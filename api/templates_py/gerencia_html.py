@@ -313,6 +313,24 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#1C2B30;min-height:1
 </div><!-- /main -->
 
 <script>
+
+// CSRF defense-in-depth - Sebastian 3-may-2026
+function _csrf() {
+  var m = document.cookie.match(/(?:^|;[ \t]*)csrf_token=([^;]+)/);
+  return m ? decodeURIComponent(m[1]) : '';
+}
+function _fetchOpts(method, body) {
+  var headers = {};
+  var tok = _csrf();
+  if (tok) headers['X-CSRF-Token'] = tok;
+  var opts = {method: method || 'GET', headers: headers, credentials: 'same-origin'};
+  if (body !== undefined && body !== null) {
+    headers['Content-Type'] = 'application/json';
+    opts.body = (typeof body === 'string') ? body : JSON.stringify(body);
+  }
+  return opts;
+}
+fetch('/api/csrf-token', {credentials: 'same-origin'}).catch(function(){});
 function fmt(n,prefix){if(n==null||n===undefined)return '—';var v=Math.abs(parseFloat(n));var s=v>=1000000?(v/1000000).toFixed(1)+'M':(v>=1000?(v/1000).toFixed(0)+'K':v.toLocaleString('es-CO'));return (prefix||'$')+s;}
 function fmtN(n){return n!=null?parseFloat(n).toLocaleString('es-CO'):'—';}
 function setSemaforo(id,color){var el=document.getElementById(id);if(el){el.className='sem '+color;}}
@@ -444,7 +462,7 @@ async function guardarInputs(){
     notas:document.getElementById('inp-notas').value
   };
   try{
-    var r=await fetch('/api/gerencia/input-manual',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+    var r=await fetch('/api/gerencia/input-manual',_fetchOpts('POST', data));
     var res=await r.json();
     document.getElementById('inp-msg').innerHTML=r.ok?'<div class="msg-ok-dark">'+res.message+'</div>':'<div class="msg-err-dark">'+(res.error||'Error')+'</div>';
     if(r.ok) setTimeout(loadKPIs,500);

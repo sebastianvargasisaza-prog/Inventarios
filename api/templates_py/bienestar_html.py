@@ -225,6 +225,24 @@ label{font-size:12px;font-weight:600;color:#475569;display:block;margin-bottom:4
 </div>
 
 <script>
+
+// CSRF defense-in-depth - Sebastian 3-may-2026
+function _csrf() {
+  var m = document.cookie.match(/(?:^|;[ \t]*)csrf_token=([^;]+)/);
+  return m ? decodeURIComponent(m[1]) : '';
+}
+function _fetchOpts(method, body) {
+  var headers = {};
+  var tok = _csrf();
+  if (tok) headers['X-CSRF-Token'] = tok;
+  var opts = {method: method || 'GET', headers: headers, credentials: 'same-origin'};
+  if (body !== undefined && body !== null) {
+    headers['Content-Type'] = 'application/json';
+    opts.body = (typeof body === 'string') ? body : JSON.stringify(body);
+  }
+  return opts;
+}
+fetch('/api/csrf-token', {credentials: 'same-origin'}).catch(function(){});
 var ES_JEFE = ({es_jefe} === true);
 var MI_USERNAME = '';
 
@@ -315,10 +333,7 @@ async function crearNotificacion(){
     adjunto_url: document.getElementById('nf-adjunto').value
   };
   try{
-    var r = await fetch('/api/bienestar/notificaciones', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify(body)
-    });
+    var r = await fetch('/api/bienestar/notificaciones', _fetchOpts('POST', body));
     var d = await r.json();
     if(d.ok){
       _toast('Notificación enviada al jefe', 1);
@@ -407,7 +422,7 @@ async function iniciarExamen(capId){
   document.getElementById('exam-info').textContent = 'Generando preguntas con Claude... un momento.';
   document.getElementById('exam-body').innerHTML = '<div style="text-align:center;color:#64748b;padding:30px">⏳ Pensando...</div>';
   try{
-    var r = await fetch('/api/bienestar/capacitaciones/'+capId+'/iniciar-examen', {method:'POST'});
+    var r = await fetch('/api/bienestar/capacitaciones/'+capId+'/iniciar-examen', _fetchOpts('POST'));
     var d = await r.json();
     if(!d.ok){ _toast('Error: '+(d.error||'?'), 0); cerrarExamen(); return; }
     document.getElementById('exam-info').innerHTML = '<b>5 preguntas generadas.</b> Responde con tus palabras (no copies). Claude va a calificar al final con base en comprensión real.';
@@ -431,10 +446,7 @@ async function enviarRespuestas(intentoId, n){
   if(respuestas.every(function(r){return !r;})){ _toast('Responde al menos una', 0); return; }
   document.getElementById('exam-body').innerHTML += '<div style="margin-top:14px;color:#64748b;text-align:center">⏳ Claude está calificando...</div>';
   try{
-    var r = await fetch('/api/bienestar/intentos/'+intentoId+'/calificar', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({respuestas: respuestas})
-    });
+    var r = await fetch('/api/bienestar/intentos/'+intentoId+'/calificar', _fetchOpts('POST', {respuestas: respuestas}));
     var d = await r.json();
     if(!d.ok){ _toast('Error: '+(d.error||'?'), 0); return; }
     var resBox = document.getElementById('exam-result');
@@ -518,10 +530,7 @@ async function cargarBandeja(){
 async function resolverNotif(id, estado){
   var coment = prompt('Comentario para el empleado (opcional):', '');
   try{
-    var r = await fetch('/api/bienestar/notificaciones/'+id+'/resolver', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({estado: estado, comentario_jefe: coment||null})
-    });
+    var r = await fetch('/api/bienestar/notificaciones/'+id+'/resolver', _fetchOpts('POST', {estado: estado, comentario_jefe: coment||null}));
     var d = await r.json();
     if(d.ok){ _toast('Notificación '+estado, 1); cargarBandeja(); }
     else { _toast('Error: '+(d.error||'?'), 0); }
@@ -541,10 +550,7 @@ async function asignarCapacitacion(){
     nota_minima: parseInt(document.getElementById('cap-notamin').value)||70
   };
   try{
-    var r = await fetch('/api/bienestar/capacitaciones', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify(body)
-    });
+    var r = await fetch('/api/bienestar/capacitaciones', _fetchOpts('POST', body));
     var d = await r.json();
     if(d.ok){
       _toast('Capacitación asignada', 1);

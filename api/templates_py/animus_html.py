@@ -105,6 +105,24 @@ table tbody tr:hover{background:#0f172a55;}
 <div id="js-error-banner"></div>
 <div id="toast-container"></div>
 <script>
+
+// CSRF defense-in-depth - Sebastian 3-may-2026
+function _csrf() {
+  var m = document.cookie.match(/(?:^|;[ \t]*)csrf_token=([^;]+)/);
+  return m ? decodeURIComponent(m[1]) : '';
+}
+function _fetchOpts(method, body) {
+  var headers = {};
+  var tok = _csrf();
+  if (tok) headers['X-CSRF-Token'] = tok;
+  var opts = {method: method || 'GET', headers: headers, credentials: 'same-origin'};
+  if (body !== undefined && body !== null) {
+    headers['Content-Type'] = 'application/json';
+    opts.body = (typeof body === 'string') ? body : JSON.stringify(body);
+  }
+  return opts;
+}
+fetch('/api/csrf-token', {credentials: 'same-origin'}).catch(function(){});
 function showToast(msg, type){
   const c = document.getElementById('toast-container');
   const t = document.createElement('div');
@@ -414,10 +432,7 @@ async function guardarCaja(){
   if (!body.monto || body.monto <= 0) { showToast('Monto debe ser mayor a 0', 'error'); return; }
   if (!body.concepto) { showToast('Concepto requerido', 'error'); return; }
   try {
-    const r = await fetch('/api/animus/caja', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify(body)
-    });
+    const r = await fetch('/api/animus/caja', _fetchOpts('POST', body));
     const d = await r.json();
     if (!d.ok) { showToast('Error: ' + (d.error||'?'), 'error'); return; }
     showToast('Movimiento registrado', 'success');
@@ -590,10 +605,7 @@ async function guardarConteo(){
     explicacion: explicacion,
   };
   try {
-    const r = await fetch('/api/animus/inventario-ciclico', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify(body)
-    });
+    const r = await fetch('/api/animus/inventario-ciclico', _fetchOpts('POST', body));
     const d = await r.json();
     if (!d.ok) { showToast('Error: ' + (d.error||'?'), 'error'); return; }
     showToast('Conteo registrado - diferencia ' + d.diferencia, 'success');

@@ -848,6 +848,24 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
 </div>
 
 <script>
+
+// CSRF defense-in-depth - Sebastian 3-may-2026
+function _csrf() {
+  var m = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/);
+  return m ? decodeURIComponent(m[1]) : '';
+}
+function _fetchOpts(method, body) {
+  var headers = {};
+  var tok = _csrf();
+  if (tok) headers['X-CSRF-Token'] = tok;
+  var opts = {method: method || 'GET', headers: headers, credentials: 'same-origin'};
+  if (body !== undefined && body !== null) {
+    headers['Content-Type'] = 'application/json';
+    opts.body = (typeof body === 'string') ? body : JSON.stringify(body);
+  }
+  return opts;
+}
+fetch('/api/csrf-token', {credentials: 'same-origin'}).catch(function(){});
 // ─── GLOBALS ──────────────────────────────────────────────────────────────
 var _seccion='animus', _pedActivo=null, _aliadoActivo=null, _prospectoActivo=null, _aliadosCache={}, _prospectoCache={}, _ordenesCache={};
 
@@ -999,7 +1017,7 @@ async function crearAliado(){
                     tiktok:(document.getElementById('cli-tiktok')||{}).value||'',
                     whatsapp:(document.getElementById('cli-wa')||{}).value||''}};
   try{
-    var r=await fetch('/api/clientes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+    var r=await fetch('/api/clientes',_fetchOpts('POST', data));
     var res=await r.json();
     document.getElementById('cli-msg').innerHTML=r.ok?'<div class="msg-ok">'+res.message+'</div>':'<div class="msg-err">'+(res.error||'Error')+'</div>';
     if(r.ok){loadAliados();document.getElementById('cli-nombre').value='';}
@@ -1017,7 +1035,7 @@ function abrirEditAliado(cid){
 async function guardarAliado(){
   var data={semaforo:document.getElementById('ea-semaforo').value,
             nivel_aliado:document.getElementById('ea-nivel').value};
-  var r=await fetch('/api/aliados/'+_aliadoActivo,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+  var r=await fetch('/api/aliados/'+_aliadoActivo,_fetchOpts('PATCH', data));
   var res=await r.json();
   if(res.ok){
     document.getElementById('ea-msg').innerHTML='<div class="msg-ok">Guardado</div>';
@@ -1028,7 +1046,7 @@ async function eliminarAliado(cid, btn){
   var a=_aliadosCache[cid]||{};
   if(!confirm('&#xbf;Desactivar aliado "'+a.nombre+'"? El historial se conserva.')){return;}
   btn.disabled=true; btn.textContent='...';
-  var r=await fetch('/api/aliados/'+cid,{method:'DELETE'});
+  var r=await fetch('/api/aliados/'+cid,_fetchOpts('DELETE'));
   var res=await r.json();
   if(res.ok){loadAliados();}else{btn.disabled=false;btn.textContent='Eliminar';}
 }
@@ -1089,7 +1107,7 @@ async function crearPedido(){
   if(!items.length){alert('Agrega al menos un ítem');return;}
   var data={cliente_id:parseInt(cid),fecha_entrega_est:document.getElementById('ped-fecha-ent').value,
     observaciones:document.getElementById('ped-obs').value,items:items};
-  var r=await fetch('/api/pedidos',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+  var r=await fetch('/api/pedidos',_fetchOpts('POST', data));
   var res=await r.json();
   document.getElementById('ped-msg').innerHTML=r.ok?'<div class="msg-ok">'+res.message+'</div>':'<div class="msg-err">'+(res.error||'Error')+'</div>';
   if(r.ok){loadPedidos('');toggleForm('f-pedido');}
@@ -1106,7 +1124,7 @@ async function confirmarEstadoPedido(){
   var nuevo=document.getElementById('m-estado-sel').value;
   var msg=document.getElementById('m-estado-msg');
   if(!nuevo){msg.innerHTML='<span style="color:#dc2626;font-size:0.84em;">Selecciona un estado</span>';return;}
-  var r=await fetch('/api/pedidos/'+_pedidoEstadoActivo,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({estado:nuevo})});
+  var r=await fetch('/api/pedidos/'+_pedidoEstadoActivo,_fetchOpts('PATCH', {estado:nuevo}));
   var res=await r.json();
   if(r.ok){
     msg.innerHTML='<span style="color:#16a34a;font-size:0.84em;">&#x2713; Actualizado</span>';
@@ -1137,9 +1155,7 @@ async function confirmarPago(){
   var estado=document.getElementById('mp-estado').value;
   var msg=document.getElementById('mp-msg');
   msg.innerHTML='';
-  var r=await fetch('/api/pedidos/'+_pagoActivo,{method:'PATCH',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({monto_pagado:monto,estado_pago:estado})});
+  var r=await fetch('/api/pedidos/'+_pagoActivo,_fetchOpts('PATCH', {monto_pagado:monto,estado_pago:estado}));
   var res=await r.json();
   if(r.ok){
     msg.innerHTML='<span style="color:#16a34a;font-size:0.84em;">&#x2713; Pago registrado</span>';
@@ -1330,7 +1346,7 @@ function abrirMoverEtapa(id){
 }
 async function confirmarEtapaMaq(){
   var nueva=document.getElementById('me-etapa').value;
-  var r=await fetch('/api/maquila/prospectos/'+_prospectoActivo,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({etapa:nueva})});
+  var r=await fetch('/api/maquila/prospectos/'+_prospectoActivo,_fetchOpts('PATCH', {etapa:nueva}));
   var res=await r.json();
   if(res.ok){
     document.getElementById('me-msg').innerHTML='<div style="color:#16a34a;font-size:0.84em;">✓ Movido</div>';
@@ -1369,7 +1385,7 @@ async function crearProspectoData(form){
     producto_tipo:document.getElementById('mp'+suf+'-prod').value,
     etapa:document.getElementById('mp'+suf+'-etapa').value,
     valor_estimado:parseFloat(document.getElementById('mp'+suf+'-val').value)||0};
-  var r=await fetch('/api/maquila/prospectos',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+  var r=await fetch('/api/maquila/prospectos',_fetchOpts('POST', data));
   var msgEl=document.getElementById('mp'+suf+'-msg');
   if(r.ok){
     msgEl.innerHTML='<div class="msg-ok">Prospecto creado</div>';
@@ -1406,7 +1422,7 @@ async function crearOrden(){
     fecha_entrega:document.getElementById('mo-fe').value,estado:document.getElementById('mo-estado').value,
     valor_total:parseFloat(document.getElementById('mo-val').value)||0,
     observaciones:document.getElementById('mo-obs').value};
-  var r=await fetch('/api/maquila/ordenes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+  var r=await fetch('/api/maquila/ordenes',_fetchOpts('POST', data));
   var res=await r.json();
   document.getElementById('mo-msg').innerHTML=r.ok?'<div class="msg-ok">Orden creada</div>':'<div class="msg-err">Error</div>';
   if(r.ok){loadOrdenes();toggleForm('f-orden');}
@@ -1423,9 +1439,7 @@ async function confirmarEstOrden(){
   var est=document.getElementById('eo-sel').value;
   var msg=document.getElementById('eo-msg');
   msg.textContent='Guardando...';
-  var r=await fetch('/api/maquila/ordenes/'+oid,{method:'PATCH',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({estado:est})});
+  var r=await fetch('/api/maquila/ordenes/'+oid,_fetchOpts('PATCH', {estado:est}));
   if(r.ok){document.getElementById('m-est-orden').style.display='none';loadOrdenes();}
   else{msg.textContent='Error al guardar';}
 }
@@ -1802,7 +1816,7 @@ async function guardarSeguimiento() {
     },
     notas_seguimiento: document.getElementById('seg-notas').value
   };
-  const r = await fetch('/api/aliados/'+id, {method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  const r = await fetch('/api/aliados/'+id, _fetchOpts('PATCH', payload));
   const d = await r.json();
   if(d.ok){
     document.getElementById('seg-msg').style.color='#16a34a';

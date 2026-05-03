@@ -136,6 +136,24 @@ label{font-size:12px;font-weight:600;color:#475569;display:block;margin-bottom:4
 </div>
 
 <script>
+
+// CSRF defense-in-depth - Sebastian 3-may-2026
+function _csrf() {
+  var m = document.cookie.match(/(?:^|;[ \t]*)csrf_token=([^;]+)/);
+  return m ? decodeURIComponent(m[1]) : '';
+}
+function _fetchOpts(method, body) {
+  var headers = {};
+  var tok = _csrf();
+  if (tok) headers['X-CSRF-Token'] = tok;
+  var opts = {method: method || 'GET', headers: headers, credentials: 'same-origin'};
+  if (body !== undefined && body !== null) {
+    headers['Content-Type'] = 'application/json';
+    opts.body = (typeof body === 'string') ? body : JSON.stringify(body);
+  }
+  return opts;
+}
+fetch('/api/csrf-token', {credentials: 'same-origin'}).catch(function(){});
 function _esc(s){return (s==null?'':String(s)).replace(/[<>&"']/g,function(c){return {'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c];});}
 function _fmtCOP(n){if(n==null||n===0) return '—'; return '$'+Math.round(n).toLocaleString('es-CO');}
 function _toast(m,ok){alert((ok?'✓ ':'⚠ ')+m);}
@@ -271,7 +289,7 @@ async function cargarEosLeads(){
 
 async function cambiarEstadoLead(id, nuevo){
   try{
-    var r = await fetch('/api/eos/leads/'+id, {method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify({estado: nuevo})});
+    var r = await fetch('/api/eos/leads/'+id, _fetchOpts('PATCH', {estado: nuevo}));
     if((await r.json()).ok){ cargarEosLeads(); }
   }catch(e){}
 }

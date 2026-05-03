@@ -369,6 +369,24 @@ tr:hover td{background:#202020}
 <div id="toast" class="toast"></div>
 
 <script>
+
+// CSRF defense-in-depth - Sebastian 3-may-2026
+function _csrf() {
+  var m = document.cookie.match(/(?:^|;[ \t]*)csrf_token=([^;]+)/);
+  return m ? decodeURIComponent(m[1]) : '';
+}
+function _fetchOpts(method, body) {
+  var headers = {};
+  var tok = _csrf();
+  if (tok) headers['X-CSRF-Token'] = tok;
+  var opts = {method: method || 'GET', headers: headers, credentials: 'same-origin'};
+  if (body !== undefined && body !== null) {
+    headers['Content-Type'] = 'application/json';
+    opts.body = (typeof body === 'string') ? body : JSON.stringify(body);
+  }
+  return opts;
+}
+fetch('/api/csrf-token', {credentials: 'same-origin'}).catch(function(){});
 const COP = n => new Intl.NumberFormat('es-CO',{style:'currency',currency:'COP',minimumFractionDigits:0}).format(n||0);
 const fmt = s => s ? new Date(s+'T00:00:00').toLocaleDateString('es-CO') : '';
 
@@ -383,7 +401,7 @@ function toast(msg, ok=true){
 async function doLogin(){
   const u = document.getElementById('l-user').value.trim().toLowerCase();
   const p = document.getElementById('l-pass').value;
-  const r = await fetch('/api/contabilidad/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({usuario:u,password:p})});
+  const r = await fetch('/api/contabilidad/login',_fetchOpts('POST', {usuario:u,password:p}));
   const d = await r.json();
   if(d.ok){
     document.getElementById('login-screen').style.display='none';
@@ -397,7 +415,7 @@ async function doLogin(){
 document.addEventListener('keydown',e=>{if(e.key==='Enter')doLogin()});
 
 async function doLogout(){
-  await fetch('/api/contabilidad/logout',{method:'POST'});
+  await fetch('/api/contabilidad/logout',_fetchOpts('POST'));
   location.reload();
 }
 
@@ -619,7 +637,7 @@ async function generarFactura(){
     fecha_vencimiento: document.getElementById('n-venc').value,
     items
   };
-  const r = await fetch('/api/contabilidad/facturas/generar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const r = await fetch('/api/contabilidad/facturas/generar',_fetchOpts('POST', body));
   const d = await r.json();
   if(d.ok){
     closeModal('modal-nueva');
@@ -646,7 +664,7 @@ async function registrarPago(){
     medio: document.getElementById('pago-medio').value,
     referencia: document.getElementById('pago-ref').value,
   };
-  const r = await fetch(`/api/contabilidad/facturas/${numero}/pago`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const r = await fetch(`/api/contabilidad/facturas/${numero}/pago`,_fetchOpts('POST', body));
   const d = await r.json();
   if(d.ok){
     closeModal('modal-pago');
@@ -661,7 +679,7 @@ async function registrarPago(){
 async function anularFactura(numero){
   const motivo = prompt(`Motivo de anulacion de ${numero}:`);
   if(!motivo) return;
-  const r = await fetch(`/api/contabilidad/facturas/${numero}/anular`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({motivo})});
+  const r = await fetch(`/api/contabilidad/facturas/${numero}/anular`,_fetchOpts('PATCH', {motivo}));
   const d = await r.json();
   if(d.ok){toast('Factura anulada'); loadFacturas(); loadKpis();}
   else toast(d.error||'Error', false);

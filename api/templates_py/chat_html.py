@@ -258,6 +258,24 @@ body{font-family:-apple-system,'Inter','Segoe UI',sans-serif;background:#0a0a0b;
 </div>
 
 <script>
+
+// CSRF defense-in-depth - Sebastian 3-may-2026
+function _csrf() {
+  var m = document.cookie.match(/(?:^|;[ \t]*)csrf_token=([^;]+)/);
+  return m ? decodeURIComponent(m[1]) : '';
+}
+function _fetchOpts(method, body) {
+  var headers = {};
+  var tok = _csrf();
+  if (tok) headers['X-CSRF-Token'] = tok;
+  var opts = {method: method || 'GET', headers: headers, credentials: 'same-origin'};
+  if (body !== undefined && body !== null) {
+    headers['Content-Type'] = 'application/json';
+    opts.body = (typeof body === 'string') ? body : JSON.stringify(body);
+  }
+  return opts;
+}
+fetch('/api/csrf-token', {credentials: 'same-origin'}).catch(function(){});
 var ME = '{usuario}';
 var THREADS = [];
 var USERS = [];
@@ -300,7 +318,7 @@ setInterval(function(){
 }, 5*1000);
 
 async function heartbeat(){
-  try { await fetch('/api/chat/heartbeat',{method:'POST'}); } catch(e){}
+  try { await fetch('/api/chat/heartbeat',_fetchOpts('POST')); } catch(e){}
 }
 
 // ─── Threads ────────────────────────────────────────────────────────
@@ -409,7 +427,7 @@ async function abrirThread(thread_id){
   await cargarMensajes(thread_id);
   document.getElementById('composer').focus();
   // Marcar leído
-  fetch('/api/chat/threads/'+thread_id+'/leer',{method:'POST'}).catch(function(){});
+  fetch('/api/chat/threads/'+thread_id+'/leer',_fetchOpts('POST')).catch(function(){});
 }
 
 async function cargarMensajes(thread_id, append){
@@ -491,10 +509,7 @@ async function enviarMensaje(){
   var btn = document.getElementById('send-btn');
   btn.disabled = true;
   try {
-    var r = await fetch('/api/chat/threads/'+ACTIVE_THREAD+'/messages',{
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({contenido: txt})
-    });
+    var r = await fetch('/api/chat/threads/'+ACTIVE_THREAD+'/messages',_fetchOpts('POST', {contenido: txt}));
     if(r.ok){
       document.getElementById('composer').value='';
       autoresize(document.getElementById('composer'));
@@ -585,10 +600,7 @@ async function crearNuevoChat(){
   } else if(TIPO_NUEVO==='directo'){
     if(SELECTED_USERS.length !== 1){ alert('Selecciona una persona'); return; }
   }
-  var r = await fetch('/api/chat/threads', {
-    method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify(body)
-  });
+  var r = await fetch('/api/chat/threads', _fetchOpts('POST', body));
   var d = await r.json();
   if(!r.ok){ alert('Error: '+(d.error||r.status)); return; }
   cerrarModalNuevo();
@@ -628,11 +640,8 @@ async function crearTareaChat(){
   if(!titulo){ alert('Escribe un título.'); return; }
   if(!asignado_a){ alert('Selecciona a quién asignar.'); return; }
   try {
-    var r = await fetch('/api/chat/threads/'+ACTIVE_THREAD+'/asignar-tarea',{
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({titulo:titulo, descripcion:descripcion,
-                            asignado_a:asignado_a, fecha_objetivo:fecha_objetivo})
-    });
+    var r = await fetch('/api/chat/threads/'+ACTIVE_THREAD+'/asignar-tarea',_fetchOpts('POST', {titulo:titulo, descripcion:descripcion,
+                            asignado_a:asignado_a, fecha_objetivo:fecha_objetivo}));
     var raw = await r.text();
     var d = null; try { d = JSON.parse(raw); } catch(_){}
     if(!r.ok){ alert('Error: '+ (d&&d.error || raw.substring(0,200))); return; }
@@ -842,10 +851,7 @@ function abrirPickerReact(msgId, ev){
 
 async function toggleReaccion(msgId, emoji){
   try {
-    var r = await fetch('/api/chat/messages/'+msgId+'/react',{
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({emoji: emoji})
-    });
+    var r = await fetch('/api/chat/messages/'+msgId+'/react',_fetchOpts('POST', {emoji: emoji}));
     if(r.ok && ACTIVE_THREAD) await cargarMensajes(ACTIVE_THREAD);
   } catch(e){}
 }
@@ -855,10 +861,7 @@ async function completarTareaChat(tareaId){
   var obs = prompt('Observaciones de cierre (opcional):', '');
   if(obs === null) return;
   try {
-    var r = await fetch('/api/tareas-operativas/'+tareaId+'/completar',{
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({observaciones: obs||''})
-    });
+    var r = await fetch('/api/tareas-operativas/'+tareaId+'/completar',_fetchOpts('POST', {observaciones: obs||''}));
     var raw = await r.text();
     var d = null; try { d = JSON.parse(raw); } catch(_){}
     if(!r.ok){ alert('Error: '+(d&&d.error || raw.substring(0,200))); return; }

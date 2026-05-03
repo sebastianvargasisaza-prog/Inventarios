@@ -268,6 +268,24 @@ HTML = r"""
   </div>
 
 <script>
+
+// CSRF defense-in-depth - Sebastian 3-may-2026
+function _csrf() {
+  var m = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/);
+  return m ? decodeURIComponent(m[1]) : '';
+}
+function _fetchOpts(method, body) {
+  var headers = {};
+  var tok = _csrf();
+  if (tok) headers['X-CSRF-Token'] = tok;
+  var opts = {method: method || 'GET', headers: headers, credentials: 'same-origin'};
+  if (body !== undefined && body !== null) {
+    headers['Content-Type'] = 'application/json';
+    opts.body = (typeof body === 'string') ? body : JSON.stringify(body);
+  }
+  return opts;
+}
+fetch('/api/csrf-token', {credentials: 'same-origin'}).catch(function(){});
 const usuario = "{usuario}";
 const _esc = s => String(s||'').replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
 
@@ -345,10 +363,7 @@ async function cambiarEstado(tid) {
   const nuevo = prompt('Nuevo estado: Asignada / EnProceso / Bloqueada / Hecha / Cancelada');
   if (!nuevo) return;
   try {
-    await fetch('/api/comunicacion/tareas/'+tid, {
-      method:'PATCH', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({estado: nuevo})
-    });
+    await fetch('/api/comunicacion/tareas/'+tid, _fetchOpts('PATCH', {estado: nuevo}));
     cargarTareas(); cargarDashboard();
   } catch(e) { alert('Error: '+e.message); }
 }
@@ -395,10 +410,7 @@ async function guardarTarea() {
     raci: raci
   };
   try {
-    const r = await fetch('/api/comunicacion/tareas', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify(body)
-    });
+    const r = await fetch('/api/comunicacion/tareas', _fetchOpts('POST', body));
     const d = await r.json();
     if (!r.ok) { alert('Error: ' + (d.error||'')); return; }
     cerrarModal('modal-tarea');
@@ -426,7 +438,7 @@ async function cargarBandeja() {
 }
 
 async function marcarLeido(mid) {
-  await fetch('/api/comunicacion/mensajes/'+mid+'/leido', {method:'POST'});
+  await fetch('/api/comunicacion/mensajes/'+mid+'/leido', _fetchOpts('POST'));
   cargarBandeja(); cargarDashboard();
 }
 
@@ -435,10 +447,7 @@ async function enviarMensaje() {
   const msg = document.getElementById('chat-msg').value.trim();
   if (!a || !msg) { alert('Destinatario y mensaje requeridos'); return; }
   try {
-    await fetch('/api/comunicacion/mensajes', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({a_usuario: a, asunto: document.getElementById('chat-asunto').value, mensaje: msg})
-    });
+    await fetch('/api/comunicacion/mensajes', _fetchOpts('POST', {a_usuario: a, asunto: document.getElementById('chat-asunto').value, mensaje: msg}));
     document.getElementById('chat-a').value = '';
     document.getElementById('chat-asunto').value = '';
     document.getElementById('chat-msg').value = '';
@@ -466,7 +475,7 @@ async function cargarActas() {
 async function parsearActa(aid) {
   if (!confirm('Parsear acta y crear tareas automaticas?')) return;
   try {
-    const r = await fetch('/api/comunicacion/actas/'+aid+'/parsear', {method:'POST'});
+    const r = await fetch('/api/comunicacion/actas/'+aid+'/parsear', _fetchOpts('POST'));
     const d = await r.json();
     if (!r.ok) { alert('Error: ' + d.error); return; }
     alert('Listo. ' + d.tareas_creadas + ' tareas creadas.');
@@ -486,14 +495,11 @@ async function guardarActa() {
   if (!transcripcion) { alert('Transcripción requerida'); return; }
   const asis = document.getElementById('a-asistentes').value.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
   try {
-    await fetch('/api/comunicacion/actas', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({
+    await fetch('/api/comunicacion/actas', _fetchOpts('POST', {
         fecha: document.getElementById('a-fecha').value,
         asistentes: asis,
         transcripcion: transcripcion
-      })
-    });
+      }));
     cerrarModal('modal-acta');
     cargarActas();
     alert('Acta guardada. Click "Parsear" para crear tareas automáticas.');
@@ -505,10 +511,7 @@ async function enviarQueja() {
   if (!ctx) { alert('Describe el problema'); return; }
   try {
     document.getElementById('queja-resultado').innerHTML = '<div class="alert-ia">Analizando con IA...</div>';
-    const r = await fetch('/api/comunicacion/quejas', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({contexto: ctx})
-    });
+    const r = await fetch('/api/comunicacion/quejas', _fetchOpts('POST', {contexto: ctx}));
     const d = await r.json();
     if (!r.ok) {
       document.getElementById('queja-resultado').innerHTML = '<div class="alert-ia" style="border-color:#dc2626">Error: '+_esc(d.error||'')+'</div>';
