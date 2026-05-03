@@ -253,6 +253,22 @@ def test_baseline_audita(app, db_clean):
     _cleanup("TEST-AUD-001")
 
 
+def test_pagina_animus_tiene_tab_inv_fisico(app, db_clean):
+    """La UI debe exponer el tab nuevo + modales."""
+    cs = _login(app, "sebastian")
+    r = cs.get("/animus")
+    body = r.get_data(as_text=True)
+    assert 'data-tab="invfis"' in body
+    assert 'id="tab-invfis"' in body
+    assert 'id="modal-baseline"' in body
+    assert 'id="modal-entrada"' in body
+    assert 'id="modal-salida"' in body
+    assert 'cargarInvFisico' in body
+    assert 'guardarBaseline' in body
+    assert 'guardarEntrada' in body
+    assert 'guardarSalida' in body
+
+
 def test_entrada_audita(app, db_clean):
     cs = _login(app, "sebastian")
     cs.post("/api/animus/inv-fisico/baseline",

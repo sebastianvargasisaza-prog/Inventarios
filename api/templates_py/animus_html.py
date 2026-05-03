@@ -164,7 +164,8 @@ window.addEventListener('error', function(ev){
 
 <div class="tabs-bar">
   <button class="tab-btn active" data-tab="caja" onclick="switchTab('caja')">&#128176; Caja Menor</button>
-  <button class="tab-btn" data-tab="inventario" onclick="switchTab('inventario')">&#128230; Inventario Ciclico</button>
+  <button class="tab-btn" data-tab="invfis" onclick="switchTab('invfis')">&#128202; Inventario Fisico</button>
+  <button class="tab-btn" data-tab="inventario" onclick="switchTab('inventario')">&#128230; Conteo Ciclico</button>
 </div>
 
 <!-- TAB: CAJA MENOR -->
@@ -259,6 +260,156 @@ window.addEventListener('error', function(ev){
   </div>
 </div>
 
+<!-- TAB: INVENTARIO FISICO (modelo nuevo · ecuacion contable) -->
+<div id="tab-invfis" class="tab-panel">
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;margin-bottom:8px;">
+    <div>
+      <div class="page-title">&#128202; Inventario Fisico</div>
+      <div class="page-sub">Esperado = baseline + entradas - ventas Shopify - salidas. Si no cuadra, se ve el desglose y donde esta el error.</div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-outline" onclick="abrirBaseline()">+ Baseline</button>
+      <button class="btn btn-primary" onclick="abrirEntrada()">+ Entrada</button>
+      <button class="btn btn-outline" onclick="abrirSalida()">+ Salida</button>
+    </div>
+  </div>
+
+  <div id="invfis-resumen" class="kpi-grid"></div>
+
+  <div class="card">
+    <div class="card-hdr">
+      <span class="card-title">Inventario esperado por SKU</span>
+      <input id="invfis-q" class="input" style="max-width:220px" placeholder="Buscar SKU..." oninput="renderInvFis()">
+    </div>
+    <div style="overflow-x:auto;">
+      <table>
+        <thead><tr>
+          <th>SKU</th>
+          <th>Baseline</th>
+          <th>Fecha</th>
+          <th style="text-align:right;">Entradas</th>
+          <th style="text-align:right;">Shopify</th>
+          <th style="text-align:right;">Salidas</th>
+          <th style="text-align:right;">Ajustes</th>
+          <th style="text-align:right;">Esperado</th>
+          <th></th>
+        </tr></thead>
+        <tbody id="invfis-tbody"><tr><td colspan="9" style="color:#64748b;text-align:center;padding:24px;">Cargando...</td></tr></tbody>
+      </table>
+    </div>
+    <div id="pg-invfis"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-hdr"><span class="card-title">Movimientos recientes</span></div>
+    <div style="overflow-x:auto;">
+      <table>
+        <thead><tr>
+          <th>Fecha</th>
+          <th>SKU</th>
+          <th>Tipo</th>
+          <th style="text-align:right;">Cantidad</th>
+          <th>Origen</th>
+          <th>Motivo</th>
+          <th>Por</th>
+        </tr></thead>
+        <tbody id="invfis-mov-body"><tr><td colspan="7" style="color:#64748b;text-align:center;padding:24px;">Cargando...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Baseline -->
+<div id="modal-baseline" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center;">
+  <div style="background:#1e293b;border:1px solid #475569;border-radius:14px;padding:22px;width:480px;max-width:92vw;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+      <h3 style="font-size:16px;color:#fff;">&#128202; Registrar baseline</h3>
+      <button onclick="cerrarModal('modal-baseline')" style="background:none;border:none;color:#94a3b8;font-size:22px;cursor:pointer;">&times;</button>
+    </div>
+    <div style="background:#0f172a;border-left:3px solid #6366f1;padding:10px 14px;border-radius:6px;margin-bottom:14px;font-size:12px;color:#cbd5e1;">
+      El baseline es la cantidad fisica que tienes HOY de un SKU. A partir de aqui el sistema rastrea entradas y salidas. Si ya hay baseline para este SKU, se actualiza.
+    </div>
+    <div class="form-row">
+      <div><div class="label">SKU *</div><input id="bl-sku" class="input" placeholder="Ej: LBHA-30" style="text-transform:uppercase"></div>
+      <div><div class="label">Fecha</div><input id="bl-fecha" type="date" class="input"></div>
+    </div>
+    <div class="form-row full"><div><div class="label">Descripcion (opcional)</div><input id="bl-desc" class="input" placeholder="Hydra Balance 30ml"></div></div>
+    <div class="form-row full"><div><div class="label">Unidades fisicas que TIENES HOY *</div><input id="bl-unidades" type="number" min="0" class="input" placeholder="0"></div></div>
+    <div class="form-row full"><div><div class="label">Observaciones</div><textarea id="bl-obs" class="textarea" placeholder="Como se conto, donde estaban, etc."></textarea></div></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">
+      <button class="btn btn-outline" onclick="cerrarModal('modal-baseline')">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarBaseline()">Guardar baseline</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Entrada -->
+<div id="modal-entrada" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center;">
+  <div style="background:#1e293b;border:1px solid #475569;border-radius:14px;padding:22px;width:480px;max-width:92vw;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+      <h3 style="font-size:16px;color:#fff;">+ Entrada de inventario</h3>
+      <button onclick="cerrarModal('modal-entrada')" style="background:none;border:none;color:#94a3b8;font-size:22px;cursor:pointer;">&times;</button>
+    </div>
+    <div class="form-row">
+      <div><div class="label">SKU *</div><input id="en-sku" class="input" placeholder="Ej: LBHA-30" style="text-transform:uppercase"></div>
+      <div><div class="label">Fecha</div><input id="en-fecha" type="date" class="input"></div>
+    </div>
+    <div class="form-row">
+      <div><div class="label">Cantidad *</div><input id="en-cantidad" type="number" min="1" class="input" placeholder="0"></div>
+      <div><div class="label">Origen *</div>
+        <select id="en-origen" class="select">
+          <option value="produccion">Produccion (lote nuevo)</option>
+          <option value="devolucion">Devolucion cliente</option>
+          <option value="ajuste">Ajuste positivo</option>
+          <option value="otro">Otro</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row full"><div><div class="label">Referencia (lote, factura)</div><input id="en-ref" class="input" placeholder="LOTE-001 / FAC-XX"></div></div>
+    <div class="form-row full"><div><div class="label">Motivo / Notas</div><textarea id="en-motivo" class="textarea" placeholder="Detalles..."></textarea></div></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">
+      <button class="btn btn-outline" onclick="cerrarModal('modal-entrada')">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarEntrada()">Guardar entrada</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Salida -->
+<div id="modal-salida" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center;">
+  <div style="background:#1e293b;border:1px solid #475569;border-radius:14px;padding:22px;width:480px;max-width:92vw;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+      <h3 style="font-size:16px;color:#fff;">- Salida de inventario (NO Shopify)</h3>
+      <button onclick="cerrarModal('modal-salida')" style="background:none;border:none;color:#94a3b8;font-size:22px;cursor:pointer;">&times;</button>
+    </div>
+    <div style="background:#0f172a;border-left:3px solid #f59e0b;padding:10px 14px;border-radius:6px;margin-bottom:14px;font-size:12px;color:#cbd5e1;">
+      Las ventas de Shopify se descuentan automaticamente. Esto es para SALIDAS QUE NO SON SHOPIFY: regalos, daños, vencidos, ventas presenciales, devoluciones a planta.
+    </div>
+    <div class="form-row">
+      <div><div class="label">SKU *</div><input id="sa-sku" class="input" placeholder="Ej: LBHA-30" style="text-transform:uppercase"></div>
+      <div><div class="label">Fecha</div><input id="sa-fecha" type="date" class="input"></div>
+    </div>
+    <div class="form-row">
+      <div><div class="label">Cantidad *</div><input id="sa-cantidad" type="number" min="1" class="input" placeholder="0"></div>
+      <div><div class="label">Origen *</div>
+        <select id="sa-origen" class="select">
+          <option value="presencial">Venta presencial</option>
+          <option value="regalo">Regalo / muestra</option>
+          <option value="dano">Daño / rotura</option>
+          <option value="vencido">Vencido</option>
+          <option value="devolucion_planta">Devolucion a planta</option>
+          <option value="otro">Otro</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row full"><div><div class="label">Referencia</div><input id="sa-ref" class="input" placeholder="Pedido, persona, etc."></div></div>
+    <div class="form-row full"><div><div class="label">Motivo / Notas</div><textarea id="sa-motivo" class="textarea" placeholder="Detalles..."></textarea></div></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">
+      <button class="btn btn-outline" onclick="cerrarModal('modal-salida')">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarSalida()">Guardar salida</button>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL: Registro caja menor -->
 <div id="modal-caja" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center;">
   <div style="background:#1e293b;border:1px solid #475569;border-radius:14px;padding:22px;width:480px;max-width:92vw;">
@@ -325,6 +476,7 @@ function switchTab(name){
 }
 function loadTab(name){
   if (name === 'caja') loadCaja();
+  else if (name === 'invfis') { cargarInvFisico(); cargarMovimientosInvFis(); }
   else if (name === 'inventario') { loadInvSkus(); loadInvConteos(); }
 }
 
@@ -615,6 +767,200 @@ async function guardarConteo(){
   } catch(e) {
     showToast('Error de red: ' + e.message, 'error');
   }
+}
+
+// ════════════════════════════════════════════════════════════════
+// INVENTARIO FISICO (Fase 1 UI)
+// ════════════════════════════════════════════════════════════════
+var INVFIS_DATA = [];
+
+async function cargarInvFisico() {
+  try {
+    var r = await fetch('/api/animus/inv-fisico/esperado');
+    var d = await r.json();
+    INVFIS_DATA = d.items || [];
+    renderInvFis();
+  } catch(e) { showToast('Error cargando inv fisico: ' + e.message, 'error'); }
+}
+
+function renderInvFis() {
+  var q = (document.getElementById('invfis-q')||{value:''}).value.toLowerCase();
+  var tb = document.getElementById('invfis-tbody');
+  var resumen = document.getElementById('invfis-resumen');
+  var data = q ? INVFIS_DATA.filter(function(x){
+    return (x.sku||'').toLowerCase().indexOf(q) >= 0;
+  }) : INVFIS_DATA;
+
+  if (resumen) {
+    var totEsp = data.reduce(function(s,x){ return s + (x.esperado||0); }, 0);
+    var totBase = data.reduce(function(s,x){ return s + (x.baseline||0); }, 0);
+    var totEnt = data.reduce(function(s,x){ return s + (x.entradas||0); }, 0);
+    var totShop = data.reduce(function(s,x){ return s + (x.shopify||0); }, 0);
+    resumen.innerHTML =
+      '<div class="kpi"><div class="kpi-label">SKUs activos</div><div class="kpi-val">' + data.length + '</div></div>' +
+      '<div class="kpi"><div class="kpi-label">Stock esperado</div><div class="kpi-val">' + totEsp + '</div></div>' +
+      '<div class="kpi"><div class="kpi-label">Total baseline</div><div class="kpi-val">' + totBase + '</div></div>' +
+      '<div class="kpi"><div class="kpi-label">Entradas registradas</div><div class="kpi-val good">+' + totEnt + '</div></div>' +
+      '<div class="kpi"><div class="kpi-label">Vendido Shopify</div><div class="kpi-val warn">-' + totShop + '</div></div>';
+  }
+
+  if (!data.length) {
+    tb.innerHTML = '<tr><td colspan="9" style="color:#64748b;text-align:center;padding:24px;">' +
+      (q ? 'Sin coincidencias' : 'Aun no hay SKUs con baseline. Click "+ Baseline" para empezar.') +
+      '</td></tr>';
+    return;
+  }
+  tb.innerHTML = data.map(function(x) {
+    return '<tr>' +
+      '<td><b>' + (x.sku||'') + '</b></td>' +
+      '<td>' + x.baseline + '</td>' +
+      '<td style="font-size:11px;color:#94a3b8;">' + (x.fecha_baseline||'') + '</td>' +
+      '<td style="text-align:right;color:#4ade80;font-weight:600;">+' + x.entradas + '</td>' +
+      '<td style="text-align:right;color:#fbbf24;font-weight:600;">-' + x.shopify + '</td>' +
+      '<td style="text-align:right;color:#f87171;font-weight:600;">-' + x.salidas + '</td>' +
+      '<td style="text-align:right;color:#a78bfa;font-weight:600;">' + (x.ajustes>0?'+':'') + x.ajustes + '</td>' +
+      '<td style="text-align:right;font-weight:800;font-size:14px;color:#22d3ee;">' + x.esperado + '</td>' +
+      '<td><button class="btn btn-outline btn-sm" onclick="verMovsSku(\'' + (x.sku||'').replace(/[\'\\\\]/g, '') + '\')">Ver mov</button></td>' +
+      '</tr>';
+  }).join('');
+}
+
+async function cargarMovimientosInvFis() {
+  try {
+    var r = await fetch('/api/animus/inv-fisico/movimientos');
+    var d = await r.json();
+    var tb = document.getElementById('invfis-mov-body');
+    var movs = d.movimientos || [];
+    if (!movs.length) { tb.innerHTML = '<tr><td colspan="7" style="color:#64748b;text-align:center;padding:24px;">Sin movimientos</td></tr>'; return; }
+    tb.innerHTML = movs.slice(0, 100).map(function(m) {
+      var col = m.tipo === 'ENTRADA' ? '#4ade80' :
+                m.tipo === 'SHOPIFY_VENTA' ? '#fbbf24' :
+                m.tipo === 'SALIDA' ? '#f87171' :
+                m.tipo === 'AJUSTE' ? '#a78bfa' : '#94a3b8';
+      var sign = (m.tipo === 'ENTRADA' || m.tipo === 'BASELINE') ? '+' :
+                 (m.tipo === 'AJUSTE' ? '' : '-');
+      return '<tr>' +
+        '<td style="font-size:12px;">' + (m.fecha||'') + '</td>' +
+        '<td><b>' + (m.sku||'') + '</b></td>' +
+        '<td><span style="background:' + col + '22;color:' + col + ';padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;">' + (m.tipo||'') + '</span></td>' +
+        '<td style="text-align:right;color:' + col + ';font-weight:700;">' + sign + (m.cantidad||0) + '</td>' +
+        '<td style="font-size:12px;color:#cbd5e1;">' + (m.origen||'') + '</td>' +
+        '<td style="font-size:12px;color:#94a3b8;">' + (m.motivo||'') + '</td>' +
+        '<td style="font-size:11px;color:#94a3b8;">' + (m.usuario||'') + '</td>' +
+        '</tr>';
+    }).join('');
+  } catch(e) { console.error(e); }
+}
+
+function verMovsSku(sku) {
+  document.getElementById('invfis-q').value = sku;
+  fetch('/api/animus/inv-fisico/movimientos?sku=' + encodeURIComponent(sku))
+    .then(function(r){return r.json();})
+    .then(function(d){
+      var tb = document.getElementById('invfis-mov-body');
+      var movs = d.movimientos || [];
+      if (!movs.length) { tb.innerHTML = '<tr><td colspan="7" style="color:#64748b;text-align:center;padding:24px;">Sin movimientos para ' + sku + '</td></tr>'; return; }
+      tb.innerHTML = movs.map(function(m) {
+        var col = m.tipo === 'ENTRADA' ? '#4ade80' :
+                  m.tipo === 'SHOPIFY_VENTA' ? '#fbbf24' :
+                  m.tipo === 'SALIDA' ? '#f87171' :
+                  m.tipo === 'AJUSTE' ? '#a78bfa' : '#94a3b8';
+        var sign = (m.tipo === 'ENTRADA' || m.tipo === 'BASELINE') ? '+' : (m.tipo === 'AJUSTE' ? '' : '-');
+        return '<tr><td>' + (m.fecha||'') + '</td><td><b>' + (m.sku||'') + '</b></td><td>' + (m.tipo||'') + '</td><td style="text-align:right;color:' + col + ';font-weight:700;">' + sign + (m.cantidad||0) + '</td><td>' + (m.origen||'') + '</td><td>' + (m.motivo||'') + '</td><td>' + (m.usuario||'') + '</td></tr>';
+      }).join('');
+    });
+  renderInvFis();
+}
+
+function abrirBaseline() {
+  document.getElementById('bl-sku').value = '';
+  document.getElementById('bl-desc').value = '';
+  document.getElementById('bl-unidades').value = '';
+  document.getElementById('bl-obs').value = '';
+  document.getElementById('bl-fecha').value = new Date().toISOString().slice(0,10);
+  document.getElementById('modal-baseline').style.display = 'flex';
+}
+async function guardarBaseline() {
+  var payload = {
+    sku: (document.getElementById('bl-sku').value||'').toUpperCase().trim(),
+    descripcion: document.getElementById('bl-desc').value,
+    unidades_baseline: parseInt(document.getElementById('bl-unidades').value, 10),
+    fecha_baseline: document.getElementById('bl-fecha').value,
+    observaciones: document.getElementById('bl-obs').value,
+  };
+  if (!payload.sku) { showToast('SKU obligatorio', 'error'); return; }
+  if (isNaN(payload.unidades_baseline) || payload.unidades_baseline < 0) { showToast('Unidades invalido', 'error'); return; }
+  try {
+    var r = await fetch('/api/animus/inv-fisico/baseline', _fetchOpts('POST', payload));
+    var d = await r.json();
+    if (d.ok) {
+      showToast('Baseline guardado: ' + payload.sku + ' = ' + payload.unidades_baseline, 'success');
+      cerrarModal('modal-baseline');
+      cargarInvFisico();
+    } else { showToast('Error: ' + (d.error||'?'), 'error'); }
+  } catch(e) { showToast('Error red: ' + e.message, 'error'); }
+}
+
+function abrirEntrada() {
+  document.getElementById('en-sku').value = '';
+  document.getElementById('en-cantidad').value = '';
+  document.getElementById('en-ref').value = '';
+  document.getElementById('en-motivo').value = '';
+  document.getElementById('en-fecha').value = new Date().toISOString().slice(0,10);
+  document.getElementById('modal-entrada').style.display = 'flex';
+}
+async function guardarEntrada() {
+  var payload = {
+    sku: (document.getElementById('en-sku').value||'').toUpperCase().trim(),
+    cantidad: parseInt(document.getElementById('en-cantidad').value, 10),
+    origen: document.getElementById('en-origen').value,
+    fecha: document.getElementById('en-fecha').value,
+    referencia: document.getElementById('en-ref').value,
+    motivo: document.getElementById('en-motivo').value,
+  };
+  if (!payload.sku) { showToast('SKU obligatorio', 'error'); return; }
+  if (isNaN(payload.cantidad) || payload.cantidad <= 0) { showToast('Cantidad debe ser > 0', 'error'); return; }
+  try {
+    var r = await fetch('/api/animus/inv-fisico/entrada', _fetchOpts('POST', payload));
+    var d = await r.json();
+    if (d.ok) {
+      showToast('Entrada registrada: +' + payload.cantidad + ' uds de ' + payload.sku, 'success');
+      cerrarModal('modal-entrada');
+      cargarInvFisico();
+      cargarMovimientosInvFis();
+    } else { showToast('Error: ' + (d.error||'?'), 'error'); }
+  } catch(e) { showToast('Error red: ' + e.message, 'error'); }
+}
+
+function abrirSalida() {
+  document.getElementById('sa-sku').value = '';
+  document.getElementById('sa-cantidad').value = '';
+  document.getElementById('sa-ref').value = '';
+  document.getElementById('sa-motivo').value = '';
+  document.getElementById('sa-fecha').value = new Date().toISOString().slice(0,10);
+  document.getElementById('modal-salida').style.display = 'flex';
+}
+async function guardarSalida() {
+  var payload = {
+    sku: (document.getElementById('sa-sku').value||'').toUpperCase().trim(),
+    cantidad: parseInt(document.getElementById('sa-cantidad').value, 10),
+    origen: document.getElementById('sa-origen').value,
+    fecha: document.getElementById('sa-fecha').value,
+    referencia: document.getElementById('sa-ref').value,
+    motivo: document.getElementById('sa-motivo').value,
+  };
+  if (!payload.sku) { showToast('SKU obligatorio', 'error'); return; }
+  if (isNaN(payload.cantidad) || payload.cantidad <= 0) { showToast('Cantidad debe ser > 0', 'error'); return; }
+  try {
+    var r = await fetch('/api/animus/inv-fisico/salida', _fetchOpts('POST', payload));
+    var d = await r.json();
+    if (d.ok) {
+      showToast('Salida registrada: -' + payload.cantidad + ' uds de ' + payload.sku, 'success');
+      cerrarModal('modal-salida');
+      cargarInvFisico();
+      cargarMovimientosInvFis();
+    } else { showToast('Error: ' + (d.error||'?'), 'error'); }
+  } catch(e) { showToast('Error red: ' + e.message, 'error'); }
 }
 
 // Init
