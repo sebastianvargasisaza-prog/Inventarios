@@ -120,11 +120,29 @@ def rrhh_empleados():
     conn = get_db(); c = conn.cursor()
     if request.method == "POST":
         d = request.get_json(silent=True) or {}
+        if not d.get("nombre") or not d.get("cedula"):
+            return jsonify({"error": "nombre y cedula son obligatorios"}), 400
+        try:
+            salario = float(d.get("salario_base", 0) or 0)
+        except (TypeError, ValueError):
+            return jsonify({"error": "salario_base invalido"}), 400
+        if salario < 0:
+            return jsonify({"error": "salario no puede ser negativo"}), 400
         c.execute("SELECT COUNT(*) FROM empleados"); n = c.fetchone()[0]+1
         codigo = "EMP"+str(n).zfill(4)
         c.execute("INSERT INTO empleados (codigo,nombre,apellido,cedula,cargo,area,empresa,tipo_contrato,fecha_ingreso,estado,salario_base,eps,afp,arl,caja_compensacion,email,telefono,nivel_riesgo,observaciones,banco,numero_cuenta,tipo_cuenta) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                 (codigo,d.get("nombre",""),d.get("apellido",""),d.get("cedula",""),d.get("cargo",""),d.get("area",""),d.get("empresa","Espagiria"),d.get("tipo_contrato","Indefinido"),d.get("fecha_ingreso",""),"Activo",float(d.get("salario_base",0)),d.get("eps",""),d.get("afp",""),d.get("arl",""),d.get("caja",""),d.get("email",""),d.get("telefono",""),int(d.get("nivel_riesgo",1)),d.get("observaciones",""),d.get("banco",""),d.get("numero_cuenta",""),d.get("tipo_cuenta","")))
-        conn.commit(); new_id=c.lastrowid
+                 (codigo,d.get("nombre",""),d.get("apellido",""),d.get("cedula",""),d.get("cargo",""),d.get("area",""),d.get("empresa","Espagiria"),d.get("tipo_contrato","Indefinido"),d.get("fecha_ingreso",""),"Activo",salario,d.get("eps",""),d.get("afp",""),d.get("arl",""),d.get("caja",""),d.get("email",""),d.get("telefono",""),int(d.get("nivel_riesgo",1)),d.get("observaciones",""),d.get("banco",""),d.get("numero_cuenta",""),d.get("tipo_cuenta","")))
+        new_id = c.lastrowid
+        # PII + nomina · audit_log obligatorio
+        audit_log(c, usuario=u, accion='CREAR_EMPLEADO',
+                  tabla='empleados', registro_id=new_id,
+                  despues={'codigo': codigo, 'nombre': d.get("nombre",""),
+                           'cedula': d.get("cedula","")[:6] + '***',  # PII parcial
+                           'cargo': d.get("cargo",""),
+                           'empresa': d.get("empresa","Espagiria"),
+                           'salario_base': salario},
+                  detalle=f"Empleado {codigo} {d.get('nombre','')} {d.get('apellido','')} · {d.get('cargo','')} · ${salario:,.0f}")
+        conn.commit()
         return jsonify({"ok":True,"id":new_id,"codigo":codigo}),201
     c.execute("SELECT id,codigo,nombre,apellido,cargo,area,empresa,tipo_contrato,fecha_ingreso,estado,salario_base,email,telefono,eps,afp,nivel_riesgo FROM empleados ORDER BY empresa,nombre")
     rows=c.fetchall()
@@ -136,8 +154,30 @@ def rrhh_empleado_det(eid):
     conn = get_db(); c = conn.cursor()
     if request.method == "PUT":
         d = request.get_json(silent=True) or {}
+        try:
+            salario = float(d.get("salario_base", 0) or 0)
+        except (TypeError, ValueError):
+            return jsonify({"error": "salario_base invalido"}), 400
+        if salario < 0:
+            return jsonify({"error": "salario no puede ser negativo"}), 400
+        # Capturar antes para audit
+        antes_row = c.execute(
+            "SELECT codigo,nombre,salario_base,estado FROM empleados WHERE id=?", (eid,)
+        ).fetchone()
+        if not antes_row:
+            return jsonify({"error": "empleado no encontrado"}), 404
+        antes = {'codigo': antes_row[0], 'nombre': antes_row[1],
+                  'salario_base': antes_row[2], 'estado': antes_row[3]}
         c.execute("UPDATE empleados SET nombre=?,apellido=?,cargo=?,area=?,empresa=?,tipo_contrato=?,salario_base=?,eps=?,afp=?,arl=?,caja_compensacion=?,email=?,telefono=?,nivel_riesgo=?,observaciones=?,estado=?,banco=?,numero_cuenta=?,tipo_cuenta=? WHERE id=?",
-                 (d.get("nombre",""),d.get("apellido",""),d.get("cargo",""),d.get("area",""),d.get("empresa",""),d.get("tipo_contrato",""),float(d.get("salario_base",0)),d.get("eps",""),d.get("afp",""),d.get("arl",""),d.get("caja",""),d.get("email",""),d.get("telefono",""),int(d.get("nivel_riesgo",1)),d.get("observaciones",""),d.get("estado","Activo"),d.get("banco",""),d.get("numero_cuenta",""),d.get("tipo_cuenta",""),eid))
+                 (d.get("nombre",""),d.get("apellido",""),d.get("cargo",""),d.get("area",""),d.get("empresa",""),d.get("tipo_contrato",""),salario,d.get("eps",""),d.get("afp",""),d.get("arl",""),d.get("caja",""),d.get("email",""),d.get("telefono",""),int(d.get("nivel_riesgo",1)),d.get("observaciones",""),d.get("estado","Activo"),d.get("banco",""),d.get("numero_cuenta",""),d.get("tipo_cuenta",""),eid))
+        audit_log(c, usuario=u, accion='MODIFICAR_EMPLEADO',
+                  tabla='empleados', registro_id=eid,
+                  antes=antes,
+                  despues={'nombre': d.get("nombre",""),
+                           'cargo': d.get("cargo",""),
+                           'salario_base': salario,
+                           'estado': d.get("estado","Activo")},
+                  detalle=f"Empleado {antes['codigo']} · ${antes['salario_base']:,.0f} → ${salario:,.0f}")
         conn.commit(); return jsonify({"ok":True})
     c.execute("SELECT * FROM empleados WHERE id=?", (eid,))
     r=c.fetchone()

@@ -206,6 +206,7 @@ td input[type=number]{width:90px;padding:5px 8px;border:1px solid #d6d3d1;border
     <button class="btn btn-primary" onclick="openEmpModal(null)">+ Nuevo</button>
   </div>
   <div id="emp-grid" class="emp-grid"></div>
+  <div id="pg-emp"></div>
 </div>
 
 <!-- ═══ EVENTOS & REPORTES (incapacidad/accidente/licencia) ═══ -->
@@ -500,6 +501,89 @@ td input[type=number]{width:90px;padding:5px 8px;border:1px solid #d6d3d1;border
 </div>
 
 <script>
+// ── CSRF defense-in-depth · Sebastian 3-may-2026 ──────────────────
+function _csrf() {
+  var m = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/);
+  return m ? decodeURIComponent(m[1]) : '';
+}
+function _fetchOpts(method, body) {
+  var headers = {};
+  var tok = _csrf();
+  if (tok) headers['X-CSRF-Token'] = tok;
+  var opts = {method: method || 'GET', headers: headers, credentials: 'same-origin'};
+  if (body !== undefined && body !== null) {
+    headers['Content-Type'] = 'application/json';
+    opts.body = (typeof body === 'string') ? body : JSON.stringify(body);
+  }
+  return opts;
+}
+fetch('/api/csrf-token', {credentials: 'same-origin'}).catch(function(){});
+
+// ── Filtros + Paginacion (client-side) ────────────────────────────
+var TBL_STATE = {
+  emp:    {q: '', page: 1, size: 25, fields: ['codigo','nombre','apellido','cedula','cargo','area','empresa','estado']},
+  evt:    {q: '', page: 1, size: 25, fields: ['empleado_nombre','tipo','estado','observaciones']},
+  llam:   {q: '', page: 1, size: 25, fields: ['empleado_nombre','tipo','motivo','estado']},
+  comp:   {q: '', page: 1, size: 25, fields: ['empleado_nombre','tipo','accion','estado']},
+};
+function _filtrar(data, query, fields) {
+  if (!query) return data || [];
+  var q = query.toLowerCase().trim();
+  return (data || []).filter(function(r) {
+    return fields.some(function(f) {
+      var v = r[f]; return v != null && String(v).toLowerCase().indexOf(q) !== -1;
+    });
+  });
+}
+function _paginar(data, page, size) {
+  if (size >= 999) return {items: data, total: data.length, totalPages: 1, page: 1};
+  var total = data.length;
+  var totalPages = Math.max(1, Math.ceil(total / size));
+  var p = Math.min(Math.max(1, page), totalPages);
+  return {items: data.slice((p-1)*size, p*size), total: total, totalPages: totalPages, page: p};
+}
+function _renderPag(tabla, info) {
+  var s = TBL_STATE[tabla];
+  if (info.total <= s.size && info.total < 26) {
+    return '<div style="font-size:11px;color:#64748b;padding:6px 0;">' + info.total + ' filas</div>';
+  }
+  var html = '<div style="display:flex;align-items:center;gap:8px;padding:8px 0;font-size:12px;color:#64748b;">';
+  html += '<span>Pág ' + info.page + '/' + info.totalPages + ' · ' + info.total + '</span>';
+  html += '<span style="flex:1"></span>';
+  html += '<button data-act="prev" data-tbl="' + tabla + '"' +
+          (info.page <= 1 ? ' disabled' : '') + ' style="padding:4px 10px;font-size:12px;border:1px solid #cbd5e1;border-radius:5px;background:#fff;cursor:pointer">&larr;</button>';
+  html += '<button data-act="next" data-tbl="' + tabla + '"' +
+          (info.page >= info.totalPages ? ' disabled' : '') + ' style="padding:4px 10px;font-size:12px;border:1px solid #cbd5e1;border-radius:5px;background:#fff;cursor:pointer">&rarr;</button>';
+  html += '<select data-act="size" data-tbl="' + tabla + '" style="border:1px solid #cbd5e1;padding:4px 6px;border-radius:5px;font-size:12px;">';
+  ['25','50','100','999'].forEach(function(o){
+    var label = o === '999' ? 'Todas' : o;
+    html += '<option value="' + o + '"' + (String(s.size)===o?' selected':'') + '>' + label + '</option>';
+  });
+  html += '</select></div>';
+  return html;
+}
+var _PAG_REFRESH = {
+  emp: function(){ if(window.renderEmpleados) renderEmpleados(); else if(window.cargarEmpleados) cargarEmpleados(); },
+  evt: function(){ if(window.cargarEventos) cargarEventos(); },
+  llam: function(){ if(window.cargarLlamados) cargarLlamados(); },
+  comp: function(){ if(window.cargarCompromisos) cargarCompromisos(); },
+};
+function cambiarPag(tabla, delta){ TBL_STATE[tabla].page = Math.max(1, TBL_STATE[tabla].page + delta); if(_PAG_REFRESH[tabla]) _PAG_REFRESH[tabla](); }
+function cambiarPagSize(tabla, valor){ TBL_STATE[tabla].size = parseInt(valor,10)||25; TBL_STATE[tabla].page = 1; if(_PAG_REFRESH[tabla]) _PAG_REFRESH[tabla](); }
+function buscarTabla(tabla, valor){ TBL_STATE[tabla].q = valor||''; TBL_STATE[tabla].page = 1; if(_PAG_REFRESH[tabla]) _PAG_REFRESH[tabla](); }
+document.addEventListener('click', function(ev){
+  var btn = ev.target.closest('[data-act][data-tbl]');
+  if (!btn || btn.tagName === 'SELECT') return;
+  var tbl = btn.dataset.tbl, act = btn.dataset.act;
+  if (act === 'prev') cambiarPag(tbl, -1);
+  else if (act === 'next') cambiarPag(tbl, 1);
+});
+document.addEventListener('change', function(ev){
+  var sel = ev.target.closest('select[data-act="size"][data-tbl]');
+  if (!sel) return;
+  cambiarPagSize(sel.dataset.tbl, sel.value);
+});
+
 // ─── state ───────────────────────────────────────────
 var USUARIO = "{usuario}";
 var allEmps = [];
@@ -612,10 +696,7 @@ async function evtRecalcular(){
   var ed = await er.json();
   var emp_obj = (ed.empleados||[]).find(function(x){return x.id===emp});
   if(!emp_obj){ document.getElementById('evt-preview').style.display='none'; return; }
-  var r = await fetch('/api/rrhh/calcular-pago-evento', {
-    method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({salario_mensual: emp_obj.salario_base, tipo: tipo, dias: dias})
-  });
+  var r = await fetch('/api/rrhh/calcular-pago-evento', _fetchOpts('POST', {salario_mensual: emp_obj.salario_base, tipo: tipo, dias: dias}));
   var d = await r.json();
   var html = '<b>📊 Cálculo legal automático ('+dias+' días)</b><br>';
   (d.detalle||[]).forEach(function(x){
@@ -638,7 +719,7 @@ async function guardarEventoRH(){
     documento_url: document.getElementById('evt-doc').value,
     descripcion: document.getElementById('evt-desc').value,
   };
-  var r = await fetch('/api/rrhh/eventos', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  var r = await fetch('/api/rrhh/eventos', _fetchOpts('POST', body));
   var d = await r.json();
   if(!r.ok){ alert('Error: '+(d.error||r.status)); return; }
   document.getElementById('evt-modal').remove();
@@ -647,7 +728,7 @@ async function guardarEventoRH(){
 
 async function aprobarEvento(eid){
   if(!confirm('Aprobar este evento?')) return;
-  var r = await fetch('/api/rrhh/eventos/'+eid+'/aprobar', {method:'POST'});
+  var r = await fetch('/api/rrhh/eventos/'+eid+'/aprobar', _fetchOpts('POST'));
   if(r.ok) cargarEventosRH();
   else alert('Error');
 }
@@ -713,7 +794,7 @@ async function guardarLlamado(){
     fecha_objetivo: document.getElementById('lla-obj').value,
   };
   if(!body.empleado_id || !body.motivo){ alert('Empleado y motivo requeridos'); return; }
-  var r = await fetch('/api/rrhh/llamados-atencion', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  var r = await fetch('/api/rrhh/llamados-atencion', _fetchOpts('POST', body));
   var d = await r.json();
   if(!r.ok){ alert('Error: '+(d.error||r.status)); return; }
   document.getElementById('lla-modal').remove();
@@ -751,7 +832,7 @@ async function cargarCompromisos(){
 
 async function completarCompromiso(cid){
   var ev = prompt('URL de evidencia (opcional):', '') || '';
-  var r = await fetch('/api/rrhh/compromisos-mejora/'+cid+'/completar', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({evidencia_url: ev})});
+  var r = await fetch('/api/rrhh/compromisos-mejora/'+cid+'/completar', _fetchOpts('POST', {evidencia_url: ev}));
   if(r.ok) cargarCompromisos();
   else alert('Error');
 }
@@ -820,8 +901,18 @@ async function loadEmpleados() {
 
 function renderEmpleados(list) {
   var g = document.getElementById('emp-grid');
-  if (!list.length){g.innerHTML='<div class="empty-state">Sin empleados registrados.</div>';return;}
-  g.innerHTML = list.map(function(e){
+  // Aplicar paginacion sobre la lista ya filtrada por filterEmps()
+  var s = TBL_STATE.emp;
+  var info = _paginar(list || [], s.page, s.size);
+  s.page = info.page;
+  var pgEl = document.getElementById('pg-emp');
+  if (!info.items.length){
+    g.innerHTML = '<div class="empty-state">' + (s.q ? 'Sin coincidencias' : 'Sin empleados registrados.') + '</div>';
+    if(pgEl) pgEl.innerHTML = '';
+    return;
+  }
+  if(pgEl) pgEl.innerHTML = _renderPag('emp', info);
+  g.innerHTML = info.items.map(function(e){
     var initials = (e.nombre||'?').charAt(0)+(e.apellido||'').charAt(0);
     var color = avatarColor(e.nombre+e.apellido);
     return '<div class="emp-card">' +
@@ -957,7 +1048,7 @@ async function loadAusencias(){
 }
 
 async function aprobarAus(id, estado){
-  await fetch('/api/rrhh/ausencias/'+id,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({estado:estado})});
+  await fetch('/api/rrhh/ausencias/'+id,_fetchOpts('PATCH', {estado:estado}));
   loadAusencias();
 }
 
@@ -980,7 +1071,7 @@ async function saveAus(){
   };
   if(!payload.fecha_inicio){alert('Fecha de inicio obligatoria.');return;}
   try {
-    await fetch('/api/rrhh/ausencias',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    await fetch('/api/rrhh/ausencias',_fetchOpts('POST', payload));
     closeModal('m-aus');
     loadAusencias();
   } catch(e){alert('Error: '+e.message);}
@@ -1027,7 +1118,7 @@ async function saveCap(){
   };
   if(!payload.nombre){alert('Nombre obligatorio.');return;}
   try {
-    await fetch('/api/rrhh/capacitaciones',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    await fetch('/api/rrhh/capacitaciones',_fetchOpts('POST', payload));
     closeModal('m-cap');
     loadCapacitaciones();
   } catch(e){alert('Error: '+e.message);}
@@ -1086,7 +1177,7 @@ async function saveEva(){
   };
   CRITERIA.forEach(function(c){payload[c.key]=parseFloat(document.getElementById('ev-'+c.key).value)||3;});
   try {
-    await fetch('/api/rrhh/evaluaciones',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    await fetch('/api/rrhh/evaluaciones',_fetchOpts('POST', payload));
     closeModal('m-eva');
     loadEvaluaciones();
   } catch(e){alert('Error: '+e.message);}
@@ -1133,7 +1224,7 @@ async function loadSgsst(){
 }
 
 async function cumplirSgsst(id){
-  await fetch('/api/rrhh/sgsst/'+id,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({estado:'Cumplido'})});
+  await fetch('/api/rrhh/sgsst/'+id,_fetchOpts('PATCH', {estado:'Cumplido'}));
   loadSgsst();
 }
 
@@ -1149,7 +1240,7 @@ async function saveSgsst(){
   };
   if(!payload.descripcion){alert('Descripci\u00f3n obligatoria.');return;}
   try {
-    await fetch('/api/rrhh/sgsst',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    await fetch('/api/rrhh/sgsst',_fetchOpts('POST', payload));
     closeModal('m-sgsst');
     loadSgsst();
   } catch(e){alert('Error: '+e.message);}
