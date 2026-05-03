@@ -1804,6 +1804,80 @@ def animus_inv_fisico_conteo_historial():
     })
 
 
+@bp.route("/api/animus/inv-fisico/baseline/sembrar-desde-shopify", methods=["POST"])
+def animus_inv_fisico_sembrar_baselines():
+    """Crea baseline=0 para cada SKU vendido en Shopify ultimos 30d que
+    aun no tenga baseline. Daniela solo edita la cantidad real despues.
+
+    Body opcional: {dias: int default 30}
+
+    Devuelve: {creados: N, ya_tenian: M, skus_creados: [...]}
+    """
+    u, err, code = _auth()
+    if err: return err, code
+    d = request.get_json(silent=True) or {}
+    try:
+        dias = int(d.get("dias", 30))
+    except (TypeError, ValueError):
+        dias = 30
+    dias = max(1, min(dias, 365))
+    conn = _db(); c = conn.cursor()
+
+    # SKUs vendidos en Shopify
+    skus_shopify = set()
+    rows = c.execute(f"""SELECT sku_items FROM animus_shopify_orders
+                         WHERE creado_en >= date('now','-{dias} day')
+                           AND sku_items IS NOT NULL AND sku_items != ''""").fetchall()
+    for r in rows:
+        try:
+            for it in (json.loads(r['sku_items']) or []):
+                s = (it.get('sku') or '').strip().upper()
+                if s: skus_shopify.add(s)
+        except Exception:
+            continue
+
+    if not skus_shopify:
+        return jsonify({"ok": True, "creados": 0, "ya_tenian": 0,
+                        "skus_creados": [], "skus_existentes": [],
+                        "mensaje": "Sin SKUs en Shopify ultimos " + str(dias) + " dias. Sincroniza Shopify primero."})
+
+    # SKUs ya con baseline
+    ya_existentes = set()
+    for r in c.execute("SELECT sku FROM animus_inventario_baseline").fetchall():
+        ya_existentes.add((r['sku'] or '').upper())
+
+    skus_a_crear = sorted(skus_shopify - ya_existentes)
+    fecha = datetime.now().date().isoformat()
+    creados = []
+    for sku in skus_a_crear:
+        try:
+            c.execute("""INSERT OR IGNORE INTO animus_inventario_baseline
+                         (sku, descripcion, unidades_baseline, fecha_baseline,
+                          creado_por, observaciones)
+                         VALUES (?, '', 0, ?, ?, 'Sembrado automatico desde Shopify · editar con cantidad real')""",
+                      (sku, fecha, u))
+            creados.append(sku)
+        except Exception:
+            continue
+
+    if creados:
+        audit_log(c, usuario=u, accion='ANIMUS_BASELINE_SEMBRAR',
+                  tabla='animus_inventario_baseline', registro_id=None,
+                  despues={'sembrados': len(creados), 'dias': dias},
+                  detalle=f"Sembrados {len(creados)} baselines=0 desde Shopify ({dias}d): " +
+                           ', '.join(creados[:8]) + ("..." if len(creados)>8 else ""))
+    conn.commit()
+
+    return jsonify({
+        "ok": True,
+        "creados": len(creados),
+        "ya_tenian": len(ya_existentes & skus_shopify),
+        "skus_creados": creados,
+        "skus_existentes": sorted(ya_existentes & skus_shopify),
+        "mensaje": f"Sembrados {len(creados)} SKUs en baseline=0. Editar cada uno con la cantidad real."
+    })
+
+
 @bp.route("/api/animus/inv-fisico/diagnostico", methods=["GET"])
 def animus_inv_fisico_diagnostico():
     """Dashboard de discrepancias y deteccion de patrones.

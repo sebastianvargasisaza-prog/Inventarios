@@ -268,7 +268,8 @@ window.addEventListener('error', function(ev){
       <div class="page-sub">Esperado = baseline + entradas - ventas Shopify - salidas. Si no cuadra, se ve el desglose y donde esta el error.</div>
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
-      <button class="btn btn-outline" onclick="abrirBaseline()">+ Baseline</button>
+      <button class="btn btn-success" onclick="sembrarShopify()" title="Crea baseline=0 para todos los SKUs vendidos en Shopify · solo editas cantidad despues" style="background:#10b981;color:#fff;">&#127793; Sembrar SKUs Shopify</button>
+      <button class="btn btn-outline" onclick="abrirBaseline()">+ Baseline manual</button>
       <button class="btn btn-primary" onclick="abrirEntrada()">+ Entrada</button>
       <button class="btn btn-outline" onclick="abrirSalida()">+ Salida</button>
       <button class="btn btn-outline" onclick="syncShopifyInv()" title="Refleja ventas Shopify ya descargadas en inv fisico">&#128260; Sync Shopify</button>
@@ -1046,6 +1047,26 @@ async function asignarConteoHoy() {
     } else {
       showToast('Error: ' + (d.error||'?'), 'error');
     }
+  } catch(e) { showToast('Error red: ' + e.message, 'error'); }
+}
+
+async function sembrarShopify() {
+  if (!confirm('Sembrar baseline=0 para TODOS los SKUs vendidos en Shopify (ultimos 30 dias)?\n\nDespues solo editas cada uno con la cantidad real que tienes fisicamente.\n\nLos SKUs que ya tienen baseline NO se tocan.')) return;
+  showToast('Sembrando SKUs desde Shopify...', 'info');
+  try {
+    var r = await fetch('/api/animus/inv-fisico/baseline/sembrar-desde-shopify', _fetchOpts('POST', {dias: 30}));
+    var d = await r.json();
+    if (d.ok) {
+      var msg = d.creados + ' SKUs nuevos sembrados';
+      if (d.ya_tenian > 0) msg += ' · ' + d.ya_tenian + ' ya tenian baseline';
+      showToast(msg, 'success');
+      if (d.creados > 0) {
+        alert('✓ ' + d.creados + ' SKUs creados con baseline=0:\n\n' + (d.skus_creados||[]).join(', ') + '\n\nAhora cada uno necesita su cantidad fisica real. Click en "+ Baseline manual" para editarlos uno por uno · o usa el botón "+ Baseline" para corregir cantidades.');
+      } else if (d.mensaje) {
+        alert(d.mensaje);
+      }
+      cargarInvFisico();
+    } else { showToast('Error: ' + (d.error||'?'), 'error'); }
   } catch(e) { showToast('Error red: ' + e.message, 'error'); }
 }
 

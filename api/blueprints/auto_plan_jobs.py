@@ -1667,7 +1667,7 @@ def job_animus_conteo_diario(app):
             log.exception('animus_conteo_diario read fallo: %s', e)
             return False, {'error': str(e)[:200]}, 0
 
-        # Notif a Daniela
+        # Notif in-app a Daniela
         try:
             from blueprints.notif import push_notif
             push_notif(
@@ -1680,6 +1680,37 @@ def job_animus_conteo_diario(app):
             )
         except Exception as e:
             log.warning('animus_conteo_diario push_notif fallo: %s', e)
+
+        # Email a Daniela (best-effort · si SMTP no configurado, log warning)
+        try:
+            from config import USER_EMAILS
+            email_dest = USER_EMAILS.get('daniela', '').strip()
+            if email_dest:
+                from notificaciones import SistemaNotificaciones
+                sn = SistemaNotificaciones()
+                if sn.email_remitente and sn.contraseña:
+                    asunto = f'📊 Conteo del día · {len(asignados)} SKUs · Animus'
+                    body = (
+                        '<h2 style="color:#0c4a6e;font-family:Segoe UI,sans-serif;">'
+                        '📊 Tu conteo de hoy en Animus</h2>'
+                        '<p>Hola Daniela 👋</p>'
+                        '<p>Hoy tienes que contar fisicamente <b>'
+                        + str(len(asignados)) + ' SKUs</b>:</p>'
+                        '<ul style="font-family:monospace;background:#f1f5f9;padding:12px 24px;border-radius:8px;">'
+                        + ''.join('<li><b>' + s + '</b></li>' for s in asignados)
+                        + '</ul>'
+                        '<p>Entra a <a href="https://eossuite.com/animus" '
+                        'style="color:#10b981;font-weight:700;">eossuite.com/animus</a> '
+                        '→ pestaña <b>Inventario Físico</b> → seccion <b>Conteos pendientes</b>.</p>'
+                        '<p style="color:#64748b;font-size:13px;">Para cada SKU veras el desglose '
+                        '(baseline + entradas - ventas Shopify - salidas) y podras anotar la cantidad '
+                        'fisica. Si hay diferencia, te pedira motivo.</p>'
+                        '<hr><p style="color:#94a3b8;font-size:11px;">Sistema EOS · cron-animus '
+                        '· generado ' + datetime.now().strftime('%Y-%m-%d %H:%M') + '</p>'
+                    )
+                    sn._enviar_email(asunto, body, destinatarios=[email_dest])
+        except Exception as e:
+            log.warning('animus_conteo_diario email fallo: %s', e)
 
         return True, {'asignados': len(asignados), 'skus': asignados}, 0
 

@@ -432,6 +432,73 @@ def test_sync_shopify_inv_endpoint(app, db_clean):
     assert "ventas_creadas" in d
 
 
+def test_sembrar_desde_shopify_endpoint(app, db_clean):
+    """Endpoint sembrar baseline=0 desde SKUs Shopify."""
+    cs = _login(app, "sebastian")
+    # Sembrar pedido shopify de prueba
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    conn.execute("DELETE FROM animus_shopify_orders WHERE shopify_id='TEST-SEMB-001'")
+    conn.execute("DELETE FROM animus_inventario_baseline WHERE sku='TEST-SEMB-SKU'")
+    conn.execute("""INSERT INTO animus_shopify_orders
+        (shopify_id, nombre, total, sku_items, unidades_total, creado_en)
+        VALUES ('TEST-SEMB-001', 'Test', 0, ?, 1, date('now'))""",
+        ('[{"sku":"TEST-SEMB-SKU","qty":1}]',))
+    conn.commit(); conn.close()
+    try:
+        r = cs.post("/api/animus/inv-fisico/baseline/sembrar-desde-shopify",
+                    json={"dias": 30}, headers=csrf_headers())
+        assert r.status_code == 200
+        d = r.get_json()
+        assert d["ok"] is True
+        # Debe haber creado el baseline
+        assert "TEST-SEMB-SKU" in d.get("skus_creados", [])
+        # Verificar que existe en DB
+        conn = sqlite3.connect(os.environ["DB_PATH"])
+        row = conn.execute(
+            "SELECT unidades_baseline FROM animus_inventario_baseline WHERE sku='TEST-SEMB-SKU'"
+        ).fetchone()
+        conn.close()
+        assert row is not None
+        assert row[0] == 0
+    finally:
+        _cleanup("TEST-SEMB-SKU")
+        conn = sqlite3.connect(os.environ["DB_PATH"])
+        conn.execute("DELETE FROM animus_shopify_orders WHERE shopify_id='TEST-SEMB-001'")
+        conn.commit(); conn.close()
+
+
+def test_sembrar_es_idempotente(app, db_clean):
+    """Si SKU ya tiene baseline, no se sobreescribe."""
+    cs = _login(app, "sebastian")
+    cs.post("/api/animus/inv-fisico/baseline",
+            json={"sku": "TEST-IDEM-SKU", "unidades_baseline": 50},
+            headers=csrf_headers())
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    conn.execute("DELETE FROM animus_shopify_orders WHERE shopify_id='TEST-IDEM-001'")
+    conn.execute("""INSERT INTO animus_shopify_orders
+        (shopify_id, nombre, total, sku_items, unidades_total, creado_en)
+        VALUES ('TEST-IDEM-001', 'Test', 0, ?, 1, date('now'))""",
+        ('[{"sku":"TEST-IDEM-SKU","qty":1}]',))
+    conn.commit(); conn.close()
+    try:
+        r = cs.post("/api/animus/inv-fisico/baseline/sembrar-desde-shopify",
+                    json={"dias": 30}, headers=csrf_headers())
+        d = r.get_json()
+        assert "TEST-IDEM-SKU" not in d.get("skus_creados", [])
+        # Baseline original NO se tocó
+        conn = sqlite3.connect(os.environ["DB_PATH"])
+        row = conn.execute(
+            "SELECT unidades_baseline FROM animus_inventario_baseline WHERE sku='TEST-IDEM-SKU'"
+        ).fetchone()
+        conn.close()
+        assert row[0] == 50
+    finally:
+        _cleanup("TEST-IDEM-SKU")
+        conn = sqlite3.connect(os.environ["DB_PATH"])
+        conn.execute("DELETE FROM animus_shopify_orders WHERE shopify_id='TEST-IDEM-001'")
+        conn.commit(); conn.close()
+
+
 def test_diagnostico_endpoint(app, db_clean):
     cs = _login(app, "sebastian")
     r = cs.get("/api/animus/inv-fisico/diagnostico")
