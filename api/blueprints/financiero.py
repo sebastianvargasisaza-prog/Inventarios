@@ -11,6 +11,7 @@ from config import DB_PATH, COMPRAS_USERS, ADMIN_USERS, CONTADORA_USERS
 from database import get_db
 from auth import _client_ip, _is_locked, _record_failure, _clear_attempts, _log_sec
 from http_helpers import validate_money
+from audit_helpers import audit_log
 from templates_py.rrhh_html import RRHH_HTML
 from templates_py.compromisos_html import COMPROMISOS_HTML
 from templates_py.home_html import HOME_HTML
@@ -50,11 +51,18 @@ def handle_fin_ingresos():
         if err:
             return jsonify(err), 400
         periodo = (d.get('fecha') or datetime.now().isoformat())[:7]
-        c.execute("""INSERT INTO flujo_ingresos (fecha,empresa,concepto,categoria,monto,periodo,fuente,referencia,creado_por)
+        usuario = session.get('compras_user','sistema')
+        cur = c.execute("""INSERT INTO flujo_ingresos (fecha,empresa,concepto,categoria,monto,periodo,fuente,referencia,creado_por)
                      VALUES (?,?,?,?,?,?,?,?,?)""",
                   (d.get('fecha', datetime.now().isoformat()[:10]), d.get('empresa','HHA'),
                    d['concepto'], d.get('categoria','Ventas'), monto,
-                   periodo, 'manual', d.get('referencia',''), session.get('compras_user','sistema')))
+                   periodo, 'manual', d.get('referencia',''), usuario))
+        audit_log(c, usuario=usuario, accion='CREAR_INGRESO_FIN',
+                  tabla='flujo_ingresos', registro_id=cur.lastrowid,
+                  despues={'concepto': d['concepto'][:80], 'monto': monto,
+                           'empresa': d.get('empresa','HHA'),
+                           'categoria': d.get('categoria','Ventas')},
+                  detalle=f"+${monto:,.0f} {d.get('empresa','HHA')} · {d['concepto'][:60]}")
         conn.commit()
         return jsonify({'message': f"Ingreso de ${monto:,.0f} registrado"}), 201
     mes = request.args.get('mes')
@@ -80,11 +88,18 @@ def handle_fin_egresos():
         if err:
             return jsonify(err), 400
         periodo = (d.get('fecha') or datetime.now().isoformat())[:7]
-        c.execute("""INSERT INTO flujo_egresos (fecha,empresa,concepto,categoria,monto,periodo,fuente,referencia,creado_por)
+        usuario = session.get('compras_user','sistema')
+        cur = c.execute("""INSERT INTO flujo_egresos (fecha,empresa,concepto,categoria,monto,periodo,fuente,referencia,creado_por)
                      VALUES (?,?,?,?,?,?,?,?,?)""",
                   (d.get('fecha', datetime.now().isoformat()[:10]), d.get('empresa','HHA'),
                    d['concepto'], d.get('categoria','MPs'), monto,
-                   periodo, 'manual', d.get('referencia',''), session.get('compras_user','sistema')))
+                   periodo, 'manual', d.get('referencia',''), usuario))
+        audit_log(c, usuario=usuario, accion='CREAR_EGRESO_FIN',
+                  tabla='flujo_egresos', registro_id=cur.lastrowid,
+                  despues={'concepto': d['concepto'][:80], 'monto': monto,
+                           'empresa': d.get('empresa','HHA'),
+                           'categoria': d.get('categoria','MPs')},
+                  detalle=f"-${monto:,.0f} {d.get('empresa','HHA')} · {d['concepto'][:60]}")
         conn.commit()
         return jsonify({'message': f"Egreso de ${monto:,.0f} registrado"}), 201
     mes = request.args.get('mes')
@@ -465,8 +480,18 @@ def financiero_config():
     conn = get_db(); c = conn.cursor()
     if request.method == 'POST':
         d = request.json or {}
+        usuario = session.get('compras_user','sistema')
+        # Capturar antes para audit
+        antes = {}
+        for clave in d.keys():
+            row = c.execute("SELECT valor FROM flujo_config WHERE clave=?", (clave,)).fetchone()
+            antes[clave] = row[0] if row else None
         for clave, valor in d.items():
             c.execute("INSERT INTO flujo_config (clave,valor,descripcion) VALUES (?,?,?) ON CONFLICT(clave) DO UPDATE SET valor=excluded.valor", (clave, str(valor), ''))
+        audit_log(c, usuario=usuario, accion='ACTUALIZAR_CONFIG_FIN',
+                  tabla='flujo_config', registro_id=None,
+                  antes=antes, despues={k: str(v) for k,v in d.items()},
+                  detalle=f"{len(d)} parametros actualizados: {', '.join(list(d.keys())[:5])}")
         conn.commit()
         return jsonify({'message': f'{len(d)} parámetros actualizados'})
     c.execute("SELECT clave, valor FROM flujo_config ORDER BY clave")
@@ -487,7 +512,9 @@ def financiero_importar_ocs():
                  AND oc.numero_oc NOT IN (SELECT referencia FROM flujo_egresos WHERE referencia LIKE 'OC-%')
                  GROUP BY oc.numero_oc""")
     ocs = c.fetchall()
+    usuario = session.get('compras_user','sistema')
     importadas = 0
+    total_importado = 0.0
     for numero_oc, fecha, proveedor, total in ocs:
         if total and total > 0:
             periodo = (fecha or datetime.now().isoformat())[:7]
@@ -495,8 +522,14 @@ def financiero_importar_ocs():
                          VALUES (?,?,?,?,?,?,?,?,?)""",
                       (fecha[:10] if fecha else datetime.now().isoformat()[:10],
                        'ESPAGIRIA', f'OC {numero_oc} — {proveedor or ""}',
-                       'MPs', float(total), periodo, 'automatico', numero_oc, 'sistema'))
+                       'MPs', float(total), periodo, 'automatico', numero_oc, usuario))
             importadas += 1
+            total_importado += float(total)
+    if importadas:
+        audit_log(c, usuario=usuario, accion='IMPORTAR_OCS_FIN',
+                  tabla='flujo_egresos', registro_id=None,
+                  despues={'ocs_importadas': importadas, 'total_egreso': total_importado},
+                  detalle=f"Importacion masiva · {importadas} OCs · ${total_importado:,.0f}")
     conn.commit()
     return jsonify({'message': f'{importadas} OC(s) importadas como egresos'})
 
@@ -881,6 +914,11 @@ def financiero_limpiar_flujo():
         ing_count = c.execute('SELECT COUNT(*) FROM flujo_ingresos').fetchone()[0]
         c.execute('DELETE FROM flujo_egresos')
         c.execute('DELETE FROM flujo_ingresos')
+        # Audit log critico · borrado masivo de datos financieros
+        audit_log(c, usuario=u, accion='LIMPIAR_FLUJO',
+                  tabla='flujo_egresos+ingresos', registro_id=None,
+                  antes={'egresos_count': egr_count, 'ingresos_count': ing_count},
+                  detalle=f"Borrado masivo · {egr_count} egresos + {ing_count} ingresos")
         conn.commit()
         return jsonify({
             'ok': True,
@@ -904,12 +942,22 @@ def get_precios_mayorista():
 
 @bp.route('/api/financiero/precios-mayorista/<sku>', methods=['POST'])
 def update_precio_mayorista(sku):
-    if 'compras_user' not in session or session.get('compras_user','') not in ADMIN_USERS:
+    usuario = session.get('compras_user','')
+    if 'compras_user' not in session or usuario not in ADMIN_USERS:
         return jsonify({'error': 'Solo admins pueden editar precios'}), 401
-    d = request.get_json()
-    precio = float(d.get('precio_mayorista', 0) or 0)
+    d = request.get_json() or {}
+    precio_n, err = validate_money(d.get('precio_mayorista'), allow_zero=True, field_name='precio_mayorista')
+    if err:
+        return jsonify(err), 400
     conn = get_db(); c = conn.cursor()
-    c.execute("UPDATE sku_precios SET precio_mayorista=? WHERE sku=?", (precio, sku))
+    antes = c.execute("SELECT precio_mayorista FROM sku_precios WHERE sku=?", (sku,)).fetchone()
+    precio_anterior = float(antes[0]) if antes and antes[0] is not None else None
+    c.execute("UPDATE sku_precios SET precio_mayorista=? WHERE sku=?", (precio_n, sku))
+    audit_log(c, usuario=usuario, accion='ACTUALIZAR_PRECIO_MAYORISTA',
+              tabla='sku_precios', registro_id=sku,
+              antes={'precio_mayorista': precio_anterior},
+              despues={'precio_mayorista': precio_n},
+              detalle=f"SKU {sku}: ${precio_anterior or 0:,.0f} → ${precio_n:,.0f}")
     conn.commit()
     return jsonify({'message': f'Precio actualizado para {sku}'})
 

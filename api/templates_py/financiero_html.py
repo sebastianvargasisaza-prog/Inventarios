@@ -161,17 +161,21 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
     <div id="ing-msg" style="margin-top:10px;"></div>
   </div>
   <div class="card">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px">
       <div class="section-title" style="margin:0;">Historial de Ingresos</div>
-      <select id="ing-filtro-mes" onchange="loadIngresos()" style="padding:6px 12px;border:1px solid #E8E4DE;border-radius:6px;font-size:0.85em;">
-        <option value="">Todos los meses</option>
-      </select>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <input type="text" placeholder="Buscar..." oninput="buscarTabla('ing', this.value)" style="padding:6px 10px;border:1px solid #E8E4DE;border-radius:6px;font-size:0.85em;max-width:180px">
+        <select id="ing-filtro-mes" onchange="loadIngresos()" style="padding:6px 12px;border:1px solid #E8E4DE;border-radius:6px;font-size:0.85em;">
+          <option value="">Todos los meses</option>
+        </select>
+      </div>
     </div>
     <table class="tbl">
       <thead><tr><th>Fecha</th><th>Empresa</th><th>Categoría</th><th>Concepto</th><th>Referencia</th><th style="text-align:right;">Monto</th></tr></thead>
       <tbody id="ing-tbody"><tr><td colspan="6" style="text-align:center;padding:20px;color:#999;">Cargando...</td></tr></tbody>
     </table>
     <div id="ing-total" style="text-align:right;font-weight:700;padding:12px 14px;font-size:1.05em;color:#2B7A78;"></div>
+    <div id="pg-ing"></div>
   </div>
 </div>
 
@@ -209,17 +213,21 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
     <div id="egr-msg" style="margin-top:10px;"></div>
   </div>
   <div class="card">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px">
       <div class="section-title" style="margin:0;">Historial de Egresos</div>
-      <select id="egr-filtro-mes" onchange="loadEgresos()" style="padding:6px 12px;border:1px solid #E8E4DE;border-radius:6px;font-size:0.85em;">
-        <option value="">Todos los meses</option>
-      </select>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <input type="text" placeholder="Buscar..." oninput="buscarTabla('egr', this.value)" style="padding:6px 10px;border:1px solid #E8E4DE;border-radius:6px;font-size:0.85em;max-width:180px">
+        <select id="egr-filtro-mes" onchange="loadEgresos()" style="padding:6px 12px;border:1px solid #E8E4DE;border-radius:6px;font-size:0.85em;">
+          <option value="">Todos los meses</option>
+        </select>
+      </div>
     </div>
     <table class="tbl">
       <thead><tr><th>Fecha</th><th>Empresa</th><th>Categoría</th><th>Concepto</th><th>Referencia</th><th style="text-align:right;">Monto</th></tr></thead>
       <tbody id="egr-tbody"><tr><td colspan="6" style="text-align:center;padding:20px;color:#999;">Cargando...</td></tr></tbody>
     </table>
     <div id="egr-total" style="text-align:right;font-weight:700;padding:12px 14px;font-size:1.05em;color:#c0392b;"></div>
+    <div id="pg-egr"></div>
   </div>
 </div>
 
@@ -333,6 +341,89 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
 </div>
 
 <script>
+// CSRF defense-in-depth · Sebastian 3-may-2026
+function _csrf() {
+  var m = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/);
+  return m ? decodeURIComponent(m[1]) : '';
+}
+function _fetchOpts(method, body) {
+  var headers = {};
+  var tok = _csrf();
+  if (tok) headers['X-CSRF-Token'] = tok;
+  var opts = {method: method || 'GET', headers: headers, credentials: 'same-origin'};
+  if (body !== undefined && body !== null) {
+    headers['Content-Type'] = 'application/json';
+    opts.body = (typeof body === 'string') ? body : JSON.stringify(body);
+  }
+  return opts;
+}
+fetch('/api/csrf-token', {credentials: 'same-origin'}).catch(function(){});
+
+// Filtros + Paginacion (client-side)
+var TBL_STATE = {
+  ing:    {q: '', page: 1, size: 50, fields: ['fecha','empresa','concepto','categoria','referencia']},
+  egr:    {q: '', page: 1, size: 50, fields: ['fecha','empresa','concepto','categoria','referencia']},
+  precios:{q: '', page: 1, size: 50, fields: ['sku','descripcion']},
+};
+function _filtrar(data, query, fields) {
+  if (!query) return data || [];
+  var q = query.toLowerCase().trim();
+  return (data || []).filter(function(r) {
+    return fields.some(function(f) {
+      var v = r[f]; return v != null && String(v).toLowerCase().indexOf(q) !== -1;
+    });
+  });
+}
+function _paginar(data, page, size) {
+  if (size >= 999) return {items: data, total: data.length, totalPages: 1, page: 1};
+  var total = data.length;
+  var totalPages = Math.max(1, Math.ceil(total / size));
+  var p = Math.min(Math.max(1, page), totalPages);
+  return {items: data.slice((p-1)*size, p*size), total: total, totalPages: totalPages, page: p};
+}
+function _renderPag(tabla, info) {
+  var s = TBL_STATE[tabla];
+  if (info.total <= s.size && info.total < 51) {
+    return '<div style="font-size:11px;color:#64748b;padding:6px 0;">' + info.total + ' filas</div>';
+  }
+  var html = '<div style="display:flex;align-items:center;gap:8px;padding:8px 0;font-size:12px;color:#64748b;">';
+  html += '<span>P' + String.fromCharCode(225) + 'g ' + info.page + '/' + info.totalPages + ' ' + String.fromCharCode(183) + ' ' + info.total + '</span>';
+  html += '<span style="flex:1"></span>';
+  html += '<button class="btn-sm" data-act="prev" data-tbl="' + tabla + '"' +
+          (info.page <= 1 ? ' disabled' : '') + ' style="padding:4px 10px;font-size:12px;border:1px solid #cbd5e1;border-radius:5px;background:#fff;cursor:pointer">&larr;</button>';
+  html += '<button class="btn-sm" data-act="next" data-tbl="' + tabla + '"' +
+          (info.page >= info.totalPages ? ' disabled' : '') + ' style="padding:4px 10px;font-size:12px;border:1px solid #cbd5e1;border-radius:5px;background:#fff;cursor:pointer">&rarr;</button>';
+  html += '<select data-act="size" data-tbl="' + tabla + '" ' +
+          'style="border:1px solid #cbd5e1;padding:4px 6px;border-radius:5px;font-size:12px;">';
+  ['25','50','100','999'].forEach(function(o){
+    var label = o === '999' ? 'Todas' : o;
+    html += '<option value="' + o + '"' + (String(s.size)===o?' selected':'') + '>' + label + '</option>';
+  });
+  html += '</select></div>';
+  return html;
+}
+document.addEventListener('click', function(ev){
+  var btn = ev.target.closest('[data-act][data-tbl]');
+  if (!btn) return;
+  var tbl = btn.dataset.tbl;
+  var act = btn.dataset.act;
+  if (act === 'prev') cambiarPag(tbl, -1);
+  else if (act === 'next') cambiarPag(tbl, 1);
+});
+document.addEventListener('change', function(ev){
+  var sel = ev.target.closest('select[data-act="size"][data-tbl]');
+  if (!sel) return;
+  cambiarPagSize(sel.dataset.tbl, sel.value);
+})
+var _PAG_REFRESH = {
+  ing: function(){ if(window.loadIngresos) loadIngresos(); },
+  egr: function(){ if(window.loadEgresos) loadEgresos(); },
+  precios: function(){ if(window.loadPreciosMayorista) loadPreciosMayorista(); },
+};
+function cambiarPag(tabla, delta){ TBL_STATE[tabla].page = Math.max(1, TBL_STATE[tabla].page + delta); if(_PAG_REFRESH[tabla]) _PAG_REFRESH[tabla](); }
+function cambiarPagSize(tabla, valor){ TBL_STATE[tabla].size = parseInt(valor,10)||50; TBL_STATE[tabla].page = 1; if(_PAG_REFRESH[tabla]) _PAG_REFRESH[tabla](); }
+function buscarTabla(tabla, valor){ TBL_STATE[tabla].q = valor||''; TBL_STATE[tabla].page = 1; if(_PAG_REFRESH[tabla]) _PAG_REFRESH[tabla](); }
+
 var _chartIngEgr=null, _chartFlujo=null;
 var _config={};
 
@@ -513,9 +604,14 @@ async function loadIngresos(){
       meses.forEach(function(m){var o=document.createElement('option');o.value=m;o.textContent=m;sel.appendChild(o);});
     }
     var total=rows.reduce(function(s,r){return s+(r.monto||0);},0);
+    var s=TBL_STATE.ing;
+    var filtrado=_filtrar(rows, s.q, s.fields);
+    var info=_paginar(filtrado, s.page, s.size);
+    s.page=info.page;
+    var pgEl=document.getElementById('pg-ing');
     var h='';
-    if(!rows.length){h='<tr><td colspan="6" style="text-align:center;padding:20px;color:#999;">Sin ingresos registrados</td></tr>';}
-    rows.forEach(function(r){
+    if(!info.items.length){h='<tr><td colspan="6" style="text-align:center;padding:20px;color:#999;">'+(s.q?'Sin coincidencias':'Sin ingresos registrados')+'</td></tr>';}
+    info.items.forEach(function(r){
       h+='<tr><td>'+((r.fecha||'').substring(0,10))+'</td>';
       h+='<td><span class="badge-ing">'+r.empresa+'</span></td>';
       h+='<td>'+r.categoria+'</td>';
@@ -525,6 +621,7 @@ async function loadIngresos(){
     });
     document.getElementById('ing-tbody').innerHTML=h;
     document.getElementById('ing-total').textContent='Total: '+fmtFull(total);
+    if(pgEl) pgEl.innerHTML=_renderPag('ing', info);
   }catch(e){console.error(e);}
 }
 
@@ -540,9 +637,14 @@ async function loadEgresos(){
       meses.forEach(function(m){var o=document.createElement('option');o.value=m;o.textContent=m;sel.appendChild(o);});
     }
     var total=rows.reduce(function(s,r){return s+(r.monto||0);},0);
+    var st=TBL_STATE.egr;
+    var filtrado=_filtrar(rows, st.q, st.fields);
+    var info=_paginar(filtrado, st.page, st.size);
+    st.page=info.page;
+    var pgEl=document.getElementById('pg-egr');
     var h='';
-    if(!rows.length){h='<tr><td colspan="6" style="text-align:center;padding:20px;color:#999;">Sin egresos registrados</td></tr>';}
-    rows.forEach(function(r){
+    if(!info.items.length){h='<tr><td colspan="6" style="text-align:center;padding:20px;color:#999;">'+(st.q?'Sin coincidencias':'Sin egresos registrados')+'</td></tr>';}
+    info.items.forEach(function(r){
       h+='<tr><td>'+((r.fecha||'').substring(0,10))+'</td>';
       h+='<td><span class="badge-egr">'+r.empresa+'</span></td>';
       h+='<td>'+r.categoria+'</td>';
@@ -552,6 +654,7 @@ async function loadEgresos(){
     });
     document.getElementById('egr-tbody').innerHTML=h;
     document.getElementById('egr-total').textContent='Total egresos: '+fmtFull(total);
+    if(pgEl) pgEl.innerHTML=_renderPag('egr', info);
   }catch(e){console.error(e);}
 }
 
@@ -609,7 +712,7 @@ async function guardarConfig(){
     var key=el.id.replace('cfg-','');
     updates[key]=el.value;
   });
-  var r=await fetch('/api/financiero/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(updates)});
+  var r=await fetch('/api/financiero/config',_fetchOpts('POST', updates));
   var d=await r.json();
   document.getElementById('config-msg').innerHTML=r.ok?'<span style="color:#2B7A78;">✓ '+d.message+'</span>':'<span style="color:red;">'+d.error+'</span>';
 }
@@ -623,7 +726,7 @@ async function guardarIngreso(){
   var ref=document.getElementById('ing-ref').value.trim();
   if(!concepto||!monto){alert('Concepto y monto son requeridos');return;}
   if(!fecha){fecha=new Date().toISOString().substring(0,10);}
-  var r=await fetch('/api/financiero/ingresos',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fecha:fecha,empresa:empresa,categoria:cat,concepto:concepto,monto:monto,referencia:ref})});
+  var r=await fetch('/api/financiero/ingresos',_fetchOpts('POST', {fecha:fecha,empresa:empresa,categoria:cat,concepto:concepto,monto:monto,referencia:ref}));
   var d=await r.json();
   document.getElementById('ing-msg').innerHTML=r.ok?'<span style="color:#2B7A78;">✓ '+d.message+'</span>':'<span style="color:red;">'+d.error+'</span>';
   if(r.ok){document.getElementById('ing-concepto').value='';document.getElementById('ing-monto').value='';document.getElementById('ing-ref').value='';loadIngresos();}
@@ -638,7 +741,7 @@ async function guardarEgreso(){
   var ref=document.getElementById('egr-ref').value.trim();
   if(!concepto||!monto){alert('Concepto y monto son requeridos');return;}
   if(!fecha){fecha=new Date().toISOString().substring(0,10);}
-  var r=await fetch('/api/financiero/egresos',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fecha:fecha,empresa:empresa,categoria:cat,concepto:concepto,monto:monto,referencia:ref})});
+  var r=await fetch('/api/financiero/egresos',_fetchOpts('POST', {fecha:fecha,empresa:empresa,categoria:cat,concepto:concepto,monto:monto,referencia:ref}));
   var d=await r.json();
   document.getElementById('egr-msg').innerHTML=r.ok?'<span style="color:#c0392b;">✓ '+d.message+'</span>':'<span style="color:red;">'+d.error+'</span>';
   if(r.ok){document.getElementById('egr-concepto').value='';document.getElementById('egr-monto').value='';document.getElementById('egr-ref').value='';loadEgresos();}
@@ -650,7 +753,7 @@ async function limpiarFlujo(){
   var msg=document.getElementById('limpiar-msg');
   msg.textContent='Eliminando...'; msg.style.color='#f59e0b';
   try{
-    var r=await fetch('/api/financiero/limpiar-flujo',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({confirmar:'LIMPIAR_TODO'})});
+    var r=await fetch('/api/financiero/limpiar-flujo',_fetchOpts('POST', {confirmar:'LIMPIAR_TODO'}));
     var d=await r.json();
     if(d.ok){
       msg.textContent='✅ '+d.message; msg.style.color='#4ade80';
@@ -664,7 +767,7 @@ async function limpiarFlujo(){
 }
 
 async function importarOCs(){
-  var r=await fetch('/api/financiero/importar-ocs',{method:'POST'});
+  var r=await fetch('/api/financiero/importar-ocs',_fetchOpts('POST'));
   var d=await r.json();
   document.getElementById('import-msg').innerHTML=r.ok?'<span style="color:#2B7A78;">✓ '+d.message+'</span>':'<span style="color:red;">'+(d.error||'Error')+'</span>';
   if(r.ok)loadEgresos();
@@ -698,10 +801,7 @@ async function loadShopifyStatus(){
 async function syncShopifyDryRun() {
   var msg = document.getElementById('shopify-sync-msg');
   msg.innerHTML = '<span style="color:#94a3b8;">Calculando...</span>';
-  var r = await fetch('/api/financiero/sync-shopify-ingresos', {
-    method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({dry_run: true, solo_pagados: true})
-  });
+  var r = await fetch('/api/financiero/sync-shopify-ingresos', _fetchOpts('POST', {dry_run: true, solo_pagados: true}));
   var d = await r.json();
   if (!r.ok) { msg.innerHTML = '<span style="color:#fca5a5;">' + (d.error||'Error') + '</span>'; return; }
   msg.innerHTML = '<span style="color:#22d3ee;">📋 Se importarían ' + d.pendientes +
@@ -716,10 +816,7 @@ async function syncShopifyEjecutar() {
   var btnDis = document.querySelectorAll('#shopify-sync-status ~ div button');
   btnDis.forEach(function(b){b.disabled=true;});
   msg.innerHTML = '<span style="color:#94a3b8;">Sincronizando...</span>';
-  var r = await fetch('/api/financiero/sync-shopify-ingresos', {
-    method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({solo_pagados: true})
-  });
+  var r = await fetch('/api/financiero/sync-shopify-ingresos', _fetchOpts('POST', {solo_pagados: true}));
   var d = await r.json();
   btnDis.forEach(function(b){b.disabled=false;});
   if (!r.ok) { msg.innerHTML = '<span style="color:#fca5a5;">' + (d.error||'Error') + '</span>'; return; }
@@ -761,7 +858,7 @@ async function guardarPrecio(sku){
   var input=document.getElementById('pm-'+sku);
   if(!input)return;
   var precio=parseFloat(input.value)||0;
-  var r=await fetch('/api/financiero/precios-mayorista/'+encodeURIComponent(sku),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({precio_mayorista:precio})});
+  var r=await fetch('/api/financiero/precios-mayorista/'+encodeURIComponent(sku),_fetchOpts('POST', {precio_mayorista:precio}));
   var d=await r.json();
   var msg=document.getElementById('precios-msg');
   msg.innerHTML=r.ok?'<span style="color:#2B7A78;">✓ '+d.message+'</span>':'<span style="color:red;">'+(d.error||'Error')+'</span>';
@@ -867,7 +964,7 @@ async function enviarRevisionCC(){
   try{
     document.getElementById('cc-submit-btn').disabled=true;
     document.getElementById('cc-submit-btn').textContent='Registrando...';
-    var r=await fetch('/api/lotes/cc-review',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    var r=await fetch('/api/lotes/cc-review',_fetchOpts('POST', payload));
     var res=await r.json();
     if(r.ok){
       msg.innerHTML='<div class="alert-success">'+res.message+'</div>';
@@ -1043,8 +1140,7 @@ async function iniciarConteo(){
   var resp = document.getElementById('cnt-responsable').value.trim() || OPER_ACTUAL;
   if(!est){alert('Selecciona una estanteria'); return;}
   try{
-    var r = await fetch('/api/conteo/iniciar',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({estanteria:est,responsable:resp})});
+    var r = await fetch('/api/conteo/iniciar',_fetchOpts('POST', {estanteria:est,responsable:resp}));
     var res = await r.json();
     if(!r.ok){alert(res.error||'Error'); return;}
     _conteoActivo = {id: res.conteo_id, numero: res.numero, estanteria: est};
@@ -1121,8 +1217,7 @@ async function guardarConteo(){
     });
   });
   try{
-    var r = await fetch('/api/conteo/'+_conteoActivo.id+'/guardar',{method:'POST',
-      headers:{'Content-Type':'application/json'},body:JSON.stringify({items:items})});
+    var r = await fetch('/api/conteo/'+_conteoActivo.id+'/guardar',_fetchOpts('POST', {items:items}));
     var res = await r.json();
     if(r.ok){
       var msg = 'Guardado. ';
@@ -1138,7 +1233,7 @@ async function cerrarConteo(){
   if(!_conteoActivo) return;
   if(!confirm('Cerrar el conteo? Ya no se podran editar los conteos fisicos.')) return;
   try{
-    var r = await fetch('/api/conteo/'+_conteoActivo.id+'/cerrar',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+    var r = await fetch('/api/conteo/'+_conteoActivo.id+'/cerrar',_fetchOpts('POST', {}));
     var res = await r.json();
     document.getElementById('cnt-msg').innerHTML = '<div class="alert-success">'+res.message+'</div>';
     document.getElementById('cnt-panel').style.display = 'none';
@@ -1151,8 +1246,7 @@ async function cerrarConteo(){
 async function aplicarAjuste(itemId){
   if(!confirm('Aplicar ajuste de inventario? Se registrara un movimiento de correccion en el sistema.')) return;
   try{
-    var r = await fetch('/api/conteo/0/ajustar',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({item_id:itemId})});
+    var r = await fetch('/api/conteo/0/ajustar',_fetchOpts('POST', {item_id:itemId}));
     var res = await r.json();
     if(r.ok){
       document.getElementById('cnt-msg').innerHTML = '<div class="alert-success">'+res.message+'</div>';
