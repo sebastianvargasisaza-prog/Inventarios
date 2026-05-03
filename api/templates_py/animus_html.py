@@ -271,10 +271,23 @@ window.addEventListener('error', function(ev){
       <button class="btn btn-outline" onclick="abrirBaseline()">+ Baseline</button>
       <button class="btn btn-primary" onclick="abrirEntrada()">+ Entrada</button>
       <button class="btn btn-outline" onclick="abrirSalida()">+ Salida</button>
+      <button class="btn btn-outline" onclick="syncShopifyInv()" title="Refleja ventas Shopify ya descargadas en inv fisico">&#128260; Sync Shopify</button>
+      <button class="btn btn-outline" onclick="asignarConteoHoy()" title="Asigna SKUs al azar a contar hoy">&#128202; Asignar conteo hoy</button>
     </div>
   </div>
 
   <div id="invfis-resumen" class="kpi-grid"></div>
+
+  <!-- CONTEOS PENDIENTES -->
+  <div class="card" id="invfis-conteos-card" style="border-left:4px solid #6366f1;">
+    <div class="card-hdr">
+      <span class="card-title">&#9888; Conteos pendientes hoy</span>
+      <span id="invfis-conteos-count" style="font-size:11px;color:#94a3b8;"></span>
+    </div>
+    <div id="invfis-pendientes" style="padding:8px 0;">
+      <div style="color:#64748b;text-align:center;padding:14px;font-size:13px;">Sin conteos pendientes</div>
+    </div>
+  </div>
 
   <div class="card">
     <div class="card-hdr">
@@ -406,6 +419,29 @@ window.addEventListener('error', function(ev){
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">
       <button class="btn btn-outline" onclick="cerrarModal('modal-salida')">Cancelar</button>
       <button class="btn btn-primary" onclick="guardarSalida()">Guardar salida</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: Registrar conteo de SKU asignado -->
+<div id="modal-conteo-fisico" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center;">
+  <div style="background:#1e293b;border:1px solid #475569;border-radius:14px;padding:22px;width:560px;max-width:92vw;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+      <h3 style="font-size:16px;color:#fff;">&#128202; Registrar conteo fisico</h3>
+      <button onclick="cerrarModal('modal-conteo-fisico')" style="background:none;border:none;color:#94a3b8;font-size:22px;cursor:pointer;">&times;</button>
+    </div>
+    <input type="hidden" id="cf-asig-id">
+    <div id="cf-sku-info" style="background:#0f172a;border-left:3px solid #22d3ee;padding:14px;border-radius:6px;margin-bottom:14px;font-size:13px;color:#cbd5e1;">
+      <div id="cf-sku-titulo" style="font-size:16px;font-weight:700;color:#fff;margin-bottom:8px;">SKU</div>
+      <div id="cf-desglose"></div>
+    </div>
+    <div class="form-row full"><div><div class="label">Cantidad fisica contada *</div><input id="cf-cantidad" type="number" min="0" class="input" placeholder="0"></div></div>
+    <div id="cf-diff-preview" style="display:none;padding:14px;border-radius:8px;font-size:14px;font-weight:700;margin-bottom:14px;text-align:center;"></div>
+    <div class="form-row full" id="cf-motivo-row" style="display:none;"><div><div class="label">Motivo de la diferencia *</div><textarea id="cf-motivo" class="textarea" placeholder="Robo, daño, devolucion no registrada, regalo no anotado, error mapeo Shopify..."></textarea></div></div>
+    <div class="form-row full"><label style="display:flex;align-items:center;gap:8px;color:#cbd5e1;font-size:13px;"><input type="checkbox" id="cf-aplicar"> Aplicar ajuste para que el sistema cuadre con tu conteo</label></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">
+      <button class="btn btn-outline" onclick="cerrarModal('modal-conteo-fisico')">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarConteoFisico()">Guardar conteo</button>
     </div>
   </div>
 </div>
@@ -962,6 +998,144 @@ async function guardarSalida() {
     } else { showToast('Error: ' + (d.error||'?'), 'error'); }
   } catch(e) { showToast('Error red: ' + e.message, 'error'); }
 }
+
+// ════════════════════════════════════════════════════════════════
+// CONTEO CICLICO Fase 2 (asignaciones + registro)
+// ════════════════════════════════════════════════════════════════
+async function cargarPendientesConteo() {
+  try {
+    var r = await fetch('/api/animus/inv-fisico/conteo/pendientes');
+    var d = await r.json();
+    var pend = d.pendientes || [];
+    var el = document.getElementById('invfis-pendientes');
+    var cnt = document.getElementById('invfis-conteos-count');
+    if (cnt) cnt.textContent = pend.length ? (pend.length + ' SKUs por contar') : '';
+    if (!pend.length) {
+      el.innerHTML = '<div style="color:#64748b;text-align:center;padding:14px;font-size:13px;">Sin conteos pendientes &middot; Click "Asignar conteo hoy" para empezar</div>';
+      return;
+    }
+    el.innerHTML = pend.map(function(p) {
+      return '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px solid #334155;">' +
+        '<div><b style="color:#fff;">' + (p.sku||'') + '</b> ' +
+        '<span style="color:#94a3b8;font-size:12px;margin-left:8px;">esperado: ' + (p.esperado!=null?p.esperado:'?') + '</span>' +
+        '<span style="color:#64748b;font-size:11px;margin-left:8px;">' + (p.fecha_asignado||'') + '</span></div>' +
+        '<button class="btn btn-primary btn-sm" onclick="abrirConteoFisico(' + p.id + ', \'' + (p.sku||'').replace(/[\'\\\\]/g,'') + '\', ' + (p.esperado||0) + ')">Contar</button>' +
+        '</div>';
+    }).join('');
+  } catch(e) { console.error(e); }
+}
+
+async function asignarConteoHoy() {
+  if (!confirm('Asignar 5 SKUs para contar hoy? Si ya hay asignaciones pendientes, no se duplican.')) return;
+  try {
+    var r = await fetch('/api/animus/inv-fisico/conteo/asignar-hoy', _fetchOpts('POST', {n: 5}));
+    var d = await r.json();
+    if (d.ok) {
+      var n = (d.asignados||[]).length || d.ya_asignados_hoy || 0;
+      showToast(n + ' SKUs asignados', 'success');
+      cargarPendientesConteo();
+    } else {
+      showToast('Error: ' + (d.error||'?'), 'error');
+    }
+  } catch(e) { showToast('Error red: ' + e.message, 'error'); }
+}
+
+async function syncShopifyInv() {
+  showToast('Sincronizando ventas Shopify...', 'info');
+  try {
+    var r = await fetch('/api/animus/inv-fisico/sync-shopify', _fetchOpts('POST'));
+    var d = await r.json();
+    if (d.ok) {
+      showToast(d.ventas_creadas + ' ventas Shopify reflejadas en inventario', 'success');
+      cargarInvFisico();
+      cargarMovimientosInvFis();
+    } else { showToast('Error: ' + (d.error||'?'), 'error'); }
+  } catch(e) { showToast('Error red: ' + e.message, 'error'); }
+}
+
+var CONTEO_DESGLOSE = null;
+function abrirConteoFisico(asigId, sku, esperado) {
+  document.getElementById('cf-asig-id').value = asigId;
+  document.getElementById('cf-sku-titulo').textContent = sku;
+  document.getElementById('cf-cantidad').value = '';
+  document.getElementById('cf-motivo').value = '';
+  document.getElementById('cf-aplicar').checked = false;
+  document.getElementById('cf-diff-preview').style.display = 'none';
+  document.getElementById('cf-motivo-row').style.display = 'none';
+  // Cargar desglose
+  fetch('/api/animus/inv-fisico/esperado/' + encodeURIComponent(sku))
+    .then(function(r){return r.json();})
+    .then(function(info){
+      CONTEO_DESGLOSE = info;
+      var d = document.getElementById('cf-desglose');
+      d.innerHTML =
+        '<div style="display:grid;grid-template-columns:auto auto;gap:6px 16px;font-size:12px;">' +
+        '<span style="color:#94a3b8;">Baseline (' + (info.fecha_baseline||'') + ')</span><span style="text-align:right;color:#fff;font-weight:600;">' + info.baseline + '</span>' +
+        '<span style="color:#94a3b8;">+ Entradas</span><span style="text-align:right;color:#4ade80;font-weight:600;">+' + info.entradas + '</span>' +
+        '<span style="color:#94a3b8;">- Ventas Shopify</span><span style="text-align:right;color:#fbbf24;font-weight:600;">-' + info.shopify + '</span>' +
+        '<span style="color:#94a3b8;">- Salidas otras</span><span style="text-align:right;color:#f87171;font-weight:600;">-' + info.salidas + '</span>' +
+        '<span style="color:#94a3b8;">+/- Ajustes</span><span style="text-align:right;color:#a78bfa;font-weight:600;">' + (info.ajustes>=0?'+':'') + info.ajustes + '</span>' +
+        '<hr style="grid-column:1/-1;border:none;border-top:1px solid #334155;margin:4px 0;">' +
+        '<span style="color:#fff;font-weight:700;">= ESPERADO</span><span style="text-align:right;color:#22d3ee;font-weight:800;font-size:18px;">' + info.esperado + '</span>' +
+        '</div>';
+    });
+  // Live preview de diferencia al escribir
+  var input = document.getElementById('cf-cantidad');
+  input.oninput = function() {
+    var fisica = parseInt(input.value, 10);
+    if (isNaN(fisica) || !CONTEO_DESGLOSE) {
+      document.getElementById('cf-diff-preview').style.display = 'none';
+      document.getElementById('cf-motivo-row').style.display = 'none';
+      return;
+    }
+    var diff = fisica - CONTEO_DESGLOSE.esperado;
+    var prev = document.getElementById('cf-diff-preview');
+    prev.style.display = 'block';
+    if (diff === 0) {
+      prev.style.background = '#064e3b';
+      prev.style.color = '#4ade80';
+      prev.innerHTML = '&#10003; Cuadra perfecto · esperado=' + CONTEO_DESGLOSE.esperado + ' · fisico=' + fisica;
+      document.getElementById('cf-motivo-row').style.display = 'none';
+    } else {
+      var col = Math.abs(diff) > 2 ? '#7f1d1d' : '#78350f';
+      var fc  = Math.abs(diff) > 2 ? '#fca5a5' : '#fbbf24';
+      prev.style.background = col;
+      prev.style.color = fc;
+      prev.innerHTML = (diff>0?'&#9650; +':'&#9660; ') + diff + ' diferencia · esperado=' + CONTEO_DESGLOSE.esperado + ' · fisico=' + fisica;
+      // motivo obligatorio si > |2|
+      document.getElementById('cf-motivo-row').style.display = Math.abs(diff) > 2 ? 'block' : 'none';
+    }
+  };
+  document.getElementById('modal-conteo-fisico').style.display = 'flex';
+}
+
+async function guardarConteoFisico() {
+  var asigId = parseInt(document.getElementById('cf-asig-id').value, 10);
+  var fisica = parseInt(document.getElementById('cf-cantidad').value, 10);
+  if (isNaN(fisica) || fisica < 0) { showToast('Cantidad invalida', 'error'); return; }
+  var motivo = document.getElementById('cf-motivo').value;
+  var aplicar = document.getElementById('cf-aplicar').checked;
+  try {
+    var r = await fetch('/api/animus/inv-fisico/conteo/' + asigId + '/registrar',
+                        _fetchOpts('POST', {cantidad_fisica: fisica, motivo_diferencia: motivo, aplicar_ajuste: aplicar}));
+    var d = await r.json();
+    if (d.ok) {
+      var msg = d.diferencia === 0 ? 'Cuadra perfecto' : ('Diferencia ' + d.diferencia + (aplicar?' · ajustado':''));
+      showToast(d.sku + ': ' + msg, d.diferencia === 0 ? 'success' : 'warning');
+      cerrarModal('modal-conteo-fisico');
+      cargarPendientesConteo();
+      cargarInvFisico();
+      cargarMovimientosInvFis();
+    } else { showToast('Error: ' + (d.error||'?'), 'error'); }
+  } catch(e) { showToast('Error red: ' + e.message, 'error'); }
+}
+
+// Hook into loadTab para cargar pendientes al entrar al tab
+var _origLoadTab_invfis = loadTab;
+loadTab = function(name) {
+  _origLoadTab_invfis(name);
+  if (name === 'invfis') cargarPendientesConteo();
+};
 
 // Init
 loadCaja();

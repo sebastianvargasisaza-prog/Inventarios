@@ -253,6 +253,185 @@ def test_baseline_audita(app, db_clean):
     _cleanup("TEST-AUD-001")
 
 
+# ── Fase 2: Conteo ciclico ────────────────────────────────────────
+
+def test_asignar_hoy_sin_baseline_returns_empty(app, db_clean):
+    """Si no hay SKUs con baseline, no hay nada que asignar."""
+    cs = _login(app, "sebastian")
+    # Limpiar baseline de la DB de tests
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    conn.execute("DELETE FROM animus_inventario_baseline")
+    conn.execute("DELETE FROM animus_conteos_asignados WHERE fecha_asignado=date('now')")
+    conn.commit(); conn.close()
+    r = cs.post("/api/animus/inv-fisico/conteo/asignar-hoy",
+                json={"n": 5}, headers=csrf_headers())
+    assert r.status_code == 200
+    d = r.get_json()
+    assert d["ok"] is True
+    assert len(d.get("asignados", [])) == 0
+
+
+def test_asignar_hoy_con_baselines(app, db_clean):
+    cs = _login(app, "sebastian")
+    # Limpiar previa
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    conn.execute("DELETE FROM animus_conteos_asignados WHERE fecha_asignado=date('now')")
+    conn.commit(); conn.close()
+    cs.post("/api/animus/inv-fisico/baseline",
+            json={"sku": "TEST-CON-A", "unidades_baseline": 10},
+            headers=csrf_headers())
+    cs.post("/api/animus/inv-fisico/baseline",
+            json={"sku": "TEST-CON-B", "unidades_baseline": 20},
+            headers=csrf_headers())
+    try:
+        r = cs.post("/api/animus/inv-fisico/conteo/asignar-hoy",
+                    json={"n": 2}, headers=csrf_headers())
+        d = r.get_json()
+        assert len(d["asignados"]) >= 1
+    finally:
+        _cleanup("TEST-CON-A")
+        _cleanup("TEST-CON-B")
+
+
+def test_asignar_hoy_es_idempotente(app, db_clean):
+    """Si ya hay pendientes hoy, no se duplican."""
+    cs = _login(app, "sebastian")
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    conn.execute("DELETE FROM animus_conteos_asignados WHERE fecha_asignado=date('now')")
+    conn.commit(); conn.close()
+    cs.post("/api/animus/inv-fisico/baseline",
+            json={"sku": "TEST-IDM-001", "unidades_baseline": 10},
+            headers=csrf_headers())
+    try:
+        cs.post("/api/animus/inv-fisico/conteo/asignar-hoy",
+                json={"n": 1}, headers=csrf_headers())
+        r2 = cs.post("/api/animus/inv-fisico/conteo/asignar-hoy",
+                     json={"n": 5}, headers=csrf_headers())
+        d2 = r2.get_json()
+        # Segunda llamada debe retornar ya_asignados_hoy
+        assert d2.get("ya_asignados_hoy", 0) >= 1 or len(d2.get("asignados", [])) == 0
+    finally:
+        _cleanup("TEST-IDM-001")
+        conn = sqlite3.connect(os.environ["DB_PATH"])
+        conn.execute("DELETE FROM animus_conteos_asignados WHERE fecha_asignado=date('now')")
+        conn.commit(); conn.close()
+
+
+def test_registrar_conteo_cuadra(app, db_clean):
+    """Conteo fisico = esperado · sin diferencia."""
+    cs = _login(app, "sebastian")
+    sku = "TEST-CUADRA"
+    cs.post("/api/animus/inv-fisico/baseline",
+            json={"sku": sku, "unidades_baseline": 50},
+            headers=csrf_headers())
+    try:
+        # Asignar manualmente
+        conn = sqlite3.connect(os.environ["DB_PATH"])
+        cur = conn.execute(
+            "INSERT INTO animus_conteos_asignados (sku, asignado_a, estado) VALUES (?, 'test', 'pendiente')",
+            (sku,))
+        asig_id = cur.lastrowid
+        conn.commit(); conn.close()
+        # Contar exacto
+        r = cs.post(f"/api/animus/inv-fisico/conteo/{asig_id}/registrar",
+                    json={"cantidad_fisica": 50}, headers=csrf_headers())
+        assert r.status_code == 200
+        d = r.get_json()
+        assert d["diferencia"] == 0
+        assert d["esperado"] == 50
+        assert d["fisica"] == 50
+    finally:
+        _cleanup(sku)
+        conn = sqlite3.connect(os.environ["DB_PATH"])
+        conn.execute("DELETE FROM animus_conteos_asignados WHERE sku=?", (sku,))
+        conn.commit(); conn.close()
+
+
+def test_registrar_conteo_diferencia_grande_requiere_motivo(app, db_clean):
+    cs = _login(app, "sebastian")
+    sku = "TEST-DIFF"
+    cs.post("/api/animus/inv-fisico/baseline",
+            json={"sku": sku, "unidades_baseline": 50},
+            headers=csrf_headers())
+    try:
+        conn = sqlite3.connect(os.environ["DB_PATH"])
+        cur = conn.execute(
+            "INSERT INTO animus_conteos_asignados (sku, asignado_a, estado) VALUES (?, 'test', 'pendiente')",
+            (sku,))
+        asig_id = cur.lastrowid
+        conn.commit(); conn.close()
+        # Diferencia grande sin motivo → 400
+        r = cs.post(f"/api/animus/inv-fisico/conteo/{asig_id}/registrar",
+                    json={"cantidad_fisica": 30}, headers=csrf_headers())
+        assert r.status_code == 400
+        # Con motivo → 200
+        r2 = cs.post(f"/api/animus/inv-fisico/conteo/{asig_id}/registrar",
+                     json={"cantidad_fisica": 30, "motivo_diferencia": "Daño en bodega"},
+                     headers=csrf_headers())
+        assert r2.status_code == 200
+        d = r2.get_json()
+        assert d["diferencia"] == -20
+    finally:
+        _cleanup(sku)
+        conn = sqlite3.connect(os.environ["DB_PATH"])
+        conn.execute("DELETE FROM animus_conteos_asignados WHERE sku=?", (sku,))
+        conn.commit(); conn.close()
+
+
+def test_registrar_conteo_con_aplicar_ajuste(app, db_clean):
+    cs = _login(app, "sebastian")
+    sku = "TEST-AJUST"
+    cs.post("/api/animus/inv-fisico/baseline",
+            json={"sku": sku, "unidades_baseline": 100},
+            headers=csrf_headers())
+    try:
+        conn = sqlite3.connect(os.environ["DB_PATH"])
+        cur = conn.execute(
+            "INSERT INTO animus_conteos_asignados (sku, asignado_a, estado) VALUES (?, 'test', 'pendiente')",
+            (sku,))
+        asig_id = cur.lastrowid
+        conn.commit(); conn.close()
+        r = cs.post(f"/api/animus/inv-fisico/conteo/{asig_id}/registrar",
+                    json={"cantidad_fisica": 95, "motivo_diferencia": "regalo no anotado",
+                          "aplicar_ajuste": True}, headers=csrf_headers())
+        assert r.status_code == 200
+        # Verificar que ahora esperado matchea
+        r2 = cs.get(f"/api/animus/inv-fisico/esperado/{sku}")
+        d2 = r2.get_json()
+        assert d2["esperado"] == 95
+    finally:
+        _cleanup(sku)
+        conn = sqlite3.connect(os.environ["DB_PATH"])
+        conn.execute("DELETE FROM animus_conteos_asignados WHERE sku=?", (sku,))
+        conn.commit(); conn.close()
+
+
+def test_pendientes_conteo_endpoint(app, db_clean):
+    cs = _login(app, "sebastian")
+    r = cs.get("/api/animus/inv-fisico/conteo/pendientes")
+    assert r.status_code == 200
+    assert "pendientes" in r.get_json()
+
+
+def test_historial_conteo_endpoint(app, db_clean):
+    cs = _login(app, "sebastian")
+    r = cs.get("/api/animus/inv-fisico/conteo/historial")
+    assert r.status_code == 200
+    d = r.get_json()
+    assert "historial" in d
+    assert "kpis_30d" in d
+
+
+def test_sync_shopify_inv_endpoint(app, db_clean):
+    cs = _login(app, "sebastian")
+    r = cs.post("/api/animus/inv-fisico/sync-shopify",
+                json={}, headers=csrf_headers())
+    assert r.status_code == 200
+    d = r.get_json()
+    assert d["ok"] is True
+    assert "ventas_creadas" in d
+
+
 def test_pagina_animus_tiene_tab_inv_fisico(app, db_clean):
     """La UI debe exponer el tab nuevo + modales."""
     cs = _login(app, "sebastian")

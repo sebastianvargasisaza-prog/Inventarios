@@ -140,7 +140,12 @@ def animus_sync(platform):
                          o.get("created_at","")[:10]))
                     synced += 1
                 conn.commit()
-                return jsonify({"ok": True, "synced": synced, "platform": "shopify"})
+                # Reflejar ventas Shopify como movimientos SHOPIFY_VENTA en
+                # inventario fisico (idempotente · referencia = shopify_id+sku)
+                ventas_creadas = _sync_shopify_a_movimientos(conn)
+                return jsonify({"ok": True, "synced": synced,
+                                "ventas_inventario": ventas_creadas,
+                                "platform": "shopify"})
             except Exception as e:
                 return jsonify({"error": f"Error Shopify API: {str(e)}"}), 502
 
@@ -1320,6 +1325,65 @@ def aplicar_ajuste_conteo(conteo_id):
 #
 # tipo movimiento ∈ {ENTRADA, SALIDA, SHOPIFY_VENTA, CONTEO, AJUSTE, BASELINE}
 
+def _sync_shopify_a_movimientos(conn):
+    """Crea movimientos SHOPIFY_VENTA por cada SKU+pedido de Shopify
+    que aun no este reflejado en animus_inventario_movimientos.
+
+    Idempotente: usa referencia = '<shopify_id>:<sku>' como key UNIQUE
+    logica.
+
+    Solo inserta movimientos para SKUs que tengan baseline activo (sino
+    no aplica la ecuacion contable y el SKU no se rastrea).
+    """
+    c = conn.cursor()
+    # Cargar SKUs con baseline · solo esos rastreamos
+    skus_con_baseline = set()
+    for r in c.execute("SELECT sku FROM animus_inventario_baseline").fetchall():
+        skus_con_baseline.add((r['sku'] or '').upper())
+    if not skus_con_baseline:
+        return 0
+    # Cargar referencias ya insertadas
+    refs_existentes = set()
+    for r in c.execute(
+        "SELECT referencia FROM animus_inventario_movimientos WHERE tipo='SHOPIFY_VENTA'"
+    ).fetchall():
+        refs_existentes.add(r['referencia'])
+    # Recorrer pedidos Shopify
+    pedidos = c.execute("""
+        SELECT shopify_id, sku_items, creado_en
+          FROM animus_shopify_orders
+         WHERE sku_items IS NOT NULL AND sku_items != ''
+    """).fetchall()
+    creados = 0
+    for p in pedidos:
+        try:
+            items = json.loads(p['sku_items']) if p['sku_items'] else []
+        except Exception:
+            continue
+        fecha = (p['creado_en'] or '')[:10]
+        if not fecha:
+            continue
+        for it in items:
+            sku = (it.get('sku') or '').strip().upper()
+            qty = int(it.get('qty') or 0)
+            if not sku or qty <= 0:
+                continue
+            if sku not in skus_con_baseline:
+                continue
+            ref = f"{p['shopify_id']}:{sku}"
+            if ref in refs_existentes:
+                continue
+            c.execute("""INSERT INTO animus_inventario_movimientos
+                         (sku, tipo, cantidad, fecha, origen, referencia, usuario)
+                         VALUES (?, 'SHOPIFY_VENTA', ?, ?, 'shopify', ?, 'sistema')""",
+                      (sku, qty, fecha, ref))
+            refs_existentes.add(ref)
+            creados += 1
+    if creados:
+        conn.commit()
+    return creados
+
+
 def _calcular_esperado(c, sku):
     """Retorna stock_esperado(sku) = baseline + entradas - shopify - salidas.
 
@@ -1516,6 +1580,250 @@ def animus_inv_fisico_esperado_todos():
         if info:
             out.append(info)
     return jsonify({"items": out, "total_skus": len(out)})
+
+
+# ── CONTEO CICLICO Fase 2 ─────────────────────────────────────────
+
+@bp.route("/api/animus/inv-fisico/conteo/asignar-hoy", methods=["POST"])
+def animus_inv_fisico_asignar_hoy():
+    """Asigna N SKUs para contar HOY. Llamado por cron o manualmente.
+
+    Algoritmo prioridad:
+      1. SKUs sin baseline (urgente · sembrar primero)
+      2. SKUs con mas dias sin contar
+      3. SKUs con mas movimientos recientes (volatiles)
+
+    Body opcional: {n: int default 5, asignar_a: usuario default 'daniela'}
+    """
+    u, err, code = _auth()
+    if err: return err, code
+    d = request.get_json(silent=True) or {}
+    try:
+        n = int(d.get("n", 5))
+    except (TypeError, ValueError):
+        n = 5
+    n = max(1, min(n, 20))
+    asignar_a = (d.get("asignar_a") or "daniela").strip().lower()
+    conn = _db(); c = conn.cursor()
+
+    # ¿Ya hay asignaciones pendientes para hoy?
+    pendientes = c.execute("""
+        SELECT sku FROM animus_conteos_asignados
+         WHERE fecha_asignado = date('now') AND estado = 'pendiente'
+    """).fetchall()
+    if pendientes:
+        return jsonify({
+            "ok": True, "ya_asignados_hoy": len(pendientes),
+            "skus": [r['sku'] for r in pendientes],
+            "mensaje": "Ya hay SKUs asignados hoy."
+        })
+
+    # Score: dias_sin_contar * 1.0 + volatilidad (mov ultimos 7d) * 0.5
+    candidatos = c.execute("""
+        WITH baseline_skus AS (
+            SELECT sku, fecha_baseline FROM animus_inventario_baseline
+        ),
+        ultimo_conteo AS (
+            SELECT sku, MAX(fecha_asignado) as ult
+              FROM animus_conteos_asignados
+             WHERE estado = 'contado'
+             GROUP BY sku
+        ),
+        volatilidad AS (
+            SELECT sku, COUNT(*) as movs
+              FROM animus_inventario_movimientos
+             WHERE fecha >= date('now', '-7 day')
+             GROUP BY sku
+        )
+        SELECT b.sku,
+               COALESCE(julianday('now') - julianday(uc.ult), 999) as dias_sin_contar,
+               COALESCE(v.movs, 0) as movs_7d
+          FROM baseline_skus b
+          LEFT JOIN ultimo_conteo uc ON uc.sku = b.sku
+          LEFT JOIN volatilidad v ON v.sku = b.sku
+          ORDER BY dias_sin_contar DESC, movs_7d DESC
+          LIMIT ?
+    """, (n,)).fetchall()
+
+    asignados = []
+    for r in candidatos:
+        c.execute("""INSERT INTO animus_conteos_asignados
+                     (sku, asignado_a, estado) VALUES (?, ?, 'pendiente')""",
+                  (r['sku'], asignar_a))
+        asignados.append({
+            'sku': r['sku'],
+            'dias_sin_contar': round(r['dias_sin_contar'], 1),
+            'movs_7d': r['movs_7d'],
+        })
+    audit_log(c, usuario=u, accion='ANIMUS_CONTEO_ASIGNAR',
+              tabla='animus_conteos_asignados', registro_id=None,
+              despues={'n': len(asignados), 'asignar_a': asignar_a},
+              detalle=f"Asignados {len(asignados)} SKUs a {asignar_a}: " +
+                       ', '.join(x['sku'] for x in asignados))
+    conn.commit()
+    return jsonify({"ok": True, "asignados": asignados, "asignar_a": asignar_a})
+
+
+@bp.route("/api/animus/inv-fisico/conteo/pendientes", methods=["GET"])
+def animus_inv_fisico_conteo_pendientes():
+    """Lista SKUs asignados pendientes de contar."""
+    u, err, code = _auth()
+    if err: return err, code
+    asignar_a = request.args.get("asignar_a")
+    conn = _db(); c = conn.cursor()
+    sql = """SELECT id, sku, fecha_asignado, asignado_a, creado_en
+               FROM animus_conteos_asignados
+              WHERE estado = 'pendiente'"""
+    params = []
+    if asignar_a:
+        sql += " AND asignado_a = ?"; params.append(asignar_a.lower())
+    sql += " ORDER BY fecha_asignado DESC"
+    rows = c.execute(sql, params).fetchall()
+    out = []
+    for r in rows:
+        info = _calcular_esperado(c, r['sku'])
+        out.append({
+            'id': r['id'], 'sku': r['sku'],
+            'fecha_asignado': r['fecha_asignado'],
+            'asignado_a': r['asignado_a'],
+            'esperado': info['esperado'] if info else None,
+        })
+    return jsonify({"pendientes": out})
+
+
+@bp.route("/api/animus/inv-fisico/conteo/<int:asig_id>/registrar", methods=["POST"])
+def animus_inv_fisico_conteo_registrar(asig_id):
+    """Registra el conteo fisico de un SKU asignado.
+
+    Body: {cantidad_fisica, motivo_diferencia? (si != esperado)}
+    """
+    u, err, code = _auth()
+    if err: return err, code
+    d = request.get_json() or {}
+    try:
+        fisica = int(d.get("cantidad_fisica"))
+    except (TypeError, ValueError):
+        return jsonify({"error": "cantidad_fisica debe ser entero"}), 400
+    if fisica < 0:
+        return jsonify({"error": "cantidad_fisica no puede ser negativo"}), 400
+    motivo = (d.get("motivo_diferencia") or "").strip()
+    aplicar_ajuste = bool(d.get("aplicar_ajuste", False))
+
+    conn = _db(); c = conn.cursor()
+    asig = c.execute(
+        "SELECT id, sku, estado FROM animus_conteos_asignados WHERE id=?",
+        (asig_id,)).fetchone()
+    if not asig:
+        return jsonify({"error": "asignacion no encontrada"}), 404
+    if asig['estado'] != 'pendiente':
+        return jsonify({"error": f"asignacion en estado {asig['estado']}, no se puede registrar"}), 400
+
+    info = _calcular_esperado(c, asig['sku'])
+    if not info:
+        return jsonify({"error": "SKU sin baseline"}), 400
+    esperado = info['esperado']
+    diferencia = fisica - esperado
+
+    # Si hay diferencia y no se da motivo y >| 2 |, requerir motivo
+    if abs(diferencia) > 2 and not motivo:
+        return jsonify({
+            "error": "Diferencia significativa requiere motivo",
+            "diferencia": diferencia, "esperado": esperado, "fisica": fisica,
+            "desglose": info,
+        }), 400
+
+    c.execute("""UPDATE animus_conteos_asignados
+                 SET cantidad_fisica=?, cantidad_esperada=?,
+                     diferencia=?, motivo_diferencia=?,
+                     estado='contado', contado_en=datetime('now')
+                 WHERE id=?""",
+              (fisica, esperado, diferencia, motivo, asig_id))
+
+    # Registrar movimiento CONTEO
+    c.execute("""INSERT INTO animus_inventario_movimientos
+                 (sku, tipo, cantidad, fecha, origen, motivo, usuario)
+                 VALUES (?, 'CONTEO', ?, date('now'), ?, ?, ?)""",
+              (asig['sku'], fisica, 'conteo_ciclico', motivo, u))
+
+    # Si aplicar_ajuste, agregar AJUSTE para que esperado matchee con fisica
+    if aplicar_ajuste and diferencia != 0:
+        c.execute("""INSERT INTO animus_inventario_movimientos
+                     (sku, tipo, cantidad, fecha, origen, motivo, usuario)
+                     VALUES (?, 'AJUSTE', ?, date('now'), 'conteo_ajuste', ?, ?)""",
+                  (asig['sku'], diferencia, motivo or 'Ajuste por conteo ciclico', u))
+
+    audit_log(c, usuario=u, accion='ANIMUS_CONTEO_REGISTRAR',
+              tabla='animus_conteos_asignados', registro_id=asig_id,
+              despues={'sku': asig['sku'], 'fisica': fisica, 'esperado': esperado,
+                        'diferencia': diferencia, 'motivo': motivo[:200],
+                        'aplicado_ajuste': aplicar_ajuste},
+              detalle=f"Conteo {asig['sku']}: fisica={fisica} esperado={esperado} dif={diferencia}" +
+                       (f" · ajustado" if aplicar_ajuste else ""))
+    conn.commit()
+    return jsonify({
+        "ok": True,
+        "sku": asig['sku'],
+        "esperado": esperado,
+        "fisica": fisica,
+        "diferencia": diferencia,
+        "desglose": info,
+        "aplicado_ajuste": aplicar_ajuste,
+        "alerta": "Diferencia detectada · revisar" if diferencia != 0 else None,
+    })
+
+
+@bp.route("/api/animus/inv-fisico/conteo/historial", methods=["GET"])
+def animus_inv_fisico_conteo_historial():
+    """Historial de conteos contados (para dashboard)."""
+    u, err, code = _auth()
+    if err: return err, code
+    sku = (request.args.get("sku") or "").strip().upper()
+    conn = _db(); c = conn.cursor()
+    sql = """SELECT id, sku, fecha_asignado, asignado_a, cantidad_fisica,
+                    cantidad_esperada, diferencia, motivo_diferencia,
+                    contado_en
+               FROM animus_conteos_asignados
+              WHERE estado = 'contado'"""
+    params = []
+    if sku:
+        sql += " AND sku = ?"; params.append(sku)
+    sql += " ORDER BY contado_en DESC LIMIT 200"
+    rows = [dict(r) for r in c.execute(sql, params).fetchall()]
+    # KPIs
+    kpis_row = c.execute("""SELECT
+          COUNT(*) as total,
+          COALESCE(SUM(CASE WHEN diferencia != 0 THEN 1 ELSE 0 END),0) as con_diferencia,
+          COALESCE(SUM(CASE WHEN diferencia < 0 THEN -diferencia ELSE 0 END),0) as faltantes,
+          COALESCE(SUM(CASE WHEN diferencia > 0 THEN diferencia ELSE 0 END),0) as sobrantes
+        FROM animus_conteos_asignados
+        WHERE estado = 'contado' AND contado_en >= date('now','-30 day')
+    """).fetchone()
+    return jsonify({
+        "historial": rows,
+        "kpis_30d": dict(kpis_row) if kpis_row else {},
+    })
+
+
+@bp.route("/api/animus/inv-fisico/sync-shopify", methods=["POST"])
+def animus_inv_fisico_sync_shopify():
+    """Sincroniza ventas Shopify ya descargadas hacia movimientos de
+    inventario fisico (sin volver a llamar API Shopify · idempotente)."""
+    u, err, code = _auth()
+    if err: return err, code
+    conn = _db()
+    try:
+        creados = _sync_shopify_a_movimientos(conn)
+    except Exception as e:
+        return jsonify({"error": str(e)[:200]}), 500
+    if creados:
+        from audit_helpers import audit_log
+        c = conn.cursor()
+        audit_log(c, usuario=u, accion='ANIMUS_SYNC_SHOPIFY_INV',
+                  tabla='animus_inventario_movimientos', registro_id=None,
+                  despues={'movimientos_creados': creados},
+                  detalle=f"Sync Shopify · {creados} ventas reflejadas en inv fisico")
+        conn.commit()
+    return jsonify({"ok": True, "ventas_creadas": creados})
 
 
 @bp.route("/api/animus/inv-fisico/movimientos", methods=["GET"])

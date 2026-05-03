@@ -583,6 +583,8 @@ JOBS_SCHEDULE = [
     ('equipos_vencimientos',  7, 30, None, None,                'job_equipos_vencimientos'),
     # ⭐ Direccion Tecnica · diario 7:45 · alerta INVIMA + SGD próximos a vencer
     ('tecnica_vencimientos',  7, 45, None, None,                'job_tecnica_vencimientos'),
+    # ⭐ Animus · L-V 8:00am · asignar 5 SKUs para conteo fisico a Daniela
+    ('animus_conteo_diario',  8,  0, [0,1,2,3,4], None,         'job_animus_conteo_diario'),
     # ⭐ Aseguramiento · diario 8:00 · alerta desviaciones en plazos críticos (ASG-PRO-001)
     ('desv_plazos',           8,  0, None, None,                'job_desv_plazos'),
     # ⭐ Aseguramiento · diario 8:30 · alerta control de cambios en plazos vencidos (ASG-PRO-007)
@@ -1602,6 +1604,84 @@ def job_tecnica_vencimientos(app):
             'sgd_proximos_30d': len(sgd_proximos),
             'destinatarios': len(destinatarios),
         }, 0
+
+
+def job_animus_conteo_diario(app):
+    """Animus · L-V 8am · asigna 5 SKUs para conteo fisico a Daniela.
+
+    Sebastian 3-may-2026: la asistente nunca cuadra inventario fisico vs
+    Shopify. Solucion: conteo ciclico rotativo + ecuacion contable.
+    Algoritmo prioridad: dias_sin_contar DESC + volatilidad (mov 7d) DESC.
+
+    Idempotente: si ya hay asignaciones pendientes hoy, no duplica.
+    """
+    with app.app_context():
+        from database import get_db
+        conn = get_db(); c = conn.cursor()
+        try:
+            # ¿Ya hay pendientes hoy?
+            pend = c.execute("""
+                SELECT COUNT(*) FROM animus_conteos_asignados
+                 WHERE fecha_asignado = date('now') AND estado = 'pendiente'
+            """).fetchone()
+            if pend and pend[0] > 0:
+                return True, {'mensaje': f'Ya hay {pend[0]} asignaciones pendientes hoy'}, 0
+
+            # Ranking SKUs (mismo algoritmo que el endpoint asignar-hoy)
+            n = 5
+            candidatos = c.execute("""
+                WITH baseline_skus AS (
+                    SELECT sku FROM animus_inventario_baseline
+                ),
+                ultimo_conteo AS (
+                    SELECT sku, MAX(fecha_asignado) as ult
+                      FROM animus_conteos_asignados
+                     WHERE estado = 'contado'
+                     GROUP BY sku
+                ),
+                volatilidad AS (
+                    SELECT sku, COUNT(*) as movs
+                      FROM animus_inventario_movimientos
+                     WHERE fecha >= date('now', '-7 day')
+                     GROUP BY sku
+                )
+                SELECT b.sku,
+                       COALESCE(julianday('now') - julianday(uc.ult), 999) as dias_sin_contar,
+                       COALESCE(v.movs, 0) as movs_7d
+                  FROM baseline_skus b
+                  LEFT JOIN ultimo_conteo uc ON uc.sku = b.sku
+                  LEFT JOIN volatilidad v ON v.sku = b.sku
+                  ORDER BY dias_sin_contar DESC, movs_7d DESC
+                  LIMIT ?
+            """, (n,)).fetchall()
+            if not candidatos:
+                return True, {'mensaje': 'Sin SKUs con baseline · pedirle a Daniela que cargue baseline primero'}, 0
+            asignados = []
+            for r in candidatos:
+                c.execute("""INSERT INTO animus_conteos_asignados
+                             (sku, asignado_a, estado) VALUES (?, 'daniela', 'pendiente')""",
+                          (r[0],))
+                asignados.append(r[0])
+            conn.commit()
+        except Exception as e:
+            log.exception('animus_conteo_diario read fallo: %s', e)
+            return False, {'error': str(e)[:200]}, 0
+
+        # Notif a Daniela
+        try:
+            from blueprints.notif import push_notif
+            push_notif(
+                'daniela', 'animus',
+                f'📊 Conteo del día · {len(asignados)} SKUs',
+                body='SKUs asignados hoy: ' + ', '.join(asignados) +
+                     '\n\nVe a /animus → Inventario Físico → Conteos pendientes',
+                link='/animus#tab-invfis',
+                remitente='cron-animus',
+            )
+        except Exception as e:
+            log.warning('animus_conteo_diario push_notif fallo: %s', e)
+
+        return True, {'asignados': len(asignados), 'skus': asignados}, 0
 
 
 def job_desv_plazos(app):
