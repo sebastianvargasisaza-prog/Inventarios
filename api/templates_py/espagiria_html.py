@@ -88,14 +88,31 @@ HTML = r"""
 
   <!-- TABS -->
   <div style="background:#1e293b;border-bottom:1px solid #334155;padding:0 28px;display:flex;gap:0;overflow-x:auto;">
-    <button class="esp-tab active" data-tab="dash" onclick="esw('dash')" style="background:none;border:none;color:#a5f3fc;padding:14px 20px;font-size:13px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;cursor:pointer;border-bottom:3px solid #06b6d4;white-space:nowrap;">📊 Dashboard</button>
+    <button class="esp-tab active" data-tab="inicio" onclick="esw('inicio')" style="background:none;border:none;color:#a5f3fc;padding:14px 20px;font-size:13px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;cursor:pointer;border-bottom:3px solid #06b6d4;white-space:nowrap;">⚡ Inicio</button>
+    <button class="esp-tab" data-tab="dash" onclick="esw('dash')" style="background:none;border:none;color:#64748b;padding:14px 20px;font-size:13px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;cursor:pointer;border-bottom:3px solid transparent;white-space:nowrap;">📊 Dashboard</button>
     <button class="esp-tab" data-tab="lab" onclick="esw('lab')" style="background:none;border:none;color:#64748b;padding:14px 20px;font-size:13px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;cursor:pointer;border-bottom:3px solid transparent;white-space:nowrap;">🔬 Lab en Vivo</button>
     <button class="esp-tab" data-tab="clientes" onclick="esw('clientes')" style="background:none;border:none;color:#64748b;padding:14px 20px;font-size:13px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;cursor:pointer;border-bottom:3px solid transparent;white-space:nowrap;">👥 Clientes 360</button>
+    <button class="esp-tab" data-tab="cartera" onclick="esw('cartera')" style="background:none;border:none;color:#64748b;padding:14px 20px;font-size:13px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;cursor:pointer;border-bottom:3px solid transparent;white-space:nowrap;">💰 Cartera</button>
   </div>
 
   <div class="container">
+    <!-- TAB INICIO · Quick Actions -->
+    <div id="esp-tab-inicio" class="esp-pane">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;flex-wrap:wrap;gap:12px;">
+        <div>
+          <div style="font-size:1.4em;font-weight:700;color:#fff;">⚡ Lo urgente del día</div>
+          <div style="font-size:13px;color:#64748b;">Resumen de lo que necesita tu acción ahora</div>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button onclick="abrirPedidoRapido()" style="background:#10b981;border:none;color:#fff;padding:10px 16px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;">+ Pedido rápido</button>
+          <button onclick="cargarQA()" style="background:#0e7490;border:none;color:#fff;padding:10px 14px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;">↻</button>
+        </div>
+      </div>
+      <div id="qa-content"><div class="empty">Cargando...</div></div>
+    </div>
+
     <!-- TAB DASHBOARD -->
-    <div id="esp-tab-dash" class="esp-pane">
+    <div id="esp-tab-dash" class="esp-pane" style="display:none;">
     <!-- KPIs principales -->
     <div class="grid grid-4">
       <div class="card"><h3>📦 Producciones del mes</h3><div class="val" id="kpi-prod">—</div><div class="sub" id="kpi-prod-sub"></div></div>
@@ -233,11 +250,87 @@ HTML = r"""
         </div>
       </div>
     </div><!-- /tab clientes -->
+
+    <!-- TAB CARTERA -->
+    <div id="esp-tab-cartera" class="esp-pane" style="display:none;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:12px;">
+        <div>
+          <div style="font-size:1.4em;font-weight:700;color:#fff;">💰 Cartera Maquila</div>
+          <div style="font-size:12px;color:#64748b;">Pedidos entregados con estado de pago · cruza con flujo_ingresos por número</div>
+        </div>
+        <button onclick="cargarCartera()" style="background:#0e7490;border:none;color:#fff;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;">↻ Refrescar</button>
+      </div>
+      <div class="grid grid-4" id="cart-kpis"></div>
+      <div class="section-title" style="margin-top:18px;">📊 Por cliente</div>
+      <div id="cart-por-cliente"><div class="empty">Cargando...</div></div>
+      <div class="section-title" style="margin-top:18px;">📋 Detalle por pedido</div>
+      <div id="cart-detalle"><div class="empty">Cargando...</div></div>
+    </div><!-- /tab cartera -->
+
+    <!-- MODAL PEDIDO RAPIDO -->
+    <div id="pr-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:1000;align-items:center;justify-content:center;padding:20px;">
+      <div style="background:#1e293b;border:1px solid #475569;border-radius:14px;padding:24px;width:560px;max-width:95vw;max-height:90vh;overflow-y:auto;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+          <h2 style="margin:0;font-size:1.2em;color:#fff;">📦 Nuevo pedido maquila</h2>
+          <button onclick="cerrarPedidoRapido()" style="background:none;border:none;color:#94a3b8;font-size:24px;cursor:pointer;">&times;</button>
+        </div>
+        <div style="margin-bottom:14px;">
+          <label style="display:block;font-size:11px;color:#94a3b8;text-transform:uppercase;margin-bottom:6px;">Cliente *</label>
+          <select id="pr-cliente" style="width:100%;background:#0f172a;border:1px solid #334155;color:#e2e8f0;padding:10px;border-radius:6px;font-size:14px;">
+            <option value="">— Seleccionar cliente —</option>
+          </select>
+        </div>
+        <div style="margin-bottom:14px;">
+          <label style="display:block;font-size:11px;color:#94a3b8;text-transform:uppercase;margin-bottom:6px;">Producto *</label>
+          <input id="pr-producto" type="text" placeholder="Ej: Hydra Balance 30ml" style="width:100%;background:#0f172a;border:1px solid #334155;color:#e2e8f0;padding:10px;border-radius:6px;font-size:14px;">
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;">
+          <div>
+            <label style="display:block;font-size:11px;color:#94a3b8;text-transform:uppercase;margin-bottom:6px;">Unidades *</label>
+            <input id="pr-uds" type="number" min="1" placeholder="0" style="width:100%;background:#0f172a;border:1px solid #334155;color:#e2e8f0;padding:10px;border-radius:6px;font-size:14px;">
+          </div>
+          <div>
+            <label style="display:block;font-size:11px;color:#94a3b8;text-transform:uppercase;margin-bottom:6px;">Precio unidad (COP)</label>
+            <input id="pr-precio" type="number" min="0" placeholder="0" style="width:100%;background:#0f172a;border:1px solid #334155;color:#e2e8f0;padding:10px;border-radius:6px;font-size:14px;">
+          </div>
+        </div>
+        <div style="margin-bottom:14px;">
+          <label style="display:block;font-size:11px;color:#94a3b8;text-transform:uppercase;margin-bottom:6px;">Fecha entrega objetivo</label>
+          <input id="pr-fecha" type="date" style="width:100%;background:#0f172a;border:1px solid #334155;color:#e2e8f0;padding:10px;border-radius:6px;font-size:14px;">
+        </div>
+        <div style="margin-bottom:14px;">
+          <label style="display:block;font-size:11px;color:#94a3b8;text-transform:uppercase;margin-bottom:6px;">Observaciones</label>
+          <textarea id="pr-obs" placeholder="Detalles adicionales..." style="width:100%;background:#0f172a;border:1px solid #334155;color:#e2e8f0;padding:10px;border-radius:6px;font-size:14px;min-height:60px;"></textarea>
+        </div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;">
+          <button onclick="cerrarPedidoRapido()" style="background:none;border:1px solid #334155;color:#94a3b8;padding:10px 16px;border-radius:6px;font-size:13px;cursor:pointer;">Cancelar</button>
+          <button onclick="guardarPedidoRapido()" style="background:#10b981;border:none;color:#fff;padding:10px 18px;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer;">Crear pedido</button>
+        </div>
+      </div>
+    </div>
   </div>
 
 <script>
 function fmtNum(n) { return (n||0).toLocaleString('es-CO'); }
 function _esc(s) { return String(s||'').replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c])); }
+
+// CSRF defense-in-depth
+function _csrf() {
+  var m = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/);
+  return m ? decodeURIComponent(m[1]) : '';
+}
+function _fetchOpts(method, body) {
+  var headers = {};
+  var tok = _csrf();
+  if (tok) headers['X-CSRF-Token'] = tok;
+  var opts = {method: method || 'GET', headers: headers, credentials: 'same-origin'};
+  if (body !== undefined && body !== null) {
+    headers['Content-Type'] = 'application/json';
+    opts.body = (typeof body === 'string') ? body : JSON.stringify(body);
+  }
+  return opts;
+}
+fetch('/api/csrf-token', {credentials: 'same-origin'}).catch(function(){});
 
 async function cargar() {
   // Dashboard KPIs
@@ -589,7 +682,174 @@ function cerrarCliModal() {
 document.addEventListener('click', function(ev){
   var m = document.getElementById('cli-modal');
   if (m && ev.target === m) cerrarCliModal();
+  var pr = document.getElementById('pr-modal');
+  if (pr && ev.target === pr) cerrarPedidoRapido();
 });
+
+// ════════════════════════════════════════════════════════════════
+// QUICK ACTIONS HOME
+// ════════════════════════════════════════════════════════════════
+async function cargarQA() {
+  try {
+    var d = await fetch('/api/espagiria/quick-actions').then(function(r){return r.json();});
+    var c = document.getElementById('qa-content');
+    if (!d.secciones || !d.secciones.length) {
+      c.innerHTML = '<div class="card" style="text-align:center;padding:40px;border-left:4px solid #10b981;"><div style="font-size:3em;">✅</div><div style="font-size:1.2em;color:#34d399;font-weight:700;margin-top:12px;">Todo bajo control</div><div style="color:#94a3b8;margin-top:6px;">Sin acciones urgentes pendientes hoy</div></div>';
+      return;
+    }
+    var html = '<div style="background:#7f1d1d;color:#fca5a5;padding:14px 18px;border-radius:8px;margin-bottom:16px;font-weight:700;">' +
+               '⚠ ' + d.total_urgentes + ' acciones requieren tu atención</div>';
+    d.secciones.forEach(function(s){
+      var col = s.severidad === 'alta' ? '#dc2626' : '#f59e0b';
+      var bgc = s.severidad === 'alta' ? '#3f0f0f' : '#1e1b3b';
+      html += '<div class="card" style="border-left:4px solid ' + col + ';background:' + bgc + 'aa;margin-bottom:14px;">' +
+              '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;margin-bottom:10px;">' +
+                '<div><div style="font-size:1.05em;font-weight:700;color:#fff;">' + _esc(s.titulo) + '</div>' +
+                '<div style="font-size:11px;color:#94a3b8;margin-top:3px;">→ ' + _esc(s.accion) + '</div></div>' +
+                '<a href="' + _esc(s.link) + '" style="background:rgba(255,255,255,0.1);color:#fff;padding:6px 12px;border-radius:6px;text-decoration:none;font-size:11px;font-weight:700;">Ir &rarr;</a>' +
+              '</div>';
+      // Mini lista
+      if (s.items && s.items.length) {
+        html += '<div style="font-size:12px;color:#cbd5e1;border-top:1px solid #334155;padding-top:8px;">';
+        s.items.slice(0, 5).forEach(function(it){
+          var label = it.numero || it.codigo || it.titulo || it.lote || it.material_nombre || it.cliente_nombre || '?';
+          var sub = it.cliente_nombre || it.producto_nombre || it.area || it.parametro || it.dias_vencido || it.dias || '';
+          html += '<div style="padding:4px 0;border-bottom:1px solid #334155;">' +
+                  '<b>' + _esc(label) + '</b>' +
+                  (sub ? ' <span style="color:#94a3b8;">· ' + _esc(String(sub).substring(0,80)) + '</span>' : '') +
+                  '</div>';
+        });
+        if (s.items.length > 5) html += '<div style="padding:4px 0;color:#94a3b8;font-style:italic;">y ' + (s.items.length - 5) + ' más...</div>';
+        html += '</div>';
+      }
+      html += '</div>';
+    });
+    c.innerHTML = html;
+  } catch(e) {
+    document.getElementById('qa-content').innerHTML = '<div class="empty">Error: ' + e.message + '</div>';
+  }
+}
+
+// ════════════════════════════════════════════════════════════════
+// PEDIDO MAQUILA RAPIDO
+// ════════════════════════════════════════════════════════════════
+async function abrirPedidoRapido() {
+  // Cargar lista de clientes en el select
+  try {
+    var d = await fetch('/api/espagiria/clientes-maquila').then(function(r){return r.json();});
+    var sel = document.getElementById('pr-cliente');
+    var opts = '<option value="">— Seleccionar cliente —</option>';
+    (d.clientes||[]).forEach(function(c){
+      opts += '<option value="' + c.id + '">' + _esc(c.nombre) + '</option>';
+    });
+    sel.innerHTML = opts;
+  } catch(e) { console.error(e); }
+  // Reset campos
+  document.getElementById('pr-producto').value = '';
+  document.getElementById('pr-uds').value = '';
+  document.getElementById('pr-precio').value = '';
+  document.getElementById('pr-fecha').value = '';
+  document.getElementById('pr-obs').value = '';
+  document.getElementById('pr-modal').style.display = 'flex';
+}
+function cerrarPedidoRapido() {
+  document.getElementById('pr-modal').style.display = 'none';
+}
+async function guardarPedidoRapido() {
+  var cliente_id = parseInt(document.getElementById('pr-cliente').value, 10);
+  var producto = (document.getElementById('pr-producto').value || '').trim();
+  var unidades = parseInt(document.getElementById('pr-uds').value, 10);
+  var precio = parseFloat(document.getElementById('pr-precio').value);
+  var fecha = document.getElementById('pr-fecha').value || null;
+  var obs = document.getElementById('pr-obs').value || '';
+  if (!cliente_id) { alert('Selecciona un cliente'); return; }
+  if (!producto) { alert('Producto obligatorio'); return; }
+  if (isNaN(unidades) || unidades <= 0) { alert('Unidades debe ser > 0'); return; }
+  var payload = {
+    cliente_id: cliente_id,
+    producto_nombre: producto,
+    unidades: unidades,
+    fecha_entrega_objetivo: fecha,
+    observaciones: obs,
+  };
+  if (!isNaN(precio) && precio >= 0) payload.precio_unidad = precio;
+  try {
+    var r = await fetch('/api/espagiria/pedido-rapido', _fetchOpts('POST', payload));
+    var d = await r.json();
+    if (r.ok && d.ok) {
+      alert('✅ Pedido ' + d.numero + ' creado para ' + d.cliente);
+      cerrarPedidoRapido();
+      cargarQA();  // refrescar por si pasa de "sin asignar" a "necesita produccion"
+    } else {
+      alert('Error: ' + (d.error || 'No se pudo crear'));
+    }
+  } catch(e) { alert('Error red: ' + e.message); }
+}
+
+// ════════════════════════════════════════════════════════════════
+// CARTERA MAQUILA
+// ════════════════════════════════════════════════════════════════
+async function cargarCartera() {
+  try {
+    var d = await fetch('/api/espagiria/cartera-maquila').then(function(r){return r.json();});
+    var k = d.kpis || {};
+    document.getElementById('cart-kpis').innerHTML =
+      '<div class="card"><h3>📋 Pedidos entregados</h3><div class="val">' + (k.total_pedidos||0) + '</div></div>' +
+      '<div class="card"><h3>💵 Total facturado</h3><div class="val" style="color:#fff;">$' + fmtNum(Math.round(k.total_facturado||0)) + '</div></div>' +
+      '<div class="card"><h3>✅ Pagado</h3><div class="val" style="color:#34d399;">$' + fmtNum(Math.round(k.total_pagado||0)) + '</div></div>' +
+      '<div class="card"><h3>🚨 Vencido +30d</h3><div class="val" style="color:#fca5a5;">$' + fmtNum(Math.round(k.total_vencido_30d||0)) + '</div></div>';
+    // Por cliente
+    var pcDiv = document.getElementById('cart-por-cliente');
+    if (!d.por_cliente || !d.por_cliente.length) {
+      pcDiv.innerHTML = '<div class="empty">Sin pedidos entregados</div>';
+    } else {
+      pcDiv.innerHTML = '<table><thead><tr><th>Cliente</th><th style="text-align:right;">Pedidos</th><th style="text-align:right;">Facturado</th><th style="text-align:right;">Pagado</th><th style="text-align:right;">Saldo</th><th style="text-align:right;">Vencido +30d</th></tr></thead><tbody>' +
+        d.por_cliente.map(function(c){
+          var col = c.vencido_30d > 0 ? '#fca5a5' : (c.saldo > 0 ? '#fbbf24' : '#34d399');
+          return '<tr><td><b>' + _esc(c.cliente) + '</b></td>' +
+            '<td style="text-align:right;">' + c.pedidos + '</td>' +
+            '<td style="text-align:right;">$' + fmtNum(Math.round(c.facturado||0)) + '</td>' +
+            '<td style="text-align:right;color:#34d399;">$' + fmtNum(Math.round(c.pagado||0)) + '</td>' +
+            '<td style="text-align:right;color:' + col + ';font-weight:700;">$' + fmtNum(Math.round(c.saldo||0)) + '</td>' +
+            '<td style="text-align:right;color:#fca5a5;font-weight:700;">$' + fmtNum(Math.round(c.vencido_30d||0)) + '</td></tr>';
+        }).join('') + '</tbody></table>';
+    }
+    // Detalle
+    var dtDiv = document.getElementById('cart-detalle');
+    if (!d.pedidos || !d.pedidos.length) {
+      dtDiv.innerHTML = '<div class="empty">Sin pedidos en cartera</div>';
+    } else {
+      dtDiv.innerHTML = '<table><thead><tr><th>Pedido</th><th>Cliente</th><th>Producto</th><th style="text-align:right;">Valor</th><th style="text-align:right;">Pagado</th><th style="text-align:right;">Saldo</th><th>Estado</th><th>Días</th></tr></thead><tbody>' +
+        d.pedidos.map(function(p){
+          var ec = p.estado_pago === 'pagado' ? 'baja' :
+                   p.estado_pago === 'parcial' ? 'media' :
+                   p.estado_pago === 'vencido_mayor_30d' ? 'alta' :
+                   p.estado_pago === 'vencido_15d' ? 'media' : 'estado-asig';
+          return '<tr><td><b>' + _esc(p.numero||'') + '</b></td>' +
+            '<td>' + _esc(p.cliente_nombre||'') + '</td>' +
+            '<td style="font-size:11px;">' + _esc((p.producto_nombre||'').substring(0,40)) + '</td>' +
+            '<td style="text-align:right;">$' + fmtNum(Math.round(p.valor_total||0)) + '</td>' +
+            '<td style="text-align:right;color:#34d399;">$' + fmtNum(Math.round(p.pagado||0)) + '</td>' +
+            '<td style="text-align:right;font-weight:700;">$' + fmtNum(Math.round(p.saldo||0)) + '</td>' +
+            '<td><span class="badge ' + ec + '">' + _esc(p.estado_pago||'') + '</span></td>' +
+            '<td>' + (p.dias_desde_pedido||0) + 'd</td></tr>';
+        }).join('') + '</tbody></table>';
+    }
+  } catch(e) {
+    document.getElementById('cart-detalle').innerHTML = '<div class="empty">Error: ' + e.message + '</div>';
+  }
+}
+
+// Hook tab switcher para cargar al entrar
+var _origEsw = esw;
+esw = function(name) {
+  _origEsw(name);
+  if (name === 'inicio') cargarQA();
+  if (name === 'cartera') cargarCartera();
+};
+
+// Cargar quick actions al entrar a la página (tab inicio es default)
+cargarQA();
 </script>
 </body>
 </html>

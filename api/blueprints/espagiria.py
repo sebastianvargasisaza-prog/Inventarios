@@ -370,6 +370,405 @@ def resumen_pre_comite():
 
 
 # ════════════════════════════════════════════════════════════════════════
+# QUICK ACTIONS · "Lo urgente del dia" para Luz (Sebastian 3-may-2026)
+# ════════════════════════════════════════════════════════════════════════
+
+@bp.route("/api/espagiria/quick-actions", methods=["GET"])
+def quick_actions():
+    """Agrupa lo que requiere accion HOY de Luz: pedidos por confirmar,
+    OOS sin asignar, lotes en cuarentena >7d, equipos vencidos, tareas
+    vencidas/hoy."""
+    u, err, code = _auth()
+    if err: return err, code
+    conn = get_db(); c = conn.cursor()
+    out = {"timestamp": datetime.now().isoformat(), "secciones": []}
+    total = 0
+
+    # 1) Pedidos maquila SIN produccion_id (necesitan planificacion)
+    try:
+        rows = c.execute("""
+            SELECT id, numero, cliente_nombre, producto_nombre, unidades,
+                   fecha_entrega_objetivo, estado
+              FROM maquila_pedidos
+             WHERE estado IN ('recibido','planificado')
+               AND (produccion_id IS NULL OR produccion_id = 0)
+             ORDER BY fecha_entrega_objetivo ASC NULLS LAST
+             LIMIT 10
+        """).fetchall()
+    except Exception:
+        try:
+            rows = c.execute("""
+                SELECT id, numero, cliente_nombre, producto_nombre, unidades,
+                       fecha_entrega_objetivo, estado
+                  FROM maquila_pedidos
+                 WHERE estado IN ('recibido','planificado')
+                   AND (produccion_id IS NULL OR produccion_id = 0)
+                 ORDER BY fecha_entrega_objetivo ASC
+                 LIMIT 10
+            """).fetchall()
+        except Exception:
+            rows = []
+    items = _fmt_many(rows)
+    if items:
+        out["secciones"].append({
+            "id": "pedidos_sin_produccion",
+            "titulo": f"📦 {len(items)} pedidos sin producción asignada",
+            "severidad": "alta",
+            "accion": "Asignar producción · planta los necesita",
+            "link": "/maquila",
+            "items": items,
+        })
+        total += len(items)
+
+    # 2) OOS abiertos sin investigador
+    try:
+        rows = c.execute("""
+            SELECT id, codigo, lote, producto, parametro, fecha_deteccion, estado
+              FROM oos
+             WHERE estado IN ('abierto','en_investigacion')
+             ORDER BY fecha_deteccion DESC LIMIT 10
+        """).fetchall()
+        items = _fmt_many(rows)
+        if items:
+            out["secciones"].append({
+                "id": "oos_abiertos",
+                "titulo": f"⚠️ {len(items)} OOS abiertos",
+                "severidad": "alta",
+                "accion": "Revisar y escalar a calidad · CTRL.PRO-006",
+                "link": "/calidad",
+                "items": items,
+            })
+            total += len(items)
+    except Exception:
+        pass
+
+    # 3) Lotes en cuarentena >7d (urgente liberar)
+    try:
+        rows = c.execute("""
+            SELECT material_id, material_nombre, lote, cantidad, fecha,
+                   julianday('now') - julianday(fecha) as dias
+              FROM movimientos
+             WHERE estado_calidad = 'Cuarentena' AND tipo = 'Entrada'
+               AND date(fecha) <= date('now', '-7 day')
+             ORDER BY fecha ASC LIMIT 10
+        """).fetchall()
+        items = _fmt_many(rows)
+        if items:
+            out["secciones"].append({
+                "id": "cuarentena_vieja",
+                "titulo": f"🟡 {len(items)} lotes en cuarentena hace >7 días",
+                "severidad": "media",
+                "accion": "Pedir liberación a calidad",
+                "link": "/calidad",
+                "items": items,
+            })
+            total += len(items)
+    except Exception:
+        pass
+
+    # 4) Equipos calibracion vencida
+    try:
+        rows = c.execute("""
+            SELECT ep.codigo, ep.nombre, ep.area_codigo,
+                   MAX(ee.fecha_proxima) as fecha_proxima,
+                   julianday('now') - julianday(MAX(ee.fecha_proxima)) as dias_vencido
+              FROM equipos_planta ep
+              LEFT JOIN equipos_eventos ee
+                ON ee.equipo_codigo = ep.codigo
+                AND ee.tipo_evento IN ('calibracion','verificacion_semestral')
+                AND ee.fecha_proxima IS NOT NULL
+             WHERE COALESCE(ep.activo,1) = 1
+             GROUP BY ep.codigo
+             HAVING fecha_proxima IS NOT NULL
+                AND date(fecha_proxima) < date('now')
+             ORDER BY fecha_proxima ASC
+             LIMIT 10
+        """).fetchall()
+        items = _fmt_many(rows)
+        if items:
+            out["secciones"].append({
+                "id": "equipos_vencidos",
+                "titulo": f"🔧 {len(items)} equipos con calibración VENCIDA",
+                "severidad": "alta",
+                "accion": "Coordinar calibración o NO usar el equipo",
+                "link": "/calidad",
+                "items": items,
+            })
+            total += len(items)
+    except Exception:
+        pass
+
+    # 5) Tareas de Luz vencidas o de hoy
+    try:
+        rows = c.execute("""
+            SELECT t.id, t.titulo, t.fecha_compromiso, t.prioridad, t.area
+              FROM tareas_internas t
+              JOIN tareas_raci r ON r.tarea_id = t.id
+             WHERE r.usuario = ?
+               AND r.rol IN ('R','A')
+               AND t.estado NOT IN ('Hecha','Cancelada')
+               AND (t.fecha_compromiso <= date('now') OR
+                    t.prioridad = 'Alta')
+             ORDER BY t.fecha_compromiso ASC LIMIT 10
+        """, (u,)).fetchall()
+        items = _fmt_many(rows)
+        if items:
+            out["secciones"].append({
+                "id": "mis_tareas_urgentes",
+                "titulo": f"📋 {len(items)} tareas tuyas vencidas/urgentes",
+                "severidad": "alta",
+                "accion": "Resolver o reasignar",
+                "link": "/comunicacion",
+                "items": items,
+            })
+            total += len(items)
+    except Exception:
+        pass
+
+    # 6) Pedidos entregados sin pago registrado (cobros vencidos)
+    try:
+        rows = c.execute("""
+            SELECT mp.id, mp.numero, mp.cliente_nombre, mp.valor_total,
+                   mp.fecha_pedido,
+                   julianday('now') - julianday(mp.fecha_pedido) as dias
+              FROM maquila_pedidos mp
+             WHERE mp.estado = 'entregado'
+               AND COALESCE(mp.valor_total, 0) > 0
+               AND NOT EXISTS (
+                 SELECT 1 FROM flujo_ingresos fi
+                  WHERE fi.referencia = mp.numero
+               )
+               AND julianday('now') - julianday(mp.fecha_pedido) > 7
+             ORDER BY dias DESC LIMIT 10
+        """).fetchall()
+        items = _fmt_many(rows)
+        if items:
+            out["secciones"].append({
+                "id": "cobros_vencidos",
+                "titulo": f"💰 {len(items)} pedidos entregados sin pago confirmado",
+                "severidad": "media",
+                "accion": "Confirmar pago o llamar al cliente",
+                "link": "/espagiria#tab-cartera",
+                "items": items,
+            })
+            total += len(items)
+    except Exception:
+        pass
+
+    out["total_urgentes"] = total
+    return jsonify(out)
+
+
+# ════════════════════════════════════════════════════════════════════════
+# CREAR PEDIDO MAQUILA RAPIDO (Sebastian 3-may-2026)
+# ════════════════════════════════════════════════════════════════════════
+
+@bp.route("/api/espagiria/pedido-rapido", methods=["POST"])
+def pedido_rapido():
+    """Crea un pedido maquila rapido desde el panel de Luz.
+
+    Body: {cliente_id, producto_nombre, unidades, fecha_entrega_objetivo,
+           presentacion_id?, precio_unidad?, observaciones?}
+
+    Genera numero MQ-NNNN automatico, valida, audita, notifica.
+    """
+    u, err, code = _auth()
+    if err: return err, code
+    from audit_helpers import audit_log
+    d = request.get_json() or {}
+    try:
+        cliente_id = int(d.get("cliente_id"))
+    except (TypeError, ValueError):
+        return jsonify({"error": "cliente_id requerido"}), 400
+    producto = (d.get("producto_nombre") or "").strip()
+    if not producto:
+        return jsonify({"error": "producto_nombre requerido"}), 400
+    try:
+        unidades = int(d.get("unidades") or 0)
+    except (TypeError, ValueError):
+        return jsonify({"error": "unidades debe ser entero"}), 400
+    if unidades <= 0:
+        return jsonify({"error": "unidades debe ser > 0"}), 400
+
+    conn = get_db(); c = conn.cursor()
+    cli = c.execute(
+        "SELECT nombre FROM clientes_maquila WHERE id=? AND activo=1",
+        (cliente_id,)).fetchone()
+    if not cli:
+        return jsonify({"error": "Cliente no existe o esta inactivo"}), 400
+
+    # Numero secuencial MQ-NNNN
+    n = c.execute(
+        "SELECT COALESCE(MAX(CAST(SUBSTR(numero,4) AS INTEGER)),0)+1 FROM maquila_pedidos WHERE numero LIKE 'MQ-%'"
+    ).fetchone()[0] or 1
+    numero = f'MQ-{n:04d}'
+
+    # Calcular kg si tenemos presentacion
+    kg_est = None
+    if d.get("presentacion_id"):
+        pr = c.execute(
+            "SELECT factor_g_por_unidad FROM producto_presentaciones WHERE id=?",
+            (d.get("presentacion_id"),)).fetchone()
+        if pr and pr[0]:
+            kg_est = (unidades * pr[0]) / 1000.0
+
+    precio_unidad = None
+    if d.get("precio_unidad") not in (None, ""):
+        try:
+            precio_unidad = float(d.get("precio_unidad"))
+            if precio_unidad < 0:
+                return jsonify({"error": "precio_unidad no puede ser negativo"}), 400
+        except (TypeError, ValueError):
+            return jsonify({"error": "precio_unidad invalido"}), 400
+    valor_total = (precio_unidad * unidades) if precio_unidad else None
+
+    try:
+        c.execute("""
+            INSERT INTO maquila_pedidos
+              (numero, cliente_id, cliente_nombre, producto_nombre,
+               presentacion_id, unidades, kg_estimados,
+               fecha_entrega_objetivo, precio_unidad, valor_total,
+               observaciones, creado_por)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            numero, cliente_id, cli[0], producto,
+            d.get("presentacion_id"),
+            unidades, kg_est,
+            (d.get("fecha_entrega_objetivo") or "").strip() or None,
+            precio_unidad, valor_total,
+            d.get("observaciones") or "",
+            u,
+        ))
+        new_id = c.lastrowid
+        audit_log(c, usuario=u, accion='CREAR_PEDIDO_MAQUILA_RAPIDO',
+                  tabla='maquila_pedidos', registro_id=new_id,
+                  despues={'numero': numero, 'cliente': cli[0], 'producto': producto[:80],
+                           'unidades': unidades, 'valor_total': valor_total},
+                  detalle=f"Pedido {numero} · {cli[0]} · {producto[:60]} · {unidades} uds" +
+                           (f" · ${valor_total:,.0f}" if valor_total else ""))
+        conn.commit()
+    except sqlite3.IntegrityError as e:
+        return jsonify({"error": str(e)[:200]}), 400
+
+    # Notif al equipo de produccion
+    try:
+        from blueprints.notif import push_notif_multi
+        push_notif_multi(
+            ['sebastian','alejandro','luis','luz'],
+            'maquila',
+            f'📦 Nuevo pedido maquila · {numero}',
+            body=f"{cli[0]} pidió {unidades} uds de {producto}" +
+                 (f"\nEntrega: {d.get('fecha_entrega_objetivo')}" if d.get('fecha_entrega_objetivo') else "") +
+                 f"\nRegistrado por {u}",
+            link=f'/maquila',
+            remitente=u,
+        )
+    except Exception:
+        pass
+
+    return jsonify({
+        "ok": True,
+        "id": new_id,
+        "numero": numero,
+        "cliente": cli[0],
+        "valor_total": valor_total,
+    }), 201
+
+
+# ════════════════════════════════════════════════════════════════════════
+# CARTERA MAQUILA · cobros vencidos (Sebastian 3-may-2026)
+# ════════════════════════════════════════════════════════════════════════
+
+@bp.route("/api/espagiria/cartera-maquila", methods=["GET"])
+def cartera_maquila():
+    """Pedidos entregados con/sin pago confirmado · cartera por cliente.
+
+    Cruza maquila_pedidos.estado='entregado' contra flujo_ingresos
+    (referencia=numero_pedido) para detectar cobros pendientes.
+    """
+    u, err, code = _auth()
+    if err: return err, code
+    conn = get_db(); c = conn.cursor()
+    # Pedidos entregados con valor
+    rows = c.execute("""
+        SELECT mp.id, mp.numero, mp.cliente_id, mp.cliente_nombre,
+               mp.producto_nombre, mp.unidades, mp.valor_total,
+               mp.fecha_pedido, mp.fecha_entrega_objetivo,
+               (SELECT MAX(actualizado_en) FROM maquila_pedidos
+                 WHERE id = mp.id) as fecha_estado_actual,
+               (SELECT COALESCE(SUM(monto),0) FROM flujo_ingresos
+                 WHERE referencia = mp.numero) as pagado,
+               julianday('now') - julianday(mp.fecha_pedido) as dias_desde_pedido
+          FROM maquila_pedidos mp
+         WHERE mp.estado = 'entregado'
+           AND COALESCE(mp.valor_total,0) > 0
+         ORDER BY mp.fecha_pedido DESC
+         LIMIT 200
+    """).fetchall()
+    items = []
+    total_facturado = 0
+    total_pagado = 0
+    total_vencido = 0
+    for r in rows:
+        d = dict(r)
+        valor = d.get('valor_total') or 0
+        pagado = d.get('pagado') or 0
+        saldo = valor - pagado
+        dias = int(d.get('dias_desde_pedido') or 0)
+        # Estado pago
+        if saldo <= 0.01:
+            estado_pago = 'pagado'
+        elif pagado > 0:
+            estado_pago = 'parcial'
+        elif dias > 30:
+            estado_pago = 'vencido_mayor_30d'
+        elif dias > 15:
+            estado_pago = 'vencido_15d'
+        elif dias > 7:
+            estado_pago = 'pendiente_>7d'
+        else:
+            estado_pago = 'pendiente_reciente'
+        d['saldo'] = saldo
+        d['estado_pago'] = estado_pago
+        d['dias_desde_pedido'] = dias
+        items.append(d)
+        total_facturado += valor
+        total_pagado += pagado
+        if saldo > 0.01 and dias > 30:
+            total_vencido += saldo
+
+    # KPIs por cliente
+    por_cliente = {}
+    for it in items:
+        cn = it.get('cliente_nombre') or '—'
+        if cn not in por_cliente:
+            por_cliente[cn] = {
+                'cliente': cn, 'pedidos': 0, 'facturado': 0,
+                'pagado': 0, 'saldo': 0, 'vencido_30d': 0,
+            }
+        por_cliente[cn]['pedidos'] += 1
+        por_cliente[cn]['facturado'] += it['valor_total'] or 0
+        por_cliente[cn]['pagado'] += it.get('pagado', 0) or 0
+        por_cliente[cn]['saldo'] += it.get('saldo', 0) or 0
+        if it['estado_pago'] == 'vencido_mayor_30d':
+            por_cliente[cn]['vencido_30d'] += it.get('saldo', 0) or 0
+    por_cliente_list = sorted(por_cliente.values(),
+                                key=lambda x: x['saldo'], reverse=True)
+
+    return jsonify({
+        "kpis": {
+            "total_facturado": total_facturado,
+            "total_pagado": total_pagado,
+            "total_saldo": total_facturado - total_pagado,
+            "total_vencido_30d": total_vencido,
+            "total_pedidos": len(items),
+        },
+        "por_cliente": por_cliente_list,
+        "pedidos": items,
+    })
+
+
+# ════════════════════════════════════════════════════════════════════════
 # CLIENTES MAQUILA 360 (Sebastian 3-may-2026 · pedido por Luz)
 # ════════════════════════════════════════════════════════════════════════
 # Luz necesita ver de cada cliente maquila el panorama completo:
