@@ -156,6 +156,7 @@ td input[type=number]{width:90px;padding:5px 8px;border:1px solid #d6d3d1;border
 <header>
   <nav>
     <button class="tab active" id="t-dash" onclick="goTo('dash',this)">&#128202; Dashboard</button>
+    <button class="tab" id="t-notif" onclick="goTo('notif',this)">&#128276; Reportes Empleados <span id="notif-badge" style="display:none;background:#dc2626;color:#fff;border-radius:10px;padding:1px 7px;font-size:10px;font-weight:700;margin-left:4px;"></span></button>
     <button class="tab" id="t-emp" onclick="goTo('emp',this)">&#128100; Empleados</button>
     <button class="tab" id="t-eventos" onclick="goTo('eventos',this)">&#129496; Eventos &amp; Reportes</button>
     <button class="tab" id="t-llamados" onclick="goTo('llamados',this)">&#128226; Llamados de atenci&oacute;n</button>
@@ -187,6 +188,31 @@ td input[type=number]{width:90px;padding:5px 8px;border:1px solid #d6d3d1;border
       <div class="card-hd" style="margin-top:16px;"><h2>&#128204; Por &aacute;rea</h2></div>
       <div id="dist-area"></div>
     </div>
+  </div>
+</div>
+
+<!-- ═══ REPORTES EMPLEADOS (notificaciones pendientes desde portal /reportar) ═══ -->
+<div id="notif" class="page">
+  <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:18px;">
+    <div>
+      <div style="font-size:1.4em;font-weight:700;color:#0f172a;">🔔 Reportes de empleados</div>
+      <div style="font-size:13px;color:#64748b;">Reportes desde el portal público <code>/reportar</code> · permisos, salud, citas médicas, incapacidades</div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <select id="notif-estado" onchange="cargarNotif()" style="padding:8px 12px;border:1.5px solid #e0ddd8;border-radius:7px;font-size:13px;">
+        <option value="pendiente">Pendientes</option>
+        <option value="">Todos los estados</option>
+        <option value="aprobada">Aprobadas</option>
+        <option value="rechazada">Rechazadas</option>
+        <option value="vista">Vistas</option>
+      </select>
+      <button onclick="cargarNotif()" style="background:#0e7490;border:none;color:#fff;padding:8px 14px;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer;">↻</button>
+    </div>
+  </div>
+  <div id="notif-content"><div class="empty">Cargando reportes...</div></div>
+  <div style="background:#f0f9ff;border-left:4px solid #0e7490;padding:14px 18px;border-radius:8px;margin-top:18px;font-size:13px;color:#0c4a6e;">
+    💡 <b>Comparte este link con los empleados:</b> <code style="background:#fff;padding:3px 8px;border-radius:4px;">eossuite.com/reportar</code> ·
+    funciona en celular sin login (validan con cédula).
   </div>
 </div>
 
@@ -606,6 +632,7 @@ function goTo(id, btn) {
   btn.classList.add('active');
   if (id==='dash') loadDashboard();
   else if (id==='emp') loadEmpleados();
+  else if (id==='notif') cargarNotif();
   else if (id==='aus') loadAusencias();
   else if (id==='cap') loadCapacitaciones();
   else if (id==='eva') loadEvaluaciones();
@@ -614,6 +641,104 @@ function goTo(id, btn) {
   else if (id==='llamados') cargarLlamadosAtencion();
   else if (id==='compromisos') cargarCompromisos();
 }
+
+// ════════════════════════════════════════════════════════════════
+// REPORTES EMPLEADOS (desde portal publico /reportar)
+// ════════════════════════════════════════════════════════════════
+function tipoIcon(t) {
+  return ({permiso:'🗓️', cita_medica:'🏥', salud:'💊', enfermedad:'🤒', licencia:'📄', otro:'📝'})[t] || '📋';
+}
+function tipoColor(t) {
+  return ({permiso:'#3b82f6', cita_medica:'#8b5cf6', salud:'#ec4899', enfermedad:'#dc2626', licencia:'#0e7490', otro:'#64748b'})[t] || '#64748b';
+}
+async function cargarNotifBadge() {
+  try {
+    var r = await fetch('/api/bienestar/notificaciones?estado=pendiente');
+    var d = await r.json();
+    var n = (d.notificaciones || []).length;
+    var b = document.getElementById('notif-badge');
+    if (n > 0) { b.textContent = n; b.style.display = 'inline-block'; }
+    else b.style.display = 'none';
+  } catch(e){}
+}
+async function cargarNotif() {
+  var estado = document.getElementById('notif-estado').value;
+  var url = '/api/bienestar/notificaciones' + (estado ? '?estado=' + estado : '');
+  try {
+    var r = await fetch(url);
+    var d = await r.json();
+    var c = document.getElementById('notif-content');
+    var lista = d.notificaciones || [];
+    if (!lista.length) {
+      c.innerHTML = '<div class="empty">Sin reportes ' + (estado ? 'con estado "' + estado + '"' : '') + '</div>';
+      cargarNotifBadge();
+      return;
+    }
+    c.innerHTML = lista.map(function(n){
+      var col = tipoColor(n.tipo);
+      var fechas = '';
+      if (n.fecha_inicio || n.fecha_fin) {
+        fechas = '<div style="font-size:11px;color:#64748b;margin-top:4px;">' +
+          (n.fecha_inicio ? '<b>Desde:</b> ' + n.fecha_inicio + ' ' : '') +
+          (n.fecha_fin ? '<b>Hasta:</b> ' + n.fecha_fin : '') + '</div>';
+      }
+      var adj = n.adjunto_url ? '<a href="' + n.adjunto_url + '" target="_blank" style="display:inline-block;margin-top:6px;color:#0e7490;font-size:12px;">📎 Ver evidencia</a>' : '';
+      var btns = '';
+      if (n.estado === 'pendiente') {
+        btns = '<div style="margin-top:10px;display:flex;gap:6px;">' +
+          '<button onclick="resolverNotif(' + n.id + ',\'aprobada\')" style="background:#10b981;color:#fff;border:none;padding:6px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;">✓ Aprobar</button>' +
+          '<button onclick="resolverNotif(' + n.id + ',\'rechazada\')" style="background:#dc2626;color:#fff;border:none;padding:6px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;">✗ Rechazar</button>' +
+          '<button onclick="resolverNotif(' + n.id + ',\'vista\')" style="background:#64748b;color:#fff;border:none;padding:6px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;">👁 Marcar vista</button>' +
+          '</div>';
+      }
+      var estadoCol = ({pendiente:'#f59e0b', aprobada:'#10b981', rechazada:'#dc2626', vista:'#64748b'})[n.estado] || '#64748b';
+      return '<div style="background:#fff;border:1.5px solid #e2e8f0;border-left:5px solid ' + col + ';border-radius:10px;padding:16px 18px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,.04);">' +
+        '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;">' +
+          '<div>' +
+            '<div style="font-weight:700;font-size:15px;color:#0f172a;">' + tipoIcon(n.tipo) + ' ' + (n.asunto||'') + '</div>' +
+            '<div style="font-size:12px;color:#475569;margin-top:3px;"><b>' + (n.empleado_nombre||n.empleado_username) + '</b> · ' +
+              '<span style="background:' + col + '22;color:' + col + ';padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;">' + n.tipo + '</span></div>' +
+            fechas +
+            (n.descripcion ? '<div style="font-size:13px;color:#334155;margin-top:8px;background:#f8fafc;padding:10px 12px;border-radius:6px;">' + n.descripcion + '</div>' : '') +
+            adj +
+          '</div>' +
+          '<div style="text-align:right;">' +
+            '<span style="background:' + estadoCol + ';color:#fff;padding:4px 10px;border-radius:6px;font-size:11px;font-weight:700;text-transform:uppercase;">' + n.estado + '</span>' +
+            '<div style="font-size:10px;color:#94a3b8;margin-top:6px;">' + (n.creado_en||'').substring(0,16) + '</div>' +
+          '</div>' +
+        '</div>' +
+        btns +
+        (n.comentario_jefe ? '<div style="margin-top:8px;padding:8px 12px;background:#fef9c3;border-radius:6px;font-size:12px;color:#713f12;"><b>Resp. RH:</b> ' + n.comentario_jefe + '</div>' : '') +
+        '</div>';
+    }).join('');
+    cargarNotifBadge();
+  } catch(e) {
+    document.getElementById('notif-content').innerHTML = '<div class="empty">Error: ' + e.message + '</div>';
+  }
+}
+async function resolverNotif(id, estado) {
+  var comentario = '';
+  if (estado === 'rechazada') {
+    comentario = prompt('Motivo del rechazo (opcional):') || '';
+  } else if (estado === 'aprobada') {
+    comentario = prompt('Comentario para el empleado (opcional):') || '';
+  }
+  try {
+    var headers = {'Content-Type': 'application/json'};
+    var m = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/);
+    if (m) headers['X-CSRF-Token'] = decodeURIComponent(m[1]);
+    var r = await fetch('/api/bienestar/notificaciones/' + id + '/resolver', {
+      method: 'POST', headers: headers, credentials: 'same-origin',
+      body: JSON.stringify({estado: estado, comentario_jefe: comentario}),
+    });
+    var d = await r.json();
+    if (d.ok) cargarNotif();
+    else alert('Error: ' + (d.error || '?'));
+  } catch(e) { alert('Error red: ' + e.message); }
+}
+// Auto-cargar badge al entrar a /rrhh
+cargarNotifBadge();
+setInterval(cargarNotifBadge, 60000);  // refresh badge cada 1 min
 
 // ═══ EVENTOS / REPORTES ═════════════════════════════════════════════
 async function cargarEventosRH(){

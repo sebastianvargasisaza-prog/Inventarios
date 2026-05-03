@@ -1,5 +1,9 @@
 """Blueprint Bienestar — notificaciones de empleados + capacitaciones.
 
+Sebastian 3-may-2026: agregado portal PUBLICO `/reportar` para que
+empleados sin login completo puedan reportar permisos / salud /
+incapacidad / cita medica desde el celular validando cedula.
+
 Sebastian (30-abr-2026): "falta modulo de notificaciones donde los empleados
 notifiquen estado de salud, soliciten permisos, citas, enfermedades... y modulo
 de educacion: jefe asigna videos, operario ve, hace autoexamen Claude, da
@@ -663,3 +667,125 @@ def _calificar_fallback(preguntas, respuestas):
         'feedback': feedback,
         'resumen': 'Calificación offline (Claude no disponible). Revisión manual recomendada.',
     }, nota_global
+
+
+# ════════════════════════════════════════════════════════════════════════
+# PORTAL PUBLICO (Sebastian 3-may-2026)
+# ════════════════════════════════════════════════════════════════════════
+# Empleados sin login pueden reportar permisos/salud/incapacidad/cita
+# validando su cedula. Auto-aparece en /rrhh para Gloria/Sebastian.
+
+# Rate limit en memoria · max N reportes por cedula+IP por hora
+_PUBLIC_REPORT_LIMITS = {}
+
+def _publico_rate_limit_check(cedula, ip, max_per_hour=5):
+    """Anti-spam · max 5 reportes por (cedula, IP) por hora."""
+    import time as _time
+    now = _time.time()
+    key = f"{cedula}|{ip}"
+    history = _PUBLIC_REPORT_LIMITS.get(key, [])
+    # Limpiar > 1h
+    history = [t for t in history if now - t < 3600]
+    if len(history) >= max_per_hour:
+        return False
+    history.append(now)
+    _PUBLIC_REPORT_LIMITS[key] = history
+    return True
+
+
+@bp.route('/reportar', methods=['GET'])
+def portal_publico_reportar():
+    """Pagina publica para que empleados reporten desde el celular.
+    Sin login · valida cedula contra tabla empleados."""
+    from templates_py.reportar_publico_html import HTML
+    return Response(HTML, mimetype='text/html; charset=utf-8')
+
+
+@bp.route('/api/publico/empleado-reporte', methods=['POST'])
+def publico_empleado_reporte():
+    """Crear notificacion de empleado SIN sesion · validar cedula."""
+    d = request.get_json(force=True, silent=True) or {}
+    cedula = (d.get('cedula') or '').strip()
+    if not cedula or not cedula.isdigit() or len(cedula) < 5 or len(cedula) > 20:
+        return jsonify({'error': 'Cédula inválida'}), 400
+    tipo = (d.get('tipo') or '').strip().lower()
+    if tipo not in ('salud', 'permiso', 'cita_medica', 'enfermedad', 'licencia', 'otro'):
+        return jsonify({'error': 'Tipo inválido'}), 400
+    asunto = (d.get('asunto') or '').strip()
+    if not asunto or len(asunto) < 5:
+        return jsonify({'error': 'Asunto debe tener al menos 5 caracteres'}), 400
+    if len(asunto) > 200:
+        return jsonify({'error': 'Asunto muy largo (max 200)'}), 400
+    descripcion = (d.get('descripcion') or '').strip() or None
+    if descripcion and len(descripcion) > 2000:
+        return jsonify({'error': 'Descripción muy larga (max 2000)'}), 400
+
+    # Validar cedula contra empleados
+    conn = get_db(); c = conn.cursor()
+    emp = c.execute(
+        "SELECT id, codigo, nombre, apellido, cargo, area, estado FROM empleados WHERE cedula=?",
+        (cedula,)).fetchone()
+    if not emp:
+        return jsonify({'error': 'Cédula no encontrada en empleados activos. Contacta a RH.'}), 404
+    if emp['estado'] != 'Activo':
+        return jsonify({'error': f'Empleado en estado {emp["estado"]}. Contacta a RH.'}), 403
+
+    # Rate limit
+    from flask import request as _req
+    ip = (_req.headers.get('X-Forwarded-For', '') or _req.remote_addr or 'unknown').split(',')[0].strip()
+    if not _publico_rate_limit_check(cedula, ip):
+        return jsonify({'error': 'Demasiados reportes (max 5/hora). Si es urgente llama a RH.'}), 429
+
+    nombre_completo = f"{emp['nombre']} {emp['apellido']}".strip()
+    fecha_inicio = (d.get('fecha_inicio') or '').strip() or None
+    fecha_fin = (d.get('fecha_fin') or '').strip() or None
+    adjunto_url = (d.get('adjunto_url') or '').strip() or None
+    if adjunto_url and not adjunto_url.startswith(('http://', 'https://')):
+        return jsonify({'error': 'adjunto_url debe ser http:// o https://'}), 400
+
+    # Username del empleado para el campo (codigo si no tiene username de sistema)
+    username = (emp['codigo'] or 'EMP-' + cedula).lower()
+
+    c.execute("""INSERT INTO notificaciones_empleados
+        (empleado_username, empleado_nombre, tipo, asunto, descripcion,
+         fecha_inicio, fecha_fin, adjunto_url, notificado_a, estado)
+        VALUES (?,?,?,?,?,?,?,?,?,'pendiente')""",
+        (username, nombre_completo, tipo, asunto, descripcion,
+         fecha_inicio, fecha_fin, adjunto_url, 'gloria,sebastian,mayra'))
+    nid = c.lastrowid
+
+    # Audit
+    try:
+        from audit_helpers import audit_log as _al
+        _al(c, usuario=username, accion='REPORTE_PUBLICO_EMPLEADO',
+            tabla='notificaciones_empleados', registro_id=nid,
+            despues={'tipo': tipo, 'asunto': asunto[:100], 'cedula': cedula[:6] + '***'},
+            detalle=f"Reporte publico · {nombre_completo} · {tipo} · {asunto[:80]} · IP={ip}")
+    except Exception:
+        pass
+    conn.commit()
+
+    # Notif in-app a RH + admins
+    try:
+        from blueprints.notif import push_notif_multi
+        push_notif_multi(
+            ['gloria', 'sebastian', 'mayra'],
+            'rrhh',
+            f'🆕 Reporte empleado · {tipo}: {asunto[:60]}',
+            body=f"{nombre_completo} ({emp['cargo'] or '—'}, {emp['area'] or '—'})\n" +
+                 f"Tipo: {tipo}\n" +
+                 (f"Desde: {fecha_inicio}\n" if fecha_inicio else "") +
+                 (f"Hasta: {fecha_fin}\n" if fecha_fin else "") +
+                 (f"\n{descripcion[:200]}" if descripcion else ""),
+            link='/rrhh#tab-notificaciones',
+            remitente='portal-publico',
+            importante=(tipo in ('salud', 'enfermedad', 'cita_medica')),
+        )
+    except Exception:
+        pass
+
+    return jsonify({
+        'ok': True,
+        'id': nid,
+        'mensaje': f'✓ Reporte enviado, {emp["nombre"]}. RH lo recibirá en minutos.',
+    }), 201

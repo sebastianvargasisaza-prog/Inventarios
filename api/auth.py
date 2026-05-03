@@ -203,7 +203,8 @@ def register_hooks(app):
         """
         if not request.path.startswith('/api/'):
             return  # Rutas HTML se manejan individualmente
-        PUBLIC_API = {'/api/login', '/api/logout', '/api/health'}
+        PUBLIC_API = {'/api/login', '/api/logout', '/api/health',
+                      '/api/publico/empleado-reporte'}
         if request.path in PUBLIC_API:
             return
         if not session.get('compras_user'):
@@ -219,6 +220,7 @@ def register_hooks(app):
     CSRF_EXEMPT_PATHS = {
         '/api/health',         # health check público
         '/api/csrf-token',     # endpoint que entrega el token
+        '/api/publico/empleado-reporte',  # portal /reportar mobile · valida cedula + rate limit
     }
     UNSAFE_METHODS = {'POST', 'PUT', 'DELETE', 'PATCH'}
 
