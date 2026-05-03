@@ -1804,6 +1804,120 @@ def animus_inv_fisico_conteo_historial():
     })
 
 
+@bp.route("/api/animus/inv-fisico/diagnostico", methods=["GET"])
+def animus_inv_fisico_diagnostico():
+    """Dashboard de discrepancias y deteccion de patrones.
+
+    Devuelve:
+      - kpis: discrepancia_total_30d, skus_con_dif, faltantes, sobrantes
+      - top_problematicos: SKUs con mas diferencias acumuladas
+      - patrones_detectados: lista de alertas tipo
+        · "SKU X siempre desfasa negativo · revisar mapeo Shopify"
+        · "SKU Y desfasa positivo siempre · entradas no anotadas"
+        · "Patron general: faltantes >> sobrantes · posible robo/dano"
+      - sin_baseline: SKUs vendidos en Shopify sin baseline registrado
+    """
+    u, err, code = _auth()
+    if err: return err, code
+    conn = _db(); c = conn.cursor()
+
+    # KPIs 30d
+    kpis_row = c.execute("""SELECT
+          COUNT(*) as total_conteos,
+          COALESCE(SUM(CASE WHEN diferencia != 0 THEN 1 ELSE 0 END),0) as con_dif,
+          COALESCE(SUM(CASE WHEN diferencia < 0 THEN -diferencia ELSE 0 END),0) as faltantes,
+          COALESCE(SUM(CASE WHEN diferencia > 0 THEN diferencia ELSE 0 END),0) as sobrantes
+        FROM animus_conteos_asignados
+        WHERE estado = 'contado' AND contado_en >= date('now','-30 day')
+    """).fetchone()
+    kpis = dict(kpis_row) if kpis_row else {
+        'total_conteos': 0, 'con_dif': 0, 'faltantes': 0, 'sobrantes': 0
+    }
+
+    # Top SKUs problemáticos (mas diferencia acumulada absoluta)
+    top_rows = c.execute("""
+        SELECT sku,
+               COUNT(*) as veces_contado,
+               COALESCE(SUM(CASE WHEN diferencia != 0 THEN 1 ELSE 0 END),0) as veces_con_dif,
+               COALESCE(SUM(diferencia),0) as suma_dif,
+               COALESCE(SUM(CASE WHEN diferencia<0 THEN -diferencia ELSE diferencia END),0) as abs_dif
+          FROM animus_conteos_asignados
+         WHERE estado = 'contado' AND contado_en >= date('now','-90 day')
+         GROUP BY sku
+         HAVING abs_dif > 0
+         ORDER BY abs_dif DESC
+         LIMIT 10
+    """).fetchall()
+    top_problematicos = [dict(r) for r in top_rows]
+
+    # Detección de patrones
+    patrones = []
+    for row in top_rows:
+        sku = row['sku']
+        veces = row['veces_contado']
+        veces_dif = row['veces_con_dif']
+        suma = row['suma_dif']
+        # SKU que siempre desfasa
+        if veces >= 3 and veces_dif == veces:
+            if suma < 0:
+                patrones.append({
+                    'severidad': 'alta',
+                    'sku': sku,
+                    'tipo': 'siempre_falta',
+                    'mensaje': f'{sku} desfasa SIEMPRE negativo ({veces}/{veces} veces, total -{abs(suma)} uds). Posible: mapeo Shopify roto / robo / dano sistemico.',
+                })
+            else:
+                patrones.append({
+                    'severidad': 'media',
+                    'sku': sku,
+                    'tipo': 'siempre_sobra',
+                    'mensaje': f'{sku} desfasa SIEMPRE positivo ({veces}/{veces} veces, total +{suma} uds). Posible: entradas no registradas.',
+                })
+
+    # Patron global: faltantes vs sobrantes
+    if kpis['faltantes'] > 0 or kpis['sobrantes'] > 0:
+        ratio = kpis['faltantes'] / max(kpis['sobrantes'], 1) if kpis['sobrantes'] > 0 else float('inf')
+        if ratio > 3 and kpis['faltantes'] > 5:
+            patrones.append({
+                'severidad': 'alta',
+                'sku': None,
+                'tipo': 'patron_faltantes',
+                'mensaje': f'Patron general: faltantes ({kpis["faltantes"]}) >> sobrantes ({kpis["sobrantes"]}). Investigar robo/dano/regalos no registrados.',
+            })
+        elif ratio < 0.33 and kpis['sobrantes'] > 5:
+            patrones.append({
+                'severidad': 'media',
+                'sku': None,
+                'tipo': 'patron_sobrantes',
+                'mensaje': f'Patron general: sobrantes ({kpis["sobrantes"]}) >> faltantes ({kpis["faltantes"]}). La asistente olvida anotar entradas.',
+            })
+
+    # SKUs vendidos en Shopify sin baseline
+    skus_shopify = set()
+    for r in c.execute("""SELECT sku_items FROM animus_shopify_orders
+                          WHERE creado_en >= date('now','-30 day')
+                            AND sku_items IS NOT NULL""").fetchall():
+        try:
+            for it in (json.loads(r['sku_items']) or []):
+                s = (it.get('sku') or '').strip().upper()
+                if s: skus_shopify.add(s)
+        except Exception:
+            pass
+    skus_con_baseline = set()
+    for r in c.execute("SELECT sku FROM animus_inventario_baseline").fetchall():
+        skus_con_baseline.add((r['sku'] or '').upper())
+    sin_baseline = sorted(skus_shopify - skus_con_baseline)
+
+    return jsonify({
+        'kpis': kpis,
+        'top_problematicos': top_problematicos,
+        'patrones_detectados': patrones,
+        'sin_baseline': sin_baseline,
+        'total_skus_baseline': len(skus_con_baseline),
+        'total_skus_shopify_30d': len(skus_shopify),
+    })
+
+
 @bp.route("/api/animus/inv-fisico/sync-shopify", methods=["POST"])
 def animus_inv_fisico_sync_shopify():
     """Sincroniza ventas Shopify ya descargadas hacia movimientos de

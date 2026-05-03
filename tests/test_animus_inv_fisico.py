@@ -432,6 +432,15 @@ def test_sync_shopify_inv_endpoint(app, db_clean):
     assert "ventas_creadas" in d
 
 
+def test_diagnostico_endpoint(app, db_clean):
+    cs = _login(app, "sebastian")
+    r = cs.get("/api/animus/inv-fisico/diagnostico")
+    assert r.status_code == 200
+    d = r.get_json()
+    for k in ("kpis", "top_problematicos", "patrones_detectados", "sin_baseline"):
+        assert k in d
+
+
 def test_pagina_animus_tiene_tab_inv_fisico(app, db_clean):
     """La UI debe exponer el tab nuevo + modales."""
     cs = _login(app, "sebastian")

@@ -278,6 +278,15 @@ window.addEventListener('error', function(ev){
 
   <div id="invfis-resumen" class="kpi-grid"></div>
 
+  <!-- DIAGNOSTICO -->
+  <div class="card" id="invfis-diag-card" style="display:none;">
+    <div class="card-hdr">
+      <span class="card-title">&#127919; Diagnostico de discrepancias (90d)</span>
+      <button class="btn btn-outline btn-sm" onclick="cargarDiagnostico()">Refrescar</button>
+    </div>
+    <div id="invfis-diag-content" style="padding:8px 0;"></div>
+  </div>
+
   <!-- CONTEOS PENDIENTES -->
   <div class="card" id="invfis-conteos-card" style="border-left:4px solid #6366f1;">
     <div class="card-hdr">
@@ -1130,11 +1139,81 @@ async function guardarConteoFisico() {
   } catch(e) { showToast('Error red: ' + e.message, 'error'); }
 }
 
+// ════════════════════════════════════════════════════════════════
+// DIAGNOSTICO Fase 3
+// ════════════════════════════════════════════════════════════════
+async function cargarDiagnostico() {
+  try {
+    var r = await fetch('/api/animus/inv-fisico/diagnostico');
+    var d = await r.json();
+    var card = document.getElementById('invfis-diag-card');
+    var c = document.getElementById('invfis-diag-content');
+    var k = d.kpis || {};
+    var hay_dato = (k.total_conteos > 0) || (d.patrones_detectados||[]).length > 0 || (d.sin_baseline||[]).length > 0;
+    if (!hay_dato) { card.style.display = 'none'; return; }
+    card.style.display = 'block';
+    var html = '';
+    // KPIs en línea
+    html += '<div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:12px;font-size:13px;">';
+    html += '<div style="background:#0f172a;padding:8px 14px;border-radius:6px;"><span style="color:#94a3b8;">Conteos 30d</span> <b style="color:#fff;margin-left:8px;">' + (k.total_conteos||0) + '</b></div>';
+    html += '<div style="background:#0f172a;padding:8px 14px;border-radius:6px;"><span style="color:#94a3b8;">Con diferencia</span> <b style="color:#fbbf24;margin-left:8px;">' + (k.con_dif||0) + '</b></div>';
+    html += '<div style="background:#0f172a;padding:8px 14px;border-radius:6px;"><span style="color:#94a3b8;">Faltantes</span> <b style="color:#f87171;margin-left:8px;">-' + (k.faltantes||0) + '</b></div>';
+    html += '<div style="background:#0f172a;padding:8px 14px;border-radius:6px;"><span style="color:#94a3b8;">Sobrantes</span> <b style="color:#4ade80;margin-left:8px;">+' + (k.sobrantes||0) + '</b></div>';
+    html += '</div>';
+    // Patrones detectados
+    if ((d.patrones_detectados||[]).length) {
+      html += '<div style="font-size:12px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">Patrones detectados</div>';
+      d.patrones_detectados.forEach(function(p) {
+        var col = p.severidad === 'alta' ? '#7f1d1d' : '#78350f';
+        var fc  = p.severidad === 'alta' ? '#fca5a5' : '#fbbf24';
+        var icon = p.severidad === 'alta' ? '&#9888;' : '&#x1F50D;';
+        html += '<div style="background:' + col + ';color:' + fc + ';padding:10px 14px;border-radius:6px;margin-bottom:6px;font-size:13px;">' +
+                icon + ' ' + p.mensaje + '</div>';
+      });
+    } else {
+      html += '<div style="background:#064e3b;color:#4ade80;padding:10px 14px;border-radius:6px;margin-bottom:12px;font-size:13px;">&#10003; Sin patrones de discrepancia detectados</div>';
+    }
+    // SKUs vendidos sin baseline
+    if ((d.sin_baseline||[]).length) {
+      html += '<div style="background:#1e1b4b;color:#a5b4fc;padding:10px 14px;border-radius:6px;margin-bottom:6px;font-size:13px;">';
+      html += '&#9432; ' + d.sin_baseline.length + ' SKUs vendidos en Shopify (30d) SIN baseline registrado: ';
+      html += '<b>' + d.sin_baseline.slice(0, 8).join(', ') + (d.sin_baseline.length > 8 ? ' y ' + (d.sin_baseline.length - 8) + ' mas' : '') + '</b>';
+      html += '</div>';
+    }
+    // Top problemáticos
+    if ((d.top_problematicos||[]).length) {
+      html += '<div style="font-size:12px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.5px;margin:14px 0 6px 0;">Top SKUs problematicos (90d)</div>';
+      html += '<table style="width:100%;font-size:13px;"><thead><tr style="color:#94a3b8;">';
+      html += '<th style="text-align:left;padding:6px;">SKU</th>';
+      html += '<th style="text-align:right;padding:6px;">Veces contado</th>';
+      html += '<th style="text-align:right;padding:6px;">Con diferencia</th>';
+      html += '<th style="text-align:right;padding:6px;">Suma diferencia</th>';
+      html += '<th style="text-align:right;padding:6px;">Abs diff</th>';
+      html += '</tr></thead><tbody>';
+      d.top_problematicos.forEach(function(t) {
+        var col = t.suma_dif < 0 ? '#f87171' : '#4ade80';
+        html += '<tr style="border-top:1px solid #334155;">';
+        html += '<td style="padding:6px;"><b>' + t.sku + '</b></td>';
+        html += '<td style="text-align:right;padding:6px;">' + t.veces_contado + '</td>';
+        html += '<td style="text-align:right;padding:6px;color:#fbbf24;">' + t.veces_con_dif + '/' + t.veces_contado + '</td>';
+        html += '<td style="text-align:right;padding:6px;color:' + col + ';font-weight:700;">' + (t.suma_dif > 0 ? '+' : '') + t.suma_dif + '</td>';
+        html += '<td style="text-align:right;padding:6px;">' + t.abs_dif + '</td>';
+        html += '</tr>';
+      });
+      html += '</tbody></table>';
+    }
+    c.innerHTML = html;
+  } catch(e) { console.error(e); }
+}
+
 // Hook into loadTab para cargar pendientes al entrar al tab
 var _origLoadTab_invfis = loadTab;
 loadTab = function(name) {
   _origLoadTab_invfis(name);
-  if (name === 'invfis') cargarPendientesConteo();
+  if (name === 'invfis') {
+    cargarPendientesConteo();
+    cargarDiagnostico();
+  }
 };
 
 // Init
