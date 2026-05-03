@@ -104,8 +104,10 @@ tr:hover{background:#fafafa}
       <option value="en_implementacion">En implementación</option>
       <option value="cerrada">Cerradas</option>
     </select>
+    <input type="text" placeholder="Buscar..." oninput="buscarTabla('capa', this.value)" style="display:inline-block;width:auto;padding:6px 10px;border:1px solid #cbd5e1;border-radius:4px;margin-left:6px">
   </div>
   <div id="capa-list"></div>
+  <div id="pg-capa"></div>
 </div>
 
 <!-- PANE: Hallazgos -->
@@ -129,8 +131,10 @@ tr:hover{background:#fafafa}
       <option value="auditoria_externa">Auditoría externa</option>
       <option value="queja_cliente">Queja cliente</option>
     </select>
+    <input type="text" placeholder="Buscar..." oninput="buscarTabla('hall', this.value)" style="display:inline-block;width:auto;padding:6px 10px;border:1px solid #cbd5e1;border-radius:4px;margin-left:6px">
   </div>
   <div id="hall-list"></div>
+  <div id="pg-hall"></div>
 </div>
 
 <!-- MODAL: Nueva CAPA -->
@@ -230,6 +234,74 @@ function _esc(s){return (s==null?'':String(s)).replace(/[<>&"']/g,function(c){re
 function _toast(m,ok){alert((ok?'✓ ':'⚠ ')+m);}
 function cerrarModal(id){document.getElementById(id).style.display='none';}
 
+// ── CSRF defense-in-depth · Sebastian 3-may-2026 ───────────────────────
+function _csrf() {
+  var m = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/);
+  return m ? decodeURIComponent(m[1]) : '';
+}
+function _fetchOpts(method, body) {
+  var headers = {};
+  var tok = _csrf();
+  if (tok) headers['X-CSRF-Token'] = tok;
+  var opts = {method: method || 'GET', headers: headers, credentials: 'same-origin'};
+  if (body !== undefined && body !== null) {
+    headers['Content-Type'] = 'application/json';
+    opts.body = (typeof body === 'string') ? body : JSON.stringify(body);
+  }
+  return opts;
+}
+fetch('/api/csrf-token', {credentials: 'same-origin'}).catch(function(){});
+
+// ── Filtros + Paginacion (client-side) ─────────────────────────────────
+var TBL_STATE = {
+  capa:  {q: '', page: 1, size: 25, fields: ['titulo','origen','estado','responsable','descripcion']},
+  hall:  {q: '', page: 1, size: 25, fields: ['titulo','origen','severidad','estado','responsable','descripcion']},
+};
+function _filtrar(data, query, fields) {
+  if (!query) return data || [];
+  var q = query.toLowerCase().trim();
+  return (data || []).filter(function(r) {
+    return fields.some(function(f) {
+      var v = r[f]; return v != null && String(v).toLowerCase().indexOf(q) !== -1;
+    });
+  });
+}
+function _paginar(data, page, size) {
+  if (size >= 999) return {items: data, total: data.length, totalPages: 1, page: 1};
+  var total = data.length;
+  var totalPages = Math.max(1, Math.ceil(total / size));
+  var p = Math.min(Math.max(1, page), totalPages);
+  return {items: data.slice((p-1)*size, p*size), total: total, totalPages: totalPages, page: p};
+}
+function _renderPag(tabla, info) {
+  var s = TBL_STATE[tabla];
+  if (info.total <= s.size && info.total < 26) {
+    return '<div style="font-size:11px;color:#64748b;padding:6px 0;">' + info.total + ' filas</div>';
+  }
+  var html = '<div style="display:flex;align-items:center;gap:8px;padding:8px 0;font-size:12px;color:#64748b;">';
+  html += '<span>Pág ' + info.page + '/' + info.totalPages + ' · ' + info.total + '</span>';
+  html += '<span style="flex:1"></span>';
+  html += '<button class="btn ghost" onclick="cambiarPag(\'' + tabla + '\',-1)"' +
+          (info.page <= 1 ? ' disabled' : '') + ' style="padding:4px 10px;font-size:12px">&larr;</button>';
+  html += '<button class="btn ghost" onclick="cambiarPag(\'' + tabla + '\',1)"' +
+          (info.page >= info.totalPages ? ' disabled' : '') + ' style="padding:4px 10px;font-size:12px">&rarr;</button>';
+  html += '<select onchange="cambiarPagSize(\'' + tabla + '\', this.value)" ' +
+          'style="border:1px solid #cbd5e1;padding:4px 6px;border-radius:5px;font-size:12px;">';
+  ['25','50','100','999'].forEach(function(o){
+    var label = o === '999' ? 'Todas' : o;
+    html += '<option value="' + o + '"' + (String(s.size)===o?' selected':'') + '>' + label + '</option>';
+  });
+  html += '</select></div>';
+  return html;
+}
+var _PAG_REFRESH = {
+  capa: function(){ if(window.cargarCAPA) cargarCAPA(); },
+  hall: function(){ if(window.cargarHallazgos) cargarHallazgos(); },
+};
+function cambiarPag(tabla, delta){ TBL_STATE[tabla].page = Math.max(1, TBL_STATE[tabla].page + delta); if(_PAG_REFRESH[tabla]) _PAG_REFRESH[tabla](); }
+function cambiarPagSize(tabla, valor){ TBL_STATE[tabla].size = parseInt(valor,10)||25; TBL_STATE[tabla].page = 1; if(_PAG_REFRESH[tabla]) _PAG_REFRESH[tabla](); }
+function buscarTabla(tabla, valor){ TBL_STATE[tabla].q = valor||''; TBL_STATE[tabla].page = 1; if(_PAG_REFRESH[tabla]) _PAG_REFRESH[tabla](); }
+
 function switchPane(p){
   document.querySelectorAll('.pane').forEach(function(el){el.classList.toggle('on', el.id==='pane-'+p);});
   document.querySelectorAll('.tabbtn').forEach(function(b){b.classList.toggle('on', b.dataset.pane===p);});
@@ -319,10 +391,7 @@ async function agregarEjecucion(){
   var f = document.getElementById('ej-fecha').value;
   if(!f){ _toast('Selecciona fecha', 0); return; }
   try{
-    var r = await fetch('/api/compliance/cronogramas/'+CRON_ID_ACTUAL+'/ejecuciones', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({fecha_planeada: f})
-    });
+    var r = await fetch('/api/compliance/cronogramas/'+CRON_ID_ACTUAL+'/ejecuciones', _fetchOpts('POST', {fecha_planeada: f}));
     if((await r.json()).ok){ abrirCronograma(CRON_ID_ACTUAL, document.getElementById('cron-modal-title').textContent); cargarCronogramas(); cargarKPIs(); }
   }catch(e){ _toast('Error', 0); }
 }
@@ -330,10 +399,7 @@ async function agregarEjecucion(){
 async function cumplirEjecucion(ej_id){
   var url = prompt('URL de evidencia (opcional, foto/registro):');
   try{
-    var r = await fetch('/api/compliance/ejecuciones/'+ej_id+'/cumplir', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({evidencia_url: url||null})
-    });
+    var r = await fetch('/api/compliance/ejecuciones/'+ej_id+'/cumplir', _fetchOpts('POST', {evidencia_url: url||null}));
     if((await r.json()).ok){ abrirCronograma(CRON_ID_ACTUAL, document.getElementById('cron-modal-title').textContent); cargarCronogramas(); cargarKPIs(); _toast('Marcado cumplido', 1); }
   }catch(e){ _toast('Error', 0); }
 }
@@ -365,7 +431,7 @@ async function guardarCAPA(){
     accion_inmediata: document.getElementById('cp-inmediata').value
   };
   try{
-    var r = await fetch('/api/compliance/capa', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    var r = await fetch('/api/compliance/capa', _fetchOpts('POST', body));
     var d = await r.json();
     if(d.ok){ _toast('Creada: '+d.codigo, 1); cerrarModal('modal-capa'); cargarCAPA(); cargarKPIs(); }
     else { _toast('Error: '+(d.error||'?'), 0); }
@@ -378,8 +444,18 @@ async function cargarCAPA(){
     var r = await fetch('/api/compliance/capa'+(estado?'?estado='+estado:''));
     var d = await r.json();
     var box = document.getElementById('capa-list');
-    if(!d.capa.length){ box.innerHTML = '<div class="empty">Sin desviaciones registradas.</div>'; return; }
-    box.innerHTML = d.capa.map(function(x){
+    var pgEl = document.getElementById('pg-capa');
+    var s = TBL_STATE.capa;
+    var filtrado = _filtrar(d.capa || [], s.q, s.fields);
+    var info = _paginar(filtrado, s.page, s.size);
+    s.page = info.page;
+    if(!info.items.length){
+      box.innerHTML = '<div class="empty">' + (s.q ? 'Sin coincidencias.' : 'Sin desviaciones registradas.') + '</div>';
+      if(pgEl) pgEl.innerHTML = '';
+      return;
+    }
+    if(pgEl) pgEl.innerHTML = _renderPag('capa', info);
+    box.innerHTML = info.items.map(function(x){
       var diasAlert = x.dias_abierta>5 && x.estado!=='cerrada' ? ' <span style="background:#dc2626;color:#fff;padding:2px 6px;border-radius:6px;font-size:10px">⚠ '+x.dias_abierta+' días</span>' : '';
       return '<div class="card">' +
         '<div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px">' +
@@ -401,8 +477,7 @@ async function cerrarCAPA(id){
   var corr = prompt('Acción correctiva tomada:');
   var prev = prompt('Acción preventiva (opcional):');
   try{
-    var r = await fetch('/api/compliance/capa/'+id, {method:'PATCH', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({estado:'cerrada', causa_raiz:raiz, accion_correctiva:corr||null, accion_preventiva:prev||null})});
+    var r = await fetch('/api/compliance/capa/'+id, _fetchOpts('PATCH', {estado:'cerrada', causa_raiz:raiz, accion_correctiva:corr||null, accion_preventiva:prev||null}));
     if((await r.json()).ok){ _toast('Cerrada', 1); cargarCAPA(); cargarKPIs(); }
   }catch(e){ _toast('Error', 0); }
 }
@@ -428,7 +503,7 @@ async function guardarHallazgo(){
     accion_propuesta: document.getElementById('hl-accion').value
   };
   try{
-    var r = await fetch('/api/compliance/hallazgos', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    var r = await fetch('/api/compliance/hallazgos', _fetchOpts('POST', body));
     var d = await r.json();
     if(d.ok){ _toast('Creado: '+d.codigo, 1); cerrarModal('modal-hall'); cargarHallazgos(); cargarKPIs(); }
   }catch(e){ _toast('Error', 0); }
@@ -442,8 +517,18 @@ async function cargarHallazgos(){
     var r = await fetch('/api/compliance/hallazgos'+(qs.length?'?'+qs.join('&'):''));
     var d = await r.json();
     var box = document.getElementById('hall-list');
-    if(!d.hallazgos.length){ box.innerHTML = '<div class="empty">Sin hallazgos.</div>'; return; }
-    box.innerHTML = d.hallazgos.map(function(h){
+    var pgEl = document.getElementById('pg-hall');
+    var s = TBL_STATE.hall;
+    var filtrado = _filtrar(d.hallazgos || [], s.q, s.fields);
+    var info = _paginar(filtrado, s.page, s.size);
+    s.page = info.page;
+    if(!info.items.length){
+      box.innerHTML = '<div class="empty">' + (s.q ? 'Sin coincidencias.' : 'Sin hallazgos.') + '</div>';
+      if(pgEl) pgEl.innerHTML = '';
+      return;
+    }
+    if(pgEl) pgEl.innerHTML = _renderPag('hall', info);
+    box.innerHTML = info.items.map(function(h){
       var venc = h.vencido ? ' <span style="background:#dc2626;color:#fff;padding:2px 6px;border-radius:6px;font-size:10px">VENCIDO '+Math.abs(h.dias_a_limite)+'d</span>' : (h.dias_a_limite!=null && h.dias_a_limite<=7 && h.estado!=='cerrado'?' <span style="background:#d97706;color:#fff;padding:2px 6px;border-radius:6px;font-size:10px">'+h.dias_a_limite+'d restantes</span>':'');
       return '<div class="card" style="border-left:4px solid '+(h.severidad==='critico'?'#dc2626':h.severidad==='mayor'?'#d97706':'#64748b')+'">' +
         '<div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px">' +
@@ -462,7 +547,7 @@ async function cargarHallazgos(){
 
 async function enProcesoHallazgo(id){
   try{
-    var r = await fetch('/api/compliance/hallazgos/'+id, {method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify({estado:'en_proceso'})});
+    var r = await fetch('/api/compliance/hallazgos/'+id, _fetchOpts('PATCH', {estado:'en_proceso'}));
     if((await r.json()).ok){ cargarHallazgos(); cargarKPIs(); }
   }catch(e){ _toast('Error', 0); }
 }
@@ -470,7 +555,7 @@ async function enProcesoHallazgo(id){
 async function cerrarHallazgo(id){
   var url = prompt('URL de evidencia de cierre (opcional):');
   try{
-    var r = await fetch('/api/compliance/hallazgos/'+id, {method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify({estado:'cerrado', evidencia_cierre_url: url||null})});
+    var r = await fetch('/api/compliance/hallazgos/'+id, _fetchOpts('PATCH', {estado:'cerrado', evidencia_cierre_url: url||null}));
     if((await r.json()).ok){ cargarHallazgos(); cargarKPIs(); _toast('Cerrado', 1); }
   }catch(e){ _toast('Error', 0); }
 }
