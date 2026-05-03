@@ -6767,12 +6767,33 @@ def _sync_calendar_a_produccion_programada(conn, days_ahead=90):
         'FAB','QC','CON','SIN','MICRO','ENVASADO','ACONDICIONAMIENTO',
         'FABRICACION','FABRICACIÓN','LANZAMIENTO','PRODUCCION','PRODUCCIÓN',
         'KG','MES','DIAS','DÍAS','ML','UDS','BATCH','FERNANDO',
-        'MESA','LOTES','LOTE','MINI','MACRO','AND','THE','FOR'
+        'MESA','LOTES','LOTE','MINI','MACRO','AND','THE','FOR',
+        # Tokens de codigo de area que Alejandro escribe — no son SKUs
+        'FAB1','FYE2','FYE3','ENV1','ENV2','PROD1','PROD2','PROD3','PROD4'
     }
     NON_FAB_KW = {
         'envasado', 'acondicionamiento', 'micro qc',
         'control de calidad', 'dispensado', 'etiquetado', 'llenado',
     }
+
+    # Mapa codigo_corto_alejandro → codigo_real_db (areas_planta.codigo)
+    # Sebastián 2-may-2026: "alejandro escribe [FAB1] o [FYE2] al inicio del
+    # evento de Calendar y el sistema asigna sala automatica". Acepta tambien
+    # los codigos reales (PROD1..PROD4) por si el equipo los usa directo.
+    AREA_ALIAS = {
+        'FAB1': 'PROD1', 'FYE2': 'PROD2', 'FYE3': 'PROD3', 'ENV2': 'PROD4',
+        'ENV1': 'ENV1',
+        'PROD1': 'PROD1', 'PROD2': 'PROD2', 'PROD3': 'PROD3', 'PROD4': 'PROD4',
+    }
+    # Mapa codigo_real_db → area_id (cargado una vez fuera del loop)
+    codigo_a_areaid = {}
+    try:
+        for r in conn.execute(
+            "SELECT id, codigo FROM areas_planta WHERE activo=1"
+        ).fetchall():
+            codigo_a_areaid[r[1]] = r[0]
+    except Exception:
+        pass
 
     def _skus(titulo):
         tokens = _re.findall(r'\b([A-Z][A-Z0-9]{1,}[A-Z0-9])\b', titulo.upper())
@@ -6783,6 +6804,25 @@ def _sync_calendar_a_produccion_programada(conn, days_ahead=90):
         if not m: return None
         try: return float(m[-1].replace(',', '.'))
         except Exception: return None
+
+    def _area_from_titulo(titulo):
+        """Extrae area_id del prefijo [CODIGO] del titulo del evento.
+
+        Convención Alejandro (May 2026): el evento de Calendar empieza con
+        un código entre corchetes, ej: '[FAB1] Gel Hidratante 50ml ~5kg' o
+        '[FYE2] Blush Balm ~3kg'. Si lo encuentra, devuelve el area_id de
+        areas_planta. Si no, None.
+        """
+        if not titulo:
+            return None
+        m = _re.match(r'\s*\[([A-Z0-9]{3,5})\]', titulo)
+        if not m:
+            return None
+        codigo_corto = m.group(1).upper()
+        codigo_real = AREA_ALIAS.get(codigo_corto)
+        if not codigo_real:
+            return None
+        return codigo_a_areaid.get(codigo_real)
 
     today = _dt.date.today()
     inserted = 0
@@ -6803,6 +6843,8 @@ def _sync_calendar_a_produccion_programada(conn, days_ahead=90):
         if any(kw in tlow for kw in NON_FAB_KW):
             continue
         kg_evento = _kg(titulo)
+        # Extraer area del prefijo [CODIGO] (Alejandro convention).
+        area_id_titulo = _area_from_titulo(titulo)
         for sku in _skus(titulo):
             prod = sku_to_prod.get(sku)
             if not prod or prod not in formulas:
@@ -6816,37 +6858,52 @@ def _sync_calendar_a_produccion_programada(conn, days_ahead=90):
             # INSERT idempotente: si ya existe (producto, fecha), no duplicar
             try:
                 exists = conn.execute(
-                    "SELECT id, COALESCE(cantidad_kg,0) FROM produccion_programada "
+                    "SELECT id, COALESCE(cantidad_kg,0), area_id "
+                    "FROM produccion_programada "
                     "WHERE producto=? AND fecha_programada=? LIMIT 1",
                     (prod, fecha_s)
                 ).fetchone()
                 if not exists:
                     # origen='calendar' para que planificacion_estrategica las
                     # filtre y no duplique con su lectura directa del calendar.
+                    # area_id = del prefijo [CODIGO] si Alejandro lo puso, sino NULL.
                     cur_ins = conn.execute(
                         """INSERT INTO produccion_programada
                            (producto, fecha_programada, lotes, cantidad_kg,
-                            estado, observaciones, origen)
-                           VALUES (?, ?, ?, ?, 'programado', ?, 'calendar')""",
+                            estado, observaciones, origen, area_id)
+                           VALUES (?, ?, ?, ?, 'programado', ?, 'calendar', ?)""",
                         (prod, fecha_s, lotes, cantidad_kg_calc,
-                         f'[auto-sync calendar] {titulo[:200]}')
+                         f'[auto-sync calendar] {titulo[:200]}', area_id_titulo)
                     )
                     inserted += 1
                     # Sebastián 1-may-2026: "todo automático". Auto-asignar
                     # área + operarios INMEDIATAMENTE al insertar (no esperar
                     # cron 06:30). Si falla, sigue → cron lo intentará después.
+                    # Si Alejandro ya puso [CODIGO] en titulo, NO sobrescribir
+                    # con auto-asignador: respeta su decision.
                     try:
                         new_id = cur_ins.lastrowid
-                        if new_id and cantidad_kg_calc and cantidad_kg_calc > 0:
+                        if (new_id and cantidad_kg_calc and cantidad_kg_calc > 0
+                                and area_id_titulo is None):
                             _auto_asignar_produccion(conn.cursor(), new_id, 'auto-sync-calendar')
                     except Exception:
                         pass
-                elif (exists[1] or 0) <= 0 and cantidad_kg_calc > 0:
-                    # Backfill: la fila existe pero sin cantidad_kg — actualizar.
-                    conn.execute(
-                        "UPDATE produccion_programada SET cantidad_kg=? WHERE id=?",
-                        (cantidad_kg_calc, exists[0])
-                    )
+                else:
+                    # Backfill cantidad_kg si falta.
+                    if (exists[1] or 0) <= 0 and cantidad_kg_calc > 0:
+                        conn.execute(
+                            "UPDATE produccion_programada SET cantidad_kg=? WHERE id=?",
+                            (cantidad_kg_calc, exists[0])
+                        )
+                    # Backfill area_id: si Alejandro acaba de meter [CODIGO]
+                    # en un evento que ya existe en DB sin area, actualizamos.
+                    # Si DB ya tiene area distinta, NO la pisamos (alguien la
+                    # asignó manualmente en la UI — gana lo manual).
+                    if area_id_titulo is not None and (exists[2] is None):
+                        conn.execute(
+                            "UPDATE produccion_programada SET area_id=? WHERE id=?",
+                            (area_id_titulo, exists[0])
+                        )
             except Exception:
                 continue
             break  # un evento → un producto match
@@ -10396,6 +10453,269 @@ def planta_cronograma_comparar_alejandro():
         'matches': matches,
         'en_alejandro_no_calendar': en_alejandro_no_calendar,
         'en_calendar_no_alejandro': en_calendar_no_alejandro,
+    })
+
+
+# ─────────────────────────────────────────────────────────────────────────
+#  ASIGNAR ÁREAS · UI para que Alejandro asigne sala a cada producción
+# ─────────────────────────────────────────────────────────────────────────
+# Sebastián 2-may-2026: dos vías complementarias para que el plan refleje
+# la organización que pide Alejandro:
+#   1) Convención [CODIGO] al inicio del titulo en Calendar (parser en _sync).
+#   2) UI manual: pantalla con listado + dropdown + auto-sugerir + confirmar.
+# Estos endpoints sirven a la opción (2). Los cambios se persisten en
+# produccion_programada.area_id (misma columna que los demás flujos).
+
+def _sugerir_area_para_producto(c, producto, lote_kg):
+    """Sugiere area_id para una producción según producto + tamaño de lote.
+
+    Reglas (basadas en project_planta_crew_areas.md):
+      • Si la fórmula contiene alcohol (palabras 'alcohol', 'etanol', 'isopropi') → PROD1 (especial='alcoholes')
+      • Si lote_kg ≤ 100 → PROD2 (marmita 100ml)
+      • Si lote_kg ≤ 250 → PROD3 (marmita 250ml)
+      • Si lote_kg > 250 → PROD1 (gran capacidad, no especial)
+      • Default → PROD1
+    """
+    try:
+        # Cargar areas y formulas
+        areas = {r[1]: r[0] for r in c.execute(
+            "SELECT id, codigo FROM areas_planta WHERE activo=1"
+        ).fetchall()}
+        if not areas:
+            return None
+        # Detectar alcoholes en la fórmula
+        usa_alcohol = False
+        try:
+            mps = c.execute("""
+                SELECT LOWER(COALESCE(m.descripcion,''))
+                  FROM formulas_v2 f
+                  LEFT JOIN maestro_mp m ON m.id = f.mp_id
+                 WHERE f.producto_nombre = ?
+            """, (producto,)).fetchall()
+            for r in mps:
+                desc = r[0] or ''
+                if any(kw in desc for kw in ('alcohol', 'etanol', 'isopropi')):
+                    usa_alcohol = True
+                    break
+        except Exception:
+            pass
+        if usa_alcohol and 'PROD1' in areas:
+            return areas['PROD1']
+        try:
+            lk = float(lote_kg or 0)
+        except Exception:
+            lk = 0
+        if lk and lk <= 100 and 'PROD2' in areas:
+            return areas['PROD2']
+        if lk and lk <= 250 and 'PROD3' in areas:
+            return areas['PROD3']
+        if 'PROD1' in areas:
+            return areas['PROD1']
+        # Fallback: cualquier area que pueda producir
+        any_prod = c.execute(
+            "SELECT id FROM areas_planta WHERE puede_producir=1 AND activo=1 LIMIT 1"
+        ).fetchone()
+        return any_prod[0] if any_prod else None
+    except Exception:
+        return None
+
+
+@bp.route('/api/planta/asignar-areas', methods=['GET'])
+def planta_asignar_areas_listar():
+    """Lista producciones de los próximos N días con su área actual + sugerida.
+
+    Query params:
+        dias (int, default 30): horizonte hacia adelante
+        solo_sin_area (bool, default false): solo las que no tienen area asignada
+
+    Devuelve para cada producción: id, producto, fecha, lotes, cantidad_kg,
+    estado, area_id_actual + nombre, area_sugerida_id + codigo, lista de
+    áreas disponibles para dropdown.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    try:
+        dias = int(request.args.get('dias', 30))
+    except (TypeError, ValueError):
+        dias = 30
+    dias = max(1, min(dias, 180))
+    solo_sin = request.args.get('solo_sin_area', 'false').lower() in ('1', 'true', 'yes')
+
+    conn = get_db(); c = conn.cursor()
+    # Cargar áreas activas (para dropdown)
+    areas_disp = []
+    for r in c.execute(
+        """SELECT id, codigo, nombre, puede_producir, puede_envasar,
+                  marmita_ml, especial
+             FROM areas_planta WHERE activo=1 ORDER BY orden, id"""
+    ).fetchall():
+        areas_disp.append({
+            'id': r[0], 'codigo': r[1], 'nombre': r[2],
+            'puede_producir': bool(r[3]), 'puede_envasar': bool(r[4]),
+            'marmita_ml': r[5], 'especial': r[6],
+        })
+
+    # Cargar producciones del horizonte (no completadas, no canceladas)
+    where = """
+        WHERE pp.fecha_programada BETWEEN date('now') AND date('now', ?)
+          AND LOWER(COALESCE(pp.estado,'')) NOT IN ('completado','cancelado')
+    """
+    params = [f'+{dias} day']
+    if solo_sin:
+        where += " AND pp.area_id IS NULL"
+
+    rows = c.execute(f"""
+        SELECT pp.id, pp.producto, pp.fecha_programada,
+               COALESCE(pp.lotes,1), COALESCE(pp.cantidad_kg, 0),
+               COALESCE(pp.estado,'programado'),
+               pp.area_id, ap.codigo, ap.nombre,
+               COALESCE(pp.observaciones,''),
+               COALESCE(pp.origen,'manual')
+          FROM produccion_programada pp
+          LEFT JOIN areas_planta ap ON ap.id = pp.area_id
+          {where}
+          ORDER BY pp.fecha_programada, pp.producto
+    """, params).fetchall()
+
+    # Cache lote_size_kg por producto (para sugerir)
+    formulas = _get_formulas(conn)
+    items = []
+    for r in rows:
+        (pid, prod, fecha, lotes, cant_kg, estado, area_id_act,
+         area_cod, area_nom, obs, origen) = r
+        lote_kg = formulas.get(prod, {}).get('lote_size_kg', 0) or 0
+        sug_id = _sugerir_area_para_producto(c, prod, lote_kg)
+        sug_cod = next((a['codigo'] for a in areas_disp if a['id'] == sug_id), None)
+        items.append({
+            'id': pid,
+            'producto': prod or '',
+            'fecha': fecha,
+            'lotes': lotes,
+            'cantidad_kg': float(cant_kg or 0),
+            'estado': estado,
+            'origen': origen,
+            'observaciones': obs,
+            'area_id_actual': area_id_act,
+            'area_codigo_actual': area_cod,
+            'area_nombre_actual': area_nom,
+            'area_sugerida_id': sug_id,
+            'area_sugerida_codigo': sug_cod,
+            'lote_size_kg': float(lote_kg or 0),
+        })
+
+    return jsonify({
+        'horizonte_dias': dias,
+        'solo_sin_area': solo_sin,
+        'total': len(items),
+        'sin_area': sum(1 for x in items if x['area_id_actual'] is None),
+        'areas_disponibles': areas_disp,
+        'producciones': items,
+    })
+
+
+@bp.route('/api/planta/asignar-areas', methods=['POST'])
+def planta_asignar_areas_bulk():
+    """Asigna área a múltiples producciones en una sola llamada.
+
+    Body JSON:
+        asignaciones: [{id: int, area_id: int|null}, ...]
+
+    Valida cada asignación. Devuelve dict con éxitos, errores y warnings
+    (sala-ocupada en mismo día). NO falla la operación completa si una
+    asignación individual no es válida — reporta y sigue con el resto.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    data = request.get_json(force=True, silent=True) or {}
+    asignaciones = data.get('asignaciones', [])
+    if not isinstance(asignaciones, list) or not asignaciones:
+        return jsonify({'error': 'asignaciones debe ser lista no vacía'}), 400
+    if len(asignaciones) > 200:
+        return jsonify({'error': 'demasiadas asignaciones (max 200)'}), 400
+
+    conn = get_db(); c = conn.cursor()
+    user = session.get('compras_user', 'desconocido')
+    ok_ids, errores, warnings = [], [], []
+
+    # Cache áreas para validar y reportar conflictos
+    areas_map = {}
+    for r in c.execute(
+        "SELECT id, codigo, nombre, puede_producir FROM areas_planta WHERE activo=1"
+    ).fetchall():
+        areas_map[r[0]] = {'codigo': r[1], 'nombre': r[2], 'puede_producir': bool(r[3])}
+
+    for asg in asignaciones:
+        try:
+            pid = int(asg.get('id'))
+        except (TypeError, ValueError):
+            errores.append({'id': asg.get('id'), 'error': 'id inválido'})
+            continue
+        new_area = asg.get('area_id')
+        if new_area is not None:
+            try:
+                new_area = int(new_area)
+            except (TypeError, ValueError):
+                errores.append({'id': pid, 'error': 'area_id inválido'})
+                continue
+            if new_area not in areas_map:
+                errores.append({'id': pid, 'error': 'área no existe o inactiva'})
+                continue
+
+        pp = c.execute(
+            """SELECT id, producto, fecha_programada, area_id,
+                      COALESCE(estado,'')
+                 FROM produccion_programada WHERE id=?""", (pid,)
+        ).fetchone()
+        if not pp:
+            errores.append({'id': pid, 'error': 'producción no existe'})
+            continue
+        # No permitir reasignar producciones completadas o canceladas
+        if pp[4].lower() in ('completado', 'cancelado'):
+            errores.append({'id': pid, 'error': f'no se puede reasignar (estado: {pp[4]})'})
+            continue
+
+        prev_area = pp[3]
+        # Conflicto: misma fecha + sala ya tomada → warning, no bloquea
+        if new_area is not None:
+            conf = c.execute("""
+                SELECT id, producto FROM produccion_programada
+                 WHERE fecha_programada=? AND area_id=? AND id<>?
+                   AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado')
+            """, (pp[2], new_area, pid)).fetchall()
+            if conf:
+                warnings.append({
+                    'id': pid, 'producto': pp[1], 'fecha': pp[2],
+                    'area_codigo': areas_map[new_area]['codigo'],
+                    'choca_con': [{'id': x[0], 'producto': x[1]} for x in conf],
+                })
+
+        c.execute(
+            "UPDATE produccion_programada SET area_id=? WHERE id=?",
+            (new_area, pid)
+        )
+        # audit_log
+        try:
+            from audit_helpers import audit_log
+            audit_log(
+                c,
+                accion='ASIGNAR_AREA_PROGRAMADA',
+                tabla='produccion_programada',
+                fila_id=pid,
+                usuario=user,
+                antes={'area_id': prev_area},
+                despues={'area_id': new_area, 'producto': pp[1], 'fecha': pp[2]},
+            )
+        except Exception:
+            pass
+        ok_ids.append(pid)
+
+    conn.commit()
+    return jsonify({
+        'ok': True,
+        'asignados': len(ok_ids),
+        'ids_ok': ok_ids,
+        'errores': errores,
+        'warnings': warnings,
     })
 
 

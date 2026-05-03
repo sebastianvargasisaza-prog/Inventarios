@@ -130,6 +130,21 @@ def programacion_comparar_page():
     return Response(CRONOGRAMA_COMPARAR_HTML, mimetype='text/html; charset=utf-8')
 
 
+@bp.route('/asignar-areas')
+def asignar_areas_page():
+    """UI para asignar área a cada producción próxima.
+
+    Sebastián 2-may-2026: Alejandro pide poder organizar las producciones
+    por sala (FAB1, FYE2, etc). Esta pantalla lista las próximas N días,
+    sugiere área en base a fórmula + tamaño de lote, permite cambiar con
+    dropdown y confirmar todo en bloque.
+    """
+    if 'compras_user' not in session:
+        return redirect('/login?next=/asignar-areas')
+    from templates_py.asignar_areas_html import ASIGNAR_AREAS_HTML
+    return Response(ASIGNAR_AREAS_HTML, mimetype='text/html; charset=utf-8')
+
+
 @bp.route('/inventarios')
 @bp.route('/planta')
 def inventarios():

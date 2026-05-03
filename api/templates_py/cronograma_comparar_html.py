@@ -94,6 +94,7 @@ CRONOGRAMA_COMPARAR_HTML = r'''<!DOCTYPE html>
   </div>
   <div class="nav">
     <a href="/programacion-areas">← Volver al cronograma</a>
+    <a href="/asignar-areas">📌 Asignar áreas</a>
     <a href="/planta">Planta</a>
     <a href="https://animuslab.neocities.org/programacion_mayo_areas" target="_blank">HTML original de Alejandro ↗</a>
   </div>
