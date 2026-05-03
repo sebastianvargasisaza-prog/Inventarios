@@ -86,7 +86,16 @@ HTML = r"""
   </header>
   <script>function cxToggleTheme(){var h=document.documentElement;var c=h.getAttribute('data-theme');var n=c==='dark'?'light':'dark';if(n==='dark')h.setAttribute('data-theme','dark');else h.removeAttribute('data-theme');try{localStorage.setItem('cx-theme',n);}catch(e){}}</script>
 
+  <!-- TABS -->
+  <div style="background:#1e293b;border-bottom:1px solid #334155;padding:0 28px;display:flex;gap:0;overflow-x:auto;">
+    <button class="esp-tab active" data-tab="dash" onclick="esw('dash')" style="background:none;border:none;color:#a5f3fc;padding:14px 20px;font-size:13px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;cursor:pointer;border-bottom:3px solid #06b6d4;white-space:nowrap;">📊 Dashboard</button>
+    <button class="esp-tab" data-tab="lab" onclick="esw('lab')" style="background:none;border:none;color:#64748b;padding:14px 20px;font-size:13px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;cursor:pointer;border-bottom:3px solid transparent;white-space:nowrap;">🔬 Lab en Vivo</button>
+    <button class="esp-tab" data-tab="clientes" onclick="esw('clientes')" style="background:none;border:none;color:#64748b;padding:14px 20px;font-size:13px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;cursor:pointer;border-bottom:3px solid transparent;white-space:nowrap;">👥 Clientes 360</button>
+  </div>
+
   <div class="container">
+    <!-- TAB DASHBOARD -->
+    <div id="esp-tab-dash" class="esp-pane">
     <!-- KPIs principales -->
     <div class="grid grid-4">
       <div class="card"><h3>📦 Producciones del mes</h3><div class="val" id="kpi-prod">—</div><div class="sub" id="kpi-prod-sub"></div></div>
@@ -131,6 +140,99 @@ HTML = r"""
         <div id="completadas-list"><div class="empty">Cargando...</div></div>
       </div>
     </div>
+    </div><!-- /tab dash -->
+
+    <!-- TAB LAB EN VIVO -->
+    <div id="esp-tab-lab" class="esp-pane" style="display:none;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
+        <div>
+          <div style="font-size:1.2em;font-weight:700;color:#fff;">🔬 Lab en Vivo</div>
+          <div style="font-size:12px;color:#64748b;">Snapshot de la planta espagiría AHORA · auto-refresh cada 60s</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <span id="lab-ts" style="font-size:11px;color:#64748b;"></span>
+          <button onclick="cargarLab()" style="background:#0e7490;border:none;color:#fff;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;">↻ Refrescar</button>
+        </div>
+      </div>
+
+      <!-- KPIs lab -->
+      <div class="grid grid-4">
+        <div class="card"><h3>⚙️ En curso</h3><div class="val" id="lab-kpi-curso">—</div><div class="sub">Producciones activas</div></div>
+        <div class="card"><h3>📅 Hoy</h3><div class="val" id="lab-kpi-hoy">—</div><div class="sub">Programadas hoy</div></div>
+        <div class="card"><h3>🟡 Cuarentena</h3><div class="val" id="lab-kpi-cuar" style="color:#fcd34d;">—</div><div class="sub">Lotes</div></div>
+        <div class="card"><h3>⚠️ OOS abiertos</h3><div class="val" id="lab-kpi-oos" style="color:#fca5a5;">—</div><div class="sub">En investigación</div></div>
+      </div>
+
+      <div class="grid grid-2" style="margin-top:18px;">
+        <div>
+          <div class="section-title">⚙️ Producciones en curso</div>
+          <div id="lab-curso-list"><div class="empty">Cargando...</div></div>
+        </div>
+        <div>
+          <div class="section-title">📅 Programadas hoy</div>
+          <div id="lab-hoy-list"><div class="empty">Cargando...</div></div>
+        </div>
+      </div>
+
+      <div class="grid grid-2" style="margin-top:18px;">
+        <div>
+          <div class="section-title">🟡 Lotes en cuarentena</div>
+          <div id="lab-cuar-list"><div class="empty">Cargando...</div></div>
+        </div>
+        <div>
+          <div class="section-title">⚠️ OOS abiertos</div>
+          <div id="lab-oos-list"><div class="empty">Cargando...</div></div>
+        </div>
+      </div>
+
+      <div class="grid grid-2" style="margin-top:18px;">
+        <div>
+          <div class="section-title">🔧 Equipos · próximos a vencer (15d)</div>
+          <div id="lab-eq-list"><div class="empty">Cargando...</div></div>
+        </div>
+        <div>
+          <div class="section-title">📢 Desviaciones abiertas</div>
+          <div id="lab-desv-list"><div class="empty">Cargando...</div></div>
+        </div>
+      </div>
+
+      <div class="grid grid-2" style="margin-top:18px;">
+        <div class="card">
+          <h3>💧 Sistema de agua hoy</h3>
+          <div class="val" id="lab-agua-val">—</div>
+          <div class="sub" id="lab-agua-sub"></div>
+        </div>
+        <div class="card">
+          <h3>🎓 Capacitaciones pendientes</h3>
+          <div class="val" id="lab-cap" style="color:#fbbf24;">—</div>
+          <div class="sub">Empleados sin firmar SOPs</div>
+        </div>
+      </div>
+    </div><!-- /tab lab -->
+
+    <!-- TAB CLIENTES 360 -->
+    <div id="esp-tab-clientes" class="esp-pane" style="display:none;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
+        <div>
+          <div style="font-size:1.2em;font-weight:700;color:#fff;">👥 Clientes Maquila 360</div>
+          <div style="font-size:12px;color:#64748b;">Vista completa de cada cliente · click en uno para ver ficha 360</div>
+        </div>
+        <input id="cli-search" type="text" placeholder="Buscar cliente..." oninput="filtrarClientes()" style="background:#0f172a;border:1px solid #334155;color:#e2e8f0;padding:8px 12px;border-radius:6px;font-size:13px;max-width:240px;">
+      </div>
+
+      <div id="cli-grid" class="grid grid-4"><div class="empty">Cargando clientes...</div></div>
+
+      <!-- Modal ficha 360 -->
+      <div id="cli-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:1000;align-items:center;justify-content:center;padding:20px;">
+        <div style="background:#1e293b;border:1px solid #475569;border-radius:14px;padding:24px;width:900px;max-width:95vw;max-height:90vh;overflow-y:auto;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+            <h2 id="cli-modal-title" style="margin:0;font-size:1.3em;color:#fff;">Cliente</h2>
+            <button onclick="cerrarCliModal()" style="background:none;border:none;color:#94a3b8;font-size:24px;cursor:pointer;">&times;</button>
+          </div>
+          <div id="cli-modal-body"><div class="empty">Cargando...</div></div>
+        </div>
+      </div>
+    </div><!-- /tab clientes -->
   </div>
 
 <script>
@@ -238,6 +340,256 @@ async function cargar() {
 
 cargar();
 setInterval(cargar, 5*60*1000); // refresh cada 5 min
+
+// ════════════════════════════════════════════════════════════════
+// TABS
+// ════════════════════════════════════════════════════════════════
+function esw(name) {
+  document.querySelectorAll('.esp-tab').forEach(function(t){
+    var on = t.dataset.tab === name;
+    t.style.color = on ? '#a5f3fc' : '#64748b';
+    t.style.borderBottomColor = on ? '#06b6d4' : 'transparent';
+    t.classList.toggle('active', on);
+  });
+  document.querySelectorAll('.esp-pane').forEach(function(p){
+    p.style.display = (p.id === 'esp-tab-' + name) ? '' : 'none';
+  });
+  if (name === 'lab') cargarLab();
+  if (name === 'clientes') cargarClientes();
+}
+
+// ════════════════════════════════════════════════════════════════
+// LAB EN VIVO
+// ════════════════════════════════════════════════════════════════
+var _labInterval = null;
+async function cargarLab() {
+  try {
+    var d = await fetch('/api/espagiria/lab/en-vivo').then(function(r){return r.json();});
+    document.getElementById('lab-ts').textContent = 'Actualizado: ' + new Date().toLocaleTimeString('es-CO');
+    document.getElementById('lab-kpi-curso').textContent = (d.producciones_en_curso||[]).length;
+    document.getElementById('lab-kpi-hoy').textContent = (d.producciones_hoy||[]).length;
+    document.getElementById('lab-kpi-cuar').textContent = (d.lotes_cuarentena||[]).length;
+    document.getElementById('lab-kpi-oos').textContent = (d.oos_abiertos||[]).length;
+
+    var curso = document.getElementById('lab-curso-list');
+    if (!d.producciones_en_curso || !d.producciones_en_curso.length) {
+      curso.innerHTML = '<div class="empty">Sin producciones en curso ahora</div>';
+    } else {
+      curso.innerHTML = '<table><thead><tr><th>Producto</th><th>Sala</th><th>Operario</th><th>Inicio</th></tr></thead><tbody>' +
+        d.producciones_en_curso.map(function(p){
+          return '<tr><td>' + _esc(p.producto||'') + '<div style="font-size:10px;color:#64748b;">' + (p.lotes||1) + ' lote' + ((p.lotes||1)===1?'':'s') + ' · ' + (p.cantidad_kg||0) + 'kg</div></td>' +
+            '<td><span class="badge estado-prog">' + (p.area_codigo||'—') + '</span></td>' +
+            '<td style="font-size:11px;color:#a5f3fc;">' + _esc(p.operario_elaboracion || p.operario_dispensacion || '—') + '</td>' +
+            '<td style="font-size:10px;color:#94a3b8;">' + _esc((p.inicio_real_at||'').substring(11,16)) + '</td></tr>';
+        }).join('') + '</tbody></table>';
+    }
+
+    var hoy = document.getElementById('lab-hoy-list');
+    if (!d.producciones_hoy || !d.producciones_hoy.length) {
+      hoy.innerHTML = '<div class="empty">Sin producciones programadas hoy</div>';
+    } else {
+      hoy.innerHTML = '<table><thead><tr><th>Producto</th><th>Sala</th><th>Lotes</th><th>Estado</th></tr></thead><tbody>' +
+        d.producciones_hoy.map(function(p){
+          return '<tr><td>' + _esc(p.producto||'') + '</td>' +
+            '<td><span class="badge estado-prog">' + (p.area_codigo||'—') + '</span></td>' +
+            '<td>' + (p.lotes||1) + '</td>' +
+            '<td style="font-size:11px;">' + _esc(p.estado||'') + '</td></tr>';
+        }).join('') + '</tbody></table>';
+    }
+
+    var cuar = document.getElementById('lab-cuar-list');
+    if (!d.lotes_cuarentena || !d.lotes_cuarentena.length) {
+      cuar.innerHTML = '<div class="empty">Sin lotes en cuarentena</div>';
+    } else {
+      cuar.innerHTML = '<table><thead><tr><th>Material</th><th>Lote</th><th>Cantidad</th><th>Días</th></tr></thead><tbody>' +
+        d.lotes_cuarentena.map(function(l){
+          var dias = Math.round(l.dias_cuarentena||0);
+          var col = dias > 14 ? '#f87171' : dias > 7 ? '#fbbf24' : '#94a3b8';
+          return '<tr><td>' + _esc(l.material_nombre||l.material_id||'') + '</td>' +
+            '<td style="font-family:monospace;font-size:11px;">' + _esc(l.lote||'-') + '</td>' +
+            '<td>' + (l.cantidad||0) + '</td>' +
+            '<td style="color:' + col + ';font-weight:700;">' + dias + 'd</td></tr>';
+        }).join('') + '</tbody></table>';
+    }
+
+    var oos = document.getElementById('lab-oos-list');
+    if (!d.oos_abiertos || !d.oos_abiertos.length) {
+      oos.innerHTML = '<div class="empty">Sin OOS abiertos ✅</div>';
+    } else {
+      oos.innerHTML = '<table><thead><tr><th>Código</th><th>Lote/Producto</th><th>Estado</th></tr></thead><tbody>' +
+        d.oos_abiertos.map(function(o){
+          return '<tr><td><b>' + _esc(o.codigo||'') + '</b></td>' +
+            '<td>' + _esc(o.lote||'') + '<div style="font-size:10px;color:#64748b;">' + _esc(o.parametro||'') + '</div></td>' +
+            '<td><span class="badge alta">' + _esc(o.estado||'') + '</span></td></tr>';
+        }).join('') + '</tbody></table>';
+    }
+
+    var eq = document.getElementById('lab-eq-list');
+    if (!d.equipos_estado || !d.equipos_estado.length) {
+      eq.innerHTML = '<div class="empty">Equipos al día ✓</div>';
+    } else {
+      eq.innerHTML = '<table><thead><tr><th>Código</th><th>Equipo</th><th>Días</th></tr></thead><tbody>' +
+        d.equipos_estado.map(function(e){
+          var dias = Math.round(e.dias||0);
+          var col = dias < 0 ? '#f87171' : dias < 7 ? '#fbbf24' : '#94a3b8';
+          return '<tr><td><b>' + _esc(e.codigo||'') + '</b></td>' +
+            '<td>' + _esc(e.nombre||'') + '<div style="font-size:10px;color:#64748b;">' + _esc(e.area_codigo||'') + '</div></td>' +
+            '<td style="color:' + col + ';font-weight:700;">' + (dias < 0 ? 'VENCIDO ' + Math.abs(dias) : dias) + 'd</td></tr>';
+        }).join('') + '</tbody></table>';
+    }
+
+    var desv = document.getElementById('lab-desv-list');
+    if (!d.desviaciones_abiertas || !d.desviaciones_abiertas.length) {
+      desv.innerHTML = '<div class="empty">Sin desviaciones abiertas ✅</div>';
+    } else {
+      desv.innerHTML = '<table><thead><tr><th>Código</th><th>Tipo</th><th>Sev.</th><th>Días</th></tr></thead><tbody>' +
+        d.desviaciones_abiertas.map(function(x){
+          var dias = Math.round(x.dias_abierta||0);
+          var col = dias > 5 ? '#f87171' : dias > 2 ? '#fbbf24' : '#94a3b8';
+          var sev = (x.severidad||'').toLowerCase();
+          var sevC = sev === 'critica' ? 'alta' : sev === 'mayor' ? 'media' : 'baja';
+          return '<tr><td><b>' + _esc(x.codigo||'') + '</b></td>' +
+            '<td style="font-size:11px;">' + _esc(x.tipo||'') + '</td>' +
+            '<td><span class="badge ' + sevC + '">' + _esc(x.severidad||'-') + '</span></td>' +
+            '<td style="color:' + col + ';font-weight:700;">' + dias + 'd</td></tr>';
+        }).join('') + '</tbody></table>';
+    }
+
+    var ahoy = d.agua_hoy || {};
+    document.getElementById('lab-agua-val').textContent = (ahoy.registros||0) === 0 ? '⚠ Sin registro' : '✓ ' + ahoy.registros;
+    document.getElementById('lab-agua-val').style.color = (ahoy.registros||0) === 0 ? '#fca5a5' : '#34d399';
+    document.getElementById('lab-agua-sub').textContent = ahoy.ultima ? ('Último: ' + ahoy.ultima.substring(11,16)) : 'Pendiente registrar conductividad/cloro';
+    document.getElementById('lab-cap').textContent = d.capacitaciones_pendientes || 0;
+  } catch(e) { console.error('Lab error:', e); }
+  // auto-refresh
+  if (!_labInterval) {
+    _labInterval = setInterval(function(){
+      var pane = document.getElementById('esp-tab-lab');
+      if (pane && pane.style.display !== 'none') cargarLab();
+    }, 60*1000);
+  }
+}
+
+// ════════════════════════════════════════════════════════════════
+// CLIENTES 360
+// ════════════════════════════════════════════════════════════════
+var CLIENTES_DATA = [];
+async function cargarClientes() {
+  try {
+    var d = await fetch('/api/espagiria/clientes-maquila').then(function(r){return r.json();});
+    CLIENTES_DATA = d.clientes || [];
+    renderClientes();
+  } catch(e) {
+    document.getElementById('cli-grid').innerHTML = '<div class="empty">Error: ' + e.message + '</div>';
+  }
+}
+function filtrarClientes() { renderClientes(); }
+function renderClientes() {
+  var q = (document.getElementById('cli-search')||{value:''}).value.toLowerCase();
+  var data = q ? CLIENTES_DATA.filter(function(c){
+    return (c.nombre||'').toLowerCase().indexOf(q)>=0 ||
+           (c.empresa_grupo||'').toLowerCase().indexOf(q)>=0;
+  }) : CLIENTES_DATA;
+  var grid = document.getElementById('cli-grid');
+  if (!data.length) { grid.innerHTML = '<div class="empty">' + (q?'Sin coincidencias':'Sin clientes registrados') + '</div>'; return; }
+  grid.innerHTML = data.map(function(c){
+    var marca = c.es_marca_propia ? '<span class="badge baja" style="margin-left:6px;">MARCA</span>' : '';
+    var act = (c.pedidos_activos||0) > 0 ? '<span class="badge media" style="margin-left:6px;">' + c.pedidos_activos + ' activos</span>' : '';
+    var ult = c.ultimo_ped ? ('Último: ' + (c.ultimo_ped||'').substring(0,10)) : 'Sin pedidos';
+    return '<div class="card" style="cursor:pointer;border-left:4px solid #06b6d4;" onclick="verCli360(' + c.id + ')">' +
+      '<h3 style="text-transform:none;letter-spacing:0;color:#fff;font-size:0.95em;margin-bottom:6px;">' + _esc(c.nombre||'') + marca + act + '</h3>' +
+      '<div style="font-size:11px;color:#94a3b8;">' + _esc(c.empresa_grupo||'—') + '</div>' +
+      '<div style="margin-top:10px;display:flex;gap:14px;flex-wrap:wrap;">' +
+        '<div><div style="font-size:10px;color:#64748b;">PEDIDOS</div><div style="font-size:1.1em;font-weight:700;color:#fff;">' + (c.total_pedidos||0) + '</div></div>' +
+        '<div><div style="font-size:10px;color:#64748b;">VALOR TOTAL</div><div style="font-size:1.1em;font-weight:700;color:#34d399;">$' + fmtNum(Math.round(c.valor_total||0)) + '</div></div>' +
+      '</div>' +
+      '<div style="font-size:11px;color:#64748b;margin-top:8px;">' + ult + '</div>' +
+      '</div>';
+  }).join('');
+}
+async function verCli360(id) {
+  document.getElementById('cli-modal').style.display = 'flex';
+  document.getElementById('cli-modal-body').innerHTML = '<div class="empty">Cargando ficha 360...</div>';
+  try {
+    var d = await fetch('/api/espagiria/clientes-maquila/' + id + '/360').then(function(r){return r.json();});
+    if (d.error) { document.getElementById('cli-modal-body').innerHTML = '<div class="empty">Error: ' + _esc(d.error) + '</div>'; return; }
+    document.getElementById('cli-modal-title').textContent = d.cliente.nombre;
+    var s = d.stats || {};
+    var html = '';
+    // Datos
+    html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:18px;">';
+    html += '<div><div style="font-size:10px;color:#64748b;">NIT</div><div>' + _esc(d.cliente.nit_cedula||'—') + '</div></div>';
+    html += '<div><div style="font-size:10px;color:#64748b;">EMAIL</div><div>' + _esc(d.cliente.email||'—') + '</div></div>';
+    html += '<div><div style="font-size:10px;color:#64748b;">TELÉFONO</div><div>' + _esc(d.cliente.telefono||'—') + '</div></div>';
+    html += '<div><div style="font-size:10px;color:#64748b;">EMPRESA GRUPO</div><div>' + _esc(d.cliente.empresa_grupo||'—') + '</div></div>';
+    if (d.cliente.es_marca_propia) html += '<div style="grid-column:1/-1;"><span class="badge baja">MARCA PROPIA HHA</span></div>';
+    if (d.cliente.comparte_formula_con) html += '<div style="grid-column:1/-1;font-size:11px;color:#a5f3fc;">📋 Comparte fórmula con: ' + _esc(d.cliente.comparte_formula_con) + '</div>';
+    if (d.cliente.notas) html += '<div style="grid-column:1/-1;font-size:11px;color:#94a3b8;font-style:italic;">' + _esc(d.cliente.notas) + '</div>';
+    html += '</div>';
+    // KPIs
+    html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:18px;">';
+    html += '<div class="card"><h3>📦 Pedidos</h3><div class="val">' + s.total_pedidos + '</div></div>';
+    html += '<div class="card"><h3>💵 Valor total</h3><div class="val" style="color:#34d399;">$' + fmtNum(Math.round(s.valor_total||0)) + '</div></div>';
+    html += '<div class="card"><h3>🎯 Ticket prom</h3><div class="val">$' + fmtNum(Math.round(s.ticket_promedio||0)) + '</div></div>';
+    html += '<div class="card"><h3>🔥 Pipeline</h3><div class="val" style="color:#fbbf24;">' + (s.pipeline_activos||0) + '</div></div>';
+    html += '<div class="card"><h3>⏱️ Días sin pedido</h3><div class="val" style="color:' + (s.dias_sin_pedido > 60 ? '#f87171' : '#fff') + ';">' + (s.dias_sin_pedido!=null ? s.dias_sin_pedido : '—') + '</div></div>';
+    html += '</div>';
+    // Pipeline activo
+    html += '<div class="section-title">🔥 Pipeline activo</div>';
+    if (!d.pipeline_activo || !d.pipeline_activo.length) {
+      html += '<div class="empty">Sin pedidos activos</div>';
+    } else {
+      html += '<table><thead><tr><th>Número</th><th>Producto</th><th>Unidades</th><th>Estado</th><th>Entrega</th></tr></thead><tbody>' +
+        d.pipeline_activo.map(function(p){
+          return '<tr><td><b>' + _esc(p.numero||'') + '</b></td>' +
+            '<td>' + _esc(p.producto_nombre||'') + '</td>' +
+            '<td>' + (p.unidades||0) + '</td>' +
+            '<td><span class="badge media">' + _esc(p.estado||'') + '</span></td>' +
+            '<td style="font-size:11px;">' + _esc(p.fecha_entrega_objetivo||'-') + '</td></tr>';
+        }).join('') + '</tbody></table>';
+    }
+    // Top productos
+    html += '<div class="section-title" style="margin-top:18px;">⭐ Top productos solicitados</div>';
+    if (!d.top_productos || !d.top_productos.length) {
+      html += '<div class="empty">Sin historial</div>';
+    } else {
+      html += '<table><thead><tr><th>Producto</th><th>Veces</th><th>Total uds</th><th>Total kg</th><th>Último</th></tr></thead><tbody>' +
+        d.top_productos.map(function(t){
+          return '<tr><td>' + _esc(t.producto_nombre||'') + '</td>' +
+            '<td>' + t.veces_pedido + '</td>' +
+            '<td>' + fmtNum(t.total_uds||0) + '</td>' +
+            '<td>' + (t.total_kg||0).toFixed(1) + '</td>' +
+            '<td style="font-size:11px;color:#94a3b8;">' + _esc((t.ultimo||'').substring(0,10)) + '</td></tr>';
+        }).join('') + '</tbody></table>';
+    }
+    // Pedidos recientes
+    html += '<div class="section-title" style="margin-top:18px;">📋 Pedidos recientes</div>';
+    if (!d.pedidos_recientes || !d.pedidos_recientes.length) {
+      html += '<div class="empty">Sin pedidos</div>';
+    } else {
+      html += '<table><thead><tr><th>Número</th><th>Producto</th><th>Uds</th><th>Estado</th><th>Fecha</th><th>Valor</th></tr></thead><tbody>' +
+        d.pedidos_recientes.map(function(p){
+          return '<tr><td><b>' + _esc(p.numero||'') + '</b></td>' +
+            '<td>' + _esc(p.producto_nombre||'') + '</td>' +
+            '<td>' + (p.unidades||0) + '</td>' +
+            '<td style="font-size:11px;">' + _esc(p.estado||'') + '</td>' +
+            '<td style="font-size:11px;">' + _esc((p.fecha_pedido||'').substring(0,10)) + '</td>' +
+            '<td style="text-align:right;">$' + fmtNum(Math.round(p.valor_total||0)) + '</td></tr>';
+        }).join('') + '</tbody></table>';
+    }
+    document.getElementById('cli-modal-body').innerHTML = html;
+  } catch(e) {
+    document.getElementById('cli-modal-body').innerHTML = '<div class="empty">Error: ' + e.message + '</div>';
+  }
+}
+function cerrarCliModal() {
+  document.getElementById('cli-modal').style.display = 'none';
+}
+// Cerrar modal por click fuera
+document.addEventListener('click', function(ev){
+  var m = document.getElementById('cli-modal');
+  if (m && ev.target === m) cerrarCliModal();
+});
 </script>
 </body>
 </html>
