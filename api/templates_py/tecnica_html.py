@@ -67,6 +67,10 @@ textarea{resize:vertical;min-height:60px;}
   </div>
   <div class="cx-mod-header__nav">
     <a href="/modulos" class="cx-btn cx-btn-ghost cx-btn-sm" title="Volver">&larr; Módulos</a>
+    <a href="/aseguramiento" class="cx-btn cx-btn-ghost cx-btn-sm" title="Aseguramiento de Calidad">Aseguramiento</a>
+    <a href="/calidad" class="cx-btn cx-btn-ghost cx-btn-sm" title="Control de Calidad">Calidad</a>
+    <a href="/compliance" class="cx-btn cx-btn-ghost cx-btn-sm" title="Cronogramas BPM + CAPA">Compliance</a>
+    <a href="/espagiria" class="cx-btn cx-btn-ghost cx-btn-sm" title="Espagiría">Espagiría</a>
     <button class="cx-theme-toggle" onclick="cxToggleTheme()" title="Modo claro/oscuro">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4 12H2M22 12h-2M5.6 5.6 4.2 4.2M19.8 19.8l-1.4-1.4M5.6 18.4l-1.4 1.4M19.8 4.2l-1.4 1.4"/></svg>
     </button>
@@ -117,10 +121,14 @@ textarea{resize:vertical;min-height:60px;}
     </div>
   </div>
   <div class="card">
-    <div class="card-title">Formulas Registradas</div>
+    <div class="card-header">
+      <span class="card-title" style="margin:0">Formulas Registradas</span>
+      <input type="text" placeholder="Buscar..." oninput="buscarEn('formulas', this.value)" style="max-width:240px">
+    </div>
     <table><thead><tr><th>Codigo</th><th>Nombre</th><th>Version</th><th>Tipo</th><th>Estado</th><th>Fecha Version</th><th>Creado por</th><th></th></tr></thead>
       <tbody id="tb-formulas"><tr><td colspan="8" class="empty">Cargando...</td></tr></tbody>
     </table>
+    <div id="pg-formulas"></div>
   </div>
 </div>
 <!-- Fichas Tecnicas -->
@@ -130,6 +138,7 @@ textarea{resize:vertical;min-height:60px;}
     <div class="form-row">
       <div class="form-group"><label>Codigo</label><input id="ft-cod" placeholder="COC-FT-001"></div>
       <div class="form-group"><label>Nombre del Producto</label><input id="ft-nom"></div>
+      <div class="form-group"><label>Formula vinculada</label><select id="ft-formula"><option value="">— ninguna —</option></select></div>
       <div class="form-group"><label>Version</label><input id="ft-ver" value="1.0" style="max-width:80px"></div>
       <div class="form-group"><label>Estado</label><select id="ft-est"><option>Vigente</option><option>En_Revision</option><option>Obsoleta</option></select></div>
       <div class="form-group"><label>Fecha Actualizacion</label><input type="date" id="ft-fv"></div>
@@ -141,10 +150,14 @@ textarea{resize:vertical;min-height:60px;}
     </div>
   </div>
   <div class="card">
-    <div class="card-title">Fichas Registradas</div>
-    <table><thead><tr><th>Codigo</th><th>Nombre</th><th>Version</th><th>Estado</th><th>Actualizado</th><th>Documento</th><th></th></tr></thead>
-      <tbody id="tb-fichas"><tr><td colspan="7" class="empty">Cargando...</td></tr></tbody>
+    <div class="card-header">
+      <span class="card-title" style="margin:0">Fichas Registradas</span>
+      <input type="text" placeholder="Buscar..." oninput="buscarEn('fichas', this.value)" style="max-width:240px">
+    </div>
+    <table><thead><tr><th>Codigo</th><th>Nombre</th><th>Formula</th><th>Version</th><th>Estado</th><th>Actualizado</th><th>Documento</th><th></th></tr></thead>
+      <tbody id="tb-fichas"><tr><td colspan="8" class="empty">Cargando...</td></tr></tbody>
     </table>
+    <div id="pg-fichas"></div>
   </div>
 </div>
 <!-- Registros INVIMA -->
@@ -166,10 +179,14 @@ textarea{resize:vertical;min-height:60px;}
     </div>
   </div>
   <div class="card">
-    <div class="card-title">Registros INVIMA</div>
+    <div class="card-header">
+      <span class="card-title" style="margin:0">Registros INVIMA</span>
+      <input type="text" placeholder="Buscar..." oninput="buscarEn('invima', this.value)" style="max-width:240px">
+    </div>
     <table><thead><tr><th>Producto</th><th>N. Registro</th><th>Tipo</th><th>Expedicion</th><th>Vencimiento</th><th>Estado</th><th>Alertas</th><th></th></tr></thead>
       <tbody id="tb-invima"><tr><td colspan="8" class="empty">Cargando...</td></tr></tbody>
     </table>
+    <div id="pg-invima"></div>
   </div>
 </div>
 <!-- Documentos SGD -->
@@ -195,10 +212,14 @@ textarea{resize:vertical;min-height:60px;}
     </div>
   </div>
   <div class="card">
-    <div class="card-title">Documentos del SGD</div>
-    <table><thead><tr><th>Tipo</th><th>Codigo</th><th>Nombre</th><th>Ver.</th><th>Emision</th><th>Revision</th><th>Responsable</th><th>Estado</th><th></th></tr></thead>
-      <tbody id="tb-sgd"><tr><td colspan="9" class="empty">Cargando...</td></tr></tbody>
+    <div class="card-header">
+      <span class="card-title" style="margin:0">Documentos del SGD</span>
+      <input type="text" placeholder="Buscar..." oninput="buscarEn('sgd', this.value)" style="max-width:240px">
+    </div>
+    <table><thead><tr><th>Tipo</th><th>Codigo</th><th>Nombre</th><th>Ver.</th><th>Emision</th><th>Revision</th><th>Responsable</th><th>Estado</th><th>Doc</th><th></th></tr></thead>
+      <tbody id="tb-sgd"><tr><td colspan="10" class="empty">Cargando...</td></tr></tbody>
     </table>
+    <div id="pg-sgd"></div>
   </div>
 </div>
 </div>
@@ -233,6 +254,76 @@ function _apiGet(url) {
 }
 // Pre-fetch CSRF token al cargar (asi el cookie existe antes del primer POST)
 fetch('/api/csrf-token', {credentials: 'same-origin'}).catch(function(){});
+
+// ── Filtros + Paginacion (client-side) ─────────────────────────────────
+// Estado por tabla: query (string), page (int), page_size (int).
+var TBL_STATE = {
+  formulas: {q: '', page: 1, size: 25, fields: ['codigo','nombre','tipo','estado','creado_por']},
+  fichas:   {q: '', page: 1, size: 25, fields: ['codigo','nombre','version','estado']},
+  invima:   {q: '', page: 1, size: 25, fields: ['producto','num_registro','tipo_tramite','estado']},
+  sgd:      {q: '', page: 1, size: 25, fields: ['tipo','codigo','nombre','responsable','estado']},
+};
+function _filtrar(data, query, fields) {
+  if (!query) return data;
+  var q = query.toLowerCase().trim();
+  return (data || []).filter(function(r) {
+    return fields.some(function(f) {
+      var v = r[f]; return v != null && String(v).toLowerCase().indexOf(q) !== -1;
+    });
+  });
+}
+function _paginar(data, page, size) {
+  if (size <= 0) return {items: data, total: data.length, totalPages: 1};
+  var total = data.length;
+  var totalPages = Math.max(1, Math.ceil(total / size));
+  var p = Math.min(Math.max(1, page), totalPages);
+  return {
+    items: data.slice((p-1)*size, p*size),
+    total: total, totalPages: totalPages, page: p,
+  };
+}
+function _renderPaginacionHTML(tabla, info) {
+  var s = TBL_STATE[tabla];
+  if (info.total <= s.size) {
+    return '<div style="font-size:11px;color:#64748b;padding:8px 0;">Mostrando ' +
+           info.total + ' filas</div>';
+  }
+  var html = '<div style="display:flex;align-items:center;gap:8px;padding:8px 0;font-size:12px;">';
+  html += '<span style="color:#64748b;">Página ' + info.page + ' / ' + info.totalPages +
+          ' · ' + info.total + ' filas</span>';
+  html += '<span style="flex:1"></span>';
+  html += '<button class="btn btn-sm" style="background:#334155;color:#cbd5e1;" ' +
+          'onclick="cambiarPagina(\'' + tabla + '\',-1)"' +
+          (info.page <= 1 ? ' disabled' : '') + '>&larr;</button>';
+  html += '<button class="btn btn-sm" style="background:#334155;color:#cbd5e1;" ' +
+          'onclick="cambiarPagina(\'' + tabla + '\',1)"' +
+          (info.page >= info.totalPages ? ' disabled' : '') + '>&rarr;</button>';
+  html += '<select onchange="cambiarTamano(\'' + tabla + '\', this.value)" ' +
+          'style="background:#0f172a;border:1px solid #334155;color:#cbd5e1;padding:4px 6px;border-radius:5px;font-size:12px;">';
+  ['25','50','100','999'].forEach(function(o){
+    var label = o === '999' ? 'Todas' : o;
+    html += '<option value="' + o + '"' + (String(s.size)===o?' selected':'') + '>' + label + '</option>';
+  });
+  html += '</select></div>';
+  return html;
+}
+function cambiarPagina(tabla, delta) {
+  TBL_STATE[tabla].page = Math.max(1, TBL_STATE[tabla].page + delta);
+  var fn = {formulas:'loadFormulas', fichas:'loadFichas', invima:'loadInvima', sgd:'loadSgd'}[tabla];
+  if (fn && window[fn]) window[fn]();
+}
+function cambiarTamano(tabla, valor) {
+  TBL_STATE[tabla].size = parseInt(valor, 10) || 25;
+  TBL_STATE[tabla].page = 1;
+  var fn = {formulas:'loadFormulas', fichas:'loadFichas', invima:'loadInvima', sgd:'loadSgd'}[tabla];
+  if (fn && window[fn]) window[fn]();
+}
+function buscarEn(tabla, valor) {
+  TBL_STATE[tabla].q = valor || '';
+  TBL_STATE[tabla].page = 1;
+  var fn = {formulas:'loadFormulas', fichas:'loadFichas', invima:'loadInvima', sgd:'loadSgd'}[tabla];
+  if (fn && window[fn]) window[fn]();
+}
 
 function goTab(ev, id) {
   document.querySelectorAll('.pane').forEach(function(p){p.classList.remove('active');});
@@ -282,13 +373,31 @@ function loadDash() {
 }
 function loadFormulas() {
   _apiGet('/api/tecnica/formulas').then(function(data) {
+    FORMULAS_CACHE = data || [];  // refresh cache for fichas dropdown
+    var s = TBL_STATE.formulas;
+    var filtrado = _filtrar(data, s.q, s.fields);
+    var info = _paginar(filtrado, s.page, s.size);
+    s.page = info.page;
     var tb = document.getElementById('tb-formulas');
-    if (!data.length) { tb.innerHTML = '<tr><td colspan="8" class="empty">Sin formulas registradas</td></tr>'; return; }
-    tb.innerHTML = data.map(function(r) {
-      var acciones = '<button class="btn btn-secondary btn-sm" onclick="verHistorialFormula(' + r.id + ', \'' + (r.codigo||'').replace(/'/g,'\\\'')+ '\')" title="Ver historial">&#128214; Historial</button> ' +
+    if (!info.items.length) { tb.innerHTML = '<tr><td colspan="8" class="empty">' + (s.q ? 'Sin coincidencias para "' + s.q + '"' : 'Sin formulas registradas') + '</td></tr>'; document.getElementById('pg-formulas').innerHTML = ''; return; }
+    tb.innerHTML = info.items.map(function(r) {
+      var acciones = '<button class="btn btn-secondary btn-sm" onclick="editarFormula(' + r.id + ')" title="Editar">&#9998;</button> ' +
+                     '<button class="btn btn-secondary btn-sm" onclick="verHistorialFormula(' + r.id + ', \'' + (r.codigo||'').replace(/'/g,'\\\'')+ '\')" title="Ver historial">&#128214;</button> ' +
                      '<button class="btn btn-danger btn-sm" onclick="eliminarFormula(' + r.id + ')">Eliminar</button>';
       return '<tr><td>' + r.codigo + '</td><td>' + r.nombre + '</td><td>' + r.version + '</td><td><span class="badge-azul">' + r.tipo + '</span></td><td>' + estadoBadge(r.estado) + '</td><td>' + (r.fecha_version||'-') + '</td><td>' + (r.creado_por||'-') + '</td><td>' + acciones + '</td></tr>';
     }).join('');
+    document.getElementById('pg-formulas').innerHTML = _renderPaginacionHTML('formulas', info);
+    // Sincronizar dropdown de fichas si la cache cambio
+    var sel = document.getElementById('ft-formula');
+    if (sel) {
+      var actual = sel.value;
+      var opts = '<option value="">— ninguna —</option>';
+      FORMULAS_CACHE.forEach(function(f) {
+        opts += '<option value="' + f.id + '">' + f.codigo + ' · ' + (f.nombre||'').slice(0,40) + '</option>';
+      });
+      sel.innerHTML = opts;
+      sel.value = actual;
+    }
   });
 }
 
@@ -373,21 +482,211 @@ function eliminarFormula(id) {
   if (!confirm('Eliminar formula? Esta accion no se puede deshacer.')) return;
   _apiDelete('/api/tecnica/formulas/' + id).then(function(){loadFormulas();});
 }
+
+// ── Editor generico (modal con form para PATCH) ──────────────────────
+// Cada entidad declara sus campos editables. Algunos requieren
+// motivo_cambio para auditoria (formulas) o vinculo CC (formulas mayor).
+var EDITOR_CONFIG = {
+  formula: {
+    titulo: 'Editar Fórmula',
+    endpoint: '/api/tecnica/formulas/',
+    list: 'loadFormulas',
+    campos: [
+      {key:'nombre', label:'Nombre', type:'text'},
+      {key:'version', label:'Versión', type:'text'},
+      {key:'tipo', label:'Tipo', type:'select', options:['COSMETICO','SUPLEMENTO','HIGIENE','OTRO']},
+      {key:'estado', label:'Estado', type:'select', options:['Vigente','En_Revision','Obsoleta']},
+      {key:'fecha_version', label:'Fecha versión', type:'date'},
+      {key:'descripcion', label:'Descripción', type:'textarea'},
+      {key:'motivo_cambio', label:'Motivo del cambio (auditable)', type:'text', extra:true,
+       hint:'Requerido si modificas algo regulatorio. Para cambios mayores, usa Cambio de Control.'},
+    ],
+  },
+  ficha: {
+    titulo: 'Editar Ficha Técnica',
+    endpoint: '/api/tecnica/fichas/',
+    list: 'loadFichas',
+    campos: [
+      {key:'nombre', label:'Nombre', type:'text'},
+      {key:'formula_id', label:'Fórmula vinculada', type:'select-formula'},
+      {key:'version', label:'Versión', type:'text'},
+      {key:'estado', label:'Estado', type:'select', options:['Vigente','En_Revision','Obsoleta']},
+      {key:'fecha_actualizacion', label:'Fecha actualización', type:'date'},
+      {key:'url_documento', label:'URL Documento', type:'text'},
+      {key:'notas', label:'Notas', type:'textarea'},
+    ],
+  },
+  invima: {
+    titulo: 'Editar Registro INVIMA',
+    endpoint: '/api/tecnica/invima/',
+    list: 'loadInvima',
+    campos: [
+      {key:'producto', label:'Producto', type:'text'},
+      {key:'num_registro', label:'N. Registro', type:'text'},
+      {key:'num_lote', label:'N. Lote', type:'text'},
+      {key:'tipo_tramite', label:'Tipo trámite', type:'select',
+       options:['Notificacion Sanitaria','Registro Sanitario','Renovacion','Modificacion']},
+      {key:'fecha_expedicion', label:'Fecha expedición', type:'date'},
+      {key:'fecha_vencimiento', label:'Fecha vencimiento', type:'date'},
+      {key:'estado', label:'Estado', type:'select',
+       options:['Vigente','En_Tramite','Vencido','Suspendido']},
+      {key:'notas', label:'Notas', type:'textarea'},
+    ],
+  },
+  sgd: {
+    titulo: 'Editar Documento SGD',
+    endpoint: '/api/tecnica/documentos/',
+    list: 'loadSgd',
+    campos: [
+      {key:'tipo', label:'Tipo', type:'select',
+       options:['SOP','BPM','Instruccion','Formato','Manual','Protocolo','Otro']},
+      {key:'nombre', label:'Nombre', type:'text'},
+      {key:'version', label:'Versión', type:'text'},
+      {key:'fecha_emision', label:'Fecha emisión', type:'date'},
+      {key:'fecha_revision', label:'Fecha última revisión', type:'date'},
+      {key:'responsable', label:'Responsable', type:'text'},
+      {key:'estado', label:'Estado', type:'select',
+       options:['Vigente','En_Revision','Obsoleto']},
+      {key:'url_documento', label:'URL Documento', type:'text'},
+      {key:'notas', label:'Notas', type:'textarea'},
+    ],
+  },
+};
+
+function abrirEditor(entidad, id, dataActual) {
+  var cfg = EDITOR_CONFIG[entidad];
+  if (!cfg) return;
+  var modal = document.createElement('div');
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:9999;';
+  var inner = '<h2 style="margin:0 0 14px 0;color:#fff;">&#9998; ' + cfg.titulo + '</h2>';
+  inner += '<div style="font-size:11px;color:#64748b;margin-bottom:14px;">id #' + id + ' · cambios crean entrada en audit_log</div>';
+  cfg.campos.forEach(function(f){
+    var val = (dataActual && dataActual[f.key] != null) ? String(dataActual[f.key]) : '';
+    inner += '<div style="margin-bottom:10px"><label style="display:block;font-size:0.7em;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">' + f.label + '</label>';
+    if (f.type === 'select') {
+      inner += '<select id="ed-' + f.key + '" style="background:#0f172a;border:1px solid #334155;color:#e2e8f0;padding:7px 10px;border-radius:7px;font-size:0.85em;width:100%;">';
+      f.options.forEach(function(o){ inner += '<option value="' + o + '"' + (o===val?' selected':'') + '>' + o + '</option>'; });
+      inner += '</select>';
+    } else if (f.type === 'select-formula') {
+      inner += '<select id="ed-' + f.key + '" style="background:#0f172a;border:1px solid #334155;color:#e2e8f0;padding:7px 10px;border-radius:7px;font-size:0.85em;width:100%;">';
+      inner += '<option value="">— ninguna —</option>';
+      FORMULAS_CACHE.forEach(function(fm){
+        inner += '<option value="' + fm.id + '"' + (String(fm.id)===val?' selected':'') + '>' + fm.codigo + ' · ' + (fm.nombre||'').slice(0,40) + '</option>';
+      });
+      inner += '</select>';
+    } else if (f.type === 'textarea') {
+      inner += '<textarea id="ed-' + f.key + '" rows="3" style="background:#0f172a;border:1px solid #334155;color:#e2e8f0;padding:7px 10px;border-radius:7px;font-size:0.85em;width:100%;resize:vertical;">' + val + '</textarea>';
+    } else {
+      inner += '<input id="ed-' + f.key + '" type="' + (f.type||'text') + '" value="' + val.replace(/"/g,'&quot;') + '" style="background:#0f172a;border:1px solid #334155;color:#e2e8f0;padding:7px 10px;border-radius:7px;font-size:0.85em;width:100%;">';
+    }
+    if (f.hint) inner += '<div style="font-size:10px;color:#64748b;margin-top:3px;">' + f.hint + '</div>';
+    inner += '</div>';
+  });
+  inner += '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;">';
+  inner += '<button class="btn btn-secondary" id="ed-cancel">Cancelar</button>';
+  inner += '<button class="btn btn-primary" id="ed-save">Guardar</button>';
+  inner += '</div>';
+  modal.innerHTML = '<div style="background:#1e293b;border:1px solid #334155;border-radius:12px;padding:24px;width:560px;max-width:95vw;max-height:90vh;overflow-y:auto;color:#e2e8f0;">' + inner + '</div>';
+  document.body.appendChild(modal);
+  modal.addEventListener('click', function(e){ if(e.target===modal) modal.remove(); });
+  document.getElementById('ed-cancel').onclick = function(){ modal.remove(); };
+  document.getElementById('ed-save').onclick = function(){
+    var payload = {};
+    cfg.campos.forEach(function(f){
+      var el = document.getElementById('ed-' + f.key);
+      if (!el) return;
+      var v = el.value;
+      if (f.key === 'formula_id') v = v ? parseInt(v,10) : null;
+      // No mandar campos vacios string excepto si user explicitamente los borro
+      payload[f.key] = v;
+    });
+    document.getElementById('ed-save').disabled = true;
+    document.getElementById('ed-save').textContent = 'Guardando...';
+    _apiPatch(cfg.endpoint + id, payload).then(function(d){
+      if (d.error) { alert('Error: ' + d.error); document.getElementById('ed-save').disabled = false; document.getElementById('ed-save').textContent = 'Guardar'; return; }
+      modal.remove();
+      if (window[cfg.list]) window[cfg.list]();
+      if (cfg.list !== 'loadDash') loadDash();
+    }).catch(function(e){
+      if (e === 0) return;
+      alert('Error de red');
+      document.getElementById('ed-save').disabled = false;
+      document.getElementById('ed-save').textContent = 'Guardar';
+    });
+  };
+}
+
+function editarFormula(id) {
+  var item = FORMULAS_CACHE.find(function(x){ return x.id === id; });
+  if (!item) {
+    _apiGet('/api/tecnica/formulas').then(function(data){
+      FORMULAS_CACHE = data || [];
+      var it = FORMULAS_CACHE.find(function(x){ return x.id === id; });
+      if (it) abrirEditor('formula', id, it);
+    });
+  } else {
+    abrirEditor('formula', id, item);
+  }
+}
+function editarFicha(id) {
+  _apiGet('/api/tecnica/fichas').then(function(data){
+    var it = (data||[]).find(function(x){ return x.id === id; });
+    if (it) abrirEditor('ficha', id, it);
+  });
+}
+function editarInvima(id) {
+  _apiGet('/api/tecnica/invima').then(function(data){
+    var it = (data||[]).find(function(x){ return x.id === id; });
+    if (it) abrirEditor('invima', id, it);
+  });
+}
+function editarSgd(id) {
+  _apiGet('/api/tecnica/documentos').then(function(data){
+    var it = (data||[]).find(function(x){ return x.id === id; });
+    if (it) abrirEditor('sgd', id, it);
+  });
+}
+// Cache simple de fórmulas para el dropdown de fichas
+var FORMULAS_CACHE = [];
+function cargarFormulasDropdown() {
+  return _apiGet('/api/tecnica/formulas').then(function(data) {
+    FORMULAS_CACHE = data || [];
+    var sel = document.getElementById('ft-formula');
+    if (!sel) return;
+    var opts = '<option value="">— ninguna —</option>';
+    FORMULAS_CACHE.forEach(function(f) {
+      opts += '<option value="' + f.id + '">' + f.codigo + ' · ' + (f.nombre||'').slice(0,40) + '</option>';
+    });
+    sel.innerHTML = opts;
+  });
+}
 function loadFichas() {
-  _apiGet('/api/tecnica/fichas').then(function(data) {
-    var tb = document.getElementById('tb-fichas');
-    if (!data.length) { tb.innerHTML = '<tr><td colspan="7" class="empty">Sin fichas registradas</td></tr>'; return; }
-    tb.innerHTML = data.map(function(r) {
-      var link = r.url_documento ? '<a href="' + r.url_documento + '" target="_blank" style="color:#a5b4fc">Ver doc</a>' : '-';
-      return '<tr><td>' + r.codigo + '</td><td>' + r.nombre + '</td><td>' + r.version + '</td><td>' + estadoBadge(r.estado) + '</td><td>' + (r.fecha_actualizacion||'-') + '</td><td>' + link + '</td><td><button class="btn btn-danger btn-sm" onclick="eliminarFicha(' + r.id + ')">Eliminar</button></td></tr>';
-    }).join('');
+  var ensure = FORMULAS_CACHE.length ? Promise.resolve() : cargarFormulasDropdown();
+  ensure.then(function(){
+    _apiGet('/api/tecnica/fichas').then(function(data) {
+      var s = TBL_STATE.fichas;
+      var filtrado = _filtrar(data, s.q, s.fields);
+      var info = _paginar(filtrado, s.page, s.size);
+      s.page = info.page;
+      var tb = document.getElementById('tb-fichas');
+      if (!info.items.length) { tb.innerHTML = '<tr><td colspan="8" class="empty">' + (s.q ? 'Sin coincidencias' : 'Sin fichas registradas') + '</td></tr>'; document.getElementById('pg-fichas').innerHTML = ''; return; }
+      var fmap = {};
+      FORMULAS_CACHE.forEach(function(f){ fmap[f.id] = f.codigo; });
+      tb.innerHTML = info.items.map(function(r) {
+        var link = r.url_documento ? '<a href="' + r.url_documento + '" target="_blank" style="color:#a5b4fc">Ver doc</a>' : '-';
+        var fcod = r.formula_id ? (fmap[r.formula_id] || ('id ' + r.formula_id)) : '<span style="color:#475569">—</span>';
+        return '<tr><td>' + r.codigo + '</td><td>' + r.nombre + '</td><td><span class="badge-azul">' + fcod + '</span></td><td>' + r.version + '</td><td>' + estadoBadge(r.estado) + '</td><td>' + (r.fecha_actualizacion||'-') + '</td><td>' + link + '</td><td><button class="btn btn-secondary btn-sm" onclick="editarFicha(' + r.id + ')" title="Editar">&#9998;</button> <button class="btn btn-danger btn-sm" onclick="eliminarFicha(' + r.id + ')">Eliminar</button></td></tr>';
+      }).join('');
+      document.getElementById('pg-fichas').innerHTML = _renderPaginacionHTML('fichas', info);
+    });
   });
 }
 function registrarFicha() {
   var fv = document.getElementById('ft-fv').value; if (!fv) fv = new Date().toISOString().slice(0,10);
-  var payload = {codigo:document.getElementById('ft-cod').value,nombre:document.getElementById('ft-nom').value,version:document.getElementById('ft-ver').value,estado:document.getElementById('ft-est').value,fecha_actualizacion:fv,url_documento:document.getElementById('ft-url').value,notas:document.getElementById('ft-notas').value};
+  var fid = document.getElementById('ft-formula').value;
+  var payload = {codigo:document.getElementById('ft-cod').value,nombre:document.getElementById('ft-nom').value,formula_id: fid ? parseInt(fid,10) : null, version:document.getElementById('ft-ver').value,estado:document.getElementById('ft-est').value,fecha_actualizacion:fv,url_documento:document.getElementById('ft-url').value,notas:document.getElementById('ft-notas').value};
   if (!payload.codigo || !payload.nombre) { alert('Codigo y nombre son obligatorios'); return; }
-  _apiPost('/api/tecnica/fichas', payload).then(function(d){if(d.ok){loadFichas();document.getElementById('ft-cod').value='';document.getElementById('ft-nom').value='';document.getElementById('ft-url').value='';}else alert(d.error||'Error');});
+  _apiPost('/api/tecnica/fichas', payload).then(function(d){if(d.ok){loadFichas();document.getElementById('ft-cod').value='';document.getElementById('ft-nom').value='';document.getElementById('ft-url').value='';document.getElementById('ft-formula').value='';}else alert(d.error||'Error');});
 }
 function eliminarFicha(id) {
   if (!confirm('Eliminar ficha tecnica?')) return;
@@ -395,14 +694,19 @@ function eliminarFicha(id) {
 }
 function loadInvima() {
   _apiGet('/api/tecnica/invima').then(function(data) {
+    var s = TBL_STATE.invima;
+    var filtrado = _filtrar(data, s.q, s.fields);
+    var info = _paginar(filtrado, s.page, s.size);
+    s.page = info.page;
     var tb = document.getElementById('tb-invima');
-    if (!data.length) { tb.innerHTML = '<tr><td colspan="8" class="empty">Sin registros INVIMA</td></tr>'; return; }
+    if (!info.items.length) { tb.innerHTML = '<tr><td colspan="8" class="empty">' + (s.q ? 'Sin coincidencias' : 'Sin registros INVIMA') + '</td></tr>'; document.getElementById('pg-invima').innerHTML = ''; return; }
     var hoy = new Date(); hoy.setHours(0,0,0,0);
-    tb.innerHTML = data.map(function(r) {
+    tb.innerHTML = info.items.map(function(r) {
       var rowClass = '';
       if (r.fecha_vencimiento) { var d = new Date(r.fecha_vencimiento + 'T00:00:00'); var diff = Math.floor((d - hoy) / 86400000); if (diff < 0) rowClass = 'class="row-crit"'; else if (diff <= 90) rowClass = 'class="row-alert"'; }
-      return '<tr ' + rowClass + '><td>' + r.producto + '</td><td>' + (r.num_registro||'-') + '</td><td><span class="badge-morado">' + (r.tipo_tramite||'-') + '</span></td><td>' + (r.fecha_expedicion||'-') + '</td><td>' + (r.fecha_vencimiento||'-') + '</td><td>' + estadoBadge(r.estado) + '</td><td>' + vencimientoBadge(r.fecha_vencimiento) + '</td><td><button class="btn btn-danger btn-sm" onclick="eliminarInvima(' + r.id + ')">Eliminar</button></td></tr>';
+      return '<tr ' + rowClass + '><td>' + r.producto + '</td><td>' + (r.num_registro||'-') + '</td><td><span class="badge-morado">' + (r.tipo_tramite||'-') + '</span></td><td>' + (r.fecha_expedicion||'-') + '</td><td>' + (r.fecha_vencimiento||'-') + '</td><td>' + estadoBadge(r.estado) + '</td><td>' + vencimientoBadge(r.fecha_vencimiento) + '</td><td><button class="btn btn-secondary btn-sm" onclick="editarInvima(' + r.id + ')" title="Editar">&#9998;</button> <button class="btn btn-danger btn-sm" onclick="eliminarInvima(' + r.id + ')">Eliminar</button></td></tr>';
     }).join('');
+    document.getElementById('pg-invima').innerHTML = _renderPaginacionHTML('invima', info);
   });
 }
 function registrarInvima() {
@@ -416,12 +720,28 @@ function eliminarInvima(id) {
 }
 function loadSgd() {
   _apiGet('/api/tecnica/documentos').then(function(data) {
+    var s = TBL_STATE.sgd;
+    var filtrado = _filtrar(data, s.q, s.fields);
+    var info = _paginar(filtrado, s.page, s.size);
+    s.page = info.page;
     var tb = document.getElementById('tb-sgd');
-    if (!data.length) { tb.innerHTML = '<tr><td colspan="9" class="empty">Sin documentos registrados</td></tr>'; return; }
-    tb.innerHTML = data.map(function(r) {
+    if (!info.items.length) { tb.innerHTML = '<tr><td colspan="10" class="empty">' + (s.q ? 'Sin coincidencias' : 'Sin documentos registrados') + '</td></tr>'; document.getElementById('pg-sgd').innerHTML = ''; return; }
+    tb.innerHTML = info.items.map(function(r) {
       var link = r.url_documento ? '<a href="' + r.url_documento + '" target="_blank" style="color:#a5b4fc">Ver</a>' : '-';
-      return '<tr><td><span class="badge-azul">' + (r.tipo||'SOP') + '</span></td><td>' + r.codigo + '</td><td>' + r.nombre + '</td><td>' + r.version + '</td><td>' + (r.fecha_emision||'-') + '</td><td>' + (r.fecha_revision||'-') + '</td><td>' + (r.responsable||'-') + '</td><td>' + estadoBadge(r.estado) + '</td><td>' + link + '</td></tr>';
+      var acc = '<button class="btn btn-secondary btn-sm" onclick="editarSgd(' + r.id + ')" title="Editar">&#9998;</button> <button class="btn btn-secondary btn-sm" onclick="marcarRevisado(' + r.id + ')" title="Marcar revisado">&#10003;</button> <button class="btn btn-danger btn-sm" onclick="eliminarSgd(' + r.id + ')">Eliminar</button>';
+      return '<tr><td><span class="badge-azul">' + (r.tipo||'SOP') + '</span></td><td>' + r.codigo + '</td><td>' + r.nombre + '</td><td>' + r.version + '</td><td>' + (r.fecha_emision||'-') + '</td><td>' + (r.fecha_revision||'-') + '</td><td>' + (r.responsable||'-') + '</td><td>' + estadoBadge(r.estado) + '</td><td>' + link + '</td><td>' + acc + '</td></tr>';
     }).join('');
+    document.getElementById('pg-sgd').innerHTML = _renderPaginacionHTML('sgd', info);
+  });
+}
+function eliminarSgd(id) {
+  if (!confirm('Eliminar documento SGD?')) return;
+  _apiDelete('/api/tecnica/documentos/' + id).then(function(){loadSgd();loadDash();});
+}
+function marcarRevisado(id) {
+  _apiPost('/api/tecnica/documentos/' + id + '/marcar-revisado').then(function(d){
+    if (d.ok) { loadSgd(); loadDash(); }
+    else alert(d.error || 'Error');
   });
 }
 function registrarDoc() {

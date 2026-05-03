@@ -93,8 +93,59 @@ def _init_tecnica():
                  ON cambios_control_formula(formula_id, fecha_solicitud DESC)""")
     c.execute("""CREATE INDEX IF NOT EXISTS idx_cc_estado
                  ON cambios_control_formula(estado, fecha_solicitud DESC)""")
+    # Versionado generico (fichas_tecnicas, registros_invima, documentos_sgd).
+    # Sebastian 3-may-2026: Auditoria INVIMA puede pedir historial completo
+    # de cualquier documento regulatorio. formulas_maestras tiene su propia
+    # tabla formulas_versiones (legacy); las demas usan esta tabla espejo.
+    c.execute("""CREATE TABLE IF NOT EXISTS tecnica_versiones (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        entidad         TEXT NOT NULL CHECK(entidad IN ('ficha','invima','sgd')),
+        registro_id     INTEGER NOT NULL,
+        version_num     INTEGER NOT NULL,
+        snapshot_json   TEXT NOT NULL,
+        motivo_cambio   TEXT,
+        creado_por      TEXT,
+        fecha_creacion  TEXT NOT NULL DEFAULT (datetime('now'))
+    )""")
+    c.execute("""CREATE INDEX IF NOT EXISTS idx_tv_entidad_reg
+                 ON tecnica_versiones(entidad, registro_id, version_num DESC)""")
     conn.commit()
 _init_tecnica()
+
+
+def _snapshot_tecnica(c, entidad, registro_id, motivo, usuario):
+    """Snapshot generico para fichas/invima/sgd antes de UPDATE/DELETE.
+
+    Asigna numero de version incremental por (entidad, registro_id).
+    No bloquea el flujo principal: cualquier excepcion se traga.
+    """
+    import json as _json
+    tabla_map = {
+        'ficha': 'fichas_tecnicas',
+        'invima': 'registros_invima',
+        'sgd': 'documentos_sgd',
+    }
+    tabla = tabla_map.get(entidad)
+    if not tabla:
+        return
+    try:
+        row = c.execute(f"SELECT * FROM {tabla} WHERE id=?", (registro_id,)).fetchone()
+        if not row:
+            return
+        snap = dict(row)
+        last = c.execute(
+            "SELECT MAX(version_num) FROM tecnica_versiones WHERE entidad=? AND registro_id=?",
+            (entidad, registro_id)
+        ).fetchone()
+        ver_num = (last[0] or 0) + 1
+        c.execute("""INSERT INTO tecnica_versiones
+                     (entidad, registro_id, version_num, snapshot_json, motivo_cambio, creado_por)
+                     VALUES (?,?,?,?,?,?)""",
+                  (entidad, registro_id, ver_num,
+                   _json.dumps(snap, ensure_ascii=False, default=str),
+                   motivo, usuario))
+    except Exception:
+        pass
 
 # ── Página ─────────────────────────────────────────────────────────────────
 @bp.route('/tecnica')
@@ -407,6 +458,7 @@ def ficha_update(fid):
             return jsonify({'error': 'Solo administradores'}), 403
         antes_row = c.execute("SELECT codigo, nombre, version, estado FROM fichas_tecnicas WHERE id=?", (fid,)).fetchone()
         antes = dict(antes_row) if antes_row else None
+        _snapshot_tecnica(c, 'ficha', fid, 'Eliminacion', usuario)
         c.execute("DELETE FROM fichas_tecnicas WHERE id=?", (fid,))
         audit_log(c, usuario=usuario, accion='ELIMINAR_FICHA', tabla='fichas_tecnicas',
                   registro_id=fid, antes=antes,
@@ -414,12 +466,14 @@ def ficha_update(fid):
         conn.commit()
         return jsonify({'ok': True})
     d = request.json or {}
-    allowed = ['nombre', 'version', 'estado', 'fecha_actualizacion', 'url_documento', 'notas']
+    allowed = ['nombre', 'formula_id', 'version', 'estado', 'fecha_actualizacion', 'url_documento', 'notas']
     sets = ', '.join(f + '=?' for f in allowed if f in d)
     vals = [d[f] for f in allowed if f in d] + [fid]
     if sets:
+        motivo = d.get('motivo_cambio') or 'Modificacion'
         antes_row = c.execute("SELECT codigo, nombre, version, estado FROM fichas_tecnicas WHERE id=?", (fid,)).fetchone()
         antes = dict(antes_row) if antes_row else None
+        _snapshot_tecnica(c, 'ficha', fid, motivo, usuario)
         c.execute(f"UPDATE fichas_tecnicas SET {sets} WHERE id=?", vals)
         audit_log(c, usuario=usuario, accion='MODIFICAR_FICHA', tabla='fichas_tecnicas',
                   registro_id=fid, antes=antes,
@@ -469,6 +523,7 @@ def invima_update(rid):
             return jsonify({'error': 'Solo administradores'}), 403
         antes_row = c.execute("SELECT producto, num_registro, estado, fecha_vencimiento FROM registros_invima WHERE id=?", (rid,)).fetchone()
         antes = dict(antes_row) if antes_row else None
+        _snapshot_tecnica(c, 'invima', rid, 'Eliminacion', usuario)
         c.execute("DELETE FROM registros_invima WHERE id=?", (rid,))
         audit_log(c, usuario=usuario, accion='ELIMINAR_REGISTRO_INVIMA', tabla='registros_invima',
                   registro_id=rid, antes=antes,
@@ -481,8 +536,10 @@ def invima_update(rid):
     sets = ', '.join(f + '=?' for f in allowed if f in d)
     vals = [d[f] for f in allowed if f in d] + [rid]
     if sets:
+        motivo = d.get('motivo_cambio') or 'Modificacion'
         antes_row = c.execute("SELECT producto, num_registro, estado, fecha_vencimiento FROM registros_invima WHERE id=?", (rid,)).fetchone()
         antes = dict(antes_row) if antes_row else None
+        _snapshot_tecnica(c, 'invima', rid, motivo, usuario)
         c.execute(f"UPDATE registros_invima SET {sets} WHERE id=?", vals)
         audit_log(c, usuario=usuario, accion='MODIFICAR_REGISTRO_INVIMA', tabla='registros_invima',
                   registro_id=rid, antes=antes,
@@ -594,6 +651,7 @@ def documento_update(did):
             return jsonify({'error': 'Solo administradores'}), 403
         antes_row = c.execute("SELECT tipo, codigo, nombre, version, estado FROM documentos_sgd WHERE id=?", (did,)).fetchone()
         antes = dict(antes_row) if antes_row else None
+        _snapshot_tecnica(c, 'sgd', did, 'Eliminacion', usuario)
         c.execute("DELETE FROM documentos_sgd WHERE id=?", (did,))
         audit_log(c, usuario=usuario, accion='ELIMINAR_SGD', tabla='documentos_sgd',
                   registro_id=did, antes=antes,
@@ -602,12 +660,15 @@ def documento_update(did):
         return jsonify({'ok': True})
     d = request.json or {}
     allowed = ['tipo', 'nombre', 'version', 'fecha_emision', 'fecha_revision',
-               'responsable', 'estado', 'url_documento', 'notas']
+               'responsable', 'estado', 'url_documento', 'notas',
+               'frecuencia_revision_meses', 'fecha_proxima_revision', 'responsable_revision']
     sets = ', '.join(f + '=?' for f in allowed if f in d)
     vals = [d[f] for f in allowed if f in d] + [did]
     if sets:
+        motivo = d.get('motivo_cambio') or 'Modificacion'
         antes_row = c.execute("SELECT tipo, codigo, nombre, version, estado FROM documentos_sgd WHERE id=?", (did,)).fetchone()
         antes = dict(antes_row) if antes_row else None
+        _snapshot_tecnica(c, 'sgd', did, motivo, usuario)
         c.execute(f"UPDATE documentos_sgd SET {sets} WHERE id=?", vals)
         audit_log(c, usuario=usuario, accion='MODIFICAR_SGD', tabla='documentos_sgd',
                   registro_id=did, antes=antes,
@@ -615,6 +676,56 @@ def documento_update(did):
                   detalle=f"Modificó SGD id={did}")
         conn.commit()
     return jsonify({'ok': True})
+
+
+# ─────────────────────────────────────────────────────────────────────────
+#  Versionado generico (lectura)
+# ─────────────────────────────────────────────────────────────────────────
+
+@bp.route('/api/tecnica/<entidad>/<int:rid>/versiones', methods=['GET'])
+def tecnica_versiones_list(entidad, rid):
+    """Lista historial de versiones de una ficha/invima/sgd."""
+    if not _check_access():
+        return jsonify({'error': 'No autorizado'}), 401
+    if entidad not in ('fichas', 'invima', 'documentos'):
+        return jsonify({'error': 'entidad invalida'}), 400
+    ent_map = {'fichas': 'ficha', 'invima': 'invima', 'documentos': 'sgd'}
+    conn = get_db(); c = conn.cursor()
+    rows = c.execute("""
+        SELECT id, version_num, motivo_cambio, creado_por, fecha_creacion
+          FROM tecnica_versiones
+         WHERE entidad=? AND registro_id=?
+         ORDER BY version_num DESC
+    """, (ent_map[entidad], rid)).fetchall()
+    cols = [x[0] for x in c.description]
+    return jsonify([dict(zip(cols, r)) for r in rows])
+
+
+@bp.route('/api/tecnica/<entidad>/<int:rid>/versiones/<int:vid>', methods=['GET'])
+def tecnica_version_detalle(entidad, rid, vid):
+    """Snapshot completo de una version específica."""
+    if not _check_access():
+        return jsonify({'error': 'No autorizado'}), 401
+    if entidad not in ('fichas', 'invima', 'documentos'):
+        return jsonify({'error': 'entidad invalida'}), 400
+    ent_map = {'fichas': 'ficha', 'invima': 'invima', 'documentos': 'sgd'}
+    import json as _json
+    conn = get_db(); c = conn.cursor()
+    row = c.execute("""
+        SELECT id, entidad, registro_id, version_num, snapshot_json,
+               motivo_cambio, creado_por, fecha_creacion
+          FROM tecnica_versiones
+         WHERE entidad=? AND registro_id=? AND id=?
+    """, (ent_map[entidad], rid, vid)).fetchone()
+    if not row:
+        return jsonify({'error': 'Version no encontrada'}), 404
+    out = dict(row)
+    try:
+        out['snapshot'] = _json.loads(out.pop('snapshot_json'))
+    except Exception:
+        out['snapshot'] = {}
+        out.pop('snapshot_json', None)
+    return jsonify(out)
 
 
 # ─────────────────────────────────────────────────────────────────────────
