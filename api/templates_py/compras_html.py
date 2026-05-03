@@ -841,6 +841,98 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
 <button class="fab" id="fab-btn" onclick="openNuevaOC('')" title="Nueva OC">+</button>
 
 <script>
+// ── CSRF defense-in-depth · Sebastian 3-may-2026 ──────────────────
+function _csrf() {
+  var m = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/);
+  return m ? decodeURIComponent(m[1]) : '';
+}
+function _fetchOpts(method, body) {
+  var headers = {};
+  var tok = _csrf();
+  if (tok) headers['X-CSRF-Token'] = tok;
+  var opts = {method: method || 'GET', headers: headers, credentials: 'same-origin'};
+  if (body !== undefined && body !== null) {
+    headers['Content-Type'] = 'application/json';
+    opts.body = (typeof body === 'string') ? body : JSON.stringify(body);
+  }
+  return opts;
+}
+fetch('/api/csrf-token', {credentials: 'same-origin'}).catch(function(){});
+
+// ── Filtros + Paginacion (client-side) ────────────────────────────
+var TBL_STATE = {
+  ocs:    {q: '', page: 1, size: 50, fields: ['numero_oc','proveedor','estado','fecha','solicitante']},
+  scs:    {q: '', page: 1, size: 50, fields: ['solicitante','area','urgencia','estado','justificacion']},
+  prov:   {q: '', page: 1, size: 50, fields: ['nombre','nit','contacto','email','telefono']},
+  mp:     {q: '', page: 1, size: 50, fields: ['codigo_mp','descripcion','clase','proveedor']},
+  pagos:  {q: '', page: 1, size: 50, fields: ['numero_oc','proveedor','metodo','observaciones']},
+};
+function _filtrar(data, query, fields) {
+  if (!query) return data || [];
+  var q = query.toLowerCase().trim();
+  return (data || []).filter(function(r) {
+    return fields.some(function(f) {
+      var v = r[f]; return v != null && String(v).toLowerCase().indexOf(q) !== -1;
+    });
+  });
+}
+function _paginar(data, page, size) {
+  if (size >= 999) return {items: data, total: data.length, totalPages: 1, page: 1};
+  var total = data.length;
+  var totalPages = Math.max(1, Math.ceil(total / size));
+  var p = Math.min(Math.max(1, page), totalPages);
+  return {items: data.slice((p-1)*size, p*size), total: total, totalPages: totalPages, page: p};
+}
+function _renderPag(tabla, info) {
+  var s = TBL_STATE[tabla];
+  if (info.total <= s.size && info.total < 51) {
+    return '<div style="font-size:11px;color:#64748b;padding:6px 0;">' + info.total + ' filas</div>';
+  }
+  var html = '<div style="display:flex;align-items:center;gap:8px;padding:8px 0;font-size:12px;color:#64748b;">';
+  html += '<span>Pag ' + info.page + '/' + info.totalPages + ' &middot; ' + info.total + '</span>';
+  html += '<span style="flex:1"></span>';
+  html += '<button data-act="prev" data-tbl="' + tabla + '"' +
+          (info.page <= 1 ? ' disabled' : '') + ' style="padding:4px 10px;font-size:12px;border:1px solid #cbd5e1;border-radius:5px;background:#fff;cursor:pointer">&larr;</button>';
+  html += '<button data-act="next" data-tbl="' + tabla + '"' +
+          (info.page >= info.totalPages ? ' disabled' : '') + ' style="padding:4px 10px;font-size:12px;border:1px solid #cbd5e1;border-radius:5px;background:#fff;cursor:pointer">&rarr;</button>';
+  html += '<select data-act="size" data-tbl="' + tabla + '" style="border:1px solid #cbd5e1;padding:4px 6px;border-radius:5px;font-size:12px;">';
+  ['50','100','200','999'].forEach(function(o){
+    var label = o === '999' ? 'Todas' : o;
+    html += '<option value="' + o + '"' + (String(s.size)===o?' selected':'') + '>' + label + '</option>';
+  });
+  html += '</select></div>';
+  return html;
+}
+function cambiarPag(tabla, delta){ TBL_STATE[tabla].page = Math.max(1, TBL_STATE[tabla].page + delta); _refreshTbl(tabla); }
+function cambiarPagSize(tabla, valor){ TBL_STATE[tabla].size = parseInt(valor,10)||50; TBL_STATE[tabla].page = 1; _refreshTbl(tabla); }
+function buscarTabla(tabla, valor){ TBL_STATE[tabla].q = valor||''; TBL_STATE[tabla].page = 1; _refreshTbl(tabla); }
+function _refreshTbl(tabla){
+  // Resolver loader de cada tabla
+  var fns = {
+    ocs: ['cargarOCs','loadOCs','renderOCs'],
+    scs: ['cargarSCs','loadSCs','renderSCs'],
+    prov: ['cargarProveedores','loadProveedores','renderProveedores'],
+    mp: ['cargarMaestroMP','loadMaestroMP'],
+    pagos: ['cargarPagos','loadPagos'],
+  };
+  var arr = fns[tabla] || [];
+  for (var i=0; i<arr.length; i++) {
+    if (typeof window[arr[i]] === 'function') { window[arr[i]](); return; }
+  }
+}
+document.addEventListener('click', function(ev){
+  var btn = ev.target.closest('[data-act][data-tbl]');
+  if (!btn || btn.tagName === 'SELECT') return;
+  var tbl = btn.dataset.tbl, act = btn.dataset.act;
+  if (act === 'prev') cambiarPag(tbl, -1);
+  else if (act === 'next') cambiarPag(tbl, 1);
+});
+document.addEventListener('change', function(ev){
+  var sel = ev.target.closest('select[data-act="size"][data-tbl]');
+  if (!sel) return;
+  cambiarPagSize(sel.dataset.tbl, sel.value);
+});
+
 // ─── Estado global ────────────────────────────────────────────────
 var OCS = [];
 var PROVS = [];
@@ -1515,7 +1607,7 @@ async function guardarEditProv360(nombre){
   ids.forEach(function(id){ var el=document.getElementById('ep-'+id); if(el) body[id]=el.value.trim(); });
   try{
     var r=await fetch('/api/proveedores-compras/'+encodeURIComponent(nombre),
-      {method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+      _fetchOpts('PATCH', body));
     var d=await r.json();
     if(d.error){ alert('Error: '+d.error); return; }
     // Refresh PROVS and reload 360
@@ -1552,8 +1644,7 @@ async function confirmarBajaProv360(nombre){
   if(!motivo){ alert('El motivo de baja es obligatorio'); return; }
   try{
     var r=await fetch('/api/proveedores-compras/'+encodeURIComponent(nombre),
-      {method:'DELETE',headers:{'Content-Type':'application/json'},
-       body:JSON.stringify({motivo:motivo})});
+      _fetchOpts('DELETE', {motivo:motivo}));
     var d=await r.json();
     if(d.error){ alert('Error: '+d.error); return; }
     // Refresh PROVS and close modal
@@ -1844,7 +1935,7 @@ async function editarOC(oc){
 async function eliminarOC(oc){
   if(!confirm('Eliminar OC '+oc+'? Esta accion no se puede deshacer.')) return;
   try{
-    var r=await fetch('/api/ordenes-compra/'+encodeURIComponent(oc),{method:'DELETE'});
+    var r=await fetch('/api/ordenes-compra/'+encodeURIComponent(oc),_fetchOpts('DELETE'));
     var d=await r.json();
     if(d.error){ alert(d.error); return; }
     await loadData();
@@ -1901,17 +1992,13 @@ function guardarNuevoProv(){
   if(!nombre){ alert('El nombre del proveedor es requerido'); return; }
   var btn=document.querySelector('#noc-new-prov-form .btn.bg');
   if(btn){ btn.disabled=true; btn.textContent='Guardando...'; }
-  fetch('/api/proveedores-compras',{
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({
-      nombre:nombre,
-      nit:(document.getElementById('np-nit').value||'').trim(),
-      telefono:(document.getElementById('np-tel').value||'').trim(),
-      email:(document.getElementById('np-email').value||'').trim(),
-      concepto_compra:(document.getElementById('np-concepto').value||'').trim()
-    })
-  }).then(function(r){ return r.json(); }).then(function(d){
+  fetch('/api/proveedores-compras', _fetchOpts('POST', {
+    nombre:nombre,
+    nit:(document.getElementById('np-nit').value||'').trim(),
+    telefono:(document.getElementById('np-tel').value||'').trim(),
+    email:(document.getElementById('np-email').value||'').trim(),
+    concepto_compra:(document.getElementById('np-concepto').value||'').trim()
+  })).then(function(r){ return r.json(); }).then(function(d){
     if(d.error){ alert('Error: '+d.error);
       if(btn){ btn.disabled=false; btn.textContent='Guardar proveedor'; } return; }
     reloadProvs(nombre);
@@ -2113,7 +2200,7 @@ async function crearOCMP(){
   try{
     var body={proveedor:prov,categoria:'MP',observaciones:obs,items:items,creado_por:'{usuario}'};
     if(fent) body.fecha_entrega_est=fent;
-    var r=await fetch('/api/ordenes-compra',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    var r=await fetch('/api/ordenes-compra',_fetchOpts('POST', body));
     var d=await r.json();
     if(d.error){ alert('Error: '+d.error); return; }
     closeModal('m-noc-mp');
@@ -2193,10 +2280,9 @@ async function crearOCSugerida(){
   for(var pi=0;pi<provList.length;pi++){
     var prov=provList[pi]; var items=grupos[prov];
     try{
-      var r=await fetch('/api/ordenes-compra',{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({proveedor:prov,categoria:'MP',creado_por:'{usuario}',
+      var r=await fetch('/api/ordenes-compra',_fetchOpts('POST', {proveedor:prov,categoria:'MP',creado_por:'{usuario}',
           observaciones:'OC sugerida — MPs bajo stock ('+new Date().toLocaleDateString('es-CO')+')',
-          items:items})});
+          items:items}));
       var res=null; try{res=await r.json();}catch(_){res=null;}
       if(r.ok&&res&&!res.error){ creadas.push(res.numero_oc||prov); }
       else{ errores.push(prov+': '+((res&&res.error)||'Error '+r.status)); }
@@ -2220,10 +2306,9 @@ async function crearOCFila(i){
   var actEl=document.getElementById('sugact'+i);
   if(actEl) actEl.innerHTML='<span style="font-size:11px;color:#78716c;">Enviando...</span>';
   try{
-    var r=await fetch('/api/ordenes-compra',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({proveedor:prov,categoria:'MP',creado_por:'{usuario}',
+    var r=await fetch('/api/ordenes-compra',_fetchOpts('POST', {proveedor:prov,categoria:'MP',creado_por:'{usuario}',
         observaciones:'OC sugerida — '+a.nombre+' ('+new Date().toLocaleDateString('es-CO')+')',
-        items:[{codigo_mp:a.codigo_mp,nombre_mp:a.nombre,cantidad_g:q,precio_unitario:p}]})});
+        items:[{codigo_mp:a.codigo_mp,nombre_mp:a.nombre,cantidad_g:q,precio_unitario:p}]}));
     var res=null; try{res=await r.json();}catch(_){res=null;}
     if(r.ok&&res&&!res.error){
       if(actEl) actEl.innerHTML='<span style="color:#16a34a;font-size:13px;">&#x2713; '+esc(res.numero_oc||'OK')+'</span>';
@@ -2287,7 +2372,7 @@ async function confirmarRev(){
     var totalVal=conIva ? Math.round(baseVal*1.19*100)/100 : baseVal;
     var body={proveedor:prov,valor_total:totalVal,observaciones:obs,con_iva:conIva,valor_sin_iva:baseVal};
     if(fent) body.fecha_entrega_est=fent;
-    var r=await fetch('/api/ordenes-compra/'+num+'/revisar',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    var r=await fetch('/api/ordenes-compra/'+num+'/revisar',_fetchOpts('PATCH', body));
     var d=await r.json();
     if(d.error){ alert('Error: '+d.error); return; }
     closeModal('m-rev');
@@ -2316,13 +2401,13 @@ async function decidirOC(decision){
   }
   if(decision==='Autorizada'){
     try{
-      var r=await fetch('/api/ordenes-compra/'+num+'/autorizar',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({motivo:motivo})});
+      var r=await fetch('/api/ordenes-compra/'+num+'/autorizar',_fetchOpts('PATCH', {motivo:motivo}));
       var d=await r.json();
       if(d.error){ alert('Error: '+d.error); return; }
     }catch(e){ alert('Error: '+e); return; }
   } else {
     try{
-      var r2=await fetch('/api/ordenes-compra/'+num,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({estado:'Rechazada',motivo:motivo})});
+      var r2=await fetch('/api/ordenes-compra/'+num,_fetchOpts('PUT', {estado:'Rechazada',motivo:motivo}));
       var d2=await r2.json();
       if(d2.error){ alert('Error: '+d2.error); return; }
     }catch(e){ alert('Error: '+e); return; }
@@ -2370,8 +2455,7 @@ async function confirmarPago(){
     if(rf && rf.checked) payload.aplicar_retefuente=true;
     if(ri && ri.checked) payload.aplicar_retica=true;
     if(iv && iv.checked) payload.aplicar_iva=true;
-    var r=await fetch('/api/ordenes-compra/'+num+'/pagar',{method:'PATCH',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify(payload)});
+    var r=await fetch('/api/ordenes-compra/'+num+'/pagar',_fetchOpts('PATCH', payload));
     var d=await r.json();
     if(r.status===409 && d.codigo==='FACTURA_DUPLICADA'){
       alert('⚠ Factura duplicada\\n\\n'+d.error+'\\n\\n'+d.detail);
@@ -2421,7 +2505,7 @@ async function confirmarPago(){
 async function marcarRecibida(num){
   if(!confirm('Marcar '+num+' como Recibida?')) return;
   try{
-    var r=await fetch('/api/ordenes-compra/'+num+'/recibir',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})});
+    var r=await fetch('/api/ordenes-compra/'+num+'/recibir',_fetchOpts('POST', {}));
     var d=await r.json();
     if(d.error){ alert('Error: '+d.error); return; }
     await loadData();
@@ -2439,7 +2523,7 @@ async function crearProv(){
     banco:document.getElementById('np-banco').value,tipo_cuenta:document.getElementById('np-tcta').value,
     num_cuenta:document.getElementById('np-ncta').value,concepto_compra:document.getElementById('np-conc').value};
   try{
-    var r=await fetch('/api/proveedores-compras',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    var r=await fetch('/api/proveedores-compras',_fetchOpts('POST', body));
     var d=await r.json();
     if(d.error){ alert('Error: '+d.error); return; }
     closeModal('m-nprov');
@@ -2577,7 +2661,7 @@ async function _guardarNuevoProv(){
   var nit=(document.getElementById('snp-nit')||{value:''}).value.trim();
   var body={nombre:nombre,nit:nit,banco:banco,tipo_cuenta:tipo,numero_cuenta:cuenta,categoria:'Cuenta de Cobro',condiciones_pago:'Inmediato'};
   try{
-    var r=await fetch('/api/proveedores-compras',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    var r=await fetch('/api/proveedores-compras',_fetchOpts('POST', body));
     var d=await r.json();
     if(d.error){ alert('Error: '+d.error); return; }
     PROVS.push({nombre:nombre,nit:nit,banco:banco,tipo_cuenta:tipo,numero_cuenta:cuenta});
@@ -2605,11 +2689,7 @@ async function confirmarProveedorOC(numOC){
   if (!prov) { alert('No hay proveedor para confirmar'); return; }
   if (btn) { btn.disabled = true; btn.textContent = 'Confirmando...'; }
   try {
-    var r = await fetch('/api/ordenes-compra/'+encodeURIComponent(numOC)+'/proveedor', {
-      method:'PATCH',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({proveedor: prov})
-    });
+    var r = await fetch('/api/ordenes-compra/'+encodeURIComponent(numOC)+'/proveedor', _fetchOpts('PATCH', {proveedor: prov}));
     var d = await r.json();
     if (!d.ok) { alert('Error: '+(d.error||'no se pudo confirmar')); return; }
     if (btn) {
@@ -2645,11 +2725,7 @@ async function guardarCambioProveedor(numOC){
   var nuevo = (input.value||'').trim();
   if (!nuevo) { alert('Ingresá un nombre de proveedor'); return; }
   try {
-    var r = await fetch('/api/ordenes-compra/'+encodeURIComponent(numOC)+'/proveedor', {
-      method:'PATCH',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({proveedor: nuevo})
-    });
+    var r = await fetch('/api/ordenes-compra/'+encodeURIComponent(numOC)+'/proveedor', _fetchOpts('PATCH', {proveedor: nuevo}));
     var d = await r.json();
     if (!d.ok) { alert('Error: '+(d.error||'no se pudo cambiar')); return; }
     // Update UI: nombre nuevo + ocultar selector + recargar lista de provs
@@ -2703,11 +2779,7 @@ async function guardarPreciosItems(numOC, solNumero){
   try {
     // Endpoint nuevo: PATCH /api/solicitudes-compra/<numero>/items
     // Persiste cantidad/proveedor/precio + actualiza maestro_mps + alimenta historico
-    var r = await fetch('/api/solicitudes-compra/'+encodeURIComponent(solNumero)+'/items', {
-      method:'PATCH',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({items: items})
-    });
+    var r = await fetch('/api/solicitudes-compra/'+encodeURIComponent(solNumero)+'/items', _fetchOpts('PATCH', {items: items}));
     var d = await r.json();
     if (!d.ok) { alert('Error: '+(d.error||'no se pudo guardar')); }
     else {
@@ -2933,7 +3005,7 @@ async function regenerarSolicitudesAuto(){
               'NO toca solicitudes Aprobadas ni Pagadas.\\n\\n' +
               '¿Confirmás?')) return;
   try{
-    var r = await fetch('/api/programacion/regenerar-oc', {method:'POST'});
+    var r = await fetch('/api/programacion/regenerar-oc', _fetchOpts('POST'));
     var d = await r.json();
     if(!r.ok){
       alert('Error: ' + (d.error || 'desconocido') + (d.detalle ? '\\n' + d.detalle : ''));
@@ -2961,10 +3033,7 @@ async function loadSolicitudes(){
 // Limpiar SOLs influencer/CC NO pagadas — dry-run primero
 window.limpiarSolsNoPagadas = async function(){
   try{
-    var r = await fetch('/api/compras/influencer/limpiar-no-pagadas', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({})  // sin confirm = dry-run
-    });
+    var r = await fetch('/api/compras/influencer/limpiar-no-pagadas', _fetchOpts('POST', {}));  // sin confirm = dry-run
     var d = await r.json();
     if(!r.ok){ alert('Error: '+(d.error||r.status)); return; }
     if(d.a_borrar === 0){
@@ -2983,10 +3052,7 @@ window.limpiarSolsNoPagadas = async function(){
     }
     msg += '\\n\\n¿Confirmar eliminación PERMANENTE?';
     if(!confirm(msg)) return;
-    var r2 = await fetch('/api/compras/influencer/limpiar-no-pagadas', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({confirm: true})
-    });
+    var r2 = await fetch('/api/compras/influencer/limpiar-no-pagadas', _fetchOpts('POST', {confirm: true}));
     var d2 = await r2.json();
     if(d2.ok){
       alert('✓ Eliminadas '+d2.total_eliminados+' solicitudes. ('+d2.omitidos_por_pagos+' preservadas con pago)');
@@ -3321,10 +3387,7 @@ function renderInfluencers(){
     if(!confirm('¿Confirmar pago de $'+monto.toLocaleString('es-CO')+' a '+(nombre||sol)+'?\\n\\nEsto crea la OC, registra el pago, genera comprobante y notifica a Jefferson.')) return;
     try {
       // Paso 1: aprobar (crea OC + entrada pagos_influencers)
-      var r1 = await fetch('/api/solicitudes-compra/'+encodeURIComponent(sol)+'/aprobar-influencer',{
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({valor: monto})
-      });
+      var r1 = await fetch('/api/solicitudes-compra/'+encodeURIComponent(sol)+'/aprobar-influencer',_fetchOpts('POST', {valor: monto}));
       var raw1 = await r1.text();
       var d1 = null; try { d1 = JSON.parse(raw1); } catch(_){}
       if(!r1.ok){
@@ -3334,10 +3397,7 @@ function renderInfluencers(){
       var ocNum = d1.numero_oc;
       if(!ocNum){ alert('OC no fue creada. Abort.'); loadInfluencers(); return; }
       // Paso 2: pagar la OC recién creada
-      var r2 = await fetch('/api/ordenes-compra/'+encodeURIComponent(ocNum)+'/pagar',{
-        method:'PATCH', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({monto: monto, medio: 'Transferencia'})
-      });
+      var r2 = await fetch('/api/ordenes-compra/'+encodeURIComponent(ocNum)+'/pagar',_fetchOpts('PATCH', {monto: monto, medio: 'Transferencia'}));
       var raw2 = await r2.text();
       var d2 = null; try { d2 = JSON.parse(raw2); } catch(_){}
       if(!r2.ok){
@@ -3357,10 +3417,7 @@ function renderInfluencers(){
     var razon = prompt('Razón del rechazo (se notifica al solicitante):', '');
     if(razon === null) return;
     try {
-      var r = await fetch('/api/solicitudes-compra/'+encodeURIComponent(sol)+'/rechazar',{
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({motivo: razon||'Rechazada sin motivo'})
-      });
+      var r = await fetch('/api/solicitudes-compra/'+encodeURIComponent(sol)+'/rechazar',_fetchOpts('POST', {motivo: razon||'Rechazada sin motivo'}));
       var raw = await r.text();
       var d = null; try { d = JSON.parse(raw); } catch(_){}
       if(!r.ok){ alert('Error '+r.status+': '+ (d&&d.error || raw.substring(0,200))); return; }
@@ -3384,7 +3441,7 @@ function eliminarSolicitudAprobada(sol_num, nombre){
           + '¿Eliminar definitivamente?';
   if(!confirm(msg)) return;
   fetch('/api/solicitudes-compra/'+encodeURIComponent(sol_num),
-        {method:'DELETE'})
+        _fetchOpts('DELETE'))
     .then(function(r){return r.json();})
     .then(function(d){
       if(d.ok || d.message){
@@ -3400,10 +3457,7 @@ function pagarInfluencer(oc_num, sol_num, valor){
   if(!oc_num){ alert('Esta solicitud no tiene OC vinculada. Contacta a Sebastian.'); return; }
   var confirmado=confirm('Confirmar pago ' + fmoney(valor) + ' para ' + sol_num + ' | OC: ' + oc_num + ' | Se registrará en Finanzas.');
   if(!confirmado) return;
-  fetch('/api/ordenes-compra/'+encodeURIComponent(oc_num)+'/pagar',{
-    method:'PATCH',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({monto:valor,medio:'Transferencia',observaciones:'Pago influencer '+sol_num})
-  }).then(function(r){return r.json();}).then(function(d){
+  fetch('/api/ordenes-compra/'+encodeURIComponent(oc_num)+'/pagar',_fetchOpts('PATCH', {monto:valor,medio:'Transferencia',observaciones:'Pago influencer '+sol_num})).then(function(r){return r.json();}).then(function(d){
     if(d.ok){
       alert('Pago registrado. La OC quedó como Pagada y el egreso fue enviado a Finanzas.');
       loadInfluencers();
@@ -3425,10 +3479,7 @@ function rechazarInfluencer(oc_num, sol_num){
     btn.onclick=function(){
       var motivo=(document.getElementById('motivo-rechazo-inf')||{value:''}).value.trim();
       if(!motivo){ alert('El motivo es obligatorio para rechazar.'); return; }
-      fetch('/api/compras/oc/'+encodeURIComponent(_rechazarOC)+'/rechazar',{
-        method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({motivo:motivo})
-      }).then(function(r){return r.json();}).then(function(d){
+      fetch('/api/compras/oc/'+encodeURIComponent(_rechazarOC)+'/rechazar',_fetchOpts('POST', {motivo:motivo})).then(function(r){return r.json();}).then(function(d){
         if(d.ok){
           closeModal('m-rechazar-inf');
           alert('OC rechazada. La solicitud volvió a estado Pendiente con el motivo registrado.');
@@ -3918,7 +3969,7 @@ async function gestionarSol(decision){
     }
   }
   try{
-    var r=await fetch('/api/solicitudes-compra/'+encodeURIComponent(num)+'/estado',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    var r=await fetch('/api/solicitudes-compra/'+encodeURIComponent(num)+'/estado',_fetchOpts('PATCH', body));
     var d=await r.json();
     if(d.error){ alert('Error: '+d.error); return; }
     closeModal('m-sol-det');
@@ -4033,10 +4084,7 @@ async function solprodEnviarDecision(solId){
     observaciones: document.getElementById('sp-obs').value,
   };
   try {
-    var r = await fetch('/api/compras/solicitudes-produccion/'+solId+'/decidir', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify(body)
-    });
+    var r = await fetch('/api/compras/solicitudes-produccion/'+solId+'/decidir', _fetchOpts('POST', body));
     var d = await r.json();
     if(!r.ok){ alert('Error: '+(d.error||r.status)); return; }
     document.getElementById('solprod-modal').remove();
@@ -4131,10 +4179,7 @@ async function marcarRecibidoSolicitante(numero){
   var obs = prompt('¿Algo que anotar de esta recepción? (opcional)\\n\\nEsto cierra la solicitud '+numero+' marcando la OC como Recibida.', '');
   if(obs===null) return;
   try {
-    var r = await fetch('/api/solicitudes-compra/'+encodeURIComponent(numero)+'/marcar-recibido-solicitante', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({observaciones: obs||''})
-    });
+    var r = await fetch('/api/solicitudes-compra/'+encodeURIComponent(numero)+'/marcar-recibido-solicitante', _fetchOpts('POST', {observaciones: obs||''}));
     var d = await r.json();
     if(!r.ok){ alert('Error: '+(d.error||r.status)); return; }
     alert(d.mensaje||'Recibido confirmado');
@@ -4402,10 +4447,7 @@ async function saveConsolEdits(idx){
       if(!orig) continue;
       if(Math.abs(newCant-(orig.cantidad_g||0))>0.001 || Math.abs(newPrec-(orig.precio_unitario||0))>0.001){
         try {
-          var rr = await fetch('/api/ordenes-compra/'+encodeURIComponent(ocNum)+'/items/'+itemId, {
-            method:'PATCH', headers:{'Content-Type':'application/json'},
-            body: JSON.stringify({cantidad_g:newCant, precio_unitario:newPrec})
-          });
+          var rr = await fetch('/api/ordenes-compra/'+encodeURIComponent(ocNum)+'/items/'+itemId, _fetchOpts('PATCH', {cantidad_g:newCant, precio_unitario:newPrec}));
           if(!rr.ok){ var dd = await rr.json().catch(function(){return{};}); errors.push(ocNum+' item '+itemId+': '+(dd.error||rr.status)); }
         } catch(e){ errors.push(ocNum+' item '+itemId+': '+e.message); }
       }
@@ -4417,14 +4459,11 @@ async function saveConsolEdits(idx){
     var obs = ocBox.querySelector('[data-field="observaciones"]').value || '';
     if(origOC && (conIva !== !!origOC.con_iva || obs !== (origOC.observaciones||''))){
       try {
-        var rr2 = await fetch('/api/ordenes-compra/'+encodeURIComponent(ocNum)+'/editar', {
-          method:'PATCH', headers:{'Content-Type':'application/json'},
-          body: JSON.stringify({
+        var rr2 = await fetch('/api/ordenes-compra/'+encodeURIComponent(ocNum)+'/editar', _fetchOpts('PATCH', {
             proveedor: p.proveedor || origOC.proveedor || '',
             con_iva: conIva?1:0,
             observaciones: obs
-          })
-        });
+          }));
         if(!rr2.ok){ var dd2 = await rr2.json().catch(function(){return{};}); errors.push(ocNum+' OC: '+(dd2.error||rr2.status)); }
       } catch(e){ errors.push(ocNum+' OC: '+e.message); }
     }
@@ -4793,7 +4832,7 @@ function escConH(s){
 async function eliminarSolicitud(num){
   if(!confirm('Eliminar solicitud '+num+'?')) return;
   try{
-    var r=await fetch('/api/solicitudes-compra/'+encodeURIComponent(num),{method:'DELETE'});
+    var r=await fetch('/api/solicitudes-compra/'+encodeURIComponent(num),_fetchOpts('DELETE'));
     var d=await r.json();
     if(d.ok){
       // Remove card from DOM immediately for snappy UX
@@ -4935,10 +4974,7 @@ async function rechazarPorPagar(numOC){
   motivo = (motivo||'').trim();
   if(!motivo){ alert('Indica un motivo.'); return; }
   try{
-    var r = await fetch('/api/compras/oc/'+encodeURIComponent(numOC)+'/rechazar', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({motivo: motivo})
-    });
+    var r = await fetch('/api/compras/oc/'+encodeURIComponent(numOC)+'/rechazar', _fetchOpts('POST', {motivo: motivo}));
     var d = await r.json().catch(function(){return {};});
     if(!r.ok){ alert('Error al rechazar: '+(d.error||r.status)); return; }
     alert('OC '+numOC+' rechazada. La solicitud de origen volvió a estado Pendiente.');
@@ -4951,9 +4987,7 @@ async function rechazarPorPagar(numOC){
 // solicitud sí tiene valor (caso 0119), este botón fuerza la sincronización.
 async function repararOC(numOC){
   try{
-    var r = await fetch('/api/compras/oc/'+encodeURIComponent(numOC)+'/reparar-desde-solicitud', {
-      method:'POST', headers:{'Content-Type':'application/json'}
-    });
+    var r = await fetch('/api/compras/oc/'+encodeURIComponent(numOC)+'/reparar-desde-solicitud', _fetchOpts('POST'));
     var d = await r.json().catch(function(){return {};});
     if(!r.ok){ alert('No se pudo reparar: '+(d.error||r.status)); return; }
     if(d.reparada){

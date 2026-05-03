@@ -192,6 +192,7 @@ def test_compras_no_orphan_fetch_urls():
         "/api/proveedores-compras", "/api/solicitudes-compra",
         "/api/conteo/", "/api/admin/",
         "/api/precio-historico/",
+        "/api/csrf-token",  # Pre-fetch defense-in-depth (core.csrf_token)
     ]
     orphans = []
     for url in fetches:
