@@ -54,18 +54,45 @@ def _init_tecnica():
         notas             TEXT
     )""")
     c.execute("""CREATE TABLE IF NOT EXISTS documentos_sgd (
-        id             INTEGER PRIMARY KEY AUTOINCREMENT,
-        tipo           TEXT DEFAULT 'SOP',
-        codigo         TEXT NOT NULL,
-        nombre         TEXT NOT NULL,
-        version        TEXT DEFAULT '1.0',
-        fecha_emision  TEXT DEFAULT (date('now')),
-        fecha_revision TEXT,
-        responsable    TEXT,
-        estado         TEXT DEFAULT 'Vigente',
-        url_documento  TEXT,
-        notas          TEXT
+        id                          INTEGER PRIMARY KEY AUTOINCREMENT,
+        tipo                        TEXT DEFAULT 'SOP',
+        codigo                      TEXT NOT NULL,
+        nombre                      TEXT NOT NULL,
+        version                     TEXT DEFAULT '1.0',
+        fecha_emision               TEXT DEFAULT (date('now')),
+        fecha_revision              TEXT,
+        responsable                 TEXT,
+        estado                      TEXT DEFAULT 'Vigente',
+        url_documento               TEXT,
+        notas                       TEXT,
+        frecuencia_revision_meses   INTEGER DEFAULT 12,
+        fecha_proxima_revision      TEXT DEFAULT '',
+        responsable_revision        TEXT DEFAULT ''
     )""")
+    # Cambio de Control formal · INVIMA Decreto 219/1998 exige clasificar
+    # cambios a fórmulas (mayor/menor), justificar impacto y aprobar antes
+    # de modificar. Tabla espejo de formulas_versiones con campos de control.
+    c.execute("""CREATE TABLE IF NOT EXISTS cambios_control_formula (
+        id                INTEGER PRIMARY KEY AUTOINCREMENT,
+        formula_id        INTEGER NOT NULL,
+        clasificacion     TEXT NOT NULL CHECK(clasificacion IN ('mayor','menor')),
+        justificacion     TEXT NOT NULL,
+        impacto           TEXT,
+        cambio_propuesto  TEXT,
+        solicitado_por    TEXT NOT NULL,
+        fecha_solicitud   TEXT NOT NULL DEFAULT (datetime('now')),
+        aprobado_por      TEXT,
+        fecha_aprobacion  TEXT,
+        estado            TEXT NOT NULL DEFAULT 'pendiente'
+                          CHECK(estado IN ('pendiente','aprobado','rechazado','aplicado')),
+        version_resultante INTEGER,
+        observaciones     TEXT,
+        FOREIGN KEY (formula_id) REFERENCES formulas_maestras(id)
+    )""")
+    c.execute("""CREATE INDEX IF NOT EXISTS idx_cc_formula
+                 ON cambios_control_formula(formula_id, fecha_solicitud DESC)""")
+    c.execute("""CREATE INDEX IF NOT EXISTS idx_cc_estado
+                 ON cambios_control_formula(estado, fecha_solicitud DESC)""")
     conn.commit()
 _init_tecnica()
 
@@ -211,13 +238,51 @@ def formula_update(fid):
     allowed = ['nombre', 'version', 'tipo', 'estado', 'fecha_version', 'descripcion']
     sets = ', '.join(f + '=?' for f in allowed if f in d)
     vals = [d[f] for f in allowed if f in d] + [fid]
+    # Cambio de Control vinculado opcional. Si viene cambio_control_id, debe
+    # estar en estado='aprobado' y referenciar esta misma fórmula.
+    cc_id = d.get('cambio_control_id')
+    cc_row = None
+    if cc_id is not None:
+        try:
+            cc_id = int(cc_id)
+        except (TypeError, ValueError):
+            return jsonify({'error': 'cambio_control_id invalido'}), 400
+        cc_row = c.execute(
+            """SELECT id, formula_id, estado, clasificacion
+                 FROM cambios_control_formula WHERE id=?""", (cc_id,)
+        ).fetchone()
+        if not cc_row:
+            return jsonify({'error': 'CC no encontrado'}), 404
+        if cc_row[1] != fid:
+            return jsonify({'error': 'CC no corresponde a esta formula'}), 400
+        if cc_row[2] != 'aprobado':
+            return jsonify({'error': f'CC en estado {cc_row[2]} · debe estar aprobado'}), 400
     if sets:
         # Snapshot ANTES del UPDATE
-        motivo = d.get('motivo_cambio') or 'Modificacion'
+        motivo = d.get('motivo_cambio') or (
+            f"CC #{cc_id} ({cc_row[3]})" if cc_row else 'Modificacion'
+        )
         antes_row = c.execute("SELECT codigo, nombre, version, estado FROM formulas_maestras WHERE id=?", (fid,)).fetchone()
         antes = dict(antes_row) if antes_row else None
         _snapshot_formula(c, fid, motivo, usuario)
         c.execute(f"UPDATE formulas_maestras SET {sets} WHERE id=?", vals)
+        # Si vinculo CC, marcarlo como aplicado y registrar version resultante
+        if cc_row:
+            ver_num = c.execute(
+                "SELECT MAX(version_num) FROM formulas_versiones WHERE formula_id=?",
+                (fid,)
+            ).fetchone()
+            c.execute(
+                """UPDATE cambios_control_formula
+                     SET estado='aplicado', version_resultante=?
+                   WHERE id=?""",
+                (ver_num[0] if ver_num else None, cc_id)
+            )
+            audit_log(c, usuario=usuario, accion='APLICAR_CAMBIO_CONTROL',
+                      tabla='cambios_control_formula', registro_id=cc_id,
+                      antes={'estado': 'aprobado'},
+                      despues={'estado': 'aplicado', 'version_resultante': ver_num[0] if ver_num else None},
+                      detalle=f"CC aplicado al modificar formula id={fid}")
         audit_log(c, usuario=usuario, accion='MODIFICAR_FORMULA', tabla='formulas_maestras',
                   registro_id=fid, antes=antes, despues={k: d.get(k) for k in d if k in allowed},
                   detalle=f"Modificó fórmula id={fid} · motivo: {motivo}")
@@ -447,30 +512,18 @@ def documentos_list():
                 fecha_proxima = (em + _td(days=frecuencia*30)).strftime('%Y-%m-%d')
             except Exception:
                 pass
-        try:
-            c.execute("""INSERT INTO documentos_sgd
-                         (tipo,codigo,nombre,version,fecha_emision,fecha_revision,
-                          responsable,estado,url_documento,notas,
-                          frecuencia_revision_meses,fecha_proxima_revision,
-                          responsable_revision)
-                         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                      (d.get('tipo', 'SOP'), d.get('codigo', ''), d.get('nombre', ''),
-                       d.get('version', '1.0'), fecha_emision,
-                       d.get('fecha_revision', ''), d.get('responsable', ''),
-                       d.get('estado', 'Vigente'), d.get('url_documento', ''),
-                       d.get('notas', ''), frecuencia, fecha_proxima,
-                       d.get('responsable_revision', d.get('responsable',''))))
-        except sqlite3.OperationalError:
-            # Fallback para instalaciones donde la migracion 38 aun no corrio
-            c.execute("""INSERT INTO documentos_sgd
-                         (tipo,codigo,nombre,version,fecha_emision,fecha_revision,
-                          responsable,estado,url_documento,notas)
-                         VALUES (?,?,?,?,?,?,?,?,?,?)""",
-                      (d.get('tipo', 'SOP'), d.get('codigo', ''), d.get('nombre', ''),
-                       d.get('version', '1.0'), fecha_emision,
-                       d.get('fecha_revision', ''), d.get('responsable', ''),
-                       d.get('estado', 'Vigente'), d.get('url_documento', ''),
-                       d.get('notas', '')))
+        c.execute("""INSERT INTO documentos_sgd
+                     (tipo,codigo,nombre,version,fecha_emision,fecha_revision,
+                      responsable,estado,url_documento,notas,
+                      frecuencia_revision_meses,fecha_proxima_revision,
+                      responsable_revision)
+                     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                  (d.get('tipo', 'SOP'), d.get('codigo', ''), d.get('nombre', ''),
+                   d.get('version', '1.0'), fecha_emision,
+                   d.get('fecha_revision', ''), d.get('responsable', ''),
+                   d.get('estado', 'Vigente'), d.get('url_documento', ''),
+                   d.get('notas', ''), frecuencia, fecha_proxima,
+                   d.get('responsable_revision', d.get('responsable',''))))
         did = c.lastrowid
         audit_log(c, usuario=usuario, accion='CREAR_SGD', tabla='documentos_sgd',
                   registro_id=did,
@@ -491,19 +544,16 @@ def documentos_vencimientos():
     if not _check_access():
         return jsonify({'error': 'No autorizado'}), 401
     conn = get_db(); c = conn.cursor()
-    try:
-        rows = c.execute("""
-            SELECT id, tipo, codigo, nombre, version, fecha_proxima_revision,
-                   responsable_revision, frecuencia_revision_meses,
-                   julianday(fecha_proxima_revision) - julianday('now') as dias_restantes
-            FROM documentos_sgd
-            WHERE estado='Vigente'
-              AND COALESCE(fecha_proxima_revision,'') != ''
-              AND fecha_proxima_revision <= date('now','+60 day')
-            ORDER BY fecha_proxima_revision ASC
-        """).fetchall()
-    except sqlite3.OperationalError:
-        return jsonify({'documentos': [], 'mensaje': 'Migracion #38 pendiente'})
+    rows = c.execute("""
+        SELECT id, tipo, codigo, nombre, version, fecha_proxima_revision,
+               responsable_revision, frecuencia_revision_meses,
+               julianday(fecha_proxima_revision) - julianday('now') as dias_restantes
+        FROM documentos_sgd
+        WHERE estado='Vigente'
+          AND COALESCE(fecha_proxima_revision,'') != ''
+          AND fecha_proxima_revision <= date('now','+60 day')
+        ORDER BY fecha_proxima_revision ASC
+    """).fetchall()
     cols = [x[0] for x in c.description]
     return jsonify({'documentos': [dict(zip(cols, r)) for r in rows]})
 
@@ -565,3 +615,361 @@ def documento_update(did):
                   detalle=f"Modificó SGD id={did}")
         conn.commit()
     return jsonify({'ok': True})
+
+
+# ─────────────────────────────────────────────────────────────────────────
+#  CROSS-CHECK · INVIMA vs Stock Vendible
+# ─────────────────────────────────────────────────────────────────────────
+# Sebastian 2-may-2026: el director técnico necesita saber QUE PRODUCTOS
+# en venta NO tienen registro INVIMA vigente. Riesgo regulatorio alto: si
+# Animus vende un SKU sin notificación sanitaria activa, INVIMA puede
+# decomisar lote + multar. Cruz por nombre de producto (matching fuzzy).
+
+def _match_invima(producto_pt, registros_invima):
+    """Encuentra registro INVIMA que matchea con un producto de stock_pt.
+
+    Match: LOWER + sin acentos + containment bidireccional + match por
+    palabras significativas (>3 chars, 2+ overlap). Devuelve la fila
+    completa del registro o None.
+    """
+    if not producto_pt:
+        return None
+    import unicodedata
+    def _norm(s):
+        s = (s or '').strip().lower()
+        s = unicodedata.normalize('NFD', s)
+        return ''.join(c for c in s if unicodedata.category(c) != 'Mn')
+    npt = _norm(producto_pt)
+    if not npt:
+        return None
+    # 1. Match por containment
+    for r in registros_invima:
+        nr = _norm(r.get('producto', ''))
+        if nr and (npt in nr or nr in npt):
+            return r
+    # 2. Match por palabras (>=2 palabras significativas en común)
+    pa = set(w for w in npt.split() if len(w) > 3)
+    if len(pa) < 2:
+        return None
+    for r in registros_invima:
+        nr = _norm(r.get('producto', ''))
+        pb = set(w for w in nr.split() if len(w) > 3)
+        if len(pa & pb) >= 2:
+            return r
+    return None
+
+
+# ─────────────────────────────────────────────────────────────────────────
+#  CAMBIO DE CONTROL · INVIMA Decreto 219/1998
+# ─────────────────────────────────────────────────────────────────────────
+# Toda modificación a una fórmula registrada debe pasar por un flujo
+# formal: solicitud → clasificación (mayor/menor) → justificación e
+# impacto → aprobación admin → aplicación. Esto deja trazabilidad
+# regulatoria si INVIMA audita.
+
+@bp.route('/api/tecnica/cambios-control', methods=['GET', 'POST'])
+def cambios_control_list():
+    """GET: lista cambios de control (filtra por estado y formula_id).
+    POST: solicita nuevo cambio de control."""
+    if not _check_access():
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    if request.method == 'POST':
+        d = request.json or {}
+        usuario = session.get('compras_user', 'sistema')
+        # Validaciones
+        formula_id = d.get('formula_id')
+        if not formula_id:
+            return jsonify({'error': 'formula_id requerido'}), 400
+        try:
+            formula_id = int(formula_id)
+        except (TypeError, ValueError):
+            return jsonify({'error': 'formula_id invalido'}), 400
+        clasif = (d.get('clasificacion') or '').strip().lower()
+        if clasif not in ('mayor', 'menor'):
+            return jsonify({'error': "clasificacion debe ser 'mayor' o 'menor'"}), 400
+        justificacion = (d.get('justificacion') or '').strip()
+        if len(justificacion) < 20:
+            return jsonify({'error': 'justificacion muy corta (min 20 chars)'}), 400
+        # Verificar que formula existe
+        existe = c.execute(
+            "SELECT id, codigo FROM formulas_maestras WHERE id=?", (formula_id,)
+        ).fetchone()
+        if not existe:
+            return jsonify({'error': 'formula no encontrada'}), 404
+        c.execute("""INSERT INTO cambios_control_formula
+                     (formula_id, clasificacion, justificacion, impacto,
+                      cambio_propuesto, solicitado_por, estado, observaciones)
+                     VALUES (?,?,?,?,?,?,'pendiente',?)""",
+                  (formula_id, clasif, justificacion,
+                   (d.get('impacto') or '').strip(),
+                   (d.get('cambio_propuesto') or '').strip(),
+                   usuario, (d.get('observaciones') or '').strip()))
+        cc_id = c.lastrowid
+        audit_log(c, usuario=usuario, accion='SOLICITAR_CAMBIO_CONTROL',
+                  tabla='cambios_control_formula', registro_id=cc_id,
+                  despues={'formula_id': formula_id, 'clasificacion': clasif,
+                            'estado': 'pendiente'},
+                  detalle=f"Solicitó CC {clasif} sobre formula {existe[1]}")
+        conn.commit()
+        # Notificar admins (TECNICA_USERS) que hay un CC pendiente
+        try:
+            from blueprints.notif import push_notif_multi
+            push_notif_multi(
+                ['sebastian', 'alejandro', 'hernando', 'miguel'],
+                'tecnica',
+                f'🔄 Cambio de Control {clasif.upper()} solicitado',
+                body=f'Fórmula {existe[1]} · solicitado por {usuario}\n{justificacion[:200]}',
+                link='/tecnica',
+                remitente=usuario,
+                importante=(clasif == 'mayor'),
+            )
+        except Exception:
+            pass
+        return jsonify({'ok': True, 'id': cc_id, 'estado': 'pendiente'})
+    # GET
+    formula_id = request.args.get('formula_id')
+    estado = request.args.get('estado')
+    where = []
+    params = []
+    if formula_id:
+        try:
+            where.append('cc.formula_id=?'); params.append(int(formula_id))
+        except ValueError:
+            return jsonify({'error': 'formula_id invalido'}), 400
+    if estado:
+        if estado not in ('pendiente', 'aprobado', 'rechazado', 'aplicado'):
+            return jsonify({'error': 'estado invalido'}), 400
+        where.append('cc.estado=?'); params.append(estado)
+    where_sql = (' WHERE ' + ' AND '.join(where)) if where else ''
+    rows = c.execute(f"""
+        SELECT cc.id, cc.formula_id, fm.codigo, fm.nombre,
+               cc.clasificacion, cc.justificacion, cc.impacto,
+               cc.cambio_propuesto, cc.solicitado_por, cc.fecha_solicitud,
+               cc.aprobado_por, cc.fecha_aprobacion, cc.estado,
+               cc.version_resultante, cc.observaciones
+          FROM cambios_control_formula cc
+          LEFT JOIN formulas_maestras fm ON fm.id = cc.formula_id
+          {where_sql}
+          ORDER BY cc.fecha_solicitud DESC
+          LIMIT 200
+    """, params).fetchall()
+    cols = [x[0] for x in c.description]
+    return jsonify({'cambios': [dict(zip(cols, r)) for r in rows]})
+
+
+@bp.route('/api/tecnica/cambios-control/<int:cc_id>/aprobar', methods=['POST'])
+def cambio_control_aprobar(cc_id):
+    """Aprueba (o rechaza) un cambio de control. Solo admins.
+
+    Body: {decision: 'aprobar'|'rechazar', observaciones?: str}
+    """
+    if not _check_access():
+        return jsonify({'error': 'No autorizado'}), 401
+    usuario = session.get('compras_user', 'sistema')
+    if usuario not in ADMIN_USERS:
+        return jsonify({'error': 'Solo administradores pueden aprobar'}), 403
+    d = request.json or {}
+    decision = (d.get('decision') or '').strip().lower()
+    if decision not in ('aprobar', 'rechazar'):
+        return jsonify({'error': "decision debe ser 'aprobar' o 'rechazar'"}), 400
+    conn = get_db(); c = conn.cursor()
+    row = c.execute(
+        """SELECT id, formula_id, estado, clasificacion, solicitado_por
+             FROM cambios_control_formula WHERE id=?""", (cc_id,)
+    ).fetchone()
+    if not row:
+        return jsonify({'error': 'CC no encontrado'}), 404
+    if row[2] != 'pendiente':
+        return jsonify({'error': f'CC ya esta en estado {row[2]} (solo pendientes pueden aprobarse)'}), 400
+    nuevo_estado = 'aprobado' if decision == 'aprobar' else 'rechazado'
+    obs = (d.get('observaciones') or '').strip()
+    c.execute("""UPDATE cambios_control_formula
+                 SET estado=?, aprobado_por=?,
+                     fecha_aprobacion=datetime('now'),
+                     observaciones=COALESCE(NULLIF(?,''), observaciones)
+                 WHERE id=?""", (nuevo_estado, usuario, obs, cc_id))
+    audit_log(c, usuario=usuario,
+              accion='APROBAR_CAMBIO_CONTROL' if decision == 'aprobar' else 'RECHAZAR_CAMBIO_CONTROL',
+              tabla='cambios_control_formula', registro_id=cc_id,
+              antes={'estado': 'pendiente'},
+              despues={'estado': nuevo_estado, 'observaciones': obs[:200]},
+              detalle=f"{decision.title()} CC #{cc_id} · formula_id={row[1]}")
+    conn.commit()
+    # Notif al solicitante
+    try:
+        from blueprints.notif import push_notif
+        push_notif(
+            row[4], 'tecnica',
+            f'{"✅" if decision == "aprobar" else "❌"} CC #{cc_id} {nuevo_estado}',
+            body=f'Tu solicitud de cambio de control fue {nuevo_estado} por {usuario}.' +
+                 (f'\nObservaciones: {obs}' if obs else ''),
+            link='/tecnica', remitente=usuario,
+        )
+    except Exception:
+        pass
+    return jsonify({'ok': True, 'estado': nuevo_estado})
+
+
+@bp.route('/api/tecnica/cambios-control/<int:cc_id>/aplicar', methods=['POST'])
+def cambio_control_aplicar(cc_id):
+    """Marca un CC aprobado como 'aplicado' una vez que la modificación a la
+    fórmula efectivamente se realizó (vincula con version_num resultante)."""
+    if not _check_access():
+        return jsonify({'error': 'No autorizado'}), 401
+    usuario = session.get('compras_user', 'sistema')
+    d = request.json or {}
+    conn = get_db(); c = conn.cursor()
+    row = c.execute(
+        """SELECT id, formula_id, estado FROM cambios_control_formula WHERE id=?""",
+        (cc_id,)
+    ).fetchone()
+    if not row:
+        return jsonify({'error': 'CC no encontrado'}), 404
+    if row[2] != 'aprobado':
+        return jsonify({'error': 'solo CCs aprobados pueden aplicarse'}), 400
+    version_resultante = d.get('version_resultante')
+    try:
+        version_resultante = int(version_resultante) if version_resultante else None
+    except (TypeError, ValueError):
+        version_resultante = None
+    c.execute("""UPDATE cambios_control_formula
+                 SET estado='aplicado', version_resultante=?
+                 WHERE id=?""", (version_resultante, cc_id))
+    audit_log(c, usuario=usuario, accion='APLICAR_CAMBIO_CONTROL',
+              tabla='cambios_control_formula', registro_id=cc_id,
+              antes={'estado': 'aprobado'},
+              despues={'estado': 'aplicado', 'version_resultante': version_resultante},
+              detalle=f"Aplicó CC #{cc_id} · version v{version_resultante or '?'}")
+    conn.commit()
+    return jsonify({'ok': True, 'estado': 'aplicado'})
+
+
+@bp.route('/api/tecnica/productos-sin-invima', methods=['GET'])
+def productos_sin_invima():
+    """Lista productos en stock_pt con disponibilidad que NO tienen INVIMA
+    vigente (sin registro o registro vencido).
+
+    Query params:
+        umbral_dias (int, default 90): considerar 'por vencer' los registros
+            con fecha_vencimiento dentro de N días. Aparecen como warning.
+        empresa (str, default todas): filtrar por empresa de stock_pt.
+
+    Devuelve:
+        sin_invima: productos con stock disponible y SIN registro vigente
+        por_vencer: productos con INVIMA vigente que vence pronto (<= umbral)
+        cobertura: resumen del % de SKUs cubiertos
+    """
+    if not _check_access():
+        return jsonify({'error': 'No autorizado'}), 401
+    try:
+        umbral = int(request.args.get('umbral_dias', 90))
+    except (TypeError, ValueError):
+        umbral = 90
+    umbral = max(1, min(umbral, 365))
+    empresa = request.args.get('empresa', '').strip()
+
+    conn = get_db(); c = conn.cursor()
+    # Cargar registros INVIMA Vigentes con fecha_vencimiento futura/null
+    inv_rows = c.execute("""
+        SELECT id, producto, num_registro, tipo_tramite, fecha_expedicion,
+               fecha_vencimiento, estado
+          FROM registros_invima
+         WHERE LOWER(COALESCE(estado,'')) = 'vigente'
+    """).fetchall()
+    cols_inv = [x[0] for x in c.description]
+    invima_vigentes = [dict(zip(cols_inv, r)) for r in inv_rows]
+
+    # Productos vendibles agrupados por SKU + descripción
+    where_emp = ""
+    params = []
+    if empresa:
+        where_emp = " WHERE empresa = ?"
+        params.append(empresa)
+    pt_rows = c.execute(f"""
+        SELECT sku, descripcion, empresa,
+               SUM(COALESCE(unidades_disponible,0)) as disp,
+               COUNT(*) as lotes,
+               GROUP_CONCAT(DISTINCT estado) as estados
+          FROM stock_pt
+          {where_emp}
+         GROUP BY sku, descripcion, empresa
+         HAVING SUM(COALESCE(unidades_disponible,0)) > 0
+         ORDER BY disp DESC
+    """, params).fetchall()
+
+    sin_invima = []
+    por_vencer = []
+    con_invima_ok = []
+    from datetime import datetime as _dt
+    hoy = _dt.now().date()
+    for sku, desc, emp, disp, lotes, estados in pt_rows:
+        match = _match_invima(desc, invima_vigentes)
+        if not match:
+            sin_invima.append({
+                'sku': sku, 'descripcion': desc or '', 'empresa': emp,
+                'unidades_disponibles': int(disp or 0),
+                'lotes_pt': int(lotes or 0),
+                'razon': 'sin_registro_vigente',
+            })
+            continue
+        # Hay match — verificar fecha_vencimiento
+        fv = match.get('fecha_vencimiento') or ''
+        dias_rest = None
+        if fv:
+            try:
+                fv_d = _dt.strptime(fv[:10], '%Y-%m-%d').date()
+                dias_rest = (fv_d - hoy).days
+            except Exception:
+                dias_rest = None
+        if dias_rest is not None and dias_rest < 0:
+            sin_invima.append({
+                'sku': sku, 'descripcion': desc or '', 'empresa': emp,
+                'unidades_disponibles': int(disp or 0),
+                'lotes_pt': int(lotes or 0),
+                'razon': 'registro_vencido',
+                'invima_match': {
+                    'id': match['id'], 'producto': match['producto'],
+                    'num_registro': match['num_registro'],
+                    'fecha_vencimiento': fv,
+                    'dias_vencido': abs(dias_rest),
+                },
+            })
+            continue
+        if dias_rest is not None and dias_rest <= umbral:
+            por_vencer.append({
+                'sku': sku, 'descripcion': desc or '', 'empresa': emp,
+                'unidades_disponibles': int(disp or 0),
+                'lotes_pt': int(lotes or 0),
+                'invima': {
+                    'id': match['id'], 'producto': match['producto'],
+                    'num_registro': match['num_registro'],
+                    'fecha_vencimiento': fv,
+                    'dias_restantes': dias_rest,
+                },
+            })
+        else:
+            con_invima_ok.append({
+                'sku': sku, 'descripcion': desc or '', 'empresa': emp,
+                'unidades_disponibles': int(disp or 0),
+                'invima_num_registro': match['num_registro'],
+                'fecha_vencimiento': fv or 'sin fecha',
+                'dias_restantes': dias_rest,
+            })
+    total_skus = len(pt_rows)
+    cubiertos = total_skus - len(sin_invima)
+    pct_cobertura = round((cubiertos / total_skus) * 100) if total_skus else 0
+    return jsonify({
+        'umbral_dias': umbral,
+        'empresa_filtro': empresa or None,
+        'cobertura': {
+            'total_skus': total_skus,
+            'con_invima_vigente': cubiertos,
+            'sin_invima_o_vencido': len(sin_invima),
+            'por_vencer': len(por_vencer),
+            'pct_cobertura': pct_cobertura,
+        },
+        'sin_invima': sin_invima,
+        'por_vencer': por_vencer,
+        'con_invima_ok': con_invima_ok,
+    })

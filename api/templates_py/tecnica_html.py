@@ -74,11 +74,11 @@ textarea{resize:vertical;min-height:60px;}
 </header>
 <script>function cxToggleTheme(){var h=document.documentElement;var c=h.getAttribute('data-theme');var n=c==='dark'?'light':'dark';if(n==='dark')h.setAttribute('data-theme','dark');else h.removeAttribute('data-theme');try{localStorage.setItem('cx-theme',n);}catch(e){}}</script>
 <div class="tabs">
-  <div class="tab active" onclick="goTab('tab-dash')">&#128200; Dashboard</div>
-  <div class="tab" onclick="goTab('tab-formulas')">&#129514; Formulas Maestras</div>
-  <div class="tab" onclick="goTab('tab-fichas')">&#128196; Fichas Tecnicas</div>
-  <div class="tab" onclick="goTab('tab-invima')">&#x2696;&#xfe0f; Registros INVIMA</div>
-  <div class="tab" onclick="goTab('tab-sgd')">&#128193; Documentos SGD</div>
+  <div class="tab active" onclick="goTab(event,'tab-dash')">&#128200; Dashboard</div>
+  <div class="tab" onclick="goTab(event,'tab-formulas')">&#129514; Formulas Maestras</div>
+  <div class="tab" onclick="goTab(event,'tab-fichas')">&#128196; Fichas Tecnicas</div>
+  <div class="tab" onclick="goTab(event,'tab-invima')">&#x2696;&#xfe0f; Registros INVIMA</div>
+  <div class="tab" onclick="goTab(event,'tab-sgd')">&#128193; Documentos SGD</div>
 </div>
 <div class="main">
 <!-- Dashboard -->
@@ -203,11 +203,44 @@ textarea{resize:vertical;min-height:60px;}
 </div>
 </div>
 <script>
-function goTab(id) {
+// CSRF helper · lee token del cookie y agrega header en POST/PATCH/DELETE.
+// Defense-in-depth sobre el Origin check del backend.
+function _csrf() {
+  var m = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/);
+  if (m) return decodeURIComponent(m[1]);
+  // Fallback: pedir uno explicito al backend (lo crea si no existe)
+  return '';
+}
+function _apiSend(url, method, body) {
+  var headers = {'Content-Type': 'application/json'};
+  var tok = _csrf();
+  if (tok) headers['X-CSRF-Token'] = tok;
+  var opts = {method: method, headers: headers, credentials: 'same-origin'};
+  if (body !== undefined) opts.body = JSON.stringify(body);
+  return fetch(url, opts).then(function(r){
+    if (r.status === 401) { window.location = '/login?next=/tecnica'; throw 0; }
+    return r.json();
+  });
+}
+function _apiPost(url, body) { return _apiSend(url, 'POST', body); }
+function _apiPatch(url, body) { return _apiSend(url, 'PATCH', body); }
+function _apiDelete(url) { return _apiSend(url, 'DELETE'); }
+function _apiGet(url) {
+  return fetch(url, {credentials: 'same-origin'}).then(function(r){
+    if (r.status === 401) { window.location = '/login?next=/tecnica'; throw 0; }
+    return r.json();
+  });
+}
+// Pre-fetch CSRF token al cargar (asi el cookie existe antes del primer POST)
+fetch('/api/csrf-token', {credentials: 'same-origin'}).catch(function(){});
+
+function goTab(ev, id) {
   document.querySelectorAll('.pane').forEach(function(p){p.classList.remove('active');});
   document.querySelectorAll('.tab').forEach(function(t){t.classList.remove('active');});
   document.getElementById(id).classList.add('active');
-  event.target.classList.add('active');
+  // ev pasado explicito (mas robusto que event global, que falla en Firefox)
+  var trg = ev && ev.currentTarget ? ev.currentTarget : (ev && ev.target);
+  if (trg && trg.classList) trg.classList.add('active');
   if (id === 'tab-dash') loadDash();
   if (id === 'tab-formulas') loadFormulas();
   if (id === 'tab-fichas') loadFichas();
@@ -230,7 +263,7 @@ function vencimientoBadge(fv) {
   return '<span class="badge-verde">' + diff + ' dias</span>';
 }
 function loadDash() {
-  fetch('/api/tecnica/dashboard').then(function(r){return r.json();}).then(function(d) {
+  _apiGet('/api/tecnica/dashboard').then(function(d) {
     document.getElementById('kv-form').textContent = d.formulas_vigentes || 0;
     document.getElementById('kv-fich').textContent = d.fichas_vigentes || 0;
     document.getElementById('kv-inv').textContent = d.registros_vigentes || 0;
@@ -248,7 +281,7 @@ function loadDash() {
   });
 }
 function loadFormulas() {
-  fetch('/api/tecnica/formulas').then(function(r){return r.json();}).then(function(data) {
+  _apiGet('/api/tecnica/formulas').then(function(data) {
     var tb = document.getElementById('tb-formulas');
     if (!data.length) { tb.innerHTML = '<tr><td colspan="8" class="empty">Sin formulas registradas</td></tr>'; return; }
     tb.innerHTML = data.map(function(r) {
@@ -261,7 +294,7 @@ function loadFormulas() {
 
 // ── Versionado: ver historial y restaurar ─────────────────────────────────
 function verHistorialFormula(fid, codigo) {
-  fetch('/api/tecnica/formulas/' + fid + '/versiones').then(function(r){return r.json();}).then(function(versiones) {
+  _apiGet('/api/tecnica/formulas/' + fid + '/versiones').then(function(versiones) {
     var modal = document.getElementById('modal-historial');
     if (!modal) {
       modal = document.createElement('div');
@@ -300,7 +333,7 @@ function verHistorialFormula(fid, codigo) {
 }
 
 function verSnapshot(fid, vid) {
-  fetch('/api/tecnica/formulas/' + fid + '/versiones/' + vid).then(function(r){return r.json();}).then(function(d) {
+  _apiGet('/api/tecnica/formulas/' + fid + '/versiones/' + vid).then(function(d) {
     if (d.error) { alert('Error: ' + d.error); return; }
     var snap = d.snapshot || {};
     var lineas = Object.keys(snap).filter(function(k){return k!=='_componentes';}).map(function(k){
@@ -322,7 +355,7 @@ function verSnapshot(fid, vid) {
 function restaurarFormula(fid, vid, vnum) {
   var msg = 'Restaurar formula a la version v' + vnum + '? El estado actual se guardara como snapshot adicional, asi puedes revertir el restore si te arrepientes. Solo admins pueden hacer esto.';
   if (!confirm(msg)) return;
-  fetch('/api/tecnica/formulas/' + fid + '/restaurar/' + vid, {method:'POST'}).then(function(r){return r.json();}).then(function(d) {
+  _apiPost('/api/tecnica/formulas/' + fid + '/restaurar/' + vid).then(function(d) {
     if (d.error) { alert('Error: ' + d.error); return; }
     alert('Formula restaurada a v' + d.restaurado_a_version);
     var m = document.getElementById('modal-historial'); if (m) m.remove();
@@ -334,14 +367,14 @@ function registrarFormula() {
   if (!fv) { var hoy = new Date(); fv = hoy.toISOString().slice(0,10); }
   var payload = {codigo:document.getElementById('fm-cod').value,nombre:document.getElementById('fm-nom').value,version:document.getElementById('fm-ver').value,tipo:document.getElementById('fm-tipo').value,estado:document.getElementById('fm-est').value,fecha_version:fv,descripcion:document.getElementById('fm-desc').value};
   if (!payload.codigo || !payload.nombre) { alert('Codigo y nombre son obligatorios'); return; }
-  fetch('/api/tecnica/formulas',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).then(function(r){return r.json();}).then(function(d){if(d.ok){loadFormulas();document.getElementById('fm-cod').value='';document.getElementById('fm-nom').value='';document.getElementById('fm-desc').value='';}else alert(d.error||'Error');});
+  _apiPost('/api/tecnica/formulas', payload).then(function(d){if(d.ok){loadFormulas();document.getElementById('fm-cod').value='';document.getElementById('fm-nom').value='';document.getElementById('fm-desc').value='';}else alert(d.error||'Error');});
 }
 function eliminarFormula(id) {
   if (!confirm('Eliminar formula? Esta accion no se puede deshacer.')) return;
-  fetch('/api/tecnica/formulas/' + id,{method:'DELETE'}).then(function(r){return r.json();}).then(function(){loadFormulas();});
+  _apiDelete('/api/tecnica/formulas/' + id).then(function(){loadFormulas();});
 }
 function loadFichas() {
-  fetch('/api/tecnica/fichas').then(function(r){return r.json();}).then(function(data) {
+  _apiGet('/api/tecnica/fichas').then(function(data) {
     var tb = document.getElementById('tb-fichas');
     if (!data.length) { tb.innerHTML = '<tr><td colspan="7" class="empty">Sin fichas registradas</td></tr>'; return; }
     tb.innerHTML = data.map(function(r) {
@@ -354,14 +387,14 @@ function registrarFicha() {
   var fv = document.getElementById('ft-fv').value; if (!fv) fv = new Date().toISOString().slice(0,10);
   var payload = {codigo:document.getElementById('ft-cod').value,nombre:document.getElementById('ft-nom').value,version:document.getElementById('ft-ver').value,estado:document.getElementById('ft-est').value,fecha_actualizacion:fv,url_documento:document.getElementById('ft-url').value,notas:document.getElementById('ft-notas').value};
   if (!payload.codigo || !payload.nombre) { alert('Codigo y nombre son obligatorios'); return; }
-  fetch('/api/tecnica/fichas',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).then(function(r){return r.json();}).then(function(d){if(d.ok){loadFichas();document.getElementById('ft-cod').value='';document.getElementById('ft-nom').value='';document.getElementById('ft-url').value='';}else alert(d.error||'Error');});
+  _apiPost('/api/tecnica/fichas', payload).then(function(d){if(d.ok){loadFichas();document.getElementById('ft-cod').value='';document.getElementById('ft-nom').value='';document.getElementById('ft-url').value='';}else alert(d.error||'Error');});
 }
 function eliminarFicha(id) {
   if (!confirm('Eliminar ficha tecnica?')) return;
-  fetch('/api/tecnica/fichas/' + id,{method:'DELETE'}).then(function(r){return r.json();}).then(function(){loadFichas();});
+  _apiDelete('/api/tecnica/fichas/' + id).then(function(){loadFichas();});
 }
 function loadInvima() {
-  fetch('/api/tecnica/invima').then(function(r){return r.json();}).then(function(data) {
+  _apiGet('/api/tecnica/invima').then(function(data) {
     var tb = document.getElementById('tb-invima');
     if (!data.length) { tb.innerHTML = '<tr><td colspan="8" class="empty">Sin registros INVIMA</td></tr>'; return; }
     var hoy = new Date(); hoy.setHours(0,0,0,0);
@@ -375,14 +408,14 @@ function loadInvima() {
 function registrarInvima() {
   var payload = {producto:document.getElementById('inv-prod').value,num_registro:document.getElementById('inv-reg').value,num_lote:document.getElementById('inv-lote').value,tipo_tramite:document.getElementById('inv-tipo').value,fecha_expedicion:document.getElementById('inv-fexp').value,fecha_vencimiento:document.getElementById('inv-fven').value,estado:document.getElementById('inv-est').value,notas:document.getElementById('inv-notas').value};
   if (!payload.producto) { alert('Producto es obligatorio'); return; }
-  fetch('/api/tecnica/invima',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).then(function(r){return r.json();}).then(function(d){if(d.ok){loadInvima();loadDash();document.getElementById('inv-prod').value='';document.getElementById('inv-reg').value='';}else alert(d.error||'Error');});
+  _apiPost('/api/tecnica/invima', payload).then(function(d){if(d.ok){loadInvima();loadDash();document.getElementById('inv-prod').value='';document.getElementById('inv-reg').value='';}else alert(d.error||'Error');});
 }
 function eliminarInvima(id) {
   if (!confirm('Eliminar registro INVIMA?')) return;
-  fetch('/api/tecnica/invima/' + id,{method:'DELETE'}).then(function(r){return r.json();}).then(function(){loadInvima();loadDash();});
+  _apiDelete('/api/tecnica/invima/' + id).then(function(){loadInvima();loadDash();});
 }
 function loadSgd() {
-  fetch('/api/tecnica/documentos').then(function(r){return r.json();}).then(function(data) {
+  _apiGet('/api/tecnica/documentos').then(function(data) {
     var tb = document.getElementById('tb-sgd');
     if (!data.length) { tb.innerHTML = '<tr><td colspan="9" class="empty">Sin documentos registrados</td></tr>'; return; }
     tb.innerHTML = data.map(function(r) {
@@ -395,7 +428,7 @@ function registrarDoc() {
   var fem = document.getElementById('sg-fem').value; if (!fem) fem = new Date().toISOString().slice(0,10);
   var payload = {tipo:document.getElementById('sg-tipo').value,codigo:document.getElementById('sg-cod').value,nombre:document.getElementById('sg-nom').value,version:document.getElementById('sg-ver').value,fecha_emision:fem,fecha_revision:document.getElementById('sg-frev').value,responsable:document.getElementById('sg-resp').value,estado:document.getElementById('sg-est').value,url_documento:document.getElementById('sg-url').value,notas:document.getElementById('sg-notas').value};
   if (!payload.codigo || !payload.nombre) { alert('Codigo y nombre son obligatorios'); return; }
-  fetch('/api/tecnica/documentos',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}).then(function(r){return r.json();}).then(function(d){if(d.ok){loadSgd();document.getElementById('sg-cod').value='';document.getElementById('sg-nom').value='';document.getElementById('sg-url').value='';}else alert(d.error||'Error');});
+  _apiPost('/api/tecnica/documentos', payload).then(function(d){if(d.ok){loadSgd();document.getElementById('sg-cod').value='';document.getElementById('sg-nom').value='';document.getElementById('sg-url').value='';}else alert(d.error||'Error');});
 }
 loadDash();
 </script>

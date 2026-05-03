@@ -581,6 +581,8 @@ JOBS_SCHEDULE = [
     ('agua_recordatorio',    12,  0, [0,1,2,3,4], None,         'job_agua_recordatorio'),
     # ⭐ Calidad · diario 7:30 · alerta equipos próximos a vencer + vencidos (COC-PRO-012)
     ('equipos_vencimientos',  7, 30, None, None,                'job_equipos_vencimientos'),
+    # ⭐ Direccion Tecnica · diario 7:45 · alerta INVIMA + SGD próximos a vencer
+    ('tecnica_vencimientos',  7, 45, None, None,                'job_tecnica_vencimientos'),
     # ⭐ Aseguramiento · diario 8:00 · alerta desviaciones en plazos críticos (ASG-PRO-001)
     ('desv_plazos',           8,  0, None, None,                'job_desv_plazos'),
     # ⭐ Aseguramiento · diario 8:30 · alerta control de cambios en plazos vencidos (ASG-PRO-007)
@@ -1449,6 +1451,156 @@ def job_equipos_vencimientos(app):
             'vencidos': len(vencidos),
             'urgentes_7d': len(urgentes),
             'proximos_30d': len(proximos),
+        }, 0
+
+
+def job_tecnica_vencimientos(app):
+    """Direccion Tecnica · diario 7:45 · alerta INVIMA + SGD próximos a vencer.
+
+    Sebastian 2-may-2026: el director técnico necesita saber con tiempo
+    qué registros INVIMA y qué SOPs hay que renovar/revisar.
+
+    INVIMA tiering:
+      - vencidos (días < 0)  → CRÍTICO · INVIMA tiene poder de decomiso
+      - urgentes (≤30d)      → URGENTE · empezar trámite renovación
+      - próximos (31-90d)    → preventivo · planear
+
+    SGD tiering (revisión periódica):
+      - vencidos (días < 0)  → CRÍTICO · auditoría INVIMA puede observar
+      - urgentes (≤7d)
+      - próximos (8-30d)
+
+    Idempotente: solo notifica si hay algo crítico/urgente, o muchos próximos.
+    """
+    with app.app_context():
+        from database import get_db
+        from datetime import date as _date
+        conn = get_db(); c = conn.cursor()
+        hoy = _date.today()
+
+        # ─── INVIMA ─────────────────────────────────────────────────────
+        try:
+            inv_rows = c.execute("""
+                SELECT id, producto, num_registro, fecha_vencimiento
+                  FROM registros_invima
+                 WHERE LOWER(COALESCE(estado,'')) = 'vigente'
+                   AND COALESCE(fecha_vencimiento,'') != ''
+                   AND date(fecha_vencimiento) <= date('now', '+90 days')
+                 ORDER BY fecha_vencimiento ASC
+                 LIMIT 200
+            """).fetchall()
+        except Exception as e:
+            log.warning('tecnica_vencimientos INVIMA read fallo: %s', e)
+            inv_rows = []
+
+        inv_vencidos, inv_urgentes, inv_proximos = [], [], []
+        for inv_id, prod, num, fv in inv_rows:
+            try:
+                f = _date.fromisoformat(fv[:10])
+                dias = (f - hoy).days
+            except Exception:
+                continue
+            entry = {'id': inv_id, 'producto': prod or '',
+                     'num_registro': num or '', 'dias': dias, 'fecha': fv}
+            if dias < 0:
+                inv_vencidos.append(entry)
+            elif dias <= 30:
+                inv_urgentes.append(entry)
+            else:
+                inv_proximos.append(entry)
+
+        # ─── SGD ────────────────────────────────────────────────────────
+        try:
+            sgd_rows = c.execute("""
+                SELECT id, tipo, codigo, nombre, fecha_proxima_revision,
+                       responsable_revision
+                  FROM documentos_sgd
+                 WHERE LOWER(COALESCE(estado,'')) = 'vigente'
+                   AND COALESCE(fecha_proxima_revision,'') != ''
+                   AND date(fecha_proxima_revision) <= date('now', '+30 days')
+                 ORDER BY fecha_proxima_revision ASC
+                 LIMIT 200
+            """).fetchall()
+        except Exception as e:
+            log.warning('tecnica_vencimientos SGD read fallo: %s', e)
+            sgd_rows = []
+
+        sgd_vencidos, sgd_urgentes, sgd_proximos = [], [], []
+        for sgd_id, tipo, cod, nom, fpr, resp in sgd_rows:
+            try:
+                f = _date.fromisoformat(fpr[:10])
+                dias = (f - hoy).days
+            except Exception:
+                continue
+            entry = {'id': sgd_id, 'tipo': tipo or 'SOP', 'codigo': cod or '',
+                     'nombre': nom or '', 'dias': dias,
+                     'responsable': (resp or '').strip()}
+            if dias < 0:
+                sgd_vencidos.append(entry)
+            elif dias <= 7:
+                sgd_urgentes.append(entry)
+            else:
+                sgd_proximos.append(entry)
+
+        # ─── Decisión de notificar ─────────────────────────────────────
+        criticos = inv_vencidos or inv_urgentes or sgd_vencidos or sgd_urgentes
+        muchos_prox = (len(inv_proximos) >= 3) or (len(sgd_proximos) >= 5)
+        if not (criticos or muchos_prox):
+            return True, {'mensaje': 'Sin alertas tecnica · todo dentro de margen'}, 0
+
+        # ─── Construir mensaje ─────────────────────────────────────────
+        lines = []
+        if inv_vencidos:
+            lines.append(f'⛔ INVIMA VENCIDOS: {len(inv_vencidos)}')
+            for v in inv_vencidos[:5]:
+                lines.append(f'  · {v["producto"]} ({v["num_registro"] or "—"}) hace {abs(v["dias"])}d')
+        if inv_urgentes:
+            lines.append(f'⏰ INVIMA ≤30d: {len(inv_urgentes)}')
+            for u in inv_urgentes[:5]:
+                lines.append(f'  · {u["producto"]} en {u["dias"]}d ({u["fecha"]})')
+        if inv_proximos:
+            lines.append(f'📅 INVIMA 31-90d: {len(inv_proximos)}')
+        if sgd_vencidos:
+            lines.append(f'⛔ SGD VENCIDOS: {len(sgd_vencidos)}')
+            for v in sgd_vencidos[:5]:
+                lines.append(f'  · {v["tipo"]} {v["codigo"]} · {v["nombre"][:40]} · hace {abs(v["dias"])}d')
+        if sgd_urgentes:
+            lines.append(f'⏰ SGD ≤7d: {len(sgd_urgentes)}')
+        if sgd_proximos:
+            lines.append(f'📅 SGD 8-30d: {len(sgd_proximos)}')
+
+        if inv_vencidos or sgd_vencidos:
+            titulo = f'⛔ Tecnica · {len(inv_vencidos)+len(sgd_vencidos)} VENCIDOS sin renovar'
+        elif inv_urgentes or sgd_urgentes:
+            titulo = f'⏰ Tecnica · {len(inv_urgentes)+len(sgd_urgentes)} venceran pronto'
+        else:
+            titulo = f'📅 Tecnica · {len(inv_proximos)+len(sgd_proximos)} en horizonte'
+
+        # Destinatarios: TECNICA_USERS + responsables especificos de SGDs
+        destinatarios = {'sebastian', 'alejandro', 'hernando', 'miguel'}
+        for s in sgd_vencidos + sgd_urgentes:
+            if s.get('responsable'):
+                destinatarios.add(s['responsable'].lower().strip())
+
+        try:
+            from blueprints.notif import push_notif_multi
+            push_notif_multi(
+                list(destinatarios), 'tecnica', titulo,
+                body='\n'.join(lines),
+                link='/tecnica', remitente='cron-tecnica',
+                importante=bool(inv_vencidos or sgd_vencidos),
+            )
+        except Exception as e:
+            log.warning('tecnica_vencimientos push_notif fallo: %s', e)
+
+        return True, {
+            'invima_vencidos': len(inv_vencidos),
+            'invima_urgentes_30d': len(inv_urgentes),
+            'invima_proximos_90d': len(inv_proximos),
+            'sgd_vencidos': len(sgd_vencidos),
+            'sgd_urgentes_7d': len(sgd_urgentes),
+            'sgd_proximos_30d': len(sgd_proximos),
+            'destinatarios': len(destinatarios),
         }, 0
 
 
