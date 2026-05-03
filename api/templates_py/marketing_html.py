@@ -160,6 +160,24 @@ textarea{resize:vertical;min-height:80px;}
      no responde. Si ves este banner, hay un bug específico para reportar. -->
 <div id="js-error-banner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:10000;background:#7f1d1d;color:#fef2f2;padding:10px 16px;font-size:12px;font-family:monospace;border-bottom:2px solid #ef4444;"></div>
 <script>
+// CSRF defense-in-depth · Sebastian 3-may-2026
+function _csrf() {
+  var m = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/);
+  return m ? decodeURIComponent(m[1]) : '';
+}
+function _fetchOpts(method, body) {
+  var headers = {};
+  var tok = _csrf();
+  if (tok) headers['X-CSRF-Token'] = tok;
+  var opts = {method: method || 'GET', headers: headers, credentials: 'same-origin'};
+  if (body !== undefined && body !== null) {
+    headers['Content-Type'] = 'application/json';
+    opts.body = (typeof body === 'string') ? body : JSON.stringify(body);
+  }
+  return opts;
+}
+fetch('/api/csrf-token', {credentials: 'same-origin'}).catch(function(){});
+
 function showToast(msg, type) {
   const c = document.getElementById('toast-container');
   const t = document.createElement('div');
@@ -1366,7 +1384,7 @@ async function hoyEjecutarTodos() {
 
   const resultados = await Promise.all(agentes.map(async ag => {
     try {
-      const r = await fetch('/api/marketing/agentes/' + ag.key, {method:'POST'});
+      const r = await fetch('/api/marketing/agentes/' + ag.key, _fetchOpts('POST'));
       if(!r.ok) return {agente:ag, error:`HTTP ${r.status}`};
       const d = await r.json();
       return {agente:ag, data:d};
@@ -1470,7 +1488,7 @@ async function hoyAplicarAgente(key) {
   if(!payload) {
     _hoyLog(`📤 Re-ejecutando agente ${key} para obtener payload...`);
     try {
-      const r0 = await fetch('/api/marketing/agentes/' + key, {method:'POST'});
+      const r0 = await fetch('/api/marketing/agentes/' + key, _fetchOpts('POST'));
       payload = await r0.json();
       window._hoyUltimoOutput[key] = payload;
     } catch(e) {
@@ -1481,11 +1499,7 @@ async function hoyAplicarAgente(key) {
 
   _hoyLog(`📤 Aplicando workflow ${key}...`);
   try {
-    const r = await fetch('/api/marketing/workflow/aplicar-agente', {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({agente: key, payload: payload})
-    });
+    const r = await fetch('/api/marketing/workflow/aplicar-agente', _fetchOpts('POST', {agente: key, payload: payload}));
     const d = await r.json();
     if(!r.ok) {
       _hoyLog(`❌ Workflow ${key} falló: ${d.error || r.status}`);
@@ -1505,7 +1519,7 @@ async function hoyRefreshMetricas() {
   const result = document.getElementById('hoy-metrics-result');
   result.textContent = '⏳ Iniciando refresh...';
   try {
-    const r = await fetch('/api/marketing/refresh-all-metrics', {method:'POST'});
+    const r = await fetch('/api/marketing/refresh-all-metrics', _fetchOpts('POST'));
     const d = await r.json();
     if(!r.ok) {
       result.innerHTML = '<span style="color:#dc2626">❌ Error: ' + (d.error || r.status) + '</span>';
@@ -1560,11 +1574,7 @@ async function saveIgToken() {
   const token = document.getElementById('ig-token-input').value.trim();
   if (!token || !token.startsWith('EAA')) { showToast('Token invalido', 'error'); return; }
   try {
-    const r = await fetch('/api/marketing/ig-update-token', {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({token})
-    });
+    const r = await fetch('/api/marketing/ig-update-token', _fetchOpts('POST', {token}));
     const d = await r.json();
     if (d.ok) {
       showToast('✅ Token guardado — sincronizando...', 'success');
@@ -1581,7 +1591,7 @@ async function refreshIgToken() {
   const btn = event.target;
   btn.disabled = true; btn.textContent = '⏳ Renovando...';
   try {
-    const r = await fetch('/api/marketing/ig-refresh', {method:'POST', headers:{'Content-Type':'application/json'}});
+    const r = await fetch('/api/marketing/ig-refresh', _fetchOpts('POST'));
     const d = await r.json();
     if (d.ok) {
       showToast('✅ ' + d.msg, 'success');
@@ -1922,7 +1932,7 @@ async function saveCampana() {
 
 async function deleteCampana(id, nombre) {
   if(!confirm(`¿Eliminar campaña "${nombre}"? Se borrarán todas las asignaciones y contenido relacionado.`)) return;
-  const resp = await fetch(`/api/marketing/campanas/${id}`,{method:'DELETE'});
+  const resp = await fetch(`/api/marketing/campanas/${id}`,_fetchOpts('DELETE'));
   const data = await resp.json();
   if(data.ok) { showAlert('camp-alert','Campaña eliminada'); loadCampanas(); }
   else showAlert('camp-alert',data.error||'Error','error');
@@ -1936,10 +1946,7 @@ let _PAGOS_INF_CACHE = [];
 
 async function cleanupHistoricoImportado() {
   try {
-    var r = await fetch('/api/marketing/pagos-historico-cleanup', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({})  // dry-run
-    });
+    var r = await fetch('/api/marketing/pagos-historico-cleanup', _fetchOpts('POST', {}));  // dry-run
     var d = await r.json();
     if (!r.ok) { alert('Error: '+(d.error||r.status)); return; }
     if (!d.total) {
@@ -1951,10 +1958,7 @@ async function cleanupHistoricoImportado() {
     }).join('\n');
     if (d.total > 15) lista += '\n  ... y '+(d.total-15)+' más';
     if (!confirm('Vas a marcar '+d.total+' pagos históricos como Pagada (dejar de aparecer en Pendientes):\n\n'+lista+'\n\n¿Confirmar?')) return;
-    var r2 = await fetch('/api/marketing/pagos-historico-cleanup', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({confirm: true})
-    });
+    var r2 = await fetch('/api/marketing/pagos-historico-cleanup', _fetchOpts('POST', {confirm: true}));
     var d2 = await r2.json();
     if (d2.ok) {
       alert('✓ '+d2.actualizados+' pagos históricos marcados como Pagada');
@@ -2415,10 +2419,7 @@ async function confirmarDarDeBaja() {
   const id = document.getElementById('baja-inf-id').value;
   const motivo = document.getElementById('baja-motivo-tipo').value;
   const obs    = document.getElementById('baja-observacion').value;
-  const resp = await fetch(`/api/marketing/influencers/${id}/dar-baja`, {
-    method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({motivo, observacion: obs})
-  });
+  const resp = await fetch(`/api/marketing/influencers/${id}/dar-baja`, _fetchOpts('POST', {motivo, observacion: obs}));
   const data = await resp.json();
   if(data.ok) {
     closeModal('modal-dar-baja');
@@ -2436,7 +2437,7 @@ async function eliminarInfluencer(id, nombre) {
     +'(Si tiene pagos históricos, usa el botón ⛔ Dar de baja en su lugar.)');
   if(!ok) return;
   try {
-    const resp = await fetch('/api/marketing/influencers/'+id, {method:'DELETE'});
+    const resp = await fetch('/api/marketing/influencers/'+id, _fetchOpts('DELETE'));
     const data = await resp.json().catch(()=>({}));
     if(resp.ok && (data.ok || data.deleted)) {
       showAlert('inf-alert','Influencer "'+nombre+'" eliminado correctamente.','success');
@@ -2566,11 +2567,7 @@ async function confirmarPagoInf() {
   if(!valor) { showAlert('pago-inf-alert','Ingresa el valor a pagar','error'); return; }
   const fechaPub   = document.getElementById('pago-fecha-pub').value;
   const entregable = document.getElementById('pago-entregable').value;
-  const resp = await fetch(`/api/marketing/influencers/${id}/solicitar-pago`,{
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({valor, concepto, fecha_publicacion:fechaPub, entregable})
-  });
+  const resp = await fetch(`/api/marketing/influencers/${id}/solicitar-pago`,_fetchOpts('POST', {valor, concepto, fecha_publicacion:fechaPub, entregable}));
   const data = await resp.json();
   if(data.ok) {
     closeModal('modal-inf-pago');
@@ -2672,10 +2669,7 @@ function kanbanMoveButtons(it) {
 
 async function moveContenido(id, nuevoEstado) {
   try {
-    const r = await fetch(`/api/marketing/contenido/${id}`, {
-      method:'PUT', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({estado: nuevoEstado})
-    });
+    const r = await fetch(`/api/marketing/contenido/${id}`, _fetchOpts('PUT', {estado: nuevoEstado}));
     const d = await r.json();
     if (d.ok) {
       loadContenido();
@@ -2763,7 +2757,7 @@ async function saveContenido() {
 
 async function deleteContenido(id) {
   if(!confirm('¿Eliminar esta pieza de contenido?')) return;
-  const data = await fetch(`/api/marketing/contenido/${id}`,{method:'DELETE'}).then(r=>r.json());
+  const data = await fetch(`/api/marketing/contenido/${id}`,_fetchOpts('DELETE')).then(r=>r.json());
   if(data.ok) { showAlert('cont-alert','Contenido eliminado'); loadContenido(); }
 }
 
@@ -2807,7 +2801,7 @@ async function syncPlatform(platform, full) {
   btn.disabled = true; btn.textContent = 'Sincronizando...';
   status.textContent = '';
   try {
-    const resp = await fetch(`/api/marketing/sync/${platform}${full?'?full=1':''}`, {method:'POST'});
+    const resp = await fetch(`/api/marketing/sync/${platform}${full?'?full=1':''}`, _fetchOpts('POST'));
     const data = await resp.json();
     if(data.ok) {
       status.style.color = '#34d399';
@@ -2944,9 +2938,7 @@ async function runAgent(agente) {
   }
 
   try {
-    const resp = await fetch(`/api/marketing/agentes/${agente}`, {
-      method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)
-    });
+    const resp = await fetch(`/api/marketing/agentes/${agente}`, _fetchOpts('POST', body));
     const data = await resp.json();
     if(data.error) {
       resultDiv.innerHTML = `<pre style="color:#f87171;">Error: ${data.error}</pre>`;
@@ -3893,10 +3885,7 @@ async function runAdsSkill() {
     </div>`;
 
   try {
-    const r = await fetch('/api/marketing/ads/run', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({platform, action, payload, business_context}),
-    });
+    const r = await fetch('/api/marketing/ads/run', _fetchOpts('POST', {platform, action, payload, business_context}));
     const data = await r.json();
     if (!r.ok || data.error) {
       out.innerHTML = `<div style="color:#f87171;font-weight:700;font-size:14px;">&#x26A0; Error</div>

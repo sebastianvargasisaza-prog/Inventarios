@@ -11,6 +11,7 @@ from flask import Blueprint, request, jsonify, session
 
 from config import DB_PATH, ADMIN_USERS, MARKETING_USERS, USER_EMAILS
 from database import get_db
+from audit_helpers import audit_log
 
 bp = Blueprint("marketing", __name__)
 CALENDARIO_COSMETICO = [
@@ -834,8 +835,14 @@ def mkt_campanas():
             d.get("sku_objetivo", ""), d.get("objetivo_unidades", 0),
             d.get("canal", ""), d.get("notas", ""), u
         ))
+        new_id = c.lastrowid
+        audit_log(c, usuario=u, accion='CREAR_CAMPANA_MKT',
+                  tabla='marketing_campanas', registro_id=new_id,
+                  despues={'nombre': d["nombre"][:80], 'tipo': d.get("tipo","Digital"),
+                           'presupuesto': presupuesto, 'canal': d.get("canal","")},
+                  detalle=f"Campana '{d['nombre'][:60]}' · ${presupuesto:,.0f}")
         conn.commit()
-        return jsonify({"ok": True, "id": c.lastrowid}), 201
+        return jsonify({"ok": True, "id": new_id}), 201
     finally:
         pass  # conexión cerrada automáticamente por teardown_appcontext
 
@@ -877,18 +884,34 @@ def mkt_campana_detail(cid):
             updates = {k: d[k] for k in campos if k in d}
             if not updates:
                 return jsonify({"error": "Nada que actualizar"}), 400
+            antes_row = c.execute(
+                "SELECT nombre, estado, presupuesto, presupuesto_gastado FROM marketing_campanas WHERE id=?",
+                (cid,)).fetchone()
+            antes = {'nombre': antes_row[0], 'estado': antes_row[1],
+                      'presupuesto': antes_row[2], 'presupuesto_gastado': antes_row[3]} if antes_row else None
             set_clause = ", ".join(f"{k}=?" for k in updates)
             c.execute(f"UPDATE marketing_campanas SET {set_clause} WHERE id=?",
                       list(updates.values()) + [cid])
+            audit_log(c, usuario=u, accion='MODIFICAR_CAMPANA_MKT',
+                      tabla='marketing_campanas', registro_id=cid,
+                      antes=antes, despues=updates,
+                      detalle=f"Campana id={cid} · {len(updates)} campos modificados")
             conn.commit()
             return jsonify({"ok": True})
 
         if request.method == "DELETE":
             if u not in ADMIN_USERS:
                 return jsonify({"error": "Sin permiso"}), 403
+            antes_row = c.execute(
+                "SELECT nombre FROM marketing_campanas WHERE id=?", (cid,)).fetchone()
+            antes = {'nombre': antes_row[0]} if antes_row else None
             c.execute("DELETE FROM marketing_campana_influencer WHERE campana_id=?", (cid,))
             c.execute("DELETE FROM marketing_contenido WHERE campana_id=?", (cid,))
             c.execute("DELETE FROM marketing_campanas WHERE id=?", (cid,))
+            audit_log(c, usuario=u, accion='ELIMINAR_CAMPANA_MKT',
+                      tabla='marketing_campanas', registro_id=cid,
+                      antes=antes,
+                      detalle=f"Eliminada campana id={cid}" + (f" · {antes['nombre']}" if antes else ""))
             conn.commit()
             return jsonify({"ok": True})
     finally:
