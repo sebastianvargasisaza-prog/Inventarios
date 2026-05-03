@@ -109,6 +109,70 @@ def _init_tecnica():
     )""")
     c.execute("""CREATE INDEX IF NOT EXISTS idx_tv_entidad_reg
                  ON tecnica_versiones(entidad, registro_id, version_num DESC)""")
+    # Migracion one-shot · documentos_sgd legacy → sgd_documentos rico.
+    # Idempotente: solo migra los que NO estan ya en sgd_documentos.
+    # Sebastian 3-may-2026: unificacion SGD para que /tecnica y /aseguramiento
+    # vean la misma fuente.
+    try:
+        legacy_rows = c.execute("""
+            SELECT id, tipo, codigo, nombre, version, fecha_emision,
+                   fecha_revision, responsable, estado, url_documento,
+                   notas, frecuencia_revision_meses, fecha_proxima_revision,
+                   responsable_revision
+              FROM documentos_sgd
+        """).fetchall()
+    except sqlite3.OperationalError:
+        legacy_rows = []
+    if legacy_rows:
+        # Ya migrado? Buscar marca en system table o usar set de codigos
+        ya_existen = set()
+        for r in c.execute("SELECT codigo FROM sgd_documentos").fetchall():
+            ya_existen.add(r[0])
+        import re as _re_mig
+        for legacy in legacy_rows:
+            (lid, tipo_legacy, codigo_legacy, nombre, version, fe, fr,
+             resp, estado_legacy, url, notas, frec, fp_rev, resp_rev) = legacy
+            codigo_legacy = (codigo_legacy or '').strip().upper()
+            if not codigo_legacy or codigo_legacy in ya_existen:
+                continue
+            # Validar formato AAA-BBB-NNN. Si no matchea, skip (data legacy
+            # malformada — operador debe corregir manualmente).
+            m = _re_mig.match(r'^([A-Z]{3})-([A-Z]{3})-(\d{1,3})(?:-([A-Z]\d{1,2}))?$',
+                              codigo_legacy)
+            if not m:
+                continue
+            area_m, tipo_doc_m, num_m, sub_m = m.groups()
+            try:
+                num_int = int(num_m)
+            except (TypeError, ValueError):
+                continue
+            estado_mapped = {
+                'Vigente': 'vigente', 'En_Revision': 'revision',
+                'Obsoleto': 'obsoleto', 'Borrador': 'borrador',
+            }.get(estado_legacy, 'vigente')
+            try:
+                c.execute("""
+                    INSERT OR IGNORE INTO sgd_documentos
+                      (codigo, area, tipo_doc, numero, subtipo, padre_codigo,
+                       titulo, version_actual, archivo_pdf_url,
+                       fecha_creacion, vigente_desde, fecha_aprobacion,
+                       proxima_revision, estado, elaborado_por,
+                       aprobado_por, observaciones, creado_por)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                """, (codigo_legacy, area_m, tipo_doc_m, num_int, sub_m,
+                       '-'.join([area_m, tipo_doc_m, num_m]) if sub_m else None,
+                       nombre or '', version or '1', url or '',
+                       fe or '', fe or '', fr or '', fp_rev or '',
+                       estado_mapped, resp or '', resp_rev or resp or '',
+                       (notas or '') + ' [migrado de documentos_sgd]',
+                       'migration-3may2026'))
+                ya_existen.add(codigo_legacy)
+            except Exception:
+                continue
+        try:
+            conn.commit()
+        except Exception:
+            pass
     conn.commit()
 _init_tecnica()
 
@@ -120,10 +184,13 @@ def _snapshot_tecnica(c, entidad, registro_id, motivo, usuario):
     No bloquea el flujo principal: cualquier excepcion se traga.
     """
     import json as _json
+    # SGD ahora vive en sgd_documentos (rich, unificado con aseguramiento).
+    # Snapshots SGD usan la misma tabla tecnica_versiones — entidad='sgd'
+    # apunta a sgd_documentos.id.
     tabla_map = {
         'ficha': 'fichas_tecnicas',
         'invima': 'registros_invima',
-        'sgd': 'documentos_sgd',
+        'sgd': 'sgd_documentos',
     }
     tabla = tabla_map.get(entidad)
     if not tabla:
@@ -549,132 +616,350 @@ def invima_update(rid):
     return jsonify({'ok': True})
 
 # ── Documentos SGD ─────────────────────────────────────────────────────────
+# Sebastian 3-may-2026: UNIFICADO con aseguramiento.sgd_documentos.
+# Hernando carga SOPs desde /tecnica y aparecen en /aseguramiento. Antes
+# eran dos tablas separadas (documentos_sgd legacy + sgd_documentos rico).
+# Ahora /api/tecnica/documentos* delega a la tabla rica y traduce campos
+# al schema simple que espera el frontend de tecnica.
+#
+# Mapeo schema simple (tecnica) ↔ rico (aseguramiento):
+#   tipo (SOP, BPM, Instruccion, Formato, Manual, Protocolo, Otro)
+#     ↔ tipo_doc (PRO, NOR, INS, FOR, MAN, PRO, REG)
+#   nombre ↔ titulo
+#   version ↔ version_actual
+#   fecha_emision ↔ vigente_desde
+#   fecha_revision ↔ fecha_aprobacion
+#   fecha_proxima_revision ↔ proxima_revision
+#   responsable ↔ elaborado_por
+#   responsable_revision ↔ aprobado_por
+#   estado: Vigente|En_Revision|Obsoleto ↔ vigente|revision|obsoleto
+#   url_documento ↔ archivo_pdf_url
+#   notas ↔ observaciones
+#   frecuencia_revision_meses → calculado de fecha_emision a proxima_revision
+#                                (no se persiste · solo se usa para calcular)
+
+_TIPO_TECNICA_A_DOC = {
+    'SOP': 'PRO', 'Protocolo': 'PRO',
+    'BPM': 'NOR',
+    'Instruccion': 'INS',
+    'Formato': 'FOR',
+    'Manual': 'MAN',
+    'Otro': 'REG',
+}
+_TIPO_DOC_A_TECNICA = {
+    'PRO': 'SOP', 'NOR': 'BPM', 'INS': 'Instruccion',
+    'FOR': 'Formato', 'MAN': 'Manual',
+    'POL': 'Otro', 'EVA': 'Otro', 'ACT': 'Otro',
+    'REG': 'Otro', 'DES': 'Otro', 'LMA': 'Otro',
+    'PGM': 'Otro', 'CRO': 'Otro',
+}
+_ESTADO_TECNICA_A_RICH = {
+    'Vigente': 'vigente', 'En_Revision': 'revision',
+    'Obsoleto': 'obsoleto', 'Borrador': 'borrador',
+}
+_ESTADO_RICH_A_TECNICA = {
+    'vigente': 'Vigente', 'revision': 'En_Revision',
+    'obsoleto': 'Obsoleto', 'borrador': 'Borrador',
+    'retirado': 'Obsoleto', 'conflicto': 'En_Revision',
+}
+
+
+def _sgd_rich_to_simple(row_dict):
+    """Transforma fila de sgd_documentos al schema simple del frontend tecnica."""
+    fecha_emi = row_dict.get('vigente_desde') or row_dict.get('fecha_creacion') or ''
+    fecha_prox = row_dict.get('proxima_revision') or ''
+    # Calcular frecuencia si tenemos ambas fechas
+    frecuencia = 12
+    if fecha_emi and fecha_prox:
+        try:
+            from datetime import date as _date
+            d1 = _date.fromisoformat(fecha_emi[:10])
+            d2 = _date.fromisoformat(fecha_prox[:10])
+            meses = round((d2 - d1).days / 30)
+            if 1 <= meses <= 60:
+                frecuencia = meses
+        except Exception:
+            pass
+    return {
+        'id': row_dict.get('id'),
+        'tipo': _TIPO_DOC_A_TECNICA.get(row_dict.get('tipo_doc', 'REG'), 'Otro'),
+        'codigo': row_dict.get('codigo', ''),
+        'nombre': row_dict.get('titulo', ''),
+        'version': row_dict.get('version_actual', '1'),
+        'fecha_emision': fecha_emi,
+        'fecha_revision': row_dict.get('fecha_aprobacion', '') or '',
+        'fecha_proxima_revision': fecha_prox,
+        'responsable': row_dict.get('elaborado_por', '') or '',
+        'responsable_revision': row_dict.get('aprobado_por', '') or '',
+        'frecuencia_revision_meses': frecuencia,
+        'estado': _ESTADO_RICH_A_TECNICA.get(
+            row_dict.get('estado', 'vigente'), 'Vigente'),
+        'url_documento': row_dict.get('archivo_pdf_url', '') or '',
+        'notas': row_dict.get('observaciones', '') or '',
+    }
+
+
+def _validar_codigo_sgd(codigo):
+    """Valida formato AAA-BBB-NNN[-FNN]. Devuelve (ok, error_msg, parts)."""
+    import re as _re
+    codigo = (codigo or '').strip().upper()
+    if not codigo:
+        return False, 'codigo requerido', None
+    if not _re.match(r'^[A-Z]{3}-[A-Z]{3}-\d{1,3}(?:-[A-Z]\d{1,2})?$', codigo):
+        return False, 'codigo formato invalido (esperado AAA-BBB-NNN, ej: COC-PRO-018)', None
+    parts = codigo.split('-')
+    return True, None, parts
+
+
 @bp.route('/api/tecnica/documentos', methods=['GET', 'POST'])
 def documentos_list():
     if not _check_access():
         return jsonify({'error': 'No autorizado'}), 401
-    conn = get_db()
-    c = conn.cursor()
+    conn = get_db(); c = conn.cursor()
+    usuario = session.get('compras_user', 'sistema')
+
     if request.method == 'POST':
         d = request.json or {}
-        usuario = session.get('compras_user', 'sistema')
-        # Calcular fecha_proxima_revision si no viene explicita
+        codigo = (d.get('codigo') or '').strip().upper()
+        ok, err, parts = _validar_codigo_sgd(codigo)
+        if not ok:
+            return jsonify({'error': err}), 400
+        nombre = (d.get('nombre') or '').strip()
+        if not nombre:
+            return jsonify({'error': 'nombre/titulo requerido'}), 400
+        # Mapear schema simple → rico
+        area = parts[0]
+        tipo_doc_codigo = parts[1]
+        try:
+            numero = int(parts[2])
+        except (ValueError, IndexError):
+            return jsonify({'error': 'numero invalido en codigo'}), 400
+        subtipo = parts[3] if len(parts) > 3 else None
+        padre_codigo = '-'.join(parts[:3]) if subtipo else None
+        version = (d.get('version') or '1.0').strip()
+        estado_rich = _ESTADO_TECNICA_A_RICH.get(d.get('estado', 'Vigente'), 'vigente')
+
         from datetime import datetime as _dt, timedelta as _td
-        fecha_emision = d.get('fecha_emision', _dt.now().strftime('%Y-%m-%d'))
-        frecuencia = int(d.get('frecuencia_revision_meses', 12))
-        fecha_proxima = d.get('fecha_proxima_revision', '')
+        fecha_emision = d.get('fecha_emision') or _dt.now().strftime('%Y-%m-%d')
+        try:
+            frecuencia = int(d.get('frecuencia_revision_meses', 12))
+        except (TypeError, ValueError):
+            frecuencia = 12
+        fecha_proxima = d.get('fecha_proxima_revision') or ''
         if not fecha_proxima and fecha_emision:
             try:
                 em = _dt.strptime(fecha_emision[:10], '%Y-%m-%d')
                 fecha_proxima = (em + _td(days=frecuencia*30)).strftime('%Y-%m-%d')
             except Exception:
                 pass
-        c.execute("""INSERT INTO documentos_sgd
-                     (tipo,codigo,nombre,version,fecha_emision,fecha_revision,
-                      responsable,estado,url_documento,notas,
-                      frecuencia_revision_meses,fecha_proxima_revision,
-                      responsable_revision)
-                     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                  (d.get('tipo', 'SOP'), d.get('codigo', ''), d.get('nombre', ''),
-                   d.get('version', '1.0'), fecha_emision,
-                   d.get('fecha_revision', ''), d.get('responsable', ''),
-                   d.get('estado', 'Vigente'), d.get('url_documento', ''),
-                   d.get('notas', ''), frecuencia, fecha_proxima,
-                   d.get('responsable_revision', d.get('responsable',''))))
+
+        # Idempotencia: si ya existe codigo, retornar conflicto
+        existe = c.execute("SELECT id FROM sgd_documentos WHERE codigo=?", (codigo,)).fetchone()
+        if existe:
+            return jsonify({'error': f'codigo {codigo} ya existe (id={existe[0]}). Usa PATCH para actualizar.'}), 409
+
+        c.execute("""INSERT INTO sgd_documentos
+                     (codigo, area, tipo_doc, numero, subtipo, padre_codigo,
+                      titulo, version_actual, archivo_pdf_url,
+                      fecha_creacion, vigente_desde, proxima_revision,
+                      estado, elaborado_por, aprobado_por,
+                      observaciones, creado_por)
+                     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                  (codigo, area, tipo_doc_codigo, numero, subtipo, padre_codigo,
+                   nombre, version, d.get('url_documento') or '',
+                   fecha_emision, fecha_emision, fecha_proxima,
+                   estado_rich, d.get('responsable') or '',
+                   d.get('responsable_revision') or d.get('responsable') or '',
+                   d.get('notas') or '', usuario))
         did = c.lastrowid
-        audit_log(c, usuario=usuario, accion='CREAR_SGD', tabla='documentos_sgd',
+        audit_log(c, usuario=usuario, accion='CREAR_SGD', tabla='sgd_documentos',
                   registro_id=did,
-                  despues={k: d.get(k) for k in ('tipo','codigo','nombre','version','estado','responsable')},
-                  detalle=f"Creó SGD {d.get('tipo','SOP')} {d.get('codigo','')} · {d.get('nombre','')}")
+                  despues={'codigo': codigo, 'titulo': nombre[:100], 'estado': estado_rich},
+                  detalle=f"Creó SGD {codigo} · {nombre[:80]}")
         conn.commit()
-        return jsonify({'ok': True, 'id': did, 'fecha_proxima_revision': fecha_proxima})
-    c.execute("SELECT * FROM documentos_sgd ORDER BY tipo, codigo")
+        return jsonify({'ok': True, 'id': did, 'codigo': codigo,
+                        'fecha_proxima_revision': fecha_proxima})
+
+    # GET
+    rows = c.execute("""
+        SELECT id, codigo, area, tipo_doc, titulo, version_actual,
+               vigente_desde, fecha_aprobacion, proxima_revision,
+               elaborado_por, aprobado_por, estado, archivo_pdf_url,
+               observaciones, fecha_creacion
+          FROM sgd_documentos
+          WHERE estado <> 'retirado'
+          ORDER BY tipo_doc, codigo
+    """).fetchall()
     cols = [x[0] for x in c.description]
-    rows = [dict(zip(cols, r)) for r in c.fetchall()]
-    return jsonify(rows)
+    return jsonify([_sgd_rich_to_simple(dict(zip(cols, r))) for r in rows])
 
 
 @bp.route('/api/tecnica/documentos/proximos-vencimientos')
 def documentos_vencimientos():
-    """Lista SGDs que requieren revision en los proximos 60 dias.
-    Vinculado al centro de notificaciones."""
+    """Lista SGDs vigentes con proxima_revision <= +60d. Lee de sgd_documentos."""
     if not _check_access():
         return jsonify({'error': 'No autorizado'}), 401
     conn = get_db(); c = conn.cursor()
     rows = c.execute("""
-        SELECT id, tipo, codigo, nombre, version, fecha_proxima_revision,
-               responsable_revision, frecuencia_revision_meses,
-               julianday(fecha_proxima_revision) - julianday('now') as dias_restantes
-        FROM documentos_sgd
-        WHERE estado='Vigente'
-          AND COALESCE(fecha_proxima_revision,'') != ''
-          AND fecha_proxima_revision <= date('now','+60 day')
-        ORDER BY fecha_proxima_revision ASC
+        SELECT id, codigo, tipo_doc, titulo, version_actual,
+               proxima_revision, aprobado_por, vigente_desde,
+               julianday(proxima_revision) - julianday('now') as dias_restantes
+          FROM sgd_documentos
+         WHERE estado='vigente'
+           AND COALESCE(proxima_revision,'') != ''
+           AND proxima_revision <= date('now','+60 day')
+         ORDER BY proxima_revision ASC
     """).fetchall()
-    cols = [x[0] for x in c.description]
-    return jsonify({'documentos': [dict(zip(cols, r)) for r in rows]})
+    out = []
+    for r in rows:
+        # Calcular frecuencia derivada
+        frecuencia = 12
+        if r[5] and r[7]:
+            try:
+                from datetime import date as _date
+                meses = round((_date.fromisoformat(r[5][:10]) - _date.fromisoformat(r[7][:10])).days / 30)
+                if 1 <= meses <= 60:
+                    frecuencia = meses
+            except Exception:
+                pass
+        out.append({
+            'id': r[0],
+            'codigo': r[1],
+            'tipo': _TIPO_DOC_A_TECNICA.get(r[2], 'Otro'),
+            'nombre': r[3],
+            'version': r[4],
+            'fecha_proxima_revision': r[5],
+            'responsable_revision': r[6] or '',
+            'frecuencia_revision_meses': frecuencia,
+            'dias_restantes': r[8],
+        })
+    return jsonify({'documentos': out})
 
 
 @bp.route('/api/tecnica/documentos/<int:did>/marcar-revisado', methods=['POST'])
 def documento_revisado(did):
-    """Marca un SGD como revisado HOY y reprograma la proxima revision."""
+    """Marca SGD como revisado HOY + reprograma proxima_revision en sgd_documentos."""
     if not _check_access():
         return jsonify({'error': 'No autorizado'}), 401
     from datetime import datetime as _dt, timedelta as _td
     conn = get_db(); c = conn.cursor()
-    row = c.execute("SELECT frecuencia_revision_meses FROM documentos_sgd WHERE id=?",
-                    (did,)).fetchone()
+    row = c.execute(
+        "SELECT codigo, vigente_desde, proxima_revision FROM sgd_documentos WHERE id=?",
+        (did,)).fetchone()
     if not row:
         return jsonify({'error': 'Documento no encontrado'}), 404
-    frecuencia = row[0] or 12
+    # Calcular frecuencia derivada
+    frecuencia = 12
+    if row[1] and row[2]:
+        try:
+            from datetime import date as _date
+            meses = round((_date.fromisoformat(row[2][:10]) - _date.fromisoformat(row[1][:10])).days / 30)
+            if 1 <= meses <= 60:
+                frecuencia = meses
+        except Exception:
+            pass
     hoy = _dt.now().strftime('%Y-%m-%d')
     proxima = (_dt.now() + _td(days=frecuencia*30)).strftime('%Y-%m-%d')
-    c.execute("""UPDATE documentos_sgd
-                 SET fecha_revision=?, fecha_proxima_revision=?
-                 WHERE id=?""", (hoy, proxima, did))
+    c.execute("""UPDATE sgd_documentos
+                 SET fecha_aprobacion=?, vigente_desde=?, proxima_revision=?,
+                     actualizado_en=datetime('now')
+                 WHERE id=?""", (hoy, hoy, proxima, did))
     audit_log(c, usuario=session.get('compras_user', 'sistema'),
-              accion='REVISAR_SGD', tabla='documentos_sgd', registro_id=did,
+              accion='REVISAR_SGD', tabla='sgd_documentos', registro_id=did,
               despues={'fecha_revision': hoy, 'fecha_proxima_revision': proxima},
-              detalle=f"Marcó SGD id={did} como revisado · próxima {proxima}")
+              detalle=f"Revisó SGD {row[0]} · próxima {proxima}")
     conn.commit()
     return jsonify({'ok': True, 'fecha_revision': hoy, 'fecha_proxima_revision': proxima})
+
 
 @bp.route('/api/tecnica/documentos/<int:did>', methods=['PATCH', 'DELETE'])
 def documento_update(did):
     if not _check_access():
         return jsonify({'error': 'No autorizado'}), 401
-    conn = get_db()
-    c = conn.cursor()
+    conn = get_db(); c = conn.cursor()
     usuario = session.get('compras_user', 'sistema')
     if request.method == 'DELETE':
         if usuario not in ADMIN_USERS:
             return jsonify({'error': 'Solo administradores'}), 403
-        antes_row = c.execute("SELECT tipo, codigo, nombre, version, estado FROM documentos_sgd WHERE id=?", (did,)).fetchone()
-        antes = dict(antes_row) if antes_row else None
-        _snapshot_tecnica(c, 'sgd', did, 'Eliminacion', usuario)
-        c.execute("DELETE FROM documentos_sgd WHERE id=?", (did,))
-        audit_log(c, usuario=usuario, accion='ELIMINAR_SGD', tabla='documentos_sgd',
-                  registro_id=did, antes=antes,
-                  detalle=f"Eliminó SGD id={did}" + (f" ({antes.get('codigo','')})" if antes else ""))
+        antes_row = c.execute(
+            "SELECT codigo, titulo, version_actual, estado FROM sgd_documentos WHERE id=?",
+            (did,)).fetchone()
+        if not antes_row:
+            return jsonify({'error': 'Documento no encontrado'}), 404
+        antes = {'codigo': antes_row[0], 'titulo': antes_row[1],
+                  'version': antes_row[2], 'estado': antes_row[3]}
+        # Soft delete: marcar como retirado en lugar de DELETE (preserva historico)
+        c.execute("""UPDATE sgd_documentos SET estado='retirado',
+                     actualizado_en=datetime('now') WHERE id=?""", (did,))
+        audit_log(c, usuario=usuario, accion='ELIMINAR_SGD',
+                  tabla='sgd_documentos', registro_id=did, antes=antes,
+                  detalle=f"Retiró SGD id={did} ({antes['codigo']})")
         conn.commit()
         return jsonify({'ok': True})
+
     d = request.json or {}
-    allowed = ['tipo', 'nombre', 'version', 'fecha_emision', 'fecha_revision',
-               'responsable', 'estado', 'url_documento', 'notas',
-               'frecuencia_revision_meses', 'fecha_proxima_revision', 'responsable_revision']
-    sets = ', '.join(f + '=?' for f in allowed if f in d)
-    vals = [d[f] for f in allowed if f in d] + [did]
-    if sets:
-        motivo = d.get('motivo_cambio') or 'Modificacion'
-        antes_row = c.execute("SELECT tipo, codigo, nombre, version, estado FROM documentos_sgd WHERE id=?", (did,)).fetchone()
-        antes = dict(antes_row) if antes_row else None
-        _snapshot_tecnica(c, 'sgd', did, motivo, usuario)
-        c.execute(f"UPDATE documentos_sgd SET {sets} WHERE id=?", vals)
-        audit_log(c, usuario=usuario, accion='MODIFICAR_SGD', tabla='documentos_sgd',
-                  registro_id=did, antes=antes,
-                  despues={k: d.get(k) for k in d if k in allowed},
-                  detalle=f"Modificó SGD id={did}")
-        conn.commit()
+    # Mapeo simple → rico para UPDATE. Solo campos que matchean.
+    set_clauses = []
+    vals = []
+    if 'nombre' in d:
+        set_clauses.append('titulo=?'); vals.append(d['nombre'])
+    if 'version' in d:
+        set_clauses.append('version_actual=?'); vals.append(d['version'])
+    if 'fecha_emision' in d:
+        set_clauses.append('vigente_desde=?'); vals.append(d['fecha_emision'])
+    if 'fecha_revision' in d:
+        set_clauses.append('fecha_aprobacion=?'); vals.append(d['fecha_revision'])
+    if 'fecha_proxima_revision' in d:
+        set_clauses.append('proxima_revision=?'); vals.append(d['fecha_proxima_revision'])
+    if 'responsable' in d:
+        set_clauses.append('elaborado_por=?'); vals.append(d['responsable'])
+    if 'responsable_revision' in d:
+        set_clauses.append('aprobado_por=?'); vals.append(d['responsable_revision'])
+    if 'estado' in d:
+        set_clauses.append('estado=?')
+        vals.append(_ESTADO_TECNICA_A_RICH.get(d['estado'], 'vigente'))
+    if 'url_documento' in d:
+        set_clauses.append('archivo_pdf_url=?'); vals.append(d['url_documento'])
+    if 'notas' in d:
+        set_clauses.append('observaciones=?'); vals.append(d['notas'])
+    # Cambio de tipo va junto con codigo (no se permite cambiar tipo aislado)
+    # frecuencia_revision_meses se traduce a recalcular proxima_revision
+    if 'frecuencia_revision_meses' in d and 'fecha_proxima_revision' not in d:
+        try:
+            frec = int(d['frecuencia_revision_meses'])
+            row = c.execute(
+                "SELECT vigente_desde FROM sgd_documentos WHERE id=?", (did,)
+            ).fetchone()
+            if row and row[0]:
+                from datetime import datetime as _dt, timedelta as _td
+                em = _dt.strptime(row[0][:10], '%Y-%m-%d')
+                set_clauses.append('proxima_revision=?')
+                vals.append((em + _td(days=frec*30)).strftime('%Y-%m-%d'))
+        except Exception:
+            pass
+
+    if not set_clauses:
+        return jsonify({'ok': True, 'aviso': 'sin cambios'})
+
+    motivo = d.get('motivo_cambio') or 'Modificacion'
+    antes_row = c.execute(
+        "SELECT codigo, titulo, version_actual, estado FROM sgd_documentos WHERE id=?",
+        (did,)).fetchone()
+    if not antes_row:
+        return jsonify({'error': 'Documento no encontrado'}), 404
+    antes = {'codigo': antes_row[0], 'titulo': antes_row[1],
+              'version': antes_row[2], 'estado': antes_row[3]}
+    _snapshot_tecnica(c, 'sgd', did, motivo, usuario)
+    set_clauses.append("actualizado_en=datetime('now')")
+    c.execute(f"UPDATE sgd_documentos SET {', '.join(set_clauses)} WHERE id=?",
+              vals + [did])
+    audit_log(c, usuario=usuario, accion='MODIFICAR_SGD',
+              tabla='sgd_documentos', registro_id=did, antes=antes,
+              despues={k: d.get(k) for k in d if k in (
+                  'nombre','version','estado','fecha_proxima_revision',
+                  'responsable','responsable_revision')},
+              detalle=f"Modificó SGD {antes['codigo']} · motivo: {motivo}")
+    conn.commit()
     return jsonify({'ok': True})
 
 

@@ -45,43 +45,44 @@ def test_sgd_post_acepta_frecuencia_revision_meses(app, db_clean):
     """POST /api/tecnica/documentos persiste frecuencia + fecha_proxima."""
     c = _login(app, "hernando")
     payload = {
-        "tipo": "SOP", "codigo": "TEST-SOP-001",
-        "nombre": "Test SOP migracion 38",
+        "tipo": "SOP", "codigo": "ASG-PRO-501",
+        "nombre": "Test SOP unificado",
         "fecha_emision": "2026-04-01",
         "frecuencia_revision_meses": 6,
         "responsable_revision": "miguel",
     }
     r = c.post("/api/tecnica/documentos", json=payload, headers=csrf_headers())
-    assert r.status_code == 200
+    assert r.status_code == 200, f"got {r.status_code}: {r.data}"
     d = r.get_json()
     assert d["ok"] is True
     # fecha_proxima_revision debe calcularse: fecha_emision + 6 meses ~ 180d
     assert d["fecha_proxima_revision"]
-    # Verificar columnas en DB
+    # Verificar en sgd_documentos (tabla unificada)
     conn = sqlite3.connect(os.environ["DB_PATH"])
     row = conn.execute(
-        """SELECT frecuencia_revision_meses, fecha_proxima_revision,
-                  responsable_revision FROM documentos_sgd WHERE id=?""",
+        """SELECT proxima_revision, aprobado_por
+             FROM sgd_documentos WHERE id=?""",
         (d["id"],)
     ).fetchone()
     conn.close()
-    assert row[0] == 6
-    assert row[1] is not None and row[1] != ''
-    assert row[2] == "miguel"
-    _cleanup("documentos_sgd", "id=?", (d["id"],))
+    assert row[0] is not None and row[0] != ''  # proxima_revision calculada
+    assert row[1] == "miguel"  # aprobado_por = responsable_revision
+    _cleanup("sgd_documentos", "id=?", (d["id"],))
 
 
 def test_sgd_proximos_vencimientos_endpoint(app, db_clean):
     """GET /api/tecnica/documentos/proximos-vencimientos lista SGDs <60d."""
     c = _login(app, "hernando")
-    # Sembrar SGD que vence en 30d
+    # Sembrar SGD que vence en 30d (en sgd_documentos rico)
     proxima = (date.today() + timedelta(days=30)).isoformat()
     conn = sqlite3.connect(os.environ["DB_PATH"])
+    conn.execute("DELETE FROM sgd_documentos WHERE codigo='COC-PRO-501'")
     cur = conn.execute(
-        """INSERT INTO documentos_sgd
-           (tipo, codigo, nombre, version, estado, fecha_proxima_revision,
-            frecuencia_revision_meses)
-           VALUES ('SOP','TEST-PROX-001','Prox vence','1.0','Vigente',?,12)""",
+        """INSERT INTO sgd_documentos
+           (codigo, area, tipo_doc, numero, titulo, version_actual,
+            estado, vigente_desde, proxima_revision)
+           VALUES ('COC-PRO-501','COC','PRO',501,'Prox vence','1.0','vigente',
+                   date('now','-300 day'), ?)""",
         (proxima,))
     sid = cur.lastrowid; conn.commit(); conn.close()
     try:
@@ -92,7 +93,7 @@ def test_sgd_proximos_vencimientos_endpoint(app, db_clean):
         ids = [x["id"] for x in d["documentos"]]
         assert sid in ids
     finally:
-        _cleanup("documentos_sgd", "id=?", (sid,))
+        _cleanup("sgd_documentos", "id=?", (sid,))
 
 
 # ════════════════════════════════════════════════════════════════════

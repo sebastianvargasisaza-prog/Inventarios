@@ -147,31 +147,36 @@ def test_ficha_crear_audita(app, db_clean):
 
 def test_sgd_crear_audita(app, db_clean):
     c = _login(app, "hernando")
+    # Codigo formato AAA-BBB-NNN unificado con aseguramiento
     r = c.post("/api/tecnica/documentos",
-               json={"tipo": "SOP", "codigo": "SOP-AUDIT-T1",
+               json={"tipo": "SOP", "codigo": "ASG-PRO-901",
                      "nombre": "SOP test audit"},
                headers=csrf_headers())
-    assert r.status_code == 200
+    assert r.status_code == 200, f"got {r.status_code}: {r.data}"
     did = r.get_json()["id"]
     audit = _last_audit(accion="CREAR_SGD", registro_id=did)
     assert audit is not None, "audit_log CREAR_SGD no registrado"
-    # cleanup
+    # cleanup (sgd_documentos rico)
     conn = sqlite3.connect(os.environ["DB_PATH"])
-    conn.execute("DELETE FROM documentos_sgd WHERE id=?", (did,))
+    conn.execute("DELETE FROM sgd_documentos WHERE id=?", (did,))
     conn.commit(); conn.close()
 
 
 def test_sgd_marcar_revisado_audita(app, db_clean):
     c = _login(app, "hernando")
     r = c.post("/api/tecnica/documentos",
-               json={"tipo": "SOP", "codigo": "SOP-REV-T1", "nombre": "Revisar"},
+               json={"tipo": "SOP", "codigo": "ASG-PRO-902", "nombre": "Revisar"},
                headers=csrf_headers())
+    assert r.status_code == 200, f"create failed: {r.data}"
     did = r.get_json()["id"]
     r = c.post(f"/api/tecnica/documentos/{did}/marcar-revisado",
                headers=csrf_headers())
     assert r.status_code == 200
     audit = _last_audit(accion="REVISAR_SGD", registro_id=did)
     assert audit is not None
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    conn.execute("DELETE FROM sgd_documentos WHERE id=?", (did,))
+    conn.commit(); conn.close()
     # cleanup
     conn = sqlite3.connect(os.environ["DB_PATH"])
     conn.execute("DELETE FROM documentos_sgd WHERE id=?", (did,))

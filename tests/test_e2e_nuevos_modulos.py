@@ -437,29 +437,29 @@ def test_comunicacion_raci_expande_area_prefix(app, db_clean):
 
 def test_sgd_proximos_vencimientos_endpoint(app, db_clean):
     c = _login_as(app, 'sebastian')
-    # Crear un SGD que vence en 5 días
+    # Crear un SGD que vence en 5 días (codigo formato AAA-BBB-NNN unificado)
     from datetime import datetime as _dt, timedelta as _td
     fecha_emision = (_dt.now() - _td(days=360)).strftime('%Y-%m-%d')
     r1 = c.post('/api/tecnica/documentos', json={
-        'tipo': 'SOP', 'codigo': 'SOP-TEST-001',
+        'tipo': 'SOP', 'codigo': 'COC-PRO-911',
         'nombre': 'SOP de prueba',
         'fecha_emision': fecha_emision,
         'frecuencia_revision_meses': 12,
     })
-    assert r1.status_code == 200
+    assert r1.status_code == 200, r1.data
 
     r2 = c.get('/api/tecnica/documentos/proximos-vencimientos')
     assert r2.status_code == 200, r2.data
     d = r2.get_json()
     assert 'documentos' in d
     codigos = [doc['codigo'] for doc in d['documentos']]
-    assert 'SOP-TEST-001' in codigos
+    assert 'COC-PRO-911' in codigos
 
 
 def test_sgd_marcar_revisado_reprograma(app, db_clean):
     c = _login_as(app, 'sebastian')
     r1 = c.post('/api/tecnica/documentos', json={
-        'tipo': 'SOP', 'codigo': 'SOP-REV-001', 'nombre': 'X',
+        'tipo': 'SOP', 'codigo': 'COC-PRO-912', 'nombre': 'X',
         'fecha_emision': '2025-01-01', 'frecuencia_revision_meses': 6,
     })
     did = r1.get_json()['id']

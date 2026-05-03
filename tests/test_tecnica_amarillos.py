@@ -161,9 +161,13 @@ def test_versionado_invima_snapshot_pre_update(app, db_clean):
 
 def test_versionado_sgd_snapshot_pre_update(app, db_clean):
     cs = _login(app, "sebastian")
+    # Sembrar en sgd_documentos (rico, unificado) con codigo formato AAA-BBB-NNN
     conn = sqlite3.connect(os.environ["DB_PATH"])
+    conn.execute("DELETE FROM sgd_documentos WHERE codigo='ASG-PRO-503'")
     cur = conn.execute(
-        "INSERT INTO documentos_sgd (tipo, codigo, nombre, version, estado) VALUES ('SOP', 'TEST-SGD-VER', 'Original', '1.0', 'Vigente')")
+        """INSERT INTO sgd_documentos
+           (codigo, area, tipo_doc, numero, titulo, version_actual, estado, vigente_desde)
+           VALUES ('ASG-PRO-503','ASG','PRO',503,'Original','1.0','vigente',date('now'))""")
     sgd_id = cur.lastrowid; conn.commit(); conn.close()
     try:
         cs.patch(f"/api/tecnica/documentos/{sgd_id}",
@@ -174,7 +178,7 @@ def test_versionado_sgd_snapshot_pre_update(app, db_clean):
         assert len(versiones) == 1
     finally:
         _cleanup("tecnica_versiones", "entidad='sgd' AND registro_id=?", (sgd_id,))
-        _cleanup("documentos_sgd", "id=?", (sgd_id,))
+        _cleanup("sgd_documentos", "id=?", (sgd_id,))
 
 
 def test_versionado_entidad_invalida(app, db_clean):
