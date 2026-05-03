@@ -233,22 +233,27 @@ textarea{resize:vertical;min-height:70px;}
     <button class="btn btn-primary" onclick="registrarNC()">Registrar NC</button>
   </div>
   <div class="card">
-    <div class="card-title">Historial de No Conformidades</div>
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+      <span class="card-title" style="margin:0">Historial de No Conformidades</span>
+      <input type="text" placeholder="Buscar..." oninput="buscarTabla('nc', this.value)" style="padding:6px 10px;border:1px solid #cbd5e1;border-radius:4px;max-width:200px">
+    </div>
     <table>
       <thead><tr><th>ID</th><th>Fecha</th><th>Tipo</th><th>Area</th><th>Descripcion</th><th>Impacto</th><th>Estado</th><th>Accion</th></tr></thead>
       <tbody id="nc-tbody"><tr><td colspan="8" class="empty">Cargando...</td></tr></tbody>
     </table>
+    <div id="pg-nc"></div>
   </div>
 </div>
 
 <!-- Ã¢ÂÂÃ¢ÂÂ CALIBRACIONES Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ -->
 <div id="tab-cal" class="pane">
   <div class="card">
-    <div class="card-title">Instrumentos y Equipos Ã¢ÂÂ Estado de Calibracion</div>
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px"><span class="card-title" style="margin:0">Instrumentos y Equipos &middot; Estado de Calibracion</span><input type="text" placeholder="Buscar..." oninput="buscarTabla('cal', this.value)" style="padding:6px 10px;border:1px solid #cbd5e1;border-radius:4px;max-width:200px"></div>
     <table>
       <thead><tr><th>Instrumento</th><th>Codigo</th><th>Ubicacion</th><th>Ultima Cal.</th><th>Proxima Cal.</th><th>Responsable</th><th>Certificado</th><th>Estado</th></tr></thead>
       <tbody id="cal-tbody"><tr><td colspan="8" class="empty">Cargando...</td></tr></tbody>
     </table>
+    <div id="pg-cal"></div>
   </div>
 </div>
 
@@ -508,7 +513,8 @@ textarea{resize:vertical;min-height:70px;}
       <div class="card-title" style="margin:0">\u26a0\ufe0f Out Of Specification (OOS)</div>
       <div style="color:#94a3b8;font-size:12px;margin-top:2px">Workflow: lote a cuarentena \u2192 investigaci\u00f3n \u2192 causa ra\u00edz \u2192 aprobaci\u00f3n \u2192 cierre.</div>
     </div>
-    <div style="display:flex;gap:8px">
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <input type="text" placeholder="Buscar..." oninput="buscarTabla('oos', this.value)" style="padding:6px 10px;border:1px solid #334155;background:#0f172a;color:#e2e8f0;border-radius:6px;font-size:12px;max-width:200px">
       <select id="oos-filtro" onchange="loadOOS()" style="padding:6px 10px;border:1px solid #334155;background:#0f172a;color:#e2e8f0;border-radius:6px;font-size:12px">
         <option value="">Todos</option>
         <option value="abierto" selected>Abiertos</option>
@@ -524,6 +530,7 @@ textarea{resize:vertical;min-height:70px;}
       <thead><tr><th>Codigo</th><th>Origen</th><th>Lote</th><th>Producto</th><th>Parametro</th><th>Valor</th><th>Detectado</th><th>Estado</th><th>Acci\u00f3n</th></tr></thead>
       <tbody id="oos-tbody"><tr><td colspan="9" class="empty">Cargando...</td></tr></tbody>
     </table>
+    <div id="pg-oos"></div>
   </div>
 </div>
 
@@ -631,6 +638,97 @@ function fmt(d){return d?d.substring(0,10):'â';}
 function fmtH(s){return s?s.substring(0,5):'â';}
 function openModal(id){document.getElementById(id).classList.add('open');}
 function closeModal(id){document.getElementById(id).classList.remove('open');}
+
+// CSRF defense-in-depth
+function _csrf() {
+  var m = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/);
+  return m ? decodeURIComponent(m[1]) : '';
+}
+function _fetchOpts(method, body) {
+  var headers = {};
+  var tok = _csrf();
+  if (tok) headers['X-CSRF-Token'] = tok;
+  var opts = {method: method || 'GET', headers: headers, credentials: 'same-origin'};
+  if (body !== undefined && body !== null) {
+    headers['Content-Type'] = 'application/json';
+    opts.body = (typeof body === 'string') ? body : JSON.stringify(body);
+  }
+  return opts;
+}
+fetch('/api/csrf-token', {credentials: 'same-origin'}).catch(function(){});
+
+// Filtros + Paginacion (client-side)
+var TBL_STATE = {
+  bandeja: {q: '', page: 1, size: 25, fields: ['titulo','tipo','estado','responsable']},
+  nc:      {q: '', page: 1, size: 25, fields: ['codigo','tipo','origen','estado','descripcion']},
+  cal:     {q: '', page: 1, size: 25, fields: ['equipo','codigo','tipo','estado']},
+  cron:    {q: '', page: 1, size: 25, fields: ['codigo','tipo','estado','responsable']},
+  esp:     {q: '', page: 1, size: 25, fields: ['producto','parametro','tipo']},
+  coa:     {q: '', page: 1, size: 25, fields: ['lote','producto','aprobado_por','estado']},
+  est:     {q: '', page: 1, size: 25, fields: ['producto','lote','condicion']},
+  capa:    {q: '', page: 1, size: 25, fields: ['titulo','tipo','estado','responsable']},
+  aud:     {q: '', page: 1, size: 25, fields: ['tipo','area','responsable','estado']},
+  micro:   {q: '', page: 1, size: 25, fields: ['ubicacion','tipo','resultado']},
+  agua:    {q: '', page: 1, size: 25, fields: ['punto','operario','observaciones']},
+  oos:     {q: '', page: 1, size: 25, fields: ['lote','parametro','estado','asignado_a']},
+  equipos: {q: '', page: 1, size: 25, fields: ['codigo','nombre','area','estado']},
+};
+function _filtrar(data, query, fields) {
+  if (!query) return data || [];
+  var q = query.toLowerCase().trim();
+  return (data || []).filter(function(r) {
+    return fields.some(function(f) {
+      var v = r[f]; return v != null && String(v).toLowerCase().indexOf(q) !== -1;
+    });
+  });
+}
+function _paginar(data, page, size) {
+  if (size >= 999) return {items: data, total: data.length, totalPages: 1, page: 1};
+  var total = data.length;
+  var totalPages = Math.max(1, Math.ceil(total / size));
+  var p = Math.min(Math.max(1, page), totalPages);
+  return {items: data.slice((p-1)*size, p*size), total: total, totalPages: totalPages, page: p};
+}
+function _renderPag(tabla, info) {
+  var s = TBL_STATE[tabla];
+  if (info.total <= s.size && info.total < 26) {
+    return '<div style="font-size:11px;color:#64748b;padding:6px 0;">' + info.total + ' filas</div>';
+  }
+  var html = '<div style="display:flex;align-items:center;gap:8px;padding:8px 0;font-size:12px;color:#94a3b8;">';
+  html += '<span>P' + String.fromCharCode(225) + 'g ' + info.page + '/' + info.totalPages + ' ' + String.fromCharCode(183) + ' ' + info.total + '</span>';
+  html += '<span style="flex:1"></span>';
+  html += '<button class="btn btn-ghost btn-sm" onclick="cambiarPag(\'' + tabla + '\',-1)"' +
+          (info.page <= 1 ? ' disabled' : '') + '>&larr;</button>';
+  html += '<button class="btn btn-ghost btn-sm" onclick="cambiarPag(\'' + tabla + '\',1)"' +
+          (info.page >= info.totalPages ? ' disabled' : '') + '>&rarr;</button>';
+  html += '<select onchange="cambiarPagSize(\'' + tabla + '\', this.value)" ' +
+          'style="background:#0f172a;border:1px solid #334155;color:#cbd5e1;padding:4px 6px;border-radius:5px;font-size:12px;">';
+  ['25','50','100','999'].forEach(function(o){
+    var label = o === '999' ? 'Todas' : o;
+    html += '<option value="' + o + '"' + (String(s.size)===o?' selected':'') + '>' + label + '</option>';
+  });
+  html += '</select></div>';
+  return html;
+}
+var _PAG_REFRESH = {
+  bandeja: function(){ if(window.loadBandeja) loadBandeja(); },
+  nc: function(){ if(window.loadNC) loadNC(); },
+  cal: function(){ if(window.loadCalibraciones) loadCalibraciones(); },
+  cron: function(){ if(window.loadCronograma) loadCronograma(); },
+  esp: function(){ if(window.loadEspecificaciones) loadEspecificaciones(); },
+  coa: function(){ if(window.loadCOA) loadCOA(); },
+  est: function(){ if(window.loadEstabilidades) loadEstabilidades(); },
+  capa: function(){ if(window.loadCAPA) loadCAPA(); },
+  aud: function(){ if(window.loadAuditorias) loadAuditorias(); },
+  micro: function(){ if(window.loadMicro) loadMicro(); },
+  agua: function(){ if(window.loadAgua) loadAgua(); },
+  oos: function(){ if(window.loadOOS) loadOOS(); },
+  equipos: function(){ if(window.loadEquipos) loadEquipos(); },
+};
+function cambiarPag(tabla, delta){ TBL_STATE[tabla].page = Math.max(1, TBL_STATE[tabla].page + delta); if(_PAG_REFRESH[tabla]) _PAG_REFRESH[tabla](); }
+function cambiarPagSize(tabla, valor){ TBL_STATE[tabla].size = parseInt(valor,10)||25; TBL_STATE[tabla].page = 1; if(_PAG_REFRESH[tabla]) _PAG_REFRESH[tabla](); }
+function buscarTabla(tabla, valor){ TBL_STATE[tabla].q = valor||''; TBL_STATE[tabla].page = 1; if(_PAG_REFRESH[tabla]) _PAG_REFRESH[tabla](); }
+
 
 var _tabIds=['tab-bandeja','tab-dash','tab-cron','tab-cc','tab-nc','tab-cal','tab-micro','tab-agua','tab-equipos','tab-oos'];
 function goTab(id){
@@ -780,10 +878,7 @@ async function guardarEventoEquipo(){
   };
   msg.innerHTML = '<span style="color:#64748b">Guardando...</span>';
   try{
-    var r = await fetch('/api/calidad/equipos/'+encodeURIComponent(codigo)+'/registrar-evento', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify(body),
-    });
+    var r = await fetch('/api/calidad/equipos/'+encodeURIComponent(codigo)+'/registrar-evento', _fetchOpts('POST', body));
     var d = await r.json();
     if(d.ok){
       msg.innerHTML = '<span style="color:#15803d;font-weight:600">&#x2705; Evento #'+d.evento_id+' registrado</span>';
@@ -798,10 +893,7 @@ async function completarCronogramaEq(cronId){
   var obs = prompt('Observaciones (opcional):');
   if(obs === null) return;
   try{
-    var r = await fetch('/api/calidad/equipos/cronograma/'+cronId+'/completar', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({observaciones: obs}),
-    });
+    var r = await fetch('/api/calidad/equipos/cronograma/'+cronId+'/completar', _fetchOpts('POST', {observaciones: obs}));
     var d = await r.json();
     if(d.ok){ loadEquiposCronograma(); }
     else alert('Error: '+(d.error||'?'));
@@ -1154,10 +1246,7 @@ async function guardarResultadoMicro(){
   };
   if(!body.producto_nombre || !body.lote){ alert('Producto y lote requeridos'); return; }
   try{
-    var r = await fetch('/api/calidad/micro/resultados', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify(body)
-    });
+    var r = await fetch('/api/calidad/micro/resultados', _fetchOpts('POST', body));
     var d = await r.json();
     if(d.ok){
       var msg = '✅ Guardado. Estado: '+d.estado;
@@ -1363,10 +1452,7 @@ async function guardarLecturaAguaInline(){
   };
   if(msg) msg.innerHTML = '<span style="color:#64748b">Registrando...</span>';
   try{
-    var r = await fetch('/api/calidad/agua/registros', {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify(body),
-    });
+    var r = await fetch('/api/calidad/agua/registros', _fetchOpts('POST', body));
     var d = await r.json();
     if(d.ok){
       var col = d.estado === 'fuera_spec' ? '#ef4444' : (d.estado === 'alerta' ? '#fbbf24' : '#15803d');
@@ -1417,7 +1503,7 @@ async function guardarLecturaAgua(){
   };
   if(!body.punto_muestreo){ alert('Punto de muestreo requerido'); return; }
   try{
-    var r = await fetch('/api/calidad/agua/registros', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    var r = await fetch('/api/calidad/agua/registros', _fetchOpts('POST', body));
     var d = await r.json();
     if(d.ok){
       var msg = '✅ Registrado. Estado: '+d.estado;
@@ -1437,8 +1523,18 @@ async function loadOOS(){
     var d = await r.json();
     var tb = document.getElementById('oos-tbody');
     var lst = d.oos || [];
-    if(!lst.length){ tb.innerHTML='<tr><td colspan="9" class="empty">Sin OOS.</td></tr>'; return; }
-    tb.innerHTML = lst.map(function(o){
+    var s = TBL_STATE.oos;
+    var filtrado = _filtrar(lst, s.q, s.fields);
+    var info = _paginar(filtrado, s.page, s.size);
+    s.page = info.page;
+    var pgEl = document.getElementById('pg-oos');
+    if(!info.items.length){
+      tb.innerHTML='<tr><td colspan="9" class="empty">' + (s.q ? 'Sin coincidencias' : 'Sin OOS.') + '</td></tr>';
+      if(pgEl) pgEl.innerHTML='';
+      return;
+    }
+    if(pgEl) pgEl.innerHTML = _renderPag('oos', info);
+    tb.innerHTML = info.items.map(function(o){
       var estColor = {abierto:'#fca5a5',en_investigacion:'#fcd34d',en_aprobacion:'#a78bfa',cerrado:'#34d399',rechazado:'#94a3b8'}[o.estado]||'#94a3b8';
       var btn = '';
       if(o.estado==='abierto') btn = '<button class="btn btn-primary btn-sm" onclick="oosTransicion('+o.id+',&quot;en_investigacion&quot;)">Investigar</button>';
@@ -1461,7 +1557,7 @@ async function loadOOS(){
 async function oosTransicion(id, nuevo){
   // Acepta tanto string directo como evento desde onclick HTML-encoded
   try{
-    var r = await fetch('/api/calidad/oos/'+id, {method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify({estado: String(nuevo)})});
+    var r = await fetch('/api/calidad/oos/'+id, _fetchOpts('PATCH', {estado: String(nuevo)}));
     var d = await r.json();
     if(d.ok){ loadOOS(); }
     else alert('Error: '+(d.error||'?'));
@@ -1474,7 +1570,7 @@ async function oosCerrarConDatos(id){
   var disp = prompt('Disposicion (liberado/reprocesado/rechazado/destruido/reanalisis):', 'rechazado');
   if(!disp) return;
   try{
-    var r = await fetch('/api/calidad/oos/'+id, {method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify({estado:'cerrado', causa_raiz: causa, disposicion: disp})});
+    var r = await fetch('/api/calidad/oos/'+id, _fetchOpts('PATCH', {estado:'cerrado', causa_raiz: causa, disposicion: disp}));
     var d = await r.json();
     if(d.ok){ alert('OOS cerrado'); loadOOS(); }
     else alert('Error: '+(d.error||'?'));
@@ -1642,7 +1738,7 @@ document.addEventListener('click',async function(e){
   const ini=e.target.closest('[data-cron-ini]');
   if(ini){
     const tid=ini.dataset.cronIni;
-    await fetch('/api/calidad/cronograma/iniciar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tarea_id:parseInt(tid),fecha:_crDate})});
+    await fetch('/api/calidad/cronograma/iniciar', _fetchOpts('POST', {tarea_id:parseInt(tid),fecha:_crDate}));
     loadCronograma();
     return;
   }
@@ -1677,7 +1773,7 @@ async function decidirTarea(estado){
   const finalEstado=oos?'OOS':estado;
   const body={tarea_id:parseInt(tid),fecha:_crDate,estado:finalEstado,valor:document.getElementById('m-cron-valor').value,observaciones:document.getElementById('m-cron-obs').value};
   try{
-    const r=await fetch('/api/calidad/cronograma/completar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const r=await fetch('/api/calidad/cronograma/completar',_fetchOpts('POST', body));
     if(r.ok){closeModal('m-cron-comp');loadCronograma();}
     else{const d=await r.json();alert(d.error||'Error al guardar');}
   }catch(e){alert('Error: '+e.message);}
@@ -1711,7 +1807,7 @@ document.addEventListener('click',async function(e){
   const estado=btn.dataset.estado;
   if(!confirm('Confirmar: '+estado+' este lote?')) return;
   try{
-    const r=await fetch('/api/recepcion/aprobar-lote',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mov_id:movId,estado})});
+    const r=await fetch('/api/recepcion/aprobar-lote',_fetchOpts('POST', {mov_id:movId,estado}));
     if(r.ok) loadCuarentena();
     else alert('Error al actualizar');
   }catch(e){alert('Error: '+e.message);}
@@ -1723,7 +1819,7 @@ async function registrarNC(){
   if(!desc){alert('La descripcion es obligatoria');return;}
   const body={tipo:document.getElementById('nc-tipo').value,area:document.getElementById('nc-area').value,impacto:document.getElementById('nc-impacto').value,descripcion:desc,responsable:document.getElementById('nc-responsable').value,lote:document.getElementById('nc-lote').value,codigo_mp:document.getElementById('nc-mp').value,accion_correctiva:document.getElementById('nc-accion').value};
   try{
-    const r=await fetch('/api/calidad/no-conformidades',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const r=await fetch('/api/calidad/no-conformidades',_fetchOpts('POST', body));
     if(r.ok){['nc-desc','nc-responsable','nc-lote','nc-mp','nc-accion'].forEach(id=>document.getElementById(id).value='');loadNC();}
     else{const d=await r.json();alert(d.error||'Error al registrar');}
   }catch(e){alert('Error: '+e.message);}
@@ -1734,8 +1830,18 @@ async function loadNC(){
   try{
     const r=await fetch('/api/calidad/no-conformidades');
     const rows=await r.json();
-    if(!rows.length){tbody.innerHTML='<tr><td colspan="8" class="empty">No hay no conformidades registradas</td></tr>';return;}
-    tbody.innerHTML=rows.map(nc=>{
+    var s = TBL_STATE.nc;
+    var filtrado = _filtrar(rows || [], s.q, s.fields);
+    var info = _paginar(filtrado, s.page, s.size);
+    s.page = info.page;
+    var pgEl = document.getElementById('pg-nc');
+    if(!info.items.length){
+      tbody.innerHTML='<tr><td colspan="8" class="empty">' + (s.q ? 'Sin coincidencias' : 'No hay no conformidades registradas') + '</td></tr>';
+      if(pgEl) pgEl.innerHTML='';
+      return;
+    }
+    if(pgEl) pgEl.innerHTML = _renderPag('nc', info);
+    tbody.innerHTML=info.items.map(nc=>{
       const bestado=nc.estado==='Abierta'?'badge-amarillo':(nc.estado==='Cerrada'?'badge-verde':'badge-gris');
       const bimpacto=nc.impacto==='Critico'?'badge-rojo':(nc.impacto==='Alto'?'badge-amarillo':'badge-gris');
       return `<tr>
@@ -1758,7 +1864,7 @@ document.addEventListener('click',async function(ev){
   const ncid=btn.dataset.cerrarNc;
   if(!confirm('Cerrar esta no conformidad?')) return;
   try{
-    const r=await fetch('/api/calidad/no-conformidades/'+ncid+'/cerrar',{method:'POST'});
+    const r=await fetch('/api/calidad/no-conformidades/'+ncid+'/cerrar', _fetchOpts('POST'));
     if(r.ok) loadNC();
     else alert('Error al cerrar NC');
   }catch(e){alert('Error: '+e.message);}
@@ -1770,8 +1876,18 @@ async function loadCal(){
   try{
     const r=await fetch('/api/calidad/calibraciones');
     const rows=await r.json();
-    if(!rows.length){tbody.innerHTML='<tr><td colspan="8" class="empty">No hay instrumentos registrados</td></tr>';return;}
-    tbody.innerHTML=rows.map(c=>{
+    var s = TBL_STATE.cal;
+    var filtrado = _filtrar(rows || [], s.q, s.fields);
+    var info = _paginar(filtrado, s.page, s.size);
+    s.page = info.page;
+    var pgEl = document.getElementById('pg-cal');
+    if(!info.items.length){
+      tbody.innerHTML='<tr><td colspan="8" class="empty">' + (s.q ? 'Sin coincidencias' : 'No hay instrumentos registrados') + '</td></tr>';
+      if(pgEl) pgEl.innerHTML='';
+      return;
+    }
+    if(pgEl) pgEl.innerHTML = _renderPag('cal', info);
+    tbody.innerHTML=info.items.map(c=>{
       const bs=c.estado==='Vigente'?'badge-verde':(c.estado==='Vencida'?'badge-rojo':'badge-amarillo');
       const hoy=new Date().toISOString().substring(0,10);
       const vence=c.fecha_proxima&&c.fecha_proxima<hoy;
