@@ -3335,6 +3335,59 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         # Índice para queries del centro-mando que filtran por fecha + estado
         "CREATE INDEX IF NOT EXISTS idx_pp_fecha_estado ON produccion_programada(fecha_programada, estado)",
     ]),
+    (95, "Animus inventario fisico: baseline + movimientos (asistente Daniela)", [
+        # Sebastian 3-may-2026: la asistente cuenta inventario fisico cada
+        # tanto y siempre hay desfase con Shopify. Solucion: ecuacion
+        # contable.
+        #   stock_esperado(sku) = baseline + Σ(entradas) − Σ(ventas_shopify) − Σ(salidas_otras)
+        # Si conteo_fisico ≠ stock_esperado → discrepancia rastreable.
+        #
+        # Tabla 1: baseline · cuanto habia en una fecha de inicio (snapshot 1 vez)
+        """CREATE TABLE IF NOT EXISTS animus_inventario_baseline (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sku TEXT NOT NULL UNIQUE,
+            descripcion TEXT,
+            unidades_baseline INTEGER NOT NULL,
+            fecha_baseline TEXT NOT NULL,
+            creado_por TEXT,
+            observaciones TEXT,
+            creado_en TEXT NOT NULL DEFAULT (datetime('now'))
+        )""",
+        # Tabla 2: movimientos · TODO movimiento entre baseline y ahora
+        """CREATE TABLE IF NOT EXISTS animus_inventario_movimientos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sku TEXT NOT NULL,
+            tipo TEXT NOT NULL CHECK(tipo IN
+                ('ENTRADA','SALIDA','SHOPIFY_VENTA','CONTEO','AJUSTE','BASELINE')),
+            cantidad INTEGER NOT NULL,
+            fecha TEXT NOT NULL DEFAULT (date('now')),
+            origen TEXT,
+            referencia TEXT,
+            motivo TEXT,
+            usuario TEXT,
+            creado_en TEXT NOT NULL DEFAULT (datetime('now'))
+        )""",
+        # Index para calcular esperado por SKU rapido
+        "CREATE INDEX IF NOT EXISTS idx_aim_sku_fecha ON animus_inventario_movimientos(sku, fecha DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_aim_tipo_fecha ON animus_inventario_movimientos(tipo, fecha DESC)",
+        # Tabla 3: asignaciones de conteo ciclico (cron diario)
+        """CREATE TABLE IF NOT EXISTS animus_conteos_asignados (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sku TEXT NOT NULL,
+            fecha_asignado TEXT NOT NULL DEFAULT (date('now')),
+            asignado_a TEXT,
+            estado TEXT NOT NULL DEFAULT 'pendiente'
+                CHECK(estado IN ('pendiente','contado','omitido')),
+            cantidad_fisica INTEGER,
+            cantidad_esperada INTEGER,
+            diferencia INTEGER,
+            motivo_diferencia TEXT,
+            contado_en TEXT,
+            creado_en TEXT NOT NULL DEFAULT (datetime('now'))
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_aca_estado_fecha ON animus_conteos_asignados(estado, fecha_asignado DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_aca_sku ON animus_conteos_asignados(sku, fecha_asignado DESC)",
+    ]),
     (94, "Re-aplicar indexes mig 92 que fallaron por orden (tablas creadas en 87/88)", [
         # Bug detectado 2-may-2026: el array de MIGRATIONS está en orden
         # parcial · 92 (indexes sobre desviaciones/control_cambios) corre

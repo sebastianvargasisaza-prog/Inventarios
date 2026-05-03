@@ -1306,6 +1306,237 @@ def aplicar_ajuste_conteo(conteo_id):
         return jsonify({"error": f"Error aplicando ajuste: {_e}"}), 500
 
 
+# ════════════════════════════════════════════════════════════════════════
+# INVENTARIO FISICO (asistente Daniela) · ecuacion contable
+# ════════════════════════════════════════════════════════════════════════
+# Sebastian 3-may-2026: para cada SKU debe cumplirse
+#   stock_esperado = baseline + Σ(entradas) − Σ(ventas_shopify) − Σ(salidas)
+# Si conteo_fisico ≠ stock_esperado → discrepancia rastreable.
+#
+# Tablas (mig 95):
+#   animus_inventario_baseline (sku UNIQUE, unidades_baseline, fecha_baseline)
+#   animus_inventario_movimientos (sku, tipo, cantidad, fecha, ...)
+#   animus_conteos_asignados (cron diario asigna SKUs a contar)
+#
+# tipo movimiento ∈ {ENTRADA, SALIDA, SHOPIFY_VENTA, CONTEO, AJUSTE, BASELINE}
+
+def _calcular_esperado(c, sku):
+    """Retorna stock_esperado(sku) = baseline + entradas - shopify - salidas.
+
+    Si el SKU no tiene baseline, retorna None (debe registrarse uno primero).
+    """
+    base_row = c.execute(
+        "SELECT unidades_baseline, fecha_baseline FROM animus_inventario_baseline WHERE sku=?",
+        (sku,)).fetchone()
+    if not base_row:
+        return None
+    baseline = int(base_row['unidades_baseline'] or 0)
+    fecha_b = base_row['fecha_baseline']
+    # Sumas posteriores al baseline
+    sums_row = c.execute("""
+        SELECT
+          COALESCE(SUM(CASE WHEN tipo='ENTRADA' THEN cantidad ELSE 0 END),0) as entradas,
+          COALESCE(SUM(CASE WHEN tipo='SALIDA' THEN cantidad ELSE 0 END),0) as salidas,
+          COALESCE(SUM(CASE WHEN tipo='SHOPIFY_VENTA' THEN cantidad ELSE 0 END),0) as shopify,
+          COALESCE(SUM(CASE WHEN tipo='AJUSTE' THEN cantidad ELSE 0 END),0) as ajustes
+        FROM animus_inventario_movimientos
+        WHERE sku=? AND fecha >= ?
+    """, (sku, fecha_b)).fetchone()
+    s = dict(sums_row) if sums_row else {'entradas': 0, 'salidas': 0, 'shopify': 0, 'ajustes': 0}
+    esperado = baseline + int(s['entradas'] or 0) - int(s['shopify'] or 0) - int(s['salidas'] or 0) + int(s['ajustes'] or 0)
+    return {
+        'sku': sku,
+        'baseline': baseline,
+        'fecha_baseline': fecha_b,
+        'entradas': int(s['entradas'] or 0),
+        'salidas': int(s['salidas'] or 0),
+        'shopify': int(s['shopify'] or 0),
+        'ajustes': int(s['ajustes'] or 0),
+        'esperado': esperado,
+    }
+
+
+@bp.route("/api/animus/inv-fisico/baseline", methods=["GET", "POST"])
+def animus_inv_fisico_baseline():
+    """GET: lista baseline de todos los SKUs.
+    POST: registra/actualiza baseline para un SKU (idempotente)."""
+    u, err, code = _auth()
+    if err: return err, code
+    conn = _db(); c = conn.cursor()
+    if request.method == "POST":
+        d = request.get_json() or {}
+        sku = (d.get("sku") or "").strip().upper()
+        if not sku:
+            return jsonify({"error": "sku requerido"}), 400
+        try:
+            unidades = int(d.get("unidades_baseline"))
+        except (TypeError, ValueError):
+            return jsonify({"error": "unidades_baseline debe ser entero"}), 400
+        if unidades < 0:
+            return jsonify({"error": "unidades_baseline no puede ser negativo"}), 400
+        fecha_baseline = d.get("fecha_baseline") or datetime.now().date().isoformat()
+        descripcion = d.get("descripcion") or ""
+        observaciones = d.get("observaciones") or ""
+        # Verificar si ya hay baseline (UPSERT-like)
+        existe = c.execute(
+            "SELECT id, unidades_baseline FROM animus_inventario_baseline WHERE sku=?",
+            (sku,)).fetchone()
+        if existe:
+            antes_uds = existe['unidades_baseline']
+            c.execute("""UPDATE animus_inventario_baseline
+                         SET unidades_baseline=?, fecha_baseline=?,
+                             descripcion=?, observaciones=?, creado_por=?
+                         WHERE sku=?""",
+                      (unidades, fecha_baseline, descripcion, observaciones, u, sku))
+            audit_log(c, usuario=u, accion='ANIMUS_BASELINE_UPDATE',
+                      tabla='animus_inventario_baseline', registro_id=existe['id'],
+                      antes={'unidades_baseline': antes_uds},
+                      despues={'unidades_baseline': unidades, 'fecha': fecha_baseline},
+                      detalle=f"SKU {sku}: {antes_uds} → {unidades} (baseline {fecha_baseline})")
+            bid = existe['id']
+        else:
+            c.execute("""INSERT INTO animus_inventario_baseline
+                         (sku, descripcion, unidades_baseline, fecha_baseline,
+                          creado_por, observaciones)
+                         VALUES (?,?,?,?,?,?)""",
+                      (sku, descripcion, unidades, fecha_baseline, u, observaciones))
+            bid = c.lastrowid
+            audit_log(c, usuario=u, accion='ANIMUS_BASELINE_CREATE',
+                      tabla='animus_inventario_baseline', registro_id=bid,
+                      despues={'sku': sku, 'unidades_baseline': unidades,
+                                'fecha': fecha_baseline},
+                      detalle=f"Baseline {sku}: {unidades} uds @ {fecha_baseline}")
+        conn.commit()
+        return jsonify({"ok": True, "id": bid, "sku": sku,
+                        "unidades_baseline": unidades, "fecha_baseline": fecha_baseline})
+    # GET
+    rows = c.execute("""SELECT id, sku, descripcion, unidades_baseline,
+                               fecha_baseline, creado_por, observaciones, creado_en
+                         FROM animus_inventario_baseline ORDER BY sku""").fetchall()
+    return jsonify({"baseline": [dict(r) for r in rows]})
+
+
+@bp.route("/api/animus/inv-fisico/entrada", methods=["POST"])
+def animus_inv_fisico_entrada():
+    """Registra entrada de inventario (produccion / devolucion / ajuste +).
+
+    Body: {sku, cantidad (>0), origen, referencia?, fecha?, motivo?}
+    """
+    u, err, code = _auth()
+    if err: return err, code
+    d = request.get_json() or {}
+    sku = (d.get("sku") or "").strip().upper()
+    if not sku:
+        return jsonify({"error": "sku requerido"}), 400
+    try:
+        cantidad = int(d.get("cantidad"))
+    except (TypeError, ValueError):
+        return jsonify({"error": "cantidad debe ser entero"}), 400
+    if cantidad <= 0:
+        return jsonify({"error": "cantidad debe ser > 0 (usa /salida para descontar)"}), 400
+    origen = (d.get("origen") or "produccion").strip()
+    if origen not in ('produccion','devolucion','ajuste','otro'):
+        return jsonify({"error": "origen invalido (produccion|devolucion|ajuste|otro)"}), 400
+    fecha = d.get("fecha") or datetime.now().date().isoformat()
+    conn = _db(); c = conn.cursor()
+    c.execute("""INSERT INTO animus_inventario_movimientos
+                 (sku, tipo, cantidad, fecha, origen, referencia, motivo, usuario)
+                 VALUES (?,'ENTRADA',?,?,?,?,?,?)""",
+              (sku, cantidad, fecha, origen, d.get("referencia",""), d.get("motivo",""), u))
+    mid = c.lastrowid
+    audit_log(c, usuario=u, accion='ANIMUS_INV_ENTRADA',
+              tabla='animus_inventario_movimientos', registro_id=mid,
+              despues={'sku': sku, 'cantidad': cantidad, 'origen': origen, 'fecha': fecha},
+              detalle=f"+{cantidad} uds {sku} ({origen}) {fecha}")
+    conn.commit()
+    return jsonify({"ok": True, "id": mid, "sku": sku, "cantidad": cantidad})
+
+
+@bp.route("/api/animus/inv-fisico/salida", methods=["POST"])
+def animus_inv_fisico_salida():
+    """Registra salida de inventario NO-Shopify (presencial / regalo / dano /
+    vencido / devolucion a planta).
+
+    Body: {sku, cantidad (>0), origen, referencia?, fecha?, motivo?}
+    """
+    u, err, code = _auth()
+    if err: return err, code
+    d = request.get_json() or {}
+    sku = (d.get("sku") or "").strip().upper()
+    if not sku:
+        return jsonify({"error": "sku requerido"}), 400
+    try:
+        cantidad = int(d.get("cantidad"))
+    except (TypeError, ValueError):
+        return jsonify({"error": "cantidad debe ser entero"}), 400
+    if cantidad <= 0:
+        return jsonify({"error": "cantidad debe ser > 0"}), 400
+    origen = (d.get("origen") or "presencial").strip()
+    if origen not in ('presencial','regalo','dano','vencido','devolucion_planta','otro'):
+        return jsonify({"error": "origen invalido"}), 400
+    fecha = d.get("fecha") or datetime.now().date().isoformat()
+    conn = _db(); c = conn.cursor()
+    c.execute("""INSERT INTO animus_inventario_movimientos
+                 (sku, tipo, cantidad, fecha, origen, referencia, motivo, usuario)
+                 VALUES (?,'SALIDA',?,?,?,?,?,?)""",
+              (sku, cantidad, fecha, origen, d.get("referencia",""), d.get("motivo",""), u))
+    mid = c.lastrowid
+    audit_log(c, usuario=u, accion='ANIMUS_INV_SALIDA',
+              tabla='animus_inventario_movimientos', registro_id=mid,
+              despues={'sku': sku, 'cantidad': cantidad, 'origen': origen, 'fecha': fecha},
+              detalle=f"-{cantidad} uds {sku} ({origen}) {fecha}")
+    conn.commit()
+    return jsonify({"ok": True, "id": mid, "sku": sku, "cantidad": cantidad})
+
+
+@bp.route("/api/animus/inv-fisico/esperado/<sku>", methods=["GET"])
+def animus_inv_fisico_esperado_sku(sku):
+    """Calcula stock_esperado para un SKU especifico (con desglose)."""
+    u, err, code = _auth()
+    if err: return err, code
+    sku = (sku or "").strip().upper()
+    conn = _db(); c = conn.cursor()
+    info = _calcular_esperado(c, sku)
+    if info is None:
+        return jsonify({"error": "SKU sin baseline · registra uno primero"}), 404
+    return jsonify(info)
+
+
+@bp.route("/api/animus/inv-fisico/esperado", methods=["GET"])
+def animus_inv_fisico_esperado_todos():
+    """Lista esperado para TODOS los SKUs con baseline."""
+    u, err, code = _auth()
+    if err: return err, code
+    conn = _db(); c = conn.cursor()
+    skus = c.execute(
+        "SELECT sku FROM animus_inventario_baseline ORDER BY sku").fetchall()
+    out = []
+    for r in skus:
+        info = _calcular_esperado(c, r['sku'])
+        if info:
+            out.append(info)
+    return jsonify({"items": out, "total_skus": len(out)})
+
+
+@bp.route("/api/animus/inv-fisico/movimientos", methods=["GET"])
+def animus_inv_fisico_movimientos():
+    """Lista movimientos con filtros (sku, tipo, desde)."""
+    u, err, code = _auth()
+    if err: return err, code
+    sku   = (request.args.get("sku") or "").strip().upper()
+    tipo  = (request.args.get("tipo") or "").strip().upper()
+    desde = (request.args.get("desde") or "").strip()
+    conn = _db(); c = conn.cursor()
+    sql = "SELECT * FROM animus_inventario_movimientos WHERE 1=1"
+    params = []
+    if sku: sql += " AND sku=?"; params.append(sku)
+    if tipo: sql += " AND tipo=?"; params.append(tipo)
+    if desde: sql += " AND fecha>=?"; params.append(desde)
+    sql += " ORDER BY fecha DESC, id DESC LIMIT 500"
+    rows = c.execute(sql, params).fetchall()
+    return jsonify({"movimientos": [dict(r) for r in rows]})
+
+
 # ── REDIRECT eliminado: /animus ahora sirve el panel de Caja Menor + ──
 #    Inventario Cíclico (definido en core.py con ANIMUS_HTML).
 
