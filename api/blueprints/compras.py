@@ -2233,6 +2233,295 @@ def crear_oc_desde_solicitudes():
         return jsonify({'error': str(e)}), 500
 
 
+# ── Sebastián 4-may-2026 (Catalina): consolidar AUTO-XXXX pendientes ────
+# Una sola pasada que toma las 200+ AUTO-XXXX Pendientes (1-MP-cada-una)
+# y las transforma en ~15-20 solicitudes consolidadas por proveedor.
+# El generador ya consolida desde aqui (auto_plan.py:936) pero hay datos
+# legacy que necesitan limpieza. Idempotente: si vuelve a correr cuando
+# ya esta consolidado, no rompe nada.
+@bp.route('/api/compras/consolidar-auto-pendientes', methods=['POST'])
+def consolidar_auto_pendientes():
+    """Consolida solicitudes AUTO-XXXX Pendientes existentes por proveedor.
+
+    Body JSON (opcional):
+      {
+        "dry_run": false,        # default false. Si true, solo retorna
+                                  el plan de consolidacion sin ejecutar.
+        "min_para_consolidar": 5 # solo consolida si hay >=5 SOLs sueltas
+                                  con el mismo proveedor (default 1 = todas)
+      }
+
+    Algoritmo:
+      1. SELECT de AUTO-XXXX Pendientes con sus items
+      2. Identifica las que tienen 1 item (sospechosas de ser legacy)
+      3. Agrupa por (proveedor_sugerido, categoria)
+      4. Si grupo tiene >= min_para_consolidar SOLs → crear UNA nueva
+         AUTO-XXXX consolidada con todos los items + delete las viejas
+      5. Atomico: rollback completo si algo falla
+      6. audit_log CONSOLIDAR_AUTO_PENDIENTES con conteos
+
+    Returns:
+      200 {ok, antes, despues, grupos: [...], eliminadas, creadas}
+      403 si no tiene permisos
+    """
+    usuario, err, code = _require_compras_write()
+    if err:
+        return err, code
+
+    body = request.get_json(silent=True) or {}
+    dry_run = bool(body.get('dry_run', False))
+    try:
+        min_para_consolidar = int(body.get('min_para_consolidar', 1))
+    except (ValueError, TypeError):
+        min_para_consolidar = 1
+    if min_para_consolidar < 1:
+        min_para_consolidar = 1
+
+    conn = get_db(); c = conn.cursor()
+
+    # 1. Cargar AUTO-XXXX Pendientes (sin OC) y sus items
+    c.execute("""
+        SELECT numero, urgencia, COALESCE(observaciones,''), categoria, fecha
+        FROM solicitudes_compra
+        WHERE numero LIKE 'AUTO-%' AND estado='Pendiente'
+          AND COALESCE(numero_oc,'') = ''
+        ORDER BY numero
+    """)
+    auto_sols = c.fetchall()
+    if not auto_sols:
+        return jsonify({
+            'ok': True, 'antes': 0, 'despues': 0,
+            'mensaje': 'Sin AUTO-XXXX pendientes para consolidar',
+            'grupos': [], 'eliminadas': 0, 'creadas': 0,
+        })
+
+    nums = [r[0] for r in auto_sols]
+    placeholders = ','.join(['?'] * len(nums))
+
+    try:
+        c.execute(f"""
+            SELECT numero, codigo_mp, nombre_mp, cantidad_g, unidad,
+                   COALESCE(valor_estimado,0), COALESCE(justificacion,''),
+                   COALESCE(precio_unit_g,0), COALESCE(proveedor_sugerido,'')
+            FROM solicitudes_compra_items
+            WHERE numero IN ({placeholders})
+        """, nums)
+        items_all = [
+            {'numero': r[0], 'codigo_mp': r[1] or '', 'nombre_mp': r[2] or '',
+             'cantidad_g': float(r[3] or 0), 'unidad': r[4] or 'g',
+             'valor_estimado': float(r[5] or 0), 'justificacion': r[6] or '',
+             'precio_unit_g': float(r[7] or 0),
+             'proveedor_sugerido': r[8] or ''}
+            for r in c.fetchall()
+        ]
+    except sqlite3.OperationalError:
+        c.execute(f"""
+            SELECT numero, codigo_mp, nombre_mp, cantidad_g, unidad,
+                   COALESCE(valor_estimado,0), COALESCE(justificacion,'')
+            FROM solicitudes_compra_items
+            WHERE numero IN ({placeholders})
+        """, nums)
+        items_all = []
+        for r in c.fetchall():
+            items_all.append({
+                'numero': r[0], 'codigo_mp': r[1] or '',
+                'nombre_mp': r[2] or '', 'cantidad_g': float(r[3] or 0),
+                'unidad': r[4] or 'g', 'valor_estimado': float(r[5] or 0),
+                'justificacion': r[6] or '', 'precio_unit_g': 0.0,
+                'proveedor_sugerido': '',
+            })
+
+    items_por_sol = {}
+    for it in items_all:
+        items_por_sol.setdefault(it['numero'], []).append(it)
+
+    # 2. Agrupar por (proveedor_sugerido, categoria) las que SOLO tienen 1 item
+    # (legacy 1-MP-por-AUTO-XXXX). Las que ya tienen N>1 items son las nuevas
+    # consolidadas - se respetan tal cual.
+    URG_RANK = {'Critico': 4, 'Urgente': 3, 'Alta': 2, 'Media': 1, 'Normal': 0}
+    grupos = {}
+    intactas = []  # AUTO-XXXX con >=2 items (ya consolidadas)
+    sol_meta = {r[0]: {'urgencia': r[1] or 'Normal', 'observ': r[2] or '',
+                        'categoria': r[3] or 'Materia Prima',
+                        'fecha': r[4]} for r in auto_sols}
+    for num in nums:
+        items = items_por_sol.get(num, [])
+        if len(items) >= 2:
+            intactas.append(num)
+            continue
+        if not items:
+            # SOL sin items — caso raro. La preservamos.
+            intactas.append(num)
+            continue
+        prov = (items[0].get('proveedor_sugerido') or '').strip()
+        cat = sol_meta[num]['categoria']
+        key = (prov, cat)
+        grupos.setdefault(key, []).append(num)
+
+    # 3. Construir plan de consolidacion
+    plan_grupos = []
+    for (prov, cat), sols in grupos.items():
+        if len(sols) < min_para_consolidar:
+            # No vale la pena consolidar
+            continue
+        # Sumar urgencia max
+        rank_max = 0
+        for n in sols:
+            r = URG_RANK.get(sol_meta[n]['urgencia'], 0)
+            if r > rank_max:
+                rank_max = r
+        urg_label = {4: 'Critico', 3: 'Urgente', 2: 'Alta',
+                      1: 'Media', 0: 'Normal'}[rank_max]
+        # Items de todas las SOLs del grupo
+        items_grupo = []
+        for n in sols:
+            for it in items_por_sol.get(n, []):
+                items_grupo.append(it)
+        plan_grupos.append({
+            'proveedor': prov,
+            'proveedor_label': prov or '(Sin proveedor sugerido)',
+            'categoria': cat,
+            'urgencia': urg_label,
+            'sols_origen': sols,
+            'items_count': len(items_grupo),
+            'total_g': round(sum(it['cantidad_g'] for it in items_grupo), 0),
+            '_items_payload': items_grupo,  # se elimina antes de retornar JSON
+        })
+
+    if dry_run:
+        # Retornar el plan sin tocar DB
+        for g in plan_grupos:
+            g.pop('_items_payload', None)
+        return jsonify({
+            'ok': True,
+            'dry_run': True,
+            'antes': len(nums),
+            'intactas': len(intactas),
+            'despues': len(plan_grupos) + len(intactas),
+            'grupos': plan_grupos,
+            'eliminadas': 0,
+            'creadas': 0,
+            'mensaje': (f'Plan: consolidar {sum(len(g["sols_origen"]) for g in plan_grupos)} '
+                         f'SOLs en {len(plan_grupos)} grupos · {len(intactas)} '
+                         f'quedan intactas (ya consolidadas)'),
+        })
+
+    if not plan_grupos:
+        return jsonify({
+            'ok': True,
+            'antes': len(nums),
+            'intactas': len(intactas),
+            'despues': len(nums),
+            'grupos': [],
+            'eliminadas': 0,
+            'creadas': 0,
+            'mensaje': f'Nada que consolidar · {len(intactas)} ya estan consolidadas',
+        })
+
+    # 4. Ejecutar atomicamente
+    creadas_nums = []
+    sols_a_eliminar = []
+    try:
+        for g in plan_grupos:
+            # Generar numero AUTO-XXXX nuevo
+            next_n = c.execute("""
+                SELECT COALESCE(MAX(CAST(SUBSTR(numero, 6) AS INTEGER)), 0) + 1
+                FROM solicitudes_compra WHERE numero LIKE 'AUTO-%'
+            """).fetchone()[0] or 1
+            new_num = f'AUTO-{next_n:04d}'
+
+            top = sorted(g['_items_payload'], key=lambda x: -float(x.get('cantidad_g') or 0))[:3]
+            resumen = ', '.join(
+                f"{(it.get('nombre_mp') or '')[:25]} {round(float(it.get('cantidad_g') or 0)/1000.0,1)}kg"
+                for it in top
+            )
+            if g['items_count'] > 3:
+                resumen += f", +{g['items_count'] - 3} mas"
+            obs = (
+                f"AUTO-PLAN consolidado · proveedor: {g['proveedor_label']} · "
+                f"{g['items_count']} MPs · {round(g['total_g']/1000.0,1)}kg total · "
+                f"{resumen} · (consolidacion legacy {datetime.now().date().isoformat()})"
+            )
+
+            c.execute("""
+                INSERT INTO solicitudes_compra
+                  (numero, fecha, estado, solicitante, urgencia,
+                   observaciones, area, empresa, categoria, tipo, valor)
+                VALUES (?, date('now'), 'Pendiente', 'AUTO-PLAN', ?, ?,
+                        'Producción', 'Espagiria', ?, 'Compra', 0)
+            """, (new_num, g['urgencia'], obs, g['categoria']))
+            for it in g['_items_payload']:
+                try:
+                    c.execute("""
+                        INSERT INTO solicitudes_compra_items
+                          (numero, codigo_mp, nombre_mp, cantidad_g, unidad,
+                           justificacion, valor_estimado, proveedor_sugerido,
+                           precio_unit_g)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (new_num, it['codigo_mp'], it['nombre_mp'],
+                          it['cantidad_g'], it['unidad'],
+                          it['justificacion'], it['valor_estimado'],
+                          g['proveedor'], it['precio_unit_g']))
+                except sqlite3.OperationalError:
+                    c.execute("""
+                        INSERT INTO solicitudes_compra_items
+                          (numero, codigo_mp, nombre_mp, cantidad_g, unidad,
+                           justificacion, valor_estimado)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """, (new_num, it['codigo_mp'], it['nombre_mp'],
+                          it['cantidad_g'], it['unidad'],
+                          it['justificacion'], it['valor_estimado']))
+            creadas_nums.append(new_num)
+            sols_a_eliminar.extend(g['sols_origen'])
+
+        # Eliminar las legacy
+        if sols_a_eliminar:
+            ph_del = ','.join(['?'] * len(sols_a_eliminar))
+            c.execute(f"DELETE FROM solicitudes_compra_items WHERE numero IN ({ph_del})",
+                      sols_a_eliminar)
+            c.execute(f"DELETE FROM solicitudes_compra WHERE numero IN ({ph_del})",
+                      sols_a_eliminar)
+
+        # Audit
+        try:
+            audit_log(
+                c, usuario=usuario, accion='CONSOLIDAR_AUTO_PENDIENTES',
+                tabla='solicitudes_compra', registro_id='bulk',
+                despues={
+                    'antes': len(nums), 'intactas': len(intactas),
+                    'eliminadas': len(sols_a_eliminar),
+                    'creadas': len(creadas_nums),
+                    'creadas_nums': creadas_nums[:50],
+                    'min_para_consolidar': min_para_consolidar,
+                },
+                detalle=(f"Consolido {len(sols_a_eliminar)} AUTO-XXXX legacy "
+                          f"en {len(creadas_nums)} solicitudes por proveedor"),
+            )
+        except Exception as _e:
+            log.warning('audit_log CONSOLIDAR_AUTO_PENDIENTES fallo: %s', _e)
+
+        conn.commit()
+    except Exception as e:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        log.exception('consolidar_auto_pendientes fallo: %s', e)
+        return jsonify({'error': str(e)}), 500
+
+    return jsonify({
+        'ok': True,
+        'antes': len(nums),
+        'intactas': len(intactas),
+        'eliminadas': len(sols_a_eliminar),
+        'creadas': len(creadas_nums),
+        'creadas_nums': creadas_nums,
+        'despues': len(creadas_nums) + len(intactas),
+        'mensaje': (f'Consolidadas {len(sols_a_eliminar)} solicitudes legacy en '
+                     f'{len(creadas_nums)} agrupadas por proveedor'),
+    })
+
+
 @bp.route('/api/solicitudes-compra/mis', methods=['GET'])
 def mis_solicitudes_con_ciclo():
     """Devuelve las solicitudes del usuario logueado con el ciclo COMPLETO

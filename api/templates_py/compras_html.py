@@ -320,6 +320,8 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
     <button class="btn" onclick="regenerarSolicitudesAuto()" style="background:#7c3aed;color:#fff;" title="Regenerar solicitudes auto">&#x1F504; Regenerar</button>
     <!-- Sebastian 4-may-2026 (Catalina): toggle vista agrupada por proveedor -->
     <button id="btn-toggle-vista" class="btn" onclick="toggleVistaSolicitudes()" style="background:#0e7490;color:#fff;" title="Agrupar todas las solicitudes pendientes por proveedor — crea una sola OC para todas las del mismo proveedor">&#x1F4E6; Agrupar por proveedor</button>
+    <!-- Sebastian 4-may-2026 (Catalina): consolidar AUTO-XXXX legacy 1-MP-cada-una en agrupadas por proveedor -->
+    <button id="btn-consolidar-auto" class="btn" onclick="consolidarAutoPendientes()" style="background:#16a34a;color:#fff;" title="Consolida las AUTO-XXXX existentes (1 MP cada una) en una solicitud por proveedor">&#x1F517; Consolidar AUTO</button>
   </div>
   <div id="pills-solic" class="pills"></div>
   <div id="grid-solic" class="grid"></div>
@@ -3262,6 +3264,71 @@ function descargarSolicitudesPDF(){
   var estados = (document.getElementById('s-solic')||{value:''}).value;
   var qs = estados ? '?estados='+encodeURIComponent(estados) : '?estados=Pendiente,Aprobada';
   window.open('/api/compras/solicitudes/pdf'+qs, '_blank');
+}
+
+// ────────────────────────────────────────────────────────────────
+// Sebastian 4-may-2026 (Catalina): consolidar AUTO-XXXX legacy
+// ────────────────────────────────────────────────────────────────
+// Ejecuta /api/compras/consolidar-auto-pendientes en 2 pasos:
+//   1. dry_run=true para mostrar el plan a Catalina
+//   2. confirm + dry_run=false para ejecutar
+async function consolidarAutoPendientes(){
+  // Step 1: dry-run
+  try{
+    var rDry = await fetch('/api/compras/consolidar-auto-pendientes',
+      _fetchOpts('POST', {dry_run: true}));
+    var dDry = await rDry.json();
+    if(!rDry.ok){
+      alert('Error preview: '+(dDry.error || rDry.status));
+      return;
+    }
+    if(dDry.antes === 0){
+      alert('✓ No hay AUTO-XXXX pendientes para consolidar.');
+      return;
+    }
+    if(!dDry.grupos || !dDry.grupos.length){
+      alert('Nada que consolidar — '+dDry.intactas+' AUTO-XXXX ya estan agrupadas.');
+      return;
+    }
+    var detalle = dDry.grupos.slice(0,8).map(function(g){
+      return '  · '+g.proveedor_label+' ('+g.categoria+'): '+
+             g.sols_origen.length+' SOLs → '+g.items_count+' MPs · '+
+             fmt(g.total_g)+' g';
+    }).join('\\n');
+    if(dDry.grupos.length > 8) detalle += '\\n  ... y '+(dDry.grupos.length-8)+' grupos mas';
+    var msg = 'CONSOLIDAR AUTO-XXXX pendientes\\n\\n'+
+      'Antes: '+dDry.antes+' solicitudes (1 MP cada una)\\n'+
+      'Despues: '+dDry.despues+' solicitudes (agrupadas por proveedor)\\n'+
+      'Intactas (ya consolidadas): '+dDry.intactas+'\\n\\n'+
+      'Plan:\\n'+detalle+'\\n\\n'+
+      'Las solicitudes legacy se reemplazan por las consolidadas. '+
+      'No se borran datos: los items se trasladan tal cual.\\n\\n'+
+      'Confirmar?';
+    if(!confirm(msg)) return;
+
+    // Step 2: ejecutar
+    var btn = document.getElementById('btn-consolidar-auto');
+    if(btn){ btn.disabled = true; btn.textContent = 'Consolidando...'; }
+    var r = await fetch('/api/compras/consolidar-auto-pendientes',
+      _fetchOpts('POST', {dry_run: false}));
+    var d = await r.json();
+    if(btn){ btn.disabled = false; btn.innerHTML = '&#x1F517; Consolidar AUTO'; }
+    if(!r.ok){
+      alert('Error: '+(d.error || r.status));
+      return;
+    }
+    alert('✓ '+d.mensaje+'\\n\\n'+
+          'Eliminadas: '+d.eliminadas+'\\n'+
+          'Creadas: '+d.creadas+'\\n'+
+          'Total ahora: '+d.despues+' solicitudes');
+    // Refrescar
+    await loadSolicitudes();
+    if(_VISTA_AGRUPADA) await renderSolicitudesAgrupadas();
+  }catch(e){
+    alert('Error red: '+e.message);
+    var btn = document.getElementById('btn-consolidar-auto');
+    if(btn){ btn.disabled = false; btn.innerHTML = '&#x1F517; Consolidar AUTO'; }
+  }
 }
 
 async function regenerarSolicitudesAuto(){

@@ -933,16 +933,50 @@ def aplicar_plan(plan, usuario='cron'):
         except Exception as e:
             log.warning(f'Asignación operarios fallida prod={cur.lastrowid}: {e}')
 
+    # Sebastian 4-may-2026 (Catalina): consolidar por proveedor.
+    # Antes: 1 solicitud AUTO-XXXX por cada MP en deficit -> 200+ cards en compras.
+    # Ahora: 1 AUTO-XXXX por proveedor con N items dentro.
+    # MPs sin proveedor_principal van a un grupo aparte ('') que Catalina
+    # gestiona manualmente.
+    URG_RANK_AP = {'critica': 3, 'alta': 2, 'normal': 1}
+    URG_LABEL = {3: 'Urgente', 2: 'Alta', 1: 'Normal'}
+    grupos_por_prov = {}
     for cp in plan['compras_propuestas']:
-        # Crear solicitud_compra automatizada
-        # Numero unico
+        prov = (cp.get('proveedor_principal') or '').strip()
+        # Si una solicitud mezcla MPs de empaque y MP, separar por categoria
+        # (no se puede tener un AUTO-XXXX con categoria mixta).
+        cat = 'Material de Empaque' if cp.get('es_envase') else 'Materia Prima'
+        key = (prov, cat)
+        grupos_por_prov.setdefault(key, []).append(cp)
+
+    for (prov, cat), items_grupo in grupos_por_prov.items():
+        # Numero unico AUTO-XXXX
         next_n = c.execute("""
             SELECT COALESCE(MAX(CAST(SUBSTR(numero, 6) AS INTEGER)), 0) + 1
             FROM solicitudes_compra WHERE numero LIKE 'AUTO-%'
         """).fetchone()[0] or 1
         numero = f'AUTO-{next_n:04d}'
-        cantidad_kg = round(cp['cantidad_a_pedir_g'] / 1000.0, 2)
-        urgencia_solic = 'Urgente' if cp['urgencia'] == 'critica' else ('Alta' if cp['urgencia'] == 'alta' else 'Normal')
+
+        # Urgencia maxima del grupo (critica > alta > normal)
+        rank_max = max(URG_RANK_AP.get(it.get('urgencia', 'normal'), 1) for it in items_grupo)
+        urgencia_solic = URG_LABEL.get(rank_max, 'Normal')
+
+        # Observacion resumen
+        prov_disp = prov or '(Sin proveedor sugerido)'
+        n_items = len(items_grupo)
+        total_g = sum(it['cantidad_a_pedir_g'] for it in items_grupo)
+        total_kg = round(total_g / 1000.0, 2)
+        # Top 3 MPs por deficit para resumen breve
+        top = sorted(items_grupo, key=lambda x: -x.get('deficit_g', 0))[:3]
+        resumen_top = ', '.join(f"{it['material_nombre'][:25]} {round(it['cantidad_a_pedir_g']/1000,1)}kg"
+                                  for it in top)
+        if n_items > 3:
+            resumen_top += f", +{n_items - 3} mas"
+        observaciones = (
+            f"AUTO-PLAN consolidado · proveedor: {prov_disp} · "
+            f"{n_items} MPs · {total_kg}kg total · {resumen_top}"
+        )
+
         try:
             cur = c.execute("""
                 INSERT INTO solicitudes_compra
@@ -950,26 +984,46 @@ def aplicar_plan(plan, usuario='cron'):
                    observaciones, area, empresa, categoria, tipo, valor)
                 VALUES (?, date('now'), 'Pendiente', 'AUTO-PLAN', ?, ?, 'Producción', 'Espagiria',
                         ?, 'Compra', 0)
-            """, (
-                numero, urgencia_solic,
-                f"AUTO-PLAN: {cp['material_nombre']} {cantidad_kg}kg · lead {cp['lead_time_dias']}d ({cp['origen']}) · déficit {cp['deficit_g']:.0f}g",
-                'Materia Prima' if not cp['es_envase'] else 'Material de Empaque',
-            ))
+            """, (numero, urgencia_solic, observaciones, cat))
             sol_id = cur.lastrowid
-            # Item asociado
-            c.execute("""
-                INSERT INTO solicitudes_compra_items
-                  (numero, codigo_mp, nombre_mp, cantidad_g, unidad, justificacion, valor_estimado, proveedor_sugerido)
-                VALUES (?, ?, ?, ?, 'g', ?, 0, ?)
-            """, (
-                numero, cp['material_id'], cp['material_nombre'],
-                cp['cantidad_a_pedir_g'],
-                f"Para producciones plan {plan['fecha_hoy']}",
-                cp.get('proveedor_principal') or '',
-            ))
-            creadas_compras.append({'numero': numero, 'sol_id': sol_id})
+
+            # Insertar 1 item por MP del grupo
+            for cp in items_grupo:
+                try:
+                    c.execute("""
+                        INSERT INTO solicitudes_compra_items
+                          (numero, codigo_mp, nombre_mp, cantidad_g, unidad,
+                           justificacion, valor_estimado, proveedor_sugerido)
+                        VALUES (?, ?, ?, ?, 'g', ?, 0, ?)
+                    """, (
+                        numero, cp['material_id'], cp['material_nombre'],
+                        cp['cantidad_a_pedir_g'],
+                        (f"Para producciones plan {plan['fecha_hoy']} · "
+                         f"deficit {cp['deficit_g']:.0f}g · lead {cp['lead_time_dias']}d "
+                         f"({cp['origen']})"),
+                        prov,
+                    ))
+                except sqlite3.OperationalError:
+                    # Esquema viejo sin proveedor_sugerido
+                    c.execute("""
+                        INSERT INTO solicitudes_compra_items
+                          (numero, codigo_mp, nombre_mp, cantidad_g, unidad,
+                           justificacion, valor_estimado)
+                        VALUES (?, ?, ?, ?, 'g', ?, 0)
+                    """, (
+                        numero, cp['material_id'], cp['material_nombre'],
+                        cp['cantidad_a_pedir_g'],
+                        (f"Para producciones plan {plan['fecha_hoy']} · "
+                         f"deficit {cp['deficit_g']:.0f}g · lead {cp['lead_time_dias']}d "
+                         f"({cp['origen']})"),
+                    ))
+            creadas_compras.append({
+                'numero': numero, 'sol_id': sol_id,
+                'proveedor': prov, 'items_count': n_items,
+                'total_g': round(total_g, 0),
+            })
         except Exception as e:
-            log.warning(f'Solicitud auto-plan fallida {cp["material_id"]}: {e}')
+            log.warning(f'Solicitud auto-plan fallida proveedor={prov} categoria={cat}: {e}')
 
     for con in plan['conteos_propuestos']:
         try:
