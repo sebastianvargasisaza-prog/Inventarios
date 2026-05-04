@@ -321,7 +321,9 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
     <!-- Sebastian 4-may-2026 (Catalina): toggle vista agrupada por proveedor -->
     <button id="btn-toggle-vista" class="btn" onclick="toggleVistaSolicitudes()" style="background:#0e7490;color:#fff;" title="Agrupar todas las solicitudes pendientes por proveedor — crea una sola OC para todas las del mismo proveedor">&#x1F4E6; Agrupar por proveedor</button>
     <!-- Sebastian 4-may-2026 (Catalina): consolidar AUTO-XXXX legacy 1-MP-cada-una en agrupadas por proveedor -->
-    <button id="btn-consolidar-auto" class="btn" onclick="consolidarAutoPendientes()" style="background:#16a34a;color:#fff;" title="Consolida las AUTO-XXXX existentes (1 MP cada una) en una solicitud por proveedor">&#x1F517; Consolidar AUTO</button>
+    <button id="btn-consolidar-auto" class="btn" onclick="consolidarAutoPendientes()" style="background:#16a34a;color:#fff;" title="Consolida las AUTO-XXXX existentes (1 MP cada una) en una solicitud por proveedor (no toca data fuente)">&#x1F517; Consolidar AUTO</button>
+    <!-- Sebastian 4-may-2026 (Catalina): limpiar AUTO-XXXX y regenerar desde planta usando logica nueva con fallback a maestro_mps.proveedor -->
+    <button id="btn-limpiar-regenerar-auto" class="btn" onclick="limpiarYRegenerarAutoPlan()" style="background:#dc2626;color:#fff;" title="Borra AUTO-XXXX Pendientes y regenera con la logica nueva (lee proveedor de maestro_mps si mp_lead_time_config esta vacio)">&#x1F525; Limpiar y regenerar</button>
   </div>
   <div id="pills-solic" class="pills"></div>
   <div id="grid-solic" class="grid"></div>
@@ -3331,6 +3333,65 @@ async function consolidarAutoPendientes(){
   }
 }
 
+// ────────────────────────────────────────────────────────────────
+// Sebastian 4-may-2026 (Catalina): limpiar TODOS los AUTO-XXXX y
+// regenerar desde planta con la logica nueva (proveedor real desde
+// maestro_mps si mp_lead_time_config esta vacio)
+// ────────────────────────────────────────────────────────────────
+async function limpiarYRegenerarAutoPlan(){
+  // Step 1: dry-run para mostrar cuantos van a borrar
+  try{
+    var rDry = await fetch('/api/compras/limpiar-y-regenerar-auto-plan',
+      _fetchOpts('POST', {dry_run: true, horizonte_dias: 60}));
+    var dDry = await rDry.json();
+    if(!rDry.ok){
+      alert('Error preview: '+(dDry.error || rDry.status));
+      return;
+    }
+    var msg = 'LIMPIAR Y REGENERAR AUTO-PLAN\\n\\n'+
+      'Esto va a:\\n'+
+      ' • BORRAR '+dDry.eliminaria+' solicitudes AUTO-XXXX Pendientes\\n'+
+      ' • REGENERAR desde planta con horizonte '+dDry.horizonte_dias+' dias\\n'+
+      ' • Las nuevas leen proveedor de maestro_mps si mp_lead_time_config\\n'+
+      '   esta vacio → ya NO aparecen "sin proveedor"\\n'+
+      ' • Quedan agrupadas por proveedor (1 SOL × proveedor con N items)\\n\\n'+
+      'NO toca AUTO-XXXX que ya tienen OC vinculada (esas son historico).\\n\\n'+
+      'Confirmar?';
+    if(!confirm(msg)) return;
+
+    // Step 2: ejecutar
+    var btn = document.getElementById('btn-limpiar-regenerar-auto');
+    if(btn){ btn.disabled = true; btn.textContent = 'Procesando...'; }
+    var r = await fetch('/api/compras/limpiar-y-regenerar-auto-plan',
+      _fetchOpts('POST', {dry_run: false, horizonte_dias: 60}));
+    var d = await r.json();
+    if(btn){ btn.disabled = false; btn.innerHTML = '&#x1F525; Limpiar y regenerar'; }
+    if(!r.ok){
+      alert('Error: '+(d.error || r.status)+
+            (d.eliminadas !== undefined ? '\\n(Eliminadas '+d.eliminadas+' antes del fallo)' : ''));
+      return;
+    }
+    var detalle = (d.grupos||[]).slice(0,8).map(function(g){
+      return '  · '+(g.proveedor||'(Sin proveedor)')+': '+g.items_count+' MPs · '+fmt(g.total_g)+' g';
+    }).join('\\n');
+    if((d.grupos||[]).length > 8) detalle += '\\n  ... y '+(d.grupos.length-8)+' grupos mas';
+    alert('✓ '+d.mensaje+'\\n\\n'+
+          (detalle ? 'Top grupos:\\n'+detalle : ''));
+    await loadSolicitudes();
+    if(_VISTA_AGRUPADA) await renderSolicitudesAgrupadas();
+  }catch(e){
+    alert('Error red: '+e.message);
+    var btn = document.getElementById('btn-limpiar-regenerar-auto');
+    if(btn){ btn.disabled = false; btn.innerHTML = '&#x1F525; Limpiar y regenerar'; }
+  }
+}
+
+// ────────────────────────────────────────────────────────────────
+// Sebastian 4-may-2026 (Catalina): consolidar AUTO-XXXX legacy
+// ────────────────────────────────────────────────────────────────
+// Ejecuta /api/compras/consolidar-auto-pendientes en 2 pasos:
+//   1. dry_run=true para mostrar el plan a Catalina
+//   2. confirm + dry_run=false para ejecutar
 async function regenerarSolicitudesAuto(){
   if(!confirm('REGENERAR solicitudes auto-generadas?\\n\\n' +
               'Esto va a:\\n' +

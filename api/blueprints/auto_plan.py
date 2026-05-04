@@ -721,16 +721,34 @@ def generar_plan(horizonte_dias=60, tipo='auto', usuario='cron'):
         # Antes usaba 'Ingreso'/'Consumo' (no existen) y devolvía 0/negativo
         # siempre · IA proponía compras erróneas (toda MP aparecía en déficit).
         stock_g = stock_mp_disponible(c, mat_id)
-        # Lead time + buffer
+        # Lead time + buffer · Sebastian 4-may-2026 (Catalina): ANTES leía SOLO
+        # mp_lead_time_config.proveedor_principal y si estaba vacio aparecia "sin
+        # proveedor" en compras aunque maestro_mps.proveedor sí tuviera valor.
+        # AHORA hace COALESCE: lead_time_config primero, luego maestro_mps.proveedor.
         lt = c.execute("""
-            SELECT lead_time_dias, buffer_dias, cobertura_min_dias, cobertura_ideal_dias,
-                   origen, es_envase, proveedor_principal, material_nombre
-            FROM mp_lead_time_config WHERE material_id=?
+            SELECT mlt.lead_time_dias, mlt.buffer_dias, mlt.cobertura_min_dias,
+                   mlt.cobertura_ideal_dias, mlt.origen, mlt.es_envase,
+                   COALESCE(NULLIF(TRIM(mlt.proveedor_principal),''), mm.proveedor, '') as prov,
+                   COALESCE(mlt.material_nombre, mm.nombre_comercial, mm.nombre_inci) as nombre
+            FROM mp_lead_time_config mlt
+            LEFT JOIN maestro_mps mm ON mm.codigo_mp = mlt.material_id
+            WHERE mlt.material_id=?
         """, (mat_id,)).fetchone()
         if lt:
             lead, buffer, cob_min, cob_ideal, origen, es_envase, prov, nombre = lt
+            prov = prov or ''
         else:
-            lead, buffer, cob_min, cob_ideal, origen, es_envase, prov, nombre = 14, 30, 30, 60, 'local', 0, '', mat_id
+            # No hay config en mp_lead_time_config — leer al menos proveedor de
+            # maestro_mps si existe ahí (caso comun: MP creada por Catalina sin
+            # haber pasado por config de planta).
+            mm_row = c.execute(
+                "SELECT COALESCE(proveedor,''), COALESCE(nombre_comercial, nombre_inci, '') "
+                "FROM maestro_mps WHERE codigo_mp=?",
+                (mat_id,),
+            ).fetchone()
+            prov = (mm_row[0] if mm_row else '') or ''
+            nombre = (mm_row[1] if mm_row else mat_id) or mat_id
+            lead, buffer, cob_min, cob_ideal, origen, es_envase = 14, 30, 30, 60, 'local', 0
         # ¿Falta?
         deficit_g = req_g - stock_g
         if deficit_g <= 0:

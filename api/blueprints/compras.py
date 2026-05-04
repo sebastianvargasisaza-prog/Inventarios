@@ -2335,6 +2335,33 @@ def consolidar_auto_pendientes():
     for it in items_all:
         items_por_sol.setdefault(it['numero'], []).append(it)
 
+    # Sebastian 4-may-2026 (Catalina): si el item NO tiene proveedor_sugerido
+    # (legacy de aplicar_plan que leia solo mp_lead_time_config), buscarlo en
+    # maestro_mps.proveedor por codigo_mp. Asi no aparecen "sin proveedor".
+    cods_sin_prov = {it['codigo_mp'].upper() for it in items_all
+                      if it['codigo_mp'] and not (it.get('proveedor_sugerido') or '').strip()}
+    prov_lookup = {}
+    if cods_sin_prov:
+        ph_cod = ','.join(['?'] * len(cods_sin_prov))
+        try:
+            for r in c.execute(
+                f"SELECT UPPER(codigo_mp), COALESCE(proveedor,'') "
+                f"FROM maestro_mps WHERE UPPER(codigo_mp) IN ({ph_cod})",
+                list(cods_sin_prov),
+            ).fetchall():
+                if r[1]:
+                    prov_lookup[r[0]] = r[1]
+        except Exception:
+            pass
+    # Aplicar fallback in-place a items_all
+    for it in items_all:
+        if not (it.get('proveedor_sugerido') or '').strip():
+            cod_up = (it.get('codigo_mp') or '').upper()
+            fallback = prov_lookup.get(cod_up, '')
+            if fallback:
+                it['proveedor_sugerido'] = fallback
+                it['_proveedor_fallback'] = True  # marca para audit/observ
+
     # 2. Agrupar por (proveedor_sugerido, categoria) las que SOLO tienen 1 item
     # (legacy 1-MP-por-AUTO-XXXX). Las que ya tienen N>1 items son las nuevas
     # consolidadas - se respetan tal cual.
@@ -2519,6 +2546,131 @@ def consolidar_auto_pendientes():
         'despues': len(creadas_nums) + len(intactas),
         'mensaje': (f'Consolidadas {len(sols_a_eliminar)} solicitudes legacy en '
                      f'{len(creadas_nums)} agrupadas por proveedor'),
+    })
+
+
+# ── Sebastián 4-may-2026 (Catalina): limpiar y regenerar AUTO-PLAN ────
+@bp.route('/api/compras/limpiar-y-regenerar-auto-plan', methods=['POST'])
+def limpiar_y_regenerar_auto_plan():
+    """Borra TODAS las AUTO-XXXX Pendientes (sin OC) y vuelve a generar.
+
+    Caso de uso: los AUTO-XXXX existentes vienen del cron que leia
+    mp_lead_time_config sin fallback a maestro_mps.proveedor → muchas
+    quedaban sin proveedor. Con el fix de aplicar_plan() (4-may-2026)
+    ahora SI tienen fallback. Este endpoint deja todo limpio y
+    regenera con la logica nueva → Catalina ve solicitudes consolidadas
+    por proveedor real.
+
+    Body JSON (opcional):
+      {
+        "horizonte_dias": 60,        # default 60d
+        "dry_run": false             # si true, solo cuenta lo que borraria
+      }
+
+    Returns:
+      200 {ok, eliminadas, creadas, mensaje}
+    """
+    usuario, err, code = _require_compras_write()
+    if err:
+        return err, code
+
+    body = request.get_json(silent=True) or {}
+    dry_run = bool(body.get('dry_run', False))
+    try:
+        horizonte = int(body.get('horizonte_dias', 60))
+    except (ValueError, TypeError):
+        horizonte = 60
+    if not (7 <= horizonte <= 365):
+        return jsonify({'error': 'horizonte_dias fuera de rango (7-365)'}), 400
+
+    conn = get_db(); c = conn.cursor()
+    # Contar AUTO-XXXX Pendientes sin OC vinculada
+    c.execute("""
+        SELECT numero FROM solicitudes_compra
+        WHERE numero LIKE 'AUTO-%' AND estado='Pendiente'
+          AND COALESCE(numero_oc,'') = ''
+    """)
+    nums_a_borrar = [r[0] for r in c.fetchall()]
+
+    if dry_run:
+        return jsonify({
+            'ok': True,
+            'dry_run': True,
+            'eliminaria': len(nums_a_borrar),
+            'horizonte_dias': horizonte,
+            'mensaje': (f'Plan: borrar {len(nums_a_borrar)} AUTO-XXXX Pendientes '
+                         f'+ regenerar con horizonte {horizonte}d'),
+        })
+
+    try:
+        # 1. Borrar items + solicitudes
+        eliminadas_items = 0
+        if nums_a_borrar:
+            ph = ','.join(['?'] * len(nums_a_borrar))
+            r1 = c.execute(
+                f"DELETE FROM solicitudes_compra_items WHERE numero IN ({ph})",
+                nums_a_borrar,
+            )
+            eliminadas_items = r1.rowcount or 0
+            c.execute(
+                f"DELETE FROM solicitudes_compra WHERE numero IN ({ph})",
+                nums_a_borrar,
+            )
+
+        # 2. Audit del borrado
+        try:
+            audit_log(
+                c, usuario=usuario, accion='LIMPIAR_AUTO_PLAN',
+                tabla='solicitudes_compra', registro_id='bulk',
+                despues={'eliminadas': len(nums_a_borrar),
+                          'items_eliminados': eliminadas_items,
+                          'horizonte_dias': horizonte},
+                detalle=f"Limpio {len(nums_a_borrar)} AUTO-XXXX Pendientes para regenerar",
+            )
+        except Exception:
+            pass
+
+        conn.commit()
+    except Exception as e:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        log.exception('limpiar_y_regenerar_auto_plan borrado fallo: %s', e)
+        return jsonify({'error': f'Borrado fallido: {e}'}), 500
+
+    # 3. Regenerar con generar_plan + aplicar_plan
+    try:
+        from blueprints.auto_plan import generar_plan, aplicar_plan
+        plan = generar_plan(horizonte_dias=horizonte, tipo='manual', usuario=usuario)
+        resultado = aplicar_plan(plan, usuario=usuario)
+    except Exception as e:
+        log.exception('limpiar_y_regenerar_auto_plan regeneracion fallo: %s', e)
+        return jsonify({
+            'error': f'Borrado OK pero falló la regeneración: {e}',
+            'eliminadas': len(nums_a_borrar),
+            'creadas': 0,
+        }), 500
+
+    creadas = resultado.get('compras_creadas', []) or []
+    grupos_resumen = []
+    for cc in creadas[:30]:
+        grupos_resumen.append({
+            'numero': cc.get('numero'),
+            'proveedor': cc.get('proveedor', ''),
+            'items_count': cc.get('items_count', 0),
+            'total_g': cc.get('total_g', 0),
+        })
+
+    return jsonify({
+        'ok': True,
+        'eliminadas': len(nums_a_borrar),
+        'creadas': len(creadas),
+        'horizonte_dias': horizonte,
+        'grupos': grupos_resumen,
+        'mensaje': (f'✓ Eliminadas {len(nums_a_borrar)} AUTO-XXXX legacy · '
+                     f'Regeneradas {len(creadas)} consolidadas por proveedor '
+                     f'(horizonte {horizonte}d)'),
     })
 
 

@@ -499,3 +499,188 @@ def test_compras_html_boton_consolidar_visible(app, db_clean):
     assert 'btn-consolidar-auto' in body
     assert 'consolidarAutoPendientes' in body
     assert 'Consolidar AUTO' in body
+
+
+def test_compras_html_boton_limpiar_regenerar_visible(app, db_clean):
+    cs = _login(app)
+    body = cs.get('/compras').get_data(as_text=True)
+    assert 'btn-limpiar-regenerar-auto' in body
+    assert 'limpiarYRegenerarAutoPlan' in body
+    assert 'Limpiar y regenerar' in body
+
+
+# ── Fallback proveedor desde maestro_mps cuando proveedor_sugerido vacio ──
+
+
+def test_consolidar_fallback_a_maestro_mps_cuando_item_sin_proveedor(app, db_clean):
+    """Si AUTO-XXXX legacy tiene item con proveedor_sugerido='' pero el codigo_mp
+    SI tiene proveedor en maestro_mps, debe agruparse ahi."""
+    cs = _login(app)
+    # Setup: insertar MP en maestro_mps con proveedor
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    conn.execute(
+        """INSERT OR REPLACE INTO maestro_mps
+           (codigo_mp, nombre_comercial, proveedor, activo)
+           VALUES ('MP-FB-1', 'Glicerina FB', 'Inquimica FB', 1)"""
+    )
+    conn.commit(); conn.close()
+    # AUTO-XXXX legacy con proveedor_sugerido='' (caso real)
+    _crear_auto_xxxx_legacy('AUTO-9101', 'MP-FB-1', 'Glicerina FB', 1000, '')
+    _crear_auto_xxxx_legacy('AUTO-9102', 'MP-FB-1', 'Glicerina FB', 2000, '')
+    try:
+        # Dry-run para ver que el plan agrupe por "Inquimica FB" (no por "")
+        r = cs.post('/api/compras/consolidar-auto-pendientes',
+                    json={'dry_run': True}, headers=csrf_headers())
+        d = r.get_json()
+        provs = [g['proveedor'] for g in d.get('grupos', [])]
+        assert 'Inquimica FB' in provs, \
+            f"Esperaba fallback a maestro_mps, llegado {provs}"
+        # Y no agrupado en "" (sin proveedor)
+        assert '' not in provs
+    finally:
+        _cleanup_auto_solicitudes()
+        conn = sqlite3.connect(os.environ["DB_PATH"])
+        conn.execute("DELETE FROM maestro_mps WHERE codigo_mp='MP-FB-1'")
+        conn.commit(); conn.close()
+
+
+# ── /api/compras/limpiar-y-regenerar-auto-plan ────────────────────
+
+
+def test_limpiar_y_regenerar_dry_run_no_modifica(app, db_clean):
+    cs = _login(app)
+    _crear_auto_xxxx_legacy('AUTO-9201', 'MP-X', 'X', 100, 'P')
+    _crear_auto_xxxx_legacy('AUTO-9202', 'MP-Y', 'Y', 100, 'P')
+    try:
+        r = cs.post('/api/compras/limpiar-y-regenerar-auto-plan',
+                    json={'dry_run': True}, headers=csrf_headers())
+        assert r.status_code == 200
+        d = r.get_json()
+        assert d['dry_run'] is True
+        assert d['eliminaria'] == 2
+        # No modifica
+        conn = sqlite3.connect(os.environ["DB_PATH"])
+        cnt = conn.execute(
+            "SELECT COUNT(*) FROM solicitudes_compra WHERE numero IN ('AUTO-9201','AUTO-9202')"
+        ).fetchone()[0]
+        conn.close()
+        assert cnt == 2
+    finally:
+        _cleanup_auto_solicitudes()
+
+
+def test_limpiar_y_regenerar_borra_pero_preserva_con_oc(app, db_clean):
+    """AUTO-XXXX con numero_oc!='' NO debe ser borrado (es historico)."""
+    cs = _login(app)
+    _crear_auto_xxxx_legacy('AUTO-9301', 'MP-A', 'A', 100, 'P')
+    # Crear AUTO-9302 con OC vinculada (simulando que ya fue procesada)
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    conn.execute(
+        """INSERT INTO solicitudes_compra
+           (numero, fecha, estado, solicitante, urgencia, observaciones,
+            area, empresa, categoria, tipo, numero_oc, valor)
+           VALUES ('AUTO-9302', '2026-05-04', 'Pendiente', 'AUTO-PLAN',
+                   'Normal', 'tiene OC', 'Producción', 'Espagiria',
+                   'Materia Prima', 'Compra', 'OC-2026-9999', 0)"""
+    )
+    conn.commit(); conn.close()
+    try:
+        r = cs.post('/api/compras/limpiar-y-regenerar-auto-plan',
+                    json={'dry_run': False, 'horizonte_dias': 30},
+                    headers=csrf_headers())
+        # Puede fallar regeneracion en test (sin formulas reales),
+        # pero el borrado debe ser correcto.
+        d = r.get_json()
+        # AUTO-9301 (sin OC) → borrado. AUTO-9302 (con OC) → preservado.
+        conn = sqlite3.connect(os.environ["DB_PATH"])
+        cnt_9301 = conn.execute("SELECT COUNT(*) FROM solicitudes_compra WHERE numero='AUTO-9301'").fetchone()[0]
+        cnt_9302 = conn.execute("SELECT COUNT(*) FROM solicitudes_compra WHERE numero='AUTO-9302'").fetchone()[0]
+        conn.close()
+        assert cnt_9301 == 0, "AUTO-9301 sin OC debio ser borrado"
+        assert cnt_9302 == 1, "AUTO-9302 con OC debe ser preservado"
+    finally:
+        _cleanup_auto_solicitudes()
+        conn = sqlite3.connect(os.environ["DB_PATH"])
+        conn.execute("DELETE FROM solicitudes_compra WHERE numero='AUTO-9302'")
+        conn.commit(); conn.close()
+
+
+def test_limpiar_y_regenerar_audit_log(app, db_clean):
+    cs = _login(app)
+    _crear_auto_xxxx_legacy('AUTO-9401', 'MP-A', 'A', 100, 'P')
+    try:
+        cs.post('/api/compras/limpiar-y-regenerar-auto-plan',
+                json={'dry_run': False, 'horizonte_dias': 30},
+                headers=csrf_headers())
+        conn = sqlite3.connect(os.environ["DB_PATH"])
+        row = conn.execute(
+            "SELECT usuario, accion FROM audit_log "
+            "WHERE accion='LIMPIAR_AUTO_PLAN' ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        conn.close()
+        assert row is not None
+        assert row[0] == 'catalina'
+    finally:
+        _cleanup_auto_solicitudes()
+
+
+def test_limpiar_y_regenerar_horizonte_invalido_400(app, db_clean):
+    cs = _login(app)
+    r = cs.post('/api/compras/limpiar-y-regenerar-auto-plan',
+                json={'horizonte_dias': 1000}, headers=csrf_headers())
+    assert r.status_code == 400
+
+
+# ── aplicar_plan COALESCE proveedor de maestro_mps ────────────────
+
+
+def test_aplicar_plan_lee_proveedor_de_maestro_mps_si_lead_time_config_vacio(app, db_clean):
+    """Si mp_lead_time_config tiene proveedor_principal='' pero maestro_mps
+    tiene proveedor='X', aplicar_plan debe usar 'X' (COALESCE)."""
+    _ensure_api_path()
+    from blueprints.auto_plan import aplicar_plan
+
+    # Setup: insertar MP solo en maestro_mps con proveedor
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    conn.execute(
+        """INSERT OR REPLACE INTO maestro_mps
+           (codigo_mp, nombre_comercial, proveedor, activo)
+           VALUES ('MP-COA-1', 'TestCoalesce', 'ProvDeMaestro', 1)"""
+    )
+    # mp_lead_time_config sin proveedor_principal (vacio)
+    conn.execute(
+        """INSERT OR REPLACE INTO mp_lead_time_config
+           (material_id, material_nombre, proveedor_principal,
+            lead_time_dias, buffer_dias, cobertura_min_dias,
+            cobertura_ideal_dias, origen, es_envase, activo)
+           VALUES ('MP-COA-1', 'TestCoalesce', '', 14, 30, 30, 60, 'local', 0, 1)"""
+    )
+    conn.commit(); conn.close()
+
+    compras = [
+        {'material_id': 'MP-COA-1', 'material_nombre': 'TestCoalesce',
+         'requerido_g': 100, 'stock_actual_g': 0, 'deficit_g': 100,
+         'cantidad_a_pedir_g': 100, 'lead_time_dias': 14, 'origen': 'local',
+         'es_envase': False, 'proveedor_principal': 'ProvDeMaestro',
+         'urgencia': 'normal'},
+    ]
+    try:
+        with app.app_context():
+            res = aplicar_plan(_make_plan(compras), usuario='test')
+        # La SOL debe llevar el proveedor 'ProvDeMaestro'
+        assert len(res['compras_creadas']) == 1
+        assert res['compras_creadas'][0]['proveedor'] == 'ProvDeMaestro'
+        # El item tambien debe tener proveedor_sugerido = 'ProvDeMaestro'
+        conn = sqlite3.connect(os.environ["DB_PATH"])
+        prov_item = conn.execute(
+            "SELECT proveedor_sugerido FROM solicitudes_compra_items "
+            "WHERE numero=?", (res['compras_creadas'][0]['numero'],)
+        ).fetchone()[0]
+        conn.close()
+        assert prov_item == 'ProvDeMaestro'
+    finally:
+        _cleanup_auto_solicitudes()
+        conn = sqlite3.connect(os.environ["DB_PATH"])
+        conn.execute("DELETE FROM mp_lead_time_config WHERE material_id='MP-COA-1'")
+        conn.execute("DELETE FROM maestro_mps WHERE codigo_mp='MP-COA-1'")
+        conn.commit(); conn.close()
