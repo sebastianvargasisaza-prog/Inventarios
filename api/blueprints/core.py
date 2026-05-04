@@ -99,6 +99,57 @@ def health():
     return jsonify({'status':'ok','commit':commit,'db_exists':db_exists,
                     'db_size_kb':db_size,'tables':tables})
 
+
+@bp.route('/api/health/debug')
+def health_debug():
+    """Diagnostico publico extendido · errores REALES de cada query.
+
+    Sebastian 4-may-2026: tablas mostraban 'err' generico en /api/health,
+    sin saber por que. Este endpoint retorna el str() de la excepcion
+    para diagnosticar issues post-deploy.
+    """
+    import sqlite3 as _sq, os as _os, traceback as _tb
+    db_exists = _os.path.exists(DB_PATH)
+    out = {'db_exists': db_exists, 'db_path': DB_PATH, 'tables': {}}
+    if not db_exists:
+        return jsonify(out)
+    try:
+        conn = _sq.connect(DB_PATH, timeout=2)
+        # PRAGMA info
+        try:
+            out['journal_mode'] = conn.execute('PRAGMA journal_mode').fetchone()[0]
+        except Exception as e:
+            out['journal_mode_err'] = str(e)[:200]
+        try:
+            out['integrity_check'] = conn.execute('PRAGMA integrity_check').fetchone()[0]
+        except Exception as e:
+            out['integrity_check_err'] = str(e)[:200]
+        try:
+            out['busy_timeout'] = conn.execute('PRAGMA busy_timeout').fetchone()[0]
+        except Exception:
+            pass
+        # Migraciones aplicadas
+        try:
+            rows = conn.execute('SELECT id, descripcion FROM migraciones ORDER BY id DESC LIMIT 10').fetchall()
+            out['migraciones_top10'] = [{'id': r[0], 'desc': (r[1] or '')[:80]} for r in rows]
+        except Exception as e:
+            out['migraciones_err'] = str(e)[:300]
+        # Cada tabla con error real
+        for tbl in ['maestro_mps','solicitudes_compra','ordenes_compra','movimientos',
+                    'animus_inventario_baseline','animus_inventario_movimientos',
+                    'sgd_documentos','documentos_sgd','users_passwords','rate_limit',
+                    'security_events','empleados','notificaciones_empleados']:
+            try:
+                n = conn.execute(f'SELECT COUNT(*) FROM {tbl}').fetchone()[0]
+                out['tables'][tbl] = n
+            except Exception as e:
+                out['tables'][tbl] = f'ERR: {type(e).__name__}: {str(e)[:200]}'
+        conn.close()
+    except Exception as e:
+        out['fatal'] = f'{type(e).__name__}: {str(e)[:300]}'
+        out['trace'] = _tb.format_exc()[-1500:]
+    return jsonify(out)
+
 @bp.route('/')
 def index():
     # Redirigir a login si no hay sesion activa; a /modulos si ya esta autenticado

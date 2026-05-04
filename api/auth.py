@@ -204,6 +204,7 @@ def register_hooks(app):
         if not request.path.startswith('/api/'):
             return  # Rutas HTML se manejan individualmente
         PUBLIC_API = {'/api/login', '/api/logout', '/api/health',
+                      '/api/health/debug',
                       '/api/publico/empleado-reporte'}
         if request.path in PUBLIC_API:
             return
