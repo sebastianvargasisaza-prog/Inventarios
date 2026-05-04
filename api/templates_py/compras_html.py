@@ -794,14 +794,77 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
       </tr></thead>
       <tbody id="nmp-tbody"></tbody>
     </table>
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;">
-      <button class="btn bo" style="font-size:12px;" onclick="addRowMP(null)">+ Agregar item</button>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;flex-wrap:wrap;gap:8px;">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn bo" style="font-size:12px;" onclick="addRowMP(null)">+ Agregar item</button>
+        <button class="btn bo" style="font-size:12px;background:#10b981;color:#fff;border-color:#10b981;" onclick="abrirNuevaMP()" title="Crear MP nueva sin salir del form">+ Nueva MP</button>
+      </div>
       <div style="font-size:15px;font-weight:700;color:#1c1917;">Total: <span id="nmp-tot">$0</span></div>
     </div>
   </div>
   <div class="mf">
     <button class="btn bo" onclick="closeModal('m-noc-mp')">Cancelar</button>
     <button class="btn bp" onclick="crearOCMP()">&#x2713; Crear Orden de Compra</button>
+  </div>
+</div>
+</div>
+
+<!-- MODAL: Nueva MP rapida (Catalina · 4-may-2026) -->
+<div id="m-nueva-mp" class="ov">
+<div class="mdl">
+  <div class="mh"><h3>&#x1F195; Nueva Materia Prima</h3><button class="mx" onclick="closeModal('m-nueva-mp')">&times;</button></div>
+  <div class="mb">
+    <div style="background:#f0f9ff;border-left:4px solid #0e7490;padding:10px 14px;border-radius:6px;margin-bottom:14px;font-size:12px;color:#0c4a6e;">
+      💡 Crea una MP nueva sin salir del form de OC. Los precios y stock que ingreses despues quedaran cargados en planta.
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+      <div>
+        <label style="font-size:12px;font-weight:600;color:#57534e;display:block;margin-bottom:4px;">Codigo MP *</label>
+        <input id="nmp-codigo" placeholder="MP-NUEVA-001" style="width:100%;padding:8px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;text-transform:uppercase;">
+      </div>
+      <div>
+        <label style="font-size:12px;font-weight:600;color:#57534e;display:block;margin-bottom:4px;">Tipo material *</label>
+        <select id="nmp-tipomat" style="width:100%;padding:8px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;">
+          <option value="MP">Materia Prima</option>
+          <option value="Envase Primario">Envase Primario</option>
+          <option value="Envase Secundario">Envase Secundario</option>
+          <option value="Empaque">Empaque</option>
+        </select>
+      </div>
+    </div>
+    <div style="margin-bottom:10px;">
+      <label style="font-size:12px;font-weight:600;color:#57534e;display:block;margin-bottom:4px;">Nombre comercial *</label>
+      <input id="nmp-nomcomer" placeholder="Ej: Glicerina vegetal USP" style="width:100%;padding:8px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;">
+    </div>
+    <div style="margin-bottom:10px;">
+      <label style="font-size:12px;font-weight:600;color:#57534e;display:block;margin-bottom:4px;">Nombre INCI (opcional)</label>
+      <input id="nmp-nominci" placeholder="Glycerin" style="width:100%;padding:8px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;">
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+      <div>
+        <label style="font-size:12px;font-weight:600;color:#57534e;display:block;margin-bottom:4px;">Tipo (categoria)</label>
+        <input id="nmp-tipo" placeholder="Ej: Humectante, Surfactante..." style="width:100%;padding:8px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;">
+      </div>
+      <div>
+        <label style="font-size:12px;font-weight:600;color:#57534e;display:block;margin-bottom:4px;">Proveedor preferido</label>
+        <input id="nmp-prov-pref" placeholder="(opcional)" style="width:100%;padding:8px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;">
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+      <div>
+        <label style="font-size:12px;font-weight:600;color:#57534e;display:block;margin-bottom:4px;">Stock minimo (g)</label>
+        <input id="nmp-stockmin" type="number" min="0" placeholder="0" style="width:100%;padding:8px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;">
+      </div>
+      <div>
+        <label style="font-size:12px;font-weight:600;color:#57534e;display:block;margin-bottom:4px;">Precio referencia ($/g)</label>
+        <input id="nmp-precio" type="number" min="0" step="0.001" placeholder="0" style="width:100%;padding:8px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;">
+      </div>
+    </div>
+    <div id="nmp-msg" style="font-size:12px;margin-top:8px;"></div>
+  </div>
+  <div class="mf">
+    <button class="btn bo" onclick="closeModal('m-nueva-mp')">Cancelar</button>
+    <button class="btn bp" onclick="guardarNuevaMP()">&#x2713; Crear MP</button>
   </div>
 </div>
 </div>
@@ -2154,7 +2217,20 @@ function mpLookup(n){
           ||(m.nombre_inci||'').toLowerCase().indexOf(q)>=0;
     });
   }
-  if(!mp){ infEl.textContent=''; infEl.style.color='#78716c'; return; }
+  if(!mp){
+    // Codigo NO existe en maestro_mps · ofrecer crear MP nueva
+    if(cod.length >= 2){
+      infEl.style.color='#dc2626';
+      // Usa data attribute + event delegation para evitar quoting issues
+      infEl.innerHTML = '⚠ Código <b>'+esc(cod)+'</b> no existe en maestro · '
+        +'<a href="#" data-action="crear-mp-rapida" data-codigo="'+esc(cod)+'" '
+        +'style="color:#10b981;font-weight:700;text-decoration:underline;">crear MP nueva</a>';
+    } else {
+      infEl.textContent='';
+      infEl.style.color='#78716c';
+    }
+    return;
+  }
   if(!(namEl.value||'').trim()) namEl.value=mp.nombre_comercial||mp.nombre_inci||cod;
   if((!prcEl.value||parseFloat(prcEl.value)===0)&&mp.precio_referencia&&mp.precio_referencia>0){
     prcEl.value=parseFloat(mp.precio_referencia).toFixed(4);
@@ -2180,6 +2256,139 @@ function calcTotMP(){
   }
   var totEl=document.getElementById('nmp-tot'); if(totEl) totEl.textContent=fmt(tot);
 }
+// ────────────────────────────────────────────────────────────────
+// Nueva MP rapida (Catalina · 4-may-2026)
+// ────────────────────────────────────────────────────────────────
+// Event delegation: cualquier <a data-action="crear-mp-rapida" data-codigo="X">
+// dentro de la pagina dispara abrirNuevaMP. Evita problemas de escape.
+document.addEventListener('click', function(ev){
+  var el = ev.target.closest('[data-action="crear-mp-rapida"]');
+  if (!el) return;
+  ev.preventDefault();
+  var cod = el.getAttribute('data-codigo') || '';
+  abrirNuevaMP(cod);
+});
+
+function abrirNuevaMP(prefillCodigo){
+  // Reset campos
+  document.getElementById('nmp-codigo').value = (prefillCodigo||'').toUpperCase();
+  document.getElementById('nmp-nomcomer').value = '';
+  document.getElementById('nmp-nominci').value = '';
+  document.getElementById('nmp-tipo').value = '';
+  document.getElementById('nmp-prov-pref').value = '';
+  document.getElementById('nmp-stockmin').value = '';
+  document.getElementById('nmp-precio').value = '';
+  document.getElementById('nmp-tipomat').value = 'MP';
+  document.getElementById('nmp-msg').textContent = '';
+  // Pre-llenar proveedor con el de la OC actual
+  var provOC = document.getElementById('nmp-prov');
+  if (provOC && provOC.value) {
+    document.getElementById('nmp-prov-pref').value = provOC.value;
+  }
+  openModal('m-nueva-mp');
+  setTimeout(function(){ document.getElementById('nmp-codigo').focus(); }, 100);
+}
+
+async function guardarNuevaMP(){
+  var codigo = (document.getElementById('nmp-codigo').value||'').toUpperCase().trim();
+  var nomcomer = (document.getElementById('nmp-nomcomer').value||'').trim();
+  var nominci = (document.getElementById('nmp-nominci').value||'').trim();
+  var msg = document.getElementById('nmp-msg');
+  if (!codigo) { msg.style.color='#dc2626'; msg.textContent='⚠ Codigo MP obligatorio'; return; }
+  if (!nomcomer && !nominci) { msg.style.color='#dc2626'; msg.textContent='⚠ Al menos un nombre (comercial o INCI)'; return; }
+
+  var payload = {
+    codigo_mp: codigo,
+    nombre_comercial: nomcomer,
+    nombre_inci: nominci,
+    tipo: (document.getElementById('nmp-tipo').value||'').trim(),
+    proveedor: (document.getElementById('nmp-prov-pref').value||'').trim(),
+    stock_minimo: parseFloat(document.getElementById('nmp-stockmin').value||0),
+    precio_referencia: parseFloat(document.getElementById('nmp-precio').value||0),
+    tipo_material: document.getElementById('nmp-tipomat').value,
+  };
+  msg.style.color='#0e7490';
+  msg.textContent='Guardando...';
+  try{
+    var r = await fetch('/api/maestro-mps', _fetchOpts('POST', payload));
+    var d = await r.json();
+    if (r.status === 409) {
+      msg.style.color='#dc2626';
+      msg.innerHTML='⚠ '+d.error+' '+
+        '<a href="#" onclick="event.preventDefault();forzarActualizarMP();" style="color:#0e7490;text-decoration:underline;">Sobrescribir</a>';
+      return;
+    }
+    if (!r.ok || d.error) {
+      msg.style.color='#dc2626';
+      msg.textContent='⚠ ' + (d.error || 'Error');
+      return;
+    }
+    msg.style.color='#16a34a';
+    msg.textContent='✓ ' + (d.message || 'MP creada');
+    // Refrescar catalogo + datalist
+    await refrescarCatalogoMP();
+    // Si el usuario habia escrito un codigo en una fila de OC, re-validar
+    setTimeout(function(){
+      closeModal('m-nueva-mp');
+      // Re-trigger lookup en filas existentes con este codigo
+      for (var i = 1; i <= MP_ITMS; i++) {
+        var el = document.getElementById('mprc' + i);
+        if (el && (el.value||'').toUpperCase() === codigo) mpLookup(i);
+      }
+    }, 700);
+  }catch(e){
+    msg.style.color='#dc2626';
+    msg.textContent='⚠ Error red: '+e.message;
+  }
+}
+
+async function forzarActualizarMP(){
+  var msg = document.getElementById('nmp-msg');
+  var payload = {
+    codigo_mp: (document.getElementById('nmp-codigo').value||'').toUpperCase().trim(),
+    nombre_comercial: (document.getElementById('nmp-nomcomer').value||'').trim(),
+    nombre_inci: (document.getElementById('nmp-nominci').value||'').trim(),
+    tipo: (document.getElementById('nmp-tipo').value||'').trim(),
+    proveedor: (document.getElementById('nmp-prov-pref').value||'').trim(),
+    stock_minimo: parseFloat(document.getElementById('nmp-stockmin').value||0),
+    precio_referencia: parseFloat(document.getElementById('nmp-precio').value||0),
+    tipo_material: document.getElementById('nmp-tipomat').value,
+    forzar_actualizar: true,
+  };
+  if (!confirm('Sobrescribir MP existente con estos datos? Esta accion queda en audit_log.')) return;
+  try{
+    var r = await fetch('/api/maestro-mps', _fetchOpts('POST', payload));
+    var d = await r.json();
+    if (!r.ok || d.error) {
+      msg.style.color='#dc2626';
+      msg.textContent='⚠ ' + (d.error || 'Error');
+      return;
+    }
+    msg.style.color='#16a34a';
+    msg.textContent='✓ MP actualizada';
+    await refrescarCatalogoMP();
+    setTimeout(function(){ closeModal('m-nueva-mp'); }, 700);
+  }catch(e){
+    msg.style.color='#dc2626';
+    msg.textContent='⚠ Error red: '+e.message;
+  }
+}
+
+async function refrescarCatalogoMP(){
+  // Recargar _MPCAT y datalist mp-codes-dl
+  try{
+    var r = await fetch('/api/maestro-mps');
+    var d = await r.json();
+    _MPCAT = d.mps || d || [];
+    var dl = document.getElementById('mp-codes-dl');
+    if (dl) {
+      dl.innerHTML = _MPCAT.map(function(m){
+        return '<option value="'+esc(m.codigo_mp)+'">'+esc(m.nombre_comercial||m.nombre_inci||m.codigo_mp)+'</option>';
+      }).join('');
+    }
+  }catch(e){ console.error('refrescarCatalogoMP fallo:', e); }
+}
+
 async function crearOCMP(){
   var prov=document.getElementById('nmp-prov').value;
   var obs=document.getElementById('nmp-obs').value;

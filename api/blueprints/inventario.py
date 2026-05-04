@@ -1845,19 +1845,90 @@ def handle_maestro():
         u, err, code = _require_planta_write()
         if err:
             return err, code
-        d = request.json
+        d = request.json or {}
+        # Validaciones zero-error · Sebastian 4-may-2026
+        codigo = (d.get('codigo_mp') or '').strip().upper()
+        if not codigo:
+            return jsonify({'error': 'codigo_mp requerido'}), 400
+        if len(codigo) > 50:
+            return jsonify({'error': 'codigo_mp muy largo (max 50)'}), 400
+        nombre_comercial = (d.get('nombre_comercial') or '').strip()
+        nombre_inci = (d.get('nombre_inci') or '').strip()
+        if not nombre_comercial and not nombre_inci:
+            return jsonify({'error': 'Al menos un nombre (comercial o INCI) es requerido'}), 400
+        try:
+            stock_minimo = float(d.get('stock_minimo', 0) or 0)
+        except (TypeError, ValueError):
+            return jsonify({'error': 'stock_minimo invalido'}), 400
+        if stock_minimo < 0:
+            return jsonify({'error': 'stock_minimo no puede ser negativo'}), 400
+        try:
+            precio_referencia = float(d.get('precio_referencia', 0) or 0)
+        except (TypeError, ValueError):
+            return jsonify({'error': 'precio_referencia invalido'}), 400
+        if precio_referencia < 0:
+            return jsonify({'error': 'precio_referencia no puede ser negativo'}), 400
         # tipo_material: validar contra lista permitida
         tipo_material = d.get('tipo_material', 'MP')
         if tipo_material not in ('MP', 'Envase Primario', 'Envase Secundario', 'Empaque'):
             tipo_material = 'MP'
-        c.execute("""INSERT OR REPLACE INTO maestro_mps
-                     (codigo_mp,nombre_inci,nombre_comercial,tipo,proveedor,stock_minimo,tipo_material)
-                     VALUES (?,?,?,?,?,?,?)""",
-                  (d['codigo_mp'], d.get('nombre_inci',''), d.get('nombre_comercial',''),
-                   d.get('tipo',''), d.get('proveedor',''), d.get('stock_minimo',0),
-                   tipo_material))
+
+        # Idempotencia controlada: detectar si ya existe
+        existente = c.execute(
+            "SELECT codigo_mp, nombre_comercial, activo FROM maestro_mps WHERE codigo_mp=?",
+            (codigo,)
+        ).fetchone()
+        if existente:
+            # Si esta archivada (activo=0) y le piden crear igual, reactivar
+            if not d.get('forzar_actualizar') and existente[2]:
+                return jsonify({
+                    'error': f'Ya existe MP con código {codigo}: "{existente[1]}". '
+                             'Pasa forzar_actualizar=true para sobrescribir, o usa código diferente.',
+                    'existente': {'codigo_mp': existente[0], 'nombre_comercial': existente[1]},
+                }), 409
+            # forzar o estaba archivada → UPDATE (reactiva)
+            c.execute("""UPDATE maestro_mps
+                         SET nombre_inci=?, nombre_comercial=?, tipo=?, proveedor=?,
+                             stock_minimo=?, tipo_material=?, precio_referencia=?,
+                             activo=1
+                         WHERE codigo_mp=?""",
+                      (nombre_inci, nombre_comercial, d.get('tipo',''),
+                       d.get('proveedor',''), stock_minimo, tipo_material,
+                       precio_referencia, codigo))
+            accion = 'ACTUALIZAR_MP'
+            mensaje = f'MP {codigo} actualizada' + (' y reactivada' if not existente[2] else '')
+        else:
+            # INSERT nuevo
+            c.execute("""INSERT INTO maestro_mps
+                         (codigo_mp, nombre_inci, nombre_comercial, tipo, proveedor,
+                          stock_minimo, tipo_material, precio_referencia, activo)
+                         VALUES (?,?,?,?,?,?,?,?,1)""",
+                      (codigo, nombre_inci, nombre_comercial, d.get('tipo',''),
+                       d.get('proveedor',''), stock_minimo, tipo_material,
+                       precio_referencia))
+            accion = 'CREAR_MP'
+            mensaje = f'MP {codigo} creada'
+
+        # audit_log obligatorio para cambios en maestro
+        try:
+            from audit_helpers import audit_log
+            audit_log(c, usuario=u, accion=accion, tabla='maestro_mps',
+                      registro_id=codigo,
+                      despues={'codigo': codigo, 'nombre': nombre_comercial or nombre_inci,
+                                'tipo_material': tipo_material,
+                                'stock_minimo': stock_minimo,
+                                'precio_referencia': precio_referencia,
+                                'proveedor': d.get('proveedor', '')[:80]},
+                      detalle=f"{accion} {codigo} · {nombre_comercial or nombre_inci}")
+        except Exception:
+            pass
         conn.commit()
-        return jsonify({'message': 'MP guardada', 'tipo_material': tipo_material}), 201
+        return jsonify({
+            'ok': True, 'message': mensaje,
+            'codigo_mp': codigo,
+            'tipo_material': tipo_material,
+            'creada': accion == 'CREAR_MP',
+        }), 201
     # GET: filtro opcional por tipo_material via query param
     tipo_filter = (request.args.get('tipo_material') or '').strip()
     if tipo_filter and tipo_filter in ('MP', 'Envase Primario', 'Envase Secundario', 'Empaque'):
