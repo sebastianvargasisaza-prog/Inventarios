@@ -308,7 +308,7 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
   </div>
   <div class="bar">
     <input type="text" id="q-solic" placeholder="Buscar SOL, OC, solicitante, proveedor..." oninput="renderSolicitudes()">
-    <select id="s-solic" onchange="renderSolicitudes()">
+    <select id="s-solic" onchange="if(_VISTA_AGRUPADA){ renderSolicitudesAgrupadas(); } else { renderSolicitudes(); }">
       <option value="">Todos los estados</option>
       <option value="Pendiente">Pendiente</option>
       <option value="Aprobada">Aprobada</option>
@@ -318,9 +318,13 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
     <button class="btn bp" onclick="openNuevaOC('')">&#x1F4DD; Nueva OC</button>
     <button class="btn" onclick="descargarSolicitudesPDF()" style="background:#1F5F5B;color:#fff;" title="PDF ejecutivo">&#x1F4C4; PDF</button>
     <button class="btn" onclick="regenerarSolicitudesAuto()" style="background:#7c3aed;color:#fff;" title="Regenerar solicitudes auto">&#x1F504; Regenerar</button>
+    <!-- Sebastian 4-may-2026 (Catalina): toggle vista agrupada por proveedor -->
+    <button id="btn-toggle-vista" class="btn" onclick="toggleVistaSolicitudes()" style="background:#0e7490;color:#fff;" title="Agrupar todas las solicitudes pendientes por proveedor — crea una sola OC para todas las del mismo proveedor">&#x1F4E6; Agrupar por proveedor</button>
   </div>
   <div id="pills-solic" class="pills"></div>
   <div id="grid-solic" class="grid"></div>
+  <!-- Vista agrupada por proveedor (oculta por defecto) -->
+  <div id="grid-solic-grouped" style="display:none;"></div>
 </div>
 
 <!-- Pane: Solicitudes de Producción (cola de Catalina desde el checklist Pre-Produccion) -->
@@ -3841,7 +3845,192 @@ function setSolicCat(btn){
   _SOLIC_CAT_FILTER=(btn&&btn.getAttribute('data-scat'))||'ALL';
   document.querySelectorAll('.ocs-cpill').forEach(function(b){ b.classList.remove('on'); });
   if(btn) btn.classList.add('on');
-  renderSolicitudes();
+  if(_VISTA_AGRUPADA){ renderSolicitudesAgrupadas(); }
+  else { renderSolicitudes(); }
+}
+
+// ────────────────────────────────────────────────────────────────
+// Sebastian 4-may-2026 (Catalina): vista agrupada de solicitudes por proveedor
+// ────────────────────────────────────────────────────────────────
+// Catalina recibe 200+ AUTO-PLAN cada uno con 1 MP. Procesarlas una por una
+// es lento. Esta vista las agrupa por proveedor sugerido y permite generar
+// UNA OC con TODAS las MPs del mismo proveedor en un solo paso.
+var _VISTA_AGRUPADA = false;
+var _GRUPOS_CACHE = null;
+
+async function toggleVistaSolicitudes(){
+  _VISTA_AGRUPADA = !_VISTA_AGRUPADA;
+  var btn = document.getElementById('btn-toggle-vista');
+  var gridFlat = document.getElementById('grid-solic');
+  var gridGrp  = document.getElementById('grid-solic-grouped');
+  if(_VISTA_AGRUPADA){
+    if(btn){ btn.style.background='#dc2626'; btn.innerHTML='&#x1F4CB; Vista plana'; }
+    if(gridFlat) gridFlat.style.display='none';
+    if(gridGrp)  gridGrp.style.display='block';
+    await renderSolicitudesAgrupadas();
+  } else {
+    if(btn){ btn.style.background='#0e7490'; btn.innerHTML='&#x1F4E6; Agrupar por proveedor'; }
+    if(gridFlat) gridFlat.style.display='';
+    if(gridGrp)  gridGrp.style.display='none';
+    renderSolicitudes();
+  }
+}
+
+async function renderSolicitudesAgrupadas(){
+  var grid = document.getElementById('grid-solic-grouped');
+  if(!grid) return;
+  var st = (document.getElementById('s-solic')||{value:'Pendiente'}).value || 'Pendiente';
+  // Si filtran "Todos los estados" usamos Pendiente (no tiene sentido agrupar Aprobada/Pagada)
+  var estadoQ = st || 'Pendiente';
+  var catUI = _SOLIC_CAT_FILTER || 'ALL';
+  // Mapear nombre de UI → categoria DB
+  var catMap = {'mp':'Materia Prima','mee':'Empaque','svc':'Servicios',
+                 'adm':'Administrativo','inf':'Infraestructura'};
+  var catDB = catMap[catUI] || '';
+
+  grid.innerHTML = '<div class="empty" style="padding:20px;text-align:center;color:#94a3b8;">Cargando agrupamiento...</div>';
+  try{
+    var qs = '?estado='+encodeURIComponent(estadoQ);
+    if(catDB) qs += '&categoria='+encodeURIComponent(catDB);
+    var r = await fetch('/api/compras/solicitudes-agrupadas-por-proveedor'+qs);
+    if(!r.ok){
+      grid.innerHTML = '<div class="empty" style="padding:20px;text-align:center;color:#dc2626;">Error '+r.status+' cargando agrupamiento</div>';
+      return;
+    }
+    var d = await r.json();
+    _GRUPOS_CACHE = d;
+    if(!d.grupos.length && !(d.sin_proveedor||[]).length){
+      grid.innerHTML = '<div class="empty" style="padding:30px;text-align:center;color:#86efac;font-size:14px;">&#10003; No hay solicitudes pendientes para agrupar</div>';
+      return;
+    }
+    var html = '';
+    // Header resumen
+    html += '<div style="background:#fff;border:1px solid #e7e5e4;border-radius:8px;padding:12px 16px;margin-bottom:12px;display:flex;gap:16px;align-items:center;flex-wrap:wrap;">'+
+      '<div><span style="font-size:24px;font-weight:800;color:#0e7490;">'+d.total_grupos+'</span> <span style="font-size:11px;color:#78716c;">proveedores</span></div>'+
+      '<div><span style="font-size:24px;font-weight:800;color:#1c1917;">'+d.total_solicitudes+'</span> <span style="font-size:11px;color:#78716c;">solicitudes pendientes</span></div>'+
+      '<div style="font-size:11px;color:#78716c;flex:1;text-align:right;">Click "Crear OC con todos" para procesar todas las MPs de un proveedor en una sola OC consolidada.</div>'+
+    '</div>';
+    // Render grupos (con proveedor)
+    d.grupos.forEach(function(g, gi){
+      html += _renderGrupoCard(g, gi);
+    });
+    // Render sin_proveedor (cards individuales agrupadas en un bloque)
+    if((d.sin_proveedor||[]).length){
+      html += '<div style="background:#fff7ed;border:1px solid #fdba74;border-radius:10px;padding:12px 16px;margin-top:8px;">'+
+        '<div style="font-weight:700;color:#9a3412;font-size:14px;margin-bottom:8px;">'+
+          '&#x26A0;&#xFE0F; '+d.sin_proveedor.length+' solicitudes sin proveedor sugerido o con proveedores mezclados'+
+        '</div>'+
+        '<div style="font-size:11px;color:#9a3412;margin-bottom:10px;">Estas requieren gestion manual: clic en "Ver & Gestionar" para asignar proveedor.</div>'+
+        '<div style="display:flex;flex-wrap:wrap;gap:8px;">'+
+          d.sin_proveedor.map(function(s){
+            return '<span style="background:#fff;border:1px solid #fdba74;border-radius:6px;padding:6px 10px;font-size:11px;font-family:monospace;cursor:pointer;" data-act="sdet" data-sol="'+esc(s.numero)+'" title="'+esc(s.urgencia||'Normal')+'">'+
+              esc(s.numero)+' &middot; '+esc((s.area||'-').substring(0,20))+
+            '</span>';
+          }).join('')+
+        '</div>'+
+      '</div>';
+    }
+    grid.innerHTML = html;
+  }catch(e){
+    grid.innerHTML = '<div class="empty" style="padding:20px;text-align:center;color:#dc2626;">Error red: '+esc(e.message)+'</div>';
+  }
+}
+
+function _renderGrupoCard(g, gi){
+  var urgColor = {'Critico':'#dc2626','Urgente':'#d97706','Alta':'#dc2626','Media':'#d97706','Normal':'#16a34a'}[g.urgencia_max] || '#78716c';
+  var totalGr = 0;
+  (g.items_consolidados||[]).forEach(function(it){ totalGr += parseFloat(it.cantidad_g||0); });
+  var html = '<div style="background:#fff;border:1px solid #e7e5e4;border-radius:10px;padding:0;margin-bottom:10px;overflow:hidden;">'+
+    // Header
+    '<div style="background:linear-gradient(90deg,#0e7490,#0891b2);color:#fff;padding:10px 16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">'+
+      '<div style="flex:1;">'+
+        '<div style="font-weight:800;font-size:15px;">'+esc(g.proveedor)+'</div>'+
+        '<div style="font-size:11px;opacity:0.9;">'+
+          g.solicitudes_count+' solicitud'+(g.solicitudes_count===1?'':'es')+' &middot; '+
+          g.items_count+' MPs &middot; '+
+          fmt(totalGr)+' g total'+
+        '</div>'+
+      '</div>'+
+      '<div style="background:'+urgColor+';color:#fff;padding:3px 8px;border-radius:6px;font-size:10px;font-weight:700;text-transform:uppercase;">'+esc(g.urgencia_max)+'</div>'+
+      '<button onclick="abrirCrearOCDesdeGrupo('+gi+')" style="background:#fff;color:#0e7490;border:none;border-radius:6px;padding:8px 16px;font-size:12px;font-weight:700;cursor:pointer;">&#x1F6D2; Crear OC con todos</button>'+
+      '<button onclick="toggleGrupo('+gi+')" id="btnTg'+gi+'" style="background:rgba(255,255,255,0.2);color:#fff;border:none;border-radius:6px;width:32px;height:32px;cursor:pointer;font-size:13px;font-weight:700;" title="Mostrar/ocultar items">&#x25BC;</button>'+
+    '</div>'+
+    // Body — items consolidados (oculto por defecto)
+    '<div id="grpBody'+gi+'" style="display:none;padding:10px 16px;">'+
+      '<div style="font-size:11px;color:#78716c;font-weight:600;margin-bottom:6px;">MATERIAS PRIMAS A COMPRAR (consolidadas):</div>'+
+      '<table style="width:100%;font-size:12px;border-collapse:collapse;">'+
+        '<thead><tr style="background:#f5f4f2;"><th style="text-align:left;padding:6px 8px;">Codigo</th><th style="text-align:left;padding:6px 8px;">Nombre</th><th style="text-align:right;padding:6px 8px;">Cantidad</th><th style="text-align:right;padding:6px 8px;">Valor est.</th><th style="text-align:center;padding:6px 8px;">Solicitudes</th></tr></thead>'+
+        '<tbody>'+
+        (g.items_consolidados||[]).map(function(it){
+          var origenes = (it.solicitudes_origen||[]);
+          var origStr = origenes.length<=2 ? origenes.join(', ') : origenes.length+' SOLs';
+          return '<tr style="border-top:1px solid #e7e5e4;">'+
+            '<td style="padding:6px 8px;font-family:monospace;font-size:11px;color:#475569;">'+esc(it.codigo_mp||'-')+'</td>'+
+            '<td style="padding:6px 8px;">'+esc((it.nombre_mp||'').substring(0,50))+'</td>'+
+            '<td style="padding:6px 8px;text-align:right;font-weight:600;">'+fmt(it.cantidad_g)+' g</td>'+
+            '<td style="padding:6px 8px;text-align:right;color:#78716c;">'+(it.valor_estimado>0?'$'+fmt(it.valor_estimado):'-')+'</td>'+
+            '<td style="padding:6px 8px;text-align:center;font-size:10px;color:#78716c;font-family:monospace;" title="'+esc((it.solicitudes_origen||[]).join(', '))+'">'+esc(origStr)+'</td>'+
+          '</tr>';
+        }).join('')+
+        '</tbody>'+
+      '</table>'+
+      '<div style="font-size:11px;color:#78716c;margin-top:8px;font-style:italic;">Solicitudes incluidas: '+
+        (g.solicitudes||[]).map(function(s){ return esc(s.numero); }).join(', ')+
+      '</div>'+
+    '</div>'+
+  '</div>';
+  return html;
+}
+
+function toggleGrupo(gi){
+  var body = document.getElementById('grpBody'+gi);
+  var btn = document.getElementById('btnTg'+gi);
+  if(!body) return;
+  if(body.style.display==='none'){
+    body.style.display='block';
+    if(btn) btn.innerHTML='&#x25B2;';
+  } else {
+    body.style.display='none';
+    if(btn) btn.innerHTML='&#x25BC;';
+  }
+}
+
+async function abrirCrearOCDesdeGrupo(gi){
+  if(!_GRUPOS_CACHE || !_GRUPOS_CACHE.grupos[gi]) return;
+  var g = _GRUPOS_CACHE.grupos[gi];
+  var totalCnt = 0;
+  (g.items_consolidados||[]).forEach(function(it){ totalCnt += parseFloat(it.cantidad_g||0); });
+  var msg = 'Crear UNA SOLA OC con:\\n\\n'+
+    '  Proveedor: '+g.proveedor+'\\n'+
+    '  '+g.solicitudes_count+' solicitudes consolidadas\\n'+
+    '  '+g.items_count+' MPs distintas\\n'+
+    '  '+fmt(totalCnt)+' g totales\\n\\n'+
+    'Las solicitudes pasaran a estado "Aprobada" y quedaran vinculadas a la OC nueva.\\n\\n'+
+    'Continuar?';
+  if(!confirm(msg)) return;
+  var nums = (g.solicitudes||[]).map(function(s){ return s.numero; });
+  try{
+    var r = await fetch('/api/compras/oc-desde-solicitudes', _fetchOpts('POST', {
+      proveedor: g.proveedor,
+      solicitudes: nums,
+      consolidar_iguales: true,
+      categoria: 'MP',
+    }));
+    var d = await r.json();
+    if(!r.ok || d.error){
+      alert('Error creando OC: '+(d.error || 'codigo '+r.status));
+      return;
+    }
+    alert('✓ OC '+d.numero_oc+' creada\\n'+
+          d.solicitudes_vinculadas+' solicitudes vinculadas\\n'+
+          d.items_creados+' items consolidados\\n'+
+          'Total: $'+fmt(d.valor_total));
+    // Refresh data + re-render grupo
+    await loadData();
+    await renderSolicitudesAgrupadas();
+  }catch(e){
+    alert('Error red: '+e.message);
+  }
 }
 
 function renderCCSolicitudes(){

@@ -1760,6 +1760,479 @@ def handle_solicitudes_compra():
     return jsonify({'solicitudes': rows_sol})
 
 
+# ── Sebastián 4-may-2026 (Catalina): agrupar solicitudes por proveedor ────
+# Catalina recibe 200+ solicitudes AUTO-PLAN desde planta (cada una es 1 MP
+# en déficit). En vez de gestionarlas una por una, las quiere agrupadas
+# por proveedor sugerido para procesar todas las del mismo proveedor en
+# UNA sola OC. Endpoint que devuelve el agrupamiento + items consolidados.
+@bp.route('/api/compras/solicitudes-agrupadas-por-proveedor', methods=['GET'])
+def solicitudes_agrupadas_por_proveedor():
+    """Agrupa solicitudes_compra Pendientes por proveedor sugerido.
+
+    Querystring:
+      ?estado=Pendiente|Aprobada|all  (default: Pendiente)
+      ?categoria=Mat. Primas|Empaque|...  (default: todas excepto Influencer/CC)
+
+    Returns:
+      {
+        "grupos": [
+          {
+            "proveedor": "Colquimicos",
+            "solicitudes_count": 12,
+            "items_count": 12,
+            "valor_total": 1234567.89,
+            "solicitudes": [{numero, fecha, urgencia, area, items: [...]}, ...],
+            "items_consolidados": [{codigo_mp, nombre_mp, cantidad_g, valor_estimado}],
+            "urgencia_max": "Urgente",
+          }, ...
+        ],
+        "sin_proveedor": [...],   # mismo shape (proveedor='')
+        "total_solicitudes": 204,
+        "total_grupos": 18
+      }
+
+    Items se consolidan por codigo_mp dentro de cada grupo (suma de
+    cantidad_g + valor_estimado). Esto es lo que Catalina usa para
+    crear UNA OC por proveedor.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+
+    estado_filtro = (request.args.get('estado') or 'Pendiente').strip()
+    categoria_filtro = (request.args.get('categoria') or '').strip()
+
+    conn = get_db(); c = conn.cursor()
+    sql = """
+        SELECT s.numero, s.fecha, s.estado, s.solicitante, s.urgencia,
+               COALESCE(s.observaciones,''), s.empresa, s.categoria,
+               s.tipo, s.area, s.fecha_requerida, COALESCE(s.numero_oc,''),
+               COALESCE(s.valor, 0)
+        FROM solicitudes_compra s
+        WHERE 1=1
+    """
+    params = []
+    if estado_filtro and estado_filtro.lower() != 'all':
+        sql += " AND s.estado=?"
+        params.append(estado_filtro)
+    # Excluir Influencer/CC siempre — esos tienen flujo aparte
+    sql += " AND s.categoria NOT IN ('Influencer/Marketing Digital','Cuenta de Cobro')"
+    if categoria_filtro:
+        sql += " AND s.categoria=?"
+        params.append(categoria_filtro)
+    sql += " ORDER BY s.fecha DESC LIMIT 500"
+
+    c.execute(sql, params)
+    sol_cols = ['numero','fecha','estado','solicitante','urgencia','observaciones',
+                'empresa','categoria','tipo','area','fecha_requerida','numero_oc','valor']
+    solicitudes = [dict(zip(sol_cols, r)) for r in c.fetchall()]
+    if not solicitudes:
+        return jsonify({
+            'grupos': [], 'sin_proveedor': [],
+            'total_solicitudes': 0, 'total_grupos': 0,
+        })
+
+    # Cargar items de todas las solicitudes en 1 query (evita N+1)
+    nums = [s['numero'] for s in solicitudes]
+    placeholders = ','.join(['?'] * len(nums))
+    try:
+        c.execute(f"""
+            SELECT id, numero, codigo_mp, nombre_mp, cantidad_g, unidad,
+                   COALESCE(valor_estimado, 0),
+                   COALESCE(justificacion, ''),
+                   COALESCE(precio_unit_g, 0),
+                   COALESCE(proveedor_sugerido, '')
+            FROM solicitudes_compra_items
+            WHERE numero IN ({placeholders})
+        """, nums)
+        item_cols = ['id','numero','codigo_mp','nombre_mp','cantidad_g','unidad',
+                     'valor_estimado','justificacion','precio_unit_g','proveedor_sugerido']
+        items_all = [dict(zip(item_cols, r)) for r in c.fetchall()]
+    except sqlite3.OperationalError:
+        # Fallback sin proveedor_sugerido (esquema viejo)
+        c.execute(f"""
+            SELECT id, numero, codigo_mp, nombre_mp, cantidad_g, unidad,
+                   COALESCE(valor_estimado, 0)
+            FROM solicitudes_compra_items
+            WHERE numero IN ({placeholders})
+        """, nums)
+        items_all = []
+        for r in c.fetchall():
+            d = dict(zip(['id','numero','codigo_mp','nombre_mp','cantidad_g',
+                          'unidad','valor_estimado'], r))
+            d['justificacion'] = ''
+            d['precio_unit_g'] = 0
+            d['proveedor_sugerido'] = ''
+            items_all.append(d)
+
+    # Indexar items por solicitud
+    items_por_sol = {}
+    for it in items_all:
+        items_por_sol.setdefault(it['numero'], []).append(it)
+
+    # Determinar proveedor de cada solicitud (el primer item con proveedor_sugerido != '')
+    # Si todos los items tienen el mismo proveedor → ese es el proveedor del grupo.
+    # Si hay mezcla, marcar como 'Mixto' para que Catalina los revise individualmente.
+    URG_RANK = {'Critico': 4, 'Urgente': 3, 'Alta': 2, 'Media': 1, 'Normal': 0}
+
+    def _prov_dominante(items_lista):
+        provs = {(it.get('proveedor_sugerido') or '').strip() for it in items_lista}
+        provs.discard('')
+        if not provs:
+            return ''  # sin proveedor sugerido
+        if len(provs) == 1:
+            return provs.pop()
+        return '__MIXTO__'
+
+    # Agrupar
+    grupos_dict = {}
+    sin_proveedor = []
+    for s in solicitudes:
+        items = items_por_sol.get(s['numero'], [])
+        s['items'] = items
+        s['valor_calc'] = sum(float(it.get('valor_estimado') or 0) for it in items)
+        prov = _prov_dominante(items)
+        if not prov or prov == '__MIXTO__':
+            target = sin_proveedor
+            if prov == '__MIXTO__':
+                s['_motivo_sin_grupo'] = 'mixto'
+            else:
+                s['_motivo_sin_grupo'] = 'sin_sugerencia'
+            target.append(s)
+        else:
+            grupos_dict.setdefault(prov, []).append(s)
+
+    # Construir output
+    grupos = []
+    for prov, sols in sorted(grupos_dict.items()):
+        # Consolidar items por codigo_mp (suma)
+        consolidados = {}
+        for s in sols:
+            for it in s['items']:
+                k = (it.get('codigo_mp') or '').upper().strip() or it.get('nombre_mp', '')[:50]
+                if k not in consolidados:
+                    consolidados[k] = {
+                        'codigo_mp': it.get('codigo_mp', ''),
+                        'nombre_mp': it.get('nombre_mp', ''),
+                        'unidad': it.get('unidad', 'g'),
+                        'cantidad_g': 0.0,
+                        'valor_estimado': 0.0,
+                        'precio_unit_g': float(it.get('precio_unit_g') or 0),
+                        'solicitudes_origen': [],
+                    }
+                consolidados[k]['cantidad_g'] += float(it.get('cantidad_g') or 0)
+                consolidados[k]['valor_estimado'] += float(it.get('valor_estimado') or 0)
+                consolidados[k]['solicitudes_origen'].append(s['numero'])
+        urg_max = 'Normal'
+        for s in sols:
+            if URG_RANK.get(s.get('urgencia') or 'Normal', 0) > URG_RANK.get(urg_max, 0):
+                urg_max = s.get('urgencia') or 'Normal'
+        grupos.append({
+            'proveedor': prov,
+            'solicitudes_count': len(sols),
+            'items_count': len(consolidados),
+            'valor_total': round(sum(float(s.get('valor_calc') or 0) for s in sols), 2),
+            'urgencia_max': urg_max,
+            'solicitudes': sols,
+            'items_consolidados': sorted(consolidados.values(),
+                                          key=lambda x: -float(x.get('valor_estimado') or 0)),
+        })
+
+    # Ordenar grupos por urgencia max → solicitudes_count desc
+    grupos.sort(key=lambda g: (-URG_RANK.get(g['urgencia_max'], 0),
+                                -g['solicitudes_count']))
+
+    return jsonify({
+        'grupos': grupos,
+        'sin_proveedor': sin_proveedor,
+        'total_solicitudes': len(solicitudes),
+        'total_grupos': len(grupos),
+        'estado_filtro': estado_filtro,
+        'categoria_filtro': categoria_filtro,
+    })
+
+
+# ── Sebastián 4-may-2026 (Catalina): convertir N solicitudes en 1 OC ──
+@bp.route('/api/compras/oc-desde-solicitudes', methods=['POST'])
+def crear_oc_desde_solicitudes():
+    """Convierte un lote de solicitudes_compra Pendientes en UNA sola OC.
+
+    Body JSON:
+      {
+        "proveedor": "Colquimicos",       # requerido
+        "solicitudes": ["AUTO-0946",...],  # requerido (lista de numeros)
+        "observaciones": "...",            # opcional
+        "fecha_entrega_est": "2026-05-15", # opcional
+        "consolidar_iguales": true,        # default true (suma cant por codigo_mp)
+        "categoria": "MP"                  # default "MP"
+      }
+
+    Atomico: si cualquier paso falla, rollback completo. La OC no queda
+    creada y las solicitudes no cambian de estado.
+
+    Returns:
+      201 {numero_oc, items_creados, solicitudes_vinculadas, valor_total}
+      400 si validacion falla (proveedor faltante, solicitudes vacias)
+      404 si alguna solicitud no existe
+      409 si alguna solicitud no esta Pendiente o ya tiene OC
+    """
+    usuario, err, code = _require_compras_write()
+    if err:
+        return err, code
+
+    d = request.get_json(silent=True) or {}
+    proveedor = (d.get('proveedor') or '').strip()
+    nums = d.get('solicitudes') or []
+    if not proveedor:
+        return jsonify({'error': 'proveedor requerido'}), 400
+    if not isinstance(nums, list) or not nums:
+        return jsonify({'error': 'solicitudes (lista) requerido'}), 400
+    nums = [str(n).strip().upper() for n in nums if str(n).strip()]
+    if not nums:
+        return jsonify({'error': 'solicitudes lista vacia'}), 400
+    if len(nums) > 100:
+        return jsonify({'error': 'maximo 100 solicitudes por OC'}), 400
+
+    consolidar = bool(d.get('consolidar_iguales', True))
+    categoria = (d.get('categoria') or 'MP').strip()
+    obs_extra = (d.get('observaciones') or '').strip()
+    fecha_entrega_est = (d.get('fecha_entrega_est') or '').strip()
+
+    conn = get_db(); c = conn.cursor()
+    try:
+        # 1. Validar todas las solicitudes
+        placeholders = ','.join(['?'] * len(nums))
+        c.execute(f"""
+            SELECT numero, estado, COALESCE(numero_oc,'')
+            FROM solicitudes_compra
+            WHERE numero IN ({placeholders})
+        """, nums)
+        rows = c.fetchall()
+        existentes = {r[0]: (r[1], r[2]) for r in rows}
+        faltantes = [n for n in nums if n not in existentes]
+        if faltantes:
+            return jsonify({
+                'error': 'Solicitudes no encontradas',
+                'faltantes': faltantes,
+            }), 404
+        no_pendientes = [n for n, (est, oc) in existentes.items() if est != 'Pendiente']
+        if no_pendientes:
+            return jsonify({
+                'error': 'Hay solicitudes que no estan Pendientes',
+                'no_pendientes': no_pendientes,
+            }), 409
+        ya_oc = [n for n, (est, oc) in existentes.items() if oc]
+        if ya_oc:
+            return jsonify({
+                'error': 'Hay solicitudes que ya tienen OC asociada',
+                'ya_con_oc': ya_oc,
+            }), 409
+
+        # 2. Cargar items de todas las solicitudes
+        try:
+            c.execute(f"""
+                SELECT numero, codigo_mp, nombre_mp, cantidad_g, unidad,
+                       COALESCE(valor_estimado, 0),
+                       COALESCE(precio_unit_g, 0),
+                       COALESCE(proveedor_sugerido, '')
+                FROM solicitudes_compra_items
+                WHERE numero IN ({placeholders})
+            """, nums)
+            items_raw = [
+                {'numero': r[0], 'codigo_mp': r[1] or '', 'nombre_mp': r[2] or '',
+                 'cantidad_g': float(r[3] or 0), 'unidad': r[4] or 'g',
+                 'valor_estimado': float(r[5] or 0),
+                 'precio_unit_g': float(r[6] or 0),
+                 'proveedor_sugerido': r[7] or ''}
+                for r in c.fetchall()
+            ]
+        except sqlite3.OperationalError:
+            c.execute(f"""
+                SELECT numero, codigo_mp, nombre_mp, cantidad_g, unidad,
+                       COALESCE(valor_estimado, 0)
+                FROM solicitudes_compra_items
+                WHERE numero IN ({placeholders})
+            """, nums)
+            items_raw = [
+                {'numero': r[0], 'codigo_mp': r[1] or '', 'nombre_mp': r[2] or '',
+                 'cantidad_g': float(r[3] or 0), 'unidad': r[4] or 'g',
+                 'valor_estimado': float(r[5] or 0),
+                 'precio_unit_g': 0.0,
+                 'proveedor_sugerido': ''}
+                for r in c.fetchall()
+            ]
+
+        if not items_raw:
+            return jsonify({'error': 'Las solicitudes no tienen items'}), 400
+
+        # 3. Consolidar items por codigo_mp si se pidio
+        if consolidar:
+            consolidados = {}
+            for it in items_raw:
+                k = (it['codigo_mp'] or '').upper().strip() or it['nombre_mp'][:50]
+                if k not in consolidados:
+                    consolidados[k] = {
+                        'codigo_mp': it['codigo_mp'],
+                        'nombre_mp': it['nombre_mp'],
+                        'cantidad_g': 0.0,
+                        'precio_unitario': it['precio_unit_g'] or 0.0,
+                        'unidad': it['unidad'],
+                    }
+                consolidados[k]['cantidad_g'] += it['cantidad_g']
+                # Si llega un precio_unit_g distinto, dejar el primero no-cero
+                if not consolidados[k]['precio_unitario'] and it['precio_unit_g']:
+                    consolidados[k]['precio_unitario'] = it['precio_unit_g']
+            items_oc = list(consolidados.values())
+        else:
+            items_oc = [
+                {'codigo_mp': it['codigo_mp'], 'nombre_mp': it['nombre_mp'],
+                 'cantidad_g': it['cantidad_g'],
+                 'precio_unitario': it['precio_unit_g'],
+                 'unidad': it['unidad']}
+                for it in items_raw
+            ]
+
+        # 4. Crear la OC
+        c.execute(
+            "SELECT COALESCE(MAX(CAST(SUBSTR(numero_oc,9) AS INTEGER)),0) "
+            "FROM ordenes_compra WHERE numero_oc LIKE ?",
+            (f"OC-{datetime.now().strftime('%Y')}-%",),
+        )
+        next_n = (c.fetchone()[0] or 0) + 1
+        numero_oc = f"OC-{datetime.now().strftime('%Y')}-{next_n:04d}"
+        obs = f"OC consolidada desde {len(nums)} solicitudes"
+        if obs_extra:
+            obs = obs_extra + ' · ' + obs
+        c.execute(
+            """INSERT INTO ordenes_compra
+               (numero_oc, fecha, estado, proveedor, observaciones,
+                creado_por, fecha_entrega_est, categoria)
+               VALUES (?,?,?,?,?,?,?,?)""",
+            (numero_oc, datetime.now().isoformat(), 'Borrador', proveedor,
+             obs, usuario, fecha_entrega_est, categoria),
+        )
+
+        # 5. Auto-crear proveedor si no existe (con audit_log)
+        try:
+            existe = c.execute(
+                "SELECT id FROM proveedores WHERE LOWER(TRIM(nombre))=LOWER(TRIM(?)) AND activo=1",
+                (proveedor,),
+            ).fetchone()
+            if not existe:
+                c.execute(
+                    """INSERT INTO proveedores (nombre, categoria, condiciones_pago,
+                                                 activo, fecha_creacion)
+                       VALUES (?,?,?,1,?)""",
+                    (proveedor, categoria, '30 dias', datetime.now().isoformat()),
+                )
+                try:
+                    audit_log(
+                        c, usuario=usuario, accion='CREAR_PROVEEDOR',
+                        tabla='proveedores', registro_id=c.lastrowid,
+                        despues={'nombre': proveedor[:200], 'categoria': categoria,
+                                  'origen': 'auto_oc_desde_solicitudes',
+                                  'oc_origen': numero_oc},
+                        detalle=f"Auto-creado al consolidar {len(nums)} solicitudes en {numero_oc}",
+                    )
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        # 6. Insertar items en la OC
+        valor_total = 0.0
+        for it in items_oc:
+            cant_g = float(it.get('cantidad_g') or 0)
+            pu = float(it.get('precio_unitario') or 0)
+            subt = round(cant_g * pu, 2)
+            valor_total += subt
+            c.execute(
+                """INSERT INTO ordenes_compra_items
+                   (numero_oc, codigo_mp, nombre_mp, cantidad_g, precio_unitario, subtotal)
+                   VALUES (?,?,?,?,?,?)""",
+                (numero_oc, it.get('codigo_mp', ''), it.get('nombre_mp', ''),
+                 cant_g, pu, subt),
+            )
+            # Historico de precios + ref maestro_mps
+            cod_mp = it.get('codigo_mp', '')
+            if cod_mp and pu > 0:
+                try:
+                    c.execute(
+                        """INSERT OR IGNORE INTO precios_mp_historico
+                           (codigo_mp, nombre_mp, precio_unitario, proveedor,
+                            fecha, numero_oc, cantidad_g)
+                           VALUES (?,?,?,?,?,?,?)""",
+                        (cod_mp, it.get('nombre_mp', ''), pu, proveedor,
+                         datetime.now().isoformat()[:10], numero_oc, cant_g),
+                    )
+                except Exception:
+                    pass
+                try:
+                    c.execute(
+                        """UPDATE maestro_mps
+                           SET precio_referencia=?,
+                               proveedor=COALESCE(NULLIF(proveedor,''),?)
+                           WHERE codigo_mp=?""",
+                        (pu, proveedor, cod_mp),
+                    )
+                except Exception:
+                    pass
+
+        if valor_total > 0:
+            c.execute(
+                "UPDATE ordenes_compra SET valor_total=? WHERE numero_oc=?",
+                (valor_total, numero_oc),
+            )
+
+        # 7. Vincular las solicitudes a la nueva OC y marcarlas Aprobada
+        c.execute(
+            f"""UPDATE solicitudes_compra
+                SET estado='Aprobada', numero_oc=?
+                WHERE numero IN ({placeholders}) AND estado='Pendiente'
+                  AND COALESCE(numero_oc,'')=''""",
+            [numero_oc] + nums,
+        )
+        vinculadas = c.rowcount
+
+        # 8. Audit log
+        try:
+            audit_log(
+                c, usuario=usuario, accion='CREAR_OC_BULK',
+                tabla='ordenes_compra', registro_id=numero_oc,
+                despues={
+                    'proveedor': proveedor[:200],
+                    'categoria': categoria,
+                    'items_count': len(items_oc),
+                    'valor_total': round(valor_total, 2),
+                    'solicitudes_vinculadas': vinculadas,
+                    'solicitudes_origen': nums[:50],  # cap a 50 en audit
+                    'consolidar_iguales': consolidar,
+                },
+                detalle=(f"Creó OC {numero_oc} consolidada desde "
+                         f"{vinculadas} solicitudes · {proveedor} · "
+                         f"{len(items_oc)} items · total {valor_total:.0f}"),
+            )
+        except Exception as e:
+            log.warning('audit_log CREAR_OC_BULK fallo: %s', e)
+
+        conn.commit()
+        return jsonify({
+            'ok': True,
+            'numero_oc': numero_oc,
+            'proveedor': proveedor,
+            'items_creados': len(items_oc),
+            'solicitudes_vinculadas': vinculadas,
+            'valor_total': round(valor_total, 2),
+            'estado': 'Borrador',
+        }), 201
+    except Exception as e:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        log.exception('crear_oc_desde_solicitudes fallo: %s', e)
+        return jsonify({'error': str(e)}), 500
+
+
 @bp.route('/api/solicitudes-compra/mis', methods=['GET'])
 def mis_solicitudes_con_ciclo():
     """Devuelve las solicitudes del usuario logueado con el ciclo COMPLETO
