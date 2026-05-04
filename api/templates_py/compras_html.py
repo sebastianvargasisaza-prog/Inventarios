@@ -515,12 +515,22 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
         </div>
         <div id="noc-ibox" class="ibox" style="display:none"></div>
         <div id="noc-new-prov-form" style="display:none;background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:12px;margin-top:8px;">
-          <div style="font-weight:700;font-size:12px;color:#166534;margin-bottom:8px;">&#x2795; Nuevo Proveedor</div>
+          <div style="font-weight:700;font-size:12px;color:#166534;margin-bottom:8px;">&#x2795; Nuevo Proveedor (form completo · queda cargado para todo el sistema)</div>
+          <div id="np-dup-warning" style="display:none;background:#fef3c7;border:1px solid #f59e0b;border-radius:6px;padding:8px 10px;margin-bottom:8px;font-size:11px;color:#92400e;"></div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">
-            <div><label style="font-size:11px;font-weight:600;">Nombre *</label><input id="np-nombre" placeholder="Razon social o nombre" style="width:100%"></div>
+            <div><label style="font-size:11px;font-weight:600;">Nombre *</label><input id="np-nombre" placeholder="Razon social o nombre" oninput="checkProvDuplicado()" style="width:100%"></div>
             <div><label style="font-size:11px;font-weight:600;">NIT / Cedula</label><input id="np-nit" placeholder="NIT" style="width:100%"></div>
+            <div><label style="font-size:11px;font-weight:600;">Contacto</label><input id="np-contacto" placeholder="Persona de contacto" style="width:100%"></div>
             <div><label style="font-size:11px;font-weight:600;">Telefono</label><input id="np-tel" placeholder="Telefono" style="width:100%"></div>
             <div><label style="font-size:11px;font-weight:600;">Email</label><input id="np-email" placeholder="Email" style="width:100%"></div>
+            <div><label style="font-size:11px;font-weight:600;">Direccion</label><input id="np-direccion" placeholder="Direccion completa" style="width:100%"></div>
+          </div>
+          <div style="font-weight:700;font-size:11px;color:#166534;margin:6px 0 4px;">Datos bancarios (para pagos)</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">
+            <div><label style="font-size:11px;font-weight:600;">Banco</label><input id="np-banco" placeholder="Bancolombia, Davivienda..." style="width:100%"></div>
+            <div><label style="font-size:11px;font-weight:600;">Tipo cuenta</label><select id="np-tipo-cuenta" style="width:100%;padding:6px 8px;border:1px solid #d6d3d1;border-radius:6px;font-size:12px;"><option value="">Seleccionar...</option><option value="Ahorros">Ahorros</option><option value="Corriente">Corriente</option><option value="Nequi">Nequi</option><option value="Daviplata">Daviplata</option></select></div>
+            <div><label style="font-size:11px;font-weight:600;">Numero de cuenta</label><input id="np-num-cuenta" placeholder="Numero de cuenta o celular" style="width:100%"></div>
+            <div><label style="font-size:11px;font-weight:600;">Condiciones pago</label><select id="np-cond-pago" style="width:100%;padding:6px 8px;border:1px solid #d6d3d1;border-radius:6px;font-size:12px;"><option value="Contado">Contado</option><option value="15 dias">15 dias</option><option value="30 dias" selected>30 dias</option><option value="45 dias">45 dias</option><option value="60 dias">60 dias</option></select></div>
           </div>
           <div style="margin-bottom:8px;"><label style="font-size:11px;font-weight:600;">Concepto de compra</label><input id="np-concepto" placeholder="Ej: Materias primas cosmeticas" style="width:100%"></div>
           <div style="display:flex;gap:8px;">
@@ -543,9 +553,13 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
     <div class="fg"><label>Concepto / Observaciones</label><textarea id="noc-obs" placeholder="Descripcion del pedido..."></textarea></div>
     <div>
       <label style="font-size:11px;font-weight:700;color:#44403c;display:block;margin-bottom:6px;">Items del pedido</label>
+      <datalist id="mp-noc-dl"></datalist>
       <table class="itbl"><thead><tr><th>Codigo</th><th>Descripcion</th><th>Cantidad</th><th>Precio U.</th><th>Subtotal</th><th></th></tr></thead>
       <tbody id="noc-tbody"></tbody></table>
-      <button class="btn bo bs" style="margin-top:8px;" onclick="addRow()">+ Item</button>
+      <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
+        <button class="btn bo bs" onclick="addRow()">+ Item</button>
+        <button class="btn bs" style="background:#10b981;color:#fff;border-color:#10b981;font-weight:600;" onclick="abrirNuevaMP()" title="Crear MP nueva sin cerrar la OC">+ Nueva MP</button>
+      </div>
     </div>
     <div style="display:flex;align-items:center;gap:10px;margin:10px 0 4px;">
       <input type="checkbox" id="noc-iva-chk" onchange="calcTot()" style="width:16px;height:16px;cursor:pointer;">
@@ -2055,13 +2069,21 @@ function guardarNuevoProv(){
   if(!nombre){ alert('El nombre del proveedor es requerido'); return; }
   var btn=document.querySelector('#noc-new-prov-form .btn.bg');
   if(btn){ btn.disabled=true; btn.textContent='Guardando...'; }
-  fetch('/api/proveedores-compras', _fetchOpts('POST', {
+  // Form completo · Sebastian 4-may-2026 (todos los campos para no quedar pelado)
+  var payload = {
     nombre:nombre,
     nit:(document.getElementById('np-nit').value||'').trim(),
+    contacto:(document.getElementById('np-contacto')||{value:''}).value.trim(),
     telefono:(document.getElementById('np-tel').value||'').trim(),
     email:(document.getElementById('np-email').value||'').trim(),
+    direccion:(document.getElementById('np-direccion')||{value:''}).value.trim(),
+    banco:(document.getElementById('np-banco')||{value:''}).value.trim(),
+    tipo_cuenta:(document.getElementById('np-tipo-cuenta')||{value:''}).value.trim(),
+    num_cuenta:(document.getElementById('np-num-cuenta')||{value:''}).value.trim(),
+    condiciones_pago:(document.getElementById('np-cond-pago')||{value:'30 dias'}).value,
     concepto_compra:(document.getElementById('np-concepto').value||'').trim()
-  })).then(function(r){ return r.json(); }).then(function(d){
+  };
+  fetch('/api/proveedores-compras', _fetchOpts('POST', payload)).then(function(r){ return r.json(); }).then(function(d){
     if(d.error){ alert('Error: '+d.error);
       if(btn){ btn.disabled=false; btn.textContent='Guardar proveedor'; } return; }
     reloadProvs(nombre);
@@ -2069,6 +2091,39 @@ function guardarNuevoProv(){
     alert('Error de conexion: '+e);
     if(btn){ btn.disabled=false; btn.textContent='Guardar proveedor'; }
   });
+}
+
+// Detector de duplicados por similitud (LOWER+TRIM) · Catalina 4-may-2026
+// Cuando Catalina escribe el nombre, compara contra PROVS (cargado al inicio)
+// y le sugiere si parece ser uno existente con typo distinto.
+function _normProvName(s){
+  return (s||'').toLowerCase().trim()
+    .normalize('NFD').replace(/[̀-ͯ]/g,'')  // sin acentos
+    .replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim();
+}
+function checkProvDuplicado(){
+  var input = document.getElementById('np-nombre');
+  var warning = document.getElementById('np-dup-warning');
+  if (!input || !warning) return;
+  var nombre = (input.value||'').trim();
+  if (nombre.length < 4) { warning.style.display='none'; return; }
+  var norm = _normProvName(nombre);
+  // Buscar en PROVS los que tengan el mismo nombre normalizado
+  var sospechosos = (PROVS||[]).filter(function(p){
+    var pnorm = _normProvName(p.nombre);
+    if (!pnorm) return false;
+    if (pnorm === norm) return true;  // exacto
+    // Containment: una contiene a otra (>=4 chars)
+    if (norm.length >= 4 && pnorm.length >= 4) {
+      if (pnorm.indexOf(norm) >= 0 || norm.indexOf(pnorm) >= 0) return true;
+    }
+    return false;
+  });
+  if (sospechosos.length === 0) { warning.style.display='none'; return; }
+  warning.style.display='block';
+  warning.innerHTML = '⚠ Posible duplicado de proveedor existente: <b>' +
+    sospechosos.slice(0,3).map(function(p){ return esc(p.nombre); }).join('</b>, <b>') +
+    '</b>. Si es el mismo, selecciona del dropdown arriba en lugar de crearlo de nuevo.';
 }
 function cancelarNuevoProv(){
   var frm=document.getElementById('noc-new-prov-form');

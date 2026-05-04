@@ -646,7 +646,7 @@ def handle_ordenes_compra():
         # solo se hace upsert de campos no-vacios para no pisar datos buenos.
         try:
             existe = c.execute(
-                "SELECT id FROM proveedores WHERE nombre=? AND activo=1",
+                "SELECT id FROM proveedores WHERE LOWER(TRIM(nombre))=LOWER(TRIM(?)) AND activo=1",
                 (d['proveedor'],)
             ).fetchone()
             if not existe:
@@ -655,6 +655,16 @@ def handle_ordenes_compra():
                              VALUES (?,?,?,1,?)""",
                           (d['proveedor'], categoria, '30 dias',
                            datetime.now().isoformat()))
+                try:
+                    audit_log(c, usuario=usuario, accion='CREAR_PROVEEDOR',
+                              tabla='proveedores', registro_id=c.lastrowid,
+                              despues={'nombre': d['proveedor'][:200],
+                                        'categoria': categoria,
+                                        'origen': 'auto_oc',
+                                        'oc_origen': numero_oc},
+                              detalle=f"Auto-creado al crear OC {numero_oc} · {d['proveedor'][:80]}")
+                except Exception:
+                    pass
         except Exception:
             pass
 
@@ -1120,6 +1130,17 @@ def confirmar_proveedor_oc(numero_oc):
                 (nuevo_prov, categoria, datetime.now().isoformat())
             )
             creado_nuevo = True
+            try:
+                audit_log(c, usuario=session.get('compras_user', 'sistema'),
+                          accion='CREAR_PROVEEDOR', tabla='proveedores',
+                          registro_id=c.lastrowid,
+                          despues={'nombre': nuevo_prov[:200],
+                                    'categoria': categoria,
+                                    'origen': 'auto_cambio_proveedor_oc',
+                                    'oc': numero_oc},
+                          detalle=f"Auto-creado al cambiar proveedor de OC {numero_oc}")
+            except Exception:
+                pass
     except sqlite3.OperationalError:
         pass
 
@@ -1327,20 +1348,45 @@ def sugerir_mp(codigo_mp):
 def handle_proveedores_compras():
     conn = get_db(); c = conn.cursor()
     if request.method == 'POST':
+        u = session.get('compras_user', '')
         d = request.get_json(silent=True) or {}
-        if not d.get('nombre'): return jsonify({'error': 'Nombre requerido'}), 400
+        nombre = (d.get('nombre') or '').strip()
+        if not nombre:
+            return jsonify({'error': 'Nombre requerido'}), 400
+        # Detectar duplicado exacto (case + trim) · Catalina 4-may-2026
+        existe = c.execute(
+            "SELECT id, nombre FROM proveedores WHERE LOWER(TRIM(nombre))=LOWER(TRIM(?)) AND activo=1",
+            (nombre,)
+        ).fetchone()
+        if existe:
+            return jsonify({
+                'error': f'Ya existe proveedor "{existe[1]}" (case-insensitive). Selecciona del dropdown.',
+                'existente': {'id': existe[0], 'nombre': existe[1]},
+            }), 409
         try:
             c.execute("""INSERT INTO proveedores
                 (nombre,contacto,email,telefono,categoria,condiciones_pago,
                  nit,direccion,num_cuenta,tipo_cuenta,banco,concepto_compra,fecha_creacion)
                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                (d['nombre'],d.get('contacto',''),d.get('email',''),d.get('telefono',''),
+                (nombre,d.get('contacto',''),d.get('email',''),d.get('telefono',''),
                  d.get('categoria',''),d.get('condiciones_pago','30 dias'),
                  d.get('nit',''),d.get('direccion',''),d.get('num_cuenta',''),
                  d.get('tipo_cuenta',''),d.get('banco',''),d.get('concepto_compra',d.get('concepto','')),
                  datetime.now().isoformat()))
+            new_id = c.lastrowid
+            try:
+                audit_log(c, usuario=u, accion='CREAR_PROVEEDOR',
+                          tabla='proveedores', registro_id=new_id,
+                          despues={'nombre': nombre[:200],
+                                    'nit': (d.get('nit','') or '')[:50],
+                                    'banco': (d.get('banco','') or '')[:80],
+                                    'condiciones_pago': d.get('condiciones_pago','30 dias')[:50]},
+                          detalle=f"Creó proveedor '{nombre[:80]}'")
+            except Exception:
+                pass
             conn.commit()
-            return jsonify({'message': f"Proveedor '{d['nombre']}' creado"}), 201
+            return jsonify({'ok': True, 'message': f"Proveedor '{nombre}' creado",
+                             'id': new_id, 'nombre': nombre}), 201
         except Exception as e: return jsonify({'error': str(e)}), 400
     c.execute("""SELECT nombre,contacto,email,telefono,categoria,condiciones_pago,
                        nit,direccion,num_cuenta,tipo_cuenta,banco,concepto_compra

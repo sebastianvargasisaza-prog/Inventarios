@@ -2018,8 +2018,10 @@ def update_mp_proveedor(codigo):
     # 2. Upsert en directorio de proveedores (tabla proveedores) si tiene nombre
     if proveedor:
         from datetime import datetime as _dt
+        # Comparacion case-insensitive · Catalina 4-may-2026
         exists = c.execute(
-            "SELECT nombre FROM proveedores WHERE nombre=?", (proveedor,)
+            "SELECT nombre FROM proveedores WHERE LOWER(TRIM(nombre))=LOWER(TRIM(?))",
+            (proveedor,)
         ).fetchone()
         if not exists:
             try:
@@ -2030,6 +2032,17 @@ def update_mp_proveedor(codigo):
                     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """, (proveedor, '', '', '', 'mp', '30 dias',
                       '', '', '', '', '', 'Materias Primas', _dt.now().isoformat()))
+                try:
+                    from audit_helpers import audit_log as _al
+                    _al(c, usuario=session.get('compras_user', 'sistema'),
+                        accion='CREAR_PROVEEDOR', tabla='proveedores',
+                        registro_id=c.lastrowid,
+                        despues={'nombre': proveedor[:200],
+                                  'origen': 'auto_setear_proveedor_mp',
+                                  'codigo_mp': str(codigo)[:50]},
+                        detalle=f"Auto-creado al asignar proveedor a MP {codigo}")
+                except Exception:
+                    pass
             except Exception:
                 pass  # Si ya existe por nombre con diferente case, ignorar
 

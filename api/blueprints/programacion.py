@@ -7869,6 +7869,17 @@ def solicitudes_compra_anticipada_decidir(sol_id):
                               (nombre, categoria, fecha_creacion, activo)
                             VALUES (?, ?, ?, 1)
                         """, (proveedor, categoria, _dt.now().isoformat()))
+                        try:
+                            from audit_helpers import audit_log as _al
+                            _al(c, usuario=session.get('compras_user', 'sistema'),
+                                accion='CREAR_PROVEEDOR', tabla='proveedores',
+                                registro_id=c.lastrowid,
+                                despues={'nombre': proveedor[:200],
+                                          'categoria': categoria,
+                                          'origen': 'auto_planta_oc'},
+                                detalle=f"Auto-creado desde planta al generar OC")
+                        except Exception:
+                            pass
                     except Exception:
                         pass
             oc_num_creada = oc_num

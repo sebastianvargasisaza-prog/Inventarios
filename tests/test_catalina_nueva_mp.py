@@ -223,8 +223,117 @@ def test_compras_html_tiene_modal_nueva_mp(app, db_clean):
     assert "abrirNuevaMP" in body
     assert "guardarNuevaMP" in body
     assert "refrescarCatalogoMP" in body
-    # Botones dentro del modal de OC
+    # Botones dentro del modal de OC (ambos modales)
     assert "+ Nueva MP" in body
+
+
+def test_compras_html_form_proveedor_completo(app, db_clean):
+    """Form de proveedor desde modal OC tiene todos los campos para no quedar pelado."""
+    cs = _login(app, "catalina")
+    r = cs.get("/compras")
+    body = r.get_data(as_text=True)
+    # Campos completos
+    for campo in ('np-nombre', 'np-nit', 'np-contacto', 'np-tel', 'np-email',
+                  'np-direccion', 'np-banco', 'np-tipo-cuenta', 'np-num-cuenta',
+                  'np-cond-pago', 'np-concepto'):
+        assert f'id="{campo}"' in body, f'falta campo {campo} en form proveedor'
+    # Detector de duplicados
+    assert "checkProvDuplicado" in body
+    assert "_normProvName" in body
+    assert "np-dup-warning" in body
+
+
+# ── Proveedores: dedup + audit ──────────────────────────────────────
+
+def test_proveedor_dedup_case_insensitive(app, db_clean):
+    cs = _login(app, "catalina")
+    cs.post("/api/proveedores-compras",
+            json={"nombre": "Proveedor Test Dedup"},
+            headers=csrf_headers())
+    try:
+        # Mismo nombre con case diferente → 409
+        r2 = cs.post("/api/proveedores-compras",
+                     json={"nombre": "PROVEEDOR TEST DEDUP"},
+                     headers=csrf_headers())
+        assert r2.status_code == 409
+        d = r2.get_json()
+        assert "ya existe" in d["error"].lower()
+    finally:
+        conn = sqlite3.connect(os.environ["DB_PATH"])
+        conn.execute("DELETE FROM proveedores WHERE LOWER(nombre) LIKE 'proveedor test dedup%'")
+        conn.commit(); conn.close()
+
+
+def test_proveedor_dedup_trim(app, db_clean):
+    cs = _login(app, "catalina")
+    cs.post("/api/proveedores-compras",
+            json={"nombre": "Proveedor Test Trim"},
+            headers=csrf_headers())
+    try:
+        r2 = cs.post("/api/proveedores-compras",
+                     json={"nombre": "  Proveedor Test Trim  "},
+                     headers=csrf_headers())
+        assert r2.status_code == 409
+    finally:
+        conn = sqlite3.connect(os.environ["DB_PATH"])
+        conn.execute("DELETE FROM proveedores WHERE LOWER(TRIM(nombre))='proveedor test trim'")
+        conn.commit(); conn.close()
+
+
+def test_proveedor_audit_log(app, db_clean):
+    cs = _login(app, "catalina")
+    cs.post("/api/proveedores-compras",
+            json={"nombre": "Proveedor Audit Test", "nit": "9001234567",
+                  "banco": "Bancolombia", "num_cuenta": "12345678"},
+            headers=csrf_headers())
+    try:
+        conn = sqlite3.connect(os.environ["DB_PATH"])
+        row = conn.execute(
+            "SELECT usuario, accion FROM audit_log WHERE accion='CREAR_PROVEEDOR' ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        conn.close()
+        assert row is not None
+        assert row[0] == "catalina"
+    finally:
+        conn = sqlite3.connect(os.environ["DB_PATH"])
+        conn.execute("DELETE FROM proveedores WHERE nombre='Proveedor Audit Test'")
+        conn.commit(); conn.close()
+
+
+def test_proveedor_form_completo_persiste_todos_los_campos(app, db_clean):
+    """Cuando Catalina llena el form completo desde OC, banco/cuenta/etc se guardan."""
+    cs = _login(app, "catalina")
+    cs.post("/api/proveedores-compras",
+            json={"nombre": "Proveedor Completo Test",
+                  "nit": "900111222",
+                  "contacto": "Maria Test",
+                  "telefono": "3001234567",
+                  "email": "maria@test.com",
+                  "direccion": "Calle 1 #2-3",
+                  "banco": "Davivienda",
+                  "tipo_cuenta": "Ahorros",
+                  "num_cuenta": "98765432",
+                  "condiciones_pago": "60 dias",
+                  "concepto_compra": "MP test"},
+            headers=csrf_headers())
+    try:
+        conn = sqlite3.connect(os.environ["DB_PATH"])
+        row = conn.execute(
+            """SELECT nit, contacto, telefono, email, direccion, banco,
+                      tipo_cuenta, num_cuenta, condiciones_pago, concepto_compra
+                 FROM proveedores WHERE nombre='Proveedor Completo Test'"""
+        ).fetchone()
+        conn.close()
+        assert row is not None
+        assert row[0] == "900111222"
+        assert row[1] == "Maria Test"
+        assert row[5] == "Davivienda"
+        assert row[7] == "98765432"
+        assert row[8] == "60 dias"
+    finally:
+        conn = sqlite3.connect(os.environ["DB_PATH"])
+        conn.execute("DELETE FROM proveedores WHERE nombre='Proveedor Completo Test'")
+        conn.commit(); conn.close()
 
 
 # ── Integracion OC → maestro_mps → reflejo en planta ─────────────
