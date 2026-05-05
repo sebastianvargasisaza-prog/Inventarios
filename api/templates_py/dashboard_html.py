@@ -1560,6 +1560,8 @@ async function enviarSolicitarLote(){
   // Convertir a gramos para solicitudes_compra (cantidad_g)
   var cant_g=cant; if(und==='kg')cant_g=cant*1000;
   var obs_full=obs+(prov?(' · Proveedor sugerido: '+prov):'');
+  var mp_codigo = _solLote.material_id;
+  var mp_nombre = _solLote.material_nombre;
   var payload={
     solicitante:(window.OPER_ACTUAL||window._usuario||'planta'),
     urgencia:urg,
@@ -1569,8 +1571,8 @@ async function enviarSolicitarLote(){
     tipo:'Compra',
     area:'Produccion',
     items:[{
-      codigo_mp:_solLote.material_id,
-      nombre_mp:_solLote.material_nombre,
+      codigo_mp:mp_codigo,
+      nombre_mp:mp_nombre,
       cantidad_g:cant_g,
       unidad:und,
       justificacion:obs,
@@ -1582,14 +1584,67 @@ async function enviarSolicitarLote(){
     var r=await fetch('/api/solicitudes-compra',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
     var d=await r.json();
     if(r.ok){
-      msg.innerHTML='<span style="color:#1a8a1a;font-weight:700;">✓ '+(d.message||'Solicitud creada')+'. Llega a Compras.</span>';
-      setTimeout(cerrarSolicitarLote,1800);
+      // Sebastian 5-may-2026 (Luis Enrique): ANTES feedback duraba 1.8s
+      // dentro del modal y luego se cerraba · operario decia "no hace
+      // nada". AHORA toast persistente fuera del modal + refresh de lista
+      // para que aparezca badge "💼 Solicitada" en el lote.
+      cerrarSolicitarLote();
+      _toastSolicitudCreada(d.numero || '?', mp_codigo, mp_nombre,
+                              cant, und);
+      // Refresh stock para que el badge "Solicitada" aparezca de inmediato
+      try{ await loadStock(); }catch(e){/* no critico */}
     }else{
       msg.innerHTML='<span style="color:#c00;">Error: '+_escHTML(d.error||r.status)+'</span>';
     }
   }catch(e){
     msg.innerHTML='<span style="color:#c00;">Error de red: '+_escHTML(e.message)+'</span>';
   }
+}
+
+// Sebastian 5-may-2026: toast persistente para feedback de solicitud
+// creada · imposible de ignorar. Aparece arriba a la derecha por 8s.
+function _toastSolicitudCreada(numero, codigo, nombre, cant, und){
+  // Cerrar uno previo si lo hay
+  var prev = document.getElementById('toast-sol-creada');
+  if(prev) prev.remove();
+  var t = document.createElement('div');
+  t.id = 'toast-sol-creada';
+  t.style.cssText = 'position:fixed;top:24px;right:24px;z-index:99999;'+
+    'background:#fff;border:2px solid #16a34a;border-radius:12px;'+
+    'box-shadow:0 12px 40px rgba(0,0,0,0.18);max-width:360px;'+
+    'animation:slideInToast 0.3s ease-out';
+  t.innerHTML =
+    '<div style="background:#16a34a;color:#fff;padding:10px 16px;'+
+      'border-radius:10px 10px 0 0;display:flex;align-items:center;gap:10px">'+
+      '<div style="font-size:22px">&#x2705;</div>'+
+      '<div style="flex:1">'+
+        '<div style="font-weight:700;font-size:14px">Solicitud enviada a Compras</div>'+
+        '<div style="font-size:11px;opacity:0.9;font-family:monospace">'+_escHTML(numero)+'</div>'+
+      '</div>'+
+      '<button onclick="document.getElementById(\\'toast-sol-creada\\').remove()" '+
+        'style="background:transparent;color:#fff;border:none;font-size:18px;'+
+        'cursor:pointer;padding:0 6px;line-height:1">&#10005;</button>'+
+    '</div>'+
+    '<div style="padding:12px 16px">'+
+      '<div style="font-size:13px;color:#1f2937;margin-bottom:4px">'+
+        '<b>'+_escHTML(nombre||codigo)+'</b></div>'+
+      '<div style="font-size:12px;color:#475569">'+
+        Number(cant).toLocaleString()+' '+_escHTML(und)+
+        ' · queda como <b>Solicitada</b> en este lote</div>'+
+      '<div style="margin-top:8px;font-size:11px;color:#64748b">'+
+        '&#x2192; Catalina la procesará en <a href="/compras" target="_blank" '+
+        'style="color:#0e7490;text-decoration:underline">Compras</a></div>'+
+    '</div>';
+  document.body.appendChild(t);
+  // Auto-dismiss en 8s (suficiente para que Luis lo vea)
+  setTimeout(function(){
+    var el = document.getElementById('toast-sol-creada');
+    if(el){
+      el.style.transition='opacity 0.5s';
+      el.style.opacity='0';
+      setTimeout(function(){ if(el.parentNode) el.remove(); }, 500);
+    }
+  }, 8000);
 }
 
 // ─── Editar Proveedor (afecta lote + catalogo MP) ──────────────────────────
@@ -2264,7 +2319,13 @@ function renderStock(items){
     h+='<td style="text-align:center;"><span style="background:'+bg[a]+';color:'+fc[a]+';padding:2px 7px;border-radius:10px;font-weight:700;font-size:0.78em;border:1px solid '+fc[a]+';">'+lb[a]+'</span></td>';
     h+='<td style="text-align:center;"><button onclick="abrirAjusteIdx('+gi+')" style="padding:3px 9px;font-size:0.75em;background:#f0ad4e;color:#fff;border-radius:4px;">Ajustar</button></td>';
     h+='<td style="text-align:center;"><button onclick="verHistorialLote('+gi+')" style="padding:3px 9px;font-size:0.75em;background:#667eea;color:#fff;border-radius:4px;">Historial</button></td>';
-    h+='<td style="text-align:center;"><button onclick="abrirSolicitarLote('+gi+')" style="padding:3px 9px;font-size:0.75em;background:#27ae60;color:#fff;border-radius:4px;">Solicitar</button></td>';
+    // Sebastian 5-may-2026: badge "Solicitada" si ya hay solicitud pendiente
+    // para este codigo_mp · feedback visible a Luis Enrique de que su click
+    // tuvo efecto (antes decia "no hace nada" porque no veia rastro).
+    var btnSolicitar = i.tiene_solicitud_pendiente
+      ? '<button onclick="abrirSolicitarLote('+gi+')" style="padding:3px 9px;font-size:0.75em;background:#fef3c7;color:#92400e;border:1px solid #f59e0b;border-radius:4px;font-weight:700;" title="Ya hay una solicitud pendiente para esta MP · click para crear otra">&#x1F4BC; Solicitada</button>'
+      : '<button onclick="abrirSolicitarLote('+gi+')" style="padding:3px 9px;font-size:0.75em;background:#27ae60;color:#fff;border-radius:4px;">Solicitar</button>';
+    h+='<td style="text-align:center;">'+btnSolicitar+'</td>';
     h+='<td style="text-align:center;"><button onclick="abrirEliminarLote('+gi+')" style="padding:3px 9px;font-size:0.75em;background:#c0392b;color:#fff;border-radius:4px;">Eliminar</button></td>';
     h+='</tr>';
   });

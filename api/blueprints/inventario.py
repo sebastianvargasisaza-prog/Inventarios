@@ -1444,6 +1444,27 @@ def get_lotes():
         sql += f" LIMIT {limit} OFFSET {offset}"
     c.execute(sql)
     rows = c.fetchall()
+
+    # Sebastian 5-may-2026 (Luis Enrique reportó "Solicitar no hace nada"):
+    # cargar set de codigo_mp con solicitudes Pendientes para que UI muestre
+    # badge "Solicitada" en cada lote afectado · feedback visible en Planta
+    # de que el boton tuvo efecto.
+    codigos_con_solicitud = set()
+    try:
+        for sr in c.execute("""
+            SELECT DISTINCT sci.codigo_mp
+            FROM solicitudes_compra_items sci
+            JOIN solicitudes_compra sc ON sc.numero = sci.numero
+            WHERE sc.estado='Pendiente'
+              AND sci.codigo_mp IS NOT NULL
+              AND sci.codigo_mp != ''
+        """).fetchall():
+            codigos_con_solicitud.add(sr[0])
+    except Exception as _e:
+        __import__('logging').getLogger('inventario').warning(
+            "get_lotes solicitudes_pendientes lookup falló: %s", _e,
+        )
+
     result = []
     for r in rows:
         mid,mnm,lote,cant,fvenc,est,pos,prov,estado,inci,tipo,smin = r
@@ -1462,7 +1483,8 @@ def get_lotes():
                        'lote':lote or '','cantidad_g':round(cant or 0,2),'cantidad_kg':round((cant or 0)/1000,3),
                        'estanteria':est or '','posicion':pos or '',
                        'fecha_vencimiento':str(fvenc)[:10] if fvenc else '',
-                       'dias_para_vencer':dias,'estado_lote':estado or '','alerta':alerta})
+                       'dias_para_vencer':dias,'estado_lote':estado or '','alerta':alerta,
+                       'tiene_solicitud_pendiente': (mid or '') in codigos_con_solicitud})
 
     # Si llegó paginacion, incluir conteo total para que UI sepa cuantas
     # paginas hay. Si no, total = len(result) (legacy compat).
