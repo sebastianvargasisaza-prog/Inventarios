@@ -94,24 +94,26 @@ def test_completar_simple_funciona(app, db_clean):
         conn.close()
 
 
-# ─── Segundo llamado consecutivo recibe 409 ──────────────────────────
+# ─── Segundo llamado consecutivo NO descuenta dos veces ─────────────
+# Sebastian 5-may-2026: contrato cambió. Antes /completar 409 si ya
+# descontado. Ahora /completar es backwards-compatible con /iniciar
+# (que descuenta primero) → segundo llamado retorna 200 sin doble
+# descuento. La GARANTÍA SAFETY (no double-descuento) sigue intacta.
 
-def test_completar_segundo_llamado_409(app, db_clean):
+def test_completar_segundo_llamado_no_descuenta_doble(app, db_clean):
     c = _login(app, "sebastian")
     conn = sqlite3.connect(os.environ["DB_PATH"])
     pid = _seed_produccion(conn)
     conn.close()
     try:
-        # Primera llamada · OK
+        # Primera llamada · descuenta
         r1 = c.post(f"/api/programacion/programar/{pid}/completar",
                     json={}, headers=csrf_headers())
         assert r1.status_code == 200
-        # Segunda llamada · 409 idempotente
+        # Segunda llamada · idempotente (200, NO doble descuento)
         r2 = c.post(f"/api/programacion/programar/{pid}/completar",
                     json={}, headers=csrf_headers())
-        assert r2.status_code == 409
-        d = r2.get_json()
-        assert d['codigo'] == 'YA_DESCONTADO'
+        assert r2.status_code == 200, r2.data
         # Importante: el segundo NO descontó · solo 1 Salida en total
         conn = sqlite3.connect(os.environ["DB_PATH"])
         rows = conn.execute(
@@ -155,9 +157,13 @@ def test_completar_concurrente_solo_uno_descuenta(app, db_clean):
 
         assert len(results) == 2, "Esperaba 2 resultados"
         codes = sorted(r[0] for r in results)
-        # Esperado: uno 200, uno 409
-        assert codes == [200, 409], f"Esperaba [200, 409], obtuve {codes}"
-        # Verificar que SOLO 1 descuento ocurrió
+        # Sebastian 5-may-2026: contrato cambió · ahora ambos pueden ser
+        # 200 (atomic claim sigue impidiendo double descuento, pero el
+        # segundo no devuelve 409 sino 200 con MP skip).
+        # Aceptamos: [200, 200] (legacy backwards-compat) o [200, 409] (race fast-path)
+        assert codes in ([200, 200], [200, 409]), \
+            f"Esperaba [200,200] o [200,409], obtuve {codes}"
+        # Lo crítico: SOLO 1 descuento ocurrió (no double)
         conn = sqlite3.connect(os.environ["DB_PATH"])
         salidas = conn.execute(
             "SELECT COUNT(*) FROM movimientos WHERE material_id='MP-RACE-1' AND tipo='Salida'"

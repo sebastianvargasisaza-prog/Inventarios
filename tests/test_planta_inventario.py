@@ -164,14 +164,15 @@ def test_idempotencia_completar_dos_veces(app, db_clean):
     stock_post1 = _stock_actual(db_path, "MP_IDEMP")
     assert stock_post1 == 19200  # 20000 - 800
 
-    # Segunda llamada — debe rechazar con 409 YA_DESCONTADO
+    # Sebastian 5-may-2026: contrato cambió. /completar ahora es backwards-
+    # compatible con /iniciar (que descuenta MP atómicamente). Segunda
+    # llamada NO devuelve 409 — devuelve 200 sin doble descuento.
+    # La GARANTÍA de no-double-descuento sigue intacta.
     r2 = client.post(f"/api/programacion/programar/{pid}/completar", json={},
                      headers={"Origin": "http://localhost"})
-    assert r2.status_code == 409
-    d2 = r2.get_json()
-    assert d2.get("codigo") == "YA_DESCONTADO"
+    assert r2.status_code == 200, r2.data
 
-    # Stock NO debe haber cambiado
+    # Stock NO debe haber cambiado (sin doble descuento)
     assert _stock_actual(db_path, "MP_IDEMP") == 19200
 
 
