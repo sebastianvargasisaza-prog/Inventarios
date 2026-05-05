@@ -106,10 +106,19 @@ def get_inventario():
     c = conn.cursor()
 
     def _safe(query, default=0):
+        # Sebastian 5-may-2026 (audit zero-error dashboard): ANTES capturaba
+        # silenciosamente cualquier excepción y devolvía default=0 — ocultaba
+        # bugs de DB locked, syntax errors, columns missing, etc. Ahora se
+        # loguea con contexto · sigue retornando default para no romper UI
+        # pero deja rastro auditable.
         try:
             r = c.execute(query).fetchone()
             return r[0] if r and r[0] is not None else default
-        except Exception:
+        except Exception as _e:
+            __import__('logging').getLogger('inventario').warning(
+                "_safe query falló · default=%s · err=%s · query=%s",
+                default, _e, query[:120].replace('\n', ' '),
+            )
             return default
 
     # ── CONTEXTO (totales / composición) ──────────────────────────────
@@ -133,10 +142,25 @@ def get_inventario():
                    FROM movimientos GROUP BY material_id) s ON m.codigo_mp=s.material_id
         WHERE m.activo=1 AND m.stock_minimo>0 AND COALESCE(s.stock,0)<m.stock_minimo
     """)
-    # Lotes vencidos (estado_lote='VENCIDO' en entradas)
+    # Lotes vencidos · Sebastian 5-may-2026 (audit zero-error dashboard):
+    # ANTES usaba estado_lote='VENCIDO' estatico que NO se actualiza
+    # automaticamente cuando un lote vence (queda como 'VIGENTE' aunque
+    # ya pasó fecha_vencimiento). Drift critico: KPI mostraba 0 vencidos
+    # mientras Bodega MP tenia 50 lotes vencidos visibles.
+    # Fix: calcular dinamico desde fecha_vencimiento agrupando por lote
+    # con stock > 0 (mismo pattern que /api/dashboard-stats compras.py:284).
     lotes_vencidos = _safe("""
-        SELECT COUNT(*) FROM movimientos
-        WHERE tipo='Entrada' AND estado_lote='VENCIDO'
+        SELECT COUNT(*) FROM (
+          SELECT material_id, lote,
+                 MIN(fecha_vencimiento) as venc,
+                 SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) as stock_g
+          FROM movimientos
+          WHERE COALESCE(lote,'') != ''
+            AND fecha_vencimiento IS NOT NULL
+            AND fecha_vencimiento != ''
+          GROUP BY material_id, lote
+          HAVING stock_g > 0 AND venc < date('now')
+        )
     """)
 
     # ── CERCA (próximos 7-30 días) ────────────────────────────────────
@@ -147,17 +171,33 @@ def get_inventario():
           AND fecha_programada >= date('now','-1 day')
           AND fecha_programada <= date('now','+60 day')
     """)
-    # Lotes en cuarentena (esperando QC)
+    # Lotes en cuarentena (esperando QC) · case-insensitive: calidad.py
+    # escribe 'Cuarentena' (Capitalized), inventario.py escribe 'CUARENTENA'
+    # (uppercase). UPPER normaliza ambos.
     lotes_cuarentena = _safe("""
         SELECT COUNT(*) FROM movimientos
-        WHERE tipo='Entrada' AND estado_lote='CUARENTENA'
+        WHERE tipo='Entrada'
+          AND UPPER(COALESCE(estado_lote,'')) IN ('CUARENTENA','CUARENTENA_EXTENDIDA')
     """)
-    # Vencimientos críticos en próximos 30 días
+    # Vencimientos críticos próximos 30d · Sebastian 5-may-2026 (audit
+    # zero-error): ANTES usaba estado_lote IN ('CRITICO','PROXIMO') que
+    # NUNCA se asignan en DB (solo VIGENTE/CUARENTENA/VENCIDO se escriben).
+    # KPI siempre retornaba 0 aunque hubiera lotes a 15 dias de vencer.
+    # Fix: calcular dinamico desde fecha_vencimiento.
     venc_criticos = _safe("""
-        SELECT COUNT(*) FROM movimientos
-        WHERE tipo='Entrada' AND estado_lote IN ('CRITICO','PROXIMO')
-          AND fecha_vencimiento IS NOT NULL
-          AND fecha_vencimiento <= date('now','+30 day')
+        SELECT COUNT(*) FROM (
+          SELECT material_id, lote,
+                 MIN(fecha_vencimiento) as venc,
+                 SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) as stock_g
+          FROM movimientos
+          WHERE COALESCE(lote,'') != ''
+            AND fecha_vencimiento IS NOT NULL
+            AND fecha_vencimiento != ''
+          GROUP BY material_id, lote
+          HAVING stock_g > 0
+             AND venc >= date('now')
+             AND venc <= date('now','+30 day')
+        )
     """)
     # OCs en tránsito (Autorizada/Pagada sin recepción)
     ocs_transito = _safe("""
@@ -1337,6 +1377,23 @@ def get_stock():
 
 @bp.route('/api/lotes')
 def get_lotes():
+    """Lista lotes de Materia Prima con stock disponible (stock_neto > 0).
+
+    Sebastian 5-may-2026 (audit zero-error Bodega MP): 2 fixes criticos.
+
+    Bug 1 — MEEs aparecian en lista MP:
+      ANTES no filtraba por tipo_material='MP'. Si por error operativo un
+      envase/tapa/etiqueta se registró en maestro_mps + movimientos (en
+      lugar de maestro_mee + movimientos_mee), aparecia en Bodega MP.
+      Fix: WHERE COALESCE(mp.tipo_material,'MP')='MP'. El COALESCE permite
+      que MPs legacy sin tipo_material set sigan apareciendo (default MP).
+
+    Bug 2 — lotes consumidos visibles:
+      ANTES HAVING stock_neto > -999999 mostraba lotes con stock 0 o
+      negativo (drift). Catalina veia lotes ya consumidos como
+      'disponibles' y planificaba sobre stock fantasma.
+      Fix: HAVING stock_neto > 0 — solo lotes con stock real disponible.
+    """
     from datetime import date; hoy = date.today().isoformat()
     conn = get_db(); c = conn.cursor()
     c.execute("""SELECT m.material_id, m.material_nombre, m.lote,
@@ -1348,8 +1405,9 @@ def get_lotes():
                         COALESCE(MAX(mp.tipo),'') as tipo,
                         COALESCE(MAX(mp.stock_minimo),0) as smin
                  FROM movimientos m LEFT JOIN maestro_mps mp ON m.material_id=mp.codigo_mp
+                 WHERE UPPER(COALESCE(mp.tipo_material,'MP'))='MP'
                  GROUP BY m.material_id, m.lote
-                 HAVING stock_neto > -999999
+                 HAVING stock_neto > 0
                  ORDER BY m.material_nombre ASC, fecha_vencimiento ASC""")
     rows = c.fetchall()
     result = []

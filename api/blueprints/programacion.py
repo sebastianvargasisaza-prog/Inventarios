@@ -3938,25 +3938,42 @@ class _DescuentoError(Exception):
         self.payload = payload or {}
 
 
+# Sebastian 5-may-2026 (audit zero-error dashboard): lista canonica de
+# estados de lote que NO se pueden consumir en produccion. Usar UPPER()
+# en comparaciones porque la DB tiene mezcla de mayusculas/capitalizadas
+# (calidad.py escribe 'Cuarentena' Capitalizado, inventario.py escribe
+# 'CUARENTENA' UPPERCASE). UPPER normaliza ambas variantes.
+_ESTADOS_LOTE_NO_PRODUCIBLES = (
+    'CUARENTENA', 'CUARENTENA_EXTENDIDA',
+    'VENCIDO',
+    'RECHAZADO',
+    'AGOTADO',
+    'BLOQUEADO',
+)
+
+
 def _validar_stock_para_produccion(c, mps_a_consumir):
     """Verifica que haya stock suficiente para descontar TODAS las MPs.
 
     Devuelve lista de faltantes. Lista vacía = OK para descontar.
     Cada faltante: {codigo_mp, nombre, requerido_g, disponible_g, falta_g}.
-    Excluye lotes Vencido/Bloqueado/Rechazado/Cuarentena.
+    Excluye lotes en CUARENTENA / CUARENTENA_EXTENDIDA / VENCIDO /
+    RECHAZADO / AGOTADO / BLOQUEADO (case-insensitive).
+    """
+    placeholders = ','.join(['?'] * len(_ESTADOS_LOTE_NO_PRODUCIBLES))
+    sql = f"""
+        SELECT COALESCE(SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END), 0)
+        FROM movimientos
+        WHERE material_id=?
+          AND UPPER(COALESCE(estado_lote,'')) NOT IN ({placeholders})
     """
     faltantes = []
     for mp in mps_a_consumir:
         cod = mp['codigo_mp']
         if not cod:
             continue
-        r = c.execute("""
-            SELECT COALESCE(SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END), 0)
-            FROM movimientos
-            WHERE material_id=?
-              AND COALESCE(estado_lote,'') NOT IN
-                  ('Vencido','Bloqueado','Rechazado','CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO')
-        """, (cod,)).fetchone()
+        params = (cod,) + _ESTADOS_LOTE_NO_PRODUCIBLES
+        r = c.execute(sql, params).fetchone()
         disp = float(r[0] or 0)
         if disp + 0.01 < float(mp['cantidad_g']):
             faltantes.append({
@@ -4113,19 +4130,26 @@ def _distribuir_fefo(c, codigo_mp, cantidad_a_descontar):
         return []
 
     # Stock disponible por lote: SUM(Entradas con lote) - SUM(Salidas con lote)
-    # Excluye lotes Vencidos/Bloqueados (no se debe consumir).
-    rows = c.execute("""
+    # Sebastian 5-may-2026 (audit zero-error): ANTES solo excluia
+    # ('Vencido','Bloqueado','Rechazado') case-sensitive — NO excluia
+    # CUARENTENA y NO matcheaba 'VENCIDO'/'CUARENTENA' en mayusculas.
+    # Riesgo: FEFO podia consumir lotes en cuarentena o vencidos.
+    # Fix: UPPER() + lista canonica _ESTADOS_LOTE_NO_PRODUCIBLES.
+    placeholders = ','.join(['?'] * len(_ESTADOS_LOTE_NO_PRODUCIBLES))
+    sql = f"""
         SELECT lote, fecha_vencimiento,
                SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) as stock_lote
         FROM movimientos
         WHERE material_id = ?
           AND COALESCE(lote, '') != ''
-          AND COALESCE(estado_lote, '') NOT IN ('Vencido','Bloqueado','Rechazado')
+          AND UPPER(COALESCE(estado_lote, '')) NOT IN ({placeholders})
         GROUP BY lote, fecha_vencimiento
         HAVING stock_lote > 0
         ORDER BY COALESCE(fecha_vencimiento, '9999-12-31') ASC,
                  lote ASC
-    """, (codigo_mp,)).fetchall()
+    """
+    params = (codigo_mp,) + _ESTADOS_LOTE_NO_PRODUCIBLES
+    rows = c.execute(sql, params).fetchall()
 
     distribucion = []
     restante = float(cantidad_a_descontar)
