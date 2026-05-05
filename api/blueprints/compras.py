@@ -2588,24 +2588,58 @@ def limpiar_y_regenerar_auto_plan():
         return jsonify({'error': 'horizonte_dias fuera de rango (7-365)'}), 400
 
     conn = get_db(); c = conn.cursor()
-    # Contar AUTO-XXXX Pendientes sin OC vinculada
+    # Sebastian 4-may-2026 (Catalina · "elimina todas asi cuando volvamos a
+    # pedir desde planta ya se agrupan"): captura BOTH patrones de auto-gen:
+    #   1. AUTO-XXXX Pendientes sin OC (cron aplicar_plan)
+    #   2. SOL-YYYY-XXXX Pendientes con observaciones "Auto-generada" o
+    #      "Centro Programación" (regenerar-oc / auto-sc-ia)
+    # Sus OCs en Borrador asociadas también se borran.
     c.execute("""
-        SELECT numero FROM solicitudes_compra
-        WHERE numero LIKE 'AUTO-%' AND estado='Pendiente'
-          AND COALESCE(numero_oc,'') = ''
+        SELECT numero, COALESCE(numero_oc,'')
+        FROM solicitudes_compra
+        WHERE estado='Pendiente'
+          AND (
+            (numero LIKE 'AUTO-%' AND COALESCE(numero_oc,'')='')
+            OR (numero LIKE 'SOL-%' AND (
+                observaciones LIKE '%Auto-generada%'
+                OR observaciones LIKE '%Centro Programación%'
+                OR observaciones LIKE '%Centro Programacion%'
+                OR observaciones LIKE '%Auto-SC IA%'
+                OR observaciones LIKE '%🤖 Auto-SC%'
+                OR LOWER(COALESCE(solicitante,'')) IN ('auto-plan','auto-plan-ia')
+            ))
+          )
     """)
-    nums_a_borrar = [r[0] for r in c.fetchall()]
+    rows_a_borrar = c.fetchall()
+    nums_a_borrar = [r[0] for r in rows_a_borrar]
+    ocs_a_revisar = [r[1] for r in rows_a_borrar if r[1]]
+
+    # OCs en Borrador asociadas (no se tocan Autorizadas/Pagadas)
+    ocs_borrador_a_borrar = []
+    if ocs_a_revisar:
+        ph_oc = ','.join(['?'] * len(ocs_a_revisar))
+        ocs_borrador_a_borrar = [
+            r[0] for r in c.execute(
+                f"SELECT numero_oc FROM ordenes_compra "
+                f"WHERE numero_oc IN ({ph_oc}) AND estado='Borrador'",
+                ocs_a_revisar,
+            ).fetchall()
+        ]
 
     if dry_run:
-        plan_txt = f'Plan: borrar {len(nums_a_borrar)} AUTO-XXXX Pendientes'
+        plan_txt = (f'Plan: borrar {len(nums_a_borrar)} solicitudes auto-generadas '
+                    f'(AUTO-XXXX + SOL-YYYY-XXXX Pendientes)')
+        if ocs_borrador_a_borrar:
+            plan_txt += f' + {len(ocs_borrador_a_borrar)} OCs Borrador asociadas'
         if regenerar:
-            plan_txt += f' + regenerar con horizonte {horizonte}d'
+            plan_txt += f' · regenerar con horizonte {horizonte}d'
         else:
-            plan_txt += ' (sin regenerar — cron de planta lo hara despues agrupado)'
+            plan_txt += ' · sin regenerar (cron de planta lo hara despues agrupado)'
         return jsonify({
             'ok': True,
             'dry_run': True,
             'eliminaria': len(nums_a_borrar),
+            'eliminaria_ocs_borrador': len(ocs_borrador_a_borrar),
             'horizonte_dias': horizonte,
             'regenerar': regenerar,
             'mensaje': plan_txt,
@@ -2626,15 +2660,35 @@ def limpiar_y_regenerar_auto_plan():
                 nums_a_borrar,
             )
 
-        # 2. Audit del borrado
+        # 2. Borrar OCs Borrador asociadas (Autorizadas/Pagadas se preservan)
+        ocs_eliminadas = 0
+        if ocs_borrador_a_borrar:
+            ph_b = ','.join(['?'] * len(ocs_borrador_a_borrar))
+            try:
+                c.execute(
+                    f"DELETE FROM ordenes_compra_items WHERE numero_oc IN ({ph_b})",
+                    ocs_borrador_a_borrar,
+                )
+            except sqlite3.OperationalError:
+                pass
+            r2 = c.execute(
+                f"DELETE FROM ordenes_compra WHERE numero_oc IN ({ph_b})",
+                ocs_borrador_a_borrar,
+            )
+            ocs_eliminadas = r2.rowcount or 0
+
+        # 3. Audit del borrado
         try:
             audit_log(
                 c, usuario=usuario, accion='LIMPIAR_AUTO_PLAN',
                 tabla='solicitudes_compra', registro_id='bulk',
                 despues={'eliminadas': len(nums_a_borrar),
                           'items_eliminados': eliminadas_items,
-                          'horizonte_dias': horizonte},
-                detalle=f"Limpio {len(nums_a_borrar)} AUTO-XXXX Pendientes para regenerar",
+                          'ocs_borrador_eliminadas': ocs_eliminadas,
+                          'horizonte_dias': horizonte,
+                          'regenerar': regenerar},
+                detalle=(f"Limpio {len(nums_a_borrar)} solicitudes auto-generadas "
+                          f"+ {ocs_eliminadas} OCs Borrador"),
             )
         except Exception:
             pass
@@ -2648,16 +2702,18 @@ def limpiar_y_regenerar_auto_plan():
         log.exception('limpiar_y_regenerar_auto_plan borrado fallo: %s', e)
         return jsonify({'error': f'Borrado fallido: {e}'}), 500
 
-    # 3. Regenerar con generar_plan + aplicar_plan (solo si regenerar=true)
+    # 4. Regenerar con generar_plan + aplicar_plan (solo si regenerar=true)
     if not regenerar:
         return jsonify({
             'ok': True,
             'eliminadas': len(nums_a_borrar),
+            'ocs_borrador_eliminadas': ocs_eliminadas,
             'creadas': 0,
             'regenerar': False,
             'horizonte_dias': horizonte,
             'grupos': [],
-            'mensaje': (f'✓ Limpiadas {len(nums_a_borrar)} AUTO-XXXX legacy. '
+            'mensaje': (f'✓ Limpiadas {len(nums_a_borrar)} solicitudes auto-generadas '
+                         f'+ {ocs_eliminadas} OCs Borrador. '
                          f'El cron de planta regenerara agrupado por proveedor '
                          f'en la proxima corrida (o usa Regenerar manual).'),
         })

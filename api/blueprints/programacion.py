@@ -891,13 +891,22 @@ def _compute_mp_deficit_aggregated(conn, days_ahead=90):
     except Exception:
         pass
 
-    # Proveedor por MP
+    # Proveedor por MP · Sebastian 4-may-2026 (Catalina): normalizar al
+    # primer "case canónico" para que "Agenquimicos" y "AGENQUIMICOS" no
+    # caigan en grupos distintos al agrupar por proveedor.
     _prov_map = {}
+    _prov_canonical = {}  # lowercase trimmed → primera variante observada
     try:
         for row in conn.execute(
             "SELECT codigo_mp, COALESCE(proveedor,'') FROM maestro_mps"
         ).fetchall():
-            _prov_map[row[0]] = row[1]
+            prov_raw = (row[1] or '').strip()
+            if not prov_raw:
+                _prov_map[row[0]] = ''
+                continue
+            key = prov_raw.lower()
+            canonical = _prov_canonical.setdefault(key, prov_raw)
+            _prov_map[row[0]] = canonical
     except Exception:
         pass
 
