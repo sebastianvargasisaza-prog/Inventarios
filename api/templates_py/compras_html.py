@@ -322,8 +322,10 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
     <button id="btn-toggle-vista" class="btn" onclick="toggleVistaSolicitudes()" style="background:#0e7490;color:#fff;" title="Agrupar todas las solicitudes pendientes por proveedor — crea una sola OC para todas las del mismo proveedor">&#x1F4E6; Agrupar por proveedor</button>
     <!-- Sebastian 4-may-2026 (Catalina): consolidar AUTO-XXXX legacy 1-MP-cada-una en agrupadas por proveedor -->
     <button id="btn-consolidar-auto" class="btn" onclick="consolidarAutoPendientes()" style="background:#16a34a;color:#fff;" title="Consolida las AUTO-XXXX existentes (1 MP cada una) en una solicitud por proveedor (no toca data fuente)">&#x1F517; Consolidar AUTO</button>
-    <!-- Sebastian 4-may-2026 (Catalina): limpiar AUTO-XXXX y regenerar desde planta usando logica nueva con fallback a maestro_mps.proveedor -->
-    <button id="btn-limpiar-regenerar-auto" class="btn" onclick="limpiarYRegenerarAutoPlan()" style="background:#dc2626;color:#fff;" title="Borra AUTO-XXXX Pendientes y regenera con la logica nueva (lee proveedor de maestro_mps si mp_lead_time_config esta vacio)">&#x1F525; Limpiar y regenerar</button>
+    <!-- Sebastian 4-may-2026 (Catalina): solo limpiar AUTO-XXXX legacy, dejar que cron regenere -->
+    <button id="btn-solo-limpiar-auto" class="btn" onclick="soloLimpiarAuto()" style="background:#475569;color:#fff;" title="Borra AUTO-XXXX Pendientes y deja que el cron de planta regenere agrupado en la proxima corrida">&#x1F5D1;&#xFE0F; Solo limpiar</button>
+    <!-- Sebastian 4-may-2026 (Catalina): limpiar + regenerar inmediato con logica nueva COALESCE -->
+    <button id="btn-limpiar-regenerar-auto" class="btn" onclick="limpiarYRegenerarAutoPlan()" style="background:#dc2626;color:#fff;" title="Borra AUTO-XXXX Pendientes y regenera ahora mismo (lee proveedor de maestro_mps si mp_lead_time_config esta vacio)">&#x1F525; Limpiar y regenerar</button>
   </div>
   <div id="pills-solic" class="pills"></div>
   <div id="grid-solic" class="grid"></div>
@@ -3330,6 +3332,54 @@ async function consolidarAutoPendientes(){
     alert('Error red: '+e.message);
     var btn = document.getElementById('btn-consolidar-auto');
     if(btn){ btn.disabled = false; btn.innerHTML = '&#x1F517; Consolidar AUTO'; }
+  }
+}
+
+// ────────────────────────────────────────────────────────────────
+// Sebastian 4-may-2026 (Catalina): SOLO limpiar AUTO-XXXX
+// Deja que el cron de planta regenere agrupado en la proxima corrida.
+// Util cuando Catalina quiere "borron y cuenta nueva" sin disparar
+// regeneracion inmediata.
+// ────────────────────────────────────────────────────────────────
+async function soloLimpiarAuto(){
+  try{
+    var rDry = await fetch('/api/compras/limpiar-y-regenerar-auto-plan',
+      _fetchOpts('POST', {dry_run: true, regenerar: false}));
+    var dDry = await rDry.json();
+    if(!rDry.ok){
+      alert('Error preview: '+(dDry.error || rDry.status));
+      return;
+    }
+    if(dDry.eliminaria === 0){
+      alert('✓ No hay AUTO-XXXX Pendientes que limpiar.');
+      return;
+    }
+    var msg = 'SOLO LIMPIAR AUTO-XXXX (sin regenerar)\\n\\n'+
+      'Va a BORRAR '+dDry.eliminaria+' solicitudes AUTO-XXXX Pendientes.\\n'+
+      'NO toca las que ya tienen OC vinculada.\\n\\n'+
+      'Cuando el cron de planta corra (o uses Regenerar manual), las\\n'+
+      'nuevas solicitudes vendran agrupadas por proveedor con la\\n'+
+      'logica corregida (COALESCE a maestro_mps).\\n\\n'+
+      'Confirmar?';
+    if(!confirm(msg)) return;
+
+    var btn = document.getElementById('btn-solo-limpiar-auto');
+    if(btn){ btn.disabled = true; btn.textContent = 'Limpiando...'; }
+    var r = await fetch('/api/compras/limpiar-y-regenerar-auto-plan',
+      _fetchOpts('POST', {dry_run: false, regenerar: false}));
+    var d = await r.json();
+    if(btn){ btn.disabled = false; btn.innerHTML = '&#x1F5D1;&#xFE0F; Solo limpiar'; }
+    if(!r.ok){
+      alert('Error: '+(d.error || r.status));
+      return;
+    }
+    alert('✓ '+d.mensaje);
+    await loadSolicitudes();
+    if(_VISTA_AGRUPADA) await renderSolicitudesAgrupadas();
+  }catch(e){
+    alert('Error red: '+e.message);
+    var btn = document.getElementById('btn-solo-limpiar-auto');
+    if(btn){ btn.disabled = false; btn.innerHTML = '&#x1F5D1;&#xFE0F; Solo limpiar'; }
   }
 }
 

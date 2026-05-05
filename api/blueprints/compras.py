@@ -2564,7 +2564,10 @@ def limpiar_y_regenerar_auto_plan():
     Body JSON (opcional):
       {
         "horizonte_dias": 60,        # default 60d
-        "dry_run": false             # si true, solo cuenta lo que borraria
+        "dry_run": false,            # si true, solo cuenta lo que borraria
+        "regenerar": true            # default true. Si false, solo borra y
+                                      # deja que el cron de planta regenere
+                                      # agrupado en la siguiente corrida.
       }
 
     Returns:
@@ -2576,6 +2579,7 @@ def limpiar_y_regenerar_auto_plan():
 
     body = request.get_json(silent=True) or {}
     dry_run = bool(body.get('dry_run', False))
+    regenerar = bool(body.get('regenerar', True))
     try:
         horizonte = int(body.get('horizonte_dias', 60))
     except (ValueError, TypeError):
@@ -2593,13 +2597,18 @@ def limpiar_y_regenerar_auto_plan():
     nums_a_borrar = [r[0] for r in c.fetchall()]
 
     if dry_run:
+        plan_txt = f'Plan: borrar {len(nums_a_borrar)} AUTO-XXXX Pendientes'
+        if regenerar:
+            plan_txt += f' + regenerar con horizonte {horizonte}d'
+        else:
+            plan_txt += ' (sin regenerar — cron de planta lo hara despues agrupado)'
         return jsonify({
             'ok': True,
             'dry_run': True,
             'eliminaria': len(nums_a_borrar),
             'horizonte_dias': horizonte,
-            'mensaje': (f'Plan: borrar {len(nums_a_borrar)} AUTO-XXXX Pendientes '
-                         f'+ regenerar con horizonte {horizonte}d'),
+            'regenerar': regenerar,
+            'mensaje': plan_txt,
         })
 
     try:
@@ -2639,7 +2648,20 @@ def limpiar_y_regenerar_auto_plan():
         log.exception('limpiar_y_regenerar_auto_plan borrado fallo: %s', e)
         return jsonify({'error': f'Borrado fallido: {e}'}), 500
 
-    # 3. Regenerar con generar_plan + aplicar_plan
+    # 3. Regenerar con generar_plan + aplicar_plan (solo si regenerar=true)
+    if not regenerar:
+        return jsonify({
+            'ok': True,
+            'eliminadas': len(nums_a_borrar),
+            'creadas': 0,
+            'regenerar': False,
+            'horizonte_dias': horizonte,
+            'grupos': [],
+            'mensaje': (f'✓ Limpiadas {len(nums_a_borrar)} AUTO-XXXX legacy. '
+                         f'El cron de planta regenerara agrupado por proveedor '
+                         f'en la proxima corrida (o usa Regenerar manual).'),
+        })
+
     try:
         from blueprints.auto_plan import generar_plan, aplicar_plan
         plan = generar_plan(horizonte_dias=horizonte, tipo='manual', usuario=usuario)

@@ -631,6 +631,57 @@ def test_limpiar_y_regenerar_horizonte_invalido_400(app, db_clean):
     assert r.status_code == 400
 
 
+def test_solo_limpiar_no_regenera(app, db_clean):
+    """regenerar=false → borra AUTO-XXXX pero NO crea nuevas (deja al cron)."""
+    cs = _login(app)
+    _crear_auto_xxxx_legacy('AUTO-9501', 'MP-A', 'A', 100, 'P')
+    _crear_auto_xxxx_legacy('AUTO-9502', 'MP-B', 'B', 100, 'P')
+    try:
+        r = cs.post('/api/compras/limpiar-y-regenerar-auto-plan',
+                    json={'regenerar': False}, headers=csrf_headers())
+        assert r.status_code == 200, r.data
+        d = r.get_json()
+        assert d['eliminadas'] == 2
+        assert d['creadas'] == 0
+        assert d['regenerar'] is False
+        # Verificar DB: AUTO-9501/9502 NO existen, no hay AUTO nuevas
+        conn = sqlite3.connect(os.environ["DB_PATH"])
+        cnt_old = conn.execute(
+            "SELECT COUNT(*) FROM solicitudes_compra WHERE numero IN ('AUTO-9501','AUTO-9502')"
+        ).fetchone()[0]
+        cnt_new = conn.execute(
+            "SELECT COUNT(*) FROM solicitudes_compra WHERE numero LIKE 'AUTO-%' AND estado='Pendiente'"
+        ).fetchone()[0]
+        conn.close()
+        assert cnt_old == 0
+        # cnt_new puede ser 0 (sin formulas) o algo si hay otras AUTO no de este test
+        # lo importante es que el delete funciono
+    finally:
+        _cleanup_auto_solicitudes()
+
+
+def test_solo_limpiar_dry_run_indica_no_regenera_en_mensaje(app, db_clean):
+    cs = _login(app)
+    _crear_auto_xxxx_legacy('AUTO-9601', 'MP', 'X', 100, 'P')
+    try:
+        r = cs.post('/api/compras/limpiar-y-regenerar-auto-plan',
+                    json={'dry_run': True, 'regenerar': False},
+                    headers=csrf_headers())
+        d = r.get_json()
+        assert d['regenerar'] is False
+        assert 'sin regenerar' in d['mensaje']
+    finally:
+        _cleanup_auto_solicitudes()
+
+
+def test_compras_html_boton_solo_limpiar_visible(app, db_clean):
+    cs = _login(app)
+    body = cs.get('/compras').get_data(as_text=True)
+    assert 'btn-solo-limpiar-auto' in body
+    assert 'soloLimpiarAuto' in body
+    assert 'Solo limpiar' in body
+
+
 # ── aplicar_plan COALESCE proveedor de maestro_mps ────────────────
 
 
