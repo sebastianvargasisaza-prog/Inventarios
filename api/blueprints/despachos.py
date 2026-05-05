@@ -129,16 +129,31 @@ def recepcion_seguimiento():
 
 @bp.route('/api/recepcion/lotes-cuarentena')
 def recepcion_lotes_cuarentena():
+    """Lotes en cuarentena pendientes de QC.
+
+    Sebastian 5-may-2026 (audit zero-error Recepciones): ANTES filtraba
+    por estado_lote='Cuarentena' (Capitalizado) pero compras.py escribe
+    'CUARENTENA' (UPPERCASE) cuando se recibe via OC. Resultado: lotes
+    recepcionados via OC NO APARECIAN en la bandeja QC · trazabilidad
+    INVIMA rota silenciosamente.
+
+    FIX: UPPER() comparison · matchea 'Cuarentena', 'CUARENTENA',
+    'cuarentena' indistintamente. Tambien incluye CUARENTENA_EXTENDIDA
+    (lotes que requirieron AQL adicional).
+    """
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
     conn = get_db(); c = conn.cursor()
     c.execute("""SELECT id, material_id, material_nombre, cantidad, lote,
-                        fecha_vencimiento, proveedor, fecha, numero_oc
+                        fecha_vencimiento, proveedor, fecha, numero_oc, estado_lote
                  FROM movimientos
-                 WHERE tipo='Entrada' AND (estado_lote='Cuarentena' OR (estado_lote IS NULL AND lote IS NOT NULL AND lote != ''))
+                 WHERE tipo='Entrada'
+                   AND (UPPER(COALESCE(estado_lote,'')) IN ('CUARENTENA','CUARENTENA_EXTENDIDA')
+                        OR (estado_lote IS NULL AND lote IS NOT NULL AND lote != ''))
                  ORDER BY fecha DESC LIMIT 100""")
     rows = c.fetchall()
-    cols = ['id','material_id','material_nombre','cantidad','lote','fecha_vencimiento','proveedor','fecha','numero_oc']
+    cols = ['id','material_id','material_nombre','cantidad','lote',
+            'fecha_vencimiento','proveedor','fecha','numero_oc','estado_lote']
     return jsonify([dict(zip(cols, r)) for r in rows])
 
 @bp.route('/api/recepcion/aprobar-lote', methods=['POST'])

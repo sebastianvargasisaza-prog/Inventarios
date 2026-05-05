@@ -59,19 +59,22 @@ def calidad_page():
 @bp.route('/api/calidad/dashboard')
 def calidad_dashboard():
     conn = get_db(); c = conn.cursor()
-    # Lotes en cuarentena
+    # Lotes en cuarentena · Sebastian 5-may-2026 (audit zero-error):
+    # UPPER() para matchear ambos 'Cuarentena' y 'CUARENTENA' que coexisten
+    # en DB · antes este KPI mostraba menos lotes de los reales.
     c.execute("""SELECT COUNT(*) FROM movimientos
-                 WHERE tipo='Entrada' AND (estado_lote='Cuarentena'
-                 OR (estado_lote IS NULL AND lote IS NOT NULL AND lote != ''))""")
+                 WHERE tipo='Entrada'
+                   AND (UPPER(COALESCE(estado_lote,'')) IN ('CUARENTENA','CUARENTENA_EXTENDIDA')
+                        OR (estado_lote IS NULL AND lote IS NOT NULL AND lote != ''))""")
     cuarentena = c.fetchone()[0]
-    # Aprobados y rechazados últimos 30d
+    # Aprobados y rechazados últimos 30d · UPPER tambien
     c.execute("""SELECT COUNT(*) FROM movimientos
-                 WHERE estado_lote='Aprobado'
-                 AND fecha >= date('now','-30 days')""")
+                 WHERE UPPER(COALESCE(estado_lote,''))='APROBADO'
+                   AND fecha >= date('now','-30 days')""")
     aprobados = c.fetchone()[0]
     c.execute("""SELECT COUNT(*) FROM movimientos
-                 WHERE estado_lote='Rechazado'
-                 AND fecha >= date('now','-30 days')""")
+                 WHERE UPPER(COALESCE(estado_lote,''))='RECHAZADO'
+                   AND fecha >= date('now','-30 days')""")
     rechazados = c.fetchone()[0]
     # NC abiertas
     c.execute("SELECT COUNT(*) FROM no_conformidades WHERE estado='Abierta'")
@@ -168,12 +171,15 @@ def calidad_bandeja():
     # Audit zero-error 2-may-2026: KPIs reales · COUNT separado del LIMIT.
     # Antes 'total' era len(items) capeado a LIMIT 100 → KPI incorrecto si >100.
     try:
+        # Sebastian 5-may-2026 (audit zero-error Recepciones): UPPER() para
+        # matchear 'Cuarentena' y 'CUARENTENA' que coexisten en DB.
         kpi_row = c.execute("""
             SELECT COUNT(*),
                    COUNT(CASE WHEN (julianday('now') - julianday(m.fecha)) > 5 THEN 1 END)
             FROM movimientos m
             LEFT JOIN maestro_mps mp ON mp.codigo_mp = m.material_id
-            WHERE m.tipo = 'Entrada' AND COALESCE(m.estado_lote, '') = 'Cuarentena'
+            WHERE m.tipo = 'Entrada'
+              AND UPPER(COALESCE(m.estado_lote, '')) IN ('CUARENTENA','CUARENTENA_EXTENDIDA')
         """).fetchone()
         rows = c.execute("""
             SELECT m.material_id, m.material_nombre, m.lote, m.proveedor,
@@ -183,7 +189,7 @@ def calidad_bandeja():
             FROM movimientos m
             LEFT JOIN maestro_mps mp ON mp.codigo_mp = m.material_id
             WHERE m.tipo = 'Entrada'
-              AND COALESCE(m.estado_lote, '') = 'Cuarentena'
+              AND UPPER(COALESCE(m.estado_lote, '')) IN ('CUARENTENA','CUARENTENA_EXTENDIDA')
             ORDER BY m.fecha ASC
             LIMIT 20
         """).fetchall()

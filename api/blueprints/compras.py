@@ -3461,17 +3461,91 @@ def recibir_oc(numero_oc):
     rec_map_idx = {idx: ir for idx, ir in enumerate(items_r)}
     # Fallback: lookup por codigo_mp para compatibilidad con clientes que lo envien
     rec_map_cod = {ir.get('codigo_mp', ''): ir for ir in items_r if ir.get('codigo_mp', '')}
+
+    # ── PRE-CHECK · Sebastian 5-may-2026 (audit zero-error Recepciones) ──
+    # Antes de tocar DB validamos sobre-recepcion y vencimiento. Si hay
+    # violaciones y no se forzo override (admin), abortamos con 422
+    # detallado · NO se inserta nada.
+    forzar_excepciones = bool(data2.get('forzar', False))
+    sobrerecepciones = []
+    vencimientos_pasados = []
+    sin_cantidad = []
+    from datetime import date as _date
+    hoy_iso = _date.today().isoformat()
+
+    for _idx, item in enumerate(items_oc):
+        codigo, nombre, cantidad_pedida = item
+        ir = rec_map_idx.get(_idx) or rec_map_cod.get(codigo, {})
+        cant_raw = ir.get('cantidad_recibida', 0)
+        cantidad_explicita = not (cant_raw is None or cant_raw == '')
+        if cantidad_explicita:
+            cant_validada, err = validate_money(cant_raw, allow_zero=True,
+                                                  max_value=10_000_000_000,
+                                                  field_name='cantidad_recibida')
+            if err:
+                return jsonify(err), 400
+            cant_check = cant_validada
+        else:
+            # ANTES default a cantidad_pedida (drift silencioso si receptor
+            # olvidaba ingresar) · AHORA flageamos para warning informativo.
+            cant_check = 0.0
+            sin_cantidad.append({'codigo_mp': codigo, 'nombre': nombre})
+
+        cantidad_pedida_f = float(cantidad_pedida or 0)
+        # Sobre-recepción · tolerancia 5% para pesaje
+        if cantidad_pedida_f > 0 and cant_check > cantidad_pedida_f * 1.05:
+            sobrerecepciones.append({
+                'codigo_mp': codigo,
+                'nombre': nombre,
+                'cantidad_pedida_g': cantidad_pedida_f,
+                'cantidad_recibida_g': cant_check,
+                'exceso_g': round(cant_check - cantidad_pedida_f, 2),
+                'pct_exceso': round((cant_check / cantidad_pedida_f - 1) * 100, 1),
+            })
+
+        # Fecha vencimiento pasada
+        fv_check = (ir.get('fecha_vencimiento') or '').strip()
+        if fv_check and len(fv_check) >= 10:
+            try:
+                if fv_check[:10] < hoy_iso:
+                    vencimientos_pasados.append({
+                        'codigo_mp': codigo,
+                        'nombre': nombre,
+                        'lote': (ir.get('lote') or '').strip(),
+                        'fecha_vencimiento': fv_check[:10],
+                        'dias_vencido': (
+                            _date.fromisoformat(hoy_iso) -
+                            _date.fromisoformat(fv_check[:10])
+                        ).days,
+                    })
+            except (ValueError, TypeError):
+                pass
+
+    # Si hay violaciones bloqueantes y no se fuerza, abortar limpio
+    if not forzar_excepciones and (sobrerecepciones or vencimientos_pasados):
+        return jsonify({
+            'error': 'Recepción bloqueada por validaciones',
+            'codigo': 'RECEPCION_VIOLA_REGLAS',
+            'sobrerecepciones': sobrerecepciones,
+            'vencimientos_pasados': vencimientos_pasados,
+            'sin_cantidad': sin_cantidad,
+            'hint': ('Verifica cantidades y vencimientos. Si la excepción es '
+                      'legítima (admin), envía body con forzar:true.'),
+        }), 422
+
+    # ── INSERT real (post-validación) ──────────────────────────────────
     ingresos = 0
     es_parcial = False
     for _idx, item in enumerate(items_oc):
         codigo, nombre, cantidad_pedida = item
         ir = rec_map_idx.get(_idx) or rec_map_cod.get(codigo, {})
-        # Money sanity validation · audit zero-error 2-may-2026
-        # cantidad_recibida puede ser 0 (item rechazado) · allow_zero=True
         cant_raw = ir.get('cantidad_recibida', 0)
-        if cant_raw is None or cant_raw == '' or cant_raw == 0:
-            cant_recibida = float(cantidad_pedida or 0)
+        if cant_raw is None or cant_raw == '':
+            cant_recibida = 0.0
+        elif cant_raw == 0:
+            cant_recibida = 0.0
         else:
+            # Re-validar (cheap · ya pasó pre-check)
             cant_validada, err = validate_money(cant_raw, allow_zero=True,
                                                   max_value=10_000_000_000,
                                                   field_name='cantidad_recibida')
@@ -3482,8 +3556,9 @@ def recibir_oc(numero_oc):
         fv = ir.get('fecha_vencimiento', '').strip()
         estado_item = ir.get('estado', 'OK')
         notas_item = ir.get('notas', '')
+        cantidad_pedida_f = float(cantidad_pedida or 0)
         # Detectar recepcion parcial
-        if cant_recibida < cantidad_pedida * 0.999:
+        if cant_recibida < cantidad_pedida_f * 0.999:
             es_parcial = True
         # Solo registrar movimiento si hay algo recibido
         if cant_recibida > 0:
