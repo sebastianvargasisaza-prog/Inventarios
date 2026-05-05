@@ -93,6 +93,42 @@ def _require_admin():
         return None, jsonify({'error': 'Solo administradores'}), 403
     return u, None, None
 
+# ── Sebastian 5-may-2026: revisar stock_minimo desde Planta ────────
+# El equipo (no solo admin) necesita ver si los stock_minimo configurados
+# son reales antes de fiarse de las alertas. Endpoint read-only que
+# reutiliza la logica de /api/admin/auditar-minimos.
+@bp.route('/api/planta/auditar-minimos', methods=['GET'])
+def planta_auditar_minimos():
+    """Audit read-only de stock_minimo · accesible para todo Planta.
+
+    Reutiliza _compute_audit_minimos() del modulo admin · misma logica
+    pero sin requerir admin role (cualquier user autenticado puede ver).
+
+    El APPLY sigue siendo solo admin via /api/admin/aplicar-minimos.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    try:
+        horizonte = max(30, min(int(request.args.get('proyeccion_dias', 90)), 180))
+    except (ValueError, TypeError):
+        horizonte = 90
+    try:
+        from blueprints.admin import _compute_audit_minimos
+    except ImportError:
+        from api.blueprints.admin import _compute_audit_minimos
+    try:
+        data = _compute_audit_minimos(horizonte)
+        return jsonify(data)
+    except Exception as e:
+        __import__('logging').getLogger('inventario').warning(
+            "planta_auditar_minimos falló: %s", e,
+        )
+        return jsonify({
+            'error': 'No se pudo calcular el audit',
+            'detalle': str(e)[:200],
+        }), 500
+
+
 @bp.route('/api/inventario')
 def get_inventario():
     """Endpoint principal del Dashboard de Planta. Devuelve KPIs agrupados

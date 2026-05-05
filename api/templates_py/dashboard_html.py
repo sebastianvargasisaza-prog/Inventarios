@@ -246,6 +246,48 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
   </div>
 </div>
 
+<!-- Modal REVISAR MINIMOS (Sebastian 5-may-2026) — audit + apply de stock_minimo -->
+<div id="modal-revisar-minimos" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.78);z-index:9998;display:none;align-items:center;justify-content:center;">
+  <div style="background:white;border-radius:16px;padding:0;max-width:1100px;width:96%;max-height:92vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.5);">
+    <div style="background:#0e7490;color:white;padding:18px 22px;border-radius:16px 16px 0 0;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+      <div>
+        <h2 style="color:white;margin:0;font-size:1.2em;">&#x1F4CA; Revisar M&iacute;nimos de MP</h2>
+        <div style="font-size:0.8em;opacity:0.9;margin-top:4px;">Compara stock_minimo configurado vs lo recomendado por consumo proyectado del calendario &times; f&oacute;rmulas. Evita alertas falsas.</div>
+      </div>
+      <button onclick="cerrarRevisarMinimos()" style="background:rgba(255,255,255,0.2);border:none;font-size:1.5em;cursor:pointer;color:white;padding:4px 10px;line-height:1;border-radius:6px;" title="Cerrar">&#10005;</button>
+    </div>
+    <div style="padding:18px 22px;">
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px;">
+        <label style="font-size:13px;color:#475569;">Horizonte proyecci&oacute;n:</label>
+        <select id="rmin-proy" style="padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;">
+          <option value="60">60 d&iacute;as</option>
+          <option value="90" selected>90 d&iacute;as (recomendado)</option>
+          <option value="120">120 d&iacute;as</option>
+          <option value="180">180 d&iacute;as</option>
+        </select>
+        <button onclick="cargarRevisarMinimos()" id="btn-rmin-load" style="background:#0e7490;color:#fff;padding:6px 14px;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;">&#x1F50D; Calcular</button>
+      </div>
+      <div id="rmin-stats" style="display:none;margin-bottom:14px;display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;">
+        <div style="background:#f8fafc;border-left:3px solid #94a3b8;padding:10px;border-radius:4px;"><div style="font-size:11px;color:#64748b;">Total MPs</div><div style="font-size:1.4em;font-weight:700;color:#1e293b;" id="rmin-total">-</div></div>
+        <div style="background:#f0fdf4;border-left:3px solid #22c55e;padding:10px;border-radius:4px;"><div style="font-size:11px;color:#166534;">OK</div><div style="font-size:1.4em;font-weight:700;color:#22c55e;" id="rmin-ok">-</div></div>
+        <div style="background:#fef2f2;border-left:3px solid #dc2626;padding:10px;border-radius:4px;"><div style="font-size:11px;color:#991b1b;">SUB-protegido</div><div style="font-size:1.4em;font-weight:700;color:#dc2626;" id="rmin-sub">-</div></div>
+        <div style="background:#fffbeb;border-left:3px solid #f59e0b;padding:10px;border-radius:4px;"><div style="font-size:11px;color:#92400e;">SOBRE-protegido</div><div style="font-size:1.4em;font-weight:700;color:#f59e0b;" id="rmin-sobre">-</div></div>
+        <div style="background:#eef2ff;border-left:3px solid #6366f1;padding:10px;border-radius:4px;"><div style="font-size:11px;color:#4338ca;">Sin m&iacute;nimo</div><div style="font-size:1.4em;font-weight:700;color:#6366f1;" id="rmin-vacio">-</div></div>
+        <div style="background:#f8fafc;border-left:3px solid #94a3b8;padding:10px;border-radius:4px;"><div style="font-size:11px;color:#64748b;">Sin uso</div><div style="font-size:1.4em;font-weight:700;color:#94a3b8;" id="rmin-uso">-</div></div>
+      </div>
+      <div id="rmin-aplicar-box" style="display:none;margin-bottom:14px;padding:12px;background:#fef3c7;border:1px solid #f59e0b;border-radius:8px;">
+        <div style="font-weight:700;color:#92400e;font-size:13px;margin-bottom:6px;">&#x26A0; Aplicar recálculo (solo admins)</div>
+        <div style="font-size:11px;color:#7c2d12;margin-bottom:8px;">Actualiza stock_minimo en maestro_mps para los SUB/SOBRE/SIN_MINIMO. Crea backup automático previo + audit_log. NO toca SIN_USO.</div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <input id="rmin-token" placeholder="Token: APLICAR_MINIMOS_RECALCULADOS_2026" style="padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:11px;flex:1;min-width:280px;">
+          <button onclick="aplicarRevisarMinimos()" id="btn-rmin-aplicar" style="background:#dc2626;color:#fff;padding:6px 14px;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;">&#x1F4A5; Aplicar recálculo</button>
+        </div>
+      </div>
+      <div id="rmin-result" style="font-size:0.85em;"></div>
+    </div>
+  </div>
+</div>
+
 <!-- Modal LIMPIEZA PROVEEDORES — detecta duplicados y los unifica -->
 <div id="modal-limpieza-prov" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.78);z-index:9998;display:none;align-items:center;justify-content:center;">
   <div style="background:white;border-radius:16px;padding:0;max-width:760px;width:96%;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.5);">
@@ -426,7 +468,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     <h2>&#128230; Stock por Lote</h2>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px;">
       <input type="text" id="stock-search" placeholder="MP, INCI, lote, proveedor..." oninput="filterStock()" style="width:210px;margin-top:0;">
-      <div style="display:flex;gap:10px;"><button onclick="loadStock()">&#8635; Actualizar</button><button onclick="exportarExcelStock()" style="background:#217346;">&#128196; Descargar Excel</button><button onclick="abrirLimpiezaProveedores()" style="background:#7c3aed;" title="Detecta proveedores duplicados por typo y los unifica">&#129529; Limpiar proveedores</button></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;"><button onclick="loadStock()">&#8635; Actualizar</button><button onclick="exportarExcelStock()" style="background:#217346;">&#128196; Descargar Excel</button><button onclick="abrirLimpiezaProveedores()" style="background:#7c3aed;" title="Detecta proveedores duplicados por typo y los unifica">&#129529; Limpiar proveedores</button><button onclick="abrirRevisarMinimos()" style="background:#0e7490;" title="Audita stock minimo de cada MP vs consumo proyectado · evita alertas falsas">&#128202; Revisar m&iacute;nimos</button></div>
       <span id="stock-count" style="color:#888;font-size:0.88em;"></span>
     </div>
     <div style="overflow-x:auto;">
@@ -1758,6 +1800,119 @@ function _fmtMiles(n){
   try{ return Math.round(Number(n)).toLocaleString('es-CO'); }
   catch(e){ return String(Math.round(Number(n))).replace(/\B(?=(\d{3})+(?!\d))/g,'.'); }
 }
+// ── Sebastian 5-may-2026 (Bodega MP): revisar mínimos de stock_minimo ──
+// Antes la auditoria solo era accesible desde /admin · operario tipico
+// no la veia. Ahora boton dentro de Bodega MP que abre modal con audit
+// completo. Apply sigue siendo admin-only en backend.
+var _RMIN_DATA = null;
+
+function abrirRevisarMinimos(){
+  document.getElementById('modal-revisar-minimos').style.display='flex';
+  if(!_RMIN_DATA){ cargarRevisarMinimos(); }
+}
+function cerrarRevisarMinimos(){
+  document.getElementById('modal-revisar-minimos').style.display='none';
+}
+
+async function cargarRevisarMinimos(){
+  var btn = document.getElementById('btn-rmin-load');
+  var out = document.getElementById('rmin-result');
+  btn.disabled = true; btn.innerHTML='Calculando...';
+  out.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:24px;">Proyectando consumo del calendario × fórmulas vs mínimos actuales...</div>';
+  document.getElementById('rmin-stats').style.display='none';
+  document.getElementById('rmin-aplicar-box').style.display='none';
+  try{
+    var proy = document.getElementById('rmin-proy').value || '90';
+    var r = await fetch('/api/planta/auditar-minimos?proyeccion_dias='+encodeURIComponent(proy));
+    var d = await r.json();
+    btn.disabled = false; btn.innerHTML='&#x1F50D; Calcular';
+    if(!r.ok){
+      out.innerHTML = '<div style="color:#dc2626;padding:18px;">Error: '+_escHTML(d.error||r.status)+'</div>';
+      return;
+    }
+    _RMIN_DATA = d;
+    // Stats
+    document.getElementById('rmin-stats').style.display='grid';
+    document.getElementById('rmin-total').textContent = d.stats.total;
+    document.getElementById('rmin-ok').textContent = d.stats.ok;
+    document.getElementById('rmin-sub').textContent = d.stats.sub_protegido;
+    document.getElementById('rmin-sobre').textContent = d.stats.sobre_protegido;
+    document.getElementById('rmin-vacio').textContent = d.stats.sin_minimo;
+    document.getElementById('rmin-uso').textContent = d.stats.sin_uso;
+    // Aplicar box solo si hay algo que aplicar
+    var totalAplic = d.stats.sub_protegido + d.stats.sobre_protegido + d.stats.sin_minimo;
+    document.getElementById('rmin-aplicar-box').style.display = totalAplic > 0 ? 'block' : 'none';
+    // Render tabla con orden por prioridad
+    var orden = {'SUB_PROTEGIDO':0, 'SIN_MINIMO_CONFIGURADO':1, 'SOBRE_PROTEGIDO':2, 'OK':3, 'SIN_USO_CON_MIN':4, 'SIN_USO':5};
+    var items = (d.auditoria||[]).slice().sort(function(a,b){
+      var oa = orden[a.estado]!==undefined?orden[a.estado]:9;
+      var ob = orden[b.estado]!==undefined?orden[b.estado]:9;
+      if(oa!==ob) return oa-ob;
+      return (b.consumo_diario_g||0)-(a.consumo_diario_g||0);
+    });
+    var colors = {OK:'#22c55e',SUB_PROTEGIDO:'#dc2626',SOBRE_PROTEGIDO:'#f59e0b',SIN_MINIMO_CONFIGURADO:'#6366f1',SIN_USO:'#94a3b8',SIN_USO_CON_MIN:'#94a3b8'};
+    var labels = {OK:'OK',SUB_PROTEGIDO:'SUB',SOBRE_PROTEGIDO:'SOBRE',SIN_MINIMO_CONFIGURADO:'VACIO',SIN_USO:'SIN USO',SIN_USO_CON_MIN:'SIN USO'};
+    var html = '<div style="font-size:11px;color:#64748b;margin-bottom:8px;">Metodologia: <code>minimo = consumo_diario × (lead_time + buffer)</code> · China 90d, local 21d, sin proveedor 28d. Piso 50g para peptides.</div>';
+    html += '<div style="overflow-x:auto;"><table style="width:100%;font-size:11px;border-collapse:collapse;">';
+    html += '<thead><tr style="background:#f1f5f9;"><th style="text-align:left;padding:6px 8px;border-bottom:2px solid #e2e8f0;">Estado</th><th style="text-align:left;padding:6px 8px;border-bottom:2px solid #e2e8f0;">Material</th><th style="text-align:left;padding:6px 8px;border-bottom:2px solid #e2e8f0;">Origen</th><th style="text-align:right;padding:6px 8px;border-bottom:2px solid #e2e8f0;">Consumo/día</th><th style="text-align:right;padding:6px 8px;border-bottom:2px solid #e2e8f0;">Mín. actual</th><th style="text-align:right;padding:6px 8px;border-bottom:2px solid #e2e8f0;">Mín. recomendado</th><th style="text-align:left;padding:6px 8px;border-bottom:2px solid #e2e8f0;">Razonamiento</th></tr></thead><tbody>';
+    items.forEach(function(a){
+      var col = colors[a.estado] || '#94a3b8';
+      var lab = labels[a.estado] || a.estado;
+      html += '<tr style="border-bottom:1px solid #f1f5f9;">';
+      html += '<td style="padding:6px 8px;"><span style="background:'+col+'20;color:'+col+';border:1px solid '+col+';border-radius:10px;padding:2px 7px;font-size:10px;font-weight:700;">'+_escHTML(lab)+'</span></td>';
+      html += '<td style="padding:6px 8px;"><div style="font-weight:600;">'+_escHTML(a.nombre)+'</div><div style="font-size:9px;color:#94a3b8;font-family:monospace;">'+_escHTML(a.codigo_mp)+'</div></td>';
+      html += '<td style="padding:6px 8px;color:#64748b;">'+_escHTML(a.origen)+'</td>';
+      html += '<td style="padding:6px 8px;text-align:right;">'+(a.consumo_diario_g||0).toLocaleString(undefined,{maximumFractionDigits:2})+' g</td>';
+      html += '<td style="padding:6px 8px;text-align:right;">'+(a.stock_minimo_actual_g||0).toLocaleString()+' g</td>';
+      html += '<td style="padding:6px 8px;text-align:right;font-weight:700;color:'+col+';">'+(a.minimo_recomendado_g||0).toLocaleString()+' g</td>';
+      html += '<td style="padding:6px 8px;color:#475569;font-size:11px;">'+_escHTML(a.razonamiento||'')+'</td>';
+      html += '</tr>';
+    });
+    html += '</tbody></table></div>';
+    out.innerHTML = html;
+  }catch(e){
+    btn.disabled = false; btn.innerHTML='&#x1F50D; Calcular';
+    out.innerHTML = '<div style="color:#dc2626;padding:18px;">Error: '+_escHTML(e.message)+'</div>';
+  }
+}
+
+async function aplicarRevisarMinimos(){
+  var token = (document.getElementById('rmin-token').value||'').trim();
+  if(token !== 'APLICAR_MINIMOS_RECALCULADOS_2026'){
+    alert('Token incorrecto. Debe ser exactamente: APLICAR_MINIMOS_RECALCULADOS_2026');
+    return;
+  }
+  if(!confirm('Esto va a actualizar stock_minimo en maestro_mps para los SUB/SOBRE/SIN_MINIMO. Crea backup automatico previo. ¿Continuar?')) return;
+  var proy = document.getElementById('rmin-proy').value || '90';
+  var btn = document.getElementById('btn-rmin-aplicar');
+  btn.disabled = true; btn.innerHTML='Aplicando...';
+  try{
+    var r = await fetch('/api/admin/aplicar-minimos', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({token: token, proyeccion_dias: parseInt(proy)})
+    });
+    var d = await r.json();
+    btn.disabled = false; btn.innerHTML='&#x1F4A5; Aplicar recálculo';
+    if(!r.ok){
+      if(r.status===403){
+        alert('Solo admins pueden aplicar el recálculo. Contacta a Sebastián o Alejandro.');
+      } else {
+        alert('Error: '+(d.error||r.status));
+      }
+      return;
+    }
+    alert('✓ '+(d.mensaje||(d.count_cambios+' mínimos actualizados.')));
+    document.getElementById('rmin-token').value='';
+    // Recargar audit
+    cargarRevisarMinimos();
+    // Refrescar stock para que la columna stock_min_g muestre los nuevos valores
+    if(typeof loadStock === 'function') loadStock();
+  }catch(e){
+    btn.disabled = false; btn.innerHTML='&#x1F4A5; Aplicar recálculo';
+    alert('Error de red: '+e.message);
+  }
+}
+
 async function abrirLimpiezaProveedores(){
   document.getElementById('modal-limpieza-prov').style.display='flex';
   await _renderLimpiezaProveedores();

@@ -4177,41 +4177,24 @@ def admin_import_pagos_influencers_excel():
 # ─── Auditoría de Mínimos ─────────────────────────────────────────────────────
 
 
-@bp.route("/api/admin/auditar-minimos", methods=["GET"])
-def auditar_minimos():
-    """Auditoría no-destructiva de stock_minimo de maestro_mps.
+def _compute_audit_minimos(horizonte_proyeccion_dias: int = 90) -> dict:
+    """Helper compartido (Sebastian 5-may-2026): calcula audit de
+    stock_minimo sin requerir auth · permite que /api/admin/auditar-minimos
+    (admin only · full + apply) y /api/planta/auditar-minimos (read-only ·
+    todos los users) compartan la misma lógica.
 
-    Para cada MP: muestra mínimo actual vs recomendado calculado por
-    metodología consumo × (lead_time + buffer) según origen del proveedor.
+    Args:
+        horizonte_proyeccion_dias: 30-180 días (default 90).
 
-    Query params:
-      proyeccion_dias: int (30-180, default 90) — horizonte para proyectar
-        consumo desde el calendario × fórmulas.
-
-    Estados:
-      OK: ratio actual/recomendado entre 0.75 y 1.50
-      SUB_PROTEGIDO: actual < recomendado × 0.75
-      SOBRE_PROTEGIDO: actual > recomendado × 1.50
-      SIN_MINIMO_CONFIGURADO: stock_minimo = 0 con consumo > 0
-      SIN_USO: sin consumo proyectado en horizonte
-      SIN_USO_CON_MIN: sin consumo pero tiene mínimo configurado
-
-    Lead times por origen:
-      china: 60d lead + 30d buffer = 90d
-      colombia/local: 7d lead + 14d buffer = 21d
-      desconocido (con proveedor): 7d + 14d = 21d
-      desconocido (sin proveedor): 14d + 14d = 28d
+    Returns:
+        dict con stats + auditoria + metodologia.
     """
-    u, err, code = _require_admin()
-    if err:
-        return err, code
-
     from database import get_db as _get_db
     from flask import current_app
 
     try:
-        horizonte_proyeccion_dias = max(30, min(int(request.args.get('proyeccion_dias', 90)), 180))
-    except ValueError:
+        horizonte_proyeccion_dias = max(30, min(int(horizonte_proyeccion_dias), 180))
+    except (ValueError, TypeError):
         horizonte_proyeccion_dias = 90
 
     # 1. Cargar planificacion estratégica para el horizonte
@@ -4225,7 +4208,6 @@ def auditar_minimos():
         plan_resp = _plan()
     plan_data = plan_resp.get_json() or {}
 
-    # Consumo proyectado por MP en horizonte
     consumo_por_mp = {}
     for mp in (plan_data.get('mps_deficit') or []) + (plan_data.get('mps_ok') or []):
         consumo_por_mp[mp['material_id']] = {
@@ -4234,7 +4216,6 @@ def auditar_minimos():
             'productos': mp.get('productos', []) or [],
         }
 
-    # 2. Cargar maestro_mps activos
     conn = _get_db()
     try:
         rows = conn.execute("""
@@ -4251,7 +4232,6 @@ def auditar_minimos():
             ORDER BY m.codigo_mp
         """).fetchall()
     except sqlite3.OperationalError:
-        # Schema legacy sin tipo_material — fallback
         rows = conn.execute("""
             SELECT m.codigo_mp, m.nombre_inci, m.nombre_comercial, m.proveedor,
                    COALESCE(m.stock_minimo, 0), 'MP',
@@ -4281,34 +4261,30 @@ def auditar_minimos():
         consumo_diario_g = consumo_horizonte_g / horizonte_proyeccion_dias if horizonte_proyeccion_dias > 0 else 0
         consumo_mensual_g = consumo_diario_g * 30
 
-        # Lead time + buffer por origen
         if origen == 'china':
-            lead_time, buffer = 60, 30
+            lead_time, buffer_d = 60, 30
         elif origen == 'colombia':
-            lead_time, buffer = 7, 14
+            lead_time, buffer_d = 7, 14
         else:
             if proveedor:
-                lead_time, buffer = 7, 14
+                lead_time, buffer_d = 7, 14
             else:
-                lead_time, buffer = 14, 14
-        dias_buffer = lead_time + buffer
+                lead_time, buffer_d = 14, 14
+        dias_buffer = lead_time + buffer_d
 
-        # Recomendado
         if consumo_diario_g <= 0:
             minimo_recomendado = 0.0
             estado = 'SIN_USO_CON_MIN' if stock_min_actual > 0 else 'SIN_USO'
             razonamiento = f'Sin uso proyectado en próximos {horizonte_proyeccion_dias} días'
         else:
             minimo_recomendado = consumo_diario_g * dias_buffer
-            # Piso para peptides de baja rotación
             if consumo_diario_g < 0.5:
                 minimo_recomendado = max(minimo_recomendado, 50)
-
             if stock_min_actual == 0:
                 estado = 'SIN_MINIMO_CONFIGURADO'
                 razonamiento = (
                     f'Sin mínimo configurado · Recomendado {int(round(minimo_recomendado))} g '
-                    f'({lead_time}d lead + {buffer}d buffer × {round(consumo_diario_g, 2)} g/día)'
+                    f'({lead_time}d lead + {buffer_d}d buffer × {round(consumo_diario_g, 2)} g/día)'
                 )
             else:
                 ratio = stock_min_actual / minimo_recomendado if minimo_recomendado > 0 else 1.0
@@ -4341,7 +4317,7 @@ def auditar_minimos():
             'consumo_diario_g': round(consumo_diario_g, 3),
             'consumo_mensual_g': round(consumo_mensual_g, 1),
             'lead_time_dias': lead_time,
-            'buffer_dias': buffer,
+            'buffer_dias': buffer_d,
             'dias_cobertura_total': dias_buffer,
             'minimo_recomendado_g': round(minimo_recomendado, 1),
             'estado': estado,
@@ -4349,7 +4325,6 @@ def auditar_minimos():
             'productos': productos,
         })
 
-    # Stats
     stats = {
         'total': len(auditoria),
         'ok': sum(1 for a in auditoria if a['estado'] == 'OK'),
@@ -4359,7 +4334,7 @@ def auditar_minimos():
         'sin_uso': sum(1 for a in auditoria if a['estado'].startswith('SIN_USO')),
     }
 
-    return jsonify({
+    return {
         'horizonte_proyeccion_dias': horizonte_proyeccion_dias,
         'stats': stats,
         'auditoria': auditoria,
@@ -4372,7 +4347,43 @@ def auditar_minimos():
                 'desconocido_sin_proveedor': '14d + 14d = 28d',
             },
         },
-    })
+    }
+
+
+@bp.route("/api/admin/auditar-minimos", methods=["GET"])
+def auditar_minimos():
+    """Auditoría no-destructiva de stock_minimo de maestro_mps.
+
+    Para cada MP: muestra mínimo actual vs recomendado calculado por
+    metodología consumo × (lead_time + buffer) según origen del proveedor.
+
+    Query params:
+      proyeccion_dias: int (30-180, default 90) — horizonte para proyectar
+        consumo desde el calendario × fórmulas.
+
+    Estados:
+      OK: ratio actual/recomendado entre 0.75 y 1.50
+      SUB_PROTEGIDO: actual < recomendado × 0.75
+      SOBRE_PROTEGIDO: actual > recomendado × 1.50
+      SIN_MINIMO_CONFIGURADO: stock_minimo = 0 con consumo > 0
+      SIN_USO: sin consumo proyectado en horizonte
+      SIN_USO_CON_MIN: sin consumo pero tiene mínimo configurado
+
+    Lead times por origen:
+      china: 60d lead + 30d buffer = 90d
+      colombia/local: 7d lead + 14d buffer = 21d
+      desconocido (con proveedor): 7d + 14d = 21d
+      desconocido (sin proveedor): 14d + 14d = 28d
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    try:
+        horizonte_proyeccion_dias = max(30, min(int(request.args.get('proyeccion_dias', 90)), 180))
+    except ValueError:
+        horizonte_proyeccion_dias = 90
+    return jsonify(_compute_audit_minimos(horizonte_proyeccion_dias))
 
 
 @bp.route("/api/admin/aplicar-minimos", methods=["POST"])
