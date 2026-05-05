@@ -400,6 +400,171 @@ def test_lotes_incluye_lote_parcialmente_consumido(app, db_clean):
         _cleanup(['MP-PAR-1'])
 
 
+# ── Audit log + permisos en operaciones de Bodega MP ───────────────
+
+
+def test_recepcion_genera_audit_log(app, db_clean):
+    """POST /api/recepcion debe emitir audit_log INGRESAR_MP."""
+    cs = _login(app, 'laura')  # laura es calidad y planta_write
+    # Pre-crear el MP en catalogo (recepcion no lo crea siempre)
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    conn.execute(
+        """INSERT OR REPLACE INTO maestro_mps
+           (codigo_mp, nombre_comercial, tipo_material, activo)
+           VALUES ('MP-AUD-REC', 'Test recepcion', 'MP', 1)"""
+    )
+    conn.commit(); conn.close()
+    try:
+        r = cs.post('/api/recepcion',
+                    json={'codigo_mp': 'MP-AUD-REC',
+                          'cantidad': 1500,
+                          'lote': 'L-REC-001',
+                          'proveedor': 'Inquimica',
+                          'numero_factura': 'F-12345',
+                          'operador': 'laura'},
+                    headers=csrf_headers())
+        assert r.status_code == 201, r.data
+        # Verificar audit_log
+        conn = sqlite3.connect(os.environ["DB_PATH"])
+        row = conn.execute(
+            "SELECT usuario, accion, detalle FROM audit_log "
+            "WHERE accion='INGRESAR_MP' ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        conn.close()
+        assert row is not None, "audit_log INGRESAR_MP no se creó"
+        assert row[0] == 'laura'
+        assert 'MP-AUD-REC' in row[2]
+        assert '1500' in row[2] or '1500g' in row[2]
+    finally:
+        _cleanup(['MP-AUD-REC'])
+
+
+def test_consumo_manual_requiere_permisos(app, db_clean):
+    """POST /api/consumo-manual sin login debe rechazar (antes era abierto)."""
+    client = app.test_client()
+    r = client.post('/api/consumo-manual',
+                    json={'codigo_mp': 'X', 'cantidad': 100},
+                    headers=csrf_headers())
+    assert r.status_code in (401, 403), \
+        f"Sin auth debe rechazar · llegó {r.status_code}"
+
+
+def test_consumo_manual_genera_audit_log(app, db_clean):
+    cs = _login(app, 'luis')
+    # Pre-crear MP + stock
+    _seed_lote('MP-AUD-CON', 'X', 5000, 'L-CON-1', '2027-01-01', 'VIGENTE')
+    try:
+        r = cs.post('/api/consumo-manual',
+                    json={'codigo_mp': 'MP-AUD-CON',
+                          'cantidad': 200,
+                          'lote': 'L-CON-1',
+                          'observaciones': 'Test consumo manual'},
+                    headers=csrf_headers())
+        assert r.status_code == 201, r.data
+        d = r.get_json()
+        assert d['stock_despues_g'] == 4800.0
+        # audit_log
+        conn = sqlite3.connect(os.environ["DB_PATH"])
+        row = conn.execute(
+            "SELECT usuario, accion, detalle FROM audit_log "
+            "WHERE accion='CONSUMO_MANUAL' ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        conn.close()
+        assert row is not None
+        assert row[0] == 'luis'
+        assert 'MP-AUD-CON' in row[2]
+    finally:
+        _cleanup(['MP-AUD-CON'])
+
+
+def test_consumo_manual_codigo_inexistente_404(app, db_clean):
+    cs = _login(app, 'luis')
+    r = cs.post('/api/consumo-manual',
+                json={'codigo_mp': 'MP-NO-EXISTE-XYZ', 'cantidad': 100},
+                headers=csrf_headers())
+    assert r.status_code == 404
+
+
+def test_consumo_manual_sobreconsumo_se_audita_con_warning(app, db_clean):
+    """Si cantidad > stock disponible, NO bloquea (puede ser ajuste
+    correctivo) pero el audit_log lo flagea como sobreconsumo=True."""
+    cs = _login(app, 'luis')
+    _seed_lote('MP-AUD-OVR', 'X', 100, 'L-OVR', '2027-01-01', 'VIGENTE')
+    try:
+        # Pedir 500g cuando solo hay 100g
+        r = cs.post('/api/consumo-manual',
+                    json={'codigo_mp': 'MP-AUD-OVR',
+                          'cantidad': 500,
+                          'observaciones': 'Test sobreconsumo'},
+                    headers=csrf_headers())
+        assert r.status_code == 201
+        # Audit debe marcar sobreconsumo=true en despues
+        conn = sqlite3.connect(os.environ["DB_PATH"])
+        row = conn.execute(
+            "SELECT despues FROM audit_log "
+            "WHERE accion='CONSUMO_MANUAL' ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        conn.close()
+        import json as _j
+        despues = _j.loads(row[0]) if row[0] else {}
+        assert despues.get('sobreconsumo') is True
+    finally:
+        _cleanup(['MP-AUD-OVR'])
+
+
+# ── Paginacion /api/lotes (backwards-compatible) ────────────────────
+
+
+def test_lotes_sin_params_devuelve_todos_legacy_compat(app, db_clean):
+    """Sin ?limit el endpoint devuelve TODOS · backwards-compat."""
+    cs = _login(app)
+    r = cs.get('/api/lotes')
+    assert r.status_code == 200
+    d = r.get_json()
+    assert 'lotes' in d
+    assert 'total' in d
+    # Sin paginacion: NO incluye campos paginacion
+    assert 'has_more' not in d
+    assert 'offset' not in d
+
+
+def test_lotes_con_limit_devuelve_metadata_paginacion(app, db_clean):
+    cs = _login(app)
+    # Sembrar 5 lotes para probar paginacion
+    for i in range(5):
+        _seed_lote(f'MP-PAG-{i}', f'Pag{i}', 1000, f'L-PAG-{i}',
+                    '2027-01-01', 'VIGENTE')
+    try:
+        r = cs.get('/api/lotes?limit=2')
+        assert r.status_code == 200
+        d = r.get_json()
+        assert d['limit'] == 2
+        assert d['offset'] == 0
+        assert 'total_disponibles' in d
+        assert 'has_more' in d
+        assert len(d['lotes']) <= 2
+    finally:
+        _cleanup([f'MP-PAG-{i}' for i in range(5)])
+
+
+def test_lotes_solo_criticos_filtra_proximos_30d(app, db_clean):
+    """?solo_criticos=1 solo trae lotes vencidos o a vencer en 30d."""
+    from datetime import date, timedelta
+    cs = _login(app)
+    _seed_lote('MP-CRT-1', 'C1', 1000, 'L-15d',
+                (date.today() + timedelta(days=15)).isoformat(), 'VIGENTE')
+    _seed_lote('MP-CRT-2', 'C2', 1000, 'L-100d',
+                (date.today() + timedelta(days=100)).isoformat(), 'VIGENTE')
+    try:
+        r = cs.get('/api/lotes?solo_criticos=1')
+        d = r.get_json()
+        codigos = {l['material_id'] for l in d['lotes']}
+        assert 'MP-CRT-1' in codigos, "Lote a 15d debe entrar"
+        assert 'MP-CRT-2' not in codigos, "Lote a 100d NO debe entrar"
+    finally:
+        _cleanup(['MP-CRT-1', 'MP-CRT-2'])
+
+
 def test_validar_stock_excluye_cuarentena_capitalizada(app, db_clean):
     """estado_lote='Cuarentena' (Capitalizada · calidad.py) debe
     excluirse al calcular disponible."""

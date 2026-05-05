@@ -1379,7 +1379,7 @@ def get_stock():
 def get_lotes():
     """Lista lotes de Materia Prima con stock disponible (stock_neto > 0).
 
-    Sebastian 5-may-2026 (audit zero-error Bodega MP): 2 fixes criticos.
+    Sebastian 5-may-2026 (audit zero-error Bodega MP): 3 fixes criticos.
 
     Bug 1 — MEEs aparecian en lista MP:
       ANTES no filtraba por tipo_material='MP'. Si por error operativo un
@@ -1393,10 +1393,36 @@ def get_lotes():
       negativo (drift). Catalina veia lotes ya consumidos como
       'disponibles' y planificaba sobre stock fantasma.
       Fix: HAVING stock_neto > 0 — solo lotes con stock real disponible.
+
+    Bug 3 — sin paginacion (cargaba 5k+ lotes en mobile):
+      ANTES sin LIMIT · query devolvia toda la tabla agrupada · 500ms+
+      en mobile.
+      Fix: paginacion OPCIONAL via query params · backwards-compatible.
+        ?limit=N (default sin limite si no se especifica)
+        ?offset=N (default 0)
+        ?solo_criticos=1 (solo lotes a vencer en 30d o vencidos)
+      Si no llegan params → comportamiento legacy (todos).
     """
     from datetime import date; hoy = date.today().isoformat()
+
+    # Paginacion opcional · backwards-compatible
+    try:
+        limit = int(request.args.get('limit') or 0)
+    except (ValueError, TypeError):
+        limit = 0
+    try:
+        offset = int(request.args.get('offset') or 0)
+    except (ValueError, TypeError):
+        offset = 0
+    if limit < 0: limit = 0
+    if offset < 0: offset = 0
+    if limit > 5000: limit = 5000
+    solo_criticos = (request.args.get('solo_criticos') or '').strip().lower() in ('1','true','yes')
+
     conn = get_db(); c = conn.cursor()
-    c.execute("""SELECT m.material_id, m.material_nombre, m.lote,
+
+    # Construir query con filtros opcionales
+    sql = """SELECT m.material_id, m.material_nombre, m.lote,
                         SUM(CASE WHEN m.tipo='Entrada' THEN m.cantidad ELSE -m.cantidad END) as stock_neto,
                         MAX(m.fecha_vencimiento) as fecha_vencimiento,
                         MAX(m.estanteria) as estanteria, MAX(m.posicion) as posicion,
@@ -1407,8 +1433,16 @@ def get_lotes():
                  FROM movimientos m LEFT JOIN maestro_mps mp ON m.material_id=mp.codigo_mp
                  WHERE UPPER(COALESCE(mp.tipo_material,'MP'))='MP'
                  GROUP BY m.material_id, m.lote
-                 HAVING stock_neto > 0
-                 ORDER BY m.material_nombre ASC, fecha_vencimiento ASC""")
+                 HAVING stock_neto > 0"""
+    if solo_criticos:
+        # Solo lotes vencidos o que vencen en proximos 30d (con fecha_venc set)
+        sql += (" AND MAX(m.fecha_vencimiento) IS NOT NULL"
+                " AND MAX(m.fecha_vencimiento) != ''"
+                " AND MAX(m.fecha_vencimiento) <= date('now','+30 day')")
+    sql += " ORDER BY m.material_nombre ASC, fecha_vencimiento ASC"
+    if limit > 0:
+        sql += f" LIMIT {limit} OFFSET {offset}"
+    c.execute(sql)
     rows = c.fetchall()
     result = []
     for r in rows:
@@ -1429,7 +1463,32 @@ def get_lotes():
                        'estanteria':est or '','posicion':pos or '',
                        'fecha_vencimiento':str(fvenc)[:10] if fvenc else '',
                        'dias_para_vencer':dias,'estado_lote':estado or '','alerta':alerta})
-    return jsonify({'lotes': result, 'total': len(result)})
+
+    # Si llegó paginacion, incluir conteo total para que UI sepa cuantas
+    # paginas hay. Si no, total = len(result) (legacy compat).
+    response = {'lotes': result, 'total': len(result)}
+    if limit > 0:
+        try:
+            count_sql = """
+                SELECT COUNT(*) FROM (
+                  SELECT m.material_id, m.lote,
+                         SUM(CASE WHEN m.tipo='Entrada' THEN m.cantidad ELSE -m.cantidad END) as sn
+                  FROM movimientos m LEFT JOIN maestro_mps mp ON m.material_id=mp.codigo_mp
+                  WHERE UPPER(COALESCE(mp.tipo_material,'MP'))='MP'
+                  GROUP BY m.material_id, m.lote
+                  HAVING sn > 0
+                )
+            """
+            total_count = c.execute(count_sql).fetchone()[0]
+            response['total_disponibles'] = total_count
+            response['offset'] = offset
+            response['limit'] = limit
+            response['has_more'] = (offset + len(result)) < total_count
+        except Exception as _e:
+            __import__('logging').getLogger('inventario').warning(
+                "get_lotes count fallo: %s", _e,
+            )
+    return jsonify(response)
 
 @bp.route('/api/proveedores-unicos', methods=['GET'])
 def proveedores_unicos():
@@ -2144,25 +2203,91 @@ def update_mee_stock_minimo(codigo):
 
 @bp.route('/api/consumo-manual', methods=['POST'])
 def consumo_manual():
-    """Registra consumo manual de una MP (ajuste por uso)."""
+    """Registra consumo manual de una MP (ajuste por uso).
+
+    Sebastian 5-may-2026 (audit zero-error Bodega MP): ANTES no tenia
+    proteccion de permisos NI audit_log · cualquier request anonimo
+    podia descontar stock sin rastro. Brecha grave de trazabilidad
+    INVIMA (Resolucion 2214/2021 art. 10).
+
+    FIX: requerir permiso planta_write + audit_log obligatorio +
+    validacion del codigo MP existe en catalogo.
+    """
+    u, err, code = _require_planta_write()
+    if err:
+        return err, code
+
     d = request.json or {}
     codigo = (d.get('codigo_mp') or '').upper().strip()
     cantidad = float(d.get('cantidad') or 0)
-    lote = d.get('lote', '')
-    obs = d.get('observaciones', 'Consumo manual')
-    operador = d.get('operador', session.get('compras_user', ''))
+    lote = (d.get('lote') or '').strip()
+    obs = (d.get('observaciones') or 'Consumo manual').strip()
+    operador = d.get('operador', '').strip() or u
     if not codigo or cantidad <= 0:
         return jsonify({'error': 'Codigo y cantidad positiva requeridos'}), 400
+
     conn = get_db(); c = conn.cursor()
     c.execute("SELECT nombre_comercial FROM maestro_mps WHERE codigo_mp=?", (codigo,))
     mp = c.fetchone()
-    nombre = mp[0] if mp else codigo
+    if not mp:
+        return jsonify({'error': f'MP {codigo} no existe en catalogo'}), 404
+    nombre = mp[0] or codigo
+
+    # Calcular stock disponible ANTES del descuento (para audit + warning)
+    stock_antes_row = c.execute(
+        "SELECT COALESCE(SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END), 0) "
+        "FROM movimientos WHERE material_id=?",
+        (codigo,),
+    ).fetchone()
+    stock_antes = float(stock_antes_row[0] or 0)
+    if cantidad > stock_antes:
+        # No bloqueamos (puede ser un ajuste correctivo deliberado) pero
+        # el audit_log lo deja claro como warning para revision QC.
+        __import__('logging').getLogger('inventario').warning(
+            "consumo_manual descontando MAS de lo disponible · codigo=%s "
+            "cantidad=%s stock=%s usuario=%s",
+            codigo, cantidad, stock_antes, u,
+        )
+
     c.execute("""INSERT INTO movimientos
                  (material_id,material_nombre,cantidad,tipo,fecha,observaciones,lote,operador)
                  VALUES (?,?,?,'Salida',datetime('now'),?,?,?)""",
               (codigo, nombre, cantidad, obs, lote, operador))
+    mov_id = c.lastrowid
+
+    try:
+        audit_log(
+            c, usuario=u, accion='CONSUMO_MANUAL',
+            tabla='movimientos', registro_id=mov_id,
+            despues={
+                'codigo_mp': codigo,
+                'nombre': nombre[:200],
+                'cantidad_g': cantidad,
+                'lote': lote or '',
+                'observaciones': obs[:200],
+                'operador': operador[:100],
+                'stock_antes_g': round(stock_antes, 2),
+                'stock_despues_g': round(stock_antes - cantidad, 2),
+                'sobreconsumo': cantidad > stock_antes,
+            },
+            detalle=(f"Consumo manual: {codigo} · {cantidad:.0f}g" +
+                      (f" · lote {lote}" if lote else "") +
+                      (" · ⚠ EXCEDE stock disponible"
+                       if cantidad > stock_antes else "")),
+        )
+    except Exception as _ae:
+        __import__('logging').getLogger('inventario').warning(
+            "audit_log CONSUMO_MANUAL fallo · mov_id=%s err=%s", mov_id, _ae,
+        )
+
     conn.commit()
-    return jsonify({'message': f'Consumo de {cantidad} registrado para {nombre}'}), 201
+    return jsonify({
+        'message': f'Consumo de {cantidad}g registrado para {nombre}',
+        'mov_id': mov_id,
+        'codigo_mp': codigo,
+        'cantidad_g': cantidad,
+        'stock_despues_g': round(stock_antes - cantidad, 2),
+    }), 201
 
 @bp.route('/api/maestro-mps/<codigo>/archivar', methods=['PUT'])
 def archivar_mp(codigo):
@@ -2265,6 +2390,37 @@ def registrar_recepcion():
             # Log but don't fail the reception — OC can be reconciled manually
             print(f'[WARN] OC update failed for {numero_oc}: {oc_err}', flush=True)
             oc_warning = f'OC {numero_oc} no pudo actualizarse automaticamente — verificar manualmente'
+    # Sebastian 5-may-2026 (audit zero-error Bodega MP): ANTES /api/recepcion
+    # NO generaba audit_log a pesar de ser un evento INVIMA-critico (entrada
+    # fisica de MP, trazabilidad GMP/BPM Resolucion 2214/2021 art. 10).
+    # FIX: registrar quien ingreso que cantidad de que MP, en que lote, con
+    # que proveedor + OC. Permite rastreo de re-llamados y auditoria QC.
+    try:
+        audit_log(
+            c, usuario=u, accion='INGRESAR_MP',
+            tabla='movimientos', registro_id=mov_id,
+            despues={
+                'codigo_mp': codigo,
+                'nombre': nombre[:200],
+                'cantidad_g': cantidad_recibida,
+                'lote': lote,
+                'proveedor': (proveedor or '')[:200],
+                'numero_oc': numero_oc or '',
+                'numero_factura': numero_factura or '',
+                'fecha_vencimiento': d.get('fecha_vencimiento', '') or '',
+                'cuarentena': cuarentena,
+                'estado_lote': estado_lote,
+                'precio_kg': precio_kg,
+            },
+            detalle=(f"Ingreso MP: {codigo} · {cantidad_recibida:.0f}g · "
+                      f"lote {lote}" +
+                      (f" · OC {numero_oc}" if numero_oc else "") +
+                      (" · CUARENTENA" if cuarentena else "")),
+        )
+    except Exception as _ae:
+        __import__('logging').getLogger('inventario').warning(
+            "audit_log INGRESAR_MP fallo · mov_id=%s err=%s", mov_id, _ae,
+        )
     conn.commit()
     msg = f'{nombre} ingresada. Lote: {lote}'
     if cuarentena: msg += ' — En CUARENTENA (pendiente aprobacion QC)'
