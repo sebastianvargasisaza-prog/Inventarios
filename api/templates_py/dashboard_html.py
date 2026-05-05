@@ -3033,6 +3033,79 @@ async function guardarPrecioMP(codigo){
   else alert('Error al guardar precio');
 }
 
+// Sebastian 5-may-2026 (Luis Enrique): popup centrado para "no se puede
+// fabricar por falta de tal cosa". Imposible de ignorar · backdrop oscuro
+// + tabla con MPs faltantes + acciones.
+function _showStockInsuficientePopup(producto, cantidad_kg, faltantes){
+  // Cerrar uno previo si existe
+  var prev = document.getElementById('popup-stock-insuf');
+  if(prev) prev.remove();
+  var rows = (faltantes||[]).map(function(f){
+    var nom = f.material || f.material_id || '?';
+    return '<tr style="border-top:1px solid #fecaca;">'+
+      '<td style="padding:8px 10px;font-weight:600;color:#1f2937;">'+nom+'</td>'+
+      '<td style="padding:8px 10px;text-align:right;color:#475569;">'+
+        (f.requerido_g||0).toLocaleString()+' g</td>'+
+      '<td style="padding:8px 10px;text-align:right;color:#78716c;">'+
+        (f.disponible_g||0).toLocaleString()+' g</td>'+
+      '<td style="padding:8px 10px;text-align:right;font-weight:800;color:#dc2626;font-size:14px;">'+
+        (f.falta_g||0).toLocaleString()+' g</td>'+
+    '</tr>';
+  }).join('');
+  var modal = document.createElement('div');
+  modal.id = 'popup-stock-insuf';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:99999;'+
+    'display:flex;align-items:center;justify-content:center;padding:20px';
+  modal.innerHTML =
+    '<div style="background:#fff;border-radius:12px;max-width:640px;width:100%;'+
+    'box-shadow:0 20px 60px rgba(0,0,0,0.3);overflow:hidden">'+
+      // Header rojo de impacto
+      '<div style="background:linear-gradient(135deg,#dc2626,#991b1b);color:#fff;padding:18px 24px">'+
+        '<div style="display:flex;align-items:center;gap:12px">'+
+          '<div style="font-size:32px">&#x274C;</div>'+
+          '<div style="flex:1">'+
+            '<div style="font-size:18px;font-weight:800">No se puede fabricar</div>'+
+            '<div style="font-size:13px;opacity:0.9;margin-top:2px">Falta stock de '+
+              faltantes.length+' materia'+(faltantes.length===1?'':'s')+' prima'+
+              (faltantes.length===1?'':'s')+' &middot; <b>'+producto+'</b> &times; '+
+              cantidad_kg+'kg</div>'+
+          '</div>'+
+        '</div>'+
+      '</div>'+
+      // Body con tabla
+      '<div style="padding:18px 24px;max-height:50vh;overflow-y:auto">'+
+        '<div style="font-size:13px;color:#475569;margin-bottom:12px">'+
+          'No se descontó <u>nada</u> del inventario (transacción atómica abortó). '+
+          'Una vez se reciba el faltante, podés volver a intentar.</div>'+
+        '<table style="width:100%;border-collapse:collapse;font-size:13px;'+
+          'background:#fff;border:1px solid #fecaca;border-radius:6px;overflow:hidden">'+
+          '<thead><tr style="background:#fee2e2">'+
+            '<th style="padding:10px;text-align:left;color:#7f1d1d;font-weight:700;font-size:12px">Materia prima</th>'+
+            '<th style="padding:10px;text-align:right;color:#7f1d1d;font-weight:700;font-size:12px">Necesita</th>'+
+            '<th style="padding:10px;text-align:right;color:#7f1d1d;font-weight:700;font-size:12px">Hay</th>'+
+            '<th style="padding:10px;text-align:right;color:#7f1d1d;font-weight:700;font-size:12px">FALTA</th>'+
+          '</tr></thead><tbody>'+rows+'</tbody></table>'+
+      '</div>'+
+      // Footer con acciones
+      '<div style="background:#f8fafc;padding:14px 24px;display:flex;'+
+        'gap:10px;justify-content:flex-end;border-top:1px solid #e2e8f0">'+
+        '<button onclick="window.location.href=\\'/compras\\'" '+
+          'style="background:#fff;color:#0f766e;border:1px solid #0f766e;border-radius:6px;'+
+          'padding:8px 16px;font-size:13px;font-weight:600;cursor:pointer">'+
+          '&#x1F6D2; Ir a Compras</button>'+
+        '<button onclick="document.getElementById(\\'popup-stock-insuf\\').remove()" '+
+          'style="background:#dc2626;color:#fff;border:none;border-radius:6px;'+
+          'padding:8px 20px;font-size:13px;font-weight:700;cursor:pointer">'+
+          'Entendido</button>'+
+      '</div>'+
+    '</div>';
+  document.body.appendChild(modal);
+  // Click fuera del modal cierra
+  modal.addEventListener('click', function(e){
+    if(e.target === modal) modal.remove();
+  });
+}
+
 async function iniciarRegistroProd(){
   var prod=document.getElementById('prod-sel').value||document.getElementById('prod-manual').value;
   var kg=parseFloat(document.getElementById('prod-kg').value);
@@ -3043,7 +3116,43 @@ async function iniciarRegistroProd(){
     var r=await fetch('/api/produccion',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({producto:prod,cantidad_kg:kg,observaciones:obs,presentacion:pres,operador:OPER_ACTUAL})});
     var d=await r.json();
-    if(!r.ok){document.getElementById('prod-msg').innerHTML='<span style="color:red;">'+(d.error||'Error')+'</span>';return;}
+    if(!r.ok){
+      // Sebastian 5-may-2026 (Luis Enrique): popup + detalle inline.
+      // Antes solo decia "Stock insuficiente" generico y Luis tenia que
+      // adivinar. Ahora popup explicito + tabla detallada en pantalla.
+      if(d.faltantes && d.faltantes.length){
+        // Popup tipo modal centrado · imposible de ignorar
+        _showStockInsuficientePopup(prod, kg, d.faltantes);
+      } else {
+        // Otros errores (sin formula, validacion, etc.) → alert nativo
+        alert('No se puede registrar produccion\\n\\n'+(d.error||'Error desconocido')+
+              (d.detalle?'\\n\\n'+d.detalle:''));
+      }
+      // Tambien mostrar detalle inline (para historial visual)
+      var html='<div style="background:#fee2e2;border:1px solid #dc2626;border-radius:8px;padding:12px 16px;color:#7f1d1d;">';
+      html+='<b style="font-size:14px;">&#x274C; '+(d.error||'Error registrando produccion')+'</b>';
+      if(d.faltantes && d.faltantes.length){
+        html+='<div style="margin-top:8px;font-size:13px;">No se descontó nada (transacción atómica abortó).</div>';
+        html+='<div style="margin-top:8px;font-size:12px;font-weight:700;color:#991b1b;">MPs faltantes:</div>';
+        html+='<table style="width:100%;font-size:12px;margin-top:4px;border-collapse:collapse;">';
+        html+='<thead><tr style="background:#fecaca;"><th style="text-align:left;padding:4px 8px;">Material</th><th style="text-align:right;padding:4px 8px;">Necesita</th><th style="text-align:right;padding:4px 8px;">Hay</th><th style="text-align:right;padding:4px 8px;">FALTA</th></tr></thead><tbody>';
+        d.faltantes.forEach(function(f){
+          html+='<tr style="border-top:1px solid #fecaca;">';
+          html+='<td style="padding:4px 8px;">'+(f.material||f.material_id||'?')+'</td>';
+          html+='<td style="padding:4px 8px;text-align:right;">'+(f.requerido_g||0).toLocaleString()+' g</td>';
+          html+='<td style="padding:4px 8px;text-align:right;color:#78716c;">'+(f.disponible_g||0).toLocaleString()+' g</td>';
+          html+='<td style="padding:4px 8px;text-align:right;font-weight:700;color:#dc2626;">'+(f.falta_g||0).toLocaleString()+' g</td>';
+          html+='</tr>';
+        });
+        html+='</tbody></table>';
+        html+='<div style="margin-top:8px;font-size:11px;color:#7f1d1d;">&#x2192; Verifica entradas en <b>Bodega MP</b> o crea OC en <b>/compras</b>.</div>';
+      } else if(d.detalle){
+        html+='<div style="margin-top:6px;font-size:12px;">'+d.detalle+'</div>';
+      }
+      html+='</div>';
+      document.getElementById('prod-msg').innerHTML=html;
+      return;
+    }
     var html='<div class="alert-success">'+(d.message||'Produccion registrada')+' &mdash; Lote: <strong>'+d.lote+'</strong></div>';
     if(d.descuentos&&d.descuentos.length){
       html+='<div style="margin-top:8px;font-size:0.88em;color:#555;"><strong>MPs descontadas:</strong><ul style="margin-top:4px;padding-left:18px;">';
@@ -8429,11 +8538,35 @@ async function ckMarcar(itemId, estado){
   }
 
   async function cmIniciarProduccion(id){
-    if(!confirm('¿Iniciar la producción ahora? Quedará el contador corriendo.')) return;
+    if(!confirm('¿Iniciar la producción ahora?\\n\\n' +
+                'Se DESCONTARÁ el inventario de MPs (FEFO) en este momento.\\n' +
+                'El contador de tiempo arranca.\\n\\n' +
+                'Si falta stock para alguna MP, el sistema bloquea el inicio.')) return;
     try{
       var r = await fetch('/api/programacion/programar/'+id+'/iniciar', {method:'POST'});
       var d = await r.json();
-      if(d.ok){ _toast(d.ya_iniciada?'Ya estaba iniciada':'Producción iniciada · contador en marcha', 1); renderCentroMando(); }
+      if(d.ok){
+        var msg;
+        if(d.ya_iniciada){
+          msg = 'Ya estaba iniciada';
+        } else if(d.sin_formula){
+          msg = '⚠ Iniciada SIN descontar (formula vacia · revisa /tecnica)';
+        } else {
+          var n = (d.mps_descontadas||[]).length;
+          msg = 'Producción iniciada · descontadas '+n+' MPs ('+
+                ((d.total_g_descontado||0)/1000).toFixed(1)+' kg)';
+        }
+        _toast(msg, 1);
+        renderCentroMando();
+      }
+      else if(r.status === 422 && d.codigo === 'SIN_STOCK'){
+        var faltantes = (d.faltantes||[]).slice(0,5).map(function(f){
+          return '  · '+f.nombre+': falta '+(f.falta_g||0).toLocaleString()+' g';
+        }).join('\\n');
+        if((d.faltantes||[]).length > 5) faltantes += '\\n  ... y '+(d.faltantes.length-5)+' MPs mas';
+        alert('❌ NO se puede iniciar: stock insuficiente\\n\\n'+faltantes+
+              '\\n\\nRevisa entradas en /planta o crea OC en /compras.');
+      }
       else { _toast('Error: '+(d.error||'?'), 0); }
     }catch(e){ _toast('Error de red', 0); }
   }

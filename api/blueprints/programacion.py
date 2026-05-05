@@ -2650,23 +2650,83 @@ def planta_historial_operarios():
 @bp.route('/api/programacion/programar/<int:evento_id>/iniciar', methods=['POST'])
 def prog_iniciar_produccion(evento_id):
     """Operario aprieta 'Iniciar produccion' — graba inicio_real_at,
-    marca la sala asignada como 'ocupada' y registra evento en area_eventos.
+    marca la sala asignada como 'ocupada' y DESCUENTA INVENTARIO MP.
 
-    Idempotente: si ya tiene inicio_real_at, retorna ok=False con el ts
-    existente — no sobreescribe (evita doble inicio accidental)."""
+    Sebastian 5-may-2026 (Luis Enrique): "cuando carguen produccion de
+    materia prima de una descuente". Antes el descuento estaba en
+    /completar pero las producciones quedaban en envasado y nunca se
+    completaban → MPs no salian del inventario. Ahora el descuento es
+    al INICIAR (cuando el operario fisicamente saca MP de bodega).
+
+    Comportamiento:
+      1. Atomic claim de inventario_descontado_at (idempotencia race-safe)
+      2. Calcula MPs desde formula_items (cantidad_g_por_lote * lotes,
+         fallback a porcentaje * kg)
+      3. Pre-check stock: si falta para alguna MP → 422 sin tocar nada
+      4. INSERT movimientos tipo 'Salida' por lote (FEFO)
+      5. Set inicio_real_at + sala='ocupada'
+      6. Audit log INICIAR_PRODUCCION con detalle de MPs descontadas
+
+    Si descuento falla → rollback completo, inicio_real_at NO se setea
+    (la producción queda en estado 'pendiente_iniciar' lista para
+    re-intentar tras corregir stock).
+
+    Idempotente: si ya tiene inicio_real_at, retorna ok=True con el ts
+    existente.
+
+    Body opcional: {forzar_redescuento: true} para admin (re-iniciar
+    producción cuyo descuento fue revertido manualmente).
+    """
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
     user = session.get('compras_user', '')
+    body = request.get_json(silent=True) or {}
+    forzar = bool(body.get('forzar_redescuento'))
+    if forzar and user not in ADMIN_USERS:
+        return jsonify({'error': 'Solo admin puede forzar re-descuento'}), 403
+
     conn = get_db(); c = conn.cursor()
-    pp = c.execute("""SELECT id, producto, area_id, inicio_real_at, fin_real_at
+    pp = c.execute("""SELECT id, producto, area_id, inicio_real_at, fin_real_at,
+                              COALESCE(inventario_descontado_at,'') as desc_at
                       FROM produccion_programada WHERE id=?""", (evento_id,)).fetchone()
     if not pp:
         return jsonify({'error': 'produccion no existe'}), 404
     if pp[3]:  # ya iniciada
-        return jsonify({'ok': True, 'ya_iniciada': True, 'inicio_real_at': pp[3]})
+        return jsonify({
+            'ok': True, 'ya_iniciada': True, 'inicio_real_at': pp[3],
+            'inventario_descontado_at': pp[5] or None,
+        })
     if pp[4]:  # ya terminada
         return jsonify({'error': 'produccion ya terminada'}), 400
-    c.execute("UPDATE produccion_programada SET inicio_real_at=datetime('now') WHERE id=?", (evento_id,))
+
+    # ── DESCONTAR INVENTARIO MP ATOMICAMENTE ──────────────────────────
+    descuento = None
+    try:
+        descuento = _descontar_mp_produccion(c, evento_id, user, forzar=forzar)
+    except _DescuentoError as e:
+        try: conn.rollback()
+        except Exception: pass
+        codigo_http = {
+            'SIN_STOCK': 422,
+            'SIN_FORMULA': 422,
+            'YA_DESCONTADO': 409,
+            'PRODUCCION_NO_EXISTE': 404,
+        }.get(e.codigo, 500)
+        log.warning('iniciar_produccion bloqueado · codigo=%s evento_id=%s msg=%s',
+                     e.codigo, evento_id, e)
+        return jsonify({
+            'ok': False,
+            'error': str(e),
+            'codigo': e.codigo,
+            **e.payload,
+        }), codigo_http
+
+    # ── REGISTRAR INICIO + SALA OCUPADA ───────────────────────────────
+    c.execute("UPDATE produccion_programada SET inicio_real_at=datetime('now') WHERE id=?",
+              (evento_id,))
+    sin_formula = bool(descuento.get('sin_formula'))
+    nota_descuento = ('SIN FORMULA · sin descuento' if sin_formula
+                       else f'MP descontada {descuento["total_g"]:.0f}g')
     if pp[2]:  # tiene sala asignada → marcar ocupada
         prev = c.execute("SELECT estado FROM areas_planta WHERE id=?", (pp[2],)).fetchone()
         c.execute("UPDATE areas_planta SET estado='ocupada' WHERE id=?", (pp[2],))
@@ -2674,13 +2734,37 @@ def prog_iniciar_produccion(evento_id):
             (area_id, tipo, estado_anterior, estado_nuevo, produccion_id, usuario, nota)
             VALUES (?,?,?,?,?,?,?)""",
             (pp[2], 'iniciar_prod', (prev[0] if prev else None), 'ocupada',
-             evento_id, user, f'inicio: {pp[1]}'))
-    audit_log(c, usuario=user, accion='INICIAR_PRODUCCION', tabla='produccion_programada',
-              registro_id=evento_id,
-              despues={'producto': pp[1], 'area_id': pp[2]},
-              detalle=f"Inició producción {pp[1]} (id={evento_id})")
+             evento_id, user, f'inicio: {pp[1]} · {nota_descuento}'))
+    audit_log(
+        c, usuario=user, accion='INICIAR_PRODUCCION',
+        tabla='produccion_programada', registro_id=evento_id,
+        despues={
+            'producto': pp[1], 'area_id': pp[2],
+            'inventario_descontado_at': descuento['inventario_descontado_at'],
+            'mps_descontadas_count': len(descuento['mps_descontadas']),
+            'total_g_descontado': descuento['total_g'],
+            'sin_formula': sin_formula,
+            'forzar': forzar,
+        },
+        detalle=(f"Inició producción {pp[1]} (id={evento_id}) · " +
+                  (f"SIN formula valida — NO se descontó inventario"
+                   if sin_formula
+                   else f"descontó {len(descuento['mps_descontadas'])} MPs "
+                        f"({descuento['total_g']:.0f}g)")),
+    )
     conn.commit()
-    return jsonify({'ok': True, 'evento_id': evento_id})
+    return jsonify({
+        'ok': True,
+        'evento_id': evento_id,
+        'inicio_real_at': c.execute(
+            "SELECT inicio_real_at FROM produccion_programada WHERE id=?",
+            (evento_id,)).fetchone()[0],
+        'inventario_descontado_at': descuento['inventario_descontado_at'],
+        'mps_descontadas': descuento['mps_descontadas'],
+        'total_g_descontado': descuento['total_g'],
+        'sin_formula': sin_formula,
+        'warning': descuento.get('warning'),
+    })
 
 
 @bp.route('/api/programacion/programar/<int:evento_id>/terminar', methods=['POST'])
@@ -3795,6 +3879,221 @@ def borrar_produccion_programada(evento_id):
     })
 
 
+def _calcular_mp_consumo_produccion(c, evento_id):
+    """Calcula MPs a consumir por una producción programada.
+
+    Lee formula_items y aplica:
+      - Preferimos cantidad_g_por_lote * lotes (formula con cantidades fijas)
+      - Fallback: porcentaje * cantidad_kg * 1000 (formula con %)
+
+    Returns: (mps_a_consumir, meta) donde:
+      mps_a_consumir = [{codigo_mp, nombre, cantidad_g}, ...]
+      meta = {producto, fecha, lotes, cantidad_kg_total}
+    Returns ({}, None) si la producción no existe.
+    """
+    row = c.execute("""
+        SELECT pp.id, pp.producto, pp.fecha_programada, pp.lotes,
+               COALESCE(pp.cantidad_kg, 0)         as cantidad_kg_explicita,
+               COALESCE(fh.lote_size_kg, 0)        as lote_kg_formula
+        FROM produccion_programada pp
+        LEFT JOIN formula_headers fh
+               ON UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(pp.producto))
+        WHERE pp.id=?
+    """, (evento_id,)).fetchone()
+    if not row:
+        return [], None
+    pid, producto, fecha, lotes, cant_kg_exp, lote_kg = row
+    lotes = int(lotes or 1)
+    cant_kg_total = float(cant_kg_exp or 0) or (lotes * float(lote_kg or 0))
+
+    mps = []
+    rows = c.execute("""
+        SELECT material_id, material_nombre,
+               COALESCE(porcentaje, 0)                as pct,
+               COALESCE(cantidad_g_por_lote, 0)       as g_por_lote
+        FROM formula_items
+        WHERE UPPER(TRIM(producto_nombre)) = UPPER(TRIM(?))
+    """, (producto,)).fetchall()
+    for cod, nom, pct, g_lote in rows:
+        g_total = float(g_lote or 0) * lotes
+        if g_total <= 0 and cant_kg_total > 0:
+            g_total = (float(pct or 0) / 100.0) * cant_kg_total * 1000.0
+        if g_total > 0:
+            mps.append({
+                'codigo_mp': cod or '',
+                'nombre': nom or '',
+                'cantidad_g': round(g_total, 2),
+            })
+    return mps, {
+        'producto': producto, 'fecha': fecha, 'lotes': lotes,
+        'cantidad_kg_total': cant_kg_total, 'pid': pid,
+    }
+
+
+class _DescuentoError(Exception):
+    """Descuento MP fallido. .codigo: str. .payload: dict."""
+    def __init__(self, mensaje, codigo='ERROR', payload=None):
+        super().__init__(mensaje)
+        self.codigo = codigo
+        self.payload = payload or {}
+
+
+def _validar_stock_para_produccion(c, mps_a_consumir):
+    """Verifica que haya stock suficiente para descontar TODAS las MPs.
+
+    Devuelve lista de faltantes. Lista vacía = OK para descontar.
+    Cada faltante: {codigo_mp, nombre, requerido_g, disponible_g, falta_g}.
+    Excluye lotes Vencido/Bloqueado/Rechazado/Cuarentena.
+    """
+    faltantes = []
+    for mp in mps_a_consumir:
+        cod = mp['codigo_mp']
+        if not cod:
+            continue
+        r = c.execute("""
+            SELECT COALESCE(SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END), 0)
+            FROM movimientos
+            WHERE material_id=?
+              AND COALESCE(estado_lote,'') NOT IN
+                  ('Vencido','Bloqueado','Rechazado','CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO')
+        """, (cod,)).fetchone()
+        disp = float(r[0] or 0)
+        if disp + 0.01 < float(mp['cantidad_g']):
+            faltantes.append({
+                'codigo_mp': cod,
+                'nombre': mp['nombre'],
+                'requerido_g': mp['cantidad_g'],
+                'disponible_g': round(disp, 2),
+                'falta_g': round(mp['cantidad_g'] - disp, 2),
+            })
+    return faltantes
+
+
+def _descontar_mp_produccion(c, evento_id, user, forzar=False):
+    """Helper compartido: claim atomico + descuenta MPs FEFO de una producción.
+
+    Sebastian 5-may-2026 (Luis Enrique): "cuando carguen produccion de materia
+    prima de una descuente". Antes el descuento estaba en /completar (paso
+    final) pero los operarios no lo ejecutaban — productions quedaban en
+    envasado y MPs nunca se descontaban del inventario. Ahora el descuento
+    ocurre al INICIAR (cuando MP fisicamente sale de bodega).
+
+    Args:
+      c: cursor SQLite (caller controla la tx)
+      evento_id: id de produccion_programada
+      user: username del actor (audit)
+      forzar: si True, ignora claim atomico (solo admin)
+
+    Atomico: usa UPDATE-WHERE inventario_descontado_at='' para evitar
+    descuento doble en race conditions.
+
+    Levanta _DescuentoError si:
+      - YA_DESCONTADO: producción ya descontada antes
+      - SIN_STOCK: alguna MP no tiene stock suficiente
+      - SIN_FORMULA: producto sin formula registrada (formula_items vacio)
+      - PRODUCCION_NO_EXISTE
+
+    Returns dict {ok, mps_descontadas:[...], inventario_descontado_at, total_g}.
+    """
+    from datetime import datetime as _dt
+    fecha_iso = _dt.now().isoformat(timespec='seconds')
+
+    mps_a_consumir, meta = _calcular_mp_consumo_produccion(c, evento_id)
+    if meta is None:
+        raise _DescuentoError('Producción no encontrada', 'PRODUCCION_NO_EXISTE')
+    if not mps_a_consumir:
+        # Formula vacía o sin %/g_por_lote: NO bloqueante · iniciar igual
+        # con warning. NO marcamos inventario_descontado_at para permitir
+        # re-intento si Tecnica completa la formula despues.
+        log.warning(
+            'iniciar_produccion sin formula valida: producto=%s evento_id=%s · '
+            'inicio se permite pero NO se descuenta inventario',
+            meta['producto'], evento_id,
+        )
+        return {
+            'ok': True,
+            'mps_descontadas': [],
+            'inventario_descontado_at': None,
+            'total_g': 0,
+            'producto': meta['producto'],
+            'sin_formula': True,
+            'warning': (f"Producto '{meta['producto']}' sin formula valida "
+                         f"(porcentaje y cantidad_g_por_lote ambos en 0/null). "
+                         f"Inicio registrado pero NO se descontó inventario · "
+                         f"revisa formula en /tecnica y usa /completar para "
+                         f"descontar despues."),
+        }
+
+    # Pre-check stock ANTES del claim para abortar limpio sin tocar la fila.
+    faltantes = _validar_stock_para_produccion(c, mps_a_consumir)
+    if faltantes:
+        raise _DescuentoError(
+            f'Stock insuficiente para producir {meta["producto"]}: '
+            f'{len(faltantes)} MP(s) sin stock',
+            'SIN_STOCK',
+            {'faltantes': faltantes, 'producto': meta['producto']},
+        )
+
+    # ATOMIC CLAIM
+    if forzar:
+        cur = c.execute(
+            "UPDATE produccion_programada SET inventario_descontado_at=? WHERE id=?",
+            (fecha_iso, evento_id),
+        )
+    else:
+        cur = c.execute(
+            "UPDATE produccion_programada SET inventario_descontado_at=? "
+            "WHERE id=? AND COALESCE(inventario_descontado_at,'')=''",
+            (fecha_iso, evento_id),
+        )
+    if cur.rowcount == 0:
+        actual = c.execute(
+            "SELECT inventario_descontado_at FROM produccion_programada WHERE id=?",
+            (evento_id,),
+        ).fetchone()
+        actual_at = (actual[0] if actual else '') or ''
+        raise _DescuentoError(
+            f'Inventario ya fue descontado el {actual_at}',
+            'YA_DESCONTADO',
+            {'inventario_descontado_at': actual_at},
+        )
+
+    # FEFO real por lote
+    obs_base = (f"Producción INICIADA: {meta['producto']} — {meta['fecha']} — "
+                f"{meta['lotes']} lote(s) × {meta['cantidad_kg_total']:.0f}kg")
+    descontados = []
+    for mp in mps_a_consumir:
+        distrib = _distribuir_fefo(c, mp['codigo_mp'], mp['cantidad_g'])
+        mp['distribucion_fefo'] = []
+        for d in distrib:
+            lote_fragment = d['lote'] or '(sin lote — stock legacy)'
+            obs_mp = (obs_base + f" | FEFO lote: {lote_fragment}" +
+                       (f" (vence {d['fecha_vencimiento']})"
+                        if d['fecha_vencimiento'] else ""))
+            c.execute("""
+                INSERT INTO movimientos
+                  (material_id, material_nombre, cantidad, tipo, fecha,
+                   observaciones, operador, lote)
+                VALUES (?, ?, ?, 'Salida', ?, ?, ?, ?)
+            """, (mp['codigo_mp'], mp['nombre'], d['cantidad'],
+                  fecha_iso, obs_mp, user, d['lote']))
+            mp['distribucion_fefo'].append({
+                'lote': d['lote'],
+                'cantidad_g': d['cantidad'],
+                'fecha_vencimiento': d['fecha_vencimiento'],
+                'sin_lote': d['sin_lote'],
+            })
+        descontados.append(mp)
+
+    return {
+        'ok': True,
+        'mps_descontadas': descontados,
+        'inventario_descontado_at': fecha_iso,
+        'total_g': round(sum(m['cantidad_g'] for m in descontados), 2),
+        'producto': meta['producto'],
+    }
+
+
 def _distribuir_fefo(c, codigo_mp, cantidad_a_descontar):
     """Distribuye una cantidad a descontar entre lotes activos siguiendo FEFO
     (First-Expired-First-Out): consume primero del lote con fecha_vencimiento
@@ -4017,15 +4316,13 @@ def prog_completar_evento(evento_id):
     lotes = int(lotes or 1)
     cant_kg_total = float(cant_kg_exp or 0) or (lotes * float(lote_kg or 0))
 
-    # Pre-check rápido para dry_run y mensaje 409 amigable cuando ya descontado.
-    # NO es race-safe por sí solo · el claim atómico dentro del try lo es.
-    if descontado_at and not forzar:
-        return jsonify({
-            'error': f'Inventario ya fue descontado el {descontado_at}',
-            'codigo': 'YA_DESCONTADO',
-            'hint': 'Si necesitas re-descontar (admin), envía {forzar_redescuento: true}',
-            'inventario_descontado_at': descontado_at,
-        }), 409
+    # Sebastian 5-may-2026 (Luis Enrique): si ya descontó al INICIAR (flujo
+    # nuevo · auto descuenta MP en /iniciar), permitimos que /completar siga
+    # corriendo solo para MEE + estado=completado · NO devolvemos 409.
+    # Solo bloqueamos si forzar=False AND aún hay que re-descontar MP — eso
+    # solo ocurre si admin pide forzar (chequeado abajo). El skip de MP se
+    # hace en el bloque ATOMIC CLAIM (rowcount=0 ya no aborta · solo skip).
+    mp_ya_descontado = bool(descontado_at) and not forzar
 
     # ── 1. Calcular MPs a consumir ─────────────────────────────────────
     mps_a_consumir = []
@@ -4105,17 +4402,17 @@ def prog_completar_evento(evento_id):
     fecha_iso = __import__('datetime').datetime.now().isoformat(timespec='seconds')
     try:
         # ATOMIC CLAIM (audit zero-error 2-may-2026 · CERO SESGO).
-        # Race condition antes: SELECT descontado_at + check + heavy work +
-        # UPDATE final → 2 requests paralelos podían pasar el SELECT y
-        # descontar 2x. Fix: claim atómico UPDATE-WHERE inventario_descontado_at='' .
-        # Solo uno gana · el otro recibe rowcount=0 → 409.
-        # Está dentro del try · si falla algo post-claim, rollback libera.
-        if forzar:
+        # Sebastian 5-may-2026: skip si ya descontó al iniciar (no devolvemos
+        # 409 · solo procesamos MEE + cierre).
+        if mp_ya_descontado:
+            claim_rowcount = 0  # ya descontado, skip MP loop
+        elif forzar:
             claim_cur = c.execute("""
                 UPDATE produccion_programada
                    SET inventario_descontado_at = ?
                  WHERE id = ?
             """, (fecha_iso, evento_id))
+            claim_rowcount = claim_cur.rowcount
         else:
             claim_cur = c.execute("""
                 UPDATE produccion_programada
@@ -4123,8 +4420,9 @@ def prog_completar_evento(evento_id):
                  WHERE id = ?
                    AND COALESCE(inventario_descontado_at, '') = ''
             """, (fecha_iso, evento_id))
-        if claim_cur.rowcount == 0:
-            # Otro request ganó la carrera · liberar transacción y devolver 409
+            claim_rowcount = claim_cur.rowcount
+        if claim_rowcount == 0 and not mp_ya_descontado:
+            # Race: otro request descontó al mismo tiempo · liberar tx + 409
             try: conn.rollback()
             except Exception: pass
             actual = c.execute(
@@ -4141,28 +4439,30 @@ def prog_completar_evento(evento_id):
         # de vencimiento (más cercano primero). Cada lote genera su propio
         # movimiento de Salida con cantidad específica. Si la suma de stock
         # por lote no alcanza, el remainder se registra sin lote (legacy).
-        for mp in mps_a_consumir:
-            distrib = _distribuir_fefo(c, mp['codigo_mp'], mp['cantidad_g'])
-            mp['distribucion_fefo'] = []
-            for d in distrib:
-                lote_fragment = d['lote'] or '(sin lote — stock legacy)'
-                obs_mp = (obs_base +
-                          f" | FEFO lote: {lote_fragment}" +
-                          (f" (vence {d['fecha_vencimiento']})" if d['fecha_vencimiento'] else ""))
-                c.execute("""
-                    INSERT INTO movimientos
-                      (material_id, material_nombre, cantidad, tipo, fecha,
-                       observaciones, operador, lote)
-                    VALUES (?, ?, ?, 'Salida', ?, ?, ?, ?)
-                """, (mp['codigo_mp'], mp['nombre'], d['cantidad'],
-                      fecha_iso, obs_mp, user, d['lote']))
-                mp['distribucion_fefo'].append({
-                    'lote': d['lote'],
-                    'cantidad_g': d['cantidad'],
-                    'fecha_vencimiento': d['fecha_vencimiento'],
-                    'sin_lote': d['sin_lote'],
-                })
-            descontados_mps.append(mp)
+        # Sebastian 5-may-2026: skip si ya descontó al iniciar.
+        if not mp_ya_descontado:
+            for mp in mps_a_consumir:
+                distrib = _distribuir_fefo(c, mp['codigo_mp'], mp['cantidad_g'])
+                mp['distribucion_fefo'] = []
+                for d in distrib:
+                    lote_fragment = d['lote'] or '(sin lote — stock legacy)'
+                    obs_mp = (obs_base +
+                              f" | FEFO lote: {lote_fragment}" +
+                              (f" (vence {d['fecha_vencimiento']})" if d['fecha_vencimiento'] else ""))
+                    c.execute("""
+                        INSERT INTO movimientos
+                          (material_id, material_nombre, cantidad, tipo, fecha,
+                           observaciones, operador, lote)
+                        VALUES (?, ?, ?, 'Salida', ?, ?, ?, ?)
+                    """, (mp['codigo_mp'], mp['nombre'], d['cantidad'],
+                          fecha_iso, obs_mp, user, d['lote']))
+                    mp['distribucion_fefo'].append({
+                        'lote': d['lote'],
+                        'cantidad_g': d['cantidad'],
+                        'fecha_vencimiento': d['fecha_vencimiento'],
+                        'sin_lote': d['sin_lote'],
+                    })
+                descontados_mps.append(mp)
         # MEEs → aplicar_movimiento_mee · drift=0 garantizado (audit zero-error)
         # lote_ref=produccion_id permite reversión limpia sin LIKE en obs.
         from inventario_helpers import aplicar_movimiento_mee as _aplicar_mee_inner
