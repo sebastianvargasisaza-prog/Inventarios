@@ -5773,20 +5773,50 @@ def producciones_faltantes():
     cutoff = (hoy + _td(days=dias)).isoformat()
 
     # 1. Cargar producciones programadas pendientes (no descontadas) en horizonte
-    c.execute("""
-        SELECT pp.id, pp.producto, pp.fecha_programada,
-               COALESCE(pp.lotes, 1), COALESCE(pp.cantidad_kg, 0),
-               COALESCE(fh.lote_size_kg, 0) as lote_size_kg
-        FROM produccion_programada pp
-        LEFT JOIN formula_headers fh
-               ON UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(pp.producto))
-        WHERE COALESCE(pp.inventario_descontado_at, '') = ''
-          AND LOWER(COALESCE(pp.estado, '')) NOT IN ('cancelado', 'completado')
-          AND pp.fecha_programada >= date('now', '-1 day')
-          AND pp.fecha_programada <= ?
-        ORDER BY pp.fecha_programada ASC
-    """, (cutoff,))
-    prod_rows = c.fetchall()
+    # Sebastian 5-may-2026: incluir area asignada (sala fisica) para que la
+    # vista calendario pueda agrupar por (sala × dia).
+    try:
+        c.execute("""
+            SELECT pp.id, pp.producto, pp.fecha_programada,
+                   COALESCE(pp.lotes, 1), COALESCE(pp.cantidad_kg, 0),
+                   COALESCE(fh.lote_size_kg, 0) as lote_size_kg,
+                   COALESCE(pp.area_id, 0) as area_id,
+                   COALESCE(ap.codigo, '') as area_codigo,
+                   COALESCE(ap.nombre, '') as area_nombre,
+                   COALESCE(LOWER(pp.estado), 'pendiente') as estado_norm,
+                   COALESCE(pp.inicio_real_at, '') as inicio_real_at,
+                   COALESCE(pp.fin_real_at, '') as fin_real_at
+            FROM produccion_programada pp
+            LEFT JOIN formula_headers fh
+                   ON UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(pp.producto))
+            LEFT JOIN areas_planta ap ON ap.id = pp.area_id
+            WHERE COALESCE(pp.inventario_descontado_at, '') = ''
+              AND LOWER(COALESCE(pp.estado, '')) NOT IN ('cancelado', 'completado')
+              AND pp.fecha_programada >= date('now', '-1 day')
+              AND pp.fecha_programada <= ?
+            ORDER BY pp.fecha_programada ASC
+        """, (cutoff,))
+        prod_rows = c.fetchall()
+    except sqlite3.OperationalError:
+        # Fallback si areas_planta no existe (esquema legacy)
+        c.execute("""
+            SELECT pp.id, pp.producto, pp.fecha_programada,
+                   COALESCE(pp.lotes, 1), COALESCE(pp.cantidad_kg, 0),
+                   COALESCE(fh.lote_size_kg, 0) as lote_size_kg,
+                   0, '', '',
+                   COALESCE(LOWER(pp.estado), 'pendiente'),
+                   COALESCE(pp.inicio_real_at, ''),
+                   COALESCE(pp.fin_real_at, '')
+            FROM produccion_programada pp
+            LEFT JOIN formula_headers fh
+                   ON UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(pp.producto))
+            WHERE COALESCE(pp.inventario_descontado_at, '') = ''
+              AND LOWER(COALESCE(pp.estado, '')) NOT IN ('cancelado', 'completado')
+              AND pp.fecha_programada >= date('now', '-1 day')
+              AND pp.fecha_programada <= ?
+            ORDER BY pp.fecha_programada ASC
+        """, (cutoff,))
+        prod_rows = c.fetchall()
 
     # 2. Cargar formulas (codigo_mp -> [nombre, cantidad_g_por_lote, porcentaje])
     formulas = {}
@@ -5898,7 +5928,16 @@ def producciones_faltantes():
     producciones_out = []
     consumo_mp_agregado = {}   # codigo_mp -> g_total
     consumo_mee_agregado = {}  # mee_codigo -> unidades_total
-    for pid, producto, fecha, lotes, cant_kg_explicita, lote_size in prod_rows:
+    for row in prod_rows:
+        # Sebastian 5-may-2026: unpack soporta ambos esquemas (con/sin areas_planta)
+        if len(row) >= 12:
+            (pid, producto, fecha, lotes, cant_kg_explicita, lote_size,
+             area_id, area_codigo, area_nombre,
+             estado_norm, inicio_real_at, fin_real_at) = row
+        else:
+            pid, producto, fecha, lotes, cant_kg_explicita, lote_size = row[:6]
+            area_id, area_codigo, area_nombre = 0, '', ''
+            estado_norm, inicio_real_at, fin_real_at = 'pendiente', '', ''
         producto_norm = (producto or '').strip().upper()
         lotes = int(lotes or 1)
         cant_kg_total = float(cant_kg_explicita or 0) or (lotes * float(lote_size or 0))
@@ -5951,6 +5990,13 @@ def producciones_faltantes():
             'mps_necesarias': mps_nec,
             'mees_necesarios': mees_nec,
             'unidades_envasadas_estimadas': unidades_envasadas,
+            # Sebastian 5-may-2026: campos para vista calendario por sala
+            'area_id': area_id,
+            'area_codigo': area_codigo or '',
+            'area_nombre': area_nombre or '',
+            'estado': estado_norm,
+            'inicio_real_at': inicio_real_at or None,
+            'fin_real_at': fin_real_at or None,
         })
 
     # 10. Calcular faltantes agregados

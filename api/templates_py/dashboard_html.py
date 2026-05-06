@@ -288,6 +288,20 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
   </div>
 </div>
 
+<!-- Sebastian 5-may-2026: modal click celda calendario · MP+MEE faltantes -->
+<div id="modal-prod-detalle" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.78);z-index:9998;display:none;align-items:center;justify-content:center;">
+  <div style="background:#fff;border-radius:14px;max-width:760px;width:96%;max-height:92vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.5);">
+    <div style="background:linear-gradient(135deg,#0f766e,#0891b2);color:#fff;padding:16px 22px;border-radius:14px 14px 0 0;display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">
+      <div>
+        <h2 id="mpd-titulo" style="color:#fff;margin:0;font-size:1.15em">Producción</h2>
+        <div id="mpd-subtitulo" style="font-size:0.78em;opacity:0.92;margin-top:4px"></div>
+      </div>
+      <button onclick="cerrarProdDetalle()" style="background:rgba(255,255,255,0.2);border:none;color:#fff;font-size:1.4em;cursor:pointer;padding:4px 10px;border-radius:6px;line-height:1;">&#10005;</button>
+    </div>
+    <div id="mpd-body" style="padding:18px 22px;font-size:13px"></div>
+  </div>
+</div>
+
 <!-- Modal LIMPIEZA PROVEEDORES — detecta duplicados y los unifica -->
 <div id="modal-limpieza-prov" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.78);z-index:9998;display:none;align-items:center;justify-content:center;">
   <div style="background:white;border-radius:16px;padding:0;max-width:760px;width:96%;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.5);">
@@ -6713,16 +6727,13 @@ function _renderProgramacion(d){
       <div id="pv2-auditoria" style="display:none"></div>
     </div>
 
-    <!-- Sebastian 5-may-2026 (Luis Enrique): vista simple primaria.
-         Producciones programadas en horizonte + MP/MEE faltantes por
-         producción + boton 'Solicitar TODO' que crea SOLs agrupadas
-         por proveedor. Esto resuelve TODO lo que el jefe de producción
-         necesita: ver qué se va a producir, qué falta para producirlo,
-         y solicitar lo faltante en un click. -->
+    <!-- Sebastian 5-may-2026 (Luis Enrique): VISTA UNICA · calendario por
+         sala × dia/semana/mes según horizonte. Click producción → modal
+         con MP+MEE faltantes. Botón global 'Solicitar TODO faltante'. -->
     <div id="pv2-vista-simple" style="margin-bottom:14px;background:#fff;border-radius:12px;border:2px solid #0f766e;overflow:hidden;box-shadow:0 4px 12px rgba(15,118,110,0.1)">
       <div style="background:linear-gradient(90deg,#f0fdfa,#ecfeff);padding:14px 18px;border-bottom:1px solid #ccfbf1;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
         <div>
-          <h3 style="margin:0;color:#134e4a;font-size:15px;font-weight:800">📋 Producciones programadas + faltantes</h3>
+          <h3 style="margin:0;color:#134e4a;font-size:15px;font-weight:800">📅 Calendario de Producción · por sala</h3>
           <div id="pv2-vs-resumen" style="font-size:11px;color:#475569;margin-top:3px">Cargando...</div>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -6733,14 +6744,13 @@ function _renderProgramacion(d){
       <div id="pv2-vs-resultado" style="padding:14px 18px"><div style="text-align:center;color:#94a3b8;padding:20px">⏳ Calculando producciones y faltantes...</div></div>
     </div>
 
-    <!-- ── KPIs (1 fila) ─────────────────────────────────────────────────── -->
-    <div id="pv2-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:12px"></div>
-
-    <!-- ── CENTRO DE ACCIÓN UNIFICADO (alertas + recomendaciones en 1 panel) ─── -->
-    <div id="pv2-centro-accion" style="margin-bottom:14px"></div>
-
-    <!-- ── 📦 MP ROLLING FORECAST (consumo MP acumulado en horizonte) ─── -->
-    <div id="pv2-mp-rolling" style="margin-bottom:14px"></div>
+    <!-- Sebastian 5-may-2026: paneles legacy ocultos · Centro de Acción,
+         KPIs, MP rolling, Vista calendario v1, Comprar Ya. La vista
+         calendario nueva (arriba) es la única que se muestra. Conservamos
+         los IDs/divs porque otros JS pueden leer/escribir innerHTML. -->
+    <div id="pv2-kpis" style="display:none"></div>
+    <div id="pv2-centro-accion" style="display:none"></div>
+    <div id="pv2-mp-rolling" style="display:none"></div>
 
     <!-- Datos crudos ocultos (los consume el centro de acción) -->
     <div id="pv2-alertas-wrap" style="display:none"></div>
@@ -6749,8 +6759,9 @@ function _renderProgramacion(d){
     <!-- Sección: Comprar AHORA (urgentes por lead time) -->
     <div id="pv2-comprar-ya" style="display:none;margin-bottom:14px"></div>
 
-    <!-- ── VISTA CALENDARIO/TIMELINE según horizonte ──────────────────── -->
-    <div id="pv2-vista"></div>
+    <!-- Sebastian 5-may-2026: vista calendario v1 (forecast por mes/semana)
+         oculta · reemplazada por la vista nueva por SALA arriba. -->
+    <div id="pv2-vista" style="display:none"></div>
   </div><!-- /ptab-planv2 -->
 
   <!-- ════════════════════════════════════════════════════════════════════ -->
@@ -11967,19 +11978,27 @@ async function ckMarcar(itemId, estado){
   }
 
   async function pv2CargarProdFaltantes(){
+    // Sebastian 5-may-2026: vista calendario · grid SALAS × tiempo (días/
+    // semanas/meses según horizonte). Cada celda = producciones programadas
+    // en esa sala en ese rango. Click celda → modal con MP+MEE faltantes.
     var resumen = document.getElementById('pv2-vs-resumen');
     var out = document.getElementById('pv2-vs-resultado');
     var btn = document.getElementById('pv2-vs-btn-solicitar');
     if(!out) return;
     if(resumen) resumen.textContent = '⏳ Calculando...';
     if(btn) btn.style.display = 'none';
-    out.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:20px">⏳ Calculando producciones + faltantes en horizonte...</div>';
+    out.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:20px">⏳ Construyendo calendario por sala...</div>';
     var dias = _pv2HorizonteDias();
     try{
-      var r = await fetch('/api/programacion/producciones-faltantes?dias='+dias);
-      var d = await r.json();
-      if(!r.ok){
-        out.innerHTML = '<div style="color:#dc2626;padding:18px;text-align:center">Error: '+_escHTML(d.error||r.status)+'</div>';
+      // Cargar producciones-faltantes + areas en paralelo
+      var [rProd, rAreas] = await Promise.all([
+        fetch('/api/programacion/producciones-faltantes?dias='+dias),
+        fetch('/api/planta/areas'),
+      ]);
+      var d = await rProd.json();
+      var dAreas = rAreas.ok ? await rAreas.json() : {areas: []};
+      if(!rProd.ok){
+        out.innerHTML = '<div style="color:#dc2626;padding:18px;text-align:center">Error: '+_escHTML(d.error||rProd.status)+'</div>';
         return;
       }
       _PV2_FALTANTES_DATA = d;
@@ -11991,7 +12010,6 @@ async function ckMarcar(itemId, estado){
           res.n_mees_faltantes+' MEEs faltantes · '+
           res.n_proveedores_unicos+' proveedores · horizonte '+dias+'d';
       }
-      // Mostrar boton solicitar solo si hay faltantes
       var hayFaltantes = (res.n_mps_faltantes||0)+(res.n_mees_faltantes||0) > 0;
       if(btn) btn.style.display = hayFaltantes ? 'inline-block' : 'none';
 
@@ -12000,99 +12018,242 @@ async function ckMarcar(itemId, estado){
         out.innerHTML = '<div style="text-align:center;color:#22c55e;padding:30px;font-size:14px">✓ Sin producciones programadas en este horizonte</div>';
         return;
       }
-      // Render tabla con filas expandibles
-      var html = '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">';
-      html += '<thead><tr style="background:#f8fafc;border-bottom:2px solid #e2e8f0">';
-      html += '<th style="text-align:left;padding:8px 10px;font-size:11px;color:#475569">Fecha</th>';
-      html += '<th style="text-align:left;padding:8px 10px;font-size:11px;color:#475569">Producto</th>';
-      html += '<th style="text-align:right;padding:8px 10px;font-size:11px;color:#475569">Lotes / kg</th>';
-      html += '<th style="text-align:center;padding:8px 10px;font-size:11px;color:#475569">MPs</th>';
-      html += '<th style="text-align:center;padding:8px 10px;font-size:11px;color:#475569">MEEs</th>';
-      html += '<th style="text-align:center;padding:8px 10px;font-size:11px;color:#475569"></th>';
-      html += '</tr></thead><tbody>';
-      // Faltantes globales (por codigo) para color-coding por fila
+
+      // Build sets de faltantes para color-coding rapido
       var mpsFaltantesSet = {};
       (d.faltantes_mps||[]).forEach(function(m){ mpsFaltantesSet[m.codigo_mp]=m; });
       var meesFaltantesSet = {};
-      (d.faltantes_mees||[]).forEach(function(m){ meesFaltantesSet[m.codigo]=m; });
+      (d.faltantes_mees||[]).forEach(function(m){ meesFaltantesSet[(m.codigo||'').toUpperCase()]=m; });
+
+      // Determinar granularidad según horizonte
+      // ≤14d: día | 15-30d: día | 31-90d: semana | 91-365d: mes
+      var granularidad = 'dia';
+      if(dias > 30 && dias <= 90) granularidad = 'semana';
+      else if(dias > 90) granularidad = 'mes';
+
+      // Construir columnas de tiempo
+      var hoy = new Date();
+      hoy.setHours(0,0,0,0);
+      var columnas = [];  // {key, label, fechaInicio, fechaFin}
+      if(granularidad === 'dia'){
+        for(var i = 0; i < Math.min(dias, 21); i++){  // cap 21 días por UI
+          var dt = new Date(hoy.getTime() + i*86400000);
+          var k = dt.toISOString().slice(0,10);
+          var dow = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'][dt.getDay()];
+          columnas.push({
+            key: k,
+            label: dow+' '+dt.getDate(),
+            fechaIni: k,
+            fechaFin: k,
+          });
+        }
+      } else if(granularidad === 'semana'){
+        var sem = new Date(hoy.getTime());
+        // Alinear al lunes (si hoy es martes, la sem actual arranca lunes pasado)
+        var dow0 = sem.getDay();
+        var diffLun = (dow0 === 0 ? -6 : 1 - dow0);
+        sem.setDate(sem.getDate() + diffLun);
+        var nSems = Math.ceil(dias / 7);
+        for(var i = 0; i < Math.min(nSems, 14); i++){
+          var ini = new Date(sem.getTime() + i*7*86400000);
+          var fin = new Date(ini.getTime() + 6*86400000);
+          columnas.push({
+            key: 's'+i,
+            label: 'Sem '+(ini.getDate())+'-'+fin.getDate(),
+            fechaIni: ini.toISOString().slice(0,10),
+            fechaFin: fin.toISOString().slice(0,10),
+          });
+        }
+      } else {
+        // Mes
+        var ms = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+        var nMs = Math.ceil(dias / 30);
+        var meses = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+        for(var i = 0; i < Math.min(nMs, 12); i++){
+          var ini = new Date(ms.getFullYear(), ms.getMonth()+i, 1);
+          var fin = new Date(ms.getFullYear(), ms.getMonth()+i+1, 0);
+          columnas.push({
+            key: 'm'+i,
+            label: meses[ini.getMonth()]+' '+ini.getFullYear(),
+            fechaIni: ini.toISOString().slice(0,10),
+            fechaFin: fin.toISOString().slice(0,10),
+          });
+        }
+      }
+
+      // Construir filas de salas (incluir sala "Sin asignar" si hay producciones sin area)
+      var areasMap = {};
+      (dAreas.areas || []).forEach(function(a){
+        areasMap[a.id] = {id:a.id, codigo:a.codigo, nombre:a.nombre, orden:a.orden||999};
+      });
+      // Detectar si hay producciones sin area
+      var haySinArea = producciones.some(function(p){ return !p.area_id; });
+      var filas = Object.values(areasMap).sort(function(a,b){ return a.orden-b.orden; });
+      if(haySinArea){
+        filas.push({id:0, codigo:'?', nombre:'Sin asignar', orden:9999});
+      }
+      if(!filas.length){
+        // Si no hay areas configuradas, agrupar todo en una sola fila
+        filas = [{id:0, codigo:'—', nombre:'Producción', orden:1}];
+      }
+
+      // Indexar producciones por (areaId, fecha)
+      var indice = {};  // key = areaId|fecha
       producciones.forEach(function(p, idx){
-        var faltMP = (p.mps_necesarias||[]).filter(function(m){ return mpsFaltantesSet[m.codigo_mp]; }).length;
-        var faltMEE = (p.mees_necesarios||[]).filter(function(m){ return meesFaltantesSet[(m.codigo||'').toUpperCase()]; }).length;
-        var hayFalta = faltMP+faltMEE > 0;
-        var color = hayFalta ? '#dc2626' : '#16a34a';
-        var bg = hayFalta ? '#fef2f2' : '#f0fdf4';
-        html += '<tr style="border-bottom:1px solid #f1f5f9;cursor:pointer" onclick="pv2ToggleProdFaltante('+idx+')">';
-        html += '<td style="padding:8px 10px;font-size:12px;color:#475569">'+_escHTML(p.fecha||'')+'</td>';
-        html += '<td style="padding:8px 10px;font-weight:600">'+_escHTML(p.producto||'')+'</td>';
-        html += '<td style="padding:8px 10px;text-align:right;color:#64748b">'+(p.lotes||1)+' lote'+(p.lotes>1?'s':'')+' · '+(p.cantidad_kg||0)+'kg</td>';
-        html += '<td style="padding:8px 10px;text-align:center"><span style="background:'+bg+';color:'+color+';padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">'+
-                (faltMP>0 ? ('⚠ '+faltMP+'/'+(p.mps_necesarias||[]).length) : ('✓ '+(p.mps_necesarias||[]).length))+'</span></td>';
-        html += '<td style="padding:8px 10px;text-align:center"><span style="background:'+bg+';color:'+color+';padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">'+
-                (faltMEE>0 ? ('⚠ '+faltMEE+'/'+(p.mees_necesarios||[]).length) : ('✓ '+(p.mees_necesarios||[]).length))+'</span></td>';
-        html += '<td style="padding:8px 10px;text-align:center;color:#94a3b8">▼</td>';
+        p._idx = idx;
+        var aid = p.area_id || 0;
+        var f = p.fecha || '';
+        if(!indice[aid]) indice[aid] = {};
+        if(!indice[aid][f]) indice[aid][f] = [];
+        indice[aid][f].push(p);
+      });
+
+      // Helper: producciones de una sala en una columna de tiempo
+      function prodsEnCelda(areaId, col){
+        var byArea = indice[areaId] || {};
+        var out = [];
+        Object.keys(byArea).forEach(function(f){
+          if(f >= col.fechaIni && f <= col.fechaFin){
+            byArea[f].forEach(function(p){ out.push(p); });
+          }
+        });
+        return out;
+      }
+
+      // Render grid
+      var html = '<div style="overflow-x:auto"><table style="border-collapse:collapse;font-size:11px;width:100%;min-width:600px">';
+      html += '<thead><tr style="background:#0f766e;color:#fff">';
+      html += '<th style="padding:8px 10px;text-align:left;position:sticky;left:0;background:#0f766e;min-width:140px">Sala</th>';
+      columnas.forEach(function(c){
+        html += '<th style="padding:8px 6px;font-weight:700;text-align:center;min-width:90px;border-left:1px solid rgba(255,255,255,0.15)">'+_escHTML(c.label)+'</th>';
+      });
+      html += '</tr></thead><tbody>';
+
+      filas.forEach(function(sala){
+        html += '<tr style="border-bottom:1px solid #e2e8f0">';
+        html += '<td style="padding:10px;background:#f8fafc;position:sticky;left:0;font-weight:700;color:#0f766e;border-right:2px solid #cbd5e1">';
+        html += '<div style="font-size:12px">'+_escHTML(sala.nombre)+'</div>';
+        if(sala.codigo) html += '<div style="font-size:10px;color:#64748b;font-family:monospace">'+_escHTML(sala.codigo)+'</div>';
+        html += '</td>';
+        columnas.forEach(function(col){
+          var prods = prodsEnCelda(sala.id, col);
+          html += '<td style="padding:4px;vertical-align:top;border-left:1px solid #f1f5f9;min-height:48px">';
+          if(!prods.length){
+            html += '<div style="color:#cbd5e1;text-align:center;font-size:14px;padding:12px 0">—</div>';
+          } else {
+            prods.forEach(function(p){
+              var faltMP = (p.mps_necesarias||[]).filter(function(m){ return mpsFaltantesSet[m.codigo_mp]; }).length;
+              var faltMEE = (p.mees_necesarios||[]).filter(function(m){ return meesFaltantesSet[(m.codigo||'').toUpperCase()]; }).length;
+              var hayFalta = faltMP+faltMEE > 0;
+              var col1 = hayFalta ? '#dc2626' : '#16a34a';
+              var bg = hayFalta ? '#fef2f2' : '#f0fdf4';
+              var bd = hayFalta ? '#fecaca' : '#bbf7d0';
+              var nombrePr = (p.producto || '').length > 22
+                ? p.producto.slice(0,20)+'…' : p.producto;
+              html += '<div onclick="pv2VerProd('+p._idx+')" '+
+                      'style="background:'+bg+';border:1px solid '+bd+';color:'+col1+';'+
+                      'padding:6px 8px;border-radius:6px;margin-bottom:4px;cursor:pointer;'+
+                      'font-size:10px;font-weight:600;line-height:1.3;'+
+                      'transition:transform 0.1s" '+
+                      'onmouseover="this.style.transform=\\'translateY(-1px)\\';" '+
+                      'onmouseout="this.style.transform=\\'\\';" '+
+                      'title="'+_escHTML(p.producto)+' · '+
+                      (p.cantidad_kg||0)+'kg · click ver detalle">';
+              html += '<div style="font-weight:700">'+_escHTML(nombrePr)+'</div>';
+              html += '<div style="opacity:0.85;font-size:9px;margin-top:2px">'+
+                      (p.cantidad_kg||0)+'kg · '+(p.lotes||1)+' lote'+(p.lotes>1?'s':'')+
+                      ' '+(hayFalta?'⚠':'✓')+'</div>';
+              html += '</div>';
+            });
+          }
+          html += '</td>';
+        });
         html += '</tr>';
-        // Fila expandible (oculta por default)
-        html += '<tr id="pv2-row-'+idx+'" style="display:none;background:#f8fafc"><td colspan="6" style="padding:14px 18px">';
-        html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:18px">';
-        // MPs
-        html += '<div><div style="font-weight:700;color:#475569;font-size:11px;text-transform:uppercase;margin-bottom:6px">Materias primas</div>';
-        if((p.mps_necesarias||[]).length){
-          html += '<table style="width:100%;font-size:11px"><tbody>';
-          p.mps_necesarias.forEach(function(m){
-            var f = mpsFaltantesSet[m.codigo_mp];
-            var col = f ? '#dc2626' : '#16a34a';
-            html += '<tr style="border-bottom:1px solid #e2e8f0">';
-            html += '<td style="padding:4px 6px"><b>'+_escHTML(m.nombre||m.codigo_mp)+'</b></td>';
-            html += '<td style="padding:4px 6px;text-align:right;color:#64748b">'+(m.necesario_g||0).toLocaleString()+' g</td>';
-            html += '<td style="padding:4px 6px;text-align:right;color:'+col+';font-weight:700">'+
-                    (f ? ('falta '+(f.faltante_g||0).toLocaleString()+' g') : '✓')+'</td>';
-            html += '</tr>';
-          });
-          html += '</tbody></table>';
-        } else { html += '<div style="color:#94a3b8;font-size:11px">Sin formula registrada</div>'; }
-        html += '</div>';
-        // MEEs
-        html += '<div><div style="font-weight:700;color:#475569;font-size:11px;text-transform:uppercase;margin-bottom:6px">Envases &amp; empaque</div>';
-        if((p.mees_necesarios||[]).length){
-          html += '<table style="width:100%;font-size:11px"><tbody>';
-          p.mees_necesarios.forEach(function(m){
-            var fk = (m.codigo||'').toUpperCase();
-            var f = meesFaltantesSet[fk];
-            var col = f ? '#dc2626' : '#16a34a';
-            html += '<tr style="border-bottom:1px solid #e2e8f0">';
-            html += '<td style="padding:4px 6px"><b>'+_escHTML(m.descripcion||m.codigo)+'</b> <span style="color:#94a3b8">'+_escHTML(m.tipo||'')+'</span></td>';
-            html += '<td style="padding:4px 6px;text-align:right;color:#64748b">'+(m.necesario_unidades||0).toLocaleString()+' u</td>';
-            html += '<td style="padding:4px 6px;text-align:right;color:'+col+';font-weight:700">'+
-                    (f ? ('falta '+(f.faltante_u||0).toLocaleString()+' u') : '✓')+'</td>';
-            html += '</tr>';
-          });
-          html += '</tbody></table>';
-        } else { html += '<div style="color:#94a3b8;font-size:11px">Sin envases configurados (falta sku_mee_config)</div>'; }
-        html += '</div>';
-        html += '</div></td></tr>';
       });
       html += '</tbody></table></div>';
-      // Resumen agregado de faltantes globales
+
+      // Resumen abajo si hay faltantes
       if(hayFaltantes){
         html += '<div style="margin-top:14px;padding:12px 14px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px">';
-        html += '<div style="font-weight:700;color:#991b1b;font-size:12px;margin-bottom:6px">📦 Total faltante agregado (todos los productos)</div>';
-        html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;font-size:11px">';
-        html += '<div><b>MPs:</b> '+(d.faltantes_mps||[]).length+' · proveedores: '+
-                Array.from(new Set((d.faltantes_mps||[]).map(function(m){return m.proveedor_sugerido||'(sin)';})).values()).join(', ')+'</div>';
-        html += '<div><b>MEEs:</b> '+(d.faltantes_mees||[]).length+' · proveedores: '+
-                Array.from(new Set((d.faltantes_mees||[]).map(function(m){return m.proveedor_sugerido||'(sin)';})).values()).join(', ')+'</div>';
-        html += '</div></div>';
+        html += '<div style="font-weight:700;color:#991b1b;font-size:12px;margin-bottom:6px">📦 Faltantes agregados (todas las producciones del horizonte)</div>';
+        html += '<div style="font-size:11px;color:#7f1d1d">'+
+                (d.faltantes_mps||[]).length+' MPs · '+
+                (d.faltantes_mees||[]).length+' MEEs · '+
+                res.n_proveedores_unicos+' proveedores. '+
+                'Click <b>Solicitar TODO</b> arriba para crear solicitudes en bloque.</div>';
+        html += '</div>';
       }
+
       out.innerHTML = html;
     }catch(e){
       out.innerHTML = '<div style="color:#dc2626;padding:18px;text-align:center">Error red: '+_escHTML(e.message)+'</div>';
     }
   }
 
-  function pv2ToggleProdFaltante(idx){
-    var row = document.getElementById('pv2-row-'+idx);
-    if(!row) return;
-    row.style.display = row.style.display === 'none' ? 'table-row' : 'none';
+  // Sebastian 5-may-2026: click producción en calendario · abre modal
+  function pv2VerProd(idx){
+    if(!_PV2_FALTANTES_DATA || !_PV2_FALTANTES_DATA.producciones) return;
+    var p = _PV2_FALTANTES_DATA.producciones[idx];
+    if(!p) return;
+    var d = _PV2_FALTANTES_DATA;
+    var mpsFalt = {}; (d.faltantes_mps||[]).forEach(function(m){ mpsFalt[m.codigo_mp]=m; });
+    var meesFalt = {}; (d.faltantes_mees||[]).forEach(function(m){ meesFalt[(m.codigo||'').toUpperCase()]=m; });
+
+    document.getElementById('mpd-titulo').textContent = p.producto || 'Producción';
+    var sub = (p.fecha||'')+' · '+(p.lotes||1)+' lote'+(p.lotes>1?'s':'')+
+              ' · '+(p.cantidad_kg||0)+'kg';
+    if(p.area_nombre) sub += ' · '+p.area_nombre;
+    if(p.estado && p.estado !== 'pendiente') sub += ' · '+p.estado;
+    document.getElementById('mpd-subtitulo').textContent = sub;
+
+    var body = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:18px">';
+    // MPs
+    body += '<div><div style="font-weight:700;color:#475569;font-size:11px;text-transform:uppercase;margin-bottom:8px">Materias primas</div>';
+    if((p.mps_necesarias||[]).length){
+      body += '<table style="width:100%;font-size:12px;border-collapse:collapse"><tbody>';
+      p.mps_necesarias.forEach(function(m){
+        var f = mpsFalt[m.codigo_mp];
+        var cl = f ? '#dc2626' : '#16a34a';
+        body += '<tr style="border-bottom:1px solid #f1f5f9">';
+        body += '<td style="padding:5px 6px"><b>'+_escHTML(m.nombre||m.codigo_mp)+'</b></td>';
+        body += '<td style="padding:5px 6px;text-align:right;color:#64748b">'+(m.necesario_g||0).toLocaleString()+' g</td>';
+        body += '<td style="padding:5px 6px;text-align:right;color:'+cl+';font-weight:700">'+
+                (f ? ('falta '+(f.faltante_g||0).toLocaleString()+' g') : '✓')+'</td>';
+        body += '</tr>';
+      });
+      body += '</tbody></table>';
+    } else {
+      body += '<div style="color:#94a3b8;font-size:12px">Sin fórmula registrada · revisar /tecnica</div>';
+    }
+    body += '</div>';
+    // MEEs
+    body += '<div><div style="font-weight:700;color:#475569;font-size:11px;text-transform:uppercase;margin-bottom:8px">Envases &amp; empaque</div>';
+    if((p.mees_necesarios||[]).length){
+      body += '<table style="width:100%;font-size:12px;border-collapse:collapse"><tbody>';
+      p.mees_necesarios.forEach(function(m){
+        var fk = (m.codigo||'').toUpperCase();
+        var f = meesFalt[fk];
+        var cl = f ? '#dc2626' : '#16a34a';
+        body += '<tr style="border-bottom:1px solid #f1f5f9">';
+        body += '<td style="padding:5px 6px"><b>'+_escHTML(m.descripcion||m.codigo)+'</b><br><span style="color:#94a3b8;font-size:10px">'+_escHTML(m.tipo||'')+'</span></td>';
+        body += '<td style="padding:5px 6px;text-align:right;color:#64748b">'+(m.necesario_unidades||0).toLocaleString()+' u</td>';
+        body += '<td style="padding:5px 6px;text-align:right;color:'+cl+';font-weight:700">'+
+                (f ? ('falta '+(f.faltante_u||0).toLocaleString()+' u') : '✓')+'</td>';
+        body += '</tr>';
+      });
+      body += '</tbody></table>';
+    } else {
+      body += '<div style="color:#94a3b8;font-size:12px">Sin envases configurados · revisar /admin → sku_mee_config</div>';
+    }
+    body += '</div>';
+    body += '</div>';
+
+    document.getElementById('mpd-body').innerHTML = body;
+    document.getElementById('modal-prod-detalle').style.display = 'flex';
+  }
+
+  function cerrarProdDetalle(){
+    document.getElementById('modal-prod-detalle').style.display = 'none';
   }
 
   async function pv2SolicitarFaltantesBulk(){

@@ -450,9 +450,11 @@ def test_solicitar_bulk_audit_log(app, db_clean):
 def test_dashboard_html_expone_vista_simple(app, db_clean):
     cs = _login(app, 'luis')
     body = cs.get('/inventarios').get_data(as_text=True)
+    # Vista calendario por sala (Sebastian 5-may-2026)
     assert 'pv2-vista-simple' in body
     assert 'pv2CargarProdFaltantes' in body
     assert 'pv2SolicitarFaltantesBulk' in body
-    assert 'pv2ToggleProdFaltante' in body
-    assert 'Producciones programadas + faltantes' in body
+    assert 'pv2VerProd' in body  # click celda → modal detalle
+    assert 'modal-prod-detalle' in body
+    assert 'Calendario de Producción' in body
     assert 'Solicitar TODO faltante' in body
