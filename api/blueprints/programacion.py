@@ -5773,8 +5773,13 @@ def producciones_faltantes():
     cutoff = (hoy + _td(days=dias)).isoformat()
 
     # 1. Cargar producciones programadas pendientes (no descontadas) en horizonte
-    # Sebastian 5-may-2026: incluir area asignada (sala fisica) para que la
-    # vista calendario pueda agrupar por (sala × dia).
+    # Sebastian 5-may-2026: incluir area asignada + arrancar desde lunes de
+    # la semana actual (para que UI muestre Lun-Vie completos aunque ya haya
+    # pasado el lunes). El cliente puede filtrar lo que sigue siendo
+    # relevante en frontend.
+    # Calcular lunes de la semana actual
+    dow = hoy.weekday()  # 0=Lun, 6=Dom
+    lunes_actual = (hoy - _td(days=dow)).isoformat()
     try:
         c.execute("""
             SELECT pp.id, pp.producto, pp.fecha_programada,
@@ -5792,10 +5797,10 @@ def producciones_faltantes():
             LEFT JOIN areas_planta ap ON ap.id = pp.area_id
             WHERE COALESCE(pp.inventario_descontado_at, '') = ''
               AND LOWER(COALESCE(pp.estado, '')) NOT IN ('cancelado', 'completado')
-              AND pp.fecha_programada >= date('now', '-1 day')
+              AND pp.fecha_programada >= ?
               AND pp.fecha_programada <= ?
             ORDER BY pp.fecha_programada ASC
-        """, (cutoff,))
+        """, (lunes_actual, cutoff))
         prod_rows = c.fetchall()
     except sqlite3.OperationalError:
         # Fallback si areas_planta no existe (esquema legacy)
@@ -5812,10 +5817,10 @@ def producciones_faltantes():
                    ON UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(pp.producto))
             WHERE COALESCE(pp.inventario_descontado_at, '') = ''
               AND LOWER(COALESCE(pp.estado, '')) NOT IN ('cancelado', 'completado')
-              AND pp.fecha_programada >= date('now', '-1 day')
+              AND pp.fecha_programada >= ?
               AND pp.fecha_programada <= ?
             ORDER BY pp.fecha_programada ASC
-        """, (cutoff,))
+        """, (lunes_actual, cutoff))
         prod_rows = c.fetchall()
 
     # 2. Cargar formulas (codigo_mp -> [nombre, cantidad_g_por_lote, porcentaje])

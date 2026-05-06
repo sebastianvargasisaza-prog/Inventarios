@@ -12026,29 +12026,37 @@ async function ckMarcar(itemId, estado){
       if(dias > 30 && dias <= 90) granularidad = 'semana';
       else if(dias > 90) granularidad = 'mes';
 
-      // Construir columnas de tiempo
+      // Construir columnas de tiempo · Sebastian 5-may-2026: arrancar desde
+      // LUNES de la semana actual (aunque ya haya pasado), no desde hoy.
+      // Permite ver el ciclo completo Lun-Vie de la semana en curso.
       var hoy = new Date();
       hoy.setHours(0,0,0,0);
+      var hoyISO = hoy.toISOString().slice(0,10);
+      // Lunes de la semana actual (getDay: 0=Dom, 1=Lun, ..., 6=Sab)
+      var dow0 = hoy.getDay();
+      var diffLun = (dow0 === 0) ? -6 : (1 - dow0);
+      var lunes = new Date(hoy.getTime() + diffLun * 86400000);
       var columnas = [];
       if(granularidad === 'dia'){
-        var nDias = Math.min(dias, 21);
+        // Arrancar desde lunes de esta semana · expandir hasta hoy+dias
+        var totalDiasGrid = Math.abs(diffLun) + dias;  // dias pasados + horizonte
+        var nDias = Math.min(totalDiasGrid, 28);  // cap 28 para no saturar
         for(var i = 0; i < nDias; i++){
-          var dt = new Date(hoy.getTime() + i*86400000);
+          var dt = new Date(lunes.getTime() + i*86400000);
           var k = dt.toISOString().slice(0,10);
-          var dow = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'][dt.getDay()];
+          var dowName = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'][dt.getDay()];
+          var esPasado = k < hoyISO;
           columnas.push({
-            label: dow+' '+dt.getDate(),
+            label: dowName+' '+dt.getDate(),
             fechaIni: k, fechaFin: k,
+            esPasado: esPasado,
+            esHoy: k === hoyISO,
           });
         }
       } else if(granularidad === 'semana'){
-        var sem = new Date(hoy.getTime());
-        var dow0 = sem.getDay();
-        var diffLun = (dow0 === 0 ? -6 : 1 - dow0);
-        sem.setDate(sem.getDate() + diffLun);
         var nSems = Math.min(Math.ceil(dias / 7), 14);
         for(var i = 0; i < nSems; i++){
-          var ini = new Date(sem.getTime() + i*7*86400000);
+          var ini = new Date(lunes.getTime() + i*7*86400000);
           var fin = new Date(ini.getTime() + 6*86400000);
           columnas.push({
             label: 'Sem '+(ini.getDate())+'-'+fin.getDate(),
@@ -12082,17 +12090,22 @@ async function ckMarcar(itemId, estado){
       }
 
       // Render grid LINEAL · 1 fila con columnas de tiempo · cada celda
-      // contiene las producciones del día/semana/mes
+      // contiene las producciones del día/semana/mes. Columnas pasadas en
+      // tono gris, columna hoy destacada.
       var html = '<div style="overflow-x:auto"><table style="border-collapse:collapse;font-size:11px;width:100%;min-width:600px">';
       html += '<thead><tr style="background:#0f766e;color:#fff">';
       columnas.forEach(function(c){
-        html += '<th style="padding:8px 6px;font-weight:700;text-align:center;min-width:130px;border-left:1px solid rgba(255,255,255,0.15)">'+_escHTML(c.label)+'</th>';
+        var headBg = c.esHoy ? '#0e7490' : (c.esPasado ? '#475569' : '#0f766e');
+        var lbl = (c.esHoy ? '★ ' : '') + c.label + (c.esHoy ? ' (HOY)' : '');
+        html += '<th style="padding:8px 6px;font-weight:700;text-align:center;min-width:130px;border-left:1px solid rgba(255,255,255,0.15);background:'+headBg+'">'+_escHTML(lbl)+'</th>';
       });
       html += '</tr></thead><tbody><tr style="border-bottom:1px solid #e2e8f0">';
 
       columnas.forEach(function(col){
         var prods = prodsEnCol(col);
-        html += '<td style="padding:6px;vertical-align:top;border-left:1px solid #f1f5f9;background:#fafbfc;min-height:80px">';
+        var cellBg = col.esPasado ? '#f1f5f9' : (col.esHoy ? '#ecfeff' : '#fafbfc');
+        var cellOpacity = col.esPasado ? '0.65' : '1';
+        html += '<td style="padding:6px;vertical-align:top;border-left:1px solid #f1f5f9;background:'+cellBg+';min-height:80px;opacity:'+cellOpacity+'">';
         if(!prods.length){
           html += '<div style="color:#cbd5e1;text-align:center;font-size:13px;padding:24px 0">—</div>';
         } else {
