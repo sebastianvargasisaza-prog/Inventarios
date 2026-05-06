@@ -6733,7 +6733,7 @@ function _renderProgramacion(d){
     <div id="pv2-vista-simple" style="margin-bottom:14px;background:#fff;border-radius:12px;border:2px solid #0f766e;overflow:hidden;box-shadow:0 4px 12px rgba(15,118,110,0.1)">
       <div style="background:linear-gradient(90deg,#f0fdfa,#ecfeff);padding:14px 18px;border-bottom:1px solid #ccfbf1;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
         <div>
-          <h3 style="margin:0;color:#134e4a;font-size:15px;font-weight:800">📅 Calendario de Producción · por sala</h3>
+          <h3 style="margin:0;color:#134e4a;font-size:15px;font-weight:800">📅 Producciones programadas</h3>
           <div id="pv2-vs-resumen" style="font-size:11px;color:#475569;margin-top:3px">Cargando...</div>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -12089,26 +12089,33 @@ async function ckMarcar(itemId, estado){
         });
       }
 
-      // Render grid LINEAL · 1 fila con columnas de tiempo · cada celda
-      // contiene las producciones del día/semana/mes. Columnas pasadas en
-      // tono gris, columna hoy destacada.
-      var html = '<div style="overflow-x:auto"><table style="border-collapse:collapse;font-size:11px;width:100%;min-width:600px">';
-      html += '<thead><tr style="background:#0f766e;color:#fff">';
-      columnas.forEach(function(c){
-        var headBg = c.esHoy ? '#0e7490' : (c.esPasado ? '#475569' : '#0f766e');
-        var lbl = (c.esHoy ? '★ ' : '') + c.label + (c.esHoy ? ' (HOY)' : '');
-        html += '<th style="padding:8px 6px;font-weight:700;text-align:center;min-width:130px;border-left:1px solid rgba(255,255,255,0.15);background:'+headBg+'">'+_escHTML(lbl)+'</th>';
-      });
-      html += '</tr></thead><tbody><tr style="border-bottom:1px solid #e2e8f0">';
-
+      // Sebastian 5-may-2026: render LISTA vertical agrupada por fecha.
+      // Cada grupo: header con fecha + cards de producciones debajo.
+      // Mas legible que grid, no se sale del ancho de la pantalla.
+      var html = '';
+      // Solo mostrar columnas que tengan al menos 1 producción
+      // (no saturar con días vacíos · si no hay nada ese día, no aparece)
+      var grupos = [];
       columnas.forEach(function(col){
         var prods = prodsEnCol(col);
-        var cellBg = col.esPasado ? '#f1f5f9' : (col.esHoy ? '#ecfeff' : '#fafbfc');
-        var cellOpacity = col.esPasado ? '0.65' : '1';
-        html += '<td style="padding:6px;vertical-align:top;border-left:1px solid #f1f5f9;background:'+cellBg+';min-height:80px;opacity:'+cellOpacity+'">';
-        if(!prods.length){
-          html += '<div style="color:#cbd5e1;text-align:center;font-size:13px;padding:24px 0">—</div>';
-        } else {
+        if(prods.length) grupos.push({col: col, prods: prods});
+      });
+      if(!grupos.length){
+        html = '<div style="text-align:center;color:#22c55e;padding:30px;font-size:14px">✓ Sin producciones en este horizonte</div>';
+      } else {
+        grupos.forEach(function(g){
+          var col = g.col;
+          var prods = g.prods;
+          var headerBg = col.esHoy ? '#0e7490' : (col.esPasado ? '#475569' : '#0f766e');
+          var headerLbl = (col.esHoy ? '★ ' : '') + col.label + (col.esHoy ? ' · HOY' : (col.esPasado ? ' · ya pasó' : ''));
+          html += '<div style="margin-bottom:12px">';
+          html += '<div style="background:'+headerBg+';color:#fff;padding:8px 14px;border-radius:6px 6px 0 0;font-weight:700;font-size:12px;display:flex;justify-content:space-between;align-items:center">';
+          html += '<div>'+_escHTML(headerLbl)+'</div>';
+          html += '<div style="font-size:10px;opacity:0.85;font-weight:600">'+prods.length+' producci'+(prods.length===1?'ón':'ones')+'</div>';
+          html += '</div>';
+          html += '<div style="border:1px solid #e2e8f0;border-top:none;border-radius:0 0 6px 6px;padding:8px;background:'+(col.esPasado?'#f8fafc':'#fff')+';opacity:'+(col.esPasado?'0.75':'1')+'">';
+          // Lista de cards horizontal (flex-wrap)
+          html += '<div style="display:flex;flex-wrap:wrap;gap:6px">';
           prods.forEach(function(p){
             var faltMP = (p.mps_necesarias||[]).filter(function(m){ return mpsFaltantesSet[m.codigo_mp]; }).length;
             var faltMEE = (p.mees_necesarios||[]).filter(function(m){ return meesFaltantesSet[(m.codigo||'').toUpperCase()]; }).length;
@@ -12116,27 +12123,28 @@ async function ckMarcar(itemId, estado){
             var col1 = hayFalta ? '#dc2626' : '#16a34a';
             var bg = hayFalta ? '#fef2f2' : '#f0fdf4';
             var bd = hayFalta ? '#fecaca' : '#bbf7d0';
-            var nombrePr = (p.producto || '').length > 28
-              ? p.producto.slice(0,26)+'…' : p.producto;
             html += '<div onclick="pv2VerProd('+p._idx+')" '+
                     'style="background:'+bg+';border:1px solid '+bd+';color:'+col1+';'+
-                    'padding:6px 8px;border-radius:6px;margin-bottom:5px;cursor:pointer;'+
-                    'font-size:10px;font-weight:600;line-height:1.3;transition:transform 0.1s" '+
+                    'padding:8px 12px;border-radius:6px;cursor:pointer;'+
+                    'font-size:12px;font-weight:600;line-height:1.4;'+
+                    'min-width:200px;transition:transform 0.1s" '+
                     'onmouseover="this.style.transform=\\'translateY(-1px)\\';" '+
                     'onmouseout="this.style.transform=\\'\\';" '+
-                    'title="'+_escHTML(p.producto)+' · '+
-                    (p.cantidad_kg||0)+'kg · '+(p.fecha||'')+
-                    ' · click ver detalle">';
-            html += '<div style="font-weight:700">'+_escHTML(nombrePr)+'</div>';
-            html += '<div style="opacity:0.85;font-size:9px;margin-top:2px">'+
-                    (p.cantidad_kg||0)+'kg · '+(p.lotes||1)+' lote'+(p.lotes>1?'s':'')+
-                    ' '+(hayFalta?'⚠':'✓')+'</div>';
+                    'title="click para ver MP+MEE faltantes">';
+            html += '<div style="font-weight:700;font-size:13px">'+_escHTML(p.producto||'')+' '+(hayFalta?'⚠':'✓')+'</div>';
+            html += '<div style="opacity:0.85;font-size:11px;margin-top:3px;color:#64748b">'+
+                    (p.cantidad_kg||0)+' kg · '+(p.lotes||1)+' lote'+(p.lotes>1?'s':'');
+            if(hayFalta){
+              html += ' · '+faltMP+(faltMP===1?' MP':' MPs')+' · '+faltMEE+(faltMEE===1?' MEE':' MEEs');
+            }
+            html += '</div>';
             html += '</div>';
           });
-        }
-        html += '</td>';
-      });
-      html += '</tr></tbody></table></div>';
+          html += '</div>';
+          html += '</div>';
+          html += '</div>';
+        });
+      }
 
       // Resumen abajo si hay faltantes
       if(hayFaltantes){

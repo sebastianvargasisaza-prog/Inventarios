@@ -456,5 +456,5 @@ def test_dashboard_html_expone_vista_simple(app, db_clean):
     assert 'pv2SolicitarFaltantesBulk' in body
     assert 'pv2VerProd' in body  # click celda → modal detalle
     assert 'modal-prod-detalle' in body
-    assert 'Calendario de Producción' in body
+    assert 'Producciones programadas' in body
     assert 'Solicitar TODO faltante' in body
