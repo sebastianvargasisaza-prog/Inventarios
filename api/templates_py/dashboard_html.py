@@ -11978,27 +11978,23 @@ async function ckMarcar(itemId, estado){
   }
 
   async function pv2CargarProdFaltantes(){
-    // Sebastian 5-may-2026: vista calendario · grid SALAS × tiempo (días/
-    // semanas/meses según horizonte). Cada celda = producciones programadas
-    // en esa sala en ese rango. Click celda → modal con MP+MEE faltantes.
+    // Sebastian 5-may-2026: vista calendario LINEAL (sin salas) · solo
+    // columnas de tiempo (días/semanas/meses según horizonte). Cada celda
+    // lista las producciones programadas en ese rango. Click producción
+    // → modal con MP+MEE faltantes.
     var resumen = document.getElementById('pv2-vs-resumen');
     var out = document.getElementById('pv2-vs-resultado');
     var btn = document.getElementById('pv2-vs-btn-solicitar');
     if(!out) return;
     if(resumen) resumen.textContent = '⏳ Calculando...';
     if(btn) btn.style.display = 'none';
-    out.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:20px">⏳ Construyendo calendario por sala...</div>';
+    out.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:20px">⏳ Construyendo calendario...</div>';
     var dias = _pv2HorizonteDias();
     try{
-      // Cargar producciones-faltantes + areas en paralelo
-      var [rProd, rAreas] = await Promise.all([
-        fetch('/api/programacion/producciones-faltantes?dias='+dias),
-        fetch('/api/planta/areas'),
-      ]);
-      var d = await rProd.json();
-      var dAreas = rAreas.ok ? await rAreas.json() : {areas: []};
-      if(!rProd.ok){
-        out.innerHTML = '<div style="color:#dc2626;padding:18px;text-align:center">Error: '+_escHTML(d.error||rProd.status)+'</div>';
+      var r = await fetch('/api/programacion/producciones-faltantes?dias='+dias);
+      var d = await r.json();
+      if(!r.ok){
+        out.innerHTML = '<div style="color:#dc2626;padding:18px;text-align:center">Error: '+_escHTML(d.error||r.status)+'</div>';
         return;
       }
       _PV2_FALTANTES_DATA = d;
@@ -12019,14 +12015,13 @@ async function ckMarcar(itemId, estado){
         return;
       }
 
-      // Build sets de faltantes para color-coding rapido
+      // Sets de faltantes para color-coding
       var mpsFaltantesSet = {};
       (d.faltantes_mps||[]).forEach(function(m){ mpsFaltantesSet[m.codigo_mp]=m; });
       var meesFaltantesSet = {};
       (d.faltantes_mees||[]).forEach(function(m){ meesFaltantesSet[(m.codigo||'').toUpperCase()]=m; });
 
-      // Determinar granularidad según horizonte
-      // ≤14d: día | 15-30d: día | 31-90d: semana | 91-365d: mes
+      // Granularidad según horizonte
       var granularidad = 'dia';
       if(dias > 30 && dias <= 90) granularidad = 'semana';
       else if(dias > 90) granularidad = 'mes';
@@ -12034,46 +12029,41 @@ async function ckMarcar(itemId, estado){
       // Construir columnas de tiempo
       var hoy = new Date();
       hoy.setHours(0,0,0,0);
-      var columnas = [];  // {key, label, fechaInicio, fechaFin}
+      var columnas = [];
       if(granularidad === 'dia'){
-        for(var i = 0; i < Math.min(dias, 21); i++){  // cap 21 días por UI
+        var nDias = Math.min(dias, 21);
+        for(var i = 0; i < nDias; i++){
           var dt = new Date(hoy.getTime() + i*86400000);
           var k = dt.toISOString().slice(0,10);
           var dow = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'][dt.getDay()];
           columnas.push({
-            key: k,
             label: dow+' '+dt.getDate(),
-            fechaIni: k,
-            fechaFin: k,
+            fechaIni: k, fechaFin: k,
           });
         }
       } else if(granularidad === 'semana'){
         var sem = new Date(hoy.getTime());
-        // Alinear al lunes (si hoy es martes, la sem actual arranca lunes pasado)
         var dow0 = sem.getDay();
         var diffLun = (dow0 === 0 ? -6 : 1 - dow0);
         sem.setDate(sem.getDate() + diffLun);
-        var nSems = Math.ceil(dias / 7);
-        for(var i = 0; i < Math.min(nSems, 14); i++){
+        var nSems = Math.min(Math.ceil(dias / 7), 14);
+        for(var i = 0; i < nSems; i++){
           var ini = new Date(sem.getTime() + i*7*86400000);
           var fin = new Date(ini.getTime() + 6*86400000);
           columnas.push({
-            key: 's'+i,
             label: 'Sem '+(ini.getDate())+'-'+fin.getDate(),
             fechaIni: ini.toISOString().slice(0,10),
             fechaFin: fin.toISOString().slice(0,10),
           });
         }
       } else {
-        // Mes
         var ms = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
-        var nMs = Math.ceil(dias / 30);
+        var nMs = Math.min(Math.ceil(dias / 30), 12);
         var meses = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
-        for(var i = 0; i < Math.min(nMs, 12); i++){
+        for(var i = 0; i < nMs; i++){
           var ini = new Date(ms.getFullYear(), ms.getMonth()+i, 1);
           var fin = new Date(ms.getFullYear(), ms.getMonth()+i+1, 0);
           columnas.push({
-            key: 'm'+i,
             label: meses[ini.getMonth()]+' '+ini.getFullYear(),
             fechaIni: ini.toISOString().slice(0,10),
             fechaFin: fin.toISOString().slice(0,10),
@@ -12081,96 +12071,59 @@ async function ckMarcar(itemId, estado){
         }
       }
 
-      // Construir filas de salas (incluir sala "Sin asignar" si hay producciones sin area)
-      var areasMap = {};
-      (dAreas.areas || []).forEach(function(a){
-        areasMap[a.id] = {id:a.id, codigo:a.codigo, nombre:a.nombre, orden:a.orden||999};
-      });
-      // Detectar si hay producciones sin area
-      var haySinArea = producciones.some(function(p){ return !p.area_id; });
-      var filas = Object.values(areasMap).sort(function(a,b){ return a.orden-b.orden; });
-      if(haySinArea){
-        filas.push({id:0, codigo:'?', nombre:'Sin asignar', orden:9999});
-      }
-      if(!filas.length){
-        // Si no hay areas configuradas, agrupar todo en una sola fila
-        filas = [{id:0, codigo:'—', nombre:'Producción', orden:1}];
-      }
+      // Indexar producciones por fecha
+      producciones.forEach(function(p, idx){ p._idx = idx; });
 
-      // Indexar producciones por (areaId, fecha)
-      var indice = {};  // key = areaId|fecha
-      producciones.forEach(function(p, idx){
-        p._idx = idx;
-        var aid = p.area_id || 0;
-        var f = p.fecha || '';
-        if(!indice[aid]) indice[aid] = {};
-        if(!indice[aid][f]) indice[aid][f] = [];
-        indice[aid][f].push(p);
-      });
-
-      // Helper: producciones de una sala en una columna de tiempo
-      function prodsEnCelda(areaId, col){
-        var byArea = indice[areaId] || {};
-        var out = [];
-        Object.keys(byArea).forEach(function(f){
-          if(f >= col.fechaIni && f <= col.fechaFin){
-            byArea[f].forEach(function(p){ out.push(p); });
-          }
+      function prodsEnCol(col){
+        return producciones.filter(function(p){
+          var f = p.fecha || '';
+          return f >= col.fechaIni && f <= col.fechaFin;
         });
-        return out;
       }
 
-      // Render grid
+      // Render grid LINEAL · 1 fila con columnas de tiempo · cada celda
+      // contiene las producciones del día/semana/mes
       var html = '<div style="overflow-x:auto"><table style="border-collapse:collapse;font-size:11px;width:100%;min-width:600px">';
       html += '<thead><tr style="background:#0f766e;color:#fff">';
-      html += '<th style="padding:8px 10px;text-align:left;position:sticky;left:0;background:#0f766e;min-width:140px">Sala</th>';
       columnas.forEach(function(c){
-        html += '<th style="padding:8px 6px;font-weight:700;text-align:center;min-width:90px;border-left:1px solid rgba(255,255,255,0.15)">'+_escHTML(c.label)+'</th>';
+        html += '<th style="padding:8px 6px;font-weight:700;text-align:center;min-width:130px;border-left:1px solid rgba(255,255,255,0.15)">'+_escHTML(c.label)+'</th>';
       });
-      html += '</tr></thead><tbody>';
+      html += '</tr></thead><tbody><tr style="border-bottom:1px solid #e2e8f0">';
 
-      filas.forEach(function(sala){
-        html += '<tr style="border-bottom:1px solid #e2e8f0">';
-        html += '<td style="padding:10px;background:#f8fafc;position:sticky;left:0;font-weight:700;color:#0f766e;border-right:2px solid #cbd5e1">';
-        html += '<div style="font-size:12px">'+_escHTML(sala.nombre)+'</div>';
-        if(sala.codigo) html += '<div style="font-size:10px;color:#64748b;font-family:monospace">'+_escHTML(sala.codigo)+'</div>';
+      columnas.forEach(function(col){
+        var prods = prodsEnCol(col);
+        html += '<td style="padding:6px;vertical-align:top;border-left:1px solid #f1f5f9;background:#fafbfc;min-height:80px">';
+        if(!prods.length){
+          html += '<div style="color:#cbd5e1;text-align:center;font-size:13px;padding:24px 0">—</div>';
+        } else {
+          prods.forEach(function(p){
+            var faltMP = (p.mps_necesarias||[]).filter(function(m){ return mpsFaltantesSet[m.codigo_mp]; }).length;
+            var faltMEE = (p.mees_necesarios||[]).filter(function(m){ return meesFaltantesSet[(m.codigo||'').toUpperCase()]; }).length;
+            var hayFalta = faltMP+faltMEE > 0;
+            var col1 = hayFalta ? '#dc2626' : '#16a34a';
+            var bg = hayFalta ? '#fef2f2' : '#f0fdf4';
+            var bd = hayFalta ? '#fecaca' : '#bbf7d0';
+            var nombrePr = (p.producto || '').length > 28
+              ? p.producto.slice(0,26)+'…' : p.producto;
+            html += '<div onclick="pv2VerProd('+p._idx+')" '+
+                    'style="background:'+bg+';border:1px solid '+bd+';color:'+col1+';'+
+                    'padding:6px 8px;border-radius:6px;margin-bottom:5px;cursor:pointer;'+
+                    'font-size:10px;font-weight:600;line-height:1.3;transition:transform 0.1s" '+
+                    'onmouseover="this.style.transform=\\'translateY(-1px)\\';" '+
+                    'onmouseout="this.style.transform=\\'\\';" '+
+                    'title="'+_escHTML(p.producto)+' · '+
+                    (p.cantidad_kg||0)+'kg · '+(p.fecha||'')+
+                    ' · click ver detalle">';
+            html += '<div style="font-weight:700">'+_escHTML(nombrePr)+'</div>';
+            html += '<div style="opacity:0.85;font-size:9px;margin-top:2px">'+
+                    (p.cantidad_kg||0)+'kg · '+(p.lotes||1)+' lote'+(p.lotes>1?'s':'')+
+                    ' '+(hayFalta?'⚠':'✓')+'</div>';
+            html += '</div>';
+          });
+        }
         html += '</td>';
-        columnas.forEach(function(col){
-          var prods = prodsEnCelda(sala.id, col);
-          html += '<td style="padding:4px;vertical-align:top;border-left:1px solid #f1f5f9;min-height:48px">';
-          if(!prods.length){
-            html += '<div style="color:#cbd5e1;text-align:center;font-size:14px;padding:12px 0">—</div>';
-          } else {
-            prods.forEach(function(p){
-              var faltMP = (p.mps_necesarias||[]).filter(function(m){ return mpsFaltantesSet[m.codigo_mp]; }).length;
-              var faltMEE = (p.mees_necesarios||[]).filter(function(m){ return meesFaltantesSet[(m.codigo||'').toUpperCase()]; }).length;
-              var hayFalta = faltMP+faltMEE > 0;
-              var col1 = hayFalta ? '#dc2626' : '#16a34a';
-              var bg = hayFalta ? '#fef2f2' : '#f0fdf4';
-              var bd = hayFalta ? '#fecaca' : '#bbf7d0';
-              var nombrePr = (p.producto || '').length > 22
-                ? p.producto.slice(0,20)+'…' : p.producto;
-              html += '<div onclick="pv2VerProd('+p._idx+')" '+
-                      'style="background:'+bg+';border:1px solid '+bd+';color:'+col1+';'+
-                      'padding:6px 8px;border-radius:6px;margin-bottom:4px;cursor:pointer;'+
-                      'font-size:10px;font-weight:600;line-height:1.3;'+
-                      'transition:transform 0.1s" '+
-                      'onmouseover="this.style.transform=\\'translateY(-1px)\\';" '+
-                      'onmouseout="this.style.transform=\\'\\';" '+
-                      'title="'+_escHTML(p.producto)+' · '+
-                      (p.cantidad_kg||0)+'kg · click ver detalle">';
-              html += '<div style="font-weight:700">'+_escHTML(nombrePr)+'</div>';
-              html += '<div style="opacity:0.85;font-size:9px;margin-top:2px">'+
-                      (p.cantidad_kg||0)+'kg · '+(p.lotes||1)+' lote'+(p.lotes>1?'s':'')+
-                      ' '+(hayFalta?'⚠':'✓')+'</div>';
-              html += '</div>';
-            });
-          }
-          html += '</td>';
-        });
-        html += '</tr>';
       });
-      html += '</tbody></table></div>';
+      html += '</tr></tbody></table></div>';
 
       // Resumen abajo si hay faltantes
       if(hayFaltantes){
