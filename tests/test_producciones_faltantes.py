@@ -25,7 +25,13 @@ def _login(app, user="luis"):
 
 
 def _seed_mp_y_stock(codigo, nombre, gramos_stock, proveedor='ProveedorMP'):
-    """Inserta MP en catalogo + un movimiento Entrada con `gramos_stock`."""
+    """Inserta MP en catalogo + un movimiento Entrada con `gramos_stock`.
+
+    Importante: tambien limpia mp_lead_time_config de leaks de tests previos.
+    /api/programacion/producciones-faltantes hace COALESCE entre
+    mp_lead_time_config.proveedor_principal y maestro_mps.proveedor —
+    si otro test dejo una fila ahi, sobreescribiria nuestro proveedor.
+    """
     conn = sqlite3.connect(os.environ["DB_PATH"])
     c = conn.cursor()
     c.execute(
@@ -34,6 +40,10 @@ def _seed_mp_y_stock(codigo, nombre, gramos_stock, proveedor='ProveedorMP'):
            VALUES (?, ?, ?, 1, 'MP')""",
         (codigo, nombre, proveedor),
     )
+    try:
+        c.execute("DELETE FROM mp_lead_time_config WHERE material_id=?", (codigo,))
+    except sqlite3.OperationalError:
+        pass  # tabla puede no existir en schema legacy
     c.execute(
         """INSERT INTO movimientos
            (material_id, material_nombre, cantidad, tipo, fecha,
@@ -163,9 +173,17 @@ def _cleanup(productos=None, mps=None, mees=None, prod_ids=None):
         ph = ','.join(['?']*len(mps))
         c.execute(f"DELETE FROM movimientos WHERE material_id IN ({ph})", mps)
         c.execute(f"DELETE FROM maestro_mps WHERE codigo_mp IN ({ph})", mps)
+        try:
+            c.execute(f"DELETE FROM mp_lead_time_config WHERE material_id IN ({ph})", mps)
+        except sqlite3.OperationalError:
+            pass
     if mees:
         ph = ','.join(['?']*len(mees))
         c.execute(f"DELETE FROM maestro_mee WHERE codigo IN ({ph})", mees)
+        try:
+            c.execute(f"DELETE FROM mee_lead_time_config WHERE mee_codigo IN ({ph})", mees)
+        except sqlite3.OperationalError:
+            pass
     conn.commit(); conn.close()
 
 

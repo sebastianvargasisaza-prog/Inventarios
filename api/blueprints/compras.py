@@ -1656,12 +1656,33 @@ def handle_solicitudes_compra():
     if filtro_estado: sql += " AND sc.estado=?"; params.append(filtro_estado)
     if filtro_empresa: sql += " AND sc.empresa=?"; params.append(filtro_empresa)
     filtro_categoria = request.args.get('categoria', '')
-    # Sebastian (29-abr-2026): cuando se pide 'Influencer/Marketing Digital'
-    # tambien incluir 'Cuenta de Cobro' — el tab Influencers de /compras
-    # gestiona ambas porque tienen el mismo flujo (pago directo a personas).
-    # Antes solo traia una categoria y SOLs de 'Cuenta de Cobro' quedaban
-    # invisibles aunque /admin/influencers-hoy SI las mostraba.
-    if filtro_categoria in ('Influencer/Marketing Digital', 'Cuenta de Cobro'):
+    # Sebastian 6-may-2026: param ?fuente= separa los 3 origenes de SOLs.
+    # Catalina debe ver cada flujo en su tab sin mezcla:
+    #   fuente=usuarios → SOLs del modulo /solicitudes (papeleria, EPP,
+    #     servicios, mantenimiento, etc.) · NO incluye MP/Empaque ni
+    #     Influencer/CC.
+    #   fuente=planta → SOLs auto-generadas por el calendario de planta
+    #     (Materia Prima + Empaque). Agrupadas por proveedor en el tab.
+    #   fuente=influencers → Influencer/Marketing Digital + Cuenta de Cobro.
+    # Sin fuente · comportamiento legacy (todo excepto Influencer/CC).
+    fuente = (request.args.get('fuente') or '').strip().lower()
+    _CATS_PLANTA = ('Materia Prima', 'Empaque', 'Material de Empaque')
+    _CATS_INFLUENCER = ('Influencer/Marketing Digital', 'Cuenta de Cobro')
+    if fuente == 'planta':
+        ph = ','.join(['?'] * len(_CATS_PLANTA))
+        sql += f" AND sc.categoria IN ({ph})"
+        params.extend(_CATS_PLANTA)
+    elif fuente == 'usuarios':
+        # Excluye Planta + Influencers · queda todo lo demas (Papeleria,
+        # Servicios, EPP, Aseo, Mantenimiento, Software, Dotacion,
+        # Reactivos, Administrativo, Infraestructura, Otros, etc.)
+        excluir = list(_CATS_PLANTA) + list(_CATS_INFLUENCER)
+        ph = ','.join(['?'] * len(excluir))
+        sql += f" AND sc.categoria NOT IN ({ph})"
+        params.extend(excluir)
+    elif fuente == 'influencers':
+        sql += " AND sc.categoria IN ('Influencer/Marketing Digital','Cuenta de Cobro')"
+    elif filtro_categoria in ('Influencer/Marketing Digital', 'Cuenta de Cobro'):
         sql += " AND sc.categoria IN ('Influencer/Marketing Digital','Cuenta de Cobro')"
     elif filtro_categoria:
         sql += " AND sc.categoria=?"; params.append(filtro_categoria)
@@ -1800,6 +1821,10 @@ def solicitudes_agrupadas_por_proveedor():
 
     estado_filtro = (request.args.get('estado') or 'Pendiente').strip()
     categoria_filtro = (request.args.get('categoria') or '').strip()
+    # Sebastian 5-may-2026: filtro de fuente alineado con /api/solicitudes-compra
+    # planta = solo MP + Empaque (la vista agrupada se usa principalmente para
+    #         consolidar pedidos de planta a proveedores)
+    fuente = (request.args.get('fuente') or '').strip().lower()
 
     conn = get_db(); c = conn.cursor()
     sql = """
@@ -1816,6 +1841,8 @@ def solicitudes_agrupadas_por_proveedor():
         params.append(estado_filtro)
     # Excluir Influencer/CC siempre — esos tienen flujo aparte
     sql += " AND s.categoria NOT IN ('Influencer/Marketing Digital','Cuenta de Cobro')"
+    if fuente == 'planta':
+        sql += " AND s.categoria IN ('Materia Prima','Empaque','Material de Empaque')"
     if categoria_filtro:
         sql += " AND s.categoria=?"
         params.append(categoria_filtro)
@@ -2550,6 +2577,84 @@ def consolidar_auto_pendientes():
 
 
 # ── Sebastián 4-may-2026 (Catalina): limpiar y regenerar AUTO-PLAN ────
+# Sebastian 6-may-2026: limpieza completa de SOLs Pendientes de Planta.
+# Borra TODO lo que vino de Planta (auto-plan + manual con categoria
+# Materia Prima/Empaque) sin OC vinculada. Usado para empezar de cero
+# antes de cargar con la nueva disposicion de calendario.
+@bp.route('/api/compras/limpiar-solicitudes-planta', methods=['POST'])
+def limpiar_solicitudes_planta():
+    """Borra TODAS las SOLs Pendientes con categoria 'Materia Prima' o
+    'Empaque' que NO tengan OC vinculada (=quedaron huérfanas tras los
+    duplicados del cron auto-plan).
+
+    Body JSON:
+      {dry_run: false}  · si true, solo cuenta sin borrar
+
+    Returns: {ok, eliminadas, items_eliminados, mensaje}
+    """
+    usuario, err, code = _require_compras_write()
+    if err:
+        return err, code
+    body = request.get_json(silent=True) or {}
+    dry_run = bool(body.get('dry_run', False))
+    conn = get_db(); c = conn.cursor()
+    rows = c.execute("""
+        SELECT numero FROM solicitudes_compra
+        WHERE estado='Pendiente'
+          AND COALESCE(numero_oc,'') = ''
+          AND categoria IN ('Materia Prima','Empaque','Material de Empaque')
+    """).fetchall()
+    nums = [r[0] for r in rows]
+    if dry_run:
+        return jsonify({
+            'ok': True,
+            'dry_run': True,
+            'eliminaria': len(nums),
+            'mensaje': f'Plan: borrar {len(nums)} SOLs de Planta Pendientes sin OC',
+        })
+    if not nums:
+        return jsonify({
+            'ok': True, 'eliminadas': 0, 'items_eliminados': 0,
+            'mensaje': 'No hay SOLs de Planta Pendientes que borrar',
+        })
+    try:
+        ph = ','.join(['?'] * len(nums))
+        r1 = c.execute(
+            f"DELETE FROM solicitudes_compra_items WHERE numero IN ({ph})",
+            nums,
+        )
+        items_eliminados = r1.rowcount or 0
+        c.execute(
+            f"DELETE FROM solicitudes_compra WHERE numero IN ({ph})",
+            nums,
+        )
+        try:
+            audit_log(
+                c, usuario=usuario, accion='LIMPIAR_SOLS_PLANTA',
+                tabla='solicitudes_compra', registro_id='bulk',
+                despues={'eliminadas': len(nums),
+                          'items_eliminados': items_eliminados},
+                detalle=(f"Borró {len(nums)} SOLs Planta Pendientes "
+                          f"(MP/Empaque sin OC) · {items_eliminados} items"),
+            )
+        except Exception:
+            pass
+        conn.commit()
+    except Exception as e:
+        try: conn.rollback()
+        except Exception: pass
+        log.exception('limpiar_solicitudes_planta fallo: %s', e)
+        return jsonify({'error': str(e)}), 500
+    return jsonify({
+        'ok': True,
+        'eliminadas': len(nums),
+        'items_eliminados': items_eliminados,
+        'mensaje': (f'✓ Eliminadas {len(nums)} SOLs Pendientes de Planta · '
+                     f'{items_eliminados} items. Ahora puedes cargar limpio '
+                     f'desde el calendario.'),
+    })
+
+
 @bp.route('/api/compras/limpiar-y-regenerar-auto-plan', methods=['POST'])
 def limpiar_y_regenerar_auto_plan():
     """Borra TODAS las AUTO-XXXX Pendientes (sin OC) y vuelve a generar.
@@ -6047,18 +6152,55 @@ def update_sol_items(numero):
         """, (cant_nueva, precio_nuevo, valor_nuevo, prov_nuevo, now, user, item_id))
         cambios['items_actualizados'] += 1
 
-        # 2) Si proveedor cambio -> normalizar en maestro_mps
+        # 2) Si proveedor cambio → sync GLOBAL · Sebastian 6-may-2026:
+        # Cuando Catalina asigna proveedor en una SOL, debe quedar guardado
+        # en TODA la app (maestro_mps + mp_lead_time_config) para que la
+        # próxima vez que el calendario detecte falta de esta MP, sugiera
+        # automáticamente el proveedor correcto sin que Catalina tenga que
+        # repetirlo.
         if codigo_mp and prov_nuevo and prov_nuevo != prov_actual:
             try:
-                c.execute("""
-                    UPDATE maestro_mps SET proveedor=? WHERE codigo_mp=?
-                """, (prov_nuevo, codigo_mp))
+                c.execute("UPDATE maestro_mps SET proveedor=? WHERE codigo_mp=?",
+                           (prov_nuevo, codigo_mp))
                 if c.rowcount > 0:
                     cambios['maestro_mps_actualizados'] += 1
             except Exception:
                 pass
+            # Sync mp_lead_time_config (fuente que aplicar_plan() usa con COALESCE)
+            try:
+                c.execute(
+                    "UPDATE mp_lead_time_config SET proveedor_principal=? "
+                    "WHERE material_id=?",
+                    (prov_nuevo, codigo_mp),
+                )
+                if c.rowcount == 0:
+                    # Si no existe la fila, crearla con defaults
+                    c.execute(
+                        "INSERT OR IGNORE INTO mp_lead_time_config "
+                        "(material_id, material_nombre, proveedor_principal, "
+                        " lead_time_dias, buffer_dias, cobertura_min_dias, "
+                        " cobertura_ideal_dias, origen, es_envase, activo) "
+                        "VALUES (?, ?, ?, 14, 30, 30, 60, 'local', 0, 1)",
+                        (codigo_mp, nombre_mp or '', prov_nuevo),
+                    )
+            except Exception:
+                pass
+            # Audit
+            try:
+                audit_log(c, usuario=user, accion='SYNC_PROVEEDOR_GLOBAL',
+                           tabla='maestro_mps', registro_id=codigo_mp,
+                           antes={'proveedor': prov_actual},
+                           despues={'proveedor': prov_nuevo,
+                                     'desde_sol': numero.upper()},
+                           detalle=(f"Sync global proveedor MP {codigo_mp}: "
+                                     f"'{prov_actual}' → '{prov_nuevo}' "
+                                     f"(desde edicion en SOL {numero})"))
+            except Exception:
+                pass
 
-        # 3) Si precio cambio (>0) y es distinto del anterior -> historico
+        # 3) Si precio cambio (>0) y es distinto del anterior → historico +
+        # sync precio_referencia en maestro_mps (Sebastian 6-may-2026:
+        # tambien debe quedar guardado globalmente)
         if precio_nuevo > 0 and abs(precio_nuevo - (precio_actual or 0)) > 1e-6:
             try:
                 c.execute("""
@@ -6072,6 +6214,25 @@ def update_sol_items(numero):
                 cambios['precios_historicos_insertados'] += 1
             except Exception:
                 pass
+            # Sync precio_referencia en maestro_mps (precio en pesos por kg ·
+            # precio_unit_g está en pesos/g · multiplicar por 1000)
+            if codigo_mp:
+                try:
+                    c.execute(
+                        "UPDATE maestro_mps SET precio_referencia=?, "
+                        "ultima_act_precio=datetime('now') WHERE codigo_mp=?",
+                        (precio_nuevo * 1000.0, codigo_mp),
+                    )
+                except sqlite3.OperationalError:
+                    # Schema viejo sin ultima_act_precio
+                    try:
+                        c.execute(
+                            "UPDATE maestro_mps SET precio_referencia=? "
+                            "WHERE codigo_mp=?",
+                            (precio_nuevo * 1000.0, codigo_mp),
+                        )
+                    except Exception:
+                        pass
 
     # 4) Recalcular valor total de la SOL
     total = c.execute("""

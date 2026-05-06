@@ -138,7 +138,12 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
        requiere visibilidad desde Compras. Toda la logica (pane, loadInfluencers,
        renderInfluencers) ya estaba en el codigo, solo se habia ocultado el boton. -->
   <button class="tn" data-tab="influencer" id="tn-influencer">&#x1F4B8; Influencers</button>
-  <button class="tn" data-tab="solic" id="tn-solic">&#128203; Solicitudes</button>
+  <!-- Sebastian 5-may-2026: 3 fuentes de SOLs claras
+       · Solicitudes = usuarios (Papelería, Servicios, EPP, etc · NO planta · NO influencers)
+       · Planta = MP + Empaque agrupado por proveedor (lo que sale de Centro Programación)
+       · Influencers = ya separado arriba -->
+  <button class="tn" data-tab="solic" id="tn-solic" title="Solicitudes de usuarios (Papelería, Servicios, EPP, Mantenimiento, etc.)">&#128203; Solicitudes</button>
+  <button class="tn" data-tab="planta" id="tn-planta" title="Materia Prima + Empaque agrupado por proveedor (vienen del Centro de Programación)">&#x1F3ED; Planta</button>
   <button class="tn" data-tab="solprod" id="tn-solprod">&#128737;&#65039; Producción <span id="solprod-badge" style="display:none;background:#dc2626;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
   <button class="tn" data-tab="consol" id="tn-consol">&#x1F4E6; Consolidado</button>
   <button class="tn" data-tab="mis-sol" id="tn-mis-sol" title="Tus solicitudes con seguimiento del ciclo completo">&#128100; Mis Solicitudes <span id="mis-sol-badge" style="display:none;background:#1e40af;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
@@ -373,6 +378,37 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
     Cuando te llegue la mercancía, click <b>✅ Marcar Recibido</b> para cerrar el ciclo sin esperar a Catalina.
   </div>
   <div id="mis-sol-body">
+    <div style="color:#94a3b8;text-align:center;padding:40px;">Cargando...</div>
+  </div>
+</div>
+
+<!-- ════════════ TAB: PLANTA (MP + Empaque agrupado por proveedor) ════════════
+     Sebastian 5-may-2026: separación de fuentes — esto es lo que SALE del
+     Centro de Programación (calendar.py). Catalina ve aquí TODO lo de planta
+     ya agrupado por proveedor, puede editar inline (proveedor / cantidad /
+     valor), y los cambios se sincronizan globalmente a maestro_mps +
+     mp_lead_time_config + precio_referencia (aplican en TODA la app). -->
+<div id="pane-planta" class="pane">
+  <div style="background:#fef9c3;border:1px solid #fde047;border-radius:8px;padding:10px 14px;margin-bottom:10px;display:flex;gap:10px;align-items:flex-start;">
+    <span style="font-size:18px;line-height:1;">&#x1F4E1;</span>
+    <div style="flex:1;font-size:12px;color:#713f12;line-height:1.5;">
+      <b>Pedidos de planta agrupados por proveedor.</b> Vienen del Centro de Programación · Materia Prima + Empaque.
+      Editá <b>proveedor / cantidad / valor</b> de cada item · al guardar se sincroniza globalmente con la app
+      (maestro_mps, lead time, precio de referencia).
+    </div>
+  </div>
+  <div class="bar" style="flex-wrap:wrap;gap:8px;">
+    <input type="text" id="q-planta" placeholder="Buscar SOL, proveedor, MP..." oninput="renderPlanta()" style="flex:1;min-width:220px;">
+    <select id="s-planta-estado" onchange="loadPlanta()" title="Estado de la solicitud">
+      <option value="Pendiente">Pendiente</option>
+      <option value="Aprobada">Aprobada</option>
+      <option value="all">Todos</option>
+    </select>
+    <button class="btn bp" onclick="loadPlanta()" style="padding:6px 14px;font-size:12px;">&#x21BA; Actualizar</button>
+    <button class="btn" onclick="limpiarSolsPlantaLegacy()" style="background:#dc2626;color:#fff;font-size:12px;padding:7px 14px;" title="Borra TODAS las SOLs Pendientes de planta sin OC vinculada · útil para borrón y cuenta nueva">&#x1F5D1;&#xFE0F; Limpiar SOLs planta</button>
+  </div>
+  <div id="planta-kpis" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px;font-size:11px;color:#64748b;"></div>
+  <div id="planta-body" style="display:flex;flex-direction:column;gap:12px;">
     <div style="color:#94a3b8;text-align:center;padding:40px;">Cargando...</div>
   </div>
 </div>
@@ -1081,6 +1117,7 @@ document.querySelectorAll('.tn').forEach(function(btn){
     if(tab==='dash') renderDash();
     else if(tab==='prov') renderProv();
     else if(tab==='solic') loadSolicitudes();
+    else if(tab==='planta') loadPlanta();
     else if(tab==='influencer') loadInfluencers();
     else if(tab==='consol') loadConsolidado();
     else if(tab==='pagos'){ loadPagos(); }
@@ -1089,7 +1126,7 @@ document.querySelectorAll('.tn').forEach(function(btn){
     else if(tab==='solprod'){ loadSolicitudesProduccion(); }
     else if(tab==='mis-sol'){ loadMisSolicitudes(); }
     var fab = document.getElementById('fab-btn');
-    if(tab==='prov'||tab==='solic'||tab==='influencer'||tab==='consol'||tab==='pagos'||tab==='por-pagar'||tab==='alertas'||tab==='mis-sol'){ fab.style.display='none'; }
+    if(tab==='prov'||tab==='solic'||tab==='planta'||tab==='influencer'||tab==='consol'||tab==='pagos'||tab==='por-pagar'||tab==='alertas'||tab==='mis-sol'){ fab.style.display='none'; }
     else{ fab.style.display='flex'; fab.onclick=function(){
       var cat=tab==='dash'?'':tab.toUpperCase();
       openNuevaOC(cat);
@@ -3468,14 +3505,21 @@ async function regenerarSolicitudesAuto(){
 }
 
 async function loadSolicitudes(){
+  // Sebastian 5-may-2026: Tab "Solicitudes" SOLO carga las solicitudes de
+  // usuarios (Papelería, Servicios, EPP, Mantenimiento, etc).
+  //
+  // Las de planta (MP + Empaque) viven en su propio tab "Planta" y las
+  // de influencers/marketing en su tab "Influencers". Esto evita que
+  // Catalina las confunda y procese mal.
+  //
+  // El backend interpreta ?fuente=usuarios como "todas las categorias
+  // EXCEPTO Materia Prima, Empaque, Material de Empaque, Influencer/
+  // Marketing Digital, Cuenta de Cobro".
   try{
-    var _results=await Promise.all([
-      fetch('/api/solicitudes-compra').then(function(r){ return r.json(); }),
-      fetch('/api/solicitudes-compra?categoria=Cuenta+de+Cobro').then(function(r){ return r.json(); })
-    ]);
-    var _all=(_results[0].solicitudes||[]).concat(_results[1].solicitudes||[]);
-    var _seen={};
-    SOLIC=_all.filter(function(s){ if(_seen[s.numero]) return false; _seen[s.numero]=1; return true; });
+    var r=await fetch('/api/solicitudes-compra?fuente=usuarios&_t='+Date.now(),
+      {cache:'no-store'});
+    var d=await r.json();
+    SOLIC=d.solicitudes||[];
   }catch(e){ SOLIC=[]; }
   renderSolicitudes();
 }
@@ -3510,6 +3554,247 @@ window.limpiarSolsNoPagadas = async function(){
       alert('Error: '+(d2.error||'?'));
     }
   }catch(e){ alert('Error de red: '+e.message); }
+};
+
+// ─── Tab PLANTA · MP + Empaque agrupado por proveedor ─────────────
+// Sebastian 5-may-2026: separación de fuentes de SOLs.
+//
+// Carga /api/compras/solicitudes-agrupadas-por-proveedor?fuente=planta
+// que devuelve grupos por proveedor con items consolidados (codigo_mp →
+// suma de cantidad_g + valor_estimado).
+//
+// Cada item se puede editar inline: proveedor (datalist), cantidad_g,
+// valor_estimado · al guardar usa PATCH /api/solicitudes-compra/<num>/items
+// que sincroniza globalmente:
+//   · maestro_mps.proveedor
+//   · mp_lead_time_config.proveedor_principal
+//   · maestro_mps.precio_referencia
+// (lo que aplican en TODA la app: Programación, Calendar, etc.)
+var PLANTA_GRUPOS=[];   // grupos[i] = {proveedor, items_consolidados, solicitudes, ...}
+var PLANTA_PROVEEDORES_LIST=[];
+
+async function loadPlanta(){
+  var estado = (document.getElementById('s-planta-estado')||{value:'Pendiente'}).value;
+  document.getElementById('planta-body').innerHTML =
+    '<div style="color:#94a3b8;text-align:center;padding:40px;">Cargando...</div>';
+  try{
+    var r = await fetch('/api/compras/solicitudes-agrupadas-por-proveedor?fuente=planta&estado='
+      + encodeURIComponent(estado) + '&_t='+Date.now(), {cache:'no-store'});
+    var d = await r.json();
+    if(!r.ok){
+      document.getElementById('planta-body').innerHTML =
+        '<div style="color:#dc2626;padding:20px;">Error: '+esc(d.error||r.status)+'</div>';
+      return;
+    }
+    PLANTA_GRUPOS = (d.grupos||[]).concat(d.sin_proveedor||[]);
+  }catch(e){
+    document.getElementById('planta-body').innerHTML =
+      '<div style="color:#dc2626;padding:20px;">Error de red: '+esc(e.message)+'</div>';
+    return;
+  }
+  // Cargar lista de proveedores desde maestro_mps + movimientos (datalist)
+  try{
+    var rp = await fetch('/api/proveedores-unicos');
+    var dp = await rp.json();
+    PLANTA_PROVEEDORES_LIST = (dp.proveedores||[]).map(function(p){ return p.nombre || p; });
+  }catch(_){ PLANTA_PROVEEDORES_LIST = []; }
+  renderPlanta();
+}
+
+function renderPlanta(){
+  var q = (document.getElementById('q-planta')||{value:''}).value.toLowerCase().trim();
+  var body = document.getElementById('planta-body');
+  if(!body) return;
+  var grupos = PLANTA_GRUPOS;
+  if(q){
+    grupos = grupos.filter(function(g){
+      if((g.proveedor||'').toLowerCase().indexOf(q) >= 0) return true;
+      var hits = (g.items_consolidados||[]).some(function(it){
+        return ((it.nombre_mp||'')+' '+(it.codigo_mp||'')).toLowerCase().indexOf(q) >= 0;
+      });
+      if(hits) return true;
+      var hits2 = (g.solicitudes||[]).some(function(s){
+        return (s.numero||'').toLowerCase().indexOf(q) >= 0;
+      });
+      return hits2;
+    });
+  }
+  // KPIs
+  var kpis = document.getElementById('planta-kpis');
+  if(kpis){
+    var totalGrupos = grupos.length;
+    var totalSols = 0, totalValor = 0, totalGr = 0;
+    grupos.forEach(function(g){
+      totalSols += (g.solicitudes||[]).length;
+      totalValor += (g.valor_total||0);
+      (g.items_consolidados||[]).forEach(function(it){ totalGr += parseFloat(it.cantidad_g||0); });
+    });
+    kpis.innerHTML =
+      '<span><b>'+totalGrupos+'</b> proveedores</span> · ' +
+      '<span><b>'+totalSols+'</b> SOLs</span> · ' +
+      '<span><b>'+(totalGr.toLocaleString('es-CO',{maximumFractionDigits:0}))+' g</b> total</span> · ' +
+      '<span><b>'+fmt(totalValor)+'</b> valor estimado</span>';
+  }
+  if(!grupos.length){
+    body.innerHTML = '<div style="color:#94a3b8;text-align:center;padding:40px;">' +
+      'No hay solicitudes de planta pendientes.</div>';
+    return;
+  }
+  body.innerHTML = grupos.map(function(g, idx){ return _plantaCardHTML(g, idx); }).join('');
+  // Wire datalist global de proveedores (1 sola lista compartida)
+  if(!document.getElementById('planta-prov-datalist')){
+    var dl = document.createElement('datalist');
+    dl.id = 'planta-prov-datalist';
+    PLANTA_PROVEEDORES_LIST.forEach(function(p){
+      var o = document.createElement('option'); o.value = p; dl.appendChild(o);
+    });
+    document.body.appendChild(dl);
+  }
+}
+
+function _plantaCardHTML(g, idx){
+  var prov = g.proveedor || '(sin proveedor)';
+  var label = g.proveedor_label || prov;
+  var solCount = (g.solicitudes||[]).length;
+  var itemCount = (g.items_consolidados||[]).length;
+  var totalGr = 0;
+  (g.items_consolidados||[]).forEach(function(it){ totalGr += parseFloat(it.cantidad_g||0); });
+  var hdrColor = (prov === '(sin proveedor)' || prov === '__SIN_PROVEEDOR__') ? '#dc2626' : '#0e7490';
+
+  var itemsHTML = (g.items_consolidados||[]).map(function(it){
+    return _plantaItemRowHTML(g, it);
+  }).join('');
+
+  return '<div class="planta-card" data-prov="'+esc(label)+'" style="background:#fff;border:1px solid #e7e5e4;border-radius:8px;overflow:hidden;">' +
+    '<div style="background:'+hdrColor+';color:#fff;padding:10px 14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">' +
+      '<div style="font-weight:700;font-size:14px;flex:1;">&#x1F3ED; '+esc(label)+'</div>' +
+      '<span style="background:rgba(255,255,255,.2);padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700;">'+solCount+' SOLs</span>' +
+      '<span style="background:rgba(255,255,255,.2);padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700;">'+itemCount+' items</span>' +
+      '<span style="background:rgba(255,255,255,.2);padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700;">'+totalGr.toLocaleString('es-CO',{maximumFractionDigits:0})+' g</span>' +
+      '<span style="background:rgba(255,255,255,.2);padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700;">'+fmt(g.valor_total||0)+'</span>' +
+    '</div>' +
+    '<div style="padding:10px 14px;font-size:11px;color:#64748b;">SOLs incluidas: ' +
+      (g.solicitudes||[]).map(function(s){ return '<span style="background:#f1f5f9;padding:2px 6px;border-radius:4px;margin-right:4px;font-weight:600;color:#334155;">'+esc(s.numero)+'</span>'; }).join('') +
+    '</div>' +
+    '<div style="padding:0 14px 14px;">' +
+      '<table style="width:100%;border-collapse:collapse;font-size:12px;">' +
+        '<thead><tr style="background:#f8fafc;border-bottom:1px solid #e2e8f0;">' +
+          '<th style="text-align:left;padding:6px;font-weight:700;color:#64748b;">MP</th>' +
+          '<th style="text-align:left;padding:6px;font-weight:700;color:#64748b;width:160px;">Proveedor</th>' +
+          '<th style="text-align:right;padding:6px;font-weight:700;color:#64748b;width:120px;">Cantidad (g)</th>' +
+          '<th style="text-align:right;padding:6px;font-weight:700;color:#64748b;width:120px;">Valor</th>' +
+          '<th style="text-align:right;padding:6px;font-weight:700;color:#64748b;width:80px;">SOL</th>' +
+          '<th style="width:100px;"></th>' +
+        '</tr></thead>' +
+        '<tbody>'+itemsHTML+'</tbody>' +
+      '</table>' +
+    '</div>' +
+  '</div>';
+}
+
+function _plantaItemRowHTML(g, it){
+  // Cada item de items_consolidados es la SUMA de un codigo_mp por todas las
+  // SOLs del grupo. Para edición individual buscamos cuál SOL/item original
+  // fue: el primero. (En la práctica, las SOLs auto-gen tienen 1 item por
+  // codigo_mp, así que es 1-a-1.) Si hay varios, sólo edita el primero.
+  var ref = null;
+  (g.solicitudes||[]).some(function(s){
+    var match = (s.items||[]).find(function(x){ return (x.codigo_mp||'')===(it.codigo_mp||''); });
+    if(match){ ref = {numero: s.numero, item_id: match.id, codigo_mp: match.codigo_mp}; return true; }
+    return false;
+  });
+  var sigla = ref ? ref.numero : '-';
+  var rowId = 'planta-row-'+(ref ? ref.numero+'-'+ref.item_id : Math.random().toString(36).slice(2));
+  return '<tr id="'+rowId+'" style="border-bottom:1px solid #f1f5f9;" data-numero="'+esc(ref ? ref.numero : '')+'" data-item-id="'+(ref ? ref.item_id : '')+'" data-codigo-mp="'+esc(it.codigo_mp||'')+'">' +
+    '<td style="padding:6px;">' +
+      '<div style="font-weight:600;color:#1e293b;">'+esc(it.nombre_mp||it.codigo_mp||'')+'</div>' +
+      '<div style="font-size:10px;color:#94a3b8;">'+esc(it.codigo_mp||'')+'</div>' +
+    '</td>' +
+    '<td style="padding:6px;">' +
+      '<input type="text" class="planta-prov-inp" value="'+esc((it.proveedor_sugerido)||g.proveedor||'')+'" list="planta-prov-datalist" placeholder="(sin proveedor)" style="width:100%;padding:4px 6px;border:1px solid #cbd5e1;border-radius:4px;font-size:12px;">' +
+    '</td>' +
+    '<td style="padding:6px;text-align:right;">' +
+      '<input type="number" step="any" class="planta-cant-inp" value="'+(parseFloat(it.cantidad_g||0))+'" style="width:100%;padding:4px 6px;border:1px solid #cbd5e1;border-radius:4px;font-size:12px;text-align:right;">' +
+    '</td>' +
+    '<td style="padding:6px;text-align:right;">' +
+      '<input type="number" step="any" class="planta-val-inp" value="'+(parseFloat(it.valor_estimado||0))+'" style="width:100%;padding:4px 6px;border:1px solid #cbd5e1;border-radius:4px;font-size:12px;text-align:right;">' +
+    '</td>' +
+    '<td style="padding:6px;text-align:right;font-size:11px;color:#64748b;font-weight:600;">'+esc(sigla)+'</td>' +
+    '<td style="padding:6px;text-align:right;">' +
+      (ref ? '<button class="btn" onclick="plantaGuardarItem(this)" style="padding:4px 10px;font-size:11px;background:#16a34a;color:#fff;">&#x1F4BE; Guardar</button>' :
+             '<span style="font-size:10px;color:#94a3b8;">—</span>') +
+    '</td>' +
+  '</tr>';
+}
+
+window.plantaGuardarItem = async function(btn){
+  var tr = btn.closest('tr');
+  if(!tr) return;
+  var numero = tr.dataset.numero;
+  var itemId = tr.dataset.itemId;
+  if(!numero || !itemId){ alert('Item sin referencia · no se puede guardar'); return; }
+  var prov = (tr.querySelector('.planta-prov-inp')||{value:''}).value.trim();
+  var cant = parseFloat((tr.querySelector('.planta-cant-inp')||{value:'0'}).value) || 0;
+  var val = parseFloat((tr.querySelector('.planta-val-inp')||{value:'0'}).value) || 0;
+  var precioUnit = cant > 0 ? (val / cant) : 0;
+  btn.disabled = true; btn.textContent = '...';
+  try{
+    var r = await fetch('/api/solicitudes-compra/'+encodeURIComponent(numero)+'/items',
+      _fetchOpts('PATCH', {
+        items: [{
+          id: parseInt(itemId, 10),
+          proveedor: prov,
+          cantidad_g: cant,
+          precio_unit_g: precioUnit
+        }]
+      }));
+    var d = await r.json();
+    if(!r.ok){
+      alert('Error: '+(d.error || r.status));
+      btn.disabled = false; btn.innerHTML = '&#x1F4BE; Guardar';
+      return;
+    }
+    btn.style.background = '#0e7490';
+    btn.innerHTML = '&#x2713; Guardado';
+    setTimeout(function(){
+      // Refrescar todo el tab para reflejar el regroup por nuevo proveedor
+      loadPlanta();
+    }, 600);
+  }catch(e){
+    alert('Error de red: '+e.message);
+    btn.disabled = false; btn.innerHTML = '&#x1F4BE; Guardar';
+  }
+};
+
+window.limpiarSolsPlantaLegacy = async function(){
+  // 2 pasos: dry_run para preview, luego confirm + ejecutar
+  try{
+    var rDry = await fetch('/api/compras/limpiar-solicitudes-planta',
+      _fetchOpts('POST', {dry_run: true}));
+    var dDry = await rDry.json();
+    if(!rDry.ok){ alert('Error preview: '+(dDry.error||rDry.status)); return; }
+    var nElim = dDry.eliminaria || dDry.eliminadas || 0;
+    if(nElim === 0){
+      alert('✓ No hay SOLs de planta Pendientes sin OC para limpiar.');
+      return;
+    }
+    var msg = 'LIMPIAR SOLs de PLANTA legacy\\n\\n' +
+      'Va a borrar:\\n' +
+      '  · '+nElim+' solicitudes Pendientes (categoría MP / Empaque · sin OC)\\n\\n' +
+      'NO toca solicitudes con OC vinculada (Aprobadas / Pagadas / Recibidas).\\n\\n' +
+      'Esto te deja un piso limpio para que el Centro de Programación\\n' +
+      'regenere las solicitudes con las reglas nuevas.\\n\\n' +
+      '¿Confirmar eliminación?';
+    if(!confirm(msg)) return;
+    var r = await fetch('/api/compras/limpiar-solicitudes-planta',
+      _fetchOpts('POST', {dry_run: false, confirm: true}));
+    var d = await r.json();
+    if(!r.ok){ alert('Error: '+(d.error||r.status)); return; }
+    alert('✓ '+d.mensaje);
+    loadPlanta();
+  }catch(e){
+    alert('Error de red: '+e.message);
+  }
 };
 
 async function loadInfluencers(){

@@ -190,6 +190,7 @@ def test_compras_no_orphan_fetch_urls():
         "/api/maestro-mps", "/api/maestro-mp/",
         "/api/ordenes-compra", "/api/programacion/",
         "/api/proveedores-compras", "/api/solicitudes-compra",
+        "/api/proveedores-unicos",  # autocompletado de proveedores en tab Planta
         "/api/conteo/", "/api/admin/",
         "/api/precio-historico/",
         "/api/csrf-token",  # Pre-fetch defense-in-depth (core.csrf_token)
