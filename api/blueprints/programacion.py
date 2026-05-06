@@ -19,7 +19,7 @@ from flask import Blueprint, jsonify, request, session
 import os, json, logging, sqlite3, urllib.request, urllib.error, urllib.parse
 from datetime import datetime, timedelta, date
 from database import get_db
-from config import ADMIN_USERS, APP_BASE_URL, CALIDAD_USERS
+from config import ADMIN_USERS, APP_BASE_URL, CALIDAD_USERS, COMPRAS_USERS
 from inventario_helpers import stock_mp_total, stock_mp_disponible
 from audit_helpers import audit_log
 
@@ -5714,6 +5714,496 @@ def mp_bridge_unmatched():
             'total_unmatched': len(unmatched),
             'unmatched': unmatched
         })
+
+
+# ─── Producciones con faltantes (vista simple para Luis Enrique) ─────────
+# Sebastian 5-may-2026: jefe de producción quiere UN solo flujo.
+#   1. Selector horizonte (semana, 15d, 1m, 2m, 3m, 6m, 1 año)
+#   2. Tabla de producciones programadas en ese horizonte
+#   3. Por cada producción: ver MP+MEE faltantes
+#   4. Botón "Solicitar TODO faltante" → bulk OC por proveedor
+#
+# Reutiliza:
+#   - produccion_programada (eventos programados)
+#   - formula_items (MP por producto)
+#   - sku_mee_config (MEE por producto)
+#   - maestro_mps + mp_lead_time_config (proveedor sugerido MP)
+#   - maestro_mee + mee_lead_time_config (proveedor sugerido MEE)
+#
+# Excluye producciones con inventario_descontado_at != NULL (ya consumieron).
+
+@bp.route('/api/programacion/producciones-faltantes', methods=['GET'])
+def producciones_faltantes():
+    """Producciones programadas en horizonte + agregado de MP/MEE faltantes.
+
+    Query params:
+      dias: int 7-365 (default 60)
+
+    Returns:
+      {
+        horizonte_dias: int,
+        producciones: [
+          {id, producto, fecha, lotes, cantidad_kg,
+           mps_necesarias: [{codigo_mp, nombre, necesario_g}],
+           mees_necesarios: [{codigo, descripcion, tipo, necesario_unidades}]
+          }
+        ],
+        faltantes_mps: [
+          {codigo_mp, nombre, necesario_total_g, stock_actual_g, faltante_g,
+           proveedor_sugerido}
+        ],
+        faltantes_mees: [
+          {codigo, descripcion, tipo, necesario_total_u, stock_actual_u,
+           faltante_u, proveedor_sugerido}
+        ],
+        resumen: {n_producciones, n_mps_faltantes, n_mees_faltantes,
+                  n_proveedores_unicos}
+      }
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    try:
+        dias = max(7, min(int(request.args.get('dias', 60)), 365))
+    except (ValueError, TypeError):
+        dias = 60
+
+    conn = get_db(); c = conn.cursor()
+    from datetime import date, timedelta as _td
+    hoy = date.today()
+    cutoff = (hoy + _td(days=dias)).isoformat()
+
+    # 1. Cargar producciones programadas pendientes (no descontadas) en horizonte
+    c.execute("""
+        SELECT pp.id, pp.producto, pp.fecha_programada,
+               COALESCE(pp.lotes, 1), COALESCE(pp.cantidad_kg, 0),
+               COALESCE(fh.lote_size_kg, 0) as lote_size_kg
+        FROM produccion_programada pp
+        LEFT JOIN formula_headers fh
+               ON UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(pp.producto))
+        WHERE COALESCE(pp.inventario_descontado_at, '') = ''
+          AND LOWER(COALESCE(pp.estado, '')) NOT IN ('cancelado', 'completado')
+          AND pp.fecha_programada >= date('now', '-1 day')
+          AND pp.fecha_programada <= ?
+        ORDER BY pp.fecha_programada ASC
+    """, (cutoff,))
+    prod_rows = c.fetchall()
+
+    # 2. Cargar formulas (codigo_mp -> [nombre, cantidad_g_por_lote, porcentaje])
+    formulas = {}
+    for r in c.execute("""
+        SELECT producto_nombre, material_id, material_nombre,
+               COALESCE(porcentaje, 0), COALESCE(cantidad_g_por_lote, 0)
+        FROM formula_items
+    """).fetchall():
+        prod = (r[0] or '').strip().upper()
+        formulas.setdefault(prod, []).append({
+            'codigo_mp': r[1] or '',
+            'nombre': r[2] or '',
+            'porcentaje': float(r[3] or 0),
+            'g_por_lote': float(r[4] or 0),
+        })
+
+    # 3. Cargar sku_mee_config (producto/sku -> [mee_codigo, cantidad_por_unidad, tipo])
+    mee_por_producto = {}
+    try:
+        for r in c.execute("""
+            SELECT s.sku_codigo, s.mee_codigo,
+                   COALESCE(s.cantidad_por_unidad, 1),
+                   COALESCE(s.componente_tipo, 'envase'),
+                   COALESCE(m.descripcion, '') as descripcion
+            FROM sku_mee_config s
+            LEFT JOIN maestro_mee m ON m.codigo = s.mee_codigo
+            WHERE COALESCE(s.aplica, 1) = 1
+        """).fetchall():
+            sku = (r[0] or '').strip().upper()
+            mee_por_producto.setdefault(sku, []).append({
+                'mee_codigo': r[1] or '',
+                'cantidad_por_unidad': float(r[2] or 1),
+                'tipo': r[3] or 'envase',
+                'descripcion': r[4] or '',
+            })
+    except sqlite3.OperationalError:
+        # Tabla no existe (esquema antiguo) · seguir sin MEE
+        mee_por_producto = {}
+
+    # 4. Cargar volumen unitario por producto (ml por unidad envasada)
+    volumen_por_producto = {}
+    try:
+        for r in c.execute("""
+            SELECT producto_nombre, COALESCE(volumen_ml, 0)
+            FROM volumen_unitario_producto WHERE COALESCE(activo,1)=1
+        """).fetchall():
+            volumen_por_producto[(r[0] or '').strip().upper()] = float(r[1] or 0)
+    except sqlite3.OperationalError:
+        pass
+    # Si no hay tabla volumen_unitario, intentar producto_presentaciones
+    if not volumen_por_producto:
+        try:
+            for r in c.execute("""
+                SELECT producto_nombre, MAX(COALESCE(volumen_ml, 0))
+                FROM producto_presentaciones
+                WHERE COALESCE(activo,1)=1
+                GROUP BY producto_nombre
+            """).fetchall():
+                volumen_por_producto[(r[0] or '').strip().upper()] = float(r[1] or 0)
+        except sqlite3.OperationalError:
+            pass
+
+    # 5. Cargar stock MP (canonical helper)
+    stock_mp = _get_mp_stock(conn)
+
+    # 6. Cargar stock MEE
+    stock_mee = {}
+    try:
+        for r in c.execute(
+            "SELECT codigo, COALESCE(stock_actual,0) FROM maestro_mee"
+        ).fetchall():
+            stock_mee[str(r[0] or '').strip().upper()] = float(r[1] or 0)
+    except sqlite3.OperationalError:
+        pass
+
+    # 7. Cargar info MP (nombre canonico + proveedor sugerido)
+    mp_info = {}
+    try:
+        for r in c.execute("""
+            SELECT mm.codigo_mp,
+                   COALESCE(mm.nombre_comercial, mm.nombre_inci, mm.codigo_mp) as nombre,
+                   COALESCE(NULLIF(TRIM(mlt.proveedor_principal),''), mm.proveedor, '') as prov
+            FROM maestro_mps mm
+            LEFT JOIN mp_lead_time_config mlt ON mlt.material_id = mm.codigo_mp
+            WHERE COALESCE(mm.activo, 1) = 1
+        """).fetchall():
+            mp_info[r[0]] = {'nombre': r[1] or r[0], 'proveedor': (r[2] or '').strip()}
+    except sqlite3.OperationalError:
+        pass
+
+    # 8. Cargar info MEE (proveedor sugerido)
+    mee_info = {}
+    try:
+        for r in c.execute("""
+            SELECT mm.codigo,
+                   COALESCE(mm.descripcion, mm.codigo) as descripcion,
+                   COALESCE(cfg.proveedor_principal, mm.proveedor, '') as prov
+            FROM maestro_mee mm
+            LEFT JOIN mee_lead_time_config cfg ON cfg.mee_codigo = mm.codigo
+        """).fetchall():
+            mee_info[r[0]] = {
+                'descripcion': r[1] or r[0],
+                'proveedor': (r[2] or '').strip(),
+            }
+    except sqlite3.OperationalError:
+        pass
+
+    # 9. Por cada producción, calcular MP y MEE necesarios
+    producciones_out = []
+    consumo_mp_agregado = {}   # codigo_mp -> g_total
+    consumo_mee_agregado = {}  # mee_codigo -> unidades_total
+    for pid, producto, fecha, lotes, cant_kg_explicita, lote_size in prod_rows:
+        producto_norm = (producto or '').strip().upper()
+        lotes = int(lotes or 1)
+        cant_kg_total = float(cant_kg_explicita or 0) or (lotes * float(lote_size or 0))
+
+        # MPs necesarias
+        mps_nec = []
+        for fi in formulas.get(producto_norm, []):
+            g_total = float(fi['g_por_lote'] or 0) * lotes
+            if g_total <= 0 and cant_kg_total > 0:
+                g_total = (fi['porcentaje'] / 100.0) * cant_kg_total * 1000.0
+            if g_total <= 0:
+                continue
+            mps_nec.append({
+                'codigo_mp': fi['codigo_mp'],
+                'nombre': fi['nombre'],
+                'necesario_g': round(g_total, 2),
+            })
+            cod = (fi['codigo_mp'] or '').strip()
+            if cod:
+                consumo_mp_agregado[cod] = consumo_mp_agregado.get(cod, 0) + g_total
+
+        # MEE necesarios · cantidad de unidades a envasar = cant_kg_total*1000 / volumen_ml
+        unidades_envasadas = 0
+        vol_ml = volumen_por_producto.get(producto_norm, 0)
+        if vol_ml > 0 and cant_kg_total > 0:
+            # Aproximación: 1g ≈ 1ml para productos cosméticos (densidad ~1)
+            unidades_envasadas = int(round((cant_kg_total * 1000.0) / vol_ml))
+
+        mees_nec = []
+        for me in mee_por_producto.get(producto_norm, []):
+            if unidades_envasadas <= 0:
+                continue
+            cant_total = unidades_envasadas * float(me['cantidad_por_unidad'] or 1)
+            mees_nec.append({
+                'codigo': me['mee_codigo'],
+                'descripcion': me['descripcion'],
+                'tipo': me['tipo'],
+                'necesario_unidades': round(cant_total, 0),
+            })
+            cod_mee = (me['mee_codigo'] or '').strip().upper()
+            if cod_mee:
+                consumo_mee_agregado[cod_mee] = consumo_mee_agregado.get(cod_mee, 0) + cant_total
+
+        producciones_out.append({
+            'id': pid,
+            'producto': producto,
+            'fecha': fecha,
+            'lotes': lotes,
+            'cantidad_kg': cant_kg_total,
+            'mps_necesarias': mps_nec,
+            'mees_necesarios': mees_nec,
+            'unidades_envasadas_estimadas': unidades_envasadas,
+        })
+
+    # 10. Calcular faltantes agregados
+    faltantes_mps = []
+    for cod, g_total in consumo_mp_agregado.items():
+        info = mp_info.get(cod, {'nombre': cod, 'proveedor': ''})
+        s_actual = float(stock_mp.get(cod, 0))
+        if s_actual == 0:
+            # Fallback: buscar por nombre canonico
+            nom_up = (info.get('nombre') or '').upper()
+            if nom_up in stock_mp:
+                s_actual = float(stock_mp[nom_up])
+        faltante = max(0.0, g_total - s_actual)
+        if faltante > 0:
+            faltantes_mps.append({
+                'codigo_mp': cod,
+                'nombre': info['nombre'],
+                'necesario_total_g': round(g_total, 2),
+                'stock_actual_g': round(s_actual, 2),
+                'faltante_g': round(faltante, 2),
+                'proveedor_sugerido': info['proveedor'],
+            })
+    faltantes_mps.sort(key=lambda x: -x['faltante_g'])
+
+    faltantes_mees = []
+    for cod, u_total in consumo_mee_agregado.items():
+        info = mee_info.get(cod, {'descripcion': cod, 'proveedor': ''})
+        s_actual = float(stock_mee.get(cod, 0))
+        faltante = max(0.0, u_total - s_actual)
+        if faltante > 0:
+            faltantes_mees.append({
+                'codigo': cod,
+                'descripcion': info['descripcion'],
+                'tipo': '',
+                'necesario_total_u': round(u_total, 0),
+                'stock_actual_u': round(s_actual, 0),
+                'faltante_u': round(faltante, 0),
+                'proveedor_sugerido': info['proveedor'],
+            })
+    faltantes_mees.sort(key=lambda x: -x['faltante_u'])
+
+    # Proveedores únicos involucrados
+    provs = {f['proveedor_sugerido'] for f in faltantes_mps if f['proveedor_sugerido']}
+    provs |= {f['proveedor_sugerido'] for f in faltantes_mees if f['proveedor_sugerido']}
+
+    return jsonify({
+        'horizonte_dias': dias,
+        'producciones': producciones_out,
+        'faltantes_mps': faltantes_mps,
+        'faltantes_mees': faltantes_mees,
+        'resumen': {
+            'n_producciones': len(producciones_out),
+            'n_mps_faltantes': len(faltantes_mps),
+            'n_mees_faltantes': len(faltantes_mees),
+            'n_proveedores_unicos': len(provs),
+        },
+    })
+
+
+@bp.route('/api/programacion/solicitar-faltantes-bulk', methods=['POST'])
+def solicitar_faltantes_bulk():
+    """Crea solicitudes_compra agrupadas por proveedor desde los faltantes
+    detectados en /api/programacion/producciones-faltantes.
+
+    Body:
+      dias: int (default 60) · mismo horizonte usado para detectar faltantes
+      urgencia: 'Alta' | 'Normal' | 'Baja' (default 'Alta')
+      observaciones_extra: str (opcional)
+
+    Returns:
+      201 {ok, solicitudes_creadas: [{numero, proveedor, items_count, total_g}],
+           total_proveedores, total_solicitudes}
+      400 si no hay faltantes
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    if user not in (set(COMPRAS_USERS) | set(ADMIN_USERS)):
+        return jsonify({'error': 'Solo Compras/Admin pueden generar solicitudes'}), 403
+
+    body = request.get_json(silent=True) or {}
+    try:
+        dias = max(7, min(int(body.get('dias', 60)), 365))
+    except (ValueError, TypeError):
+        dias = 60
+    urgencia = (body.get('urgencia') or 'Alta').strip()
+    if urgencia not in ('Alta', 'Normal', 'Baja'):
+        urgencia = 'Alta'
+    obs_extra = (body.get('observaciones_extra') or '').strip()
+
+    # Reutilizar el endpoint anterior llamandolo internamente
+    from flask import current_app
+    with current_app.test_request_context(
+        f'/api/programacion/producciones-faltantes?dias={dias}'
+    ):
+        # Bypass auth check del helper interno
+        from flask import session as _s
+        _s['compras_user'] = user
+        resp = producciones_faltantes()
+    data = resp.get_json() if hasattr(resp, 'get_json') else (resp[0].get_json() if isinstance(resp, tuple) else {})
+    faltantes_mps = data.get('faltantes_mps') or []
+    faltantes_mees = data.get('faltantes_mees') or []
+    if not faltantes_mps and not faltantes_mees:
+        return jsonify({
+            'ok': True,
+            'mensaje': 'No hay faltantes en el horizonte · nada que solicitar',
+            'solicitudes_creadas': [],
+            'total_proveedores': 0,
+            'total_solicitudes': 0,
+        }), 200
+
+    # Agrupar por proveedor (sin proveedor sugerido = grupo aparte)
+    grupos = {}
+    for f in faltantes_mps:
+        prov = (f.get('proveedor_sugerido') or '').strip() or '__SIN_PROVEEDOR__'
+        grupos.setdefault(prov, {'mps': [], 'mees': []})
+        grupos[prov]['mps'].append(f)
+    for f in faltantes_mees:
+        prov = (f.get('proveedor_sugerido') or '').strip() or '__SIN_PROVEEDOR__'
+        grupos.setdefault(prov, {'mps': [], 'mees': []})
+        grupos[prov]['mees'].append(f)
+
+    conn = get_db(); c = conn.cursor()
+    creadas = []
+    fecha_now = datetime.now().isoformat()
+    obs_base_horizonte = f"Auto-generada Centro Programación · horizonte {dias}d"
+    if obs_extra:
+        obs_base_horizonte = obs_extra + ' · ' + obs_base_horizonte
+
+    try:
+        for prov, items in sorted(grupos.items()):
+            mps_lst = items.get('mps', [])
+            mees_lst = items.get('mees', [])
+            if not mps_lst and not mees_lst:
+                continue
+            # Crear SOL-YYYY-XXXX
+            c.execute(
+                "SELECT COALESCE(MAX(CAST(SUBSTR(numero,10) AS INTEGER)),0) "
+                "FROM solicitudes_compra WHERE numero LIKE ?",
+                (f"SOL-{datetime.now().strftime('%Y')}-%",),
+            )
+            num = (c.fetchone()[0] or 0) + 1
+            numero = f"SOL-{datetime.now().strftime('%Y')}-{num:04d}"
+            prov_label = prov if prov != '__SIN_PROVEEDOR__' else ''
+            obs = obs_base_horizonte
+            if prov_label:
+                obs += f" · proveedor: {prov_label}"
+            obs += (f" · {len(mps_lst)} MPs · {len(mees_lst)} MEEs")
+
+            # Categoria · si solo hay MEEs y nada de MP, marcamos categoria='Empaque'
+            categoria = 'Materia Prima'
+            if not mps_lst and mees_lst:
+                categoria = 'Empaque'
+
+            c.execute("""
+                INSERT INTO solicitudes_compra
+                  (numero, fecha, estado, solicitante, urgencia, observaciones,
+                   area, empresa, categoria, tipo)
+                VALUES (?, ?, 'Pendiente', ?, ?, ?, 'Producción', 'Espagiria', ?, 'Compra')
+            """, (numero, fecha_now, user, urgencia, obs, categoria))
+
+            items_count = 0
+            total_g_mps = 0.0
+            for mp in mps_lst:
+                try:
+                    c.execute("""
+                        INSERT INTO solicitudes_compra_items
+                          (numero, codigo_mp, nombre_mp, cantidad_g, unidad,
+                           justificacion, valor_estimado, proveedor_sugerido)
+                        VALUES (?, ?, ?, ?, 'g', ?, 0, ?)
+                    """, (numero, mp['codigo_mp'], mp['nombre'],
+                          mp['faltante_g'],
+                          f"Falta para producción {dias}d · stock {mp['stock_actual_g']}g de {mp['necesario_total_g']}g necesarios",
+                          prov_label))
+                except sqlite3.OperationalError:
+                    c.execute("""
+                        INSERT INTO solicitudes_compra_items
+                          (numero, codigo_mp, nombre_mp, cantidad_g, unidad,
+                           justificacion, valor_estimado)
+                        VALUES (?, ?, ?, ?, 'g', ?, 0)
+                    """, (numero, mp['codigo_mp'], mp['nombre'],
+                          mp['faltante_g'],
+                          f"Falta para producción {dias}d · stock {mp['stock_actual_g']}g de {mp['necesario_total_g']}g"))
+                items_count += 1
+                total_g_mps += float(mp.get('faltante_g') or 0)
+
+            for me in mees_lst:
+                # Items MEE · usar nombre_mp como descripcion + cantidad en unidades
+                try:
+                    c.execute("""
+                        INSERT INTO solicitudes_compra_items
+                          (numero, codigo_mp, nombre_mp, cantidad_g, unidad,
+                           justificacion, valor_estimado, proveedor_sugerido)
+                        VALUES (?, ?, ?, ?, 'unidades', ?, 0, ?)
+                    """, (numero, me['codigo'], me['descripcion'],
+                          me['faltante_u'],
+                          f"Falta para envasar producción {dias}d · stock {me['stock_actual_u']}u de {me['necesario_total_u']}u",
+                          prov_label))
+                except sqlite3.OperationalError:
+                    c.execute("""
+                        INSERT INTO solicitudes_compra_items
+                          (numero, codigo_mp, nombre_mp, cantidad_g, unidad,
+                           justificacion, valor_estimado)
+                        VALUES (?, ?, ?, ?, 'unidades', ?, 0)
+                    """, (numero, me['codigo'], me['descripcion'],
+                          me['faltante_u'],
+                          f"Falta para envasar {dias}d · stock {me['stock_actual_u']}u de {me['necesario_total_u']}u"))
+                items_count += 1
+
+            try:
+                audit_log(
+                    c, usuario=user, accion='SOLICITAR_FALTANTES_BULK',
+                    tabla='solicitudes_compra', registro_id=numero,
+                    despues={
+                        'proveedor': prov_label or '(sin proveedor)',
+                        'horizonte_dias': dias,
+                        'urgencia': urgencia,
+                        'mps_count': len(mps_lst),
+                        'mees_count': len(mees_lst),
+                        'items_count': items_count,
+                    },
+                    detalle=(f"Auto-bulk: {numero} · {prov_label or 'sin proveedor'} · "
+                              f"{len(mps_lst)} MPs + {len(mees_lst)} MEEs"),
+                )
+            except Exception as _e:
+                log.warning('audit_log SOLICITAR_FALTANTES_BULK fallo: %s', _e)
+
+            creadas.append({
+                'numero': numero,
+                'proveedor': prov_label or '(sin proveedor)',
+                'items_count': items_count,
+                'mps_count': len(mps_lst),
+                'mees_count': len(mees_lst),
+                'total_g_mps': round(total_g_mps, 2),
+            })
+
+        conn.commit()
+    except Exception as e:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        log.exception('solicitar_faltantes_bulk fallo: %s', e)
+        return jsonify({'error': str(e)}), 500
+
+    return jsonify({
+        'ok': True,
+        'mensaje': f'Creadas {len(creadas)} solicitudes para {len(creadas)} proveedores',
+        'solicitudes_creadas': creadas,
+        'total_proveedores': len(creadas),
+        'total_solicitudes': len(creadas),
+        'horizonte_dias': dias,
+    }), 201
 
 
 # ─── Planificación Estratégica ────────────────────────────────────────────────

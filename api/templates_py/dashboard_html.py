@@ -6713,6 +6713,26 @@ function _renderProgramacion(d){
       <div id="pv2-auditoria" style="display:none"></div>
     </div>
 
+    <!-- Sebastian 5-may-2026 (Luis Enrique): vista simple primaria.
+         Producciones programadas en horizonte + MP/MEE faltantes por
+         producción + boton 'Solicitar TODO' que crea SOLs agrupadas
+         por proveedor. Esto resuelve TODO lo que el jefe de producción
+         necesita: ver qué se va a producir, qué falta para producirlo,
+         y solicitar lo faltante en un click. -->
+    <div id="pv2-vista-simple" style="margin-bottom:14px;background:#fff;border-radius:12px;border:2px solid #0f766e;overflow:hidden;box-shadow:0 4px 12px rgba(15,118,110,0.1)">
+      <div style="background:linear-gradient(90deg,#f0fdfa,#ecfeff);padding:14px 18px;border-bottom:1px solid #ccfbf1;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+        <div>
+          <h3 style="margin:0;color:#134e4a;font-size:15px;font-weight:800">📋 Producciones programadas + faltantes</h3>
+          <div id="pv2-vs-resumen" style="font-size:11px;color:#475569;margin-top:3px">Cargando...</div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button id="pv2-vs-btn-solicitar" onclick="pv2SolicitarFaltantesBulk()" style="background:#dc2626;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:800;cursor:pointer;display:none" title="Crea solicitudes de compra agrupadas por proveedor para todo lo faltante">🛒 Solicitar TODO faltante</button>
+          <button onclick="pv2CargarProdFaltantes()" style="background:#0f766e;color:#fff;border:none;padding:8px 12px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">↻ Recargar</button>
+        </div>
+      </div>
+      <div id="pv2-vs-resultado" style="padding:14px 18px"><div style="text-align:center;color:#94a3b8;padding:20px">⏳ Calculando producciones y faltantes...</div></div>
+    </div>
+
     <!-- ── KPIs (1 fila) ─────────────────────────────────────────────────── -->
     <div id="pv2-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:12px"></div>
 
@@ -11930,13 +11950,199 @@ async function ckMarcar(itemId, estado){
     });
     planV2Cargar();
     planV2CargarCobertura();
+    // Sebastian 5-may-2026: vista simple (Luis Enrique) sigue el horizonte
+    pv2CargarProdFaltantes();
     // Recomendaciones siempre las mismas (no dependen de horizonte)
+  }
+
+  // ── Sebastian 5-may-2026 (Luis Enrique): vista simple primaria ─────────
+  // Producciones programadas en horizonte + MP/MEE faltantes por producto
+  // + boton "Solicitar TODO" que crea SOLs agrupadas por proveedor.
+  var _PV2_FALTANTES_DATA = null;
+
+  function _pv2HorizonteDias(){
+    var meses = parseFloat(_PV2_HORIZONTE || '2');
+    if(meses < 1) return 14;  // semana = 14d (segunda semana incluida)
+    return Math.round(meses * 30);
+  }
+
+  async function pv2CargarProdFaltantes(){
+    var resumen = document.getElementById('pv2-vs-resumen');
+    var out = document.getElementById('pv2-vs-resultado');
+    var btn = document.getElementById('pv2-vs-btn-solicitar');
+    if(!out) return;
+    if(resumen) resumen.textContent = '⏳ Calculando...';
+    if(btn) btn.style.display = 'none';
+    out.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:20px">⏳ Calculando producciones + faltantes en horizonte...</div>';
+    var dias = _pv2HorizonteDias();
+    try{
+      var r = await fetch('/api/programacion/producciones-faltantes?dias='+dias);
+      var d = await r.json();
+      if(!r.ok){
+        out.innerHTML = '<div style="color:#dc2626;padding:18px;text-align:center">Error: '+_escHTML(d.error||r.status)+'</div>';
+        return;
+      }
+      _PV2_FALTANTES_DATA = d;
+      var res = d.resumen || {};
+      if(resumen){
+        resumen.textContent =
+          res.n_producciones+' producciones · '+
+          res.n_mps_faltantes+' MPs faltantes · '+
+          res.n_mees_faltantes+' MEEs faltantes · '+
+          res.n_proveedores_unicos+' proveedores · horizonte '+dias+'d';
+      }
+      // Mostrar boton solicitar solo si hay faltantes
+      var hayFaltantes = (res.n_mps_faltantes||0)+(res.n_mees_faltantes||0) > 0;
+      if(btn) btn.style.display = hayFaltantes ? 'inline-block' : 'none';
+
+      var producciones = d.producciones || [];
+      if(!producciones.length){
+        out.innerHTML = '<div style="text-align:center;color:#22c55e;padding:30px;font-size:14px">✓ Sin producciones programadas en este horizonte</div>';
+        return;
+      }
+      // Render tabla con filas expandibles
+      var html = '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">';
+      html += '<thead><tr style="background:#f8fafc;border-bottom:2px solid #e2e8f0">';
+      html += '<th style="text-align:left;padding:8px 10px;font-size:11px;color:#475569">Fecha</th>';
+      html += '<th style="text-align:left;padding:8px 10px;font-size:11px;color:#475569">Producto</th>';
+      html += '<th style="text-align:right;padding:8px 10px;font-size:11px;color:#475569">Lotes / kg</th>';
+      html += '<th style="text-align:center;padding:8px 10px;font-size:11px;color:#475569">MPs</th>';
+      html += '<th style="text-align:center;padding:8px 10px;font-size:11px;color:#475569">MEEs</th>';
+      html += '<th style="text-align:center;padding:8px 10px;font-size:11px;color:#475569"></th>';
+      html += '</tr></thead><tbody>';
+      // Faltantes globales (por codigo) para color-coding por fila
+      var mpsFaltantesSet = {};
+      (d.faltantes_mps||[]).forEach(function(m){ mpsFaltantesSet[m.codigo_mp]=m; });
+      var meesFaltantesSet = {};
+      (d.faltantes_mees||[]).forEach(function(m){ meesFaltantesSet[m.codigo]=m; });
+      producciones.forEach(function(p, idx){
+        var faltMP = (p.mps_necesarias||[]).filter(function(m){ return mpsFaltantesSet[m.codigo_mp]; }).length;
+        var faltMEE = (p.mees_necesarios||[]).filter(function(m){ return meesFaltantesSet[(m.codigo||'').toUpperCase()]; }).length;
+        var hayFalta = faltMP+faltMEE > 0;
+        var color = hayFalta ? '#dc2626' : '#16a34a';
+        var bg = hayFalta ? '#fef2f2' : '#f0fdf4';
+        html += '<tr style="border-bottom:1px solid #f1f5f9;cursor:pointer" onclick="pv2ToggleProdFaltante('+idx+')">';
+        html += '<td style="padding:8px 10px;font-size:12px;color:#475569">'+_escHTML(p.fecha||'')+'</td>';
+        html += '<td style="padding:8px 10px;font-weight:600">'+_escHTML(p.producto||'')+'</td>';
+        html += '<td style="padding:8px 10px;text-align:right;color:#64748b">'+(p.lotes||1)+' lote'+(p.lotes>1?'s':'')+' · '+(p.cantidad_kg||0)+'kg</td>';
+        html += '<td style="padding:8px 10px;text-align:center"><span style="background:'+bg+';color:'+color+';padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">'+
+                (faltMP>0 ? ('⚠ '+faltMP+'/'+(p.mps_necesarias||[]).length) : ('✓ '+(p.mps_necesarias||[]).length))+'</span></td>';
+        html += '<td style="padding:8px 10px;text-align:center"><span style="background:'+bg+';color:'+color+';padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">'+
+                (faltMEE>0 ? ('⚠ '+faltMEE+'/'+(p.mees_necesarios||[]).length) : ('✓ '+(p.mees_necesarios||[]).length))+'</span></td>';
+        html += '<td style="padding:8px 10px;text-align:center;color:#94a3b8">▼</td>';
+        html += '</tr>';
+        // Fila expandible (oculta por default)
+        html += '<tr id="pv2-row-'+idx+'" style="display:none;background:#f8fafc"><td colspan="6" style="padding:14px 18px">';
+        html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:18px">';
+        // MPs
+        html += '<div><div style="font-weight:700;color:#475569;font-size:11px;text-transform:uppercase;margin-bottom:6px">Materias primas</div>';
+        if((p.mps_necesarias||[]).length){
+          html += '<table style="width:100%;font-size:11px"><tbody>';
+          p.mps_necesarias.forEach(function(m){
+            var f = mpsFaltantesSet[m.codigo_mp];
+            var col = f ? '#dc2626' : '#16a34a';
+            html += '<tr style="border-bottom:1px solid #e2e8f0">';
+            html += '<td style="padding:4px 6px"><b>'+_escHTML(m.nombre||m.codigo_mp)+'</b></td>';
+            html += '<td style="padding:4px 6px;text-align:right;color:#64748b">'+(m.necesario_g||0).toLocaleString()+' g</td>';
+            html += '<td style="padding:4px 6px;text-align:right;color:'+col+';font-weight:700">'+
+                    (f ? ('falta '+(f.faltante_g||0).toLocaleString()+' g') : '✓')+'</td>';
+            html += '</tr>';
+          });
+          html += '</tbody></table>';
+        } else { html += '<div style="color:#94a3b8;font-size:11px">Sin formula registrada</div>'; }
+        html += '</div>';
+        // MEEs
+        html += '<div><div style="font-weight:700;color:#475569;font-size:11px;text-transform:uppercase;margin-bottom:6px">Envases &amp; empaque</div>';
+        if((p.mees_necesarios||[]).length){
+          html += '<table style="width:100%;font-size:11px"><tbody>';
+          p.mees_necesarios.forEach(function(m){
+            var fk = (m.codigo||'').toUpperCase();
+            var f = meesFaltantesSet[fk];
+            var col = f ? '#dc2626' : '#16a34a';
+            html += '<tr style="border-bottom:1px solid #e2e8f0">';
+            html += '<td style="padding:4px 6px"><b>'+_escHTML(m.descripcion||m.codigo)+'</b> <span style="color:#94a3b8">'+_escHTML(m.tipo||'')+'</span></td>';
+            html += '<td style="padding:4px 6px;text-align:right;color:#64748b">'+(m.necesario_unidades||0).toLocaleString()+' u</td>';
+            html += '<td style="padding:4px 6px;text-align:right;color:'+col+';font-weight:700">'+
+                    (f ? ('falta '+(f.faltante_u||0).toLocaleString()+' u') : '✓')+'</td>';
+            html += '</tr>';
+          });
+          html += '</tbody></table>';
+        } else { html += '<div style="color:#94a3b8;font-size:11px">Sin envases configurados (falta sku_mee_config)</div>'; }
+        html += '</div>';
+        html += '</div></td></tr>';
+      });
+      html += '</tbody></table></div>';
+      // Resumen agregado de faltantes globales
+      if(hayFaltantes){
+        html += '<div style="margin-top:14px;padding:12px 14px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px">';
+        html += '<div style="font-weight:700;color:#991b1b;font-size:12px;margin-bottom:6px">📦 Total faltante agregado (todos los productos)</div>';
+        html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;font-size:11px">';
+        html += '<div><b>MPs:</b> '+(d.faltantes_mps||[]).length+' · proveedores: '+
+                Array.from(new Set((d.faltantes_mps||[]).map(function(m){return m.proveedor_sugerido||'(sin)';})).values()).join(', ')+'</div>';
+        html += '<div><b>MEEs:</b> '+(d.faltantes_mees||[]).length+' · proveedores: '+
+                Array.from(new Set((d.faltantes_mees||[]).map(function(m){return m.proveedor_sugerido||'(sin)';})).values()).join(', ')+'</div>';
+        html += '</div></div>';
+      }
+      out.innerHTML = html;
+    }catch(e){
+      out.innerHTML = '<div style="color:#dc2626;padding:18px;text-align:center">Error red: '+_escHTML(e.message)+'</div>';
+    }
+  }
+
+  function pv2ToggleProdFaltante(idx){
+    var row = document.getElementById('pv2-row-'+idx);
+    if(!row) return;
+    row.style.display = row.style.display === 'none' ? 'table-row' : 'none';
+  }
+
+  async function pv2SolicitarFaltantesBulk(){
+    if(!_PV2_FALTANTES_DATA) return;
+    var dias = _PV2_FALTANTES_DATA.horizonte_dias || _pv2HorizonteDias();
+    var nMps = (_PV2_FALTANTES_DATA.faltantes_mps||[]).length;
+    var nMees = (_PV2_FALTANTES_DATA.faltantes_mees||[]).length;
+    var provs = _PV2_FALTANTES_DATA.resumen.n_proveedores_unicos || 0;
+    if(!confirm('Crear solicitudes de compra agrupadas por proveedor para todo lo faltante?\\n\\n'+
+                '  • '+nMps+' MPs faltantes\\n'+
+                '  • '+nMees+' MEEs faltantes\\n'+
+                '  • '+provs+' proveedores distintos (cada uno = 1 solicitud)\\n'+
+                '  • Horizonte: '+dias+' días\\n\\n'+
+                'Las solicitudes llegarán a Compras como Pendientes y Catalina las procesará.\\n\\n'+
+                'Continuar?')) return;
+    var btn = document.getElementById('pv2-vs-btn-solicitar');
+    if(btn){ btn.disabled = true; btn.textContent = 'Generando...'; }
+    try{
+      var r = await fetch('/api/programacion/solicitar-faltantes-bulk', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({dias: dias, urgencia: 'Alta'})
+      });
+      var d = await r.json();
+      if(btn){ btn.disabled = false; btn.innerHTML = '🛒 Solicitar TODO faltante'; }
+      if(!r.ok){
+        alert('Error: '+(d.error||r.status));
+        return;
+      }
+      var msg = '✓ '+d.mensaje+'\\n\\n';
+      (d.solicitudes_creadas||[]).slice(0,8).forEach(function(s){
+        msg += '  • '+s.numero+' · '+s.proveedor+' · '+s.items_count+' items\\n';
+      });
+      if((d.solicitudes_creadas||[]).length > 8) msg += '  ... y '+((d.solicitudes_creadas||[]).length-8)+' más\\n';
+      msg += '\\nVer todas en /compras → tab Solicitudes';
+      alert(msg);
+      pv2CargarProdFaltantes();  // refresh
+    }catch(e){
+      if(btn){ btn.disabled = false; btn.innerHTML = '🛒 Solicitar TODO faltante'; }
+      alert('Error red: '+e.message);
+    }
   }
 
   async function planV2Cargar(){
     var vista = document.getElementById('pv2-vista');
     var kpis = document.getElementById('pv2-kpis');
     if(!vista) return;
+    // Sebastian 5-may-2026: cargar vista simple de Luis Enrique en paralelo.
+    // No bloquea el flujo · si falla, el resto del Plan sigue funcionando.
+    try{ pv2CargarProdFaltantes(); }catch(e){/* no critico */}
     vista.innerHTML = '<div style="text-align:center;padding:40px;color:#94a3b8">Cargando plan...</div>';
     var meses = parseFloat(_PV2_HORIZONTE);
     try {
