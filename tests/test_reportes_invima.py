@@ -45,31 +45,46 @@ def test_audit_trail_default_30d(app, db_clean):
 
 
 def test_audit_trail_filtro_accion(app, db_clean):
-    """Filtro por accion exacta."""
+    """Filtro por accion exacta.
+
+    Sebastian 6-may-2026: hardening anti-flake order-dependent en suite
+    global. Asegura cada step del lifecycle (clasificar/investigar/capa/
+    cerrar) responde 200 antes de validar el audit log · sin esto, si un
+    test previo deja la sesion de laura limpia pero algun side-effect
+    rompe el flow, el assert final del audit log fallaba sin pista.
+    """
     c = _login(app, "laura")
     # Generar entrada audit log con CERRAR_DESVIACION
     r = c.post("/api/aseguramiento/desviaciones",
                json={"tipo":"otra","descripcion":"Audit trail test desviacion para cierre"},
                headers=csrf_headers())
+    assert r.status_code in (200, 201), f"crear desviacion fallo: {r.status_code} {r.data[:200]}"
     desv_id = r.get_json()["id"]
-    c.post(f"/api/aseguramiento/desviaciones/{desv_id}/clasificar",
+    r = c.post(f"/api/aseguramiento/desviaciones/{desv_id}/clasificar",
            json={"clasificacion":"menor","justificacion":"Test audit trail clasificacion"},
            headers=csrf_headers())
-    c.post(f"/api/aseguramiento/desviaciones/{desv_id}/investigar",
+    assert r.status_code == 200, f"clasificar fallo: {r.status_code} {r.data[:200]}"
+    r = c.post(f"/api/aseguramiento/desviaciones/{desv_id}/investigar",
            json={"metodo_investigacion":"otro","causa_raiz":"Causa raiz suficiente para test audit trail"},
            headers=csrf_headers())
-    c.post(f"/api/aseguramiento/desviaciones/{desv_id}/capa",
+    assert r.status_code == 200, f"investigar fallo: {r.status_code} {r.data[:200]}"
+    r = c.post(f"/api/aseguramiento/desviaciones/{desv_id}/capa",
            json={"capa_descripcion":"CAPA suficiente para test audit trail",
                  "capa_responsable":"miguel"},
            headers=csrf_headers())
-    c.post(f"/api/aseguramiento/desviaciones/{desv_id}/cerrar",
+    assert r.status_code == 200, f"capa fallo: {r.status_code} {r.data[:200]}"
+    r = c.post(f"/api/aseguramiento/desviaciones/{desv_id}/cerrar",
            json={"efectividad_ok":True,
                  "verificacion_efectividad":"Verificacion suficiente para test audit trail"},
            headers=csrf_headers())
+    assert r.status_code == 200, f"cerrar fallo: {r.status_code} {r.data[:200]}"
     # Filtrar
     r = c.get("/api/aseguramiento/reportes/audit-trail?accion=CERRAR_DESVIACION")
     items = r.get_json()["items"]
-    assert any(it["accion"] == "CERRAR_DESVIACION" for it in items)
+    assert any(it["accion"] == "CERRAR_DESVIACION" for it in items), (
+        f"Audit log no tiene CERRAR_DESVIACION para desv_id={desv_id}. "
+        f"Items recientes: {[it.get('accion') for it in items[:5]]}"
+    )
     # Cleanup
     conn = sqlite3.connect(os.environ["DB_PATH"])
     conn.execute("DELETE FROM desviaciones WHERE id=?", (desv_id,))

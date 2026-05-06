@@ -30,6 +30,31 @@ SMOKE_USER = os.environ.get('SMOKE_USER', '')
 SMOKE_PASSWORD = os.environ.get('SMOKE_PASSWORD', '')
 
 
+# Sebastian 6-may-2026: skip TODO el modulo si no hay server vivo en BASE_URL.
+# Antes los tests fallaban con ECONNREFUSED y eso cascadeaba estado para
+# tests subsecuentes. Las e2e necesitan un Flask real en localhost:5000
+# (no el test_client) · si no esta corriendo, las omitimos limpio.
+def _server_reachable() -> bool:
+    import socket
+    from urllib.parse import urlparse
+    try:
+        u = urlparse(BASE_URL)
+        host = u.hostname or 'localhost'
+        port = u.port or (443 if u.scheme == 'https' else 80)
+        with socket.create_connection((host, port), timeout=1.5):
+            return True
+    except (OSError, socket.error):
+        return False
+
+
+if not _server_reachable():
+    pytest.skip(
+        f'Server no esta corriendo en {BASE_URL} · arranca con '
+        f'`python api/index.py` o configura E2E_BASE_URL=https://...',
+        allow_module_level=True,
+    )
+
+
 @pytest.fixture(scope='module')
 def browser():
     """Browser compartido entre tests del módulo (más rápido que por test)."""
