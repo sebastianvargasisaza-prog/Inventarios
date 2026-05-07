@@ -222,6 +222,104 @@ def admin_users_list():
     return jsonify({"users": out, "total": len(out)})
 
 
+@bp.route("/api/admin/agent-memory", methods=["GET", "POST"])
+def admin_agent_memory():
+    """CRUD de la tabla agent_memory · memoria persistente entre sesiones IA.
+
+    Sebastián 7-may-2026 (zero-error sprint día 3): los agentes IA leen y
+    escriben aquí para resolver "amnesia entre sesiones". Cada entrada es
+    key-value con categoría opcional para filtrar.
+
+    GET  /api/admin/agent-memory                 → lista todo (last 100)
+    GET  /api/admin/agent-memory?category=bug    → filtra por categoría
+    GET  /api/admin/agent-memory?key=X           → entry específica
+    POST /api/admin/agent-memory                 → upsert
+         body: {key, value, category?}
+    DELETE via POST con body {key, _delete: true}
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+
+    if request.method == "GET":
+        key = request.args.get("key", "").strip()
+        category = request.args.get("category", "").strip()
+        try:
+            limit = max(1, min(int(request.args.get("limit", 100)), 1000))
+        except (ValueError, TypeError):
+            limit = 100
+
+        if key:
+            row = c.execute(
+                "SELECT key, value, category, created_by, created_at, updated_at "
+                "FROM agent_memory WHERE key=?", (key,)
+            ).fetchone()
+            conn.close()
+            if not row:
+                return jsonify({"error": "Key no encontrada"}), 404
+            return jsonify({
+                "key": row[0], "value": row[1], "category": row[2],
+                "created_by": row[3], "created_at": row[4], "updated_at": row[5],
+            })
+
+        sql = ("SELECT key, value, category, created_by, created_at, updated_at "
+               "FROM agent_memory WHERE 1=1")
+        params = []
+        if category:
+            sql += " AND category=?"
+            params.append(category)
+        sql += " ORDER BY updated_at DESC LIMIT ?"
+        params.append(limit)
+        rows = c.execute(sql, params).fetchall()
+        conn.close()
+        return jsonify({
+            "entries": [
+                {"key": r[0], "value": r[1], "category": r[2],
+                 "created_by": r[3], "created_at": r[4], "updated_at": r[5]}
+                for r in rows
+            ],
+            "total": len(rows),
+        })
+
+    # POST · upsert o delete
+    body = request.get_json(silent=True) or {}
+    key = (body.get("key") or "").strip()
+    if not key:
+        conn.close()
+        return jsonify({"error": "key requerido"}), 400
+
+    if body.get("_delete"):
+        c.execute("DELETE FROM agent_memory WHERE key=?", (key,))
+        conn.commit()
+        conn.close()
+        return jsonify({"ok": True, "deleted": key})
+
+    value = body.get("value")
+    if value is None:
+        conn.close()
+        return jsonify({"error": "value requerido"}), 400
+    # Coerce value a string (puede venir como dict/list)
+    if not isinstance(value, str):
+        import json as _json
+        value = _json.dumps(value, ensure_ascii=False)
+    category = (body.get("category") or "general").strip()
+
+    c.execute("""
+        INSERT INTO agent_memory(key, value, category, created_by, updated_at)
+        VALUES(?, ?, ?, ?, datetime('now', 'utc'))
+        ON CONFLICT(key) DO UPDATE SET
+          value = excluded.value,
+          category = excluded.category,
+          updated_at = datetime('now', 'utc')
+    """, (key, value, category, u))
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True, "key": key, "category": category})
+
+
 @bp.route("/api/admin/diag-login/<username>", methods=["GET"])
 def admin_diag_login(username):
     """Diagnóstico detallado del estado de login de un usuario.

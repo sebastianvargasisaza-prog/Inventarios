@@ -3335,6 +3335,36 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         # Índice para queries del centro-mando que filtran por fecha + estado
         "CREATE INDEX IF NOT EXISTS idx_pp_fecha_estado ON produccion_programada(fecha_programada, estado)",
     ]),
+    (96, "agent_memory: memoria persistente para agentes IA (zero-error sprint)", [
+        # Sebastián 7-may-2026: tabla simple key-value que los agentes IA
+        # usan entre sesiones. Resuelve el problema de "amnesia entre
+        # sesiones" sin depender de la memoria del LLM.
+        #
+        # Uso típico:
+        #   agent_memory.set('last_deploy_commit', 'abc123', 'release')
+        #   agent_memory.get('last_deploy_commit')
+        #   agent_memory.list(category='release', limit=10)
+        #
+        # Categorías sugeridas:
+        #   release · último deploy, último build, último rollback
+        #   bug_pattern · síntoma + causa + fix conocidos
+        #   user_preference · "Sebastián prefiere gramos, no kg"
+        #   blocker · cosas pendientes que afectan futuras decisiones
+        #   regression · golden path que rompió y cómo se arregló
+        """CREATE TABLE IF NOT EXISTS agent_memory (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            key TEXT NOT NULL,
+            value TEXT NOT NULL,
+            category TEXT NOT NULL DEFAULT 'general',
+            created_by TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now', 'utc')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now', 'utc')),
+            UNIQUE(key)
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_agent_memory_category ON agent_memory(category, updated_at DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_agent_memory_updated ON agent_memory(updated_at DESC)",
+    ]),
+
     (95, "Animus inventario fisico: baseline + movimientos (asistente Daniela)", [
         # Sebastian 3-may-2026: la asistente cuenta inventario fisico cada
         # tanto y siempre hay desfase con Shopify. Solucion: ecuacion
