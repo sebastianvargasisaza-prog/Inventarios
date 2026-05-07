@@ -1377,32 +1377,23 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
 
 <div id="programacion" class="tab-content">
 <div style="padding:18px">
-  <!-- 4 pestañas únicas (Sebastian 30-abr-2026: "reduce a las pestañas necesarias") -->
+  <!-- Sebastian 7-may-2026: SOLO el tab "Plan" queda visible.
+       Los otros (Operación Live / Auto-Plan / Maquila / Configuración)
+       generaban ruido + posibles errores · ocultos pero los IDs siguen
+       en el DOM por compatibilidad con switchProgTab() y JS existente. -->
   <div style="display:flex;gap:10px;margin-bottom:18px;border-bottom:2px solid #e2e8f0;padding-bottom:12px;align-items:center;flex-wrap:wrap">
     <button id="prog-tab-planv2" onclick="switchProgTab('planv2')"
       style="padding:9px 22px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:800;cursor:pointer;background:linear-gradient(135deg,#0f766e,#0891b2);color:#fff;box-shadow:0 3px 10px rgba(8,145,178,.35)">
       &#128197; Plan
     </button>
-    <button id="prog-tab-mando" onclick="switchProgTab('mando')"
-      style="padding:9px 22px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:700;cursor:pointer;background:#e2e8f0;color:#1a4a7a">
-      &#127919; Operación Live <span style="font-size:9px;font-weight:600;background:#dc2626;color:#fff;padding:1px 6px;border-radius:6px;margin-left:4px;text-transform:uppercase;letter-spacing:.5px">unificado</span>
-    </button>
-    <button id="prog-tab-autoplan" onclick="switchProgTab('autoplan')"
-      style="padding:9px 22px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:800;cursor:pointer;background:linear-gradient(135deg,#7c3aed,#dc2626);color:#fff;box-shadow:0 3px 10px rgba(124,58,237,.4)">
-      &#129302; Auto-Plan
-    </button>
-    <button id="prog-tab-maquila" onclick="switchProgTab('maquila')"
-      style="padding:9px 22px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:700;cursor:pointer;background:#e2e8f0;color:#1a4a7a">
-      &#129309; Maquila
-    </button>
-    <button id="prog-tab-config" onclick="switchProgTab('config')"
-      style="padding:9px 22px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:700;cursor:pointer;background:#e2e8f0;color:#1a4a7a">
-      &#9881; Configuración
-    </button>
     <span id="prog-tareas-badge" style="display:none;background:#dc2626;color:#fff;font-size:9px;font-weight:800;padding:2px 8px;border-radius:8px"></span>
   </div>
   <!-- Botones HIDDEN para no romper switchProgTab() y JS existente -->
   <div style="display:none">
+    <button id="prog-tab-mando"></button>
+    <button id="prog-tab-autoplan"></button>
+    <button id="prog-tab-maquila"></button>
+    <button id="prog-tab-config"></button>
     <button id="prog-tab-centro"></button>
     <button id="prog-tab-plan"></button>
     <button id="prog-tab-checklist"></button>
@@ -6731,6 +6722,7 @@ function _renderProgramacion(d){
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button id="pv2-vs-btn-dup" onclick="pv2LimpiarDuplicados()" style="background:#b45309;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:800;cursor:pointer;display:none" title="Borra producciones duplicadas (mismo producto + lotes + kg en 7 días)">🗑️ Limpiar duplicados</button>
           <button id="pv2-vs-btn-solicitar" onclick="pv2SolicitarFaltantesBulk()" style="background:#dc2626;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:800;cursor:pointer;display:none" title="Crea solicitudes de compra agrupadas por proveedor para todo lo faltante">🛒 Solicitar TODO faltante</button>
+          <button onclick="pv2ReSyncCalendar()" style="background:#0e7490;color:#fff;border:none;padding:8px 12px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer" title="Trae cambios de Google Calendar (espejo: borra fantasmas + agrega nuevas)">📅 Re-sync Calendar</button>
           <button onclick="pv2CargarProdFaltantes()" style="background:#0f766e;color:#fff;border:none;padding:8px 12px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">↻ Recargar</button>
         </div>
       </div>
@@ -12070,6 +12062,7 @@ async function ckMarcar(itemId, estado){
               'color:#64748b;width:60px">Lotes</th>'+
               '<th style="text-align:left;padding:8px 10px;font-weight:700;'+
               'color:#64748b;width:140px">Estado</th>'+
+              '<th style="width:40px"></th>'+
               '</tr></thead><tbody>';
       grupos.forEach(function(g, idx){
         var faltMP = g.faltantes_mps_count || 0;
@@ -12122,6 +12115,19 @@ async function ckMarcar(itemId, estado){
                 (g.total_lotes||0)+'</td>';
         html += '<td style="padding:8px 10px;color:'+estadoCol+';'+
                 'font-weight:600">'+_escHTML(estadoTxt)+'</td>';
+        // Botón quitar · borra TODAS las fechas de este producto en el horizonte
+        var pids = (g.fechas||[]).map(function(f){ return f.pid; }).filter(Boolean);
+        if(pids.length){
+          html += '<td style="padding:6px 8px;text-align:right">'+
+                  '<button onclick="event.stopPropagation();pv2QuitarProducto('+
+                  JSON.stringify(pids).replace(/"/g,'&quot;')+',\\''+_escHTML(g.producto||'')+'\\')" '+
+                  'title="Borrar esta producción de la DB (queda solo en Calendar)" '+
+                  'style="background:transparent;border:1px solid #fecaca;color:#dc2626;'+
+                  'border-radius:4px;padding:3px 8px;font-size:11px;cursor:pointer">🗑️</button>'+
+                  '</td>';
+        } else {
+          html += '<td></td>';
+        }
         html += '</tr>';
       });
       html += '</tbody></table>';
@@ -12173,6 +12179,54 @@ async function ckMarcar(itemId, estado){
       alert('✓ '+d.mensaje);
       pv2CargarProdFaltantes();
     }catch(e){ alert('Error de red: '+e.message); }
+  }
+
+  // Sebastian 7-may-2026: forzar sync con Google Calendar (espejo).
+  // Calendar es fuente de verdad · borra fantasmas + agrega nuevas.
+  async function pv2ReSyncCalendar(){
+    var resumen = document.getElementById('pv2-vs-resumen');
+    if(resumen) resumen.textContent = '⏳ Re-sync con Calendar...';
+    try{
+      var r = await fetch('/api/programacion/checklist/sync-calendar?dias=120',
+                          {method:'POST'});
+      var d = await r.json();
+      if(!r.ok){
+        alert('Error sync: '+(d.error||r.status));
+        if(resumen) resumen.textContent = '';
+        return;
+      }
+      // d.mensaje suele ser "X producciones nuevas importadas..."
+      // Recargar la vista para ver el resultado
+      pv2CargarProdFaltantes();
+    }catch(e){
+      alert('Error de red al sync: '+e.message);
+      if(resumen) resumen.textContent = '';
+    }
+  }
+
+  // Sebastian 7-may-2026: borrar producciones de un producto · solo admin.
+  // Hard delete · útil para limpiar fantasmas que sobrevivieron al sync
+  // (entries manuales viejas con fecha distinta a Calendar).
+  async function pv2QuitarProducto(pids, productoNombre){
+    if(!pids || !pids.length){ return; }
+    var n = pids.length;
+    var msg = 'BORRAR '+n+' producción'+(n!==1?'es':'')+' de "'+productoNombre+'"?\\n\\n'+
+              'Esto las borra DEFINITIVAMENTE de la DB.\\n'+
+              'Si la producción está en Calendar, volverá a aparecer al re-sync.\\n\\n'+
+              '¿Confirmar?';
+    if(!confirm(msg)) return;
+    var fails = 0;
+    for(var i=0; i<pids.length; i++){
+      try{
+        var r = await fetch('/api/programacion/produccion-programada/'+pids[i]+'/borrar',
+                            {method:'DELETE'});
+        if(!r.ok) fails++;
+      }catch(e){ fails++; }
+    }
+    if(fails){
+      alert('Borradas '+(n-fails)+'/'+n+' · '+fails+' fallaron (¿permisos?)');
+    }
+    pv2CargarProdFaltantes();
   }
 
   // Click en card del producto agrupado · abre modal con MPs/MEEs faltantes
