@@ -12181,13 +12181,23 @@ async function ckMarcar(itemId, estado){
     }catch(e){ alert('Error de red: '+e.message); }
   }
 
-  // Sebastian 7-may-2026: forzar sync con Google Calendar (espejo).
-  // Calendar es fuente de verdad · borra fantasmas + agrega nuevas.
+  // Sebastian 7-may-2026: forzar sync con Google Calendar (espejo total).
+  // force_mirror=true · HARD DELETE de cualquier producción del horizonte
+  // que NO esté en Calendar (manual + calendar), excepto las ya iniciadas
+  // o descontadas. Garantiza que la app refleje EXACTAMENTE Calendar.
   async function pv2ReSyncCalendar(){
     var resumen = document.getElementById('pv2-vs-resumen');
-    if(resumen) resumen.textContent = '⏳ Re-sync con Calendar...';
+    var msg = 'Re-sync ESPEJO con Google Calendar\\n\\n'+
+              'Va a:\\n'+
+              ' · Insertar las producciones nuevas que aparezcan en Calendar\\n'+
+              ' · BORRAR las del horizonte que ya NO están en Calendar\\n'+
+              '   (sin importar si las creó alguien manualmente)\\n\\n'+
+              'NO toca producciones ya iniciadas o que descontaron inventario.\\n\\n'+
+              '¿Continuar?';
+    if(!confirm(msg)) return;
+    if(resumen) resumen.textContent = '⏳ Re-sync con Calendar (espejo)...';
     try{
-      var r = await fetch('/api/programacion/checklist/sync-calendar?dias=120',
+      var r = await fetch('/api/programacion/checklist/sync-calendar?dias=120&force_mirror=true',
                           {method:'POST'});
       var d = await r.json();
       if(!r.ok){
@@ -12195,7 +12205,6 @@ async function ckMarcar(itemId, estado){
         if(resumen) resumen.textContent = '';
         return;
       }
-      // d.mensaje suele ser "X producciones nuevas importadas..."
       // Recargar la vista para ver el resultado
       pv2CargarProdFaltantes();
     }catch(e){

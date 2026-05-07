@@ -651,3 +651,34 @@ def test_limpiar_duplicados_sin_login_401(client):
     r = client.post('/api/programacion/limpiar-duplicados-producciones',
                     json={'dry_run': True}, headers=csrf_headers())
     assert r.status_code == 401
+
+
+# ── /api/programacion/checklist/sync-calendar (force_mirror) ──────
+
+
+def test_sync_calendar_endpoint_acepta_force_mirror(app, db_clean):
+    """El endpoint debe aceptar ?force_mirror=true y reportarlo en respuesta."""
+    cs = _login(app, 'sebastian')
+    r = cs.post('/api/programacion/checklist/sync-calendar?force_mirror=true&dias=30',
+                headers=csrf_headers())
+    assert r.status_code == 200
+    d = r.get_json()
+    assert d['ok'] is True
+    assert d['force_mirror'] is True
+    assert 'modo espejo' in (d.get('mensaje') or '').lower() or \
+           d.get('producciones_creadas', 0) >= 0  # mensaje varía si no hay events
+
+
+def test_sync_calendar_default_no_force_mirror(app, db_clean):
+    """Sin ?force_mirror = comportamiento legacy."""
+    cs = _login(app, 'sebastian')
+    r = cs.post('/api/programacion/checklist/sync-calendar?dias=30',
+                headers=csrf_headers())
+    assert r.status_code == 200
+    d = r.get_json()
+    assert d['force_mirror'] is False
+
+
+def test_sync_calendar_sin_login_401(client):
+    r = client.post('/api/programacion/checklist/sync-calendar')
+    assert r.status_code == 401

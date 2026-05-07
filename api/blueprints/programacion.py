@@ -7885,7 +7885,8 @@ def _get_last_sync(conn, sync_type):
         return None
 
 
-def _sync_calendar_a_produccion_programada(conn, days_ahead=90):
+def _sync_calendar_a_produccion_programada(conn, days_ahead=90,
+                                              force_mirror=False):
     """Sincroniza eventos de Google Calendar a la tabla produccion_programada.
 
     Idempotente: usa (producto, fecha_programada) como key para evitar
@@ -7895,6 +7896,14 @@ def _sync_calendar_a_produccion_programada(conn, days_ahead=90):
     produccion_programada, pero los eventos viven en el calendario
     animuslb.com. Antes habia que duplicar manualmente. Ahora se
     auto-sincroniza al cargar el checklist.
+
+    Sebastian 7-may-2026: agregado force_mirror=True para hacer espejo
+    DURO con Calendar · borra (HARD DELETE) cualquier producción del
+    horizonte que NO esté en Calendar, sin importar origen. Solo
+    respeta el guard de inicio_real_at / inventario_descontado_at.
+    Útil cuando hay entries manuales viejas que sobrevivieron al sync
+    bidireccional standard. Sin force_mirror, comportamiento legacy:
+    solo cancela origen='calendar' orphans.
 
     Returns: count de filas insertadas en esta corrida.
     """
@@ -8100,27 +8109,35 @@ def _sync_calendar_a_produccion_programada(conn, days_ahead=90):
                 if prod and prod in formulas:
                     keys_calendar.add((prod, fecha_s))
                     break
-        # Filas activas con origen='calendar' que NO estan en el calendar actual.
+        # Sebastian 7-may-2026 · modo espejo:
+        #   force_mirror=False (default): solo origen='calendar' (legacy)
+        #   force_mirror=True: cualquier origen · ESPEJO DURO con Calendar
         # IMPORTANTE: capturar inicio_real_at + inventario_descontado_at para
         # decidir si es seguro cancelar (no corromper inventario en curso).
+        if force_mirror:
+            origen_filter = ''   # cualquier origen
+        else:
+            origen_filter = "AND origen='calendar'"
         candidatos = conn.execute(
-            """SELECT id, producto, fecha_programada,
-                      COALESCE(inicio_real_at,'') as inicio,
-                      COALESCE(inventario_descontado_at,'') as descontado
+            f"""SELECT id, producto, fecha_programada,
+                       COALESCE(inicio_real_at,'') as inicio,
+                       COALESCE(inventario_descontado_at,'') as descontado,
+                       COALESCE(origen,'manual') as origen_val
                FROM produccion_programada
-               WHERE origen='calendar'
+               WHERE 1=1 {origen_filter}
                  AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado')
                  AND fecha_programada >= date('now','-1 day')"""
         ).fetchall()
         huerfanos = []
         for r in candidatos:
-            id_, prod, fecha, inicio, descontado = r
+            id_, prod, fecha, inicio, descontado, origen_val = r
             if (prod, fecha) in keys_calendar:
                 continue  # sigue en calendar, no es huérfano
-            # GUARD: si ya inició o ya descontó inventario, NO cancelar
+            # GUARD: si ya inició o ya descontó inventario, NO tocar
             if inicio or descontado:
                 skipped_in_progress.append({
                     'id': id_, 'producto': prod, 'fecha': fecha,
+                    'origen': origen_val,
                     'inicio_real_at': inicio or None,
                     'inventario_descontado_at': descontado or None,
                 })
@@ -8128,25 +8145,38 @@ def _sync_calendar_a_produccion_programada(conn, days_ahead=90):
             huerfanos.append(id_)
         if huerfanos:
             placeholders = ','.join(['?'] * len(huerfanos))
-            conn.execute(
-                f"UPDATE produccion_programada SET estado='cancelado', "
-                f"observaciones=COALESCE(observaciones,'') || ' [auto-cancelado: ya no esta en calendar]' "
-                f"WHERE id IN ({placeholders})",
-                huerfanos
-            )
+            if force_mirror:
+                # Modo espejo · HARD DELETE para que la app refleje exactamente
+                # Calendar (sin entries fantasma cancelados ocupando memoria).
+                conn.execute(
+                    f"DELETE FROM produccion_programada WHERE id IN ({placeholders})",
+                    huerfanos,
+                )
+                accion_audit = 'AUTO_BORRAR_PRODUCCION_ESPEJO'
+                detalle_audit = 'force_mirror: sync borró producción no-en-calendar'
+            else:
+                # Modo legacy · solo cancela (preserva historial)
+                conn.execute(
+                    f"UPDATE produccion_programada SET estado='cancelado', "
+                    f"observaciones=COALESCE(observaciones,'') || ' [auto-cancelado: ya no esta en calendar]' "
+                    f"WHERE id IN ({placeholders})",
+                    huerfanos,
+                )
+                accion_audit = 'AUTO_CANCELAR_PRODUCCION'
+                detalle_audit = 'evento ya no existe en calendar'
             archived = len(huerfanos)
-            # Audit log · cada cancelación auto debe quedar trazada
+            # Audit log · cada acción auto debe quedar trazada
             try:
                 from audit_helpers import audit_log as _audit_log
                 cur = conn.cursor()
                 for prod_id in huerfanos:
                     _audit_log(cur, usuario='sistema_calendar_sync',
-                               accion='AUTO_CANCELAR_PRODUCCION',
+                               accion=accion_audit,
                                tabla='produccion_programada',
                                registro_id=prod_id,
-                               despues={'estado': 'cancelado',
-                                         'razon': 'evento ya no existe en calendar'},
-                               detalle=f"Sync calendar auto-canceló producción id={prod_id}")
+                               despues={'razon': detalle_audit,
+                                         'force_mirror': force_mirror},
+                               detalle=f"Sync calendar id={prod_id} · {detalle_audit}")
             except Exception:
                 pass
             conn.commit()
@@ -8234,19 +8264,35 @@ def checklist_sync_calendar_endpoint():
 
     Tambien se llama automaticamente al cargar /resumen-calendario y por
     un thread background cada N min (CALENDAR_SYNC_INTERVAL_MIN).
+
+    Querystring:
+      ?dias=90 · ventana hacia adelante
+      ?force_mirror=true · modo espejo · HARD DELETE de cualquier
+        producción del horizonte que NO esté en Calendar (cualquier
+        origen, NO solo 'calendar') · respeta guard inicio/descontado.
+        Sin este flag: comportamiento legacy (solo cancela calendar).
     """
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
     days = int(request.args.get('dias', 90))
+    force_mirror = (request.args.get('force_mirror', '').lower()
+                    in ('true', '1', 'yes'))
     conn = get_db()
-    inserted = _sync_calendar_a_produccion_programada(conn, days_ahead=days)
+    inserted = _sync_calendar_a_produccion_programada(
+        conn, days_ahead=days, force_mirror=force_mirror,
+    )
     last = _get_last_sync(conn, 'calendar')
+    msg = f'{inserted} producciones nuevas importadas del calendario'
+    if not inserted:
+        msg = 'El calendario ya estaba sincronizado'
+    if force_mirror:
+        msg += ' · modo espejo (orfanos eliminados)'
     return jsonify({
         'ok': True,
         'producciones_creadas': inserted,
+        'force_mirror': force_mirror,
         'last_run_at': last['last_run_at'] if last else None,
-        'mensaje': f'{inserted} producciones nuevas importadas del calendario'
-                   if inserted else 'El calendario ya estaba sincronizado'
+        'mensaje': msg,
     })
 
 
