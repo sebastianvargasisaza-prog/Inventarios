@@ -45,7 +45,9 @@ else
   TESTS=("tests/test_golden_paths.py")
 fi
 
-# Ejecutar
+# Ejecutar · pipefail para que el exit code de pytest llegue al if
+# (sin pipefail, el pipe a tail siempre exit 0 y el bug se traga).
+set -o pipefail
 START=$(date +%s)
 if "$PYTHON_BIN" -m pytest "${TESTS[@]}" -q --tb=line 2>&1 | tail -10; then
   END=$(date +%s)
