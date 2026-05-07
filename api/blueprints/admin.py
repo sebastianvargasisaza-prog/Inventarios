@@ -222,6 +222,173 @@ def admin_users_list():
     return jsonify({"users": out, "total": len(out)})
 
 
+@bp.route("/api/admin/diag-login/<username>", methods=["GET"])
+def admin_diag_login(username):
+    """Diagnóstico detallado del estado de login de un usuario.
+
+    Sebastián 7-may-2026 (Mayerlin): cuando un usuario reporta que no puede
+    entrar, Sebastián necesita ver de un vistazo:
+      · Tiene PASS_<USER> seteada en Render? Es hash o plaintext?
+      · Cambió su password vía self-service (DB)? Cuándo?
+      · Cuántos intentos fallidos recientes? Está locked?
+      · Tiene MFA enabled?
+      · Cuál es la acción recomendada?
+
+    Returns: { username, exists, password_source, password_changed_at,
+               last_login, recent_failures: [{ts, ip}], is_locked,
+               mfa_enabled, recommended_action, hint }
+    """
+    admin_user, err, code = _require_admin()
+    if err:
+        return err, code
+
+    target = (username or "").strip().lower()
+    if not target:
+        return jsonify({"error": "Falta username"}), 400
+    exists = target in COMPRAS_USERS
+
+    out = {
+        "username": target,
+        "exists": exists,
+        "password_source": None,
+        "password_changed_at": None,
+        "password_changed_by": None,
+        "last_login": None,
+        "recent_failures": [],
+        "is_locked": False,
+        "mfa_enabled": False,
+        "recommended_action": "",
+        "hint": "",
+    }
+    if not exists:
+        out["recommended_action"] = "AGREGAR_USUARIO"
+        out["hint"] = (f"'{target}' no está en config.COMPRAS_USERS · "
+                        "agregalo en config.py + setea PASS_{target.upper()} "
+                        "en Render")
+        return jsonify(out)
+
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        conn.execute("PRAGMA busy_timeout=2000")
+        # password_source via helper existente
+        out["password_source"] = _password_source(target, conn)
+        # password_changed_at + by
+        try:
+            row = conn.execute(
+                "SELECT changed_at, changed_by FROM users_passwords WHERE username=?",
+                (target,),
+            ).fetchone()
+            if row:
+                out["password_changed_at"] = row[0]
+                out["password_changed_by"] = row[1]
+        except Exception:
+            pass
+        # Último login exitoso
+        try:
+            row = conn.execute(
+                """SELECT ts, ip FROM security_events
+                   WHERE event='login_success' AND username=?
+                   ORDER BY id DESC LIMIT 1""",
+                (target,),
+            ).fetchone()
+            if row:
+                out["last_login"] = {"ts": row[0], "ip": row[1]}
+        except Exception:
+            pass
+        # Últimos 5 login_failure
+        try:
+            rows = conn.execute(
+                """SELECT ts, ip FROM security_events
+                   WHERE event='login_failure' AND username=?
+                   ORDER BY id DESC LIMIT 5""",
+                (target,),
+            ).fetchall()
+            out["recent_failures"] = [{"ts": r[0], "ip": r[1]} for r in rows]
+        except Exception:
+            pass
+        # MFA
+        try:
+            row = conn.execute(
+                "SELECT 1 FROM users_mfa WHERE username=? AND enabled=1",
+                (target,),
+            ).fetchone()
+            out["mfa_enabled"] = bool(row)
+        except Exception:
+            pass
+        conn.close()
+    except Exception as e:
+        log.warning("diag_login DB error: %s", e)
+
+    # Lock status (importado del módulo core)
+    try:
+        from blueprints.core import _is_locked  # noqa
+        # _is_locked toma (ip, username) · sin IP no podemos saber por IP
+        # exacta; pero si username está bloqueado en cualquier IP, lo
+        # reportamos. _is_locked usa rate_limit table.
+        conn = sqlite3.connect(DB_PATH)
+        # Contar entries en rate_limit para este username
+        try:
+            row = conn.execute(
+                """SELECT COUNT(*) FROM rate_limit
+                   WHERE username=? AND failures >= 5""",
+                (target,),
+            ).fetchone()
+            out["is_locked"] = bool(row and row[0])
+        except Exception:
+            pass
+        conn.close()
+    except Exception:
+        pass
+
+    # Recomendación basada en estado
+    src = out["password_source"]
+    n_fail = len(out["recent_failures"])
+    if src == "missing":
+        out["recommended_action"] = "SETEAR_PASS_EN_RENDER"
+        out["hint"] = (
+            f"PASS_{target.upper()} no existe en Render. "
+            "Opciones: (1) En el panel /admin click 'Resetear' — genera "
+            "password nueva y la guarda en DB (no necesitás Render). "
+            "(2) Setear PASS_{target.upper()} en Render con un hash "
+            "pbkdf2:sha256:600000 (correr scripts/gen_password_hashes.py)."
+        )
+    elif src == "env_plaintext":
+        out["recommended_action"] = "RESETEAR_PASSWORD"
+        out["hint"] = (
+            f"PASS_{target.upper()} en Render está en PLAINTEXT (inseguro). "
+            "Click 'Resetear' para que sea hash + queda en DB. La password "
+            "actual debería ser exactamente el valor de la env var."
+        )
+    elif out["is_locked"]:
+        out["recommended_action"] = "ESPERAR_LOCK_O_RESETEAR"
+        out["hint"] = (
+            "Usuario bloqueado por demasiados intentos fallidos. "
+            "Esperá 15 min o resetear (limpia el lock implícitamente)."
+        )
+    elif n_fail >= 3 and not out["last_login"]:
+        out["recommended_action"] = "RESETEAR_PASSWORD"
+        out["hint"] = (
+            f"{n_fail} fallos recientes y nunca un login exitoso. "
+            "Probable que el usuario no sepa su password · resetear."
+        )
+    elif n_fail >= 3 and out["last_login"]:
+        out["recommended_action"] = "RESETEAR_PASSWORD"
+        out["hint"] = (
+            f"{n_fail} fallos recientes (último login OK fue "
+            f"{out['last_login'].get('ts')}). El usuario olvidó "
+            "o cambió de teclado · resetear."
+        )
+    else:
+        out["recommended_action"] = "OK"
+        out["hint"] = (
+            "Sin señales de problema. Si el usuario insiste que no puede "
+            "entrar: pedirle screenshot del error exacto + verificar IP + "
+            "preguntarle si el browser tiene autofill mal."
+        )
+
+    return jsonify(out)
+
+
 @bp.route("/api/admin/reset-password", methods=["POST"])
 def admin_reset_password():
     """Resetea la password de OTRO usuario. Genera password aleatoria,
@@ -5664,9 +5831,50 @@ async function loadUsers() {
       <td>${_pwdBadge(u.password_source)}</td>
       <td style="font-size:11px;color:#94a3b8;">${last}</td>
       <td style="font-size:11px;color:#94a3b8;">${changed}</td>
-      <td><button class="btn btn-sm btn-warn" onclick="resetPassword('${u.username}')">&#x1F511; Resetear</button></td>
+      <td>
+        <button class="btn btn-sm" onclick="diagLogin('${u.username}')" style="background:#0e7490;color:#fff;margin-right:4px;" title="Ver por qué este usuario no puede entrar">&#x1F50D; Diag</button>
+        <button class="btn btn-sm btn-warn" onclick="resetPassword('${u.username}')">&#x1F511; Resetear</button>
+      </td>
     </tr>`;
   }).join('');
+}
+
+async function diagLogin(username) {
+  // Sebastián 7-may-2026: muestra estado completo del login para diagnosticar
+  // por qué un usuario no puede entrar (caso Mayerlin)
+  try {
+    const r = await fetch('/api/admin/diag-login/' + encodeURIComponent(username));
+    const d = await r.json();
+    if (!r.ok) { toast('Error: ' + (d.error || r.status), 'err'); return; }
+    const failures = (d.recent_failures || []).map(f =>
+      '  · ' + (f.ts||'').replace('T',' ').replace('Z','') + ' desde ' + (f.ip||'?')
+    ).join('\\n') || '  (ninguno)';
+    const last = d.last_login
+      ? (d.last_login.ts || '').replace('T',' ').replace('Z','') + ' desde ' + (d.last_login.ip||'?')
+      : 'nunca';
+    const lines = [
+      'DIAGNÓSTICO LOGIN · ' + d.username,
+      '─────────────────────────────',
+      'Existe en config: ' + (d.exists ? 'sí' : 'NO'),
+      'Password source: ' + (d.password_source || '—'),
+      '  · db = el user cambió su password vía self-service',
+      '  · env = está la PASS_USER en Render como hash pbkdf2/scrypt',
+      '  · env_plaintext = en Render pero SIN hash (inseguro)',
+      '  · missing = NO existe PASS_USER en Render',
+      '',
+      'Password cambiada: ' + (d.password_changed_at || '—'),
+      'Último login OK: ' + last,
+      'MFA enabled: ' + (d.mfa_enabled ? 'sí' : 'no'),
+      'Bloqueado por intentos: ' + (d.is_locked ? 'SÍ' : 'no'),
+      '',
+      'Últimos fallos:\\n' + failures,
+      '',
+      '➤ ACCIÓN: ' + (d.recommended_action || '—'),
+      '',
+      d.hint || '',
+    ].join('\\n');
+    alert(lines);
+  } catch (e) { toast('Error: ' + e.message, 'err'); }
 }
 
 async function resetPassword(username) {

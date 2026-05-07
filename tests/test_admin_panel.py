@@ -119,6 +119,75 @@ def test_reset_password_disables_old_password(app, db_clean):
     assert r.status_code == 200  # fallo
 
 
+# ── /api/admin/diag-login/<username> ─────────────────────────────────────────
+
+
+def test_diag_login_requires_admin(client, db_clean):
+    r = client.get("/api/admin/diag-login/mayerlin")
+    assert r.status_code == 401
+
+
+def test_diag_login_blocked_for_non_admin(app, db_clean):
+    c = app.test_client()
+    c.post("/login", data={"username": "valentina", "password": TEST_PASSWORD},
+           headers=csrf_headers(), follow_redirects=False)
+    r = c.get("/api/admin/diag-login/mayerlin")
+    assert r.status_code == 403
+
+
+def test_diag_login_existing_user_returns_full_diag(admin_client, db_clean):
+    r = admin_client.get("/api/admin/diag-login/mayerlin")
+    assert r.status_code == 200
+    d = r.get_json()
+    assert d["username"] == "mayerlin"
+    assert d["exists"] is True
+    assert d["password_source"] in ("env", "db", "missing", "env_plaintext")
+    assert "recommended_action" in d
+    assert "hint" in d
+    assert isinstance(d["recent_failures"], list)
+
+
+def test_diag_login_unknown_user(admin_client, db_clean):
+    r = admin_client.get("/api/admin/diag-login/quien_no_existe")
+    assert r.status_code == 200
+    d = r.get_json()
+    assert d["exists"] is False
+    assert d["recommended_action"] == "AGREGAR_USUARIO"
+
+
+def test_diag_login_no_expone_hashes(admin_client, db_clean):
+    """Diagnóstico NO debe leakear el password_hash."""
+    r = admin_client.get("/api/admin/diag-login/sebastian")
+    body = r.get_data(as_text=True)
+    assert "pbkdf2:" not in body
+    assert "scrypt:" not in body
+
+
+def test_diag_login_recomienda_resetear_si_muchos_fallos(app, db_clean):
+    """Tras N intentos fallidos, recomienda RESETEAR_PASSWORD."""
+    c = app.test_client()
+    # 4 intentos fallidos (sin lock todavía → lock está en 5)
+    for _ in range(4):
+        c.post("/login", data={"username": "yuliel", "password": "WRONG"},
+               headers=csrf_headers(), follow_redirects=False)
+    # Login admin para diag
+    admin = app.test_client()
+    admin.post("/login", data={"username": "sebastian", "password": TEST_PASSWORD},
+               headers=csrf_headers(), follow_redirects=False)
+    r = admin.get("/api/admin/diag-login/yuliel")
+    d = r.get_json()
+    assert len(d["recent_failures"]) >= 3
+    assert d["recommended_action"] == "RESETEAR_PASSWORD"
+
+
+def test_admin_html_expone_diag_login(admin_client, db_clean):
+    """El panel /admin tab Usuarios debe exponer botón Diag + función JS."""
+    r = admin_client.get("/admin")
+    body = r.get_data(as_text=True)
+    assert "diagLogin" in body
+    assert "diag-login" in body or "Diag" in body
+
+
 # ── /api/admin/security-events ───────────────────────────────────────────────
 
 
