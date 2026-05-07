@@ -6697,31 +6697,23 @@ function _renderProgramacion(d){
   <!-- ptab-planv2: Plan unificado con horizontes 1sem→1año + necesidades   -->
   <!-- ════════════════════════════════════════════════════════════════════ -->
   <div id="ptab-planv2" style="display:none">
-    <!-- ── HEADER COMPACTO ─────────────────────────────────────────────── -->
-    <div style="background:linear-gradient(135deg,#0f766e,#0891b2);color:#fff;padding:14px 20px;border-radius:12px;margin-bottom:14px">
-      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
-        <div>
-          <h2 style="margin:0;color:#fff;font-size:20px">📅 Plan de Producción Ánimus</h2>
-          <div id="pv2-status-line" style="font-size:12px;color:#cffafe;margin-top:3px">⏳ Cargando estado...</div>
-        </div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap">
-          <button onclick="abrirNuevoProducto()" style="background:#fff;color:#0f766e;border:none;padding:7px 12px;border-radius:6px;font-size:11px;font-weight:800;cursor:pointer">+ Nuevo</button>
-          <button onclick="planV2DiagnosticoSKU()" style="background:#dc2626;color:#fff;border:none;padding:7px 12px;border-radius:6px;font-size:11px;font-weight:800;cursor:pointer" title="Diagnóstico SKU: stock + ventas + alcance">🔍 Diag SKU</button>
-          <button onclick="planV2VerForecastBF()" style="background:#a855f7;color:#fff;border:none;padding:7px 12px;border-radius:6px;font-size:11px;font-weight:800;cursor:pointer" title="Pre-stock Black Friday">🛍️ BF</button>
-          <button onclick="planV2Descargar()" style="background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.4);color:#fff;padding:7px 12px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer" title="Descargar Excel">📥</button>
-          <button onclick="planV2Cargar()" style="background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.4);color:#fff;padding:7px 12px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer" title="Recargar">↻</button>
-        </div>
+    <!-- Sebastian 7-may-2026: header compacto · solo horizonte switcher.
+         Los botones legacy (Nuevo / Diag SKU / BF / Descargar / Recargar
+         doble) se eliminaron. La vista plana abajo trae sus propios
+         botones. -->
+    <div style="background:linear-gradient(135deg,#0f766e,#0891b2);color:#fff;padding:10px 16px;border-radius:10px;margin-bottom:12px">
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+        <span style="font-size:11px;color:#cffafe;font-weight:700;margin-right:4px">Horizonte:</span>
+        <button class="phz-btn" data-meses="0.25" onclick="planV2Horizonte('0.25')" style="padding:5px 11px;border:none;border-radius:5px;background:rgba(255,255,255,.18);color:#fff;font-weight:700;cursor:pointer;font-size:11px">Semana</button>
+        <button class="phz-btn" data-meses="1" onclick="planV2Horizonte('1')" style="padding:5px 11px;border:none;border-radius:5px;background:rgba(255,255,255,.18);color:#fff;font-weight:700;cursor:pointer;font-size:11px">1 mes</button>
+        <button class="phz-btn" data-meses="2" onclick="planV2Horizonte('2')" style="padding:5px 11px;border:none;border-radius:5px;background:#fff;color:#0f766e;font-weight:800;cursor:pointer;font-size:11px">2 meses</button>
+        <button class="phz-btn" data-meses="3" onclick="planV2Horizonte('3')" style="padding:5px 11px;border:none;border-radius:5px;background:rgba(255,255,255,.18);color:#fff;font-weight:700;cursor:pointer;font-size:11px">3 meses</button>
+        <button class="phz-btn" data-meses="6" onclick="planV2Horizonte('6')" style="padding:5px 11px;border:none;border-radius:5px;background:rgba(255,255,255,.18);color:#fff;font-weight:700;cursor:pointer;font-size:11px">6 meses</button>
+        <button class="phz-btn" data-meses="12" onclick="planV2Horizonte('12')" style="padding:5px 11px;border:none;border-radius:5px;background:rgba(255,255,255,.18);color:#fff;font-weight:700;cursor:pointer;font-size:11px">1 año</button>
+        <button onclick="abrirNuevoProducto()" style="margin-left:auto;background:#fff;color:#0f766e;border:none;padding:5px 11px;border-radius:5px;font-size:11px;font-weight:800;cursor:pointer">+ Nuevo</button>
       </div>
-      <!-- Switcher de horizonte (1 línea) -->
-      <div style="display:flex;gap:6px;margin-top:12px;flex-wrap:wrap">
-        <button class="phz-btn" data-meses="0.25" onclick="planV2Horizonte('0.25')" style="padding:6px 13px;border:none;border-radius:6px;background:rgba(255,255,255,.18);color:#fff;font-weight:700;cursor:pointer;font-size:12px">Semana</button>
-        <button class="phz-btn" data-meses="1" onclick="planV2Horizonte('1')" style="padding:6px 13px;border:none;border-radius:6px;background:rgba(255,255,255,.18);color:#fff;font-weight:700;cursor:pointer;font-size:12px">1 mes</button>
-        <button class="phz-btn" data-meses="2" onclick="planV2Horizonte('2')" style="padding:6px 13px;border:none;border-radius:6px;background:#fff;color:#0f766e;font-weight:800;cursor:pointer;font-size:12px">2 meses</button>
-        <button class="phz-btn" data-meses="3" onclick="planV2Horizonte('3')" style="padding:6px 13px;border:none;border-radius:6px;background:rgba(255,255,255,.18);color:#fff;font-weight:700;cursor:pointer;font-size:12px">3 meses</button>
-        <button class="phz-btn" data-meses="6" onclick="planV2Horizonte('6')" style="padding:6px 13px;border:none;border-radius:6px;background:rgba(255,255,255,.18);color:#fff;font-weight:700;cursor:pointer;font-size:12px">6 meses</button>
-        <button class="phz-btn" data-meses="12" onclick="planV2Horizonte('12')" style="padding:6px 13px;border:none;border-radius:6px;background:rgba(255,255,255,.18);color:#fff;font-weight:700;cursor:pointer;font-size:12px">1 año</button>
-      </div>
-      <!-- Status banners ocultos (se consolidan en pv2-status-line) -->
+      <!-- Status line + banners ocultos (compatibilidad JS legacy) -->
+      <div id="pv2-status-line" style="display:none"></div>
       <div id="pv2-cobertura" style="display:none"></div>
       <div id="pv2-calendar-status" style="display:none"></div>
       <div id="pv2-auditoria" style="display:none"></div>
@@ -10366,24 +10358,14 @@ async function ckMarcar(itemId, estado){
   var _PV2_DATA = null;
 
   function planV2Init(){
-    // Sebastian (30-abr-2026): "monte todo automáticamente desde Shopify".
-    fetch('/api/auto-plan/asegurar-actualizado?max_horas=12', {method:'POST'})
-      .then(function(r){return r.json();})
-      .then(function(d){
-        if(d.ejecutado){
-          _toast('🤖 Auto-Plan recalculando en background...', 1);
-          setTimeout(planV2Cargar, 35000);
-        }
-      }).catch(function(){});
-    planV2Cargar();
-    planV2DetectarCambios();
-    planV2CargarStatusLine();
-    planV2CargarCentroAccion();
-    planV2CargarMpRolling();
-    // Sebastián (1-may-2026): paneles MEE + Auto-SC + Alertas viven en
-    // ptab-plan (legacy) pero Sebastián trabaja en planv2. Movemos los
-    // nodos DOM una sola vez para que aparezcan aquí sin duplicar HTML.
-    planV2InjectMeePanels();
+    // Sebastian 7-may-2026: gutted. El módulo Plan se reduce a la vista
+    // minimalista de producciones programadas. Toda la maquinaria legacy
+    // (auto-plan auto-trigger, status line, centro acción, MP rolling,
+    // paneles MEE, alertas, recomendaciones, calendar status, cobertura,
+    // auditoría, detectarCambios) ya NO se carga automáticamente · si
+    // alguien necesita esos panels los llama explícitamente desde botones
+    // específicos. Resultado: 1 sola llamada al backend por tab activation.
+    pv2CargarProdFaltantes();
   }
 
   function planV2InjectMeePanels(){
@@ -11960,11 +11942,9 @@ async function ckMarcar(itemId, estado){
       b.style.background = act ? '#fff' : 'rgba(255,255,255,.18)';
       b.style.color = act ? '#0f766e' : '#fff';
     });
-    planV2Cargar();
-    planV2CargarCobertura();
-    // Sebastian 5-may-2026: vista simple (Luis Enrique) sigue el horizonte
+    // Sebastian 7-may-2026: solo refrescar la vista simple · planV2Cargar
+    // y planV2CargarCobertura escriben en panels ocultos.
     pv2CargarProdFaltantes();
-    // Recomendaciones siempre las mismas (no dependen de horizonte)
   }
 
   // ── Sebastian 5-may-2026 (Luis Enrique): vista simple primaria ─────────
@@ -12155,9 +12135,15 @@ async function ckMarcar(itemId, estado){
   // Sebastian 7-may-2026: limpiar duplicados de produccion_programada · 2 pasos
   async function pv2LimpiarDuplicados(){
     var dias = _pv2HorizonteDias();
+    function _post(body){
+      return fetch('/api/programacion/limpiar-duplicados-producciones', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(body),
+      });
+    }
     try{
-      var rDry = await fetch('/api/programacion/limpiar-duplicados-producciones',
-        _fetchOpts('POST', {dry_run: true, horizonte_dias: dias}));
+      var rDry = await _post({dry_run: true, horizonte_dias: dias});
       var dDry = await rDry.json();
       if(!rDry.ok){ alert('Error preview: '+(dDry.error||rDry.status)); return; }
       if((dDry.producciones_a_borrar||0) === 0){
@@ -12181,8 +12167,7 @@ async function ckMarcar(itemId, estado){
         'Plan:\\n'+detalle+'\\n\\n¿Confirmar?';
       if(!confirm(msg)) return;
 
-      var r = await fetch('/api/programacion/limpiar-duplicados-producciones',
-        _fetchOpts('POST', {dry_run: false, horizonte_dias: dias}));
+      var r = await _post({dry_run: false, horizonte_dias: dias});
       var d = await r.json();
       if(!r.ok){ alert('Error: '+(d.error||r.status)); return; }
       alert('✓ '+d.mensaje);
