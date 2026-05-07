@@ -2880,7 +2880,30 @@ def conteo_guardar(conteo_id):
     c.execute("UPDATE conteos_fisicos SET items_diferencia=?,total_items=? WHERE id=?",
               (items_con_diff, len(items), conteo_id))
     conn.commit()
-    return jsonify({'message': 'Conteo guardado', 'items_con_diferencia': items_con_diff})
+    # Sebastian 7-may-2026: devolver items con sus IDs para que la UI pueda
+    # llamar /ajustar(item_id) directo en cada fila (botón "Aplicar ajuste")
+    saved_items = []
+    try:
+        for r in c.execute("""
+            SELECT id, codigo_mp, COALESCE(lote,'') as lote, diferencia,
+                   COALESCE(requiere_gerencia,0), COALESCE(aprobado_gerencia,0),
+                   COALESCE(ajuste_aplicado,0)
+            FROM conteo_items WHERE conteo_id=?
+        """, (conteo_id,)).fetchall():
+            saved_items.append({
+                'id': r[0], 'codigo_mp': r[1], 'lote': r[2],
+                'diferencia': float(r[3] or 0),
+                'requiere_gerencia': bool(r[4]),
+                'aprobado_gerencia': bool(r[5]),
+                'ajuste_aplicado': bool(r[6]),
+            })
+    except Exception:
+        pass
+    return jsonify({
+        'message': 'Conteo guardado',
+        'items_con_diferencia': items_con_diff,
+        'items': saved_items,
+    })
 
 @bp.route('/api/conteo/<int:conteo_id>/cerrar', methods=['POST'])
 def conteo_cerrar(conteo_id):

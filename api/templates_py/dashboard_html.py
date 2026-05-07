@@ -3902,6 +3902,13 @@ async function iniciarConteo(){
 document.addEventListener('click', function(e){
   var btnProv = e.target.closest && e.target.closest('.cnt-prov-edit');
   var btnDel = e.target.closest && e.target.closest('.cnt-del-lote');
+  // Sebastian 7-may-2026: botón aplicar ajuste por fila (post-guardar)
+  var btnAplicar = e.target.closest && e.target.closest('.cnt-aplicar-ajuste');
+  if(btnAplicar){
+    var idxA = parseInt(btnAplicar.getAttribute('data-idx'),10);
+    if(!isNaN(idxA)) aplicarAjusteFila(idxA);
+    return;
+  }
   if (!btnProv && !btnDel) return;
   var idx = parseInt((btnProv||btnDel).getAttribute('data-idx'),10);
   if (isNaN(idx) || !_conteoItems || !_conteoItems[idx]) return;
@@ -3959,8 +3966,16 @@ async function cargarItemsConteo(est){
       h += '<td id="cnt-diff-'+i+'" style="text-align:right;font-family:monospace;font-weight:700;">--</td>';
       h += '<td id="cnt-pct-'+i+'" style="font-size:0.85em;">--</td>';
       h += '<td><select id="cnt-causa-'+i+'" style="width:140px;padding:5px;border:1px solid #dde;border-radius:6px;font-size:0.8em;"><option value="">Sin diferencia</option>'+causaOpts+'</select></td>';
-      // Acciones: eliminar lote (con motivo) — reusa modal-eliminar-lote
-      h += '<td style="text-align:center;"><button class="cnt-del-lote" data-idx="'+i+'" title="Eliminar lote (motivo obligatorio)" style="padding:3px 8px;font-size:0.75em;background:#c0392b;color:#fff;border-radius:4px;cursor:pointer;">&#128465;</button></td>';
+      // Acciones: eliminar lote (motivo) + aplicar ajuste (admin · post-guardar)
+      h += '<td style="text-align:center;white-space:nowrap;">';
+      // Botón aplicar ajuste · solo aparece si el item ya fue guardado y tiene diff != 0
+      // Se renderiza placeholder · `cntRefreshAjusteButtons()` lo activa después.
+      h += '<button class="cnt-aplicar-ajuste" data-idx="'+i+'" '+
+            'style="display:none;margin-right:4px;padding:3px 8px;font-size:0.75em;'+
+            'background:#16a34a;color:#fff;border:none;border-radius:4px;cursor:pointer;font-weight:700" '+
+            'title="Aplicar ajuste (admin: aprueba >5% como gerencia)">✅ Aplicar</button>';
+      h += '<button class="cnt-del-lote" data-idx="'+i+'" title="Eliminar lote (motivo obligatorio)" style="padding:3px 8px;font-size:0.75em;background:#c0392b;color:#fff;border-radius:4px;cursor:pointer;">&#128465;</button>';
+      h += '</td>';
       h += '</tr>';
     });
     document.getElementById('cnt-tbody').innerHTML = h || '<tr><td colspan="10" style="text-align:center;color:#999;">Sin materiales en esta estanteria con el filtro seleccionado</td></tr>';
@@ -4016,10 +4031,109 @@ async function guardarConteo(){
       var msg = 'Guardado. ';
       if(res.items_con_diferencia > 0) msg += res.items_con_diferencia+' item(s) con diferencias.';
       document.getElementById('cnt-resumen').style.display = 'block';
-      document.getElementById('cnt-resumen').innerHTML = msg + ' Revisa los items marcados con ⚠ GERENCIA antes de cerrar.';
+      document.getElementById('cnt-resumen').innerHTML = msg +
+        ' Click <b>✅ Aplicar</b> en cada fila con diferencia para que el ajuste se cargue al kardex. '+
+        'Diferencias >5% son aprobadas por gerencia (sebastián/alejandro pueden hacerlo desde acá).';
+      // Sebastian 7-may-2026: hidratar _conteoItems con item_id de DB y
+      // mostrar el botón ✅ Aplicar en filas que tienen diff != 0 y aún no se aplicó.
+      if(res.items && res.items.length){
+        cntHidratarItemIds(res.items);
+      }
       await cargarHistorialConteos();
+    } else {
+      alert('Error guardar: '+(res.error||r.status));
     }
   }catch(e){alert('Error: '+e.message);}
+}
+
+// Sebastian 7-may-2026: tras guardar, asocia cada fila con su conteo_items.id
+// (DB) y muestra el botón Aplicar para las que tienen diferencia != 0.
+function cntHidratarItemIds(savedItems){
+  // Index los items DB por (codigo_mp, lote) para emparejar con _conteoItems[i]
+  var idx = {};
+  savedItems.forEach(function(it){
+    var k = (it.codigo_mp||'')+'|'+(it.lote||'');
+    idx[k] = it;
+  });
+  _conteoItems.forEach(function(mp, i){
+    var k = (mp.codigo_mp||'')+'|'+(mp.lote||'');
+    var it = idx[k];
+    if(!it) return;
+    mp._item_id = it.id;
+    mp._diferencia = it.diferencia;
+    mp._aplicado = it.ajuste_aplicado;
+    mp._requiere_gerencia = it.requiere_gerencia;
+    mp._aprobado_gerencia = it.aprobado_gerencia;
+    var btn = document.querySelector('.cnt-aplicar-ajuste[data-idx="'+i+'"]');
+    if(!btn) return;
+    if(it.ajuste_aplicado){
+      btn.style.display = 'none';
+      // Tachar la fila para feedback visual
+      var row = document.getElementById('cnt-row-'+i);
+      if(row) row.style.opacity = '0.6';
+    } else if(Math.abs(it.diferencia) > 0){
+      btn.style.display = 'inline-block';
+      // Si requiere gerencia, etiquetar
+      if(it.requiere_gerencia && !it.aprobado_gerencia){
+        btn.innerHTML = '✅ Aplicar (Gerencia)';
+        btn.style.background = '#7c3aed';
+        btn.title = 'Aprobar como gerencia y aplicar ajuste >5% (admin only)';
+      } else {
+        btn.innerHTML = '✅ Aplicar';
+        btn.style.background = '#16a34a';
+      }
+    }
+  });
+}
+
+// Click en botón ✅ Aplicar de una fila · llama /ajustar con item_id
+async function aplicarAjusteFila(idx){
+  var mp = _conteoItems[idx];
+  if(!mp || !mp._item_id){
+    alert('Primero hacé click en Guardar para que el item tenga ID en la DB.');
+    return;
+  }
+  if(mp._aplicado){
+    alert('Este ajuste ya se aplicó.');
+    return;
+  }
+  var diff = mp._diferencia || 0;
+  var tipo = diff > 0 ? 'Entrada' : 'Salida';
+  var prefix = (mp._requiere_gerencia && !mp._aprobado_gerencia)
+                  ? 'APROBAR como GERENCIA y aplicar ajuste\\n\\n'
+                  : 'Aplicar ajuste\\n\\n';
+  var msg = prefix +
+            'Material: '+(mp.nombre||mp.codigo_mp)+'\\n'+
+            'Diferencia: '+(diff>0?'+':'')+diff.toLocaleString('es-CO')+' g\\n'+
+            'Movimiento: '+tipo+' de '+Math.abs(diff).toLocaleString('es-CO')+' g\\n'+
+            'Lote: '+(mp.lote||'sin lote')+'\\n\\n'+
+            '¿Confirmar?';
+  if(!confirm(msg)) return;
+  try{
+    var r = await fetch('/api/conteo/'+_conteoActivo.id+'/ajustar', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({item_id: mp._item_id})
+    });
+    var d = await r.json();
+    if(!r.ok){
+      alert('Error: '+(d.error||r.status));
+      return;
+    }
+    mp._aplicado = true;
+    mp._aprobado_gerencia = true;
+    var btn = document.querySelector('.cnt-aplicar-ajuste[data-idx="'+idx+'"]');
+    if(btn) btn.style.display = 'none';
+    var row = document.getElementById('cnt-row-'+idx);
+    if(row){ row.style.opacity = '0.6'; row.style.background = '#dcfce7'; }
+    var resumen = document.getElementById('cnt-resumen');
+    if(resumen){
+      resumen.innerHTML = '✅ '+(d.message||'Ajuste aplicado.')+
+                          '<br><small style="color:#16a34a">Movimiento de '+tipo+
+                          ' registrado en kardex con lote AJUSTE-'+_conteoActivo.id+'.</small>';
+    }
+  }catch(e){
+    alert('Error de red: '+e.message);
+  }
 }
 
 async function cerrarConteo(){
