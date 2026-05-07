@@ -2963,6 +2963,19 @@ def conteo_cerrar(conteo_id):
                 continue
 
             # Auto-ajuste para diferencias menores
+            # Sebastian 7-may-2026: aplicar al lote REAL del conteo (no
+            # al sintético) para que la query por lote en Bodega refleje
+            # el cambio. Fallback a 'AJUSTE-CICLICO-<id>' si no hay lote.
+            lote_real = ''
+            try:
+                lote_row = c.execute(
+                    "SELECT COALESCE(lote,'') FROM conteo_items WHERE id=?",
+                    (it_id,)
+                ).fetchone()
+                lote_real = (lote_row[0] if lote_row else '') or ''
+            except Exception:
+                lote_real = ''
+            lote_obj = lote_real or f'AJUSTE-CICLICO-{conteo_id}'
             obs = (f"Ajuste automático conteo cíclico #{conteo_id} | "
                    f"Causa: {causa or 'no indicada'} | Cerrado por: {user}")
             c.execute("""INSERT INTO movimientos
@@ -2970,7 +2983,7 @@ def conteo_cerrar(conteo_id):
                           observaciones, lote, estanteria, estado_lote, operador)
                          VALUES (?,?,?,?,datetime('now'),?,?,?,'VIGENTE',?)""",
                       (codigo, nombre, abs(diff), tipo_mov, obs,
-                       f'AJUSTE-CICLICO-{conteo_id}', estant or '', user))
+                       lote_obj, estant or '', user))
             c.execute("UPDATE conteo_items SET ajuste_aplicado=1 WHERE id=?", (it_id,))
             try:
                 c.execute("""INSERT INTO audit_log
@@ -3111,18 +3124,43 @@ def conteo_ajustar(conteo_id):
     if diff == 0:
         return jsonify({'message': 'Sin diferencia, no se requiere ajuste'})
     tipo_mov = 'Entrada' if diff > 0 else 'Salida'
-    obs = f'Ajuste inventario ciclico #{conteo_id} - {it.get("causa_diferencia","Sin causa")} - Aprobado: {user}'
+    # Sebastian 7-may-2026: usar el LOTE REAL del conteo (it['lote']) para
+    # que el movimiento afecte el kardex del lote correcto y Bodega lo
+    # refleje. Antes usábamos 'AJUSTE-<id>' (lote sintético) y la query por
+    # lote en bodega seguía mostrando el stock viejo del lote original.
+    # Si el conteo no tiene lote (material agregado sin lote), fallback al
+    # sintético 'AJUSTE-<id>' para no perder trazabilidad.
+    lote_objetivo = (it.get('lote') or '').strip() or f'AJUSTE-{conteo_id}'
+    obs = (f'Ajuste inventario ciclico #{conteo_id} - '
+           f'{it.get("causa_diferencia","Sin causa")} - Aprobado: {user}')
     c.execute("""INSERT INTO movimientos (material_id,material_nombre,cantidad,tipo,fecha,observaciones,lote,estanteria,estado_lote,operador)
                  VALUES (?,?,?,?,datetime('now'),?,?,?,'VIGENTE',?)""",
               (it['codigo_mp'], it['nombre_mp'], abs(diff), tipo_mov, obs,
-               'AJUSTE-'+str(conteo_id), it.get('estanteria',''), user))
+               lote_objetivo, it.get('estanteria',''), user))
     c.execute("UPDATE conteo_items SET ajuste_aplicado=1 WHERE id=?", (item_id,))
     c.execute("INSERT INTO audit_log (usuario,accion,tabla,registro_id,detalle,ip,fecha) VALUES (?,?,?,?,?,?,datetime('now'))",
               (user, 'AJUSTE_INVENTARIO', 'conteo_items', str(item_id),
-               f'MP:{it["codigo_mp"]} Diff:{diff}g Causa:{it.get("causa_diferencia","")}',
+               f'MP:{it["codigo_mp"]} Diff:{diff}g Lote:{lote_objetivo} Causa:{it.get("causa_diferencia","")}',
                request.remote_addr))
     conn.commit()
-    return jsonify({'message': f'Ajuste aplicado: {tipo_mov} de {abs(diff):.0f}g para {it["nombre_mp"]}'})
+    # Stock actual post-ajuste (suma todos movimientos del lote)
+    stock_post = 0.0
+    try:
+        row = c.execute("""
+            SELECT COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA')
+                                     THEN cantidad ELSE -cantidad END), 0)
+            FROM movimientos WHERE material_id=? AND lote=?
+        """, (it['codigo_mp'], lote_objetivo)).fetchone()
+        stock_post = float(row[0] or 0)
+    except Exception:
+        pass
+    return jsonify({
+        'message': f'Ajuste aplicado: {tipo_mov} de {abs(diff):.0f}g para {it["nombre_mp"]} (lote {lote_objetivo}). Stock post-ajuste del lote: {stock_post:.0f}g',
+        'lote_ajustado': lote_objetivo,
+        'tipo_movimiento': tipo_mov,
+        'cantidad_g': abs(diff),
+        'stock_lote_post': stock_post,
+    })
 
 @bp.route('/api/conteo/historial', methods=['GET'])
 def conteo_historial():

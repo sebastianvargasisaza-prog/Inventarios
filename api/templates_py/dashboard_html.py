@@ -4127,9 +4127,13 @@ async function aplicarAjusteFila(idx){
     if(row){ row.style.opacity = '0.6'; row.style.background = '#dcfce7'; }
     var resumen = document.getElementById('cnt-resumen');
     if(resumen){
-      resumen.innerHTML = '✅ '+(d.message||'Ajuste aplicado.')+
-                          '<br><small style="color:#16a34a">Movimiento de '+tipo+
-                          ' registrado en kardex con lote AJUSTE-'+_conteoActivo.id+'.</small>';
+      var loteInfo = d.lote_ajustado ? ' (lote '+d.lote_ajustado+')' : '';
+      var stockInfo = (typeof d.stock_lote_post === 'number')
+                        ? '<br><small style="color:#16a34a">Stock post-ajuste del lote: '+
+                          d.stock_lote_post.toLocaleString('es-CO')+' g · '+
+                          'Refrescá Bodega Materias Primas para ver el cambio reflejado.</small>'
+                        : '';
+      resumen.innerHTML = '✅ '+(d.message||'Ajuste aplicado.')+loteInfo+stockInfo;
     }
   }catch(e){
     alert('Error de red: '+e.message);
