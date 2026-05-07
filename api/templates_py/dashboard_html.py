@@ -12216,6 +12216,7 @@ async function ckMarcar(itemId, estado){
   // Sebastian 7-may-2026: borrar producciones de un producto · solo admin.
   // Hard delete · útil para limpiar fantasmas que sobrevivieron al sync
   // (entries manuales viejas con fecha distinta a Calendar).
+  // Si NADA se borra, llamamos al debug endpoint y mostramos por qué.
   async function pv2QuitarProducto(pids, productoNombre){
     if(!pids || !pids.length){ return; }
     var n = pids.length;
@@ -12224,16 +12225,47 @@ async function ckMarcar(itemId, estado){
               'Si la producción está en Calendar, volverá a aparecer al re-sync.\\n\\n'+
               '¿Confirmar?';
     if(!confirm(msg)) return;
-    var fails = 0;
+    var fails = 0; var ok = 0;
     for(var i=0; i<pids.length; i++){
       try{
         var r = await fetch('/api/programacion/produccion-programada/'+pids[i]+'/borrar',
                             {method:'DELETE'});
-        if(!r.ok) fails++;
+        if(r.ok) ok++; else fails++;
       }catch(e){ fails++; }
     }
-    if(fails){
-      alert('Borradas '+(n-fails)+'/'+n+' · '+fails+' fallaron (¿permisos?)');
+    if(ok > 0 && fails === 0){
+      // todo OK · refresh
+      pv2CargarProdFaltantes();
+      return;
+    }
+    // Algo falló · pedir debug para entender por qué
+    try{
+      var rDbg = await fetch('/api/programacion/debug-producto/'+
+                              encodeURIComponent(productoNombre));
+      var dbg = await rDbg.json();
+      if(rDbg.ok && (dbg.entries_db||[]).length){
+        var protegidas = dbg.entries_db.filter(function(e){ return e.protegida_del_sync; });
+        if(protegidas.length){
+          var detalle = protegidas.map(function(e){
+            return '  · id='+e.id+' fecha='+e.fecha_programada+
+                   ' razón: '+(e.razones_guard||[]).join(', ');
+          }).join('\\n');
+          alert('Borradas '+ok+'/'+n+'\\n\\n'+
+                protegidas.length+' protegida(s) por guard de seguridad:\\n'+
+                detalle+'\\n\\n'+
+                'Estas tienen inicio_real_at o inventario_descontado_at set ' +
+                '(ya iniciaron / descontaron). Si querés forzar borrado, '+
+                'pedile a Alejandro que reverta el "iniciar producción" en '+
+                'Operación Live · o contacta a soporte para hard delete admin.');
+          pv2CargarProdFaltantes();
+          return;
+        }
+      }
+      alert('Borradas '+ok+'/'+n+' · '+fails+' fallaron · '+
+            '¿permisos de admin? (debug endpoint disponible: '+
+            '/api/programacion/debug-producto/'+encodeURIComponent(productoNombre)+')');
+    }catch(_e){
+      alert('Borradas '+ok+'/'+n+' · '+fails+' fallaron');
     }
     pv2CargarProdFaltantes();
   }

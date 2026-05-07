@@ -3842,6 +3842,144 @@ def listado_produccion_programada():
     return jsonify({'producciones': out, 'total': len(out)})
 
 
+@bp.route('/api/programacion/debug-producto/<path:producto>', methods=['GET'])
+def debug_producto_estado(producto):
+    """Diagnóstico de un producto: entries DB + eventos Calendar + razones
+    de por qué el sync no las puede tocar.
+
+    Sebastián 7-may-2026 (caso AZHC Lun 11): después de re-sync espejo,
+    una entry sigue ahí · ¿por qué? Este endpoint responde:
+      · Lista de entries en produccion_programada para el producto
+        (id, fecha, lotes, kg, estado, origen, inicio_real_at,
+         inventario_descontado_at, observaciones)
+      · Eventos en Google Calendar que mencionan el SKU
+      · Si el sync las borraría/cancelaría o no (guard explicado)
+
+    Returns:
+      { producto, entries_db: [...], eventos_calendar: [...],
+        sku_to_prod_match: bool, formula_existe: bool }
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    try:
+        from blueprints.compras import ADMIN_USERS as _ADMIN
+    except Exception:
+        _ADMIN = ('sebastian', 'alejandro')
+    if user not in _ADMIN:
+        return jsonify({'error': 'Solo admin'}), 403
+
+    producto_norm = (producto or '').strip().upper()
+    conn = get_db(); c = conn.cursor()
+
+    # Entries DB
+    entries = []
+    try:
+        rows = c.execute("""
+            SELECT id, producto, fecha_programada,
+                   COALESCE(lotes, 1), COALESCE(cantidad_kg, 0),
+                   COALESCE(estado, 'programado'),
+                   COALESCE(origen, 'manual'),
+                   COALESCE(inicio_real_at, ''),
+                   COALESCE(inventario_descontado_at, ''),
+                   COALESCE(observaciones, ''),
+                   COALESCE(area_id, 0)
+            FROM produccion_programada
+            WHERE UPPER(TRIM(producto)) = ?
+            ORDER BY fecha_programada DESC
+        """, (producto_norm,)).fetchall()
+        for r in rows:
+            (id_, prod, fecha, lotes, kg, estado, origen,
+             inicio, descontado, obs, area_id) = r
+            # Razón guard
+            guard_blocks = []
+            if inicio:
+                guard_blocks.append(f'inicio_real_at={inicio}')
+            if descontado:
+                guard_blocks.append(f'inventario_descontado_at={descontado}')
+            if estado.lower() in ('cancelado', 'completado'):
+                guard_blocks.append(f'estado={estado}')
+            entries.append({
+                'id': id_,
+                'producto': prod,
+                'fecha_programada': fecha,
+                'lotes': lotes,
+                'cantidad_kg': kg,
+                'estado': estado,
+                'origen': origen,
+                'inicio_real_at': inicio or None,
+                'inventario_descontado_at': descontado or None,
+                'observaciones': obs[:200] if obs else '',
+                'area_id': area_id,
+                'protegida_del_sync': bool(guard_blocks),
+                'razones_guard': guard_blocks,
+            })
+    except Exception as e:
+        return jsonify({'error': f'DB: {e}'}), 500
+
+    # SKU lookup · ¿Se mapea este producto a algún SKU?
+    sku_match = []
+    try:
+        sku_rows = c.execute(
+            "SELECT sku, activo FROM sku_producto_map WHERE UPPER(producto_nombre)=?",
+            (producto_norm,)
+        ).fetchall()
+        for s, act in sku_rows:
+            sku_match.append({'sku': s, 'activo': bool(act)})
+    except Exception:
+        pass
+
+    # ¿Existe formula?
+    formula_existe = False
+    try:
+        row = c.execute(
+            "SELECT 1 FROM formula_headers WHERE UPPER(TRIM(producto_nombre))=? LIMIT 1",
+            (producto_norm,)
+        ).fetchone()
+        formula_existe = bool(row)
+    except Exception:
+        pass
+
+    # Eventos Calendar (best-effort · puede fallar si no hay credenciales)
+    eventos_cal = []
+    try:
+        cal = _fetch_calendar_events(days_ahead=120)
+        import re as _re
+        for ev in cal.get('events', []):
+            titulo = ev.get('titulo', '') or ''
+            tokens = _re.findall(r'\b([A-Z][A-Z0-9]{1,}[A-Z0-9])\b', titulo.upper())
+            # Si algún SKU del map matchea, o el producto está en el título
+            matches = [s['sku'] for s in sku_match if s['sku'] in tokens]
+            prod_in_title = producto_norm.replace(' ', '') in titulo.upper().replace(' ', '')
+            if matches or prod_in_title:
+                eventos_cal.append({
+                    'titulo': titulo,
+                    'fecha': ev.get('fecha'),
+                    'skus_matcheados': matches,
+                    'producto_en_titulo': prod_in_title,
+                })
+    except Exception as e:
+        eventos_cal = [{'error': str(e)}]
+
+    return jsonify({
+        'producto': producto_norm,
+        'entries_db': entries,
+        'entries_count': len(entries),
+        'eventos_calendar': eventos_cal,
+        'eventos_calendar_count': len([e for e in eventos_cal
+                                         if 'error' not in e]),
+        'sku_match': sku_match,
+        'formula_existe': formula_existe,
+        'hint': (
+            'Si ves entries con protegida_del_sync=true · esas no las borra '
+            'el espejo · usá DELETE /api/programacion/produccion-programada/<id>/borrar'
+            ' o el botón 🗑️ en la UI. Si eventos_calendar está vacío o no '
+            'matchea SKUs · el evento Calendar tiene un título sin SKU '
+            'reconocible o el SKU no está en sku_producto_map.'
+        ),
+    })
+
+
 @bp.route('/api/programacion/produccion-programada/<int:evento_id>/borrar', methods=['DELETE'])
 def borrar_produccion_programada(evento_id):
     """Borra una produccion programada (HARD DELETE, no solo cancelar).
