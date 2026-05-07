@@ -476,3 +476,178 @@ def test_dashboard_html_expone_vista_simple(app, db_clean):
     assert 'modal-prod-detalle' in body
     assert 'Producciones programadas' in body
     assert 'Solicitar TODO faltante' in body
+    # Vista por producto + cleanup duplicados (Sebastian 7-may-2026)
+    assert 'pv2VerProductoAgrupado' in body
+    assert 'pv2LimpiarDuplicados' in body
+    assert 'Limpiar duplicados' in body
+
+
+# ── Vista agrupada por producto ────────────────────────────────────
+
+
+def test_producciones_agrupadas_consolida_misma_producto(app, db_clean):
+    """Un producto con 2 fechas debe aparecer UNA vez en producciones_agrupadas
+    con todas sus fechas listadas y total_kg sumado.
+    """
+    cs = _login(app, 'luis')
+    _seed_mp_y_stock('MP-AGR-1', 'X', 100000)
+    _seed_formula('PROD-AGR', [('MP-AGR-1', 'X', 5000)], lote_size_kg=5)
+    pid_a = _seed_produccion('PROD-AGR', lotes=1, cantidad_kg=5,
+                              fecha_offset_dias=2)
+    pid_b = _seed_produccion('PROD-AGR', lotes=2, cantidad_kg=10,
+                              fecha_offset_dias=10)
+    try:
+        r = cs.get('/api/programacion/producciones-faltantes?dias=30')
+        d = r.get_json()
+        agr = [g for g in (d.get('producciones_agrupadas') or [])
+               if g['producto'] == 'PROD-AGR']
+        assert len(agr) == 1, 'producto debe consolidarse en 1 entry'
+        g = agr[0]
+        assert len(g['fechas']) == 2
+        assert g['total_kg'] == 15  # 5 + 10
+        assert g['total_lotes'] == 3  # 1 + 2
+        # Fechas ordenadas ascendente
+        assert g['fechas'][0]['fecha'] < g['fechas'][1]['fecha']
+    finally:
+        _cleanup(productos=['PROD-AGR'], mps=['MP-AGR-1'],
+                  prod_ids=[pid_a, pid_b])
+
+
+def test_duplicado_sospechoso_marca_clones_dentro_de_7_dias(app, db_clean):
+    """Misma producción (mismo producto + lotes + kg) en fechas dentro de 7d
+    → flag duplicado_sospechoso=True.
+    """
+    cs = _login(app, 'luis')
+    _seed_formula('PROD-DUP', [('MP-DUP', 'X', 1000)], lote_size_kg=1)
+    pid_a = _seed_produccion('PROD-DUP', lotes=1, cantidad_kg=1,
+                              fecha_offset_dias=2)
+    pid_b = _seed_produccion('PROD-DUP', lotes=1, cantidad_kg=1,
+                              fecha_offset_dias=4)  # 2 días después
+    try:
+        r = cs.get('/api/programacion/producciones-faltantes?dias=30')
+        d = r.get_json()
+        agr = [g for g in (d.get('producciones_agrupadas') or [])
+               if g['producto'] == 'PROD-DUP']
+        assert len(agr) == 1
+        assert agr[0]['duplicado_sospechoso'] is True
+        assert agr[0]['duplicados_detalle']
+        # Resumen contiene contador de duplicados
+        res = d.get('resumen', {})
+        assert res.get('n_productos_con_duplicados', 0) >= 1
+    finally:
+        _cleanup(productos=['PROD-DUP'], prod_ids=[pid_a, pid_b])
+
+
+def test_duplicado_no_marca_si_distintos_lotes(app, db_clean):
+    """Mismo producto con DISTINTOS lotes/kg no debe marcar como clon."""
+    cs = _login(app, 'luis')
+    _seed_formula('PROD-NODUP', [('MP-ND', 'X', 1000)], lote_size_kg=1)
+    pid_a = _seed_produccion('PROD-NODUP', lotes=1, cantidad_kg=1,
+                              fecha_offset_dias=2)
+    pid_b = _seed_produccion('PROD-NODUP', lotes=3, cantidad_kg=3,
+                              fecha_offset_dias=4)
+    try:
+        r = cs.get('/api/programacion/producciones-faltantes?dias=30')
+        d = r.get_json()
+        agr = [g for g in (d.get('producciones_agrupadas') or [])
+               if g['producto'] == 'PROD-NODUP']
+        assert len(agr) == 1
+        assert agr[0]['duplicado_sospechoso'] is False
+    finally:
+        _cleanup(productos=['PROD-NODUP'], prod_ids=[pid_a, pid_b])
+
+
+# ── /api/programacion/limpiar-duplicados-producciones ──────────────
+
+
+def test_limpiar_duplicados_dry_run_no_borra(app, db_clean):
+    cs = _login(app, 'sebastian')
+    _seed_formula('PROD-LIMP-DUP', [('MP-LD', 'X', 1000)], lote_size_kg=1)
+    pid_a = _seed_produccion('PROD-LIMP-DUP', lotes=1, cantidad_kg=1,
+                              fecha_offset_dias=2)
+    pid_b = _seed_produccion('PROD-LIMP-DUP', lotes=1, cantidad_kg=1,
+                              fecha_offset_dias=4)
+    try:
+        r = cs.post('/api/programacion/limpiar-duplicados-producciones',
+                    json={'dry_run': True, 'horizonte_dias': 30},
+                    headers=csrf_headers())
+        assert r.status_code == 200
+        d = r.get_json()
+        assert d['ok'] is True
+        assert d['dry_run'] is True
+        assert d['producciones_a_borrar'] >= 1
+        # NO se borraron
+        conn = sqlite3.connect(os.environ['DB_PATH'])
+        cnt = conn.execute(
+            "SELECT COUNT(*) FROM produccion_programada WHERE id IN (?, ?)",
+            (pid_a, pid_b)
+        ).fetchone()[0]
+        conn.close()
+        assert cnt == 2
+    finally:
+        _cleanup(productos=['PROD-LIMP-DUP'], prod_ids=[pid_a, pid_b])
+
+
+def test_limpiar_duplicados_ejecuta_borra_solo_clones(app, db_clean):
+    """Ejecuta cleanup · debe borrar el clon (más tarde) y conservar el ancla."""
+    cs = _login(app, 'sebastian')
+    _seed_formula('PROD-LIMP-EXEC', [('MP-LX', 'X', 1000)], lote_size_kg=1)
+    pid_a = _seed_produccion('PROD-LIMP-EXEC', lotes=1, cantidad_kg=1,
+                              fecha_offset_dias=2)  # ancla (más temprana)
+    pid_b = _seed_produccion('PROD-LIMP-EXEC', lotes=1, cantidad_kg=1,
+                              fecha_offset_dias=5)  # clon
+    try:
+        r = cs.post('/api/programacion/limpiar-duplicados-producciones',
+                    json={'dry_run': False, 'horizonte_dias': 30},
+                    headers=csrf_headers())
+        assert r.status_code == 200, r.data
+        d = r.get_json()
+        assert d['ok'] is True
+        assert d['producciones_borradas'] >= 1
+        # ancla queda, clon borrado
+        conn = sqlite3.connect(os.environ['DB_PATH'])
+        anc = conn.execute(
+            "SELECT 1 FROM produccion_programada WHERE id=?", (pid_a,)
+        ).fetchone()
+        clon = conn.execute(
+            "SELECT 1 FROM produccion_programada WHERE id=?", (pid_b,)
+        ).fetchone()
+        conn.close()
+        assert anc is not None, 'ancla (más temprana) NO debe borrarse'
+        assert clon is None, 'clon (más tarde) DEBE borrarse'
+    finally:
+        _cleanup(productos=['PROD-LIMP-EXEC'], prod_ids=[pid_a, pid_b])
+
+
+def test_limpiar_duplicados_no_toca_descontadas(app, db_clean):
+    """Producciones ya descontadas NO deben aparecer en el plan."""
+    cs = _login(app, 'sebastian')
+    _seed_formula('PROD-LIMP-DESC', [('MP-LDS', 'X', 1000)], lote_size_kg=1)
+    pid_a = _seed_produccion('PROD-LIMP-DESC', lotes=1, cantidad_kg=1,
+                              fecha_offset_dias=2)
+    pid_b = _seed_produccion('PROD-LIMP-DESC', lotes=1, cantidad_kg=1,
+                              fecha_offset_dias=4)
+    # Marcar pid_a como descontada
+    conn = sqlite3.connect(os.environ['DB_PATH'])
+    conn.execute("UPDATE produccion_programada "
+                  "SET inventario_descontado_at='2026-05-01' WHERE id=?",
+                  (pid_a,))
+    conn.commit(); conn.close()
+    try:
+        r = cs.post('/api/programacion/limpiar-duplicados-producciones',
+                    json={'dry_run': True, 'horizonte_dias': 30},
+                    headers=csrf_headers())
+        d = r.get_json()
+        # Buscar plan sobre PROD-LIMP-DESC · no debe haber nada (la única
+        # producción no-descontada es pid_b, no tiene clon)
+        relevant = [g for g in (d.get('plan') or [])
+                    if g['producto'] == 'PROD-LIMP-DESC']
+        assert not relevant, 'no debe planear borrar nada · descontada se ignora'
+    finally:
+        _cleanup(productos=['PROD-LIMP-DESC'], prod_ids=[pid_a, pid_b])
+
+
+def test_limpiar_duplicados_sin_login_401(client):
+    r = client.post('/api/programacion/limpiar-duplicados-producciones',
+                    json={'dry_run': True}, headers=csrf_headers())
+    assert r.status_code == 401

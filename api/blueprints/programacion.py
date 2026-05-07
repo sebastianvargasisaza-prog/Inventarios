@@ -5773,13 +5773,9 @@ def producciones_faltantes():
     cutoff = (hoy + _td(days=dias)).isoformat()
 
     # 1. Cargar producciones programadas pendientes (no descontadas) en horizonte
-    # Sebastian 5-may-2026: incluir area asignada + arrancar desde lunes de
-    # la semana actual (para que UI muestre Lun-Vie completos aunque ya haya
-    # pasado el lunes). El cliente puede filtrar lo que sigue siendo
-    # relevante en frontend.
-    # Calcular lunes de la semana actual
-    dow = hoy.weekday()  # 0=Lun, 6=Dom
-    lunes_actual = (hoy - _td(days=dow)).isoformat()
+    # Sebastian 7-may-2026: filtrar SOLO desde hoy en adelante (no incluir
+    # pasadas). Lo del lunes anterior ya no es accionable para Luis Enrique
+    # · solo es ruido visual. Si quedó sin descontar, se maneja en otro flujo.
     try:
         c.execute("""
             SELECT pp.id, pp.producto, pp.fecha_programada,
@@ -5800,7 +5796,7 @@ def producciones_faltantes():
               AND pp.fecha_programada >= ?
               AND pp.fecha_programada <= ?
             ORDER BY pp.fecha_programada ASC
-        """, (lunes_actual, cutoff))
+        """, (hoy.isoformat(), cutoff))
         prod_rows = c.fetchall()
     except sqlite3.OperationalError:
         # Fallback si areas_planta no existe (esquema legacy)
@@ -5820,7 +5816,7 @@ def producciones_faltantes():
               AND pp.fecha_programada >= ?
               AND pp.fecha_programada <= ?
             ORDER BY pp.fecha_programada ASC
-        """, (lunes_actual, cutoff))
+        """, (hoy.isoformat(), cutoff))
         prod_rows = c.fetchall()
 
     # 2. Cargar formulas (codigo_mp -> [nombre, cantidad_g_por_lote, porcentaje])
@@ -6047,18 +6043,305 @@ def producciones_faltantes():
     provs = {f['proveedor_sugerido'] for f in faltantes_mps if f['proveedor_sugerido']}
     provs |= {f['proveedor_sugerido'] for f in faltantes_mees if f['proveedor_sugerido']}
 
+    # Sebastian 7-may-2026: agrupación por producto · una entry por producto
+    # con TODAS sus fechas listadas, total kg, total lotes, MPs/MEEs faltantes
+    # agregados. Soluciona el ruido visual de "lo mismo aparece en lunes y
+    # miércoles" cuando son producciones duplicadas en `produccion_programada`.
+    #
+    # Detección de duplicados sospechosos: si dos producciones del MISMO
+    # producto tienen exactamente mismos `lotes` y `cantidad_kg` y sus fechas
+    # están dentro de 7 días, marcamos el grupo con `duplicado_sospechoso=True`
+    # — Sebastián decide si limpiar via /api/programacion/limpiar-duplicados-producciones.
+    grupos_por_producto = {}
+    for p in producciones_out:
+        key = (p.get('producto') or '').strip().upper()
+        if not key:
+            continue
+        if key not in grupos_por_producto:
+            grupos_por_producto[key] = {
+                'producto': p.get('producto'),
+                'fechas': [],          # lista de {fecha, pid, lotes, cantidad_kg, estado}
+                'total_kg': 0.0,
+                'total_lotes': 0,
+                'mps_necesarias_set': {},   # codigo_mp -> {nombre, necesario_g}
+                'mees_necesarios_set': {},  # codigo -> {descripcion, necesario_unidades}
+                'unidades_envasadas_total': 0,
+                'duplicado_sospechoso': False,
+                'duplicados_detalle': [],  # entries que disparan la marca
+            }
+        g = grupos_por_producto[key]
+        g['fechas'].append({
+            'pid': p.get('id'),
+            'fecha': p.get('fecha'),
+            'lotes': p.get('lotes', 1),
+            'cantidad_kg': p.get('cantidad_kg', 0),
+            'estado': p.get('estado'),
+            'area_nombre': p.get('area_nombre'),
+        })
+        g['total_kg'] += float(p.get('cantidad_kg') or 0)
+        g['total_lotes'] += int(p.get('lotes') or 0)
+        g['unidades_envasadas_total'] += int(p.get('unidades_envasadas_estimadas') or 0)
+        for m in (p.get('mps_necesarias') or []):
+            cod = m.get('codigo_mp') or ''
+            if not cod:
+                continue
+            existing = g['mps_necesarias_set'].get(cod)
+            if existing:
+                existing['necesario_g'] = (existing.get('necesario_g') or 0) + (m.get('necesario_g') or 0)
+            else:
+                g['mps_necesarias_set'][cod] = {
+                    'codigo_mp': cod,
+                    'nombre': m.get('nombre') or cod,
+                    'necesario_g': m.get('necesario_g') or 0,
+                }
+        for me in (p.get('mees_necesarios') or []):
+            cod = me.get('codigo') or ''
+            if not cod:
+                continue
+            existing = g['mees_necesarios_set'].get(cod)
+            if existing:
+                existing['necesario_unidades'] = (existing.get('necesario_unidades') or 0) + (me.get('necesario_unidades') or 0)
+            else:
+                g['mees_necesarios_set'][cod] = {
+                    'codigo': cod,
+                    'descripcion': me.get('descripcion') or cod,
+                    'tipo': me.get('tipo') or '',
+                    'necesario_unidades': me.get('necesario_unidades') or 0,
+                }
+
+    # Detectar duplicados sospechosos · 2 producciones del mismo producto con
+    # mismos lotes + cantidad_kg y fechas dentro de 7 días = casi seguro un
+    # clon que quedó por sync mal hecho del calendar. Marcar grupo.
+    from datetime import timedelta as _td, date as _date
+    def _parse_iso(s):
+        try:
+            return _date.fromisoformat((s or '')[:10])
+        except (ValueError, TypeError):
+            return None
+    for g in grupos_por_producto.values():
+        fs = g['fechas']
+        if len(fs) <= 1:
+            continue
+        # Comparar pares
+        for i in range(len(fs)):
+            for j in range(i + 1, len(fs)):
+                a, b = fs[i], fs[j]
+                if (a.get('lotes') == b.get('lotes')
+                        and abs(float(a.get('cantidad_kg') or 0)
+                                - float(b.get('cantidad_kg') or 0)) < 0.01):
+                    da, db = _parse_iso(a.get('fecha')), _parse_iso(b.get('fecha'))
+                    if da and db and abs((da - db).days) <= 7:
+                        g['duplicado_sospechoso'] = True
+                        g['duplicados_detalle'].append({
+                            'pid_a': a.get('pid'), 'fecha_a': a.get('fecha'),
+                            'pid_b': b.get('pid'), 'fecha_b': b.get('fecha'),
+                            'lotes': a.get('lotes'),
+                            'cantidad_kg': a.get('cantidad_kg'),
+                            'dias_separacion': abs((da - db).days),
+                        })
+
+    # Convertir sets a listas + ordenar
+    producciones_agrupadas = []
+    for g in grupos_por_producto.values():
+        g['fechas'].sort(key=lambda x: x.get('fecha') or '')
+        g['mps_necesarias'] = sorted(g.pop('mps_necesarias_set').values(),
+                                      key=lambda m: m.get('nombre') or '')
+        g['mees_necesarios'] = sorted(g.pop('mees_necesarios_set').values(),
+                                       key=lambda m: m.get('descripcion') or '')
+        # Faltantes agregados para este producto · join con sets globales
+        mp_falt_set = {f['codigo_mp']: f for f in faltantes_mps}
+        mee_falt_set = {f['codigo']: f for f in faltantes_mees}
+        g['faltantes_mps_count'] = sum(1 for m in g['mps_necesarias']
+                                        if m['codigo_mp'] in mp_falt_set)
+        g['faltantes_mees_count'] = sum(1 for m in g['mees_necesarios']
+                                         if m['codigo'] in mee_falt_set)
+        producciones_agrupadas.append(g)
+    # Orden: con duplicados sospechosos primero, luego por nombre
+    producciones_agrupadas.sort(key=lambda x: (
+        not x['duplicado_sospechoso'],
+        x['producto'] or '',
+    ))
+
     return jsonify({
         'horizonte_dias': dias,
         'producciones': producciones_out,
+        'producciones_agrupadas': producciones_agrupadas,
         'faltantes_mps': faltantes_mps,
         'faltantes_mees': faltantes_mees,
         'resumen': {
             'n_producciones': len(producciones_out),
+            'n_productos_unicos': len(producciones_agrupadas),
+            'n_productos_con_duplicados': sum(1 for g in producciones_agrupadas
+                                                if g['duplicado_sospechoso']),
             'n_mps_faltantes': len(faltantes_mps),
             'n_mees_faltantes': len(faltantes_mees),
             'n_proveedores_unicos': len(provs),
         },
     })
+
+
+@bp.route('/api/programacion/limpiar-duplicados-producciones', methods=['POST'])
+def limpiar_duplicados_producciones():
+    """Detecta y elimina producciones duplicadas en `produccion_programada`.
+
+    Sebastián 7-may-2026 (Luis Enrique): el calendario mostraba la misma
+    producción en lunes y miércoles porque algún sync dejó clones en la
+    tabla. Este endpoint detecta pares con mismo producto + lotes +
+    cantidad_kg dentro de 7 días, conserva la fecha más temprana y borra
+    las posteriores.
+
+    No toca:
+      · Producciones ya descontadas (`inventario_descontado_at` IS NOT NULL)
+      · Producciones canceladas/completadas
+      · Producciones con `inicio_real_at` (ya empezó · es real, no clon)
+
+    Body:
+      {dry_run: bool, horizonte_dias: int}  (default dry_run=True, horizonte=30)
+
+    Returns:
+      200 {ok, dry_run, grupos_detectados, producciones_borradas,
+           plan: [{producto, fechas: [{pid, fecha}]}], mensaje}
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    # Solo COMPRAS+ADMIN+jefe de producción pueden limpiar
+    permitidos = set(COMPRAS_USERS) | set(ADMIN_USERS)
+    if user not in permitidos:
+        return jsonify({'error': 'Solo Compras/Admin/Jefe Producción pueden limpiar'}), 403
+
+    body = request.get_json(silent=True) or {}
+    dry_run = bool(body.get('dry_run', True))
+    try:
+        horizonte = max(7, min(int(body.get('horizonte_dias', 30)), 365))
+    except (ValueError, TypeError):
+        horizonte = 30
+
+    conn = get_db(); c = conn.cursor()
+    fecha_hoy = datetime.now().strftime('%Y-%m-%d')
+    fecha_cutoff = (datetime.now() + timedelta(days=horizonte)).strftime('%Y-%m-%d')
+
+    # Cargar candidatos · producciones que NO están descontadas, ni canceladas/
+    # completadas, ni ya empezadas, en el horizonte.
+    rows = c.execute("""
+        SELECT id, producto, fecha_programada,
+               COALESCE(lotes, 1), COALESCE(cantidad_kg, 0),
+               COALESCE(LOWER(estado), 'pendiente') as estado_norm,
+               COALESCE(inicio_real_at, '') as inicio,
+               COALESCE(inventario_descontado_at, '') as desc_at
+        FROM produccion_programada
+        WHERE COALESCE(inventario_descontado_at, '') = ''
+          AND LOWER(COALESCE(estado, '')) NOT IN ('cancelado', 'completado')
+          AND COALESCE(inicio_real_at, '') = ''
+          AND fecha_programada >= ?
+          AND fecha_programada <= ?
+        ORDER BY producto, fecha_programada ASC
+    """, (fecha_hoy, fecha_cutoff)).fetchall()
+
+    # Agrupar por (producto_norm, lotes, cantidad_kg) y buscar pares dentro de 7d
+    from datetime import date as _date
+    def _iso(s):
+        try:
+            return _date.fromisoformat((s or '')[:10])
+        except (ValueError, TypeError):
+            return None
+
+    grupos = {}
+    for r in rows:
+        pid, producto, fecha, lotes, cant_kg, _est, _ini, _desc = r
+        key = ((producto or '').strip().upper(), int(lotes or 1),
+               round(float(cant_kg or 0), 2))
+        grupos.setdefault(key, []).append({'pid': pid, 'fecha': fecha,
+                                            'producto': producto})
+
+    # Para cada grupo con >1 entries, encontrar clusters de fechas <=7d apart
+    a_borrar = []  # [{pid, producto, fecha}]
+    plan = []      # [{producto, fechas: [{pid, fecha, accion}]}]
+    for (prod_norm, lotes, cant), entries in grupos.items():
+        if len(entries) < 2:
+            continue
+        # Ordenar por fecha
+        entries.sort(key=lambda e: e.get('fecha') or '')
+        # Tomar la primera como "ancla" · borrar las demás SI están dentro de
+        # 7 días de la ancla
+        ancla = entries[0]
+        ancla_d = _iso(ancla['fecha'])
+        if not ancla_d:
+            continue
+        clones = []
+        for e in entries[1:]:
+            ed = _iso(e.get('fecha'))
+            if ed and abs((ed - ancla_d).days) <= 7:
+                clones.append(e)
+        if not clones:
+            continue
+        plan.append({
+            'producto': ancla['producto'],
+            'lotes': lotes, 'cantidad_kg': cant,
+            'fechas': (
+                [{'pid': ancla['pid'], 'fecha': ancla['fecha'],
+                  'accion': 'KEEP (más temprana)'}]
+                + [{'pid': cl['pid'], 'fecha': cl['fecha'], 'accion': 'BORRAR'}
+                   for cl in clones]
+            ),
+        })
+        for cl in clones:
+            a_borrar.append({'pid': cl['pid'], 'producto': ancla['producto'],
+                              'fecha': cl.get('fecha')})
+
+    if dry_run:
+        return jsonify({
+            'ok': True,
+            'dry_run': True,
+            'grupos_detectados': len(plan),
+            'producciones_a_borrar': len(a_borrar),
+            'plan': plan,
+            'mensaje': (f'Detectados {len(plan)} grupos con duplicados · '
+                        f'{len(a_borrar)} producciones se borrarían'),
+        }), 200
+
+    if not a_borrar:
+        return jsonify({
+            'ok': True, 'dry_run': False,
+            'grupos_detectados': 0, 'producciones_borradas': 0,
+            'plan': [], 'mensaje': 'No hay duplicados que limpiar',
+        }), 200
+
+    try:
+        pids = [b['pid'] for b in a_borrar]
+        ph = ','.join(['?'] * len(pids))
+        c.execute(f"DELETE FROM produccion_programada WHERE id IN ({ph})", pids)
+        deleted = c.rowcount or 0
+        try:
+            audit_log(
+                c, usuario=user,
+                accion='LIMPIAR_DUPLICADOS_PRODUCCIONES',
+                tabla='produccion_programada',
+                registro_id='bulk',
+                despues={'grupos': len(plan), 'borradas': deleted,
+                          'horizonte_dias': horizonte},
+                detalle=(f"Borró {deleted} producciones duplicadas en "
+                          f"{len(plan)} grupos · horizonte {horizonte}d"),
+            )
+        except Exception as e:
+            log.warning('audit_log LIMPIAR_DUPLICADOS_PRODUCCIONES falló: %s', e)
+        conn.commit()
+    except Exception as e:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        log.exception('limpiar_duplicados_producciones falló: %s', e)
+        return jsonify({'error': str(e)}), 500
+
+    return jsonify({
+        'ok': True, 'dry_run': False,
+        'grupos_detectados': len(plan),
+        'producciones_borradas': deleted,
+        'plan': plan,
+        'mensaje': (f'✓ Eliminadas {deleted} producciones duplicadas en '
+                     f'{len(plan)} grupos · horizonte {horizonte}d'),
+    }), 200
 
 
 @bp.route('/api/programacion/solicitar-faltantes-bulk', methods=['POST'])

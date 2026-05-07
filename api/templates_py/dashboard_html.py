@@ -6737,6 +6737,7 @@ function _renderProgramacion(d){
           <div id="pv2-vs-resumen" style="font-size:11px;color:#475569;margin-top:3px">Cargando...</div>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button id="pv2-vs-btn-dup" onclick="pv2LimpiarDuplicados()" style="background:#b45309;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:800;cursor:pointer;display:none" title="Borra producciones duplicadas (mismo producto + lotes + kg en 7 días)">🗑️ Limpiar duplicados</button>
           <button id="pv2-vs-btn-solicitar" onclick="pv2SolicitarFaltantesBulk()" style="background:#dc2626;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:800;cursor:pointer;display:none" title="Crea solicitudes de compra agrupadas por proveedor para todo lo faltante">🛒 Solicitar TODO faltante</button>
           <button onclick="pv2CargarProdFaltantes()" style="background:#0f766e;color:#fff;border:none;padding:8px 12px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">↻ Recargar</button>
         </div>
@@ -11978,17 +11979,23 @@ async function ckMarcar(itemId, estado){
   }
 
   async function pv2CargarProdFaltantes(){
-    // Sebastian 5-may-2026: vista calendario LINEAL (sin salas) · solo
-    // columnas de tiempo (días/semanas/meses según horizonte). Cada celda
-    // lista las producciones programadas en ese rango. Click producción
-    // → modal con MP+MEE faltantes.
+    // Sebastian 7-may-2026: vista CONSOLIDADA por PRODUCTO (no por día).
+    // Cada producto aparece UNA card con todas sus fechas listadas adentro.
+    // Si detectamos clones (mismo producto + mismos lotes + mismas kg
+    // dentro de 7 días) marcamos badge ⚠️ y exponemos el botón "Limpiar
+    // duplicados" arriba.
+    //
+    // Soluciona el problema visual de "lo mismo aparece en lunes y miércoles"
+    // que era data duplicada en produccion_programada (sync mal hecho).
     var resumen = document.getElementById('pv2-vs-resumen');
     var out = document.getElementById('pv2-vs-resultado');
     var btn = document.getElementById('pv2-vs-btn-solicitar');
+    var btnDup = document.getElementById('pv2-vs-btn-dup');
     if(!out) return;
     if(resumen) resumen.textContent = '⏳ Calculando...';
     if(btn) btn.style.display = 'none';
-    out.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:20px">⏳ Construyendo calendario...</div>';
+    if(btnDup) btnDup.style.display = 'none';
+    out.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:20px">⏳ Construyendo plan...</div>';
     var dias = _pv2HorizonteDias();
     try{
       var r = await fetch('/api/programacion/producciones-faltantes?dias='+dias);
@@ -11999,169 +12006,261 @@ async function ckMarcar(itemId, estado){
       }
       _PV2_FALTANTES_DATA = d;
       var res = d.resumen || {};
+      var nDup = res.n_productos_con_duplicados || 0;
       if(resumen){
-        resumen.textContent =
-          res.n_producciones+' producciones · '+
-          res.n_mps_faltantes+' MPs faltantes · '+
-          res.n_mees_faltantes+' MEEs faltantes · '+
-          res.n_proveedores_unicos+' proveedores · horizonte '+dias+'d';
+        var txt = (res.n_productos_unicos||0)+' productos · '+
+                  res.n_producciones+' producciones · '+
+                  res.n_mps_faltantes+' MPs faltantes · '+
+                  res.n_mees_faltantes+' MEEs faltantes · '+
+                  res.n_proveedores_unicos+' proveedores · horizonte '+dias+'d';
+        if(nDup) txt += ' · ⚠️ '+nDup+' con clones';
+        resumen.textContent = txt;
       }
       var hayFaltantes = (res.n_mps_faltantes||0)+(res.n_mees_faltantes||0) > 0;
       if(btn) btn.style.display = hayFaltantes ? 'inline-block' : 'none';
+      if(btnDup) btnDup.style.display = nDup > 0 ? 'inline-block' : 'none';
 
-      var producciones = d.producciones || [];
-      if(!producciones.length){
+      var grupos = d.producciones_agrupadas || [];
+      if(!grupos.length){
         out.innerHTML = '<div style="text-align:center;color:#22c55e;padding:30px;font-size:14px">✓ Sin producciones programadas en este horizonte</div>';
         return;
       }
 
-      // Sets de faltantes para color-coding
+      // Index para acceso rápido en el modal: producto_norm → idx en grupos
+      _PV2_FALTANTES_DATA._gruposIdx = {};
+      grupos.forEach(function(g, i){
+        var k = (g.producto||'').trim().toUpperCase();
+        _PV2_FALTANTES_DATA._gruposIdx[k] = i;
+      });
+
+      // Sets de faltantes globales para color-coding
       var mpsFaltantesSet = {};
       (d.faltantes_mps||[]).forEach(function(m){ mpsFaltantesSet[m.codigo_mp]=m; });
       var meesFaltantesSet = {};
       (d.faltantes_mees||[]).forEach(function(m){ meesFaltantesSet[(m.codigo||'').toUpperCase()]=m; });
 
-      // Granularidad según horizonte
-      var granularidad = 'dia';
-      if(dias > 30 && dias <= 90) granularidad = 'semana';
-      else if(dias > 90) granularidad = 'mes';
-
-      // Construir columnas de tiempo · Sebastian 5-may-2026: arrancar desde
-      // LUNES de la semana actual (aunque ya haya pasado), no desde hoy.
-      // Permite ver el ciclo completo Lun-Vie de la semana en curso.
       var hoy = new Date();
       hoy.setHours(0,0,0,0);
       var hoyISO = hoy.toISOString().slice(0,10);
-      // Lunes de la semana actual (getDay: 0=Dom, 1=Lun, ..., 6=Sab)
-      var dow0 = hoy.getDay();
-      var diffLun = (dow0 === 0) ? -6 : (1 - dow0);
-      var lunes = new Date(hoy.getTime() + diffLun * 86400000);
-      var columnas = [];
-      if(granularidad === 'dia'){
-        // Arrancar desde lunes de esta semana · expandir hasta hoy+dias
-        var totalDiasGrid = Math.abs(diffLun) + dias;  // dias pasados + horizonte
-        var nDias = Math.min(totalDiasGrid, 28);  // cap 28 para no saturar
-        for(var i = 0; i < nDias; i++){
-          var dt = new Date(lunes.getTime() + i*86400000);
-          var k = dt.toISOString().slice(0,10);
-          var dowName = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'][dt.getDay()];
-          var esPasado = k < hoyISO;
-          columnas.push({
-            label: dowName+' '+dt.getDate(),
-            fechaIni: k, fechaFin: k,
-            esPasado: esPasado,
-            esHoy: k === hoyISO,
-          });
-        }
-      } else if(granularidad === 'semana'){
-        var nSems = Math.min(Math.ceil(dias / 7), 14);
-        for(var i = 0; i < nSems; i++){
-          var ini = new Date(lunes.getTime() + i*7*86400000);
-          var fin = new Date(ini.getTime() + 6*86400000);
-          columnas.push({
-            label: 'Sem '+(ini.getDate())+'-'+fin.getDate(),
-            fechaIni: ini.toISOString().slice(0,10),
-            fechaFin: fin.toISOString().slice(0,10),
-          });
-        }
-      } else {
-        var ms = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
-        var nMs = Math.min(Math.ceil(dias / 30), 12);
-        var meses = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
-        for(var i = 0; i < nMs; i++){
-          var ini = new Date(ms.getFullYear(), ms.getMonth()+i, 1);
-          var fin = new Date(ms.getFullYear(), ms.getMonth()+i+1, 0);
-          columnas.push({
-            label: meses[ini.getMonth()]+' '+ini.getFullYear(),
-            fechaIni: ini.toISOString().slice(0,10),
-            fechaFin: fin.toISOString().slice(0,10),
-          });
-        }
+      function _fechaChip(f){
+        // Acepta 'YYYY-MM-DD' · devuelve {label, color, bg}
+        var iso = (f.fecha||'').slice(0,10);
+        var d = new Date(iso+'T00:00:00');
+        var dowName = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'][d.getDay()];
+        var esHoy = iso === hoyISO;
+        var esPasado = iso < hoyISO;
+        var lbl = dowName+' '+d.getDate();
+        if(esHoy) lbl += ' · HOY';
+        else if(esPasado) lbl += ' · ya pasó';
+        return {
+          label: lbl,
+          bg: esHoy ? '#0e7490' : (esPasado ? '#cbd5e1' : '#0f766e'),
+          color: '#fff',
+        };
       }
 
-      // Indexar producciones por fecha
-      producciones.forEach(function(p, idx){ p._idx = idx; });
-
-      function prodsEnCol(col){
-        return producciones.filter(function(p){
-          var f = p.fecha || '';
-          return f >= col.fechaIni && f <= col.fechaFin;
-        });
-      }
-
-      // Sebastian 5-may-2026: render LISTA vertical agrupada por fecha.
-      // Cada grupo: header con fecha + cards de producciones debajo.
-      // Mas legible que grid, no se sale del ancho de la pantalla.
+      // Tabla minimalista · una fila por producto único
       var html = '';
-      // Solo mostrar columnas que tengan al menos 1 producción
-      // (no saturar con días vacíos · si no hay nada ese día, no aparece)
-      var grupos = [];
-      columnas.forEach(function(col){
-        var prods = prodsEnCol(col);
-        if(prods.length) grupos.push({col: col, prods: prods});
-      });
-      if(!grupos.length){
-        html = '<div style="text-align:center;color:#22c55e;padding:30px;font-size:14px">✓ Sin producciones en este horizonte</div>';
-      } else {
-        grupos.forEach(function(g){
-          var col = g.col;
-          var prods = g.prods;
-          var headerBg = col.esHoy ? '#0e7490' : (col.esPasado ? '#475569' : '#0f766e');
-          var headerLbl = (col.esHoy ? '★ ' : '') + col.label + (col.esHoy ? ' · HOY' : (col.esPasado ? ' · ya pasó' : ''));
-          html += '<div style="margin-bottom:12px">';
-          html += '<div style="background:'+headerBg+';color:#fff;padding:8px 14px;border-radius:6px 6px 0 0;font-weight:700;font-size:12px;display:flex;justify-content:space-between;align-items:center">';
-          html += '<div>'+_escHTML(headerLbl)+'</div>';
-          html += '<div style="font-size:10px;opacity:0.85;font-weight:600">'+prods.length+' producci'+(prods.length===1?'ón':'ones')+'</div>';
-          html += '</div>';
-          html += '<div style="border:1px solid #e2e8f0;border-top:none;border-radius:0 0 6px 6px;padding:8px;background:'+(col.esPasado?'#f8fafc':'#fff')+';opacity:'+(col.esPasado?'0.75':'1')+'">';
-          // Lista de cards horizontal (flex-wrap)
-          html += '<div style="display:flex;flex-wrap:wrap;gap:6px">';
-          prods.forEach(function(p){
-            var faltMP = (p.mps_necesarias||[]).filter(function(m){ return mpsFaltantesSet[m.codigo_mp]; }).length;
-            var faltMEE = (p.mees_necesarios||[]).filter(function(m){ return meesFaltantesSet[(m.codigo||'').toUpperCase()]; }).length;
-            var hayFalta = faltMP+faltMEE > 0;
-            var col1 = hayFalta ? '#dc2626' : '#16a34a';
-            var bg = hayFalta ? '#fef2f2' : '#f0fdf4';
-            var bd = hayFalta ? '#fecaca' : '#bbf7d0';
-            html += '<div onclick="pv2VerProd('+p._idx+')" '+
-                    'style="background:'+bg+';border:1px solid '+bd+';color:'+col1+';'+
-                    'padding:8px 12px;border-radius:6px;cursor:pointer;'+
-                    'font-size:12px;font-weight:600;line-height:1.4;'+
-                    'min-width:200px;transition:transform 0.1s" '+
-                    'onmouseover="this.style.transform=\\'translateY(-1px)\\';" '+
-                    'onmouseout="this.style.transform=\\'\\';" '+
-                    'title="click para ver MP+MEE faltantes">';
-            html += '<div style="font-weight:700;font-size:13px">'+_escHTML(p.producto||'')+' '+(hayFalta?'⚠':'✓')+'</div>';
-            html += '<div style="opacity:0.85;font-size:11px;margin-top:3px;color:#64748b">'+
-                    (p.cantidad_kg||0)+' kg · '+(p.lotes||1)+' lote'+(p.lotes>1?'s':'');
-            if(hayFalta){
-              html += ' · '+faltMP+(faltMP===1?' MP':' MPs')+' · '+faltMEE+(faltMEE===1?' MEE':' MEEs');
-            }
-            html += '</div>';
-            html += '</div>';
-          });
-          html += '</div>';
-          html += '</div>';
-          html += '</div>';
-        });
-      }
-
-      // Resumen abajo si hay faltantes
-      if(hayFaltantes){
-        html += '<div style="margin-top:14px;padding:12px 14px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px">';
-        html += '<div style="font-weight:700;color:#991b1b;font-size:12px;margin-bottom:6px">📦 Faltantes agregados (todas las producciones del horizonte)</div>';
-        html += '<div style="font-size:11px;color:#7f1d1d">'+
-                (d.faltantes_mps||[]).length+' MPs · '+
-                (d.faltantes_mees||[]).length+' MEEs · '+
-                res.n_proveedores_unicos+' proveedores. '+
-                'Click <b>Solicitar TODO</b> arriba para crear solicitudes en bloque.</div>';
+      if(nDup){
+        html += '<div style="margin-bottom:10px;padding:10px 14px;'+
+                'background:#fef3c7;border:1px solid #fcd34d;'+
+                'border-radius:6px;display:flex;align-items:center;'+
+                'justify-content:space-between;gap:10px;flex-wrap:wrap">';
+        html += '<div style="font-size:12px;color:#78350f">'+
+                '<b>⚠️ '+nDup+' producto'+(nDup!==1?'s':'')+
+                ' con clones detectados</b> '+
+                '<span style="opacity:0.85">(mismo producto + lotes/kg dentro de 7 días)</span>'+
+                '</div>';
+        html += '<button onclick="pv2LimpiarDuplicados()" '+
+                'style="background:#b45309;color:#fff;border:none;'+
+                'padding:6px 12px;border-radius:5px;font-size:11px;'+
+                'font-weight:700;cursor:pointer">🗑️ Limpiar</button>';
         html += '</div>';
       }
+      html += '<table style="width:100%;border-collapse:collapse;font-size:12px">';
+      html += '<thead><tr style="border-bottom:2px solid #e2e8f0;'+
+              'background:#f8fafc">'+
+              '<th style="text-align:left;padding:8px 10px;font-weight:700;'+
+              'color:#64748b">Producto</th>'+
+              '<th style="text-align:left;padding:8px 10px;font-weight:700;'+
+              'color:#64748b;width:100px">Próxima</th>'+
+              '<th style="text-align:right;padding:8px 10px;font-weight:700;'+
+              'color:#64748b;width:80px">Kg</th>'+
+              '<th style="text-align:right;padding:8px 10px;font-weight:700;'+
+              'color:#64748b;width:60px">Lotes</th>'+
+              '<th style="text-align:left;padding:8px 10px;font-weight:700;'+
+              'color:#64748b;width:140px">Estado</th>'+
+              '</tr></thead><tbody>';
+      grupos.forEach(function(g, idx){
+        var faltMP = g.faltantes_mps_count || 0;
+        var faltMEE = g.faltantes_mees_count || 0;
+        var hayFalta = (faltMP + faltMEE) > 0;
+        var dup = !!g.duplicado_sospechoso;
+        var proxFecha = (g.fechas && g.fechas[0] && g.fechas[0].fecha) || '';
+        var nFechas = (g.fechas||[]).length;
+        // Próxima fecha en formato Día/Mes
+        var proxLbl = '-';
+        if(proxFecha){
+          var dt = new Date(proxFecha+'T00:00:00');
+          var dowName = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'][dt.getDay()];
+          proxLbl = dowName+' '+dt.getDate();
+        }
+        // Estado
+        var estadoTxt, estadoCol;
+        if(hayFalta){
+          estadoTxt = 'Falta '+faltMP+(faltMP===1?' MP':' MPs');
+          if(faltMEE) estadoTxt += ' · '+faltMEE+(faltMEE===1?' MEE':' MEEs');
+          estadoCol = '#dc2626';
+        } else {
+          estadoTxt = '✓ Listo';
+          estadoCol = '#16a34a';
+        }
+        var fechasTooltip = (g.fechas||[])
+          .map(function(f){ return (f.fecha||'').slice(0,10)+' · '+(f.lotes||1)+'L · '+(f.cantidad_kg||0)+'kg'; })
+          .join(' | ');
+        html += '<tr onclick="pv2VerProductoAgrupado('+idx+')" '+
+                'style="border-bottom:1px solid #f1f5f9;cursor:pointer" '+
+                'onmouseover="this.style.background=\\'#f8fafc\\'" '+
+                'onmouseout="this.style.background=\\'transparent\\'" '+
+                'title="'+_escHTML(fechasTooltip)+'">';
+        html += '<td style="padding:8px 10px;font-weight:600;color:#1e293b">'+
+                _escHTML(g.producto||'');
+        if(dup){
+          html += ' <span style="background:#fef3c7;color:#92400e;'+
+                  'padding:1px 6px;border-radius:3px;font-size:9px;'+
+                  'font-weight:700;margin-left:4px" title="Clones detectados">CLONES</span>';
+        }
+        html += '</td>';
+        html += '<td style="padding:8px 10px;color:#64748b">'+_escHTML(proxLbl);
+        if(nFechas > 1){
+          html += ' <span style="color:#94a3b8;font-size:10px">+'+(nFechas-1)+'</span>';
+        }
+        html += '</td>';
+        html += '<td style="padding:8px 10px;text-align:right;color:#475569">'+
+                Number(g.total_kg||0).toFixed(1)+'</td>';
+        html += '<td style="padding:8px 10px;text-align:right;color:#475569">'+
+                (g.total_lotes||0)+'</td>';
+        html += '<td style="padding:8px 10px;color:'+estadoCol+';'+
+                'font-weight:600">'+_escHTML(estadoTxt)+'</td>';
+        html += '</tr>';
+      });
+      html += '</tbody></table>';
 
       out.innerHTML = html;
     }catch(e){
       out.innerHTML = '<div style="color:#dc2626;padding:18px;text-align:center">Error red: '+_escHTML(e.message)+'</div>';
     }
+  }
+
+  // Sebastian 7-may-2026: limpiar duplicados de produccion_programada · 2 pasos
+  async function pv2LimpiarDuplicados(){
+    var dias = _pv2HorizonteDias();
+    try{
+      var rDry = await fetch('/api/programacion/limpiar-duplicados-producciones',
+        _fetchOpts('POST', {dry_run: true, horizonte_dias: dias}));
+      var dDry = await rDry.json();
+      if(!rDry.ok){ alert('Error preview: '+(dDry.error||rDry.status)); return; }
+      if((dDry.producciones_a_borrar||0) === 0){
+        alert('✓ No hay duplicados que limpiar en este horizonte.');
+        return;
+      }
+      var detalle = (dDry.plan||[]).slice(0,8).map(function(g){
+        var fs = g.fechas.map(function(f){
+          return f.fecha+(f.accion==='BORRAR'?' (BORRAR)':' (KEEP)');
+        }).join(' · ');
+        return '  · '+g.producto+': '+fs;
+      }).join('\\n');
+      if((dDry.plan||[]).length > 8){
+        detalle += '\\n  ... y '+((dDry.plan||[]).length-8)+' grupos más';
+      }
+      var msg = 'LIMPIAR DUPLICADOS de produccion_programada\\n\\n'+
+        'Va a borrar '+dDry.producciones_a_borrar+' producciones duplicadas\\n'+
+        '(en '+dDry.grupos_detectados+' grupos · horizonte '+dias+'d)\\n\\n'+
+        'Conserva la fecha más temprana de cada grupo.\\n'+
+        'No toca producciones ya descontadas / canceladas / iniciadas.\\n\\n'+
+        'Plan:\\n'+detalle+'\\n\\n¿Confirmar?';
+      if(!confirm(msg)) return;
+
+      var r = await fetch('/api/programacion/limpiar-duplicados-producciones',
+        _fetchOpts('POST', {dry_run: false, horizonte_dias: dias}));
+      var d = await r.json();
+      if(!r.ok){ alert('Error: '+(d.error||r.status)); return; }
+      alert('✓ '+d.mensaje);
+      pv2CargarProdFaltantes();
+    }catch(e){ alert('Error de red: '+e.message); }
+  }
+
+  // Click en card del producto agrupado · abre modal con MPs/MEEs faltantes
+  // y lista de fechas. Reusa el modal existente con vista consolidada.
+  function pv2VerProductoAgrupado(idx){
+    if(!_PV2_FALTANTES_DATA || !_PV2_FALTANTES_DATA.producciones_agrupadas) return;
+    var g = _PV2_FALTANTES_DATA.producciones_agrupadas[idx];
+    if(!g) return;
+    var d = _PV2_FALTANTES_DATA;
+    var mpsFalt = {}; (d.faltantes_mps||[]).forEach(function(m){ mpsFalt[m.codigo_mp]=m; });
+    var meesFalt = {}; (d.faltantes_mees||[]).forEach(function(m){ meesFalt[(m.codigo||'').toUpperCase()]=m; });
+
+    document.getElementById('mpd-titulo').textContent = g.producto || 'Producto';
+    var fechasLbl = (g.fechas||[]).map(function(f){
+      return (f.fecha||'').slice(0,10)+' ('+(f.lotes||1)+'L·'+(f.cantidad_kg||0)+'kg)';
+    }).join(' · ');
+    var sub = (g.fechas||[]).length+' fecha'+((g.fechas||[]).length!==1?'s':'')+
+              ' · '+(g.total_lotes||0)+' lotes · '+
+              Number(g.total_kg||0).toFixed(1)+' kg total';
+    if(g.duplicado_sospechoso){
+      sub += ' · ⚠️ DUPLICADOS DETECTADOS';
+    }
+    var subEl = document.getElementById('mpd-subtitulo');
+    if(subEl){
+      subEl.textContent = sub;
+      subEl.title = fechasLbl;
+    }
+
+    // MPs · usa los necesarios agregados del grupo
+    var bodyMP = document.getElementById('mpd-mps');
+    if(bodyMP){
+      var mps = (g.mps_necesarias||[]).map(function(m){
+        var f = mpsFalt[m.codigo_mp];
+        var col = f ? '#dc2626' : '#16a34a';
+        var bg = f ? '#fef2f2' : '#f0fdf4';
+        var statusTxt = f
+          ? ('FALTA '+Number(f.faltante_g||0).toLocaleString('es-CO')+' g')
+          : 'OK';
+        return '<div style="background:'+bg+';border-left:3px solid '+col+
+               ';padding:8px 12px;margin-bottom:4px;border-radius:0 4px 4px 0">'+
+               '<div style="font-weight:700;font-size:12px;color:#1e293b">'+
+                _escHTML(m.nombre||m.codigo_mp)+'</div>'+
+               '<div style="font-size:11px;color:'+col+'">'+
+               'Necesita '+Number(m.necesario_g||0).toLocaleString('es-CO')+' g · '+
+               statusTxt+'</div>'+
+               '</div>';
+      }).join('');
+      bodyMP.innerHTML = mps || '<div style="color:#94a3b8;font-size:11px;padding:6px">Sin MPs necesarias</div>';
+    }
+
+    // MEEs
+    var bodyMEE = document.getElementById('mpd-mees');
+    if(bodyMEE){
+      var mees = (g.mees_necesarios||[]).map(function(m){
+        var f = meesFalt[(m.codigo||'').toUpperCase()];
+        var col = f ? '#dc2626' : '#16a34a';
+        var bg = f ? '#fef2f2' : '#f0fdf4';
+        var statusTxt = f
+          ? ('FALTA '+Number(f.faltante_u||0).toLocaleString('es-CO')+' u')
+          : 'OK';
+        return '<div style="background:'+bg+';border-left:3px solid '+col+
+               ';padding:8px 12px;margin-bottom:4px;border-radius:0 4px 4px 0">'+
+               '<div style="font-weight:700;font-size:12px;color:#1e293b">'+
+                _escHTML(m.descripcion||m.codigo)+'</div>'+
+               '<div style="font-size:11px;color:'+col+'">'+
+               'Necesita '+Number(m.necesario_unidades||0).toLocaleString('es-CO')+' u · '+
+               statusTxt+'</div>'+
+               '</div>';
+      }).join('');
+      bodyMEE.innerHTML = mees || '<div style="color:#94a3b8;font-size:11px;padding:6px">Sin MEEs necesarios</div>';
+    }
+
+    document.getElementById('modal-prod-detalle').style.display = 'flex';
   }
 
   // Sebastian 5-may-2026: click producción en calendario · abre modal
