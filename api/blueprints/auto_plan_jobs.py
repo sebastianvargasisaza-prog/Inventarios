@@ -599,6 +599,14 @@ JOBS_SCHEDULE = [
     ('monthly_financial',     8,  0, None, [1],                 'job_monthly_financial_summary'),
     # ⭐ Planta · diario 6:30am · detector de drift inventario MP/MEE (cero sesgo continuo)
     ('drift_detector_inv',    6, 30, None, None,                'job_drift_detector_inventario'),
+    # ⭐ Watcher · zero-error sprint día 4 · pega health/critical-paths cada hora
+    # Si algún check status=='critical' → mail a EMAIL_GERENCIA.
+    # Schedule: cada hora a :07 (offset para no chocar con :00 jobs).
+    # Cada hora usa job_name distinto (watcher_health_HH) porque el dedup
+    # `_ya_ejecutado_hoy` agrupa por job_name. Todas llaman al mismo callable.
+] + [
+    (f'watcher_health_{h:02d}', h, 7, None, None, 'job_watcher_health')
+    for h in range(24)
 ]
 
 
@@ -2695,6 +2703,106 @@ def job_drift_detector_inventario(app):
         except Exception as e:
             log.exception('drift_detector_inventario fallo: %s', e)
             return False, {'error': str(e)[:300]}, 0
+
+
+def job_watcher_health(app):
+    """Watcher hourly · ejecuta /api/admin/health/critical-paths internamente
+    y manda mail a EMAIL_GERENCIA si status='critical'.
+
+    Sebastián 7-may-2026 (zero-error sprint día 4): el Watcher detecta
+    bugs en prod antes que los descubra el usuario. Se ejecuta cada
+    hora a :07 (24 entries en JOBS_SCHEDULE con dedup separado).
+
+    Returns: (ok, resumen_dict, _)
+    """
+    with app.app_context():
+        try:
+            # Ejecutar el endpoint internamente (sin HTTP request).
+            # Replica la lógica del endpoint admin_health_critical_paths
+            # pero sin requerir admin session.
+            from blueprints.admin import admin_health_critical_paths
+            from flask import session as _s
+            with app.test_request_context('/api/admin/health/critical-paths'):
+                _s['compras_user'] = 'sistema_watcher'
+                _s['_admin_override_for_watcher'] = True
+                # Bypass del _require_admin para invocar la función pura
+                # · crear admin context manualmente
+                from config import ADMIN_USERS as _ADMIN
+                _s['compras_user'] = next(iter(_ADMIN), 'sebastian')
+                resp = admin_health_critical_paths()
+            # resp es Response de Flask · extraer json
+            if isinstance(resp, tuple):
+                payload, status_code = resp[0].get_json(), resp[1]
+            else:
+                payload, status_code = resp.get_json(), resp.status_code
+            crit_count = (payload or {}).get('critical_count', 0)
+            if crit_count > 0:
+                # Hay críticos · alertar
+                _enviar_mail_watcher(payload)
+                return True, {
+                    'status': payload.get('status'),
+                    'critical_count': crit_count,
+                    'warn_count': payload.get('warn_count', 0),
+                    'mail_sent': True,
+                    'failing_checks': [
+                        c['name'] for c in payload.get('checks', [])
+                        if c.get('status') == 'critical'
+                    ],
+                }, 0
+            return True, {
+                'status': payload.get('status', 'unknown'),
+                'critical_count': 0,
+                'warn_count': payload.get('warn_count', 0),
+                'mail_sent': False,
+            }, 0
+        except Exception as e:
+            log.exception('watcher_health fallo: %s', e)
+            return False, {'error': str(e)[:300]}, 0
+
+
+def _enviar_mail_watcher(payload):
+    """Manda mail a EMAIL_GERENCIA con los críticos detectados."""
+    try:
+        from notificaciones import SistemaNotificaciones
+        import os as _os
+        sn = SistemaNotificaciones()
+        if not (sn.email_remitente and sn.contraseña):
+            log.warning('watcher: sin SMTP config · skip mail')
+            return
+        gerencia_raw = _os.environ.get('EMAIL_GERENCIA', '').strip()
+        if gerencia_raw:
+            destinatarios = [e.strip() for e in gerencia_raw.split(',')
+                             if e.strip() and '@' in e.strip()]
+        else:
+            destinatarios = [sn.email_remitente]
+        crits = [c for c in payload.get('checks', [])
+                 if c.get('status') == 'critical']
+        items_html = ''.join([
+            f"<li><strong>{c['name']}</strong>: {c['detail']}</li>"
+            for c in crits
+        ])
+        body = f"""<html><body style="font-family:Arial,sans-serif">
+        <h2 style="color:#c62828">⚠ Watcher detectó {len(crits)} check(s) crítico(s)</h2>
+        <p>Sistema EOS Inventarios · health check hourly.</p>
+        <ul>{items_html}</ul>
+        <p>Acción sugerida: revisar <a href="https://app.eossuite.com/admin">/admin</a>
+        para ver el estado completo.</p>
+        <p style="color:#666;font-size:11px">
+          Total checks: {payload.get('total_checks')} ·
+          Críticos: {payload.get('critical_count')} ·
+          Warnings: {payload.get('warn_count')} ·
+          OK: {payload.get('ok_count')}
+        </p>
+        </body></html>"""
+        sn.enviar_en_background(
+            sn._enviar_email,
+            asunto=f"[EOS] Watcher: {len(crits)} check(s) críticos en producción",
+            body=body,
+            destinatarios=destinatarios,
+        )
+        log.info(f'watcher: mail enviado a {len(destinatarios)} destinatarios')
+    except Exception as e:
+        log.warning(f'watcher mail fallo (best-effort): {e}')
 
 
 def _loop_multi_cron(app):

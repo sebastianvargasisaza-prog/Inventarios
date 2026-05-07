@@ -222,6 +222,236 @@ def admin_users_list():
     return jsonify({"users": out, "total": len(out)})
 
 
+@bp.route("/api/admin/health/critical-paths", methods=["GET"])
+def admin_health_critical_paths():
+    """Health check de invariantes críticas en producción.
+
+    Sebastián 7-may-2026 (zero-error sprint día 4): el Watcher cron pega
+    este endpoint cada 15 min. Si algún check falla (status='critical')
+    se manda email a EMAIL_GERENCIA.
+
+    Devuelve UN status global y por check:
+      · ok       · todo bien
+      · warn     · anomalía menor, no bloquea operación
+      · critical · bug que afecta usuarios YA · alerta inmediata
+
+    Checks (ALL READ-ONLY · no muta data):
+      1. tablas_criticas · core tables existen y tienen filas
+      2. indexes_criticos · indexes de performance presentes
+      3. producciones_zombie · iniciadas hace >30d sin completar
+      4. sols_planta_huerfanas · planta SOLs sin OC vencidas
+      5. last_calendar_sync · sync se ejecutó <2h
+      6. last_backup · backup <30h (Sebastián tolerante)
+      7. agent_memory_smoke · tabla nueva responde
+      8. movimientos_consistency · ningún tipo distinto de Entrada/Salida
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    import time as _time
+    t0 = _time.time()
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    checks = []
+
+    def _check(name, status, detail, value=None, threshold=None):
+        checks.append({
+            'name': name, 'status': status, 'detail': detail,
+            'value': value, 'threshold': threshold,
+        })
+
+    # 1. tablas críticas existen
+    try:
+        critical_tables = [
+            'movimientos', 'maestro_mps', 'produccion_programada',
+            'solicitudes_compra', 'conteos_fisicos', 'conteo_items',
+            'audit_log', 'mp_lead_time_config', 'agent_memory',
+        ]
+        missing = []
+        for t in critical_tables:
+            row = c.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+                (t,)
+            ).fetchone()
+            if not row:
+                missing.append(t)
+        if missing:
+            _check('tablas_criticas', 'critical',
+                   f'Faltan tablas: {", ".join(missing)}', value=missing)
+        else:
+            _check('tablas_criticas', 'ok',
+                   f'{len(critical_tables)} tablas presentes',
+                   value=len(critical_tables))
+    except Exception as e:
+        _check('tablas_criticas', 'critical', f'Error query: {e}')
+
+    # 2. indexes críticos
+    try:
+        critical_indexes = [
+            'idx_mov_material', 'idx_mov_lote', 'idx_mov_fecha',
+            'idx_oc_estado', 'idx_sol_estado',
+        ]
+        rows = c.execute(
+            "SELECT name FROM sqlite_master WHERE type='index'"
+        ).fetchall()
+        existing = {r[0] for r in rows}
+        missing = [i for i in critical_indexes if i not in existing]
+        if missing:
+            _check('indexes_criticos', 'warn',
+                   f'Faltan indexes (degrade performance): {missing}',
+                   value=missing)
+        else:
+            _check('indexes_criticos', 'ok',
+                   f'{len(critical_indexes)} indexes verificados')
+    except Exception as e:
+        _check('indexes_criticos', 'warn', f'Error query: {e}')
+
+    # 3. producciones zombie (iniciadas hace >30d sin completar)
+    try:
+        rows = c.execute("""
+            SELECT COUNT(*), GROUP_CONCAT(producto || ' (' || fecha_programada || ')', ', ')
+            FROM produccion_programada
+            WHERE inicio_real_at IS NOT NULL
+              AND COALESCE(estado, '') NOT IN ('completado', 'cancelado')
+              AND date(fecha_programada) < date('now', '-30 days')
+        """).fetchone()
+        n = rows[0] or 0
+        if n > 5:
+            _check('producciones_zombie', 'critical',
+                   f'{n} producciones iniciadas hace >30d sin cerrar', value=n,
+                   threshold='>5')
+        elif n > 0:
+            _check('producciones_zombie', 'warn',
+                   f'{n} producciones iniciadas hace >30d', value=n)
+        else:
+            _check('producciones_zombie', 'ok', 'sin zombies', value=0)
+    except Exception as e:
+        _check('producciones_zombie', 'warn', f'Error: {e}')
+
+    # 4. SOLs planta huérfanas (Pendientes >14d sin OC)
+    try:
+        n = c.execute("""
+            SELECT COUNT(*) FROM solicitudes_compra
+            WHERE estado='Pendiente' AND COALESCE(numero_oc,'') = ''
+              AND categoria IN ('Materia Prima','Empaque','Material de Empaque')
+              AND date(fecha) < date('now', '-14 days')
+        """).fetchone()[0] or 0
+        if n > 20:
+            _check('sols_planta_huerfanas', 'warn',
+                   f'{n} SOLs planta Pendientes >14d sin OC · considera Limpiar',
+                   value=n, threshold='>20')
+        else:
+            _check('sols_planta_huerfanas', 'ok',
+                   f'{n} SOLs planta Pendientes >14d', value=n)
+    except Exception as e:
+        _check('sols_planta_huerfanas', 'warn', f'Error: {e}')
+
+    # 5. last calendar sync < 2h
+    try:
+        row = c.execute("""
+            SELECT MAX(last_run_at) FROM _sync_log WHERE sync_type='calendar'
+        """).fetchone()
+        last_sync = row[0] if row else None
+        if not last_sync:
+            _check('last_calendar_sync', 'warn',
+                   'Nunca corrió un sync de calendar')
+        else:
+            # Parse ISO timestamp
+            from datetime import datetime as _dt
+            try:
+                ts = _dt.fromisoformat(last_sync.replace('Z', '+00:00'))
+                age_min = (_dt.utcnow() - ts.replace(tzinfo=None)).total_seconds() / 60
+            except Exception:
+                age_min = 99999
+            if age_min > 120:
+                _check('last_calendar_sync', 'critical',
+                       f'Sync no corre desde {age_min:.0f}min (>2h)',
+                       value=round(age_min), threshold='>120 min')
+            else:
+                _check('last_calendar_sync', 'ok',
+                       f'Sync hace {age_min:.0f}min', value=round(age_min))
+    except sqlite3.OperationalError:
+        _check('last_calendar_sync', 'warn', 'Tabla _sync_log no existe')
+    except Exception as e:
+        _check('last_calendar_sync', 'warn', f'Error: {e}')
+
+    # 6. last backup < 30h
+    try:
+        row = c.execute("""
+            SELECT MAX(completed_at) FROM backup_log WHERE status='ok'
+        """).fetchone()
+        last_bk = row[0] if row else None
+        if not last_bk:
+            _check('last_backup', 'warn', 'No hay backups exitosos')
+        else:
+            from datetime import datetime as _dt
+            try:
+                ts = _dt.fromisoformat(last_bk.replace('Z', '+00:00'))
+                age_h = (_dt.utcnow() - ts.replace(tzinfo=None)).total_seconds() / 3600
+            except Exception:
+                age_h = 999
+            if age_h > 30:
+                _check('last_backup', 'critical',
+                       f'Sin backup en {age_h:.1f}h (>30h)',
+                       value=round(age_h, 1), threshold='>30 h')
+            else:
+                _check('last_backup', 'ok',
+                       f'Backup hace {age_h:.1f}h', value=round(age_h, 1))
+    except sqlite3.OperationalError:
+        _check('last_backup', 'warn', 'Tabla backup_log no existe')
+    except Exception as e:
+        _check('last_backup', 'warn', f'Error: {e}')
+
+    # 7. agent_memory smoke (tabla nueva del Día 3 respondiendo)
+    try:
+        n = c.execute("SELECT COUNT(*) FROM agent_memory").fetchone()[0]
+        _check('agent_memory_smoke', 'ok',
+               f'{n} entries · tabla viva', value=n)
+    except Exception as e:
+        _check('agent_memory_smoke', 'critical',
+               f'Tabla agent_memory falló: {e}')
+
+    # 8. movimientos consistency · tipos válidos
+    try:
+        invalid = c.execute("""
+            SELECT COUNT(*) FROM movimientos
+            WHERE tipo NOT IN ('Entrada','Salida','entrada','salida','ENTRADA','SALIDA')
+              AND tipo IS NOT NULL AND tipo != ''
+        """).fetchone()[0] or 0
+        if invalid > 0:
+            _check('movimientos_consistency', 'critical',
+                   f'{invalid} movimientos con tipo inválido', value=invalid)
+        else:
+            _check('movimientos_consistency', 'ok',
+                   'Todos los movimientos tienen tipo válido')
+    except Exception as e:
+        _check('movimientos_consistency', 'warn', f'Error: {e}')
+
+    conn.close()
+
+    # Status global = peor de todos
+    has_critical = any(c['status'] == 'critical' for c in checks)
+    has_warn = any(c['status'] == 'warn' for c in checks)
+    if has_critical:
+        global_status = 'critical'
+    elif has_warn:
+        global_status = 'warn'
+    else:
+        global_status = 'ok'
+
+    elapsed_ms = round((_time.time() - t0) * 1000, 1)
+    return jsonify({
+        'status': global_status,
+        'checks': checks,
+        'critical_count': sum(1 for c in checks if c['status'] == 'critical'),
+        'warn_count': sum(1 for c in checks if c['status'] == 'warn'),
+        'ok_count': sum(1 for c in checks if c['status'] == 'ok'),
+        'total_checks': len(checks),
+        'elapsed_ms': elapsed_ms,
+    }), 200 if global_status != 'critical' else 503
+
+
 @bp.route("/api/admin/agent-memory", methods=["GET", "POST"])
 def admin_agent_memory():
     """CRUD de la tabla agent_memory · memoria persistente entre sesiones IA.
