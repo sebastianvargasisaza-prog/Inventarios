@@ -4,6 +4,59 @@ Procedimientos para situaciones comunes y de emergencia. Mantener al día.
 
 ---
 
+## ⭐ Sistema anti-regresión (Sebastián 7-may-2026)
+
+Para que cambios futuros NO rompan flujos que ya funcionan:
+
+### Setup inicial (UNA vez después de clonar)
+
+```bash
+bash scripts/install_hooks.sh
+```
+
+Esto instala 2 git hooks:
+- **pre-commit** → corre `scripts/reviewer.py` (warnings + checks de contract)
+- **pre-push** → corre `scripts/guardian.sh --quick` (5 golden paths · ~3s)
+
+### Flujo de cambios protegido
+
+```
+1. Editás código
+2. git add ...
+3. git commit -m "..."
+   ↳ Reviewer revisa diff · si BLOCK, corregí antes de seguir
+4. git push origin main
+   ↳ Guardian corre golden paths · si rojo, push abortado
+5. Si todo verde → push exitoso → Render deploya
+```
+
+### Comandos útiles
+
+```bash
+# Correr Guardian manual antes de commit
+bash scripts/guardian.sh --quick   # solo golden paths · ~3s
+bash scripts/guardian.sh --full    # + smoke + 3fuentes + producciones · ~30s
+
+# Correr Reviewer sobre cambios staged
+python scripts/reviewer.py
+python scripts/reviewer.py --strict   # warnings = errors
+
+# Bypass URGENTE (NO recomendado · solo emergencias prod)
+git commit --no-verify
+git push --no-verify
+```
+
+### Documentación de soporte
+
+- **`MEMORY.md`** — reglas estáticas del dominio · LEER antes de modificar
+- **`api/blueprints/CONTRACT_*.md`** — invariantes por blueprint
+- **`tests/test_golden_paths.py`** — 5 journeys que NO pueden romperse
+- **`SESSION_LOG/`** — bitácora de cambios entre sesiones IA
+- **`.claude/agents/guardian.md`** + **`reviewer.md`** — subagentes para
+  sesiones IA con Claude Code
+
+---
+
 ## Deploy normal
 
 1. `git push origin main` → Render auto-deploy detecta el push
