@@ -8047,12 +8047,22 @@ def _sync_calendar_a_produccion_programada(conn, days_ahead=90,
     """
     import datetime as _dt
     import re as _re
+    cal_error = None
     try:
         cal = _fetch_calendar_events(days_ahead=days_ahead)
-    except Exception:
-        return 0
+    except Exception as _e:
+        cal_error = str(_e)
+        cal = {'events': [], 'error': cal_error}
     events = cal.get('events', [])
-    if not events:
+    # Sebastian 7-may-2026 (golden path 2): si NO hay events, antes hacíamos
+    # early return y eso impedía que force_mirror borrase orfanos. Ahora:
+    # · Si hay error de API → return (no destruir basado en data corrupta)
+    # · Si la API respondió con 0 eventos legítimos → seguimos al cleanup
+    #   pass (con keys_calendar=∅, TODO orfan será detectado correctamente).
+    if cal_error or cal.get('error'):
+        return 0
+    if not events and not force_mirror:
+        # Sin events + sin espejo: nada que insertar, nada que borrar
         return 0
 
     # Cargar mapa SKU → producto y formulas (para validar y obtener kg/lote)
