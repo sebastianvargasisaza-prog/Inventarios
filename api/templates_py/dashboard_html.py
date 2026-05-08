@@ -161,6 +161,18 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       </div>
       <div id="ajuste-smin-msg" style="margin-top:6px;font-size:0.82em;"></div>
     </div>
+    <!-- Sebastian 8-may-2026: corregir ubicacion del lote (encontradas discrepancias en inventario real). -->
+    <div style="border:1px solid #b6dcfe;border-radius:8px;padding:14px;margin-bottom:10px;background:#f0f8ff;">
+      <div style="font-size:0.78em;font-weight:700;color:#1e63a8;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">&#128205; Ubicaci&#243;n F&#237;sica del Lote</div>
+      <div style="font-size:0.78em;color:#555;margin-bottom:8px;">Actual: <span id="ajuste-ubic-actual" style="font-weight:700;color:#1e63a8;">&mdash;</span></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <div class="form-group" style="margin-bottom:0;"><label>Estanter&#237;a nueva</label><input type="text" id="ajuste-estanteria" placeholder="Ej: A3" maxlength="50"></div>
+        <div class="form-group" style="margin-bottom:0;"><label>Posici&#243;n nueva</label><input type="text" id="ajuste-posicion" placeholder="Ej: B-2" maxlength="50"></div>
+      </div>
+      <div class="form-group" style="margin-top:8px;margin-bottom:0;"><label>Motivo (queda en audit log)</label><input type="text" id="ajuste-ubic-motivo" placeholder="Ej: discrepancia encontrada en conteo" maxlength="200"></div>
+      <button onclick="actualizarUbicacionLote()" style="margin-top:10px;background:#1e63a8;color:white;padding:8px 14px;border-radius:6px;width:100%;">Actualizar ubicaci&#243;n</button>
+      <div id="ajuste-ubic-msg" style="margin-top:6px;font-size:0.82em;"></div>
+    </div>
     <div style="border:1px solid #d8b4fe;border-radius:8px;padding:14px;margin-bottom:10px;background:#faf5ff;">
       <div style="font-size:0.78em;font-weight:700;color:#6f42c1;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">&#9749; Consumo Manual</div>
       <div style="display:flex;gap:8px;align-items:flex-end;">
@@ -1572,7 +1584,7 @@ function confirmarOper(){var inp=document.getElementById('oper-input');var n=(in
 function abrirAjusteIdx(idx){
   var i=_lotes[idx];
   if(!i)return;
-  abrirAjuste(i.material_id,i.material_nombre,i.lote||"",i.cantidad_g);
+  abrirAjuste(i.material_id,i.material_nombre,i.lote||"",i.cantidad_g,i.estanteria||"",i.posicion||"");
 }
 
 // ─── Solicitar MP (a nivel materia prima, no lote) ─────────────────────────
@@ -2031,9 +2043,9 @@ async function confirmarEliminarLote(){
     msg.innerHTML='<span style="color:#c00;">Error de red: '+e.message+'</span>';
   }
 }
-async function abrirAjuste(mid,mn,lt,sa){
+async function abrirAjuste(mid,mn,lt,sa,est,pos){
   if(!OPER_ACTUAL){alert('Primero selecciona tu nombre al inicio');return;}
-  _ajDat={mid:mid,mn:mn,lt:lt,sa:sa};
+  _ajDat={mid:mid,mn:mn,lt:lt,sa:sa,est:est||'',pos:pos||''};
   document.getElementById('ajuste-info').textContent=mid+' — '+mn+(lt&&lt!='S/L'?' (Lote: '+lt+')':'');
   document.getElementById('ajuste-sistema').value=sa;
   document.getElementById('ajuste-fisico').value='';
@@ -2043,6 +2055,16 @@ async function abrirAjuste(mid,mn,lt,sa){
   document.getElementById('ajuste-consumo-msg').innerHTML='';
   document.getElementById('ajuste-arch-msg').innerHTML='';
   document.getElementById('ajuste-consumo').value='';
+  // Sebastian 8-may-2026: hidratar bloque ubicacion del lote
+  var ubicActual=document.getElementById('ajuste-ubic-actual');
+  if(ubicActual){
+    var resumen=((est||'').trim()||'(sin estanteria)')+' / '+((pos||'').trim()||'(sin posicion)');
+    ubicActual.textContent=resumen;
+  }
+  var inpEst=document.getElementById('ajuste-estanteria');if(inpEst)inpEst.value=est||'';
+  var inpPos=document.getElementById('ajuste-posicion');if(inpPos)inpPos.value=pos||'';
+  var inpMot=document.getElementById('ajuste-ubic-motivo');if(inpMot)inpMot.value='';
+  var ubicMsg=document.getElementById('ajuste-ubic-msg');if(ubicMsg)ubicMsg.innerHTML='';
   try{var r=await fetch('/api/maestro-mps/'+encodeURIComponent(mid));if(r.ok){var d=await r.json();document.getElementById('ajuste-smin').value=d.stock_minimo||0;}}catch(e){document.getElementById('ajuste-smin').value=0;}
   document.getElementById('modal-ajuste').style.display='flex';
 }
@@ -2077,7 +2099,54 @@ async function archivarMP(){
     setTimeout(function(){cerrarAjuste();},3000);
   }
 }
-function cerrarAjuste(){document.getElementById('modal-ajuste').style.display='none';['ajuste-msg','ajuste-smin-msg','ajuste-consumo-msg','ajuste-arch-msg'].forEach(function(id){var el=document.getElementById(id);if(el)el.innerHTML='';});}
+// Sebastian 8-may-2026: corregir ubicacion fisica del lote.
+// PUT /api/lotes/<mid>/<lote>/ubicacion · UPDATE estanteria/posicion en
+// TODOS los movimientos del lote (para que /api/lotes refleje MAX nuevo).
+async function actualizarUbicacionLote(){
+  var mid=_ajDat&&_ajDat.mid;
+  var lt=_ajDat&&_ajDat.lt;
+  if(!mid){return;}
+  var msgEl=document.getElementById('ajuste-ubic-msg');
+  var nuevaEst=(document.getElementById('ajuste-estanteria').value||'').trim();
+  var nuevaPos=(document.getElementById('ajuste-posicion').value||'').trim();
+  var motivo=(document.getElementById('ajuste-ubic-motivo').value||'').trim();
+  if(!nuevaEst && !nuevaPos){
+    msgEl.innerHTML='<span style="color:red;">Indica al menos estanteria o posicion</span>';
+    return;
+  }
+  var actEst=(_ajDat.est||'').trim();
+  var actPos=(_ajDat.pos||'').trim();
+  if(nuevaEst===actEst && nuevaPos===actPos){
+    msgEl.innerHTML='<span style="color:#666;">Sin cambios respecto al actual</span>';
+    return;
+  }
+  // Lote vacio → placeholder _SIN_LOTE_ (mismo patron que /proveedor)
+  var loteUrl=lt && lt!=='S/L' ? encodeURIComponent(lt) : '_SIN_LOTE_';
+  msgEl.innerHTML='<span style="color:#666;">Guardando...</span>';
+  try{
+    var r=await fetch('/api/lotes/'+encodeURIComponent(mid)+'/'+loteUrl+'/ubicacion',
+      {method:'PUT',headers:{'Content-Type':'application/json'},
+       body:JSON.stringify({estanteria:nuevaEst,posicion:nuevaPos,motivo:motivo})});
+    var d={};try{d=await r.json();}catch(je){}
+    if(r.ok){
+      msgEl.innerHTML='<span style="color:#28a745;">&#10003; '+(d.message||'Actualizado')+
+        ' ('+(d.movimientos_actualizados||0)+' movimiento(s))</span>';
+      // Hidratar _ajDat y display con valores nuevos
+      _ajDat.est=d.estanteria_nueva||nuevaEst;
+      _ajDat.pos=d.posicion_nueva||nuevaPos;
+      var ubicActual=document.getElementById('ajuste-ubic-actual');
+      if(ubicActual){
+        ubicActual.textContent=(_ajDat.est||'(sin estanteria)')+' / '+(_ajDat.pos||'(sin posicion)');
+      }
+      // Refrescar la tabla de Bodega para que muestre la posicion nueva
+      setTimeout(loadStock,500);
+    }else{
+      msgEl.innerHTML='<span style="color:red;">'+(d.error||'Error '+r.status)+
+        (d.detail?' &mdash; '+d.detail:'')+'</span>';
+    }
+  }catch(e){msgEl.innerHTML='<span style="color:red;">Error: '+e.message+'</span>';}
+}
+function cerrarAjuste(){document.getElementById('modal-ajuste').style.display='none';['ajuste-msg','ajuste-smin-msg','ajuste-consumo-msg','ajuste-arch-msg','ajuste-ubic-msg'].forEach(function(id){var el=document.getElementById(id);if(el)el.innerHTML='';});}
 var _provSaveTimers={};
 function guardarProveedorMP(inp){
   var cod=inp.dataset.cod;

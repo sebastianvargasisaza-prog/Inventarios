@@ -1467,3 +1467,94 @@ def test_golden_mfa_endpoint(app, db_clean):
     # Si MFA no enrolado, 200 con flag · si endpoint no existe, 404 OK
     assert r.status_code != 500, \
         f'BUG: /api/mfa/status 5xx · {r.status_code}'
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 51 · INV-3 · Cambiar ubicacion del lote refleja en Bodega
+# ═══════════════════════════════════════════════════════════════════
+# Sebastian 8-may-2026 (inventario REAL en vuelo): el modal de Bodega
+# MP no permitia cambiar posicion · habia discrepancias entre la
+# posicion registrada y donde el lote esta fisicamente. Endpoint nuevo
+# PUT /api/lotes/<mp>/<lote>/ubicacion hace UPDATE de TODOS los
+# movimientos del lote. /api/lotes lee MAX(posicion) agrupado, asi que
+# la nueva posicion debe verse inmediatamente en la pantalla Bodega MP.
+
+def test_golden_cambiar_ubicacion_lote_refleja_en_bodega(app, db_clean):
+    cs = _login(app, 'sebastian')
+
+    codigo_mp = 'GP51-MP-TEST'
+    lote = 'GP51-LOTE-001'
+    nombre = 'Test Ubicacion'
+
+    # Setup: MP + 3 movimientos del mismo lote en posicion vieja A1/B-1
+    _exec("""INSERT OR REPLACE INTO maestro_mps
+              (codigo_mp, nombre_comercial, proveedor, activo, tipo_material)
+              VALUES (?, ?, 'TestProv', 1, 'MP')""",
+          (codigo_mp, nombre))
+    for i, qty in enumerate([1000, 500, 200]):
+        _exec("""INSERT INTO movimientos
+                  (material_id, material_nombre, cantidad, tipo, fecha,
+                   lote, estanteria, posicion, estado_lote, operador)
+                  VALUES (?, ?, ?, 'Entrada', date('now'),
+                          ?, 'A1', 'B-1', 'VIGENTE', 'seed')""",
+              (codigo_mp, nombre, qty, lote))
+
+    # Precondicion: /api/lotes muestra A1 / B-1
+    r = cs.get('/api/lotes')
+    assert r.status_code == 200
+    lotes_pre = [l for l in (r.get_json() or {}).get('lotes', [])
+                 if l.get('material_id') == codigo_mp and l.get('lote') == lote]
+    assert lotes_pre, f'precondicion: lote {lote} debe estar en /api/lotes'
+    assert lotes_pre[0].get('estanteria') == 'A1'
+    assert lotes_pre[0].get('posicion') == 'B-1'
+
+    # Accion: PUT ubicacion · cambiar a A3 / D-7
+    r = cs.put(
+        f'/api/lotes/{codigo_mp}/{lote}/ubicacion',
+        json={'estanteria': 'A3', 'posicion': 'D-7',
+              'motivo': 'Discrepancia encontrada en conteo cíclico'},
+        headers=csrf_headers(),
+    )
+    assert r.status_code == 200, f'PUT ubicacion fallo: {r.status_code} {r.data}'
+    res = r.get_json() or {}
+    assert res.get('ok'), f'response no ok: {res}'
+    assert res.get('movimientos_actualizados') == 3, \
+        f'BUG: deberia actualizar 3 movs (todos del lote), actualizo {res.get("movimientos_actualizados")}'
+    assert res.get('estanteria_anterior') == 'A1'
+    assert res.get('posicion_anterior') == 'B-1'
+    assert res.get('estanteria_nueva') == 'A3'
+    assert res.get('posicion_nueva') == 'D-7'
+
+    # Verificacion CRITICA: /api/lotes refleja la posicion nueva
+    # (sin cache, sin filtros) - como ve la pantalla Bodega MP.
+    r = cs.get('/api/lotes')
+    assert r.status_code == 200
+    lotes_post = [l for l in (r.get_json() or {}).get('lotes', [])
+                  if l.get('material_id') == codigo_mp and l.get('lote') == lote]
+    assert lotes_post, f'BUG: lote {lote} desaparecio de /api/lotes post-update'
+    assert lotes_post[0].get('estanteria') == 'A3', \
+        f'BUG SILENCIADO: estanteria en /api/lotes sigue siendo {lotes_post[0].get("estanteria")}, esperado A3'
+    assert lotes_post[0].get('posicion') == 'D-7', \
+        f'BUG SILENCIADO: posicion en /api/lotes sigue siendo {lotes_post[0].get("posicion")}, esperado D-7'
+
+    # Validacion: PUT vacio (sin estanteria ni posicion) → 400
+    r = cs.put(
+        f'/api/lotes/{codigo_mp}/{lote}/ubicacion',
+        json={'estanteria': '', 'posicion': '', 'motivo': 'no'},
+        headers=csrf_headers(),
+    )
+    assert r.status_code == 400, \
+        f'PUT sin valores deberia rechazar 400, devolvio {r.status_code}'
+
+    # Validacion: lote inexistente → 404
+    r = cs.put(
+        f'/api/lotes/{codigo_mp}/LOTE-NO-EXISTE/ubicacion',
+        json={'estanteria': 'A1', 'posicion': 'X-9'},
+        headers=csrf_headers(),
+    )
+    assert r.status_code == 404, \
+        f'PUT a lote inexistente deberia ser 404, devolvio {r.status_code}'
+
+    # Cleanup
+    _exec("DELETE FROM movimientos WHERE material_id=?", (codigo_mp,))
+    _exec("DELETE FROM maestro_mps WHERE codigo_mp=?", (codigo_mp,))

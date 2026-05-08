@@ -1893,6 +1893,134 @@ def editar_proveedor_lote(material_id, lote):
     }), 200
 
 
+@bp.route('/api/lotes/<material_id>/<path:lote>/ubicacion', methods=['PUT'])
+def editar_ubicacion_lote(material_id, lote):
+    """Corrige la ubicacion fisica (estanteria + posicion) de un lote.
+
+    Sebastian 8-may-2026 (inventario REAL en vuelo): el modal de ajuste
+    de Bodega MP no permitia cambiar posicion. Catalina/Sebastian
+    encontraron discrepancias entre la posicion registrada y donde el
+    lote esta fisicamente. Sin esto, el ajuste de cantidad funciona
+    pero la pantalla sigue mostrando una posicion incorrecta.
+
+    /api/lotes lee MAX(estanteria) y MAX(posicion) agrupado por
+    (material_id, lote). UPDATE de TODOS los movimientos del lote
+    deja el MAX en el valor nuevo y la UI lo refleja inmediatamente.
+
+    Body JSON:
+      estanteria: str (opcional, max 50 chars)
+      posicion:   str (opcional, max 50 chars)
+      motivo:     str (recomendado, queda en audit_log)
+
+    Al menos uno de estanteria o posicion debe venir distinto del
+    actual; si ambos coinciden, devuelve 200 sin tocar nada.
+
+    Soporta lote vacio con placeholder _SIN_LOTE_ (igual que /proveedor).
+    """
+    u, err, code = _require_planta_write()
+    if err:
+        return err, code
+
+    d = request.json or {}
+    nueva_estanteria = (d.get('estanteria') or '').strip()
+    nueva_posicion = (d.get('posicion') or '').strip()
+    motivo = (d.get('motivo') or '').strip()
+
+    if len(nueva_estanteria) > 50:
+        return jsonify({'error': 'Estanteria demasiado larga (max 50 chars)'}), 400
+    if len(nueva_posicion) > 50:
+        return jsonify({'error': 'Posicion demasiado larga (max 50 chars)'}), 400
+    if not nueva_estanteria and not nueva_posicion:
+        return jsonify({
+            'error': 'Debe enviar al menos estanteria o posicion',
+        }), 400
+
+    sin_lote = (lote == '_SIN_LOTE_')
+
+    conn = get_db()
+    c = conn.cursor()
+
+    # Snapshot valores actuales (MAX como en /api/lotes)
+    if sin_lote:
+        prev_row = c.execute(
+            "SELECT MAX(estanteria), MAX(posicion), COUNT(*) "
+            "FROM movimientos WHERE material_id=? AND (lote IS NULL OR lote='')",
+            (material_id,)
+        ).fetchone()
+    else:
+        prev_row = c.execute(
+            "SELECT MAX(estanteria), MAX(posicion), COUNT(*) "
+            "FROM movimientos WHERE material_id=? AND lote=?",
+            (material_id, lote)
+        ).fetchone()
+    if not prev_row or (prev_row[2] or 0) == 0:
+        return jsonify({
+            'error': 'Lote no encontrado',
+            'detail': f'No hay movimientos para {material_id}/{lote}',
+        }), 404
+    estanteria_anterior = (prev_row[0] or '')
+    posicion_anterior = (prev_row[1] or '')
+
+    # Determinar SET clause: solo updateamos los campos enviados
+    sets = []
+    params = []
+    if nueva_estanteria:
+        sets.append('estanteria=?')
+        params.append(nueva_estanteria)
+    if nueva_posicion:
+        sets.append('posicion=?')
+        params.append(nueva_posicion)
+    if not sets:
+        return jsonify({'ok': True, 'message': 'Nada que cambiar', 'movimientos_actualizados': 0}), 200
+
+    where_sql = ("material_id=? AND (lote IS NULL OR lote='')"
+                 if sin_lote else "material_id=? AND lote=?")
+    where_params = [material_id] if sin_lote else [material_id, lote]
+
+    sql = f"UPDATE movimientos SET {', '.join(sets)} WHERE {where_sql}"
+    c.execute(sql, params + where_params)
+    movs_actualizados = c.rowcount
+
+    # Audit log con snapshot anterior+nuevo
+    try:
+        import json as _json
+        c.execute("""INSERT INTO audit_log
+                     (usuario, accion, tabla, registro_id, detalle, ip, fecha)
+                     VALUES (?,?,?,?,?,?,datetime('now'))""",
+                  (u, 'EDITAR_UBICACION_LOTE', 'movimientos',
+                   f'{material_id}/{"" if sin_lote else lote}',
+                   _json.dumps({
+                       'material_id': material_id,
+                       'lote': '' if sin_lote else lote,
+                       'estanteria_anterior': estanteria_anterior,
+                       'posicion_anterior': posicion_anterior,
+                       'estanteria_nueva': nueva_estanteria or estanteria_anterior,
+                       'posicion_nueva': nueva_posicion or posicion_anterior,
+                       'motivo': motivo,
+                       'movimientos_actualizados': movs_actualizados,
+                   }, ensure_ascii=False),
+                   request.remote_addr))
+    except sqlite3.OperationalError:
+        __import__('logging').getLogger('inventario').warning(
+            "audit_log no disponible — editar_ubicacion por %s sobre %s/%s "
+            "no quedo registrado.", u, material_id, lote,
+        )
+
+    conn.commit()
+
+    return jsonify({
+        'ok': True,
+        'message': (f'Ubicacion actualizada en {movs_actualizados} movimiento(s) '
+                    f'del lote {lote if not sin_lote else "(sin lote)"} '
+                    f'de {material_id}.'),
+        'movimientos_actualizados': movs_actualizados,
+        'estanteria_anterior': estanteria_anterior,
+        'estanteria_nueva': nueva_estanteria or estanteria_anterior,
+        'posicion_anterior': posicion_anterior,
+        'posicion_nueva': nueva_posicion or posicion_anterior,
+    }), 200
+
+
 @bp.route('/api/lotes/<material_id>/<path:lote>', methods=['DELETE'])
 def eliminar_lote(material_id, lote):
     """Elimina un lote completo por incoherencia (jefe de produccion).
