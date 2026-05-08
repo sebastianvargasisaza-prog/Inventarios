@@ -6098,11 +6098,17 @@ def producciones_faltantes():
     from datetime import date, timedelta as _td
     hoy = date.today()
     cutoff = (hoy + _td(days=dias)).isoformat()
+    # Sebastián 8-may-2026 ("rescatalas"): después del filtro 7-may que escondía
+    # pasadas, las producciones REALIZADAS (completadas / descontadas / con
+    # inicio_real_at) tampoco salían — el panel parecía haberlas perdido.
+    # Ahora la ventana es bidireccional: incluye 14 días pasados para que se
+    # vean otra vez. Los canceladas siguen excluidos (basura). Las realizadas
+    # se marcan con flag `realizada` y NO inflan el cálculo de MPs/MEEs
+    # faltantes (sus MPs ya fueron descontadas o no se necesitan).
+    pasado_dias = 14
+    past_window = (hoy - _td(days=pasado_dias)).isoformat()
 
-    # 1. Cargar producciones programadas pendientes (no descontadas) en horizonte
-    # Sebastian 7-may-2026: filtrar SOLO desde hoy en adelante (no incluir
-    # pasadas). Lo del lunes anterior ya no es accionable para Luis Enrique
-    # · solo es ruido visual. Si quedó sin descontar, se maneja en otro flujo.
+    # 1. Cargar producciones programadas pendientes Y realizadas en ventana
     try:
         c.execute("""
             SELECT pp.id, pp.producto, pp.fecha_programada,
@@ -6113,17 +6119,17 @@ def producciones_faltantes():
                    COALESCE(ap.nombre, '') as area_nombre,
                    COALESCE(LOWER(pp.estado), 'pendiente') as estado_norm,
                    COALESCE(pp.inicio_real_at, '') as inicio_real_at,
-                   COALESCE(pp.fin_real_at, '') as fin_real_at
+                   COALESCE(pp.fin_real_at, '') as fin_real_at,
+                   COALESCE(pp.inventario_descontado_at, '') as desc_at
             FROM produccion_programada pp
             LEFT JOIN formula_headers fh
                    ON UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(pp.producto))
             LEFT JOIN areas_planta ap ON ap.id = pp.area_id
-            WHERE COALESCE(pp.inventario_descontado_at, '') = ''
-              AND LOWER(COALESCE(pp.estado, '')) NOT IN ('cancelado', 'completado')
+            WHERE LOWER(COALESCE(pp.estado, '')) != 'cancelado'
               AND pp.fecha_programada >= ?
               AND pp.fecha_programada <= ?
             ORDER BY pp.fecha_programada ASC
-        """, (hoy.isoformat(), cutoff))
+        """, (past_window, cutoff))
         prod_rows = c.fetchall()
     except sqlite3.OperationalError:
         # Fallback si areas_planta no existe (esquema legacy)
@@ -6134,16 +6140,16 @@ def producciones_faltantes():
                    0, '', '',
                    COALESCE(LOWER(pp.estado), 'pendiente'),
                    COALESCE(pp.inicio_real_at, ''),
-                   COALESCE(pp.fin_real_at, '')
+                   COALESCE(pp.fin_real_at, ''),
+                   COALESCE(pp.inventario_descontado_at, '')
             FROM produccion_programada pp
             LEFT JOIN formula_headers fh
                    ON UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(pp.producto))
-            WHERE COALESCE(pp.inventario_descontado_at, '') = ''
-              AND LOWER(COALESCE(pp.estado, '')) NOT IN ('cancelado', 'completado')
+            WHERE LOWER(COALESCE(pp.estado, '')) != 'cancelado'
               AND pp.fecha_programada >= ?
               AND pp.fecha_programada <= ?
             ORDER BY pp.fecha_programada ASC
-        """, (hoy.isoformat(), cutoff))
+        """, (past_window, cutoff))
         prod_rows = c.fetchall()
 
     # 2. Cargar formulas (codigo_mp -> [nombre, cantidad_g_por_lote, porcentaje])
@@ -6256,9 +6262,17 @@ def producciones_faltantes():
     producciones_out = []
     consumo_mp_agregado = {}   # codigo_mp -> g_total
     consumo_mee_agregado = {}  # mee_codigo -> unidades_total
+    hoy_iso = hoy.isoformat()
     for row in prod_rows:
         # Sebastian 5-may-2026: unpack soporta ambos esquemas (con/sin areas_planta)
-        if len(row) >= 12:
+        # Sebastian 8-may-2026: nuevo campo `desc_at` (inventario_descontado_at)
+        # para detectar realizadas.
+        desc_at = ''
+        if len(row) >= 13:
+            (pid, producto, fecha, lotes, cant_kg_explicita, lote_size,
+             area_id, area_codigo, area_nombre,
+             estado_norm, inicio_real_at, fin_real_at, desc_at) = row
+        elif len(row) >= 12:
             (pid, producto, fecha, lotes, cant_kg_explicita, lote_size,
              area_id, area_codigo, area_nombre,
              estado_norm, inicio_real_at, fin_real_at) = row
@@ -6270,7 +6284,32 @@ def producciones_faltantes():
         lotes = int(lotes or 1)
         cant_kg_total = float(cant_kg_explicita or 0) or (lotes * float(lote_size or 0))
 
-        # MPs necesarias
+        # Sebastián 8-may-2026: clasificación visual + lógica MP separadas.
+        # · Realizada: TERMINADA (fin_real_at o estado=completado)
+        # · En proceso: arrancó pero no terminó (inicio_real_at sin fin · o
+        #   descontada sin fin)
+        # · Atrasada: fecha pasó sin arrancar y sin descontar · sigue pendiente
+        # · Pendiente: futura sin arrancar · caso normal
+        # MPs/MEEs faltantes: regla por separado · NO contar si ya hay descuento
+        # registrado (desc_at set) · esos MPs ya salieron del stock.
+        es_realizada = bool(fin_real_at) or estado_norm == 'completado'
+        es_en_proceso = (bool(inicio_real_at) or bool(desc_at)) and not es_realizada
+        es_pasada = (fecha or '') < hoy_iso
+        es_atrasada = es_pasada and not es_realizada and not es_en_proceso
+        # Solo sumar al consumo si NO se ha descontado y aún hay que hacerla
+        cuenta_para_faltantes = not bool(desc_at) and not es_realizada
+
+        if es_realizada:
+            estado_display = 'realizada'
+        elif es_en_proceso:
+            estado_display = 'en_proceso'
+        elif es_atrasada:
+            estado_display = 'atrasada'
+        else:
+            estado_display = 'pendiente'
+
+        # MPs necesarias (siempre se calculan para mostrar en modal, pero solo
+        # se acumulan al global de faltantes si la producción aún consume stock)
         mps_nec = []
         for fi in formulas.get(producto_norm, []):
             g_total = float(fi['g_por_lote'] or 0) * lotes
@@ -6284,7 +6323,7 @@ def producciones_faltantes():
                 'necesario_g': round(g_total, 2),
             })
             cod = (fi['codigo_mp'] or '').strip()
-            if cod:
+            if cod and cuenta_para_faltantes:
                 consumo_mp_agregado[cod] = consumo_mp_agregado.get(cod, 0) + g_total
 
         # MEE necesarios · cantidad de unidades a envasar = cant_kg_total*1000 / volumen_ml
@@ -6306,7 +6345,7 @@ def producciones_faltantes():
                 'necesario_unidades': round(cant_total, 0),
             })
             cod_mee = (me['mee_codigo'] or '').strip().upper()
-            if cod_mee:
+            if cod_mee and cuenta_para_faltantes:
                 consumo_mee_agregado[cod_mee] = consumo_mee_agregado.get(cod_mee, 0) + cant_total
 
         producciones_out.append({
@@ -6325,6 +6364,12 @@ def producciones_faltantes():
             'estado': estado_norm,
             'inicio_real_at': inicio_real_at or None,
             'fin_real_at': fin_real_at or None,
+            # Sebastián 8-may-2026: estado_display + flags rescate
+            'estado_display': estado_display,
+            'realizada': es_realizada,
+            'en_proceso': es_en_proceso,
+            'atrasada': es_atrasada,
+            'inventario_descontado_at': desc_at or None,
         })
 
     # 10. Calcular faltantes agregados
@@ -6404,10 +6449,22 @@ def producciones_faltantes():
             'cantidad_kg': p.get('cantidad_kg', 0),
             'estado': p.get('estado'),
             'area_nombre': p.get('area_nombre'),
+            # Sebastián 8-may-2026: flags para que frontend distinga visualmente
+            'estado_display': p.get('estado_display') or 'pendiente',
+            'realizada': bool(p.get('realizada')),
+            'en_proceso': bool(p.get('en_proceso')),
+            'atrasada': bool(p.get('atrasada')),
+            'inicio_real_at': p.get('inicio_real_at'),
+            'fin_real_at': p.get('fin_real_at'),
+            'inventario_descontado_at': p.get('inventario_descontado_at'),
         })
-        g['total_kg'] += float(p.get('cantidad_kg') or 0)
-        g['total_lotes'] += int(p.get('lotes') or 0)
-        g['unidades_envasadas_total'] += int(p.get('unidades_envasadas_estimadas') or 0)
+        # Solo sumar a totales lo que aún no se ha realizado · esos kg/lotes
+        # representan trabajo PENDIENTE para Luis Enrique. Las realizadas se
+        # ven como contexto pero no inflan la cifra "kg por hacer".
+        if not p.get('realizada') and not p.get('en_proceso'):
+            g['total_kg'] += float(p.get('cantidad_kg') or 0)
+            g['total_lotes'] += int(p.get('lotes') or 0)
+            g['unidades_envasadas_total'] += int(p.get('unidades_envasadas_estimadas') or 0)
         for m in (p.get('mps_necesarias') or []):
             cod = m.get('codigo_mp') or ''
             if not cod:
@@ -6446,7 +6503,12 @@ def producciones_faltantes():
         except (ValueError, TypeError):
             return None
     for g in grupos_por_producto.values():
-        fs = g['fechas']
+        # Sebastián 8-may-2026: solo comparar entre fechas NO-realizadas. Una
+        # producción ya completada no es "clon" de la próxima programada — es
+        # historia. Evita falsos positivos como "AZHC Lun 4 (realizada) clona
+        # con AZHC Lun 11 (pendiente)".
+        fs = [f for f in g['fechas']
+              if not f.get('realizada') and not f.get('en_proceso')]
         if len(fs) <= 1:
             continue
         # Comparar pares
@@ -6489,8 +6551,17 @@ def producciones_faltantes():
         x['producto'] or '',
     ))
 
+    # Sebastián 8-may-2026: contadores por estado para el resumen del panel
+    n_realizadas = sum(1 for p in producciones_out if p.get('realizada'))
+    n_en_proceso = sum(1 for p in producciones_out if p.get('en_proceso'))
+    n_atrasadas = sum(1 for p in producciones_out if p.get('atrasada'))
+    n_pendientes = sum(1 for p in producciones_out
+                       if not p.get('realizada') and not p.get('en_proceso')
+                       and not p.get('atrasada'))
+
     return jsonify({
         'horizonte_dias': dias,
+        'pasado_dias': pasado_dias,
         'producciones': producciones_out,
         'producciones_agrupadas': producciones_agrupadas,
         'faltantes_mps': faltantes_mps,
@@ -6503,6 +6574,10 @@ def producciones_faltantes():
             'n_mps_faltantes': len(faltantes_mps),
             'n_mees_faltantes': len(faltantes_mees),
             'n_proveedores_unicos': len(provs),
+            'n_realizadas': n_realizadas,
+            'n_en_proceso': n_en_proceso,
+            'n_atrasadas': n_atrasadas,
+            'n_pendientes': n_pendientes,
         },
     })
 

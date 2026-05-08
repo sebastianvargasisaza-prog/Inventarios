@@ -145,6 +145,24 @@ def test_golden_conteo_ciclico_ajuste_afecta_lote_real(app, db_clean):
         f'BUG: lote {lote} debería tener 10000g post-ajuste, tiene {stock_post}g · ' \
         f'esto significa que el ajuste no se aplicó al lote correcto y Bodega no lo refleja'
 
+    # 5. Sebastián 8-may-2026 ("que no quede silenciado eso es importante"):
+    # garantizar que el ENDPOINT PÚBLICO que sirve a Bodega Materias Primas
+    # también refleje el ajuste. Si alguien rompe esta query (filtros, cache,
+    # whitelist de origen), este assert se prende y el push se bloquea.
+    r_bodega = cs.get(f'/api/planta/stock-por-lote/{codigo_mp}')
+    assert r_bodega.status_code == 200, f'/api/planta/stock-por-lote/<mp> no respondió 200: {r_bodega.data}'
+    bodega = r_bodega.get_json() or {}
+    lote_en_bodega = next((l for l in bodega.get('lotes', [])
+                           if l.get('lote') == lote), None)
+    assert lote_en_bodega is not None, \
+        f'BUG: lote {lote} no aparece en /api/planta/stock-por-lote/{codigo_mp} ' \
+        f'tras el ajuste · Bodega no lo verá. Lotes devueltos: ' \
+        f'{[l.get("lote") for l in bodega.get("lotes", [])]}'
+    assert lote_en_bodega.get('stock_g') == 10000, \
+        f'BUG SILENCIADO: endpoint Bodega devuelve {lote_en_bodega.get("stock_g")}g ' \
+        f'para lote {lote}, esperado 10000g · el ajuste cíclico NO se está reflejando ' \
+        f'en la UI de Bodega Materias Primas (regresión del golden path #1)'
+
     # Cleanup
     _exec("DELETE FROM movimientos WHERE material_id=?", (codigo_mp,))
     _exec("DELETE FROM conteo_items WHERE conteo_id=?", (conteo_id,))

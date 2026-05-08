@@ -139,14 +139,18 @@ def _seed_volumen(producto, volumen_ml):
 
 
 def _seed_produccion(producto, lotes=1, fecha_offset_dias=3, cantidad_kg=None):
-    """Inserta una produccion_programada en horizonte futuro."""
+    """Inserta una produccion_programada en horizonte futuro o pasado.
+
+    fecha_offset_dias soporta negativos para sembrar producciones atrasadas.
+    """
+    modifier = ('+' if fecha_offset_dias >= 0 else '') + str(fecha_offset_dias) + ' days'
     conn = sqlite3.connect(os.environ["DB_PATH"])
     c = conn.cursor()
     c.execute(
         """INSERT INTO produccion_programada
            (producto, fecha_programada, lotes, estado, cantidad_kg)
-           VALUES (?, date('now', '+' || ? || ' days'), ?, 'pendiente', ?)""",
-        (producto, fecha_offset_dias, lotes, cantidad_kg or 0),
+           VALUES (?, date('now', ?), ?, 'pendiente', ?)""",
+        (producto, modifier, lotes, cantidad_kg or 0),
     )
     pid = c.lastrowid
     conn.commit(); conn.close()
@@ -223,10 +227,15 @@ def test_producciones_faltantes_listado_basico(app, db_clean):
                   prod_ids=[pid])
 
 
-def test_producciones_faltantes_excluye_descontadas(app, db_clean):
-    """Producciones con inventario_descontado_at NO deben aparecer."""
+def test_producciones_faltantes_descontadas_aparecen_marcadas(app, db_clean):
+    """Sebastián 8-may-2026 ('rescatalas'): producciones con
+    inventario_descontado_at AHORA aparecen visibles (antes se escondían).
+    Una descontada sin fin_real_at = en_proceso (sigue activa en planta).
+    Crítico: aunque visibles, NO suman a faltantes_mps (ya descontaron).
+    """
     cs = _login(app, 'luis')
-    _seed_mp_y_stock('MP-DESC-1', 'X', 100)
+    _seed_mp_y_stock('MP-DESC-1', 'X', 100)  # solo 100g · si en_proceso
+                                              # contara, faltarían 4900g
     _seed_formula('PROD-DESC', [('MP-DESC-1', 'X', 5000)], lote_size_kg=5)
     pid = _seed_produccion('PROD-DESC', lotes=1, cantidad_kg=5)
     # Forzar descontado
@@ -237,7 +246,14 @@ def test_producciones_faltantes_excluye_descontadas(app, db_clean):
         r = cs.get('/api/programacion/producciones-faltantes?dias=30')
         d = r.get_json()
         prods = [p for p in d['producciones'] if p['producto'] == 'PROD-DESC']
-        assert len(prods) == 0  # excluida
+        assert len(prods) == 1, 'descontada debe aparecer'
+        # Descontada sin fin → en_proceso (siguió activa pero no terminó)
+        assert prods[0]['en_proceso'] is True
+        assert prods[0]['estado_display'] == 'en_proceso'
+        # NO infla faltantes
+        falt = next((m for m in d['faltantes_mps']
+                     if m['codigo_mp'] == 'MP-DESC-1'), None)
+        assert falt is None, 'descontada NO debe pedir MPs otra vez'
     finally:
         _cleanup(productos=['PROD-DESC'], mps=['MP-DESC-1'], prod_ids=[pid])
 
@@ -465,6 +481,191 @@ def test_solicitar_bulk_audit_log(app, db_clean):
 # ── HTML expone UI ─────────────────────────────────────────────────
 
 
+def _seed_produccion_realizada(producto, fecha_offset_dias, lotes=1, cantidad_kg=5):
+    """Insert a production marked as realizada (descontada + estado completado).
+
+    fecha_offset_dias soporta negativos · construimos modifier explícito.
+    """
+    modifier = ('+' if fecha_offset_dias >= 0 else '') + str(fecha_offset_dias) + ' days'
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    c = conn.cursor()
+    c.execute(
+        """INSERT INTO produccion_programada
+           (producto, fecha_programada, lotes, estado, cantidad_kg,
+            inicio_real_at, fin_real_at, inventario_descontado_at)
+           VALUES (?, date('now', ?), ?, 'completado', ?,
+                   datetime('now'), datetime('now'), datetime('now'))""",
+        (producto, modifier, lotes, cantidad_kg),
+    )
+    pid = c.lastrowid
+    conn.commit(); conn.close()
+    return pid
+
+
+def _seed_produccion_en_proceso(producto, fecha_offset_dias, lotes=1, cantidad_kg=5):
+    """Producción que arrancó pero no terminó: inicio_real_at + descontada."""
+    modifier = ('+' if fecha_offset_dias >= 0 else '') + str(fecha_offset_dias) + ' days'
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    c = conn.cursor()
+    c.execute(
+        """INSERT INTO produccion_programada
+           (producto, fecha_programada, lotes, estado, cantidad_kg,
+            inicio_real_at, inventario_descontado_at)
+           VALUES (?, date('now', ?), ?, 'en_proceso', ?,
+                   datetime('now'), datetime('now'))""",
+        (producto, modifier, lotes, cantidad_kg),
+    )
+    pid = c.lastrowid
+    conn.commit(); conn.close()
+    return pid
+
+
+def test_realizadas_aparecen_en_panel(app, db_clean):
+    """Sebastián 8-may-2026 ('rescatalas'): producciones completadas DEBEN
+    aparecer en el panel para visibilidad. Antes el filtro las escondía y
+    parecía que se habían perdido.
+    """
+    cs = _login(app, 'luis')
+    _seed_formula('PROD-RESC-DONE', [('MP-RESC-D', 'X', 1000)], lote_size_kg=1)
+    pid_real = _seed_produccion_realizada('PROD-RESC-DONE',
+                                            fecha_offset_dias=-3, lotes=2,
+                                            cantidad_kg=2)
+    try:
+        r = cs.get('/api/programacion/producciones-faltantes?dias=14')
+        assert r.status_code == 200
+        d = r.get_json()
+        prods = [p for p in d['producciones'] if p['producto'] == 'PROD-RESC-DONE']
+        assert len(prods) == 1, 'la realizada DEBE aparecer en el panel'
+        p = prods[0]
+        assert p['realizada'] is True
+        assert p['estado_display'] == 'realizada'
+        # Resumen contiene contador
+        assert d['resumen']['n_realizadas'] >= 1
+    finally:
+        _cleanup(productos=['PROD-RESC-DONE'], prod_ids=[pid_real])
+
+
+def test_realizadas_no_inflan_mp_faltantes(app, db_clean):
+    """Crítico: producciones ya descontadas NO deben sumar al cálculo de MPs
+    faltantes — sus MPs ya se descontaron del stock. Si las contáramos otra
+    vez, infláriamos la lista de compras y se ordenaría stock duplicado.
+    """
+    cs = _login(app, 'luis')
+    _seed_mp_y_stock('MP-NOINFLA', 'X', 5000, 'ProvX')   # 5kg en stock
+    _seed_formula('PROD-NOINFLA', [('MP-NOINFLA', 'X', 5000)], lote_size_kg=5)
+    # Realizada (no debe contar) + pendiente futura (sí cuenta)
+    pid_done = _seed_produccion_realizada('PROD-NOINFLA',
+                                            fecha_offset_dias=-2, lotes=1,
+                                            cantidad_kg=5)
+    pid_pend = _seed_produccion('PROD-NOINFLA', lotes=1, cantidad_kg=5,
+                                  fecha_offset_dias=4)
+    try:
+        r = cs.get('/api/programacion/producciones-faltantes?dias=14')
+        d = r.get_json()
+        # Solo la pendiente debe contribuir al cálculo: 5000g - 5000g stock = 0
+        falt = next((m for m in d['faltantes_mps']
+                     if m['codigo_mp'] == 'MP-NOINFLA'), None)
+        # Si la realizada inflara → necesario=10000 → falta 5000. Bug.
+        # Esperado: necesario=5000 → falta 0 → no aparece en faltantes
+        assert falt is None, (
+            f'realizada NO debe inflar MP faltantes · falt={falt}')
+    finally:
+        _cleanup(productos=['PROD-NOINFLA'], mps=['MP-NOINFLA'],
+                  prod_ids=[pid_done, pid_pend])
+
+
+def test_en_proceso_aparece_y_no_infla_mp(app, db_clean):
+    """Producción que arrancó (inicio_real_at + descontada) pero no terminó:
+    visible con estado_display='en_proceso' y NO suma a faltantes.
+    """
+    cs = _login(app, 'luis')
+    _seed_mp_y_stock('MP-PROC', 'X', 5000)
+    _seed_formula('PROD-PROC', [('MP-PROC', 'X', 5000)], lote_size_kg=5)
+    pid = _seed_produccion_en_proceso('PROD-PROC',
+                                        fecha_offset_dias=0, lotes=1,
+                                        cantidad_kg=5)
+    try:
+        r = cs.get('/api/programacion/producciones-faltantes?dias=14')
+        d = r.get_json()
+        p = next(p for p in d['producciones'] if p['producto'] == 'PROD-PROC')
+        assert p['en_proceso'] is True
+        assert p['estado_display'] == 'en_proceso'
+        # No infla MP — su descuento ya se aplicó
+        falt = next((m for m in d['faltantes_mps']
+                     if m['codigo_mp'] == 'MP-PROC'), None)
+        assert falt is None, 'en_proceso ya descontó · NO debe pedir más'
+    finally:
+        _cleanup(productos=['PROD-PROC'], mps=['MP-PROC'], prod_ids=[pid])
+
+
+def test_atrasada_aparece_y_si_infla_mp(app, db_clean):
+    """Producción cuya fecha pasó pero NUNCA arrancó: 'atrasada'. Sigue
+    requiriendo MPs porque no ha consumido stock todavía.
+    """
+    cs = _login(app, 'luis')
+    _seed_mp_y_stock('MP-ATR', 'X', 0)  # sin stock
+    _seed_formula('PROD-ATR', [('MP-ATR', 'X', 1000)], lote_size_kg=1)
+    pid = _seed_produccion('PROD-ATR', lotes=1, cantidad_kg=1,
+                            fecha_offset_dias=-3)
+    try:
+        r = cs.get('/api/programacion/producciones-faltantes?dias=14')
+        d = r.get_json()
+        p = next(p for p in d['producciones'] if p['producto'] == 'PROD-ATR')
+        assert p['atrasada'] is True
+        assert p['estado_display'] == 'atrasada'
+        # SÍ debe contar a faltantes (1000g necesarios, 0 stock)
+        falt = next(m for m in d['faltantes_mps']
+                    if m['codigo_mp'] == 'MP-ATR')
+        assert falt['faltante_g'] == 1000
+        # Resumen
+        assert d['resumen']['n_atrasadas'] >= 1
+    finally:
+        _cleanup(productos=['PROD-ATR'], mps=['MP-ATR'], prod_ids=[pid])
+
+
+def test_canceladas_siguen_ocultas(app, db_clean):
+    """Las cancelaciones SIGUEN siendo ruido — no deben aparecer en el panel
+    ni siquiera con la nueva visibilidad de realizadas/atrasadas.
+    """
+    cs = _login(app, 'luis')
+    _seed_formula('PROD-CANC', [('MP-CC', 'X', 1000)], lote_size_kg=1)
+    pid = _seed_produccion('PROD-CANC', lotes=1, cantidad_kg=1)
+    conn = sqlite3.connect(os.environ['DB_PATH'])
+    conn.execute("UPDATE produccion_programada SET estado='cancelado' WHERE id=?", (pid,))
+    conn.commit(); conn.close()
+    try:
+        r = cs.get('/api/programacion/producciones-faltantes?dias=14')
+        d = r.get_json()
+        prods = [p for p in d['producciones'] if p['producto'] == 'PROD-CANC']
+        assert len(prods) == 0, 'canceladas siguen ocultas · son basura'
+    finally:
+        _cleanup(productos=['PROD-CANC'], prod_ids=[pid])
+
+
+def test_realizada_no_clona_con_pendiente_misma_kg(app, db_clean):
+    """Antes: una realizada + una pendiente con mismo kg/lotes dentro de 7d
+    se marcaban como CLONES. Eso es falso positivo — la realizada es historia,
+    no clon de la próxima.
+    """
+    cs = _login(app, 'luis')
+    _seed_formula('PROD-NOCLON', [('MP-NC', 'X', 1000)], lote_size_kg=1)
+    pid_done = _seed_produccion_realizada('PROD-NOCLON',
+                                            fecha_offset_dias=-2, lotes=1,
+                                            cantidad_kg=1)
+    pid_next = _seed_produccion('PROD-NOCLON', lotes=1, cantidad_kg=1,
+                                  fecha_offset_dias=3)
+    try:
+        r = cs.get('/api/programacion/producciones-faltantes?dias=14')
+        d = r.get_json()
+        agr = [g for g in (d.get('producciones_agrupadas') or [])
+               if g['producto'] == 'PROD-NOCLON']
+        assert len(agr) == 1
+        assert agr[0]['duplicado_sospechoso'] is False, \
+            'realizada vs pendiente NO son clones'
+    finally:
+        _cleanup(productos=['PROD-NOCLON'], prod_ids=[pid_done, pid_next])
+
+
 def test_dashboard_html_expone_vista_simple(app, db_clean):
     cs = _login(app, 'luis')
     body = cs.get('/inventarios').get_data(as_text=True)
@@ -480,6 +681,12 @@ def test_dashboard_html_expone_vista_simple(app, db_clean):
     assert 'pv2VerProductoAgrupado' in body
     assert 'pv2LimpiarDuplicados' in body
     assert 'Limpiar duplicados' in body
+    # Sebastian 8-may-2026: UNA FILA POR (producto × fecha) — antes colapsaba
+    # múltiples fechas en "Lun 11 +N" oculto.
+    assert 'UNA FILA POR (producto × fecha)' in body
+    assert 'Fecha</th>' in body  # nuevo header (antes "Próxima")
+    # +N badge ya NO debe estar — todas las fechas son visibles ahora
+    assert '<span style="color:#94a3b8;font-size:10px">+' not in body
 
 
 # ── Vista agrupada por producto ────────────────────────────────────
@@ -536,6 +743,87 @@ def test_duplicado_sospechoso_marca_clones_dentro_de_7_dias(app, db_clean):
         assert res.get('n_productos_con_duplicados', 0) >= 1
     finally:
         _cleanup(productos=['PROD-DUP'], prod_ids=[pid_a, pid_b])
+
+
+def test_fechas_distintas_misma_semana_no_se_colapsan(app, db_clean):
+    """Bug 8-may-2026 Sebastián: el panel mostraba 'Lun 11 +1' colapsando
+    múltiples fechas distintas de la misma semana en la primera. El backend
+    DEBE devolver TODAS las fechas distintas con su propio pid/lotes/kg en
+    g.fechas[] para que el frontend pueda renderizar una fila por fecha.
+
+    Caso: PROD-MULTIWEEK con 3 fechas en horizonte 14d (lunes 11, jueves 14,
+    lunes 18). Cada fecha con kg/lotes distintos. La respuesta debe preservar
+    las 3 fechas separadas.
+    """
+    cs = _login(app, 'luis')
+    _seed_mp_y_stock('MP-MW-1', 'X', 100000)
+    _seed_formula('PROD-MULTIWEEK', [('MP-MW-1', 'X', 1000)], lote_size_kg=10)
+    pid_1 = _seed_produccion('PROD-MULTIWEEK', lotes=2, cantidad_kg=20,
+                              fecha_offset_dias=3)
+    pid_2 = _seed_produccion('PROD-MULTIWEEK', lotes=1, cantidad_kg=10,
+                              fecha_offset_dias=6)
+    pid_3 = _seed_produccion('PROD-MULTIWEEK', lotes=3, cantidad_kg=30,
+                              fecha_offset_dias=10)
+    try:
+        r = cs.get('/api/programacion/producciones-faltantes?dias=14')
+        assert r.status_code == 200
+        d = r.get_json()
+        agr = [g for g in (d.get('producciones_agrupadas') or [])
+               if g['producto'] == 'PROD-MULTIWEEK']
+        assert len(agr) == 1
+        g = agr[0]
+        # Las 3 fechas DISTINTAS deben estar en g.fechas — sin colapsar
+        assert len(g['fechas']) == 3, \
+            f"Esperaba 3 fechas distintas, got {len(g['fechas'])}"
+        # Cada fecha con su propio pid/lotes/kg (no totalizado)
+        fechas_por_pid = {f['pid']: f for f in g['fechas']}
+        assert pid_1 in fechas_por_pid
+        assert pid_2 in fechas_por_pid
+        assert pid_3 in fechas_por_pid
+        assert fechas_por_pid[pid_1]['lotes'] == 2
+        assert fechas_por_pid[pid_2]['lotes'] == 1
+        assert fechas_por_pid[pid_3]['lotes'] == 3
+        assert fechas_por_pid[pid_1]['cantidad_kg'] == 20
+        assert fechas_por_pid[pid_2]['cantidad_kg'] == 10
+        assert fechas_por_pid[pid_3]['cantidad_kg'] == 30
+        # Fechas ordenadas ascendente
+        fechas_iso = [f['fecha'] for f in g['fechas']]
+        assert fechas_iso == sorted(fechas_iso)
+        # Totales agregados separados de las fechas individuales
+        assert g['total_lotes'] == 6
+        assert g['total_kg'] == 60
+    finally:
+        _cleanup(productos=['PROD-MULTIWEEK'], mps=['MP-MW-1'],
+                  prod_ids=[pid_1, pid_2, pid_3])
+
+
+def test_fechas_no_se_marcan_clones_si_separadas_mas_de_7_dias(app, db_clean):
+    """Bug-related: 4 lunes consecutivos del mes (4 productions, 7 dias entre
+    cada una) NO debe activar el flag duplicado_sospechoso porque la regla es
+    'mismo producto + mismos lotes/kg DENTRO de 7 dias' — exactamente 7 entra
+    al límite, pero el caso real son lunes consecutivos de cadencia distinta.
+    """
+    cs = _login(app, 'luis')
+    _seed_formula('PROD-MONDAYS', [('MP-MN-1', 'X', 500)], lote_size_kg=5)
+    # 4 fechas separadas por > 7 días cada una (offset 1, 9, 17, 25)
+    pids = []
+    for offset in (1, 9, 17, 25):
+        pids.append(_seed_produccion('PROD-MONDAYS', lotes=1, cantidad_kg=5,
+                                      fecha_offset_dias=offset))
+    try:
+        r = cs.get('/api/programacion/producciones-faltantes?dias=30')
+        d = r.get_json()
+        agr = [g for g in (d.get('producciones_agrupadas') or [])
+               if g['producto'] == 'PROD-MONDAYS']
+        assert len(agr) == 1
+        g = agr[0]
+        # 4 fechas distintas preservadas
+        assert len(g['fechas']) == 4
+        # No debe marcar como clones (separadas > 7d)
+        assert g['duplicado_sospechoso'] is False, \
+            f"Lunes consecutivos NO son clones · detalle: {g.get('duplicados_detalle')}"
+    finally:
+        _cleanup(productos=['PROD-MONDAYS'], prod_ids=pids)
 
 
 def test_duplicado_no_marca_si_distintos_lotes(app, db_clean):

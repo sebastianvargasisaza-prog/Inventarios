@@ -12129,14 +12129,26 @@ async function ckMarcar(itemId, estado){
       _PV2_FALTANTES_DATA = d;
       var res = d.resumen || {};
       var nDup = res.n_productos_con_duplicados || 0;
+      var nReal = res.n_realizadas || 0;
+      var nProc = res.n_en_proceso || 0;
+      var nAtr = res.n_atrasadas || 0;
+      var nPend = res.n_pendientes || 0;
+      var pasadoDias = d.pasado_dias || 0;
       if(resumen){
-        var txt = (res.n_productos_unicos||0)+' productos · '+
-                  res.n_producciones+' producciones · '+
-                  res.n_mps_faltantes+' MPs faltantes · '+
-                  res.n_mees_faltantes+' MEEs faltantes · '+
-                  res.n_proveedores_unicos+' proveedores · horizonte '+dias+'d';
-        if(nDup) txt += ' · ⚠️ '+nDup+' con clones';
-        resumen.textContent = txt;
+        // Sebastián 8-may-2026: separar pendientes de realizadas en el header
+        // para que se vea de un golpe qué falta y qué ya está hecho.
+        var partes = [];
+        partes.push((res.n_productos_unicos||0)+' productos');
+        if(nPend) partes.push(nPend+' pendientes');
+        if(nProc) partes.push('▶ '+nProc+' en curso');
+        if(nAtr) partes.push('⚠️ '+nAtr+' atrasadas');
+        if(nReal) partes.push('✓ '+nReal+' realizadas');
+        partes.push(res.n_mps_faltantes+' MPs faltantes');
+        partes.push(res.n_mees_faltantes+' MEEs faltantes');
+        partes.push(res.n_proveedores_unicos+' proveedores');
+        partes.push('ventana -'+pasadoDias+'d / +'+dias+'d');
+        if(nDup) partes.push('⚠️ '+nDup+' con clones');
+        resumen.textContent = partes.join(' · ');
       }
       var hayFaltantes = (res.n_mps_faltantes||0)+(res.n_mees_faltantes||0) > 0;
       if(btn) btn.style.display = hayFaltantes ? 'inline-block' : 'none';
@@ -12199,38 +12211,86 @@ async function ckMarcar(itemId, estado){
                 'font-weight:700;cursor:pointer">🗑️ Limpiar</button>';
         html += '</div>';
       }
+      // Sebastian 8-may-2026 (zero-error): UNA FILA POR (producto × fecha).
+      // Antes era una fila por producto con badge "+N" oculto y eso colapsaba
+      // visualmente todas las fechas a la primera (ej. AZHC Lun 11 Y Lun 18
+      // ambos aparecian solo como "Lun 11 +1"). Ahora cada fecha programada
+      // es una fila propia, ordenadas por fecha ascendente. Kg y Lotes son
+      // de ESA fecha, Estado sigue siendo agregado a nivel producto (porque
+      // las MPs/MEEs faltantes se calculan sumando todas las fechas).
+      var filas = [];
+      grupos.forEach(function(g, idx){
+        (g.fechas||[]).forEach(function(f, fi){
+          filas.push({grupo: g, grupoIdx: idx, fecha: f, fechaIdx: fi});
+        });
+      });
+      filas.sort(function(a, b){
+        var fa = (a.fecha.fecha||'').slice(0,10);
+        var fb = (b.fecha.fecha||'').slice(0,10);
+        if(fa !== fb) return fa < fb ? -1 : 1;
+        var pa = (a.grupo.producto||'').toUpperCase();
+        var pb = (b.grupo.producto||'').toUpperCase();
+        return pa < pb ? -1 : (pa > pb ? 1 : 0);
+      });
+
       html += '<table style="width:100%;border-collapse:collapse;font-size:12px">';
       html += '<thead><tr style="border-bottom:2px solid #e2e8f0;'+
               'background:#f8fafc">'+
               '<th style="text-align:left;padding:8px 10px;font-weight:700;'+
               'color:#64748b">Producto</th>'+
               '<th style="text-align:left;padding:8px 10px;font-weight:700;'+
-              'color:#64748b;width:100px">Próxima</th>'+
+              'color:#64748b;width:120px">Fecha</th>'+
               '<th style="text-align:right;padding:8px 10px;font-weight:700;'+
               'color:#64748b;width:80px">Kg</th>'+
               '<th style="text-align:right;padding:8px 10px;font-weight:700;'+
               'color:#64748b;width:60px">Lotes</th>'+
               '<th style="text-align:left;padding:8px 10px;font-weight:700;'+
-              'color:#64748b;width:140px">Estado</th>'+
+              'color:#64748b;width:160px">Estado</th>'+
               '<th style="width:40px"></th>'+
               '</tr></thead><tbody>';
-      grupos.forEach(function(g, idx){
+      filas.forEach(function(row){
+        var g = row.grupo;
+        var f = row.fecha;
         var faltMP = g.faltantes_mps_count || 0;
         var faltMEE = g.faltantes_mees_count || 0;
         var hayFalta = (faltMP + faltMEE) > 0;
         var dup = !!g.duplicado_sospechoso;
-        var proxFecha = (g.fechas && g.fechas[0] && g.fechas[0].fecha) || '';
-        var nFechas = (g.fechas||[]).length;
-        // Próxima fecha en formato Día/Mes
-        var proxLbl = '-';
-        if(proxFecha){
-          var dt = new Date(proxFecha+'T00:00:00');
+        var iso = (f.fecha||'').slice(0,10);
+        var dt = iso ? new Date(iso+'T00:00:00') : null;
+        var fechaLbl = '-';
+        var fechaCol = '#64748b';
+        if(dt && !isNaN(dt.getTime())){
           var dowName = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'][dt.getDay()];
-          proxLbl = dowName+' '+dt.getDate();
+          fechaLbl = dowName+' '+dt.getDate();
+          var esHoy = iso === hoyISO;
+          var esPasado = iso < hoyISO;
+          if(esHoy){ fechaLbl += ' · HOY'; fechaCol = '#0e7490'; }
+          else if(esPasado){ fechaLbl += ' · ya pasó'; fechaCol = '#94a3b8'; }
+          else { fechaCol = '#0f766e'; }
         }
-        // Estado
+        // Sebastián 8-may-2026 · estado_display: realizada / en_proceso /
+        // atrasada / pendiente. Cada uno con tag visual distinto. Las
+        // realizadas y en_proceso NO muestran botón borrar (ya descontaron
+        // inventario · borrarlas crearía drift).
+        var sd = f.estado_display || 'pendiente';
+        var rowBg = '';
+        var rowOpacity = '1';
         var estadoTxt, estadoCol;
-        if(hayFalta){
+        if(sd === 'realizada'){
+          estadoTxt = '✓ Realizada';
+          estadoCol = '#15803d';
+          rowBg = '#f0fdf4';
+          rowOpacity = '0.85';
+        } else if(sd === 'en_proceso'){
+          estadoTxt = '▶ En proceso';
+          estadoCol = '#b45309';
+          rowBg = '#fffbeb';
+        } else if(sd === 'atrasada'){
+          estadoTxt = '⚠ Atrasada';
+          if(hayFalta) estadoTxt += ' · falta '+faltMP+(faltMP===1?' MP':' MPs');
+          estadoCol = '#b91c1c';
+          rowBg = '#fef2f2';
+        } else if(hayFalta){
           estadoTxt = 'Falta '+faltMP+(faltMP===1?' MP':' MPs');
           if(faltMEE) estadoTxt += ' · '+faltMEE+(faltMEE===1?' MEE':' MEEs');
           estadoCol = '#dc2626';
@@ -12238,14 +12298,15 @@ async function ckMarcar(itemId, estado){
           estadoTxt = '✓ Listo';
           estadoCol = '#16a34a';
         }
-        var fechasTooltip = (g.fechas||[])
-          .map(function(f){ return (f.fecha||'').slice(0,10)+' · '+(f.lotes||1)+'L · '+(f.cantidad_kg||0)+'kg'; })
-          .join(' | ');
-        html += '<tr onclick="pv2VerProductoAgrupado('+idx+')" '+
-                'style="border-bottom:1px solid #f1f5f9;cursor:pointer" '+
-                'onmouseover="this.style.background=\\'#f8fafc\\'" '+
-                'onmouseout="this.style.background=\\'transparent\\'" '+
-                'title="'+_escHTML(fechasTooltip)+'">';
+        var pidArrJSON = JSON.stringify([f.pid]).replace(/"/g,'&quot;');
+        var rowLabel = (g.producto||'')+' · '+fechaLbl;
+        var rowStyle = 'border-bottom:1px solid #f1f5f9;cursor:pointer;'+
+                       'opacity:'+rowOpacity+';';
+        if(rowBg) rowStyle += 'background:'+rowBg+';';
+        html += '<tr onclick="pv2VerProductoAgrupado('+row.grupoIdx+')" '+
+                'style="'+rowStyle+'" '+
+                'onmouseover="this.style.background=\\'#f1f5f9\\'" '+
+                'onmouseout="this.style.background=\\''+(rowBg||'transparent')+'\\'">';
         html += '<td style="padding:8px 10px;font-weight:600;color:#1e293b">'+
                 _escHTML(g.producto||'');
         if(dup){
@@ -12254,24 +12315,22 @@ async function ckMarcar(itemId, estado){
                   'font-weight:700;margin-left:4px" title="Clones detectados">CLONES</span>';
         }
         html += '</td>';
-        html += '<td style="padding:8px 10px;color:#64748b">'+_escHTML(proxLbl);
-        if(nFechas > 1){
-          html += ' <span style="color:#94a3b8;font-size:10px">+'+(nFechas-1)+'</span>';
-        }
-        html += '</td>';
+        html += '<td style="padding:8px 10px;color:'+fechaCol+';font-weight:600">'+
+                _escHTML(fechaLbl)+'</td>';
         html += '<td style="padding:8px 10px;text-align:right;color:#475569">'+
-                Number(g.total_kg||0).toFixed(1)+'</td>';
+                Number(f.cantidad_kg||0).toFixed(1)+'</td>';
         html += '<td style="padding:8px 10px;text-align:right;color:#475569">'+
-                (g.total_lotes||0)+'</td>';
+                (f.lotes||1)+'</td>';
         html += '<td style="padding:8px 10px;color:'+estadoCol+';'+
                 'font-weight:600">'+_escHTML(estadoTxt)+'</td>';
-        // Botón quitar · borra TODAS las fechas de este producto en el horizonte
-        var pids = (g.fechas||[]).map(function(f){ return f.pid; }).filter(Boolean);
-        if(pids.length){
+        // Sebastián 8-may-2026: solo permitir borrar pendientes/atrasadas.
+        // Realizadas y en_proceso ya tocaron inventario · borrarlas crea drift.
+        var puedeBorrar = (sd === 'pendiente' || sd === 'atrasada');
+        if(f.pid && puedeBorrar){
           html += '<td style="padding:6px 8px;text-align:right">'+
                   '<button onclick="event.stopPropagation();pv2QuitarProducto('+
-                  JSON.stringify(pids).replace(/"/g,'&quot;')+',\\''+_escHTML(g.producto||'')+'\\')" '+
-                  'title="Borrar esta producción de la DB (queda solo en Calendar)" '+
+                  pidArrJSON+',\\''+_escHTML(rowLabel)+'\\')" '+
+                  'title="Borrar SOLO esta producción del horizonte (otras fechas no se tocan)" '+
                   'style="background:transparent;border:1px solid #fecaca;color:#dc2626;'+
                   'border-radius:4px;padding:3px 8px;font-size:11px;cursor:pointer">🗑️</button>'+
                   '</td>';
