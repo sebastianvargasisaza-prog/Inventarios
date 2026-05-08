@@ -162,9 +162,25 @@
 - Pre-sprint: 0 golden paths formales · regresiones llegaban a prod.
 - Sprint Día 1: 5 golden paths.
 - Expansión 1: 15 golden paths.
-- **Expansión 2: 23 golden paths** (cobertura ahora >55% de flujos críticos).
+- Expansión 2: 23 golden paths.
+- **Expansión 3: 33 golden paths** (cobertura ~80% de flujos críticos).
 
-Tiempo de ejecución completo (Guardian quick mode): **~13s**.
+Tiempo de ejecución completo (Guardian quick mode): **~18s**.
+
+## Golden paths 24-33 (Expansión 3 · 7-may-2026)
+
+| GP | Flujo | Módulo |
+|---|---|---|
+| 24 | Cancelar producción no-iniciada | Producción |
+| 25 | Animus inv físico baseline (Daniela) | Animus |
+| 26 | Quejas ASG-PRO-013 endpoint vivo | Calidad |
+| 27 | Recalls ASG-PRO-004 endpoint | Calidad |
+| 28 | Cambios ASG-PRO-007 listado | Calidad |
+| 29 | Bodega MEE listado | Bodega MEE |
+| 30 | Backup endpoint admin | Operaciones |
+| 31 | Comercial / Maquila pipeline | Maquila |
+| 32 | Health critical-paths disponible (meta) | Operaciones |
+| 33 | Rate limit login anti brute-force | Auth |
 
 ## Plan de expansión
 

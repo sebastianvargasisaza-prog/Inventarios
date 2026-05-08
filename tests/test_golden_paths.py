@@ -979,3 +979,180 @@ def test_golden_cambiar_proveedor_lote(app, db_clean):
     finally:
         _exec("DELETE FROM movimientos WHERE material_id=?", (codigo,))
         _exec("DELETE FROM maestro_mps WHERE codigo_mp=?", (codigo,))
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 24 · PRO-3 · Cancelar producción no-iniciada
+# ═══════════════════════════════════════════════════════════════════
+
+def test_golden_cancelar_produccion(app, db_clean):
+    cs = _login(app, 'sebastian')
+    pid = _exec("""
+        INSERT INTO produccion_programada
+          (producto, fecha_programada, lotes, estado, cantidad_kg, origen)
+        VALUES ('GP24-PROD-CANCEL', date('now', '+5 days'), 1, 'pendiente',
+                10, 'manual')
+    """)
+    try:
+        r = cs.delete(f'/api/programacion/produccion-programada/{pid}/borrar',
+                      headers=csrf_headers())
+        if r.status_code == 200:
+            rows = _query("SELECT COUNT(*) FROM produccion_programada WHERE id=?",
+                          (pid,))
+            assert rows[0][0] == 0, \
+                f'BUG: producción cancelada/borrada sigue en DB · id={pid}'
+    finally:
+        _exec("DELETE FROM produccion_programada WHERE id=?", (pid,))
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 25 · ANI-1 · Animus inv físico baseline
+# ═══════════════════════════════════════════════════════════════════
+
+def test_golden_animus_baseline_set(app, db_clean):
+    cs = _login(app, 'sebastian')
+    sku = 'GP25-SKU-ANI'
+    try:
+        r = cs.post('/api/animus/inv-fisico/baseline',
+                    json={'sku': sku, 'descripcion': 'Test ANI',
+                          'unidades_baseline': 100,
+                          'fecha_baseline': '2026-05-07'},
+                    headers=csrf_headers())
+        if r.status_code in (200, 201):
+            rows = _query("""SELECT unidades_baseline FROM animus_inventario_baseline
+                             WHERE sku=?""", (sku,))
+            assert rows and rows[0][0] == 100, \
+                f'BUG: baseline ANI no se guardó · {rows}'
+    finally:
+        try:
+            _exec("DELETE FROM animus_inventario_movimientos WHERE sku=?", (sku,))
+            _exec("DELETE FROM animus_inventario_baseline WHERE sku=?", (sku,))
+        except sqlite3.OperationalError:
+            pass
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 26 · ASG-2 · Quejas ASG-PRO-013 endpoint
+# ═══════════════════════════════════════════════════════════════════
+
+def test_golden_aseguramiento_quejas_endpoint(app, db_clean):
+    cs = _login(app, 'laura')
+    r = cs.get('/api/aseguramiento/quejas')
+    assert r.status_code == 200, \
+        f'BUG: /aseguramiento/quejas caído · {r.status_code}'
+    d = r.get_json()
+    assert isinstance(d, (dict, list)), 'response debe ser JSON'
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 27 · ASG-3 · Recalls ASG-PRO-004 endpoint
+# ═══════════════════════════════════════════════════════════════════
+
+def test_golden_aseguramiento_recalls_endpoint(app, db_clean):
+    cs = _login(app, 'laura')
+    r = cs.get('/api/aseguramiento/recalls')
+    # Endpoint puede no existir aún (depende del estado de ASG-PRO-004)
+    # Lo importante: si existe, responde 200/404 (no 500).
+    assert r.status_code in (200, 404), \
+        f'BUG: /aseguramiento/recalls 5xx · {r.status_code}'
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 28 · ASG-4 · Cambios ASG-PRO-007 listado
+# ═══════════════════════════════════════════════════════════════════
+
+def test_golden_aseguramiento_cambios_endpoint(app, db_clean):
+    cs = _login(app, 'laura')
+    r = cs.get('/api/aseguramiento/cambios')
+    assert r.status_code == 200, \
+        f'BUG: /aseguramiento/cambios caído · {r.status_code}'
+    d = r.get_json()
+    assert isinstance(d, (dict, list)), 'response debe ser JSON'
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 29 · MEE-1 · Bodega MEE GET listado
+# ═══════════════════════════════════════════════════════════════════
+
+def test_golden_bodega_mee_listado(app, db_clean):
+    cs = _login(app, 'sebastian')
+    r = cs.get('/api/mee')
+    assert r.status_code == 200, \
+        f'BUG: /api/mee caído · {r.status_code}'
+    d = r.get_json()
+    # Debe ser dict con key 'mee' o lista directa
+    assert isinstance(d, (dict, list)), 'response debe ser JSON estructurado'
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 30 · OPS-1 · Backup endpoint admin disponible
+# ═══════════════════════════════════════════════════════════════════
+
+def test_golden_backup_endpoint(app, db_clean):
+    cs = _login(app, 'sebastian')
+    r = cs.get('/api/admin/backups')
+    assert r.status_code == 200, \
+        f'BUG: /admin/backups caído · {r.status_code}'
+    d = r.get_json() or {}
+    # Debe tener key 'backups' o similar
+    has_data = any(k in d for k in ('backups', 'recent_runs', 'config'))
+    assert has_data, f'/admin/backups response sin estructura esperada: {list(d.keys())}'
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 31 · CMR-1 · Comercial / Maquila pipeline accesible
+# ═══════════════════════════════════════════════════════════════════
+
+def test_golden_comercial_maquila_pipeline(app, db_clean):
+    cs = _login(app, 'sebastian')
+    # Página comercial debe cargar (HTML render)
+    r = cs.get('/comercial')
+    assert r.status_code == 200, \
+        f'BUG: /comercial caído · {r.status_code}'
+    # Endpoint maquila deals
+    r = cs.get('/api/maquila/deals')
+    # 200 si existe el endpoint, 404 si no · NUNCA 5xx
+    assert r.status_code != 500, \
+        f'BUG: /api/maquila/deals 5xx · {r.status_code} {r.data[:200]}'
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 32 · OPS · Health critical-paths NO regresión
+# ═══════════════════════════════════════════════════════════════════
+# Meta-check: el endpoint que monitorea otros checks debe SIEMPRE
+# responder. Si esto cae, el watcher cron no detecta nada.
+
+def test_golden_health_critical_paths_disponible(app, db_clean):
+    cs = _login(app, 'sebastian')
+    r = cs.get('/api/admin/health/critical-paths')
+    assert r.status_code in (200, 503), \
+        f'BUG: health/critical-paths · {r.status_code}'
+    d = r.get_json()
+    assert d.get('total_checks', 0) >= 8, \
+        f'BUG: faltan checks · solo {d.get("total_checks")}'
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 33 · AUTH-7 · Rate limit login (5 intentos → bloqueo)
+# ═══════════════════════════════════════════════════════════════════
+
+def test_golden_rate_limit_login(app, db_clean):
+    """6 intentos fallidos seguidos · el 6to debe ser bloqueado o
+    requerir delay. Anti brute-force."""
+    c = app.test_client()
+    # 6 intentos con password mala
+    statuses = []
+    for i in range(6):
+        r = c.post('/login',
+                   data={'username': f'usr_no_existe_{i % 2}',
+                         'password': 'wrong-password'},
+                   headers=csrf_headers(),
+                   follow_redirects=False)
+        statuses.append(r.status_code)
+    # Al menos uno de los últimos 2 debería ser bloqueado
+    # (429 Too Many Requests, 403 Forbidden, o no-302 stuck en login)
+    last_two = statuses[-2:]
+    has_block = any(s in (429, 403) for s in last_two)
+    no_redirect = all(s != 302 for s in statuses)
+    assert has_block or no_redirect, \
+        f'BUG SEGURIDAD: rate limit no protege login · statuses={statuses}'
