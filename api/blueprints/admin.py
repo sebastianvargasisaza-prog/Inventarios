@@ -222,6 +222,364 @@ def admin_users_list():
     return jsonify({"users": out, "total": len(out)})
 
 
+@bp.route("/admin/skus-pendientes", methods=["GET"])
+def admin_skus_pendientes_page():
+    """Página HTML que lista SKUs no mapeados detectados por
+    /api/programacion/debug-calendar y permite asignar producto
+    inline sin tocar DB.
+
+    Sebastián 8-may-2026: cuando Alejandro agrega un evento al
+    Calendar con un SKU nuevo (HYDRA BALANCE, GLOSSMERLOT, etc.),
+    no aparece en /producciones-faltantes hasta que alguien
+    agrega el mapping. Esta página le permite a admin hacerlo
+    en 30 segundos.
+    """
+    u, err, code = _require_admin()
+    if err:
+        return Response(
+            '<h1>403</h1><p>Solo admin</p>',
+            status=403, mimetype='text/html'
+        )
+    return Response(_SKUS_PENDIENTES_HTML, mimetype='text/html')
+
+
+_SKUS_PENDIENTES_HTML = """<!DOCTYPE html>
+<html lang="es"><head>
+<meta charset="utf-8">
+<title>SKUs pendientes · EOS</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+       background: #f8fafc; color: #1e293b; padding: 20px; line-height: 1.5; }
+h1 { font-size: 22px; margin-bottom: 4px; }
+.sub { color: #64748b; font-size: 13px; margin-bottom: 18px; }
+.banner { padding: 14px 18px; border-radius: 10px; margin-bottom: 16px;
+          font-size: 14px; font-weight: 600; }
+.banner.ok { background: #dcfce7; color: #166534; border: 1px solid #86efac; }
+.banner.warn { background: #fef3c7; color: #92400e; border: 1px solid #fde047; }
+.row-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px;
+            padding: 14px 18px; margin-bottom: 10px; }
+.row-card.assigned { background: #f0fdf4; border-color: #86efac; opacity: .7; }
+.titulo-evento { font-size: 13px; color: #64748b; margin-bottom: 4px; }
+.fecha { display: inline-block; font-size: 11px; padding: 2px 8px;
+         background: #f1f5f9; border-radius: 4px; color: #475569;
+         margin-right: 8px; }
+.skus-list { display: inline-flex; gap: 4px; flex-wrap: wrap;
+             align-items: center; margin: 6px 0; }
+.sku-chip { display: inline-block; padding: 4px 10px; border-radius: 6px;
+            font-size: 12px; font-weight: 700; background: #fef3c7;
+            color: #92400e; cursor: pointer; border: 1px solid #fde047; }
+.sku-chip:hover { background: #fde047; }
+.sku-chip.selected { background: #16a34a; color: #fff; border-color: #16a34a; }
+.assign-row { display: flex; gap: 8px; align-items: center;
+              margin-top: 10px; padding-top: 10px;
+              border-top: 1px dashed #e2e8f0; }
+.assign-row input { flex: 1; padding: 8px 12px; border: 1px solid #cbd5e1;
+                    border-radius: 6px; font-size: 13px; font-family: inherit; }
+.assign-row select { padding: 8px 12px; border: 1px solid #cbd5e1;
+                     border-radius: 6px; font-size: 13px; min-width: 280px; }
+.btn { padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer;
+       font-size: 13px; font-weight: 700; }
+.btn.primary { background: #0f766e; color: #fff; }
+.btn.primary:hover { background: #0d5d56; }
+.btn.primary:disabled { opacity: .5; cursor: not-allowed; }
+.actions-top { display: flex; gap: 10px; margin-bottom: 14px; }
+.muted { color: #94a3b8; font-size: 11px; margin-top: 4px; }
+.success-msg { color: #16a34a; font-size: 12px; font-weight: 600; }
+.error-msg { color: #dc2626; font-size: 12px; }
+</style>
+</head><body>
+<h1>🧩 SKUs pendientes de mapear</h1>
+<div class="sub">Eventos del Calendar cuyos SKUs no están en
+sku_producto_map · agregar mapping para que aparezcan en Plan.</div>
+
+<div id="banner" class="banner warn">⏳ Cargando...</div>
+
+<div class="actions-top">
+  <button class="btn primary" onclick="loadPending()">↻ Recargar</button>
+  <button class="btn" onclick="window.open('/api/programacion/debug-calendar?dias=30','_blank')"
+          style="background:#475569;color:#fff">JSON raw</button>
+  <button class="btn" onclick="window.location.href='/admin'"
+          style="background:#475569;color:#fff">← Volver a admin</button>
+</div>
+
+<div id="grid"></div>
+
+<script>
+let _productosLista = [];
+let _eventosBuckets = {ok:0, sku_no_mapeado:0, sin_formula:0, sin_sku:0, no_fab:0};
+
+async function loadPending() {
+  document.getElementById('banner').textContent = '⏳ Cargando...';
+  try {
+    // Cargar mapeos existentes para datalist
+    const mapsR = await fetch('/api/admin/sku-producto-map?limit=1000');
+    const mapsD = await mapsR.json();
+    const productosSet = new Set();
+    (mapsD.mappings || []).forEach(m => {
+      if (m.producto_nombre) productosSet.add(m.producto_nombre);
+    });
+
+    // Cargar productos del catálogo (formulas existentes)
+    const catR = await fetch('/api/maestro-mps?limit=2000').catch(()=>({ok:false}));
+    if (catR.ok) {
+      const catD = await catR.json();
+      // (productos vienen de formula_headers · usaremos lo que hay)
+    }
+
+    _productosLista = [...productosSet].sort();
+
+    // Cargar eventos pendientes
+    const r = await fetch('/api/programacion/debug-calendar?dias=30');
+    const d = await r.json();
+    if (!r.ok) { showError(d.error || 'Error'); return; }
+
+    _eventosBuckets = d.counters || {};
+    const pendientes = (d.eventos || []).filter(e => e.status === 'sku_no_mapeado');
+    renderBanner(pendientes.length, d.total_eventos);
+    renderGrid(pendientes);
+  } catch(e) {
+    showError(e.message);
+  }
+}
+
+function renderBanner(pendientes, total) {
+  const b = document.getElementById('banner');
+  if (pendientes === 0) {
+    b.className = 'banner ok';
+    b.textContent = '✅ Sin SKUs pendientes · todos los eventos mapeados.';
+  } else {
+    b.className = 'banner warn';
+    b.textContent = '⚠️ ' + pendientes + ' eventos con SKUs no mapeados (de ' + total + ' totales en horizonte 30d).';
+  }
+}
+
+function showError(msg) {
+  const b = document.getElementById('banner');
+  b.className = 'banner warn';
+  b.textContent = '❌ ' + msg;
+}
+
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function renderGrid(eventos) {
+  if (!eventos.length) {
+    document.getElementById('grid').innerHTML = '<div class="muted">Nada pendiente.</div>';
+    return;
+  }
+  let html = '';
+  eventos.forEach((ev, i) => {
+    const skus = ev.skus_detectados || [];
+    html += '<div class="row-card" id="card-' + i + '" data-idx="' + i + '">' +
+      '<div class="titulo-evento">' +
+        '<span class="fecha">' + esc(ev.fecha) + '</span>' +
+        esc(ev.titulo) +
+      '</div>' +
+      '<div class="skus-list">SKUs: ' +
+        skus.map(s =>
+          '<span class="sku-chip" onclick="selectSku(' + i + ',\\''+ esc(s) +'\\')">' + esc(s) + '</span>'
+        ).join('') +
+      '</div>' +
+      '<div class="assign-row">' +
+        '<input type="text" id="sku-input-' + i + '" placeholder="Click un SKU arriba o escribí manual" />' +
+        '<input type="text" id="prod-input-' + i + '" list="prod-list" placeholder="Producto destino (ej: GEL HIDRATANTE)" />' +
+        '<button class="btn primary" onclick="saveMapping(' + i + ')">💾 Guardar</button>' +
+        '<span id="msg-' + i + '"></span>' +
+      '</div>' +
+    '</div>';
+  });
+  // Datalist con productos conocidos
+  html += '<datalist id="prod-list">' +
+    _productosLista.map(p => '<option value="' + esc(p) + '">').join('') +
+    '</datalist>';
+  document.getElementById('grid').innerHTML = html;
+}
+
+function selectSku(idx, sku) {
+  document.getElementById('sku-input-' + idx).value = sku;
+  // Highlight
+  const card = document.getElementById('card-' + idx);
+  card.querySelectorAll('.sku-chip').forEach(c => c.classList.remove('selected'));
+  card.querySelectorAll('.sku-chip').forEach(c => {
+    if (c.textContent.trim() === sku) c.classList.add('selected');
+  });
+}
+
+async function saveMapping(idx) {
+  const sku = document.getElementById('sku-input-' + idx).value.trim().toUpperCase();
+  const prod = document.getElementById('prod-input-' + idx).value.trim();
+  const msgEl = document.getElementById('msg-' + idx);
+  if (!sku || !prod) {
+    msgEl.className = 'error-msg';
+    msgEl.textContent = 'SKU y producto son obligatorios';
+    return;
+  }
+  msgEl.className = 'muted';
+  msgEl.textContent = '⏳ Guardando...';
+  try {
+    const r = await fetch('/api/admin/sku-producto-map', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({sku: sku, producto_nombre: prod, activo: true})
+    });
+    const d = await r.json();
+    if (r.ok) {
+      msgEl.className = 'success-msg';
+      msgEl.textContent = '✅ ' + sku + ' → ' + prod;
+      const card = document.getElementById('card-' + idx);
+      card.classList.add('assigned');
+      if (d.warning) {
+        msgEl.textContent += ' (advertencia: ' + d.warning + ')';
+      }
+    } else {
+      msgEl.className = 'error-msg';
+      msgEl.textContent = '❌ ' + (d.error || 'Error');
+    }
+  } catch(e) {
+    msgEl.className = 'error-msg';
+    msgEl.textContent = '❌ ' + e.message;
+  }
+}
+
+loadPending();
+</script>
+
+<!-- Widget Mi contraseña -->
+<a href="/cambiar-password" title="Cambiar mi contraseña"
+   style="position:fixed;bottom:24px;left:24px;z-index:9998;
+          background:#1e293b;color:#a78bfa;border:1px solid #4c1d95;
+          border-radius:24px;padding:8px 16px;font-size:12px;font-weight:700;
+          text-decoration:none;box-shadow:0 4px 12px rgba(0,0,0,.2);
+          font-family:-apple-system,Segoe UI,sans-serif;
+          display:flex;align-items:center;gap:6px">
+  🔐 Mi contraseña
+</a>
+</body></html>
+"""
+
+
+@bp.route("/api/admin/sku-producto-map", methods=["GET", "POST"])
+def admin_sku_producto_map():
+    """CRUD del mapeo SKU → producto · Sebastián 8-may-2026.
+
+    Sin este mapping, eventos del Calendar con SKUs como GLOSSMERLOT,
+    HYDRA PEPTIDE, etc. quedan invisibles en /producciones-faltantes.
+
+    GET:
+      ?sku=X       → busca un SKU específico
+      ?producto=Y  → busca productos por nombre
+      (sin args)   → lista todos (last 500)
+
+    POST:
+      body: {sku, producto_nombre, activo: true}
+      Upsert · si existe sku, actualiza producto y activo.
+
+    POST con _delete=true:
+      body: {sku, _delete: true} → marca activo=0 (soft delete)
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+
+    if request.method == "GET":
+        sku = (request.args.get("sku") or "").strip().upper()
+        prod = (request.args.get("producto") or "").strip()
+        try:
+            limit = max(1, min(int(request.args.get("limit", 500)), 5000))
+        except (ValueError, TypeError):
+            limit = 500
+        # Tolerante a schema · creado_at/por pueden no existir
+        cols_info = c.execute("PRAGMA table_info(sku_producto_map)").fetchall()
+        col_names = {ci[1] for ci in cols_info}
+        creado_at_col = ("COALESCE(creado_at,'')" if 'creado_at' in col_names else "''")
+        creado_por_col = ("COALESCE(creado_por,'')" if 'creado_por' in col_names else "''")
+        sql = (f"SELECT sku, producto_nombre, COALESCE(activo,1), "
+               f"{creado_at_col}, {creado_por_col} "
+               "FROM sku_producto_map WHERE 1=1")
+        params = []
+        if sku:
+            sql += " AND UPPER(sku)=?"
+            params.append(sku)
+        if prod:
+            sql += " AND UPPER(producto_nombre) LIKE ?"
+            params.append(f'%{prod.upper()}%')
+        sql += " ORDER BY sku LIMIT ?"
+        params.append(limit)
+        rows = c.execute(sql, params).fetchall()
+        conn.close()
+        return jsonify({
+            "mappings": [
+                {"sku": r[0], "producto_nombre": r[1],
+                 "activo": bool(r[2]), "creado_at": r[3], "creado_por": r[4]}
+                for r in rows
+            ],
+            "total": len(rows),
+        })
+
+    # POST · upsert o delete
+    body = request.get_json(silent=True) or {}
+    sku = (body.get("sku") or "").strip().upper()
+    if not sku:
+        conn.close()
+        return jsonify({"error": "sku requerido"}), 400
+
+    if body.get("_delete"):
+        c.execute("UPDATE sku_producto_map SET activo=0 WHERE UPPER(sku)=?", (sku,))
+        rows = c.rowcount
+        conn.commit()
+        conn.close()
+        return jsonify({"ok": True, "deleted": sku, "rows_affected": rows})
+
+    producto = (body.get("producto_nombre") or "").strip()
+    if not producto:
+        conn.close()
+        return jsonify({"error": "producto_nombre requerido"}), 400
+
+    activo = 1 if body.get("activo", True) else 0
+
+    # Verificar que el producto existe en formula_headers (recomendado)
+    formula_existe = c.execute(
+        "SELECT 1 FROM formula_headers WHERE UPPER(TRIM(producto_nombre))=? LIMIT 1",
+        (producto.upper().strip(),)
+    ).fetchone()
+
+    # Upsert
+    try:
+        c.execute("""
+            INSERT INTO sku_producto_map(sku, producto_nombre, activo)
+            VALUES(?, ?, ?)
+            ON CONFLICT(sku) DO UPDATE SET
+              producto_nombre = excluded.producto_nombre,
+              activo = excluded.activo
+        """, (sku, producto, activo))
+        # Best-effort: agregar created_by/at si las columnas existen
+        try:
+            c.execute(
+                "UPDATE sku_producto_map SET creado_por=? WHERE sku=?",
+                (u, sku),
+            )
+        except sqlite3.OperationalError:
+            pass
+        conn.commit()
+    except Exception as e:
+        conn.close()
+        return jsonify({"error": f"DB: {e}"}), 500
+
+    conn.close()
+    return jsonify({
+        "ok": True, "sku": sku, "producto_nombre": producto,
+        "activo": bool(activo),
+        "warning": (None if formula_existe
+                    else f'producto "{producto}" no tiene fórmula · '
+                         'el sync incluirá el evento pero sin calcular MPs faltantes'),
+    })
+
+
 @bp.route("/api/admin/zero-error/status", methods=["GET"])
 def admin_zero_error_status():
     """Dashboard agregador del sistema anti-regresión.

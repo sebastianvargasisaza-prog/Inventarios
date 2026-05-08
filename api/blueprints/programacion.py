@@ -938,6 +938,8 @@ def _compute_mp_deficit_aggregated(conn, days_ahead=90):
     _NON_FAB_KW = {
         'envasado', 'acondicionamiento', 'micro qc', 'control de calidad',
         'dispensado', 'etiquetado', 'llenado',
+        'reunion', 'reunión', 'ajuste contractual', 'ajuste cor',
+        'meeting', 'agenda', 'capacitaci', 'training',
     }
 
     producciones = []
@@ -3935,6 +3937,9 @@ def debug_calendar_eventos():
     NON_FAB_KW = {
         'envasado', 'acondicionamiento', 'micro qc',
         'control de calidad', 'dispensado', 'etiquetado', 'llenado',
+        # Sebastian 8-may-2026: tambien ignorar eventos no-produccion
+        'reunion', 'reunión', 'ajuste contractual', 'ajuste cor',
+        'meeting', 'agenda', 'capacitaci', 'training',
     }
 
     def _skus(titulo):
@@ -6963,6 +6968,8 @@ def planificacion_estrategica():
         _NON_FAB_KW = {
             'envasado', 'acondicionamiento', 'micro qc',
             'control de calidad', 'dispensado', 'etiquetado', 'llenado',
+            'reunion', 'reunión', 'ajuste contractual', 'ajuste cor',
+            'meeting', 'agenda', 'capacitaci', 'training',
         }
         if any(kw in titulo.lower() for kw in _NON_FAB_KW):
             continue
@@ -8272,6 +8279,9 @@ def _sync_calendar_a_produccion_programada(conn, days_ahead=90,
     NON_FAB_KW = {
         'envasado', 'acondicionamiento', 'micro qc',
         'control de calidad', 'dispensado', 'etiquetado', 'llenado',
+        # Sebastian 8-may-2026: tambien ignorar eventos no-produccion
+        'reunion', 'reunión', 'ajuste contractual', 'ajuste cor',
+        'meeting', 'agenda', 'capacitaci', 'training',
     }
 
     # Mapa codigo_corto_alejandro → codigo_real_db (areas_planta.codigo)
