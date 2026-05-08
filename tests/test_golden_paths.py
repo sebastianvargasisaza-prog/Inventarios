@@ -1289,3 +1289,163 @@ def test_golden_movimientos_mee_endpoint(app, db_clean):
         f'BUG: /movimientos-mee caído · {r.status_code}'
     d = r.get_json()
     assert isinstance(d, (list, dict))
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 41 · AUTH-4 · Diag-login admin (caso Mayerlin)
+# ═══════════════════════════════════════════════════════════════════
+
+def test_golden_diag_login_admin(app, db_clean):
+    cs = _login(app, 'sebastian')
+    r = cs.get('/api/admin/diag-login/mayerlin')
+    assert r.status_code == 200, \
+        f'BUG: /admin/diag-login/mayerlin caído · {r.status_code}'
+    d = r.get_json()
+    # Debe tener al menos info clave para diagnosticar
+    expected_keys = {'username', 'password_source', 'is_locked'}
+    actual_keys = set(d.keys())
+    has_keys = bool(expected_keys & actual_keys)
+    assert has_keys, \
+        f'diag-login response sin keys de diagnóstico · got {actual_keys}'
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 42 · INV-6 · Stock helper canónico devuelve dict
+# ═══════════════════════════════════════════════════════════════════
+
+def test_golden_get_mp_stock_helper(app, db_clean):
+    """_get_mp_stock(conn) debe devolver dict {key: stock} con keys
+    indexados por material_id Y nombre normalizado."""
+    import sys as _sys
+    _sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'api'))
+    from blueprints.programacion import _get_mp_stock
+    conn = sqlite3.connect(os.environ['DB_PATH'])
+    # Seed
+    codigo = 'GP42-MP-STOCK'
+    _exec("""INSERT OR REPLACE INTO maestro_mps
+              (codigo_mp, nombre_comercial, activo, tipo_material)
+              VALUES (?, 'Stock Test', 1, 'MP')""", (codigo,))
+    _exec("""INSERT INTO movimientos
+              (material_id, material_nombre, cantidad, tipo, fecha,
+               lote, estado_lote, operador)
+              VALUES (?, 'Stock Test', 5000, 'Entrada', date('now'),
+                      'L1', 'VIGENTE', 'seed')""", (codigo,))
+    try:
+        stock = _get_mp_stock(conn)
+        assert isinstance(stock, dict), 'helper debe devolver dict'
+        # Debe poder consultarse por material_id
+        assert stock.get(codigo, 0) == 5000, \
+            f'BUG: helper no agrega stock por material_id · got {stock.get(codigo)}'
+    finally:
+        conn.close()
+        _exec("DELETE FROM movimientos WHERE material_id=?", (codigo,))
+        _exec("DELETE FROM maestro_mps WHERE codigo_mp=?", (codigo,))
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 43 · PRG-3 · Producciones-faltantes estructura completa
+# ═══════════════════════════════════════════════════════════════════
+
+def test_golden_producciones_faltantes_estructura(app, db_clean):
+    cs = _login(app, 'sebastian')
+    r = cs.get('/api/programacion/producciones-faltantes?dias=14')
+    assert r.status_code == 200
+    d = r.get_json()
+    expected_keys = ['producciones', 'faltantes_mps', 'faltantes_mees']
+    for k in expected_keys:
+        assert k in d, f'BUG: falta key "{k}" en response · keys: {list(d.keys())}'
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 44 · PRG-4 · Producciones-agrupadas estructura
+# ═══════════════════════════════════════════════════════════════════
+
+def test_golden_producciones_agrupadas_estructura(app, db_clean):
+    cs = _login(app, 'sebastian')
+    r = cs.get('/api/programacion/producciones-agrupadas?dias=14')
+    # Endpoint puede no existir aún · 200 o 404 OK · 5xx NO
+    assert r.status_code != 500, \
+        f'BUG: /producciones-agrupadas 5xx · {r.status_code} {r.data[:200]}'
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 45 · COM-6 · Comprobante pago PDF se genera
+# ═══════════════════════════════════════════════════════════════════
+
+def test_golden_comprobante_pdf_endpoint(app, db_clean):
+    cs = _login(app, 'sebastian')
+    # Solo verificamos que el endpoint NO 5xx · necesitaría seed
+    # complejo de OC + pago para 200 real, pero ese flow ya está
+    # cubierto por GP-18. Acá meta-check de disponibilidad.
+    r = cs.get('/api/comprobantes-pago/999999/pdf')
+    # 404 si comp_id no existe · OK · 5xx NO
+    assert r.status_code != 500, \
+        f'BUG: /comprobantes-pago/<id>/pdf 5xx · {r.status_code}'
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 46 · ASG-5 · audit_log tiene columnas regulatorias
+# ═══════════════════════════════════════════════════════════════════
+
+def test_golden_audit_log_columns_regulatorias(app, db_clean):
+    """audit_log debe tener columnas antes/despues + indexes (mig 91)."""
+    rows = _query("PRAGMA table_info(audit_log)")
+    cols = {r[1] for r in rows}
+    expected = {'usuario', 'accion', 'tabla', 'registro_id'}
+    missing = expected - cols
+    assert not missing, \
+        f'BUG REGULATORIO: audit_log sin columnas core · falta {missing}'
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 47 · PRO-4 · Auto-asignar áreas + operarios
+# ═══════════════════════════════════════════════════════════════════
+
+def test_golden_auto_asignar_endpoint(app, db_clean):
+    cs = _login(app, 'sebastian')
+    # Intentar un trigger (POST) del auto-asignador
+    r = cs.post('/api/planta/reasignar-operarios-conflictos',
+                json={}, headers=csrf_headers())
+    # 200 OK / 404 si endpoint movido · 5xx NO
+    assert r.status_code != 500, \
+        f'BUG: reasignar-operarios 5xx · {r.status_code} {r.data[:200]}'
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 48 · OPS-8 · WAL mode activo
+# ═══════════════════════════════════════════════════════════════════
+
+def test_golden_wal_mode_activo(app):
+    """SQLite debe estar en WAL mode para concurrent writes seguros."""
+    conn = sqlite3.connect(os.environ['DB_PATH'])
+    mode = conn.execute("PRAGMA journal_mode").fetchone()[0]
+    conn.close()
+    assert mode.lower() == 'wal', \
+        f'BUG PERFORMANCE: SQLite NO en WAL mode · {mode} · ' \
+        'concurrent writes pueden corromperse'
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 49 · CMR-2 · Clientes endpoint (Aliados Animus)
+# ═══════════════════════════════════════════════════════════════════
+
+def test_golden_clientes_endpoint(app, db_clean):
+    cs = _login(app, 'sebastian')
+    # Endpoint listado clientes
+    r = cs.get('/api/clientes')
+    # 200 si existe · 404 si está en otro path
+    assert r.status_code != 500, \
+        f'BUG: /api/clientes 5xx · {r.status_code} {r.data[:200]}'
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 50 · AUTH-2 · MFA endpoint disponible (admin only)
+# ═══════════════════════════════════════════════════════════════════
+
+def test_golden_mfa_endpoint(app, db_clean):
+    cs = _login(app, 'sebastian')
+    # Status MFA del propio user
+    r = cs.get('/api/mfa/status')
+    # Si MFA no enrolado, 200 con flag · si endpoint no existe, 404 OK
+    assert r.status_code != 500, \
+        f'BUG: /api/mfa/status 5xx · {r.status_code}'

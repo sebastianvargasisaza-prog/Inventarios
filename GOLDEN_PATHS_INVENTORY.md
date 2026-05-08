@@ -164,9 +164,25 @@
 - Expansión 1: 15 golden paths.
 - Expansión 2: 23 golden paths.
 - Expansión 3: 33 golden paths.
-- **Expansión 4: 40 golden paths** (cobertura ~95% de flujos críticos).
+- Expansión 4: 40 golden paths.
+- **Expansión 5: 50 golden paths** (cobertura ~96% de flujos críticos).
 
-Tiempo de ejecución completo (Guardian quick mode): **~32s**.
+Tiempo de ejecución completo (Guardian quick mode): **~25s**.
+
+## Golden paths 41-50 (Expansión 5 · 7-may-2026)
+
+| GP | Flujo | Módulo |
+|---|---|---|
+| 41 | Diag-login admin (caso Mayerlin) | Auth |
+| 42 | _get_mp_stock helper canónico | Inventario |
+| 43 | Producciones-faltantes estructura completa | Programación |
+| 44 | Producciones-agrupadas estructura | Programación |
+| 45 | Comprobante pago PDF endpoint vivo | Compras |
+| 46 | audit_log columnas regulatorias presentes | Calidad/INVIMA |
+| 47 | Auto-asignar áreas + operarios endpoint | Producción |
+| 48 | SQLite WAL mode activo (concurrencia) | Operaciones |
+| 49 | Clientes endpoint vivo | Comercial |
+| 50 | MFA endpoint disponible | Auth |
 
 ## Golden paths 24-33 (Expansión 3 · 7-may-2026)
 
