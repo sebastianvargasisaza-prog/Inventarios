@@ -111,6 +111,138 @@ def admin_backup_now():
     return jsonify(result), 500
 
 
+@bp.route("/api/admin/restore-backup", methods=["POST"])
+def admin_restore_backup():
+    """Restaura la DB desde un backup específico.
+
+    Sebastián 8-may-2026 (EMERGENCIA): SQLite corrupted en prod.
+    Necesitamos restore rápido sin ssh a Render.
+
+    Body JSON: {filename: "inventario_YYYYMMDD_HHMMSS.db.gz", confirm: true}
+
+    Pasos:
+      1. Verificar que filename existe en BACKUPS_DIR
+      2. Hacer copia del DB actual a /var/data/inventario.db.corrupt-<ts>
+         (por si necesitamos forensics después)
+      3. gunzip el backup a /var/data/inventario.db.tmp
+      4. mv atomic sobre DB_PATH
+      5. Re-init conexiones · próxima request abre la nueva DB
+
+    Returns:
+      {ok, restored_from, corrupt_backup_path, message}
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    body = request.get_json(silent=True) or {}
+    filename = (body.get("filename") or "").strip()
+    confirm = bool(body.get("confirm"))
+
+    if not filename:
+        return jsonify({"error": "filename requerido"}), 400
+    if not confirm:
+        return jsonify({"error": "confirm=true requerido para evitar restore accidental"}), 400
+
+    # Validar filename
+    if not filename.startswith("inventario_") or not filename.endswith(".db.gz"):
+        return jsonify({"error": "filename inválido (debe ser inventario_*.db.gz)"}), 400
+    if "/" in filename or ".." in filename:
+        return jsonify({"error": "filename con caracteres prohibidos"}), 400
+
+    import os as _os
+    import gzip
+    import shutil
+    import time as _time
+
+    backup_path = _os.path.join(BACKUPS_DIR, filename)
+    if not _os.path.exists(backup_path):
+        return jsonify({"error": f"backup no encontrado: {filename}"}), 404
+
+    backup_size = _os.path.getsize(backup_path)
+    if backup_size < 1024:
+        return jsonify({
+            "error": f"backup muy pequeno ({backup_size} bytes) · probablemente corrupto"
+        }), 400
+
+    ts = _time.strftime("%Y%m%d_%H%M%S")
+    corrupt_path = f"{DB_PATH}.corrupt-{ts}"
+    tmp_path = f"{DB_PATH}.restore-tmp-{ts}"
+
+    try:
+        # 1. Mover DB corrupto a archivo .corrupt (para forensics)
+        if _os.path.exists(DB_PATH):
+            try:
+                shutil.copy2(DB_PATH, corrupt_path)
+            except Exception:
+                pass  # best-effort
+
+        # 2. Descomprimir backup a tmp
+        with gzip.open(backup_path, 'rb') as src, open(tmp_path, 'wb') as dst:
+            shutil.copyfileobj(src, dst)
+
+        # 3. Verificar que el archivo descomprimido es una SQLite válida
+        try:
+            test_conn = sqlite3.connect(tmp_path)
+            test_conn.execute("PRAGMA integrity_check")
+            test_conn.close()
+        except Exception as ce:
+            try:
+                _os.unlink(tmp_path)
+            except Exception:
+                pass
+            return jsonify({
+                "error": f"backup descomprimido NO es SQLite válida: {ce}",
+            }), 500
+
+        # 4. mv atomic sobre DB_PATH
+        # SQLite WAL: borrar archivos -wal y -shm si existen para evitar
+        # mezcla con DB nueva
+        for suffix in ('-wal', '-shm', '-journal'):
+            sidecar = DB_PATH + suffix
+            if _os.path.exists(sidecar):
+                try:
+                    _os.unlink(sidecar)
+                except Exception:
+                    pass
+        _os.replace(tmp_path, DB_PATH)
+
+        # 5. _log_sec para audit (no tocamos DB porque acabamos de
+        # restaurar y queremos ver si abre limpio).
+        _log_sec("db_restored", u, _client_ip(),
+                 detalle=f"restored from {filename}")
+
+        # 6. Verificar que la nueva DB abre limpia
+        verify = "ok"
+        try:
+            verify_conn = sqlite3.connect(DB_PATH)
+            row = verify_conn.execute("PRAGMA integrity_check").fetchone()
+            verify = str(row[0]) if row else "(empty)"
+            verify_conn.close()
+        except Exception as e:
+            verify = f"verify failed: {e}"
+
+        return jsonify({
+            "ok": True,
+            "restored_from": filename,
+            "backup_size_bytes": backup_size,
+            "corrupt_backup_path": corrupt_path,
+            "integrity_check": verify,
+            "message": (f"DB restaurada desde {filename}. "
+                        "Próxima request usa la DB nueva. "
+                        f"Backup del corrupto: {corrupt_path}"),
+        })
+
+    except Exception as e:
+        # Limpieza de archivos temporales
+        try:
+            if _os.path.exists(tmp_path):
+                _os.unlink(tmp_path)
+        except Exception:
+            pass
+        return jsonify({"error": f"restore falló: {e}"}), 500
+
+
 @bp.route("/api/admin/backup/<path:filename>", methods=["GET"])
 def admin_backup_download(filename):
     """Descarga un backup específico para off-site."""
