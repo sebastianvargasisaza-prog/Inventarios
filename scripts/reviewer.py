@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
-"""REVIEWER · Sebastián 7-may-2026
+"""REVIEWER - Sebastian 7-may-2026
 
-Pre-commit reviewer · revisa diff staged y aplica heurísticas:
+Pre-commit reviewer · revisa diff staged y aplica heuristicas:
 
-  1. Si modificás un blueprint sin actualizar su CONTRACT_*.md → warning
-  2. Si modificás MEMORY.md sin agregar entrada en SESSION_LOG → warning
-  3. Si agregás endpoint nuevo (@bp.route) sin agregar test → warning
-  4. Si tocás logica crítica (movimientos, conteo_items, sync) sin
-     actualizar golden paths → ERROR (block)
-  5. Si commit no tiene mensaje descriptivo (<10 chars) → warning
+  1. Si modificas un blueprint sin actualizar su CONTRACT_*.md - warning
+  2. Si modificas MEMORY.md sin agregar entrada en SESSION_LOG - warning
+  3. Si agregas endpoint nuevo (@bp.route) sin agregar test - warning
+  4. Si tocas logica critica (movimientos, conteo_items, sync) sin
+     actualizar golden paths - ERROR (block)
+  5. Si commit no tiene mensaje descriptivo (<10 chars) - warning
 
 Uso:
-  python scripts/reviewer.py           · revisa staged
-  python scripts/reviewer.py --strict  · warnings → errors
+  python scripts/reviewer.py           - revisa staged
+  python scripts/reviewer.py --strict  - warnings se vuelven errors
 
-Instalación:
+Instalacion:
   bash scripts/install_hooks.sh
 """
 import re
@@ -22,10 +22,19 @@ import subprocess
 import sys
 from pathlib import Path
 
+# Sebastian 8-may-2026: forzar stdout/stderr a UTF-8 para que
+# print() no falle en Windows console (cp1252) cuando warnings
+# o diff content tienen chars no-ASCII tipo flecha o middot.
+try:
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+except (AttributeError, ValueError):
+    pass  # Python <3.7 o stream sin reconfigure
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 STRICT = '--strict' in sys.argv
 
-# Mapeo blueprint → CONTRACT.md esperado
+# Mapeo blueprint -> CONTRACT.md esperado
 BLUEPRINT_CONTRACTS = {
     'api/blueprints/inventario.py':   'api/blueprints/CONTRACT_inventario.md',
     'api/blueprints/programacion.py': 'api/blueprints/CONTRACT_programacion.md',
@@ -80,7 +89,7 @@ def main():
     warnings = []
     errors = []
 
-    # Check 1: blueprint modificado → CONTRACT.md también?
+    # Check 1: blueprint modificado -> CONTRACT.md también?
     for bp_path, contract_path in BLUEPRINT_CONTRACTS.items():
         if bp_path in files and contract_path not in files:
             # Si solo es un fix trivial (1-2 líneas) no exigimos contract
@@ -92,10 +101,10 @@ def main():
                 warnings.append(
                     f'Modificaste {bp_path} ({ins} líneas) pero NO actualizaste '
                     f'{contract_path}. Si cambiaste invariantes / endpoints / '
-                    f'tablas → actualizá el CONTRACT.'
+                    f'tablas -> actualizá el CONTRACT.'
                 )
 
-    # Check 2: MEMORY.md cambió → SESSION_LOG?
+    # Check 2: MEMORY.md cambió -> SESSION_LOG?
     if 'MEMORY.md' in files:
         has_session = any(f.startswith('SESSION_LOG/') and f.endswith('.md')
                           for f in files)
@@ -105,7 +114,7 @@ def main():
                 'Cambios en reglas estáticas requieren justificación auditable.'
             )
 
-    # Check 3: nuevo endpoint @bp.route → ¿hay test asociado?
+    # Check 3: nuevo endpoint @bp.route -> ¿hay test asociado?
     new_routes = []
     for f in files:
         if not f.endswith('.py'):
@@ -124,7 +133,7 @@ def main():
                 'sin test asociado. Agregá un test antes de mergear.'
             )
 
-    # Check 4: tocó función crítica → golden_paths debe estar staged también
+    # Check 4: tocó función crítica -> golden_paths debe estar staged también
     critical_touched = []
     for f in files:
         if not f.endswith('.py'):
