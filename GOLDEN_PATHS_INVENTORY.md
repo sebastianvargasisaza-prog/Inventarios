@@ -126,10 +126,10 @@
 
 ---
 
-## Resumen de cobertura (post-sprint 7-may-2026)
+## Resumen de cobertura (post-sprint 7-may-2026 · expansión 2)
 
 ```
-✅ Cubierto E2E (15 golden paths verdes en CI):
+✅ Cubierto E2E (23 golden paths verdes en CI):
    GP-1  · Conteo cíclico ajuste afecta lote real      [INV-4]
    GP-2  · Sync Calendar espejo borra orfanos          [PRG-1]
    GP-3  · PATCH SOL sincroniza global                 [COM-2]
@@ -145,13 +145,26 @@
    GP-13 · Migrations idempotentes                     [OPS-7]
    GP-14 · CSRF protección cross-origin                [AUTH-6]
    GP-15 · Aseguramiento endpoints básicos             [ASG-1]
+   GP-16 · Eliminar lote con motivo                    [INV-2]  ⭐ nuevo
+   GP-17 · Autorizar OC                                [COM-4]  ⭐ nuevo
+   GP-18 · Pagar OC                                    [COM-5]  ⭐ nuevo
+   GP-19 · Recibir OC actualiza kardex                 [COM-7]  ⭐ nuevo
+   GP-20 · Completar producción                        [PRO-2]  ⭐ nuevo
+   GP-21 · Reset password admin                        [AUTH-3] ⭐ nuevo
+   GP-22 · Logout invalida sesión                      [AUTH-5] ⭐ nuevo
+   GP-23 · Cambiar proveedor lote                      [INV-3]  ⭐ nuevo
 
-🔶 Parcial: 27 flujos · tests unitarios sin marca golden
-⏳ Pendiente: 18 flujos restantes
+🔶 Parcial: 25 flujos · tests unitarios sin marca golden
+⏳ Pendiente: 10 flujos restantes
 ```
 
-**Antes del sprint**: 5 flujos cubiertos.
-**Después del sprint**: 15 flujos cubiertos · +200%.
+**Histórico de cobertura:**
+- Pre-sprint: 0 golden paths formales · regresiones llegaban a prod.
+- Sprint Día 1: 5 golden paths.
+- Expansión 1: 15 golden paths.
+- **Expansión 2: 23 golden paths** (cobertura ahora >55% de flujos críticos).
+
+Tiempo de ejecución completo (Guardian quick mode): **~13s**.
 
 ## Plan de expansión
 

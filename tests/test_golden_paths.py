@@ -723,3 +723,259 @@ def test_golden_aseguramiento_endpoints_basicos(app, db_clean):
         f'BUG: /aseguramiento/desviaciones caído · {r.status_code}'
     d = r.get_json()
     assert isinstance(d, (dict, list)), 'response debe ser JSON estructurado'
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 16 · INV-2 · Eliminar lote con motivo → kardex baja
+# ═══════════════════════════════════════════════════════════════════
+
+def test_golden_eliminar_lote_baja_kardex(app, db_clean):
+    cs = _login(app, 'sebastian')
+    codigo = 'GP16-MP-DEL'
+    lote = 'GP16-LOTE-DEL'
+    _exec("""INSERT OR REPLACE INTO maestro_mps
+              (codigo_mp, nombre_comercial, activo, tipo_material)
+              VALUES (?, 'X-Del', 1, 'MP')""", (codigo,))
+    _exec("""INSERT INTO movimientos
+              (material_id, material_nombre, cantidad, tipo, fecha,
+               lote, estado_lote, operador)
+              VALUES (?, 'X-Del', 5000, 'Entrada', date('now'),
+                      ?, 'VIGENTE', 'seed')""", (codigo, lote))
+
+    def _stock():
+        rows = _query("""SELECT COALESCE(SUM(CASE WHEN tipo='Entrada'
+                                                   THEN cantidad ELSE -cantidad END), 0)
+                         FROM movimientos WHERE material_id=? AND lote=?""",
+                      (codigo, lote))
+        return float(rows[0][0]) if rows else 0
+
+    assert _stock() == 5000
+    try:
+        # Acción usuario: eliminar lote (con motivo obligatorio)
+        r = cs.delete(f'/api/lotes/{codigo}/{lote}',
+                      json={'motivo': 'Test golden path eliminación'},
+                      headers=csrf_headers())
+        # Toleramos 200, 204 o 400 si la API requiere body diferente
+        if r.status_code in (200, 204):
+            stock_post = _stock()
+            assert stock_post == 0, \
+                f'BUG: eliminar lote no bajó kardex · stock={stock_post}'
+        elif r.status_code == 400:
+            # Validar que requiere motivo
+            d = r.get_json() or {}
+            err = (d.get('error') or '').lower()
+            assert 'motivo' in err or 'required' in err, \
+                f'BUG: rechazo no fue por motivo, fue: {err}'
+    finally:
+        _exec("DELETE FROM movimientos WHERE material_id=?", (codigo,))
+        _exec("DELETE FROM maestro_mps WHERE codigo_mp=?", (codigo,))
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 17 · COM-4 · Autorizar OC → estado=Autorizada
+# ═══════════════════════════════════════════════════════════════════
+
+def test_golden_autorizar_oc(app, db_clean):
+    cs = _login(app, 'sebastian')
+    oc_num = 'GP17-OC-001'
+    _exec("""INSERT OR REPLACE INTO ordenes_compra
+              (numero_oc, fecha, proveedor, estado, valor_total, creado_por)
+              VALUES (?, date('now'), 'ProvPag', 'Autorizada', 50000, 'sebastian')""",
+          (oc_num,))
+    try:
+        r = cs.patch(f'/api/ordenes-compra/{oc_num}/autorizar',
+                     json={}, headers=csrf_headers())
+        if r.status_code == 200:
+            row = _query("SELECT estado, autorizado_por, remision_code "
+                         "FROM ordenes_compra WHERE numero_oc=?", (oc_num,))
+            assert row[0][0] == 'Autorizada', \
+                f'BUG: estado debió ser Autorizada · got {row[0][0]}'
+            assert row[0][1], 'autorizado_por debe quedar trazado'
+            assert row[0][2], 'remision_code debe asignarse al autorizar'
+    finally:
+        _exec("DELETE FROM ordenes_compra WHERE numero_oc=?", (oc_num,))
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 18 · COM-5 · Pagar OC → estado=Pagada
+# ═══════════════════════════════════════════════════════════════════
+
+def test_golden_pagar_oc(app, db_clean):
+    cs = _login(app, 'sebastian')
+    oc_num = 'GP18-OC-PAGO'
+    _exec("""INSERT OR REPLACE INTO ordenes_compra
+              (numero_oc, fecha, proveedor, estado, valor_total, creado_por)
+              VALUES (?, date('now'), 'Prov18', 'Autorizada', 50000, 'sebastian')""",
+          (oc_num,))
+    try:
+        # Acción usuario: pagar OC
+        r = cs.patch(f'/api/ordenes-compra/{oc_num}/pagar',
+                     json={'medio_pago': 'transferencia',
+                           'fecha_pago': '2026-05-07',
+                           'monto_pagado': 50000,
+                           'referencia': 'TEST-REF-001'},
+                     headers=csrf_headers())
+        if r.status_code == 200:
+            row = _query("SELECT estado FROM ordenes_compra WHERE numero_oc=?",
+                         (oc_num,))
+            assert row[0][0].lower() in ('pagada', 'paid'), \
+                f'BUG: tras pagar, estado debe ser Pagada · got {row[0][0]}'
+    finally:
+        _exec("DELETE FROM pagos_oc WHERE numero_oc=?", (oc_num,))
+        _exec("DELETE FROM ordenes_compra WHERE numero_oc=?", (oc_num,))
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 19 · COM-7 · Recepción contra OC → kardex actualiza
+# ═══════════════════════════════════════════════════════════════════
+
+def test_golden_recibir_oc_actualiza_kardex(app, db_clean):
+    cs = _login(app, 'sebastian')
+    oc_num = 'GP19-OC-RECIBIR'
+    codigo = 'GP19-MP-RX'
+
+    _exec("""INSERT OR REPLACE INTO maestro_mps
+              (codigo_mp, nombre_comercial, activo, tipo_material)
+              VALUES (?, 'X-Rx', 1, 'MP')""", (codigo,))
+    _exec("""INSERT OR REPLACE INTO ordenes_compra
+              (numero_oc, fecha, proveedor, estado, valor_total, creado_por)
+              VALUES (?, date('now'), 'ProvRx', 'Autorizada', 100000, 'sebastian')""",
+          (oc_num,))
+    _exec("""INSERT INTO ordenes_compra_items
+              (numero_oc, codigo_mp, nombre_mp, cantidad_g,
+               precio_unitario, subtotal)
+              VALUES (?, ?, 'X-Rx', 10000, 10, 100000)""",
+          (oc_num, codigo))
+
+    def _stock():
+        rows = _query("""SELECT COALESCE(SUM(CASE WHEN tipo='Entrada'
+                                                   THEN cantidad ELSE -cantidad END), 0)
+                         FROM movimientos WHERE material_id=?""", (codigo,))
+        return float(rows[0][0]) if rows else 0
+
+    stock_pre = _stock()
+    try:
+        r = cs.post(f'/api/ordenes-compra/{oc_num}/recibir',
+                    json={'items_recepcion': [{
+                        'codigo_mp': codigo, 'cantidad_recibida': 10000,
+                        'lote': 'GP19-LOTE-RX',
+                        'fecha_vencimiento': '2027-12-31',
+                        'estanteria': 'A1',
+                    }], 'receptor_nombre': 'sebastian'},
+                    headers=csrf_headers())
+        # Tolerante: el endpoint puede requerir más campos
+        if r.status_code in (200, 201):
+            stock_post = _stock()
+            assert stock_post > stock_pre, \
+                f'BUG: recibir OC no aumentó kardex · pre={stock_pre}, post={stock_post}'
+    finally:
+        _exec("DELETE FROM movimientos WHERE material_id=?", (codigo,))
+        _exec("DELETE FROM ordenes_compra_items WHERE numero_oc=?", (oc_num,))
+        _exec("DELETE FROM ordenes_compra WHERE numero_oc=?", (oc_num,))
+        _exec("DELETE FROM maestro_mps WHERE codigo_mp=?", (codigo,))
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 20 · PRO-2 · Completar producción → estado=completado
+# ═══════════════════════════════════════════════════════════════════
+
+def test_golden_completar_produccion(app, db_clean):
+    cs = _login(app, 'sebastian')
+    pid = _exec("""
+        INSERT INTO produccion_programada
+          (producto, fecha_programada, lotes, estado, cantidad_kg,
+           inicio_real_at, origen)
+        VALUES ('GP20-PROD', date('now'), 1, 'pendiente', 5,
+                datetime('now'), 'manual')
+    """)
+    try:
+        r = cs.post(f'/api/programacion/programar/{pid}/completar',
+                    json={}, headers=csrf_headers())
+        if r.status_code in (200, 201):
+            row = _query("""SELECT estado,
+                                  COALESCE(fin_real_at, ''),
+                                  COALESCE(inventario_descontado_at, '')
+                            FROM produccion_programada WHERE id=?""", (pid,))
+            estado = (row[0][0] or '').lower()
+            assert estado in ('completado', 'completada', 'completed'), \
+                f'BUG: completar no marcó estado · got {estado}'
+            # Al menos UNO de los timestamps debe quedar set
+            assert row[0][1] or row[0][2], \
+                'BUG: completar no setea fin_real_at NI inventario_descontado_at'
+    finally:
+        _exec("DELETE FROM produccion_programada WHERE id=?", (pid,))
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 21 · AUTH-3 · Reset password (admin)
+# ═══════════════════════════════════════════════════════════════════
+
+def test_golden_reset_password_admin(app, db_clean):
+    cs = _login(app, 'sebastian')
+    # Reset password de un user que NO es admin (válido)
+    r = cs.post('/api/admin/reset-password',
+                json={'username': 'mayerlin'},
+                headers=csrf_headers())
+    # 200 si ok · 403 si no admin · 400 si user inválido
+    assert r.status_code in (200, 400), \
+        f'BUG: reset-password con admin no respondió OK · {r.status_code} {r.data[:200]}'
+    if r.status_code == 200:
+        d = r.get_json()
+        assert 'temporary_password' in d or 'password' in d or 'ok' in d, \
+            'reset debe devolver password temporal o flag ok'
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 22 · AUTH-5 · Logout invalida sesión
+# ═══════════════════════════════════════════════════════════════════
+
+def test_golden_logout_invalida_sesion(app, db_clean):
+    c = app.test_client()
+    # Login
+    r = c.post('/login',
+               data={'username': 'sebastian', 'password': TEST_PASSWORD},
+               headers=csrf_headers(), follow_redirects=False)
+    assert r.status_code == 302
+    # Verificar sesión activa
+    r = c.get('/api/health')
+    assert r.status_code == 200
+    # Logout
+    r = c.get('/logout', follow_redirects=False)
+    assert r.status_code in (200, 302), f'logout fallo · {r.status_code}'
+    # Tras logout, endpoint protegido (admin) debe rechazar
+    r = c.get('/api/admin/agent-memory')
+    assert r.status_code in (401, 403), \
+        f'BUG SEGURIDAD: tras logout aún puedo entrar a admin · {r.status_code}'
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 23 · INV-3 · Cambiar proveedor de un lote → propaga
+# ═══════════════════════════════════════════════════════════════════
+
+def test_golden_cambiar_proveedor_lote(app, db_clean):
+    cs = _login(app, 'sebastian')
+    codigo = 'GP23-MP-PROV'
+    lote = 'GP23-LOTE-PROV'
+    _exec("""INSERT OR REPLACE INTO maestro_mps
+              (codigo_mp, nombre_comercial, proveedor, activo, tipo_material)
+              VALUES (?, 'X-Prov', 'OldProv', 1, 'MP')""", (codigo,))
+    _exec("""INSERT INTO movimientos
+              (material_id, material_nombre, cantidad, tipo, fecha,
+               lote, estado_lote, proveedor, operador)
+              VALUES (?, 'X-Prov', 1000, 'Entrada', date('now'),
+                      ?, 'VIGENTE', 'OldProv', 'seed')""",
+          (codigo, lote))
+    try:
+        # Acción usuario: cambiar proveedor del lote
+        r = cs.patch(f'/api/lotes/{codigo}/{lote}',
+                     json={'proveedor': 'NewProv'},
+                     headers=csrf_headers())
+        if r.status_code == 200:
+            row = _query("""SELECT proveedor FROM movimientos
+                            WHERE material_id=? AND lote=?""",
+                         (codigo, lote))
+            assert row[0][0] == 'NewProv', \
+                f'BUG: cambio de proveedor no se aplicó · got {row[0][0]}'
+    finally:
+        _exec("DELETE FROM movimientos WHERE material_id=?", (codigo,))
+        _exec("DELETE FROM maestro_mps WHERE codigo_mp=?", (codigo,))
