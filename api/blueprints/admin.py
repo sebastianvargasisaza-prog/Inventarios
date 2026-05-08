@@ -277,9 +277,12 @@ def admin_zero_error_status():
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     try:
+        # Sebastian 7-may-2026: schema correcto es resultado_json + error
+        # (no detalle_json + error_msg que era el guess inicial)
         rows = c.execute("""
             SELECT job_name, ejecutado_at, ok,
-                   COALESCE(detalle_json,''), COALESCE(error_msg,''),
+                   COALESCE(resultado_json, ''),
+                   COALESCE(error, ''),
                    COALESCE(duracion_ms, 0)
             FROM cron_jobs_runs
             WHERE job_name LIKE 'watcher_health%'
@@ -289,14 +292,18 @@ def admin_zero_error_status():
             'runs': [
                 {
                     'job_name': r[0], 'ejecutado_at': r[1],
-                    'ok': bool(r[2]), 'detalle': r[3][:500],
-                    'error': r[4][:200], 'duracion_ms': r[5],
+                    'ok': bool(r[2]), 'detalle': (r[3] or '')[:500],
+                    'error': (r[4] or '')[:200], 'duracion_ms': r[5],
                 } for r in rows
             ],
             'count_recent': len(rows),
         }
-    except sqlite3.OperationalError:
-        out['watcher'] = {'runs': [], 'note': 'Tabla cron_jobs_runs no existe'}
+    except sqlite3.OperationalError as _e:
+        # Tabla puede no existir si la mig 72 no corrió o si DB es nueva
+        out['watcher'] = {
+            'runs': [],
+            'note': f'cron_jobs_runs no disponible: {_e}',
+        }
     except Exception as e:
         out['watcher'] = {'error': str(e)}
 
@@ -768,14 +775,16 @@ def admin_health_critical_paths():
         _check('sols_planta_huerfanas', 'warn', f'Error: {e}')
 
     # 5. last calendar sync < 2h
+    # Sebastian 7-may-2026: tabla es `sync_log` (sin underscore prefix).
+    # _ensure_sync_log_table() en programacion.py la crea on-demand.
     try:
         row = c.execute("""
-            SELECT MAX(last_run_at) FROM _sync_log WHERE sync_type='calendar'
+            SELECT MAX(last_run_at) FROM sync_log WHERE sync_type='calendar'
         """).fetchone()
         last_sync = row[0] if row else None
         if not last_sync:
             _check('last_calendar_sync', 'warn',
-                   'Nunca corrió un sync de calendar')
+                   'Nunca corrió un sync de calendar (tabla vacía o sin runs)')
         else:
             # Parse ISO timestamp
             from datetime import datetime as _dt
@@ -792,7 +801,9 @@ def admin_health_critical_paths():
                 _check('last_calendar_sync', 'ok',
                        f'Sync hace {age_min:.0f}min', value=round(age_min))
     except sqlite3.OperationalError:
-        _check('last_calendar_sync', 'warn', 'Tabla _sync_log no existe')
+        # Tabla puede no existir aún si nunca corrió un sync
+        _check('last_calendar_sync', 'warn',
+               'Tabla sync_log aún no creada (sync nunca corrió en este worker)')
     except Exception as e:
         _check('last_calendar_sync', 'warn', f'Error: {e}')
 

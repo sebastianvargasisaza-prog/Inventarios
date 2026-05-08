@@ -3335,6 +3335,18 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         # Índice para queries del centro-mando que filtran por fecha + estado
         "CREATE INDEX IF NOT EXISTS idx_pp_fecha_estado ON produccion_programada(fecha_programada, estado)",
     ]),
+    (97, "Performance: indexes faltantes detectados por health/critical-paths", [
+        # Sebastián 7-may-2026: dashboard zero-error detectó que estos 5
+        # indexes no estaban creados. Sin ellos las queries de movimientos
+        # por material/lote/fecha hacen full table scan en una tabla con
+        # decenas de miles de filas · degrade real de performance.
+        "CREATE INDEX IF NOT EXISTS idx_mov_material ON movimientos(material_id)",
+        "CREATE INDEX IF NOT EXISTS idx_mov_lote ON movimientos(material_id, lote)",
+        "CREATE INDEX IF NOT EXISTS idx_mov_fecha ON movimientos(fecha DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_oc_estado ON ordenes_compra(estado, fecha DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_sol_estado ON solicitudes_compra(estado, fecha DESC)",
+    ]),
+
     (96, "agent_memory: memoria persistente para agentes IA (zero-error sprint)", [
         # Sebastián 7-may-2026: tabla simple key-value que los agentes IA
         # usan entre sesiones. Resuelve el problema de "amnesia entre
