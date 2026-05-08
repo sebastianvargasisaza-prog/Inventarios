@@ -41,3 +41,30 @@ def test_cambiar_password_page_sin_login_redirect(client):
     location = r.headers.get('Location', '')
     assert '/login' in location
     assert 'cambiar-password' in location  # next preservado
+
+
+# ── Widget "Mi contraseña" presente en páginas principales ─────────
+
+def test_widget_visible_en_paginas_principales(app, db_clean):
+    """Sebastián 8-may-2026: el link 🔐 Mi contraseña debe aparecer en
+    todas las páginas principales · users descubren sin saber URL."""
+    cs = _login(app, 'sebastian')
+    paginas = [
+        '/inventarios',  # dashboard
+        '/compras',
+        '/contabilidad',
+        '/calidad',
+        '/animus',
+        '/marketing',
+        '/modulos',
+    ]
+    fallan = []
+    for url in paginas:
+        r = cs.get(url)
+        if r.status_code != 200:
+            continue  # algunas pueden requerir permisos extra · skip
+        body = r.get_data(as_text=True)
+        if 'cambiar-password' not in body:
+            fallan.append(url)
+    assert not fallan, \
+        f'Widget Mi contraseña falta en: {fallan}'
