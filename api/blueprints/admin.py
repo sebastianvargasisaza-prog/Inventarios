@@ -389,17 +389,10 @@ def admin_zero_error_status():
         out['git'] = {'error': str(e)}
 
     # 7. Pending bugs (manual list · podemos persistirlos en agent_memory después)
+    # AZHC-LUN-11 RESUELTO 2026-05-07 · debug confirmó que las 3 fechas
+    # (11-may, 14-may, 12-ago) corresponden a eventos reales en Calendar.
+    # No era fantasma · era 2 producciones distintas en la misma semana.
     out['pending_bugs'] = [
-        {
-            'id': 'AZHC-LUN-11',
-            'title': 'AZHC fantasma Lun 11 sigue en prod',
-            'severity': 'medium',
-            'next_action': (
-                'Ir a /api/programacion/debug-producto/AZ%20HIBRID%20CLEAR · '
-                'revisar entries con protegida_del_sync=true · si tienen '
-                'inicio_real_at, revertir desde Operación Live'
-            ),
-        },
         {
             'id': 'MAYERLIN-LOGIN',
             'title': 'Mayerlin no puede entrar',
@@ -407,6 +400,18 @@ def admin_zero_error_status():
             'next_action': (
                 'Ir a /admin → Usuarios → Mayerlin → Diag · '
                 'si password_source=missing → click Resetear'
+            ),
+        },
+    ]
+    out['resolved_recent'] = [
+        {
+            'id': 'AZHC-LUN-11',
+            'title': 'AZHC fantasma Lun 11',
+            'resolved_at': '2026-05-07',
+            'resolution': (
+                'Falsa alarma post-fix · sync espejo limpió 9 entries '
+                'canceladas · las 3 fechas vivas (11-may, 14-may, 12-ago) '
+                'corresponden a eventos reales en Calendar.'
             ),
         },
     ]
