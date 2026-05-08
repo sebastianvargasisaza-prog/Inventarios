@@ -2013,6 +2013,79 @@ def eliminar_lote(material_id, lote):
     }), 200
 
 
+@bp.route('/api/maestro-mps/next-codigo', methods=['GET'])
+def maestro_mps_next_codigo():
+    """Devuelve el SIGUIENTE código MP disponible.
+
+    Sebastián 8-may-2026: el form "Crear Nueva MP" pedía al usuario
+    escribir manualmente el código (MP00350) sin saber cuál era el
+    último. Resultado: códigos repetidos o saltos al azar.
+
+    Lógica:
+      1. Busca todos los códigos que matchean el patrón MP\\d+
+      2. Encuentra el número máximo
+      3. Devuelve max+1 con el mismo padding (5 dígitos = MP00350)
+
+    Si no existe ninguna MP en el catálogo, arranca en MP00001.
+
+    Returns:
+      { siguiente: 'MP00350', ultimo: 'MP00349', total: 248 }
+
+    Querystring:
+      ?prefix=MP  · permite cambiar prefijo (default 'MP')
+      ?width=5    · padding del número (default 5)
+    """
+    u, err, code = _require_session()
+    if err:
+        return err, code
+
+    prefix = (request.args.get('prefix') or 'MP').strip().upper()
+    try:
+        width = max(3, min(int(request.args.get('width', 5)), 10))
+    except (ValueError, TypeError):
+        width = 5
+
+    conn = get_db(); c = conn.cursor()
+    # Pattern SQL: MP seguido de solo dígitos
+    pattern = f'{prefix}%'
+    rows = c.execute(
+        "SELECT codigo_mp FROM maestro_mps WHERE codigo_mp LIKE ?", (pattern,)
+    ).fetchall()
+
+    import re as _re
+    regex = _re.compile(f'^{_re.escape(prefix)}(\\d+)$')
+    max_n = 0
+    ultimo = None
+    total_validos = 0
+    for (cod,) in rows:
+        if not cod:
+            continue
+        m = regex.match(cod.strip().upper())
+        if not m:
+            continue
+        try:
+            n = int(m.group(1))
+            total_validos += 1
+            if n > max_n:
+                max_n = n
+                ultimo = cod
+        except (ValueError, TypeError):
+            continue
+
+    siguiente_n = max_n + 1
+    siguiente = f'{prefix}{siguiente_n:0{width}d}'
+
+    return jsonify({
+        'siguiente': siguiente,
+        'ultimo': ultimo,
+        'siguiente_n': siguiente_n,
+        'total_con_prefix': total_validos,
+        'total_en_catalogo': len(rows),
+        'prefix': prefix,
+        'width': width,
+    })
+
+
 @bp.route('/api/maestro-mps', methods=['GET','POST'])
 def handle_maestro():
     conn = get_db(); c = conn.cursor()

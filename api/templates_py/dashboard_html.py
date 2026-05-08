@@ -564,7 +564,11 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       </div>
       <p style="font-size:0.88em;color:#2e7d32;margin-bottom:12px;">Esta MP quedara registrada en el catalogo y disponible para futuros ingresos.</p>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-        <div class="form-group"><label>Codigo MP * (ej: MP00350)</label><input type="text" id="nmp-cod" placeholder="MP00350" style="text-transform:uppercase;"></div>
+        <div class="form-group">
+          <label>Codigo MP * <span style="color:#16a34a;font-size:0.75em;font-weight:600">(auto-asignado &middot; podes editarlo)</span></label>
+          <input type="text" id="nmp-cod" placeholder="MP00350" style="text-transform:uppercase;background:#f0fdf4;">
+          <div id="nmp-cod-hint" style="font-size:0.72em;color:#475569;margin-top:3px;font-style:italic;"></div>
+        </div>
         <div class="form-group"><label>Nombre INCI *</label><input type="text" id="nmp-inci" placeholder="Ej: NIACINAMIDE"></div>
         <div class="form-group"><label>Nombre Comercial *</label><input type="text" id="nmp-nombre" placeholder="Ej: Niacinamida"></div>
         <div class="form-group">
@@ -3394,9 +3398,36 @@ async function iniciarRegistroProd(){
 }
 
 window.onload=function(){/* Data loads after operator confirms name */};
-function mostrarFormNuevaMP(){
+async function mostrarFormNuevaMP(){
   var panel=document.getElementById('ing-nueva-mp');
   if(panel){ panel.style.display='block'; panel.scrollIntoView({behavior:'smooth',block:'nearest'}); }
+  // Sebastian 8-may-2026: auto-rellenar código MP con el siguiente
+  // consecutivo · evitar que el user adivine y duplique.
+  var codInput=document.getElementById('nmp-cod');
+  if(codInput && !codInput.value){
+    codInput.value='⏳ Calculando...';
+    codInput.disabled=true;
+    try{
+      var r=await fetch('/api/maestro-mps/next-codigo');
+      var d=await r.json();
+      if(r.ok && d.siguiente){
+        codInput.value=d.siguiente;
+        var hint=document.getElementById('nmp-cod-hint');
+        if(hint){
+          hint.textContent='Auto-asignado · último: '+(d.ultimo||'(ninguno)')+
+                           ' · catálogo: '+d.total_en_catalogo+' MPs';
+        }
+      } else {
+        codInput.value='';
+        codInput.placeholder='MP00350 (auto-fetch falló · escribí manual)';
+      }
+    }catch(e){
+      codInput.value='';
+      codInput.placeholder='MP00350';
+    } finally {
+      codInput.disabled=false;
+    }
+  }
 }
 function ocultarFormNuevaMP(){
   var panel=document.getElementById('ing-nueva-mp');
@@ -3406,6 +3437,7 @@ function ocultarFormNuevaMP(){
   });
   var ns=document.getElementById('nmp-smin'); if(ns) ns.value='500';
   var nm=document.getElementById('nmp-msg'); if(nm) nm.innerHTML='';
+  var hint=document.getElementById('nmp-cod-hint'); if(hint) hint.textContent='';
 }
 async function crearNuevaMP(){
   var cod=(document.getElementById('nmp-cod').value||'').toUpperCase().trim();
