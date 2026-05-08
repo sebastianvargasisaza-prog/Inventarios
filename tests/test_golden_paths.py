@@ -1470,6 +1470,140 @@ def test_golden_mfa_endpoint(app, db_clean):
 
 
 # ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 52 · INV-4 · Conteo ciclico end-to-end con cambios in-flow
+# ═══════════════════════════════════════════════════════════════════
+# Sebastian 8-may-2026 (inventario REAL en vuelo): "que sea funcional
+# que permita guardar cada dato y cambiar posicion proveedor, que no
+# tenga error y se refleje en bodega".
+#
+# Simula el flujo completo del operario contando en planta:
+#  1. Iniciar conteo en estanteria
+#  2. Listar items (debe traer proveedor/estanteria/posicion)
+#  3. Durante el conteo: cambiar UBICACION (estanteria/posicion)
+#  4. Durante el conteo: cambiar PROVEEDOR del lote
+#  5. Guardar conteo con stock_fisico distinto al sistema
+#  6. Aplicar ajuste fila (admin auto-aprueba >5%)
+#  7. Verificar /api/lotes refleja: posicion nueva + proveedor nuevo
+#     + cantidad ajustada · TODO en una sola query
+
+def test_golden_conteo_ciclico_end_to_end_con_cambios(app, db_clean):
+    cs = _login(app, 'sebastian')
+
+    codigo_mp = 'GP52-MP-TEST'
+    lote = 'GP52-LOTE-001'
+    nombre = 'Test Conteo E2E'
+
+    # Setup: MP + 2 movs en estanteria 'A1' / pos 'B-1' / proveedor 'ProvViejo'
+    _exec("""INSERT OR REPLACE INTO maestro_mps
+              (codigo_mp, nombre_comercial, proveedor, activo, tipo_material,
+               precio_referencia)
+              VALUES (?, ?, 'ProvViejo', 1, 'MP', 100)""",
+          (codigo_mp, nombre))
+    for qty in [800, 200]:
+        _exec("""INSERT INTO movimientos
+                  (material_id, material_nombre, cantidad, tipo, fecha,
+                   lote, estanteria, posicion, proveedor, estado_lote, operador)
+                  VALUES (?, ?, ?, 'Entrada', date('now'),
+                          ?, 'A1', 'B-1', 'ProvViejo', 'VIGENTE', 'seed')""",
+              (codigo_mp, nombre, qty, lote))
+
+    # 1. Iniciar conteo en estanteria A1
+    r = cs.post('/api/conteo/iniciar',
+                json={'estanteria': 'A1', 'tipo_material': 'TODOS'},
+                headers=csrf_headers())
+    assert r.status_code == 200, f'iniciar fallo: {r.data}'
+    body = r.get_json() or {}
+    conteo_id = body.get('conteo_id') or body.get('id') or (body.get('conteo') or {}).get('id')
+    assert conteo_id, f'conteo_id no en respuesta: {body}'
+
+    # 2. Listar items · debe traer proveedor/estanteria/posicion para que
+    # la UI los pueda hidratar (sin esto, los modales de editar arrancan vacios)
+    r = cs.get('/api/conteo/materiales?estanteria=A1')
+    assert r.status_code == 200
+    items = r.get_json()
+    assert isinstance(items, list) and items, f'items vacios: {items}'
+    # Endpoint retorna codigo_mp (no material_id) — la UI lo consume asi
+    nuestro = next((i for i in items if i.get('codigo_mp') == codigo_mp
+                    and i.get('lote') == lote), None)
+    assert nuestro, f'lote {lote} no aparece en /api/conteo/materiales (items={len(items)})'
+    assert nuestro.get('estanteria') == 'A1', f'estanteria no llega: {nuestro}'
+    assert nuestro.get('posicion') == 'B-1', f'posicion no llega: {nuestro}'
+    assert nuestro.get('proveedor') == 'ProvViejo', f'proveedor no llega: {nuestro}'
+
+    # 3. Cambiar UBICACION durante el conteo
+    r = cs.put(
+        f'/api/lotes/{codigo_mp}/{lote}/ubicacion',
+        json={'estanteria': 'A5', 'posicion': 'C-9',
+              'motivo': 'Discrepancia detectada en conteo'},
+        headers=csrf_headers(),
+    )
+    assert r.status_code == 200, f'PUT ubicacion fallo: {r.data}'
+    res_u = r.get_json() or {}
+    assert res_u.get('movimientos_actualizados') == 2, \
+        f'BUG: deberia actualizar 2 movs, actualizo {res_u.get("movimientos_actualizados")}'
+
+    # 4. Cambiar PROVEEDOR durante el conteo
+    r = cs.put(
+        f'/api/lotes/{codigo_mp}/{lote}/proveedor',
+        json={'proveedor': 'ProvNuevo'},
+        headers=csrf_headers(),
+    )
+    assert r.status_code == 200, f'PUT proveedor fallo: {r.data}'
+    res_p = r.get_json() or {}
+    assert res_p.get('proveedor_nuevo') == 'ProvNuevo'
+
+    # 5. Guardar conteo · stock_fisico=600 (diff -400, 40% > 5% gerencia)
+    r = cs.post(f'/api/conteo/{conteo_id}/guardar',
+                json={'items': [{
+                    'codigo_mp': codigo_mp, 'nombre': nombre, 'lote': lote,
+                    'stock_sistema': 1000, 'stock_fisico': 600,
+                    'precio_ref': 100, 'estanteria': 'A5',
+                    'causa_diferencia': 'Error de conteo',
+                }]},
+                headers=csrf_headers())
+    assert r.status_code == 200, f'guardar fallo: {r.data}'
+    saved = r.get_json().get('items', [])
+    assert saved, 'guardar debe devolver items con item_id'
+    item_id = saved[0]['id']
+    assert saved[0]['requiere_gerencia'], 'diff 40% debe requerir gerencia'
+
+    # 6. Aplicar ajuste como admin (auto-aprueba)
+    r = cs.post(f'/api/conteo/{conteo_id}/ajustar',
+                json={'item_id': item_id},
+                headers=csrf_headers())
+    assert r.status_code == 200, f'ajustar fallo: {r.data}'
+    res_a = r.get_json() or {}
+    assert res_a.get('lote_ajustado') == lote, \
+        f'ajuste al lote SINTETICO en vez del real · {res_a}'
+
+    # 7. Verificacion CRITICA: /api/lotes refleja TODO
+    r = cs.get('/api/lotes')
+    assert r.status_code == 200
+    lotes_post = [l for l in (r.get_json() or {}).get('lotes', [])
+                  if l.get('material_id') == codigo_mp and l.get('lote') == lote]
+    assert lotes_post, f'BUG: lote {lote} desaparecio de /api/lotes'
+    L = lotes_post[0]
+    # Posicion nueva
+    assert L.get('estanteria') == 'A5', \
+        f'BUG: estanteria sigue siendo {L.get("estanteria")}, esperado A5'
+    assert L.get('posicion') == 'C-9', \
+        f'BUG: posicion sigue siendo {L.get("posicion")}, esperado C-9'
+    # Proveedor nuevo
+    assert L.get('proveedor') == 'ProvNuevo', \
+        f'BUG: proveedor sigue siendo {L.get("proveedor")}, esperado ProvNuevo'
+    # Cantidad ajustada (1000 - 400 = 600g)
+    cantidad_g = L.get('cantidad_g') or L.get('stock_neto') or 0
+    assert abs(float(cantidad_g) - 600) < 0.01, \
+        f'BUG: cantidad_g={cantidad_g}, esperado 600 · ajuste no se aplico'
+
+    # Cleanup
+    _exec("DELETE FROM movimientos WHERE material_id=?", (codigo_mp,))
+    _exec("DELETE FROM conteo_items WHERE conteo_id=?", (conteo_id,))
+    _exec("DELETE FROM conteos_fisicos WHERE id=?", (conteo_id,))
+    _exec("DELETE FROM maestro_mps WHERE codigo_mp=?", (codigo_mp,))
+
+
+# ═══════════════════════════════════════════════════════════════════
 # GOLDEN PATH 51 · INV-3 · Cambiar ubicacion del lote refleja en Bodega
 # ═══════════════════════════════════════════════════════════════════
 # Sebastian 8-may-2026 (inventario REAL en vuelo): el modal de Bodega

@@ -258,6 +258,35 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
   </div>
 </div>
 
+<!-- Sebastian 8-may-2026: Modal liviano para editar ubicacion del lote
+     desde Conteo Ciclico (reusa endpoint PUT /api/lotes/<mp>/<lote>/ubicacion). -->
+<div id="modal-editar-ubicacion-cnt" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.78);z-index:9998;display:none;align-items:center;justify-content:center;">
+  <div style="background:white;border-radius:16px;padding:0;max-width:520px;width:96%;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.5);">
+    <div style="background:#1e63a8;color:white;padding:18px 22px;border-radius:16px 16px 0 0;display:flex;justify-content:space-between;align-items:center;">
+      <h2 style="color:white;margin:0;font-size:1.2em;">&#128205; Cambiar ubicaci&#243;n del lote</h2>
+      <button onclick="cerrarEditarUbicacionConteo()" style="background:none;border:none;font-size:1.5em;cursor:pointer;color:white;padding:0 4px;line-height:1;" title="Cerrar">&#10005;</button>
+    </div>
+    <div style="padding:22px;">
+      <div style="background:#f0f8ff;border:1px solid #b6dcfe;border-radius:8px;padding:12px;margin-bottom:14px;">
+        <div style="font-size:0.78em;color:#1e40af;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;margin-bottom:6px;">Lote</div>
+        <div style="font-weight:700;color:#222;" id="ubic-cnt-info">&mdash;</div>
+        <div style="color:#666;font-size:0.85em;margin-top:4px;" id="ubic-cnt-actual">&mdash;</div>
+      </div>
+      <p style="color:#666;font-size:0.85em;margin-bottom:8px;">El cambio actualiza <b>todos los movimientos</b> de este lote y se refleja inmediato en Bodega MP. Queda en audit_log.</p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <div class="form-group" style="margin-bottom:0;"><label>Estanter&#237;a</label><input type="text" id="ubic-cnt-est" placeholder="Ej: A3" maxlength="50"></div>
+        <div class="form-group" style="margin-bottom:0;"><label>Posici&#243;n</label><input type="text" id="ubic-cnt-pos" placeholder="Ej: B-2" maxlength="50"></div>
+      </div>
+      <div class="form-group" style="margin-top:8px;"><label>Motivo</label><input type="text" id="ubic-cnt-motivo" placeholder="Ej: discrepancia encontrada en conteo" maxlength="200"></div>
+      <div style="display:flex;gap:8px;margin-top:6px;">
+        <button onclick="guardarUbicacionConteo()" style="flex:1;background:#1e63a8;padding:9px;font-weight:700;color:white;">&#10003; Guardar</button>
+        <button onclick="cerrarEditarUbicacionConteo()" style="flex:1;background:#6c757d;padding:9px;">Cancelar</button>
+      </div>
+      <div id="ubic-cnt-msg" style="margin-top:10px;font-size:0.85em;"></div>
+    </div>
+  </div>
+</div>
+
 <!-- Modal REVISAR MINIMOS (Sebastian 5-may-2026) — audit + apply de stock_minimo -->
 <div id="modal-revisar-minimos" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.78);z-index:9998;display:none;align-items:center;justify-content:center;">
   <div style="background:white;border-radius:16px;padding:0;max-width:1100px;width:96%;max-height:92vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.5);">
@@ -4020,9 +4049,16 @@ document.addEventListener('click', function(e){
   var btnDel = e.target.closest && e.target.closest('.cnt-del-lote');
   // Sebastian 7-may-2026: botón aplicar ajuste por fila (post-guardar)
   var btnAplicar = e.target.closest && e.target.closest('.cnt-aplicar-ajuste');
+  // Sebastian 8-may-2026: editar ubicacion (estanteria/posicion) desde el conteo
+  var btnUbic = e.target.closest && e.target.closest('.cnt-ubic-edit');
   if(btnAplicar){
     var idxA = parseInt(btnAplicar.getAttribute('data-idx'),10);
     if(!isNaN(idxA)) aplicarAjusteFila(idxA);
+    return;
+  }
+  if(btnUbic){
+    var idxU = parseInt(btnUbic.getAttribute('data-idx'),10);
+    if(!isNaN(idxU)) abrirEditarUbicacionConteo(idxU);
     return;
   }
   if (!btnProv && !btnDel) return;
@@ -4046,6 +4082,76 @@ document.addEventListener('click', function(e){
     abrirEliminarLote(fakeIdx);
   }
 });
+
+// ─── Editar ubicacion del lote desde Conteo Ciclico ─────────────────
+// Sebastian 8-may-2026: durante el conteo, descubrir que la posicion
+// esta mal es comun. Sin esto, hay que cerrar el conteo, ir a Bodega
+// MP, ajustar, volver. Mas friccion = menos correcciones = mas drift.
+// Llama al endpoint PUT /api/lotes/<mp>/<lote>/ubicacion ya existente.
+var _ubicConteoIdx = null;
+function abrirEditarUbicacionConteo(idx){
+  var ci = _conteoItems && _conteoItems[idx];
+  if(!ci){alert('Item no encontrado'); return;}
+  _ubicConteoIdx = idx;
+  var info = (ci.nombre||'')+' · '+(ci.codigo_mp||'')+(ci.lote?' · Lote '+ci.lote:' · (sin lote)');
+  document.getElementById('ubic-cnt-info').textContent = info;
+  document.getElementById('ubic-cnt-actual').textContent = 'Actual: '+
+    ((ci.estanteria||'').trim()||'(sin estanteria)')+' / '+
+    ((ci.posicion||'').trim()||'(sin posicion)');
+  document.getElementById('ubic-cnt-est').value = ci.estanteria||'';
+  document.getElementById('ubic-cnt-pos').value = ci.posicion||'';
+  document.getElementById('ubic-cnt-motivo').value = '';
+  document.getElementById('ubic-cnt-msg').innerHTML = '';
+  document.getElementById('modal-editar-ubicacion-cnt').style.display = 'flex';
+  setTimeout(function(){var el=document.getElementById('ubic-cnt-est');if(el)el.focus();},120);
+}
+function cerrarEditarUbicacionConteo(){
+  document.getElementById('modal-editar-ubicacion-cnt').style.display='none';
+  _ubicConteoIdx=null;
+}
+async function guardarUbicacionConteo(){
+  if(_ubicConteoIdx===null) return;
+  var ci = _conteoItems[_ubicConteoIdx];
+  if(!ci){return;}
+  var msgEl = document.getElementById('ubic-cnt-msg');
+  var nuevaEst=(document.getElementById('ubic-cnt-est').value||'').trim();
+  var nuevaPos=(document.getElementById('ubic-cnt-pos').value||'').trim();
+  var motivo=(document.getElementById('ubic-cnt-motivo').value||'').trim();
+  if(!nuevaEst && !nuevaPos){
+    msgEl.innerHTML='<span style="color:#c00;">Indica al menos estanteria o posicion.</span>';
+    return;
+  }
+  var actEst=(ci.estanteria||'').trim();
+  var actPos=(ci.posicion||'').trim();
+  if(nuevaEst===actEst && nuevaPos===actPos){
+    msgEl.innerHTML='<span style="color:#666;">Sin cambios respecto al actual.</span>';
+    return;
+  }
+  msgEl.innerHTML='<span style="color:#666;">Guardando...</span>';
+  var loteUrl = ci.lote && ci.lote!=='S/L' ? encodeURIComponent(ci.lote) : '_SIN_LOTE_';
+  try{
+    var r=await fetch('/api/lotes/'+encodeURIComponent(ci.codigo_mp)+'/'+loteUrl+'/ubicacion',
+      {method:'PUT',headers:{'Content-Type':'application/json'},
+       body:JSON.stringify({estanteria:nuevaEst,posicion:nuevaPos,motivo:motivo})});
+    var d={};try{d=await r.json();}catch(je){}
+    if(r.ok){
+      msgEl.innerHTML='<span style="color:#1a8a1a;font-weight:700;">&#10003; '+
+        (d.message||'Ubicacion actualizada')+' ('+(d.movimientos_actualizados||0)+' mov)</span>';
+      // Hidratar el item en _conteoItems para que el modal no muestre datos viejos
+      ci.estanteria = d.estanteria_nueva || nuevaEst;
+      ci.posicion = d.posicion_nueva || nuevaPos;
+      // Actualizar visualmente la fila (sin re-fetch)
+      var estEl = document.getElementById('cnt-est-'+_ubicConteoIdx);
+      var posEl = document.getElementById('cnt-pos-'+_ubicConteoIdx);
+      if(estEl){estEl.textContent='Est: '+(ci.estanteria||'—');estEl.style.color=ci.estanteria?'#888':'#bbb';}
+      if(posEl){posEl.textContent='Pos: '+(ci.posicion||'—');posEl.style.color=ci.posicion?'#888':'#bbb';}
+      setTimeout(cerrarEditarUbicacionConteo, 1400);
+    }else{
+      msgEl.innerHTML='<span style="color:#c00;">Error: '+(d.error||r.status)+
+        (d.detail?' &mdash; '+d.detail:'')+'</span>';
+    }
+  }catch(e){msgEl.innerHTML='<span style="color:#c00;">Error de red: '+e.message+'</span>';}
+}
 
 async function cargarItemsConteo(est){
   try{
@@ -4071,9 +4177,12 @@ async function cargarItemsConteo(est){
       h += '<td style="font-family:monospace;font-size:0.82em;">'+mp.codigo_mp+'<br><span style="font-size:0.7em;color:'+col+';font-weight:700;text-transform:uppercase;letter-spacing:0.4px;">'+tipo+'</span></td>';
       h += '<td style="font-size:0.85em;">'+mp.nombre+(mp.inci?'<br><span style="font-size:0.72em;color:#888;">'+mp.inci+'</span>':'')+'</td>';
       var loteTxt = lote ? '<span style="font-family:monospace;font-size:0.82em;">'+lote+'</span>' : '<span style="color:#bbb;font-style:italic;font-size:0.78em;">— sin lote —</span>';
-      var posTxt = mp.posicion ? '<br><span style="font-size:0.72em;color:#888;">Pos: '+mp.posicion+'</span>' : '';
+      var estTxt = mp.estanteria ? '<br><span style="font-size:0.72em;color:#888;" id="cnt-est-'+i+'">Est: '+mp.estanteria+'</span>' : '<br><span style="font-size:0.72em;color:#bbb;" id="cnt-est-'+i+'">Est: —</span>';
+      var posTxt = mp.posicion ? '<br><span style="font-size:0.72em;color:#888;" id="cnt-pos-'+i+'">Pos: '+mp.posicion+'</span>' : '<br><span style="font-size:0.72em;color:#bbb;" id="cnt-pos-'+i+'">Pos: —</span>';
       var venTxt = mp.fecha_vencimiento ? '<br><span style="font-size:0.72em;color:#888;">Vence: '+mp.fecha_vencimiento.substr(0,10)+'</span>' : '';
-      h += '<td>'+loteTxt+posTxt+venTxt+'</td>';
+      // Sebastian 8-may-2026: boton para editar ubicacion (estanteria/posicion) desde el conteo
+      var btnUbic = '<button class="cnt-ubic-edit" data-idx="'+i+'" title="Cambiar estanteria/posicion del lote" style="margin-left:4px;padding:1px 5px;font-size:0.72em;background:#dbeafe;color:#1e40af;border:1px solid #93c5fd;border-radius:4px;cursor:pointer;">&#128205;&#9999;&#65039;</button>';
+      h += '<td>'+loteTxt+btnUbic+estTxt+posTxt+venTxt+'</td>';
       // Proveedor con boton editar (reusa modal y datalist global del flujo Stock por Lote)
       var provHtml = prov ? prov : '<span style="color:#bbb;font-style:italic;font-size:0.78em;">— sin proveedor —</span>';
       h += '<td class="cnt-prov-cell" data-idx="'+i+'" style="font-size:0.82em;color:#475569;">'+provHtml+' <button class="cnt-prov-edit" data-idx="'+i+'" title="Editar proveedor del lote" style="margin-left:3px;padding:1px 5px;font-size:0.72em;background:#e0f2fe;color:#0369a1;border:1px solid #bae6fd;border-radius:4px;cursor:pointer;">&#9999;&#65039;</button></td>';
