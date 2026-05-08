@@ -246,12 +246,13 @@ def admin_skus_pendientes_page():
 _SKUS_PENDIENTES_HTML = """<!DOCTYPE html>
 <html lang="es"><head>
 <meta charset="utf-8">
-<title>SKUs pendientes · EOS</title>
+<title>SKUs · EOS</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
        background: #f8fafc; color: #1e293b; padding: 20px; line-height: 1.5; }
 h1 { font-size: 22px; margin-bottom: 4px; }
+h2 { font-size: 16px; margin: 24px 0 10px; color: #334155; }
 .sub { color: #64748b; font-size: 13px; margin-bottom: 18px; }
 .banner { padding: 14px 18px; border-radius: 10px; margin-bottom: 16px;
           font-size: 14px; font-weight: 600; }
@@ -276,81 +277,98 @@ h1 { font-size: 22px; margin-bottom: 4px; }
               border-top: 1px dashed #e2e8f0; }
 .assign-row input { flex: 1; padding: 8px 12px; border: 1px solid #cbd5e1;
                     border-radius: 6px; font-size: 13px; font-family: inherit; }
-.assign-row select { padding: 8px 12px; border: 1px solid #cbd5e1;
-                     border-radius: 6px; font-size: 13px; min-width: 280px; }
 .btn { padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer;
        font-size: 13px; font-weight: 700; }
 .btn.primary { background: #0f766e; color: #fff; }
 .btn.primary:hover { background: #0d5d56; }
 .btn.primary:disabled { opacity: .5; cursor: not-allowed; }
+.btn.danger { background: #dc2626; color: #fff; }
+.btn.danger:hover { background: #b91c1c; }
 .actions-top { display: flex; gap: 10px; margin-bottom: 14px; }
 .muted { color: #94a3b8; font-size: 11px; margin-top: 4px; }
 .success-msg { color: #16a34a; font-size: 12px; font-weight: 600; }
 .error-msg { color: #dc2626; font-size: 12px; }
+table { width: 100%; border-collapse: collapse; background: #fff;
+        border-radius: 10px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.04); }
+th { background: #f1f5f9; text-align: left; padding: 10px 14px;
+     font-size: 11px; color: #64748b; text-transform: uppercase;
+     letter-spacing: .5px; font-weight: 700; }
+td { padding: 8px 14px; font-size: 13px; border-top: 1px solid #f1f5f9; }
+tr.warning td { background: #fef3c7; }
+.badge-no-formula { display: inline-block; font-size: 10px; padding: 1px 6px;
+                    background: #fee2e2; color: #991b1b; border-radius: 4px;
+                    margin-left: 6px; font-weight: 700; }
+.search-bar { padding: 10px 14px; background: #fff; border: 1px solid #e2e8f0;
+              border-radius: 8px; margin-bottom: 10px; }
+.search-bar input { width: 100%; padding: 8px 10px; border: 1px solid #cbd5e1;
+                    border-radius: 6px; font-size: 13px; }
 </style>
 </head><body>
-<h1>🧩 SKUs pendientes de mapear</h1>
-<div class="sub">Eventos del Calendar cuyos SKUs no están en
-sku_producto_map · agregar mapping para que aparezcan en Plan.</div>
+<h1>🧩 SKUs · mapping con productos</h1>
+<div class="sub">Cada evento del Calendar usa un SKU corto (AZHC, BBM, etc.).
+Para que aparezca en Plan, el SKU debe estar mapeado a un producto que tenga fórmula.</div>
 
 <div id="banner" class="banner warn">⏳ Cargando...</div>
 
 <div class="actions-top">
-  <button class="btn primary" onclick="loadPending()">↻ Recargar</button>
+  <button class="btn primary" onclick="loadAll()">↻ Recargar</button>
   <button class="btn" onclick="window.open('/api/programacion/debug-calendar?dias=30','_blank')"
           style="background:#475569;color:#fff">JSON raw</button>
   <button class="btn" onclick="window.location.href='/admin'"
           style="background:#475569;color:#fff">← Volver a admin</button>
 </div>
 
-<div id="grid"></div>
+<h2>📋 SKUs pendientes (sin mapping)</h2>
+<div id="grid-pendientes"></div>
+
+<h2>🗂️ Mapeos existentes (editar / borrar)</h2>
+<div class="search-bar">
+  <input type="text" id="search-existing" placeholder="Filtrar por SKU o producto..."
+         oninput="filterExisting()" />
+</div>
+<div id="grid-existing"></div>
 
 <script>
 let _productosLista = [];
-let _eventosBuckets = {ok:0, sku_no_mapeado:0, sin_formula:0, sin_sku:0, no_fab:0};
+let _existingMappings = [];
 
-async function loadPending() {
+async function loadAll() {
   document.getElementById('banner').textContent = '⏳ Cargando...';
   try {
-    // Cargar mapeos existentes para datalist
+    // 1. Cargar mappings existentes
     const mapsR = await fetch('/api/admin/sku-producto-map?limit=1000');
     const mapsD = await mapsR.json();
+    _existingMappings = mapsD.mappings || [];
     const productosSet = new Set();
-    (mapsD.mappings || []).forEach(m => {
+    _existingMappings.forEach(m => {
       if (m.producto_nombre) productosSet.add(m.producto_nombre);
     });
-
-    // Cargar productos del catálogo (formulas existentes)
-    const catR = await fetch('/api/maestro-mps?limit=2000').catch(()=>({ok:false}));
-    if (catR.ok) {
-      const catD = await catR.json();
-      // (productos vienen de formula_headers · usaremos lo que hay)
-    }
-
     _productosLista = [...productosSet].sort();
 
-    // Cargar eventos pendientes
+    // 2. Cargar eventos pendientes (debug-calendar)
     const r = await fetch('/api/programacion/debug-calendar?dias=30');
     const d = await r.json();
     if (!r.ok) { showError(d.error || 'Error'); return; }
 
-    _eventosBuckets = d.counters || {};
     const pendientes = (d.eventos || []).filter(e => e.status === 'sku_no_mapeado');
-    renderBanner(pendientes.length, d.total_eventos);
-    renderGrid(pendientes);
+    renderBanner(pendientes.length, d.total_eventos, _existingMappings.length);
+    renderPendientes(pendientes);
+    renderExisting();
   } catch(e) {
     showError(e.message);
   }
 }
 
-function renderBanner(pendientes, total) {
+function renderBanner(pendientes, totalEvents, totalMappings) {
   const b = document.getElementById('banner');
   if (pendientes === 0) {
     b.className = 'banner ok';
-    b.textContent = '✅ Sin SKUs pendientes · todos los eventos mapeados.';
+    b.textContent = '✅ Sin SKUs pendientes · ' + totalMappings +
+                    ' mappings existentes · ' + totalEvents + ' eventos en horizonte 30d.';
   } else {
     b.className = 'banner warn';
-    b.textContent = '⚠️ ' + pendientes + ' eventos con SKUs no mapeados (de ' + total + ' totales en horizonte 30d).';
+    b.textContent = '⚠️ ' + pendientes + ' eventos con SKUs no mapeados de ' + totalEvents +
+                    ' · ' + totalMappings + ' mappings ya existen.';
   }
 }
 
@@ -364,9 +382,10 @@ function esc(s) {
   return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-function renderGrid(eventos) {
+function renderPendientes(eventos) {
+  const div = document.getElementById('grid-pendientes');
   if (!eventos.length) {
-    document.getElementById('grid').innerHTML = '<div class="muted">Nada pendiente.</div>';
+    div.innerHTML = '<div class="muted">✅ Nada pendiente · todos los SKUs del Calendar están mapeados.</div>';
     return;
   }
   let html = '';
@@ -390,16 +409,112 @@ function renderGrid(eventos) {
       '</div>' +
     '</div>';
   });
-  // Datalist con productos conocidos
   html += '<datalist id="prod-list">' +
     _productosLista.map(p => '<option value="' + esc(p) + '">').join('') +
     '</datalist>';
-  document.getElementById('grid').innerHTML = html;
+  div.innerHTML = html;
+}
+
+function renderExisting() {
+  const div = document.getElementById('grid-existing');
+  if (!_existingMappings.length) {
+    div.innerHTML = '<div class="muted">No hay mappings existentes aún.</div>';
+    return;
+  }
+  const filter = (document.getElementById('search-existing')||{}).value || '';
+  const filterUp = filter.toUpperCase();
+  const filtered = _existingMappings.filter(m => {
+    if (!filter) return true;
+    return ((m.sku||'').toUpperCase().indexOf(filterUp) >= 0) ||
+           ((m.producto_nombre||'').toUpperCase().indexOf(filterUp) >= 0);
+  });
+  let html = '<table>' +
+    '<thead><tr>' +
+      '<th>SKU</th>' +
+      '<th>Producto destino</th>' +
+      '<th>Estado</th>' +
+      '<th>Acciones</th>' +
+    '</tr></thead><tbody>';
+  filtered.forEach((m, i) => {
+    const isInactive = !m.activo;
+    html += '<tr id="exist-row-' + i + '"' +
+            (isInactive ? ' style="opacity:.5"' : '') + '>' +
+      '<td><b>' + esc(m.sku) + '</b></td>' +
+      '<td>' +
+        '<input type="text" id="exist-prod-' + i + '" value="' + esc(m.producto_nombre) + '" ' +
+        'list="prod-list-exist" style="width:100%;padding:6px;border:1px solid #cbd5e1;border-radius:4px;font-size:12px"/>' +
+      '</td>' +
+      '<td>' + (isInactive ? '<span class="badge-no-formula">DESACTIVADO</span>' : '<span style="color:#16a34a">activo</span>') + '</td>' +
+      '<td style="white-space:nowrap">' +
+        '<button class="btn primary" style="padding:4px 10px;font-size:11px" onclick="updateExisting(' + i + ',\\''+ esc(m.sku) +'\\')">💾</button> ' +
+        '<button class="btn danger" style="padding:4px 10px;font-size:11px" onclick="deleteExisting(' + i + ',\\''+ esc(m.sku) +'\\')">🗑️</button> ' +
+        '<span id="exist-msg-' + i + '" style="margin-left:6px"></span>' +
+      '</td>' +
+    '</tr>';
+  });
+  html += '</tbody></table>' +
+    '<datalist id="prod-list-exist">' +
+    _productosLista.map(p => '<option value="' + esc(p) + '">').join('') +
+    '</datalist>';
+  div.innerHTML = html;
+}
+
+function filterExisting() { renderExisting(); }
+
+async function updateExisting(idx, sku) {
+  const prod = document.getElementById('exist-prod-' + idx).value.trim();
+  const msg = document.getElementById('exist-msg-' + idx);
+  if (!prod) { msg.className = 'error-msg'; msg.textContent = 'producto vacío'; return; }
+  msg.textContent = '⏳';
+  try {
+    const r = await fetch('/api/admin/sku-producto-map', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({sku: sku, producto_nombre: prod, activo: true})
+    });
+    const d = await r.json();
+    if (r.ok) {
+      msg.className = 'success-msg';
+      msg.textContent = '✅';
+      // Update local list
+      _existingMappings.forEach(m => { if (m.sku === sku) m.producto_nombre = prod; });
+      setTimeout(() => loadAll(), 500);
+    } else {
+      msg.className = 'error-msg';
+      msg.textContent = '❌ ' + (d.error || '?');
+    }
+  } catch(e) {
+    msg.className = 'error-msg';
+    msg.textContent = '❌ ' + e.message;
+  }
+}
+
+async function deleteExisting(idx, sku) {
+  if (!confirm('Desactivar mapping ' + sku + '?\\nLos eventos con este SKU dejarán de aparecer en Plan hasta que crees uno nuevo.')) return;
+  const msg = document.getElementById('exist-msg-' + idx);
+  msg.textContent = '⏳';
+  try {
+    const r = await fetch('/api/admin/sku-producto-map', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({sku: sku, _delete: true})
+    });
+    if (r.ok) {
+      msg.className = 'success-msg';
+      msg.textContent = '✅ desactivado';
+      setTimeout(() => loadAll(), 500);
+    } else {
+      msg.className = 'error-msg';
+      msg.textContent = '❌';
+    }
+  } catch(e) {
+    msg.className = 'error-msg';
+    msg.textContent = '❌ ' + e.message;
+  }
 }
 
 function selectSku(idx, sku) {
   document.getElementById('sku-input-' + idx).value = sku;
-  // Highlight
   const card = document.getElementById('card-' + idx);
   card.querySelectorAll('.sku-chip').forEach(c => c.classList.remove('selected'));
   card.querySelectorAll('.sku-chip').forEach(c => {
@@ -433,6 +548,7 @@ async function saveMapping(idx) {
       if (d.warning) {
         msgEl.textContent += ' (advertencia: ' + d.warning + ')';
       }
+      setTimeout(() => loadAll(), 1000);
     } else {
       msgEl.className = 'error-msg';
       msgEl.textContent = '❌ ' + (d.error || 'Error');
@@ -443,7 +559,7 @@ async function saveMapping(idx) {
   }
 }
 
-loadPending();
+loadAll();
 </script>
 
 <!-- Widget Mi contraseña -->
