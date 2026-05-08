@@ -222,6 +222,421 @@ def admin_users_list():
     return jsonify({"users": out, "total": len(out)})
 
 
+@bp.route("/api/admin/zero-error/status", methods=["GET"])
+def admin_zero_error_status():
+    """Dashboard agregador del sistema anti-regresión.
+
+    Sebastián 7-may-2026: una sola query devuelve todo el estado del
+    sistema zero-error. Lo consume la página /admin/zero-error.
+
+    Devuelve:
+      · golden_paths: count + último resultado (si lo tenemos)
+      · watcher: últimos 5 runs del cron + status global
+      · health: estado actual de los 8 invariantes (call interno)
+      · agent_memory: count + últimas 5 entries por categoría
+      · session_logs: últimos 5 archivos en SESSION_LOG/
+      · git: últimos 10 commits
+      · pending_bugs: lista de bugs conocidos sin resolver (manual)
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    import os as _os
+    import subprocess as _sp
+    import re as _re
+    from datetime import datetime as _dt
+
+    REPO_ROOT = _os.path.dirname(
+        _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+    )
+
+    out = {
+        'generated_at': _dt.utcnow().isoformat() + 'Z',
+        'repo_root': REPO_ROOT,
+    }
+
+    # 1. Golden paths · contar tests en el archivo
+    try:
+        gp_file = _os.path.join(REPO_ROOT, 'tests', 'test_golden_paths.py')
+        if _os.path.exists(gp_file):
+            with open(gp_file, 'r', encoding='utf-8', errors='replace') as f:
+                content = f.read()
+            tests = _re.findall(r'^def (test_golden_\w+)\(', content, _re.MULTILINE)
+            out['golden_paths'] = {
+                'count': len(tests),
+                'tests': tests[:60],
+                'file': 'tests/test_golden_paths.py',
+            }
+        else:
+            out['golden_paths'] = {'count': 0, 'tests': [], 'error': 'archivo no encontrado'}
+    except Exception as e:
+        out['golden_paths'] = {'error': str(e)}
+
+    # 2. Watcher · últimos 5 runs
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    try:
+        rows = c.execute("""
+            SELECT job_name, ejecutado_at, ok,
+                   COALESCE(detalle_json,''), COALESCE(error_msg,''),
+                   COALESCE(duracion_ms, 0)
+            FROM cron_jobs_runs
+            WHERE job_name LIKE 'watcher_health%'
+            ORDER BY ejecutado_at DESC LIMIT 5
+        """).fetchall()
+        out['watcher'] = {
+            'runs': [
+                {
+                    'job_name': r[0], 'ejecutado_at': r[1],
+                    'ok': bool(r[2]), 'detalle': r[3][:500],
+                    'error': r[4][:200], 'duracion_ms': r[5],
+                } for r in rows
+            ],
+            'count_recent': len(rows),
+        }
+    except sqlite3.OperationalError:
+        out['watcher'] = {'runs': [], 'note': 'Tabla cron_jobs_runs no existe'}
+    except Exception as e:
+        out['watcher'] = {'error': str(e)}
+
+    # 3. Health · invocar el endpoint internamente
+    try:
+        from flask import session as _s, current_app as _ca
+        with _ca.test_request_context('/api/admin/health/critical-paths'):
+            _s['compras_user'] = u
+            resp = admin_health_critical_paths()
+        if isinstance(resp, tuple):
+            health_payload = resp[0].get_json()
+        else:
+            health_payload = resp.get_json()
+        out['health'] = health_payload
+    except Exception as e:
+        out['health'] = {'error': str(e)}
+
+    # 4. agent_memory · count + últimas 5 entries
+    try:
+        total = c.execute("SELECT COUNT(*) FROM agent_memory").fetchone()[0]
+        recent = c.execute("""
+            SELECT key, category, updated_at, created_by,
+                   SUBSTR(value, 1, 100)
+            FROM agent_memory
+            ORDER BY updated_at DESC LIMIT 5
+        """).fetchall()
+        cat_counts = c.execute("""
+            SELECT category, COUNT(*) FROM agent_memory
+            GROUP BY category ORDER BY 2 DESC
+        """).fetchall()
+        out['agent_memory'] = {
+            'total': total,
+            'recent': [
+                {'key': r[0], 'category': r[1], 'updated_at': r[2],
+                 'created_by': r[3], 'value_preview': r[4]}
+                for r in recent
+            ],
+            'by_category': [{'category': r[0], 'count': r[1]}
+                            for r in cat_counts],
+        }
+    except sqlite3.OperationalError:
+        out['agent_memory'] = {'total': 0, 'note': 'Tabla agent_memory no existe (mig 96 pendiente)'}
+    except Exception as e:
+        out['agent_memory'] = {'error': str(e)}
+    conn.close()
+
+    # 5. SESSION_LOG · listar últimos 5 archivos
+    try:
+        log_dir = _os.path.join(REPO_ROOT, 'SESSION_LOG')
+        if _os.path.isdir(log_dir):
+            files = []
+            for fn in _os.listdir(log_dir):
+                if not fn.endswith('.md') or fn == 'README.md':
+                    continue
+                path = _os.path.join(log_dir, fn)
+                try:
+                    st = _os.stat(path)
+                    files.append({
+                        'name': fn,
+                        'mtime': _dt.utcfromtimestamp(st.st_mtime).isoformat() + 'Z',
+                        'size': st.st_size,
+                    })
+                except Exception:
+                    pass
+            files.sort(key=lambda f: f['mtime'], reverse=True)
+            out['session_logs'] = {'files': files[:5], 'total': len(files)}
+        else:
+            out['session_logs'] = {'files': [], 'note': 'SESSION_LOG/ no existe'}
+    except Exception as e:
+        out['session_logs'] = {'error': str(e)}
+
+    # 6. Git · últimos 10 commits
+    try:
+        result = _sp.run(
+            ['git', '-C', REPO_ROOT, 'log', '--oneline', '-10',
+             '--pretty=format:%h|%s|%an|%ar'],
+            capture_output=True, text=True,
+            encoding='utf-8', errors='replace', timeout=10,
+        )
+        commits = []
+        for line in (result.stdout or '').splitlines():
+            parts = line.split('|', 3)
+            if len(parts) == 4:
+                commits.append({
+                    'hash': parts[0], 'message': parts[1],
+                    'author': parts[2], 'when': parts[3],
+                })
+        out['git'] = {'recent_commits': commits, 'total_shown': len(commits)}
+    except Exception as e:
+        out['git'] = {'error': str(e)}
+
+    # 7. Pending bugs (manual list · podemos persistirlos en agent_memory después)
+    out['pending_bugs'] = [
+        {
+            'id': 'AZHC-LUN-11',
+            'title': 'AZHC fantasma Lun 11 sigue en prod',
+            'severity': 'medium',
+            'next_action': (
+                'Ir a /api/programacion/debug-producto/AZ%20HIBRID%20CLEAR · '
+                'revisar entries con protegida_del_sync=true · si tienen '
+                'inicio_real_at, revertir desde Operación Live'
+            ),
+        },
+        {
+            'id': 'MAYERLIN-LOGIN',
+            'title': 'Mayerlin no puede entrar',
+            'severity': 'high',
+            'next_action': (
+                'Ir a /admin → Usuarios → Mayerlin → Diag · '
+                'si password_source=missing → click Resetear'
+            ),
+        },
+    ]
+
+    # 8. Status global derivado
+    has_critical = (
+        out.get('health', {}).get('critical_count', 0) > 0
+        or any(not r.get('ok') for r in out.get('watcher', {}).get('runs', []))
+    )
+    out['global_status'] = 'critical' if has_critical else 'ok'
+
+    return jsonify(out)
+
+
+@bp.route("/admin/zero-error", methods=["GET"])
+def admin_zero_error_page():
+    """Dashboard HTML del sistema anti-regresión.
+
+    Renderiza una página standalone que consume
+    /api/admin/zero-error/status y muestra cards con el estado.
+    Solo admin puede verla.
+    """
+    u, err, code = _require_admin()
+    if err:
+        # Si no es admin, redirigir a login en vez de devolver JSON
+        return Response(
+            '<h1>403</h1><p>Solo admin puede ver este dashboard.</p>',
+            status=403, mimetype='text/html'
+        )
+    return Response(_ZERO_ERROR_DASHBOARD_HTML, mimetype='text/html')
+
+
+_ZERO_ERROR_DASHBOARD_HTML = """<!DOCTYPE html>
+<html lang="es"><head>
+<meta charset="utf-8">
+<title>Zero-Error · EOS</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+       background: #f8fafc; color: #1e293b; padding: 20px; line-height: 1.5; }
+h1 { font-size: 22px; margin-bottom: 4px; }
+.sub { color: #64748b; font-size: 13px; margin-bottom: 18px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+        gap: 14px; }
+.card { background: #fff; border-radius: 10px; border: 1px solid #e2e8f0;
+        padding: 14px 16px; box-shadow: 0 1px 3px rgba(0,0,0,.04); }
+.card h3 { font-size: 13px; color: #475569; text-transform: uppercase;
+           letter-spacing: .4px; margin-bottom: 10px; font-weight: 700;
+           display: flex; align-items: center; gap: 6px; }
+.dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.dot.ok { background: #16a34a; }
+.dot.warn { background: #f59e0b; }
+.dot.critical { background: #dc2626; }
+.kpi { font-size: 28px; font-weight: 800; color: #0f172a; line-height: 1.1; }
+.kpi-label { font-size: 11px; color: #94a3b8; }
+.row { display: flex; justify-content: space-between; align-items: center;
+       padding: 6px 0; border-bottom: 1px solid #f1f5f9; font-size: 12px; }
+.row:last-child { border-bottom: none; }
+.row .v { color: #475569; font-family: monospace; font-size: 11px; }
+.muted { color: #94a3b8; font-size: 11px; }
+.tag { display: inline-block; padding: 1px 8px; border-radius: 4px;
+       font-size: 10px; font-weight: 700; text-transform: uppercase;
+       letter-spacing: .3px; }
+.tag.ok { background: #dcfce7; color: #166534; }
+.tag.warn { background: #fef3c7; color: #92400e; }
+.tag.critical { background: #fee2e2; color: #991b1b; }
+.global-banner { padding: 12px 16px; border-radius: 10px; margin-bottom: 16px;
+                 font-weight: 700; }
+.global-banner.ok { background: #dcfce7; color: #166534;
+                    border: 1px solid #86efac; }
+.global-banner.critical { background: #fee2e2; color: #991b1b;
+                           border: 1px solid #fca5a5; }
+button { background: #0f766e; color: #fff; border: none; padding: 8px 14px;
+         border-radius: 6px; cursor: pointer; font-weight: 700; font-size: 12px; }
+button:hover { background: #0d5d56; }
+.actions { display: flex; gap: 8px; margin-bottom: 14px; }
+pre { font-size: 11px; background: #f1f5f9; padding: 8px; border-radius: 4px;
+      overflow-x: auto; max-height: 200px; }
+.bug { background: #fef2f2; border-left: 3px solid #dc2626; padding: 8px 12px;
+       margin: 6px 0; border-radius: 4px; }
+.bug .title { font-weight: 700; color: #7f1d1d; font-size: 12px; }
+.bug .next { font-size: 11px; color: #4b5563; margin-top: 4px; }
+</style>
+</head>
+<body>
+<h1>🛡️ Zero-Error Dashboard · EOS</h1>
+<div class="sub">Estado del sistema anti-regresión · auto-refresh cada 60s</div>
+
+<div id="global-banner" class="global-banner ok">⏳ Cargando...</div>
+
+<div class="actions">
+  <button onclick="loadStatus()">↻ Recargar</button>
+  <button onclick="window.open('/api/admin/zero-error/status','_blank')"
+          style="background:#475569">JSON crudo</button>
+  <button onclick="window.open('/api/admin/health/critical-paths','_blank')"
+          style="background:#475569">Health checks</button>
+</div>
+
+<div class="grid" id="grid">
+  <div class="card"><h3>Cargando...</h3></div>
+</div>
+
+<script>
+async function loadStatus() {
+  try {
+    const r = await fetch('/api/admin/zero-error/status');
+    const d = await r.json();
+    render(d);
+  } catch (e) {
+    document.getElementById('grid').innerHTML =
+      '<div class="card"><h3>Error</h3><pre>' + e.message + '</pre></div>';
+  }
+}
+
+function fmt(s) { return (s == null) ? '—' : String(s); }
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function render(d) {
+  // Global banner
+  const banner = document.getElementById('global-banner');
+  banner.className = 'global-banner ' + (d.global_status || 'critical');
+  banner.textContent = d.global_status === 'ok'
+    ? '✅ Sistema OK · todos los checks verdes'
+    : '🚨 Atención · hay checks críticos pendientes';
+
+  const grid = document.getElementById('grid');
+  let html = '';
+
+  // Card 1: Golden Paths
+  const gp = d.golden_paths || {};
+  html += card('🛡️ Golden Paths', gp.error ? 'critical' : 'ok',
+    `<div class="kpi">${gp.count||0}</div>
+     <div class="kpi-label">tests E2E protegen flujos críticos</div>
+     <div class="muted" style="margin-top:8px">${esc(gp.file||'')}</div>
+     <div style="margin-top:8px">
+       <a href="javascript:document.getElementById('gp-list').style.display=document.getElementById('gp-list').style.display==='none'?'block':'none'" style="font-size:11px">Ver/ocultar lista</a>
+       <pre id="gp-list" style="display:none">${(gp.tests||[]).map(esc).join('\\n')}</pre>
+     </div>`);
+
+  // Card 2: Health checks
+  const h = d.health || {};
+  const hStatus = (h.status || 'critical');
+  html += card('💚 Health · 8 invariantes',
+    hStatus === 'ok' ? 'ok' : (hStatus === 'warn' ? 'warn' : 'critical'),
+    h.checks ? h.checks.map(c => `
+      <div class="row">
+        <span><span class="dot ${c.status||'critical'}"></span> ${esc(c.name)}</span>
+        <span class="v">${esc(c.detail||'')}</span>
+      </div>`).join('') : `<pre>${esc(JSON.stringify(h,null,2))}</pre>`);
+
+  // Card 3: Watcher cron
+  const w = d.watcher || {};
+  const lastRun = (w.runs && w.runs[0]) || null;
+  html += card('⏰ Watcher cron',
+    lastRun ? (lastRun.ok ? 'ok' : 'critical') : 'warn',
+    `<div class="kpi">${(w.runs||[]).length}</div>
+     <div class="kpi-label">runs recientes</div>
+     ${(w.runs||[]).map(r => `
+       <div class="row">
+         <span><span class="dot ${r.ok?'ok':'critical'}"></span> ${esc(r.job_name)}</span>
+         <span class="v">${esc(r.ejecutado_at||'')}</span>
+       </div>`).join('') || '<div class="muted">Sin runs registrados todavía. El cron corre cada hora a :07.</div>'}`);
+
+  // Card 4: agent_memory
+  const am = d.agent_memory || {};
+  html += card('🧠 Agent Memory', 'ok',
+    `<div class="kpi">${am.total||0}</div>
+     <div class="kpi-label">entries persistidas</div>
+     ${(am.by_category||[]).map(c => `
+       <div class="row">
+         <span>${esc(c.category)}</span>
+         <span class="v">${c.count}</span>
+       </div>`).join('')}
+     ${am.note ? `<div class="muted" style="margin-top:8px">${esc(am.note)}</div>` : ''}`);
+
+  // Card 5: SESSION_LOG
+  const sl = d.session_logs || {};
+  html += card('📝 Session Log', 'ok',
+    `<div class="kpi">${sl.total||0}</div>
+     <div class="kpi-label">archivos · últimos 5</div>
+     ${(sl.files||[]).map(f => `
+       <div class="row">
+         <span>${esc(f.name)}</span>
+         <span class="v">${esc((f.mtime||'').slice(0,10))}</span>
+       </div>`).join('')}`);
+
+  // Card 6: Git
+  const g = d.git || {};
+  html += card('🔀 Git · últimos commits', 'ok',
+    `${(g.recent_commits||[]).map(c => `
+       <div class="row">
+         <span><b>${esc(c.hash)}</b> ${esc(c.message).slice(0,50)}${c.message.length>50?'...':''}</span>
+         <span class="v">${esc(c.when)}</span>
+       </div>`).join('')}`);
+
+  // Card 7: Bugs pendientes
+  const bugs = d.pending_bugs || [];
+  html += card('🐛 Bugs pendientes',
+    bugs.length ? 'warn' : 'ok',
+    `<div class="kpi">${bugs.length}</div>
+     <div class="kpi-label">bugs conocidos sin resolver</div>
+     ${bugs.map(b => `
+       <div class="bug">
+         <div class="title">[${esc(b.severity)}] ${esc(b.title)}</div>
+         <div class="next">→ ${esc(b.next_action)}</div>
+       </div>`).join('')}`);
+
+  // Card 8: Meta-info
+  html += card('ℹ️ Meta', 'ok',
+    `<div class="row"><span>Generado</span><span class="v">${esc(d.generated_at)}</span></div>
+     <div class="row"><span>Repo</span><span class="v">${esc((d.repo_root||'').split(/[\\\\/]/).pop())}</span></div>
+     <div class="row"><span>Status global</span><span class="tag ${d.global_status}">${esc(d.global_status)}</span></div>`);
+
+  grid.innerHTML = html;
+}
+
+function card(title, status, body) {
+  return `<div class="card">
+    <h3><span class="dot ${status}"></span> ${title}</h3>
+    ${body}
+  </div>`;
+}
+
+loadStatus();
+setInterval(loadStatus, 60000);
+</script>
+</body></html>
+"""
+
+
 @bp.route("/api/admin/health/critical-paths", methods=["GET"])
 def admin_health_critical_paths():
     """Health check de invariantes críticas en producción.
