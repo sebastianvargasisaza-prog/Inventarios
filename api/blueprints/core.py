@@ -218,6 +218,160 @@ def hub():
     from templates_py.hub_html import HUB_HTML
     return Response(HUB_HTML, mimetype='text/html')
 
+
+@bp.route('/cambiar-password')
+def cambiar_password_page():
+    """Página standalone para que cualquier user logueado cambie su password.
+
+    Sebastián 7-may-2026: el modal del /hub solo lo ven users que pasan por
+    el hub. Mayerlin/Catalina entran directo a /planta o /compras y no lo
+    veían. Esta página standalone es accesible desde cualquier sesión activa.
+    """
+    if 'compras_user' not in session:
+        return redirect('/login?next=/cambiar-password')
+    username = session.get('compras_user', '')
+    return Response(
+        _PWD_PAGE_HTML.replace('{{USERNAME}}', username),
+        mimetype='text/html',
+    )
+
+
+_PWD_PAGE_HTML = """<!DOCTYPE html>
+<html lang="es"><head>
+<meta charset="utf-8">
+<title>Cambiar contraseña · EOS</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+       background: linear-gradient(135deg, #0f172a, #1e293b);
+       min-height: 100vh; display: flex; align-items: center;
+       justify-content: center; padding: 20px; color: #e2e8f0; }
+.card { background: #1e293b; border: 1px solid #334155; border-radius: 14px;
+        padding: 32px; width: 100%; max-width: 440px;
+        box-shadow: 0 20px 50px rgba(0,0,0,.4); }
+h1 { font-size: 22px; color: #f1f5f9; margin-bottom: 6px; }
+.user { font-size: 13px; color: #94a3b8; margin-bottom: 24px; }
+.user b { color: #a78bfa; }
+.req { font-size: 11px; color: #94a3b8; background: #0f172a;
+       border: 1px solid #1e293b; padding: 10px 12px; border-radius: 8px;
+       margin-bottom: 18px; line-height: 1.6; }
+label { font-size: 11px; color: #94a3b8; font-weight: 600;
+        text-transform: uppercase; letter-spacing: .05em;
+        display: block; margin-bottom: 4px; }
+input[type=password] { background: #0f172a; border: 1px solid #334155;
+       color: #e2e8f0; padding: 10px 14px; border-radius: 8px;
+       font-size: 14px; width: 100%; font-family: inherit; }
+input:focus { outline: none; border-color: #7c3aed; }
+.row { margin-bottom: 14px; }
+.actions { display: flex; gap: 10px; margin-top: 20px; }
+.btn { flex: 1; padding: 11px 18px; border-radius: 8px; cursor: pointer;
+       font-size: 14px; font-weight: 700; border: none; }
+.btn.primary { background: linear-gradient(135deg, #7c3aed, #4c1d95);
+               color: #fff; }
+.btn.primary:hover { background: linear-gradient(135deg, #6d28d9, #3b1480); }
+.btn.primary:disabled { opacity: .5; cursor: not-allowed; }
+.btn.secondary { background: transparent; border: 1px solid #334155;
+                 color: #94a3b8; }
+.msg { font-size: 13px; min-height: 20px; padding: 8px 0;
+       text-align: center; }
+.back { text-align: center; margin-top: 20px; }
+.back a { color: #94a3b8; font-size: 12px; text-decoration: none; }
+.back a:hover { color: #e2e8f0; }
+</style>
+</head><body>
+<div class="card">
+  <h1>🔐 Cambiar contraseña</h1>
+  <div class="user">Usuario: <b>{{USERNAME}}</b></div>
+  <div class="req">
+    Tu nueva contraseña debe tener:
+    <ul style="margin-left:18px;margin-top:4px;">
+      <li>Mínimo 8 caracteres</li>
+      <li>Al menos una letra y un número</li>
+      <li>Diferente a tu nombre de usuario</li>
+    </ul>
+  </div>
+  <form id="form" onsubmit="return submitForm(event)">
+    <div class="row">
+      <label>Contraseña actual</label>
+      <input type="password" id="actual" required autocomplete="current-password" autofocus>
+    </div>
+    <div class="row">
+      <label>Nueva contraseña</label>
+      <input type="password" id="nueva" required minlength="8" autocomplete="new-password">
+    </div>
+    <div class="row">
+      <label>Confirmar nueva contraseña</label>
+      <input type="password" id="confirmar" required minlength="8" autocomplete="new-password">
+    </div>
+    <div class="msg" id="msg"></div>
+    <div class="actions">
+      <button type="button" class="btn secondary" onclick="window.history.back()">Cancelar</button>
+      <button type="submit" class="btn primary" id="btn">Guardar</button>
+    </div>
+  </form>
+  <div class="back"><a href="/modulos">← Volver al panel</a></div>
+</div>
+
+<script>
+async function submitForm(ev) {
+  ev.preventDefault();
+  const actual = document.getElementById('actual').value;
+  const nueva = document.getElementById('nueva').value;
+  const confirmar = document.getElementById('confirmar').value;
+  const msg = document.getElementById('msg');
+  const btn = document.getElementById('btn');
+
+  msg.style.color = '#fbbf24';
+  msg.textContent = 'Validando...';
+
+  if (nueva !== confirmar) {
+    msg.style.color = '#f87171';
+    msg.textContent = 'La confirmación no coincide.';
+    return false;
+  }
+  if (nueva.length < 8) {
+    msg.style.color = '#f87171';
+    msg.textContent = 'Mínimo 8 caracteres.';
+    return false;
+  }
+  if (!/[a-zA-Z]/.test(nueva) || !/[0-9]/.test(nueva)) {
+    msg.style.color = '#f87171';
+    msg.textContent = 'Debe incluir al menos una letra y un número.';
+    return false;
+  }
+
+  btn.disabled = true;
+  try {
+    const r = await fetch('/api/cambiar-password', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        password_actual: actual,
+        password_nueva: nueva,
+        password_confirmar: confirmar
+      })
+    });
+    const data = await r.json();
+    if (r.ok && (data.ok || data.message)) {
+      msg.style.color = '#34d399';
+      msg.textContent = '✅ Contraseña actualizada · redirigiendo a login...';
+      setTimeout(() => { window.location.href = '/logout'; }, 1800);
+    } else {
+      msg.style.color = '#f87171';
+      msg.textContent = data.error || 'Error desconocido';
+      btn.disabled = false;
+    }
+  } catch (e) {
+    msg.style.color = '#f87171';
+    msg.textContent = 'Error de red: ' + e.message;
+    btn.disabled = false;
+  }
+  return false;
+}
+</script>
+</body></html>
+"""
+
 @bp.route('/modulos')
 def modulos():
     if 'compras_user' not in session:
