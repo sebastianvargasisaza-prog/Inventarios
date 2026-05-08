@@ -493,7 +493,8 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
   <div id="stock" class="tab-content">
     <h2>&#128230; Stock por Lote</h2>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px;">
-      <input type="text" id="stock-search" placeholder="MP, INCI, lote, proveedor..." oninput="filterStock()" style="width:210px;margin-top:0;">
+      <input type="text" id="stock-search" placeholder="MP, INCI, proveedor..." oninput="filterStock()" style="width:200px;margin-top:0;">
+      <input type="text" id="stock-search-lote" placeholder="&#127991; Solo por lote" oninput="filterStock()" style="width:170px;margin-top:0;border:2px solid #1e63a8;background:#f0f8ff;">
       <div style="display:flex;gap:10px;flex-wrap:wrap;"><button onclick="loadStock()">&#8635; Actualizar</button><button onclick="exportarExcelStock()" style="background:#217346;">&#128196; Descargar Excel</button><button onclick="abrirLimpiezaProveedores()" style="background:#7c3aed;" title="Detecta proveedores duplicados por typo y los unifica">&#129529; Limpiar proveedores</button><button onclick="abrirRevisarMinimos()" style="background:#0e7490;" title="Audita stock minimo de cada MP vs consumo proyectado · evita alertas falsas">&#128202; Revisar m&iacute;nimos</button></div>
       <span id="stock-count" style="color:#888;font-size:0.88em;"></span>
     </div>
@@ -2564,14 +2565,28 @@ function renderStock(items){
   });
   tb.innerHTML=h;
 }
+// Sebastian 8-may-2026: input dedicado para buscar por LOTE +
+// el input general (MP/INCI/proveedor). Ambos se aplican en AND.
+// Si ambos vacios → muestra todo. Si solo lote → filtra por lote.
+// Si ambos llenos → match en general Y lote.
 function filterStock(){
-  var q=document.getElementById('stock-search').value.toLowerCase();
+  var qGen=(document.getElementById('stock-search')||{}).value||'';
+  var qLote=(document.getElementById('stock-search-lote')||{}).value||'';
+  qGen=qGen.toLowerCase().trim();
+  qLote=qLote.toLowerCase().trim();
   var f=_lotes.filter(function(i){
-    return !q||(i.material_id.toLowerCase().includes(q)||i.material_nombre.toLowerCase().includes(q)||
-               i.nombre_inci.toLowerCase().includes(q)||(i.lote||'').toLowerCase().includes(q)||
-               (i.proveedor||'').toLowerCase().includes(q));
+    var matchGen=!qGen||(
+      (i.material_id||'').toLowerCase().includes(qGen)||
+      (i.material_nombre||'').toLowerCase().includes(qGen)||
+      (i.nombre_inci||'').toLowerCase().includes(qGen)||
+      (i.proveedor||'').toLowerCase().includes(qGen)||
+      // Mantener compat: si pega un lote en el general, sigue funcionando
+      (i.lote||'').toLowerCase().includes(qGen));
+    var matchLote=!qLote||(i.lote||'').toLowerCase().includes(qLote);
+    return matchGen && matchLote;
   });
-  document.getElementById('stock-count').textContent=f.length+' de '+_lotes.length;
+  var hint=qLote?(' lote~"'+qLote+'"'):'';
+  document.getElementById('stock-count').textContent=f.length+' de '+_lotes.length+hint;
   renderStock(f);
 }
 
