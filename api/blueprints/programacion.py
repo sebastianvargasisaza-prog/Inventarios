@@ -3842,6 +3842,190 @@ def listado_produccion_programada():
     return jsonify({'producciones': out, 'total': len(out)})
 
 
+@bp.route('/api/programacion/debug-calendar', methods=['GET'])
+def debug_calendar_eventos():
+    """Diagnóstico de TODOS los eventos del Calendar y por qué cada uno
+    aparece (o NO aparece) en /producciones-faltantes.
+
+    Sebastián 8-may-2026: la app solo muestra ~11 productos pero Calendar
+    tiene 20+ eventos. La razón es silenciosa: si un SKU del título no
+    está en sku_producto_map o no tiene fórmula, el evento se ignora.
+
+    Este endpoint expone los 4 motivos por los que un evento no aparece:
+      · sin_sku_detectable · regex no encontró código tipo [A-Z]+
+      · sku_no_mapeado · el SKU detectado no está en sku_producto_map
+      · sin_formula · el producto mapeado no tiene formula_headers
+      · evento_no_fab · título contiene 'envasado'/'qc'/etc · skip por diseño
+      · ok · evento sí aparece en la app
+
+    Querystring: ?dias=14 (mismo horizonte que producciones-faltantes)
+
+    Returns:
+      {
+        eventos: [{titulo, fecha, status, skus_detectados,
+                   sku_match, producto_mapeado, tiene_formula, razon}],
+        total_eventos: int, total_aparecen: int, total_ignorados: int,
+        skus_no_mapeados: [list of SKUs unique],
+        productos_sin_formula: [list of productos]
+      }
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    try:
+        from blueprints.compras import ADMIN_USERS as _ADMIN
+    except Exception:
+        _ADMIN = ('sebastian', 'alejandro')
+    if user not in _ADMIN:
+        return jsonify({'error': 'Solo admin'}), 403
+
+    import re as _re
+    try:
+        dias = max(7, min(int(request.args.get('dias', 14)), 365))
+    except (ValueError, TypeError):
+        dias = 14
+
+    try:
+        cal = _fetch_calendar_events(days_ahead=dias)
+    except Exception as e:
+        return jsonify({'error': f'Calendar fetch fallo: {e}'}), 500
+
+    if cal.get('error'):
+        return jsonify({
+            'error': f'Calendar API: {cal["error"]}',
+            'source': cal.get('source'),
+            'hint': 'Configura GCAL_ICAL_URL en Render',
+        }), 500
+
+    events = cal.get('events') or []
+    if not events:
+        return jsonify({
+            'eventos': [], 'total_eventos': 0,
+            'note': 'Calendar respondió 0 eventos · ¿el calendar correcto?',
+        })
+
+    # Cargar mapeos relevantes
+    conn = get_db()
+    sku_to_prod = {}
+    try:
+        for r in conn.execute(
+            "SELECT UPPER(sku), producto_nombre FROM sku_producto_map WHERE activo=1"
+        ).fetchall():
+            sku_to_prod[r[0]] = r[1]
+    except Exception:
+        pass
+
+    productos_con_formula = set()
+    try:
+        for r in conn.execute(
+            "SELECT UPPER(TRIM(producto_nombre)) FROM formula_headers"
+        ).fetchall():
+            productos_con_formula.add(r[0])
+    except Exception:
+        pass
+
+    # Mismas constantes que el sync
+    NOT_SKU = {
+        'FAB','QC','CON','SIN','MICRO','ENVASADO','ACONDICIONAMIENTO',
+        'FABRICACION','FABRICACIÓN','LANZAMIENTO','PRODUCCION','PRODUCCIÓN',
+        'KG','MES','DIAS','DÍAS','ML','UDS','BATCH','FERNANDO',
+        'MESA','LOTES','LOTE','MINI','MACRO','AND','THE','FOR',
+        'FAB1','FYE2','FYE3','ENV1','ENV2','PROD1','PROD2','PROD3','PROD4'
+    }
+    NON_FAB_KW = {
+        'envasado', 'acondicionamiento', 'micro qc',
+        'control de calidad', 'dispensado', 'etiquetado', 'llenado',
+    }
+
+    def _skus(titulo):
+        tokens = _re.findall(r'\b([A-Z][A-Z0-9]{1,}[A-Z0-9])\b', (titulo or '').upper())
+        return [t for t in tokens if t not in NOT_SKU]
+
+    eventos_out = []
+    skus_no_mapeados = set()
+    productos_sin_formula = set()
+    counters = {'ok': 0, 'sku_no_mapeado': 0, 'sin_formula': 0,
+                'sin_sku': 0, 'no_fab': 0}
+
+    for ev in events:
+        titulo = ev.get('titulo', '') or ''
+        fecha = ev.get('fecha', '')
+        tlow = titulo.lower()
+
+        # Status del evento
+        if any(kw in tlow for kw in NON_FAB_KW):
+            status = 'no_fab'
+            razon = 'Evento de envasado/QC · ignorado por diseño'
+            counters['no_fab'] += 1
+            sku_match = None
+            producto_mapeado = None
+            tiene_formula = False
+            skus_detectados = []
+        else:
+            skus_detectados = _skus(titulo)
+            if not skus_detectados:
+                status = 'sin_sku'
+                razon = 'Título no tiene SKU detectable (regex [A-Z][A-Z0-9]+)'
+                counters['sin_sku'] += 1
+                sku_match = None
+                producto_mapeado = None
+                tiene_formula = False
+            else:
+                # Buscar primer SKU que matchee
+                sku_match = None
+                producto_mapeado = None
+                tiene_formula = False
+                for sku in skus_detectados:
+                    if sku in sku_to_prod:
+                        sku_match = sku
+                        producto_mapeado = sku_to_prod[sku]
+                        prod_norm = (producto_mapeado or '').strip().upper()
+                        tiene_formula = prod_norm in productos_con_formula
+                        break
+                if not sku_match:
+                    status = 'sku_no_mapeado'
+                    razon = (f'SKU(s) {skus_detectados} no están en '
+                             'sku_producto_map. Agregar mapping desde admin.')
+                    counters['sku_no_mapeado'] += 1
+                    for s in skus_detectados:
+                        skus_no_mapeados.add(s)
+                elif not tiene_formula:
+                    status = 'sin_formula'
+                    razon = (f'SKU={sku_match} mapea a producto "{producto_mapeado}" '
+                             'pero NO tiene formula_headers · MPs no se calculan.')
+                    counters['sin_formula'] += 1
+                    productos_sin_formula.add(producto_mapeado)
+                else:
+                    status = 'ok'
+                    razon = 'Evento aparece en /producciones-faltantes'
+                    counters['ok'] += 1
+
+        eventos_out.append({
+            'titulo': titulo,
+            'fecha': fecha,
+            'skus_detectados': skus_detectados,
+            'sku_match': sku_match,
+            'producto_mapeado': producto_mapeado,
+            'tiene_formula': tiene_formula,
+            'status': status,
+            'razon': razon,
+        })
+
+    return jsonify({
+        'horizonte_dias': dias,
+        'total_eventos': len(events),
+        'eventos': eventos_out,
+        'counters': counters,
+        'skus_no_mapeados': sorted(skus_no_mapeados),
+        'productos_sin_formula': sorted(productos_sin_formula),
+        'hint': (
+            'SKUs no mapeados: agregalos en admin / sku_producto_map. '
+            'Productos sin fórmula: cargá la fórmula en /planta → fórmulas. '
+            'Mientras tanto el evento queda invisible en la app.'
+        ),
+    })
+
+
 @bp.route('/api/programacion/debug-producto/<path:producto>', methods=['GET'])
 def debug_producto_estado(producto):
     """Diagnóstico de un producto: entries DB + eventos Calendar + razones
