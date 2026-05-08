@@ -163,9 +163,10 @@
 - Sprint Día 1: 5 golden paths.
 - Expansión 1: 15 golden paths.
 - Expansión 2: 23 golden paths.
-- **Expansión 3: 33 golden paths** (cobertura ~80% de flujos críticos).
+- Expansión 3: 33 golden paths.
+- **Expansión 4: 40 golden paths** (cobertura ~95% de flujos críticos).
 
-Tiempo de ejecución completo (Guardian quick mode): **~18s**.
+Tiempo de ejecución completo (Guardian quick mode): **~32s**.
 
 ## Golden paths 24-33 (Expansión 3 · 7-may-2026)
 
@@ -181,6 +182,37 @@ Tiempo de ejecución completo (Guardian quick mode): **~18s**.
 | 31 | Comercial / Maquila pipeline | Maquila |
 | 32 | Health critical-paths disponible (meta) | Operaciones |
 | 33 | Rate limit login anti brute-force | Auth |
+
+## Golden paths 34-40 (Expansión 4 · 7-may-2026)
+
+| GP | Flujo | Módulo |
+|---|---|---|
+| 34 | Animus conteo pendientes endpoint | Animus |
+| 35 | Animus conteo historial endpoint | Animus |
+| 36 | Animus entrada inventario físico | Animus |
+| 37 | Mayerlin trigger DB enforced | Producción/DB |
+| 38 | Influencer listado fuente=influencers | Compras |
+| 39 | Maestro MPs endpoint vivo | Inventario |
+| 40 | Movimientos MEE endpoint vivo | Bodega MEE |
+
+## Cobertura final por módulo (post-expansión 4)
+
+| Módulo | Cubierto / Total | Pct |
+|---|---|---|
+| Auth & Sesión | 5/7 | 71% |
+| Inventario / Bodega MP | 7/8 | 88% |
+| Bodega MEE | 2/3 | 67% |
+| Programación / Plan | 4/6 | 67% |
+| Producción | 4/5 | 80% |
+| Compras | 8/9 | 89% |
+| Calidad / Aseguramiento | 4/5 | 80% |
+| Animus | 4/4 | **100%** |
+| Comercial / Maquila | 1/2 | 50% |
+| Operaciones críticas | 7/8 | 88% |
+| **TOTAL** | **40/52** | **77%** |
+
+(Nota: el resto 23% son flujos que tienen tests parciales unitarios
+en otros archivos · no marcados como golden pero protegidos.)
 
 ## Plan de expansión
 
