@@ -2137,10 +2137,29 @@ async function actualizarStockMinimo(){
   var mid=_ajDat&&_ajDat.mid;if(!mid)return;
   var val=parseFloat(document.getElementById('ajuste-smin').value);
   if(isNaN(val)||val<0){document.getElementById('ajuste-smin-msg').innerHTML='<span style="color:red;">Valor inválido</span>';return;}
-  var r=await fetch('/api/maestro-mps/'+encodeURIComponent(mid)+'/stock-minimo',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({stock_minimo:val})});
-  var d=await r.json();
-  document.getElementById('ajuste-smin-msg').innerHTML=r.ok?'<span style="color:#28a745;">✓ Actualizado</span>':'<span style="color:red;">'+(d.error||'Error')+'</span>';
-  if(r.ok) setTimeout(loadAlertasReabas,500);
+  // Sebastián 9-may-2026: persistir + reflejar en Bodega MP. Antes solo
+  // refrescaba alertas-reabas, no la tabla Bodega · el user veía el valor
+  // viejo en columna "Stock Min" aunque la BD ya tenía el nuevo (bug
+  // visual interpretado como "no se guardó").
+  document.getElementById('ajuste-smin-msg').innerHTML='<span style="color:#666;">⏳ Guardando...</span>';
+  try{
+    var r=await fetch('/api/maestro-mps/'+encodeURIComponent(mid)+'/stock-minimo',
+      {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({stock_minimo:val})});
+    var d={};try{d=await r.json();}catch(je){}
+    if(r.ok){
+      document.getElementById('ajuste-smin-msg').innerHTML=
+        '<span style="color:#28a745;font-weight:700;">✓ Stock mínimo actualizado a '+val.toLocaleString('es-CO')+' g · persistido en BD</span>';
+      // Refrescar tabla Bodega MP (columna "Stock Min" usa _lotes·stock_min_g
+      // que viene de /api/lotes con MAX(stock_minimo)) Y alertas reabastec.
+      try{ if(typeof loadStock==='function') setTimeout(loadStock, 400); }catch(e){}
+      try{ if(typeof loadAlertasReabas==='function') setTimeout(loadAlertasReabas, 500); }catch(e){}
+    } else {
+      document.getElementById('ajuste-smin-msg').innerHTML=
+        '<span style="color:red;">Error: '+(d.error||r.status)+'</span>';
+    }
+  }catch(e){
+    document.getElementById('ajuste-smin-msg').innerHTML='<span style="color:red;">Error de red: '+e.message+'</span>';
+  }
 }
 async function registrarConsumo(){
   var mid=_ajDat&&_ajDat.mid;if(!mid)return;

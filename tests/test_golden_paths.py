@@ -1470,6 +1470,94 @@ def test_golden_mfa_endpoint(app, db_clean):
 
 
 # ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 55 · INV-6 · Stock mínimo persiste y refleja en /api/lotes
+# ═══════════════════════════════════════════════════════════════════
+# Sebastián 9-may-2026: "no se estan acutalizando el stock minimo cuando
+# hago el ajuste". PUT /api/maestro-mps/<cod>/stock-minimo SÍ persiste
+# en BD, pero el frontend no refrescaba Bodega MP así que el user veía
+# el valor viejo y creía que no se guardó. Este test valida que la BD
+# realmente persiste el cambio y /api/lotes refleja el nuevo MAX.
+
+def test_golden_stock_minimo_persiste_y_refleja_en_bodega(app, db_clean):
+    cs = _login(app, 'sebastian')
+
+    codigo_mp = 'GP55-MP-MIN'
+    lote = 'GP55-LOTE-MIN'
+    nombre = 'Test StockMin'
+
+    # Setup: MP en catálogo con stock_minimo=500 + 1 movimiento de Entrada
+    _exec("""INSERT OR REPLACE INTO maestro_mps
+              (codigo_mp, nombre_comercial, proveedor, activo, tipo_material, stock_minimo)
+              VALUES (?, ?, 'TestProv', 1, 'MP', 500)""",
+          (codigo_mp, nombre))
+    _exec("""INSERT INTO movimientos
+              (material_id, material_nombre, cantidad, tipo, fecha,
+               lote, estado_lote, operador)
+              VALUES (?, ?, 2000, 'Entrada', date('now'),
+                      ?, 'VIGENTE', 'seed')""",
+          (codigo_mp, nombre, lote))
+
+    # Precondición: GET MP devuelve 500
+    r = cs.get(f'/api/maestro-mps/{codigo_mp}')
+    assert r.status_code == 200
+    assert (r.get_json() or {}).get('stock_minimo') == 500
+
+    # /api/lotes muestra stock_min_g=500
+    r = cs.get('/api/lotes')
+    L = next((l for l in (r.get_json() or {}).get('lotes', [])
+              if l.get('material_id') == codigo_mp), None)
+    assert L, f'precondición: lote {codigo_mp} debe estar en /api/lotes'
+    assert L.get('stock_min_g') == 500
+
+    # Acción: PUT stock-minimo → 1500
+    r = cs.put(
+        f'/api/maestro-mps/{codigo_mp}/stock-minimo',
+        json={'stock_minimo': 1500},
+        headers=csrf_headers(),
+    )
+    assert r.status_code == 200, f'PUT fallo: {r.status_code} {r.data}'
+
+    # Verificación 1: GET MP devuelve 1500 (BD persistió)
+    r = cs.get(f'/api/maestro-mps/{codigo_mp}')
+    val_bd = (r.get_json() or {}).get('stock_minimo')
+    assert val_bd == 1500, \
+        f'BUG GRAVE: stock_minimo NO persistió en BD · GET devuelve {val_bd}'
+
+    # Verificación 2: /api/lotes refleja 1500 (lo que ve la pantalla Bodega)
+    r = cs.get('/api/lotes')
+    L = next((l for l in (r.get_json() or {}).get('lotes', [])
+              if l.get('material_id') == codigo_mp), None)
+    assert L, 'lote debe seguir en /api/lotes post-update'
+    assert L.get('stock_min_g') == 1500, \
+        f'BUG SILENCIADO: /api/lotes devuelve stock_min_g={L.get("stock_min_g")}, ' \
+        f'esperado 1500 · pantalla Bodega MP no refleja'
+
+    # Validación: stock_minimo negativo → backend lo acepta como float
+    # pero en práctica frontend lo rechaza. Aceptar valor 0 (limpiar mínimo).
+    r = cs.put(
+        f'/api/maestro-mps/{codigo_mp}/stock-minimo',
+        json={'stock_minimo': 0},
+        headers=csrf_headers(),
+    )
+    assert r.status_code == 200
+    r = cs.get(f'/api/maestro-mps/{codigo_mp}')
+    assert (r.get_json() or {}).get('stock_minimo') == 0, \
+        'BUG: stock_minimo=0 no persistió (caso "sin mínimo")'
+
+    # Validación: PUT a MP inexistente → 404
+    r = cs.put(
+        '/api/maestro-mps/MP-INEXISTENTE/stock-minimo',
+        json={'stock_minimo': 100},
+        headers=csrf_headers(),
+    )
+    assert r.status_code == 404, f'404 esperado, got {r.status_code}'
+
+    # Cleanup
+    _exec("DELETE FROM movimientos WHERE material_id=?", (codigo_mp,))
+    _exec("DELETE FROM maestro_mps WHERE codigo_mp=?", (codigo_mp,))
+
+
+# ═══════════════════════════════════════════════════════════════════
 # GOLDEN PATH 54 · INV-5 · Cambiar fecha_vencimiento del lote refleja en Bodega
 # ═══════════════════════════════════════════════════════════════════
 # Sebastián 9-may-2026: "necesito poder modificar fecha de vencimiento
