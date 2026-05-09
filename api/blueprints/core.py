@@ -164,6 +164,16 @@ def health_debug():
         except Exception as e:
             out['forensics']['movimientos_por_tipo_err'] = str(e)[:200]
         try:
+            # Sebastián 9-may-2026: subtipo/categoria de cada MP en catalogo
+            # → para responder "qué categorías aplican" sin pedir login.
+            rows = conn.execute(
+                "SELECT COALESCE(NULLIF(TRIM(tipo),''),'(vacío)'), COUNT(*) "
+                "FROM maestro_mps WHERE activo=1 GROUP BY 1 ORDER BY 2 DESC"
+            ).fetchall()
+            out['forensics']['mp_subtipos'] = {r[0]: r[1] for r in rows}
+        except Exception as e:
+            out['forensics']['mp_subtipos_err'] = str(e)[:200]
+        try:
             # Producciones por estado
             rows = conn.execute(
                 "SELECT COALESCE(estado,'(null)'), COUNT(*) "
