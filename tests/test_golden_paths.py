@@ -1470,6 +1470,92 @@ def test_golden_mfa_endpoint(app, db_clean):
 
 
 # ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 57 · INV-8 · Stock mínimo se compara contra TOTAL del MP
+# ═══════════════════════════════════════════════════════════════════
+# Sebastián 9-may-2026: "el stock minimo dice 200 pero en cada uno
+# no esta sumando porque si hay otro con mas cantidad va a generar
+# alerta". Bug: la UI pintaba rojo un lote individual con stock < min
+# aunque el MP completo (suma de lotes) tuviera stock de sobra.
+# Fix: /api/lotes ahora devuelve stock_total_mp_g por cada fila, y
+# el frontend compara contra ese total · no contra el lote individual.
+
+def test_golden_stock_minimo_vs_total_mp_no_lote_individual(app, db_clean):
+    cs = _login(app, 'sebastian')
+
+    codigo_mp = 'GP57-MP-MULTILOTE'
+    nombre = 'Test MultiLote'
+
+    # Setup: MP con stock_minimo=200 · DOS lotes:
+    #   lote A = 50g  (individual MENOR al mínimo)
+    #   lote B = 1000g (suficiente)
+    # Total MP = 1050g >> 200g · NO debe alertar bajo_min en NINGÚN lote
+    _exec("""INSERT OR REPLACE INTO maestro_mps
+              (codigo_mp, nombre_comercial, proveedor, activo, tipo_material, stock_minimo)
+              VALUES (?, ?, 'TestProv', 1, 'MP', 200)""",
+          (codigo_mp, nombre))
+    _exec("""INSERT INTO movimientos
+              (material_id, material_nombre, cantidad, tipo, fecha,
+               lote, estado_lote, operador)
+              VALUES (?, ?, 50, 'Entrada', date('now'),
+                      'LOTE-CHICO', 'VIGENTE', 'seed')""",
+          (codigo_mp, nombre))
+    _exec("""INSERT INTO movimientos
+              (material_id, material_nombre, cantidad, tipo, fecha,
+               lote, estado_lote, operador)
+              VALUES (?, ?, 1000, 'Entrada', date('now'),
+                      'LOTE-GRANDE', 'VIGENTE', 'seed')""",
+          (codigo_mp, nombre))
+
+    # /api/lotes debe traer ambos lotes con el TOTAL del MP en cada uno
+    r = cs.get('/api/lotes')
+    assert r.status_code == 200
+    lotes = [l for l in (r.get_json() or {}).get('lotes', [])
+             if l.get('material_id') == codigo_mp]
+    assert len(lotes) == 2, f'esperaba 2 lotes, got {len(lotes)}'
+
+    for L in lotes:
+        # NUEVO campo: stock_total_mp_g debe estar y ser 1050 para AMBOS
+        assert 'stock_total_mp_g' in L, \
+            f'BUG: /api/lotes no devuelve stock_total_mp_g · {list(L.keys())}'
+        assert L['stock_total_mp_g'] == 1050, \
+            f'BUG: stock_total_mp_g={L["stock_total_mp_g"]}, esperado 1050 (suma 50+1000)'
+        # stock_min_g sigue siendo 200 en cada lote (no cambia)
+        assert L['stock_min_g'] == 200
+
+    # Lote chico (50g) NO debe estar bajo mínimo (porque el MP total es 1050)
+    L_chico = next(l for l in lotes if l['lote'] == 'LOTE-CHICO')
+    assert L_chico['cantidad_g'] == 50
+    # La lógica del frontend: bajo_min = stock_min > 0 AND stock_total_mp < stock_min
+    # Aquí: 200 > 0 AND 1050 < 200 → False → NO bajo_min ✓
+    bajo_min_calc = L_chico['stock_min_g'] > 0 and L_chico['stock_total_mp_g'] < L_chico['stock_min_g']
+    assert not bajo_min_calc, \
+        f'BUG: lote individual de 50g NO debe ser bajo_min porque el MP completo tiene 1050g'
+
+    # Caso opuesto: si el TOTAL del MP cae bajo el mínimo, ambos lotes alertan
+    # Reducir lote grande para que total = 50 + 100 = 150 (< 200)
+    _exec("""DELETE FROM movimientos WHERE material_id=? AND lote='LOTE-GRANDE'""", (codigo_mp,))
+    _exec("""INSERT INTO movimientos
+              (material_id, material_nombre, cantidad, tipo, fecha,
+               lote, estado_lote, operador)
+              VALUES (?, ?, 100, 'Entrada', date('now'),
+                      'LOTE-GRANDE', 'VIGENTE', 'seed')""",
+          (codigo_mp, nombre))
+    r = cs.get('/api/lotes')
+    lotes2 = [l for l in (r.get_json() or {}).get('lotes', [])
+              if l.get('material_id') == codigo_mp]
+    for L in lotes2:
+        assert L['stock_total_mp_g'] == 150, \
+            f'tras reducción, total debe ser 150, got {L["stock_total_mp_g"]}'
+        bajo = L['stock_min_g'] > 0 and L['stock_total_mp_g'] < L['stock_min_g']
+        assert bajo, \
+            f'BUG: con MP total 150 < min 200, todos los lotes deben alertar bajo_min'
+
+    # Cleanup
+    _exec("DELETE FROM movimientos WHERE material_id=?", (codigo_mp,))
+    _exec("DELETE FROM maestro_mps WHERE codigo_mp=?", (codigo_mp,))
+
+
+# ═══════════════════════════════════════════════════════════════════
 # GOLDEN PATH 56 · INV-7 · Renombrar código de lote refleja en Bodega
 # ═══════════════════════════════════════════════════════════════════
 # Sebastián 9-may-2026: "necesito que me deje cambiar lotes porque

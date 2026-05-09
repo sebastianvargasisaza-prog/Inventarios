@@ -2748,8 +2748,18 @@ function renderStock(items){
   items.forEach(function(i,idx){ var gi=_lotes.indexOf(i); if(gi<0)gi=idx;
     var a=i.alerta||'ok';
     var qc=i.cantidad_g<=0?'color:#cc0000;font-weight:700;':i.cantidad_g<500?'color:#e68a00;font-weight:700;':'color:#1a8a1a;font-weight:700;';
-    var bajo_min=i.stock_min_g>0&&i.cantidad_g<i.stock_min_g;
+    // Sebastián 9-may-2026: bajo_min se calcula contra el TOTAL del MP
+    // (suma de lotes), NO contra el stock del lote individual. Antes pintaba
+    // rojo un lote con poco stock aunque otros lotes del mismo MP tuvieran
+    // stock de sobra · falso positivo. Si el backend no envió stock_total_mp_g
+    // (compat con respuestas viejas) cae a la lógica vieja.
+    var stockTotalMP=(typeof i.stock_total_mp_g==='number')?i.stock_total_mp_g:i.cantidad_g;
+    var bajo_min=i.stock_min_g>0 && stockTotalMP < i.stock_min_g;
     var min_style=bajo_min?'background:#ffebeb;color:#cc0000;font-weight:700;':'';
+    // Tooltip indica el total del MP y el mínimo para contextualizar la celda
+    var min_title='Stock min del MP: '+(i.stock_min_g||0).toLocaleString('es-CO')+' g · '+
+                  'Total MP: '+stockTotalMP.toLocaleString('es-CO')+' g'+
+                  (bajo_min?' · ⚠ por debajo del mínimo':' · OK');
     var dias=i.dias_para_vencer!=null?i.dias_para_vencer:'';
     var dc=i.dias_para_vencer!=null&&i.dias_para_vencer<0?'color:#cc0000;font-weight:700;':i.dias_para_vencer<=30?'color:#e65100;font-weight:700;':'';
     h+='<tr style="background:'+bg[a]+';font-size:0.83em;">';
@@ -2758,7 +2768,7 @@ function renderStock(items){
     h+='<td style="font-weight:600;">'+i.material_nombre+'</td>';
     h+='<td style="color:#888;">'+i.tipo+'</td>';
     h+='<td style="color:#555;">'+(i.proveedor||'<span style="color:#bbb;">— sin proveedor —</span>')+' <button onclick="abrirEditarProveedor('+gi+')" title="Editar proveedor" style="margin-left:4px;padding:1px 6px;font-size:0.75em;background:#e8f5f5;color:#2B7A78;border:1px solid #b8dada;border-radius:4px;cursor:pointer;">&#9999;&#65039;</button></td>';
-    h+='<td style="text-align:right;'+min_style+'">'+i.stock_min_g.toLocaleString()+'</td>';
+    h+='<td style="text-align:right;'+min_style+'" title="'+_escHTML(min_title)+'">'+i.stock_min_g.toLocaleString()+'</td>';
     h+='<td style="font-family:monospace;">'+i.lote+'</td>';
     h+='<td style="text-align:right;'+qc+'">'+i.cantidad_g.toLocaleString()+'</td>';
     h+='<td style="text-align:center;font-weight:700;color:#667eea;">'+i.estanteria+'</td>';

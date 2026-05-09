@@ -1501,6 +1501,17 @@ def get_lotes():
             "get_lotes solicitudes_pendientes lookup falló: %s", _e,
         )
 
+    # Sebastián 9-may-2026: stock_minimo es a nivel del MP completo (suma
+    # de lotes), NO de cada lote individual. Antes la UI pintaba como
+    # "bajo mínimo" un lote con menos cantidad que el mínimo · falso
+    # positivo si el MP tiene OTROS lotes con stock suficiente. Ahora
+    # calculamos el TOTAL por material y lo devolvemos en cada fila para
+    # que el frontend compare contra ese total.
+    totales_mp = {}
+    for r in rows:
+        mid_r = r[0] or ''
+        totales_mp[mid_r] = totales_mp.get(mid_r, 0) + (r[3] or 0)
+
     result = []
     for r in rows:
         mid,mnm,lote,cant,fvenc,est,pos,prov,estado,inci,tipo,smin = r
@@ -1516,6 +1527,7 @@ def get_lotes():
                 pass
         result.append({'material_id':mid or '','nombre_inci':inci,'material_nombre':mnm or '',
                        'tipo':tipo,'proveedor':prov or '','stock_min_g':round(smin,1),
+                       'stock_total_mp_g':round(totales_mp.get(mid or '', 0), 2),
                        'lote':lote or '','cantidad_g':round(cant or 0,2),'cantidad_kg':round((cant or 0)/1000,3),
                        'estanteria':est or '','posicion':pos or '',
                        'fecha_vencimiento':str(fvenc)[:10] if fvenc else '',
