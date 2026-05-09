@@ -2148,6 +2148,163 @@ def editar_fecha_vencimiento_lote(material_id, lote):
     }), 200
 
 
+@bp.route('/api/lotes/<material_id>/<path:lote>/codigo-lote', methods=['PUT'])
+def editar_codigo_lote(material_id, lote):
+    """Renombra el número de lote de TODOS los movimientos de un lote.
+
+    Sebastián 9-may-2026: "necesito que me deje cambiar lotes porque
+    algunos estan mal". Caso típico: el lote se ingresó como '20250703'
+    pero el formato correcto del proveedor es 'YT20250703'. Cambiar el
+    código en todos los movimientos en una sola transacción.
+
+    /api/lotes agrupa por (material_id, lote) → tras el rename, las
+    filas del lote viejo desaparecen y aparece una nueva con el código
+    correcto · trazabilidad histórica preservada en audit_log.
+
+    Body JSON:
+      lote_nuevo: str (1..120 chars, no espacios solo)
+      motivo: str (recomendado, queda en audit_log)
+
+    Validaciones:
+      - lote_nuevo no vacío, distinto del actual.
+      - lote_nuevo no debe colisionar: si ya existe un lote con ese
+        código para el MISMO material_id, retorna 409 (mergearía
+        dos lotes distintos · acción peligrosa que requiere flag
+        explícito merge=true).
+      - Si merge=true en body: permite la fusión (UPDATE igual aplica
+        · stock se suma · audit registra la fusión).
+
+    Soporta lote vacío con placeholder _SIN_LOTE_ (mismo patrón).
+    """
+    u, err, code = _require_planta_write()
+    if err:
+        return err, code
+
+    d = request.json or {}
+    lote_nuevo = (d.get('lote_nuevo') or '').strip()
+    motivo = (d.get('motivo') or '').strip()
+    permitir_merge = bool(d.get('merge'))
+
+    if not lote_nuevo:
+        return jsonify({
+            'error': 'lote_nuevo requerido',
+            'detail': 'El nuevo número de lote no puede estar vacío.',
+        }), 400
+    if len(lote_nuevo) > 120:
+        return jsonify({
+            'error': 'lote_nuevo demasiado largo',
+            'detail': 'Máximo 120 caracteres.',
+        }), 400
+
+    sin_lote = (lote == '_SIN_LOTE_')
+    lote_actual = '' if sin_lote else lote
+
+    # No-op si idéntico
+    if lote_nuevo == lote_actual:
+        return jsonify({
+            'ok': True,
+            'message': 'Sin cambios · el lote nuevo es igual al actual.',
+            'movimientos_actualizados': 0,
+        }), 200
+
+    conn = get_db()
+    c = conn.cursor()
+
+    # Verificar que el lote actual existe
+    if sin_lote:
+        existe = c.execute(
+            "SELECT COUNT(*) FROM movimientos "
+            "WHERE material_id=? AND (lote IS NULL OR lote='')",
+            (material_id,)
+        ).fetchone()
+    else:
+        existe = c.execute(
+            "SELECT COUNT(*) FROM movimientos WHERE material_id=? AND lote=?",
+            (material_id, lote_actual)
+        ).fetchone()
+    n_actuales = (existe[0] if existe else 0) or 0
+    if n_actuales == 0:
+        return jsonify({
+            'error': 'Lote no encontrado',
+            'detail': f'No hay movimientos para {material_id}/{lote_actual or "(sin lote)"}',
+        }), 404
+
+    # Verificar colisión con lote_nuevo
+    colision = c.execute(
+        "SELECT COUNT(*) FROM movimientos WHERE material_id=? AND lote=?",
+        (material_id, lote_nuevo)
+    ).fetchone()
+    n_colision = (colision[0] if colision else 0) or 0
+    if n_colision > 0 and not permitir_merge:
+        return jsonify({
+            'error': 'Colisión de lote',
+            'detail': (f'Ya existe un lote "{lote_nuevo}" para {material_id} '
+                       f'con {n_colision} movimiento(s). Esto fusionaría dos '
+                       f'lotes distintos en uno solo · acción peligrosa. '
+                       f'Si querés fusionar deliberadamente, pasá merge=true '
+                       f'en el body.'),
+            'lote_existente_movs': n_colision,
+            'lote_a_renombrar_movs': n_actuales,
+        }), 409
+
+    # Aplicar UPDATE
+    if sin_lote:
+        c.execute(
+            "UPDATE movimientos SET lote=? "
+            "WHERE material_id=? AND (lote IS NULL OR lote='')",
+            (lote_nuevo, material_id)
+        )
+    else:
+        c.execute(
+            "UPDATE movimientos SET lote=? WHERE material_id=? AND lote=?",
+            (lote_nuevo, material_id, lote_actual)
+        )
+    movs_actualizados = c.rowcount
+
+    # Audit log con detalles del rename + fusión si aplica
+    try:
+        import json as _json
+        c.execute("""INSERT INTO audit_log
+                     (usuario, accion, tabla, registro_id, detalle, ip, fecha)
+                     VALUES (?,?,?,?,?,?,datetime('now'))""",
+                  (u, 'EDITAR_CODIGO_LOTE', 'movimientos',
+                   f'{material_id}/{lote_actual}',
+                   _json.dumps({
+                       'material_id': material_id,
+                       'lote_anterior': lote_actual,
+                       'lote_nuevo': lote_nuevo,
+                       'motivo': motivo,
+                       'movimientos_actualizados': movs_actualizados,
+                       'fusion_realizada': permitir_merge and n_colision > 0,
+                       'movs_lote_existente_pre_merge': n_colision,
+                   }, ensure_ascii=False),
+                   request.remote_addr))
+    except sqlite3.OperationalError:
+        __import__('logging').getLogger('inventario').warning(
+            "audit_log no disponible — editar_codigo_lote por %s sobre "
+            "%s/%s -> %s no quedó registrado.",
+            u, material_id, lote_actual, lote_nuevo,
+        )
+
+    conn.commit()
+
+    msg_extra = ''
+    if permitir_merge and n_colision > 0:
+        msg_extra = (f' · FUSIONADO con lote existente (sumó '
+                     f'{n_colision} movimientos previos)')
+
+    return jsonify({
+        'ok': True,
+        'message': (f'Lote renombrado de "{lote_actual or "(sin lote)"}" a '
+                    f'"{lote_nuevo}" en {movs_actualizados} movimiento(s) '
+                    f'de {material_id}.{msg_extra}'),
+        'movimientos_actualizados': movs_actualizados,
+        'lote_anterior': lote_actual,
+        'lote_nuevo': lote_nuevo,
+        'fusion_realizada': permitir_merge and n_colision > 0,
+    }), 200
+
+
 @bp.route('/api/lotes/<material_id>/<path:lote>', methods=['DELETE'])
 def eliminar_lote(material_id, lote):
     """Elimina un lote completo por incoherencia (jefe de produccion).

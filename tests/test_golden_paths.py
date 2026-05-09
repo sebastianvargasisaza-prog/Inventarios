@@ -1470,6 +1470,127 @@ def test_golden_mfa_endpoint(app, db_clean):
 
 
 # ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 56 · INV-7 · Renombrar código de lote refleja en Bodega
+# ═══════════════════════════════════════════════════════════════════
+# Sebastián 9-may-2026: "necesito que me deje cambiar lotes porque
+# algunos estan mal". Endpoint nuevo:
+#   PUT /api/lotes/<mp>/<lote>/codigo-lote {lote_nuevo, motivo, merge?}
+# - UPDATE atómico de todos los movimientos del lote.
+# - 409 si lote_nuevo ya existe (a menos que merge=true).
+# - Audit log EDITAR_CODIGO_LOTE con snapshot.
+
+def test_golden_renombrar_codigo_lote_refleja_en_bodega(app, db_clean):
+    cs = _login(app, 'sebastian')
+
+    codigo_mp = 'GP56-MP-RENAME'
+    lote_viejo = '20250703'
+    lote_nuevo = 'YT20250703'
+    nombre = 'Test Rename Lote'
+
+    _exec("""INSERT OR REPLACE INTO maestro_mps
+              (codigo_mp, nombre_comercial, proveedor, activo, tipo_material)
+              VALUES (?, ?, 'TestProv', 1, 'MP')""",
+          (codigo_mp, nombre))
+    for qty in [1000, 500, 300]:
+        _exec("""INSERT INTO movimientos
+                  (material_id, material_nombre, cantidad, tipo, fecha,
+                   lote, estado_lote, operador)
+                  VALUES (?, ?, ?, 'Entrada', date('now'),
+                          ?, 'VIGENTE', 'seed')""",
+              (codigo_mp, nombre, qty, lote_viejo))
+
+    # Pre: /api/lotes muestra lote_viejo
+    r = cs.get('/api/lotes')
+    L = next((l for l in (r.get_json() or {}).get('lotes', [])
+              if l.get('material_id') == codigo_mp), None)
+    assert L and L.get('lote') == lote_viejo, f'pre: lote viejo debe estar'
+    assert L.get('cantidad_g') == 1800, 'pre: stock debe ser 1800g'
+
+    # Acción: renombrar
+    r = cs.put(
+        f'/api/lotes/{codigo_mp}/{lote_viejo}/codigo-lote',
+        json={'lote_nuevo': lote_nuevo, 'motivo': 'formato proveedor'},
+        headers=csrf_headers(),
+    )
+    assert r.status_code == 200, f'rename fallo: {r.status_code} {r.data}'
+    res = r.get_json() or {}
+    assert res.get('movimientos_actualizados') == 3, \
+        f'BUG: deberia actualizar 3 movs, actualizo {res.get("movimientos_actualizados")}'
+    assert not res.get('fusion_realizada'), 'no había colisión, no debe ser fusión'
+
+    # Verificación: /api/lotes muestra lote_nuevo (no lote_viejo)
+    r = cs.get('/api/lotes')
+    lotes = (r.get_json() or {}).get('lotes', [])
+    L_viejo = next((l for l in lotes if l.get('material_id') == codigo_mp
+                    and l.get('lote') == lote_viejo), None)
+    assert not L_viejo, f'BUG: lote viejo {lote_viejo} debería desaparecer'
+    L_nuevo = next((l for l in lotes if l.get('material_id') == codigo_mp
+                    and l.get('lote') == lote_nuevo), None)
+    assert L_nuevo, f'BUG: lote nuevo {lote_nuevo} debería aparecer'
+    assert L_nuevo.get('cantidad_g') == 1800, 'stock debe preservarse en rename'
+
+    # Caso colisión: crear otro lote con código X y renombrar lote_nuevo a X
+    lote_X = 'OTRO-LOTE-X'
+    _exec("""INSERT INTO movimientos
+              (material_id, material_nombre, cantidad, tipo, fecha,
+               lote, estado_lote, operador)
+              VALUES (?, ?, 200, 'Entrada', date('now'),
+                      ?, 'VIGENTE', 'seed')""",
+          (codigo_mp, nombre, lote_X))
+
+    # Sin merge → 409
+    r = cs.put(
+        f'/api/lotes/{codigo_mp}/{lote_nuevo}/codigo-lote',
+        json={'lote_nuevo': lote_X},
+        headers=csrf_headers(),
+    )
+    assert r.status_code == 409, f'colisión sin merge debería ser 409, got {r.status_code}'
+    err = r.get_json() or {}
+    assert err.get('lote_existente_movs') == 1
+    assert err.get('lote_a_renombrar_movs') == 3
+
+    # Con merge=true → 200 + fusión
+    r = cs.put(
+        f'/api/lotes/{codigo_mp}/{lote_nuevo}/codigo-lote',
+        json={'lote_nuevo': lote_X, 'merge': True, 'motivo': 'fusionar duplicados'},
+        headers=csrf_headers(),
+    )
+    assert r.status_code == 200, f'merge=true fallo: {r.data}'
+    res = r.get_json() or {}
+    assert res.get('fusion_realizada') is True
+    assert res.get('movimientos_actualizados') == 3
+
+    # Tras la fusión, solo queda lote_X con stock 1800 + 200 = 2000g
+    r = cs.get('/api/lotes')
+    lotes = (r.get_json() or {}).get('lotes', [])
+    L_X = next((l for l in lotes if l.get('material_id') == codigo_mp
+                and l.get('lote') == lote_X), None)
+    assert L_X, 'lote_X debe seguir tras fusión'
+    assert L_X.get('cantidad_g') == 2000, \
+        f'BUG: post-fusión stock debe ser 2000 (1800+200), got {L_X.get("cantidad_g")}'
+
+    # Validación: lote_nuevo vacío → 400
+    r = cs.put(
+        f'/api/lotes/{codigo_mp}/{lote_X}/codigo-lote',
+        json={'lote_nuevo': ''},
+        headers=csrf_headers(),
+    )
+    assert r.status_code == 400, '400 esperado para lote_nuevo vacío'
+
+    # Validación: lote inexistente → 404
+    r = cs.put(
+        f'/api/lotes/{codigo_mp}/LOTE-FANTASMA/codigo-lote',
+        json={'lote_nuevo': 'CUALQUIERA'},
+        headers=csrf_headers(),
+    )
+    assert r.status_code == 404, '404 esperado para lote inexistente'
+
+    # Cleanup
+    _exec("DELETE FROM movimientos WHERE material_id=?", (codigo_mp,))
+    _exec("DELETE FROM maestro_mps WHERE codigo_mp=?", (codigo_mp,))
+
+
+# ═══════════════════════════════════════════════════════════════════
 # GOLDEN PATH 55 · INV-6 · Stock mínimo persiste y refleja en /api/lotes
 # ═══════════════════════════════════════════════════════════════════
 # Sebastián 9-may-2026: "no se estan acutalizando el stock minimo cuando

@@ -185,6 +185,19 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       <div class="form-group" style="margin-top:8px;margin-bottom:0;"><label>Motivo (queda en audit log)</label><input type="text" id="ajuste-fv-motivo" placeholder="Ej: COA del proveedor recibido tarde" maxlength="200"></div>
       <div id="ajuste-fv-msg" style="margin-top:6px;font-size:0.82em;"></div>
     </div>
+    <!-- Sebastián 9-may-2026: corregir número de lote (algunos están
+         mal escritos · ej. '20250703' debe ser 'YT20250703'). -->
+    <div style="border:1px solid #99f6e4;border-radius:8px;padding:14px;margin-bottom:10px;background:#f0fdfa;">
+      <div style="font-size:0.78em;font-weight:700;color:#0d9488;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">&#127991; N&#250;mero de Lote</div>
+      <div style="font-size:0.78em;color:#555;margin-bottom:8px;">Actual: <span id="ajuste-lt-actual" style="font-weight:700;color:#0d9488;font-family:monospace;">&mdash;</span></div>
+      <div style="display:flex;gap:8px;align-items:flex-end;">
+        <div class="form-group" style="flex:1;margin-bottom:0;"><label>Nuevo n&#250;mero de lote</label><input type="text" id="ajuste-lt-nuevo" placeholder="Ej: YT20250703" maxlength="120" style="font-family:monospace;"></div>
+        <button onclick="actualizarCodigoLote()" style="background:#0d9488;color:white;padding:8px 14px;white-space:nowrap;border-radius:6px;">Renombrar</button>
+      </div>
+      <div class="form-group" style="margin-top:8px;margin-bottom:0;"><label>Motivo (queda en audit log)</label><input type="text" id="ajuste-lt-motivo" placeholder="Ej: formato proveedor incorrecto al ingresar" maxlength="200"></div>
+      <small style="color:#666;font-size:0.75em;display:block;margin-top:6px;font-style:italic;">Aplica el cambio a TODOS los movimientos de este lote. Si el lote nuevo ya existe se confirma fusi&oacute;n.</small>
+      <div id="ajuste-lt-msg" style="margin-top:6px;font-size:0.82em;"></div>
+    </div>
     <div style="border:1px solid #d8b4fe;border-radius:8px;padding:14px;margin-bottom:10px;background:#faf5ff;">
       <div style="font-size:0.78em;font-weight:700;color:#6f42c1;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">&#9749; Consumo Manual</div>
       <div style="display:flex;gap:8px;align-items:flex-end;">
@@ -2130,6 +2143,12 @@ async function abrirAjuste(mid,mn,lt,sa,est,pos,fv){
   var fvInp=document.getElementById('ajuste-fv'); if(fvInp) fvInp.value=fvNorm;
   var fvMot=document.getElementById('ajuste-fv-motivo'); if(fvMot) fvMot.value='';
   var fvMsg=document.getElementById('ajuste-fv-msg'); if(fvMsg) fvMsg.innerHTML='';
+  // Sebastián 9-may-2026: hidratar bloque número de lote
+  var ltActual=document.getElementById('ajuste-lt-actual');
+  if(ltActual) ltActual.textContent = (lt && lt!=='S/L') ? lt : '(sin lote)';
+  var ltInp=document.getElementById('ajuste-lt-nuevo'); if(ltInp) ltInp.value=(lt && lt!=='S/L')?lt:'';
+  var ltMot=document.getElementById('ajuste-lt-motivo'); if(ltMot) ltMot.value='';
+  var ltMsg=document.getElementById('ajuste-lt-msg'); if(ltMsg) ltMsg.innerHTML='';
   try{var r=await fetch('/api/maestro-mps/'+encodeURIComponent(mid));if(r.ok){var d=await r.json();document.getElementById('ajuste-smin').value=d.stock_minimo||0;}}catch(e){document.getElementById('ajuste-smin').value=0;}
   document.getElementById('modal-ajuste').style.display='flex';
 }
@@ -2265,7 +2284,67 @@ async function actualizarFechaVencimiento(){
     }
   }catch(e){msgEl.innerHTML='<span style="color:#c00;">Error de red: '+e.message+'</span>';}
 }
-function cerrarAjuste(){document.getElementById('modal-ajuste').style.display='none';['ajuste-msg','ajuste-smin-msg','ajuste-consumo-msg','ajuste-arch-msg','ajuste-ubic-msg','ajuste-fv-msg'].forEach(function(id){var el=document.getElementById(id);if(el)el.innerHTML='';});}
+// Sebastián 9-may-2026: renombrar el código de lote (caso típico:
+// '20250703' debe ser 'YT20250703'). UPDATE de TODOS los movimientos
+// del lote en una transacción + audit log. Soporta fusión opcional.
+async function actualizarCodigoLote(){
+  var mid=_ajDat&&_ajDat.mid;
+  var ltActual=_ajDat&&_ajDat.lt;
+  if(!mid){return;}
+  var msgEl=document.getElementById('ajuste-lt-msg');
+  var ltNuevo=((document.getElementById('ajuste-lt-nuevo')||{}).value||'').trim();
+  var motivo=((document.getElementById('ajuste-lt-motivo')||{}).value||'').trim();
+  if(!ltNuevo){
+    msgEl.innerHTML='<span style="color:#c00;">El nuevo número de lote no puede estar vacío.</span>';
+    return;
+  }
+  var ltActualNorm=(ltActual==='S/L'?'':(ltActual||''));
+  if(ltNuevo===ltActualNorm){
+    msgEl.innerHTML='<span style="color:#666;">Sin cambios respecto al lote actual.</span>';
+    return;
+  }
+  if(!confirm('Vas a renombrar el lote "'+(ltActualNorm||'(sin lote)')+'" a "'+ltNuevo+'"\\n\\n'+
+              'Esto actualiza TODOS los movimientos del lote en BD. Si el lote nuevo ya existe se te pedirá confirmar fusión. ¿Continuar?')){
+    return;
+  }
+  var loteUrl=ltActual && ltActual!=='S/L' ? encodeURIComponent(ltActual) : '_SIN_LOTE_';
+  msgEl.innerHTML='<span style="color:#666;">⏳ Renombrando...</span>';
+  try{
+    var body={lote_nuevo:ltNuevo,motivo:motivo};
+    var r=await fetch('/api/lotes/'+encodeURIComponent(mid)+'/'+loteUrl+'/codigo-lote',
+      {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    var d={};try{d=await r.json();}catch(je){}
+    // 409 = colisión · pedir confirmación de fusión
+    if(r.status===409){
+      var nExist=d.lote_existente_movs||0;
+      var nRen=d.lote_a_renombrar_movs||0;
+      var ok2=confirm('⚠️ COLISIÓN: ya existe un lote "'+ltNuevo+'" para este material con '+nExist+' movimiento(s).\\n\\n'+
+                      'Si confirmás, se FUSIONAN los dos lotes en uno solo:\\n'+
+                      '  · '+nRen+' movs del lote viejo "'+(ltActualNorm||'(sin lote)')+'"\\n'+
+                      '  · '+nExist+' movs del lote existente "'+ltNuevo+'"\\n'+
+                      'Total: '+(nExist+nRen)+' movs bajo "'+ltNuevo+'" (stock se suma).\\n\\n'+
+                      '¿Fusionar?');
+      if(!ok2){msgEl.innerHTML='<span style="color:#666;">Cancelado · sin cambios.</span>';return;}
+      body.merge=true;
+      msgEl.innerHTML='<span style="color:#666;">⏳ Fusionando...</span>';
+      r=await fetch('/api/lotes/'+encodeURIComponent(mid)+'/'+loteUrl+'/codigo-lote',
+        {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+      d={};try{d=await r.json();}catch(je){}
+    }
+    if(r.ok){
+      msgEl.innerHTML='<span style="color:#28a745;font-weight:700;">✓ '+(d.message||'Lote renombrado')+'</span>';
+      _ajDat.lt=ltNuevo;
+      var ltActEl=document.getElementById('ajuste-lt-actual');
+      if(ltActEl) ltActEl.textContent=ltNuevo;
+      // Refrescar Bodega MP para que la columna "Lote" muestre el nuevo
+      try{ if(typeof loadStock==='function') setTimeout(loadStock, 500); }catch(e){}
+    }else{
+      msgEl.innerHTML='<span style="color:#c00;">Error: '+(d.error||r.status)+
+        (d.detail?' &mdash; '+d.detail:'')+'</span>';
+    }
+  }catch(e){msgEl.innerHTML='<span style="color:#c00;">Error de red: '+e.message+'</span>';}
+}
+function cerrarAjuste(){document.getElementById('modal-ajuste').style.display='none';['ajuste-msg','ajuste-smin-msg','ajuste-consumo-msg','ajuste-arch-msg','ajuste-ubic-msg','ajuste-fv-msg','ajuste-lt-msg'].forEach(function(id){var el=document.getElementById(id);if(el)el.innerHTML='';});}
 var _provSaveTimers={};
 function guardarProveedorMP(inp){
   var cod=inp.dataset.cod;
