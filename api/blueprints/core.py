@@ -215,6 +215,41 @@ def health_debug():
         except Exception as e:
             out['forensics']['ultimas_mps_err'] = str(e)[:200]
         try:
+            # Sebastián 9-may-2026 EMERGENCY 2: replicar EXACTAMENTE la query
+            # de /api/lotes para los materiales ingresados recientemente y ver
+            # si aparecen / por qué no aparecen.
+            # 1. Identificar materiales con movimientos en últimas 24h
+            mids_recent = [r[0] for r in conn.execute("""
+                SELECT DISTINCT material_id FROM movimientos
+                WHERE fecha >= datetime('now','-1 day') AND material_id IS NOT NULL
+                ORDER BY material_id LIMIT 20
+            """).fetchall()]
+            # 2. Para cada uno, replicar el query de /api/lotes (sin LIMIT)
+            #    y ver qué lotes aparecen y cuáles no
+            placeholders = ','.join(['?']*len(mids_recent)) if mids_recent else "''"
+            rows = conn.execute(f"""
+                SELECT m.material_id, COALESCE(m.lote,'') as lote,
+                       SUM(CASE WHEN m.tipo='Entrada' THEN m.cantidad ELSE -m.cantidad END) as stock_neto,
+                       UPPER(COALESCE(mp.tipo_material,'MP')) as tipo_mat_norm,
+                       (mp.codigo_mp IS NOT NULL) as en_catalogo,
+                       COUNT(*) as n_movs
+                FROM movimientos m LEFT JOIN maestro_mps mp ON m.material_id=mp.codigo_mp
+                WHERE m.material_id IN ({placeholders})
+                GROUP BY m.material_id, m.lote
+                ORDER BY m.material_id, m.lote
+            """, mids_recent).fetchall() if mids_recent else []
+            out['forensics']['materiales_recientes_lotes'] = [
+                {
+                    'material_id': r[0], 'lote': r[1],
+                    'stock_neto': r[2], 'tipo_mat': r[3],
+                    'en_catalogo': bool(r[4]), 'n_movs': r[5],
+                    'visible_bodega_mp': (r[3] == 'MP' and (r[2] or 0) > 0),
+                }
+                for r in rows
+            ]
+        except Exception as e:
+            out['forensics']['recientes_lotes_err'] = str(e)[:200]
+        try:
             # Producciones por estado
             rows = conn.execute(
                 "SELECT COALESCE(estado,'(null)'), COUNT(*) "
