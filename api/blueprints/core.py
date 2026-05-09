@@ -174,6 +174,47 @@ def health_debug():
         except Exception as e:
             out['forensics']['mp_subtipos_err'] = str(e)[:200]
         try:
+            # Sebastián 9-may-2026 EMERGENCY: últimos movimientos (sin PII)
+            # para diagnosticar "ingresé X y no sale en Bodega".
+            rows = conn.execute("""
+                SELECT id, material_id,
+                       SUBSTR(COALESCE(material_nombre,''),1,40) as nombre,
+                       cantidad, tipo,
+                       SUBSTR(COALESCE(lote,''),1,30) as lote,
+                       SUBSTR(COALESCE(proveedor,''),1,30) as prov,
+                       SUBSTR(COALESCE(estado_lote,''),1,20) as estado,
+                       SUBSTR(fecha,1,19) as fecha
+                FROM movimientos
+                ORDER BY id DESC
+                LIMIT 8
+            """).fetchall()
+            out['forensics']['ultimos_movimientos'] = [
+                {'id': r[0], 'material_id': r[1], 'nombre': r[2],
+                 'cantidad': r[3], 'tipo': r[4], 'lote': r[5],
+                 'proveedor': r[6], 'estado_lote': r[7], 'fecha': r[8]}
+                for r in rows
+            ]
+        except Exception as e:
+            out['forensics']['ultimos_movs_err'] = str(e)[:200]
+        try:
+            # Últimas MPs creadas en catálogo
+            rows = conn.execute("""
+                SELECT codigo_mp,
+                       SUBSTR(COALESCE(nombre_comercial,''),1,40) as nc,
+                       SUBSTR(COALESCE(tipo_material,'MP'),1,20) as tm,
+                       activo
+                FROM maestro_mps
+                ORDER BY codigo_mp DESC
+                LIMIT 8
+            """).fetchall()
+            out['forensics']['ultimas_mps'] = [
+                {'codigo_mp': r[0], 'nombre': r[1],
+                 'tipo_material': r[2], 'activo': r[3]}
+                for r in rows
+            ]
+        except Exception as e:
+            out['forensics']['ultimas_mps_err'] = str(e)[:200]
+        try:
             # Producciones por estado
             rows = conn.execute(
                 "SELECT COALESCE(estado,'(null)'), COUNT(*) "
