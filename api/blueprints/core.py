@@ -143,12 +143,93 @@ def health_debug():
                     'security_events','empleados','notificaciones_empleados',
                     'producciones','produccion_programada','formula_headers',
                     'formula_items','conteos_fisicos','conteo_items',
-                    'maestro_mee','movimientos_mee','clientes','despachos']:
+                    'maestro_mee','movimientos_mee','clientes','despachos',
+                    'audit_log']:
             try:
                 n = conn.execute(f'SELECT COUNT(*) FROM {tbl}').fetchone()[0]
                 out['tables'][tbl] = n
             except Exception as e:
                 out['tables'][tbl] = f'ERR: {type(e).__name__}: {str(e)[:200]}'
+
+        # Sebastian 8-may-2026 (alarma "se perdieron producciones"): seccion
+        # FORENSE para diagnosticar en caliente sin necesitar admin auth.
+        # Solo lectura · counts y top-N · sin PII.
+        out['forensics'] = {}
+        try:
+            # Movimientos por tipo · si hubo producciones, debe haber muchas Salidas
+            rows = conn.execute(
+                "SELECT tipo, COUNT(*) FROM movimientos GROUP BY tipo"
+            ).fetchall()
+            out['forensics']['movimientos_por_tipo'] = {r[0]: r[1] for r in rows}
+        except Exception as e:
+            out['forensics']['movimientos_por_tipo_err'] = str(e)[:200]
+        try:
+            # Producciones por estado
+            rows = conn.execute(
+                "SELECT COALESCE(estado,'(null)'), COUNT(*) "
+                "FROM producciones GROUP BY estado"
+            ).fetchall()
+            out['forensics']['producciones_por_estado'] = {r[0]: r[1] for r in rows}
+            # Primera y ultima
+            row = conn.execute(
+                "SELECT MIN(fecha), MAX(fecha) FROM producciones"
+            ).fetchone()
+            out['forensics']['producciones_rango_fechas'] = {
+                'primera': row[0], 'ultima': row[1]
+            }
+        except Exception as e:
+            out['forensics']['producciones_err'] = str(e)[:200]
+        try:
+            # Producciones programadas con inicio_real_at o descontadas
+            row = conn.execute(
+                "SELECT "
+                "  COUNT(*) as total, "
+                "  SUM(CASE WHEN inicio_real_at IS NOT NULL AND inicio_real_at != '' THEN 1 ELSE 0 END) as iniciadas, "
+                "  SUM(CASE WHEN inventario_descontado_at IS NOT NULL AND inventario_descontado_at != '' THEN 1 ELSE 0 END) as descontadas "
+                "FROM produccion_programada"
+            ).fetchone()
+            out['forensics']['produccion_programada'] = {
+                'total': row[0], 'iniciadas': row[1], 'descontadas': row[2]
+            }
+        except Exception as e:
+            out['forensics']['programada_err'] = str(e)[:200]
+        try:
+            # Salidas tipo FEFO/UNLIMITED en movimientos (descuentos por produccion)
+            row = conn.execute(
+                "SELECT COUNT(*) FROM movimientos "
+                "WHERE tipo='Salida' AND (observaciones LIKE 'FEFO:%' OR observaciones LIKE 'UNLIMITED:%')"
+            ).fetchone()
+            out['forensics']['salidas_por_produccion'] = row[0]
+        except Exception as e:
+            out['forensics']['salidas_err'] = str(e)[:200]
+        try:
+            # Audit log: ultimos DELETE de tablas criticas
+            rows = conn.execute(
+                "SELECT accion, tabla, COUNT(*) "
+                "FROM audit_log "
+                "WHERE accion LIKE '%DELETE%' OR accion LIKE '%ELIMINAR%' "
+                "      OR accion='DB_RESTORED' OR accion='RESTORE_BACKUP' "
+                "GROUP BY accion, tabla "
+                "ORDER BY COUNT(*) DESC LIMIT 20"
+            ).fetchall()
+            out['forensics']['deletes_recientes'] = [
+                {'accion': r[0], 'tabla': r[1], 'count': r[2]} for r in rows
+            ]
+        except Exception as e:
+            out['forensics']['audit_err'] = str(e)[:200]
+        try:
+            # Security events tipo db_restored o sospechosos
+            rows = conn.execute(
+                "SELECT category, COUNT(*) "
+                "FROM security_events "
+                "WHERE category IN ('db_restored','backup_manual_triggered','db_drop','admin_action') "
+                "   OR category LIKE '%delete%' "
+                "GROUP BY category"
+            ).fetchall()
+            out['forensics']['security_events_criticos'] = {r[0]: r[1] for r in rows}
+        except Exception as e:
+            out['forensics']['security_err'] = str(e)[:200]
+
         conn.close()
     except Exception as e:
         out['fatal'] = f'{type(e).__name__}: {str(e)[:300]}'
