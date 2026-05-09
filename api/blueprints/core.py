@@ -135,10 +135,15 @@ def health_debug():
         except Exception as e:
             out['migraciones_err'] = str(e)[:300]
         # Cada tabla con error real
+        # Sebastian 8-may-2026: ampliada para detectar regresiones en producciones,
+        # programacion, formulas, conteos · evidencia rapida de "datos perdidos"
         for tbl in ['maestro_mps','solicitudes_compra','ordenes_compra','movimientos',
                     'animus_inventario_baseline','animus_inventario_movimientos',
                     'sgd_documentos','documentos_sgd','users_passwords','rate_limit',
-                    'security_events','empleados','notificaciones_empleados']:
+                    'security_events','empleados','notificaciones_empleados',
+                    'producciones','produccion_programada','formula_headers',
+                    'formula_items','conteos_fisicos','conteo_items',
+                    'maestro_mee','movimientos_mee','clientes','despachos']:
             try:
                 n = conn.execute(f'SELECT COUNT(*) FROM {tbl}').fetchone()[0]
                 out['tables'][tbl] = n
