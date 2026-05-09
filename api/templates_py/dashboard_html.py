@@ -2490,8 +2490,15 @@ async function confirmarAjuste(){
         cantidad:Math.abs(dif),tipo:tipo,observaciones:obs,lote:_ajDat.lt,operador:OPER_ACTUAL})});
     var res=await r.json();
     var sg=dif>0?'+':'';
-    document.getElementById('ajuste-msg').innerHTML='<div class="alert-success">✓ Ajuste registrado: '+sg+dif.toLocaleString()+'g ('+tipo+'). Stock actualizado.</div>';
-    setTimeout(function(){cerrarAjuste();loadStock();},2500);
+    document.getElementById('ajuste-msg').innerHTML='<div class="alert-success">✓ Ajuste registrado: '+sg+dif.toLocaleString()+'g ('+tipo+'). Stock actualizado · podés seguir editando o cerrar el modal.</div>';
+    // Sebastián 9-may-2026: NO auto-cerrar el modal · el user puede
+    // querer hacer más cambios al mismo lote (ubicación, fecha, lote,
+    // proveedor) sin tener que volver a buscar la MP. Solo refrescamos
+    // el stock visible y actualizamos _ajDat.sa con el nuevo total.
+    _ajDat.sa = fis;  // hidratar nuevo stock_actual para próximos ajustes
+    var sysInp=document.getElementById('ajuste-sistema'); if(sysInp) sysInp.value=fis;
+    var fisInp=document.getElementById('ajuste-fisico'); if(fisInp) fisInp.value='';
+    setTimeout(loadStock, 500);
   }catch(e){document.getElementById('ajuste-msg').innerHTML='<div class="alert-error">Error al registrar ajuste</div>';}
 }
 
@@ -2715,7 +2722,18 @@ async function loadStock(){
     var r=await fetch('/api/lotes'), d=await r.json();
     _lotes=d.lotes||[];
     document.getElementById('stock-count').textContent=_lotes.length+' lotes';
-    renderStock(_lotes);
+    // Sebastián 9-may-2026: tras cambio (ajustar/ubicación/fecha/lote/min)
+    // no perder el filtro escrito · si hay query activa, re-aplicar para
+    // que la fila editada siga visible. Antes mostraba los 298 lotes y
+    // el user tenía que volver a buscar la MP. filterStock() es seguro
+    // (si los inputs están vacíos, muestra todo igual).
+    var qGen=((document.getElementById('stock-search')||{}).value||'').trim();
+    var qLote=((document.getElementById('stock-search-lote')||{}).value||'').trim();
+    if(qGen || qLote){
+      filterStock();  // re-aplica el filtro Y actualiza el counter
+    } else {
+      renderStock(_lotes);
+    }
   }catch(e){
     document.getElementById('stock-body').innerHTML='<tr><td colspan="17" style="padding:20px;color:#c00;">Error al cargar.</td></tr>';
   }
