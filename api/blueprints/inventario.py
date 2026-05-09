@@ -2021,6 +2021,133 @@ def editar_ubicacion_lote(material_id, lote):
     }), 200
 
 
+@bp.route('/api/lotes/<material_id>/<path:lote>/fecha-vencimiento', methods=['PUT'])
+def editar_fecha_vencimiento_lote(material_id, lote):
+    """Corrige la fecha de vencimiento de un lote.
+
+    Sebastián 9-may-2026 (inventario REAL): "necesito poder modificar
+    fecha de vencimiento si ves hay algunos que no tienen". Casos:
+      - Lote ingresado sin fecha_vencimiento (Beauty Oil Copaiba en pantalla).
+      - Fecha incorrecta por error de tipeo en recepción.
+      - Lote con vencimiento extendido tras revisión QC.
+
+    /api/lotes lee MAX(fecha_vencimiento) agrupado por (material_id, lote).
+    UPDATE de TODOS los movimientos del lote deja MAX en valor nuevo y la
+    UI lo refleja inmediato.
+
+    Body JSON:
+      fecha_vencimiento: str ISO YYYY-MM-DD (vacío = limpiar)
+      motivo: str (recomendado, queda en audit_log)
+
+    Validación: formato ISO. Si vacío, se permite (limpiar campo).
+    Soporta lote vacío con placeholder _SIN_LOTE_.
+    """
+    u, err, code = _require_planta_write()
+    if err:
+        return err, code
+
+    d = request.json or {}
+    nueva_fv = (d.get('fecha_vencimiento') or '').strip()
+    motivo = (d.get('motivo') or '').strip()
+
+    # Validar formato ISO si no vacío
+    if nueva_fv:
+        try:
+            from datetime import date as _date
+            _date.fromisoformat(nueva_fv[:10])
+            nueva_fv = nueva_fv[:10]  # solo YYYY-MM-DD
+        except (ValueError, TypeError):
+            return jsonify({
+                'error': 'fecha_vencimiento inválida',
+                'detail': 'Formato esperado: YYYY-MM-DD',
+            }), 400
+
+    sin_lote = (lote == '_SIN_LOTE_')
+
+    conn = get_db()
+    c = conn.cursor()
+
+    # Snapshot anterior
+    if sin_lote:
+        prev_row = c.execute(
+            "SELECT MAX(fecha_vencimiento), COUNT(*) "
+            "FROM movimientos WHERE material_id=? AND (lote IS NULL OR lote='')",
+            (material_id,)
+        ).fetchone()
+    else:
+        prev_row = c.execute(
+            "SELECT MAX(fecha_vencimiento), COUNT(*) "
+            "FROM movimientos WHERE material_id=? AND lote=?",
+            (material_id, lote)
+        ).fetchone()
+    if not prev_row or (prev_row[1] or 0) == 0:
+        return jsonify({
+            'error': 'Lote no encontrado',
+            'detail': f'No hay movimientos para {material_id}/{lote}',
+        }), 404
+    fv_anterior = (prev_row[0] or '')
+
+    # Sin cambio
+    if (fv_anterior or '')[:10] == (nueva_fv or '')[:10]:
+        return jsonify({
+            'ok': True,
+            'message': 'Sin cambios respecto a la fecha actual',
+            'movimientos_actualizados': 0,
+            'fecha_anterior': fv_anterior,
+            'fecha_nueva': nueva_fv,
+        }), 200
+
+    # UPDATE
+    if sin_lote:
+        c.execute(
+            "UPDATE movimientos SET fecha_vencimiento=? "
+            "WHERE material_id=? AND (lote IS NULL OR lote='')",
+            (nueva_fv, material_id)
+        )
+    else:
+        c.execute(
+            "UPDATE movimientos SET fecha_vencimiento=? "
+            "WHERE material_id=? AND lote=?",
+            (nueva_fv, material_id, lote)
+        )
+    movs_actualizados = c.rowcount
+
+    # Audit
+    try:
+        import json as _json
+        c.execute("""INSERT INTO audit_log
+                     (usuario, accion, tabla, registro_id, detalle, ip, fecha)
+                     VALUES (?,?,?,?,?,?,datetime('now'))""",
+                  (u, 'EDITAR_FECHA_VENC_LOTE', 'movimientos',
+                   f'{material_id}/{"" if sin_lote else lote}',
+                   _json.dumps({
+                       'material_id': material_id,
+                       'lote': '' if sin_lote else lote,
+                       'fecha_anterior': fv_anterior,
+                       'fecha_nueva': nueva_fv,
+                       'motivo': motivo,
+                       'movimientos_actualizados': movs_actualizados,
+                   }, ensure_ascii=False),
+                   request.remote_addr))
+    except sqlite3.OperationalError:
+        __import__('logging').getLogger('inventario').warning(
+            "audit_log no disponible — editar_fecha_venc por %s sobre %s/%s "
+            "no quedo registrado.", u, material_id, lote,
+        )
+
+    conn.commit()
+
+    return jsonify({
+        'ok': True,
+        'message': (f'Fecha de vencimiento actualizada en {movs_actualizados} '
+                    f'movimiento(s) del lote {lote if not sin_lote else "(sin lote)"} '
+                    f'de {material_id}.'),
+        'movimientos_actualizados': movs_actualizados,
+        'fecha_anterior': fv_anterior,
+        'fecha_nueva': nueva_fv,
+    }), 200
+
+
 @bp.route('/api/lotes/<material_id>/<path:lote>', methods=['DELETE'])
 def eliminar_lote(material_id, lote):
     """Elimina un lote completo por incoherencia (jefe de produccion).

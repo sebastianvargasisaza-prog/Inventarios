@@ -6094,21 +6094,42 @@ def producciones_faltantes():
     except (ValueError, TypeError):
         dias = 60
 
+    # Sebastián 9-may-2026: las producciones programadas que pasaron pero
+    # nunca arrancaron (sin inicio_real_at, sin descontar) ensucian el panel
+    # con basura vieja ("Mar 28 ya pasó", "Lun 4 ya pasó", ...) que ya no
+    # se va a producir. Antes del fix se mezclaba con lo real.
+    #
+    # Ahora se filtra:
+    #   - REALIZADAS pasadas (con inicio_real_at o desc_at): SIEMPRE se
+    #     muestran independiente del horizonte → trazabilidad histórica.
+    #   - PENDIENTES pasadas: solo se muestran si fecha >= hoy - atrasadas_max_dias
+    #     (default 7d). Una atrasada de >7d sin arrancar es ruido.
+    #   - Si el usuario quiere ver TODAS las atrasadas pendientes (para
+    #     limpiarlas/cancelarlas), pasa ?atrasadas_max_dias=999 desde el
+    #     toggle "Mostrar atrasadas viejas" del frontend.
+    try:
+        atrasadas_max_dias = max(0, min(int(request.args.get('atrasadas_max_dias', 7)), 999))
+    except (ValueError, TypeError):
+        atrasadas_max_dias = 7
+
     conn = get_db(); c = conn.cursor()
     from datetime import date, timedelta as _td
     hoy = date.today()
     cutoff = (hoy + _td(days=dias)).isoformat()
-    # Sebastián 8-may-2026 ("rescatalas"): después del filtro 7-may que escondía
-    # pasadas, las producciones REALIZADAS (completadas / descontadas / con
-    # inicio_real_at) tampoco salían — el panel parecía haberlas perdido.
-    # Ahora la ventana es bidireccional: incluye 14 días pasados para que se
-    # vean otra vez. Los canceladas siguen excluidos (basura). Las realizadas
-    # se marcan con flag `realizada` y NO inflan el cálculo de MPs/MEEs
-    # faltantes (sus MPs ya fueron descontadas o no se necesitan).
+    # Ventana pasada amplia (14d) solo para que las realizadas viejas SÍ aparezcan.
+    # Las pendientes-pasadas se filtran por separado abajo.
     pasado_dias = 14
     past_window = (hoy - _td(days=pasado_dias)).isoformat()
+    # Threshold para pendientes-pasadas (atrasadas que no arrancaron)
+    atrasadas_cutoff = (hoy - _td(days=atrasadas_max_dias)).isoformat()
 
-    # 1. Cargar producciones programadas pendientes Y realizadas en ventana
+    # 1. Cargar producciones programadas pendientes Y realizadas en ventana.
+    # Sebastián 9-may-2026: condición compuesta para evitar ruido de atrasadas
+    # viejas pendientes. La pasada-pendiente (sin inicio_real_at, sin desc_at)
+    # solo aparece si fecha >= atrasadas_cutoff (default hoy-7d).
+    # La REALIZADA (tiene inicio_real_at o desc_at) siempre aparece dentro de
+    # la ventana past_window (14d hacia atrás · trazabilidad reciente).
+    # La FUTURA (>= hoy) siempre aparece hasta el cutoff.
     try:
         c.execute("""
             SELECT pp.id, pp.producto, pp.fecha_programada,
@@ -6128,8 +6149,15 @@ def producciones_faltantes():
             WHERE LOWER(COALESCE(pp.estado, '')) != 'cancelado'
               AND pp.fecha_programada >= ?
               AND pp.fecha_programada <= ?
+              AND (
+                    -- Realizada: con inicio_real_at o desc_at → siempre incluir
+                    COALESCE(pp.inicio_real_at, '') != ''
+                 OR COALESCE(pp.inventario_descontado_at, '') != ''
+                    -- Futura o atrasada reciente (≤ atrasadas_max_dias)
+                 OR pp.fecha_programada >= ?
+              )
             ORDER BY pp.fecha_programada ASC
-        """, (past_window, cutoff))
+        """, (past_window, cutoff, atrasadas_cutoff))
         prod_rows = c.fetchall()
     except sqlite3.OperationalError:
         # Fallback si areas_planta no existe (esquema legacy)
@@ -6148,8 +6176,13 @@ def producciones_faltantes():
             WHERE LOWER(COALESCE(pp.estado, '')) != 'cancelado'
               AND pp.fecha_programada >= ?
               AND pp.fecha_programada <= ?
+              AND (
+                    COALESCE(pp.inicio_real_at, '') != ''
+                 OR COALESCE(pp.inventario_descontado_at, '') != ''
+                 OR pp.fecha_programada >= ?
+              )
             ORDER BY pp.fecha_programada ASC
-        """, (past_window, cutoff))
+        """, (past_window, cutoff, atrasadas_cutoff))
         prod_rows = c.fetchall()
 
     # 2. Cargar formulas (codigo_mp -> [nombre, cantidad_g_por_lote, porcentaje])
@@ -6559,9 +6592,29 @@ def producciones_faltantes():
                        if not p.get('realizada') and not p.get('en_proceso')
                        and not p.get('atrasada'))
 
+    # Sebastián 9-may-2026: contar atrasadas pendientes OCULTAS (anteriores
+    # a atrasadas_cutoff) para mostrar en el toggle "Mostrar atrasadas viejas (N)".
+    # Una atrasada-pendiente vieja es: estado != cancelado, sin inicio_real_at,
+    # sin desc_at, fecha < atrasadas_cutoff.
+    # NO se aplica past_window aquí · una basura de hace 30d sigue siendo
+    # ruido oculto que el user puede querer ver/limpiar.
+    n_atrasadas_ocultas = 0
+    try:
+        row = c.execute("""
+            SELECT COUNT(*) FROM produccion_programada
+            WHERE LOWER(COALESCE(estado, '')) != 'cancelado'
+              AND COALESCE(inicio_real_at, '') = ''
+              AND COALESCE(inventario_descontado_at, '') = ''
+              AND fecha_programada < ?
+        """, (atrasadas_cutoff,)).fetchone()
+        n_atrasadas_ocultas = int(row[0] or 0) if row else 0
+    except Exception:
+        pass
+
     return jsonify({
         'horizonte_dias': dias,
         'pasado_dias': pasado_dias,
+        'atrasadas_max_dias': atrasadas_max_dias,
         'producciones': producciones_out,
         'producciones_agrupadas': producciones_agrupadas,
         'faltantes_mps': faltantes_mps,
@@ -6578,6 +6631,7 @@ def producciones_faltantes():
             'n_en_proceso': n_en_proceso,
             'n_atrasadas': n_atrasadas,
             'n_pendientes': n_pendientes,
+            'n_atrasadas_ocultas': n_atrasadas_ocultas,
         },
     })
 

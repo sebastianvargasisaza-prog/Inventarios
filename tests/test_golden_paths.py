@@ -1470,6 +1470,100 @@ def test_golden_mfa_endpoint(app, db_clean):
 
 
 # ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 54 · INV-5 · Cambiar fecha_vencimiento del lote refleja en Bodega
+# ═══════════════════════════════════════════════════════════════════
+# Sebastián 9-may-2026: "necesito poder modificar fecha de vencimiento
+# si ves hay algunos que no tienen". /api/lotes lee MAX(fecha_vencimiento)
+# agrupado por (material_id, lote). UPDATE de TODOS los movs deja MAX en
+# valor nuevo y la UI refleja inmediato. Endpoint:
+# PUT /api/lotes/<mp>/<lote>/fecha-vencimiento
+
+def test_golden_cambiar_fecha_venc_lote_refleja_en_bodega(app, db_clean):
+    cs = _login(app, 'sebastian')
+
+    codigo_mp = 'GP54-MP-FV'
+    lote = 'GP54-LOTE-FV'
+    nombre = 'Test FechaVenc'
+
+    # Setup: MP + 2 movs sin fecha de vencimiento
+    _exec("""INSERT OR REPLACE INTO maestro_mps
+              (codigo_mp, nombre_comercial, proveedor, activo, tipo_material)
+              VALUES (?, ?, 'TestProv', 1, 'MP')""",
+          (codigo_mp, nombre))
+    for qty in [1500, 500]:
+        _exec("""INSERT INTO movimientos
+                  (material_id, material_nombre, cantidad, tipo, fecha,
+                   lote, fecha_vencimiento, estanteria, estado_lote, operador)
+                  VALUES (?, ?, ?, 'Entrada', date('now'),
+                          ?, '', 'A1', 'VIGENTE', 'seed')""",
+              (codigo_mp, nombre, qty, lote))
+
+    # Precondición: /api/lotes muestra fecha_vencimiento vacía
+    r = cs.get('/api/lotes')
+    assert r.status_code == 200
+    lotes_pre = [l for l in (r.get_json() or {}).get('lotes', [])
+                 if l.get('material_id') == codigo_mp and l.get('lote') == lote]
+    assert lotes_pre, f'precondicion: lote {lote} debe estar en /api/lotes'
+    fv_pre = (lotes_pre[0].get('fecha_vencimiento') or '')
+    assert not fv_pre, f'precondicion: fecha_vencimiento debe estar vacia, got {fv_pre!r}'
+
+    # Acción: PUT fecha-vencimiento → 2027-12-31
+    r = cs.put(
+        f'/api/lotes/{codigo_mp}/{lote}/fecha-vencimiento',
+        json={'fecha_vencimiento': '2027-12-31',
+              'motivo': 'COA del proveedor recibido'},
+        headers=csrf_headers(),
+    )
+    assert r.status_code == 200, f'PUT fecha-venc fallo: {r.status_code} {r.data}'
+    res = r.get_json() or {}
+    assert res.get('ok'), f'response no ok: {res}'
+    assert res.get('movimientos_actualizados') == 2, \
+        f'BUG: deberia actualizar 2 movs, actualizo {res.get("movimientos_actualizados")}'
+    assert res.get('fecha_nueva') == '2027-12-31'
+
+    # Verificación CRÍTICA: /api/lotes refleja la fecha nueva
+    r = cs.get('/api/lotes')
+    assert r.status_code == 200
+    lotes_post = [l for l in (r.get_json() or {}).get('lotes', [])
+                  if l.get('material_id') == codigo_mp and l.get('lote') == lote]
+    assert lotes_post, f'BUG: lote {lote} desaparecio de /api/lotes post-update'
+    assert (lotes_post[0].get('fecha_vencimiento') or '').startswith('2027-12-31'), \
+        f'BUG SILENCIADO: fecha_vencimiento en /api/lotes sigue siendo ' \
+        f'{lotes_post[0].get("fecha_vencimiento")!r}, esperado 2027-12-31'
+
+    # Validación: formato inválido → 400
+    r = cs.put(
+        f'/api/lotes/{codigo_mp}/{lote}/fecha-vencimiento',
+        json={'fecha_vencimiento': 'no-es-fecha'},
+        headers=csrf_headers(),
+    )
+    assert r.status_code == 400, \
+        f'PUT fecha invalida deberia ser 400, devolvio {r.status_code}'
+
+    # Validación: lote inexistente → 404
+    r = cs.put(
+        f'/api/lotes/{codigo_mp}/LOTE-FANTASMA/fecha-vencimiento',
+        json={'fecha_vencimiento': '2027-01-01'},
+        headers=csrf_headers(),
+    )
+    assert r.status_code == 404, \
+        f'PUT a lote inexistente deberia ser 404, devolvio {r.status_code}'
+
+    # Permitir limpiar (vacío) → 200
+    r = cs.put(
+        f'/api/lotes/{codigo_mp}/{lote}/fecha-vencimiento',
+        json={'fecha_vencimiento': '', 'motivo': 'fecha era incorrecta'},
+        headers=csrf_headers(),
+    )
+    assert r.status_code == 200, \
+        f'PUT con fecha vacia deberia limpiar (200), devolvio {r.status_code}'
+
+    # Cleanup
+    _exec("DELETE FROM movimientos WHERE material_id=?", (codigo_mp,))
+    _exec("DELETE FROM maestro_mps WHERE codigo_mp=?", (codigo_mp,))
+
+
+# ═══════════════════════════════════════════════════════════════════
 # GOLDEN PATH 52 · INV-4 · Conteo ciclico end-to-end con cambios in-flow
 # ═══════════════════════════════════════════════════════════════════
 # Sebastian 8-may-2026 (inventario REAL en vuelo): "que sea funcional

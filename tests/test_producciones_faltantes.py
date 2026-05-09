@@ -970,3 +970,111 @@ def test_sync_calendar_default_no_force_mirror(app, db_clean):
 def test_sync_calendar_sin_login_401(client):
     r = client.post('/api/programacion/checklist/sync-calendar')
     assert r.status_code == 401
+
+
+# ════════════════════════════════════════════════════════════════════
+# Sebastián 9-may-2026: filtro atrasadas_max_dias para ocultar
+# producciones pendientes pasadas viejas (basura abandonada).
+# ════════════════════════════════════════════════════════════════════
+
+def test_atrasadas_viejas_pendientes_se_ocultan_por_default(app, db_clean):
+    """Una pendiente de hace 30 días sin arrancar NO debe aparecer en
+    la vista por default (atrasadas_max_dias=7). Es basura visual.
+    """
+    cs = _login(app, 'luis')
+    _seed_mp_y_stock('MP-VJ', 'X', 0)
+    _seed_formula('PROD-VIEJA', [('MP-VJ', 'X', 1000)], lote_size_kg=1)
+    pid = _seed_produccion('PROD-VIEJA', lotes=1, cantidad_kg=1,
+                            fecha_offset_dias=-30)  # 30 días atrás
+    try:
+        # Default (atrasadas_max_dias implícito = 7)
+        r = cs.get('/api/programacion/producciones-faltantes?dias=14')
+        d = r.get_json()
+        prods = [p for p in d['producciones'] if p['producto'] == 'PROD-VIEJA']
+        assert not prods, \
+            f'BUG: producción de hace 30 días NO debe aparecer · default oculta >7d'
+        # Pero el contador de ocultas SÍ debe reflejarlas
+        assert d['resumen'].get('n_atrasadas_ocultas', 0) >= 1, \
+            'n_atrasadas_ocultas debe contar la vieja oculta'
+        # MPs faltantes NO deben inflar (esa producción no contribuye)
+        falt = next((m for m in d['faltantes_mps']
+                     if m['codigo_mp'] == 'MP-VJ'), None)
+        assert falt is None, 'BUG: MP de producción oculta no debe contar como faltante'
+    finally:
+        _cleanup(productos=['PROD-VIEJA'], mps=['MP-VJ'], prod_ids=[pid])
+
+
+def test_atrasadas_viejas_visible_si_pasa_param(app, db_clean):
+    """Si el frontend pasa ?atrasadas_max_dias=999 (toggle 'Mostrar
+    atrasadas viejas'), las producciones viejas SÍ aparecen.
+    """
+    cs = _login(app, 'luis')
+    _seed_mp_y_stock('MP-VS', 'X', 0)
+    _seed_formula('PROD-VS', [('MP-VS', 'X', 1000)], lote_size_kg=1)
+    pid = _seed_produccion('PROD-VS', lotes=1, cantidad_kg=1,
+                            fecha_offset_dias=-10)
+    try:
+        r = cs.get('/api/programacion/producciones-faltantes?dias=14&atrasadas_max_dias=999')
+        d = r.get_json()
+        prods = [p for p in d['producciones'] if p['producto'] == 'PROD-VS']
+        assert prods, 'BUG: con atrasadas_max_dias=999 la vieja debe aparecer'
+        assert prods[0]['atrasada'] is True
+        # Ahora SÍ debe contar para faltantes
+        falt = next((m for m in d['faltantes_mps']
+                     if m['codigo_mp'] == 'MP-VS'), None)
+        assert falt is not None, 'BUG: con toggle activado debe contar faltantes'
+        assert falt['faltante_g'] == 1000
+    finally:
+        _cleanup(productos=['PROD-VS'], mps=['MP-VS'], prod_ids=[pid])
+
+
+def test_realizadas_pasadas_siempre_visibles(app, db_clean):
+    """Una producción con descuento aplicado (desc_at) DEBE aparecer
+    aunque sea de hace 10 días. El filtro atrasadas_max_dias NO aplica
+    a producciones que ya tocaron stock — son trazabilidad histórica.
+    Nota: se marca como `en_proceso` (arrancó/descontó pero sin fin_real_at).
+    Para `realizada=True` necesita fin_real_at o estado=completado.
+    """
+    cs = _login(app, 'luis')
+    _seed_mp_y_stock('MP-RP', 'X', 0)
+    _seed_formula('PROD-REAL', [('MP-RP', 'X', 1000)], lote_size_kg=1)
+    pid = _seed_produccion('PROD-REAL', lotes=1, cantidad_kg=1,
+                            fecha_offset_dias=-10)
+    # Marcarla como descontada (ya consumió MPs)
+    conn = sqlite3.connect(os.environ['DB_PATH'])
+    conn.execute("UPDATE produccion_programada SET inventario_descontado_at=datetime('now') WHERE id=?", (pid,))
+    conn.commit(); conn.close()
+    try:
+        # Default — debe aparecer aunque sea -10d (con desc_at supera filtro)
+        r = cs.get('/api/programacion/producciones-faltantes?dias=14')
+        d = r.get_json()
+        prods = [p for p in d['producciones'] if p['producto'] == 'PROD-REAL']
+        assert prods, 'BUG: producción descontada de hace 10d debe aparecer aunque default oculta atrasadas viejas'
+        # Con desc_at se marca en_proceso (no realizada porque falta fin_real_at)
+        assert prods[0].get('en_proceso') is True, \
+            f'debe marcarse en_proceso (arrancó/descontó · sin fin_real): {prods[0]}'
+        # NO debe contar para faltantes (sus MPs ya fueron descontadas)
+        falt = next((m for m in d['faltantes_mps']
+                     if m['codigo_mp'] == 'MP-RP'), None)
+        assert falt is None, 'descontada NO debe inflar faltantes'
+    finally:
+        _cleanup(productos=['PROD-REAL'], mps=['MP-RP'], prod_ids=[pid])
+
+
+def test_atrasadas_recientes_dentro_threshold_aparecen(app, db_clean):
+    """Una pendiente de hace 3 días (dentro del threshold 7d default)
+    SÍ aparece como atrasada. No es basura vieja, todavía puede hacerse.
+    """
+    cs = _login(app, 'luis')
+    _seed_mp_y_stock('MP-AR', 'X', 0)
+    _seed_formula('PROD-AR', [('MP-AR', 'X', 1000)], lote_size_kg=1)
+    pid = _seed_produccion('PROD-AR', lotes=1, cantidad_kg=1,
+                            fecha_offset_dias=-3)
+    try:
+        r = cs.get('/api/programacion/producciones-faltantes?dias=14')
+        d = r.get_json()
+        prods = [p for p in d['producciones'] if p['producto'] == 'PROD-AR']
+        assert prods, 'atrasada de -3d debe aparecer (default 7d)'
+        assert prods[0]['atrasada'] is True
+    finally:
+        _cleanup(productos=['PROD-AR'], mps=['MP-AR'], prod_ids=[pid])

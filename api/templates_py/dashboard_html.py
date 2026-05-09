@@ -173,6 +173,18 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       <button onclick="actualizarUbicacionLote()" style="margin-top:10px;background:#1e63a8;color:white;padding:8px 14px;border-radius:6px;width:100%;">Actualizar ubicaci&#243;n</button>
       <div id="ajuste-ubic-msg" style="margin-top:6px;font-size:0.82em;"></div>
     </div>
+    <!-- Sebastián 9-may-2026: editar fecha de vencimiento del lote
+         (algunos lotes ingresaron sin fecha y necesita corregirla). -->
+    <div style="border:1px solid #fbcfe8;border-radius:8px;padding:14px;margin-bottom:10px;background:#fdf4ff;">
+      <div style="font-size:0.78em;font-weight:700;color:#a21caf;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">&#128197; Fecha de Vencimiento</div>
+      <div style="font-size:0.78em;color:#555;margin-bottom:8px;">Actual: <span id="ajuste-fv-actual" style="font-weight:700;color:#a21caf;">&mdash;</span></div>
+      <div style="display:flex;gap:8px;align-items:flex-end;">
+        <div class="form-group" style="flex:1;margin-bottom:0;"><label>Nueva fecha de vencimiento</label><input type="date" id="ajuste-fv"></div>
+        <button onclick="actualizarFechaVencimiento()" style="background:#a21caf;color:white;padding:8px 14px;white-space:nowrap;border-radius:6px;">Actualizar</button>
+      </div>
+      <div class="form-group" style="margin-top:8px;margin-bottom:0;"><label>Motivo (queda en audit log)</label><input type="text" id="ajuste-fv-motivo" placeholder="Ej: COA del proveedor recibido tarde" maxlength="200"></div>
+      <div id="ajuste-fv-msg" style="margin-top:6px;font-size:0.82em;"></div>
+    </div>
     <div style="border:1px solid #d8b4fe;border-radius:8px;padding:14px;margin-bottom:10px;background:#faf5ff;">
       <div style="font-size:0.78em;font-weight:700;color:#6f42c1;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">&#9749; Consumo Manual</div>
       <div style="display:flex;gap:8px;align-items:flex-end;">
@@ -626,8 +638,24 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
         <div class="form-group"><label>Proveedor</label><input type="text" id="nmp-prov" list="prov-list-global" placeholder="Selecciona o escribe nuevo" autocomplete="off"></div>
         <div class="form-group"><label>Stock Minimo (g)</label><input type="number" id="nmp-smin" placeholder="0" value="500"></div>
       </div>
+      <!-- Sebastián 9-may-2026: campos del PRIMER INGRESO en el mismo form
+           verde para evitar que el usuario tenga que cerrar este form y
+           scrollear al de abajo. Si llena cantidad > 0, además del catálogo
+           se registra el movimiento de Entrada. Si no, solo crea catálogo. -->
+      <div style="border-top:1px dashed #b6e3b6;margin:14px 0 10px;padding-top:12px;">
+        <div style="font-size:0.85em;color:#1b5e20;font-weight:700;text-transform:uppercase;letter-spacing:0.6px;margin-bottom:8px;">&#127991; Primer ingreso de este lote (opcional &middot; deja en blanco si solo creas catálogo)</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+          <div class="form-group"><label>N Lote (vacio = auto)</label><input type="text" id="nmp-ing-lote" placeholder="Ej: LYPH250727"></div>
+          <div class="form-group"><label>Cantidad recibida (g)</label><input type="number" id="nmp-ing-cant" placeholder="Ej: 5000" step="0.01" min="0"></div>
+          <div class="form-group"><label>Fecha Vencimiento</label><input type="date" id="nmp-ing-vence"></div>
+          <div class="form-group"><label>Estanter&#237;a</label><input type="text" id="nmp-ing-est" placeholder="Ej: A3"></div>
+          <div class="form-group"><label>Posici&#243;n</label><input type="text" id="nmp-ing-pos" placeholder="Ej: B-2"></div>
+          <div class="form-group"><label>Precio por kg (COP)</label><input type="number" id="nmp-ing-precio-kg" placeholder="Ej: 45000" step="0.01" min="0"></div>
+        </div>
+        <small style="color:#666;font-size:0.78em;display:block;margin-top:6px;font-style:italic;">Si llenas cantidad &gt; 0, se crea la MP <b>y</b> se registra el ingreso en una sola acción.</small>
+      </div>
       <div style="display:flex;gap:10px;margin-top:12px;">
-        <button onclick="crearNuevaMP()" style="background:#1b5e20;">&#10003; Crear en Catalogo</button>
+        <button onclick="crearNuevaMP()" style="background:#1b5e20;">&#10003; Crear en Catalogo (+ ingreso si hay cantidad)</button>
       </div>
       <div id="nmp-msg" style="margin-top:10px;"></div>
     </div>
@@ -1614,7 +1642,7 @@ function confirmarOper(){var inp=document.getElementById('oper-input');var n=(in
 function abrirAjusteIdx(idx){
   var i=_lotes[idx];
   if(!i)return;
-  abrirAjuste(i.material_id,i.material_nombre,i.lote||"",i.cantidad_g,i.estanteria||"",i.posicion||"");
+  abrirAjuste(i.material_id,i.material_nombre,i.lote||"",i.cantidad_g,i.estanteria||"",i.posicion||"",i.fecha_vencimiento||"");
 }
 
 // ─── Solicitar MP (a nivel materia prima, no lote) ─────────────────────────
@@ -2073,9 +2101,9 @@ async function confirmarEliminarLote(){
     msg.innerHTML='<span style="color:#c00;">Error de red: '+e.message+'</span>';
   }
 }
-async function abrirAjuste(mid,mn,lt,sa,est,pos){
+async function abrirAjuste(mid,mn,lt,sa,est,pos,fv){
   if(!OPER_ACTUAL){alert('Primero selecciona tu nombre al inicio');return;}
-  _ajDat={mid:mid,mn:mn,lt:lt,sa:sa,est:est||'',pos:pos||''};
+  _ajDat={mid:mid,mn:mn,lt:lt,sa:sa,est:est||'',pos:pos||'',fv:fv||''};
   document.getElementById('ajuste-info').textContent=mid+' — '+mn+(lt&&lt!='S/L'?' (Lote: '+lt+')':'');
   document.getElementById('ajuste-sistema').value=sa;
   document.getElementById('ajuste-fisico').value='';
@@ -2095,6 +2123,13 @@ async function abrirAjuste(mid,mn,lt,sa,est,pos){
   var inpPos=document.getElementById('ajuste-posicion');if(inpPos)inpPos.value=pos||'';
   var inpMot=document.getElementById('ajuste-ubic-motivo');if(inpMot)inpMot.value='';
   var ubicMsg=document.getElementById('ajuste-ubic-msg');if(ubicMsg)ubicMsg.innerHTML='';
+  // Sebastián 9-may-2026: hidratar bloque fecha de vencimiento
+  var fvNorm = (fv||'').slice(0,10);
+  var fvActual=document.getElementById('ajuste-fv-actual');
+  if(fvActual) fvActual.textContent = fvNorm || '(sin fecha)';
+  var fvInp=document.getElementById('ajuste-fv'); if(fvInp) fvInp.value=fvNorm;
+  var fvMot=document.getElementById('ajuste-fv-motivo'); if(fvMot) fvMot.value='';
+  var fvMsg=document.getElementById('ajuste-fv-msg'); if(fvMsg) fvMsg.innerHTML='';
   try{var r=await fetch('/api/maestro-mps/'+encodeURIComponent(mid));if(r.ok){var d=await r.json();document.getElementById('ajuste-smin').value=d.stock_minimo||0;}}catch(e){document.getElementById('ajuste-smin').value=0;}
   document.getElementById('modal-ajuste').style.display='flex';
 }
@@ -2176,7 +2211,42 @@ async function actualizarUbicacionLote(){
     }
   }catch(e){msgEl.innerHTML='<span style="color:red;">Error: '+e.message+'</span>';}
 }
-function cerrarAjuste(){document.getElementById('modal-ajuste').style.display='none';['ajuste-msg','ajuste-smin-msg','ajuste-consumo-msg','ajuste-arch-msg','ajuste-ubic-msg'].forEach(function(id){var el=document.getElementById(id);if(el)el.innerHTML='';});}
+// Sebastián 9-may-2026: actualizar fecha de vencimiento del lote (algunos
+// lotes ingresaron sin fecha y se necesita corregir).
+async function actualizarFechaVencimiento(){
+  var mid=_ajDat&&_ajDat.mid;
+  var lt=_ajDat&&_ajDat.lt;
+  if(!mid){return;}
+  var msgEl=document.getElementById('ajuste-fv-msg');
+  var nuevaFv=((document.getElementById('ajuste-fv')||{}).value||'').trim();
+  var motivo=((document.getElementById('ajuste-fv-motivo')||{}).value||'').trim();
+  var actFv=((_ajDat.fv||'')+'').slice(0,10);
+  if(nuevaFv===actFv){
+    msgEl.innerHTML='<span style="color:#666;">Sin cambios respecto a la fecha actual.</span>';
+    return;
+  }
+  if(!nuevaFv && !confirm('Vas a DEJAR EL LOTE SIN FECHA DE VENCIMIENTO. ¿Continuar?')){return;}
+  var loteUrl=lt && lt!=='S/L' ? encodeURIComponent(lt) : '_SIN_LOTE_';
+  msgEl.innerHTML='<span style="color:#666;">Guardando...</span>';
+  try{
+    var r=await fetch('/api/lotes/'+encodeURIComponent(mid)+'/'+loteUrl+'/fecha-vencimiento',
+      {method:'PUT',headers:{'Content-Type':'application/json'},
+       body:JSON.stringify({fecha_vencimiento:nuevaFv,motivo:motivo})});
+    var d={};try{d=await r.json();}catch(je){}
+    if(r.ok){
+      msgEl.innerHTML='<span style="color:#28a745;font-weight:700;">&#10003; '+
+        (d.message||'Fecha actualizada')+' ('+(d.movimientos_actualizados||0)+' mov)</span>';
+      _ajDat.fv=d.fecha_nueva||nuevaFv;
+      var fvActual=document.getElementById('ajuste-fv-actual');
+      if(fvActual) fvActual.textContent=(_ajDat.fv||'(sin fecha)');
+      setTimeout(loadStock,500);
+    }else{
+      msgEl.innerHTML='<span style="color:#c00;">Error: '+(d.error||r.status)+
+        (d.detail?' &mdash; '+d.detail:'')+'</span>';
+    }
+  }catch(e){msgEl.innerHTML='<span style="color:#c00;">Error de red: '+e.message+'</span>';}
+}
+function cerrarAjuste(){document.getElementById('modal-ajuste').style.display='none';['ajuste-msg','ajuste-smin-msg','ajuste-consumo-msg','ajuste-arch-msg','ajuste-ubic-msg','ajuste-fv-msg'].forEach(function(id){var el=document.getElementById(id);if(el)el.innerHTML='';});}
 var _provSaveTimers={};
 function guardarProveedorMP(inp){
   var cod=inp.dataset.cod;
@@ -3564,20 +3634,75 @@ async function crearNuevaMP(){
     tipo_material:tipoMaterial,
     proveedor:(document.getElementById('nmp-prov').value||'').trim(),
     stock_minimo:parseFloat(document.getElementById('nmp-smin').value)||500};
+  // Sebastián 9-may-2026: si hay cantidad > 0 en el bloque "Primer ingreso",
+  // tras crear el catálogo registramos el movimiento de Entrada en la misma
+  // acción · evita que el usuario tenga que cerrar este form y rellenar el
+  // de abajo (era el bug de UX).
+  var ingCant = parseFloat((document.getElementById('nmp-ing-cant')||{}).value)||0;
+  var ingLote = ((document.getElementById('nmp-ing-lote')||{}).value||'').trim();
+  var ingVence = ((document.getElementById('nmp-ing-vence')||{}).value||'').trim();
+  var ingEst = ((document.getElementById('nmp-ing-est')||{}).value||'').trim();
+  var ingPos = ((document.getElementById('nmp-ing-pos')||{}).value||'').trim();
+  var ingPrecioKg = parseFloat((document.getElementById('nmp-ing-precio-kg')||{}).value)||0;
+
+  var msgEl = document.getElementById('nmp-msg');
+  msgEl.innerHTML = '<div style="color:#666">⏳ Creando...</div>';
   try{
     var r=await fetch('/api/maestro-mps',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
     var res=await r.json();
-    if(r.ok){
-      document.getElementById('nmp-msg').innerHTML='<div class="alert-success">MP '+cod+' creada en catalogo. Ya puedes usarla en el ingreso.</div>';
-      _cat[cod]=data;  // Agregar al catalogo local
-      // Pre-llenar el formulario de ingreso
-      var f={'ing-cod':cod,'ing-inci':inci,'ing-nombre':nombre,'ing-tipo':data.tipo,'ing-prov':data.proveedor};
-      Object.keys(f).forEach(function(id){var el=document.getElementById(id);if(el)el.value=f[id];});
-      var st=document.getElementById('ing-status'); if(st){st.textContent='Nueva MP creada y lista para ingresar';st.style.color='#28a745';}
-    } else {
-      document.getElementById('nmp-msg').innerHTML='<div class="alert-error">'+(res.error||'Error al crear')+'</div>';
+    if(!r.ok){
+      msgEl.innerHTML='<div class="alert-error">'+(res.error||'Error al crear catálogo')+'</div>';
+      return;
     }
-  }catch(e){document.getElementById('nmp-msg').innerHTML='<div class="alert-error">Error: '+e.message+'</div>';}
+    _cat[cod]=data;  // Agregar al catalogo local
+    // Pre-llenar el formulario de ingreso (compat con flow viejo)
+    var f={'ing-cod':cod,'ing-inci':inci,'ing-nombre':nombre,'ing-tipo':data.tipo,'ing-prov':data.proveedor};
+    Object.keys(f).forEach(function(id){var el=document.getElementById(id);if(el)el.value=f[id];});
+
+    if(ingCant > 0){
+      // Registrar también el primer ingreso (movimiento Entrada)
+      msgEl.innerHTML='<div style="color:#666">⏳ MP creada · registrando entrada...</div>';
+      // Auto-generar lote si está vacío (formato corto: PROV-YYMMDD)
+      var loteFinal = ingLote;
+      if(!loteFinal){
+        var d2=new Date();
+        var ymd = String(d2.getFullYear()).slice(2)+String(d2.getMonth()+1).padStart(2,'0')+String(d2.getDate()).padStart(2,'0');
+        var provPrefix = (data.proveedor||'AUTO').replace(/[^A-Z]/gi,'').slice(0,4).toUpperCase()||'AUTO';
+        loteFinal = provPrefix+ymd;
+      }
+      var movPayload = {
+        material_id: cod,
+        material_nombre: nombre,
+        cantidad: ingCant,
+        tipo: 'Entrada',
+        observaciones: 'Primer ingreso al crear MP en catálogo' + (ingPrecioKg>0 ? ' · $'+ingPrecioKg.toLocaleString('es-CO')+'/kg' : ''),
+        lote: loteFinal,
+        fecha_vencimiento: ingVence||'',
+        estanteria: ingEst,
+        posicion: ingPos,
+        proveedor: data.proveedor||'',
+        operador: (typeof OPER_ACTUAL !== 'undefined' ? OPER_ACTUAL : '') || ''
+      };
+      var rm = await fetch('/api/movimientos',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(movPayload)});
+      var resm={};try{resm=await rm.json();}catch(e){}
+      if(!rm.ok){
+        msgEl.innerHTML='<div class="alert-error">MP creada pero el ingreso falló: '+(resm.error||rm.status)+'. Podés reintentar el ingreso desde el form de abajo.</div>';
+        var st=document.getElementById('ing-status'); if(st){st.textContent='MP creada · completa el ingreso abajo';st.style.color='#e67e22';}
+        return;
+      }
+      msgEl.innerHTML='<div class="alert-success">✓ MP <b>'+cod+'</b> creada en catálogo · ingreso registrado: lote <b>'+loteFinal+'</b> con <b>'+ingCant.toLocaleString('es-CO')+' g</b>.</div>';
+      // Refrescar el stock visible si la pantalla lo permite
+      try{ if(typeof loadStock==='function') setTimeout(loadStock, 600); }catch(e){}
+      try{ if(typeof cargarHistIngreso==='function') setTimeout(cargarHistIngreso, 600); }catch(e){}
+      // Limpiar inputs del bloque ingreso para próxima vez
+      ['nmp-ing-lote','nmp-ing-cant','nmp-ing-vence','nmp-ing-est','nmp-ing-pos','nmp-ing-precio-kg'].forEach(function(id){
+        var el=document.getElementById(id); if(el) el.value='';
+      });
+    } else {
+      msgEl.innerHTML='<div class="alert-success">✓ MP '+cod+' creada en catálogo. Si la quieres ingresar, completa cantidad / lote / posición arriba y vuelve a presionar.</div>';
+      var st=document.getElementById('ing-status'); if(st){st.textContent='Nueva MP creada y lista para ingresar';st.style.color='#28a745';}
+    }
+  }catch(e){msgEl.innerHTML='<div class="alert-error">Error: '+e.message+'</div>';}
 }
 
 // ── Funciones CC / Trazabilidad / Conteo Ciclico ──
@@ -12312,8 +12437,13 @@ async function ckMarcar(itemId, estado){
     if(btnDup) btnDup.style.display = 'none';
     out.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:20px">⏳ Construyendo plan...</div>';
     var dias = _pv2HorizonteDias();
+    // Sebastián 9-may-2026: por default ocultar atrasadas pendientes >7d
+    // (basura vieja). Toggle "Mostrar atrasadas viejas" pasa 999.
+    var atrasadasMaxDias = window._PV2_MOSTRAR_ATRASADAS_VIEJAS ? 999 : 7;
     try{
-      var r = await fetch('/api/programacion/producciones-faltantes?dias='+dias);
+      var url = '/api/programacion/producciones-faltantes?dias='+dias+
+                '&atrasadas_max_dias='+atrasadasMaxDias;
+      var r = await fetch(url);
       var d = await r.json();
       if(!r.ok){
         out.innerHTML = '<div style="color:#dc2626;padding:18px;text-align:center">Error: '+_escHTML(d.error||r.status)+'</div>';
@@ -12326,6 +12456,7 @@ async function ckMarcar(itemId, estado){
       var nProc = res.n_en_proceso || 0;
       var nAtr = res.n_atrasadas || 0;
       var nPend = res.n_pendientes || 0;
+      var nAtrOcultas = res.n_atrasadas_ocultas || 0;
       var pasadoDias = d.pasado_dias || 0;
       if(resumen){
         // Sebastián 8-may-2026: separar pendientes de realizadas en el header
@@ -12341,7 +12472,25 @@ async function ckMarcar(itemId, estado){
         partes.push(res.n_proveedores_unicos+' proveedores');
         partes.push('ventana -'+pasadoDias+'d / +'+dias+'d');
         if(nDup) partes.push('⚠️ '+nDup+' con clones');
-        resumen.textContent = partes.join(' · ');
+        // Sebastián 9-may-2026: badge con # de atrasadas viejas ocultas +
+        // toggle para mostrarlas. La basura abandonada (atrasada-pendiente >7d)
+        // queda fuera del panel principal pero accesible si el user la quiere
+        // limpiar/cancelar/reprogramar.
+        var resumenHtml = partes.map(_escHTML).join(' · ');
+        if(nAtrOcultas > 0 && !window._PV2_MOSTRAR_ATRASADAS_VIEJAS){
+          resumenHtml += ' · <a href="javascript:void(0)" '+
+            'onclick="window._PV2_MOSTRAR_ATRASADAS_VIEJAS=true;pv2CargarProdFaltantes()" '+
+            'style="color:#6b7280;background:#f3f4f6;border:1px solid #d1d5db;'+
+            'border-radius:4px;padding:1px 7px;text-decoration:none;'+
+            'font-size:11px;font-weight:600">📅 Mostrar '+nAtrOcultas+' atrasadas viejas</a>';
+        } else if(window._PV2_MOSTRAR_ATRASADAS_VIEJAS){
+          resumenHtml += ' · <a href="javascript:void(0)" '+
+            'onclick="window._PV2_MOSTRAR_ATRASADAS_VIEJAS=false;pv2CargarProdFaltantes()" '+
+            'style="color:#7c3aed;background:#ede9fe;border:1px solid #c4b5fd;'+
+            'border-radius:4px;padding:1px 7px;text-decoration:none;'+
+            'font-size:11px;font-weight:600">⏪ Ocultar atrasadas viejas</a>';
+        }
+        resumen.innerHTML = resumenHtml;
       }
       var hayFaltantes = (res.n_mps_faltantes||0)+(res.n_mees_faltantes||0) > 0;
       if(btn) btn.style.display = hayFaltantes ? 'inline-block' : 'none';
@@ -15952,18 +16101,26 @@ async function ckMarcar(itemId, estado){
   }
   </script>
 
-  <!-- ═══ Widget Mi contraseña · Sebastián 7-may-2026 ═══════════════════
-       Botón flotante esquina inferior derecha · cualquier user logueado
-       puede cambiar su contraseña sin pasar por el hub. -->
+  <!-- ═══ Widget Mi contraseña · Sebastián 7/8-may-2026 ═══════════════════
+       Mini círculo 36px en esquina inferior izquierda. Discreto · NO tapa
+       contenido. Tooltip nativo (title) muestra "Cambiar mi contraseña".
+       Sebastián 9-may-2026: el chip ancho con texto "🔐 Mi contraseña"
+       aparecía flotando en TODAS las páginas tapando contenido. Mini
+       círculo solo-icono mantiene el acceso pero deja de estorbar. -->
   <a href="/cambiar-password"
      title="Cambiar mi contraseña"
-     style="position:fixed;bottom:24px;left:24px;z-index:9998;
+     aria-label="Cambiar mi contraseña"
+     style="position:fixed;bottom:18px;left:18px;z-index:9998;
+            width:34px;height:34px;
             background:#1e293b;color:#a78bfa;border:1px solid #4c1d95;
-            border-radius:24px;padding:8px 16px;font-size:12px;font-weight:700;
-            text-decoration:none;box-shadow:0 4px 12px rgba(0,0,0,.2);
+            border-radius:50%;font-size:14px;
+            text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.18);
             font-family:-apple-system,Segoe UI,sans-serif;
-            display:flex;align-items:center;gap:6px">
-    🔐 Mi contraseña
+            display:flex;align-items:center;justify-content:center;
+            opacity:.65;transition:opacity .15s;"
+     onmouseover="this.style.opacity='1'"
+     onmouseout="this.style.opacity='.65'">
+    🔐
   </a>
 
 </body>
