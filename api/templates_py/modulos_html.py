@@ -100,6 +100,16 @@ MODULOS_HTML = (
     "<span class=\"mod-icon\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"cx-ico\"><path d=\"M3 9l9-6 9 6\"/><path d=\"M5 21V11M19 21V11M9 21v-8M15 21v-8M2 21h20\"/></svg></span>"
     "<span class=\"mod-name\">Gerencia</span>"
     "<span class=\"mod-sub\">metas YTD &middot; estrategia</span></a>\n"
+    # Sebastián 10-may-2026: link directo a herramientas admin críticas
+    # desde el panel inicial (panel ejecutivo CEO).
+    "      <a class=\"mod-card\" href=\"/admin/auditoria-catalogo\">"
+    "<span class=\"mod-icon\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"cx-ico\"><circle cx=\"11\" cy=\"11\" r=\"7\"/><path d=\"M21 21l-4.3-4.3M11 8v3M11 14h.01\"/></svg></span>"
+    "<span class=\"mod-name\">Auditoría Catálogo</span>"
+    "<span class=\"mod-sub\">duplicados &middot; huérfanos &middot; vencidos</span></a>\n"
+    "      <a class=\"mod-card\" href=\"/admin/zero-error\">"
+    "<span class=\"mod-icon\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\" class=\"cx-ico\"><path d=\"M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z\"/><path d=\"M9 12l2 2 4-4\"/></svg></span>"
+    "<span class=\"mod-name\">Zero-Error</span>"
+    "<span class=\"mod-sub\">health &middot; tests &middot; backups</span></a>\n"
     "    </div>\n"
     "  </div>\n"
     "  <script>\n"
