@@ -10258,6 +10258,21 @@ def auditoria_catalogo():
         findings['alta']['codigos_mp_duplicados_err'] = str(e)[:200]
 
     # 2. Mismo INCI con códigos MP distintos
+    # Sebastián 10-may-2026: hay INCI que se REPITEN LEGÍTIMAMENTE entre
+    # MPs distintas en cosmética (Parfum, Aqua, etc · cada fragancia es
+    # una MP comercial distinta pero con mismo nombre INCI por estándar).
+    # Estos NO son duplicados reales · se mueven a BAJA con label.
+    INCI_WHITELIST_LEGAL = {
+        'parfum', 'fragrance', 'aroma',
+        'aqua', 'water', 'agua',
+        'alcohol', 'alcohol denat',
+        'glycerin', 'glicerina',
+        '(varies)', 'mixture',
+    }
+    INCI_PLACEHOLDERS = {
+        'pendiente inci', 'pendiente', 'sin inci', 'no inci',
+        'por definir', 'tbd', 'n/a', 'na', '-',
+    }
     try:
         rows = c.execute("""
             SELECT LOWER(TRIM(nombre_inci)) as inci_norm,
@@ -10271,11 +10286,34 @@ def auditoria_catalogo():
             HAVING cnt > 1
             ORDER BY cnt DESC LIMIT 100
         """).fetchall()
-        findings['alta']['inci_duplicado'] = [
-            {'inci_normalizado': r[0], 'codigos_mp': (r[1] or '').split(','),
-             'count': r[2], 'variantes_raw': r[3]}
-            for r in rows
-        ]
+        inci_real_dup = []
+        inci_legal_compartido = []
+        inci_placeholder = []
+        for r in rows:
+            inci_norm = r[0]
+            grupo = {
+                'inci_normalizado': inci_norm,
+                'codigos_mp': (r[1] or '').split(','),
+                'count': r[2], 'variantes_raw': r[3],
+            }
+            if inci_norm in INCI_WHITELIST_LEGAL:
+                inci_legal_compartido.append({
+                    **grupo,
+                    'label': 'INCI cosmético compartido legalmente · NO fusionar',
+                })
+            elif inci_norm in INCI_PLACEHOLDERS:
+                inci_placeholder.append({
+                    **grupo,
+                    'label': 'INCI placeholder · falta definir el real',
+                })
+            else:
+                inci_real_dup.append(grupo)
+        findings['alta']['inci_duplicado'] = inci_real_dup
+        # Mover legales y placeholders a BAJA
+        if inci_legal_compartido:
+            findings['baja']['inci_compartido_legal'] = inci_legal_compartido
+        if inci_placeholder:
+            findings['media']['inci_pendiente_llenar'] = inci_placeholder
     except Exception as e:
         findings['alta']['inci_duplicado_err'] = str(e)[:200]
 
@@ -10325,6 +10363,9 @@ def auditoria_catalogo():
 
     # === MEDIA ===
     # 5. Mismo nombre comercial con códigos distintos
+    # Sebastián 10-may-2026: aplicar misma lógica de whitelist · nombres
+    # comerciales genéricos (Agua, Alcohol, Glicerina) tampoco son
+    # duplicados reales aunque compartan nombre.
     try:
         rows = c.execute("""
             SELECT LOWER(TRIM(nombre_comercial)) as nc_norm,
@@ -10338,11 +10379,25 @@ def auditoria_catalogo():
             HAVING cnt > 1
             ORDER BY cnt DESC LIMIT 100
         """).fetchall()
-        findings['media']['nombre_comercial_duplicado'] = [
-            {'nombre_normalizado': r[0], 'codigos_mp': (r[1] or '').split(','),
-             'count': r[2], 'variantes_raw': r[3]}
-            for r in rows
-        ]
+        nc_real_dup = []
+        nc_legal_compartido = []
+        for r in rows:
+            nc_norm = r[0]
+            grupo = {
+                'nombre_normalizado': nc_norm,
+                'codigos_mp': (r[1] or '').split(','),
+                'count': r[2], 'variantes_raw': r[3],
+            }
+            if nc_norm in INCI_WHITELIST_LEGAL:
+                nc_legal_compartido.append({
+                    **grupo,
+                    'label': 'Nombre genérico · NO fusionar sin verificar',
+                })
+            else:
+                nc_real_dup.append(grupo)
+        findings['media']['nombre_comercial_duplicado'] = nc_real_dup
+        if nc_legal_compartido:
+            findings['baja']['nombre_comercial_compartido_legal'] = nc_legal_compartido
     except Exception as e:
         findings['media']['nombre_dup_err'] = str(e)[:200]
 
