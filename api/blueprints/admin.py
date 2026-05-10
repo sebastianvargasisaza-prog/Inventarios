@@ -10534,3 +10534,156 @@ def auditoria_catalogo():
         },
         'findings': findings,
     }), 200
+
+
+@bp.route("/admin/auditoria-catalogo", methods=["GET"])
+def admin_auditoria_catalogo_page():
+    """UI HTML que consume /api/admin/auditoria-catalogo y muestra
+    findings agrupados por severidad. Sebastián 10-may-2026."""
+    u, err, code = _require_admin()
+    if err:
+        return Response(
+            '<h1>403</h1><p>Solo admin puede ver esta auditoría.</p>',
+            status=403, mimetype='text/html'
+        )
+    return Response(_AUDIT_CATALOGO_HTML, mimetype='text/html')
+
+
+_AUDIT_CATALOGO_HTML = """<!DOCTYPE html>
+<html lang="es"><head>
+<meta charset="utf-8">
+<title>Auditoría Catálogo MPs · EOS</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;background:#f1f5f9;padding:20px;color:#0f172a}
+h1{font-size:22px;margin-bottom:6px;color:#0f766e}
+.sub{color:#64748b;font-size:13px;margin-bottom:18px}
+.bar{display:flex;gap:8px;margin-bottom:18px;flex-wrap:wrap}
+button{padding:8px 16px;border:none;border-radius:6px;cursor:pointer;font-weight:700;font-size:13px}
+button.run{background:#0d9488;color:white}
+button.run:hover{background:#0f766e}
+button.back{background:#475569;color:white;text-decoration:none;display:inline-block}
+.resumen{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:24px}
+.card{padding:18px;border-radius:8px;background:white;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.card h3{font-size:11px;text-transform:uppercase;color:#64748b;letter-spacing:.5px;margin-bottom:8px}
+.card .num{font-size:36px;font-weight:800}
+.card.alta .num{color:#dc2626}
+.card.media .num{color:#f59e0b}
+.card.baja .num{color:#0891b2}
+.card.total .num{color:#0d9488}
+section{background:white;border-radius:8px;padding:18px;margin-bottom:18px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+section h2{font-size:16px;margin-bottom:12px;display:flex;align-items:center;gap:8px}
+section.alta h2{color:#dc2626}
+section.media h2{color:#d97706}
+section.baja h2{color:#0891b2}
+.finding{border-left:3px solid #cbd5e1;padding:10px 14px;margin-bottom:10px;background:#f8fafc;border-radius:0 4px 4px 0}
+.finding.alta{border-left-color:#dc2626}
+.finding.media{border-left-color:#f59e0b}
+.finding.baja{border-left-color:#0891b2}
+.finding h4{font-size:13px;color:#0f172a;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center}
+.finding .count{background:#1e293b;color:white;padding:2px 8px;border-radius:10px;font-size:11px}
+.finding .empty{color:#16a34a;font-size:12px;font-weight:600}
+.finding table{width:100%;font-size:12px;margin-top:6px;border-collapse:collapse}
+.finding th{text-align:left;color:#475569;padding:4px 8px;border-bottom:1px solid #e2e8f0;font-weight:600;font-size:11px;text-transform:uppercase}
+.finding td{padding:4px 8px;border-bottom:1px solid #f1f5f9}
+.finding code{background:#f1f5f9;padding:1px 4px;border-radius:3px;font-size:11px;color:#0d9488}
+.loading{text-align:center;padding:40px;color:#64748b}
+.error{background:#fee2e2;color:#991b1b;padding:14px;border-radius:6px}
+.ok-section{background:#dcfce7;color:#15803d;padding:14px;border-radius:6px;font-size:13px}
+</style>
+</head><body>
+<a href="/modulos" class="back" style="padding:8px 16px;border-radius:6px;background:#475569;color:white;text-decoration:none;display:inline-block;margin-bottom:18px;font-size:12px">← Volver al panel</a>
+<h1>🔍 Auditoría del Catálogo de Materias Primas</h1>
+<p class="sub">Detecta duplicados, huérfanos e inconsistencias en <code>maestro_mps</code> y <code>movimientos</code>. 12 checks · solo lectura.</p>
+<div class="bar">
+  <button class="run" onclick="ejecutarAudit()">▶ Ejecutar auditoría</button>
+  <span id="ts" style="align-self:center;color:#64748b;font-size:12px"></span>
+</div>
+<div id="contenido"><div class="loading">Click "Ejecutar auditoría" para empezar...</div></div>
+
+<script>
+async function ejecutarAudit(){
+  var c=document.getElementById('contenido');
+  c.innerHTML='<div class="loading">⏳ Analizando catálogo (puede tardar 5-10s)...</div>';
+  document.getElementById('ts').textContent='';
+  try{
+    var r=await fetch('/api/admin/auditoria-catalogo');
+    var d=await r.json();
+    if(!r.ok){c.innerHTML='<div class="error">Error '+r.status+': '+(d.error||'')+'</div>';return;}
+    document.getElementById('ts').textContent='Generado: '+(d.timestamp||'').replace('T',' ').slice(0,19);
+    render(d);
+  }catch(e){c.innerHTML='<div class="error">Error de red: '+e.message+'</div>';}
+}
+
+function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+
+function render(d){
+  var r=d.resumen||{};
+  var f=d.findings||{};
+  var html='<div class="resumen">'+
+    '<div class="card alta"><h3>🔴 Alta</h3><div class="num">'+(r.n_alta||0)+'</div></div>'+
+    '<div class="card media"><h3>🟠 Media</h3><div class="num">'+(r.n_media||0)+'</div></div>'+
+    '<div class="card baja"><h3>🔵 Baja</h3><div class="num">'+(r.n_baja||0)+'</div></div>'+
+    '<div class="card total"><h3>Total findings</h3><div class="num">'+(r.n_total_findings||0)+'</div></div>'+
+    '</div>';
+  if((r.n_total_findings||0)===0){
+    html+='<div class="ok-section">✅ Catálogo limpio · 0 findings · todo OK.</div>';
+    document.getElementById('contenido').innerHTML=html;
+    return;
+  }
+  html+=renderSeccion('alta','🔴 ALTA · bloquean producción / pérdida de trazabilidad',f.alta||{});
+  html+=renderSeccion('media','🟠 MEDIA · operativos · confunden trabajo diario',f.media||{});
+  html+=renderSeccion('baja','🔵 BAJA · limpieza / mejora',f.baja||{});
+  document.getElementById('contenido').innerHTML=html;
+}
+
+function renderSeccion(sev, titulo, items){
+  var keys=Object.keys(items).filter(function(k){return !k.endsWith('_err');});
+  var hayAlgo=keys.some(function(k){return Array.isArray(items[k]) && items[k].length>0;});
+  if(!hayAlgo){
+    return '<section class="'+sev+'"><h2>'+titulo+'</h2>'+
+           '<div class="ok-section">✓ Sin findings en esta categoría</div></section>';
+  }
+  var html='<section class="'+sev+'"><h2>'+titulo+'</h2>';
+  keys.forEach(function(k){
+    var arr=items[k]||[];
+    if(!Array.isArray(arr)||!arr.length)return;
+    html+='<div class="finding '+sev+'">';
+    html+='<h4>'+esc(k.replace(/_/g,' '))+
+          ' <span class="count">'+arr.length+'</span></h4>';
+    html+=renderTabla(arr);
+    html+='</div>';
+  });
+  // Errors si hubo
+  Object.keys(items).filter(function(k){return k.endsWith('_err');}).forEach(function(k){
+    html+='<div class="finding"><h4>⚠️ '+esc(k)+'</h4><code>'+esc(items[k])+'</code></div>';
+  });
+  html+='</section>';
+  return html;
+}
+
+function renderTabla(arr){
+  if(!arr.length)return '<div class="empty">vacío</div>';
+  var cols=Object.keys(arr[0]);
+  var html='<table><thead><tr>';
+  cols.forEach(function(c){html+='<th>'+esc(c)+'</th>';});
+  html+='</tr></thead><tbody>';
+  arr.slice(0,30).forEach(function(row){
+    html+='<tr>';
+    cols.forEach(function(c){
+      var v=row[c];
+      if(Array.isArray(v))v=v.join(', ');
+      else if(typeof v==='object'&&v!==null)v=JSON.stringify(v);
+      html+='<td>'+esc(v)+'</td>';
+    });
+    html+='</tr>';
+  });
+  html+='</tbody></table>';
+  if(arr.length>30)html+='<div style="font-size:11px;color:#64748b;margin-top:6px">... y '+(arr.length-30)+' más (limitado a 30 en UI)</div>';
+  return html;
+}
+
+// Auto-ejecutar al cargar
+ejecutarAudit();
+</script>
+</body></html>"""
