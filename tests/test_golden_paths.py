@@ -1470,6 +1470,148 @@ def test_golden_mfa_endpoint(app, db_clean):
 
 
 # ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 58 · INV-9 · Fusionar MPs duplicadas (maestro-mps-unificar)
+# ═══════════════════════════════════════════════════════════════════
+# Sebastián 10-may-2026: auditoría detectó MPs con mismo INCI pero
+# códigos distintos (típico casing inconsistente). Endpoint
+# /api/admin/maestro-mps-unificar transfiere movimientos del duplicado
+# al canónico y archiva (activo=0) el duplicado. Audit log queda.
+
+def test_golden_fusionar_mps_duplicadas(app, db_clean):
+    cs = _login(app, 'sebastian')
+
+    canonico = 'GP58-MP-CANON'
+    duplicado = 'GP58-MP-DUP'
+    nombre = 'Hidroxido de sodio'
+
+    # Setup: 2 MPs con mismo INCI (Sodium Hydroxide), distintos códigos
+    _exec("""INSERT OR REPLACE INTO maestro_mps
+              (codigo_mp, nombre_comercial, nombre_inci, proveedor,
+               activo, tipo_material)
+              VALUES (?, ?, 'SODIUM HYDROXIDE', 'P1', 1, 'MP')""",
+          (canonico, nombre))
+    _exec("""INSERT OR REPLACE INTO maestro_mps
+              (codigo_mp, nombre_comercial, nombre_inci, proveedor,
+               activo, tipo_material)
+              VALUES (?, ?, 'Sodium Hydroxide', 'P2', 1, 'MP')""",
+          (duplicado, nombre))
+    # Movimientos en cada uno
+    _exec("""INSERT INTO movimientos
+              (material_id, material_nombre, cantidad, tipo, fecha,
+               lote, estado_lote, operador)
+              VALUES (?, ?, 5000, 'Entrada', date('now'),
+                      'LOTE-CANON-A', 'VIGENTE', 'seed')""",
+          (canonico, nombre))
+    _exec("""INSERT INTO movimientos
+              (material_id, material_nombre, cantidad, tipo, fecha,
+               lote, estado_lote, operador)
+              VALUES (?, ?, 3000, 'Entrada', date('now'),
+                      'LOTE-DUP-B', 'VIGENTE', 'seed')""",
+          (duplicado, nombre))
+    _exec("""INSERT INTO movimientos
+              (material_id, material_nombre, cantidad, tipo, fecha,
+               lote, estado_lote, operador)
+              VALUES (?, ?, 1000, 'Salida', date('now'),
+                      'LOTE-DUP-B', 'VIGENTE', 'seed')""",
+          (duplicado, nombre))
+
+    # Pre: 2 lotes distintos visibles, uno por cada material_id
+    r = cs.get('/api/lotes')
+    pre = [l for l in (r.get_json() or {}).get('lotes', [])
+           if l.get('material_id') in (canonico, duplicado)]
+    pre_canon = [l for l in pre if l['material_id'] == canonico]
+    pre_dup = [l for l in pre if l['material_id'] == duplicado]
+    assert len(pre_canon) == 1, f'precondicion: 1 lote en canonico'
+    assert pre_canon[0]['cantidad_g'] == 5000
+    assert len(pre_dup) == 1, f'precondicion: 1 lote en duplicado'
+    assert pre_dup[0]['cantidad_g'] == 2000  # 3000 - 1000 salida
+
+    # Acción: fusionar
+    r = cs.post(
+        '/api/admin/maestro-mps-unificar',
+        json={
+            'codigo_canonico': canonico,
+            'codigos_duplicados': [duplicado],
+            'motivo': 'casing inconsistente · test golden',
+        },
+        headers=csrf_headers(),
+    )
+    assert r.status_code == 200, f'fusion fallo: {r.status_code} {r.data}'
+    res = r.get_json() or {}
+    assert res.get('ok')
+    assert res.get('canonico') == canonico
+    assert duplicado in res.get('duplicados_archivados', [])
+    totales = res.get('totales_transferidos', {})
+    assert totales.get('movimientos') == 2, \
+        f'esperaba transferir 2 movs (Entrada+Salida del duplicado), got {totales.get("movimientos")}'
+
+    # Verificación 1: maestro_mps · duplicado archivado, canonico activo
+    rows = _query(
+        "SELECT codigo_mp, activo FROM maestro_mps WHERE codigo_mp IN (?,?)",
+        (canonico, duplicado)
+    )
+    estados = {r[0]: r[1] for r in rows}
+    assert estados[canonico] == 1, 'canónico debe seguir activo'
+    assert estados[duplicado] == 0, 'duplicado debe estar archivado (activo=0)'
+
+    # Verificación 2: TODOS los movs ahora apuntan al canónico
+    movs_dup = _query(
+        "SELECT COUNT(*) FROM movimientos WHERE material_id=?", (duplicado,)
+    )
+    assert movs_dup[0][0] == 0, 'no debe haber movs con material_id=duplicado'
+    movs_canon = _query(
+        "SELECT COUNT(*) FROM movimientos WHERE material_id=?", (canonico,)
+    )
+    # 1 entrada original del canónico + 2 transferidos del duplicado = 3
+    assert movs_canon[0][0] == 3, f'esperaba 3 movs en canonico, got {movs_canon[0][0]}'
+
+    # Verificación 3: /api/lotes muestra solo lotes del canónico (con stocks
+    # de AMBOS lotes originales)
+    r = cs.get('/api/lotes')
+    post = [l for l in (r.get_json() or {}).get('lotes', [])
+            if l.get('material_id') in (canonico, duplicado)]
+    post_canon = [l for l in post if l['material_id'] == canonico]
+    post_dup = [l for l in post if l['material_id'] == duplicado]
+    assert len(post_canon) == 2, f'esperaba 2 lotes en canonico (A+B), got {len(post_canon)}'
+    assert len(post_dup) == 0, 'duplicado no debe aparecer en /api/lotes (archivado)'
+    # Stock total preservado: 5000 (LOTE-A) + 2000 (LOTE-B post-salida) = 7000g
+    total = sum(l['cantidad_g'] for l in post_canon)
+    assert abs(total - 7000) < 0.01, f'stock total debe preservarse en 7000g, got {total}'
+
+    # Verificación 4: audit_log tiene entrada UNIFICAR_MPS
+    audit = _query(
+        "SELECT accion, registro_id FROM audit_log "
+        "WHERE accion='UNIFICAR_MPS' AND registro_id=? "
+        "ORDER BY id DESC LIMIT 1",
+        (canonico,)
+    )
+    assert audit, 'audit_log debe tener entrada UNIFICAR_MPS'
+
+    # Validación: canónico en lista de duplicados → 400
+    r = cs.post(
+        '/api/admin/maestro-mps-unificar',
+        json={'codigo_canonico': canonico, 'codigos_duplicados': [canonico]},
+        headers=csrf_headers(),
+    )
+    assert r.status_code == 400, 'canonico en duplicados debe ser 400'
+
+    # Validación: MP inexistente → 404
+    r = cs.post(
+        '/api/admin/maestro-mps-unificar',
+        json={'codigo_canonico': canonico,
+              'codigos_duplicados': ['MP-NO-EXISTE']},
+        headers=csrf_headers(),
+    )
+    assert r.status_code == 404
+
+    # Cleanup
+    _exec("DELETE FROM movimientos WHERE material_id IN (?,?)",
+          (canonico, duplicado))
+    _exec("DELETE FROM maestro_mps WHERE codigo_mp IN (?,?)",
+          (canonico, duplicado))
+
+
+# ═══════════════════════════════════════════════════════════════════
 # GOLDEN PATH 57 · INV-8 · Stock mínimo se compara contra TOTAL del MP
 # ═══════════════════════════════════════════════════════════════════
 # Sebastián 9-may-2026: "el stock minimo dice 200 pero en cada uno

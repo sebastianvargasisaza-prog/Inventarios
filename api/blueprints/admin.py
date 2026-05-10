@@ -10536,6 +10536,249 @@ def auditoria_catalogo():
     }), 200
 
 
+@bp.route("/api/admin/maestro-mps-unificar", methods=["POST"])
+def maestro_mps_unificar():
+    """Fusiona 2+ MPs duplicadas en una canónica.
+
+    Sebastián 10-may-2026: tras auditoría detectamos grupos de MPs con
+    mismo INCI o nombre comercial pero códigos distintos (típicamente
+    casing inconsistente como SODIUM HYDROXIDE vs Sodium Hydroxide).
+    Este endpoint transfiere TODOS los movimientos de los duplicados
+    al código canónico elegido, archiva los duplicados (activo=0) y
+    deja audit_log con el snapshot.
+
+    Body JSON:
+      codigo_canonico: str      (la MP que sobrevive)
+      codigos_duplicados: []    (1+ MPs a fusionar y archivar)
+      motivo: str               (recomendado, queda en audit_log)
+      merge_force: bool         (opcional, default false · permite
+                                  fusionar aunque tengan diferente INCI/
+                                  nombre · solo para typos extremos)
+
+    Tablas que se actualizan (transacción atómica):
+      - movimientos.material_id          (TODOS los movs duplicados)
+      - formula_items.material_id        (recetas)
+      - conteo_items.codigo_mp           (conteos cíclicos)
+      - solicitudes_compra_items.codigo_mp (SOLs pendientes)
+      - mp_lead_time_config.material_id  (config de leadtime)
+      - maestro_mps.activo=0             (archive duplicados)
+      - audit_log                        (snapshot completo)
+
+    Returns:
+      { ok, canonico, duplicados_archivados, totales_transferidos: {
+        movimientos, formula_items, conteo_items, sol_items,
+        leadtime_config
+      } }
+
+    Errores:
+      400 codigo_canonico vacío o duplicado vacío
+      404 alguna MP no existe
+      409 INCI/nombre incompatibles sin merge_force
+      500 falla transaccional (rollback automático)
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    d = request.json or {}
+    canonico = (d.get('codigo_canonico') or '').strip().upper()
+    duplicados = d.get('codigos_duplicados') or []
+    motivo = (d.get('motivo') or '').strip()
+    merge_force = bool(d.get('merge_force'))
+
+    if not canonico:
+        return jsonify({'error': 'codigo_canonico requerido'}), 400
+    if not isinstance(duplicados, list) or not duplicados:
+        return jsonify({'error': 'codigos_duplicados debe ser lista no vacía'}), 400
+    duplicados = [str(x).strip().upper() for x in duplicados if str(x).strip()]
+    if not duplicados:
+        return jsonify({'error': 'codigos_duplicados vacíos tras strip'}), 400
+    if canonico in duplicados:
+        return jsonify({
+            'error': 'codigo_canonico no puede estar en codigos_duplicados',
+            'detail': f'{canonico} aparece en ambas listas.',
+        }), 400
+    if len(duplicados) > 20:
+        return jsonify({
+            'error': 'demasiados duplicados',
+            'detail': 'Máximo 20 MPs por fusión para evitar operaciones masivas accidentales.',
+        }), 400
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("PRAGMA busy_timeout=2000")
+    c = conn.cursor()
+
+    # 1. Validar canónico existe y está activo
+    row = c.execute(
+        "SELECT codigo_mp, nombre_inci, nombre_comercial, activo "
+        "FROM maestro_mps WHERE codigo_mp=?", (canonico,)
+    ).fetchone()
+    if not row:
+        conn.close()
+        return jsonify({
+            'error': 'Canónico no encontrado',
+            'detail': f'{canonico} no existe en maestro_mps',
+        }), 404
+    if not row[3]:
+        conn.close()
+        return jsonify({
+            'error': 'Canónico archivado',
+            'detail': f'{canonico} tiene activo=0. Reactivar primero o elegir otro canónico.',
+        }), 400
+    inci_canonico = (row[1] or '').strip().lower()
+    nc_canonico = (row[2] or '').strip().lower()
+
+    # 2. Validar cada duplicado existe y compatible
+    info_duplicados = []
+    incompat = []
+    for cod_d in duplicados:
+        row_d = c.execute(
+            "SELECT codigo_mp, nombre_inci, nombre_comercial, activo "
+            "FROM maestro_mps WHERE codigo_mp=?", (cod_d,)
+        ).fetchone()
+        if not row_d:
+            conn.close()
+            return jsonify({
+                'error': 'Duplicado no encontrado',
+                'detail': f'{cod_d} no existe en maestro_mps',
+            }), 404
+        inci_d = (row_d[1] or '').strip().lower()
+        nc_d = (row_d[2] or '').strip().lower()
+        info_duplicados.append({
+            'codigo_mp': cod_d,
+            'nombre_inci': row_d[1] or '',
+            'nombre_comercial': row_d[2] or '',
+            'activo': bool(row_d[3]),
+        })
+        if not merge_force:
+            # Si tienen INCI distinto Y nombre comercial distinto → sospechoso
+            if inci_canonico and inci_d and inci_canonico != inci_d:
+                if nc_canonico and nc_d and nc_canonico != nc_d:
+                    incompat.append({
+                        'codigo_mp': cod_d,
+                        'inci_duplicado': row_d[1],
+                        'inci_canonico': row[1],
+                    })
+
+    if incompat and not merge_force:
+        conn.close()
+        return jsonify({
+            'error': 'INCI/nombre incompatibles',
+            'detail': ('Algunos duplicados tienen INCI y nombre comercial '
+                       'diferentes al canónico. Si querés forzar la fusión '
+                       '(typos extremos), pasá merge_force=true.'),
+            'incompatibles': incompat,
+        }), 409
+
+    # 3. Ejecutar fusión en transacción
+    totales = {'movimientos': 0, 'formula_items': 0, 'conteo_items': 0,
+               'sol_items': 0, 'leadtime_config': 0}
+    try:
+        ph = ','.join(['?'] * len(duplicados))
+
+        # movimientos.material_id
+        c.execute(f"UPDATE movimientos SET material_id=? "
+                  f"WHERE material_id IN ({ph})", [canonico] + duplicados)
+        totales['movimientos'] = c.rowcount
+
+        # formula_items.material_id (si la tabla existe)
+        try:
+            c.execute(f"UPDATE formula_items SET material_id=? "
+                      f"WHERE material_id IN ({ph})", [canonico] + duplicados)
+            totales['formula_items'] = c.rowcount
+        except sqlite3.OperationalError:
+            pass
+
+        # conteo_items.codigo_mp (si la tabla existe)
+        try:
+            c.execute(f"UPDATE conteo_items SET codigo_mp=? "
+                      f"WHERE codigo_mp IN ({ph})", [canonico] + duplicados)
+            totales['conteo_items'] = c.rowcount
+        except sqlite3.OperationalError:
+            pass
+
+        # solicitudes_compra_items.codigo_mp (si la tabla existe)
+        try:
+            c.execute(f"UPDATE solicitudes_compra_items SET codigo_mp=? "
+                      f"WHERE codigo_mp IN ({ph})", [canonico] + duplicados)
+            totales['sol_items'] = c.rowcount
+        except sqlite3.OperationalError:
+            pass
+
+        # mp_lead_time_config.material_id
+        try:
+            # Para evitar UNIQUE conflicts (si canónico ya tiene config),
+            # primero borramos los configs de duplicados que colisionarían.
+            existe_canonico_lt = c.execute(
+                "SELECT 1 FROM mp_lead_time_config WHERE material_id=?",
+                (canonico,)
+            ).fetchone()
+            if existe_canonico_lt:
+                # canónico ya tiene config · borrar configs de duplicados
+                c.execute(f"DELETE FROM mp_lead_time_config "
+                          f"WHERE material_id IN ({ph})", duplicados)
+                totales['leadtime_config'] = c.rowcount
+            else:
+                # canónico sin config · transferir del primero que tenga
+                c.execute(f"UPDATE mp_lead_time_config SET material_id=? "
+                          f"WHERE material_id=(SELECT material_id "
+                          f"  FROM mp_lead_time_config WHERE material_id IN ({ph}) "
+                          f"  LIMIT 1)",
+                          [canonico] + duplicados)
+                totales['leadtime_config'] = c.rowcount
+                # Borrar las restantes (si las hay)
+                c.execute(f"DELETE FROM mp_lead_time_config "
+                          f"WHERE material_id IN ({ph})", duplicados)
+        except sqlite3.OperationalError:
+            pass
+
+        # Archive duplicados
+        c.execute(f"UPDATE maestro_mps SET activo=0 "
+                  f"WHERE codigo_mp IN ({ph})", duplicados)
+
+        # Audit log
+        try:
+            import json as _json
+            audit_log(
+                c, usuario=u, accion='UNIFICAR_MPS', tabla='maestro_mps',
+                registro_id=canonico,
+                despues={
+                    'canonico': canonico,
+                    'duplicados_archivados': duplicados,
+                    'motivo': motivo,
+                    'merge_force': merge_force,
+                    'totales_transferidos': totales,
+                    'info_duplicados': info_duplicados,
+                },
+                detalle=(f'Fusión MPs: {len(duplicados)} duplicados → {canonico} · '
+                         f'{totales["movimientos"]} movimientos transferidos'),
+            )
+        except Exception:
+            pass
+
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        return jsonify({
+            'error': 'Falla transaccional en fusión',
+            'detail': str(e)[:300],
+            'rollback': 'aplicado · ningún cambio persistió',
+        }), 500
+
+    conn.close()
+
+    return jsonify({
+        'ok': True,
+        'canonico': canonico,
+        'duplicados_archivados': duplicados,
+        'totales_transferidos': totales,
+        'message': (f'✓ {len(duplicados)} MP(s) fusionada(s) en {canonico} · '
+                    f'{totales["movimientos"]} movimientos transferidos · '
+                    f'duplicados archivados (activo=0).'),
+    }), 200
+
+
 @bp.route("/admin/auditoria-catalogo", methods=["GET"])
 def admin_auditoria_catalogo_page():
     """UI HTML que consume /api/admin/auditoria-catalogo y muestra
@@ -10651,7 +10894,13 @@ function renderSeccion(sev, titulo, items){
     html+='<div class="finding '+sev+'">';
     html+='<h4>'+esc(k.replace(/_/g,' '))+
           ' <span class="count">'+arr.length+'</span></h4>';
-    html+=renderTabla(arr);
+    // Sebastián 10-may-2026: renderizar grupos de duplicados con botón
+    // "Fusionar" cuando aplica (inci_duplicado / nombre_comercial_duplicado).
+    if(k==='inci_duplicado' || k==='nombre_comercial_duplicado'){
+      html+=renderGruposFusion(arr, k);
+    } else {
+      html+=renderTabla(arr);
+    }
     html+='</div>';
   });
   // Errors si hubo
@@ -10681,6 +10930,149 @@ function renderTabla(arr){
   html+='</tbody></table>';
   if(arr.length>30)html+='<div style="font-size:11px;color:#64748b;margin-top:6px">... y '+(arr.length-30)+' más (limitado a 30 en UI)</div>';
   return html;
+}
+
+// Sebastián 10-may-2026: render de grupos de duplicados con botón
+// "Fusionar grupo" que abre modal para elegir cuál es canónico.
+window._gruposFusion = {};
+function renderGruposFusion(arr, tipoKey){
+  if(!arr.length)return '<div class="empty">vacío</div>';
+  var html='<table><thead><tr>'+
+           '<th>Normalizado</th><th>Códigos MP</th><th>Variantes raw</th>'+
+           '<th style="text-align:center">Acción</th></tr></thead><tbody>';
+  arr.slice(0,30).forEach(function(row,idx){
+    var key = tipoKey+'_'+idx;
+    window._gruposFusion[key] = row;
+    var norm = row.inci_normalizado || row.nombre_normalizado || '';
+    var codigos = row.codigos_mp || [];
+    var variantes = row.variantes_raw || '';
+    html+='<tr>';
+    html+='<td><code>'+esc(norm)+'</code></td>';
+    html+='<td style="font-family:monospace;font-size:11px">'+esc(codigos.join(', '))+'</td>';
+    html+='<td>'+esc(variantes)+'</td>';
+    html+='<td style="text-align:center">'+
+          '<button onclick="abrirModalFusion(\''+esc(key)+'\')" '+
+          'style="background:#7c3aed;color:white;border:none;padding:5px 12px;'+
+          'border-radius:4px;cursor:pointer;font-size:11px;font-weight:700">'+
+          '🔀 Fusionar</button></td>';
+    html+='</tr>';
+  });
+  html+='</tbody></table>';
+  if(arr.length>30)html+='<div style="font-size:11px;color:#64748b;margin-top:6px">... y '+(arr.length-30)+' más</div>';
+  return html;
+}
+
+function abrirModalFusion(key){
+  var g = window._gruposFusion[key];
+  if(!g){alert('Grupo no encontrado'); return;}
+  var codigos = g.codigos_mp || [];
+  if(codigos.length < 2){alert('Necesito al menos 2 códigos para fusionar'); return;}
+
+  // Crear modal dinámicamente si no existe
+  var modal = document.getElementById('modal-fusion');
+  if(!modal){
+    modal = document.createElement('div');
+    modal.id='modal-fusion';
+    modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:9999;'+
+                       'display:flex;align-items:center;justify-content:center;padding:20px';
+    document.body.appendChild(modal);
+  }
+  var norm = g.inci_normalizado || g.nombre_normalizado || '';
+  var opciones = codigos.map(function(cod){
+    return '<label style="display:flex;align-items:center;gap:10px;padding:10px;'+
+           'border:2px solid #e2e8f0;border-radius:6px;margin-bottom:8px;cursor:pointer;'+
+           'font-family:monospace" '+
+           'onmouseover="this.style.borderColor=\'#7c3aed\';this.style.background=\'#faf5ff\'" '+
+           'onmouseout="this.style.borderColor=\'#e2e8f0\';this.style.background=\'white\'">'+
+           '<input type="radio" name="fusion-canonico" value="'+esc(cod)+'" '+
+           'style="margin:0"><span style="font-weight:700">'+esc(cod)+'</span></label>';
+  }).join('');
+  modal.innerHTML =
+    '<div style="background:white;border-radius:10px;padding:24px;max-width:600px;width:100%;'+
+    'box-shadow:0 20px 60px rgba(0,0,0,.4)">'+
+    '<h2 style="margin:0 0 12px;color:#7c3aed;font-size:18px">🔀 Fusionar MPs duplicadas</h2>'+
+    '<p style="color:#64748b;font-size:13px;margin-bottom:14px">'+
+    'Grupo: <code style="background:#f1f5f9;padding:2px 6px;border-radius:3px">'+esc(norm)+'</code></p>'+
+    '<p style="font-size:13px;margin-bottom:14px"><b>Elegí cuál MP es la <span style="color:#7c3aed">CANÓNICA</span></b> '+
+    '(la que sobrevive). Las otras se archivan y sus movimientos se transfieren a la canónica.</p>'+
+    '<div style="margin-bottom:14px">'+opciones+'</div>'+
+    '<div style="margin-bottom:14px">'+
+    '<label style="display:block;font-size:12px;font-weight:600;margin-bottom:4px;color:#475569">'+
+    'Motivo (queda en audit_log)</label>'+
+    '<input type="text" id="fusion-motivo" placeholder="Ej: casing inconsistente · auditoría 10-may" '+
+    'style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px"></div>'+
+    '<div style="display:flex;gap:8px;justify-content:flex-end">'+
+    '<button onclick="document.getElementById(\'modal-fusion\').remove()" '+
+    'style="background:#94a3b8;color:white;border:none;padding:8px 16px;border-radius:6px;'+
+    'cursor:pointer;font-weight:700">Cancelar</button>'+
+    '<button onclick="ejecutarFusion()" id="btn-ejecutar-fusion" '+
+    'style="background:#7c3aed;color:white;border:none;padding:8px 16px;border-radius:6px;'+
+    'cursor:pointer;font-weight:700">✓ Fusionar</button>'+
+    '</div>'+
+    '<div id="fusion-msg" style="margin-top:12px;font-size:13px"></div>'+
+    '</div>';
+  modal.dataset.codigos = JSON.stringify(codigos);
+}
+
+async function ejecutarFusion(){
+  var modal = document.getElementById('modal-fusion');
+  if(!modal) return;
+  var radio = modal.querySelector('input[name="fusion-canonico"]:checked');
+  if(!radio){
+    document.getElementById('fusion-msg').innerHTML =
+      '<span style="color:#dc2626">Elegí cuál código será el canónico.</span>';
+    return;
+  }
+  var canonico = radio.value;
+  var codigos = JSON.parse(modal.dataset.codigos || '[]');
+  var duplicados = codigos.filter(function(c){return c !== canonico;});
+  var motivo = (document.getElementById('fusion-motivo').value || '').trim();
+  if(!confirm('¿FUSIONAR?\\n\\n'+
+              'Canónico (sobrevive): '+canonico+'\\n'+
+              'A archivar: '+duplicados.join(', ')+'\\n\\n'+
+              'Esto transferirá TODOS los movimientos al canónico. Acción rastreable en audit_log.')){
+    return;
+  }
+  var btn = document.getElementById('btn-ejecutar-fusion');
+  btn.disabled = true; btn.textContent = '⏳ Fusionando...';
+  document.getElementById('fusion-msg').innerHTML =
+    '<span style="color:#64748b">Procesando · esto puede tardar unos segundos...</span>';
+  try{
+    var r = await fetch('/api/admin/maestro-mps-unificar', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        codigo_canonico: canonico,
+        codigos_duplicados: duplicados,
+        motivo: motivo,
+      }),
+    });
+    var d = {}; try{d = await r.json();}catch(e){}
+    if(r.ok){
+      var t = d.totales_transferidos || {};
+      document.getElementById('fusion-msg').innerHTML =
+        '<div style="color:#16a34a;font-weight:700;padding:8px;background:#dcfce7;border-radius:6px">'+
+        '✓ '+esc(d.message||'Fusión completada')+'<br>'+
+        '<small style="color:#15803d;font-weight:400">Transferidos: '+
+        (t.movimientos||0)+' movs · '+
+        (t.formula_items||0)+' fórmulas · '+
+        (t.conteo_items||0)+' conteos · '+
+        (t.sol_items||0)+' SOLs</small></div>';
+      setTimeout(function(){
+        document.getElementById('modal-fusion').remove();
+        ejecutarAudit();  // recargar auditoría · el grupo debería desaparecer
+      }, 2200);
+    } else {
+      document.getElementById('fusion-msg').innerHTML =
+        '<div style="color:#dc2626;padding:8px;background:#fee2e2;border-radius:6px">'+
+        '❌ Error '+r.status+': '+esc(d.error||'unknown')+
+        (d.detail ? '<br><small>'+esc(d.detail)+'</small>' : '')+'</div>';
+      btn.disabled = false; btn.textContent = '✓ Fusionar';
+    }
+  }catch(e){
+    document.getElementById('fusion-msg').innerHTML =
+      '<span style="color:#dc2626">Error de red: '+e.message+'</span>';
+    btn.disabled = false; btn.textContent = '✓ Fusionar';
+  }
 }
 
 // Auto-ejecutar al cargar
