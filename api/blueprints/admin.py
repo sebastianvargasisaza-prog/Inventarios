@@ -10195,3 +10195,342 @@ def admin_import_inventario_envase_xlsx():
                    f'{ajustes_stock} con cambio de stock'
                    + (f' · {archivados} archivados (modo reset)' if archivados else ''),
     })
+
+
+# ─── Auditoría de Catálogo MPs ────────────────────────────────────────────────
+# Sebastián 10-may-2026: detectar duplicados, inconsistencias y huérfanos
+# antes del inventario físico. Read-only · admin only · 12 checks.
+
+@bp.route("/api/admin/auditoria-catalogo", methods=["GET"])
+def auditoria_catalogo():
+    """Audit completo del catálogo de MPs y bodega.
+
+    Detecta 12 tipos de inconsistencias agrupados por severidad:
+
+    ALTA (bloquean producción / pérdida trazabilidad):
+      1. Códigos MP duplicados activos (debería ser imposible por PK)
+      2. Mismo INCI con códigos MP distintos
+      3. Stock negativo por MP/lote
+      4. Lotes vencidos pero estado_lote=VIGENTE con stock > 0
+
+    MEDIA (operativos · confunden trabajo diario):
+      5. Mismo nombre comercial con códigos distintos
+      6. Movimientos huérfanos (material_id sin fila en maestro_mps)
+      7. Tipo material inválido (fuera de MP/Envase Primario/etc)
+      8. Lotes duplicados entre MPs distintas (mismo número de lote)
+      9. Códigos MP con espacios o caracteres extraños
+
+    BAJA (limpieza):
+      10. MPs activas sin movimientos (catálogo muerto)
+      11. Proveedores con casing inconsistente
+      12. Nombres muy similares (fuzzy · típicamente typos)
+
+    Returns:
+      {
+        ok: bool,
+        timestamp: ISO,
+        resumen: {n_alta, n_media, n_baja, n_total_findings},
+        findings: { alta: {...}, media: {...}, baja: {...} },
+      }
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    import datetime as _dt
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("PRAGMA busy_timeout=2000")
+    c = conn.cursor()
+    findings = {'alta': {}, 'media': {}, 'baja': {}}
+
+    # === ALTA ===
+    # 1. Códigos MP duplicados activos (PK debería prevenir, verificar)
+    try:
+        rows = c.execute("""
+            SELECT codigo_mp, COUNT(*) as cnt
+            FROM maestro_mps WHERE activo=1
+            GROUP BY codigo_mp HAVING cnt > 1
+        """).fetchall()
+        findings['alta']['codigos_mp_duplicados'] = [
+            {'codigo_mp': r[0], 'count': r[1]} for r in rows
+        ]
+    except Exception as e:
+        findings['alta']['codigos_mp_duplicados_err'] = str(e)[:200]
+
+    # 2. Mismo INCI con códigos MP distintos
+    try:
+        rows = c.execute("""
+            SELECT LOWER(TRIM(nombre_inci)) as inci_norm,
+                   GROUP_CONCAT(codigo_mp) as codigos,
+                   COUNT(*) as cnt,
+                   GROUP_CONCAT(DISTINCT nombre_inci) as variantes
+            FROM maestro_mps
+            WHERE activo=1 AND nombre_inci IS NOT NULL
+                  AND TRIM(nombre_inci) != ''
+            GROUP BY LOWER(TRIM(nombre_inci))
+            HAVING cnt > 1
+            ORDER BY cnt DESC LIMIT 100
+        """).fetchall()
+        findings['alta']['inci_duplicado'] = [
+            {'inci_normalizado': r[0], 'codigos_mp': (r[1] or '').split(','),
+             'count': r[2], 'variantes_raw': r[3]}
+            for r in rows
+        ]
+    except Exception as e:
+        findings['alta']['inci_duplicado_err'] = str(e)[:200]
+
+    # 3. Stock negativo por MP/lote
+    try:
+        rows = c.execute("""
+            SELECT material_id, COALESCE(lote,'') as lote,
+                   ROUND(SUM(CASE WHEN tipo='Entrada' THEN cantidad
+                                  ELSE -cantidad END), 2) as stock_neto,
+                   COUNT(*) as n_movs
+            FROM movimientos
+            GROUP BY material_id, lote
+            HAVING stock_neto < -0.5
+            ORDER BY stock_neto ASC LIMIT 50
+        """).fetchall()
+        findings['alta']['stock_negativo'] = [
+            {'material_id': r[0], 'lote': r[1],
+             'stock_neto_g': r[2], 'n_movimientos': r[3]}
+            for r in rows
+        ]
+    except Exception as e:
+        findings['alta']['stock_negativo_err'] = str(e)[:200]
+
+    # 4. Lotes vencidos pero estado_lote=VIGENTE con stock > 0
+    try:
+        rows = c.execute("""
+            SELECT material_id, COALESCE(lote,'') as lote,
+                   MAX(fecha_vencimiento) as fv,
+                   ROUND(SUM(CASE WHEN tipo='Entrada' THEN cantidad
+                                  ELSE -cantidad END), 2) as stock,
+                   MAX(estado_lote) as estado
+            FROM movimientos
+            WHERE COALESCE(fecha_vencimiento,'') != ''
+                  AND fecha_vencimiento < date('now')
+                  AND UPPER(COALESCE(estado_lote,'')) IN ('VIGENTE', '')
+            GROUP BY material_id, lote
+            HAVING stock > 0.5
+            ORDER BY fv ASC LIMIT 100
+        """).fetchall()
+        findings['alta']['vencidos_pero_vigente'] = [
+            {'material_id': r[0], 'lote': r[1], 'fecha_venc': r[2],
+             'stock_g': r[3], 'estado_lote': r[4]}
+            for r in rows
+        ]
+    except Exception as e:
+        findings['alta']['vencidos_err'] = str(e)[:200]
+
+    # === MEDIA ===
+    # 5. Mismo nombre comercial con códigos distintos
+    try:
+        rows = c.execute("""
+            SELECT LOWER(TRIM(nombre_comercial)) as nc_norm,
+                   GROUP_CONCAT(codigo_mp) as codigos,
+                   COUNT(*) as cnt,
+                   GROUP_CONCAT(DISTINCT nombre_comercial) as variantes
+            FROM maestro_mps
+            WHERE activo=1 AND nombre_comercial IS NOT NULL
+                  AND TRIM(nombre_comercial) != ''
+            GROUP BY LOWER(TRIM(nombre_comercial))
+            HAVING cnt > 1
+            ORDER BY cnt DESC LIMIT 100
+        """).fetchall()
+        findings['media']['nombre_comercial_duplicado'] = [
+            {'nombre_normalizado': r[0], 'codigos_mp': (r[1] or '').split(','),
+             'count': r[2], 'variantes_raw': r[3]}
+            for r in rows
+        ]
+    except Exception as e:
+        findings['media']['nombre_dup_err'] = str(e)[:200]
+
+    # 6. Movimientos huérfanos (material_id sin fila activa en maestro_mps)
+    try:
+        rows = c.execute("""
+            SELECT m.material_id, COUNT(*) as movs,
+                   ROUND(SUM(CASE WHEN m.tipo='Entrada' THEN m.cantidad
+                                  ELSE -m.cantidad END), 2) as stock
+            FROM movimientos m
+            LEFT JOIN maestro_mps mp ON m.material_id = mp.codigo_mp AND mp.activo=1
+            WHERE mp.codigo_mp IS NULL
+                  AND m.material_id IS NOT NULL AND TRIM(m.material_id) != ''
+            GROUP BY m.material_id
+            ORDER BY movs DESC LIMIT 50
+        """).fetchall()
+        findings['media']['movs_huerfanos'] = [
+            {'material_id': r[0], 'n_movimientos': r[1], 'stock_actual_g': r[2]}
+            for r in rows
+        ]
+    except Exception as e:
+        findings['media']['huerfanos_err'] = str(e)[:200]
+
+    # 7. Tipo material inválido
+    try:
+        rows = c.execute("""
+            SELECT codigo_mp, COALESCE(tipo_material,'(null)') as tm,
+                   COALESCE(nombre_comercial,'') as nc
+            FROM maestro_mps
+            WHERE activo=1
+                  AND COALESCE(tipo_material,'') NOT IN
+                      ('MP','Envase Primario','Envase Secundario','Empaque','')
+            LIMIT 100
+        """).fetchall()
+        findings['media']['tipo_material_invalido'] = [
+            {'codigo_mp': r[0], 'tipo_material': r[1], 'nombre': r[2]}
+            for r in rows
+        ]
+    except Exception as e:
+        findings['media']['tipo_invalido_err'] = str(e)[:200]
+
+    # 8. Lotes duplicados entre MPs distintas
+    try:
+        rows = c.execute("""
+            SELECT lote, COUNT(DISTINCT material_id) as mps_count,
+                   GROUP_CONCAT(DISTINCT material_id) as materiales
+            FROM movimientos
+            WHERE COALESCE(lote,'') != ''
+            GROUP BY lote
+            HAVING mps_count > 1
+            ORDER BY mps_count DESC LIMIT 50
+        """).fetchall()
+        findings['media']['lote_compartido_entre_mps'] = [
+            {'lote': r[0], 'cantidad_mps': r[1],
+             'material_ids': (r[2] or '').split(',')}
+            for r in rows
+        ]
+    except Exception as e:
+        findings['media']['lote_compartido_err'] = str(e)[:200]
+
+    # 9. Códigos MP con espacios o caracteres extraños
+    try:
+        import re as _re
+        rows = c.execute("""
+            SELECT codigo_mp, LENGTH(codigo_mp) as len
+            FROM maestro_mps WHERE activo=1
+        """).fetchall()
+        sospechosos = []
+        for cod, ln in rows:
+            if cod is None:
+                continue
+            stripped = (cod or '').strip()
+            issues = []
+            if cod != stripped:
+                issues.append('espacios_borde')
+            if '  ' in (cod or ''):
+                issues.append('espacios_dobles')
+            if not _re.match(r'^[A-Za-z0-9_\-]+$', stripped):
+                issues.append('caracter_extraño')
+            if issues:
+                sospechosos.append({'codigo_mp': cod, 'issues': issues})
+        findings['media']['codigos_caracter_extraño'] = sospechosos[:50]
+    except Exception as e:
+        findings['media']['caracter_err'] = str(e)[:200]
+
+    # === BAJA ===
+    # 10. MPs activas sin movimientos
+    try:
+        rows = c.execute("""
+            SELECT mp.codigo_mp,
+                   SUBSTR(COALESCE(mp.nombre_comercial,''),1,50) as nc,
+                   COALESCE(mp.tipo_material,'MP') as tm
+            FROM maestro_mps mp
+            LEFT JOIN movimientos mov ON mp.codigo_mp = mov.material_id
+            WHERE mp.activo=1 AND mov.id IS NULL
+            ORDER BY mp.codigo_mp LIMIT 100
+        """).fetchall()
+        findings['baja']['mps_sin_movimientos'] = [
+            {'codigo_mp': r[0], 'nombre': r[1], 'tipo_material': r[2]}
+            for r in rows
+        ]
+    except Exception as e:
+        findings['baja']['sin_movs_err'] = str(e)[:200]
+
+    # 11. Proveedores con casing inconsistente (resumen, ya hay endpoint)
+    try:
+        rows = c.execute("""
+            SELECT LOWER(TRIM(proveedor)) as prov_norm,
+                   COUNT(DISTINCT proveedor) as variantes,
+                   GROUP_CONCAT(DISTINCT proveedor) as raw
+            FROM movimientos
+            WHERE proveedor IS NOT NULL AND TRIM(proveedor) != ''
+            GROUP BY LOWER(TRIM(proveedor))
+            HAVING variantes > 1
+            ORDER BY variantes DESC LIMIT 50
+        """).fetchall()
+        findings['baja']['proveedores_casing'] = [
+            {'normalizado': r[0], 'cantidad_variantes': r[1],
+             'variantes': (r[2] or '').split(',')}
+            for r in rows
+        ]
+    except Exception as e:
+        findings['baja']['prov_casing_err'] = str(e)[:200]
+
+    # 12. Nombres muy similares (fuzzy con difflib)
+    try:
+        import difflib as _diff
+        rows = c.execute("""
+            SELECT codigo_mp, COALESCE(nombre_comercial,''), COALESCE(nombre_inci,'')
+            FROM maestro_mps WHERE activo=1
+        """).fetchall()
+        # Limitar comparaciones a 800 MPs para evitar O(n²) explosivo (n=400 → 80k pares)
+        rows = rows[:800]
+        similares = []
+        seen = set()
+        for i in range(len(rows)):
+            cod_i, nc_i, _ = rows[i]
+            nc_i_norm = (nc_i or '').strip().lower()
+            if len(nc_i_norm) < 5:
+                continue
+            for j in range(i+1, len(rows)):
+                cod_j, nc_j, _ = rows[j]
+                nc_j_norm = (nc_j or '').strip().lower()
+                if len(nc_j_norm) < 5:
+                    continue
+                if nc_i_norm == nc_j_norm:
+                    continue  # exacto ya capturado en check #5
+                # Filtro rápido: longitudes muy distintas → skip
+                if abs(len(nc_i_norm) - len(nc_j_norm)) > 4:
+                    continue
+                ratio = _diff.SequenceMatcher(None, nc_i_norm, nc_j_norm).ratio()
+                if ratio >= 0.85:
+                    pair = tuple(sorted([cod_i, cod_j]))
+                    if pair in seen:
+                        continue
+                    seen.add(pair)
+                    similares.append({
+                        'codigos': list(pair),
+                        'nombres': [nc_i, nc_j],
+                        'similaridad': round(ratio, 3),
+                    })
+                    if len(similares) >= 30:
+                        break
+            if len(similares) >= 30:
+                break
+        findings['baja']['nombres_similares_fuzzy'] = similares
+    except Exception as e:
+        findings['baja']['fuzzy_err'] = str(e)[:200]
+
+    conn.close()
+
+    # Resumen
+    def _count_real(d):
+        # ignorar claves *_err en counts
+        return sum(len(v) for k, v in d.items()
+                   if not k.endswith('_err') and isinstance(v, list))
+    n_alta = _count_real(findings['alta'])
+    n_media = _count_real(findings['media'])
+    n_baja = _count_real(findings['baja'])
+
+    return jsonify({
+        'ok': True,
+        'timestamp': _dt.datetime.utcnow().isoformat() + 'Z',
+        'resumen': {
+            'n_alta': n_alta,
+            'n_media': n_media,
+            'n_baja': n_baja,
+            'n_total_findings': n_alta + n_media + n_baja,
+        },
+        'findings': findings,
+    }), 200
