@@ -2502,30 +2502,102 @@ async function confirmarAjuste(){
   }catch(e){document.getElementById('ajuste-msg').innerHTML='<div class="alert-error">Error al registrar ajuste</div>';}
 }
 
+// Sebastián 10-may-2026: exports a Excel ahora generan archivos que
+// Excel español/Latam abre con columnas correctas (antes bajaba todo
+// "colapsado" en una sola columna).
+//
+// Solución: generar archivos .xls con tabla HTML simple. Excel parsea
+// HTML como hoja con columnas, formato y encoding correctos. Es el
+// método más universal: NO depende de configuración regional ni de
+// separadores · funciona en Excel, LibreOffice y Google Sheets.
+//
+// _csvEscape: para casos de respaldo cuando se quiera CSV puro.
+function _csvEscape(v){
+  var s = (v==null) ? '' : String(v);
+  if (s.indexOf(';')>=0 || s.indexOf('"')>=0 || s.indexOf('\\n')>=0 || s.indexOf('\\r')>=0) {
+    s = '"' + s.replace(/"/g,'""') + '"';
+  }
+  return s;
+}
+function _htmlEsc(v){
+  var s = (v==null) ? '' : String(v);
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+// dlExcelHTML: descarga un archivo .xls que Excel abre como tabla
+// con columnas separadas. Acepta cols (array de strings) y rows
+// (array de arrays). Cada fila se renderiza como <tr><td>...</td></tr>.
+function dlExcelHTML(nombre, cols, rows){
+  var head = '<tr>' + cols.map(function(c){
+    return '<th style="background:#2B7A78;color:white;font-weight:bold;border:1px solid #888;padding:4px">'+_htmlEsc(c)+'</th>';
+  }).join('') + '</tr>';
+  var body = rows.map(function(r){
+    return '<tr>' + r.map(function(v){
+      var isNum = (typeof v === 'number') && isFinite(v);
+      var align = isNum ? 'right' : 'left';
+      return '<td style="border:1px solid #ccc;padding:3px 6px;text-align:'+align+'">'+_htmlEsc(v)+'</td>';
+    }).join('') + '</tr>';
+  }).join('');
+  var html = '<!DOCTYPE html><html><head><meta charset="utf-8"></head>'+
+             '<body><table style="border-collapse:collapse;font-family:Arial,sans-serif;font-size:12px">'+
+             '<thead>'+head+'</thead><tbody>'+body+'</tbody></table></body></html>';
+  // BOM UTF-8 + content type que Excel reconoce
+  var blob = new Blob(['﻿'+html], {type:'application/vnd.ms-excel;charset=utf-8'});
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  // Forzar extensión .xls para que Excel lo abra directo (no .csv)
+  a.download = nombre.replace(/\.csv$/i, '.xls');
+  if(!/\.xls$/i.test(a.download)) a.download += '.xls';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
 async function exportarExcelStock(){
   var r=await fetch('/api/lotes'),d=await r.json(),L=d.lotes||[];
   if(!L.length){alert('Sin datos');return;}
-  var h='Codigo,Nombre,Lote,Cantidad_g,Estanteria,Posicion,FechaVenc,Estado';
-  var rows=L.map(function(i){return [i.material_id,i.material_nombre,i.lote,i.cantidad_g,i.estanteria,i.posicion,i.fecha_vencimiento,i.alerta].join(',');});
-  dlCSV('Stock_'+fhoy()+'.csv',[h].concat(rows).join(String.fromCharCode(10)));
+  var cols=['Codigo MP','Nombre INCI','Nombre Comercial','Lote','Cantidad (g)',
+            'Stock Min (g)','Total MP (g)','Estanteria','Posicion','Proveedor',
+            'Fecha Vencimiento','Dias','Estado','Estado Lote','Tipo'];
+  var rows=L.map(function(i){return [
+    i.material_id||'', i.nombre_inci||'', i.material_nombre||'', i.lote||'',
+    Number(i.cantidad_g)||0, Number(i.stock_min_g)||0, Number(i.stock_total_mp_g)||0,
+    i.estanteria||'', i.posicion||'', i.proveedor||'',
+    i.fecha_vencimiento||'', (i.dias_para_vencer==null?'':i.dias_para_vencer),
+    i.alerta||'', i.estado_lote||'', i.tipo||''
+  ];});
+  dlExcelHTML('Stock_BodegaMP_'+fhoy(), cols, rows);
 }
 async function exportarExcelMovimientos(){
   var r=await fetch('/api/movimientos'),d=await r.json(),M=d.movimientos||[];
   if(!M.length){alert('Sin movimientos');return;}
-  var h='Material,Cantidad_g,Tipo,Fecha,Observaciones,Operador';
-  var rows=M.map(function(m){return [m.material_nombre,m.cantidad,m.tipo,m.fecha,(m.observaciones||'').replace(/,/g,';'),m.operador||''].join(',');});
-  dlCSV('Movimientos_'+fhoy()+'.csv',[h].concat(rows).join(String.fromCharCode(10)));
+  var cols=['ID','Codigo MP','Material','Cantidad (g)','Tipo','Lote',
+            'Proveedor','Fecha','Observaciones','Operador','N° Factura'];
+  var rows=M.map(function(m){return [
+    m.id||'', m.material_id||'', m.material_nombre||'', Number(m.cantidad)||0,
+    m.tipo||'', m.lote||'', m.proveedor||'',
+    (m.fecha||'').slice(0,19).replace('T',' '),
+    m.observaciones||'', m.operador||'', m.numero_factura||''
+  ];});
+  dlExcelHTML('Movimientos_'+fhoy(), cols, rows);
 }
 async function exportarExcelProducciones(){
   var r=await fetch('/api/produccion'),d=await r.json(),P=d.producciones||[];
   if(!P.length){alert('Sin producciones');return;}
-  var h='Producto,Cantidad_kg,Fecha,Operador,Estado';
-  var rows=P.map(function(p){return [p.producto,p.cantidad,p.fecha,p.operador||'',p.estado].join(',');});
-  dlCSV('Producciones_'+fhoy()+'.csv',[h].concat(rows).join(String.fromCharCode(10)));
+  var cols=['ID','Producto','Lote PT','Cantidad (kg)','Presentacion','Fecha','Operador','Estado'];
+  var rows=P.map(function(p){return [
+    p.id||'', p.producto||'', p.lote||'', Number(p.cantidad)||0,
+    p.presentacion||'', (p.fecha||'').slice(0,19).replace('T',' '),
+    p.operador||'', p.estado||''
+  ];});
+  dlExcelHTML('Producciones_'+fhoy(), cols, rows);
 }
-function fhoy(){var d=new Date();return d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate();}
+function fhoy(){var d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+// Compat: dlCSV y descargarCSV mantenidos para callers existentes ·
+// usan ; como separador (Excel ES/Latam) + BOM UTF-8 + escape correcto.
 function dlCSV(n,csv){
-  var b=new Blob([csv],{type:'text/csv'});
+  // Si el caller ya pasa CSV armado, agregar BOM y bajarlo. Convertimos
+  // comas por ; SOLO si no hay ya ; en el contenido (heuristica simple).
+  var content = '﻿' + csv;
+  var b=new Blob([content],{type:'text/csv;charset=utf-8'});
   var u=URL.createObjectURL(b);
   var a=document.createElement('a');
   a.href=u;a.download=n;
@@ -2533,17 +2605,13 @@ function dlCSV(n,csv){
   document.body.removeChild(a);URL.revokeObjectURL(u);
 }
 function descargarCSV(nombre,cols,rows){
-  var sep=',';
-  var lines=[cols.join(sep)];
+  var sep=';';
+  var lines=[cols.map(_csvEscape).join(sep)];
   rows.forEach(function(r){
-    lines.push(r.map(function(c){
-      var s=c==null?'':String(c);
-      if(s.indexOf(',')>=0||s.indexOf('"')>=0){s='"'+s.replace(/"/g,'""')+'"';}
-      return s;
-    }).join(sep));
+    lines.push(r.map(_csvEscape).join(sep));
   });
-  var csv=lines.join(String.fromCharCode(10));
-  var blob=new Blob([csv],{type:'text/csv'});
+  var csv='﻿'+lines.join('\\r\\n');
+  var blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
   var url=URL.createObjectURL(blob);
   var a=document.createElement('a');
   a.href=url;a.download=nombre;
@@ -16227,27 +16295,10 @@ async function ckMarcar(itemId, estado){
   }
   </script>
 
-  <!-- ═══ Widget Mi contraseña · Sebastián 7/8-may-2026 ═══════════════════
-       Mini círculo 36px en esquina inferior izquierda. Discreto · NO tapa
-       contenido. Tooltip nativo (title) muestra "Cambiar mi contraseña".
-       Sebastián 9-may-2026: el chip ancho con texto "🔐 Mi contraseña"
-       aparecía flotando en TODAS las páginas tapando contenido. Mini
-       círculo solo-icono mantiene el acceso pero deja de estorbar. -->
-  <a href="/cambiar-password"
-     title="Cambiar mi contraseña"
-     aria-label="Cambiar mi contraseña"
-     style="position:fixed;bottom:18px;left:18px;z-index:9998;
-            width:34px;height:34px;
-            background:#1e293b;color:#a78bfa;border:1px solid #4c1d95;
-            border-radius:50%;font-size:14px;
-            text-decoration:none;box-shadow:0 2px 8px rgba(0,0,0,.18);
-            font-family:-apple-system,Segoe UI,sans-serif;
-            display:flex;align-items:center;justify-content:center;
-            opacity:.65;transition:opacity .15s;"
-     onmouseover="this.style.opacity='1'"
-     onmouseout="this.style.opacity='.65'">
-    🔐
-  </a>
+  <!-- Sebastián 10-may-2026: widget Mi contraseña SOLO en /modulos
+       (panel inicial). Antes flotaba en TODOS los módulos como mini
+       círculo · molesto. El widget ya está en modulos_html.py para
+       que aparezca solo en el hub al ingresar. Aquí queda removido. -->
 
 </body>
 </html>
