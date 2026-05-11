@@ -12677,6 +12677,259 @@ def auditoria_producciones_descuento():
     }), 200
 
 
+@bp.route("/api/admin/auditoria-kardex-drift", methods=["GET"])
+def auditoria_kardex_drift():
+    """S3 · Drift inventario · stock derivado vs movimientos (read-only).
+
+    Sebastián 8-may-2026: el corazón de zero-error. Para CADA MP el stock
+    debe derivarse exactamente de SUM(entradas) - SUM(salidas) + ajustes.
+    Si hay drift (stock negativo o discrepancia), es bug operativo: doble
+    descuento, ajuste sin contrapartida, etc.
+
+    Usa los helpers existentes:
+      - detect_drift_mp(conn): MPs con stock NEGATIVO
+      - detect_drift_mee(conn): MEEs con drift entre maestro_mee.stock_actual
+        y SUM(movimientos_mee)
+
+    Score 100 = sin drift. Cada item con drift baja el score proporcional
+    al total de MPs activas.
+
+    Returns:
+      {
+        ok, score, veredicto, resumen, mp_negativos, mee_drift
+      }
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("PRAGMA busy_timeout=2000")
+
+    try:
+        from inventario_helpers import detect_drift_mp, detect_drift_mee
+    except Exception as e:
+        conn.close()
+        return jsonify({
+            'ok': False,
+            'error': 'helpers no disponibles',
+            'detail': str(e)[:200],
+        }), 500
+
+    try:
+        mp_neg = detect_drift_mp(conn)
+        mee_drift = detect_drift_mee(conn)
+
+        # Total MPs activas (denominador para score)
+        try:
+            n_mps_activas = conn.execute(
+                "SELECT COUNT(*) FROM maestro_mps WHERE COALESCE(activo,1)=1"
+            ).fetchone()[0]
+        except Exception:
+            n_mps_activas = 0
+        try:
+            n_mee_activos = conn.execute(
+                "SELECT COUNT(*) FROM maestro_mee "
+                "WHERE COALESCE(estado,'Activo') != 'Inactivo'"
+            ).fetchone()[0]
+        except Exception:
+            n_mee_activos = 0
+
+        n_total_items = n_mps_activas + n_mee_activos
+        n_drift = len(mp_neg) + len(mee_drift)
+        n_criticos = sum(1 for x in mp_neg if x.get('severidad') == 'critical')
+        n_criticos += sum(1 for x in mee_drift if x.get('severidad') == 'critical')
+
+        # Score: 100 - (drift/total) * 100, con peso extra para criticos
+        if n_total_items > 0:
+            score = 100.0 - (100.0 * n_drift / n_total_items) - (10.0 * n_criticos)
+            score = max(0.0, round(score, 1))
+        else:
+            score = 100.0
+
+        if score >= 99 and n_drift == 0:
+            veredicto = 'PERFECTA'
+        elif score >= 85:
+            veredicto = 'MENOR'
+        else:
+            veredicto = 'BLOQUEANTE'
+
+        conn.close()
+
+        return jsonify({
+            'ok': True,
+            'score': score,
+            'veredicto': veredicto,
+            'resumen': {
+                'mps_activas': n_mps_activas,
+                'mees_activos': n_mee_activos,
+                'mp_negativos': len(mp_neg),
+                'mee_con_drift': len(mee_drift),
+                'criticos': n_criticos,
+                'total_con_drift': n_drift,
+            },
+            'mp_negativos': mp_neg,
+            'mee_drift': mee_drift,
+            'message': (f'S3 kardex: {veredicto} · score {score}/100 '
+                        f'· {n_drift} items con drift '
+                        f'(de {n_total_items} totales)'),
+        }), 200
+
+    except Exception as e:
+        conn.close()
+        return jsonify({
+            'ok': False, 'error': 'falla query drift',
+            'detail': str(e)[:300],
+        }), 500
+
+
+@bp.route("/admin/auditoria-kardex", methods=["GET"])
+def admin_auditoria_kardex_page():
+    """S3 · Página visual del drift inventario."""
+    u, err, code = _require_admin()
+    if err:
+        return Response(
+            '<h1>403</h1><p>Solo admin puede ver este panel.</p>',
+            status=403, mimetype='text/html'
+        )
+    return Response(_AUDIT_KARDEX_HTML, mimetype='text/html')
+
+
+_AUDIT_KARDEX_HTML = """<!DOCTYPE html>
+<html lang="es"><head>
+<meta charset="utf-8">
+<title>S3 · Kardex · EOS</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,Segoe UI,sans-serif;background:#0f172a;color:#f1f5f9;padding:20px;line-height:1.5}
+h1{font-size:24px;margin-bottom:6px;color:#5eead4}
+.sub{color:#94a3b8;font-size:13px;margin-bottom:20px}
+.back{display:inline-block;color:#94a3b8;text-decoration:none;font-size:13px;margin-bottom:16px}
+.back:hover{color:#f1f5f9}
+.hero{background:#1e293b;border-radius:14px;padding:24px;margin-bottom:20px;text-align:center}
+.score{font-size:72px;font-weight:800;line-height:1}
+.score.ok{color:#22c55e}
+.score.warn{color:#fbbf24}
+.score.bad{color:#ef4444}
+.verdict{font-size:16px;font-weight:700;letter-spacing:1px;margin-top:8px;text-transform:uppercase}
+.verdict.ok{color:#22c55e}
+.verdict.warn{color:#fbbf24}
+.verdict.bad{color:#ef4444}
+.resumen{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-top:14px}
+.kpi{background:#0f172a;border-radius:8px;padding:8px;font-size:11px;color:#94a3b8}
+.kpi b{display:block;color:#f1f5f9;font-size:18px;margin-bottom:2px}
+.kpi.bad b{color:#ef4444}
+.kpi.ok b{color:#22c55e}
+table{width:100%;border-collapse:collapse;background:#1e293b;border-radius:10px;overflow:hidden;font-size:12px;margin-top:10px}
+th,td{padding:8px 10px;text-align:left;border-bottom:1px solid #334155}
+th{background:#0f172a;color:#94a3b8;font-weight:600;font-size:11px;text-transform:uppercase}
+tr:hover{background:#334155}
+.badge{padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;display:inline-block}
+.badge.critical{background:#7f1d1d;color:#fca5a5}
+.badge.high{background:#7c2d12;color:#fed7aa}
+.loading{text-align:center;padding:40px;color:#64748b}
+.empty{color:#22c55e;text-align:center;padding:30px;font-size:15px}
+.error{background:#7f1d1d;color:#fecaca;padding:14px;border-radius:8px;font-size:13px}
+button{padding:8px 16px;border:none;border-radius:6px;cursor:pointer;font-weight:600;font-size:13px;background:#5eead4;color:#0f172a}
+button:hover{background:#2dd4bf}
+.section-title{margin-top:18px;color:#fbbf24;font-size:14px}
+</style></head><body>
+
+<a class="back" href="/modulos">← Panel inicial</a>
+<h1>📊 S3 · Drift inventario · stock vs movimientos</h1>
+<p class="sub">El corazón de zero-error. Para cada MP/MEE, el stock debe coincidir con SUM(entradas)−SUM(salidas)±ajustes. Si NO coincide, hay bug operativo.</p>
+
+<div style="margin-bottom:14px"><button onclick="run()">🔄 Re-ejecutar</button></div>
+<div id="content" class="loading">⏳ Cargando auditoría...</div>
+
+<script>
+function esc(s){return String(s===null||s===undefined?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;');}
+
+async function run(){
+  document.getElementById('content').className = 'loading';
+  document.getElementById('content').innerHTML = '⏳ Cargando auditoría...';
+  try{
+    const r = await fetch('/api/admin/auditoria-kardex-drift');
+    const d = await r.json();
+    if(!r.ok){
+      document.getElementById('content').innerHTML =
+        '<div class="error">Error: ' + esc(d.error||'falla') + '<br><small>' + esc(d.detail||'') + '</small></div>';
+      return;
+    }
+    render(d);
+  }catch(e){
+    document.getElementById('content').innerHTML =
+      '<div class="error">Error de red: ' + esc(e.message) + '</div>';
+  }
+}
+
+function render(d){
+  const score = d.score || 0;
+  const sclass = score >= 99 ? 'ok' : score >= 85 ? 'warn' : 'bad';
+  const v = d.veredicto || 'BLOQUEANTE';
+  const vclass = v === 'PERFECTA' ? 'ok' : v === 'MENOR' ? 'warn' : 'bad';
+  const rs = d.resumen || {};
+
+  let html = '<div class="hero">' +
+    '<div class="score ' + sclass + '">' + score + '<small style="font-size:24px;color:#64748b">/100</small></div>' +
+    '<div class="verdict ' + vclass + '">' + v + '</div>' +
+    '<div class="resumen">' +
+      kpi('MPs activas', rs.mps_activas, '') +
+      kpi('MEEs activos', rs.mees_activos, '') +
+      kpi('MPs negativas', rs.mp_negativos, (rs.mp_negativos||0)>0?'bad':'ok') +
+      kpi('MEEs con drift', rs.mee_con_drift, (rs.mee_con_drift||0)>0?'bad':'ok') +
+      kpi('Críticos', rs.criticos, (rs.criticos||0)>0?'bad':'ok') +
+    '</div>' +
+  '</div>';
+
+  const mpn = d.mp_negativos || [];
+  const meed = d.mee_drift || [];
+
+  if(mpn.length === 0 && meed.length === 0){
+    html += '<div class="empty">✓ Cero drift en ' + (rs.mps_activas + rs.mees_activos) + ' items totales · inventario perfectamente cuadrado.</div>';
+  }
+  if(mpn.length > 0){
+    html += '<h3 class="section-title">⚠ MPs con stock NEGATIVO (' + mpn.length + ')</h3>';
+    html += '<table><thead><tr><th>Código MP</th><th>Nombre</th><th>Stock (g)</th><th>Severidad</th></tr></thead><tbody>';
+    for(const m of mpn){
+      html += '<tr>' +
+        '<td><b>' + esc(m.codigo_mp) + '</b></td>' +
+        '<td>' + esc(m.nombre) + '</td>' +
+        '<td style="color:#ef4444">' + esc(m.stock_g) + '</td>' +
+        '<td><span class="badge ' + esc(m.severidad) + '">' + esc(m.severidad) + '</span></td>' +
+      '</tr>';
+    }
+    html += '</tbody></table>';
+  }
+  if(meed.length > 0){
+    html += '<h3 class="section-title">⚠ MEEs con drift entre persistido y calculado (' + meed.length + ')</h3>';
+    html += '<table><thead><tr><th>Código</th><th>Nombre</th><th>Persistido</th><th>Calculado</th><th>Drift</th><th>Severidad</th></tr></thead><tbody>';
+    for(const m of meed){
+      html += '<tr>' +
+        '<td><b>' + esc(m.codigo) + '</b></td>' +
+        '<td>' + esc(m.nombre) + '</td>' +
+        '<td>' + esc(m.stock_persistido) + '</td>' +
+        '<td>' + esc(m.stock_calculado) + '</td>' +
+        '<td style="color:#ef4444">' + esc(m.drift) + '</td>' +
+        '<td><span class="badge ' + esc(m.severidad) + '">' + esc(m.severidad) + '</span></td>' +
+      '</tr>';
+    }
+    html += '</tbody></table>';
+  }
+
+  document.getElementById('content').className = '';
+  document.getElementById('content').innerHTML = html;
+}
+
+function kpi(label, val, cls){
+  return '<div class="kpi ' + (cls||'') + '"><b>' + (val||0) + '</b>' + esc(label) + '</div>';
+}
+
+run();
+</script>
+</body></html>"""
+
+
 @bp.route("/api/admin/formula-remapear-material-id", methods=["POST"])
 def formula_remapear_material_id():
     """Reemplaza material_id en formula_items (huérfano → código real).

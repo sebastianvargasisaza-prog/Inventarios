@@ -3257,3 +3257,55 @@ def test_golden_auditoria_producciones_descuento(app, db_clean):
         _exec("DELETE FROM produccion_programada WHERE id IN (?,?,?)",
               (p1_id, p2_id, p3_id))
         _exec("DELETE FROM maestro_mps WHERE codigo_mp=?", (mp_codigo,))
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 71 · S3 · Drift inventario · kardex vs movimientos
+# ═══════════════════════════════════════════════════════════════════
+
+def test_golden_auditoria_kardex_drift(app, db_clean):
+    cs = _login(app, 'sebastian')
+
+    # Seed: MP con stock NEGATIVO (más salidas que entradas) → debe detectarse
+    mp_negativa = 'GP71-MP-NEG'
+    _exec("""INSERT OR REPLACE INTO maestro_mps
+              (codigo_mp, nombre_comercial, activo, tipo_material)
+              VALUES (?, 'MP negativa test', 1, 'MP')""",
+          (mp_negativa,))
+    # Entrada 100g + Salida 200g = -100g
+    _exec("""INSERT INTO movimientos
+              (material_id, material_nombre, cantidad, tipo, fecha,
+               lote, estado_lote, operador)
+              VALUES (?, 'MP negativa test', 100, 'Entrada', date('now'),
+                      'GP71-LOTE-E', 'VIGENTE', 'gp71')""",
+          (mp_negativa,))
+    _exec("""INSERT INTO movimientos
+              (material_id, material_nombre, cantidad, tipo, fecha,
+               lote, operador)
+              VALUES (?, 'MP negativa test', 200, 'Salida', date('now'),
+                      'GP71-LOTE-E', 'gp71')""",
+          (mp_negativa,))
+
+    try:
+        r = cs.get('/api/admin/auditoria-kardex-drift')
+        assert r.status_code == 200, \
+            f'BUG: endpoint caido · {r.status_code} {r.data}'
+        d = r.get_json() or {}
+
+        assert d.get('ok'), f'response sin ok: {d}'
+        assert 'score' in d and 'veredicto' in d, 'falta score/veredicto'
+        assert 'mp_negativos' in d, 'falta mp_negativos'
+
+        # MP sembrada debe aparecer en mp_negativos
+        codigos_neg = {x.get('codigo_mp') for x in d['mp_negativos']}
+        assert mp_negativa in codigos_neg, \
+            f'BUG: MP negativa no detectada · negativos={codigos_neg}'
+
+        # Resumen consistente
+        rs = d.get('resumen', {})
+        assert (rs.get('mp_negativos') or 0) >= 1, \
+            f'BUG: contador mp_negativos mal · {rs}'
+
+    finally:
+        _exec("DELETE FROM movimientos WHERE material_id=?", (mp_negativa,))
+        _exec("DELETE FROM maestro_mps WHERE codigo_mp=?", (mp_negativa,))
