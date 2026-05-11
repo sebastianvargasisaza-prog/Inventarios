@@ -12930,6 +12930,290 @@ run();
 </body></html>"""
 
 
+@bp.route("/api/admin/auditoria-mps-nuevas", methods=["GET"])
+def auditoria_mps_nuevas():
+    """S4 · Audit MPs nuevas · que carguen en inventario correctamente.
+
+    Sebastián 8-may-2026: cuando se ingresa una MP nueva, debe tener
+    su primera Entrada para que aparezca en inventario con stock real.
+
+    Heurística "MP nueva": primer movimiento en últimos N días (default 30).
+    Para cada MP nueva detectada:
+      - n_entradas: count movs tipo='Entrada'
+      - n_salidas: count tipo='Salida'
+      - stock_actual: SUM(entradas) - SUM(salidas) + ajustes
+      - tiene_formula: count en formula_items
+      - estado_audit:
+        · OK: tiene >= 1 Entrada
+        · SIN_ENTRADA: solo salidas/ajustes (bug grave · imposible operativo)
+        · STOCK_NEGATIVO: stock < 0
+
+    Query params:
+      dias: int (default 30)
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    try:
+        dias = int(request.args.get('dias', 30))
+        if dias < 1: dias = 1
+        if dias > 365: dias = 365
+    except Exception:
+        dias = 30
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("PRAGMA busy_timeout=2000")
+    c = conn.cursor()
+
+    try:
+        rows = c.execute("""
+            WITH primer_mov AS (
+                SELECT material_id,
+                       MIN(date(fecha)) AS primer_fecha,
+                       SUM(CASE WHEN tipo='Entrada' THEN 1 ELSE 0 END) AS n_entradas,
+                       SUM(CASE WHEN tipo='Salida' THEN 1 ELSE 0 END) AS n_salidas,
+                       SUM(CASE WHEN tipo='Entrada' THEN cantidad
+                                WHEN tipo='Salida' THEN -cantidad
+                                ELSE 0 END) AS stock_g
+                FROM movimientos
+                WHERE material_id IS NOT NULL AND material_id != ''
+                GROUP BY material_id
+            )
+            SELECT pm.material_id,
+                   COALESCE(m.nombre_comercial, m.nombre_inci, '') AS nombre,
+                   pm.primer_fecha,
+                   pm.n_entradas, pm.n_salidas, pm.stock_g,
+                   COALESCE(m.activo, 1) AS activo,
+                   (SELECT COUNT(*) FROM formula_items
+                     WHERE material_id = pm.material_id) AS n_formula
+            FROM primer_mov pm
+            LEFT JOIN maestro_mps m ON m.codigo_mp = pm.material_id
+            WHERE date(pm.primer_fecha) >= date('now', '-' || ? || ' days')
+            ORDER BY pm.primer_fecha DESC
+            LIMIT 200
+        """, (dias,)).fetchall()
+    except Exception as e:
+        conn.close()
+        return jsonify({
+            'ok': False, 'error': 'falla query',
+            'detail': str(e)[:300],
+        }), 500
+
+    mps_nuevas = []
+    n_ok = 0
+    n_sin_entrada = 0
+    n_stock_negativo = 0
+    for r in rows:
+        (mid, nombre, primer, n_e, n_s, stock, activo, n_f) = r
+        n_e = int(n_e or 0)
+        n_s = int(n_s or 0)
+        stock = float(stock or 0)
+        if n_e == 0:
+            estado_audit = 'SIN_ENTRADA'
+            n_sin_entrada += 1
+        elif stock < -1:
+            estado_audit = 'STOCK_NEGATIVO'
+            n_stock_negativo += 1
+        else:
+            estado_audit = 'OK'
+            n_ok += 1
+        mps_nuevas.append({
+            'codigo_mp': mid,
+            'nombre': nombre or '',
+            'primer_movimiento': primer,
+            'n_entradas': n_e,
+            'n_salidas': n_s,
+            'stock_actual_g': round(stock, 2),
+            'activo': bool(activo),
+            'n_formula_items': int(n_f or 0),
+            'estado_audit': estado_audit,
+        })
+
+    n_total = len(mps_nuevas)
+    n_problemas = n_sin_entrada + n_stock_negativo
+
+    if n_total == 0:
+        score = 100.0
+    else:
+        score = 100.0 * (1.0 - n_problemas / n_total)
+    score = max(0.0, round(score, 1))
+
+    if score >= 99:
+        veredicto = 'PERFECTA'
+    elif score >= 85:
+        veredicto = 'MENOR'
+    else:
+        veredicto = 'BLOQUEANTE'
+
+    conn.close()
+
+    return jsonify({
+        'ok': True,
+        'score': score,
+        'veredicto': veredicto,
+        'resumen': {
+            'dias_horizonte': dias,
+            'n_total': n_total,
+            'n_ok': n_ok,
+            'n_problemas': n_problemas,
+            'sin_entrada': n_sin_entrada,
+            'stock_negativo': n_stock_negativo,
+        },
+        'mps_nuevas': mps_nuevas[:100],
+        'message': (f'S4 MPs nuevas: {veredicto} · score {score}/100 '
+                    f'· {n_total} MPs nuevas · {n_problemas} con problemas'),
+    }), 200
+
+
+@bp.route("/api/admin/auditoria-lotes-nuevos", methods=["GET"])
+def auditoria_lotes_nuevos():
+    """S5 · Audit lotes nuevos · que queden con info real.
+
+    Sebastián 8-may-2026: cada lote nuevo de MP debe tener fecha_vencimiento,
+    proveedor, lote_id, y aparecer en bodega con stock real.
+
+    Heurística "lote nuevo": primera Entrada del (material_id, lote) en
+    últimos N días (default 30).
+
+    Para cada lote nuevo:
+      - tiene_fecha_venc: fecha_vencimiento NOT NULL
+      - tiene_proveedor: proveedor NOT NULL
+      - stock_actual: SUM(entradas) - SUM(salidas) por (material_id, lote)
+      - estado_audit:
+        · OK: tiene fecha_venc Y proveedor Y stock >= 0
+        · SIN_FECHA_VENC: bug regulatorio (INVIMA exige fecha venc)
+        · SIN_PROVEEDOR: trazabilidad incompleta
+        · STOCK_NEGATIVO: lote con más salidas que entradas (imposible)
+
+    Query params:
+      dias: int (default 30)
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    try:
+        dias = int(request.args.get('dias', 30))
+        if dias < 1: dias = 1
+        if dias > 365: dias = 365
+    except Exception:
+        dias = 30
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("PRAGMA busy_timeout=2000")
+    c = conn.cursor()
+
+    try:
+        rows = c.execute("""
+            WITH lote_resumen AS (
+                SELECT material_id, lote,
+                       MIN(date(fecha)) AS primer_fecha,
+                       MAX(fecha_vencimiento) AS fv,
+                       MAX(proveedor) AS prov,
+                       SUM(CASE WHEN tipo='Entrada' THEN cantidad
+                                WHEN tipo='Salida' THEN -cantidad
+                                ELSE 0 END) AS stock_g,
+                       COUNT(*) AS n_movs
+                FROM movimientos
+                WHERE material_id IS NOT NULL AND material_id != ''
+                  AND lote IS NOT NULL AND lote != ''
+                GROUP BY material_id, lote
+            )
+            SELECT lr.material_id, lr.lote, lr.primer_fecha, lr.fv,
+                   lr.prov, lr.stock_g, lr.n_movs,
+                   COALESCE(m.nombre_comercial, m.nombre_inci, '') AS nombre
+            FROM lote_resumen lr
+            LEFT JOIN maestro_mps m ON m.codigo_mp = lr.material_id
+            WHERE date(lr.primer_fecha) >= date('now', '-' || ? || ' days')
+            ORDER BY lr.primer_fecha DESC
+            LIMIT 300
+        """, (dias,)).fetchall()
+    except Exception as e:
+        conn.close()
+        return jsonify({
+            'ok': False, 'error': 'falla query',
+            'detail': str(e)[:300],
+        }), 500
+
+    lotes = []
+    n_ok = 0
+    n_sin_fv = 0
+    n_sin_prov = 0
+    n_stock_neg = 0
+    for r in rows:
+        (mid, lote, primer, fv, prov, stock, n_movs, nombre) = r
+        tiene_fv = bool(fv and fv.strip())
+        tiene_prov = bool(prov and prov.strip())
+        stock = float(stock or 0)
+
+        problemas_lote = []
+        if not tiene_fv:
+            problemas_lote.append('SIN_FECHA_VENC')
+            n_sin_fv += 1
+        if not tiene_prov:
+            problemas_lote.append('SIN_PROVEEDOR')
+            n_sin_prov += 1
+        if stock < -1:
+            problemas_lote.append('STOCK_NEGATIVO')
+            n_stock_neg += 1
+
+        if not problemas_lote:
+            estado_audit = 'OK'
+            n_ok += 1
+        else:
+            estado_audit = problemas_lote[0]  # primer problema más grave
+
+        lotes.append({
+            'material_id': mid,
+            'lote': lote,
+            'nombre': nombre or '',
+            'primer_fecha': primer,
+            'fecha_vencimiento': fv,
+            'proveedor': prov,
+            'stock_actual_g': round(stock, 2),
+            'n_movs': int(n_movs or 0),
+            'problemas': problemas_lote,
+            'estado_audit': estado_audit,
+        })
+
+    n_total = len(lotes)
+    n_problemas = n_total - n_ok
+
+    if n_total == 0:
+        score = 100.0
+    else:
+        score = 100.0 * (n_ok / n_total)
+    score = max(0.0, round(score, 1))
+
+    if score >= 99:
+        veredicto = 'PERFECTA'
+    elif score >= 85:
+        veredicto = 'MENOR'
+    else:
+        veredicto = 'BLOQUEANTE'
+
+    conn.close()
+
+    return jsonify({
+        'ok': True,
+        'score': score,
+        'veredicto': veredicto,
+        'resumen': {
+            'dias_horizonte': dias,
+            'n_total': n_total,
+            'n_ok': n_ok,
+            'n_problemas': n_problemas,
+            'sin_fecha_venc': n_sin_fv,
+            'sin_proveedor': n_sin_prov,
+            'stock_negativo': n_stock_neg,
+        },
+        'lotes': lotes[:150],
+        'message': (f'S5 lotes nuevos: {veredicto} · score {score}/100 '
+                    f'· {n_total} lotes nuevos · {n_problemas} con problemas'),
+    }), 200
+
+
 @bp.route("/api/admin/formula-remapear-material-id", methods=["POST"])
 def formula_remapear_material_id():
     """Reemplaza material_id en formula_items (huérfano → código real).
@@ -15896,6 +16180,211 @@ function render(d){
 
 function kpi(label, val, cls){
   return '<div class="kpi ' + (cls||'') + '"><b>' + (val||0) + '</b>' + esc(label) + '</div>';
+}
+
+run();
+</script>
+</body></html>"""
+
+
+@bp.route("/api/admin/realidad-cero-error", methods=["GET"])
+def api_realidad_cero_error():
+    """S6 agregador zero-error score combinado S1-S5."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    resultados = {}
+
+    def _llamar(funcion):
+        try:
+            resp = funcion()
+            if isinstance(resp, tuple):
+                payload, status = resp[0].get_json(), resp[1]
+            else:
+                payload, status = resp.get_json(), resp.status_code
+            return {'ok': status == 200, 'status': status, 'data': payload or {}}
+        except Exception as e:
+            return {'ok': False, 'error': str(e)[:200]}
+
+    resultados['S1_formulas'] = _llamar(auditoria_formulas_completa)
+    resultados['S2_producciones'] = _llamar(auditoria_producciones_descuento)
+    resultados['S3_kardex'] = _llamar(auditoria_kardex_drift)
+    resultados['S4_mps_nuevas'] = _llamar(auditoria_mps_nuevas)
+    resultados['S5_lotes_nuevos'] = _llamar(auditoria_lotes_nuevos)
+
+    pesos = {'S1_formulas': 1, 'S2_producciones': 2, 'S3_kardex': 2,
+              'S4_mps_nuevas': 1, 'S5_lotes_nuevos': 1}
+    suma_ponderada = 0.0
+    suma_pesos = 0.0
+    detalles = {}
+    todos_perfecta = True
+    algun_bloqueante = False
+
+    for key, peso in pesos.items():
+        r = resultados.get(key, {})
+        if r.get('ok') and r.get('data'):
+            d = r['data']
+            score = float(d.get('score', 0))
+            veredicto = d.get('veredicto', 'BLOQUEANTE')
+            mensaje = d.get('message', '')
+        else:
+            score = 0.0
+            veredicto = 'ERROR'
+            mensaje = r.get('error', 'fallo invocacion')
+
+        if veredicto != 'PERFECTA':
+            todos_perfecta = False
+        if veredicto == 'BLOQUEANTE':
+            algun_bloqueante = True
+
+        suma_ponderada += score * peso
+        suma_pesos += peso
+
+        detalles[key] = {
+            'score': score,
+            'veredicto': veredicto,
+            'message': mensaje,
+        }
+
+    score_global = round(suma_ponderada / max(suma_pesos, 1), 1)
+
+    if todos_perfecta:
+        veredicto_global = 'PERFECTA'
+    elif algun_bloqueante:
+        veredicto_global = 'BLOQUEANTE'
+    else:
+        veredicto_global = 'MENOR'
+
+    return jsonify({
+        'ok': True,
+        'score_global': score_global,
+        'veredicto_global': veredicto_global,
+        'detalles': detalles,
+        'message': (f'Realidad zero-error: {veredicto_global} score global {score_global}/100'),
+    }), 200
+
+
+@bp.route("/admin/realidad-cero-error", methods=["GET"])
+def admin_realidad_cero_error_page():
+    """S6 dashboard ejecutivo agregado S1-S5."""
+    u, err, code = _require_admin()
+    if err:
+        return Response(
+            '<h1>403</h1><p>Solo admin puede ver este panel.</p>',
+            status=403, mimetype='text/html'
+        )
+    return Response(_REALIDAD_HTML, mimetype='text/html')
+
+
+_REALIDAD_HTML = """<!DOCTYPE html>
+<html lang="es"><head>
+<meta charset="utf-8">
+<title>Realidad Zero-Error</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,Segoe UI,sans-serif;background:#0f172a;color:#f1f5f9;padding:20px;line-height:1.5}
+h1{font-size:26px;margin-bottom:6px;color:#5eead4}
+.sub{color:#94a3b8;font-size:13px;margin-bottom:20px}
+.back{display:inline-block;color:#94a3b8;text-decoration:none;font-size:13px;margin-bottom:16px}
+.back:hover{color:#f1f5f9}
+.hero{background:#1e293b;border-radius:14px;padding:28px;margin-bottom:20px;text-align:center}
+.score{font-size:88px;font-weight:800;line-height:1}
+.score.ok{color:#22c55e}
+.score.warn{color:#fbbf24}
+.score.bad{color:#ef4444}
+.verdict{font-size:20px;font-weight:800;letter-spacing:2px;margin-top:10px;text-transform:uppercase}
+.verdict.ok{color:#22c55e}
+.verdict.warn{color:#fbbf24}
+.verdict.bad{color:#ef4444}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-top:14px}
+.card{background:#1e293b;border-radius:12px;padding:18px;border-left:5px solid #475569}
+.card.ok{border-left-color:#22c55e}
+.card.warn{border-left-color:#fbbf24}
+.card.bad{border-left-color:#ef4444}
+.card h3{font-size:15px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center}
+.card-score{font-size:32px;font-weight:800;margin-top:8px}
+.card-score.ok{color:#22c55e}
+.card-score.warn{color:#fbbf24}
+.card-score.bad{color:#ef4444}
+.badge{padding:3px 10px;border-radius:12px;font-size:10px;font-weight:700;display:inline-block}
+.badge.ok{background:#14532d;color:#86efac}
+.badge.warn{background:#7c2d12;color:#fed7aa}
+.badge.bad{background:#7f1d1d;color:#fca5a5}
+.badge.err{background:#1e293b;color:#94a3b8}
+.msg{font-size:11px;color:#94a3b8;margin-top:6px;line-height:1.4}
+.linka{color:#5eead4;text-decoration:none;font-size:11px;margin-top:8px;display:inline-block}
+.linka:hover{text-decoration:underline}
+.loading{text-align:center;padding:40px;color:#64748b}
+button{padding:8px 16px;border:none;border-radius:6px;cursor:pointer;font-weight:600;font-size:13px;background:#5eead4;color:#0f172a;margin-bottom:14px}
+button:hover{background:#2dd4bf}
+</style></head><body>
+
+<a class="back" href="/modulos">Panel inicial</a>
+<h1>Realidad zero-error</h1>
+<p class="sub">Score agregado de las 5 auditorias core (S1-S5). Si veredicto = PERFECTA, sistema sin defectos.</p>
+
+<button onclick="run()">Re-ejecutar todo</button>
+<div id="content" class="loading">Cargando...</div>
+
+<script>
+function esc(s){return String(s===null||s===undefined?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;');}
+
+const ETIQUETAS = {
+  S1_formulas:     {nombre:'S1 Formulas integras', link:'/admin/auditoria-formulas', desc:'huerfanos duplicados suma %'},
+  S2_producciones: {nombre:'S2 Produccion descuenta MPs', link:'/admin/auditoria-producciones', desc:'mov Salida por produccion'},
+  S3_kardex:       {nombre:'S3 Kardex sin drift', link:'/admin/auditoria-kardex', desc:'stock = entradas - salidas'},
+  S4_mps_nuevas:   {nombre:'S4 MPs nuevas ingresan', link:'#', desc:'MP nueva tiene Entrada inicial'},
+  S5_lotes_nuevos: {nombre:'S5 Lotes nuevos reales', link:'#', desc:'lote tiene fecha_venc + proveedor'},
+};
+
+async function run(){
+  document.getElementById('content').className = 'loading';
+  document.getElementById('content').innerHTML = 'Re-ejecutando 5 auditorias...';
+  try{
+    const r = await fetch('/api/admin/realidad-cero-error');
+    const d = await r.json();
+    if(!r.ok){
+      document.getElementById('content').innerHTML = '<div style="background:#7f1d1d;color:#fecaca;padding:14px;border-radius:8px">Error: ' + esc(d.error||'falla') + '</div>';
+      return;
+    }
+    render(d);
+  }catch(e){
+    document.getElementById('content').innerHTML = '<div style="background:#7f1d1d;color:#fecaca;padding:14px;border-radius:8px">Error de red: ' + esc(e.message) + '</div>';
+  }
+}
+
+function render(d){
+  const score = d.score_global || 0;
+  const sclass = score >= 99 ? 'ok' : score >= 85 ? 'warn' : 'bad';
+  const v = d.veredicto_global || 'BLOQUEANTE';
+  const vclass = v === 'PERFECTA' ? 'ok' : v === 'MENOR' ? 'warn' : 'bad';
+
+  let html = '<div class="hero">' +
+    '<div class="score ' + sclass + '">' + score + '<small style="font-size:32px;color:#64748b">/100</small></div>' +
+    '<div class="verdict ' + vclass + '">' + v + '</div>' +
+  '</div>';
+
+  html += '<div class="grid">';
+  for(const key of Object.keys(ETIQUETAS)){
+    const e = ETIQUETAS[key];
+    const d2 = (d.detalles || {})[key] || {};
+    const sc = d2.score || 0;
+    const ver = d2.veredicto || 'ERROR';
+    const cclass = ver === 'PERFECTA' ? 'ok' : ver === 'MENOR' ? 'warn' : ver === 'BLOQUEANTE' ? 'bad' : 'err';
+    const bclass = cclass === 'err' ? 'err' : cclass;
+    html += '<div class="card ' + cclass + '">' +
+      '<h3>' + esc(e.nombre) + ' <span class="badge ' + bclass + '">' + esc(ver) + '</span></h3>' +
+      '<div style="font-size:11px;color:#94a3b8">' + esc(e.desc) + '</div>' +
+      '<div class="card-score ' + cclass + '">' + sc + '<small style="font-size:14px;color:#64748b">/100</small></div>' +
+      '<div class="msg">' + esc(d2.message || '') + '</div>' +
+      (e.link !== '#' ? '<a class="linka" href="' + e.link + '">Ver detalle</a>' : '') +
+    '</div>';
+  }
+  html += '</div>';
+
+  document.getElementById('content').className = '';
+  document.getElementById('content').innerHTML = html;
 }
 
 run();

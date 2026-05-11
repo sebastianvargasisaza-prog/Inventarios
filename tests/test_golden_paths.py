@@ -3309,3 +3309,151 @@ def test_golden_auditoria_kardex_drift(app, db_clean):
     finally:
         _exec("DELETE FROM movimientos WHERE material_id=?", (mp_negativa,))
         _exec("DELETE FROM maestro_mps WHERE codigo_mp=?", (mp_negativa,))
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 72 · S4 · MP nueva ingresa correctamente
+# ═══════════════════════════════════════════════════════════════════
+
+def test_golden_auditoria_mps_nuevas(app, db_clean):
+    cs = _login(app, 'sebastian')
+
+    # Seed:
+    # - mp_ok: MP nueva con Entrada → OK
+    # - mp_sin_entrada: MP con solo Salida (huérfano operativo) → SIN_ENTRADA
+    mp_ok = 'GP72-MP-OK'
+    mp_sin_e = 'GP72-MP-NO-ENTRADA'
+
+    for cod, nom in [(mp_ok, 'OK nueva'), (mp_sin_e, 'Sin entrada')]:
+        _exec("""INSERT OR REPLACE INTO maestro_mps
+                  (codigo_mp, nombre_comercial, activo, tipo_material)
+                  VALUES (?, ?, 1, 'MP')""",
+              (cod, nom))
+
+    # mp_ok: Entrada reciente
+    _exec("""INSERT INTO movimientos
+              (material_id, material_nombre, cantidad, tipo, fecha,
+               lote, estado_lote, operador)
+              VALUES (?, 'OK nueva', 5000, 'Entrada', date('now'),
+                      'GP72-LOTE-OK', 'VIGENTE', 'gp72')""",
+          (mp_ok,))
+
+    # mp_sin_e: solo Salida (sin Entrada previa · imposible operativo)
+    _exec("""INSERT INTO movimientos
+              (material_id, material_nombre, cantidad, tipo, fecha,
+               operador)
+              VALUES (?, 'Sin entrada', 100, 'Salida', date('now'),
+                      'gp72')""",
+          (mp_sin_e,))
+
+    try:
+        r = cs.get('/api/admin/auditoria-mps-nuevas?dias=7')
+        assert r.status_code == 200, \
+            f'BUG: endpoint caido · {r.status_code} {r.data}'
+        d = r.get_json() or {}
+        assert d.get('ok'), f'response sin ok: {d}'
+
+        codigos = {m['codigo_mp']: m['estado_audit']
+                    for m in d.get('mps_nuevas', [])}
+
+        assert mp_ok in codigos, \
+            f'BUG: MP OK no detectada · detectadas={codigos.keys()}'
+        assert codigos[mp_ok] == 'OK', \
+            f'BUG: MP OK mal clasificada · {codigos[mp_ok]}'
+
+        assert mp_sin_e in codigos, \
+            'BUG: MP sin entrada no detectada'
+        assert codigos[mp_sin_e] == 'SIN_ENTRADA', \
+            f'BUG: MP sin entrada mal clasificada · {codigos[mp_sin_e]}'
+
+    finally:
+        _exec("DELETE FROM movimientos WHERE material_id IN (?,?)",
+              (mp_ok, mp_sin_e))
+        _exec("DELETE FROM maestro_mps WHERE codigo_mp IN (?,?)",
+              (mp_ok, mp_sin_e))
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 73 · S5 · Lote nuevo queda real (con fecha_venc + proveedor)
+# ═══════════════════════════════════════════════════════════════════
+
+def test_golden_auditoria_lotes_nuevos(app, db_clean):
+    cs = _login(app, 'sebastian')
+
+    mp = 'GP73-MP-LOTES'
+    _exec("""INSERT OR REPLACE INTO maestro_mps
+              (codigo_mp, nombre_comercial, activo, tipo_material)
+              VALUES (?, 'MP lotes test', 1, 'MP')""",
+          (mp,))
+
+    # Lote OK: con fecha_venc + proveedor
+    _exec("""INSERT INTO movimientos
+              (material_id, material_nombre, cantidad, tipo, fecha, lote,
+               fecha_vencimiento, proveedor, estado_lote, operador)
+              VALUES (?, 'MP lotes test', 1000, 'Entrada', date('now'),
+                      'GP73-LOTE-OK', date('now','+1 year'),
+                      'ProvedorA', 'VIGENTE', 'gp73')""",
+          (mp,))
+
+    # Lote SIN fecha_venc (regulatorio INVIMA bug)
+    _exec("""INSERT INTO movimientos
+              (material_id, material_nombre, cantidad, tipo, fecha, lote,
+               proveedor, operador)
+              VALUES (?, 'MP lotes test', 500, 'Entrada', date('now'),
+                      'GP73-LOTE-SIN-FV', 'ProvedorA', 'gp73')""",
+          (mp,))
+
+    try:
+        r = cs.get('/api/admin/auditoria-lotes-nuevos?dias=7')
+        assert r.status_code == 200, \
+            f'BUG: endpoint caido · {r.status_code} {r.data}'
+        d = r.get_json() or {}
+        assert d.get('ok'), f'response sin ok: {d}'
+
+        lotes_por_id = {(l['material_id'], l['lote']): l
+                         for l in d.get('lotes', [])}
+
+        # Lote OK
+        ok = lotes_por_id.get((mp, 'GP73-LOTE-OK'))
+        assert ok, f'BUG: lote OK no detectado · {lotes_por_id.keys()}'
+        assert ok['estado_audit'] == 'OK', \
+            f'BUG: lote OK mal clasificado · {ok}'
+
+        # Lote sin fecha venc
+        sin_fv = lotes_por_id.get((mp, 'GP73-LOTE-SIN-FV'))
+        assert sin_fv, 'BUG: lote sin fv no detectado'
+        assert 'SIN_FECHA_VENC' in sin_fv['problemas'], \
+            f'BUG: lote sin fv mal clasificado · {sin_fv}'
+
+    finally:
+        _exec("DELETE FROM movimientos WHERE material_id=?", (mp,))
+        _exec("DELETE FROM maestro_mps WHERE codigo_mp=?", (mp,))
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 74 · S6 · Realidad zero-error agregada S1-S5
+# ═══════════════════════════════════════════════════════════════════
+
+def test_golden_realidad_cero_error(app, db_clean):
+    cs = _login(app, 'sebastian')
+
+    r = cs.get('/api/admin/realidad-cero-error')
+    assert r.status_code == 200, \
+        f'BUG: agregador caido · {r.status_code} {r.data}'
+    d = r.get_json() or {}
+    assert d.get('ok'), f'response sin ok: {d}'
+
+    # Estructura esperada
+    assert 'score_global' in d, 'falta score_global'
+    assert 'veredicto_global' in d, 'falta veredicto_global'
+    assert d['veredicto_global'] in ('PERFECTA', 'MENOR', 'BLOQUEANTE'), \
+        f'veredicto invalido: {d.get("veredicto_global")}'
+    assert 'detalles' in d, 'falta detalles'
+
+    # Los 5 sub-veredictos deben estar
+    for key in ('S1_formulas', 'S2_producciones', 'S3_kardex',
+                'S4_mps_nuevas', 'S5_lotes_nuevos'):
+        assert key in d['detalles'], f'falta detalle {key}'
+        sub = d['detalles'][key]
+        assert 'score' in sub and 'veredicto' in sub, \
+            f'{key} sin score/veredicto'
