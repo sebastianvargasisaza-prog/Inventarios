@@ -3640,6 +3640,7 @@ def recibir_oc(numero_oc):
 
     # ── INSERT real (post-validación) ──────────────────────────────────
     ingresos = 0
+    es_parcial = False
     for _idx, item in enumerate(items_oc):
         codigo, nombre, cantidad_pedida = item
         ir = rec_map_idx.get(_idx) or rec_map_cod.get(codigo, {})
@@ -3660,6 +3661,10 @@ def recibir_oc(numero_oc):
         fv = ir.get('fecha_vencimiento', '').strip()
         estado_item = ir.get('estado', 'OK')
         notas_item = ir.get('notas', '')
+        cantidad_pedida_f = float(cantidad_pedida or 0)
+        # Detectar recepcion parcial
+        if cant_recibida < cantidad_pedida_f * 0.999:
+            es_parcial = True
         # Solo registrar movimiento si hay algo recibido
         if cant_recibida > 0:
             if categoria == 'MEE':
@@ -3688,25 +3693,7 @@ def recibir_oc(numero_oc):
                 (cant_recibida, estado_item, notas_item, lote_num, numero_oc, codigo))
         except Exception as e:
             log.warning('UPDATE oci en recibir_oc fallo: %s', e)
-
-    # Estado final · usar acumulado de items, no solo la cantidad del request actual.
-    # Bug fix Sebastián 8-may-2026: antes `es_parcial` chequeaba cant_recibida
-    # de esta llamada vs cantidad_pedida, lo que mantenía OC en 'Parcial'
-    # aunque la suma acumulada cubriera la pedida (bug en multi-recepción).
-    es_parcial = False
-    try:
-        oci_rows = cur.execute(
-            "SELECT COALESCE(cantidad_g, 0), COALESCE(cantidad_recibida_g, 0) "
-            "FROM ordenes_compra_items WHERE numero_oc=?",
-            (numero_oc,)
-        ).fetchall()
-        for cant_ped, cant_recib_acum in oci_rows:
-            if float(cant_recib_acum or 0) < float(cant_ped or 0) * 0.999:
-                es_parcial = True
-                break
-    except Exception as e:
-        log.warning('chequeo parcial post-update fallo: %s', e)
-
+    # Estado final de la OC
     nuevo_estado = 'Parcial' if es_parcial else 'Recibida'
     try:
         cur.execute(
