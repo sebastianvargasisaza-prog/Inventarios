@@ -253,6 +253,15 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
             SELECT RAISE(ABORT, 'UPDATE material_id no existe en maestro_mps activo (FK violation)');
         END""",
     ]),
+    (99, "producciones: formula_snapshot_json (anti drift retroactivo · Sebastián 8-may-2026)", [
+        # Snapshot inmutable de la fórmula al momento exacto de la producción.
+        # Resuelve el bug raíz descubierto por audit profundo: si la fórmula
+        # se modifica DESPUÉS de una producción, el audit comparaba contra la
+        # versión actual y reportaba drift falso. Con snapshot: comparación
+        # siempre contra la versión usada en ese momento.
+        # JSON: [{material_id, material_nombre, porcentaje}, ...]
+        "ALTER TABLE producciones ADD COLUMN formula_snapshot_json TEXT",
+    ]),
     (97, "Triggers BD invariantes Planta (Sebastián 10-may-2026 cero-error)", [
         # Trigger: BLOQUEAR movimientos con cantidad <= 0 o NULL.
         # Antes el endpoint POST /api/movimientos validaba, pero algunos

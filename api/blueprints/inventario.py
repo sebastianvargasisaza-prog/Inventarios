@@ -1051,6 +1051,27 @@ def handle_produccion():
                 if 'no such column' not in str(_e).lower():
                     raise
 
+            # Sebastián 8-may-2026 zero-error: snapshot inmutable de la fórmula
+            # al momento exacto. Previene drift retroactivo: si la fórmula se
+            # modifica después, audit compara contra esta versión.
+            try:
+                import json as _json_snap
+                items_snap = c.execute(
+                    "SELECT material_id, material_nombre, porcentaje "
+                    "FROM formula_items WHERE producto_nombre=?",
+                    (producto,)
+                ).fetchall()
+                snap = [{'material_id': r[0], 'material_nombre': r[1],
+                         'porcentaje': r[2]} for r in items_snap]
+                c.execute(
+                    "UPDATE producciones SET formula_snapshot_json=? WHERE id=?",
+                    (_json_snap.dumps(snap), prod_id)
+                )
+            except sqlite3.OperationalError as _e:
+                # Columna formula_snapshot_json puede no existir en schemas viejos
+                if 'no such column' not in str(_e).lower():
+                    raise
+
             for plan in plan_descuentos:
                 lotes_log = []
                 for uso in plan['lotes_a_usar']:

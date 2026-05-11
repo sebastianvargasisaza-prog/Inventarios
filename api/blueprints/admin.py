@@ -16698,26 +16698,51 @@ def validacion_profunda():
 
         # ── 3. DESCUENTO REAL vs ESPERADO ───────────────────────────────
         # Solo producciones recientes con stock > 0 (los con stock=0 son
-        # historicos, drift menor no importa)
-        prod_rows = c.execute("""
-            SELECT id, producto, cantidad, fecha, lote
-            FROM producciones
-            WHERE fecha >= date('now', '-180 days')
-            ORDER BY fecha DESC
-            LIMIT 30
-        """).fetchall()
+        # historicos, drift menor no importa).
+        # Si producciones.formula_snapshot_json existe, usar snapshot
+        # (anti drift retroactivo) · si no, usar formula_items vigente.
+        try:
+            prod_rows = c.execute("""
+                SELECT id, producto, cantidad, fecha, lote, formula_snapshot_json
+                FROM producciones
+                WHERE fecha >= date('now', '-180 days')
+                ORDER BY fecha DESC
+                LIMIT 30
+            """).fetchall()
+        except sqlite3.OperationalError:
+            # Schemas viejos sin formula_snapshot_json
+            prod_rows = [
+                (*r, None) for r in c.execute("""
+                    SELECT id, producto, cantidad, fecha, lote
+                    FROM producciones
+                    WHERE fecha >= date('now', '-180 days')
+                    ORDER BY fecha DESC
+                    LIMIT 30
+                """).fetchall()
+            ]
 
-        for pid, producto, cant_kg, fecha, lote in prod_rows:
+        import json as _json_audit
+        for row in prod_rows:
+            pid, producto, cant_kg, fecha, lote, snap_json = row
             cant_kg = float(cant_kg or 0)
             if cant_kg <= 0:
                 continue
 
-            # Fórmula del producto
-            items_formula = c.execute("""
-                SELECT material_id, material_nombre, porcentaje
-                FROM formula_items
-                WHERE producto_nombre = ?
-            """, (producto,)).fetchall()
+            # Usar snapshot si existe · si no, formula_items vigente
+            items_formula = None
+            if snap_json:
+                try:
+                    parsed = _json_audit.loads(snap_json)
+                    items_formula = [(p['material_id'], p.get('material_nombre',''),
+                                       p.get('porcentaje', 0)) for p in parsed]
+                except Exception:
+                    pass
+            if items_formula is None:
+                items_formula = c.execute("""
+                    SELECT material_id, material_nombre, porcentaje
+                    FROM formula_items
+                    WHERE producto_nombre = ?
+                """, (producto,)).fetchall()
             if not items_formula:
                 continue
 
