@@ -12194,6 +12194,230 @@ def formula_huerfanos_con_sugerencias():
     }), 200
 
 
+@bp.route("/api/admin/auditoria-formulas-completa", methods=["GET"])
+def auditoria_formulas_completa():
+    """S1 · Integridad fórmulas maestras (read-only).
+
+    Sebastián 8-may-2026 (revisa-cosa-a-cosa): un solo endpoint con
+    veredicto unificado sobre fórmulas. No modifica nada · solo lee
+    y reporta.
+
+    Checks (cada uno bloqueante = ALTA si > 0):
+      1. Huérfanos: material_id no existe en maestro_mps activo
+      2. Duplicados: (producto, material_id) con >1 fila
+      3. Suma % ≠ 100 ±0.5
+      4. material_id NULL o vacío
+      5. porcentaje NULL, <0, o >100
+      6. Productos con fórmula pero sin items (declared but empty)
+      7. Items sin material_nombre y sin material_id (huérfano absoluto)
+
+    Returns:
+      {
+        ok: bool,
+        score: 0-100 (100 = perfecto),
+        veredicto: 'PERFECTA' | 'MENOR' | 'BLOQUEANTE',
+        resumen: {n_formulas, n_items, ...counts},
+        checks: {check1: {ok, count, top}, ...}
+      }
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("PRAGMA busy_timeout=2000")
+    c = conn.cursor()
+
+    try:
+        n_formulas = c.execute(
+            "SELECT COUNT(DISTINCT producto_nombre) FROM formula_items"
+        ).fetchone()[0]
+        n_items = c.execute("SELECT COUNT(*) FROM formula_items").fetchone()[0]
+
+        # 1. Huérfanos
+        huerfanos = c.execute("""
+            SELECT fi.material_id, MAX(fi.material_nombre) AS nombre,
+                   COUNT(DISTINCT fi.producto_nombre) AS n_productos
+            FROM formula_items fi
+            LEFT JOIN maestro_mps m
+              ON m.codigo_mp = fi.material_id AND m.activo = 1
+            WHERE m.codigo_mp IS NULL
+              AND fi.material_id IS NOT NULL AND TRIM(fi.material_id) != ''
+            GROUP BY fi.material_id
+            ORDER BY n_productos DESC
+            LIMIT 50
+        """).fetchall()
+
+        # 2. Duplicados
+        duplicados = c.execute("""
+            SELECT producto_nombre, material_id, COUNT(*) AS veces
+            FROM formula_items
+            WHERE material_id IS NOT NULL AND TRIM(material_id) != ''
+            GROUP BY producto_nombre, material_id
+            HAVING veces > 1
+            ORDER BY veces DESC
+            LIMIT 50
+        """).fetchall()
+
+        # 3. Suma % ≠ 100
+        sumas_malas = c.execute("""
+            SELECT producto_nombre, ROUND(SUM(porcentaje),2) AS suma,
+                   COUNT(*) AS items
+            FROM formula_items
+            GROUP BY producto_nombre
+            HAVING ABS(suma - 100) > 0.5
+            ORDER BY ABS(suma - 100) DESC
+            LIMIT 50
+        """).fetchall()
+
+        # 4. material_id NULL o vacío
+        nulos = c.execute("""
+            SELECT COUNT(*) FROM formula_items
+            WHERE material_id IS NULL OR TRIM(material_id) = ''
+        """).fetchone()[0]
+
+        # 5. porcentaje inválido
+        pct_invalidos = c.execute("""
+            SELECT id, producto_nombre, material_id, porcentaje
+            FROM formula_items
+            WHERE porcentaje IS NULL OR porcentaje < 0 OR porcentaje > 100
+            LIMIT 50
+        """).fetchall()
+
+        # 6. Productos en formula_headers sin items (best-effort · tabla puede no existir)
+        try:
+            headers_vacios = c.execute("""
+                SELECT fh.producto_nombre
+                FROM formula_headers fh
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM formula_items fi
+                    WHERE fi.producto_nombre = fh.producto_nombre
+                )
+                LIMIT 50
+            """).fetchall()
+        except sqlite3.OperationalError:
+            headers_vacios = []
+
+        # 7. Items sin nombre Y sin material_id
+        huerfanos_absolutos = c.execute("""
+            SELECT id, producto_nombre, porcentaje
+            FROM formula_items
+            WHERE (material_id IS NULL OR TRIM(material_id) = '')
+              AND (material_nombre IS NULL OR TRIM(material_nombre) = '')
+            LIMIT 50
+        """).fetchall()
+
+        # Score 0-100: cada check bloqueante restará proporcionalmente
+        n_huer = len(huerfanos)
+        n_dup = len(duplicados)
+        n_pct100 = len(sumas_malas)
+        n_pct_inv = len(pct_invalidos)
+        n_hdr_vac = len(headers_vacios)
+        n_huer_abs = len(huerfanos_absolutos)
+
+        # Pesos: huérfanos y duplicados son los más graves
+        score = 100.0
+        if n_formulas > 0:
+            score -= min(40, 40 * n_huer / max(n_formulas, 1))
+            score -= min(20, 20 * n_dup / max(n_formulas, 1))
+            score -= min(20, 20 * n_pct100 / max(n_formulas, 1))
+            score -= min(10, 10 * (n_pct_inv + nulos) / max(n_items, 1))
+            score -= min(5, 5 * n_hdr_vac / max(n_formulas, 1))
+            score -= min(5, 5 * n_huer_abs / max(n_items, 1))
+        score = max(0.0, round(score, 1))
+
+        if score >= 99:
+            veredicto = 'PERFECTA'
+        elif score >= 85:
+            veredicto = 'MENOR'
+        else:
+            veredicto = 'BLOQUEANTE'
+
+        conn.close()
+
+        return jsonify({
+            'ok': True,
+            'score': score,
+            'veredicto': veredicto,
+            'resumen': {
+                'n_formulas': n_formulas,
+                'n_items': n_items,
+                'huerfanos': n_huer,
+                'duplicados': n_dup,
+                'sumas_pct_no_100': n_pct100,
+                'material_id_nulos': nulos,
+                'pct_invalidos': n_pct_inv,
+                'headers_vacios': n_hdr_vac,
+                'huerfanos_absolutos': n_huer_abs,
+            },
+            'checks': {
+                'huerfanos': {
+                    'ok': n_huer == 0,
+                    'count': n_huer,
+                    'top': [
+                        {'material_id': h[0], 'nombre': h[1] or '',
+                         'n_productos': h[2]}
+                        for h in huerfanos[:10]
+                    ],
+                    'fix_link': '/admin/normalizar-formulas',
+                },
+                'duplicados': {
+                    'ok': n_dup == 0,
+                    'count': n_dup,
+                    'top': [
+                        {'producto': d[0], 'material_id': d[1],
+                         'veces': d[2]}
+                        for d in duplicados[:10]
+                    ],
+                    'fix_link': '/admin/limpieza-cero-error',
+                },
+                'sumas_pct_no_100': {
+                    'ok': n_pct100 == 0,
+                    'count': n_pct100,
+                    'top': [
+                        {'producto': s[0], 'suma_actual': s[1],
+                         'diff': round((s[1] or 0) - 100, 2),
+                         'items': s[2]}
+                        for s in sumas_malas[:10]
+                    ],
+                    'fix_link': '/tecnica',
+                },
+                'material_id_nulos': {
+                    'ok': nulos == 0,
+                    'count': nulos,
+                },
+                'pct_invalidos': {
+                    'ok': n_pct_inv == 0,
+                    'count': n_pct_inv,
+                    'top': [
+                        {'id': p[0], 'producto': p[1],
+                         'material_id': p[2], 'porcentaje': p[3]}
+                        for p in pct_invalidos[:10]
+                    ],
+                },
+                'headers_vacios': {
+                    'ok': n_hdr_vac == 0,
+                    'count': n_hdr_vac,
+                    'top': [h[0] for h in headers_vacios[:10]],
+                },
+                'huerfanos_absolutos': {
+                    'ok': n_huer_abs == 0,
+                    'count': n_huer_abs,
+                    'top': [
+                        {'id': h[0], 'producto': h[1], 'porcentaje': h[2]}
+                        for h in huerfanos_absolutos[:10]
+                    ],
+                },
+            },
+            'message': (f'S1 fórmulas: {veredicto} · score {score}/100 '
+                        f'· {n_formulas} fórmulas · {n_items} items'),
+        }), 200
+
+    except Exception as e:
+        conn.close()
+        return jsonify({'error': 'falla auditoría', 'detail': str(e)[:300]}), 500
+
+
 @bp.route("/api/admin/formula-remapear-material-id", methods=["POST"])
 def formula_remapear_material_id():
     """Reemplaza material_id en formula_items (huérfano → código real).

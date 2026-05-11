@@ -3083,3 +3083,86 @@ def test_golden_rechazo_gerencia_oc(app, db_clean):
     finally:
         _exec("DELETE FROM solicitudes_compra WHERE numero=?", (sc_num,))
         _exec("DELETE FROM ordenes_compra WHERE numero_oc=?", (oc_num,))
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 69 · S1 · Integridad fórmulas maestras (read-only audit)
+# ═══════════════════════════════════════════════════════════════════
+# Sebastián 8-may-2026 (revisa-cosa-a-cosa): /api/admin/auditoria-
+# formulas-completa devuelve veredicto unificado de los 7 checks de
+# integridad de fórmulas. Score 0-100. Test fija la estructura del
+# response y verifica que detecta los defectos sembrados.
+
+def test_golden_auditoria_formulas_completa(app, db_clean):
+    cs = _login(app, 'sebastian')
+
+    # Seed: producto con duplicado + suma % = 95 (no 100).
+    # Nota: huérfanos ya NO se pueden sembrar (trigger FK migration 98
+    # bloquea inserción de material_id no en maestro_mps activo). Esa
+    # invariante está garantizada por BD · el endpoint solo necesita
+    # reportarla = 0 si la BD está sana.
+    prod = 'GP69-PROD-DEFECTUOSO'
+    mp_real = 'GP69-MP-REAL'
+
+    _exec("""INSERT OR REPLACE INTO maestro_mps
+              (codigo_mp, nombre_comercial, activo, tipo_material)
+              VALUES (?, 'MP real test', 1, 'MP')""",
+          (mp_real,))
+    # 3 items con material_id real válido · duplicado + suma=85
+    _exec("""INSERT INTO formula_items
+              (producto_nombre, material_id, material_nombre, porcentaje)
+              VALUES (?, ?, 'Real A', 50)""", (prod, mp_real))
+    _exec("""INSERT INTO formula_items
+              (producto_nombre, material_id, material_nombre, porcentaje)
+              VALUES (?, ?, 'Real DUP', 20)""", (prod, mp_real))
+    _exec("""INSERT INTO formula_items
+              (producto_nombre, material_id, material_nombre, porcentaje)
+              VALUES (?, ?, 'Real C', 15)""", (prod, mp_real))
+    # Suma: 50 + 20 + 15 = 85 ≠ 100 (defecto check #3)
+    # Duplicado: (prod, mp_real) aparece 3 veces (defecto check #2)
+
+    try:
+        r = cs.get('/api/admin/auditoria-formulas-completa')
+        assert r.status_code == 200, \
+            f'BUG: auditoria-formulas-completa caido · {r.status_code} {r.data}'
+        d = r.get_json() or {}
+
+        # Estructura básica
+        assert d.get('ok') is True, f'response sin ok: {d}'
+        assert 'score' in d, 'response sin score'
+        assert 'veredicto' in d, 'response sin veredicto'
+        assert 'checks' in d, 'response sin checks'
+        assert d['veredicto'] in ('PERFECTA', 'MENOR', 'BLOQUEANTE'), \
+            f'veredicto invalido: {d.get("veredicto")}'
+
+        # Los 7 checks deben estar presentes
+        for check_name in ('huerfanos', 'duplicados', 'sumas_pct_no_100',
+                            'material_id_nulos', 'pct_invalidos',
+                            'headers_vacios', 'huerfanos_absolutos'):
+            assert check_name in d['checks'], \
+                f'check {check_name} ausente'
+
+        # Nota: huérfanos legacy pueden existir (datos anteriores al
+        # trigger FK migration 98). El endpoint debe reportarlos · es
+        # información, no fallo del test.
+
+        # Detecta los defectos sembrados (duplicado + suma!=100)
+        assert d['checks']['duplicados']['count'] >= 1, \
+            f'BUG: duplicado sembrado no detectado · {d["checks"]["duplicados"]}'
+        assert any(dup.get('producto') == prod
+                   for dup in d['checks']['duplicados']['top']), \
+            'BUG: duplicado sembrado no esta en el top'
+
+        assert d['checks']['sumas_pct_no_100']['count'] >= 1, \
+            f'BUG: suma % 85 ≠ 100 no detectada · {d["checks"]["sumas_pct_no_100"]}'
+        assert any(s.get('producto') == prod
+                   for s in d['checks']['sumas_pct_no_100']['top']), \
+            'BUG: producto con suma 85 no esta en el top'
+
+        # Resumen consistente con checks
+        assert d['resumen']['duplicados'] == d['checks']['duplicados']['count']
+        assert d['resumen']['sumas_pct_no_100'] == d['checks']['sumas_pct_no_100']['count']
+
+    finally:
+        _exec("DELETE FROM formula_items WHERE producto_nombre=?", (prod,))
+        _exec("DELETE FROM maestro_mps WHERE codigo_mp=?", (mp_real,))
