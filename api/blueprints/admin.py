@@ -10273,6 +10273,17 @@ def auditoria_catalogo():
         'alcohol', 'alcohol denat',
         'glycerin', 'glicerina',
         '(varies)', 'mixture',
+        # Sebastián 8-may-2026: misma molécula INCI puede tener presentaciones
+        # físicas distintas (líquida vs polvo) · es legítimo
+        'tocopherol', 'panthenol',
+        'phenoxyethanol', 'ethylhexylglycerin',
+        'sodium hydroxide', 'citric acid', 'lactic acid',
+        'sodium benzoate', 'potassium sorbate',
+        'xanthan gum', 'carbomer',
+        'butylene glycol', 'propylene glycol', 'propilenglicol',
+        'caprylic/capric triglyceride',
+        'cetyl alcohol', 'stearyl alcohol',
+        'titanium dioxide',
     }
     INCI_PLACEHOLDERS = {
         'pendiente inci', 'pendiente', 'sin inci', 'no inci',
