@@ -17845,3 +17845,146 @@ function render(d){
 run();
 </script>
 </body></html>"""
+
+
+
+@bp.route("/admin/reportes-invima", methods=["GET"])
+def admin_reportes_invima_page():
+    """Panel UI para descargar reportes INVIMA por lote."""
+    u, err, code = _require_admin()
+    if err:
+        return Response(
+            '<h1>403</h1><p>Solo admin.</p>',
+            status=403, mimetype='text/html'
+        )
+    return Response(_REPORTES_INVIMA_HTML, mimetype='text/html')
+
+
+_REPORTES_INVIMA_HTML = """<!DOCTYPE html>
+<html lang="es"><head>
+<meta charset="utf-8">
+<title>Reportes INVIMA</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,Segoe UI,sans-serif;background:#0f172a;color:#f1f5f9;padding:20px;line-height:1.5}
+h1{font-size:24px;margin-bottom:6px;color:#5eead4}
+.sub{color:#94a3b8;font-size:13px;margin-bottom:20px}
+.back{display:inline-block;color:#94a3b8;text-decoration:none;font-size:13px;margin-bottom:16px}
+.back:hover{color:#f1f5f9}
+.card{background:#1e293b;border-radius:14px;padding:20px;margin-bottom:18px}
+.card h2{font-size:16px;margin-bottom:12px;color:#fbbf24}
+.row{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+label{font-size:12px;color:#cbd5e1;display:flex;flex-direction:column;gap:4px}
+input{background:#0f172a;color:#f1f5f9;border:1px solid #475569;border-radius:6px;padding:8px 10px;font-size:13px}
+input.wide{min-width:240px}
+button{padding:10px 18px;border:none;border-radius:6px;cursor:pointer;font-weight:600;font-size:13px;background:#5eead4;color:#0f172a;align-self:flex-end}
+button:hover{background:#2dd4bf}
+button.secondary{background:#475569;color:#f1f5f9}
+button.secondary:hover{background:#64748b}
+.result{margin-top:12px;padding:12px;background:#0f172a;border-radius:8px;font-family:Consolas,Monaco,monospace;font-size:11px;color:#cbd5e1;max-height:400px;overflow:auto;white-space:pre-wrap;display:none}
+.result.visible{display:block}
+.result.error{border:1px solid #ef4444;color:#fca5a5}
+.result.ok{border:1px solid #22c55e}
+hr{border:none;border-top:1px solid #334155;margin:14px 0}
+.info{font-size:11px;color:#94a3b8;margin-top:6px}
+</style></head><body>
+
+<a class="back" href="/modulos">Panel inicial</a>
+<h1>Reportes INVIMA</h1>
+<p class="sub">Reportes regulatorios descargables · trazabilidad de lote + audit trail.</p>
+
+<div class="card">
+  <h2>Reporte de trazabilidad por lote</h2>
+  <p class="info">Genera PDF o JSON con historial completo de un lote: entradas, salidas, producciones, operadores.</p>
+  <div class="row">
+    <label>Codigo MP
+      <input id="mp" placeholder="ej MP00021" class="wide">
+    </label>
+    <label>Lote
+      <input id="lote" placeholder="ej 909695" class="wide">
+    </label>
+    <button onclick="descargarPDF()">Descargar PDF</button>
+    <button class="secondary" onclick="verJSON()">Ver JSON</button>
+  </div>
+  <div class="result" id="r-lote"></div>
+</div>
+
+<div class="card">
+  <h2>Audit trail · CSV exportable</h2>
+  <p class="info">Descarga el log auditable de operaciones criticas en CSV (Excel compatible) filtrado por rango de fechas y accion.</p>
+  <div class="row">
+    <label>Desde
+      <input id="audit-desde" type="date">
+    </label>
+    <label>Hasta
+      <input id="audit-hasta" type="date">
+    </label>
+    <label>Accion (opcional)
+      <input id="audit-accion" placeholder="ej RECONCILIAR">
+    </label>
+    <button onclick="descargarAuditCSV()">Descargar CSV</button>
+  </div>
+  <p class="info">Default: ultimos 30 dias. Vacio = todos.</p>
+</div>
+
+<div class="card">
+  <h2>Atajos · ultimos reportes</h2>
+  <div class="row">
+    <a href="/admin/realidad-cero-error" style="color:#5eead4;text-decoration:none;border:1px solid #475569;padding:8px 12px;border-radius:6px">Dashboard Zero-Error</a>
+    <a href="/admin/auditoria-formulas" style="color:#5eead4;text-decoration:none;border:1px solid #475569;padding:8px 12px;border-radius:6px">S1 Formulas</a>
+    <a href="/admin/auditoria-producciones" style="color:#5eead4;text-decoration:none;border:1px solid #475569;padding:8px 12px;border-radius:6px">S2 Producciones</a>
+    <a href="/admin/auditoria-kardex" style="color:#5eead4;text-decoration:none;border:1px solid #475569;padding:8px 12px;border-radius:6px">S3 Kardex</a>
+  </div>
+</div>
+
+<script>
+function descargarPDF(){
+  const mp = document.getElementById("mp").value.trim();
+  const lote = document.getElementById("lote").value.trim();
+  if(!mp || !lote){ alert("Codigo MP y lote requeridos"); return; }
+  window.location.href = "/api/reportes/invima/lote/" + encodeURIComponent(mp) + "/" + encodeURIComponent(lote) + "/pdf";
+}
+
+async function verJSON(){
+  const mp = document.getElementById("mp").value.trim();
+  const lote = document.getElementById("lote").value.trim();
+  if(!mp || !lote){ alert("Codigo MP y lote requeridos"); return; }
+  const r = document.getElementById("r-lote");
+  r.className = "result visible";
+  r.textContent = "Cargando...";
+  try{
+    const resp = await fetch("/api/reportes/invima/lote/" + encodeURIComponent(mp) + "/" + encodeURIComponent(lote));
+    const data = await resp.json();
+    if(!resp.ok){
+      r.className = "result visible error";
+      r.textContent = "Error: " + (data.error || resp.status);
+    } else {
+      r.className = "result visible ok";
+      r.textContent = JSON.stringify(data, null, 2);
+    }
+  }catch(e){
+    r.className = "result visible error";
+    r.textContent = "Error de red: " + e.message;
+  }
+}
+
+function descargarAuditCSV(){
+  const desde = document.getElementById("audit-desde").value;
+  const hasta = document.getElementById("audit-hasta").value;
+  const accion = document.getElementById("audit-accion").value.trim();
+  const params = new URLSearchParams();
+  if(desde) params.set("desde", desde);
+  if(hasta) params.set("hasta", hasta);
+  if(accion) params.set("accion", accion);
+  window.location.href = "/api/reportes/audit-trail.csv?" + params.toString();
+}
+
+// Defaults: ultimos 30 dias
+(function(){
+  const d = new Date();
+  document.getElementById("audit-hasta").value = d.toISOString().slice(0,10);
+  d.setDate(d.getDate() - 30);
+  document.getElementById("audit-desde").value = d.toISOString().slice(0,10);
+})();
+</script>
+</body></html>"""
