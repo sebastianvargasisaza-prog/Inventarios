@@ -16316,7 +16316,7 @@ def reconciliar_produccion_mp():
                    observaciones, lote, operador, estado_lote)
                 VALUES (?, ?, ?, 'Entrada', ?, ?, ?, ?, 'VIGENTE')
             """, (mid, mp[1] or '', cant,
-                  fecha_comp or datetime.now().isoformat(),
+                  fecha_comp or __import__('datetime').datetime.now().isoformat(),
                   obs_entrada,
                   prod_dict['lote'] or '',
                   u))
