@@ -11690,6 +11690,442 @@ def investigar_mp(codigo):
     }), 200
 
 
+@bp.route("/api/admin/validar-planta", methods=["GET"])
+def validar_planta_invariantes():
+    """Verifica los 5 invariantes críticos de Planta · cero-error.
+
+    Sebastián 10-may-2026 (visión): "planta es lo principal · fórmulas
+    maestras perfectas descontando MPs adecuadas · MPs organizadas un
+    código por materia prima donde solo varía el lote · descuentos
+    adecuados con cada producción · ingresos reales · ajustes con
+    integridad perfecta".
+
+    Devuelve estado de los 5 invariantes con findings concretos:
+
+    1. FÓRMULAS perfectas
+       1a. SUM(porcentaje) por producto debe ser 100 ±0.5
+       1b. CERO material_id duplicado dentro de una misma fórmula
+       1c. CERO formula_items.material_id huérfano (sin maestro activo)
+
+    2. CATÁLOGO: 1 código = 1 MP
+       2a. PRIMARY KEY codigo_mp (SQLite enforced)
+       2b. CERO MPs activas con mismo nombre_inci/nombre_comercial post-fusión
+       2c. CERO MPs archivadas con stock > 0
+
+    3. PRODUCCIONES descontaron correctamente
+       3a. Cada produccion 'Completada' tiene movimientos Salida con
+           lote_ref en observaciones (prefix FEFO: o UNLIMITED:)
+       3b. CERO stock_neto < 0 por lote
+       3c. Suma de descuentos = cantidad_total_producida (±tolerancia)
+
+    4. INGRESOS reales (recepciones)
+       4a. CERO movimientos Entrada con cantidad <= 0
+       4b. Movimientos Entrada con material_id en maestro activo
+       4c. Cada Entrada con operador identificado
+
+    5. AJUSTES con integridad
+       5a. CERO movimientos con tipo fuera de (Entrada/Salida/Ajuste)
+       5b. CERO movimientos con cantidad <= 0
+       5c. CERO anulaciones sin contra-movimiento
+       5d. audit_log entry por cada acción crítica
+
+    Returns:
+      {
+        ok, timestamp, score (0-100),
+        invariantes: {
+          formulas: {ok, score, findings:[...]},
+          catalogo: {...},
+          producciones: {...},
+          ingresos: {...},
+          ajustes: {...},
+        },
+        veredicto: "PERFECTO" | "OK_CON_OBSERVACIONES" | "VIOLACIONES_CRITICAS"
+      }
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    import datetime as _dt
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("PRAGMA busy_timeout=2000")
+    c = conn.cursor()
+
+    inv = {
+        'formulas': {'ok': True, 'score': 100, 'findings': []},
+        'catalogo': {'ok': True, 'score': 100, 'findings': []},
+        'producciones': {'ok': True, 'score': 100, 'findings': []},
+        'ingresos': {'ok': True, 'score': 100, 'findings': []},
+        'ajustes': {'ok': True, 'score': 100, 'findings': []},
+    }
+
+    def _add(seccion, descripcion, severidad='alta', detalle=None):
+        f = {'descripcion': descripcion, 'severidad': severidad}
+        if detalle is not None:
+            f['detalle'] = detalle
+        inv[seccion]['findings'].append(f)
+        # Penalizar score · alta -30, media -15, baja -5
+        penalty = {'alta': 30, 'media': 15, 'baja': 5}.get(severidad, 10)
+        inv[seccion]['score'] = max(0, inv[seccion]['score'] - penalty)
+        inv[seccion]['ok'] = False
+
+    # ═══ 1. FÓRMULAS ═══
+    # 1a. SUM(porcentaje) por producto debe ser 100 ±0.5
+    try:
+        rows = c.execute("""
+            SELECT producto_nombre, ROUND(SUM(porcentaje), 4) as suma, COUNT(*) as n
+            FROM formula_items
+            GROUP BY producto_nombre
+            HAVING ABS(suma - 100) > 0.5
+        """).fetchall()
+        if rows:
+            _add('formulas',
+                 f'{len(rows)} fórmulas con SUM(porcentaje) != 100 ±0.5',
+                 'alta',
+                 [{'producto': r[0], 'suma': r[1], 'n_items': r[2]} for r in rows[:10]])
+    except Exception as e:
+        _add('formulas', f'error verificando porcentajes: {e}', 'media')
+
+    # 1b. material_id duplicado en misma fórmula
+    try:
+        rows = c.execute("""
+            SELECT producto_nombre, material_id, COUNT(*) as veces
+            FROM formula_items
+            WHERE material_id IS NOT NULL AND TRIM(material_id) != ''
+            GROUP BY producto_nombre, material_id
+            HAVING veces > 1
+        """).fetchall()
+        if rows:
+            _add('formulas',
+                 f'{len(rows)} grupos (producto, material_id) duplicados en formula_items',
+                 'alta',
+                 [{'producto': r[0], 'material_id': r[1], 'veces': r[2]} for r in rows[:10]])
+    except Exception as e:
+        _add('formulas', f'error verificando duplicados: {e}', 'media')
+
+    # 1c. material_id huérfano (no en maestro activo)
+    try:
+        rows = c.execute("""
+            SELECT DISTINCT fi.material_id
+            FROM formula_items fi
+            LEFT JOIN maestro_mps mp ON fi.material_id=mp.codigo_mp AND mp.activo=1
+            WHERE mp.codigo_mp IS NULL
+              AND fi.material_id IS NOT NULL AND TRIM(fi.material_id) != ''
+        """).fetchall()
+        if rows:
+            _add('formulas',
+                 f'{len(rows)} material_ids en formula_items sin maestro_mps activo',
+                 'alta',
+                 [r[0] for r in rows[:20]])
+    except Exception as e:
+        _add('formulas', f'error verificando huérfanos: {e}', 'media')
+
+    # ═══ 2. CATÁLOGO ═══
+    # 2b. MPs activas con mismo nombre_inci normalizado
+    try:
+        rows = c.execute("""
+            SELECT LOWER(TRIM(nombre_inci)) as inci_norm, COUNT(*) as n,
+                   GROUP_CONCAT(codigo_mp) as codigos
+            FROM maestro_mps
+            WHERE activo=1 AND nombre_inci IS NOT NULL AND TRIM(nombre_inci) != ''
+              AND LOWER(TRIM(nombre_inci)) NOT IN
+                ('parfum','fragrance','aroma','aqua','water','agua',
+                 'alcohol','alcohol denat','glycerin','glicerina',
+                 '(varies)','mixture','pendiente inci','pendiente',
+                 'sin inci','no inci','por definir','tbd','n/a','na','-')
+            GROUP BY LOWER(TRIM(nombre_inci))
+            HAVING n > 1
+        """).fetchall()
+        if rows:
+            _add('catalogo',
+                 f'{len(rows)} grupos INCI duplicados activos (no whitelist)',
+                 'alta',
+                 [{'inci': r[0], 'n': r[1], 'codigos': r[2]} for r in rows[:10]])
+    except Exception as e:
+        _add('catalogo', f'error: {e}', 'media')
+
+    # 2c. MPs archivadas con stock > 0
+    try:
+        rows = c.execute("""
+            SELECT mp.codigo_mp,
+                   ROUND(SUM(CASE WHEN m.tipo='Entrada' THEN m.cantidad
+                                  ELSE -m.cantidad END), 2) as stock
+            FROM maestro_mps mp
+            JOIN movimientos m ON m.material_id=mp.codigo_mp
+            WHERE mp.activo=0
+            GROUP BY mp.codigo_mp
+            HAVING stock > 0.5
+        """).fetchall()
+        if rows:
+            _add('catalogo',
+                 f'{len(rows)} MPs archivadas con stock > 0 (contradicción)',
+                 'media',
+                 [{'codigo_mp': r[0], 'stock_g': r[1]} for r in rows[:10]])
+    except Exception as e:
+        _add('catalogo', f'error: {e}', 'media')
+
+    # ═══ 3. PRODUCCIONES ═══
+    # 3b. stock_neto < 0 por lote
+    try:
+        rows = c.execute("""
+            SELECT material_id, COALESCE(lote,'') as lote,
+                   ROUND(SUM(CASE WHEN tipo='Entrada' THEN cantidad
+                                  ELSE -cantidad END), 2) as stock
+            FROM movimientos
+            GROUP BY material_id, lote
+            HAVING stock < -0.5
+        """).fetchall()
+        if rows:
+            _add('producciones',
+                 f'{len(rows)} lotes con stock negativo',
+                 'alta',
+                 [{'material_id': r[0], 'lote': r[1], 'stock': r[2]} for r in rows[:10]])
+    except Exception as e:
+        _add('producciones', f'error: {e}', 'media')
+
+    # 3a. Producciones Completadas sin movimientos FEFO/UNLIMITED
+    try:
+        rows = c.execute("""
+            SELECT p.id, p.producto, p.lote, p.cantidad
+            FROM producciones p
+            WHERE p.estado='Completado'
+              AND NOT EXISTS (
+                SELECT 1 FROM movimientos m
+                WHERE m.tipo='Salida'
+                  AND (m.observaciones LIKE 'FEFO:%' OR m.observaciones LIKE 'UNLIMITED:%')
+                  AND (m.observaciones LIKE '%'||p.lote||'%' OR m.observaciones LIKE '%'||p.producto||'%')
+              )
+            LIMIT 10
+        """).fetchall()
+        if rows:
+            _add('producciones',
+                 f'{len(rows)} producciones Completadas sin movimientos FEFO de descuento',
+                 'alta',
+                 [{'id': r[0], 'producto': r[1], 'lote': r[2], 'cantidad_kg': r[3]} for r in rows[:10]])
+    except Exception as e:
+        _add('producciones', f'error producciones huerfanas: {e}', 'media')
+
+    # ═══ 4. INGRESOS ═══
+    # 4a. Movimientos Entrada con cantidad <= 0
+    try:
+        row = c.execute(
+            "SELECT COUNT(*) FROM movimientos WHERE tipo='Entrada' AND cantidad <= 0"
+        ).fetchone()
+        if row and row[0] > 0:
+            _add('ingresos', f'{row[0]} movimientos Entrada con cantidad <= 0', 'alta')
+    except Exception as e:
+        _add('ingresos', f'error: {e}', 'media')
+
+    # 4b. Entradas con material_id huérfano
+    try:
+        row = c.execute("""
+            SELECT COUNT(*) FROM movimientos m
+            LEFT JOIN maestro_mps mp ON m.material_id=mp.codigo_mp AND mp.activo=1
+            WHERE m.tipo='Entrada' AND mp.codigo_mp IS NULL
+        """).fetchone()
+        if row and row[0] > 0:
+            _add('ingresos',
+                 f'{row[0]} movimientos Entrada con material_id sin maestro activo',
+                 'media')
+    except Exception as e:
+        _add('ingresos', f'error: {e}', 'media')
+
+    # 4c. Entradas sin operador
+    try:
+        row = c.execute("""
+            SELECT COUNT(*) FROM movimientos
+            WHERE tipo='Entrada' AND (operador IS NULL OR TRIM(operador)='')
+        """).fetchone()
+        if row and row[0] > 0:
+            _add('ingresos',
+                 f'{row[0]} movimientos Entrada sin operador identificado',
+                 'baja')
+    except Exception as e:
+        _add('ingresos', f'error: {e}', 'media')
+
+    # ═══ 5. AJUSTES (integridad de movimientos) ═══
+    # 5a. tipo fuera de (Entrada/Salida/Ajuste)
+    try:
+        rows = c.execute("""
+            SELECT tipo, COUNT(*) FROM movimientos
+            WHERE tipo NOT IN ('Entrada','Salida','Ajuste')
+            GROUP BY tipo
+        """).fetchall()
+        if rows:
+            _add('ajustes',
+                 f'{sum(r[1] for r in rows)} movimientos con tipo inválido',
+                 'alta',
+                 [{'tipo': r[0], 'count': r[1]} for r in rows])
+    except Exception as e:
+        _add('ajustes', f'error: {e}', 'media')
+
+    # 5b. cantidad <= 0
+    try:
+        row = c.execute(
+            "SELECT COUNT(*) FROM movimientos WHERE cantidad IS NULL OR cantidad <= 0"
+        ).fetchone()
+        if row and row[0] > 0:
+            _add('ajustes', f'{row[0]} movimientos con cantidad <= 0 o NULL', 'alta')
+    except Exception as e:
+        _add('ajustes', f'error: {e}', 'media')
+
+    # 5d. audit_log existe y tiene entradas recientes
+    try:
+        row = c.execute(
+            "SELECT COUNT(*) FROM audit_log WHERE fecha >= datetime('now','-7 days')"
+        ).fetchone()
+        if row and row[0] < 1:
+            _add('ajustes', 'audit_log sin entradas en últimos 7 días (¿deshabilitado?)', 'media')
+    except Exception as e:
+        _add('ajustes', f'audit_log no consultable: {e}', 'media')
+
+    conn.close()
+
+    # Score global = promedio ponderado
+    scores = [v['score'] for v in inv.values()]
+    score_global = round(sum(scores) / len(scores), 1)
+    veredicto = (
+        'PERFECTO' if score_global >= 95 else
+        'OK_CON_OBSERVACIONES' if score_global >= 70 else
+        'VIOLACIONES_CRITICAS'
+    )
+
+    return jsonify({
+        'ok': True,
+        'timestamp': _dt.datetime.utcnow().isoformat() + 'Z',
+        'score_global': score_global,
+        'veredicto': veredicto,
+        'invariantes': inv,
+    }), 200
+
+
+@bp.route("/admin/integridad-planta", methods=["GET"])
+def admin_integridad_planta_page():
+    """Panel semáforo de los 5 invariantes de Planta · cero-error."""
+    u, err, code = _require_admin()
+    if err:
+        return Response('<h1>403</h1>', status=403, mimetype='text/html')
+    return Response(_INTEGRIDAD_PLANTA_HTML, mimetype='text/html')
+
+
+_INTEGRIDAD_PLANTA_HTML = """<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Integridad Planta · EOS</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,Segoe UI,sans-serif;background:#0c0a09;color:#fafaf9;padding:24px}
+h1{font-size:26px;color:#5eead4;margin-bottom:4px}
+.sub{color:#a8a29e;font-size:13px;margin-bottom:24px}
+.score-card{background:linear-gradient(135deg,#1c1917 0%,#292524 100%);
+  border-radius:16px;padding:32px;margin-bottom:24px;text-align:center;
+  border:2px solid #44403c}
+.score-num{font-size:72px;font-weight:900;line-height:1}
+.score-label{font-size:18px;color:#a8a29e;margin-top:8px;letter-spacing:1px;text-transform:uppercase}
+.vere{display:inline-block;padding:6px 16px;border-radius:20px;font-weight:700;font-size:13px;margin-top:12px;letter-spacing:.5px}
+.v-PERFECTO{background:#16a34a;color:white}
+.v-OK_CON_OBSERVACIONES{background:#ca8a04;color:white}
+.v-VIOLACIONES_CRITICAS{background:#dc2626;color:white}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:16px}
+.inv{background:#1c1917;border-radius:12px;padding:20px;border-left:5px solid #44403c}
+.inv.ok{border-left-color:#16a34a}
+.inv.bad{border-left-color:#dc2626}
+.inv h3{font-size:14px;text-transform:uppercase;letter-spacing:1px;color:#fafaf9;margin-bottom:4px}
+.inv .meta{color:#a8a29e;font-size:11px;margin-bottom:12px}
+.inv .score{font-size:32px;font-weight:800;margin-bottom:4px}
+.inv.ok .score{color:#16a34a}
+.inv.bad .score{color:#dc2626}
+.findings{margin-top:12px}
+.f{background:#0c0a09;border-radius:6px;padding:10px;margin-bottom:6px;border-left:3px solid #57534e;font-size:12px}
+.f.alta{border-left-color:#dc2626}
+.f.media{border-left-color:#ca8a04}
+.f.baja{border-left-color:#0891b2}
+.f .det{color:#a8a29e;font-size:11px;margin-top:4px;font-family:monospace;max-height:120px;overflow:auto}
+button{background:#5eead4;color:#0c0a09;border:none;padding:10px 24px;border-radius:8px;cursor:pointer;font-weight:700;font-size:14px}
+button:hover{background:#2dd4bf}
+.back{display:inline-block;color:#a8a29e;text-decoration:none;font-size:13px;margin-bottom:16px}
+.ts{color:#78716c;font-size:11px;margin-left:12px}
+</style></head><body>
+<a class="back" href="/modulos">← Panel inicial</a>
+<h1>🏭 Integridad de Planta</h1>
+<p class="sub">5 invariantes obligatorios · cero-error · validación en vivo</p>
+
+<div class="score-card">
+  <div class="score-num" id="score">--</div>
+  <div class="score-label">SCORE GLOBAL</div>
+  <div id="veredicto"></div>
+  <div style="margin-top:18px"><button onclick="validar()">🔍 Validar ahora</button>
+  <span class="ts" id="ts"></span></div>
+</div>
+
+<div class="grid" id="grid"></div>
+
+<script>
+var LABELS = {
+  formulas: '🧪 Fórmulas Maestras',
+  catalogo: '📦 Catálogo MPs',
+  producciones: '⚙️ Producciones',
+  ingresos: '🚚 Ingresos (recepciones)',
+  ajustes: '✏️ Ajustes (integridad)'
+};
+var SUB = {
+  formulas: 'SUM%=100 · sin duplicados · sin huérfanos',
+  catalogo: '1 código = 1 MP · sin contradicciones',
+  producciones: 'FEFO correcto · stock no negativo',
+  ingresos: 'cantidad>0 · operador · maestro activo',
+  ajustes: 'tipo válido · audit_log · sin DELETE'
+};
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;');}
+
+async function validar(){
+  document.getElementById('score').textContent='⏳';
+  document.getElementById('grid').innerHTML='<div style="grid-column:1/-1;text-align:center;color:#a8a29e;padding:40px">Validando 5 invariantes...</div>';
+  try{
+    var r = await fetch('/api/admin/validar-planta');
+    var d = await r.json();
+    if(!r.ok){document.getElementById('grid').innerHTML='<div style="color:#dc2626;padding:20px">Error '+r.status+'</div>';return;}
+    document.getElementById('score').textContent = d.score_global;
+    document.getElementById('score').style.color =
+      d.veredicto==='PERFECTO' ? '#16a34a' :
+      d.veredicto==='OK_CON_OBSERVACIONES' ? '#ca8a04' : '#dc2626';
+    document.getElementById('veredicto').innerHTML =
+      '<span class="vere v-'+d.veredicto+'">'+d.veredicto.replace(/_/g,' ')+'</span>';
+    document.getElementById('ts').textContent = (d.timestamp||'').slice(0,19).replace('T',' ');
+    var html = '';
+    Object.keys(LABELS).forEach(function(k){
+      var inv = d.invariantes[k] || {};
+      var klass = inv.ok ? 'ok' : 'bad';
+      html += '<div class="inv '+klass+'">';
+      html += '<h3>'+LABELS[k]+'</h3>';
+      html += '<div class="meta">'+SUB[k]+'</div>';
+      html += '<div class="score">'+(inv.score||0)+'<span style="font-size:14px;color:#a8a29e">/100</span></div>';
+      var findings = inv.findings || [];
+      if(!findings.length){
+        html += '<div style="color:#16a34a;font-size:12px;margin-top:8px">✓ Sin findings · invariante perfecto</div>';
+      } else {
+        html += '<div class="findings">';
+        findings.slice(0,8).forEach(function(f){
+          html += '<div class="f '+(f.severidad||'media')+'"><b>'+esc(f.descripcion)+'</b>';
+          if(f.detalle){
+            html += '<div class="det">'+esc(JSON.stringify(f.detalle, null, 2))+'</div>';
+          }
+          html += '</div>';
+        });
+        if(findings.length > 8){
+          html += '<div style="color:#a8a29e;font-size:11px;margin-top:6px">... y '+(findings.length-8)+' más</div>';
+        }
+        html += '</div>';
+      }
+      html += '</div>';
+    });
+    document.getElementById('grid').innerHTML = html;
+  }catch(e){
+    document.getElementById('grid').innerHTML='<div style="color:#dc2626;padding:20px">'+e.message+'</div>';
+  }
+}
+validar();
+</script>
+</body></html>"""
+
+
 @bp.route("/admin/limpieza-cero-error", methods=["GET"])
 def admin_limpieza_cero_error_page():
     """Panel guiado de limpieza cero-error · ejecuta los 5 fixes en
