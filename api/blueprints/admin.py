@@ -11726,9 +11726,14 @@ def sugerir_stock_minimos():
         horizonte = max(30, min(int(request.args.get('horizonte_dias', 90)), 365))
     except (ValueError, TypeError):
         horizonte = 90
-    cobertura_default = 30
+    # Sebastián 10-may-2026: cobertura default = 90 días (3 meses).
+    # Compras locales: lead 14d + safety 76d · sobrado seguro.
+    # Compras China estándar: lead 60d + safety 30d · OK.
+    # MPs China críticas (lead 90-180d) deben configurar SU lead específico
+    # en mp_lead_time_config · el endpoint usa lead+buffer del MP si existe.
+    cobertura_default = 90
     try:
-        cobertura_default = max(7, min(int(request.args.get('cobertura_dias', 30)), 180))
+        cobertura_default = max(7, min(int(request.args.get('cobertura_dias', 90)), 365))
     except (ValueError, TypeError):
         pass
 
@@ -12325,7 +12330,11 @@ tr:hover{background:#292524}
 <p class="sub">Calculado desde producción proyectada en Google Calendar × fórmulas activas. NO usa consumo histórico.</p>
 
 <div class="note">
-<b>Cómo funciona:</b> el sistema lee Google Calendar para el horizonte que definas, multiplica cada producción por su fórmula, suma el consumo proyectado por MP, y calcula stock_minimo = consumo_mensual × (lead_time+buffer)/30 días.
+<b>Cómo funciona:</b> el sistema lee Google Calendar para el horizonte (default 90d = 1 trimestre), multiplica cada producción por su fórmula, suma el consumo proyectado por MP, y calcula <code>stock_minimo = consumo_mensual × cobertura/30</code>.
+<br><br>
+<b>Cobertura 90d (3 meses)</b> es el default · cuando una MP llega al stock_minimo, te quedan 3 meses de stock · tiempo suficiente para que llegue el pedido (locales 14d, China 60d) con buffer de seguridad.
+<br><br>
+<b>MPs China críticas (lead 90-180d):</b> configurá su lead específico en <code>mp_lead_time_config</code> · el endpoint usa SU cobertura individual (lead+buffer) en vez del default.
 </div>
 
 <div class="controls">
@@ -12333,7 +12342,7 @@ tr:hover{background:#292524}
     <input type="number" id="horizonte" value="90" min="30" max="365" step="30">
   </label>
   <label>Cobertura default (días)
-    <input type="number" id="cobertura" value="30" min="7" max="180" step="7">
+    <input type="number" id="cobertura" value="90" min="7" max="365" step="15">
   </label>
   <button class="b-run" onclick="calcular()">🔍 Calcular sugerencias</button>
   <span id="ts" style="color:#a8a29e;font-size:11px;margin-left:8px"></span>
