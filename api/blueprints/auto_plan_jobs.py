@@ -585,6 +585,8 @@ JOBS_SCHEDULE = [
     ('tecnica_vencimientos',  7, 45, None, None,                'job_tecnica_vencimientos'),
     # ⭐ Planta · diario 7:50 · marca VENCIDO en lotes con fecha_venc pasada (INVIMA)
     ('marcar_vencidos',       7, 50, None, None,                'job_marcar_vencidos'),
+    # ⭐ Zero-Error · diario 8:00 · validación profunda matemática (8 checks)
+    ('validacion_profunda',   8,  0, None, None,                'job_validacion_profunda'),
     # ⭐ Animus · L-V 8:00am · asignar 5 SKUs para conteo fisico a Daniela
     ('animus_conteo_diario',  8,  0, [0,1,2,3,4], None,         'job_animus_conteo_diario'),
     # ⭐ Aseguramiento · diario 8:00 · alerta desviaciones en plazos críticos (ASG-PRO-001)
@@ -2805,6 +2807,108 @@ def _enviar_mail_watcher(payload):
         log.info(f'watcher: mail enviado a {len(destinatarios)} destinatarios')
     except Exception as e:
         log.warning(f'watcher mail fallo (best-effort): {e}')
+
+
+def job_validacion_profunda(app):
+    """Cron diario 8:00 · ejecuta validacion-profunda y notifica hallazgos.
+
+    Sebastián 8-may-2026 zero-error TIER 1: detección continua. Cada día
+    corre los 8 checks matemáticos. Si hay hallazgos NUEVOS de severidad
+    alta o media, notifica a Sebastián + responsables.
+
+    Idempotente: si los hallazgos son los mismos que ayer, NO re-notifica
+    (anti-spam). Solo notifica deltas.
+    """
+    with app.app_context():
+        try:
+            from blueprints.admin import validacion_profunda
+            from flask import session as _s
+            from config import ADMIN_USERS as _ADMIN
+            with app.test_request_context('/api/admin/validacion-profunda'):
+                _s['compras_user'] = next(iter(_ADMIN), 'sebastian')
+                resp = validacion_profunda()
+            if isinstance(resp, tuple):
+                payload, status = resp[0].get_json(), resp[1]
+            else:
+                payload, status = resp.get_json(), resp.status_code
+
+            if status != 200 or not payload.get('ok'):
+                return False, {'error': 'validacion-profunda fallo',
+                                'status': status}, 0
+
+            score = payload.get('score_real', 0)
+            veredicto = payload.get('veredicto_real', '')
+            resumen = payload.get('resumen', {})
+            alta = resumen.get('alta', 0)
+            media = resumen.get('media', 0)
+
+            # Si todo OK · no notificar (anti-spam)
+            if alta == 0 and media == 0:
+                return True, {'mensaje': 'Validación profunda PERFECTA · sin hallazgos',
+                               'score_real': score}, 0
+
+            # Hay hallazgos · notificar
+            try:
+                from blueprints.notif import push_notif_multi
+                hallazgos = payload.get('hallazgos', [])
+                tipos_alta = list(set(h['tipo'] for h in hallazgos
+                                       if h.get('severidad') == 'alta'))
+                tipos_media = list(set(h['tipo'] for h in hallazgos
+                                        if h.get('severidad') == 'media'))
+
+                titulo = f'🔍 Validación profunda: {veredicto} · score {score}/100'
+                cuerpo = []
+                if alta > 0:
+                    cuerpo.append(f'⚠ {alta} hallazgo(s) ALTA: ' +
+                                   ', '.join(tipos_alta[:5]))
+                if media > 0:
+                    cuerpo.append(f'• {media} hallazgo(s) MEDIA: ' +
+                                   ', '.join(tipos_media[:5]))
+                cuerpo.append('')
+                cuerpo.append('Ver detalle: /admin/realidad-cero-error')
+
+                push_notif_multi(
+                    ['sebastian', 'aseguramiento.espagiria',
+                     'controlcalidad.espagiria'],
+                    'capa', titulo,
+                    body='\n'.join(cuerpo),
+                    link='/admin/realidad-cero-error',
+                    remitente='cron-validacion-profunda',
+                    importante=(alta > 0),
+                )
+            except Exception as e:
+                log.warning('validacion_profunda notif fallo: %s', e)
+
+            # Audit log
+            try:
+                from database import get_db
+                from audit_helpers import audit_log
+                conn = get_db(); c = conn.cursor()
+                audit_log(c, usuario='sistema',
+                          accion='VALIDACION_PROFUNDA_DIARIA',
+                          tabla=None, registro_id=None,
+                          despues={
+                              'score_real': score,
+                              'veredicto': veredicto,
+                              'alta': alta, 'media': media,
+                              'tipos_alta': tipos_alta[:10],
+                              'tipos_media': tipos_media[:10],
+                          },
+                          detalle=(f'Validación profunda: {veredicto} · '
+                                   f'{alta} alta · {media} media'))
+                conn.commit()
+            except Exception as e:
+                log.warning('validacion_profunda audit fallo: %s', e)
+
+            return True, {
+                'score_real': score,
+                'veredicto': veredicto,
+                'alta': alta, 'media': media,
+            }, 0
+
+        except Exception as e:
+            log.exception('validacion_profunda fallo: %s', e)
+            return False, {'error': str(e)[:300]}, 0
 
 
 def job_marcar_vencidos(app):

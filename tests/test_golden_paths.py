@@ -3789,3 +3789,16 @@ def test_golden_forensic_trazabilidad(app, db_clean):
     assert 'movs_sin_operador' in d
     assert isinstance(d['lotes_vivos_sin_fv'], list)
     assert isinstance(d['movs_sin_operador'], list)
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 81 · Cron diario validacion-profunda
+# ═══════════════════════════════════════════════════════════════════
+
+def test_golden_cron_validacion_profunda(app, db_clean):
+    from blueprints.auto_plan_jobs import job_validacion_profunda
+    ok, resultado, _ = job_validacion_profunda(app)
+    assert ok, f'BUG: cron validacion-profunda retorno False · {resultado}'
+    # Debe retornar score y veredicto
+    assert 'score_real' in resultado or 'mensaje' in resultado, \
+        f'response incompleto: {resultado}'
