@@ -3166,3 +3166,94 @@ def test_golden_auditoria_formulas_completa(app, db_clean):
     finally:
         _exec("DELETE FROM formula_items WHERE producto_nombre=?", (prod,))
         _exec("DELETE FROM maestro_mps WHERE codigo_mp=?", (mp_real,))
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 70 · S2 · Auditoria produccion descuenta MPs
+# ═══════════════════════════════════════════════════════════════════
+# Sebastián 8-may-2026: /api/admin/auditoria-producciones-descuento
+# detecta produccion iniciada pero sin movimientos Salida del descuento.
+
+def test_golden_auditoria_producciones_descuento(app, db_clean):
+    cs = _login(app, 'sebastian')
+
+    # Seed 3 producciones distintas:
+    # P1: iniciada + descontada + tiene movs Salida → OK
+    # P2: iniciada pero sin inventario_descontado_at → INICIADA_SIN_DESCUENTO
+    # P3: pendiente (no iniciada) → PENDIENTE (no es problema)
+    producto = 'GP70-PRODUCTO-AUDIT'
+    mp_codigo = 'GP70-MP-AUDIT'
+
+    _exec("""INSERT OR REPLACE INTO maestro_mps
+              (codigo_mp, nombre_comercial, activo, tipo_material)
+              VALUES (?, 'MP audit S2', 1, 'MP')""",
+          (mp_codigo,))
+    _exec("""INSERT INTO formula_items
+              (producto_nombre, material_id, material_nombre, porcentaje)
+              VALUES (?, ?, 'MP audit S2', 100)""",
+          (producto, mp_codigo))
+
+    # P1: OK · iniciada + descontada + mov Salida con obs correcta
+    p1_id = _exec("""INSERT INTO produccion_programada
+              (producto, fecha_programada, lotes, estado,
+               inicio_real_at, inventario_descontado_at)
+              VALUES (?, date('now'), 1, 'completada',
+                      datetime('now'), datetime('now'))""",
+          (producto,))
+    _exec("""INSERT INTO movimientos
+              (material_id, material_nombre, cantidad, tipo, fecha,
+               observaciones, operador)
+              VALUES (?, 'MP audit S2', 500, 'Salida', date('now'),
+                      ?, 'gp70-test')""",
+          (mp_codigo, f'Producción INICIADA: {producto} — test'))
+
+    # P2: INICIADA_SIN_DESCUENTO
+    p2_id = _exec("""INSERT INTO produccion_programada
+              (producto, fecha_programada, lotes, estado, inicio_real_at)
+              VALUES (?, date('now'), 1, 'en_proceso', datetime('now'))""",
+          (producto,))
+
+    # P3: PENDIENTE
+    p3_id = _exec("""INSERT INTO produccion_programada
+              (producto, fecha_programada, lotes, estado)
+              VALUES (?, date('now', '+5 days'), 1, 'pendiente')""",
+          (producto,))
+
+    try:
+        r = cs.get('/api/admin/auditoria-producciones-descuento?dias=30')
+        assert r.status_code == 200, \
+            f'BUG: endpoint caido · {r.status_code} {r.data}'
+        d = r.get_json() or {}
+
+        assert d.get('ok'), f'response sin ok: {d}'
+        assert 'score' in d and 'veredicto' in d, 'falta score/veredicto'
+
+        # Buscar P1 y P2 en el response
+        ids_problemas = {p['id']: p['estado_audit']
+                          for p in d.get('problemas', [])}
+
+        # P1 NO debe estar en problemas (es OK)
+        assert p1_id not in ids_problemas, \
+            f'BUG: P1 con descuento OK aparece como problema · {ids_problemas.get(p1_id)}'
+
+        # P2 SI debe aparecer como INICIADA_SIN_DESCUENTO
+        assert p2_id in ids_problemas, \
+            f'BUG: P2 sin descuento NO detectada · problemas={ids_problemas}'
+        assert ids_problemas[p2_id] == 'INICIADA_SIN_DESCUENTO', \
+            f'BUG: P2 mal clasificada · {ids_problemas[p2_id]}'
+
+        # P3 NO debe estar en problemas (es PENDIENTE)
+        assert p3_id not in ids_problemas, \
+            'BUG: P3 pendiente aparece como problema'
+
+        # Resumen consistente
+        rs = d.get('resumen', {})
+        assert (rs.get('iniciadas_sin_descuento') or 0) >= 1, \
+            f'BUG: contador iniciadas_sin_descuento mal · {rs}'
+
+    finally:
+        _exec("DELETE FROM movimientos WHERE material_id=?", (mp_codigo,))
+        _exec("DELETE FROM formula_items WHERE producto_nombre=?", (producto,))
+        _exec("DELETE FROM produccion_programada WHERE id IN (?,?,?)",
+              (p1_id, p2_id, p3_id))
+        _exec("DELETE FROM maestro_mps WHERE codigo_mp=?", (mp_codigo,))

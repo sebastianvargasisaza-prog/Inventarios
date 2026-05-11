@@ -12441,6 +12441,176 @@ def auditoria_formulas_completa():
     }), 200
 
 
+@bp.route("/api/admin/auditoria-producciones-descuento", methods=["GET"])
+def auditoria_producciones_descuento():
+    """S2 · Integridad producciones · descuento de MPs (read-only).
+
+    Sebastián 8-may-2026: validar que cuando una producción se inicia,
+    descuenta correctamente las MPs de inventario via movimientos Salida.
+
+    Para cada producción en los últimos N días (default 90):
+      1. iniciada · si tiene inicio_real_at != NULL
+      2. descontada · si tiene inventario_descontado_at != NULL
+      3. n_movs_salida · movimientos Salida con obs LIKE 'Producción INICIADA: <producto>%'
+      4. estado_audit:
+         - OK: iniciada + descontada + n_movs_salida >= 1
+         - PENDIENTE: no iniciada (sin problema)
+         - INICIADA_SIN_DESCUENTO: iniciada pero inventario_descontado_at NULL
+         - DESCONTADA_SIN_MOVS: descontada pero ningún movimiento Salida (bug grave)
+         - SIN_FORMULA: producto sin formula_items (no se puede descontar)
+         - TERMINADA_SIN_DESCUENTO: tiene fin_real_at sin inventario_descontado_at
+
+    Query params:
+      dias: int (default 90)
+
+    Returns:
+      {
+        ok, score (0-100), veredicto, resumen, producciones: [...]
+      }
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    try:
+        dias = int(request.args.get('dias', 90))
+        if dias < 1: dias = 1
+        if dias > 730: dias = 730
+    except Exception:
+        dias = 90
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("PRAGMA busy_timeout=2000")
+    c = conn.cursor()
+
+    errores_checks = {}
+
+    try:
+        # Producciones programadas con datos para auditar
+        rows = c.execute("""
+            SELECT pp.id, pp.producto, pp.fecha_programada, pp.lotes,
+                   pp.estado,
+                   pp.inicio_real_at,
+                   pp.fin_real_at,
+                   pp.inventario_descontado_at,
+                   (SELECT COUNT(*) FROM formula_items
+                     WHERE producto_nombre = pp.producto) AS n_formula_items,
+                   (SELECT COUNT(*) FROM movimientos
+                     WHERE tipo = 'Salida'
+                       AND observaciones LIKE 'Producción INICIADA: ' || pp.producto || '%')
+                   AS n_movs_salida_producto
+            FROM produccion_programada pp
+            WHERE date(pp.fecha_programada) >= date('now', '-' || ? || ' days')
+            ORDER BY pp.fecha_programada DESC
+            LIMIT 500
+        """, (dias,)).fetchall()
+    except Exception as e:
+        conn.close()
+        return jsonify({
+            'ok': False,
+            'error': 'falla en query base · puede que falten columnas',
+            'detail': str(e)[:300],
+        }), 500
+
+    producciones = []
+    n_ok = 0
+    n_pendientes = 0
+    n_sin_descuento = 0
+    n_descontada_sin_movs = 0
+    n_sin_formula = 0
+    n_terminada_sin_descuento = 0
+
+    for r in rows:
+        (pp_id, producto, fecha_prog, lotes, estado,
+         inicio_real, fin_real, desc_at, n_fi, n_movs) = r
+
+        iniciada = bool(inicio_real)
+        descontada = bool(desc_at)
+        terminada = bool(fin_real)
+        tiene_formula = (n_fi or 0) > 0
+
+        if not iniciada:
+            estado_audit = 'PENDIENTE'
+            n_pendientes += 1
+        elif not tiene_formula:
+            estado_audit = 'SIN_FORMULA'
+            n_sin_formula += 1
+        elif iniciada and not descontada:
+            estado_audit = 'INICIADA_SIN_DESCUENTO'
+            n_sin_descuento += 1
+        elif terminada and not descontada:
+            estado_audit = 'TERMINADA_SIN_DESCUENTO'
+            n_terminada_sin_descuento += 1
+        elif descontada and (n_movs or 0) == 0:
+            estado_audit = 'DESCONTADA_SIN_MOVS'
+            n_descontada_sin_movs += 1
+        else:
+            estado_audit = 'OK'
+            n_ok += 1
+
+        producciones.append({
+            'id': pp_id,
+            'producto': producto,
+            'fecha_programada': fecha_prog,
+            'lotes': lotes,
+            'estado': estado,
+            'iniciada': iniciada,
+            'descontada': descontada,
+            'terminada': terminada,
+            'n_formula_items': n_fi or 0,
+            'n_movs_salida_producto': n_movs or 0,
+            'estado_audit': estado_audit,
+        })
+
+    n_total = len(producciones)
+    n_iniciadas = n_total - n_pendientes
+    n_problemas = (n_sin_descuento + n_descontada_sin_movs +
+                    n_sin_formula + n_terminada_sin_descuento)
+
+    # Score: cada problema baja proporcionalmente.
+    # Si no hay producciones iniciadas, score=100 (no hay nada que auditar)
+    if n_iniciadas == 0:
+        score = 100.0
+    else:
+        score = 100.0 * (1.0 - n_problemas / max(n_iniciadas, 1))
+    score = max(0.0, round(score, 1))
+
+    if score >= 99:
+        veredicto = 'PERFECTA'
+    elif score >= 85:
+        veredicto = 'MENOR'
+    else:
+        veredicto = 'BLOQUEANTE'
+
+    conn.close()
+
+    # Top producciones con problemas (no mostrar las OK ni PENDIENTE)
+    problemas = [p for p in producciones
+                  if p['estado_audit'] not in ('OK', 'PENDIENTE')]
+
+    return jsonify({
+        'ok': True,
+        'score': score,
+        'veredicto': veredicto,
+        'resumen': {
+            'dias_horizonte': dias,
+            'n_total': n_total,
+            'n_iniciadas': n_iniciadas,
+            'n_pendientes': n_pendientes,
+            'n_ok': n_ok,
+            'n_problemas': n_problemas,
+            'iniciadas_sin_descuento': n_sin_descuento,
+            'descontadas_sin_movs': n_descontada_sin_movs,
+            'sin_formula': n_sin_formula,
+            'terminadas_sin_descuento': n_terminada_sin_descuento,
+        },
+        'problemas': problemas[:50],
+        'errores_checks': errores_checks,
+        'message': (f'S2 producciones: {veredicto} · score {score}/100 '
+                    f'· {n_total} producciones · {n_problemas} con problemas'),
+    }), 200
+
+
 @bp.route("/api/admin/formula-remapear-material-id", methods=["POST"])
 def formula_remapear_material_id():
     """Reemplaza material_id en formula_items (huérfano → código real).
@@ -15232,6 +15402,161 @@ function topTable(k, top){
       '</table>';
   }
   return '<pre style="font-size:11px">' + esc(JSON.stringify(top, null, 2)) + '</pre>';
+}
+
+run();
+</script>
+</body></html>"""
+
+
+@bp.route("/admin/auditoria-producciones", methods=["GET"])
+def admin_auditoria_producciones_page():
+    """S2 · Página visual del veredicto producción descuenta MPs."""
+    u, err, code = _require_admin()
+    if err:
+        return Response(
+            '<h1>403</h1><p>Solo admin puede ver este panel.</p>',
+            status=403, mimetype='text/html'
+        )
+    return Response(_AUDIT_PRODUCCIONES_HTML, mimetype='text/html')
+
+
+_AUDIT_PRODUCCIONES_HTML = """<!DOCTYPE html>
+<html lang="es"><head>
+<meta charset="utf-8">
+<title>S2 · Producciones · EOS</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,Segoe UI,sans-serif;background:#0f172a;color:#f1f5f9;padding:20px;line-height:1.5}
+h1{font-size:24px;margin-bottom:6px;color:#5eead4}
+.sub{color:#94a3b8;font-size:13px;margin-bottom:20px}
+.back{display:inline-block;color:#94a3b8;text-decoration:none;font-size:13px;margin-bottom:16px}
+.back:hover{color:#f1f5f9}
+.controls{background:#1e293b;border-radius:10px;padding:14px;margin-bottom:16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.controls label{font-size:13px;color:#cbd5e1}
+.controls input{background:#0f172a;color:#f1f5f9;border:1px solid #475569;border-radius:6px;padding:6px 10px;width:90px}
+.hero{background:#1e293b;border-radius:14px;padding:24px;margin-bottom:20px;text-align:center}
+.score{font-size:72px;font-weight:800;line-height:1}
+.score.ok{color:#22c55e}
+.score.warn{color:#fbbf24}
+.score.bad{color:#ef4444}
+.verdict{font-size:16px;font-weight:700;letter-spacing:1px;margin-top:8px;text-transform:uppercase}
+.verdict.ok{color:#22c55e}
+.verdict.warn{color:#fbbf24}
+.verdict.bad{color:#ef4444}
+.resumen{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-top:14px}
+.kpi{background:#0f172a;border-radius:8px;padding:8px;font-size:11px;color:#94a3b8}
+.kpi b{display:block;color:#f1f5f9;font-size:18px;margin-bottom:2px}
+.kpi.bad b{color:#ef4444}
+.kpi.warn b{color:#fbbf24}
+.kpi.ok b{color:#22c55e}
+table{width:100%;border-collapse:collapse;background:#1e293b;border-radius:10px;overflow:hidden;font-size:12px;margin-top:10px}
+th,td{padding:8px 10px;text-align:left;border-bottom:1px solid #334155}
+th{background:#0f172a;color:#94a3b8;font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.5px}
+tr:hover{background:#334155}
+.badge{padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;letter-spacing:.5px;display:inline-block}
+.badge.ok{background:#14532d;color:#86efac}
+.badge.bad{background:#7f1d1d;color:#fca5a5}
+.badge.warn{background:#7c2d12;color:#fed7aa}
+.loading{text-align:center;padding:40px;color:#64748b}
+.error{background:#7f1d1d;color:#fecaca;padding:14px;border-radius:8px;font-size:13px}
+button{padding:8px 16px;border:none;border-radius:6px;cursor:pointer;font-weight:600;font-size:13px;background:#5eead4;color:#0f172a}
+button:hover{background:#2dd4bf}
+.empty{color:#64748b;text-align:center;padding:30px;font-style:italic}
+</style></head><body>
+
+<a class="back" href="/modulos">← Panel inicial</a>
+<h1>🏭 S2 · Producción descuenta MPs</h1>
+<p class="sub">Verifica que cada producción iniciada descontó MPs vía movimientos Salida. Solo lectura · no modifica datos.</p>
+
+<div class="controls">
+  <label>Últimos
+    <input type="number" id="dias" value="90" min="1" max="730">
+    días
+  </label>
+  <button onclick="run()">🔄 Re-ejecutar</button>
+</div>
+
+<div id="content" class="loading">⏳ Cargando auditoría...</div>
+
+<script>
+function esc(s){return String(s===null||s===undefined?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;');}
+
+async function run(){
+  const dias = document.getElementById('dias').value || 90;
+  document.getElementById('content').className = 'loading';
+  document.getElementById('content').innerHTML = '⏳ Cargando auditoría...';
+  try{
+    const r = await fetch('/api/admin/auditoria-producciones-descuento?dias=' + dias);
+    const d = await r.json();
+    if(!r.ok){
+      document.getElementById('content').innerHTML =
+        '<div class="error">Error ' + r.status + ': ' + esc(d.error||'falla') +
+        '<br><small>' + esc(d.detail||'') + '</small></div>';
+      return;
+    }
+    render(d);
+  }catch(e){
+    document.getElementById('content').innerHTML =
+      '<div class="error">Error de red: ' + esc(e.message) + '</div>';
+  }
+}
+
+function render(d){
+  const score = d.score || 0;
+  const sclass = score >= 99 ? 'ok' : score >= 85 ? 'warn' : 'bad';
+  const v = d.veredicto || 'BLOQUEANTE';
+  const vclass = v === 'PERFECTA' ? 'ok' : v === 'MENOR' ? 'warn' : 'bad';
+  const rs = d.resumen || {};
+
+  let html = '<div class="hero">' +
+    '<div class="score ' + sclass + '">' + score + '<small style="font-size:24px;color:#64748b">/100</small></div>' +
+    '<div class="verdict ' + vclass + '">' + v + '</div>' +
+    '<div class="resumen">' +
+      kpi('Total', rs.n_total, '') +
+      kpi('Iniciadas', rs.n_iniciadas, '') +
+      kpi('OK', rs.n_ok, 'ok') +
+      kpi('Pendientes', rs.n_pendientes, '') +
+      kpi('Problemas', rs.n_problemas, (rs.n_problemas||0)>0?'bad':'ok') +
+    '</div>' +
+    (rs.n_problemas > 0 ? '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:6px;margin-top:10px">' +
+      kpi('Iniciada sin descuento', rs.iniciadas_sin_descuento, (rs.iniciadas_sin_descuento||0)>0?'bad':'') +
+      kpi('Descontada sin movs', rs.descontadas_sin_movs, (rs.descontadas_sin_movs||0)>0?'bad':'') +
+      kpi('Sin fórmula', rs.sin_formula, (rs.sin_formula||0)>0?'warn':'') +
+      kpi('Terminada sin descuento', rs.terminadas_sin_descuento, (rs.terminadas_sin_descuento||0)>0?'bad':'') +
+    '</div>' : '') +
+  '</div>';
+
+  const probs = d.problemas || [];
+  if(probs.length === 0){
+    html += '<div class="empty">✓ Sin problemas detectados en los últimos ' + rs.dias_horizonte + ' días.</div>';
+  } else {
+    html += '<h3 style="margin-top:14px;color:#fbbf24">Producciones con problema (' + probs.length + ')</h3>';
+    html += '<table><thead><tr><th>ID</th><th>Producto</th><th>Fecha</th><th>Lotes</th>' +
+      '<th>Iniciada</th><th>Descontada</th><th>Movs Salida</th><th>Estado</th></tr></thead><tbody>';
+    for(const p of probs){
+      const eclass = p.estado_audit === 'OK' ? 'ok' :
+                     p.estado_audit === 'SIN_FORMULA' ? 'warn' : 'bad';
+      html += '<tr>' +
+        '<td>' + esc(p.id) + '</td>' +
+        '<td>' + esc(p.producto) + '</td>' +
+        '<td>' + esc(p.fecha_programada) + '</td>' +
+        '<td>' + esc(p.lotes) + '</td>' +
+        '<td>' + (p.iniciada ? '✓' : '—') + '</td>' +
+        '<td>' + (p.descontada ? '✓' : '—') + '</td>' +
+        '<td>' + esc(p.n_movs_salida_producto) + '</td>' +
+        '<td><span class="badge ' + eclass + '">' + esc(p.estado_audit) + '</span></td>' +
+      '</tr>';
+    }
+    html += '</tbody></table>';
+  }
+
+  document.getElementById('content').className = '';
+  document.getElementById('content').innerHTML = html;
+}
+
+function kpi(label, val, cls){
+  return '<div class="kpi ' + (cls||'') + '"><b>' + (val||0) + '</b>' + esc(label) + '</div>';
 }
 
 run();
