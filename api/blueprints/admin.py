@@ -17642,6 +17642,69 @@ def reconciliar_mee():
                         'detail': str(e)[:300]}), 500
 
 
+@bp.route("/api/admin/zero-error-historial", methods=["GET"])
+def api_zero_error_historial():
+    """Histórico de scores zero-error · gráfica temporal.
+
+    Query params:
+      dias: int (default 30 · max 365)
+
+    Returns: { runs: [{fecha, score_real, veredicto_real, alta, media, baja}, ...] }
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    try:
+        dias = int(request.args.get('dias', 30))
+        if dias < 1: dias = 1
+        if dias > 365: dias = 365
+    except Exception:
+        dias = 30
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("PRAGMA busy_timeout=2000")
+    c = conn.cursor()
+    try:
+        rows = c.execute("""
+            SELECT fecha, score_real, veredicto_real, alta, media, baja,
+                   detalles_json, origen
+            FROM audit_zero_error_runs
+            WHERE date(fecha) >= date('now', '-' || ? || ' days')
+            ORDER BY fecha DESC
+            LIMIT 500
+        """, (dias,)).fetchall()
+    except Exception as e:
+        conn.close()
+        return jsonify({'error': 'falla query historial',
+                        'detail': str(e)[:200]}), 500
+    conn.close()
+
+    import json as _json
+    runs = []
+    for r in rows:
+        try:
+            det = _json.loads(r[6]) if r[6] else {}
+        except Exception:
+            det = {}
+        runs.append({
+            'fecha': r[0], 'score_real': r[1],
+            'veredicto_real': r[2], 'alta': r[3],
+            'media': r[4], 'baja': r[5],
+            'tipos_alta': det.get('tipos_alta', [])[:10],
+            'tipos_media': det.get('tipos_media', [])[:10],
+            'origen': r[7],
+        })
+
+    return jsonify({
+        'ok': True,
+        'dias_horizonte': dias,
+        'n_runs': len(runs),
+        'runs': runs,
+        'message': f'{len(runs)} runs en últimos {dias} días',
+    }), 200
+
+
 @bp.route("/api/admin/realidad-cero-error", methods=["GET"])
 def api_realidad_cero_error():
     """S6 agregador zero-error score combinado S1-S5."""

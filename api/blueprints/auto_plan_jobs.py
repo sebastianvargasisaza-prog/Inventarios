@@ -2920,6 +2920,26 @@ def job_validacion_profunda(app):
             except Exception as e:
                 log.warning('validacion_profunda audit fallo: %s', e)
 
+            # Persistir histórico zero-error (gráfica temporal)
+            try:
+                import json as _json_h
+                from database import get_db
+                conn_h = get_db(); ch = conn_h.cursor()
+                ch.execute("""
+                    INSERT INTO audit_zero_error_runs
+                      (score_real, veredicto_real, alta, media, baja,
+                       detalles_json, origen)
+                    VALUES (?, ?, ?, ?, ?, ?, 'cron')
+                """, (score, veredicto, alta, media,
+                       resumen.get('baja', 0),
+                       _json_h.dumps({
+                           'tipos_alta': tipos_alta[:20],
+                           'tipos_media': tipos_media[:20],
+                       })))
+                conn_h.commit()
+            except Exception as e:
+                log.warning('validacion_profunda historial fallo: %s', e)
+
             return True, {
                 'score_real': score,
                 'veredicto': veredicto,

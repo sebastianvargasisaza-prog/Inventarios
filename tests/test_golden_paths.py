@@ -3968,3 +3968,33 @@ def test_golden_audit_trail_csv(app, db_clean):
     csv_text2 = r2.data.decode('utf-8', errors='ignore')
     # Header siempre presente
     assert 'accion' in csv_text2
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 85 · Historial zero-error · cron persistencia
+# ═══════════════════════════════════════════════════════════════════
+
+def test_golden_zero_error_historial(app, db_clean):
+    cs = _login(app, 'sebastian')
+
+    # Insertar 2 runs manualmente (simular cron)
+    _exec("""INSERT INTO audit_zero_error_runs
+              (fecha, score_real, veredicto_real, alta, media, baja, origen)
+              VALUES (datetime('now','-2 days'), 85.0, 'MENOR', 1, 3, 5, 'cron')""")
+    _exec("""INSERT INTO audit_zero_error_runs
+              (fecha, score_real, veredicto_real, alta, media, baja, origen)
+              VALUES (datetime('now','-1 days'), 95.0, 'MENOR', 0, 5, 4, 'cron')""")
+
+    try:
+        r = cs.get('/api/admin/zero-error-historial?dias=7')
+        assert r.status_code == 200, \
+            f'BUG: historial caido · {r.status_code} {r.data}'
+        d = r.get_json() or {}
+        assert d.get('ok')
+        assert d['n_runs'] >= 2, f'esperaba >=2 runs · got {d["n_runs"]}'
+        # Más reciente primero
+        assert d['runs'][0]['score_real'] == 95.0, \
+            f'orden DESC roto · {d["runs"][:2]}'
+
+    finally:
+        _exec("DELETE FROM audit_zero_error_runs WHERE origen='cron' AND score_real IN (85.0, 95.0)")

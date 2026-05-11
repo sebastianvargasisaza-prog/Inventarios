@@ -253,6 +253,22 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
             SELECT RAISE(ABORT, 'UPDATE material_id no existe en maestro_mps activo (FK violation)');
         END""",
     ]),
+    (100, "audit_zero_error_runs (historial scores) · Sebastián 8-may-2026", [
+        """CREATE TABLE IF NOT EXISTS audit_zero_error_runs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            fecha TEXT NOT NULL DEFAULT (datetime('now')),
+            score_global REAL,
+            veredicto_global TEXT,
+            score_real REAL,
+            veredicto_real TEXT,
+            alta INTEGER DEFAULT 0,
+            media INTEGER DEFAULT 0,
+            baja INTEGER DEFAULT 0,
+            detalles_json TEXT,
+            origen TEXT DEFAULT 'cron'
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_aze_fecha ON audit_zero_error_runs(fecha DESC)",
+    ]),
     (99, "producciones: formula_snapshot_json (anti drift retroactivo · Sebastián 8-may-2026)", [
         # Snapshot inmutable de la fórmula al momento exacto de la producción.
         # Resuelve el bug raíz descubierto por audit profundo: si la fórmula
