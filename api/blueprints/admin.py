@@ -11690,6 +11690,259 @@ def investigar_mp(codigo):
     }), 200
 
 
+@bp.route("/api/admin/formula-huerfanos-con-sugerencias", methods=["GET"])
+def formula_huerfanos_con_sugerencias():
+    """Detecta TODOS los huérfanos en formula_items y sugiere el código
+    real de maestro_mps basado en similitud de nombre.
+
+    Sebastián 10-may-2026: 'las formulas tienen cosas diferentes que lo
+    que hay en stock · debemos normalizar nombres y codigos'.
+
+    Para cada material_id en formula_items que NO existe en maestro_mps
+    activo, busca el mejor match en maestro_mps por nombre (fuzzy).
+
+    Returns:
+      huerfanos: [{
+        material_id_actual_formula,
+        material_nombre_en_formula,
+        productos_que_lo_usan: [...],
+        sugerencias: [{
+          codigo_mp_correcto, nombre_match, similitud,
+          razon: 'nombre exacto' | 'nombre similar' | ...
+        }],
+        recomendacion: 'auto' | 'manual' | 'crear_nueva'
+      }]
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("PRAGMA busy_timeout=2000")
+    c = conn.cursor()
+
+    # 1. Encontrar huérfanos
+    huerfanos_rows = c.execute("""
+        SELECT fi.material_id,
+               MAX(fi.material_nombre) as nombre_en_formula,
+               COUNT(DISTINCT fi.producto_nombre) as n_productos,
+               GROUP_CONCAT(DISTINCT fi.producto_nombre) as productos
+        FROM formula_items fi
+        LEFT JOIN maestro_mps mp
+               ON fi.material_id = mp.codigo_mp AND mp.activo = 1
+        WHERE mp.codigo_mp IS NULL
+          AND fi.material_id IS NOT NULL AND TRIM(fi.material_id) != ''
+        GROUP BY fi.material_id
+        ORDER BY n_productos DESC
+    """).fetchall()
+
+    # 2. Cargar catálogo activo para buscar matches
+    catalogo = c.execute("""
+        SELECT codigo_mp,
+               COALESCE(nombre_comercial,'') as nc,
+               COALESCE(nombre_inci,'') as inci
+        FROM maestro_mps WHERE activo = 1
+    """).fetchall()
+
+    # 3. Para cada huérfano, calcular sugerencias
+    import difflib as _diff
+    huerfanos = []
+    for r in huerfanos_rows:
+        mid_huerfano, nom_formula, n_prods, prods = r
+        nom_formula_norm = (nom_formula or '').strip().lower()
+        productos = (prods or '').split(',')[:10]
+
+        sugerencias = []
+        if nom_formula_norm:
+            # Buscar matches exactos primero
+            for cm, nc, inci in catalogo:
+                if cm == mid_huerfano:
+                    continue
+                nc_norm = (nc or '').strip().lower()
+                inci_norm = (inci or '').strip().lower()
+                if nc_norm and nc_norm == nom_formula_norm:
+                    sugerencias.append({
+                        'codigo_mp_correcto': cm,
+                        'nombre_match': nc, 'similitud': 1.0,
+                        'razon': 'nombre comercial exacto',
+                    })
+                elif inci_norm and inci_norm == nom_formula_norm:
+                    sugerencias.append({
+                        'codigo_mp_correcto': cm,
+                        'nombre_match': inci, 'similitud': 1.0,
+                        'razon': 'INCI exacto',
+                    })
+
+            # Si no hubo exacto, búsqueda fuzzy
+            if not sugerencias:
+                candidatos = []
+                for cm, nc, inci in catalogo:
+                    if cm == mid_huerfano:
+                        continue
+                    for nombre_cand, etiq in [(nc, 'nombre comercial'),
+                                              (inci, 'INCI')]:
+                        nc_norm2 = (nombre_cand or '').strip().lower()
+                        if not nc_norm2 or len(nc_norm2) < 4:
+                            continue
+                        ratio = _diff.SequenceMatcher(
+                            None, nom_formula_norm, nc_norm2
+                        ).ratio()
+                        if ratio >= 0.7:
+                            candidatos.append({
+                                'codigo_mp_correcto': cm,
+                                'nombre_match': nombre_cand,
+                                'similitud': round(ratio, 3),
+                                'razon': f'{etiq} similar (fuzzy)',
+                            })
+                # Top 5 ordenados por similitud
+                candidatos.sort(key=lambda x: -x['similitud'])
+                sugerencias = candidatos[:5]
+
+        # Recomendación
+        if sugerencias and sugerencias[0]['similitud'] >= 0.95:
+            recomendacion = 'auto'
+        elif sugerencias and sugerencias[0]['similitud'] >= 0.85:
+            recomendacion = 'revisar_alta_confianza'
+        elif sugerencias:
+            recomendacion = 'manual'
+        else:
+            recomendacion = 'crear_nueva_mp'
+
+        huerfanos.append({
+            'material_id_actual_formula': mid_huerfano,
+            'material_nombre_en_formula': nom_formula or '',
+            'n_productos_que_lo_usan': n_prods,
+            'productos': productos,
+            'sugerencias': sugerencias,
+            'recomendacion': recomendacion,
+        })
+
+    conn.close()
+    return jsonify({
+        'ok': True,
+        'huerfanos': huerfanos,
+        'resumen': {
+            'total_huerfanos': len(huerfanos),
+            'auto': sum(1 for h in huerfanos if h['recomendacion'] == 'auto'),
+            'revisar_alta_confianza': sum(1 for h in huerfanos if h['recomendacion'] == 'revisar_alta_confianza'),
+            'manual': sum(1 for h in huerfanos if h['recomendacion'] == 'manual'),
+            'crear_nueva_mp': sum(1 for h in huerfanos if h['recomendacion'] == 'crear_nueva_mp'),
+        },
+    }), 200
+
+
+@bp.route("/api/admin/formula-remapear-material-id", methods=["POST"])
+def formula_remapear_material_id():
+    """Reemplaza material_id en formula_items (huérfano → código real).
+
+    Body JSON:
+      remapeos: [{material_id_actual, material_id_correcto}]
+      motivo: str (audit_log)
+      dry_run: bool
+
+    Para cada remapeo:
+      1. Valida que material_id_correcto existe en maestro_mps activo
+      2. UPDATE formula_items SET material_id=correcto, material_nombre=nombre_canonico
+         WHERE material_id=actual
+      3. Audit log REMAPEAR_FORMULA_MATERIAL_ID con before/after
+
+    NO toca movimientos · solo formula_items (que es la fuente de pre-check).
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    d = request.json or {}
+    remapeos = d.get('remapeos') or []
+    motivo = (d.get('motivo') or 'Remapeo huérfanos formula_items').strip()
+    dry_run = bool(d.get('dry_run'))
+
+    if not isinstance(remapeos, list) or not remapeos:
+        return jsonify({'error': 'remapeos lista no vacía requerida'}), 400
+    if len(remapeos) > 200:
+        return jsonify({'error': 'max 200 remapeos por request'}), 400
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("PRAGMA busy_timeout=2000")
+    c = conn.cursor()
+
+    plan = []
+    for it in remapeos:
+        actual = (it.get('material_id_actual') or '').strip()
+        correcto = (it.get('material_id_correcto') or '').strip().upper()
+        if not actual or not correcto:
+            continue
+        # Validar correcto existe y activo
+        row = c.execute("""
+            SELECT codigo_mp, nombre_comercial, nombre_inci, activo
+            FROM maestro_mps WHERE codigo_mp = ?
+        """, (correcto,)).fetchone()
+        if not row:
+            plan.append({'actual': actual, 'correcto': correcto,
+                        'error': f'{correcto} no existe en maestro_mps'})
+            continue
+        if not row[3]:
+            plan.append({'actual': actual, 'correcto': correcto,
+                        'error': f'{correcto} está archivado (activo=0)'})
+            continue
+        nombre_canonico = row[1] or row[2] or correcto
+        # Contar afectados
+        count_row = c.execute(
+            "SELECT COUNT(*) FROM formula_items WHERE material_id = ?",
+            (actual,)
+        ).fetchone()
+        n_items = count_row[0] if count_row else 0
+        plan.append({
+            'actual': actual, 'correcto': correcto,
+            'nombre_canonico': nombre_canonico,
+            'items_a_actualizar': n_items,
+        })
+
+    if dry_run:
+        conn.close()
+        return jsonify({'ok': True, 'dry_run': True, 'plan': plan}), 200
+
+    aplicados = 0
+    errores = []
+    try:
+        for p in plan:
+            if 'error' in p:
+                errores.append(p)
+                continue
+            try:
+                c.execute("""
+                    UPDATE formula_items
+                    SET material_id = ?, material_nombre = ?
+                    WHERE material_id = ?
+                """, (p['correcto'], p['nombre_canonico'], p['actual']))
+                aplicados += 1
+            except Exception as e:
+                errores.append({'actual': p['actual'], 'correcto': p['correcto'],
+                               'error': str(e)[:200]})
+        try:
+            import json as _json
+            audit_log(
+                c, usuario=u, accion='REMAPEAR_FORMULA_MATERIAL_ID',
+                tabla='formula_items', registro_id='bulk',
+                despues={'motivo': motivo, 'plan': plan,
+                        'aplicados': aplicados, 'errores': errores},
+                detalle=f'Remapeados {aplicados} material_ids en formula_items',
+            )
+        except Exception:
+            pass
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        return jsonify({'error': 'falla', 'detail': str(e)[:300]}), 500
+
+    conn.close()
+    return jsonify({
+        'ok': True, 'aplicados': aplicados, 'errores': errores, 'plan': plan,
+        'message': f'✓ {aplicados} remapeos aplicados',
+    }), 200
+
+
 @bp.route("/api/admin/explicar-stock-min/<codigo>", methods=["GET"])
 def explicar_stock_min(codigo):
     """Desglose detallado del cálculo de stock_min sugerido para UNA MP.
@@ -12543,6 +12796,204 @@ def validar_planta_invariantes():
         'veredicto': veredicto,
         'invariantes': inv,
     }), 200
+
+
+@bp.route("/admin/normalizar-formulas", methods=["GET"])
+def admin_normalizar_formulas_page():
+    """Panel para remapear material_ids huérfanos en formula_items."""
+    u, err, code = _require_admin()
+    if err:
+        return Response('<h1>403</h1>', status=403, mimetype='text/html')
+    return Response(_NORMALIZAR_FORMULAS_HTML, mimetype='text/html')
+
+
+_NORMALIZAR_FORMULAS_HTML = """<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Normalizar Fórmulas · EOS</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,Segoe UI,sans-serif;background:#0c0a09;color:#fafaf9;padding:24px}
+h1{font-size:24px;color:#fb923c;margin-bottom:4px}
+.sub{color:#a8a29e;font-size:13px;margin-bottom:18px}
+.note{background:#7c2d1230;border-left:3px solid #fb923c;padding:10px 14px;border-radius:6px;font-size:12px;margin-bottom:14px;line-height:1.6}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:18px}
+.kpi{background:#1c1917;border-radius:8px;padding:14px;text-align:center;border-left:4px solid #44403c}
+.kpi.auto{border-left-color:#16a34a}
+.kpi.alta{border-left-color:#5eead4}
+.kpi.manual{border-left-color:#ca8a04}
+.kpi.crear{border-left-color:#dc2626}
+.kpi h4{font-size:10px;text-transform:uppercase;color:#a8a29e;letter-spacing:.5px;margin-bottom:4px}
+.kpi .v{font-size:30px;font-weight:800}
+.kpi.auto .v{color:#16a34a}.kpi.alta .v{color:#5eead4}.kpi.manual .v{color:#ca8a04}.kpi.crear .v{color:#dc2626}
+button{padding:8px 16px;border:none;border-radius:6px;cursor:pointer;font-weight:700;font-size:13px}
+.b-run{background:#fb923c;color:#0c0a09}
+.b-apply{background:#a855f7;color:white}
+.b-apply:disabled{opacity:.4;cursor:not-allowed}
+.row{background:#1c1917;border-radius:8px;padding:14px;margin-bottom:10px;border-left:4px solid #44403c}
+.row.auto{border-left-color:#16a34a}
+.row.alta{border-left-color:#5eead4}
+.row.manual{border-left-color:#ca8a04}
+.row.crear{border-left-color:#dc2626}
+.r-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:10px;flex-wrap:wrap}
+.r-h-info{font-size:13px}
+.r-mid{font-family:monospace;font-size:11px;color:#fb923c;background:#0c0a09;padding:2px 6px;border-radius:4px}
+.r-name{color:#a8a29e;font-size:11px;margin-left:6px}
+.r-prod{color:#78716c;font-size:11px;margin-top:4px}
+.sugerencias{margin-top:8px}
+.sug{display:flex;align-items:center;gap:8px;padding:6px;border-radius:4px;background:#0c0a09;margin-bottom:4px;font-size:12px}
+.sug input{margin:0}
+.sug-cod{font-family:monospace;color:#5eead4;font-weight:700;font-size:11px}
+.sug-name{color:#a8a29e}
+.sug-sim{margin-left:auto;font-weight:700;font-size:11px}
+.sug-sim.alta{color:#16a34a}.sug-sim.media{color:#ca8a04}.sug-sim.baja{color:#a8a29e}
+.bar-bot{position:sticky;bottom:0;background:#1c1917;padding:14px;border-radius:10px;margin-top:16px;display:flex;justify-content:space-between;align-items:center;border:1px solid #44403c}
+.back{display:inline-block;color:#a8a29e;text-decoration:none;font-size:13px;margin-bottom:16px}
+</style></head><body>
+
+<a class="back" href="/modulos">← Panel inicial</a>
+<h1>🔧 Normalizar Fórmulas · Material IDs huérfanos</h1>
+<p class="sub">Material_ids usados en formula_items que NO existen en maestro_mps. Remapea al código correcto.</p>
+
+<div class="note">
+<b>Por qué pasa:</b> fórmulas creadas antes de normalizar el catálogo, o con typos de código, o con material_id minúscula/mayúscula distinta. <b>Resultado:</b> producciones que usan esas fórmulas no descuentan correctamente las MPs.
+<br><br>
+<b>Recomendaciones automáticas:</b>
+<ul style="margin:6px 0 0 18px;font-size:12px">
+  <li><span style="color:#16a34a">AUTO</span>: similitud ≥ 95% · aplicar sin pensar</li>
+  <li><span style="color:#5eead4">ALTA CONFIANZA</span>: 85-95% · revisar el match sugerido y confirmar</li>
+  <li><span style="color:#ca8a04">MANUAL</span>: 70-85% · vos elegís cuál código asignar</li>
+  <li><span style="color:#dc2626">CREAR NUEVA MP</span>: sin match · esta MP no existe en catálogo y debe crearse</li>
+</ul>
+</div>
+
+<div style="margin-bottom:14px">
+  <button class="b-run" onclick="cargar()">🔍 Detectar huérfanos</button>
+  <span id="ts" style="color:#a8a29e;font-size:11px;margin-left:8px"></span>
+</div>
+
+<div id="kpis" class="kpis"></div>
+<div id="tabla-cont"></div>
+<div class="bar-bot" id="bar-bot" style="display:none">
+  <div id="sel-info" style="font-size:13px;color:#a8a29e">0 remapeos seleccionados</div>
+  <button class="b-apply" id="b-apply" onclick="aplicar()" disabled>✓ Aplicar remapeos</button>
+</div>
+
+<script>
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;');}
+window._huerfanos = [];
+
+async function cargar(){
+  document.getElementById('tabla-cont').innerHTML='<div style="text-align:center;padding:40px;color:#a8a29e">⏳ Detectando huérfanos en formula_items...</div>';
+  try{
+    var r = await fetch('/api/admin/formula-huerfanos-con-sugerencias');
+    var d = await r.json();
+    if(!r.ok){document.getElementById('tabla-cont').innerHTML='<div style="color:#dc2626;padding:14px">Error: '+esc(d.error||r.status)+'</div>';return;}
+    window._huerfanos = d.huerfanos || [];
+    document.getElementById('ts').textContent = (d.huerfanos||[]).length + ' huérfanos detectados';
+    render(d);
+  }catch(e){
+    document.getElementById('tabla-cont').innerHTML='<div style="color:#dc2626;padding:14px">'+e.message+'</div>';
+  }
+}
+
+function render(d){
+  var r = d.resumen || {};
+  var khtml = '';
+  [['auto','✓ AUTO (≥95%)'],['revisar_alta_confianza','✓ ALTA CONFIANZA'],
+   ['manual','MANUAL'],['crear_nueva_mp','CREAR NUEVA MP']].forEach(function(p){
+    var k = p[0]; var label = p[1];
+    var klass = k==='auto'?'auto':k==='revisar_alta_confianza'?'alta':k==='manual'?'manual':'crear';
+    khtml += '<div class="kpi '+klass+'"><h4>'+label+'</h4><div class="v">'+(r[k]||0)+'</div></div>';
+  });
+  document.getElementById('kpis').innerHTML = khtml;
+
+  var huerfanos = d.huerfanos || [];
+  if(!huerfanos.length){
+    document.getElementById('tabla-cont').innerHTML='<div style="text-align:center;color:#16a34a;padding:40px;font-size:14px">✅ Cero huérfanos · formula_items 100% alineada con catálogo.</div>';
+    document.getElementById('bar-bot').style.display='none';
+    return;
+  }
+  var html = '';
+  huerfanos.forEach(function(h, idx){
+    var rec = h.recomendacion;
+    var klass = rec==='auto'?'auto':rec==='revisar_alta_confianza'?'alta':rec==='manual'?'manual':'crear';
+    html += '<div class="row '+klass+'">';
+    html += '<div class="r-head">';
+    html += '<div class="r-h-info"><span class="r-mid">'+esc(h.material_id_actual_formula)+'</span>';
+    html += '<span class="r-name">'+esc(h.material_nombre_en_formula)+'</span>';
+    html += '<div class="r-prod">Usado en '+h.n_productos_que_lo_usan+' productos: '+esc((h.productos||[]).slice(0,5).join(', '))+(h.productos.length>5?'...':'')+'</div>';
+    html += '</div>';
+    html += '<div style="font-size:11px;color:#a8a29e">recomendación: <b style="color:#fafaf9">'+rec+'</b></div>';
+    html += '</div>';
+
+    var sug = h.sugerencias || [];
+    if(sug.length){
+      html += '<div class="sugerencias">';
+      sug.forEach(function(s, j){
+        var simKlass = s.similitud>=0.95?'alta':s.similitud>=0.85?'media':'baja';
+        var checked = (j===0 && rec==='auto') ? 'checked' : '';
+        html += '<label class="sug">';
+        html += '<input type="radio" name="sug-'+idx+'" data-actual="'+esc(h.material_id_actual_formula)+'" data-correcto="'+esc(s.codigo_mp_correcto)+'" '+checked+' onchange="updateSel()">';
+        html += '<span class="sug-cod">→ '+esc(s.codigo_mp_correcto)+'</span>';
+        html += '<span class="sug-name">'+esc(s.nombre_match)+'</span>';
+        html += '<span style="color:#78716c;font-size:11px">('+esc(s.razon)+')</span>';
+        html += '<span class="sug-sim '+simKlass+'">'+(Math.round(s.similitud*100))+'%</span>';
+        html += '</label>';
+      });
+      // Opción "ninguna · no remapear"
+      html += '<label class="sug" style="opacity:.6">';
+      html += '<input type="radio" name="sug-'+idx+'" data-actual="" data-correcto="" '+(rec==='auto'?'':'checked')+' onchange="updateSel()">';
+      html += '<span class="sug-name">↛ No remapear · dejar como está</span>';
+      html += '</label>';
+      html += '</div>';
+    } else {
+      html += '<div style="color:#dc2626;font-size:12px;padding:8px;background:#0c0a09;border-radius:4px">⚠ Sin sugerencias automáticas. Esta MP debe crearse en catálogo (o el nombre en formula_items está incorrecto). Editar manualmente.</div>';
+    }
+    html += '</div>';
+  });
+  document.getElementById('tabla-cont').innerHTML = html;
+  document.getElementById('bar-bot').style.display='flex';
+  updateSel();
+}
+
+function updateSel(){
+  var sel = Array.from(document.querySelectorAll('input[type=radio]:checked'))
+              .filter(function(cb){return cb.dataset.correcto;});
+  document.getElementById('sel-info').textContent = sel.length + ' remapeos seleccionados';
+  document.getElementById('b-apply').disabled = sel.length === 0;
+}
+
+async function aplicar(){
+  var sel = Array.from(document.querySelectorAll('input[type=radio]:checked'))
+              .filter(function(cb){return cb.dataset.correcto;});
+  if(!sel.length){return;}
+  if(!confirm('¿Aplicar '+sel.length+' remapeos? Esto actualiza material_id en formula_items. Acción rastreable en audit_log.')){return;}
+  var btn = document.getElementById('b-apply');
+  btn.disabled = true; btn.textContent = '⏳ Aplicando...';
+  var remapeos = sel.map(function(cb){
+    return {material_id_actual: cb.dataset.actual, material_id_correcto: cb.dataset.correcto};
+  });
+  try{
+    var r = await fetch('/api/admin/formula-remapear-material-id', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({remapeos: remapeos, motivo: 'Normalización catálogo · panel admin'}),
+    });
+    var d = await r.json();
+    if(r.ok){
+      alert('✓ '+(d.message||'Aplicado')+' · recargando...');
+      cargar();
+    } else {
+      alert('Error: '+(d.error||r.status));
+      btn.disabled = false; btn.textContent = '✓ Aplicar remapeos';
+    }
+  }catch(e){
+    alert('Error de red: '+e.message);
+    btn.disabled = false; btn.textContent = '✓ Aplicar remapeos';
+  }
+}
+
+cargar();
+</script>
+</body></html>"""
 
 
 @bp.route("/admin/stock-minimos", methods=["GET"])
