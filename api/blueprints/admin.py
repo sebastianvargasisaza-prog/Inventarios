@@ -16267,25 +16267,24 @@ def reconciliar_produccion_mp():
             conn.close()
             return jsonify({'error': f'MP {mid} no existe'}), 404
 
-        # Verificar que NO existe ya un mov Salida de esta MP para esta producción
-        lote_pat = f'PROD-{prod_id:05d}'
+        # Verificar que NO existe ya un mov Salida de RECONCILIACION para
+        # esta (producción, MP). Usar marker token específico para idempotencia.
+        recon_token = f'RECON_ID:{prod_id}:{mid}'
         ya_existe = c.execute("""
             SELECT id FROM movimientos
             WHERE material_id = ? AND tipo = 'Salida'
               AND observaciones LIKE ?
             LIMIT 1
-        """, (mid, f'%{lote_pat}%')).fetchone()
+        """, (mid, f'%{recon_token}%')).fetchone()
         if ya_existe:
             conn.close()
             return jsonify({
-                'error': f'MP {mid} ya tiene mov Salida para producción #{prod_id} (id={ya_existe[0]}). Cancelar antes de reconciliar.'
+                'error': f'MP {mid} ya tiene reconciliación para producción #{prod_id} (mov id={ya_existe[0]}). Idempotente · cancelar mov antes de reconciliar.'
             }), 409
 
-        # Crear mov Salida retroactivo (NOTA: este insert va a violar trigger
-        # estado_lote='VIGENTE' default si no lo seteamos, pero estado_lote
-        # default es 'VIGENTE' que es OK)
-        obs_salida = (f"RECONCILIACION zero-error: bug descuento omitido en "
-                       f"producción #{prod_id} {prod_dict['producto']} "
+        # Crear mov Salida retroactivo con marker token
+        obs_salida = (f"[{recon_token}] RECONCILIACION zero-error: bug descuento "
+                       f"omitido en producción #{prod_id} {prod_dict['producto']} "
                        f"({prod_dict['cant_kg']}kg) lote {prod_dict['lote']}. "
                        f"MP {mid} no se descontó por stock=0 en kardex al "
                        f"momento (físicamente sí había). Motivo: {motivo[:300]}")

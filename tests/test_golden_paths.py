@@ -3600,3 +3600,192 @@ def test_golden_completar_info_lote_bulk(app, db_clean):
     finally:
         _exec("DELETE FROM movimientos WHERE material_id=?", (mp,))
         _exec("DELETE FROM maestro_mps WHERE codigo_mp=?", (mp,))
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 77 · Validacion profunda · matematica zero falsos positivos
+# ═══════════════════════════════════════════════════════════════════
+
+def test_golden_validacion_profunda(app, db_clean):
+    cs = _login(app, 'sebastian')
+    r = cs.get('/api/admin/validacion-profunda')
+    assert r.status_code == 200, \
+        f'BUG: validacion-profunda caido · {r.status_code} {r.data}'
+    d = r.get_json() or {}
+    assert d.get('ok'), f'response sin ok: {d}'
+
+    # Estructura esperada
+    assert 'score_real' in d
+    assert 'veredicto_real' in d
+    assert d['veredicto_real'] in ('PERFECTA', 'MENOR', 'BLOQUEANTE')
+    assert 'resumen' in d
+    assert 'hallazgos' in d
+    assert 'checks_ejecutados' in d
+    # 8 checks documentados
+    assert len(d['checks_ejecutados']) == 8
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 78 · Reconciliar produccion MP · descuento omitido
+# ═══════════════════════════════════════════════════════════════════
+
+def test_golden_reconciliar_produccion_mp(app, db_clean):
+    cs = _login(app, 'sebastian')
+
+    mp = 'GP78-MP-RECON'
+    _exec("""INSERT OR REPLACE INTO maestro_mps
+              (codigo_mp, nombre_comercial, activo, tipo_material)
+              VALUES (?, 'MP reconciliar test', 1, 'MP')""",
+          (mp,))
+    # Producción legacy sin movs de salida para esta MP
+    prod_id = _exec("""INSERT INTO producciones
+              (producto, cantidad, fecha, estado, observaciones, operador, lote)
+              VALUES ('GP78-PROD-TEST', 10, date('now'), 'Completado',
+                      'test', 'gp78', 'PROD-99999')""")
+
+    try:
+        # Reconciliar: crear mov Salida retroactivo
+        r = cs.post('/api/admin/reconciliar-produccion-mp',
+                    json={
+                        'produccion_id': prod_id,
+                        'material_id': mp,
+                        'cantidad_g': 500,
+                        'motivo': 'Test golden 78 reconciliar produccion MP omitida'
+                    },
+                    headers=csrf_headers())
+        assert r.status_code == 200, \
+            f'BUG: reconciliar fallo · {r.status_code} {r.data}'
+        d = r.get_json() or {}
+        assert d.get('ok')
+        assert d['cantidad_g'] == 500
+        assert d['mov_salida_id'] is not None
+        assert d['mov_entrada_id'] is not None  # compensar=True default
+
+        # Verificar movs creados con observaciones correctas
+        rows = _query(
+            "SELECT id, tipo, cantidad, observaciones FROM movimientos "
+            "WHERE material_id=? ORDER BY id",
+            (mp,)
+        )
+        assert len(rows) >= 2, f'esperaba 2 movs (salida + entrada compensatoria) · {rows}'
+        tipos = [r[1] for r in rows]
+        assert 'Salida' in tipos
+        assert 'Entrada' in tipos
+        # Observaciones deben mencionar RECONCILIACION
+        for r_row in rows:
+            assert 'RECONCILIACION' in (r_row[3] or ''), \
+                f'observación sin RECONCILIACION · {r_row}'
+
+        # Idempotencia: 2do request rechazado (ya existe Salida)
+        r2 = cs.post('/api/admin/reconciliar-produccion-mp',
+                     json={
+                         'produccion_id': prod_id,
+                         'material_id': mp,
+                         'cantidad_g': 500,
+                         'motivo': 'Test idempotencia · debe rechazar duplicado'
+                     },
+                     headers=csrf_headers())
+        assert r2.status_code == 409, \
+            f'BUG: 2do reconciliar debe ser 409 · {r2.status_code}'
+
+        # Motivo corto rechazado
+        r3 = cs.post('/api/admin/reconciliar-produccion-mp',
+                     json={
+                         'produccion_id': prod_id,
+                         'material_id': mp,
+                         'cantidad_g': 100,
+                         'motivo': 'corto'  # < 20 chars
+                     },
+                     headers=csrf_headers())
+        assert r3.status_code == 400, \
+            f'BUG: motivo corto debe ser 400 · {r3.status_code}'
+
+    finally:
+        _exec("DELETE FROM movimientos WHERE material_id=?", (mp,))
+        _exec("DELETE FROM producciones WHERE id=?", (prod_id,))
+        _exec("DELETE FROM maestro_mps WHERE codigo_mp=?", (mp,))
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 79 · Asignar operador bulk a movs sin operador
+# ═══════════════════════════════════════════════════════════════════
+
+def test_golden_asignar_operador_bulk(app, db_clean):
+    cs = _login(app, 'sebastian')
+
+    mp = 'GP79-MP-NOPOP'
+    _exec("""INSERT OR REPLACE INTO maestro_mps
+              (codigo_mp, nombre_comercial, activo, tipo_material)
+              VALUES (?, 'MP sin op test', 1, 'MP')""",
+          (mp,))
+    # 3 movs sin operador
+    ids = []
+    for i in range(3):
+        mid = _exec("""INSERT INTO movimientos
+                    (material_id, material_nombre, cantidad, tipo, fecha,
+                     observaciones)
+                    VALUES (?, 'MP sin op test', ?, 'Entrada', date('now'),
+                            'mov sin operador test')""",
+                    (mp, 100 * (i + 1)))
+        ids.append(mid)
+    # 1 mov ya con operador (NO debe tocar)
+    id_con_op = _exec("""INSERT INTO movimientos
+                      (material_id, material_nombre, cantidad, tipo, fecha,
+                       operador)
+                      VALUES (?, 'MP sin op test', 50, 'Entrada', date('now'),
+                              'ya-tiene')""", (mp,))
+    ids_a_actualizar = ids + [id_con_op]
+
+    try:
+        r = cs.post('/api/admin/asignar-operador-bulk',
+                    json={
+                        'ids': ids_a_actualizar,
+                        'operador': 'test-bulk-op',
+                        'motivo': 'Test golden 79 asignar operador bulk legacy fix'
+                    },
+                    headers=csrf_headers())
+        assert r.status_code == 200, \
+            f'BUG: asignar-operador fallo · {r.status_code} {r.data}'
+        d = r.get_json() or {}
+        assert d['n_actualizados'] == 3, \
+            f'BUG: solo 3 movs debían actualizarse (1 ya tenía op) · {d}'
+
+        # Verificar: los 3 sin op ahora con 'test-bulk-op'
+        for mov_id in ids:
+            row = _query("SELECT operador FROM movimientos WHERE id=?",
+                         (mov_id,))
+            assert row[0][0] == 'test-bulk-op', \
+                f'BUG: mov {mov_id} sin operador asignado · {row}'
+
+        # El que ya tenía op no cambió
+        row = _query("SELECT operador FROM movimientos WHERE id=?",
+                     (id_con_op,))
+        assert row[0][0] == 'ya-tiene', 'BUG: mov con op fue sobrescrito'
+
+        # Motivo corto rechazado
+        r2 = cs.post('/api/admin/asignar-operador-bulk',
+                     json={'ids': [ids[0]], 'operador': 'x',
+                           'motivo': 'corto'},
+                     headers=csrf_headers())
+        assert r2.status_code == 400
+
+    finally:
+        _exec("DELETE FROM movimientos WHERE material_id=?", (mp,))
+        _exec("DELETE FROM maestro_mps WHERE codigo_mp=?", (mp,))
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 80 · Forensic trazabilidad
+# ═══════════════════════════════════════════════════════════════════
+
+def test_golden_forensic_trazabilidad(app, db_clean):
+    cs = _login(app, 'sebastian')
+    r = cs.get('/api/admin/forensic-trazabilidad')
+    assert r.status_code == 200, \
+        f'BUG: forensic-trazabilidad caido · {r.status_code} {r.data}'
+    d = r.get_json() or {}
+    assert d.get('ok'), f'response sin ok: {d}'
+    assert 'lotes_vivos_sin_fv' in d
+    assert 'movs_sin_operador' in d
+    assert isinstance(d['lotes_vivos_sin_fv'], list)
+    assert isinstance(d['movs_sin_operador'], list)
