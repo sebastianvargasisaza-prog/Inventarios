@@ -13141,17 +13141,22 @@ def auditoria_lotes_nuevos():
     n_sin_fv = 0
     n_sin_prov = 0
     n_stock_neg = 0
+    n_consumidos = 0  # stock<=0 · inertes operativamente
     for r in rows:
         (mid, lote, primer, fv, prov, stock, n_movs, nombre) = r
         tiene_fv = bool(fv and fv.strip())
         tiene_prov = bool(prov and prov.strip())
         stock = float(stock or 0)
 
+        # Sebastián 8-may-2026: lotes con stock<=0 son consumidos o
+        # anulados · operativamente inertes. NO requieren fecha_venc
+        # ni proveedor para INVIMA (ya no hay producto físico).
+        lote_consumido = stock <= 0
         problemas_lote = []
-        if not tiene_fv:
+        if not tiene_fv and not lote_consumido:
             problemas_lote.append('SIN_FECHA_VENC')
             n_sin_fv += 1
-        if not tiene_prov:
+        if not tiene_prov and not lote_consumido:
             problemas_lote.append('SIN_PROVEEDOR')
             n_sin_prov += 1
         if stock < -1:
@@ -13159,8 +13164,10 @@ def auditoria_lotes_nuevos():
             n_stock_neg += 1
 
         if not problemas_lote:
-            estado_audit = 'OK'
+            estado_audit = 'OK' if not lote_consumido else 'CONSUMIDO'
             n_ok += 1
+            if lote_consumido:
+                n_consumidos += 1
         else:
             estado_audit = problemas_lote[0]  # primer problema más grave
 
@@ -13203,6 +13210,7 @@ def auditoria_lotes_nuevos():
             'dias_horizonte': dias,
             'n_total': n_total,
             'n_ok': n_ok,
+            'n_consumidos': n_consumidos,
             'n_problemas': n_problemas,
             'sin_fecha_venc': n_sin_fv,
             'sin_proveedor': n_sin_prov,
@@ -13210,7 +13218,8 @@ def auditoria_lotes_nuevos():
         },
         'lotes': lotes[:150],
         'message': (f'S5 lotes nuevos: {veredicto} · score {score}/100 '
-                    f'· {n_total} lotes nuevos · {n_problemas} con problemas'),
+                    f'· {n_total} lotes nuevos · {n_problemas} con problemas '
+                    f'· {n_consumidos} consumidos (inertes)'),
     }), 200
 
 
