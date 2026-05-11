@@ -4016,3 +4016,41 @@ def test_golden_producciones_inconsistentes(app, db_clean):
     assert 'por_tipo' in d
     assert 'mensaje_recovery' in d
     assert isinstance(d['inconsistencias'], list)
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 87 · Actualizar INCI bulk
+# ═══════════════════════════════════════════════════════════════════
+
+def test_golden_actualizar_inci_bulk(app, db_clean):
+    cs = _login(app, 'sebastian')
+    mp = 'GP87-MP-INCI'
+    _exec("""INSERT OR REPLACE INTO maestro_mps
+              (codigo_mp, nombre_comercial, nombre_inci, activo, tipo_material)
+              VALUES (?, 'MP INCI test', 'PENDIENTE INCI', 1, 'MP')""",
+          (mp,))
+    try:
+        r = cs.post('/api/admin/mp-actualizar-inci',
+                    json={'items': [{'codigo_mp': mp, 'nombre_inci': 'TOCOPHEROL'}],
+                          'motivo': 'test golden 87 actualizar INCI'},
+                    headers=csrf_headers())
+        assert r.status_code == 200, \
+            f'BUG: actualizar-inci fallo · {r.status_code} {r.data}'
+        d = r.get_json() or {}
+        assert d.get('ok')
+        assert len(d['actualizados']) == 1
+        # Verificar BD
+        rows = _query("SELECT nombre_inci FROM maestro_mps WHERE codigo_mp=?",
+                      (mp,))
+        assert rows[0][0] == 'TOCOPHEROL'
+
+        # Idempotencia: mismo INCI rechaza
+        r2 = cs.post('/api/admin/mp-actualizar-inci',
+                     json={'items': [{'codigo_mp': mp, 'nombre_inci': 'TOCOPHEROL'}],
+                           'motivo': 'test idempotencia · ya tiene ese INCI'},
+                     headers=csrf_headers())
+        d2 = r2.get_json() or {}
+        assert d2['actualizados'] == []
+        assert len(d2['rechazados']) == 1
+    finally:
+        _exec("DELETE FROM maestro_mps WHERE codigo_mp=?", (mp,))

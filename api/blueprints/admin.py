@@ -16899,6 +16899,93 @@ def producciones_inconsistentes():
                         'detail': str(e)[:300]}), 500
 
 
+@bp.route("/api/admin/mp-actualizar-inci", methods=["POST"])
+def mp_actualizar_inci():
+    """Actualiza nombre_inci de una MP · audit_log.
+
+    Sebastián 8-may-2026: limpieza catálogo · 4 MPs tenían INCI="PENDIENTE INCI".
+    Este endpoint las completa con el INCI real + audit.
+
+    Body JSON:
+      items: [{codigo_mp, nombre_inci}]  · max 50
+      motivo: str (audit_log)
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    d = request.json or {}
+    items = d.get('items') or []
+    motivo = (d.get('motivo') or 'Limpieza catálogo · completar INCI').strip()
+
+    if not isinstance(items, list) or not items:
+        return jsonify({'error': 'items requerido (lista)'}), 400
+    if len(items) > 50:
+        return jsonify({'error': 'max 50 items'}), 400
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("PRAGMA busy_timeout=2000")
+    c = conn.cursor()
+    actualizados = []
+    rechazados = []
+    try:
+        for it in items:
+            cod = (it.get('codigo_mp') or '').strip()
+            inci_nuevo = (it.get('nombre_inci') or '').strip()
+            if not cod or not inci_nuevo:
+                rechazados.append({'item': it,
+                                    'razon': 'codigo_mp y nombre_inci requeridos'})
+                continue
+            row = c.execute(
+                "SELECT nombre_inci FROM maestro_mps WHERE codigo_mp=?",
+                (cod,)
+            ).fetchone()
+            if not row:
+                rechazados.append({'codigo': cod, 'razon': 'no existe'})
+                continue
+            inci_antes = row[0] or ''
+            if inci_antes == inci_nuevo:
+                rechazados.append({'codigo': cod, 'razon': 'ya tiene ese INCI'})
+                continue
+            c.execute(
+                "UPDATE maestro_mps SET nombre_inci=? WHERE codigo_mp=?",
+                (inci_nuevo, cod)
+            )
+            actualizados.append({
+                'codigo': cod,
+                'inci_antes': inci_antes,
+                'inci_nuevo': inci_nuevo,
+            })
+
+        if actualizados:
+            try:
+                audit_log(
+                    c, usuario=u,
+                    accion='ACTUALIZAR_INCI_BULK',
+                    tabla='maestro_mps', registro_id='bulk',
+                    despues={'motivo': motivo,
+                              'actualizados': actualizados,
+                              'rechazados': rechazados},
+                    detalle=f'Actualizado INCI en {len(actualizados)} MPs · {motivo[:120]}',
+                )
+            except Exception:
+                pass
+
+        conn.commit()
+        conn.close()
+        return jsonify({
+            'ok': True,
+            'actualizados': actualizados,
+            'rechazados': rechazados,
+            'message': f'✓ {len(actualizados)} INCIs actualizados',
+        }), 200
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        return jsonify({'error': 'falla transaccional',
+                        'detail': str(e)[:300]}), 500
+
+
 @bp.route("/api/admin/asignar-operador-bulk", methods=["POST"])
 def asignar_operador_bulk():
     """Asigna operador a movimientos sin operador (trazabilidad INVIMA).
