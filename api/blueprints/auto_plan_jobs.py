@@ -2847,7 +2847,7 @@ def job_validacion_profunda(app):
                 return True, {'mensaje': 'Validación profunda PERFECTA · sin hallazgos',
                                'score_real': score}, 0
 
-            # Hay hallazgos · notificar
+            # Hay hallazgos · notificar al ÁREA RESPONSABLE
             try:
                 from blueprints.notif import push_notif_multi
                 hallazgos = payload.get('hallazgos', [])
@@ -2855,6 +2855,26 @@ def job_validacion_profunda(app):
                                        if h.get('severidad') == 'alta'))
                 tipos_media = list(set(h['tipo'] for h in hallazgos
                                         if h.get('severidad') == 'media'))
+
+                # Mapa de tipo → responsable (notif proactiva por área)
+                AREA_POR_TIPO = {
+                    'MP_NOMBRE_DUPLICADO': ['aseguramiento.espagiria'],
+                    'MP_INCI_DUPLICADO': ['aseguramiento.espagiria'],
+                    'MP_CODIGO_INCONSISTENTE': ['aseguramiento.espagiria'],
+                    'FORMULA_USA_MP_ARCHIVADA': ['tecnica.espagiria', 'sebastian'],
+                    'FORMULA_SIN_PRODUCCIONES': ['tecnica.espagiria'],
+                    'DESCUENTO_DRIFT_PRODUCCION': ['controlcalidad.espagiria',
+                                                     'mayerlin', 'luis'],
+                    'TRAZABILIDAD_MOV_SIN_OPERADOR': ['controlcalidad.espagiria'],
+                    'TRAZABILIDAD_LOTE_VIVO_SIN_FV': ['controlcalidad.espagiria',
+                                                       'tecnica.espagiria'],
+                }
+                destinatarios_area = set(['sebastian'])  # sebastián siempre
+                for h in hallazgos:
+                    if h.get('severidad') not in ('alta', 'media'):
+                        continue
+                    for d in AREA_POR_TIPO.get(h.get('tipo', ''), []):
+                        destinatarios_area.add(d)
 
                 titulo = f'🔍 Validación profunda: {veredicto} · score {score}/100'
                 cuerpo = []
@@ -2865,11 +2885,11 @@ def job_validacion_profunda(app):
                     cuerpo.append(f'• {media} hallazgo(s) MEDIA: ' +
                                    ', '.join(tipos_media[:5]))
                 cuerpo.append('')
+                cuerpo.append(f'Notificado a: {", ".join(sorted(destinatarios_area))}')
                 cuerpo.append('Ver detalle: /admin/realidad-cero-error')
 
                 push_notif_multi(
-                    ['sebastian', 'aseguramiento.espagiria',
-                     'controlcalidad.espagiria'],
+                    sorted(destinatarios_area),
                     'capa', titulo,
                     body='\n'.join(cuerpo),
                     link='/admin/realidad-cero-error',
