@@ -16368,6 +16368,108 @@ def reconciliar_produccion_mp():
                         'detail': str(e)[:300]}), 500
 
 
+@bp.route("/api/admin/asignar-operador-bulk", methods=["POST"])
+def asignar_operador_bulk():
+    """Asigna operador a movimientos sin operador (trazabilidad INVIMA).
+
+    Sebastián 8-may-2026: audit profundo detectó movs antiguos sin
+    operador asignado. Este endpoint actualiza bulk con operador y
+    motivo claro en observaciones.
+
+    Body JSON:
+      ids: [int]                (mov ids a actualizar · max 200)
+      operador: str             (operador a asignar · ej: 'sistema-legacy')
+      append_observaciones: str (opcional · append a observaciones)
+      motivo: str (audit_log)
+
+    Returns: {ok, n_actualizados, ids_aplicados}
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    d = request.json or {}
+    ids = d.get('ids') or []
+    operador = (d.get('operador') or '').strip()
+    append_obs = (d.get('append_observaciones') or '').strip()
+    motivo = (d.get('motivo') or '').strip()
+
+    if not isinstance(ids, list) or not ids:
+        return jsonify({'error': 'ids debe ser lista no vacía'}), 400
+    if len(ids) > 200:
+        return jsonify({'error': 'max 200 ids'}), 400
+    if not operador:
+        return jsonify({'error': 'operador requerido'}), 400
+    if len(motivo) < 20:
+        return jsonify({'error': 'motivo min 20 chars (auditabilidad)'}), 400
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("PRAGMA busy_timeout=2000")
+    c = conn.cursor()
+    aplicados = []
+    try:
+        for mov_id in ids:
+            try:
+                mov_id_int = int(mov_id)
+            except (ValueError, TypeError):
+                continue
+            # Solo actualizar si operador realmente esta vacio (idempotencia)
+            row = c.execute(
+                "SELECT operador FROM movimientos WHERE id=?",
+                (mov_id_int,)
+            ).fetchone()
+            if not row:
+                continue
+            if row[0] and row[0].strip():
+                # Ya tiene operador · skip
+                continue
+            if append_obs:
+                c.execute(
+                    "UPDATE movimientos SET operador=?, "
+                    "observaciones = COALESCE(observaciones,'') || ? "
+                    "WHERE id=?",
+                    (operador, f' | {append_obs}', mov_id_int)
+                )
+            else:
+                c.execute(
+                    "UPDATE movimientos SET operador=? WHERE id=?",
+                    (operador, mov_id_int)
+                )
+            aplicados.append(mov_id_int)
+
+        if aplicados:
+            try:
+                audit_log(
+                    c, usuario=u,
+                    accion='ASIGNAR_OPERADOR_BULK',
+                    tabla='movimientos', registro_id='bulk',
+                    despues={
+                        'operador': operador,
+                        'ids': aplicados[:50],
+                        'n_aplicados': len(aplicados),
+                        'motivo': motivo[:300],
+                    },
+                    detalle=(f'Asignar operador "{operador}" a '
+                             f'{len(aplicados)} movs · motivo: {motivo[:120]}'),
+                )
+            except Exception:
+                pass
+
+        conn.commit()
+        conn.close()
+        return jsonify({
+            'ok': True,
+            'n_actualizados': len(aplicados),
+            'ids_aplicados': aplicados,
+            'message': f'✓ {len(aplicados)} movs actualizados con operador "{operador}"',
+        }), 200
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        return jsonify({'error': 'falla transaccional',
+                        'detail': str(e)[:300]}), 500
+
+
 @bp.route("/api/admin/forensic-trazabilidad", methods=["GET"])
 def forensic_trazabilidad():
     """Forensic detallado de hallazgos de trazabilidad.
