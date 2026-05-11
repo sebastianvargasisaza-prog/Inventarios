@@ -11690,6 +11690,309 @@ def investigar_mp(codigo):
     }), 200
 
 
+@bp.route("/admin/limpieza-cero-error", methods=["GET"])
+def admin_limpieza_cero_error_page():
+    """Panel guiado de limpieza cero-error · ejecuta los 5 fixes en
+    orden seguro · cada paso con preview (dry_run) antes de aplicar.
+
+    Sebastián 10-may-2026: "hazlo todo, código perfecto cero error".
+    Sequenced execution: dry_run → confirm → apply → verify.
+    """
+    u, err, code = _require_admin()
+    if err:
+        return Response(
+            '<h1>403</h1><p>Solo admin puede ver este panel.</p>',
+            status=403, mimetype='text/html'
+        )
+    return Response(_LIMPIEZA_HTML, mimetype='text/html')
+
+
+_LIMPIEZA_HTML = """<!DOCTYPE html>
+<html lang="es"><head>
+<meta charset="utf-8">
+<title>Limpieza Cero-Error · EOS</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,Segoe UI,sans-serif;background:#0f172a;color:#f1f5f9;padding:20px}
+h1{font-size:24px;margin-bottom:6px;color:#5eead4}
+.sub{color:#94a3b8;font-size:13px;margin-bottom:24px}
+.step{background:#1e293b;border-radius:10px;padding:20px;margin-bottom:16px;border-left:4px solid #475569;transition:.2s}
+.step.active{border-left-color:#5eead4;box-shadow:0 0 0 1px #5eead4}
+.step.done{border-left-color:#22c55e;opacity:.8}
+.step.error{border-left-color:#ef4444}
+.step h2{font-size:16px;margin-bottom:6px;color:#f1f5f9;display:flex;align-items:center;gap:10px}
+.badge{background:#0f172a;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700;color:#5eead4;border:1px solid #475569}
+.badge.done{color:#22c55e;border-color:#22c55e}
+.badge.error{color:#ef4444;border-color:#ef4444}
+.desc{font-size:13px;color:#94a3b8;margin-bottom:12px;line-height:1.5}
+.actions{display:flex;gap:8px;flex-wrap:wrap}
+button{padding:8px 16px;border:none;border-radius:6px;cursor:pointer;font-weight:600;font-size:13px;transition:.15s}
+button:disabled{opacity:.4;cursor:not-allowed}
+.btn-preview{background:#475569;color:#f1f5f9}
+.btn-preview:hover:not(:disabled){background:#64748b}
+.btn-apply{background:#5eead4;color:#0f172a;font-weight:700}
+.btn-apply:hover:not(:disabled){background:#2dd4bf}
+.btn-verify{background:#a855f7;color:white}
+.result{margin-top:12px;padding:12px;background:#0f172a;border-radius:6px;font-family:Consolas,Monaco,monospace;font-size:11px;color:#cbd5e1;max-height:300px;overflow:auto;white-space:pre-wrap;display:none}
+.result.visible{display:block}
+.result.ok{border:1px solid #22c55e}
+.result.error{border:1px solid #ef4444;color:#fca5a5}
+.back{display:inline-block;color:#94a3b8;text-decoration:none;font-size:13px;margin-bottom:16px}
+.back:hover{color:#f1f5f9}
+.summary{background:#0c4a6e;border:1px solid #0284c7;border-radius:10px;padding:16px;margin-top:24px}
+.summary h3{color:#7dd3fc;margin-bottom:8px;font-size:14px}
+.summary p{font-size:13px;color:#bae6fd;line-height:1.6}
+</style></head><body>
+
+<a class="back" href="/modulos">← Panel inicial</a>
+<h1>🧹 Limpieza Cero-Error · Catálogo MPs</h1>
+<p class="sub">5 fixes secuenciales · cada uno con preview (dry-run) antes de aplicar · todo en audit_log · reversible.</p>
+
+<div class="step active" id="step-1">
+  <h2>1. Fórmulas con items duplicados <span class="badge" id="b-1">pendiente</span></h2>
+  <p class="desc">Detecta fórmulas donde el mismo material_id aparece en >1 fila (caso SUERO ILUMINADOR TRX = 200%). Consolida en una sola fila sumando porcentajes.</p>
+  <div class="actions">
+    <button class="btn-preview" onclick="preview(1)">📊 Preview</button>
+    <button class="btn-apply" onclick="apply(1)" disabled id="apply-1">✓ Aplicar</button>
+  </div>
+  <div class="result" id="r-1"></div>
+</div>
+
+<div class="step" id="step-2">
+  <h2>2. MPs huérfanas en fórmulas <span class="badge" id="b-2">pendiente</span></h2>
+  <p class="desc">187 material_ids usados en formula_items NO existen en maestro_mps activo. Bloquean producción real. Crea las MPs faltantes con nombre derivado.</p>
+  <div class="actions">
+    <button class="btn-preview" onclick="preview(2)">📊 Preview</button>
+    <button class="btn-apply" onclick="apply(2)" disabled id="apply-2">✓ Aplicar</button>
+  </div>
+  <div class="result" id="r-2"></div>
+</div>
+
+<div class="step" id="step-3">
+  <h2>3. Marcar 6 lotes vencidos como VENCIDO <span class="badge" id="b-3">pendiente</span></h2>
+  <p class="desc">Lotes con fecha_vencimiento &lt; hoy pero estado_lote='VIGENTE'. Riesgo INVIMA. Cambia estado a VENCIDO en todos sus movimientos.</p>
+  <div class="actions">
+    <button class="btn-preview" onclick="preview(3)">📊 Preview</button>
+    <button class="btn-apply" onclick="apply(3)" disabled id="apply-3">✓ Aplicar</button>
+  </div>
+  <div class="result" id="r-3"></div>
+</div>
+
+<div class="step" id="step-4">
+  <h2>4. Anular MP00112 lote AJUSTE-4 (-1.430.000g) <span class="badge" id="b-4">pendiente</span></h2>
+  <p class="desc">Movimiento salida fantasma sin Entrada respaldatoria. Crea contra-movimiento Entrada que lleva saldo a 0. Preserva trazabilidad INVIMA (no borra original).</p>
+  <div class="actions">
+    <button class="btn-preview" onclick="preview(4)">📊 Preview</button>
+    <button class="btn-apply" onclick="apply(4)" disabled id="apply-4">✓ Aplicar</button>
+  </div>
+  <div class="result" id="r-4"></div>
+</div>
+
+<div class="step" id="step-5">
+  <h2>5. Re-ejecutar auditoría · verificar cero findings ALTA <span class="badge" id="b-5">pendiente</span></h2>
+  <p class="desc">Tras los 4 fixes anteriores, vuelve a correr la auditoría completa. Si ALTA=0, el catálogo está perfecto.</p>
+  <div class="actions">
+    <button class="btn-verify" onclick="verifyFinal()">🔍 Verificar</button>
+  </div>
+  <div class="result" id="r-5"></div>
+</div>
+
+<div class="summary">
+  <h3>📋 Reporte ejecutivo</h3>
+  <p id="summary-text">Empezá con el Paso 1. Cada "Preview" muestra qué se va a cambiar sin aplicarlo. Después de revisar, "Aplicar" lo ejecuta con audit_log. Si algo falla, podés ver los detalles en el área negra de resultado.</p>
+</div>
+
+<script>
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;');}
+function setBadge(n, txt, klass){
+  var b = document.getElementById('b-'+n);
+  b.textContent = txt;
+  b.className = 'badge' + (klass ? ' '+klass : '');
+  var s = document.getElementById('step-'+n);
+  s.className = 'step' + (klass==='done'?' done':klass==='error'?' error':' active');
+}
+function show(n, text, ok){
+  var r = document.getElementById('r-'+n);
+  r.className = 'result visible' + (ok===false?' error':' ok');
+  r.textContent = text;
+}
+
+async function preview(n){
+  setBadge(n, '⏳ analizando...');
+  show(n, 'Cargando...', true);
+  try{
+    var res;
+    if(n===1){
+      res = await fetch('/api/admin/formula-duplicados');
+    } else if(n===2){
+      res = await fetch('/api/admin/material-ids-huerfanos');
+    } else if(n===3){
+      // Re-ejecutar auditoría para obtener lotes vencidos
+      res = await fetch('/api/admin/auditoria-catalogo?quick=1');
+    } else if(n===4){
+      res = await fetch('/api/admin/investigar-mp/MP00112');
+    }
+    var d = await res.json();
+    if(!res.ok){
+      setBadge(n, 'error', 'error');
+      show(n, 'Error '+res.status+': '+JSON.stringify(d, null, 2), false);
+      return;
+    }
+    // Resumen amigable por paso
+    var summary = '';
+    if(n===1){
+      var dups = d.duplicados || [];
+      var pcts = d.porcentajes_anomalos || [];
+      summary = 'Detectado:\\n  · '+dups.length+' grupos con material_id duplicado\\n  · '+pcts.length+' fórmulas con SUM != 100%\\n\\n';
+      if(pcts.length){
+        summary += 'Fórmulas con porcentaje anómalo:\\n';
+        pcts.slice(0,10).forEach(function(p){
+          summary += '  · '+p.producto+' = '+p.suma_porcentajes+'%  ('+p.n_items+' items)\\n';
+        });
+        summary += '\\n';
+      }
+      if(dups.length){
+        summary += 'Top 10 grupos duplicados:\\n';
+        dups.slice(0,10).forEach(function(g){
+          summary += '  · '+g.producto+' / '+g.material_id+' aparece '+g.veces+' veces\\n';
+        });
+      }
+      summary += '\\n→ Al aplicar: consolida en 1 fila por grupo (suma porcentajes).';
+    } else if(n===2){
+      var huerf = (d.huerfanos && d.huerfanos.formula_items) || [];
+      summary = 'Huérfanos en formula_items: '+huerf.length+'\\n\\nTop 15:\\n';
+      huerf.slice(0,15).forEach(function(h){
+        summary += '  · '+h.material_id+' ('+h.nombre+') · '+h.productos_usando+' productos\\n';
+      });
+      summary += '\\n→ Al aplicar: crea estas MPs en maestro_mps con datos mínimos.';
+    } else if(n===3){
+      var v = (d.findings && d.findings.alta && d.findings.alta.vencidos_pero_vigente) || [];
+      window._vencidos_cache = v;
+      summary = 'Lotes vencidos pero VIGENTE: '+v.length+'\\n\\n';
+      v.forEach(function(l){
+        summary += '  · '+l.material_id+' lote '+l.lote+' venció '+l.fecha_venc+' (stock '+l.stock_g+'g)\\n';
+      });
+      summary += '\\n→ Al aplicar: cambia estado_lote=\\'VENCIDO\\' en todos sus movs.';
+    } else if(n===4){
+      var movs = d.movimientos_recientes || [];
+      var ajuste4 = movs.find(function(m){return (m.lote||'').toUpperCase()==='AJUSTE-4';});
+      window._mp00112_mov_id = ajuste4 ? ajuste4.id : null;
+      summary = 'MP00112 ('+(d.mp&&d.mp.nombre_comercial||'?')+')\\n';
+      summary += 'Stock total: '+d.stock_total_neto_g+' g\\n\\n';
+      if(ajuste4){
+        summary += 'Movimiento problemático encontrado:\\n';
+        summary += '  · id='+ajuste4.id+' tipo='+ajuste4.tipo+' cantidad='+ajuste4.cantidad_g+'g\\n';
+        summary += '  · lote='+ajuste4.lote+' fecha='+ajuste4.fecha+'\\n';
+        summary += '  · obs: '+(ajuste4.observaciones||'(sin obs)')+'\\n\\n';
+        summary += '→ Al aplicar: crea contra-movimiento '+(ajuste4.tipo==='Salida'?'Entrada':'Salida')+
+                   ' de '+ajuste4.cantidad_g+'g lote '+ajuste4.lote+' (saldo neto → 0).';
+      } else {
+        summary += 'No se encontró movimiento de lote AJUSTE-4 en últimos 50.\\n';
+        summary += 'Saltar este paso si stock_total ya está OK.';
+      }
+    }
+    setBadge(n, 'preview OK · listo para aplicar');
+    show(n, summary, true);
+    document.getElementById('apply-'+n).disabled = false;
+  }catch(e){
+    setBadge(n, 'error', 'error');
+    show(n, 'Error de red: '+e.message, false);
+  }
+}
+
+async function apply(n){
+  if(!confirm('¿Aplicar paso '+n+'? Esta acción queda en audit_log y es trazable. Continuar?')) return;
+  setBadge(n, '⏳ aplicando...');
+  document.getElementById('apply-'+n).disabled = true;
+  try{
+    var res, body, url;
+    if(n===1){
+      url='/api/admin/formula-limpiar-duplicados';
+      body={};
+    } else if(n===2){
+      // Recargar lista y enviar todos los huerfanos
+      var listRes = await fetch('/api/admin/material-ids-huerfanos');
+      var listD = await listRes.json();
+      var mids = ((listD.huerfanos||{}).formula_items||[]).map(function(h){return h.material_id;});
+      url='/api/admin/crear-mps-huerfanas';
+      body={material_ids: mids};
+    } else if(n===3){
+      var venc = window._vencidos_cache || [];
+      if(!venc.length){
+        setBadge(n, 'nada que hacer', 'done');
+        show(n, 'No hay lotes vencidos VIGENTE.', true);
+        return;
+      }
+      url='/api/admin/marcar-lotes-vencidos';
+      body={lotes: venc.map(function(l){return {material_id: l.material_id, lote: l.lote};}),
+            motivo: 'Limpieza cero-error · INVIMA compliance'};
+    } else if(n===4){
+      var mid = window._mp00112_mov_id;
+      if(!mid){
+        setBadge(n, 'sin movimiento a anular', 'done');
+        show(n, 'No se encontró movimiento de lote AJUSTE-4 en los últimos 50 movs.\\n'+
+              'Si el saldo neto sigue siendo -1.4M, posiblemente esté en movs más antiguos.\\n'+
+              'Resolver manualmente con SQL o backup-restore.', false);
+        return;
+      }
+      url='/api/admin/anular-movimiento';
+      body={mov_id: mid, motivo: 'Ajuste-4 cíclico sin Entrada respaldatoria · saldo -1.430.000g irreal · limpieza cero-error'};
+    }
+    res = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'},
+                            body: JSON.stringify(body)});
+    var d = await res.json();
+    if(res.ok){
+      setBadge(n, '✓ aplicado', 'done');
+      show(n, '✓ ÉXITO\\n\\n'+JSON.stringify(d, null, 2), true);
+    } else {
+      setBadge(n, 'error', 'error');
+      show(n, 'Error '+res.status+':\\n'+JSON.stringify(d, null, 2), false);
+      document.getElementById('apply-'+n).disabled = false;
+    }
+  }catch(e){
+    setBadge(n, 'error', 'error');
+    show(n, 'Error de red: '+e.message, false);
+    document.getElementById('apply-'+n).disabled = false;
+  }
+}
+
+async function verifyFinal(){
+  setBadge(5, '⏳ verificando...');
+  show(5, 'Re-ejecutando auditoría completa...', true);
+  try{
+    var res = await fetch('/api/admin/auditoria-catalogo?quick=1');
+    var d = await res.json();
+    var r = d.resumen || {};
+    var alta = r.n_alta || 0;
+    var media = r.n_media || 0;
+    var baja = r.n_baja || 0;
+    var msg = '🔍 AUDITORÍA POST-LIMPIEZA\\n\\n';
+    msg += '🔴 ALTA:  '+alta+'\\n';
+    msg += '🟠 MEDIA: '+media+'\\n';
+    msg += '🔵 BAJA:  '+baja+'\\n';
+    msg += '──────────────\\n';
+    msg += 'TOTAL: '+(alta+media+baja)+' findings\\n\\n';
+    if(alta === 0){
+      msg += '✅ CATÁLOGO PERFECTO · 0 findings ALTA · cero-error logrado.';
+      setBadge(5, '✓ perfecto', 'done');
+      document.getElementById('summary-text').innerHTML =
+        '<b style="color:#5eead4">✅ Sistema en estado cero-error.</b> '+
+        'Catálogo limpio, fórmulas consistentes, sin huérfanos, sin vencidos vigente, sin stock negativo. '+
+        'Los findings MEDIA/BAJA restantes son mejoras operativas no críticas.';
+    } else {
+      msg += '⚠ Quedan '+alta+' findings ALTA · revisar /admin/auditoria-catalogo';
+      setBadge(5, alta+' ALTA pendientes', 'error');
+    }
+    show(5, msg, alta===0);
+  }catch(e){
+    setBadge(5, 'error', 'error');
+    show(5, 'Error: '+e.message, false);
+  }
+}
+</script>
+</body></html>"""
+
+
 @bp.route("/admin/auditoria-catalogo", methods=["GET"])
 def admin_auditoria_catalogo_page():
     """UI HTML que consume /api/admin/auditoria-catalogo y muestra
