@@ -11690,6 +11690,203 @@ def investigar_mp(codigo):
     }), 200
 
 
+@bp.route("/api/admin/explicar-stock-min/<codigo>", methods=["GET"])
+def explicar_stock_min(codigo):
+    """Desglose detallado del cálculo de stock_min sugerido para UNA MP.
+
+    Sebastián 10-may-2026: "estamos seguros de esos stock minimos?
+    corroboraste consumos con formulas maestras?" · esta función te
+    permite VALIDAR el cálculo MP por MP antes de aplicar.
+
+    Para el código MP dado, muestra:
+      - Producciones del Calendar en el horizonte que la usan
+      - Por cada producción: cantidad_kg, lote_size_kg, factor, gramos
+        consumidos (calculado tanto por g_por_lote como por porcentaje)
+      - Total proyectado en horizonte (suma)
+      - Conversión a consumo mensual
+      - Stock_min sugerido con la cobertura usada
+      - Catálogo MP actual (stock_minimo guardado)
+
+    Query: ?horizonte_dias=90&cobertura_dias=90
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    codigo = (codigo or '').strip()
+    if not codigo:
+        return jsonify({'error': 'codigo requerido'}), 400
+
+    try:
+        horizonte = max(30, min(int(request.args.get('horizonte_dias', 90)), 365))
+    except (ValueError, TypeError):
+        horizonte = 90
+    try:
+        cobertura = max(7, min(int(request.args.get('cobertura_dias', 90)), 365))
+    except (ValueError, TypeError):
+        cobertura = 90
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("PRAGMA busy_timeout=2000")
+    c = conn.cursor()
+
+    # 1. Datos del MP
+    mp_row = c.execute("""
+        SELECT codigo_mp, nombre_inci, nombre_comercial, proveedor,
+               stock_minimo, tipo_material, activo
+        FROM maestro_mps WHERE codigo_mp=?
+    """, (codigo,)).fetchone()
+    if not mp_row:
+        conn.close()
+        return jsonify({'error': f'MP {codigo} no existe en catálogo'}), 404
+
+    mp_info = {
+        'codigo_mp': mp_row[0], 'nombre_inci': mp_row[1],
+        'nombre_comercial': mp_row[2], 'proveedor': mp_row[3],
+        'stock_minimo_actual_g': mp_row[4] or 0,
+        'tipo_material': mp_row[5], 'activo': bool(mp_row[6]),
+    }
+
+    # 2. Stock actual (suma de movimientos)
+    stock_row = c.execute("""
+        SELECT ROUND(SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END), 2)
+        FROM movimientos WHERE material_id=?
+    """, (codigo,)).fetchone()
+    mp_info['stock_actual_g'] = (stock_row[0] or 0) if stock_row else 0
+
+    # 3. Lead time
+    lt_row = c.execute("""
+        SELECT lead_time_dias, buffer_dias FROM mp_lead_time_config
+        WHERE material_id=?
+    """, (codigo,)).fetchone() if True else None
+    try:
+        lt_info = {'lead_time_dias': lt_row[0], 'buffer_dias': lt_row[1]} if lt_row else None
+    except Exception:
+        lt_info = None
+    mp_info['mp_lead_time_config'] = lt_info
+    cobertura_efectiva = (lt_info['lead_time_dias'] + lt_info['buffer_dias']) if lt_info else cobertura
+    mp_info['cobertura_efectiva_dias'] = cobertura_efectiva
+
+    # 4. Fórmulas que usan esta MP (por porcentaje O g_por_lote)
+    formulas_usan = c.execute("""
+        SELECT fi.producto_nombre,
+               COALESCE(fi.porcentaje, 0) as pct,
+               COALESCE(fi.cantidad_g_por_lote, 0) as g_lote,
+               COALESCE(fh.lote_size_kg, 0) as lote_size_kg
+        FROM formula_items fi
+        LEFT JOIN formula_headers fh ON fh.producto_nombre = fi.producto_nombre
+        WHERE fi.material_id = ?
+        ORDER BY fi.producto_nombre
+    """, (codigo,)).fetchall()
+
+    formulas_info = []
+    for r in formulas_usan:
+        formulas_info.append({
+            'producto': r[0],
+            'porcentaje': r[1],
+            'cantidad_g_por_lote': r[2],
+            'lote_size_kg': r[3],
+        })
+
+    if not formulas_info:
+        conn.close()
+        return jsonify({
+            'ok': True, 'mp': mp_info,
+            'formulas_que_lo_usan': [],
+            'producciones_calendar': [],
+            'desglose_calculo': None,
+            'mensaje': 'Esta MP NO está en ninguna fórmula activa. Stock_min sugerido = 0.',
+            'stock_min_sugerido_g': 0,
+        }), 200
+
+    # 5. Producciones del Calendar en horizonte
+    # Lee de produccion_programada (que está poblada desde Calendar)
+    productos_que_usan = [f['producto'] for f in formulas_info]
+    ph = ','.join(['?'] * len(productos_que_usan))
+    prods_cal = c.execute(f"""
+        SELECT pp.id, pp.producto, pp.fecha_programada, pp.cantidad_kg,
+               COALESCE(pp.lotes, 1) as lotes,
+               COALESCE(pp.estado, 'pendiente') as estado,
+               COALESCE(pp.inventario_descontado_at, '') as desc_at
+        FROM produccion_programada pp
+        WHERE pp.producto IN ({ph})
+          AND pp.fecha_programada >= date('now')
+          AND pp.fecha_programada <= date('now', '+' || ? || ' day')
+          AND LOWER(COALESCE(pp.estado,'')) != 'cancelado'
+        ORDER BY pp.fecha_programada
+    """, productos_que_usan + [horizonte]).fetchall()
+
+    # 6. Desglose por producción
+    desglose = []
+    total_g_proyectado = 0.0
+    for pr in prods_cal:
+        pid, producto, fecha, kg, lotes, estado, desc_at = pr
+        kg = float(kg or 0)
+        # Buscar la fórmula correspondiente
+        formula = next((f for f in formulas_info if f['producto'] == producto), None)
+        if not formula:
+            continue
+        # 2 métodos de cálculo (preferir g_por_lote si existe, fallback porcentaje)
+        g_por_lote = formula['cantidad_g_por_lote']
+        lote_kg = formula['lote_size_kg']
+        pct = formula['porcentaje']
+        metodo = None
+        g_consumido = 0
+        formula_detalle = None
+        if g_por_lote > 0 and lote_kg > 0:
+            factor = kg / lote_kg
+            g_consumido = g_por_lote * factor
+            metodo = 'cantidad_g_por_lote × factor'
+            formula_detalle = f'{g_por_lote}g × ({kg}kg / {lote_kg}kg) = {g_consumido:.2f}g'
+        elif pct > 0:
+            g_consumido = (pct / 100.0) * kg * 1000
+            metodo = 'porcentaje × cantidad_kg × 1000 (fallback)'
+            formula_detalle = f'{pct}% × {kg}kg × 1000 = {g_consumido:.2f}g'
+        else:
+            metodo = 'SIN DATOS (porcentaje=0 y cantidad_g_por_lote=0)'
+            formula_detalle = '⚠ Fórmula incompleta · no aporta a stock_min'
+
+        # Considerar solo producciones pendientes/atrasadas (no las ya descontadas)
+        cuenta_para_consumo = not desc_at
+        if cuenta_para_consumo:
+            total_g_proyectado += g_consumido
+
+        desglose.append({
+            'produccion_id': pid,
+            'producto': producto, 'fecha': fecha,
+            'cantidad_kg': kg, 'lotes': lotes, 'estado': estado,
+            'ya_descontado': bool(desc_at),
+            'metodo_calculo': metodo,
+            'formula_calculo': formula_detalle,
+            'g_consumido': round(g_consumido, 2),
+            'cuenta_para_proyeccion': cuenta_para_consumo,
+        })
+
+    # 7. Cálculo final
+    consumo_mensual = round((total_g_proyectado * 30 / horizonte) if horizonte else 0, 2)
+    stock_min_sugerido = round(consumo_mensual * (cobertura_efectiva / 30), 2)
+
+    conn.close()
+    return jsonify({
+        'ok': True,
+        'mp': mp_info,
+        'horizonte_dias': horizonte,
+        'cobertura_default_dias': cobertura,
+        'formulas_que_lo_usan': formulas_info,
+        'producciones_calendar': desglose,
+        'desglose_calculo': {
+            'total_g_horizonte': round(total_g_proyectado, 2),
+            'horizonte_dias': horizonte,
+            'consumo_mensual_g': consumo_mensual,
+            'cobertura_efectiva_dias': cobertura_efectiva,
+            'formula': f'({consumo_mensual:.2f}g/mes) × ({cobertura_efectiva}d / 30d)',
+            'stock_min_sugerido_g': stock_min_sugerido,
+        },
+        'stock_min_sugerido_g': stock_min_sugerido,
+        'diferencia_vs_actual_g': round(stock_min_sugerido - mp_info['stock_minimo_actual_g'], 2),
+    }), 200
+
+
 @bp.route("/api/admin/sugerir-stock-minimos", methods=["GET"])
 def sugerir_stock_minimos():
     """Sugiere stock_minimo por MP basado en PRODUCCIÓN PROYECTADA en
@@ -11737,47 +11934,50 @@ def sugerir_stock_minimos():
     except (ValueError, TypeError):
         pass
 
-    from flask import current_app
-
-    # 1. Llamar planificacion_estrategica con horizonte
-    try:
-        try:
-            from blueprints.programacion import planificacion_estrategica as _plan
-        except ImportError:
-            from api.blueprints.programacion import planificacion_estrategica as _plan
-        with current_app.test_request_context(
-            f'/api/programacion/planificacion-estrategica?dias={horizonte}'
-        ):
-            plan_resp = _plan()
-        plan_data = plan_resp.get_json() if hasattr(plan_resp, 'get_json') else {}
-        if not isinstance(plan_data, dict):
-            plan_data = {}
-    except Exception as e:
-        return jsonify({
-            'error': 'No se pudo cargar planificación estratégica',
-            'detail': str(e)[:200],
-            'hint': 'Verificar que Google Calendar esté sincronizado y haya fórmulas activas.',
-        }), 500
-
-    # 2. Consumo proyectado por MP desde el plan
+    # Sebastián 10-may-2026 (validación a fondo): cálculo directo en SQL
+    # con fallback dual cantidad_g_por_lote / porcentaje. La versión vieja
+    # delegaba a `planificacion_estrategica` que tiene el bug de saltar
+    # fórmulas con solo porcentaje (cantidad_g_por_lote=0). Esto cubre
+    # AMBOS tipos de fórmula:
+    #   1. g_por_lote × (kg_prod / lote_size_kg)        si g_por_lote > 0
+    #   2. (porcentaje/100) × kg_prod × 1000            fallback si pct > 0
     consumo_proyectado = {}
-    for k in ('mps_deficit', 'mps_ok', 'mps'):
-        for mp in (plan_data.get(k) or []):
-            if not isinstance(mp, dict):
-                continue
-            mid = mp.get('material_id') or mp.get('codigo_mp') or ''
-            if not mid:
-                continue
-            total_g = float(mp.get('total_g') or mp.get('necesario_g') or 0)
-            if mid not in consumo_proyectado:
-                consumo_proyectado[mid] = {
-                    'total_g_horizonte': total_g,
-                    'productos': mp.get('productos', []) or [],
-                }
-
     conn = sqlite3.connect(DB_PATH)
     conn.execute("PRAGMA busy_timeout=2000")
     c = conn.cursor()
+
+    try:
+        rows = c.execute(f"""
+            SELECT fi.material_id,
+                   COALESCE(SUM(
+                     CASE
+                       WHEN COALESCE(fi.cantidad_g_por_lote,0) > 0 AND COALESCE(fh.lote_size_kg,0) > 0
+                         THEN COALESCE(fi.cantidad_g_por_lote,0) *
+                              (pp.cantidad_kg / fh.lote_size_kg)
+                       WHEN COALESCE(fi.porcentaje,0) > 0
+                         THEN (COALESCE(fi.porcentaje,0) / 100.0) *
+                              COALESCE(pp.cantidad_kg, 0) * 1000
+                       ELSE 0
+                     END
+                   ), 0) as total_g
+            FROM produccion_programada pp
+            JOIN formula_items fi ON UPPER(TRIM(fi.producto_nombre))
+                                  = UPPER(TRIM(pp.producto))
+            LEFT JOIN formula_headers fh
+                   ON UPPER(TRIM(fh.producto_nombre))
+                    = UPPER(TRIM(pp.producto))
+            WHERE pp.fecha_programada >= date('now')
+              AND pp.fecha_programada <= date('now', '+' || ? || ' day')
+              AND LOWER(COALESCE(pp.estado,'')) != 'cancelado'
+              AND COALESCE(pp.inventario_descontado_at, '') = ''
+              AND fi.material_id IS NOT NULL AND TRIM(fi.material_id) != ''
+            GROUP BY fi.material_id
+        """, (horizonte,)).fetchall()
+        for r in rows:
+            consumo_proyectado[r[0]] = {'total_g_horizonte': r[1] or 0}
+    except Exception as e:
+        # Si falla por schema, dejar consumo vacío (todo SIN_USO)
+        consumo_proyectado = {}
 
     # 3. Lead time + buffer por MP (cobertura específica)
     lead_times = {}
