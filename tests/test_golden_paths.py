@@ -3108,17 +3108,19 @@ def test_golden_auditoria_formulas_completa(app, db_clean):
               (codigo_mp, nombre_comercial, activo, tipo_material)
               VALUES (?, 'MP real test', 1, 'MP')""",
           (mp_real,))
-    # 3 items con material_id real válido · duplicado + suma=85
+    # 3 items con material_id real válido · duplicado + suma=120 (>100)
+    # Sebastian 8-may-2026: check #3 ahora solo flagea suma>100 (sobreapasamiento)
+    # o =0 (vacia). Sumas <100 son legítimas (agua q.s. en cosmética).
     _exec("""INSERT INTO formula_items
               (producto_nombre, material_id, material_nombre, porcentaje)
               VALUES (?, ?, 'Real A', 50)""", (prod, mp_real))
     _exec("""INSERT INTO formula_items
               (producto_nombre, material_id, material_nombre, porcentaje)
-              VALUES (?, ?, 'Real DUP', 20)""", (prod, mp_real))
+              VALUES (?, ?, 'Real DUP', 50)""", (prod, mp_real))
     _exec("""INSERT INTO formula_items
               (producto_nombre, material_id, material_nombre, porcentaje)
-              VALUES (?, ?, 'Real C', 15)""", (prod, mp_real))
-    # Suma: 50 + 20 + 15 = 85 ≠ 100 (defecto check #3)
+              VALUES (?, ?, 'Real C', 20)""", (prod, mp_real))
+    # Suma: 50 + 50 + 20 = 120 > 100 (defecto check #3 · sobreapasamiento)
     # Duplicado: (prod, mp_real) aparece 3 veces (defecto check #2)
 
     try:

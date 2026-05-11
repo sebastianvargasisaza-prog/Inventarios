@@ -12280,9 +12280,12 @@ def auditoria_formulas_completa():
         LIMIT 50
     """).fetchall(), [])
 
-    # 3. Suma % ≠ 100 · excluyendo formulas que usan cantidad_g_por_lote
-    # (modalidad alterna · sebastian 8-may-2026: formulas pueden estar en %
-    # o en g por lote. Si tienen g_por_lote, la suma de % no aplica).
+    # 3. Suma % SOLO si > 100 (sobreapasamiento) o exactamente 0
+    # (fórmula vacía). Sebastián 8-may-2026: en cosmética, formulas
+    # declaran solo activos · el resto es agua q.s. (quantum satis)
+    # que no se declara como item. Sumas 1-100% son legítimas.
+    # SOLO es bug: suma > 100 (sobra · imposible regulatorio) o = 0
+    # (fórmula sin ingredientes declarados).
     sumas_malas = _safe('sumas_pct_no_100', lambda: c.execute("""
         SELECT producto_nombre,
                ROUND(SUM(COALESCE(porcentaje,0)), 2) AS suma_pct,
@@ -12291,9 +12294,9 @@ def auditoria_formulas_completa():
         FROM formula_items
         WHERE producto_nombre IS NOT NULL
         GROUP BY producto_nombre
-        HAVING ABS(suma_pct - 100) > 0.5
+        HAVING (suma_pct > 100.5 OR suma_pct < 0.001)
            AND suma_g < 1
-        ORDER BY ABS(suma_pct - 100) DESC
+        ORDER BY suma_pct DESC
         LIMIT 50
     """).fetchall(), [])
 
