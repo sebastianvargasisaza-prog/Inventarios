@@ -3457,3 +3457,57 @@ def test_golden_realidad_cero_error(app, db_clean):
         sub = d['detalles'][key]
         assert 'score' in sub and 'veredicto' in sub, \
             f'{key} sin score/veredicto'
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 75 · A · Investigar MEE + reconciliar drift
+# ═══════════════════════════════════════════════════════════════════
+
+def test_golden_investigar_y_reconciliar_mee(app, db_clean):
+    cs = _login(app, 'sebastian')
+
+    cod = 'GP75-MEE-DRIFT'
+    # Setup: MEE con stock persistido NO igual a SUM(movs)
+    _exec("""INSERT OR REPLACE INTO maestro_mee
+              (codigo, descripcion, estado, stock_actual, unidad)
+              VALUES (?, 'MEE drift test', 'Activo', 100, 'und')""",
+          (cod,))
+    # Mov entrada de 50 (calc = 50, persistido = 100, drift = +50)
+    _exec("""INSERT INTO movimientos_mee
+              (mee_codigo, tipo, cantidad, fecha, responsable)
+              VALUES (?, 'Entrada', 50, datetime('now'), 'gp75')""",
+          (cod,))
+
+    try:
+        # 1. Investigar: drift = 100 - 50 = +50
+        r = cs.get(f'/api/admin/investigar-mee/{cod}')
+        assert r.status_code == 200, \
+            f'BUG: investigar-mee caido · {r.status_code}'
+        d = r.get_json() or {}
+        assert d.get('ok')
+        assert d['stock_persistido'] == 100
+        assert d['stock_calculado'] == 50
+        assert d['drift'] == 50
+        assert d['n_movs_total'] == 1
+
+        # 2. Reconciliar subiendo calculado (crea mov Ajuste +50)
+        r2 = cs.post('/api/admin/reconciliar-mee',
+                     json={'codigo': cod,
+                           'sentido': 'subir_calculado',
+                           'motivo': 'test golden 75'},
+                     headers=csrf_headers())
+        assert r2.status_code == 200, \
+            f'BUG: reconciliar fallo · {r2.status_code}'
+        d2 = r2.get_json() or {}
+        assert d2.get('ok')
+        assert d2['drift_aplicado'] == 50
+
+        # 3. Verificar: drift ahora es 0
+        r3 = cs.get(f'/api/admin/investigar-mee/{cod}')
+        d3 = r3.get_json() or {}
+        assert abs(d3['drift']) < 1, \
+            f'BUG: drift no se cerró · {d3["drift"]}'
+
+    finally:
+        _exec("DELETE FROM movimientos_mee WHERE mee_codigo=?", (cod,))
+        _exec("DELETE FROM maestro_mee WHERE codigo=?", (cod,))

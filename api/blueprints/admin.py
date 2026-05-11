@@ -16187,6 +16187,249 @@ run();
 </body></html>"""
 
 
+@bp.route("/api/admin/investigar-mee/<codigo>", methods=["GET"])
+def investigar_mee(codigo):
+    """Forensic para diagnosticar drift en MEE.
+
+    Sebastián 8-may-2026: cuando S3 detecta drift entre maestro_mee.stock_actual
+    y SUM(movimientos_mee), necesitamos saber EXACTAMENTE qué movimiento o
+    qué edit manual introdujo el drift.
+
+    Returns:
+      mee: {codigo, descripcion, stock_actual_persistido, ...}
+      movimientos: [{id, tipo, cantidad, fecha, anulado, observaciones, ...}]
+      stock_calculado: SUM(entradas - salidas + ajustes) de movs vigentes
+      drift: stock_actual_persistido - stock_calculado
+      audit_log: entries relacionadas (acciones que modificaron este MEE)
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    cod = (codigo or '').strip()
+    if not cod:
+        return jsonify({'error': 'codigo requerido'}), 400
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("PRAGMA busy_timeout=2000")
+    c = conn.cursor()
+
+    try:
+        mee_row = c.execute(
+            "SELECT codigo, descripcion, categoria, proveedor, fabricante, "
+            "       estado, stock_actual, stock_minimo, unidad, fecha_creacion "
+            "FROM maestro_mee WHERE codigo = ?",
+            (cod,)
+        ).fetchone()
+        if not mee_row:
+            conn.close()
+            return jsonify({'error': f'MEE {cod} no existe en maestro_mee'}), 404
+        mee_cols = ['codigo','descripcion','categoria','proveedor','fabricante',
+                     'estado','stock_actual','stock_minimo','unidad','fecha_creacion']
+        mee = dict(zip(mee_cols, mee_row))
+
+        # TODOS los movs en orden cronologico
+        rows = c.execute("""
+            SELECT id, tipo, cantidad, lote_ref, batch_ref, responsable,
+                   observaciones, fecha, COALESCE(anulado,0) AS anulado
+            FROM movimientos_mee
+            WHERE mee_codigo = ?
+            ORDER BY fecha ASC, id ASC
+        """, (cod,)).fetchall()
+        movs = []
+        for r in rows:
+            movs.append({
+                'id': r[0], 'tipo': r[1], 'cantidad': r[2],
+                'lote_ref': r[3], 'batch_ref': r[4],
+                'responsable': r[5], 'observaciones': r[6],
+                'fecha': r[7], 'anulado': r[8],
+            })
+
+        # Stock calculado (solo vigentes · no anulados)
+        stock_calc = 0.0
+        for m in movs:
+            if m['anulado']:
+                continue
+            cant = float(m['cantidad'] or 0)
+            if m['tipo'] == 'Entrada':
+                stock_calc += cant
+            elif m['tipo'] == 'Salida':
+                stock_calc -= cant
+            elif m['tipo'] == 'Ajuste':
+                stock_calc += cant  # ajuste puede ser + o -
+
+        stock_persistido = float(mee['stock_actual'] or 0)
+        drift = stock_persistido - stock_calc
+
+        # Audit log relacionado (best-effort · tabla puede no existir)
+        audit_entries = []
+        try:
+            ar = c.execute("""
+                SELECT timestamp, usuario, accion, registro_id, detalle
+                FROM audit_log
+                WHERE (tabla = 'maestro_mee' AND registro_id = ?)
+                   OR (tabla = 'movimientos_mee' AND detalle LIKE ?)
+                   OR (accion LIKE '%MEE%' AND detalle LIKE ?)
+                ORDER BY timestamp DESC
+                LIMIT 50
+            """, (cod, f'%{cod}%', f'%{cod}%')).fetchall()
+            for r in ar:
+                audit_entries.append({
+                    'timestamp': r[0], 'usuario': r[1],
+                    'accion': r[2], 'registro_id': r[3],
+                    'detalle': (r[4] or '')[:300],
+                })
+        except sqlite3.OperationalError:
+            pass
+
+        conn.close()
+
+        return jsonify({
+            'ok': True,
+            'mee': mee,
+            'stock_persistido': stock_persistido,
+            'stock_calculado': stock_calc,
+            'drift': drift,
+            'n_movs_total': len(movs),
+            'n_movs_anulados': sum(1 for m in movs if m['anulado']),
+            'movimientos': movs,
+            'audit_log_relacionado': audit_entries,
+            'recomendacion': (
+                'Stock OK · sin drift' if abs(drift) < 1
+                else (
+                    'Crear movimiento Ajuste para reconciliar · usar '
+                    '/api/admin/reconciliar-mee con drift como cantidad'
+                )
+            ),
+        }), 200
+
+    except Exception as e:
+        conn.close()
+        return jsonify({'error': 'falla query',
+                        'detail': str(e)[:300]}), 500
+
+
+@bp.route("/api/admin/reconciliar-mee", methods=["POST"])
+def reconciliar_mee():
+    """Crea un movimiento Ajuste para reconciliar drift MEE.
+
+    Sebastián 8-may-2026: cuando un MEE tiene drift entre persistido y
+    calculado, esta es la única forma INVIMA-compliant de igualarlos:
+    crear un mov Ajuste explícito con razón documentada. NO se borran
+    movimientos existentes · se agrega uno nuevo.
+
+    Body JSON:
+      codigo: str (MEE)
+      sentido: 'subir_calculado' | 'bajar_calculado'
+        · subir: crea mov Entrada con cant=|drift| · stock_calc sube hasta persistido
+        · bajar: pone stock_actual = stock_calc (sin tocar movimientos)
+      motivo: str (audit_log)
+
+    Returns: {ok, mov_id?, audit_id?, message}
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    d = request.json or {}
+    cod = (d.get('codigo') or '').strip()
+    sentido = (d.get('sentido') or '').strip()
+    motivo = (d.get('motivo') or 'Reconciliación drift MEE · auditoría S3').strip()
+
+    if not cod:
+        return jsonify({'error': 'codigo requerido'}), 400
+    if sentido not in ('subir_calculado', 'bajar_calculado'):
+        return jsonify({'error': 'sentido invalido (debe ser subir_calculado o bajar_calculado)'}), 400
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("PRAGMA busy_timeout=2000")
+    c = conn.cursor()
+    try:
+        # Calcular drift actual
+        mee = c.execute(
+            "SELECT stock_actual FROM maestro_mee WHERE codigo=?", (cod,)
+        ).fetchone()
+        if not mee:
+            conn.close()
+            return jsonify({'error': f'MEE {cod} no existe'}), 404
+        stock_persistido = float(mee[0] or 0)
+
+        calc_row = c.execute("""
+            SELECT COALESCE(SUM(
+              CASE WHEN tipo='Entrada' AND COALESCE(anulado,0)=0 THEN cantidad
+                   WHEN tipo='Salida' AND COALESCE(anulado,0)=0 THEN -cantidad
+                   WHEN tipo='Ajuste' AND COALESCE(anulado,0)=0 THEN cantidad
+                   ELSE 0 END
+            ), 0)
+            FROM movimientos_mee WHERE mee_codigo=?
+        """, (cod,)).fetchone()
+        stock_calc = float(calc_row[0] or 0)
+        drift = stock_persistido - stock_calc
+
+        if abs(drift) < 1:
+            conn.close()
+            return jsonify({
+                'ok': True,
+                'message': 'Sin drift · nada que reconciliar',
+                'stock_persistido': stock_persistido,
+                'stock_calculado': stock_calc,
+            }), 200
+
+        mov_id = None
+        if sentido == 'subir_calculado':
+            # Crear mov Ajuste con cant=drift (positivo o negativo)
+            c.execute("""
+                INSERT INTO movimientos_mee
+                  (mee_codigo, tipo, cantidad, observaciones, responsable, fecha)
+                VALUES (?, 'Ajuste', ?, ?, ?, datetime('now'))
+            """, (cod, drift,
+                  f'RECONCILIACION zero-error: persistido era {stock_persistido}, '
+                  f'calculado era {stock_calc}, drift {drift:+.2f}. Motivo: {motivo[:200]}',
+                  u))
+            mov_id = c.lastrowid
+        else:
+            # bajar_calculado: poner stock_actual=stock_calc en maestro_mee
+            c.execute(
+                "UPDATE maestro_mee SET stock_actual=? WHERE codigo=?",
+                (stock_calc, cod)
+            )
+
+        # Audit log
+        audit_id = None
+        try:
+            audit_log(
+                c, usuario=u,
+                accion='RECONCILIAR_MEE',
+                tabla='maestro_mee', registro_id=cod,
+                antes={'stock_persistido': stock_persistido,
+                        'stock_calculado': stock_calc},
+                despues={'sentido': sentido, 'drift_aplicado': drift,
+                          'mov_ajuste_id': mov_id, 'motivo': motivo[:300]},
+                detalle=f'Reconciliacion drift MEE {cod}: {drift:+.2f} ({sentido})',
+            )
+        except Exception:
+            pass
+
+        conn.commit()
+        conn.close()
+        return jsonify({
+            'ok': True,
+            'codigo': cod,
+            'sentido': sentido,
+            'drift_aplicado': drift,
+            'mov_ajuste_id': mov_id,
+            'audit_id': audit_id,
+            'message': (f'Reconciliado · drift {drift:+.2f} cerrado via '
+                        f'{"mov Ajuste" if sentido == "subir_calculado" else "UPDATE maestro"}'),
+        }), 200
+
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        return jsonify({'error': 'falla transaccional',
+                        'detail': str(e)[:300]}), 500
+
+
 @bp.route("/api/admin/realidad-cero-error", methods=["GET"])
 def api_realidad_cero_error():
     """S6 agregador zero-error score combinado S1-S5."""
