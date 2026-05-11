@@ -12582,12 +12582,20 @@ def auditoria_producciones_descuento():
         conn2 = sqlite3.connect(DB_PATH)
         conn2.execute("PRAGMA busy_timeout=2000")
         c2 = conn2.cursor()
+        # Flujo legacy (inventario.py · /api/producciones POST) genera movs
+        # con observaciones formato 'FEFO:PROD-XXXXX:producto x Nkg' o
+        # 'UNLIMITED:PROD-XXXXX:producto x Nkg'. Detectamos por id de
+        # producción embebido como PROD-00123 zero-padded.
         legacy_rows = c2.execute("""
             SELECT p.id, p.producto, p.fecha, p.cantidad, p.estado, p.lote,
                    (SELECT COUNT(*) FROM movimientos
                      WHERE tipo = 'Salida'
-                       AND (observaciones LIKE '%' || p.producto || '%'
-                            OR (p.lote IS NOT NULL AND p.lote != '' AND lote = p.lote)))
+                       AND (
+                         observaciones LIKE '%PROD-' || printf('%05d', p.id) || '%'
+                         OR (p.lote IS NOT NULL AND p.lote != '' AND
+                             observaciones LIKE '%' || p.lote || '%')
+                         OR (observaciones LIKE 'Producción INICIADA: ' || p.producto || '%')
+                       ))
                    AS n_movs_relacionados,
                    (SELECT COUNT(*) FROM formula_items
                      WHERE producto_nombre = p.producto) AS n_formula_items
