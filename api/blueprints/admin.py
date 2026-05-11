@@ -11690,6 +11690,276 @@ def investigar_mp(codigo):
     }), 200
 
 
+@bp.route("/api/admin/sugerir-stock-minimos", methods=["GET"])
+def sugerir_stock_minimos():
+    """Sugiere stock_minimo por MP basado en PRODUCCIÓN PROYECTADA en
+    Google Calendar (no en consumo histórico).
+
+    Sebastián 10-may-2026: 'el minimo debemos calcularlo segun lo que
+    hay en google calendar, alli dice cuanto vamos a producir durante
+    el año'.
+
+    Cálculo:
+      1. Lee `planificacion_estrategica` (que parsea Calendar + fórmulas)
+         para horizonte N días (default 90).
+      2. Por cada MP, suma `total_g` proyectado en ese horizonte.
+      3. Convierte a tasa mensual: consumo_mensual = total_g / (N/30).
+      4. Stock_minimo_sugerido = consumo_mensual × (lead_time+buffer)/30
+         donde lead+buffer viene de mp_lead_time_config si existe,
+         sino default cobertura 30 días.
+
+    Diferencia vs versión anterior (histórico):
+      - Histórico mira pasado · proyectado mira futuro (más útil)
+      - Captura lanzamientos nuevos sin historial (estrenos)
+      - Captura estacionalidad (campañas, picos)
+      - Captura productos descontinuados (consumo proyectado = 0)
+
+    Query params:
+      horizonte_dias: int (30-365, default 90)
+      cobertura_dias: int (7-180, default = lead+buffer si existe, sino 30)
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    try:
+        horizonte = max(30, min(int(request.args.get('horizonte_dias', 90)), 365))
+    except (ValueError, TypeError):
+        horizonte = 90
+    cobertura_default = 30
+    try:
+        cobertura_default = max(7, min(int(request.args.get('cobertura_dias', 30)), 180))
+    except (ValueError, TypeError):
+        pass
+
+    from flask import current_app
+
+    # 1. Llamar planificacion_estrategica con horizonte
+    try:
+        try:
+            from blueprints.programacion import planificacion_estrategica as _plan
+        except ImportError:
+            from api.blueprints.programacion import planificacion_estrategica as _plan
+        with current_app.test_request_context(
+            f'/api/programacion/planificacion-estrategica?dias={horizonte}'
+        ):
+            plan_resp = _plan()
+        plan_data = plan_resp.get_json() if hasattr(plan_resp, 'get_json') else {}
+        if not isinstance(plan_data, dict):
+            plan_data = {}
+    except Exception as e:
+        return jsonify({
+            'error': 'No se pudo cargar planificación estratégica',
+            'detail': str(e)[:200],
+            'hint': 'Verificar que Google Calendar esté sincronizado y haya fórmulas activas.',
+        }), 500
+
+    # 2. Consumo proyectado por MP desde el plan
+    consumo_proyectado = {}
+    for k in ('mps_deficit', 'mps_ok', 'mps'):
+        for mp in (plan_data.get(k) or []):
+            if not isinstance(mp, dict):
+                continue
+            mid = mp.get('material_id') or mp.get('codigo_mp') or ''
+            if not mid:
+                continue
+            total_g = float(mp.get('total_g') or mp.get('necesario_g') or 0)
+            if mid not in consumo_proyectado:
+                consumo_proyectado[mid] = {
+                    'total_g_horizonte': total_g,
+                    'productos': mp.get('productos', []) or [],
+                }
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("PRAGMA busy_timeout=2000")
+    c = conn.cursor()
+
+    # 3. Lead time + buffer por MP (cobertura específica)
+    lead_times = {}
+    try:
+        rows = c.execute("""
+            SELECT material_id, COALESCE(lead_time_dias, 14) as lt,
+                   COALESCE(buffer_dias, 30) as buf
+            FROM mp_lead_time_config
+        """).fetchall()
+        for r in rows:
+            lead_times[r[0]] = {'lead': r[1], 'buffer': r[2]}
+    except sqlite3.OperationalError:
+        pass
+
+    # 4. Catálogo MPs activas
+    try:
+        rows = c.execute("""
+            SELECT codigo_mp,
+                   SUBSTR(COALESCE(nombre_comercial,nombre_inci,codigo_mp),1,60) as nombre,
+                   COALESCE(stock_minimo,0) as min_actual,
+                   COALESCE(proveedor,'') as proveedor
+            FROM maestro_mps
+            WHERE activo=1
+            ORDER BY codigo_mp
+        """).fetchall()
+    except Exception as e:
+        conn.close()
+        return jsonify({'error': str(e)[:200]}), 500
+
+    resumen = {'sin_uso': 0, 'alto': 0, 'bajo': 0, 'ok': 0}
+    items = []
+
+    for r in rows:
+        mid, nombre, min_actual, prov = r[0], r[1], r[2], r[3]
+        proy = consumo_proyectado.get(mid, {})
+        total_g_horizonte = float(proy.get('total_g_horizonte', 0))
+        consumo_mensual = round((total_g_horizonte * 30 / horizonte) if horizonte else 0, 2)
+        lt_info = lead_times.get(mid)
+        if lt_info:
+            cobertura_dias = lt_info['lead'] + lt_info['buffer']
+        else:
+            cobertura_dias = cobertura_default
+
+        sugerido = round(consumo_mensual * (cobertura_dias / 30), 2)
+
+        if total_g_horizonte == 0:
+            estado = 'sin_uso'
+            resumen['sin_uso'] += 1
+        elif sugerido == 0:
+            estado = 'sin_uso'
+            resumen['sin_uso'] += 1
+        elif min_actual > 2 * sugerido and sugerido > 0:
+            estado = 'alto'
+            resumen['alto'] += 1
+        elif min_actual < 0.5 * sugerido:
+            estado = 'bajo'
+            resumen['bajo'] += 1
+        else:
+            estado = 'ok'
+            resumen['ok'] += 1
+
+        items.append({
+            'codigo_mp': mid, 'nombre': nombre, 'proveedor': prov,
+            'stock_minimo_actual_g': round(min_actual, 2),
+            'total_proyectado_horizonte_g': round(total_g_horizonte, 2),
+            'consumo_mensual_g': consumo_mensual,
+            'productos_que_lo_usan': len(proy.get('productos', [])),
+            'lead_time_dias': lt_info['lead'] if lt_info else None,
+            'buffer_dias': lt_info['buffer'] if lt_info else None,
+            'cobertura_dias_usada': cobertura_dias,
+            'stock_minimo_sugerido_g': sugerido,
+            'diferencia_g': round(sugerido - min_actual, 2),
+            'estado': estado,
+        })
+
+    items.sort(key=lambda x: (
+        {'alto': 0, 'bajo': 1, 'ok': 2, 'sin_uso': 3}.get(x['estado'], 4),
+        -abs(x['diferencia_g']),
+    ))
+
+    conn.close()
+    return jsonify({
+        'ok': True,
+        'horizonte_dias': horizonte,
+        'cobertura_dias_default': cobertura_default,
+        'items': items,
+        'resumen': resumen,
+        'metodologia': (
+            f'Producción proyectada (Google Calendar + fórmulas) en {horizonte}d → '
+            f'consumo_mensual = total/(horizonte/30) · '
+            f'stock_min_sugerido = consumo_mensual × cobertura/30. '
+            f'Cobertura usa lead_time+buffer si configurado, sino {cobertura_default} días.'
+        ),
+        'fuente': 'planificacion_estrategica (Google Calendar)',
+    }), 200
+
+
+@bp.route("/api/admin/aplicar-stock-minimos-sugeridos", methods=["POST"])
+def aplicar_stock_minimos_sugeridos():
+    """Aplica los stock_minimo sugeridos por /sugerir-stock-minimos.
+
+    Body JSON:
+      items: [{codigo_mp, stock_minimo_g}] · lista a aplicar
+      motivo: str (audit_log)
+      dry_run: bool (default false)
+
+    Filtros recomendados desde frontend:
+      - Solo aplicar 'alto' y 'bajo' (no 'ok' ni 'sin_uso')
+      - Confirmar uno por uno · o batch tras revisión visual
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    d = request.json or {}
+    items = d.get('items') or []
+    motivo = (d.get('motivo') or 'Ajuste stock_minimo basado en consumo histórico').strip()
+    dry_run = bool(d.get('dry_run'))
+
+    if not isinstance(items, list) or not items:
+        return jsonify({'error': 'items lista no vacía requerida'}), 400
+    if len(items) > 500:
+        return jsonify({'error': 'max 500 items por request'}), 400
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("PRAGMA busy_timeout=2000")
+    c = conn.cursor()
+
+    plan = []
+    for it in items:
+        mid = (it.get('codigo_mp') or '').strip()
+        nuevo = it.get('stock_minimo_g')
+        if not mid:
+            continue
+        try:
+            nuevo = float(nuevo)
+            if nuevo < 0:
+                continue
+        except (ValueError, TypeError):
+            continue
+        row = c.execute(
+            "SELECT stock_minimo FROM maestro_mps WHERE codigo_mp=? AND activo=1",
+            (mid,)
+        ).fetchone()
+        if not row:
+            continue
+        actual = row[0] or 0
+        if abs(actual - nuevo) < 0.01:
+            continue
+        plan.append({'codigo_mp': mid, 'actual': actual, 'nuevo': nuevo})
+
+    if dry_run:
+        conn.close()
+        return jsonify({'ok': True, 'dry_run': True, 'plan': plan,
+                       'a_aplicar': len(plan)}), 200
+
+    aplicados = 0
+    try:
+        for p in plan:
+            c.execute(
+                "UPDATE maestro_mps SET stock_minimo=? WHERE codigo_mp=?",
+                (p['nuevo'], p['codigo_mp'])
+            )
+            aplicados += 1
+        try:
+            import json as _json
+            audit_log(
+                c, usuario=u, accion='ACTUALIZAR_STOCK_MINIMOS_BULK',
+                tabla='maestro_mps', registro_id='bulk',
+                despues={'motivo': motivo, 'plan': plan, 'aplicados': aplicados},
+                detalle=f'{aplicados} stock_minimos actualizados · motivo: {motivo}',
+            )
+        except Exception:
+            pass
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        return jsonify({'error': 'falla', 'detail': str(e)[:300]}), 500
+
+    conn.close()
+    return jsonify({
+        'ok': True, 'aplicados': aplicados,
+        'message': f'✓ {aplicados} stock_minimo actualizados',
+    }), 200
+
+
 @bp.route("/api/admin/validar-planta", methods=["GET"])
 def validar_planta_invariantes():
     """Verifica los 5 invariantes críticos de Planta · cero-error.
@@ -11997,6 +12267,195 @@ def validar_planta_invariantes():
         'veredicto': veredicto,
         'invariantes': inv,
     }), 200
+
+
+@bp.route("/admin/stock-minimos", methods=["GET"])
+def admin_stock_minimos_page():
+    """Panel para revisar y ajustar stock_minimos basados en producción
+    proyectada (Google Calendar). Sebastián 10-may-2026."""
+    u, err, code = _require_admin()
+    if err:
+        return Response('<h1>403</h1>', status=403, mimetype='text/html')
+    return Response(_STOCK_MINIMOS_HTML, mimetype='text/html')
+
+
+_STOCK_MINIMOS_HTML = """<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Stock Mínimos · EOS</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,Segoe UI,sans-serif;background:#0c0a09;color:#fafaf9;padding:24px}
+h1{font-size:24px;color:#5eead4;margin-bottom:4px}
+.sub{color:#a8a29e;font-size:13px;margin-bottom:20px}
+.controls{background:#1c1917;border-radius:10px;padding:16px;margin-bottom:18px;display:flex;gap:12px;align-items:end;flex-wrap:wrap}
+.controls label{display:flex;flex-direction:column;font-size:11px;color:#a8a29e;text-transform:uppercase;letter-spacing:.5px}
+.controls input{margin-top:4px;padding:7px 10px;background:#0c0a09;border:1px solid #44403c;color:#fafaf9;border-radius:5px;width:100px}
+button{padding:8px 16px;border:none;border-radius:6px;cursor:pointer;font-weight:700;font-size:13px}
+.b-run{background:#5eead4;color:#0c0a09}
+.b-apply{background:#a855f7;color:white}
+.b-apply:disabled{opacity:.4;cursor:not-allowed}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:18px}
+.kpi{background:#1c1917;border-radius:8px;padding:14px;text-align:center;border-left:4px solid #44403c}
+.kpi.alto{border-left-color:#dc2626}
+.kpi.bajo{border-left-color:#ca8a04}
+.kpi.ok{border-left-color:#16a34a}
+.kpi.sin_uso{border-left-color:#525252}
+.kpi h4{font-size:10px;text-transform:uppercase;color:#a8a29e;letter-spacing:.5px;margin-bottom:4px}
+.kpi .v{font-size:30px;font-weight:800}
+.kpi.alto .v{color:#dc2626}.kpi.bajo .v{color:#ca8a04}.kpi.ok .v{color:#16a34a}.kpi.sin_uso .v{color:#a8a29e}
+table{width:100%;background:#1c1917;border-radius:10px;border-collapse:separate;border-spacing:0;font-size:12px;overflow:hidden}
+th{background:#292524;text-align:left;padding:10px;color:#fafaf9;font-weight:700;text-transform:uppercase;letter-spacing:.5px;font-size:11px;border-bottom:1px solid #44403c;position:sticky;top:0}
+td{padding:8px 10px;border-bottom:1px solid #292524}
+tr:hover{background:#292524}
+.estado{display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.3px}
+.estado.alto{background:#7f1d1d;color:#fecaca}
+.estado.bajo{background:#854d0e;color:#fef3c7}
+.estado.ok{background:#14532d;color:#bbf7d0}
+.estado.sin_uso{background:#262626;color:#a8a29e}
+.num{font-family:Consolas,monospace;text-align:right}
+.diff{font-weight:700}
+.diff.pos{color:#16a34a}.diff.neg{color:#dc2626}
+.back{display:inline-block;color:#a8a29e;text-decoration:none;font-size:13px;margin-bottom:16px}
+.bar-bot{position:sticky;bottom:0;background:#1c1917;padding:14px;border-radius:10px;margin-top:16px;display:flex;justify-content:space-between;align-items:center;border:1px solid #44403c}
+.sel-info{font-size:13px;color:#a8a29e}
+.note{background:#1e3a8a30;border-left:3px solid #3b82f6;padding:10px 14px;border-radius:6px;font-size:12px;margin-bottom:14px}
+</style></head><body>
+
+<a class="back" href="/modulos">← Panel inicial</a>
+<h1>📊 Stock Mínimos · Sugeridos por Calendar</h1>
+<p class="sub">Calculado desde producción proyectada en Google Calendar × fórmulas activas. NO usa consumo histórico.</p>
+
+<div class="note">
+<b>Cómo funciona:</b> el sistema lee Google Calendar para el horizonte que definas, multiplica cada producción por su fórmula, suma el consumo proyectado por MP, y calcula stock_minimo = consumo_mensual × (lead_time+buffer)/30 días.
+</div>
+
+<div class="controls">
+  <label>Horizonte (días)
+    <input type="number" id="horizonte" value="90" min="30" max="365" step="30">
+  </label>
+  <label>Cobertura default (días)
+    <input type="number" id="cobertura" value="30" min="7" max="180" step="7">
+  </label>
+  <button class="b-run" onclick="calcular()">🔍 Calcular sugerencias</button>
+  <span id="ts" style="color:#a8a29e;font-size:11px;margin-left:8px"></span>
+</div>
+
+<div id="kpis" class="kpis"></div>
+<div id="tabla-cont"></div>
+<div class="bar-bot" id="bar-bot" style="display:none">
+  <div class="sel-info" id="sel-info">0 items seleccionados</div>
+  <button class="b-apply" id="b-apply" onclick="aplicar()" disabled>✓ Aplicar seleccionados</button>
+</div>
+
+<script>
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;');}
+function fmt(n){return Number(n||0).toLocaleString('es-CO',{maximumFractionDigits:1});}
+
+async function calcular(){
+  var h = document.getElementById('horizonte').value || 90;
+  var c = document.getElementById('cobertura').value || 30;
+  document.getElementById('tabla-cont').innerHTML = '<div style="text-align:center;padding:40px;color:#a8a29e">⏳ Leyendo Google Calendar + cruzando con fórmulas...</div>';
+  try{
+    var r = await fetch('/api/admin/sugerir-stock-minimos?horizonte_dias='+h+'&cobertura_dias='+c);
+    var d = await r.json();
+    if(!r.ok){
+      document.getElementById('tabla-cont').innerHTML='<div style="color:#dc2626;padding:14px">Error: '+esc(d.error||r.status)+'</div>';
+      return;
+    }
+    document.getElementById('ts').textContent = 'Horizonte: '+(d.horizonte_dias)+'d · '+
+      'Fuente: '+(d.fuente||'')+' · '+(d.items||[]).length+' MPs activas';
+    render(d);
+  }catch(e){
+    document.getElementById('tabla-cont').innerHTML='<div style="color:#dc2626;padding:14px">'+e.message+'</div>';
+  }
+}
+
+function render(d){
+  var r = d.resumen || {};
+  var html = '';
+  ['alto','bajo','ok','sin_uso'].forEach(function(k){
+    html += '<div class="kpi '+k+'"><h4>'+k.replace('_',' ')+'</h4><div class="v">'+(r[k]||0)+'</div></div>';
+  });
+  document.getElementById('kpis').innerHTML = html;
+
+  var items = d.items || [];
+  // Mostrar sólo los que tienen acción (alto/bajo)
+  var accion = items.filter(function(it){return it.estado==='alto'||it.estado==='bajo';});
+  if(!accion.length){
+    document.getElementById('tabla-cont').innerHTML='<div style="text-align:center;color:#16a34a;padding:40px;font-size:14px">✅ TODOS los stock_minimos están dentro de rango razonable · sin sugerencias de cambio.</div>';
+    document.getElementById('bar-bot').style.display='none';
+    return;
+  }
+  var thtml = '<table>'+
+    '<thead><tr>'+
+    '<th style="width:30px"><input type="checkbox" onclick="marcarTodos(this.checked)"></th>'+
+    '<th>Código</th><th>Nombre</th><th>Estado</th>'+
+    '<th class="num">Actual (g)</th><th class="num">Proyectado horizonte (g)</th>'+
+    '<th class="num">Consumo /mes (g)</th><th class="num">Cobertura</th>'+
+    '<th class="num">Sugerido (g)</th><th class="num">Diferencia</th>'+
+    '</tr></thead><tbody>';
+  accion.forEach(function(it,idx){
+    var diffClass = it.diferencia_g > 0 ? 'pos' : 'neg';
+    var diffSign = it.diferencia_g > 0 ? '+' : '';
+    thtml += '<tr>';
+    thtml += '<td><input type="checkbox" class="sel" data-mid="'+esc(it.codigo_mp)+'" data-sug="'+it.stock_minimo_sugerido_g+'" onchange="updateSel()"></td>';
+    thtml += '<td style="font-family:monospace;font-size:11px">'+esc(it.codigo_mp)+'</td>';
+    thtml += '<td>'+esc(it.nombre)+'</td>';
+    thtml += '<td><span class="estado '+it.estado+'">'+it.estado+'</span></td>';
+    thtml += '<td class="num">'+fmt(it.stock_minimo_actual_g)+'</td>';
+    thtml += '<td class="num">'+fmt(it.total_proyectado_horizonte_g)+'</td>';
+    thtml += '<td class="num">'+fmt(it.consumo_mensual_g)+'</td>';
+    thtml += '<td class="num">'+(it.cobertura_dias_usada||'-')+'d</td>';
+    thtml += '<td class="num" style="color:#5eead4;font-weight:700">'+fmt(it.stock_minimo_sugerido_g)+'</td>';
+    thtml += '<td class="num diff '+diffClass+'">'+diffSign+fmt(it.diferencia_g)+'</td>';
+    thtml += '</tr>';
+  });
+  thtml += '</tbody></table>';
+  document.getElementById('tabla-cont').innerHTML = thtml;
+  document.getElementById('bar-bot').style.display='flex';
+  updateSel();
+}
+
+function marcarTodos(estado){
+  document.querySelectorAll('.sel').forEach(function(cb){cb.checked = estado;});
+  updateSel();
+}
+function updateSel(){
+  var sel = document.querySelectorAll('.sel:checked').length;
+  document.getElementById('sel-info').textContent = sel + ' items seleccionados';
+  document.getElementById('b-apply').disabled = sel === 0;
+}
+
+async function aplicar(){
+  var sel = Array.from(document.querySelectorAll('.sel:checked'));
+  if(!sel.length){return;}
+  if(!confirm('¿Aplicar nuevo stock_minimo a '+sel.length+' MPs? Acción rastreable en audit_log.')){return;}
+  var items = sel.map(function(cb){
+    return {codigo_mp: cb.dataset.mid, stock_minimo_g: parseFloat(cb.dataset.sug)};
+  });
+  var btn = document.getElementById('b-apply');
+  btn.disabled = true; btn.textContent = '⏳ Aplicando...';
+  try{
+    var r = await fetch('/api/admin/aplicar-stock-minimos-sugeridos',{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({items: items, motivo: 'Ajuste basado en Google Calendar · panel'}),
+    });
+    var d = await r.json();
+    if(r.ok){
+      alert('✓ '+(d.message||'Aplicado')+' · recargando...');
+      calcular();
+    } else {
+      alert('Error: '+(d.error||r.status));
+      btn.disabled = false; btn.textContent = '✓ Aplicar seleccionados';
+    }
+  }catch(e){
+    alert('Error de red: '+e.message);
+    btn.disabled = false; btn.textContent = '✓ Aplicar seleccionados';
+  }
+}
+
+calcular();
+</script>
+</body></html>"""
 
 
 @bp.route("/admin/integridad-planta", methods=["GET"])
