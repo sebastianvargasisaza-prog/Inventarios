@@ -12228,194 +12228,210 @@ def auditoria_formulas_completa():
     conn.execute("PRAGMA busy_timeout=2000")
     c = conn.cursor()
 
+    # Cada check independiente · si uno falla, el resto sigue.
+    errores_checks = {}
+
+    def _safe(label, fn, default):
+        try:
+            return fn()
+        except Exception as ex:
+            errores_checks[label] = str(ex)[:200]
+            return default
+
+    # Pre-check: formula_items existe?
     try:
         n_formulas = c.execute(
-            "SELECT COUNT(DISTINCT producto_nombre) FROM formula_items"
+            "SELECT COUNT(DISTINCT producto_nombre) FROM formula_items "
+            "WHERE producto_nombre IS NOT NULL"
         ).fetchone()[0]
-        n_items = c.execute("SELECT COUNT(*) FROM formula_items").fetchone()[0]
-
-        # 1. Huérfanos
-        huerfanos = c.execute("""
-            SELECT fi.material_id, MAX(fi.material_nombre) AS nombre,
-                   COUNT(DISTINCT fi.producto_nombre) AS n_productos
-            FROM formula_items fi
-            LEFT JOIN maestro_mps m
-              ON m.codigo_mp = fi.material_id AND m.activo = 1
-            WHERE m.codigo_mp IS NULL
-              AND fi.material_id IS NOT NULL AND TRIM(fi.material_id) != ''
-            GROUP BY fi.material_id
-            ORDER BY n_productos DESC
-            LIMIT 50
-        """).fetchall()
-
-        # 2. Duplicados
-        duplicados = c.execute("""
-            SELECT producto_nombre, material_id, COUNT(*) AS veces
-            FROM formula_items
-            WHERE material_id IS NOT NULL AND TRIM(material_id) != ''
-            GROUP BY producto_nombre, material_id
-            HAVING veces > 1
-            ORDER BY veces DESC
-            LIMIT 50
-        """).fetchall()
-
-        # 3. Suma % ≠ 100
-        sumas_malas = c.execute("""
-            SELECT producto_nombre, ROUND(SUM(porcentaje),2) AS suma,
-                   COUNT(*) AS items
-            FROM formula_items
-            GROUP BY producto_nombre
-            HAVING ABS(suma - 100) > 0.5
-            ORDER BY ABS(suma - 100) DESC
-            LIMIT 50
-        """).fetchall()
-
-        # 4. material_id NULL o vacío
-        nulos = c.execute("""
-            SELECT COUNT(*) FROM formula_items
-            WHERE material_id IS NULL OR TRIM(material_id) = ''
-        """).fetchone()[0]
-
-        # 5. porcentaje inválido
-        pct_invalidos = c.execute("""
-            SELECT id, producto_nombre, material_id, porcentaje
-            FROM formula_items
-            WHERE porcentaje IS NULL OR porcentaje < 0 OR porcentaje > 100
-            LIMIT 50
-        """).fetchall()
-
-        # 6. Productos en formula_headers sin items (best-effort · tabla puede no existir)
-        try:
-            headers_vacios = c.execute("""
-                SELECT fh.producto_nombre
-                FROM formula_headers fh
-                WHERE NOT EXISTS (
-                    SELECT 1 FROM formula_items fi
-                    WHERE fi.producto_nombre = fh.producto_nombre
-                )
-                LIMIT 50
-            """).fetchall()
-        except sqlite3.OperationalError:
-            headers_vacios = []
-
-        # 7. Items sin nombre Y sin material_id
-        huerfanos_absolutos = c.execute("""
-            SELECT id, producto_nombre, porcentaje
-            FROM formula_items
-            WHERE (material_id IS NULL OR TRIM(material_id) = '')
-              AND (material_nombre IS NULL OR TRIM(material_nombre) = '')
-            LIMIT 50
-        """).fetchall()
-
-        # Score 0-100: cada check bloqueante restará proporcionalmente
-        n_huer = len(huerfanos)
-        n_dup = len(duplicados)
-        n_pct100 = len(sumas_malas)
-        n_pct_inv = len(pct_invalidos)
-        n_hdr_vac = len(headers_vacios)
-        n_huer_abs = len(huerfanos_absolutos)
-
-        # Pesos: huérfanos y duplicados son los más graves
-        score = 100.0
-        if n_formulas > 0:
-            score -= min(40, 40 * n_huer / max(n_formulas, 1))
-            score -= min(20, 20 * n_dup / max(n_formulas, 1))
-            score -= min(20, 20 * n_pct100 / max(n_formulas, 1))
-            score -= min(10, 10 * (n_pct_inv + nulos) / max(n_items, 1))
-            score -= min(5, 5 * n_hdr_vac / max(n_formulas, 1))
-            score -= min(5, 5 * n_huer_abs / max(n_items, 1))
-        score = max(0.0, round(score, 1))
-
-        if score >= 99:
-            veredicto = 'PERFECTA'
-        elif score >= 85:
-            veredicto = 'MENOR'
-        else:
-            veredicto = 'BLOQUEANTE'
-
+        n_items = c.execute(
+            "SELECT COUNT(*) FROM formula_items"
+        ).fetchone()[0]
+    except Exception as ex:
         conn.close()
-
         return jsonify({
-            'ok': True,
-            'score': score,
-            'veredicto': veredicto,
-            'resumen': {
-                'n_formulas': n_formulas,
-                'n_items': n_items,
-                'huerfanos': n_huer,
-                'duplicados': n_dup,
-                'sumas_pct_no_100': n_pct100,
-                'material_id_nulos': nulos,
-                'pct_invalidos': n_pct_inv,
-                'headers_vacios': n_hdr_vac,
-                'huerfanos_absolutos': n_huer_abs,
-            },
-            'checks': {
-                'huerfanos': {
-                    'ok': n_huer == 0,
-                    'count': n_huer,
-                    'top': [
-                        {'material_id': h[0], 'nombre': h[1] or '',
-                         'n_productos': h[2]}
-                        for h in huerfanos[:10]
-                    ],
-                    'fix_link': '/admin/normalizar-formulas',
-                },
-                'duplicados': {
-                    'ok': n_dup == 0,
-                    'count': n_dup,
-                    'top': [
-                        {'producto': d[0], 'material_id': d[1],
-                         'veces': d[2]}
-                        for d in duplicados[:10]
-                    ],
-                    'fix_link': '/admin/limpieza-cero-error',
-                },
-                'sumas_pct_no_100': {
-                    'ok': n_pct100 == 0,
-                    'count': n_pct100,
-                    'top': [
-                        {'producto': s[0], 'suma_actual': s[1],
-                         'diff': round((s[1] or 0) - 100, 2),
-                         'items': s[2]}
-                        for s in sumas_malas[:10]
-                    ],
-                    'fix_link': '/tecnica',
-                },
-                'material_id_nulos': {
-                    'ok': nulos == 0,
-                    'count': nulos,
-                },
-                'pct_invalidos': {
-                    'ok': n_pct_inv == 0,
-                    'count': n_pct_inv,
-                    'top': [
-                        {'id': p[0], 'producto': p[1],
-                         'material_id': p[2], 'porcentaje': p[3]}
-                        for p in pct_invalidos[:10]
-                    ],
-                },
-                'headers_vacios': {
-                    'ok': n_hdr_vac == 0,
-                    'count': n_hdr_vac,
-                    'top': [h[0] for h in headers_vacios[:10]],
-                },
-                'huerfanos_absolutos': {
-                    'ok': n_huer_abs == 0,
-                    'count': n_huer_abs,
-                    'top': [
-                        {'id': h[0], 'producto': h[1], 'porcentaje': h[2]}
-                        for h in huerfanos_absolutos[:10]
-                    ],
-                },
-            },
-            'message': (f'S1 fórmulas: {veredicto} · score {score}/100 '
-                        f'· {n_formulas} fórmulas · {n_items} items'),
-        }), 200
+            'ok': False, 'error': 'tabla formula_items inaccesible',
+            'detail': str(ex)[:300],
+        }), 500
 
-    except Exception as e:
-        conn.close()
-        return jsonify({'error': 'falla auditoría', 'detail': str(e)[:300]}), 500
+    # 1. Huérfanos
+    huerfanos = _safe('huerfanos', lambda: c.execute("""
+        SELECT fi.material_id, MAX(fi.material_nombre) AS nombre,
+               COUNT(DISTINCT fi.producto_nombre) AS n_productos
+        FROM formula_items fi
+        LEFT JOIN maestro_mps m
+          ON m.codigo_mp = fi.material_id AND COALESCE(m.activo,1) = 1
+        WHERE m.codigo_mp IS NULL
+          AND fi.material_id IS NOT NULL AND TRIM(fi.material_id) != ''
+        GROUP BY fi.material_id
+        ORDER BY n_productos DESC
+        LIMIT 50
+    """).fetchall(), [])
+
+    # 2. Duplicados
+    duplicados = _safe('duplicados', lambda: c.execute("""
+        SELECT producto_nombre, material_id, COUNT(*) AS veces
+        FROM formula_items
+        WHERE material_id IS NOT NULL AND TRIM(material_id) != ''
+          AND producto_nombre IS NOT NULL
+        GROUP BY producto_nombre, material_id
+        HAVING veces > 1
+        ORDER BY veces DESC
+        LIMIT 50
+    """).fetchall(), [])
+
+    # 3. Suma % ≠ 100
+    sumas_malas = _safe('sumas_pct_no_100', lambda: c.execute("""
+        SELECT producto_nombre, ROUND(SUM(COALESCE(porcentaje,0)),2) AS suma,
+               COUNT(*) AS items
+        FROM formula_items
+        WHERE producto_nombre IS NOT NULL
+        GROUP BY producto_nombre
+        HAVING ABS(suma - 100) > 0.5
+        ORDER BY ABS(suma - 100) DESC
+        LIMIT 50
+    """).fetchall(), [])
+
+    # 4. material_id NULL o vacío
+    nulos = _safe('material_id_nulos', lambda: c.execute("""
+        SELECT COUNT(*) FROM formula_items
+        WHERE material_id IS NULL OR TRIM(material_id) = ''
+    """).fetchone()[0], 0)
+
+    # 5. porcentaje inválido
+    pct_invalidos = _safe('pct_invalidos', lambda: c.execute("""
+        SELECT id, producto_nombre, material_id, porcentaje
+        FROM formula_items
+        WHERE porcentaje IS NULL OR porcentaje < 0 OR porcentaje > 100
+        LIMIT 50
+    """).fetchall(), [])
+
+    # 6. Productos en formula_headers sin items (tabla puede no existir)
+    headers_vacios = _safe('headers_vacios', lambda: c.execute("""
+        SELECT fh.producto_nombre
+        FROM formula_headers fh
+        WHERE NOT EXISTS (
+            SELECT 1 FROM formula_items fi
+            WHERE fi.producto_nombre = fh.producto_nombre
+        )
+        LIMIT 50
+    """).fetchall(), [])
+
+    # 7. Items sin nombre Y sin material_id
+    huerfanos_absolutos = _safe('huerfanos_absolutos', lambda: c.execute("""
+        SELECT id, producto_nombre, porcentaje
+        FROM formula_items
+        WHERE (material_id IS NULL OR TRIM(material_id) = '')
+          AND (material_nombre IS NULL OR TRIM(material_nombre) = '')
+        LIMIT 50
+    """).fetchall(), [])
+
+    # Score 0-100: cada check bloqueante restará proporcionalmente
+    n_huer = len(huerfanos)
+    n_dup = len(duplicados)
+    n_pct100 = len(sumas_malas)
+    n_pct_inv = len(pct_invalidos)
+    n_hdr_vac = len(headers_vacios)
+    n_huer_abs = len(huerfanos_absolutos)
+
+    # Pesos: huérfanos y duplicados son los más graves
+    score = 100.0
+    if n_formulas > 0:
+        score -= min(40, 40 * n_huer / max(n_formulas, 1))
+        score -= min(20, 20 * n_dup / max(n_formulas, 1))
+        score -= min(20, 20 * n_pct100 / max(n_formulas, 1))
+        score -= min(10, 10 * (n_pct_inv + nulos) / max(n_items, 1))
+        score -= min(5, 5 * n_hdr_vac / max(n_formulas, 1))
+        score -= min(5, 5 * n_huer_abs / max(n_items, 1))
+    score = max(0.0, round(score, 1))
+
+    if score >= 99:
+        veredicto = 'PERFECTA'
+    elif score >= 85:
+        veredicto = 'MENOR'
+    else:
+        veredicto = 'BLOQUEANTE'
+
+    conn.close()
+
+    return jsonify({
+        'ok': True,
+        'score': score,
+        'veredicto': veredicto,
+        'resumen': {
+            'n_formulas': n_formulas,
+            'n_items': n_items,
+            'huerfanos': n_huer,
+            'duplicados': n_dup,
+            'sumas_pct_no_100': n_pct100,
+            'material_id_nulos': nulos,
+            'pct_invalidos': n_pct_inv,
+            'headers_vacios': n_hdr_vac,
+            'huerfanos_absolutos': n_huer_abs,
+        },
+        'checks': {
+            'huerfanos': {
+                'ok': n_huer == 0,
+                'count': n_huer,
+                'top': [
+                    {'material_id': h[0], 'nombre': h[1] or '',
+                     'n_productos': h[2]}
+                    for h in huerfanos[:10]
+                ],
+                'fix_link': '/admin/normalizar-formulas',
+            },
+            'duplicados': {
+                'ok': n_dup == 0,
+                'count': n_dup,
+                'top': [
+                    {'producto': d[0], 'material_id': d[1],
+                     'veces': d[2]}
+                    for d in duplicados[:10]
+                ],
+                'fix_link': '/admin/limpieza-cero-error',
+            },
+            'sumas_pct_no_100': {
+                'ok': n_pct100 == 0,
+                'count': n_pct100,
+                'top': [
+                    {'producto': s[0], 'suma_actual': s[1],
+                     'diff': round((s[1] or 0) - 100, 2),
+                     'items': s[2]}
+                    for s in sumas_malas[:10]
+                ],
+                'fix_link': '/tecnica',
+            },
+            'material_id_nulos': {
+                'ok': nulos == 0,
+                'count': nulos,
+            },
+            'pct_invalidos': {
+                'ok': n_pct_inv == 0,
+                'count': n_pct_inv,
+                'top': [
+                    {'id': p[0], 'producto': p[1],
+                     'material_id': p[2], 'porcentaje': p[3]}
+                    for p in pct_invalidos[:10]
+                ],
+            },
+            'headers_vacios': {
+                'ok': n_hdr_vac == 0,
+                'count': n_hdr_vac,
+                'top': [h[0] for h in headers_vacios[:10]],
+            },
+            'huerfanos_absolutos': {
+                'ok': n_huer_abs == 0,
+                'count': n_huer_abs,
+                'top': [
+                    {'id': h[0], 'producto': h[1], 'porcentaje': h[2]}
+                    for h in huerfanos_absolutos[:10]
+                ],
+            },
+        },
+        'errores_checks': errores_checks,  # vacío si todo OK
+        'message': (f'S1 fórmulas: {veredicto} · score {score}/100 '
+                    f'· {n_formulas} fórmulas · {n_items} items'),
+    }), 200
 
 
 @bp.route("/api/admin/formula-remapear-material-id", methods=["POST"])
@@ -15042,5 +15058,175 @@ async function triggerVencidos(){
     alert('Error de red: '+e.message);
   }
 }
+</script>
+</body></html>"""
+
+
+@bp.route("/admin/auditoria-formulas", methods=["GET"])
+def admin_auditoria_formulas_page():
+    """S1 · Página visual del veredicto de fórmulas maestras.
+
+    Sebastián 8-may-2026: corre /api/admin/auditoria-formulas-completa
+    y pinta el score + checks. Sin necesidad de DevTools.
+    """
+    u, err, code = _require_admin()
+    if err:
+        return Response(
+            '<h1>403</h1><p>Solo admin puede ver este panel.</p>',
+            status=403, mimetype='text/html'
+        )
+    return Response(_AUDIT_FORMULAS_HTML, mimetype='text/html')
+
+
+_AUDIT_FORMULAS_HTML = """<!DOCTYPE html>
+<html lang="es"><head>
+<meta charset="utf-8">
+<title>S1 · Fórmulas maestras · EOS</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,Segoe UI,sans-serif;background:#0f172a;color:#f1f5f9;padding:20px;line-height:1.5}
+h1{font-size:24px;margin-bottom:6px;color:#5eead4}
+.sub{color:#94a3b8;font-size:13px;margin-bottom:20px}
+.back{display:inline-block;color:#94a3b8;text-decoration:none;font-size:13px;margin-bottom:16px}
+.back:hover{color:#f1f5f9}
+.hero{background:#1e293b;border-radius:14px;padding:24px;margin-bottom:20px;text-align:center}
+.score{font-size:72px;font-weight:800;line-height:1}
+.score.ok{color:#22c55e}
+.score.warn{color:#fbbf24}
+.score.bad{color:#ef4444}
+.verdict{font-size:16px;font-weight:700;letter-spacing:1px;margin-top:8px;text-transform:uppercase}
+.verdict.ok{color:#22c55e}
+.verdict.warn{color:#fbbf24}
+.verdict.bad{color:#ef4444}
+.resumen{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-top:14px}
+.kpi{background:#0f172a;border-radius:8px;padding:8px;font-size:11px;color:#94a3b8}
+.kpi b{display:block;color:#f1f5f9;font-size:18px;margin-bottom:2px}
+.checks{display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:12px}
+.check{background:#1e293b;border-radius:10px;padding:16px;border-left:4px solid #475569}
+.check.ok{border-left-color:#22c55e}
+.check.fail{border-left-color:#ef4444}
+.check h3{font-size:14px;margin-bottom:8px;display:flex;align-items:center;gap:8px}
+.badge{padding:2px 10px;border-radius:10px;font-size:10px;font-weight:700;letter-spacing:.5px}
+.badge.ok{background:#14532d;color:#86efac}
+.badge.fail{background:#7f1d1d;color:#fca5a5}
+.top{margin-top:10px;font-size:11px;color:#cbd5e1;max-height:240px;overflow:auto}
+.top table{width:100%;border-collapse:collapse}
+.top th{background:#0f172a;color:#94a3b8;padding:6px 8px;text-align:left;font-size:10px;text-transform:uppercase}
+.top td{padding:6px 8px;border-bottom:1px solid #334155}
+.fix{margin-top:10px;font-size:12px}
+.fix a{color:#5eead4;text-decoration:none}
+.fix a:hover{text-decoration:underline}
+.loading{text-align:center;padding:40px;color:#64748b}
+.error{background:#7f1d1d;color:#fecaca;padding:14px;border-radius:8px;font-size:13px}
+button{padding:8px 16px;border:none;border-radius:6px;cursor:pointer;font-weight:600;font-size:13px;background:#5eead4;color:#0f172a}
+button:hover{background:#2dd4bf}
+</style></head><body>
+
+<a class="back" href="/modulos">← Panel inicial</a>
+<h1>📐 S1 · Integridad fórmulas maestras</h1>
+<p class="sub">Veredicto sobre 7 checks · solo lectura · no modifica datos.</p>
+
+<div id="content" class="loading">⏳ Ejecutando auditoría...</div>
+
+<script>
+function esc(s){return String(s===null||s===undefined?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;');}
+
+async function run(){
+  try{
+    const r = await fetch('/api/admin/auditoria-formulas-completa');
+    const d = await r.json();
+    if(!r.ok){
+      document.getElementById('content').innerHTML =
+        '<div class="error">Error ' + r.status + ': ' + esc(d.error||'falla') +
+        '<br><small>' + esc(d.detail||'') + '</small></div>';
+      return;
+    }
+    render(d);
+  }catch(e){
+    document.getElementById('content').innerHTML =
+      '<div class="error">Error de red: ' + esc(e.message) + '</div>';
+  }
+}
+
+function render(d){
+  const score = d.score || 0;
+  const sclass = score >= 99 ? 'ok' : score >= 85 ? 'warn' : 'bad';
+  const v = d.veredicto || 'BLOQUEANTE';
+  const vclass = v === 'PERFECTA' ? 'ok' : v === 'MENOR' ? 'warn' : 'bad';
+
+  let html = '<div class="hero">' +
+    '<div class="score ' + sclass + '">' + score + '<small style="font-size:24px;color:#64748b">/100</small></div>' +
+    '<div class="verdict ' + vclass + '">' + v + '</div>' +
+    '<div class="resumen">' +
+      kpi('Fórmulas', d.resumen.n_formulas) +
+      kpi('Items', d.resumen.n_items) +
+      kpi('Huérfanos', d.resumen.huerfanos) +
+      kpi('Duplicados', d.resumen.duplicados) +
+      kpi('Suma %≠100', d.resumen.sumas_pct_no_100) +
+      kpi('% inválido', d.resumen.pct_invalidos) +
+    '</div>' +
+  '</div>';
+
+  if(d.errores_checks && Object.keys(d.errores_checks).length){
+    html += '<div class="error">⚠ Algunos checks fallaron: ' +
+      esc(JSON.stringify(d.errores_checks)) + '</div>';
+  }
+
+  html += '<div class="checks">';
+  const labels = {
+    huerfanos: '1. Huérfanos (material_id sin maestro_mps)',
+    duplicados: '2. Duplicados (mismo MP 2+ veces)',
+    sumas_pct_no_100: '3. Suma % ≠ 100 ±0.5',
+    material_id_nulos: '4. material_id NULL/vacío',
+    pct_invalidos: '5. Porcentaje inválido',
+    headers_vacios: '6. Fórmulas declaradas sin items',
+    huerfanos_absolutos: '7. Huérfanos absolutos (sin id ni nombre)',
+  };
+  for(const k of Object.keys(labels)){
+    const ch = d.checks[k] || {};
+    const ok = !!ch.ok;
+    html += '<div class="check ' + (ok?'ok':'fail') + '">' +
+      '<h3>' + labels[k] + ' <span class="badge ' + (ok?'ok':'fail') + '">' +
+      (ok ? '✓ OK' : ('⚠ ' + (ch.count||0))) + '</span></h3>';
+    if(!ok && ch.top && ch.top.length){
+      html += '<div class="top">' + topTable(k, ch.top) + '</div>';
+    }
+    if(!ok && ch.fix_link){
+      html += '<div class="fix">Arreglar: <a href="' + ch.fix_link + '">' + ch.fix_link + '</a></div>';
+    }
+    html += '</div>';
+  }
+  html += '</div>';
+
+  html += '<div style="margin-top:20px;text-align:center"><button onclick="run()">🔄 Re-ejecutar</button></div>';
+
+  document.getElementById('content').className = '';
+  document.getElementById('content').innerHTML = html;
+}
+
+function kpi(label, val){
+  return '<div class="kpi"><b>' + (val||0) + '</b>' + esc(label) + '</div>';
+}
+
+function topTable(k, top){
+  if(k === 'huerfanos'){
+    return '<table><tr><th>material_id</th><th>nombre</th><th>productos</th></tr>' +
+      top.map(t => '<tr><td><b>'+esc(t.material_id)+'</b></td><td>'+esc(t.nombre)+'</td><td>'+(t.n_productos||0)+'</td></tr>').join('') +
+      '</table>';
+  }
+  if(k === 'duplicados'){
+    return '<table><tr><th>producto</th><th>material_id</th><th>veces</th></tr>' +
+      top.map(t => '<tr><td>'+esc(t.producto)+'</td><td>'+esc(t.material_id)+'</td><td>'+(t.veces||0)+'</td></tr>').join('') +
+      '</table>';
+  }
+  if(k === 'sumas_pct_no_100'){
+    return '<table><tr><th>producto</th><th>suma %</th><th>diff</th><th>items</th></tr>' +
+      top.map(t => '<tr><td>'+esc(t.producto)+'</td><td>'+(t.suma_actual||0)+'</td><td>'+(t.diff||0)+'</td><td>'+(t.items||0)+'</td></tr>').join('') +
+      '</table>';
+  }
+  return '<pre style="font-size:11px">' + esc(JSON.stringify(top, null, 2)) + '</pre>';
+}
+
+run();
 </script>
 </body></html>"""
