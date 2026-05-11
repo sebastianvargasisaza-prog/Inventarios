@@ -4780,24 +4780,49 @@ def run_migrations(conn: "sqlite3.Connection") -> int:
     # el resultado de que CREATE INDEX fallaba silenciosamente por "no such
     # table" (en BENIGN_PATTERNS) y los indexes nunca se creaban.
     # Ordenar garantiza que dependencias siempre estén aplicadas primero.
+    # Migraciones marcadas como best-effort: si fallan, log warning + skip
+    # registro (no abortan arranque). Permite que prod siga viva mientras
+    # diagnosticamos sintaxis específica del SQLite del runtime.
+    # Sebastián 8-may-2026: migración 98 falló en Render con error que no
+    # se logueaba (el `from exc` no se mostraba). Ahora incluimos str(exc)
+    # en el mensaje y permitimos best-effort para no tumbar prod.
+    BEST_EFFORT_VERSIONS = {97, 98}
+
     for version, description, stmts in sorted(MIGRATIONS, key=lambda m: m[0]):
         if version in applied:
             continue
+        migration_ok = True
         for stmt in stmts:
             try:
                 conn.execute(stmt)
             except Exception as exc:
                 msg = str(exc).lower()
-                if not any(pat in msg for pat in BENIGN_PATTERNS):
-                    raise RuntimeError(
-                        f"Migración {version} falló en: {stmt!r}"
-                    ) from exc
-        conn.execute(
-            "INSERT OR IGNORE INTO schema_migrations(version, description) VALUES(?,?)",
-            (version, description),
-        )
-        conn.commit()
-        applied_count += 1
+                if any(pat in msg for pat in BENIGN_PATTERNS):
+                    continue
+                # Migración best-effort: log y sigue sin abortar arranque
+                if version in BEST_EFFORT_VERSIONS:
+                    print(
+                        f"[migration] WARN: migración {version} stmt falló "
+                        f"(best-effort, no aborta): {type(exc).__name__}: {exc} "
+                        f"· stmt: {stmt[:120]}..."
+                    )
+                    migration_ok = False
+                    continue
+                # Migración crítica: abortar con info completa (causa raíz visible)
+                raise RuntimeError(
+                    f"Migración {version} falló en: {stmt!r} · causa: "
+                    f"{type(exc).__name__}: {exc}"
+                ) from exc
+        # Solo registrar como aplicada si todos los stmts pasaron.
+        # Si fue best-effort fallida, queda fuera de applied y reintenta
+        # en el próximo arranque (idempotente con CREATE IF NOT EXISTS).
+        if migration_ok:
+            conn.execute(
+                "INSERT OR IGNORE INTO schema_migrations(version, description) VALUES(?,?)",
+                (version, description),
+            )
+            conn.commit()
+            applied_count += 1
 
     return applied_count
 
