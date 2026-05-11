@@ -16368,6 +16368,80 @@ def reconciliar_produccion_mp():
                         'detail': str(e)[:300]}), 500
 
 
+@bp.route("/api/admin/forensic-trazabilidad", methods=["GET"])
+def forensic_trazabilidad():
+    """Forensic detallado de hallazgos de trazabilidad.
+
+    Devuelve listas concretas de:
+      - lotes con stock > 0 sin fecha_venc (TODOS, no solo count)
+      - movs sin operador (TODOS, no solo count)
+    Para que el admin pueda decidir qué hacer con cada caso.
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("PRAGMA busy_timeout=2000")
+    c = conn.cursor()
+
+    try:
+        # Lotes con stock > 0 sin fv (TODOS)
+        lotes_vivos_sin_fv = c.execute("""
+            WITH lote_stock AS (
+                SELECT material_id, lote,
+                       SUM(CASE WHEN tipo='Entrada' THEN cantidad
+                                WHEN tipo='Salida' THEN -cantidad
+                                ELSE 0 END) AS stock,
+                       MAX(fecha_vencimiento) AS fv,
+                       MAX(proveedor) AS prov,
+                       MIN(fecha) AS primer_fecha
+                FROM movimientos
+                WHERE lote IS NOT NULL AND lote != ''
+                GROUP BY material_id, lote
+            )
+            SELECT ls.material_id, ls.lote, ls.stock, ls.primer_fecha,
+                   ls.prov,
+                   COALESCE(m.nombre_comercial, m.nombre_inci, '') AS nombre
+            FROM lote_stock ls
+            LEFT JOIN maestro_mps m ON m.codigo_mp = ls.material_id
+            WHERE ls.stock > 0
+              AND (ls.fv IS NULL OR TRIM(ls.fv) = '')
+            ORDER BY ls.stock DESC
+        """).fetchall()
+
+        movs_sin_op = c.execute("""
+            SELECT id, material_id, material_nombre, cantidad, tipo,
+                   fecha, observaciones, lote
+            FROM movimientos
+            WHERE (operador IS NULL OR TRIM(operador) = '')
+              AND fecha >= date('now', '-90 days')
+            ORDER BY fecha DESC
+        """).fetchall()
+
+        conn.close()
+
+        return jsonify({
+            'ok': True,
+            'lotes_vivos_sin_fv': [
+                {'material_id': r[0], 'lote': r[1], 'stock_g': r[2],
+                 'primer_fecha': r[3], 'proveedor': r[4],
+                 'nombre': r[5]}
+                for r in lotes_vivos_sin_fv
+            ],
+            'movs_sin_operador': [
+                {'id': r[0], 'material_id': r[1], 'material_nombre': r[2],
+                 'cantidad': r[3], 'tipo': r[4], 'fecha': r[5],
+                 'observaciones': (r[6] or '')[:200], 'lote': r[7]}
+                for r in movs_sin_op
+            ],
+        }), 200
+
+    except Exception as e:
+        conn.close()
+        return jsonify({'error': 'falla', 'detail': str(e)[:300]}), 500
+
+
 @bp.route("/api/admin/validacion-profunda", methods=["GET"])
 def validacion_profunda():
     """Validación matemática REAL · zero falsos positivos.
