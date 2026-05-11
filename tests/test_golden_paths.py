@@ -3891,3 +3891,80 @@ def test_golden_snapshot_formula_anti_drift_retroactivo(app, db_clean):
         _exec("DELETE FROM producciones WHERE id=?", (prod_id,))
         _exec("DELETE FROM maestro_mps WHERE codigo_mp IN (?,?)",
               (mp_orig, mp_nuevo))
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 83 · Reporte INVIMA · lote JSON + PDF
+# ═══════════════════════════════════════════════════════════════════
+
+def test_golden_reporte_invima_lote(app, db_clean):
+    cs = _login(app, 'sebastian')
+    mp = 'GP83-MP-INVIMA'
+    lote = 'GP83-LOTE-001'
+
+    _exec("""INSERT OR REPLACE INTO maestro_mps
+              (codigo_mp, nombre_comercial, nombre_inci, proveedor,
+               activo, tipo_material)
+              VALUES (?, 'MP test INVIMA', 'TEST INCI', 'TestProv',
+                      1, 'MP')""",
+          (mp,))
+    _exec("""INSERT INTO movimientos
+              (material_id, material_nombre, cantidad, tipo, fecha, lote,
+               fecha_vencimiento, proveedor, estado_lote, operador)
+              VALUES (?, 'MP test INVIMA', 5000, 'Entrada',
+                      date('now','-30 days'), ?, date('now','+1 year'),
+                      'TestProv', 'VIGENTE', 'op-test')""",
+          (mp, lote))
+    _exec("""INSERT INTO movimientos
+              (material_id, material_nombre, cantidad, tipo, fecha, lote,
+               observaciones, operador)
+              VALUES (?, 'MP test INVIMA', 2000, 'Salida', date('now','-10 days'),
+                      ?, 'FEFO:PROD-00099:TEST x 20kg', 'op-test')""",
+          (mp, lote))
+
+    try:
+        # JSON variant
+        r = cs.get(f'/api/reportes/invima/lote/{mp}/{lote}')
+        assert r.status_code == 200, \
+            f'BUG: reporte INVIMA caido · {r.status_code} {r.data}'
+        d = r.get_json() or {}
+        assert d.get('ok')
+        assert d['mp']['codigo_mp'] == mp
+        assert d['lote_info']['stock_actual_g'] == 3000  # 5000 - 2000
+        assert len(d['movimientos']) == 2
+        assert 'op-test' in d['lote_info']['operadores_involucrados']
+
+        # PDF variant
+        r_pdf = cs.get(f'/api/reportes/invima/lote/{mp}/{lote}/pdf')
+        assert r_pdf.status_code == 200, \
+            f'BUG: PDF INVIMA caido · {r_pdf.status_code}'
+        assert r_pdf.headers.get('Content-Type', '').startswith('application/pdf')
+        assert len(r_pdf.data) > 1000  # PDF tiene contenido real
+
+    finally:
+        _exec("DELETE FROM movimientos WHERE material_id=?", (mp,))
+        _exec("DELETE FROM maestro_mps WHERE codigo_mp=?", (mp,))
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 84 · Audit trail CSV exportable
+# ═══════════════════════════════════════════════════════════════════
+
+def test_golden_audit_trail_csv(app, db_clean):
+    cs = _login(app, 'sebastian')
+
+    r = cs.get('/api/reportes/audit-trail.csv?desde=2026-01-01&hasta=2026-12-31')
+    assert r.status_code == 200, \
+        f'BUG: audit-trail CSV caido · {r.status_code} {r.data}'
+    assert r.headers.get('Content-Type', '').startswith('text/csv')
+    csv_text = r.data.decode('utf-8', errors='ignore')
+    # Header esperado · primera línea CSV
+    assert 'timestamp' in csv_text or 'fecha' in csv_text or 'usuario' in csv_text
+    assert 'accion' in csv_text
+
+    # Filtro accion
+    r2 = cs.get('/api/reportes/audit-trail.csv?accion=RECONCILIAR')
+    assert r2.status_code == 200
+    csv_text2 = r2.data.decode('utf-8', errors='ignore')
+    # Header siempre presente
+    assert 'accion' in csv_text2

@@ -16367,6 +16367,383 @@ def reconciliar_produccion_mp():
                         'detail': str(e)[:300]}), 500
 
 
+@bp.route("/api/reportes/invima/lote/<material_id>/<lote>", methods=["GET"])
+def reporte_invima_lote(material_id, lote):
+    """Reporte INVIMA · trazabilidad completa de un (material_id, lote).
+
+    Sebastián 8-may-2026 TIER 2: para auditorías INVIMA un solo endpoint
+    devuelve TODO el historial regulatorio de un lote:
+      - Info MP (código, nombre, INCI, tipo, proveedor)
+      - Lote info (lote, fecha_vencimiento, primer ingreso, estado)
+      - TODOS los movimientos cronológicos (Entrada, Salida, Ajuste)
+      - Producciones donde se consumió
+      - Operadores involucrados
+      - Stock actual neto del lote
+
+    Returns: JSON estructurado · usar /pdf variant para descarga PDF.
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    mid = (material_id or '').strip()
+    lt = (lote or '').strip()
+    if not mid or not lt:
+        return jsonify({'error': 'material_id y lote requeridos'}), 400
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("PRAGMA busy_timeout=2000")
+    c = conn.cursor()
+
+    try:
+        # Info MP
+        mp_row = c.execute("""
+            SELECT codigo_mp, nombre_comercial, nombre_inci, tipo,
+                   proveedor, tipo_material, COALESCE(activo,1)
+            FROM maestro_mps WHERE codigo_mp=?
+        """, (mid,)).fetchone()
+        if not mp_row:
+            conn.close()
+            return jsonify({'error': f'MP {mid} no existe'}), 404
+        mp = {
+            'codigo_mp': mp_row[0], 'nombre_comercial': mp_row[1] or '',
+            'nombre_inci': mp_row[2] or '', 'tipo': mp_row[3] or '',
+            'proveedor': mp_row[4] or '', 'tipo_material': mp_row[5] or '',
+            'activo': bool(mp_row[6]),
+        }
+
+        # Movimientos cronológicos
+        movs = c.execute("""
+            SELECT id, fecha, tipo, cantidad, observaciones, operador,
+                   fecha_vencimiento, proveedor, estado_lote, numero_oc
+            FROM movimientos
+            WHERE material_id=? AND lote=?
+            ORDER BY fecha ASC, id ASC
+        """, (mid, lt)).fetchall()
+
+        movimientos = []
+        stock = 0.0
+        operadores = set()
+        fecha_venc = None
+        prov_recibido = None
+        estado_actual = 'VIGENTE'
+        primer_mov = None
+        ultimo_mov = None
+        producciones_uso = set()
+
+        for mov in movs:
+            mid_id, fecha, tipo, cant, obs, op, fv, prov, est, oc = mov
+            cant = float(cant or 0)
+            if tipo == 'Entrada':
+                stock += cant
+            elif tipo == 'Salida':
+                stock -= cant
+            elif tipo == 'Ajuste':
+                stock += cant
+            if op and op.strip():
+                operadores.add(op.strip())
+            if fv and not fecha_venc:
+                fecha_venc = fv
+            if prov and not prov_recibido:
+                prov_recibido = prov
+            if est:
+                estado_actual = est
+            if not primer_mov:
+                primer_mov = fecha
+            ultimo_mov = fecha
+            # Detectar producciones legacy
+            if obs:
+                import re as _re
+                match_prod = _re.search(r'PROD-(\d{5})', obs)
+                if match_prod:
+                    producciones_uso.add(int(match_prod.group(1)))
+            movimientos.append({
+                'id': mid_id, 'fecha': fecha, 'tipo': tipo,
+                'cantidad_g': cant, 'observaciones': (obs or '')[:300],
+                'operador': op or '', 'fecha_vencimiento': fv or '',
+                'proveedor': prov or '', 'estado_lote': est or '',
+                'numero_oc': oc or '',
+            })
+
+        # Detalle producciones
+        producciones_info = []
+        if producciones_uso:
+            placeholders = ','.join('?' * len(producciones_uso))
+            prod_rows = c.execute(f"""
+                SELECT id, producto, cantidad, fecha, estado, lote, operador
+                FROM producciones
+                WHERE id IN ({placeholders})
+                ORDER BY fecha DESC
+            """, list(producciones_uso)).fetchall()
+            for p in prod_rows:
+                producciones_info.append({
+                    'id': p[0], 'producto': p[1], 'cantidad_kg': p[2],
+                    'fecha': p[3], 'estado': p[4], 'lote': p[5],
+                    'operador': p[6] or '',
+                })
+
+        conn.close()
+
+        return jsonify({
+            'ok': True,
+            'mp': mp,
+            'lote': lt,
+            'lote_info': {
+                'lote': lt,
+                'fecha_vencimiento': fecha_venc,
+                'proveedor_recibido': prov_recibido,
+                'estado_actual': estado_actual,
+                'primer_movimiento': primer_mov,
+                'ultimo_movimiento': ultimo_mov,
+                'stock_actual_g': round(stock, 2),
+                'n_movimientos': len(movimientos),
+                'operadores_involucrados': sorted(operadores),
+            },
+            'movimientos': movimientos,
+            'producciones_donde_se_uso': producciones_info,
+            'n_producciones': len(producciones_info),
+            'reporte_generado_at': __import__('datetime').datetime.now().isoformat(),
+            'reporte_generado_por': u,
+        }), 200
+
+    except Exception as e:
+        conn.close()
+        return jsonify({'error': 'falla reporte INVIMA',
+                        'detail': str(e)[:300]}), 500
+
+
+@bp.route("/api/reportes/invima/lote/<material_id>/<lote>/pdf", methods=["GET"])
+def reporte_invima_lote_pdf(material_id, lote):
+    """PDF descargable del reporte INVIMA de un lote.
+
+    Misma data que /reportes/invima/lote/<material_id>/<lote> pero
+    formateada como PDF profesional para presentar en auditorías.
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    # Reusar la lógica del JSON endpoint llamándolo internamente
+    resp = reporte_invima_lote(material_id, lote)
+    if isinstance(resp, tuple):
+        payload, status = resp[0].get_json(), resp[1]
+    else:
+        payload, status = resp.get_json(), resp.status_code
+    if status != 200:
+        return jsonify(payload), status
+
+    try:
+        from fpdf import FPDF
+    except Exception:
+        return jsonify({'error': 'fpdf2 no disponible · usar variante JSON'}), 500
+
+    mp = payload['mp']
+    lote_info = payload['lote_info']
+    movs = payload['movimientos']
+    prods = payload['producciones_donde_se_uso']
+
+    pdf = FPDF(orientation='P', unit='mm', format='A4')
+    pdf.add_page()
+    pdf.set_auto_page_break(auto=True, margin=15)
+
+    # Encabezado
+    pdf.set_font('helvetica', 'B', 16)
+    pdf.cell(0, 8, 'REPORTE INVIMA · TRAZABILIDAD DE LOTE',
+              align='C', new_x='LMARGIN', new_y='NEXT')
+    pdf.set_font('helvetica', '', 9)
+    pdf.cell(0, 5, 'HHA Group · Espagiria Laboratorios SAS',
+              align='C', new_x='LMARGIN', new_y='NEXT')
+    pdf.cell(0, 5, f"Generado: {payload['reporte_generado_at'][:19]} por {u}",
+              align='C', new_x='LMARGIN', new_y='NEXT')
+    pdf.ln(4)
+
+    # Info MP
+    pdf.set_font('helvetica', 'B', 11)
+    pdf.cell(0, 6, 'Material Prima', new_x='LMARGIN', new_y='NEXT')
+    pdf.set_font('helvetica', '', 9)
+    pdf.cell(40, 5, 'Codigo:'); pdf.cell(0, 5, mp['codigo_mp'], new_x='LMARGIN', new_y='NEXT')
+    pdf.cell(40, 5, 'Nombre:'); pdf.cell(0, 5, (mp['nombre_comercial'] or '')[:80], new_x='LMARGIN', new_y='NEXT')
+    pdf.cell(40, 5, 'INCI:'); pdf.cell(0, 5, (mp['nombre_inci'] or '')[:80], new_x='LMARGIN', new_y='NEXT')
+    pdf.cell(40, 5, 'Tipo material:'); pdf.cell(0, 5, mp['tipo_material'] or '', new_x='LMARGIN', new_y='NEXT')
+    pdf.cell(40, 5, 'Activo:'); pdf.cell(0, 5, 'SI' if mp['activo'] else 'NO (archivado)', new_x='LMARGIN', new_y='NEXT')
+    pdf.ln(2)
+
+    # Info Lote
+    pdf.set_font('helvetica', 'B', 11)
+    pdf.cell(0, 6, 'Lote', new_x='LMARGIN', new_y='NEXT')
+    pdf.set_font('helvetica', '', 9)
+    pdf.cell(50, 5, 'Numero de lote:'); pdf.cell(0, 5, lote_info['lote'], new_x='LMARGIN', new_y='NEXT')
+    pdf.cell(50, 5, 'Fecha vencimiento:'); pdf.cell(0, 5, (lote_info['fecha_vencimiento'] or 'NO REGISTRADA')[:30], new_x='LMARGIN', new_y='NEXT')
+    pdf.cell(50, 5, 'Proveedor recibido:'); pdf.cell(0, 5, (lote_info['proveedor_recibido'] or 'NO REGISTRADO')[:50], new_x='LMARGIN', new_y='NEXT')
+    pdf.cell(50, 5, 'Estado actual:'); pdf.cell(0, 5, lote_info['estado_actual'] or '', new_x='LMARGIN', new_y='NEXT')
+    pdf.cell(50, 5, 'Primer mov:'); pdf.cell(0, 5, (lote_info['primer_movimiento'] or '')[:30], new_x='LMARGIN', new_y='NEXT')
+    pdf.cell(50, 5, 'Ultimo mov:'); pdf.cell(0, 5, (lote_info['ultimo_movimiento'] or '')[:30], new_x='LMARGIN', new_y='NEXT')
+    pdf.cell(50, 5, 'Stock actual (g):'); pdf.cell(0, 5, f"{lote_info['stock_actual_g']:.2f}", new_x='LMARGIN', new_y='NEXT')
+    pdf.cell(50, 5, 'N movimientos:'); pdf.cell(0, 5, str(lote_info['n_movimientos']), new_x='LMARGIN', new_y='NEXT')
+    pdf.cell(50, 5, 'Operadores:'); pdf.cell(0, 5, ', '.join(lote_info['operadores_involucrados'])[:80], new_x='LMARGIN', new_y='NEXT')
+    pdf.ln(3)
+
+    # Movimientos cronológicos
+    pdf.set_font('helvetica', 'B', 11)
+    pdf.cell(0, 6, f'Movimientos cronologicos ({len(movs)})',
+              new_x='LMARGIN', new_y='NEXT')
+    pdf.set_font('helvetica', 'B', 8)
+    pdf.cell(28, 4, 'Fecha', border=1)
+    pdf.cell(16, 4, 'Tipo', border=1)
+    pdf.cell(20, 4, 'Cant g', border=1, align='R')
+    pdf.cell(25, 4, 'Operador', border=1)
+    pdf.cell(20, 4, 'Estado', border=1)
+    pdf.cell(0, 4, 'Observaciones', border=1, new_x='LMARGIN', new_y='NEXT')
+    pdf.set_font('helvetica', '', 7)
+    for m in movs[:60]:  # cap 60 por página primera
+        pdf.cell(28, 4, (m['fecha'] or '')[:19], border=1)
+        pdf.cell(16, 4, m['tipo'][:8], border=1)
+        pdf.cell(20, 4, f"{m['cantidad_g']:.1f}", border=1, align='R')
+        pdf.cell(25, 4, (m['operador'] or '')[:14], border=1)
+        pdf.cell(20, 4, (m['estado_lote'] or '')[:10], border=1)
+        pdf.cell(0, 4, (m['observaciones'] or '')[:50], border=1,
+                  new_x='LMARGIN', new_y='NEXT')
+
+    pdf.ln(2)
+
+    # Producciones
+    if prods:
+        pdf.set_font('helvetica', 'B', 11)
+        pdf.cell(0, 6, f'Producciones donde se uso este lote ({len(prods)})',
+                  new_x='LMARGIN', new_y='NEXT')
+        pdf.set_font('helvetica', 'B', 8)
+        pdf.cell(15, 4, 'ID', border=1)
+        pdf.cell(70, 4, 'Producto', border=1)
+        pdf.cell(20, 4, 'Cant kg', border=1, align='R')
+        pdf.cell(28, 4, 'Fecha', border=1)
+        pdf.cell(25, 4, 'Operador', border=1)
+        pdf.cell(0, 4, 'Estado', border=1, new_x='LMARGIN', new_y='NEXT')
+        pdf.set_font('helvetica', '', 7)
+        for p in prods:
+            pdf.cell(15, 4, str(p['id']), border=1)
+            pdf.cell(70, 4, (p['producto'] or '')[:45], border=1)
+            pdf.cell(20, 4, f"{p['cantidad_kg']:.2f}", border=1, align='R')
+            pdf.cell(28, 4, (p['fecha'] or '')[:19], border=1)
+            pdf.cell(25, 4, (p['operador'] or '')[:14], border=1)
+            pdf.cell(0, 4, (p['estado'] or '')[:15], border=1,
+                      new_x='LMARGIN', new_y='NEXT')
+
+    # Footer compliance
+    pdf.ln(4)
+    pdf.set_font('helvetica', 'I', 7)
+    pdf.cell(0, 4, 'Reporte generado automaticamente para auditoria INVIMA.', new_x='LMARGIN', new_y='NEXT')
+    pdf.cell(0, 4, 'Datos extraidos de EOS Inventarios (HHA Group) · cero modificacion posible.', new_x='LMARGIN', new_y='NEXT')
+
+    pdf_bytes = bytes(pdf.output())
+    filename = f'INVIMA_{material_id}_{lote}_{__import__("datetime").datetime.now().strftime("%Y%m%d")}.pdf'.replace('/', '_').replace(' ', '_')
+
+    from flask import Response as _R
+    return _R(
+        pdf_bytes,
+        mimetype='application/pdf',
+        headers={'Content-Disposition': f'attachment; filename="{filename}"'},
+    )
+
+
+@bp.route("/api/reportes/audit-trail.csv", methods=["GET"])
+def reporte_audit_trail_csv():
+    """Audit trail exportable CSV · auditorías regulatorias.
+
+    Query params:
+      desde: ISO date (default 30 días atrás)
+      hasta: ISO date (default hoy)
+      accion: filtro opcional (LIKE %)
+      usuario: filtro opcional (exacto)
+      tabla: filtro opcional (exacto)
+
+    Returns: CSV descargable con headers ts, usuario, accion, tabla,
+             registro_id, detalle, antes, despues.
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    desde = (request.args.get('desde') or '').strip()
+    hasta = (request.args.get('hasta') or '').strip()
+    accion = (request.args.get('accion') or '').strip()
+    usuario = (request.args.get('usuario') or '').strip()
+    tabla = (request.args.get('tabla') or '').strip()
+
+    if not desde:
+        from datetime import datetime as _dt, timedelta as _td
+        desde = (_dt.now() - _td(days=30)).date().isoformat()
+    if not hasta:
+        from datetime import date as _date
+        hasta = _date.today().isoformat()
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("PRAGMA busy_timeout=2000")
+    c = conn.cursor()
+
+    try:
+        clauses = ["date(fecha) >= ?", "date(fecha) <= ?"]
+        params = [desde, hasta]
+        if accion:
+            clauses.append("accion LIKE ?")
+            params.append(f'%{accion}%')
+        if usuario:
+            clauses.append("usuario = ?")
+            params.append(usuario)
+        if tabla:
+            clauses.append("tabla = ?")
+            params.append(tabla)
+        where = ' AND '.join(clauses)
+
+        try:
+            rows = c.execute(f"""
+                SELECT fecha, usuario, accion, tabla, registro_id,
+                       detalle, antes, despues
+                FROM audit_log
+                WHERE {where}
+                ORDER BY fecha DESC
+                LIMIT 10000
+            """, params).fetchall()
+        except sqlite3.OperationalError:
+            # Schema viejo sin antes/despues
+            rows_raw = c.execute(f"""
+                SELECT fecha, usuario, accion, tabla, registro_id, detalle
+                FROM audit_log
+                WHERE {where}
+                ORDER BY fecha DESC
+                LIMIT 10000
+            """, params).fetchall()
+            rows = [(*r, '', '') for r in rows_raw]
+    except Exception as e:
+        conn.close()
+        return jsonify({'error': 'falla query audit',
+                        'detail': str(e)[:300]}), 500
+    conn.close()
+
+    import csv as _csv
+    from io import StringIO as _StringIO
+    buf = _StringIO()
+    writer = _csv.writer(buf, quoting=_csv.QUOTE_MINIMAL)
+    writer.writerow(['timestamp', 'usuario', 'accion', 'tabla',
+                      'registro_id', 'detalle', 'antes', 'despues'])
+    for r in rows:
+        writer.writerow([
+            r[0] or '', r[1] or '', r[2] or '', r[3] or '',
+            r[4] or '', (r[5] or '')[:500],
+            (r[6] or '')[:500], (r[7] or '')[:500],
+        ])
+    csv_text = buf.getvalue()
+
+    from datetime import date as _date
+    filename = f'audit-trail_{desde}_a_{hasta}.csv'
+
+    from flask import Response as _R
+    return _R(
+        '﻿' + csv_text,  # BOM utf-8 para Excel
+        mimetype='text/csv; charset=utf-8',
+        headers={'Content-Disposition': f'attachment; filename="{filename}"'},
+    )
+
+
 @bp.route("/api/admin/asignar-operador-bulk", methods=["POST"])
 def asignar_operador_bulk():
     """Asigna operador a movimientos sin operador (trazabilidad INVIMA).
