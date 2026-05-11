@@ -11059,6 +11059,184 @@ def maestro_mps_unificar_bulk():
     }), 200
 
 
+@bp.route("/api/admin/marcar-lotes-vencidos", methods=["POST"])
+def marcar_lotes_vencidos():
+    """Cambia estado_lote='VENCIDO' en lotes que tienen fecha_venc pasada
+    pero estado='VIGENTE'. Bulk action desde panel auditoría.
+
+    Sebastián 10-may-2026: limpieza regulatoria · MPs vencidas marcadas
+    como VIGENTE son violación INVIMA (pueden usarse en producción).
+
+    Body JSON:
+      lotes: [{material_id, lote}]  · lista de lotes a marcar
+      motivo: str (queda en audit_log)
+
+    Returns: { ok, actualizados, audit_id }
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    d = request.json or {}
+    lotes = d.get('lotes') or []
+    motivo = (d.get('motivo') or 'Limpieza auditoría · vencidos sin marcar').strip()
+
+    if not isinstance(lotes, list) or not lotes:
+        return jsonify({'error': 'lotes debe ser lista no vacía'}), 400
+    if len(lotes) > 200:
+        return jsonify({'error': 'max 200 lotes por request'}), 400
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("PRAGMA busy_timeout=2000")
+    c = conn.cursor()
+    total_actualizados = 0
+    detalles = []
+    try:
+        for it in lotes:
+            mid = (it.get('material_id') or '').strip()
+            lt = (it.get('lote') or '').strip()
+            if not mid:
+                continue
+            if lt:
+                c.execute(
+                    "UPDATE movimientos SET estado_lote='VENCIDO' "
+                    "WHERE material_id=? AND lote=? "
+                    "AND UPPER(COALESCE(estado_lote,''))='VIGENTE'",
+                    (mid, lt)
+                )
+            else:
+                c.execute(
+                    "UPDATE movimientos SET estado_lote='VENCIDO' "
+                    "WHERE material_id=? AND (lote IS NULL OR lote='') "
+                    "AND UPPER(COALESCE(estado_lote,''))='VIGENTE'",
+                    (mid,)
+                )
+            n = c.rowcount
+            total_actualizados += n
+            detalles.append({'material_id': mid, 'lote': lt, 'movs_actualizados': n})
+
+        # Audit log
+        try:
+            import json as _json
+            audit_log(
+                c, usuario=u, accion='MARCAR_LOTES_VENCIDOS',
+                tabla='movimientos', registro_id='bulk',
+                despues={
+                    'motivo': motivo,
+                    'detalles': detalles,
+                    'total_movs_actualizados': total_actualizados,
+                },
+                detalle=f'Marcados VENCIDO en {len(lotes)} lotes · {total_actualizados} movs',
+            )
+        except Exception:
+            pass
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        return jsonify({'error': 'falla transaccional', 'detail': str(e)[:300]}), 500
+
+    conn.close()
+    return jsonify({
+        'ok': True,
+        'lotes_procesados': len(lotes),
+        'total_movimientos_actualizados': total_actualizados,
+        'detalles': detalles,
+        'message': f'✓ {len(lotes)} lotes marcados como VENCIDO · {total_actualizados} movs actualizados',
+    }), 200
+
+
+@bp.route("/api/admin/investigar-mp/<codigo>", methods=["GET"])
+def investigar_mp(codigo):
+    """Devuelve TODO sobre un MP: catálogo + movs por lote + saldos.
+
+    Sebastián 10-may-2026: vista forensic para investigar findings raros
+    (stock negativo, huérfanos, etc.) sin tener que ir tabla por tabla.
+
+    Returns:
+      {
+        mp: {codigo, nombre, activo, ...} | null si no existe,
+        lotes: [{lote, n_movs, stock_neto, primer_mov, ultimo_mov}],
+        movimientos_recientes: [{id, tipo, cantidad, lote, fecha, obs}],
+        stock_total_neto: float,
+      }
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    codigo = (codigo or '').strip()
+    if not codigo:
+        return jsonify({'error': 'codigo requerido'}), 400
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("PRAGMA busy_timeout=2000")
+    c = conn.cursor()
+
+    # Catálogo
+    mp_row = c.execute(
+        "SELECT codigo_mp, nombre_inci, nombre_comercial, tipo, tipo_material, "
+        "       proveedor, stock_minimo, activo "
+        "FROM maestro_mps WHERE codigo_mp=?", (codigo,)
+    ).fetchone()
+    mp_info = None
+    if mp_row:
+        mp_info = {
+            'codigo_mp': mp_row[0], 'nombre_inci': mp_row[1],
+            'nombre_comercial': mp_row[2], 'tipo': mp_row[3],
+            'tipo_material': mp_row[4], 'proveedor': mp_row[5],
+            'stock_minimo': mp_row[6], 'activo': bool(mp_row[7]),
+        }
+
+    # Lotes con saldo
+    lotes_rows = c.execute("""
+        SELECT COALESCE(lote,'') as lote, COUNT(*) as n,
+               ROUND(SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END), 2) as neto,
+               MIN(fecha) as primero, MAX(fecha) as ultimo,
+               MAX(estado_lote) as estado, MAX(fecha_vencimiento) as fv
+        FROM movimientos WHERE material_id=?
+        GROUP BY lote ORDER BY neto DESC LIMIT 100
+    """, (codigo,)).fetchall()
+    lotes = [
+        {'lote': r[0], 'n_movs': r[1], 'stock_neto_g': r[2],
+         'primer_mov': r[3], 'ultimo_mov': r[4],
+         'estado_lote': r[5], 'fecha_venc': r[6]}
+        for r in lotes_rows
+    ]
+
+    # Movimientos recientes (últimos 50)
+    mov_rows = c.execute("""
+        SELECT id, tipo, cantidad, COALESCE(lote,'') as lote,
+               fecha, SUBSTR(COALESCE(observaciones,''),1,200) as obs,
+               COALESCE(operador,'') as op
+        FROM movimientos WHERE material_id=?
+        ORDER BY id DESC LIMIT 50
+    """, (codigo,)).fetchall()
+    movimientos = [
+        {'id': r[0], 'tipo': r[1], 'cantidad_g': r[2], 'lote': r[3],
+         'fecha': r[4], 'observaciones': r[5], 'operador': r[6]}
+        for r in mov_rows
+    ]
+
+    # Stock total neto
+    total_row = c.execute(
+        "SELECT ROUND(SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END), 2) "
+        "FROM movimientos WHERE material_id=?", (codigo,)
+    ).fetchone()
+    stock_total = (total_row[0] or 0) if total_row else 0
+
+    conn.close()
+
+    return jsonify({
+        'ok': True,
+        'codigo': codigo,
+        'mp': mp_info,
+        'stock_total_neto_g': stock_total,
+        'lotes_resumen': lotes,
+        'movimientos_recientes': movimientos,
+    }), 200
+
+
 @bp.route("/admin/auditoria-catalogo", methods=["GET"])
 def admin_auditoria_catalogo_page():
     """UI HTML que consume /api/admin/auditoria-catalogo y muestra
@@ -11187,10 +11365,20 @@ function renderSeccion(sev, titulo, items){
     html+='<div class="finding '+sev+'">';
     html+='<h4>'+esc(k.replace(/_/g,' '))+
           ' <span class="count">'+arr.length+'</span></h4>';
-    // Sebastián 10-may-2026: renderizar grupos de duplicados con botón
-    // "Fusionar" cuando aplica (inci_duplicado / nombre_comercial_duplicado).
+    // Sebastián 10-may-2026: botones de limpieza por tipo de finding.
     if(k==='inci_duplicado' || k==='nombre_comercial_duplicado'){
       html+=renderGruposFusion(arr, k);
+    } else if(k==='vencidos_pero_vigente'){
+      html+='<div style="margin-bottom:10px"><button onclick="marcarVencidos()" '+
+            'style="background:#dc2626;color:white;border:none;padding:6px 14px;border-radius:5px;'+
+            'cursor:pointer;font-size:12px;font-weight:700">🏷️ Marcar todos como VENCIDO</button>'+
+            '<span style="margin-left:10px;font-size:11px;color:#64748b">'+
+            'Cambia estado_lote a VENCIDO en los '+arr.length+' lotes</span></div>';
+      html+=renderTabla(arr);
+    } else if(k==='stock_negativo'){
+      html+='<div style="margin-bottom:10px;background:#fef3c7;padding:8px 12px;border-radius:4px;font-size:11px;color:#92400e">'+
+            '⚠ Stock negativo = error de kardex. Click <b>Investigar</b> en cada lote para ver sus movimientos y decidir si anular o compensar.</div>';
+      html+=renderTablaConInvestigar(arr);
     } else {
       html+=renderTabla(arr);
     }
@@ -11366,6 +11554,138 @@ async function ejecutarFusion(){
       '<span style="color:#dc2626">Error de red: '+e.message+'</span>';
     btn.disabled = false; btn.textContent = '✓ Fusionar';
   }
+}
+
+// Sebastián 10-may-2026: marcar todos los lotes vencidos_pero_vigente como VENCIDO
+async function marcarVencidos(){
+  var d = window._auditData || {};
+  var arr = (d.findings && d.findings.alta && d.findings.alta.vencidos_pero_vigente) || [];
+  if(!arr.length){alert('No hay vencidos para marcar'); return;}
+  if(!confirm('Marcar como VENCIDO los '+arr.length+' lotes con fecha vencida?\\n\\n'+
+              'Esto cambia estado_lote en TODOS los movimientos de cada lote.\\n'+
+              'Acción rastreable en audit_log. Continuar?')){return;}
+  var lotes = arr.map(function(r){return {material_id: r.material_id, lote: r.lote};});
+  try{
+    var r = await fetch('/api/admin/marcar-lotes-vencidos',{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({lotes: lotes, motivo: 'Limpieza auditoría'}),
+    });
+    var resp = {};try{resp = await r.json();}catch(e){}
+    if(r.ok){
+      alert('✓ '+(resp.message || 'Vencidos marcados')+'\\nRecargando auditoría...');
+      ejecutarAudit();
+    } else {
+      alert('Error: '+(resp.error||r.status)+(resp.detail?'\\n'+resp.detail:''));
+    }
+  }catch(e){alert('Error de red: '+e.message);}
+}
+
+// Investigar un MP específico (stock negativo, huérfanos, etc.)
+async function investigarMP(codigo){
+  try{
+    var r = await fetch('/api/admin/investigar-mp/'+encodeURIComponent(codigo));
+    var d = {};try{d = await r.json();}catch(e){}
+    if(!r.ok){alert('Error: '+(d.error||r.status)); return;}
+    abrirModalInvestigar(codigo, d);
+  }catch(e){alert('Error de red: '+e.message);}
+}
+
+function abrirModalInvestigar(codigo, d){
+  var modal = document.getElementById('modal-investigar');
+  if(!modal){
+    modal = document.createElement('div');
+    modal.id = 'modal-investigar';
+    modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:9999;'+
+                       'display:flex;align-items:flex-start;justify-content:center;padding:20px;'+
+                       'overflow-y:auto';
+    document.body.appendChild(modal);
+  }
+  var mp = d.mp || {};
+  var lotes = d.lotes_resumen || [];
+  var movs = d.movimientos_recientes || [];
+  var stockTotal = d.stock_total_neto_g || 0;
+  var lotesTbl = lotes.map(function(l){
+    var stockColor = l.stock_neto_g < 0 ? 'color:#dc2626;font-weight:700' : '';
+    return '<tr>'+
+      '<td style="padding:4px 6px;font-family:monospace;font-size:11px">'+esc(l.lote||'(sin lote)')+'</td>'+
+      '<td style="padding:4px 6px;text-align:right;'+stockColor+'">'+l.stock_neto_g+'</td>'+
+      '<td style="padding:4px 6px;text-align:center">'+l.n_movs+'</td>'+
+      '<td style="padding:4px 6px;font-size:10px;color:#64748b">'+esc((l.primer_mov||'').slice(0,16))+'</td>'+
+      '<td style="padding:4px 6px;font-size:10px;color:#64748b">'+esc((l.ultimo_mov||'').slice(0,16))+'</td>'+
+    '</tr>';
+  }).join('');
+  var movsTbl = movs.map(function(m){
+    var tipoColor = m.tipo==='Salida'?'color:#dc2626':m.tipo==='Entrada'?'color:#16a34a':'color:#7c3aed';
+    return '<tr>'+
+      '<td style="padding:3px 6px;font-size:10px">'+m.id+'</td>'+
+      '<td style="padding:3px 6px;'+tipoColor+';font-weight:600;font-size:11px">'+esc(m.tipo)+'</td>'+
+      '<td style="padding:3px 6px;text-align:right;font-family:monospace">'+m.cantidad_g+'</td>'+
+      '<td style="padding:3px 6px;font-family:monospace;font-size:10px">'+esc(m.lote||'')+'</td>'+
+      '<td style="padding:3px 6px;font-size:10px;color:#64748b">'+esc((m.fecha||'').slice(0,16))+'</td>'+
+      '<td style="padding:3px 6px;font-size:10px">'+esc((m.observaciones||'').slice(0,80))+'</td>'+
+    '</tr>';
+  }).join('');
+  var stockTotalColor = stockTotal < 0 ? 'color:#dc2626;font-weight:700' : 'color:#16a34a';
+  modal.innerHTML =
+    '<div style="background:white;border-radius:10px;padding:24px;max-width:1200px;width:100%;'+
+    'box-shadow:0 20px 60px rgba(0,0,0,.4)">'+
+    '<div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:14px">'+
+    '<div><h2 style="margin:0;color:#0d9488;font-size:18px">🔬 Investigar '+esc(codigo)+'</h2>'+
+    '<p style="margin:4px 0 0;font-size:13px;color:#475569">'+
+    esc(mp.nombre_comercial||'(sin nombre)')+' · '+esc(mp.nombre_inci||'')+'</p></div>'+
+    '<button onclick="document.getElementById(\\'modal-investigar\\').remove()" '+
+    'style="background:#94a3b8;color:white;border:none;padding:6px 12px;border-radius:5px;cursor:pointer;font-size:12px">✗ Cerrar</button>'+
+    '</div>'+
+    '<div style="background:#f1f5f9;border-radius:6px;padding:10px;margin-bottom:14px;font-size:12px">'+
+    'Stock total: <span style="'+stockTotalColor+'">'+stockTotal+' g</span> · '+
+    'Activo: '+(mp.activo?'Sí':'No')+' · '+
+    'Stock mínimo: '+(mp.stock_minimo||0)+' g'+
+    '</div>'+
+    '<h3 style="font-size:14px;margin-bottom:6px">Lotes ('+lotes.length+')</h3>'+
+    '<div style="border:1px solid #e2e8f0;border-radius:5px;max-height:250px;overflow-y:auto;margin-bottom:14px">'+
+    '<table style="width:100%;font-size:12px;border-collapse:collapse">'+
+    '<thead style="background:#f1f5f9;position:sticky;top:0"><tr>'+
+    '<th style="padding:5px;text-align:left">Lote</th>'+
+    '<th style="padding:5px;text-align:right">Stock g</th>'+
+    '<th style="padding:5px;text-align:center">N movs</th>'+
+    '<th style="padding:5px;text-align:left">Primer mov</th>'+
+    '<th style="padding:5px;text-align:left">Último mov</th>'+
+    '</tr></thead><tbody>'+lotesTbl+'</tbody></table></div>'+
+    '<h3 style="font-size:14px;margin-bottom:6px">Movimientos recientes ('+movs.length+')</h3>'+
+    '<div style="border:1px solid #e2e8f0;border-radius:5px;max-height:300px;overflow-y:auto">'+
+    '<table style="width:100%;font-size:11px;border-collapse:collapse">'+
+    '<thead style="background:#f1f5f9;position:sticky;top:0"><tr>'+
+    '<th style="padding:5px;text-align:left">ID</th>'+
+    '<th style="padding:5px;text-align:left">Tipo</th>'+
+    '<th style="padding:5px;text-align:right">Cantidad g</th>'+
+    '<th style="padding:5px;text-align:left">Lote</th>'+
+    '<th style="padding:5px;text-align:left">Fecha</th>'+
+    '<th style="padding:5px;text-align:left">Obs</th>'+
+    '</tr></thead><tbody>'+movsTbl+'</tbody></table></div>'+
+    '</div>';
+}
+
+function renderTablaConInvestigar(arr){
+  if(!arr.length)return '<div class="empty">vacío</div>';
+  var cols=Object.keys(arr[0]);
+  var html='<table><thead><tr>';
+  cols.forEach(function(c){html+='<th>'+esc(c)+'</th>';});
+  html+='<th>Acción</th></tr></thead><tbody>';
+  arr.slice(0,30).forEach(function(row){
+    html+='<tr>';
+    cols.forEach(function(c){
+      var v=row[c];
+      if(Array.isArray(v))v=v.join(', ');
+      else if(typeof v==='object'&&v!==null)v=JSON.stringify(v);
+      html+='<td>'+esc(v)+'</td>';
+    });
+    var mid = row.material_id || row.codigo_mp || '';
+    html+='<td><button onclick="investigarMP(\\''+esc(mid)+'\\')" '+
+          'style="background:#0d9488;color:white;border:none;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:11px">🔬 Investigar</button></td>';
+    html+='</tr>';
+  });
+  html+='</tbody></table>';
+  return html;
 }
 
 // Sebastián 10-may-2026: fusión masiva con auto-elección de canónico
