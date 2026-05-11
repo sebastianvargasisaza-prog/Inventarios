@@ -583,6 +583,8 @@ JOBS_SCHEDULE = [
     ('equipos_vencimientos',  7, 30, None, None,                'job_equipos_vencimientos'),
     # ⭐ Direccion Tecnica · diario 7:45 · alerta INVIMA + SGD próximos a vencer
     ('tecnica_vencimientos',  7, 45, None, None,                'job_tecnica_vencimientos'),
+    # ⭐ Planta · diario 7:50 · marca VENCIDO en lotes con fecha_venc pasada (INVIMA)
+    ('marcar_vencidos',       7, 50, None, None,                'job_marcar_vencidos'),
     # ⭐ Animus · L-V 8:00am · asignar 5 SKUs para conteo fisico a Daniela
     ('animus_conteo_diario',  8,  0, [0,1,2,3,4], None,         'job_animus_conteo_diario'),
     # ⭐ Aseguramiento · diario 8:00 · alerta desviaciones en plazos críticos (ASG-PRO-001)
@@ -2805,13 +2807,125 @@ def _enviar_mail_watcher(payload):
         log.warning(f'watcher mail fallo (best-effort): {e}')
 
 
+def job_marcar_vencidos(app):
+    """Cron diario 7:50 · marca estado_lote='VENCIDO' en lotes con
+    fecha_vencimiento pasada que todavía figuran como VIGENTE.
+
+    Sebastián 8-may-2026 (zero-error FASE A): MPs vencidas con
+    estado VIGENTE son violación regulatoria INVIMA · pueden colarse
+    en producción si nadie las marca. Antes era acción manual desde
+    panel auditoría · ahora corre automático.
+
+    Lógica:
+      UPDATE movimientos
+      SET estado_lote='VENCIDO'
+      WHERE fecha_vencimiento < date('now')
+        AND UPPER(COALESCE(estado_lote,'')) = 'VIGENTE'
+
+    Idempotente: si no hay vencidos, no hace nada. Si los hay,
+    audit_log + push_notif a planta/aseguramiento.
+
+    Returns: (ok, {actualizados, top_5_codigos, top_5_lotes}, _)
+    """
+    with app.app_context():
+        from database import get_db
+        conn = get_db(); c = conn.cursor()
+        try:
+            # Detectar primero (para sabermos qué cambió y notificar)
+            rows = c.execute("""
+                SELECT material_id, lote, fecha_vencimiento, COUNT(*) AS movs
+                FROM movimientos
+                WHERE fecha_vencimiento IS NOT NULL
+                  AND TRIM(fecha_vencimiento) != ''
+                  AND date(fecha_vencimiento) < date('now')
+                  AND UPPER(COALESCE(estado_lote,'')) = 'VIGENTE'
+                GROUP BY material_id, lote
+                ORDER BY fecha_vencimiento ASC
+                LIMIT 200
+            """).fetchall()
+
+            if not rows:
+                return True, {'mensaje': 'Sin lotes vencidos pendientes · OK'}, 0
+
+            # Marcar VENCIDO en batch (un solo UPDATE para todo)
+            res = c.execute("""
+                UPDATE movimientos
+                SET estado_lote = 'VENCIDO'
+                WHERE fecha_vencimiento IS NOT NULL
+                  AND TRIM(fecha_vencimiento) != ''
+                  AND date(fecha_vencimiento) < date('now')
+                  AND UPPER(COALESCE(estado_lote,'')) = 'VIGENTE'
+            """)
+            actualizados = res.rowcount
+
+            # Audit log (best-effort · no romper si falla)
+            try:
+                from audit_helpers import audit_log
+                detalles = [
+                    {'material_id': r[0], 'lote': r[1],
+                     'fecha_venc': r[2], 'movs': r[3]}
+                    for r in rows[:50]
+                ]
+                audit_log(
+                    c, usuario='sistema',
+                    accion='MARCAR_LOTES_VENCIDOS_AUTO',
+                    tabla='movimientos', registro_id='cron',
+                    despues={
+                        'total_movs_actualizados': actualizados,
+                        'lotes_afectados': len(rows),
+                        'detalles': detalles,
+                    },
+                    detalle=(f'Cron diario marcó VENCIDO en {len(rows)} '
+                             f'lotes · {actualizados} movimientos'),
+                )
+            except Exception as e:
+                log.warning('marcar_vencidos audit fallo: %s', e)
+
+            conn.commit()
+
+            # Push notif a planta/aseguramiento (best-effort)
+            try:
+                from blueprints.notif import push_notif_multi
+                top_lines = []
+                for r in rows[:5]:
+                    top_lines.append(f"  · {r[0]} lote {r[1] or '-'} (venc {r[2]})")
+                push_notif_multi(
+                    ['controlcalidad.espagiria',
+                     'aseguramiento.espagiria',
+                     'mayerlin',  # dispensación
+                     'sebastian'],
+                    'capa',
+                    f'⛔ {len(rows)} lote(s) marcados VENCIDO automático',
+                    body=('Cron diario detectó lotes con fecha_venc pasada '
+                          'que seguían VIGENTE. Ya están bloqueados.\n\n'
+                          'Top 5:\n' + '\n'.join(top_lines)),
+                    link='/admin/limpieza-cero-error',
+                    remitente='cron-vencidos',
+                    importante=True,
+                )
+            except Exception as e:
+                log.warning('marcar_vencidos push_notif fallo: %s', e)
+
+            return True, {
+                'actualizados': actualizados,
+                'lotes_afectados': len(rows),
+                'top_codigos': [r[0] for r in rows[:5]],
+                'top_lotes': [r[1] for r in rows[:5]],
+            }, 0
+
+        except Exception as e:
+            conn.rollback()
+            log.exception('marcar_vencidos fallo: %s', e)
+            return False, {'error': str(e)[:300]}, 0
+
+
 def _loop_multi_cron(app):
     """Loop cada 5 min revisa schedule de jobs y ejecuta los que apliquen.
 
     Sebastián 1-may-2026 audit zero-error: incorporar lock distribuido
     `cron_locks` para prevenir doble ejecución cuando hay >1 worker.
     """
-    log.info('[multi-cron] Loop iniciado · 5 jobs configurados')
+    log.info(f'[multi-cron] Loop iniciado · {len(JOBS_SCHEDULE)} jobs configurados')
     import time as _time
     import time as time_mod
     from datetime import datetime as _dt

@@ -2474,3 +2474,301 @@ def test_golden_cambiar_ubicacion_lote_refleja_en_bodega(app, db_clean):
     # Cleanup
     _exec("DELETE FROM movimientos WHERE material_id=?", (codigo_mp,))
     _exec("DELETE FROM maestro_mps WHERE codigo_mp=?", (codigo_mp,))
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 61 · FASE A · Trigger manual marcar vencidos bulk
+# ═══════════════════════════════════════════════════════════════════
+# Sebastián 8-may-2026 (zero-error FASE A): endpoint
+# /api/admin/marcar-vencidos-bulk-todos marca VENCIDO en lotes con
+# fecha_venc pasada que aún figuran VIGENTE. Equivalente del cron diario.
+
+def test_golden_marcar_vencidos_bulk_todos(app, db_clean):
+    cs = _login(app, 'sebastian')
+
+    codigo_mp = 'GP61-MP-VENCIDOS'
+    nombre = 'MP test vencidos auto'
+
+    # Setup: MP + 2 lotes vencidos (VIGENTE) + 1 vigente
+    _exec("""INSERT OR REPLACE INTO maestro_mps
+              (codigo_mp, nombre_comercial, activo, tipo_material)
+              VALUES (?, ?, 1, 'MP')""",
+          (codigo_mp, nombre))
+    # Lote vencido hace 30d, marcado VIGENTE
+    _exec("""INSERT INTO movimientos
+              (material_id, material_nombre, cantidad, tipo, fecha, lote,
+               fecha_vencimiento, estado_lote, operador)
+              VALUES (?, ?, 5000, 'Entrada', date('now','-60 days'),
+                      'GP61-LOTE-OLD', date('now','-30 days'),
+                      'VIGENTE', 'seed')""",
+          (codigo_mp, nombre))
+    # Lote vencido hace 5d, marcado VIGENTE
+    _exec("""INSERT INTO movimientos
+              (material_id, material_nombre, cantidad, tipo, fecha, lote,
+               fecha_vencimiento, estado_lote, operador)
+              VALUES (?, ?, 3000, 'Entrada', date('now','-30 days'),
+                      'GP61-LOTE-RECENT', date('now','-5 days'),
+                      'VIGENTE', 'seed')""",
+          (codigo_mp, nombre))
+    # Lote vigente (futuro) — no se debe tocar
+    _exec("""INSERT INTO movimientos
+              (material_id, material_nombre, cantidad, tipo, fecha, lote,
+               fecha_vencimiento, estado_lote, operador)
+              VALUES (?, ?, 2000, 'Entrada', date('now','-10 days'),
+                      'GP61-LOTE-FUTURO', date('now','+90 days'),
+                      'VIGENTE', 'seed')""",
+          (codigo_mp, nombre))
+
+    try:
+        # Acción: trigger manual
+        r = cs.post('/api/admin/marcar-vencidos-bulk-todos',
+                    headers=csrf_headers())
+        assert r.status_code == 200, \
+            f'BUG: trigger marcar-vencidos-bulk-todos · {r.status_code} {r.data}'
+        d = r.get_json() or {}
+        assert d.get('ok'), f'response sin ok: {d}'
+        assert (d.get('actualizados') or 0) >= 2, \
+            f'esperaba >=2 movs actualizados (2 lotes vencidos), got {d.get("actualizados")}'
+
+        # Verificación: los 2 lotes vencidos ahora son VENCIDO, el futuro sigue VIGENTE
+        rows = _query(
+            "SELECT lote, estado_lote FROM movimientos "
+            "WHERE material_id=? ORDER BY lote",
+            (codigo_mp,)
+        )
+        estados = {l: e for l, e in rows}
+        assert estados['GP61-LOTE-OLD'].upper() == 'VENCIDO', \
+            f'BUG: lote viejo no marcado VENCIDO · {estados["GP61-LOTE-OLD"]}'
+        assert estados['GP61-LOTE-RECENT'].upper() == 'VENCIDO', \
+            f'BUG: lote reciente vencido no marcado · {estados["GP61-LOTE-RECENT"]}'
+        assert estados['GP61-LOTE-FUTURO'].upper() == 'VIGENTE', \
+            f'BUG: lote futuro mal marcado · {estados["GP61-LOTE-FUTURO"]}'
+
+        # Verificación: audit_log registró la acción (best-effort)
+        try:
+            audit_rows = _query(
+                "SELECT COUNT(*) FROM audit_log "
+                "WHERE accion='MARCAR_LOTES_VENCIDOS_BULK' "
+                "AND datetime(timestamp) > datetime('now','-5 minutes')",
+            )
+            if audit_rows:
+                assert audit_rows[0][0] >= 1, \
+                    'BUG: audit_log sin entrada MARCAR_LOTES_VENCIDOS_BULK'
+        except sqlite3.OperationalError:
+            pass
+
+        # Re-ejecutar: ahora no hay nada que marcar (idempotente)
+        r2 = cs.post('/api/admin/marcar-vencidos-bulk-todos',
+                     headers=csrf_headers())
+        assert r2.status_code == 200, 'segundo trigger debe ser ok'
+        d2 = r2.get_json() or {}
+        assert (d2.get('actualizados') or 0) == 0, \
+            f'BUG: idempotencia rota · 2do trigger actualizo {d2.get("actualizados")}'
+
+    finally:
+        _exec("DELETE FROM movimientos WHERE material_id=?", (codigo_mp,))
+        _exec("DELETE FROM maestro_mps WHERE codigo_mp=?", (codigo_mp,))
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 62 · FASE A · Detectar MPs sin uso
+# ═══════════════════════════════════════════════════════════════════
+# Sebastián 8-may-2026: el endpoint detecta MPs que no están en
+# fórmulas, sin movs recientes, stock=0 · candidatas a archivar.
+
+def test_golden_mps_sin_uso_detecta(app, db_clean):
+    cs = _login(app, 'sebastian')
+
+    cod_sin_uso = 'GP62-MP-INUTIL'
+    cod_con_formula = 'GP62-MP-EN-FORMULA'
+    cod_con_stock = 'GP62-MP-CON-STOCK'
+
+    for codigo, nom in [(cod_sin_uso, 'Sin uso real'),
+                         (cod_con_formula, 'En formula'),
+                         (cod_con_stock, 'Con stock')]:
+        _exec("""INSERT OR REPLACE INTO maestro_mps
+                  (codigo_mp, nombre_comercial, activo, tipo_material)
+                  VALUES (?, ?, 1, 'MP')""",
+              (codigo, nom))
+
+    # cod_con_formula: insertar en formula_items (best-effort segun schema)
+    formula_inserted = False
+    try:
+        _exec("""INSERT OR IGNORE INTO formulas (producto_nombre, activa)
+                 VALUES ('GP62-PROD-TEST', 1)""")
+        prod_row = _query(
+            "SELECT id FROM formulas WHERE producto_nombre='GP62-PROD-TEST'"
+        )
+        if prod_row:
+            formula_id = prod_row[0][0]
+            _exec("""INSERT OR IGNORE INTO formula_items
+                     (formula_id, material_id, porcentaje, cantidad_g_por_lote)
+                     VALUES (?, ?, 5.0, 100)""",
+                  (formula_id, cod_con_formula))
+            formula_inserted = True
+    except sqlite3.OperationalError:
+        try:
+            _exec("""INSERT OR IGNORE INTO formula_items
+                     (producto_nombre, material_id, porcentaje)
+                     VALUES ('GP62-PROD-TEST', ?, 5.0)""",
+                  (cod_con_formula,))
+            formula_inserted = True
+        except sqlite3.OperationalError:
+            pass
+
+    # cod_con_stock: con entrada reciente
+    _exec("""INSERT INTO movimientos
+              (material_id, material_nombre, cantidad, tipo, fecha,
+               lote, estado_lote, operador)
+              VALUES (?, ?, 1000, 'Entrada', date('now'),
+                      'GP62-LOTE-STOCK', 'VIGENTE', 'seed')""",
+          (cod_con_stock, 'Con stock'))
+
+    try:
+        r = cs.get('/api/admin/mps-sin-uso?dias_inactividad=30')
+        assert r.status_code == 200, \
+            f'BUG: /mps-sin-uso caido · {r.status_code} {r.data}'
+        d = r.get_json() or {}
+        assert d.get('ok'), f'response sin ok: {d}'
+
+        codigos_detectados = {x['codigo'] for x in d.get('sin_uso', [])}
+        assert cod_sin_uso in codigos_detectados, \
+            f'BUG: cod_sin_uso no detectado · detectados: {len(codigos_detectados)}'
+        if formula_inserted:
+            assert cod_con_formula not in codigos_detectados, \
+                'BUG: MP en formula detectada como sin-uso'
+        assert cod_con_stock not in codigos_detectados, \
+            'BUG: MP con stock>0 detectada como sin-uso'
+
+    finally:
+        _exec("DELETE FROM movimientos WHERE material_id IN (?,?,?)",
+              (cod_sin_uso, cod_con_formula, cod_con_stock))
+        try:
+            _exec("DELETE FROM formula_items WHERE material_id IN (?,?,?)",
+                  (cod_sin_uso, cod_con_formula, cod_con_stock))
+        except sqlite3.OperationalError:
+            pass
+        try:
+            _exec("DELETE FROM formulas WHERE producto_nombre='GP62-PROD-TEST'")
+        except sqlite3.OperationalError:
+            pass
+        _exec("DELETE FROM maestro_mps WHERE codigo_mp IN (?,?,?)",
+              (cod_sin_uso, cod_con_formula, cod_con_stock))
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 63 · FASE A · Archivar MPs sin uso bulk
+# ═══════════════════════════════════════════════════════════════════
+# Verifica que el bulk archive:
+#   - rechaza MPs con stock>0
+#   - archiva (activo=0) las elegibles
+#   - es idempotente
+
+def test_golden_archivar_mps_sin_uso_bulk(app, db_clean):
+    cs = _login(app, 'sebastian')
+
+    cod_archivable = 'GP63-MP-ARCH'
+    cod_con_stock = 'GP63-MP-STOCK'
+
+    _exec("""INSERT OR REPLACE INTO maestro_mps
+              (codigo_mp, nombre_comercial, activo, tipo_material)
+              VALUES (?, 'Archivable test', 1, 'MP')""",
+          (cod_archivable,))
+    _exec("""INSERT OR REPLACE INTO maestro_mps
+              (codigo_mp, nombre_comercial, activo, tipo_material)
+              VALUES (?, 'Con stock test', 1, 'MP')""",
+          (cod_con_stock,))
+    _exec("""INSERT INTO movimientos
+              (material_id, material_nombre, cantidad, tipo, fecha,
+               lote, estado_lote, operador)
+              VALUES (?, 'Con stock test', 999, 'Entrada', date('now'),
+                      'GP63-LOTE', 'VIGENTE', 'seed')""",
+          (cod_con_stock,))
+
+    try:
+        r = cs.post('/api/admin/archivar-mps-sin-uso-bulk',
+                    json={'codigos': [cod_archivable, cod_con_stock],
+                          'motivo': 'test golden 63'},
+                    headers=csrf_headers())
+        assert r.status_code == 200, \
+            f'BUG: archivar-bulk caido · {r.status_code} {r.data}'
+        d = r.get_json() or {}
+        assert d.get('ok'), f'response sin ok: {d}'
+
+        archivadas_codigos = {x['codigo'] for x in d.get('archivadas', [])}
+        rechazadas_codigos = {x['codigo'] for x in d.get('rechazadas', [])}
+        assert cod_archivable in archivadas_codigos, \
+            f'BUG: archivable no archivada · {d}'
+        assert cod_con_stock in rechazadas_codigos, \
+            f'BUG: con-stock no rechazada · {d}'
+
+        rows = _query(
+            "SELECT codigo_mp, activo FROM maestro_mps "
+            "WHERE codigo_mp IN (?,?)",
+            (cod_archivable, cod_con_stock)
+        )
+        estados = {c: a for c, a in rows}
+        assert estados[cod_archivable] == 0, \
+            f'BUG: archivable sigue activa · {estados}'
+        assert estados[cod_con_stock] == 1, \
+            f'BUG: con-stock fue desactivada por error · {estados}'
+
+        # Idempotencia: 2do request debe rechazar (ya archivada)
+        r2 = cs.post('/api/admin/archivar-mps-sin-uso-bulk',
+                     json={'codigos': [cod_archivable]},
+                     headers=csrf_headers())
+        d2 = r2.get_json() or {}
+        rechazadas2 = {x['codigo'] for x in d2.get('rechazadas', [])}
+        assert cod_archivable in rechazadas2, \
+            'BUG: 2do archive debe rechazar (ya archivada)'
+
+    finally:
+        _exec("DELETE FROM movimientos WHERE material_id=?", (cod_con_stock,))
+        _exec("DELETE FROM maestro_mps WHERE codigo_mp IN (?,?)",
+              (cod_archivable, cod_con_stock))
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 64 · FASE A · Cron job_marcar_vencidos · función directa
+# ═══════════════════════════════════════════════════════════════════
+# Llama directamente la función del cron en auto_plan_jobs.py.
+# Cubre la lógica del cron sin esperar a las 7:50am.
+
+def test_golden_cron_job_marcar_vencidos(app, db_clean):
+    codigo_mp = 'GP64-MP-CRON-VENC'
+    _exec("""INSERT OR REPLACE INTO maestro_mps
+              (codigo_mp, nombre_comercial, activo, tipo_material)
+              VALUES (?, 'MP cron test', 1, 'MP')""",
+          (codigo_mp,))
+    _exec("""INSERT INTO movimientos
+              (material_id, material_nombre, cantidad, tipo, fecha, lote,
+               fecha_vencimiento, estado_lote, operador)
+              VALUES (?, 'MP cron test', 2500, 'Entrada', date('now','-90 days'),
+                      'GP64-LOTE-OLD', date('now','-15 days'),
+                      'VIGENTE', 'seed')""",
+          (codigo_mp,))
+
+    try:
+        from blueprints.auto_plan_jobs import job_marcar_vencidos
+        ok, resultado, _ = job_marcar_vencidos(app)
+        assert ok, f'BUG: job_marcar_vencidos retorno ok=False · {resultado}'
+        assert (resultado.get('actualizados') or 0) >= 1, \
+            f'BUG: cron no actualizo lote vencido · {resultado}'
+
+        rows = _query(
+            "SELECT estado_lote FROM movimientos "
+            "WHERE material_id=? AND lote='GP64-LOTE-OLD'",
+            (codigo_mp,)
+        )
+        assert rows and rows[0][0].upper() == 'VENCIDO', \
+            f'BUG: lote post-cron no es VENCIDO · {rows}'
+
+        # 2da corrida: idempotente · sin nada que marcar
+        ok2, resultado2, _ = job_marcar_vencidos(app)
+        assert ok2, '2da corrida del cron debe ser ok'
+        assert (resultado2.get('actualizados') or 0) == 0, \
+            f'BUG: cron no idempotente · 2da corrida actualizo {resultado2.get("actualizados")}'
+
+    finally:
+        _exec("DELETE FROM movimientos WHERE material_id=?", (codigo_mp,))
+        _exec("DELETE FROM maestro_mps WHERE codigo_mp=?", (codigo_mp,))
