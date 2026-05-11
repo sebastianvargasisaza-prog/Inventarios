@@ -238,7 +238,7 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
             WHERE codigo_mp = NEW.material_id AND activo = 1
           )
         BEGIN
-            SELECT RAISE(ABORT, 'material_id '||COALESCE(NEW.material_id,'NULL')||' no existe en maestro_mps activo (FK violation)');
+            SELECT RAISE(ABORT, 'material_id no existe en maestro_mps activo (FK violation)');
         END""",
         """CREATE TRIGGER IF NOT EXISTS trg_fi_material_id_fk_upd
         BEFORE UPDATE OF material_id ON formula_items
@@ -250,7 +250,7 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
             WHERE codigo_mp = NEW.material_id AND activo = 1
           )
         BEGIN
-            SELECT RAISE(ABORT, 'UPDATE material_id '||COALESCE(NEW.material_id,'NULL')||' no existe en maestro_mps activo (FK violation)');
+            SELECT RAISE(ABORT, 'UPDATE material_id no existe en maestro_mps activo (FK violation)');
         END""",
     ]),
     (97, "Triggers BD invariantes Planta (Sebastián 10-may-2026 cero-error)", [
@@ -263,7 +263,7 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         FOR EACH ROW
         WHEN NEW.cantidad IS NULL OR NEW.cantidad <= 0
         BEGIN
-            SELECT RAISE(ABORT, 'cantidad debe ser > 0 (recibido: '||COALESCE(NEW.cantidad,'NULL')||')');
+            SELECT RAISE(ABORT, 'cantidad debe ser > 0 (no NULL ni cero ni negativo)');
         END""",
         # Trigger: BLOQUEAR movimientos con tipo inválido. Solo permitidos:
         # Entrada, Salida, Ajuste. Cualquier typo o valor inventado rechazado.
@@ -272,7 +272,7 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         FOR EACH ROW
         WHEN NEW.tipo NOT IN ('Entrada','Salida','Ajuste')
         BEGIN
-            SELECT RAISE(ABORT, 'tipo invalido (debe ser Entrada/Salida/Ajuste): '||COALESCE(NEW.tipo,'NULL'));
+            SELECT RAISE(ABORT, 'tipo invalido (debe ser Entrada/Salida/Ajuste)');
         END""",
         # Trigger: BLOQUEAR movimientos sin material_id (huérfanos absolutos).
         # No bloqueo "material_id no está en maestro_mps" porque algunos
@@ -293,7 +293,7 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         FOR EACH ROW
         WHEN NEW.porcentaje IS NOT NULL AND (NEW.porcentaje < 0 OR NEW.porcentaje > 100)
         BEGIN
-            SELECT RAISE(ABORT, 'porcentaje fuera de rango [0,100]: '||COALESCE(NEW.porcentaje,'NULL'));
+            SELECT RAISE(ABORT, 'porcentaje fuera de rango [0,100]');
         END""",
         # Trigger: prevenir UPDATE que llevaría porcentaje fuera de rango.
         """CREATE TRIGGER IF NOT EXISTS trg_fi_porcentaje_valido_upd
@@ -301,7 +301,7 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         FOR EACH ROW
         WHEN NEW.porcentaje IS NOT NULL AND (NEW.porcentaje < 0 OR NEW.porcentaje > 100)
         BEGIN
-            SELECT RAISE(ABORT, 'UPDATE porcentaje fuera de rango [0,100]: '||COALESCE(NEW.porcentaje,'NULL'));
+            SELECT RAISE(ABORT, 'UPDATE porcentaje fuera de rango [0,100]');
         END""",
         # Trigger: BLOQUEAR maestro_mps con codigo_mp vacío.
         """CREATE TRIGGER IF NOT EXISTS trg_mps_codigo_requerido
