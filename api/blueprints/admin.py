@@ -12569,10 +12569,61 @@ def auditoria_producciones_descuento():
 
     # Score: cada problema baja proporcionalmente.
     # Si no hay producciones iniciadas, score=100 (no hay nada que auditar)
-    if n_iniciadas == 0:
+    # ── AUDITAR TAMBIEN tabla legacy `producciones` ───────────────────────
+    # Hueco descubierto Sebastian 8-may-2026: 358 produccion_programada
+    # todas en pendiente PERO dashboard muestra producciones histórico.
+    # Si la planta usa la tabla legacy `producciones`, NO pasa por
+    # _descontar_mp_produccion y MPs no se descuentan.
+    legacy = []
+    n_legacy_total = 0
+    n_legacy_sin_movs = 0
+    try:
+        # Re-abrir conn
+        conn2 = sqlite3.connect(DB_PATH)
+        conn2.execute("PRAGMA busy_timeout=2000")
+        c2 = conn2.cursor()
+        legacy_rows = c2.execute("""
+            SELECT p.id, p.producto, p.fecha, p.cantidad, p.estado, p.lote,
+                   (SELECT COUNT(*) FROM movimientos
+                     WHERE tipo = 'Salida'
+                       AND (observaciones LIKE '%' || p.producto || '%'
+                            OR (p.lote IS NOT NULL AND p.lote != '' AND lote = p.lote)))
+                   AS n_movs_relacionados,
+                   (SELECT COUNT(*) FROM formula_items
+                     WHERE producto_nombre = p.producto) AS n_formula_items
+            FROM producciones p
+            WHERE date(COALESCE(p.fecha, '1970-01-01')) >= date('now', '-' || ? || ' days')
+            ORDER BY p.fecha DESC
+            LIMIT 200
+        """, (dias,)).fetchall()
+        conn2.close()
+        n_legacy_total = len(legacy_rows)
+        for r in legacy_rows:
+            pid, producto, fecha, cantidad, estado, lote, n_movs, n_fi = r
+            sin_movs = (n_movs or 0) == 0 and (n_fi or 0) > 0
+            if sin_movs:
+                n_legacy_sin_movs += 1
+            legacy.append({
+                'id': pid,
+                'producto': producto,
+                'fecha': fecha,
+                'cantidad': cantidad,
+                'estado': estado,
+                'lote': lote,
+                'n_movs_salida_relacionados': n_movs or 0,
+                'n_formula_items': n_fi or 0,
+                'sin_movimientos_salida': bool(sin_movs),
+            })
+    except Exception as e:
+        errores_checks['legacy_producciones'] = str(e)[:200]
+
+    # Score considera ambas: produccion_programada Y producciones legacy
+    n_total_audit = n_iniciadas + n_legacy_total
+    n_total_problemas = n_problemas + n_legacy_sin_movs
+    if n_total_audit == 0:
         score = 100.0
     else:
-        score = 100.0 * (1.0 - n_problemas / max(n_iniciadas, 1))
+        score = 100.0 * (1.0 - n_total_problemas / max(n_total_audit, 1))
     score = max(0.0, round(score, 1))
 
     if score >= 99:
@@ -12587,6 +12638,8 @@ def auditoria_producciones_descuento():
     # Top producciones con problemas (no mostrar las OK ni PENDIENTE)
     problemas = [p for p in producciones
                   if p['estado_audit'] not in ('OK', 'PENDIENTE')]
+    # Agregar legacy con problema al inicio
+    problemas_legacy = [l for l in legacy if l.get('sin_movimientos_salida')]
 
     return jsonify({
         'ok': True,
@@ -12599,15 +12652,20 @@ def auditoria_producciones_descuento():
             'n_pendientes': n_pendientes,
             'n_ok': n_ok,
             'n_problemas': n_problemas,
+            'legacy_total': n_legacy_total,
+            'legacy_sin_movs': n_legacy_sin_movs,
             'iniciadas_sin_descuento': n_sin_descuento,
             'descontadas_sin_movs': n_descontada_sin_movs,
             'sin_formula': n_sin_formula,
             'terminadas_sin_descuento': n_terminada_sin_descuento,
         },
         'problemas': problemas[:50],
+        'legacy_producciones': legacy[:100],
+        'legacy_problemas': problemas_legacy[:50],
         'errores_checks': errores_checks,
         'message': (f'S2 producciones: {veredicto} · score {score}/100 '
-                    f'· {n_total} producciones · {n_problemas} con problemas'),
+                    f'· {n_total} programadas · {n_legacy_total} legacy '
+                    f'· {n_total_problemas} con problemas'),
     }), 200
 
 
@@ -15513,13 +15571,13 @@ function render(d){
     '<div class="score ' + sclass + '">' + score + '<small style="font-size:24px;color:#64748b">/100</small></div>' +
     '<div class="verdict ' + vclass + '">' + v + '</div>' +
     '<div class="resumen">' +
-      kpi('Total', rs.n_total, '') +
+      kpi('Programadas', rs.n_total, '') +
       kpi('Iniciadas', rs.n_iniciadas, '') +
       kpi('OK', rs.n_ok, 'ok') +
-      kpi('Pendientes', rs.n_pendientes, '') +
-      kpi('Problemas', rs.n_problemas, (rs.n_problemas||0)>0?'bad':'ok') +
+      kpi('Legacy total', rs.legacy_total, '') +
+      kpi('Legacy sin movs', rs.legacy_sin_movs, (rs.legacy_sin_movs||0)>0?'bad':'ok') +
     '</div>' +
-    (rs.n_problemas > 0 ? '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:6px;margin-top:10px">' +
+    ((rs.n_problemas + (rs.legacy_sin_movs||0)) > 0 ? '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:6px;margin-top:10px">' +
       kpi('Iniciada sin descuento', rs.iniciadas_sin_descuento, (rs.iniciadas_sin_descuento||0)>0?'bad':'') +
       kpi('Descontada sin movs', rs.descontadas_sin_movs, (rs.descontadas_sin_movs||0)>0?'bad':'') +
       kpi('Sin fórmula', rs.sin_formula, (rs.sin_formula||0)>0?'warn':'') +
@@ -15528,12 +15586,15 @@ function render(d){
   '</div>';
 
   const probs = d.problemas || [];
-  if(probs.length === 0){
+  const legacyProbs = d.legacy_problemas || [];
+
+  if(probs.length === 0 && legacyProbs.length === 0){
     html += '<div class="empty">✓ Sin problemas detectados en los últimos ' + rs.dias_horizonte + ' días.</div>';
-  } else {
-    html += '<h3 style="margin-top:14px;color:#fbbf24">Producciones con problema (' + probs.length + ')</h3>';
+  }
+  if(probs.length > 0){
+    html += '<h3 style="margin-top:14px;color:#fbbf24">Producción programada con problema (' + probs.length + ')</h3>';
     html += '<table><thead><tr><th>ID</th><th>Producto</th><th>Fecha</th><th>Lotes</th>' +
-      '<th>Iniciada</th><th>Descontada</th><th>Movs Salida</th><th>Estado</th></tr></thead><tbody>';
+      '<th>Iniciada</th><th>Descontada</th><th>Movs</th><th>Estado</th></tr></thead><tbody>';
     for(const p of probs){
       const eclass = p.estado_audit === 'OK' ? 'ok' :
                      p.estado_audit === 'SIN_FORMULA' ? 'warn' : 'bad';
@@ -15546,6 +15607,23 @@ function render(d){
         '<td>' + (p.descontada ? '✓' : '—') + '</td>' +
         '<td>' + esc(p.n_movs_salida_producto) + '</td>' +
         '<td><span class="badge ' + eclass + '">' + esc(p.estado_audit) + '</span></td>' +
+      '</tr>';
+    }
+    html += '</tbody></table>';
+  }
+  if(legacyProbs.length > 0){
+    html += '<h3 style="margin-top:18px;color:#ef4444">⚠ Producción LEGACY sin descuento de MPs (' + legacyProbs.length + ')</h3>';
+    html += '<p style="font-size:11px;color:#94a3b8;margin-bottom:6px">Producciones en tabla `producciones` (flujo legacy) que NO tienen movimientos Salida. Stock real consumido pero MPs no descontadas del inventario.</p>';
+    html += '<table><thead><tr><th>ID</th><th>Producto</th><th>Fecha</th><th>Cantidad</th><th>Lote</th><th>Estado</th><th>Items fórmula</th></tr></thead><tbody>';
+    for(const p of legacyProbs){
+      html += '<tr>' +
+        '<td>' + esc(p.id) + '</td>' +
+        '<td>' + esc(p.producto) + '</td>' +
+        '<td>' + esc(p.fecha) + '</td>' +
+        '<td>' + esc(p.cantidad) + '</td>' +
+        '<td>' + esc(p.lote||'—') + '</td>' +
+        '<td>' + esc(p.estado||'—') + '</td>' +
+        '<td>' + esc(p.n_formula_items) + '</td>' +
       '</tr>';
     }
     html += '</tbody></table>';
