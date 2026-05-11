@@ -10237,6 +10237,11 @@ def auditoria_catalogo():
     if err:
         return err, code
 
+    # Modo rápido: salta el check fuzzy (#12 · O(n²) con difflib, ~5-10s
+    # en catálogos grandes). Sebastián 10-may-2026: agregado para evitar
+    # timeouts del browser cuando el catálogo crece.
+    quick_mode = request.args.get('quick', '').strip() in ('1', 'true', 'yes')
+
     import datetime as _dt
     conn = sqlite3.connect(DB_PATH)
     conn.execute("PRAGMA busy_timeout=2000")
@@ -10523,49 +10528,58 @@ def auditoria_catalogo():
         findings['baja']['prov_casing_err'] = str(e)[:200]
 
     # 12. Nombres muy similares (fuzzy con difflib)
-    try:
-        import difflib as _diff
-        rows = c.execute("""
-            SELECT codigo_mp, COALESCE(nombre_comercial,''), COALESCE(nombre_inci,'')
-            FROM maestro_mps WHERE activo=1
-        """).fetchall()
-        # Limitar comparaciones a 800 MPs para evitar O(n²) explosivo (n=400 → 80k pares)
-        rows = rows[:800]
-        similares = []
-        seen = set()
-        for i in range(len(rows)):
-            cod_i, nc_i, _ = rows[i]
-            nc_i_norm = (nc_i or '').strip().lower()
-            if len(nc_i_norm) < 5:
-                continue
-            for j in range(i+1, len(rows)):
-                cod_j, nc_j, _ = rows[j]
-                nc_j_norm = (nc_j or '').strip().lower()
-                if len(nc_j_norm) < 5:
+    # Sebastián 10-may-2026: si modo rápido (?quick=1), saltar este check
+    # · es el más lento (O(n²) con difflib · ~5-15s en catálogos grandes)
+    # y puede causar timeout del browser. El frontend usa quick=1 por default
+    # y ofrece botón "Análisis profundo" para correr sin omitir.
+    if quick_mode:
+        findings['baja']['nombres_similares_fuzzy'] = []
+        findings['baja']['_fuzzy_omitido'] = (
+            'modo rápido · pasa ?quick=0 para correr fuzzy completo'
+        )
+    else:
+        try:
+            import difflib as _diff
+            rows = c.execute("""
+                SELECT codigo_mp, COALESCE(nombre_comercial,''), COALESCE(nombre_inci,'')
+                FROM maestro_mps WHERE activo=1
+            """).fetchall()
+            # Limitar a 800 MPs para evitar O(n²) explosivo
+            rows = rows[:800]
+            similares = []
+            seen = set()
+            for i in range(len(rows)):
+                cod_i, nc_i, _ = rows[i]
+                nc_i_norm = (nc_i or '').strip().lower()
+                if len(nc_i_norm) < 5:
                     continue
-                if nc_i_norm == nc_j_norm:
-                    continue  # exacto ya capturado en check #5
-                # Filtro rápido: longitudes muy distintas → skip
-                if abs(len(nc_i_norm) - len(nc_j_norm)) > 4:
-                    continue
-                ratio = _diff.SequenceMatcher(None, nc_i_norm, nc_j_norm).ratio()
-                if ratio >= 0.85:
-                    pair = tuple(sorted([cod_i, cod_j]))
-                    if pair in seen:
+                for j in range(i+1, len(rows)):
+                    cod_j, nc_j, _ = rows[j]
+                    nc_j_norm = (nc_j or '').strip().lower()
+                    if len(nc_j_norm) < 5:
                         continue
-                    seen.add(pair)
-                    similares.append({
-                        'codigos': list(pair),
-                        'nombres': [nc_i, nc_j],
-                        'similaridad': round(ratio, 3),
-                    })
-                    if len(similares) >= 30:
-                        break
-            if len(similares) >= 30:
-                break
-        findings['baja']['nombres_similares_fuzzy'] = similares
-    except Exception as e:
-        findings['baja']['fuzzy_err'] = str(e)[:200]
+                    if nc_i_norm == nc_j_norm:
+                        continue
+                    if abs(len(nc_i_norm) - len(nc_j_norm)) > 4:
+                        continue
+                    ratio = _diff.SequenceMatcher(None, nc_i_norm, nc_j_norm).ratio()
+                    if ratio >= 0.85:
+                        pair = tuple(sorted([cod_i, cod_j]))
+                        if pair in seen:
+                            continue
+                        seen.add(pair)
+                        similares.append({
+                            'codigos': list(pair),
+                            'nombres': [nc_i, nc_j],
+                            'similaridad': round(ratio, 3),
+                        })
+                        if len(similares) >= 30:
+                            break
+                if len(similares) >= 30:
+                    break
+            findings['baja']['nombres_similares_fuzzy'] = similares
+        except Exception as e:
+            findings['baja']['fuzzy_err'] = str(e)[:200]
 
     conn.close()
 
@@ -11006,7 +11020,7 @@ function renderGruposFusion(arr, tipoKey){
     html+='<td style="font-family:monospace;font-size:11px">'+esc(codigos.join(', '))+'</td>';
     html+='<td>'+esc(variantes)+'</td>';
     html+='<td style="text-align:center">'+
-          '<button onclick="abrirModalFusion(\''+esc(key)+'\')" '+
+          '<button onclick="abrirModalFusion(\\''+esc(key)+'\\')" '+
           'style="background:#7c3aed;color:white;border:none;padding:5px 12px;'+
           'border-radius:4px;cursor:pointer;font-size:11px;font-weight:700">'+
           '🔀 Fusionar</button></td>';
@@ -11037,8 +11051,8 @@ function abrirModalFusion(key){
     return '<label style="display:flex;align-items:center;gap:10px;padding:10px;'+
            'border:2px solid #e2e8f0;border-radius:6px;margin-bottom:8px;cursor:pointer;'+
            'font-family:monospace" '+
-           'onmouseover="this.style.borderColor=\'#7c3aed\';this.style.background=\'#faf5ff\'" '+
-           'onmouseout="this.style.borderColor=\'#e2e8f0\';this.style.background=\'white\'">'+
+           'onmouseover="this.style.borderColor=\\'#7c3aed\\';this.style.background=\\'#faf5ff\\'" '+
+           'onmouseout="this.style.borderColor=\\'#e2e8f0\\';this.style.background=\\'white\\'">'+
            '<input type="radio" name="fusion-canonico" value="'+esc(cod)+'" '+
            'style="margin:0"><span style="font-weight:700">'+esc(cod)+'</span></label>';
   }).join('');
@@ -11057,7 +11071,7 @@ function abrirModalFusion(key){
     '<input type="text" id="fusion-motivo" placeholder="Ej: casing inconsistente · auditoría 10-may" '+
     'style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px"></div>'+
     '<div style="display:flex;gap:8px;justify-content:flex-end">'+
-    '<button onclick="document.getElementById(\'modal-fusion\').remove()" '+
+    '<button onclick="document.getElementById(\\'modal-fusion\\').remove()" '+
     'style="background:#94a3b8;color:white;border:none;padding:8px 16px;border-radius:6px;'+
     'cursor:pointer;font-weight:700">Cancelar</button>'+
     '<button onclick="ejecutarFusion()" id="btn-ejecutar-fusion" '+
