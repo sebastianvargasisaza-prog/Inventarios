@@ -16744,6 +16744,161 @@ def reporte_audit_trail_csv():
     )
 
 
+@bp.route("/api/admin/producciones-inconsistentes", methods=["GET"])
+def producciones_inconsistentes():
+    """Detecta producciones en estado inconsistente · candidatas a recovery.
+
+    Sebastián 8-may-2026 T4.2: cuando una producción falla a mitad
+    (red caída, stock insuficiente intermedio, error operativo), puede
+    quedar en estado raro. Este endpoint las detecta para recovery.
+
+    Categorías:
+      - PROGRAMADA_INICIADA_SIN_DESCUENTO:
+          produccion_programada con inicio_real_at IS NOT NULL pero
+          inventario_descontado_at IS NULL · iniciada formalmente sin
+          haber descontado · bug crítico INVIMA
+      - PROGRAMADA_DESCONTADA_SIN_TERMINAR:
+          inventario_descontado_at IS NOT NULL pero fin_real_at IS NULL
+          desde hace >7d · producción "fantasma" que se inició y descontó
+          MPs pero nunca se completó · stock comprometido
+      - LEGACY_SIN_MOVS:
+          producciones legacy estado=Completado pero sin movs Salida
+          relacionados (busqueda por PROD-XXXXX o producto en obs)
+      - LEGACY_STOCK_NEGATIVO_DESPUES:
+          producción legacy que dejó stock NEGATIVO en alguna MP
+          (operación válida no podría dejar stock negativo)
+
+    Returns: { inconsistencias: [...], total, por_tipo }
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("PRAGMA busy_timeout=2000")
+    c = conn.cursor()
+    inconsistencias = []
+
+    try:
+        # 1. Programada iniciada sin descuento
+        try:
+            rows = c.execute("""
+                SELECT id, producto, fecha_programada, lotes, inicio_real_at
+                FROM produccion_programada
+                WHERE inicio_real_at IS NOT NULL
+                  AND (inventario_descontado_at IS NULL OR inventario_descontado_at = '')
+                ORDER BY inicio_real_at DESC
+                LIMIT 50
+            """).fetchall()
+            for r in rows:
+                inconsistencias.append({
+                    'tipo': 'PROGRAMADA_INICIADA_SIN_DESCUENTO',
+                    'severidad': 'alta',
+                    'id': r[0], 'producto': r[1],
+                    'fecha': r[2], 'detalle': f'iniciada {r[4]} pero sin descontar inventario',
+                    'tabla': 'produccion_programada',
+                })
+        except Exception:
+            pass
+
+        # 2. Programada descontada sin terminar (>7d)
+        try:
+            rows = c.execute("""
+                SELECT id, producto, inicio_real_at, inventario_descontado_at
+                FROM produccion_programada
+                WHERE inventario_descontado_at IS NOT NULL
+                  AND (fin_real_at IS NULL OR fin_real_at = '')
+                  AND date(inventario_descontado_at) < date('now', '-7 days')
+                ORDER BY inventario_descontado_at DESC
+                LIMIT 50
+            """).fetchall()
+            for r in rows:
+                inconsistencias.append({
+                    'tipo': 'PROGRAMADA_DESCONTADA_SIN_TERMINAR',
+                    'severidad': 'media',
+                    'id': r[0], 'producto': r[1],
+                    'fecha': r[2], 'detalle': f'descontada {r[3]} pero sin fin_real_at hace > 7 días',
+                    'tabla': 'produccion_programada',
+                })
+        except Exception:
+            pass
+
+        # 3. Legacy sin movs Salida
+        legacy_rows = c.execute("""
+            SELECT p.id, p.producto, p.fecha, p.cantidad, p.lote,
+                   (SELECT COUNT(*) FROM movimientos
+                     WHERE tipo='Salida'
+                       AND (observaciones LIKE '%PROD-' || printf('%05d', p.id) || '%'
+                            OR (p.lote IS NOT NULL AND p.lote != '' AND
+                                observaciones LIKE '%' || p.lote || '%')))
+                   AS n_movs,
+                   (SELECT COUNT(*) FROM formula_items
+                     WHERE producto_nombre = p.producto) AS n_formula
+            FROM producciones p
+            WHERE p.estado IN ('Completado', 'Terminado')
+              AND date(p.fecha) >= date('now', '-180 days')
+            ORDER BY p.fecha DESC
+            LIMIT 100
+        """).fetchall()
+        for r in legacy_rows:
+            pid, producto, fecha, cant, lote, n_movs, n_form = r
+            if (n_form or 0) > 0 and (n_movs or 0) == 0:
+                inconsistencias.append({
+                    'tipo': 'LEGACY_SIN_MOVS',
+                    'severidad': 'alta',
+                    'id': pid, 'producto': producto,
+                    'fecha': fecha, 'cantidad_kg': cant,
+                    'detalle': f'completada pero sin movs Salida · {n_form} items en fórmula',
+                    'tabla': 'producciones',
+                })
+
+        # 4. MPs con stock negativo (usa helper existente)
+        try:
+            from inventario_helpers import detect_drift_mp
+            mp_neg = detect_drift_mp(conn)
+            for mp in mp_neg[:30]:
+                inconsistencias.append({
+                    'tipo': 'STOCK_NEGATIVO_MP',
+                    'severidad': 'alta',
+                    'codigo_mp': mp.get('codigo_mp'),
+                    'nombre': mp.get('nombre'),
+                    'stock_g': mp.get('stock_g'),
+                    'detalle': f'MP {mp.get("codigo_mp")} con stock {mp.get("stock_g")}g (imposible)',
+                    'tabla': 'movimientos',
+                })
+        except Exception:
+            pass
+
+        conn.close()
+
+        por_tipo = {}
+        for inc in inconsistencias:
+            por_tipo[inc['tipo']] = por_tipo.get(inc['tipo'], 0) + 1
+
+        return jsonify({
+            'ok': True,
+            'total': len(inconsistencias),
+            'por_tipo': por_tipo,
+            'inconsistencias': inconsistencias,
+            'mensaje_recovery': (
+                'Para cada inconsistencia, según tipo:\n'
+                '  PROGRAMADA_INICIADA_SIN_DESCUENTO: completar descuento manual O '
+                'marcar como cancelada vía /api/programacion/<id>/cancelar\n'
+                '  PROGRAMADA_DESCONTADA_SIN_TERMINAR: marcar fin_real_at = ahora O '
+                'cancelar+reentrada compensatoria\n'
+                '  LEGACY_SIN_MOVS: usar /api/admin/reconciliar-produccion-mp para '
+                'crear salidas retroactivas\n'
+                '  STOCK_NEGATIVO_MP: investigar via /api/admin/investigar-mp/<cod> '
+                'y reconciliar via mov Ajuste'
+            ),
+        }), 200
+
+    except Exception as e:
+        conn.close()
+        return jsonify({'error': 'falla query',
+                        'detail': str(e)[:300]}), 500
+
+
 @bp.route("/api/admin/asignar-operador-bulk", methods=["POST"])
 def asignar_operador_bulk():
     """Asigna operador a movimientos sin operador (trazabilidad INVIMA).

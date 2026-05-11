@@ -3998,3 +3998,21 @@ def test_golden_zero_error_historial(app, db_clean):
 
     finally:
         _exec("DELETE FROM audit_zero_error_runs WHERE origen='cron' AND score_real IN (85.0, 95.0)")
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 86 · Producciones inconsistentes · recovery wizard
+# ═══════════════════════════════════════════════════════════════════
+
+def test_golden_producciones_inconsistentes(app, db_clean):
+    cs = _login(app, 'sebastian')
+
+    r = cs.get('/api/admin/producciones-inconsistentes')
+    assert r.status_code == 200, \
+        f'BUG: producciones-inconsistentes caido · {r.status_code} {r.data}'
+    d = r.get_json() or {}
+    assert d.get('ok'), f'response sin ok: {d}'
+    assert 'inconsistencias' in d
+    assert 'por_tipo' in d
+    assert 'mensaje_recovery' in d
+    assert isinstance(d['inconsistencias'], list)
