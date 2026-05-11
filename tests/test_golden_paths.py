@@ -4054,3 +4054,78 @@ def test_golden_actualizar_inci_bulk(app, db_clean):
         assert len(d2['rechazados']) == 1
     finally:
         _exec("DELETE FROM maestro_mps WHERE codigo_mp=?", (mp,))
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 88 · Auditoria FEFO + descuento matemático
+# ═══════════════════════════════════════════════════════════════════
+
+def test_golden_auditoria_fefo_descuento(app, db_clean):
+    cs = _login(app, 'sebastian')
+    r = cs.get('/api/admin/auditoria-fefo-descuento?dias=30')
+    assert r.status_code == 200, \
+        f'BUG: endpoint caido · {r.status_code} {r.data}'
+    d = r.get_json() or {}
+    assert d.get('ok')
+    assert 'veredicto' in d
+    assert 'score_descuento' in d
+    assert 'score_fefo' in d
+    assert 'drifts_cantidad' in d
+    assert 'violaciones_fefo' in d
+    assert d['veredicto'] in ('PERFECTA', 'MENOR', 'BLOQUEANTE')
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 89 · _distribuir_fefo respeta orden por fecha_vencimiento
+# ═══════════════════════════════════════════════════════════════════
+
+def test_golden_distribuir_fefo_orden(app, db_clean):
+    """Verifica que _distribuir_fefo consume primero el lote con fv más cercana."""
+    import sqlite3 as _sql
+    mp = 'GP89-MP-FEFO'
+    _exec("""INSERT OR REPLACE INTO maestro_mps
+              (codigo_mp, nombre_comercial, activo, tipo_material)
+              VALUES (?, 'MP FEFO test', 1, 'MP')""", (mp,))
+    # Lote A · fv lejana 2028
+    _exec("""INSERT INTO movimientos
+              (material_id, material_nombre, cantidad, tipo, fecha, lote,
+               fecha_vencimiento, estado_lote, operador)
+              VALUES (?, 'MP FEFO test', 1000, 'Entrada', date('now','-30 days'),
+                      'GP89-LOTE-LEJANA', '2028-12-31', 'VIGENTE', 'gp89')""",
+          (mp,))
+    # Lote B · fv cercana 2026 (debería usarse PRIMERO por FEFO)
+    _exec("""INSERT INTO movimientos
+              (material_id, material_nombre, cantidad, tipo, fecha, lote,
+               fecha_vencimiento, estado_lote, operador)
+              VALUES (?, 'MP FEFO test', 500, 'Entrada', date('now','-20 days'),
+                      'GP89-LOTE-CERCANA', '2026-08-01', 'VIGENTE', 'gp89')""",
+          (mp,))
+
+    try:
+        # Llamar _distribuir_fefo directamente
+        from blueprints.programacion import _distribuir_fefo
+        conn = _sql.connect(os.environ['DB_PATH'])
+        distrib = _distribuir_fefo(conn.cursor(), mp, 300)
+        conn.close()
+
+        # Debe usar PRIMERO el lote con fv más cercana (2026-08-01)
+        assert len(distrib) >= 1, 'distrib vacía'
+        primer = distrib[0]
+        assert primer['lote'] == 'GP89-LOTE-CERCANA', \
+            f'BUG FEFO: primer lote consumido debió ser CERCANA · got {primer["lote"]}'
+        assert primer['cantidad'] == 300, \
+            f'BUG: cantidad incorrecta · {primer["cantidad"]}'
+
+        # Si pido más de lo que tiene el cercano, debe ir al lejano
+        conn2 = _sql.connect(os.environ['DB_PATH'])
+        distrib2 = _distribuir_fefo(conn2.cursor(), mp, 800)
+        conn2.close()
+        assert len(distrib2) == 2, f'esperaba 2 lotes · {distrib2}'
+        assert distrib2[0]['lote'] == 'GP89-LOTE-CERCANA'
+        assert distrib2[0]['cantidad'] == 500  # todo el cercano
+        assert distrib2[1]['lote'] == 'GP89-LOTE-LEJANA'
+        assert distrib2[1]['cantidad'] == 300  # resto del lejano
+
+    finally:
+        _exec("DELETE FROM movimientos WHERE material_id=?", (mp,))
+        _exec("DELETE FROM maestro_mps WHERE codigo_mp=?", (mp,))

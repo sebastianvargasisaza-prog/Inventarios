@@ -16910,6 +16910,221 @@ def producciones_inconsistentes():
                         'detail': str(e)[:300]}), 500
 
 
+@bp.route("/api/admin/auditoria-fefo-descuento", methods=["GET"])
+def auditoria_fefo_descuento():
+    """Audit matemático · descuento exacto + FEFO respetado.
+
+    Sebastián 8-may-2026: validación profunda de los 2 pilares:
+      1. Cada producción descontó cantidad EXACTA por MP (% × kg × 10 ± 5%)
+      2. Los lotes usados fueron los más cercanos a vencer al momento (FEFO)
+
+    Para cada producción legacy reciente (último N días, con cantidad > 0):
+      Para cada item de fórmula:
+        a. ESPERADO_g = porcentaje × cant_kg × 10
+        b. REAL_g = SUM(movs Salida con observaciones match producción)
+        c. drift_pct = |REAL - ESPERADO| / ESPERADO × 100
+        d. Si drift > 5% → DRIFT_CANTIDAD
+        e. Para cada lote usado en las Salidas:
+           - Identificar fecha_vencimiento del lote
+           - Buscar OTROS lotes de la misma MP que tenían stock al momento
+             y fecha_vencimiento MENOR (más cercana). Si los había
+             y NO se usaron primero → FEFO_VIOLADO
+
+    Query params:
+      dias: int (default 180, max 365)
+
+    Returns: {ok, score_fefo, score_descuento, violaciones_fefo[], drifts_cantidad[]}
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    try:
+        dias = int(request.args.get('dias', 180))
+        if dias < 1: dias = 1
+        if dias > 365: dias = 365
+    except Exception:
+        dias = 180
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("PRAGMA busy_timeout=2000")
+    c = conn.cursor()
+
+    violaciones_fefo = []
+    drifts_cantidad = []
+    n_producciones = 0
+    n_items_auditados = 0
+    n_descuentos_ok = 0
+
+    try:
+        # Producciones legacy recientes (con snapshot si existe)
+        try:
+            prod_rows = c.execute("""
+                SELECT id, producto, cantidad, fecha, lote, formula_snapshot_json
+                FROM producciones
+                WHERE date(fecha) >= date('now', '-' || ? || ' days')
+                  AND COALESCE(cantidad, 0) > 0
+                ORDER BY fecha DESC
+                LIMIT 50
+            """, (dias,)).fetchall()
+        except sqlite3.OperationalError:
+            prod_rows = [(*r, None) for r in c.execute("""
+                SELECT id, producto, cantidad, fecha, lote
+                FROM producciones
+                WHERE date(fecha) >= date('now', '-' || ? || ' days')
+                  AND COALESCE(cantidad, 0) > 0
+                ORDER BY fecha DESC
+                LIMIT 50
+            """, (dias,)).fetchall()]
+
+        import json as _json_a
+        for row in prod_rows:
+            pid, producto, cant_kg, fecha_prod, lote_prod, snap_json = row
+            cant_kg = float(cant_kg or 0)
+            if cant_kg <= 0:
+                continue
+            n_producciones += 1
+
+            # Usar snapshot si existe (anti drift retroactivo)
+            items_formula = None
+            if snap_json:
+                try:
+                    parsed = _json_a.loads(snap_json)
+                    items_formula = [(p['material_id'],
+                                       p.get('material_nombre', ''),
+                                       p.get('porcentaje', 0)) for p in parsed]
+                except Exception:
+                    pass
+            if items_formula is None:
+                items_formula = c.execute("""
+                    SELECT material_id, material_nombre, porcentaje
+                    FROM formula_items WHERE producto_nombre = ?
+                """, (producto,)).fetchall()
+            if not items_formula:
+                continue
+
+            lote_pat = f'PROD-{pid:05d}'
+
+            for mid, nom_form, pct in items_formula:
+                pct = float(pct or 0)
+                if pct <= 0:
+                    continue
+                n_items_auditados += 1
+
+                # 1. ESPERADO vs REAL
+                esperado_g = pct * cant_kg * 10
+                movs_sal = c.execute("""
+                    SELECT id, cantidad, lote, fecha, fecha_vencimiento
+                    FROM movimientos
+                    WHERE material_id = ? AND tipo = 'Salida'
+                      AND (observaciones LIKE ?
+                           OR observaciones LIKE ?)
+                """, (mid, f'%{lote_pat}%',
+                       f'Producción INICIADA: {producto}%')).fetchall()
+
+                real_g = sum(float(m[1] or 0) for m in movs_sal)
+                if esperado_g > 0.01:
+                    drift_pct = abs(real_g - esperado_g) / esperado_g * 100
+                    if drift_pct > 5:
+                        drifts_cantidad.append({
+                            'produccion_id': pid,
+                            'producto': producto,
+                            'material_id': mid,
+                            'nombre': nom_form,
+                            'esperado_g': round(esperado_g, 2),
+                            'real_g': round(real_g, 2),
+                            'drift_pct': round(drift_pct, 2),
+                        })
+                        continue
+                    else:
+                        n_descuentos_ok += 1
+
+                # 2. FEFO · para cada lote usado
+                for mov in movs_sal:
+                    mov_id, cant_mov, lote_usado, fecha_mov, fv_usado = mov
+                    if not lote_usado:
+                        continue
+                    # Reconstruir lotes disponibles al momento del mov
+                    # (con stock > 0 antes de esta Salida)
+                    otros_lotes = c.execute("""
+                        SELECT lote,
+                               MAX(fecha_vencimiento) AS fv,
+                               SUM(CASE WHEN tipo='Entrada' AND fecha < ?
+                                        THEN cantidad
+                                        WHEN tipo='Salida' AND fecha < ?
+                                        THEN -cantidad
+                                        ELSE 0 END) AS stock_antes
+                        FROM movimientos
+                        WHERE material_id = ?
+                          AND COALESCE(lote, '') != ''
+                          AND COALESCE(lote, '') != ?
+                        GROUP BY lote
+                        HAVING stock_antes > 0
+                    """, (fecha_mov, fecha_mov, mid, lote_usado)).fetchall()
+
+                    fv_usado_str = (fv_usado or '9999-12-31')
+                    for other_lote, other_fv, other_stock in otros_lotes:
+                        other_fv_str = (other_fv or '9999-12-31')
+                        if other_fv_str < fv_usado_str:
+                            # Había otro lote con fv MÁS cercana · FEFO violado
+                            violaciones_fefo.append({
+                                'produccion_id': pid,
+                                'producto': producto,
+                                'material_id': mid,
+                                'mov_id': mov_id,
+                                'lote_usado': lote_usado,
+                                'fv_usado': fv_usado,
+                                'lote_correcto_fefo': other_lote,
+                                'fv_correcto_fefo': other_fv,
+                                'stock_correcto_disponible': round(float(other_stock), 2),
+                                'fecha_mov': fecha_mov,
+                            })
+                            break
+
+        # Scores
+        score_descuento = (
+            100.0 if n_items_auditados == 0
+            else max(0, 100.0 - 100.0 * len(drifts_cantidad) / n_items_auditados)
+        )
+        score_fefo = (
+            100.0 if n_items_auditados == 0
+            else max(0, 100.0 - 100.0 * len(violaciones_fefo) / max(n_items_auditados, 1))
+        )
+        score_descuento = round(score_descuento, 1)
+        score_fefo = round(score_fefo, 1)
+
+        if len(violaciones_fefo) == 0 and len(drifts_cantidad) == 0:
+            veredicto = 'PERFECTA'
+        elif len(violaciones_fefo) + len(drifts_cantidad) <= 3:
+            veredicto = 'MENOR'
+        else:
+            veredicto = 'BLOQUEANTE'
+
+        conn.close()
+        return jsonify({
+            'ok': True,
+            'veredicto': veredicto,
+            'score_descuento': score_descuento,
+            'score_fefo': score_fefo,
+            'resumen': {
+                'n_producciones_auditadas': n_producciones,
+                'n_items_auditados': n_items_auditados,
+                'n_descuentos_ok': n_descuentos_ok,
+                'n_drifts_cantidad': len(drifts_cantidad),
+                'n_violaciones_fefo': len(violaciones_fefo),
+            },
+            'drifts_cantidad': drifts_cantidad[:50],
+            'violaciones_fefo': violaciones_fefo[:50],
+            'message': (f'FEFO+Descuento: {veredicto} · descuento {score_descuento}/100 · '
+                        f'FEFO {score_fefo}/100 · {n_items_auditados} items en {n_producciones} producciones'),
+        }), 200
+
+    except Exception as e:
+        conn.close()
+        return jsonify({'error': 'falla auditoria FEFO',
+                        'detail': str(e)[:300]}), 500
+
+
 @bp.route("/api/admin/mp-actualizar-inci", methods=["POST"])
 def mp_actualizar_inci():
     """Actualiza nombre_inci de una MP · audit_log.
