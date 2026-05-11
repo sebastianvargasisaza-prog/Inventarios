@@ -3802,3 +3802,92 @@ def test_golden_cron_validacion_profunda(app, db_clean):
     # Debe retornar score y veredicto
     assert 'score_real' in resultado or 'mensaje' in resultado, \
         f'response incompleto: {resultado}'
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 82 · Snapshot fórmula E2E · anti drift retroactivo
+# ═══════════════════════════════════════════════════════════════════
+# Verifica el comportamiento crítico del Tier 1 T2:
+# 1. Producción se ejecuta con fórmula V1 · snapshot V1 se guarda
+# 2. Fórmula se modifica a V2 (agregando MP nueva)
+# 3. validacion-profunda usa SNAPSHOT V1 (no V2) · NO marca drift falso
+
+def test_golden_snapshot_formula_anti_drift_retroactivo(app, db_clean):
+    cs = _login(app, 'sebastian')
+
+    prod_name = 'GP82-PROD-SNAP-TEST'
+    mp_orig = 'GP82-MP-ORIG'
+    mp_nuevo = 'GP82-MP-AGREGADO-POST'
+
+    # Setup: 2 MPs con stock
+    for cod, nom in [(mp_orig, 'MP original'),
+                      (mp_nuevo, 'MP agregada después')]:
+        _exec("""INSERT OR REPLACE INTO maestro_mps
+                  (codigo_mp, nombre_comercial, activo, tipo_material)
+                  VALUES (?, ?, 1, 'MP')""",
+              (cod, nom))
+        _exec("""INSERT INTO movimientos
+                  (material_id, material_nombre, cantidad, tipo, fecha,
+                   lote, estado_lote, operador)
+                  VALUES (?, ?, 10000, 'Entrada', date('now'),
+                          'LOTE-SNAP', 'VIGENTE', 'gp82')""",
+              (cod, nom))
+
+    # Fórmula V1: SOLO mp_orig al 1%
+    _exec("""INSERT INTO formula_items
+              (producto_nombre, material_id, material_nombre, porcentaje)
+              VALUES (?, ?, 'MP original', 1.0)""",
+          (prod_name, mp_orig))
+
+    # Producción con fórmula V1 · guarda snapshot
+    prod_id = _exec("""INSERT INTO producciones
+                  (producto, cantidad, fecha, estado, lote, operador)
+                  VALUES (?, 10, date('now'), 'Completado',
+                          'PROD-GP82', 'gp82')""",
+                (prod_name,))
+    # Simular snapshot · en flujo real lo crea el endpoint /api/producciones
+    import json as _json
+    snap_v1 = [{'material_id': mp_orig, 'material_nombre': 'MP original',
+                 'porcentaje': 1.0}]
+    _exec("UPDATE producciones SET formula_snapshot_json=? WHERE id=?",
+          (_json.dumps(snap_v1), prod_id))
+    # Mov Salida real con formula V1 (1% de 10kg = 100g de mp_orig)
+    _exec("""INSERT INTO movimientos
+              (material_id, material_nombre, cantidad, tipo, fecha,
+               lote, observaciones, operador)
+              VALUES (?, 'MP original', 100, 'Salida', date('now'),
+                      'LOTE-SNAP',
+                      ?, 'gp82')""",
+          (mp_orig, f'FEFO:PROD-{prod_id:05d}:{prod_name} x 10kg'))
+
+    # Modificar fórmula AL V2: agregar mp_nuevo al 2%
+    _exec("""INSERT INTO formula_items
+              (producto_nombre, material_id, material_nombre, porcentaje)
+              VALUES (?, ?, 'MP agregada después', 2.0)""",
+          (prod_name, mp_nuevo))
+
+    try:
+        # validacion-profunda debe usar snapshot V1 · NO debe reportar
+        # drift para mp_nuevo (porque NO existía en formula V1).
+        r = cs.get('/api/admin/validacion-profunda')
+        assert r.status_code == 200
+        d = r.get_json() or {}
+        drifts = [h for h in d.get('hallazgos', [])
+                   if h.get('tipo') == 'DESCUENTO_DRIFT_PRODUCCION'
+                   and h.get('datos', {}).get('produccion_id') == prod_id]
+        # Si snapshot funciona: NO debe haber drift para esta producción
+        # (snapshot solo tiene mp_orig que sí se descontó correctamente)
+        drift_mp_nuevo = [d2 for d2 in drifts
+                           if d2.get('datos', {}).get('material_id') == mp_nuevo]
+        assert not drift_mp_nuevo, \
+            (f'BUG: snapshot no respetado · audit reportó drift de '
+             f'mp_nuevo agregada POST-producción · {drift_mp_nuevo}')
+
+    finally:
+        _exec("DELETE FROM movimientos WHERE material_id IN (?,?)",
+              (mp_orig, mp_nuevo))
+        _exec("DELETE FROM formula_items WHERE producto_nombre=?",
+              (prod_name,))
+        _exec("DELETE FROM producciones WHERE id=?", (prod_id,))
+        _exec("DELETE FROM maestro_mps WHERE codigo_mp IN (?,?)",
+              (mp_orig, mp_nuevo))
