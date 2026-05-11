@@ -1470,6 +1470,107 @@ def test_golden_mfa_endpoint(app, db_clean):
 
 
 # ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 60 · INV-11 · FK enforcement formula_items → maestro_mps
+# ═══════════════════════════════════════════════════════════════════
+# Sebastián 10-may-2026: tras normalizar huérfanos en formula_items
+# (panel /admin/normalizar-formulas), migración 98 enforce FK con
+# trigger BD. NUNCA se podrá crear un formula_item con material_id
+# que no exista en maestro_mps activo · cero huérfanos a futuro.
+
+def test_golden_fk_enforcement_formula_items(app, db_clean):
+    """Trigger trg_fi_material_id_fk rechaza inserts con material_id
+    inexistente o archivado."""
+    import sqlite3
+    db = os.environ['DB_PATH']
+
+    # 1. Insert con material_id INEXISTENTE → ABORT
+    conn = sqlite3.connect(db)
+    try:
+        conn.execute("""INSERT INTO formula_items
+                       (producto_nombre, material_id, material_nombre, porcentaje)
+                       VALUES ('TEST-FK','MP-INEXISTENTE-999','Test',10)""")
+        conn.commit()
+        assert False, 'BUG: FK trigger debió bloquear material_id inexistente'
+    except sqlite3.IntegrityError as e:
+        assert 'no existe en maestro_mps' in str(e).lower() or 'fk violation' in str(e).lower(), \
+            f'mensaje raro: {e}'
+    finally:
+        conn.close()
+
+    # 2. Insert con material_id ARCHIVADO → ABORT
+    conn = sqlite3.connect(db)
+    try:
+        # Crear y archivar una MP
+        conn.execute("""INSERT OR REPLACE INTO maestro_mps
+                       (codigo_mp, nombre_comercial, activo, tipo_material)
+                       VALUES ('FK-TEST-ARCHIVED','Archivada',0,'MP')""")
+        conn.commit()
+        conn.execute("""INSERT INTO formula_items
+                       (producto_nombre, material_id, material_nombre, porcentaje)
+                       VALUES ('TEST-FK','FK-TEST-ARCHIVED','Archivada',10)""")
+        conn.commit()
+        assert False, 'BUG: FK trigger debió bloquear material_id archivado (activo=0)'
+    except sqlite3.IntegrityError as e:
+        assert 'no existe en maestro_mps' in str(e).lower()
+    finally:
+        # Cleanup
+        try:
+            conn2 = sqlite3.connect(db)
+            conn2.execute("DELETE FROM maestro_mps WHERE codigo_mp='FK-TEST-ARCHIVED'")
+            conn2.commit(); conn2.close()
+        except Exception:
+            pass
+        conn.close()
+
+    # 3. SANITY: insert con material_id VÁLIDO sí se inserta
+    conn = sqlite3.connect(db)
+    try:
+        conn.execute("""INSERT OR REPLACE INTO maestro_mps
+                       (codigo_mp, nombre_comercial, activo, tipo_material)
+                       VALUES ('FK-TEST-OK','Test FK OK',1,'MP')""")
+        conn.commit()
+        conn.execute("""INSERT INTO formula_items
+                       (producto_nombre, material_id, material_nombre, porcentaje)
+                       VALUES ('TEST-FK-OK','FK-TEST-OK','Test FK OK',5)""")
+        conn.commit()
+        # Cleanup
+        conn.execute("DELETE FROM formula_items WHERE producto_nombre='TEST-FK-OK'")
+        conn.execute("DELETE FROM maestro_mps WHERE codigo_mp='FK-TEST-OK'")
+        conn.commit()
+    except Exception as e:
+        conn.close()
+        assert False, f'formula_item válido NO debería fallar: {e}'
+    conn.close()
+
+    # 4. UPDATE: cambiar material_id a uno inexistente → ABORT
+    conn = sqlite3.connect(db)
+    try:
+        # Crear MP válida y formula_item válido
+        conn.execute("""INSERT OR REPLACE INTO maestro_mps
+                       (codigo_mp, nombre_comercial, activo, tipo_material)
+                       VALUES ('FK-UPD-OK','Test',1,'MP')""")
+        conn.execute("""INSERT INTO formula_items
+                       (producto_nombre, material_id, material_nombre, porcentaje)
+                       VALUES ('TEST-FK-UPD','FK-UPD-OK','Test',5)""")
+        conn.commit()
+        # Intentar UPDATE a id inexistente
+        try:
+            conn.execute("""UPDATE formula_items
+                           SET material_id='NO-EXISTE-FK'
+                           WHERE producto_nombre='TEST-FK-UPD'""")
+            conn.commit()
+            assert False, 'BUG: UPDATE a material_id inexistente debió bloquear'
+        except sqlite3.IntegrityError:
+            pass  # esperado
+        # Cleanup
+        conn.execute("DELETE FROM formula_items WHERE producto_nombre='TEST-FK-UPD'")
+        conn.execute("DELETE FROM maestro_mps WHERE codigo_mp='FK-UPD-OK'")
+        conn.commit()
+    finally:
+        conn.close()
+
+
+# ═══════════════════════════════════════════════════════════════════
 # GOLDEN PATH 59 · INV-10 · Triggers BD que IMPIDEN violar invariantes
 # ═══════════════════════════════════════════════════════════════════
 # Sebastián 10-may-2026 (visión cero-error): "fórmulas perfectas,
@@ -1526,12 +1627,25 @@ def test_golden_triggers_bd_invariantes_planta(app, db_clean):
     finally:
         conn.close()
 
-    # Trigger 4: porcentaje > 100 → ABORT
+    # Trigger 4 & 5: porcentaje fuera de rango → ABORT
+    # Necesita material_id VÁLIDO (existe en maestro_mps) para que el FK
+    # trigger no rechace antes del check de porcentaje (post-migración 98).
+    conn = sqlite3.connect(db)
+    try:
+        conn.execute("""INSERT OR REPLACE INTO maestro_mps
+                       (codigo_mp, nombre_comercial, activo, tipo_material)
+                       VALUES ('TRG-MP-VALID','Test',1,'MP')""")
+        conn.commit()
+    except Exception:
+        pass
+    finally:
+        conn.close()
+    # 4. porcentaje > 100 → ABORT
     conn = sqlite3.connect(db)
     try:
         conn.execute("""INSERT INTO formula_items
                        (producto_nombre, material_id, material_nombre, porcentaje)
-                       VALUES ('TRG-PROD','TRG-MP','Test',150)""")
+                       VALUES ('TRG-PROD','TRG-MP-VALID','Test',150)""")
         conn.commit()
         assert False, 'BUG: trigger porcentaje >100 debió bloquear'
     except sqlite3.IntegrityError as e:
@@ -1539,17 +1653,24 @@ def test_golden_triggers_bd_invariantes_planta(app, db_clean):
     finally:
         conn.close()
 
-    # Trigger 5: porcentaje negativo → ABORT
+    # 5. porcentaje negativo → ABORT
     conn = sqlite3.connect(db)
     try:
         conn.execute("""INSERT INTO formula_items
                        (producto_nombre, material_id, material_nombre, porcentaje)
-                       VALUES ('TRG-PROD','TRG-MP','Test',-5)""")
+                       VALUES ('TRG-PROD','TRG-MP-VALID','Test',-5)""")
         conn.commit()
         assert False, 'BUG: trigger porcentaje negativo debió bloquear'
     except sqlite3.IntegrityError as e:
         assert 'porcentaje' in str(e).lower()
     finally:
+        # Cleanup MP de prueba
+        try:
+            c2 = sqlite3.connect(db)
+            c2.execute("DELETE FROM maestro_mps WHERE codigo_mp='TRG-MP-VALID'")
+            c2.commit(); c2.close()
+        except Exception:
+            pass
         conn.close()
 
     # Trigger 6: codigo_mp vacío en maestro_mps → ABORT

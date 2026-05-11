@@ -222,6 +222,37 @@ _AREAS_LIMPIEZA_PROFUNDA = (
 
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (98, "FK enforcement formula_items → maestro_mps (Sebastián 10-may-2026)", [
+        # Sebastián 10-may-2026: tras normalizar formula_items con remapeo
+        # bulk, AHORA es safe activar enforcement · cero huérfanos confirmado.
+        # Estos triggers garantizan que NUNCA se pueda crear/actualizar un
+        # formula_items con material_id que no exista en maestro_mps activo.
+        # Resultado: cero huérfanos a futuro · descuento de producción 100%
+        # confiable.
+        """CREATE TRIGGER IF NOT EXISTS trg_fi_material_id_fk
+        BEFORE INSERT ON formula_items
+        FOR EACH ROW
+        WHEN NEW.material_id IS NOT NULL AND TRIM(NEW.material_id) != ''
+          AND NOT EXISTS (
+            SELECT 1 FROM maestro_mps
+            WHERE codigo_mp = NEW.material_id AND activo = 1
+          )
+        BEGIN
+            SELECT RAISE(ABORT, 'material_id '||COALESCE(NEW.material_id,'NULL')||' no existe en maestro_mps activo (FK violation)');
+        END""",
+        """CREATE TRIGGER IF NOT EXISTS trg_fi_material_id_fk_upd
+        BEFORE UPDATE OF material_id ON formula_items
+        FOR EACH ROW
+        WHEN NEW.material_id IS NOT NULL AND TRIM(NEW.material_id) != ''
+          AND NEW.material_id != OLD.material_id
+          AND NOT EXISTS (
+            SELECT 1 FROM maestro_mps
+            WHERE codigo_mp = NEW.material_id AND activo = 1
+          )
+        BEGIN
+            SELECT RAISE(ABORT, 'UPDATE material_id '||COALESCE(NEW.material_id,'NULL')||' no existe en maestro_mps activo (FK violation)');
+        END""",
+    ]),
     (97, "Triggers BD invariantes Planta (Sebastián 10-may-2026 cero-error)", [
         # Trigger: BLOQUEAR movimientos con cantidad <= 0 o NULL.
         # Antes el endpoint POST /api/movimientos validaba, pero algunos
