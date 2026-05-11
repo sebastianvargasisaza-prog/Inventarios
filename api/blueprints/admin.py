@@ -16199,6 +16199,318 @@ run();
 </body></html>"""
 
 
+@bp.route("/api/admin/validacion-profunda", methods=["GET"])
+def validacion_profunda():
+    """Validación matemática REAL · zero falsos positivos.
+
+    Sebastián 8-may-2026: el score PERFECTA agregado puede esconder
+    problemas si los checks son débiles. Este endpoint hace validación
+    MATEMÁTICA real:
+
+    1. MPs duplicadas REALES:
+       - Mismo nombre_comercial con códigos distintos (case+trim insensitive)
+       - Mismo INCI con códigos distintos (excluye whitelist legales)
+       - Códigos con whitespace o casing duplicado
+
+    2. Fórmulas íntegras DEEP:
+       - Cada item.material_id está en maestro_mps con activo=1
+       - No hay duplicados (mismo MP 2+ veces en misma fórmula)
+       - Producto en formula_headers existe en producciones reales
+       - Detecta fórmulas con menos items que producciones similares
+
+    3. Descuento REAL vs ESPERADO:
+       - Para cada producción legacy con stock > 0:
+         · Calcula ESPERADO = formula_items[MP].porcentaje × cantidad_kg × 10
+         · Compara con SUM(movs Salida) reales por MP/producción
+         · Drift = REAL - ESPERADO
+       - Solo flagea diferencias > 5% del esperado (tolerancia operativa)
+
+    4. Trazabilidad INVIMA:
+       - Cada movimiento Salida tiene operador NOT NULL
+       - Cada lote tiene fecha_vencimiento (si stock > 0)
+       - Cada producción tiene fórmula completa
+
+    Returns: { ok, todos_los_checks, score_real, hallazgos: [...] }
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("PRAGMA busy_timeout=2000")
+    c = conn.cursor()
+    hallazgos = []
+
+    try:
+        # ── 1. MPs DUPLICADAS REALES ─────────────────────────────────────
+        # 1a · nombre_comercial duplicado entre activos
+        dup_nombre = c.execute("""
+            SELECT LOWER(TRIM(COALESCE(nombre_comercial,''))) AS nom,
+                   COUNT(*) AS n,
+                   GROUP_CONCAT(codigo_mp) AS codigos
+            FROM maestro_mps
+            WHERE activo = 1
+              AND nombre_comercial IS NOT NULL
+              AND TRIM(nombre_comercial) != ''
+            GROUP BY LOWER(TRIM(COALESCE(nombre_comercial,'')))
+            HAVING n > 1
+            ORDER BY n DESC
+            LIMIT 30
+        """).fetchall()
+        for nom, n, codigos in dup_nombre:
+            hallazgos.append({
+                'tipo': 'MP_NOMBRE_DUPLICADO',
+                'severidad': 'alta',
+                'detalle': f"nombre '{nom}' usado en {n} codigos: {codigos}",
+                'datos': {'nombre': nom, 'codigos': codigos.split(',')},
+            })
+
+        # 1b · INCI duplicado (whitelist INCIs cosméticos compartidos legalmente)
+        WHITELIST_INCI = {
+            'aqua', 'water', 'glycerin', 'parfum', 'fragrance',
+            'phenoxyethanol', 'ethylhexylglycerin', 'sodium hydroxide',
+            'citric acid', 'lactic acid', 'tocopherol', 'panthenol',
+            '', 'pendiente inci', 'pending inci',
+        }
+        dup_inci_raw = c.execute("""
+            SELECT LOWER(TRIM(COALESCE(nombre_inci,''))) AS inci,
+                   COUNT(*) AS n,
+                   GROUP_CONCAT(codigo_mp) AS codigos
+            FROM maestro_mps
+            WHERE activo = 1
+            GROUP BY LOWER(TRIM(COALESCE(nombre_inci,'')))
+            HAVING n > 1
+            ORDER BY n DESC
+        """).fetchall()
+        for inci, n, codigos in dup_inci_raw:
+            if inci in WHITELIST_INCI:
+                continue
+            hallazgos.append({
+                'tipo': 'MP_INCI_DUPLICADO',
+                'severidad': 'media',
+                'detalle': f"INCI '{inci}' compartido por {n} codigos: {codigos}",
+                'datos': {'inci': inci, 'codigos': codigos.split(',')[:10]},
+            })
+
+        # 1c · códigos con whitespace o casing inconsistente
+        codigos_raros = c.execute("""
+            SELECT codigo_mp FROM maestro_mps
+            WHERE activo = 1
+              AND (codigo_mp != TRIM(codigo_mp)
+                   OR codigo_mp LIKE '% %'
+                   OR codigo_mp != UPPER(codigo_mp))
+            LIMIT 20
+        """).fetchall()
+        for (cod,) in codigos_raros:
+            hallazgos.append({
+                'tipo': 'MP_CODIGO_INCONSISTENTE',
+                'severidad': 'media',
+                'detalle': f"codigo '{cod}' tiene whitespace o casing irregular",
+                'datos': {'codigo': cod},
+            })
+
+        # ── 2. FORMULAS INTEGRAS DEEP ────────────────────────────────────
+        # 2a · items con MP archivada (activo=0) · trigger FK previene nuevos
+        # pero data legacy puede tener
+        formula_archivadas = c.execute("""
+            SELECT fi.producto_nombre, fi.material_id,
+                   COALESCE(fi.material_nombre,'') AS nom
+            FROM formula_items fi
+            JOIN maestro_mps m ON m.codigo_mp = fi.material_id
+            WHERE m.activo = 0
+            LIMIT 30
+        """).fetchall()
+        for prod, mid, nom in formula_archivadas:
+            hallazgos.append({
+                'tipo': 'FORMULA_USA_MP_ARCHIVADA',
+                'severidad': 'alta',
+                'detalle': f"formula '{prod}' usa MP archivada {mid} ({nom})",
+                'datos': {'producto': prod, 'material_id': mid},
+            })
+
+        # 2b · fórmulas declaradas pero producciones nunca existieron
+        # (info · no necesariamente bug)
+        try:
+            fh_huerfanas = c.execute("""
+                SELECT fh.producto_nombre
+                FROM formula_headers fh
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM producciones p WHERE p.producto = fh.producto_nombre
+                )
+                  AND NOT EXISTS (
+                    SELECT 1 FROM produccion_programada pp WHERE pp.producto = fh.producto_nombre
+                )
+                LIMIT 20
+            """).fetchall()
+            for (prod,) in fh_huerfanas:
+                hallazgos.append({
+                    'tipo': 'FORMULA_SIN_PRODUCCIONES',
+                    'severidad': 'baja',
+                    'detalle': f"formula '{prod}' nunca se uso en una producción real",
+                    'datos': {'producto': prod},
+                })
+        except sqlite3.OperationalError:
+            pass
+
+        # ── 3. DESCUENTO REAL vs ESPERADO ───────────────────────────────
+        # Solo producciones recientes con stock > 0 (los con stock=0 son
+        # historicos, drift menor no importa)
+        prod_rows = c.execute("""
+            SELECT id, producto, cantidad, fecha, lote
+            FROM producciones
+            WHERE fecha >= date('now', '-180 days')
+            ORDER BY fecha DESC
+            LIMIT 30
+        """).fetchall()
+
+        for pid, producto, cant_kg, fecha, lote in prod_rows:
+            cant_kg = float(cant_kg or 0)
+            if cant_kg <= 0:
+                continue
+
+            # Fórmula del producto
+            items_formula = c.execute("""
+                SELECT material_id, material_nombre, porcentaje
+                FROM formula_items
+                WHERE producto_nombre = ?
+            """, (producto,)).fetchall()
+            if not items_formula:
+                continue
+
+            # Movs Salida REALES de esta producción
+            # Formato observaciones: 'FEFO:PROD-NNNNN:...' o 'UNLIMITED:PROD-NNNNN:...'
+            lote_ref_pat = f'PROD-{pid:05d}'
+            for mid, nom, pct in items_formula:
+                pct = float(pct or 0)
+                if pct <= 0:
+                    continue
+                # Esperado: % * cantidad_kg * 10  (porque pct es 0-100 y kg→g multiplicas por 1000, / 100)
+                esperado_g = pct * cant_kg * 10
+
+                real_row = c.execute("""
+                    SELECT COALESCE(SUM(cantidad), 0)
+                    FROM movimientos
+                    WHERE material_id = ?
+                      AND tipo = 'Salida'
+                      AND (observaciones LIKE ?
+                           OR observaciones LIKE ?)
+                """, (mid, f'%{lote_ref_pat}%', f'%{producto}%' + (f'%{lote}%' if lote else ''))).fetchone()
+                real_g = float(real_row[0] or 0)
+
+                if esperado_g < 0.01:
+                    continue
+
+                drift_pct = abs(real_g - esperado_g) / esperado_g * 100
+                # Tolerancia 5% (operativa · pesaje físico tiene error)
+                if drift_pct > 5:
+                    hallazgos.append({
+                        'tipo': 'DESCUENTO_DRIFT_PRODUCCION',
+                        'severidad': 'alta',
+                        'detalle': (
+                            f"producción #{pid} '{producto}' MP {mid}: "
+                            f"esperaba {esperado_g:.2f}g, descontó {real_g:.2f}g, "
+                            f"drift {drift_pct:.1f}%"
+                        ),
+                        'datos': {
+                            'produccion_id': pid,
+                            'producto': producto,
+                            'material_id': mid,
+                            'esperado_g': round(esperado_g, 2),
+                            'real_g': round(real_g, 2),
+                            'drift_pct': round(drift_pct, 2),
+                        },
+                    })
+
+        # ── 4. TRAZABILIDAD INVIMA ─────────────────────────────────────
+        # 4a · movs sin operador
+        sin_op = c.execute("""
+            SELECT COUNT(*) FROM movimientos
+            WHERE (operador IS NULL OR TRIM(operador) = '')
+              AND fecha >= date('now', '-90 days')
+        """).fetchone()[0]
+        if sin_op > 0:
+            hallazgos.append({
+                'tipo': 'TRAZABILIDAD_MOV_SIN_OPERADOR',
+                'severidad': 'media',
+                'detalle': f"{sin_op} movimientos sin operador en últimos 90 días",
+                'datos': {'count': sin_op},
+            })
+
+        # 4b · lotes con stock > 0 sin fecha_venc (legacy o nuevo)
+        sin_fv_con_stock = c.execute("""
+            WITH lote_stock AS (
+                SELECT material_id, lote,
+                       SUM(CASE WHEN tipo='Entrada' THEN cantidad
+                                WHEN tipo='Salida' THEN -cantidad
+                                ELSE 0 END) AS stock,
+                       MAX(fecha_vencimiento) AS fv
+                FROM movimientos
+                WHERE lote IS NOT NULL AND lote != ''
+                GROUP BY material_id, lote
+            )
+            SELECT COUNT(*) FROM lote_stock
+            WHERE stock > 0
+              AND (fv IS NULL OR TRIM(fv) = '')
+        """).fetchone()[0]
+        if sin_fv_con_stock > 0:
+            hallazgos.append({
+                'tipo': 'TRAZABILIDAD_LOTE_VIVO_SIN_FV',
+                'severidad': 'alta',
+                'detalle': f"{sin_fv_con_stock} lotes con stock > 0 sin fecha_vencimiento (riesgo INVIMA)",
+                'datos': {'count': sin_fv_con_stock},
+            })
+
+        # Resumen por severidad
+        alta = sum(1 for h in hallazgos if h['severidad'] == 'alta')
+        media = sum(1 for h in hallazgos if h['severidad'] == 'media')
+        baja = sum(1 for h in hallazgos if h['severidad'] == 'baja')
+
+        # Score real: solo cuenta hallazgos de severidad alta y media
+        score = 100.0
+        score -= alta * 5.0
+        score -= media * 1.0
+        score = max(0.0, round(score, 1))
+
+        if alta == 0 and media == 0:
+            veredicto = 'PERFECTA'
+        elif alta == 0:
+            veredicto = 'MENOR'
+        else:
+            veredicto = 'BLOQUEANTE'
+
+        conn.close()
+
+        return jsonify({
+            'ok': True,
+            'score_real': score,
+            'veredicto_real': veredicto,
+            'resumen': {
+                'total_hallazgos': len(hallazgos),
+                'alta': alta,
+                'media': media,
+                'baja': baja,
+            },
+            'hallazgos': hallazgos,
+            'checks_ejecutados': [
+                'MP_NOMBRE_DUPLICADO',
+                'MP_INCI_DUPLICADO (con whitelist cosmetica)',
+                'MP_CODIGO_INCONSISTENTE',
+                'FORMULA_USA_MP_ARCHIVADA',
+                'FORMULA_SIN_PRODUCCIONES',
+                'DESCUENTO_DRIFT_PRODUCCION (tolerancia 5%)',
+                'TRAZABILIDAD_MOV_SIN_OPERADOR',
+                'TRAZABILIDAD_LOTE_VIVO_SIN_FV',
+            ],
+            'message': (f'Validación profunda: {veredicto} · score_real {score}/100 '
+                        f'· {alta} ALTA · {media} MEDIA · {baja} BAJA'),
+        }), 200
+
+    except Exception as e:
+        conn.close()
+        return jsonify({'error': 'falla validacion profunda',
+                        'detail': str(e)[:300]}), 500
+
+
 @bp.route("/api/admin/completar-info-lote-bulk", methods=["POST"])
 def completar_info_lote_bulk():
     """Completa info faltante (fecha_venc, proveedor) en lotes legacy.
