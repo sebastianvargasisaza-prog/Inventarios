@@ -17039,41 +17039,56 @@ def auditoria_fefo_descuento():
                     else:
                         n_descuentos_ok += 1
 
-                # 2. FEFO · para cada lote usado
+                # 2. FEFO · para cada lote usado.
+                # NOTA: la fv del mov Salida puede ser NULL (no se copia desde
+                # la Entrada). Se busca el MAX(fecha_vencimiento) por lote
+                # entre TODOS los movs del lote (típicamente la Entrada).
                 for mov in movs_sal:
-                    mov_id, cant_mov, lote_usado, fecha_mov, fv_usado = mov
+                    mov_id, cant_mov, lote_usado, fecha_mov, fv_usado_mov = mov
                     if not lote_usado:
                         continue
-                    # Reconstruir lotes disponibles al momento del mov
-                    # (con stock > 0 antes de esta Salida)
+                    # fv real del lote usado (desde la Entrada original)
+                    fv_lote_row = c.execute("""
+                        SELECT MAX(fecha_vencimiento)
+                        FROM movimientos
+                        WHERE material_id = ? AND lote = ?
+                          AND fecha_vencimiento IS NOT NULL
+                          AND TRIM(fecha_vencimiento) != ''
+                    """, (mid, lote_usado)).fetchone()
+                    fv_lote_real = fv_lote_row[0] if fv_lote_row else None
+
+                    # Reconstruir otros lotes con stock al momento + fv real
                     otros_lotes = c.execute("""
                         SELECT lote,
-                               MAX(fecha_vencimiento) AS fv,
+                               (SELECT MAX(fecha_vencimiento) FROM movimientos
+                                 WHERE material_id = ? AND lote = m.lote
+                                   AND fecha_vencimiento IS NOT NULL
+                                   AND TRIM(fecha_vencimiento) != '') AS fv,
                                SUM(CASE WHEN tipo='Entrada' AND fecha < ?
                                         THEN cantidad
                                         WHEN tipo='Salida' AND fecha < ?
                                         THEN -cantidad
                                         ELSE 0 END) AS stock_antes
-                        FROM movimientos
+                        FROM movimientos m
                         WHERE material_id = ?
                           AND COALESCE(lote, '') != ''
                           AND COALESCE(lote, '') != ?
                         GROUP BY lote
                         HAVING stock_antes > 0
-                    """, (fecha_mov, fecha_mov, mid, lote_usado)).fetchall()
+                    """, (mid, fecha_mov, fecha_mov, mid, lote_usado)).fetchall()
 
-                    fv_usado_str = (fv_usado or '9999-12-31')
+                    fv_usado_str = (fv_lote_real or '9999-12-31')
                     for other_lote, other_fv, other_stock in otros_lotes:
                         other_fv_str = (other_fv or '9999-12-31')
                         if other_fv_str < fv_usado_str:
-                            # Había otro lote con fv MÁS cercana · FEFO violado
+                            # Hay otro lote con fv MÁS cercana · FEFO violado
                             violaciones_fefo.append({
                                 'produccion_id': pid,
                                 'producto': producto,
                                 'material_id': mid,
                                 'mov_id': mov_id,
                                 'lote_usado': lote_usado,
-                                'fv_usado': fv_usado,
+                                'fv_lote_usado': fv_lote_real,
                                 'lote_correcto_fefo': other_lote,
                                 'fv_correcto_fefo': other_fv,
                                 'stock_correcto_disponible': round(float(other_stock), 2),
