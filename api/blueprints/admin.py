@@ -16187,6 +16187,148 @@ run();
 </body></html>"""
 
 
+@bp.route("/api/admin/completar-info-lote-bulk", methods=["POST"])
+def completar_info_lote_bulk():
+    """Completa info faltante (fecha_venc, proveedor) en lotes legacy.
+
+    Sebastián 8-may-2026: S5 detecta 12 lotes con SIN_FECHA_VENC o
+    SIN_PROVEEDOR. Este endpoint actualiza TODOS los movs de un
+    (material_id, lote) con la info nueva. Preserva movs existentes.
+
+    Body JSON:
+      items: [{
+        material_id: str (requerido),
+        lote: str (requerido),
+        fecha_vencimiento: str ISO (opcional · si null y aplicar_default_fv=true,
+                                     usa primer_mov + 1 año con observación),
+        proveedor: str (opcional · si null queda igual)
+      }]
+      aplicar_default_fv: bool (default False · solo afecta items sin fecha_venc)
+      motivo: str (audit_log)
+
+    Returns: {ok, actualizados:[...], rechazados:[...], total}
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    d = request.json or {}
+    items = d.get('items') or []
+    aplicar_default_fv = bool(d.get('aplicar_default_fv', False))
+    motivo = (d.get('motivo') or 'Completar info lotes legacy · audit S5').strip()
+
+    if not isinstance(items, list) or not items:
+        return jsonify({'error': 'items debe ser lista no vacía'}), 400
+    if len(items) > 100:
+        return jsonify({'error': 'max 100 items por request'}), 400
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("PRAGMA busy_timeout=2000")
+    c = conn.cursor()
+    actualizados = []
+    rechazados = []
+    try:
+        for it in items:
+            mid = (it.get('material_id') or '').strip()
+            lote = (it.get('lote') or '').strip()
+            fv = (it.get('fecha_vencimiento') or '').strip() or None
+            prov = (it.get('proveedor') or '').strip() or None
+
+            if not mid or not lote:
+                rechazados.append({'item': it,
+                                    'razon': 'material_id y lote requeridos'})
+                continue
+
+            # Verificar que existe el lote
+            existe = c.execute("""
+                SELECT MIN(fecha) FROM movimientos
+                WHERE material_id=? AND lote=?
+            """, (mid, lote)).fetchone()
+            if not existe or not existe[0]:
+                rechazados.append({'material_id': mid, 'lote': lote,
+                                    'razon': 'lote no existe en movimientos'})
+                continue
+            primer_mov = existe[0]
+
+            # Si no se dio fecha_venc y aplicar_default_fv: usar primer_mov + 1 año
+            fv_final = fv
+            usado_default = False
+            if not fv_final and aplicar_default_fv:
+                try:
+                    from datetime import datetime as _dt, timedelta as _td
+                    pm = _dt.fromisoformat(primer_mov[:10])
+                    fv_final = (pm + _td(days=365)).date().isoformat()
+                    usado_default = True
+                except Exception:
+                    pass
+
+            # Construir SET clause dinámico
+            sets = []
+            params = []
+            if fv_final:
+                sets.append('fecha_vencimiento=?')
+                params.append(fv_final)
+            if prov:
+                sets.append('proveedor=?')
+                params.append(prov)
+            if not sets:
+                rechazados.append({'material_id': mid, 'lote': lote,
+                                    'razon': 'sin fecha_venc ni proveedor para actualizar'})
+                continue
+
+            params.extend([mid, lote])
+            c.execute(
+                f"UPDATE movimientos SET {', '.join(sets)} "
+                f"WHERE material_id=? AND lote=?",
+                params
+            )
+            n = c.rowcount
+            actualizados.append({
+                'material_id': mid, 'lote': lote,
+                'fecha_vencimiento_aplicada': fv_final,
+                'proveedor_aplicado': prov,
+                'movs_actualizados': n,
+                'usado_default_fv': usado_default,
+            })
+
+        if actualizados:
+            try:
+                audit_log(
+                    c, usuario=u,
+                    accion='COMPLETAR_INFO_LOTE_BULK',
+                    tabla='movimientos', registro_id='bulk',
+                    despues={
+                        'motivo': motivo,
+                        'aplicar_default_fv': aplicar_default_fv,
+                        'actualizados': actualizados[:50],
+                        'rechazados': rechazados[:50],
+                        'n_actualizados': len(actualizados),
+                        'n_rechazados': len(rechazados),
+                    },
+                    detalle=(f'Completar info en {len(actualizados)} lotes · '
+                             f'default_fv={aplicar_default_fv} · motivo: {motivo[:120]}'),
+                )
+            except Exception:
+                pass
+
+        conn.commit()
+        conn.close()
+        return jsonify({
+            'ok': True,
+            'actualizados': actualizados,
+            'rechazados': rechazados,
+            'n_actualizados': len(actualizados),
+            'n_rechazados': len(rechazados),
+            'message': (f'✓ Completados {len(actualizados)} lotes '
+                        f'· rechazados {len(rechazados)}'),
+        }), 200
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        return jsonify({'error': 'falla transaccional',
+                        'detail': str(e)[:300]}), 500
+
+
 @bp.route("/api/admin/investigar-mee/<codigo>", methods=["GET"])
 def investigar_mee(codigo):
     """Forensic para diagnosticar drift en MEE.

@@ -3511,3 +3511,90 @@ def test_golden_investigar_y_reconciliar_mee(app, db_clean):
     finally:
         _exec("DELETE FROM movimientos_mee WHERE mee_codigo=?", (cod,))
         _exec("DELETE FROM maestro_mee WHERE codigo=?", (cod,))
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 76 · B · Completar info lotes legacy (fecha_venc + prov)
+# ═══════════════════════════════════════════════════════════════════
+
+def test_golden_completar_info_lote_bulk(app, db_clean):
+    cs = _login(app, 'sebastian')
+
+    mp = 'GP76-MP-LEGACY'
+    lote = 'GP76-LOTE-INCOMPLETO'
+
+    _exec("""INSERT OR REPLACE INTO maestro_mps
+              (codigo_mp, nombre_comercial, activo, tipo_material)
+              VALUES (?, 'MP legacy test', 1, 'MP')""",
+          (mp,))
+    # Lote sin fecha_venc ni proveedor
+    _exec("""INSERT INTO movimientos
+              (material_id, material_nombre, cantidad, tipo, fecha,
+               lote, operador)
+              VALUES (?, 'MP legacy test', 1000, 'Entrada', date('now'),
+                      ?, 'gp76')""",
+          (mp, lote))
+    _exec("""INSERT INTO movimientos
+              (material_id, material_nombre, cantidad, tipo, fecha,
+               lote, operador)
+              VALUES (?, 'MP legacy test', 200, 'Salida', date('now'),
+                      ?, 'gp76')""",
+          (mp, lote))
+
+    try:
+        # Aplicar fix manual con fecha y proveedor explícitos
+        r = cs.post('/api/admin/completar-info-lote-bulk',
+                    json={
+                        'items': [{
+                            'material_id': mp,
+                            'lote': lote,
+                            'fecha_vencimiento': '2028-12-31',
+                            'proveedor': 'TestProvB',
+                        }],
+                        'motivo': 'test golden 76'
+                    },
+                    headers=csrf_headers())
+        assert r.status_code == 200, \
+            f'BUG: completar-info fallo · {r.status_code} {r.data}'
+        d = r.get_json() or {}
+        assert d.get('ok')
+        assert d['n_actualizados'] == 1, f'esperaba 1 actualizado · {d}'
+        assert d['actualizados'][0]['movs_actualizados'] == 2, \
+            f'esperaba 2 movs actualizados (entrada + salida) · {d}'
+
+        # Verificar BD
+        rows = _query(
+            "SELECT fecha_vencimiento, proveedor FROM movimientos "
+            "WHERE material_id=? AND lote=?",
+            (mp, lote)
+        )
+        for fv, prov in rows:
+            assert fv == '2028-12-31', f'BUG: fecha_venc no aplicada · {fv}'
+            assert prov == 'TestProvB', f'BUG: proveedor no aplicado · {prov}'
+
+        # Probar default: nuevo lote sin info + aplicar_default_fv=True
+        lote2 = 'GP76-LOTE-DEFAULT'
+        _exec("""INSERT INTO movimientos
+                  (material_id, material_nombre, cantidad, tipo, fecha,
+                   lote, operador)
+                  VALUES (?, 'MP legacy test', 500, 'Entrada', date('now'),
+                          ?, 'gp76')""",
+              (mp, lote2))
+        r2 = cs.post('/api/admin/completar-info-lote-bulk',
+                     json={
+                         'items': [{
+                             'material_id': mp,
+                             'lote': lote2,
+                         }],
+                         'aplicar_default_fv': True,
+                         'motivo': 'test golden 76 default'
+                     },
+                     headers=csrf_headers())
+        d2 = r2.get_json() or {}
+        assert d2['n_actualizados'] == 1, f'esperaba default aplicado · {d2}'
+        assert d2['actualizados'][0]['usado_default_fv'] is True, \
+            f'BUG: default no marcado · {d2}'
+
+    finally:
+        _exec("DELETE FROM movimientos WHERE material_id=?", (mp,))
+        _exec("DELETE FROM maestro_mps WHERE codigo_mp=?", (mp,))
