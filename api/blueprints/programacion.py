@@ -4463,16 +4463,22 @@ def _distribuir_fefo(c, codigo_mp, cantidad_a_descontar):
     # Riesgo: FEFO podia consumir lotes en cuarentena o vencidos.
     # Fix: UPPER() + lista canonica _ESTADOS_LOTE_NO_PRODUCIBLES.
     placeholders = ','.join(['?'] * len(_ESTADOS_LOTE_NO_PRODUCIBLES))
+    # Sebastian 8-may-2026 FEFO zero-error: ANTES GROUP BY (lote, fv)
+    # generaba grupos separados para movs con fv NULL vs fv real del
+    # mismo lote · ORDER BY podía elegir el grupo NULL primero.
+    # Fix: agrupar SOLO por lote y tomar la fv real desde la Entrada
+    # (que es donde el proveedor la declara · MAX ignora NULLs).
     sql = f"""
-        SELECT lote, fecha_vencimiento,
+        SELECT lote,
+               MAX(CASE WHEN tipo='Entrada' THEN fecha_vencimiento END) AS fv_real,
                SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) as stock_lote
         FROM movimientos
         WHERE material_id = ?
           AND COALESCE(lote, '') != ''
           AND UPPER(COALESCE(estado_lote, '')) NOT IN ({placeholders})
-        GROUP BY lote, fecha_vencimiento
+        GROUP BY lote
         HAVING stock_lote > 0
-        ORDER BY COALESCE(fecha_vencimiento, '9999-12-31') ASC,
+        ORDER BY COALESCE(fv_real, '9999-12-31') ASC,
                  lote ASC
     """
     params = (codigo_mp,) + _ESTADOS_LOTE_NO_PRODUCIBLES

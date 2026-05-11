@@ -980,14 +980,17 @@ def handle_produccion():
                 continue
 
             # FEFO sobre lotes disponibles (excluye CUARENTENA/RECHAZADO)
-            c.execute("""SELECT lote, fecha_vencimiento,
+            # Sebastian 8-may-2026 zero-error: tomar fv REAL de la Entrada
+            # original (no del primer mov que SQLite escoja arbitrariamente).
+            c.execute("""SELECT lote,
+                                MAX(CASE WHEN tipo='Entrada' THEN fecha_vencimiento END) AS fv_real,
                                 SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) as stock
                          FROM movimientos
                          WHERE material_id=? AND lote IS NOT NULL AND lote!='' AND lote!='S/L'
                            AND (estado_lote IS NULL OR estado_lote NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO'))
                          GROUP BY lote HAVING stock > 0
-                         ORDER BY CASE WHEN fecha_vencimiento IS NULL OR fecha_vencimiento=''
-                                  THEN '9999' ELSE fecha_vencimiento END ASC""", (mat_id,))
+                         ORDER BY CASE WHEN fv_real IS NULL OR fv_real=''
+                                  THEN '9999' ELSE fv_real END ASC""", (mat_id,))
             lotes_fefo = c.fetchall()
             stock_total_disp = sum(float(l[2] or 0) for l in lotes_fefo)
             if stock_total_disp + 0.01 < g_total:  # tolerancia 0.01g por floats
