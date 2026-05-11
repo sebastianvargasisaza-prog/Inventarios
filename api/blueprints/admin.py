@@ -11768,11 +11768,14 @@ def explicar_stock_min(codigo):
     mp_info['cobertura_efectiva_dias'] = cobertura_efectiva
 
     # 4. Fórmulas que usan esta MP (por porcentaje O g_por_lote)
+    # Búsqueda EXACTA primero (case-sensitive)
     formulas_usan = c.execute("""
         SELECT fi.producto_nombre,
                COALESCE(fi.porcentaje, 0) as pct,
                COALESCE(fi.cantidad_g_por_lote, 0) as g_lote,
-               COALESCE(fh.lote_size_kg, 0) as lote_size_kg
+               COALESCE(fh.lote_size_kg, 0) as lote_size_kg,
+               fi.material_id as match_mid,
+               'exacto' as match_tipo
         FROM formula_items fi
         LEFT JOIN formula_headers fh ON fh.producto_nombre = fi.producto_nombre
         WHERE fi.material_id = ?
@@ -11782,20 +11785,88 @@ def explicar_stock_min(codigo):
     formulas_info = []
     for r in formulas_usan:
         formulas_info.append({
-            'producto': r[0],
-            'porcentaje': r[1],
-            'cantidad_g_por_lote': r[2],
-            'lote_size_kg': r[3],
+            'producto': r[0], 'porcentaje': r[1],
+            'cantidad_g_por_lote': r[2], 'lote_size_kg': r[3],
+            'material_id_en_formula': r[4], 'match_tipo': r[5],
         })
 
+    # Si no hay match exacto, hacer búsqueda fuzzy por código case-insensitive
+    # y por nombre (catch typos comunes)
+    posibles_huerfanos = []
     if not formulas_info:
+        nombre_inci = (mp_info.get('nombre_inci') or '').strip()
+        nombre_comercial = (mp_info.get('nombre_comercial') or '').strip()
+        # Búsqueda case-insensitive por material_id
+        rows_ci = c.execute("""
+            SELECT DISTINCT fi.material_id, fi.material_nombre,
+                   COUNT(DISTINCT fi.producto_nombre) as n_productos
+            FROM formula_items fi
+            WHERE UPPER(TRIM(fi.material_id)) = UPPER(TRIM(?))
+              AND fi.material_id != ?
+            GROUP BY fi.material_id
+        """, (codigo, codigo)).fetchall()
+        for r in rows_ci:
+            posibles_huerfanos.append({
+                'tipo': 'codigo_case_distinto',
+                'material_id_en_formula': r[0],
+                'material_nombre_en_formula': r[1],
+                'n_productos': r[2],
+                'sugerencia': f'Hay items en formula_items con material_id="{r[0]}" (diff casing). Considerar UPDATE para unificar a {codigo}.',
+            })
+        # Búsqueda por nombre comercial o INCI
+        if nombre_comercial or nombre_inci:
+            patrones = []
+            params = []
+            if nombre_comercial and len(nombre_comercial) > 3:
+                patrones.append("UPPER(TRIM(fi.material_nombre)) LIKE UPPER(TRIM(?))")
+                params.append(f'%{nombre_comercial}%')
+            if nombre_inci and len(nombre_inci) > 3:
+                patrones.append("UPPER(TRIM(fi.material_nombre)) LIKE UPPER(TRIM(?))")
+                params.append(f'%{nombre_inci}%')
+            if patrones:
+                rows_nm = c.execute(f"""
+                    SELECT DISTINCT fi.material_id, fi.material_nombre,
+                           COUNT(DISTINCT fi.producto_nombre) as n_productos
+                    FROM formula_items fi
+                    WHERE ({' OR '.join(patrones)})
+                      AND UPPER(TRIM(fi.material_id)) != UPPER(TRIM(?))
+                    GROUP BY fi.material_id
+                """, params + [codigo]).fetchall()
+                for r in rows_nm:
+                    posibles_huerfanos.append({
+                        'tipo': 'nombre_similar',
+                        'material_id_en_formula': r[0],
+                        'material_nombre_en_formula': r[1],
+                        'n_productos': r[2],
+                        'sugerencia': f'Items con nombre similar a "{nombre_comercial or nombre_inci}" usando material_id="{r[0]}". Probable typo · considerá unificar.',
+                    })
+
+    if not formulas_info and not posibles_huerfanos:
         conn.close()
         return jsonify({
             'ok': True, 'mp': mp_info,
             'formulas_que_lo_usan': [],
+            'posibles_match_huerfanos': [],
             'producciones_calendar': [],
             'desglose_calculo': None,
-            'mensaje': 'Esta MP NO está en ninguna fórmula activa. Stock_min sugerido = 0.',
+            'mensaje': 'Esta MP NO está en ninguna fórmula (ni exacto ni similar). '
+                       'Stock_min sugerido = 0 · si la MP debería usarse, alguna fórmula '
+                       'la necesita registrar.',
+            'stock_min_sugerido_g': 0,
+        }), 200
+
+    if not formulas_info and posibles_huerfanos:
+        conn.close()
+        return jsonify({
+            'ok': True, 'mp': mp_info,
+            'formulas_que_lo_usan': [],
+            'posibles_match_huerfanos': posibles_huerfanos,
+            'producciones_calendar': [],
+            'desglose_calculo': None,
+            'mensaje': f'⚠ Esta MP no tiene match EXACTO en fórmulas, pero hay '
+                       f'{len(posibles_huerfanos)} posibles huérfanos con código '
+                       'distinto o nombre similar. Revisar abajo para decidir si '
+                       'unificar antes de calcular stock_min.',
             'stock_min_sugerido_g': 0,
         }), 200
 
