@@ -16199,6 +16199,175 @@ run();
 </body></html>"""
 
 
+@bp.route("/api/admin/reconciliar-produccion-mp", methods=["POST"])
+def reconciliar_produccion_mp():
+    """Reconcilia descuento omitido en una producción (bug operativo).
+
+    Sebastián 8-may-2026: cuando una producción NO descontó una MP porque
+    el stock en kardex era 0 (pero físicamente sí había producto), el
+    audit profundo lo detecta. Este endpoint crea los movs retroactivos
+    INVIMA-compliant para cerrar el drift.
+
+    Body JSON:
+      produccion_id: int (producciones.id)
+      material_id: str (MP que NO se descontó)
+      cantidad_g: float (lo que la fórmula dice debió descontar)
+      fecha_retroactiva: ISO (fecha real de la producción)
+      motivo: str (obligatorio · queda en audit + observaciones)
+      compensar_con_entrada: bool · si true, crea mov Entrada compensatoria
+                              para no afectar stock_neto actual
+      fecha_entrada_compensatoria: ISO opcional (default datetime.now)
+
+    Returns: {ok, mov_salida_id, mov_entrada_id?, audit_id}
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    d = request.json or {}
+    prod_id = d.get('produccion_id')
+    mid = (d.get('material_id') or '').strip()
+    cant = float(d.get('cantidad_g') or 0)
+    fecha_retro = (d.get('fecha_retroactiva') or '').strip()
+    motivo = (d.get('motivo') or '').strip()
+    compensar = bool(d.get('compensar_con_entrada', True))
+    fecha_comp = (d.get('fecha_entrada_compensatoria') or '').strip()
+
+    if not prod_id or not mid or cant <= 0 or not motivo:
+        return jsonify({
+            'error': 'produccion_id, material_id, cantidad_g > 0 y motivo son requeridos'
+        }), 400
+    if len(motivo) < 20:
+        return jsonify({
+            'error': 'motivo debe tener al menos 20 caracteres (auditabilidad INVIMA)'
+        }), 400
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("PRAGMA busy_timeout=2000")
+    c = conn.cursor()
+
+    try:
+        # Verificar que producción existe
+        prod = c.execute(
+            "SELECT id, producto, cantidad, fecha, lote FROM producciones WHERE id=?",
+            (prod_id,)
+        ).fetchone()
+        if not prod:
+            conn.close()
+            return jsonify({'error': f'producción {prod_id} no existe'}), 404
+        prod_dict = {'id': prod[0], 'producto': prod[1], 'cant_kg': prod[2],
+                      'fecha': prod[3], 'lote': prod[4]}
+
+        # Verificar MP existe
+        mp = c.execute(
+            "SELECT codigo_mp, nombre_comercial FROM maestro_mps WHERE codigo_mp=?",
+            (mid,)
+        ).fetchone()
+        if not mp:
+            conn.close()
+            return jsonify({'error': f'MP {mid} no existe'}), 404
+
+        # Verificar que NO existe ya un mov Salida de esta MP para esta producción
+        lote_pat = f'PROD-{prod_id:05d}'
+        ya_existe = c.execute("""
+            SELECT id FROM movimientos
+            WHERE material_id = ? AND tipo = 'Salida'
+              AND observaciones LIKE ?
+            LIMIT 1
+        """, (mid, f'%{lote_pat}%')).fetchone()
+        if ya_existe:
+            conn.close()
+            return jsonify({
+                'error': f'MP {mid} ya tiene mov Salida para producción #{prod_id} (id={ya_existe[0]}). Cancelar antes de reconciliar.'
+            }), 409
+
+        # Crear mov Salida retroactivo (NOTA: este insert va a violar trigger
+        # estado_lote='VIGENTE' default si no lo seteamos, pero estado_lote
+        # default es 'VIGENTE' que es OK)
+        obs_salida = (f"RECONCILIACION zero-error: bug descuento omitido en "
+                       f"producción #{prod_id} {prod_dict['producto']} "
+                       f"({prod_dict['cant_kg']}kg) lote {prod_dict['lote']}. "
+                       f"MP {mid} no se descontó por stock=0 en kardex al "
+                       f"momento (físicamente sí había). Motivo: {motivo[:300]}")
+        c.execute("""
+            INSERT INTO movimientos
+              (material_id, material_nombre, cantidad, tipo, fecha,
+               observaciones, lote, operador, estado_lote)
+            VALUES (?, ?, ?, 'Salida', ?, ?, ?, ?, 'VIGENTE')
+        """, (mid, mp[1] or '', cant,
+              fecha_retro or prod_dict['fecha'],
+              obs_salida,
+              prod_dict['lote'] or '',
+              u))
+        mov_salida_id = c.lastrowid
+
+        # Compensación: mov Entrada para no afectar stock_neto
+        mov_entrada_id = None
+        if compensar:
+            obs_entrada = (f"RECONCILIACION zero-error: compensación por "
+                            f"descuento retroactivo mov #{mov_salida_id} "
+                            f"(producción #{prod_id}). El stock físico real "
+                            f"al momento del ajuste anterior era mayor al "
+                            f"contado · diff +{cant}g identificado por audit "
+                            f"profundo. Motivo: {motivo[:300]}")
+            c.execute("""
+                INSERT INTO movimientos
+                  (material_id, material_nombre, cantidad, tipo, fecha,
+                   observaciones, lote, operador, estado_lote)
+                VALUES (?, ?, ?, 'Entrada', ?, ?, ?, ?, 'VIGENTE')
+            """, (mid, mp[1] or '', cant,
+                  fecha_comp or datetime.now().isoformat(),
+                  obs_entrada,
+                  prod_dict['lote'] or '',
+                  u))
+            mov_entrada_id = c.lastrowid
+
+        # Audit log
+        try:
+            audit_log(
+                c, usuario=u,
+                accion='RECONCILIAR_PRODUCCION_MP',
+                tabla='movimientos', registro_id=str(mov_salida_id),
+                despues={
+                    'produccion_id': prod_id,
+                    'producto': prod_dict['producto'],
+                    'material_id': mid,
+                    'cantidad_g': cant,
+                    'mov_salida_id': mov_salida_id,
+                    'mov_entrada_id': mov_entrada_id,
+                    'compensado': compensar,
+                    'motivo': motivo[:300],
+                },
+                detalle=(f'Reconciliacion zero-error: producción #{prod_id} '
+                         f'{prod_dict["producto"]} omitió descuento de {mid} '
+                         f'({cant}g). Compensación: {compensar}'),
+            )
+        except Exception:
+            pass
+
+        conn.commit()
+        conn.close()
+        return jsonify({
+            'ok': True,
+            'mov_salida_id': mov_salida_id,
+            'mov_entrada_id': mov_entrada_id,
+            'cantidad_g': cant,
+            'compensado': compensar,
+            'message': (
+                f'✓ Reconciliada producción #{prod_id} MP {mid} ({cant}g) · '
+                f'mov Salida #{mov_salida_id}'
+                + (f' + Entrada compensatoria #{mov_entrada_id}'
+                   if compensar else '')
+            ),
+        }), 200
+
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        return jsonify({'error': 'falla transaccional',
+                        'detail': str(e)[:300]}), 500
+
+
 @bp.route("/api/admin/validacion-profunda", methods=["GET"])
 def validacion_profunda():
     """Validación matemática REAL · zero falsos positivos.
