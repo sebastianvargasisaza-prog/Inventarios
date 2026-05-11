@@ -17881,6 +17881,7 @@ function render(d){
   let html = '<div class="hero">' +
     '<div class="score ' + sclass + '">' + score + '<small style="font-size:32px;color:#64748b">/100</small></div>' +
     '<div class="verdict ' + vclass + '">' + v + '</div>' +
+    '<div id="sparkline" style="margin-top:14px;min-height:60px"></div>' +
   '</div>';
 
   html += '<div class="grid">';
@@ -17903,6 +17904,49 @@ function render(d){
 
   document.getElementById('content').className = '';
   document.getElementById('content').innerHTML = html;
+
+  // Sparkline historico
+  cargarSparkline();
+}
+
+async function cargarSparkline(){
+  try{
+    const r = await fetch('/api/admin/zero-error-historial?dias=30');
+    const d = await r.json();
+    if(!r.ok || !d.runs || !d.runs.length){
+      document.getElementById('sparkline').innerHTML =
+        '<div style="font-size:11px;color:#64748b">Aun no hay historico · el cron diario empezara a popularlo a partir de manana 8am.</div>';
+      return;
+    }
+    const runs = d.runs.slice().reverse(); // cronologico
+    const W = 600, H = 60, P = 8;
+    const sw = (W - 2*P) / Math.max(runs.length - 1, 1);
+    const scores = runs.map(r => r.score_real || 0);
+    const minS = Math.min(...scores, 80);
+    const maxS = 100;
+    const rangeS = Math.max(maxS - minS, 1);
+    const pts = scores.map((s, i) => {
+      const x = P + i * sw;
+      const y = H - P - ((s - minS) / rangeS) * (H - 2*P);
+      return [x, y, s, runs[i].fecha];
+    });
+    const path = pts.map((p, i) => (i ? 'L' : 'M') + p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join(' ');
+    const lastScore = scores[scores.length - 1];
+    const lastClass = lastScore >= 99 ? '#22c55e' : lastScore >= 85 ? '#fbbf24' : '#ef4444';
+
+    const dots = pts.map(p => '<circle cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) + '" r="2.5" fill="' + (p[2] >= 99 ? '#22c55e' : p[2] >= 85 ? '#fbbf24' : '#ef4444') + '"><title>' + p[3].slice(0,16) + ': ' + p[2] + '/100</title></circle>').join('');
+
+    document.getElementById('sparkline').innerHTML =
+      '<div style="font-size:11px;color:#94a3b8;margin-bottom:4px">Score real ultimos ' + runs.length + ' runs (zoom rango ' + minS.toFixed(0) + '-100)</div>' +
+      '<svg width="100%" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none">' +
+      '<line x1="' + P + '" y1="' + (H - P) + '" x2="' + (W - P) + '" y2="' + (H - P) + '" stroke="#334155" stroke-width="0.5"/>' +
+      '<path d="' + path + '" fill="none" stroke="' + lastClass + '" stroke-width="2"/>' +
+      dots +
+      '</svg>';
+  }catch(e){
+    document.getElementById('sparkline').innerHTML =
+      '<div style="font-size:11px;color:#64748b">No se pudo cargar historico</div>';
+  }
 }
 
 run();
