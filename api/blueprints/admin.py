@@ -11599,6 +11599,369 @@ def marcar_lotes_vencidos():
     }), 200
 
 
+@bp.route("/api/admin/marcar-vencidos-bulk-todos", methods=["POST"])
+def marcar_vencidos_bulk_todos():
+    """Marca VENCIDO en TODOS los lotes con fecha_venc pasada que aún son
+    VIGENTE. Equivalente al cron diario `job_marcar_vencidos` pero a demanda.
+
+    Sebastián 8-may-2026 (zero-error FASE A): trigger manual para no
+    esperar al cron de las 7:50am cuando se acaba de descubrir un lote
+    vencido en auditoría.
+
+    Returns: { ok, actualizados, lotes_afectados, top_5_codigos }
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("PRAGMA busy_timeout=2000")
+    c = conn.cursor()
+    try:
+        # Detectar primero (para feedback al usuario)
+        rows = c.execute("""
+            SELECT material_id, lote, fecha_vencimiento, COUNT(*) AS movs
+            FROM movimientos
+            WHERE fecha_vencimiento IS NOT NULL
+              AND TRIM(fecha_vencimiento) != ''
+              AND date(fecha_vencimiento) < date('now')
+              AND UPPER(COALESCE(estado_lote,'')) = 'VIGENTE'
+            GROUP BY material_id, lote
+            ORDER BY fecha_vencimiento ASC
+            LIMIT 500
+        """).fetchall()
+
+        if not rows:
+            conn.close()
+            return jsonify({
+                'ok': True,
+                'actualizados': 0,
+                'lotes_afectados': 0,
+                'message': 'Sin lotes vencidos pendientes · OK',
+            }), 200
+
+        res = c.execute("""
+            UPDATE movimientos
+            SET estado_lote = 'VENCIDO'
+            WHERE fecha_vencimiento IS NOT NULL
+              AND TRIM(fecha_vencimiento) != ''
+              AND date(fecha_vencimiento) < date('now')
+              AND UPPER(COALESCE(estado_lote,'')) = 'VIGENTE'
+        """)
+        actualizados = res.rowcount
+
+        try:
+            detalles = [
+                {'material_id': r[0], 'lote': r[1],
+                 'fecha_venc': r[2], 'movs': r[3]}
+                for r in rows[:100]
+            ]
+            audit_log(
+                c, usuario=u,
+                accion='MARCAR_LOTES_VENCIDOS_BULK',
+                tabla='movimientos', registro_id='bulk-trigger',
+                despues={
+                    'total_movs_actualizados': actualizados,
+                    'lotes_afectados': len(rows),
+                    'detalles': detalles,
+                },
+                detalle=(f'Trigger manual marcó VENCIDO en {len(rows)} '
+                         f'lotes · {actualizados} movimientos'),
+            )
+        except Exception:
+            pass
+
+        conn.commit()
+        conn.close()
+
+        return jsonify({
+            'ok': True,
+            'actualizados': actualizados,
+            'lotes_afectados': len(rows),
+            'top_codigos': [r[0] for r in rows[:5]],
+            'top_lotes': [{'material_id': r[0], 'lote': r[1],
+                           'fecha_venc': r[2]} for r in rows[:10]],
+            'message': (f'✓ {len(rows)} lotes marcados VENCIDO '
+                        f'· {actualizados} movs actualizados'),
+        }), 200
+
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        return jsonify({'error': 'falla transaccional',
+                        'detail': str(e)[:300]}), 500
+
+
+@bp.route("/api/admin/mps-sin-uso", methods=["GET"])
+def mps_sin_uso():
+    """Detecta MPs activas que NO se usan en ningún lado.
+
+    Sebastián 8-may-2026 (zero-error FASE A): el catálogo va creciendo
+    con MPs que en algún momento se probaron y nunca más se usaron.
+    Estas MPs:
+      - No están en ninguna fórmula activa
+      - No tienen movimientos en >X días (default 365d)
+      - Stock actual = 0
+      - activo=1
+
+    Son candidatas a archivar (activo=0) para limpiar listas y reportes.
+    NO se borran · activo=0 preserva historial INVIMA.
+
+    Query params:
+      dias_inactividad: int (default 365)
+      incluir_con_stock: 1/0 (default 0 · stock>0 NO se archiva nunca)
+
+    Returns:
+      {
+        total_activas: int,
+        sin_uso: [
+          {codigo, nombre, ultima_actividad, dias_inactivo,
+           stock_actual_g, en_formula: bool, n_movs}
+        ],
+        resumen: {sin_uso, con_stock_pero_no_usadas, ...}
+      }
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    try:
+        dias = int(request.args.get('dias_inactividad', 365))
+        if dias < 30:
+            dias = 30
+        if dias > 3650:
+            dias = 3650
+    except Exception:
+        dias = 365
+
+    incluir_con_stock = request.args.get('incluir_con_stock', '0') == '1'
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("PRAGMA busy_timeout=2000")
+    c = conn.cursor()
+    try:
+        total_activas = c.execute(
+            "SELECT COUNT(*) FROM maestro_mps WHERE activo=1"
+        ).fetchone()[0]
+
+        rows = c.execute("""
+            WITH mp_uso AS (
+                SELECT
+                    m.codigo_mp                                 AS codigo,
+                    COALESCE(m.nombre_comercial, m.nombre_inci, '') AS nombre,
+                    (SELECT MAX(fecha) FROM movimientos
+                      WHERE material_id = m.codigo_mp)          AS ultima_act,
+                    (SELECT COUNT(*) FROM movimientos
+                      WHERE material_id = m.codigo_mp)          AS n_movs,
+                    (SELECT COALESCE(SUM(
+                        CASE WHEN UPPER(tipo) IN ('ENTRADA','RECEPCION',
+                                                  'AJUSTE_POS','DEVOLUCION')
+                             THEN COALESCE(cantidad,0)
+                             WHEN UPPER(tipo) IN ('SALIDA','CONSUMO',
+                                                  'AJUSTE_NEG','BAJA')
+                             THEN -COALESCE(cantidad,0)
+                             ELSE 0 END), 0)
+                      FROM movimientos
+                      WHERE material_id = m.codigo_mp)          AS stock_g,
+                    (SELECT COUNT(*) FROM formula_items
+                      WHERE material_id = m.codigo_mp)          AS n_formulas
+                FROM maestro_mps m
+                WHERE m.activo = 1
+            )
+            SELECT codigo, nombre, ultima_act, n_movs, stock_g, n_formulas
+            FROM mp_uso
+            WHERE n_formulas = 0
+              AND (
+                ultima_act IS NULL
+                OR date(ultima_act) < date('now', '-' || ? || ' days')
+              )
+              AND (? = 1 OR ABS(stock_g) < 1)
+            ORDER BY
+              CASE WHEN ultima_act IS NULL THEN 1 ELSE 0 END DESC,
+              ultima_act ASC
+            LIMIT 500
+        """, (dias, 1 if incluir_con_stock else 0)).fetchall()
+
+        from datetime import date as _date
+        hoy = _date.today()
+        sin_uso = []
+        con_stock_pero_inutil = 0
+        for codigo, nombre, ultima, n_movs, stock_g, n_formulas in rows:
+            dias_inact = None
+            if ultima:
+                try:
+                    dias_inact = (hoy - _date.fromisoformat(ultima[:10])).days
+                except Exception:
+                    dias_inact = None
+            stock_g = float(stock_g or 0)
+            if abs(stock_g) >= 1:
+                con_stock_pero_inutil += 1
+            sin_uso.append({
+                'codigo': codigo,
+                'nombre': nombre or '',
+                'ultima_actividad': ultima,
+                'dias_inactivo': dias_inact,
+                'stock_actual_g': round(stock_g, 2),
+                'en_formula': False,
+                'n_movs': int(n_movs or 0),
+            })
+
+        conn.close()
+
+        return jsonify({
+            'ok': True,
+            'total_activas': total_activas,
+            'umbral_dias_inactividad': dias,
+            'incluye_con_stock': incluir_con_stock,
+            'sin_uso': sin_uso,
+            'resumen': {
+                'sin_uso': len(sin_uso),
+                'con_stock_pero_no_usadas': con_stock_pero_inutil,
+                'archivables_seguro': sum(
+                    1 for x in sin_uso if abs(x['stock_actual_g']) < 1
+                ),
+            },
+            'message': (f'{len(sin_uso)} MPs candidatas a archivar '
+                        f'· {total_activas} activas en catálogo'),
+        }), 200
+
+    except Exception as e:
+        conn.close()
+        return jsonify({'error': 'falla query',
+                        'detail': str(e)[:300]}), 500
+
+
+@bp.route("/api/admin/archivar-mps-sin-uso-bulk", methods=["POST"])
+def archivar_mps_sin_uso_bulk():
+    """Archiva (activo=0) las MPs especificadas. Verifica antes que cumplan
+    criterio sin-uso: no en formula, stock=0, sin movs recientes.
+
+    Sebastián 8-may-2026: el bulk archive evita acción manual una por una.
+    Las MPs archivadas NO se borran · audit_log preserva trazabilidad
+    INVIMA. Para reactivar, usar el panel `desactivar-mp` con activo=1.
+
+    Body JSON:
+      codigos: ['MP00001', 'MP00002', ...]
+      motivo: str (queda en audit_log)
+      forzar: bool (default False · si True, salta verificación de criterio)
+
+    Returns: { ok, archivadas, rechazadas: [...], audit_id }
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    d = request.json or {}
+    codigos = d.get('codigos') or []
+    motivo = (d.get('motivo') or 'Limpieza catálogo · sin uso').strip()
+    forzar = bool(d.get('forzar', False))
+
+    if not isinstance(codigos, list) or not codigos:
+        return jsonify({'error': 'codigos debe ser lista no vacía'}), 400
+    if len(codigos) > 200:
+        return jsonify({'error': 'max 200 codigos por request'}), 400
+
+    codigos_limpios = [str(c).strip().upper() for c in codigos if str(c).strip()]
+    if not codigos_limpios:
+        return jsonify({'error': 'codigos vacíos tras limpieza'}), 400
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("PRAGMA busy_timeout=2000")
+    c = conn.cursor()
+    archivadas = []
+    rechazadas = []
+    try:
+        for cod in codigos_limpios:
+            row = c.execute(
+                "SELECT codigo_mp, "
+                "  COALESCE(nombre_comercial, nombre_inci, '') AS nombre, "
+                "  activo "
+                "FROM maestro_mps WHERE codigo_mp = ?",
+                (cod,)
+            ).fetchone()
+            if not row:
+                rechazadas.append({'codigo': cod,
+                                    'razon': 'no existe en maestro_mps'})
+                continue
+            if row[2] == 0:
+                rechazadas.append({'codigo': cod,
+                                    'razon': 'ya archivada (activo=0)'})
+                continue
+
+            if not forzar:
+                n_form = c.execute(
+                    "SELECT COUNT(*) FROM formula_items WHERE material_id=?",
+                    (cod,)
+                ).fetchone()[0]
+                if n_form > 0:
+                    rechazadas.append({'codigo': cod,
+                                        'razon': f'en uso en {n_form} fórmula(s)'})
+                    continue
+
+                stock_row = c.execute("""
+                    SELECT COALESCE(SUM(
+                        CASE WHEN UPPER(tipo) IN ('ENTRADA','RECEPCION',
+                                                  'AJUSTE_POS','DEVOLUCION')
+                             THEN COALESCE(cantidad,0)
+                             WHEN UPPER(tipo) IN ('SALIDA','CONSUMO',
+                                                  'AJUSTE_NEG','BAJA')
+                             THEN -COALESCE(cantidad,0)
+                             ELSE 0 END), 0)
+                    FROM movimientos WHERE material_id=?
+                """, (cod,)).fetchone()
+                stock_g = float(stock_row[0] or 0)
+                if abs(stock_g) >= 1:
+                    rechazadas.append({'codigo': cod,
+                                        'razon': (f'stock no-cero '
+                                                  f'({stock_g:.0f}g)')})
+                    continue
+
+            c.execute(
+                "UPDATE maestro_mps SET activo=0 WHERE codigo_mp=?",
+                (cod,)
+            )
+            archivadas.append({'codigo': cod, 'nombre': row[1] or ''})
+
+        if archivadas:
+            try:
+                audit_log(
+                    c, usuario=u,
+                    accion='ARCHIVAR_MPS_SIN_USO_BULK',
+                    tabla='maestro_mps', registro_id='bulk',
+                    despues={
+                        'motivo': motivo,
+                        'forzar': forzar,
+                        'archivadas': archivadas,
+                        'rechazadas': rechazadas,
+                        'n_archivadas': len(archivadas),
+                        'n_rechazadas': len(rechazadas),
+                    },
+                    detalle=(f'Archivadas {len(archivadas)} MPs · '
+                             f'rechazadas {len(rechazadas)} · motivo: {motivo}'),
+                )
+            except Exception:
+                pass
+
+        conn.commit()
+        conn.close()
+
+        return jsonify({
+            'ok': True,
+            'archivadas': archivadas,
+            'rechazadas': rechazadas,
+            'n_archivadas': len(archivadas),
+            'n_rechazadas': len(rechazadas),
+            'message': (f'✓ Archivadas {len(archivadas)} MPs '
+                        f'· rechazadas {len(rechazadas)}'),
+        }), 200
+
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        return jsonify({'error': 'falla transaccional',
+                        'detail': str(e)[:300]}), 500
+
+
 @bp.route("/api/admin/investigar-mp/<codigo>", methods=["GET"])
 def investigar_mp(codigo):
     """Devuelve TODO sobre un MP: catálogo + movs por lote + saldos.
@@ -14245,5 +14608,215 @@ async function ejecutarFusionBulk(){
 
 // Auto-ejecutar al cargar
 ejecutarAudit();
+</script>
+</body></html>"""
+
+
+@bp.route("/admin/mps-sin-uso", methods=["GET"])
+def admin_mps_sin_uso_page():
+    """Panel para detectar y archivar MPs sin uso del catálogo.
+
+    Sebastián 8-may-2026 (zero-error FASE A): el catálogo crece con MPs
+    que nunca más se usan. Archivarlas (activo=0) limpia listas sin
+    perder historial INVIMA.
+    """
+    u, err, code = _require_admin()
+    if err:
+        return Response(
+            '<h1>403</h1><p>Solo admin puede ver este panel.</p>',
+            status=403, mimetype='text/html'
+        )
+    return Response(_MPS_SIN_USO_HTML, mimetype='text/html')
+
+
+_MPS_SIN_USO_HTML = """<!DOCTYPE html>
+<html lang="es"><head>
+<meta charset="utf-8">
+<title>MPs sin uso · EOS</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,Segoe UI,sans-serif;background:#0f172a;color:#f1f5f9;padding:20px}
+h1{font-size:24px;margin-bottom:6px;color:#fbbf24}
+.sub{color:#94a3b8;font-size:13px;margin-bottom:24px}
+.back{display:inline-block;color:#94a3b8;text-decoration:none;font-size:13px;margin-bottom:16px}
+.back:hover{color:#f1f5f9}
+.controls{background:#1e293b;border-radius:10px;padding:16px;margin-bottom:16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.controls label{font-size:13px;color:#cbd5e1}
+.controls input[type=number]{background:#0f172a;color:#f1f5f9;border:1px solid #475569;border-radius:6px;padding:6px 10px;width:90px}
+.controls input[type=checkbox]{accent-color:#fbbf24}
+button{padding:8px 16px;border:none;border-radius:6px;cursor:pointer;font-weight:600;font-size:13px;transition:.15s}
+button:disabled{opacity:.4;cursor:not-allowed}
+.btn-detect{background:#fbbf24;color:#0f172a}
+.btn-detect:hover:not(:disabled){background:#f59e0b}
+.btn-archive{background:#dc2626;color:white}
+.btn-archive:hover:not(:disabled){background:#b91c1c}
+.btn-trigger{background:#5eead4;color:#0f172a;font-weight:700}
+.btn-trigger:hover:not(:disabled){background:#2dd4bf}
+.summary{background:#0c4a6e;border:1px solid #0284c7;border-radius:10px;padding:14px;margin-bottom:16px;display:none}
+.summary.visible{display:block}
+.summary p{font-size:13px;color:#bae6fd}
+table{width:100%;border-collapse:collapse;background:#1e293b;border-radius:10px;overflow:hidden;font-size:12px}
+th,td{padding:8px 10px;text-align:left;border-bottom:1px solid #334155}
+th{background:#0f172a;color:#94a3b8;font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.5px}
+tr:hover{background:#334155}
+.stock-zero{color:#22c55e}
+.stock-nonzero{color:#fbbf24}
+.empty{color:#64748b;text-align:center;padding:30px;font-style:italic}
+.kbd{background:#0f172a;padding:2px 6px;border-radius:3px;font-family:Consolas,Monaco,monospace;font-size:11px;color:#fbbf24}
+.danger-zone{background:#7f1d1d;border:1px solid #dc2626;border-radius:8px;padding:14px;margin-top:16px}
+.danger-zone h3{color:#fca5a5;font-size:14px;margin-bottom:8px}
+.danger-zone p{font-size:12px;color:#fecaca;margin-bottom:8px}
+</style></head><body>
+
+<a class="back" href="/modulos">← Panel inicial</a>
+<h1>🗃 MPs sin uso · Catálogo</h1>
+<p class="sub">Detecta MPs activas que no están en fórmulas, sin movimientos recientes y stock cero. Archivar (activo=0) preserva historial INVIMA.</p>
+
+<div class="controls">
+  <label>Inactividad mínima:
+    <input type="number" id="dias" value="365" min="30" max="3650">
+    días
+  </label>
+  <label>
+    <input type="checkbox" id="incluir-stock"> Incluir con stock &gt; 0 (NO archivar)
+  </label>
+  <button class="btn-detect" onclick="detect()">📊 Detectar</button>
+  <button class="btn-trigger" onclick="triggerVencidos()" title="Equivalente al cron diario · marca VENCIDO en lotes con fecha pasada">⛔ Marcar vencidos bulk</button>
+</div>
+
+<div class="summary" id="summary"></div>
+
+<table id="tabla" style="display:none">
+  <thead>
+    <tr>
+      <th><input type="checkbox" id="sel-all" onclick="toggleAll(this)"></th>
+      <th>Código</th>
+      <th>Nombre</th>
+      <th>Stock g</th>
+      <th>Última actividad</th>
+      <th>Días inactivo</th>
+      <th>Movs</th>
+    </tr>
+  </thead>
+  <tbody id="tbody"></tbody>
+</table>
+
+<div class="empty" id="empty" style="display:none">No hay MPs sin uso con esos criterios.</div>
+
+<div class="danger-zone" id="danger-zone" style="display:none">
+  <h3>⚠ Zona peligrosa · Archivar bulk</h3>
+  <p>Esto pondrá <span class="kbd">activo=0</span> en las MPs seleccionadas. No se borran · historial INVIMA preservado.</p>
+  <p>Solo se archivan las que cumplen criterio (no en fórmula + stock=0). Las marcadas con stock&gt;0 serán rechazadas automáticamente.</p>
+  <button class="btn-archive" onclick="archivar()" id="btn-arch" disabled>🗃 Archivar seleccionadas (<span id="n-sel">0</span>)</button>
+</div>
+
+<script>
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;');}
+let candidatos = [];
+
+async function detect(){
+  const dias = document.getElementById('dias').value || 365;
+  const incl = document.getElementById('incluir-stock').checked ? 1 : 0;
+  const sum = document.getElementById('summary');
+  sum.className = 'summary visible';
+  sum.innerHTML = '<p>⏳ Detectando...</p>';
+  try{
+    const r = await fetch(`/api/admin/mps-sin-uso?dias_inactividad=${dias}&incluir_con_stock=${incl}`);
+    const d = await r.json();
+    if(!r.ok){
+      sum.innerHTML = '<p style="color:#fca5a5">Error: '+esc(d.error || 'falla')+'</p>';
+      return;
+    }
+    candidatos = d.sin_uso || [];
+    sum.innerHTML = `<p>${d.message} · <strong>${d.resumen.archivables_seguro}</strong> archivables seguro · ${d.resumen.con_stock_pero_no_usadas} con stock.</p>`;
+    renderTabla();
+  }catch(e){
+    sum.innerHTML = '<p style="color:#fca5a5">Error de red: '+esc(e.message)+'</p>';
+  }
+}
+
+function renderTabla(){
+  const tbody = document.getElementById('tbody');
+  const empty = document.getElementById('empty');
+  const tabla = document.getElementById('tabla');
+  const dz = document.getElementById('danger-zone');
+  if(!candidatos.length){
+    tabla.style.display = 'none';
+    empty.style.display = 'block';
+    dz.style.display = 'none';
+    return;
+  }
+  tabla.style.display = 'table';
+  empty.style.display = 'none';
+  dz.style.display = 'block';
+  tbody.innerHTML = candidatos.map((it, i) => {
+    const stkClass = Math.abs(it.stock_actual_g) < 1 ? 'stock-zero' : 'stock-nonzero';
+    const ua = it.ultima_actividad || '—nunca—';
+    const di = (it.dias_inactivo !== null && it.dias_inactivo !== undefined) ? it.dias_inactivo : '∞';
+    const archivable = Math.abs(it.stock_actual_g) < 1;
+    return `<tr>
+      <td><input type="checkbox" class="sel" data-codigo="${esc(it.codigo)}" ${archivable?'':'disabled title="stock no-cero"'} onchange="updateSel()"></td>
+      <td><strong>${esc(it.codigo)}</strong></td>
+      <td>${esc(it.nombre)}</td>
+      <td class="${stkClass}">${it.stock_actual_g.toLocaleString()}</td>
+      <td>${esc(ua)}</td>
+      <td>${esc(di)}</td>
+      <td>${it.n_movs}</td>
+    </tr>`;
+  }).join('');
+  updateSel();
+}
+
+function toggleAll(cb){
+  document.querySelectorAll('.sel:not([disabled])').forEach(x => x.checked = cb.checked);
+  updateSel();
+}
+
+function updateSel(){
+  const n = document.querySelectorAll('.sel:checked').length;
+  document.getElementById('n-sel').textContent = n;
+  document.getElementById('btn-arch').disabled = (n === 0);
+}
+
+async function archivar(){
+  const codigos = Array.from(document.querySelectorAll('.sel:checked')).map(x => x.dataset.codigo);
+  if(!codigos.length) return;
+  if(!confirm(`¿Archivar ${codigos.length} MPs? Quedan activo=0 (no se borran · reversible).`)) return;
+  const btn = document.getElementById('btn-arch');
+  btn.disabled = true; btn.textContent = '⏳ Archivando...';
+  try{
+    const r = await fetch('/api/admin/archivar-mps-sin-uso-bulk', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({codigos: codigos, motivo: 'Panel mps-sin-uso · limpieza catálogo'})
+    });
+    const d = await r.json();
+    if(!r.ok){
+      alert('Error: '+ (d.error || 'falla'));
+      btn.disabled = false; btn.textContent = '🗃 Archivar seleccionadas (' + codigos.length + ')';
+      return;
+    }
+    alert(`✓ ${d.message}\\n\\nArchivadas: ${d.n_archivadas}\\nRechazadas: ${d.n_rechazadas}`);
+    detect();  // re-detectar
+  }catch(e){
+    alert('Error de red: '+e.message);
+    btn.disabled = false;
+  }
+}
+
+async function triggerVencidos(){
+  if(!confirm('¿Marcar como VENCIDO todos los lotes con fecha_venc pasada que aún figuran VIGENTE?')) return;
+  try{
+    const r = await fetch('/api/admin/marcar-vencidos-bulk-todos', {method:'POST'});
+    const d = await r.json();
+    if(!r.ok){
+      alert('Error: '+(d.error || 'falla'));
+      return;
+    }
+    alert(`✓ ${d.message}\\n\\nLotes afectados: ${d.lotes_afectados || 0}\\nMovs actualizados: ${d.actualizados || 0}`);
+  }catch(e){
+    alert('Error de red: '+e.message);
+  }
+}
 </script>
 </body></html>"""
