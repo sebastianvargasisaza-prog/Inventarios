@@ -2772,3 +2772,314 @@ def test_golden_cron_job_marcar_vencidos(app, db_clean):
     finally:
         _exec("DELETE FROM movimientos WHERE material_id=?", (codigo_mp,))
         _exec("DELETE FROM maestro_mps WHERE codigo_mp=?", (codigo_mp,))
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 65 · FASE B · Anular OC (DELETE)
+# ═══════════════════════════════════════════════════════════════════
+# DELETE /api/ordenes-compra/<num> solo permite estados Borrador o
+# Rechazada. Verifica que post-DELETE: OC + items se eliminan, y que
+# OC en estado distinto rechaza con 400.
+
+def test_golden_anular_oc_borrador(app, db_clean):
+    cs = _login(app, 'sebastian')
+    oc_num = 'GP65-OC-ANULAR'
+    oc_num_aut = 'GP65-OC-AUT'
+    codigo = 'GP65-MP-X'
+
+    _exec("""INSERT OR REPLACE INTO maestro_mps
+              (codigo_mp, nombre_comercial, activo, tipo_material)
+              VALUES (?, 'MP test anular', 1, 'MP')""",
+          (codigo,))
+    # OC en Borrador (anulable)
+    _exec("""INSERT OR REPLACE INTO ordenes_compra
+              (numero_oc, fecha, proveedor, estado, valor_total, creado_por)
+              VALUES (?, date('now'), 'ProvAnul', 'Borrador', 30000, 'sebastian')""",
+          (oc_num,))
+    _exec("""INSERT INTO ordenes_compra_items
+              (numero_oc, codigo_mp, nombre_mp, cantidad_g,
+               precio_unitario, subtotal)
+              VALUES (?, ?, 'MP test anular', 3000, 10, 30000)""",
+          (oc_num, codigo))
+    # OC en Autorizada (NO anulable)
+    _exec("""INSERT OR REPLACE INTO ordenes_compra
+              (numero_oc, fecha, proveedor, estado, valor_total, creado_por)
+              VALUES (?, date('now'), 'ProvAut', 'Autorizada', 50000, 'sebastian')""",
+          (oc_num_aut,))
+
+    try:
+        # Acción 1: anular OC Borrador
+        r = cs.delete(f'/api/ordenes-compra/{oc_num}', headers=csrf_headers())
+        assert r.status_code == 200, \
+            f'BUG: DELETE OC Borrador deberia 200 · {r.status_code} {r.data}'
+
+        # Verif: OC + items eliminados
+        rows = _query("SELECT numero_oc FROM ordenes_compra WHERE numero_oc=?",
+                      (oc_num,))
+        assert not rows, 'BUG: OC Borrador no eliminada del DB'
+        items = _query("SELECT id FROM ordenes_compra_items WHERE numero_oc=?",
+                       (oc_num,))
+        assert not items, 'BUG: items de OC anulada no se eliminaron'
+
+        # Acción 2: intentar anular Autorizada → debe rechazar 400
+        r2 = cs.delete(f'/api/ordenes-compra/{oc_num_aut}',
+                       headers=csrf_headers())
+        assert r2.status_code == 400, \
+            f'BUG: DELETE OC Autorizada debe rechazar 400 · got {r2.status_code}'
+
+        # Verif: OC autorizada sigue existiendo
+        rows2 = _query("SELECT estado FROM ordenes_compra WHERE numero_oc=?",
+                       (oc_num_aut,))
+        assert rows2 and rows2[0][0] == 'Autorizada', \
+            f'BUG: OC autorizada fue modificada · {rows2}'
+
+        # Acción 3: anular OC inexistente → 404
+        r3 = cs.delete('/api/ordenes-compra/GP65-NO-EXISTE',
+                       headers=csrf_headers())
+        assert r3.status_code == 404, \
+            f'BUG: DELETE OC inexistente debe ser 404 · {r3.status_code}'
+
+    finally:
+        _exec("DELETE FROM ordenes_compra_items WHERE numero_oc IN (?,?)",
+              (oc_num, oc_num_aut))
+        _exec("DELETE FROM ordenes_compra WHERE numero_oc IN (?,?)",
+              (oc_num, oc_num_aut))
+        _exec("DELETE FROM maestro_mps WHERE codigo_mp=?", (codigo,))
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 66 · FASE B · Recepción PARCIAL marca estado='Parcial'
+# ═══════════════════════════════════════════════════════════════════
+# Si la cantidad recibida < pedida, OC queda en 'Parcial' (no 'Recibida').
+# Stock sube por la cantidad parcial · OC puede recibir el resto despues.
+
+def test_golden_recepcion_parcial(app, db_clean):
+    cs = _login(app, 'sebastian')
+    oc_num = 'GP66-OC-PARCIAL'
+    codigo = 'GP66-MP-PARC'
+
+    _exec("""INSERT OR REPLACE INTO maestro_mps
+              (codigo_mp, nombre_comercial, activo, tipo_material)
+              VALUES (?, 'MP parcial test', 1, 'MP')""",
+          (codigo,))
+    _exec("""INSERT OR REPLACE INTO ordenes_compra
+              (numero_oc, fecha, proveedor, estado, valor_total,
+               creado_por, categoria)
+              VALUES (?, date('now'), 'ProvParc', 'Autorizada',
+                      100000, 'sebastian', 'MP')""",
+          (oc_num,))
+    _exec("""INSERT INTO ordenes_compra_items
+              (numero_oc, codigo_mp, nombre_mp, cantidad_g,
+               precio_unitario, subtotal)
+              VALUES (?, ?, 'MP parcial test', 10000, 10, 100000)""",
+          (oc_num, codigo))
+
+    def _stock():
+        rows = _query("""SELECT COALESCE(SUM(CASE WHEN tipo='Entrada'
+                                                   THEN cantidad ELSE -cantidad END), 0)
+                         FROM movimientos WHERE material_id=?""", (codigo,))
+        return float(rows[0][0]) if rows else 0
+
+    stock_pre = _stock()
+    try:
+        # Recepción 1: solo 4000 de 10000 pedidos (40%)
+        r = cs.post(f'/api/ordenes-compra/{oc_num}/recibir',
+                    json={'items_recepcion': [{
+                        'codigo_mp': codigo, 'cantidad_recibida': 4000,
+                        'lote': 'GP66-LOTE-1',
+                        'fecha_vencimiento': '2027-12-31',
+                    }], 'receptor_nombre': 'sebastian'},
+                    headers=csrf_headers())
+        assert r.status_code in (200, 201), \
+            f'BUG: recibir parcial fallo · {r.status_code} {r.data}'
+        d = r.get_json() or {}
+
+        # Verif 1: estado = 'Parcial'
+        rows = _query("SELECT estado FROM ordenes_compra WHERE numero_oc=?",
+                      (oc_num,))
+        assert rows and rows[0][0] == 'Parcial', \
+            f'BUG: recepción parcial no marcó estado Parcial · {rows}'
+        assert d.get('parcial') is True, \
+            f'BUG: response no flagea parcial=True · {d}'
+
+        # Verif 2: stock subió por 4000
+        stock_mid = _stock()
+        assert abs(stock_mid - stock_pre - 4000) < 1, \
+            f'BUG: stock parcial mal calculado · pre={stock_pre} mid={stock_mid}'
+
+        # Recepción 2: los 6000 restantes → completa
+        r2 = cs.post(f'/api/ordenes-compra/{oc_num}/recibir',
+                     json={'items_recepcion': [{
+                         'codigo_mp': codigo, 'cantidad_recibida': 6000,
+                         'lote': 'GP66-LOTE-2',
+                         'fecha_vencimiento': '2027-12-31',
+                     }], 'receptor_nombre': 'sebastian'},
+                     headers=csrf_headers())
+        assert r2.status_code in (200, 201), \
+            f'BUG: recepción complementaria fallo · {r2.status_code} {r2.data}'
+
+        # Verif 3: estado = 'Recibida', stock total +10000
+        rows = _query("SELECT estado FROM ordenes_compra WHERE numero_oc=?",
+                      (oc_num,))
+        assert rows and rows[0][0] == 'Recibida', \
+            f'BUG: 2da recepción no marcó Recibida · {rows}'
+        stock_final = _stock()
+        assert abs(stock_final - stock_pre - 10000) < 1, \
+            f'BUG: stock final mal · pre={stock_pre} final={stock_final}'
+
+    finally:
+        _exec("DELETE FROM movimientos WHERE material_id=?", (codigo,))
+        _exec("DELETE FROM ordenes_compra_items WHERE numero_oc=?", (oc_num,))
+        _exec("DELETE FROM ordenes_compra WHERE numero_oc=?", (oc_num,))
+        _exec("DELETE FROM maestro_mps WHERE codigo_mp=?", (codigo,))
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 67 · FASE B · Concurrencia · 2 movimientos en paralelo
+# ═══════════════════════════════════════════════════════════════════
+# Sebastián: el WAL + busy_timeout deben permitir que 2 escrituras
+# concurrentes a movimientos persistan ambas sin race ni data corruption.
+# Verifica que dos inserts en threads paralelos quedan ambos en kardex.
+
+def test_golden_concurrencia_movimientos(app, db_clean):
+    import threading
+    cs = _login(app, 'sebastian')
+    codigo = 'GP67-MP-RACE'
+
+    _exec("""INSERT OR REPLACE INTO maestro_mps
+              (codigo_mp, nombre_comercial, activo, tipo_material)
+              VALUES (?, 'MP race test', 1, 'MP')""",
+          (codigo,))
+
+    errores = []
+    n_writers = 8
+    movs_por_writer = 5
+
+    def writer(thread_id):
+        try:
+            for i in range(movs_por_writer):
+                lote = f'GP67-LOTE-T{thread_id}-{i}'
+                # _exec usa conexión nueva cada llamada · simula workers paralelos
+                _exec("""INSERT INTO movimientos
+                         (material_id, material_nombre, cantidad, tipo,
+                          fecha, lote, estado_lote, operador)
+                         VALUES (?, 'MP race', 100, 'Entrada',
+                                 date('now'), ?, 'VIGENTE', 'race-test')""",
+                      (codigo, lote))
+        except Exception as e:
+            errores.append((thread_id, str(e)))
+
+    threads = [threading.Thread(target=writer, args=(i,))
+               for i in range(n_writers)]
+    try:
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=30)
+
+        assert not errores, \
+            f'BUG: race condition · {len(errores)} errores · primero: {errores[0] if errores else None}'
+
+        # Verif: todos los movs persistieron
+        rows = _query(
+            "SELECT COUNT(*) FROM movimientos WHERE material_id=? AND operador='race-test'",
+            (codigo,)
+        )
+        n_total = rows[0][0] if rows else 0
+        esperados = n_writers * movs_por_writer
+        assert n_total == esperados, \
+            f'BUG: race · esperaba {esperados} movs, persistieron {n_total}'
+
+        # Verif: stock acumulado es correcto (no perdió escrituras)
+        stock = _query(
+            "SELECT COALESCE(SUM(cantidad),0) FROM movimientos "
+            "WHERE material_id=? AND operador='race-test'",
+            (codigo,)
+        )
+        assert stock[0][0] == esperados * 100, \
+            f'BUG: stock acumulado mal · {stock[0][0]} != {esperados*100}'
+
+        # Verif: lotes únicos (no se sobrescribieron)
+        lotes = _query(
+            "SELECT COUNT(DISTINCT lote) FROM movimientos "
+            "WHERE material_id=? AND operador='race-test'",
+            (codigo,)
+        )
+        assert lotes[0][0] == esperados, \
+            f'BUG: lotes únicos {lotes[0][0]} != esperados {esperados}'
+
+    finally:
+        _exec("DELETE FROM movimientos WHERE material_id=?", (codigo,))
+        _exec("DELETE FROM maestro_mps WHERE codigo_mp=?", (codigo,))
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 68 · FASE B · Rechazo gerencia OC
+# ═══════════════════════════════════════════════════════════════════
+# POST /api/compras/oc/<num>/rechazar marca estado='Rechazada',
+# guarda motivo en observaciones, registra audit_log y si hay SC
+# linkeada, la devuelve a 'Pendiente' para que el solicitante reintente.
+
+def test_golden_rechazo_gerencia_oc(app, db_clean):
+    cs = _login(app, 'sebastian')
+    oc_num = 'GP68-OC-RECHAZAR'
+    sc_num = 'GP68-SC-LINK'
+
+    _exec("""INSERT OR REPLACE INTO solicitudes_compra
+              (numero, fecha, solicitante, estado, observaciones,
+               numero_oc)
+              VALUES (?, date('now'), 'lab', 'Aprobada', 'orig obs', ?)""",
+          (sc_num, oc_num))
+    _exec("""INSERT OR REPLACE INTO ordenes_compra
+              (numero_oc, fecha, proveedor, estado, valor_total,
+               creado_por, observaciones)
+              VALUES (?, date('now'), 'ProvRej', 'Revisada', 40000,
+                      'sebastian', 'OC orig')""",
+          (oc_num,))
+
+    try:
+        # Acción: rechazar
+        motivo = 'precio fuera de presupuesto'
+        r = cs.post(f'/api/compras/oc/{oc_num}/rechazar',
+                    json={'motivo': motivo},
+                    headers=csrf_headers())
+        assert r.status_code == 200, \
+            f'BUG: rechazar OC fallo · {r.status_code} {r.data}'
+
+        # Verif 1: OC estado='Rechazada', motivo en observaciones
+        rows = _query(
+            "SELECT estado, observaciones FROM ordenes_compra WHERE numero_oc=?",
+            (oc_num,)
+        )
+        assert rows, 'OC desapareció'
+        assert rows[0][0] == 'Rechazada', \
+            f'BUG: OC no marcada Rechazada · {rows[0][0]}'
+        assert motivo in (rows[0][1] or ''), \
+            f'BUG: motivo no quedó en observaciones · {rows[0][1]}'
+
+        # Verif 2: SC linkeada volvió a 'Pendiente'
+        sc_rows = _query(
+            "SELECT estado FROM solicitudes_compra WHERE numero=?",
+            (sc_num,)
+        )
+        if sc_rows:
+            assert sc_rows[0][0] == 'Pendiente', \
+                f'BUG: SC linkeada debe ir a Pendiente · {sc_rows[0][0]}'
+
+        # Verif 3: audit_log con accion=RECHAZAR_OC (best-effort)
+        try:
+            audit_rows = _query(
+                "SELECT COUNT(*) FROM audit_log "
+                "WHERE accion='RECHAZAR_OC' AND registro_id=? "
+                "AND datetime(timestamp) > datetime('now','-5 minutes')",
+                (oc_num,)
+            )
+            if audit_rows:
+                assert audit_rows[0][0] >= 1, \
+                    'BUG: audit_log sin entrada RECHAZAR_OC'
+        except sqlite3.OperationalError:
+            pass
+
+    finally:
+        _exec("DELETE FROM solicitudes_compra WHERE numero=?", (sc_num,))
+        _exec("DELETE FROM ordenes_compra WHERE numero_oc=?", (oc_num,))
