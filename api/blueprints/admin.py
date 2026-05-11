@@ -11059,6 +11059,459 @@ def maestro_mps_unificar_bulk():
     }), 200
 
 
+@bp.route("/api/admin/material-ids-huerfanos", methods=["GET"])
+def material_ids_huerfanos():
+    """Lista material_ids usados en formula_items/movimientos/conteo_items/SOLs
+    que NO tienen fila activa en maestro_mps.
+
+    Sebastián 10-may-2026: 187 huérfanos detectados por auditor 4 ·
+    bloquean producción real (pre-check FEFO no encuentra lotes).
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("PRAGMA busy_timeout=2000")
+    c = conn.cursor()
+
+    queries = {
+        'formula_items': """
+            SELECT fi.material_id,
+                   SUBSTR(MAX(fi.material_nombre),1,40) as nombre,
+                   COUNT(DISTINCT fi.producto_nombre) as productos_usando,
+                   COUNT(*) as items_total
+            FROM formula_items fi
+            LEFT JOIN maestro_mps mp ON fi.material_id=mp.codigo_mp AND mp.activo=1
+            WHERE mp.codigo_mp IS NULL
+              AND fi.material_id IS NOT NULL AND TRIM(fi.material_id) != ''
+            GROUP BY fi.material_id
+            ORDER BY productos_usando DESC
+        """,
+        'movimientos': """
+            SELECT m.material_id,
+                   SUBSTR(MAX(m.material_nombre),1,40) as nombre,
+                   COUNT(*) as movs,
+                   ROUND(SUM(CASE WHEN m.tipo='Entrada' THEN m.cantidad
+                                  ELSE -m.cantidad END), 2) as stock_neto
+            FROM movimientos m
+            LEFT JOIN maestro_mps mp ON m.material_id=mp.codigo_mp AND mp.activo=1
+            WHERE mp.codigo_mp IS NULL
+              AND m.material_id IS NOT NULL AND TRIM(m.material_id) != ''
+            GROUP BY m.material_id
+            ORDER BY movs DESC
+        """,
+    }
+    result = {}
+    for k, sql in queries.items():
+        try:
+            rows = c.execute(sql).fetchall()
+            cols = [d[0] for d in c.description]
+            result[k] = [dict(zip(cols, r)) for r in rows]
+        except Exception as e:
+            result[k+'_err'] = str(e)[:200]
+
+    conn.close()
+    return jsonify({
+        'ok': True,
+        'huerfanos': result,
+        'resumen': {
+            'formula_items_huerfanos': len(result.get('formula_items', [])),
+            'movimientos_huerfanos': len(result.get('movimientos', [])),
+        },
+    }), 200
+
+
+@bp.route("/api/admin/crear-mps-huerfanas", methods=["POST"])
+def crear_mps_huerfanas():
+    """Crea en maestro_mps las MPs huérfanas detectadas (con datos
+    mínimos · nombre desde movs/formula_items).
+
+    Body JSON:
+      material_ids: ['MPAGUALI01', ...] · lista a crear
+      dry_run: bool (default false)
+
+    Para cada material_id:
+      - Si ya existe en maestro_mps: lo reactiva (activo=1)
+      - Si no existe: INSERT con datos derivados (nombre desde otras tablas)
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    d = request.json or {}
+    mids = d.get('material_ids') or []
+    dry_run = bool(d.get('dry_run'))
+
+    if not isinstance(mids, list) or not mids:
+        return jsonify({'error': 'material_ids debe ser lista no vacía'}), 400
+    if len(mids) > 300:
+        return jsonify({'error': 'max 300 por request'}), 400
+
+    mids = [str(x).strip().upper() for x in mids if str(x).strip()]
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("PRAGMA busy_timeout=2000")
+    c = conn.cursor()
+
+    plan = []
+    for mid in mids:
+        existe = c.execute(
+            "SELECT codigo_mp, activo FROM maestro_mps WHERE codigo_mp=?", (mid,)
+        ).fetchone()
+        # Derivar nombre desde formula_items/movimientos
+        nom_row = c.execute("""
+            SELECT material_nombre FROM (
+                SELECT material_nombre, COUNT(*) as n FROM formula_items
+                WHERE material_id=? GROUP BY material_nombre
+                UNION ALL
+                SELECT material_nombre, COUNT(*) as n FROM movimientos
+                WHERE material_id=? GROUP BY material_nombre
+            ) GROUP BY material_nombre ORDER BY SUM(n) DESC LIMIT 1
+        """, (mid, mid)).fetchone()
+        nombre = (nom_row[0] if nom_row else mid)
+        if existe:
+            plan.append({
+                'material_id': mid, 'accion': 'reactivar' if not existe[1] else 'ya_activo',
+                'nombre': nombre,
+            })
+        else:
+            plan.append({
+                'material_id': mid, 'accion': 'crear', 'nombre': nombre,
+            })
+
+    if dry_run:
+        conn.close()
+        return jsonify({'ok': True, 'dry_run': True, 'plan': plan,
+                       'message': f'Plan: {len(plan)} MPs'}), 200
+
+    creados = 0
+    reactivados = 0
+    try:
+        for p in plan:
+            if p['accion'] == 'crear':
+                c.execute("""
+                    INSERT INTO maestro_mps
+                    (codigo_mp, nombre_inci, nombre_comercial, tipo, proveedor,
+                     stock_minimo, activo, tipo_material)
+                    VALUES (?, '', ?, '', '', 0, 1, 'MP')
+                """, (p['material_id'], p['nombre']))
+                creados += 1
+            elif p['accion'] == 'reactivar':
+                c.execute("UPDATE maestro_mps SET activo=1 WHERE codigo_mp=?",
+                          (p['material_id'],))
+                reactivados += 1
+        try:
+            import json as _json
+            audit_log(
+                c, usuario=u, accion='CREAR_MPS_HUERFANAS',
+                tabla='maestro_mps', registro_id='bulk',
+                despues={'creados': creados, 'reactivados': reactivados, 'plan': plan},
+                detalle=f'Creados {creados} · reactivados {reactivados}',
+            )
+        except Exception:
+            pass
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        return jsonify({'error': 'falla transaccional', 'detail': str(e)[:300]}), 500
+
+    conn.close()
+    return jsonify({
+        'ok': True, 'creados': creados, 'reactivados': reactivados,
+        'message': f'✓ {creados} MPs creadas + {reactivados} reactivadas',
+    }), 200
+
+
+@bp.route("/api/admin/anular-movimiento", methods=["POST"])
+def anular_movimiento():
+    """Anula un movimiento creando contra-movimiento Entrada/Salida del
+    mismo lote y cantidad. Audit log INVIMA compliant.
+
+    Sebastián 10-may-2026: MP00112 lote AJUSTE-4 con stock -1.4M sin
+    Entrada respaldatoria. Caso de uso: anular salida fantasma para
+    llevar saldo a 0 sin borrar el original (trazabilidad INVIMA).
+
+    Body JSON:
+      mov_id: int (movimiento a anular)
+      motivo: str (queda en audit_log y observaciones)
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    d = request.json or {}
+    mov_id = d.get('mov_id')
+    motivo = (d.get('motivo') or '').strip()
+
+    try:
+        mov_id = int(mov_id)
+    except (TypeError, ValueError):
+        return jsonify({'error': 'mov_id inválido'}), 400
+    if not motivo or len(motivo) < 10:
+        return jsonify({'error': 'motivo requerido (mín 10 chars)'}), 400
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("PRAGMA busy_timeout=2000")
+    c = conn.cursor()
+
+    row = c.execute("""
+        SELECT id, material_id, material_nombre, cantidad, tipo, lote,
+               fecha_vencimiento, estanteria, posicion, proveedor, estado_lote
+        FROM movimientos WHERE id=?
+    """, (mov_id,)).fetchone()
+    if not row:
+        conn.close()
+        return jsonify({'error': 'movimiento no encontrado'}), 404
+
+    orig = {
+        'id': row[0], 'material_id': row[1], 'material_nombre': row[2],
+        'cantidad': row[3], 'tipo': row[4], 'lote': row[5],
+        'fecha_vencimiento': row[6], 'estanteria': row[7], 'posicion': row[8],
+        'proveedor': row[9], 'estado_lote': row[10],
+    }
+
+    # Tipo inverso
+    tipo_contra = 'Entrada' if (orig['tipo'] == 'Salida') else 'Salida'
+    obs_contra = (f'ANULACION mov #{orig["id"]} ({orig["tipo"]} {orig["cantidad"]}g) · '
+                  f'Motivo: {motivo} · Por: {u}')
+
+    try:
+        c.execute("""
+            INSERT INTO movimientos
+            (material_id, material_nombre, cantidad, tipo, fecha, observaciones,
+             lote, fecha_vencimiento, estanteria, posicion, proveedor, estado_lote, operador)
+            VALUES (?,?,?,?,datetime('now'),?,?,?,?,?,?,?,?)
+        """, (orig['material_id'], orig['material_nombre'],
+              orig['cantidad'], tipo_contra, obs_contra,
+              orig['lote'], orig['fecha_vencimiento'],
+              orig['estanteria'], orig['posicion'], orig['proveedor'],
+              orig['estado_lote'], u))
+        contra_id = c.lastrowid
+
+        try:
+            import json as _json
+            audit_log(
+                c, usuario=u, accion='ANULAR_MOVIMIENTO',
+                tabla='movimientos', registro_id=str(mov_id),
+                antes=orig,
+                despues={'contra_movimiento_id': contra_id, 'motivo': motivo,
+                         'tipo_contra': tipo_contra},
+                detalle=(f'Anulación mov #{mov_id} · creado contra #{contra_id} · '
+                         f'tipo {tipo_contra} {orig["cantidad"]}g · motivo: {motivo}'),
+            )
+        except Exception:
+            pass
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        return jsonify({'error': 'falla transaccional', 'detail': str(e)[:300]}), 500
+
+    conn.close()
+    return jsonify({
+        'ok': True,
+        'movimiento_original': orig,
+        'contra_movimiento_id': contra_id,
+        'tipo_contra': tipo_contra,
+        'message': (f'✓ Movimiento #{mov_id} anulado · creado contra #{contra_id} '
+                    f'tipo {tipo_contra} {orig["cantidad"]}g lote {orig["lote"]}'),
+    }), 200
+
+
+@bp.route("/api/admin/formula-duplicados", methods=["GET"])
+def formula_duplicados_listado():
+    """Lista TODAS las fórmulas con items duplicados (mismo material_id
+    aparece >1 vez en la misma fórmula) o cuya suma de porcentajes NO
+    da 100% ±0.5.
+
+    Sebastián 10-may-2026: caso real SUERO ILUMINADOR TRX = 200% por
+    46 items con duplicados. Sin esto, producir TRX descontaría 2x.
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("PRAGMA busy_timeout=2000")
+    c = conn.cursor()
+
+    # 1. Fórmulas con items duplicados (mismo material_id repetido)
+    duplicados = []
+    rows = c.execute("""
+        SELECT producto_nombre, material_id, COUNT(*) as veces,
+               GROUP_CONCAT(id) as ids, GROUP_CONCAT(porcentaje) as pcts
+        FROM formula_items
+        WHERE material_id IS NOT NULL AND TRIM(material_id) != ''
+        GROUP BY producto_nombre, material_id
+        HAVING veces > 1
+        ORDER BY producto_nombre, material_id
+    """).fetchall()
+    for r in rows:
+        duplicados.append({
+            'producto': r[0], 'material_id': r[1], 'veces': r[2],
+            'ids': [int(x) for x in (r[3] or '').split(',') if x],
+            'porcentajes': [float(x) for x in (r[4] or '').split(',') if x],
+        })
+
+    # 2. Fórmulas con SUM(porcentaje) NO == 100%
+    sumas = []
+    rows = c.execute("""
+        SELECT producto_nombre, ROUND(SUM(porcentaje), 4) as suma,
+               COUNT(*) as n_items
+        FROM formula_items
+        GROUP BY producto_nombre
+        HAVING ABS(suma - 100) > 0.5
+        ORDER BY ABS(suma - 100) DESC
+    """).fetchall()
+    for r in rows:
+        sumas.append({
+            'producto': r[0], 'suma_porcentajes': r[1],
+            'n_items': r[2],
+            'diff_vs_100': round((r[1] or 0) - 100, 4),
+        })
+
+    conn.close()
+    return jsonify({
+        'ok': True,
+        'duplicados': duplicados,
+        'porcentajes_anomalos': sumas,
+        'resumen': {
+            'productos_con_duplicados': len(set(d['producto'] for d in duplicados)),
+            'items_duplicados_total': sum(d['veces'] for d in duplicados),
+            'formulas_porcentaje_no_100': len(sumas),
+        },
+    }), 200
+
+
+@bp.route("/api/admin/formula-limpiar-duplicados", methods=["POST"])
+def formula_limpiar_duplicados():
+    """Consolida items duplicados de una fórmula en uno solo.
+
+    Para cada grupo (producto, material_id) con N filas:
+      1. Conserva la fila con menor id
+      2. Suma los porcentajes y cantidades en la conservada
+      3. DELETE las demás
+      4. Audit log
+
+    Body JSON:
+      producto: str (opcional · si vacío procesa TODAS las fórmulas con dups)
+      dry_run: bool (default false · si true solo simula y devuelve plan)
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    d = request.json or {}
+    producto_filter = (d.get('producto') or '').strip()
+    dry_run = bool(d.get('dry_run'))
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("PRAGMA busy_timeout=2000")
+    c = conn.cursor()
+
+    # Detectar duplicados
+    if producto_filter:
+        rows = c.execute("""
+            SELECT producto_nombre, material_id, GROUP_CONCAT(id) as ids,
+                   GROUP_CONCAT(porcentaje) as pcts,
+                   GROUP_CONCAT(COALESCE(cantidad_g_por_lote,0)) as cants
+            FROM formula_items
+            WHERE producto_nombre = ?
+              AND material_id IS NOT NULL AND TRIM(material_id) != ''
+            GROUP BY producto_nombre, material_id
+            HAVING COUNT(*) > 1
+        """, (producto_filter,)).fetchall()
+    else:
+        rows = c.execute("""
+            SELECT producto_nombre, material_id, GROUP_CONCAT(id) as ids,
+                   GROUP_CONCAT(porcentaje) as pcts,
+                   GROUP_CONCAT(COALESCE(cantidad_g_por_lote,0)) as cants
+            FROM formula_items
+            WHERE material_id IS NOT NULL AND TRIM(material_id) != ''
+            GROUP BY producto_nombre, material_id
+            HAVING COUNT(*) > 1
+        """).fetchall()
+
+    plan = []
+    total_borrados = 0
+    for r in rows:
+        producto, mid, ids_str, pcts_str, cants_str = r
+        ids = [int(x) for x in (ids_str or '').split(',') if x]
+        pcts = [float(x) for x in (pcts_str or '').split(',') if x]
+        cants = [float(x) for x in (cants_str or '').split(',') if x]
+        if len(ids) <= 1:
+            continue
+        ids_sorted = sorted(ids)
+        keep_id = ids_sorted[0]
+        delete_ids = ids_sorted[1:]
+        suma_pct = round(sum(pcts), 4)
+        suma_cant = round(sum(cants), 4)
+        plan.append({
+            'producto': producto, 'material_id': mid,
+            'keep_id': keep_id,
+            'delete_ids': delete_ids,
+            'porcentaje_consolidado': suma_pct,
+            'cantidad_g_consolidada': suma_cant,
+            'items_originales': len(ids),
+        })
+        total_borrados += len(delete_ids)
+
+    if dry_run:
+        conn.close()
+        return jsonify({
+            'ok': True, 'dry_run': True,
+            'plan': plan,
+            'items_a_consolidar': len(plan),
+            'items_a_borrar': total_borrados,
+            'message': f'Plan: consolidar {len(plan)} grupos, borrar {total_borrados} items duplicados',
+        }), 200
+
+    # Aplicar
+    aplicados = 0
+    errores = []
+    try:
+        for p in plan:
+            try:
+                c.execute("""
+                    UPDATE formula_items
+                    SET porcentaje = ?, cantidad_g_por_lote = ?
+                    WHERE id = ?
+                """, (p['porcentaje_consolidado'], p['cantidad_g_consolidada'], p['keep_id']))
+                ph = ','.join(['?'] * len(p['delete_ids']))
+                c.execute(f"DELETE FROM formula_items WHERE id IN ({ph})", p['delete_ids'])
+                aplicados += 1
+            except Exception as e:
+                errores.append({'producto': p['producto'], 'material_id': p['material_id'],
+                               'error': str(e)[:200]})
+        try:
+            import json as _json
+            audit_log(
+                c, usuario=u, accion='LIMPIAR_FORMULA_DUPLICADOS',
+                tabla='formula_items', registro_id=producto_filter or 'bulk',
+                despues={'plan': plan, 'aplicados': aplicados, 'errores': errores},
+                detalle=f'Consolidados {aplicados} grupos, borrados {total_borrados} items',
+            )
+        except Exception:
+            pass
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        return jsonify({'error': 'falla transaccional', 'detail': str(e)[:300]}), 500
+
+    conn.close()
+
+    return jsonify({
+        'ok': True, 'aplicado': True,
+        'grupos_consolidados': aplicados,
+        'items_borrados': total_borrados,
+        'errores': errores,
+        'message': f'✓ Consolidados {aplicados} grupos · borrados {total_borrados} items duplicados',
+    }), 200
+
+
 @bp.route("/api/admin/marcar-lotes-vencidos", methods=["POST"])
 def marcar_lotes_vencidos():
     """Cambia estado_lote='VENCIDO' en lotes que tienen fecha_venc pasada
