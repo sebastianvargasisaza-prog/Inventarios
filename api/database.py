@@ -222,6 +222,89 @@ _AREAS_LIMPIEZA_PROFUNDA = (
 
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (97, "Triggers BD invariantes Planta (Sebastián 10-may-2026 cero-error)", [
+        # Trigger: BLOQUEAR movimientos con cantidad <= 0 o NULL.
+        # Antes el endpoint POST /api/movimientos validaba, pero algunos
+        # scripts internos podían insertar sin pasar por el endpoint. Esta
+        # es defensa en profundidad: BD rechaza antes de aceptar.
+        """CREATE TRIGGER IF NOT EXISTS trg_mov_cantidad_positiva
+        BEFORE INSERT ON movimientos
+        FOR EACH ROW
+        WHEN NEW.cantidad IS NULL OR NEW.cantidad <= 0
+        BEGIN
+            SELECT RAISE(ABORT, 'cantidad debe ser > 0 (recibido: '||COALESCE(NEW.cantidad,'NULL')||')');
+        END""",
+        # Trigger: BLOQUEAR movimientos con tipo inválido. Solo permitidos:
+        # Entrada, Salida, Ajuste. Cualquier typo o valor inventado rechazado.
+        """CREATE TRIGGER IF NOT EXISTS trg_mov_tipo_valido
+        BEFORE INSERT ON movimientos
+        FOR EACH ROW
+        WHEN NEW.tipo NOT IN ('Entrada','Salida','Ajuste')
+        BEGIN
+            SELECT RAISE(ABORT, 'tipo invalido (debe ser Entrada/Salida/Ajuste): '||COALESCE(NEW.tipo,'NULL'));
+        END""",
+        # Trigger: BLOQUEAR movimientos sin material_id (huérfanos absolutos).
+        # No bloqueo "material_id no está en maestro_mps" porque algunos
+        # legacy lo permiten (movs históricos de MPs archivadas). Solo bloqueo
+        # NULL/vacío que es claramente bug.
+        """CREATE TRIGGER IF NOT EXISTS trg_mov_material_id_requerido
+        BEFORE INSERT ON movimientos
+        FOR EACH ROW
+        WHEN NEW.material_id IS NULL OR TRIM(NEW.material_id) = ''
+        BEGIN
+            SELECT RAISE(ABORT, 'material_id requerido (no puede ser vacio)');
+        END""",
+        # Trigger: BLOQUEAR formula_items con porcentaje claramente inválido.
+        # Acepta 0 (item placeholder sin descuento) y hasta 100. Solo rechaza
+        # NEGATIVO o > 100 que no tienen sentido cosmético/regulatorio.
+        """CREATE TRIGGER IF NOT EXISTS trg_fi_porcentaje_valido
+        BEFORE INSERT ON formula_items
+        FOR EACH ROW
+        WHEN NEW.porcentaje IS NOT NULL AND (NEW.porcentaje < 0 OR NEW.porcentaje > 100)
+        BEGIN
+            SELECT RAISE(ABORT, 'porcentaje fuera de rango [0,100]: '||COALESCE(NEW.porcentaje,'NULL'));
+        END""",
+        # Trigger: prevenir UPDATE que llevaría porcentaje fuera de rango.
+        """CREATE TRIGGER IF NOT EXISTS trg_fi_porcentaje_valido_upd
+        BEFORE UPDATE OF porcentaje ON formula_items
+        FOR EACH ROW
+        WHEN NEW.porcentaje IS NOT NULL AND (NEW.porcentaje < 0 OR NEW.porcentaje > 100)
+        BEGIN
+            SELECT RAISE(ABORT, 'UPDATE porcentaje fuera de rango [0,100]: '||COALESCE(NEW.porcentaje,'NULL'));
+        END""",
+        # Trigger: BLOQUEAR maestro_mps con codigo_mp vacío.
+        """CREATE TRIGGER IF NOT EXISTS trg_mps_codigo_requerido
+        BEFORE INSERT ON maestro_mps
+        FOR EACH ROW
+        WHEN NEW.codigo_mp IS NULL OR TRIM(NEW.codigo_mp) = ''
+        BEGIN
+            SELECT RAISE(ABORT, 'codigo_mp requerido (no puede ser vacio)');
+        END""",
+        # Trigger: BLOQUEAR stock_minimo negativo en maestro_mps.
+        """CREATE TRIGGER IF NOT EXISTS trg_mps_stock_min_no_negativo
+        BEFORE INSERT ON maestro_mps
+        FOR EACH ROW
+        WHEN NEW.stock_minimo IS NOT NULL AND NEW.stock_minimo < 0
+        BEGIN
+            SELECT RAISE(ABORT, 'stock_minimo no puede ser negativo');
+        END""",
+        """CREATE TRIGGER IF NOT EXISTS trg_mps_stock_min_no_negativo_upd
+        BEFORE UPDATE OF stock_minimo ON maestro_mps
+        FOR EACH ROW
+        WHEN NEW.stock_minimo IS NOT NULL AND NEW.stock_minimo < 0
+        BEGIN
+            SELECT RAISE(ABORT, 'UPDATE stock_minimo no puede ser negativo');
+        END""",
+        # Trigger: BLOQUEAR conteo_items con stock_fisico negativo (físico
+        # nunca puede ser < 0).
+        """CREATE TRIGGER IF NOT EXISTS trg_conteo_stock_fisico_no_negativo
+        BEFORE INSERT ON conteo_items
+        FOR EACH ROW
+        WHEN NEW.stock_fisico IS NOT NULL AND NEW.stock_fisico < 0
+        BEGIN
+            SELECT RAISE(ABORT, 'stock_fisico no puede ser negativo (lo que cuentas no puede ser negativo)');
+        END""",
+    ]),
     (1, "baseline — sistema de migraciones instalado", []),
     (2, "maestro_mps: proveedor_preferido", [
         "ALTER TABLE maestro_mps ADD COLUMN proveedor_preferido TEXT DEFAULT \'\'",

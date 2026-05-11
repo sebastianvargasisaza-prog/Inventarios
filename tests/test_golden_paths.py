@@ -1470,6 +1470,136 @@ def test_golden_mfa_endpoint(app, db_clean):
 
 
 # ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 59 · INV-10 · Triggers BD que IMPIDEN violar invariantes
+# ═══════════════════════════════════════════════════════════════════
+# Sebastián 10-may-2026 (visión cero-error): "fórmulas perfectas,
+# 1 código=1 MP, descuentos adecuados, ingresos reales, ajustes
+# integridad perfecta". Migración 97 agregó triggers BD que rechazan
+# violaciones a nivel BD (defense in depth · ningún path puede saltarse).
+
+def test_golden_triggers_bd_invariantes_planta(app, db_clean):
+    """Verifica que los 8 triggers de migración 97 IMPIDEN movimientos
+    inválidos · cantidad<=0, tipo inválido, material_id vacío, etc.
+    """
+    import sqlite3
+    db = os.environ['DB_PATH']
+
+    # Trigger 1: cantidad <= 0 → ABORT
+    conn = sqlite3.connect(db)
+    try:
+        conn.execute("""INSERT INTO movimientos
+                       (material_id, material_nombre, cantidad, tipo, fecha,
+                        lote, operador)
+                       VALUES ('TRG-TEST-1','Test',0,'Entrada',date('now'),'L1','t')""")
+        conn.commit()
+        assert False, 'BUG: trigger cantidad debió bloquear cantidad=0'
+    except sqlite3.IntegrityError as e:
+        assert 'cantidad' in str(e).lower(), f'mensaje raro: {e}'
+    finally:
+        conn.close()
+
+    # Trigger 2: tipo inválido → ABORT
+    conn = sqlite3.connect(db)
+    try:
+        conn.execute("""INSERT INTO movimientos
+                       (material_id, material_nombre, cantidad, tipo, fecha,
+                        lote, operador)
+                       VALUES ('TRG-TEST-2','Test',100,'TipoFantasma',date('now'),'L1','t')""")
+        conn.commit()
+        assert False, 'BUG: trigger tipo debió bloquear TipoFantasma'
+    except sqlite3.IntegrityError as e:
+        assert 'tipo' in str(e).lower(), f'mensaje raro: {e}'
+    finally:
+        conn.close()
+
+    # Trigger 3: material_id vacío → ABORT
+    conn = sqlite3.connect(db)
+    try:
+        conn.execute("""INSERT INTO movimientos
+                       (material_id, material_nombre, cantidad, tipo, fecha,
+                        lote, operador)
+                       VALUES ('','Test',100,'Entrada',date('now'),'L1','t')""")
+        conn.commit()
+        assert False, 'BUG: trigger material_id vacío debió bloquear'
+    except sqlite3.IntegrityError as e:
+        assert 'material_id' in str(e).lower(), f'mensaje raro: {e}'
+    finally:
+        conn.close()
+
+    # Trigger 4: porcentaje > 100 → ABORT
+    conn = sqlite3.connect(db)
+    try:
+        conn.execute("""INSERT INTO formula_items
+                       (producto_nombre, material_id, material_nombre, porcentaje)
+                       VALUES ('TRG-PROD','TRG-MP','Test',150)""")
+        conn.commit()
+        assert False, 'BUG: trigger porcentaje >100 debió bloquear'
+    except sqlite3.IntegrityError as e:
+        assert 'porcentaje' in str(e).lower(), f'mensaje raro: {e}'
+    finally:
+        conn.close()
+
+    # Trigger 5: porcentaje negativo → ABORT
+    conn = sqlite3.connect(db)
+    try:
+        conn.execute("""INSERT INTO formula_items
+                       (producto_nombre, material_id, material_nombre, porcentaje)
+                       VALUES ('TRG-PROD','TRG-MP','Test',-5)""")
+        conn.commit()
+        assert False, 'BUG: trigger porcentaje negativo debió bloquear'
+    except sqlite3.IntegrityError as e:
+        assert 'porcentaje' in str(e).lower()
+    finally:
+        conn.close()
+
+    # Trigger 6: codigo_mp vacío en maestro_mps → ABORT
+    conn = sqlite3.connect(db)
+    try:
+        conn.execute("""INSERT INTO maestro_mps
+                       (codigo_mp, nombre_comercial, activo, tipo_material)
+                       VALUES ('','Test',1,'MP')""")
+        conn.commit()
+        assert False, 'BUG: codigo_mp vacío debió bloquear'
+    except sqlite3.IntegrityError as e:
+        assert 'codigo_mp' in str(e).lower()
+    finally:
+        conn.close()
+
+    # Trigger 7: stock_minimo negativo → ABORT
+    conn = sqlite3.connect(db)
+    try:
+        conn.execute("""INSERT INTO maestro_mps
+                       (codigo_mp, nombre_comercial, activo, tipo_material, stock_minimo)
+                       VALUES ('TRG-TEST-NEG','Test',1,'MP',-100)""")
+        conn.commit()
+        assert False, 'BUG: stock_minimo negativo debió bloquear'
+    except sqlite3.IntegrityError as e:
+        assert 'stock_minimo' in str(e).lower()
+    finally:
+        conn.close()
+
+    # SANITY: movimiento válido SÍ se inserta
+    conn = sqlite3.connect(db)
+    try:
+        _exec("""INSERT OR REPLACE INTO maestro_mps
+                  (codigo_mp, nombre_comercial, activo, tipo_material)
+                  VALUES ('TRG-OK','Test',1,'MP')""")
+        conn.execute("""INSERT INTO movimientos
+                       (material_id, material_nombre, cantidad, tipo, fecha,
+                        lote, operador)
+                       VALUES ('TRG-OK','Test',500,'Entrada',date('now'),'TRG-LOTE','test')""")
+        conn.commit()
+        # Cleanup
+        conn.execute("DELETE FROM movimientos WHERE material_id='TRG-OK'")
+        conn.execute("DELETE FROM maestro_mps WHERE codigo_mp='TRG-OK'")
+        conn.commit()
+    except Exception as e:
+        conn.close()
+        assert False, f'movimiento válido NO debería fallar: {e}'
+    conn.close()
+
+
+# ═══════════════════════════════════════════════════════════════════
 # GOLDEN PATH 58 · INV-9 · Fusionar MPs duplicadas (maestro-mps-unificar)
 # ═══════════════════════════════════════════════════════════════════
 # Sebastián 10-may-2026: auditoría detectó MPs con mismo INCI pero
