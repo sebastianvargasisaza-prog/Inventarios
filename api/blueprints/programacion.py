@@ -8650,6 +8650,12 @@ def _sync_calendar_a_produccion_programada(conn, days_ahead=90,
             origen_filter = ''   # cualquier origen
         else:
             origen_filter = "AND origen='calendar'"
+        # Sebastián 12-may-2026: ventana ampliada de -1d a -14d.
+        # Antes el sync solo limpiaba fechas >=hoy-1, así que las atrasadas
+        # zombies (Alejandro movió/borró en Calendar pero quedaron en BD)
+        # del pasado nunca se cancelaban → panel mostraba "Mar 5 atrasada"
+        # cuando Calendar nunca tuvo nada Mar 5. Ahora se cancelan también
+        # las de hasta 14 días atrás SI no iniciaron Y no descontaron inv.
         candidatos = conn.execute(
             f"""SELECT id, producto, fecha_programada,
                        COALESCE(inicio_real_at,'') as inicio,
@@ -8658,7 +8664,7 @@ def _sync_calendar_a_produccion_programada(conn, days_ahead=90,
                FROM produccion_programada
                WHERE 1=1 {origen_filter}
                  AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado')
-                 AND fecha_programada >= date('now','-1 day')"""
+                 AND fecha_programada >= date('now','-14 days')"""
         ).fetchall()
         huerfanos = []
         for r in candidatos:

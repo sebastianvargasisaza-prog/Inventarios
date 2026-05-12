@@ -19887,6 +19887,207 @@ def _escape_html(s):
             .replace('"', '&quot;'))
 
 
+@bp.route("/api/admin/programacion-vs-calendar", methods=["GET"])
+def programacion_vs_calendar():
+    """Compara línea por línea Calendar vs produccion_programada activa.
+
+    Sebastián 12-may-2026: 'la programación no concuerda con el calendario'.
+    Este endpoint muestra exactamente:
+      - en_db_no_en_calendar[]: producciones activas en BD sin contraparte
+        en Google Calendar (zombies que sobrevivieron al sync)
+      - en_calendar_no_en_db[]: eventos del Calendar que NO entraron a BD
+        (probable porque el sync los rechazó · ver razón)
+      - matched[]: producciones que SÍ concuerdan
+
+    Query: ?dias_pasado=14&dias_futuro=60 (ventana)
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    try:
+        dias_pasado = int(request.args.get('dias_pasado', 14))
+        dias_futuro = int(request.args.get('dias_futuro', 60))
+    except Exception:
+        dias_pasado, dias_futuro = 14, 60
+
+    # Fetch Calendar events
+    try:
+        from blueprints.programacion import (
+            _fetch_calendar_events, NON_FAB_KW_GLOBAL,
+        )
+        import re as _re
+    except ImportError:
+        return jsonify({'error': 'no se pudo importar programacion'}), 500
+
+    cal = _fetch_calendar_events(days_ahead=dias_futuro)
+    cal_events = cal.get('events', [])
+    cal_error = cal.get('error')
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    try:
+        # Cargar mapeo SKU → producto y formula_headers
+        sku_to_prod = {}
+        for r in c.execute(
+            "SELECT UPPER(sku), producto_nombre FROM sku_producto_map WHERE COALESCE(activo,1)=1"
+        ).fetchall():
+            sku_to_prod[r[0]] = r[1]
+        formulas = set(
+            r[0] for r in c.execute(
+                "SELECT producto_nombre FROM formula_headers"
+            ).fetchall()
+        )
+
+        NOT_SKU = {
+            'FAB','QC','CON','SIN','MICRO','ENVASADO','ACONDICIONAMIENTO',
+            'FABRICACION','FABRICACIÓN','LANZAMIENTO','PRODUCCION','PRODUCCIÓN',
+            'KG','MES','DIAS','DÍAS','ML','UDS','BATCH','FERNANDO',
+            'MESA','LOTES','LOTE','MINI','MACRO','AND','THE','FOR',
+            'FAB1','FYE2','FYE3','ENV1','ENV2','PROD1','PROD2','PROD3','PROD4'
+        }
+        def _skus(titulo):
+            tokens = _re.findall(r'\b([A-Z][A-Z0-9]{1,}[A-Z0-9])\b', (titulo or '').upper())
+            return [t for t in tokens if t not in NOT_SKU]
+
+        # Set de (producto, fecha) que están en Calendar HOY
+        from datetime import date as _date, timedelta as _td
+        hoy = _date.today()
+        keys_cal = set()
+        cal_detalle_por_key = {}
+        eventos_no_fab = []
+        eventos_sin_sku = []
+        eventos_sku_sin_formula = []
+        for ev in cal_events:
+            titulo = ev.get('titulo', '') or ''
+            fecha_s = (ev.get('fecha') or '')[:10]
+            if not fecha_s:
+                continue
+            try:
+                f = _date.fromisoformat(fecha_s)
+            except Exception:
+                continue
+            # Filtros del sync
+            tlow = titulo.lower()
+            if any(kw in tlow for kw in NON_FAB_KW_GLOBAL):
+                eventos_no_fab.append({'titulo': titulo[:80], 'fecha': fecha_s})
+                continue
+            skus_titulo = _skus(titulo)
+            if not skus_titulo:
+                eventos_sin_sku.append({'titulo': titulo[:80], 'fecha': fecha_s})
+                continue
+            matched = False
+            for sku in skus_titulo:
+                prod = sku_to_prod.get(sku)
+                if not prod:
+                    continue
+                if prod not in formulas:
+                    eventos_sku_sin_formula.append({
+                        'titulo': titulo[:80], 'fecha': fecha_s,
+                        'sku': sku, 'producto': prod,
+                    })
+                    matched = True
+                    continue
+                keys_cal.add((prod, fecha_s))
+                cal_detalle_por_key[(prod, fecha_s)] = {
+                    'titulo': titulo[:120],
+                    'gcal_id': (ev.get('id') or '')[:40],
+                }
+                matched = True
+                break
+            if not matched:
+                eventos_sin_sku.append({'titulo': titulo[:80], 'fecha': fecha_s})
+
+        # Producciones activas en BD (no canceladas/completadas) en ventana
+        fecha_min = (hoy - _td(days=dias_pasado)).isoformat()
+        fecha_max = (hoy + _td(days=dias_futuro)).isoformat()
+        db_rows = c.execute("""
+            SELECT id, producto, fecha_programada,
+                   COALESCE(estado,'') AS estado,
+                   COALESCE(origen,'') AS origen,
+                   COALESCE(inicio_real_at,'') AS inicio,
+                   COALESCE(inventario_descontado_at,'') AS desc,
+                   COALESCE(gcal_event_id,'') AS gcal_id,
+                   COALESCE(cantidad_kg,0) AS kg,
+                   COALESCE(lotes,1) AS lotes
+            FROM produccion_programada
+            WHERE LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado')
+              AND fecha_programada >= ?
+              AND fecha_programada <= ?
+            ORDER BY fecha_programada, producto
+        """, (fecha_min, fecha_max)).fetchall()
+
+        en_db_no_cal = []
+        matched = []
+        keys_db = set()
+        for r in db_rows:
+            key = (r['producto'], r['fecha_programada'])
+            keys_db.add(key)
+            base = {
+                'id': r['id'], 'producto': r['producto'],
+                'fecha': r['fecha_programada'][:10],
+                'estado': r['estado'], 'origen': r['origen'],
+                'gcal_event_id': r['gcal_id'][:40] if r['gcal_id'] else '',
+                'cantidad_kg': float(r['kg']),
+                'lotes': int(r['lotes']),
+                'iniciada': bool(r['inicio']),
+                'descontada': bool(r['desc']),
+            }
+            if key in keys_cal:
+                base['cal_titulo'] = cal_detalle_por_key[key]['titulo']
+                matched.append(base)
+            else:
+                # No está en Calendar · zombie probable
+                base['razon_zombie'] = (
+                    'Protegida (ya inició o descontó inv)' if (r['inicio'] or r['desc'])
+                    else 'origen=manual · no se borra auto' if r['origen'] not in ('calendar', 'auto-sync-calendar')
+                    else 'force_mirror=false en sync regular'
+                )
+                en_db_no_cal.append(base)
+
+        # Eventos de Calendar que NO entraron a BD (en futuro)
+        en_cal_no_db = []
+        for key, det in cal_detalle_por_key.items():
+            prod, fecha_s = key
+            try:
+                f = _date.fromisoformat(fecha_s)
+            except Exception:
+                continue
+            if f < hoy - _td(days=dias_pasado) or f > hoy + _td(days=dias_futuro):
+                continue
+            if key not in keys_db:
+                en_cal_no_db.append({
+                    'producto': prod, 'fecha': fecha_s,
+                    'titulo': det['titulo'], 'gcal_id': det['gcal_id'],
+                })
+
+        return jsonify({
+            'ok': True,
+            'calendar_error': cal_error,
+            'ventana': {'dias_pasado': dias_pasado, 'dias_futuro': dias_futuro},
+            'resumen': {
+                'matched': len(matched),
+                'en_db_no_en_calendar': len(en_db_no_cal),
+                'en_calendar_no_en_db': len(en_cal_no_db),
+                'eventos_no_fab': len(eventos_no_fab),
+                'eventos_sin_sku': len(eventos_sin_sku),
+                'eventos_sku_sin_formula': len(eventos_sku_sin_formula),
+                'eventos_calendar_total': len(cal_events),
+                'db_rows_activos': len(db_rows),
+            },
+            'en_db_no_en_calendar': en_db_no_cal,
+            'en_calendar_no_en_db': en_cal_no_db,
+            'eventos_no_fab_sample': eventos_no_fab[:20],
+            'eventos_sin_sku_sample': eventos_sin_sku[:20],
+            'eventos_sku_sin_formula_sample': eventos_sku_sin_formula[:20],
+            'matched_sample': matched[:20],
+        }), 200
+    finally:
+        try: conn.close()
+        except Exception: pass
+
+
 @bp.route("/api/admin/limpiar-produccion-zombies", methods=["GET", "POST"])
 def limpiar_produccion_zombies():
     """Detecta y limpia producciones zombie/huérfanas en produccion_programada.
