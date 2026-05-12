@@ -19530,6 +19530,218 @@ def debug_formula_items():
             pass
 
 
+@bp.route("/api/admin/debug-consumo-mp/<codigo_mp>", methods=["GET"])
+def debug_consumo_mp(codigo_mp):
+    """Drill-down · explica el consumo Calendar+Shopify de UNA MP específica.
+
+    Sebastián 11-may-2026: mp-alcanza-multi infla consumo · ej propilenglicol
+    dice 370kg/mes pero realidad es 45kg/mes (8x). Este endpoint muestra:
+
+      - Qué fórmulas usan la MP + su % y g_por_lote
+      - Cuántos lotes programados hay por producto en 60/90/180d (Calendar)
+      - Cuántas ventas Shopify proyectadas por producto
+      - Consumo Calendar vs Shopify por producto+horizonte
+      - El total que sale para que coincida con mp-alcanza-multi
+
+    Útil para cazar duplicados de Calendar o lotes sobre-programados.
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    try:
+        ventana = int(request.args.get('ventana_shopify', 60))
+    except Exception:
+        ventana = 60
+
+    HORIZONTES = [60, 90, 180]
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    try:
+        import json as _json
+        import re as _re
+        from datetime import datetime as _dt, timedelta as _td, date as _date
+
+        # 1. Fórmulas que usan esta MP
+        formulas = c.execute("""
+            SELECT producto_nombre,
+                   COALESCE(porcentaje, 0) AS pct,
+                   COALESCE(cantidad_g_por_lote, 0) AS gpl
+            FROM formula_items
+            WHERE material_id = ?
+        """, (codigo_mp,)).fetchall()
+        if not formulas:
+            return jsonify({'ok': True, 'codigo_mp': codigo_mp,
+                             'mensaje': 'MP no aparece en ninguna fórmula',
+                             'formulas': []}), 200
+
+        productos = [f['producto_nombre'] for f in formulas]
+
+        # 2. Producciones programadas para esos productos
+        placeholders = ','.join('?' * len(productos))
+        rows = c.execute(f"""
+            SELECT producto, fecha_programada,
+                   COALESCE(lotes, 1) AS lotes
+            FROM produccion_programada
+            WHERE producto IN ({placeholders})
+            ORDER BY fecha_programada
+        """, productos).fetchall()
+
+        hoy = _date.today()
+        producciones_por_producto = {}
+        producciones_raw = []  # lista completa para detectar duplicados
+        for r in rows:
+            prod = r['producto']
+            try:
+                f = _date.fromisoformat(r['fecha_programada'][:10])
+                dias = (f - hoy).days
+            except Exception:
+                continue
+            if dias < 0:
+                continue
+            lt = int(r['lotes'] or 1)
+            producciones_raw.append({
+                'producto': prod,
+                'fecha': r['fecha_programada'][:10],
+                'dias': dias,
+                'lotes': lt,
+            })
+            d = producciones_por_producto.setdefault(prod, {
+                'count_60d': 0, 'lotes_60d': 0,
+                'count_90d': 0, 'lotes_90d': 0,
+                'count_180d': 0, 'lotes_180d': 0,
+            })
+            for h in HORIZONTES:
+                if dias <= h:
+                    d[f'count_{h}d'] += 1
+                    d[f'lotes_{h}d'] += lt
+
+        # 3. Detectar fechas duplicadas (mismo producto + misma fecha)
+        from collections import Counter
+        dup_counter = Counter(
+            (p['producto'], p['fecha']) for p in producciones_raw
+        )
+        duplicados = [
+            {'producto': k[0], 'fecha': k[1], 'apariciones': v}
+            for k, v in dup_counter.items() if v > 1
+        ]
+
+        # 4. Ventas Shopify por SKU → producto
+        since = (_dt.now() - _td(days=ventana)).strftime('%Y-%m-%d')
+        sku_ventas = {}
+        for row in c.execute("""
+            SELECT sku_items FROM animus_shopify_orders
+            WHERE creado_en >= ? AND sku_items IS NOT NULL
+        """, (since,)).fetchall():
+            try:
+                items = _json.loads(row['sku_items']) if row['sku_items'] else []
+            except Exception:
+                items = []
+            for it in items:
+                sku = str(it.get('sku', '') or '').strip().upper()
+                qty = int(it.get('qty', 0) or 0)
+                if sku and qty > 0:
+                    sku_ventas[sku] = sku_ventas.get(sku, 0) + qty
+
+        def _ml(nombre):
+            if not nombre: return 30.0
+            m = _re.search(r'(\d+(?:\.\d+)?)\s*(?:ml|g\b)', nombre.lower())
+            return float(m.group(1)) if m else 30.0
+
+        sku_producto = {}
+        for r in c.execute("""
+            SELECT sku, producto_nombre
+            FROM sku_producto_map
+            WHERE COALESCE(activo, 1) = 1
+        """).fetchall():
+            sku_producto[r['sku'].upper()] = {
+                'producto': r['producto_nombre'],
+                'ml': _ml(r['producto_nombre']),
+            }
+        producto_ventas_mes = {}
+        producto_ml = {}
+        for sku, info in sku_producto.items():
+            p = info['producto']
+            if not p: continue
+            v_mes = sku_ventas.get(sku, 0) * 30.0 / ventana
+            producto_ventas_mes[p] = producto_ventas_mes.get(p, 0) + v_mes
+            producto_ml[p] = info['ml']
+
+        # 5. unidad_base por producto
+        ub_por_prod = {}
+        for r in c.execute(
+            "SELECT producto_nombre, COALESCE(unidad_base_g, 1000) FROM formula_headers"
+        ).fetchall():
+            ub_por_prod[r[0]] = float(r[1] or 1000)
+
+        # 6. Calcular consumos por producto+horizonte (lógica idéntica a mp-alcanza-multi)
+        formulas_detalle = []
+        total_consumo = {h: 0.0 for h in HORIZONTES}
+        for f in formulas:
+            prod = f['producto_nombre']
+            pct = float(f['pct'])
+            gpl = float(f['gpl'])
+            ub = ub_por_prod.get(prod, 1000)
+            v_mes = producto_ventas_mes.get(prod, 0)
+            ml = producto_ml.get(prod, 30)
+            prog = producciones_por_producto.get(prod, {})
+
+            horizonte_g = {}
+            for h in HORIZONTES:
+                lotes_h = prog.get(f'lotes_{h}d', 0)
+                if gpl > 0:
+                    cal_g = gpl * lotes_h
+                else:
+                    cal_g = (pct/100.0) * ub * lotes_h
+                shop_g = v_mes * (h/30.0) * ml * (pct/100.0) if (pct > 0 and v_mes > 0) else 0
+                tomado = max(cal_g, shop_g)
+                horizonte_g[h] = {
+                    'lotes_calendar': lotes_h,
+                    'calendar_g': round(cal_g, 1),
+                    'shopify_g': round(shop_g, 1),
+                    'tomado_max_g': round(tomado, 1),
+                    'fuente': 'calendar' if cal_g >= shop_g else 'shopify',
+                }
+                total_consumo[h] += tomado
+
+            formulas_detalle.append({
+                'producto': prod,
+                'porcentaje': pct,
+                'g_por_lote': gpl,
+                'unidad_base_g': ub,
+                'ventas_mes_shopify': round(v_mes, 1),
+                'ml': ml,
+                'horizonte': horizonte_g,
+            })
+
+        return jsonify({
+            'ok': True,
+            'codigo_mp': codigo_mp,
+            'ventana_shopify_dias': ventana,
+            'horizontes_dias': HORIZONTES,
+            'total_consumo_g': {h: round(v, 1) for h, v in total_consumo.items()},
+            'total_consumo_kg_mensual_aprox': {
+                '60d': round(total_consumo[60]/2.0/1000, 2),
+                '90d': round(total_consumo[90]/3.0/1000, 2),
+                '180d': round(total_consumo[180]/6.0/1000, 2),
+            },
+            'formulas_que_la_usan': formulas_detalle,
+            'producciones_calendar_count': len(producciones_raw),
+            'producciones_calendar_sample': producciones_raw[:30],
+            'duplicados_calendar': duplicados,
+            'top_productos_por_lotes_90d': sorted(
+                [{'producto': p, 'lotes_90d': d['lotes_90d'], 'count_90d': d['count_90d']}
+                  for p, d in producciones_por_producto.items()
+                  if d['lotes_90d'] > 0],
+                key=lambda x: -x['lotes_90d']
+            )[:10],
+        }), 200
+    finally:
+        try: conn.close()
+        except Exception: pass
+
+
 @bp.route("/api/admin/auditoria-unidad-base", methods=["GET"])
 def auditoria_unidad_base():
     """Audit · formula_headers.unidad_base_g vs g_por_lote/porcentaje.
