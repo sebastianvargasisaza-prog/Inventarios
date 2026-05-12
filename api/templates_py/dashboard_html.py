@@ -12815,6 +12815,33 @@ async function ckMarcar(itemId, estado){
       });
       html += '</tbody></table>';
 
+      // Sebastián 12-may-2026: 2 categorías de SKUs filtrados con acción clara
+      function _apaPintarFiltro(titulo, accion, lista){
+        var h = '<details style="margin:0 0 10px;font-size:11px;color:#92400e;background:#fffbeb;border:1px solid #fed7aa;border-radius:6px;padding:6px 10px">'+
+                '<summary style="cursor:pointer;font-weight:700">⚠️ '+_apaEscHTML(titulo)+' ('+lista.length+') · clic para ver</summary>'+
+                '<div style="margin-top:6px;color:#78350f"><b>Acción:</b> '+_apaEscHTML(accion)+'</div>'+
+                '<table style="width:100%;font-size:11px;margin-top:6px;border-collapse:collapse">'+
+                '<thead><tr style="color:#78350f"><th style="text-align:left;padding:4px">SKU</th><th style="text-align:right;padding:4px">Vendido</th></tr></thead><tbody>';
+        lista.forEach(function(x){
+          h += '<tr><td style="padding:4px;font-weight:600">'+_apaEscHTML(x.sku)+'</td><td style="padding:4px;text-align:right">'+_apaFmtN(x.ventas_periodo_u)+'</td></tr>';
+        });
+        return h + '</tbody></table></details>';
+      }
+      var huerf = d.skus_huerfano || [];
+      var mvac = d.skus_mapeo_vacio || [];
+      if(huerf.length){
+        html += _apaPintarFiltro(
+          huerf.length+' SKUs huérfanos vendiendo (no están en sku_producto_map)',
+          'Si es producto real: agregar fila en sku_producto_map · si no, desactivar SKU en Shopify',
+          huerf);
+      }
+      if(mvac.length){
+        html += _apaPintarFiltro(
+          mvac.length+' SKUs con mapeo vacío vendiendo (producto_nombre en blanco)',
+          'Completar la columna producto_nombre en sku_producto_map para estos SKUs',
+          mvac);
+      }
+
       // Tabla MPs
       html += '<h4 style="margin:18px 0 8px;color:#134e4a;font-size:13px">📦 MPs necesarias (agregado de SKUs urgentes)</h4>';
       html += '<table style="width:100%;border-collapse:collapse;font-size:12px">';

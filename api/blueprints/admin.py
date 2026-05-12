@@ -282,13 +282,29 @@ def animus_prioridad_agotamiento():
                 'proveedor': r['proveedor'][:40],
             }
 
-        # 6. Compute por SKU · SOLO los que VENDEN en la ventana
-        # Sebastián 12-may-2026: filtrar ruido (SKUs descontinuados, de prueba,
-        # ANM-RM-* que no existen como producto real). El criterio de "producto
-        # real" es simple: si nadie lo compra en los últimos N días, no entra
-        # al panel de prioridad. Un SKU agotado pero vendido sigue apareciendo
-        # como CRITICO porque está en ventas_por_sku.
-        todos_skus = set(ventas_por_sku.keys())
+        # 6. Compute por SKU · vende AND mapeado a producto_nombre NO VACIO
+        # Sebastián 12-may-2026 ("solucionar de raíz"):
+        # Requiere 3 condiciones:
+        #   · vende (>=1 uds en ventana)
+        #   · mapeado en sku_producto_map con activo=1
+        #   · producto_nombre NO vacío (TRIM != '')
+        # Los filtrados se clasifican en 2 categorías para acción clara:
+        #   · skus_huerfano: NO en sku_producto_map · accion: crear mapeo
+        #     o desactivar SKU en Shopify
+        #   · skus_mapeo_vacio: en sku_producto_map pero producto_nombre = ''
+        #     · accion: completar producto_nombre en BD
+        sku_mapeados_validos = {
+            sku for sku, prod in sku_to_prod.items()
+            if prod and str(prod).strip()
+        }
+        sku_mapeo_vacio = {
+            sku for sku, prod in sku_to_prod.items()
+            if not (prod and str(prod).strip())
+        }
+        skus_que_venden = set(ventas_por_sku.keys())
+        todos_skus = skus_que_venden & sku_mapeados_validos
+        skus_huerfano = sorted(list(skus_que_venden - sku_mapeados_validos - sku_mapeo_vacio))
+        skus_mapeo_vacio_vendiendo = sorted(list(skus_que_venden & sku_mapeo_vacio))
         skus_out = []
         mp_necesario_g = {}  # codigo_mp → necesario_g acumulado
         for sku in todos_skus:
@@ -395,8 +411,33 @@ def animus_prioridad_agotamiento():
                     f"{int(s.get('stock_actual_u',0)):>7} {s.get('fuente_stock',''):<8} {dias_s:>7} "
                     f"{s['urgencia']:<10} {(s.get('descripcion') or s.get('producto_base') or '')[:60]}"
                 )
+            if skus_huerfano:
+                lines.append("")
+                lines.append(f"⚠️  {len(skus_huerfano)} SKUs HUERFANOS vendiendo (no estan en sku_producto_map):")
+                lines.append("    Accion: crear mapeo si es producto real · o desactivar SKU en Shopify")
+                for sku in skus_huerfano:
+                    lines.append(f"    {sku:<22} {int(ventas_por_sku.get(sku, 0)):>4} uds vendidas")
+            if skus_mapeo_vacio_vendiendo:
+                lines.append("")
+                lines.append(f"⚠️  {len(skus_mapeo_vacio_vendiendo)} SKUs con MAPEO VACIO vendiendo (producto_nombre en blanco):")
+                lines.append("    Accion: completar producto_nombre en sku_producto_map")
+                for sku in skus_mapeo_vacio_vendiendo:
+                    lines.append(f"    {sku:<22} {int(ventas_por_sku.get(sku, 0)):>4} uds vendidas")
             from flask import Response
             return Response("\n".join(lines), mimetype='text/plain; charset=utf-8'), 200
+
+        skus_huerfano_detalle = [
+            {'sku': s, 'ventas_periodo_u': int(ventas_por_sku.get(s, 0)),
+             'motivo': 'No está en sku_producto_map (o activo=0)',
+             'accion': 'Crear mapeo si es producto real · o desactivar SKU en Shopify'}
+            for s in skus_huerfano
+        ]
+        skus_mapeo_vacio_detalle = [
+            {'sku': s, 'ventas_periodo_u': int(ventas_por_sku.get(s, 0)),
+             'motivo': 'En sku_producto_map pero producto_nombre vacío',
+             'accion': 'Completar producto_nombre en sku_producto_map'}
+            for s in skus_mapeo_vacio_vendiendo
+        ]
 
         return jsonify({
             'ok': True,
@@ -410,6 +451,8 @@ def animus_prioridad_agotamiento():
             'resumen': resumen,
             'skus': skus_out,
             'mps_necesarias': mps_out,
+            'skus_huerfano': skus_huerfano_detalle,
+            'skus_mapeo_vacio': skus_mapeo_vacio_detalle,
         }), 200
     finally:
         try: conn.close()
