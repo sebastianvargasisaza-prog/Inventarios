@@ -167,30 +167,24 @@ def animus_prioridad_agotamiento():
         hoy = _date.today()
         ventana_desde = (hoy - _td(days=ventana)).isoformat()
 
-        # 1. Stock actual por SKU = baseline + entradas/ajustes - salidas/ventas
+        # 1. Stock actual por SKU desde stock_pt (sync Shopify).
+        # Sebastián 12-may-2026: fuente correcta es stock_pt (sincronizado
+        # por /api/programacion/sync-stock-shopify), NO animus_inventario_baseline
+        # (que es para conteo cíclico interno).
+        # Nota: inventory_quantity de Shopify = ON HAND (incluye committed).
+        # Idealmente sería AVAILABLE (On hand - Committed), pendiente fix futuro.
         stock_por_sku = {}
         for r in c.execute("""
-            SELECT b.sku,
-                   COALESCE(b.descripcion, '') AS descripcion,
-                   COALESCE(b.unidades_baseline, 0) AS baseline_u,
-                   COALESCE((
-                     SELECT SUM(cantidad) FROM animus_inventario_movimientos m
-                     WHERE m.sku = b.sku
-                       AND m.fecha >= b.fecha_baseline
-                       AND m.tipo IN ('ENTRADA', 'AJUSTE', 'CONTEO')
-                   ), 0) AS entradas_u,
-                   COALESCE((
-                     SELECT SUM(cantidad) FROM animus_inventario_movimientos m
-                     WHERE m.sku = b.sku
-                       AND m.fecha >= b.fecha_baseline
-                       AND m.tipo IN ('SALIDA', 'SHOPIFY_VENTA')
-                   ), 0) AS salidas_u
-            FROM animus_inventario_baseline b
+            SELECT UPPER(sku) AS sku,
+                   MAX(COALESCE(descripcion, '')) AS descripcion,
+                   COALESCE(SUM(unidades_disponible), 0) AS stock_u
+            FROM stock_pt
+            WHERE estado = 'Disponible' AND empresa = 'ANIMUS'
+            GROUP BY UPPER(sku)
         """).fetchall():
-            stock_actual = int(r['baseline_u']) + int(r['entradas_u']) - int(r['salidas_u'])
-            stock_por_sku[r['sku'].upper()] = {
+            stock_por_sku[r['sku']] = {
                 'descripcion': r['descripcion'],
-                'stock_actual': max(0, stock_actual),
+                'stock_actual': max(0, int(r['stock_u'])),
             }
 
         # 2. Ventas últimos N días por SKU desde animus_shopify_orders
@@ -269,10 +263,14 @@ def animus_prioridad_agotamiento():
                 'proveedor': r['proveedor'][:40],
             }
 
-        # 6. Compute por SKU
+        # 6. Compute por SKU · unión de SKUs con stock O con ventas
+        # Un SKU que se vende pero está agotado en stock también debe aparecer
+        # (stock=0, urgencia=CRITICO).
+        todos_skus = set(stock_por_sku.keys()) | set(ventas_por_sku.keys())
         skus_out = []
         mp_necesario_g = {}  # codigo_mp → necesario_g acumulado
-        for sku, stk in stock_por_sku.items():
+        for sku in todos_skus:
+            stk = stock_por_sku.get(sku, {'descripcion': '', 'stock_actual': 0})
             ventas_n = int(ventas_por_sku.get(sku, 0))
             velocidad = ventas_n / float(ventana)
             stock_u = int(stk['stock_actual'])

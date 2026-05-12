@@ -7390,23 +7390,28 @@ function _renderProgramacion(d){
       <div id="pv2-auditoria" style="display:none"></div>
     </div>
 
-    <!-- Sebastian 5-may-2026 (Luis Enrique): VISTA UNICA · calendario por
-         sala × dia/semana/mes según horizonte. Click producción → modal
-         con MP+MEE faltantes. Botón global 'Solicitar TODO faltante'. -->
+    <!-- Sebastián 12-may-2026: PIVOTE · pasar de Calendar-driven a
+         Shopify-driven. Ahora el panel se basa en ventas reales + stock
+         disponible para priorizar producciones. Sin depender de Calendar.
+         Datos vienen de /api/admin/animus-prioridad-agotamiento. -->
     <div id="pv2-vista-simple" style="margin-bottom:14px;background:#fff;border-radius:12px;border:2px solid #0f766e;overflow:hidden;box-shadow:0 4px 12px rgba(15,118,110,0.1)">
       <div style="background:linear-gradient(90deg,#f0fdfa,#ecfeff);padding:14px 18px;border-bottom:1px solid #ccfbf1;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
         <div>
-          <h3 style="margin:0;color:#134e4a;font-size:15px;font-weight:800">📅 Producciones programadas</h3>
-          <div id="pv2-vs-resumen" style="font-size:11px;color:#475569;margin-top:3px">Cargando...</div>
+          <h3 style="margin:0;color:#134e4a;font-size:15px;font-weight:800">🛍️ Prioridad de producción · Shopify-driven</h3>
+          <div id="apa-resumen" style="font-size:11px;color:#475569;margin-top:3px">Listado de SKUs por días para agotamiento (ventas reales / stock disponible). Las MPs se derivan de las fórmulas.</div>
         </div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <button id="pv2-vs-btn-dup" onclick="pv2LimpiarDuplicados()" style="background:#b45309;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:800;cursor:pointer;display:none" title="Borra producciones duplicadas (mismo producto + lotes + kg en 7 días)">🗑️ Limpiar duplicados</button>
-          <button id="pv2-vs-btn-solicitar" onclick="pv2SolicitarFaltantesBulk()" style="background:#dc2626;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:800;cursor:pointer;display:none" title="Crea solicitudes de compra agrupadas por proveedor para todo lo faltante">🛒 Solicitar TODO faltante</button>
-          <button onclick="pv2ReSyncCalendar()" style="background:#0e7490;color:#fff;border:none;padding:8px 12px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer" title="Trae cambios de Google Calendar (espejo: borra fantasmas + agrega nuevas)">📅 Re-sync Calendar</button>
-          <button onclick="pv2CargarProdFaltantes()" style="background:#0f766e;color:#fff;border:none;padding:8px 12px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">↻ Recargar</button>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <label style="font-size:11px;color:#475569">Ventas (días):
+            <input type="number" id="apa-ventana" value="60" min="30" max="180" step="10" style="width:50px;padding:3px 6px;border:1px solid #cbd5e1;border-radius:4px;font-size:11px">
+          </label>
+          <label style="font-size:11px;color:#475569">Cobertura:
+            <input type="number" id="apa-cobertura" value="30" min="14" max="90" step="7" style="width:50px;padding:3px 6px;border:1px solid #cbd5e1;border-radius:4px;font-size:11px">
+          </label>
+          <button onclick="apaSyncShopify()" style="background:#0e7490;color:#fff;border:none;padding:8px 12px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer" title="Trae stock actual desde Shopify API a stock_pt">🔄 Sync Shopify</button>
+          <button onclick="apaCargar()" style="background:#0f766e;color:#fff;border:none;padding:8px 12px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">↻ Recalcular</button>
         </div>
       </div>
-      <div id="pv2-vs-resultado" style="padding:14px 18px"><div style="text-align:center;color:#94a3b8;padding:20px">⏳ Calculando producciones y faltantes...</div></div>
+      <div id="apa-resultado" style="padding:14px 18px"><div style="text-align:center;color:#94a3b8;padding:20px">⏳ Calculando…</div></div>
     </div>
 
     <!-- Sebastian 5-may-2026: paneles legacy ocultos · Centro de Acción,
@@ -11100,7 +11105,9 @@ async function ckMarcar(itemId, estado){
     // auditoría, detectarCambios) ya NO se carga automáticamente · si
     // alguien necesita esos panels los llama explícitamente desde botones
     // específicos. Resultado: 1 sola llamada al backend por tab activation.
-    pv2CargarProdFaltantes();
+    // Sebastián 12-may-2026 pivote: apaCargar (Shopify-driven) en lugar de
+    // pv2CargarProdFaltantes (Calendar-driven). Ya no dependemos de Alejandro.
+    apaCargar();
   }
 
   function planV2InjectMeePanels(){
@@ -12679,7 +12686,8 @@ async function ckMarcar(itemId, estado){
     });
     // Sebastian 7-may-2026: solo refrescar la vista simple · planV2Cargar
     // y planV2CargarCobertura escriben en panels ocultos.
-    pv2CargarProdFaltantes();
+    // Sebastián 12-may-2026 pivote: apaCargar reemplaza pv2CargarProdFaltantes.
+    apaCargar();
   }
 
   // ── Sebastian 5-may-2026 (Luis Enrique): vista simple primaria ─────────
@@ -12691,6 +12699,135 @@ async function ckMarcar(itemId, estado){
     var meses = parseFloat(_PV2_HORIZONTE || '2');
     if(meses < 1) return 14;  // semana = 14d (segunda semana incluida)
     return Math.round(meses * 30);
+  }
+
+  // ────────────────────────────────────────────────────────────────────────
+  // Sebastián 12-may-2026: panel Shopify-driven (APA = Animus Prioridad Agotamiento)
+  // Reemplaza el viejo pv2 basado en Calendar. Ahora prioriza por días para
+  // agotamiento (stock_pt / velocidad ventas Shopify).
+  // ────────────────────────────────────────────────────────────────────────
+  function _apaEscHTML(s){return String(s===null||s===undefined?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;');}
+  function _apaFmtN(n,d){if(n===null||n===undefined)return '—';return Number(n).toLocaleString('es-CO',{maximumFractionDigits:d||0});}
+  function _apaFmtG(g){if(g===null||g===undefined)return '—';if(Math.abs(g)>=1000)return (g/1000).toFixed(1)+' kg';return Math.round(g)+' g';}
+  function _apaUrgenciaColor(u){
+    return {CRITICO:'#dc2626',ALTA:'#ea580c',MEDIA:'#d97706',BAJA:'#0e7490',OK:'#15803d',SIN_USO:'#64748b'}[u]||'#64748b';
+  }
+  function _apaUrgenciaBg(u){
+    return {CRITICO:'#fee2e2',ALTA:'#ffedd5',MEDIA:'#fef3c7',BAJA:'#cffafe',OK:'#dcfce7',SIN_USO:'#f1f5f9'}[u]||'#f1f5f9';
+  }
+
+  async function apaSyncShopify(){
+    var resumen = document.getElementById('apa-resumen');
+    if(resumen) resumen.textContent = '⏳ Sincronizando stock desde Shopify…';
+    try{
+      var r = await fetch('/api/programacion/sync-stock-shopify', {method:'POST'});
+      var d = await r.json();
+      if(!r.ok || d.ok === false){
+        alert('Error sync Shopify: '+(d.error||r.status));
+        if(resumen) resumen.textContent = '';
+        return;
+      }
+      apaCargar();
+    }catch(e){
+      alert('Error red sync Shopify: '+e.message);
+      if(resumen) resumen.textContent = '';
+    }
+  }
+
+  async function apaCargar(){
+    var ventana = document.getElementById('apa-ventana');
+    var cobertura = document.getElementById('apa-cobertura');
+    var v = ventana ? (ventana.value || 60) : 60;
+    var c = cobertura ? (cobertura.value || 30) : 30;
+    var out = document.getElementById('apa-resultado');
+    var resumen = document.getElementById('apa-resumen');
+    if(!out) return;
+    out.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:30px">⏳ Calculando prioridad de agotamiento…</div>';
+    try{
+      var r = await fetch('/api/admin/animus-prioridad-agotamiento?ventana_ventas='+v+'&cobertura_objetivo='+c);
+      var d = await r.json();
+      if(!d.ok){
+        out.innerHTML = '<div style="color:#dc2626;padding:18px;text-align:center">Error: '+_apaEscHTML(d.error||'?')+'</div>';
+        return;
+      }
+      var res = d.resumen || {};
+      if(resumen){
+        var partes = [];
+        partes.push((res.n_skus||0)+' SKUs');
+        if(res.n_critico) partes.push('🔴 '+res.n_critico+' crítico');
+        if(res.n_alta) partes.push('🟠 '+res.n_alta+' alta');
+        if(res.n_media) partes.push('🟡 '+res.n_media+' media');
+        if(res.n_baja) partes.push('🔵 '+res.n_baja+' baja');
+        if(res.n_ok) partes.push('✅ '+res.n_ok+' ok');
+        if(res.n_sin_uso) partes.push('⚪ '+res.n_sin_uso+' sin uso');
+        partes.push((res.kg_total_a_producir||0).toFixed(1)+' kg a producir');
+        partes.push(res.n_mps_faltantes+' MPs faltantes');
+        resumen.innerHTML = partes.map(_apaEscHTML).join(' · ');
+      }
+      var skus = d.skus || [];
+      var mps = d.mps_necesarias || [];
+      var html = '';
+      // Tabla SKUs
+      html += '<h4 style="margin:6px 0 8px;color:#134e4a;font-size:13px">🛍️ SKUs por urgencia (los primeros se agotan primero)</h4>';
+      html += '<table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:18px">';
+      html += '<thead><tr style="border-bottom:2px solid #e2e8f0;background:#f8fafc">'+
+              '<th style="text-align:left;padding:8px;color:#64748b;font-weight:700">SKU</th>'+
+              '<th style="text-align:left;padding:8px;color:#64748b;font-weight:700">Producto base</th>'+
+              '<th style="text-align:right;padding:8px;color:#64748b;font-weight:700">Stock</th>'+
+              '<th style="text-align:right;padding:8px;color:#64748b;font-weight:700">Vendido</th>'+
+              '<th style="text-align:right;padding:8px;color:#64748b;font-weight:700">uds/día</th>'+
+              '<th style="text-align:right;padding:8px;color:#64748b;font-weight:700">Días</th>'+
+              '<th style="text-align:left;padding:8px;color:#64748b;font-weight:700">Urgencia</th>'+
+              '<th style="text-align:right;padding:8px;color:#64748b;font-weight:700">A producir</th>'+
+              '</tr></thead><tbody>';
+      if(!skus.length){
+        html += '<tr><td colspan="8" style="text-align:center;color:#94a3b8;padding:18px">Sin SKUs · sincroniza stock Shopify primero</td></tr>';
+      }
+      skus.forEach(function(s){
+        var bg = _apaUrgenciaBg(s.urgencia);
+        var col = _apaUrgenciaColor(s.urgencia);
+        html += '<tr style="border-bottom:1px solid #f1f5f9;background:'+(s.urgencia==='CRITICO'?'#fef2f2':'transparent')+'">'+
+          '<td style="padding:8px;font-weight:700;color:#1e293b">'+_apaEscHTML(s.sku)+'</td>'+
+          '<td style="padding:8px;color:#475569">'+_apaEscHTML(s.producto_base||'—')+'</td>'+
+          '<td style="padding:8px;text-align:right;font-variant-numeric:tabular-nums">'+_apaFmtN(s.stock_actual_u)+'</td>'+
+          '<td style="padding:8px;text-align:right;font-variant-numeric:tabular-nums">'+_apaFmtN(s.ventas_periodo_u)+'</td>'+
+          '<td style="padding:8px;text-align:right;font-variant-numeric:tabular-nums">'+_apaFmtN(s.velocidad_uds_dia,2)+'</td>'+
+          '<td style="padding:8px;text-align:right;font-variant-numeric:tabular-nums;font-weight:'+(s.urgencia==='CRITICO'||s.urgencia==='ALTA'?'700':'400')+'">'+(s.dias_cobertura===null?'∞':_apaFmtN(s.dias_cobertura,1))+'</td>'+
+          '<td style="padding:8px"><span style="background:'+bg+';color:'+col+';padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700">'+_apaEscHTML(s.urgencia)+'</span></td>'+
+          '<td style="padding:8px;text-align:right;font-variant-numeric:tabular-nums;font-weight:'+(s.kg_a_producir_para_cobertura>0?'700':'400')+';color:'+(s.kg_a_producir_para_cobertura>0?'#dc2626':'#94a3b8')+'">'+(s.kg_a_producir_para_cobertura>0?_apaFmtN(s.kg_a_producir_para_cobertura,1)+' kg':'—')+'</td>'+
+          '</tr>';
+      });
+      html += '</tbody></table>';
+
+      // Tabla MPs
+      html += '<h4 style="margin:18px 0 8px;color:#134e4a;font-size:13px">📦 MPs necesarias (agregado de SKUs urgentes)</h4>';
+      html += '<table style="width:100%;border-collapse:collapse;font-size:12px">';
+      html += '<thead><tr style="border-bottom:2px solid #e2e8f0;background:#f8fafc">'+
+              '<th style="text-align:left;padding:8px;color:#64748b;font-weight:700">Código</th>'+
+              '<th style="text-align:left;padding:8px;color:#64748b;font-weight:700">Nombre</th>'+
+              '<th style="text-align:left;padding:8px;color:#64748b;font-weight:700">Proveedor</th>'+
+              '<th style="text-align:right;padding:8px;color:#64748b;font-weight:700">Stock actual</th>'+
+              '<th style="text-align:right;padding:8px;color:#64748b;font-weight:700">Necesario</th>'+
+              '<th style="text-align:right;padding:8px;color:#64748b;font-weight:700">Faltante</th>'+
+              '</tr></thead><tbody>';
+      if(!mps.length){
+        html += '<tr><td colspan="6" style="text-align:center;color:#15803d;padding:18px">✓ Ninguna MP faltante 🎉</td></tr>';
+      }
+      mps.forEach(function(m){
+        html += '<tr style="border-bottom:1px solid #f1f5f9;background:'+(m.faltante_g>0?'#fef2f2':'transparent')+'">'+
+          '<td style="padding:8px;font-weight:700">'+_apaEscHTML(m.codigo_mp)+'</td>'+
+          '<td style="padding:8px;color:#475569">'+_apaEscHTML(m.nombre)+'</td>'+
+          '<td style="padding:8px;color:#475569">'+_apaEscHTML(m.proveedor||'—')+'</td>'+
+          '<td style="padding:8px;text-align:right;font-variant-numeric:tabular-nums">'+_apaFmtG(m.stock_actual_g)+'</td>'+
+          '<td style="padding:8px;text-align:right;font-variant-numeric:tabular-nums">'+_apaFmtG(m.necesario_g)+'</td>'+
+          '<td style="padding:8px;text-align:right;font-variant-numeric:tabular-nums;font-weight:700;color:'+(m.faltante_g>0?'#dc2626':'#15803d')+'">'+_apaFmtG(m.faltante_g)+'</td>'+
+          '</tr>';
+      });
+      html += '</tbody></table>';
+      out.innerHTML = html;
+    }catch(e){
+      out.innerHTML = '<div style="color:#dc2626;padding:18px;text-align:center">Error red: '+_apaEscHTML(e.message)+'</div>';
+    }
   }
 
   async function pv2CargarProdFaltantes(){
