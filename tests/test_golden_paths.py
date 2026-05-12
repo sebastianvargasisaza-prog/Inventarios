@@ -4272,3 +4272,48 @@ def test_golden_corregir_unidad_base_bulk(app, db_clean):
 
     finally:
         _exec("DELETE FROM formula_headers WHERE producto_nombre=?", (prod,))
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 93 · AGUA ilimitada · fórmula con pct<100 NO es problemática
+# ═══════════════════════════════════════════════════════════════════
+# Sebastián 11-may-2026: ESPAGIRIA produce agua deshionizada in-house. Las
+# fórmulas intencionalmente NO incluyen agua en formula_items, suma_pct
+# típicamente 30-90%. El audit no debe marcarlas como problemáticas si
+# ub_implícito = suma_gpl / (suma_pct/100) coincide con unidad_base_g.
+def test_golden_audit_respeta_agua_ilimitada(app, db_clean):
+    """Audit reconoce que suma_pct < 100 es OK si ub_implícito coincide."""
+    cs = _login(app, 'sebastian')
+    prod = 'GP93-PROD-AGUA'
+    mp = 'GP93-MP-PROPILEN'
+    try:
+        _exec("""INSERT OR REPLACE INTO maestro_mps
+                  (codigo_mp, nombre_comercial, activo, tipo_material)
+                  VALUES (?, 'GP93 Propilenglicol', 1, 'MP')""", (mp,))
+        # Header dice lote = 36 kg
+        _exec("""INSERT OR REPLACE INTO formula_headers
+                  (producto_nombre, unidad_base_g, lote_size_kg)
+                  VALUES (?, 36000, 36.0)""", (prod,))
+        # Item: Propilenglicol 20% = 7200g (el resto, 80%, es agua ilimitada)
+        _exec("""INSERT INTO formula_items
+                  (producto_nombre, material_id, material_nombre,
+                   porcentaje, cantidad_g_por_lote)
+                  VALUES (?, ?, 'Propilenglicol', 20.0, 7200)""", (prod, mp))
+
+        r = cs.get('/api/admin/auditoria-unidad-base')
+        d = r.get_json() or {}
+        assert d.get('ok')
+        mio = [it for it in d['items'] if it['producto'] == prod]
+        assert len(mio) == 1
+        it = mio[0]
+        # ub_implícito = 7200 / (20/100) = 36000 → coincide con ub_actual
+        assert it['unidad_base_g_implicito'] == 36000, \
+            f'BUG: ub_implicito debió ser 36000 · got {it["unidad_base_g_implicito"]}'
+        assert it['diagnostico'] == 'OK', \
+            f'BUG: agua ilimitada NO debe disparar problema · got {it["diagnostico"]}'
+        assert it['suma_pct'] == 20.0  # menos de 100 pero CORRECTO
+
+    finally:
+        _exec("DELETE FROM formula_items WHERE producto_nombre=?", (prod,))
+        _exec("DELETE FROM formula_headers WHERE producto_nombre=?", (prod,))
+        _exec("DELETE FROM maestro_mps WHERE codigo_mp=?", (mp,))

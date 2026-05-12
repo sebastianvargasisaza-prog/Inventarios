@@ -19532,31 +19532,28 @@ def debug_formula_items():
 
 @bp.route("/api/admin/auditoria-unidad-base", methods=["GET"])
 def auditoria_unidad_base():
-    """Audit · formula_headers.unidad_base_g vs suma cantidad_g_por_lote.
+    """Audit · formula_headers.unidad_base_g vs g_por_lote/porcentaje.
 
-    Sebastián 11-may-2026: bug raíz detectado · varias fórmulas tienen
-    unidad_base_g = 1000 (default) cuando el lote real es de decenas de kg.
-    Esto subestima el consumo Calendar en mp-alcanza-multi (factor 30x para
-    GEL HIDRATANTE NF).
+    Sebastián 11-may-2026: bug raíz detectado · BLUSH BALM y GEL HIDRATANTE NF
+    tienen unidad_base_g = 1000 (default) cuando el lote real es de decenas
+    de kg. El resto está OK.
 
-    Para cada producto en formula_headers cruzamos:
-      - unidad_base_g (declarado en header)
-      - suma_pct = SUM(porcentaje) de formula_items
-      - suma_gpl = SUM(cantidad_g_por_lote) de formula_items
-      - count_items
-      - veces_en_calendar_90d
-      - producciones_legacy_180d
+    AGUA DESHIONIZADA es ILIMITADA (Sebastián tiene equipo propio): NO se
+    cuenta en formula_items. Por eso suma_pct nunca llega a 100 (típicamente
+    30-90%). Eso NO es bug — es diseño correcto.
+
+    Lógica de validación correcta:
+      ub_implicito = suma_gpl / (suma_pct/100)
+      Esto es el lote total IMPLÍCITO según los datos sembrados.
+      Si ub_actual ≈ ub_implicito → todo consistente.
 
     Diagnóstico:
       - SIN_FORMULA: 0 items
-      - FORMULA_INCOMPLETA: suma_pct fuera de 95–105
-      - SUBESTIMADO: unidad_base_g < suma_gpl * 0.5
-      - SOBREESTIMADO: unidad_base_g > suma_gpl * 2
-      - DESALINEADO: |unidad_base_g - suma_gpl| / suma_gpl > 0.05 pero no extremo
-      - OK: |unidad_base_g - suma_gpl| / suma_gpl <= 0.05
-
-    Sugerido: suma_gpl (= total real del lote según items)
-              pero SOLO si suma_pct ≈ 100 (de lo contrario hay que pedir a Alejandro)
+      - GPL_NO_SEMBRADO: suma_gpl=0 pero pct>0 (no se puede auto-sugerir)
+      - SUBESTIMADO: ub_actual < ub_implicito * 0.5 (ej: 1000 vs real 30000)
+      - SOBREESTIMADO: ub_actual > ub_implicito * 2
+      - DESALINEADO: |ub_actual - ub_implicito|/ub_implicito > 0.05 pero no extremo
+      - OK: |ub_actual - ub_implicito|/ub_implicito <= 0.05
 
     Returns: {ok, total, problematicos, items:[...]}
     """
@@ -19624,10 +19621,12 @@ def auditoria_unidad_base():
             pass
 
         # 5. Construir items con diagnóstico
+        # AGUA es ilimitada → suma_pct no llega a 100 por diseño.
+        # Validamos: ub_implicito = suma_gpl / (suma_pct/100) ≈ unidad_base_g
         out = []
         cnt_diag = {
             'SIN_FORMULA': 0,
-            'FORMULA_INCOMPLETA': 0,
+            'GPL_NO_SEMBRADO': 0,
             'SUBESTIMADO': 0,
             'SOBREESTIMADO': 0,
             'DESALINEADO': 0,
@@ -19642,33 +19641,40 @@ def auditoria_unidad_base():
             suma_gpl = agg['suma_gpl']
             n_items = agg['n_items']
 
+            # Calcular ub_implicito = lo que debería ser unidad_base_g según los items
+            if suma_pct > 0 and suma_gpl > 0:
+                ub_implicito = suma_gpl / (suma_pct / 100.0)
+            else:
+                ub_implicito = None
+
             # Diagnóstico
             if n_items == 0:
                 diag = 'SIN_FORMULA'
                 sugerido = None
-            elif suma_pct < 95 or suma_pct > 105:
-                diag = 'FORMULA_INCOMPLETA'
+            elif suma_pct <= 0:
+                diag = 'SIN_FORMULA'
                 sugerido = None
             elif suma_gpl <= 0:
-                diag = 'FORMULA_INCOMPLETA'
+                # cantidad_g_por_lote no sembrado · no podemos auto-sugerir
+                diag = 'GPL_NO_SEMBRADO'
                 sugerido = None
             elif ub <= 0:
                 diag = 'SUBESTIMADO'
-                sugerido = round(suma_gpl, 2)
+                sugerido = round(ub_implicito, 2)
             else:
-                ratio = ub / suma_gpl
+                ratio = ub / ub_implicito
                 if ratio < 0.5:
                     diag = 'SUBESTIMADO'
-                    sugerido = round(suma_gpl, 2)
+                    sugerido = round(ub_implicito, 2)
                 elif ratio > 2.0:
                     diag = 'SOBREESTIMADO'
-                    sugerido = round(suma_gpl, 2)
-                elif abs(ub - suma_gpl) / suma_gpl > 0.05:
+                    sugerido = round(ub_implicito, 2)
+                elif abs(ub - ub_implicito) / ub_implicito > 0.05:
                     diag = 'DESALINEADO'
-                    sugerido = round(suma_gpl, 2)
+                    sugerido = round(ub_implicito, 2)
                 else:
                     diag = 'OK'
-                    sugerido = round(suma_gpl, 2)
+                    sugerido = round(ub_implicito, 2)
             cnt_diag[diag] = cnt_diag.get(diag, 0) + 1
 
             out.append({
@@ -19677,6 +19683,7 @@ def auditoria_unidad_base():
                 'lote_size_kg_actual': round(lsk, 3),
                 'suma_pct': round(suma_pct, 2),
                 'suma_gpl': round(suma_gpl, 2),
+                'unidad_base_g_implicito': round(ub_implicito, 2) if ub_implicito else None,
                 'n_items': n_items,
                 'cal_90d': cal_uso.get(prod, 0),
                 'prod_legacy_180d': prod_legacy.get(prod, 0),
@@ -19689,7 +19696,7 @@ def auditoria_unidad_base():
         # Orden: problemáticos primero (los usados), luego por nombre
         prioridad = {
             'SUBESTIMADO': 0, 'SOBREESTIMADO': 1, 'DESALINEADO': 2,
-            'FORMULA_INCOMPLETA': 3, 'SIN_FORMULA': 4, 'OK': 5,
+            'GPL_NO_SEMBRADO': 3, 'SIN_FORMULA': 4, 'OK': 5,
         }
         out.sort(key=lambda x: (
             prioridad.get(x['diagnostico'], 9),
@@ -19897,7 +19904,7 @@ th{background:#0f172a;font-size:11px;text-transform:uppercase;color:#94a3b8;posi
 tr:hover{background:#293548}
 .diag{padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;display:inline-block}
 .diag-SIN_FORMULA{background:#9333ea33;color:#c4b5fd}
-.diag-FORMULA_INCOMPLETA{background:#f59e0b33;color:#fcd34d}
+.diag-GPL_NO_SEMBRADO{background:#f59e0b33;color:#fcd34d}
 .diag-SUBESTIMADO{background:#dc262633;color:#fca5a5}
 .diag-SOBREESTIMADO{background:#ea580c33;color:#fdba74}
 .diag-DESALINEADO{background:#ca8a0433;color:#fde047}
@@ -19913,7 +19920,7 @@ input.inline{width:90px;text-align:right;padding:4px 6px}
 </style></head>
 <body>
 <h1>Auditoría · unidad_base_g de fórmulas maestras</h1>
-<p class="sub">Detecta fórmulas con unidad_base_g mal configurado (default 1000g) comparando vs SUM(cantidad_g_por_lote). El bug subestima consumo Calendar en mp-alcanza-multi · puede inflar artificialmente las MPs en COMPRAR_YA.</p>
+<p class="sub">Detecta fórmulas con unidad_base_g mal configurado comparando contra <b>ub_implícito = suma_gpl / (suma_pct/100)</b>. AGUA es ilimitada → suma_pct nunca llega a 100, eso es OK por diseño. Lo que importa es que ub_implícito ≈ unidad_base_g actual.</p>
 
 <div class="kpis">
   <div class="kpi"><div class="v" id="k-total">—</div><div class="l">Total fórmulas</div></div>
@@ -19922,7 +19929,7 @@ input.inline{width:90px;text-align:right;padding:4px 6px}
   <div class="kpi"><div class="v" id="k-sub">—</div><div class="l">SUBESTIMADO</div></div>
   <div class="kpi"><div class="v" id="k-sob">—</div><div class="l">SOBREESTIMADO</div></div>
   <div class="kpi"><div class="v" id="k-des">—</div><div class="l">DESALINEADO</div></div>
-  <div class="kpi"><div class="v" id="k-inc">—</div><div class="l">FORMULA_INCOMPLETA</div></div>
+  <div class="kpi"><div class="v" id="k-inc">—</div><div class="l">GPL_NO_SEMBRADO</div></div>
   <div class="kpi"><div class="v" id="k-sf">—</div><div class="l">SIN_FORMULA</div></div>
 </div>
 
@@ -19945,8 +19952,8 @@ input.inline{width:90px;text-align:right;padding:4px 6px}
     <th>Producto</th>
     <th class="right">% suma</th>
     <th class="right">g/lote suma</th>
-    <th class="right">unidad_base_g actual</th>
-    <th class="right">→ Sugerido</th>
+    <th class="right">ub_implícito</th>
+    <th class="right">ub actual</th>
     <th class="right">Factor</th>
     <th>Diagnóstico</th>
     <th class="right">#items</th>
@@ -19976,7 +19983,7 @@ async function cargar(){
     document.getElementById('k-sub').textContent = DATA.resumen.SUBESTIMADO||0;
     document.getElementById('k-sob').textContent = DATA.resumen.SOBREESTIMADO||0;
     document.getElementById('k-des').textContent = DATA.resumen.DESALINEADO||0;
-    document.getElementById('k-inc').textContent = DATA.resumen.FORMULA_INCOMPLETA||0;
+    document.getElementById('k-inc').textContent = DATA.resumen.GPL_NO_SEMBRADO||0;
     document.getElementById('k-sf').textContent = DATA.resumen.SIN_FORMULA||0;
     const btnAuto = document.getElementById('btn-auto');
     btnAuto.disabled = (DATA.auto_aplicables||0) === 0;
@@ -20005,19 +20012,20 @@ function render(){
     return;
   }
   tbody.innerHTML = items.map(it => {
-    const factor = (it.unidad_base_g_actual > 0 && it.unidad_base_g_sugerido)
-      ? (it.unidad_base_g_sugerido / it.unidad_base_g_actual).toFixed(2) + 'x'
+    const ubi = it.unidad_base_g_implicito;
+    const factor = (it.unidad_base_g_actual > 0 && ubi)
+      ? (ubi / it.unidad_base_g_actual).toFixed(2) + 'x'
       : '—';
-    const sug = it.unidad_base_g_sugerido != null ? it.unidad_base_g_sugerido.toLocaleString() : '—';
-    const accion = (it.unidad_base_g_sugerido && it.diagnostico !== 'OK' && it.diagnostico !== 'SIN_FORMULA' && it.diagnostico !== 'FORMULA_INCOMPLETA')
+    const ubiTxt = ubi != null ? ubi.toLocaleString() : '<span class="muted">—</span>';
+    const accion = (it.unidad_base_g_sugerido && it.diagnostico !== 'OK' && it.diagnostico !== 'SIN_FORMULA' && it.diagnostico !== 'GPL_NO_SEMBRADO')
       ? '<button onclick="aplicarUno('+JSON.stringify(it.producto).replace(/"/g,'&quot;')+','+it.unidad_base_g_sugerido+')">Aplicar</button>'
       : '<span class="muted">—</span>';
     return '<tr>'+
       '<td>'+escapeHtml(it.producto)+(it.usado?' <span class="usado">●</span>':'')+'</td>'+
       '<td class="right">'+it.suma_pct.toFixed(1)+'</td>'+
       '<td class="right">'+it.suma_gpl.toLocaleString()+'</td>'+
+      '<td class="right">'+ubiTxt+'</td>'+
       '<td class="right">'+it.unidad_base_g_actual.toLocaleString()+'</td>'+
-      '<td class="right">'+sug+'</td>'+
       '<td class="right">'+factor+'</td>'+
       '<td><span class="diag diag-'+it.diagnostico+'">'+it.diagnostico+'</span></td>'+
       '<td class="right">'+it.n_items+'</td>'+
