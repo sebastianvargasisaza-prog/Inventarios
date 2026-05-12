@@ -19568,6 +19568,115 @@ def debug_formula_items():
             pass
 
 
+@bp.route("/api/admin/productos-calendar-sin-formula", methods=["GET"])
+def productos_calendar_sin_formula():
+    """Detecta productos programados en Calendar SIN fórmula maestra.
+
+    Sebastián 12-may-2026: si Alejandro/Luis Enrique programa GLOSS en
+    Calendar pero la fórmula no existe en formula_headers, el operario
+    NO puede producir (endpoint /api/producciones rechaza con
+    'Producto sin fórmula registrada').
+
+    Cruza:
+      - producto_nombre de produccion_programada futuras (no canceladas)
+      vs
+      - producto_nombre de formula_headers
+      con match exacto + UPPER+TRIM (case/space insensitive)
+
+    Retorna lista de productos pendientes de crear fórmula + cuántos
+    eventos los esperan + fechas próximas.
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    try:
+        # 1. Productos con fórmula (normalizados UPPER+TRIM)
+        formulas_set = set()
+        formulas_originales = {}  # normalized -> original
+        for r in c.execute("SELECT producto_nombre FROM formula_headers").fetchall():
+            orig = r['producto_nombre'] or ''
+            norm = orig.upper().strip()
+            formulas_set.add(norm)
+            formulas_originales[norm] = orig
+
+        # 2. Productos programados en Calendar (futuras + no canceladas)
+        prog_rows = c.execute("""
+            SELECT producto,
+                   MIN(fecha_programada) AS proxima_fecha,
+                   COUNT(*) AS n_eventos,
+                   GROUP_CONCAT(DISTINCT estado) AS estados
+            FROM produccion_programada
+            WHERE date(fecha_programada) >= date('now')
+              AND COALESCE(estado, '') != 'cancelado'
+            GROUP BY producto
+            ORDER BY producto
+        """).fetchall()
+
+        sin_formula = []
+        con_formula_exacta = 0
+        con_formula_fuzzy = 0  # case/space difiere
+        for r in prog_rows:
+            prod_cal = r['producto'] or ''
+            norm = prod_cal.upper().strip()
+            if norm in formulas_set:
+                # Match
+                if formulas_originales[norm] == prod_cal:
+                    con_formula_exacta += 1
+                else:
+                    con_formula_fuzzy += 1
+                continue
+            # No match · buscar similitudes parciales para sugerir
+            sugerencias = [
+                formulas_originales[n] for n in formulas_set
+                if (n in norm or norm in n) and len(n) >= 4
+            ][:3]
+            sin_formula.append({
+                'producto_calendar': prod_cal,
+                'proxima_produccion': r['proxima_fecha'][:10] if r['proxima_fecha'] else '',
+                'n_eventos_programados': int(r['n_eventos']),
+                'estados': r['estados'] or '',
+                'sugerencias_match_parcial': sugerencias,
+            })
+
+        # 3. Variantes ortográficas (mismo producto en distintas formas)
+        variantes_calendar = {}
+        for r in prog_rows:
+            norm = (r['producto'] or '').upper().strip()
+            if norm in formulas_set:
+                if formulas_originales[norm] != r['producto']:
+                    # Variante ortográfica
+                    variantes_calendar.setdefault(norm, {
+                        'formula_db': formulas_originales[norm],
+                        'variantes_calendar': set(),
+                    })['variantes_calendar'].add(r['producto'])
+        variantes_list = [
+            {
+                'formula_db': v['formula_db'],
+                'variantes_calendar': sorted(v['variantes_calendar']),
+            }
+            for v in variantes_calendar.values()
+        ]
+
+        return jsonify({
+            'ok': True,
+            'productos_programados_count': len(prog_rows),
+            'con_formula_exacta': con_formula_exacta,
+            'con_formula_fuzzy': con_formula_fuzzy,
+            'sin_formula_count': len(sin_formula),
+            'sin_formula': sin_formula,
+            'variantes_ortograficas': variantes_list,
+            'impacto': ('BLOQUEA produccion · POST /api/producciones rechaza'
+                         if sin_formula else 'OK · todas las programadas tienen formula'),
+        }), 200
+    finally:
+        try: conn.close()
+        except Exception: pass
+
+
 @bp.route("/api/admin/debug-formulas-recientes", methods=["GET"])
 def debug_formulas_recientes():
     """Lista fórmulas ordenadas por fecha_creacion DESC.
