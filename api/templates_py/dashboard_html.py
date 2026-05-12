@@ -12815,6 +12815,20 @@ async function ckMarcar(itemId, estado){
       });
       html += '</tbody></table>';
 
+      // Sebastián 12-may-2026: nota colapsable de SKUs sin mapeo
+      var sinMapeo = d.skus_sin_mapeo || [];
+      if(sinMapeo.length){
+        html += '<details style="margin:0 0 14px;font-size:11px;color:#92400e;background:#fffbeb;border:1px solid #fed7aa;border-radius:6px;padding:6px 10px">'+
+                '<summary style="cursor:pointer;font-weight:600">⚠️ '+sinMapeo.length+' SKUs vendiendo sin mapeo · ocultos del panel (clic para ver)</summary>'+
+                '<div style="margin-top:8px;color:#78350f">Para que aparezcan: mapear el SKU a un producto en <code>sku_producto_map</code>, o desactivar el SKU en Shopify si ya no se vende.</div>'+
+                '<table style="width:100%;font-size:11px;margin-top:8px;border-collapse:collapse">'+
+                '<thead><tr style="color:#78350f"><th style="text-align:left;padding:4px">SKU</th><th style="text-align:right;padding:4px">Vendido</th></tr></thead><tbody>';
+        sinMapeo.forEach(function(x){
+          html += '<tr><td style="padding:4px;font-weight:600">'+_apaEscHTML(x.sku)+'</td><td style="padding:4px;text-align:right">'+_apaFmtN(x.ventas_periodo_u)+'</td></tr>';
+        });
+        html += '</tbody></table></details>';
+      }
+
       // Tabla MPs
       html += '<h4 style="margin:18px 0 8px;color:#134e4a;font-size:13px">📦 MPs necesarias (agregado de SKUs urgentes)</h4>';
       html += '<table style="width:100%;border-collapse:collapse;font-size:12px">';

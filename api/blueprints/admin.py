@@ -282,13 +282,18 @@ def animus_prioridad_agotamiento():
                 'proveedor': r['proveedor'][:40],
             }
 
-        # 6. Compute por SKU · SOLO los que VENDEN en la ventana
-        # Sebastián 12-may-2026: filtrar ruido (SKUs descontinuados, de prueba,
-        # ANM-RM-* que no existen como producto real). El criterio de "producto
-        # real" es simple: si nadie lo compra en los últimos N días, no entra
-        # al panel de prioridad. Un SKU agotado pero vendido sigue apareciendo
-        # como CRITICO porque está en ventas_por_sku.
-        todos_skus = set(ventas_por_sku.keys())
+        # 6. Compute por SKU · vende AND tiene mapeo activo a producto
+        # Sebastián 12-may-2026 (2da iteración): filtro inicial "solo vende"
+        # dejaba pasar SKUs tipo ANM-RM-MER, ANM-RM-MAL que venden poco pero
+        # no son productos reales (códigos internos huérfanos en Shopify).
+        # AHORA: requerimos que el SKU esté mapeado en sku_producto_map con
+        # activo=1. Si vende pero no está mapeado, no aparece en el panel.
+        # Se exponen aparte (skus_sin_mapeo) para que Sebastián los mapee
+        # o desactive en Shopify.
+        sku_mapeados = set(sku_to_prod.keys())
+        skus_que_venden = set(ventas_por_sku.keys())
+        todos_skus = skus_que_venden & sku_mapeados
+        skus_sin_mapeo = sorted(list(skus_que_venden - sku_mapeados))
         skus_out = []
         mp_necesario_g = {}  # codigo_mp → necesario_g acumulado
         for sku in todos_skus:
@@ -395,8 +400,19 @@ def animus_prioridad_agotamiento():
                     f"{int(s.get('stock_actual_u',0)):>7} {s.get('fuente_stock',''):<8} {dias_s:>7} "
                     f"{s['urgencia']:<10} {(s.get('descripcion') or s.get('producto_base') or '')[:60]}"
                 )
+            if skus_sin_mapeo_detalle:
+                lines.append("")
+                lines.append(f"⚠️  {len(skus_sin_mapeo_detalle)} SKUs vendiendo pero SIN MAPEO en sku_producto_map (no entran al panel · revisar):")
+                for x in skus_sin_mapeo_detalle:
+                    lines.append(f"    {x['sku']:<22} {x['ventas_periodo_u']:>4} uds vendidas (no mapeado)")
             from flask import Response
             return Response("\n".join(lines), mimetype='text/plain; charset=utf-8'), 200
+
+        # Detalle de los SKUs vendiendo pero sin mapeo (para que Sebastián los mapee o desactive en Shopify)
+        skus_sin_mapeo_detalle = [
+            {'sku': s, 'ventas_periodo_u': int(ventas_por_sku.get(s, 0))}
+            for s in skus_sin_mapeo
+        ]
 
         return jsonify({
             'ok': True,
@@ -410,6 +426,7 @@ def animus_prioridad_agotamiento():
             'resumen': resumen,
             'skus': skus_out,
             'mps_necesarias': mps_out,
+            'skus_sin_mapeo': skus_sin_mapeo_detalle,
         }), 200
     finally:
         try: conn.close()
