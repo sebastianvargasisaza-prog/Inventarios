@@ -31,6 +31,35 @@ logger = log  # alias compatible con call-sites históricos
 
 bp = Blueprint('programacion', __name__)
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Sebastián 12-may-2026: constante global NON_FAB_KW unificada.
+# Antes había 4 definiciones duplicadas (líneas 938, 3937, 7103, 8414) con
+# variantes mínimas. Ahora una sola fuente de verdad para que actualizaciones
+# del filtro apliquen a TODO el módulo. Eventos cuyo título matchee uno de
+# estos substrings (lowercase) NO se importan a produccion_programada porque
+# no consumen MPs crudas (envasado/QC/etc) o no son eventos productivos
+# (reuniones/aniversarios/etc).
+#
+# Si Calendar tiene eventos legítimos que están siendo rechazados por error,
+# evaluar si el título tiene palabras genéricas que coinciden con esta lista.
+# Ejemplo: 'BLOQUE DIA 1' rechazado correctamente; 'GLOSS Día' similar.
+NON_FAB_KW_GLOBAL = frozenset({
+    # Operaciones post-fabricación (no consumen MPs crudas)
+    'envasado', 'acondicionamiento', 'micro qc',
+    'control de calidad', 'dispensado', 'etiquetado', 'llenado',
+    # Eventos no-producción
+    'reunion', 'reunión', 'ajuste contractual', 'ajuste cor',
+    'meeting', 'agenda', 'capacitaci', 'training',
+    # Sebastián 12-may-2026: eventos administrativos del Calendar
+    'aniversario', 'cumpleaño', 'vacacion', 'feriado', 'festivo',
+    'inventario fisico', 'inventario físico', 'auditoria', 'auditoría',
+    'orden del dia', 'orden del día', 'planeacion', 'planeación',
+    'comite', 'comité', 'visita', 'demo ', 'presentaci',
+    ' día 1', ' día 2', ' día 3', ' dia 1', ' dia 2', ' dia 3',
+    'bloque dia', 'bloque día',
+})
+
+
 CALENDAR_ID      = os.environ.get('CALENDAR_ID', '1c8aa3f1d9024d5eeead72447c0606f927cfd6ee6d1d2e5d28bf1b252959f396@group.calendar.google.com')
 GOOGLE_API_KEY   = os.environ.get('GOOGLE_API_KEY', '')
 GCAL_ICAL_URL    = os.environ.get('GCAL_ICAL_URL', '')   # iCal feed URL (no API key needed)
@@ -935,12 +964,8 @@ def _compute_mp_deficit_aggregated(conn, days_ahead=90):
             return None
 
     # Filtro: ignorar fases que NO consumen MPs (envasado/acondicionamiento/QC)
-    _NON_FAB_KW = {
-        'envasado', 'acondicionamiento', 'micro qc', 'control de calidad',
-        'dispensado', 'etiquetado', 'llenado',
-        'reunion', 'reunión', 'ajuste contractual', 'ajuste cor',
-        'meeting', 'agenda', 'capacitaci', 'training',
-    }
+    # Sebastián 12-may-2026: usar constante global unificada.
+    _NON_FAB_KW = NON_FAB_KW_GLOBAL
 
     producciones = []
     seen_events = set()
@@ -3934,13 +3959,7 @@ def debug_calendar_eventos():
         'MESA','LOTES','LOTE','MINI','MACRO','AND','THE','FOR',
         'FAB1','FYE2','FYE3','ENV1','ENV2','PROD1','PROD2','PROD3','PROD4'
     }
-    NON_FAB_KW = {
-        'envasado', 'acondicionamiento', 'micro qc',
-        'control de calidad', 'dispensado', 'etiquetado', 'llenado',
-        # Sebastian 8-may-2026: tambien ignorar eventos no-produccion
-        'reunion', 'reunión', 'ajuste contractual', 'ajuste cor',
-        'meeting', 'agenda', 'capacitaci', 'training',
-    }
+    NON_FAB_KW = NON_FAB_KW_GLOBAL  # Sebastián 12-may-2026: unificado
 
     def _skus(titulo):
         tokens = _re.findall(r'\b([A-Z][A-Z0-9]{1,}[A-Z0-9])\b', (titulo or '').upper())
@@ -7100,13 +7119,8 @@ def planificacion_estrategica():
         # ── Phase filter: skip non-Fabricación events ──────────────────────
         # Envasado / Acondicionamiento / QC no consumen MPs crudas.
         # Contarlos duplica/triplica los requerimientos (infla 2-3×).
-        _NON_FAB_KW = {
-            'envasado', 'acondicionamiento', 'micro qc',
-            'control de calidad', 'dispensado', 'etiquetado', 'llenado',
-            'reunion', 'reunión', 'ajuste contractual', 'ajuste cor',
-            'meeting', 'agenda', 'capacitaci', 'training',
-        }
-        if any(kw in titulo.lower() for kw in _NON_FAB_KW):
+        # Sebastián 12-may-2026: usar constante global.
+        if any(kw in titulo.lower() for kw in NON_FAB_KW_GLOBAL):
             continue
 
         kg = _kg_ev(titulo)
@@ -8411,13 +8425,7 @@ def _sync_calendar_a_produccion_programada(conn, days_ahead=90,
         # Tokens de codigo de area que Alejandro escribe — no son SKUs
         'FAB1','FYE2','FYE3','ENV1','ENV2','PROD1','PROD2','PROD3','PROD4'
     }
-    NON_FAB_KW = {
-        'envasado', 'acondicionamiento', 'micro qc',
-        'control de calidad', 'dispensado', 'etiquetado', 'llenado',
-        # Sebastian 8-may-2026: tambien ignorar eventos no-produccion
-        'reunion', 'reunión', 'ajuste contractual', 'ajuste cor',
-        'meeting', 'agenda', 'capacitaci', 'training',
-    }
+    NON_FAB_KW = NON_FAB_KW_GLOBAL  # Sebastián 12-may-2026: unificado
 
     # Mapa codigo_corto_alejandro → codigo_real_db (areas_planta.codigo)
     # Sebastián 2-may-2026: "alejandro escribe [FAB1] o [FYE2] al inicio del
@@ -8469,43 +8477,79 @@ def _sync_calendar_a_produccion_programada(conn, days_ahead=90,
 
     today = _dt.date.today()
     inserted = 0
+    # Sebastián 12-may-2026: contadores forenses para diagnosticar Calendar.
+    # Antes era silent: si Calendar tenía 50 eventos y solo 10 entraban, no
+    # había forma de saber cuántos se rechazaron y por qué. Ahora reporta:
+    #   - eventos_no_fab: NON_FAB_KW match (reuniones, envasado, etc)
+    #   - eventos_sin_sku: título sin token que matchee un SKU activo
+    #   - eventos_sku_sin_formula: SKU mapeado pero sin fórmula en DB
+    #   - eventos_fecha_pasada: fecha anterior a hoy
+    #   - eventos_fecha_invalida: no se pudo parsear
+    rechazados = {
+        'no_fab': [], 'sin_sku': [], 'sku_sin_formula': [],
+        'fecha_pasada': 0, 'fecha_invalida': 0,
+    }
     for ev in events:
         titulo = ev.get('titulo', '')
         fecha_s = ev.get('fecha', '')
+        gcal_id = ev.get('id', '') or ''
         if not fecha_s:
+            rechazados['fecha_invalida'] += 1
             continue
         try:
             fecha = _dt.date.fromisoformat(fecha_s)
         except ValueError:
+            rechazados['fecha_invalida'] += 1
             continue
         if fecha < today:
+            rechazados['fecha_pasada'] += 1
             continue
         # Saltar eventos que NO son fabricacion (envasado/QC/etc consumen
         # nada de MPs crudas y no tienen sentido en el checklist).
         tlow = titulo.lower()
         if any(kw in tlow for kw in NON_FAB_KW):
+            rechazados['no_fab'].append(titulo[:80])
             continue
         kg_evento = _kg(titulo)
         # Extraer area del prefijo [CODIGO] (Alejandro convention).
         area_id_titulo = _area_from_titulo(titulo)
+        matched_any = False
         for sku in _skus(titulo):
             prod = sku_to_prod.get(sku)
-            if not prod or prod not in formulas:
+            if not prod:
                 continue
+            if prod not in formulas:
+                rechazados['sku_sin_formula'].append({'sku': sku, 'producto': prod, 'titulo': titulo[:80]})
+                matched_any = True  # tenía SKU válido aunque sin fórmula
+                continue
+            matched_any = True
             lote_kg = formulas[prod].get('lote_size_kg', 0) or 0
-            lotes = max(1, round((kg_evento or lote_kg) / lote_kg)) if lote_kg > 0 else 1
-            # cantidad_kg explicita: prioriza kg extraido del titulo del evento
-            # ("~5kg") sobre el calculo derivado lotes*lote_kg. Si ninguno aplica,
-            # 0 (el frontend mostrara "Sin tamano de lote — verificar formula").
-            cantidad_kg_calc = (kg_evento or 0) or (lotes * lote_kg if lote_kg > 0 else 0)
-            # INSERT idempotente: si ya existe (producto, fecha), no duplicar
+            # Sebastián 12-may-2026: si hay kg_evento del título, usar 1 lote
+            # con cantidad_kg=kg_evento (NO dividir por lote_size_kg para
+            # calcular múltiples lotes — Calendar representa UNA producción).
+            if kg_evento and kg_evento > 0:
+                lotes = 1
+                cantidad_kg_calc = kg_evento
+            else:
+                lotes = 1
+                cantidad_kg_calc = lote_kg if lote_kg > 0 else 0
+            # INSERT idempotente prioritario por gcal_event_id, fallback (producto, fecha)
             try:
-                exists = conn.execute(
-                    "SELECT id, COALESCE(cantidad_kg,0), area_id "
-                    "FROM produccion_programada "
-                    "WHERE producto=? AND fecha_programada=? LIMIT 1",
-                    (prod, fecha_s)
-                ).fetchone()
+                exists = None
+                if gcal_id:
+                    exists = conn.execute(
+                        "SELECT id, COALESCE(cantidad_kg,0), area_id "
+                        "FROM produccion_programada "
+                        "WHERE gcal_event_id=? LIMIT 1",
+                        (gcal_id,)
+                    ).fetchone()
+                if not exists:
+                    exists = conn.execute(
+                        "SELECT id, COALESCE(cantidad_kg,0), area_id "
+                        "FROM produccion_programada "
+                        "WHERE producto=? AND fecha_programada=? LIMIT 1",
+                        (prod, fecha_s)
+                    ).fetchone()
                 if not exists:
                     # origen='calendar' para que planificacion_estrategica las
                     # filtre y no duplique con su lectura directa del calendar.
@@ -8513,10 +8557,11 @@ def _sync_calendar_a_produccion_programada(conn, days_ahead=90,
                     cur_ins = conn.execute(
                         """INSERT INTO produccion_programada
                            (producto, fecha_programada, lotes, cantidad_kg,
-                            estado, observaciones, origen, area_id)
-                           VALUES (?, ?, ?, ?, 'programado', ?, 'calendar', ?)""",
+                            estado, observaciones, origen, area_id, gcal_event_id)
+                           VALUES (?, ?, ?, ?, 'programado', ?, 'calendar', ?, ?)""",
                         (prod, fecha_s, lotes, cantidad_kg_calc,
-                         f'[auto-sync calendar] {titulo[:200]}', area_id_titulo)
+                         f'[auto-sync calendar] {titulo[:200]}', area_id_titulo,
+                         gcal_id)
                     )
                     inserted += 1
                     # Sebastián 1-may-2026: "todo automático". Auto-asignar
@@ -8540,16 +8585,26 @@ def _sync_calendar_a_produccion_programada(conn, days_ahead=90,
                         )
                     # Backfill area_id: si Alejandro acaba de meter [CODIGO]
                     # en un evento que ya existe en DB sin area, actualizamos.
-                    # Si DB ya tiene area distinta, NO la pisamos (alguien la
-                    # asignó manualmente en la UI — gana lo manual).
                     if area_id_titulo is not None and (exists[2] is None):
                         conn.execute(
                             "UPDATE produccion_programada SET area_id=? WHERE id=?",
                             (area_id_titulo, exists[0])
                         )
+                    # Backfill gcal_event_id si falta (eventos viejos pre-fix)
+                    if gcal_id:
+                        try:
+                            conn.execute(
+                                "UPDATE produccion_programada SET gcal_event_id=? "
+                                "WHERE id=? AND COALESCE(gcal_event_id,'') = ''",
+                                (gcal_id, exists[0])
+                            )
+                        except Exception:
+                            pass
             except Exception:
                 continue
             break  # un evento → un producto match
+        if not matched_any:
+            rechazados['sin_sku'].append(titulo[:80])
     if inserted:
         conn.commit()
 
@@ -8681,7 +8736,35 @@ def _sync_calendar_a_produccion_programada(conn, days_ahead=90,
 
     # Registrar timestamp del sync (independiente de si hubo nuevas)
     _record_sync(conn, 'calendar', inserted + archived, error=cal.get('error'))
-    return inserted
+
+    # Sebastián 12-may-2026: log forense de rechazos (visibles vía logs Render).
+    # Si hay muchos no_fab o sin_sku, es señal de que Calendar tiene títulos
+    # raros que no matchean SKUs activos · útil para limpiar.
+    n_no_fab = len(rechazados.get('no_fab', []))
+    n_sin_sku = len(rechazados.get('sin_sku', []))
+    n_sin_formula = len(rechazados.get('sku_sin_formula', []))
+    if inserted or n_no_fab or n_sin_sku or n_sin_formula:
+        log.info(
+            'sync_calendar · inserted=%d archived=%d skip_in_progress=%d '
+            'rechazos: no_fab=%d sin_sku=%d sku_sin_formula=%d '
+            'fecha_pasada=%d fecha_invalida=%d',
+            inserted, archived, len(skipped_in_progress),
+            n_no_fab, n_sin_sku, n_sin_formula,
+            rechazados.get('fecha_pasada', 0),
+            rechazados.get('fecha_invalida', 0),
+        )
+
+    # Sebastián 12-may-2026: retornar dict con detalles para que callers
+    # puedan exponer 'cosas raras' al usuario. Compat: si caller solo usa
+    # como int, hace .get('inserted', 0) o similar.
+    return {
+        'inserted': inserted,
+        'archived': archived,
+        'skipped_in_progress': skipped_in_progress,
+        'rechazos': rechazados,
+        'events_count': len(events),
+        'error': cal.get('error'),
+    }
 
 
 def _start_calendar_sync_background_loop():
@@ -8755,9 +8838,20 @@ def checklist_sync_calendar_endpoint():
     force_mirror = (request.args.get('force_mirror', '').lower()
                     in ('true', '1', 'yes'))
     conn = get_db()
-    inserted = _sync_calendar_a_produccion_programada(
+    result = _sync_calendar_a_produccion_programada(
         conn, days_ahead=days, force_mirror=force_mirror,
     )
+    # Backward compat: result puede ser dict (nuevo) o int (legacy en algún path).
+    if isinstance(result, dict):
+        inserted = result.get('inserted', 0)
+        archived = result.get('archived', 0)
+        rechazos = result.get('rechazos', {})
+        events_count = result.get('events_count', 0)
+    else:
+        inserted = int(result or 0)
+        archived = 0
+        rechazos = {}
+        events_count = 0
     last = _get_last_sync(conn, 'calendar')
     msg = f'{inserted} producciones nuevas importadas del calendario'
     if not inserted:
@@ -8767,6 +8861,20 @@ def checklist_sync_calendar_endpoint():
     return jsonify({
         'ok': True,
         'producciones_creadas': inserted,
+        'archivadas': archived,
+        'events_total': events_count,
+        'rechazos': {
+            'no_fabricacion': len(rechazos.get('no_fab', [])),
+            'sin_sku_mapeado': len(rechazos.get('sin_sku', [])),
+            'sku_sin_formula': len(rechazos.get('sku_sin_formula', [])),
+            'fecha_pasada': rechazos.get('fecha_pasada', 0),
+            'fecha_invalida': rechazos.get('fecha_invalida', 0),
+        },
+        'rechazos_detalle': {
+            'no_fabricacion_titulos': rechazos.get('no_fab', [])[:20],
+            'sin_sku_titulos': rechazos.get('sin_sku', [])[:20],
+            'sku_sin_formula_items': rechazos.get('sku_sin_formula', [])[:20],
+        },
         'force_mirror': force_mirror,
         'last_run_at': last['last_run_at'] if last else None,
         'mensaje': msg,
@@ -8791,7 +8899,11 @@ def checklist_resumen_calendario():
     # Auto-sync calendario → produccion_programada (idempotente, falla silenciosa)
     sync_count = 0
     try:
-        sync_count = _sync_calendar_a_produccion_programada(conn, days_ahead=max(horizonte, 90))
+        _sync_res = _sync_calendar_a_produccion_programada(conn, days_ahead=max(horizonte, 90))
+        if isinstance(_sync_res, dict):
+            sync_count = _sync_res.get('inserted', 0)
+        else:
+            sync_count = int(_sync_res or 0)
     except Exception:
         pass
 

@@ -7710,8 +7710,11 @@ async function cargarChecklistResumen(dias){
       cardKpi('Sin checklist', sinChecklist, '#78716c', 'click "Generar"');
     // Guardar lista para navegacion siguiente/anterior dentro del modal
     window._ckLista = prods.filter(function(p){ return (p.total_items||0) > 0; });
-    // Lista de producciones
-    document.getElementById('ck-producciones-list').innerHTML = prods.map(rowProduccion).join('');
+    // Sebastián 12-may-2026: AGRUPAR POR SEMANA (Lun-Dom).
+    // Antes: lista plana ordenada por fecha · usuario no podía leer "qué hay
+    // esta semana vs próxima". Ahora cada semana tiene header con rango +
+    // conteo + suma de kg programados, y las producciones anidadas dentro.
+    document.getElementById('ck-producciones-list').innerHTML = renderProduccionesPorSemana(prods);
   } catch(e){
     document.getElementById('ck-loading').style.display='none';
     document.getElementById('ck-empty').textContent='Error: '+e.message;
@@ -7725,6 +7728,66 @@ function cardKpi(label, val, color, sub){
     '<div style="font-size:1.6em;font-weight:800;color:'+color+';margin:4px 0">'+val+'</div>' +
     (sub?'<div style="font-size:10px;color:#a8a29e">'+sub+'</div>':'') +
     '</div>';
+}
+
+// Sebastián 12-may-2026: agrupar producciones por semana ISO (Lun-Dom).
+// Resuelve queja "no está ordenado por semana realmente". Header sticky
+// con rango Lun-Dom + total kg + count. Click colapsa/expande.
+function _lunesDe(fechaStr){
+  // fechaStr formato YYYY-MM-DD · devuelve Date del Lun de esa semana ISO
+  var d = new Date(fechaStr + 'T00:00:00');
+  var dia = d.getDay();  // 0=Dom, 1=Lun, ..., 6=Sab
+  // Si es Dom (0), retroceder 6 días; si es Lun (1), 0 días; etc
+  var offset = dia === 0 ? -6 : 1 - dia;
+  d.setDate(d.getDate() + offset);
+  return d;
+}
+function _fmtFechaCorta(d){
+  var meses = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  return d.getDate() + ' ' + meses[d.getMonth()];
+}
+function _semanaKey(fechaStr){
+  var lun = _lunesDe(fechaStr);
+  return lun.toISOString().slice(0,10);
+}
+
+function renderProduccionesPorSemana(prods){
+  if(!prods || !prods.length) return '';
+  // Agrupar
+  var grupos = {};
+  prods.forEach(function(p){
+    var f = p.fecha_objetivo || p.fecha_programada || '';
+    if(!f) return;
+    var key = _semanaKey(f);
+    if(!grupos[key]) grupos[key] = [];
+    grupos[key].push(p);
+  });
+  // Ordenar semanas asc
+  var keys = Object.keys(grupos).sort();
+  var hoy = new Date(); hoy.setHours(0,0,0,0);
+  var lunesHoy = _lunesDe(hoy.toISOString().slice(0,10));
+  var lunesHoyKey = lunesHoy.toISOString().slice(0,10);
+  var html = '';
+  keys.forEach(function(key){
+    var lun = new Date(key + 'T00:00:00');
+    var dom = new Date(lun); dom.setDate(dom.getDate()+6);
+    var rango = 'Semana ' + _fmtFechaCorta(lun) + ' - ' + _fmtFechaCorta(dom);
+    if(key === lunesHoyKey) rango += ' · ESTA SEMANA';
+    var items = grupos[key];
+    // Total kg programados de la semana
+    var totalKg = items.reduce(function(s,p){ return s + (parseFloat(p.cantidad_kg)||0); }, 0);
+    var nProd = items.length;
+    var bgHeader = key === lunesHoyKey ? '#dcfce7' : '#f1f5f9';
+    var fgHeader = key === lunesHoyKey ? '#15803d' : '#0f172a';
+    html += '<div style="margin-top:18px;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden">' +
+      '<div style="background:'+bgHeader+';padding:10px 14px;font-weight:700;font-size:13px;color:'+fgHeader+';display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #e5e7eb">' +
+        '<span>📅 ' + rango + '</span>' +
+        '<span style="font-size:11px;font-weight:600">' + nProd + ' producción(es) · ' + totalKg.toFixed(1) + ' kg</span>' +
+      '</div>' +
+      '<div>' + items.map(rowProduccion).join('') + '</div>' +
+    '</div>';
+  });
+  return html;
 }
 
 function rowProduccion(p){

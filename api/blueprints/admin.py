@@ -19887,6 +19887,167 @@ def _escape_html(s):
             .replace('"', '&quot;'))
 
 
+@bp.route("/api/admin/limpiar-produccion-zombies", methods=["GET", "POST"])
+def limpiar_produccion_zombies():
+    """Detecta y limpia producciones zombie/huérfanas en produccion_programada.
+
+    Sebastián 12-may-2026: Programación trae "cosas raras del calendario" ·
+    eventos viejos cancelados que nunca se purgaron, eventos sin SKU
+    mapeado, producciones del pasado que nunca se completaron.
+
+    Zombies considerados:
+      A. estado=cancelado con fecha >30d en el pasado · histórico inútil
+      B. estado=programado con fecha >7d en el pasado y sin inicio_real_at
+         (nunca arrancaron, deberían cancelarse)
+      C. duplicados por gcal_event_id (mismo evento múltiples filas activas)
+
+    GET: solo retorna lista (dry_run).
+    POST: aplica limpieza · audit_log.
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    es_post = request.method == 'POST'
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    try:
+        # A. Canceladas viejas >30d
+        cancel_viejas = c.execute("""
+            SELECT id, producto, fecha_programada, estado
+            FROM produccion_programada
+            WHERE COALESCE(estado,'') = 'cancelado'
+              AND date(fecha_programada) < date('now', '-30 days')
+            ORDER BY fecha_programada
+        """).fetchall()
+
+        # B. Programadas viejas sin iniciar (>7d pasado)
+        prog_viejas = c.execute("""
+            SELECT id, producto, fecha_programada, estado
+            FROM produccion_programada
+            WHERE COALESCE(estado,'') = 'programado'
+              AND date(fecha_programada) < date('now', '-7 days')
+              AND COALESCE(inicio_real_at,'') = ''
+              AND COALESCE(inventario_descontado_at,'') = ''
+            ORDER BY fecha_programada
+        """).fetchall()
+
+        # C. Duplicados por gcal_event_id (activos)
+        duplicados = []
+        try:
+            for r in c.execute("""
+                SELECT gcal_event_id, COUNT(*) AS n,
+                       GROUP_CONCAT(id) AS ids,
+                       GROUP_CONCAT(fecha_programada) AS fechas
+                FROM produccion_programada
+                WHERE COALESCE(gcal_event_id,'') != ''
+                  AND COALESCE(estado,'') NOT IN ('cancelado', 'completado')
+                GROUP BY gcal_event_id
+                HAVING n > 1
+            """).fetchall():
+                duplicados.append({
+                    'gcal_event_id': r['gcal_event_id'][:40],
+                    'n_activos': int(r['n']),
+                    'ids': r['ids'],
+                    'fechas': r['fechas'],
+                })
+        except Exception:
+            pass
+
+        result = {
+            'ok': True,
+            'dry_run': not es_post,
+            'a_purgar_canceladas_viejas': [dict(r) for r in cancel_viejas],
+            'a_cancelar_programadas_viejas': [dict(r) for r in prog_viejas],
+            'duplicados_gcal_event_id': duplicados,
+            'totales': {
+                'canceladas_viejas': len(cancel_viejas),
+                'programadas_viejas': len(prog_viejas),
+                'duplicados': len(duplicados),
+            },
+        }
+
+        if not es_post:
+            return jsonify(result), 200
+
+        # POST · aplicar limpieza
+        purgadas = 0
+        canceladas = 0
+        dedup = 0
+        try:
+            # A. DELETE canceladas viejas
+            if cancel_viejas:
+                ids = [r['id'] for r in cancel_viejas]
+                ph = ','.join('?' * len(ids))
+                c.execute(f"DELETE FROM produccion_programada WHERE id IN ({ph})", ids)
+                purgadas = c.rowcount or 0
+
+            # B. UPDATE programadas viejas a cancelado
+            if prog_viejas:
+                ids = [r['id'] for r in prog_viejas]
+                ph = ','.join('?' * len(ids))
+                c.execute(
+                    f"""UPDATE produccion_programada
+                        SET estado='cancelado',
+                            observaciones=COALESCE(observaciones,'')
+                                || ' [auto-cancelado: programada >7d sin iniciar]'
+                        WHERE id IN ({ph})""",
+                    ids
+                )
+                canceladas = c.rowcount or 0
+
+            # C. Para duplicados: marcar como cancelado todos menos el más reciente
+            for dup in duplicados:
+                ids_str = dup['ids']
+                if not ids_str:
+                    continue
+                ids = [int(x) for x in ids_str.split(',')]
+                if len(ids) < 2:
+                    continue
+                # Conservar el ID más alto (más reciente)
+                keep_id = max(ids)
+                discard = [i for i in ids if i != keep_id]
+                ph = ','.join('?' * len(discard))
+                c.execute(
+                    f"""UPDATE produccion_programada
+                        SET estado='cancelado',
+                            observaciones=COALESCE(observaciones,'')
+                                || ' [auto-dedup: duplicado gcal_event_id]'
+                        WHERE id IN ({ph})
+                          AND COALESCE(inicio_real_at,'') = ''
+                          AND COALESCE(inventario_descontado_at,'') = ''""",
+                    discard
+                )
+                dedup += c.rowcount or 0
+
+            try:
+                audit_log(c, usuario=u, accion='LIMPIAR_PRODUCCION_ZOMBIES',
+                           tabla='produccion_programada', registro_id='bulk',
+                           despues={'purgadas': purgadas, 'canceladas': canceladas,
+                                     'dedup': dedup},
+                           detalle=f'Limpieza zombies · {purgadas} canceladas viejas borradas, '
+                                   f'{canceladas} programadas viejas canceladas, '
+                                   f'{dedup} duplicados dedup')
+            except Exception:
+                pass
+            conn.commit()
+            result['aplicado'] = True
+            result['purgadas'] = purgadas
+            result['canceladas'] = canceladas
+            result['dedup_aplicado'] = dedup
+            result['message'] = (f'✓ {purgadas} purgadas · {canceladas} canceladas · {dedup} dedup')
+        except Exception as e:
+            conn.rollback()
+            result['aplicado'] = False
+            result['error'] = str(e)[:300]
+            return jsonify(result), 500
+        return jsonify(result), 200
+    finally:
+        try: conn.close()
+        except Exception: pass
+
+
 @bp.route("/api/admin/cron-snapshot-mp-alcanza", methods=["POST", "GET"])
 def cron_snapshot_mp_alcanza():
     """Cron diario · snapshot COMPRAR_YA + delta vs ayer.
