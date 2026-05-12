@@ -19555,34 +19555,28 @@ def debug_calendar_producto():
     try:
         from datetime import date as _date
 
+        # Columnas reales de produccion_programada (verificadas en database.py)
+        base_select = """SELECT id, producto, fecha_programada,
+                       COALESCE(lotes, 1) AS lotes,
+                       COALESCE(cantidad_kg, 0) AS cantidad_kg,
+                       COALESCE(estado, '') AS estado,
+                       COALESCE(observaciones, '') AS observaciones,
+                       COALESCE(origen, '') AS origen,
+                       COALESCE(inicio_real_at, '') AS inicio_real_at,
+                       COALESCE(inventario_descontado_at, '') AS inventario_descontado_at,
+                       COALESCE(gcal_event_id, '') AS gcal_event_id,
+                       COALESCE(creado_en, '') AS creado_en
+                FROM produccion_programada """
         if contiene:
-            rows = c.execute("""
-                SELECT id, producto, fecha_programada,
-                       COALESCE(lotes, 1) AS lotes,
-                       COALESCE(estado, '') AS estado,
-                       COALESCE(operario, '') AS operario,
-                       COALESCE(inicio_real_at, '') AS inicio_real_at,
-                       COALESCE(inventario_descontado_at, '') AS inventario_descontado_at,
-                       COALESCE(google_event_id, '') AS google_event_id,
-                       COALESCE(creado_en, '') AS creado_en
-                FROM produccion_programada
-                WHERE UPPER(producto) LIKE UPPER(?)
-                ORDER BY fecha_programada DESC
-            """, (f'%{contiene}%',)).fetchall()
+            rows = c.execute(
+                base_select + "WHERE UPPER(producto) LIKE UPPER(?) ORDER BY fecha_programada DESC",
+                (f'%{contiene}%',)
+            ).fetchall()
         else:
-            rows = c.execute("""
-                SELECT id, producto, fecha_programada,
-                       COALESCE(lotes, 1) AS lotes,
-                       COALESCE(estado, '') AS estado,
-                       COALESCE(operario, '') AS operario,
-                       COALESCE(inicio_real_at, '') AS inicio_real_at,
-                       COALESCE(inventario_descontado_at, '') AS inventario_descontado_at,
-                       COALESCE(google_event_id, '') AS google_event_id,
-                       COALESCE(creado_en, '') AS creado_en
-                FROM produccion_programada
-                WHERE producto = ?
-                ORDER BY fecha_programada DESC
-            """, (nombre,)).fetchall()
+            rows = c.execute(
+                base_select + "WHERE producto = ? ORDER BY fecha_programada DESC",
+                (nombre,)
+            ).fetchall()
 
         hoy = _date.today()
         entries = []
@@ -19619,11 +19613,13 @@ def debug_calendar_producto():
                 'fecha': r['fecha_programada'][:10] if r['fecha_programada'] else None,
                 'dias_desde_hoy': dias,
                 'lotes': int(r['lotes'] or 1),
+                'cantidad_kg': float(r['cantidad_kg'] or 0),
                 'estado': r['estado'],
-                'operario': r['operario'],
+                'origen': r['origen'],
+                'observaciones': r['observaciones'][:120] if r['observaciones'] else '',
                 'inicio_real_at': r['inicio_real_at'][:19] if r['inicio_real_at'] else '',
                 'inventario_descontado_at': r['inventario_descontado_at'][:19] if r['inventario_descontado_at'] else '',
-                'google_event_id': r['google_event_id'][:30] if r['google_event_id'] else '',
+                'gcal_event_id': r['gcal_event_id'][:40] if r['gcal_event_id'] else '',
                 'creado_en': r['creado_en'][:19] if r['creado_en'] else '',
             })
 
