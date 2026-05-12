@@ -13826,6 +13826,9 @@ def aplicar_stock_minimos_sugeridos():
     items = d.get('items') or []
     motivo = (d.get('motivo') or 'Ajuste stock_minimo basado en consumo histórico').strip()
     dry_run = bool(d.get('dry_run'))
+    # Sebastián 12-may-2026: regla operativa "NO bajar mínimos".
+    # Default true · solo aceptar reducciones cuando el caller lo pide explicito.
+    permitir_bajar = bool(d.get('permitir_bajar', False))
 
     if not isinstance(items, list) or not items:
         return jsonify({'error': 'items lista no vacía requerida'}), 400
@@ -13837,6 +13840,7 @@ def aplicar_stock_minimos_sugeridos():
     c = conn.cursor()
 
     plan = []
+    rechazados_baja = []
     for it in items:
         mid = (it.get('codigo_mp') or '').strip()
         nuevo = it.get('stock_minimo_g')
@@ -13857,12 +13861,16 @@ def aplicar_stock_minimos_sugeridos():
         actual = row[0] or 0
         if abs(actual - nuevo) < 0.01:
             continue
+        if not permitir_bajar and nuevo < actual:
+            rechazados_baja.append({'codigo_mp': mid, 'actual': actual, 'nuevo': nuevo})
+            continue
         plan.append({'codigo_mp': mid, 'actual': actual, 'nuevo': nuevo})
 
     if dry_run:
         conn.close()
         return jsonify({'ok': True, 'dry_run': True, 'plan': plan,
-                       'a_aplicar': len(plan)}), 200
+                       'a_aplicar': len(plan),
+                       'rechazados_baja': rechazados_baja}), 200
 
     aplicados = 0
     try:
@@ -13891,7 +13899,10 @@ def aplicar_stock_minimos_sugeridos():
     conn.close()
     return jsonify({
         'ok': True, 'aplicados': aplicados,
-        'message': f'✓ {aplicados} stock_minimo actualizados',
+        'rechazados_baja': rechazados_baja,
+        'message': (f'✓ {aplicados} stock_minimo actualizados'
+                     + (f' · {len(rechazados_baja)} rechazados por bajar'
+                        if rechazados_baja else '')),
     }), 200
 
 
@@ -17597,19 +17608,26 @@ function kpi(cls, label, val){
 }
 
 async function aplicarMinimos(){
-  const items = __ITEMS.filter(x => Math.abs((x.minimo_actual_g||0) - x.minimo_sugerido_g) > 10);
-  if(!items.length){ alert('Nada que actualizar · todos los mínimos están al día.'); return; }
-  if(!confirm('Aplicar mínimos sugeridos a '+items.length+' MPs? (Audit log INVIMA)')) return;
-  // Llamamos al endpoint aplicar-stock-minimos-sugeridos (ya existe)
-  const codigos = items.map(x => ({codigo_mp: x.codigo_mp, stock_minimo: x.minimo_sugerido_g}));
+  // Solo SUBIR mínimos · regla Sebastian (nunca bajar para no quedar corto)
+  // Y solo si la diferencia >50g (evita actualizaciones triviales)
+  const items = __ITEMS.filter(x =>
+    x.minimo_sugerido_g > (x.minimo_actual_g || 0) + 50
+  );
+  if(!items.length){
+    alert('Nada que actualizar · todos los mínimos actuales ya cubren el sugerido.');
+    return;
+  }
+  if(!confirm('Aplicar mínimos sugeridos a '+items.length+' MPs?\\n\\nSOLO SUBE · nunca baja.\\nAudit log INVIMA.')) return;
+  // Endpoint espera 'stock_minimo_g' (no 'stock_minimo')
+  const codigos = items.map(x => ({codigo_mp: x.codigo_mp, stock_minimo_g: x.minimo_sugerido_g}));
   try{
     const r = await fetch('/api/admin/aplicar-stock-minimos-sugeridos', {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({items: codigos, motivo: 'Mínimos calculados desde Calendar+Shopify · alcance 90d'})
+      body: JSON.stringify({items: codigos, motivo: 'Mínimos calculados desde Calendar+Shopify · alcance 90d (solo subir)'})
     });
     const d = await r.json();
-    if(!r.ok){ alert('Error: '+(d.error||'')); return; }
-    alert('✓ '+(d.n_actualizados||0)+' mínimos aplicados.');
+    if(!r.ok){ alert('Error: '+(d.error||d.detail||'')); return; }
+    alert('✓ '+(d.aplicados||0)+' mínimos aplicados.');
     run();
   }catch(e){ alert('Error red: '+e.message); }
 }

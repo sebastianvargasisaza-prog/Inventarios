@@ -4391,3 +4391,51 @@ def test_golden_corregir_unidad_base_resembrar_gpl(app, db_clean):
         _exec("DELETE FROM formula_items WHERE producto_nombre=?", (prod,))
         _exec("DELETE FROM formula_headers WHERE producto_nombre=?", (prod,))
         _exec("DELETE FROM maestro_mps WHERE codigo_mp IN (?, ?)", (mp_a, mp_b))
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 95 · aplicar-stock-minimos NO baja mínimos (regla Sebastian)
+# ═══════════════════════════════════════════════════════════════════
+def test_golden_aplicar_minimos_no_baja(app, db_clean):
+    """Por default, aplicar-stock-minimos-sugeridos NO baja mínimos."""
+    cs = _login(app, 'sebastian')
+    mp = 'GP95-MP-TEST'
+    try:
+        _exec("""INSERT OR REPLACE INTO maestro_mps
+                  (codigo_mp, nombre_comercial, activo, tipo_material, stock_minimo)
+                  VALUES (?, 'GP95 test', 1, 'MP', 100)""", (mp,))
+
+        # Caso 1: subir → debe aplicarse
+        r = cs.post('/api/admin/aplicar-stock-minimos-sugeridos',
+            json={'items': [{'codigo_mp': mp, 'stock_minimo_g': 200}],
+                  'motivo': 'GP95 test · subir mínimo'},
+            headers=csrf_headers())
+        d = r.get_json()
+        assert r.status_code == 200 and d['ok']
+        assert d['aplicados'] == 1
+
+        # Caso 2: bajar → debe RECHAZARSE por default
+        r2 = cs.post('/api/admin/aplicar-stock-minimos-sugeridos',
+            json={'items': [{'codigo_mp': mp, 'stock_minimo_g': 50}],
+                  'motivo': 'GP95 test · intento bajar'},
+            headers=csrf_headers())
+        d2 = r2.get_json()
+        assert d2['aplicados'] == 0, \
+            f'BUG: NO debe bajar mínimos por default · aplicados={d2["aplicados"]}'
+        assert len(d2.get('rechazados_baja', [])) == 1
+
+        # Verificar DB · sigue en 200, no en 50
+        row = _query("SELECT stock_minimo FROM maestro_mps WHERE codigo_mp=?", (mp,))
+        assert row[0][0] == 200, f'BUG: DB cambió de 200 · ahora {row[0][0]}'
+
+        # Caso 3: bajar CON permitir_bajar=true → SÍ aplica
+        r3 = cs.post('/api/admin/aplicar-stock-minimos-sugeridos',
+            json={'items': [{'codigo_mp': mp, 'stock_minimo_g': 50}],
+                  'motivo': 'GP95 test · forzar bajada',
+                  'permitir_bajar': True},
+            headers=csrf_headers())
+        d3 = r3.get_json()
+        assert d3['aplicados'] == 1
+
+    finally:
+        _exec("DELETE FROM maestro_mps WHERE codigo_mp=?", (mp,))
