@@ -19424,3 +19424,554 @@ function descargarAuditCSV(){
 })();
 </script>
 </body></html>"""
+
+
+@bp.route("/api/admin/auditoria-unidad-base", methods=["GET"])
+def auditoria_unidad_base():
+    """Audit · formula_headers.unidad_base_g vs suma cantidad_g_por_lote.
+
+    Sebastián 11-may-2026: bug raíz detectado · varias fórmulas tienen
+    unidad_base_g = 1000 (default) cuando el lote real es de decenas de kg.
+    Esto subestima el consumo Calendar en mp-alcanza-multi (factor 30x para
+    GEL HIDRATANTE NF).
+
+    Para cada producto en formula_headers cruzamos:
+      - unidad_base_g (declarado en header)
+      - suma_pct = SUM(porcentaje) de formula_items
+      - suma_gpl = SUM(cantidad_g_por_lote) de formula_items
+      - count_items
+      - veces_en_calendar_90d
+      - producciones_legacy_180d
+
+    Diagnóstico:
+      - SIN_FORMULA: 0 items
+      - FORMULA_INCOMPLETA: suma_pct fuera de 95–105
+      - SUBESTIMADO: unidad_base_g < suma_gpl * 0.5
+      - SOBREESTIMADO: unidad_base_g > suma_gpl * 2
+      - DESALINEADO: |unidad_base_g - suma_gpl| / suma_gpl > 0.05 pero no extremo
+      - OK: |unidad_base_g - suma_gpl| / suma_gpl <= 0.05
+
+    Sugerido: suma_gpl (= total real del lote según items)
+              pero SOLO si suma_pct ≈ 100 (de lo contrario hay que pedir a Alejandro)
+
+    Returns: {ok, total, problematicos, items:[...]}
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA busy_timeout=2000")
+    c = conn.cursor()
+
+    try:
+        # 1. Headers
+        headers = c.execute("""
+            SELECT producto_nombre,
+                   COALESCE(unidad_base_g, 1000) AS unidad_base_g,
+                   COALESCE(lote_size_kg, 0) AS lote_size_kg
+            FROM formula_headers
+            ORDER BY producto_nombre
+        """).fetchall()
+
+        # 2. Items aggregados por producto
+        items_agg = {}
+        for row in c.execute("""
+            SELECT producto_nombre,
+                   COALESCE(SUM(porcentaje), 0) AS suma_pct,
+                   COALESCE(SUM(cantidad_g_por_lote), 0) AS suma_gpl,
+                   COUNT(*) AS n_items
+            FROM formula_items
+            GROUP BY producto_nombre
+        """).fetchall():
+            items_agg[row['producto_nombre']] = {
+                'suma_pct': float(row['suma_pct'] or 0),
+                'suma_gpl': float(row['suma_gpl'] or 0),
+                'n_items': int(row['n_items'] or 0),
+            }
+
+        # 3. Apariciones en Calendar próximos 90d (producción programada)
+        cal_uso = {}
+        try:
+            for row in c.execute("""
+                SELECT producto, COUNT(*) AS n
+                FROM produccion_programada
+                WHERE date(fecha_programada)
+                      BETWEEN date('now') AND date('now', '+90 days')
+                GROUP BY producto
+            """).fetchall():
+                cal_uso[row['producto']] = int(row['n'] or 0)
+        except Exception:
+            pass
+
+        # 4. Producciones legacy últimos 180d
+        prod_legacy = {}
+        try:
+            for row in c.execute("""
+                SELECT producto, COUNT(*) AS n
+                FROM producciones
+                WHERE date(fecha) >= date('now', '-180 days')
+                  AND COALESCE(cantidad, 0) > 0
+                GROUP BY producto
+            """).fetchall():
+                prod_legacy[row['producto']] = int(row['n'] or 0)
+        except Exception:
+            pass
+
+        # 5. Construir items con diagnóstico
+        out = []
+        cnt_diag = {
+            'SIN_FORMULA': 0,
+            'FORMULA_INCOMPLETA': 0,
+            'SUBESTIMADO': 0,
+            'SOBREESTIMADO': 0,
+            'DESALINEADO': 0,
+            'OK': 0,
+        }
+        for h in headers:
+            prod = h['producto_nombre']
+            ub = float(h['unidad_base_g'] or 0)
+            lsk = float(h['lote_size_kg'] or 0)
+            agg = items_agg.get(prod, {'suma_pct': 0, 'suma_gpl': 0, 'n_items': 0})
+            suma_pct = agg['suma_pct']
+            suma_gpl = agg['suma_gpl']
+            n_items = agg['n_items']
+
+            # Diagnóstico
+            if n_items == 0:
+                diag = 'SIN_FORMULA'
+                sugerido = None
+            elif suma_pct < 95 or suma_pct > 105:
+                diag = 'FORMULA_INCOMPLETA'
+                sugerido = None
+            elif suma_gpl <= 0:
+                diag = 'FORMULA_INCOMPLETA'
+                sugerido = None
+            elif ub <= 0:
+                diag = 'SUBESTIMADO'
+                sugerido = round(suma_gpl, 2)
+            else:
+                ratio = ub / suma_gpl
+                if ratio < 0.5:
+                    diag = 'SUBESTIMADO'
+                    sugerido = round(suma_gpl, 2)
+                elif ratio > 2.0:
+                    diag = 'SOBREESTIMADO'
+                    sugerido = round(suma_gpl, 2)
+                elif abs(ub - suma_gpl) / suma_gpl > 0.05:
+                    diag = 'DESALINEADO'
+                    sugerido = round(suma_gpl, 2)
+                else:
+                    diag = 'OK'
+                    sugerido = round(suma_gpl, 2)
+            cnt_diag[diag] = cnt_diag.get(diag, 0) + 1
+
+            out.append({
+                'producto': prod,
+                'unidad_base_g_actual': round(ub, 2),
+                'lote_size_kg_actual': round(lsk, 3),
+                'suma_pct': round(suma_pct, 2),
+                'suma_gpl': round(suma_gpl, 2),
+                'n_items': n_items,
+                'cal_90d': cal_uso.get(prod, 0),
+                'prod_legacy_180d': prod_legacy.get(prod, 0),
+                'unidad_base_g_sugerido': sugerido,
+                'lote_size_kg_sugerido': round(sugerido / 1000.0, 3) if sugerido else None,
+                'diagnostico': diag,
+                'usado': (cal_uso.get(prod, 0) > 0 or prod_legacy.get(prod, 0) > 0),
+            })
+
+        # Orden: problemáticos primero (los usados), luego por nombre
+        prioridad = {
+            'SUBESTIMADO': 0, 'SOBREESTIMADO': 1, 'DESALINEADO': 2,
+            'FORMULA_INCOMPLETA': 3, 'SIN_FORMULA': 4, 'OK': 5,
+        }
+        out.sort(key=lambda x: (
+            prioridad.get(x['diagnostico'], 9),
+            0 if x['usado'] else 1,
+            x['producto']
+        ))
+
+        total = len(out)
+        problematicos = sum(1 for it in out if it['diagnostico'] != 'OK')
+        # Auto-aplicables: SUBESTIMADO/SOBREESTIMADO/DESALINEADO con fórmula completa
+        # Y que efectivamente se usen (Calendar o producción reciente)
+        auto_aplicables = [
+            it for it in out
+            if it['diagnostico'] in ('SUBESTIMADO', 'SOBREESTIMADO', 'DESALINEADO')
+            and it['unidad_base_g_sugerido']
+            and it['usado']
+        ]
+
+        return jsonify({
+            'ok': True,
+            'total': total,
+            'problematicos': problematicos,
+            'auto_aplicables': len(auto_aplicables),
+            'resumen': cnt_diag,
+            'items': out,
+        }), 200
+    except Exception as e:
+        return jsonify({'error': 'falla auditoria',
+                        'detail': str(e)[:300]}), 500
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+@bp.route("/api/admin/corregir-unidad-base-bulk", methods=["POST"])
+def corregir_unidad_base_bulk():
+    """Corrige formula_headers.unidad_base_g (+ lote_size_kg) bulk · audit_log.
+
+    Sebastián 11-may-2026: para arreglar el bug raíz que subestima consumo
+    Calendar en mp-alcanza-multi.
+
+    Body JSON:
+      items: [{producto, unidad_base_g_nuevo, lote_size_kg_nuevo?}]
+        max 100 items
+        lote_size_kg_nuevo opcional · default = unidad_base_g_nuevo / 1000
+      motivo: str (min 10 chars)
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    d = request.json or {}
+    items = d.get('items') or []
+    motivo = (d.get('motivo') or '').strip()
+
+    if not isinstance(items, list) or not items:
+        return jsonify({'error': 'items requerido (lista)'}), 400
+    if len(items) > 100:
+        return jsonify({'error': 'max 100 items por bulk'}), 400
+    if len(motivo) < 10:
+        return jsonify({'error': 'motivo requerido (min 10 chars)'}), 400
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("PRAGMA busy_timeout=2000")
+    c = conn.cursor()
+    actualizados = []
+    rechazados = []
+    try:
+        for it in items:
+            prod = (it.get('producto') or '').strip()
+            try:
+                ub_nuevo = float(it.get('unidad_base_g_nuevo') or 0)
+            except Exception:
+                ub_nuevo = 0
+            if not prod:
+                rechazados.append({'item': it, 'razon': 'producto requerido'})
+                continue
+            if ub_nuevo <= 0 or ub_nuevo > 1_000_000:
+                rechazados.append({'producto': prod,
+                                    'razon': f'unidad_base_g fuera de rango (0,1M]: {ub_nuevo}'})
+                continue
+
+            # lote_size_kg derivado si no provisto
+            lsk_input = it.get('lote_size_kg_nuevo')
+            if lsk_input is None or lsk_input == '':
+                lsk_nuevo = round(ub_nuevo / 1000.0, 3)
+            else:
+                try:
+                    lsk_nuevo = float(lsk_input)
+                except Exception:
+                    rechazados.append({'producto': prod,
+                                        'razon': 'lote_size_kg_nuevo no numérico'})
+                    continue
+                if lsk_nuevo <= 0 or lsk_nuevo > 1000:
+                    rechazados.append({'producto': prod,
+                                        'razon': f'lote_size_kg fuera de rango: {lsk_nuevo}'})
+                    continue
+
+            row = c.execute(
+                """SELECT COALESCE(unidad_base_g,1000), COALESCE(lote_size_kg,0)
+                   FROM formula_headers WHERE producto_nombre=?""",
+                (prod,)
+            ).fetchone()
+            if not row:
+                rechazados.append({'producto': prod, 'razon': 'no existe en formula_headers'})
+                continue
+
+            ub_antes = float(row[0] or 0)
+            lsk_antes = float(row[1] or 0)
+
+            if (abs(ub_antes - ub_nuevo) < 0.01
+                    and abs(lsk_antes - lsk_nuevo) < 0.001):
+                rechazados.append({'producto': prod, 'razon': 'sin cambios'})
+                continue
+
+            c.execute(
+                """UPDATE formula_headers
+                   SET unidad_base_g=?, lote_size_kg=?
+                   WHERE producto_nombre=?""",
+                (ub_nuevo, lsk_nuevo, prod)
+            )
+            actualizados.append({
+                'producto': prod,
+                'unidad_base_g_antes': round(ub_antes, 2),
+                'unidad_base_g_despues': round(ub_nuevo, 2),
+                'lote_size_kg_antes': round(lsk_antes, 3),
+                'lote_size_kg_despues': round(lsk_nuevo, 3),
+                'factor': round(ub_nuevo / ub_antes, 2) if ub_antes > 0 else None,
+            })
+
+        if actualizados:
+            try:
+                audit_log(
+                    c, usuario=u,
+                    accion='CORREGIR_UNIDAD_BASE_BULK',
+                    tabla='formula_headers', registro_id='bulk',
+                    despues={'motivo': motivo,
+                              'actualizados': actualizados,
+                              'rechazados_count': len(rechazados)},
+                    detalle=f'unidad_base_g actualizado en {len(actualizados)} fórmulas · {motivo[:120]}',
+                )
+            except Exception:
+                pass
+
+        conn.commit()
+        return jsonify({
+            'ok': True,
+            'actualizados': actualizados,
+            'rechazados': rechazados,
+            'message': f'✓ {len(actualizados)} fórmulas actualizadas · {len(rechazados)} rechazadas',
+        }), 200
+    except Exception as e:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return jsonify({'error': 'falla transaccional',
+                        'detail': str(e)[:300]}), 500
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+@bp.route("/admin/auditoria-unidad-base", methods=["GET"])
+def admin_auditoria_unidad_base_page():
+    """Panel UI · auditoría y corrección de formula_headers.unidad_base_g."""
+    u, err, code = _require_admin()
+    if err:
+        return Response(
+            '<h1>403</h1><p>Solo admin.</p>',
+            status=403, mimetype='text/html'
+        )
+    return Response(_AUDIT_UNIDAD_BASE_HTML, mimetype='text/html')
+
+
+_AUDIT_UNIDAD_BASE_HTML = """<!DOCTYPE html>
+<html lang="es"><head>
+<meta charset="utf-8">
+<title>Auditoría unidad_base_g</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,Segoe UI,sans-serif;background:#0f172a;color:#f1f5f9;padding:20px;line-height:1.5}
+h1{font-size:22px;margin-bottom:6px}
+.sub{color:#94a3b8;margin-bottom:18px;font-size:13px}
+.kpis{display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+.kpi{background:#1e293b;padding:10px 14px;border-radius:8px;min-width:120px}
+.kpi .v{font-size:22px;font-weight:600}
+.kpi .l{font-size:11px;color:#94a3b8;text-transform:uppercase}
+.toolbar{display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;align-items:center}
+button{background:#4f46e5;color:white;border:0;padding:8px 14px;border-radius:6px;cursor:pointer;font-size:13px}
+button:hover{background:#4338ca}
+button.secondary{background:#475569}
+button.secondary:hover{background:#334155}
+button.danger{background:#dc2626}
+button.danger:hover{background:#b91c1c}
+button:disabled{background:#475569;cursor:not-allowed;opacity:0.5}
+input,select{background:#1e293b;color:#f1f5f9;border:1px solid #334155;padding:6px 8px;border-radius:6px;font-size:13px}
+table{width:100%;border-collapse:collapse;background:#1e293b;border-radius:8px;overflow:hidden;font-size:12px}
+th,td{padding:8px 10px;text-align:left;border-bottom:1px solid #334155}
+th{background:#0f172a;font-size:11px;text-transform:uppercase;color:#94a3b8;position:sticky;top:0}
+tr:hover{background:#293548}
+.diag{padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;display:inline-block}
+.diag-SIN_FORMULA{background:#9333ea33;color:#c4b5fd}
+.diag-FORMULA_INCOMPLETA{background:#f59e0b33;color:#fcd34d}
+.diag-SUBESTIMADO{background:#dc262633;color:#fca5a5}
+.diag-SOBREESTIMADO{background:#ea580c33;color:#fdba74}
+.diag-DESALINEADO{background:#ca8a0433;color:#fde047}
+.diag-OK{background:#16a34a33;color:#86efac}
+.usado{font-weight:700;color:#fbbf24}
+input.inline{width:90px;text-align:right;padding:4px 6px}
+.right{text-align:right}
+.muted{color:#64748b}
+.r{margin-top:12px;padding:10px;border-radius:6px;display:none}
+.r.visible{display:block}
+.r.ok{background:#16a34a22;color:#86efac}
+.r.err{background:#dc262622;color:#fca5a5}
+</style></head>
+<body>
+<h1>Auditoría · unidad_base_g de fórmulas maestras</h1>
+<p class="sub">Detecta fórmulas con unidad_base_g mal configurado (default 1000g) comparando vs SUM(cantidad_g_por_lote). El bug subestima consumo Calendar en mp-alcanza-multi · puede inflar artificialmente las MPs en COMPRAR_YA.</p>
+
+<div class="kpis">
+  <div class="kpi"><div class="v" id="k-total">—</div><div class="l">Total fórmulas</div></div>
+  <div class="kpi"><div class="v" id="k-problem">—</div><div class="l">Problemáticas</div></div>
+  <div class="kpi"><div class="v" id="k-auto">—</div><div class="l">Auto-aplicables</div></div>
+  <div class="kpi"><div class="v" id="k-sub">—</div><div class="l">SUBESTIMADO</div></div>
+  <div class="kpi"><div class="v" id="k-sob">—</div><div class="l">SOBREESTIMADO</div></div>
+  <div class="kpi"><div class="v" id="k-des">—</div><div class="l">DESALINEADO</div></div>
+  <div class="kpi"><div class="v" id="k-inc">—</div><div class="l">FORMULA_INCOMPLETA</div></div>
+  <div class="kpi"><div class="v" id="k-sf">—</div><div class="l">SIN_FORMULA</div></div>
+</div>
+
+<div class="toolbar">
+  <button onclick="cargar()">↻ Refrescar</button>
+  <select id="filtro" onchange="render()">
+    <option value="todos">Todos</option>
+    <option value="usado" selected>Solo en uso (Calendar/producción)</option>
+    <option value="problem">Solo problemáticos</option>
+    <option value="auto">Solo auto-aplicables</option>
+  </select>
+  <button class="danger" onclick="aplicarAutoAplicables()" id="btn-auto" disabled>⚡ Aplicar TODOS auto-aplicables</button>
+  <span class="muted" id="sel-count"></span>
+</div>
+
+<div id="resultado" class="r"></div>
+
+<table id="tbl">
+  <thead><tr>
+    <th>Producto</th>
+    <th class="right">% suma</th>
+    <th class="right">g/lote suma</th>
+    <th class="right">unidad_base_g actual</th>
+    <th class="right">→ Sugerido</th>
+    <th class="right">Factor</th>
+    <th>Diagnóstico</th>
+    <th class="right">#items</th>
+    <th class="right">Cal 90d</th>
+    <th class="right">Prod 180d</th>
+    <th>Acción</th>
+  </tr></thead>
+  <tbody id="tbody"></tbody>
+</table>
+
+<script>
+let DATA = null;
+
+async function cargar(){
+  const tbody = document.getElementById('tbody');
+  tbody.innerHTML = '<tr><td colspan="11">Cargando...</td></tr>';
+  try{
+    const r = await fetch('/api/admin/auditoria-unidad-base');
+    DATA = await r.json();
+    if(!DATA.ok){
+      tbody.innerHTML = '<tr><td colspan="11">Error: ' + (DATA.error||'?') + '</td></tr>';
+      return;
+    }
+    document.getElementById('k-total').textContent = DATA.total;
+    document.getElementById('k-problem').textContent = DATA.problematicos;
+    document.getElementById('k-auto').textContent = DATA.auto_aplicables;
+    document.getElementById('k-sub').textContent = DATA.resumen.SUBESTIMADO||0;
+    document.getElementById('k-sob').textContent = DATA.resumen.SOBREESTIMADO||0;
+    document.getElementById('k-des').textContent = DATA.resumen.DESALINEADO||0;
+    document.getElementById('k-inc').textContent = DATA.resumen.FORMULA_INCOMPLETA||0;
+    document.getElementById('k-sf').textContent = DATA.resumen.SIN_FORMULA||0;
+    const btnAuto = document.getElementById('btn-auto');
+    btnAuto.disabled = (DATA.auto_aplicables||0) === 0;
+    btnAuto.textContent = '⚡ Aplicar TODOS auto-aplicables ('+(DATA.auto_aplicables||0)+')';
+    render();
+  }catch(e){
+    tbody.innerHTML = '<tr><td colspan="11">Error red: '+e.message+'</td></tr>';
+  }
+}
+
+function render(){
+  if(!DATA) return;
+  const filtro = document.getElementById('filtro').value;
+  const tbody = document.getElementById('tbody');
+  let items = DATA.items;
+  if(filtro === 'usado') items = items.filter(x=>x.usado);
+  else if(filtro === 'problem') items = items.filter(x=>x.diagnostico !== 'OK');
+  else if(filtro === 'auto') items = items.filter(x =>
+    ['SUBESTIMADO','SOBREESTIMADO','DESALINEADO'].includes(x.diagnostico)
+    && x.unidad_base_g_sugerido
+    && x.usado
+  );
+  document.getElementById('sel-count').textContent = items.length + ' filas';
+  if(!items.length){
+    tbody.innerHTML = '<tr><td colspan="11" class="muted">Sin resultados</td></tr>';
+    return;
+  }
+  tbody.innerHTML = items.map(it => {
+    const factor = (it.unidad_base_g_actual > 0 && it.unidad_base_g_sugerido)
+      ? (it.unidad_base_g_sugerido / it.unidad_base_g_actual).toFixed(2) + 'x'
+      : '—';
+    const sug = it.unidad_base_g_sugerido != null ? it.unidad_base_g_sugerido.toLocaleString() : '—';
+    const accion = (it.unidad_base_g_sugerido && it.diagnostico !== 'OK' && it.diagnostico !== 'SIN_FORMULA' && it.diagnostico !== 'FORMULA_INCOMPLETA')
+      ? '<button onclick="aplicarUno('+JSON.stringify(it.producto).replace(/"/g,'&quot;')+','+it.unidad_base_g_sugerido+')">Aplicar</button>'
+      : '<span class="muted">—</span>';
+    return '<tr>'+
+      '<td>'+escapeHtml(it.producto)+(it.usado?' <span class="usado">●</span>':'')+'</td>'+
+      '<td class="right">'+it.suma_pct.toFixed(1)+'</td>'+
+      '<td class="right">'+it.suma_gpl.toLocaleString()+'</td>'+
+      '<td class="right">'+it.unidad_base_g_actual.toLocaleString()+'</td>'+
+      '<td class="right">'+sug+'</td>'+
+      '<td class="right">'+factor+'</td>'+
+      '<td><span class="diag diag-'+it.diagnostico+'">'+it.diagnostico+'</span></td>'+
+      '<td class="right">'+it.n_items+'</td>'+
+      '<td class="right">'+it.cal_90d+'</td>'+
+      '<td class="right">'+it.prod_legacy_180d+'</td>'+
+      '<td>'+accion+'</td>'+
+    '</tr>';
+  }).join('');
+}
+
+function escapeHtml(s){
+  return String(s||'').replace(/[&<>"']/g, ch => ({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+  }[ch]));
+}
+
+async function aplicarUno(producto, nuevo){
+  if(!confirm('Aplicar a "'+producto+'":\\nunidad_base_g → '+nuevo.toLocaleString()+' g\\nlote_size_kg → '+(nuevo/1000).toFixed(3)+' kg')) return;
+  await aplicarBulk([{producto:producto, unidad_base_g_nuevo:nuevo}], 'Corrección manual unidad_base_g desde panel · '+producto);
+}
+
+async function aplicarAutoAplicables(){
+  if(!DATA) return;
+  const lista = DATA.items.filter(x =>
+    ['SUBESTIMADO','SOBREESTIMADO','DESALINEADO'].includes(x.diagnostico)
+    && x.unidad_base_g_sugerido
+    && x.usado
+  );
+  if(!lista.length){ alert('No hay auto-aplicables'); return; }
+  if(!confirm('Aplicar '+lista.length+' correcciones automáticas?\\n\\nSe actualizará unidad_base_g = SUM(cantidad_g_por_lote) para cada fórmula problemática que esté en uso (Calendar o producción reciente).')) return;
+  const items = lista.map(x => ({producto:x.producto, unidad_base_g_nuevo:x.unidad_base_g_sugerido}));
+  await aplicarBulk(items, 'Corrección masiva unidad_base_g · auto-aplicables (suma_pct ≈ 100 + en uso)');
+}
+
+async function aplicarBulk(items, motivo){
+  const r = document.getElementById('resultado');
+  r.className = 'r visible';
+  r.textContent = 'Aplicando...';
+  try{
+    const resp = await fetch('/api/admin/corregir-unidad-base-bulk', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({items:items, motivo:motivo})
+    });
+    const j = await resp.json();
+    if(!resp.ok || !j.ok){
+      r.className = 'r visible err';
+      r.textContent = 'Error: '+(j.error||resp.statusText)+' · '+(j.detail||'');
+      return;
+    }
+    r.className = 'r visible ok';
+    r.textContent = j.message + (j.rechazados && j.rechazados.length ? ' · rechazados: '+JSON.stringify(j.rechazados.slice(0,3)) : '');
+    cargar();
+  }catch(e){
+    r.className = 'r visible err';
+    r.textContent = 'Error red: '+e.message;
+  }
+}
+
+cargar();
+</script>
+</body></html>"""

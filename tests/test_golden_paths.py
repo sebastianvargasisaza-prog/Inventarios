@@ -4151,3 +4151,124 @@ def test_golden_distribuir_fefo_orden(app, db_clean):
     finally:
         _exec("DELETE FROM movimientos WHERE material_id=?", (mp,))
         _exec("DELETE FROM maestro_mps WHERE codigo_mp=?", (mp,))
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 91 · Auditoría unidad_base_g detecta SUBESTIMADO
+# ═══════════════════════════════════════════════════════════════════
+# Bug raíz que detectó Sebastián 11-may-2026: formula_headers.unidad_base_g
+# quedaba en default 1000 (1kg) cuando el lote real es de decenas de kg,
+# subestimando el consumo Calendar en mp-alcanza-multi.
+def test_golden_auditoria_unidad_base(app, db_clean):
+    """Verifica que auditoria-unidad-base detecte SUBESTIMADO correctamente."""
+    cs = _login(app, 'sebastian')
+    prod = 'GP91-PROD-TEST'
+    mp_a = 'GP91-MP-A'
+    mp_b = 'GP91-MP-B'
+    try:
+        # MPs requeridos por trigger FK formula_items → maestro_mps activo
+        _exec("""INSERT OR REPLACE INTO maestro_mps
+                  (codigo_mp, nombre_comercial, activo, tipo_material)
+                  VALUES (?, 'GP91 MP A', 1, 'MP')""", (mp_a,))
+        _exec("""INSERT OR REPLACE INTO maestro_mps
+                  (codigo_mp, nombre_comercial, activo, tipo_material)
+                  VALUES (?, 'GP91 MP B', 1, 'MP')""", (mp_b,))
+        _exec("""INSERT OR REPLACE INTO formula_headers
+                  (producto_nombre, unidad_base_g, lote_size_kg)
+                  VALUES (?, 1000, 1.0)""", (prod,))
+        _exec("""INSERT INTO formula_items
+                  (producto_nombre, material_id, material_nombre,
+                   porcentaje, cantidad_g_por_lote)
+                  VALUES (?, ?, 'AGUA', 70.0, 21000)""", (prod, mp_a))
+        _exec("""INSERT INTO formula_items
+                  (producto_nombre, material_id, material_nombre,
+                   porcentaje, cantidad_g_por_lote)
+                  VALUES (?, ?, 'GLICERINA', 30.0, 9000)""", (prod, mp_b))
+
+        r = cs.get('/api/admin/auditoria-unidad-base')
+        assert r.status_code == 200, f'audit caido · {r.status_code}'
+        d = r.get_json() or {}
+        assert d.get('ok'), f'response no ok · {d}'
+        mio = [it for it in d['items'] if it['producto'] == prod]
+        assert len(mio) == 1, f'no encontrado en audit · {prod}'
+        it = mio[0]
+        assert it['diagnostico'] == 'SUBESTIMADO', \
+            f'BUG: 1000 vs 30000 debió ser SUBESTIMADO · got {it["diagnostico"]}'
+        assert it['unidad_base_g_sugerido'] == 30000, \
+            f'sugerido debió ser 30000 · got {it["unidad_base_g_sugerido"]}'
+        assert it['n_items'] == 2
+        assert abs(it['suma_pct'] - 100.0) < 0.01
+        assert it['suma_gpl'] == 30000
+
+    finally:
+        _exec("DELETE FROM formula_items WHERE producto_nombre=?", (prod,))
+        _exec("DELETE FROM formula_headers WHERE producto_nombre=?", (prod,))
+        _exec("DELETE FROM maestro_mps WHERE codigo_mp IN (?, ?)", (mp_a, mp_b))
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 92 · Corrección unidad_base_g aplica + audit log
+# ═══════════════════════════════════════════════════════════════════
+def test_golden_corregir_unidad_base_bulk(app, db_clean):
+    """Verifica que corregir-unidad-base-bulk actualice y deje audit log."""
+    cs = _login(app, 'sebastian')
+    prod = 'GP92-PROD-TEST'
+    try:
+        _exec("""INSERT OR REPLACE INTO formula_headers
+                  (producto_nombre, unidad_base_g, lote_size_kg)
+                  VALUES (?, 1000, 1.0)""", (prod,))
+
+        r = cs.post(
+            '/api/admin/corregir-unidad-base-bulk',
+            json={'items': [{'producto': prod, 'unidad_base_g_nuevo': 30000}],
+                  'motivo': 'Test golden path · corrigiendo lote real 30kg'},
+            headers=csrf_headers(),
+        )
+        assert r.status_code == 200, f'BUG: {r.status_code} {r.data}'
+        d = r.get_json() or {}
+        assert d.get('ok'), f'response · {d}'
+        assert len(d['actualizados']) == 1
+        upd = d['actualizados'][0]
+        assert upd['producto'] == prod
+        assert upd['unidad_base_g_antes'] == 1000
+        assert upd['unidad_base_g_despues'] == 30000
+        assert upd['lote_size_kg_despues'] == 30.0
+        assert upd['factor'] == 30.0
+
+        # Verificar DB
+        row = _query(
+            "SELECT unidad_base_g, lote_size_kg FROM formula_headers WHERE producto_nombre=?",
+            (prod,)
+        )
+        assert row and row[0][0] == 30000 and abs(row[0][1] - 30.0) < 0.001
+
+        # Verificar audit_log
+        audit = _query(
+            "SELECT accion FROM audit_log WHERE accion='CORREGIR_UNIDAD_BASE_BULK' ORDER BY id DESC LIMIT 1"
+        )
+        assert audit, 'BUG: no se registró audit_log de la corrección'
+
+        # Rechazo · motivo muy corto
+        r2 = cs.post(
+            '/api/admin/corregir-unidad-base-bulk',
+            json={'items': [{'producto': prod, 'unidad_base_g_nuevo': 25000}],
+                  'motivo': 'corto'},
+            headers=csrf_headers(),
+        )
+        assert r2.status_code == 400, 'BUG: motivo corto debió rechazar'
+
+        # Idempotencia · sin cambios
+        r3 = cs.post(
+            '/api/admin/corregir-unidad-base-bulk',
+            json={'items': [{'producto': prod, 'unidad_base_g_nuevo': 30000}],
+                  'motivo': 'Idempotencia test · sin cambios reales'},
+            headers=csrf_headers(),
+        )
+        d3 = r3.get_json() or {}
+        assert d3.get('ok')
+        assert len(d3['actualizados']) == 0
+        assert len(d3['rechazados']) == 1
+        assert 'sin cambios' in d3['rechazados'][0]['razon']
+
+    finally:
+        _exec("DELETE FROM formula_headers WHERE producto_nombre=?", (prod,))
