@@ -373,6 +373,160 @@ def animus_prioridad_agotamiento():
         except Exception: pass
 
 
+@bp.route("/admin/animus-prioridad", methods=["GET"])
+def admin_animus_prioridad_page():
+    """Panel UI · listado priorizado de SKUs Ánimus + MPs a comprar."""
+    u, err, code = _require_admin()
+    if err:
+        return Response('<h1>403</h1>', status=403, mimetype='text/html')
+    return Response(_ANIMUS_PRIORIDAD_HTML, mimetype='text/html')
+
+
+_ANIMUS_PRIORIDAD_HTML = """<!DOCTYPE html>
+<html lang="es"><head>
+<meta charset="utf-8">
+<title>Ánimus · Prioridad de agotamiento</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,Segoe UI,sans-serif;background:#0f172a;color:#f1f5f9;padding:20px;line-height:1.5}
+h1{font-size:22px;margin-bottom:6px}
+.sub{color:#94a3b8;margin-bottom:18px;font-size:13px}
+.kpis{display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+.kpi{background:#1e293b;padding:10px 14px;border-radius:8px;min-width:120px}
+.kpi .v{font-size:22px;font-weight:600}
+.kpi .l{font-size:11px;color:#94a3b8;text-transform:uppercase}
+.toolbar{display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;align-items:center}
+button{background:#4f46e5;color:white;border:0;padding:8px 14px;border-radius:6px;cursor:pointer;font-size:13px}
+button:hover{background:#4338ca}
+input,select{background:#1e293b;color:#f1f5f9;border:1px solid #334155;padding:6px 8px;border-radius:6px;font-size:13px}
+table{width:100%;border-collapse:collapse;background:#1e293b;border-radius:8px;overflow:hidden;font-size:12px;margin-bottom:24px}
+th,td{padding:8px 10px;text-align:left;border-bottom:1px solid #334155}
+th{background:#0f172a;font-size:11px;text-transform:uppercase;color:#94a3b8;position:sticky;top:0}
+tr:hover{background:#293548}
+.u{padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;display:inline-block}
+.u-CRITICO{background:#dc262633;color:#fecaca}
+.u-ALTA{background:#ea580c33;color:#fdba74}
+.u-MEDIA{background:#d9770633;color:#fde047}
+.u-BAJA{background:#0e749033;color:#7dd3fc}
+.u-OK{background:#16a34a33;color:#86efac}
+.u-SIN_USO{background:#47556933;color:#94a3b8}
+.right{text-align:right;font-variant-numeric:tabular-nums}
+h2{font-size:16px;color:#0f766e;margin:20px 0 8px}
+</style></head>
+<body>
+<h1>Ánimus Lab · Prioridad de agotamiento</h1>
+<p class="sub">Listado de SKUs ordenado por <b>días para agotamiento</b> (stock actual / velocidad ventas Shopify). Las MPs necesarias se derivan automáticamente. No depende del Calendar.</p>
+
+<div class="toolbar">
+  <label>Ventana ventas (días): <input type="number" id="ventana" value="60" min="30" max="180" step="10"></label>
+  <label>Cobertura objetivo (días): <input type="number" id="cobertura" value="30" min="14" max="90" step="7"></label>
+  <button onclick="cargar()">↻ Recalcular</button>
+</div>
+
+<div class="kpis">
+  <div class="kpi"><div class="v" id="k-total">—</div><div class="l">Total SKUs</div></div>
+  <div class="kpi"><div class="v" id="k-crit" style="color:#fca5a5">—</div><div class="l">🔴 Crítico (&lt;7d)</div></div>
+  <div class="kpi"><div class="v" id="k-alta" style="color:#fdba74">—</div><div class="l">🟠 Alta (7-14d)</div></div>
+  <div class="kpi"><div class="v" id="k-media" style="color:#fde047">—</div><div class="l">🟡 Media</div></div>
+  <div class="kpi"><div class="v" id="k-baja" style="color:#7dd3fc">—</div><div class="l">🔵 Baja</div></div>
+  <div class="kpi"><div class="v" id="k-ok" style="color:#86efac">—</div><div class="l">✅ OK</div></div>
+  <div class="kpi"><div class="v" id="k-sin" style="color:#94a3b8">—</div><div class="l">Sin uso</div></div>
+  <div class="kpi"><div class="v" id="k-kg">—</div><div class="l">Kg a producir</div></div>
+  <div class="kpi"><div class="v" id="k-mps" style="color:#fca5a5">—</div><div class="l">MPs faltantes</div></div>
+</div>
+
+<h2>🛍️ SKUs por urgencia (los primeros se agotan primero)</h2>
+<table id="tbl-skus">
+  <thead><tr>
+    <th>SKU</th>
+    <th>Producto base</th>
+    <th class="right">Stock</th>
+    <th class="right">Ventas período</th>
+    <th class="right">uds/día</th>
+    <th class="right">Días cobertura</th>
+    <th>Urgencia</th>
+    <th class="right">A producir (kg)</th>
+  </tr></thead>
+  <tbody id="tbody-skus"><tr><td colspan="8">Cargando...</td></tr></tbody>
+</table>
+
+<h2>📦 MPs necesarias (agregado de todos los SKUs urgentes)</h2>
+<table id="tbl-mps">
+  <thead><tr>
+    <th>Código</th>
+    <th>Nombre</th>
+    <th>Proveedor</th>
+    <th class="right">Stock actual</th>
+    <th class="right">Necesario</th>
+    <th class="right">Faltante</th>
+    <th>Urgencia</th>
+  </tr></thead>
+  <tbody id="tbody-mps"><tr><td colspan="7">Cargando...</td></tr></tbody>
+</table>
+
+<script>
+function esc(s){return String(s===null||s===undefined?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;');}
+function fmtN(n,d){if(n===null||n===undefined)return '—';return Number(n).toLocaleString('es-CO',{maximumFractionDigits:d||0});}
+function fmtG(g){if(g===null||g===undefined)return '—';if(Math.abs(g)>=1000)return (g/1000).toFixed(1)+' kg';return Math.round(g)+' g';}
+
+async function cargar(){
+  const ventana = document.getElementById('ventana').value || 60;
+  const cobertura = document.getElementById('cobertura').value || 30;
+  const tbS = document.getElementById('tbody-skus');
+  const tbM = document.getElementById('tbody-mps');
+  tbS.innerHTML = '<tr><td colspan="8">⏳ Calculando...</td></tr>';
+  tbM.innerHTML = '<tr><td colspan="7">⏳ Calculando...</td></tr>';
+  try{
+    const r = await fetch('/api/admin/animus-prioridad-agotamiento?ventana_ventas='+ventana+'&cobertura_objetivo='+cobertura);
+    const d = await r.json();
+    if(!d.ok){
+      tbS.innerHTML = '<tr><td colspan="8">Error: '+esc(d.error||'?')+'</td></tr>';
+      return;
+    }
+    const res = d.resumen || {};
+    document.getElementById('k-total').textContent = res.n_skus || 0;
+    document.getElementById('k-crit').textContent = res.n_critico || 0;
+    document.getElementById('k-alta').textContent = res.n_alta || 0;
+    document.getElementById('k-media').textContent = res.n_media || 0;
+    document.getElementById('k-baja').textContent = res.n_baja || 0;
+    document.getElementById('k-ok').textContent = res.n_ok || 0;
+    document.getElementById('k-sin').textContent = res.n_sin_uso || 0;
+    document.getElementById('k-kg').textContent = (res.kg_total_a_producir || 0).toFixed(1) + ' kg';
+    document.getElementById('k-mps').textContent = res.n_mps_faltantes || 0;
+
+    const skus = d.skus || [];
+    tbS.innerHTML = skus.map(s => '<tr>'+
+      '<td><b>'+esc(s.sku)+'</b></td>'+
+      '<td>'+esc(s.producto_base||'—')+'</td>'+
+      '<td class="right">'+fmtN(s.stock_actual_u)+'</td>'+
+      '<td class="right">'+fmtN(s.ventas_periodo_u)+'</td>'+
+      '<td class="right">'+fmtN(s.velocidad_uds_dia,2)+'</td>'+
+      '<td class="right">'+(s.dias_cobertura===null?'∞':fmtN(s.dias_cobertura,1))+'</td>'+
+      '<td><span class="u u-'+esc(s.urgencia)+'">'+esc(s.urgencia)+'</span></td>'+
+      '<td class="right">'+(s.kg_a_producir_para_cobertura>0?fmtN(s.kg_a_producir_para_cobertura,1)+' kg':'—')+'</td>'+
+      '</tr>').join('') || '<tr><td colspan="8">Sin SKUs</td></tr>';
+
+    const mps = d.mps_necesarias || [];
+    tbM.innerHTML = mps.map(m => '<tr>'+
+      '<td><b>'+esc(m.codigo_mp)+'</b></td>'+
+      '<td>'+esc(m.nombre)+'</td>'+
+      '<td>'+esc(m.proveedor)+'</td>'+
+      '<td class="right">'+fmtG(m.stock_actual_g)+'</td>'+
+      '<td class="right">'+fmtG(m.necesario_g)+'</td>'+
+      '<td class="right" style="font-weight:700;color:'+(m.faltante_g>0?'#fca5a5':'#86efac')+'">'+fmtG(m.faltante_g)+'</td>'+
+      '<td><span class="u u-'+(m.faltante_g>0?'ALTA':'OK')+'">'+(m.faltante_g>0?'ALTA':'OK')+'</span></td>'+
+      '</tr>').join('') || '<tr><td colspan="7">Sin MPs faltantes 🎉</td></tr>';
+  }catch(e){
+    tbS.innerHTML = '<tr><td colspan="8">Error red: '+esc(e.message)+'</td></tr>';
+    tbM.innerHTML = '';
+  }
+}
+
+cargar();
+</script>
+</body></html>"""
+
+
 @bp.route("/api/admin/cron-db-integrity-check", methods=["POST", "GET"])
 def cron_db_integrity_check():
     """Cron diario · corre PRAGMA quick_check + registra en db_health_log.
