@@ -567,6 +567,7 @@ JOBS_SCHEDULE = [
     # ⭐ LUNES 7AM · Workflow completo (jefe producción no hace nada manual)
     ('lunes_7am_workflow',    7,  0, [0],  None,                'job_lunes_7am_workflow'),
     # Diarios
+    ('sync_stock_shopify',    5, 30, None, None,                'job_sync_stock_shopify_diario'),
     ('sync_shopify',          6,  0, None, None,                'job_sync_shopify'),
     ('auto_asignar_areas',    6, 30, None, None,                'job_auto_asignar_areas'),
     ('auto_d20',              8,  0, None, None,                'job_auto_d20'),
@@ -747,6 +748,102 @@ def _registrar_ejecucion(conn, job_name, ok, resultado, duracion_ms, error=None)
         conn.commit()
     except Exception as e:
         log.warning(f'[multi-cron] no se pudo registrar {job_name}: {e}')
+
+
+def job_sync_stock_shopify_diario(app):
+    """Sync Shopify stock (inventory_quantity) → tabla stock_pt.
+
+    Sebastian 12-may-2026: 'quisiera un sync automatico diario asi sabemos
+    realidades'. Antes el stock solo se actualizaba al clickear el boton
+    '🔄 Sync Shopify' en el panel · ahora corre diario 5:30am Colombia.
+
+    Replica logica del endpoint /api/programacion/sync-stock-shopify:
+      - Pull products.json paginado (Link header rel=next).
+      - Marca snapshots SHOPIFY-* anteriores como Ajustado.
+      - INSERT por variant con stock>0 con lote_produccion='SHOPIFY-<hoy>'.
+
+    Inventory_quantity de Shopify = ON HAND (incluye committed). Fix futuro
+    para usar AVAILABLE pendiente (requiere segunda llamada a inventory_levels).
+    """
+    with app.app_context():
+        from database import get_db
+        import urllib.request as _ur
+        import urllib.error as _uerr
+        import json as _json
+        from datetime import datetime as _dt
+
+        conn = get_db()
+
+        def _cfg(clave):
+            r = conn.execute("SELECT valor FROM animus_config WHERE clave=?", (clave,)).fetchone()
+            return r[0] if r else None
+
+        token = _cfg('shopify_token')
+        shop = _cfg('shopify_shop')
+        if not token or not shop:
+            return False, {'error': 'Shopify no configurado en animus_config'}, 1
+
+        sku_map = {}
+        for row in conn.execute(
+            "SELECT sku, producto_nombre FROM sku_producto_map WHERE activo=1"
+        ).fetchall():
+            sku_map[str(row[0] or '').strip().upper()] = str(row[1] or '').strip()
+
+        all_variants = []
+        url = 'https://' + shop + '/admin/api/2024-01/products.json?limit=250&fields=id,title,variants'
+        while url:
+            req = _ur.Request(url, headers={'X-Shopify-Access-Token': token})
+            try:
+                with _ur.urlopen(req, timeout=20) as r:
+                    data = _json.loads(r.read())
+                    link_header = r.headers.get('Link', '')
+            except _uerr.HTTPError as e:
+                body = e.read().decode('utf-8', errors='replace')[:200]
+                return False, {'error': f'Shopify HTTP {e.code} — {body}'}, 1
+            except Exception as e:
+                return False, {'error': f'Error red Shopify: {e}'}, 1
+
+            for product in data.get('products', []):
+                title = str(product.get('title', '') or '').strip()
+                for variant in product.get('variants', []):
+                    sku_raw = str(variant.get('sku', '') or '').strip().upper()
+                    qty = int(variant.get('inventory_quantity', 0) or 0)
+                    all_variants.append({'sku': sku_raw, 'titulo': title, 'inv_qty': qty})
+
+            next_url = None
+            for part in link_header.split(','):
+                if 'rel="next"' in part:
+                    s = part.find('<') + 1
+                    e2 = part.find('>')
+                    if s > 0 and e2 > s:
+                        next_url = part[s:e2].strip()
+            url = next_url
+
+        if not all_variants:
+            return False, {'error': 'Shopify no devolvio productos'}, 1
+
+        conn.execute("UPDATE stock_pt SET estado='Ajustado' WHERE lote_produccion LIKE 'SHOPIFY-%'")
+        synced = 0
+        skipped = 0
+        today = _dt.now().strftime('%Y-%m-%d')
+        for v in all_variants:
+            sku = v['sku']
+            qty = v['inv_qty']
+            if not sku or qty <= 0:
+                skipped += 1
+                continue
+            producto = sku_map.get(sku)
+            if not producto:
+                prefix = sku.split('-')[0] if '-' in sku else sku[:6]
+                producto = sku_map.get(prefix) or v['titulo']
+            conn.execute(
+                "INSERT INTO stock_pt (sku,descripcion,lote_produccion,fecha_produccion,unidades_inicial,unidades_disponible,precio_base,empresa,estado,observaciones) VALUES (?,?,?,?,?,?,0,'ANIMUS','Disponible','Sync Shopify CRON')",
+                (sku, producto, 'SHOPIFY-' + today, today, qty, qty)
+            )
+            synced += 1
+
+        conn.commit()
+        return True, {'synced': synced, 'skipped_zero': skipped, 'total_variantes': len(all_variants)}, 0
 
 
 def job_sync_shopify(app):
