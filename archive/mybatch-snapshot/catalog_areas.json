@@ -1,0 +1,12 @@
+{
+  "generated_at": "2026-05-12",
+  "source": "https://esparigia-mybatch-907403675147.us-east4.run.app/productionorder/add/ (dropdown line_area)",
+  "total": 5,
+  "areas": [
+    {"nombre": "Purificación de agua Equipo de agua Área gris", "tipo": "aguas",         "zona": "gris"},
+    {"nombre": "Area Gris Area de dispensado Área gris",        "tipo": "dispensacion",  "zona": "gris"},
+    {"nombre": "Area tecnica Cuarto de Aires .",                "tipo": "tecnica",       "zona": "tecnica"},
+    {"nombre": "Área de producción Área 1 Fabricación líquidos y semisólidos 1", "tipo": "fabricacion", "zona": "produccion"},
+    {"nombre": "Área de producción Área 2 Fabricación y envasado líquidos y semisólidos 2", "tipo": "fabricacion_envasado", "zona": "produccion"}
+  ]
+}

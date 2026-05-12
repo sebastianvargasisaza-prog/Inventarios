@@ -1,0 +1,387 @@
+{
+  "run_at": "2026-05-12T17:24:29",
+  "method": "browser-mcp-direct-download",
+  "total_indexed": 52,
+  "total_downloaded": 52,
+  "total_size_bytes": 1610725,
+  "by_estado": {
+    "En Proceso": {
+      "count": 10,
+      "bytes": 313780
+    },
+    "Aprobado": {
+      "count": 33,
+      "bytes": 1071442
+    },
+    "Cancelado": {
+      "count": 9,
+      "bytes": 225503
+    }
+  },
+  "results": [
+    {
+      "num": "OP-2026-51",
+      "estado": "En Proceso",
+      "file": "OP-2026-51-lote-261321.pdf",
+      "bytes": 31708,
+      "valid_pdf": true
+    },
+    {
+      "num": "OP-2026-50",
+      "estado": "Aprobado",
+      "file": "OP-2026-50-lote-261271.pdf",
+      "bytes": 35666,
+      "valid_pdf": true
+    },
+    {
+      "num": "OP-2026-49",
+      "estado": "Cancelado",
+      "file": "OP-2026-49-lote-261271.pdf",
+      "bytes": 24410,
+      "valid_pdf": true
+    },
+    {
+      "num": "OP-2026-48",
+      "estado": "Aprobado",
+      "file": "OP-2026-48-lote-261261.pdf",
+      "bytes": 33023,
+      "valid_pdf": true
+    },
+    {
+      "num": "OP-2026-47",
+      "estado": "Aprobado",
+      "file": "OP-2026-47-lote-261251.pdf",
+      "bytes": 32745,
+      "valid_pdf": true
+    },
+    {
+      "num": "OP-2026-46",
+      "estado": "Cancelado",
+      "file": "OP-2026-46-lote-261251.pdf",
+      "bytes": 24380,
+      "valid_pdf": true
+    },
+    {
+      "num": "OP-2026-45",
+      "estado": "En Proceso",
+      "file": "OP-2026-45-lote-261244.pdf",
+      "bytes": 32585,
+      "valid_pdf": true
+    },
+    {
+      "num": "OP-2026-44",
+      "estado": "En Proceso",
+      "file": "OP-2026-44-lote-261243.pdf",
+      "bytes": 31007,
+      "valid_pdf": true
+    },
+    {
+      "num": "OP-2026-43",
+      "estado": "En Proceso",
+      "file": "OP-2026-43-lote-261242.pdf",
+      "bytes": 31027,
+      "valid_pdf": true
+    },
+    {
+      "num": "OP-2026-42",
+      "estado": "En Proceso",
+      "file": "OP-2026-42-lote-261241.pdf",
+      "bytes": 31024,
+      "valid_pdf": true
+    },
+    {
+      "num": "OP-2026-41",
+      "estado": "Aprobado",
+      "file": "OP-2026-41-lote-261201.pdf",
+      "bytes": 29755,
+      "valid_pdf": true
+    },
+    {
+      "num": "OP-2026-40",
+      "estado": "Aprobado",
+      "file": "OP-2026-40-lote-261191.pdf",
+      "bytes": 32620,
+      "valid_pdf": true
+    },
+    {
+      "num": "OP-2026-39",
+      "estado": "Cancelado",
+      "file": "OP-2026-39-lote-261191.pdf",
+      "bytes": 24251,
+      "valid_pdf": true
+    },
+    {
+      "num": "OP-2026-38",
+      "estado": "En Proceso",
+      "file": "OP-2026-38-lote-261181.pdf",
+      "bytes": 31328,
+      "valid_pdf": true
+    },
+    {
+      "num": "OP-2026-37",
+      "estado": "Aprobado",
+      "file": "OP-2026-37-lote-261171.pdf",
+      "bytes": 29861,
+      "valid_pdf": true
+    },
+    {
+      "num": "OP-2026-36",
+      "estado": "Cancelado",
+      "file": "OP-2026-36-lote-261171.pdf",
+      "bytes": 30927,
+      "valid_pdf": true
+    },
+    {
+      "num": "OP-2026-35",
+      "estado": "En Proceso",
+      "file": "OP-2026-35-lote-261171.pdf",
+      "bytes": 31068,
+      "valid_pdf": true
+    },
+    {
+      "num": "OP-2026-34",
+      "estado": "Cancelado",
+      "file": "OP-2026-34-lote-261141.pdf",
+      "bytes": 24381,
+      "valid_pdf": true
+    },
+    {
+      "num": "OP-2026-33",
+      "estado": "Aprobado",
+      "file": "OP-2026-33-lote-261132.pdf",
+      "bytes": 33798,
+      "valid_pdf": true
+    },
+    {
+      "num": "OP-2026-32",
+      "estado": "Aprobado",
+      "file": "OP-2026-32-lote-261131.pdf",
+      "bytes": 31615,
+      "valid_pdf": true
+    },
+    {
+      "num": "OP-2026-31",
+      "estado": "Aprobado",
+      "file": "OP-2026-31-lote-261111.pdf",
+      "bytes": 33149,
+      "valid_pdf": true
+    },
+    {
+      "num": "OP-2026-30",
+      "estado": "Aprobado",
+      "file": "OP-2026-30-lote-261102.pdf",
+      "bytes": 33131,
+      "valid_pdf": true
+    },
+    {
+      "num": "OP-2026-29",
+      "estado": "Aprobado",
+      "file": "OP-2026-29-lote-261101.pdf",
+      "bytes": 33047,
+      "valid_pdf": true
+    },
+    {
+      "num": "OP-2026-28",
+      "estado": "En Proceso",
+      "file": "OP-2026-28-lote-261102.pdf",
+      "bytes": 31182,
+      "valid_pdf": true
+    },
+    {
+      "num": "OP-2026-27",
+      "estado": "En Proceso",
+      "file": "OP-2026-27-lote-261101.pdf",
+      "bytes": 31184,
+      "valid_pdf": true
+    },
+    {
+      "num": "OP-2026-26",
+      "estado": "Aprobado",
+      "file": "OP-2026-26-lote-261061.pdf",
+      "bytes": 42123,
+      "valid_pdf": true
+    },
+    {
+      "num": "OP-2026-25",
+      "estado": "Aprobado",
+      "file": "OP-2026-25-lote-261051.pdf",
+      "bytes": 34271,
+      "valid_pdf": true
+    },
+    {
+      "num": "OP-2026-24",
+      "estado": "Aprobado",
+      "file": "OP-2026-24-lote-261031.pdf",
+      "bytes": 30612,
+      "valid_pdf": true
+    },
+    {
+      "num": "OP-2026-23",
+      "estado": "Aprobado",
+      "file": "OP-2026-23-lote-261001.pdf",
+      "bytes": 32772,
+      "valid_pdf": true
+    },
+    {
+      "num": "OP-2026-22",
+      "estado": "Aprobado",
+      "file": "OP-2026-22-lote-260991.pdf",
+      "bytes": 31576,
+      "valid_pdf": true
+    },
+    {
+      "num": "OP-2026-21",
+      "estado": "Aprobado",
+      "file": "OP-2026-21-lote-260981.pdf",
+      "bytes": 33661,
+      "valid_pdf": true
+    },
+    {
+      "num": "OP-2026-20",
+      "estado": "En Proceso",
+      "file": "OP-2026-20-lote-260971.pdf",
+      "bytes": 31667,
+      "valid_pdf": true
+    },
+    {
+      "num": "OP-2026-19",
+      "estado": "Aprobado",
+      "file": "OP-2026-19-lote-260962.pdf",
+      "bytes": 29667,
+      "valid_pdf": true
+    },
+    {
+      "num": "OP-2026-18",
+      "estado": "Aprobado",
+      "file": "OP-2026-18-lote-260961.pdf",
+      "bytes": 31752,
+      "valid_pdf": true
+    },
+    {
+      "num": "OP-2026-17",
+      "estado": "Aprobado",
+      "file": "OP-2026-17-lote-260901.pdf",
+      "bytes": 32852,
+      "valid_pdf": true
+    },
+    {
+      "num": "OP-2026-16",
+      "estado": "Cancelado",
+      "file": "OP-2026-16-lote-260901.pdf",
+      "bytes": 24252,
+      "valid_pdf": true
+    },
+    {
+      "num": "OP-2026-15",
+      "estado": "Aprobado",
+      "file": "OP-2026-15-lote-260891.pdf",
+      "bytes": 29655,
+      "valid_pdf": true
+    },
+    {
+      "num": "OP-2026-14",
+      "estado": "Cancelado",
+      "file": "OP-2026-14-lote-260891.pdf",
+      "bytes": 24375,
+      "valid_pdf": true
+    },
+    {
+      "num": "OP-2026-13",
+      "estado": "Cancelado",
+      "file": "OP-2026-13-lote-260711.pdf",
+      "bytes": 24270,
+      "valid_pdf": true
+    },
+    {
+      "num": "OP-2026-12",
+      "estado": "Aprobado",
+      "file": "OP-2026-12-lote-260701.pdf",
+      "bytes": 31569,
+      "valid_pdf": true
+    },
+    {
+      "num": "OP-2026-11",
+      "estado": "Aprobado",
+      "file": "OP-2026-11-lote-260681.pdf",
+      "bytes": 31948,
+      "valid_pdf": true
+    },
+    {
+      "num": "OP-2026-10",
+      "estado": "Aprobado",
+      "file": "OP-2026-10-lote-260651.pdf",
+      "bytes": 32161,
+      "valid_pdf": true
+    },
+    {
+      "num": "OP-2026-9",
+      "estado": "Aprobado",
+      "file": "OP-2026-9-lote-260641.pdf",
+      "bytes": 32017,
+      "valid_pdf": true
+    },
+    {
+      "num": "OP-2026-8",
+      "estado": "Aprobado",
+      "file": "OP-2026-8-lote-260631.pdf",
+      "bytes": 29604,
+      "valid_pdf": true
+    },
+    {
+      "num": "OP-2026-7",
+      "estado": "Aprobado",
+      "file": "OP-2026-7-lote-260612.pdf",
+      "bytes": 31574,
+      "valid_pdf": true
+    },
+    {
+      "num": "OP-2026-6",
+      "estado": "Aprobado",
+      "file": "OP-2026-6-lote-260611.pdf",
+      "bytes": 33606,
+      "valid_pdf": true
+    },
+    {
+      "num": "OP-2026-5",
+      "estado": "Cancelado",
+      "file": "OP-2026-5-lote-260611.pdf",
+      "bytes": 24257,
+      "valid_pdf": true
+    },
+    {
+      "num": "OP-2026-4",
+      "estado": "Aprobado",
+      "file": "OP-2026-4-lote-260581.pdf",
+      "bytes": 30283,
+      "valid_pdf": true
+    },
+    {
+      "num": "OP-2026-3",
+      "estado": "Aprobado",
+      "file": "OP-2026-3-lote-260571.pdf",
+      "bytes": 34415,
+      "valid_pdf": true
+    },
+    {
+      "num": "OP-2026-2",
+      "estado": "Aprobado",
+      "file": "OP-2026-2-lote-260561.pdf",
+      "bytes": 29682,
+      "valid_pdf": true
+    },
+    {
+      "num": "OP-2026-1",
+      "estado": "Aprobado",
+      "file": "OP-2026-1-lote-260551.pdf",
+      "bytes": 34048,
+      "valid_pdf": true
+    },
+    {
+      "num": "OP-2025-1",
+      "estado": "Aprobado",
+      "file": "OP-2025-1-lote-253352.pdf",
+      "bytes": 33184,
+      "valid_pdf": true
+    }
+  ]
+}
