@@ -1890,7 +1890,7 @@ async function jsonFetch(url, opts){
 function _fmtMiles(n){
   if(n===null||n===undefined||isNaN(n)) return '0';
   try{ return Math.round(Number(n)).toLocaleString('es-CO'); }
-  catch(e){ return String(Math.round(Number(n))).replace(/\B(?=(\d{3})+(?!\d))/g,'.'); }
+  catch(e){ return String(Math.round(Number(n))).replace(/\\B(?=(\\d{3})+(?!\\d))/g,'.'); }
 }
 // ── Sebastian 5-may-2026 (Bodega MP): revisar mínimos de stock_minimo ──
 // Antes la auditoria solo era accesible desde /admin · operario tipico
@@ -2546,8 +2546,8 @@ function dlExcelHTML(nombre, cols, rows){
   var a = document.createElement('a');
   a.href = url;
   // Forzar extensión .xls para que Excel lo abra directo (no .csv)
-  a.download = nombre.replace(/\.csv$/i, '.xls');
-  if(!/\.xls$/i.test(a.download)) a.download += '.xls';
+  a.download = nombre.replace(/\\.csv$/i, '.xls');
+  if(!/\\.xls$/i.test(a.download)) a.download += '.xls';
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }

@@ -851,7 +851,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
 
 // CSRF defense-in-depth - Sebastian 3-may-2026
 function _csrf() {
-  var m = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/);
+  var m = document.cookie.match(/(?:^|;\\s*)csrf_token=([^;]+)/);
   return m ? decodeURIComponent(m[1]) : '';
 }
 function _fetchOpts(method, body) {

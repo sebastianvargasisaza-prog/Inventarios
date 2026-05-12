@@ -966,7 +966,7 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
 <script>
 // ── CSRF defense-in-depth · Sebastian 3-may-2026 ──────────────────
 function _csrf() {
-  var m = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/);
+  var m = document.cookie.match(/(?:^|;\\s*)csrf_token=([^;]+)/);
   return m ? decodeURIComponent(m[1]) : '';
 }
 function _fetchOpts(method, body) {
@@ -2146,7 +2146,7 @@ function guardarNuevoProv(){
 function _normProvName(s){
   return (s||'').toLowerCase().trim()
     .normalize('NFD').replace(/[̀-ͯ]/g,'')  // sin acentos
-    .replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim();
+    .replace(/[^a-z0-9 ]/g,' ').replace(/\\s+/g,' ').trim();
 }
 function checkProvDuplicado(){
   var input = document.getElementById('np-nombre');
@@ -3073,8 +3073,8 @@ async function guardarPreciosItems(numOC, solNumero){
     var inpCant = tr.querySelector('input.cant-edit');
     var inpProv = tr.querySelector('input.prov-edit');
     if (!iid) return;
-    var precio = inpPrecio ? parseFloat((inpPrecio.value||'').replace(/[^\d.]/g,'')) : 0;
-    var cantidad = inpCant ? parseFloat((inpCant.value||'').replace(/[^\d.]/g,'')) : null;
+    var precio = inpPrecio ? parseFloat((inpPrecio.value||'').replace(/[^\\d.]/g,'')) : 0;
+    var cantidad = inpCant ? parseFloat((inpCant.value||'').replace(/[^\\d.]/g,'')) : null;
     var prov = inpProv ? (inpProv.value||'').trim() : null;
     var item = {id: parseInt(iid)};
     if (isFinite(precio) && precio > 0) item.precio_unit_g = precio;
