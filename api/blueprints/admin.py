@@ -19530,6 +19530,129 @@ def debug_formula_items():
             pass
 
 
+@bp.route("/api/admin/debug-calendar-producto", methods=["GET"])
+def debug_calendar_producto():
+    """Lista RAW de produccion_programada para 1 producto · forensia inflado.
+
+    Sebastián 11-may-2026: LBHA cada 45d real pero panel ve 17 lotes/60d (13x).
+    Necesito ver todas las entries para detectar qué tipo de inflado es.
+
+    Query: ?nombre=LIMPIADOR FACIAL BHA 2%
+           o ?contiene=BHA  (LIKE match parcial · útil para variantes)
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    nombre = (request.args.get('nombre') or '').strip()
+    contiene = (request.args.get('contiene') or '').strip()
+    if not nombre and not contiene:
+        return jsonify({'error': 'pasa ?nombre=X o ?contiene=Y'}), 400
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    try:
+        from datetime import date as _date
+
+        if contiene:
+            rows = c.execute("""
+                SELECT id, producto, fecha_programada,
+                       COALESCE(lotes, 1) AS lotes,
+                       COALESCE(estado, '') AS estado,
+                       COALESCE(operario, '') AS operario,
+                       COALESCE(inicio_real_at, '') AS inicio_real_at,
+                       COALESCE(inventario_descontado_at, '') AS inventario_descontado_at,
+                       COALESCE(google_event_id, '') AS google_event_id,
+                       COALESCE(creado_en, '') AS creado_en
+                FROM produccion_programada
+                WHERE UPPER(producto) LIKE UPPER(?)
+                ORDER BY fecha_programada DESC
+            """, (f'%{contiene}%',)).fetchall()
+        else:
+            rows = c.execute("""
+                SELECT id, producto, fecha_programada,
+                       COALESCE(lotes, 1) AS lotes,
+                       COALESCE(estado, '') AS estado,
+                       COALESCE(operario, '') AS operario,
+                       COALESCE(inicio_real_at, '') AS inicio_real_at,
+                       COALESCE(inventario_descontado_at, '') AS inventario_descontado_at,
+                       COALESCE(google_event_id, '') AS google_event_id,
+                       COALESCE(creado_en, '') AS creado_en
+                FROM produccion_programada
+                WHERE producto = ?
+                ORDER BY fecha_programada DESC
+            """, (nombre,)).fetchall()
+
+        hoy = _date.today()
+        entries = []
+        cnt_total = 0
+        cnt_futuras = 0
+        cnt_60d = 0
+        cnt_90d = 0
+        cnt_180d = 0
+        cnt_completadas = 0
+        cnt_descontadas = 0
+        cnt_pasadas = 0
+        for r in rows:
+            cnt_total += 1
+            try:
+                f = _date.fromisoformat(r['fecha_programada'][:10])
+                dias = (f - hoy).days
+            except Exception:
+                dias = None
+            if dias is not None:
+                if dias < 0:
+                    cnt_pasadas += 1
+                else:
+                    cnt_futuras += 1
+                    if dias <= 60: cnt_60d += 1
+                    if dias <= 90: cnt_90d += 1
+                    if dias <= 180: cnt_180d += 1
+            if r['inventario_descontado_at']:
+                cnt_descontadas += 1
+            if r['estado'].lower() in ('completado', 'completada', 'terminado'):
+                cnt_completadas += 1
+            entries.append({
+                'id': r['id'],
+                'producto': r['producto'],
+                'fecha': r['fecha_programada'][:10] if r['fecha_programada'] else None,
+                'dias_desde_hoy': dias,
+                'lotes': int(r['lotes'] or 1),
+                'estado': r['estado'],
+                'operario': r['operario'],
+                'inicio_real_at': r['inicio_real_at'][:19] if r['inicio_real_at'] else '',
+                'inventario_descontado_at': r['inventario_descontado_at'][:19] if r['inventario_descontado_at'] else '',
+                'google_event_id': r['google_event_id'][:30] if r['google_event_id'] else '',
+                'creado_en': r['creado_en'][:19] if r['creado_en'] else '',
+            })
+
+        # Detectar variantes de nombre (si usamos contiene)
+        variantes_count = {}
+        for e in entries:
+            variantes_count[e['producto']] = variantes_count.get(e['producto'], 0) + 1
+
+        return jsonify({
+            'ok': True,
+            'query': {'nombre': nombre, 'contiene': contiene},
+            'stats': {
+                'total': cnt_total,
+                'pasadas': cnt_pasadas,
+                'futuras': cnt_futuras,
+                'en_60d': cnt_60d,
+                'en_90d': cnt_90d,
+                'en_180d': cnt_180d,
+                'completadas': cnt_completadas,
+                'descontadas': cnt_descontadas,
+            },
+            'variantes_nombre': variantes_count,
+            'entries': entries,
+        }), 200
+    finally:
+        try: conn.close()
+        except Exception: pass
+
+
 @bp.route("/api/admin/debug-consumo-mp/<codigo_mp>", methods=["GET"])
 def debug_consumo_mp(codigo_mp):
     """Drill-down · explica el consumo Calendar+Shopify de UNA MP específica.
