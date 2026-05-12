@@ -19426,6 +19426,110 @@ function descargarAuditCSV(){
 </body></html>"""
 
 
+@bp.route("/api/admin/debug-formula-items", methods=["GET"])
+def debug_formula_items():
+    """Stats forenses de formula_items · diagnóstico FORMULA_INCOMPLETA masivo.
+
+    Sebastián 11-may-2026: Sebastián ve TODAS formulas en INCOMPLETA · investigar.
+    Devuelve:
+      - Conteos globales (total, con_pct, con_gpl, distinct_productos)
+      - Top 10 productos por suma_pct (ascendente y descendente)
+      - 5 ejemplos de items random
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    try:
+        stats = c.execute("""
+            SELECT
+              COUNT(*) AS total_items,
+              SUM(CASE WHEN COALESCE(porcentaje,0) > 0 THEN 1 ELSE 0 END) AS con_pct,
+              SUM(CASE WHEN COALESCE(porcentaje,0) > 0 AND porcentaje <= 1 THEN 1 ELSE 0 END) AS pct_le_1,
+              SUM(CASE WHEN COALESCE(porcentaje,0) > 1 THEN 1 ELSE 0 END) AS pct_gt_1,
+              SUM(CASE WHEN COALESCE(cantidad_g_por_lote,0) > 0 THEN 1 ELSE 0 END) AS con_gpl,
+              COUNT(DISTINCT producto_nombre) AS productos_distintos
+            FROM formula_items
+        """).fetchone()
+
+        # Por producto: suma_pct (ordenado asc / desc)
+        rows_pct = c.execute("""
+            SELECT producto_nombre,
+                   COALESCE(SUM(porcentaje), 0) AS suma_pct,
+                   COALESCE(SUM(cantidad_g_por_lote), 0) AS suma_gpl,
+                   COUNT(*) AS n_items
+            FROM formula_items
+            GROUP BY producto_nombre
+            ORDER BY suma_pct DESC
+        """).fetchall()
+        top_pct = [{'producto': r['producto_nombre'],
+                     'suma_pct': round(float(r['suma_pct']), 3),
+                     'suma_gpl': round(float(r['suma_gpl']), 2),
+                     'n_items': int(r['n_items'])} for r in rows_pct]
+
+        # Top headers vs items
+        head_rows = c.execute("""
+            SELECT h.producto_nombre,
+                   COALESCE(h.unidad_base_g, 1000) AS ub_g,
+                   COALESCE(h.lote_size_kg, 0) AS lsk,
+                   (SELECT COUNT(*) FROM formula_items i
+                    WHERE i.producto_nombre = h.producto_nombre) AS n_items
+            FROM formula_headers h
+            ORDER BY h.producto_nombre
+            LIMIT 20
+        """).fetchall()
+        headers_sample = [{'producto': r['producto_nombre'],
+                            'unidad_base_g': float(r['ub_g']),
+                            'lote_size_kg': float(r['lsk']),
+                            'n_items': int(r['n_items'])} for r in head_rows]
+
+        # 5 items ejemplo
+        sample_items = c.execute("""
+            SELECT producto_nombre, material_id, material_nombre,
+                   porcentaje, cantidad_g_por_lote
+            FROM formula_items
+            WHERE porcentaje IS NOT NULL
+            ORDER BY id ASC
+            LIMIT 10
+        """).fetchall()
+        items_ej = [{'producto': r['producto_nombre'],
+                      'material_id': r['material_id'],
+                      'material': r['material_nombre'],
+                      'porcentaje': float(r['porcentaje'] or 0),
+                      'g_por_lote': float(r['cantidad_g_por_lote'] or 0)}
+                     for r in sample_items]
+
+        return jsonify({
+            'ok': True,
+            'stats': {
+                'total_items': int(stats['total_items'] or 0),
+                'con_pct_no_cero': int(stats['con_pct'] or 0),
+                'pct_le_1': int(stats['pct_le_1'] or 0),  # sospechoso · decimal vs %
+                'pct_gt_1': int(stats['pct_gt_1'] or 0),
+                'con_gpl_no_cero': int(stats['con_gpl'] or 0),
+                'productos_distintos': int(stats['productos_distintos'] or 0),
+            },
+            'top_5_suma_pct_max': top_pct[:5],
+            'top_5_suma_pct_min_no_cero': [
+                p for p in reversed(top_pct) if p['suma_pct'] > 0
+            ][:5],
+            'productos_con_suma_pct_cero': sum(1 for p in top_pct if p['suma_pct'] == 0),
+            'productos_suma_pct_entre_95_105': sum(
+                1 for p in top_pct if 95 <= p['suma_pct'] <= 105
+            ),
+            'headers_sample_20': headers_sample,
+            'items_ejemplo': items_ej,
+        }), 200
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
 @bp.route("/api/admin/auditoria-unidad-base", methods=["GET"])
 def auditoria_unidad_base():
     """Audit · formula_headers.unidad_base_g vs suma cantidad_g_por_lote.
