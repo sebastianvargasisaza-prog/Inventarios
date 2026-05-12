@@ -358,6 +358,26 @@ def animus_prioridad_agotamiento():
             'kg_total_a_producir': round(sum(s['kg_a_producir_para_cobertura'] for s in skus_out), 2),
         }
 
+        # Sebastian 12-may-2026: ?formato=lista → texto plano para revisar
+        # rapido cuales SKUs entran al panel (copy/paste a chat con Claude).
+        if request.args.get('formato', '').lower() == 'lista':
+            lines = []
+            lines.append(f"SKUs Animus con ventas en ultimos {ventana} dias (orden: ventas DESC)")
+            lines.append(f"Total: {resumen['n_skus']} SKUs · {resumen['n_critico']} critico · {resumen['n_alta']} alta · {resumen['n_media']} media · {resumen['n_baja']} baja · {resumen['n_ok']} ok")
+            lines.append("")
+            lines.append(f"{'SKU':<22} {'VENTAS':>7} {'STOCK':>7} {'DIAS':>7} {'URGENCIA':<10} DESCRIPCION")
+            lines.append("-" * 110)
+            for s in sorted(skus_out, key=lambda x: -int(x.get('ventas_periodo_u', 0))):
+                dias = s.get('dias_cobertura', 0)
+                dias_s = f"{dias:.1f}" if dias < 999 else "INF"
+                lines.append(
+                    f"{s['sku']:<22} {int(s.get('ventas_periodo_u',0)):>7} "
+                    f"{int(s.get('stock_actual_u',0)):>7} {dias_s:>7} "
+                    f"{s['urgencia']:<10} {(s.get('descripcion') or s.get('producto_base') or '')[:60]}"
+                )
+            from flask import Response
+            return Response("\n".join(lines), mimetype='text/plain; charset=utf-8'), 200
+
         return jsonify({
             'ok': True,
             'parametros': {
