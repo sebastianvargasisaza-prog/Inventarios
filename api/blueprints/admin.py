@@ -263,10 +263,13 @@ def animus_prioridad_agotamiento():
                 'proveedor': r['proveedor'][:40],
             }
 
-        # 6. Compute por SKU · unión de SKUs con stock O con ventas
-        # Un SKU que se vende pero está agotado en stock también debe aparecer
-        # (stock=0, urgencia=CRITICO).
-        todos_skus = set(stock_por_sku.keys()) | set(ventas_por_sku.keys())
+        # 6. Compute por SKU · SOLO los que VENDEN en la ventana
+        # Sebastián 12-may-2026: filtrar ruido (SKUs descontinuados, de prueba,
+        # ANM-RM-* que no existen como producto real). El criterio de "producto
+        # real" es simple: si nadie lo compra en los últimos N días, no entra
+        # al panel de prioridad. Un SKU agotado pero vendido sigue apareciendo
+        # como CRITICO porque está en ventas_por_sku.
+        todos_skus = set(ventas_por_sku.keys())
         skus_out = []
         mp_necesario_g = {}  # codigo_mp → necesario_g acumulado
         for sku in todos_skus:
