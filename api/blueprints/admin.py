@@ -19568,6 +19568,134 @@ def debug_formula_items():
             pass
 
 
+@bp.route("/api/admin/debug-formulas-recientes", methods=["GET"])
+def debug_formulas_recientes():
+    """Lista fórmulas ordenadas por fecha_creacion DESC.
+
+    Sebastián 12-may-2026: verificar que las fórmulas creadas por Luis
+    Enrique recientemente están bien configuradas (unidad_base_g real,
+    items con cantidad_g_por_lote sembrado, suma_pct razonable).
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    try:
+        # Verificar si fecha_creacion existe en la tabla
+        try:
+            rows = c.execute("""
+                SELECT producto_nombre,
+                       COALESCE(unidad_base_g, 0) AS unidad_base_g,
+                       COALESCE(lote_size_kg, 0) AS lote_size_kg,
+                       COALESCE(fecha_creacion, '') AS fecha_creacion,
+                       COALESCE(descripcion, '') AS descripcion
+                FROM formula_headers
+                ORDER BY COALESCE(fecha_creacion, '') DESC,
+                         producto_nombre ASC
+                LIMIT 50
+            """).fetchall()
+        except sqlite3.OperationalError:
+            rows = c.execute("""
+                SELECT producto_nombre,
+                       COALESCE(unidad_base_g, 0) AS unidad_base_g,
+                       COALESCE(lote_size_kg, 0) AS lote_size_kg,
+                       '' AS fecha_creacion,
+                       '' AS descripcion
+                FROM formula_headers
+                ORDER BY producto_nombre
+            """).fetchall()
+
+        # Producciones recientes por producto (últimos 60d)
+        prod_recientes = {}
+        for r in c.execute("""
+            SELECT producto, MAX(fecha) AS ultima
+            FROM producciones
+            WHERE date(fecha) >= date('now', '-60 days')
+            GROUP BY producto
+        """).fetchall():
+            prod_recientes[r['producto']] = r['ultima'][:10] if r['ultima'] else ''
+
+        # Items agg por fórmula
+        items_agg = {}
+        for r in c.execute("""
+            SELECT producto_nombre,
+                   COUNT(*) AS n,
+                   COALESCE(SUM(porcentaje), 0) AS suma_pct,
+                   COALESCE(SUM(cantidad_g_por_lote), 0) AS suma_gpl
+            FROM formula_items
+            GROUP BY producto_nombre
+        """).fetchall():
+            items_agg[r['producto_nombre']] = {
+                'n_items': int(r['n']),
+                'suma_pct': round(float(r['suma_pct']), 2),
+                'suma_gpl': round(float(r['suma_gpl']), 2),
+            }
+
+        # En produccion_programada (vigentes)
+        cal_count = {}
+        for r in c.execute("""
+            SELECT producto, COUNT(*) AS n
+            FROM produccion_programada
+            WHERE date(fecha_programada) >= date('now')
+              AND COALESCE(estado, '') != 'cancelado'
+            GROUP BY producto
+        """).fetchall():
+            cal_count[r['producto']] = int(r['n'])
+
+        out = []
+        sin_fecha = 0
+        for r in rows:
+            prod = r['producto_nombre']
+            ag = items_agg.get(prod, {'n_items': 0, 'suma_pct': 0, 'suma_gpl': 0})
+            ub = float(r['unidad_base_g'] or 0)
+            # Detectar fórmulas problemáticas
+            problemas = []
+            if ub == 1000:
+                problemas.append('unidad_base_g default (1000g · ¿lote real?)')
+            if ag['n_items'] == 0:
+                problemas.append('SIN_ITEMS (no se puede producir)')
+            elif ag['suma_pct'] <= 0:
+                problemas.append('porcentaje todos en 0')
+            elif ag['suma_gpl'] <= 0 and ag['suma_pct'] > 0:
+                problemas.append('cantidad_g_por_lote no sembrado')
+            if ub > 0 and ag['suma_gpl'] > 0 and ag['suma_pct'] > 0:
+                ub_impl = ag['suma_gpl'] / (ag['suma_pct'] / 100.0)
+                if abs(ub - ub_impl) / ub_impl > 0.5:
+                    problemas.append(f'unidad_base_g inconsistente · impl={int(ub_impl)}')
+            fecha = r['fecha_creacion'][:19] if r['fecha_creacion'] else ''
+            if not fecha:
+                sin_fecha += 1
+            out.append({
+                'producto': prod,
+                'unidad_base_g': ub,
+                'lote_size_kg': float(r['lote_size_kg'] or 0),
+                'fecha_creacion': fecha,
+                'descripcion': r['descripcion'][:80] if r['descripcion'] else '',
+                'n_items': ag['n_items'],
+                'suma_pct': ag['suma_pct'],
+                'suma_gpl': ag['suma_gpl'],
+                'producciones_60d': prod_recientes.get(prod, ''),
+                'calendar_vigentes': cal_count.get(prod, 0),
+                'problemas': problemas,
+                'usable_para_producir': bool(ag['n_items'] > 0 and ag['suma_pct'] > 0),
+            })
+
+        return jsonify({
+            'ok': True,
+            'total_formulas': len(out),
+            'sin_fecha_creacion': sin_fecha,
+            'con_problemas': sum(1 for x in out if x['problemas']),
+            'usables_para_producir': sum(1 for x in out if x['usable_para_producir']),
+            'formulas': out,
+        }), 200
+    finally:
+        try: conn.close()
+        except Exception: pass
+
+
 @bp.route("/api/admin/debug-ocs-transito", methods=["GET"])
 def debug_ocs_transito():
     """Lista OCs activas por estado · cazar OCs no contadas en mp-alcanza.
