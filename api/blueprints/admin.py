@@ -111,6 +111,166 @@ def admin_backup_now():
     return jsonify(result), 500
 
 
+@bp.route("/api/admin/emergency-restore", methods=["POST", "GET"])
+def admin_emergency_restore():
+    """Restore EMERGENCY · auto-detecta backup más reciente válido.
+
+    Sebastián 12-may-2026: BD se corrompió ('database disk image is malformed').
+    Antes había que listar backups, identificar uno, restaurar manualmente.
+    Ahora 1 click hace todo:
+      1. Lista backups en BACKUPS_DIR
+      2. Filtra los > 5 MB (válidos · backups corruptos pesan poco)
+      3. Toma el más reciente
+      4. Verifica que descomprime OK + integrity_check pasa
+      5. Mueve DB corrupto a .corrupt-<ts> (forensics)
+      6. Restaura atomic
+      7. Verifica health post-restore
+    NO toca audit_log (porque la BD puede estar mal). Log via _log_sec.
+
+    GET: dry-run · solo retorna qué backup elegiría
+    POST: aplica · body {confirm: true}
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    import os as _os
+    import gzip
+    import sqlite3 as _sql
+    import time as _time
+    import shutil
+
+    # 1. Listar backups disponibles
+    try:
+        items = list_backups()
+    except Exception as e:
+        return jsonify({'error': f'no se puede leer BACKUPS_DIR: {str(e)[:200]}'}), 500
+
+    if not items:
+        return jsonify({'error': 'no hay backups disponibles'}), 404
+
+    # 2. Filtrar válidos (>5MB) ordenado por fecha desc
+    validos = []
+    for it in items:
+        size = it.get('size_bytes', 0) or 0
+        if size < 5 * 1024 * 1024:  # <5MB es sospechoso
+            continue
+        validos.append(it)
+
+    if not validos:
+        return jsonify({
+            'error': 'no hay backups >5MB · todos parecen corruptos',
+            'backups_pequenos': items[:5],
+        }), 500
+
+    # Ordenar por filename DESC (timestamp en nombre · cronológicamente ordenable)
+    validos.sort(key=lambda x: x.get('filename', ''), reverse=True)
+    candidato = validos[0]
+    filename = candidato['filename']
+    backup_path = _os.path.join(BACKUPS_DIR, filename)
+
+    # GET = dry run
+    es_post = request.method == 'POST'
+    body = request.get_json(silent=True) or {}
+
+    # 3. Verificar que descomprime + integrity_check
+    ts = _time.strftime('%Y%m%d_%H%M%S')
+    tmp_path = f"{DB_PATH}.restore-tmp-{ts}"
+    try:
+        with gzip.open(backup_path, 'rb') as f_in:
+            with open(tmp_path, 'wb') as f_out:
+                shutil.copyfileobj(f_in, f_out)
+        # Verificar integrity
+        verify_conn = _sql.connect(tmp_path)
+        try:
+            row = verify_conn.execute('PRAGMA integrity_check').fetchone()
+            integrity = (row[0] if row else 'unknown')
+        finally:
+            verify_conn.close()
+        if integrity != 'ok':
+            _os.remove(tmp_path)
+            return jsonify({
+                'error': 'backup tampoco pasa integrity_check',
+                'backup': filename,
+                'integrity': integrity,
+            }), 500
+    except Exception as e:
+        try: _os.remove(tmp_path)
+        except Exception: pass
+        return jsonify({
+            'error': f'fallo descomprimiendo/verificando backup: {str(e)[:200]}',
+            'backup': filename,
+        }), 500
+
+    if not es_post:
+        try: _os.remove(tmp_path)
+        except Exception: pass
+        return jsonify({
+            'ok': True,
+            'dry_run': True,
+            'backup_a_restaurar': filename,
+            'size_mb': round(candidato.get('size_bytes', 0) / 1024 / 1024, 2),
+            'integrity_check': integrity,
+            'message': ('Backup válido. Para aplicar el restore, repite con '
+                         'POST y body {"confirm": true}'),
+        }), 200
+
+    if not body.get('confirm'):
+        try: _os.remove(tmp_path)
+        except Exception: pass
+        return jsonify({'error': 'confirm=true requerido para evitar restore accidental'}), 400
+
+    # 4. Backup del actual corrupto + atomic move
+    corrupt_path = f"{DB_PATH}.corrupt-{ts}"
+    try:
+        if _os.path.exists(DB_PATH):
+            shutil.copy2(DB_PATH, corrupt_path)
+    except Exception:
+        pass  # ya estaba inaccesible, no importa
+
+    try:
+        _os.replace(tmp_path, DB_PATH)
+    except Exception as e:
+        return jsonify({
+            'error': f'fallo replace atomic: {str(e)[:200]}',
+            'tmp_path': tmp_path,
+        }), 500
+
+    # 5. Verificar post-restore
+    post = {}
+    try:
+        c2 = _sql.connect(DB_PATH)
+        row = c2.execute('PRAGMA integrity_check').fetchone()
+        post['integrity'] = row[0] if row else 'unknown'
+        tables_ok = 0
+        for t in ('maestro_mps', 'movimientos', 'ordenes_compra', 'producciones'):
+            try:
+                cnt = c2.execute(f'SELECT COUNT(*) FROM {t}').fetchone()[0]
+                post[f'count_{t}'] = int(cnt)
+                tables_ok += 1
+            except Exception as e:
+                post[f'err_{t}'] = str(e)[:100]
+        c2.close()
+        post['tables_ok'] = tables_ok
+    except Exception as e:
+        post['err_verify'] = str(e)[:200]
+
+    try:
+        _log_sec('emergency_restore', u, _client_ip(),
+                  details=f'Restored from {filename}, post={post}')
+    except Exception:
+        pass
+
+    return jsonify({
+        'ok': True,
+        'restored_from': filename,
+        'corrupt_backup_path': corrupt_path,
+        'post_restore': post,
+        'message': (f'✓ BD restaurada desde {filename}. '
+                     'Verifica https://...onrender.com/api/health'),
+    }), 200
+
+
 @bp.route("/api/admin/restore-backup", methods=["POST"])
 def admin_restore_backup():
     """Restaura la DB desde un backup específico.
