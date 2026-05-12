@@ -12850,6 +12850,28 @@ async function ckMarcar(itemId, estado){
         return pa < pb ? -1 : (pa > pb ? 1 : 0);
       });
 
+      // Sebastián 12-may-2026: helper para agrupar por semana ISO (Lun-Dom).
+      // Antes: lista lineal cruzando semanas sin separador. Ahora cada
+      // semana tiene header con rango + count producciones + total kg.
+      function _pv2LunesDe(iso){
+        if(!iso) return null;
+        var d = new Date(iso+'T00:00:00');
+        if(isNaN(d.getTime())) return null;
+        var dia = d.getDay();
+        var offset = dia === 0 ? -6 : 1 - dia;
+        d.setDate(d.getDate() + offset);
+        return d;
+      }
+      function _pv2SemanaKey(iso){
+        var l = _pv2LunesDe(iso);
+        return l ? l.toISOString().slice(0,10) : 'zzz';
+      }
+      function _pv2FmtFechaCorta(d){
+        var meses = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+        return d.getDate() + ' ' + meses[d.getMonth()];
+      }
+      var lunesHoyKey = _pv2SemanaKey(hoyISO);
+
       html += '<table style="width:100%;border-collapse:collapse;font-size:12px">';
       html += '<thead><tr style="border-bottom:2px solid #e2e8f0;'+
               'background:#f8fafc">'+
@@ -12865,7 +12887,40 @@ async function ckMarcar(itemId, estado){
               'color:#64748b;width:160px">Estado</th>'+
               '<th style="width:40px"></th>'+
               '</tr></thead><tbody>';
+      // Agrupar filas por semana antes de renderizar
+      var filasPorSemana = {};
       filas.forEach(function(row){
+        var iso = (row.fecha.fecha||'').slice(0,10);
+        var key = _pv2SemanaKey(iso) || 'sin-fecha';
+        if(!filasPorSemana[key]) filasPorSemana[key] = [];
+        filasPorSemana[key].push(row);
+      });
+      var semanasOrdenadas = Object.keys(filasPorSemana).sort();
+      semanasOrdenadas.forEach(function(semanaKey){
+        var rowsSemana = filasPorSemana[semanaKey];
+        // Header de semana con rango + count + total kg
+        if(semanaKey !== 'sin-fecha'){
+          var lun = new Date(semanaKey + 'T00:00:00');
+          var dom = new Date(lun); dom.setDate(dom.getDate()+6);
+          var rangoSem = 'Semana ' + _pv2FmtFechaCorta(lun) + ' – ' + _pv2FmtFechaCorta(dom);
+          var esEstaSem = semanaKey === lunesHoyKey;
+          var esPasada = semanaKey < lunesHoyKey;
+          if(esEstaSem) rangoSem += ' · ESTA SEMANA';
+          else if(esPasada) rangoSem += ' · pasada';
+          var totalKgSem = rowsSemana.reduce(function(s, row){
+            return s + (parseFloat(row.fecha.cantidad_kg)||0);
+          }, 0);
+          var bgSem = esEstaSem ? '#dcfce7' : (esPasada ? '#f3f4f6' : '#e0f2fe');
+          var fgSem = esEstaSem ? '#15803d' : (esPasada ? '#6b7280' : '#0e7490');
+          html += '<tr style="background:'+bgSem+';border-top:2px solid #e2e8f0">'+
+                  '<td colspan="6" style="padding:8px 12px;color:'+fgSem+
+                  ';font-weight:700;font-size:11.5px;letter-spacing:0.3px">'+
+                  '📅 '+_escHTML(rangoSem)+
+                  ' <span style="font-weight:500;opacity:0.85;margin-left:8px">· '+
+                  rowsSemana.length+' producción(es) · '+totalKgSem.toFixed(1)+' kg</span>'+
+                  '</td></tr>';
+        }
+        rowsSemana.forEach(function(row){
         var g = row.grupo;
         var f = row.fecha;
         var faltMP = g.faltantes_mps_count || 0;
@@ -12955,6 +13010,7 @@ async function ckMarcar(itemId, estado){
           html += '<td></td>';
         }
         html += '</tr>';
+        });
       });
       html += '</tbody></table>';
 
