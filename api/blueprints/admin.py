@@ -19568,6 +19568,325 @@ def debug_formula_items():
             pass
 
 
+@bp.route("/api/admin/ocs-revision-limpieza", methods=["GET"])
+def ocs_revision_limpieza():
+    """Lista OCs en estados Borrador y Pagada para revisión manual.
+
+    Sebastián 12-may-2026: tras detectar que 2 OCs Borrador del 4-5 may
+    tienen 30+ items pendientes (¿abandonadas? ¿pendientes de aprobar?)
+    y 20 OCs Pagada (¿ya llegaron físicamente?). Necesita lista clara
+    para decidir caso por caso.
+
+    Retorna:
+      - ocs_borrador[]: con n_items, kg total, dias_desde_creacion
+      - ocs_pagada[]: con n_items, kg total, fecha_pago, dias_desde_pago,
+                      kg_recibido (para detectar parciales)
+      - acciones_sugeridas
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    try:
+        # Detectar nombres reales de columnas (algunas son opcionales)
+        def _has_col(tabla, col):
+            try:
+                c.execute(f"SELECT {col} FROM {tabla} LIMIT 1")
+                return True
+            except Exception:
+                return False
+        has_fecha_pago = _has_col('ordenes_compra', 'fecha_pago')
+        sel_fecha_pago = "fecha_pago" if has_fecha_pago else "''"
+
+        # OCs Borrador
+        ocs_borrador = []
+        for r in c.execute(f"""
+            SELECT oc.numero_oc,
+                   COALESCE(oc.proveedor, '') AS proveedor,
+                   COALESCE(oc.fecha, '') AS fecha,
+                   COALESCE(oc.valor_total, 0) AS valor_total,
+                   COALESCE(oc.observaciones, '') AS observaciones,
+                   COALESCE(oc.creado_por, '') AS creado_por,
+                   julianday('now') - julianday(COALESCE(oc.fecha, 'now')) AS dias_antig,
+                   (SELECT COUNT(*) FROM ordenes_compra_items i
+                    WHERE i.numero_oc = oc.numero_oc) AS n_items,
+                   (SELECT COALESCE(SUM(cantidad_g), 0) FROM ordenes_compra_items i
+                    WHERE i.numero_oc = oc.numero_oc) AS total_g
+            FROM ordenes_compra oc
+            WHERE COALESCE(oc.estado, '') = 'Borrador'
+            ORDER BY oc.fecha DESC
+        """).fetchall():
+            ocs_borrador.append({
+                'numero_oc': r['numero_oc'],
+                'proveedor': r['proveedor'][:40],
+                'fecha': r['fecha'][:10] if r['fecha'] else '',
+                'dias_antiguedad': int(r['dias_antig'] or 0),
+                'valor_total_cop': float(r['valor_total'] or 0),
+                'n_items': int(r['n_items']),
+                'total_kg': round(float(r['total_g'] or 0) / 1000.0, 2),
+                'observaciones': r['observaciones'][:120],
+                'creado_por': r['creado_por'],
+            })
+
+        # OCs Pagada (verificar si ya llegaron)
+        ocs_pagada = []
+        for r in c.execute(f"""
+            SELECT oc.numero_oc,
+                   COALESCE(oc.proveedor, '') AS proveedor,
+                   COALESCE(oc.fecha, '') AS fecha,
+                   {sel_fecha_pago} AS fecha_pago,
+                   COALESCE(oc.valor_total, 0) AS valor_total,
+                   julianday('now') - julianday(COALESCE({sel_fecha_pago}, oc.fecha, 'now')) AS dias_desde_pago,
+                   (SELECT COUNT(*) FROM ordenes_compra_items i
+                    WHERE i.numero_oc = oc.numero_oc) AS n_items,
+                   (SELECT COALESCE(SUM(cantidad_g), 0) FROM ordenes_compra_items i
+                    WHERE i.numero_oc = oc.numero_oc) AS total_g,
+                   (SELECT COALESCE(SUM(cantidad_recibida_g), 0) FROM ordenes_compra_items i
+                    WHERE i.numero_oc = oc.numero_oc) AS recibido_g
+            FROM ordenes_compra oc
+            WHERE COALESCE(oc.estado, '') = 'Pagada'
+            ORDER BY {sel_fecha_pago} DESC, oc.fecha DESC
+        """).fetchall():
+            total_g = float(r['total_g'] or 0)
+            recib_g = float(r['recibido_g'] or 0)
+            pct_recib = (recib_g / total_g * 100) if total_g > 0 else 0
+            ocs_pagada.append({
+                'numero_oc': r['numero_oc'],
+                'proveedor': r['proveedor'][:40],
+                'fecha_pedido': r['fecha'][:10] if r['fecha'] else '',
+                'fecha_pago': (r['fecha_pago'] or '')[:10],
+                'dias_desde_pago': int(r['dias_desde_pago'] or 0),
+                'valor_cop': float(r['valor_total'] or 0),
+                'n_items': int(r['n_items']),
+                'total_kg': round(total_g / 1000.0, 2),
+                'recibido_kg': round(recib_g / 1000.0, 2),
+                'pct_recibido': round(pct_recib, 1),
+                'sospechoso': pct_recib < 5 and (r['dias_desde_pago'] or 0) > 21,
+            })
+
+        # Resumen acciones
+        ocs_borrador_viejas = [o for o in ocs_borrador if o['dias_antiguedad'] > 7]
+        ocs_pagada_sospechosas = [o for o in ocs_pagada if o['sospechoso']]
+
+        return jsonify({
+            'ok': True,
+            'ocs_borrador': ocs_borrador,
+            'ocs_borrador_viejas_count': len(ocs_borrador_viejas),
+            'ocs_pagada': ocs_pagada,
+            'ocs_pagada_sospechosas_count': len(ocs_pagada_sospechosas),
+            'acciones_sugeridas': {
+                'borrador_viejas': (
+                    f'{len(ocs_borrador_viejas)} OCs Borrador >7d sin actividad. '
+                    'Revisar con Catalina: ¿descartar o autorizar?'
+                ),
+                'pagada_sin_recibir': (
+                    f'{len(ocs_pagada_sospechosas)} OCs pagadas >21d con <5% '
+                    'recibido. Verificar si ya llegaron físicamente y marcar como Recibida.'
+                ),
+            },
+        }), 200
+    finally:
+        try: conn.close()
+        except Exception: pass
+
+
+@bp.route("/api/admin/email-alejandro-formulas-faltantes", methods=["GET", "POST"])
+def email_alejandro_formulas_faltantes():
+    """Genera email para Alejandro con lista de fórmulas faltantes.
+
+    Sebastián 12-may-2026: Luis Enrique programó GLOSS en Calendar pero
+    la fórmula no existe. Detectados otros productos similares vía
+    /api/admin/productos-calendar-sin-formula.
+
+    GET: retorna {asunto, html, texto_plano, productos_faltantes[]}
+         para preview o copy-paste manual desde Gmail.
+    POST: si SMTP configurado (EMAIL_REMITENTE + EMAIL_PASSWORD env),
+          envía directamente a alejandro@espagiria.co.
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    try:
+        # 1. Productos con fórmula (normalizados)
+        formulas_set = set()
+        for r in c.execute("SELECT producto_nombre FROM formula_headers").fetchall():
+            formulas_set.add((r['producto_nombre'] or '').upper().strip())
+
+        # 2. Productos programados sin fórmula
+        from datetime import date as _date
+        sin_formula = []
+        for r in c.execute("""
+            SELECT producto,
+                   MIN(fecha_programada) AS proxima,
+                   COUNT(*) AS n_eventos
+            FROM produccion_programada
+            WHERE date(fecha_programada) >= date('now')
+              AND COALESCE(estado, '') != 'cancelado'
+            GROUP BY producto
+            ORDER BY MIN(fecha_programada)
+        """).fetchall():
+            prod = r['producto'] or ''
+            if prod.upper().strip() in formulas_set:
+                continue
+            sin_formula.append({
+                'producto': prod,
+                'proxima_produccion': r['proxima'][:10] if r['proxima'] else '',
+                'n_eventos': int(r['n_eventos']),
+            })
+
+        # 3. Listar todas las fórmulas existentes (Alejandro debe revisar)
+        formulas_actuales = [
+            {'producto': r['producto_nombre'],
+             'unidad_base_g': float(r['unidad_base_g'] or 0),
+             'fecha_creacion': (r['fecha_creacion'] or '')[:10]}
+            for r in c.execute("""
+                SELECT producto_nombre,
+                       COALESCE(unidad_base_g, 0) AS unidad_base_g,
+                       COALESCE(fecha_creacion, '') AS fecha_creacion
+                FROM formula_headers
+                ORDER BY producto_nombre
+            """).fetchall()
+        ]
+
+        # 4. Generar email
+        hoy = _date.today().strftime('%d/%m/%Y')
+        asunto = f"[EOS Inventarios] Fórmulas maestras pendientes · {len(sin_formula)} productos sin fórmula · {hoy}"
+
+        # Texto plano (para copy/paste en Gmail si SMTP no responde)
+        lineas = [
+            f"Hola Alejandro,",
+            f"",
+            f"Hicimos auditoría profunda al módulo de inventarios y detectamos productos que están programados en Google Calendar (Producciones) pero NO tienen fórmula maestra registrada en EOS. Eso BLOQUEA al operario cuando intenta producir (el sistema responde \"Producto sin fórmula registrada\").",
+            f"",
+            f"PRODUCTOS PROGRAMADOS SIN FÓRMULA EN EOS ({len(sin_formula)}):",
+            f"",
+        ]
+        for it in sin_formula[:50]:
+            lineas.append(
+                f"  • {it['producto']}  ·  próxima producción: {it['proxima_produccion']}  ·  eventos pendientes: {it['n_eventos']}"
+            )
+        lineas += [
+            f"",
+            f"ACCIÓN PEDIDA:",
+            f"",
+            f"1. Para CADA producto de la lista, pasar al equipo técnico la fórmula completa con:",
+            f"   - Peso real del lote estándar (kg)",
+            f"   - Lista de materias primas con porcentaje (% en peso) — el agua deshionizada NO se incluye porque es ilimitada",
+            f"",
+            f"2. Cargarlas en EOS → módulo Producción → sub-pestaña Fórmulas → 'Guardar Fórmula'.",
+            f"   - Si una MP no aparece en el catálogo, primero crearla en Bodega MP.",
+            f"   - El sistema ahora valida que cada material_id exista activo antes de aceptar la fórmula (mensaje claro si falla).",
+            f"",
+            f"3. Si hay productos adicionales que estés planeando agregar al portafolio (líneas nuevas, variaciones, etc), aprovecha y crea también su fórmula maestra anticipadamente.",
+            f"",
+            f"CONTEXTO TÉCNICO:",
+            f"- Actualmente hay {len(formulas_actuales)} fórmulas creadas en EOS.",
+            f"- El sistema mp-alcanza (¿alcanzan las MPs?) ahora calcula correctamente el consumo proyectado para los próximos 60/90/180 días basado en Calendar + Shopify.",
+            f"- Cuando falten fórmulas, esas producciones no se contabilizan en el cálculo de MPs a comprar → riesgo de quedarnos sin material.",
+            f"",
+            f"Cualquier duda me dices.",
+            f"",
+            f"Saludos,",
+            f"Sebastián",
+        ]
+        texto_plano = '\n'.join(lineas)
+
+        # HTML (más bonito para email)
+        html_filas = ''.join([
+            f'<tr><td style="padding:8px;border-bottom:1px solid #e5e7eb"><b>{_escape_html(it["producto"])}</b></td>'
+            f'<td style="padding:8px;border-bottom:1px solid #e5e7eb;color:#7f1d1d">{it["proxima_produccion"]}</td>'
+            f'<td style="padding:8px;border-bottom:1px solid #e5e7eb;text-align:center">{it["n_eventos"]}</td></tr>'
+            for it in sin_formula[:50]
+        ])
+        html = f"""<!DOCTYPE html><html><body style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;line-height:1.55;color:#0f172a;max-width:680px;margin:0 auto;padding:24px">
+<h2 style="color:#0f766e;margin-bottom:6px">Fórmulas maestras pendientes · {hoy}</h2>
+<p style="color:#475569;margin-top:0">{len(sin_formula)} productos programados en Google Calendar sin fórmula maestra en EOS.</p>
+<p>Hola Alejandro,</p>
+<p>Hicimos auditoría profunda al módulo de inventarios y detectamos productos que están programados en Google Calendar (Producciones) pero <b>NO tienen fórmula maestra registrada en EOS</b>. Eso BLOQUEA al operario cuando intenta producir (el sistema responde <i>"Producto sin fórmula registrada"</i>).</p>
+<h3 style="color:#dc2626;margin-top:24px">Productos sin fórmula ({len(sin_formula)})</h3>
+<table style="width:100%;border-collapse:collapse;font-size:14px">
+<thead><tr style="background:#f8fafc"><th style="padding:8px;text-align:left;border-bottom:2px solid #cbd5e1">Producto</th><th style="padding:8px;text-align:left;border-bottom:2px solid #cbd5e1">Próxima producción</th><th style="padding:8px;text-align:center;border-bottom:2px solid #cbd5e1">Eventos</th></tr></thead>
+<tbody>{html_filas}</tbody>
+</table>
+<h3 style="color:#0f766e;margin-top:24px">Acción pedida</h3>
+<ol style="line-height:1.7">
+<li>Para CADA producto de la lista, definir la fórmula completa con: peso real del lote (kg) + lista de MPs con porcentaje. <b>El agua deshionizada NO se incluye</b> (es ilimitada).</li>
+<li>Cargarlas en EOS → módulo <b>Producción</b> → sub-pestaña <b>Fórmulas</b>. Si una MP no aparece en el catálogo, primero crearla en Bodega MP.</li>
+<li>Si tienes productos adicionales planeados (líneas nuevas, variaciones), aprovecha y crea sus fórmulas anticipadamente.</li>
+</ol>
+<p style="color:#64748b;font-size:13px;margin-top:24px">Contexto técnico: hay {len(formulas_actuales)} fórmulas creadas. El sistema mp-alcanza calcula consumo proyectado 60/90/180d basado en Calendar + Shopify. Cuando falten fórmulas, esas producciones no se contabilizan → riesgo de quedarnos sin MP.</p>
+<p>Cualquier duda me dices.</p>
+<p>Saludos,<br>Sebastián</p>
+</body></html>"""
+
+        result = {
+            'ok': True,
+            'asunto': asunto,
+            'html': html,
+            'texto_plano': texto_plano,
+            'productos_faltantes_count': len(sin_formula),
+            'productos_faltantes': sin_formula,
+            'formulas_existentes_count': len(formulas_actuales),
+            'destinatarios': ['alejandro@espagiria.co'],
+            'cc': ['sebastian@espagiria.co'],
+        }
+
+        if request.method == 'POST':
+            # Intentar enviar via SMTP
+            import os as _os
+            if not _os.environ.get('EMAIL_REMITENTE') or not _os.environ.get('EMAIL_PASSWORD'):
+                result['enviado'] = False
+                result['razon'] = 'SMTP no configurado · usa el HTML para copy/paste'
+                return jsonify(result), 200
+            try:
+                from notificaciones import SistemaNotificaciones
+                sn = SistemaNotificaciones(
+                    email_remitente=_os.environ.get('EMAIL_REMITENTE', ''),
+                    contraseña=_os.environ.get('EMAIL_PASSWORD', ''),
+                    smtp_server=_os.environ.get('SMTP_SERVER', 'smtp.gmail.com'),
+                    smtp_port=int(_os.environ.get('SMTP_PORT', '587')),
+                )
+                ok = sn._enviar_email(
+                    asunto, html,
+                    destinatarios=['alejandro@espagiria.co', 'sebastian@espagiria.co'],
+                )
+                result['enviado'] = bool(ok)
+                if not ok:
+                    result['razon'] = 'SMTP no respondió (revisar config)'
+                try:
+                    audit_log(c, usuario=u, accion='EMAIL_FORMULAS_FALTANTES',
+                               tabla='-', registro_id='-',
+                               detalle=f'Email a Alejandro · {len(sin_formula)} faltantes',
+                               despues={'destinatarios': result['destinatarios'],
+                                         'faltantes': sin_formula})
+                    conn.commit()
+                except Exception:
+                    pass
+            except Exception as e:
+                result['enviado'] = False
+                result['razon'] = f'Error SMTP: {str(e)[:200]}'
+        return jsonify(result), 200
+    finally:
+        try: conn.close()
+        except Exception: pass
+
+
+def _escape_html(s):
+    """Escape básico para HTML."""
+    return (str(s or '')
+            .replace('&', '&amp;')
+            .replace('<', '&lt;')
+            .replace('>', '&gt;')
+            .replace('"', '&quot;'))
+
+
 @bp.route("/api/admin/cron-snapshot-mp-alcanza", methods=["POST", "GET"])
 def cron_snapshot_mp_alcanza():
     """Cron diario · snapshot COMPRAR_YA + delta vs ayer.
