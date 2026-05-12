@@ -17140,6 +17140,487 @@ def auditoria_fefo_descuento():
                         'detail': str(e)[:300]}), 500
 
 
+@bp.route("/api/admin/mp-alcanza-multi", methods=["GET"])
+def mp_alcanza_multi():
+    """¿Las MPs alcanzan? · multi-horizonte 60/90/180 días.
+
+    Sebastián 8-may-2026: el corazón de "alcanza o no alcanza". Para
+    cada MP calcula necesidad real combinando 2 fuentes:
+
+    Fuente A · Calendar (producciones programadas):
+      Para cada produccion_programada en el horizonte:
+        cantidad_kg × % de la MP en fórmula × 10 = g consumir
+
+    Fuente B · Shopify ventas (proyección de demanda):
+      Para cada SKU que usa la MP:
+        ventas_mes × (horizonte/30) × ml_por_und × % fórmula
+
+    NECESIDAD = MAX(A, B) para cubrir peor caso.
+
+    Decisión sugerida:
+      🔴 COMPRAR_YA: no alcanza 60d
+      🟡 COMPRAR_1_2_SEM: alcanza 60d pero no 90d
+      🟢 COMPRAR_1_MES: alcanza 90d pero no 180d
+      ✅ OK: alcanza 180d
+
+    Query params:
+      ventana_shopify: int 30-180 (default 60) ventana extracción velocity
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    try:
+        ventana = int(request.args.get('ventana_shopify', 60))
+        if ventana < 30: ventana = 30
+        if ventana > 180: ventana = 180
+    except Exception:
+        ventana = 60
+
+    HORIZONTES = [60, 90, 180]
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA busy_timeout=2000")
+    c = conn.cursor()
+
+    try:
+        import json as _json
+        import re as _re
+        from datetime import datetime as _dt, timedelta as _td, date as _date
+
+        # 1. Ventas Shopify por SKU (ventana N días → mes promedio)
+        since = (_dt.now() - _td(days=ventana)).strftime('%Y-%m-%d')
+        sku_ventas_periodo = {}
+        for row in c.execute("""
+            SELECT sku_items FROM animus_shopify_orders
+            WHERE creado_en >= ? AND sku_items IS NOT NULL
+        """, (since,)).fetchall():
+            try:
+                items = _json.loads(row['sku_items']) if row['sku_items'] else []
+            except Exception:
+                items = []
+            for it in items:
+                sku = str(it.get('sku', '') or '').strip().upper()
+                qty = int(it.get('qty', 0) or 0)
+                if sku and qty > 0:
+                    sku_ventas_periodo[sku] = sku_ventas_periodo.get(sku, 0) + qty
+        # Extrapolar a ventas mensuales (mes = 30d)
+        sku_ventas_mes = {k: v * 30.0 / ventana for k, v in sku_ventas_periodo.items()}
+
+        # 2. SKU → producto_nombre + ml (regex del nombre)
+        def _extraer_ml(nombre):
+            if not nombre:
+                return 30.0  # default conservador
+            n = nombre.lower()
+            m = _re.search(r'(\d+(?:\.\d+)?)\s*(?:ml|g\b)', n)
+            if m:
+                return float(m.group(1))
+            return 30.0  # default
+        sku_producto = {}
+        for row in c.execute("""
+            SELECT sku, producto_nombre
+            FROM sku_producto_map
+            WHERE COALESCE(activo, 1) = 1
+        """).fetchall():
+            sku_producto[row['sku'].upper()] = {
+                'producto': row['producto_nombre'],
+                'ml': _extraer_ml(row['producto_nombre']),
+            }
+
+        # 3. Producciones programadas en Calendar (90d hacia adelante, default lotes=1, asumimos kg_por_lote)
+        # produccion_programada · cantidad típica = lotes × ~30kg estándar.
+        # PERO: para mantenerlo simple uso `lotes` como kg total (cada lote programado = 1 producción)
+        prods_prog = c.execute("""
+            SELECT producto, fecha_programada, lotes
+            FROM produccion_programada
+            WHERE date(fecha_programada) BETWEEN date('now') AND date('now', '+180 days')
+        """).fetchall()
+        # Para cada producción: ya hay un campo `lotes` que es el conteo de batches.
+        # Tomamos kg típico = unidad_base_g del formula_header / 1000 (kg).
+        # Si no hay header, usamos 20kg default conservador.
+        unidad_base_por_producto = {}
+        try:
+            for row in c.execute(
+                "SELECT producto_nombre, COALESCE(unidad_base_g, 1000) FROM formula_headers"
+            ).fetchall():
+                unidad_base_por_producto[row[0]] = float(row[1] or 1000)
+        except Exception:
+            pass
+
+        # Pre-cargar formula_items completo (material_id → list of {producto, porcentaje, cantidad_g_por_lote})
+        mp_a_productos = {}  # material_id → [(producto, pct, g_por_lote)]
+        for row in c.execute("""
+            SELECT material_id, producto_nombre,
+                   COALESCE(porcentaje, 0) AS pct,
+                   COALESCE(cantidad_g_por_lote, 0) AS gpl
+            FROM formula_items
+            WHERE material_id IS NOT NULL AND TRIM(material_id) != ''
+        """).fetchall():
+            mid = row['material_id']
+            mp_a_productos.setdefault(mid, []).append({
+                'producto': row['producto_nombre'],
+                'pct': float(row['pct']),
+                'g_por_lote': float(row['gpl']),
+            })
+
+        # Producto → ventas_mes (sumando todos los SKUs del producto)
+        producto_ventas_mes = {}
+        producto_ml = {}
+        for sku, info in sku_producto.items():
+            prod = info['producto']
+            if not prod:
+                continue
+            producto_ventas_mes[prod] = producto_ventas_mes.get(prod, 0) + sku_ventas_mes.get(sku, 0)
+            producto_ml[prod] = info['ml']  # último ml visto (mismo producto = mismo ml)
+
+        # Producciones por producto agrupadas por días desde hoy
+        from collections import defaultdict
+        prods_por_producto = defaultdict(list)  # producto → [(dias_desde_hoy, lotes)]
+        hoy = _date.today()
+        for row in prods_prog:
+            try:
+                f = _date.fromisoformat(row['fecha_programada'][:10])
+                dias = (f - hoy).days
+                if dias < 0:
+                    continue
+                lotes = int(row['lotes'] or 1)
+                prods_por_producto[row['producto']].append((dias, lotes))
+            except Exception:
+                continue
+
+        # 4. Para cada MP: calcular necesidad por horizonte
+        mps = c.execute("""
+            SELECT codigo_mp,
+                   COALESCE(nombre_comercial, nombre_inci, '') AS nombre,
+                   proveedor,
+                   COALESCE(stock_minimo, 0) AS stock_min_actual
+            FROM maestro_mps
+            WHERE COALESCE(activo, 1) = 1
+            ORDER BY codigo_mp
+        """).fetchall()
+
+        # OCs en tránsito por MP
+        ocs_transito = {}
+        try:
+            for row in c.execute("""
+                SELECT codigo_mp,
+                       SUM(COALESCE(cantidad_g, 0) - COALESCE(cantidad_recibida_g, 0)) AS pend_g
+                FROM ordenes_compra_items oci
+                WHERE EXISTS (
+                    SELECT 1 FROM ordenes_compra oc
+                    WHERE oc.numero_oc = oci.numero_oc
+                      AND oc.estado IN ('Autorizada','Parcial')
+                )
+                GROUP BY codigo_mp
+            """).fetchall():
+                ocs_transito[row[0]] = float(row[1] or 0)
+        except Exception:
+            pass
+
+        # Stock actual por MP
+        stock_actual_map = {}
+        for row in c.execute("""
+            SELECT material_id,
+                   SUM(CASE WHEN tipo='Entrada' THEN cantidad
+                            WHEN tipo='Salida' THEN -cantidad
+                            ELSE 0 END) AS stock
+            FROM movimientos
+            WHERE material_id IS NOT NULL
+            GROUP BY material_id
+        """).fetchall():
+            stock_actual_map[row[0]] = float(row[1] or 0)
+
+        items = []
+        for mp in mps:
+            mid = mp['codigo_mp']
+            stock_actual = stock_actual_map.get(mid, 0.0)
+            oc_pend = ocs_transito.get(mid, 0.0)
+            disponible = stock_actual + oc_pend
+
+            consumos = {h: 0.0 for h in HORIZONTES}
+
+            for finfo in mp_a_productos.get(mid, []):
+                producto = finfo['producto']
+                pct = finfo['pct']
+                g_por_lote = finfo['g_por_lote']
+
+                # Fuente A · Calendar
+                ub = unidad_base_por_producto.get(producto, 1000)  # gramos por lote
+                for h in HORIZONTES:
+                    cal_g = 0.0
+                    for dias, lotes in prods_por_producto.get(producto, []):
+                        if dias <= h:
+                            # Usar g_por_lote si está definido, sino % × unidad_base
+                            if g_por_lote > 0:
+                                cal_g += g_por_lote * lotes
+                            elif pct > 0:
+                                cal_g += (pct / 100.0) * ub * lotes
+                    # Fuente B · Shopify
+                    ventas_mes = producto_ventas_mes.get(producto, 0)
+                    ml = producto_ml.get(producto, 30)
+                    if pct > 0 and ventas_mes > 0:
+                        shop_g = ventas_mes * (h / 30.0) * ml * (pct / 100.0)
+                    else:
+                        shop_g = 0.0
+                    # Tomar MAX por horizonte
+                    consumos[h] += max(cal_g, shop_g)
+
+            # Alcanza por horizonte
+            alc = {}
+            for h in HORIZONTES:
+                necesidad = consumos[h]
+                alc[h] = {
+                    'consumo_g': round(necesidad, 1),
+                    'alcanza': disponible >= necesidad,
+                    'falta_g': max(0, round(necesidad - disponible, 1)),
+                }
+
+            # Decisión
+            if not alc[60]['alcanza']:
+                decision = 'COMPRAR_YA'
+                urgencia = 'ALTA'
+            elif not alc[90]['alcanza']:
+                decision = 'COMPRAR_1_2_SEM'
+                urgencia = 'MEDIA'
+            elif not alc[180]['alcanza']:
+                decision = 'COMPRAR_1_MES'
+                urgencia = 'BAJA'
+            elif consumos[180] < 0.01:
+                decision = 'SIN_USO'
+                urgencia = 'NINGUNA'
+            else:
+                decision = 'OK'
+                urgencia = 'NINGUNA'
+
+            # Mínimo sugerido = consumo 90d (cobertura 3 meses)
+            min_sugerido = round(consumos[90], 1)
+
+            items.append({
+                'codigo_mp': mid,
+                'nombre': mp['nombre'][:60],
+                'proveedor': mp['proveedor'] or '',
+                'stock_actual_g': round(stock_actual, 1),
+                'oc_pendiente_g': round(oc_pend, 1),
+                'disponible_g': round(disponible, 1),
+                'consumo_60d_g': alc[60]['consumo_g'],
+                'consumo_90d_g': alc[90]['consumo_g'],
+                'consumo_180d_g': alc[180]['consumo_g'],
+                'alcanza_60d': alc[60]['alcanza'],
+                'alcanza_90d': alc[90]['alcanza'],
+                'alcanza_180d': alc[180]['alcanza'],
+                'falta_60d': alc[60]['falta_g'],
+                'falta_90d': alc[90]['falta_g'],
+                'falta_180d': alc[180]['falta_g'],
+                'minimo_actual_g': float(mp['stock_min_actual'] or 0),
+                'minimo_sugerido_g': min_sugerido,
+                'decision': decision,
+                'urgencia': urgencia,
+            })
+
+        # Orden: urgencia ALTA > MEDIA > BAJA > OK; dentro de cada · falta_60d DESC
+        ORDEN = {'ALTA': 0, 'MEDIA': 1, 'BAJA': 2, 'NINGUNA': 3}
+        items.sort(key=lambda x: (ORDEN.get(x['urgencia'], 9), -x['falta_60d']))
+
+        por_decision = {}
+        for it in items:
+            por_decision[it['decision']] = por_decision.get(it['decision'], 0) + 1
+
+        conn.close()
+        return jsonify({
+            'ok': True,
+            'horizontes_dias': HORIZONTES,
+            'ventana_shopify_dias': ventana,
+            'total_mps': len(items),
+            'por_decision': por_decision,
+            'items': items,
+            'message': (f'{len(items)} MPs · COMPRAR_YA {por_decision.get("COMPRAR_YA",0)} · '
+                        f'COMPRAR_1_2_SEM {por_decision.get("COMPRAR_1_2_SEM",0)} · '
+                        f'COMPRAR_1_MES {por_decision.get("COMPRAR_1_MES",0)} · '
+                        f'OK {por_decision.get("OK",0)} · '
+                        f'SIN_USO {por_decision.get("SIN_USO",0)}'),
+        }), 200
+
+    except Exception as e:
+        conn.close()
+        return jsonify({'error': 'falla mp-alcanza-multi',
+                        'detail': str(e)[:300]}), 500
+
+
+@bp.route("/admin/mp-alcanza", methods=["GET"])
+def admin_mp_alcanza_page():
+    """Panel UI · ¿alcanzan las MPs? · multi-horizonte."""
+    u, err, code = _require_admin()
+    if err:
+        return Response(
+            '<h1>403</h1><p>Solo admin.</p>',
+            status=403, mimetype='text/html'
+        )
+    return Response(_MP_ALCANZA_HTML, mimetype='text/html')
+
+
+_MP_ALCANZA_HTML = """<!DOCTYPE html>
+<html lang="es"><head>
+<meta charset="utf-8">
+<title>¿Alcanzan las MPs?</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,Segoe UI,sans-serif;background:#0f172a;color:#f1f5f9;padding:18px;line-height:1.4}
+h1{font-size:24px;color:#5eead4;margin-bottom:6px}
+.sub{color:#94a3b8;font-size:13px;margin-bottom:14px}
+.back{color:#94a3b8;text-decoration:none;font-size:13px;margin-bottom:14px;display:inline-block}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:14px}
+.kpi{background:#1e293b;border-radius:8px;padding:10px;text-align:center}
+.kpi b{display:block;font-size:24px;margin-bottom:2px}
+.kpi.ya b{color:#ef4444}
+.kpi.med b{color:#fbbf24}
+.kpi.lej b{color:#22c55e}
+.kpi.ok b{color:#5eead4}
+.kpi-label{font-size:10px;color:#94a3b8;text-transform:uppercase}
+.controls{margin-bottom:10px;display:flex;gap:10px;align-items:center}
+.controls input{background:#0f172a;border:1px solid #475569;color:#f1f5f9;padding:6px 10px;border-radius:6px;width:80px}
+button{padding:7px 14px;background:#5eead4;color:#0f172a;border:none;border-radius:6px;cursor:pointer;font-weight:600;font-size:12px}
+button.warn{background:#fbbf24}
+button.danger{background:#ef4444;color:white}
+table{width:100%;border-collapse:collapse;background:#1e293b;border-radius:10px;overflow:hidden;font-size:11px}
+th{background:#0f172a;color:#94a3b8;padding:8px 6px;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.3px}
+td{padding:6px;border-bottom:1px solid #334155}
+tr:hover{background:#334155}
+tr.u-ALTA td{background:rgba(239,68,68,0.10)}
+tr.u-MEDIA td{background:rgba(251,191,36,0.06)}
+tr.u-BAJA td{background:rgba(34,197,94,0.04)}
+.b{padding:2px 6px;border-radius:8px;font-size:9px;font-weight:700;display:inline-block;white-space:nowrap}
+.b-COMPRAR_YA{background:#7f1d1d;color:#fca5a5}
+.b-COMPRAR_1_2_SEM{background:#7c2d12;color:#fed7aa}
+.b-COMPRAR_1_MES{background:#14532d;color:#86efac}
+.b-OK{background:#0f172a;color:#86efac;border:1px solid #166534}
+.b-SIN_USO{background:#0f172a;color:#64748b}
+.num{text-align:right;font-family:monospace}
+.alcanza-ok{color:#22c55e;font-weight:700}
+.alcanza-no{color:#ef4444;font-weight:700}
+.loading{text-align:center;padding:40px;color:#64748b}
+.error{background:#7f1d1d;color:#fecaca;padding:14px;border-radius:8px}
+</style></head><body>
+
+<a class="back" href="/modulos">← Panel inicial</a>
+<h1>📦 ¿Alcanzan las materias primas?</h1>
+<p class="sub">Multi-horizonte 60/90/180d · combina Calendar (lo programado) + Shopify (lo proyectado). Toma MAX.</p>
+
+<div class="controls">
+  <label>Ventana Shopify (días): <input type="number" id="ventana" value="60" min="30" max="180"></label>
+  <button onclick="run()">🔄 Recalcular</button>
+  <button class="warn" onclick="aplicarMinimos()">✓ Aplicar mínimos sugeridos a todas las MPs</button>
+  <button class="danger" onclick="exportarCompras()">📋 Exportar lista compras urgentes</button>
+</div>
+
+<div id="content" class="loading">⏳ Cargando...</div>
+
+<script>
+function esc(s){return String(s===null||s===undefined?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;');}
+function fmt(n){if(n===null||n===undefined||n===0) return '—'; if(n>=1000) return (n/1000).toFixed(1)+'k'; return Math.round(n).toLocaleString();}
+let __ITEMS = [];
+
+async function run(){
+  const v = document.getElementById('ventana').value || 60;
+  document.getElementById('content').className='loading';
+  document.getElementById('content').innerHTML='⏳ Calculando...';
+  try{
+    const r = await fetch('/api/admin/mp-alcanza-multi?ventana_shopify='+v);
+    const d = await r.json();
+    if(!r.ok){
+      document.getElementById('content').innerHTML='<div class="error">Error: '+esc(d.error||'')+'</div>';
+      return;
+    }
+    __ITEMS = d.items || [];
+    render(d);
+  }catch(e){
+    document.getElementById('content').innerHTML='<div class="error">Error red: '+esc(e.message)+'</div>';
+  }
+}
+
+function render(d){
+  const p = d.por_decision || {};
+  let html = '<div class="kpis">' +
+    kpi('ya', 'COMPRAR YA <60d', p.COMPRAR_YA || 0) +
+    kpi('med', 'COMPRAR 1-2sem', p.COMPRAR_1_2_SEM || 0) +
+    kpi('lej', 'COMPRAR 1 mes', p.COMPRAR_1_MES || 0) +
+    kpi('ok', 'OK 180d+', p.OK || 0) +
+    '<div class="kpi"><b style="color:#64748b">' + (p.SIN_USO||0) + '</b><div class="kpi-label">Sin uso (0% consumo)</div></div>' +
+    '<div class="kpi"><b style="color:#5eead4">' + (d.total_mps||0) + '</b><div class="kpi-label">Total MPs</div></div>' +
+  '</div>';
+
+  html += '<table><thead><tr>' +
+    '<th>Decisión</th><th>Código</th><th>MP</th><th>Prov</th>' +
+    '<th>Stock</th><th>OC tránsito</th><th>Disp.</th>' +
+    '<th>60d</th><th>90d</th><th>180d</th>' +
+    '<th>Mín actual</th><th>Mín sugerido</th>' +
+    '</tr></thead><tbody>';
+
+  for(const it of __ITEMS){
+    html += '<tr class="u-'+it.urgencia+'">' +
+      '<td><span class="b b-'+it.decision+'">'+it.decision.replace(/_/g,' ')+'</span></td>' +
+      '<td style="font-family:monospace;color:#5eead4">'+esc(it.codigo_mp)+'</td>' +
+      '<td>'+esc(it.nombre)+'</td>' +
+      '<td style="font-size:10px">'+esc(it.proveedor)+'</td>' +
+      '<td class="num">'+fmt(it.stock_actual_g)+'g</td>' +
+      '<td class="num">'+fmt(it.oc_pendiente_g)+'</td>' +
+      '<td class="num">'+fmt(it.disponible_g)+'g</td>' +
+      '<td class="num '+(it.alcanza_60d?'alcanza-ok':'alcanza-no')+'">'+
+        (it.alcanza_60d ? '✓' : '−'+fmt(it.falta_60d))+'</td>' +
+      '<td class="num '+(it.alcanza_90d?'alcanza-ok':'alcanza-no')+'">'+
+        (it.alcanza_90d ? '✓' : '−'+fmt(it.falta_90d))+'</td>' +
+      '<td class="num '+(it.alcanza_180d?'alcanza-ok':'alcanza-no')+'">'+
+        (it.alcanza_180d ? '✓' : '−'+fmt(it.falta_180d))+'</td>' +
+      '<td class="num">'+fmt(it.minimo_actual_g)+'g</td>' +
+      '<td class="num" style="color:#5eead4;font-weight:700">'+fmt(it.minimo_sugerido_g)+'g</td>' +
+    '</tr>';
+  }
+  html += '</tbody></table>';
+
+  document.getElementById('content').className='';
+  document.getElementById('content').innerHTML = html;
+}
+
+function kpi(cls, label, val){
+  return '<div class="kpi '+cls+'"><b>'+val+'</b><div class="kpi-label">'+label+'</div></div>';
+}
+
+async function aplicarMinimos(){
+  const items = __ITEMS.filter(x => Math.abs((x.minimo_actual_g||0) - x.minimo_sugerido_g) > 10);
+  if(!items.length){ alert('Nada que actualizar · todos los mínimos están al día.'); return; }
+  if(!confirm('Aplicar mínimos sugeridos a '+items.length+' MPs? (Audit log INVIMA)')) return;
+  // Llamamos al endpoint aplicar-stock-minimos-sugeridos (ya existe)
+  const codigos = items.map(x => ({codigo_mp: x.codigo_mp, stock_minimo: x.minimo_sugerido_g}));
+  try{
+    const r = await fetch('/api/admin/aplicar-stock-minimos-sugeridos', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({items: codigos, motivo: 'Mínimos calculados desde Calendar+Shopify · alcance 90d'})
+    });
+    const d = await r.json();
+    if(!r.ok){ alert('Error: '+(d.error||'')); return; }
+    alert('✓ '+(d.n_actualizados||0)+' mínimos aplicados.');
+    run();
+  }catch(e){ alert('Error red: '+e.message); }
+}
+
+function exportarCompras(){
+  const urgentes = __ITEMS.filter(x => x.decision === 'COMPRAR_YA' || x.decision === 'COMPRAR_1_2_SEM');
+  if(!urgentes.length){ alert('Nada urgente! 🎉'); return; }
+  const csv = ['codigo,nombre,proveedor,stock_actual_g,falta_60d_g,falta_90d_g,decision'];
+  for(const u of urgentes){
+    csv.push([u.codigo_mp, '"'+u.nombre+'"', '"'+(u.proveedor||'')+'"', u.stock_actual_g, u.falta_60d, u.falta_90d, u.decision].join(','));
+  }
+  const blob = new Blob([csv.join('\\n')], {type: 'text/csv'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'mps-comprar-urgentes-'+new Date().toISOString().slice(0,10)+'.csv';
+  a.click();
+}
+
+run();
+</script>
+</body></html>"""
+
+
 @bp.route("/api/programacion/sku-status", methods=["GET"])
 def programacion_sku_status():
     """FASE 1 · Vista unificada SKU · días de stock + urgencia + producciones.

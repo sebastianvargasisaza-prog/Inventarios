@@ -4079,6 +4079,28 @@ def test_golden_auditoria_fefo_descuento(app, db_clean):
 # GOLDEN PATH 89 · _distribuir_fefo respeta orden por fecha_vencimiento
 # ═══════════════════════════════════════════════════════════════════
 
+def test_golden_mp_alcanza_multi(app, db_clean):
+    """Verifica que el endpoint multi-horizonte responda bien con datos vacíos."""
+    cs = _login(app, 'sebastian')
+    r = cs.get('/api/admin/mp-alcanza-multi?ventana_shopify=60')
+    assert r.status_code == 200, \
+        f'BUG: mp-alcanza-multi caido · {r.status_code} {r.data}'
+    d = r.get_json() or {}
+    assert d.get('ok')
+    assert 'horizontes_dias' in d
+    assert d['horizontes_dias'] == [60, 90, 180]
+    assert 'por_decision' in d
+    assert 'items' in d
+    # Si hay items, verificar estructura
+    if d['items']:
+        first = d['items'][0]
+        for key in ['codigo_mp', 'stock_actual_g', 'consumo_60d_g',
+                     'consumo_90d_g', 'consumo_180d_g', 'alcanza_60d',
+                     'alcanza_90d', 'alcanza_180d', 'minimo_sugerido_g',
+                     'decision', 'urgencia']:
+            assert key in first, f'item sin key {key}'
+
+
 def test_golden_distribuir_fefo_orden(app, db_clean):
     """Verifica que _distribuir_fefo consume primero el lote con fv más cercana."""
     import sqlite3 as _sql
