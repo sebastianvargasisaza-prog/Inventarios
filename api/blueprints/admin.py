@@ -19568,6 +19568,233 @@ def debug_formula_items():
             pass
 
 
+@bp.route("/api/admin/cron-snapshot-mp-alcanza", methods=["POST", "GET"])
+def cron_snapshot_mp_alcanza():
+    """Cron diario · snapshot COMPRAR_YA + delta vs ayer.
+
+    Sebastián 12-may-2026: cierre del sprint mp-alcanza. Diariamente
+    detecta MPs que entraron a COMPRAR_YA (nuevas) o salieron (resueltas).
+
+    Auth:
+      - Session admin (ADMIN_USERS) · disparo manual
+      - ?clave=AUTO_PLAN_CRON_KEY · cron Render
+
+    Body opcional:
+      ventana: int 30-180 (default 60)
+      dry_run: bool (no guarda snapshot)
+    """
+    # Auth dual: admin session O cron key
+    usuario = None
+    if session.get('compras_user') in ADMIN_USERS:
+        usuario = session['compras_user']
+    else:
+        clave_env = os.environ.get('AUTO_PLAN_CRON_KEY', '')
+        if clave_env and request.args.get('clave', '') == clave_env:
+            usuario = 'cron-bot'
+    if not usuario:
+        return jsonify({'error': 'No autorizado'}), 401
+
+    try:
+        ventana = int(request.args.get('ventana_shopify', 60))
+    except Exception:
+        ventana = 60
+    if ventana < 30: ventana = 30
+    if ventana > 180: ventana = 180
+
+    body = request.json or {}
+    dry_run = bool(body.get('dry_run', False))
+
+    # Llamar internamente mp-alcanza-multi (reusa lógica · evita duplicación)
+    from flask import current_app
+    import time as _time
+    try:
+        with current_app.test_client() as tc:
+            with tc.session_transaction() as sess:
+                # Necesita ser admin · usar usuario actual o sebastian
+                sess['compras_user'] = (
+                    usuario if usuario in ADMIN_USERS else 'sebastian'
+                )
+                # before_request check_session_timeout exige login_time
+                sess['login_time'] = _time.time()
+            r = tc.get(f'/api/admin/mp-alcanza-multi?ventana_shopify={ventana}')
+            if r.status_code != 200:
+                return jsonify({
+                    'error': f'mp-alcanza-multi devolvió {r.status_code}',
+                    'detail': r.data.decode('utf-8', errors='ignore')[:300],
+                }), 500
+            data = r.get_json() or {}
+    except Exception as e:
+        return jsonify({'error': 'fallo llamando mp-alcanza-multi',
+                         'detail': str(e)[:300]}), 500
+
+    items = data.get('items', [])
+    por_decision = data.get('por_decision', {})
+    total_mps = int(data.get('total_mps', 0))
+
+    # Códigos en COMPRAR_YA actual
+    comprar_ya_actual = sorted(
+        it['codigo_mp'] for it in items if it.get('decision') == 'COMPRAR_YA'
+    )
+
+    import json as _json
+    from datetime import date as _date
+    hoy = _date.today().isoformat()
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("PRAGMA busy_timeout=2000")
+    c = conn.cursor()
+    try:
+        # Snapshot del día anterior más reciente (excluyendo hoy)
+        prev_row = c.execute(
+            """SELECT fecha, comprar_ya_codigos
+               FROM mp_alcanza_snapshots
+               WHERE fecha < ?
+               ORDER BY fecha DESC LIMIT 1""",
+            (hoy,)
+        ).fetchone()
+        if prev_row and prev_row[1]:
+            try:
+                prev_codigos = set(_json.loads(prev_row[1]))
+            except Exception:
+                prev_codigos = set()
+            prev_fecha = prev_row[0]
+        else:
+            prev_codigos = set()
+            prev_fecha = None
+
+        actual_set = set(comprar_ya_actual)
+        nuevas = sorted(actual_set - prev_codigos)
+        persistentes = sorted(actual_set & prev_codigos)
+        resueltas = sorted(prev_codigos - actual_set)
+
+        # Enriquecer nuevas con nombres para alertas
+        nuevas_detalle = []
+        if nuevas:
+            placeholders = ','.join('?' * len(nuevas))
+            for r in c.execute(
+                f"""SELECT codigo_mp,
+                          COALESCE(nombre_comercial, nombre_inci, '') AS nombre,
+                          COALESCE(proveedor, '') AS prov
+                   FROM maestro_mps WHERE codigo_mp IN ({placeholders})""",
+                nuevas
+            ).fetchall():
+                nuevas_detalle.append({
+                    'codigo_mp': r[0],
+                    'nombre': r[1][:50],
+                    'proveedor': r[2][:30],
+                })
+
+        result = {
+            'ok': True,
+            'fecha_hoy': hoy,
+            'fecha_anterior': prev_fecha,
+            'total_mps': total_mps,
+            'comprar_ya_total': len(comprar_ya_actual),
+            'nuevas_count': len(nuevas),
+            'persistentes_count': len(persistentes),
+            'resueltas_count': len(resueltas),
+            'nuevas_hoy': nuevas_detalle,
+            'resueltas_hoy': resueltas,
+            'usuario': usuario,
+        }
+
+        if dry_run:
+            result['dry_run'] = True
+            return jsonify(result), 200
+
+        # UPSERT snapshot de hoy
+        c.execute(
+            """INSERT INTO mp_alcanza_snapshots
+                 (fecha, total_mps, comprar_ya_total, comprar_1_2_sem_total,
+                  comprar_1_mes_total, ok_total, sin_uso_total,
+                  comprar_ya_codigos, origen)
+               VALUES (?,?,?,?,?,?,?,?,?)
+               ON CONFLICT(fecha) DO UPDATE SET
+                 total_mps=excluded.total_mps,
+                 comprar_ya_total=excluded.comprar_ya_total,
+                 comprar_1_2_sem_total=excluded.comprar_1_2_sem_total,
+                 comprar_1_mes_total=excluded.comprar_1_mes_total,
+                 ok_total=excluded.ok_total,
+                 sin_uso_total=excluded.sin_uso_total,
+                 comprar_ya_codigos=excluded.comprar_ya_codigos,
+                 origen=excluded.origen""",
+            (
+                hoy, total_mps,
+                int(por_decision.get('COMPRAR_YA', 0)),
+                int(por_decision.get('COMPRAR_1_2_SEM', 0)),
+                int(por_decision.get('COMPRAR_1_MES', 0)),
+                int(por_decision.get('OK', 0)),
+                int(por_decision.get('SIN_USO', 0)),
+                _json.dumps(comprar_ya_actual),
+                'cron' if usuario == 'cron-bot' else 'manual',
+            )
+        )
+        conn.commit()
+
+        # Si hay nuevas, log SEC para visibilidad
+        if nuevas:
+            try:
+                import json as _json2
+                _log_sec(
+                    event='mp_alcanza_nueva_comprar_ya',
+                    username=usuario,
+                    details=_json2.dumps({
+                        'count': len(nuevas),
+                        'codigos': nuevas[:10],
+                    })[:500],
+                )
+            except Exception:
+                pass
+
+        result['snapshot_guardado'] = True
+        return jsonify(result), 200
+    finally:
+        try: conn.close()
+        except Exception: pass
+
+
+@bp.route("/api/admin/mp-alcanza-historial", methods=["GET"])
+def mp_alcanza_historial():
+    """Lista últimos N snapshots de mp-alcanza para tendencia.
+
+    Query: ?dias=30 (default · max 90)
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    try:
+        dias = int(request.args.get('dias', 30))
+    except Exception:
+        dias = 30
+    if dias < 1: dias = 1
+    if dias > 90: dias = 90
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    try:
+        rows = c.execute(
+            """SELECT fecha, total_mps, comprar_ya_total,
+                      comprar_1_2_sem_total, comprar_1_mes_total,
+                      ok_total, sin_uso_total, origen, creado_en
+               FROM mp_alcanza_snapshots
+               WHERE date(fecha) >= date('now', '-' || ? || ' days')
+               ORDER BY fecha DESC""",
+            (dias,)
+        ).fetchall()
+        snapshots = [dict(r) for r in rows]
+        return jsonify({
+            'ok': True,
+            'dias': dias,
+            'snapshots': snapshots,
+            'count': len(snapshots),
+        }), 200
+    finally:
+        try: conn.close()
+        except Exception: pass
+
+
 @bp.route("/api/admin/productos-calendar-sin-formula", methods=["GET"])
 def productos_calendar_sin_formula():
     """Detecta productos programados en Calendar SIN fórmula maestra.

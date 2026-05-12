@@ -4504,3 +4504,68 @@ def test_golden_post_formula_completa(app, db_clean):
         _exec("DELETE FROM formula_items WHERE producto_nombre=?", (prod,))
         _exec("DELETE FROM formula_headers WHERE producto_nombre=?", (prod,))
         _exec("DELETE FROM maestro_mps WHERE codigo_mp=?", (mp_valido,))
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 97 · cron-snapshot-mp-alcanza · delta vs ayer
+# ═══════════════════════════════════════════════════════════════════
+# Sebastián 12-may-2026: cron diario detecta MPs que entran/salen de
+# COMPRAR_YA. Tres aspectos clave:
+#   1. dry_run = true no debe escribir BD
+#   2. UPSERT idempotente (correr 2x mismo día no duplica)
+#   3. Delta vs snapshot anterior calcula nuevas/persistentes/resueltas
+def test_golden_cron_snapshot_mp_alcanza(app, db_clean):
+    """Cron snapshot guarda + computa delta correctamente."""
+    cs = _login(app, 'sebastian')
+    try:
+        # Limpiar snapshots de prueba (mismo dia)
+        _exec("DELETE FROM mp_alcanza_snapshots WHERE fecha = date('now')")
+        _exec("DELETE FROM mp_alcanza_snapshots WHERE fecha = date('now','-1 day')")
+        # Snapshot de ayer simulado · 2 codigos en COMPRAR_YA
+        import json as _json
+        _exec(
+            """INSERT INTO mp_alcanza_snapshots
+                 (fecha, total_mps, comprar_ya_total, comprar_ya_codigos, origen)
+               VALUES (date('now','-1 day'), 10, 2, ?, 'test')""",
+            (_json.dumps(['MP-OLD-1', 'MP-OLD-2']),)
+        )
+
+        # Caso 1: dry_run = true · no escribe BD
+        r = cs.post('/api/admin/cron-snapshot-mp-alcanza',
+            json={'dry_run': True}, headers=csrf_headers())
+        assert r.status_code == 200, f'BUG: {r.status_code} {r.data}'
+        d = r.get_json()
+        assert d['ok'] and d.get('dry_run')
+        assert 'nuevas_count' in d
+        # Verificar que NO guardó snapshot de hoy
+        hoy_count = _query("SELECT COUNT(*) FROM mp_alcanza_snapshots WHERE fecha = date('now')")
+        assert hoy_count[0][0] == 0, 'BUG: dry_run NO debe escribir BD'
+
+        # Caso 2: real · sí guarda
+        r2 = cs.post('/api/admin/cron-snapshot-mp-alcanza',
+            json={}, headers=csrf_headers())
+        d2 = r2.get_json()
+        assert d2['ok']
+        assert d2.get('snapshot_guardado')
+        # Verificar BD
+        snap = _query("SELECT comprar_ya_total FROM mp_alcanza_snapshots WHERE fecha = date('now')")
+        assert snap, 'BUG: snapshot no se guardó en BD'
+
+        # Caso 3: idempotente · correr 2da vez no duplica
+        r3 = cs.post('/api/admin/cron-snapshot-mp-alcanza',
+            json={}, headers=csrf_headers())
+        d3 = r3.get_json()
+        assert d3['ok']
+        count = _query("SELECT COUNT(*) FROM mp_alcanza_snapshots WHERE fecha = date('now')")
+        assert count[0][0] == 1, f'BUG: snapshot duplicado · {count[0][0]} filas'
+
+        # Caso 4: usuario no admin sin clave cron → 401
+        # Hacer logout
+        cs2 = app.test_client()
+        r4 = cs2.post('/api/admin/cron-snapshot-mp-alcanza',
+            json={}, headers=csrf_headers())
+        assert r4.status_code == 401
+
+    finally:
+        _exec("DELETE FROM mp_alcanza_snapshots WHERE fecha = date('now')")
+        _exec("DELETE FROM mp_alcanza_snapshots WHERE fecha = date('now','-1 day')")

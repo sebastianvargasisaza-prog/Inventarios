@@ -269,6 +269,24 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         )""",
         "CREATE INDEX IF NOT EXISTS idx_aze_fecha ON audit_zero_error_runs(fecha DESC)",
     ]),
+    (101, "mp_alcanza_snapshots · cron diario tracking COMPRAR_YA · Sebastián 12-may-2026", [
+        # Tracking diario de MPs en COMPRAR_YA para alertar cuando aparecen
+        # nuevas (delta vs ayer). Una fila por día. comprar_ya_codigos es
+        # JSON array de codigo_mp para computar delta entre dias.
+        """CREATE TABLE IF NOT EXISTS mp_alcanza_snapshots (
+            fecha TEXT PRIMARY KEY,
+            total_mps INTEGER,
+            comprar_ya_total INTEGER,
+            comprar_1_2_sem_total INTEGER,
+            comprar_1_mes_total INTEGER,
+            ok_total INTEGER,
+            sin_uso_total INTEGER,
+            comprar_ya_codigos TEXT,
+            creado_en TEXT NOT NULL DEFAULT (datetime('now')),
+            origen TEXT DEFAULT 'cron'
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_mps_fecha ON mp_alcanza_snapshots(fecha DESC)",
+    ]),
     (99, "producciones: formula_snapshot_json (anti drift retroactivo · Sebastián 8-may-2026)", [
         # Snapshot inmutable de la fórmula al momento exacto de la producción.
         # Resuelve el bug raíz descubierto por audit profundo: si la fórmula
