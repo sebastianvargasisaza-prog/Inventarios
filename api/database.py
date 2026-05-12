@@ -234,7 +234,7 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         # los 21 codigos (preserva nombre_comercial si ya existe), después la
         # fórmula. Idempotente.
 
-        # Paso 1: garantizar que los 21 MPs existan en maestro_mps
+        # Paso 1a: garantizar que los 21 MPs existan en maestro_mps
         """INSERT OR IGNORE INTO maestro_mps (codigo_mp, nombre_comercial, activo) VALUES
             ('MP00051', 'Polyglyceryl-2 triisostearate', 1),
             ('MP00063', 'Tinogard TT',                  1),
@@ -257,6 +257,17 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
             ('MP00190', 'Palmitoyl tripeptide-1',       1),
             ('MP00172', 'Palmitoyl tetrapeptide-7',     1),
             ('MP00174', 'Palmitoyl tripeptide-38',      1)""",
+
+        # Paso 1b: forzar activo=1 (INSERT OR IGNORE no actualiza filas
+        # existentes · si algún MP existía con activo=0 el trigger FK de
+        # migration 98 abortaría el paso 4 con 'material_id no existe en
+        # maestro_mps activo'). Fix del deploy fallido 12-may-2026 6pm.
+        """UPDATE maestro_mps SET activo=1 WHERE codigo_mp IN (
+            'MP00051','MP00063','MPPIGCI01','MP00054','MP00127','MP00040',
+            'MPCOCP01','MP00103','MP00257','MP00024','MP00041','MP00077',
+            'MP00055','MPBNIT01','MP00207','MP00078','MP00101','MP00025',
+            'MP00190','MP00172','MP00174'
+        )""",
 
         # Paso 2: formula_headers (lote ref 1kg)
         """INSERT OR REPLACE INTO formula_headers (producto_nombre, unidad_base_g, descripcion)
