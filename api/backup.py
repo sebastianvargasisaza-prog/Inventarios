@@ -34,8 +34,11 @@ BACKUPS_DIR = os.environ.get(
     "BACKUPS_DIR",
     str(Path(DB_PATH).parent / "backups")
 )
-RETENTION_DAYS = int(os.environ.get("BACKUP_RETENTION_DAYS", "7"))
-BACKUP_INTERVAL_HOURS = int(os.environ.get("BACKUP_INTERVAL_HOURS", "23"))
+RETENTION_DAYS = int(os.environ.get("BACKUP_RETENTION_DAYS", "14"))
+# Sebastián 12-may-2026: tras incidente 'database disk image is malformed'
+# (perdimos ~24h de data), reducimos intervalo de 23h a 6h. 4 backups/día.
+# Con retention 14 días = ~56 backups guardados (~3GB asumiendo 50MB c/u).
+BACKUP_INTERVAL_HOURS = int(os.environ.get("BACKUP_INTERVAL_HOURS", "6"))
 
 # Off-site backup opcional · Día 5 ROADMAP zero-error
 # Si BACKUP_OFFSITE_URL está configurado (S3/B2/GCS pre-signed PUT URL),

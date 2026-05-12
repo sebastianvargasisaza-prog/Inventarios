@@ -111,6 +111,138 @@ def admin_backup_now():
     return jsonify(result), 500
 
 
+@bp.route("/api/admin/cron-db-integrity-check", methods=["POST", "GET"])
+def cron_db_integrity_check():
+    """Cron diario · corre PRAGMA quick_check + registra en db_health_log.
+
+    Sebastián 12-may-2026: tras incidente 'database disk image is malformed',
+    necesitamos detectar corrupción ANTES de que se note. Este cron corre
+    quick_check, guarda histórico en db_health_log, y si detecta malformed
+    loguea SEC HIGH para alerta externa.
+
+    Auth dual:
+      - Session admin (manual)
+      - ?clave=AUTO_PLAN_CRON_KEY (cron Render)
+
+    Returns: {ok, integrity, db_size_kb, wal_size_kb, alert?}
+    """
+    # Auth dual
+    usuario = None
+    if session.get('compras_user') in ADMIN_USERS:
+        usuario = session['compras_user']
+    else:
+        clave_env = os.environ.get('AUTO_PLAN_CRON_KEY', '')
+        if clave_env and request.args.get('clave', '') == clave_env:
+            usuario = 'cron-bot'
+    if not usuario:
+        return jsonify({'error': 'No autorizado'}), 401
+
+    import os as _os_local
+    integrity = 'unknown'
+    error_msg = None
+    db_size_kb = 0
+    wal_size_kb = 0
+
+    try:
+        db_size_kb = int(_os_local.path.getsize(DB_PATH) / 1024) if _os_local.path.exists(DB_PATH) else 0
+        wal_path = DB_PATH + '-wal'
+        if _os_local.path.exists(wal_path):
+            wal_size_kb = int(_os_local.path.getsize(wal_path) / 1024)
+    except Exception:
+        pass
+
+    try:
+        check_conn = sqlite3.connect(DB_PATH, timeout=5.0)
+        try:
+            # quick_check es más rápido que integrity_check, suficiente para detección
+            row = check_conn.execute('PRAGMA quick_check').fetchone()
+            integrity = (row[0] if row else 'unknown')
+        finally:
+            check_conn.close()
+    except sqlite3.DatabaseError as e:
+        integrity = 'CORRUPT'
+        error_msg = str(e)[:300]
+    except Exception as e:
+        integrity = 'error'
+        error_msg = str(e)[:300]
+
+    # Guardar histórico (intentar; si BD está corrupta esto fallará y es OK)
+    try:
+        log_conn = sqlite3.connect(DB_PATH, timeout=3.0)
+        log_conn.execute(
+            """INSERT INTO db_health_log
+                 (integrity, db_size_kb, wal_size_kb, error, origen)
+               VALUES (?, ?, ?, ?, ?)""",
+            (integrity, db_size_kb, wal_size_kb, error_msg,
+             'cron' if usuario == 'cron-bot' else 'manual')
+        )
+        log_conn.commit()
+        log_conn.close()
+    except Exception as log_e:
+        # No bloquear cron si log falla
+        if not error_msg:
+            error_msg = f'log fallo: {str(log_e)[:100]}'
+
+    result = {
+        'ok': True,
+        'integrity': integrity,
+        'db_size_kb': db_size_kb,
+        'wal_size_kb': wal_size_kb,
+        'usuario': usuario,
+    }
+    if error_msg:
+        result['error_detalle'] = error_msg
+
+    if integrity != 'ok':
+        # SEC HIGH para alerta
+        try:
+            _log_sec('db_integrity_failed', usuario, _client_ip(),
+                     details=f'integrity={integrity}, error={error_msg}')
+        except Exception:
+            pass
+        result['alert'] = (
+            f'DB integrity={integrity} · restaurar via '
+            'POST /api/admin/emergency-restore con body {confirm:true}'
+        )
+        return jsonify(result), 503
+
+    return jsonify(result), 200
+
+
+@bp.route("/api/admin/db-health-historial", methods=["GET"])
+def db_health_historial():
+    """Lista últimos N registros de db_health_log."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    try:
+        limit = int(request.args.get('limit', 30))
+    except Exception:
+        limit = 30
+    if limit < 1: limit = 1
+    if limit > 200: limit = 200
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = conn.execute(
+            """SELECT id, fecha, integrity, db_size_kb, wal_size_kb,
+                      error, origen
+               FROM db_health_log
+               ORDER BY id DESC LIMIT ?""",
+            (limit,)
+        ).fetchall()
+        return jsonify({
+            'ok': True,
+            'historial': [dict(r) for r in rows],
+            'count': len(rows),
+        }), 200
+    finally:
+        try: conn.close()
+        except Exception: pass
+
+
 @bp.route("/api/admin/emergency-restore", methods=["POST", "GET"])
 def admin_emergency_restore():
     """Restore EMERGENCY · auto-detecta backup más reciente válido.
@@ -127,12 +259,42 @@ def admin_emergency_restore():
       7. Verifica health post-restore
     NO toca audit_log (porque la BD puede estar mal). Log via _log_sec.
 
+    AUTH:
+      Por default requiere admin. PERO si la BD actual está malformed,
+      cualquiera puede llamarlo (porque nadie puede loguearse si la BD está
+      mal). Esto es seguro porque:
+        - Un attacker no puede forzar corrupción de DB sin acceso al disco
+        - La acción se registra en _log_sec con severity HIGH
+        - Solo restaura DESDE backups en BACKUPS_DIR (no upload externo)
+
     GET: dry-run · solo retorna qué backup elegiría
     POST: aplica · body {confirm: true}
     """
-    u, err, code = _require_admin()
-    if err:
-        return err, code
+    # AUTH: chequear integrity ANTES de require_admin.
+    # Si BD malformed, permitir sin admin (emergencia).
+    import sqlite3 as _sql_pre
+    db_malformed = False
+    try:
+        _conn_check = _sql_pre.connect(DB_PATH, timeout=2.0)
+        try:
+            _row = _conn_check.execute('PRAGMA integrity_check').fetchone()
+            db_malformed = (_row and _row[0] != 'ok')
+        finally:
+            _conn_check.close()
+    except _sql_pre.DatabaseError as e:
+        # "database disk image is malformed" cae aquí
+        if 'malformed' in str(e).lower() or 'corrupt' in str(e).lower():
+            db_malformed = True
+    except Exception:
+        pass
+
+    u = 'emergency-anon'
+    if not db_malformed:
+        # BD OK · requerir admin como antes
+        u_real, err, code = _require_admin()
+        if err:
+            return err, code
+        u = u_real
 
     import os as _os
     import gzip
@@ -369,8 +531,9 @@ def admin_restore_backup():
 
         # 5. _log_sec para audit (no tocamos DB porque acabamos de
         # restaurar y queremos ver si abre limpio).
+        # Sebastián 12-may-2026 bug fix: _log_sec firma es details=, no detalle=
         _log_sec("db_restored", u, _client_ip(),
-                 detalle=f"restored from {filename}")
+                 details=f"restored from {filename}")
 
         # 6. Verificar que la nueva DB abre limpia
         verify = "ok"

@@ -269,6 +269,21 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         )""",
         "CREATE INDEX IF NOT EXISTS idx_aze_fecha ON audit_zero_error_runs(fecha DESC)",
     ]),
+    (102, "db_health_log · histórico de integrity checks · Sebastián 12-may-2026", [
+        # Tracking de integridad de la BD. Cron diario corre PRAGMA
+        # quick_check y registra resultado. Si falla, alerta SEC HIGH.
+        # Permite ver retrospectivamente cuándo empezó la corrupción.
+        """CREATE TABLE IF NOT EXISTS db_health_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            fecha TEXT NOT NULL DEFAULT (datetime('now')),
+            integrity TEXT,
+            db_size_kb INTEGER,
+            wal_size_kb INTEGER,
+            error TEXT,
+            origen TEXT DEFAULT 'cron'
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_dbhealth_fecha ON db_health_log(fecha DESC)",
+    ]),
     (101, "mp_alcanza_snapshots · cron diario tracking COMPRAR_YA · Sebastián 12-may-2026", [
         # Tracking diario de MPs en COMPRAR_YA para alertar cuando aparecen
         # nuevas (delta vs ayer). Una fila por día. comprar_ya_codigos es
@@ -4870,6 +4885,37 @@ def run_migrations(conn: "sqlite3.Connection") -> int:
     return applied_count
 
 def init_db():
+    # Sebastián 12-may-2026: integrity_check al startup ANTES de
+    # cualquier escritura. Si la BD está corrupta ('database disk
+    # image is malformed'), logueamos CRITICAL para que el dev se
+    # entere y pueda restaurar con /api/admin/emergency-restore antes
+    # de que el sistema produzca data inconsistente.
+    try:
+        _check_conn = sqlite3.connect(DB_PATH, timeout=3.0)
+        try:
+            _check_row = _check_conn.execute('PRAGMA integrity_check').fetchone()
+            _integrity = (_check_row[0] if _check_row else 'unknown')
+            if _integrity != 'ok':
+                import logging as _logging
+                _log = _logging.getLogger('inventario.db_integrity')
+                _log.critical(
+                    'DB INTEGRITY FAILED al startup · integrity_check=%s · '
+                    'RESTAURAR DESDE BACKUP via /api/admin/emergency-restore',
+                    _integrity
+                )
+        finally:
+            _check_conn.close()
+    except sqlite3.DatabaseError as _e:
+        # 'database disk image is malformed' cae aquí
+        import logging as _logging
+        _log = _logging.getLogger('inventario.db_integrity')
+        _log.critical(
+            'DB CORRUPTA al startup · %s · RESTAURAR via '
+            '/api/admin/emergency-restore', str(_e)[:200]
+        )
+    except Exception:
+        pass
+
     conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     c.execute("""CREATE TABLE IF NOT EXISTS movimientos
                  (id INTEGER PRIMARY KEY AUTOINCREMENT,

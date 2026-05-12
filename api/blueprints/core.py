@@ -73,7 +73,13 @@ def csrf_token():
 
 @bp.route('/api/health')
 def health():
-    """Diagnostico publico — version, DB, tablas clave."""
+    """Diagnostico publico — version, DB, tablas clave.
+
+    Sebastián 12-may-2026: tras incidente 'database disk image is malformed',
+    el endpoint ahora retorna 503 si detecta malformed (en lugar de 200 con
+    tables.err). Esto permite a Render auto-detect el problema y alerta a
+    cualquier monitoreo externo (Pingdom, UptimeRobot, etc).
+    """
     import sqlite3 as _sq, os as _os, subprocess as _sp
     try:
         commit = _sp.check_output(['git','rev-parse','--short','HEAD'],
@@ -84,20 +90,54 @@ def health():
     db_exists = _os.path.exists(DB_PATH)
     db_size = round(_os.path.getsize(DB_PATH)/1024, 1) if db_exists else 0
     tables = {}
+    malformed = False
     try:
-        conn = _sq.connect(DB_PATH)
+        conn = _sq.connect(DB_PATH, timeout=3.0)
+        # Integrity check rápido (no quick) · más confiable que solo intentar query
+        try:
+            ic = conn.execute('PRAGMA quick_check').fetchone()
+            if ic and ic[0] != 'ok':
+                malformed = True
+        except _sq.DatabaseError:
+            malformed = True
         for tbl in ['maestro_mps','solicitudes_compra','ordenes_compra','movimientos']:
             try:
                 tables[tbl] = conn.execute(f'SELECT COUNT(*) FROM {tbl}').fetchone()[0]
-            except: tables[tbl] = 'err'
+            except _sq.DatabaseError as e:
+                tables[tbl] = 'err'
+                if 'malformed' in str(e).lower() or 'corrupt' in str(e).lower():
+                    malformed = True
         try:
             tables['planta_pendientes'] = conn.execute(
                 "SELECT COUNT(*) FROM solicitudes_compra WHERE estado='Aprobada' AND area='Produccion' AND (numero_oc IS NULL OR numero_oc='')").fetchone()[0]
         except: pass
+    except _sq.DatabaseError as e:
+        tables['error'] = str(e)
+        if 'malformed' in str(e).lower() or 'corrupt' in str(e).lower():
+            malformed = True
     except Exception as e:
         tables['error'] = str(e)
-    return jsonify({'status':'ok','commit':commit,'db_exists':db_exists,
-                    'db_size_kb':db_size,'tables':tables})
+    payload = {
+        'status': 'error' if malformed else 'ok',
+        'commit': commit,
+        'db_exists': db_exists,
+        'db_size_kb': db_size,
+        'tables': tables,
+    }
+    if malformed:
+        # Log SEC HIGH para alerta externa
+        try:
+            from auth import _log_sec
+            _log_sec('db_malformed_detected', None, None,
+                     details='health endpoint detectó BD corrupta · restaurar via /api/admin/emergency-restore')
+        except Exception:
+            pass
+        payload['alert'] = (
+            'DB MALFORMED · restaurar via POST /api/admin/emergency-restore '
+            '(con body {confirm:true})'
+        )
+        return jsonify(payload), 503  # Service Unavailable
+    return jsonify(payload), 200
 
 
 @bp.route('/api/health/debug')
