@@ -1987,6 +1987,54 @@ def prog_registrar_stock():
 
 
 
+def _fetch_shopify_available(token, shop, inv_item_ids):
+    """Para una lista de inventory_item_ids de Shopify, devuelve dict
+    {inv_item_id: total_available_across_locations}.
+
+    Sebastián 12-may-2026: fix #D On hand → Available. Shopify Admin API
+    expone 'inventory_quantity' = ON HAND (incluye Committed/Reservado),
+    pero para MRP/planeación necesitamos AVAILABLE (= On hand - Committed).
+    Para obtenerlo hay que ir a /inventory_levels.json que sí trae 'available'.
+
+    Limitación API: ~50 IDs por request. Chunkeamos.
+    Si hay múltiples locations Shopify, suma 'available' de todas (cubre
+    el caso de tiendas con bodega + retail · si quieren restringir a una
+    location específica, agregar query param &location_ids=).
+
+    Si falla (red/auth/empty IDs), devuelve dict vacío y loggea warning.
+    El caller debe tener fallback (usualmente: usar inventory_quantity).
+    """
+    out = {}
+    if not inv_item_ids:
+        return out
+    # Dedupe + filtrar None/0
+    unique_ids = sorted({int(x) for x in inv_item_ids if x})
+    chunk = 50
+    for i in range(0, len(unique_ids), chunk):
+        sub = unique_ids[i:i + chunk]
+        ids_csv = ','.join(str(x) for x in sub)
+        url = ('https://' + shop +
+               '/admin/api/2024-01/inventory_levels.json'
+               '?inventory_item_ids=' + ids_csv + '&limit=' + str(chunk * 5))
+        req = urllib.request.Request(url, headers={'X-Shopify-Access-Token': token})
+        try:
+            with urllib.request.urlopen(req, timeout=20) as r:
+                data = json.loads(r.read())
+        except Exception as e:
+            log.warning("inventory_levels chunk %d-%d falló: %s", i, i + chunk, e)
+            continue
+        for lvl in data.get('inventory_levels', []) or []:
+            iid = lvl.get('inventory_item_id')
+            av = lvl.get('available')
+            if iid is None or av is None:
+                continue
+            try:
+                out[int(iid)] = out.get(int(iid), 0) + int(av)
+            except Exception:
+                continue
+    return out
+
+
 @bp.route('/api/programacion/test-shopify')
 def prog_test_shopify():
     """GET publico — diagnostico: verifica credenciales y cuenta productos Shopify."""
@@ -2105,6 +2153,14 @@ def prog_sync_stock_shopify():
         if not all_variants:
             return jsonify({'ok': False, 'error': 'Shopify no devolvio productos. Tienda sin productos o token sin permiso read_products.'})
 
+        # Sebastián 12-may-2026: fix #D · usar AVAILABLE en lugar de ON HAND.
+        # inventory_quantity (paso anterior) = On hand · incluye committed.
+        # available (de inventory_levels.json) = lo realmente disponible.
+        # Si la segunda API call falla, caemos back a inventory_quantity (mejor algo que nada).
+        inv_item_ids = [v['inv_item_id'] for v in all_variants if v.get('inv_item_id')]
+        avail_map = _fetch_shopify_available(token, shop, inv_item_ids)
+        used_available = bool(avail_map)  # True si Shopify nos dio Available (fix activo)
+
         conn.execute("UPDATE stock_pt SET estado='Ajustado' WHERE lote_produccion LIKE 'SHOPIFY-%'")
         synced = 0
         skipped = 0
@@ -2112,7 +2168,13 @@ def prog_sync_stock_shopify():
 
         for v in all_variants:
             sku = v['sku']
-            qty = v['inv_qty']
+            # Preferir Available si está disponible para este inv_item_id;
+            # sino fallback a inventory_quantity (On hand).
+            iid = v.get('inv_item_id')
+            if iid and iid in avail_map:
+                qty = max(int(avail_map[iid]), 0)
+            else:
+                qty = int(v['inv_qty'])
             if qty <= 0:
                 skipped += 1
                 continue
@@ -2120,9 +2182,10 @@ def prog_sync_stock_shopify():
             if not producto:
                 prefix = sku.split('-')[0] if '-' in sku else sku[:6]
                 producto = sku_map.get(prefix) or v['titulo']
+            obs = 'Sync Shopify (Available)' if (iid and iid in avail_map) else 'Sync Shopify (On hand)'
             conn.execute(
-                "INSERT INTO stock_pt (sku,descripcion,lote_produccion,fecha_produccion,unidades_inicial,unidades_disponible,precio_base,empresa,estado,observaciones) VALUES (?,?,?,?,?,?,0,'ANIMUS','Disponible','Sync Shopify')",
-                (sku, producto, 'SHOPIFY-' + today, today, qty, qty)
+                "INSERT INTO stock_pt (sku,descripcion,lote_produccion,fecha_produccion,unidades_inicial,unidades_disponible,precio_base,empresa,estado,observaciones) VALUES (?,?,?,?,?,?,0,'ANIMUS','Disponible',?)",
+                (sku, producto, 'SHOPIFY-' + today, today, qty, qty, obs)
             )
             synced += 1
 
@@ -2132,7 +2195,8 @@ def prog_sync_stock_shopify():
             'synced': synced,
             'skipped_zero': skipped,
             'total_variantes': len(all_variants),
-            'mensaje': str(synced) + ' SKUs sincronizados desde Shopify',
+            'usado_available': used_available,
+            'mensaje': str(synced) + ' SKUs sincronizados desde Shopify' + (' (Available)' if used_available else ' (On hand fallback)'),
         })
 
     except Exception as e:

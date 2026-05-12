@@ -808,7 +808,11 @@ def job_sync_stock_shopify_diario(app):
                 for variant in product.get('variants', []):
                     sku_raw = str(variant.get('sku', '') or '').strip().upper()
                     qty = int(variant.get('inventory_quantity', 0) or 0)
-                    all_variants.append({'sku': sku_raw, 'titulo': title, 'inv_qty': qty})
+                    iid = variant.get('inventory_item_id')  # para fix D Available
+                    all_variants.append({
+                        'sku': sku_raw, 'titulo': title,
+                        'inv_qty': qty, 'inv_item_id': iid,
+                    })
 
             next_url = None
             for part in link_header.split(','):
@@ -822,13 +826,38 @@ def job_sync_stock_shopify_diario(app):
         if not all_variants:
             return False, {'error': 'Shopify no devolvio productos'}, 1
 
+        # Sebastián 12-may-2026 · fix D: AVAILABLE en lugar de ON HAND.
+        # Reusa helper _fetch_shopify_available del blueprint programacion.
+        try:
+            from blueprints.programacion import _fetch_shopify_available
+        except Exception:
+            try:
+                from .programacion import _fetch_shopify_available
+            except Exception:
+                _fetch_shopify_available = None
+
+        avail_map = {}
+        if _fetch_shopify_available is not None:
+            inv_item_ids = [v.get('inv_item_id') for v in all_variants if v.get('inv_item_id')]
+            try:
+                avail_map = _fetch_shopify_available(token, shop, inv_item_ids) or {}
+            except Exception:
+                avail_map = {}
+        used_available = bool(avail_map)
+
         conn.execute("UPDATE stock_pt SET estado='Ajustado' WHERE lote_produccion LIKE 'SHOPIFY-%'")
         synced = 0
         skipped = 0
         today = _dt.now().strftime('%Y-%m-%d')
         for v in all_variants:
             sku = v['sku']
-            qty = v['inv_qty']
+            iid = v.get('inv_item_id')
+            if iid and iid in avail_map:
+                qty = max(int(avail_map[iid]), 0)
+                fuente = 'Available'
+            else:
+                qty = int(v['inv_qty'] or 0)
+                fuente = 'On hand'
             if not sku or qty <= 0:
                 skipped += 1
                 continue
@@ -837,13 +866,18 @@ def job_sync_stock_shopify_diario(app):
                 prefix = sku.split('-')[0] if '-' in sku else sku[:6]
                 producto = sku_map.get(prefix) or v['titulo']
             conn.execute(
-                "INSERT INTO stock_pt (sku,descripcion,lote_produccion,fecha_produccion,unidades_inicial,unidades_disponible,precio_base,empresa,estado,observaciones) VALUES (?,?,?,?,?,?,0,'ANIMUS','Disponible','Sync Shopify CRON')",
-                (sku, producto, 'SHOPIFY-' + today, today, qty, qty)
+                "INSERT INTO stock_pt (sku,descripcion,lote_produccion,fecha_produccion,unidades_inicial,unidades_disponible,precio_base,empresa,estado,observaciones) VALUES (?,?,?,?,?,?,0,'ANIMUS','Disponible',?)",
+                (sku, producto, 'SHOPIFY-' + today, today, qty, qty, f'Sync Shopify CRON ({fuente})')
             )
             synced += 1
 
         conn.commit()
-        return True, {'synced': synced, 'skipped_zero': skipped, 'total_variantes': len(all_variants)}, 0
+        return True, {
+            'synced': synced,
+            'skipped_zero': skipped,
+            'total_variantes': len(all_variants),
+            'usado_available': used_available,
+        }, 0
 
 
 def job_sync_shopify(app):
