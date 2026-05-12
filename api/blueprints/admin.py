@@ -17140,6 +17140,371 @@ def auditoria_fefo_descuento():
                         'detail': str(e)[:300]}), 500
 
 
+@bp.route("/api/programacion/sku-status", methods=["GET"])
+def programacion_sku_status():
+    """FASE 1 · Vista unificada SKU · días de stock + urgencia + producciones.
+
+    Sebastián 8-may-2026: el cerebro de programación. Combina:
+      - sku_producto_map (catálogo)
+      - animus_inventario_baseline + animus_inventario_movimientos (stock real)
+      - animus_shopify_orders.sku_items parsed (ventas 30/60d)
+      - produccion_programada + producciones (próximas producciones)
+      - formula_items (puede producir si MP disponible)
+
+    Para cada SKU activo devuelve:
+      - stock_und, ventas_mes_und, dias_stock
+      - status: BACKORDER / URGENTE_30d / MEDIO_30_89 / OK / LANZAMIENTO
+      - fecha_agotamiento_estimada
+      - producciones_programadas (próximas)
+      - tiene_formula
+      - puede_producir_ahora (stock MP suficiente)
+
+    Ordenado por urgencia (BACKORDER primero, luego dias_stock ASC).
+
+    Query params:
+      dias_velocidad: int (default 60)
+      solo_animus: 1/0 (default 1 · filtra SKUs Animus)
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    try:
+        dias_vel = int(request.args.get('dias_velocidad', 60))
+        if dias_vel < 7: dias_vel = 7
+        if dias_vel > 180: dias_vel = 180
+    except Exception:
+        dias_vel = 60
+    solo_animus = request.args.get('solo_animus', '1') == '1'
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA busy_timeout=2000")
+    c = conn.cursor()
+
+    try:
+        # 1. Calcular ventas por SKU (parsing JSON sku_items de Shopify)
+        import json as _json
+        from datetime import datetime as _dt, timedelta as _td, date as _date
+        since = (_dt.now() - _td(days=dias_vel)).strftime('%Y-%m-%d')
+        sku_ventas = {}
+        for row in c.execute("""
+            SELECT sku_items FROM animus_shopify_orders
+            WHERE creado_en >= ? AND sku_items IS NOT NULL
+        """, (since,)).fetchall():
+            try:
+                items = _json.loads(row['sku_items']) if row['sku_items'] else []
+            except Exception:
+                items = []
+            for it in items:
+                sku = str(it.get('sku', '') or '').strip().upper()
+                qty = int(it.get('qty', 0) or 0)
+                if sku and qty > 0:
+                    sku_ventas[sku] = sku_ventas.get(sku, 0) + qty
+
+        # Convertir a ventas_mes (30d) extrapolando desde la ventana
+        sku_ventas_mes = {k: round(v * 30 / dias_vel, 1) for k, v in sku_ventas.items()}
+
+        # 2. Stock por SKU (baseline + movs)
+        sku_stock = {}
+        for row in c.execute("""
+            SELECT b.sku, b.unidades_baseline AS baseline,
+                   COALESCE((
+                     SELECT SUM(CASE
+                       WHEN tipo IN ('ENTRADA','BASELINE') THEN cantidad
+                       ELSE -cantidad END)
+                     FROM animus_inventario_movimientos m
+                     WHERE m.sku = b.sku
+                       AND m.fecha > b.fecha_baseline
+                   ), 0) AS delta_post
+            FROM animus_inventario_baseline b
+        """).fetchall():
+            sku = row['sku']
+            stock = int(row['baseline'] or 0) + int(row['delta_post'] or 0)
+            sku_stock[sku] = stock
+
+        # 3. SKUs activos del catálogo + producto_nombre
+        skus_catalogo = c.execute("""
+            SELECT sku, producto_nombre
+            FROM sku_producto_map
+            WHERE COALESCE(activo, 1) = 1
+        """).fetchall()
+
+        # 4. Próximas producciones programadas por producto
+        prods_prog_por_producto = {}
+        try:
+            for row in c.execute("""
+                SELECT producto, fecha_programada, lotes, estado,
+                       inicio_real_at, inventario_descontado_at, fin_real_at
+                FROM produccion_programada
+                WHERE date(fecha_programada) >= date('now', '-7 days')
+                ORDER BY fecha_programada ASC
+                LIMIT 200
+            """).fetchall():
+                prod = row['producto']
+                prods_prog_por_producto.setdefault(prod, []).append({
+                    'fecha': row['fecha_programada'],
+                    'lotes': row['lotes'],
+                    'estado': row['estado'],
+                    'iniciada': bool(row['inicio_real_at']),
+                    'descontada': bool(row['inventario_descontado_at']),
+                    'terminada': bool(row['fin_real_at']),
+                })
+        except Exception:
+            pass
+
+        # 5. Para cada SKU: combinar todo + status
+        items = []
+        hoy = _date.today()
+        for s in skus_catalogo:
+            sku = s['sku']
+            producto = s['producto_nombre']
+            stock = int(sku_stock.get(sku, 0))
+            ventas_mes = sku_ventas_mes.get(sku.upper(), 0)
+
+            # días de stock
+            if ventas_mes < 0.1:
+                dias_stock = None
+                status_dias = 'OK'
+            elif stock <= 0:
+                dias_stock = 0
+                status_dias = 'BACKORDER'
+            else:
+                dias_stock = round(stock / ventas_mes * 30, 1)
+                if dias_stock < 30:
+                    status_dias = 'URGENTE_30d'
+                elif dias_stock < 90:
+                    status_dias = 'MEDIO_30_89'
+                else:
+                    status_dias = 'OK'
+
+            # Lanzamiento: SKU con stock=0 + ventas_mes>0 + nunca antes producido
+            es_lanzamiento = (stock <= 0 and ventas_mes <= 0 and
+                              producto and 'lanz' in (producto.lower() if producto else ''))
+            if es_lanzamiento:
+                status_final = 'LANZAMIENTO'
+            else:
+                status_final = status_dias
+
+            # Fecha agotamiento estimada
+            fecha_agot = None
+            if dias_stock and dias_stock > 0:
+                try:
+                    fecha_agot = (hoy + _td(days=int(dias_stock))).isoformat()
+                except Exception:
+                    pass
+
+            # Fórmula y producciones
+            tiene_formula = False
+            try:
+                fi_count = c.execute(
+                    "SELECT COUNT(*) FROM formula_items WHERE producto_nombre=?",
+                    (producto,)
+                ).fetchone()[0]
+                tiene_formula = (fi_count or 0) > 0
+            except Exception:
+                pass
+            prods_prog = prods_prog_por_producto.get(producto, [])
+
+            # Filtro solo_animus
+            if solo_animus and not (stock > 0 or ventas_mes > 0 or prods_prog):
+                # SKU del catálogo pero sin actividad reciente → skip
+                continue
+
+            items.append({
+                'sku': sku,
+                'producto': producto,
+                'stock_und': stock,
+                'ventas_mes_und': ventas_mes,
+                'dias_stock': dias_stock,
+                'status': status_final,
+                'fecha_agotamiento': fecha_agot,
+                'tiene_formula': tiene_formula,
+                'producciones_programadas': prods_prog[:3],
+                'n_producciones_programadas': len(prods_prog),
+            })
+
+        # Orden urgencia: BACKORDER primero, luego dias_stock ASC, LANZAMIENTO al final
+        ORDEN = {'BACKORDER': 0, 'URGENTE_30d': 1, 'MEDIO_30_89': 2, 'OK': 3, 'LANZAMIENTO': 4}
+        items.sort(key=lambda x: (
+            ORDEN.get(x['status'], 5),
+            x['dias_stock'] if x['dias_stock'] is not None else 9999,
+        ))
+
+        # Resumen por status
+        por_status = {}
+        for it in items:
+            por_status[it['status']] = por_status.get(it['status'], 0) + 1
+
+        conn.close()
+
+        return jsonify({
+            'ok': True,
+            'fecha_referencia': hoy.isoformat(),
+            'dias_velocidad': dias_vel,
+            'total_skus': len(items),
+            'por_status': por_status,
+            'items': items,
+            'message': (f'{len(items)} SKUs · BACKORDER {por_status.get("BACKORDER",0)} · '
+                        f'URGENTE_30d {por_status.get("URGENTE_30d",0)} · '
+                        f'MEDIO {por_status.get("MEDIO_30_89",0)} · '
+                        f'OK {por_status.get("OK",0)}'),
+        }), 200
+
+    except Exception as e:
+        conn.close()
+        return jsonify({'error': 'falla sku-status',
+                        'detail': str(e)[:300]}), 500
+
+
+@bp.route("/admin/programacion-sku", methods=["GET"])
+def admin_programacion_sku_page():
+    """Panel UI · Hoja 2 del Excel Alejandro pero auto."""
+    u, err, code = _require_admin()
+    if err:
+        return Response(
+            '<h1>403</h1><p>Solo admin puede ver este panel.</p>',
+            status=403, mimetype='text/html'
+        )
+    return Response(_PROG_SKU_HTML, mimetype='text/html')
+
+
+_PROG_SKU_HTML = """<!DOCTYPE html>
+<html lang="es"><head>
+<meta charset="utf-8">
+<title>Programación · SKU Status</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,Segoe UI,sans-serif;background:#0f172a;color:#f1f5f9;padding:20px;line-height:1.4}
+h1{font-size:24px;margin-bottom:6px;color:#5eead4}
+.sub{color:#94a3b8;font-size:13px;margin-bottom:14px}
+.back{display:inline-block;color:#94a3b8;text-decoration:none;font-size:13px;margin-bottom:14px}
+.back:hover{color:#f1f5f9}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:14px}
+.kpi{background:#1e293b;border-radius:8px;padding:10px;text-align:center}
+.kpi b{display:block;font-size:24px;margin-bottom:2px}
+.kpi.b b{color:#000;background:#fca5a5}
+.kpi.u b{color:#ef4444}
+.kpi.m b{color:#fbbf24}
+.kpi.o b{color:#22c55e}
+.kpi.l b{color:#a78bfa}
+.kpi-label{font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px}
+table{width:100%;border-collapse:collapse;background:#1e293b;border-radius:10px;overflow:hidden;font-size:12px}
+th{background:#0f172a;color:#94a3b8;font-weight:600;font-size:10px;text-transform:uppercase;letter-spacing:.5px;padding:10px 8px;text-align:left;position:sticky;top:0}
+td{padding:8px;border-bottom:1px solid #334155}
+tr:hover{background:#334155}
+tr.s-BACKORDER td{background:rgba(239,68,68,0.15)}
+tr.s-URGENTE_30d td{background:rgba(239,68,68,0.05)}
+tr.s-MEDIO_30_89 td{background:rgba(251,191,36,0.05)}
+tr.s-LANZAMIENTO td{background:rgba(167,139,250,0.05)}
+.b{padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700}
+.b-BACKORDER{background:#000;color:#fca5a5}
+.b-URGENTE_30d{background:#7f1d1d;color:#fca5a5}
+.b-MEDIO_30_89{background:#7c2d12;color:#fed7aa}
+.b-OK{background:#14532d;color:#86efac}
+.b-LANZAMIENTO{background:#3730a3;color:#c7d2fe}
+.loading{text-align:center;padding:40px;color:#64748b}
+.error{background:#7f1d1d;color:#fecaca;padding:14px;border-radius:8px}
+.bar{height:6px;background:#0f172a;border-radius:3px;overflow:hidden;margin-top:3px;width:80px}
+.bar-fill{height:100%;border-radius:3px}
+.bar-fill.b{background:#000}
+.bar-fill.u{background:#ef4444}
+.bar-fill.m{background:#fbbf24}
+.bar-fill.o{background:#22c55e}
+.prod-prog{font-size:10px;color:#94a3b8;margin-top:2px}
+.controls{margin-bottom:10px}
+button{padding:6px 14px;background:#5eead4;color:#0f172a;border:none;border-radius:6px;cursor:pointer;font-weight:600;font-size:12px}
+</style></head><body>
+
+<a class="back" href="/modulos">← Panel inicial</a>
+<h1>📅 Programación · Vista SKU</h1>
+<p class="sub">Hoja 2 del plan operativo automatizada. Ordenado por urgencia. Stock real + ventas Shopify 60d.</p>
+
+<div class="controls">
+  <button onclick="run()">🔄 Recargar</button>
+</div>
+
+<div id="content" class="loading">⏳ Cargando...</div>
+
+<script>
+function esc(s){return String(s===null||s===undefined?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;');}
+
+async function run(){
+  document.getElementById('content').className='loading';
+  document.getElementById('content').innerHTML='⏳ Cargando...';
+  try{
+    const r = await fetch('/api/programacion/sku-status?dias_velocidad=60');
+    const d = await r.json();
+    if(!r.ok){
+      document.getElementById('content').innerHTML='<div class="error">Error: '+esc(d.error||'')+'</div>';
+      return;
+    }
+    render(d);
+  }catch(e){
+    document.getElementById('content').innerHTML='<div class="error">Error red: '+esc(e.message)+'</div>';
+  }
+}
+
+function render(d){
+  const p = d.por_status || {};
+  let html = '<div class="kpis">' +
+    kpi('b', 'BACKORDER', p.BACKORDER || 0) +
+    kpi('u', 'URGENTE <30d', p.URGENTE_30d || 0) +
+    kpi('m', 'MEDIO 30-89', p.MEDIO_30_89 || 0) +
+    kpi('o', 'OK ≥90d', p.OK || 0) +
+    kpi('l', 'LANZAMIENTO', p.LANZAMIENTO || 0) +
+    '<div class="kpi"><b style="color:#5eead4">' + (d.total_skus||0) + '</b><div class="kpi-label">Total SKUs</div></div>' +
+  '</div>';
+
+  html += '<table><thead><tr>' +
+    '<th>#</th>' +
+    '<th>Producto</th>' +
+    '<th>SKU</th>' +
+    '<th>Stock und</th>' +
+    '<th>Ventas/mes</th>' +
+    '<th>Días stock</th>' +
+    '<th>Se acaba</th>' +
+    '<th>Status</th>' +
+    '<th>Producción programada</th>' +
+    '</tr></thead><tbody>';
+  (d.items || []).forEach((it, i) => {
+    const ds = it.dias_stock;
+    const dsTxt = ds === null ? '—' : (ds === 0 ? 'YA' : ds.toFixed(1)+'d');
+    const barW = ds === null ? 0 : Math.min(100, ds / 90 * 100);
+    const barClass = it.status === 'BACKORDER' ? 'b' :
+                     it.status === 'URGENTE_30d' ? 'u' :
+                     it.status === 'MEDIO_30_89' ? 'm' : 'o';
+    const prods = (it.producciones_programadas || []).map(p => {
+      const ic = p.terminada ? '✓' : p.iniciada ? '▶' : '○';
+      return ic + ' ' + p.fecha + ' (×' + (p.lotes||1) + ')';
+    }).join('<br>') || '—';
+    html += '<tr class="s-'+it.status+'">' +
+      '<td>'+(i+1)+'</td>' +
+      '<td>'+esc(it.producto)+'</td>' +
+      '<td style="color:#5eead4;font-family:monospace">'+esc(it.sku)+'</td>' +
+      '<td>'+it.stock_und.toLocaleString()+'</td>' +
+      '<td>'+it.ventas_mes_und.toLocaleString()+'</td>' +
+      '<td>'+dsTxt+'<div class="bar"><div class="bar-fill '+barClass+'" style="width:'+barW+'%"></div></div></td>' +
+      '<td>'+(it.fecha_agotamiento || '—')+'</td>' +
+      '<td><span class="b b-'+it.status+'">'+it.status.replace('_',' ')+'</span></td>' +
+      '<td class="prod-prog">'+prods+'</td>' +
+      '</tr>';
+  });
+  html += '</tbody></table>';
+
+  document.getElementById('content').className='';
+  document.getElementById('content').innerHTML = html;
+}
+
+function kpi(cls, label, val){
+  return '<div class="kpi '+cls+'"><b>'+val+'</b><div class="kpi-label">'+label+'</div></div>';
+}
+
+run();
+</script>
+</body></html>"""
+
+
 @bp.route("/api/admin/mp-actualizar-inci", methods=["POST"])
 def mp_actualizar_inci():
     """Actualiza nombre_inci de una MP · audit_log.
