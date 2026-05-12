@@ -222,6 +222,16 @@ _AREAS_LIMPIEZA_PROFUNDA = (
 
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (103, "BBM (Blush Balm) · desactivar mapeo erróneo a MASCARILLA HIDRATANTE · Sebastián 12-may-2026", [
+        # Migration #8 mapeo BBM → MASCARILLA HIDRATANTE incorrectamente.
+        # BBM es 'Blush Balm', producto nuevo de la línea de creadoras
+        # (royalty 15%). Hasta que se cargue la fórmula real, desactivamos
+        # el mapeo para que el panel de prioridad-agotamiento no infle MPs
+        # de la mascarilla cuando BBM venda. BBM seguirá apareciendo en
+        # listado SKUs (porque vende en Shopify), solo que sin producto_base
+        # resuelto · no contribuirá a mps_necesarias.
+        """UPDATE sku_producto_map SET activo=0 WHERE sku='BBM'"""
+    ]),
     (98, "FK enforcement formula_items → maestro_mps (Sebastián 10-may-2026)", [
         # Sebastián 10-may-2026: tras normalizar formula_items con remapeo
         # bulk, AHORA es safe activar enforcement · cero huérfanos confirmado.
