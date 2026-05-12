@@ -17318,7 +17318,11 @@ def mp_alcanza_multi():
             ORDER BY codigo_mp
         """).fetchall()
 
-        # OCs en tránsito por MP
+        # OCs en tránsito por MP · Sebastián 12-may-2026: ampliar estados.
+        # El sistema usa multiples nombres ('Autorizada','Aprobada','Parcial',
+        # 'En tránsito','En transito','Revisada'). Antes solo contaba 2 →
+        # columna OC TRÁNSITO siempre vacía aunque Catalina ya hubiera
+        # hecho OCs. Ahora cuenta cualquier OC NO recibida ni cancelada.
         ocs_transito = {}
         try:
             for row in c.execute("""
@@ -17328,9 +17332,13 @@ def mp_alcanza_multi():
                 WHERE EXISTS (
                     SELECT 1 FROM ordenes_compra oc
                     WHERE oc.numero_oc = oci.numero_oc
-                      AND oc.estado IN ('Autorizada','Parcial')
+                      AND UPPER(TRIM(COALESCE(oc.estado, ''))) NOT IN (
+                          'BORRADOR', 'CANCELADA', 'RECHAZADA', 'RECIBIDA', ''
+                      )
                 )
+                  AND COALESCE(cantidad_g, 0) > COALESCE(cantidad_recibida_g, 0)
                 GROUP BY codigo_mp
+                HAVING pend_g > 0
             """).fetchall():
                 ocs_transito[row[0]] = float(row[1] or 0)
         except Exception:
@@ -17539,7 +17547,7 @@ tr.u-BAJA td{background:rgba(34,197,94,0.04)}
 
 <script>
 function esc(s){return String(s===null||s===undefined?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;');}
-function fmt(n){if(n===null||n===undefined||n===0) return '—'; if(n>=1000) return (n/1000).toFixed(1)+'k'; return Math.round(n).toLocaleString();}
+function fmt(n){if(n===null||n===undefined) return '—'; if(n===0) return '0'; if(Math.abs(n)>=1000) return (n/1000).toFixed(1)+'k'; return Math.round(n).toLocaleString();}
 let __ITEMS = [];
 
 async function run(){
@@ -19558,6 +19566,96 @@ def debug_formula_items():
             conn.close()
         except Exception:
             pass
+
+
+@bp.route("/api/admin/debug-ocs-transito", methods=["GET"])
+def debug_ocs_transito():
+    """Lista OCs activas por estado · cazar OCs no contadas en mp-alcanza.
+
+    Sebastián 12-may-2026: columna OC TRÁNSITO en mp-alcanza siempre vacía.
+    Posibles causas:
+      - No hay OCs activas (esperar a Catalina)
+      - Estados que mp-alcanza no reconoce
+      - cantidad_g / cantidad_recibida_g mal configurados
+
+    Retorna: conteo por estado, items pendientes (cantidad_g > recibida_g),
+             top 10 MPs con más pendiente.
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    try:
+        # 1. Conteo por estado de TODAS las OCs
+        por_estado = {}
+        for r in c.execute("""
+            SELECT COALESCE(estado, '') AS estado, COUNT(*) AS n
+            FROM ordenes_compra
+            GROUP BY COALESCE(estado, '')
+            ORDER BY n DESC
+        """).fetchall():
+            por_estado[r['estado']] = int(r['n'])
+
+        # 2. Items pendientes (cualquier OC sin recibir completo)
+        pendientes = c.execute("""
+            SELECT oc.numero_oc,
+                   COALESCE(oc.estado, '') AS estado,
+                   COALESCE(oc.proveedor, '') AS proveedor,
+                   COALESCE(oc.fecha, '') AS fecha,
+                   COALESCE(oc.fecha_entrega_est, '') AS fecha_entrega_est,
+                   oci.codigo_mp,
+                   COALESCE(oci.nombre_mp, '') AS nombre_mp,
+                   COALESCE(oci.cantidad_g, 0) AS cantidad_g,
+                   COALESCE(oci.cantidad_recibida_g, 0) AS cantidad_recibida_g
+            FROM ordenes_compra_items oci
+            JOIN ordenes_compra oc ON oc.numero_oc = oci.numero_oc
+            WHERE COALESCE(oci.cantidad_g, 0) > COALESCE(oci.cantidad_recibida_g, 0)
+            ORDER BY oc.fecha DESC
+            LIMIT 100
+        """).fetchall()
+
+        pend_list = [{
+            'numero_oc': p['numero_oc'],
+            'estado': p['estado'],
+            'proveedor': p['proveedor'][:30],
+            'fecha': p['fecha'][:10] if p['fecha'] else '',
+            'fecha_entrega_est': p['fecha_entrega_est'][:10] if p['fecha_entrega_est'] else '',
+            'codigo_mp': p['codigo_mp'],
+            'nombre_mp': p['nombre_mp'][:40],
+            'cantidad_g': float(p['cantidad_g']),
+            'cantidad_recibida_g': float(p['cantidad_recibida_g']),
+            'pendiente_g': float(p['cantidad_g']) - float(p['cantidad_recibida_g']),
+        } for p in pendientes]
+
+        # 3. Suma pendiente por MP (cualquier estado)
+        from collections import defaultdict
+        por_mp = defaultdict(lambda: {'pend_g': 0, 'n_ocs': 0, 'estados': set()})
+        for p in pend_list:
+            por_mp[p['codigo_mp']]['pend_g'] += p['pendiente_g']
+            por_mp[p['codigo_mp']]['n_ocs'] += 1
+            por_mp[p['codigo_mp']]['estados'].add(p['estado'])
+
+        top_mps = sorted(
+            [{'codigo_mp': k, 'pendiente_g': v['pend_g'],
+               'n_ocs': v['n_ocs'], 'estados': sorted(v['estados'])}
+             for k, v in por_mp.items()],
+            key=lambda x: -x['pendiente_g']
+        )[:20]
+
+        return jsonify({
+            'ok': True,
+            'total_ocs_por_estado': por_estado,
+            'items_pendientes_count': len(pend_list),
+            'pendientes_sample': pend_list[:30],
+            'top_20_mps_con_pendiente': top_mps,
+            'estados_que_mp_alcanza_cuenta': 'CUALQUIERA excepto: Borrador, Cancelada, Rechazada, Recibida',
+        }), 200
+    finally:
+        try: conn.close()
+        except Exception: pass
 
 
 @bp.route("/api/admin/debug-calendar-producto", methods=["GET"])
