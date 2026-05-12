@@ -12805,7 +12805,7 @@ async function ckMarcar(itemId, estado){
         html += '<tr style="border-bottom:1px solid #f1f5f9;background:'+(s.urgencia==='CRITICO'?'#fef2f2':'transparent')+'">'+
           '<td style="padding:8px;font-weight:700;color:#1e293b">'+_apaEscHTML(s.sku)+'</td>'+
           '<td style="padding:8px;color:#475569">'+_apaEscHTML(s.producto_base||'—')+'</td>'+
-          '<td style="padding:8px;text-align:right;font-variant-numeric:tabular-nums">'+_apaFmtN(s.stock_actual_u)+'</td>'+
+          '<td style="padding:8px;text-align:right;font-variant-numeric:tabular-nums">'+_apaFmtN(s.stock_actual_u)+(s.fuente_stock?' <span title="Fuente del stock (CC=conteo local, SHOPIFY=snapshot Shopify)" style="font-size:9px;color:#94a3b8;font-weight:600">'+_apaEscHTML(s.fuente_stock)+'</span>':'')+'</td>'+
           '<td style="padding:8px;text-align:right;font-variant-numeric:tabular-nums">'+_apaFmtN(s.ventas_periodo_u)+'</td>'+
           '<td style="padding:8px;text-align:right;font-variant-numeric:tabular-nums">'+_apaFmtN(s.velocidad_uds_dia,2)+'</td>'+
           '<td style="padding:8px;text-align:right;font-variant-numeric:tabular-nums;font-weight:'+(s.urgencia==='CRITICO'||s.urgencia==='ALTA'?'700':'400')+'">'+(s.dias_cobertura===null?'∞':_apaFmtN(s.dias_cobertura,1))+'</td>'+

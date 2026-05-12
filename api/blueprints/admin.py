@@ -167,24 +167,22 @@ def animus_prioridad_agotamiento():
         hoy = _date.today()
         ventana_desde = (hoy - _td(days=ventana)).isoformat()
 
-        # 1. Stock actual por SKU desde stock_pt (sync Shopify).
-        # Sebastián 12-may-2026: fuente correcta es stock_pt (sincronizado
-        # por /api/programacion/sync-stock-shopify), NO animus_inventario_baseline
-        # (que es para conteo cíclico interno).
+        # 1. Stock actual por SKU desde stock_pt (sync Shopify) aplicando
+        # regla 'CC manda sobre SHOPIFY'.
+        # Sebastián 12-may-2026: ANTES sumaba directo (CC + SHOPIFY) y
+        # doble-contaba cuando había liberación local + snapshot Shopify.
+        # AHORA usa _resolved_stock_por_sku (mismo helper que _get_stock_pt)
+        # que ignora rows SHOPIFY si hay rows CC para el mismo SKU.
         # Nota: inventory_quantity de Shopify = ON HAND (incluye committed).
         # Idealmente sería AVAILABLE (On hand - Committed), pendiente fix futuro.
+        from blueprints.programacion import _resolved_stock_por_sku
+        resolved_stock = _resolved_stock_por_sku(conn, empresa='ANIMUS')
         stock_por_sku = {}
-        for r in c.execute("""
-            SELECT UPPER(sku) AS sku,
-                   MAX(COALESCE(descripcion, '')) AS descripcion,
-                   COALESCE(SUM(unidades_disponible), 0) AS stock_u
-            FROM stock_pt
-            WHERE estado = 'Disponible' AND empresa = 'ANIMUS'
-            GROUP BY UPPER(sku)
-        """).fetchall():
-            stock_por_sku[r['sku']] = {
-                'descripcion': r['descripcion'],
-                'stock_actual': max(0, int(r['stock_u'])),
+        for _sku, _info in resolved_stock.items():
+            stock_por_sku[_sku] = {
+                'descripcion': _info['descripcion'],
+                'stock_actual': _info['uds'],
+                'fuente_stock': _info['fuente'],  # 'CC' o 'SHOPIFY'
             }
 
         # 1b. Frescura del último sync Shopify (Sebastián 12-may-2026)
@@ -334,6 +332,7 @@ def animus_prioridad_agotamiento():
                 'descripcion': stk['descripcion'],
                 'producto_base': producto_base,
                 'stock_actual_u': stock_u,
+                'fuente_stock': stk.get('fuente_stock', ''),  # 'CC' o 'SHOPIFY' (vacío si stock=0)
                 'ventas_periodo_u': ventas_n,
                 'velocidad_uds_dia': round(velocidad, 2),
                 'dias_cobertura': round(dias_cobertura, 1) if velocidad > 0 else None,
@@ -386,14 +385,14 @@ def animus_prioridad_agotamiento():
             lines.append(f"SKUs Animus con ventas en ultimos {ventana} dias (orden: ventas DESC)")
             lines.append(f"Total: {resumen['n_skus']} SKUs · {resumen['n_critico']} critico · {resumen['n_alta']} alta · {resumen['n_media']} media · {resumen['n_baja']} baja · {resumen['n_ok']} ok")
             lines.append("")
-            lines.append(f"{'SKU':<22} {'VENTAS':>7} {'STOCK':>7} {'DIAS':>7} {'URGENCIA':<10} DESCRIPCION")
-            lines.append("-" * 110)
+            lines.append(f"{'SKU':<22} {'VENTAS':>7} {'STOCK':>7} {'FUENTE':<8} {'DIAS':>7} {'URGENCIA':<10} DESCRIPCION")
+            lines.append("-" * 120)
             for s in sorted(skus_out, key=lambda x: -int(x.get('ventas_periodo_u', 0))):
                 dias = s.get('dias_cobertura', 0)
                 dias_s = f"{dias:.1f}" if dias < 999 else "INF"
                 lines.append(
                     f"{s['sku']:<22} {int(s.get('ventas_periodo_u',0)):>7} "
-                    f"{int(s.get('stock_actual_u',0)):>7} {dias_s:>7} "
+                    f"{int(s.get('stock_actual_u',0)):>7} {s.get('fuente_stock',''):<8} {dias_s:>7} "
                     f"{s['urgencia']:<10} {(s.get('descripcion') or s.get('producto_base') or '')[:60]}"
                 )
             from flask import Response

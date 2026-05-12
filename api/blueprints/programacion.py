@@ -725,8 +725,101 @@ def _get_formulas(conn):
 
 # ─── Helpers: PT stock y MEE stock ──────────────────────────────────────────
 
+def _resolved_stock_por_sku(conn, empresa=None):
+    """Stock disponible por SKU aplicando regla 'CC manda sobre SHOPIFY'.
+
+    Sebastián 12-may-2026: extraído de _get_stock_pt para reuso desde el
+    panel de prioridad-agotamiento (admin.py). Antes ese panel hacía un
+    SUM directo que doble-contaba CC + SHOPIFY · ahora usa esta función.
+
+    REGLA DE AUTORIDAD: si para un SKU hay rows liberados por CC (lote
+    NO empieza con 'SHOPIFY-'), ESOS son la fuente de verdad y se
+    IGNORAN los snapshots Shopify para ese SKU (la app local ya descuenta
+    al vender; sumar Shopify duplicaba). Si SOLO hay rows SHOPIFY (SKU
+    sin pasar por maquila local), se usa Shopify como fallback.
+
+    Args:
+        conn: conexión sqlite
+        empresa: si se pasa (ej. 'ANIMUS'), filtra solo stock de esa empresa.
+
+    Returns:
+        dict {sku_upper: {'uds': int, 'descripcion': str, 'fuente': 'CC'|'SHOPIFY'}}
+    """
+    cc_stock = {}      # SKU → uds (autoridad)
+    shop_stock = {}    # SKU → uds (fallback)
+    descripcion = {}   # SKU → descripcion (la más reciente)
+    shop_max_age_hours = 0.0
+
+    where_empresa = " AND UPPER(TRIM(COALESCE(empresa,''))) = UPPER(?)" if empresa else ""
+    params = (empresa,) if empresa else ()
+
+    try:
+        rows = conn.execute(f"""
+            SELECT UPPER(TRIM(sku)) AS sku,
+                   COALESCE(lote_produccion, '') AS lote,
+                   COALESCE(SUM(unidades_disponible), 0) AS uds,
+                   MAX(COALESCE(descripcion, '')) AS descripcion,
+                   MAX(COALESCE(fecha_liberacion, fecha_creacion, '')) AS fmax
+            FROM stock_pt
+            WHERE estado = 'Disponible' {where_empresa}
+            GROUP BY UPPER(TRIM(sku)),
+                     CASE WHEN COALESCE(lote_produccion,'') LIKE 'SHOPIFY-%'
+                          THEN 'SHOPIFY' ELSE 'CC' END
+        """, params).fetchall()
+    except sqlite3.OperationalError:
+        rows = conn.execute(f"""
+            SELECT UPPER(TRIM(sku)) AS sku,
+                   COALESCE(lote_produccion, '') AS lote,
+                   COALESCE(SUM(unidades_disponible), 0) AS uds,
+                   MAX(COALESCE(descripcion, '')) AS descripcion,
+                   '' AS fmax
+            FROM stock_pt
+            WHERE estado = 'Disponible' {where_empresa}
+            GROUP BY UPPER(TRIM(sku)),
+                     CASE WHEN COALESCE(lote_produccion,'') LIKE 'SHOPIFY-%'
+                          THEN 'SHOPIFY' ELSE 'CC' END
+        """, params).fetchall()
+
+    from datetime import datetime as _dt
+    for row in rows:
+        raw_sku = str(row[0] or '').strip().upper()
+        lote = str(row[1] or '')
+        uds = max(int(row[2] or 0), 0)
+        desc = str(row[3] or '')
+        fmax = str(row[4] or '')
+        if not raw_sku or uds <= 0:
+            continue
+        if desc and not descripcion.get(raw_sku):
+            descripcion[raw_sku] = desc
+        if lote.startswith('SHOPIFY-'):
+            shop_stock[raw_sku] = shop_stock.get(raw_sku, 0) + uds
+            if fmax:
+                try:
+                    age_h = (_dt.utcnow() - _dt.fromisoformat(fmax.replace('Z', ''))).total_seconds() / 3600.0
+                    if age_h > shop_max_age_hours:
+                        shop_max_age_hours = age_h
+                except Exception:
+                    pass
+        else:
+            cc_stock[raw_sku] = cc_stock.get(raw_sku, 0) + uds
+
+    if shop_max_age_hours > 24:
+        logging.getLogger('programacion').warning(
+            "Stock PT desde SHOPIFY tiene %.1fh de antigüedad — revisa el cron de sync",
+            shop_max_age_hours
+        )
+
+    resolved = {}
+    for sku, uds in cc_stock.items():
+        resolved[sku] = {'uds': uds, 'descripcion': descripcion.get(sku, ''), 'fuente': 'CC'}
+    for sku, uds in shop_stock.items():
+        if sku not in resolved:
+            resolved[sku] = {'uds': uds, 'descripcion': descripcion.get(sku, ''), 'fuente': 'SHOPIFY'}
+    return resolved
+
+
 def _get_stock_pt(conn):
-    """Stock real de producto terminado desde stock_pt.
+    """Stock real de producto terminado desde stock_pt (por producto_nombre).
 
     REGLA DE AUTORIDAD (fix CRITICAL #1 auditoría): si para un SKU hay rows
     liberados por CC (lote_produccion NO empieza con 'SHOPIFY-'), ESOS son
@@ -740,6 +833,9 @@ def _get_stock_pt(conn):
 
     Loguea warning si los rows SHOPIFY tienen >24h (staleness) — señal de
     que el sync se está retrasando y conviene revisar el cron.
+
+    Sebastián 12-may-2026: refactor · ahora delega a _resolved_stock_por_sku
+    para que panel admin y este coincidan en la regla.
     """
     sku_map = {}
     try:
@@ -752,73 +848,12 @@ def _get_stock_pt(conn):
     except Exception:
         pass
 
-    # Separar stock por origen: CC liberado vs SHOPIFY snapshot
-    cc_stock = {}      # SKU → uds (autoridad real)
-    shop_stock = {}    # SKU → uds (snapshot, fallback)
-    shop_max_age_hours = 0.0
-    try:
-        rows = conn.execute("""
-            SELECT UPPER(TRIM(sku)) AS sku,
-                   COALESCE(lote_produccion, '') AS lote,
-                   COALESCE(SUM(unidades_disponible), 0) AS uds,
-                   MAX(COALESCE(fecha_liberacion, fecha_creacion, '')) AS fmax
-            FROM stock_pt
-            WHERE estado = 'Disponible'
-            GROUP BY UPPER(TRIM(sku)),
-                     CASE WHEN COALESCE(lote_produccion,'') LIKE 'SHOPIFY-%'
-                          THEN 'SHOPIFY' ELSE 'CC' END
-        """).fetchall()
-    except sqlite3.OperationalError:
-        # Esquema viejo sin fecha_liberacion/fecha_creacion: fallback simple
-        rows = conn.execute("""
-            SELECT UPPER(TRIM(sku)) AS sku,
-                   COALESCE(lote_produccion, '') AS lote,
-                   COALESCE(SUM(unidades_disponible), 0) AS uds,
-                   '' AS fmax
-            FROM stock_pt
-            WHERE estado = 'Disponible'
-            GROUP BY UPPER(TRIM(sku)),
-                     CASE WHEN COALESCE(lote_produccion,'') LIKE 'SHOPIFY-%'
-                          THEN 'SHOPIFY' ELSE 'CC' END
-        """).fetchall()
+    resolved = _resolved_stock_por_sku(conn)
 
-    from datetime import datetime as _dt
-    for row in rows:
-        raw_sku = str(row[0] or '').strip().upper()
-        lote = str(row[1] or '')
-        uds = max(int(row[2] or 0), 0)
-        fmax = str(row[3] or '')
-        if not raw_sku or uds <= 0:
-            continue
-        if lote.startswith('SHOPIFY-'):
-            shop_stock[raw_sku] = shop_stock.get(raw_sku, 0) + uds
-            if fmax:
-                try:
-                    age_h = (_dt.utcnow() - _dt.fromisoformat(fmax.replace('Z', ''))).total_seconds() / 3600.0
-                    if age_h > shop_max_age_hours:
-                        shop_max_age_hours = age_h
-                except Exception:
-                    pass
-        else:
-            cc_stock[raw_sku] = cc_stock.get(raw_sku, 0) + uds
-
-    # Resolver: CC manda; SHOPIFY solo para SKUs sin row de CC
-    resolved = {}
-    for sku, uds in cc_stock.items():
-        resolved[sku] = uds
-    for sku, uds in shop_stock.items():
-        if sku not in resolved:
-            resolved[sku] = uds
-
-    if shop_max_age_hours > 24:
-        logging.getLogger('programacion').warning(
-            "Stock PT desde SHOPIFY tiene %.1fh de antigüedad — revisa el cron de sync",
-            shop_max_age_hours
-        )
-
-    # Mapear SKU → producto_nombre
+    # Mapear SKU → producto_nombre (agregado para back-compat)
     stock = {}
-    for raw_sku, uds in resolved.items():
+    for raw_sku, info in resolved.items():
+        uds = info['uds']
         prod = sku_map.get(raw_sku)
         if not prod:
             prefix = raw_sku.split('-')[0]
