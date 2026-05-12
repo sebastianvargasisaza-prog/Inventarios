@@ -222,6 +222,77 @@ _AREAS_LIMPIEZA_PROFUNDA = (
 
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (104, "Blush Balm · fórmula oficial v1 (21 MPs · 1kg) + remap BBM · Sebastián 12-may-2026", [
+        # Fórmula completa Blush Balm aprobada por Sebastián CEO 12-may-2026.
+        # Origen: archive/data-imports/formulas_data.json:2357 (v1 · 100% activos).
+        # 20 MPs con código existente + 1 pigmento nuevo MPPIGCI01 (Pigmentos CI
+        # como mezcla · si Dirección Técnica quiere desglose por CI individual,
+        # crear MPs separados en migration posterior y reasignar % aquí).
+        #
+        # Trigger FK de migration 98 exige que codigo_mp exista en maestro_mps
+        # ANTES de insertar en formula_items. Por eso primero INSERT OR IGNORE
+        # los 21 codigos (preserva nombre_comercial si ya existe), después la
+        # fórmula. Idempotente.
+
+        # Paso 1: garantizar que los 21 MPs existan en maestro_mps
+        """INSERT OR IGNORE INTO maestro_mps (codigo_mp, nombre_comercial, activo) VALUES
+            ('MP00051', 'Polyglyceryl-2 triisostearate', 1),
+            ('MP00063', 'Tinogard TT',                  1),
+            ('MPPIGCI01','Pigmentos CI (mezcla)',       1),
+            ('MP00054', 'Lauroyl lysine',               1),
+            ('MP00127', 'BM-956',                       1),
+            ('MP00040', 'Cetiol',                       1),
+            ('MPCOCP01','Coco caprylate',               1),
+            ('MP00103', 'Beauty Oil Cerámidas',         1),
+            ('MP00257', 'Synthetic wax',                1),
+            ('MP00024', 'Microcristalina 127',          1),
+            ('MP00041', 'Ceresine wax',                 1),
+            ('MP00077', 'Manteca murumuru',             1),
+            ('MP00055', 'PMSS',                         1),
+            ('MPBNIT01','Boron nitride',                1),
+            ('MP00207', 'Stabil',                       1),
+            ('MP00078', 'Vitamina E líquida',           1),
+            ('MP00101', 'AE Vainilla',                  1),
+            ('MP00025', 'AE Neroli',                    1),
+            ('MP00190', 'Palmitoyl tripeptide-1',       1),
+            ('MP00172', 'Palmitoyl tetrapeptide-7',     1),
+            ('MP00174', 'Palmitoyl tripeptide-38',      1)""",
+
+        # Paso 2: formula_headers (lote ref 1kg)
+        """INSERT OR REPLACE INTO formula_headers (producto_nombre, unidad_base_g, descripcion)
+           VALUES ('Blush Balm', 1000.0, 'v1 oficial · lote 1kg · 21 MPs · Sebastián 12-may-2026')""",
+
+        # Paso 3: limpiar items previos (idempotencia)
+        """DELETE FROM formula_items WHERE producto_nombre='Blush Balm'""",
+
+        # Paso 4: insertar 21 items de la fórmula
+        """INSERT INTO formula_items (producto_nombre, material_id, material_nombre, porcentaje) VALUES
+            ('Blush Balm', 'MP00051',  'Polyglyceryl-2 triisostearate', 10.0),
+            ('Blush Balm', 'MP00063',  'Tinogard TT',                   0.1),
+            ('Blush Balm', 'MPPIGCI01','Pigmentos CI (mezcla)',         7.5),
+            ('Blush Balm', 'MP00054',  'Lauroyl lysine',                1.0),
+            ('Blush Balm', 'MP00127',  'BM-956',                        20.271),
+            ('Blush Balm', 'MP00040',  'Cetiol',                        20.271),
+            ('Blush Balm', 'MPCOCP01', 'Coco caprylate',                3.0),
+            ('Blush Balm', 'MP00103',  'Beauty Oil Cerámidas',          0.3),
+            ('Blush Balm', 'MP00257',  'Synthetic wax',                 11.5),
+            ('Blush Balm', 'MP00024',  'Microcristalina 127',           10.0),
+            ('Blush Balm', 'MP00041',  'Ceresine wax',                  10.0),
+            ('Blush Balm', 'MP00077',  'Manteca murumuru',              0.15),
+            ('Blush Balm', 'MP00055',  'PMSS',                          3.0),
+            ('Blush Balm', 'MPBNIT01', 'Boron nitride',                 2.0),
+            ('Blush Balm', 'MP00207',  'Stabil',                        0.75),
+            ('Blush Balm', 'MP00078',  'Vitamina E líquida',            0.1),
+            ('Blush Balm', 'MP00101',  'AE Vainilla',                   0.035),
+            ('Blush Balm', 'MP00025',  'AE Neroli',                     0.02),
+            ('Blush Balm', 'MP00190',  'Palmitoyl tripeptide-1',        0.001),
+            ('Blush Balm', 'MP00172',  'Palmitoyl tetrapeptide-7',      0.001),
+            ('Blush Balm', 'MP00174',  'Palmitoyl tripeptide-38',       0.001)""",
+
+        # Paso 5: remapear BBM → 'Blush Balm' (reemplaza el activo=0 de migration 103)
+        """INSERT OR REPLACE INTO sku_producto_map (sku, producto_nombre, activo)
+           VALUES ('BBM', 'Blush Balm', 1)"""
+    ]),
     (103, "BBM (Blush Balm) · desactivar mapeo erróneo a MASCARILLA HIDRATANTE · Sebastián 12-may-2026", [
         # Migration #8 mapeo BBM → MASCARILLA HIDRATANTE incorrectamente.
         # BBM es 'Blush Balm', producto nuevo de la línea de creadoras
@@ -230,6 +301,7 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         # de la mascarilla cuando BBM venda. BBM seguirá apareciendo en
         # listado SKUs (porque vende en Shopify), solo que sin producto_base
         # resuelto · no contribuirá a mps_necesarias.
+        # Reemplazada en migration 104 (carga fórmula real + remap correcto).
         """UPDATE sku_producto_map SET activo=0 WHERE sku='BBM'"""
     ]),
     (98, "FK enforcement formula_items → maestro_mps (Sebastián 10-may-2026)", [
