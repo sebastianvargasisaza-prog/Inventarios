@@ -4317,3 +4317,77 @@ def test_golden_audit_respeta_agua_ilimitada(app, db_clean):
         _exec("DELETE FROM formula_items WHERE producto_nombre=?", (prod,))
         _exec("DELETE FROM formula_headers WHERE producto_nombre=?", (prod,))
         _exec("DELETE FROM maestro_mps WHERE codigo_mp=?", (mp,))
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 94 · Resembrar cantidad_g_por_lote en items (GPL_NO_SEMBRADO)
+# ═══════════════════════════════════════════════════════════════════
+# Sebastián 11-may-2026: GEL HIDRATANTE NF tenía 19 items con porcentajes
+# pero sin cantidad_g_por_lote. Cuando aplica peso real (58 kg), endpoint
+# debe re-sembrar gpl en cada item como (pct/100) × ub_nuevo.
+def test_golden_corregir_unidad_base_resembrar_gpl(app, db_clean):
+    """Cuando resembrar_items_gpl=true, items se completan con (pct/100) × ub."""
+    cs = _login(app, 'sebastian')
+    prod = 'GP94-PROD-RESEMBRAR'
+    mp_a = 'GP94-MP-A'
+    mp_b = 'GP94-MP-B'
+    try:
+        _exec("""INSERT OR REPLACE INTO maestro_mps
+                  (codigo_mp, nombre_comercial, activo, tipo_material)
+                  VALUES (?, 'GP94 MP A', 1, 'MP')""", (mp_a,))
+        _exec("""INSERT OR REPLACE INTO maestro_mps
+                  (codigo_mp, nombre_comercial, activo, tipo_material)
+                  VALUES (?, 'GP94 MP B', 1, 'MP')""", (mp_b,))
+        _exec("""INSERT OR REPLACE INTO formula_headers
+                  (producto_nombre, unidad_base_g, lote_size_kg)
+                  VALUES (?, 1000, 1.0)""", (prod,))
+        # Items con porcentaje pero cantidad_g_por_lote=0 (caso GPL_NO_SEMBRADO)
+        _exec("""INSERT INTO formula_items
+                  (producto_nombre, material_id, material_nombre,
+                   porcentaje, cantidad_g_por_lote)
+                  VALUES (?, ?, 'MP A', 20.0, 0)""", (prod, mp_a))
+        _exec("""INSERT INTO formula_items
+                  (producto_nombre, material_id, material_nombre,
+                   porcentaje, cantidad_g_por_lote)
+                  VALUES (?, ?, 'MP B', 5.5, 0)""", (prod, mp_b))
+
+        # Aplicar con resembrar_items_gpl=true · lote real 58 kg
+        r = cs.post(
+            '/api/admin/corregir-unidad-base-bulk',
+            json={'items': [{'producto': prod,
+                              'unidad_base_g_nuevo': 58000,
+                              'resembrar_items_gpl': True}],
+                  'motivo': 'GP94 · resembrar GPL en formula incompleta'},
+            headers=csrf_headers(),
+        )
+        assert r.status_code == 200, f'BUG: {r.status_code} {r.data}'
+        d = r.get_json()
+        assert d['ok']
+        upd = d['actualizados'][0]
+        assert upd['items_resembrados'] == 2, \
+            f'BUG: debió re-sembrar 2 items · got {upd["items_resembrados"]}'
+
+        # Verificar DB: items ahora tienen gpl recalculado
+        rows = _query(
+            """SELECT material_id, porcentaje, cantidad_g_por_lote
+               FROM formula_items WHERE producto_nombre=? ORDER BY material_id""",
+            (prod,)
+        )
+        # MP A: 20% de 58000g = 11600g
+        # MP B: 5.5% de 58000g = 3190g
+        gpls = {r[0]: r[2] for r in rows}
+        assert gpls[mp_a] == 11600, f'MP A debió ser 11600 · got {gpls[mp_a]}'
+        assert gpls[mp_b] == 3190, f'MP B debió ser 3190 · got {gpls[mp_b]}'
+
+        # Y formula_headers actualizado
+        head = _query(
+            "SELECT unidad_base_g, lote_size_kg FROM formula_headers WHERE producto_nombre=?",
+            (prod,)
+        )
+        assert head[0][0] == 58000
+        assert abs(head[0][1] - 58.0) < 0.001
+
+    finally:
+        _exec("DELETE FROM formula_items WHERE producto_nombre=?", (prod,))
+        _exec("DELETE FROM formula_headers WHERE producto_nombre=?", (prod,))
+        _exec("DELETE FROM maestro_mps WHERE codigo_mp IN (?, ?)", (mp_a, mp_b))

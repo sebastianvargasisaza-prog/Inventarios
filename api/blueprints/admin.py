@@ -19741,9 +19741,13 @@ def corregir_unidad_base_bulk():
     Calendar en mp-alcanza-multi.
 
     Body JSON:
-      items: [{producto, unidad_base_g_nuevo, lote_size_kg_nuevo?}]
+      items: [{producto, unidad_base_g_nuevo, lote_size_kg_nuevo?,
+               resembrar_items_gpl?}]
         max 100 items
         lote_size_kg_nuevo opcional · default = unidad_base_g_nuevo / 1000
+        resembrar_items_gpl opcional · si true, recalcula
+          cantidad_g_por_lote = (porcentaje/100) * unidad_base_g_nuevo
+          para cada item de la fórmula. Usar para GPL_NO_SEMBRADO.
       motivo: str (min 10 chars)
     """
     u, err, code = _require_admin()
@@ -19810,7 +19814,8 @@ def corregir_unidad_base_bulk():
             lsk_antes = float(row[1] or 0)
 
             if (abs(ub_antes - ub_nuevo) < 0.01
-                    and abs(lsk_antes - lsk_nuevo) < 0.001):
+                    and abs(lsk_antes - lsk_nuevo) < 0.001
+                    and not it.get('resembrar_items_gpl')):
                 rechazados.append({'producto': prod, 'razon': 'sin cambios'})
                 continue
 
@@ -19820,6 +19825,19 @@ def corregir_unidad_base_bulk():
                    WHERE producto_nombre=?""",
                 (ub_nuevo, lsk_nuevo, prod)
             )
+
+            # Opcional: re-sembrar cantidad_g_por_lote en items (caso GPL_NO_SEMBRADO)
+            items_resembrados = 0
+            if it.get('resembrar_items_gpl'):
+                c.execute(
+                    """UPDATE formula_items
+                       SET cantidad_g_por_lote = ROUND((COALESCE(porcentaje,0)/100.0) * ?, 2)
+                       WHERE producto_nombre = ?
+                         AND COALESCE(porcentaje, 0) > 0""",
+                    (ub_nuevo, prod)
+                )
+                items_resembrados = c.rowcount or 0
+
             actualizados.append({
                 'producto': prod,
                 'unidad_base_g_antes': round(ub_antes, 2),
@@ -19827,6 +19845,7 @@ def corregir_unidad_base_bulk():
                 'lote_size_kg_antes': round(lsk_antes, 3),
                 'lote_size_kg_despues': round(lsk_nuevo, 3),
                 'factor': round(ub_nuevo / ub_antes, 2) if ub_antes > 0 else None,
+                'items_resembrados': items_resembrados,
             })
 
         if actualizados:
@@ -20017,9 +20036,17 @@ function render(){
       ? (ubi / it.unidad_base_g_actual).toFixed(2) + 'x'
       : '—';
     const ubiTxt = ubi != null ? ubi.toLocaleString() : '<span class="muted">—</span>';
-    const accion = (it.unidad_base_g_sugerido && it.diagnostico !== 'OK' && it.diagnostico !== 'SIN_FORMULA' && it.diagnostico !== 'GPL_NO_SEMBRADO')
-      ? '<button onclick="aplicarUno('+JSON.stringify(it.producto).replace(/"/g,'&quot;')+','+it.unidad_base_g_sugerido+')">Aplicar</button>'
-      : '<span class="muted">—</span>';
+    let accion;
+    if (it.diagnostico === 'GPL_NO_SEMBRADO') {
+      const safeProd = JSON.stringify(it.producto).replace(/"/g,'&quot;');
+      const inputId = 'kg-' + it.producto.replace(/[^a-zA-Z0-9]/g,'-');
+      accion = '<input type="number" min="0.1" max="500" step="0.1" id="'+inputId+'" placeholder="kg" class="inline"> '+
+               '<button onclick="aplicarGpl('+safeProd+',&quot;'+inputId+'&quot;)">Aplicar peso</button>';
+    } else if (it.unidad_base_g_sugerido && it.diagnostico !== 'OK' && it.diagnostico !== 'SIN_FORMULA') {
+      accion = '<button onclick="aplicarUno('+JSON.stringify(it.producto).replace(/"/g,'&quot;')+','+it.unidad_base_g_sugerido+')">Aplicar</button>';
+    } else {
+      accion = '<span class="muted">—</span>';
+    }
     return '<tr>'+
       '<td>'+escapeHtml(it.producto)+(it.usado?' <span class="usado">●</span>':'')+'</td>'+
       '<td class="right">'+it.suma_pct.toFixed(1)+'</td>'+
@@ -20045,6 +20072,19 @@ function escapeHtml(s){
 async function aplicarUno(producto, nuevo){
   if(!confirm('Aplicar a "'+producto+'":\\nunidad_base_g → '+nuevo.toLocaleString()+' g\\nlote_size_kg → '+(nuevo/1000).toFixed(3)+' kg')) return;
   await aplicarBulk([{producto:producto, unidad_base_g_nuevo:nuevo}], 'Corrección manual unidad_base_g desde panel · '+producto);
+}
+
+async function aplicarGpl(producto, inputId){
+  const inp = document.getElementById(inputId);
+  const kg = parseFloat(inp.value);
+  if(!kg || kg <= 0 || kg > 500){
+    alert('Ingresa el peso del lote en kg (entre 0.1 y 500)');
+    return;
+  }
+  const g = kg * 1000;
+  if(!confirm('Aplicar a "'+producto+'":\\nunidad_base_g → '+g.toLocaleString()+' g ('+kg+' kg)\\n\\nAdemás recalculará cantidad_g_por_lote en TODOS los items de la fórmula como (%/100) × '+g.toLocaleString()+'. Esto completa la fórmula GPL_NO_SEMBRADO.')) return;
+  await aplicarBulk([{producto:producto, unidad_base_g_nuevo:g, resembrar_items_gpl:true}],
+                     'Corrección GPL_NO_SEMBRADO desde panel · '+producto+' · lote real '+kg+' kg');
 }
 
 async function aplicarAutoAplicables(){
