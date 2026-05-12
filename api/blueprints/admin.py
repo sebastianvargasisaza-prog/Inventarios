@@ -17227,13 +17227,20 @@ def mp_alcanza_multi():
                 'ml': _extraer_ml(row['producto_nombre']),
             }
 
-        # 3. Producciones programadas en Calendar (90d hacia adelante, default lotes=1, asumimos kg_por_lote)
-        # produccion_programada · cantidad típica = lotes × ~30kg estándar.
-        # PERO: para mantenerlo simple uso `lotes` como kg total (cada lote programado = 1 producción)
+        # 3. Producciones programadas en Calendar (180d hacia adelante)
+        # Sebastián 12-may-2026: 2 bugs criticos fixed:
+        #   a) Filtrar estado != 'cancelado' · el sync auto marca canceladas
+        #      cuando Alejandro borra evento en Calendar, pero las dejaba
+        #      contando como vigentes. Para TRX 11 entries → 3 reales.
+        #   b) Usar cantidad_kg directamente (peso real del evento Calendar
+        #      extraido del titulo "Fabricación N kg"). El campo 'lotes' se
+        #      calcula mal en muchos casos (mig 50 explicita lo creó).
         prods_prog = c.execute("""
-            SELECT producto, fecha_programada, lotes
+            SELECT producto, fecha_programada, lotes,
+                   COALESCE(cantidad_kg, 0) AS cantidad_kg
             FROM produccion_programada
             WHERE date(fecha_programada) BETWEEN date('now') AND date('now', '+180 days')
+              AND COALESCE(estado, '') != 'cancelado'
         """).fetchall()
         # Para cada producción: ya hay un campo `lotes` que es el conteo de batches.
         # Tomamos kg típico = unidad_base_g del formula_header / 1000 (kg).
@@ -17275,7 +17282,7 @@ def mp_alcanza_multi():
 
         # Producciones por producto agrupadas por días desde hoy
         from collections import defaultdict
-        prods_por_producto = defaultdict(list)  # producto → [(dias_desde_hoy, lotes)]
+        prods_por_producto = defaultdict(list)  # producto → [(dias, lotes, cantidad_kg)]
         hoy = _date.today()
         for row in prods_prog:
             try:
@@ -17284,7 +17291,8 @@ def mp_alcanza_multi():
                 if dias < 0:
                     continue
                 lotes = int(row['lotes'] or 1)
-                prods_por_producto[row['producto']].append((dias, lotes))
+                cantidad_kg = float(row['cantidad_kg'] or 0)
+                prods_por_producto[row['producto']].append((dias, lotes, cantidad_kg))
             except Exception:
                 continue
 
@@ -17348,10 +17356,14 @@ def mp_alcanza_multi():
                 ub = unidad_base_por_producto.get(producto, 1000)  # gramos por lote
                 for h in HORIZONTES:
                     cal_g = 0.0
-                    for dias, lotes in prods_por_producto.get(producto, []):
+                    for dias, lotes, cantidad_kg_evento in prods_por_producto.get(producto, []):
                         if dias <= h:
-                            # Usar g_por_lote si está definido, sino % × unidad_base
-                            if g_por_lote > 0:
+                            # PRIORIDAD 1: cantidad_kg del evento Calendar (peso real)
+                            # PRIORIDAD 2: g_por_lote × lotes (datos de fórmula)
+                            # PRIORIDAD 3: pct × unidad_base × lotes (fallback)
+                            if cantidad_kg_evento > 0 and pct > 0:
+                                cal_g += (pct / 100.0) * (cantidad_kg_evento * 1000)
+                            elif g_por_lote > 0:
                                 cal_g += g_por_lote * lotes
                             elif pct > 0:
                                 cal_g += (pct / 100.0) * ub * lotes
@@ -19697,13 +19709,16 @@ def debug_consumo_mp(codigo_mp):
 
         productos = [f['producto_nombre'] for f in formulas]
 
-        # 2. Producciones programadas para esos productos
+        # 2. Producciones programadas para esos productos (filtra canceladas)
         placeholders = ','.join('?' * len(productos))
         rows = c.execute(f"""
             SELECT producto, fecha_programada,
-                   COALESCE(lotes, 1) AS lotes
+                   COALESCE(lotes, 1) AS lotes,
+                   COALESCE(cantidad_kg, 0) AS cantidad_kg,
+                   COALESCE(estado, '') AS estado
             FROM produccion_programada
             WHERE producto IN ({placeholders})
+              AND COALESCE(estado, '') != 'cancelado'
             ORDER BY fecha_programada
         """, productos).fetchall()
 
@@ -19720,21 +19735,25 @@ def debug_consumo_mp(codigo_mp):
             if dias < 0:
                 continue
             lt = int(r['lotes'] or 1)
+            ckg = float(r['cantidad_kg'] or 0)
             producciones_raw.append({
                 'producto': prod,
                 'fecha': r['fecha_programada'][:10],
                 'dias': dias,
                 'lotes': lt,
+                'cantidad_kg': ckg,
+                'estado': r['estado'],
             })
             d = producciones_por_producto.setdefault(prod, {
-                'count_60d': 0, 'lotes_60d': 0,
-                'count_90d': 0, 'lotes_90d': 0,
-                'count_180d': 0, 'lotes_180d': 0,
+                'count_60d': 0, 'lotes_60d': 0, 'kg_60d': 0.0,
+                'count_90d': 0, 'lotes_90d': 0, 'kg_90d': 0.0,
+                'count_180d': 0, 'lotes_180d': 0, 'kg_180d': 0.0,
             })
             for h in HORIZONTES:
                 if dias <= h:
                     d[f'count_{h}d'] += 1
                     d[f'lotes_{h}d'] += lt
+                    d[f'kg_{h}d'] += ckg
 
         # 3. Detectar fechas duplicadas (mismo producto + misma fecha)
         from collections import Counter
@@ -19809,7 +19828,11 @@ def debug_consumo_mp(codigo_mp):
             horizonte_g = {}
             for h in HORIZONTES:
                 lotes_h = prog.get(f'lotes_{h}d', 0)
-                if gpl > 0:
+                kg_h = prog.get(f'kg_{h}d', 0)
+                # PRIORIDAD 1: cantidad_kg del evento Calendar (peso real)
+                if kg_h > 0 and pct > 0:
+                    cal_g = (pct/100.0) * (kg_h * 1000)
+                elif gpl > 0:
                     cal_g = gpl * lotes_h
                 else:
                     cal_g = (pct/100.0) * ub * lotes_h
@@ -19817,6 +19840,7 @@ def debug_consumo_mp(codigo_mp):
                 tomado = max(cal_g, shop_g)
                 horizonte_g[h] = {
                     'lotes_calendar': lotes_h,
+                    'kg_calendar': round(kg_h, 1),
                     'calendar_g': round(cal_g, 1),
                     'shopify_g': round(shop_g, 1),
                     'tomado_max_g': round(tomado, 1),
