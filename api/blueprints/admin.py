@@ -187,6 +187,27 @@ def animus_prioridad_agotamiento():
                 'stock_actual': max(0, int(r['stock_u'])),
             }
 
+        # 1b. Frescura del último sync Shopify (Sebastián 12-may-2026)
+        # Lee MAX(fecha_produccion) de filas SHOPIFY-*. El cron diario corre
+        # 5:30am · si la fecha es hoy = sync fresco, si es de >2 días = alerta.
+        stock_sync_fecha = None
+        stock_sync_dias_atras = None
+        try:
+            row = c.execute("""
+                SELECT MAX(fecha_produccion) AS f
+                FROM stock_pt
+                WHERE lote_produccion LIKE 'SHOPIFY-%' AND empresa = 'ANIMUS'
+            """).fetchone()
+            if row and row['f']:
+                stock_sync_fecha = str(row['f'])
+                try:
+                    f = _date.fromisoformat(stock_sync_fecha[:10])
+                    stock_sync_dias_atras = (hoy - f).days
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
         # 2. Ventas últimos N días por SKU desde animus_shopify_orders
         ventas_por_sku = {}
         import json as _json
@@ -384,6 +405,8 @@ def animus_prioridad_agotamiento():
                 'ventana_ventas_dias': ventana,
                 'cobertura_objetivo_dias': cobertura,
                 'fecha': hoy.isoformat(),
+                'stock_sync_fecha': stock_sync_fecha,
+                'stock_sync_dias_atras': stock_sync_dias_atras,
             },
             'resumen': resumen,
             'skus': skus_out,

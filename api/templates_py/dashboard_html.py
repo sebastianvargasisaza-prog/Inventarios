@@ -12708,7 +12708,8 @@ async function ckMarcar(itemId, estado){
   // ────────────────────────────────────────────────────────────────────────
   function _apaEscHTML(s){return String(s===null||s===undefined?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;');}
   function _apaFmtN(n,d){if(n===null||n===undefined)return '—';return Number(n).toLocaleString('es-CO',{maximumFractionDigits:d||0});}
-  function _apaFmtG(g){if(g===null||g===undefined)return '—';if(Math.abs(g)>=1000)return (g/1000).toFixed(1)+' kg';return Math.round(g)+' g';}
+  // Sebastian 12-may-2026: regla Alejandro · MPs SIEMPRE en gramos con separador miles · NUNCA convertir a kg
+  function _apaFmtG(g){if(g===null||g===undefined)return '—';return Math.round(g).toLocaleString('es-CO')+' g';}
   function _apaUrgenciaColor(u){
     return {CRITICO:'#dc2626',ALTA:'#ea580c',MEDIA:'#d97706',BAJA:'#0e7490',OK:'#15803d',SIN_USO:'#64748b'}[u]||'#64748b';
   }
@@ -12751,6 +12752,7 @@ async function ckMarcar(itemId, estado){
         return;
       }
       var res = d.resumen || {};
+      var params = d.parametros || {};
       if(resumen){
         var partes = [];
         partes.push((res.n_skus||0)+' SKUs');
@@ -12762,7 +12764,21 @@ async function ckMarcar(itemId, estado){
         if(res.n_sin_uso) partes.push('⚪ '+res.n_sin_uso+' sin uso');
         partes.push((res.kg_total_a_producir||0).toFixed(1)+' kg a producir');
         partes.push(res.n_mps_faltantes+' MPs faltantes');
-        resumen.innerHTML = partes.map(_apaEscHTML).join(' · ');
+        // Frescura del sync Shopify (Sebastián 12-may-2026)
+        var syncTxt = '';
+        var dAtras = params.stock_sync_dias_atras;
+        if(dAtras === null || dAtras === undefined){
+          syncTxt = '⚠️ Stock nunca sincronizado · clickea 🔄 Sync Shopify';
+        } else if(dAtras === 0){
+          syncTxt = '📡 Stock sincronizado hoy';
+        } else if(dAtras === 1){
+          syncTxt = '📡 Stock sincronizado ayer';
+        } else if(dAtras <= 2){
+          syncTxt = '📡 Stock sincronizado hace '+dAtras+' días';
+        } else {
+          syncTxt = '⚠️ Stock desactualizado · hace '+dAtras+' días';
+        }
+        resumen.innerHTML = partes.map(_apaEscHTML).join(' · ') + '<br><span style="color:'+(dAtras>2||dAtras===null?'#dc2626':'#0f766e')+';font-weight:700">'+_apaEscHTML(syncTxt)+'</span>';
       }
       var skus = d.skus || [];
       var mps = d.mps_necesarias || [];
