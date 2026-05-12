@@ -111,6 +111,268 @@ def admin_backup_now():
     return jsonify(result), 500
 
 
+@bp.route("/api/admin/animus-prioridad-agotamiento", methods=["GET"])
+def animus_prioridad_agotamiento():
+    """Listado de SKUs Ánimus priorizado por días de agotamiento + MPs derivadas.
+
+    Sebastián 12-may-2026: pivote estratégico · olvidar Calendar como fuente
+    de programación · usar realidad de mercado:
+      - Velocidad de venta Shopify (últimos N días)
+      - Stock disponible actual (baseline + entradas - ventas - salidas)
+      - Días para agotamiento = stock / velocidad
+      - Priorización por urgencia · cuanto menos días, más urgente
+
+    Para cada SKU urgente, calcula MPs necesarias a través de la fórmula
+    maestra (sku_producto_map → formula_items × % × ml_por_unidad).
+
+    Query:
+      ventana_ventas: int 30-180 (default 60) · período para calcular velocidad
+      cobertura_objetivo: int 14-90 (default 30) · días que queremos cubrir
+
+    Returns:
+      {
+        skus: [{sku, descripcion, stock_actual, ventas_N_d, velocidad_uds_dia,
+                dias_cobertura, urgencia, producto_base, ml_unidad,
+                kg_recomendado_producir, recomendar_producir_kg}],
+        mps_necesarias: [{codigo_mp, nombre, proveedor, stock_actual_g,
+                           necesario_g, faltante_g, urgencia}],
+        resumen: {n_skus, n_criticos, n_alta, n_media, n_baja, n_sin_uso}
+      }
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    try:
+        ventana = int(request.args.get('ventana_ventas', 60))
+        if ventana < 30: ventana = 30
+        if ventana > 180: ventana = 180
+    except Exception:
+        ventana = 60
+    try:
+        cobertura = int(request.args.get('cobertura_objetivo', 30))
+        if cobertura < 14: cobertura = 14
+        if cobertura > 90: cobertura = 90
+    except Exception:
+        cobertura = 30
+
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA busy_timeout=2000")
+    c = conn.cursor()
+    try:
+        from datetime import date as _date, timedelta as _td
+        import re as _re
+
+        hoy = _date.today()
+        ventana_desde = (hoy - _td(days=ventana)).isoformat()
+
+        # 1. Stock actual por SKU = baseline + entradas/ajustes - salidas/ventas
+        stock_por_sku = {}
+        for r in c.execute("""
+            SELECT b.sku,
+                   COALESCE(b.descripcion, '') AS descripcion,
+                   COALESCE(b.unidades_baseline, 0) AS baseline_u,
+                   COALESCE((
+                     SELECT SUM(cantidad) FROM animus_inventario_movimientos m
+                     WHERE m.sku = b.sku
+                       AND m.fecha >= b.fecha_baseline
+                       AND m.tipo IN ('ENTRADA', 'AJUSTE', 'CONTEO')
+                   ), 0) AS entradas_u,
+                   COALESCE((
+                     SELECT SUM(cantidad) FROM animus_inventario_movimientos m
+                     WHERE m.sku = b.sku
+                       AND m.fecha >= b.fecha_baseline
+                       AND m.tipo IN ('SALIDA', 'SHOPIFY_VENTA')
+                   ), 0) AS salidas_u
+            FROM animus_inventario_baseline b
+        """).fetchall():
+            stock_actual = int(r['baseline_u']) + int(r['entradas_u']) - int(r['salidas_u'])
+            stock_por_sku[r['sku'].upper()] = {
+                'descripcion': r['descripcion'],
+                'stock_actual': max(0, stock_actual),
+            }
+
+        # 2. Ventas últimos N días por SKU desde animus_shopify_orders
+        ventas_por_sku = {}
+        import json as _json
+        for r in c.execute("""
+            SELECT sku_items FROM animus_shopify_orders
+            WHERE date(creado_en) >= ?
+              AND sku_items IS NOT NULL AND sku_items != ''
+        """, (ventana_desde,)).fetchall():
+            try:
+                items = _json.loads(r['sku_items']) if r['sku_items'] else []
+            except Exception:
+                continue
+            for it in items:
+                sku = str(it.get('sku', '') or '').strip().upper()
+                qty = int(it.get('qty', 0) or 0)
+                if sku and qty > 0:
+                    ventas_por_sku[sku] = ventas_por_sku.get(sku, 0) + qty
+
+        # 3. SKU → producto + ml
+        def _extraer_ml(nombre):
+            if not nombre: return 30.0
+            m = _re.search(r'(\d+(?:\.\d+)?)\s*(?:ml|g\b)', (nombre or '').lower())
+            return float(m.group(1)) if m else 30.0
+        sku_to_prod = {}
+        for r in c.execute("""
+            SELECT sku, producto_nombre FROM sku_producto_map
+            WHERE COALESCE(activo, 1) = 1
+        """).fetchall():
+            sku_to_prod[r['sku'].upper()] = r['producto_nombre']
+
+        # 4. Producto → unidad_base_g + items de fórmula
+        prod_to_ub = {}
+        for r in c.execute(
+            "SELECT producto_nombre, COALESCE(unidad_base_g, 1000) FROM formula_headers"
+        ).fetchall():
+            prod_to_ub[r[0]] = float(r[1] or 1000)
+        prod_to_items = {}
+        for r in c.execute("""
+            SELECT producto_nombre, material_id, COALESCE(material_nombre, '') AS nombre,
+                   COALESCE(porcentaje, 0) AS pct
+            FROM formula_items
+            WHERE material_id IS NOT NULL AND TRIM(material_id) != ''
+              AND COALESCE(porcentaje, 0) > 0
+        """).fetchall():
+            prod_to_items.setdefault(r['producto_nombre'], []).append({
+                'material_id': r['material_id'],
+                'nombre': r['nombre'][:60],
+                'pct': float(r['pct']),
+            })
+
+        # 5. Stock actual MPs
+        mp_stock = {}
+        for r in c.execute("""
+            SELECT material_id, SUM(
+                CASE WHEN tipo='Entrada' THEN cantidad
+                     WHEN tipo='Salida' THEN -cantidad
+                     ELSE 0 END
+            ) AS stock_g
+            FROM movimientos
+            WHERE material_id IS NOT NULL AND TRIM(material_id) != ''
+            GROUP BY material_id
+        """).fetchall():
+            mp_stock[r['material_id']] = float(r['stock_g'] or 0)
+
+        mp_info = {}
+        for r in c.execute("""
+            SELECT codigo_mp,
+                   COALESCE(nombre_comercial, nombre_inci, '') AS nombre,
+                   COALESCE(proveedor, '') AS proveedor
+            FROM maestro_mps WHERE COALESCE(activo, 1) = 1
+        """).fetchall():
+            mp_info[r['codigo_mp']] = {
+                'nombre': r['nombre'][:60],
+                'proveedor': r['proveedor'][:40],
+            }
+
+        # 6. Compute por SKU
+        skus_out = []
+        mp_necesario_g = {}  # codigo_mp → necesario_g acumulado
+        for sku, stk in stock_por_sku.items():
+            ventas_n = int(ventas_por_sku.get(sku, 0))
+            velocidad = ventas_n / float(ventana)
+            stock_u = int(stk['stock_actual'])
+            dias_cobertura = (stock_u / velocidad) if velocidad > 0 else 9999.0
+
+            # Urgencia
+            if velocidad <= 0.001:
+                urgencia = 'SIN_USO'
+            elif dias_cobertura < 7:
+                urgencia = 'CRITICO'
+            elif dias_cobertura < 14:
+                urgencia = 'ALTA'
+            elif dias_cobertura < cobertura:
+                urgencia = 'MEDIA'
+            elif dias_cobertura < 90:
+                urgencia = 'BAJA'
+            else:
+                urgencia = 'OK'
+
+            # Cantidad recomendada a producir = lo que cubre `cobertura` dias
+            uds_recomendar = max(0, int(velocidad * cobertura) - stock_u)
+            producto_base = sku_to_prod.get(sku, '')
+            ml = _extraer_ml(producto_base) if producto_base else 30.0
+            kg_recomendar = round((uds_recomendar * ml) / 1000.0, 2) if uds_recomendar > 0 else 0
+
+            # Sumar MPs necesarias si recomendamos producir
+            if urgencia in ('CRITICO', 'ALTA', 'MEDIA') and producto_base and kg_recomendar > 0:
+                items_f = prod_to_items.get(producto_base, [])
+                for it in items_f:
+                    g_mp = (it['pct'] / 100.0) * (kg_recomendar * 1000)
+                    mp_necesario_g[it['material_id']] = (
+                        mp_necesario_g.get(it['material_id'], 0) + g_mp
+                    )
+
+            skus_out.append({
+                'sku': sku,
+                'descripcion': stk['descripcion'],
+                'producto_base': producto_base,
+                'stock_actual_u': stock_u,
+                'ventas_periodo_u': ventas_n,
+                'velocidad_uds_dia': round(velocidad, 2),
+                'dias_cobertura': round(dias_cobertura, 1) if velocidad > 0 else None,
+                'urgencia': urgencia,
+                'ml_unidad': ml,
+                'kg_a_producir_para_cobertura': kg_recomendar,
+                'uds_a_producir': uds_recomendar,
+            })
+
+        # Ordenar por urgencia + días cobertura asc (menos días = primero)
+        ORDEN = {'CRITICO': 0, 'ALTA': 1, 'MEDIA': 2, 'BAJA': 3, 'OK': 4, 'SIN_USO': 5}
+        skus_out.sort(key=lambda x: (
+            ORDEN.get(x['urgencia'], 9),
+            x['dias_cobertura'] if x['dias_cobertura'] is not None else 99999,
+        ))
+
+        # 7. MPs necesarias agregadas
+        mps_out = []
+        for mid, nec_g in mp_necesario_g.items():
+            stock_g = mp_stock.get(mid, 0)
+            faltante_g = max(0, nec_g - stock_g)
+            info = mp_info.get(mid, {'nombre': '', 'proveedor': ''})
+            mps_out.append({
+                'codigo_mp': mid,
+                'nombre': info['nombre'],
+                'proveedor': info['proveedor'],
+                'stock_actual_g': round(stock_g, 1),
+                'necesario_g': round(nec_g, 1),
+                'faltante_g': round(faltante_g, 1),
+                'urgencia': 'ALTA' if faltante_g > 0 else 'OK',
+            })
+        mps_out.sort(key=lambda x: -x['faltante_g'])
+
+        resumen = {
+            'n_skus': len(skus_out),
+            'n_critico': sum(1 for s in skus_out if s['urgencia'] == 'CRITICO'),
+            'n_alta': sum(1 for s in skus_out if s['urgencia'] == 'ALTA'),
+            'n_media': sum(1 for s in skus_out if s['urgencia'] == 'MEDIA'),
+            'n_baja': sum(1 for s in skus_out if s['urgencia'] == 'BAJA'),
+            'n_ok': sum(1 for s in skus_out if s['urgencia'] == 'OK'),
+            'n_sin_uso': sum(1 for s in skus_out if s['urgencia'] == 'SIN_USO'),
+            'n_mps_faltantes': sum(1 for m in mps_out if m['faltante_g'] > 0),
+            'kg_total_a_producir': round(sum(s['kg_a_producir_para_cobertura'] for s in skus_out), 2),
+        }
+
+        return jsonify({
+            'ok': True,
+            'parametros': {
+                'ventana_ventas_dias': ventana,
+                'cobertura_objetivo_dias': cobertura,
+                'fecha': hoy.isoformat(),
+            },
+            'resumen': resumen,
+            'skus': skus_out,
+            'mps_necesarias': mps_out,
+        }), 200
+    finally:
+        try: conn.close()
+        except Exception: pass
+
+
 @bp.route("/api/admin/cron-db-integrity-check", methods=["POST", "GET"])
 def cron_db_integrity_check():
     """Cron diario · corre PRAGMA quick_check + registra en db_health_log.
