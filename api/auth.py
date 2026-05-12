@@ -7,11 +7,47 @@ from datetime import datetime
 
 from flask import request, session, redirect, jsonify
 
-from config import DB_PATH
+from config import DB_PATH, ADMIN_USERS
 
 # ── Rate limiter persistente (SQLite — multi-worker safe) ────────────────────
 _MAX_ATTEMPTS = 5
 _LOCKOUT_SECS = 900   # 15 minutos
+
+
+# ── MFA enforcement helpers ─────────────────────────────────────────────────
+def _user_has_mfa_active(username):
+    """True si el usuario tiene MFA TOTP activado.
+
+    Query directa contra users_mfa para evitar circular import con blueprints/mfa.
+    """
+    if not username:
+        return False
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute("PRAGMA busy_timeout=2000")
+    try:
+        row = conn.execute(
+            "SELECT enabled FROM users_mfa WHERE username=?",
+            (username,)
+        ).fetchone()
+        return bool(row and row[0])
+    except sqlite3.OperationalError:
+        # Tabla users_mfa aún no creada (migración pendiente) → no bloquear.
+        return False
+    finally:
+        conn.close()
+
+
+# Paths exentos del bloqueo MFA: login, logout, setup MFA, health, csrf, static.
+# Cualquier admin sin MFA puede acceder a estos para poder activar su MFA.
+MFA_EXEMPT_PATHS = {
+    '/', '/login', '/logout',
+    '/api/login', '/api/logout',
+    '/api/health', '/api/health/debug', '/api/csrf-token',
+    '/api/mfa/status', '/api/mfa/setup', '/api/mfa/verify-setup',
+    '/login/mfa', '/login/mfa-backup',
+    '/seguridad', '/seguridad/mfa',  # paginas HTML de setup
+}
+MFA_EXEMPT_PREFIXES = ('/static/', '/favicon')
 
 
 def _client_ip():
@@ -210,6 +246,51 @@ def register_hooks(app):
             return
         if not session.get('compras_user'):
             return jsonify({'error': 'No autorizado. Inicia sesion primero.'}), 401
+
+    @app.before_request
+    def enforce_mfa_for_admins():
+        """Bloquea acciones de usuarios ADMIN_USERS si no tienen MFA activado.
+
+        Política:
+        - Admin sin MFA puede LEER (GET) y navegar para llegar al setup MFA.
+        - Admin sin MFA NO puede ejecutar mutaciones (POST/PUT/DELETE/PATCH)
+          excepto endpoints del propio setup MFA.
+        - Bandera session['mfa_warning']=True para banner UI.
+
+        Why: phishing de password de admin con MFA = compromiso total del holding
+        (Espagiria, Animus, EOS). MFA es P0 según audit zero-error 30-abr-2026.
+        """
+        # Testing mode: el test client no autentica con MFA real; bypass.
+        # En prod (app.testing=False) sí aplica.
+        if app.testing or os.environ.get('PYTEST_CURRENT_TEST'):
+            return
+        user = session.get('compras_user')
+        if not user or user not in ADMIN_USERS:
+            return  # No es admin → no aplica
+        if _user_has_mfa_active(user):
+            session.pop('mfa_warning', None)
+            return  # Tiene MFA activo → OK
+        # Admin sin MFA: marcar warning para banner en HTML
+        session['mfa_warning'] = True
+        # Permitir paths exentos (setup MFA, navegación lectora)
+        if request.path in MFA_EXEMPT_PATHS:
+            return
+        if any(request.path.startswith(p) for p in MFA_EXEMPT_PREFIXES):
+            return
+        # Bloquear mutaciones API para admin sin MFA
+        if request.method in {'POST', 'PUT', 'DELETE', 'PATCH'} \
+                and request.path.startswith('/api/'):
+            _log_sec("mfa_required_blocked", user, _client_ip(),
+                     f"path={request.path} method={request.method}")
+            return jsonify({
+                'error': 'mfa_required',
+                'message': 'Como administrador debes activar MFA antes de '
+                           'ejecutar acciones que modifican datos.',
+                'redirect': '/seguridad',
+                'hint': 'Ve a /seguridad para configurar MFA con tu app '
+                        'authenticator (Google Authenticator, Authy, 1Password).'
+            }), 403
+        # GET y otros métodos seguros: dejar pasar (con banner UI)
 
     # ── CSRF protection light: Origin/Referer check + token ──────────────────
     # Defense in depth con 2 capas independientes:

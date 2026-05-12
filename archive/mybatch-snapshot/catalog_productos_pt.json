@@ -1,0 +1,33 @@
+{
+  "generated_at": "2026-05-12",
+  "source": "https://esparigia-mybatch-907403675147.us-east4.run.app/productionorder/add/ (dropdown product_formulation)",
+  "total": 26,
+  "productos": [
+    {"codigo": "PT-TRX-30-001",          "nombre": "Suero Iluminador Trx",                      "lote_std_g": 250000},
+    {"codigo": "PT-ESEILUM-30-001",      "nombre": "Esencia Iluminadora",                       "lote_std_g": 250000},
+    {"codigo": "PT-NIA-30-001",          "nombre": "Suero de Niacinamida 5%",                   "lote_std_g": 250000},
+    {"codigo": "PT-EMLIMP-1200-001",     "nombre": "Emulsion Limpiadora",                       "lote_std_g": 250000},
+    {"codigo": "PT-CCAFEINA-10-001",     "nombre": "Contorno de Cafeína",                       "lote_std_g": 250000},
+    {"codigo": "PT-SAH-30-001",          "nombre": "Suero Hidratante AH 1,5%",                  "lote_std_g": 400000},
+    {"codigo": "PT-BLUSH BALM-6",        "nombre": "Blush Balm",                                "lote_std_g": 250000},
+    {"codigo": "PT-BOOSTER-001",         "nombre": "Booster Tensor",                            "lote_std_g": 400000},
+    {"codigo": "PT-LIMILUM-150-001",     "nombre": "Limpiador Iluminador",                      "lote_std_g": 400000},
+    {"codigo": "PT-LKJ-100-001",         "nombre": "Limpiador Iluminador Ácido Kójico",         "lote_std_g": 250000},
+    {"codigo": "PT-LIMPAH-30-001",       "nombre": "Limpiador Facial Hidratante",               "lote_std_g": 250000},
+    {"codigo": "PT-LIMBHA-100-001",      "nombre": "Limpiador Facial BHA 2%",                   "lote_std_g": 250000},
+    {"codigo": "PT-RENOVABODY-120-001",  "nombre": "Crema Corporal Renova Body",                "lote_std_g": 250000},
+    {"codigo": "PT-SMULTIP-30-001",      "nombre": "Suero Multipéptidos",                       "lote_std_g": 250000},
+    {"codigo": "PT-VITC-30-001",         "nombre": "Suero Vitamina C+",                         "lote_std_g": 400000},
+    {"codigo": "PT-B3+BHA-50-001",       "nombre": "Emulsion Hidratante B3+BHA",                "lote_std_g": 400000},
+    {"codigo": "PT-RENOVAC10-30-001",    "nombre": "Suero Antioxidante Renova C10",             "lote_std_g": 400000},
+    {"codigo": "PT-LIPVOL-10-001",       "nombre": "LIP SERUM VOLUMINIZADOR CON PÉPTIDOS NF",   "lote_std_g": 250000},
+    {"codigo": "PT-CONTMULTIP-15-001",   "nombre": "Contorno de Ojos Multipeptidos",            "lote_std_g": 400000},
+    {"codigo": "PT-TRIACTIVE-30-001",    "nombre": "Triactive Retinoid + NAD",                  "lote_std_g": 400000},
+    {"codigo": "PT-EMLIMP-150-001",      "nombre": "EMULSION LIMPIADORA NF",                    "lote_std_g": 400000},
+    {"codigo": "PT-PHA-30-001",          "nombre": "Suero Exfoliante Nova Pha",                 "lote_std_g": 400000},
+    {"codigo": "PT-CONTRETINAL-15-001",  "nombre": "Contorno de Retinaldehido 0,05%",           "lote_std_g": 250000},
+    {"codigo": "PT-AZHYBRID-15-001",     "nombre": "AZ Hybrid Clear",                           "lote_std_g": 400000},
+    {"codigo": "PT-GHIDRA-50-002",       "nombre": "GEL HIDRATANTE NF",                         "lote_std_g": 400000},
+    {"codigo": "PT-EHILUM-150-001",      "nombre": "EMULSIÓN HIDRATANTE ILUMINADORA NF",        "lote_std_g": 400000}
+  ]
+}
