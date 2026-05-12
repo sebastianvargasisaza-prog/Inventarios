@@ -285,16 +285,96 @@ def handle_formulas():
     conn = get_db()
     c = conn.cursor()
     if request.method == 'POST':
-        data = request.json
-        prod = data['producto_nombre']
-        c.execute('INSERT OR REPLACE INTO formula_headers (producto_nombre, unidad_base_g, descripcion, fecha_creacion) VALUES (?,?,?,?)',
-                  (prod, data.get('unidad_base_g', 1000), data.get('descripcion', ''), datetime.now().isoformat()))
-        c.execute('DELETE FROM formula_items WHERE producto_nombre=?', (prod,))
-        for item in data.get('items', []):
-            c.execute('INSERT INTO formula_items (producto_nombre, material_id, material_nombre, porcentaje) VALUES (?,?,?,?)',
-                      (prod, item['material_id'], item['material_nombre'], item['porcentaje']))
-        conn.commit()
-        return jsonify({'message': f'Formula de {prod} guardada exitosamente'}), 201
+        # Sebastián 12-may-2026: bugs criticos resueltos:
+        #   1. INSERT items olvidaba cantidad_g_por_lote → fórmulas quedaban
+        #      GPL_NO_SEMBRADO. Ahora calcula automaticamente.
+        #   2. Trigger FK (mig 98) podia abortar items con material_id sin
+        #      registrar en maestro_mps activo. Antes 500 sin rollback ·
+        #      header zombie + items vacios. Ahora rollback + 400 + detalle.
+        #   3. Tambien sembramos lote_size_kg = unidad_base_g/1000.
+        data = request.json or {}
+        prod = (data.get('producto_nombre') or '').strip()
+        if not prod:
+            return jsonify({'error': 'producto_nombre vacío'}), 400
+        try:
+            unidad_base_g = float(data.get('unidad_base_g', 1000) or 1000)
+        except (ValueError, TypeError):
+            return jsonify({'error': 'unidad_base_g debe ser numérico'}), 400
+        if unidad_base_g <= 0:
+            return jsonify({'error': 'unidad_base_g debe ser > 0'}), 400
+        lote_size_kg = round(unidad_base_g / 1000.0, 3)
+        items_input = data.get('items', [])
+        if not items_input:
+            return jsonify({'error': 'items vacío'}), 400
+
+        # Validar items antes del INSERT (mejor rechazar early que rollback)
+        items_validados = []
+        for it in items_input:
+            mid = (it.get('material_id') or '').strip()
+            nm = (it.get('material_nombre') or '').strip()
+            try:
+                pct = float(it.get('porcentaje', 0) or 0)
+            except (ValueError, TypeError):
+                pct = 0
+            if not mid or not nm or pct <= 0:
+                continue
+            # Validar que material_id existe en maestro_mps activo (FK preview)
+            row = c.execute(
+                "SELECT 1 FROM maestro_mps WHERE codigo_mp=? AND activo=1",
+                (mid,)
+            ).fetchone()
+            if not row:
+                return jsonify({
+                    'error': f'MP no existe o está inactiva: {mid}',
+                    'detalle': (f'La MP "{mid}" ({nm}) no está registrada en '
+                                'maestro_mps con activo=1. Créala primero en '
+                                'Bodega MP antes de usarla en una fórmula.'),
+                    'material_id_invalido': mid,
+                }), 400
+            # cantidad_g_por_lote = (pct/100) × unidad_base_g
+            gpl = round((pct / 100.0) * unidad_base_g, 2)
+            items_validados.append({
+                'material_id': mid,
+                'material_nombre': nm,
+                'porcentaje': pct,
+                'cantidad_g_por_lote': gpl,
+            })
+        if not items_validados:
+            return jsonify({'error': 'items todos inválidos (id, nombre y porcentaje>0 requeridos)'}), 400
+
+        try:
+            c.execute(
+                """INSERT OR REPLACE INTO formula_headers
+                   (producto_nombre, unidad_base_g, lote_size_kg, descripcion, fecha_creacion)
+                   VALUES (?,?,?,?,?)""",
+                (prod, unidad_base_g, lote_size_kg, data.get('descripcion', ''),
+                 datetime.now().isoformat())
+            )
+            c.execute('DELETE FROM formula_items WHERE producto_nombre=?', (prod,))
+            for it in items_validados:
+                c.execute(
+                    """INSERT INTO formula_items
+                       (producto_nombre, material_id, material_nombre,
+                        porcentaje, cantidad_g_por_lote)
+                       VALUES (?,?,?,?,?)""",
+                    (prod, it['material_id'], it['material_nombre'],
+                     it['porcentaje'], it['cantidad_g_por_lote'])
+                )
+            conn.commit()
+            return jsonify({
+                'message': f'Fórmula de {prod} guardada · {len(items_validados)} items',
+                'producto': prod,
+                'unidad_base_g': unidad_base_g,
+                'lote_size_kg': lote_size_kg,
+                'items_count': len(items_validados),
+            }), 201
+        except Exception as e:
+            try: conn.rollback()
+            except Exception: pass
+            return jsonify({
+                'error': 'Falla guardando fórmula',
+                'detalle': str(e)[:300],
+            }), 500
     c.execute('SELECT producto_nombre, unidad_base_g, descripcion, fecha_creacion FROM formula_headers ORDER BY producto_nombre')
     headers = c.fetchall()
     formulas = []

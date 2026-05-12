@@ -3182,13 +3182,31 @@ async function guardarFormula(){
     if(id&&nm&&pc>0) items.push({material_id:id,material_nombre:nm,porcentaje:pc});
   });
   if(!items.length){alert('Agrega al menos un ingrediente');return;}
+  // Sebastián 12-may-2026: bug critico · antes mostraba "alert-success" siempre
+  // aunque el POST devolviera 400 (FK violation por material_id sin registrar
+  // en maestro_mps activo, etc). Luis Enrique creía que guardaba pero la BD
+  // nunca recibía el INSERT. Ahora chequea r.ok y muestra error real.
   try{
     var r=await fetch('/api/formulas',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({producto_nombre:prod,unidad_base_g:base,descripcion:desc,items:items})});
     var res=await r.json();
-    document.getElementById('formula-msg').innerHTML='<div class="alert-success">'+_escHTML(res.message)+'</div>';
+    if(!r.ok){
+      var msg='<div class="alert-error"><b>&#x274C; No se guardó la fórmula</b>';
+      msg+='<div style="margin-top:6px;font-size:13px;">'+_escHTML(res.error||'Error desconocido')+'</div>';
+      if(res.detalle){ msg+='<div style="margin-top:4px;font-size:12px;color:#7f1d1d;">'+_escHTML(res.detalle)+'</div>'; }
+      if(res.material_id_invalido){
+        msg+='<div style="margin-top:8px;font-size:12px;color:#7f1d1d;">';
+        msg+='&#x2192; MP <b>'+_escHTML(res.material_id_invalido)+'</b> no existe en el catálogo o está inactiva.';
+        msg+='Crea la MP primero en <b>Bodega MP</b> antes de usarla en una fórmula.</div>';
+      }
+      msg+='</div>';
+      document.getElementById('formula-msg').innerHTML=msg;
+      alert('❌ No se guardó la fórmula:\\n\\n'+(res.error||'')+(res.detalle?'\\n\\n'+res.detalle:''));
+      return;
+    }
+    document.getElementById('formula-msg').innerHTML='<div class="alert-success">&#x2705; '+_escHTML(res.message||'Fórmula guardada')+'</div>';
     await loadFormulas();
     setTimeout(function(){document.getElementById('formula-msg').innerHTML='';},3000);
-  }catch(e){document.getElementById('formula-msg').innerHTML='<div class="alert-error">Error: '+_escHTML(e.message)+'</div>';}
+  }catch(e){document.getElementById('formula-msg').innerHTML='<div class="alert-error">Error red: '+_escHTML(e.message)+'</div>';}
 }
 
 function editFormula(idx){

@@ -4439,3 +4439,68 @@ def test_golden_aplicar_minimos_no_baja(app, db_clean):
 
     finally:
         _exec("DELETE FROM maestro_mps WHERE codigo_mp=?", (mp,))
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 96 · POST /api/formulas siembra cantidad_g_por_lote + FK check
+# ═══════════════════════════════════════════════════════════════════
+# Sebastián 12-may-2026: Luis Enrique crea fórmulas pero quedaban como
+# GPL_NO_SEMBRADO porque endpoint olvidaba cantidad_g_por_lote. Y si
+# usaba una MP sin registrar en maestro_mps activo, antes 500 + header
+# zombie. Ahora rollback + 400 con detalle.
+def test_golden_post_formula_completa(app, db_clean):
+    """POST /api/formulas guarda con gpl + valida FK material_id."""
+    cs = _login(app, 'sebastian')
+    prod = 'GP96-PROD-NEW'
+    mp_valido = 'GP96-MP-VALID'
+    mp_invalido = 'GP96-MP-NOEXISTE'
+    try:
+        _exec("""INSERT OR REPLACE INTO maestro_mps
+                  (codigo_mp, nombre_comercial, activo, tipo_material)
+                  VALUES (?, 'GP96 valido', 1, 'MP')""", (mp_valido,))
+
+        # Caso 1: fórmula válida · debe sembrar cantidad_g_por_lote
+        r = cs.post('/api/formulas', json={
+            'producto_nombre': prod,
+            'unidad_base_g': 30000,
+            'items': [{'material_id': mp_valido, 'material_nombre': 'MP valida',
+                        'porcentaje': 20.0}],
+        }, headers=csrf_headers())
+        assert r.status_code == 201, f'BUG: status {r.status_code} body {r.data}'
+        d = r.get_json()
+        assert d.get('items_count') == 1
+        assert d.get('lote_size_kg') == 30.0
+        # cantidad_g_por_lote = 20% × 30000 = 6000
+        row = _query(
+            "SELECT cantidad_g_por_lote FROM formula_items WHERE producto_nombre=?",
+            (prod,)
+        )
+        assert row and row[0][0] == 6000, \
+            f'BUG: cantidad_g_por_lote debió ser 6000 · got {row[0][0] if row else None}'
+
+        # Verificar header
+        head = _query("SELECT unidad_base_g, lote_size_kg FROM formula_headers WHERE producto_nombre=?",
+                       (prod,))
+        assert head[0][0] == 30000 and abs(head[0][1] - 30.0) < 0.001
+
+        # Caso 2: MP que no existe · 400 + sin zombie header
+        _exec("DELETE FROM formula_items WHERE producto_nombre=?", (prod,))
+        _exec("DELETE FROM formula_headers WHERE producto_nombre=?", (prod,))
+        r2 = cs.post('/api/formulas', json={
+            'producto_nombre': prod,
+            'unidad_base_g': 30000,
+            'items': [{'material_id': mp_invalido, 'material_nombre': 'No existe',
+                        'porcentaje': 50.0}],
+        }, headers=csrf_headers())
+        assert r2.status_code == 400, f'BUG: esperaba 400 · {r2.status_code}'
+        d2 = r2.get_json()
+        assert 'material_id_invalido' in d2, f'falta material_id_invalido en respuesta: {d2}'
+        assert d2['material_id_invalido'] == mp_invalido
+        # No debe haber header zombie
+        hzombie = _query("SELECT 1 FROM formula_headers WHERE producto_nombre=?", (prod,))
+        assert not hzombie, 'BUG: header zombie creado tras fallo de FK'
+
+    finally:
+        _exec("DELETE FROM formula_items WHERE producto_nombre=?", (prod,))
+        _exec("DELETE FROM formula_headers WHERE producto_nombre=?", (prod,))
+        _exec("DELETE FROM maestro_mps WHERE codigo_mp=?", (mp_valido,))
