@@ -520,7 +520,36 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
             "kg_total": round(float(r[2] or 0), 2),
             "proximas_fechas": fechas[:3],
         }
-    # Inyectar en cada producto
+
+    # 8. Última producción COMPLETADA por producto (para el horizonte)
+    # Sebastián 13-may-2026: "ya producido + que diga si se hizo tal día
+    # y tanto alcanzará para tantos días + próxima sugerida".
+    ultima_prod = {}
+    for r in c.execute(
+        """SELECT producto, MAX(fecha_programada) AS f
+           FROM produccion_programada
+           WHERE fin_real_at IS NOT NULL
+             AND COALESCE(kg_real, cantidad_kg, 0) > 0
+           GROUP BY producto""",
+    ).fetchall():
+        ultima_prod[r[0]] = {"fecha": r[1]}
+    # Obtener kg de esa última (separadamente para evitar GROUP BY con MAX(fecha)
+    # pero kg de otra fila)
+    for prod, info in ultima_prod.items():
+        row = c.execute(
+            """SELECT COALESCE(kg_real, cantidad_kg, 0)
+               FROM produccion_programada
+               WHERE producto = ?
+                 AND fin_real_at IS NOT NULL
+                 AND fecha_programada = ?
+               ORDER BY id DESC LIMIT 1""",
+            (prod, info["fecha"]),
+        ).fetchone()
+        info["kg"] = round(float(row[0] or 0), 2) if row else 0.0
+
+    # Inyectar lotes pendientes + horizonte en cada producto
+    from datetime import date as _date, timedelta as _td
+    hoy = _date.today()
     for p in out:
         info = lotes_pendientes.get(p["producto_nombre"])
         if info:
@@ -531,6 +560,41 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
             p["lotes_pendientes_n"] = 0
             p["lotes_pendientes_kg"] = 0.0
             p["lotes_pendientes_proximas_fechas"] = []
+
+        # Horizonte: última producción completada + cálculo próxima sugerida
+        up = ultima_prod.get(p["producto_nombre"])
+        if up and up["fecha"]:
+            p["ultima_produccion_fecha"] = up["fecha"]
+            p["ultima_produccion_kg"] = up["kg"]
+            try:
+                f = _date.fromisoformat(up["fecha"][:10])
+                p["dias_desde_ultima"] = (hoy - f).days
+            except Exception:
+                p["dias_desde_ultima"] = None
+            # Duración estimada del lote producido (kg / velocidad_kg_día)
+            if p["velocidad_kg_dia"] > 0 and up["kg"] > 0:
+                dur_dias = int(up["kg"] / p["velocidad_kg_dia"])
+                p["duracion_lote_dias"] = dur_dias
+                try:
+                    f_ini = _date.fromisoformat(up["fecha"][:10])
+                    # Próxima sugerida = última + duración - buffer 25d
+                    proxima = f_ini + _td(days=max(1, dur_dias - cob_alerta))
+                    p["proxima_sugerida_fecha"] = proxima.isoformat()
+                    p["proxima_sugerida_dias"] = (proxima - hoy).days
+                except Exception:
+                    p["proxima_sugerida_fecha"] = None
+                    p["proxima_sugerida_dias"] = None
+            else:
+                p["duracion_lote_dias"] = None
+                p["proxima_sugerida_fecha"] = None
+                p["proxima_sugerida_dias"] = None
+        else:
+            p["ultima_produccion_fecha"] = None
+            p["ultima_produccion_kg"] = 0.0
+            p["dias_desde_ultima"] = None
+            p["duracion_lote_dias"] = None
+            p["proxima_sugerida_fecha"] = None
+            p["proxima_sugerida_dias"] = None
 
     # Ordenar por urgencia + días cobertura ascendente
     ORDEN = {"CRITICO": 0, "URGENTE": 1, "VIGILAR": 2, "OK": 3, "SIN_VENTAS": 4}
@@ -637,3 +701,90 @@ def _valida_fecha_iso(s):
         return True
     except Exception:
         return False
+
+
+@bp.route("/api/plan/registrar-produccion-completada", methods=["POST"])
+def registrar_produccion_completada():
+    """Registra retroactivamente un lote ya producido.
+
+    Sebastián 13-may-2026: "decir ya producido y que diga si se hizo tal
+    día y tanto alcanzará para tantos días". Permite back-fill de
+    producciones reales que ya pasaron · el horizonte de Necesidades usa
+    esa data para calcular "próxima sugerida".
+
+    NO toca movimientos (inventario ya refleja Shopify Available). Solo
+    registra el evento histórico en produccion_programada con
+    estado='completado' + fin_real_at + kg_real.
+
+    Body:
+        producto_nombre: str (FK formula_headers)
+        cantidad_kg_real: float > 0
+        fecha_producida: str YYYY-MM-DD
+        lote: str opcional (auto si no se pasa)
+        notas: str opcional
+
+    Response:
+        201 {ok, id, producto, fecha, kg_real, lote}
+    """
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+
+    body = request.get_json(silent=True) or {}
+    producto = (body.get("producto_nombre") or "").strip()
+    fecha = (body.get("fecha_producida") or "").strip()
+    try:
+        kg = float(body.get("cantidad_kg_real") or 0)
+    except (ValueError, TypeError):
+        return jsonify({"error": "cantidad_kg_real inválida"}), 400
+    lote = (body.get("lote") or "").strip()
+    notas = (body.get("notas") or "").strip()
+
+    if not producto:
+        return jsonify({"error": "producto_nombre requerido"}), 400
+    if not fecha or not _valida_fecha_iso(fecha):
+        return jsonify({"error": "fecha_producida formato YYYY-MM-DD requerido"}), 400
+    if kg <= 0:
+        return jsonify({"error": "cantidad_kg_real debe ser > 0"}), 400
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    if not cur.execute(
+        "SELECT 1 FROM formula_headers WHERE producto_nombre = ?", (producto,),
+    ).fetchone():
+        return jsonify({"error": f"producto '{producto}' no existe"}), 404
+
+    # Auto-generar lote si no se proporciona: PRODSHORT-YYYYMMDD-id
+    if not lote:
+        palabras = (producto or 'PROD').split()[:3]
+        prod_short = ''.join(p[:3].upper() for p in palabras)[:12]
+        lote = f"{prod_short}-{fecha.replace('-','')}"
+
+    cur.execute(
+        """INSERT INTO produccion_programada
+             (producto, fecha_programada, cantidad_kg, lotes, estado,
+              origen, observaciones, inicio_real_at, fin_real_at,
+              kg_real, inventario_descontado_at, creado_en)
+           VALUES (?, ?, ?, 1, 'completado', 'eos_retroactivo', ?,
+                   ?, ?, ?, ?, datetime('now'))""",
+        (producto, fecha, kg,
+         f"LOTE {lote}" + (f" · {notas}" if notas else ""),
+         fecha + " 08:00:00",  # inicio_real_at · same day at 8am (placeholder)
+         fecha + " 17:00:00",  # fin_real_at · same day at 5pm (placeholder)
+         kg,
+         fecha + " 08:00:00"),  # inventario_descontado_at · no double-discount
+    )
+    pid = cur.lastrowid
+    audit_log(cur, usuario=user, accion="REGISTRAR_PRODUCCION_COMPLETADA",
+              tabla="produccion_programada", registro_id=pid,
+              despues={"producto": producto, "fecha": fecha,
+                       "kg_real": kg, "lote": lote,
+                       "origen": "eos_retroactivo", "notas": notas})
+    conn.commit()
+    return jsonify({
+        "ok": True, "id": pid,
+        "producto": producto, "fecha": fecha,
+        "kg_real": kg, "lote": lote, "estado": "completado",
+    }), 201

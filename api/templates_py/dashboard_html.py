@@ -1508,6 +1508,39 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     <div id="nec-resumen" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px"></div>
     <div id="nec-contenido"><div style="text-align:center;color:#94a3b8;padding:40px">Cargando…</div></div>
   </div>
+  <!-- Modal "Ya producido" · back-fill retroactivo (no toca inventario) -->
+  <div id="ypModal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.55);z-index:1000;justify-content:center;align-items:center;padding:20px">
+    <div style="background:white;border-radius:14px;padding:24px;max-width:480px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.4)">
+      <h3 id="yp-titulo" style="margin:0 0 8px;color:#1e40af">✓ Ya producido</h3>
+      <div style="font-size:12px;color:#64748b;margin-bottom:16px">Registra retroactivamente un lote ya fabricado · NO toca inventario (Shopify ya lo refleja) · solo histórico para el horizonte.</div>
+      <div style="display:grid;gap:10px">
+        <div>
+          <label style="font-size:11px;color:#64748b;display:block;margin-bottom:3px">Producto</label>
+          <input id="yp-producto" readonly style="padding:9px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;width:100%;background:#f8fafc">
+        </div>
+        <div>
+          <label style="font-size:11px;color:#64748b;display:block;margin-bottom:3px">Kg reales producidos</label>
+          <input id="yp-kg" type="number" step="0.1" min="0.1" style="padding:9px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;width:100%">
+        </div>
+        <div>
+          <label style="font-size:11px;color:#64748b;display:block;margin-bottom:3px">Fecha de producción</label>
+          <input id="yp-fecha" type="date" style="padding:9px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;width:100%">
+        </div>
+        <div>
+          <label style="font-size:11px;color:#64748b;display:block;margin-bottom:3px">Lote (opcional · auto si vacío)</label>
+          <input id="yp-lote" type="text" placeholder="ej. SAH-20260505" style="padding:9px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;width:100%">
+        </div>
+        <div>
+          <label style="font-size:11px;color:#64748b;display:block;margin-bottom:3px">Notas (opcional)</label>
+          <textarea id="yp-notas" rows="2" style="padding:9px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;width:100%;resize:vertical"></textarea>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end">
+        <button onclick="cerrarYaProducido()" style="background:#e2e8f0;color:#1e293b;border:none;padding:8px 16px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer">Cancelar</button>
+        <button onclick="confirmarYaProducido()" style="background:#1e40af;color:white;border:none;padding:8px 16px;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer">Registrar histórico</button>
+      </div>
+    </div>
+  </div>
   <!-- Modal Generar producción · todo vive en EOS (sin Calendar) -->
   <div id="gpModal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.55);z-index:1000;justify-content:center;align-items:center;padding:20px">
     <div style="background:white;border-radius:14px;padding:24px;max-width:480px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.4)">
@@ -16875,7 +16908,32 @@ async function ckMarcar(itemId, estado){
     if ((p.lotes_pendientes_n || 0) > 0) {
       html += '<div style="font-size:11px;color:#1e40af;margin-bottom:6px">📅 Ya agendado en EOS: ' + p.lotes_pendientes_n + ' lote · ' + p.lotes_pendientes_kg + 'kg · fechas: ' + (p.lotes_pendientes_proximas_fechas || []).join(', ') + '</div>';
     }
-    html += '<div style="margin-top:10px"><button onclick="abrirGenerarProduccion(' + idx + ')" style="background:#0f766e;color:#fff;border:none;padding:10px 18px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer">⚡ Generar producción</button></div>';
+    // Horizonte · última producción + próxima sugerida (Sebastián 13-may-2026)
+    if (p.ultima_produccion_fecha) {
+      let lineas = '<div style="background:#fef9c3;border-left:4px solid #ca8a04;border-radius:6px;padding:8px 10px;margin-top:8px;margin-bottom:8px">';
+      lineas += '<div style="font-size:11px;color:#854d0e;font-weight:700;margin-bottom:3px">📜 Horizonte</div>';
+      lineas += '<div style="font-size:11px;color:#475569">Última producción: <strong>' + p.ultima_produccion_fecha + '</strong> · ' + p.ultima_produccion_kg + 'kg';
+      if (p.dias_desde_ultima != null) lineas += ' · hace ' + p.dias_desde_ultima + 'd';
+      lineas += '</div>';
+      if (p.duracion_lote_dias) {
+        lineas += '<div style="font-size:11px;color:#475569">Lote alcanza para ~<strong>' + p.duracion_lote_dias + ' días</strong></div>';
+      }
+      if (p.proxima_sugerida_fecha) {
+        const en = p.proxima_sugerida_dias;
+        const colorSug = en <= 0 ? '#dc2626' : (en <= 7 ? '#ea580c' : '#0f766e');
+        lineas += '<div style="font-size:11px;color:' + colorSug + ';font-weight:700">Próxima sugerida: ' + p.proxima_sugerida_fecha;
+        if (en != null) lineas += ' (' + (en > 0 ? 'en ' + en + 'd' : 'YA · ' + (-en) + 'd atrasado') + ')';
+        lineas += '</div>';
+      }
+      lineas += '</div>';
+      html += lineas;
+    } else {
+      html += '<div style="font-size:11px;color:#94a3b8;margin-top:6px;margin-bottom:6px">📜 Sin producciones registradas · usá "✓ Ya producido" para back-fill el histórico</div>';
+    }
+    html += '<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">';
+    html += '<button onclick="abrirGenerarProduccion(' + idx + ')" style="background:#0f766e;color:#fff;border:none;padding:10px 18px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer">⚡ Generar (agendar futura)</button>';
+    html += '<button onclick="abrirYaProducido(' + idx + ')" style="background:#1e40af;color:#fff;border:none;padding:10px 18px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer">✓ Ya producido (back-fill)</button>';
+    html += '</div>';
     html += '</div></div>';
     return html;
   }
@@ -16916,6 +16974,44 @@ async function ckMarcar(itemId, estado){
       if (!r.ok) { alert('Error: ' + (d.error || r.status)); return; }
       cerrarGenerarProduccion();
       alert('✓ Producción agendada · #' + d.id + ' · ' + d.producto + ' · ' + d.cantidad_kg + 'kg · ' + d.fecha);
+      cargarNecesidades();
+    } catch(e) { alert('Error: ' + e.message); }
+  }
+
+  // Modal "Ya producido" · registra lote retroactivo (sin tocar inventario)
+  function abrirYaProducido(idx) {
+    const p = window._NEC_PRODUCTOS_CACHE[idx];
+    if (!p) { alert('Producto no encontrado en cache'); return; }
+    document.getElementById('yp-producto').value = p.producto_nombre;
+    document.getElementById('yp-titulo').textContent = '✓ Ya producido · ' + (p.codigo_pt || p.producto_nombre.substring(0, 20));
+    document.getElementById('yp-kg').value = p.lote_bulk_kg || '';
+    document.getElementById('yp-fecha').value = new Date().toISOString().slice(0, 10);
+    document.getElementById('yp-lote').value = '';
+    document.getElementById('yp-notas').value = '';
+    document.getElementById('ypModal').style.display = 'flex';
+  }
+  function cerrarYaProducido() { document.getElementById('ypModal').style.display = 'none'; }
+
+  async function confirmarYaProducido() {
+    const producto = document.getElementById('yp-producto').value;
+    const kg = parseFloat(document.getElementById('yp-kg').value);
+    const fecha = document.getElementById('yp-fecha').value;
+    const lote = document.getElementById('yp-lote').value.trim();
+    const notas = document.getElementById('yp-notas').value.trim();
+    if (!producto || !kg || kg <= 0 || !fecha) { alert('Completá producto, kg y fecha'); return; }
+    try {
+      const r = await fetch('/api/plan/registrar-produccion-completada', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfTokenNec()},
+        body: JSON.stringify({
+          producto_nombre: producto, cantidad_kg_real: kg,
+          fecha_producida: fecha, lote: lote, notas: notas,
+        }),
+      });
+      const d = await r.json();
+      if (!r.ok) { alert('Error: ' + (d.error || r.status)); return; }
+      cerrarYaProducido();
+      alert('✓ Lote registrado · #' + d.id + ' · ' + d.lote + ' · ' + d.kg_real + 'kg · ' + d.fecha);
       cargarNecesidades();
     } catch(e) { alert('Error: ' + e.message); }
   }

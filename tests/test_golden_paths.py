@@ -7017,3 +7017,95 @@ def test_golden_plan_programar_produccion_origen_eos(app, db_clean):
 
     # Cleanup
     _exec("DELETE FROM produccion_programada WHERE observaciones LIKE 'TEST_PLAN_%'")
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH PLAN-D · registrar-produccion-completada (horizonte)
+# ═══════════════════════════════════════════════════════════════════
+def test_golden_plan_registrar_completada_horizonte(app, db_clean):
+    """Back-fill retroactivo de lote ya producido · horizonte calcula
+    próxima sugerida correctamente."""
+    _exec("DELETE FROM produccion_programada WHERE observaciones LIKE 'LOTE TEST_HORIZ%'")
+
+    cs = _login(app, 'sebastian')
+    from datetime import date, timedelta
+    fecha_pasada = (date.today() - timedelta(days=5)).isoformat()
+
+    # Caso 1: POST registra lote completado retroactivo
+    r1 = cs.post('/api/plan/registrar-produccion-completada', json={
+        'producto_nombre': 'SUERO HIDRATANTE AH 1.5%',
+        'cantidad_kg_real': 90,
+        'fecha_producida': fecha_pasada,
+        'notas': 'TEST_HORIZ_SAH',
+    }, headers=csrf_headers())
+    assert r1.status_code == 201, f'BUG POST: {r1.status_code} {r1.data}'
+    d1 = r1.get_json()
+    pid = d1['id']
+    assert d1['lote'], 'BUG: lote no auto-generado'
+
+    # Caso 2: persistido con estado=completado + fin_real_at + kg_real
+    rows = _query(
+        """SELECT estado, kg_real, fin_real_at, origen
+           FROM produccion_programada WHERE id = ?""", (pid,),
+    )
+    assert rows, 'BUG: lote no persistió'
+    estado, kg_real, fin, origen = rows[0]
+    assert estado == 'completado', f'BUG: estado={estado}'
+    assert kg_real == 90.0
+    assert fin and fecha_pasada in fin
+    assert origen == 'eos_retroactivo'
+
+    # Caso 3: NO se crearon movimientos (no doble-descuento inventario)
+    movs = _query(
+        """SELECT COUNT(*) FROM movimientos
+           WHERE observaciones LIKE 'LOTE TEST_HORIZ%' OR lote LIKE '%TEST_HORIZ%'""",
+    )
+    assert movs[0][0] == 0, f'BUG: registrar NO debe insertar movimientos · {movs[0][0]}'
+
+    # Caso 4: audit_log captura
+    audit = _query(
+        """SELECT accion FROM audit_log
+           WHERE accion='REGISTRAR_PRODUCCION_COMPLETADA' AND registro_id = ?""",
+        (str(pid),),
+    )
+    assert audit, 'BUG audit_log'
+
+    # Caso 5: aparece en necesidades.ultima_produccion + próxima_sugerida
+    r5 = cs.get('/api/plan/necesidades')
+    d5 = r5.get_json()
+    animus = next(c for c in d5['clientes'] if c['cliente_id'] == 'ANIMUS_DTC')
+    sah = next((p for p in animus['productos']
+                 if p['producto_nombre'] == 'SUERO HIDRATANTE AH 1.5%'), None)
+    assert sah, 'BUG: SAH no encontrado'
+    assert sah['ultima_produccion_fecha'] == fecha_pasada, \
+        f'BUG: ultima_produccion_fecha={sah["ultima_produccion_fecha"]}'
+    assert sah['ultima_produccion_kg'] == 90.0
+    assert sah['dias_desde_ultima'] == 5
+
+    # Caso 6: producto inexistente → 404
+    r6 = cs.post('/api/plan/registrar-produccion-completada', json={
+        'producto_nombre': 'XYZ_NO_EXISTE',
+        'cantidad_kg_real': 10,
+        'fecha_producida': fecha_pasada,
+    }, headers=csrf_headers())
+    assert r6.status_code == 404
+
+    # Caso 7: kg <= 0 → 400
+    r7 = cs.post('/api/plan/registrar-produccion-completada', json={
+        'producto_nombre': 'SUERO HIDRATANTE AH 1.5%',
+        'cantidad_kg_real': 0,
+        'fecha_producida': fecha_pasada,
+    }, headers=csrf_headers())
+    assert r7.status_code == 400
+
+    # Caso 8: mayerlin (planta, no compras) → 403
+    cs_op = _login(app, 'mayerlin')
+    r8 = cs_op.post('/api/plan/registrar-produccion-completada', json={
+        'producto_nombre': 'SUERO HIDRATANTE AH 1.5%',
+        'cantidad_kg_real': 10,
+        'fecha_producida': fecha_pasada,
+    }, headers=csrf_headers())
+    assert r8.status_code == 403
+
+    # Cleanup
+    _exec("DELETE FROM produccion_programada WHERE observaciones LIKE 'LOTE TEST_HORIZ%'")
