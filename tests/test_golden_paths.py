@@ -5746,6 +5746,232 @@ def test_golden_planta_yield_kg_real_y_merma(app, db_clean):
 
 
 # ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH FIX-B1 · vista stock por lote NO duplica saldo post-FEFO
+# ═══════════════════════════════════════════════════════════════════
+# Auditoría 13-may-2026: el endpoint /api/planta/stock-por-lote/<mp>
+# agrupaba por (lote, fecha_vencimiento, estado_lote) lo que separaba
+# Entradas (con fv/estado) de Salidas FEFO (sin fv/estado · NULL).
+# El grupo Salida quedaba con stock negativo y HAVING > 0 lo filtraba,
+# dejando el grupo Entrada con stock VIEJO. UI Bodega mentía.
+def test_golden_lote_view_no_duplica_post_fefo(app, db_clean):
+    """Después de Salida FEFO, vista por lote refleja saldo correcto."""
+    cs = _login(app, 'sebastian')
+    import sqlite3 as _sqlite3
+    # Setup: MP única + lote único + Entrada 1000g con fv/estado
+    mp_codigo = 'MP-FIXB1-TEST'
+    lote = 'FIXB1-LOTE-001'
+    conn = _sqlite3.connect(os.environ['DB_PATH'], timeout=5.0)
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT OR IGNORE INTO maestro_mps (codigo_mp, nombre_comercial, activo) VALUES (?, ?, 1)",
+            (mp_codigo, 'Test FIX-B1'),
+        )
+        # Limpiar movimientos previos (test repetible)
+        cur.execute("DELETE FROM movimientos WHERE material_id=?", (mp_codigo,))
+        # Entrada 1000g con fv y estado
+        cur.execute(
+            """INSERT INTO movimientos
+                 (material_id, material_nombre, cantidad, tipo, fecha,
+                  observaciones, operador, lote, fecha_vencimiento, estado_lote)
+               VALUES (?, ?, ?, 'Entrada', datetime('now'), 'test entrada', 'test', ?, '2027-12-31', 'APROBADO')""",
+            (mp_codigo, 'Test FIX-B1', 1000.0, lote),
+        )
+        # Salida 300g del MISMO lote SIN fv/estado (simula FEFO de _distribuir_fefo)
+        cur.execute(
+            """INSERT INTO movimientos
+                 (material_id, material_nombre, cantidad, tipo, fecha,
+                  observaciones, operador, lote)
+               VALUES (?, ?, ?, 'Salida', datetime('now'), 'test FEFO', 'test', ?)""",
+            (mp_codigo, 'Test FIX-B1', 300.0, lote),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    # Validar: vista por lote debe mostrar 700g (no 1000g)
+    r = cs.get(f'/api/planta/stock-por-lote/{mp_codigo}')
+    assert r.status_code == 200, f'BUG: {r.status_code} {r.data}'
+    d = r.get_json()
+    assert len(d['lotes']) == 1, f'BUG-B1: esperaba 1 lote · {len(d["lotes"])}'
+    assert d['lotes'][0]['lote'] == lote
+    assert d['lotes'][0]['stock_g'] == 700.0, \
+        f'BUG-B1: vista por lote miente · esperaba 700g · got {d["lotes"][0]["stock_g"]}g (la Entrada de 1000g sigue visible sin restar la Salida)'
+    # fv y estado vienen de la Entrada
+    assert d['lotes'][0]['fecha_vencimiento'] == '2027-12-31'
+    assert d['lotes'][0]['estado_lote'] == 'APROBADO'
+    # Total agregado coincide
+    assert d['total_g'] == 700.0
+
+    # Cleanup
+    conn = _sqlite3.connect(os.environ['DB_PATH'], timeout=5.0)
+    try:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM movimientos WHERE material_id=?", (mp_codigo,))
+        cur.execute("DELETE FROM maestro_mps WHERE codigo_mp=?", (mp_codigo,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH FIX-B2 · conteo_ajustar es idempotente · doble-click no duplica
+# ═══════════════════════════════════════════════════════════════════
+def test_golden_conteo_ajustar_idempotente_doble_click(app, db_clean):
+    """Doble POST a /conteo/<id>/ajustar inserta UN movimiento, no dos."""
+    cs = _login(app, 'sebastian')
+    import sqlite3 as _sqlite3
+    mp_codigo = 'MP-FIXB2-TEST'
+    lote = 'FIXB2-LOTE-001'
+
+    conn = _sqlite3.connect(os.environ['DB_PATH'], timeout=5.0)
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT OR IGNORE INTO maestro_mps (codigo_mp, nombre_comercial, activo) VALUES (?, ?, 1)",
+            (mp_codigo, 'Test FIX-B2'),
+        )
+        cur.execute("DELETE FROM movimientos WHERE material_id=?", (mp_codigo,))
+        # Stock inicial: 100g (Entrada)
+        cur.execute(
+            """INSERT INTO movimientos
+                 (material_id, material_nombre, cantidad, tipo, fecha,
+                  operador, lote, estado_lote)
+               VALUES (?, ?, 100, 'Entrada', datetime('now'), 'test', ?, 'APROBADO')""",
+            (mp_codigo, 'Test FIX-B2', lote),
+        )
+        # Crear conteo + item con diferencia +20g (físico=120, sistema=100)
+        cur.execute(
+            """INSERT INTO conteos_fisicos (numero, fecha_inicio, estado, responsable)
+               VALUES ('TEST-FIXB2-001', date('now'), 'Abierto', 'test')"""
+        )
+        conteo_id = cur.lastrowid
+        cur.execute(
+            """INSERT INTO conteo_items
+                 (conteo_id, codigo_mp, nombre_mp, lote, stock_sistema,
+                  stock_fisico, diferencia, requiere_gerencia,
+                  aprobado_gerencia, ajuste_aplicado)
+               VALUES (?, ?, ?, ?, 100, 120, 20, 0, 0, 0)""",
+            (conteo_id, mp_codigo, 'Test FIX-B2', lote),
+        )
+        item_id = cur.lastrowid
+        conn.commit()
+    finally:
+        conn.close()
+
+    # Caso 1: primer ajuste → 200 OK, inserta 1 movimiento Entrada
+    r1 = cs.post(f'/api/conteo/{conteo_id}/ajustar',
+                 json={'item_id': item_id}, headers=csrf_headers())
+    assert r1.status_code == 200, f'BUG: primer ajuste · {r1.status_code} {r1.data}'
+
+    # Verificar movimiento insertado
+    rows = _query(
+        "SELECT cantidad, tipo FROM movimientos WHERE material_id=? AND lote=? AND tipo='Entrada' AND observaciones LIKE 'Ajuste inventario%'",
+        (mp_codigo, lote),
+    )
+    assert len(rows) == 1, f'BUG: esperaba 1 mov Ajuste · hay {len(rows)}'
+
+    # Caso 2: doble-click · segundo POST debe ser 409 idempotente
+    r2 = cs.post(f'/api/conteo/{conteo_id}/ajustar',
+                 json={'item_id': item_id}, headers=csrf_headers())
+    assert r2.status_code == 409, \
+        f'BUG-B2: segundo ajuste duplica · esperaba 409 · got {r2.status_code} {r2.data}'
+
+    # Verificar que NO se duplicó el movimiento
+    rows2 = _query(
+        "SELECT cantidad FROM movimientos WHERE material_id=? AND lote=? AND tipo='Entrada' AND observaciones LIKE 'Ajuste inventario%'",
+        (mp_codigo, lote),
+    )
+    assert len(rows2) == 1, \
+        f'BUG-B2 GRAVE: doble-click duplicó el ajuste · {len(rows2)} movs (debería ser 1)'
+
+    # Cleanup
+    conn = _sqlite3.connect(os.environ['DB_PATH'], timeout=5.0)
+    try:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM movimientos WHERE material_id=?", (mp_codigo,))
+        cur.execute("DELETE FROM conteo_items WHERE conteo_id=?", (conteo_id,))
+        cur.execute("DELETE FROM conteos_fisicos WHERE id=?", (conteo_id,))
+        cur.execute("DELETE FROM maestro_mps WHERE codigo_mp=?", (mp_codigo,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH FIX-B3 · _distribuir_fefo NO inserta sin_lote fantasma
+# ═══════════════════════════════════════════════════════════════════
+# Auditoría 13-may-2026: si un MP tiene stock real insuficiente y
+# tampoco tiene stock legacy sin lote, _distribuir_fefo agregaba
+# sin_lote=True silenciosamente generando STOCK FANTASMA NEGATIVO
+# oculto por max(...,0). Ahora debe raise SIN_STOCK.
+def test_golden_distribuir_fefo_no_stock_fantasma(app, db_clean):
+    """FEFO con stock insuficiente y sin legacy → raise SIN_STOCK · NO inserta."""
+    from blueprints.programacion import _distribuir_fefo, _DescuentoError
+    import sqlite3 as _sqlite3
+    mp_codigo = 'MP-FIXB3-TEST'
+    lote = 'FIXB3-LOTE-001'
+
+    # Setup directo en DB
+    conn = _sqlite3.connect(os.environ['DB_PATH'], timeout=5.0)
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT OR IGNORE INTO maestro_mps (codigo_mp, nombre_comercial, activo) VALUES (?, ?, 1)",
+            (mp_codigo, 'Test FIX-B3'),
+        )
+        cur.execute("DELETE FROM movimientos WHERE material_id=?", (mp_codigo,))
+        # Solo 60g disponibles · sin stock legacy sin lote
+        cur.execute(
+            """INSERT INTO movimientos
+                 (material_id, material_nombre, cantidad, tipo, fecha,
+                  operador, lote, estado_lote)
+               VALUES (?, ?, 60, 'Entrada', datetime('now'), 'test', ?, 'APROBADO')""",
+            (mp_codigo, 'Test FIX-B3', lote),
+        )
+        conn.commit()
+
+        # Caso 1: pedir 100g · solo 60 disponibles · NO hay legacy → raise
+        err = None
+        try:
+            _distribuir_fefo(cur, mp_codigo, 100.0)
+        except _DescuentoError as e:
+            err = e
+        assert err is not None, 'BUG-B3: FEFO no falló cuando no había stock'
+        assert err.codigo == 'SIN_STOCK'
+        assert err.payload['faltante_g'] >= 39  # ~40g
+
+        # Caso 2: pedir 60g exactos · debe pasar (sin remainder)
+        d2 = _distribuir_fefo(cur, mp_codigo, 60.0)
+        assert len(d2) == 1
+        assert d2[0]['lote'] == lote
+        assert d2[0]['cantidad'] == 60.0
+        assert d2[0]['sin_lote'] is False
+
+        # Caso 3: agregar stock legacy (lote='') de 50g · ahora 100g sí pasa
+        cur.execute(
+            """INSERT INTO movimientos
+                 (material_id, material_nombre, cantidad, tipo, fecha,
+                  operador, lote)
+               VALUES (?, ?, 50, 'Entrada', datetime('now'), 'test legacy', '')""",
+            (mp_codigo, 'Test FIX-B3'),
+        )
+        conn.commit()
+        d3 = _distribuir_fefo(cur, mp_codigo, 100.0)
+        # 60 del lote + 40 sin_lote (legacy)
+        assert len(d3) == 2
+        assert d3[0]['lote'] == lote and d3[0]['cantidad'] == 60.0
+        assert d3[1]['lote'] is None and d3[1]['sin_lote'] is True
+        assert abs(d3[1]['cantidad'] - 40.0) < 0.01
+
+    finally:
+        cur.execute("DELETE FROM movimientos WHERE material_id=?", (mp_codigo,))
+        cur.execute("DELETE FROM maestro_mps WHERE codigo_mp=?", (mp_codigo,))
+        conn.commit()
+        conn.close()
+
+
+# ═══════════════════════════════════════════════════════════════════
 # GOLDEN PATH 60 · PDF maestro auditable EBR (Fase 1 F8)
 # ═══════════════════════════════════════════════════════════════════
 def test_golden_brd_pdf_ebr_descargable(app, db_clean):

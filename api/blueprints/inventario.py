@@ -3717,6 +3717,18 @@ def conteo_ajustar(conteo_id):
         return jsonify({'error': 'Item no encontrado'}), 404
     cols = [desc[0] for desc in c.description]
     it = dict(zip(cols, item))
+    # FIX-B2 13-may-2026: idempotencia. Antes el endpoint NO chequeaba
+    # ajuste_aplicado al entrar, así que un doble-click del operario (o un
+    # reintento tras timeout) duplicaba el INSERT en movimientos · stock
+    # quedaba con −2× del delta real. Ahora si ya se aplicó devolvemos 409
+    # como no-op idempotente. Atomic claim vía UPDATE-WHERE para evitar
+    # race condition (2 requests concurrentes).
+    if it.get('ajuste_aplicado'):
+        return jsonify({
+            'error': 'Ajuste ya aplicado para este item · operación idempotente',
+            'item_id': item_id,
+            'aplicado_anterior': True,
+        }), 409
     if it['requiere_gerencia'] and not it['aprobado_gerencia']:
         if user not in ADMIN_USERS:
             return jsonify({'error': 'Diferencia >5% requiere aprobacion Gerencia General (BDG-PRO-002)'}), 403
@@ -3724,6 +3736,17 @@ def conteo_ajustar(conteo_id):
     diff = float(it['diferencia'])
     if diff == 0:
         return jsonify({'message': 'Sin diferencia, no se requiere ajuste'})
+
+    # Atomic claim: marcar ajuste_aplicado=1 en mismo statement con
+    # WHERE ajuste_aplicado=0. Si rowcount=0, otro request ya lo procesó.
+    c.execute("UPDATE conteo_items SET ajuste_aplicado=1 WHERE id=? AND COALESCE(ajuste_aplicado,0)=0",
+              (item_id,))
+    if c.rowcount == 0:
+        conn.rollback()
+        return jsonify({
+            'error': 'Otro request procesó este ajuste en paralelo · operación idempotente',
+            'item_id': item_id,
+        }), 409
     tipo_mov = 'Entrada' if diff > 0 else 'Salida'
     # Sebastian 7-may-2026: usar el LOTE REAL del conteo (it['lote']) para
     # que el movimiento afecte el kardex del lote correcto y Bodega lo
@@ -3738,7 +3761,7 @@ def conteo_ajustar(conteo_id):
                  VALUES (?,?,?,?,datetime('now'),?,?,?,'VIGENTE',?)""",
               (it['codigo_mp'], it['nombre_mp'], abs(diff), tipo_mov, obs,
                lote_objetivo, it.get('estanteria',''), user))
-    c.execute("UPDATE conteo_items SET ajuste_aplicado=1 WHERE id=?", (item_id,))
+    # ajuste_aplicado=1 ya seteado en el atomic claim arriba (FIX-B2)
     c.execute("INSERT INTO audit_log (usuario,accion,tabla,registro_id,detalle,ip,fecha) VALUES (?,?,?,?,?,?,datetime('now'))",
               (user, 'AJUSTE_INVENTARIO', 'conteo_items', str(item_id),
                f'MP:{it["codigo_mp"]} Diff:{diff}g Lote:{lote_objetivo} Causa:{it.get("causa_diferencia","")}',
@@ -5802,15 +5825,24 @@ def planta_stock_por_lote(codigo_mp):
 
     # Stock por lote (Entradas - Salidas con lote)
     rows = c.execute("""
-        SELECT lote, fecha_vencimiento, estado_lote,
+        -- FIX-B1 12-may-2026: GROUP BY solo `lote`. Antes agrupaba por
+        -- (lote, fecha_vencimiento, estado_lote) lo que separaba las
+        -- Entradas (que llenan fv/estado) de las Salidas FEFO de
+        -- _distribuir_fefo (que no las llenan, quedan NULL). Resultado:
+        -- el grupo Salida quedaba con stock_g negativo y HAVING > 0 lo
+        -- filtraba, dejando el grupo Entrada con stock viejo. UI Bodega
+        -- mostraba 1000g cuando lo real eran 500g.
+        SELECT lote,
+               MAX(CASE WHEN tipo='Entrada' THEN fecha_vencimiento END) as fecha_vencimiento,
+               MAX(CASE WHEN tipo='Entrada' THEN estado_lote END) as estado_lote,
                SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) as stock_g,
                MIN(fecha) as primera_entrada
         FROM movimientos
         WHERE material_id = ?
           AND COALESCE(lote,'') != ''
-        GROUP BY lote, fecha_vencimiento, estado_lote
+        GROUP BY lote
         HAVING stock_g > 0
-        ORDER BY COALESCE(fecha_vencimiento, '9999-12-31') ASC, lote ASC
+        ORDER BY COALESCE(MAX(CASE WHEN tipo='Entrada' THEN fecha_vencimiento END), '9999-12-31') ASC, lote ASC
     """, (codigo_mp,)).fetchall()
 
     from datetime import date

@@ -4860,10 +4860,37 @@ def _distribuir_fefo(c, codigo_mp, cantidad_a_descontar):
         })
         restante -= toma
 
-    # Si aún queda cantidad por descontar, viene de stock sin lote (entradas
-    # históricas sin trazabilidad). Lo registramos sin lote para mantener
-    # consistencia del stock total.
+    # FIX-B3 13-may-2026: si aún queda cantidad por descontar, antes
+    # SIEMPRE se agregaba sin_lote=True asumiendo que era stock legacy
+    # (entradas históricas sin trazabilidad). Pero esto ocultaba race
+    # conditions: 2 producciones paralelas mismo MP, la 2da encontraba
+    # solo 60g, faltaban 40g, se agregaba sin_lote silenciosamente
+    # creando STOCK FANTASMA NEGATIVO oculto por max(...,0) en _get_mp_stock.
+    # Ahora chequeamos primero si hay stock legacy real (movs con lote='');
+    # solo si lo hay y cubre el restante, permitimos el sin_lote. Sino,
+    # raise _DescuentoError para que la operación haga ROLLBACK limpio.
     if restante > 0.01:
+        legacy_row = c.execute("""
+            SELECT COALESCE(SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END), 0)
+            FROM movimientos
+            WHERE material_id = ? AND COALESCE(lote,'') = ''
+        """, (codigo_mp,)).fetchone()
+        legacy_stock = float(legacy_row[0] or 0)
+        if legacy_stock + 0.01 < restante:
+            # Race condition o drift · NO insertar sin_lote silenciosamente
+            raise _DescuentoError(
+                f"Stock real insuficiente para {codigo_mp}: faltan "
+                f"{restante:.2f}g (stock legacy sin lote disponible: "
+                f"{legacy_stock:.2f}g). Posible race condition o drift.",
+                'SIN_STOCK',
+                {
+                    'codigo_mp': codigo_mp,
+                    'faltante_g': round(restante, 2),
+                    'legacy_g': round(legacy_stock, 2),
+                    'razon': 'race_o_drift_post_validacion',
+                },
+            )
+        # Caso válido: hay stock legacy suficiente
         distribucion.append({
             'lote': None,
             'cantidad': round(restante, 2),
