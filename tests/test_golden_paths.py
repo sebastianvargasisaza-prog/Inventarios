@@ -6635,3 +6635,80 @@ def test_golden_patch_codigo_pt_permisos_y_unique(app, db_clean):
 
     # Cleanup
     _exec("UPDATE formula_headers SET codigo_pt=NULL WHERE codigo_pt LIKE 'GP_TEST_%'")
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH OPERARIO-A · vista "Mi Día" filtra por asignación
+# ═══════════════════════════════════════════════════════════════════
+# Bug que cazaría: si el endpoint /api/operario/mi-dia NO filtra por
+# operario_*_id (los 4 campos), Mayerlin vería producciones de otros
+# operarios · ruido + riesgo de iniciar producción ajena.
+
+def test_golden_operario_mi_dia_filtra_por_asignacion(app, db_clean):
+    """Mayerlin (operario_id=1, dispensación) solo ve producciones donde
+    tiene asignación. Sebastián (admin) ve TODAS. Usuario sin operario
+    asociado ve mensaje de "sin acceso".
+    """
+    import sqlite3 as _sqlite3
+    # Limpieza previa de producciones de test (run aislamiento)
+    _exec("DELETE FROM produccion_programada WHERE producto LIKE 'TEST_OP_%'")
+
+    # Setup: 2 producciones · una asignada a Mayerlin (dispensación),
+    # otra sin asignaciones.
+    op_mayerlin = _query(
+        "SELECT id FROM operarios_planta WHERE LOWER(nombre)='mayerlin' LIMIT 1",
+    )
+    assert op_mayerlin, 'precondición: Mayerlin debe estar en operarios_planta'
+    mayerlin_id = op_mayerlin[0][0]
+
+    pp_a = _exec(
+        """INSERT INTO produccion_programada
+            (producto, fecha_programada, cantidad_kg, origen,
+             operario_dispensacion_id)
+           VALUES ('TEST_OP_MAYERLIN', date('now'), 5, 'manual', ?)""",
+        (mayerlin_id,),
+    )
+    pp_b = _exec(
+        """INSERT INTO produccion_programada
+            (producto, fecha_programada, cantidad_kg, origen)
+           VALUES ('TEST_OP_OTRO', date('now'), 3, 'manual')""",
+    )
+
+    # Caso 1: Mayerlin ve SOLO la suya
+    cs_m = _login(app, 'mayerlin')
+    r1 = cs_m.get('/api/operario/mi-dia')
+    assert r1.status_code == 200, f'BUG mi-dia mayerlin: {r1.status_code} {r1.data}'
+    d1 = r1.get_json()
+    assert d1['operario_id'] == mayerlin_id, 'BUG: mayerlin no mapeado a operario'
+    assert d1['ve_todas'] is False
+    productos_m = [p['producto'] for p in d1['producciones']]
+    assert 'TEST_OP_MAYERLIN' in productos_m, \
+        f'BUG: Mayerlin no ve su producción · {productos_m}'
+    assert 'TEST_OP_OTRO' not in productos_m, \
+        f'BUG: Mayerlin ve producción ajena · {productos_m}'
+
+    # Caso 2: el item mostrado tiene mi_rol_aqui='dispensacion' y siguiente_accion='iniciar'
+    item = next(p for p in d1['producciones'] if p['producto'] == 'TEST_OP_MAYERLIN')
+    assert item['mi_rol_aqui'] == 'dispensacion', \
+        f'BUG: mi_rol_aqui incorrecto · {item["mi_rol_aqui"]}'
+    assert item['siguiente_accion'] == 'iniciar', \
+        f'BUG: accion incorrecta · {item["siguiente_accion"]}'
+
+    # Caso 3: Sebastián (admin) ve AMBAS
+    cs_s = _login(app, 'sebastian')
+    r2 = cs_s.get('/api/operario/mi-dia')
+    d2 = r2.get_json()
+    assert d2['es_admin'] is True
+    assert d2['ve_todas'] is True
+    productos_s = [p['producto'] for p in d2['producciones']]
+    assert 'TEST_OP_MAYERLIN' in productos_s and 'TEST_OP_OTRO' in productos_s, \
+        f'BUG: admin no ve todas · {productos_s}'
+
+    # Caso 4: HTML /operario responde 200
+    r3 = cs_m.get('/operario')
+    assert r3.status_code == 200
+    assert b'Mi D' in r3.data, 'BUG: HTML /operario no contiene "Mi D[ía]"'
+
+    # Cleanup
+    _exec("DELETE FROM produccion_programada WHERE id = ?", (pp_a,))
+    _exec("DELETE FROM produccion_programada WHERE id = ?", (pp_b,))
