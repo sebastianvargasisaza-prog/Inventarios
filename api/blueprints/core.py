@@ -658,10 +658,16 @@ def login():
             if not nxt or not nxt.startswith('/') or nxt.startswith('//'):
                 nxt = '/modulos'
             # Safety: non-admins must not land on admin-only pages
-            from config import ADMIN_USERS as _AU
+            from config import ADMIN_USERS as _AU, PLANTA_USERS as _PU
             ADMIN_ONLY = {'/gerencia'}
             if any(nxt == p or nxt.startswith(p + '/') for p in ADMIN_ONLY) and username not in _AU:
                 nxt = '/modulos'
+            # Operarios de planta (no admin · no explicit ?next=) → directo a Mi Día.
+            # Saltean /modulos porque su día-a-día es solo producciones asignadas.
+            # Admin/gerencia/contadora siguen yendo a /modulos.
+            if (nxt == '/modulos' and username in _PU and username not in _AU
+                and not request.args.get('next')):
+                nxt = '/operario'
             return redirect(nxt)
         _record_failure(ip, username)
         _log_sec("login_failure", username, ip)

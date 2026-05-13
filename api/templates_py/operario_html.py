@@ -88,6 +88,11 @@ main { padding:16px; padding-bottom:80px; max-width:600px; margin:0 auto; }
 </header>
 <main>
   <div id="contenido" class="loading">Cargando tu día</div>
+  <div style="text-align:center;margin-top:32px;padding-top:24px;border-top:1px solid #334155">
+    <a href="/inventarios" style="color:#94a3b8;font-size:13px;text-decoration:none">
+      &larr; Ver inventario completo de Planta
+    </a>
+  </div>
 </main>
 <button class="fab" onclick="refreshNow()" title="Refrescar">↻</button>
 

@@ -1473,7 +1473,19 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       style="padding:9px 22px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:800;cursor:pointer;background:linear-gradient(135deg,#0f766e,#0891b2);color:#fff;box-shadow:0 3px 10px rgba(8,145,178,.35)">
       &#128197; Plan
     </button>
+    <!-- Sebastián 13-may-2026: Mi Día sub-tab anclado dentro de Programación.
+         Acá iremos anclando "cositas" del día a día del operario. -->
+    <button id="prog-tab-midia" onclick="switchProgTab('midia')"
+      style="padding:9px 22px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:700;cursor:pointer;background:#1e40af;color:#fff;box-shadow:0 3px 10px rgba(30,64,175,.35)">
+      &#128100; Mi D&iacute;a
+    </button>
     <span id="prog-tareas-badge" style="display:none;background:#dc2626;color:#fff;font-size:9px;font-weight:800;padding:2px 8px;border-radius:8px"></span>
+  </div>
+  <!-- Mi Día embed via iframe · operario_html aislado del light theme padre -->
+  <div id="ptab-midia" style="display:none;background:#0f172a;border-radius:12px;overflow:hidden;margin-top:-8px">
+    <iframe id="midia-frame" src="about:blank" loading="lazy"
+            style="width:100%;height:80vh;min-height:600px;border:0;display:block;background:#0f172a"
+            sandbox="allow-same-origin allow-scripts allow-forms allow-popups"></iframe>
   </div>
   <!-- Botones HIDDEN para no romper switchProgTab() y JS existente -->
   <div style="display:none">
@@ -8823,6 +8835,7 @@ async function ckMarcar(itemId, estado){
       // Mapeo tab → ID del div objetivo
       var TAB_TO_DIV = {
         'planv2': 'ptab-planv2',
+        'midia':  'ptab-midia',
         // 'asignacion' eliminado · redirige a 'mando' (unificado en mapa)
         'asignacion': 'ptab-plano',
         'mando': 'ptab-plano',
@@ -8841,6 +8854,13 @@ async function ckMarcar(itemId, estado){
         'tareas': 'ptab-tareas',
         'plano': 'ptab-plano',
       };
+      // Lazy-load iframe Mi Día solo al activar tab (evita carga al boot)
+      if (tab === 'midia') {
+        var fr = document.getElementById('midia-frame');
+        if (fr && (!fr.src || fr.src === 'about:blank')) {
+          fr.src = '/operario';
+        }
+      }
       // Ocultar TODOS los ptab-* dentro de #programacion
       var prog = document.getElementById('programacion');
       if(prog){
