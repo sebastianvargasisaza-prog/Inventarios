@@ -6253,3 +6253,236 @@ def test_golden_brd_pdf_ebr_descargable(app, db_clean):
     cs.patch('/api/identidad/sebastian',
              json={'cedula': '', 'nombre_completo': ''},
              headers=csrf_headers())
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH B2-117a · numero_op secuencial anual + único MyBatch-compat
+# ═══════════════════════════════════════════════════════════════════
+# Bug que cazaría: si el counter de op_counters no es atómico o si el
+# format string cambia, los EBRs perderían el número MyBatch-compat
+# y la vista de importación legacy se rompería. Validamos también que
+# el reset de año arranca limpio en 0001.
+
+def test_golden_numero_op_secuencial_y_unico(app, db_clean):
+    """Mig 117 · cada EBR creado vía API recibe numero_op OP-YYYY-NNNN único
+    auto-asignado. 3 EBRs consecutivos del mismo año dan 0001, 0002, 0003.
+    Reset implícito en año distinto arranca en 0001.
+    """
+    cs = _login(app, 'sebastian')
+    cs.patch('/api/identidad/sebastian',
+             json={'cedula': '11111117', 'nombre_completo': 'Test OP'},
+             headers=csrf_headers())
+
+    # Leer counter inicial · NO se puede resetear (rompería UNIQUE con
+    # numero_ops ya generados por tests previos en la misma session-DB).
+    # Validamos secuencialidad relativa al baseline.
+    from datetime import datetime as _dt, timezone as _tz
+    year = _dt.now(_tz.utc).year
+    baseline_rows = _query("SELECT counter FROM op_counters WHERE year = ?", (year,))
+    counter_base = baseline_rows[0][0] if baseline_rows else 0
+
+    # Setup: MBR aprobado para producir 3 EBRs
+    r1 = cs.post('/api/brd/mbr', json={
+        'producto_nombre': 'Test NumeroOp Prod',
+        'lote_size_g': 1000.0,
+    }, headers=csrf_headers())
+    mbr_id = r1.get_json()['id']
+    cs.post(f'/api/brd/mbr/{mbr_id}/pasos', json={
+        'descripcion': 'Paso único', 'tipo_paso': 'otro',
+    }, headers=csrf_headers())
+    cs.post(f'/api/brd/mbr/{mbr_id}/submit', json={}, headers=csrf_headers())
+    sig = _firmar(cs, record_table='mbr_templates', record_id=mbr_id,
+                   meaning='aprueba')
+    cs.post(f'/api/brd/mbr/{mbr_id}/aprobar',
+            json={'signature_id': sig}, headers=csrf_headers())
+
+    # Caso 1: tres EBRs consecutivos · numero_op secuencial 0001, 0002, 0003
+    ops_obtenidos = []
+    ebr_ids = []
+    for i in range(1, 4):
+        rb = cs.post('/api/brd/ebr', json={
+            'mbr_template_id': mbr_id,
+            'lote': f'NUMOP-TEST-{i:03d}',
+        }, headers=csrf_headers())
+        assert rb.status_code == 201, f'BUG iniciar EBR #{i}: {rb.data}'
+        d = rb.get_json()
+        assert 'numero_op' in d, f'BUG: response sin numero_op (EBR #{i})'
+        ops_obtenidos.append(d['numero_op'])
+        ebr_ids.append(d['id'])
+
+    # Caso 2: format y secuencia correctos (relativos al baseline)
+    rows = _query(
+        "SELECT counter FROM op_counters WHERE year = ?", (year,),
+    )
+    assert rows and rows[0][0] == counter_base + 3, \
+        f'BUG: op_counters debería ser baseline+3 ({counter_base+3}), está en {rows[0][0] if rows else "vacío"}'
+
+    for i, op in enumerate(ops_obtenidos, 1):
+        expected = f'OP-{year}-{counter_base + i:04d}'
+        assert op == expected, \
+            f'BUG: EBR #{i} esperaba {expected}, obtuvo {op}'
+
+    # Caso 3: numero_op queda en la fila ebr_ejecuciones (persistido)
+    for ebr_id, op_esperado in zip(ebr_ids, ops_obtenidos):
+        rows = _query(
+            "SELECT numero_op FROM ebr_ejecuciones WHERE id = ?", (ebr_id,),
+        )
+        assert rows and rows[0][0] == op_esperado, \
+            f'BUG: EBR id={ebr_id} numero_op persistido={rows[0][0]} != {op_esperado}'
+
+    # Caso 4: UNIQUE index bloquea inserción duplicada de numero_op
+    # (uso conn manual con try/finally para garantizar close() aun si
+    # la INSERT lanza · evita deadlock en SQLite ante connection leak)
+    import sqlite3 as _sqlite3_c4
+    err = None
+    conn4 = _sqlite3_c4.connect(os.environ['DB_PATH'], timeout=5.0)
+    try:
+        try:
+            conn4.execute(
+                """INSERT INTO ebr_ejecuciones
+                     (mbr_template_id, mbr_version, lote, numero_op, estado,
+                      iniciado_por, iniciado_at_utc, cantidad_objetivo_g)
+                   VALUES (?, 1, 'DUP-LOTE', ?, 'iniciado', 'test',
+                           datetime('now','utc'), 100)""",
+                (mbr_id, ops_obtenidos[0]),  # mismo numero_op que el primero
+            )
+            conn4.commit()
+        except Exception as e:
+            err = str(e)
+    finally:
+        conn4.close()
+    assert err and ('UNIQUE' in err.upper() or 'unique' in err), \
+        f'BUG: UNIQUE constraint sobre numero_op NO bloquea duplicado · err={err}'
+
+    # Caso 5: reset de año arranca en 0001 (simular insertando counter
+    # manualmente para un año ficticio + invocando assign_numero_op)
+    year_futuro = year + 50  # garantizado sin colisión
+    _exec("DELETE FROM op_counters WHERE year = ?", (year_futuro,))
+    # Llamar el helper directamente para validar reset · usamos conn
+    # propia para no contaminar la del Flask client
+    import sqlite3 as _sqlite3
+    from blueprints.brd import assign_numero_op
+    conn = _sqlite3.connect(os.environ['DB_PATH'], timeout=5.0)
+    try:
+        cur = conn.cursor()
+        primer_op_futuro = assign_numero_op(cur, year=year_futuro)
+        conn.commit()
+    finally:
+        conn.close()
+    assert primer_op_futuro == f'OP-{year_futuro}-0001', \
+        f'BUG: año nuevo no arranca en 0001 · obtuvo {primer_op_futuro}'
+
+    # Cleanup
+    _exec("DELETE FROM op_counters WHERE year = ?", (year_futuro,))
+    cs.patch('/api/identidad/sebastian',
+             json={'cedula': '', 'nombre_completo': ''},
+             headers=csrf_headers())
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH B2-117b · codigo_pt en formula_headers · UNIQUE cuando set
+# ═══════════════════════════════════════════════════════════════════
+# Bug que cazaría: si el índice parcial WHERE codigo_pt IS NOT NULL no
+# funciona o se aplicó como índice completo, no se podrían tener varios
+# productos con codigo_pt NULL al mismo tiempo (rompería el seed inicial).
+
+def test_golden_codigo_pt_formula_headers_unique_parcial(app, db_clean):
+    """Mig 117 · codigo_pt en formula_headers es opcional pero único.
+    Varios NULL conviven · pero dos valores iguales no.
+    """
+    # Caso 1: dos productos NULL conviven sin problema (estado inicial post-mig)
+    cuantos_null = _query(
+        "SELECT COUNT(*) FROM formula_headers WHERE codigo_pt IS NULL",
+    )[0][0]
+    # Tras la mig, todos arrancan en NULL · debe haber varios
+    assert cuantos_null > 1, \
+        f'BUG: índice parcial debería permitir varios NULL · hay {cuantos_null}'
+
+    # Caso 2: asignar codigo_pt a 1 producto funciona
+    producto_test = _query(
+        "SELECT producto_nombre FROM formula_headers LIMIT 1",
+    )
+    assert producto_test, 'precondición: debe existir al menos 1 producto'
+    p1 = producto_test[0][0]
+    _exec("UPDATE formula_headers SET codigo_pt='TEST_PT_X1' WHERE producto_nombre=?",
+          (p1,))
+    rows = _query(
+        "SELECT codigo_pt FROM formula_headers WHERE producto_nombre=?", (p1,),
+    )
+    assert rows[0][0] == 'TEST_PT_X1', 'BUG: codigo_pt no se persistió'
+
+    # Caso 3: duplicar codigo_pt en otro producto bloquea (UNIQUE índice parcial)
+    # (conn manual con try/finally para evitar leak en exception path)
+    p2_row = _query(
+        "SELECT producto_nombre FROM formula_headers WHERE producto_nombre != ? LIMIT 1",
+        (p1,),
+    )
+    assert p2_row, 'precondición: debe existir al menos 2 productos'
+    p2 = p2_row[0][0]
+    import sqlite3 as _sqlite3_pt
+    err = None
+    conn_pt = _sqlite3_pt.connect(os.environ['DB_PATH'], timeout=5.0)
+    try:
+        try:
+            conn_pt.execute(
+                "UPDATE formula_headers SET codigo_pt='TEST_PT_X1' WHERE producto_nombre=?",
+                (p2,),
+            )
+            conn_pt.commit()
+        except Exception as e:
+            err = str(e)
+    finally:
+        conn_pt.close()
+    assert err and ('UNIQUE' in err.upper() or 'unique' in err), \
+        f'BUG: índice parcial UNIQUE no bloquea duplicado · err={err}'
+
+    # Cleanup
+    _exec("UPDATE formula_headers SET codigo_pt=NULL WHERE codigo_pt='TEST_PT_X1'")
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH B2-117c · zona en areas_planta · seed regulatorio INVIMA
+# ═══════════════════════════════════════════════════════════════════
+# Bug que cazaría: si la mig de UPDATE no aplicó bien, todas las áreas
+# quedarían en zona='general' default, y el reporte regulatorio INVIMA
+# (próximo en backlog) mostraría que ninguna sala es CONTROLADA · error
+# de clasificación que comprometería auditoría.
+
+def test_golden_zona_areas_planta_seed_correcto(app, db_clean):
+    """Mig 117 · areas_planta.zona arranca con clasificación regulatoria
+    razonable según el codigo de la sala (PROD/FAB/ENV → controlada,
+    ACOND/ALM → general).
+    """
+    # Caso 1: las salas de manufactura conocidas son CONTROLADAS
+    controladas = _query(
+        """SELECT codigo, zona FROM areas_planta
+           WHERE codigo IN ('PROD1','PROD2','PROD3','PROD4',
+                            'FAB1','FAB2','FAB3','ENV1','ENV2','DISP','LAV')
+             AND activo = 1""",
+    )
+    for codigo, zona in controladas:
+        assert zona == 'controlada', \
+            f'BUG: sala manufactura {codigo} tiene zona={zona}, esperaba controlada'
+
+    # Caso 2: áreas de apoyo/almacén son GENERAL
+    generales = _query(
+        """SELECT codigo, zona FROM areas_planta
+           WHERE codigo IN ('ACOND','ALMP','ALMPT','ESC1')""",
+    )
+    for codigo, zona in generales:
+        assert zona == 'general', \
+            f'BUG: área apoyo {codigo} tiene zona={zona}, esperaba general'
+
+    # Caso 3: nueva área se crea con default 'general' (NOT NULL DEFAULT)
+    _exec(
+        """INSERT INTO areas_planta (codigo, nombre, puede_producir, puede_envasar)
+           VALUES ('TEST-ZONA-X', 'Test Zona', 0, 0)"""
+    )
+    rows = _query(
+        "SELECT zona FROM areas_planta WHERE codigo = 'TEST-ZONA-X'",
+    )
+    assert rows and rows[0][0] == 'general', \
+        f'BUG: nueva área sin zona explícita debería tener default general · {rows}'
+
+    # Cleanup
+    _exec("DELETE FROM areas_planta WHERE codigo = 'TEST-ZONA-X'")

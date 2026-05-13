@@ -222,6 +222,63 @@ _AREAS_LIMPIEZA_PROFUNDA = (
 
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (117, "codigo_pt + numero_op + zona · MyBatch compat · Sebastián 13-may-2026", [
+        # Pieza mínima de Bloque B2 del PLAN_VERTICAL_2026. Tres conceptos
+        # que MyBatch (sistema legacy a reemplazar) usa y que necesitamos
+        # poder ingerir + emitir para compat de vista. Ver
+        # `docs/PLAN_VERTICAL_2026.md` Bloque B2.
+        #
+        # === codigo_pt en formula_headers ===
+        # Identificador corto de producto terminado que MyBatch usa en la
+        # nomenclatura de OPs y etiquetas. Manual seed por Calidad (Daniela)
+        # — NULL aceptado hasta que se asigne. Único cuando set (índice
+        # parcial WHERE codigo_pt IS NOT NULL para permitir varios NULL).
+        "ALTER TABLE formula_headers ADD COLUMN codigo_pt TEXT DEFAULT NULL",
+        """CREATE UNIQUE INDEX IF NOT EXISTS idx_fh_codigo_pt
+           ON formula_headers(codigo_pt) WHERE codigo_pt IS NOT NULL""",
+
+        # === numero_op en ebr_ejecuciones ===
+        # Identificador secuencial anual MyBatch-compat. Format 'OP-YYYY-NNNN'
+        # (4 dígitos zero-padded). Auto-asignado en hook al crear EBR via
+        # tabla op_counters (atómico bajo WAL · ver brd.assign_numero_op).
+        # Legacy NULL: EBRs anteriores a esta mig se quedan sin numero_op
+        # (ya no se asigna retroactivo · evita pisar lotes Blush Balm seed).
+        "ALTER TABLE ebr_ejecuciones ADD COLUMN numero_op TEXT DEFAULT NULL",
+        """CREATE UNIQUE INDEX IF NOT EXISTS idx_ebr_numero_op
+           ON ebr_ejecuciones(numero_op) WHERE numero_op IS NOT NULL""",
+
+        # op_counters: contador atómico por año. Una fila por año, counter
+        # arranca en 0 y sube +1 con cada EBR creado. SQLite WAL serializa
+        # writes · safe ante races concurrentes (worker A y B no pueden
+        # UPDATE simultáneo). Reset implícito en año nuevo: nueva fila
+        # (INSERT OR IGNORE) con counter=0.
+        """CREATE TABLE IF NOT EXISTS op_counters (
+            year INTEGER PRIMARY KEY,
+            counter INTEGER NOT NULL DEFAULT 0,
+            updated_at_utc TEXT NOT NULL DEFAULT (datetime('now', 'utc'))
+        )""",
+
+        # === zona en areas_planta ===
+        # Clasificación regulatoria INVIMA (mapea a Cosmetics GMP zonas):
+        #   'limpia'      → manufactura crítica (aséptica, baja carga
+        #                   microbiana) · no aplica hoy en HHA pero queda
+        #                   en el enum para futuros productos.
+        #   'controlada'  → manufactura cosmética estándar (PROD/FAB/ENV/
+        #                   DISP) · el grueso de las áreas HHA.
+        #   'general'     → almacenamiento, oficinas, áreas no productivas.
+        #   'restringida' → acceso limitado (QC, archivos regulatorios).
+        # NOT NULL DEFAULT 'general' · filas existentes arrancan en general
+        # y se reclasifican abajo según codigo.
+        "ALTER TABLE areas_planta ADD COLUMN zona TEXT NOT NULL DEFAULT 'general'",
+        # Reclasificación de las áreas conocidas (ver project_planta_crew_areas.md
+        # y el seed de migs 55/58). Las salas de fabricación/envasado/dispensación
+        # son CONTROLADAS porque tienen requisitos GMP de limpieza,
+        # cross-contamination control, gowning. ESC1 (escaleras) y ACOND
+        # (acondicionamiento post-envasado) se quedan general porque ya
+        # no manipulan bulk.
+        "UPDATE areas_planta SET zona='controlada' WHERE codigo IN ('PROD1','PROD2','PROD3','PROD4','FAB1','FAB2','FAB3','ENV1','ENV2','DISP','LAV')",
+        "UPDATE areas_planta SET zona='general'    WHERE codigo IN ('ACOND','ALMP','ALMPT','ESC1')",
+    ]),
     (116, "produccion_programada · kg_real + unidades_real + merma_pct · Planta Mejora A · Sebastián 12-may-2026", [
         # Sebastián pidió "planta puede tener cosas" como prioridad. El primer
         # dolor detectado: hoy NO se captura cuántos kg/unidades salieron al

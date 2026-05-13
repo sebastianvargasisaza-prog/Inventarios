@@ -127,6 +127,44 @@ def _next_version(conn, producto):
     return int(row[0] or 0) + 1
 
 
+def assign_numero_op(c, year=None):
+    """Genera atómicamente el siguiente numero_op MyBatch-compat.
+
+    Format: 'OP-YYYY-NNNN' (4 dígitos zero-padded).
+
+    Usa tabla op_counters (mig 117) como counter atómico por año. SQLite WAL
+    serializa los writes · safe ante races concurrentes (worker A y B
+    bloquean uno al otro mientras hacen UPDATE op_counters).
+
+    Reset implícito de año: la primera vez que se llama con un año nuevo
+    se inserta fila counter=0 y arranca en 1. No hay reset manual.
+
+    El cursor debe ser de una transacción viva (caller debe hacer commit
+    después de la INSERT INTO ebr_ejecuciones que use el numero_op
+    retornado · si rollback, op_counters queda con el counter incrementado
+    pero ese numero queda sin uso · es comportamiento aceptable porque
+    Part 11 no exige numeros contiguos, solo únicos).
+    """
+    if year is None:
+        from datetime import datetime as _dt, timezone as _tz
+        year = _dt.now(_tz.utc).year
+    c.execute(
+        "INSERT OR IGNORE INTO op_counters (year, counter) VALUES (?, 0)",
+        (year,),
+    )
+    c.execute(
+        """UPDATE op_counters
+           SET counter = counter + 1,
+               updated_at_utc = datetime('now', 'utc')
+           WHERE year = ?""",
+        (year,),
+    )
+    counter = c.execute(
+        "SELECT counter FROM op_counters WHERE year = ?", (year,),
+    ).fetchone()[0]
+    return f"OP-{year}-{counter:04d}"
+
+
 # ── endpoints ───────────────────────────────────────────────────────────────
 
 @bp.route("/api/brd/mbr", methods=["GET"])
@@ -504,6 +542,7 @@ def _ebr_to_dict(row, pasos=None):
         "mbr_version": row["mbr_version"],
         "produccion_id": row["produccion_id"],
         "lote": row["lote"],
+        "numero_op": row["numero_op"] if "numero_op" in row.keys() else None,
         "estado": row["estado"],
         "iniciado_por": row["iniciado_por"],
         "iniciado_at_utc": row["iniciado_at_utc"],
@@ -589,12 +628,13 @@ def iniciar_ebr():
         return jsonify({"error": "cantidad_objetivo_g inválida"}), 400
 
     user = session.get("compras_user", "")
+    numero_op = assign_numero_op(cur)
     cur.execute(
         """INSERT INTO ebr_ejecuciones
-             (mbr_template_id, mbr_version, produccion_id, lote, estado,
-              iniciado_por, iniciado_at_utc, cantidad_objetivo_g, notas)
-           VALUES (?, ?, ?, ?, 'iniciado', ?, datetime('now', 'utc'), ?, ?)""",
-        (mbr["id"], mbr["version"], body.get("produccion_id"), lote,
+             (mbr_template_id, mbr_version, produccion_id, lote, numero_op,
+              estado, iniciado_por, iniciado_at_utc, cantidad_objetivo_g, notas)
+           VALUES (?, ?, ?, ?, ?, 'iniciado', ?, datetime('now', 'utc'), ?, ?)""",
+        (mbr["id"], mbr["version"], body.get("produccion_id"), lote, numero_op,
          user, cantidad_obj, (body.get("notas") or "").strip()),
     )
     ebr_id = cur.lastrowid
@@ -618,8 +658,10 @@ def iniciar_ebr():
     audit_log(cur, usuario=user, accion="INICIAR_EBR",
               tabla="ebr_ejecuciones", registro_id=ebr_id,
               despues={"mbr_template_id": mbr["id"], "lote": lote,
+                        "numero_op": numero_op,
                         "pasos_clonados": len(pasos_mbr)})
-    return jsonify({"ok": True, "id": ebr_id, "pasos": len(pasos_mbr)}), 201
+    return jsonify({"ok": True, "id": ebr_id, "numero_op": numero_op,
+                     "pasos": len(pasos_mbr)}), 201
 
 
 @bp.route("/api/brd/ebr", methods=["GET"])
@@ -637,10 +679,10 @@ def listar_ebr():
         where.append("lote = ?")
         params.append(lote)
     sql = """SELECT id, mbr_template_id, mbr_version, produccion_id, lote,
-                    estado, iniciado_por, iniciado_at_utc, completado_at_utc,
-                    liberado_por, liberado_at_utc, liberado_signature_id,
-                    rechazado_motivo, cantidad_objetivo_g, cantidad_real_g,
-                    yield_pct, notas
+                    numero_op, estado, iniciado_por, iniciado_at_utc,
+                    completado_at_utc, liberado_por, liberado_at_utc,
+                    liberado_signature_id, rechazado_motivo,
+                    cantidad_objetivo_g, cantidad_real_g, yield_pct, notas
              FROM ebr_ejecuciones"""
     if where:
         sql += " WHERE " + " AND ".join(where)

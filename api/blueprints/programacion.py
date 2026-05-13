@@ -3046,12 +3046,16 @@ def _intentar_crear_ebr_auto(c, evento_id, producto, total_g_descontado, user):
         # o lote_size_g del MBR como fallback
         cantidad_obj = total_g_descontado or mbr[2]
 
+        # numero_op MyBatch-compat (mig 117) · atómico via op_counters
+        from blueprints.brd import assign_numero_op
+        numero_op = assign_numero_op(c)
+
         c.execute(
             """INSERT INTO ebr_ejecuciones
-                 (mbr_template_id, mbr_version, produccion_id, lote, estado,
-                  iniciado_por, iniciado_at_utc, cantidad_objetivo_g, notas)
-               VALUES (?, ?, ?, ?, 'iniciado', ?, datetime('now', 'utc'), ?, ?)""",
-            (mbr[0], mbr[1], evento_id, lote, user, cantidad_obj,
+                 (mbr_template_id, mbr_version, produccion_id, lote, numero_op,
+                  estado, iniciado_por, iniciado_at_utc, cantidad_objetivo_g, notas)
+               VALUES (?, ?, ?, ?, ?, 'iniciado', ?, datetime('now', 'utc'), ?, ?)""",
+            (mbr[0], mbr[1], evento_id, lote, numero_op, user, cantidad_obj,
              f'Auto-creado al iniciar producción Calendar id={evento_id}'),
         )
         ebr_id = c.lastrowid
@@ -3072,9 +3076,10 @@ def _intentar_crear_ebr_auto(c, evento_id, producto, total_g_descontado, user):
                 (ebr_id, p[0], p[1], p[2], p[3], p[4], p[5], p[6]),
             )
 
-        log.info('BRD auto-EBR creado · evento=%s ebr=%s lote=%s pasos=%d',
-                  evento_id, ebr_id, lote, len(pasos_mbr))
+        log.info('BRD auto-EBR creado · evento=%s ebr=%s lote=%s op=%s pasos=%d',
+                  evento_id, ebr_id, lote, numero_op, len(pasos_mbr))
         return {'ok': True, 'ebr_id': ebr_id, 'lote': lote,
+                 'numero_op': numero_op,
                  'pasos_clonados': len(pasos_mbr),
                  'mbr_version': mbr[1]}
 
