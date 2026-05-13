@@ -1182,3 +1182,426 @@ def reportar_ipc_resultado(ebr_id):
               despues={"ebr_id": ebr_id, "spec_id": spec_id,
                         "valor": valor_f, "conforme": conforme})
     return jsonify({"ok": True, "id": rid, "conforme": conforme}), 201
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Equipment cleaning log (F6)
+# ════════════════════════════════════════════════════════════════════════════
+
+VALID_TIPO_LIMPIEZA = {"rutinaria", "profunda", "cambio_producto"}
+
+
+def _cleaning_to_dict(row):
+    return {
+        "id": row["id"],
+        "equipo_codigo": row["equipo_codigo"],
+        "lote_anterior": row["lote_anterior"] or "",
+        "lote_siguiente": row["lote_siguiente"] or "",
+        "tipo_limpieza": row["tipo_limpieza"],
+        "operario_username": row["operario_username"],
+        "operario_e_sign_id": row["operario_e_sign_id"],
+        "qc_username": row["qc_username"] or "",
+        "qc_e_sign_id": row["qc_e_sign_id"],
+        "visual_ok": row["visual_ok"],
+        "iniciado_at_utc": row["iniciado_at_utc"],
+        "completado_at_utc": row["completado_at_utc"],
+        "observaciones": row["observaciones"] or "",
+    }
+
+
+@bp.route("/api/brd/cleaning", methods=["POST"])
+def reportar_cleaning():
+    """Operario reporta INICIO de limpieza de un equipo."""
+    err = _require_login()
+    if err:
+        return err
+    body = request.get_json(silent=True) or {}
+    equipo = (body.get("equipo_codigo") or "").strip()
+    if not equipo:
+        return jsonify({"error": "equipo_codigo requerido"}), 400
+    tipo = (body.get("tipo_limpieza") or "rutinaria").strip().lower()
+    if tipo not in VALID_TIPO_LIMPIEZA:
+        return jsonify({"error": f"tipo_limpieza inválido · use {sorted(VALID_TIPO_LIMPIEZA)}"}), 400
+
+    user = session.get("compras_user", "")
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        """INSERT INTO equipo_limpieza_log
+             (equipo_codigo, lote_anterior, lote_siguiente, tipo_limpieza,
+              operario_username, iniciado_at_utc, observaciones)
+           VALUES (?, ?, ?, ?, ?, datetime('now', 'utc'), ?)""",
+        (equipo,
+         (body.get("lote_anterior") or "").strip(),
+         (body.get("lote_siguiente") or "").strip(),
+         tipo, user,
+         (body.get("observaciones") or "").strip()),
+    )
+    cl_id = cur.lastrowid
+    conn.commit()
+    audit_log(cur, usuario=user, accion="INICIAR_LIMPIEZA",
+              tabla="equipo_limpieza_log", registro_id=cl_id,
+              despues={"equipo": equipo, "tipo": tipo})
+    return jsonify({"ok": True, "id": cl_id}), 201
+
+
+@bp.route("/api/brd/cleaning/<int:cl_id>/completar", methods=["POST"])
+def completar_cleaning(cl_id):
+    """Operario marca limpieza como completada con e-sign opcional."""
+    err = _require_login()
+    if err:
+        return err
+    body = request.get_json(silent=True) or {}
+    signature_id = body.get("signature_id")
+
+    conn = get_db()
+    cur = conn.cursor()
+    row = cur.execute(
+        "SELECT operario_username, completado_at_utc FROM equipo_limpieza_log WHERE id = ?",
+        (cl_id,),
+    ).fetchone()
+    if not row:
+        return jsonify({"error": "cleaning log no encontrado"}), 404
+    if row["completado_at_utc"]:
+        return jsonify({"error": "limpieza ya completada"}), 409
+
+    user = session.get("compras_user", "")
+    # Validar e-sign si se pasa
+    if signature_id:
+        if not _validar_signature(
+            cur, signature_id, record_table="equipo_limpieza_log",
+            record_id=cl_id, meaning="ejecuta", signer_username=user,
+        ):
+            return jsonify({"error": "signature_id inválido"}), 400
+
+    cur.execute(
+        """UPDATE equipo_limpieza_log
+             SET completado_at_utc = datetime('now', 'utc'),
+                 operario_e_sign_id = ?
+           WHERE id = ?""",
+        (int(signature_id) if signature_id else None, cl_id),
+    )
+    conn.commit()
+    return jsonify({"ok": True})
+
+
+@bp.route("/api/brd/cleaning/<int:cl_id>/validar", methods=["POST"])
+def validar_cleaning_qc(cl_id):
+    """QC firma inspección visual y marca visual_ok=1/0."""
+    err = _require_qa_or_admin()
+    if err:
+        return err
+    body = request.get_json(silent=True) or {}
+    visual_ok = body.get("visual_ok")
+    signature_id = body.get("signature_id")
+    if visual_ok is None:
+        return jsonify({"error": "visual_ok requerido (1=conforme, 0=no)"}), 400
+    if not signature_id:
+        return jsonify({
+            "error": "signature_id requerido · meaning='supervisa' record_table='equipo_limpieza_log'",
+        }), 400
+
+    conn = get_db()
+    cur = conn.cursor()
+    row = cur.execute(
+        "SELECT qc_e_sign_id FROM equipo_limpieza_log WHERE id = ?",
+        (cl_id,),
+    ).fetchone()
+    if not row:
+        return jsonify({"error": "cleaning log no encontrado"}), 404
+    if row["qc_e_sign_id"]:
+        return jsonify({"error": "ya validado por QC (inmutable)"}), 409
+
+    user = session.get("compras_user", "")
+    if not _validar_signature(
+        cur, signature_id, record_table="equipo_limpieza_log",
+        record_id=cl_id, meaning="supervisa", signer_username=user,
+    ):
+        return jsonify({"error": "signature_id no corresponde a 'supervisa' tuya en este log"}), 400
+
+    cur.execute(
+        """UPDATE equipo_limpieza_log
+             SET qc_username = ?,
+                 qc_e_sign_id = ?,
+                 visual_ok = ?
+           WHERE id = ?""",
+        (user, int(signature_id), 1 if visual_ok else 0, cl_id),
+    )
+    conn.commit()
+    audit_log(cur, usuario=user, accion="VALIDAR_LIMPIEZA_QC",
+              tabla="equipo_limpieza_log", registro_id=cl_id,
+              despues={"visual_ok": visual_ok, "signature_id": signature_id})
+    return jsonify({"ok": True, "visual_ok": int(bool(visual_ok))})
+
+
+@bp.route("/api/brd/cleaning", methods=["GET"])
+def listar_cleaning():
+    err = _require_login()
+    if err:
+        return err
+    equipo = (request.args.get("equipo") or "").strip()
+    where, params = [], []
+    if equipo:
+        where.append("equipo_codigo = ?")
+        params.append(equipo)
+    sql = """SELECT * FROM equipo_limpieza_log"""
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    sql += " ORDER BY iniciado_at_utc DESC LIMIT 200"
+    rows = get_db().execute(sql, params).fetchall()
+    return jsonify({"items": [_cleaning_to_dict(r) for r in rows]})
+
+
+@bp.route("/api/brd/cleaning/equipo/<equipo>/ultima", methods=["GET"])
+def ultima_cleaning(equipo):
+    """Última limpieza del equipo (validada o no). Útil para wizard que
+    decide si el equipo puede usarse en un lote nuevo."""
+    err = _require_login()
+    if err:
+        return err
+    row = get_db().execute(
+        """SELECT * FROM equipo_limpieza_log
+           WHERE equipo_codigo = ?
+           ORDER BY iniciado_at_utc DESC LIMIT 1""",
+        (equipo,),
+    ).fetchone()
+    if not row:
+        return jsonify({"equipo_codigo": equipo, "ultima": None,
+                         "apto_para_uso": False,
+                         "razon": "sin registros de limpieza"})
+    apto = (row["completado_at_utc"] is not None
+             and int(row["visual_ok"] or 0) == 1)
+    return jsonify({
+        "equipo_codigo": equipo,
+        "ultima": _cleaning_to_dict(row),
+        "apto_para_uso": apto,
+        "razon": "" if apto else "limpieza pendiente o no validada por QC",
+    })
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# PDF maestro auditable EBR (F8)
+# ════════════════════════════════════════════════════════════════════════════
+
+def _safe_pdf(text):
+    """fpdf2 latin-1 compatible (replica de api/comprobante_pago._safe)."""
+    if text is None:
+        return ""
+    if not isinstance(text, str):
+        text = str(text)
+    repl = {"—": "-", "–": "-", "…": "...", "“": '"', "”": '"',
+            "‘": "'", "’": "'", "•": "·", "→": "->", "≥": ">=", "≤": "<="}
+    for k, v in repl.items():
+        text = text.replace(k, v)
+    return text.encode("latin-1", errors="replace").decode("latin-1")
+
+
+@bp.route("/api/brd/ebr/<int:ebr_id>/pdf", methods=["GET"])
+def pdf_ebr(ebr_id):
+    """Genera el PDF maestro del EBR para auditoría INVIMA / archivo regulatorio.
+
+    Estructura:
+      1. Header: producto, lote, MBR version, estado
+      2. Identificación: iniciado/completado/liberado por con timestamps
+      3. Reconciliación cantidad objetivo vs real + yield_pct
+      4. Tabla de pasos ejecutados con operarios + e-signature IDs
+      5. Tabla de IPCs reportados con conformidad
+      6. Tabla de firmas electrónicas asociadas (de e_signatures)
+      7. Footer: hash SHA256 del cuerpo + timestamp de generación
+    """
+    err = _require_login()
+    if err:
+        return err
+
+    import hashlib
+    import io
+    from datetime import datetime, timezone
+    from flask import send_file
+    try:
+        from fpdf import FPDF
+    except ImportError:
+        return jsonify({"error": "fpdf2 no instalado · agregar a requirements.txt"}), 500
+
+    conn = get_db()
+    ebr = conn.execute("SELECT * FROM ebr_ejecuciones WHERE id = ?", (ebr_id,)).fetchone()
+    if not ebr:
+        return jsonify({"error": "EBR no encontrado"}), 404
+
+    mbr = conn.execute(
+        "SELECT producto_nombre, version, lote_size_g FROM mbr_templates WHERE id = ?",
+        (ebr["mbr_template_id"],),
+    ).fetchone()
+    pasos = conn.execute(
+        "SELECT * FROM ebr_pasos_ejecutados WHERE ebr_id = ? ORDER BY orden",
+        (ebr_id,),
+    ).fetchall()
+    ipcs = conn.execute(
+        """SELECT r.*, s.parametro AS p, s.unidad AS u,
+                  s.valor_min AS vmin, s.valor_max AS vmax
+           FROM ipc_resultados r JOIN ipc_specs s ON s.id = r.ipc_spec_id
+           WHERE r.ebr_id = ?
+           ORDER BY r.medido_at_utc""",
+        (ebr_id,),
+    ).fetchall()
+    firmas = conn.execute(
+        """SELECT meaning, signer_username, signer_full_name, signer_cedula,
+                  signer_cargo, signed_at_utc, comment
+           FROM e_signatures
+           WHERE (record_table='ebr_ejecuciones' AND record_id=?)
+              OR (record_table='ebr_pasos_ejecutados' AND record_id IN
+                  (SELECT id FROM ebr_pasos_ejecutados WHERE ebr_id=?))
+              OR (record_table='ipc_resultados' AND record_id IN
+                  (SELECT id FROM ipc_resultados WHERE ebr_id=?))
+           ORDER BY signed_at_utc""",
+        (str(ebr_id), ebr_id, ebr_id),
+    ).fetchall()
+
+    pdf = FPDF()
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.add_page()
+
+    # Header
+    pdf.set_font("Helvetica", "B", 16)
+    pdf.cell(0, 10, _safe_pdf(f"Executed Batch Record · Lote {ebr['lote']}"),
+             new_x="LMARGIN", new_y="NEXT", align="C")
+    pdf.set_font("Helvetica", "", 10)
+    pdf.cell(0, 6, _safe_pdf(f"Producto: {mbr['producto_nombre']} · MBR v{ebr['mbr_version']}"),
+             new_x="LMARGIN", new_y="NEXT", align="C")
+    pdf.cell(0, 6, _safe_pdf(f"Estado: {ebr['estado'].upper()}"),
+             new_x="LMARGIN", new_y="NEXT", align="C")
+    pdf.ln(4)
+
+    # Identificación
+    pdf.set_font("Helvetica", "B", 11)
+    pdf.cell(0, 7, _safe_pdf("1. Identificación del lote"),
+             new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font("Helvetica", "", 10)
+    pdf.cell(0, 5, _safe_pdf(f"Iniciado por: {ebr['iniciado_por']}  ·  {ebr['iniciado_at_utc']} UTC"),
+             new_x="LMARGIN", new_y="NEXT")
+    if ebr["completado_at_utc"]:
+        pdf.cell(0, 5, _safe_pdf(f"Completado: {ebr['completado_at_utc']} UTC"),
+                 new_x="LMARGIN", new_y="NEXT")
+    if ebr["liberado_at_utc"]:
+        pdf.cell(0, 5, _safe_pdf(
+            f"Liberado por: {ebr['liberado_por']}  ·  {ebr['liberado_at_utc']} UTC  ·  "
+            f"firma e-sig #{ebr['liberado_signature_id']}"),
+                 new_x="LMARGIN", new_y="NEXT")
+    if ebr["rechazado_motivo"]:
+        pdf.cell(0, 5, _safe_pdf(f"RECHAZADO · motivo: {ebr['rechazado_motivo']}"),
+                 new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(3)
+
+    # Reconciliación
+    pdf.set_font("Helvetica", "B", 11)
+    pdf.cell(0, 7, _safe_pdf("2. Reconciliación cantidad"),
+             new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font("Helvetica", "", 10)
+    obj = ebr["cantidad_objetivo_g"]
+    real = ebr["cantidad_real_g"]
+    yld = ebr["yield_pct"]
+    pdf.cell(0, 5, _safe_pdf(
+        f"Objetivo: {obj:,.2f} g   ·   Real: {real:,.2f} g   ·   Yield: {yld:.2f} %"
+        if real is not None else
+        f"Objetivo: {obj:,.2f} g   ·   Real: pendiente"),
+        new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(3)
+
+    def _line(text, h=5, font_size=9, italic=False):
+        """multi_cell que siempre arranca al margen izquierdo (evita FPDFException)."""
+        pdf.set_x(pdf.l_margin)
+        if italic:
+            pdf.set_font("Helvetica", "I", font_size)
+        else:
+            pdf.set_font("Helvetica", "", font_size)
+        pdf.multi_cell(0, h, _safe_pdf(text))
+
+    # Pasos ejecutados (formato lista)
+    pdf.set_font("Helvetica", "B", 11)
+    pdf.cell(0, 7, _safe_pdf(f"3. Pasos ejecutados ({len(pasos)})"),
+             new_x="LMARGIN", new_y="NEXT")
+    for p in pasos:
+        sig_str = f"#{p['e_sign_id']}" if p["e_sign_id"] else "-"
+        if p["qc_e_sign_id"]:
+            sig_str += f" QC#{p['qc_e_sign_id']}"
+        _line(f"Paso {p['orden']}: {p['descripcion']}", h=5, font_size=9)
+        _line(
+            f"   operario: {p['operario_username'] or '-'}  "
+            f"completado: {(p['completado_at_utc'] or '-')[:19]} UTC  "
+            f"e-sign: {sig_str}",
+            h=4, font_size=8,
+        )
+        if p["observaciones"]:
+            _line(f"   obs: {p['observaciones']}", h=4, font_size=8, italic=True)
+    pdf.ln(2)
+
+    # IPCs (formato lista)
+    if ipcs:
+        pdf.set_font("Helvetica", "B", 11)
+        pdf.cell(0, 7, _safe_pdf(f"4. In-Process Controls ({len(ipcs)})"),
+                 new_x="LMARGIN", new_y="NEXT")
+        for ipc in ipcs:
+            conf = "Conforme" if ipc["conforme"] == 1 else ("NO conforme" if ipc["conforme"] == 0 else "pendiente")
+            rango = ""
+            if ipc["vmin"] is not None or ipc["vmax"] is not None:
+                rango = f" [rango: {ipc['vmin']} - {ipc['vmax']} {ipc['u'] or ''}]"
+            _line(
+                f"{ipc['p']}: {ipc['valor_medido']} {ipc['u'] or ''}"
+                f"{rango}  ·  {conf}  ·  {ipc['medido_por']}  ·  "
+                f"{(ipc['medido_at_utc'] or '')[:19]} UTC",
+                h=5, font_size=9,
+            )
+        pdf.ln(2)
+
+    # Firmas electrónicas
+    if firmas:
+        pdf.set_font("Helvetica", "B", 11)
+        pdf.cell(0, 7, _safe_pdf(f"5. Firmas electrónicas ({len(firmas)}) · Part 11 §11.50"),
+                 new_x="LMARGIN", new_y="NEXT")
+        for f in firmas:
+            _line(
+                f"{f['signed_at_utc']} UTC · {f['meaning']} · "
+                f"{f['signer_username']} ({f['signer_full_name'] or '-'}, "
+                f"cédula {f['signer_cedula'] or '-'}, {f['signer_cargo'] or '-'})",
+                h=5, font_size=9,
+            )
+            if f["comment"]:
+                _line(f'   "{f["comment"]}"', h=4, font_size=8, italic=True)
+
+    # Hash de contenido (NO de los bytes del PDF · esos cambian con timestamp).
+    # Este hash es estable: depende solo de los datos del EBR. Sirve para que
+    # el auditor verifique que el PDF que tiene en mano corresponde a un EBR
+    # específico y no fue alterado el record fuente.
+    payload = "|".join([
+        str(ebr["id"]), ebr["lote"], str(ebr["mbr_template_id"]),
+        str(ebr["mbr_version"]), ebr["estado"], ebr["iniciado_at_utc"],
+        str(ebr["cantidad_objetivo_g"]),
+        str(ebr["cantidad_real_g"]) if ebr["cantidad_real_g"] is not None else "-",
+        str(ebr["yield_pct"]) if ebr["yield_pct"] is not None else "-",
+        str(ebr["liberado_signature_id"] or "-"),
+        str(len(pasos)), str(len(ipcs)), str(len(firmas)),
+    ])
+    content_hash = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    gen_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+    # Footer con hash · agregar ANTES de output() final
+    pdf.ln(8)
+    pdf.set_font("Helvetica", "I", 7)
+    pdf.cell(0, 4, _safe_pdf(f"Generado: {gen_at}  ·  EOS app.eossuite.com  ·  EBR id #{ebr_id}"),
+             new_x="LMARGIN", new_y="NEXT", align="C")
+    pdf.cell(0, 4, _safe_pdf(f"SHA-256 del contenido EBR: {content_hash}"),
+             new_x="LMARGIN", new_y="NEXT", align="C")
+    final_bytes = bytes(pdf.output())
+    pdf_hash = content_hash
+
+    # Audit log de la descarga (importante para Part 11 evidencia)
+    audit_log(None, usuario=session.get("compras_user", ""),
+              accion="DOWNLOAD_EBR_PDF", tabla="ebr_ejecuciones",
+              registro_id=ebr_id,
+              detalle=f"hash={pdf_hash[:16]} bytes={len(final_bytes)}")
+
+    return send_file(
+        io.BytesIO(final_bytes),
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name=f"EBR_{ebr['lote']}.pdf",
+    )

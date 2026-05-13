@@ -222,6 +222,52 @@ _AREAS_LIMPIEZA_PROFUNDA = (
 
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (113, "equipo_limpieza_log · cleaning records por equipo · Fase 1 BRD · Sebastián 12-may-2026", [
+        # GMP requiere demostrar que cada equipo está limpio antes de un nuevo
+        # lote (especialmente cambio de producto). Si auditor pregunta "cómo
+        # sabe que TQ01 no contaminó el lote N con residuos del N-1", la
+        # respuesta es este log: limpieza con timestamp + operario + QC visual.
+        #
+        # tipo_limpieza:
+        #   rutinaria         → entre lotes del mismo producto.
+        #   profunda          → mensual / programada (ya existe limpieza_profunda_calendario).
+        #   cambio_producto   → al fabricar un producto distinto (mayor riesgo).
+        #
+        # visual_ok=1 lo setea QC al firmar inspección visual. Solo entonces
+        # el equipo se considera apto para próximo uso.
+        """CREATE TABLE IF NOT EXISTS equipo_limpieza_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            equipo_codigo TEXT NOT NULL,
+            lote_anterior TEXT DEFAULT '',
+            lote_siguiente TEXT DEFAULT '',
+            tipo_limpieza TEXT NOT NULL DEFAULT 'rutinaria',
+            operario_username TEXT NOT NULL,
+            operario_e_sign_id INTEGER DEFAULT NULL,
+            qc_username TEXT DEFAULT '',
+            qc_e_sign_id INTEGER DEFAULT NULL,
+            visual_ok INTEGER DEFAULT NULL,
+            iniciado_at_utc TEXT NOT NULL,
+            completado_at_utc TEXT DEFAULT NULL,
+            observaciones TEXT DEFAULT ''
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_limpieza_equipo ON equipo_limpieza_log(equipo_codigo, completado_at_utc DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_limpieza_lote_sig ON equipo_limpieza_log(lote_siguiente) WHERE lote_siguiente != ''",
+
+        # Inmutabilidad post-validación QC: una vez visual_ok seteado y QC
+        # firmó, el log no se modifica. Si hubo error, abrir desviación
+        # nueva, no editar el record.
+        """CREATE TRIGGER IF NOT EXISTS trg_limpieza_no_edit_qc
+           BEFORE UPDATE ON equipo_limpieza_log
+           FOR EACH ROW
+           WHEN OLD.qc_e_sign_id IS NOT NULL
+                AND (NEW.visual_ok IS NOT OLD.visual_ok
+                  OR NEW.qc_e_sign_id IS NOT OLD.qc_e_sign_id
+                  OR NEW.completado_at_utc IS NOT OLD.completado_at_utc
+                  OR NEW.equipo_codigo IS NOT OLD.equipo_codigo)
+           BEGIN
+               SELECT RAISE(ABORT, 'cleaning log validado por QC es inmutable');
+           END""",
+    ]),
     (112, "IPCs · In-Process Controls · specs (MBR) + resultados (EBR) · Fase 1 BRD · Sebastián 12-may-2026", [
         # ipc_specs: parámetros de control (pH, viscosidad, T°, apariencia, etc.)
         # asociados a un MBR. Pueden estar atados a un paso específico o ser

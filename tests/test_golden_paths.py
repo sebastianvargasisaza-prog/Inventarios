@@ -5295,3 +5295,159 @@ def test_golden_brd_ipcs_workflow_completo(app, db_clean):
     cs.patch('/api/identidad/sebastian',
              json={'cedula': '', 'nombre_completo': ''},
              headers=csrf_headers())
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 59 · Equipment cleaning log + validación QC (Fase 1 F6)
+# ═══════════════════════════════════════════════════════════════════
+def test_golden_brd_cleaning_log_workflow(app, db_clean):
+    """reportar inicio → completar operario → QC firma → equipo apto."""
+    cs = _login(app, 'sebastian')
+    cs.patch('/api/identidad/sebastian',
+             json={'cedula': '55555555', 'nombre_completo': 'Test Cleaning'},
+             headers=csrf_headers())
+
+    # Caso 1: equipo sin limpiezas previas → no apto
+    r0 = cs.get('/api/brd/cleaning/equipo/TQ99/ultima')
+    assert r0.status_code == 200
+    d0 = r0.get_json()
+    assert d0['ultima'] is None
+    assert d0['apto_para_uso'] is False
+
+    # Caso 2: iniciar limpieza
+    r1 = cs.post('/api/brd/cleaning', json={
+        'equipo_codigo': 'TQ99',
+        'lote_anterior': 'LOTE-OLD',
+        'lote_siguiente': 'LOTE-NEW',
+        'tipo_limpieza': 'cambio_producto',
+        'observaciones': 'Cambio de producto · limpieza CIP completa',
+    }, headers=csrf_headers())
+    assert r1.status_code == 201
+    cl_id = r1.get_json()['id']
+
+    # Caso 3: completar (operario, sin e-sign opcional)
+    r2 = cs.post(f'/api/brd/cleaning/{cl_id}/completar', json={},
+                 headers=csrf_headers())
+    assert r2.status_code == 200
+
+    # Caso 4: aún sin QC → no apto
+    r3 = cs.get('/api/brd/cleaning/equipo/TQ99/ultima')
+    assert r3.get_json()['apto_para_uso'] is False
+
+    # Caso 5: QC valida con e-sign · meaning='supervisa' sobre el log
+    sig_qc = _firmar(cs, record_table='equipo_limpieza_log',
+                      record_id=cl_id, meaning='supervisa',
+                      comment='Inspección visual conforme')
+    r4 = cs.post(f'/api/brd/cleaning/{cl_id}/validar', json={
+        'visual_ok': 1, 'signature_id': sig_qc,
+    }, headers=csrf_headers())
+    assert r4.status_code == 200, f'BUG QC validar: {r4.status_code} {r4.data}'
+
+    # Caso 6: ahora equipo es apto
+    r5 = cs.get('/api/brd/cleaning/equipo/TQ99/ultima')
+    d5 = r5.get_json()
+    assert d5['apto_para_uso'] is True
+    assert d5['ultima']['visual_ok'] == 1
+    assert d5['ultima']['qc_username'] == 'sebastian'
+
+    # Caso 7: trigger SQL bloquea modificación post-validación QC
+    import sqlite3 as _sqlite3
+    err = None
+    try:
+        conn = _sqlite3.connect(os.environ['DB_PATH'], timeout=5.0)
+        try:
+            conn.execute(
+                "UPDATE equipo_limpieza_log SET visual_ok=0 WHERE id=?",
+                (cl_id,),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception as e:
+        err = str(e)
+    assert err and 'inmutable' in err.lower(), \
+        f'BUG: cleaning log validado debe ser inmutable · err={err}'
+
+    # Caso 8: re-validar mismo log rechaza (ya QC firmó)
+    sig_qc2 = _firmar(cs, record_table='equipo_limpieza_log',
+                       record_id=cl_id, meaning='supervisa')
+    r6 = cs.post(f'/api/brd/cleaning/{cl_id}/validar', json={
+        'visual_ok': 1, 'signature_id': sig_qc2,
+    }, headers=csrf_headers())
+    assert r6.status_code == 409
+
+    # Cleanup
+    cs.patch('/api/identidad/sebastian',
+             json={'cedula': '', 'nombre_completo': ''},
+             headers=csrf_headers())
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 60 · PDF maestro auditable EBR (Fase 1 F8)
+# ═══════════════════════════════════════════════════════════════════
+def test_golden_brd_pdf_ebr_descargable(app, db_clean):
+    """GET /api/brd/ebr/<id>/pdf devuelve PDF firmado · audit_log captura."""
+    cs = _login(app, 'sebastian')
+    cs.patch('/api/identidad/sebastian',
+             json={'cedula': '44444444', 'nombre_completo': 'Test PDF'},
+             headers=csrf_headers())
+
+    # Setup completo: MBR aprobado + EBR liberado para PDF "real"
+    rm = cs.post('/api/brd/mbr', json={
+        'producto_nombre': 'Test PDF Producto',
+        'lote_size_g': 200.0,
+    }, headers=csrf_headers())
+    mbr_id = rm.get_json()['id']
+    cs.post(f'/api/brd/mbr/{mbr_id}/pasos',
+            json={'descripcion': 'Mezclar 30 min', 'tipo_paso': 'mezclado'},
+            headers=csrf_headers())
+    cs.post(f'/api/brd/mbr/{mbr_id}/submit', json={}, headers=csrf_headers())
+    sig_aprob = _firmar(cs, record_table='mbr_templates', record_id=mbr_id,
+                          meaning='aprueba')
+    cs.post(f'/api/brd/mbr/{mbr_id}/aprobar',
+            json={'signature_id': sig_aprob}, headers=csrf_headers())
+
+    re = cs.post('/api/brd/ebr', json={
+        'mbr_template_id': mbr_id, 'lote': 'TEST-PDF-001',
+    }, headers=csrf_headers())
+    ebr_id = re.get_json()['id']
+    cs.post(f'/api/brd/ebr/{ebr_id}/pasos/1/iniciar', json={},
+            headers=csrf_headers())
+    cs.post(f'/api/brd/ebr/{ebr_id}/pasos/1/completar',
+            json={'observaciones': 'OK'}, headers=csrf_headers())
+    cs.post(f'/api/brd/ebr/{ebr_id}/completar',
+            json={'cantidad_real_g': 195.0}, headers=csrf_headers())
+    sig_lib = _firmar(cs, record_table='ebr_ejecuciones',
+                       record_id=ebr_id, meaning='libera',
+                       comment='Conforme · liberación PDF test')
+    cs.post(f'/api/brd/ebr/{ebr_id}/liberar',
+            json={'signature_id': sig_lib}, headers=csrf_headers())
+
+    # Caso 1: GET PDF devuelve 200 con Content-Type pdf
+    r = cs.get(f'/api/brd/ebr/{ebr_id}/pdf')
+    assert r.status_code == 200, f'BUG PDF: {r.status_code} {r.data[:200]}'
+    assert r.content_type.startswith('application/pdf'), \
+        f'BUG: content_type={r.content_type}'
+    # Magic bytes PDF
+    assert r.data[:4] == b'%PDF', 'BUG: respuesta no es un PDF válido'
+    # Tamaño razonable (>1KB para 1 paso + 1 firma)
+    assert len(r.data) > 1000, f'BUG: PDF muy chico ({len(r.data)} bytes)'
+
+    # Caso 2: header Content-Disposition con nombre de lote
+    cd = r.headers.get('Content-Disposition', '')
+    assert 'TEST-PDF-001' in cd, f'BUG: filename sin lote · {cd}'
+
+    # Caso 3: audit_log captura la descarga (Part 11 evidencia)
+    rows = _query(
+        "SELECT accion, registro_id FROM audit_log "
+        "WHERE accion='DOWNLOAD_EBR_PDF' AND registro_id=? "
+        "ORDER BY id DESC LIMIT 1",
+        (str(ebr_id),)
+    )
+    assert rows and rows[0][0] == 'DOWNLOAD_EBR_PDF', \
+        'BUG: audit_log NO captura descarga del PDF'
+
+    # Cleanup
+    cs.patch('/api/identidad/sebastian',
+             json={'cedula': '', 'nombre_completo': ''},
+             headers=csrf_headers())
