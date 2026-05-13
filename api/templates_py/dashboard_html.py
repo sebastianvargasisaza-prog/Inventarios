@@ -1469,17 +1469,67 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
        generaban ruido + posibles errores · ocultos pero los IDs siguen
        en el DOM por compatibilidad con switchProgTab() y JS existente. -->
   <div style="display:flex;gap:10px;margin-bottom:18px;border-bottom:2px solid #e2e8f0;padding-bottom:12px;align-items:center;flex-wrap:wrap">
-    <button id="prog-tab-planv2" onclick="switchProgTab('planv2')"
+    <!-- Sebastián 13-may-2026: Necesidades = bandeja entrada (Animus DTC
+         + B2B Fernando + futuros clientes). Cada cliente B2B nuevo se
+         agrega como sección sin tocar UI. -->
+    <button id="prog-tab-necesidades" onclick="switchProgTab('necesidades')"
       style="padding:9px 22px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:800;cursor:pointer;background:linear-gradient(135deg,#0f766e,#0891b2);color:#fff;box-shadow:0 3px 10px rgba(8,145,178,.35)">
-      &#128197; Plan
+      &#128202; Necesidades
     </button>
-    <!-- Sebastián 13-may-2026: Mi Día sub-tab anclado dentro de Programación.
-         Acá iremos anclando "cositas" del día a día del operario. -->
+    <button id="prog-tab-planv2" onclick="switchProgTab('planv2')"
+      style="padding:9px 22px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:700;cursor:pointer;background:#475569;color:#fff;box-shadow:0 3px 10px rgba(71,85,105,.35)">
+      &#128197; Plan (legacy)
+    </button>
     <button id="prog-tab-midia" onclick="switchProgTab('midia')"
       style="padding:9px 22px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:700;cursor:pointer;background:#1e40af;color:#fff;box-shadow:0 3px 10px rgba(30,64,175,.35)">
       &#128100; Mi D&iacute;a
     </button>
     <span id="prog-tareas-badge" style="display:none;background:#dc2626;color:#fff;font-size:9px;font-weight:800;padding:2px 8px;border-radius:8px"></span>
+  </div>
+  <!-- Tab "Necesidades" · cards por cliente con semáforo 4 zonas + B2B -->
+  <div id="ptab-necesidades" style="display:none">
+    <div style="background:linear-gradient(90deg,#f0fdfa,#ecfeff);padding:14px 18px;border-radius:10px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+      <div>
+        <h3 style="margin:0;color:#134e4a;font-size:15px;font-weight:800">&#128202; Necesidades por cliente</h3>
+        <div style="font-size:11px;color:#475569;margin-top:3px">Animus DTC (Shopify auto) + clientes B2B (manual)</div>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:11px">
+        <label style="color:#475569">Crítico ≤
+          <input type="number" id="nec-cob-critico" value="20" min="7" max="30" style="width:42px;padding:2px 4px;border:1px solid #cbd5e1;border-radius:3px;font-size:11px">d
+        </label>
+        <label style="color:#475569">Alerta ≤
+          <input type="number" id="nec-cob-alerta" value="25" min="14" max="60" style="width:42px;padding:2px 4px;border:1px solid #cbd5e1;border-radius:3px;font-size:11px">d
+        </label>
+        <button onclick="abrirFormB2B()" style="background:#1e40af;color:#fff;border:none;padding:7px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">+ Pedido B2B</button>
+        <button onclick="cargarNecesidades()" style="background:#0f766e;color:#fff;border:none;padding:7px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">↻ Recargar</button>
+      </div>
+    </div>
+    <div id="nec-resumen" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px"></div>
+    <div id="nec-contenido"><div style="text-align:center;color:#94a3b8;padding:40px">Cargando…</div></div>
+  </div>
+  <!-- Modal pedido B2B -->
+  <div id="b2bModal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.55);z-index:1000;justify-content:center;align-items:center;padding:20px">
+    <div style="background:white;border-radius:14px;padding:24px;max-width:480px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.4)">
+      <h3 style="margin:0 0 8px;color:#1e40af">+ Pedido B2B</h3>
+      <div style="font-size:12px;color:#64748b;margin-bottom:16px">Cliente solicita producto · se suma al plan de producción</div>
+      <div style="display:grid;gap:10px">
+        <input id="b2b-cliente-id" placeholder="Cliente ID (ej CLI-002)" style="padding:9px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px">
+        <input id="b2b-cliente-nombre" placeholder="Cliente nombre (ej Fernando Mesa)" style="padding:9px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px">
+        <select id="b2b-producto" style="padding:9px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px">
+          <option value="">— Seleccionar producto —</option>
+        </select>
+        <div style="display:flex;gap:8px">
+          <input id="b2b-cantidad" type="number" placeholder="Cantidad uds" min="1" style="flex:1;padding:9px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px">
+          <input id="b2b-ml" type="number" placeholder="ml/ud" value="30" min="1" style="width:90px;padding:9px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px">
+        </div>
+        <input id="b2b-fecha" type="date" style="padding:9px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px">
+        <textarea id="b2b-notas" placeholder="Notas (opcional)" rows="2" style="padding:9px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;resize:vertical"></textarea>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end">
+        <button onclick="cerrarFormB2B()" style="background:#e2e8f0;color:#1e293b;border:none;padding:8px 16px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer">Cancelar</button>
+        <button onclick="crearB2B()" style="background:#1e40af;color:white;border:none;padding:8px 16px;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer">Crear pedido</button>
+      </div>
+    </div>
   </div>
   <!-- Mi Día embed via iframe · operario_html aislado del light theme padre -->
   <div id="ptab-midia" style="display:none;background:#0f172a;border-radius:12px;overflow:hidden;margin-top:-8px">
@@ -8836,6 +8886,7 @@ async function ckMarcar(itemId, estado){
       var TAB_TO_DIV = {
         'planv2': 'ptab-planv2',
         'midia':  'ptab-midia',
+        'necesidades': 'ptab-necesidades',
         // 'asignacion' eliminado · redirige a 'mando' (unificado en mapa)
         'asignacion': 'ptab-plano',
         'mando': 'ptab-plano',
@@ -8860,6 +8911,10 @@ async function ckMarcar(itemId, estado){
         if (fr && (!fr.src || fr.src === 'about:blank')) {
           fr.src = '/operario';
         }
+      }
+      // Lazy-load Necesidades al activar tab
+      if (tab === 'necesidades') {
+        if (typeof cargarNecesidades === 'function') cargarNecesidades();
       }
       // Ocultar TODOS los ptab-* dentro de #programacion
       var prog = document.getElementById('programacion');
@@ -16629,6 +16684,213 @@ async function ckMarcar(itemId, estado){
     var r = await fetch('/api/programacion/mp-bridge/' + id, {method:'DELETE'});
     var d = await r.json();
     if(d.ok){ _toast('Enlace eliminado', 1); cargarBridgeMappings(); cargarUnmatched(null); }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // Tab "Necesidades" · Sebastián 13-may-2026 · Sprint 2A Plan v3
+  // ═══════════════════════════════════════════════════════════════════
+  const URG_COLORS = {
+    'CRITICO':    {bg:'#fee2e2', border:'#dc2626', text:'#991b1b', emoji:'🔴'},
+    'URGENTE':    {bg:'#fff7ed', border:'#ea580c', text:'#9a3412', emoji:'🟠'},
+    'VIGILAR':    {bg:'#fefce8', border:'#ca8a04', text:'#854d0e', emoji:'🟡'},
+    'OK':         {bg:'#f0fdf4', border:'#16a34a', text:'#15803d', emoji:'🟢'},
+    'SIN_VENTAS': {bg:'#f1f5f9', border:'#94a3b8', text:'#475569', emoji:'⚪'},
+  };
+
+  function escapeHtmlNec(s) {
+    if (s === null || s === undefined) return '';
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  async function cargarNecesidades() {
+    const cobC = document.getElementById('nec-cob-critico').value || 20;
+    const cobA = document.getElementById('nec-cob-alerta').value || 25;
+    const qs = `?cobertura_dias_minimo=${cobC}&cobertura_dias_alerta=${cobA}&cobertura_dias_vigilar=45`;
+    const div = document.getElementById('nec-contenido');
+    div.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:40px">Cargando…</div>';
+    try {
+      const r = await fetch('/api/plan/necesidades' + qs);
+      if (r.status === 401) { window.location.href = '/login'; return; }
+      const d = await r.json();
+      renderResumenNec(d.resumen);
+      renderClientesNec(d.clientes);
+    } catch(e) {
+      div.innerHTML = '<div style="text-align:center;color:#dc2626;padding:40px">Error: ' + escapeHtmlNec(e.message) + '</div>';
+    }
+  }
+
+  function renderResumenNec(res) {
+    if (!res) return;
+    const items = [
+      ['🔴 Crítico', res.n_critico, '#dc2626'],
+      ['🟠 Urgente', res.n_urgente, '#ea580c'],
+      ['🟡 Vigilar', res.n_vigilar, '#ca8a04'],
+      ['🟢 OK', res.n_ok, '#16a34a'],
+      ['⚪ Sin ventas', res.n_sin_ventas, '#64748b'],
+      ['📦 Pedidos B2B', res.n_pedidos_b2b_pendientes, '#1e40af'],
+    ];
+    document.getElementById('nec-resumen').innerHTML = items.map(it =>
+      '<div style="background:white;border:2px solid '+it[2]+';border-radius:10px;padding:10px 16px;flex:1;min-width:120px;text-align:center">'
+      + '<div style="font-size:11px;color:#64748b">'+it[0]+'</div>'
+      + '<div style="font-size:24px;font-weight:800;color:'+it[2]+'">'+it[1]+'</div>'
+      + '</div>'
+    ).join('');
+  }
+
+  function renderClientesNec(clientes) {
+    const div = document.getElementById('nec-contenido');
+    if (!clientes || !clientes.length) { div.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:40px">Sin datos.</div>'; return; }
+    let html = '';
+    clientes.forEach(cli => {
+      if (cli.tipo === 'shopify_auto') {
+        html += renderAnimusSection(cli);
+      } else if (cli.tipo === 'b2b_manual') {
+        html += renderB2BSection(cli);
+      }
+    });
+    div.innerHTML = html;
+  }
+
+  function renderAnimusSection(cli) {
+    const prods = cli.productos || [];
+    // Agrupar por urgencia
+    const grupos = {CRITICO:[], URGENTE:[], VIGILAR:[], OK:[], SIN_VENTAS:[]};
+    prods.forEach(p => { if (grupos[p.urgencia]) grupos[p.urgencia].push(p); });
+    let html = '<div style="background:white;border-radius:14px;padding:18px;margin-bottom:14px;border:1px solid #e2e8f0">';
+    html += '<h3 style="margin:0 0 14px;color:#0f766e;font-size:16px;font-weight:800">🛍️ ' + escapeHtmlNec(cli.cliente_nombre) + ' <span style="font-size:11px;font-weight:500;color:#94a3b8">· Shopify automático</span></h3>';
+    ['CRITICO','URGENTE','VIGILAR','OK','SIN_VENTAS'].forEach(urg => {
+      const lista = grupos[urg];
+      if (!lista.length) return;
+      const cfg = URG_COLORS[urg];
+      const collapsed = (urg === 'OK' || urg === 'SIN_VENTAS' || urg === 'VIGILAR');
+      html += '<details ' + (collapsed ? '' : 'open') + ' style="margin-bottom:10px">';
+      html += '<summary style="cursor:pointer;padding:8px 12px;background:'+cfg.bg+';border-left:4px solid '+cfg.border+';border-radius:6px;font-weight:700;color:'+cfg.text+';font-size:13px">'
+        + cfg.emoji + ' ' + urg + ' (' + lista.length + ')'
+        + '</summary>';
+      html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px;margin-top:8px">';
+      lista.forEach(p => { html += renderProductoCard(p); });
+      html += '</div></details>';
+    });
+    html += '</div>';
+    return html;
+  }
+
+  function renderProductoCard(p) {
+    const cfg = URG_COLORS[p.urgencia] || URG_COLORS.OK;
+    const dias = p.dias_cobertura != null ? p.dias_cobertura + 'd cobertura' : 'sin ventas';
+    const imgHtml = p.imagen_url
+      ? '<img src="' + escapeHtmlNec(p.imagen_url) + '" alt="" style="width:60px;height:60px;object-fit:cover;border-radius:8px;background:#f1f5f9" onerror="this.style.display=\'none\'">'
+      : '<div style="width:60px;height:60px;background:linear-gradient(135deg,#e2e8f0,#cbd5e1);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:20px;color:#64748b">📦</div>';
+    let extras = '';
+    if (p.n_lotes_recomendados > 0) {
+      extras += '<div style="font-size:11px;color:#64748b;margin-top:4px">Producir <strong>' + p.n_lotes_recomendados + ' lote × ' + p.lote_bulk_kg + 'kg</strong></div>';
+      if (p.regalos_extra_uds > 0) {
+        extras += '<div style="font-size:10px;color:#0891b2;margin-top:2px">+ ' + p.regalos_extra_uds + ' uds 10ml regalo automático</div>';
+      }
+    }
+    if (p.pipeline_kg > 0) {
+      extras += '<div style="font-size:10px;color:#15803d;margin-top:2px">🔄 Pipeline 7d: ' + p.pipeline_kg + 'kg en vuelo</div>';
+    }
+    return '<div style="background:'+cfg.bg+';border:1px solid '+cfg.border+';border-radius:10px;padding:12px;display:flex;gap:10px">'
+      + imgHtml
+      + '<div style="flex:1;min-width:0">'
+      + '<div style="font-weight:700;color:'+cfg.text+';font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + escapeHtmlNec(p.codigo_pt) + ' · ' + escapeHtmlNec(p.producto_nombre) + '</div>'
+      + '<div style="font-size:11px;color:#475569;margin-top:2px">📊 ' + p.stock_uds_total + ' uds · ' + p.velocidad_uds_dia.toFixed(1) + ' uds/d · ' + dias + '</div>'
+      + extras
+      + '</div></div>';
+  }
+
+  function renderB2BSection(cli) {
+    let html = '<div style="background:white;border-radius:14px;padding:18px;margin-bottom:14px;border:1px solid #e2e8f0">';
+    html += '<h3 style="margin:0 0 14px;color:#1e40af;font-size:16px;font-weight:800">📦 ' + escapeHtmlNec(cli.cliente_nombre) + ' <span style="font-size:11px;font-weight:500;color:#94a3b8">· B2B · ' + cli.kg_total.toFixed(1) + ' kg pendiente</span></h3>';
+    html += '<table style="width:100%;border-collapse:collapse;font-size:12px">';
+    html += '<thead><tr style="background:#f1f5f9"><th style="text-align:left;padding:6px 10px">Producto</th><th style="padding:6px 10px">Uds</th><th style="padding:6px 10px">kg</th><th style="padding:6px 10px">Fecha</th><th style="padding:6px 10px">Estado</th><th style="padding:6px 10px"></th></tr></thead><tbody>';
+    cli.pedidos.forEach(p => {
+      html += '<tr style="border-bottom:1px solid #e2e8f0">'
+        + '<td style="padding:6px 10px"><strong>' + escapeHtmlNec(p.producto_nombre) + '</strong></td>'
+        + '<td style="padding:6px 10px;text-align:center">' + p.cantidad_uds + ' × ' + p.ml_unidad + 'ml</td>'
+        + '<td style="padding:6px 10px;text-align:center;font-weight:700">' + p.kg_equivalente + '</td>'
+        + '<td style="padding:6px 10px;text-align:center">' + (p.fecha_estimada || '—') + '</td>'
+        + '<td style="padding:6px 10px;text-align:center"><span style="background:#e0e7ff;color:#3730a3;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700">' + p.estado + '</span></td>'
+        + '<td style="padding:6px 10px;text-align:right"><button onclick="cancelarB2B(' + p.id + ')" style="background:transparent;border:1px solid #cbd5e1;color:#64748b;padding:3px 8px;border-radius:4px;font-size:10px;cursor:pointer">Cancelar</button></td>'
+        + '</tr>';
+    });
+    html += '</tbody></table></div>';
+    return html;
+  }
+
+  async function abrirFormB2B() {
+    // Cargar productos activos al select si está vacío
+    const sel = document.getElementById('b2b-producto');
+    if (sel.options.length <= 1) {
+      try {
+        const r = await fetch('/api/formulas');
+        const d = await r.json();
+        const items = d.items || d.formulas || d;
+        if (Array.isArray(items)) {
+          items.forEach(p => {
+            const nombre = p.producto_nombre || p.producto || p.nombre;
+            const activo = p.activo === undefined ? true : p.activo;
+            if (nombre && activo) {
+              const opt = document.createElement('option');
+              opt.value = nombre;
+              opt.textContent = nombre;
+              sel.appendChild(opt);
+            }
+          });
+        }
+      } catch(e) { console.warn('No se pudo cargar productos:', e); }
+    }
+    document.getElementById('b2bModal').style.display = 'flex';
+  }
+  function cerrarFormB2B() { document.getElementById('b2bModal').style.display = 'none'; }
+
+  async function crearB2B() {
+    const cliente_id = document.getElementById('b2b-cliente-id').value.trim();
+    const cliente_nombre = document.getElementById('b2b-cliente-nombre').value.trim();
+    const producto = document.getElementById('b2b-producto').value;
+    const cantidad = parseInt(document.getElementById('b2b-cantidad').value);
+    const ml = parseFloat(document.getElementById('b2b-ml').value || '30');
+    const fecha = document.getElementById('b2b-fecha').value;
+    const notas = document.getElementById('b2b-notas').value.trim();
+    if (!cliente_id || !cliente_nombre || !producto || !cantidad || cantidad <= 0) {
+      alert('Completá cliente, producto y cantidad'); return;
+    }
+    try {
+      const r = await fetch('/api/pedidos-b2b', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfTokenNec()},
+        body: JSON.stringify({
+          cliente_id, cliente_nombre,
+          producto_nombre: producto,
+          cantidad_uds: cantidad,
+          ml_unidad: ml,
+          fecha_estimada: fecha,
+          notas,
+        }),
+      });
+      const d = await r.json();
+      if (!r.ok) { alert('Error: ' + (d.error || r.status)); return; }
+      cerrarFormB2B();
+      // Limpiar campos
+      ['b2b-cliente-id','b2b-cliente-nombre','b2b-cantidad','b2b-fecha','b2b-notas'].forEach(id => document.getElementById(id).value='');
+      document.getElementById('b2b-producto').value = '';
+      cargarNecesidades();
+    } catch(e) { alert('Error: ' + e.message); }
+  }
+
+  async function cancelarB2B(id) {
+    if (!confirm('¿Cancelar este pedido?')) return;
+    try {
+      const r = await fetch('/api/pedidos-b2b/' + id, {method: 'DELETE', headers: {'X-CSRF-Token': csrfTokenNec()}});
+      if (!r.ok) { const d = await r.json(); alert('Error: ' + (d.error || r.status)); return; }
+      cargarNecesidades();
+    } catch(e) { alert('Error: ' + e.message); }
+  }
+
+  function csrfTokenNec() {
+    const m = document.cookie.match(/(?:^|; )csrf_token=([^;]*)/);
+    return m ? decodeURIComponent(m[1]) : '';
   }
   </script>
 

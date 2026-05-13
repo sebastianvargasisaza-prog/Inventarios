@@ -222,6 +222,48 @@ _AREAS_LIMPIEZA_PROFUNDA = (
 
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (119, "pedidos_b2b · necesidades B2B (Fernando + futuros) · Sebastián 13-may-2026", [
+        # Sprint 2A · Plan v3 · Sebastián 13-may-2026: cada cliente B2B
+        # tiene sus pedidos pendientes que se suman a las necesidades de
+        # Animus DTC para generar el plan de producción consolidado.
+        #
+        # Hoy solo Fernando Mesa (CLI-002). Cuando lleguen más B2B, simplemente
+        # se agregan filas con cliente_id distinto · misma tabla escalable.
+        #
+        # Workflow:
+        #   pendiente     → cliente solicitó (manual hoy · portal futuro)
+        #   confirmado    → Sebastián cuadró cantidad y fecha
+        #   en_produccion → ya está agendado en Calendar
+        #   despachado    → entregado al cliente · estado terminal
+        #   cancelado     → no se produce · estado terminal
+        """CREATE TABLE IF NOT EXISTS pedidos_b2b (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cliente_id TEXT NOT NULL,
+            cliente_nombre TEXT NOT NULL,
+            producto_nombre TEXT NOT NULL,
+            cantidad_uds INTEGER NOT NULL,
+            ml_unidad REAL NOT NULL DEFAULT 30,
+            fecha_estimada TEXT,
+            estado TEXT NOT NULL DEFAULT 'pendiente'
+                CHECK(estado IN ('pendiente','confirmado','en_produccion','despachado','cancelado')),
+            notas TEXT DEFAULT '',
+            creado_por TEXT NOT NULL,
+            creado_at_utc TEXT NOT NULL DEFAULT (datetime('now','utc')),
+            actualizado_at_utc TEXT NOT NULL DEFAULT (datetime('now','utc'))
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_pedidos_b2b_cliente ON pedidos_b2b(cliente_id, estado)",
+        "CREATE INDEX IF NOT EXISTS idx_pedidos_b2b_estado ON pedidos_b2b(estado, fecha_estimada)",
+        "CREATE INDEX IF NOT EXISTS idx_pedidos_b2b_producto ON pedidos_b2b(producto_nombre, estado)",
+        # Trigger actualizado_at_utc fresh en cada UPDATE
+        """CREATE TRIGGER IF NOT EXISTS trg_pedidos_b2b_updated
+           AFTER UPDATE ON pedidos_b2b
+           FOR EACH ROW
+           WHEN OLD.actualizado_at_utc = NEW.actualizado_at_utc
+           BEGIN
+               UPDATE pedidos_b2b SET actualizado_at_utc = datetime('now','utc')
+               WHERE id = NEW.id;
+           END""",
+    ]),
     (118, "Activar productos Animus + presentaciones 10ml/15ml · Sebastián 13-may-2026", [
         # Sebastián 13-may-2026: definimos el modelo de "productos hermanos"
         # de Animus que comparten producción (mismo bulk genera presentación

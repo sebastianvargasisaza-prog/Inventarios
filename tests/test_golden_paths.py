@@ -6792,3 +6792,135 @@ def test_golden_animus_productos_variants_seed(app, db_clean):
     )
     assert sin_variant[0][0] == 0, \
         f'BUG: hay productos con tiene_10ml=1 que no deberían · {sin_variant[0][0]}'
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH PLAN-A · /api/pedidos-b2b CRUD + permisos
+# ═══════════════════════════════════════════════════════════════════
+def test_golden_plan_pedidos_b2b_crud(app, db_clean):
+    """Sprint 2A · POST crea · GET lista · PATCH actualiza · DELETE soft-cancel."""
+    # Limpieza previa
+    _exec("DELETE FROM pedidos_b2b WHERE cliente_id LIKE 'TEST_CLI_%'")
+
+    cs_admin = _login(app, 'sebastian')
+
+    # Caso 1: POST crea pedido
+    r1 = cs_admin.post('/api/pedidos-b2b', json={
+        'cliente_id': 'TEST_CLI_FERNANDO',
+        'cliente_nombre': 'Fernando Mesa Test',
+        'producto_nombre': 'SUERO HIDRATANTE AH 1.5%',
+        'cantidad_uds': 167,
+        'ml_unidad': 30,
+        'fecha_estimada': '2026-05-20',
+        'notas': 'pedido trimestral',
+    }, headers=csrf_headers())
+    assert r1.status_code == 201, f'BUG POST: {r1.status_code} {r1.data}'
+    pid = r1.get_json()['id']
+
+    # Caso 2: GET lista lo incluye
+    r2 = cs_admin.get('/api/pedidos-b2b?cliente_id=TEST_CLI_FERNANDO')
+    items = r2.get_json()['items']
+    assert len(items) == 1
+    assert items[0]['producto_nombre'] == 'SUERO HIDRATANTE AH 1.5%'
+    assert items[0]['cantidad_uds'] == 167
+    assert items[0]['kg_equivalente'] == 5.01  # 167 × 30 / 1000
+
+    # Caso 3: producto inexistente rechaza
+    r3 = cs_admin.post('/api/pedidos-b2b', json={
+        'cliente_id': 'TEST_CLI_FERNANDO',
+        'cliente_nombre': 'F',
+        'producto_nombre': 'PRODUCTO_QUE_NO_EXISTE_XYZ',
+        'cantidad_uds': 1,
+        'ml_unidad': 30,
+    }, headers=csrf_headers())
+    assert r3.status_code == 404
+
+    # Caso 4: PATCH cambia estado
+    r4 = cs_admin.patch(f'/api/pedidos-b2b/{pid}', json={
+        'estado': 'confirmado',
+    }, headers=csrf_headers())
+    assert r4.status_code == 200
+    item = cs_admin.get(f'/api/pedidos-b2b?cliente_id=TEST_CLI_FERNANDO').get_json()['items'][0]
+    assert item['estado'] == 'confirmado'
+
+    # Caso 5: DELETE soft-cancel
+    r5 = cs_admin.delete(f'/api/pedidos-b2b/{pid}', headers=csrf_headers())
+    assert r5.status_code == 200
+    # Ya no aparece en listado default (oculta terminales)
+    items = cs_admin.get('/api/pedidos-b2b?cliente_id=TEST_CLI_FERNANDO').get_json()['items']
+    assert len(items) == 0
+    # Pero aparece con incluir_terminales=1
+    items = cs_admin.get('/api/pedidos-b2b?cliente_id=TEST_CLI_FERNANDO&incluir_terminales=1').get_json()['items']
+    assert len(items) == 1
+    assert items[0]['estado'] == 'cancelado'
+
+    # Caso 6: cancelar 2x rechaza
+    r6 = cs_admin.delete(f'/api/pedidos-b2b/{pid}', headers=csrf_headers())
+    assert r6.status_code == 409
+
+    # Caso 7: non-admin/non-compras rechazado al crear (mayerlin es planta, no compras)
+    cs_op = _login(app, 'mayerlin')
+    r7 = cs_op.post('/api/pedidos-b2b', json={
+        'cliente_id': 'TEST_CLI_HACK',
+        'cliente_nombre': 'H',
+        'producto_nombre': 'SUERO HIDRATANTE AH 1.5%',
+        'cantidad_uds': 1, 'ml_unidad': 30,
+    }, headers=csrf_headers())
+    assert r7.status_code == 403, f'BUG: mayerlin pudo crear pedido B2B · {r7.status_code}'
+
+    # Cleanup
+    _exec("DELETE FROM pedidos_b2b WHERE cliente_id LIKE 'TEST_CLI_%'")
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH PLAN-B · /api/plan/necesidades agrega Animus + B2B
+# ═══════════════════════════════════════════════════════════════════
+def test_golden_plan_necesidades_agrega_animus_y_b2b(app, db_clean):
+    """Endpoint consolidador · devuelve clientes: [Animus DTC] + [B2B pendientes]."""
+    # Setup B2B
+    _exec("DELETE FROM pedidos_b2b WHERE cliente_id LIKE 'TEST_CLI_%'")
+    cs = _login(app, 'sebastian')
+    cs.post('/api/pedidos-b2b', json={
+        'cliente_id': 'TEST_CLI_NECESIDADES',
+        'cliente_nombre': 'Test Cliente Necesidades',
+        'producto_nombre': 'SUERO HIDRATANTE AH 1.5%',
+        'cantidad_uds': 100, 'ml_unidad': 30,
+        'fecha_estimada': '2026-06-01',
+    }, headers=csrf_headers())
+
+    # Caso 1: endpoint responde 200 con estructura esperada
+    r = cs.get('/api/plan/necesidades')
+    assert r.status_code == 200, f'BUG: {r.status_code} {r.data}'
+    d = r.get_json()
+    assert 'clientes' in d and 'resumen' in d and 'parametros' in d
+
+    # Caso 2: hay al menos 2 clientes (Animus + nuestro B2B)
+    cli_ids = [c['cliente_id'] for c in d['clientes']]
+    assert 'ANIMUS_DTC' in cli_ids
+    assert 'TEST_CLI_NECESIDADES' in cli_ids
+
+    # Caso 3: Animus DTC trae productos con campos esperados
+    animus = next(c for c in d['clientes'] if c['cliente_id'] == 'ANIMUS_DTC')
+    assert animus['tipo'] == 'shopify_auto'
+    # Debe tener al menos los 4 con codigo_pt seedeado (SAH, TRX, PHA, AZH)
+    codigos = [p['codigo_pt'] for p in animus['productos']]
+    for esperado in ['SAH', 'TRX', 'PHA', 'AZH']:
+        assert esperado in codigos, f'BUG: producto {esperado} falta en Animus DTC'
+    # Cada producto debe tener urgencia válida
+    for p in animus['productos']:
+        assert p['urgencia'] in ('CRITICO','URGENTE','VIGILAR','OK','SIN_VENTAS'), \
+            f'BUG: urgencia inválida {p["urgencia"]}'
+
+    # Caso 4: nuestro B2B aparece con su pedido
+    b2b = next(c for c in d['clientes'] if c['cliente_id'] == 'TEST_CLI_NECESIDADES')
+    assert b2b['tipo'] == 'b2b_manual'
+    assert len(b2b['pedidos']) == 1
+    assert b2b['pedidos'][0]['cantidad_uds'] == 100
+    assert b2b['kg_total'] == 3.0  # 100 × 30 / 1000
+
+    # Caso 5: resumen incluye conteo B2B
+    assert d['resumen']['n_pedidos_b2b_pendientes'] >= 1
+    assert d['resumen']['kg_total_b2b_pendientes'] >= 3.0
+
+    # Cleanup
+    _exec("DELETE FROM pedidos_b2b WHERE cliente_id LIKE 'TEST_CLI_%'")
