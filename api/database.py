@@ -222,6 +222,71 @@ _AREAS_LIMPIEZA_PROFUNDA = (
 
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (106, "usuarios_identidad · Part 11 §11.100(b) identity binding · Sebastián 12-may-2026", [
+        # Tabla de identidad humana detrás de cada `username` de la app.
+        # Part 11 §11.100(b): "before an organization establishes, assigns,
+        # certifies, or otherwise sanctions an individual's electronic
+        # signature... the organization shall verify the identity of the
+        # individual." Hoy COMPRAS_USERS son strings hardcoded en config.py;
+        # esta tabla aporta el binding con la persona real (cédula, cargo,
+        # manager) que un auditor INVIMA exige para validar quién firmó qué.
+        #
+        # username es texto (no FK a una tabla `users` que no existe todavía)
+        # para no acoplarnos al refactor RBAC futuro. Cuando exista `users`
+        # tabla se agrega FK con migración aparte.
+        #
+        # Manager: username del jefe directo (auto-referencia textual). Útil
+        # para workflow de aprobación donde la firma de un junior debe ser
+        # contra-verificada por su manager.
+        """CREATE TABLE IF NOT EXISTS usuarios_identidad (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL UNIQUE,
+            cedula TEXT DEFAULT '',
+            nombre_completo TEXT DEFAULT '',
+            cargo TEXT DEFAULT 'Por definir',
+            area TEXT DEFAULT '',
+            email TEXT DEFAULT '',
+            manager_username TEXT DEFAULT '',
+            activo INTEGER DEFAULT 1,
+            created_at TEXT DEFAULT (datetime('now')),
+            updated_at TEXT DEFAULT (datetime('now'))
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_usuarios_identidad_activo ON usuarios_identidad(activo, username)",
+        "CREATE INDEX IF NOT EXISTS idx_usuarios_identidad_manager ON usuarios_identidad(manager_username) WHERE manager_username != ''",
+
+        # Seed básico de los 19 usuarios actuales (config.py:16-44).
+        # Cargo y area como 'Por definir'; admin completa por UI después.
+        # cedula y nombre_completo NO se seedean (datos personales · admin
+        # los carga directamente). INSERT OR IGNORE para idempotencia.
+        """INSERT OR IGNORE INTO usuarios_identidad (username, cargo, area, manager_username) VALUES
+            ('sebastian',  'CEO · Founder',                'Gerencia',     ''),
+            ('alejandro',  'Co-Founder · Director',        'Gerencia',     ''),
+            ('hernando',   'Director Técnico',             'Técnica',      'sebastian'),
+            ('catalina',   'Asistente de Compras',         'Compras',      'mayra'),
+            ('luz',        'Asistente Gerencia Espagiria', 'Espagiria',    'alejandro'),
+            ('daniela',    'Asistente Gerencia ÁNIMUS',    'Animus',       'alejandro'),
+            ('valentina',  'Asistente Comercial',          'Comercial',    'daniela'),
+            ('jefferson',  'Marketing Lead',               'Marketing',    'sebastian'),
+            ('felipe',     'Marketing',                    'Marketing',    'jefferson'),
+            ('mayra',      'Contadora',                    'Contabilidad', 'sebastian'),
+            ('gloria',     'RRHH',                         'RRHH',         'mayra'),
+            ('laura',      'Calidad',                      'Calidad',      'alejandro'),
+            ('miguel',     'Técnica · Calidad',            'Técnica',      'hernando'),
+            ('yuliel',     'Calidad',                      'Calidad',      'laura'),
+            ('luis',       'Jefe de Planta',               'Producción',   'alejandro'),
+            ('smurillo',   'Operario Planta',              'Producción',   'luis'),
+            ('sergio',     'Operario Planta',              'Producción',   'luis'),
+            ('mayerlin',   'Operaria · Dispensación',      'Producción',   'luis'),
+            ('camilo',     'Operario Planta',              'Producción',   'luis')""",
+
+        # Trigger para mantener updated_at fresco en cada UPDATE.
+        """CREATE TRIGGER IF NOT EXISTS trg_usuarios_identidad_updated_at
+           AFTER UPDATE ON usuarios_identidad
+           FOR EACH ROW
+           BEGIN
+               UPDATE usuarios_identidad SET updated_at = datetime('now') WHERE id = NEW.id;
+           END""",
+    ]),
     (105, "audit_log append-only · Part 11 §11.10(e) · Sebastián 12-may-2026", [
         # Bloquea UPDATE/DELETE sobre audit_log para que la evidencia
         # regulatoria sea inmutable. 21 CFR Part 11 §11.10(e) requiere

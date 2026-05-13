@@ -4630,3 +4630,60 @@ def test_golden_audit_log_append_only(app, db_clean):
     )
     assert rows and rows[0][0] == 'sembrar para test inmutabilidad', \
         'BUG: el registro original fue alterado pese al trigger'
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 52 · usuarios_identidad CRUD (Part 11 §11.100(b))
+# ═══════════════════════════════════════════════════════════════════
+# Sebastián 12-may-2026: tabla usuarios_identidad (mig 106) bindea cada
+# username con cédula+nombre+cargo+manager para que un auditor INVIMA
+# pueda responder "¿quién firmó?" con identidad humana, no solo string.
+def test_golden_identidad_seed_y_actualizacion(app, db_clean):
+    """Listado seedeado · admin actualiza · audit_log captura el cambio."""
+    cs = _login(app, 'sebastian')
+
+    # Caso 1: GET /api/identidad lista los 19 usuarios seedeados (mig 106)
+    r = cs.get('/api/identidad')
+    assert r.status_code == 200, f'BUG: listar identidad {r.status_code}'
+    items = r.get_json().get('items', [])
+    assert len(items) >= 19, f'BUG: seed mig 106 incompleto · {len(items)} items'
+    usernames = {it['username'] for it in items}
+    assert 'sebastian' in usernames and 'mayerlin' in usernames, \
+        'BUG: usuarios clave faltan del seed'
+
+    # Caso 2: GET /api/identidad/sebastian devuelve el detalle
+    r2 = cs.get('/api/identidad/sebastian')
+    assert r2.status_code == 200
+    seb = r2.get_json()
+    assert seb['username'] == 'sebastian'
+    assert 'CEO' in (seb['cargo'] or '')
+
+    # Caso 3: PATCH actualiza cédula + nombre_completo (admin)
+    r3 = cs.patch('/api/identidad/sebastian',
+                  json={'cedula': '1234567890', 'nombre_completo': 'Test Update'},
+                  headers=csrf_headers())
+    assert r3.status_code == 200, f'BUG: PATCH {r3.status_code} {r3.data}'
+    d3 = r3.get_json()
+    assert d3['ok']
+    assert d3['identidad']['cedula'] == '1234567890'
+    assert d3['identidad']['nombre_completo'] == 'Test Update'
+
+    # Caso 4: audit_log captura el UPDATE_IDENTIDAD
+    rows = _query(
+        "SELECT usuario, accion FROM audit_log "
+        "WHERE accion='UPDATE_IDENTIDAD' AND registro_id='sebastian' "
+        "ORDER BY id DESC LIMIT 1"
+    )
+    assert rows and rows[0][1] == 'UPDATE_IDENTIDAD', \
+        'BUG: audit_log NO captura el cambio de identidad'
+
+    # Caso 5: usuario no admin recibe 403 al PATCH
+    cs2 = _login(app, 'catalina')
+    r5 = cs2.patch('/api/identidad/sebastian',
+                   json={'cargo': 'Hacker'}, headers=csrf_headers())
+    assert r5.status_code == 403, f'BUG: catalina pudo editar identidad ({r5.status_code})'
+
+    # Cleanup: revertir cédula/nombre del seed
+    cs.patch('/api/identidad/sebastian',
+             json={'cedula': '', 'nombre_completo': ''},
+             headers=csrf_headers())
