@@ -16778,8 +16778,11 @@ async function ckMarcar(itemId, estado){
   function renderProductoCard(p) {
     const cfg = URG_COLORS[p.urgencia] || URG_COLORS.OK;
     const dias = p.dias_cobertura != null ? p.dias_cobertura + 'd cobertura' : 'sin ventas';
+    // IMPORTANTE: NO usar comillas simples dentro del onerror inline porque
+    // rompen el string JS contenedor (bug crítico que silenció todo el
+    // <script> el 13-may-2026 · escalabilidad cero error: usar &#39;).
     const imgHtml = p.imagen_url
-      ? '<img src="' + escapeHtmlNec(p.imagen_url) + '" alt="" style="width:60px;height:60px;object-fit:cover;border-radius:8px;background:#f1f5f9" onerror="this.style.display=\'none\'">'
+      ? '<img src="' + escapeHtmlNec(p.imagen_url) + '" alt="" style="width:60px;height:60px;object-fit:cover;border-radius:8px;background:#f1f5f9" onerror="this.style.display=&#39;none&#39;">'
       : '<div style="width:60px;height:60px;background:linear-gradient(135deg,#e2e8f0,#cbd5e1);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:20px;color:#64748b">📦</div>';
     let extras = '';
     if (p.n_lotes_recomendados > 0) {

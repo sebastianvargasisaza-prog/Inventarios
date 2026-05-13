@@ -153,7 +153,101 @@ def main():
                 'antes de commit. Si pasa, este check no aplica.'
             )
 
-    # Check 5: commit message significativo (heurística: hooks no acceden al
+    # Check 5: validar JS embebido en templates_py/*.py
+    # Sebastián 13-may-2026: cazó el bug fatal de comillas simples dentro
+    # de onerror inline · rompía silenciosamente todo el <script> · sub-tabs
+    # dejaron de abrir. Cero error a futuro: importamos el módulo, agarramos
+    # el HTML RENDERED (no el .py raw) y validamos cada <script> con
+    # `node --check`. Sin node · skip silencioso.
+    templates_touched = [f for f in files
+                          if f.startswith('api/templates_py/') and f.endswith('.py')]
+    if templates_touched:
+        try:
+            node_check = subprocess.run(['node', '--version'],
+                                         capture_output=True, timeout=5)
+            node_ok = node_check.returncode == 0
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            node_ok = False
+        if node_ok:
+            import tempfile, os as _os
+            # sys.path: agregar api/ para que `import templates_py.xxx` funcione
+            api_path = str(REPO_ROOT / 'api')
+            if api_path not in sys.path:
+                sys.path.insert(0, api_path)
+            import importlib
+            for tpl_path in templates_touched:
+                # Convertir 'api/templates_py/foo_html.py' → 'templates_py.foo_html'
+                module_name = (tpl_path
+                                .replace('api/', '', 1)
+                                .replace('/', '.')
+                                .replace('.py', ''))
+                try:
+                    if module_name in sys.modules:
+                        importlib.reload(sys.modules[module_name])
+                        mod = sys.modules[module_name]
+                    else:
+                        mod = importlib.import_module(module_name)
+                except Exception as e:
+                    warnings.append(f'No pude importar {module_name}: {e}')
+                    continue
+                # Recolectar todos los strings >1000 chars (los HTML)
+                html_strings = []
+                for attr_name in dir(mod):
+                    if attr_name.startswith('_'):
+                        continue
+                    val = getattr(mod, attr_name, None)
+                    if isinstance(val, str) and len(val) > 1000:
+                        html_strings.append((attr_name, val))
+                    elif callable(val):
+                        # Functions like render_xxx() pueden devolver el HTML
+                        try:
+                            import inspect
+                            if not inspect.isfunction(val):
+                                continue
+                            sig = inspect.signature(val)
+                            if any(p.default is p.empty and p.kind != p.VAR_KEYWORD
+                                   for p in sig.parameters.values()
+                                   if p.kind not in (p.VAR_POSITIONAL, p.VAR_KEYWORD)):
+                                continue  # requiere args · skip
+                            rendered = val()
+                            if isinstance(rendered, str) and len(rendered) > 1000:
+                                html_strings.append((attr_name + '()', rendered))
+                        except Exception:
+                            pass
+                if not html_strings:
+                    continue
+                for attr_name, html in html_strings:
+                    scripts = re.findall(r'<script[^>]*>(.*?)</script>',
+                                          html, re.DOTALL)
+                    for i, sc in enumerate(scripts):
+                        if len(sc) < 50:
+                            continue
+                        with tempfile.NamedTemporaryFile(
+                                mode='w', suffix='.js', delete=False,
+                                encoding='utf-8') as tf:
+                            tf.write(sc)
+                            tf_path = tf.name
+                        try:
+                            r = subprocess.run(
+                                ['node', '--check', tf_path],
+                                capture_output=True, text=True, timeout=15,
+                                encoding='utf-8', errors='replace',
+                            )
+                            if r.returncode != 0:
+                                err_lines = (r.stderr or '').strip().split('\n')[:3]
+                                errors.append(
+                                    f'JS SYNTAX ERROR en {tpl_path} ({attr_name} '
+                                    f'script #{i+1}): ' + ' · '.join(err_lines)[:400]
+                                )
+                        except Exception as e:
+                            warnings.append(
+                                f'No pude validar JS de {tpl_path}: {e}'
+                            )
+                        finally:
+                            try: _os.unlink(tf_path)
+                            except Exception: pass
+
+    # Check 6: commit message significativo (heurística: hooks no acceden al
     # mensaje en pre-commit, solo en commit-msg. Skip por ahora.)
 
     # Reportar (ASCII-safe para Windows cmd)
