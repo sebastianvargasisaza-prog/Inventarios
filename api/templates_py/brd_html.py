@@ -62,6 +62,18 @@ tr:hover{background:#fafafa}
 .paso-card{background:#f8fafc;border-left:3px solid #cbd5e1;padding:8px 12px;margin-bottom:6px;border-radius:0 4px 4px 0}
 .paso-card.completado{border-left-color:#15803d}
 .paso-card.en_proceso{border-left-color:#fbbf24}
+.action-bar{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.btn-success{background:#15803d;color:#fff}.btn-success:hover{background:#166534}
+.btn-danger{background:#dc2626;color:#fff}.btn-danger:hover{background:#b91c1c}
+.modal-bg{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:9999;padding:20px}
+.modal-bg.open{display:flex}
+.modal{background:#fff;border-radius:8px;padding:20px;max-width:420px;width:100%;box-shadow:0 10px 40px rgba(0,0,0,.3)}
+.modal h3{margin:0 0 12px 0;font-size:1.1em}
+.modal label{display:block;font-size:.82em;color:#475569;font-weight:600;margin:8px 0 2px}
+.modal input,.modal textarea{width:100%;padding:8px 10px;border:1px solid #cbd5e1;border-radius:4px;font-size:.95em;box-sizing:border-box;font-family:inherit}
+.modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
+.modal-error{color:#dc2626;font-size:.85em;margin-top:8px;min-height:1em}
+.modal-meaning{background:#eff6ff;border:1px solid #bfdbfe;border-radius:4px;padding:8px;font-size:.85em;margin-bottom:8px;color:#1e3a8a}
 </style>
 </head>
 <body>
@@ -135,6 +147,25 @@ tr:hover{background:#fafafa}
 
 </div>
 
+<!-- Modal de firma electrónica reusable -->
+<div id="signModal" class="modal-bg">
+  <div class="modal">
+    <h3 id="signTitle">Firma electrónica</h3>
+    <div class="modal-meaning" id="signMeaning">…</div>
+    <label>Tu password (re-autenticación · Part 11 §11.200)</label>
+    <input type="password" id="signPwd" autocomplete="current-password">
+    <label>Código MFA (si tenés activo · 6 dígitos)</label>
+    <input type="text" id="signTotp" inputmode="numeric" maxlength="6" placeholder="opcional">
+    <label>Comentario (queda en el record)</label>
+    <textarea id="signComment" rows="2" placeholder="Razón de la firma"></textarea>
+    <div class="modal-error" id="signError"></div>
+    <div class="modal-actions">
+      <button class="btn btn-sm" onclick="closeSignModal()">Cancelar</button>
+      <button class="btn btn-primary btn-sm" id="signSubmit" onclick="submitSign()">Firmar</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // ── tabs ──
 document.querySelectorAll('.tab').forEach(function(t){
@@ -152,6 +183,82 @@ document.querySelectorAll('.tab').forEach(function(t){
 // ── helpers ──
 function escapeHtml(s){return String(s||'').replace(/[&<>"']/g, function(c){return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]})}
 function fmtDate(s){if(!s) return '—';return s.substring(0,16).replace('T',' ');}
+
+// CSRF defense-in-depth (mismo patrón que aseguramiento_html.py)
+function _csrf(){var m=document.cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/);return m?decodeURIComponent(m[1]):'';}
+function _fetchOpts(method, body){
+  var headers = {}; var tok = _csrf();
+  if (tok) headers['X-CSRF-Token'] = tok;
+  var opts = {method: method||'GET', headers: headers, credentials: 'same-origin'};
+  if (body !== undefined && body !== null) {
+    headers['Content-Type'] = 'application/json';
+    opts.body = (typeof body === 'string') ? body : JSON.stringify(body);
+  }
+  return opts;
+}
+fetch('/api/csrf-token', {credentials: 'same-origin'}).catch(function(){});
+
+// ── Modal e-signature reusable ──
+// onSigned(signature_id) callback se llama con el ID si la firma fue ok.
+let _signCtx = null;
+function openSignModal(opts) {
+  // opts: {title, meaning, recordTable, recordId, onSigned}
+  _signCtx = opts;
+  document.getElementById('signTitle').textContent = opts.title || 'Firma electrónica';
+  document.getElementById('signMeaning').innerHTML =
+    'Vas a firmar como <strong>' + opts.meaning + '</strong> sobre <code>'
+    + opts.recordTable + ' #' + opts.recordId + '</code>. La firma quedará '
+    + 'inmutable en el audit trail (Part 11 §11.50).';
+  document.getElementById('signPwd').value = '';
+  document.getElementById('signTotp').value = '';
+  document.getElementById('signComment').value = '';
+  document.getElementById('signError').textContent = '';
+  document.getElementById('signSubmit').disabled = false;
+  document.getElementById('signModal').classList.add('open');
+  setTimeout(()=>document.getElementById('signPwd').focus(), 50);
+}
+function closeSignModal() {
+  document.getElementById('signModal').classList.remove('open');
+  _signCtx = null;
+}
+async function submitSign() {
+  if (!_signCtx) return;
+  const btn = document.getElementById('signSubmit');
+  const errDiv = document.getElementById('signError');
+  btn.disabled = true;
+  errDiv.textContent = '';
+  try {
+    // Paso 1: challenge (re-auth password+TOTP)
+    const ch = await fetch('/api/sign/challenge', _fetchOpts('POST', {
+      password: document.getElementById('signPwd').value,
+      totp_token: document.getElementById('signTotp').value || undefined,
+    }));
+    const chData = await ch.json();
+    if (!ch.ok) { errDiv.textContent = 'Auth: ' + (chData.error || ch.status); btn.disabled=false; return; }
+
+    // Paso 2: sign
+    const sig = await fetch('/api/sign', _fetchOpts('POST', {
+      record_table: _signCtx.recordTable,
+      record_id: String(_signCtx.recordId),
+      meaning: _signCtx.meaning,
+      comment: document.getElementById('signComment').value,
+      challenge_token: chData.token,
+    }));
+    const sigData = await sig.json();
+    if (!sig.ok) { errDiv.textContent = 'Firma: ' + (sigData.error || sig.status); btn.disabled=false; return; }
+
+    // Callback con signature_id
+    const cb = _signCtx.onSigned;
+    closeSignModal();
+    if (cb) await cb(sigData.signature_id);
+  } catch(e) {
+    errDiv.textContent = 'Error: ' + e.message;
+    btn.disabled = false;
+  }
+}
+document.addEventListener('keydown', function(e){
+  if (e.key === 'Escape' && document.getElementById('signModal').classList.contains('open')) closeSignModal();
+});
 
 // ── dashboard KPIs ──
 async function loadDash(){
@@ -202,6 +309,23 @@ async function showMbrDetail(id){
   div.innerHTML = '<div class="card">Cargando MBR ' + id + '…</div>';
   const r = await fetch('/api/brd/mbr/' + id);
   const m = await r.json();
+
+  // Botones de acción contextual según estado
+  let actions = '';
+  if (m.estado === 'draft') {
+    actions = '<div class="action-bar">'
+      + '<button class="btn btn-primary btn-sm" onclick="submitMbr(' + id + ')">Submit a revisión</button>'
+      + '</div>';
+  } else if (m.estado === 'en_revision') {
+    actions = '<div class="action-bar">'
+      + '<button class="btn btn-success btn-sm" onclick="aprobarMbr(' + id + ')">Firmar y aprobar</button>'
+      + '</div>';
+  } else if (m.estado === 'aprobado') {
+    actions = '<div class="action-bar">'
+      + '<button class="btn btn-danger btn-sm" onclick="obsoletarMbr(' + id + ')">Obsoletar (motivo)</button>'
+      + '</div>';
+  }
+
   let html = '<div class="card">'
     + '<div class="card-title">' + escapeHtml(m.titulo || m.producto_nombre) + ' v' + m.version + ' <span class="estado estado-' + m.estado + '">' + m.estado + '</span></div>'
     + '<dl class="detail-grid">'
@@ -211,7 +335,9 @@ async function showMbrDetail(id){
     + '<dt>Creado por</dt><dd>' + escapeHtml(m.creado_por) + ' · ' + fmtDate(m.creado_at_utc) + '</dd>'
     + (m.aprobado_por ? '<dt>Aprobado por</dt><dd>' + escapeHtml(m.aprobado_por) + ' · firma #' + m.aprobado_signature_id + '</dd>' : '')
     + (m.descripcion ? '<dt>Descripción</dt><dd>' + escapeHtml(m.descripcion) + '</dd>' : '')
-    + '</dl></div>';
+    + '</dl>'
+    + actions
+    + '</div>';
   if (m.pasos && m.pasos.length) {
     html += '<div class="card"><div class="card-title">Pasos del procedimiento (' + m.pasos.length + ')</div>';
     m.pasos.forEach(function(p){
@@ -263,6 +389,20 @@ async function showEbrDetail(id){
     fetch('/api/brd/ebr/' + id + '/ipc-resultados').then(r=>r.json()).catch(()=>({items:[]})),
     fetch('/api/brd/ebr/' + id + '/reconciliacion').then(r=>r.json()).catch(()=>null),
   ]);
+
+  // Acciones contextuales según estado
+  let actions = '';
+  if (d.estado === 'completado' || d.estado === 'en_revision_qc') {
+    actions = '<div class="action-bar">'
+      + '<button class="btn btn-success btn-sm" onclick="liberarEbr(' + id + ')">Firmar y liberar</button>'
+      + '<button class="btn btn-danger btn-sm" onclick="rechazarEbr(' + id + ')">Firmar y rechazar</button>'
+      + '</div>';
+  } else if (['liberado','rechazado'].includes(d.estado)) {
+    actions = '<div class="action-bar">'
+      + '<a class="btn btn-primary btn-sm" href="/api/brd/ebr/' + id + '/pdf" target="_blank">Descargar PDF auditable</a>'
+      + '</div>';
+  }
+
   let html = '<div class="card">'
     + '<div class="card-title">EBR ' + escapeHtml(d.lote) + ' <span class="estado estado-' + d.estado + '">' + d.estado + '</span></div>'
     + '<dl class="detail-grid">'
@@ -273,7 +413,9 @@ async function showEbrDetail(id){
     + (d.cantidad_real_g != null ? '<dt>Cantidad real</dt><dd>' + d.cantidad_real_g.toLocaleString('es-CO') + ' g · yield ' + d.yield_pct.toFixed(2) + '%</dd>' : '')
     + (d.liberado_por ? '<dt>Liberado por</dt><dd>' + escapeHtml(d.liberado_por) + ' · firma #' + d.liberado_signature_id + '</dd>' : '')
     + (d.rechazado_motivo ? '<dt>Rechazo</dt><dd style="color:#991b1b">' + escapeHtml(d.rechazado_motivo) + '</dd>' : '')
-    + '</dl></div>';
+    + '</dl>'
+    + actions
+    + '</div>';
   if (d.pasos && d.pasos.length) {
     html += '<div class="card"><div class="card-title">Pasos ejecutados (' + d.pasos.length + ')</div>';
     d.pasos.forEach(function(p){
@@ -309,6 +451,74 @@ async function showEbrDetail(id){
     html += '</div>';
   }
   div.innerHTML = html;
+}
+
+// ── Acciones MBR ──
+async function submitMbr(id) {
+  if (!confirm('Submit MBR a revisión QA · ya no se podrá editar como draft.')) return;
+  const r = await fetch('/api/brd/mbr/' + id + '/submit', _fetchOpts('POST', {}));
+  const d = await r.json();
+  if (!r.ok) { alert('Error: ' + (d.error||r.status)); return; }
+  showMbrDetail(id);
+  loadMbrs();
+}
+function aprobarMbr(id) {
+  openSignModal({
+    title: 'Aprobar MBR (firma QA)',
+    meaning: 'aprueba',
+    recordTable: 'mbr_templates',
+    recordId: id,
+    onSigned: async function(sigId) {
+      const r = await fetch('/api/brd/mbr/' + id + '/aprobar', _fetchOpts('POST', {signature_id: sigId}));
+      const d = await r.json();
+      if (!r.ok) { alert('Error aprobando: ' + (d.error||r.status)); return; }
+      showMbrDetail(id);
+      loadMbrs();
+    },
+  });
+}
+async function obsoletarMbr(id) {
+  const motivo = prompt('Motivo de obsoletar este MBR (queda en audit):');
+  if (!motivo || motivo.trim().length < 3) return;
+  const r = await fetch('/api/brd/mbr/' + id + '/obsoletar', _fetchOpts('POST', {motivo: motivo.trim()}));
+  const d = await r.json();
+  if (!r.ok) { alert('Error: ' + (d.error||r.status)); return; }
+  showMbrDetail(id);
+  loadMbrs();
+}
+
+// ── Acciones EBR ──
+function liberarEbr(id) {
+  openSignModal({
+    title: 'Liberar EBR (firma QC)',
+    meaning: 'libera',
+    recordTable: 'ebr_ejecuciones',
+    recordId: id,
+    onSigned: async function(sigId) {
+      const r = await fetch('/api/brd/ebr/' + id + '/liberar', _fetchOpts('POST', {signature_id: sigId}));
+      const d = await r.json();
+      if (!r.ok) { alert('Error liberando: ' + (d.error||r.status)); return; }
+      showEbrDetail(id);
+      loadEbrs();
+    },
+  });
+}
+function rechazarEbr(id) {
+  const motivo = prompt('Motivo del rechazo (queda en audit):');
+  if (!motivo || motivo.trim().length < 3) return;
+  openSignModal({
+    title: 'Rechazar EBR (firma QC)',
+    meaning: 'rechaza',
+    recordTable: 'ebr_ejecuciones',
+    recordId: id,
+    onSigned: async function(sigId) {
+      const r = await fetch('/api/brd/ebr/' + id + '/rechazar', _fetchOpts('POST', {signature_id: sigId, motivo: motivo.trim()}));
+      const d = await r.json();
+      if (!r.ok) { alert('Error rechazando: ' + (d.error||r.status)); return; }
+      showEbrDetail(id);
+      loadEbrs();
+    },
+  });
 }
 
 // ── Cleaning list ──

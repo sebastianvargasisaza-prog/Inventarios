@@ -102,3 +102,20 @@
 - **Síntoma**: en tests sin Calendar API, force_mirror no hacía nada.
 - **Fix**: solo return early si hay error API (`cal.get('error')`).
   Events vacíos legítimos siguen al cleanup.
+
+### 2026-05-12 · Hook auto-EBR al iniciar producción (Fase 1 BRD)
+- `prog_iniciar_produccion` ahora llama `_intentar_crear_ebr_auto()`
+  después del audit_log de INICIAR_PRODUCCION.
+- Si hay MBR aprobado para el producto, crea EBR vinculado por
+  `produccion_id` con pasos clonados (estado='pendiente').
+- **NON-FATAL**: si falla la creación del EBR (excepción cualquiera),
+  loguea warning pero NO bloquea el inicio de producción. Esto es
+  invariante crítica: el flujo Mayerlin/operario aprieta 'Iniciar' NO
+  debe romperse por bugs del BRD.
+- Idempotente vs `produccion_id` (re-iniciar no duplica EBR).
+- Lote auto-generado: `<prod-short>-<evento_id>-<YYYYMMDD>` (UTC).
+- Response incluye campo `brd_ebr` con resultado.
+- Tablas escritas adicionales (delegadas a brd.py vía cursor compartido):
+  `ebr_ejecuciones`, `ebr_pasos_ejecutados`.
+- **Test que cazaría regresión**:
+  `test_golden_brd_hook_auto_ebr_al_iniciar_produccion`.

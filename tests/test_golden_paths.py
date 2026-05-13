@@ -5489,6 +5489,12 @@ def test_golden_brd_dashboard_ui_responde(app, db_clean):
     assert "/api/brd/mbr" in body
     assert "/api/brd/ebr" in body
     assert "/api/brd/cleaning" in body
+    # Sebastián 12-may UI v2: modal de firma + acciones
+    assert "openSignModal" in body, 'BUG: modal de firma ausente'
+    assert "aprobarMbr" in body, 'BUG: acción aprobar MBR ausente'
+    assert "liberarEbr" in body, 'BUG: acción liberar EBR ausente'
+    # CSRF defense-in-depth
+    assert "X-CSRF-Token" in body
     # No autorizado sin login
     cs2 = app.test_client()
     r2 = cs2.get('/brd')
