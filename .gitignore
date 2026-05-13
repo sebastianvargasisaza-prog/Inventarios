@@ -5,6 +5,7 @@
 .git_token
 *.pem
 *.key
+dev.cmd
 *.db
 *.db-wal
 *.db-shm
