@@ -412,7 +412,7 @@ def _log_request(response):
         response.headers["X-Request-Id"] = rid
         duration_ms = round((_time_module.time() - getattr(request, "_start_time", _time_module.time())) * 1000, 1)
         _logger.info(_json.dumps({
-            "ts":         __import__("datetime").datetime.utcnow().isoformat() + "Z",
+            "ts":         __import__("datetime").datetime.now(__import__("datetime").timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
             "request_id": rid,
             "method":     request.method,
             "path":       request.path,
@@ -442,7 +442,7 @@ def _unhandled_exception(e):
     rid = getattr(request, "id", "-")
     try:
         _logger.error(_json.dumps({
-            "ts":         __import__("datetime").datetime.utcnow().isoformat() + "Z",
+            "ts":         __import__("datetime").datetime.now(__import__("datetime").timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
             "level":      "ERROR",
             "request_id": rid,
             "method":     request.method,
@@ -538,7 +538,7 @@ def health_detailed():
     if user not in ADMIN_USERS:
         return jsonify({'error': 'Solo Admin'}), 403
 
-    out = {'timestamp': __import__('datetime').datetime.utcnow().isoformat() + 'Z',
+    out = {'timestamp': __import__('datetime').datetime.now(__import__('datetime').timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
            'commit': os.environ.get('RENDER_GIT_COMMIT', 'unknown')[:8],
            'sections': {}}
     overall_ok = True
@@ -1149,7 +1149,7 @@ def bandeja_ceo():
         counts[it['severidad']] = counts.get(it['severidad'], 0) + 1
 
     return jsonify({
-        'timestamp': __import__('datetime').datetime.utcnow().isoformat() + 'Z',
+        'timestamp': __import__('datetime').datetime.now(__import__('datetime').timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
         'usuario': user,
         'total': len(items),
         'counts': counts,

@@ -3,7 +3,7 @@
 import os
 import sqlite3
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 
 from flask import request, session, redirect, jsonify
 
@@ -189,7 +189,7 @@ def _clear_attempts(ip_or_key, username=None):
 def _log_sec(event, username=None, ip=None, details=None):
     try:
         ua = request.headers.get("User-Agent", "")[:200]
-        ts = datetime.utcnow().isoformat() + "Z"
+        ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
         conn2 = sqlite3.connect(DB_PATH)
         conn2.execute(
             "INSERT INTO security_events(ts,event,username,ip,user_agent,details)"

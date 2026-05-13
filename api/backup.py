@@ -24,8 +24,16 @@ import shutil
 import sqlite3
 import threading
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
+# Sebastián 12-may-2026 Bloque B parcial: helper local UTC-aware para
+# reemplazar datetime.utcnow() (deprecado en Python 3.12+).
+def _utcnow_naive():
+    """Devuelve datetime UTC naive (sin tzinfo) para compat con queries SQLite
+    legacy que usan strptime(...,'%Y-%m-%d %H:%M:%S'). Equivalente a la vieja
+    datetime.utcnow() pero sin DeprecationWarning."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 from config import DB_PATH
 
@@ -102,7 +110,7 @@ def _ensure_backups_dir():
 
 def _backup_filename(now=None):
     """Genera nombre de archivo con timestamp UTC."""
-    now = now or datetime.utcnow()
+    now = now or _utcnow_naive()
     return f"inventario_{now.strftime('%Y%m%d_%H%M%S')}.db.gz"
 
 
@@ -121,7 +129,7 @@ def _claim_backup_slot(conn, triggered_by="auto"):
     # Formato del timestamp: SQLite datetime('now', 'utc') devuelve
     # 'YYYY-MM-DD HH:MM:SS' (con espacio, no T). Usamos el mismo formato
     # para que la comparación lexicográfica sea correcta.
-    stale_threshold = datetime.utcnow() - timedelta(minutes=5)
+    stale_threshold = _utcnow_naive() - timedelta(minutes=5)
     row = conn.execute(
         """SELECT id FROM backup_log
            WHERE status='running' AND started_at > ?
@@ -243,7 +251,7 @@ def _ensure_monthly_snapshot(daily_path):
         dict {created, monthly_path} o {created: False, reason}.
     """
     try:
-        now = datetime.utcnow()
+        now = _utcnow_naive()
         mes_tag = now.strftime("%Y%m")  # YYYYMM
         backups_path = Path(BACKUPS_DIR)
         # ¿Ya existe snapshot monthly de este mes?
@@ -362,7 +370,7 @@ def should_run_backup(conn):
     except (ValueError, TypeError):
         return True
 
-    age = datetime.utcnow() - last
+    age = _utcnow_naive() - last
     return age > timedelta(hours=BACKUP_INTERVAL_HOURS)
 
 
@@ -379,7 +387,7 @@ def list_backups():
                 "filename": f.name,
                 "size_bytes": st.st_size,
                 "size_mb": round(st.st_size / 1024 / 1024, 2),
-                "modified": datetime.utcfromtimestamp(st.st_mtime).isoformat(timespec="seconds") + "Z",
+                "modified": datetime.fromtimestamp(st.st_mtime, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
             })
         except OSError:
             pass

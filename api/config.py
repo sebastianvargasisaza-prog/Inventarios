@@ -146,7 +146,7 @@ def validate_config():
     """
     import json as _json
     import logging as _logging
-    from datetime import datetime as _dt
+    from datetime import datetime as _dt, timezone as _tz
 
     issues = []
 
@@ -232,7 +232,7 @@ def validate_config():
     logger = _logging.getLogger("inventario.config")
     for issue in issues:
         log_entry = {
-            "ts":       _dt.utcnow().isoformat() + "Z",
+            "ts":       _dt.now(_tz.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
             "level":    issue["severity"],
             "category": "config_validation",
             **issue,
