@@ -1506,9 +1506,10 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       </div>
     </div>
     <div id="nec-resumen" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px"></div>
-    <!-- Próximas producciones agendadas (visibles arriba para que Sebastián
-         vea lo que ya programó · click producto en abajo cuando hay drill) -->
-    <div id="nec-proximas" style="margin-bottom:14px"></div>
+    <!-- Sebastián 13-may-2026: sección "Próximas agendadas" eliminada
+         (queda el endpoint /api/plan/proximas por si la reactivamos
+         después). El chip "📅 Ya agendado" sigue dentro del modal
+         Solicitar para evitar doble producción. -->
     <div id="nec-contenido"><div style="text-align:center;color:#94a3b8;padding:40px">Cargando…</div></div>
   </div>
   <!-- Modal UNIFICADO "Solicitar producción" · Sebastián 13-may-2026
@@ -16789,15 +16790,10 @@ async function ckMarcar(itemId, estado){
     const div = document.getElementById('nec-contenido');
     div.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:40px">Cargando…</div>';
     try {
-      const [r, rp] = await Promise.all([
-        fetch('/api/plan/necesidades' + qs),
-        fetch('/api/plan/proximas'),
-      ]);
+      const r = await fetch('/api/plan/necesidades' + qs);
       if (r.status === 401) { window.location.href = '/login'; return; }
       const d = await r.json();
-      const dp = await rp.json();
       renderResumenNec(d.resumen);
-      renderProximasNec(dp.items || []);
       renderClientesNec(d.clientes);
     } catch(e) {
       div.innerHTML = '<div style="text-align:center;color:#dc2626;padding:40px">Error: ' + escapeHtmlNec(e.message) + '</div>';
