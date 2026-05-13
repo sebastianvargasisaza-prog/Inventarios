@@ -222,6 +222,22 @@ _AREAS_LIMPIEZA_PROFUNDA = (
 
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (116, "produccion_programada · kg_real + unidades_real + merma_pct · Planta Mejora A · Sebastián 12-may-2026", [
+        # Sebastián pidió "planta puede tener cosas" como prioridad. El primer
+        # dolor detectado: hoy NO se captura cuántos kg/unidades salieron al
+        # terminar producción. Sin eso, cero data de yield/merma a nivel
+        # operativo (el BRD/EBR sí lo tiene pero solo para producciones con
+        # MBR aprobado · la mayoría siguen sin EBR).
+        #
+        # Columnas opcionales · NO bloquean el flujo de terminar (operario
+        # puede saltarlo en versión inicial · UI lo recordará). Si se reportan,
+        # el sistema calcula merma_pct = (1 - kg_real/cantidad_kg) * 100.
+        "ALTER TABLE produccion_programada ADD COLUMN kg_real REAL DEFAULT NULL",
+        "ALTER TABLE produccion_programada ADD COLUMN unidades_real INTEGER DEFAULT NULL",
+        "ALTER TABLE produccion_programada ADD COLUMN merma_pct REAL DEFAULT NULL",
+        # Índice para reportes agrupados por mes
+        "CREATE INDEX IF NOT EXISTS idx_pp_fin_real ON produccion_programada(fin_real_at, producto) WHERE fin_real_at IS NOT NULL",
+    ]),
     (115, "MBR auto-seed · drafts para todos los productos en formula_headers · Sebastián 12-may-2026", [
         # Para cada producto en formula_headers que TODAVÍA no tiene MBR,
         # crear un MBR draft con 3 pasos genéricos (dispensación / fabricación

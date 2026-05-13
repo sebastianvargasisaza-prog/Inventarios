@@ -5630,6 +5630,122 @@ def test_golden_brd_hook_auto_ebr_al_iniciar_produccion(app, db_clean):
 
 
 # ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH PLANTA-A · capturar kg_real + reporte yield/merma (B1.5)
+# ═══════════════════════════════════════════════════════════════════
+def test_golden_planta_yield_kg_real_y_merma(app, db_clean):
+    """Terminar producción con kg_real → calcula merma → reporte yield clasifica."""
+    cs = _login(app, 'sebastian')
+    import sqlite3 as _sqlite3
+
+    # Crear 2 producciones: 1 con merma OK, 1 con merma alta
+    conn = _sqlite3.connect(os.environ['DB_PATH'], timeout=5.0)
+    try:
+        cur = conn.cursor()
+        # Producción 1: planeado 10kg → real 9.7kg (merma 3% · OK)
+        cur.execute(
+            """INSERT INTO produccion_programada
+                 (producto, fecha_programada, cantidad_kg, origen,
+                  inicio_real_at)
+               VALUES ('Test Yield A', date('now'), 10, 'manual',
+                       datetime('now', '-2 hours'))"""
+        )
+        ev1 = cur.lastrowid
+        # Producción 2: planeado 20kg → real 18kg (merma 10% · ALTA)
+        cur.execute(
+            """INSERT INTO produccion_programada
+                 (producto, fecha_programada, cantidad_kg, origen,
+                  inicio_real_at)
+               VALUES ('Test Yield B', date('now'), 20, 'manual',
+                       datetime('now', '-3 hours'))"""
+        )
+        ev2 = cur.lastrowid
+        conn.commit()
+    finally:
+        conn.close()
+
+    # Caso 1: terminar producción 1 con kg_real OK
+    r1 = cs.post(f'/api/programacion/programar/{ev1}/terminar',
+                 json={'kg_real': 9.7, 'unidades_real': 100},
+                 headers=csrf_headers())
+    assert r1.status_code == 200, f'BUG: {r1.status_code} {r1.data}'
+    d1 = r1.get_json()
+    assert d1['ok'] is True
+    assert d1['kg_real'] == 9.7
+    assert d1['merma_pct'] == 3.0
+    assert d1['merma_alta'] is False
+
+    # Caso 2: terminar producción 2 con merma alta · pasa porque está dentro 70-110%
+    r2 = cs.post(f'/api/programacion/programar/{ev2}/terminar',
+                 json={'kg_real': 18.0, 'observaciones': 'merma normal por residuo en tanque'},
+                 headers=csrf_headers())
+    assert r2.status_code == 200, f'BUG: {r2.status_code} {r2.data}'
+    d2 = r2.get_json()
+    assert d2['merma_pct'] == 10.0
+    assert d2['merma_alta'] is True
+
+    # Caso 3: kg_real < 70% del planeado SIN observaciones → rechaza
+    conn = _sqlite3.connect(os.environ['DB_PATH'], timeout=5.0)
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """INSERT INTO produccion_programada
+                 (producto, fecha_programada, cantidad_kg, origen,
+                  inicio_real_at)
+               VALUES ('Test Yield C', date('now'), 100, 'manual',
+                       datetime('now', '-1 hour'))"""
+        )
+        ev3 = cur.lastrowid
+        conn.commit()
+    finally:
+        conn.close()
+    r3 = cs.post(f'/api/programacion/programar/{ev3}/terminar',
+                 json={'kg_real': 50},  # 50% · fuera del rango 70-110%
+                 headers=csrf_headers())
+    assert r3.status_code == 400
+    assert 'fuera de rango' in str(r3.data) or '70-110' in str(r3.data)
+
+    # Caso 4: con observaciones, sí pasa
+    r3b = cs.post(f'/api/programacion/programar/{ev3}/terminar',
+                  json={'kg_real': 50, 'observaciones': 'lote rechazado por contaminación'},
+                  headers=csrf_headers())
+    assert r3b.status_code == 200
+    assert r3b.get_json()['merma_pct'] == 50.0
+
+    # Caso 5: GET reporte yield por producto+mes
+    rrep = cs.get('/api/planta/yield-reporte')
+    assert rrep.status_code == 200
+    rep = rrep.get_json()
+    assert 'items' in rep
+    assert rep['merma_alta_threshold_pct'] == 5.0
+    # Buscar nuestros 3 productos
+    productos_en_reporte = {it['producto'] for it in rep['items']}
+    assert 'Test Yield A' in productos_en_reporte
+    assert 'Test Yield B' in productos_en_reporte
+    assert 'Test Yield C' in productos_en_reporte
+    # B y C deben aparecer como merma_alta (10% y 50%)
+    items_alta = [it for it in rep['items'] if it['merma_alta']]
+    productos_alta = {it['producto'] for it in items_alta}
+    assert 'Test Yield B' in productos_alta
+    assert 'Test Yield C' in productos_alta
+    # Outliers contiene los 2 con merma > 5%
+    assert len(rep['outliers']) >= 2
+
+    # Caso 6: filter por producto funciona
+    rrep2 = cs.get('/api/planta/yield-reporte?producto=Test Yield A')
+    items2 = rrep2.get_json()['items']
+    assert all(it['producto'] == 'Test Yield A' for it in items2)
+
+    # Cleanup
+    conn = _sqlite3.connect(os.environ['DB_PATH'], timeout=5.0)
+    try:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM produccion_programada WHERE id IN (?,?,?)", (ev1, ev2, ev3))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+# ═══════════════════════════════════════════════════════════════════
 # GOLDEN PATH 60 · PDF maestro auditable EBR (Fase 1 F8)
 # ═══════════════════════════════════════════════════════════════════
 def test_golden_brd_pdf_ebr_descargable(app, db_clean):

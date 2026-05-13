@@ -2413,6 +2413,106 @@ def prog_cancelar_evento(evento_id):
 # produccion. Mayerlin fija dispensacion (regla dura). Las salas tienen
 # capacidades distintas post-INVIMA (ver migracion 55).
 
+# ── Reporte yield/merma (Mejora A · 12-may-2026) ────────────────────────────
+@bp.route('/api/planta/yield-reporte', methods=['GET'])
+def planta_yield_reporte():
+    """Yield y merma por producto, agrupado por mes (mig 116).
+
+    Query params opcionales:
+      desde · YYYY-MM-DD (default: hace 90 días)
+      hasta · YYYY-MM-DD (default: hoy)
+      producto · filtro exact match (opcional)
+
+    Solo cuenta producciones con kg_real reportado. Las producciones sin
+    kg_real aparecen en `pendientes_reportar` para que Sebastián vea cuántas
+    faltan llenar. merma_alta_threshold = 5%.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+
+    from datetime import datetime as _dtcls, timezone as _tzcls, timedelta as _td
+    # Sebastián 12-may-2026: usar UTC (alineado con SQLite datetime('now') sin
+    # modifier que devuelve UTC). En máquinas con TZ != UTC, date.today() no
+    # coincide con date(fin_real_at) y el reporte sale vacío.
+    desde = (request.args.get('desde') or '').strip()
+    hasta = (request.args.get('hasta') or '').strip()
+    producto_filter = (request.args.get('producto') or '').strip()
+    hoy_utc = _dtcls.now(_tzcls.utc).date()
+    if not desde:
+        desde = (hoy_utc - _td(days=90)).isoformat()
+    if not hasta:
+        hasta = hoy_utc.isoformat()
+
+    conn = get_db()
+    where = ["fin_real_at IS NOT NULL",
+             "date(fin_real_at) BETWEEN ? AND ?"]
+    params = [desde, hasta]
+    if producto_filter:
+        where.append("producto = ?")
+        params.append(producto_filter)
+
+    # Resumen por (producto, mes_yyyy_mm)
+    rows = conn.execute(f"""
+        SELECT
+          producto,
+          substr(fin_real_at, 1, 7) AS mes,
+          COUNT(*) AS lotes,
+          SUM(CASE WHEN kg_real IS NOT NULL THEN 1 ELSE 0 END) AS lotes_con_real,
+          SUM(cantidad_kg) AS planeado_kg_total,
+          SUM(kg_real) AS real_kg_total,
+          AVG(merma_pct) AS merma_pct_avg,
+          MIN(merma_pct) AS merma_pct_min,
+          MAX(merma_pct) AS merma_pct_max
+        FROM produccion_programada
+        WHERE {' AND '.join(where)}
+        GROUP BY producto, mes
+        ORDER BY mes DESC, producto
+    """, params).fetchall()
+
+    items = []
+    THRESHOLD = 5.0
+    for r in rows:
+        merma_avg = r['merma_pct_avg']
+        items.append({
+            'producto': r['producto'],
+            'mes': r['mes'],
+            'lotes': r['lotes'],
+            'lotes_con_kg_real': r['lotes_con_real'] or 0,
+            'planeado_kg_total': r['planeado_kg_total'] or 0,
+            'real_kg_total': r['real_kg_total'],
+            'merma_pct_avg': round(merma_avg, 2) if merma_avg is not None else None,
+            'merma_pct_min': round(r['merma_pct_min'], 2) if r['merma_pct_min'] is not None else None,
+            'merma_pct_max': round(r['merma_pct_max'], 2) if r['merma_pct_max'] is not None else None,
+            'merma_alta': bool(merma_avg is not None and abs(merma_avg) > THRESHOLD),
+        })
+
+    # Cuenta de producciones sin kg_real (pendientes de reportar)
+    pendientes = conn.execute(f"""
+        SELECT COUNT(*) FROM produccion_programada
+        WHERE {' AND '.join(where)} AND kg_real IS NULL
+    """, params).fetchone()[0]
+
+    # Top 5 outliers (peor merma · solo donde merma > threshold)
+    outliers = conn.execute(f"""
+        SELECT id, producto, fin_real_at, cantidad_kg, kg_real, merma_pct
+        FROM produccion_programada
+        WHERE {' AND '.join(where)} AND merma_pct IS NOT NULL
+          AND ABS(merma_pct) > ?
+        ORDER BY ABS(merma_pct) DESC LIMIT 10
+    """, params + [THRESHOLD]).fetchall()
+
+    return jsonify({
+        'desde': desde, 'hasta': hasta,
+        'producto_filter': producto_filter or None,
+        'merma_alta_threshold_pct': THRESHOLD,
+        'total_lotes': sum(it['lotes'] for it in items),
+        'total_con_kg_real': sum(it['lotes_con_kg_real'] for it in items),
+        'pendientes_reportar': pendientes,
+        'items': items,
+        'outliers': [dict(r) for r in outliers],
+    })
+
+
 @bp.route('/api/planta/areas', methods=['GET'])
 def planta_listar_areas():
     """Lista las 5 salas con capacidades y disponibilidad opcional por fecha.
@@ -2990,12 +3090,19 @@ def prog_terminar_produccion(evento_id):
     """Operario aprieta 'Terminar' — graba fin_real_at, marca sala 'sucia'
     (asume que despues de produccion siempre hay limpieza), registra evento.
 
+    Sebastián 12-may-2026 (Planta Mejora A): acepta body opcional
+    {kg_real, unidades_real, observaciones} para capturar cantidad real
+    producida y calcular merma_pct = (1 - kg_real/cantidad_kg) * 100.
+    El operario puede omitirlo (queda pendiente · UI lo recordará).
+
     Idempotente: si ya tiene fin_real_at, no sobreescribe."""
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
     user = session.get('compras_user', '')
+    body = request.get_json(silent=True) or {}
     conn = get_db(); c = conn.cursor()
-    pp = c.execute("""SELECT id, producto, area_id, inicio_real_at, fin_real_at
+    pp = c.execute("""SELECT id, producto, area_id, inicio_real_at, fin_real_at,
+                              cantidad_kg
                       FROM produccion_programada WHERE id=?""", (evento_id,)).fetchone()
     if not pp:
         return jsonify({'error': 'produccion no existe'}), 404
@@ -3003,7 +3110,44 @@ def prog_terminar_produccion(evento_id):
         return jsonify({'ok': True, 'ya_terminada': True, 'fin_real_at': pp[4]})
     if not pp[3]:
         return jsonify({'error': 'produccion no ha iniciado'}), 400
-    c.execute("UPDATE produccion_programada SET fin_real_at=datetime('now') WHERE id=?", (evento_id,))
+
+    # Validar kg_real / unidades_real si se reportan
+    kg_real = body.get('kg_real')
+    unidades_real = body.get('unidades_real')
+    merma_pct = None
+    cantidad_kg = pp[5] or 0
+    if kg_real is not None:
+        try:
+            kg_real = float(kg_real)
+        except (TypeError, ValueError):
+            return jsonify({'error': 'kg_real inválido'}), 400
+        if kg_real < 0:
+            return jsonify({'error': 'kg_real debe ser >= 0'}), 400
+        # Sanity check 70-110% del planeado · fuera de eso, requiere
+        # observaciones explícitas para auditoría.
+        if cantidad_kg > 0:
+            ratio = kg_real / cantidad_kg
+            if (ratio < 0.7 or ratio > 1.1) and not (body.get('observaciones') or '').strip():
+                return jsonify({
+                    'error': f'kg_real fuera de rango 70-110% del planeado ({cantidad_kg} kg). '
+                              f'Reportar observaciones obligatorio.',
+                    'planeado_kg': cantidad_kg, 'real_kg': kg_real,
+                    'ratio_pct': round(ratio * 100, 2),
+                }), 400
+            merma_pct = round((1 - ratio) * 100, 2)
+    if unidades_real is not None:
+        try:
+            unidades_real = int(unidades_real)
+        except (TypeError, ValueError):
+            return jsonify({'error': 'unidades_real inválido'}), 400
+
+    c.execute("""UPDATE produccion_programada
+                   SET fin_real_at=datetime('now'),
+                       kg_real=COALESCE(?, kg_real),
+                       unidades_real=COALESCE(?, unidades_real),
+                       merma_pct=COALESCE(?, merma_pct)
+                 WHERE id=?""",
+              (kg_real, unidades_real, merma_pct, evento_id))
     if pp[2]:
         prev = c.execute("SELECT estado FROM areas_planta WHERE id=?", (pp[2],)).fetchone()
         # Sebastián 1-may-2026: guard contra sobrescribir 'limpiando'
@@ -3023,12 +3167,20 @@ def prog_terminar_produccion(evento_id):
     cycle_min = cycle[0] if cycle else None
     audit_log(c, usuario=user, accion='TERMINAR_PRODUCCION', tabla='produccion_programada',
               registro_id=evento_id,
-              despues={'producto': pp[1], 'area_id': pp[2], 'cycle_time_min': cycle_min},
+              despues={'producto': pp[1], 'area_id': pp[2], 'cycle_time_min': cycle_min,
+                        'kg_real': kg_real, 'unidades_real': unidades_real,
+                        'merma_pct': merma_pct},
               detalle=f"Terminó producción {pp[1]} (id={evento_id})"
-                      + (f" · cycle {cycle_min} min" if cycle_min else ""))
+                      + (f" · cycle {cycle_min} min" if cycle_min else "")
+                      + (f" · {kg_real} kg real" if kg_real is not None else "")
+                      + (f" · merma {merma_pct}%" if merma_pct is not None else ""))
     conn.commit()
     return jsonify({'ok': True, 'evento_id': evento_id,
-                    'cycle_time_min': cycle_min})
+                    'cycle_time_min': cycle_min,
+                    'kg_real': kg_real,
+                    'unidades_real': unidades_real,
+                    'merma_pct': merma_pct,
+                    'merma_alta': bool(merma_pct is not None and abs(merma_pct) > 5.0)})
 
 
 @bp.route('/api/planta/listo-producir/<path:producto>', methods=['GET'])
