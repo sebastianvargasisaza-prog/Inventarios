@@ -222,6 +222,114 @@ _AREAS_LIMPIEZA_PROFUNDA = (
 
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (111, "EBR (Executed Batch Record) · ejecución de lote real · Fase 1 BRD · Sebastián 12-may-2026", [
+        # EBR = instancia ejecutada de un MBR aprobado para UN lote real.
+        # Workflow:
+        #   iniciado          → al crear · pasos_ejecutados clonados de MBR
+        #                       en estado='pendiente'.
+        #   en_proceso        → primer paso completado.
+        #   completado        → todos los pasos completados + cantidad_real_g
+        #                       reportada · esperando QC.
+        #   en_revision_qc    → QC mirando el EBR (transición opcional).
+        #   liberado          → QC firmó liberación · INMUTABLE post este punto.
+        #   rechazado         → QC firmó rechazo · INMUTABLE post este punto.
+        #
+        # liberado_signature_id es FK lógico a e_signatures con meaning='libera'.
+        # mbr_version es snapshot · si el MBR fuente cambia (no debería poder,
+        # por trigger mig 109) el EBR sigue mostrando la versión que ejecutó.
+        #
+        # cantidad_objetivo_g se snapshotea de mbr.lote_size_g al iniciar para
+        # que la reconciliación teórico vs real (cantidad_real_g / objetivo)
+        # sea estable aunque el MBR fuente se obsoletee.
+        """CREATE TABLE IF NOT EXISTS ebr_ejecuciones (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            mbr_template_id INTEGER NOT NULL,
+            mbr_version INTEGER NOT NULL,
+            produccion_id INTEGER DEFAULT NULL,
+            lote TEXT NOT NULL UNIQUE,
+            estado TEXT NOT NULL DEFAULT 'iniciado',
+            iniciado_por TEXT NOT NULL,
+            iniciado_at_utc TEXT NOT NULL,
+            completado_at_utc TEXT DEFAULT NULL,
+            liberado_por TEXT DEFAULT '',
+            liberado_at_utc TEXT DEFAULT NULL,
+            liberado_signature_id INTEGER DEFAULT NULL,
+            rechazado_motivo TEXT DEFAULT '',
+            cantidad_objetivo_g REAL NOT NULL,
+            cantidad_real_g REAL DEFAULT NULL,
+            yield_pct REAL DEFAULT NULL,
+            notas TEXT DEFAULT '',
+            FOREIGN KEY (mbr_template_id) REFERENCES mbr_templates(id)
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_ebr_estado ON ebr_ejecuciones(estado, iniciado_at_utc DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_ebr_mbr ON ebr_ejecuciones(mbr_template_id, iniciado_at_utc DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_ebr_produccion ON ebr_ejecuciones(produccion_id) WHERE produccion_id IS NOT NULL",
+
+        # ebr_pasos_ejecutados: snapshot de los pasos del MBR + estado de
+        # ejecución por cada uno. Se clonan al iniciar el EBR (orden +
+        # descripcion + flags) para que el record sobreviva a un eventual
+        # cambio del MBR fuente.
+        """CREATE TABLE IF NOT EXISTS ebr_pasos_ejecutados (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ebr_id INTEGER NOT NULL,
+            mbr_paso_id INTEGER NOT NULL,
+            orden INTEGER NOT NULL,
+            descripcion TEXT NOT NULL,
+            tipo_paso TEXT DEFAULT 'otro',
+            equipo_requerido TEXT DEFAULT '',
+            requiere_e_sign INTEGER DEFAULT 0,
+            requiere_qc INTEGER DEFAULT 0,
+            estado TEXT NOT NULL DEFAULT 'pendiente',
+            operario_username TEXT DEFAULT '',
+            iniciado_at_utc TEXT DEFAULT NULL,
+            completado_at_utc TEXT DEFAULT NULL,
+            observaciones TEXT DEFAULT '',
+            e_sign_id INTEGER DEFAULT NULL,
+            qc_username TEXT DEFAULT '',
+            qc_e_sign_id INTEGER DEFAULT NULL,
+            desviacion_id INTEGER DEFAULT NULL,
+            UNIQUE(ebr_id, orden),
+            FOREIGN KEY (ebr_id) REFERENCES ebr_ejecuciones(id) ON DELETE CASCADE
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_ebr_pasos_ebr ON ebr_pasos_ejecutados(ebr_id, orden)",
+        "CREATE INDEX IF NOT EXISTS idx_ebr_pasos_estado ON ebr_pasos_ejecutados(estado, ebr_id)",
+
+        # Trigger inmutabilidad: una vez liberado/rechazado, NO se modifican
+        # campos críticos del EBR (los QA/QC pueden agregar comentarios
+        # postliberación a través del audit_log, NO modificando el EBR).
+        """CREATE TRIGGER IF NOT EXISTS trg_ebr_liberado_no_edit
+           BEFORE UPDATE ON ebr_ejecuciones
+           FOR EACH ROW
+           WHEN OLD.estado IN ('liberado', 'rechazado')
+                AND (NEW.estado IS NOT OLD.estado
+                  OR NEW.cantidad_real_g IS NOT OLD.cantidad_real_g
+                  OR NEW.yield_pct IS NOT OLD.yield_pct
+                  OR NEW.liberado_signature_id IS NOT OLD.liberado_signature_id
+                  OR NEW.notas IS NOT OLD.notas)
+           BEGIN
+               SELECT RAISE(ABORT, 'EBR liberado/rechazado es inmutable (Part 11 11.10(e))');
+           END""",
+
+        # Trigger inmutabilidad pasos post-liberación
+        """CREATE TRIGGER IF NOT EXISTS trg_ebr_pasos_liberado_no_edit
+           BEFORE UPDATE ON ebr_pasos_ejecutados
+           FOR EACH ROW
+           WHEN EXISTS (SELECT 1 FROM ebr_ejecuciones
+                        WHERE id = NEW.ebr_id
+                          AND estado IN ('liberado', 'rechazado'))
+           BEGIN
+               SELECT RAISE(ABORT, 'pasos de EBR liberado/rechazado son inmutables');
+           END""",
+        """CREATE TRIGGER IF NOT EXISTS trg_ebr_pasos_liberado_no_delete
+           BEFORE DELETE ON ebr_pasos_ejecutados
+           FOR EACH ROW
+           WHEN EXISTS (SELECT 1 FROM ebr_ejecuciones
+                        WHERE id = OLD.ebr_id
+                          AND estado IN ('liberado', 'rechazado'))
+           BEGIN
+               SELECT RAISE(ABORT, 'pasos de EBR liberado/rechazado son inmutables · DELETE prohibido');
+           END""",
+    ]),
     (110, "MBR seed · Blush Balm v1 draft (primer template real) · Sebastián 12-may-2026", [
         # Primer MBR draft real con Blush Balm (fórmula oficial v1, mig 104).
         # Se crea como DRAFT para que Sebastián/Calidad lo revise y ajuste

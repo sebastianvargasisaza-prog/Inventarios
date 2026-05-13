@@ -467,3 +467,451 @@ def obsoletar_mbr(mbr_id):
               antes={"estado": "aprobado"},
               despues={"estado": "obsoleto", "motivo": motivo})
     return jsonify({"ok": True, "estado": "obsoleto"})
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# EBR (Executed Batch Record) · ejecución de un lote real desde un MBR
+# ════════════════════════════════════════════════════════════════════════════
+# Flujo típico:
+#   1. POST /api/brd/ebr {mbr_template_id, lote, produccion_id?}
+#      → clona pasos del MBR a ebr_pasos_ejecutados (pendientes).
+#   2. Operario va al wizard del EBR. Por cada paso: iniciar → completar
+#      con observaciones + e-sign si requerido.
+#   3. POST /api/brd/ebr/<id>/completar con cantidad_real_g → yield_pct.
+#   4. QC firma: POST /api/brd/ebr/<id>/liberar con signature_id.
+
+VALID_ESTADOS_EBR = {"iniciado", "en_proceso", "completado",
+                     "en_revision_qc", "liberado", "rechazado"}
+
+
+def _ebr_to_dict(row, pasos=None):
+    d = {
+        "id": row["id"],
+        "mbr_template_id": row["mbr_template_id"],
+        "mbr_version": row["mbr_version"],
+        "produccion_id": row["produccion_id"],
+        "lote": row["lote"],
+        "estado": row["estado"],
+        "iniciado_por": row["iniciado_por"],
+        "iniciado_at_utc": row["iniciado_at_utc"],
+        "completado_at_utc": row["completado_at_utc"],
+        "liberado_por": row["liberado_por"] or "",
+        "liberado_at_utc": row["liberado_at_utc"],
+        "liberado_signature_id": row["liberado_signature_id"],
+        "rechazado_motivo": row["rechazado_motivo"] or "",
+        "cantidad_objetivo_g": row["cantidad_objetivo_g"],
+        "cantidad_real_g": row["cantidad_real_g"],
+        "yield_pct": row["yield_pct"],
+        "notas": row["notas"] or "",
+    }
+    if pasos is not None:
+        d["pasos"] = [_paso_ej_to_dict(p) for p in pasos]
+    return d
+
+
+def _paso_ej_to_dict(row):
+    return {
+        "id": row["id"],
+        "ebr_id": row["ebr_id"],
+        "mbr_paso_id": row["mbr_paso_id"],
+        "orden": row["orden"],
+        "descripcion": row["descripcion"],
+        "tipo_paso": row["tipo_paso"] or "otro",
+        "equipo_requerido": row["equipo_requerido"] or "",
+        "requiere_e_sign": int(row["requiere_e_sign"] or 0),
+        "requiere_qc": int(row["requiere_qc"] or 0),
+        "estado": row["estado"],
+        "operario_username": row["operario_username"] or "",
+        "iniciado_at_utc": row["iniciado_at_utc"],
+        "completado_at_utc": row["completado_at_utc"],
+        "observaciones": row["observaciones"] or "",
+        "e_sign_id": row["e_sign_id"],
+        "qc_username": row["qc_username"] or "",
+        "qc_e_sign_id": row["qc_e_sign_id"],
+        "desviacion_id": row["desviacion_id"],
+    }
+
+
+def _validar_signature(cur, signature_id, *, record_table, record_id,
+                       meaning, signer_username):
+    sig = cur.execute(
+        """SELECT id FROM e_signatures
+           WHERE id = ? AND record_table = ? AND record_id = ?
+             AND meaning = ? AND signer_username = ?""",
+        (int(signature_id), record_table, str(record_id), meaning, signer_username),
+    ).fetchone()
+    return sig is not None
+
+
+@bp.route("/api/brd/ebr", methods=["POST"])
+def iniciar_ebr():
+    err = _require_login()
+    if err:
+        return err
+    body = request.get_json(silent=True) or {}
+    mbr_id = body.get("mbr_template_id")
+    lote = (body.get("lote") or "").strip()
+    if not mbr_id or not lote:
+        return jsonify({"error": "mbr_template_id y lote requeridos"}), 400
+
+    conn = get_db()
+    cur = conn.cursor()
+    mbr = cur.execute(
+        """SELECT id, producto_nombre, version, estado, lote_size_g
+           FROM mbr_templates WHERE id = ?""", (int(mbr_id),),
+    ).fetchone()
+    if not mbr:
+        return jsonify({"error": "MBR no encontrado"}), 404
+    if mbr["estado"] != "aprobado":
+        return jsonify({
+            "error": f"solo MBR aprobado puede instanciar EBR (actual: {mbr['estado']})",
+        }), 409
+
+    if cur.execute("SELECT id FROM ebr_ejecuciones WHERE lote = ?", (lote,)).fetchone():
+        return jsonify({"error": f"lote '{lote}' ya tiene un EBR"}), 409
+
+    try:
+        cantidad_obj = float(body.get("cantidad_objetivo_g") or mbr["lote_size_g"])
+    except (ValueError, TypeError):
+        return jsonify({"error": "cantidad_objetivo_g inválida"}), 400
+
+    user = session.get("compras_user", "")
+    cur.execute(
+        """INSERT INTO ebr_ejecuciones
+             (mbr_template_id, mbr_version, produccion_id, lote, estado,
+              iniciado_por, iniciado_at_utc, cantidad_objetivo_g, notas)
+           VALUES (?, ?, ?, ?, 'iniciado', ?, datetime('now', 'utc'), ?, ?)""",
+        (mbr["id"], mbr["version"], body.get("produccion_id"), lote,
+         user, cantidad_obj, (body.get("notas") or "").strip()),
+    )
+    ebr_id = cur.lastrowid
+
+    pasos_mbr = cur.execute(
+        """SELECT id, orden, descripcion, tipo_paso, equipo_requerido,
+                  requiere_e_sign, requiere_qc
+           FROM mbr_pasos WHERE mbr_template_id = ? ORDER BY orden""",
+        (mbr["id"],),
+    ).fetchall()
+    for p in pasos_mbr:
+        cur.execute(
+            """INSERT INTO ebr_pasos_ejecutados
+                 (ebr_id, mbr_paso_id, orden, descripcion, tipo_paso,
+                  equipo_requerido, requiere_e_sign, requiere_qc, estado)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pendiente')""",
+            (ebr_id, p["id"], p["orden"], p["descripcion"], p["tipo_paso"],
+             p["equipo_requerido"], p["requiere_e_sign"], p["requiere_qc"]),
+        )
+    conn.commit()
+    audit_log(cur, usuario=user, accion="INICIAR_EBR",
+              tabla="ebr_ejecuciones", registro_id=ebr_id,
+              despues={"mbr_template_id": mbr["id"], "lote": lote,
+                        "pasos_clonados": len(pasos_mbr)})
+    return jsonify({"ok": True, "id": ebr_id, "pasos": len(pasos_mbr)}), 201
+
+
+@bp.route("/api/brd/ebr", methods=["GET"])
+def listar_ebr():
+    err = _require_login()
+    if err:
+        return err
+    estado = (request.args.get("estado") or "").strip()
+    lote = (request.args.get("lote") or "").strip()
+    where, params = [], []
+    if estado:
+        where.append("estado = ?")
+        params.append(estado)
+    if lote:
+        where.append("lote = ?")
+        params.append(lote)
+    sql = """SELECT id, mbr_template_id, mbr_version, produccion_id, lote,
+                    estado, iniciado_por, iniciado_at_utc, completado_at_utc,
+                    liberado_por, liberado_at_utc, liberado_signature_id,
+                    rechazado_motivo, cantidad_objetivo_g, cantidad_real_g,
+                    yield_pct, notas
+             FROM ebr_ejecuciones"""
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    sql += " ORDER BY iniciado_at_utc DESC"
+    rows = get_db().execute(sql, params).fetchall()
+    return jsonify({"items": [_ebr_to_dict(r) for r in rows]})
+
+
+@bp.route("/api/brd/ebr/<int:ebr_id>", methods=["GET"])
+def detalle_ebr(ebr_id):
+    err = _require_login()
+    if err:
+        return err
+    conn = get_db()
+    row = conn.execute(
+        """SELECT * FROM ebr_ejecuciones WHERE id = ?""", (ebr_id,),
+    ).fetchone()
+    if not row:
+        return jsonify({"error": "EBR no encontrado"}), 404
+    pasos = conn.execute(
+        """SELECT * FROM ebr_pasos_ejecutados
+           WHERE ebr_id = ? ORDER BY orden""", (ebr_id,),
+    ).fetchall()
+    return jsonify(_ebr_to_dict(row, pasos))
+
+
+@bp.route("/api/brd/ebr/<int:ebr_id>/pasos/<int:orden>/iniciar", methods=["POST"])
+def iniciar_paso_ebr(ebr_id, orden):
+    err = _require_login()
+    if err:
+        return err
+    conn = get_db()
+    cur = conn.cursor()
+    ebr = cur.execute(
+        "SELECT estado FROM ebr_ejecuciones WHERE id = ?", (ebr_id,),
+    ).fetchone()
+    if not ebr:
+        return jsonify({"error": "EBR no encontrado"}), 404
+    if ebr["estado"] not in ("iniciado", "en_proceso"):
+        return jsonify({"error": f"EBR no editable (estado: {ebr['estado']})"}), 409
+
+    paso = cur.execute(
+        """SELECT id, estado FROM ebr_pasos_ejecutados
+           WHERE ebr_id = ? AND orden = ?""", (ebr_id, orden),
+    ).fetchone()
+    if not paso:
+        return jsonify({"error": "paso no encontrado"}), 404
+    if paso["estado"] != "pendiente":
+        return jsonify({"error": f"paso ya iniciado (estado: {paso['estado']})"}), 409
+
+    user = session.get("compras_user", "")
+    cur.execute(
+        """UPDATE ebr_pasos_ejecutados
+             SET estado = 'en_proceso',
+                 operario_username = ?,
+                 iniciado_at_utc = datetime('now', 'utc')
+           WHERE id = ?""",
+        (user, paso["id"]),
+    )
+    cur.execute(
+        """UPDATE ebr_ejecuciones SET estado = 'en_proceso'
+           WHERE id = ? AND estado = 'iniciado'""", (ebr_id,),
+    )
+    conn.commit()
+    return jsonify({"ok": True, "estado": "en_proceso"})
+
+
+@bp.route("/api/brd/ebr/<int:ebr_id>/pasos/<int:orden>/completar", methods=["POST"])
+def completar_paso_ebr(ebr_id, orden):
+    err = _require_login()
+    if err:
+        return err
+    body = request.get_json(silent=True) or {}
+    observaciones = (body.get("observaciones") or "").strip()[:500]
+    signature_id = body.get("signature_id")
+    qc_signature_id = body.get("qc_signature_id")
+
+    conn = get_db()
+    cur = conn.cursor()
+    ebr = cur.execute(
+        "SELECT estado FROM ebr_ejecuciones WHERE id = ?", (ebr_id,),
+    ).fetchone()
+    if not ebr:
+        return jsonify({"error": "EBR no encontrado"}), 404
+    if ebr["estado"] not in ("iniciado", "en_proceso"):
+        return jsonify({"error": f"EBR no editable (estado: {ebr['estado']})"}), 409
+
+    paso = cur.execute(
+        """SELECT id, estado, requiere_e_sign, requiere_qc, operario_username
+           FROM ebr_pasos_ejecutados
+           WHERE ebr_id = ? AND orden = ?""", (ebr_id, orden),
+    ).fetchone()
+    if not paso:
+        return jsonify({"error": "paso no encontrado"}), 404
+    if paso["estado"] not in ("en_proceso", "pendiente"):
+        return jsonify({"error": f"paso ya completado (estado: {paso['estado']})"}), 409
+
+    user = session.get("compras_user", "")
+
+    if paso["requiere_e_sign"]:
+        if not signature_id:
+            return jsonify({
+                "error": "paso requiere e-signature · meaning='ejecuta' "
+                          "record_table='ebr_pasos_ejecutados'",
+                "paso_id": paso["id"],
+            }), 400
+        if not _validar_signature(
+            cur, signature_id, record_table="ebr_pasos_ejecutados",
+            record_id=paso["id"], meaning="ejecuta", signer_username=user,
+        ):
+            return jsonify({"error": "signature_id inválido para este paso"}), 400
+
+    qc_username = ""
+    if paso["requiere_qc"]:
+        if not qc_signature_id:
+            return jsonify({
+                "error": "paso requiere QC e-signature · meaning='supervisa'",
+            }), 400
+        qc_sig = cur.execute(
+            """SELECT signer_username FROM e_signatures
+               WHERE id = ? AND record_table = 'ebr_pasos_ejecutados'
+                 AND record_id = ? AND meaning = 'supervisa'""",
+            (int(qc_signature_id), str(paso["id"])),
+        ).fetchone()
+        if not qc_sig:
+            return jsonify({"error": "qc_signature_id inválido"}), 400
+        qc_username = qc_sig["signer_username"]
+
+    op_username = paso["operario_username"] or user
+    cur.execute(
+        """UPDATE ebr_pasos_ejecutados
+             SET estado = 'completado',
+                 operario_username = ?,
+                 iniciado_at_utc = COALESCE(iniciado_at_utc, datetime('now', 'utc')),
+                 completado_at_utc = datetime('now', 'utc'),
+                 observaciones = ?,
+                 e_sign_id = ?,
+                 qc_username = ?,
+                 qc_e_sign_id = ?
+           WHERE id = ?""",
+        (op_username, observaciones,
+         int(signature_id) if signature_id else None,
+         qc_username,
+         int(qc_signature_id) if qc_signature_id else None,
+         paso["id"]),
+    )
+    conn.commit()
+    return jsonify({"ok": True, "estado": "completado"})
+
+
+@bp.route("/api/brd/ebr/<int:ebr_id>/completar", methods=["POST"])
+def completar_ebr(ebr_id):
+    err = _require_login()
+    if err:
+        return err
+    body = request.get_json(silent=True) or {}
+    try:
+        cantidad_real = float(body.get("cantidad_real_g") or 0)
+    except (ValueError, TypeError):
+        return jsonify({"error": "cantidad_real_g inválida"}), 400
+    if cantidad_real <= 0:
+        return jsonify({"error": "cantidad_real_g debe ser > 0"}), 400
+
+    conn = get_db()
+    cur = conn.cursor()
+    ebr = cur.execute(
+        "SELECT estado, cantidad_objetivo_g FROM ebr_ejecuciones WHERE id = ?",
+        (ebr_id,),
+    ).fetchone()
+    if not ebr:
+        return jsonify({"error": "EBR no encontrado"}), 404
+    if ebr["estado"] not in ("iniciado", "en_proceso"):
+        return jsonify({"error": f"EBR no completable (estado: {ebr['estado']})"}), 409
+
+    pendientes = cur.execute(
+        """SELECT COUNT(*) FROM ebr_pasos_ejecutados
+           WHERE ebr_id = ? AND estado NOT IN ('completado', 'omitido')""",
+        (ebr_id,),
+    ).fetchone()[0]
+    if pendientes:
+        return jsonify({"error": f"hay {pendientes} paso(s) sin completar"}), 409
+
+    yield_pct = round((cantidad_real / ebr["cantidad_objetivo_g"]) * 100, 2) if ebr["cantidad_objetivo_g"] else None
+    user = session.get("compras_user", "")
+    cur.execute(
+        """UPDATE ebr_ejecuciones
+             SET estado = 'completado',
+                 completado_at_utc = datetime('now', 'utc'),
+                 cantidad_real_g = ?,
+                 yield_pct = ?
+           WHERE id = ?""",
+        (cantidad_real, yield_pct, ebr_id),
+    )
+    conn.commit()
+    audit_log(cur, usuario=user, accion="COMPLETAR_EBR",
+              tabla="ebr_ejecuciones", registro_id=ebr_id,
+              despues={"cantidad_real_g": cantidad_real, "yield_pct": yield_pct})
+    return jsonify({"ok": True, "estado": "completado", "yield_pct": yield_pct})
+
+
+@bp.route("/api/brd/ebr/<int:ebr_id>/liberar", methods=["POST"])
+def liberar_ebr(ebr_id):
+    err = _require_qa_or_admin()
+    if err:
+        return err
+    body = request.get_json(silent=True) or {}
+    signature_id = body.get("signature_id")
+    if not signature_id:
+        return jsonify({
+            "error": "signature_id requerido · meaning='libera' record_table='ebr_ejecuciones'",
+        }), 400
+
+    conn = get_db()
+    cur = conn.cursor()
+    ebr = cur.execute(
+        "SELECT estado FROM ebr_ejecuciones WHERE id = ?", (ebr_id,),
+    ).fetchone()
+    if not ebr:
+        return jsonify({"error": "EBR no encontrado"}), 404
+    if ebr["estado"] not in ("completado", "en_revision_qc"):
+        return jsonify({"error": f"solo completado puede liberarse (actual: {ebr['estado']})"}), 409
+
+    user = session.get("compras_user", "")
+    if not _validar_signature(
+        cur, signature_id, record_table="ebr_ejecuciones",
+        record_id=ebr_id, meaning="libera", signer_username=user,
+    ):
+        return jsonify({"error": "signature_id no corresponde a una firma 'libera' de este EBR por vos"}), 400
+
+    cur.execute(
+        """UPDATE ebr_ejecuciones
+             SET estado = 'liberado',
+                 liberado_por = ?,
+                 liberado_at_utc = datetime('now', 'utc'),
+                 liberado_signature_id = ?
+           WHERE id = ?""",
+        (user, int(signature_id), ebr_id),
+    )
+    conn.commit()
+    audit_log(cur, usuario=user, accion="LIBERAR_EBR",
+              tabla="ebr_ejecuciones", registro_id=ebr_id,
+              despues={"liberado_por": user, "signature_id": signature_id})
+    return jsonify({"ok": True, "estado": "liberado"})
+
+
+@bp.route("/api/brd/ebr/<int:ebr_id>/rechazar", methods=["POST"])
+def rechazar_ebr(ebr_id):
+    err = _require_qa_or_admin()
+    if err:
+        return err
+    body = request.get_json(silent=True) or {}
+    motivo = (body.get("motivo") or "").strip()
+    signature_id = body.get("signature_id")
+    if not motivo:
+        return jsonify({"error": "motivo requerido"}), 400
+    if not signature_id:
+        return jsonify({"error": "signature_id requerido (meaning='rechaza')"}), 400
+
+    conn = get_db()
+    cur = conn.cursor()
+    ebr = cur.execute(
+        "SELECT estado FROM ebr_ejecuciones WHERE id = ?", (ebr_id,),
+    ).fetchone()
+    if not ebr:
+        return jsonify({"error": "EBR no encontrado"}), 404
+    if ebr["estado"] not in ("completado", "en_revision_qc"):
+        return jsonify({"error": f"solo completado puede rechazarse (actual: {ebr['estado']})"}), 409
+
+    user = session.get("compras_user", "")
+    if not _validar_signature(
+        cur, signature_id, record_table="ebr_ejecuciones",
+        record_id=ebr_id, meaning="rechaza", signer_username=user,
+    ):
+        return jsonify({"error": "signature_id no corresponde a una firma 'rechaza' de este EBR por vos"}), 400
+
+    cur.execute(
+        """UPDATE ebr_ejecuciones
+             SET estado = 'rechazado',
+                 rechazado_motivo = ?
+           WHERE id = ?""",
+        (motivo, ebr_id),
+    )
+    conn.commit()
+    audit_log(cur, usuario=user, accion="RECHAZAR_EBR",
+              tabla="ebr_ejecuciones", registro_id=ebr_id,
+              despues={"motivo": motivo, "signature_id": signature_id})
+    return jsonify({"ok": True, "estado": "rechazado"})

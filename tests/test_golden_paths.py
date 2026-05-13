@@ -5020,3 +5020,163 @@ def test_golden_brd_seed_blush_balm(app, db_clean):
     assert 'fabricacion' in fases
     assert 'envasado' in fases
     assert 'control_ipc' in fases
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 57 · EBR workflow E2E (Fase 1 F4)
+# ═══════════════════════════════════════════════════════════════════
+# Sebastián 12-may-2026 Fase 1 F4: Executed Batch Record · ejecución
+# de un lote real desde un MBR aprobado, con e-sign por paso crítico
+# y firma QA al liberar. Inmutable post-liberación (mig 111 triggers).
+def _firmar(client, *, record_table, record_id, meaning, comment=''):
+    """Helper: hace challenge + sign y devuelve signature_id."""
+    rch = client.post('/api/sign/challenge',
+                      json={'password': TEST_PASSWORD}, headers=csrf_headers())
+    assert rch.status_code == 200, f'BUG challenge: {rch.status_code} {rch.data}'
+    token = rch.get_json()['token']
+    rsig = client.post('/api/sign', json={
+        'record_table': record_table,
+        'record_id': str(record_id),
+        'meaning': meaning,
+        'comment': comment,
+        'challenge_token': token,
+    }, headers=csrf_headers())
+    assert rsig.status_code == 201, f'BUG sign: {rsig.status_code} {rsig.data}'
+    return rsig.get_json()['signature_id']
+
+
+def test_golden_brd_ebr_workflow_completo(app, db_clean):
+    """MBR aprobado → iniciar EBR → ejecutar pasos → completar → liberar QC."""
+    cs = _login(app, 'sebastian')
+    cs.patch('/api/identidad/sebastian',
+             json={'cedula': '77777777', 'nombre_completo': 'Test EBR'},
+             headers=csrf_headers())
+
+    # Setup: crear MBR y aprobarlo
+    r1 = cs.post('/api/brd/mbr', json={
+        'producto_nombre': 'Test EBR Producto',
+        'lote_size_g': 500.0,
+    }, headers=csrf_headers())
+    assert r1.status_code == 201
+    mbr_id = r1.get_json()['id']
+    # 2 pasos · uno requiere e-sign, el otro no
+    cs.post(f'/api/brd/mbr/{mbr_id}/pasos', json={
+        'descripcion': 'Pesar MPs', 'tipo_paso': 'pesaje',
+        'requiere_e_sign': 1,
+    }, headers=csrf_headers())
+    cs.post(f'/api/brd/mbr/{mbr_id}/pasos', json={
+        'descripcion': 'Mezclar y envasar', 'tipo_paso': 'mezclado',
+    }, headers=csrf_headers())
+    cs.post(f'/api/brd/mbr/{mbr_id}/submit', json={}, headers=csrf_headers())
+    sig_aprob = _firmar(cs, record_table='mbr_templates', record_id=mbr_id,
+                          meaning='aprueba', comment='Test approve')
+    cs.post(f'/api/brd/mbr/{mbr_id}/aprobar',
+            json={'signature_id': sig_aprob}, headers=csrf_headers())
+
+    # Caso 1: iniciar EBR · clona pasos del MBR
+    r2 = cs.post('/api/brd/ebr', json={
+        'mbr_template_id': mbr_id,
+        'lote': 'TEST-EBR-001',
+    }, headers=csrf_headers())
+    assert r2.status_code == 201, f'BUG iniciar EBR: {r2.status_code} {r2.data}'
+    d2 = r2.get_json()
+    ebr_id = d2['id']
+    assert d2['pasos'] == 2
+
+    # Caso 2: NO se puede crear EBR de MBR draft
+    r2b = cs.post('/api/brd/mbr', json={'producto_nombre': 'X', 'lote_size_g': 100},
+                   headers=csrf_headers())
+    mbr_draft = r2b.get_json()['id']
+    r2c = cs.post('/api/brd/ebr', json={
+        'mbr_template_id': mbr_draft, 'lote': 'X-001',
+    }, headers=csrf_headers())
+    assert r2c.status_code == 409
+
+    # Caso 3: lote duplicado rechaza
+    r2d = cs.post('/api/brd/ebr', json={
+        'mbr_template_id': mbr_id, 'lote': 'TEST-EBR-001',
+    }, headers=csrf_headers())
+    assert r2d.status_code == 409
+
+    # Caso 4: detalle muestra los 2 pasos pendientes
+    r3 = cs.get(f'/api/brd/ebr/{ebr_id}')
+    assert r3.status_code == 200
+    pasos = r3.get_json()['pasos']
+    assert len(pasos) == 2
+    assert all(p['estado'] == 'pendiente' for p in pasos)
+
+    # Caso 5: iniciar paso 1
+    r4 = cs.post(f'/api/brd/ebr/{ebr_id}/pasos/1/iniciar', json={},
+                 headers=csrf_headers())
+    assert r4.status_code == 200
+    # EBR ahora en_proceso
+    r4b = cs.get(f'/api/brd/ebr/{ebr_id}')
+    assert r4b.get_json()['estado'] == 'en_proceso'
+
+    # Caso 6: completar paso 1 SIN signature_id rechaza (requiere e-sign)
+    r5 = cs.post(f'/api/brd/ebr/{ebr_id}/pasos/1/completar',
+                 json={'observaciones': 'Pesado OK'}, headers=csrf_headers())
+    assert r5.status_code == 400
+
+    # Caso 7: firmar el paso (e-sign meaning='ejecuta' sobre ebr_pasos_ejecutados)
+    paso1 = next(p for p in r3.get_json()['pasos'] if p['orden'] == 1)
+    sig_paso = _firmar(cs, record_table='ebr_pasos_ejecutados',
+                        record_id=paso1['id'], meaning='ejecuta')
+    r6 = cs.post(f'/api/brd/ebr/{ebr_id}/pasos/1/completar', json={
+        'observaciones': 'Pesado conforme · 21 MPs OK',
+        'signature_id': sig_paso,
+    }, headers=csrf_headers())
+    assert r6.status_code == 200, f'BUG completar paso: {r6.status_code} {r6.data}'
+
+    # Caso 8: completar paso 2 (no requiere e-sign)
+    cs.post(f'/api/brd/ebr/{ebr_id}/pasos/2/iniciar', json={},
+            headers=csrf_headers())
+    r7 = cs.post(f'/api/brd/ebr/{ebr_id}/pasos/2/completar',
+                 json={'observaciones': 'Mezclado y envasado OK'},
+                 headers=csrf_headers())
+    assert r7.status_code == 200
+
+    # Caso 9: completar EBR · cantidad_real_g calcula yield
+    r8 = cs.post(f'/api/brd/ebr/{ebr_id}/completar',
+                 json={'cantidad_real_g': 485.0}, headers=csrf_headers())
+    assert r8.status_code == 200
+    d8 = r8.get_json()
+    assert d8['estado'] == 'completado'
+    assert d8['yield_pct'] == 97.0  # 485/500 = 97%
+
+    # Caso 10: liberar SIN signature_id rechaza
+    r9 = cs.post(f'/api/brd/ebr/{ebr_id}/liberar', json={},
+                 headers=csrf_headers())
+    assert r9.status_code == 400
+
+    # Caso 11: liberar con signature_id correcto
+    sig_lib = _firmar(cs, record_table='ebr_ejecuciones',
+                       record_id=ebr_id, meaning='libera',
+                       comment='Lote conforme')
+    r10 = cs.post(f'/api/brd/ebr/{ebr_id}/liberar',
+                  json={'signature_id': sig_lib}, headers=csrf_headers())
+    assert r10.status_code == 200, f'BUG liberar: {r10.status_code} {r10.data}'
+    assert r10.get_json()['estado'] == 'liberado'
+
+    # Caso 12: trigger SQL bloquea modificación post-liberación
+    import sqlite3 as _sqlite3
+    err = None
+    try:
+        conn = _sqlite3.connect(os.environ['DB_PATH'], timeout=5.0)
+        try:
+            conn.execute(
+                "UPDATE ebr_ejecuciones SET cantidad_real_g=999 WHERE id=?",
+                (ebr_id,),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception as e:
+        err = str(e)
+    assert err and 'inmutable' in err.lower(), \
+        f'BUG: EBR liberado debe ser inmutable · err={err}'
+
+    # Cleanup
+    cs.patch('/api/identidad/sebastian',
+             json={'cedula': '', 'nombre_completo': ''},
+             headers=csrf_headers())
