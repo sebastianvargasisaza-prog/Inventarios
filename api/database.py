@@ -222,6 +222,188 @@ _AREAS_LIMPIEZA_PROFUNDA = (
 
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (110, "MBR seed · Blush Balm v1 draft (primer template real) · Sebastián 12-may-2026", [
+        # Primer MBR draft real con Blush Balm (fórmula oficial v1, mig 104).
+        # Se crea como DRAFT para que Sebastián/Calidad lo revise y ajuste
+        # los pasos antes de aprobar. 7 pasos genéricos como punto de partida
+        # — se editan vía PATCH /api/brd/mbr/<id>/pasos/<paso_id>.
+        #
+        # creado_por='system-seed' indica origen automático. En el aprobar
+        # final, aprobado_por será un user real con e-signature válida.
+        """INSERT OR IGNORE INTO mbr_templates
+             (producto_nombre, version, estado, titulo, descripcion,
+              lote_size_g, tiempo_total_estimado_min, creado_por)
+           VALUES (
+             'Blush Balm', 1, 'draft',
+             'Blush Balm · Master Batch Record v1',
+             'Procedimiento estándar para fabricación de Blush Balm. '
+              || 'Lote referencia 1kg con 21 MPs (mig 104). '
+              || 'PENDIENTE: Calidad debe ajustar parámetros específicos '
+              || 'antes de submit a revisión.',
+             1000.0, 360, 'system-seed'
+           )""",
+
+        # Pasos seedeados · cubrir las 3 fases típicas de una crema/balm.
+        # tiempo_estimado_min totaliza ~360min (6h). Calidad ajusta.
+        """INSERT OR IGNORE INTO mbr_pasos
+             (mbr_template_id, orden, fase, descripcion, tipo_paso,
+              equipo_requerido, tiempo_estimado_min, requiere_e_sign,
+              requiere_qc, notas)
+           SELECT
+             (SELECT id FROM mbr_templates WHERE producto_nombre='Blush Balm' AND version=1),
+             orden, fase, descripcion, tipo_paso, equipo_requerido,
+             tiempo_estimado_min, requiere_e_sign, requiere_qc, notas
+           FROM (
+             SELECT 1 AS orden, 'dispensacion' AS fase,
+                    'Pesar las 21 MPs según fórmula maestra (referencia 1kg)' AS descripcion,
+                    'pesaje' AS tipo_paso, 'BAL01,DISP' AS equipo_requerido,
+                    60 AS tiempo_estimado_min, 1 AS requiere_e_sign, 0 AS requiere_qc,
+                    'Mayerlin · dispensación. Verificar lote+vencimiento de cada MP.' AS notas
+             UNION ALL SELECT 2, 'fabricacion',
+                    'Fundir fase oleosa: ceras (Synthetic, Microcristalina, Ceresine) + oils a 75°C en TQ01',
+                    'caliente', 'TQ01', 45, 1, 0,
+                    'Verificar fusión completa antes de pasar al paso 3'
+             UNION ALL SELECT 3, 'fabricacion',
+                    'Adicionar y dispersar pigmentos CI + Boron nitride en fase oleosa',
+                    'mezclado', 'TQ01,DISP', 30, 0, 0,
+                    'Mezclado homogéneo · sin grumos visibles'
+             UNION ALL SELECT 4, 'fabricacion',
+                    'Adicionar manteca de murumuru, beauty oil ceramidas',
+                    'mezclado', 'TQ01', 20, 0, 0, ''
+             UNION ALL SELECT 5, 'fabricacion',
+                    'Enfriar a 50°C y adicionar peptides + Vit E + AE Vainilla + AE Neroli + Tinogard',
+                    'enfriamiento', 'TQ01', 30, 1, 0,
+                    'Activos sensibles a calor · NO superar 50°C en este paso'
+             UNION ALL SELECT 6, 'control_ipc',
+                    'Control en proceso: apariencia, color, textura',
+                    'control_ipc', '', 15, 0, 1,
+                    'QC visual · comparar contra muestra patrón'
+             UNION ALL SELECT 7, 'envasado',
+                    'Envasar en frascos definidos por presentación',
+                    'envasado', 'ENV1', 90, 0, 1,
+                    'Verificar etiquetado y cierre · QC firma liberación'
+           )""",
+    ]),
+    (109, "MBR (Master Batch Record) · templates + pasos · Fase 1 BRD · Sebastián 12-may-2026", [
+        # Master Batch Record = procedimiento aprobado para fabricar UN
+        # producto en UN tamaño de lote estándar. Estructura:
+        #   mbr_templates: header con producto + versión + estado del workflow.
+        #   mbr_pasos: secuencia ordenada de instrucciones para el operario.
+        #
+        # WORKFLOW de estados (mbr_templates.estado):
+        #   draft        → puede editarse libremente por el creador.
+        #   en_revision  → submit a QA · ya no editable.
+        #   aprobado     → vigente · puede instanciarse en EBR. Inmutable.
+        #   obsoleto     → reemplazado por versión nueva. NO instanciable.
+        #
+        # Solo UN MBR aprobado por (producto, versión). El producto puede
+        # tener múltiples versiones a lo largo del tiempo (v1 obsoleto +
+        # v2 aprobado + v3 draft) — los EBR siempre referencian la versión
+        # exacta vigente al momento de iniciar.
+        #
+        # aprobado_signature_id es FK lógico (no SQL) a e_signatures: la
+        # aprobación QA debe pasar por POST /api/sign con meaning='aprueba'
+        # y el signature_id resultante se persiste aquí. Sin firma, el
+        # endpoint /api/brd/mbr/<id>/aprobar rechaza.
+        """CREATE TABLE IF NOT EXISTS mbr_templates (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            producto_nombre TEXT NOT NULL,
+            formula_version_id INTEGER,
+            version INTEGER NOT NULL,
+            estado TEXT NOT NULL DEFAULT 'draft',
+            titulo TEXT DEFAULT '',
+            descripcion TEXT DEFAULT '',
+            lote_size_g REAL NOT NULL,
+            tiempo_total_estimado_min INTEGER DEFAULT 0,
+            creado_por TEXT NOT NULL,
+            creado_at_utc TEXT DEFAULT (datetime('now', 'utc')),
+            updated_at_utc TEXT DEFAULT (datetime('now', 'utc')),
+            aprobado_por TEXT DEFAULT '',
+            aprobado_at_utc TEXT DEFAULT NULL,
+            aprobado_signature_id INTEGER DEFAULT NULL,
+            obsoleto_at_utc TEXT DEFAULT NULL,
+            obsoleto_motivo TEXT DEFAULT '',
+            UNIQUE(producto_nombre, version)
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_mbr_producto_estado ON mbr_templates(producto_nombre, estado)",
+        "CREATE INDEX IF NOT EXISTS idx_mbr_estado ON mbr_templates(estado, producto_nombre)",
+
+        # mbr_pasos: secuencia de instrucciones. orden es 1-based.
+        # tipo_paso ∈ {'pesaje', 'dispensacion', 'mezclado', 'caliente',
+        #              'enfriamiento', 'control_ipc', 'envasado', 'inspeccion',
+        #              'limpieza', 'otro'}.
+        # requiere_e_sign=1 → el operario debe firmar electrónicamente al
+        # marcar el paso como completado (común en pesajes críticos, IPCs).
+        # requiere_qc=1 → además del operario, QC debe firmar.
+        """CREATE TABLE IF NOT EXISTS mbr_pasos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            mbr_template_id INTEGER NOT NULL,
+            orden INTEGER NOT NULL,
+            fase TEXT DEFAULT '',
+            descripcion TEXT NOT NULL,
+            tipo_paso TEXT DEFAULT 'otro',
+            equipo_requerido TEXT DEFAULT '',
+            tiempo_estimado_min INTEGER DEFAULT 0,
+            requiere_e_sign INTEGER DEFAULT 0,
+            requiere_qc INTEGER DEFAULT 0,
+            notas TEXT DEFAULT '',
+            UNIQUE(mbr_template_id, orden),
+            FOREIGN KEY (mbr_template_id) REFERENCES mbr_templates(id) ON DELETE CASCADE
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_mbr_pasos_template ON mbr_pasos(mbr_template_id, orden)",
+
+        # Trigger updated_at fresh en cada UPDATE de mbr_templates
+        """CREATE TRIGGER IF NOT EXISTS trg_mbr_templates_updated_at
+           AFTER UPDATE ON mbr_templates
+           FOR EACH ROW
+           WHEN OLD.updated_at_utc = NEW.updated_at_utc
+           BEGIN
+               UPDATE mbr_templates SET updated_at_utc = datetime('now', 'utc') WHERE id = NEW.id;
+           END""",
+
+        # Trigger inmutabilidad post-aprobación: una vez estado='aprobado',
+        # los campos críticos (titulo, descripcion, lote_size_g, formula_version_id)
+        # no se pueden modificar. Solo se permite obsoletar (cambiar a
+        # estado='obsoleto' + obsoleto_at_utc + obsoleto_motivo).
+        """CREATE TRIGGER IF NOT EXISTS trg_mbr_aprobado_no_edit
+           BEFORE UPDATE ON mbr_templates
+           FOR EACH ROW
+           WHEN OLD.estado = 'aprobado'
+                AND NEW.estado = 'aprobado'
+                AND (OLD.titulo IS NOT NEW.titulo
+                  OR OLD.descripcion IS NOT NEW.descripcion
+                  OR OLD.lote_size_g IS NOT NEW.lote_size_g
+                  OR OLD.formula_version_id IS NOT NEW.formula_version_id)
+           BEGIN
+               SELECT RAISE(ABORT, 'MBR aprobado es inmutable · obsoletá y crea v+1 (Part 11 11.10(e))');
+           END""",
+
+        # Trigger inmutabilidad sobre mbr_pasos cuando el template está aprobado
+        """CREATE TRIGGER IF NOT EXISTS trg_mbr_pasos_no_edit_aprobado
+           BEFORE UPDATE ON mbr_pasos
+           FOR EACH ROW
+           WHEN EXISTS (SELECT 1 FROM mbr_templates
+                        WHERE id = NEW.mbr_template_id AND estado = 'aprobado')
+           BEGIN
+               SELECT RAISE(ABORT, 'pasos de MBR aprobado son inmutables');
+           END""",
+        """CREATE TRIGGER IF NOT EXISTS trg_mbr_pasos_no_delete_aprobado
+           BEFORE DELETE ON mbr_pasos
+           FOR EACH ROW
+           WHEN EXISTS (SELECT 1 FROM mbr_templates
+                        WHERE id = OLD.mbr_template_id AND estado = 'aprobado')
+           BEGIN
+               SELECT RAISE(ABORT, 'pasos de MBR aprobado son inmutables · DELETE prohibido');
+           END""",
+        """CREATE TRIGGER IF NOT EXISTS trg_mbr_pasos_no_insert_aprobado
+           BEFORE INSERT ON mbr_pasos
+           FOR EACH ROW
+           WHEN EXISTS (SELECT 1 FROM mbr_templates
+                        WHERE id = NEW.mbr_template_id AND estado = 'aprobado')
+           BEGIN
+               SELECT RAISE(ABORT, 'pasos de MBR aprobado son inmutables · INSERT prohibido');
+           END""",
+    ]),
     (107, "e_signatures · Part 11 §11.50 §11.70 §11.200 firma electrónica · Sebastián 12-may-2026", [
         # Tabla central de firmas electrónicas con binding inmutable al record
         # firmado. 21 CFR Part 11:

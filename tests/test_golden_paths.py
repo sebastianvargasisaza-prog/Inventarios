@@ -4849,3 +4849,174 @@ def test_golden_e_signature_workflow_completo(app, db_clean):
     cs.patch('/api/identidad/sebastian',
              json={'cedula': '', 'nombre_completo': ''},
              headers=csrf_headers())
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 55 · MBR workflow draft → revision → aprobado (Fase 1 BRD)
+# ═══════════════════════════════════════════════════════════════════
+# Sebastián 12-may-2026 Fase 1 sub-bloque F1+F2: Master Batch Record
+# con workflow de estados, pasos, firma electrónica QA al aprobar,
+# inmutabilidad post-aprobación enforced por triggers SQL (mig 109).
+def test_golden_brd_mbr_workflow_completo(app, db_clean):
+    """Crear draft → pasos → submit → firmar → aprobar → inmutable."""
+    cs = _login(app, 'sebastian')
+
+    # Setup identidad para snapshot en e_signatures
+    cs.patch('/api/identidad/sebastian',
+             json={'cedula': '88888888', 'nombre_completo': 'Sebastián Test QA'},
+             headers=csrf_headers())
+
+    # Caso 1: crear MBR draft
+    r1 = cs.post('/api/brd/mbr', json={
+        'producto_nombre': 'Test Product BRD',
+        'titulo': 'Test BRD v1',
+        'descripcion': 'Procedimiento de prueba',
+        'lote_size_g': 1000.0,
+        'tiempo_total_estimado_min': 240,
+    }, headers=csrf_headers())
+    assert r1.status_code == 201, f'BUG: crear MBR · {r1.status_code} {r1.data}'
+    d1 = r1.get_json()
+    mbr_id = d1['id']
+    assert d1['version'] == 1
+
+    # Caso 2: agregar 3 pasos
+    pasos_seed = [
+        {'fase': 'dispensacion', 'descripcion': 'Pesar MPs según fórmula',
+         'tipo_paso': 'pesaje', 'equipo_requerido': 'BAL01',
+         'tiempo_estimado_min': 30, 'requiere_e_sign': 1},
+        {'fase': 'fabricacion', 'descripcion': 'Mezclar a 60°C 30 min',
+         'tipo_paso': 'caliente', 'equipo_requerido': 'TQ01',
+         'tiempo_estimado_min': 60},
+        {'fase': 'envasado', 'descripcion': 'Envasar en frascos 50g',
+         'tipo_paso': 'envasado', 'equipo_requerido': 'ENV1',
+         'tiempo_estimado_min': 90, 'requiere_qc': 1},
+    ]
+    for p in pasos_seed:
+        rp = cs.post(f'/api/brd/mbr/{mbr_id}/pasos', json=p, headers=csrf_headers())
+        assert rp.status_code == 201, f'BUG: agregar paso · {rp.status_code} {rp.data}'
+
+    # Caso 3: detalle muestra los 3 pasos en orden
+    r3 = cs.get(f'/api/brd/mbr/{mbr_id}')
+    assert r3.status_code == 200
+    d3 = r3.get_json()
+    assert len(d3['pasos']) == 3
+    assert d3['pasos'][0]['orden'] == 1
+    assert d3['pasos'][2]['orden'] == 3
+
+    # Caso 4: submit a en_revision
+    r4 = cs.post(f'/api/brd/mbr/{mbr_id}/submit', json={}, headers=csrf_headers())
+    assert r4.status_code == 200
+    assert r4.get_json()['estado'] == 'en_revision'
+
+    # Caso 5: en en_revision NO se puede editar header ni pasos
+    r5 = cs.patch(f'/api/brd/mbr/{mbr_id}', json={'titulo': 'Hack'},
+                  headers=csrf_headers())
+    assert r5.status_code == 409
+    r5b = cs.post(f'/api/brd/mbr/{mbr_id}/pasos',
+                  json={'descripcion': 'Hack'}, headers=csrf_headers())
+    assert r5b.status_code == 409
+
+    # Caso 6: aprobar SIN signature_id rechaza
+    r6 = cs.post(f'/api/brd/mbr/{mbr_id}/aprobar', json={}, headers=csrf_headers())
+    assert r6.status_code == 400
+
+    # Caso 7: firmar primero · POST /api/sign/challenge → /api/sign
+    rch = cs.post('/api/sign/challenge',
+                  json={'password': TEST_PASSWORD}, headers=csrf_headers())
+    assert rch.status_code == 200
+    token = rch.get_json()['token']
+    rsig = cs.post('/api/sign', json={
+        'record_table': 'mbr_templates',
+        'record_id': str(mbr_id),
+        'meaning': 'aprueba',
+        'comment': 'Procedimiento conforme · QA',
+        'challenge_token': token,
+    }, headers=csrf_headers())
+    assert rsig.status_code == 201, f'BUG: firma · {rsig.status_code} {rsig.data}'
+    sig_id = rsig.get_json()['signature_id']
+
+    # Caso 8: aprobar con signature_id correcto
+    r8 = cs.post(f'/api/brd/mbr/{mbr_id}/aprobar',
+                 json={'signature_id': sig_id}, headers=csrf_headers())
+    assert r8.status_code == 200, f'BUG: aprobar · {r8.status_code} {r8.data}'
+    assert r8.get_json()['estado'] == 'aprobado'
+
+    # Caso 9: en aprobado, trigger SQL bloquea edición de campos críticos
+    import sqlite3 as _sqlite3
+    err = None
+    try:
+        conn = _sqlite3.connect(os.environ['DB_PATH'], timeout=5.0)
+        try:
+            conn.execute(
+                "UPDATE mbr_templates SET titulo='Hack' WHERE id=?", (mbr_id,)
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception as e:
+        err = str(e)
+    assert err and ('inmutable' in err.lower() or '11.10' in err), \
+        f'BUG: MBR aprobado debe ser inmutable · err={err}'
+
+    # Caso 10: pasos también inmutables post-aprobación
+    err2 = None
+    try:
+        conn = _sqlite3.connect(os.environ['DB_PATH'], timeout=5.0)
+        try:
+            conn.execute(
+                "UPDATE mbr_pasos SET descripcion='Hack' WHERE mbr_template_id=?",
+                (mbr_id,)
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception as e:
+        err2 = str(e)
+    assert err2 and 'inmutable' in err2.lower(), \
+        f'BUG: pasos de MBR aprobado deben ser inmutables · err={err2}'
+
+    # Caso 11: obsoletar requiere motivo
+    r11a = cs.post(f'/api/brd/mbr/{mbr_id}/obsoletar', json={},
+                   headers=csrf_headers())
+    assert r11a.status_code == 400
+
+    # Caso 12: obsoletar con motivo funciona
+    r12 = cs.post(f'/api/brd/mbr/{mbr_id}/obsoletar',
+                  json={'motivo': 'Reemplazado por v2 · cambio de fórmula'},
+                  headers=csrf_headers())
+    assert r12.status_code == 200
+    assert r12.get_json()['estado'] == 'obsoleto'
+
+    # Cleanup
+    cs.patch('/api/identidad/sebastian',
+             json={'cedula': '', 'nombre_completo': ''},
+             headers=csrf_headers())
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 56 · MBR seed Blush Balm v1 (Fase 1 F3)
+# ═══════════════════════════════════════════════════════════════════
+def test_golden_brd_seed_blush_balm(app, db_clean):
+    """Mig 110 seedea Blush Balm v1 draft con 7 pasos típicos."""
+    cs = _login(app, 'sebastian')
+
+    r = cs.get('/api/brd/mbr?producto=Blush Balm')
+    assert r.status_code == 200
+    items = r.get_json()['items']
+    assert len(items) >= 1, 'BUG: seed mig 110 NO creó Blush Balm v1'
+    bb = next((it for it in items if it['version'] == 1), None)
+    assert bb, 'BUG: Blush Balm v1 ausente'
+    assert bb['estado'] == 'draft'
+    assert bb['lote_size_g'] == 1000.0
+    assert bb['creado_por'] == 'system-seed'
+
+    # Detalle muestra los 7 pasos
+    rd = cs.get(f'/api/brd/mbr/{bb["id"]}')
+    assert rd.status_code == 200
+    pasos = rd.get_json()['pasos']
+    assert len(pasos) == 7, f'BUG: esperaba 7 pasos seed · hay {len(pasos)}'
+    fases = [p['fase'] for p in pasos]
+    assert 'dispensacion' in fases
+    assert 'fabricacion' in fases
+    assert 'envasado' in fases
+    assert 'control_ipc' in fases
