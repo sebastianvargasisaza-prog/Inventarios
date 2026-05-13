@@ -16901,6 +16901,7 @@ async function ckMarcar(itemId, estado){
     items.forEach(it => {
       const cfg = PEC_ESTADO_COLORS[it.estado] || {bg:'#e2e8f0', text:'#475569', emoji:''};
       const orig = it.origen === 'eos_plan' ? '🆕 EOS' :
+                   it.origen === 'eos_canonico' ? '🔁 Canónico' :
                    it.origen === 'eos_retroactivo' ? '📜 Histórico' :
                    it.origen === 'calendar' ? '📆 Calendar' :
                    it.origen === 'manual' ? '✋ Manual' : escapeHtmlNec(it.origen || '—');
