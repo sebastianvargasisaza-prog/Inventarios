@@ -2803,9 +2803,10 @@ function switchTab(n,btn){
   if(n==='movimientos') loadMovimientos();
   if(n==='programacion'){
     cargarProgramacion(null);
-    // Sebastian (30-abr-2026): "las pestañas no sirven" — al click "Programación"
-    // forzar que se muestre Plan v2 (no la pestaña Centro vieja).
-    if(typeof switchProgTab==='function') switchProgTab('planv2');
+    // Sebastián 13-may-2026: default a Necesidades (no a Plan v2 legacy)
+    // porque ahora Necesidades es la vista de decisión y Plan en curso
+    // es solo la bitácora.
+    if(typeof switchProgTab==='function') switchProgTab('necesidades');
   }
 }
 
@@ -7511,70 +7512,57 @@ function _renderProgramacion(d){
   <!-- ptab-planv2: Plan unificado con horizontes 1sem→1año + necesidades   -->
   <!-- ════════════════════════════════════════════════════════════════════ -->
   <div id="ptab-planv2" style="display:none">
-    <!-- Sebastian 7-may-2026: header compacto · solo horizonte switcher.
-         Los botones legacy (Nuevo / Diag SKU / BF / Descargar / Recargar
-         doble) se eliminaron. La vista plana abajo trae sus propios
-         botones. -->
-    <div style="background:linear-gradient(135deg,#0f766e,#0891b2);color:#fff;padding:10px 16px;border-radius:10px;margin-bottom:12px">
+    <!-- Sebastián 13-may-2026: rediseño completo · Plan en curso =
+         bitácora de TUS programaciones (lo que decidiste en Necesidades).
+         La vista vieja Shopify-driven (agotamiento) ya está en Necesidades.
+         Los divs legacy quedan ocultos al final para no romper JS pre-existente. -->
+    <div style="background:linear-gradient(135deg,#475569,#1e293b);color:#fff;padding:14px 18px;border-radius:10px;margin-bottom:14px">
+      <h3 style="margin:0 0 4px;font-size:15px">📅 Plan en curso · tus programaciones</h3>
+      <div style="font-size:11px;color:#cbd5e1">Lotes que agendaste desde Necesidades · pendientes, en curso, completados</div>
+    </div>
+    <!-- Filtros -->
+    <div style="background:white;border-radius:10px;border:1px solid #e2e8f0;padding:12px 14px;margin-bottom:14px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
       <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
-        <span style="font-size:11px;color:#cffafe;font-weight:700;margin-right:4px">Horizonte:</span>
-        <button class="phz-btn" data-meses="0.25" onclick="planV2Horizonte('0.25')" style="padding:5px 11px;border:none;border-radius:5px;background:rgba(255,255,255,.18);color:#fff;font-weight:700;cursor:pointer;font-size:11px">Semana</button>
-        <button class="phz-btn" data-meses="1" onclick="planV2Horizonte('1')" style="padding:5px 11px;border:none;border-radius:5px;background:rgba(255,255,255,.18);color:#fff;font-weight:700;cursor:pointer;font-size:11px">1 mes</button>
-        <button class="phz-btn" data-meses="2" onclick="planV2Horizonte('2')" style="padding:5px 11px;border:none;border-radius:5px;background:#fff;color:#0f766e;font-weight:800;cursor:pointer;font-size:11px">2 meses</button>
-        <button class="phz-btn" data-meses="3" onclick="planV2Horizonte('3')" style="padding:5px 11px;border:none;border-radius:5px;background:rgba(255,255,255,.18);color:#fff;font-weight:700;cursor:pointer;font-size:11px">3 meses</button>
-        <button class="phz-btn" data-meses="6" onclick="planV2Horizonte('6')" style="padding:5px 11px;border:none;border-radius:5px;background:rgba(255,255,255,.18);color:#fff;font-weight:700;cursor:pointer;font-size:11px">6 meses</button>
-        <button class="phz-btn" data-meses="12" onclick="planV2Horizonte('12')" style="padding:5px 11px;border:none;border-radius:5px;background:rgba(255,255,255,.18);color:#fff;font-weight:700;cursor:pointer;font-size:11px">1 año</button>
-        <button onclick="abrirNuevoProducto()" style="margin-left:auto;background:#fff;color:#0f766e;border:none;padding:5px 11px;border-radius:5px;font-size:11px;font-weight:800;cursor:pointer">+ Nuevo</button>
+        <span style="font-size:11px;color:#64748b;font-weight:700">Estado:</span>
+        <label style="font-size:11px;color:#475569"><input type="checkbox" class="pec-est" value="pendiente" checked> pendiente</label>
+        <label style="font-size:11px;color:#475569"><input type="checkbox" class="pec-est" value="programado" checked> programado</label>
+        <label style="font-size:11px;color:#475569"><input type="checkbox" class="pec-est" value="en_curso" checked> en curso</label>
+        <label style="font-size:11px;color:#475569"><input type="checkbox" class="pec-est" value="completado"> completado</label>
+        <label style="font-size:11px;color:#475569"><input type="checkbox" class="pec-est" value="cancelado"> cancelado</label>
       </div>
-      <!-- Status line + banners ocultos (compatibilidad JS legacy) -->
-      <div id="pv2-status-line" style="display:none"></div>
-      <div id="pv2-cobertura" style="display:none"></div>
-      <div id="pv2-calendar-status" style="display:none"></div>
-      <div id="pv2-auditoria" style="display:none"></div>
+      <div style="display:flex;gap:6px;align-items:center;font-size:11px;color:#475569">
+        Desde <input type="date" id="pec-desde" style="padding:3px 5px;border:1px solid #cbd5e1;border-radius:4px;font-size:11px">
+        Hasta <input type="date" id="pec-hasta" style="padding:3px 5px;border:1px solid #cbd5e1;border-radius:4px;font-size:11px">
+      </div>
+      <button onclick="cargarPlanEnCurso()" style="margin-left:auto;background:#0f766e;color:#fff;border:none;padding:7px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">↻ Aplicar filtros</button>
+    </div>
+    <!-- Contenido · tabla lotes -->
+    <div id="pec-contenido" style="background:white;border-radius:12px;border:1px solid #e2e8f0;overflow:hidden">
+      <div style="text-align:center;color:#94a3b8;padding:40px">Cargando…</div>
     </div>
 
-    <!-- Sebastián 12-may-2026: PIVOTE · pasar de Calendar-driven a
-         Shopify-driven. Ahora el panel se basa en ventas reales + stock
-         disponible para priorizar producciones. Sin depender de Calendar.
-         Datos vienen de /api/admin/animus-prioridad-agotamiento. -->
-    <div id="pv2-vista-simple" style="margin-bottom:14px;background:#fff;border-radius:12px;border:2px solid #0f766e;overflow:hidden;box-shadow:0 4px 12px rgba(15,118,110,0.1)">
-      <div style="background:linear-gradient(90deg,#f0fdfa,#ecfeff);padding:14px 18px;border-bottom:1px solid #ccfbf1;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
-        <div>
-          <h3 style="margin:0;color:#134e4a;font-size:15px;font-weight:800">🛍️ Prioridad de producción · Shopify-driven</h3>
-          <div id="apa-resumen" style="font-size:11px;color:#475569;margin-top:3px">Listado de SKUs por días para agotamiento (ventas reales / stock disponible). Las MPs se derivan de las fórmulas.</div>
-        </div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-          <label style="font-size:11px;color:#475569">Ventas (días):
-            <input type="number" id="apa-ventana" value="60" min="30" max="180" step="10" style="width:50px;padding:3px 6px;border:1px solid #cbd5e1;border-radius:4px;font-size:11px">
-          </label>
-          <label style="font-size:11px;color:#475569">Cobertura:
-            <input type="number" id="apa-cobertura" value="30" min="14" max="90" step="7" style="width:50px;padding:3px 6px;border:1px solid #cbd5e1;border-radius:4px;font-size:11px">
-          </label>
-          <button onclick="apaSyncShopify()" style="background:#0e7490;color:#fff;border:none;padding:8px 12px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer" title="Trae stock actual desde Shopify API a stock_pt">🔄 Sync Shopify</button>
-          <button onclick="apaCargar()" style="background:#0f766e;color:#fff;border:none;padding:8px 12px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">↻ Recalcular</button>
-        </div>
-      </div>
-      <div id="apa-resultado" style="padding:14px 18px"><div style="text-align:center;color:#94a3b8;padding:20px">⏳ Calculando…</div></div>
-    </div>
-
-    <!-- Sebastian 5-may-2026: paneles legacy ocultos · Centro de Acción,
-         KPIs, MP rolling, Vista calendario v1, Comprar Ya. La vista
-         calendario nueva (arriba) es la única que se muestra. Conservamos
-         los IDs/divs porque otros JS pueden leer/escribir innerHTML. -->
+    <!-- LEGACY HIDDEN · NO TOCAR (otros JS pueden leer/escribir innerHTML) -->
+    <div id="pv2-status-line" style="display:none"></div>
+    <div id="pv2-cobertura" style="display:none"></div>
+    <div id="pv2-calendar-status" style="display:none"></div>
+    <div id="pv2-auditoria" style="display:none"></div>
     <div id="pv2-kpis" style="display:none"></div>
     <div id="pv2-centro-accion" style="display:none"></div>
     <div id="pv2-mp-rolling" style="display:none"></div>
-
-    <!-- Datos crudos ocultos (los consume el centro de acción) -->
     <div id="pv2-alertas-wrap" style="display:none"></div>
     <div id="pv2-recomendaciones-wrap" style="display:none"></div>
-
-    <!-- Sección: Comprar AHORA (urgentes por lead time) -->
-    <div id="pv2-comprar-ya" style="display:none;margin-bottom:14px"></div>
-
-    <!-- Sebastian 5-may-2026: vista calendario v1 (forecast por mes/semana)
-         oculta · reemplazada por la vista nueva por SALA arriba. -->
+    <div id="pv2-comprar-ya" style="display:none"></div>
     <div id="pv2-vista" style="display:none"></div>
+    <div id="pv2-vista-simple" style="display:none">
+      <input type="hidden" id="apa-ventana" value="60">
+      <input type="hidden" id="apa-cobertura" value="30">
+      <div id="apa-resumen" style="display:none"></div>
+      <div id="apa-resultado" style="display:none"></div>
+    </div>
+
+    <!-- Sebastián 13-may-2026: los pv2-* legacy ahora viven arriba en la
+         sección "LEGACY HIDDEN" para evitar IDs duplicados después del
+         rediseño de Plan en curso. -->
   </div><!-- /ptab-planv2 -->
 
   <!-- ════════════════════════════════════════════════════════════════════ -->
@@ -8997,6 +8985,10 @@ async function ckMarcar(itemId, estado){
       if (tab === 'necesidades') {
         if (typeof cargarNecesidades === 'function') cargarNecesidades();
       }
+      // Lazy-load Plan en curso al activar tab
+      if (tab === 'planv2') {
+        if (typeof cargarPlanEnCurso === 'function') cargarPlanEnCurso();
+      }
       // Ocultar TODOS los ptab-* dentro de #programacion
       var prog = document.getElementById('programacion');
       if(prog){
@@ -9868,9 +9860,9 @@ async function ckMarcar(itemId, estado){
       if(this.checked) cmStartAutoRefresh();
       else cmStopAutoRefresh();
     });}
-    // Default tab: Plan v2 cuando abres Programación
+    // Default tab: Necesidades cuando abres Programación · Sebastián 13-may-2026
     setTimeout(function(){
-      if(typeof switchProgTab==='function') switchProgTab('planv2');
+      if(typeof switchProgTab==='function') switchProgTab('necesidades');
     }, 100);
   });
 
@@ -16847,6 +16839,107 @@ async function ckMarcar(itemId, estado){
       });
       if (!r.ok) { const d = await r.json(); alert('Error: ' + (d.error || r.status)); return; }
       cargarNecesidades();
+    } catch(e) { alert('Error: ' + e.message); }
+  }
+
+  // ── Plan en curso · bitácora de lotes agendados ─────────────────
+  const PEC_ESTADO_COLORS = {
+    'pendiente':   {bg:'#fef3c7', text:'#854d0e', emoji:'⏳'},
+    'programado':  {bg:'#dbeafe', text:'#1e40af', emoji:'📅'},
+    'en_curso':    {bg:'#fed7aa', text:'#9a3412', emoji:'⚙️'},
+    'completado':  {bg:'#dcfce7', text:'#166534', emoji:'✓'},
+    'cancelado':   {bg:'#fee2e2', text:'#991b1b', emoji:'✕'},
+  };
+
+  async function cargarPlanEnCurso() {
+    const div = document.getElementById('pec-contenido');
+    if (!div) return;
+    div.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:40px">Cargando…</div>';
+    const estados = Array.from(document.querySelectorAll('.pec-est:checked')).map(c => c.value);
+    if (!estados.length) {
+      div.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:40px">Marcá al menos un estado.</div>';
+      return;
+    }
+    const qs = new URLSearchParams();
+    qs.set('estados', estados.join(','));
+    const desde = document.getElementById('pec-desde').value;
+    const hasta = document.getElementById('pec-hasta').value;
+    if (desde) qs.set('desde', desde);
+    if (hasta) qs.set('hasta', hasta);
+
+    try {
+      const r = await fetch('/api/plan/proximas?' + qs.toString());
+      if (r.status === 401) { window.location.href = '/login'; return; }
+      const d = await r.json();
+      renderPlanEnCurso(d.items || []);
+    } catch(e) {
+      div.innerHTML = '<div style="text-align:center;color:#dc2626;padding:40px">Error: ' + escapeHtmlNec(e.message) + '</div>';
+    }
+  }
+
+  function renderPlanEnCurso(items) {
+    const div = document.getElementById('pec-contenido');
+    if (!items.length) {
+      div.innerHTML = '<div style="text-align:center;padding:60px 20px;color:#64748b">'
+        + '<div style="font-size:48px;opacity:0.4;margin-bottom:12px">📅</div>'
+        + '<div style="font-size:14px;font-weight:600;margin-bottom:6px">Sin lotes con estos filtros</div>'
+        + '<div style="font-size:12px;color:#94a3b8">Andá a Necesidades → ⚡ Solicitar para agendar uno</div>'
+        + '</div>';
+      return;
+    }
+    let html = '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px;min-width:720px">';
+    html += '<thead><tr style="background:#f8fafc;color:#475569">';
+    html += '<th style="text-align:center;padding:10px 6px;font-weight:700">Fecha</th>';
+    html += '<th style="text-align:left;padding:10px 6px;font-weight:700">Producto</th>';
+    html += '<th style="text-align:center;padding:10px 6px;font-weight:700">kg</th>';
+    html += '<th style="text-align:center;padding:10px 6px;font-weight:700">Sala</th>';
+    html += '<th style="text-align:center;padding:10px 6px;font-weight:700">Origen</th>';
+    html += '<th style="text-align:center;padding:10px 6px;font-weight:700">Estado</th>';
+    html += '<th style="text-align:left;padding:10px 6px;font-weight:700">Notas</th>';
+    html += '<th style="padding:10px 6px;width:120px"></th>';
+    html += '</tr></thead><tbody>';
+    items.forEach(it => {
+      const cfg = PEC_ESTADO_COLORS[it.estado] || {bg:'#e2e8f0', text:'#475569', emoji:''};
+      const orig = it.origen === 'eos_plan' ? '🆕 EOS' :
+                   it.origen === 'eos_retroactivo' ? '📜 Histórico' :
+                   it.origen === 'calendar' ? '📆 Calendar' :
+                   it.origen === 'manual' ? '✋ Manual' : escapeHtmlNec(it.origen || '—');
+      html += '<tr style="border-bottom:1px solid #f1f5f9">';
+      html += '<td style="padding:9px 6px;text-align:center;font-weight:700">' + escapeHtmlNec(it.fecha_programada) + '</td>';
+      html += '<td style="padding:9px 6px">' + escapeHtmlNec(it.producto) + '</td>';
+      html += '<td style="padding:9px 6px;text-align:center">' + (it.kg_real != null ? it.kg_real + ' <span style="color:#94a3b8">/' + it.cantidad_kg + '</span>' : it.cantidad_kg) + '</td>';
+      html += '<td style="padding:9px 6px;text-align:center">' + (it.area_codigo || '—') + '</td>';
+      html += '<td style="padding:9px 6px;text-align:center;font-size:11px">' + orig + '</td>';
+      html += '<td style="padding:9px 6px;text-align:center"><span style="background:' + cfg.bg + ';color:' + cfg.text + ';padding:3px 9px;border-radius:6px;font-size:11px;font-weight:700">' + cfg.emoji + ' ' + escapeHtmlNec(it.estado) + '</span></td>';
+      html += '<td style="padding:9px 6px;color:#64748b;font-size:11px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escapeHtmlNec(it.observaciones || '') + '">' + escapeHtmlNec((it.observaciones || '').slice(0, 40)) + '</td>';
+      html += '<td style="padding:9px 6px;text-align:right">';
+      if (it.estado === 'pendiente' || it.estado === 'programado') {
+        html += '<button onclick="cancelarPEC(' + it.id + ')" style="background:transparent;border:1px solid #cbd5e1;color:#64748b;padding:4px 10px;border-radius:4px;font-size:11px;cursor:pointer">Cancelar</button>';
+      }
+      html += '</td></tr>';
+    });
+    html += '</tbody></table></div>';
+    // Resumen
+    const conteo = {};
+    items.forEach(it => { conteo[it.estado] = (conteo[it.estado]||0) + 1; });
+    let chips = '<div style="padding:10px 14px;border-top:1px solid #e2e8f0;background:#f8fafc;display:flex;gap:8px;flex-wrap:wrap">';
+    Object.entries(conteo).forEach(([est, n]) => {
+      const cfg = PEC_ESTADO_COLORS[est] || {bg:'#e2e8f0', text:'#475569', emoji:''};
+      chips += '<span style="background:' + cfg.bg + ';color:' + cfg.text + ';padding:3px 9px;border-radius:6px;font-size:11px;font-weight:700">' + cfg.emoji + ' ' + est + ': ' + n + '</span>';
+    });
+    chips += '</div>';
+    div.innerHTML = html + chips;
+  }
+
+  async function cancelarPEC(id) {
+    if (!confirm('¿Cancelar este lote agendado?')) return;
+    try {
+      const r = await fetch('/api/plan/proximas/' + id, {
+        method: 'DELETE',
+        headers: {'X-CSRF-Token': csrfTokenNec()},
+      });
+      if (!r.ok) { const d = await r.json(); alert('Error: ' + (d.error || r.status)); return; }
+      cargarPlanEnCurso();
     } catch(e) { alert('Error: ' + e.message); }
   }
 

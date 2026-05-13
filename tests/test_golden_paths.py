@@ -7178,3 +7178,72 @@ def test_golden_plan_escenarios_y_proximas(app, db_clean):
 
     # Cleanup
     _exec("DELETE FROM produccion_programada WHERE observaciones LIKE 'TEST_ESC_%'")
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH PLAN-F · filtros estados/fechas en /api/plan/proximas
+# ═══════════════════════════════════════════════════════════════════
+def test_golden_plan_proximas_filtros(app, db_clean):
+    """/api/plan/proximas acepta filtros estados, desde, hasta, producto.
+    Plan en curso UI usa esto."""
+    _exec("DELETE FROM produccion_programada WHERE observaciones LIKE 'TEST_F%'")
+
+    cs = _login(app, 'sebastian')
+
+    # Setup: 1 pendiente + 1 completado + 1 cancelado
+    pid_p = _exec(
+        """INSERT INTO produccion_programada (producto, fecha_programada, cantidad_kg, estado, origen, observaciones)
+           VALUES ('SUERO HIDRATANTE AH 1.5%', '2026-06-15', 30, 'pendiente', 'eos_plan', 'TEST_F_PEND')""",
+    )
+    pid_c = _exec(
+        """INSERT INTO produccion_programada (producto, fecha_programada, cantidad_kg, estado, origen, observaciones, fin_real_at, kg_real)
+           VALUES ('SUERO HIDRATANTE AH 1.5%', '2026-05-01', 90, 'completado', 'eos_retroactivo', 'TEST_F_COMP', '2026-05-01 17:00', 90)""",
+    )
+    pid_x = _exec(
+        """INSERT INTO produccion_programada (producto, fecha_programada, cantidad_kg, estado, origen, observaciones)
+           VALUES ('SUERO HIDRATANTE AH 1.5%', '2026-06-20', 60, 'cancelado', 'eos_plan', 'TEST_F_CANC')""",
+    )
+
+    # Caso 1: default · solo pendiente/programado/en_curso
+    r1 = cs.get('/api/plan/proximas?desde=2026-01-01')
+    ids1 = [i['id'] for i in r1.get_json()['items']]
+    assert pid_p in ids1, 'BUG: pendiente debe aparecer en default'
+    assert pid_c not in ids1, 'BUG: completado NO debe aparecer en default'
+    assert pid_x not in ids1, 'BUG: cancelado NO debe aparecer en default'
+
+    # Caso 2: filtro estados=completado
+    r2 = cs.get('/api/plan/proximas?estados=completado&desde=2026-01-01')
+    items2 = r2.get_json()['items']
+    ids2 = [i['id'] for i in items2]
+    assert pid_c in ids2
+    comp_item = next(i for i in items2 if i['id'] == pid_c)
+    assert comp_item['kg_real'] == 90.0
+    assert comp_item['fin_real_at'] is not None
+
+    # Caso 3: múltiples estados
+    r3 = cs.get('/api/plan/proximas?estados=pendiente,completado,cancelado&desde=2026-01-01')
+    ids3 = [i['id'] for i in r3.get_json()['items']]
+    assert pid_p in ids3 and pid_c in ids3 and pid_x in ids3
+
+    # Caso 4: rango fechas
+    r4 = cs.get('/api/plan/proximas?estados=pendiente,completado,cancelado&desde=2026-06-01&hasta=2026-06-19')
+    ids4 = [i['id'] for i in r4.get_json()['items']]
+    assert pid_p in ids4
+    assert pid_c not in ids4
+    assert pid_x not in ids4
+
+    # Caso 5: filtro producto substring
+    r5 = cs.get('/api/plan/proximas?estados=pendiente&desde=2026-01-01&producto=hidratante')
+    ids5 = [i['id'] for i in r5.get_json()['items']]
+    assert pid_p in ids5
+
+    # Caso 6: estados inválidos → 400
+    r6 = cs.get('/api/plan/proximas?estados=foo,bar')
+    assert r6.status_code == 400
+
+    # Caso 7: fecha inválida → 400
+    r7 = cs.get('/api/plan/proximas?desde=fecha-mala')
+    assert r7.status_code == 400
+
+    # Cleanup
+    _exec("DELETE FROM produccion_programada WHERE observaciones LIKE 'TEST_F%'")

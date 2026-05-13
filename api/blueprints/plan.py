@@ -749,33 +749,78 @@ def _valida_fecha_iso(s):
 
 @bp.route("/api/plan/proximas", methods=["GET"])
 def plan_proximas():
-    """Lista lotes ya agendados pero NO completados todavía.
+    """Lista lotes de produccion_programada con filtros.
 
-    Sebastián 13-may-2026: "cuando dice programar futuro dónde lo vemos?
-    debería aparecer en algún lado". Esta es esa lista · feed de la
-    sección "Próximas programadas" arriba de Necesidades.
+    Sebastián 13-may-2026: usado por dos vistas:
+    - Tab Plan en curso · bitácora completa con filtros estado/fecha
+    - (deprecated) sección Próximas en Necesidades · ya removida pero
+      el endpoint se conserva
 
-    Devuelve lotes con estado pendiente/programado/en_curso y fecha futura
-    o reciente (-7d). Ordenado por fecha ASC.
+    Query params:
+        estados: lista coma-separada · default pendiente,programado,en_curso
+                 valores válidos: pendiente, programado, en_curso, completado,
+                 cancelado, propuesto
+        desde: YYYY-MM-DD · fecha_programada >= (default: hoy - 7d)
+        hasta: YYYY-MM-DD · fecha_programada <= (default: sin límite)
+        producto: filtro substring case-insensitive en producto
+
+    Devuelve ordenado por fecha_programada ASC + id ASC.
     """
     err = _require_login()
     if err:
         return err
 
+    # Parse filtros
+    estados_param = (request.args.get("estados") or "").strip()
+    if estados_param:
+        estados = [e.strip() for e in estados_param.split(",") if e.strip()]
+    else:
+        estados = ['pendiente', 'programado', 'en_curso']
+
+    valid = {'pendiente','programado','en_curso','completado','cancelado','propuesto'}
+    estados = [e for e in estados if e in valid]
+    if not estados:
+        return jsonify({"error": "estados inválidos"}), 400
+
+    desde = (request.args.get("desde") or "").strip()
+    hasta = (request.args.get("hasta") or "").strip()
+    if desde and not _valida_fecha_iso(desde):
+        return jsonify({"error": "desde formato YYYY-MM-DD"}), 400
+    if hasta and not _valida_fecha_iso(hasta):
+        return jsonify({"error": "hasta formato YYYY-MM-DD"}), 400
+
+    producto_filtro = (request.args.get("producto") or "").strip()
+
     conn = get_db()
     c = conn.cursor()
-    rows = c.execute(
-        """SELECT pp.id, pp.producto, pp.fecha_programada, pp.cantidad_kg,
-                  pp.estado, pp.origen, pp.observaciones,
-                  pp.area_id, ap.codigo as area_codigo, ap.nombre as area_nombre,
-                  pp.creado_en
-           FROM produccion_programada pp
-           LEFT JOIN areas_planta ap ON ap.id = pp.area_id
-           WHERE pp.estado IN ('pendiente','programado','en_curso')
-             AND pp.fin_real_at IS NULL
-             AND date(pp.fecha_programada) >= date('now', '-7 day')
-           ORDER BY pp.fecha_programada ASC, pp.id ASC""",
-    ).fetchall()
+    placeholders = ",".join(["?"] * len(estados))
+    where = [f"pp.estado IN ({placeholders})"]
+    params = list(estados)
+
+    if desde:
+        where.append("date(pp.fecha_programada) >= date(?)")
+        params.append(desde)
+    else:
+        # Default: últimos 7 días + futuro
+        where.append("date(pp.fecha_programada) >= date('now', '-7 day')")
+
+    if hasta:
+        where.append("date(pp.fecha_programada) <= date(?)")
+        params.append(hasta)
+
+    if producto_filtro:
+        where.append("LOWER(pp.producto) LIKE LOWER(?)")
+        params.append(f"%{producto_filtro}%")
+
+    sql = f"""SELECT pp.id, pp.producto, pp.fecha_programada, pp.cantidad_kg,
+                     pp.estado, pp.origen, pp.observaciones,
+                     pp.area_id, ap.codigo as area_codigo, ap.nombre as area_nombre,
+                     pp.creado_en, pp.kg_real, pp.fin_real_at, pp.inicio_real_at
+              FROM produccion_programada pp
+              LEFT JOIN areas_planta ap ON ap.id = pp.area_id
+              WHERE {' AND '.join(where)}
+              ORDER BY pp.fecha_programada ASC, pp.id ASC"""
+    rows = c.execute(sql, params).fetchall()
     items = []
     for r in rows:
         items.append({
@@ -790,8 +835,13 @@ def plan_proximas():
             "area_codigo": r[8] or "",
             "area_nombre": r[9] or "",
             "creado_en": r[10] or "",
+            "kg_real": float(r[11] or 0) if r[11] else None,
+            "fin_real_at": r[12],
+            "inicio_real_at": r[13],
         })
-    return jsonify({"items": items, "total": len(items)})
+    return jsonify({"items": items, "total": len(items),
+                     "filtros": {"estados": estados, "desde": desde or None,
+                                  "hasta": hasta or None, "producto": producto_filtro or None}})
 
 
 @bp.route("/api/plan/proximas/<int:pid>", methods=["DELETE"])
