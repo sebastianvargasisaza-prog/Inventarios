@@ -494,6 +494,39 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
             "regalos_extra_uds": regalos_extra_uds,
         })
 
+    # 7. Lotes pendientes/en curso por producto (ya agendados)
+    # Sebastián 13-may-2026: todo vive en EOS · sin Calendar. Cualquier lote
+    # con estado pendiente/en_curso y sin fin_real_at cuenta como "en vuelo".
+    lotes_pendientes = {}
+    for r in c.execute(
+        """SELECT producto,
+                  COUNT(*) AS n,
+                  COALESCE(SUM(cantidad_kg), 0) AS kg,
+                  GROUP_CONCAT(fecha_programada, ',') AS fechas
+           FROM produccion_programada
+           WHERE estado IN ('pendiente','programado','en_curso')
+             AND fin_real_at IS NULL
+             AND date(fecha_programada) >= date('now', '-7 day')
+           GROUP BY producto""",
+    ).fetchall():
+        fechas = sorted(set([f.strip() for f in (r[3] or "").split(",") if f.strip()]))
+        lotes_pendientes[r[0]] = {
+            "n": r[1],
+            "kg_total": round(float(r[2] or 0), 2),
+            "proximas_fechas": fechas[:3],
+        }
+    # Inyectar en cada producto
+    for p in out:
+        info = lotes_pendientes.get(p["producto_nombre"])
+        if info:
+            p["lotes_pendientes_n"] = info["n"]
+            p["lotes_pendientes_kg"] = info["kg_total"]
+            p["lotes_pendientes_proximas_fechas"] = info["proximas_fechas"]
+        else:
+            p["lotes_pendientes_n"] = 0
+            p["lotes_pendientes_kg"] = 0.0
+            p["lotes_pendientes_proximas_fechas"] = []
+
     # Ordenar por urgencia + días cobertura ascendente
     ORDEN = {"CRITICO": 0, "URGENTE": 1, "VIGILAR": 2, "OK": 3, "SIN_VENTAS": 4}
     out.sort(key=lambda x: (
@@ -501,3 +534,101 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
         x["dias_cobertura"] if x["dias_cobertura"] is not None else 99999,
     ))
     return out
+
+
+# ─── Programar producción · todo vive en EOS · sin Calendar ───────────────
+
+@bp.route("/api/plan/programar-produccion", methods=["POST"])
+def programar_produccion():
+    """Crea entrada en produccion_programada con origen='eos_plan'.
+
+    Sebastián 13-may-2026: decisión arquitectónica · todo vive en EOS,
+    Calendar deja de ser source of truth. Esta es la API que reemplaza
+    el flujo manual de "agendar evento en Calendar" para programar producción.
+
+    Body:
+        producto_nombre: str (FK formula_headers)
+        fecha_programada: str YYYY-MM-DD
+        cantidad_kg: float > 0
+        area_id: int opcional (FK areas_planta)
+        notas: str opcional
+
+    Response:
+        201 {ok, id, producto, fecha, cantidad_kg}
+        400 / 404 errores
+
+    Permiso: admin o compras (mismo que pedidos B2B).
+    """
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+
+    body = request.get_json(silent=True) or {}
+    producto = (body.get("producto_nombre") or "").strip()
+    fecha = (body.get("fecha_programada") or "").strip()
+    try:
+        kg = float(body.get("cantidad_kg") or 0)
+    except (ValueError, TypeError):
+        return jsonify({"error": "cantidad_kg inválida"}), 400
+    try:
+        area_id = int(body.get("area_id")) if body.get("area_id") else None
+    except (ValueError, TypeError):
+        return jsonify({"error": "area_id inválido"}), 400
+    notas = (body.get("notas") or "").strip()
+
+    # Validaciones
+    if not producto:
+        return jsonify({"error": "producto_nombre requerido"}), 400
+    if not fecha or not _valida_fecha_iso(fecha):
+        return jsonify({"error": "fecha_programada formato YYYY-MM-DD requerido"}), 400
+    if kg <= 0:
+        return jsonify({"error": "cantidad_kg debe ser > 0"}), 400
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    # Producto debe existir
+    if not cur.execute(
+        "SELECT 1 FROM formula_headers WHERE producto_nombre = ?", (producto,),
+    ).fetchone():
+        return jsonify({"error": f"producto '{producto}' no existe"}), 404
+
+    # Si area_id provisto, validar
+    if area_id is not None:
+        if not cur.execute(
+            "SELECT 1 FROM areas_planta WHERE id = ? AND activo = 1",
+            (area_id,),
+        ).fetchone():
+            return jsonify({"error": f"area_id {area_id} no existe o inactiva"}), 404
+
+    # Insertar con origen='eos_plan' (identifica origen post-Calendar)
+    cur.execute(
+        """INSERT INTO produccion_programada
+             (producto, fecha_programada, cantidad_kg, lotes, estado,
+              origen, observaciones, area_id, creado_en)
+           VALUES (?, ?, ?, 1, 'pendiente', 'eos_plan', ?, ?, datetime('now'))""",
+        (producto, fecha, kg, notas, area_id),
+    )
+    pid = cur.lastrowid
+    audit_log(cur, usuario=user, accion="PROGRAMAR_PRODUCCION",
+              tabla="produccion_programada", registro_id=pid,
+              despues={"producto": producto, "fecha": fecha,
+                       "cantidad_kg": kg, "area_id": area_id,
+                       "origen": "eos_plan", "notas": notas})
+    conn.commit()
+    return jsonify({
+        "ok": True, "id": pid,
+        "producto": producto, "fecha": fecha,
+        "cantidad_kg": kg, "estado": "pendiente",
+    }), 201
+
+
+def _valida_fecha_iso(s):
+    """True si s es formato YYYY-MM-DD válido."""
+    try:
+        from datetime import date as _d
+        _d.fromisoformat(s[:10])
+        return True
+    except Exception:
+        return False

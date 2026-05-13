@@ -6924,3 +6924,96 @@ def test_golden_plan_necesidades_agrega_animus_y_b2b(app, db_clean):
 
     # Cleanup
     _exec("DELETE FROM pedidos_b2b WHERE cliente_id LIKE 'TEST_CLI_%'")
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH PLAN-C · POST /api/plan/programar-produccion · todo en EOS
+# ═══════════════════════════════════════════════════════════════════
+# Bug que cazaría: si el endpoint no setea origen='eos_plan' o estado
+# 'pendiente', los lotes nuevos se confundirían con los importados de
+# Calendar legacy (memoria pre 13-may-2026).
+
+def test_golden_plan_programar_produccion_origen_eos(app, db_clean):
+    """POST agenda lote en produccion_programada con origen='eos_plan' ·
+    sin tocar Calendar · queda visible en Plan en curso · audit_log captura."""
+    _exec("DELETE FROM produccion_programada WHERE observaciones LIKE 'TEST_PLAN_%'")
+
+    cs = _login(app, 'sebastian')
+
+    # Caso 1: POST crea lote correctamente
+    r1 = cs.post('/api/plan/programar-produccion', json={
+        'producto_nombre': 'SUERO HIDRATANTE AH 1.5%',
+        'cantidad_kg': 90,
+        'fecha_programada': '2026-06-01',
+        'notas': 'TEST_PLAN_SAH · lote semanal',
+    }, headers=csrf_headers())
+    assert r1.status_code == 201, f'BUG POST: {r1.status_code} {r1.data}'
+    pid = r1.get_json()['id']
+
+    # Caso 2: persistido con origen='eos_plan' + estado='pendiente'
+    rows = _query(
+        """SELECT cantidad_kg, fecha_programada, origen, estado, observaciones
+           FROM produccion_programada WHERE id = ?""", (pid,),
+    )
+    assert rows, 'BUG: lote no persistió'
+    kg, fecha, origen, estado, notas = rows[0]
+    assert origen == 'eos_plan', f'BUG: origen={origen}, esperaba eos_plan'
+    assert estado == 'pendiente', f'BUG: estado={estado}'
+    assert kg == 90.0
+    assert fecha == '2026-06-01'
+    assert 'TEST_PLAN_SAH' in notas
+
+    # Caso 3: audit_log captura
+    audit = _query(
+        """SELECT accion FROM audit_log
+           WHERE accion='PROGRAMAR_PRODUCCION' AND registro_id = ?
+           ORDER BY id DESC LIMIT 1""", (str(pid),),
+    )
+    assert audit and audit[0][0] == 'PROGRAMAR_PRODUCCION', 'BUG audit_log'
+
+    # Caso 4: producto inexistente → 404
+    r4 = cs.post('/api/plan/programar-produccion', json={
+        'producto_nombre': 'PRODUCTO_INEXISTENTE_XYZ',
+        'cantidad_kg': 10,
+        'fecha_programada': '2026-06-01',
+    }, headers=csrf_headers())
+    assert r4.status_code == 404
+
+    # Caso 5: fecha inválida → 400
+    r5 = cs.post('/api/plan/programar-produccion', json={
+        'producto_nombre': 'SUERO HIDRATANTE AH 1.5%',
+        'cantidad_kg': 10,
+        'fecha_programada': 'fecha-mala',
+    }, headers=csrf_headers())
+    assert r5.status_code == 400
+
+    # Caso 6: kg <= 0 → 400
+    r6 = cs.post('/api/plan/programar-produccion', json={
+        'producto_nombre': 'SUERO HIDRATANTE AH 1.5%',
+        'cantidad_kg': 0,
+        'fecha_programada': '2026-06-01',
+    }, headers=csrf_headers())
+    assert r6.status_code == 400
+
+    # Caso 7: non-admin/compras rechazado (mayerlin es planta)
+    cs_op = _login(app, 'mayerlin')
+    r7 = cs_op.post('/api/plan/programar-produccion', json={
+        'producto_nombre': 'SUERO HIDRATANTE AH 1.5%',
+        'cantidad_kg': 10,
+        'fecha_programada': '2026-06-01',
+    }, headers=csrf_headers())
+    assert r7.status_code == 403
+
+    # Caso 8: el lote aparece en /api/plan/necesidades.lotes_pendientes
+    r8 = cs.get('/api/plan/necesidades')
+    d8 = r8.get_json()
+    animus = next(c for c in d8['clientes'] if c['cliente_id'] == 'ANIMUS_DTC')
+    sah = next((p for p in animus['productos'] if p['codigo_pt'] == 'SAH'), None)
+    assert sah, 'BUG: SAH no encontrado en Animus'
+    assert sah['lotes_pendientes_n'] >= 1, \
+        f'BUG: lote agendado no se refleja en necesidades · {sah["lotes_pendientes_n"]}'
+    assert sah['lotes_pendientes_kg'] >= 90, \
+        f'BUG: kg pendiente · {sah["lotes_pendientes_kg"]}'
+
+    # Cleanup
+    _exec("DELETE FROM produccion_programada WHERE observaciones LIKE 'TEST_PLAN_%'")

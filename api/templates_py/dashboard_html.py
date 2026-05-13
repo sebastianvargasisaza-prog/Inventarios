@@ -1477,8 +1477,9 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       &#128202; Necesidades
     </button>
     <button id="prog-tab-planv2" onclick="switchProgTab('planv2')"
-      style="padding:9px 22px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:700;cursor:pointer;background:#475569;color:#fff;box-shadow:0 3px 10px rgba(71,85,105,.35)">
-      &#128197; Plan (legacy)
+      style="padding:9px 22px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:700;cursor:pointer;background:#475569;color:#fff;box-shadow:0 3px 10px rgba(71,85,105,.35)"
+      title="Monitor de lotes ya agendados">
+      &#128197; Plan en curso
     </button>
     <button id="prog-tab-midia" onclick="switchProgTab('midia')"
       style="padding:9px 22px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:700;cursor:pointer;background:#1e40af;color:#fff;box-shadow:0 3px 10px rgba(30,64,175,.35)">
@@ -1506,6 +1507,36 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     </div>
     <div id="nec-resumen" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px"></div>
     <div id="nec-contenido"><div style="text-align:center;color:#94a3b8;padding:40px">Cargando…</div></div>
+  </div>
+  <!-- Modal Generar producción · todo vive en EOS (sin Calendar) -->
+  <div id="gpModal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.55);z-index:1000;justify-content:center;align-items:center;padding:20px">
+    <div style="background:white;border-radius:14px;padding:24px;max-width:480px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.4)">
+      <h3 id="gp-titulo" style="margin:0 0 8px;color:#0f766e">⚡ Generar producción</h3>
+      <div style="font-size:12px;color:#64748b;margin-bottom:16px">Agenda el lote en EOS · queda pendiente en "Plan en curso"</div>
+      <div style="display:grid;gap:10px">
+        <input id="gp-codigo" type="hidden">
+        <div>
+          <label style="font-size:11px;color:#64748b;display:block;margin-bottom:3px">Producto</label>
+          <input id="gp-producto" readonly style="padding:9px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;width:100%;background:#f8fafc">
+        </div>
+        <div>
+          <label style="font-size:11px;color:#64748b;display:block;margin-bottom:3px">Cantidad (kg)</label>
+          <input id="gp-kg" type="number" step="0.1" min="0.1" style="padding:9px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;width:100%">
+        </div>
+        <div>
+          <label style="font-size:11px;color:#64748b;display:block;margin-bottom:3px">Fecha programada</label>
+          <input id="gp-fecha" type="date" style="padding:9px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;width:100%">
+        </div>
+        <div>
+          <label style="font-size:11px;color:#64748b;display:block;margin-bottom:3px">Notas (opcional)</label>
+          <textarea id="gp-notas" rows="2" placeholder="ej: lote para Fernando + DTC normal" style="padding:9px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;width:100%;resize:vertical"></textarea>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end">
+        <button onclick="cerrarGenerarProduccion()" style="background:#e2e8f0;color:#1e293b;border:none;padding:8px 16px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer">Cancelar</button>
+        <button onclick="confirmarGenerarProduccion()" style="background:#0f766e;color:white;border:none;padding:8px 16px;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer">Agendar lote</button>
+      </div>
+    </div>
   </div>
   <!-- Modal pedido B2B -->
   <div id="b2bModal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.55);z-index:1000;justify-content:center;align-items:center;padding:20px">
@@ -16737,70 +16768,152 @@ async function ckMarcar(itemId, estado){
     ).join('');
   }
 
+  // Cache global productos para drill panel y modal generar
+  window._NEC_PRODUCTOS_CACHE = {};
+
   function renderClientesNec(clientes) {
     const div = document.getElementById('nec-contenido');
     if (!clientes || !clientes.length) { div.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:40px">Sin datos.</div>'; return; }
     let html = '';
     clientes.forEach(cli => {
-      if (cli.tipo === 'shopify_auto') {
-        html += renderAnimusSection(cli);
-      } else if (cli.tipo === 'b2b_manual') {
-        html += renderB2BSection(cli);
-      }
+      if (cli.tipo === 'shopify_auto') html += renderAnimusSection(cli);
+      else if (cli.tipo === 'b2b_manual') html += renderB2BSection(cli);
     });
     div.innerHTML = html;
   }
 
   function renderAnimusSection(cli) {
     const prods = cli.productos || [];
-    // Agrupar por urgencia
-    const grupos = {CRITICO:[], URGENTE:[], VIGILAR:[], OK:[], SIN_VENTAS:[]};
-    prods.forEach(p => { if (grupos[p.urgencia]) grupos[p.urgencia].push(p); });
-    let html = '<div style="background:white;border-radius:14px;padding:18px;margin-bottom:14px;border:1px solid #e2e8f0">';
-    html += '<h3 style="margin:0 0 14px;color:#0f766e;font-size:16px;font-weight:800">🛍️ ' + escapeHtmlNec(cli.cliente_nombre) + ' <span style="font-size:11px;font-weight:500;color:#94a3b8">· Shopify automático</span></h3>';
-    ['CRITICO','URGENTE','VIGILAR','OK','SIN_VENTAS'].forEach(urg => {
-      const lista = grupos[urg];
-      if (!lista.length) return;
-      const cfg = URG_COLORS[urg];
-      const collapsed = (urg === 'OK' || urg === 'SIN_VENTAS' || urg === 'VIGILAR');
-      html += '<details ' + (collapsed ? '' : 'open') + ' style="margin-bottom:10px">';
-      html += '<summary style="cursor:pointer;padding:8px 12px;background:'+cfg.bg+';border-left:4px solid '+cfg.border+';border-radius:6px;font-weight:700;color:'+cfg.text+';font-size:13px">'
-        + cfg.emoji + ' ' + urg + ' (' + lista.length + ')'
-        + '</summary>';
-      html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px;margin-top:8px">';
-      lista.forEach(p => { html += renderProductoCard(p); });
-      html += '</div></details>';
+    // Cachear para drill panel
+    prods.forEach(p => { window._NEC_PRODUCTOS_CACHE[p.codigo_pt] = p; });
+    // Chips resumen por urgencia
+    const conteos = {CRITICO:0, URGENTE:0, VIGILAR:0, OK:0, SIN_VENTAS:0};
+    prods.forEach(p => { if (conteos[p.urgencia] !== undefined) conteos[p.urgencia]++; });
+    let chips = '';
+    ['CRITICO','URGENTE','VIGILAR','OK','SIN_VENTAS'].forEach(u => {
+      if (conteos[u] > 0) {
+        const cfg = URG_COLORS[u];
+        chips += '<span style="background:'+cfg.bg+';color:'+cfg.text+';padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700;margin-left:4px">' + cfg.emoji + ' ' + conteos[u] + '</span>';
+      }
     });
-    html += '</div>';
+
+    let html = '<details open style="background:white;border-radius:14px;margin-bottom:14px;border:1px solid #e2e8f0;overflow:hidden">';
+    html += '<summary style="cursor:pointer;padding:14px 18px;background:linear-gradient(90deg,#f0fdfa,#ecfeff);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">';
+    html += '<div><span style="color:#0f766e;font-size:16px;font-weight:800">🛍️ ' + escapeHtmlNec(cli.cliente_nombre) + '</span>';
+    html += ' <span style="font-size:11px;font-weight:500;color:#94a3b8">· Shopify auto · ' + prods.length + ' SKUs</span></div>';
+    html += '<div>' + chips + '</div></summary>';
+    html += '<div style="padding:14px 18px;overflow-x:auto">';
+
+    if (!prods.length) {
+      html += '<div style="text-align:center;color:#94a3b8;padding:20px">Sin productos con codigo_pt · ejecutá mig 118 seed.</div>';
+    } else {
+      html += '<table style="width:100%;border-collapse:collapse;font-size:12px;min-width:720px">';
+      html += '<thead><tr style="background:#f8fafc;color:#475569">';
+      html += '<th style="text-align:left;padding:8px 6px;font-weight:700">Cód</th>';
+      html += '<th style="text-align:left;padding:8px 6px;font-weight:700">Producto</th>';
+      html += '<th style="text-align:center;padding:8px 6px;font-weight:700">Stock</th>';
+      html += '<th style="text-align:center;padding:8px 6px;font-weight:700">Vel/día</th>';
+      html += '<th style="text-align:center;padding:8px 6px;font-weight:700">Cobertura</th>';
+      html += '<th style="text-align:center;padding:8px 6px;font-weight:700">Estado</th>';
+      html += '<th style="text-align:center;padding:8px 6px;font-weight:700">Agendado</th>';
+      html += '<th style="padding:8px 6px"></th>';
+      html += '</tr></thead><tbody>';
+      prods.forEach(p => {
+        const cfg = URG_COLORS[p.urgencia] || URG_COLORS.OK;
+        const dias = p.dias_cobertura != null ? p.dias_cobertura + 'd' : '—';
+        const agendado = (p.lotes_pendientes_n || 0) > 0
+          ? '<span title="' + (p.lotes_pendientes_proximas_fechas || []).join(', ') + '" style="background:#dbeafe;color:#1e40af;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700">' + p.lotes_pendientes_n + ' · ' + p.lotes_pendientes_kg + 'kg</span>'
+          : '<span style="color:#cbd5e1">—</span>';
+        const codSafe = escapeHtmlNec(p.codigo_pt);
+        html += '<tr style="border-bottom:1px solid #f1f5f9;cursor:pointer" onclick="toggleDrill(&quot;' + codSafe + '&quot;)">';
+        html += '<td style="padding:8px 6px;font-family:ui-monospace,SFMono-Regular,monospace;font-weight:700;color:#1e40af">' + codSafe + '</td>';
+        html += '<td style="padding:8px 6px;color:#1e293b">' + escapeHtmlNec(p.producto_nombre) + '</td>';
+        html += '<td style="padding:8px 6px;text-align:center">' + p.stock_uds_total + '</td>';
+        html += '<td style="padding:8px 6px;text-align:center">' + p.velocidad_uds_dia.toFixed(1) + '</td>';
+        html += '<td style="padding:8px 6px;text-align:center;font-weight:700;color:' + cfg.text + '">' + dias + '</td>';
+        html += '<td style="padding:8px 6px;text-align:center"><span style="background:' + cfg.bg + ';color:' + cfg.text + ';padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700">' + cfg.emoji + ' ' + p.urgencia + '</span></td>';
+        html += '<td style="padding:8px 6px;text-align:center">' + agendado + '</td>';
+        html += '<td style="padding:8px 6px;text-align:right"><button onclick="event.stopPropagation();abrirGenerarProduccion(&quot;' + codSafe + '&quot;)" style="background:#0f766e;color:#fff;border:none;padding:5px 10px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">⚡ Generar</button></td>';
+        html += '</tr>';
+        html += '<tr id="drill-' + codSafe + '" style="display:none"><td colspan="8" style="padding:14px;background:#f8fafc;border-bottom:1px solid #e2e8f0">';
+        html += renderDrillPanel(p);
+        html += '</td></tr>';
+      });
+      html += '</tbody></table>';
+    }
+    html += '</div></details>';
     return html;
   }
 
-  function renderProductoCard(p) {
+  function renderDrillPanel(p) {
     const cfg = URG_COLORS[p.urgencia] || URG_COLORS.OK;
-    const dias = p.dias_cobertura != null ? p.dias_cobertura + 'd cobertura' : 'sin ventas';
-    // IMPORTANTE: NO usar comillas simples dentro del onerror inline porque
-    // rompen el string JS contenedor (bug crítico que silenció todo el
-    // <script> el 13-may-2026 · escalabilidad cero error: usar &#39;).
     const imgHtml = p.imagen_url
-      ? '<img src="' + escapeHtmlNec(p.imagen_url) + '" alt="" style="width:60px;height:60px;object-fit:cover;border-radius:8px;background:#f1f5f9" onerror="this.style.display=&#39;none&#39;">'
-      : '<div style="width:60px;height:60px;background:linear-gradient(135deg,#e2e8f0,#cbd5e1);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:20px;color:#64748b">📦</div>';
-    let extras = '';
+      ? '<img src="' + escapeHtmlNec(p.imagen_url) + '" alt="" style="width:100px;height:100px;object-fit:cover;border-radius:10px;background:#f1f5f9" onerror="this.style.display=&#39;none&#39;">'
+      : '<div style="width:100px;height:100px;background:linear-gradient(135deg,#e2e8f0,#cbd5e1);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:36px;color:#64748b">📦</div>';
+    let html = '<div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">';
+    html += imgHtml;
+    html += '<div style="flex:1;min-width:260px">';
+    html += '<div style="font-weight:800;color:' + cfg.text + ';font-size:14px;margin-bottom:8px">' + cfg.emoji + ' ' + escapeHtmlNec(p.codigo_pt) + ' · ' + escapeHtmlNec(p.producto_nombre) + '</div>';
+    html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:10px">';
+    html += '<div style="background:white;border:1px solid #e2e8f0;border-radius:6px;padding:8px"><div style="font-size:10px;color:#64748b">Stock</div><div style="font-weight:700;color:#1e293b">' + p.stock_uds_total + ' uds · ' + p.stock_kg_total + 'kg</div></div>';
+    html += '<div style="background:white;border:1px solid #e2e8f0;border-radius:6px;padding:8px"><div style="font-size:10px;color:#64748b">Velocidad</div><div style="font-weight:700;color:#1e293b">' + p.velocidad_uds_dia.toFixed(1) + ' uds/día (' + p.ventas_periodo_uds + ' en ventana)</div></div>';
+    html += '<div style="background:white;border:1px solid #e2e8f0;border-radius:6px;padding:8px"><div style="font-size:10px;color:#64748b">Cobertura</div><div style="font-weight:700;color:' + cfg.text + '">' + (p.dias_cobertura != null ? p.dias_cobertura + ' días' : '—') + '</div></div>';
+    html += '<div style="background:white;border:1px solid #e2e8f0;border-radius:6px;padding:8px"><div style="font-size:10px;color:#64748b">Lote bulk</div><div style="font-weight:700;color:#1e293b">' + p.lote_bulk_kg + ' kg</div></div>';
+    html += '</div>';
     if (p.n_lotes_recomendados > 0) {
-      extras += '<div style="font-size:11px;color:#64748b;margin-top:4px">Producir <strong>' + p.n_lotes_recomendados + ' lote × ' + p.lote_bulk_kg + 'kg</strong></div>';
-      if (p.regalos_extra_uds > 0) {
-        extras += '<div style="font-size:10px;color:#0891b2;margin-top:2px">+ ' + p.regalos_extra_uds + ' uds 10ml regalo automático</div>';
-      }
+      let s = '💡 Sistema sugiere: <strong>' + p.n_lotes_recomendados + ' lote × ' + p.lote_bulk_kg + 'kg = ' + p.kg_a_producir + 'kg</strong>';
+      if (p.regalos_extra_uds > 0) s += ' (+ ' + p.regalos_extra_uds + ' uds 10ml regalo)';
+      html += '<div style="font-size:12px;color:#475569;margin-bottom:6px">' + s + '</div>';
     }
     if (p.pipeline_kg > 0) {
-      extras += '<div style="font-size:10px;color:#15803d;margin-top:2px">🔄 Pipeline 7d: ' + p.pipeline_kg + 'kg en vuelo</div>';
+      html += '<div style="font-size:11px;color:#15803d;margin-bottom:6px">🔄 Pipeline 7d: ' + p.pipeline_kg + 'kg pendiente de Shopify Available</div>';
     }
-    return '<div style="background:'+cfg.bg+';border:1px solid '+cfg.border+';border-radius:10px;padding:12px;display:flex;gap:10px">'
-      + imgHtml
-      + '<div style="flex:1;min-width:0">'
-      + '<div style="font-weight:700;color:'+cfg.text+';font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + escapeHtmlNec(p.codigo_pt) + ' · ' + escapeHtmlNec(p.producto_nombre) + '</div>'
-      + '<div style="font-size:11px;color:#475569;margin-top:2px">📊 ' + p.stock_uds_total + ' uds · ' + p.velocidad_uds_dia.toFixed(1) + ' uds/d · ' + dias + '</div>'
-      + extras
-      + '</div></div>';
+    if ((p.lotes_pendientes_n || 0) > 0) {
+      html += '<div style="font-size:11px;color:#1e40af;margin-bottom:6px">📅 Ya agendado en EOS: ' + p.lotes_pendientes_n + ' lote · ' + p.lotes_pendientes_kg + 'kg · fechas: ' + (p.lotes_pendientes_proximas_fechas || []).join(', ') + '</div>';
+    }
+    html += '<div style="margin-top:10px"><button onclick="abrirGenerarProduccion(&quot;' + escapeHtmlNec(p.codigo_pt) + '&quot;)" style="background:#0f766e;color:#fff;border:none;padding:10px 18px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer">⚡ Generar producción</button></div>';
+    html += '</div></div>';
+    return html;
+  }
+
+  function toggleDrill(codigo) {
+    const tr = document.getElementById('drill-' + codigo);
+    if (!tr) return;
+    tr.style.display = (tr.style.display === 'none' || !tr.style.display) ? 'table-row' : 'none';
+  }
+
+  function abrirGenerarProduccion(codigo) {
+    const p = window._NEC_PRODUCTOS_CACHE[codigo];
+    if (!p) { alert('Producto no encontrado en cache'); return; }
+    document.getElementById('gp-codigo').value = p.codigo_pt;
+    document.getElementById('gp-producto').value = p.producto_nombre;
+    document.getElementById('gp-titulo').textContent = '⚡ Generar producción · ' + p.codigo_pt;
+    document.getElementById('gp-kg').value = p.kg_a_producir > 0 ? p.kg_a_producir : p.lote_bulk_kg;
+    const f = new Date(); f.setDate(f.getDate() + 7);
+    document.getElementById('gp-fecha').value = f.toISOString().slice(0, 10);
+    document.getElementById('gp-notas').value = '';
+    document.getElementById('gpModal').style.display = 'flex';
+  }
+  function cerrarGenerarProduccion() { document.getElementById('gpModal').style.display = 'none'; }
+
+  async function confirmarGenerarProduccion() {
+    const producto = document.getElementById('gp-producto').value;
+    const kg = parseFloat(document.getElementById('gp-kg').value);
+    const fecha = document.getElementById('gp-fecha').value;
+    const notas = document.getElementById('gp-notas').value.trim();
+    if (!producto || !kg || kg <= 0 || !fecha) { alert('Completá producto, kg y fecha'); return; }
+    try {
+      const r = await fetch('/api/plan/programar-produccion', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfTokenNec()},
+        body: JSON.stringify({producto_nombre: producto, cantidad_kg: kg, fecha_programada: fecha, notas: notas}),
+      });
+      const d = await r.json();
+      if (!r.ok) { alert('Error: ' + (d.error || r.status)); return; }
+      cerrarGenerarProduccion();
+      alert('✓ Producción agendada · #' + d.id + ' · ' + d.producto + ' · ' + d.cantidad_kg + 'kg · ' + d.fecha);
+      cargarNecesidades();
+    } catch(e) { alert('Error: ' + e.message); }
   }
 
   function renderB2BSection(cli) {
