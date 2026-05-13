@@ -671,6 +671,7 @@ def listar_ebr():
         return err
     estado = (request.args.get("estado") or "").strip()
     lote = (request.args.get("lote") or "").strip()
+    numero_op = (request.args.get("numero_op") or "").strip()
     where, params = [], []
     if estado:
         where.append("estado = ?")
@@ -678,6 +679,10 @@ def listar_ebr():
     if lote:
         where.append("lote = ?")
         params.append(lote)
+    if numero_op:
+        # Match exacto · MyBatch-compat
+        where.append("numero_op = ?")
+        params.append(numero_op)
     sql = """SELECT id, mbr_template_id, mbr_version, produccion_id, lote,
                     numero_op, estado, iniciado_por, iniciado_at_utc,
                     completado_at_utc, liberado_por, liberado_at_utc,

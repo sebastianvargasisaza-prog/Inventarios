@@ -363,10 +363,12 @@ async function loadEbrs(){
     const r = await fetch('/api/brd/ebr');
     const items = (await r.json()).items || [];
     if (!items.length) { div.innerHTML = '<div class="empty">Sin EBRs ejecutados todavía. Iniciá uno desde un MBR aprobado.</div>'; return; }
-    let html = '<table><thead><tr><th>Lote</th><th>Estado</th><th>Iniciado</th><th>Yield</th><th>Liberado por</th><th></th></tr></thead><tbody>';
+    let html = '<table><thead><tr><th>OP</th><th>Lote</th><th>Estado</th><th>Iniciado</th><th>Yield</th><th>Liberado por</th><th></th></tr></thead><tbody>';
     items.forEach(function(e){
       const yld = e.yield_pct != null ? e.yield_pct.toFixed(1) + '%' : '—';
+      const op = e.numero_op || '—';
       html += '<tr>'
+        + '<td><span class="muted" style="font-family:monospace;font-size:12px">' + escapeHtml(op) + '</span></td>'
         + '<td><strong>' + escapeHtml(e.lote) + '</strong></td>'
         + '<td><span class="estado estado-' + e.estado + '">' + e.estado + '</span></td>'
         + '<td>' + escapeHtml(e.iniciado_por) + '<br><span class="muted">' + fmtDate(e.iniciado_at_utc) + '</span></td>'

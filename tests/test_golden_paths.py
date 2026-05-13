@@ -6486,3 +6486,152 @@ def test_golden_zona_areas_planta_seed_correcto(app, db_clean):
 
     # Cleanup
     _exec("DELETE FROM areas_planta WHERE codigo = 'TEST-ZONA-X'")
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH B2-117d · filter numero_op en GET /api/brd/ebr
+# ═══════════════════════════════════════════════════════════════════
+# Bug que cazaría: si el filter numero_op cae al WHERE de forma incorrecta
+# (ej. LIKE en vez de =) la vista MyBatch-compat devolvería matches
+# parciales · romperia búsqueda exacta de OP histórica.
+
+def test_golden_brd_ebr_filter_numero_op(app, db_clean):
+    """GET /api/brd/ebr?numero_op=OP-YYYY-NNNN devuelve solo ese EBR exacto."""
+    cs = _login(app, 'sebastian')
+    cs.patch('/api/identidad/sebastian',
+             json={'cedula': '99999999', 'nombre_completo': 'Test Filter'},
+             headers=csrf_headers())
+
+    # Setup: MBR aprobado + 2 EBRs con numero_op asignado
+    r1 = cs.post('/api/brd/mbr', json={
+        'producto_nombre': 'Test Filter OP',
+        'lote_size_g': 100.0,
+    }, headers=csrf_headers())
+    mbr_id = r1.get_json()['id']
+    cs.post(f'/api/brd/mbr/{mbr_id}/pasos', json={
+        'descripcion': 'p', 'tipo_paso': 'otro',
+    }, headers=csrf_headers())
+    cs.post(f'/api/brd/mbr/{mbr_id}/submit', json={}, headers=csrf_headers())
+    sig = _firmar(cs, record_table='mbr_templates', record_id=mbr_id,
+                   meaning='aprueba')
+    cs.post(f'/api/brd/mbr/{mbr_id}/aprobar',
+            json={'signature_id': sig}, headers=csrf_headers())
+
+    r_a = cs.post('/api/brd/ebr', json={
+        'mbr_template_id': mbr_id, 'lote': 'FILTER-LOTE-A',
+    }, headers=csrf_headers())
+    op_a = r_a.get_json()['numero_op']
+    r_b = cs.post('/api/brd/ebr', json={
+        'mbr_template_id': mbr_id, 'lote': 'FILTER-LOTE-B',
+    }, headers=csrf_headers())
+    op_b = r_b.get_json()['numero_op']
+    assert op_a != op_b, 'precondición: ambos EBRs deben tener OP distintos'
+
+    # Caso 1: filter por numero_op_a devuelve exactamente 1 item
+    r1 = cs.get(f'/api/brd/ebr?numero_op={op_a}')
+    items = r1.get_json()['items']
+    assert len(items) == 1, f'BUG filter por OP exacto · esperaba 1, dio {len(items)}'
+    assert items[0]['numero_op'] == op_a
+    assert items[0]['lote'] == 'FILTER-LOTE-A'
+
+    # Caso 2: filter por OP inexistente devuelve vacío
+    r2 = cs.get('/api/brd/ebr?numero_op=OP-9999-9999')
+    assert r2.get_json()['items'] == []
+
+    # Caso 3: SIN filter devuelve ambos (sanity)
+    r3 = cs.get('/api/brd/ebr')
+    items_all = r3.get_json()['items']
+    ops = [i.get('numero_op') for i in items_all]
+    assert op_a in ops and op_b in ops, \
+        f'BUG: sin filter ambos OPs deben aparecer · ops={ops[:5]}'
+
+    # Cleanup
+    cs.patch('/api/identidad/sebastian',
+             json={'cedula': '', 'nombre_completo': ''},
+             headers=csrf_headers())
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH B2-117e · PATCH codigo_pt · permisos + UNIQUE
+# ═══════════════════════════════════════════════════════════════════
+# Bug que cazaría: si el endpoint deja a cualquier usuario asignar
+# codigo_pt, Daniela (calidad) o un operario podrían pisar valores ajenos
+# sin trazabilidad. UNIQUE índice parcial debe bloquear duplicados y
+# audit_log debe capturar el cambio.
+
+def test_golden_patch_codigo_pt_permisos_y_unique(app, db_clean):
+    """PATCH /api/formulas/<p>/codigo-pt requiere admin/calidad + bloquea
+    duplicado + persiste audit_log.
+    """
+    # Setup: 2 productos reales del catálogo
+    productos = _query(
+        "SELECT producto_nombre FROM formula_headers WHERE codigo_pt IS NULL LIMIT 2",
+    )
+    if len(productos) < 2:
+        # Si todos ya tienen codigo_pt asignado por otro test, limpio test rows
+        _exec("UPDATE formula_headers SET codigo_pt=NULL WHERE codigo_pt LIKE 'GP_TEST_%'")
+        productos = _query(
+            "SELECT producto_nombre FROM formula_headers WHERE codigo_pt IS NULL LIMIT 2",
+        )
+    assert len(productos) >= 2, 'precondición: necesitamos 2 productos sin codigo_pt'
+    p1 = productos[0][0]
+    p2 = productos[1][0]
+
+    # Caso 1: admin puede asignar
+    cs_admin = _login(app, 'sebastian')
+    r1 = cs_admin.patch(
+        f'/api/formulas/{p1}/codigo-pt',
+        json={'codigo_pt': 'GP_TEST_PT1'},
+        headers=csrf_headers(),
+    )
+    assert r1.status_code == 200, f'BUG admin PATCH · {r1.status_code} {r1.data}'
+    d1 = r1.get_json()
+    assert d1['codigo_pt'] == 'GP_TEST_PT1'
+
+    # Verificar persistido
+    row = _query(
+        'SELECT codigo_pt FROM formula_headers WHERE producto_nombre = ?', (p1,),
+    )
+    assert row[0][0] == 'GP_TEST_PT1', 'BUG: no persistió'
+
+    # Caso 2: duplicar en otro producto → 409 UNIQUE
+    r2 = cs_admin.patch(
+        f'/api/formulas/{p2}/codigo-pt',
+        json={'codigo_pt': 'GP_TEST_PT1'},
+        headers=csrf_headers(),
+    )
+    assert r2.status_code == 409, \
+        f'BUG: UNIQUE índice parcial NO bloqueó duplicado · {r2.status_code} {r2.data}'
+
+    # Caso 3: limpiar (codigo_pt=null) funciona
+    r3 = cs_admin.patch(
+        f'/api/formulas/{p1}/codigo-pt',
+        json={'codigo_pt': None},
+        headers=csrf_headers(),
+    )
+    assert r3.status_code == 200
+    row = _query(
+        'SELECT codigo_pt FROM formula_headers WHERE producto_nombre = ?', (p1,),
+    )
+    assert row[0][0] is None, 'BUG: null no limpió'
+
+    # Caso 4: audit_log captura
+    rows = _query(
+        "SELECT accion FROM audit_log WHERE accion='SET_CODIGO_PT' AND registro_id=? "
+        "ORDER BY id DESC LIMIT 1", (p1,),
+    )
+    assert rows and rows[0][0] == 'SET_CODIGO_PT', 'BUG: audit_log NO capturó'
+
+    # Caso 5: usuario non-admin/non-calidad rechazado
+    # mayerlin es operaria (planta), no admin ni calidad
+    cs_op = _login(app, 'mayerlin')
+    r5 = cs_op.patch(
+        f'/api/formulas/{p1}/codigo-pt',
+        json={'codigo_pt': 'GP_TEST_HACK'},
+        headers=csrf_headers(),
+    )
+    assert r5.status_code == 403, \
+        f'BUG: non-admin pudo asignar codigo_pt · {r5.status_code}'
+
+    # Cleanup
+    _exec("UPDATE formula_headers SET codigo_pt=NULL WHERE codigo_pt LIKE 'GP_TEST_%'")

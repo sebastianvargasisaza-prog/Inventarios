@@ -395,6 +395,58 @@ def del_formula(producto_nombre):
     return jsonify({'message': f'Formula {producto_nombre} eliminada'})
 
 
+@bp.route('/api/formulas/<path:producto_nombre>/codigo-pt', methods=['PATCH'])
+def patch_codigo_pt(producto_nombre):
+    """Asigna o limpia el codigo_pt (MyBatch-compat) de un producto.
+
+    Solo ADMIN o CALIDAD pueden modificar. UNIQUE constraint del índice
+    parcial bloquea duplicados (mig 117). Body: {codigo_pt: "BB001"} o
+    {codigo_pt: null} para limpiar.
+    """
+    user = session.get('compras_user', '')
+    if user not in ADMIN_USERS and user not in CALIDAD_USERS:
+        return jsonify({'error': 'requiere admin o calidad'}), 403
+
+    body = request.get_json(silent=True) or {}
+    raw = body.get('codigo_pt')
+    if raw is None or raw == '':
+        nuevo = None
+    else:
+        nuevo = str(raw).strip().upper()
+        if not nuevo or len(nuevo) > 20:
+            return jsonify({'error': 'codigo_pt vacío o > 20 chars'}), 400
+
+    conn = get_db()
+    c = conn.cursor()
+    row = c.execute(
+        'SELECT codigo_pt FROM formula_headers WHERE producto_nombre = ?',
+        (producto_nombre,),
+    ).fetchone()
+    if not row:
+        return jsonify({'error': 'producto no encontrado'}), 404
+
+    anterior = row[0]
+    try:
+        c.execute(
+            'UPDATE formula_headers SET codigo_pt = ? WHERE producto_nombre = ?',
+            (nuevo, producto_nombre),
+        )
+        conn.commit()
+    except sqlite3.IntegrityError as e:
+        # UNIQUE índice parcial bloqueó duplicado
+        if 'UNIQUE' in str(e).upper():
+            return jsonify({'error': f'codigo_pt "{nuevo}" ya asignado a otro producto'}), 409
+        raise
+
+    audit_log(c, usuario=user, accion='SET_CODIGO_PT',
+              tabla='formula_headers', registro_id=producto_nombre,
+              antes={'codigo_pt': anterior},
+              despues={'codigo_pt': nuevo})
+    conn.commit()
+    return jsonify({'ok': True, 'producto_nombre': producto_nombre,
+                     'codigo_pt': nuevo, 'anterior': anterior})
+
+
 @bp.route('/api/formulas/<path:producto_nombre>/imagen', methods=['POST', 'GET', 'DELETE'])
 def producto_imagen(producto_nombre):
     """Gestiona la URL de imagen de un producto (para mostrar en checklist).
