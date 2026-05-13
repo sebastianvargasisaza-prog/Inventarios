@@ -7247,3 +7247,79 @@ def test_golden_plan_proximas_filtros(app, db_clean):
 
     # Cleanup
     _exec("DELETE FROM produccion_programada WHERE observaciones LIKE 'TEST_F%'")
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH PLAN-G · programar canónico (lun-vie + max 2/día)
+# ═══════════════════════════════════════════════════════════════════
+def test_golden_plan_canonico_lunvie_max2(app, db_clean):
+    """Canónico: respeta lun-vie · max 2 producciones/día · horizonte 1 año."""
+    _exec("DELETE FROM produccion_programada WHERE observaciones LIKE 'Canónico%'")
+
+    cs = _login(app, 'sebastian')
+
+    # Caso 1: generar canónico cada 60 días horizonte 365 días
+    r1 = cs.post('/api/plan/programar-canonico', json={
+        'producto_nombre': 'SUERO HIDRATANTE AH 1.5%',
+        'cantidad_kg': 90,
+        'frecuencia_dias': 60,
+        'horizonte_dias': 365,
+    }, headers=csrf_headers())
+    assert r1.status_code == 201, f'BUG POST: {r1.status_code} {r1.data}'
+    d1 = r1.get_json()
+    assert d1['total'] >= 5, f'BUG: esperaba ~6 lotes en 365d c/60d, dio {d1["total"]}'
+    # Verificar todas las fechas son lun-vie
+    from datetime import date as _date
+    for lote in d1['lotes_creados']:
+        f = _date.fromisoformat(lote['fecha'])
+        assert f.weekday() <= 4, f'BUG: lote en fin de semana · {lote["fecha"]} weekday={f.weekday()}'
+
+    # Caso 2: verificar max 2/día (ningún día tiene más de 2)
+    fechas_count = {}
+    for lote in d1['lotes_creados']:
+        fechas_count[lote['fecha']] = fechas_count.get(lote['fecha'], 0) + 1
+    for fecha, cnt in fechas_count.items():
+        assert cnt <= 2, f'BUG: día {fecha} tiene {cnt} lotes (max 2)'
+
+    # Caso 3: persistido en BD con origen='eos_canonico'
+    rows = _query(
+        """SELECT COUNT(*) FROM produccion_programada
+           WHERE origen='eos_canonico'
+             AND producto='SUERO HIDRATANTE AH 1.5%'""",
+    )
+    assert rows[0][0] >= d1['total']
+
+    # Caso 4: frecuencia inválida → 400
+    r2 = cs.post('/api/plan/programar-canonico', json={
+        'producto_nombre': 'SUERO HIDRATANTE AH 1.5%',
+        'cantidad_kg': 10, 'frecuencia_dias': 5,  # menor a 7
+        'horizonte_dias': 30,
+    }, headers=csrf_headers())
+    assert r2.status_code == 400
+
+    # Caso 5: horizonte muy grande → 400
+    r3 = cs.post('/api/plan/programar-canonico', json={
+        'producto_nombre': 'SUERO HIDRATANTE AH 1.5%',
+        'cantidad_kg': 10, 'frecuencia_dias': 30,
+        'horizonte_dias': 1000,
+    }, headers=csrf_headers())
+    assert r3.status_code == 400
+
+    # Caso 6: producto inexistente → 404
+    r4 = cs.post('/api/plan/programar-canonico', json={
+        'producto_nombre': 'NO_EXISTE',
+        'cantidad_kg': 10, 'frecuencia_dias': 30,
+        'horizonte_dias': 90,
+    }, headers=csrf_headers())
+    assert r4.status_code == 404
+
+    # Caso 7: mayerlin (planta) rechazado · 403
+    cs_op = _login(app, 'mayerlin')
+    r5 = cs_op.post('/api/plan/programar-canonico', json={
+        'producto_nombre': 'SUERO HIDRATANTE AH 1.5%',
+        'cantidad_kg': 10, 'frecuencia_dias': 30, 'horizonte_dias': 90,
+    }, headers=csrf_headers())
+    assert r5.status_code == 403
+
+    # Cleanup
+    _exec("DELETE FROM produccion_programada WHERE origen='eos_canonico'")

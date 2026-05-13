@@ -17198,6 +17198,19 @@ async function ckMarcar(itemId, estado){
       html += '</div></div>';
     }
 
+    // ── Programación canónica · recurrente con horizonte ──
+    // Sebastián 13-may-2026: "quieres hacer canónico, cada 60 días un año"
+    html += '<div style="background:#fef3c7;border-left:4px solid #ca8a04;border-radius:8px;padding:12px;margin-top:10px;margin-bottom:10px">';
+    html += '<div style="font-size:11px;color:#854d0e;font-weight:700;margin-bottom:8px">🔁 Programar canónico · 1 click llena el año</div>';
+    html += '<div style="font-size:11px;color:#475569;margin-bottom:6px">Genera lotes recurrentes respetando: solo lun-vie · preferir lun/mié/vie · max 2/día</div>';
+    html += '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px">';
+    html += '<label style="font-size:11px;color:#475569">Cada <select id="can-freq" style="padding:3px 6px;border:1px solid #cbd5e1;border-radius:4px;font-size:11px"><option value="30">30 días</option><option value="60" selected>60 días</option><option value="90">90 días</option><option value="45">45 días</option><option value="120">120 días</option></select></label>';
+    html += '<label style="font-size:11px;color:#475569">kg/lote <input id="can-kg" type="number" step="0.1" value="' + (p.lote_bulk_kg || 90) + '" style="padding:3px 6px;border:1px solid #cbd5e1;border-radius:4px;font-size:11px;width:70px"></label>';
+    html += '<label style="font-size:11px;color:#475569">Horizonte <select id="can-horizonte" style="padding:3px 6px;border:1px solid #cbd5e1;border-radius:4px;font-size:11px"><option value="180">6 meses</option><option value="365" selected>1 año</option><option value="540">1.5 años</option><option value="730">2 años</option></select></label>';
+    html += '</div>';
+    html += '<button onclick="programarCanonico(' + idx + ')" style="background:#ca8a04;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">🔁 Generar plan recurrente</button>';
+    html += '</div>';
+
     // ── Acciones secundarias ──
     html += '<div style="display:flex;gap:8px;flex-wrap:wrap;padding-top:8px;border-top:1px solid #e2e8f0">';
     html += '<button onclick="cerrarSolicitar();setTimeout(function(){abrirGenerarProduccion(' + idx + ')},100)" style="background:#475569;color:#fff;border:none;padding:9px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">⚙ Personalizar cantidad/fecha</button>';
@@ -17208,6 +17221,35 @@ async function ckMarcar(itemId, estado){
     document.getElementById('solicitarModal').style.display = 'flex';
   }
   function cerrarSolicitar() { document.getElementById('solicitarModal').style.display = 'none'; }
+
+  // Programar canónico · genera N lotes recurrentes con horizonte
+  async function programarCanonico(idx) {
+    const p = window._NEC_PRODUCTOS_CACHE[idx];
+    if (!p) { alert('Producto no encontrado'); return; }
+    const freq = parseInt(document.getElementById('can-freq').value);
+    const kg = parseFloat(document.getElementById('can-kg').value);
+    const horizonte = parseInt(document.getElementById('can-horizonte').value);
+    if (!freq || !kg || kg <= 0 || !horizonte) { alert('Completá frecuencia, kg y horizonte'); return; }
+    const nLotes = Math.floor(horizonte / freq);
+    if (!confirm('¿Generar ' + nLotes + ' lotes de ' + p.producto_nombre + ' · ' + kg + 'kg c/u · cada ' + freq + ' días durante ' + horizonte + ' días? · Respeta lun-vie · prefiere lun/mié/vie · max 2/día.')) return;
+    try {
+      const r = await fetch('/api/plan/programar-canonico', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfTokenNec()},
+        body: JSON.stringify({
+          producto_nombre: p.producto_nombre,
+          cantidad_kg: kg,
+          frecuencia_dias: freq,
+          horizonte_dias: horizonte,
+        }),
+      });
+      const d = await r.json();
+      if (!r.ok) { alert('Error: ' + (d.error || r.status)); return; }
+      cerrarSolicitar();
+      alert('✓ ' + d.total + ' lotes generados · cada ' + d.frecuencia_dias + 'd · horizonte ' + d.horizonte_dias + 'd · Ve a Plan en curso para verlos.');
+      cargarNecesidades();
+    } catch(e) { alert('Error: ' + e.message); }
+  }
 
   // Agenda directo · 1 click desde el escenario sugerido
   async function agendarRapido(idx, kg, fecha, etiqueta) {
@@ -17305,7 +17347,40 @@ async function ckMarcar(itemId, estado){
       const d = await r.json();
       if (!r.ok) { alert('Error: ' + (d.error || r.status)); return; }
       cerrarYaProducido();
-      alert('✓ Lote registrado · #' + d.id + ' · ' + d.lote + ' · ' + d.kg_real + 'kg · ' + d.fecha);
+
+      // Follow-up · sugerir próxima producción · Sebastián 13-may-2026:
+      // "ya fue producido, y diga alcanzará para tantos días, producir
+      // en tal fecha, ¿aceptar?"
+      try {
+        const rn = await fetch('/api/plan/necesidades?cobertura_dias_minimo=20&cobertura_dias_alerta=25&cobertura_dias_vigilar=45');
+        const dn = await rn.json();
+        const animus = (dn.clientes || []).find(c => c.cliente_id === 'ANIMUS_DTC');
+        const prodUpdate = animus && animus.productos.find(pp => pp.producto_nombre === producto);
+        if (prodUpdate && prodUpdate.duracion_lote_dias && prodUpdate.proxima_sugerida_fecha) {
+          const msg = '✓ Lote registrado: ' + d.lote + ' · ' + d.kg_real + 'kg · '
+                    + 'Este lote alcanza para ~' + prodUpdate.duracion_lote_dias + ' días · '
+                    + 'Próxima sugerida: ' + prodUpdate.proxima_sugerida_fecha
+                    + (prodUpdate.proxima_sugerida_dias != null ? ' (en ' + prodUpdate.proxima_sugerida_dias + 'd)' : '')
+                    + ' · ¿Agendar siguiente lote para esa fecha?';
+          if (confirm(msg)) {
+            // Agendar próximo automáticamente
+            await fetch('/api/plan/programar-produccion', {
+              method: 'POST',
+              headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfTokenNec()},
+              body: JSON.stringify({
+                producto_nombre: producto,
+                cantidad_kg: kg,  // misma kg que el ya producido
+                fecha_programada: prodUpdate.proxima_sugerida_fecha,
+                notas: 'Auto-sugerido tras back-fill ' + d.lote,
+              }),
+            });
+          }
+        } else {
+          alert('✓ Lote registrado · #' + d.id + ' · ' + d.lote + ' · ' + d.kg_real + 'kg');
+        }
+      } catch(e) {
+        alert('✓ Lote registrado · #' + d.id + ' · ' + d.lote + ' · ' + d.kg_real + 'kg');
+      }
       cargarNecesidades();
     } catch(e) { alert('Error: ' + e.message); }
   }

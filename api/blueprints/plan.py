@@ -747,6 +747,39 @@ def _valida_fecha_iso(s):
         return False
 
 
+# Constantes de capacidad de planta · Sebastián 13-may-2026
+# "solo trabajamos lunes a viernes · max 2 producciones por día"
+DIAS_HABILES = {0, 1, 2, 3, 4}        # lun=0 ... vie=4
+DIAS_PREFERIDOS = {0, 2, 4}            # lun, mié, vie (para canónico)
+MAX_PRODUCCIONES_POR_DIA = 2
+
+
+def _proxima_fecha_habil(c, fecha_obj, prefer_mwf=False, max_lookahead=400):
+    """Devuelve la próxima fecha date que cumpla:
+    - Día hábil (lun-vie, no fines de semana)
+    - Cuenta de producciones activas ese día < MAX_PRODUCCIONES_POR_DIA
+    - Si prefer_mwf=True · prefiere lun/mié/vie pero acepta mar/jue si los
+      preferidos están saturados
+
+    Si no se puede encontrar dentro de max_lookahead días → retorna None.
+    """
+    from datetime import timedelta as _td
+    cur = fecha_obj
+    for _ in range(max_lookahead):
+        if cur.weekday() in DIAS_HABILES:
+            if (not prefer_mwf) or (cur.weekday() in DIAS_PREFERIDOS):
+                count = c.execute(
+                    """SELECT COUNT(*) FROM produccion_programada
+                       WHERE date(fecha_programada) = ?
+                         AND estado IN ('pendiente','programado','en_curso')""",
+                    (cur.isoformat(),),
+                ).fetchone()[0]
+                if count < MAX_PRODUCCIONES_POR_DIA:
+                    return cur
+        cur = cur + _td(days=1)
+    return None
+
+
 @bp.route("/api/plan/proximas", methods=["GET"])
 def plan_proximas():
     """Lista lotes de produccion_programada con filtros.
@@ -873,6 +906,123 @@ def cancelar_proxima(pid):
               antes={"estado": estado_actual, "producto": producto, "fecha": fecha},
               despues={"estado": "cancelado"})
     return jsonify({"ok": True, "id": pid, "estado": "cancelado"})
+
+
+@bp.route("/api/plan/programar-canonico", methods=["POST"])
+def programar_canonico():
+    """Programa N lotes recurrentes con horizonte (típicamente 1 año).
+
+    Sebastián 13-may-2026: "quieres hacerlo canónico, cada 60 días por
+    un año · horizonte sólido". Crea múltiples filas en
+    produccion_programada con origen='eos_canonico' respetando:
+    - Solo lunes a viernes (skip fin de semana)
+    - Preferir lun/mié/vie (3 días/semana, ritmo Sebastián)
+    - Max 2 producciones por día (capacidad planta)
+
+    Body:
+        producto_nombre: str
+        cantidad_kg: float > 0
+        frecuencia_dias: int 7..180 (típicamente 30/60/90)
+        horizonte_dias: int 30..730 (default 365)
+        fecha_inicio: str YYYY-MM-DD (default hoy+3d)
+        notas: str opcional
+
+    Response:
+        201 {ok, lotes_creados: [{id, fecha, kg}, ...], total: N}
+    """
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+
+    body = request.get_json(silent=True) or {}
+    producto = (body.get("producto_nombre") or "").strip()
+    try:
+        kg = float(body.get("cantidad_kg") or 0)
+    except (ValueError, TypeError):
+        return jsonify({"error": "cantidad_kg inválida"}), 400
+    try:
+        freq = int(body.get("frecuencia_dias") or 0)
+    except (ValueError, TypeError):
+        return jsonify({"error": "frecuencia_dias inválida"}), 400
+    try:
+        horizonte = int(body.get("horizonte_dias") or 365)
+    except (ValueError, TypeError):
+        return jsonify({"error": "horizonte_dias inválido"}), 400
+    fecha_inicio = (body.get("fecha_inicio") or "").strip()
+    notas = (body.get("notas") or "").strip()
+
+    if not producto:
+        return jsonify({"error": "producto_nombre requerido"}), 400
+    if kg <= 0:
+        return jsonify({"error": "cantidad_kg debe ser > 0"}), 400
+    if not (7 <= freq <= 180):
+        return jsonify({"error": "frecuencia_dias debe estar entre 7 y 180"}), 400
+    if not (30 <= horizonte <= 730):
+        return jsonify({"error": "horizonte_dias debe estar entre 30 y 730"}), 400
+
+    from datetime import date as _date, timedelta as _td
+    hoy = _date.today()
+    if fecha_inicio:
+        if not _valida_fecha_iso(fecha_inicio):
+            return jsonify({"error": "fecha_inicio formato YYYY-MM-DD"}), 400
+        f_ini = _date.fromisoformat(fecha_inicio[:10])
+    else:
+        f_ini = hoy + _td(days=3)  # default: 3 días desde hoy
+
+    f_fin = hoy + _td(days=horizonte)
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    if not cur.execute(
+        "SELECT 1 FROM formula_headers WHERE producto_nombre = ?", (producto,),
+    ).fetchone():
+        return jsonify({"error": f"producto '{producto}' no existe"}), 404
+
+    lotes_creados = []
+    fecha_objetivo = f_ini
+
+    while fecha_objetivo <= f_fin:
+        # Encontrar próxima fecha hábil con capacidad disponible
+        fecha_real = _proxima_fecha_habil(cur, fecha_objetivo, prefer_mwf=True)
+        if fecha_real is None or fecha_real > f_fin:
+            break
+
+        cur.execute(
+            """INSERT INTO produccion_programada
+                 (producto, fecha_programada, cantidad_kg, lotes, estado,
+                  origen, observaciones, creado_en)
+               VALUES (?, ?, ?, 1, 'pendiente', 'eos_canonico', ?, datetime('now'))""",
+            (producto, fecha_real.isoformat(), kg,
+             f"Canónico cada {freq}d" + (f" · {notas}" if notas else "")),
+        )
+        pid = cur.lastrowid
+        lotes_creados.append({
+            "id": pid,
+            "fecha": fecha_real.isoformat(),
+            "kg": kg,
+        })
+
+        # Avanzar el objetivo a la próxima fecha según frecuencia
+        # (NO desde fecha_real para que el ritmo no se descalibre)
+        fecha_objetivo = fecha_real + _td(days=freq)
+
+    audit_log(cur, usuario=user, accion="PROGRAMAR_CANONICO",
+              tabla="produccion_programada", registro_id=lotes_creados[0]["id"] if lotes_creados else None,
+              despues={"producto": producto, "kg": kg, "frecuencia_dias": freq,
+                       "horizonte_dias": horizonte, "total_lotes": len(lotes_creados),
+                       "fecha_inicio": f_ini.isoformat(),
+                       "fecha_fin": (lotes_creados[-1]["fecha"] if lotes_creados else None)})
+    conn.commit()
+    return jsonify({
+        "ok": True,
+        "total": len(lotes_creados),
+        "lotes_creados": lotes_creados,
+        "producto": producto,
+        "frecuencia_dias": freq,
+        "horizonte_dias": horizonte,
+    }), 201
 
 
 @bp.route("/api/plan/registrar-produccion-completada", methods=["POST"])
