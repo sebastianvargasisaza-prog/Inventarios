@@ -225,6 +225,7 @@ from blueprints.compliance import bp as compliance_bp
 from blueprints.comercial import bp as comercial_bp
 from blueprints.auto_plan import bp as auto_plan_bp
 from blueprints.identidad import bp as identidad_bp
+from blueprints.firmas import bp as firmas_bp
 
 app.register_blueprint(core_bp)
 app.register_blueprint(hub_bp)
@@ -254,6 +255,7 @@ app.register_blueprint(compliance_bp)
 app.register_blueprint(comercial_bp)
 app.register_blueprint(auto_plan_bp)
 app.register_blueprint(identidad_bp)
+app.register_blueprint(firmas_bp)
 
 # ─── DB init + migraciones de esquema (idempotente) ────────────────────────
 init_db()   # crea tablas + ejecuta run_migrations() internamente

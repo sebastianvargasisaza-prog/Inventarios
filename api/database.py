@@ -222,6 +222,80 @@ _AREAS_LIMPIEZA_PROFUNDA = (
 
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (107, "e_signatures · Part 11 §11.50 §11.70 §11.200 firma electrónica · Sebastián 12-may-2026", [
+        # Tabla central de firmas electrónicas con binding inmutable al record
+        # firmado. 21 CFR Part 11:
+        #   §11.50  - Signature manifestations (printed name + date + meaning)
+        #   §11.70  - Signature/record linking (firma no separable del registro)
+        #   §11.200 - Electronic signature components (re-auth + meaning)
+        #
+        # signer_full_name/cedula/cargo se snapshotean al momento de firma
+        # (no FK) para que la evidencia sobreviva al rename/eliminación de
+        # la persona en usuarios_identidad — auditoría puede ver "quién era
+        # esa persona el día que firmó".
+        #
+        # record_hash captura el estado del record al momento de firma
+        # (calculado por el caller del endpoint /api/sign). signature_hash
+        # es HMAC-SHA256 de todos los campos críticos con SECRET_KEY como
+        # llave — si alguien rota el SECRET_KEY las firmas pasadas siguen
+        # siendo verificables porque el hash quedó persistido (no se
+        # re-calcula). El tamper-evidence depende de que SECRET_KEY no
+        # haya sido leakeada antes del intento de adulteración.
+        """CREATE TABLE IF NOT EXISTS e_signatures (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            record_table TEXT NOT NULL,
+            record_id TEXT NOT NULL,
+            meaning TEXT NOT NULL,
+            signer_username TEXT NOT NULL,
+            signer_full_name TEXT DEFAULT '',
+            signer_cedula TEXT DEFAULT '',
+            signer_cargo TEXT DEFAULT '',
+            signed_at_utc TEXT NOT NULL,
+            ip TEXT DEFAULT '',
+            auth_factor TEXT NOT NULL,
+            comment TEXT DEFAULT '',
+            record_hash TEXT DEFAULT '',
+            signature_hash TEXT NOT NULL
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_esig_record ON e_signatures(record_table, record_id, signed_at_utc DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_esig_signer ON e_signatures(signer_username, signed_at_utc DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_esig_meaning ON e_signatures(meaning, signed_at_utc DESC)",
+        # Triggers append-only · misma protección que audit_log (mig 105)
+        """CREATE TRIGGER IF NOT EXISTS trg_esig_no_update
+           BEFORE UPDATE ON e_signatures
+           BEGIN
+               SELECT RAISE(ABORT, 'e_signatures es append-only (Part 11 11.50)');
+           END""",
+        """CREATE TRIGGER IF NOT EXISTS trg_esig_no_delete
+           BEFORE DELETE ON e_signatures
+           BEGIN
+               SELECT RAISE(ABORT, 'e_signatures es append-only (Part 11 11.50)');
+           END""",
+    ]),
+    (108, "sign_challenges · single-use re-auth tokens para firma · Sebastián 12-may-2026", [
+        # Tokens de corta vida que prueban que el firmante se re-autenticó
+        # con password (+TOTP si tiene MFA) en los últimos 5 minutos. El
+        # workflow es:
+        #   1. Frontend muestra modal "Firmar como liberado"
+        #   2. Modal pide password + TOTP
+        #   3. POST /api/sign/challenge → verifica + emite token corto
+        #   4. POST /api/sign con el token → consume + crea e_signature
+        #
+        # consumed=1 garantiza single-use. El cron cleanup_logs limpia los
+        # vencidos (no urgente, los expira el endpoint igual).
+        """CREATE TABLE IF NOT EXISTS sign_challenges (
+            token TEXT PRIMARY KEY,
+            username TEXT NOT NULL,
+            auth_factor TEXT NOT NULL,
+            created_at_utc TEXT NOT NULL,
+            expires_at_utc TEXT NOT NULL,
+            consumed INTEGER DEFAULT 0,
+            consumed_at_utc TEXT DEFAULT NULL,
+            ip TEXT DEFAULT ''
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_signchall_username ON sign_challenges(username, expires_at_utc DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_signchall_expires ON sign_challenges(expires_at_utc)",
+    ]),
     (106, "usuarios_identidad · Part 11 §11.100(b) identity binding · Sebastián 12-may-2026", [
         # Tabla de identidad humana detrás de cada `username` de la app.
         # Part 11 §11.100(b): "before an organization establishes, assigns,

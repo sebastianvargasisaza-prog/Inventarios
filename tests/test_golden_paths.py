@@ -4749,3 +4749,103 @@ def test_golden_backup_retencion_dual_monthly(app, db_clean):
             f.unlink()
         except OSError:
             pass
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 54 · E-signature workflow Part 11 §11.50/70/200
+# ═══════════════════════════════════════════════════════════════════
+# Sebastián 12-may-2026 Bloque C: firma electrónica con re-auth
+# obligatoria + binding inmutable + identity snapshot.
+def test_golden_e_signature_workflow_completo(app, db_clean):
+    """Challenge → Sign → List · firma queda inmutable + binding identidad."""
+    cs = _login(app, 'sebastian')
+
+    # Setup: completar identidad de sebastian para snapshot identidad correcto
+    cs.patch('/api/identidad/sebastian',
+             json={'cedula': '99999999', 'nombre_completo': 'Sebastián Vargas'},
+             headers=csrf_headers())
+
+    # Caso 1: /api/sign sin challenge_token rechaza (400)
+    r0 = cs.post('/api/sign', json={
+        'record_table': 'producciones', 'record_id': 'TEST-1',
+        'meaning': 'libera',
+    }, headers=csrf_headers())
+    assert r0.status_code == 400
+
+    # Caso 2: /api/sign/challenge sin password rechaza (401)
+    r1 = cs.post('/api/sign/challenge', json={'password': 'wrong'},
+                 headers=csrf_headers())
+    assert r1.status_code == 401
+
+    # Caso 3: challenge correcto emite token
+    r2 = cs.post('/api/sign/challenge',
+                 json={'password': TEST_PASSWORD},
+                 headers=csrf_headers())
+    assert r2.status_code == 200, f'BUG: challenge {r2.status_code} {r2.data}'
+    d2 = r2.get_json()
+    assert d2.get('token') and len(d2['token']) >= 32
+    assert d2.get('auth_factor') in ('password', 'password+totp')
+    token = d2['token']
+
+    # Caso 4: meaning inválido → 400
+    r3 = cs.post('/api/sign', json={
+        'record_table': 'producciones', 'record_id': 'TEST-1',
+        'meaning': 'invalid_action', 'challenge_token': token,
+    }, headers=csrf_headers())
+    assert r3.status_code == 400
+
+    # Caso 5: firma exitosa con token (consume el challenge)
+    r4 = cs.post('/api/sign', json={
+        'record_table': 'producciones', 'record_id': 'TEST-1',
+        'meaning': 'libera',
+        'comment': 'Lote conforme a especificaciones',
+        'challenge_token': token,
+        'record_hash': 'abc123hashtest',
+    }, headers=csrf_headers())
+    assert r4.status_code == 201, f'BUG: sign {r4.status_code} {r4.data}'
+    d4 = r4.get_json()
+    assert d4['ok']
+    assert d4['signature_id']
+    assert d4['signature_hash'] and len(d4['signature_hash']) == 64
+
+    # Caso 6: re-uso del token rechaza (single-use)
+    r5 = cs.post('/api/sign', json={
+        'record_table': 'producciones', 'record_id': 'TEST-1',
+        'meaning': 'aprueba', 'challenge_token': token,
+    }, headers=csrf_headers())
+    assert r5.status_code == 401
+
+    # Caso 7: GET /api/sign/<table>/<id> lista la firma con identidad snapshot
+    r6 = cs.get('/api/sign/producciones/TEST-1')
+    assert r6.status_code == 200
+    sigs = r6.get_json().get('signatures', [])
+    assert len(sigs) == 1
+    sig = sigs[0]
+    assert sig['signer_username'] == 'sebastian'
+    assert sig['signer_full_name'] == 'Sebastián Vargas'
+    assert sig['signer_cedula'] == '99999999'
+    assert sig['meaning'] == 'libera'
+    assert sig['record_hash'] == 'abc123hashtest'
+
+    # Caso 8: append-only · UPDATE/DELETE bloqueado por trigger
+    import sqlite3 as _sqlite3
+    err = None
+    try:
+        conn = _sqlite3.connect(os.environ['DB_PATH'], timeout=5.0)
+        try:
+            conn.execute(
+                "UPDATE e_signatures SET comment='falsificado' WHERE id=?",
+                (d4['signature_id'],),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception as e:
+        err = str(e)
+    assert err and ('append-only' in err.lower() or '11.50' in err), \
+        f'BUG Part 11 §11.50: e_signatures debe ser append-only · err={err}'
+
+    # Cleanup
+    cs.patch('/api/identidad/sebastian',
+             json={'cedula': '', 'nombre_completo': ''},
+             headers=csrf_headers())
