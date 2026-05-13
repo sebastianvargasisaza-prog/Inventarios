@@ -1511,6 +1511,19 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     <div id="nec-proximas" style="margin-bottom:14px"></div>
     <div id="nec-contenido"><div style="text-align:center;color:#94a3b8;padding:40px">Cargando…</div></div>
   </div>
+  <!-- Modal UNIFICADO "Solicitar producción" · Sebastián 13-may-2026
+       todo en un solo lugar: presentación, demanda, histórico, sugerencias,
+       custom y ya-producido. Reemplaza el drill panel anterior. -->
+  <div id="solicitarModal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.55);z-index:1000;justify-content:center;align-items:center;padding:20px;overflow-y:auto">
+    <div style="background:white;border-radius:14px;padding:0;max-width:600px;width:100%;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.4)">
+      <div style="background:linear-gradient(90deg,#0f766e,#0891b2);padding:16px 24px;border-radius:14px 14px 0 0;color:white;display:flex;justify-content:space-between;align-items:center">
+        <h3 id="sol-titulo" style="margin:0;font-size:16px;font-weight:800">⚡ Solicitar producción</h3>
+        <button onclick="cerrarSolicitar()" style="background:transparent;color:white;border:none;font-size:20px;cursor:pointer;line-height:1">✕</button>
+      </div>
+      <div id="sol-body" style="padding:20px"></div>
+    </div>
+  </div>
+
   <!-- Modal "Ya producido" · back-fill retroactivo (no toca inventario) -->
   <div id="ypModal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.55);z-index:1000;justify-content:center;align-items:center;padding:20px">
     <div style="background:white;border-radius:14px;padding:24px;max-width:480px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.4)">
@@ -16901,40 +16914,40 @@ async function ckMarcar(itemId, estado){
     if (!prods.length) {
       html += '<div style="text-align:center;color:#94a3b8;padding:20px">Sin productos con codigo_pt · ejecutá mig 118 seed.</div>';
     } else {
-      // Tabla simplificada · Sebastián 13-may-2026: "había redundancia
-      // con la columna agendado y el botón generar". Ahora click fila
-      // abre drill con TODO · información completa allí.
-      html += '<table style="width:100%;border-collapse:collapse;font-size:12px;min-width:560px">';
+      // Tabla mínima · Sebastián 13-may-2026 "hablemos directo": producto,
+      // vende día/mes, alcanza, estado, botón solicitar. Todo lo demás
+      // (presentación, horizonte, sugerencias) vive en el modal único
+      // que abre el botón.
+      html += '<table style="width:100%;border-collapse:collapse;font-size:12px;min-width:600px">';
       html += '<thead><tr style="background:#f8fafc;color:#475569">';
       html += '<th style="text-align:left;padding:8px 6px;font-weight:700">Cód</th>';
       html += '<th style="text-align:left;padding:8px 6px;font-weight:700">Producto</th>';
-      html += '<th style="text-align:center;padding:8px 6px;font-weight:700">Stock</th>';
-      html += '<th style="text-align:center;padding:8px 6px;font-weight:700">Vel/día</th>';
-      html += '<th style="text-align:center;padding:8px 6px;font-weight:700">Cobertura</th>';
+      html += '<th style="text-align:center;padding:8px 6px;font-weight:700">Vende/día</th>';
+      html += '<th style="text-align:center;padding:8px 6px;font-weight:700">Vende/mes</th>';
+      html += '<th style="text-align:center;padding:8px 6px;font-weight:700">Alcanza</th>';
       html += '<th style="text-align:center;padding:8px 6px;font-weight:700">Estado</th>';
-      html += '<th style="text-align:center;padding:8px 6px;font-weight:700;width:32px">▾</th>';
+      html += '<th style="padding:8px 6px"></th>';
       html += '</tr></thead><tbody>';
       prods.forEach((p, j) => {
         const idx = baseIdx + j;
         const cfg = URG_COLORS[p.urgencia] || URG_COLORS.OK;
         const dias = p.dias_cobertura != null ? p.dias_cobertura + 'd' : '—';
         const codDisp = escapeHtmlNec(p.codigo_pt || '');
-        // Indicador de "tiene programado" o "tiene histórico" sin redundancia
-        let marker = '';
-        if ((p.lotes_pendientes_n || 0) > 0) marker = '<span title="Tiene producción agendada" style="color:#1e40af">📅</span>';
-        else if (p.ultima_produccion_fecha) marker = '<span title="Tiene histórico registrado" style="color:#ca8a04">📜</span>';
-        html += '<tr style="border-bottom:1px solid #f1f5f9;cursor:pointer" onclick="toggleDrill(' + idx + ')">';
+        const ventaMes = Math.round(p.velocidad_uds_dia * 30);
+        // Indicadores compactos junto al nombre
+        let markers = '';
+        if (p.tiene_10ml) markers += '<span title="Presenta 10ml ' + (p.tipo_10ml || '') + '" style="background:#fdf4ff;color:#7e22ce;padding:1px 6px;border-radius:4px;font-size:10px;margin-left:4px">10ml</span>';
+        if ((p.lotes_pendientes_n || 0) > 0) markers += '<span title="Tiene producción agendada" style="color:#1e40af;margin-left:4px">📅</span>';
+        if (p.ultima_produccion_fecha) markers += '<span title="Tiene histórico · ' + p.ultima_produccion_fecha + '" style="color:#ca8a04;margin-left:4px">📜</span>';
+        html += '<tr style="border-bottom:1px solid #f1f5f9">';
         html += '<td style="padding:8px 6px;font-family:ui-monospace,SFMono-Regular,monospace;font-weight:700;color:#1e40af">' + codDisp + '</td>';
-        html += '<td style="padding:8px 6px;color:#1e293b">' + escapeHtmlNec(p.producto_nombre) + ' ' + marker + '</td>';
-        html += '<td style="padding:8px 6px;text-align:center">' + p.stock_uds_total + '</td>';
-        html += '<td style="padding:8px 6px;text-align:center">' + p.velocidad_uds_dia.toFixed(1) + '</td>';
+        html += '<td style="padding:8px 6px;color:#1e293b">' + escapeHtmlNec(p.producto_nombre) + markers + '</td>';
+        html += '<td style="padding:8px 6px;text-align:center">' + p.velocidad_uds_dia.toFixed(1) + ' uds</td>';
+        html += '<td style="padding:8px 6px;text-align:center">' + ventaMes + ' uds</td>';
         html += '<td style="padding:8px 6px;text-align:center;font-weight:700;color:' + cfg.text + '">' + dias + '</td>';
         html += '<td style="padding:8px 6px;text-align:center"><span style="background:' + cfg.bg + ';color:' + cfg.text + ';padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700">' + cfg.emoji + ' ' + p.urgencia + '</span></td>';
-        html += '<td style="padding:8px 6px;text-align:center;color:#94a3b8">▾</td>';
+        html += '<td style="padding:8px 6px;text-align:right"><button onclick="abrirSolicitar(' + idx + ')" style="background:#0f766e;color:#fff;border:none;padding:6px 12px;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer">⚡ Solicitar</button></td>';
         html += '</tr>';
-        html += '<tr id="drill-' + idx + '" style="display:none"><td colspan="7" style="padding:14px;background:#f8fafc;border-bottom:1px solid #e2e8f0">';
-        html += renderDrillPanel(p, idx);
-        html += '</td></tr>';
       });
       html += '</tbody></table>';
     }
@@ -17017,6 +17030,96 @@ async function ckMarcar(itemId, estado){
     return html;
   }
 
+  // ── Modal unificado "Solicitar producción" ──────────────────────
+  function abrirSolicitar(idx) {
+    const p = window._NEC_PRODUCTOS_CACHE[idx];
+    if (!p) { alert('Producto no encontrado'); return; }
+    document.getElementById('sol-titulo').textContent =
+      '⚡ ' + (p.codigo_pt || '') + ' · ' + p.producto_nombre;
+    const cfg = URG_COLORS[p.urgencia] || URG_COLORS.OK;
+    const ventaMes = Math.round(p.velocidad_uds_dia * 30);
+
+    const imgHtml = p.imagen_url
+      ? '<img src="' + escapeHtmlNec(p.imagen_url) + '" alt="" style="width:80px;height:80px;object-fit:cover;border-radius:8px" onerror="this.style.display=&#39;none&#39;">'
+      : '<div style="width:80px;height:80px;background:linear-gradient(135deg,#e2e8f0,#cbd5e1);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:32px">📦</div>';
+
+    // Presentación + 10ml info
+    let presentacion = '<strong>30 ml</strong> (presentación DTC)';
+    if (p.tiene_10ml) {
+      const tipo10 = p.tipo_10ml === 'regalo' ? 'regalo automático' : 'venta';
+      presentacion += '<br><span style="background:#fdf4ff;color:#7e22ce;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700">10ml · ' + p.uds_10ml_por_lote + ' uds/lote · ' + tipo10 + '</span>';
+    }
+
+    let html = '<div style="display:flex;gap:14px;margin-bottom:16px;align-items:center">';
+    html += imgHtml;
+    html += '<div style="flex:1">' + presentacion + '</div>';
+    html += '</div>';
+
+    // ── Demanda actual ──
+    html += '<div style="background:#f8fafc;border-radius:8px;padding:12px;margin-bottom:12px;border-left:4px solid ' + cfg.border + '">';
+    html += '<div style="font-size:11px;color:#475569;font-weight:700;margin-bottom:6px">📊 Demanda y stock actual</div>';
+    html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:12px">';
+    html += '<div>Vende/día: <strong>' + p.velocidad_uds_dia.toFixed(1) + ' uds</strong></div>';
+    html += '<div>Vende/mes: <strong>' + ventaMes + ' uds</strong></div>';
+    html += '<div>Stock: <strong>' + p.stock_uds_total + ' uds · ' + p.stock_kg_total + ' kg</strong></div>';
+    html += '<div>Alcanza: <strong style="color:' + cfg.text + '">' + (p.dias_cobertura != null ? p.dias_cobertura + ' días' : '—') + '</strong> ' + cfg.emoji + ' ' + p.urgencia + '</div>';
+    html += '</div></div>';
+
+    // ── Última producción + horizonte ──
+    if (p.ultima_produccion_fecha) {
+      const en = p.proxima_sugerida_dias;
+      const colorSug = en != null && en <= 0 ? '#dc2626' : (en != null && en <= 7 ? '#ea580c' : '#0f766e');
+      html += '<div style="background:#fef9c3;border-left:4px solid #ca8a04;border-radius:8px;padding:12px;margin-bottom:12px">';
+      html += '<div style="font-size:11px;color:#854d0e;font-weight:700;margin-bottom:6px">📜 Última producción · horizonte</div>';
+      html += '<div style="font-size:12px;color:#475569">Producido: <strong>' + p.ultima_produccion_fecha + '</strong> · ' + p.ultima_produccion_kg + ' kg (hace ' + p.dias_desde_ultima + 'd)</div>';
+      if (p.duracion_lote_dias) {
+        html += '<div style="font-size:12px;color:#475569">Alcanza para ~<strong>' + p.duracion_lote_dias + ' días</strong></div>';
+      }
+      if (p.proxima_sugerida_fecha) {
+        html += '<div style="font-size:12px;font-weight:700;color:' + colorSug + ';margin-top:4px">Próxima sugerida: ' + p.proxima_sugerida_fecha;
+        if (en != null) html += ' (' + (en > 0 ? 'en ' + en + 'd' : 'YA · ' + (-en) + 'd atrasado') + ')';
+        html += '</div>';
+      }
+      html += '</div>';
+    } else {
+      html += '<div style="background:#f1f5f9;border-radius:8px;padding:10px;margin-bottom:12px;font-size:12px;color:#64748b">📜 Sin producciones previas registradas · usá "Ya producido" abajo para back-fill</div>';
+    }
+
+    // ── Agendado pendiente (si hay) ──
+    if ((p.lotes_pendientes_n || 0) > 0) {
+      html += '<div style="background:#dbeafe;border-left:4px solid #1e40af;border-radius:8px;padding:10px;margin-bottom:12px;font-size:12px;color:#1e40af">';
+      html += '📅 <strong>Ya agendado:</strong> ' + p.lotes_pendientes_n + ' lote · ' + p.lotes_pendientes_kg + ' kg · ' + (p.lotes_pendientes_proximas_fechas || []).join(', ');
+      html += '</div>';
+    }
+
+    // ── Sugerencias inteligentes ──
+    if (p.escenarios && p.escenarios.length > 0) {
+      html += '<div style="background:#ecfeff;border-left:4px solid #0891b2;border-radius:8px;padding:12px;margin-bottom:12px">';
+      html += '<div style="font-size:11px;color:#155e75;font-weight:700;margin-bottom:8px">⚡ Sugerencias · click y agendado</div>';
+      html += '<div style="display:flex;gap:8px;flex-wrap:wrap">';
+      p.escenarios.forEach(esc => {
+        const bg = esc.recomendado ? '#0f766e' : '#0891b2';
+        const star = esc.recomendado ? ' ⭐' : '';
+        html += '<button onclick="agendarRapido(' + idx + ', ' + esc.kg_sugerido + ', &quot;' + esc.fecha_sugerida + '&quot;, &quot;' + escapeHtmlNec(esc.etiqueta) + '&quot;)" '
+          + 'style="background:' + bg + ';color:#fff;border:none;padding:10px 14px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;text-align:left;line-height:1.4;flex:1;min-width:140px">'
+          + esc.etiqueta + star + '<br>'
+          + '<span style="font-size:11px;font-weight:500;opacity:.9">' + esc.kg_sugerido + ' kg · ' + esc.fecha_sugerida + '</span>'
+          + '</button>';
+      });
+      html += '</div></div>';
+    }
+
+    // ── Acciones secundarias ──
+    html += '<div style="display:flex;gap:8px;flex-wrap:wrap;padding-top:8px;border-top:1px solid #e2e8f0">';
+    html += '<button onclick="cerrarSolicitar();setTimeout(function(){abrirGenerarProduccion(' + idx + ')},100)" style="background:#475569;color:#fff;border:none;padding:9px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">⚙ Personalizar cantidad/fecha</button>';
+    html += '<button onclick="cerrarSolicitar();setTimeout(function(){abrirYaProducido(' + idx + ')},100)" style="background:#1e40af;color:#fff;border:none;padding:9px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">✓ Ya se produjo (back-fill)</button>';
+    html += '</div>';
+
+    document.getElementById('sol-body').innerHTML = html;
+    document.getElementById('solicitarModal').style.display = 'flex';
+  }
+  function cerrarSolicitar() { document.getElementById('solicitarModal').style.display = 'none'; }
+
   // Agenda directo · 1 click desde el escenario sugerido
   async function agendarRapido(idx, kg, fecha, etiqueta) {
     const p = window._NEC_PRODUCTOS_CACHE[idx];
@@ -17035,6 +17138,7 @@ async function ckMarcar(itemId, estado){
       });
       const d = await r.json();
       if (!r.ok) { alert('Error: ' + (d.error || r.status)); return; }
+      cerrarSolicitar();
       cargarNecesidades();
     } catch(e) { alert('Error: ' + e.message); }
   }
