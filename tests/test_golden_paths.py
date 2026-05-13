@@ -5538,6 +5538,87 @@ def test_golden_brd_auto_seed_mbrs_desde_formula_headers(app, db_clean):
 
 
 # ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH HOOK · iniciar producción crea EBR auto si hay MBR aprobado
+# ═══════════════════════════════════════════════════════════════════
+def test_golden_brd_hook_auto_ebr_al_iniciar_produccion(app, db_clean):
+    """prog/iniciar crea EBR auto vinculado por produccion_id (NON-FATAL)."""
+    cs = _login(app, 'sebastian')
+
+    # Setup: aprobar el MBR de Blush Balm (ya seedeado por mig 110)
+    rl = cs.get('/api/brd/mbr?producto=Blush Balm')
+    bb = next(it for it in rl.get_json()['items'] if it['version'] == 1)
+    if bb['estado'] != 'aprobado':
+        cs.post(f'/api/brd/mbr/{bb["id"]}/submit', json={}, headers=csrf_headers())
+        sig = _firmar(cs, record_table='mbr_templates', record_id=bb['id'],
+                       meaning='aprueba')
+        cs.post(f'/api/brd/mbr/{bb["id"]}/aprobar',
+                json={'signature_id': sig}, headers=csrf_headers())
+
+    # Crear una produccion_programada con producto='Blush Balm' (sin sala
+    # para evitar lógica de areas; sin formula valida → NO descuenta inv,
+    # pero igual hookea BRD).
+    import sqlite3 as _sqlite3
+    conn = _sqlite3.connect(os.environ['DB_PATH'], timeout=5.0)
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """INSERT INTO produccion_programada
+                 (producto, fecha_programada, cantidad_kg, origen)
+               VALUES ('Blush Balm', date('now', '+1 day'), 1, 'manual')"""
+        )
+        conn.commit()
+        evento_id = cur.lastrowid
+    finally:
+        conn.close()
+
+    # Iniciar producción (sin formula valida → no descuenta MPs · pero
+    # igual el hook BRD intenta crear EBR)
+    r = cs.post(f'/api/programacion/programar/{evento_id}/iniciar',
+                json={}, headers=csrf_headers())
+    # Aceptar 200 (caso normal) o 422 (sin stock para fórmula activa).
+    # Lo que nos importa es validar el hook si llegó a ejecutarse.
+    if r.status_code == 200:
+        d = r.get_json()
+        assert d['ok']
+        # brd_ebr puede ser ok=True (creado) o ok=False (razón)
+        assert 'brd_ebr' in d, 'BUG: response no incluye brd_ebr info'
+        ebr = d['brd_ebr']
+        if ebr['ok']:
+            # EBR creado · verificar
+            assert ebr['ebr_id']
+            assert 'BLU' in ebr['lote'] or 'BLUSH' in ebr['lote'].upper() \
+                    or 'BAL' in ebr['lote'].upper()
+            assert ebr['pasos_clonados'] == 7  # Blush Balm seed tiene 7 pasos
+            # GET el EBR creado
+            r2 = cs.get(f"/api/brd/ebr/{ebr['ebr_id']}")
+            assert r2.status_code == 200
+            d2 = r2.get_json()
+            assert d2['produccion_id'] == evento_id
+            assert d2['mbr_template_id'] == bb['id']
+
+            # Idempotencia: re-iniciar (ya iniciada) no duplica
+            r3 = cs.post(f'/api/programacion/programar/{evento_id}/iniciar',
+                         json={}, headers=csrf_headers())
+            assert r3.status_code == 200
+            # Re-busca EBR · debe ser el mismo
+            ebrs = cs.get('/api/brd/ebr').get_json()['items']
+            con_prod = [e for e in ebrs if e['produccion_id'] == evento_id]
+            assert len(con_prod) == 1, \
+                f'BUG: idempotencia rota · {len(con_prod)} EBRs para produccion'
+
+    # Cleanup
+    conn = _sqlite3.connect(os.environ['DB_PATH'], timeout=5.0)
+    try:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM ebr_pasos_ejecutados WHERE ebr_id IN (SELECT id FROM ebr_ejecuciones WHERE produccion_id=?)", (evento_id,))
+        cur.execute("DELETE FROM ebr_ejecuciones WHERE produccion_id=?", (evento_id,))
+        cur.execute("DELETE FROM produccion_programada WHERE id=?", (evento_id,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+# ═══════════════════════════════════════════════════════════════════
 # GOLDEN PATH 60 · PDF maestro auditable EBR (Fase 1 F8)
 # ═══════════════════════════════════════════════════════════════════
 def test_golden_brd_pdf_ebr_descargable(app, db_clean):

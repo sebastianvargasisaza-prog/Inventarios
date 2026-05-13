@@ -2878,6 +2878,15 @@ def prog_iniciar_produccion(evento_id):
                    else f"descontó {len(descuento['mps_descontadas'])} MPs "
                         f"({descuento['total_g']:.0f}g)")),
     )
+
+    # ── BRD auto-EBR · si hay MBR aprobado, crear EBR vinculado ───────
+    # NON-FATAL: si falla la creación del EBR, NO se aborta el inicio de
+    # producción. El flujo crítico (Mayerlin/operario inicia lote) NO debe
+    # bloquearse por culpa del BRD. Loguear warning + retornar info en
+    # response para visibilidad.
+    ebr_info = _intentar_crear_ebr_auto(c, evento_id, pp[1],
+                                        descuento.get('total_g'), user)
+
     conn.commit()
     return jsonify({
         'ok': True,
@@ -2890,7 +2899,90 @@ def prog_iniciar_produccion(evento_id):
         'total_g_descontado': descuento['total_g'],
         'sin_formula': sin_formula,
         'warning': descuento.get('warning'),
+        'brd_ebr': ebr_info,
     })
+
+
+def _intentar_crear_ebr_auto(c, evento_id, producto, total_g_descontado, user):
+    """Crea EBR vinculado a una producción cuando se inicia desde Calendar.
+
+    Retorna dict con resultado:
+      - ok=True + ebr_id si se creó
+      - ok=False + razon si no se creó (sin MBR aprobado, ya existe, error)
+
+    NON-FATAL: ningún error propaga. Cualquier excepción se atrapa y se
+    loguea para no romper el flujo de iniciar producción.
+    """
+    try:
+        mbr = c.execute(
+            """SELECT id, version, lote_size_g
+               FROM mbr_templates
+               WHERE producto_nombre = ? AND estado = 'aprobado'
+               ORDER BY version DESC LIMIT 1""",
+            (producto,),
+        ).fetchone()
+        if not mbr:
+            return {'ok': False, 'razon': 'sin MBR aprobado para este producto',
+                     'producto': producto}
+
+        # Idempotencia: si ya existe EBR para esta producción, no duplicar
+        existe = c.execute(
+            "SELECT id, lote FROM ebr_ejecuciones WHERE produccion_id = ?",
+            (evento_id,),
+        ).fetchone()
+        if existe:
+            return {'ok': True, 'ya_existia': True, 'ebr_id': existe[0],
+                     'lote': existe[1]}
+
+        # Generar lote único basado en evento_id + fecha
+        from datetime import datetime as _dt, timezone as _tz
+        fecha = _dt.now(_tz.utc).strftime('%Y%m%d')
+        # producto_corto: primeras 3 palabras → siglas + sin espacios
+        palabras = (producto or 'PROD').split()[:3]
+        prod_short = ''.join(p[:3].upper() for p in palabras)[:12]
+        lote = f"{prod_short}-{evento_id}-{fecha}"
+
+        # cantidad_objetivo_g: usar total descontado si existe (más preciso),
+        # o lote_size_g del MBR como fallback
+        cantidad_obj = total_g_descontado or mbr[2]
+
+        c.execute(
+            """INSERT INTO ebr_ejecuciones
+                 (mbr_template_id, mbr_version, produccion_id, lote, estado,
+                  iniciado_por, iniciado_at_utc, cantidad_objetivo_g, notas)
+               VALUES (?, ?, ?, ?, 'iniciado', ?, datetime('now', 'utc'), ?, ?)""",
+            (mbr[0], mbr[1], evento_id, lote, user, cantidad_obj,
+             f'Auto-creado al iniciar producción Calendar id={evento_id}'),
+        )
+        ebr_id = c.lastrowid
+
+        # Clonar pasos del MBR
+        pasos_mbr = c.execute(
+            """SELECT id, orden, descripcion, tipo_paso, equipo_requerido,
+                      requiere_e_sign, requiere_qc
+               FROM mbr_pasos WHERE mbr_template_id = ? ORDER BY orden""",
+            (mbr[0],),
+        ).fetchall()
+        for p in pasos_mbr:
+            c.execute(
+                """INSERT INTO ebr_pasos_ejecutados
+                     (ebr_id, mbr_paso_id, orden, descripcion, tipo_paso,
+                      equipo_requerido, requiere_e_sign, requiere_qc, estado)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pendiente')""",
+                (ebr_id, p[0], p[1], p[2], p[3], p[4], p[5], p[6]),
+            )
+
+        log.info('BRD auto-EBR creado · evento=%s ebr=%s lote=%s pasos=%d',
+                  evento_id, ebr_id, lote, len(pasos_mbr))
+        return {'ok': True, 'ebr_id': ebr_id, 'lote': lote,
+                 'pasos_clonados': len(pasos_mbr),
+                 'mbr_version': mbr[1]}
+
+    except Exception as e:
+        log.warning('BRD auto-EBR falló (NO bloquea inicio) · evento=%s err=%s',
+                     evento_id, e)
+        return {'ok': False, 'razon': f'excepción: {str(e)[:200]}',
+                 'producto': producto}
 
 
 @bp.route('/api/programacion/programar/<int:evento_id>/terminar', methods=['POST'])
