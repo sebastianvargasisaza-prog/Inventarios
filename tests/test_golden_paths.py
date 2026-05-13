@@ -5180,3 +5180,118 @@ def test_golden_brd_ebr_workflow_completo(app, db_clean):
     cs.patch('/api/identidad/sebastian',
              json={'cedula': '', 'nombre_completo': ''},
              headers=csrf_headers())
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 58 · IPCs · specs + resultados + bloqueo OOS (Fase 1 F5)
+# ═══════════════════════════════════════════════════════════════════
+def test_golden_brd_ipcs_workflow_completo(app, db_clean):
+    """spec en MBR draft → medición conforme aprueba EBR · OOS bloquea."""
+    cs = _login(app, 'sebastian')
+    cs.patch('/api/identidad/sebastian',
+             json={'cedula': '66666666', 'nombre_completo': 'Test IPC'},
+             headers=csrf_headers())
+
+    # Setup: crear MBR draft con 1 paso
+    r1 = cs.post('/api/brd/mbr', json={
+        'producto_nombre': 'Test IPC Producto',
+        'lote_size_g': 100.0,
+    }, headers=csrf_headers())
+    mbr_id = r1.get_json()['id']
+    cs.post(f'/api/brd/mbr/{mbr_id}/pasos',
+            json={'descripcion': 'Mezclar', 'tipo_paso': 'mezclado'},
+            headers=csrf_headers())
+
+    # Caso 1: agregar 2 IPC specs (pH 5-7 obligatorio + apariencia opcional)
+    rs1 = cs.post(f'/api/brd/mbr/{mbr_id}/ipc-specs', json={
+        'parametro': 'pH', 'unidad': 'pH',
+        'valor_min': 5.0, 'valor_max': 7.0,
+        'metodo': 'pHmetro Hanna', 'obligatorio': 1,
+    }, headers=csrf_headers())
+    assert rs1.status_code == 201
+    spec_ph = rs1.get_json()['id']
+    rs2 = cs.post(f'/api/brd/mbr/{mbr_id}/ipc-specs', json={
+        'parametro': 'apariencia', 'unidad': '-',
+        'metodo': 'visual', 'obligatorio': 0,
+    }, headers=csrf_headers())
+    assert rs2.status_code == 201
+
+    # Caso 2: listar specs
+    rl = cs.get(f'/api/brd/mbr/{mbr_id}/ipc-specs')
+    assert len(rl.get_json()['items']) == 2
+
+    # Caso 3: aprobar MBR
+    cs.post(f'/api/brd/mbr/{mbr_id}/submit', json={}, headers=csrf_headers())
+    sig_aprob = _firmar(cs, record_table='mbr_templates', record_id=mbr_id,
+                          meaning='aprueba')
+    cs.post(f'/api/brd/mbr/{mbr_id}/aprobar',
+            json={'signature_id': sig_aprob}, headers=csrf_headers())
+
+    # Caso 4: NO se pueden agregar specs en MBR aprobado (trigger SQL)
+    import sqlite3 as _sqlite3
+    err = None
+    try:
+        conn = _sqlite3.connect(os.environ['DB_PATH'], timeout=5.0)
+        try:
+            conn.execute(
+                "INSERT INTO ipc_specs (mbr_template_id, parametro) VALUES (?, ?)",
+                (mbr_id, 'hack'),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception as e:
+        err = str(e)
+    assert err and 'inmutable' in err.lower(), \
+        f'BUG: specs IPC de MBR aprobado deben ser inmutables · err={err}'
+
+    # Caso 5: iniciar EBR + completar el paso
+    re = cs.post('/api/brd/ebr', json={
+        'mbr_template_id': mbr_id, 'lote': 'TEST-IPC-001',
+    }, headers=csrf_headers())
+    ebr_id = re.get_json()['id']
+    cs.post(f'/api/brd/ebr/{ebr_id}/pasos/1/iniciar', json={}, headers=csrf_headers())
+    cs.post(f'/api/brd/ebr/{ebr_id}/pasos/1/completar',
+            json={'observaciones': 'OK'}, headers=csrf_headers())
+
+    # Caso 6: completar EBR sin reportar IPC obligatorio rechaza
+    rc = cs.post(f'/api/brd/ebr/{ebr_id}/completar',
+                 json={'cantidad_real_g': 95.0}, headers=csrf_headers())
+    assert rc.status_code == 409
+    assert 'pH' in str(rc.data)
+
+    # Caso 7: reportar pH dentro de spec
+    rr1 = cs.post(f'/api/brd/ebr/{ebr_id}/ipc-resultados', json={
+        'ipc_spec_id': spec_ph, 'valor_medido': 6.2,
+    }, headers=csrf_headers())
+    assert rr1.status_code == 201
+    assert rr1.get_json()['conforme'] == 1
+
+    # Caso 8: ahora completar EBR funciona
+    rc2 = cs.post(f'/api/brd/ebr/{ebr_id}/completar',
+                  json={'cantidad_real_g': 95.0}, headers=csrf_headers())
+    assert rc2.status_code == 200
+    assert rc2.get_json()['estado'] == 'completado'
+
+    # Caso 9: nuevo EBR · pH FUERA de spec (8.5 > 7.0) bloquea completar
+    re2 = cs.post('/api/brd/ebr', json={
+        'mbr_template_id': mbr_id, 'lote': 'TEST-IPC-002',
+    }, headers=csrf_headers())
+    ebr2 = re2.get_json()['id']
+    cs.post(f'/api/brd/ebr/{ebr2}/pasos/1/iniciar', json={}, headers=csrf_headers())
+    cs.post(f'/api/brd/ebr/{ebr2}/pasos/1/completar',
+            json={'observaciones': 'OK'}, headers=csrf_headers())
+    rr2 = cs.post(f'/api/brd/ebr/{ebr2}/ipc-resultados', json={
+        'ipc_spec_id': spec_ph, 'valor_medido': 8.5,
+    }, headers=csrf_headers())
+    assert rr2.status_code == 201
+    assert rr2.get_json()['conforme'] == 0
+    rc3 = cs.post(f'/api/brd/ebr/{ebr2}/completar',
+                  json={'cantidad_real_g': 95.0}, headers=csrf_headers())
+    assert rc3.status_code == 409
+    assert 'fuera de spec' in str(rc3.data).lower() or 'pH' in str(rc3.data)
+
+    # Cleanup
+    cs.patch('/api/identidad/sebastian',
+             json={'cedula': '', 'nombre_completo': ''},
+             headers=csrf_headers())

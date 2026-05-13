@@ -810,6 +810,45 @@ def completar_ebr(ebr_id):
     if pendientes:
         return jsonify({"error": f"hay {pendientes} paso(s) sin completar"}), 409
 
+    # IPCs obligatorios deben estar reportados Y conformes (Part 11 + GMP).
+    # mbr_template_id viene de ebr_ejecuciones · re-leemos para no asumir.
+    ebr_full = cur.execute(
+        "SELECT mbr_template_id FROM ebr_ejecuciones WHERE id = ?", (ebr_id,)
+    ).fetchone()
+    ipcs_faltantes = cur.execute(
+        """SELECT s.parametro
+           FROM ipc_specs s
+           LEFT JOIN ipc_resultados r
+             ON r.ipc_spec_id = s.id AND r.ebr_id = ?
+           WHERE s.mbr_template_id = ?
+             AND s.obligatorio = 1
+             AND r.id IS NULL""",
+        (ebr_id, ebr_full["mbr_template_id"]),
+    ).fetchall()
+    if ipcs_faltantes:
+        return jsonify({
+            "error": "IPCs obligatorios sin reportar",
+            "parametros": [r["parametro"] for r in ipcs_faltantes],
+        }), 409
+    ipcs_no_conformes = cur.execute(
+        """SELECT s.parametro, r.valor_medido, s.valor_min, s.valor_max
+           FROM ipc_resultados r
+           JOIN ipc_specs s ON s.id = r.ipc_spec_id
+           WHERE r.ebr_id = ?
+             AND s.obligatorio = 1
+             AND r.conforme = 0""",
+        (ebr_id,),
+    ).fetchall()
+    if ipcs_no_conformes:
+        return jsonify({
+            "error": "IPCs obligatorios fuera de spec · debe haber desviación previa",
+            "parametros": [{
+                "parametro": r["parametro"],
+                "medido": r["valor_medido"],
+                "min": r["valor_min"], "max": r["valor_max"],
+            } for r in ipcs_no_conformes],
+        }), 409
+
     yield_pct = round((cantidad_real / ebr["cantidad_objetivo_g"]) * 100, 2) if ebr["cantidad_objetivo_g"] else None
     user = session.get("compras_user", "")
     cur.execute(
@@ -915,3 +954,231 @@ def rechazar_ebr(ebr_id):
               tabla="ebr_ejecuciones", registro_id=ebr_id,
               despues={"motivo": motivo, "signature_id": signature_id})
     return jsonify({"ok": True, "estado": "rechazado"})
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# IPCs · In-Process Controls (specs en MBR + resultados en EBR)
+# ════════════════════════════════════════════════════════════════════════════
+# specs: pH, viscosidad, T°, apariencia, etc. con rangos de aceptación.
+# resultados: medición real durante la ejecución del lote.
+# Si un spec obligatorio queda sin medir o NO conforme, el endpoint
+# /api/brd/ebr/<id>/completar (lo veremos abajo en la ampliación) bloquea.
+
+def _spec_to_dict(row):
+    return {
+        "id": row["id"],
+        "mbr_template_id": row["mbr_template_id"],
+        "mbr_paso_id": row["mbr_paso_id"],
+        "parametro": row["parametro"],
+        "unidad": row["unidad"] or "",
+        "valor_min": row["valor_min"],
+        "valor_max": row["valor_max"],
+        "metodo": row["metodo"] or "",
+        "obligatorio": int(row["obligatorio"] or 0),
+        "notas": row["notas"] or "",
+    }
+
+
+def _resultado_to_dict(row):
+    return {
+        "id": row["id"],
+        "ebr_id": row["ebr_id"],
+        "ipc_spec_id": row["ipc_spec_id"],
+        "valor_medido": row["valor_medido"],
+        "valor_texto": row["valor_texto"] or "",
+        "conforme": row["conforme"],
+        "medido_por": row["medido_por"],
+        "medido_at_utc": row["medido_at_utc"],
+        "qc_username": row["qc_username"] or "",
+        "qc_e_sign_id": row["qc_e_sign_id"],
+        "notas": row["notas"] or "",
+    }
+
+
+# ── /api/brd/mbr/<id>/ipc-specs · CRUD specs (solo en draft) ──────────────
+
+@bp.route("/api/brd/mbr/<int:mbr_id>/ipc-specs", methods=["GET"])
+def listar_ipc_specs(mbr_id):
+    err = _require_login()
+    if err:
+        return err
+    rows = get_db().execute(
+        """SELECT id, mbr_template_id, mbr_paso_id, parametro, unidad,
+                  valor_min, valor_max, metodo, obligatorio, notas
+           FROM ipc_specs WHERE mbr_template_id = ? ORDER BY id""",
+        (mbr_id,),
+    ).fetchall()
+    return jsonify({"items": [_spec_to_dict(r) for r in rows]})
+
+
+@bp.route("/api/brd/mbr/<int:mbr_id>/ipc-specs", methods=["POST"])
+def crear_ipc_spec(mbr_id):
+    err = _require_login()
+    if err:
+        return err
+    conn = get_db()
+    cur = conn.cursor()
+    tpl = cur.execute("SELECT estado FROM mbr_templates WHERE id = ?", (mbr_id,)).fetchone()
+    if not tpl:
+        return jsonify({"error": "MBR no encontrado"}), 404
+    if tpl["estado"] != "draft":
+        return jsonify({"error": "solo se agregan specs IPC en MBR draft"}), 409
+
+    body = request.get_json(silent=True) or {}
+    parametro = (body.get("parametro") or "").strip()
+    if not parametro:
+        return jsonify({"error": "parametro requerido"}), 400
+
+    def _f(v):
+        try:
+            return float(v) if v is not None and v != "" else None
+        except (ValueError, TypeError):
+            return None
+
+    cur.execute(
+        """INSERT INTO ipc_specs
+             (mbr_template_id, mbr_paso_id, parametro, unidad,
+              valor_min, valor_max, metodo, obligatorio, notas)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (mbr_id,
+         body.get("mbr_paso_id"),
+         parametro,
+         (body.get("unidad") or "").strip(),
+         _f(body.get("valor_min")),
+         _f(body.get("valor_max")),
+         (body.get("metodo") or "").strip(),
+         1 if body.get("obligatorio", 1) else 0,
+         (body.get("notas") or "").strip()),
+    )
+    spec_id = cur.lastrowid
+    conn.commit()
+    return jsonify({"ok": True, "id": spec_id}), 201
+
+
+@bp.route("/api/brd/mbr/<int:mbr_id>/ipc-specs/<int:spec_id>", methods=["DELETE"])
+def borrar_ipc_spec(mbr_id, spec_id):
+    err = _require_login()
+    if err:
+        return err
+    conn = get_db()
+    cur = conn.cursor()
+    tpl = cur.execute("SELECT estado FROM mbr_templates WHERE id = ?", (mbr_id,)).fetchone()
+    if not tpl:
+        return jsonify({"error": "MBR no encontrado"}), 404
+    if tpl["estado"] != "draft":
+        return jsonify({"error": "solo se borran specs en MBR draft"}), 409
+    cur.execute(
+        "DELETE FROM ipc_specs WHERE id = ? AND mbr_template_id = ?",
+        (spec_id, mbr_id),
+    )
+    if cur.rowcount == 0:
+        return jsonify({"error": "spec no encontrado"}), 404
+    conn.commit()
+    return jsonify({"ok": True})
+
+
+# ── /api/brd/ebr/<id>/ipc-resultados · reportar mediciones ────────────────
+
+@bp.route("/api/brd/ebr/<int:ebr_id>/ipc-resultados", methods=["GET"])
+def listar_ipc_resultados(ebr_id):
+    err = _require_login()
+    if err:
+        return err
+    # JOIN con specs para devolver detalle del parámetro
+    rows = get_db().execute(
+        """SELECT r.*, s.parametro AS spec_parametro, s.unidad AS spec_unidad,
+                  s.valor_min AS spec_min, s.valor_max AS spec_max,
+                  s.obligatorio AS spec_obligatorio
+           FROM ipc_resultados r
+           JOIN ipc_specs s ON s.id = r.ipc_spec_id
+           WHERE r.ebr_id = ?
+           ORDER BY r.medido_at_utc""",
+        (ebr_id,),
+    ).fetchall()
+    items = []
+    for r in rows:
+        d = _resultado_to_dict(r)
+        d["spec"] = {
+            "parametro": r["spec_parametro"],
+            "unidad": r["spec_unidad"] or "",
+            "valor_min": r["spec_min"],
+            "valor_max": r["spec_max"],
+            "obligatorio": int(r["spec_obligatorio"] or 0),
+        }
+        items.append(d)
+    return jsonify({"items": items})
+
+
+@bp.route("/api/brd/ebr/<int:ebr_id>/ipc-resultados", methods=["POST"])
+def reportar_ipc_resultado(ebr_id):
+    """Operario reporta medición de un IPC. Calcula conforme automáticamente
+    si hay rango numérico; para parámetros cualitativos QC debe firmar después."""
+    err = _require_login()
+    if err:
+        return err
+    body = request.get_json(silent=True) or {}
+    spec_id = body.get("ipc_spec_id")
+    if not spec_id:
+        return jsonify({"error": "ipc_spec_id requerido"}), 400
+
+    conn = get_db()
+    cur = conn.cursor()
+    ebr = cur.execute(
+        "SELECT estado, mbr_template_id FROM ebr_ejecuciones WHERE id = ?",
+        (ebr_id,),
+    ).fetchone()
+    if not ebr:
+        return jsonify({"error": "EBR no encontrado"}), 404
+    if ebr["estado"] not in ("iniciado", "en_proceso"):
+        return jsonify({"error": f"EBR no editable (estado: {ebr['estado']})"}), 409
+
+    spec = cur.execute(
+        "SELECT * FROM ipc_specs WHERE id = ? AND mbr_template_id = ?",
+        (int(spec_id), ebr["mbr_template_id"]),
+    ).fetchone()
+    if not spec:
+        return jsonify({"error": "spec no pertenece al MBR del EBR"}), 400
+
+    # Validar valor_medido vs rango si aplica
+    valor = body.get("valor_medido")
+    valor_texto = (body.get("valor_texto") or "").strip()
+    try:
+        valor_f = float(valor) if valor is not None and valor != "" else None
+    except (ValueError, TypeError):
+        return jsonify({"error": "valor_medido inválido"}), 400
+
+    if spec["valor_min"] is not None or spec["valor_max"] is not None:
+        if valor_f is None:
+            return jsonify({"error": "valor_medido requerido (spec numérico)"}), 400
+        conforme = 1
+        if spec["valor_min"] is not None and valor_f < float(spec["valor_min"]):
+            conforme = 0
+        if spec["valor_max"] is not None and valor_f > float(spec["valor_max"]):
+            conforme = 0
+    else:
+        # Cualitativo: pendiente de validación QC (NULL hasta que firme)
+        conforme = body.get("conforme")
+        if conforme is not None:
+            conforme = 1 if conforme else 0
+
+    user = session.get("compras_user", "")
+    try:
+        cur.execute(
+            """INSERT INTO ipc_resultados
+                 (ebr_id, ipc_spec_id, valor_medido, valor_texto, conforme,
+                  medido_por, medido_at_utc, notas)
+               VALUES (?, ?, ?, ?, ?, ?, datetime('now', 'utc'), ?)""",
+            (ebr_id, int(spec_id), valor_f, valor_texto, conforme,
+             user, (body.get("notas") or "").strip()),
+        )
+    except Exception as e:
+        if "UNIQUE" in str(e):
+            return jsonify({"error": "ya existe resultado para este spec en este EBR"}), 409
+        raise
+    rid = cur.lastrowid
+    conn.commit()
+    audit_log(cur, usuario=user, accion="REPORTAR_IPC",
+              tabla="ipc_resultados", registro_id=rid,
+              despues={"ebr_id": ebr_id, "spec_id": spec_id,
+                        "valor": valor_f, "conforme": conforme})
+    return jsonify({"ok": True, "id": rid, "conforme": conforme}), 201

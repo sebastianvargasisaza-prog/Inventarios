@@ -222,6 +222,94 @@ _AREAS_LIMPIEZA_PROFUNDA = (
 
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (112, "IPCs · In-Process Controls · specs (MBR) + resultados (EBR) · Fase 1 BRD · Sebastián 12-may-2026", [
+        # ipc_specs: parámetros de control (pH, viscosidad, T°, apariencia, etc.)
+        # asociados a un MBR. Pueden estar atados a un paso específico o ser
+        # globales del MBR (mbr_paso_id NULL = aplica al cierre, no a un paso).
+        # valor_min y valor_max son rangos de aceptación. Si min y max son NULL,
+        # el parámetro es cualitativo (se mide vía valor_texto).
+        # obligatorio=1: si no se reporta o NO conforme, bloquea completar EBR.
+        """CREATE TABLE IF NOT EXISTS ipc_specs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            mbr_template_id INTEGER NOT NULL,
+            mbr_paso_id INTEGER DEFAULT NULL,
+            parametro TEXT NOT NULL,
+            unidad TEXT NOT NULL DEFAULT '',
+            valor_min REAL DEFAULT NULL,
+            valor_max REAL DEFAULT NULL,
+            metodo TEXT DEFAULT '',
+            obligatorio INTEGER DEFAULT 1,
+            notas TEXT DEFAULT '',
+            FOREIGN KEY (mbr_template_id) REFERENCES mbr_templates(id) ON DELETE CASCADE
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_ipcspec_mbr ON ipc_specs(mbr_template_id, parametro)",
+        # Inmutabilidad: especs son editables solo mientras el MBR está en draft.
+        # Si el MBR está aprobado, NO se permite UPDATE/DELETE/INSERT de specs.
+        """CREATE TRIGGER IF NOT EXISTS trg_ipcspec_no_edit_aprobado
+           BEFORE UPDATE ON ipc_specs
+           FOR EACH ROW
+           WHEN EXISTS (SELECT 1 FROM mbr_templates
+                        WHERE id = NEW.mbr_template_id AND estado IN ('aprobado','obsoleto'))
+           BEGIN
+               SELECT RAISE(ABORT, 'IPC specs de MBR aprobado son inmutables');
+           END""",
+        """CREATE TRIGGER IF NOT EXISTS trg_ipcspec_no_delete_aprobado
+           BEFORE DELETE ON ipc_specs
+           FOR EACH ROW
+           WHEN EXISTS (SELECT 1 FROM mbr_templates
+                        WHERE id = OLD.mbr_template_id AND estado IN ('aprobado','obsoleto'))
+           BEGIN
+               SELECT RAISE(ABORT, 'IPC specs de MBR aprobado son inmutables · DELETE prohibido');
+           END""",
+        """CREATE TRIGGER IF NOT EXISTS trg_ipcspec_no_insert_aprobado
+           BEFORE INSERT ON ipc_specs
+           FOR EACH ROW
+           WHEN EXISTS (SELECT 1 FROM mbr_templates
+                        WHERE id = NEW.mbr_template_id AND estado IN ('aprobado','obsoleto'))
+           BEGIN
+               SELECT RAISE(ABORT, 'IPC specs de MBR aprobado son inmutables · INSERT prohibido');
+           END""",
+
+        # ipc_resultados: medición concreta en un EBR. conforme se calcula
+        # en el endpoint si hay rango numérico, o lo setea QC si es cualitativo.
+        # qc_e_sign_id es para mediciones que requieren validación QC explícita.
+        """CREATE TABLE IF NOT EXISTS ipc_resultados (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ebr_id INTEGER NOT NULL,
+            ipc_spec_id INTEGER NOT NULL,
+            valor_medido REAL DEFAULT NULL,
+            valor_texto TEXT DEFAULT '',
+            conforme INTEGER DEFAULT NULL,
+            medido_por TEXT NOT NULL,
+            medido_at_utc TEXT NOT NULL,
+            qc_username TEXT DEFAULT '',
+            qc_e_sign_id INTEGER DEFAULT NULL,
+            notas TEXT DEFAULT '',
+            FOREIGN KEY (ebr_id) REFERENCES ebr_ejecuciones(id) ON DELETE CASCADE,
+            FOREIGN KEY (ipc_spec_id) REFERENCES ipc_specs(id),
+            UNIQUE(ebr_id, ipc_spec_id)
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_ipcres_ebr ON ipc_resultados(ebr_id, ipc_spec_id)",
+        "CREATE INDEX IF NOT EXISTS idx_ipcres_conforme ON ipc_resultados(conforme, ebr_id)",
+
+        # Inmutabilidad post-liberación del EBR (espejo de la lógica EBR).
+        """CREATE TRIGGER IF NOT EXISTS trg_ipcres_no_edit_liberado
+           BEFORE UPDATE ON ipc_resultados
+           FOR EACH ROW
+           WHEN EXISTS (SELECT 1 FROM ebr_ejecuciones
+                        WHERE id = NEW.ebr_id AND estado IN ('liberado','rechazado'))
+           BEGIN
+               SELECT RAISE(ABORT, 'IPC resultados de EBR liberado/rechazado son inmutables');
+           END""",
+        """CREATE TRIGGER IF NOT EXISTS trg_ipcres_no_delete_liberado
+           BEFORE DELETE ON ipc_resultados
+           FOR EACH ROW
+           WHEN EXISTS (SELECT 1 FROM ebr_ejecuciones
+                        WHERE id = OLD.ebr_id AND estado IN ('liberado','rechazado'))
+           BEGIN
+               SELECT RAISE(ABORT, 'IPC resultados de EBR liberado/rechazado son inmutables');
+           END""",
+    ]),
     (111, "EBR (Executed Batch Record) · ejecución de lote real · Fase 1 BRD · Sebastián 12-may-2026", [
         # EBR = instancia ejecutada de un MBR aprobado para UN lote real.
         # Workflow:
