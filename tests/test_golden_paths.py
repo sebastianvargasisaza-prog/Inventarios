@@ -5493,6 +5493,11 @@ def test_golden_brd_dashboard_ui_responde(app, db_clean):
     assert "openSignModal" in body, 'BUG: modal de firma ausente'
     assert "aprobarMbr" in body, 'BUG: acción aprobar MBR ausente'
     assert "liberarEbr" in body, 'BUG: acción liberar EBR ausente'
+    # B1.2/B1.3: ejecución pasos + reportes
+    assert "iniciarPasoEbr" in body, 'BUG: acción iniciar paso ausente'
+    assert "completarPasoEbrConFirma" in body, 'BUG: completar paso con firma ausente'
+    assert "reportarIpc" in body, 'BUG: reportar IPC ausente'
+    assert "reportarPesaje" in body, 'BUG: reportar pesaje ausente'
     # CSRF defense-in-depth
     assert "X-CSRF-Token" in body
     # No autorizado sin login

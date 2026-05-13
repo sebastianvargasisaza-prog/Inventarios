@@ -418,16 +418,72 @@ async function showEbrDetail(id){
     + '</div>';
   if (d.pasos && d.pasos.length) {
     html += '<div class="card"><div class="card-title">Pasos ejecutados (' + d.pasos.length + ')</div>';
+    const ebrEditable = ['iniciado','en_proceso'].includes(d.estado);
     d.pasos.forEach(function(p){
+      // Acciones del paso según estado y flags requiere_*
+      let pasoActions = '';
+      if (ebrEditable) {
+        if (p.estado === 'pendiente') {
+          pasoActions = '<button class="btn btn-primary btn-sm" onclick="iniciarPasoEbr(' + id + ',' + p.orden + ')">Iniciar</button>';
+        } else if (p.estado === 'en_proceso') {
+          if (p.requiere_e_sign) {
+            pasoActions = '<button class="btn btn-success btn-sm" onclick="completarPasoEbrConFirma(' + id + ',' + p.orden + ',' + p.id + ',' + p.requiere_qc + ')">Firmar y completar</button>';
+          } else {
+            pasoActions = '<button class="btn btn-success btn-sm" onclick="completarPasoEbrSimple(' + id + ',' + p.orden + ')">Completar</button>';
+          }
+        }
+      }
       html += '<div class="paso-card ' + p.estado + '"><strong>Paso ' + p.orden + '</strong> · <span class="estado estado-' + p.estado + '">' + p.estado + '</span>'
+        + (p.requiere_e_sign ? ' <span class="estado estado-en_revision">e-sign</span>' : '')
+        + (p.requiere_qc ? ' <span class="estado estado-en_revision">QC</span>' : '')
         + '<br>' + escapeHtml(p.descripcion)
         + (p.operario_username ? '<br><span class="muted">Operario: ' + escapeHtml(p.operario_username) + (p.completado_at_utc ? ' · ' + fmtDate(p.completado_at_utc) : '') + '</span>' : '')
         + (p.observaciones ? '<br><em class="muted">"' + escapeHtml(p.observaciones) + '"</em>' : '')
         + (p.e_sign_id ? ' · <span class="muted">e-sign #' + p.e_sign_id + '</span>' : '')
+        + (pasoActions ? '<div class="action-bar" style="margin-top:6px">' + pasoActions + '</div>' : '')
         + '</div>';
     });
+    // Acción global: completar EBR si todos los pasos están completados
+    const allCompletados = d.pasos.every(function(p){ return p.estado === 'completado' || p.estado === 'omitido'; });
+    if (ebrEditable && allCompletados && d.pasos.length > 0) {
+      html += '<div class="action-bar" style="margin-top:10px"><button class="btn btn-primary btn-sm" onclick="completarEbr(' + id + ')">Completar EBR (reportar cantidad real)</button></div>';
+    }
     html += '</div>';
   }
+  // Mostrar IPCs pendientes (specs sin resultado todavía) + acciones
+  const ebrEditable2 = ['iniciado','en_proceso'].includes(d.estado);
+  if (ebrEditable2) {
+    try {
+      const sr = await fetch('/api/brd/mbr/' + d.mbr_template_id + '/ipc-specs').then(r=>r.json());
+      const yaReportados = new Set((ipc.items || []).map(x => x.ipc_spec_id));
+      const pendientes = (sr.items || []).filter(s => !yaReportados.has(s.id));
+      if (pendientes.length) {
+        html += '<div class="card"><div class="card-title">IPCs pendientes (' + pendientes.length + ')</div>';
+        pendientes.forEach(function(s){
+          const rango = (s.valor_min !== null || s.valor_max !== null) ? (s.valor_min + ' – ' + s.valor_max + ' ' + s.unidad) : 'cualitativo';
+          html += '<div class="paso-card"><strong>' + escapeHtml(s.parametro) + '</strong> · <span class="muted">rango: ' + escapeHtml(rango) + '</span>'
+            + (s.obligatorio ? ' <span class="estado estado-en_revision">obligatorio</span>' : '')
+            + '<div class="action-bar" style="margin-top:6px"><button class="btn btn-primary btn-sm" onclick="reportarIpc(' + id + ',' + s.id + ',\'' + escapeHtml(s.parametro) + '\',' + (s.valor_min===null?'null':s.valor_min) + ',' + (s.valor_max===null?'null':s.valor_max) + ',\'' + escapeHtml(s.unidad||'') + '\')">Reportar medición</button></div>'
+            + '</div>';
+        });
+        html += '</div>';
+      }
+
+      // Pesajes faltantes (MPs de la fórmula que aún no se pesaron)
+      const recRes = rec || {};
+      if (recRes.no_pesados && recRes.no_pesados.length) {
+        html += '<div class="card"><div class="card-title">Pesajes pendientes (' + recRes.no_pesados.length + ' MPs)</div>'
+          + '<table><thead><tr><th>MP</th><th>Teórico (g)</th><th></th></tr></thead><tbody>';
+        recRes.no_pesados.forEach(function(mp){
+          html += '<tr><td>' + escapeHtml(mp.material_id) + ' · ' + escapeHtml(mp.material_nombre || '') + '</td>'
+            + '<td>' + mp.cantidad_teorica_g.toFixed(2) + '</td>'
+            + '<td><button class="btn btn-primary btn-sm" onclick="reportarPesaje(' + id + ',\'' + escapeHtml(mp.material_id) + '\',\'' + escapeHtml(mp.material_nombre||'') + '\',' + mp.cantidad_teorica_g + ')">Reportar</button></td></tr>';
+        });
+        html += '</tbody></table></div>';
+      }
+    } catch(e) { /* ignorar errores de listados auxiliares */ }
+  }
+
   if (ipc.items && ipc.items.length) {
     html += '<div class="card"><div class="card-title">In-Process Controls (' + ipc.items.length + ')</div>'
       + '<table><thead><tr><th>Parámetro</th><th>Medido</th><th>Rango</th><th>Conforme</th><th>Por</th></tr></thead><tbody>';
@@ -519,6 +575,116 @@ function rechazarEbr(id) {
       loadEbrs();
     },
   });
+}
+
+// ── Acciones de pasos EBR (B1.2) ──
+async function iniciarPasoEbr(ebrId, orden) {
+  const r = await fetch('/api/brd/ebr/' + ebrId + '/pasos/' + orden + '/iniciar', _fetchOpts('POST', {}));
+  const d = await r.json();
+  if (!r.ok) { alert('Error iniciar paso: ' + (d.error||r.status)); return; }
+  showEbrDetail(ebrId);
+}
+
+async function completarPasoEbrSimple(ebrId, orden) {
+  const obs = prompt('Observaciones del paso (opcional):', '') || '';
+  const r = await fetch('/api/brd/ebr/' + ebrId + '/pasos/' + orden + '/completar',
+    _fetchOpts('POST', {observaciones: obs}));
+  const d = await r.json();
+  if (!r.ok) { alert('Error completar paso: ' + (d.error||r.status)); return; }
+  showEbrDetail(ebrId);
+}
+
+function completarPasoEbrConFirma(ebrId, orden, pasoId, requiereQc) {
+  // Primero pedir e-sign del operario (meaning='ejecuta' sobre ebr_pasos_ejecutados)
+  const obs = prompt('Observaciones del paso (queda en audit):', '') || '';
+  openSignModal({
+    title: 'Firmar y completar paso ' + orden,
+    meaning: 'ejecuta',
+    recordTable: 'ebr_pasos_ejecutados',
+    recordId: pasoId,
+    onSigned: async function(opSigId) {
+      const body = {observaciones: obs, signature_id: opSigId};
+      // Si requiere QC, pedir segunda firma con meaning='supervisa'
+      if (requiereQc) {
+        // Cierra el modal anterior y abre el de QC
+        openSignModal({
+          title: 'Firma QC para paso ' + orden,
+          meaning: 'supervisa',
+          recordTable: 'ebr_pasos_ejecutados',
+          recordId: pasoId,
+          onSigned: async function(qcSigId) {
+            body.qc_signature_id = qcSigId;
+            const r = await fetch('/api/brd/ebr/' + ebrId + '/pasos/' + orden + '/completar', _fetchOpts('POST', body));
+            const d = await r.json();
+            if (!r.ok) { alert('Error completar paso: ' + (d.error||r.status)); return; }
+            showEbrDetail(ebrId);
+          },
+        });
+        return;
+      }
+      const r = await fetch('/api/brd/ebr/' + ebrId + '/pasos/' + orden + '/completar', _fetchOpts('POST', body));
+      const d = await r.json();
+      if (!r.ok) { alert('Error completar paso: ' + (d.error||r.status)); return; }
+      showEbrDetail(ebrId);
+    },
+  });
+}
+
+// ── Reportar IPC y pesaje (B1.3) ──
+async function reportarIpc(ebrId, specId, parametro, vmin, vmax, unidad) {
+  const tieneRango = (vmin !== null && vmin !== undefined) || (vmax !== null && vmax !== undefined);
+  let valorRaw;
+  if (tieneRango) {
+    valorRaw = prompt('Reportar ' + parametro + ' (' + unidad + ') · rango: ' + vmin + ' – ' + vmax + ':', '');
+    if (!valorRaw) return;
+    const v = parseFloat(valorRaw);
+    if (isNaN(v)) { alert('Valor inválido'); return; }
+    const r = await fetch('/api/brd/ebr/' + ebrId + '/ipc-resultados',
+      _fetchOpts('POST', {ipc_spec_id: specId, valor_medido: v}));
+    const d = await r.json();
+    if (!r.ok) { alert('Error: ' + (d.error||r.status)); return; }
+    if (d.conforme === 0) {
+      alert('IPC fuera de spec · medido ' + v + ' fuera de [' + vmin + ',' + vmax + ']. Documentar desviación.');
+    }
+  } else {
+    valorRaw = prompt('Reportar ' + parametro + ' (cualitativo · ej. "conforme/no conforme/turbio/etc"):', '');
+    if (!valorRaw) return;
+    const r = await fetch('/api/brd/ebr/' + ebrId + '/ipc-resultados',
+      _fetchOpts('POST', {ipc_spec_id: specId, valor_texto: valorRaw}));
+    const d = await r.json();
+    if (!r.ok) { alert('Error: ' + (d.error||r.status)); return; }
+  }
+  showEbrDetail(ebrId);
+}
+
+async function reportarPesaje(ebrId, materialId, materialNombre, teorico) {
+  const realRaw = prompt('Pesaje real de ' + materialNombre + ' (' + materialId + ') · teórico: ' + teorico.toFixed(2) + ' g:', teorico.toFixed(2));
+  if (!realRaw) return;
+  const real = parseFloat(realRaw);
+  if (isNaN(real) || real < 0) { alert('Valor inválido'); return; }
+  const lote = prompt('Lote del MP (opcional · ej. ' + materialId + '-2026-001):', '') || '';
+  const r = await fetch('/api/brd/ebr/' + ebrId + '/pesajes',
+    _fetchOpts('POST', {material_id: materialId, cantidad_real_g: real, lote_mp: lote}));
+  const d = await r.json();
+  if (!r.ok) { alert('Error pesaje: ' + (d.error||r.status)); return; }
+  if (Math.abs(d.delta_pct) > 5) {
+    alert('Outlier: delta ' + d.delta_pct.toFixed(1) + '% · documentar desviación si aplica.');
+  }
+  showEbrDetail(ebrId);
+}
+
+async function completarEbr(ebrId) {
+  const cant = prompt('Cantidad real producida (g) · calcula yield:', '');
+  if (!cant) return;
+  const cantF = parseFloat(cant);
+  if (isNaN(cantF) || cantF <= 0) { alert('Cantidad inválida'); return; }
+  const r = await fetch('/api/brd/ebr/' + ebrId + '/completar',
+    _fetchOpts('POST', {cantidad_real_g: cantF}));
+  const d = await r.json();
+  if (!r.ok) { alert('Error completar EBR: ' + (d.error||r.status)); return; }
+  alert('EBR completado · yield: ' + (d.yield_pct || '-') + '% · listo para liberación QC');
+  showEbrDetail(ebrId);
+  loadEbrs();
 }
 
 // ── Cleaning list ──
