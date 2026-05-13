@@ -6399,10 +6399,13 @@ def test_golden_codigo_pt_formula_headers_unique_parcial(app, db_clean):
         f'BUG: índice parcial debería permitir varios NULL · hay {cuantos_null}'
 
     # Caso 2: asignar codigo_pt a 1 producto funciona
+    # IMPORTANTE: tomamos un producto con codigo_pt=NULL para NO pisar
+    # los seeds de mig 118 (SAH, TRX, PHA, AZH). Si tomamos uno seeded
+    # y no restauramos su valor, GPs siguientes fallan.
     producto_test = _query(
-        "SELECT producto_nombre FROM formula_headers LIMIT 1",
+        "SELECT producto_nombre FROM formula_headers WHERE codigo_pt IS NULL LIMIT 1",
     )
-    assert producto_test, 'precondición: debe existir al menos 1 producto'
+    assert producto_test, 'precondición: debe existir al menos 1 producto con codigo_pt NULL'
     p1 = producto_test[0][0]
     _exec("UPDATE formula_headers SET codigo_pt='TEST_PT_X1' WHERE producto_nombre=?",
           (p1,))
@@ -6413,8 +6416,10 @@ def test_golden_codigo_pt_formula_headers_unique_parcial(app, db_clean):
 
     # Caso 3: duplicar codigo_pt en otro producto bloquea (UNIQUE índice parcial)
     # (conn manual con try/finally para evitar leak en exception path)
+    # Tomamos OTRO producto NULL (no pisamos los seeds).
     p2_row = _query(
-        "SELECT producto_nombre FROM formula_headers WHERE producto_nombre != ? LIMIT 1",
+        """SELECT producto_nombre FROM formula_headers
+           WHERE producto_nombre != ? AND codigo_pt IS NULL LIMIT 1""",
         (p1,),
     )
     assert p2_row, 'precondición: debe existir al menos 2 productos'
@@ -6712,3 +6717,78 @@ def test_golden_operario_mi_dia_filtra_por_asignacion(app, db_clean):
     # Cleanup
     _exec("DELETE FROM produccion_programada WHERE id = ?", (pp_a,))
     _exec("DELETE FROM produccion_programada WHERE id = ?", (pp_b,))
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH ANIMUS-A · activo + variants 10ml/15ml (mig 118)
+# ═══════════════════════════════════════════════════════════════════
+# Bug que cazaría: si la mig 118 no setea correctamente los hermanos,
+# el plan v3 no sumará los regalos 10ml en la demanda · Mayerlin no
+# producirá suficiente SAH/TRX para los 1200 regalos del lote.
+
+def test_golden_animus_productos_variants_seed(app, db_clean):
+    """Mig 118 · 4 productos inactivos · SAH/TRX/PHA tienen 10ml configurado
+    correctamente · AZ HIBRID CLEAR tiene flag 15ml."""
+    # Caso 1: 4 productos inactivos
+    inactivos = _query(
+        """SELECT producto_nombre FROM formula_headers
+           WHERE activo = 0
+             AND producto_nombre IN (
+               'SUERO DE RETINALDEHIDO 0.05%',
+               'Suero RETINAL +',
+               'SUERO ILUMINADOR AHA+AH.',
+               'EMULSION HIDRATANTE  B3+BHA'
+             )
+           ORDER BY producto_nombre""",
+    )
+    assert len(inactivos) == 4, \
+        f'BUG: esperaba 4 productos inactivos, obtuvo {len(inactivos)}: {inactivos}'
+
+    # Caso 2: SAH tiene 1200 regalo
+    sah = _query(
+        """SELECT codigo_pt, tiene_10ml, uds_10ml_por_lote, tipo_10ml
+           FROM formula_headers WHERE producto_nombre = 'SUERO HIDRATANTE AH 1.5%'""",
+    )
+    assert sah, 'precondición: SUERO HIDRATANTE AH 1.5% debe existir'
+    codigo, tiene, uds, tipo = sah[0]
+    assert codigo == 'SAH', f'BUG: codigo_pt SAH esperado, obtuvo {codigo}'
+    assert tiene == 1, f'BUG: tiene_10ml=1 esperado, obtuvo {tiene}'
+    assert uds == 1200, f'BUG: 1200 uds esperado, obtuvo {uds}'
+    assert tipo == 'regalo', f'BUG: tipo regalo esperado, obtuvo {tipo}'
+
+    # Caso 3: TRX tiene 1200 regalo
+    trx = _query(
+        """SELECT codigo_pt, uds_10ml_por_lote, tipo_10ml
+           FROM formula_headers WHERE producto_nombre = 'SUERO ILUMINADOR TRX'""",
+    )
+    assert trx and trx[0] == ('TRX', 1200, 'regalo'), \
+        f'BUG: TRX config incorrecta · {trx}'
+
+    # Caso 4: PHA tiene 200 venta
+    pha = _query(
+        """SELECT codigo_pt, uds_10ml_por_lote, tipo_10ml
+           FROM formula_headers WHERE producto_nombre = 'SUERO EXFOLIANTE NOVA PHA'""",
+    )
+    assert pha and pha[0] == ('PHA', 200, 'venta'), \
+        f'BUG: PHA config incorrecta · esperaba (PHA, 200, venta), obtuvo {pha}'
+
+    # Caso 5: AZ HIBRID CLEAR tiene flag 15ml
+    azh = _query(
+        """SELECT codigo_pt, tiene_15ml
+           FROM formula_headers WHERE producto_nombre = 'AZ HIBRID CLEAR'""",
+    )
+    assert azh and azh[0] == ('AZH', 1), \
+        f'BUG: AZH config incorrecta · {azh}'
+
+    # Caso 6: productos sin variant 10ml siguen en 0 (default)
+    sin_variant = _query(
+        """SELECT COUNT(*) FROM formula_headers
+           WHERE tiene_10ml = 1
+             AND producto_nombre NOT IN (
+               'SUERO HIDRATANTE AH 1.5%',
+               'SUERO ILUMINADOR TRX',
+               'SUERO EXFOLIANTE NOVA PHA'
+             )""",
+    )
+    assert sin_variant[0][0] == 0, \
+        f'BUG: hay productos con tiene_10ml=1 que no deberían · {sin_variant[0][0]}'

@@ -222,6 +222,60 @@ _AREAS_LIMPIEZA_PROFUNDA = (
 
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (118, "Activar productos Animus + presentaciones 10ml/15ml · Sebastián 13-may-2026", [
+        # Sebastián 13-may-2026: definimos el modelo de "productos hermanos"
+        # de Animus que comparten producción (mismo bulk genera presentación
+        # principal + 10ml regalo/venta + 15ml en algunos).
+        #
+        # Datos confirmados por Sebastián vía chat:
+        #   · SAH (Suero Hidratante AH 1.5%): 1200 uds 10ml regalo por lote
+        #   · TRX (Suero Iluminador TRX): 1200 uds 10ml regalo por lote
+        #   · PHA (Nova PHA): 200 uds 10ml de VENTA por lote
+        #   · AZ HIBRID CLEAR: presentación 15ml también (uds TBD)
+        #   · "renova" y "triactive" 15ml pendiente confirmar nombres BD
+        #
+        # Inactivos confirmados (no producir más):
+        #   · SUERO DE RETINALDEHIDO 0.05%
+        #   · Suero RETINAL +
+        #   · SUERO ILUMINADOR AHA+AH.
+        #   · EMULSION HIDRATANTE  B3+BHA (reemplazada por nueva)
+
+        # Columna activo · DEFAULT 1 · permite desactivar productos sin borrar
+        "ALTER TABLE formula_headers ADD COLUMN activo INTEGER NOT NULL DEFAULT 1",
+
+        # Columnas variants · 10ml y 15ml por lote bulk
+        # uds_*_por_lote = unidades que salen de cada producción del bulk
+        # tipo_10ml: 'regalo' (no vende, demanda fija por producción) o
+        #            'venta' (vende como SKU separado en Shopify)
+        "ALTER TABLE formula_headers ADD COLUMN tiene_10ml INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE formula_headers ADD COLUMN uds_10ml_por_lote INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE formula_headers ADD COLUMN tipo_10ml TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE formula_headers ADD COLUMN tiene_15ml INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE formula_headers ADD COLUMN uds_15ml_por_lote INTEGER NOT NULL DEFAULT 0",
+
+        # Marcar inactivos
+        """UPDATE formula_headers SET activo=0
+           WHERE producto_nombre IN (
+             'SUERO DE RETINALDEHIDO 0.05%',
+             'Suero RETINAL +',
+             'SUERO ILUMINADOR AHA+AH.',
+             'EMULSION HIDRATANTE  B3+BHA'
+           )""",
+
+        # Seed codigo_pt + variant info para productos confirmados
+        """UPDATE formula_headers
+           SET codigo_pt='SAH', tiene_10ml=1, uds_10ml_por_lote=1200, tipo_10ml='regalo'
+           WHERE producto_nombre='SUERO HIDRATANTE AH 1.5%'""",
+        """UPDATE formula_headers
+           SET codigo_pt='TRX', tiene_10ml=1, uds_10ml_por_lote=1200, tipo_10ml='regalo'
+           WHERE producto_nombre='SUERO ILUMINADOR TRX'""",
+        """UPDATE formula_headers
+           SET codigo_pt='PHA', tiene_10ml=1, uds_10ml_por_lote=200, tipo_10ml='venta'
+           WHERE producto_nombre='SUERO EXFOLIANTE NOVA PHA'""",
+        """UPDATE formula_headers
+           SET codigo_pt='AZH', tiene_15ml=1
+           WHERE producto_nombre='AZ HIBRID CLEAR'""",
+    ]),
     (117, "codigo_pt + numero_op + zona · MyBatch compat · Sebastián 13-may-2026", [
         # Pieza mínima de Bloque B2 del PLAN_VERTICAL_2026. Tres conceptos
         # que MyBatch (sistema legacy a reemplazar) usa y que necesitamos
