@@ -5496,6 +5496,48 @@ def test_golden_brd_dashboard_ui_responde(app, db_clean):
 
 
 # ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH SEED-ALL · mig 115 crea MBR draft para todos los productos
+# ═══════════════════════════════════════════════════════════════════
+def test_golden_brd_auto_seed_mbrs_desde_formula_headers(app, db_clean):
+    """Cada producto en formula_headers tiene un MBR draft auto-creado."""
+    cs = _login(app, 'sebastian')
+
+    # Listar todos los productos con fórmula
+    productos = _query("SELECT producto_nombre FROM formula_headers")
+    productos_set = {p[0] for p in productos}
+    if not productos_set:
+        # Si no hay fórmulas seedeadas en este entorno de test, no hay nada
+        # que verificar (la mig 115 es no-op).
+        return
+
+    # Listar MBRs auto-seedeados
+    rl = cs.get('/api/brd/mbr')
+    items = rl.get_json()['items']
+    mbrs_por_producto = {it['producto_nombre']: it for it in items}
+
+    faltantes = productos_set - set(mbrs_por_producto.keys())
+    assert not faltantes, \
+        f'BUG: mig 115 no creó MBR para {len(faltantes)} productos: {sorted(faltantes)[:5]}'
+
+    # Cada MBR auto-seed debe estar en draft con 3 pasos (excepto Blush Balm
+    # que tiene 7 por mig 110)
+    for prod_name, mbr in mbrs_por_producto.items():
+        if prod_name == 'Blush Balm':
+            continue
+        if mbr['creado_por'] != 'system-seed':
+            continue
+        d = cs.get(f"/api/brd/mbr/{mbr['id']}").get_json()
+        assert d['estado'] == 'draft'
+        assert len(d['pasos']) >= 3, \
+            f"BUG: MBR {prod_name} tiene {len(d['pasos'])} pasos (esperaba 3+)"
+        # Pasos típicos
+        fases = {p['fase'] for p in d['pasos']}
+        assert 'dispensacion' in fases
+        assert 'fabricacion' in fases
+        assert 'envasado' in fases
+
+
+# ═══════════════════════════════════════════════════════════════════
 # GOLDEN PATH 60 · PDF maestro auditable EBR (Fase 1 F8)
 # ═══════════════════════════════════════════════════════════════════
 def test_golden_brd_pdf_ebr_descargable(app, db_clean):

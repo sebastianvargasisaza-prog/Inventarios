@@ -222,6 +222,78 @@ _AREAS_LIMPIEZA_PROFUNDA = (
 
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (115, "MBR auto-seed · drafts para todos los productos en formula_headers · Sebastián 12-may-2026", [
+        # Para cada producto en formula_headers que TODAVÍA no tiene MBR,
+        # crear un MBR draft con 3 pasos genéricos (dispensación / fabricación
+        # / envasado). Calidad después ajusta los detalles específicos por
+        # producto antes de submit a revisión.
+        #
+        # Condición NOT EXISTS evita duplicar Blush Balm (ya creado por mig 110)
+        # y permite re-correr la migración después de agregar nuevos productos
+        # a formula_headers (idempotente).
+        """INSERT OR IGNORE INTO mbr_templates
+             (producto_nombre, version, estado, titulo, descripcion,
+              lote_size_g, tiempo_total_estimado_min, creado_por)
+           SELECT
+             fh.producto_nombre,
+             1,
+             'draft',
+             fh.producto_nombre || ' · MBR v1 (auto-seed)',
+             'Procedimiento auto-generado desde formula_headers. '
+              || 'PENDIENTE: Calidad debe ajustar pasos específicos antes '
+              || 'de submit a revisión. ' || COALESCE(fh.descripcion, ''),
+             COALESCE(fh.unidad_base_g, 1000.0),
+             270,
+             'system-seed'
+           FROM formula_headers fh
+           WHERE NOT EXISTS (
+             SELECT 1 FROM mbr_templates m
+             WHERE m.producto_nombre = fh.producto_nombre
+           )""",
+
+        # Paso 1: dispensación (con e-sign · pesaje crítico)
+        """INSERT INTO mbr_pasos
+             (mbr_template_id, orden, fase, descripcion, tipo_paso,
+              equipo_requerido, tiempo_estimado_min, requiere_e_sign,
+              requiere_qc, notas)
+           SELECT m.id, 1, 'dispensacion',
+                  'Pesar y dispensar las MPs según fórmula maestra',
+                  'dispensacion', 'BAL01,DISP', 60, 1, 0,
+                  'Verificar lote y vencimiento de cada MP. Mayerlin · dispensación.'
+           FROM mbr_templates m
+           WHERE m.creado_por = 'system-seed'
+             AND m.estado = 'draft'
+             AND NOT EXISTS (SELECT 1 FROM mbr_pasos p WHERE p.mbr_template_id = m.id)""",
+
+        # Paso 2: fabricación (genérico · Calidad detalla)
+        """INSERT INTO mbr_pasos
+             (mbr_template_id, orden, fase, descripcion, tipo_paso,
+              equipo_requerido, tiempo_estimado_min, requiere_e_sign,
+              requiere_qc, notas)
+           SELECT m.id, 2, 'fabricacion',
+                  'Fabricar el producto siguiendo procedimiento aprobado · '
+                  || 'PENDIENTE: Calidad debe completar parámetros específicos '
+                  || '(temperatura, tiempo de mezclado, secuencia de adición)',
+                  'mezclado', 'TQ01', 120, 0, 0, ''
+           FROM mbr_templates m
+           WHERE m.creado_por = 'system-seed'
+             AND m.estado = 'draft'
+             AND (SELECT COUNT(*) FROM mbr_pasos p WHERE p.mbr_template_id = m.id) = 1""",
+
+        # Paso 3: envasado (con QC firma)
+        """INSERT INTO mbr_pasos
+             (mbr_template_id, orden, fase, descripcion, tipo_paso,
+              equipo_requerido, tiempo_estimado_min, requiere_e_sign,
+              requiere_qc, notas)
+           SELECT m.id, 3, 'envasado',
+                  'Envasar producto y etiquetar · QC firma liberación',
+                  'envasado', 'ENV1', 90, 0, 1,
+                  'Verificar etiquetado, cierre, hermeticidad. QC inspección visual.'
+           FROM mbr_templates m
+           WHERE m.creado_por = 'system-seed'
+             AND m.estado = 'draft'
+             AND (SELECT COUNT(*) FROM mbr_pasos p WHERE p.mbr_template_id = m.id) = 2""",
+    ]),
     (114, "ebr_pesajes · reconciliación granular MP teórico vs real · Fase 1 F7 · Sebastián 12-may-2026", [
         # Cada pesaje individual del operario durante un paso de dispensación.
         # Permite reconciliación MP-por-MP entre lo que la fórmula PEDÍA
