@@ -2521,21 +2521,32 @@ def eliminar_lote(material_id, lote):
             u, material_id, lote, motivo,
         )
 
-    # Hard delete de los movimientos del lote
-    if sin_lote:
-        c.execute("DELETE FROM movimientos WHERE material_id=? "
-                  "AND (lote IS NULL OR lote='')", (material_id,))
-    else:
-        c.execute("DELETE FROM movimientos WHERE material_id=? AND lote=?",
-                  (material_id, lote))
-    deleted = c.rowcount
+    # FIX-B5 13-may-2026: ANTES hacíamos hard DELETE de TODOS los movs del
+    # lote (Entrada + Salidas FEFO consumidas en producciones reales) ·
+    # rompe trazabilidad INVIMA Resolución 2214/2021 art. 10 (qué producción
+    # consumió este lote desaparecía del kardex). El agregado por material_id
+    # quedaba consistente pero el detalle por lote se borraba.
+    # Ahora: contra-movimiento del saldo neto (Salida si saldo>0 · Entrada si
+    # saldo<0). Las filas históricas de Entrada y Salidas FEFO se preservan.
+    if abs(saldo_neto) > 0.01:
+        tipo_contra = 'Salida' if saldo_neto > 0 else 'Entrada'
+        obs_contra = (f'[ELIMINAR_LOTE] Saldo neto {saldo_neto:.2f}g cancelado '
+                      f'por eliminación de lote {lote}. Motivo: {motivo[:200]}')
+        c.execute("""INSERT INTO movimientos
+                       (material_id, material_nombre, cantidad, tipo, fecha,
+                        observaciones, operador, lote, estado_lote)
+                     VALUES (?, ?, ?, ?, datetime('now', 'utc'), ?, ?, ?, 'ELIMINADO')""",
+                  (material_id, nombre_comercial, abs(saldo_neto), tipo_contra,
+                   obs_contra, u, lote if not sin_lote else ''))
+    deleted = 0  # ya no hay DELETE · histórico preservado
     conn.commit()
 
     return jsonify({
         'ok': True,
-        'message': (f'Lote {lote} de {nombre_comercial} eliminado. '
-                    f'{deleted} movimientos borrados. Saldo neto al momento '
-                    f'de eliminar: {saldo_neto:.2f}g.'),
+        'message': (f'Lote {lote} de {nombre_comercial} eliminado (saldo neto '
+                    f'{saldo_neto:.2f}g cancelado con contra-movimiento). '
+                    f'Histórico preservado para trazabilidad INVIMA.'),
+        'saldo_cancelado_g': saldo_neto,
         'deleted_count': deleted,
         'snapshot': snapshot,
     }), 200
@@ -3467,7 +3478,14 @@ def conteo_guardar(conteo_id):
         diff = stock_fis - stock_sis
         precio_ref = float(item.get('precio_ref', 0))
         valor_diff = abs(diff / 1000) * precio_ref  # diff en g, precio en /kg
-        pct_diff = abs(diff / stock_sis) if stock_sis > 0 else 0
+        # FIX-B6 13-may-2026: antes pct_diff=0 cuando stock_sis=0 · cualquier
+        # cantidad encontrada físicamente sin sistema previo evadía el
+        # threshold gerencia. Ahora si stock_sis=0 Y diff != 0 → escalación
+        # automática (deviación infinita = siempre supera 5%).
+        if stock_sis > 0:
+            pct_diff = abs(diff / stock_sis)
+        else:
+            pct_diff = 1.0 if abs(diff) > 0.01 else 0
         requiere_gerencia = 1 if pct_diff > UMBRAL_ESCALA else 0
         causa = item.get('causa_diferencia', '')
         if abs(diff) > 0: items_con_diff += 1
@@ -5008,13 +5026,21 @@ def mee_import_bulk():
                   stock_actual=?, stock_minimo=?, estado='Activo'
                 WHERE codigo=?
             """, (descripcion, categoria, unidad, proveedor, stock, stock_min, codigo))
-            # Si cambió el stock, registrar movimiento de ajuste
+            # FIX-B4 13-may-2026: antes insertaba tipo='Ajuste' con
+            # abs(delta) · pero stock_mee_calculated trata 'Ajuste' como
+            # +cantidad (positivo). Si stock_nuevo < stock_anterior, el
+            # UPDATE bajaba el stock_actual pero el INSERT subía el kardex
+            # calculado · drift permanente de 2×|delta|. Ahora usamos
+            # Entrada/Salida según signo del delta (igual patrón que
+            # mee_ajustar_stock línea 4910).
             if abs(stock - stock_anterior) > 0.01:
+                delta = stock - stock_anterior
+                tipo_mov = 'Entrada' if delta > 0 else 'Salida'
                 c.execute("""
                     INSERT INTO movimientos_mee (mee_codigo, tipo, cantidad, responsable, observaciones)
-                    VALUES (?, 'Ajuste', ?, ?, ?)
-                """, (codigo, abs(stock-stock_anterior), user,
-                      f'[Import Excel] {stock_anterior} → {stock}'))
+                    VALUES (?, ?, ?, ?, ?)
+                """, (codigo, tipo_mov, abs(delta), user,
+                      f'[Import Excel] {stock_anterior} → {stock} ({tipo_mov.lower()})'))
             actualizados += 1
         else:
             c.execute("""

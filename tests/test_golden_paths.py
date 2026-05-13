@@ -5972,6 +5972,219 @@ def test_golden_distribuir_fefo_no_stock_fantasma(app, db_clean):
 
 
 # ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH FIX-B6 · threshold gerencia se aplica si stock_sistema=0
+# ═══════════════════════════════════════════════════════════════════
+def test_golden_conteo_escala_gerencia_si_sistema_cero(app, db_clean):
+    """Encontrar físicamente cantidad >0 cuando sistema=0 → requiere_gerencia=1."""
+    cs = _login(app, 'sebastian')
+    import sqlite3 as _sqlite3
+    mp_codigo = 'MP-FIXB6-TEST'
+
+    conn = _sqlite3.connect(os.environ['DB_PATH'], timeout=5.0)
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT OR IGNORE INTO maestro_mps (codigo_mp, nombre_comercial, activo) VALUES (?, ?, 1)",
+            (mp_codigo, 'Test FIX-B6'),
+        )
+        # Crear conteo y guardar item con stock_sistema=0 y físico=5000g
+        cur.execute(
+            """INSERT INTO conteos_fisicos (numero, fecha_inicio, estado, responsable)
+               VALUES ('TEST-FIXB6-001', date('now'), 'Abierto', 'sebastian')"""
+        )
+        conteo_id = cur.lastrowid
+        conn.commit()
+    finally:
+        conn.close()
+
+    # POST /api/conteo/<id>/guardar con item de stock_sistema=0, físico=5000
+    r = cs.post(f'/api/conteo/{conteo_id}/guardar', json={
+        'items': [{
+            'codigo_mp': mp_codigo, 'nombre_mp': 'Test FIX-B6',
+            'stock_sistema': 0, 'stock_fisico': 5000,
+            'precio_ref': 10, 'estanteria': 'TEST',
+        }]
+    }, headers=csrf_headers())
+    assert r.status_code == 200, f'BUG guardar: {r.status_code} {r.data}'
+
+    # Verificar que requiere_gerencia=1 quedó marcado
+    rows = _query(
+        "SELECT requiere_gerencia FROM conteo_items WHERE conteo_id=? AND codigo_mp=?",
+        (conteo_id, mp_codigo),
+    )
+    assert rows and rows[0][0] == 1, \
+        f'BUG-B6: encontrar 5000g físicos con sistema=0 NO escala a gerencia (requiere_gerencia={rows[0][0] if rows else "ninguno"})'
+
+    # Cleanup
+    conn = _sqlite3.connect(os.environ['DB_PATH'], timeout=5.0)
+    try:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM conteo_items WHERE conteo_id=?", (conteo_id,))
+        cur.execute("DELETE FROM conteos_fisicos WHERE id=?", (conteo_id,))
+        cur.execute("DELETE FROM maestro_mps WHERE codigo_mp=?", (mp_codigo,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH FIX-B5 · eliminar_lote preserva historial (contra-mov)
+# ═══════════════════════════════════════════════════════════════════
+def test_golden_eliminar_lote_preserva_historial(app, db_clean):
+    """eliminar_lote inserta contra-movimiento · NO borra historial."""
+    cs = _login(app, 'sebastian')
+    import sqlite3 as _sqlite3
+    mp_codigo = 'MP-FIXB5-TEST'
+    lote = 'FIXB5-LOTE-001'
+
+    conn = _sqlite3.connect(os.environ['DB_PATH'], timeout=5.0)
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT OR IGNORE INTO maestro_mps (codigo_mp, nombre_comercial, activo) VALUES (?, ?, 1)",
+            (mp_codigo, 'Test FIX-B5'),
+        )
+        cur.execute("DELETE FROM movimientos WHERE material_id=?", (mp_codigo,))
+        # Entrada 1000g + Salida FEFO 300g (simulada)
+        cur.execute(
+            """INSERT INTO movimientos
+                 (material_id, material_nombre, cantidad, tipo, fecha,
+                  operador, lote, estado_lote)
+               VALUES (?, ?, 1000, 'Entrada', datetime('now'), 'test', ?, 'APROBADO')""",
+            (mp_codigo, 'Test FIX-B5', lote),
+        )
+        cur.execute(
+            """INSERT INTO movimientos
+                 (material_id, material_nombre, cantidad, tipo, fecha,
+                  operador, lote, observaciones)
+               VALUES (?, ?, 300, 'Salida', datetime('now'), 'test', ?,
+                       'Producción XYZ consumió 300g')""",
+            (mp_codigo, 'Test FIX-B5', lote),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    # Eliminar lote (DELETE /api/lotes/<material_id>/<lote>)
+    r = cs.delete(f'/api/lotes/{mp_codigo}/{lote}',
+                  json={'motivo': 'Test contaminación'},
+                  headers=csrf_headers())
+    assert r.status_code == 200, f'BUG: {r.status_code} {r.data}'
+    d = r.get_json()
+    assert d['saldo_cancelado_g'] == 700.0  # 1000 - 300
+
+    # Histórico preservado: deben quedar 3 movimientos (Entrada + Salida FEFO + contra-mov)
+    rows = _query(
+        "SELECT tipo, cantidad, observaciones FROM movimientos WHERE material_id=? AND lote=? ORDER BY id",
+        (mp_codigo, lote),
+    )
+    assert len(rows) == 3, \
+        f'BUG-B5: esperaba 3 movs (Entrada + Salida FEFO + contra-mov) · hay {len(rows)}'
+    # La Salida FEFO original sigue ahí con su observación
+    fefo_salidas = [r for r in rows if r[0] == 'Salida' and 'consumió' in (r[2] or '')]
+    assert len(fefo_salidas) == 1, \
+        'BUG-B5: la Salida FEFO histórica fue borrada · trazabilidad rota'
+    # Stock neto del lote = 0 (Entrada 1000 - Salida 300 - Contra 700)
+    stock_neto = _query(
+        "SELECT SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) FROM movimientos WHERE material_id=? AND lote=?",
+        (mp_codigo, lote),
+    )[0][0]
+    assert abs(stock_neto) < 0.01, f'BUG-B5: stock neto post-eliminar debería ser 0 · es {stock_neto}'
+
+    # Cleanup
+    conn = _sqlite3.connect(os.environ['DB_PATH'], timeout=5.0)
+    try:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM movimientos WHERE material_id=?", (mp_codigo,))
+        cur.execute("DELETE FROM maestro_mps WHERE codigo_mp=?", (mp_codigo,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH FIX-B4 · mee_import_bulk usa Entrada/Salida según signo
+# ═══════════════════════════════════════════════════════════════════
+def test_golden_mee_import_bulk_no_drift_signo(app, db_clean):
+    """Import MEE con stock menor → usa Salida · stock_actual coincide con kardex."""
+    cs = _login(app, 'sebastian')
+    import sqlite3 as _sqlite3
+    mee_codigo = 'MEE-FIXB4-TEST'
+
+    conn = _sqlite3.connect(os.environ['DB_PATH'], timeout=5.0)
+    try:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM movimientos_mee WHERE mee_codigo=?", (mee_codigo,))
+        cur.execute("DELETE FROM maestro_mee WHERE codigo=?", (mee_codigo,))
+        # Crear MEE con stock_actual=100
+        cur.execute(
+            """INSERT INTO maestro_mee
+                 (codigo, descripcion, categoria, unidad, proveedor,
+                  stock_actual, stock_minimo, estado, fecha_creacion)
+               VALUES (?, 'Test FIX-B4', 'Envases', 'und', 'Test',
+                       100, 0, 'Activo', datetime('now'))""",
+            (mee_codigo,),
+        )
+        # Entrada inicial 100
+        cur.execute(
+            """INSERT INTO movimientos_mee (mee_codigo, tipo, cantidad, responsable, observaciones)
+               VALUES (?, 'Entrada', 100, 'test', 'inicial')""",
+            (mee_codigo,),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    # Import bulk con stock=70 (DELTA NEGATIVO)
+    r = cs.post('/api/mee/import-bulk', json={
+        'items': [{
+            'codigo': mee_codigo,
+            'descripcion': 'Test FIX-B4',
+            'categoria': 'Envases',
+            'unidad': 'und',
+            'proveedor': 'Test',
+            'stock': 70,
+            'stock_min': 0,
+        }]
+    }, headers=csrf_headers())
+    assert r.status_code == 200, f'BUG: {r.status_code} {r.data}'
+
+    # Verificar: stock_actual=70 + último movimiento es 'Salida' (no 'Ajuste')
+    rows = _query(
+        "SELECT stock_actual FROM maestro_mee WHERE codigo=?", (mee_codigo,)
+    )
+    assert rows[0][0] == 70
+
+    # Verificar kardex calculado coincide con stock_actual (sin drift)
+    movs = _query(
+        "SELECT tipo, cantidad FROM movimientos_mee WHERE mee_codigo=? ORDER BY id",
+        (mee_codigo,),
+    )
+    # Sumar correctamente Entradas y Salidas
+    kardex = 0
+    for tipo, cant in movs:
+        if tipo == 'Entrada' or tipo == 'Ajuste':
+            kardex += cant
+        elif tipo == 'Salida':
+            kardex -= cant
+    assert kardex == 70, \
+        f'BUG-B4: drift entre stock_actual=70 y kardex calculado={kardex}'
+    # El último movimiento del import debe ser Salida (delta=-30)
+    assert movs[-1] == ('Salida', 30.0), \
+        f'BUG-B4: último mov debería ser Salida 30 · es {movs[-1]}'
+
+    # Cleanup
+    conn = _sqlite3.connect(os.environ['DB_PATH'], timeout=5.0)
+    try:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM movimientos_mee WHERE mee_codigo=?", (mee_codigo,))
+        cur.execute("DELETE FROM maestro_mee WHERE codigo=?", (mee_codigo,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+# ═══════════════════════════════════════════════════════════════════
 # GOLDEN PATH 60 · PDF maestro auditable EBR (Fase 1 F8)
 # ═══════════════════════════════════════════════════════════════════
 def test_golden_brd_pdf_ebr_descargable(app, db_clean):
