@@ -1605,3 +1605,225 @@ def pdf_ebr(ebr_id):
         as_attachment=True,
         download_name=f"EBR_{ebr['lote']}.pdf",
     )
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Reconciliación granular pesajes MP (F7)
+# ════════════════════════════════════════════════════════════════════════════
+# Captura cada pesaje individual del operario durante un paso de
+# dispensación. Compara contra el teórico calculado de formula_items
+# (porcentaje × cantidad_objetivo_g del lote).
+
+def _calcular_teoricos_mp(conn, producto_nombre, lote_size_g):
+    """Devuelve {material_id: cantidad_teorica_g} desde formula_items.
+
+    Si la fórmula no existe (producto no fórmula-driven), devuelve dict vacío.
+    """
+    rows = conn.execute(
+        """SELECT material_id, material_nombre, porcentaje
+           FROM formula_items WHERE producto_nombre = ?""",
+        (producto_nombre,),
+    ).fetchall()
+    teoricos = {}
+    for r in rows:
+        teoricos[r["material_id"]] = {
+            "material_id": r["material_id"],
+            "material_nombre": r["material_nombre"] or "",
+            "porcentaje": r["porcentaje"],
+            "cantidad_teorica_g": (r["porcentaje"] / 100.0) * lote_size_g,
+        }
+    return teoricos
+
+
+@bp.route("/api/brd/ebr/<int:ebr_id>/pesajes", methods=["POST"])
+def reportar_pesaje(ebr_id):
+    """Operario reporta el pesaje real de un MP.
+
+    Body: {material_id, cantidad_real_g, lote_mp?, ebr_paso_id?,
+           signature_id?, notas?}
+    El cantidad_teorica_g se calcula del lado del servidor desde
+    formula_items + cantidad_objetivo_g del EBR (no se acepta del cliente
+    para evitar manipulación). delta_g y delta_pct también se calculan acá.
+    """
+    err = _require_login()
+    if err:
+        return err
+    body = request.get_json(silent=True) or {}
+    material_id = (body.get("material_id") or "").strip()
+    if not material_id:
+        return jsonify({"error": "material_id requerido"}), 400
+    try:
+        real = float(body.get("cantidad_real_g") or 0)
+    except (ValueError, TypeError):
+        return jsonify({"error": "cantidad_real_g inválido"}), 400
+    if real < 0:
+        return jsonify({"error": "cantidad_real_g debe ser >= 0"}), 400
+
+    conn = get_db()
+    cur = conn.cursor()
+    ebr = cur.execute(
+        """SELECT e.estado, e.cantidad_objetivo_g, m.producto_nombre
+           FROM ebr_ejecuciones e
+           JOIN mbr_templates m ON m.id = e.mbr_template_id
+           WHERE e.id = ?""",
+        (ebr_id,),
+    ).fetchone()
+    if not ebr:
+        return jsonify({"error": "EBR no encontrado"}), 404
+    if ebr["estado"] not in ("iniciado", "en_proceso"):
+        return jsonify({"error": f"EBR no editable (estado: {ebr['estado']})"}), 409
+
+    # Calcular teórico desde formula_items
+    teoricos = _calcular_teoricos_mp(conn, ebr["producto_nombre"],
+                                     ebr["cantidad_objetivo_g"])
+    spec = teoricos.get(material_id)
+    if not spec:
+        return jsonify({
+            "error": f"material_id '{material_id}' no está en formula_items "
+                      f"de '{ebr['producto_nombre']}'",
+        }), 400
+
+    teorico = spec["cantidad_teorica_g"]
+    delta = real - teorico
+    delta_pct = (delta / teorico * 100.0) if teorico > 0 else None
+
+    # Validar e-sign si se pasa
+    user = session.get("compras_user", "")
+    signature_id = body.get("signature_id")
+    if signature_id:
+        if not _validar_signature(
+            cur, signature_id, record_table="ebr_pesajes",
+            record_id=f"{ebr_id}:{material_id}",
+            meaning="ejecuta", signer_username=user,
+        ):
+            return jsonify({"error": "signature_id inválido para este pesaje"}), 400
+
+    cur.execute(
+        """INSERT INTO ebr_pesajes
+             (ebr_id, ebr_paso_id, material_id, material_nombre,
+              cantidad_teorica_g, cantidad_real_g, delta_g, delta_pct,
+              lote_mp, pesado_por, pesado_at_utc, e_sign_id, notas)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now', 'utc'), ?, ?)""",
+        (ebr_id, body.get("ebr_paso_id"), material_id, spec["material_nombre"],
+         teorico, real, delta, delta_pct,
+         (body.get("lote_mp") or "").strip(), user,
+         int(signature_id) if signature_id else None,
+         (body.get("notas") or "").strip()),
+    )
+    pid = cur.lastrowid
+    conn.commit()
+    audit_log(cur, usuario=user, accion="REPORTAR_PESAJE",
+              tabla="ebr_pesajes", registro_id=pid,
+              despues={"ebr_id": ebr_id, "material_id": material_id,
+                        "real": real, "teorico": teorico, "delta_pct": delta_pct})
+    return jsonify({
+        "ok": True, "id": pid,
+        "cantidad_teorica_g": teorico,
+        "cantidad_real_g": real,
+        "delta_g": delta,
+        "delta_pct": delta_pct,
+    }), 201
+
+
+@bp.route("/api/brd/ebr/<int:ebr_id>/pesajes", methods=["GET"])
+def listar_pesajes(ebr_id):
+    err = _require_login()
+    if err:
+        return err
+    rows = get_db().execute(
+        """SELECT id, ebr_id, ebr_paso_id, material_id, material_nombre,
+                  cantidad_teorica_g, cantidad_real_g, delta_g, delta_pct,
+                  lote_mp, pesado_por, pesado_at_utc, e_sign_id, notas
+           FROM ebr_pesajes WHERE ebr_id = ?
+           ORDER BY pesado_at_utc""",
+        (ebr_id,),
+    ).fetchall()
+    return jsonify({"items": [dict(r) for r in rows]})
+
+
+@bp.route("/api/brd/ebr/<int:ebr_id>/reconciliacion", methods=["GET"])
+def reconciliacion_ebr(ebr_id):
+    """Resumen MP-por-MP de teórico vs real.
+
+    Threshold de outlier: |delta_pct| > 5% se marca para revisión QC.
+    Se exponen 3 listas: ok (sin outliers), outliers (>5% delta),
+    no_pesados (MPs de la fórmula que no tienen pesaje todavía).
+    """
+    err = _require_login()
+    if err:
+        return err
+    conn = get_db()
+    ebr = conn.execute(
+        """SELECT e.cantidad_objetivo_g, e.cantidad_real_g, e.yield_pct,
+                  e.estado, m.producto_nombre
+           FROM ebr_ejecuciones e
+           JOIN mbr_templates m ON m.id = e.mbr_template_id
+           WHERE e.id = ?""", (ebr_id,),
+    ).fetchone()
+    if not ebr:
+        return jsonify({"error": "EBR no encontrado"}), 404
+
+    teoricos = _calcular_teoricos_mp(conn, ebr["producto_nombre"],
+                                     ebr["cantidad_objetivo_g"])
+    pesajes_rows = conn.execute(
+        """SELECT material_id, SUM(cantidad_real_g) AS suma_real,
+                  COUNT(*) AS n_pesajes,
+                  GROUP_CONCAT(DISTINCT lote_mp) AS lotes_mp
+           FROM ebr_pesajes WHERE ebr_id = ? AND material_id != ''
+           GROUP BY material_id""",
+        (ebr_id,),
+    ).fetchall()
+    pesajes = {r["material_id"]: dict(r) for r in pesajes_rows}
+
+    OUTLIER_THRESHOLD_PCT = 5.0
+    ok, outliers, no_pesados = [], [], []
+    total_teorico = 0.0
+    total_real = 0.0
+    for mid, spec in teoricos.items():
+        teorico = spec["cantidad_teorica_g"]
+        total_teorico += teorico
+        p = pesajes.get(mid)
+        if not p:
+            no_pesados.append({
+                "material_id": mid,
+                "material_nombre": spec["material_nombre"],
+                "cantidad_teorica_g": teorico,
+            })
+            continue
+        real = p["suma_real"] or 0
+        total_real += real
+        delta = real - teorico
+        delta_pct = (delta / teorico * 100.0) if teorico > 0 else None
+        item = {
+            "material_id": mid,
+            "material_nombre": spec["material_nombre"],
+            "cantidad_teorica_g": teorico,
+            "cantidad_real_g": real,
+            "delta_g": delta,
+            "delta_pct": delta_pct,
+            "n_pesajes": p["n_pesajes"],
+            "lotes_mp": (p["lotes_mp"] or "").split(",") if p["lotes_mp"] else [],
+        }
+        if delta_pct is not None and abs(delta_pct) > OUTLIER_THRESHOLD_PCT:
+            outliers.append(item)
+        else:
+            ok.append(item)
+
+    return jsonify({
+        "ebr_id": ebr_id,
+        "producto_nombre": ebr["producto_nombre"],
+        "cantidad_objetivo_g": ebr["cantidad_objetivo_g"],
+        "cantidad_real_g_lote": ebr["cantidad_real_g"],
+        "yield_pct_lote": ebr["yield_pct"],
+        "totales_pesajes": {
+            "total_teorico_g": total_teorico,
+            "total_real_g": total_real,
+            "delta_g": total_real - total_teorico,
+            "delta_pct": ((total_real - total_teorico) / total_teorico * 100.0) if total_teorico > 0 else None,
+        },
+        "ok": ok,
+        "outliers": outliers,
+        "no_pesados": no_pesados,
+        "outlier_threshold_pct": OUTLIER_THRESHOLD_PCT,
+        "estado_ebr": ebr["estado"],
+    })

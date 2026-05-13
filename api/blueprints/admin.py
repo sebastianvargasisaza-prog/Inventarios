@@ -21143,8 +21143,11 @@ def cron_snapshot_mp_alcanza():
     )
 
     import json as _json
-    from datetime import date as _date
-    hoy = _date.today().isoformat()
+    from datetime import datetime as _dt, timezone as _tz
+    # Sebastián 12-may-2026: usar UTC para alinear con SQLite date('now') de
+    # las queries (que sin modifier 'localtime' devuelven UTC). Antes usábamos
+    # date.today() Python local que en máquinas con TZ != UTC daba mismatch.
+    hoy = _dt.now(_tz.utc).date().isoformat()
 
     conn = sqlite3.connect(DB_PATH)
     conn.execute("PRAGMA busy_timeout=2000")

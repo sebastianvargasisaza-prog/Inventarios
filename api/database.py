@@ -222,6 +222,51 @@ _AREAS_LIMPIEZA_PROFUNDA = (
 
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (114, "ebr_pesajes · reconciliación granular MP teórico vs real · Fase 1 F7 · Sebastián 12-may-2026", [
+        # Cada pesaje individual del operario durante un paso de dispensación.
+        # Permite reconciliación MP-por-MP entre lo que la fórmula PEDÍA
+        # (formula_items.porcentaje × cantidad_objetivo_g) y lo que realmente
+        # se pesó. delta_g y delta_pct se calculan en el endpoint al insertar.
+        # lote_mp captura el lote real del kardex usado (auditabilidad de lote
+        # de origen → lote de producto terminado).
+        """CREATE TABLE IF NOT EXISTS ebr_pesajes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ebr_id INTEGER NOT NULL,
+            ebr_paso_id INTEGER DEFAULT NULL,
+            material_id TEXT NOT NULL,
+            material_nombre TEXT DEFAULT '',
+            cantidad_teorica_g REAL NOT NULL,
+            cantidad_real_g REAL NOT NULL,
+            delta_g REAL,
+            delta_pct REAL,
+            lote_mp TEXT DEFAULT '',
+            pesado_por TEXT NOT NULL,
+            pesado_at_utc TEXT NOT NULL,
+            e_sign_id INTEGER DEFAULT NULL,
+            notas TEXT DEFAULT '',
+            FOREIGN KEY (ebr_id) REFERENCES ebr_ejecuciones(id) ON DELETE CASCADE
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_pesajes_ebr ON ebr_pesajes(ebr_id, material_id)",
+        "CREATE INDEX IF NOT EXISTS idx_pesajes_lote_mp ON ebr_pesajes(lote_mp) WHERE lote_mp != ''",
+
+        # Inmutabilidad post-liberación del EBR (igual lógica que ebr_pasos).
+        """CREATE TRIGGER IF NOT EXISTS trg_pesajes_no_edit_liberado
+           BEFORE UPDATE ON ebr_pesajes
+           FOR EACH ROW
+           WHEN EXISTS (SELECT 1 FROM ebr_ejecuciones
+                        WHERE id = NEW.ebr_id AND estado IN ('liberado','rechazado'))
+           BEGIN
+               SELECT RAISE(ABORT, 'pesajes de EBR liberado/rechazado son inmutables');
+           END""",
+        """CREATE TRIGGER IF NOT EXISTS trg_pesajes_no_delete_liberado
+           BEFORE DELETE ON ebr_pesajes
+           FOR EACH ROW
+           WHEN EXISTS (SELECT 1 FROM ebr_ejecuciones
+                        WHERE id = OLD.ebr_id AND estado IN ('liberado','rechazado'))
+           BEGIN
+               SELECT RAISE(ABORT, 'pesajes de EBR liberado/rechazado son inmutables · DELETE prohibido');
+           END""",
+    ]),
     (113, "equipo_limpieza_log · cleaning records por equipo · Fase 1 BRD · Sebastián 12-may-2026", [
         # GMP requiere demostrar que cada equipo está limpio antes de un nuevo
         # lote (especialmente cambio de producto). Si auditor pregunta "cómo

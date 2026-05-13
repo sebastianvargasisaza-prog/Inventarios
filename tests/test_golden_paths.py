@@ -5383,6 +5383,93 @@ def test_golden_brd_cleaning_log_workflow(app, db_clean):
 
 
 # ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH RECON · Reconciliación granular MP (Fase 1 F7)
+# ═══════════════════════════════════════════════════════════════════
+def test_golden_brd_reconciliacion_pesajes_mp(app, db_clean):
+    """POST pesaje calcula delta · GET reconciliacion separa ok/outliers/no_pesados."""
+    cs = _login(app, 'sebastian')
+
+    # Usar el seed Blush Balm v1 (mig 110): tiene 21 MPs en formula_items
+    rl = cs.get('/api/brd/mbr?producto=Blush Balm')
+    bb = next(it for it in rl.get_json()['items'] if it['version'] == 1)
+    mbr_id = bb['id']
+
+    # Aprobar el MBR (necesario para iniciar EBR)
+    cs.post(f'/api/brd/mbr/{mbr_id}/submit', json={}, headers=csrf_headers())
+    sig = _firmar(cs, record_table='mbr_templates', record_id=mbr_id,
+                   meaning='aprueba')
+    cs.post(f'/api/brd/mbr/{mbr_id}/aprobar',
+            json={'signature_id': sig}, headers=csrf_headers())
+
+    # Iniciar EBR con lote 1 kg (= 1000 g)
+    re = cs.post('/api/brd/ebr', json={
+        'mbr_template_id': mbr_id, 'lote': 'TEST-RECON-001',
+    }, headers=csrf_headers())
+    ebr_id = re.get_json()['id']
+
+    # Caso 1: reportar pesaje EXACTO de Polyglyceryl-2 triisostearate (10% × 1kg = 100g)
+    r1 = cs.post(f'/api/brd/ebr/{ebr_id}/pesajes', json={
+        'material_id': 'MP00051',
+        'cantidad_real_g': 100.0,
+        'lote_mp': 'LOTE-MP-2026-001',
+    }, headers=csrf_headers())
+    assert r1.status_code == 201, f'BUG pesaje: {r1.status_code} {r1.data}'
+    d1 = r1.get_json()
+    assert d1['cantidad_teorica_g'] == 100.0  # 10% de 1000
+    assert d1['delta_g'] == 0.0
+    assert d1['delta_pct'] == 0.0
+
+    # Caso 2: pesaje con delta dentro del threshold (3% de 100 = 103, ok)
+    r2 = cs.post(f'/api/brd/ebr/{ebr_id}/pesajes', json={
+        'material_id': 'MP00040',  # Cetiol 20.271%
+        'cantidad_real_g': 205.0,  # teórico = 202.71
+    }, headers=csrf_headers())
+    assert r2.status_code == 201
+    d2 = r2.get_json()
+    assert abs(d2['cantidad_teorica_g'] - 202.71) < 0.01
+    assert abs(d2['delta_pct']) < 5.0  # dentro del threshold
+
+    # Caso 3: pesaje con delta GRANDE (outlier)
+    r3 = cs.post(f'/api/brd/ebr/{ebr_id}/pesajes', json={
+        'material_id': 'MP00077',  # Manteca murumuru 0.15% × 1000 = 1.5g
+        'cantidad_real_g': 2.5,    # 66% más → outlier
+    }, headers=csrf_headers())
+    assert r3.status_code == 201
+    d3 = r3.get_json()
+    assert d3['delta_pct'] > 50  # claramente outlier
+
+    # Caso 4: material inexistente en fórmula rechaza
+    r4 = cs.post(f'/api/brd/ebr/{ebr_id}/pesajes', json={
+        'material_id': 'MP-FAKE-999',
+        'cantidad_real_g': 10.0,
+    }, headers=csrf_headers())
+    assert r4.status_code == 400
+
+    # Caso 5: GET reconciliación clasifica ok / outliers / no_pesados
+    rr = cs.get(f'/api/brd/ebr/{ebr_id}/reconciliacion')
+    assert rr.status_code == 200
+    rec = rr.get_json()
+    # Total formula items = 21 · pesamos 3 → 18 no_pesados
+    assert len(rec['no_pesados']) == 18
+    # 2 dentro de threshold + 1 outlier
+    assert len(rec['ok']) == 2
+    assert len(rec['outliers']) == 1
+    # Outlier es la manteca murumuru
+    assert rec['outliers'][0]['material_id'] == 'MP00077'
+    # Totales
+    assert rec['cantidad_objetivo_g'] == 1000.0
+    assert 'totales_pesajes' in rec
+    # MP00051 pesaje incluye lote_mp en lotes_mp
+    mp51 = next(it for it in rec['ok'] if it['material_id'] == 'MP00051')
+    assert 'LOTE-MP-2026-001' in mp51['lotes_mp']
+
+    # Caso 6: listado retorna los 3 pesajes
+    rl2 = cs.get(f'/api/brd/ebr/{ebr_id}/pesajes')
+    assert rl2.status_code == 200
+    assert len(rl2.get_json()['items']) == 3
+
+
+# ═══════════════════════════════════════════════════════════════════
 # GOLDEN PATH 60 · PDF maestro auditable EBR (Fase 1 F8)
 # ═══════════════════════════════════════════════════════════════════
 def test_golden_brd_pdf_ebr_descargable(app, db_clean):
