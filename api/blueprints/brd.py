@@ -1,4 +1,4 @@
-"""Blueprint brd · Master Batch Record (MBR) CRUD.
+"""Blueprint brd · Batch Record Digital (MBR + EBR + IPCs + cleaning + pesajes).
 
 Sebastián 12-may-2026 · Fase 1 del salto a Batch Record digital.
 
@@ -32,7 +32,7 @@ Permisos:
 """
 import json as _json
 import logging
-from flask import Blueprint, jsonify, request, session
+from flask import Blueprint, Response, jsonify, request, session
 
 from database import get_db
 from config import ADMIN_USERS, CALIDAD_USERS
@@ -40,6 +40,19 @@ from audit_helpers import audit_log
 
 bp = Blueprint("brd", __name__)
 log = logging.getLogger("brd")
+
+
+# ── UI dashboard (read-only listings) ──────────────────────────────────────
+
+@bp.route("/brd", methods=["GET"])
+@bp.route("/brd/", methods=["GET"])
+def brd_dashboard():
+    """UI dashboard read-only del BRD. Listados de MBR/EBR/Cleaning con
+    drill-down a detalle. Acciones (crear, firmar, ejecutar) vía API."""
+    if not session.get("compras_user"):
+        return Response("No autorizado · login requerido", status=401)
+    from templates_py.brd_html import render_brd_dashboard
+    return Response(render_brd_dashboard(), mimetype="text/html")
 
 VALID_TIPO_PASO = {
     "pesaje", "dispensacion", "mezclado", "caliente",

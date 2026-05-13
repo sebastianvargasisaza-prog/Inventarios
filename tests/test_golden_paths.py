@@ -5470,6 +5470,32 @@ def test_golden_brd_reconciliacion_pesajes_mp(app, db_clean):
 
 
 # ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH UI · Dashboard BRD responde 200 y contiene tabs (smoke)
+# ═══════════════════════════════════════════════════════════════════
+def test_golden_brd_dashboard_ui_responde(app, db_clean):
+    """GET /brd retorna HTML con los 4 tabs (Dashboard/MBR/EBR/Cleaning)."""
+    cs = _login(app, 'sebastian')
+    r = cs.get('/brd')
+    assert r.status_code == 200, f'BUG: dashboard {r.status_code}'
+    assert r.content_type.startswith('text/html'), \
+        f'BUG: content_type={r.content_type}'
+    body = r.data.decode('utf-8', errors='ignore')
+    # tabs presentes
+    assert 'data-pane="dash"' in body
+    assert 'data-pane="mbr"' in body
+    assert 'data-pane="ebr"' in body
+    assert 'data-pane="cleaning"' in body
+    # llamadas API presentes (la UI hace fetch a estos)
+    assert "/api/brd/mbr" in body
+    assert "/api/brd/ebr" in body
+    assert "/api/brd/cleaning" in body
+    # No autorizado sin login
+    cs2 = app.test_client()
+    r2 = cs2.get('/brd')
+    assert r2.status_code == 401
+
+
+# ═══════════════════════════════════════════════════════════════════
 # GOLDEN PATH 60 · PDF maestro auditable EBR (Fase 1 F8)
 # ═══════════════════════════════════════════════════════════════════
 def test_golden_brd_pdf_ebr_descargable(app, db_clean):
