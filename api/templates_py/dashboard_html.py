@@ -1506,6 +1506,9 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       </div>
     </div>
     <div id="nec-resumen" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px"></div>
+    <!-- Próximas producciones agendadas (visibles arriba para que Sebastián
+         vea lo que ya programó · click producto en abajo cuando hay drill) -->
+    <div id="nec-proximas" style="margin-bottom:14px"></div>
     <div id="nec-contenido"><div style="text-align:center;color:#94a3b8;padding:40px">Cargando…</div></div>
   </div>
   <!-- Modal "Ya producido" · back-fill retroactivo (no toca inventario) -->
@@ -16773,14 +16776,69 @@ async function ckMarcar(itemId, estado){
     const div = document.getElementById('nec-contenido');
     div.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:40px">Cargando…</div>';
     try {
-      const r = await fetch('/api/plan/necesidades' + qs);
+      const [r, rp] = await Promise.all([
+        fetch('/api/plan/necesidades' + qs),
+        fetch('/api/plan/proximas'),
+      ]);
       if (r.status === 401) { window.location.href = '/login'; return; }
       const d = await r.json();
+      const dp = await rp.json();
       renderResumenNec(d.resumen);
+      renderProximasNec(dp.items || []);
       renderClientesNec(d.clientes);
     } catch(e) {
       div.innerHTML = '<div style="text-align:center;color:#dc2626;padding:40px">Error: ' + escapeHtmlNec(e.message) + '</div>';
     }
+  }
+
+  function renderProximasNec(items) {
+    const div = document.getElementById('nec-proximas');
+    if (!items.length) { div.innerHTML = ''; return; }
+    let html = '<details open style="background:white;border-radius:12px;border:1px solid #e2e8f0;overflow:hidden">';
+    html += '<summary style="cursor:pointer;padding:12px 16px;background:linear-gradient(90deg,#eff6ff,#dbeafe);font-weight:700;color:#1e40af;font-size:14px">';
+    html += '📅 Próximas producciones agendadas · ' + items.length;
+    html += '</summary>';
+    html += '<div style="padding:10px 16px;overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px;min-width:560px">';
+    html += '<thead><tr style="background:#f8fafc;color:#475569">';
+    html += '<th style="text-align:center;padding:6px 6px;font-weight:700">Fecha</th>';
+    html += '<th style="text-align:left;padding:6px 6px;font-weight:700">Producto</th>';
+    html += '<th style="text-align:center;padding:6px 6px;font-weight:700">kg</th>';
+    html += '<th style="text-align:center;padding:6px 6px;font-weight:700">Sala</th>';
+    html += '<th style="text-align:center;padding:6px 6px;font-weight:700">Origen</th>';
+    html += '<th style="text-align:center;padding:6px 6px;font-weight:700">Estado</th>';
+    html += '<th style="padding:6px 6px"></th>';
+    html += '</tr></thead><tbody>';
+    items.forEach(it => {
+      const orig = it.origen === 'eos_plan' ? '🆕 EOS' :
+                   it.origen === 'eos_retroactivo' ? '📜 EOS-back' :
+                   it.origen === 'calendar' ? '📆 Calendar' : it.origen;
+      html += '<tr style="border-bottom:1px solid #f1f5f9">';
+      html += '<td style="padding:6px 6px;text-align:center;font-weight:700">' + escapeHtmlNec(it.fecha_programada) + '</td>';
+      html += '<td style="padding:6px 6px">' + escapeHtmlNec(it.producto) + '</td>';
+      html += '<td style="padding:6px 6px;text-align:center">' + it.cantidad_kg + '</td>';
+      html += '<td style="padding:6px 6px;text-align:center">' + (it.area_codigo || '—') + '</td>';
+      html += '<td style="padding:6px 6px;text-align:center;font-size:11px">' + escapeHtmlNec(orig) + '</td>';
+      html += '<td style="padding:6px 6px;text-align:center"><span style="background:#e0e7ff;color:#3730a3;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700">' + escapeHtmlNec(it.estado) + '</span></td>';
+      html += '<td style="padding:6px 6px;text-align:right">';
+      if (it.estado === 'pendiente' || it.estado === 'programado') {
+        html += '<button onclick="cancelarProxima(' + it.id + ')" style="background:transparent;border:1px solid #cbd5e1;color:#64748b;padding:3px 8px;border-radius:4px;font-size:10px;cursor:pointer">Cancelar</button>';
+      }
+      html += '</td></tr>';
+    });
+    html += '</tbody></table></div></details>';
+    div.innerHTML = html;
+  }
+
+  async function cancelarProxima(id) {
+    if (!confirm('¿Cancelar este lote agendado?')) return;
+    try {
+      const r = await fetch('/api/plan/proximas/' + id, {
+        method: 'DELETE',
+        headers: {'X-CSRF-Token': csrfTokenNec()},
+      });
+      if (!r.ok) { const d = await r.json(); alert('Error: ' + (d.error || r.status)); return; }
+      cargarNecesidades();
+    } catch(e) { alert('Error: ' + e.message); }
   }
 
   function renderResumenNec(res) {
@@ -16843,7 +16901,10 @@ async function ckMarcar(itemId, estado){
     if (!prods.length) {
       html += '<div style="text-align:center;color:#94a3b8;padding:20px">Sin productos con codigo_pt · ejecutá mig 118 seed.</div>';
     } else {
-      html += '<table style="width:100%;border-collapse:collapse;font-size:12px;min-width:720px">';
+      // Tabla simplificada · Sebastián 13-may-2026: "había redundancia
+      // con la columna agendado y el botón generar". Ahora click fila
+      // abre drill con TODO · información completa allí.
+      html += '<table style="width:100%;border-collapse:collapse;font-size:12px;min-width:560px">';
       html += '<thead><tr style="background:#f8fafc;color:#475569">';
       html += '<th style="text-align:left;padding:8px 6px;font-weight:700">Cód</th>';
       html += '<th style="text-align:left;padding:8px 6px;font-weight:700">Producto</th>';
@@ -16851,28 +16912,27 @@ async function ckMarcar(itemId, estado){
       html += '<th style="text-align:center;padding:8px 6px;font-weight:700">Vel/día</th>';
       html += '<th style="text-align:center;padding:8px 6px;font-weight:700">Cobertura</th>';
       html += '<th style="text-align:center;padding:8px 6px;font-weight:700">Estado</th>';
-      html += '<th style="text-align:center;padding:8px 6px;font-weight:700">Agendado</th>';
-      html += '<th style="padding:8px 6px"></th>';
+      html += '<th style="text-align:center;padding:8px 6px;font-weight:700;width:32px">▾</th>';
       html += '</tr></thead><tbody>';
       prods.forEach((p, j) => {
         const idx = baseIdx + j;
         const cfg = URG_COLORS[p.urgencia] || URG_COLORS.OK;
         const dias = p.dias_cobertura != null ? p.dias_cobertura + 'd' : '—';
-        const agendado = (p.lotes_pendientes_n || 0) > 0
-          ? '<span title="' + (p.lotes_pendientes_proximas_fechas || []).join(', ') + '" style="background:#dbeafe;color:#1e40af;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700">' + p.lotes_pendientes_n + ' · ' + p.lotes_pendientes_kg + 'kg</span>'
-          : '<span style="color:#cbd5e1">—</span>';
         const codDisp = escapeHtmlNec(p.codigo_pt || '');
+        // Indicador de "tiene programado" o "tiene histórico" sin redundancia
+        let marker = '';
+        if ((p.lotes_pendientes_n || 0) > 0) marker = '<span title="Tiene producción agendada" style="color:#1e40af">📅</span>';
+        else if (p.ultima_produccion_fecha) marker = '<span title="Tiene histórico registrado" style="color:#ca8a04">📜</span>';
         html += '<tr style="border-bottom:1px solid #f1f5f9;cursor:pointer" onclick="toggleDrill(' + idx + ')">';
         html += '<td style="padding:8px 6px;font-family:ui-monospace,SFMono-Regular,monospace;font-weight:700;color:#1e40af">' + codDisp + '</td>';
-        html += '<td style="padding:8px 6px;color:#1e293b">' + escapeHtmlNec(p.producto_nombre) + '</td>';
+        html += '<td style="padding:8px 6px;color:#1e293b">' + escapeHtmlNec(p.producto_nombre) + ' ' + marker + '</td>';
         html += '<td style="padding:8px 6px;text-align:center">' + p.stock_uds_total + '</td>';
         html += '<td style="padding:8px 6px;text-align:center">' + p.velocidad_uds_dia.toFixed(1) + '</td>';
         html += '<td style="padding:8px 6px;text-align:center;font-weight:700;color:' + cfg.text + '">' + dias + '</td>';
         html += '<td style="padding:8px 6px;text-align:center"><span style="background:' + cfg.bg + ';color:' + cfg.text + ';padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700">' + cfg.emoji + ' ' + p.urgencia + '</span></td>';
-        html += '<td style="padding:8px 6px;text-align:center">' + agendado + '</td>';
-        html += '<td style="padding:8px 6px;text-align:right"><button onclick="event.stopPropagation();abrirGenerarProduccion(' + idx + ')" style="background:#0f766e;color:#fff;border:none;padding:5px 10px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">⚡ Generar</button></td>';
+        html += '<td style="padding:8px 6px;text-align:center;color:#94a3b8">▾</td>';
         html += '</tr>';
-        html += '<tr id="drill-' + idx + '" style="display:none"><td colspan="8" style="padding:14px;background:#f8fafc;border-bottom:1px solid #e2e8f0">';
+        html += '<tr id="drill-' + idx + '" style="display:none"><td colspan="7" style="padding:14px;background:#f8fafc;border-bottom:1px solid #e2e8f0">';
         html += renderDrillPanel(p, idx);
         html += '</td></tr>';
       });
@@ -16930,12 +16990,53 @@ async function ckMarcar(itemId, estado){
     } else {
       html += '<div style="font-size:11px;color:#94a3b8;margin-top:6px;margin-bottom:6px">📜 Sin producciones registradas · usá "✓ Ya producido" para back-fill el histórico</div>';
     }
-    html += '<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">';
-    html += '<button onclick="abrirGenerarProduccion(' + idx + ')" style="background:#0f766e;color:#fff;border:none;padding:10px 18px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer">⚡ Generar (agendar futura)</button>';
-    html += '<button onclick="abrirYaProducido(' + idx + ')" style="background:#1e40af;color:#fff;border:none;padding:10px 18px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer">✓ Ya producido (back-fill)</button>';
+    // Sugerencias inteligentes 30/60/90 días · Sebastián 13-may-2026:
+    // "programación inteligente, sugiero 30 días X kg, 60 Y, 90 Z, click
+    // y ya". Cada escenario = botón one-click.
+    if (p.escenarios && p.escenarios.length > 0) {
+      html += '<div style="background:#ecfeff;border-left:4px solid #0891b2;border-radius:6px;padding:10px;margin-top:8px;margin-bottom:8px">';
+      html += '<div style="font-size:11px;color:#155e75;font-weight:700;margin-bottom:6px">⚡ Sugerencias · click y agendado</div>';
+      html += '<div style="display:flex;gap:8px;flex-wrap:wrap">';
+      p.escenarios.forEach(esc => {
+        const rec = esc.recomendado;
+        const bg = rec ? '#0f766e' : '#0891b2';
+        const star = rec ? ' ⭐' : '';
+        html += '<button onclick="agendarRapido(' + idx + ', ' + esc.kg_sugerido + ', &quot;' + esc.fecha_sugerida + '&quot;, &quot;' + escapeHtmlNec(esc.etiqueta) + '&quot;)" '
+          + 'style="background:' + bg + ';color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;text-align:left;line-height:1.4">'
+          + esc.etiqueta + star + '<br>'
+          + '<span style="font-size:11px;font-weight:500;opacity:.9">' + esc.kg_sugerido + 'kg · ' + esc.fecha_sugerida + '</span>'
+          + '</button>';
+      });
+      html += '</div></div>';
+    }
+    html += '<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;border-top:1px solid #e2e8f0;padding-top:10px">';
+    html += '<button onclick="abrirGenerarProduccion(' + idx + ')" style="background:#475569;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">⚙ Personalizar</button>';
+    html += '<button onclick="abrirYaProducido(' + idx + ')" style="background:#1e40af;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">✓ Ya producido (back-fill)</button>';
     html += '</div>';
     html += '</div></div>';
     return html;
+  }
+
+  // Agenda directo · 1 click desde el escenario sugerido
+  async function agendarRapido(idx, kg, fecha, etiqueta) {
+    const p = window._NEC_PRODUCTOS_CACHE[idx];
+    if (!p) { alert('Producto no encontrado'); return; }
+    if (!confirm('¿Agendar producción de ' + p.producto_nombre + ' · ' + kg + 'kg para ' + fecha + '? · ' + etiqueta)) return;
+    try {
+      const r = await fetch('/api/plan/programar-produccion', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfTokenNec()},
+        body: JSON.stringify({
+          producto_nombre: p.producto_nombre,
+          cantidad_kg: kg,
+          fecha_programada: fecha,
+          notas: etiqueta,
+        }),
+      });
+      const d = await r.json();
+      if (!r.ok) { alert('Error: ' + (d.error || r.status)); return; }
+      cargarNecesidades();
+    } catch(e) { alert('Error: ' + e.message); }
   }
 
   function toggleDrill(idx) {

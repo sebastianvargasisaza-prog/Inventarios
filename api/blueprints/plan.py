@@ -596,6 +596,50 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
             p["proxima_sugerida_fecha"] = None
             p["proxima_sugerida_dias"] = None
 
+        # Escenarios inteligentes 30/60/90 días · Sebastián 13-may-2026:
+        # "sugiero para 30 días tantos kilos, para 60 tantos, etc · elijo
+        # y se agenda con un click". Cada escenario propone kg + fecha.
+        # Fecha sugerida = max(hoy + 3d, cobertura - buffer 7d) para que
+        # haya tiempo de planear sin agotamiento.
+        vel_kg_dia = p["velocidad_kg_dia"] or 0
+        escenarios = []
+        if vel_kg_dia > 0:
+            # Buffer: producir antes de que cobertura llegue a 0 (de hecho
+            # antes del buffer 25d ideal del usuario). Aproximamos con
+            # max(hoy + 3d, fecha_proxima_critica).
+            dias_hasta_critico = (
+                (p["dias_cobertura"] or 0) - cob_critico
+                if p["dias_cobertura"] is not None else 0
+            )
+            from datetime import date as _date2, timedelta as _td2
+            hoy2 = _date2.today()
+            fecha_base = hoy2 + _td2(days=max(3, dias_hasta_critico))
+            for d in (30, 60, 90):
+                kg_d = round(vel_kg_dia * d, 1)
+                # No bajar de 0.5kg ni superar 5× lote bulk (sanity)
+                if kg_d < 0.5:
+                    continue
+                escenarios.append({
+                    "dias_objetivo": d,
+                    "kg_sugerido": kg_d,
+                    "fecha_sugerida": fecha_base.isoformat(),
+                    "etiqueta": f"Cubrir {d} días",
+                    "recomendado": d == 90 and kg_d <= p["lote_bulk_kg"] * 1.2,
+                })
+            # Si el lote_bulk_kg no coincide con ninguno, agregar como opción
+            if p["lote_bulk_kg"] > 0 and not any(
+                abs(e["kg_sugerido"] - p["lote_bulk_kg"]) < 0.5 for e in escenarios
+            ):
+                lote_dias = int(p["lote_bulk_kg"] / vel_kg_dia)
+                escenarios.append({
+                    "dias_objetivo": lote_dias,
+                    "kg_sugerido": p["lote_bulk_kg"],
+                    "fecha_sugerida": fecha_base.isoformat(),
+                    "etiqueta": f"Lote bulk completo (~{lote_dias} días)",
+                    "recomendado": True,
+                })
+        p["escenarios"] = escenarios
+
     # Ordenar por urgencia + días cobertura ascendente
     ORDEN = {"CRITICO": 0, "URGENTE": 1, "VIGILAR": 2, "OK": 3, "SIN_VENTAS": 4}
     out.sort(key=lambda x: (
@@ -701,6 +745,84 @@ def _valida_fecha_iso(s):
         return True
     except Exception:
         return False
+
+
+@bp.route("/api/plan/proximas", methods=["GET"])
+def plan_proximas():
+    """Lista lotes ya agendados pero NO completados todavía.
+
+    Sebastián 13-may-2026: "cuando dice programar futuro dónde lo vemos?
+    debería aparecer en algún lado". Esta es esa lista · feed de la
+    sección "Próximas programadas" arriba de Necesidades.
+
+    Devuelve lotes con estado pendiente/programado/en_curso y fecha futura
+    o reciente (-7d). Ordenado por fecha ASC.
+    """
+    err = _require_login()
+    if err:
+        return err
+
+    conn = get_db()
+    c = conn.cursor()
+    rows = c.execute(
+        """SELECT pp.id, pp.producto, pp.fecha_programada, pp.cantidad_kg,
+                  pp.estado, pp.origen, pp.observaciones,
+                  pp.area_id, ap.codigo as area_codigo, ap.nombre as area_nombre,
+                  pp.creado_en
+           FROM produccion_programada pp
+           LEFT JOIN areas_planta ap ON ap.id = pp.area_id
+           WHERE pp.estado IN ('pendiente','programado','en_curso')
+             AND pp.fin_real_at IS NULL
+             AND date(pp.fecha_programada) >= date('now', '-7 day')
+           ORDER BY pp.fecha_programada ASC, pp.id ASC""",
+    ).fetchall()
+    items = []
+    for r in rows:
+        items.append({
+            "id": r[0],
+            "producto": r[1] or "",
+            "fecha_programada": r[2] or "",
+            "cantidad_kg": float(r[3] or 0),
+            "estado": r[4] or "",
+            "origen": r[5] or "",
+            "observaciones": r[6] or "",
+            "area_id": r[7],
+            "area_codigo": r[8] or "",
+            "area_nombre": r[9] or "",
+            "creado_en": r[10] or "",
+        })
+    return jsonify({"items": items, "total": len(items)})
+
+
+@bp.route("/api/plan/proximas/<int:pid>", methods=["DELETE"])
+def cancelar_proxima(pid):
+    """Cancela un lote agendado (soft delete · estado='cancelado')."""
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+
+    conn = get_db()
+    cur = conn.cursor()
+    row = cur.execute(
+        "SELECT estado, producto, fecha_programada FROM produccion_programada WHERE id = ?",
+        (pid,),
+    ).fetchone()
+    if not row:
+        return jsonify({"error": "lote no encontrado"}), 404
+    estado_actual, producto, fecha = row
+    if estado_actual not in ('pendiente', 'programado'):
+        return jsonify({
+            "error": f"solo se puede cancelar pendiente/programado · estado actual: {estado_actual}",
+        }), 409
+
+    cur.execute("UPDATE produccion_programada SET estado='cancelado' WHERE id = ?", (pid,))
+    conn.commit()
+    audit_log(cur, usuario=user, accion="CANCELAR_PRODUCCION_PROGRAMADA",
+              tabla="produccion_programada", registro_id=pid,
+              antes={"estado": estado_actual, "producto": producto, "fecha": fecha},
+              despues={"estado": "cancelado"})
+    return jsonify({"ok": True, "id": pid, "estado": "cancelado"})
 
 
 @bp.route("/api/plan/registrar-produccion-completada", methods=["POST"])

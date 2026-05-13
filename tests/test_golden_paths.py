@@ -7109,3 +7109,72 @@ def test_golden_plan_registrar_completada_horizonte(app, db_clean):
 
     # Cleanup
     _exec("DELETE FROM produccion_programada WHERE observaciones LIKE 'LOTE TEST_HORIZ%'")
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH PLAN-E · escenarios sugeridos + /api/plan/proximas
+# ═══════════════════════════════════════════════════════════════════
+def test_golden_plan_escenarios_y_proximas(app, db_clean):
+    """Cada producto en /api/plan/necesidades trae escenarios 30/60/90d ·
+    /api/plan/proximas lista los pendientes · DELETE cancela."""
+    _exec("DELETE FROM produccion_programada WHERE observaciones LIKE 'TEST_ESC_%'")
+
+    cs = _login(app, 'sebastian')
+
+    # Caso 1: /api/plan/necesidades incluye escenarios
+    r1 = cs.get('/api/plan/necesidades')
+    d1 = r1.get_json()
+    animus = next(c for c in d1['clientes'] if c['cliente_id'] == 'ANIMUS_DTC')
+    # Tomar un producto con velocidad > 0 (no SIN_VENTAS) para que tenga escenarios
+    con_velocidad = [p for p in animus['productos']
+                      if p['velocidad_kg_dia'] > 0]
+    if con_velocidad:
+        p = con_velocidad[0]
+        assert 'escenarios' in p, 'BUG: escenarios falta en producto'
+        assert isinstance(p['escenarios'], list)
+        assert len(p['escenarios']) >= 1, 'BUG: escenarios vacío'
+        for e in p['escenarios']:
+            assert 'dias_objetivo' in e
+            assert 'kg_sugerido' in e
+            assert 'fecha_sugerida' in e
+            assert 'etiqueta' in e
+
+    # Caso 2: POST programar-produccion + GET proximas devuelve el lote
+    r2 = cs.post('/api/plan/programar-produccion', json={
+        'producto_nombre': 'SUERO HIDRATANTE AH 1.5%',
+        'cantidad_kg': 60,
+        'fecha_programada': '2026-06-15',
+        'notas': 'TEST_ESC_próximas',
+    }, headers=csrf_headers())
+    assert r2.status_code == 201
+    pid = r2.get_json()['id']
+
+    r3 = cs.get('/api/plan/proximas')
+    items = r3.get_json()['items']
+    mio = next((i for i in items if i['id'] == pid), None)
+    assert mio, 'BUG: lote agendado no aparece en /api/plan/proximas'
+    assert mio['cantidad_kg'] == 60
+    assert mio['estado'] == 'pendiente'
+    assert mio['origen'] == 'eos_plan'
+
+    # Caso 3: DELETE soft-cancel
+    r4 = cs.delete('/api/plan/proximas/' + str(pid), headers=csrf_headers())
+    assert r4.status_code == 200
+    rows = _query("SELECT estado FROM produccion_programada WHERE id = ?", (pid,))
+    assert rows and rows[0][0] == 'cancelado'
+
+    # Caso 4: ya cancelado · 409 si re-cancelar
+    r5 = cs.delete('/api/plan/proximas/' + str(pid), headers=csrf_headers())
+    assert r5.status_code == 409
+
+    # Caso 5: mayerlin (planta) no puede cancelar (403)
+    pp_b = _exec(
+        """INSERT INTO produccion_programada (producto, fecha_programada, cantidad_kg, estado, origen, observaciones)
+           VALUES ('SUERO HIDRATANTE AH 1.5%', '2026-06-20', 30, 'pendiente', 'eos_plan', 'TEST_ESC_2')""",
+    )
+    cs_op = _login(app, 'mayerlin')
+    r6 = cs_op.delete('/api/plan/proximas/' + str(pp_b), headers=csrf_headers())
+    assert r6.status_code == 403
+
+    # Cleanup
+    _exec("DELETE FROM produccion_programada WHERE observaciones LIKE 'TEST_ESC_%'")
