@@ -198,7 +198,9 @@ def test_audit_log_inserta_correctamente(app, db_clean):
             SELECT usuario, accion, tabla, registro_id, antes, despues
             FROM audit_log WHERE registro_id='HELPER-TEST-001'
         """).fetchone()
-        c.execute("DELETE FROM audit_log WHERE registro_id='HELPER-TEST-001'")
+        # NO DELETE: audit_log es append-only (mig 105 trigger). El registro
+        # queda en la DB de tests pero no contamina a otros tests porque
+        # registro_id='HELPER-TEST-001' es único de este caso.
         assert row is not None
         assert row[0] == 'sebastian'
         assert row[1] == 'TEST_HELPER'

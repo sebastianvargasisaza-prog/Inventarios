@@ -222,6 +222,29 @@ _AREAS_LIMPIEZA_PROFUNDA = (
 
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (105, "audit_log append-only · Part 11 §11.10(e) · Sebastián 12-may-2026", [
+        # Bloquea UPDATE/DELETE sobre audit_log para que la evidencia
+        # regulatoria sea inmutable. 21 CFR Part 11 §11.10(e) requiere
+        # "use of secure, computer-generated, time-stamped audit trails to
+        # independently record the date and time of operator entries and
+        # actions that create, modify, or delete electronic records."
+        # Una columna audit no inmutable es inválida en auditoría INVIMA
+        # (cualquier admin con shell SQLite podía sobreescribir el rastro).
+        #
+        # Si en el futuro se necesita archivar audit_log >3 años (política
+        # de retención EOS), hacerlo con una migración explícita que
+        # DROP TRIGGER → mueva filas → CREATE TRIGGER. NUNCA en runtime.
+        """CREATE TRIGGER IF NOT EXISTS trg_audit_log_no_update
+           BEFORE UPDATE ON audit_log
+           BEGIN
+               SELECT RAISE(ABORT, 'audit_log es append-only (Part 11 11.10(e))');
+           END""",
+        """CREATE TRIGGER IF NOT EXISTS trg_audit_log_no_delete
+           BEFORE DELETE ON audit_log
+           BEGIN
+               SELECT RAISE(ABORT, 'audit_log es append-only (Part 11 11.10(e))');
+           END""",
+    ]),
     (104, "Blush Balm · fórmula oficial v1 (21 MPs · 1kg) + remap BBM · Sebastián 12-may-2026", [
         # Fórmula completa Blush Balm aprobada por Sebastián CEO 12-may-2026.
         # Origen: archive/data-imports/formulas_data.json:2357 (v1 · 100% activos).

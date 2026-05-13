@@ -4569,3 +4569,64 @@ def test_golden_cron_snapshot_mp_alcanza(app, db_clean):
     finally:
         _exec("DELETE FROM mp_alcanza_snapshots WHERE fecha = date('now')")
         _exec("DELETE FROM mp_alcanza_snapshots WHERE fecha = date('now','-1 day')")
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 51 · audit_log es append-only (Part 11 §11.10(e))
+# ═══════════════════════════════════════════════════════════════════
+# Sebastián 12-may-2026: trigger SQL append-only sobre audit_log
+# (mig 105) bloquea UPDATE y DELETE para que la evidencia regulatoria
+# sea inmutable. Sin esto, cualquier admin con shell SQLite puede
+# sobreescribir el rastro auditor — invalidante en auditoría INVIMA.
+def test_golden_audit_log_append_only(app, db_clean):
+    """audit_log no permite UPDATE ni DELETE · Part 11 evidencia inmutable."""
+    import sqlite3 as _sqlite3
+
+    def _try_sql(sql, params=()):
+        """Intenta ejecutar sql en conn dedicada; cierra siempre. Retorna msg de error o None."""
+        conn = _sqlite3.connect(os.environ['DB_PATH'], timeout=5.0)
+        try:
+            conn.execute(sql, params)
+            conn.commit()
+            return None  # exitoso
+        except Exception as e:
+            return f'{type(e).__name__}: {e}'
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+    # Sembrar un registro de auditoría para luego intentar tocarlo
+    err_seed = _try_sql(
+        """INSERT INTO audit_log (usuario, accion, tabla, registro_id,
+                                    detalle, ip, fecha)
+           VALUES (?, ?, ?, ?, ?, ?, datetime('now'))""",
+        ('test-bot', 'TEST_PART11', 'audit_log', 'PART11-AUDIT-1',
+         'sembrar para test inmutabilidad', '127.0.0.1')
+    )
+    assert err_seed is None, f'BUG: setup falló · INSERT base · {err_seed}'
+
+    # Caso 1: UPDATE debe ser bloqueado por trigger
+    err_update = _try_sql(
+        "UPDATE audit_log SET detalle='falsificado' WHERE registro_id='PART11-AUDIT-1'"
+    )
+    assert err_update is not None, \
+        'BUG Part 11 §11.10(e): UPDATE sobre audit_log NO fue bloqueado'
+    assert 'append-only' in err_update.lower() or '11.10' in err_update, \
+        f'UPDATE bloqueado pero mensaje inesperado: {err_update}'
+
+    # Caso 2: DELETE debe ser bloqueado por trigger
+    err_delete = _try_sql(
+        "DELETE FROM audit_log WHERE registro_id='PART11-AUDIT-1'"
+    )
+    assert err_delete is not None, \
+        'BUG Part 11 §11.10(e): DELETE sobre audit_log NO fue bloqueado'
+    assert 'append-only' in err_delete.lower() or '11.10' in err_delete, \
+        f'DELETE bloqueado pero mensaje inesperado: {err_delete}'
+
+    # Caso 3: el registro original sigue presente sin cambios
+    rows = _query(
+        "SELECT detalle FROM audit_log WHERE registro_id='PART11-AUDIT-1'"
+    )
+    assert rows and rows[0][0] == 'sembrar para test inmutabilidad', \
+        'BUG: el registro original fue alterado pese al trigger'

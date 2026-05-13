@@ -124,6 +124,8 @@ Al editar un item de SOL (`PATCH /api/solicitudes-compra/<num>/items`):
 3. **PATCH SOL** → sincroniza global maestro_mps + mp_lead_time_config.
 4. **Limpiar duplicados** → respeta guard inicio_real_at/descontado.
 5. **3 fuentes SOL** → no se mezclan (Catalina ve cada tab limpio).
+6. **audit_log es append-only** → mig 105 trigger SQL bloquea UPDATE/DELETE
+   (Part 11 §11.10(e) · evidencia inmutable para auditoría INVIMA).
 
 Tests E2E: `tests/test_golden_paths.py` · 5 tests obligatorios pre-push.
 

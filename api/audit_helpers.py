@@ -18,9 +18,30 @@ implementación de:
 
 Compatible con la migración 91 (audit_log columnas antes/despues).
 Si la migración no se aplicó, hace fallback al schema mínimo.
+
+──────────────────────────────────────────────────────────────────────────────
+Sebastián 12-may-2026 · Part 11 §11.10(e) · audit_log INMUTABLE + indep opcional
+──────────────────────────────────────────────────────────────────────────────
+La protección principal es la migración 105: triggers SQL que bloquean UPDATE
+y DELETE sobre `audit_log`. Eso garantiza la inmutabilidad ("secure" en el
+texto del §11.10(e)) sin importar el camino del INSERT.
+
+Además, `audit_log()` soporta dos modos:
+
+- Modo **legacy** (cursor pasado, `c=cursor`): inserta dentro de la transacción
+  del caller. Si el caller hace ROLLBACK, el rastro también rollback. Es lo
+  que hacían los ~485 call sites pre-existentes y mantiene compatibilidad
+  con el patrón "una conn por request".
+
+- Modo **independent** (cursor `None`, recomendado para nuevos call sites):
+  abre una conn SQLite separada con autocommit (`isolation_level=None`) y
+  escribe el INSERT ahí. El rastro queda incluso si la operación principal
+  falla — útil para forensia y para Part 11 puro ("independently recorded").
+  Migrar call sites a este modo de a uno, midiendo impacto en concurrencia.
 """
 import json as _json
 import logging
+import os as _os
 import sqlite3 as _sqlite3
 from datetime import datetime
 from flask import request
@@ -28,12 +49,35 @@ from flask import request
 log = logging.getLogger('audit_helpers')
 
 
-def audit_log(c, *, usuario, accion, registro_id, tabla=None,
+def _audit_conn():
+    """Conexión SQLite dedicada al audit_log con autocommit.
+
+    Cada llamada a audit_log() abre una conexión nueva, escribe el INSERT
+    en autocommit (isolation_level=None) y la cierra. La conexión es
+    INDEPENDIENTE de la transacción que esté corriendo en el request actual:
+    si el caller hace ROLLBACK la evidencia queda persistida igual.
+
+    `busy_timeout=10000` cubre el caso de 3 workers Gunicorn con WAL escribiendo
+    al mismo tiempo. SQLite WAL permite N readers + 1 writer concurrente, así
+    que el lock real es muy breve (sub-milisegundo en INSERTs cortos).
+    """
+    db_path = _os.environ.get("DB_PATH", "/var/data/inventario.db")
+    conn = _sqlite3.connect(db_path, isolation_level=None, timeout=10.0)
+    conn.execute("PRAGMA busy_timeout=10000")
+    return conn
+
+
+def audit_log(c=None, *, usuario, accion, registro_id, tabla=None,
                 antes=None, despues=None, detalle=None):
-    """INSERT a audit_log para evidencia regulatoria (Resolución 2214/2021).
+    """INSERT a audit_log para evidencia regulatoria (Part 11 §11.10(e)).
 
     Args:
-        c: cursor SQLite (no se hace commit aquí · caller controla la tx).
+        c: cursor SQLite del caller para inserción en la misma transacción
+           (modo legacy, default de los ~485 call sites). Si se pasa `None`,
+           audit_log abre una conn separada con autocommit (modo independent,
+           recomendado para call sites nuevos · ver docstring del módulo).
+           La inmutabilidad la garantiza el trigger SQL de la mig 105 en
+           ambos modos.
         usuario: username del actor.
         accion: string corto identificador (ej. 'CERRAR_DESVIACION', 'PAGAR_OC').
         registro_id: ID o código del registro afectado.
@@ -47,43 +91,56 @@ def audit_log(c, *, usuario, accion, registro_id, tabla=None,
     hace fallback al schema mínimo (usuario, accion, tabla, registro_id,
     detalle, ip, fecha).
     """
+    # IP del cliente (si estamos en request context)
     try:
-        antes_s = _json.dumps(antes) if antes is not None and not isinstance(antes, str) else antes
-        despues_s = _json.dumps(despues) if despues is not None and not isinstance(despues, str) else despues
-        # IP del cliente (si estamos en request context)
+        ip = request.headers.get('X-Forwarded-For', request.remote_addr or '')[:45]
+    except RuntimeError:
+        ip = ''  # fuera de request context (cron, script)
+
+    antes_s = _json.dumps(antes) if antes is not None and not isinstance(antes, str) else antes
+    despues_s = _json.dumps(despues) if despues is not None and not isinstance(despues, str) else despues
+    registro_id_s = str(registro_id) if registro_id is not None else None
+
+    # Resolver executor: cursor del caller (legacy) o conn separada autocommit (Part 11 puro).
+    independent_conn = None
+    if c is None:
         try:
-            ip = request.headers.get('X-Forwarded-For', request.remote_addr or '')[:45]
-        except RuntimeError:
-            ip = ''  # fuera de request context (cron, script)
-        c.execute("""
-            INSERT INTO audit_log (usuario, accion, tabla, registro_id,
-                                     detalle, antes, despues, ip, fecha)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-        """, (usuario or '', accion, tabla,
-              str(registro_id) if registro_id is not None else None,
-              detalle, antes_s, despues_s, ip))
-    except Exception as e:
-        msg = str(e).lower()
-        if 'no column named' in msg or 'has no column' in msg:
-            # Migración 91 no aplicada · fallback al schema mínimo
-            log.warning('audit_log antes/despues no disponible · fallback: %s', e)
-            try:
-                try:
-                    ip = request.headers.get('X-Forwarded-For', request.remote_addr or '')[:45]
-                except RuntimeError:
-                    ip = ''
-                c.execute("""
+            independent_conn = _audit_conn()
+            executor = independent_conn
+        except Exception as e:
+            log.exception('audit_log: no pude abrir conn separada: %s', e)
+            raise
+    else:
+        executor = c
+
+    try:
+        try:
+            executor.execute("""
+                INSERT INTO audit_log (usuario, accion, tabla, registro_id,
+                                         detalle, antes, despues, ip, fecha)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+            """, (usuario or '', accion, tabla, registro_id_s,
+                  detalle, antes_s, despues_s, ip))
+        except _sqlite3.OperationalError as e:
+            msg = str(e).lower()
+            if 'no column named' in msg or 'has no column' in msg:
+                # Migración 91 no aplicada · fallback al schema mínimo
+                log.warning('audit_log antes/despues no disponible · fallback: %s', e)
+                executor.execute("""
                     INSERT INTO audit_log (usuario, accion, tabla, registro_id, detalle, ip, fecha)
                     VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
-                """, (usuario or '', accion, tabla,
-                      str(registro_id) if registro_id is not None else None,
-                      detalle, ip))
-            except Exception as e2:
-                log.exception('audit_log fallback también falló: %s', e2)
-                raise  # regulatorio · debe rollback la operación
-        else:
-            log.exception('audit_log fallo inesperado: %s', e)
-            raise
+                """, (usuario or '', accion, tabla, registro_id_s, detalle, ip))
+            else:
+                raise
+    except Exception as e:
+        log.exception('audit_log fallo: %s', e)
+        raise  # regulatorio · debe rollback la operación si falla la auditoría
+    finally:
+        if independent_conn is not None:
+            try:
+                independent_conn.close()
+            except Exception:
+                pass
 
 
 def siguiente_codigo_secuencial(c, prefijo, tabla, columna='codigo', anio=None):
