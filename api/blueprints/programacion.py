@@ -17,7 +17,7 @@ Dependencias de env:
 
 from flask import Blueprint, jsonify, request, session
 import os, json, logging, sqlite3, urllib.request, urllib.error, urllib.parse
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta, date, timezone
 from database import get_db
 from config import ADMIN_USERS, APP_BASE_URL, CALIDAD_USERS, COMPRAS_USERS
 from inventario_helpers import stock_mp_total, stock_mp_disponible
@@ -409,7 +409,7 @@ def _fetch_calendar_events(days_ahead=90):
     if not GOOGLE_API_KEY:
         return {'events': [], 'error': 'Configura GCAL_ICAL_URL en Render para leer el calendario', 'source': 'none'}
 
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     # Sebastián 1-may-2026: 'lunes vacío' · cambiar time_min al LUNES de esta
     # semana (no a now) para incluir eventos de lun-mar-mié-jue cuando hoy es vie.
     lunes_semana = (now - timedelta(days=now.weekday())).replace(hour=0, minute=0, second=0)
@@ -795,7 +795,7 @@ def _resolved_stock_por_sku(conn, empresa=None):
             shop_stock[raw_sku] = shop_stock.get(raw_sku, 0) + uds
             if fmax:
                 try:
-                    age_h = (_dt.utcnow() - _dt.fromisoformat(fmax.replace('Z', ''))).total_seconds() / 3600.0
+                    age_h = (_dt.now(timezone.utc).replace(tzinfo=None) - _dt.fromisoformat(fmax.replace('Z', ''))).total_seconds() / 3600.0
                     if age_h > shop_max_age_hours:
                         shop_max_age_hours = age_h
                 except Exception:
@@ -8525,7 +8525,7 @@ def _record_sync(conn, sync_type, count, error=None):
     """Registra timestamp del ultimo sync exitoso/fallido de un tipo."""
     _ensure_sync_log_table(conn)
     try:
-        ts = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')
+        ts = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
         conn.execute("""
             INSERT INTO sync_log (sync_type, last_run_at, last_count, last_error)
             VALUES (?, ?, ?, ?)

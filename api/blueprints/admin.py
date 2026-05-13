@@ -1676,14 +1676,14 @@ def admin_zero_error_status():
     import os as _os
     import subprocess as _sp
     import re as _re
-    from datetime import datetime as _dt
+    from datetime import datetime as _dt, timezone as _tz
 
     REPO_ROOT = _os.path.dirname(
         _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
     )
 
     out = {
-        'generated_at': _dt.utcnow().isoformat() + 'Z',
+        'generated_at': _dt.now(_tz.utc).strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
         'repo_root': REPO_ROOT,
     }
 
@@ -1794,7 +1794,7 @@ def admin_zero_error_status():
                     st = _os.stat(path)
                     files.append({
                         'name': fn,
-                        'mtime': _dt.utcfromtimestamp(st.st_mtime).isoformat() + 'Z',
+                        'mtime': _dt.fromtimestamp(st.st_mtime, tz=_tz.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
                         'size': st.st_size,
                     })
                 except Exception:
@@ -2218,10 +2218,10 @@ def admin_health_critical_paths():
                    'Nunca corrió un sync de calendar (tabla vacía o sin runs)')
         else:
             # Parse ISO timestamp
-            from datetime import datetime as _dt
+            from datetime import datetime as _dt, timezone as _tz
             try:
                 ts = _dt.fromisoformat(last_sync.replace('Z', '+00:00'))
-                age_min = (_dt.utcnow() - ts.replace(tzinfo=None)).total_seconds() / 60
+                age_min = (_dt.now(_tz.utc).replace(tzinfo=None) - ts.replace(tzinfo=None)).total_seconds() / 60
             except Exception:
                 age_min = 99999
             if age_min > 120:
@@ -2247,10 +2247,10 @@ def admin_health_critical_paths():
         if not last_bk:
             _check('last_backup', 'warn', 'No hay backups exitosos')
         else:
-            from datetime import datetime as _dt
+            from datetime import datetime as _dt, timezone as _tz
             try:
                 ts = _dt.fromisoformat(last_bk.replace('Z', '+00:00'))
-                age_h = (_dt.utcnow() - ts.replace(tzinfo=None)).total_seconds() / 3600
+                age_h = (_dt.now(_tz.utc).replace(tzinfo=None) - ts.replace(tzinfo=None)).total_seconds() / 3600
             except Exception:
                 age_h = 999
             if age_h > 30:
@@ -3531,7 +3531,7 @@ def admin_inventario_snapshot_pre_reset():
         return err, code
 
     import json as _json
-    from datetime import datetime as _dt
+    from datetime import datetime as _dt, timezone as _tz
 
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -3539,7 +3539,7 @@ def admin_inventario_snapshot_pre_reset():
 
     snapshot = {
         'meta': {
-            'generated_at': _dt.utcnow().isoformat() + 'Z',
+            'generated_at': _dt.now(_tz.utc).strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
             'generated_by': u,
             'db_path': DB_PATH,
         },
@@ -3821,7 +3821,7 @@ def admin_inventario_reset_aplicar():
         return jsonify({'error': errs[0] if errs else 'Excel invalido'}), 400
 
     # Verificar backup reciente
-    from datetime import datetime as _dt, timedelta as _td
+    from datetime import datetime as _dt, timedelta as _td, timezone as _tz
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
@@ -3834,7 +3834,7 @@ def admin_inventario_reset_aplicar():
             try:
                 # SQLite datetime('now','utc') devuelve 'YYYY-MM-DD HH:MM:SS'
                 last_dt = _dt.fromisoformat(last.replace(' ', 'T').replace('Z', ''))
-                if (_dt.utcnow() - last_dt) < _td(hours=24):
+                if (_dt.now(_tz.utc).replace(tzinfo=None) - last_dt) < _td(hours=24):
                     backup_reciente = True
             except Exception:
                 pass
@@ -5234,8 +5234,8 @@ def admin_inventario_health_monitor():
 
     # 3. SIN OC ratio en ultimos 7 dias (excluye reset)
     try:
-        from datetime import datetime as _dt, timedelta as _td
-        hace_7 = (_dt.utcnow() - _td(days=7)).strftime('%Y-%m-%d')
+        from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+        hace_7 = (_dt.now(_tz.utc) - _td(days=7)).strftime('%Y-%m-%d')
         r = c.execute("""
             SELECT
               SUM(CASE WHEN COALESCE(numero_oc,'') = '' THEN 1 ELSE 0 END) as sin_oc,
@@ -11067,7 +11067,7 @@ def auditoria_catalogo():
     # timeouts del browser cuando el catálogo crece.
     quick_mode = request.args.get('quick', '').strip() in ('1', 'true', 'yes')
 
-    import datetime as _dt
+    from datetime import datetime as _dtcls, timezone as _tzcls
     conn = sqlite3.connect(DB_PATH)
     conn.execute("PRAGMA busy_timeout=2000")
     c = conn.cursor()
@@ -11430,7 +11430,7 @@ def auditoria_catalogo():
 
     return jsonify({
         'ok': True,
-        'timestamp': _dt.datetime.utcnow().isoformat() + 'Z',
+        'timestamp': _dtcls.now(_tzcls.utc).strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
         'resumen': {
             'n_alta': n_alta,
             'n_media': n_media,
@@ -14787,7 +14787,7 @@ def validar_planta_invariantes():
     if err:
         return err, code
 
-    import datetime as _dt
+    from datetime import datetime as _dtcls, timezone as _tzcls
     conn = sqlite3.connect(DB_PATH)
     conn.execute("PRAGMA busy_timeout=2000")
     c = conn.cursor()
@@ -15033,7 +15033,7 @@ def validar_planta_invariantes():
 
     return jsonify({
         'ok': True,
-        'timestamp': _dt.datetime.utcnow().isoformat() + 'Z',
+        'timestamp': _dtcls.now(_tzcls.utc).strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
         'score_global': score_global,
         'veredicto': veredicto,
         'invariantes': inv,
