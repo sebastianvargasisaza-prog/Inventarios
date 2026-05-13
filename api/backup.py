@@ -34,10 +34,18 @@ BACKUPS_DIR = os.environ.get(
     "BACKUPS_DIR",
     str(Path(DB_PATH).parent / "backups")
 )
-RETENTION_DAYS = int(os.environ.get("BACKUP_RETENTION_DAYS", "14"))
+# Sebastián 12-may-2026 Bloque E: retención dual para alinear con política
+# de records 3 años. INVIMA Res. 3131/1998 + práctica GMP típica = mantener
+# evidencia 3+ años post-vencimiento. Hoy:
+#   - DAILY: 30 días (1 mes) en disco rápido. Recovery operativo.
+#   - MONTHLY: 36 meses (3 años) snapshot mensual marcado con sufijo
+#              "__monthly" que NO entra en la rotación diaria. Auditoría.
+# El snapshot mensual se hace copiando el primer backup de cada mes natural.
+RETENTION_DAYS = int(os.environ.get("BACKUP_RETENTION_DAYS", "30"))
+MONTHLY_RETENTION_DAYS = int(os.environ.get("BACKUP_MONTHLY_RETENTION_DAYS", "1100"))
 # Sebastián 12-may-2026: tras incidente 'database disk image is malformed'
 # (perdimos ~24h de data), reducimos intervalo de 23h a 6h. 4 backups/día.
-# Con retention 14 días = ~56 backups guardados (~3GB asumiendo 50MB c/u).
+# Con retention 30 días = ~120 backups guardados (~6GB asumiendo 50MB c/u).
 BACKUP_INTERVAL_HOURS = int(os.environ.get("BACKUP_INTERVAL_HOURS", "6"))
 
 # Off-site backup opcional · Día 5 ROADMAP zero-error
@@ -198,20 +206,64 @@ def _do_sqlite_backup_to_gz(target_gz_path):
 
 
 def _rotate_old_backups():
-    """Borra backups con más de RETENTION_DAYS días. Retorna cuántos borró."""
-    cutoff = time.time() - (RETENTION_DAYS * 86400)
+    """Borra backups expirados aplicando política dual:
+    - daily (sin sufijo): borrar si edad > RETENTION_DAYS (30d default).
+    - monthly (sufijo __monthly): borrar si edad > MONTHLY_RETENTION_DAYS (1100d / 3 años).
+    Retorna cuántos borró.
+    """
+    now = time.time()
+    cutoff_daily = now - (RETENTION_DAYS * 86400)
+    cutoff_monthly = now - (MONTHLY_RETENTION_DAYS * 86400)
     deleted = 0
     backups_path = Path(BACKUPS_DIR)
     if not backups_path.exists():
         return 0
     for f in backups_path.glob("inventario_*.db.gz"):
         try:
-            if f.stat().st_mtime < cutoff:
+            mtime = f.stat().st_mtime
+            es_monthly = "__monthly" in f.name
+            cutoff = cutoff_monthly if es_monthly else cutoff_daily
+            if mtime < cutoff:
                 f.unlink()
                 deleted += 1
         except OSError:
             pass
     return deleted
+
+
+def _ensure_monthly_snapshot(daily_path):
+    """Si todavía no hay snapshot mensual de este mes, copia el daily como monthly.
+
+    Política: el primer backup completado de cada mes natural se preserva 3
+    años (1100d) como evidencia regulatoria. Los daily se rotan a 30d.
+
+    Args:
+        daily_path: ruta del .db.gz daily recién creado.
+    Returns:
+        dict {created, monthly_path} o {created: False, reason}.
+    """
+    try:
+        now = datetime.utcnow()
+        mes_tag = now.strftime("%Y%m")  # YYYYMM
+        backups_path = Path(BACKUPS_DIR)
+        # ¿Ya existe snapshot monthly de este mes?
+        existing = list(backups_path.glob(f"inventario_{mes_tag}*__monthly.db.gz"))
+        if existing:
+            return {"created": False, "reason": "monthly snapshot ya existe este mes",
+                    "monthly_path": str(existing[0])}
+        # Crear copy con sufijo __monthly del archivo daily
+        daily_name = Path(daily_path).name  # inventario_YYYYMMDD_HHMMSS.db.gz
+        # Reemplazar extensión: .db.gz → __monthly.db.gz
+        if daily_name.endswith(".db.gz"):
+            monthly_name = daily_name[:-len(".db.gz")] + "__monthly.db.gz"
+        else:
+            monthly_name = daily_name + "__monthly"
+        monthly_path = str(backups_path / monthly_name)
+        shutil.copy2(daily_path, monthly_path)
+        return {"created": True, "monthly_path": monthly_path}
+    except Exception as e:
+        _logger.warning("monthly_snapshot_failed: %s", e)
+        return {"created": False, "reason": str(e)[:200]}
 
 
 def do_backup(triggered_by="auto"):
@@ -242,23 +294,35 @@ def do_backup(triggered_by="auto"):
         _do_sqlite_backup_to_gz(target)
         size = os.path.getsize(target)
 
-        # Upload off-site (best effort · no falla el backup local si offsite falla)
+        # Snapshot mensual (Bloque E · retención 3 años para INVIMA).
+        # Si todavía no hay un __monthly de este mes, copia el daily.
+        monthly_result = _ensure_monthly_snapshot(target)
+
+        # Upload off-site (best effort · no falla el backup local si offsite falla).
+        # Si el monthly se acaba de crear, lo subimos también para tener
+        # 3 años de evidencia fuera del disco Render.
         offsite_result = None
+        offsite_monthly_result = None
         if BACKUP_OFFSITE_URL:
             offsite_result = _upload_offsite(target)
+            if monthly_result.get("created"):
+                offsite_monthly_result = _upload_offsite(monthly_result["monthly_path"])
 
         deleted = _rotate_old_backups()
         _close_backup_slot(conn, slot_id, file_path=target, size_bytes=size,
                            status="ok")
         _logger.info(
-            "backup_completed file=%s size=%d rotated=%d trigger=%s offsite=%s",
+            "backup_completed file=%s size=%d rotated=%d trigger=%s offsite=%s monthly=%s",
             filename, size, deleted, triggered_by,
             'ok' if (offsite_result and offsite_result.get('ok')) else
-            ('skipped' if not BACKUP_OFFSITE_URL else 'failed')
+            ('skipped' if not BACKUP_OFFSITE_URL else 'failed'),
+            'created' if monthly_result.get('created') else 'skip'
         )
         return {"ok": True, "file_path": target, "filename": filename,
                 "size_bytes": size, "rotated": deleted,
-                "offsite": offsite_result}
+                "offsite": offsite_result,
+                "monthly": monthly_result,
+                "offsite_monthly": offsite_monthly_result}
 
     except Exception as e:
         _logger.error("backup_failed: %s", e, exc_info=True)

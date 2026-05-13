@@ -134,15 +134,31 @@ DELETE FROM schema_migrations WHERE version = 82;
 
 ---
 
-## Backups
+## Backups · Política de retención dual (Bloque E · 12-may-2026)
 
-- Render hace backup automático diario de `/var/data/inventario.db`
-- Retención: según plan Render
-- Manual backup desde Render shell:
-  ```bash
-  sqlite3 /var/data/inventario.db ".backup /tmp/backup-$(date +%Y%m%d).db"
-  # Luego scp a tu máquina o sube a S3/Drive
-  ```
+EOS aplica **retención dual** alineada con la política de records de 3 años
+(INVIMA Res. 3131/1998 + práctica GMP típica):
+
+| Tipo | Frecuencia | Retención | Ubicación |
+|---|---|---|---|
+| **Daily** | cada `BACKUP_INTERVAL_HOURS` (6h default → 4/día) | `BACKUP_RETENTION_DAYS` (30d default) | disco Render `/var/data/backups/` |
+| **Monthly** | el primer backup completado de cada mes natural | `BACKUP_MONTHLY_RETENTION_DAYS` (1100d ≈ 3 años) | mismo disco · sufijo `__monthly` |
+| **Off-site** | si `BACKUP_OFFSITE_URL` set, en cada backup + cada monthly | dependiente del provider (S3/B2/GCS) | bucket externo |
+
+Los daily se rotan automáticamente a los 30 días. Los monthly se reconocen
+por el sufijo `__monthly.db.gz` y NO entran en la rotación diaria — se borran
+recién a los 1100 días. Implementación: `api/backup.py::_rotate_old_backups()`
+y `_ensure_monthly_snapshot()`.
+
+**Para activar off-site (recomendado)**: en Render → Environment, agregar:
+- `BACKUP_OFFSITE_URL` = pre-signed PUT URL (S3/B2/GCS).
+- Recomendación: rotar la URL pre-signed cada 6 meses con cron externo.
+
+**Backup manual desde Render shell:**
+```bash
+sqlite3 /var/data/inventario.db ".backup /tmp/backup-$(date +%Y%m%d).db"
+# Luego scp a tu máquina o sube a S3/Drive
+```
 
 ### Restore desde backup
 ```bash

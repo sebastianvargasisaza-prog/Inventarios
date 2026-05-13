@@ -4687,3 +4687,65 @@ def test_golden_identidad_seed_y_actualizacion(app, db_clean):
     cs.patch('/api/identidad/sebastian',
              json={'cedula': '', 'nombre_completo': ''},
              headers=csrf_headers())
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 53 · Backup retención dual (daily 30d + monthly 3 años)
+# ═══════════════════════════════════════════════════════════════════
+# Sebastián 12-may-2026 Bloque E: política de retención 3 años para
+# alinear con record retention típico GMP/INVIMA. El primer backup de
+# cada mes se preserva con sufijo __monthly y NO entra en rotación
+# diaria (rotada a 30d).
+def test_golden_backup_retencion_dual_monthly(app, db_clean):
+    """do_backup() crea snapshot mensual la primera vez del mes."""
+    import backup as _backup_mod
+    import importlib
+    importlib.reload(_backup_mod)  # asegurar que lee env vars actuales
+
+    # Limpieza previa por si quedó algo de runs anteriores
+    backups_path = _backup_mod.Path(_backup_mod.BACKUPS_DIR)
+    backups_path.mkdir(parents=True, exist_ok=True)
+    for f in list(backups_path.glob("inventario_*.db.gz")):
+        try:
+            f.unlink()
+        except OSError:
+            pass
+
+    # Caso 1: primer backup del mes → debe crear __monthly
+    res = _backup_mod.do_backup(triggered_by="test")
+    assert res.get("ok"), f'BUG: backup falló · {res.get("error")}'
+    assert res.get("monthly", {}).get("created"), \
+        f'BUG: primer backup del mes NO creó snapshot mensual · {res.get("monthly")}'
+    monthly_files = list(backups_path.glob("inventario_*__monthly.db.gz"))
+    assert len(monthly_files) == 1, \
+        f'BUG: esperaba 1 monthly · hay {len(monthly_files)}'
+
+    # Caso 2: segundo backup del mismo mes → NO crea otro monthly (idempotente)
+    res2 = _backup_mod.do_backup(triggered_by="test")
+    if not res2.get("ok") and res2.get("skipped"):
+        # Puede saltar si el slot reservado del primero no se cerró todavía
+        # entre runs muy seguidos. Forzamos limpieza rápida y reintentamos.
+        import time as _t
+        _t.sleep(0.5)
+        res2 = _backup_mod.do_backup(triggered_by="test")
+    assert res2.get("ok"), f'BUG: segundo backup falló · {res2.get("error")}'
+    assert not res2.get("monthly", {}).get("created"), \
+        'BUG: segundo backup del mes creó OTRO monthly (no debería)'
+    monthly_files_2 = list(backups_path.glob("inventario_*__monthly.db.gz"))
+    assert len(monthly_files_2) == 1, \
+        f'BUG: monthly se duplicó · {len(monthly_files_2)} archivos'
+
+    # Caso 3: política de retención dual reconoce el sufijo
+    # (no podemos manipular mtime libremente en Windows por OSError; basta
+    # con verificar que la rotación NO borra los monthly existentes).
+    deleted = _backup_mod._rotate_old_backups()
+    monthly_files_3 = list(backups_path.glob("inventario_*__monthly.db.gz"))
+    assert len(monthly_files_3) == 1, \
+        f'BUG: rotación borró un monthly nuevo · quedan {len(monthly_files_3)}'
+
+    # Cleanup
+    for f in list(backups_path.glob("inventario_*.db.gz")):
+        try:
+            f.unlink()
+        except OSError:
+            pass
