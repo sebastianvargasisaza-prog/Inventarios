@@ -16768,12 +16768,14 @@ async function ckMarcar(itemId, estado){
     ).join('');
   }
 
-  // Cache global productos para drill panel y modal generar
-  window._NEC_PRODUCTOS_CACHE = {};
+  // Cache global productos · key = índice numérico estable (codigo_pt
+  // puede colisionar: varios "CONT..." o "SUER..." con fallback de 4 letras).
+  window._NEC_PRODUCTOS_CACHE = [];
 
   function renderClientesNec(clientes) {
     const div = document.getElementById('nec-contenido');
     if (!clientes || !clientes.length) { div.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:40px">Sin datos.</div>'; return; }
+    window._NEC_PRODUCTOS_CACHE = [];  // reset cache en cada render
     let html = '';
     clientes.forEach(cli => {
       if (cli.tipo === 'shopify_auto') html += renderAnimusSection(cli);
@@ -16784,8 +16786,9 @@ async function ckMarcar(itemId, estado){
 
   function renderAnimusSection(cli) {
     const prods = cli.productos || [];
-    // Cachear para drill panel
-    prods.forEach(p => { window._NEC_PRODUCTOS_CACHE[p.codigo_pt] = p; });
+    // Cachear con índice estable · base = tamaño actual del cache
+    const baseIdx = window._NEC_PRODUCTOS_CACHE.length;
+    prods.forEach(p => { window._NEC_PRODUCTOS_CACHE.push(p); });
     // Chips resumen por urgencia
     const conteos = {CRITICO:0, URGENTE:0, VIGILAR:0, OK:0, SIN_VENTAS:0};
     prods.forEach(p => { if (conteos[p.urgencia] !== undefined) conteos[p.urgencia]++; });
@@ -16818,25 +16821,26 @@ async function ckMarcar(itemId, estado){
       html += '<th style="text-align:center;padding:8px 6px;font-weight:700">Agendado</th>';
       html += '<th style="padding:8px 6px"></th>';
       html += '</tr></thead><tbody>';
-      prods.forEach(p => {
+      prods.forEach((p, j) => {
+        const idx = baseIdx + j;
         const cfg = URG_COLORS[p.urgencia] || URG_COLORS.OK;
         const dias = p.dias_cobertura != null ? p.dias_cobertura + 'd' : '—';
         const agendado = (p.lotes_pendientes_n || 0) > 0
           ? '<span title="' + (p.lotes_pendientes_proximas_fechas || []).join(', ') + '" style="background:#dbeafe;color:#1e40af;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700">' + p.lotes_pendientes_n + ' · ' + p.lotes_pendientes_kg + 'kg</span>'
           : '<span style="color:#cbd5e1">—</span>';
-        const codSafe = escapeHtmlNec(p.codigo_pt);
-        html += '<tr style="border-bottom:1px solid #f1f5f9;cursor:pointer" onclick="toggleDrill(&quot;' + codSafe + '&quot;)">';
-        html += '<td style="padding:8px 6px;font-family:ui-monospace,SFMono-Regular,monospace;font-weight:700;color:#1e40af">' + codSafe + '</td>';
+        const codDisp = escapeHtmlNec(p.codigo_pt || '');
+        html += '<tr style="border-bottom:1px solid #f1f5f9;cursor:pointer" onclick="toggleDrill(' + idx + ')">';
+        html += '<td style="padding:8px 6px;font-family:ui-monospace,SFMono-Regular,monospace;font-weight:700;color:#1e40af">' + codDisp + '</td>';
         html += '<td style="padding:8px 6px;color:#1e293b">' + escapeHtmlNec(p.producto_nombre) + '</td>';
         html += '<td style="padding:8px 6px;text-align:center">' + p.stock_uds_total + '</td>';
         html += '<td style="padding:8px 6px;text-align:center">' + p.velocidad_uds_dia.toFixed(1) + '</td>';
         html += '<td style="padding:8px 6px;text-align:center;font-weight:700;color:' + cfg.text + '">' + dias + '</td>';
         html += '<td style="padding:8px 6px;text-align:center"><span style="background:' + cfg.bg + ';color:' + cfg.text + ';padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700">' + cfg.emoji + ' ' + p.urgencia + '</span></td>';
         html += '<td style="padding:8px 6px;text-align:center">' + agendado + '</td>';
-        html += '<td style="padding:8px 6px;text-align:right"><button onclick="event.stopPropagation();abrirGenerarProduccion(&quot;' + codSafe + '&quot;)" style="background:#0f766e;color:#fff;border:none;padding:5px 10px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">⚡ Generar</button></td>';
+        html += '<td style="padding:8px 6px;text-align:right"><button onclick="event.stopPropagation();abrirGenerarProduccion(' + idx + ')" style="background:#0f766e;color:#fff;border:none;padding:5px 10px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">⚡ Generar</button></td>';
         html += '</tr>';
-        html += '<tr id="drill-' + codSafe + '" style="display:none"><td colspan="8" style="padding:14px;background:#f8fafc;border-bottom:1px solid #e2e8f0">';
-        html += renderDrillPanel(p);
+        html += '<tr id="drill-' + idx + '" style="display:none"><td colspan="8" style="padding:14px;background:#f8fafc;border-bottom:1px solid #e2e8f0">';
+        html += renderDrillPanel(p, idx);
         html += '</td></tr>';
       });
       html += '</tbody></table>';
@@ -16845,7 +16849,7 @@ async function ckMarcar(itemId, estado){
     return html;
   }
 
-  function renderDrillPanel(p) {
+  function renderDrillPanel(p, idx) {
     const cfg = URG_COLORS[p.urgencia] || URG_COLORS.OK;
     const imgHtml = p.imagen_url
       ? '<img src="' + escapeHtmlNec(p.imagen_url) + '" alt="" style="width:100px;height:100px;object-fit:cover;border-radius:10px;background:#f1f5f9" onerror="this.style.display=&#39;none&#39;">'
@@ -16871,21 +16875,21 @@ async function ckMarcar(itemId, estado){
     if ((p.lotes_pendientes_n || 0) > 0) {
       html += '<div style="font-size:11px;color:#1e40af;margin-bottom:6px">📅 Ya agendado en EOS: ' + p.lotes_pendientes_n + ' lote · ' + p.lotes_pendientes_kg + 'kg · fechas: ' + (p.lotes_pendientes_proximas_fechas || []).join(', ') + '</div>';
     }
-    html += '<div style="margin-top:10px"><button onclick="abrirGenerarProduccion(&quot;' + escapeHtmlNec(p.codigo_pt) + '&quot;)" style="background:#0f766e;color:#fff;border:none;padding:10px 18px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer">⚡ Generar producción</button></div>';
+    html += '<div style="margin-top:10px"><button onclick="abrirGenerarProduccion(' + idx + ')" style="background:#0f766e;color:#fff;border:none;padding:10px 18px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer">⚡ Generar producción</button></div>';
     html += '</div></div>';
     return html;
   }
 
-  function toggleDrill(codigo) {
-    const tr = document.getElementById('drill-' + codigo);
+  function toggleDrill(idx) {
+    const tr = document.getElementById('drill-' + idx);
     if (!tr) return;
     tr.style.display = (tr.style.display === 'none' || !tr.style.display) ? 'table-row' : 'none';
   }
 
-  function abrirGenerarProduccion(codigo) {
-    const p = window._NEC_PRODUCTOS_CACHE[codigo];
-    if (!p) { alert('Producto no encontrado en cache'); return; }
-    document.getElementById('gp-codigo').value = p.codigo_pt;
+  function abrirGenerarProduccion(idx) {
+    const p = window._NEC_PRODUCTOS_CACHE[idx];
+    if (!p) { alert('Producto no encontrado en cache (idx=' + idx + ')'); return; }
+    document.getElementById('gp-codigo').value = p.codigo_pt || '';
     document.getElementById('gp-producto').value = p.producto_nombre;
     document.getElementById('gp-titulo').textContent = '⚡ Generar producción · ' + p.codigo_pt;
     document.getElementById('gp-kg').value = p.kg_a_producir > 0 ? p.kg_a_producir : p.lote_bulk_kg;

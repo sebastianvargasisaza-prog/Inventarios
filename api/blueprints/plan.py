@@ -350,16 +350,21 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
     ventana_desde = (hoy - _td(days=ventana)).isoformat()
     pipeline_desde = (hoy - _td(days=7)).isoformat()
 
-    # 1. Productos activos con código asignado
+    # 1. TODOS los productos activos · Sebastián 13-may-2026:
+    # "necesito que aparezcan todos y en orden de necesidades"
+    # · removí el filtro `codigo_pt IS NOT NULL` que ocultaba 22 productos.
+    # · codigo_pt fallback: primeras 4 letras de producto_nombre upper si está vacío.
     productos = c.execute(
-        """SELECT producto_nombre, codigo_pt, lote_size_kg,
+        """SELECT producto_nombre,
+                  COALESCE(NULLIF(TRIM(codigo_pt),''),
+                           UPPER(SUBSTR(REPLACE(REPLACE(producto_nombre,' ',''),'.',''),1,4)))
+                       AS codigo,
+                  COALESCE(lote_size_kg, 0),
                   COALESCE(tiene_10ml,0), COALESCE(uds_10ml_por_lote,0),
                   COALESCE(tipo_10ml,''),
                   COALESCE(imagen_url,'')
            FROM formula_headers
            WHERE COALESCE(activo,1) = 1
-             AND codigo_pt IS NOT NULL
-             AND TRIM(codigo_pt) != ''
            ORDER BY producto_nombre""",
     ).fetchall()
 
