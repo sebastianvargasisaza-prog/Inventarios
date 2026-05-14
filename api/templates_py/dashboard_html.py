@@ -1505,6 +1505,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
         <label style="color:#475569">Alerta ≤
           <input type="number" id="nec-cob-alerta" value="25" min="14" max="60" style="width:42px;padding:2px 4px;border:1px solid #cbd5e1;border-radius:3px;font-size:11px">d
         </label>
+        <a href="/admin/plan-calendario" target="_blank" style="background:linear-gradient(135deg,#ca8a04,#f59e0b);color:#fff;text-decoration:none;padding:8px 14px;border-radius:6px;font-size:11px;font-weight:800;display:inline-flex;align-items:center;gap:4px;box-shadow:0 2px 6px rgba(245,158,11,.35)" title="Calendario propio · autoplan IA · vista mes">🤖 Calendario + IA</a>
         <button onclick="abrirFormB2B()" style="background:#1e40af;color:#fff;border:none;padding:7px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">+ Pedido B2B</button>
         <button onclick="cargarNecesidades()" style="background:#0f766e;color:#fff;border:none;padding:7px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">↻ Recargar</button>
       </div>
