@@ -2270,8 +2270,18 @@ def plan_sugerido():
         return err
     from datetime import date as _date, timedelta as _td
 
-    horizonte_semanas = int(request.args.get("horizonte_semanas") or 4)
-    horizonte_dias = horizonte_semanas * 7 + 7
+    # Sebastián 14-may-2026: "queria que hubiera un autoplan que programe
+    # 15 dias, 30 dias, 60 dias 90 dias y 120 dias automaticamente".
+    # Acepta horizonte_dias directo (15/30/60/90/120) además de _semanas.
+    hd_param = request.args.get("horizonte_dias")
+    if hd_param:
+        try:
+            horizonte_dias = max(7, min(365, int(hd_param)))
+        except ValueError:
+            horizonte_dias = 35
+    else:
+        horizonte_semanas = int(request.args.get("horizonte_semanas") or 4)
+        horizonte_dias = horizonte_semanas * 7 + 7
 
     conn = get_db()
     c = conn.cursor()
@@ -2504,6 +2514,400 @@ def plan_sugerido_page():
         return redirect("/login?next=/admin/plan-sugerido")
     from flask import Response
     return Response(_PLAN_SUGERIDO_HTML, mimetype="text/html")
+
+
+@bp.route("/admin/plan-calendario", methods=["GET"])
+def plan_calendario_page():
+    """Calendario propio · vista mes/semana de producciones programadas
+    + sugerencias autoplan · reemplaza Google Calendar.
+
+    Sebastián 14-may-2026: "queria que hubiera un autoplan que programe
+    15 dias, 30 dias, 60 dias 90 dias y 120 dias automaticamente,
+    que producciones hacer segun las necesidades, y que eos tenga como
+    el calendario ya propuesto, y permita moverlo en caso tal, es como
+    si existiera google calendar dentro pero autonomo".
+    """
+    if not session.get("compras_user"):
+        from flask import redirect
+        return redirect("/login?next=/admin/plan-calendario")
+    from flask import Response
+    return Response(_PLAN_CALENDARIO_HTML, mimetype="text/html")
+
+
+_PLAN_CALENDARIO_HTML = r"""<!DOCTYPE html>
+<html lang="es"><head><meta charset="UTF-8">
+<title>📅 Calendario EOS · Plan autónomo</title>
+<style>
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;color:#1e293b;margin:0;padding:18px}
+.wrap{max-width:1500px;margin:0 auto}
+.card{background:white;border-radius:12px;padding:16px;margin-bottom:14px;box-shadow:0 2px 6px rgba(0,0,0,.05)}
+h1{margin:0 0 4px;color:#0f766e;font-size:20px}
+.muted{color:#64748b;font-size:12px}
+button{background:#0f766e;color:white;border:none;padding:8px 14px;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;margin:2px}
+button:hover{background:#0d635c}
+button.secondary{background:#475569}
+button.warn{background:#ca8a04}
+button.success{background:#16a34a}
+button.danger{background:#dc2626}
+button:disabled{background:#94a3b8;cursor:not-allowed}
+select,input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:12px}
+.horiz-btn{padding:10px 16px;border:2px solid #e2e8f0;background:white;color:#475569;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;margin:2px}
+.horiz-btn.active{border-color:#0f766e;background:#0f766e;color:white}
+.horiz-btn:hover{border-color:#0f766e}
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-top:8px}
+.cal-head{background:#f1f5f9;padding:8px;text-align:center;font-weight:800;color:#475569;font-size:12px;border-radius:6px}
+.cal-day{background:white;border:1px solid #e2e8f0;border-radius:8px;padding:6px;min-height:110px;position:relative;font-size:11px}
+.cal-day.festivo{background:#fef2f2;border-color:#fca5a5}
+.cal-day.weekend{background:#f8fafc;opacity:.7}
+.cal-day.hoy{border:2px solid #0f766e;background:#f0fdfa}
+.cal-day.suggest{background:linear-gradient(135deg,#f0fdfa,#ecfeff)}
+.day-num{font-weight:800;color:#1e293b;font-size:13px;margin-bottom:4px;display:flex;justify-content:space-between;align-items:center}
+.day-num .festivo-tag{font-size:9px;background:#fecaca;color:#7f1d1d;padding:1px 5px;border-radius:3px;font-weight:700}
+.lote{background:#dbeafe;color:#1e40af;padding:3px 5px;border-radius:4px;margin-bottom:3px;font-size:10px;font-weight:600;cursor:pointer;border-left:3px solid #1e40af;display:flex;justify-content:space-between;align-items:center;gap:3px}
+.lote:hover{background:#bfdbfe}
+.lote.calendar{background:#fef9c3;border-left-color:#ca8a04;color:#854d0e}
+.lote.eos_plan{background:#dcfce7;border-left-color:#16a34a;color:#166534}
+.lote.eos_canonico{background:#e0e7ff;border-left-color:#6366f1;color:#3730a3}
+.lote.esperando_recurso{background:#fde68a;border-left-color:#d97706;color:#78350f;opacity:.85}
+.lote.sugerido{background:#fef3c7;border-left-color:#f59e0b;color:#92400e;border-style:dashed;border-width:1px}
+.lote.grande{font-weight:800;border-left-width:4px}
+.lote-action{background:transparent;border:none;padding:0;color:inherit;cursor:pointer;font-size:10px;opacity:.6}
+.lote-action:hover{opacity:1}
+.kpi{display:inline-block;background:white;border:1px solid #e2e8f0;border-radius:8px;padding:8px 14px;margin-right:8px;margin-bottom:6px;text-align:center;min-width:100px;vertical-align:top}
+.kpi-lbl{font-size:10px;color:#64748b;text-transform:uppercase}
+.kpi-val{font-size:20px;font-weight:800}
+.legend{display:flex;gap:10px;flex-wrap:wrap;font-size:11px;margin-top:8px}
+.legend span{display:inline-flex;align-items:center;gap:4px}
+.legend-dot{width:10px;height:10px;border-radius:2px;display:inline-block}
+.banner{padding:10px 14px;border-radius:8px;margin-bottom:12px;font-size:12px}
+.banner.success{background:#dcfce7;color:#166534;border:1px solid #86efac}
+.banner.warn{background:#fef3c7;color:#854d0e;border:1px solid #fde68a}
+.banner.info{background:#dbeafe;color:#1e40af;border:1px solid #bfdbfe}
+.actions-bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;justify-content:space-between;margin-top:10px}
+.suggest-list{max-height:280px;overflow-y:auto;border:1px solid #e2e8f0;border-radius:8px}
+.suggest-row{padding:6px 10px;border-bottom:1px solid #f1f5f9;display:flex;justify-content:space-between;align-items:center;font-size:11px}
+.suggest-row:hover{background:#f0fdfa}
+.suggest-row .info{flex:1}
+.suggest-row .actions{display:flex;gap:3px}
+</style></head><body>
+<div class="wrap">
+<a href="/modulos" style="color:#0f766e;font-weight:700;font-size:13px">&larr; Volver</a>
+
+<div class="card">
+  <h1>📅 Calendario EOS · Plan autónomo</h1>
+  <div class="muted">Calendario propio · reemplaza Google Calendar · genera autoplan según ventas Shopify + lote_size del Excel + reglas operativas (festivos · lun-vie · max 2/día · grandes solos · Vit C/Triactive lun-mié)</div>
+  <div class="actions-bar" style="margin-top:10px">
+    <div>
+      <span class="muted" style="margin-right:8px">Horizonte autoplan:</span>
+      <button class="horiz-btn" data-h="15" onclick="setHoriz(15)">15 días</button>
+      <button class="horiz-btn active" data-h="30" onclick="setHoriz(30)">30 días</button>
+      <button class="horiz-btn" data-h="60" onclick="setHoriz(60)">60 días</button>
+      <button class="horiz-btn" data-h="90" onclick="setHoriz(90)">90 días</button>
+      <button class="horiz-btn" data-h="120" onclick="setHoriz(120)">120 días</button>
+    </div>
+    <div>
+      <button onclick="cargar()" class="secondary">↻ Recargar</button>
+    </div>
+  </div>
+  <div id="kpis" style="margin-top:10px"></div>
+</div>
+
+<div class="card">
+  <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+    <div>
+      <button onclick="cambiarMes(-1)" class="secondary">← Anterior</button>
+      <strong id="mesActual" style="font-size:16px;margin:0 10px;color:#1e293b">—</strong>
+      <button onclick="cambiarMes(1)" class="secondary">Siguiente →</button>
+      <button onclick="irHoy()" class="secondary">Hoy</button>
+    </div>
+    <div>
+      <button onclick="confirmarAplicar()" class="success" id="btn-aplicar" disabled>✅ Confirmar y programar TODO</button>
+    </div>
+  </div>
+  <div class="legend">
+    <span><span class="legend-dot" style="background:#16a34a"></span>EOS Plan</span>
+    <span><span class="legend-dot" style="background:#6366f1"></span>Canónico</span>
+    <span><span class="legend-dot" style="background:#ca8a04"></span>Calendar legacy</span>
+    <span><span class="legend-dot" style="background:#d97706"></span>⏸ Pausado</span>
+    <span><span class="legend-dot" style="background:#f59e0b;opacity:.7"></span>✨ Sugerido (autoplan)</span>
+    <span><span class="legend-dot" style="background:#fca5a5"></span>Festivo</span>
+  </div>
+  <div id="cal-grid-wrap"></div>
+</div>
+
+<div class="card">
+  <h2 style="margin:0 0 8px;color:#475569;font-size:15px">📋 Lista del autoplan · ' + horizonte + ' días</h2>
+  <div id="sugerencias-lista"></div>
+</div>
+
+</div>
+<script>
+let HORIZONTE = 30;
+let MES_OFFSET = 0;  // 0 = mes actual · -1/+1 navegar
+let PLAN_DATA = null;
+const DIAS = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
+const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+
+function escapeHtml(s){return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function getCSRF(){return document.cookie.split(';').find(c=>c.trim().startsWith('csrf_token='))?.split('=')[1] || '';}
+
+function setHoriz(h){
+  HORIZONTE = h;
+  document.querySelectorAll('.horiz-btn').forEach(b => b.classList.toggle('active', parseInt(b.dataset.h) === h));
+  cargar();
+}
+
+function cambiarMes(delta){ MES_OFFSET += delta; render(); }
+function irHoy(){ MES_OFFSET = 0; render(); }
+
+async function cargar(){
+  document.getElementById('cal-grid-wrap').innerHTML = '<div class="muted" style="padding:30px;text-align:center">Generando autoplan…</div>';
+  try {
+    // Plan sugerido (lotes propuestos sin agendar todavía)
+    const rPlan = await fetch('/api/plan/plan-sugerido?horizonte_dias=' + HORIZONTE);
+    const dPlan = await rPlan.json();
+    if (!rPlan.ok){ alert('Error plan: ' + (dPlan.error || rPlan.status)); return; }
+
+    // Producciones ya agendadas (calendar/eos_plan/canonico/manual/esperando)
+    const rAgendadas = await fetch('/api/programacion/produccion-programada/listado');
+    const dAgendadas = await rAgendadas.json();
+    if (!rAgendadas.ok){ alert('Error agendadas: ' + rAgendadas.status); return; }
+
+    // Festivos colombianos del rango
+    const year = new Date().getFullYear();
+    const rFest = await fetch('/api/plan/festivos?year=' + year + ',' + (year + 1));
+    const dFest = await rFest.json();
+    const festivosSet = new Set();
+    Object.values(dFest.festivos_por_year || {}).forEach(arr => arr.forEach(f => festivosSet.add(f.fecha)));
+
+    PLAN_DATA = {plan: dPlan, agendadas: dAgendadas.producciones || [], festivos: festivosSet};
+    document.getElementById('btn-aplicar').disabled = (dPlan.total_producciones || 0) === 0;
+    render();
+  } catch(e){ alert('Error: ' + e.message); }
+}
+
+function render(){
+  if (!PLAN_DATA) return;
+
+  // KPIs
+  const k = PLAN_DATA.plan;
+  let html = '';
+  html += '<span class="kpi"><div class="kpi-lbl">📅 Sugeridas</div><div class="kpi-val" style="color:#16a34a">' + (k.total_producciones || 0) + '</div></span>';
+  html += '<span class="kpi"><div class="kpi-lbl">🗑 Cancelables</div><div class="kpi-val" style="color:#dc2626">' + ((k.cancelables_calendar || []).length) + '</div></span>';
+  html += '<span class="kpi"><div class="kpi-lbl">⚠ Sin fórmula</div><div class="kpi-val" style="color:#ca8a04">' + ((k.sin_formula || []).length) + '</div></span>';
+  html += '<span class="kpi"><div class="kpi-lbl">📅 Ya agendadas</div><div class="kpi-val" style="color:#475569">' + (PLAN_DATA.agendadas.length || 0) + '</div></span>';
+  document.getElementById('kpis').innerHTML = html;
+
+  // Calcular mes a mostrar
+  const hoy = new Date();
+  const ref = new Date(hoy.getFullYear(), hoy.getMonth() + MES_OFFSET, 1);
+  document.getElementById('mesActual').textContent = MESES[ref.getMonth()] + ' ' + ref.getFullYear();
+
+  // Agrupar lotes por fecha · ya agendadas
+  const lotesPorFecha = {};
+  PLAN_DATA.agendadas.forEach(ag => {
+    const f = (ag.fecha_programada || '').slice(0, 10);
+    if (!f) return;
+    (lotesPorFecha[f] = lotesPorFecha[f] || []).push({
+      tipo: 'agendado',
+      id: ag.id,
+      producto: ag.producto,
+      kg: ag.kg || 0,
+      estado: ag.estado,
+      origen: ag.origen,
+    });
+  });
+  // Lotes sugeridos del autoplan (no agendados aún)
+  (k.plan_items || []).forEach(it => {
+    const f = it.fecha;
+    if (!f) return;
+    (lotesPorFecha[f] = lotesPorFecha[f] || []).push({
+      tipo: 'sugerido',
+      producto: it.producto,
+      kg: it.kg || 0,
+      motivo: it.motivo,
+      cob: it.cob_dias_actual,
+    });
+  });
+
+  // Grid 6 semanas × 7 días · semana empieza lunes
+  // Encontrar el lunes de la primera semana que contiene día 1
+  const dia1 = new Date(ref.getFullYear(), ref.getMonth(), 1);
+  const offsetLun = (dia1.getDay() + 6) % 7;  // 0=lun ... 6=dom
+  const inicio = new Date(dia1);
+  inicio.setDate(dia1.getDate() - offsetLun);
+  const hoyStr = hoy.toISOString().slice(0, 10);
+
+  let grid = '<div class="cal-grid">';
+  DIAS.forEach(d => grid += '<div class="cal-head">' + d + '</div>');
+  for (let sem = 0; sem < 6; sem++){
+    for (let d = 0; d < 7; d++){
+      const fecha = new Date(inicio);
+      fecha.setDate(inicio.getDate() + sem * 7 + d);
+      const fStr = fecha.toISOString().slice(0, 10);
+      const isWeekend = d >= 5;
+      const isFestivo = PLAN_DATA.festivos.has(fStr);
+      const isHoy = fStr === hoyStr;
+      const isOtroMes = fecha.getMonth() !== ref.getMonth();
+      const lotes = lotesPorFecha[fStr] || [];
+
+      let cls = 'cal-day';
+      if (isHoy) cls += ' hoy';
+      if (isFestivo) cls += ' festivo';
+      if (isWeekend && !isFestivo) cls += ' weekend';
+      if (lotes.some(l => l.tipo === 'sugerido')) cls += ' suggest';
+
+      grid += '<div class="' + cls + '" style="' + (isOtroMes ? 'opacity:.4' : '') + '">';
+      grid += '<div class="day-num"><span>' + fecha.getDate() + '</span>';
+      if (isFestivo) grid += '<span class="festivo-tag">FEST</span>';
+      grid += '</div>';
+
+      lotes.forEach(lt => {
+        const ltCls = 'lote ' + (lt.tipo === 'sugerido' ? 'sugerido' : (lt.estado === 'esperando_recurso' ? 'esperando_recurso' : (lt.origen || 'eos_plan')));
+        const esGrande = (lt.kg || 0) > 50 ? ' grande' : '';
+        const prodCorto = (lt.producto || '').slice(0, 18);
+        if (lt.tipo === 'sugerido'){
+          grid += '<div class="' + ltCls + esGrande + '" title="' + escapeHtml(lt.producto + ' · ' + lt.kg + 'kg · ' + (lt.motivo || '')) + '">';
+          grid += '<span>✨ ' + escapeHtml(prodCorto) + '<br><span style="opacity:.7">' + lt.kg + 'kg</span></span>';
+          grid += '</div>';
+        } else {
+          grid += '<div class="' + ltCls + esGrande + '" onclick="accionLote(' + lt.id + ',&quot;' + escapeHtml(lt.producto) + '&quot;,&quot;' + fStr + '&quot;)" title="' + escapeHtml(lt.producto + ' · ' + lt.kg + 'kg · ' + lt.estado + ' · click acción') + '">';
+          grid += '<span>' + escapeHtml(prodCorto) + '<br><span style="opacity:.7">' + lt.kg + 'kg</span></span>';
+          grid += '</div>';
+        }
+      });
+
+      grid += '</div>';
+    }
+  }
+  grid += '</div>';
+
+  document.getElementById('cal-grid-wrap').innerHTML = grid;
+
+  // Lista sugeridas con acciones
+  renderListaSugerencias();
+}
+
+function renderListaSugerencias(){
+  const items = (PLAN_DATA.plan.plan_items || []);
+  if (!items.length){
+    document.getElementById('sugerencias-lista').innerHTML = '<div class="muted" style="padding:20px;text-align:center">No hay sugerencias para este horizonte · todo cubierto</div>';
+    return;
+  }
+  let html = '<div class="suggest-list">';
+  items.sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''));
+  items.forEach((it, i) => {
+    const motivoColor = it.motivo === 'urgente' ? '#dc2626' : (it.motivo === 'adelanto' ? '#ca8a04' : '#475569');
+    html += '<div class="suggest-row">';
+    html += '<div class="info"><strong>' + escapeHtml(it.fecha) + '</strong> · ' + escapeHtml(it.producto) + ' · ' + it.kg + 'kg <span style="color:' + motivoColor + ';font-weight:700">[' + (it.motivo || '?') + ']</span> · cob ' + (it.cob_dias_actual || 0) + 'd</div>';
+    html += '<div class="actions">';
+    html += '<button onclick="moverSugerencia(' + i + ')" class="secondary" style="padding:3px 8px;font-size:10px">📅</button>';
+    html += '<button onclick="ignorarSugerencia(' + i + ')" class="danger" style="padding:3px 8px;font-size:10px">✕</button>';
+    html += '</div>';
+    html += '</div>';
+  });
+  html += '</div>';
+  document.getElementById('sugerencias-lista').innerHTML = html;
+}
+
+function moverSugerencia(i){
+  const it = PLAN_DATA.plan.plan_items[i];
+  if (!it) return;
+  const nueva = prompt('Mover sugerencia\\n\\n' + it.producto + '\\nFecha actual: ' + it.fecha + '\\n\\nNueva fecha (YYYY-MM-DD):', it.fecha);
+  if (!nueva || nueva === it.fecha) return;
+  if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(nueva.trim())){ alert('Formato inválido'); return; }
+  it.fecha = nueva.trim();
+  render();
+}
+
+function ignorarSugerencia(i){
+  if (!confirm('¿Descartar esta sugerencia del autoplan?')) return;
+  PLAN_DATA.plan.plan_items.splice(i, 1);
+  document.getElementById('btn-aplicar').disabled = PLAN_DATA.plan.plan_items.length === 0;
+  render();
+}
+
+async function accionLote(id, producto, fecha){
+  const accion = prompt('Lote ' + id + ' · ' + producto + ' · ' + fecha +
+                          '\\n\\nAcción:\\n  M = Mover fecha\\n  P = Pausar (esperando MP)\\n  C = Cancelar\\n  R = Reactivar (si pausado)', 'M');
+  if (!accion) return;
+  const a = accion.trim().toUpperCase();
+  if (a === 'M'){
+    const nueva = prompt('Nueva fecha (YYYY-MM-DD):', fecha);
+    if (!nueva) return;
+    const r = await fetch('/api/plan/proximas/' + id + '/reprogramar', {
+      method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':getCSRF()},
+      body: JSON.stringify({nueva_fecha: nueva.trim(), razon: 'manual_calendario'}),
+    });
+    let d = await r.json();
+    if (r.status === 422 && confirm('⚠ ' + d.error + '\\n\\n¿Forzar?')){
+      const r2 = await fetch('/api/plan/proximas/' + id + '/reprogramar', {
+        method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':getCSRF()},
+        body: JSON.stringify({nueva_fecha: nueva.trim(), skip_validacion_dia: true}),
+      });
+      d = await r2.json();
+    }
+    if (!r.ok && r.status !== 422){ alert('Error: ' + (d.error || r.status)); return; }
+    cargar();
+  } else if (a === 'P'){
+    const motivo = prompt('Motivo:', 'falta_mp');
+    if (!motivo) return;
+    const r = await fetch('/api/plan/proximas/' + id + '/pausar', {
+      method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':getCSRF()},
+      body: JSON.stringify({motivo_pausa: motivo.trim()}),
+    });
+    const d = await r.json();
+    if (!r.ok){ alert('Error: ' + (d.error || r.status)); return; }
+    cargar();
+  } else if (a === 'C'){
+    if (!confirm('¿Cancelar lote?')) return;
+    const r = await fetch('/api/plan/proximas/' + id, {
+      method:'DELETE', headers:{'X-CSRF-Token':getCSRF()},
+    });
+    if (!r.ok){ const d = await r.json(); alert('Error: ' + (d.error || r.status)); return; }
+    cargar();
+  } else if (a === 'R'){
+    const r = await fetch('/api/plan/proximas/' + id + '/reactivar', {
+      method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':getCSRF()},
+      body: JSON.stringify({}),
+    });
+    const d = await r.json();
+    if (!r.ok){ alert('Error: ' + (d.error || r.status)); return; }
+    cargar();
+  }
+}
+
+async function confirmarAplicar(){
+  const items = (PLAN_DATA.plan.plan_items || []);
+  const cancelables = (PLAN_DATA.plan.cancelables_calendar || []).filter(c => c.razon === 'reemplazado_por_plan_eos');
+  if (!items.length){ alert('Nada que aplicar'); return; }
+  const msg = '¿Aplicar autoplan?\\n\\n' +
+              '• ' + items.length + ' producciones nuevas se programarán\\n' +
+              '• ' + cancelables.length + ' lotes Calendar legacy se cancelarán\\n\\n' +
+              'Esto persiste en EOS · podés mover/cancelar después con click en cada lote.';
+  if (!confirm(msg)) return;
+  const payload = {
+    programar: items.map(it => ({
+      producto: it.producto, fecha: it.fecha, kg: it.kg, motivo: it.motivo
+    })),
+    cancelar_ids: cancelables.map(c => c.id),
+    backfills: [],
+  };
+  try {
+    const r = await fetch('/api/plan/plan-sugerido/ejecutar', {
+      method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':getCSRF()},
+      body: JSON.stringify(payload),
+    });
+    const d = await r.json();
+    if (!r.ok){ alert('Error: ' + (d.error || r.status)); return; }
+    alert('✅ Aplicado\\n\\n• ' + d.programadas + ' programadas\\n• ' + d.canceladas + ' canceladas\\n• ' + d.total_errores + ' errores');
+    cargar();
+  } catch(e){ alert('Error: ' + e.message); }
+}
+
+cargar();
+</script>
+</body></html>"""
 
 
 @bp.route("/api/plan/plan-sugerido/ejecutar", methods=["POST"])
