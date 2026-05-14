@@ -503,6 +503,47 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
             "regalos_extra_uds": regalos_extra_uds,
         })
 
+    # 6b. Match MPs por producto · Sebastián 13-may-2026:
+    # "match de materias primas que diga si se puede hacer o no".
+    # Para cada producto activo, leer su formula_items + stock MP actual ·
+    # calcular faltantes para 1 lote bulk_kg.
+    formula_por_prod = {}  # producto → [{material_id, nombre, necesario_g}]
+    for r in c.execute(
+        """SELECT fi.producto_nombre, fi.material_id,
+                  COALESCE(fi.material_nombre, '') AS mat_nom,
+                  COALESCE(fi.cantidad_g_por_lote, 0) AS cant_g,
+                  COALESCE(fi.porcentaje, 0) AS pct,
+                  COALESCE(fh.lote_size_kg, 0) AS lote_kg
+           FROM formula_items fi
+           JOIN formula_headers fh ON fh.producto_nombre = fi.producto_nombre
+           WHERE COALESCE(fh.activo, 1) = 1
+             AND fi.material_id IS NOT NULL
+             AND TRIM(fi.material_id) != ''""",
+    ).fetchall():
+        prod, mid, mnom, cant_g, pct, lote_kg = r
+        nec_g = float(cant_g or 0)
+        if nec_g <= 0 and pct > 0 and lote_kg > 0:
+            nec_g = (float(pct) / 100.0) * float(lote_kg) * 1000.0
+        if nec_g <= 0:
+            continue
+        formula_por_prod.setdefault(prod, []).append({
+            "material_id": mid,
+            "material_nombre": mnom[:50],
+            "necesario_g": round(nec_g, 2),
+        })
+
+    # Stock MP por material_id · SUM(movimientos)
+    mp_stock_g = {}
+    for r in c.execute(
+        """SELECT material_id,
+                  COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA')
+                                    THEN cantidad ELSE -cantidad END), 0)
+           FROM movimientos
+           WHERE material_id IS NOT NULL AND TRIM(material_id) != ''
+           GROUP BY material_id""",
+    ).fetchall():
+        mp_stock_g[str(r[0]).strip()] = max(float(r[1] or 0), 0)
+
     # 7. Lotes pendientes/en curso por producto (ya agendados)
     # Sebastián 13-may-2026: todo vive en EOS · sin Calendar. Cualquier lote
     # con estado pendiente/en_curso y sin fin_real_at cuenta como "en vuelo".
@@ -599,6 +640,35 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
             p["duracion_lote_dias"] = None
             p["proxima_sugerida_fecha"] = None
             p["proxima_sugerida_dias"] = None
+
+        # Match MPs · ¿se puede fabricar 1 lote bulk con stock actual?
+        # Sebastián 13-may-2026: "match de materias primas que diga si se
+        # puede hacer o no".
+        items_form = formula_por_prod.get(p["producto_nombre"], [])
+        if not items_form:
+            p["mps_status"] = "SIN_FORMULA"
+            p["mps_faltantes"] = []
+            p["mps_total_items"] = 0
+            p["mps_n_faltantes"] = 0
+            p["puede_fabricar"] = False
+        else:
+            faltantes = []
+            for it in items_form:
+                disponible_g = mp_stock_g.get(str(it["material_id"]).strip(), 0.0)
+                falta = it["necesario_g"] - disponible_g
+                if falta > 0.01:  # tolerancia gramos
+                    faltantes.append({
+                        "material_id": it["material_id"],
+                        "material_nombre": it["material_nombre"],
+                        "necesario_g": it["necesario_g"],
+                        "disponible_g": round(disponible_g, 2),
+                        "faltante_g": round(falta, 2),
+                    })
+            p["mps_total_items"] = len(items_form)
+            p["mps_n_faltantes"] = len(faltantes)
+            p["mps_faltantes"] = faltantes
+            p["mps_status"] = "OK" if not faltantes else "FALTAN_MPS"
+            p["puede_fabricar"] = len(faltantes) == 0
 
         # Escenarios inteligentes 30/60/90 días · Sebastián 13-may-2026:
         # "sugiero para 30 días tantos kilos, para 60 tantos, etc · elijo

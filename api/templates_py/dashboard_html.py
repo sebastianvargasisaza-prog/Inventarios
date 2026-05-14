@@ -17029,6 +17029,14 @@ async function ckMarcar(itemId, estado){
         if (p.tiene_10ml) markers += '<span title="Presenta 10ml ' + (p.tipo_10ml || '') + '" style="background:#fdf4ff;color:#7e22ce;padding:1px 6px;border-radius:4px;font-size:10px;margin-left:4px">10ml</span>';
         if ((p.lotes_pendientes_n || 0) > 0) markers += '<span title="Tiene producción agendada" style="color:#1e40af;margin-left:4px">📅</span>';
         if (p.ultima_produccion_fecha) markers += '<span title="Tiene histórico · ' + p.ultima_produccion_fecha + '" style="color:#ca8a04;margin-left:4px">📜</span>';
+        // 🧪 Match MPs · puede fabricar?
+        if (p.mps_status === 'OK') {
+          markers += '<span title="MPs OK · ' + p.mps_total_items + ' items" style="color:#16a34a;margin-left:4px">🧪✓</span>';
+        } else if (p.mps_status === 'FALTAN_MPS') {
+          markers += '<span title="Faltan ' + p.mps_n_faltantes + ' MPs" style="color:#dc2626;margin-left:4px">🧪⚠</span>';
+        } else if (p.mps_status === 'SIN_FORMULA') {
+          markers += '<span title="Sin fórmula registrada" style="color:#94a3b8;margin-left:4px">🧪?</span>';
+        }
         html += '<tr style="border-bottom:1px solid #f1f5f9">';
         html += '<td style="padding:8px 6px;font-family:ui-monospace,SFMono-Regular,monospace;font-weight:700;color:#1e40af">' + codDisp + '</td>';
         html += '<td style="padding:8px 6px;color:#1e293b">' + escapeHtmlNec(p.producto_nombre) + markers + '</td>';
@@ -17173,6 +17181,28 @@ async function ckMarcar(itemId, estado){
       html += '</div>';
     } else {
       html += '<div style="background:#f1f5f9;border-radius:8px;padding:10px;margin-bottom:12px;font-size:12px;color:#64748b">📜 Sin producciones previas registradas · usá "Ya producido" abajo para back-fill</div>';
+    }
+
+    // ── Match materias primas · ¿puede fabricarse? ──
+    // Sebastián 13-may-2026: bloque CRÍTICO antes de programar
+    if (p.mps_status === 'OK') {
+      html += '<div style="background:#dcfce7;border-left:4px solid #16a34a;border-radius:8px;padding:10px;margin-bottom:12px;font-size:12px;color:#166534">';
+      html += '🧪 <strong>Materias primas OK</strong> · ' + p.mps_total_items + ' items con stock suficiente para 1 lote · listo para producir';
+      html += '</div>';
+    } else if (p.mps_status === 'FALTAN_MPS') {
+      html += '<div style="background:#fee2e2;border-left:4px solid #dc2626;border-radius:8px;padding:10px;margin-bottom:12px">';
+      html += '<div style="font-size:11px;color:#991b1b;font-weight:700;margin-bottom:6px">🧪⚠ FALTAN MATERIAS PRIMAS · ' + p.mps_n_faltantes + ' de ' + p.mps_total_items + ' items insuficientes</div>';
+      html += '<table style="width:100%;border-collapse:collapse;font-size:11px;margin-top:6px"><thead><tr style="background:rgba(255,255,255,.5)"><th style="text-align:left;padding:4px">Código</th><th style="text-align:left;padding:4px">MP</th><th style="text-align:center;padding:4px">Necesario</th><th style="text-align:center;padding:4px">Stock</th><th style="text-align:center;padding:4px">Falta</th></tr></thead><tbody>';
+      p.mps_faltantes.forEach(f => {
+        html += '<tr style="border-top:1px solid rgba(220,38,38,.2)"><td style="padding:3px 4px;font-family:ui-monospace;font-weight:700">' + escapeHtmlNec(f.material_id) + '</td><td style="padding:3px 4px">' + escapeHtmlNec(f.material_nombre) + '</td><td style="padding:3px 4px;text-align:center">' + f.necesario_g + 'g</td><td style="padding:3px 4px;text-align:center">' + f.disponible_g + 'g</td><td style="padding:3px 4px;text-align:center;color:#dc2626;font-weight:700">' + f.faltante_g + 'g</td></tr>';
+      });
+      html += '</tbody></table>';
+      html += '<div style="font-size:11px;color:#7f1d1d;margin-top:6px">⚠ Comprar/recibir estas MPs antes de iniciar producción</div>';
+      html += '</div>';
+    } else if (p.mps_status === 'SIN_FORMULA') {
+      html += '<div style="background:#f1f5f9;border-left:4px solid #94a3b8;border-radius:8px;padding:10px;margin-bottom:12px;font-size:12px;color:#64748b">';
+      html += '🧪? Sin fórmula registrada · no se puede calcular MPs necesarias';
+      html += '</div>';
     }
 
     // ── Agendado pendiente (si hay) ──

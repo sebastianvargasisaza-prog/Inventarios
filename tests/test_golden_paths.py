@@ -7376,3 +7376,30 @@ def test_golden_plan_check_codigos_mp(app, db_clean):
     r3 = cs.get('/admin/verificar-codigos-mp')
     assert r3.status_code == 200
     assert b'Verificar' in r3.data
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH PLAN-I · match MPs · puede_fabricar?
+# ═══════════════════════════════════════════════════════════════════
+def test_golden_plan_match_mps_puede_fabricar(app, db_clean):
+    """/api/plan/necesidades incluye mps_status + mps_faltantes por producto."""
+    cs = _login(app, 'sebastian')
+    r = cs.get('/api/plan/necesidades')
+    assert r.status_code == 200
+    d = r.get_json()
+    animus = next(c for c in d['clientes'] if c['cliente_id'] == 'ANIMUS_DTC')
+    for p in animus['productos']:
+        assert 'mps_status' in p, f'BUG: {p["codigo_pt"]} sin mps_status'
+        assert p['mps_status'] in ('OK', 'FALTAN_MPS', 'SIN_FORMULA')
+        assert 'puede_fabricar' in p
+        assert 'mps_total_items' in p
+        assert 'mps_n_faltantes' in p
+        assert 'mps_faltantes' in p
+        if p['mps_status'] == 'FALTAN_MPS':
+            assert len(p['mps_faltantes']) > 0
+            for f in p['mps_faltantes']:
+                assert 'material_id' in f
+                assert 'necesario_g' in f
+                assert 'disponible_g' in f
+                assert 'faltante_g' in f
+                assert f['faltante_g'] > 0
