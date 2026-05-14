@@ -1476,9 +1476,13 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       style="padding:9px 22px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:800;cursor:pointer;background:linear-gradient(135deg,#0f766e,#0891b2);color:#fff;box-shadow:0 3px 10px rgba(8,145,178,.35)">
       &#128202; Necesidades
     </button>
+    <!-- Sebastián 13-may-2026: "que en plan al dia deje de aparecer la
+         programacion, mejor todo junto en necesidades asi esta integrado".
+         Plan en curso oculto · sus controles (Mover/Pausar/Cancelar/
+         Reactivar) ahora viven inline en cada card de Necesidades. -->
     <button id="prog-tab-planv2" onclick="switchProgTab('planv2')"
-      style="padding:9px 22px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:700;cursor:pointer;background:#475569;color:#fff;box-shadow:0 3px 10px rgba(71,85,105,.35)"
-      title="Monitor de lotes ya agendados">
+      style="display:none"
+      title="Plan en curso · ahora integrado en Necesidades">
       &#128197; Plan en curso
     </button>
     <button id="prog-tab-midia" onclick="switchProgTab('midia')"
@@ -17145,19 +17149,69 @@ async function ckMarcar(itemId, estado){
         if (p.sin_mapeo_shopify) {
           markers += '<span title="SIN MAPEO SHOPIFY · ventas no se cuentan · agregar SKU a sku_producto_map" style="background:#fee2e2;color:#dc2626;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:700;margin-left:4px">🛒✕</span>';
         }
-        html += '<tr style="border-bottom:1px solid #f1f5f9">';
-        html += '<td style="padding:8px 6px;font-family:ui-monospace,SFMono-Regular,monospace;font-weight:700;color:#1e40af">' + codDisp + '</td>';
-        html += '<td style="padding:8px 6px;color:#1e293b">' + escapeHtmlNec(p.producto_nombre) + markers + '</td>';
-        html += '<td style="padding:8px 6px;text-align:center">' + p.velocidad_uds_dia.toFixed(1) + ' uds</td>';
-        html += '<td style="padding:8px 6px;text-align:center">' + ventaMes + ' uds</td>';
-        html += '<td style="padding:8px 6px;text-align:center;font-weight:700;color:' + cfg.text + '">' + dias + '</td>';
-        html += '<td style="padding:8px 6px;text-align:center"><span style="background:' + cfg.bg + ';color:' + cfg.text + ';padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700">' + cfg.emoji + ' ' + p.urgencia + '</span></td>';
-        html += '<td style="padding:8px 6px;text-align:right"><button onclick="abrirSolicitar(' + idx + ')" style="background:#0f766e;color:#fff;border:none;padding:6px 12px;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer">⚡ Solicitar</button></td>';
+        // Fila principal · producto + urgencia
+        const tieneLotes = (p.planificacion || []).length > 0;
+        const expanded = tieneLotes ? ' style="background:#fafbff"' : '';
+        html += '<tr' + expanded + '>';
+        html += '<td style="padding:8px 6px;font-family:ui-monospace,SFMono-Regular,monospace;font-weight:700;color:#1e40af;border-top:1px solid #e2e8f0">' + codDisp + '</td>';
+        html += '<td style="padding:8px 6px;color:#1e293b;border-top:1px solid #e2e8f0">' + escapeHtmlNec(p.producto_nombre) + markers + '</td>';
+        html += '<td style="padding:8px 6px;text-align:center;border-top:1px solid #e2e8f0">' + p.velocidad_uds_dia.toFixed(1) + ' uds</td>';
+        html += '<td style="padding:8px 6px;text-align:center;border-top:1px solid #e2e8f0">' + ventaMes + ' uds</td>';
+        html += '<td style="padding:8px 6px;text-align:center;font-weight:700;border-top:1px solid #e2e8f0;color:' + cfg.text + '">' + dias + '</td>';
+        html += '<td style="padding:8px 6px;text-align:center;border-top:1px solid #e2e8f0"><span style="background:' + cfg.bg + ';color:' + cfg.text + ';padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700">' + cfg.emoji + ' ' + p.urgencia + '</span></td>';
+        html += '<td style="padding:8px 6px;text-align:right;border-top:1px solid #e2e8f0"><button onclick="abrirSolicitar(' + idx + ')" style="background:#0f766e;color:#fff;border:none;padding:6px 12px;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer">⚡ Solicitar</button></td>';
         html += '</tr>';
+
+        // Fila secundaria · lotes programados/pausados con acciones inline
+        // Sebastián 13-may-2026: "todo junto en necesidades asi esta integrado"
+        if (tieneLotes) {
+          html += '<tr style="background:#fafbff"><td colspan="7" style="padding:4px 14px 10px 14px">';
+          html += renderLotesInline(p.planificacion, p.producto_nombre);
+          html += '</td></tr>';
+        }
       });
       html += '</tbody></table>';
     }
     html += '</div></details>';
+    return html;
+  }
+
+  // Renderiza lotes programados/pausados inline en Necesidades · Sebastián
+  // 13-may-2026: "todo junto en necesidades asi esta integrado". Reemplaza
+  // a Plan en curso · misma data, misma acciones, contexto del producto.
+  function renderLotesInline(lotes, producto) {
+    if (!lotes || !lotes.length) return '';
+    const ORIGEN_LABEL = {
+      'eos_plan': '🆕', 'eos_canonico': '🔁', 'eos_retroactivo': '📜',
+      'calendar': '📆', 'manual': '✋',
+    };
+    let html = '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:11px">';
+    html += '<span style="color:#64748b;font-weight:700">📋 Lotes:</span>';
+    lotes.forEach(lt => {
+      const cfg = PEC_ESTADO_COLORS[lt.estado] || {bg:'#e2e8f0', text:'#475569', emoji:''};
+      const orig = ORIGEN_LABEL[lt.origen] || '';
+      const motivoTxt = lt.motivo_pausa ? ' · ' + escapeHtmlNec(lt.motivo_pausa) : '';
+      const fechaCorta = (lt.fecha || '').slice(5, 10);
+      const prodEsc = escapeHtmlNec(producto);
+      // Chip estado + fecha + kg
+      html += '<span style="background:white;border:1px solid #cbd5e1;border-radius:6px;padding:3px 6px;display:inline-flex;gap:4px;align-items:center">';
+      html += '<span style="background:' + cfg.bg + ';color:' + cfg.text + ';padding:1px 5px;border-radius:3px;font-weight:700">' + cfg.emoji + ' ' + lt.estado + '</span>';
+      html += '<span style="font-family:ui-monospace,monospace;color:#1e40af;font-weight:700">' + fechaCorta + '</span>';
+      html += '<span style="color:#475569">' + lt.kg + 'kg</span>';
+      html += '<span title="' + lt.origen + '">' + orig + '</span>';
+      if (motivoTxt) html += '<span style="color:#92400e">' + motivoTxt + '</span>';
+      // Botones acción inline
+      if (lt.estado === 'pendiente' || lt.estado === 'programado') {
+        html += '<button onclick="moverPEC(' + lt.id + ',&#39;' + prodEsc + '&#39;,&#39;' + (lt.fecha || '') + '&#39;)" style="background:transparent;border:1px solid #0f766e;color:#0f766e;padding:1px 6px;border-radius:3px;font-size:10px;cursor:pointer" title="Mover fecha">📅</button>';
+        html += '<button onclick="pausarPEC(' + lt.id + ',&#39;' + prodEsc + '&#39;)" style="background:transparent;border:1px solid #ca8a04;color:#ca8a04;padding:1px 6px;border-radius:3px;font-size:10px;cursor:pointer" title="Pausar">⏸</button>';
+        html += '<button onclick="cancelarPEC(' + lt.id + ')" style="background:transparent;border:1px solid #cbd5e1;color:#64748b;padding:1px 6px;border-radius:3px;font-size:10px;cursor:pointer" title="Cancelar">✕</button>';
+      } else if (lt.estado === 'esperando_recurso') {
+        html += '<button onclick="reactivarPEC(' + lt.id + ',&#39;' + prodEsc + '&#39;,&#39;' + (lt.fecha || '') + '&#39;)" style="background:#16a34a;color:white;border:none;padding:2px 7px;border-radius:3px;font-size:10px;cursor:pointer;font-weight:700" title="Reactivar">▶</button>';
+        html += '<button onclick="cancelarPEC(' + lt.id + ')" style="background:transparent;border:1px solid #cbd5e1;color:#64748b;padding:1px 6px;border-radius:3px;font-size:10px;cursor:pointer" title="Cancelar">✕</button>';
+      }
+      html += '</span>';
+    });
+    html += '</div>';
     return html;
   }
 
