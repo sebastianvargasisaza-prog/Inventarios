@@ -43,7 +43,7 @@ MFA_EXEMPT_PATHS = {
     '/', '/login', '/logout',
     '/api/login', '/api/logout',
     '/api/health', '/api/health/debug', '/api/csrf-token',
-    '/api/mfa/status', '/api/mfa/setup', '/api/mfa/verify-setup',
+    '/api/mfa/status', '/api/mfa/setup', '/api/mfa/verify-setup', '/api/mfa/qr',
     '/login/mfa', '/login/mfa-backup',
     '/seguridad', '/seguridad/mfa',  # paginas HTML de setup
 }

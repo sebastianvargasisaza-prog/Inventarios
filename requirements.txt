@@ -7,3 +7,6 @@ sentry-sdk[flask]==2.21.0
 # pyotp: TOTP RFC 6238 para MFA (Google Authenticator, Authy, 1Password)
 # Sebastian (30-abr-2026): MFA opcional para todos, recomendado para admins.
 pyotp==2.9.0
+# qrcode: genera QR server-side para setup MFA (CSP-safe · sin servicio externo)
+# Sebastian 13-may-2026: QR escaneable desde iPhone Camera nativa
+qrcode[pil]==7.4.2

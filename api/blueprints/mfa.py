@@ -111,6 +111,42 @@ def _provisioning_uri(username, secret):
 
 # ── Endpoints ────────────────────────────────────────────────────────────────
 
+@bp.route('/api/mfa/qr', methods=['GET'])
+def mfa_qr():
+    """Genera QR PNG server-side desde provisioning_uri activo.
+
+    Sebastián 13-may-2026: el QR via servicio externo (qrserver.com)
+    fallaba por CSP/Cloudflare. Generamos local con `qrcode` lib.
+
+    Requiere setup activo (POST /api/mfa/setup primero) y no MFA enabled.
+    Devuelve image/png directo.
+    """
+    username = session.get('compras_user', '')
+    if not username:
+        return jsonify({'error': 'No autorizado'}), 401
+    rec = _get_mfa_record(username)
+    if not rec:
+        return jsonify({'error': 'No hay setup MFA pendiente. Inicia con POST /api/mfa/setup.'}), 400
+    if rec.get('enabled'):
+        return jsonify({'error': 'MFA ya está activo.'}), 409
+    try:
+        import qrcode
+        import io
+        from flask import Response
+    except ImportError:
+        return jsonify({'error': 'qrcode lib no instalada en el servidor.'}), 503
+    uri = _provisioning_uri(username, rec['secret'])
+    qr = qrcode.QRCode(box_size=8, border=2)
+    qr.add_data(uri)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="black", back_color="white")
+    buf = io.BytesIO()
+    img.save(buf, format='PNG')
+    buf.seek(0)
+    return Response(buf.read(), mimetype='image/png',
+                     headers={'Cache-Control': 'no-store, private'})
+
+
 @bp.route('/seguridad', methods=['GET'])
 @bp.route('/seguridad/mfa', methods=['GET'])
 def seguridad_page():
@@ -159,15 +195,27 @@ ol{counter-reset:step;list-style:none;padding:0}
   </div>
 
   <div id="paso1" style="display:none;margin-top:20px">
-    <h2>Escaneá este QR con tu app</h2>
-    <div class="qr-box"><img id="qr-img" alt="QR code"></div>
-    <div class="muted">O ingresá manualmente este secret en tu app:</div>
-    <div class="secret" id="secret-display"></div>
-    <h2 style="margin-top:18px">Ingresá el código de 6 dígitos</h2>
-    <div class="muted">La app te muestra un código que cambia cada 30 segundos. Pegalo acá:</div>
+    <h2>📱 1. Instalá Google Authenticator</h2>
+    <a href="https://apps.apple.com/co/app/google-authenticator/id388497605" target="_blank" style="display:inline-block;padding:12px 18px;background:#f1f5f9;border-radius:8px;text-decoration:none;color:#1e293b;border:1px solid #cbd5e1;margin-right:8px">
+      📱 iPhone · App Store
+    </a>
+    <a href="https://play.google.com/store/apps/details?id=com.google.android.apps.authenticator2" target="_blank" style="display:inline-block;padding:12px 18px;background:#f1f5f9;border-radius:8px;text-decoration:none;color:#1e293b;border:1px solid #cbd5e1">
+      🤖 Android · Play Store
+    </a>
+
+    <h2 style="margin-top:20px">📷 2. Escaneá este QR</h2>
+    <div class="muted">En iPhone: abrí la app <strong>Cámara</strong> nativa y enfocá el QR · te ofrece "Abrir en Authenticator". O abrí Google Authenticator → ➕ → Escanear código QR.</div>
+    <div class="qr-box"><img id="qr-img" alt="QR code" style="display:block;width:240px;height:240px"></div>
+    <details style="margin-top:6px"><summary class="muted" style="cursor:pointer;font-size:12px">¿No podés escanear? Usá la clave manual</summary>
+      <div class="secret" id="secret-display" style="cursor:pointer;margin-top:8px" onclick="copiarSecret()" title="Click para copiar"></div>
+      <div class="muted" style="font-size:11px;margin-top:4px">Click la clave para copiar · pegala en la app cuando elija "Ingresar clave manualmente"</div>
+    </details>
+
+    <h2 style="margin-top:20px">🔢 3. Ingresá el código de 6 dígitos</h2>
+    <div class="muted">La app te muestra un código que cambia cada 30s. Pegalo acá:</div>
     <div style="display:flex;gap:10px;margin-top:10px;align-items:center">
       <input type="text" id="token" maxlength="6" placeholder="000000" autocomplete="off">
-      <button onclick="verificar()" id="btn-verificar">✓ Verificar</button>
+      <button onclick="verificar()" id="btn-verificar">✓ Verificar y activar</button>
     </div>
     <div id="err" style="margin-top:10px;color:#dc2626;font-size:13px"></div>
   </div>
@@ -195,14 +243,22 @@ async function iniciar() {
     if (!r.ok) { document.getElementById('err').textContent = d.error || 'Error ' + r.status; return; }
     SECRET = d.secret;
     PROVISIONING_URI = d.provisioning_uri;
-    // Generar QR via API pública qrserver
-    var qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=' + encodeURIComponent(PROVISIONING_URI);
-    document.getElementById('qr-img').src = qrUrl;
+    // QR generado server-side · CSP-safe (no servicio externo)
+    document.getElementById('qr-img').src = '/api/mfa/qr?t=' + Date.now();
     document.getElementById('secret-display').textContent = SECRET;
     document.getElementById('paso0').style.display = 'none';
     document.getElementById('paso1').style.display = 'block';
-    setTimeout(function(){ document.getElementById('token').focus(); }, 200);
   } catch(e) { document.getElementById('err').textContent = e.message; }
+}
+
+function copiarSecret() {
+  if (!SECRET) return;
+  navigator.clipboard.writeText(SECRET).then(function(){
+    var el = document.getElementById('secret-display');
+    var orig = el.textContent;
+    el.textContent = '✓ Copiado al portapapeles';
+    setTimeout(function(){ el.textContent = orig; }, 1500);
+  }).catch(function(){ alert('No se pudo copiar · marcá manual: ' + SECRET); });
 }
 
 async function verificar() {
