@@ -2607,8 +2607,10 @@ select,input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-si
     </div>
     <div>
       <button onclick="cargar()" class="secondary">↻ Recargar</button>
+      <button onclick="autoplanIA()" class="warn" id="btn-ia">🤖 Autoplan con IA</button>
     </div>
   </div>
+  <div id="ia-comentario" style="margin-top:10px"></div>
   <div id="kpis" style="margin-top:10px"></div>
 </div>
 
@@ -2798,8 +2800,10 @@ function renderListaSugerencias(){
   items.sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''));
   items.forEach((it, i) => {
     const motivoColor = it.motivo === 'urgente' ? '#dc2626' : (it.motivo === 'adelanto' ? '#ca8a04' : '#475569');
-    html += '<div class="suggest-row">';
-    html += '<div class="info"><strong>' + escapeHtml(it.fecha) + '</strong> · ' + escapeHtml(it.producto) + ' · ' + it.kg + 'kg <span style="color:' + motivoColor + ';font-weight:700">[' + (it.motivo || '?') + ']</span> · cob ' + (it.cob_dias_actual || 0) + 'd</div>';
+    const iaTag = it.from_ia ? ' <span style="background:#fef3c7;color:#854d0e;padding:1px 5px;border-radius:3px;font-size:10px;font-weight:700">🤖 IA' + (it.confianza ? ' ' + Math.round(it.confianza * 100) + '%' : '') + '</span>' : '';
+    const razonTip = it.razonamiento_ia ? ' title="' + escapeHtml(it.razonamiento_ia) + '"' : '';
+    html += '<div class="suggest-row"' + razonTip + '>';
+    html += '<div class="info"><strong>' + escapeHtml(it.fecha) + '</strong> · ' + escapeHtml(it.producto) + ' · ' + it.kg + 'kg <span style="color:' + motivoColor + ';font-weight:700">[' + (it.motivo || '?') + ']</span> · cob ' + (it.cob_dias_actual || 0) + 'd' + iaTag + (it.razonamiento_ia ? '<div style="font-size:10px;color:#64748b;margin-top:2px">💭 ' + escapeHtml(it.razonamiento_ia.slice(0, 120)) + '</div>' : '') + '</div>';
     html += '<div class="actions">';
     html += '<button onclick="moverSugerencia(' + i + ')" class="secondary" style="padding:3px 8px;font-size:10px">📅</button>';
     html += '<button onclick="ignorarSugerencia(' + i + ')" class="danger" style="padding:3px 8px;font-size:10px">✕</button>';
@@ -2816,12 +2820,21 @@ function moverSugerencia(i){
   const nueva = prompt('Mover sugerencia\\n\\n' + it.producto + '\\nFecha actual: ' + it.fecha + '\\n\\nNueva fecha (YYYY-MM-DD):', it.fecha);
   if (!nueva || nueva === it.fecha) return;
   if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(nueva.trim())){ alert('Formato inválido'); return; }
+  const fechaPrev = it.fecha;
   it.fecha = nueva.trim();
+  // Feedback IA · si era sugerencia IA, registra "movida"
+  if (it.from_ia && it.decision_id){
+    feedbackIA(it.decision_id, 'movida', it.kg, it.fecha, 'Movida de ' + fechaPrev);
+  }
   render();
 }
 
 function ignorarSugerencia(i){
   if (!confirm('¿Descartar esta sugerencia del autoplan?')) return;
+  const it = PLAN_DATA.plan.plan_items[i];
+  if (it && it.from_ia && it.decision_id){
+    feedbackIA(it.decision_id, 'ignorada', null, null, null);
+  }
   PLAN_DATA.plan.plan_items.splice(i, 1);
   document.getElementById('btn-aplicar').disabled = PLAN_DATA.plan.plan_items.length === 0;
   render();
@@ -2877,6 +2890,62 @@ async function accionLote(id, producto, fecha){
   }
 }
 
+async function autoplanIA(){
+  const btn = document.getElementById('btn-ia');
+  btn.disabled = true;
+  btn.textContent = '🤖 Consultando IA...';
+  document.getElementById('ia-comentario').innerHTML = '<div class="banner info">⏳ La IA está analizando ventas, stock, MPs y feedback previo… esto toma ~15-30 segundos</div>';
+  try {
+    const r = await fetch('/api/plan/autoplan-ia', {
+      method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':getCSRF()},
+      body: JSON.stringify({cliente:'ANIMUS_DTC', horizonte_dias: HORIZONTE, forzar_recalcular: true}),
+    });
+    const d = await r.json();
+    if (!r.ok){
+      document.getElementById('ia-comentario').innerHTML = '<div class="banner warn">⚠ ' + escapeHtml(d.error || 'Error IA') + (d.error && d.error.includes('ANTHROPIC_API_KEY') ? ' · Configurá la variable en Render → Environment.' : '') + '</div>';
+      return;
+    }
+    // Inyectar las sugerencias IA en el plan
+    if (PLAN_DATA && d.sugerencias && d.sugerencias.length){
+      PLAN_DATA.plan.plan_items = d.sugerencias.map((s, i) => ({
+        producto: s.producto, fecha: s.fecha, kg: s.kg,
+        motivo: s.motivo, cob_dias_actual: s.cobertura_post_dias,
+        razonamiento_ia: s.razonamiento, confianza: s.confianza,
+        decision_id: (d.ids_decisiones || [])[i],
+        from_ia: true,
+      }));
+      PLAN_DATA.plan.total_producciones = d.sugerencias.length;
+      document.getElementById('btn-aplicar').disabled = false;
+    }
+    const cacheTag = d.cache_hit ? ' <span style="background:#dbeafe;color:#1e40af;padding:1px 5px;border-radius:3px;font-size:10px">cache 24h</span>' : '';
+    document.getElementById('ia-comentario').innerHTML =
+      '<div class="banner success">🤖 <strong>IA (' + escapeHtml(d.modelo_ia || '') + '):</strong> ' +
+      escapeHtml(d.comentario_general || '(sin comentario)') + cacheTag +
+      ' · ' + (d.sugerencias || []).length + ' sugerencias · aprendí de ' +
+      (d.n_historial_aprendido || 0) + ' decisiones previas · ' +
+      (d.tokens_usados || 0) + ' tokens</div>';
+    render();
+  } catch(e){
+    document.getElementById('ia-comentario').innerHTML = '<div class="banner warn">⚠ Error: ' + escapeHtml(e.message) + '</div>';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🤖 Autoplan con IA';
+  }
+}
+
+async function feedbackIA(decisionId, accion, kgReal, fechaReal, comentario){
+  if (!decisionId) return;
+  try {
+    await fetch('/api/plan/autoplan-ia/feedback', {
+      method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':getCSRF()},
+      body: JSON.stringify({
+        decision_id: decisionId, accion: accion,
+        kg_real: kgReal, fecha_real: fechaReal, comentario: comentario,
+      }),
+    });
+  } catch(e){}  // silencioso · feedback es best-effort
+}
+
 async function confirmarAplicar(){
   const items = (PLAN_DATA.plan.plan_items || []);
   const cancelables = (PLAN_DATA.plan.cancelables_calendar || []).filter(c => c.razon === 'reemplazado_por_plan_eos');
@@ -2900,6 +2969,12 @@ async function confirmarAplicar(){
     });
     const d = await r.json();
     if (!r.ok){ alert('Error: ' + (d.error || r.status)); return; }
+    // Feedback IA · marcá como aceptadas las que vinieron de IA
+    items.forEach(it => {
+      if (it.from_ia && it.decision_id){
+        feedbackIA(it.decision_id, 'aceptada', it.kg, it.fecha, null);
+      }
+    });
     alert('✅ Aplicado\\n\\n• ' + d.programadas + ' programadas\\n• ' + d.canceladas + ' canceladas\\n• ' + d.total_errores + ' errores');
     cargar();
   } catch(e){ alert('Error: ' + e.message); }
@@ -2908,6 +2983,340 @@ async function confirmarAplicar(){
 cargar();
 </script>
 </body></html>"""
+
+
+def _ia_autoplan_sugerir(payload_contexto, modelo="claude-haiku-4-5-20251001"):
+    """Llama a Anthropic con el contexto · devuelve plan estructurado.
+
+    payload_contexto debe incluir:
+        cliente, productos[{nombre, ml_unidad, lote_size_kg, stock_kg,
+          velocidad_uds_dia, velocidad_uds_mes, dias_cobertura, urgencia,
+          mps_status, ultima_produccion_fecha, ultima_produccion_kg,
+          producciones_recientes_30d (lista), ya_agendado[]}]
+        horizonte_dias, reglas{festivos, lun_mie_vie, max_2_dia, ...}
+        historial_decisiones · últimas 20 con accion_usuario para feedback
+
+    Devuelve: lista de {producto, fecha, kg, motivo, confianza,
+              cobertura_post_dias} ó None si falla.
+    """
+    import os, json as _json
+    import urllib.request as _ureq
+    api_key = os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("CLAUDE_API_KEY")
+    if not api_key:
+        return None, "ANTHROPIC_API_KEY no configurada en Render"
+
+    system_prompt = (
+        "Eres el jefe de producción de un laboratorio cosmético colombiano. "
+        "Tu trabajo es decidir QUÉ producir, CUÁNDO y CUÁNTO según las "
+        "ventas reales y reglas operativas. Devolvés SOLO JSON válido sin "
+        "explicaciones extras.\n\n"
+        "REGLAS DURAS:\n"
+        "- Producir 20 días antes de agotar (ideal 25d)\n"
+        "- Solo Lun-Vie · skip festivos colombianos\n"
+        "- Max 2 producciones/día normalmente\n"
+        "- Lotes >50kg ocupan el día solos\n"
+        "- Vitamina C y Triactive solo Lun o Mié (envasado mismo día)\n"
+        "- Si MPs faltan: NO programar · sugerir comprar primero\n"
+        "- Aprendé del historial: si el usuario movió/canceló sugerencias "
+        "previas, ajustá criterio\n\n"
+        "FORMATO RESPUESTA (JSON estricto):\n"
+        "{\"sugerencias\":[{\"producto\":\"...\",\"fecha\":\"YYYY-MM-DD\","
+        "\"kg\":N,\"motivo\":\"urgente|adelanto|buffer\","
+        "\"cobertura_post_dias\":N,\"confianza\":0.0-1.0,"
+        "\"razonamiento\":\"...\"}],\"comentario_general\":\"...\"}"
+    )
+    user_msg = (
+        f"Contexto del cliente y productos:\n"
+        f"{_json.dumps(payload_contexto, ensure_ascii=False, default=str)[:8000]}\n\n"
+        f"Generá el autoplan para horizonte {payload_contexto.get('horizonte_dias', 30)} días. "
+        f"Devolvé SOLO JSON."
+    )
+
+    body = _json.dumps({
+        "model": modelo,
+        "max_tokens": 2500,
+        "system": system_prompt,
+        "messages": [{"role": "user", "content": user_msg}],
+    }).encode("utf-8")
+    req = _ureq.Request(
+        "https://api.anthropic.com/v1/messages",
+        data=body,
+        headers={
+            "x-api-key": api_key,
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with _ureq.urlopen(req, timeout=45) as resp:
+            data = _json.loads(resp.read().decode("utf-8"))
+    except Exception as ex:
+        return None, f"Error llamando Anthropic: {ex}"
+
+    try:
+        text = data["content"][0]["text"]
+        # IA a veces devuelve con ```json
+        if "```" in text:
+            text = text.split("```")[1]
+            if text.startswith("json"):
+                text = text[4:]
+        parsed = _json.loads(text.strip())
+    except Exception as ex:
+        return None, f"Respuesta IA no parseable: {ex} · raw: {data}"
+
+    tokens = data.get("usage", {}).get("input_tokens", 0) + data.get("usage", {}).get("output_tokens", 0)
+    return {"sugerencias": parsed.get("sugerencias", []),
+            "comentario": parsed.get("comentario_general", ""),
+            "tokens": tokens, "modelo": modelo}, None
+
+
+@bp.route("/api/plan/autoplan-ia", methods=["POST"])
+def autoplan_ia():
+    """Autoplan inteligente con Anthropic · aprende del feedback histórico.
+
+    Sebastián 14-may-2026: "tenemos clientes, eso son necesidades, ellos
+    cargan sus necesidades el ejemplo de animus lab es que sale de shopy
+    pero no hay una sugerencia de produccion para que sepamos que se debe
+    producir, podemos usar api kay de antropic para que lo haga, ya
+    sabemos las necesidades hay que ponerle reglas, exportan el tamaño
+    del producto, cuanto se vende al mes, y ver si se hace para 30 dias
+    60 o 90 asi va aprendiendo".
+
+    Body:
+        cliente: str (default "ANIMUS_DTC")
+        horizonte_dias: int (15/30/60/90/120 default 30)
+        forzar_recalcular: bool (si False y hay decisión <24h vieja, devuelve cache)
+
+    Returns:
+        sugerencias[]: cada una con razonamiento de la IA y confianza
+        comentario_general: insight global del jefe de producción IA
+        contexto_enviado: para auditar qué leyó la IA
+    """
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+
+    body = request.get_json(silent=True) or {}
+    cliente = (body.get("cliente") or "ANIMUS_DTC").strip()
+    try:
+        horizonte = max(7, min(180, int(body.get("horizonte_dias") or 30)))
+    except (ValueError, TypeError):
+        horizonte = 30
+    forzar = bool(body.get("forzar_recalcular"))
+
+    conn = get_db()
+    c = conn.cursor()
+
+    # 1) Cache 24h · evita gastar tokens si nada cambió
+    if not forzar:
+        cache_row = c.execute(
+            f"""SELECT payload_completo, fecha_decision FROM autoplan_decisiones
+                WHERE cliente = ? AND horizonte_dias = ?
+                  AND accion_usuario IS NULL
+                  AND datetime(fecha_decision) >= datetime('now','-5 hours','-1 day')
+                ORDER BY fecha_decision DESC LIMIT 1""",
+            (cliente, horizonte),
+        ).fetchone()
+        if cache_row and cache_row[0]:
+            try:
+                import json as _json
+                cached = _json.loads(cache_row[0])
+                cached["cache_hit"] = True
+                cached["cache_fecha"] = cache_row[1]
+                return jsonify(cached)
+            except Exception:
+                pass  # cache corrupto · ignorar y recalcular
+
+    # 2) Construir contexto · solo Animus DTC por ahora (Fernando B2B después)
+    necesidades = _calcular_animus_dtc(c, ventana=60, cob_critico=20,
+                                        cob_alerta=25, cob_vigilar=45)
+
+    # Filtrar a productos relevantes · con velocidad real Y fórmula
+    productos_ctx = []
+    for n in necesidades:
+        if (n.get("velocidad_uds_dia") or 0) < 0.1:
+            continue  # sin ventas, no programar
+        if n.get("mps_status") == "SIN_FORMULA":
+            continue
+        productos_ctx.append({
+            "nombre": n["producto_nombre"],
+            "codigo_pt": n.get("codigo_pt", ""),
+            "ml_unidad": n.get("ml_unidad", 30),
+            "lote_size_kg": n.get("lote_bulk_kg", 0),
+            "stock_uds": n.get("stock_uds_total", 0),
+            "stock_kg": n.get("stock_kg_total", 0),
+            "velocidad_uds_dia": round(n.get("velocidad_uds_dia", 0), 2),
+            "velocidad_uds_mes": int((n.get("velocidad_uds_dia", 0) or 0) * 30),
+            "velocidad_kg_dia": round(n.get("velocidad_kg_dia", 0), 3),
+            "dias_cobertura": n.get("dias_cobertura"),
+            "urgencia": n.get("urgencia"),
+            "mps_status": n.get("mps_status"),
+            "mps_n_faltantes": n.get("mps_n_faltantes", 0),
+            "ultima_produccion_fecha": n.get("ultima_produccion_fecha"),
+            "ultima_produccion_kg": n.get("ultima_produccion_kg"),
+            "dias_desde_ultima": n.get("dias_desde_ultima"),
+            "lotes_agendados": [{
+                "fecha": a["fecha"], "kg": a["kg"], "estado": a["estado"]
+            } for a in (n.get("planificacion") or [])][:5],
+        })
+
+    # 3) Historial reciente para feedback · últimas 20 decisiones
+    historial_rows = c.execute(
+        """SELECT producto_nombre, sugerencia_kg, sugerencia_fecha,
+                  motivo_ia, accion_usuario, kg_real, fecha_real,
+                  comentario_usuario
+           FROM autoplan_decisiones
+           WHERE cliente = ?
+             AND accion_usuario IS NOT NULL
+           ORDER BY accion_at DESC LIMIT 20""",
+        (cliente,),
+    ).fetchall()
+    historial = [{
+        "producto": r[0],
+        "sugerencia_kg": r[1],
+        "sugerencia_fecha": r[2],
+        "motivo": r[3],
+        "accion": r[4],         # 'aceptada' / 'movida' / 'cancelada' / 'ignorada'
+        "kg_real": r[5],
+        "fecha_real": r[6],
+        "comentario": r[7],
+    } for r in historial_rows]
+
+    # 4) Reglas resumidas para la IA
+    reglas = {
+        "producir_dias_antes_agotar": 20,
+        "ideal_dias_antes": 25,
+        "dias_habiles": "Lun-Vie",
+        "dias_preferidos": "Lun/Mié/Vie",
+        "max_producciones_por_dia": MAX_PRODUCCIONES_POR_DIA,
+        "lote_grande_umbral_kg": LOTE_GRANDE_KG,
+        "lote_grande_regla": "Día solo · no comparte",
+        "productos_complejos": list(PRODUCTOS_COMPLEJOS_SUBSTR),
+        "productos_complejos_regla": "Solo Lun o Mié (envasado mismo día)",
+        "festivos_skip": True,
+        "horizontes_validos": [15, 30, 60, 90, 120],
+    }
+
+    payload_contexto = {
+        "cliente": cliente,
+        "horizonte_dias": horizonte,
+        "fecha_hoy": _hoy_colombia().isoformat(),
+        "n_productos": len(productos_ctx),
+        "productos": productos_ctx,
+        "historial_feedback": historial,
+        "reglas_operativas": reglas,
+    }
+
+    # 5) Llamar IA
+    resultado, err_msg = _ia_autoplan_sugerir(payload_contexto)
+    if not resultado:
+        return jsonify({"error": err_msg or "Error llamando IA",
+                        "contexto_enviado": payload_contexto}), 502
+
+    # 6) Persistir cada sugerencia en autoplan_decisiones
+    fecha_dec = _now_colombia().isoformat()
+    ids_creados = []
+    import json as _json
+    payload_str = _json.dumps({
+        "sugerencias": resultado["sugerencias"],
+        "comentario": resultado["comentario"],
+        "modelo": resultado["modelo"],
+        "tokens": resultado["tokens"],
+        "horizonte_dias": horizonte,
+    }, ensure_ascii=False)
+
+    for s in resultado["sugerencias"]:
+        prod_nom = (s.get("producto") or "").strip()
+        if not prod_nom:
+            continue
+        prod_ctx = next((p for p in productos_ctx if p["nombre"].upper() == prod_nom.upper()), None)
+        cur = c.execute(
+            f"""INSERT INTO autoplan_decisiones
+                (cliente, producto_nombre, fecha_decision, horizonte_dias,
+                 stock_kg, velocidad_uds_mes, ml_unidad, lote_size_kg,
+                 sugerencia_kg, sugerencia_fecha, sugerencia_cobertura_dias,
+                 motivo_ia, usuario, modelo_ia, tokens_usados, confianza_ia,
+                 payload_completo)
+                VALUES (?,?,{SQLITE_NOW_COL},?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (cliente, prod_nom, horizonte,
+             prod_ctx.get("stock_kg") if prod_ctx else None,
+             prod_ctx.get("velocidad_uds_mes") if prod_ctx else None,
+             prod_ctx.get("ml_unidad") if prod_ctx else None,
+             prod_ctx.get("lote_size_kg") if prod_ctx else None,
+             s.get("kg"), s.get("fecha"), s.get("cobertura_post_dias"),
+             s.get("motivo"), user, resultado["modelo"], resultado["tokens"],
+             s.get("confianza"), payload_str),
+        )
+        ids_creados.append(cur.lastrowid)
+    conn.commit()
+
+    return jsonify({
+        "cliente": cliente,
+        "horizonte_dias": horizonte,
+        "fecha_generacion": fecha_dec,
+        "modelo_ia": resultado["modelo"],
+        "tokens_usados": resultado["tokens"],
+        "sugerencias": resultado["sugerencias"],
+        "comentario_general": resultado["comentario"],
+        "ids_decisiones": ids_creados,
+        "contexto_enviado": payload_contexto,
+        "n_historial_aprendido": len(historial),
+        "cache_hit": False,
+    })
+
+
+@bp.route("/api/plan/autoplan-ia/feedback", methods=["POST"])
+def autoplan_ia_feedback():
+    """Registra la acción del usuario sobre una sugerencia IA · para
+    que el siguiente autoplan aprenda.
+
+    Body:
+        decision_id: int (del autoplan_decisiones)
+        accion: str · 'aceptada' / 'movida' / 'cancelada' / 'ignorada'
+        kg_real: float (opcional · si movió cantidad)
+        fecha_real: str YYYY-MM-DD (opcional · si movió fecha)
+        comentario: str (opcional · ej: "muy temprano · prefiero al final mes")
+    """
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+
+    body = request.get_json(silent=True) or {}
+    try:
+        decision_id = int(body.get("decision_id") or 0)
+    except (ValueError, TypeError):
+        return jsonify({"error": "decision_id inválido"}), 400
+    accion = (body.get("accion") or "").strip()
+    if accion not in ("aceptada", "movida", "cancelada", "ignorada"):
+        return jsonify({"error": "accion debe ser aceptada/movida/cancelada/ignorada"}), 400
+
+    conn = get_db()
+    c = conn.cursor()
+    existing = c.execute(
+        "SELECT id, producto_nombre FROM autoplan_decisiones WHERE id = ?",
+        (decision_id,),
+    ).fetchone()
+    if not existing:
+        return jsonify({"error": "decision_id no encontrado"}), 404
+
+    c.execute(
+        f"""UPDATE autoplan_decisiones
+            SET accion_usuario = ?, accion_at = {SQLITE_NOW_COL},
+                kg_real = ?, fecha_real = ?, comentario_usuario = ?
+            WHERE id = ?""",
+        (accion, body.get("kg_real"), body.get("fecha_real"),
+         body.get("comentario"), decision_id),
+    )
+    conn.commit()
+    audit_log(c, usuario=user, accion="AUTOPLAN_IA_FEEDBACK",
+              tabla="autoplan_decisiones", registro_id=decision_id,
+              antes={"producto": existing[1]},
+              despues={"accion": accion, "comentario": body.get("comentario")})
+    conn.commit()
+    return jsonify({"ok": True, "decision_id": decision_id, "accion": accion})
 
 
 @bp.route("/api/plan/plan-sugerido/ejecutar", methods=["POST"])

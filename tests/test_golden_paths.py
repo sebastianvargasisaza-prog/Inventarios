@@ -7244,6 +7244,90 @@ def test_golden_plan_festivos_colombia(app, db_clean):
 
 
 # ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH PLAN-K · autoplan IA · Sebastián 14-may-2026
+# ═══════════════════════════════════════════════════════════════════
+def test_golden_plan_autoplan_ia(app, db_clean):
+    """Endpoints /autoplan-ia + /autoplan-ia/feedback persisten decisiones
+    en autoplan_decisiones (mig 124) y registran feedback usuario.
+
+    Sebastián: "podemos usar api kay de antropic... ya sabemos las
+    necesidades... y ver si se hace para 30 dias 60 o 90 asi va aprendiendo".
+
+    No llamamos a Anthropic real (necesita API key) · solo validamos:
+    - Sin ANTHROPIC_API_KEY: error claro 502
+    - Tabla autoplan_decisiones existe y acepta inserts (mig 124)
+    - Feedback endpoint actualiza columnas accion_usuario + accion_at
+    """
+    cs = _login(app, 'sebastian')
+
+    # Caso 1: sin API key configurada → 502 con mensaje claro
+    import os
+    prev = os.environ.pop('ANTHROPIC_API_KEY', None)
+    prev2 = os.environ.pop('CLAUDE_API_KEY', None)
+    try:
+        r = cs.post('/api/plan/autoplan-ia',
+                      json={'cliente': 'ANIMUS_DTC', 'horizonte_dias': 30,
+                            'forzar_recalcular': True},
+                      headers=csrf_headers())
+        assert r.status_code == 502, f'BUG: {r.status_code} {r.data}'
+        assert 'ANTHROPIC_API_KEY' in r.get_json()['error']
+    finally:
+        if prev: os.environ['ANTHROPIC_API_KEY'] = prev
+        if prev2: os.environ['CLAUDE_API_KEY'] = prev2
+
+    # Caso 2: tabla autoplan_decisiones existe (mig 124) y acepta inserts
+    _exec("""INSERT INTO autoplan_decisiones
+             (cliente, producto_nombre, fecha_decision, horizonte_dias,
+              stock_kg, velocidad_uds_mes, ml_unidad, lote_size_kg,
+              sugerencia_kg, sugerencia_fecha, motivo_ia, usuario, modelo_ia)
+             VALUES ('ANIMUS_DTC','TEST_AUTOPLAN_PROD',datetime('now','-5 hours'),
+                     30, 50.0, 1000, 30, 90.0, 90.0, '2026-06-01',
+                     'urgente', 'sebastian', 'claude-haiku-4-5-20251001')""")
+    rid = _query("SELECT id FROM autoplan_decisiones WHERE producto_nombre='TEST_AUTOPLAN_PROD'")[0][0]
+
+    # Caso 3: feedback "movida"
+    r3 = cs.post('/api/plan/autoplan-ia/feedback',
+                   json={'decision_id': rid, 'accion': 'movida',
+                         'kg_real': 100, 'fecha_real': '2026-06-08',
+                         'comentario': 'Mejor fin de mes'},
+                   headers=csrf_headers())
+    assert r3.status_code == 200, f'BUG: {r3.data}'
+    assert r3.get_json()['accion'] == 'movida'
+
+    row = _query("""SELECT accion_usuario, kg_real, fecha_real,
+                            comentario_usuario, accion_at
+                   FROM autoplan_decisiones WHERE id=?""", (rid,))
+    assert row[0][0] == 'movida'
+    assert row[0][1] == 100.0
+    assert row[0][2] == '2026-06-08'
+    assert 'fin de mes' in row[0][3]
+    assert row[0][4] is not None
+
+    # Caso 4: accion inválida → 400
+    r4 = cs.post('/api/plan/autoplan-ia/feedback',
+                   json={'decision_id': rid, 'accion': 'X'},
+                   headers=csrf_headers())
+    assert r4.status_code == 400
+
+    # Caso 5: decision_id inexistente → 404
+    r5 = cs.post('/api/plan/autoplan-ia/feedback',
+                   json={'decision_id': 999999, 'accion': 'aceptada'},
+                   headers=csrf_headers())
+    assert r5.status_code == 404
+
+    # Caso 6: audit_log captura feedback
+    aud = _query(
+        """SELECT COUNT(*) FROM audit_log
+           WHERE accion='AUTOPLAN_IA_FEEDBACK'
+             AND datetime(fecha) >= datetime('now','-5 hours','-1 minute')"""
+    )
+    assert aud[0][0] >= 1
+
+    # Cleanup
+    _exec("DELETE FROM autoplan_decisiones WHERE producto_nombre='TEST_AUTOPLAN_PROD'")
+
+
+# ═══════════════════════════════════════════════════════════════════
 # GOLDEN PATH PLAN-J · pausar/reactivar lote · Sebastián 13-may-2026
 # ═══════════════════════════════════════════════════════════════════
 def test_golden_plan_pausar_reactivar(app, db_clean):

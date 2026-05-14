@@ -232,6 +232,47 @@ except ImportError:
         _MIG_121_STMTS = []  # falla silenciosa si archivo no existe en deploy
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (124, "autoplan IA · tabla aprendizaje · Sebastián 14-may-2026", [
+        # Sebastián: "podemos usar api kay de antropic para que lo haga,
+        # ya sabemos las necesidades hay que ponerle reglas, exportan el
+        # tamaño del producto, cuanto se vende al mes, y ver si se hace
+        # para 30 dias 60 o 90 asi va aprendiendo".
+        #
+        # Cada decisión de autoplan se persiste con su contexto y la
+        # acción real del usuario (aceptada / movida / cancelada) para
+        # que la IA aprenda de feedback en futuras corridas.
+        """CREATE TABLE IF NOT EXISTS autoplan_decisiones (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cliente TEXT NOT NULL,
+            producto_nombre TEXT NOT NULL,
+            fecha_decision TEXT NOT NULL,
+            horizonte_dias INTEGER NOT NULL,
+            stock_kg REAL,
+            velocidad_uds_mes INTEGER,
+            ml_unidad INTEGER,
+            lote_size_kg REAL,
+            sugerencia_kg REAL,
+            sugerencia_fecha TEXT,
+            sugerencia_cobertura_dias INTEGER,
+            motivo_ia TEXT,
+            usuario TEXT,
+            -- feedback usuario (NULL hasta que actúe)
+            accion_usuario TEXT,
+            accion_at TEXT,
+            kg_real REAL,
+            fecha_real TEXT,
+            comentario_usuario TEXT,
+            -- metadata
+            modelo_ia TEXT,
+            tokens_usados INTEGER,
+            confianza_ia REAL,
+            payload_completo TEXT
+        )""",
+        """CREATE INDEX IF NOT EXISTS idx_autoplan_cliente_fecha
+           ON autoplan_decisiones(cliente, fecha_decision)""",
+        """CREATE INDEX IF NOT EXISTS idx_autoplan_producto
+           ON autoplan_decisiones(producto_nombre)""",
+    ]),
     (123, "produccion_programada · motivo_pausa + estado esperando_recurso · Sebastián 13-may-2026", [
         # Sebastián: "coloquemos en plan en curso un boton pendiente
         # reprogramar o algo asi como que quede pendiente programarla
