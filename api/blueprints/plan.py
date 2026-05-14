@@ -3158,6 +3158,157 @@ def cancelar_proxima(pid):
     return jsonify({"ok": True, "id": pid, "estado": "cancelado"})
 
 
+@bp.route("/api/plan/proximas/<int:pid>/reprogramar", methods=["POST"])
+def reprogramar_proxima(pid):
+    """Cambia la fecha de un lote agendado · útil cuando falta MP ese
+    día o hay otro imprevisto.
+
+    Sebastián 13-may-2026: "nos falta mover o cambiar fecha por si no
+    hay materia prima por ejemplo".
+
+    Body:
+        nueva_fecha: str YYYY-MM-DD (requerido)
+        razon: str (opcional · "falta_mp", "operario_ausente", etc.)
+        skip_validacion_dia: bool (default False · admin override)
+
+    Reglas aplicadas si skip_validacion_dia=False:
+        - No festivo colombiano · no fin de semana
+        - Si lote >50kg · día destino no debe tener otra producción
+        - Si producto es Vit C / Triactive · solo Lun/Mié
+        - Si día destino ya tiene MAX_PRODUCCIONES_POR_DIA · rechazar
+
+    Inmutabilidad post-aprobación · si tiene fin_real_at o
+    inicio_real_at → 409.
+
+    Audit_log captura fecha_antes/fecha_despues/razon.
+    """
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+
+    body = request.get_json(silent=True) or {}
+    nueva_fecha = (body.get("nueva_fecha") or "").strip()
+    razon = (body.get("razon") or "").strip()
+    skip_val = bool(body.get("skip_validacion_dia"))
+
+    if not nueva_fecha or not _valida_fecha_iso(nueva_fecha):
+        return jsonify({"error": "nueva_fecha YYYY-MM-DD requerida"}), 400
+
+    conn = get_db()
+    cur = conn.cursor()
+    row = cur.execute(
+        """SELECT pp.estado, pp.producto, pp.fecha_programada,
+                  COALESCE(pp.cantidad_kg, fh.lote_size_kg, 0),
+                  pp.inicio_real_at, pp.fin_real_at, pp.origen
+           FROM produccion_programada pp
+           LEFT JOIN formula_headers fh
+             ON UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(pp.producto))
+           WHERE pp.id = ?""",
+        (pid,),
+    ).fetchone()
+    if not row:
+        return jsonify({"error": "lote no encontrado"}), 404
+
+    estado_actual, producto, fecha_antes, lote_kg, inicio_real, fin_real, origen = row
+    lote_kg = float(lote_kg or 0)
+
+    # Inmutabilidad post-arranque · no reprogramar lotes en ejecución
+    if fin_real:
+        return jsonify({
+            "error": f"lote ya completado · no reprogramable (fin_real_at={fin_real})",
+        }), 409
+    if inicio_real:
+        return jsonify({
+            "error": f"lote en curso · no reprogramable (inicio_real_at={inicio_real})",
+        }), 409
+    if estado_actual not in ('pendiente', 'programado'):
+        return jsonify({
+            "error": f"solo se reprograma pendiente/programado · estado actual: {estado_actual}",
+        }), 409
+
+    # Same date · no-op pero no error
+    if (fecha_antes or "")[:10] == nueva_fecha:
+        return jsonify({"ok": True, "id": pid, "noop": True,
+                        "fecha": nueva_fecha}), 200
+
+    # Validar fecha destino (a menos que admin la fuerce)
+    if not skip_val:
+        from datetime import date as _date
+        try:
+            f_obj = _date.fromisoformat(nueva_fecha)
+        except ValueError:
+            return jsonify({"error": "nueva_fecha formato inválido"}), 400
+
+        if f_obj.weekday() not in DIAS_HABILES:
+            return jsonify({
+                "error": f"{nueva_fecha} es fin de semana · usa skip_validacion_dia=true para forzar",
+            }), 422
+        if es_festivo_colombia(f_obj):
+            return jsonify({
+                "error": f"{nueva_fecha} es festivo colombiano · usa skip_validacion_dia=true para forzar",
+            }), 422
+
+        # Productos complejos · solo Lun/Mié
+        if _es_producto_complejo(producto) and f_obj.weekday() not in {0, 2}:
+            return jsonify({
+                "error": f"{producto} es complejo · solo Lun/Mié (envasado mismo día) · usa skip_validacion_dia=true para forzar",
+            }), 422
+
+        # Capacidad del día destino · excluir el propio lote
+        rows_dia = cur.execute(
+            """SELECT pp.id, COALESCE(pp.cantidad_kg, fh.lote_size_kg, 0)
+               FROM produccion_programada pp
+               LEFT JOIN formula_headers fh
+                 ON UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(pp.producto))
+               WHERE date(pp.fecha_programada) = ?
+                 AND pp.estado IN ('pendiente','programado','en_curso')
+                 AND pp.id != ?""",
+            (nueva_fecha, pid),
+        ).fetchall()
+        count_dia = len(rows_dia)
+        kgs_dia = [float(r[1] or 0) for r in rows_dia]
+        ya_grande = any(k > LOTE_GRANDE_KG for k in kgs_dia)
+        es_grande = lote_kg > LOTE_GRANDE_KG
+
+        if es_grande and count_dia > 0:
+            return jsonify({
+                "error": f"{nueva_fecha} ya tiene {count_dia} producción(es) · este lote grande necesita el día solo · usa skip_validacion_dia=true para forzar",
+            }), 422
+        if not es_grande and ya_grande:
+            return jsonify({
+                "error": f"{nueva_fecha} ya tiene un lote grande · no se pueden agregar más · usa skip_validacion_dia=true para forzar",
+            }), 422
+        if not es_grande and count_dia >= MAX_PRODUCCIONES_POR_DIA:
+            return jsonify({
+                "error": f"{nueva_fecha} ya tiene {count_dia} producciones (max {MAX_PRODUCCIONES_POR_DIA}) · usa skip_validacion_dia=true para forzar",
+            }), 422
+
+    # UPDATE + audit
+    cur.execute(
+        """UPDATE produccion_programada
+           SET fecha_programada = ?,
+               observaciones = COALESCE(observaciones,'') ||
+                   ' · REPROGRAMADO de ' || COALESCE(?,'?') || ' a ' || ? ||
+                   CASE WHEN ? != '' THEN ' (razón: ' || ? || ')' ELSE '' END ||
+                   ' · ' || datetime('now')
+           WHERE id = ?""",
+        (nueva_fecha, fecha_antes, nueva_fecha, razon, razon, pid),
+    )
+    conn.commit()
+    audit_log(cur, usuario=user, accion="REPROGRAMAR_PRODUCCION_PROGRAMADA",
+              tabla="produccion_programada", registro_id=pid,
+              antes={"fecha_programada": fecha_antes,
+                     "producto": producto, "origen": origen},
+              despues={"fecha_programada": nueva_fecha, "razon": razon,
+                       "skip_validacion_dia": skip_val})
+    conn.commit()
+
+    return jsonify({"ok": True, "id": pid, "producto": producto,
+                    "fecha_antes": fecha_antes, "fecha_nueva": nueva_fecha,
+                    "razon": razon or None})
+
+
 @bp.route("/api/plan/programar-canonico", methods=["POST"])
 def programar_canonico():
     """Programa N lotes recurrentes con horizonte (típicamente 1 año).

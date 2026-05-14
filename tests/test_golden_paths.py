@@ -7244,6 +7244,122 @@ def test_golden_plan_festivos_colombia(app, db_clean):
 
 
 # ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH PLAN-H · reprogramar lote (mover fecha) · Sebastián 13-may-2026
+# ═══════════════════════════════════════════════════════════════════
+def test_golden_plan_reprogramar_proxima(app, db_clean):
+    """POST /api/plan/proximas/<id>/reprogramar cambia fecha con
+    validación de reglas operativas + skip override.
+
+    Sebastián: "nos falta mover o cambiar fecha por si no hay materia
+    prima por ejemplo".
+    """
+    _exec("DELETE FROM produccion_programada WHERE observaciones LIKE '%REPROG_TEST%'")
+    cs = _login(app, 'sebastian')
+
+    # PREP: lote pequeño (16kg) programado mié 20-may
+    _exec("""INSERT INTO produccion_programada
+             (producto, fecha_programada, cantidad_kg, estado, origen, observaciones)
+             VALUES ('SUERO MULTIPEPTIDOS', '2026-05-20', 16,
+                     'programado', 'eos_plan', 'REPROG_TEST pequeño')""")
+    pid = _query("SELECT id FROM produccion_programada WHERE observaciones LIKE 'REPROG_TEST pequeño'")[0][0]
+
+    # Caso 1: mover a vie 22-may (hábil, sin conflicto) → OK
+    r = cs.post(f'/api/plan/proximas/{pid}/reprogramar',
+                  json={'nueva_fecha': '2026-05-22', 'razon': 'falta_mp'},
+                  headers=csrf_headers())
+    assert r.status_code == 200, f'BUG: {r.status_code} {r.data}'
+    d = r.get_json()
+    assert d['fecha_antes'].startswith('2026-05-20')
+    assert d['fecha_nueva'] == '2026-05-22'
+
+    # Caso 2: persistido + observaciones marcadas
+    row = _query("SELECT fecha_programada, observaciones FROM produccion_programada WHERE id = ?", (pid,))
+    assert row[0][0] == '2026-05-22'
+    assert 'REPROGRAMADO' in row[0][1]
+    assert 'falta_mp' in row[0][1]
+
+    # Caso 3: misma fecha → noop sin error
+    r3 = cs.post(f'/api/plan/proximas/{pid}/reprogramar',
+                   json={'nueva_fecha': '2026-05-22'}, headers=csrf_headers())
+    assert r3.status_code == 200
+    assert r3.get_json().get('noop') is True
+
+    # Caso 4: festivo colombiano → 422
+    r4 = cs.post(f'/api/plan/proximas/{pid}/reprogramar',
+                   json={'nueva_fecha': '2026-05-18'}, headers=csrf_headers())
+    assert r4.status_code == 422
+    assert 'festivo' in r4.get_json()['error']
+
+    # Caso 5: fin de semana → 422
+    r5 = cs.post(f'/api/plan/proximas/{pid}/reprogramar',
+                   json={'nueva_fecha': '2026-05-23'},  # sábado
+                   headers=csrf_headers())
+    assert r5.status_code == 422
+    assert 'fin de semana' in r5.get_json()['error']
+
+    # Caso 6: skip_validacion_dia=True permite festivo
+    r6 = cs.post(f'/api/plan/proximas/{pid}/reprogramar',
+                   json={'nueva_fecha': '2026-05-18',
+                         'skip_validacion_dia': True}, headers=csrf_headers())
+    assert r6.status_code == 200, f'BUG override: {r6.data}'
+
+    # Reset para casos siguientes
+    _exec(f"UPDATE produccion_programada SET fecha_programada='2026-05-22' WHERE id={pid}")
+
+    # Caso 7: lote complejo (Vit C) hacia viernes (no Lun/Mié) → 422
+    _exec("""INSERT INTO produccion_programada
+             (producto, fecha_programada, cantidad_kg, estado, origen, observaciones)
+             VALUES ('SUERO DE VITAMINA C+ FORMULA NUEVA', '2026-05-25', 20,
+                     'programado', 'eos_plan', 'REPROG_TEST vitc')""")
+    vitc_id = _query("SELECT id FROM produccion_programada WHERE observaciones LIKE 'REPROG_TEST vitc'")[0][0]
+    r7 = cs.post(f'/api/plan/proximas/{vitc_id}/reprogramar',
+                   json={'nueva_fecha': '2026-05-29'},  # vie
+                   headers=csrf_headers())
+    assert r7.status_code == 422
+    assert 'complejo' in r7.get_json()['error']
+
+    # Caso 8: lote grande (>50kg) hacia día ocupado → 422
+    _exec("""INSERT INTO produccion_programada
+             (producto, fecha_programada, cantidad_kg, estado, origen, observaciones)
+             VALUES ('SUERO ILUMINADOR TRX', '2026-06-01', 100,
+                     'programado', 'eos_plan', 'REPROG_TEST grande')""")
+    grande_id = _query("SELECT id FROM produccion_programada WHERE observaciones LIKE 'REPROG_TEST grande'")[0][0]
+    # Mover a 2026-05-22 (donde ya hay el lote pequeño del caso 1)
+    r8 = cs.post(f'/api/plan/proximas/{grande_id}/reprogramar',
+                   json={'nueva_fecha': '2026-05-22'}, headers=csrf_headers())
+    assert r8.status_code == 422
+    assert 'día solo' in r8.get_json()['error'] or 'lote grande' in r8.get_json()['error']
+
+    # Caso 9: lote con fin_real_at → 409
+    _exec(f"UPDATE produccion_programada SET fin_real_at='2026-05-25 10:00:00', estado='completado' WHERE id={pid}")
+    r9 = cs.post(f'/api/plan/proximas/{pid}/reprogramar',
+                   json={'nueva_fecha': '2026-06-05'}, headers=csrf_headers())
+    assert r9.status_code == 409
+    assert 'completado' in r9.get_json()['error']
+
+    # Caso 10: ID inexistente → 404
+    r10 = cs.post('/api/plan/proximas/9999999/reprogramar',
+                    json={'nueva_fecha': '2026-06-05'}, headers=csrf_headers())
+    assert r10.status_code == 404
+
+    # Caso 11: fecha inválida → 400
+    r11 = cs.post(f'/api/plan/proximas/{vitc_id}/reprogramar',
+                    json={'nueva_fecha': '2026-13-99'}, headers=csrf_headers())
+    assert r11.status_code == 400
+
+    # Caso 12: audit_log captura REPROGRAMAR
+    aud = _query(
+        """SELECT COUNT(*) FROM audit_log
+           WHERE accion='REPROGRAMAR_PRODUCCION_PROGRAMADA'
+             AND datetime(fecha) >= datetime('now','-1 minute')"""
+    )
+    assert aud[0][0] >= 1
+
+    # Cleanup
+    _exec("DELETE FROM produccion_programada WHERE observaciones LIKE '%REPROG_TEST%'")
+
+
+# ═══════════════════════════════════════════════════════════════════
 # GOLDEN PATH PLAN-G · plan sugerido automático batch · Sebastián 13-may-2026
 # ═══════════════════════════════════════════════════════════════════
 def test_golden_plan_sugerido_batch_ejecutar(app, db_clean):

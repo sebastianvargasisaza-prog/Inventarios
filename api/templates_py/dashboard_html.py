@@ -16913,8 +16913,9 @@ async function ckMarcar(itemId, estado){
       html += '<td style="padding:9px 6px;text-align:center;font-size:11px">' + orig + '</td>';
       html += '<td style="padding:9px 6px;text-align:center"><span style="background:' + cfg.bg + ';color:' + cfg.text + ';padding:3px 9px;border-radius:6px;font-size:11px;font-weight:700">' + cfg.emoji + ' ' + escapeHtmlNec(it.estado) + '</span></td>';
       html += '<td style="padding:9px 6px;color:#64748b;font-size:11px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escapeHtmlNec(it.observaciones || '') + '">' + escapeHtmlNec((it.observaciones || '').slice(0, 40)) + '</td>';
-      html += '<td style="padding:9px 6px;text-align:right">';
+      html += '<td style="padding:9px 6px;text-align:right;white-space:nowrap">';
       if (it.estado === 'pendiente' || it.estado === 'programado') {
+        html += '<button onclick="moverPEC(' + it.id + ',&#39;' + escapeHtmlNec(it.producto) + '&#39;,&#39;' + escapeHtmlNec(it.fecha_programada) + '&#39;)" style="background:transparent;border:1px solid #0f766e;color:#0f766e;padding:4px 8px;border-radius:4px;font-size:11px;cursor:pointer;margin-right:4px" title="Cambiar fecha · útil cuando falta MP">📅 Mover</button>';
         html += '<button onclick="cancelarPEC(' + it.id + ')" style="background:transparent;border:1px solid #cbd5e1;color:#64748b;padding:4px 10px;border-radius:4px;font-size:11px;cursor:pointer">Cancelar</button>';
       }
       html += '</td></tr>';
@@ -16940,6 +16941,42 @@ async function ckMarcar(itemId, estado){
         headers: {'X-CSRF-Token': csrfTokenNec()},
       });
       if (!r.ok) { const d = await r.json(); alert('Error: ' + (d.error || r.status)); return; }
+      cargarPlanEnCurso();
+    } catch(e) { alert('Error: ' + e.message); }
+  }
+
+  async function moverPEC(id, producto, fechaActual) {
+    const fNueva = prompt('📅 Mover producción\\n\\n' + producto + '\\nFecha actual: ' + fechaActual +
+                          '\\n\\nNueva fecha (YYYY-MM-DD):', fechaActual);
+    if (!fNueva || fNueva === fechaActual) return;
+    if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(fNueva.trim())) {
+      alert('Formato inválido · usa YYYY-MM-DD');
+      return;
+    }
+    const razon = prompt('Razón (opcional · ej: falta_mp, operario_ausente):', 'falta_mp') || '';
+    try {
+      let r = await fetch('/api/plan/proximas/' + id + '/reprogramar', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json', 'X-CSRF-Token': csrfTokenNec()},
+        body: JSON.stringify({nueva_fecha: fNueva.trim(), razon: razon.trim()}),
+      });
+      let d = await r.json();
+      // 422 = validación de día (festivo, lote grande, etc) · ofrecer forzar
+      if (r.status === 422) {
+        if (confirm('⚠ ' + (d.error || 'Validación falló') + '\\n\\n¿Forzar reprogramación de todos modos?')) {
+          r = await fetch('/api/plan/proximas/' + id + '/reprogramar', {
+            method: 'POST',
+            headers: {'Content-Type':'application/json', 'X-CSRF-Token': csrfTokenNec()},
+            body: JSON.stringify({nueva_fecha: fNueva.trim(), razon: razon.trim(), skip_validacion_dia: true}),
+          });
+          d = await r.json();
+        } else {
+          return;
+        }
+      }
+      if (!r.ok) { alert('Error: ' + (d.error || r.status)); return; }
+      if (d.noop) { alert('Misma fecha · sin cambios'); return; }
+      alert('✓ Reprogramado: ' + d.fecha_antes + ' → ' + d.fecha_nueva);
       cargarPlanEnCurso();
     } catch(e) { alert('Error: ' + e.message); }
   }
