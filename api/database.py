@@ -232,6 +232,60 @@ except ImportError:
         _MIG_121_STMTS = []  # falla silenciosa si archivo no existe en deploy
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (126, "Agregar AGUA DESIONIZADA a fórmulas (q.s.p.) · Sebastián 14-may-2026", [
+        # Sebastián 14-may-2026: "las formulas deben estar perfectas para
+        # que funcione · revisa eso del agua, el excel lo que tenemos en
+        # la BD, y resuelvelo".
+        #
+        # Causa raíz: el Excel mig 121 lista solo activos (4-37% del lote)
+        # sin el AGUA (60-95% del peso · q.s.p. quantum satis para).
+        # Resultado: cobertura de fórmulas 4-60% · sistema no puede
+        # calcular consumo real de agua ni descontar inventario correcto.
+        #
+        # Solución: asumir AGUA DESIONIZADA (MPAGUALI01) como ingrediente
+        # implícito · cantidad = (lote_size_kg × 1000) - SUM(otros items).
+        # Idempotente: solo agrega si NO existe ya.
+
+        # Paso 0 · Asegurar que MPAGUALI01 existe en maestro_mps
+        """INSERT OR IGNORE INTO maestro_mps
+           (codigo_mp, nombre_comercial, nombre_inci, activo, stock_minimo, proveedor)
+           VALUES ('MPAGUALI01', 'Agua Desionizada', 'AQUA', 1, 0, 'Planta')""",
+        """UPDATE maestro_mps SET activo = 1
+           WHERE codigo_mp = 'MPAGUALI01' AND COALESCE(activo, 0) = 0""",
+
+        # Paso 1 · Para cada formula_headers ACTIVO, si NO tiene AGUA en
+        # formula_items, agregar con cantidad = (lote_size_kg*1000) - suma_actual
+        # Usa subquery · INSERT ... SELECT FROM ... WHERE NOT EXISTS
+        """INSERT INTO formula_items
+              (producto_nombre, material_id, material_nombre,
+               porcentaje, cantidad_g_por_lote)
+           SELECT
+              fh.producto_nombre,
+              'MPAGUALI01',
+              'AGUA DESIONIZADA',
+              ROUND(100.0 - COALESCE((
+                SELECT SUM(porcentaje) FROM formula_items fi2
+                WHERE fi2.producto_nombre = fh.producto_nombre
+                  AND fi2.material_id != 'MPAGUALI01'
+              ), 0), 4),
+              ROUND(fh.lote_size_kg * 1000 - COALESCE((
+                SELECT SUM(cantidad_g_por_lote) FROM formula_items fi3
+                WHERE fi3.producto_nombre = fh.producto_nombre
+                  AND fi3.material_id != 'MPAGUALI01'
+              ), 0), 2)
+           FROM formula_headers fh
+           WHERE COALESCE(fh.activo, 1) = 1
+             AND fh.lote_size_kg > 0
+             AND NOT EXISTS (
+               SELECT 1 FROM formula_items fi
+               WHERE fi.producto_nombre = fh.producto_nombre
+                 AND fi.material_id = 'MPAGUALI01'
+             )
+             AND (fh.lote_size_kg * 1000 - COALESCE((
+               SELECT SUM(cantidad_g_por_lote) FROM formula_items fi4
+               WHERE fi4.producto_nombre = fh.producto_nombre
+             ), 0)) > 0""",
+    ]),
     (125, "limpieza formula_items con cantidad_g_por_lote=0 + Blush Balm dup · Sebastián 14-may-2026", [
         # Sebastián 14-may-2026: durante análisis de necesidad anual de
         # Phenyl Trimethicone (MP00127), apareció que GEL HIDRATANTE NF
