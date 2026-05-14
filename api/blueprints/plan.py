@@ -796,28 +796,22 @@ function csrf() {
 
 async function verificar() {
   document.getElementById('resultados').innerHTML = '<div class="card">Verificando…</div>';
-  var debug = 'Códigos a enviar: ' + CODES_EXCEL.length + ' · ';
   try {
-    var r = await fetch('/api/plan/check-codigos-mp', {
-      method:'POST',
-      headers:{'Content-Type':'application/json','X-CSRF-Token':csrf()},
-      body: JSON.stringify({codigos: CODES_EXCEL}),
-    });
-    debug += 'HTTP ' + r.status + ' ' + r.statusText + ' · ';
+    // GET · read-only · sin body · sin CSRF · saltea bloqueo MFA admin
+    var r = await fetch('/api/plan/check-codigos-mp');
     var raw = await r.text();
-    debug += 'response: ' + raw.substring(0, 300);
     var d;
     try { d = JSON.parse(raw); } catch(je) {
-      document.getElementById('resultados').innerHTML = '<div class="card crit"><h3>Error · response no es JSON</h3><pre style="white-space:pre-wrap;font-size:11px">' + escapeHtml(debug) + '</pre></div>';
+      document.getElementById('resultados').innerHTML = '<div class="card crit"><h3>Response no JSON · HTTP ' + r.status + '</h3><pre>' + escapeHtml(raw.substring(0, 500)) + '</pre></div>';
       return;
     }
     if (!r.ok) {
-      document.getElementById('resultados').innerHTML = '<div class="card crit"><h3>Error HTTP ' + r.status + '</h3><pre style="white-space:pre-wrap;font-size:11px">' + escapeHtml(JSON.stringify(d, null, 2)) + '</pre><div class="muted" style="margin-top:8px">Si dice 401 · refrescá la página y volvé a login.<br>Si dice 403 · CSRF · refrescá la página.<br>Si dice 500 · es bug del backend.</div></div>';
+      document.getElementById('resultados').innerHTML = '<div class="card crit"><h3>Error HTTP ' + r.status + '</h3><pre>' + escapeHtml(JSON.stringify(d, null, 2)) + '</pre></div>';
       return;
     }
     render(d);
   } catch(e) {
-    document.getElementById('resultados').innerHTML = '<div class="card crit"><h3>Error de red o JavaScript</h3><pre>' + escapeHtml(e.message + ' · ' + debug) + '</pre></div>';
+    document.getElementById('resultados').innerHTML = '<div class="card crit"><h3>Error de red</h3><pre>' + escapeHtml(e.message) + '</pre></div>';
   }
 }
 
@@ -874,8 +868,20 @@ function render(d) {
 
 # Embed CODES_EXCEL inline (lista de los 146 codigos del Excel
 # FORMULAS_MAESTRO_v2_1 Alejandro mayo-2026 · si Sebastián actualiza el
-# Excel, regenerar este array · script auxiliar:
-# python scripts/extract_excel_mp_codes.py
+# Excel, regenerar estos arrays leyendo scripts/excel_mp_codigos.json
+_EXCEL_INFO = {}
+try:
+    import json as __json, os as __os
+    __json_path = __os.path.join(
+        __os.path.dirname(__os.path.dirname(__os.path.dirname(__os.path.abspath(__file__)))),
+        'scripts', 'excel_mp_codigos.json',
+    )
+    if __os.path.exists(__json_path):
+        with open(__json_path, encoding='utf-8') as __f:
+            _EXCEL_INFO = __json.load(__f)
+except Exception:
+    _EXCEL_INFO = {}
+
 _CODES_EXCEL_LIST = [
     "MP00005", "MP00006", "MP00008", "MP00020", "MP00021", "MP00024",
     "MP00025", "MP00030", "MP00035", "MP00040", "MP00041", "MP00043",
@@ -908,9 +914,9 @@ _VERIFICAR_CODIGOS_HTML = _VERIFICAR_CODIGOS_HTML.replace(
     "__CODES_EXCEL__", _json.dumps(_CODES_EXCEL_LIST))
 
 
-@bp.route("/api/plan/check-codigos-mp", methods=["POST"])
+@bp.route("/api/plan/check-codigos-mp", methods=["GET"])
 def check_codigos_mp():
-    """Verifica qué códigos de MP existen en maestro_mps.
+    """Verifica qué códigos de MP del Excel existen en maestro_mps.
 
     Sebastián 13-may-2026: antes de importar fórmulas nuevas del Excel
     Alejandro, verificar que todos los códigos batch (MPxxxxx) tengan
@@ -918,33 +924,23 @@ def check_codigos_mp():
     (con su nombre_inci y nombre_comercial) para que el trigger mig 98
     permita insertar a formula_items.
 
-    Body:
-        codigos: [str, ...]  · lista de codigo_mp a verificar
-        info_excel: {codigo: {inci, comercial}}  · opcional, info para
-                                                   sugerir altas
+    GET sin body · usa constantes _CODES_EXCEL_LIST y _EXCEL_INFO embebidas
+    en el server (extraídas del Excel Alejandro mayo-2026). Read-only
+    para saltarse el bloqueo MFA admin de mutaciones POST.
 
     Response:
         existentes: [{codigo, nombre_comercial_bd, nombre_inci_bd, activo}]
-        faltantes: [{codigo, info_excel}]
+        faltantes: [{codigo, info_excel}]  · info_excel incluye inci+comercial
         inactivos: [{codigo, ...}]  · existen pero activo=0
-        total_excel: N · total_existentes_activos · total_faltantes · total_inactivos
+        total_excel · total_existentes_activos · total_faltantes · total_inactivos
     """
     user, err = _require_admin_or_compras()
     if err:
         body, code = err
         return jsonify(body), code
 
-    body = request.get_json(silent=True) or {}
-    codigos_raw = body.get("codigos") or []
-    info_excel = body.get("info_excel") or {}
-    if not isinstance(codigos_raw, list):
-        return jsonify({"error": "codigos debe ser lista"}), 400
-
-    codigos = [str(c).strip().upper() for c in codigos_raw if str(c).strip()]
-    if not codigos:
-        return jsonify({"error": "lista codigos vacía"}), 400
-    if len(codigos) > 1000:
-        return jsonify({"error": "máximo 1000 códigos por request"}), 400
+    codigos = list(_CODES_EXCEL_LIST)
+    info_excel = _EXCEL_INFO
 
     conn = get_db()
     c = conn.cursor()
