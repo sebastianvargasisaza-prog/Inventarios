@@ -3416,39 +3416,77 @@ async function autoplanIA(){
   const btn = document.getElementById('btn-ia');
   btn.disabled = true;
   btn.textContent = '🤖 Consultando IA...';
-  document.getElementById('ia-comentario').innerHTML = '<div class="banner info">⏳ La IA está analizando ventas, stock, MPs y feedback previo… esto toma ~15-30 segundos</div>';
+  document.getElementById('ia-comentario').innerHTML = '<div class="banner info">⏳ La IA está analizando ventas, stock, MPs y feedback previo… esto toma ~20-45 segundos (modelo Sonnet 4.6)</div>';
   try {
     const r = await fetch('/api/plan/autoplan-ia', {
-      method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':getCSRF()},
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':getCSRF()},
+      credentials: 'same-origin',
       body: JSON.stringify({cliente:'ANIMUS_DTC', horizonte_dias: HORIZONTE, forzar_recalcular: true}),
     });
-    const d = await r.json();
+    let d = null; let txtErr = '';
+    try { d = await r.json(); } catch(e){ txtErr = await r.text(); }
+
     if (!r.ok){
-      document.getElementById('ia-comentario').innerHTML = '<div class="banner warn">⚠ ' + escapeHtml(d.error || 'Error IA') + (d.error && d.error.includes('ANTHROPIC_API_KEY') ? ' · Configurá la variable en Render → Environment.' : '') + '</div>';
+      const errMsg = (d && (d.error || d.message)) || txtErr || ('HTTP ' + r.status);
+      const hint = (errMsg && errMsg.includes('ANTHROPIC_API_KEY')) ?
+        '<br>👉 Configurá ANTHROPIC_API_KEY en Render → Environment y reiniciá el servicio.' :
+        (r.status === 403 ? '<br>👉 Probable: MFA no activado · andá a /seguridad' : '');
+      document.getElementById('ia-comentario').innerHTML =
+        '<div class="banner danger">❌ <strong>Error ' + r.status + ':</strong> ' +
+        escapeHtml(errMsg) + hint + '</div>';
       return;
     }
-    // Inyectar las sugerencias IA en el plan
-    if (PLAN_DATA && d.sugerencias && d.sugerencias.length){
-      PLAN_DATA.plan.plan_items = d.sugerencias.map((s, i) => ({
-        producto: s.producto, fecha: s.fecha, kg: s.kg,
-        motivo: s.motivo, cob_dias_actual: s.cobertura_post_dias,
-        razonamiento_ia: s.razonamiento, confianza: s.confianza,
-        decision_id: (d.ids_decisiones || [])[i],
-        from_ia: true,
-      }));
-      PLAN_DATA.plan.total_producciones = d.sugerencias.length;
-      document.getElementById('btn-aplicar').disabled = false;
+
+    const sugerencias = d.sugerencias || [];
+    const n = sugerencias.length;
+
+    if (n === 0){
+      // IA respondió OK pero con CERO sugerencias · explicar por qué
+      const motivos = [];
+      if (d.comentario_general) motivos.push('💬 IA: ' + d.comentario_general);
+      motivos.push('🔍 Posibles causas:');
+      motivos.push('• La IA aplicó confianza ≥0.95 · si no hay producto que sume puntos, se excluye');
+      motivos.push('• Productos con lote_size_kg <3kg (Excel piloto) y sin historial real → quedan en sin_formula');
+      motivos.push('• MPs faltantes en productos críticos');
+      motivos.push('• Stock suficiente para todo el horizonte');
+      document.getElementById('ia-comentario').innerHTML =
+        '<div class="banner warn"><strong>🤖 IA (' + escapeHtml(d.modelo_ia || '') + ') no devolvió sugerencias</strong><br>' +
+        motivos.map(m => escapeHtml(m)).join('<br>') +
+        '<br><br>Tokens usados: ' + (d.tokens_usados || 0) +
+        ' · Historial aprendido: ' + (d.n_historial_aprendido || 0) +
+        '<br><br>💡 Probá desmarcar "Solo sugerencias IA" para ver el plan determinista, o aumentá el horizonte (60/90/120 días).</div>';
+      // Limpiar plan_items y render para no mostrar cosas viejas
+      if (PLAN_DATA && PLAN_DATA.plan){
+        PLAN_DATA.plan.plan_items = [];
+        PLAN_DATA.plan.total_producciones = 0;
+        document.getElementById('btn-aplicar').disabled = true;
+      }
+      render();
+      return;
     }
+
+    // IA devolvió sugerencias · inyectarlas
+    PLAN_DATA.plan.plan_items = sugerencias.map((s, i) => ({
+      producto: s.producto, fecha: s.fecha, kg: s.kg,
+      motivo: s.motivo, cob_dias_actual: s.cobertura_post_dias,
+      razonamiento_ia: s.razonamiento, confianza: s.confianza,
+      decision_id: (d.ids_decisiones || [])[i],
+      from_ia: true,
+    }));
+    PLAN_DATA.plan.total_producciones = n;
+    document.getElementById('btn-aplicar').disabled = false;
     const cacheTag = d.cache_hit ? ' <span style="background:#dbeafe;color:#1e40af;padding:1px 5px;border-radius:3px;font-size:10px">cache 24h</span>' : '';
+    // Confianza promedio para mostrar
+    const confs = sugerencias.map(s => s.confianza || 0).filter(c => c > 0);
+    const confProm = confs.length ? Math.round(100 * confs.reduce((a,b)=>a+b,0) / confs.length) : 0;
     document.getElementById('ia-comentario').innerHTML =
-      '<div class="banner success">🤖 <strong>IA (' + escapeHtml(d.modelo_ia || '') + '):</strong> ' +
-      escapeHtml(d.comentario_general || '(sin comentario)') + cacheTag +
-      ' · ' + (d.sugerencias || []).length + ' sugerencias · aprendí de ' +
-      (d.n_historial_aprendido || 0) + ' decisiones previas · ' +
-      (d.tokens_usados || 0) + ' tokens</div>';
+      '<div class="banner success">🤖 <strong>IA (' + escapeHtml(d.modelo_ia || '') + ') · ' + n + ' sugerencias · confianza promedio ' + confProm + '%</strong>' + cacheTag + '<br>' +
+      escapeHtml(d.comentario_general || '') +
+      '<br><span style="font-size:11px;color:#475569">Aprendí de ' + (d.n_historial_aprendido || 0) + ' decisiones previas · ' + (d.tokens_usados || 0) + ' tokens</span></div>';
     render();
   } catch(e){
-    document.getElementById('ia-comentario').innerHTML = '<div class="banner warn">⚠ Error: ' + escapeHtml(e.message) + '</div>';
+    document.getElementById('ia-comentario').innerHTML = '<div class="banner danger">❌ Error de red: ' + escapeHtml(e.message) + '</div>';
   } finally {
     btn.disabled = false;
     btn.textContent = '🤖 Autoplan con IA';
@@ -3575,25 +3613,29 @@ def _ia_autoplan_sugerir(payload_contexto, modelo="claude-sonnet-4-6"):
         "CRITERIOS DE CONFIANZA (campo confianza 0.0-1.0):\n"
         "Antes de asignar confianza, ejecutá esta checklist mental por "
         "cada sugerencia. Cada chequeo SUMA puntos:\n"
-        "  [+0.20] La fecha respeta TODAS las reglas duras 1-7\n"
-        "  [+0.20] El producto tiene mps_status='OK' (puede fabricarse)\n"
-        "  [+0.15] El kg viene de lote_recomendado_kg (no del Excel piloto)\n"
+        "  [+0.30] La fecha respeta TODAS las reglas duras 1-7\n"
+        "  [+0.25] El producto tiene mps_status='OK' (o no aplica)\n"
+        "  [+0.20] El kg viene de lote_recomendado_kg (no del Excel piloto)\n"
         "  [+0.15] La fecha está dentro de 25-15d antes del agotamiento\n"
-        "  [+0.10] Hay al menos 1 producción real histórica del producto\n"
-        "  [+0.10] No hay duplicación con lotes_agendados del producto\n"
-        "  [+0.10] El historial_feedback no muestra rechazos previos similares\n"
-        "Total posible: 1.00. Si NO sumás al menos 0.95 puntos, "
-        "REVISÁ tu sugerencia o no la incluyas. Usuarios esperan "
-        "confianza ≥0.95 · si das menos, es mejor NO sugerir.\n\n"
-        "REGLA DE EXCLUSIÓN: si tu confianza para una sugerencia daría "
-        "<0.95, NO la incluyas en sugerencias[] · mejor mencionarla en "
-        "comentario_general como 'queda pendiente revisar X porque Y'.\n\n"
+        "  [+0.05] Hay producción real histórica del producto\n"
+        "  [+0.05] El historial_feedback no muestra rechazos previos\n"
+        "Total posible: 1.00\n\n"
+        "UMBRAL DE INCLUSIÓN: confianza ≥ 0.85 → INCLUIR en sugerencias[].\n"
+        "Si confianza <0.85 → mejor mencionar en comentario_general como\n"
+        "'queda pendiente X porque Y' · NO forzar inclusión dudosa.\n"
+        "Sugerencias con confianza ≥0.95 son IDEALES · marcar razonamiento\n"
+        "con '✓ alta certeza'. Entre 0.85-0.94 son ACEPTABLES · razonamiento\n"
+        "con '⚠ confianza media · revisar antes de aplicar'.\n\n"
+        "IMPORTANTE: SIEMPRE devolvé al menos 1 sugerencia si hay productos\n"
+        "con urgencia CRITICO o URGENTE Y mps_status=OK Y lote_recomendado_kg.\n"
+        "Solo devolvé sugerencias[] vacío si TODOS los productos críticos\n"
+        "tienen MPs faltantes o lote piloto inviable (explicar en comentario).\n\n"
         "FORMATO RESPUESTA (JSON estricto · sin markdown):\n"
         "{\"sugerencias\":[{\"producto\":\"...\",\"fecha\":\"YYYY-MM-DD\","
         "\"kg\":N,\"motivo\":\"urgente|adelanto|buffer\","
-        "\"cobertura_post_dias\":N,\"confianza\":0.95-1.00,"
-        "\"razonamiento\":\"explica la checklist · qué puntos sumó\"}],"
-        "\"comentario_general\":\"resumen + casos excluidos por baja confianza\"}"
+        "\"cobertura_post_dias\":N,\"confianza\":0.85-1.00,"
+        "\"razonamiento\":\"explica los puntos · usa ✓ o ⚠\"}],"
+        "\"comentario_general\":\"resumen + casos excluidos\"}"
     )
     user_msg = (
         f"Contexto del cliente y productos:\n"
