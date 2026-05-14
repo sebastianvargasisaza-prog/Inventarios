@@ -823,12 +823,21 @@ def plan_proximas():
         return jsonify({"error": "hasta formato YYYY-MM-DD"}), 400
 
     producto_filtro = (request.args.get("producto") or "").strip()
+    # Sebastián 13-may-2026: "olvidemos Calendar · en Plan montemos la
+    # realidad de lo que estamos programando". Plan en curso muestra
+    # SOLO origenes EOS por default. Si admin necesita ver legacy
+    # (calendar, manual), pasa incluir_legacy=1.
+    incluir_legacy = request.args.get("incluir_legacy", "0") == "1"
 
     conn = get_db()
     c = conn.cursor()
     placeholders = ",".join(["?"] * len(estados))
     where = [f"pp.estado IN ({placeholders})"]
     params = list(estados)
+
+    if not incluir_legacy:
+        # Solo los origenes que EOS controla
+        where.append("pp.origen IN ('eos_plan','eos_canonico','eos_retroactivo')")
 
     if desde:
         where.append("date(pp.fecha_programada) >= date(?)")

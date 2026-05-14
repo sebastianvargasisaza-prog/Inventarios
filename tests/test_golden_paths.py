@@ -7220,7 +7220,8 @@ def test_golden_plan_proximas_filtros(app, db_clean):
     assert comp_item['kg_real'] == 90.0
     assert comp_item['fin_real_at'] is not None
 
-    # Caso 3: múltiples estados
+    # Caso 3: múltiples estados (origen eos_plan / eos_retroactivo por default
+    # pasa el filtro de incluir_legacy=0)
     r3 = cs.get('/api/plan/proximas?estados=pendiente,completado,cancelado&desde=2026-01-01')
     ids3 = [i['id'] for i in r3.get_json()['items']]
     assert pid_p in ids3 and pid_c in ids3 and pid_x in ids3
@@ -7244,6 +7245,19 @@ def test_golden_plan_proximas_filtros(app, db_clean):
     # Caso 7: fecha inválida → 400
     r7 = cs.get('/api/plan/proximas?desde=fecha-mala')
     assert r7.status_code == 400
+
+    # Caso 8: legacy origen (calendar/manual) NO aparece por default
+    pid_legacy = _exec(
+        """INSERT INTO produccion_programada (producto, fecha_programada, cantidad_kg, estado, origen, observaciones)
+           VALUES ('SUERO HIDRATANTE AH 1.5%', '2026-06-25', 50, 'pendiente', 'calendar', 'TEST_F_LEGACY')""",
+    )
+    r8 = cs.get('/api/plan/proximas?estados=pendiente&desde=2026-01-01')
+    ids8 = [i['id'] for i in r8.get_json()['items']]
+    assert pid_legacy not in ids8, 'BUG: origen calendar legacy NO debe aparecer en Plan en curso default'
+    # Caso 9: con incluir_legacy=1 SÍ aparece
+    r9 = cs.get('/api/plan/proximas?estados=pendiente&desde=2026-01-01&incluir_legacy=1')
+    ids9 = [i['id'] for i in r9.get_json()['items']]
+    assert pid_legacy in ids9, 'BUG: con incluir_legacy=1 origen calendar debe aparecer'
 
     # Cleanup
     _exec("DELETE FROM produccion_programada WHERE observaciones LIKE 'TEST_F%'")
