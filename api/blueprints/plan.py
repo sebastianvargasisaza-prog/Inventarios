@@ -1114,17 +1114,29 @@ def comparar_calendar_necesidades():
     # Sebastián 13-may-2026: "en la misma app aparece cuántos kilos y fechas"
     reales_por_prod = {}
     rows_reales = c.execute(
-        """SELECT producto, fin_real_at,
-                  COALESCE(kg_real, cantidad_kg, 0),
-                  inicio_real_at,
-                  COALESCE(inventario_descontado_at, ''),
-                  COALESCE(numero_op, ''),
-                  COALESCE(estado, '')
-           FROM produccion_programada
-           WHERE fin_real_at IS NOT NULL
-             AND date(fin_real_at) >= date('now','-30 day')
-           ORDER BY fin_real_at DESC""",
+        """SELECT pp.producto, pp.fin_real_at,
+                  COALESCE(pp.kg_real, pp.cantidad_kg, 0),
+                  pp.inicio_real_at,
+                  COALESCE(pp.inventario_descontado_at, ''),
+                  COALESCE(pp.estado, ''),
+                  pp.id
+           FROM produccion_programada pp
+           WHERE pp.fin_real_at IS NOT NULL
+             AND date(pp.fin_real_at) >= date('now','-30 day')
+           ORDER BY pp.fin_real_at DESC""",
     ).fetchall()
+    # numero_op vive en ebr_ejecuciones · lookup separado por produccion_id
+    op_por_pp = {}
+    try:
+        for r in c.execute(
+            """SELECT produccion_id, numero_op
+               FROM ebr_ejecuciones
+               WHERE numero_op IS NOT NULL AND produccion_id IS NOT NULL""",
+        ).fetchall():
+            op_por_pp[int(r[0])] = r[1]
+    except Exception:
+        pass
+
     for r in rows_reales:
         prod = r[0] or ""
         reales_por_prod.setdefault(prod, []).append({
@@ -1132,8 +1144,8 @@ def comparar_calendar_necesidades():
             "kg_real": round(float(r[2] or 0), 2),
             "inicio_real_at": (r[3] or "")[:10] if r[3] else None,
             "inventario_descontado": bool(r[4]),
-            "numero_op": r[5] or None,
-            "estado": r[6] or "",
+            "estado": r[5] or "",
+            "numero_op": op_por_pp.get(int(r[6])) if r[6] else None,
         })
 
     # Comparar por producto · Sebastián 13-may-2026 v2:
