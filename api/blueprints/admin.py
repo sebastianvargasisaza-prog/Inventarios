@@ -2172,7 +2172,7 @@ def admin_health_critical_paths():
             FROM produccion_programada
             WHERE inicio_real_at IS NOT NULL
               AND COALESCE(estado, '') NOT IN ('completado', 'cancelado')
-              AND date(fecha_programada) < date('now', '-30 days')
+              AND date(fecha_programada) < date('now', '-5 hours', '-30 days')
         """).fetchone()
         n = rows[0] or 0
         if n > 5:
@@ -2193,7 +2193,7 @@ def admin_health_critical_paths():
             SELECT COUNT(*) FROM solicitudes_compra
             WHERE estado='Pendiente' AND COALESCE(numero_oc,'') = ''
               AND categoria IN ('Materia Prima','Empaque','Material de Empaque')
-              AND date(fecha) < date('now', '-14 days')
+              AND date(fecha) < date('now', '-5 hours', '-14 days')
         """).fetchone()[0] or 0
         if n > 20:
             _check('sols_planta_huerfanas', 'warn',
@@ -2401,11 +2401,11 @@ def admin_agent_memory():
 
     c.execute("""
         INSERT INTO agent_memory(key, value, category, created_by, updated_at)
-        VALUES(?, ?, ?, ?, datetime('now', 'utc'))
+        VALUES(?, ?, ?, ?, datetime('now', '-5 hours', 'utc'))
         ON CONFLICT(key) DO UPDATE SET
           value = excluded.value,
           category = excluded.category,
-          updated_at = datetime('now', 'utc')
+          updated_at = datetime('now', '-5 hours', 'utc')
     """, (key, value, category, u))
     conn.commit()
     conn.close()
@@ -2620,7 +2620,7 @@ def admin_reset_password():
         cur = conn.cursor()
         cur.execute("""
             INSERT INTO users_passwords (username, password_hash, changed_at, changed_by)
-            VALUES (?, ?, datetime('now', 'utc'), ?)
+            VALUES (?, ?, datetime('now', '-5 hours', 'utc'), ?)
             ON CONFLICT(username) DO UPDATE SET
                 password_hash = excluded.password_hash,
                 changed_at    = excluded.changed_at,
@@ -2700,7 +2700,7 @@ def admin_security_events():
     try:
         agg = conn.execute("""
             SELECT event, COUNT(*) as n FROM security_events
-            WHERE ts > datetime('now', 'utc', '-1 day')
+            WHERE ts > datetime('now', '-5 hours', 'utc', '-1 day')
             GROUP BY event
             ORDER BY n DESC
         """).fetchall()
@@ -3832,7 +3832,7 @@ def admin_inventario_reset_aplicar():
         ).fetchone()[0]
         if last:
             try:
-                # SQLite datetime('now','utc') devuelve 'YYYY-MM-DD HH:MM:SS'
+                # SQLite datetime('now', '-5 hours', 'utc') devuelve 'YYYY-MM-DD HH:MM:SS'
                 last_dt = _dt.fromisoformat(last.replace(' ', 'T').replace('Z', ''))
                 if (_dt.now(_tz.utc).replace(tzinfo=None) - last_dt) < _td(hours=24):
                     backup_reciente = True
@@ -3897,7 +3897,7 @@ def admin_inventario_reset_aplicar():
         import json as _json
         c.execute("""INSERT INTO audit_log
                      (usuario, accion, tabla, registro_id, detalle, ip, fecha)
-                     VALUES (?,?,?,?,?,?,datetime('now'))""",
+                     VALUES (?,?,?,?,?,?,datetime('now', '-5 hours'))""",
                   (u, 'RESET_INVENTARIO_PRE', 'movimientos', '_BULK_',
                    _json.dumps({
                        'movs_a_borrar': movs_borrados,
@@ -4022,7 +4022,7 @@ def admin_inventario_reset_aplicar():
     try:
         c.execute("""INSERT INTO audit_log
                      (usuario, accion, tabla, registro_id, detalle, ip, fecha)
-                     VALUES (?,?,?,?,?,?,datetime('now'))""",
+                     VALUES (?,?,?,?,?,?,datetime('now', '-5 hours'))""",
                   (u, 'RESET_INVENTARIO_POST', 'movimientos', '_BULK_',
                    _json.dumps({
                        'movs_borrados': movs_borrados,
@@ -4538,7 +4538,7 @@ def admin_corregir_formulas():
         c.execute(
             """INSERT INTO audit_log
                (usuario, accion, tabla, registro_id, detalle, ip, fecha)
-               VALUES (?,?,?,?,?,?,datetime('now'))""",
+               VALUES (?,?,?,?,?,?,datetime('now', '-5 hours'))""",
             (u, 'CORREGIR_FORMULAS', 'formula_items', '_BULK_',
              _json.dumps({
                  'count': len(aplicados),
@@ -4676,7 +4676,7 @@ def admin_revertir_formulas_desde_backup():
         c.execute(
             """INSERT INTO audit_log
                (usuario, accion, tabla, registro_id, detalle, ip, fecha)
-               VALUES (?,?,?,?,?,?,datetime('now'))""",
+               VALUES (?,?,?,?,?,?,datetime('now', '-5 hours'))""",
             (u, 'REVERTIR_FORMULAS_DESDE_BACKUP', 'formula_items', '_BULK_',
              _json.dumps({
                  'backup': bk_info,
@@ -4759,7 +4759,7 @@ def admin_eliminar_formulas_obsoletas():
         c.execute(
             """INSERT INTO audit_log
                (usuario, accion, tabla, registro_id, detalle, ip, fecha)
-               VALUES (?,?,?,?,?,?,datetime('now'))""",
+               VALUES (?,?,?,?,?,?,datetime('now', '-5 hours'))""",
             (u, 'ELIMINAR_FORMULAS_OBSOLETAS', 'formula_items', '_BULK_',
              _json.dumps({
                  'count': len(eliminados),
@@ -4975,7 +4975,7 @@ def admin_aplicar_correcciones_formulas_batch_20260428():
         c.execute(
             """INSERT INTO audit_log
                (usuario, accion, tabla, registro_id, detalle, ip, fecha)
-               VALUES (?,?,?,?,?,?,datetime('now'))""",
+               VALUES (?,?,?,?,?,?,datetime('now', '-5 hours'))""",
             (u, 'APLICAR_CORRECCIONES_FORMULAS_BATCH_20260428', 'multi', '_BULK_',
              _json.dumps({
                  'sql_file': 'scripts/migraciones/correcciones_formulas_2026_04_28.sql',
@@ -5112,7 +5112,7 @@ def admin_sembrar_maestro_desde_excel():
         c.execute(
             """INSERT INTO audit_log
                (usuario, accion, tabla, registro_id, detalle, ip, fecha)
-               VALUES (?,?,?,?,?,?,datetime('now'))""",
+               VALUES (?,?,?,?,?,?,datetime('now', '-5 hours'))""",
             (u, 'SEMBRAR_MAESTRO_DESDE_EXCEL', 'maestro_mps', '_BULK_',
              _json.dumps({
                  'archivo': f.filename,
@@ -6456,13 +6456,13 @@ def admin_import_pagos_influencers_excel():
             c.execute("""INSERT INTO solicitudes_compra
                 (numero, fecha, estado, solicitante, urgencia, observaciones,
                  area, empresa, categoria, tipo, numero_oc, influencer_id, fecha_requerida)
-                VALUES (?, datetime('now'), 'Aprobada', ?, 'Normal', ?, 'Marketing',
+                VALUES (?, datetime('now', '-5 hours'), 'Aprobada', ?, 'Normal', ?, 'Marketing',
                         'Animus', 'Influencer/Marketing Digital', 'Servicio', ?, ?, ?)""",
                 (num_sol, u, obs, num_oc, plan['influencer_id'],
                  plan['fecha_publicacion'] or ''))
             c.execute("""INSERT INTO ordenes_compra
                 (numero_oc, fecha, estado, proveedor, valor_total, observaciones, creado_por)
-                VALUES (?, datetime('now'), 'Aprobada', ?, ?, ?, ?)""",
+                VALUES (?, datetime('now', '-5 hours'), 'Aprobada', ?, ?, ?, ?)""",
                 (num_oc, plan['nombre'], plan['valor'],
                  f"Pago influencer importado desde Excel · pub: {plan['fecha_publicacion'] or 'n/a'}", u))
             try:
@@ -6478,7 +6478,7 @@ def admin_import_pagos_influencers_excel():
                 # eternamente marcado como pendiente aunque ya se haya transferido.
                 c.execute("""INSERT INTO pagos_influencers
                     (influencer_id, influencer_nombre, valor, fecha, estado, concepto, numero_oc, fecha_publicacion)
-                    VALUES (?, ?, ?, datetime('now'), 'Pagada', ?, ?, ?)""",
+                    VALUES (?, ?, ?, datetime('now', '-5 hours'), 'Pagada', ?, ?, ?)""",
                     (plan['influencer_id'], plan['nombre'], plan['valor'],
                      plan['concepto'][:200], num_oc, plan['fecha_publicacion'] or ''))
             except sqlite3.OperationalError:
@@ -6824,7 +6824,7 @@ def aplicar_minimos():
         c.execute(
             """INSERT INTO audit_log
                (usuario, accion, tabla, registro_id, detalle, ip, fecha)
-               VALUES (?,?,?,?,?,?,datetime('now'))""",
+               VALUES (?,?,?,?,?,?,datetime('now', '-5 hours'))""",
             (u, 'APLICAR_MINIMOS_RECALCULADOS', 'maestro_mps', '_BULK_',
              _json.dumps({
                  'count': len(cambios),
@@ -9042,7 +9042,7 @@ def admin_auditoria_lotes():
             FROM movimientos m
             WHERE COALESCE(m.lote,'') != ''
               AND m.tipo = 'Entrada'
-              AND m.fecha >= date('now', '{fecha_corte}')
+              AND m.fecha >= date('now', '-5 hours', '{fecha_corte}')
               AND NOT EXISTS (
                   SELECT 1 FROM movimientos m2
                   WHERE m2.material_id = m.material_id
@@ -9065,7 +9065,7 @@ def admin_auditoria_lotes():
             SELECT id, material_id, material_nombre, cantidad, tipo, fecha,
                    lote, proveedor, operador, observaciones
             FROM movimientos
-            WHERE fecha >= date('now', '{fecha_corte}')
+            WHERE fecha >= date('now', '-5 hours', '{fecha_corte}')
             ORDER BY id DESC
             LIMIT 500
         """).fetchall()
@@ -9083,7 +9083,7 @@ def admin_auditoria_lotes():
                    GROUP_CONCAT(operador, ' / ') as operadores
             FROM movimientos
             WHERE COALESCE(lote,'') != ''
-              AND fecha >= date('now', '{fecha_corte}')
+              AND fecha >= date('now', '-5 hours', '{fecha_corte}')
             GROUP BY material_id, lote, cantidad, tipo, fecha
             HAVING COUNT(*) > 1
             ORDER BY veces DESC, ultima DESC
@@ -9102,7 +9102,7 @@ def admin_auditoria_lotes():
                    COUNT(*) as movs,
                    COUNT(DISTINCT lote) as lotes_distintos
             FROM movimientos
-            WHERE fecha = date('now')
+            WHERE fecha = date('now', '-5 hours')
             GROUP BY operador, tipo
             ORDER BY movs DESC
         """).fetchall()
@@ -9120,7 +9120,7 @@ def admin_auditoria_lotes():
                                      ELSE 0 END), 0) as stock
             FROM movimientos
             WHERE COALESCE(lote,'') != ''
-              AND fecha < date('now', '{fecha_corte}')
+              AND fecha < date('now', '-5 hours', '{fecha_corte}')
             GROUP BY material_id, lote
             HAVING stock > 0
         """).fetchall()
@@ -9531,7 +9531,7 @@ def admin_audit_inventario():
                    julianday('now') - julianday(fecha_programada) as dias_atraso
             FROM produccion_programada
             WHERE LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado')
-              AND fecha_programada < date('now','-1 day')
+              AND fecha_programada < date('now', '-5 hours', '-1 day')
             ORDER BY fecha_programada ASC LIMIT 30
         """).fetchall()
         cols = [d[0] for d in c.description]
@@ -9703,7 +9703,7 @@ def admin_influencers_limpieza():
         FROM pagos_influencers pi
         JOIN ordenes_compra oc ON oc.numero_oc = pi.numero_oc
         WHERE oc.estado IN ('Borrador','Pendiente','Revisada','Aprobada','Autorizada')
-          AND oc.fecha < date('now','-30 day')
+          AND oc.fecha < date('now', '-5 hours', '-30 day')
         ORDER BY oc.fecha ASC LIMIT 500
     """).fetchall()
     cols = [d[0] for d in c.description]
@@ -9933,7 +9933,7 @@ def _do_bulk_import(items, usuario):
             c.execute("""
                 INSERT INTO marketing_influencers
                   (nombre, red_social, telefono, ciudad, tarifa, estado, fecha_registro)
-                VALUES (?, 'Instagram', ?, ?, ?, 'Activo', date('now'))
+                VALUES (?, 'Instagram', ?, ?, ?, 'Activo', date('now', '-5 hours'))
             """, (nombre, telefono, ciudad, costo))
             inf_id = c.lastrowid
 
@@ -9981,7 +9981,7 @@ def _do_bulk_import(items, usuario):
               (numero, fecha, estado, solicitante, urgencia, observaciones,
                area, empresa, categoria, tipo, valor, influencer_id,
                fecha_requerida, numero_oc)
-            VALUES (?, date('now'), 'Aprobada', 'jefferson', 'Normal', ?,
+            VALUES (?, date('now', '-5 hours'), 'Aprobada', 'jefferson', 'Normal', ?,
                     'Marketing', 'ANIMUS', 'Cuenta de Cobro', 'Servicio',
                     ?, ?, ?, ?)
         """, (sol_num, observaciones, costo, inf_id, fecha_pub, oc_num))
@@ -9991,7 +9991,7 @@ def _do_bulk_import(items, usuario):
             INSERT INTO ordenes_compra
               (numero_oc, fecha, estado, proveedor, observaciones,
                creado_por, categoria, valor_total)
-            VALUES (?, date('now'), 'Aprobada', ?, ?, ?, 'Cuenta de Cobro', ?)
+            VALUES (?, date('now', '-5 hours'), 'Aprobada', ?, ?, ?, 'Cuenta de Cobro', ?)
         """, (oc_num, nombre, observaciones, usuario, costo))
 
         # 5. INSERT pagos_influencers Pendiente
@@ -10000,7 +10000,7 @@ def _do_bulk_import(items, usuario):
                 INSERT INTO pagos_influencers
                   (influencer_id, influencer_nombre, valor, fecha, estado,
                    concepto, numero_oc, fecha_publicacion)
-                VALUES (?, ?, ?, date('now'), 'Pendiente', ?, ?, ?)
+                VALUES (?, ?, ?, date('now', '-5 hours'), 'Pendiente', ?, ?, ?)
             """, (inf_id, nombre, int(costo), concepto, oc_num, fecha_pub))
         except sqlite3.OperationalError:
             pass
@@ -10285,7 +10285,7 @@ def admin_sku_map_upsert():
                     observaciones=COALESCE(observaciones,'') ||
                       ' [auto-cancelado: SKU ' || ? || ' remapeado de ' || ? || ' a ' || ? || ']'
                 WHERE producto=? AND origen='calendar'
-                  AND fecha_programada >= date('now','-1 day')
+                  AND fecha_programada >= date('now', '-5 hours', '-1 day')
                   AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado')
             """, (sku, producto_anterior, producto, producto_anterior))
             canceladas = cur.rowcount or 0
@@ -10536,7 +10536,7 @@ def admin_mee_fugas_check():
                    COALESCE(SUM(cantidad),0)
             FROM movimientos_mee
             WHERE observaciones LIKE '%INVENTARIO ENVASE%'
-              AND fecha >= datetime('now','-2 day')
+              AND fecha >= datetime('now', '-5 hours', '-2 day')
         """).fetchone()
         fugas['movimientos_import_2d'] = {
             'count': rows[0] if rows else 0,
@@ -10993,7 +10993,7 @@ def admin_import_inventario_envase_xlsx():
                 INSERT INTO maestro_mee
                   (codigo, descripcion, categoria, unidad, stock_actual,
                    stock_minimo, estado, fecha_creacion)
-                VALUES (?, ?, ?, ?, ?, 1000, 'Activo', datetime('now'))
+                VALUES (?, ?, ?, ?, ?, 1000, 'Activo', datetime('now', '-5 hours'))
             """, (it['codigo'], it['descripcion'], it['categoria'],
                   it['unidad'], it['stock']))
             try:
@@ -11188,7 +11188,7 @@ def auditoria_catalogo():
                    MAX(estado_lote) as estado
             FROM movimientos
             WHERE COALESCE(fecha_vencimiento,'') != ''
-                  AND fecha_vencimiento < date('now')
+                  AND fecha_vencimiento < date('now', '-5 hours')
                   AND UPPER(COALESCE(estado_lote,'')) IN ('VIGENTE', '')
             GROUP BY material_id, lote
             HAVING stock > 0.5
@@ -12118,7 +12118,7 @@ def anular_movimiento():
             INSERT INTO movimientos
             (material_id, material_nombre, cantidad, tipo, fecha, observaciones,
              lote, fecha_vencimiento, estanteria, posicion, proveedor, estado_lote, operador)
-            VALUES (?,?,?,?,datetime('now'),?,?,?,?,?,?,?,?)
+            VALUES (?,?,?,?,datetime('now', '-5 hours'),?,?,?,?,?,?,?,?)
         """, (orig['material_id'], orig['material_nombre'],
               orig['cantidad'], tipo_contra, obs_contra,
               orig['lote'], orig['fecha_vencimiento'],
@@ -12460,7 +12460,7 @@ def marcar_vencidos_bulk_todos():
             FROM movimientos
             WHERE fecha_vencimiento IS NOT NULL
               AND TRIM(fecha_vencimiento) != ''
-              AND date(fecha_vencimiento) < date('now')
+              AND date(fecha_vencimiento) < date('now', '-5 hours')
               AND UPPER(COALESCE(estado_lote,'')) = 'VIGENTE'
             GROUP BY material_id, lote
             ORDER BY fecha_vencimiento ASC
@@ -12481,7 +12481,7 @@ def marcar_vencidos_bulk_todos():
             SET estado_lote = 'VENCIDO'
             WHERE fecha_vencimiento IS NOT NULL
               AND TRIM(fecha_vencimiento) != ''
-              AND date(fecha_vencimiento) < date('now')
+              AND date(fecha_vencimiento) < date('now', '-5 hours')
               AND UPPER(COALESCE(estado_lote,'')) = 'VIGENTE'
         """)
         actualizados = res.rowcount
@@ -12609,7 +12609,7 @@ def mps_sin_uso():
             WHERE n_formulas = 0
               AND (
                 ultima_act IS NULL
-                OR date(ultima_act) < date('now', '-' || ? || ' days')
+                OR date(ultima_act) < date('now', '-5 hours', '-' || ? || ' days')
               )
               AND (? = 1 OR ABS(stock_g) < 1)
             ORDER BY
@@ -13339,7 +13339,7 @@ def auditoria_producciones_descuento():
                        AND observaciones LIKE 'Producción INICIADA: ' || pp.producto || '%')
                    AS n_movs_salida_producto
             FROM produccion_programada pp
-            WHERE date(pp.fecha_programada) >= date('now', '-' || ? || ' days')
+            WHERE date(pp.fecha_programada) >= date('now', '-5 hours', '-' || ? || ' days')
             ORDER BY pp.fecha_programada DESC
             LIMIT 500
         """, (dias,)).fetchall()
@@ -13439,7 +13439,7 @@ def auditoria_producciones_descuento():
                    (SELECT COUNT(*) FROM formula_items
                      WHERE producto_nombre = p.producto) AS n_formula_items
             FROM producciones p
-            WHERE date(COALESCE(p.fecha, '1970-01-01')) >= date('now', '-' || ? || ' days')
+            WHERE date(COALESCE(p.fecha, '1970-01-01')) >= date('now', '-5 hours', '-' || ? || ' days')
             ORDER BY p.fecha DESC
             LIMIT 200
         """, (dias,)).fetchall()
@@ -13828,7 +13828,7 @@ def auditoria_mps_nuevas():
                      WHERE material_id = pm.material_id) AS n_formula
             FROM primer_mov pm
             LEFT JOIN maestro_mps m ON m.codigo_mp = pm.material_id
-            WHERE date(pm.primer_fecha) >= date('now', '-' || ? || ' days')
+            WHERE date(pm.primer_fecha) >= date('now', '-5 hours', '-' || ? || ' days')
             ORDER BY pm.primer_fecha DESC
             LIMIT 200
         """, (dias,)).fetchall()
@@ -13964,7 +13964,7 @@ def auditoria_lotes_nuevos():
                    COALESCE(m.nombre_comercial, m.nombre_inci, '') AS nombre
             FROM lote_resumen lr
             LEFT JOIN maestro_mps m ON m.codigo_mp = lr.material_id
-            WHERE date(lr.primer_fecha) >= date('now', '-' || ? || ' days')
+            WHERE date(lr.primer_fecha) >= date('now', '-5 hours', '-' || ? || ' days')
             ORDER BY lr.primer_fecha DESC
             LIMIT 300
         """, (dias,)).fetchall()
@@ -14365,8 +14365,8 @@ def explicar_stock_min(codigo):
                COALESCE(pp.inventario_descontado_at, '') as desc_at
         FROM produccion_programada pp
         WHERE pp.producto IN ({ph})
-          AND pp.fecha_programada >= date('now')
-          AND pp.fecha_programada <= date('now', '+' || ? || ' day')
+          AND pp.fecha_programada >= date('now', '-5 hours')
+          AND pp.fecha_programada <= date('now', '-5 hours', '+' || ? || ' day')
           AND LOWER(COALESCE(pp.estado,'')) != 'cancelado'
         ORDER BY pp.fecha_programada
     """, productos_que_usan + [horizonte]).fetchall()
@@ -14521,8 +14521,8 @@ def sugerir_stock_minimos():
             LEFT JOIN formula_headers fh
                    ON UPPER(TRIM(fh.producto_nombre))
                     = UPPER(TRIM(pp.producto))
-            WHERE pp.fecha_programada >= date('now')
-              AND pp.fecha_programada <= date('now', '+' || ? || ' day')
+            WHERE pp.fecha_programada >= date('now', '-5 hours')
+              AND pp.fecha_programada <= date('now', '-5 hours', '+' || ? || ' day')
               AND LOWER(COALESCE(pp.estado,'')) != 'cancelado'
               AND COALESCE(pp.inventario_descontado_at, '') = ''
               AND fi.material_id IS NOT NULL AND TRIM(fi.material_id) != ''
@@ -15013,7 +15013,7 @@ def validar_planta_invariantes():
     # 5d. audit_log existe y tiene entradas recientes
     try:
         row = c.execute(
-            "SELECT COUNT(*) FROM audit_log WHERE fecha >= datetime('now','-7 days')"
+            "SELECT COUNT(*) FROM audit_log WHERE fecha >= datetime('now', '-5 hours', '-7 days')"
         ).fetchone()
         if row and row[0] < 1:
             _add('ajustes', 'audit_log sin entradas en últimos 7 días (¿deshabilitado?)', 'media')
@@ -17655,7 +17655,7 @@ def producciones_inconsistentes():
                 FROM produccion_programada
                 WHERE inventario_descontado_at IS NOT NULL
                   AND (fin_real_at IS NULL OR fin_real_at = '')
-                  AND date(inventario_descontado_at) < date('now', '-7 days')
+                  AND date(inventario_descontado_at) < date('now', '-5 hours', '-7 days')
                 ORDER BY inventario_descontado_at DESC
                 LIMIT 50
             """).fetchall()
@@ -17683,7 +17683,7 @@ def producciones_inconsistentes():
                      WHERE producto_nombre = p.producto) AS n_formula
             FROM producciones p
             WHERE p.estado IN ('Completado', 'Terminado')
-              AND date(p.fecha) >= date('now', '-180 days')
+              AND date(p.fecha) >= date('now', '-5 hours', '-180 days')
             ORDER BY p.fecha DESC
             LIMIT 100
         """).fetchall()
@@ -17798,7 +17798,7 @@ def auditoria_fefo_descuento():
             prod_rows = c.execute("""
                 SELECT id, producto, cantidad, fecha, lote, formula_snapshot_json
                 FROM producciones
-                WHERE date(fecha) >= date('now', '-' || ? || ' days')
+                WHERE date(fecha) >= date('now', '-5 hours', '-' || ? || ' days')
                   AND COALESCE(cantidad, 0) > 0
                 ORDER BY fecha DESC
                 LIMIT 50
@@ -17807,7 +17807,7 @@ def auditoria_fefo_descuento():
             prod_rows = [(*r, None) for r in c.execute("""
                 SELECT id, producto, cantidad, fecha, lote
                 FROM producciones
-                WHERE date(fecha) >= date('now', '-' || ? || ' days')
+                WHERE date(fecha) >= date('now', '-5 hours', '-' || ? || ' days')
                   AND COALESCE(cantidad, 0) > 0
                 ORDER BY fecha DESC
                 LIMIT 50
@@ -18075,7 +18075,7 @@ def mp_alcanza_multi():
             SELECT producto, fecha_programada, lotes,
                    COALESCE(cantidad_kg, 0) AS cantidad_kg
             FROM produccion_programada
-            WHERE date(fecha_programada) BETWEEN date('now') AND date('now', '+180 days')
+            WHERE date(fecha_programada) BETWEEN date('now', '-5 hours') AND date('now', '-5 hours', '+180 days')
               AND COALESCE(estado, '') != 'cancelado'
         """).fetchall()
         # Para cada producción: ya hay un campo `lotes` que es el conteo de batches.
@@ -18581,7 +18581,7 @@ def programacion_sku_status():
                 SELECT producto, fecha_programada, lotes, estado,
                        inicio_real_at, inventario_descontado_at, fin_real_at
                 FROM produccion_programada
-                WHERE date(fecha_programada) >= date('now', '-7 days')
+                WHERE date(fecha_programada) >= date('now', '-5 hours', '-7 days')
                 ORDER BY fecha_programada ASC
                 LIMIT 200
             """).fetchall():
@@ -19085,7 +19085,7 @@ def forensic_trazabilidad():
                    fecha, observaciones, lote
             FROM movimientos
             WHERE (operador IS NULL OR TRIM(operador) = '')
-              AND fecha >= date('now', '-90 days')
+              AND fecha >= date('now', '-5 hours', '-90 days')
             ORDER BY fecha DESC
         """).fetchall()
 
@@ -19274,7 +19274,7 @@ def validacion_profunda():
             prod_rows = c.execute("""
                 SELECT id, producto, cantidad, fecha, lote, formula_snapshot_json
                 FROM producciones
-                WHERE fecha >= date('now', '-180 days')
+                WHERE fecha >= date('now', '-5 hours', '-180 days')
                 ORDER BY fecha DESC
                 LIMIT 30
             """).fetchall()
@@ -19284,7 +19284,7 @@ def validacion_profunda():
                 (*r, None) for r in c.execute("""
                     SELECT id, producto, cantidad, fecha, lote
                     FROM producciones
-                    WHERE fecha >= date('now', '-180 days')
+                    WHERE fecha >= date('now', '-5 hours', '-180 days')
                     ORDER BY fecha DESC
                     LIMIT 30
                 """).fetchall()
@@ -19364,7 +19364,7 @@ def validacion_profunda():
         sin_op = c.execute("""
             SELECT COUNT(*) FROM movimientos
             WHERE (operador IS NULL OR TRIM(operador) = '')
-              AND fecha >= date('now', '-90 days')
+              AND fecha >= date('now', '-5 hours', '-90 days')
         """).fetchone()[0]
         if sin_op > 0:
             hallazgos.append({
@@ -19785,7 +19785,7 @@ def reconciliar_mee():
             c.execute("""
                 INSERT INTO movimientos_mee
                   (mee_codigo, tipo, cantidad, observaciones, responsable, fecha)
-                VALUES (?, 'Ajuste', ?, ?, ?, datetime('now'))
+                VALUES (?, 'Ajuste', ?, ?, ?, datetime('now', '-5 hours'))
             """, (cod, drift,
                   f'RECONCILIACION zero-error: persistido era {stock_persistido}, '
                   f'calculado era {stock_calc}, drift {drift:+.2f}. Motivo: {motivo[:200]}',
@@ -19862,7 +19862,7 @@ def api_zero_error_historial():
             SELECT fecha, score_real, veredicto_real, alta, media, baja,
                    detalles_json, origen
             FROM audit_zero_error_runs
-            WHERE date(fecha) >= date('now', '-' || ? || ' days')
+            WHERE date(fecha) >= date('now', '-5 hours', '-' || ? || ' days')
             ORDER BY fecha DESC
             LIMIT 500
         """, (dias,)).fetchall()
@@ -20552,7 +20552,7 @@ def email_alejandro_formulas_faltantes():
                    MIN(fecha_programada) AS proxima,
                    COUNT(*) AS n_eventos
             FROM produccion_programada
-            WHERE date(fecha_programada) >= date('now')
+            WHERE date(fecha_programada) >= date('now', '-5 hours')
               AND COALESCE(estado, '') != 'cancelado'
             GROUP BY producto
             ORDER BY MIN(fecha_programada)
@@ -20944,7 +20944,7 @@ def limpiar_produccion_zombies():
             SELECT id, producto, fecha_programada, estado
             FROM produccion_programada
             WHERE COALESCE(estado,'') = 'cancelado'
-              AND date(fecha_programada) < date('now', '-30 days')
+              AND date(fecha_programada) < date('now', '-5 hours', '-30 days')
             ORDER BY fecha_programada
         """).fetchall()
 
@@ -20953,7 +20953,7 @@ def limpiar_produccion_zombies():
             SELECT id, producto, fecha_programada, estado
             FROM produccion_programada
             WHERE COALESCE(estado,'') = 'programado'
-              AND date(fecha_programada) < date('now', '-7 days')
+              AND date(fecha_programada) < date('now', '-5 hours', '-7 days')
               AND COALESCE(inicio_real_at,'') = ''
               AND COALESCE(inventario_descontado_at,'') = ''
             ORDER BY fecha_programada
@@ -21144,7 +21144,7 @@ def cron_snapshot_mp_alcanza():
 
     import json as _json
     from datetime import datetime as _dt, timezone as _tz
-    # Sebastián 12-may-2026: usar UTC para alinear con SQLite date('now') de
+    # Sebastián 12-may-2026: usar UTC para alinear con SQLite date('now', '-5 hours') de
     # las queries (que sin modifier 'localtime' devuelven UTC). Antes usábamos
     # date.today() Python local que en máquinas con TZ != UTC daba mismatch.
     hoy = _dt.now(_tz.utc).date().isoformat()
@@ -21288,7 +21288,7 @@ def mp_alcanza_historial():
                       comprar_1_2_sem_total, comprar_1_mes_total,
                       ok_total, sin_uso_total, origen, creado_en
                FROM mp_alcanza_snapshots
-               WHERE date(fecha) >= date('now', '-' || ? || ' days')
+               WHERE date(fecha) >= date('now', '-5 hours', '-' || ? || ' days')
                ORDER BY fecha DESC""",
             (dias,)
         ).fetchall()
@@ -21346,7 +21346,7 @@ def productos_calendar_sin_formula():
                    COUNT(*) AS n_eventos,
                    GROUP_CONCAT(DISTINCT estado) AS estados
             FROM produccion_programada
-            WHERE date(fecha_programada) >= date('now')
+            WHERE date(fecha_programada) >= date('now', '-5 hours')
               AND COALESCE(estado, '') != 'cancelado'
             GROUP BY producto
             ORDER BY producto
@@ -21458,7 +21458,7 @@ def debug_formulas_recientes():
         for r in c.execute("""
             SELECT producto, MAX(fecha) AS ultima
             FROM producciones
-            WHERE date(fecha) >= date('now', '-60 days')
+            WHERE date(fecha) >= date('now', '-5 hours', '-60 days')
             GROUP BY producto
         """).fetchall():
             prod_recientes[r['producto']] = r['ultima'][:10] if r['ultima'] else ''
@@ -21484,7 +21484,7 @@ def debug_formulas_recientes():
         for r in c.execute("""
             SELECT producto, COUNT(*) AS n
             FROM produccion_programada
-            WHERE date(fecha_programada) >= date('now')
+            WHERE date(fecha_programada) >= date('now', '-5 hours')
               AND COALESCE(estado, '') != 'cancelado'
             GROUP BY producto
         """).fetchall():
@@ -22043,7 +22043,7 @@ def auditoria_unidad_base():
                 SELECT producto, COUNT(*) AS n
                 FROM produccion_programada
                 WHERE date(fecha_programada)
-                      BETWEEN date('now') AND date('now', '+90 days')
+                      BETWEEN date('now', '-5 hours') AND date('now', '-5 hours', '+90 days')
                 GROUP BY producto
             """).fetchall():
                 cal_uso[row['producto']] = int(row['n'] or 0)
@@ -22056,7 +22056,7 @@ def auditoria_unidad_base():
             for row in c.execute("""
                 SELECT producto, COUNT(*) AS n
                 FROM producciones
-                WHERE date(fecha) >= date('now', '-180 days')
+                WHERE date(fecha) >= date('now', '-5 hours', '-180 days')
                   AND COALESCE(cantidad, 0) > 0
                 GROUP BY producto
             """).fetchall():

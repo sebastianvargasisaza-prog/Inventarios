@@ -305,7 +305,7 @@ def tarea_detalle(tid):
             c.execute(f"UPDATE tareas_internas SET {sets} WHERE id=?", vals)
         # Si estado pasa a Hecha, registrar fecha_completada
         if d.get("estado") == "Hecha":
-            c.execute("UPDATE tareas_internas SET fecha_completada=datetime('now') "
+            c.execute("UPDATE tareas_internas SET fecha_completada=datetime('now', '-5 hours') "
                       "WHERE id=? AND fecha_completada IS NULL", (tid,))
         # RACI delta opcional. Tambien expande area:Calidad si viene asi.
         raci_input = d.get("raci") or []
@@ -430,7 +430,7 @@ def mensaje_leer(mid):
     u, err, code = _auth()
     if err: return err, code
     conn = get_db(); c = conn.cursor()
-    c.execute("""UPDATE mensajes_internos SET leido_at=datetime('now')
+    c.execute("""UPDATE mensajes_internos SET leido_at=datetime('now', '-5 hours')
                  WHERE id=? AND a_usuario=? AND leido_at IS NULL""", (mid, u))
     conn.commit()
     return jsonify({"ok": True})
@@ -722,7 +722,7 @@ def queja_resolver(qid):
     d = request.json or {}
     conn = get_db(); c = conn.cursor()
     c.execute("""UPDATE quejas_internas
-                 SET estado=?, resolucion=?, fecha_resolucion=datetime('now')
+                 SET estado=?, resolucion=?, fecha_resolucion=datetime('now', '-5 hours')
                  WHERE id=?""",
               (d.get("estado", "Resuelta"),
                d.get("resolucion", "")[:1000], qid))
@@ -814,7 +814,7 @@ def dashboard():
         WHERE r.usuario=? AND r.rol IN ('R','A')
           AND t.estado NOT IN ('Hecha','Cancelada')
           AND t.fecha_compromiso IS NOT NULL
-          AND t.fecha_compromiso < date('now')
+          AND t.fecha_compromiso < date('now', '-5 hours')
     """, (u,)).fetchone()[0]
 
     # No leidos

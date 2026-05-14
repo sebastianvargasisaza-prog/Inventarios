@@ -70,11 +70,11 @@ def calidad_dashboard():
     # Aprobados y rechazados últimos 30d · UPPER tambien
     c.execute("""SELECT COUNT(*) FROM movimientos
                  WHERE UPPER(COALESCE(estado_lote,''))='APROBADO'
-                   AND fecha >= date('now','-30 days')""")
+                   AND fecha >= date('now', '-5 hours', '-30 days')""")
     aprobados = c.fetchone()[0]
     c.execute("""SELECT COUNT(*) FROM movimientos
                  WHERE UPPER(COALESCE(estado_lote,''))='RECHAZADO'
-                   AND fecha >= date('now','-30 days')""")
+                   AND fecha >= date('now', '-5 hours', '-30 days')""")
     rechazados = c.fetchone()[0]
     # NC abiertas
     c.execute("SELECT COUNT(*) FROM no_conformidades WHERE estado='Abierta'")
@@ -86,11 +86,11 @@ def calidad_dashboard():
     # PT liberados y rechazados ultimos 30d
     c.execute("""SELECT COUNT(*) FROM liberaciones
                  WHERE estado='Liberado'
-                 AND fecha_liberacion >= date('now','-30 days')""")
+                 AND fecha_liberacion >= date('now', '-5 hours', '-30 days')""")
     liberados_mes = c.fetchone()[0]
     c.execute("""SELECT COUNT(*) FROM liberaciones
                  WHERE estado='Rechazado'
-                 AND fecha_liberacion >= date('now','-30 days')""")
+                 AND fecha_liberacion >= date('now', '-5 hours', '-30 days')""")
     rechazados_pt = c.fetchone()[0]
     total_lib = liberados_mes + rechazados_pt
     tasa_liberacion = round((liberados_mes / total_lib * 100), 1) if total_lib > 0 else None
@@ -275,7 +275,7 @@ def calidad_bandeja():
             SELECT id, instrumento, codigo, ubicacion, fecha_proxima, responsable, estado,
                    CAST((julianday('now') - julianday(fecha_proxima)) AS INTEGER) as dias_vencida
             FROM calibraciones_instrumentos
-            WHERE date(fecha_proxima) < date('now')
+            WHERE date(fecha_proxima) < date('now', '-5 hours')
             ORDER BY fecha_proxima ASC
             LIMIT 30
         """).fetchall()
@@ -283,7 +283,7 @@ def calidad_bandeja():
             SELECT id, instrumento, codigo, ubicacion, fecha_proxima, responsable, estado,
                    CAST((julianday(fecha_proxima) - julianday('now')) AS INTEGER) as dias_restantes
             FROM calibraciones_instrumentos
-            WHERE date(fecha_proxima) BETWEEN date('now') AND date('now', '+7 days')
+            WHERE date(fecha_proxima) BETWEEN date('now', '-5 hours') AND date('now', '-5 hours', '+7 days')
             ORDER BY fecha_proxima ASC
             LIMIT 30
         """).fetchall()
@@ -313,7 +313,7 @@ def calidad_bandeja():
         rows = c.execute("""
             SELECT fecha, area_codigo, area_nombre, tipo_muestra, frecuencia, estado, asignado_a
             FROM cronograma_muestreo_micro
-            WHERE date(fecha) BETWEEN date('now') AND date('now', '+7 days')
+            WHERE date(fecha) BETWEEN date('now', '-5 hours') AND date('now', '-5 hours', '+7 days')
               AND COALESCE(estado, 'pendiente') NOT IN ('completado', 'cancelado')
             ORDER BY fecha ASC, area_codigo
             LIMIT 50
@@ -340,7 +340,7 @@ def calidad_bandeja():
                    conductividad_us_cm, toc_ppb, microorganismos_ufc_ml,
                    estado, observaciones, operador
             FROM calidad_sistema_agua
-            WHERE date(fecha) = date('now')
+            WHERE date(fecha) = date('now', '-5 hours')
             ORDER BY id DESC LIMIT 1
         """).fetchone()
         if row:
@@ -396,7 +396,7 @@ def calidad_bandeja():
         rows = c.execute("""
             SELECT id, fecha, tipo, area, responsable, descripcion, estado
             FROM auditorias
-            WHERE date(fecha) BETWEEN date('now') AND date('now', '+60 days')
+            WHERE date(fecha) BETWEEN date('now', '-5 hours') AND date('now', '-5 hours', '+60 days')
               AND COALESCE(estado, 'programada') NOT IN ('completada', 'cancelada')
             ORDER BY fecha ASC
             LIMIT 20
@@ -419,7 +419,7 @@ def calidad_bandeja():
             SELECT id, producto, lote, condicion, fecha_inicio, fecha_proxima_analisis, estado,
                    CAST((julianday(fecha_proxima_analisis) - julianday('now')) AS INTEGER) as dias
             FROM estabilidades
-            WHERE date(fecha_proxima_analisis) BETWEEN date('now') AND date('now', '+30 days')
+            WHERE date(fecha_proxima_analisis) BETWEEN date('now', '-5 hours') AND date('now', '-5 hours', '+30 days')
               AND COALESCE(estado, 'en_curso') = 'en_curso'
             ORDER BY fecha_proxima_analisis ASC
             LIMIT 20
@@ -479,7 +479,7 @@ def handle_no_conformidades():
         c.execute("""INSERT INTO no_conformidades
                      (fecha,tipo,descripcion,area,responsable,lote,codigo_mp,
                       impacto,accion_correctiva,estado,creado_por)
-                     VALUES (date('now'),?,?,?,?,?,?,?,?,'Abierta',?)""",
+                     VALUES (date('now', '-5 hours'),?,?,?,?,?,?,?,?,'Abierta',?)""",
                   (d.get('tipo','Proceso'), desc,
                    d.get('area',''), d.get('responsable',''),
                    d.get('lote',''), d.get('codigo_mp',''),
@@ -543,7 +543,7 @@ def cerrar_no_conformidad(ncid):
     if row[0] == 'Cerrada':
         return jsonify({'error': 'NC ya está cerrada'}), 409
     c.execute("""UPDATE no_conformidades
-                 SET estado='Cerrada', fecha_cierre=date('now'), cerrado_por=?,
+                 SET estado='Cerrada', fecha_cierre=date('now', '-5 hours'), cerrado_por=?,
                      accion_correctiva=COALESCE(?, accion_correctiva)
                  WHERE id=?""",
               (user, accion, ncid))
@@ -651,7 +651,7 @@ def completar_tarea_cron():
         c.execute("""INSERT INTO no_conformidades
                      (fecha,tipo,descripcion,area,responsable,impacto,
                       accion_correctiva,estado,creado_por)
-                     VALUES (date('now'),'Proceso',?,
+                     VALUES (date('now', '-5 hours'),'Proceso',?,
                      'Calidad','Jefe CC','Alto',
                      ?,'Abierta',?)""",
                   ('OOS detectado en cronograma: ' + nombre_tarea,
@@ -870,7 +870,7 @@ def coa_list():
                 c.execute("""INSERT INTO no_conformidades
                              (fecha,tipo,descripcion,area,responsable,lote,
                               codigo_mp,impacto,accion_correctiva,estado,creado_por)
-                             VALUES (date('now'),'Insumo',?,?,?,?,?,?,?,'Abierta',?)""",
+                             VALUES (date('now', '-5 hours'),'Insumo',?,?,?,?,?,?,?,'Abierta',?)""",
                           (f'CoA fuera de spec: {d["parametro"]}={d["valor_obtenido"]} '
                            f'(spec {valor_min_spec}-{valor_max_spec})',
                            'Calidad', 'Jefe CC', d['lote'], d['codigo_mp'],
@@ -1357,7 +1357,7 @@ def calidad_micro_heatmap():
     # Lista de productos con resultados en la ventana
     prods = [r[0] for r in c.execute(
         "SELECT DISTINCT producto_nombre FROM calidad_micro_resultados "
-        "WHERE fecha_analisis >= date('now','-' || ? || ' months') "
+        "WHERE fecha_analisis >= date('now', '-5 hours', '-' || ? || ' months') "
         "ORDER BY producto_nombre", (meses,)
     ).fetchall()]
 
@@ -1373,7 +1373,7 @@ def calidad_micro_heatmap():
                   MAX(fecha_analisis) as ultima_fecha
                 FROM calidad_micro_resultados
                 WHERE producto_nombre=? AND microorganismo=?
-                  AND fecha_analisis >= date('now','-' || ? || ' months')
+                  AND fecha_analisis >= date('now', '-5 hours', '-' || ? || ' months')
             """, (prod, m, meses)).fetchone()
             n, n_fi, n_fm, ultima = cell
             if not n:
@@ -1398,13 +1398,13 @@ def calidad_micro_heatmap():
 
     # KPIs globales
     total_res = c.execute(
-        "SELECT COUNT(*) FROM calidad_micro_resultados WHERE fecha_analisis >= date('now','-' || ? || ' months')", (meses,)
+        "SELECT COUNT(*) FROM calidad_micro_resultados WHERE fecha_analisis >= date('now', '-5 hours', '-' || ? || ' months')", (meses,)
     ).fetchone()[0] or 0
     total_fi = c.execute(
-        "SELECT COUNT(*) FROM calidad_micro_resultados WHERE estado='fuera_industria' AND fecha_analisis >= date('now','-' || ? || ' months')", (meses,)
+        "SELECT COUNT(*) FROM calidad_micro_resultados WHERE estado='fuera_industria' AND fecha_analisis >= date('now', '-5 hours', '-' || ? || ' months')", (meses,)
     ).fetchone()[0] or 0
     total_fm = c.execute(
-        "SELECT COUNT(*) FROM calidad_micro_resultados WHERE estado='fuera_meta' AND fecha_analisis >= date('now','-' || ? || ' months')", (meses,)
+        "SELECT COUNT(*) FROM calidad_micro_resultados WHERE estado='fuera_meta' AND fecha_analisis >= date('now', '-5 hours', '-' || ? || ' months')", (meses,)
     ).fetchone()[0] or 0
 
     return jsonify({
@@ -1559,7 +1559,7 @@ def calidad_agua_estado_hoy():
                conductividad_us_cm, toc_ppb, microorganismos_ufc_ml,
                cloro_residual_ppm, temperatura_c, estado, observaciones, operador
         FROM calidad_sistema_agua
-        WHERE date(fecha) = date('now')
+        WHERE date(fecha) = date('now', '-5 hours')
         ORDER BY id DESC LIMIT 1
     """).fetchone()
     ahora = datetime.now()
@@ -1609,7 +1609,7 @@ def calidad_agua_tendencia():
                SUM(CASE WHEN estado='alerta' THEN 1 ELSE 0 END) as n_alerta,
                COUNT(*) as n_total
         FROM calidad_sistema_agua
-        WHERE date(fecha) >= date('now', '-' || ? || ' days')
+        WHERE date(fecha) >= date('now', '-5 hours', '-' || ? || ' days')
         GROUP BY fecha
         ORDER BY fecha ASC
     """, (dias,)).fetchall()

@@ -291,9 +291,9 @@ def dashboard_stats():
               HAVING stock_g > 0
             )
             SELECT
-              SUM(CASE WHEN venc < date('now') THEN 1 ELSE 0 END) as vencidos,
-              SUM(CASE WHEN venc >= date('now') AND venc <= date('now','+30 days') THEN 1 ELSE 0 END) as criticos,
-              SUM(CASE WHEN venc > date('now','+30 days') AND venc <= date('now','+90 days') THEN 1 ELSE 0 END) as proximos
+              SUM(CASE WHEN venc < date('now', '-5 hours') THEN 1 ELSE 0 END) as vencidos,
+              SUM(CASE WHEN venc >= date('now', '-5 hours') AND venc <= date('now', '-5 hours', '+30 days') THEN 1 ELSE 0 END) as criticos,
+              SUM(CASE WHEN venc > date('now', '-5 hours', '+30 days') AND venc <= date('now', '-5 hours', '+90 days') THEN 1 ELSE 0 END) as proximos
             FROM lote_stock
         """)
         r = c.fetchone()
@@ -1243,7 +1243,7 @@ def actualizar_precios_items_oc(numero_oc):
                 c.execute(
                     """INSERT OR IGNORE INTO precios_mp_historico
                        (codigo_mp, precio_kg, proveedor, fecha)
-                       VALUES (?, ?, ?, datetime('now'))""",
+                       VALUES (?, ?, ?, datetime('now', '-5 hours'))""",
                     (cod, precio, proveedor)
                 )
             except sqlite3.OperationalError:
@@ -2501,7 +2501,7 @@ def consolidar_auto_pendientes():
                 INSERT INTO solicitudes_compra
                   (numero, fecha, estado, solicitante, urgencia,
                    observaciones, area, empresa, categoria, tipo, valor)
-                VALUES (?, date('now'), 'Pendiente', 'AUTO-PLAN', ?, ?,
+                VALUES (?, date('now', '-5 hours'), 'Pendiente', 'AUTO-PLAN', ?, ?,
                         'Producción', 'Espagiria', ?, 'Compra', 0)
             """, (new_num, g['urgencia'], obs, g['categoria']))
             for it in g['_items_payload']:
@@ -3010,7 +3010,7 @@ def marcar_recibido_solicitante(numero):
         c.execute("""
             UPDATE ordenes_compra SET
               estado='Recibida',
-              fecha_recepcion=COALESCE(fecha_recepcion, datetime('now')),
+              fecha_recepcion=COALESCE(fecha_recepcion, datetime('now', '-5 hours')),
               recibido_por=?,
               observaciones_recepcion=COALESCE(observaciones_recepcion,'') || ?
             WHERE numero_oc=?
@@ -3020,8 +3020,8 @@ def marcar_recibido_solicitante(numero):
             c.execute("""
                 UPDATE produccion_checklist SET
                   estado='recibido',
-                  fecha_recibido=date('now'),
-                  actualizado_at=datetime('now')
+                  fecha_recibido=date('now', '-5 hours'),
+                  actualizado_at=datetime('now', '-5 hours')
                 WHERE oc_numero=? AND estado IN ('solicitado','en_transito','pendiente')
             """, (numero_oc,))
         except sqlite3.OperationalError:
@@ -3096,7 +3096,7 @@ def aprobar_solicitud_influencer(numero):
     # 1. Update SOL: valor + estado=Aprobada
     cur.execute(
         "UPDATE solicitudes_compra SET valor=?, estado='Aprobada', "
-        "aprobado_por=?, fecha_aprobacion=datetime('now') WHERE numero=?",
+        "aprobado_por=?, fecha_aprobacion=datetime('now', '-5 hours') WHERE numero=?",
         (monto, user, numero)
     )
 
@@ -3114,7 +3114,7 @@ def aprobar_solicitud_influencer(numero):
             INSERT INTO ordenes_compra
             (numero_oc, fecha, estado, proveedor, observaciones, creado_por,
              categoria, valor_total)
-            VALUES (?, date('now'), 'Aprobada', ?, ?, ?, ?, ?)
+            VALUES (?, date('now', '-5 hours'), 'Aprobada', ?, ?, ?, ?, ?)
         """, (oc_num, benef_nombre, obs_orig or '', user, categoria, monto))
         cur.execute(
             "UPDATE solicitudes_compra SET numero_oc=? WHERE numero=?",
@@ -3139,7 +3139,7 @@ def aprobar_solicitud_influencer(numero):
                 INSERT INTO pagos_influencers
                 (influencer_id, influencer_nombre, valor, fecha, estado,
                  concepto, numero_oc)
-                VALUES (?, ?, ?, date('now'), 'Pendiente', ?, ?)
+                VALUES (?, ?, ?, date('now', '-5 hours'), 'Pendiente', ?, ?)
             """, (infl_id, benef_nombre, int(monto),
                   obs_orig[:200] if obs_orig else 'Cuenta de cobro', oc_num))
     except sqlite3.OperationalError:
@@ -3724,8 +3724,8 @@ def recibir_oc(numero_oc):
             cur.execute("""
                 UPDATE produccion_checklist SET
                   estado='recibido',
-                  fecha_recibido=date('now'),
-                  actualizado_at=datetime('now')
+                  fecha_recibido=date('now', '-5 hours'),
+                  actualizado_at=datetime('now', '-5 hours')
                 WHERE oc_numero=? AND estado IN ('solicitado','en_transito','pendiente')
             """, (numero_oc,))
             items_checklist_actualizados = cur.rowcount or 0
@@ -4072,7 +4072,7 @@ def pagar_oc(numero_oc):
             cur.execute("""
                 INSERT INTO pagos_influencers
                 (influencer_id, influencer_nombre, valor, fecha, estado, concepto, numero_oc)
-                VALUES (?,?,?,date('now'),'Pagada',?,?)
+                VALUES (?,?,?,date('now', '-5 hours'),'Pagada',?,?)
             """, (inf_id, inf_name, monto, f'Pago OC {numero_oc}', numero_oc))
     except Exception as _e:
         __import__('logging').getLogger('compras').warning(
@@ -4115,7 +4115,7 @@ def pagar_oc(numero_oc):
             if precio and precio > 0:
                 cur.execute("""INSERT OR IGNORE INTO precios_mp_historico
                                (codigo_mp, precio_kg, numero_factura, proveedor, fecha)
-                               VALUES (?, ?, ?, ?, datetime('now'))""",
+                               VALUES (?, ?, ?, ?, datetime('now', '-5 hours'))""",
                             (codigo_mp, precio, numero_factura, proveedor))
     except sqlite3.OperationalError as _e:
         if 'no such table' not in str(_e).lower():
@@ -6233,7 +6233,7 @@ def update_sol_items(numero):
                 try:
                     c.execute(
                         "UPDATE maestro_mps SET precio_referencia=?, "
-                        "ultima_act_precio=datetime('now') WHERE codigo_mp=?",
+                        "ultima_act_precio=datetime('now', '-5 hours') WHERE codigo_mp=?",
                         (precio_nuevo * 1000.0, codigo_mp),
                     )
                 except sqlite3.OperationalError:
@@ -6607,7 +6607,7 @@ def reporte_ejecutivo_compras():
                (SELECT precio_kg FROM precios_mp_historico p2
                 WHERE p2.codigo_mp = p1.codigo_mp ORDER BY fecha DESC LIMIT 1) as ultimo
         FROM precios_mp_historico p1
-        WHERE fecha >= date('now', '-6 months')
+        WHERE fecha >= date('now', '-5 hours', '-6 months')
         GROUP BY codigo_mp
         HAVING n_compras >= 2
     """)
@@ -6630,7 +6630,7 @@ def reporte_ejecutivo_compras():
     c.execute("""
         SELECT COUNT(*), COALESCE(SUM(valor_total), 0)
         FROM ordenes_compra
-        WHERE fecha >= date('now', 'start of month') AND estado != 'Rechazada'
+        WHERE fecha >= date('now', '-5 hours', 'start of month') AND estado != 'Rechazada'
     """)
     mes_actual = c.fetchone()
 
@@ -6714,7 +6714,7 @@ def actualizar_cotizacion(cot_id):
 
     conn = get_db(); c = conn.cursor()
     c.execute("""UPDATE cotizaciones SET
-                    valor_total=?, fecha_recibida=datetime('now', 'utc'),
+                    valor_total=?, fecha_recibida=datetime('now', '-5 hours', 'utc'),
                     condiciones=COALESCE(?, condiciones),
                     tiempo_entrega_dias=COALESCE(?, tiempo_entrega_dias),
                     archivo=COALESCE(?, archivo),

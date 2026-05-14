@@ -195,7 +195,7 @@ def get_inventario():
             AND fecha_vencimiento IS NOT NULL
             AND fecha_vencimiento != ''
           GROUP BY material_id, lote
-          HAVING stock_g > 0 AND venc < date('now')
+          HAVING stock_g > 0 AND venc < date('now', '-5 hours')
         )
     """)
 
@@ -204,8 +204,8 @@ def get_inventario():
     prod_proximas = _safe("""
         SELECT COUNT(*) FROM produccion_programada
         WHERE LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado')
-          AND fecha_programada >= date('now','-1 day')
-          AND fecha_programada <= date('now','+60 day')
+          AND fecha_programada >= date('now', '-5 hours', '-1 day')
+          AND fecha_programada <= date('now', '-5 hours', '+60 day')
     """)
     # Lotes en cuarentena (esperando QC) · case-insensitive: calidad.py
     # escribe 'Cuarentena' (Capitalized), inventario.py escribe 'CUARENTENA'
@@ -231,8 +231,8 @@ def get_inventario():
             AND fecha_vencimiento != ''
           GROUP BY material_id, lote
           HAVING stock_g > 0
-             AND venc >= date('now')
-             AND venc <= date('now','+30 day')
+             AND venc >= date('now', '-5 hours')
+             AND venc <= date('now', '-5 hours', '+30 day')
         )
     """)
     # OCs en tránsito (Autorizada/Pagada sin recepción)
@@ -472,7 +472,7 @@ def producto_imagen(producto_nombre):
 
     if request.method == 'DELETE':
         c.execute(
-            "UPDATE formula_headers SET imagen_url='', imagen_actualizada_at=datetime('now') "
+            "UPDATE formula_headers SET imagen_url='', imagen_actualizada_at=datetime('now', '-5 hours') "
             "WHERE producto_nombre=?",
             (producto_nombre,)
         )
@@ -485,7 +485,7 @@ def producto_imagen(producto_nombre):
     if url and not url.startswith(('http://', 'https://', '/static/')):
         return jsonify({'error': 'URL invalida (debe empezar con http(s):// o /static/)'}), 400
     cur = c.execute(
-        "UPDATE formula_headers SET imagen_url=?, imagen_actualizada_at=datetime('now') "
+        "UPDATE formula_headers SET imagen_url=?, imagen_actualizada_at=datetime('now', '-5 hours') "
         "WHERE producto_nombre=?",
         (url, producto_nombre)
     )
@@ -640,11 +640,11 @@ def _shopify_sync_producto(conn, producto_nombre, token=None, shop=None, timeout
 
     cur = conn.execute("""
         UPDATE formula_headers SET
-          imagen_url=?, imagen_actualizada_at=datetime('now'),
+          imagen_url=?, imagen_actualizada_at=datetime('now', '-5 hours'),
           shopify_id=?, shopify_handle=?,
           descripcion_html=?, descripcion_plain=?,
           sku_principal=?, precio_venta=?, peso_g=?,
-          imagenes_extra_json=?, shopify_synced_at=datetime('now')
+          imagenes_extra_json=?, shopify_synced_at=datetime('now', '-5 hours')
         WHERE producto_nombre=?
     """, (
         imagen_principal, str(p0.get('id') or ''), p0.get('handle') or '',
@@ -685,7 +685,7 @@ def _sync_shopify_pendientes_background(max_edad_horas=24, max_productos=50):
                 if not token or not shop:
                     return
                 # Productos pendientes: nunca sincronizados o sync viejo
-                cutoff_sql = f"datetime('now', '-{int(max_edad_horas)} hours')"
+                cutoff_sql = f"datetime('now', '-5 hours', '-{int(max_edad_horas)} hours')"
                 rows = local_conn.execute(f"""
                     SELECT producto_nombre FROM formula_headers
                     WHERE COALESCE(shopify_synced_at,'') = ''
@@ -865,7 +865,7 @@ def sync_shopify_blocking():
         return jsonify({'error': 'Shopify no configurado en animus_config'}), 400
     force = request.args.get('force', '0') == '1'
 
-    where = "" if force else "WHERE COALESCE(shopify_synced_at,'') = '' OR shopify_synced_at < datetime('now', '-24 hours')"
+    where = "" if force else "WHERE COALESCE(shopify_synced_at,'') = '' OR shopify_synced_at < datetime('now', '-5 hours', '-24 hours')"
     rows = conn.execute(
         f"SELECT producto_nombre FROM formula_headers {where} LIMIT 200"
     ).fetchall()
@@ -915,7 +915,7 @@ def sync_shopify_all():
     pendientes = conn.execute("""
         SELECT COUNT(*) FROM formula_headers
         WHERE COALESCE(shopify_synced_at,'') = ''
-           OR shopify_synced_at < datetime('now', '-24 hours')
+           OR shopify_synced_at < datetime('now', '-5 hours', '-24 hours')
     """).fetchone()[0]
     _sync_shopify_pendientes_background(max_edad_horas=24, max_productos=100)
     return jsonify({
@@ -1064,7 +1064,7 @@ def handle_produccion():
             c.execute("""SELECT id, fecha, lote
                          FROM producciones
                          WHERE producto=? AND cantidad=? AND operador=?
-                           AND datetime(fecha) >= datetime('now','-90 seconds')
+                           AND datetime(fecha) >= datetime('now', '-5 hours', '-90 seconds')
                          ORDER BY id DESC LIMIT 1""",
                       (producto, cantidad_kg, operador))
             dup = c.fetchone()
@@ -1630,7 +1630,7 @@ def get_lotes():
         # Solo lotes vencidos o que vencen en proximos 30d (con fecha_venc set)
         sql += (" AND MAX(m.fecha_vencimiento) IS NOT NULL"
                 " AND MAX(m.fecha_vencimiento) != ''"
-                " AND MAX(m.fecha_vencimiento) <= date('now','+30 day')")
+                " AND MAX(m.fecha_vencimiento) <= date('now', '-5 hours', '+30 day')")
     sql += " ORDER BY m.material_nombre ASC, fecha_vencimiento ASC"
     if limit > 0:
         sql += f" LIMIT {limit} OFFSET {offset}"
@@ -1909,7 +1909,7 @@ def proveedores_unificar():
         import json as _json
         c.execute("""INSERT INTO audit_log
                      (usuario, accion, tabla, registro_id, detalle, ip, fecha)
-                     VALUES (?,?,?,?,?,?,datetime('now'))""",
+                     VALUES (?,?,?,?,?,?,datetime('now', '-5 hours'))""",
                   (u, 'UNIFICAR_PROVEEDORES', 'movimientos+maestro_mps',
                    canonico,
                    _json.dumps({
@@ -2029,7 +2029,7 @@ def editar_proveedor_lote(material_id, lote):
         import json as _json
         c.execute("""INSERT INTO audit_log
                      (usuario, accion, tabla, registro_id, detalle, ip, fecha)
-                     VALUES (?,?,?,?,?,?,datetime('now'))""",
+                     VALUES (?,?,?,?,?,?,datetime('now', '-5 hours'))""",
                   (u, 'EDITAR_PROVEEDOR_LOTE', 'movimientos+maestro_mps',
                    f'{material_id}/{"" if sin_lote else lote}',
                    _json.dumps({
@@ -2154,7 +2154,7 @@ def editar_ubicacion_lote(material_id, lote):
         import json as _json
         c.execute("""INSERT INTO audit_log
                      (usuario, accion, tabla, registro_id, detalle, ip, fecha)
-                     VALUES (?,?,?,?,?,?,datetime('now'))""",
+                     VALUES (?,?,?,?,?,?,datetime('now', '-5 hours'))""",
                   (u, 'EDITAR_UBICACION_LOTE', 'movimientos',
                    f'{material_id}/{"" if sin_lote else lote}',
                    _json.dumps({
@@ -2285,7 +2285,7 @@ def editar_fecha_vencimiento_lote(material_id, lote):
         import json as _json
         c.execute("""INSERT INTO audit_log
                      (usuario, accion, tabla, registro_id, detalle, ip, fecha)
-                     VALUES (?,?,?,?,?,?,datetime('now'))""",
+                     VALUES (?,?,?,?,?,?,datetime('now', '-5 hours'))""",
                   (u, 'EDITAR_FECHA_VENC_LOTE', 'movimientos',
                    f'{material_id}/{"" if sin_lote else lote}',
                    _json.dumps({
@@ -2434,7 +2434,7 @@ def editar_codigo_lote(material_id, lote):
         import json as _json
         c.execute("""INSERT INTO audit_log
                      (usuario, accion, tabla, registro_id, detalle, ip, fecha)
-                     VALUES (?,?,?,?,?,?,datetime('now'))""",
+                     VALUES (?,?,?,?,?,?,datetime('now', '-5 hours'))""",
                   (u, 'EDITAR_CODIGO_LOTE', 'movimientos',
                    f'{material_id}/{lote_actual}',
                    _json.dumps({
@@ -2559,7 +2559,7 @@ def eliminar_lote(material_id, lote):
         import json as _json
         c.execute("""INSERT INTO audit_log
                      (usuario, accion, tabla, registro_id, detalle, ip, fecha)
-                     VALUES (?,?,?,?,?,?,datetime('now'))""",
+                     VALUES (?,?,?,?,?,?,datetime('now', '-5 hours'))""",
                   (u, 'ELIMINAR_LOTE', 'movimientos',
                    f'{material_id}/{lote}',
                    _json.dumps(snapshot, ensure_ascii=False),
@@ -2587,7 +2587,7 @@ def eliminar_lote(material_id, lote):
         c.execute("""INSERT INTO movimientos
                        (material_id, material_nombre, cantidad, tipo, fecha,
                         observaciones, operador, lote, estado_lote)
-                     VALUES (?, ?, ?, ?, datetime('now', 'utc'), ?, ?, ?, 'ELIMINADO')""",
+                     VALUES (?, ?, ?, ?, datetime('now', '-5 hours', 'utc'), ?, ?, ?, 'ELIMINADO')""",
                   (material_id, nombre_comercial, abs(saldo_neto), tipo_contra,
                    obs_contra, u, lote if not sin_lote else ''))
     deleted = 0  # ya no hay DELETE · histórico preservado
@@ -2891,7 +2891,7 @@ def update_mp_proveedor(codigo):
             import json as _json
             c.execute("""INSERT INTO audit_log
                          (usuario, accion, tabla, registro_id, detalle, ip, fecha)
-                         VALUES (?,?,?,?,?,?,datetime('now'))""",
+                         VALUES (?,?,?,?,?,?,datetime('now', '-5 hours'))""",
                       (user, 'EDITAR_PROVEEDOR_MP', 'maestro_mps', codigo,
                        _json.dumps({
                            'codigo_mp': codigo,
@@ -2973,7 +2973,7 @@ def consumo_manual():
 
     c.execute("""INSERT INTO movimientos
                  (material_id,material_nombre,cantidad,tipo,fecha,observaciones,lote,operador)
-                 VALUES (?,?,?,'Salida',datetime('now'),?,?,?)""",
+                 VALUES (?,?,?,'Salida',datetime('now', '-5 hours'),?,?,?)""",
               (codigo, nombre, cantidad, obs, lote, operador))
     mov_id = c.lastrowid
 
@@ -3067,7 +3067,7 @@ def registrar_recepcion():
     # Solo ignoramos si la columna 'ultima_act_precio' no existe (versión vieja).
     if precio_kg > 0:
         try:
-            c.execute("UPDATE maestro_mps SET precio_referencia=?, ultima_act_precio=datetime('now') WHERE codigo_mp=?", (precio_kg, codigo))
+            c.execute("UPDATE maestro_mps SET precio_referencia=?, ultima_act_precio=datetime('now', '-5 hours') WHERE codigo_mp=?", (precio_kg, codigo))
         except sqlite3.OperationalError as _e:
             if 'no such column' not in str(_e).lower():
                 __import__('logging').getLogger('inventario').error(
@@ -3089,7 +3089,7 @@ def registrar_recepcion():
     # Log precio historico — solo ignorar si tabla no existe (legacy).
     if precio_kg > 0:
         try:
-            c.execute("INSERT OR IGNORE INTO precios_mp_historico (codigo_mp,precio_kg,numero_factura,proveedor,fecha) VALUES (?,?,?,?,datetime('now'))",
+            c.execute("INSERT OR IGNORE INTO precios_mp_historico (codigo_mp,precio_kg,numero_factura,proveedor,fecha) VALUES (?,?,?,?,datetime('now', '-5 hours'))",
                       (codigo, precio_kg, numero_factura, proveedor))
         except sqlite3.OperationalError as _e:
             if 'no such table' not in str(_e).lower():
@@ -3106,7 +3106,7 @@ def registrar_recepcion():
             c.execute("SELECT COUNT(*) FROM ordenes_compra_items WHERE numero_oc=? AND (cantidad_g - cantidad_recibida_g) > 1", (numero_oc,))
             pendientes = c.fetchone()[0]
             if pendientes == 0:
-                c.execute("UPDATE ordenes_compra SET estado='RECIBIDA',fecha_recepcion=datetime('now'),recibido_por=? WHERE numero_oc=?",
+                c.execute("UPDATE ordenes_compra SET estado='RECIBIDA',fecha_recepcion=datetime('now', '-5 hours'),recibido_por=? WHERE numero_oc=?",
                           (d.get('operador',''), numero_oc))
         except Exception as oc_err:
             # Log but don't fail the reception — OC can be reconciled manually
@@ -3182,7 +3182,7 @@ def liberar_lote():
     if c.rowcount == 0:
         return jsonify({'error': 'Lote no encontrado o ya procesado'}), 404
     c.execute("""INSERT INTO audit_log (usuario,accion,tabla,registro_id,detalle,ip,fecha)
-                 VALUES (?,?,?,?,?,?,datetime('now'))""",
+                 VALUES (?,?,?,?,?,?,datetime('now', '-5 hours'))""",
               (session.get('compras_user','?'), f'LOTE_{accion}', 'movimientos',
                str(mov_id), f'Lote liberado: {accion}', request.remote_addr))
     conn.commit()
@@ -3307,7 +3307,7 @@ def conteo_iniciar():
     if suffix > 0:
         numero = numero + f'-{suffix+1}'
     try:
-        c.execute("INSERT INTO conteos_fisicos (numero,fecha_inicio,estado,responsable,estanteria,tipo_conteo) VALUES (?,datetime('now'),'Abierto',?,?,'Ciclico')",
+        c.execute("INSERT INTO conteos_fisicos (numero,fecha_inicio,estado,responsable,estanteria,tipo_conteo) VALUES (?,datetime('now', '-5 hours'),'Abierto',?,?,'Ciclico')",
                   (numero, responsable, est))
         conteo_id = c.lastrowid
         conn.commit()
@@ -3652,14 +3652,14 @@ def conteo_cerrar(conteo_id):
             c.execute("""INSERT INTO movimientos
                          (material_id, material_nombre, cantidad, tipo, fecha,
                           observaciones, lote, estanteria, estado_lote, operador)
-                         VALUES (?,?,?,?,datetime('now'),?,?,?,'VIGENTE',?)""",
+                         VALUES (?,?,?,?,datetime('now', '-5 hours'),?,?,?,'VIGENTE',?)""",
                       (codigo, nombre, abs(diff), tipo_mov, obs,
                        lote_obj, estant or '', user))
             c.execute("UPDATE conteo_items SET ajuste_aplicado=1 WHERE id=?", (it_id,))
             try:
                 c.execute("""INSERT INTO audit_log
                              (usuario, accion, tabla, registro_id, detalle, ip, fecha)
-                             VALUES (?,?,?,?,?,?,datetime('now'))""",
+                             VALUES (?,?,?,?,?,?,datetime('now', '-5 hours'))""",
                           (user, 'AJUSTE_INVENTARIO_AUTO', 'conteo_items', str(it_id),
                            f'MP:{codigo} Diff:{diff}g Auto:<5% Causa:{causa or "n/a"}',
                            request.remote_addr if request else ''))
@@ -3671,7 +3671,7 @@ def conteo_cerrar(conteo_id):
             })
 
         c.execute("""UPDATE conteos_fisicos
-                     SET estado='Cerrado', fecha_cierre=datetime('now')
+                     SET estado='Cerrado', fecha_cierre=datetime('now', '-5 hours')
                      WHERE id=?""", (conteo_id,))
         conn.commit()
     except Exception as _e:
@@ -3828,11 +3828,11 @@ def conteo_ajustar(conteo_id):
     obs = (f'Ajuste inventario ciclico #{conteo_id} - '
            f'{it.get("causa_diferencia","Sin causa")} - Aprobado: {user}')
     c.execute("""INSERT INTO movimientos (material_id,material_nombre,cantidad,tipo,fecha,observaciones,lote,estanteria,estado_lote,operador)
-                 VALUES (?,?,?,?,datetime('now'),?,?,?,'VIGENTE',?)""",
+                 VALUES (?,?,?,?,datetime('now', '-5 hours'),?,?,?,'VIGENTE',?)""",
               (it['codigo_mp'], it['nombre_mp'], abs(diff), tipo_mov, obs,
                lote_objetivo, it.get('estanteria',''), user))
     # ajuste_aplicado=1 ya seteado en el atomic claim arriba (FIX-B2)
-    c.execute("INSERT INTO audit_log (usuario,accion,tabla,registro_id,detalle,ip,fecha) VALUES (?,?,?,?,?,?,datetime('now'))",
+    c.execute("INSERT INTO audit_log (usuario,accion,tabla,registro_id,detalle,ip,fecha) VALUES (?,?,?,?,?,?,datetime('now', '-5 hours'))",
               (user, 'AJUSTE_INVENTARIO', 'conteo_items', str(item_id),
                f'MP:{it["codigo_mp"]} Diff:{diff}g Lote:{lote_objetivo} Causa:{it.get("causa_diferencia","")}',
                request.remote_addr))
@@ -3906,7 +3906,7 @@ def cc_review():
     c.execute(
         "INSERT INTO cc_reviews (mov_id,lote,codigo_mp,coa_ok,lote_coincide,coa_vigente,ficha_ok,"
         "solubilidad,resultado_aql,observaciones_aql,muestra_retencion,observaciones,firmante,estado_final,fecha,ip) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'),?)",
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now', '-5 hours'),?)",
         (mov_id, d.get('lote',''), d.get('codigo_mp',''),
          1 if d.get('coa_ok') else 0, 1 if d.get('lote_coincide') else 0,
          1 if d.get('coa_vigente') else 0, 1 if d.get('ficha_ok') else 0,
@@ -3915,7 +3915,7 @@ def cc_review():
          d.get('firmante', user), estado_final, request.remote_addr))
     c.execute("UPDATE movimientos SET estado_lote=? WHERE id=?", (estado_final, mov_id))
     c.execute(
-        "INSERT INTO audit_log (usuario,accion,tabla,registro_id,detalle,ip,fecha) VALUES (?,?,?,?,?,?,datetime('now'))",
+        "INSERT INTO audit_log (usuario,accion,tabla,registro_id,detalle,ip,fecha) VALUES (?,?,?,?,?,?,datetime('now', '-5 hours'))",
         (user, 'CC_REVIEW_'+estado_final, 'movimientos', str(mov_id),
          'Lote '+d.get('lote','')+' AQL:'+resultado_aql+' Solub:'+solubilidad+' Firma:'+d.get('firmante',user),
          request.remote_addr))
@@ -3923,7 +3923,7 @@ def cc_review():
         try:
             c.execute(
                 "INSERT INTO solicitudes_compra (material_codigo,material_nombre,cantidad,unidad,justificacion,estado,empresa,area,solicitante,fecha) "
-                "VALUES (?,?,0,'kg',?,'PENDIENTE','Espagiria','Calidad',?,datetime('now'))",
+                "VALUES (?,?,0,'kg',?,'PENDIENTE','Espagiria','Calidad',?,datetime('now', '-5 hours'))",
                 (d.get('codigo_mp',''), d.get('lote',''),
                  'LOTE RECHAZADO QC - Devolucion proveedor. Lote: '+d.get('lote',''), user))
         except sqlite3.OperationalError as _e:
@@ -3965,7 +3965,7 @@ def anular_movimiento(mov_id):
     obs_contra = f'[ANULACION] del movimiento #{mov_id} — {motivo} — por {user}'
     c.execute("""INSERT INTO movimientos
                  (material_id, tipo, cantidad, unidad, lote_ref, responsable, observaciones, fecha)
-                 VALUES (?,?,?,?,?,?,?,datetime('now'))""",
+                 VALUES (?,?,?,?,?,?,?,datetime('now', '-5 hours'))""",
               (mov['material_id'], tipo_inv, mov['cantidad'], mov.get('unidad','g'),
                mov.get('lote_ref',''), user, obs_contra))
     # Marcar original como anulado
@@ -3973,7 +3973,7 @@ def anular_movimiento(mov_id):
               ('[ANULADO] ' + (mov.get('observaciones') or ''), mov_id))
     # Registrar en audit_log
     c.execute("""INSERT INTO audit_log (usuario,accion,tabla,registro_id,detalle,ip,fecha)
-                 VALUES (?,?,?,?,?,?,datetime('now'))""",
+                 VALUES (?,?,?,?,?,?,datetime('now', '-5 hours'))""",
               (user, 'ANULAR_MOVIMIENTO', 'movimientos', str(mov_id),
                f'Anulado mov #{mov_id} ({mov["tipo"]} {mov["cantidad"]}g de {mov["material_id"]}) — {motivo}',
                request.remote_addr))
@@ -4035,7 +4035,7 @@ def reset_mov():
     rows_deleted = c.execute("SELECT COUNT(*) FROM movimientos").fetchone()[0]
     c.execute("DELETE FROM movimientos")
     c.execute("""INSERT INTO audit_log (usuario,accion,tabla,registro_id,detalle,ip,fecha)
-                 VALUES (?,?,?,?,?,?,datetime('now'))""",
+                 VALUES (?,?,?,?,?,?,datetime('now', '-5 hours'))""",
               (user, 'RESET_MOVIMIENTOS', 'movimientos', 'ALL',
                f'Borrados {rows_deleted} movimientos. Backup pre-reset: {backup_filename}',
                _client_ip()))
@@ -4507,7 +4507,7 @@ def liberar_cuarentena(mov_id):
     nuevo_estado = 'VIGENTE' if decision == 'Aprobado' else 'RECHAZADO'
     c.execute("UPDATE movimientos SET estado_lote=? WHERE id=?", (nuevo_estado, mov_id))
     c.execute("""INSERT INTO audit_log (usuario,accion,tabla,registro_id,detalle,ip,fecha)
-                 VALUES (?,?,?,?,?,?,datetime('now'))""",
+                 VALUES (?,?,?,?,?,?,datetime('now', '-5 hours'))""",
               (session['compras_user'], f'{decision.upper()}_CUARENTENA', 'movimientos',
                str(mov_id), d.get('observaciones',''), request.remote_addr))
     conn.commit()
@@ -4565,7 +4565,7 @@ def backfill_precios_mp():
                  GROUP BY material_id""")
     from_movs = c.fetchall()
     for mat_id, avg_p in from_movs:
-        c.execute("""UPDATE maestro_mps SET precio_referencia=?, ultima_act_precio=datetime('now')
+        c.execute("""UPDATE maestro_mps SET precio_referencia=?, ultima_act_precio=datetime('now', '-5 hours')
                      WHERE codigo_mp=? AND (precio_referencia IS NULL OR precio_referencia=0)""",
                   (round(avg_p, 2), mat_id))
         actualizados += c.rowcount
@@ -4578,7 +4578,7 @@ def backfill_precios_mp():
     from_hist = c.fetchall()
     hist_count = 0
     for codigo, precio in from_hist:
-        c.execute("""UPDATE maestro_mps SET precio_referencia=?, ultima_act_precio=datetime('now')
+        c.execute("""UPDATE maestro_mps SET precio_referencia=?, ultima_act_precio=datetime('now', '-5 hours')
                      WHERE codigo_mp=? AND (precio_referencia IS NULL OR precio_referencia=0)""",
                   (round(precio, 2), codigo))
         hist_count += c.rowcount
@@ -4613,7 +4613,7 @@ def _init_mee_movimientos():
         batch_ref   TEXT     DEFAULT '',
         responsable TEXT     DEFAULT '',
         observaciones TEXT   DEFAULT '',
-        fecha       DATETIME DEFAULT (datetime('now')),
+        fecha       DATETIME DEFAULT (datetime('now', '-5 hours')),
         anulado     INTEGER  DEFAULT 0
     )""")
     conn.commit()
@@ -4808,9 +4808,9 @@ def mee_alertas_list():
     total = c.fetchone()[0]
     c.execute("SELECT COUNT(*) FROM maestro_mee WHERE estado='Activo' AND stock_minimo>0 AND stock_actual<stock_minimo")
     n_bajo = c.fetchone()[0]
-    c.execute("SELECT COUNT(*) FROM movimientos_mee WHERE anulado=0 AND fecha>=date('now','-7 days')")
+    c.execute("SELECT COUNT(*) FROM movimientos_mee WHERE anulado=0 AND fecha>=date('now', '-5 hours', '-7 days')")
     mov_sem = c.fetchone()[0]
-    c.execute("SELECT COUNT(*) FROM movimientos_mee WHERE tipo='Entrada' AND anulado=0 AND fecha>=date('now','-30 days')")
+    c.execute("SELECT COUNT(*) FROM movimientos_mee WHERE tipo='Entrada' AND anulado=0 AND fecha>=date('now', '-5 hours', '-30 days')")
     ent_mes = c.fetchone()[0]
     return jsonify({
         'bajo_minimo': bajo_minimo, 'obsolescencia': obsolescencia,
@@ -5098,7 +5098,7 @@ def mee_import_bulk():
             c.execute("""
                 INSERT INTO maestro_mee (codigo, descripcion, categoria, unidad, proveedor,
                                          stock_actual, stock_minimo, estado, fecha_creacion)
-                VALUES (?, ?, ?, ?, ?, ?, ?, 'Activo', datetime('now'))
+                VALUES (?, ?, ?, ?, ?, ?, ?, 'Activo', datetime('now', '-5 hours'))
             """, (codigo, descripcion, categoria, unidad, proveedor, stock, stock_min))
             c.execute("""
                 INSERT INTO movimientos_mee (mee_codigo, tipo, cantidad, responsable, observaciones)
@@ -5158,11 +5158,11 @@ def _init_acondicionamiento():
         unidades_producidas INTEGER DEFAULT 0,
         presentacion        TEXT DEFAULT '',
         mee_consumido       TEXT DEFAULT '[]',
-        fecha               TEXT DEFAULT (date('now')),
+        fecha               TEXT DEFAULT (date('now', '-5 hours')),
         operador            TEXT DEFAULT '',
         observaciones       TEXT DEFAULT '',
         estado              TEXT DEFAULT 'En proceso',
-        creado_en           DATETIME DEFAULT (datetime('now'))
+        creado_en           DATETIME DEFAULT (datetime('now', '-5 hours'))
     )""")
     c.execute("""CREATE TABLE IF NOT EXISTS liberaciones (
         id                      INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -5178,7 +5178,7 @@ def _init_acondicionamiento():
         destino                 TEXT DEFAULT 'ANIMUS',
         observaciones           TEXT DEFAULT '',
         estado                  TEXT DEFAULT 'Pendiente CC',
-        creado_en               DATETIME DEFAULT (datetime('now'))
+        creado_en               DATETIME DEFAULT (datetime('now', '-5 hours'))
     )""")
     # Nuevas columnas — múltiples presentaciones y flujo liberación→stock_pt.
     # Usamos safe_alter (database.py) que distingue "columna ya existe"
@@ -5328,7 +5328,7 @@ def envasado_list():
                                    consumido_por = ?,
                                    cantidad_consumida_real = ?,
                                    consumido_contexto = 'envasado',
-                                   actualizado_at = datetime('now')
+                                   actualizado_at = datetime('now', '-5 hours')
                              WHERE produccion_id = ?
                                AND mee_codigo_asignado = ?
                                AND COALESCE(consumido_at,'') = ''
@@ -5561,7 +5561,7 @@ def liberacion_update(lid):
             _cli_dest = d.get('cliente','') or 'sin cliente'
             c.execute("""INSERT INTO calidad_registros
                          (fecha, tarea_id, usuario, estado, valor_registrado, observaciones)
-                         VALUES (date('now'), NULL, ?, 'Completado', ?, ?)""",
+                         VALUES (date('now', '-5 hours'), NULL, ?, 'Completado', ?, ?)""",
                      (u,
                       f"{_lib_lote} | {str(_lib_val)[:40]}",
                       f"BPM Liberacion PT -> {_cli_dest}"))

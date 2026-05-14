@@ -378,7 +378,7 @@ def animus_solicitar_produccion():
     sid = c.lastrowid
     # Audit log
     c.execute("""INSERT INTO audit_log (usuario,accion,tabla,registro_id,detalle,ip,fecha)
-                 VALUES (?,?,?,?,?,?,datetime('now'))""",
+                 VALUES (?,?,?,?,?,?,datetime('now', '-5 hours'))""",
               (session.get('compras_user','sistema'), 'SOLICITUD_PRODUCCION',
                'solicitudes_produccion', str(sid),
                f'{sku} — {unidades} uds — Stock: {disponible}/{minimo}',
@@ -484,7 +484,7 @@ def recall_ejecutar():
     rid = c.lastrowid
     # Audit log — immutable
     c.execute("""INSERT INTO audit_log (usuario,accion,tabla,registro_id,detalle,ip,fecha)
-                 VALUES (?,?,?,?,?,?,datetime('now'))""",
+                 VALUES (?,?,?,?,?,?,datetime('now', '-5 hours'))""",
               (session['compras_user'], 'RECALL_EJECUTADO', 'stock_pt',
                str(rid),
                f'Lote {lote_pt} — Motivo: {motivo} — {total_uds} uds en {n_desp} despachos — {bloqueadas} lotes bloqueados en bodega',
@@ -553,7 +553,7 @@ def hub_despachar():
     n = (c.fetchone()[0] or 0) + 1
     numero = f"DSP-{datetime.now().strftime('%Y')}-{n:04d}"
     c.execute("""INSERT INTO despachos (numero,numero_pedido,cliente_id,fecha,operador,observaciones,estado)
-                 VALUES (?,?,?,datetime('now'),?,?,?)""",
+                 VALUES (?,?,?,datetime('now', '-5 hours'),?,?,?)""",
               (numero, d.get('numero_pedido',''), d.get('cliente_id'),
                session.get('compras_user','sistema'), d.get('observaciones',''), 'Completado'))
     for it in (d.get('items') or []):
@@ -575,7 +575,7 @@ def hub_despachar():
                       (int(it.get('cantidad',0)), it.get('sku','')))
     num_ped = d.get('numero_pedido','')
     if num_ped:
-        c.execute("UPDATE pedidos SET estado='Despachado',fecha_despacho=datetime('now') WHERE numero=?", (num_ped,))
+        c.execute("UPDATE pedidos SET estado='Despachado',fecha_despacho=datetime('now', '-5 hours') WHERE numero=?", (num_ped,))
     conn.commit()
     return jsonify({'message': f'Despacho {numero} registrado', 'numero': numero}), 201
 

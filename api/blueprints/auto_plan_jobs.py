@@ -343,7 +343,7 @@ def _detectar_cambios_demanda_con_margen(conn):
                 SELECT id, fecha_programada FROM produccion_programada
                 WHERE UPPER(TRIM(producto))=UPPER(TRIM(?))
                   AND estado IN ('pendiente','en_proceso')
-                  AND fecha_programada >= date('now')
+                  AND fecha_programada >= date('now', '-5 hours')
                 ORDER BY fecha_programada ASC LIMIT 1
             """, (producto,)).fetchone()
             from datetime import datetime as _dt2
@@ -524,7 +524,7 @@ def _loop_cron(app):
                 from database import get_db
                 with app.app_context():
                     get_db().execute(
-                        "UPDATE auto_plan_cron_state SET ultima_ejecucion_at=datetime('now'), errores_consecutivos=0 WHERE id=1"
+                        "UPDATE auto_plan_cron_state SET ultima_ejecucion_at=datetime('now', '-5 hours'), errores_consecutivos=0 WHERE id=1"
                     )
                     get_db().commit()
             except Exception as _e:
@@ -641,7 +641,7 @@ def _ya_ejecutado_hoy(conn, job_name, retry_si_fallo_horas=2):
         row_ok = conn.execute("""
             SELECT 1 FROM cron_jobs_runs
             WHERE job_name = ? AND ok = 1
-              AND date(ejecutado_at) = date('now')
+              AND date(ejecutado_at) = date('now', '-5 hours')
             LIMIT 1
         """, (job_name,)).fetchone()
         if row_ok: return True
@@ -649,7 +649,7 @@ def _ya_ejecutado_hoy(conn, job_name, retry_si_fallo_horas=2):
         row_fail = conn.execute("""
             SELECT 1 FROM cron_jobs_runs
             WHERE job_name = ? AND ok = 0
-              AND ejecutado_at >= datetime('now', '-' || ? || ' hours')
+              AND ejecutado_at >= datetime('now', '-5 hours', '-' || ? || ' hours')
             LIMIT 1
         """, (job_name, retry_si_fallo_horas)).fetchone()
         return bool(row_fail)
@@ -675,11 +675,11 @@ def _adquirir_lock_cron(conn, job_name, ttl_horas=2):
         # Limpiar locks vencidos antes de intentar reclamar
         conn.execute("""
             DELETE FROM cron_locks
-            WHERE locked_at < datetime('now', '-' || ? || ' hours')
+            WHERE locked_at < datetime('now', '-5 hours', '-' || ? || ' hours')
         """, (ttl_horas,))
         cur = conn.execute("""
             INSERT OR IGNORE INTO cron_locks (job_name, locked_at, locked_by)
-            VALUES (?, datetime('now'), 'multi-cron')
+            VALUES (?, datetime('now', '-5 hours'), 'multi-cron')
         """, (job_name,))
         conn.commit()
         return cur.rowcount > 0
@@ -702,7 +702,7 @@ def _registrar_ejecucion(conn, job_name, ok, resultado, duracion_ms, error=None)
         import json as _json
         conn.execute("""
             INSERT INTO cron_jobs_runs (job_name, ejecutado_at, duracion_ms, ok, resultado_json, error)
-            VALUES (?, datetime('now'), ?, ?, ?, ?)
+            VALUES (?, datetime('now', '-5 hours'), ?, ?, ?, ?)
         """, (job_name, duracion_ms, 1 if ok else 0,
               _json.dumps(resultado, default=str) if resultado else None,
               error))
@@ -719,10 +719,10 @@ def _registrar_ejecucion(conn, job_name, ok, resultado, duracion_ms, error=None)
             else:
                 conn.execute("""
                     INSERT INTO cron_jobs_health (job_name, errores_consecutivos, ultimo_error_at, ultimo_error_msg)
-                    VALUES (?, 1, datetime('now'), ?)
+                    VALUES (?, 1, datetime('now', '-5 hours'), ?)
                     ON CONFLICT(job_name) DO UPDATE SET
                       errores_consecutivos = errores_consecutivos + 1,
-                      ultimo_error_at = datetime('now'),
+                      ultimo_error_at = datetime('now', '-5 hours'),
                       ultimo_error_msg = excluded.ultimo_error_msg
                 """, (job_name, (error or '')[:300]))
                 # Si 3+ errores consecutivos y no se ha notificado en 24h → email
@@ -741,7 +741,7 @@ def _registrar_ejecucion(conn, job_name, ok, resultado, duracion_ms, error=None)
                             log.info('parse notificado_at fallo (%s): %s', notif_old, _e)
                     if notificar:
                         log.warning(f'[multi-cron] {job_name}: {row[0]} errores consecutivos · notificando')
-                        conn.execute("UPDATE cron_jobs_health SET notificado_at=datetime('now') WHERE job_name=?",
+                        conn.execute("UPDATE cron_jobs_health SET notificado_at=datetime('now', '-5 hours') WHERE job_name=?",
                                        (job_name,))
         except Exception as _e:
             log.warning('cron_jobs_health update %s fallo: %s', job_name, _e)
@@ -908,7 +908,7 @@ def job_sync_shopify(app):
                 INSERT OR REPLACE INTO animus_shopify_orders
                   (shopify_id, nombre, email, total, moneda, estado, estado_pago,
                    sku_items, unidades_total, ciudad, pais, creado_en, synced_at)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,datetime('now', '-5 hours'))
             """, (str(o["id"]), o.get("name",""), o.get("email",""),
                   float(o.get("total_price",0)), o.get("currency","COP"),
                   o.get("fulfillment_status",""), o.get("financial_status",""),
@@ -963,7 +963,7 @@ def job_auto_d20(app):
                 SELECT 1 FROM solicitudes_compra
                 WHERE categoria='Servicios'
                   AND observaciones LIKE ?
-                  AND date(fecha) >= date('now','-30 days')
+                  AND date(fecha) >= date('now', '-5 hours', '-30 days')
                 LIMIT 1
             """, (f'%decoración D-20 · {prod_match}%',)).fetchone()
             if existe:
@@ -1167,7 +1167,7 @@ def job_lunes_7am_workflow(app):
                         INSERT OR REPLACE INTO animus_shopify_orders
                           (shopify_id, nombre, email, total, moneda, estado, estado_pago,
                            sku_items, unidades_total, ciudad, pais, creado_en, synced_at)
-                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,datetime('now', '-5 hours'))
                     """, (str(o["id"]), o.get("name",""), o.get("email",""),
                           float(o.get("total_price",0)), o.get("currency","COP"),
                           o.get("fulfillment_status",""), o.get("financial_status",""),
@@ -1220,7 +1220,7 @@ def job_lunes_7am_workflow(app):
                     SELECT 1 FROM limpieza_profunda_calendario l
                     WHERE l.area_codigo = a.codigo
                       AND l.estado IN ('pendiente','asignada','en_proceso')
-                      AND date(l.fecha) >= date('now')
+                      AND date(l.fecha) >= date('now', '-5 hours')
                   )
             """).fetchall()
             for area_id, area_cod in rows:
@@ -1237,7 +1237,7 @@ def job_lunes_7am_workflow(app):
         try:
             cur = c.execute("""
                 UPDATE produccion_programada
-                  SET bloqueado_at = datetime('now'),
+                  SET bloqueado_at = datetime('now', '-5 hours'),
                       bloqueado_por = 'cron-lunes-7am',
                       semana_workflow_id = COALESCE(NULLIF(semana_workflow_id,''), ?)
                 WHERE date(fecha_programada) BETWEEN ? AND ?
@@ -1341,7 +1341,7 @@ def job_self_heal(app):
         try:
             r = c.execute("SELECT habilitado FROM auto_plan_cron_state WHERE id=1").fetchone()
             if r and not r[0]:
-                c.execute("UPDATE auto_plan_cron_state SET habilitado=1, notas='Self-heal auto-enable', activado_por='self-heal', activado_at=datetime('now') WHERE id=1")
+                c.execute("UPDATE auto_plan_cron_state SET habilitado=1, notas='Self-heal auto-enable', activado_por='self-heal', activado_at=datetime('now', '-5 hours') WHERE id=1")
                 acciones.append('cron habilitado')
         except Exception as _e:
             log.warning('self-heal habilitar cron fallo: %s', _e)
@@ -1355,7 +1355,7 @@ def job_self_heal(app):
                     SELECT 1 FROM limpieza_profunda_calendario l
                     WHERE l.area_codigo = a.codigo
                       AND l.estado IN ('pendiente','asignada','en_proceso')
-                      AND date(l.fecha) >= date('now')
+                      AND date(l.fecha) >= date('now', '-5 hours')
                   )
             """).fetchall()
             for area_id, area_cod in rows:
@@ -1443,17 +1443,17 @@ def job_cleanup_logs(app):
         n_runs = 0; n_apr = 0; n_aal = 0
         errores = []
         try:
-            n_runs = c.execute("DELETE FROM cron_jobs_runs WHERE date(ejecutado_at) < date('now', '-30 days')").rowcount
+            n_runs = c.execute("DELETE FROM cron_jobs_runs WHERE date(ejecutado_at) < date('now', '-5 hours', '-30 days')").rowcount
         except Exception as e:
             log.warning('cleanup cron_jobs_runs fallo: %s', e)
             errores.append(f'cron_jobs_runs:{e}')
         try:
-            n_apr = c.execute("DELETE FROM auto_plan_runs WHERE date(ejecutado_at) < date('now', '-90 days')").rowcount
+            n_apr = c.execute("DELETE FROM auto_plan_runs WHERE date(ejecutado_at) < date('now', '-5 hours', '-90 days')").rowcount
         except Exception as e:
             log.warning('cleanup auto_plan_runs fallo: %s', e)
             errores.append(f'auto_plan_runs:{e}')
         try:
-            n_aal = c.execute("DELETE FROM auto_asignacion_log WHERE date(ejecutado_at) < date('now', '-90 days')").rowcount
+            n_aal = c.execute("DELETE FROM auto_asignacion_log WHERE date(ejecutado_at) < date('now', '-5 hours', '-90 days')").rowcount
         except Exception as e:
             log.warning('cleanup auto_asignacion_log fallo: %s', e)
             errores.append(f'auto_asignacion_log:{e}')
@@ -1481,7 +1481,7 @@ def job_agua_recordatorio(app):
         try:
             row = c.execute("""
                 SELECT 1 FROM calidad_sistema_agua
-                WHERE date(fecha) = date('now')
+                WHERE date(fecha) = date('now', '-5 hours')
                 LIMIT 1
             """).fetchone()
         except Exception as e:
@@ -1533,7 +1533,7 @@ def job_equipos_vencimientos(app):
                 WHERE COALESCE(ep.activo,1) = 1
                 GROUP BY ep.codigo
                 HAVING fecha_proxima IS NOT NULL
-                  AND date(fecha_proxima) <= date('now', '+30 days')
+                  AND date(fecha_proxima) <= date('now', '-5 hours', '+30 days')
                 ORDER BY fecha_proxima ASC
                 LIMIT 100
             """).fetchall()
@@ -1630,7 +1630,7 @@ def job_tecnica_vencimientos(app):
                   FROM registros_invima
                  WHERE LOWER(COALESCE(estado,'')) = 'vigente'
                    AND COALESCE(fecha_vencimiento,'') != ''
-                   AND date(fecha_vencimiento) <= date('now', '+90 days')
+                   AND date(fecha_vencimiento) <= date('now', '-5 hours', '+90 days')
                  ORDER BY fecha_vencimiento ASC
                  LIMIT 200
             """).fetchall()
@@ -1662,7 +1662,7 @@ def job_tecnica_vencimientos(app):
                   FROM documentos_sgd
                  WHERE LOWER(COALESCE(estado,'')) = 'vigente'
                    AND COALESCE(fecha_proxima_revision,'') != ''
-                   AND date(fecha_proxima_revision) <= date('now', '+30 days')
+                   AND date(fecha_proxima_revision) <= date('now', '-5 hours', '+30 days')
                  ORDER BY fecha_proxima_revision ASC
                  LIMIT 200
             """).fetchall()
@@ -1765,7 +1765,7 @@ def job_animus_conteo_diario(app):
             # ¿Ya hay pendientes hoy?
             pend = c.execute("""
                 SELECT COUNT(*) FROM animus_conteos_asignados
-                 WHERE fecha_asignado = date('now') AND estado = 'pendiente'
+                 WHERE fecha_asignado = date('now', '-5 hours') AND estado = 'pendiente'
             """).fetchone()
             if pend and pend[0] > 0:
                 return True, {'mensaje': f'Ya hay {pend[0]} asignaciones pendientes hoy'}, 0
@@ -1785,7 +1785,7 @@ def job_animus_conteo_diario(app):
                 volatilidad AS (
                     SELECT sku, COUNT(*) as movs
                       FROM animus_inventario_movimientos
-                     WHERE fecha >= date('now', '-7 day')
+                     WHERE fecha >= date('now', '-5 hours', '-7 day')
                      GROUP BY sku
                 )
                 SELECT b.sku,
@@ -1873,20 +1873,20 @@ def job_desv_plazos(app):
             sin_clasif = c.execute("""
                 SELECT codigo, descripcion FROM desviaciones
                 WHERE estado='detectada'
-                  AND date(fecha_deteccion) <= date('now', '-1 day')
+                  AND date(fecha_deteccion) <= date('now', '-5 hours', '-1 day')
                 LIMIT 30
             """).fetchall()
             sin_invest = c.execute("""
                 SELECT codigo, clasificacion, descripcion FROM desviaciones
                 WHERE estado IN ('clasificada')
-                  AND date(fecha_deteccion) <= date('now', '-5 days')
+                  AND date(fecha_deteccion) <= date('now', '-5 hours', '-5 days')
                 LIMIT 30
             """).fetchall()
             capa_vencido = c.execute("""
                 SELECT codigo, capa_responsable, capa_fecha_limite FROM desviaciones
                 WHERE estado IN ('capa_propuesto','capa_implementado')
                   AND capa_fecha_limite IS NOT NULL
-                  AND date(capa_fecha_limite) < date('now')
+                  AND date(capa_fecha_limite) < date('now', '-5 hours')
                 LIMIT 30
             """).fetchall()
         except Exception as e:
@@ -1942,7 +1942,7 @@ def job_cambios_plazos(app):
             sin_evaluar = c.execute("""
                 SELECT codigo, titulo, solicitado_por FROM control_cambios
                 WHERE estado='solicitado'
-                  AND date(fecha_solicitud) <= date('now', '-5 days')
+                  AND date(fecha_solicitud) <= date('now', '-5 hours', '-5 days')
                 LIMIT 30
             """).fetchall()
             invima_pendiente = c.execute("""
@@ -1950,14 +1950,14 @@ def job_cambios_plazos(app):
                 WHERE estado IN ('aprobado','en_implementacion')
                   AND requiere_invima=1
                   AND notificacion_invima_at IS NULL
-                  AND date(aprobado_at) <= date('now', '-3 days')
+                  AND date(aprobado_at) <= date('now', '-5 hours', '-3 days')
                 LIMIT 30
             """).fetchall()
             sin_implementar = c.execute("""
                 SELECT codigo, titulo, responsable_implementacion, fecha_implementacion_propuesta
                 FROM control_cambios
                 WHERE estado IN ('aprobado','en_implementacion')
-                  AND date(aprobado_at) <= date('now', '-30 days')
+                  AND date(aprobado_at) <= date('now', '-5 hours', '-30 days')
                   AND (requiere_invima=0 OR notificacion_invima_at IS NOT NULL)
                 LIMIT 30
             """).fetchall()
@@ -1965,7 +1965,7 @@ def job_cambios_plazos(app):
                 SELECT codigo, titulo, implementado_por, implementado_at
                 FROM control_cambios
                 WHERE estado='implementado'
-                  AND date(implementado_at) <= date('now', '-15 days')
+                  AND date(implementado_at) <= date('now', '-5 hours', '-15 days')
                 LIMIT 30
             """).fetchall()
         except Exception as e:
@@ -2027,14 +2027,14 @@ def job_quejas_plazos(app):
             sin_triar = c.execute("""
                 SELECT codigo, cliente_nombre, tipo_queja FROM quejas_clientes
                 WHERE estado='nueva'
-                  AND date(fecha_recepcion) <= date('now', '-1 day')
+                  AND date(fecha_recepcion) <= date('now', '-5 hours', '-1 day')
                 LIMIT 30
             """).fetchall()
             criticas_lentas = c.execute("""
                 SELECT codigo, cliente_nombre, tipo_queja FROM quejas_clientes
                 WHERE estado IN ('en_triaje','en_investigacion')
                   AND (severidad='critica' OR impacto_salud=1)
-                  AND date(fecha_recepcion) <= date('now', '-2 day')
+                  AND date(fecha_recepcion) <= date('now', '-5 hours', '-2 day')
                 LIMIT 30
             """).fetchall()
             sin_responder = c.execute("""
@@ -2042,13 +2042,13 @@ def job_quejas_plazos(app):
                 WHERE estado IN ('en_triaje','en_investigacion')
                   AND (severidad IS NULL OR severidad NOT IN ('critica'))
                   AND impacto_salud=0
-                  AND date(fecha_recepcion) <= date('now', '-7 day')
+                  AND date(fecha_recepcion) <= date('now', '-5 hours', '-7 day')
                 LIMIT 30
             """).fetchall()
             sin_cerrar = c.execute("""
                 SELECT codigo, cliente_nombre, respondido_at FROM quejas_clientes
                 WHERE estado='respondida'
-                  AND date(respondido_at) <= date('now', '-14 day')
+                  AND date(respondido_at) <= date('now', '-5 hours', '-14 day')
                 LIMIT 30
             """).fetchall()
         except Exception as e:
@@ -2108,7 +2108,7 @@ def job_recalls_plazos(app):
             sin_clasificar = c.execute("""
                 SELECT codigo, producto, lotes_afectados FROM recalls
                 WHERE estado='iniciado'
-                  AND datetime(creado_en) <= datetime('now', '-12 hours')
+                  AND datetime(creado_en) <= datetime('now', '-5 hours', '-12 hours')
                 LIMIT 30
             """).fetchall()
             clase_I_sin_invima = c.execute("""
@@ -2116,7 +2116,7 @@ def job_recalls_plazos(app):
                 WHERE clase_recall='clase_I'
                   AND notificacion_invima_at IS NULL
                   AND estado NOT IN ('cerrado','cancelado')
-                  AND datetime(clasificado_at) <= datetime('now', '-1 day')
+                  AND datetime(clasificado_at) <= datetime('now', '-5 hours', '-1 day')
                 LIMIT 30
             """).fetchall()
             sin_invima_5d = c.execute("""
@@ -2124,14 +2124,14 @@ def job_recalls_plazos(app):
                 WHERE clase_recall IN ('clase_II','clase_III')
                   AND notificacion_invima_at IS NULL
                   AND estado NOT IN ('cerrado','cancelado')
-                  AND date(clasificado_at) <= date('now', '-5 day')
+                  AND date(clasificado_at) <= date('now', '-5 hours', '-5 day')
                 LIMIT 30
             """).fetchall()
             sin_recolectar_30d = c.execute("""
                 SELECT codigo, producto, cantidad_recolectada, cantidad_distribuida
                 FROM recalls
                 WHERE estado IN ('distribuidores_notificados','en_recoleccion')
-                  AND date(notificacion_invima_at) <= date('now', '-30 day')
+                  AND date(notificacion_invima_at) <= date('now', '-5 hours', '-30 day')
                 LIMIT 30
             """).fetchall()
         except Exception as e:
@@ -2315,7 +2315,7 @@ def _calcular_kpis_semanales(conn):
         # Pedidos B2B emitidos última semana
         r = c.execute("""SELECT COUNT(*), COALESCE(SUM(valor_total),0)
                          FROM pedidos
-                         WHERE fecha >= date('now','-7 days')""").fetchone()
+                         WHERE fecha >= date('now', '-5 hours', '-7 days')""").fetchone()
         kpis['Pedidos 7d'] = f"{r[0] or 0}"
         kpis['Ventas 7d'] = f"${(r[1] or 0)/1_000_000:.1f}M"
     except Exception:
@@ -2323,7 +2323,7 @@ def _calcular_kpis_semanales(conn):
     try:
         # OCs creadas última semana
         n_oc = c.execute("""SELECT COUNT(*) FROM ordenes_compra
-                            WHERE fecha >= date('now','-7 days')""").fetchone()[0]
+                            WHERE fecha >= date('now', '-5 hours', '-7 days')""").fetchone()[0]
         kpis['OCs 7d'] = f"{n_oc or 0}"
     except Exception:
         kpis['OCs 7d'] = '—'
@@ -2331,14 +2331,14 @@ def _calcular_kpis_semanales(conn):
         # Producciones completadas semana
         n_prod = c.execute("""SELECT COUNT(*) FROM produccion_programada
                               WHERE fin_real_at IS NOT NULL
-                                AND fin_real_at >= datetime('now','-7 days')""").fetchone()[0]
+                                AND fin_real_at >= datetime('now', '-5 hours', '-7 days')""").fetchone()[0]
         kpis['Prod 7d'] = f"{n_prod or 0}"
     except Exception:
         kpis['Prod 7d'] = '—'
     try:
         # Audit log entries 7d (señal de actividad regulatoria)
         n_audit = c.execute("""SELECT COUNT(*) FROM audit_log
-                               WHERE fecha >= datetime('now','-7 days')""").fetchone()[0]
+                               WHERE fecha >= datetime('now', '-5 hours', '-7 days')""").fetchone()[0]
         kpis['Audit 7d'] = f"{n_audit or 0}"
     except Exception:
         kpis['Audit 7d'] = '—'
@@ -3094,7 +3094,7 @@ def job_marcar_vencidos(app):
     Lógica:
       UPDATE movimientos
       SET estado_lote='VENCIDO'
-      WHERE fecha_vencimiento < date('now')
+      WHERE fecha_vencimiento < date('now', '-5 hours')
         AND UPPER(COALESCE(estado_lote,'')) = 'VIGENTE'
 
     Idempotente: si no hay vencidos, no hace nada. Si los hay,
@@ -3112,7 +3112,7 @@ def job_marcar_vencidos(app):
                 FROM movimientos
                 WHERE fecha_vencimiento IS NOT NULL
                   AND TRIM(fecha_vencimiento) != ''
-                  AND date(fecha_vencimiento) < date('now')
+                  AND date(fecha_vencimiento) < date('now', '-5 hours')
                   AND UPPER(COALESCE(estado_lote,'')) = 'VIGENTE'
                 GROUP BY material_id, lote
                 ORDER BY fecha_vencimiento ASC
@@ -3128,7 +3128,7 @@ def job_marcar_vencidos(app):
                 SET estado_lote = 'VENCIDO'
                 WHERE fecha_vencimiento IS NOT NULL
                   AND TRIM(fecha_vencimiento) != ''
-                  AND date(fecha_vencimiento) < date('now')
+                  AND date(fecha_vencimiento) < date('now', '-5 hours')
                   AND UPPER(COALESCE(estado_lote,'')) = 'VIGENTE'
             """)
             actualizados = res.rowcount

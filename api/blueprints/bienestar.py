@@ -144,7 +144,7 @@ def notificacion_resolver(nid):
                         WHERE id=?""", (nid,)).fetchone()
     cur = c.execute("""UPDATE notificaciones_empleados
         SET estado=?, comentario_jefe=COALESCE(?, comentario_jefe),
-            resuelto_por=?, resuelto_en=datetime('now')
+            resuelto_por=?, resuelto_en=datetime('now', '-5 hours')
         WHERE id=?""", (nuevo, coment, user, nid))
     if cur.rowcount == 0:
         return jsonify({'error': 'no encontrada'}), 404
@@ -326,7 +326,7 @@ def calificar_intento(int_id):
     aprobado = nota >= (nota_minima or 70)
 
     c.execute("""UPDATE bienestar_capacitaciones_intentos
-        SET respuestas_json=?, evaluacion_json=?, nota=?, terminado_en=datetime('now')
+        SET respuestas_json=?, evaluacion_json=?, nota=?, terminado_en=datetime('now', '-5 hours')
         WHERE id=?""", (
         json.dumps(respuestas, ensure_ascii=False),
         json.dumps(evaluacion, ensure_ascii=False),
@@ -335,7 +335,7 @@ def calificar_intento(int_id):
     nuevo_estado = 'completada' if aprobado else 'reprobada'
     c.execute("""UPDATE bienestar_capacitaciones
                  SET estado=?, nota_obtenida=?,
-                     completada_en = CASE WHEN ?='completada' THEN datetime('now') ELSE completada_en END
+                     completada_en = CASE WHEN ?='completada' THEN datetime('now', '-5 hours') ELSE completada_en END
                  WHERE id=?""", (nuevo_estado, nota, nuevo_estado, cap_id))
     conn.commit()
     return jsonify({

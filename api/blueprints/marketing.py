@@ -653,7 +653,7 @@ def mkt_dar_de_baja(iid):
     nota   = f"{motivo}" + (f" — {obs}" if obs else "")
     conn.execute("""
         UPDATE marketing_influencers
-        SET estado='Baja', motivo_baja=?, fecha_baja=date('now'), notas=?
+        SET estado='Baja', motivo_baja=?, fecha_baja=date('now', '-5 hours'), notas=?
         WHERE id=?
     """, (nota, obs, iid))
     conn.commit()
@@ -1786,7 +1786,7 @@ def mkt_sync(platform):
                         (shopify_id,nombre,email,total,moneda,estado,estado_pago,
                          sku_items,unidades_total,ciudad,pais,creado_en,synced_at,
                          discount_codes,subtotal,total_descuentos)
-                        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'),?,?,?)""",
+                        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,datetime('now', '-5 hours'),?,?,?)""",
                         (str(o["id"]), o.get("name",""), o.get("email",""),
                          float(o.get("total_price") or 0),
                          o.get("currency","COP"),
@@ -1839,7 +1839,7 @@ def mkt_sync(platform):
                     fecha = (ct.get("dateAdded") or ct.get("createdAt") or "")[:10]
                     conn.execute("""INSERT OR REPLACE INTO animus_ghl_contacts
                         (ghl_id,nombre,email,telefono,etiquetas,fuente,creado_en,synced_at)
-                        VALUES(?,?,?,?,?,?,?,datetime('now'))""",
+                        VALUES(?,?,?,?,?,?,?,datetime('now', '-5 hours'))""",
                         (ct.get("id",""),
                          f"{ct.get('firstName','')} {ct.get('lastName','')}".strip(),
                          ct.get("email",""), ct.get("phone",""),
@@ -1879,7 +1879,7 @@ def mkt_sync(platform):
             for p in posts:
                 conn.execute("""INSERT OR REPLACE INTO animus_instagram_posts
                     (instagram_id,tipo,descripcion,url_media,url_permalink,likes,comentarios,publicado_en,synced_at)
-                    VALUES(?,?,?,?,?,?,?,?,datetime('now'))""",
+                    VALUES(?,?,?,?,?,?,?,?,datetime('now', '-5 hours'))""",
                     (p.get("id",""), p.get("media_type",""),
                      (p.get("caption","") or "")[:500],
                      p.get("media_url",""), p.get("permalink",""),
@@ -2571,7 +2571,7 @@ def mkt_ejecutar_agente(agente):
                 produccion_proxima = [dict(r) for r in c.execute("""
                     SELECT producto, fecha_programada, lotes, estado
                     FROM produccion_programada
-                    WHERE fecha_programada BETWEEN date('now') AND ?
+                    WHERE fecha_programada BETWEEN date('now', '-5 hours') AND ?
                       AND estado NOT IN ('cancelado','completado')
                     ORDER BY fecha_programada LIMIT 30
                 """, (prox_30,)).fetchall()]
@@ -2940,7 +2940,7 @@ def mkt_influencers_panel():
                 SET estado='Pagada'
                 WHERE estado='Pendiente'
                   AND COALESCE(fecha_publicacion,'') != ''
-                  AND fecha_publicacion < date('now','-7 day')
+                  AND fecha_publicacion < date('now', '-5 hours', '-7 day')
                   AND (numero_oc IS NULL OR numero_oc='' OR numero_oc NOT IN (
                     SELECT numero_oc FROM ordenes_compra WHERE estado IN ('Aprobada','Autorizada','Revisada','Borrador')
                   ))
@@ -2967,12 +2967,12 @@ def mkt_influencers_panel():
                          WHEN COALESCE(oc.estado,'') IN ('Rechazada','Cancelada')
                            THEN NULL
                          WHEN COALESCE(oc.estado,'') = '' AND pi.estado = 'Pagada'
-                              AND pi.fecha >= date('now','-180 day')
+                              AND pi.fecha >= date('now', '-5 hours', '-180 day')
                            THEN 'Pagada'
                          WHEN COALESCE(oc.estado,'') = ''
                            THEN NULL
                          WHEN oc.estado IN ('Aprobada','Autorizada','Revisada','Borrador')
-                              AND oc.fecha >= date('now','-90 day')
+                              AND oc.fecha >= date('now', '-5 hours', '-90 day')
                            THEN 'Pendiente'
                          ELSE NULL
                        END as estado,
@@ -3533,7 +3533,7 @@ def mkt_solicitar_pago_influencer(iid):
             INSERT INTO solicitudes_compra
             (numero, fecha, estado, solicitante, email_solicitante, urgencia, observaciones,
              area, empresa, categoria, tipo, valor, influencer_id)
-            VALUES (?,date('now'),'Aprobada',?,?,?,?,?,?,?,?,?,?)
+            VALUES (?,date('now', '-5 hours'),'Aprobada',?,?,?,?,?,?,?,?,?,?)
         """, (
             numero,
             solicitante_user,
@@ -3553,7 +3553,7 @@ def mkt_solicitar_pago_influencer(iid):
         c.execute("""
             INSERT INTO ordenes_compra
             (numero_oc, fecha, estado, proveedor, observaciones, creado_por, categoria, valor_total)
-            VALUES (?,date('now'),'Aprobada',?,?,?,?,?)
+            VALUES (?,date('now', '-5 hours'),'Aprobada',?,?,?,?,?)
         """, (
             oc_num,
             inf["nombre"],
@@ -3572,7 +3572,7 @@ def mkt_solicitar_pago_influencer(iid):
             c.execute("""
                 INSERT INTO pagos_influencers
                 (influencer_id, influencer_nombre, valor, fecha, estado, concepto, numero_oc)
-                VALUES (?,?,?,date('now'),'Pendiente',?,?)
+                VALUES (?,?,?,date('now', '-5 hours'),'Pendiente',?,?)
             """, (iid, inf["nombre"], int(monto), concepto, oc_num))
         except Exception:
             pass  # tabla puede no existir aún en instancias viejas
@@ -3680,7 +3680,7 @@ def mkt_fix_pago_link():
         c.execute("""
             INSERT INTO pagos_influencers
             (influencer_id, influencer_nombre, valor, fecha, estado, concepto, numero_oc)
-            VALUES (?,?,?,date('now'),?,?,?)
+            VALUES (?,?,?,date('now', '-5 hours'),?,?,?)
         """, (influencer_id, nombre, int(valor), estado, f"Pago OC {numero_oc}", numero_oc))
         conn.commit()
         return jsonify({"ok": True, "action": "inserted"})
@@ -3974,7 +3974,7 @@ def _notificar_alertas_criticas(conn, agente, alertas):
         ya = c.execute("""
             SELECT 1 FROM marketing_alertas_enviadas
             WHERE agente=? AND COALESCE(sku,'')=COALESCE(?,'')
-              AND COALESCE(tipo_alerta,'')=? AND fecha_envio = date('now')
+              AND COALESCE(tipo_alerta,'')=? AND fecha_envio = date('now', '-5 hours')
         """, (agente, a.get('sku', ''), a.get('tipo_alerta', ''))).fetchone()
         if ya:
             continue
@@ -4203,7 +4203,7 @@ def mkt_metrics_history(iid):
         SELECT fecha, seguidores, siguiendo, posts_total, engagement_rate,
                avg_likes, avg_comments, rank_global, grade, fuente
         FROM marketing_influencers_metrics
-        WHERE influencer_id=? AND fecha >= date('now', ? || ' day')
+        WHERE influencer_id=? AND fecha >= date('now', '-5 hours', ? || ' day')
         ORDER BY fecha ASC
     """, (iid, f'-{dias}')).fetchall()
     return jsonify({
@@ -4266,7 +4266,7 @@ def mkt_workflow_aplicar_agente():
                    sku_objetivo, objetivo_unidades, presupuesto, notas,
                    fecha_creacion)
                 VALUES (?, 'Influencer', 'Push', 'Planificada',
-                        date('now'), date('now','+30 day'), ?, ?, ?, ?, ?)
+                        date('now', '-5 hours'), date('now', '-5 hours', '+30 day'), ?, ?, ?, ?, ?)
             """, (nombre, sku,
                   max(int(r.get('stock', 0) * 0.5), 10),  # objetivo: vender 50% del stock
                   500000,  # presupuesto base sugerido
@@ -4327,7 +4327,7 @@ def mkt_workflow_aplicar_agente():
                 INSERT INTO marketing_campanas
                   (nombre, canal, tipo, estado, fecha_inicio, sku_objetivo,
                    notas, fecha_creacion)
-                VALUES (?, 'Interno', 'Reposición', 'Planificada', date('now'),
+                VALUES (?, 'Interno', 'Reposición', 'Planificada', date('now', '-5 hours'),
                         ?, ?, ?)
             """, (f"FLAG Reposición {sku}", sku, obs, fecha_iso))
             creado['solicitudes_produccion'] += 1
@@ -4352,7 +4352,7 @@ def mkt_workflow_aplicar_agente():
                   (nombre, canal, tipo, estado, fecha_inicio, fecha_fin,
                    sku_objetivo, presupuesto, notas, fecha_creacion)
                 VALUES (?, 'Influencer', 'Push', 'Planificada',
-                        date('now'), date('now','+45 day'), ?, ?, ?, ?)
+                        date('now', '-5 hours'), date('now', '-5 hours', '+45 day'), ?, ?, ?, ?)
             """, (f"Estrategia {sku} — empuje", sku, 700000,
                   f"Auto-creada por agente estrategia: SKU detectado para empuje urgente",
                   fecha_iso))
@@ -4555,7 +4555,7 @@ def mkt_agencia_audit():
         try:
             old_pending = [dict(r) for r in c.execute("""
                 SELECT influencer_nombre, valor, fecha FROM pagos_influencers
-                WHERE estado='Pendiente' AND fecha <= date('now','-60 days')
+                WHERE estado='Pendiente' AND fecha <= date('now', '-5 hours', '-60 days')
             """).fetchall()]
             for op in old_pending:
                 audit.append({

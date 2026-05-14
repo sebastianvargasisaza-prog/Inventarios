@@ -7402,11 +7402,11 @@ def test_golden_plan_reprogramar_proxima(app, db_clean):
                     json={'nueva_fecha': '2026-13-99'}, headers=csrf_headers())
     assert r11.status_code == 400
 
-    # Caso 12: audit_log captura REPROGRAMAR
+    # Caso 12: audit_log captura REPROGRAMAR · timezone Colombia
     aud = _query(
         """SELECT COUNT(*) FROM audit_log
            WHERE accion='REPROGRAMAR_PRODUCCION_PROGRAMADA'
-             AND datetime(fecha) >= datetime('now','-1 minute')"""
+             AND datetime(fecha) >= datetime('now','-5 hours','-1 minute')"""
     )
     assert aud[0][0] >= 1
 
@@ -7486,11 +7486,11 @@ def test_golden_plan_sugerido_batch_ejecutar(app, db_clean):
     assert row_bf[0][3] == 'completado'
     assert row_bf[0][4] == 'eos_retroactivo'
 
-    # Caso 5: audit_log captura las 3 acciones
+    # Caso 5: audit_log captura las 3 acciones · timezone Colombia
     auditas = _query(
         """SELECT COUNT(*) FROM audit_log
            WHERE accion LIKE 'PLAN_SUGERIDO_%'
-             AND datetime(fecha) >= datetime('now','-1 minute')"""
+             AND datetime(fecha) >= datetime('now','-5 hours','-1 minute')"""
     )
     assert auditas[0][0] >= 3, f'BUG audit_log: {auditas[0][0]}'
 

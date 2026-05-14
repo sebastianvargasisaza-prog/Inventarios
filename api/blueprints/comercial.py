@@ -192,7 +192,7 @@ def maquila_actualizar(mid):
         if stage_field:
             sets.append(f'{stage_field}=COALESCE({stage_field}, ?)')
             params.append(date.today().isoformat())
-    sets.append("actualizado_en=datetime('now')")
+    sets.append("actualizado_en=datetime('now', '-5 hours')")
     if not sets:
         return jsonify({'error': 'nada que actualizar'}), 400
     params.append(mid)

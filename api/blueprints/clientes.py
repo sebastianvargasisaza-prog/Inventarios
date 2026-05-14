@@ -67,7 +67,7 @@ def handle_clientes():
                          (codigo,nombre,empresa,tipo,contacto,email,telefono,nit,
                           condiciones_pago,descuento_pct,activo,fecha_creacion,observaciones,ciudad,
                           categoria_profesional,canal_captacion,redes_sociales,notas_seguimiento)
-                         VALUES (?,?,?,?,?,?,?,?,?,?,1,datetime('now'),?,?,?,?,?,?)""",
+                         VALUES (?,?,?,?,?,?,?,?,?,?,1,datetime('now', '-5 hours'),?,?,?,?,?,?)""",
                       (codigo, d['nombre'], d.get('empresa','ANIMUS'), d.get('tipo','Distribuidor'),
                        d.get('contacto',''), d.get('email',''), d.get('telefono',''),
                        d.get('nit',''), d.get('condiciones_pago','Pago anticipado'),
@@ -810,7 +810,7 @@ def handle_pedidos():
         if not cli_row:
             return jsonify({'error': 'cliente_id no existe o está inactivo'}), 400
         c.execute("""INSERT INTO pedidos (numero,cliente_id,fecha,fecha_entrega_est,estado,empresa,valor_total,observaciones,creado_por)
-                     VALUES (?,?,datetime('now'),?,?,?,?,?,?)""",
+                     VALUES (?,?,datetime('now', '-5 hours'),?,?,?,?,?,?)""",
                   (numero, d['cliente_id'], d.get('fecha_entrega_est',''), d.get('estado','Confirmado'),
                    d.get('empresa','ANIMUS'), valor_total, d.get('observaciones',''), session.get('compras_user','sistema')))
         for it in items_clean:
@@ -961,7 +961,7 @@ def handle_stock_pt():
                     'codigo': 'STOCK_PT_DUPLICADO'
                 }), 409
         c.execute("""INSERT INTO stock_pt (sku,descripcion,lote_produccion,fecha_produccion,unidades_inicial,unidades_disponible,precio_base,empresa,estado,observaciones)
-                     VALUES (?,?,?,datetime('now'),?,?,?,?,?,?)""",
+                     VALUES (?,?,?,datetime('now', '-5 hours'),?,?,?,?,?,?)""",
                   (d['sku'], d.get('descripcion',''), lote_prod, unidades, unidades,
                    precio_base, d.get('empresa','ANIMUS'), 'Disponible', d.get('observaciones','')))
         spt_id = c.lastrowid
@@ -1006,7 +1006,7 @@ def handle_despachos():
                 return jsonify({'error': f'Pedido {numero_ped} no existe'}), 400
         c.execute("SELECT COALESCE(MAX(CAST(SUBSTR(numero,10) AS INTEGER)),0) FROM despachos WHERE numero LIKE ?", (f"DSP-{datetime.now().strftime('%Y')}-%",)); n = (c.fetchone()[0] or 0) + 1
         numero = f"DSP-{datetime.now().strftime('%Y')}-{n:04d}"
-        c.execute("INSERT INTO despachos (numero,numero_pedido,cliente_id,fecha,operador,observaciones,estado) VALUES (?,?,?,datetime('now'),?,?,?)",
+        c.execute("INSERT INTO despachos (numero,numero_pedido,cliente_id,fecha,operador,observaciones,estado) VALUES (?,?,?,datetime('now', '-5 hours'),?,?,?)",
                   (numero, numero_ped, d['cliente_id'], session.get('compras_user','sistema'), d.get('observaciones',''), 'Completado'))
         # Audit zero-error 2-may-2026: trazabilidad lote→cliente recall-ready.
         # Antes el lote_pt persistido en despachos_items era el que mandó el
@@ -1049,7 +1049,7 @@ def handle_despachos():
                       (numero, sku, it.get('descripcion',''),
                        lote_real, cantidad, precio_v))
         if numero_ped:
-            c.execute("UPDATE pedidos SET estado='Despachado',fecha_despacho=datetime('now') WHERE numero=?", (numero_ped,))
+            c.execute("UPDATE pedidos SET estado='Despachado',fecha_despacho=datetime('now', '-5 hours') WHERE numero=?", (numero_ped,))
         try:
             items_count = len(d.get('items') or [])
             audit_log(c, usuario=session.get('compras_user', 'sistema'),
@@ -1161,7 +1161,7 @@ def delete_aliado(cid):
     try:
         c.execute("""
             INSERT INTO audit_log (usuario, accion, tabla, registro_id, fecha)
-            VALUES (?, 'DESACTIVAR_ALIADO', 'clientes', ?, datetime('now'))
+            VALUES (?, 'DESACTIVAR_ALIADO', 'clientes', ?, datetime('now', '-5 hours'))
         """, (user, str(cid)))
         conn.commit()
     except Exception as e:

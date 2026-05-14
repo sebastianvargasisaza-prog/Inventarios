@@ -879,7 +879,7 @@ def rrhh_evento_aprobar(evt_id):
     conn = get_db(); c = conn.cursor()
     cur = c.execute("""
         UPDATE rh_eventos
-           SET estado='aprobada', aprobado_por=?, fecha_aprobacion=datetime('now')
+           SET estado='aprobada', aprobado_por=?, fecha_aprobacion=datetime('now', '-5 hours')
          WHERE id=? AND estado='registrada'
     """, (user, evt_id))
     if cur.rowcount == 0:
@@ -1125,7 +1125,7 @@ def rrhh_compromiso_completar(cid):
         UPDATE rh_compromisos_mejora SET
           estado='completado',
           verificado_por=?,
-          fecha_verificacion=datetime('now'),
+          fecha_verificacion=datetime('now', '-5 hours'),
           evidencia_url=?
         WHERE id=?
     """, (user, (d.get('evidencia_url') or '').strip(), cid))
@@ -1155,19 +1155,19 @@ def rrhh_dashboard_completo():
     incapac_activas = _safe("""SELECT COUNT(*) FROM rh_eventos
                                WHERE tipo IN ('incapacidad_comun','incapacidad_laboral')
                                  AND estado IN ('registrada','aprobada')
-                                 AND date('now') BETWEEN fecha_inicio AND COALESCE(fecha_fin,'9999-12-31')""")
+                                 AND date('now', '-5 hours') BETWEEN fecha_inicio AND COALESCE(fecha_fin,'9999-12-31')""")
     llamados_30d = _safe("""SELECT COUNT(*) FROM rh_eventos
                             WHERE tipo IN ('llamado_atencion_verbal','llamado_atencion_escrito','suspension')
-                              AND fecha_inicio >= date('now','-30 days')""")
+                              AND fecha_inicio >= date('now', '-5 hours', '-30 days')""")
     compromisos_pendientes = _safe("""SELECT COUNT(*) FROM rh_compromisos_mejora
                                       WHERE estado IN ('pendiente','en_progreso')""")
     docs_por_vencer = _safe("""SELECT COUNT(*) FROM empleados_documentos
                                WHERE COALESCE(fecha_vencimiento,'') != ''
-                                 AND fecha_vencimiento >= date('now')
-                                 AND fecha_vencimiento <= date('now','+30 days')""")
+                                 AND fecha_vencimiento >= date('now', '-5 hours')
+                                 AND fecha_vencimiento <= date('now', '-5 hours', '+30 days')""")
     docs_vencidos = _safe("""SELECT COUNT(*) FROM empleados_documentos
                              WHERE COALESCE(fecha_vencimiento,'') != ''
-                               AND fecha_vencimiento < date('now')""")
+                               AND fecha_vencimiento < date('now', '-5 hours')""")
     return jsonify({
         'empleados_activos': emp_activos,
         'eventos_mes': eventos_mes,

@@ -118,7 +118,7 @@ def _sync_shopify_orders(conn, days=60):
                 "INSERT OR REPLACE INTO animus_shopify_orders "
                 "(shopify_id,nombre,email,total,moneda,estado,estado_pago,"
                 "sku_items,unidades_total,ciudad,pais,creado_en,synced_at) "
-                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))"
+                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,datetime('now', '-5 hours'))"
             )
             conn.execute(sql, (
                 str(o["id"]), o.get("name",""), o.get("email",""),
@@ -458,7 +458,7 @@ def _fetch_local_production_events(conn):
             """SELECT id, producto, fecha_programada, lotes, estado, observaciones
                FROM produccion_programada
                WHERE estado NOT IN ('completado','cancelado')
-                 AND fecha_programada >= date('now', '-14 days')
+                 AND fecha_programada >= date('now', '-5 hours', '-14 days')
                ORDER BY fecha_programada"""
         ).fetchall()
         import datetime as _dt
@@ -1039,7 +1039,7 @@ def _compute_mp_deficit_aggregated(conn, days_ahead=90):
         local_rows = conn.execute(
             """SELECT producto, fecha_programada, lotes FROM produccion_programada
                WHERE estado NOT IN ('completado','cancelado')
-                 AND fecha_programada >= date('now', '-7 days')
+                 AND fecha_programada >= date('now', '-5 hours', '-7 days')
                  AND fecha_programada <= ?
                ORDER BY fecha_programada""",
             (cutoff.isoformat(),)
@@ -1980,7 +1980,7 @@ def prog_registrar_stock():
             (sku, descripcion, lote_produccion, fecha_produccion,
              unidades_inicial, unidades_disponible, precio_base,
              empresa, estado, observaciones)
-        VALUES (?,?,?,date('now'),?,?,0,'ANIMUS','Disponible','Carga inicial de stock')
+        VALUES (?,?,?,date('now', '-5 hours'),?,?,0,'ANIMUS','Disponible','Carga inicial de stock')
     """, (sku, producto, lote, unidades, unidades))
     conn.commit()
     return jsonify({'ok': True, 'sku': sku, 'producto': producto, 'unidades': unidades})
@@ -2431,7 +2431,7 @@ def planta_yield_reporte():
         return jsonify({'error': 'No autorizado'}), 401
 
     from datetime import datetime as _dtcls, timezone as _tzcls, timedelta as _td
-    # Sebastián 12-may-2026: usar UTC (alineado con SQLite datetime('now') sin
+    # Sebastián 12-may-2026: usar UTC (alineado con SQLite datetime('now', '-5 hours') sin
     # modifier que devuelve UTC). En máquinas con TZ != UTC, date.today() no
     # coincide con date(fin_real_at) y el reporte sale vacío.
     desde = (request.args.get('desde') or '').strip()
@@ -2824,25 +2824,25 @@ def planta_historial_operarios():
             SELECT operario_dispensacion_id as op_id, 'dispensacion' as fase, fecha_programada
               FROM produccion_programada
               WHERE operario_dispensacion_id IS NOT NULL
-                AND fecha_programada >= date('now','-14 day')
+                AND fecha_programada >= date('now', '-5 hours', '-14 day')
                 AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado')
             UNION ALL
             SELECT operario_elaboracion_id, 'elaboracion', fecha_programada
               FROM produccion_programada
               WHERE operario_elaboracion_id IS NOT NULL
-                AND fecha_programada >= date('now','-14 day')
+                AND fecha_programada >= date('now', '-5 hours', '-14 day')
                 AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado')
             UNION ALL
             SELECT operario_envasado_id, 'envasado', fecha_programada
               FROM produccion_programada
               WHERE operario_envasado_id IS NOT NULL
-                AND fecha_programada >= date('now','-14 day')
+                AND fecha_programada >= date('now', '-5 hours', '-14 day')
                 AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado')
             UNION ALL
             SELECT operario_acondicionamiento_id, 'acondicionamiento', fecha_programada
               FROM produccion_programada
               WHERE operario_acondicionamiento_id IS NOT NULL
-                AND fecha_programada >= date('now','-14 day')
+                AND fecha_programada >= date('now', '-5 hours', '-14 day')
                 AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado')
         ) hist ON hist.op_id = op.id
         WHERE op.activo=1 AND op.es_jefe_produccion=0
@@ -2948,7 +2948,7 @@ def prog_iniciar_produccion(evento_id):
         }), codigo_http
 
     # ── REGISTRAR INICIO + SALA OCUPADA ───────────────────────────────
-    c.execute("UPDATE produccion_programada SET inicio_real_at=datetime('now') WHERE id=?",
+    c.execute("UPDATE produccion_programada SET inicio_real_at=datetime('now', '-5 hours') WHERE id=?",
               (evento_id,))
     sin_formula = bool(descuento.get('sin_formula'))
     nota_descuento = ('SIN FORMULA · sin descuento' if sin_formula
@@ -3054,7 +3054,7 @@ def _intentar_crear_ebr_auto(c, evento_id, producto, total_g_descontado, user):
             """INSERT INTO ebr_ejecuciones
                  (mbr_template_id, mbr_version, produccion_id, lote, numero_op,
                   estado, iniciado_por, iniciado_at_utc, cantidad_objetivo_g, notas)
-               VALUES (?, ?, ?, ?, ?, 'iniciado', ?, datetime('now', 'utc'), ?, ?)""",
+               VALUES (?, ?, ?, ?, ?, 'iniciado', ?, datetime('now', '-5 hours', 'utc'), ?, ?)""",
             (mbr[0], mbr[1], evento_id, lote, numero_op, user, cantidad_obj,
              f'Auto-creado al iniciar producción Calendar id={evento_id}'),
         )
@@ -3147,7 +3147,7 @@ def prog_terminar_produccion(evento_id):
             return jsonify({'error': 'unidades_real inválido'}), 400
 
     c.execute("""UPDATE produccion_programada
-                   SET fin_real_at=datetime('now'),
+                   SET fin_real_at=datetime('now', '-5 hours'),
                        kg_real=COALESCE(?, kg_real),
                        unidades_real=COALESCE(?, unidades_real),
                        merma_pct=COALESCE(?, merma_pct)
@@ -3319,8 +3319,8 @@ def planta_actividades_sala(area_id):
         if previo:
             prev_id, prev_area = previo
             c.execute("""UPDATE actividades_sala
-                SET fin_at=datetime('now'),
-                    duracion_min=CAST((julianday(datetime('now'))-julianday(inicio_at))*24*60 AS INTEGER)
+                SET fin_at=datetime('now', '-5 hours'),
+                    duracion_min=CAST((julianday(datetime('now', '-5 hours'))-julianday(inicio_at))*24*60 AS INTEGER)
                 WHERE id=?""", (prev_id,))
             cerrado_previo = {'actividad_id': prev_id, 'area_id': prev_area}
         # Insertar actividad nueva
@@ -3399,8 +3399,8 @@ def planta_actividad_terminar(act_id):
     if row[3]:
         return jsonify({'ok': True, 'ya_cerrada': True})
     c.execute("""UPDATE actividades_sala
-        SET fin_at=datetime('now'),
-            duracion_min=CAST((julianday(datetime('now'))-julianday(inicio_at))*24*60 AS INTEGER),
+        SET fin_at=datetime('now', '-5 hours'),
+            duracion_min=CAST((julianday(datetime('now', '-5 hours'))-julianday(inicio_at))*24*60 AS INTEGER),
             observaciones=COALESCE(?, observaciones)
         WHERE id=?""", (obs, act_id))
     # Si no quedan actividades activas en la sala → marcar libre o sucia
@@ -3714,7 +3714,7 @@ def planta_centro_mando():
                      THEN (julianday(fin_real_at)-julianday(inicio_real_at))*24*60
                      ELSE NULL END) as ct_prom_min
         FROM produccion_programada
-        WHERE fecha_programada >= date('now','-30 day')
+        WHERE fecha_programada >= date('now', '-5 hours', '-30 day')
     """, (hoy, hoy)).fetchone()
     salas_libres = sum(1 for a in areas if a['estado'] == 'libre' and a['tipo']=='produccion')
     salas_sucias = sum(1 for a in areas if a['estado'] == 'sucia')
@@ -4202,7 +4202,7 @@ def listado_produccion_programada():
         LEFT JOIN operarios_planta oen ON oen.id = pp.operario_envasado_id
         LEFT JOIN operarios_planta oa  ON oa.id  = pp.operario_acondicionamiento_id
         WHERE LOWER(COALESCE(pp.estado,'')) NOT IN ('cancelado','completado')
-          AND pp.fecha_programada >= date('now','-7 day')
+          AND pp.fecha_programada >= date('now', '-5 hours', '-7 day')
         ORDER BY pp.fecha_programada ASC, pp.id ASC
     """).fetchall()
     out = [{
@@ -5001,7 +5001,7 @@ def _descontar_mee_envasado(c, produccion_id, lote, unidades_envasadas,
                        consumido_por = ?,
                        cantidad_consumida_real = ?,
                        consumido_contexto = 'envasado',
-                       actualizado_at = datetime('now')
+                       actualizado_at = datetime('now', '-5 hours')
                  WHERE id = ?
             """, (fecha_iso, user, cant_real, item_id))
             descontados.append({
@@ -5232,7 +5232,7 @@ def prog_completar_evento(evento_id):
                                consumido_por = ?,
                                cantidad_consumida_real = ?,
                                consumido_contexto = 'completar',
-                               actualizado_at = datetime('now')
+                               actualizado_at = datetime('now', '-5 hours')
                          WHERE id = ?
                     """, (fecha_iso, user, me['cantidad_unidades'], me['item_id']))
                 descontados_mees.append(me)
@@ -5794,13 +5794,13 @@ def prog_regenerar_oc():
             conn.execute("""INSERT INTO solicitudes_compra
                 (numero, fecha, estado, solicitante, urgencia, observaciones,
                  area, empresa, categoria, tipo, numero_oc)
-                VALUES (?, datetime('now'), 'Pendiente', ?, 'Alta', ?,
+                VALUES (?, datetime('now', '-5 hours'), 'Pendiente', ?, 'Alta', ?,
                         'Produccion', 'Espagiria', 'Materia Prima', 'Compra', ?)""",
                 (sol_numero, user, obs, num_oc))
 
             conn.execute("""INSERT INTO ordenes_compra
                 (numero_oc, fecha, estado, proveedor, valor_total, observaciones, creado_por, categoria)
-                VALUES (?, datetime('now'), 'Borrador', ?, 0, ?, ?, 'MP')""",
+                VALUES (?, datetime('now', '-5 hours'), 'Borrador', ?, 0, ?, ?, 'MP')""",
                 (num_oc, prov,
                  f"OC sugerida desde Centro Programación · {len(items)} MPs",
                  user))
@@ -5962,7 +5962,7 @@ def prog_generar_oc():
             conn.execute("""INSERT INTO solicitudes_compra
                 (numero, fecha, estado, solicitante, urgencia, observaciones,
                  area, empresa, categoria, tipo, numero_oc)
-                VALUES (?, datetime('now'), 'Pendiente', ?, 'Alta', ?,
+                VALUES (?, datetime('now', '-5 hours'), 'Pendiente', ?, 'Alta', ?,
                         'Produccion', 'Espagiria', 'Materia Prima', 'Compra', ?)""",
                 (sol_numero, user, obs, num_oc))
 
@@ -5970,7 +5970,7 @@ def prog_generar_oc():
             valor_estimado_total = 0
             conn.execute("""INSERT INTO ordenes_compra
                 (numero_oc, fecha, estado, proveedor, valor_total, observaciones, creado_por, categoria)
-                VALUES (?, datetime('now'), 'Borrador', ?, 0, ?, ?, 'MP')""",
+                VALUES (?, datetime('now', '-5 hours'), 'Borrador', ?, 0, ?, ?, 'MP')""",
                 (num_oc, prov,
                  f"OC sugerida desde Centro Programación · {len(items)} MPs",
                  user))
@@ -7524,7 +7524,7 @@ def planificacion_estrategica():
         local_rows = conn.execute(
             """SELECT producto, fecha_programada, lotes FROM produccion_programada
                WHERE estado NOT IN ('completado','cancelado')
-                 AND fecha_programada >= date('now', '-7 days')
+                 AND fecha_programada >= date('now', '-5 hours', '-7 days')
                  AND fecha_programada <= ?
                  AND COALESCE(origen,'manual') != 'calendar'
                ORDER BY fecha_programada""",
@@ -7875,7 +7875,7 @@ def planificacion_solicitar_bulk():
         import json as _json
         c.execute("""INSERT INTO audit_log
                      (usuario, accion, tabla, registro_id, detalle, ip, fecha)
-                     VALUES (?,?,?,?,?,?,datetime('now'))""",
+                     VALUES (?,?,?,?,?,?,datetime('now', '-5 hours'))""",
                   (user, 'PLANIFICACION_BULK_REQUEST', 'solicitudes_compra',
                    '_BULK_',
                    _json.dumps({
@@ -8070,7 +8070,7 @@ def planificacion_checklist_verificacion():
         import json as _json
         c.execute("""INSERT INTO audit_log
                      (usuario, accion, tabla, registro_id, detalle, ip, fecha)
-                     VALUES (?,?,?,?,?,?,datetime('now'))""",
+                     VALUES (?,?,?,?,?,?,datetime('now', '-5 hours'))""",
                   (session.get('compras_user', '') or 'sistema',
                    'PLANIFICACION_CHECKLIST_DOWNLOAD',
                    'planificacion', '_CHECKLIST_',
@@ -8201,7 +8201,7 @@ def _calcular_disponibilidad_mp(c, codigo_mp, fecha_horizonte=None):
             JOIN formula_items fi ON fi.producto_nombre = pp.producto
             WHERE fi.material_id = ?
               AND LOWER(COALESCE(pp.estado,'')) NOT IN ('cancelado','completado')
-              AND pp.fecha_programada >= date('now','-1 day')
+              AND pp.fecha_programada >= date('now', '-5 hours', '-1 day')
         """
         if fecha_horizonte:
             sql += " AND pp.fecha_programada <= ?"
@@ -8581,7 +8581,7 @@ def checklist_item_update(item_id):
             vals.append(d[f])
     if not sets:
         return jsonify({'error': 'Nada que actualizar'}), 400
-    sets.append("actualizado_at=datetime('now')")
+    sets.append("actualizado_at=datetime('now', '-5 hours')")
     sets.append("actualizado_por=?")
     vals.append(session.get('compras_user', 'sistema'))
     vals.append(item_id)
@@ -8659,7 +8659,7 @@ def checklist_item_solicitar(item_id):
     c.execute("""INSERT INTO solicitudes_compra
         (numero, fecha, estado, solicitante, email_solicitante, urgencia,
          observaciones, area, empresa, categoria, tipo)
-        VALUES (?,date('now'),'Pendiente',?,?,?,?,?,?,?,?)""",
+        VALUES (?,date('now', '-5 hours'),'Pendiente',?,?,?,?,?,?,?,?)""",
         (sol_num, user, user_email, 'Alta', descripcion,
          'Produccion', 'Espagiria', categoria,
          'Servicio' if categoria == 'Servicios' else 'Material'))
@@ -8680,8 +8680,8 @@ def checklist_item_solicitar(item_id):
     # Actualizar item del checklist
     c.execute("""UPDATE produccion_checklist
                  SET estado='solicitado', solicitud_numero=?,
-                     fecha_solicitud=date('now'),
-                     actualizado_at=datetime('now'), actualizado_por=?
+                     fecha_solicitud=date('now', '-5 hours'),
+                     actualizado_at=datetime('now', '-5 hours'), actualizado_por=?
                  WHERE id=?""",
               (sol_num, user, item_id))
     conn.commit()
@@ -9039,7 +9039,7 @@ def _sync_calendar_a_produccion_programada(conn, days_ahead=90,
                FROM produccion_programada
                WHERE 1=1 {origen_filter}
                  AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado')
-                 AND fecha_programada >= date('now','-14 days')"""
+                 AND fecha_programada >= date('now', '-5 hours', '-14 days')"""
         ).fetchall()
         huerfanos = []
         for r in candidatos:
@@ -9330,8 +9330,8 @@ def checklist_resumen_calendario():
             FROM produccion_programada pp
             LEFT JOIN formula_headers fh ON UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(pp.producto))
             WHERE LOWER(COALESCE(pp.estado,'')) NOT IN ('cancelado','completado')
-              AND pp.fecha_programada >= date('now','-30 day')
-              AND pp.fecha_programada <= date('now','+' || ? || ' day')
+              AND pp.fecha_programada >= date('now', '-5 hours', '-30 day')
+              AND pp.fecha_programada <= date('now', '-5 hours', '+' || ? || ' day')
             ORDER BY pp.fecha_programada ASC
         """, (horizonte,)).fetchall()
         cols = [x[0] for x in c.description]
@@ -9426,7 +9426,7 @@ def disponibilidad_mp_endpoint(codigo_mp):
             LEFT JOIN formula_headers fh ON UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(pp.producto))
             WHERE fi.material_id = ?
               AND LOWER(COALESCE(pp.estado,'')) NOT IN ('cancelado','completado')
-              AND pp.fecha_programada >= date('now','-1 day')
+              AND pp.fecha_programada >= date('now', '-5 hours', '-1 day')
               AND pp.fecha_programada <= ?
             ORDER BY pp.fecha_programada ASC
         """, (codigo_mp, fecha_h)).fetchall()
@@ -9473,7 +9473,7 @@ def checklist_backfill():
                 LEFT JOIN formula_headers fh
                        ON UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(pp.producto))
                 WHERE LOWER(COALESCE(pp.estado,'')) NOT IN ('cancelado','completado')
-                  AND pp.fecha_programada >= date('now','-30 day')
+                  AND pp.fecha_programada >= date('now', '-5 hours', '-30 day')
                   AND NOT EXISTS (SELECT 1 FROM produccion_checklist
                                   WHERE produccion_id=pp.id)
             """).fetchall()
@@ -9683,8 +9683,8 @@ def checklist_item_solicitar_produccion(item_id):
         UPDATE produccion_checklist SET
           solicitud_produccion_id=?,
           estado='solicitado',
-          fecha_solicitud=datetime('now'),
-          actualizado_at=datetime('now')
+          fecha_solicitud=datetime('now', '-5 hours'),
+          actualizado_at=datetime('now', '-5 hours')
         WHERE id=?
     """, (sol_id, item_id))
     conn.commit()
@@ -10065,7 +10065,7 @@ def solicitudes_compra_anticipada_decidir(sol_id):
     c.execute("""
         UPDATE solicitudes_compra_anticipada SET
           estado='decidida', decision=?, decidido_por=?,
-          fecha_decision=datetime('now'),
+          fecha_decision=datetime('now', '-5 hours'),
           proveedor=?, tarea_operativa_id=?, observaciones=?
         WHERE id=?
     """, (decision, user, proveedor, tarea_id, obs, sol_id))
@@ -10077,7 +10077,7 @@ def solicitudes_compra_anticipada_decidir(sol_id):
         UPDATE produccion_checklist SET
           estado=CASE WHEN ? IN ('inventario') THEN 'en_transito'
                       ELSE 'solicitado' END,
-          actualizado_at=datetime('now')
+          actualizado_at=datetime('now', '-5 hours')
         WHERE id=?
     """, (decision, sol[1]))
     conn.commit()
@@ -10174,7 +10174,7 @@ def tareas_operativas_completar(tarea_id):
         UPDATE tareas_operativas SET
           estado='completada',
           completado_por=?,
-          fecha_completado=datetime('now'),
+          fecha_completado=datetime('now', '-5 hours'),
           observaciones_cierre=?
         WHERE id=? AND estado IN ('pendiente','en_progreso')
     """, (user, obs, tarea_id))
@@ -10197,8 +10197,8 @@ def tareas_operativas_completar(tarea_id):
             c.execute("""
                 UPDATE produccion_checklist SET
                   estado='recibido',
-                  fecha_recibido=date('now'),
-                  actualizado_at=datetime('now')
+                  fecha_recibido=date('now', '-5 hours'),
+                  actualizado_at=datetime('now', '-5 hours')
                 WHERE id=?
             """, (checklist_item_id,))
     conn.commit()
@@ -10364,7 +10364,7 @@ def planta_presentaciones_crear():
               (producto_nombre, categoria, presentacion_codigo, etiqueta,
                volumen_ml, peso_g, envase_codigo, factor_g_por_unidad,
                sku_shopify, es_default, activo, notas, actualizado_en)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, datetime('now'))
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, datetime('now', '-5 hours'))
         """, (
             producto,
             (d.get('categoria') or '').strip() or None,
@@ -10390,7 +10390,7 @@ def planta_presentaciones_detail(pid):
     conn = get_db(); c = conn.cursor()
     if request.method == 'DELETE':
         # Soft delete (activo=0). No borramos para preservar referencias historicas.
-        c.execute("UPDATE producto_presentaciones SET activo=0, actualizado_en=datetime('now') WHERE id=?", (pid,))
+        c.execute("UPDATE producto_presentaciones SET activo=0, actualizado_en=datetime('now', '-5 hours') WHERE id=?", (pid,))
         conn.commit()
         return jsonify({'ok': True})
     # PUT
@@ -10411,7 +10411,7 @@ def planta_presentaciones_detail(pid):
             params.append(v)
     if not campos:
         return jsonify({'error': 'Sin cambios'}), 400
-    campos.append("actualizado_en = datetime('now')")
+    campos.append("actualizado_en = datetime('now', '-5 hours')")
     params.append(pid)
     c.execute(f"UPDATE producto_presentaciones SET {', '.join(campos)} WHERE id=?", params)
     conn.commit()
@@ -10446,7 +10446,7 @@ def planta_presentaciones_bulk_categoria():
                 INSERT INTO producto_presentaciones
                   (producto_nombre, categoria, presentacion_codigo, etiqueta,
                    volumen_ml, envase_codigo, es_default, activo, notas, actualizado_en)
-                VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, datetime('now'))
+                VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, datetime('now', '-5 hours'))
             """, (
                 producto, categoria, p['codigo'], p['etiqueta'],
                 p['volumen_ml'], p.get('envase_codigo') or None,
@@ -10545,7 +10545,7 @@ def planta_equipos_detail(eq_id):
         cols = [d[0] for d in c.description]
         return jsonify({'equipo': dict(zip(cols, r))})
     if request.method == 'DELETE':
-        c.execute("UPDATE equipos_planta SET activo=0, actualizado_en=datetime('now') WHERE id=?", (eq_id,))
+        c.execute("UPDATE equipos_planta SET activo=0, actualizado_en=datetime('now', '-5 hours') WHERE id=?", (eq_id,))
         conn.commit()
         return jsonify({'ok': True})
     # PUT
@@ -10565,7 +10565,7 @@ def planta_equipos_detail(eq_id):
             params.append(v)
     if not campos:
         return jsonify({'error': 'Sin cambios'}), 400
-    campos.append("actualizado_en = datetime('now')")
+    campos.append("actualizado_en = datetime('now', '-5 hours')")
     params.append(eq_id)
     c.execute(f"UPDATE equipos_planta SET {', '.join(campos)} WHERE id=?", params)
     conn.commit()
@@ -10766,16 +10766,16 @@ def _registrar_rotacion(c, rol, operario_id, user='auto-ia'):
     try:
         c.execute("""
             INSERT INTO rotacion_operarios_state (rol, ultimo_operario_id, ultimo_asignado_at, actualizado_por)
-            VALUES (?, ?, datetime('now'), ?)
+            VALUES (?, ?, datetime('now', '-5 hours'), ?)
             ON CONFLICT(rol) DO UPDATE SET
               ultimo_operario_id=excluded.ultimo_operario_id,
-              ultimo_asignado_at=datetime('now'),
+              ultimo_asignado_at=datetime('now', '-5 hours'),
               actualizado_por=excluded.actualizado_por
         """, (rol, operario_id, user))
     except Exception:
         # Fallback si SQLite vieja sin ON CONFLICT
         c.execute(
-            "UPDATE rotacion_operarios_state SET ultimo_operario_id=?, ultimo_asignado_at=datetime('now'), actualizado_por=? WHERE rol=?",
+            "UPDATE rotacion_operarios_state SET ultimo_operario_id=?, ultimo_asignado_at=datetime('now', '-5 hours'), actualizado_por=? WHERE rol=?",
             (operario_id, user, rol)
         )
 
@@ -11557,7 +11557,7 @@ def _gate_arrastre_pigmento(produccion, conn):
         FROM produccion_programada pp
         WHERE pp.area_id = ?
           AND pp.id != ?
-          AND pp.fecha_programada < COALESCE(?, date('now', '+1 days'))
+          AND pp.fecha_programada < COALESCE(?, date('now', '-5 hours', '+1 days'))
           AND pp.estado IN ('completado','en_proceso')
         ORDER BY pp.fecha_programada DESC LIMIT 1
     """, (produccion['area_id'], produccion['id'], produccion.get('fecha_programada'))).fetchone()
@@ -11956,7 +11956,7 @@ def planta_envasado_terminar(envasado_id):
     cur = c.execute("""
         UPDATE produccion_envasado SET
           estado='terminado',
-          terminado_at=datetime('now'),
+          terminado_at=datetime('now', '-5 hours'),
           terminado_por=?,
           unidades_envasadas=COALESCE(?, unidades_envasadas),
           notas=COALESCE(?, notas)
@@ -12081,7 +12081,7 @@ def planta_cola_liberacion_disposicion(item_id):
     antes = dict(antes_row)
     c.execute("""
         UPDATE cola_liberacion SET
-          disposicion=?, estado=?, aprobado_por=?, aprobado_at=datetime('now'),
+          disposicion=?, estado=?, aprobado_por=?, aprobado_at=datetime('now', '-5 hours'),
           notas=COALESCE(?, notas)
         WHERE id=?
     """, (disposicion, estado_nuevo, user, notas or None, item_id))
@@ -12125,7 +12125,7 @@ def planta_limpieza_calendario():
     cobertura = c.execute("""
         SELECT area_codigo, MAX(fecha) as ultima
         FROM limpieza_profunda_calendario
-        WHERE estado='completada' AND fecha >= date('now','-14 days')
+        WHERE estado='completada' AND fecha >= date('now', '-5 hours', '-14 days')
         GROUP BY area_codigo
     """).fetchall()
     return jsonify({
@@ -12155,7 +12155,7 @@ def planta_limpieza_generar():
 
     if d.get('reset'):
         c.execute(
-            "DELETE FROM limpieza_profunda_calendario WHERE estado='programada' AND fecha >= date('now')"
+            "DELETE FROM limpieza_profunda_calendario WHERE estado='programada' AND fecha >= date('now', '-5 hours')"
         )
 
     # Obtener orden de rotación según última limpieza por área
@@ -12244,12 +12244,12 @@ def planta_limpieza_completar(item_id):
     area_codigo = row[0]
     c.execute("""
         UPDATE limpieza_profunda_calendario SET
-          estado='completada', terminado_at=datetime('now'), terminado_por=?,
+          estado='completada', terminado_at=datetime('now', '-5 hours'), terminado_por=?,
           notas=COALESCE(?, notas)
         WHERE id=?
     """, (user, d.get('notas'), item_id))
     c.execute(
-        "UPDATE areas_planta SET ultima_limpieza_profunda=datetime('now') WHERE codigo=?",
+        "UPDATE areas_planta SET ultima_limpieza_profunda=datetime('now', '-5 hours') WHERE codigo=?",
         (area_codigo,)
     )
     c.execute("""
@@ -12470,10 +12470,10 @@ def planta_cronograma_areas():
     # ── ACOND · acondicionamiento (creado_en o fecha_inicio) ───────────
     try:
         rows = c.execute(f"""
-            SELECT date(COALESCE(creado_en, datetime('now'))) as fecha,
+            SELECT date(COALESCE(creado_en, datetime('now', '-5 hours'))) as fecha,
                    producto, lote, COALESCE(estado, '')
             FROM acondicionamiento
-            WHERE date(COALESCE(creado_en, datetime('now')))
+            WHERE date(COALESCE(creado_en, datetime('now', '-5 hours')))
                   BETWEEN ? AND ?
               AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado')
         """, (desde_iso, hasta_iso)).fetchall()
@@ -12741,7 +12741,7 @@ def planta_asignar_areas_listar():
 
     # Cargar producciones del horizonte (no completadas, no canceladas)
     where = """
-        WHERE pp.fecha_programada BETWEEN date('now') AND date('now', ?)
+        WHERE pp.fecha_programada BETWEEN date('now', '-5 hours') AND date('now', '-5 hours', ?)
           AND LOWER(COALESCE(pp.estado,'')) NOT IN ('completado','cancelado')
     """
     params = [f'+{dias} day']
@@ -12992,7 +12992,7 @@ def planta_plan_semanal():
         for (sku,) in sku_rows:
             vel = c.execute("""
                 SELECT COALESCE(SUM(cantidad),0)/60.0
-                FROM ordenes_shopify_items WHERE sku=? AND fecha >= date('now','-60 days')
+                FROM ordenes_shopify_items WHERE sku=? AND fecha >= date('now', '-5 hours', '-60 days')
             """, (sku,)).fetchone() if False else None  # legacy, may not exist
             # Stock PT
             sp = c.execute(
@@ -13226,7 +13226,7 @@ def planta_aceptar_produccion(produccion_id):
 
     # 4) Marcar produccion como confirmada (estado='confirmada' opcional)
     c.execute(
-        "UPDATE produccion_programada SET observaciones=COALESCE(observaciones,'')||'\n[ACEPTADA por '||?||' '||datetime('now')||']' WHERE id=?",
+        "UPDATE produccion_programada SET observaciones=COALESCE(observaciones,'')||'\n[ACEPTADA por '||?||' '||datetime('now', '-5 hours')||']' WHERE id=?",
         (user, produccion_id)
     )
     conn.commit()
@@ -13259,7 +13259,7 @@ def planta_preflight_confirmar_limpieza(produccion_id):
     if not pp or not pp[0]:
         return jsonify({'error': 'Producción sin área asignada'}), 400
     area_id = pp[0]
-    c.execute("UPDATE areas_planta SET ultima_limpieza_profunda=datetime('now') WHERE id=?", (area_id,))
+    c.execute("UPDATE areas_planta SET ultima_limpieza_profunda=datetime('now', '-5 hours') WHERE id=?", (area_id,))
     c.execute("""
         INSERT INTO area_eventos (area_id, tipo, produccion_id, usuario, nota)
         VALUES (?, 'fin_limpieza', ?, ?, ?)

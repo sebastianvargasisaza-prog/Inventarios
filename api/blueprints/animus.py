@@ -91,7 +91,7 @@ def animus_config():
         if request.method == "POST":
             data = request.json or {}
             for k, v in data.items():
-                conn.execute("INSERT OR REPLACE INTO animus_config(clave,valor,actualizado) VALUES(?,?,datetime('now'))", (k, v))
+                conn.execute("INSERT OR REPLACE INTO animus_config(clave,valor,actualizado) VALUES(?,?,datetime('now', '-5 hours'))", (k, v))
             conn.commit()
             return jsonify({"ok": True})
         rows = conn.execute("SELECT clave, CASE WHEN clave LIKE '%token%' OR clave LIKE '%key%' OR clave LIKE '%secret%' THEN '***' ELSE valor END as valor, actualizado FROM animus_config").fetchall()
@@ -131,7 +131,7 @@ def animus_sync(platform):
                     addr = o.get("billing_address") or {}
                     conn.execute("""INSERT OR REPLACE INTO animus_shopify_orders
                         (shopify_id,nombre,email,total,moneda,estado,estado_pago,sku_items,unidades_total,ciudad,pais,creado_en,synced_at)
-                        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,datetime('now'))""",
+                        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,datetime('now', '-5 hours'))""",
                         (str(o["id"]), o.get("name",""), o.get("email",""),
                          float(o.get("total_price",0)), o.get("currency","COP"),
                          o.get("fulfillment_status",""), o.get("financial_status",""),
@@ -165,7 +165,7 @@ def animus_sync(platform):
                     tags = json.dumps(c.get("tags", []))
                     conn.execute("""INSERT OR REPLACE INTO animus_ghl_contacts
                         (ghl_id,nombre,email,telefono,etiquetas,fuente,creado_en,synced_at)
-                        VALUES(?,?,?,?,?,?,?,datetime('now'))""",
+                        VALUES(?,?,?,?,?,?,?,datetime('now', '-5 hours'))""",
                         (c.get("id",""), f"{c.get('firstName','')} {c.get('lastName','')}".strip(),
                          c.get("email",""), c.get("phone",""), tags,
                          c.get("source",""), c.get("dateAdded","")[:10] if c.get("dateAdded") else ""))
@@ -191,7 +191,7 @@ def animus_sync(platform):
                 for p in posts:
                     conn.execute("""INSERT OR REPLACE INTO animus_instagram_posts
                         (instagram_id,tipo,descripcion,url_media,url_permalink,likes,comentarios,publicado_en,synced_at)
-                        VALUES(?,?,?,?,?,?,?,?,datetime('now'))""",
+                        VALUES(?,?,?,?,?,?,?,?,datetime('now', '-5 hours'))""",
                         (p.get("id",""), p.get("media_type",""),
                          (p.get("caption","") or "")[:500],
                          p.get("media_url",""), p.get("permalink",""),
@@ -549,7 +549,7 @@ DON'Ts: No comparar con otras marcas, no hacer claims médicos
 
         # Guardar en BD
         c.execute("""INSERT INTO animus_contenido_generado(sku,tipo,plataforma,tono,contenido,generado_por,creado_en)
-            VALUES(?,?,?,?,?,?,datetime('now'))""",
+            VALUES(?,?,?,?,?,?,datetime('now', '-5 hours'))""",
             (sku, tipo, tipo.split("_")[0] if "_" in tipo else tipo, tono, contenido, u))
         conn.commit()
 
@@ -1288,7 +1288,7 @@ def aplicar_ajuste_conteo(conteo_id):
         c.execute("""INSERT INTO movimientos
             (material_id, material_nombre, tipo, cantidad, fecha,
              observaciones, operador, estado_lote)
-            VALUES (?,?,?,?,date('now'),?,?,'OK')""",
+            VALUES (?,?,?,?,date('now', '-5 hours'),?,?,'OK')""",
             (sku, producto, tipo_mov, cantidad_abs,
              f'Ajuste conteo ciclico Animus #{conteo_id}: {explicacion}',
              u or 'sistema_animus'))
@@ -1609,7 +1609,7 @@ def animus_inv_fisico_asignar_hoy():
     # ¿Ya hay asignaciones pendientes para hoy?
     pendientes = c.execute("""
         SELECT sku FROM animus_conteos_asignados
-         WHERE fecha_asignado = date('now') AND estado = 'pendiente'
+         WHERE fecha_asignado = date('now', '-5 hours') AND estado = 'pendiente'
     """).fetchall()
     if pendientes:
         return jsonify({
@@ -1632,7 +1632,7 @@ def animus_inv_fisico_asignar_hoy():
         volatilidad AS (
             SELECT sku, COUNT(*) as movs
               FROM animus_inventario_movimientos
-             WHERE fecha >= date('now', '-7 day')
+             WHERE fecha >= date('now', '-5 hours', '-7 day')
              GROUP BY sku
         )
         SELECT b.sku,
@@ -1735,21 +1735,21 @@ def animus_inv_fisico_conteo_registrar(asig_id):
     c.execute("""UPDATE animus_conteos_asignados
                  SET cantidad_fisica=?, cantidad_esperada=?,
                      diferencia=?, motivo_diferencia=?,
-                     estado='contado', contado_en=datetime('now')
+                     estado='contado', contado_en=datetime('now', '-5 hours')
                  WHERE id=?""",
               (fisica, esperado, diferencia, motivo, asig_id))
 
     # Registrar movimiento CONTEO
     c.execute("""INSERT INTO animus_inventario_movimientos
                  (sku, tipo, cantidad, fecha, origen, motivo, usuario)
-                 VALUES (?, 'CONTEO', ?, date('now'), ?, ?, ?)""",
+                 VALUES (?, 'CONTEO', ?, date('now', '-5 hours'), ?, ?, ?)""",
               (asig['sku'], fisica, 'conteo_ciclico', motivo, u))
 
     # Si aplicar_ajuste, agregar AJUSTE para que esperado matchee con fisica
     if aplicar_ajuste and diferencia != 0:
         c.execute("""INSERT INTO animus_inventario_movimientos
                      (sku, tipo, cantidad, fecha, origen, motivo, usuario)
-                     VALUES (?, 'AJUSTE', ?, date('now'), 'conteo_ajuste', ?, ?)""",
+                     VALUES (?, 'AJUSTE', ?, date('now', '-5 hours'), 'conteo_ajuste', ?, ?)""",
                   (asig['sku'], diferencia, motivo or 'Ajuste por conteo ciclico', u))
 
     audit_log(c, usuario=u, accion='ANIMUS_CONTEO_REGISTRAR',
@@ -1796,7 +1796,7 @@ def animus_inv_fisico_conteo_historial():
           COALESCE(SUM(CASE WHEN diferencia < 0 THEN -diferencia ELSE 0 END),0) as faltantes,
           COALESCE(SUM(CASE WHEN diferencia > 0 THEN diferencia ELSE 0 END),0) as sobrantes
         FROM animus_conteos_asignados
-        WHERE estado = 'contado' AND contado_en >= date('now','-30 day')
+        WHERE estado = 'contado' AND contado_en >= date('now', '-5 hours', '-30 day')
     """).fetchone()
     return jsonify({
         "historial": rows,
@@ -1826,7 +1826,7 @@ def animus_inv_fisico_sembrar_baselines():
     # SKUs vendidos en Shopify
     skus_shopify = set()
     rows = c.execute(f"""SELECT sku_items FROM animus_shopify_orders
-                         WHERE creado_en >= date('now','-{dias} day')
+                         WHERE creado_en >= date('now', '-5 hours', '-{dias} day')
                            AND sku_items IS NOT NULL AND sku_items != ''""").fetchall()
     for r in rows:
         try:
@@ -1902,7 +1902,7 @@ def animus_inv_fisico_diagnostico():
           COALESCE(SUM(CASE WHEN diferencia < 0 THEN -diferencia ELSE 0 END),0) as faltantes,
           COALESCE(SUM(CASE WHEN diferencia > 0 THEN diferencia ELSE 0 END),0) as sobrantes
         FROM animus_conteos_asignados
-        WHERE estado = 'contado' AND contado_en >= date('now','-30 day')
+        WHERE estado = 'contado' AND contado_en >= date('now', '-5 hours', '-30 day')
     """).fetchone()
     kpis = dict(kpis_row) if kpis_row else {
         'total_conteos': 0, 'con_dif': 0, 'faltantes': 0, 'sobrantes': 0
@@ -1916,7 +1916,7 @@ def animus_inv_fisico_diagnostico():
                COALESCE(SUM(diferencia),0) as suma_dif,
                COALESCE(SUM(CASE WHEN diferencia<0 THEN -diferencia ELSE diferencia END),0) as abs_dif
           FROM animus_conteos_asignados
-         WHERE estado = 'contado' AND contado_en >= date('now','-90 day')
+         WHERE estado = 'contado' AND contado_en >= date('now', '-5 hours', '-90 day')
          GROUP BY sku
          HAVING abs_dif > 0
          ORDER BY abs_dif DESC
@@ -1969,7 +1969,7 @@ def animus_inv_fisico_diagnostico():
     # SKUs vendidos en Shopify sin baseline
     skus_shopify = set()
     for r in c.execute("""SELECT sku_items FROM animus_shopify_orders
-                          WHERE creado_en >= date('now','-30 day')
+                          WHERE creado_en >= date('now', '-5 hours', '-30 day')
                             AND sku_items IS NOT NULL""").fetchall():
         try:
             for it in (json.loads(r['sku_items']) or []):

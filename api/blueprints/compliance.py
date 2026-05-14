@@ -58,7 +58,7 @@ def cronogramas_listar():
                   AND strftime('%Y', e.fecha_planeada)=?) as vencidas,
                (SELECT COUNT(*) FROM cronograma_ejecuciones e
                 WHERE e.cronograma_id=c.id AND e.estado='pendiente'
-                  AND e.fecha_planeada >= date('now')) as proximas
+                  AND e.fecha_planeada >= date('now', '-5 hours')) as proximas
         FROM cronogramas_bpm c
         WHERE c.activo=1
         ORDER BY c.codigo
@@ -134,7 +134,7 @@ def cronograma_marcar_cumplido(ej_id):
     d = request.get_json(force=True, silent=True) or {}
     conn = get_db(); c = conn.cursor()
     cur = c.execute("""UPDATE cronograma_ejecuciones
-        SET estado='ejecutado', fecha_real=date('now'), ejecutado_por=?,
+        SET estado='ejecutado', fecha_real=date('now', '-5 hours'), ejecutado_por=?,
             evidencia_url=COALESCE(?, evidencia_url),
             observaciones=COALESCE(?, observaciones)
         WHERE id=?""", (user,
@@ -503,7 +503,7 @@ def compliance_kpis():
     hall_total = conn.execute("SELECT COUNT(*) FROM hallazgos WHERE estado!='cerrado' AND estado!='rechazado'").fetchone()[0]
     hall_venc = conn.execute(
         "SELECT COUNT(*) FROM hallazgos WHERE estado!='cerrado' AND estado!='rechazado' "
-        "AND fecha_limite < date('now')"
+        "AND fecha_limite < date('now', '-5 hours')"
     ).fetchone()[0]
     hall_invima = conn.execute(
         "SELECT COUNT(*) FROM hallazgos WHERE origen='INVIMA' AND estado!='cerrado'"

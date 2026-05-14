@@ -128,11 +128,11 @@ def aseguramiento_dashboard():
             SELECT
               COUNT(CASE WHEN estado='vigente' THEN 1 END) as vigentes,
               COUNT(CASE WHEN estado='vigente'
-                          AND date(proxima_revision) <= date('now','+30 days')
-                          AND date(proxima_revision) >= date('now')
+                          AND date(proxima_revision) <= date('now', '-5 hours', '+30 days')
+                          AND date(proxima_revision) >= date('now', '-5 hours')
                        THEN 1 END) as vencen_30d,
               COUNT(CASE WHEN estado='vigente'
-                          AND date(proxima_revision) < date('now')
+                          AND date(proxima_revision) < date('now', '-5 hours')
                        THEN 1 END) as vencidos,
               COUNT(CASE WHEN estado='obsoleto' THEN 1 END) as obsoletos,
               COUNT(CASE WHEN estado='conflicto' THEN 1 END) as conflictos,
@@ -157,7 +157,7 @@ def aseguramiento_dashboard():
               COUNT(CASE WHEN estado IN ('asignada','leida') THEN 1 END) as pendientes,
               COUNT(CASE WHEN estado='vencida' THEN 1 END) as vencidas,
               COUNT(CASE WHEN estado IN ('firmada','aprobada')
-                          AND date(firmado_at) >= date('now','-30 days')
+                          AND date(firmado_at) >= date('now', '-5 hours', '-30 days')
                        THEN 1 END) as firmadas_30d
             FROM sgd_capacitaciones
         """).fetchone()
@@ -182,7 +182,7 @@ def aseguramiento_dashboard():
     try:
         a = c.execute("""
             SELECT COUNT(*) FROM auditorias
-            WHERE date(fecha) BETWEEN date('now') AND date('now','+60 days')
+            WHERE date(fecha) BETWEEN date('now', '-5 hours') AND date('now', '-5 hours', '+60 days')
               AND COALESCE(estado,'programada') NOT IN ('completada','cancelada')
         """).fetchone()
         out['auditorias_60d'] = a[0] or 0
@@ -199,7 +199,7 @@ def aseguramiento_dashboard():
                           AND estado NOT IN ('cerrada','rechazada') THEN 1 END) as criticas_abiertas,
               COUNT(CASE WHEN estado IN ('en_investigacion','clasificada') THEN 1 END) as investigando,
               COUNT(CASE WHEN estado='cerrada'
-                          AND date(fecha_cierre) >= date('now','-30 days') THEN 1 END) as cerradas_30d
+                          AND date(fecha_cierre) >= date('now', '-5 hours', '-30 days') THEN 1 END) as cerradas_30d
             FROM desviaciones
         """).fetchone()
         out['desviaciones'] = {
@@ -221,7 +221,7 @@ def aseguramiento_dashboard():
                           AND estado NOT IN ('cerrado','rechazado')
                           AND notificacion_invima_at IS NULL THEN 1 END) as invima_pendiente,
               COUNT(CASE WHEN estado='cerrado'
-                          AND date(fecha_cierre) >= date('now','-30 days') THEN 1 END) as cerrados_30d
+                          AND date(fecha_cierre) >= date('now', '-5 hours', '-30 days') THEN 1 END) as cerrados_30d
             FROM control_cambios
         """).fetchone()
         out['cambios'] = {
@@ -242,7 +242,7 @@ def aseguramiento_dashboard():
               COUNT(CASE WHEN (severidad='critica' OR impacto_salud=1)
                           AND estado NOT IN ('cerrada','rechazada') THEN 1 END) as criticas_abiertas,
               COUNT(CASE WHEN estado='cerrada'
-                          AND date(fecha_cierre) >= date('now','-30 days') THEN 1 END) as cerradas_30d
+                          AND date(fecha_cierre) >= date('now', '-5 hours', '-30 days') THEN 1 END) as cerradas_30d
             FROM quejas_clientes
         """).fetchone()
         out['quejas'] = {
@@ -265,7 +265,7 @@ def aseguramiento_dashboard():
                           AND notificacion_invima_at IS NULL THEN 1 END) as invima_pendiente,
               COUNT(CASE WHEN estado='en_recoleccion' THEN 1 END) as en_recoleccion,
               COUNT(CASE WHEN estado='cerrado'
-                          AND date(fecha_cierre) >= date('now','-30 days') THEN 1 END) as cerrados_30d
+                          AND date(fecha_cierre) >= date('now', '-5 hours', '-30 days') THEN 1 END) as cerrados_30d
             FROM recalls
         """).fetchone()
         out['recalls'] = {
@@ -293,7 +293,7 @@ def aseguramiento_dashboard():
         for r in c.execute("""
             SELECT codigo, descripcion FROM desviaciones
             WHERE clasificacion='critica' AND estado IN ('clasificada','detectada')
-              AND date(fecha_deteccion) <= date('now','-2 days')
+              AND date(fecha_deteccion) <= date('now', '-5 hours', '-2 days')
             LIMIT 3
         """).fetchall():
             alertas.append({'tipo': 'desviacion_critica_sin_investigar', 'severidad': 'critica',
@@ -303,7 +303,7 @@ def aseguramiento_dashboard():
         for r in c.execute("""
             SELECT codigo, cliente_nombre FROM quejas_clientes
             WHERE impacto_salud=1 AND estado IN ('nueva','en_triaje','en_investigacion')
-              AND date(fecha_recepcion) <= date('now','-2 days')
+              AND date(fecha_recepcion) <= date('now', '-5 hours', '-2 days')
             LIMIT 3
         """).fetchall():
             alertas.append({'tipo': 'queja_salud_sin_responder', 'severidad': 'critica',
@@ -314,7 +314,7 @@ def aseguramiento_dashboard():
             SELECT codigo, titulo FROM control_cambios
             WHERE requiere_invima=1 AND notificacion_invima_at IS NULL
               AND estado IN ('aprobado','en_implementacion')
-              AND date(aprobado_at) <= date('now','-3 days')
+              AND date(aprobado_at) <= date('now', '-5 hours', '-3 days')
             LIMIT 3
         """).fetchall():
             alertas.append({'tipo': 'cambio_invima_pendiente', 'severidad': 'critica',
@@ -360,8 +360,8 @@ def sgd_listado():
                     proxima_revision, archivo_pdf_url,
                     elaborado_por, revisado_por, aprobado_por,
                     CASE
-                      WHEN estado = 'vigente' AND date(proxima_revision) < date('now') THEN 'vencido'
-                      WHEN estado = 'vigente' AND date(proxima_revision) <= date('now','+30 days') THEN 'vence_pronto'
+                      WHEN estado = 'vigente' AND date(proxima_revision) < date('now', '-5 hours') THEN 'vencido'
+                      WHEN estado = 'vigente' AND date(proxima_revision) <= date('now', '-5 hours', '+30 days') THEN 'vence_pronto'
                       ELSE estado
                     END as estado_efectivo
              FROM sgd_documentos"""
@@ -518,7 +518,7 @@ def sgd_crear_o_actualizar():
                   archivo_pdf_url=?, archivo_origen=?, fecha_creacion=?,
                   fecha_aprobacion=?, vigente_desde=?, proxima_revision=?,
                   estado=?, elaborado_por=?, revisado_por=?, aprobado_por=?,
-                  observaciones=?, actualizado_en=datetime('now')
+                  observaciones=?, actualizado_en=datetime('now', '-5 hours')
                 WHERE codigo=?
             """, (area, tipo_doc, numero, subtipo, padre_codigo,
                   titulo, d.get('descripcion'), version,
@@ -587,7 +587,7 @@ def sgd_actualizar_pdf(codigo):
         return jsonify({'error': 'documento no encontrado'}), 404
     c.execute("""
         UPDATE sgd_documentos
-        SET archivo_pdf_url=?, actualizado_en=datetime('now')
+        SET archivo_pdf_url=?, actualizado_en=datetime('now', '-5 hours')
         WHERE codigo=?
     """, (url or None, codigo))
     _audit_log(c, usuario=user, accion='SGD_PDF', tabla='sgd_documentos',
@@ -732,7 +732,7 @@ def sgd_conflicto_resolver(conflicto_id):
     r = c.execute("""
         UPDATE sgd_conflictos
         SET estado='resuelto', resolucion=?, resuelto_por=?,
-            resuelto_at=datetime('now')
+            resuelto_at=datetime('now', '-5 hours')
         WHERE id=?
     """, (resolucion, user, conflicto_id))
     if r.rowcount == 0:
@@ -825,8 +825,8 @@ def capacitaciones_firmar():
     conn = get_db(); c = conn.cursor()
     r = c.execute("""
         UPDATE sgd_capacitaciones
-        SET leido_at=COALESCE(leido_at, datetime('now')),
-            firmado_at=datetime('now'),
+        SET leido_at=COALESCE(leido_at, datetime('now', '-5 hours')),
+            firmado_at=datetime('now', '-5 hours'),
             firma_hash=?,
             estado='firmada'
         WHERE sgd_codigo=? AND sgd_version=? AND persona_username=?
@@ -892,7 +892,7 @@ def desviaciones_endpoint():
                   (codigo, fecha_deteccion, hora_deteccion, detectado_por,
                    tipo, area_origen, descripcion, contencion_inmediata,
                    impacto_producto, lotes_afectados, estado)
-                VALUES (?, date('now'), ?, ?, ?, ?, ?, ?, ?, ?, 'detectada')
+                VALUES (?, date('now', '-5 hours'), ?, ?, ?, ?, ?, ?, ?, ?, 'detectada')
             """, (cod,
                   (d.get('hora_deteccion') or datetime.now().strftime('%H:%M')),
                   user, tipo,
@@ -1041,8 +1041,8 @@ def desviacion_clasificar(desv_id):
     c.execute("""
         UPDATE desviaciones
         SET clasificacion=?, justificacion_clasificacion=?,
-            clasificado_por=?, clasificado_at=datetime('now'),
-            estado='clasificada', actualizado_en=datetime('now')
+            clasificado_por=?, clasificado_at=datetime('now', '-5 hours'),
+            estado='clasificada', actualizado_en=datetime('now', '-5 hours')
         WHERE id=?
     """, (clasif, just, user, desv_id))
     c.execute("""
@@ -1077,8 +1077,8 @@ def desviacion_investigar(desv_id):
     c.execute("""
         UPDATE desviaciones
         SET metodo_investigacion=?, causa_raiz_descripcion=?,
-            investigado_por=?, investigacion_at=datetime('now'),
-            estado='en_investigacion', actualizado_en=datetime('now')
+            investigado_por=?, investigacion_at=datetime('now', '-5 hours'),
+            estado='en_investigacion', actualizado_en=datetime('now', '-5 hours')
         WHERE id=?
     """, (metodo, causa, user, desv_id))
     c.execute("""
@@ -1114,7 +1114,7 @@ def desviacion_capa(desv_id):
     c.execute("""
         UPDATE desviaciones
         SET capa_descripcion=?, capa_responsable=?, capa_fecha_limite=?,
-            estado='capa_propuesto', actualizado_en=datetime('now')
+            estado='capa_propuesto', actualizado_en=datetime('now', '-5 hours')
         WHERE id=?
     """, (capa, responsable, fecha_limite, desv_id))
     c.execute("""
@@ -1161,10 +1161,10 @@ def desviacion_cerrar(desv_id):
     efectividad_ok = bool(d.get('efectividad_ok'))
     c.execute("""
         UPDATE desviaciones
-        SET estado='cerrada', fecha_cierre=date('now'), cerrado_por=?,
-            verificacion_efectividad=?, verificado_at=datetime('now'), verificado_por=?,
+        SET estado='cerrada', fecha_cierre=date('now', '-5 hours'), cerrado_por=?,
+            verificacion_efectividad=?, verificado_at=datetime('now', '-5 hours'), verificado_por=?,
             efectividad_ok=?, observaciones_cierre=?,
-            actualizado_en=datetime('now')
+            actualizado_en=datetime('now', '-5 hours')
         WHERE id=?
     """, (user, verificacion, user, 1 if efectividad_ok else 0,
           obs[:500] or None, desv_id))
@@ -1264,7 +1264,7 @@ def cambios_endpoint():
                   (codigo, fecha_solicitud, solicitado_por, tipo, titulo,
                    descripcion, justificacion, areas_afectadas,
                    impacto_bpm, impacto_regulatorio, estado)
-                VALUES (?, date('now'), ?, ?, ?, ?, ?, ?, ?, ?, 'solicitado')
+                VALUES (?, date('now', '-5 hours'), ?, ?, ?, ?, ?, ?, ?, ?, 'solicitado')
             """, (cod, user, tipo, titulo[:200], descripcion[:3000],
                   (d.get('justificacion') or '')[:1000],
                   (d.get('areas_afectadas') or '')[:300],
@@ -1394,8 +1394,8 @@ def cambio_evaluar(cid):
     c.execute("""
         UPDATE control_cambios
         SET severidad=?, evaluacion_descripcion=?, evaluado_por=?,
-            evaluado_at=datetime('now'), requiere_invima=?,
-            estado='en_evaluacion', actualizado_en=datetime('now')
+            evaluado_at=datetime('now', '-5 hours'), requiere_invima=?,
+            estado='en_evaluacion', actualizado_en=datetime('now', '-5 hours')
         WHERE id=?
     """, (severidad, eval_desc, user, 1 if requiere_invima else 0, cid))
     c.execute("""
@@ -1438,10 +1438,10 @@ def cambio_aprobar(cid):
 
     c.execute("""
         UPDATE control_cambios
-        SET aprobado_por=?, aprobado_at=datetime('now'),
+        SET aprobado_por=?, aprobado_at=datetime('now', '-5 hours'),
             aprobacion_observaciones=?, plan_implementacion=?,
             fecha_implementacion_propuesta=?, responsable_implementacion=?,
-            estado=?, actualizado_en=datetime('now')
+            estado=?, actualizado_en=datetime('now', '-5 hours')
         WHERE id=?
     """, (user, obs, plan, fecha_imp, responsable, nuevo_estado, cid))
     c.execute("""
@@ -1491,8 +1491,8 @@ def cambio_notificar_invima(cid):
         return jsonify({'error': 'este cambio no requiere INVIMA'}), 400
     c.execute("""
         UPDATE control_cambios
-        SET notificacion_invima_at=datetime('now'),
-            notificacion_invima_ref=?, actualizado_en=datetime('now')
+        SET notificacion_invima_at=datetime('now', '-5 hours'),
+            notificacion_invima_ref=?, actualizado_en=datetime('now', '-5 hours')
         WHERE id=?
     """, (ref[:200], cid))
     c.execute("""
@@ -1535,8 +1535,8 @@ def cambio_implementar(cid):
         return jsonify({'error': f'no se puede implementar en estado {estado_ant}'}), 409
     c.execute("""
         UPDATE control_cambios
-        SET implementado_at=datetime('now'), implementado_por=?,
-            estado='implementado', actualizado_en=datetime('now')
+        SET implementado_at=datetime('now', '-5 hours'), implementado_por=?,
+            estado='implementado', actualizado_en=datetime('now', '-5 hours')
         WHERE id=?
     """, (user, cid))
     c.execute("""
@@ -1576,10 +1576,10 @@ def cambio_cerrar(cid):
 
     c.execute("""
         UPDATE control_cambios
-        SET verificacion_post=?, verificado_por=?, verificado_at=datetime('now'),
+        SET verificacion_post=?, verificado_por=?, verificado_at=datetime('now', '-5 hours'),
             verificacion_ok=?, observaciones_cierre=?,
-            estado='cerrado', fecha_cierre=date('now'), cerrado_por=?,
-            actualizado_en=datetime('now')
+            estado='cerrado', fecha_cierre=date('now', '-5 hours'), cerrado_por=?,
+            actualizado_en=datetime('now', '-5 hours')
         WHERE id=?
     """, (verif, user, 1 if d.get('verificacion_ok') else 0,
           obs[:500] or None, user, cid))
@@ -1656,7 +1656,7 @@ def quejas_endpoint():
                    cliente_nombre, cliente_contacto, cliente_tipo,
                    producto, lote, fecha_compra, establecimiento_compra,
                    tipo_queja, descripcion, impacto_salud, estado)
-                VALUES (?, date('now'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'nueva')
+                VALUES (?, date('now', '-5 hours'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'nueva')
             """, (cod, user, canal,
                   cliente_nombre[:200],
                   (d.get('cliente_contacto') or '')[:200],
@@ -1831,7 +1831,7 @@ def queja_triaje(qid):
                 INSERT INTO desviaciones
                   (codigo, fecha_deteccion, detectado_por, tipo, area_origen,
                    descripcion, impacto_producto, lotes_afectados, estado)
-                VALUES (?, date('now'), ?, ?, ?, ?, ?, ?, 'detectada')
+                VALUES (?, date('now', '-5 hours'), ?, ?, ?, ?, ?, ?, 'detectada')
             """, (cod_desv, user, tipo_desv, 'Quejas',
                   desv_descripcion,
                   1 if impacto_salud else 0,
@@ -1856,10 +1856,10 @@ def queja_triaje(qid):
     c.execute("""
         UPDATE quejas_clientes
         SET severidad=?, triaje_descripcion=?, triaje_por=?,
-            triaje_at=datetime('now'),
+            triaje_at=datetime('now', '-5 hours'),
             requiere_desviacion=?, requiere_recall=?,
             desviacion_id=?,
-            estado='en_triaje', actualizado_en=datetime('now')
+            estado='en_triaje', actualizado_en=datetime('now', '-5 hours')
         WHERE id=?
     """, (severidad, triaje_desc, user,
           1 if requiere_desv else 0, 1 if requiere_recall else 0,
@@ -1917,8 +1917,8 @@ def queja_investigar(qid):
         return jsonify({'error': f'no se puede investigar en estado {estado_ant}'}), 409
     c.execute("""
         UPDATE quejas_clientes
-        SET causa_raiz=?, investigacion_por=?, investigacion_at=datetime('now'),
-            estado='en_investigacion', actualizado_en=datetime('now')
+        SET causa_raiz=?, investigacion_por=?, investigacion_at=datetime('now', '-5 hours'),
+            estado='en_investigacion', actualizado_en=datetime('now', '-5 hours')
         WHERE id=?
     """, (causa[:2000], user, qid))
     c.execute("""
@@ -1954,9 +1954,9 @@ def queja_responder(qid):
     c.execute("""
         UPDATE quejas_clientes
         SET respuesta_descripcion=?, respuesta_canal=?,
-            respondido_por=?, respondido_at=datetime('now'),
+            respondido_por=?, respondido_at=datetime('now', '-5 hours'),
             fecha_compromiso=?, estado='respondida',
-            actualizado_en=datetime('now')
+            actualizado_en=datetime('now', '-5 hours')
         WHERE id=?
     """, (resp_desc[:2000], canal_resp, user, fecha_comp, qid))
     c.execute("""
@@ -1993,8 +1993,8 @@ def queja_cerrar(qid):
     c.execute("""
         UPDATE quejas_clientes
         SET cliente_satisfecho=?, accion_correctiva=?, observaciones_cierre=?,
-            estado='cerrada', fecha_cierre=date('now'), cerrado_por=?,
-            actualizado_en=datetime('now')
+            estado='cerrada', fecha_cierre=date('now', '-5 hours'), cerrado_por=?,
+            actualizado_en=datetime('now', '-5 hours')
         WHERE id=?
     """, (1 if d.get('cliente_satisfecho') else 0, accion[:2000],
           obs[:500] or None, user, qid))
@@ -2132,7 +2132,7 @@ def mis_tareas():
                        CAST(julianday('now') - julianday(fecha_deteccion) AS INTEGER) as dias
                 FROM desviaciones
                 WHERE estado='detectada'
-                  AND date(fecha_deteccion) <= date('now')
+                  AND date(fecha_deteccion) <= date('now', '-5 hours')
                 ORDER BY fecha_deteccion ASC LIMIT 20
             """).fetchall():
                 out['calidad_queue'].append({
@@ -2297,7 +2297,7 @@ def recalls_endpoint():
                    desviacion_id, queja_id, producto, lotes_afectados,
                    cantidad_fabricada, cantidad_distribuida,
                    motivo, riesgo_descripcion, estado)
-                VALUES (?, date('now'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'iniciado')
+                VALUES (?, date('now', '-5 hours'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'iniciado')
             """, (cod, user, origen,
                   (d.get('origen_referencia') or '')[:200],
                   d.get('desviacion_id'),
@@ -2442,8 +2442,8 @@ def recall_clasificar(rid):
     c.execute("""
         UPDATE recalls
         SET clase_recall=?, alcance_geografico=?, justificacion_clasificacion=?,
-            clasificado_por=?, clasificado_at=datetime('now'),
-            estado='clasificado', actualizado_en=datetime('now')
+            clasificado_por=?, clasificado_at=datetime('now', '-5 hours'),
+            estado='clasificado', actualizado_en=datetime('now', '-5 hours')
         WHERE id=?
     """, (clase, alcance, just, user, rid))
     c.execute("""
@@ -2491,9 +2491,9 @@ def recall_notificar_invima(rid):
         return jsonify({'error': f'no se puede notificar INVIMA en estado {estado_ant} · clasificar primero'}), 409
     c.execute("""
         UPDATE recalls
-        SET notificacion_invima_at=datetime('now'),
+        SET notificacion_invima_at=datetime('now', '-5 hours'),
             notificacion_invima_ref=?, notificacion_invima_por=?,
-            estado='invima_notificado', actualizado_en=datetime('now')
+            estado='invima_notificado', actualizado_en=datetime('now', '-5 hours')
         WHERE id=?
     """, (ref[:200], user, rid))
     c.execute("""
@@ -2527,11 +2527,11 @@ def recall_notificar_distribuidores(rid):
         return jsonify({'error': f'INVIMA debe estar notificado primero · estado {estado_ant}'}), 409
     c.execute("""
         UPDATE recalls
-        SET notificacion_distribuidores_at=datetime('now'),
+        SET notificacion_distribuidores_at=datetime('now', '-5 hours'),
             distribuidores_notificados=?, notificacion_distribuidores_por=?,
             estado=CASE WHEN estado='en_recoleccion' THEN 'en_recoleccion'
                           ELSE 'distribuidores_notificados' END,
-            actualizado_en=datetime('now')
+            actualizado_en=datetime('now', '-5 hours')
         WHERE id=?
     """, (distribuidores[:2000], user, rid))
     c.execute("""
@@ -2572,9 +2572,9 @@ def recall_recoleccion(rid):
     c.execute("""
         UPDATE recalls
         SET cantidad_recolectada=?,
-            recoleccion_inicio_at=COALESCE(recoleccion_inicio_at, datetime('now')),
-            recoleccion_completada_at=CASE WHEN ? THEN datetime('now') ELSE recoleccion_completada_at END,
-            estado=?, actualizado_en=datetime('now')
+            recoleccion_inicio_at=COALESCE(recoleccion_inicio_at, datetime('now', '-5 hours')),
+            recoleccion_completada_at=CASE WHEN ? THEN datetime('now', '-5 hours') ELSE recoleccion_completada_at END,
+            estado=?, actualizado_en=datetime('now', '-5 hours')
         WHERE id=?
     """, (cantidad, 1 if completa else 0, nuevo_estado, rid))
     c.execute("""
@@ -2624,8 +2624,8 @@ def recall_cerrar(rid):
         SET disposicion_final=?, disposicion_descripcion=?,
             efectividad_porcentaje=?, efectividad_descripcion=?,
             observaciones_cierre=?, estado='cerrado',
-            fecha_cierre=date('now'), cerrado_por=?,
-            actualizado_en=datetime('now')
+            fecha_cierre=date('now', '-5 hours'), cerrado_por=?,
+            actualizado_en=datetime('now', '-5 hours')
         WHERE id=?
     """, (disposicion, disp_desc[:1000],
           efectividad, ef_desc[:1000] or None,

@@ -29,7 +29,7 @@ def _init_tecnica():
         fecha_version    TEXT,
         descripcion      TEXT,
         creado_por       TEXT,
-        fecha_creacion   TEXT DEFAULT (date('now'))
+        fecha_creacion   TEXT DEFAULT (date('now', '-5 hours'))
     )""")
     c.execute("""CREATE TABLE IF NOT EXISTS fichas_tecnicas (
         id                  INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -38,7 +38,7 @@ def _init_tecnica():
         formula_id          INTEGER,
         version             TEXT DEFAULT '1.0',
         estado              TEXT DEFAULT 'Vigente',
-        fecha_actualizacion TEXT DEFAULT (date('now')),
+        fecha_actualizacion TEXT DEFAULT (date('now', '-5 hours')),
         url_documento       TEXT,
         notas               TEXT
     )""")
@@ -59,7 +59,7 @@ def _init_tecnica():
         codigo                      TEXT NOT NULL,
         nombre                      TEXT NOT NULL,
         version                     TEXT DEFAULT '1.0',
-        fecha_emision               TEXT DEFAULT (date('now')),
+        fecha_emision               TEXT DEFAULT (date('now', '-5 hours')),
         fecha_revision              TEXT,
         responsable                 TEXT,
         estado                      TEXT DEFAULT 'Vigente',
@@ -80,7 +80,7 @@ def _init_tecnica():
         impacto           TEXT,
         cambio_propuesto  TEXT,
         solicitado_por    TEXT NOT NULL,
-        fecha_solicitud   TEXT NOT NULL DEFAULT (datetime('now')),
+        fecha_solicitud   TEXT NOT NULL DEFAULT (datetime('now', '-5 hours')),
         aprobado_por      TEXT,
         fecha_aprobacion  TEXT,
         estado            TEXT NOT NULL DEFAULT 'pendiente'
@@ -105,7 +105,7 @@ def _init_tecnica():
         snapshot_json   TEXT NOT NULL,
         motivo_cambio   TEXT,
         creado_por      TEXT,
-        fecha_creacion  TEXT NOT NULL DEFAULT (datetime('now'))
+        fecha_creacion  TEXT NOT NULL DEFAULT (datetime('now', '-5 hours'))
     )""")
     c.execute("""CREATE INDEX IF NOT EXISTS idx_tv_entidad_reg
                  ON tecnica_versiones(entidad, registro_id, version_num DESC)""")
@@ -241,14 +241,14 @@ def tecnica_dashboard():
     registros_tramite = c.fetchone()[0]
     c.execute("""SELECT COUNT(*) FROM registros_invima
                  WHERE estado='Vigente' AND fecha_vencimiento IS NOT NULL
-                   AND fecha_vencimiento <= date('now','+90 days')
-                   AND fecha_vencimiento >= date('now')""")
+                   AND fecha_vencimiento <= date('now', '-5 hours', '+90 days')
+                   AND fecha_vencimiento >= date('now', '-5 hours')""")
     por_vencer = c.fetchone()[0]
     c.execute("SELECT COUNT(*) FROM documentos_sgd WHERE estado='Vigente'")
     docs_vigentes = c.fetchone()[0]
     c.execute("""SELECT COUNT(*) FROM documentos_sgd
                  WHERE estado='Vigente' AND fecha_revision IS NOT NULL
-                   AND fecha_revision <= date('now','+30 days')""")
+                   AND fecha_revision <= date('now', '-5 hours', '+30 days')""")
     docs_revisar = c.fetchone()[0]
     # Próximos vencimientos INVIMA
     c.execute("""SELECT producto, num_registro, fecha_vencimiento, estado
@@ -807,7 +807,7 @@ def documentos_vencimientos():
           FROM sgd_documentos
          WHERE estado='vigente'
            AND COALESCE(proxima_revision,'') != ''
-           AND proxima_revision <= date('now','+60 day')
+           AND proxima_revision <= date('now', '-5 hours', '+60 day')
          ORDER BY proxima_revision ASC
     """).fetchall()
     out = []
@@ -862,7 +862,7 @@ def documento_revisado(did):
     proxima = (_dt.now() + _td(days=frecuencia*30)).strftime('%Y-%m-%d')
     c.execute("""UPDATE sgd_documentos
                  SET fecha_aprobacion=?, vigente_desde=?, proxima_revision=?,
-                     actualizado_en=datetime('now')
+                     actualizado_en=datetime('now', '-5 hours')
                  WHERE id=?""", (hoy, hoy, proxima, did))
     audit_log(c, usuario=session.get('compras_user', 'sistema'),
               accion='REVISAR_SGD', tabla='sgd_documentos', registro_id=did,
@@ -890,7 +890,7 @@ def documento_update(did):
                   'version': antes_row[2], 'estado': antes_row[3]}
         # Soft delete: marcar como retirado en lugar de DELETE (preserva historico)
         c.execute("""UPDATE sgd_documentos SET estado='retirado',
-                     actualizado_en=datetime('now') WHERE id=?""", (did,))
+                     actualizado_en=datetime('now', '-5 hours') WHERE id=?""", (did,))
         audit_log(c, usuario=usuario, accion='ELIMINAR_SGD',
                   tabla='sgd_documentos', registro_id=did, antes=antes,
                   detalle=f"Retiró SGD id={did} ({antes['codigo']})")
@@ -950,7 +950,7 @@ def documento_update(did):
     antes = {'codigo': antes_row[0], 'titulo': antes_row[1],
               'version': antes_row[2], 'estado': antes_row[3]}
     _snapshot_tecnica(c, 'sgd', did, motivo, usuario)
-    set_clauses.append("actualizado_en=datetime('now')")
+    set_clauses.append("actualizado_en=datetime('now', '-5 hours')")
     c.execute(f"UPDATE sgd_documentos SET {', '.join(set_clauses)} WHERE id=?",
               vals + [did])
     audit_log(c, usuario=usuario, accion='MODIFICAR_SGD',
@@ -1182,7 +1182,7 @@ def cambio_control_aprobar(cc_id):
     obs = (d.get('observaciones') or '').strip()
     c.execute("""UPDATE cambios_control_formula
                  SET estado=?, aprobado_por=?,
-                     fecha_aprobacion=datetime('now'),
+                     fecha_aprobacion=datetime('now', '-5 hours'),
                      observaciones=COALESCE(NULLIF(?,''), observaciones)
                  WHERE id=?""", (nuevo_estado, usuario, obs, cc_id))
     audit_log(c, usuario=usuario,

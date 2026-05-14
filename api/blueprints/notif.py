@@ -128,7 +128,7 @@ def notif_marcar_leida(nid):
     user = session.get('compras_user', '')
     conn = get_db(); c = conn.cursor()
     cur = c.execute(
-        "UPDATE notificaciones_app SET leido_at=datetime('now') "
+        "UPDATE notificaciones_app SET leido_at=datetime('now', '-5 hours') "
         "WHERE id=? AND destinatario=? AND leido_at IS NULL",
         (nid, user)
     )
@@ -143,7 +143,7 @@ def notif_marcar_todas():
     user = session.get('compras_user', '')
     conn = get_db(); c = conn.cursor()
     cur = c.execute(
-        "UPDATE notificaciones_app SET leido_at=datetime('now') "
+        "UPDATE notificaciones_app SET leido_at=datetime('now', '-5 hours') "
         "WHERE destinatario=? AND leido_at IS NULL",
         (user,)
     )

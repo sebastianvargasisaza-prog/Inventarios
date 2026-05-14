@@ -416,7 +416,7 @@ def centro_notificaciones():
                 SELECT numero_oc, proveedor, valor_total, fecha
                 FROM ordenes_compra
                 WHERE estado IN ('Autorizada','Aprobada')
-                  AND fecha < date('now','-7 day')
+                  AND fecha < date('now', '-5 hours', '-7 day')
                 ORDER BY fecha ASC LIMIT 10
             """).fetchall():
                 alertas.append({
@@ -436,7 +436,7 @@ def centro_notificaciones():
         for r in c.execute("""
             SELECT id, descripcion, fecha, responsable
             FROM no_conformidades
-            WHERE estado='Abierta' AND fecha < date('now','-30 day')
+            WHERE estado='Abierta' AND fecha < date('now', '-5 hours', '-30 day')
             ORDER BY fecha ASC LIMIT 10
         """).fetchall():
             alertas.append({
@@ -454,7 +454,7 @@ def centro_notificaciones():
     # ── Calidad: calibraciones vencidas ──
     try:
         n_calib = c.execute("""SELECT COUNT(*) FROM calibraciones
-                               WHERE fecha_proxima < date('now') AND estado != 'OK'
+                               WHERE fecha_proxima < date('now', '-5 hours') AND estado != 'OK'
                             """).fetchone()[0]
         if n_calib:
             alertas.append({
@@ -516,7 +516,7 @@ def centro_notificaciones():
             WHERE r.usuario=? AND r.rol IN ('R','A')
               AND t.estado NOT IN ('Hecha','Cancelada')
               AND t.fecha_compromiso IS NOT NULL
-              AND t.fecha_compromiso < date('now')
+              AND t.fecha_compromiso < date('now', '-5 hours')
             ORDER BY t.fecha_compromiso ASC LIMIT 10
         """, (u,)).fetchall():
             alertas.append({
@@ -584,7 +584,7 @@ def centro_notificaciones():
             FROM tareas_internas t
             WHERE t.estado NOT IN ('Hecha','Cancelada')
               AND t.origen='comite'
-              AND t.fecha_creacion < date('now','-14 day')
+              AND t.fecha_creacion < date('now', '-5 hours', '-14 day')
             ORDER BY t.fecha_creacion ASC LIMIT 5
         """).fetchall():
             alertas.append({
@@ -607,7 +607,7 @@ def centro_notificaciones():
             FROM documentos_sgd
             WHERE estado='Vigente'
               AND COALESCE(fecha_proxima_revision,'') != ''
-              AND fecha_proxima_revision <= date('now','+30 day')
+              AND fecha_proxima_revision <= date('now', '-5 hours', '+30 day')
             ORDER BY fecha_proxima_revision ASC LIMIT 10
         """).fetchall():
             dias = int(r['dias']) if r['dias'] is not None else 0
@@ -732,8 +732,8 @@ def centro_operaciones_data():
         prods_proximos = c.execute("""
             SELECT COUNT(*) FROM produccion_programada
             WHERE LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado')
-              AND fecha_programada >= date('now')
-              AND fecha_programada <= date('now','+30 day')
+              AND fecha_programada >= date('now', '-5 hours')
+              AND fecha_programada <= date('now', '-5 hours', '+30 day')
         """).fetchone()
         out['produccion'] = {
             'lotes_mes': prods_mes[0] if prods_mes else 0,
@@ -772,7 +772,7 @@ def centro_operaciones_data():
         """).fetchone()[0]
         venc7 = c.execute("""SELECT COUNT(*) FROM movimientos
                              WHERE tipo='Entrada' AND fecha_vencimiento BETWEEN
-                                   date('now') AND date('now','+7 day')""").fetchone()[0]
+                                   date('now', '-5 hours') AND date('now', '-5 hours', '+7 day')""").fetchone()[0]
         out['inventario'] = {
             'mps_cero': n_cero, 'mps_bajo': n_bajo, 'lotes_vencen_7d': venc7,
         }
@@ -829,7 +829,7 @@ def centro_operaciones_data():
             SELECT COUNT(*) FROM tareas_internas
             WHERE estado NOT IN ('Hecha','Cancelada')
               AND fecha_compromiso IS NOT NULL
-              AND fecha_compromiso < date('now')
+              AND fecha_compromiso < date('now', '-5 hours')
         """).fetchone()[0]
         msg_admin = c.execute("""SELECT COUNT(*) FROM mensajes_internos
                                  WHERE a_usuario=? AND leido_at IS NULL""",
@@ -889,7 +889,7 @@ def centro_operaciones_data():
             'sgd_vencen_30d':    c.execute("""SELECT COUNT(*) FROM documentos_sgd
                                              WHERE estado='Vigente'
                                                AND COALESCE(fecha_proxima_revision,'') != ''
-                                               AND fecha_proxima_revision <= date('now','+30 day')""").fetchone()[0] or 0,
+                                               AND fecha_proxima_revision <= date('now', '-5 hours', '+30 day')""").fetchone()[0] or 0,
         }
     except Exception:
         out['tecnica'] = {}
@@ -908,17 +908,17 @@ def centro_operaciones_data():
         actividad = []
         # Movimientos
         for r in c.execute("""SELECT 'movimiento' as tipo, fecha, material_nombre as titulo, tipo as detalle
-                              FROM movimientos WHERE fecha >= datetime('now','-1 hour')
+                              FROM movimientos WHERE fecha >= datetime('now', '-5 hours', '-1 hour')
                               ORDER BY fecha DESC LIMIT 5""").fetchall():
             actividad.append(dict(r))
         # OCs nuevas
         for r in c.execute("""SELECT 'oc' as tipo, fecha, numero_oc as titulo, proveedor as detalle
-                              FROM ordenes_compra WHERE fecha >= datetime('now','-1 hour')
+                              FROM ordenes_compra WHERE fecha >= datetime('now', '-5 hours', '-1 hour')
                               ORDER BY fecha DESC LIMIT 5""").fetchall():
             actividad.append(dict(r))
         # Tareas creadas
         for r in c.execute("""SELECT 'tarea' as tipo, fecha_creacion as fecha, titulo, area as detalle
-                              FROM tareas_internas WHERE fecha_creacion >= datetime('now','-1 hour')
+                              FROM tareas_internas WHERE fecha_creacion >= datetime('now', '-5 hours', '-1 hour')
                               ORDER BY fecha_creacion DESC LIMIT 5""").fetchall():
             actividad.append(dict(r))
         actividad.sort(key=lambda x: x.get('fecha','') or '', reverse=True)
@@ -964,15 +964,15 @@ def ia_analizar_semana():
     datos = {}
     try:
         datos['caja_semana_neta'] = c.execute("""
-            SELECT (SELECT COALESCE(SUM(monto),0) FROM flujo_ingresos WHERE fecha >= date('now','-7 day'))
-                 - (SELECT COALESCE(SUM(monto),0) FROM flujo_egresos WHERE fecha >= date('now','-7 day'))
+            SELECT (SELECT COALESCE(SUM(monto),0) FROM flujo_ingresos WHERE fecha >= date('now', '-5 hours', '-7 day'))
+                 - (SELECT COALESCE(SUM(monto),0) FROM flujo_egresos WHERE fecha >= date('now', '-5 hours', '-7 day'))
         """).fetchone()[0]
-        datos['ocs_creadas'] = c.execute("SELECT COUNT(*) FROM ordenes_compra WHERE fecha >= date('now','-7 day')").fetchone()[0]
-        datos['shopify_pedidos'] = c.execute("SELECT COUNT(*) FROM animus_shopify_orders WHERE creado_en >= datetime('now','-7 day')").fetchone()[0]
+        datos['ocs_creadas'] = c.execute("SELECT COUNT(*) FROM ordenes_compra WHERE fecha >= date('now', '-5 hours', '-7 day')").fetchone()[0]
+        datos['shopify_pedidos'] = c.execute("SELECT COUNT(*) FROM animus_shopify_orders WHERE creado_en >= datetime('now', '-5 hours', '-7 day')").fetchone()[0]
         datos['ncs_abiertas'] = c.execute("SELECT COUNT(*) FROM no_conformidades WHERE estado='Abierta'").fetchone()[0]
         datos['tareas_vencidas'] = c.execute("""SELECT COUNT(*) FROM tareas_internas
                                                 WHERE estado NOT IN ('Hecha','Cancelada')
-                                                  AND fecha_compromiso < date('now')""").fetchone()[0]
+                                                  AND fecha_compromiso < date('now', '-5 hours')""").fetchone()[0]
         datos['mps_cero'] = c.execute("""SELECT COUNT(*) FROM (
             SELECT m.codigo_mp, COALESCE(SUM(CASE WHEN mov.tipo IN ('Entrada','Ajuste +') THEN mov.cantidad
                                                   WHEN mov.tipo IN ('Salida','Ajuste -') THEN -mov.cantidad ELSE 0 END),0) as stock
@@ -1043,9 +1043,9 @@ def reporte_semanal_ceo():
 
     try:
         ing = c.execute("""SELECT COALESCE(SUM(monto),0) FROM flujo_ingresos
-                           WHERE fecha >= date('now','-7 day')""").fetchone()[0]
+                           WHERE fecha >= date('now', '-5 hours', '-7 day')""").fetchone()[0]
         egr = c.execute("""SELECT COALESCE(SUM(monto),0) FROM flujo_egresos
-                           WHERE fecha >= date('now','-7 day')""").fetchone()[0]
+                           WHERE fecha >= date('now', '-5 hours', '-7 day')""").fetchone()[0]
         out['caja_semana'] = {'ingresos': ing, 'egresos': egr, 'neto': ing - egr}
     except Exception:
         out['caja_semana'] = {}
@@ -1053,7 +1053,7 @@ def reporte_semanal_ceo():
     try:
         sh = c.execute("""SELECT COUNT(*), COALESCE(SUM(total),0)
                           FROM animus_shopify_orders
-                          WHERE creado_en >= datetime('now','-7 day')""").fetchone()
+                          WHERE creado_en >= datetime('now', '-5 hours', '-7 day')""").fetchone()
         out['shopify_semana'] = {'pedidos': sh[0] if sh else 0,
                                  'total': sh[1] if sh else 0}
     except Exception:
@@ -1061,10 +1061,10 @@ def reporte_semanal_ceo():
 
     try:
         out['ocs_creadas'] = c.execute("""SELECT COUNT(*) FROM ordenes_compra
-                                         WHERE fecha >= date('now','-7 day')""").fetchone()[0]
+                                         WHERE fecha >= date('now', '-5 hours', '-7 day')""").fetchone()[0]
         out['ocs_pagadas'] = c.execute("""SELECT COUNT(*), COALESCE(SUM(valor_total),0)
                                           FROM ordenes_compra
-                                          WHERE fecha_pago >= date('now','-7 day')""").fetchone()
+                                          WHERE fecha_pago >= date('now', '-5 hours', '-7 day')""").fetchone()
         out['ocs_pagadas'] = {'count': out['ocs_pagadas'][0] if out['ocs_pagadas'] else 0,
                               'valor': out['ocs_pagadas'][1] if out['ocs_pagadas'] else 0}
     except Exception:
@@ -1073,9 +1073,9 @@ def reporte_semanal_ceo():
 
     try:
         out['ncs_nuevas'] = c.execute("""SELECT COUNT(*) FROM no_conformidades
-                                         WHERE fecha >= date('now','-7 day')""").fetchone()[0]
+                                         WHERE fecha >= date('now', '-5 hours', '-7 day')""").fetchone()[0]
         out['ncs_cerradas'] = c.execute("""SELECT COUNT(*) FROM no_conformidades
-                                           WHERE fecha_cierre >= date('now','-7 day')""").fetchone()[0]
+                                           WHERE fecha_cierre >= date('now', '-5 hours', '-7 day')""").fetchone()[0]
     except Exception:
         out['ncs_nuevas'] = 0
         out['ncs_cerradas'] = 0
@@ -1083,7 +1083,7 @@ def reporte_semanal_ceo():
     try:
         out['producciones_semana'] = c.execute("""SELECT COUNT(*), COALESCE(SUM(cantidad),0)
                                                   FROM producciones
-                                                  WHERE fecha >= date('now','-7 day')""").fetchone()
+                                                  WHERE fecha >= date('now', '-5 hours', '-7 day')""").fetchone()
         out['producciones_semana'] = {'lotes': out['producciones_semana'][0],
                                       'kg': out['producciones_semana'][1]/1000.0}
     except Exception:
@@ -1091,19 +1091,19 @@ def reporte_semanal_ceo():
 
     try:
         out['tareas_completadas'] = c.execute("""SELECT COUNT(*) FROM tareas_internas
-                                                 WHERE fecha_completada >= date('now','-7 day')""").fetchone()[0]
+                                                 WHERE fecha_completada >= date('now', '-5 hours', '-7 day')""").fetchone()[0]
         out['tareas_creadas'] = c.execute("""SELECT COUNT(*) FROM tareas_internas
-                                             WHERE fecha_creacion >= date('now','-7 day')""").fetchone()[0]
+                                             WHERE fecha_creacion >= date('now', '-5 hours', '-7 day')""").fetchone()[0]
         out['tareas_vencidas_pendientes'] = c.execute("""SELECT COUNT(*) FROM tareas_internas
                                                          WHERE estado NOT IN ('Hecha','Cancelada')
-                                                           AND fecha_compromiso < date('now')""").fetchone()[0]
+                                                           AND fecha_compromiso < date('now', '-5 hours')""").fetchone()[0]
     except Exception:
         out['tareas_completadas'] = out['tareas_creadas'] = out['tareas_vencidas_pendientes'] = 0
 
     try:
         inf_pagados = c.execute("""SELECT COUNT(*), COALESCE(SUM(valor),0)
                                    FROM pagos_influencers
-                                   WHERE fecha >= date('now','-7 day')
+                                   WHERE fecha >= date('now', '-5 hours', '-7 day')
                                      AND estado='Pagada'""").fetchone()
         out['influencers_pagados'] = {'count': inf_pagados[0] if inf_pagados else 0,
                                       'total': inf_pagados[1] if inf_pagados else 0}

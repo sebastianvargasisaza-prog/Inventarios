@@ -62,11 +62,11 @@ def gerencia_kpis():
         mee_bajo_minimo = c.fetchone()[0] or 0
     except Exception:
         mee_bajo_minimo = 0
-    c.execute("SELECT COUNT(*) FROM movimientos WHERE tipo='Entrada' AND fecha_vencimiento IS NOT NULL AND fecha_vencimiento!='' AND fecha_vencimiento<=date('now','+30 days') AND fecha_vencimiento>=date('now')")
+    c.execute("SELECT COUNT(*) FROM movimientos WHERE tipo='Entrada' AND fecha_vencimiento IS NOT NULL AND fecha_vencimiento!='' AND fecha_vencimiento<=date('now', '-5 hours', '+30 days') AND fecha_vencimiento>=date('now', '-5 hours')")
     lotes_vence_30 = c.fetchone()[0] or 0
-    c.execute("SELECT COUNT(*) FROM movimientos WHERE tipo='Entrada' AND fecha_vencimiento IS NOT NULL AND fecha_vencimiento!='' AND fecha_vencimiento<=date('now','+60 days') AND fecha_vencimiento>=date('now','+30 days')")
+    c.execute("SELECT COUNT(*) FROM movimientos WHERE tipo='Entrada' AND fecha_vencimiento IS NOT NULL AND fecha_vencimiento!='' AND fecha_vencimiento<=date('now', '-5 hours', '+60 days') AND fecha_vencimiento>=date('now', '-5 hours', '+30 days')")
     lotes_vence_60 = c.fetchone()[0] or 0
-    c.execute("SELECT COUNT(*) FROM producciones WHERE fecha>=date('now','start of month')")
+    c.execute("SELECT COUNT(*) FROM producciones WHERE fecha>=date('now', '-5 hours', 'start of month')")
     prod_mes = c.fetchone()[0] or 0
     c.execute("SELECT COUNT(*) FROM ordenes_compra WHERE estado IN ('Pendiente','Aprobada','Enviada')")
     ocs_pendientes = c.fetchone()[0] or 0
@@ -498,7 +498,7 @@ def gerencia_input_manual():
     ingresos_maquila = float(d.get('ingresos_maquila',0))
     conn = get_db()
     conn.execute("""INSERT INTO gerencia_inputs (periodo,saldo_caja,ingresos_animus,ingresos_maquila,notas,fecha)
-                    VALUES (?,?,?,?,?,datetime('now'))
+                    VALUES (?,?,?,?,?,datetime('now', '-5 hours'))
                     ON CONFLICT(periodo) DO UPDATE SET saldo_caja=excluded.saldo_caja,
                     ingresos_animus=excluded.ingresos_animus, ingresos_maquila=excluded.ingresos_maquila,
                     notas=excluded.notas, fecha=excluded.fecha""",

@@ -116,7 +116,7 @@ def dashboard():
                    COUNT(CASE WHEN estado IN ('Autorizada','Revisada') THEN 1 END) as en_proceso,
                    COUNT(CASE WHEN estado='Pagada' THEN 1 END) as pagadas_mes
             FROM ordenes_compra
-            WHERE fecha >= date('now','-30 day')
+            WHERE fecha >= date('now', '-5 hours', '-30 day')
         """).fetchone()
         out["ocs_activas"] = dict(out["ocs_activas"])
     except Exception:
@@ -151,7 +151,7 @@ def dashboard():
     try:
         out["calibraciones_vencidas"] = c.execute("""
             SELECT COUNT(*) FROM calibraciones
-            WHERE fecha_proxima < date('now') AND estado != 'OK'
+            WHERE fecha_proxima < date('now', '-5 hours') AND estado != 'OK'
         """).fetchone()[0]
     except Exception:
         out["calibraciones_vencidas"] = 0
@@ -272,7 +272,7 @@ def alertas():
         for r in c.execute("""
             SELECT id, descripcion, fecha, responsable
             FROM no_conformidades
-            WHERE estado='Abierta' AND fecha < date('now','-30 day')
+            WHERE estado='Abierta' AND fecha < date('now', '-5 hours', '-30 day')
             ORDER BY fecha ASC
             LIMIT 10
         """).fetchall():
@@ -296,7 +296,7 @@ def alertas():
               AND r.rol IN ('R','A')
               AND t.estado NOT IN ('Hecha','Cancelada')
               AND t.fecha_compromiso IS NOT NULL
-              AND t.fecha_compromiso < date('now')
+              AND t.fecha_compromiso < date('now', '-5 hours')
             LIMIT 15
         """, (u,)).fetchall():
             alertas_lista.append({
@@ -336,7 +336,7 @@ def resumen_pre_comite():
             FROM tareas_internas t
             WHERE t.estado NOT IN ('Hecha','Cancelada')
               AND t.origen = 'comite'
-              AND t.fecha_creacion < date('now','-14 day')
+              AND t.fecha_creacion < date('now', '-5 hours', '-14 day')
             ORDER BY t.fecha_creacion ASC
             LIMIT 20
         """).fetchall())
@@ -348,7 +348,7 @@ def resumen_pre_comite():
             SELECT id, titulo, area, fecha_completada
             FROM tareas_internas
             WHERE estado = 'Hecha'
-              AND fecha_completada >= date('now','-7 day')
+              AND fecha_completada >= date('now', '-5 hours', '-7 day')
             ORDER BY fecha_completada DESC
             LIMIT 30
         """).fetchall())
@@ -359,7 +359,7 @@ def resumen_pre_comite():
         out["nuevas_semana"] = _fmt_many(c.execute("""
             SELECT id, titulo, area, fecha_creacion, prioridad
             FROM tareas_internas
-            WHERE fecha_creacion >= date('now','-7 day')
+            WHERE fecha_creacion >= date('now', '-5 hours', '-7 day')
             ORDER BY fecha_creacion DESC
             LIMIT 30
         """).fetchall())
@@ -449,7 +449,7 @@ def quick_actions():
                    julianday('now') - julianday(fecha) as dias
               FROM movimientos
              WHERE estado_calidad = 'Cuarentena' AND tipo = 'Entrada'
-               AND date(fecha) <= date('now', '-7 day')
+               AND date(fecha) <= date('now', '-5 hours', '-7 day')
              ORDER BY fecha ASC LIMIT 10
         """).fetchall()
         items = _fmt_many(rows)
@@ -480,7 +480,7 @@ def quick_actions():
              WHERE COALESCE(ep.activo,1) = 1
              GROUP BY ep.codigo
              HAVING fecha_proxima IS NOT NULL
-                AND date(fecha_proxima) < date('now')
+                AND date(fecha_proxima) < date('now', '-5 hours')
              ORDER BY fecha_proxima ASC
              LIMIT 10
         """).fetchall()
@@ -507,7 +507,7 @@ def quick_actions():
              WHERE r.usuario = ?
                AND r.rol IN ('R','A')
                AND t.estado NOT IN ('Hecha','Cancelada')
-               AND (t.fecha_compromiso <= date('now') OR
+               AND (t.fecha_compromiso <= date('now', '-5 hours') OR
                     t.prioridad = 'Alta')
              ORDER BY t.fecha_compromiso ASC LIMIT 10
         """, (u,)).fetchall()
@@ -966,7 +966,7 @@ def lab_en_vivo():
                    pp.estado, ap.codigo as area_codigo
               FROM produccion_programada pp
               LEFT JOIN areas_planta ap ON ap.id = pp.area_id
-             WHERE pp.fecha_programada = date('now')
+             WHERE pp.fecha_programada = date('now', '-5 hours')
                AND LOWER(COALESCE(pp.estado,'')) NOT IN ('cancelado','completado')
              ORDER BY ap.codigo, pp.producto
         """).fetchall())
@@ -987,7 +987,7 @@ def lab_en_vivo():
              WHERE COALESCE(ep.activo,1) = 1
              GROUP BY ep.codigo
              HAVING fecha_proxima IS NOT NULL
-                AND date(fecha_proxima) <= date('now', '+15 days')
+                AND date(fecha_proxima) <= date('now', '-5 hours', '+15 days')
              ORDER BY fecha_proxima ASC
              LIMIT 20
         """).fetchall())
@@ -1026,7 +1026,7 @@ def lab_en_vivo():
         agua_hoy = c.execute("""
             SELECT COUNT(*) as registros, MAX(fecha) as ultima
               FROM calidad_agua_registros
-             WHERE date(fecha) = date('now')
+             WHERE date(fecha) = date('now', '-5 hours')
         """).fetchone()
         out["agua_hoy"] = dict(agua_hoy) if agua_hoy else {'registros': 0, 'ultima': None}
     except Exception:

@@ -538,9 +538,9 @@ def chat_heartbeat():
     conn = get_db(); c = conn.cursor()
     c.execute("""
         INSERT INTO chat_user_presence (username, last_heartbeat, estado, display_name)
-        VALUES (?, datetime('now'), 'conectado', ?)
+        VALUES (?, datetime('now', '-5 hours'), 'conectado', ?)
         ON CONFLICT(username) DO UPDATE SET
-          last_heartbeat = datetime('now'),
+          last_heartbeat = datetime('now', '-5 hours'),
           estado = 'conectado'
     """, (user, user.capitalize()))
     conn.commit()
@@ -753,7 +753,7 @@ def chat_messages(thread_id):
         preview = contenido[:120] if tipo == 'texto' else f'[{tipo}] {contenido[:100]}'
         c.execute("""
             UPDATE chat_threads SET
-              ultimo_mensaje_id=?, ultimo_mensaje_en=datetime('now'),
+              ultimo_mensaje_id=?, ultimo_mensaje_en=datetime('now', '-5 hours'),
               ultimo_mensaje_preview=?
             WHERE id=?
         """, (msg_id, preview, thread_id))
@@ -904,7 +904,7 @@ def chat_mensaje_modificar(message_id):
         if not nuevo:
             return jsonify({'error': 'contenido vacío'}), 400
         c.execute("""
-            UPDATE chat_messages SET contenido=?, editado_en=datetime('now')
+            UPDATE chat_messages SET contenido=?, editado_en=datetime('now', '-5 hours')
             WHERE id=?
         """, (nuevo, message_id))
     conn.commit()
@@ -1001,7 +1001,7 @@ def chat_asignar_tarea(thread_id):
     preview = f"[tarea] {titulo[:100]}"
     c.execute("""
         UPDATE chat_threads SET
-          ultimo_mensaje_id=?, ultimo_mensaje_en=datetime('now'),
+          ultimo_mensaje_id=?, ultimo_mensaje_en=datetime('now', '-5 hours'),
           ultimo_mensaje_preview=?
         WHERE id=?
     """, (msg_id, preview, thread_id))

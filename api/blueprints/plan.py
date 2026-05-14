@@ -803,7 +803,7 @@ def programar_produccion():
         """INSERT INTO produccion_programada
              (producto, fecha_programada, cantidad_kg, lotes, estado,
               origen, observaciones, area_id, creado_en)
-           VALUES (?, ?, ?, 1, 'pendiente', 'eos_plan', ?, ?, datetime('now'))""",
+           VALUES (?, ?, ?, 1, 'pendiente', 'eos_plan', ?, ?, datetime('now', '-5 hours'))""",
         (producto, fecha, kg, notas, area_id),
     )
     pid = cur.lastrowid
@@ -1910,9 +1910,9 @@ def plan_debug_tz():
     # SQLite comparison
     conn = get_db()
     c = conn.cursor()
-    sql_now_utc = c.execute("SELECT datetime('now')").fetchone()[0]
+    sql_now_utc = c.execute("SELECT datetime('now', '-5 hours')").fetchone()[0]
     sql_now_col = c.execute("SELECT datetime('now', '-5 hours')").fetchone()[0]
-    sql_date_utc = c.execute("SELECT date('now')").fetchone()[0]
+    sql_date_utc = c.execute("SELECT date('now', '-5 hours')").fetchone()[0]
     sql_date_col = c.execute("SELECT date('now', '-5 hours')").fetchone()[0]
 
     es_consistente = (hoy_correcto.isoformat() == sql_date_col)
@@ -2349,7 +2349,7 @@ def plan_sugerido_ejecutar():
                 c.execute(
                     """INSERT INTO audit_log
                            (fecha, usuario, accion, tabla, registro_id, detalle)
-                       VALUES (datetime('now'), ?, 'PLAN_SUGERIDO_PROGRAMAR',
+                       VALUES (datetime('now', '-5 hours'), ?, 'PLAN_SUGERIDO_PROGRAMAR',
                                'produccion_programada', ?, ?)""",
                     (user, str(new_id),
                      f"producto={producto_canonico} fecha={fecha} kg={kg}"),
@@ -2380,7 +2380,7 @@ def plan_sugerido_ejecutar():
                 """UPDATE produccion_programada
                    SET estado = 'cancelado',
                        observaciones = COALESCE(observaciones,'') ||
-                           ' · CANCELADO por plan-sugerido · ' || datetime('now')
+                           ' · CANCELADO por plan-sugerido · ' || datetime('now', '-5 hours')
                    WHERE id = ?""",
                 (pid_int,),
             )
@@ -2390,7 +2390,7 @@ def plan_sugerido_ejecutar():
                 c.execute(
                     """INSERT INTO audit_log
                            (fecha, usuario, accion, tabla, registro_id, detalle)
-                       VALUES (datetime('now'), ?, 'PLAN_SUGERIDO_CANCELAR',
+                       VALUES (datetime('now', '-5 hours'), ?, 'PLAN_SUGERIDO_CANCELAR',
                                'produccion_programada', ?, ?)""",
                     (user, str(pid_int),
                      f"producto={row[0]} fecha={row[1]} origen={row[2]}"),
@@ -2453,7 +2453,7 @@ def plan_sugerido_ejecutar():
                 c.execute(
                     """INSERT INTO audit_log
                            (fecha, usuario, accion, tabla, registro_id, detalle)
-                       VALUES (datetime('now'), ?, 'PLAN_SUGERIDO_BACKFILL',
+                       VALUES (datetime('now', '-5 hours'), ?, 'PLAN_SUGERIDO_BACKFILL',
                                'produccion_programada', ?, ?)""",
                     (user, str(new_id),
                      f"producto={producto_canonico} fecha={fecha} kg={kg}"),
@@ -2919,30 +2919,21 @@ DIAS_HABILES = {0, 1, 2, 3, 4}        # lun=0 ... vie=4
 DIAS_PREFERIDOS = {0, 2, 4}            # lun, mié, vie (para canónico)
 MAX_PRODUCCIONES_POR_DIA = 2
 
-# Timezone Colombia (UTC-5 sin DST) · Sebastián 13-may-2026
-# "veo errores en la programacion las fechas estan raras como hacemos
-# para solucionar esas fechas? porque si revisas salta mucho no tiene
-# consistencia · te pasaba cuando lo extraias de google calendar".
-# Causa raíz: Render corre en UTC. Después de 7pm Colombia, date.today()
-# del server salta al día siguiente. date('now') de SQLite también UTC.
-# Solución: forzar UTC-5 para CUALQUIER cálculo de "hoy" o "ahora".
-from datetime import timezone as _tz, timedelta as _td_init
-TZ_COLOMBIA = _tz(_td_init(hours=-5))
-SQLITE_NOW_COL = "datetime('now', '-5 hours')"
-SQLITE_DATE_COL = "date('now', '-5 hours')"
-
-
-def _hoy_colombia():
-    """Fecha de hoy en zona horaria Colombia (UTC-5).
-    Reemplaza date.today() del server (que está en UTC en Render)."""
-    from datetime import datetime as _dt
-    return _dt.now(TZ_COLOMBIA).date()
-
-
-def _now_colombia():
-    """Datetime ahora en zona horaria Colombia."""
-    from datetime import datetime as _dt
-    return _dt.now(TZ_COLOMBIA)
+# Timezone Colombia · módulo central api/tz_colombia.py · Sebastián 13-may-2026
+try:
+    from tz_colombia import (
+        TZ_COLOMBIA, hoy_colombia as _hoy_colombia,
+        now_colombia as _now_colombia,
+        SQLITE_DATE_NOW as SQLITE_DATE_COL,
+        SQLITE_DATETIME_NOW as SQLITE_NOW_COL,
+    )
+except ImportError:
+    from api.tz_colombia import (
+        TZ_COLOMBIA, hoy_colombia as _hoy_colombia,
+        now_colombia as _now_colombia,
+        SQLITE_DATE_NOW as SQLITE_DATE_COL,
+        SQLITE_DATETIME_NOW as SQLITE_NOW_COL,
+    )
 
 
 # Festivos colombianos · Sebastián 13-may-2026
@@ -3379,7 +3370,7 @@ def reprogramar_proxima(pid):
                observaciones = COALESCE(observaciones,'') ||
                    ' · REPROGRAMADO de ' || COALESCE(?,'?') || ' a ' || ? ||
                    CASE WHEN ? != '' THEN ' (razón: ' || ? || ')' ELSE '' END ||
-                   ' · ' || datetime('now')
+                   ' · ' || datetime('now', '-5 hours')
            WHERE id = ?""",
         (nueva_fecha, fecha_antes, nueva_fecha, razon, razon, pid),
     )
@@ -3482,7 +3473,7 @@ def programar_canonico():
             """INSERT INTO produccion_programada
                  (producto, fecha_programada, cantidad_kg, lotes, estado,
                   origen, observaciones, creado_en)
-               VALUES (?, ?, ?, 1, 'pendiente', 'eos_canonico', ?, datetime('now'))""",
+               VALUES (?, ?, ?, 1, 'pendiente', 'eos_canonico', ?, datetime('now', '-5 hours'))""",
             (producto, fecha_real.isoformat(), kg,
              f"Canónico cada {freq}d" + (f" · {notas}" if notas else "")),
         )
@@ -3579,7 +3570,7 @@ def registrar_produccion_completada():
               origen, observaciones, inicio_real_at, fin_real_at,
               kg_real, inventario_descontado_at, creado_en)
            VALUES (?, ?, ?, 1, 'completado', 'eos_retroactivo', ?,
-                   ?, ?, ?, ?, datetime('now'))""",
+                   ?, ?, ?, ?, datetime('now', '-5 hours'))""",
         (producto, fecha, kg,
          f"LOTE {lote}" + (f" · {notas}" if notas else ""),
          fecha + " 08:00:00",  # inicio_real_at · same day at 8am (placeholder)
