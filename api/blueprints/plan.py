@@ -2180,6 +2180,280 @@ def plan_debug_tz():
     })
 
 
+@bp.route("/admin/validar-formulas", methods=["GET"])
+def validar_formulas_page():
+    """Auditoría de fórmulas · Sebastián 14-may-2026: "quiero que
+    revisemos los frentes, que las formulas esten bien con la nueva
+    logica que te puse" (Excel % puros sobre 100% · escala al lote real).
+    """
+    if not session.get("compras_user"):
+        from flask import redirect
+        return redirect("/login?next=/admin/validar-formulas")
+    from flask import Response
+    return Response(_VALIDAR_FORMULAS_HTML, mimetype="text/html")
+
+
+@bp.route("/api/plan/validar-formulas", methods=["GET"])
+def validar_formulas_api():
+    """Para cada fórmula activa, verifica:
+      - suma_gramos vs lote_size_kg × 1000 (debe sumar 100%)
+      - items con cantidad_g_por_lote = 0
+      - lote real promedio (de producciones_programadas con fin_real_at)
+        vs lote_size_kg del Excel
+      - score de salud: OK / WARNING / ERROR
+    """
+    err = _require_login()
+    if err:
+        return err
+
+    conn = get_db()
+    c = conn.cursor()
+
+    # 1) Lista de fórmulas activas + datos clave
+    rows_fh = c.execute(
+        """SELECT producto_nombre, COALESCE(lote_size_kg, 0),
+                  COALESCE(unidad_base_g, 0), COALESCE(activo, 1)
+           FROM formula_headers
+           ORDER BY producto_nombre""",
+    ).fetchall()
+
+    # 2) Suma de gramos + count items por producto
+    sumas_items = {}
+    for r in c.execute(
+        """SELECT producto_nombre,
+                  COALESCE(SUM(cantidad_g_por_lote), 0) as suma_g,
+                  COUNT(*) as n_items,
+                  COALESCE(SUM(CASE WHEN COALESCE(cantidad_g_por_lote,0)=0 THEN 1 ELSE 0 END), 0) as n_vacios,
+                  COALESCE(SUM(CASE WHEN material_id IS NULL OR TRIM(material_id)='' THEN 1 ELSE 0 END), 0) as n_sin_codigo
+           FROM formula_items
+           GROUP BY producto_nombre""",
+    ).fetchall():
+        sumas_items[r[0]] = {
+            "suma_g": float(r[1] or 0),
+            "n_items": int(r[2] or 0),
+            "n_vacios": int(r[3] or 0),
+            "n_sin_codigo": int(r[4] or 0),
+        }
+
+    # 3) Lote real promedio · producciones completadas últ 180d
+    lote_real_por_prod = {}
+    for r in c.execute(
+        """SELECT producto,
+                  AVG(COALESCE(kg_real, cantidad_kg, 0)) as kg_promedio,
+                  COUNT(*) as n_lotes,
+                  MAX(fin_real_at) as ultima_fecha
+           FROM produccion_programada
+           WHERE fin_real_at IS NOT NULL
+             AND COALESCE(kg_real, cantidad_kg, 0) > 0
+             AND date(fin_real_at) >= date('now','-5 hours','-180 day')
+           GROUP BY producto""",
+    ).fetchall():
+        lote_real_por_prod[r[0]] = {
+            "kg_promedio": round(float(r[1] or 0), 2),
+            "n_lotes": int(r[2] or 0),
+            "ultima_fecha": (r[3] or "")[:10] if r[3] else None,
+        }
+
+    # 4) Componer reporte por producto
+    items = []
+    for fh in rows_fh:
+        producto = fh[0]
+        lote_excel = float(fh[1] or 0)
+        activo = bool(fh[3])
+        s = sumas_items.get(producto, {"suma_g": 0, "n_items": 0,
+                                       "n_vacios": 0, "n_sin_codigo": 0})
+        suma_kg = s["suma_g"] / 1000.0
+        # Si lote_excel > 0, suma debería ser cercana
+        # cobertura_% = (suma_kg / lote_excel) × 100
+        if lote_excel > 0.001:
+            cobertura_pct = (suma_kg / lote_excel) * 100.0
+        else:
+            cobertura_pct = 0
+
+        real = lote_real_por_prod.get(producto, {})
+        kg_real = real.get("kg_promedio", 0)
+
+        # Score salud
+        problemas = []
+        if not activo:
+            problemas.append("⚪ INACTIVO")
+        if s["n_items"] == 0:
+            problemas.append("❌ Sin items (fórmula vacía)")
+        if s["n_vacios"] > 0:
+            problemas.append(f"⚠ {s['n_vacios']} items con cantidad=0")
+        if s["n_sin_codigo"] > 0:
+            problemas.append(f"⚠ {s['n_sin_codigo']} items sin código MP")
+        if lote_excel < 1:
+            problemas.append(f"⚠ Lote Excel piloto ({lote_excel}kg < 1kg)")
+        if lote_excel > 0 and abs(cobertura_pct - 100) > 5 and s["n_items"] > 0:
+            problemas.append(f"⚠ Suma items = {round(cobertura_pct, 1)}% del lote (debería ser ~100%)")
+        if kg_real > 0 and lote_excel > 0 and abs(kg_real - lote_excel) / lote_excel > 0.3:
+            problemas.append(f"⚠ Lote real ({kg_real}kg) difiere >30% del Excel ({lote_excel}kg)")
+
+        if not activo:
+            score = "INACTIVO"
+        elif any("❌" in p for p in problemas):
+            score = "ERROR"
+        elif problemas:
+            score = "WARNING"
+        else:
+            score = "OK"
+
+        items.append({
+            "producto": producto,
+            "activo": activo,
+            "lote_size_kg_excel": lote_excel,
+            "n_items": s["n_items"],
+            "n_vacios": s["n_vacios"],
+            "n_sin_codigo": s["n_sin_codigo"],
+            "suma_kg_items": round(suma_kg, 2),
+            "cobertura_pct": round(cobertura_pct, 1),
+            "lote_real_kg_promedio": kg_real,
+            "lote_real_n_producciones": real.get("n_lotes", 0),
+            "lote_real_ultima_fecha": real.get("ultima_fecha"),
+            "score": score,
+            "problemas": problemas,
+        })
+
+    # Resumen
+    by_score = {}
+    for it in items:
+        by_score[it["score"]] = by_score.get(it["score"], 0) + 1
+
+    return jsonify({
+        "total_formulas": len(items),
+        "resumen_por_score": by_score,
+        "items": items,
+    })
+
+
+_VALIDAR_FORMULAS_HTML = r"""<!DOCTYPE html>
+<html lang="es"><head><meta charset="UTF-8">
+<title>Validar fórmulas · EOS</title>
+<style>
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;color:#1e293b;margin:0;padding:20px}
+.wrap{max-width:1500px;margin:0 auto}
+.card{background:white;border-radius:12px;padding:18px;margin-bottom:14px;box-shadow:0 2px 6px rgba(0,0,0,.05)}
+h1{margin:0 0 6px;color:#0f766e;font-size:22px}
+.muted{color:#64748b;font-size:12px}
+button{background:#0f766e;color:white;border:none;padding:8px 14px;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{text-align:left;padding:10px 8px;background:#f1f5f9;color:#475569;font-weight:700;position:sticky;top:0}
+td{padding:8px;border-bottom:1px solid #f1f5f9;vertical-align:top}
+.kpi{display:inline-block;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 18px;margin-right:8px;margin-bottom:8px;text-align:center;min-width:120px;vertical-align:top}
+.kpi-lbl{font-size:10px;color:#64748b;text-transform:uppercase}
+.kpi-val{font-size:22px;font-weight:800}
+.score-OK{background:#dcfce7;color:#166534;padding:3px 8px;border-radius:6px;font-weight:700;font-size:11px}
+.score-WARNING{background:#fef3c7;color:#854d0e;padding:3px 8px;border-radius:6px;font-weight:700;font-size:11px}
+.score-ERROR{background:#fee2e2;color:#991b1b;padding:3px 8px;border-radius:6px;font-weight:700;font-size:11px}
+.score-INACTIVO{background:#f1f5f9;color:#64748b;padding:3px 8px;border-radius:6px;font-weight:700;font-size:11px}
+.tag{display:inline-block;padding:1px 6px;border-radius:4px;font-size:10px;margin-right:3px}
+.num{text-align:right;font-variant-numeric:tabular-nums}
+.mono{font-family:ui-monospace,monospace}
+.filter{display:inline-block;margin-right:14px;font-size:12px}
+.filter input{margin-right:4px;vertical-align:middle}
+</style></head><body>
+<div class="wrap">
+<a href="/modulos" style="color:#0f766e;font-weight:700;font-size:13px">&larr; Volver</a>
+
+<div class="card">
+  <h1>🧪 Auditoría de fórmulas · nueva lógica (% sobre 100%)</h1>
+  <div class="muted">Verifica que las fórmulas del Excel mig 121 estén completas y que los lotes piloto coincidan con producciones reales · Sebastián 14-may-2026</div>
+  <div style="margin-top:14px">
+    <button onclick="cargar()">↻ Recargar</button>
+  </div>
+  <div id="kpis" style="margin-top:14px"></div>
+  <div style="margin-top:8px">
+    <span class="filter"><label><input type="checkbox" class="flt" value="OK" checked> ✅ OK</label></span>
+    <span class="filter"><label><input type="checkbox" class="flt" value="WARNING" checked> ⚠ Warning</label></span>
+    <span class="filter"><label><input type="checkbox" class="flt" value="ERROR" checked> ❌ Error</label></span>
+    <span class="filter"><label><input type="checkbox" class="flt" value="INACTIVO"> ⚪ Inactivo</label></span>
+  </div>
+</div>
+
+<div id="resultado"></div>
+
+</div>
+<script>
+function escapeHtml(s){return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+let DATA = null;
+
+async function cargar(){
+  document.getElementById('resultado').innerHTML = '<div class="card">⏳ Analizando…</div>';
+  try {
+    const r = await fetch('/api/plan/validar-formulas');
+    const d = await r.json();
+    if (!r.ok){ alert('Error: ' + (d.error || r.status)); return; }
+    DATA = d;
+    render();
+  } catch(e){ alert('Error: ' + e.message); }
+}
+
+document.addEventListener('change', e => {
+  if (e.target.classList.contains('flt')) render();
+});
+
+function render(){
+  if (!DATA) return;
+
+  // KPIs
+  const r = DATA.resumen_por_score || {};
+  let k = '';
+  k += '<span class="kpi"><div class="kpi-lbl">Total fórmulas</div><div class="kpi-val">' + DATA.total_formulas + '</div></span>';
+  k += '<span class="kpi"><div class="kpi-lbl">✅ OK</div><div class="kpi-val" style="color:#16a34a">' + (r.OK || 0) + '</div></span>';
+  k += '<span class="kpi"><div class="kpi-lbl">⚠ Warning</div><div class="kpi-val" style="color:#ca8a04">' + (r.WARNING || 0) + '</div></span>';
+  k += '<span class="kpi"><div class="kpi-lbl">❌ Error</div><div class="kpi-val" style="color:#dc2626">' + (r.ERROR || 0) + '</div></span>';
+  k += '<span class="kpi"><div class="kpi-lbl">⚪ Inactivo</div><div class="kpi-val" style="color:#64748b">' + (r.INACTIVO || 0) + '</div></span>';
+  document.getElementById('kpis').innerHTML = k;
+
+  // Filtros
+  const activos = new Set(Array.from(document.querySelectorAll('.flt:checked')).map(x => x.value));
+
+  // Ordenar: ERROR → WARNING → INACTIVO → OK
+  const ORDEN = {ERROR: 0, WARNING: 1, INACTIVO: 2, OK: 3};
+  const items = (DATA.items || []).filter(it => activos.has(it.score));
+  items.sort((a, b) => (ORDEN[a.score] || 9) - (ORDEN[b.score] || 9));
+
+  let html = '<div class="card">';
+  html += '<table><thead><tr>';
+  html += '<th>Producto</th>';
+  html += '<th>Score</th>';
+  html += '<th class="num">Lote Excel<br>(kg)</th>';
+  html += '<th class="num">Lote real<br>histórico (kg)</th>';
+  html += '<th class="num">N° items</th>';
+  html += '<th class="num">Suma items<br>kg (=100%?)</th>';
+  html += '<th class="num">Cobertura %</th>';
+  html += '<th>Problemas detectados</th>';
+  html += '</tr></thead><tbody>';
+
+  items.forEach(it => {
+    const cobertura = it.cobertura_pct || 0;
+    const covColor = Math.abs(cobertura - 100) <= 5 ? '#166534' : '#dc2626';
+    html += '<tr>';
+    html += '<td><strong>' + escapeHtml(it.producto) + '</strong>';
+    if (it.lote_real_ultima_fecha) html += '<br><span class="muted" style="font-size:10px">última real: ' + it.lote_real_ultima_fecha + ' · ' + it.lote_real_n_producciones + ' lote(s)</span>';
+    html += '</td>';
+    html += '<td><span class="score-' + it.score + '">' + it.score + '</span></td>';
+    html += '<td class="num">' + it.lote_size_kg_excel.toFixed(2) + '</td>';
+    html += '<td class="num">' + (it.lote_real_kg_promedio || '—') + '</td>';
+    html += '<td class="num">' + it.n_items + (it.n_vacios > 0 ? ' <span style="color:#dc2626">(' + it.n_vacios + ' vacíos)</span>' : '') + '</td>';
+    html += '<td class="num">' + it.suma_kg_items.toFixed(2) + ' kg</td>';
+    html += '<td class="num" style="color:' + covColor + ';font-weight:700">' + cobertura + '%</td>';
+    html += '<td style="font-size:11px;color:#7f1d1d">' + (it.problemas || []).map(p => escapeHtml(p)).join('<br>') + '</td>';
+    html += '</tr>';
+  });
+
+  html += '</tbody></table>';
+  html += '<div class="muted" style="margin-top:8px;font-size:11px">📝 Cobertura % = (suma kg items / lote Excel) × 100. Debería estar ~100% si la fórmula es completa.</div>';
+  html += '</div>';
+  document.getElementById('resultado').innerHTML = html;
+}
+
+cargar();
+</script>
+</body></html>"""
+
+
 @bp.route("/api/plan/diagnostico-mp", methods=["GET"])
 def diagnostico_mp():
     """Diagnóstico completo de por qué una MP "no se rastrea" en el sistema.
