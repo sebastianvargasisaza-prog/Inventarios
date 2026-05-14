@@ -2180,6 +2180,133 @@ def plan_debug_tz():
     })
 
 
+@bp.route("/api/plan/gasto-mps", methods=["GET"])
+def gasto_anual_mps():
+    """Calcula consumo anual y gasto estimado de una o varias MPs.
+
+    Sebastián 14-may-2026: "alejandro quiere saber cuanto gastamos al
+    año de estas materias primas".
+
+    Query:
+      ?q=cetiol&q=phenyl&q=peg-12&q=capb  (uno o varios términos)
+      ?dias=365  (ventana de cálculo · default 365)
+
+    Para cada MP que matchea cualquier término:
+      - kg consumidos en la ventana (movimientos tipo Salida)
+      - promedio_mensual_kg
+      - proyeccion_anual_kg (extrapolado a 12m si ventana <365d)
+      - precio_referencia (de maestro_mps · COP/kg)
+      - gasto_anual_estimado_cop
+
+    Total agregado al final.
+    """
+    err = _require_login()
+    if err:
+        return err
+    queries = [q.strip() for q in request.args.getlist("q") if q.strip()]
+    if not queries:
+        return jsonify({"error": "pasá al menos un ?q=<nombre_mp>"}), 400
+    try:
+        dias = max(30, min(730, int(request.args.get("dias") or 365)))
+    except ValueError:
+        dias = 365
+
+    conn = get_db()
+    c = conn.cursor()
+
+    # Normalizador básico para matching (sin acentos, lowercase)
+    import unicodedata
+    def _norm(s):
+        if not s: return ""
+        s = unicodedata.normalize('NFD', str(s).strip().lower())
+        return ''.join(ch for ch in s if unicodedata.category(ch) != 'Mn')
+
+    # Buscar MPs que matcheen cualquier query (nombre_inci o nombre_comercial)
+    rows_mps = c.execute(
+        """SELECT codigo_mp,
+                  COALESCE(nombre_comercial,'') AS nc,
+                  COALESCE(nombre_inci,'') AS ni,
+                  COALESCE(precio_referencia, 0) AS precio,
+                  COALESCE(proveedor, '') AS prov,
+                  COALESCE(activo, 1) AS act
+           FROM maestro_mps""",
+    ).fetchall()
+
+    matched = []
+    for r in rows_mps:
+        cod = (r[0] or "").strip()
+        nc = r[1] or ""
+        ni = r[2] or ""
+        n_all = _norm(nc + " " + ni)
+        for q in queries:
+            if _norm(q) in n_all:
+                matched.append({
+                    "codigo_mp": cod,
+                    "nombre_comercial": nc,
+                    "nombre_inci": ni,
+                    "precio_referencia": float(r[3] or 0),
+                    "proveedor": r[4] or "",
+                    "activo": bool(r[5]),
+                    "matched_query": q,
+                })
+                break
+
+    # Consumo por MP en la ventana · sumar Salida (tipo='Salida')
+    # Stock_actual = sum(Entrada) - sum(Salida) · pero queremos solo salidas
+    items = []
+    total_kg = 0.0
+    total_cop = 0.0
+    for mp in matched:
+        cod = mp["codigo_mp"]
+        # Consumo en gramos · convertir a kg
+        row = c.execute(
+            f"""SELECT
+                  COALESCE(SUM(CASE WHEN LOWER(tipo) IN ('salida','consumo')
+                                    THEN cantidad ELSE 0 END), 0) AS gramos_salida,
+                  COUNT(*) AS n_movimientos
+               FROM movimientos
+               WHERE material_id = ?
+                 AND date(fecha) >= date('now','-5 hours','-' || ? || ' day')""",
+            (cod, dias),
+        ).fetchone()
+        gramos = float(row[0] or 0)
+        n_mov = int(row[1] or 0)
+        kg = gramos / 1000.0
+        # Proyección anual si ventana <365d
+        if dias > 0:
+            kg_anual = kg * (365.0 / dias)
+        else:
+            kg_anual = kg
+        precio = mp["precio_referencia"]
+        gasto_ventana_cop = kg * precio
+        gasto_anual_cop = kg_anual * precio
+
+        items.append({
+            **mp,
+            "ventana_dias": dias,
+            "kg_consumidos_ventana": round(kg, 2),
+            "n_movimientos": n_mov,
+            "kg_promedio_mensual": round(kg / (dias / 30.0), 2) if dias > 0 else 0,
+            "kg_proyeccion_anual": round(kg_anual, 2),
+            "gasto_ventana_cop": round(gasto_ventana_cop, 0),
+            "gasto_anual_estimado_cop": round(gasto_anual_cop, 0),
+        })
+        total_kg += kg_anual
+        total_cop += gasto_anual_cop
+
+    return jsonify({
+        "ventana_dias": dias,
+        "queries": queries,
+        "items": items,
+        "n_mps_encontradas": len(items),
+        "total_kg_anual": round(total_kg, 2),
+        "total_gasto_anual_cop": round(total_cop, 0),
+        "no_encontrados": [q for q in queries if not any(
+            _norm(q) in _norm(it["nombre_comercial"] + " " + it["nombre_inci"]) for it in items
+        )],
+    })
+
+
 @bp.route("/api/plan/festivos", methods=["GET"])
 def plan_festivos():
     """Lista festivos colombianos para uno o varios años.
