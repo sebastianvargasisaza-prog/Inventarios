@@ -222,6 +222,24 @@ _AREAS_LIMPIEZA_PROFUNDA = (
 
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (120, "Reactivar 5 MPs inactivas usadas en Excel Alejandro mayo-2026 · Sebastián 13-may-2026", [
+        # Verificador /admin/verificar-codigos-mp 13-may-2026: de los 146
+        # códigos del Excel FORMULAS_MAESTRO_v2_1 Alejandro, 141 estaban
+        # activos · 5 inactivos · 0 faltantes. Reactivar los 5 para que
+        # el trigger mig 98 permita los nuevos formula_items.
+        #
+        # MP00181 y MP00176 ambos son "Centella asiática" · ambos siguen
+        # usándose en fórmulas del Excel (Esencia Centella + Suero
+        # Multipéptidos respectivamente, según las hojas).
+        """UPDATE maestro_mps SET activo = 1
+           WHERE codigo_mp IN (
+             'MP00111',  -- Puresil ORG01 · C13-15 ALCANO
+             'MP00176',  -- Triterpenos de centella asiática 80%
+             'MP00181',  -- extracto de Centella asiática
+             'MP00236',  -- Pantenol en polvo
+             'MP00297'   -- Hidróxido de sodio sol.
+           )""",
+    ]),
     (119, "pedidos_b2b · necesidades B2B (Fernando + futuros) · Sebastián 13-may-2026", [
         # Sprint 2A · Plan v3 · Sebastián 13-may-2026: cada cliente B2B
         # tiene sus pedidos pendientes que se suman a las necesidades de
