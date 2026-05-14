@@ -1023,6 +1023,317 @@ _VERIFICAR_CODIGOS_HTML = _VERIFICAR_CODIGOS_HTML.replace(
     "__CODES_EXCEL__", _json.dumps(_CODES_EXCEL_LIST))
 
 
+@bp.route("/admin/comparar-calendar-necesidades", methods=["GET"])
+def comparar_calendar_page():
+    """Análisis read-only · Calendar vs Necesidades · diagnóstico."""
+    if not session.get("compras_user"):
+        from flask import redirect
+        return redirect("/login?next=/admin/comparar-calendar-necesidades")
+    from flask import Response
+    return Response(_COMPARAR_CALENDAR_HTML, mimetype="text/html")
+
+
+@bp.route("/api/plan/comparar-calendar-necesidades", methods=["GET"])
+def comparar_calendar_necesidades():
+    """Compara lotes en Google Calendar vs necesidades calculadas Shopify.
+
+    Sebastián 13-may-2026: "primero saber si lo de calendar está bien
+    para decidir si migramos a Plan".
+
+    Para cada producto Animus activo con codigo_pt:
+    - kg_calendar_horizonte: SUM(cantidad_kg) de origen='calendar'/'manual'
+                              en próximos N días
+    - kg_necesario_horizonte: velocidad_kg_dia × horizonte_dias
+    - diff = calendar - necesario
+    - categoria:
+      MATCH_OK · |diff| <= 20% de necesario · cumple
+      SOBRE · calendar >> necesario (>20% más) · sobra capacidad
+      SUB · calendar << necesario · falta producción
+      URGENTE_SIN_AGENDAR · días cobertura < 25 Y calendar=0 · CRÍTICO
+      AGENDADO_SIN_URGENCIA · cobertura > 45 Y calendar > 0 · revisar
+      SIN_VENTAS_SIN_AGENDAR · OK · no se mide
+
+    Query:
+        horizonte_dias: 60/90/180 (default 90)
+    """
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+
+    try:
+        horizonte = max(30, min(365, int(request.args.get("horizonte_dias", 90))))
+    except Exception:
+        horizonte = 90
+
+    # Reusar lógica de necesidades pero con horizonte custom
+    conn = get_db()
+    c = conn.cursor()
+    # Calcular necesidades con umbrales default
+    necesidades = _calcular_animus_dtc(c, ventana=60, cob_critico=20,
+                                        cob_alerta=25, cob_vigilar=45)
+    # Mapear producto → necesidad
+    nec_por_prod = {p["producto_nombre"]: p for p in necesidades}
+
+    # Producciones en Calendar (y manual legacy) próximos N días
+    from datetime import date as _date, timedelta as _td
+    hoy = _date.today()
+    fecha_hasta = (hoy + _td(days=horizonte)).isoformat()
+    cal_por_prod = {}
+    rows = c.execute(
+        """SELECT producto,
+                  GROUP_CONCAT(fecha_programada || '|' || COALESCE(cantidad_kg,0)),
+                  COUNT(*),
+                  COALESCE(SUM(cantidad_kg), 0),
+                  GROUP_CONCAT(origen, ',')
+           FROM produccion_programada
+           WHERE origen IN ('calendar','manual')
+             AND estado IN ('pendiente','programado','en_curso')
+             AND fin_real_at IS NULL
+             AND date(fecha_programada) >= date('now')
+             AND date(fecha_programada) <= date(?)
+           GROUP BY producto""",
+        (fecha_hasta,),
+    ).fetchall()
+    for r in rows:
+        if not r[0]:
+            continue
+        items = []
+        for item in (r[1] or "").split(","):
+            if "|" in item:
+                f, kg = item.split("|", 1)
+                items.append({"fecha": f, "kg": float(kg or 0)})
+        items.sort(key=lambda x: x["fecha"])
+        cal_por_prod[r[0]] = {
+            "n_lotes": int(r[2] or 0),
+            "kg_total": round(float(r[3] or 0), 2),
+            "fechas": items[:5],
+        }
+
+    # Comparar por producto
+    out = []
+    for nec in necesidades:
+        prod = nec["producto_nombre"]
+        cal = cal_por_prod.get(prod, {"n_lotes": 0, "kg_total": 0, "fechas": []})
+        vel_kg_dia = nec["velocidad_kg_dia"] or 0
+        kg_necesario = round(vel_kg_dia * horizonte, 2)
+        kg_calendar = cal["kg_total"]
+        diff_kg = round(kg_calendar - kg_necesario, 2)
+        diff_pct = (diff_kg / kg_necesario * 100) if kg_necesario > 0.01 else (100 if kg_calendar > 0 else 0)
+
+        # Categorización
+        dias_cob = nec["dias_cobertura"]
+        urgencia = nec["urgencia"]
+        if urgencia == "SIN_VENTAS":
+            categoria = "SIN_VENTAS"
+            if cal["n_lotes"] > 0:
+                categoria = "AGENDADO_SIN_VENTAS"  # ¡posible muerto!
+        elif urgencia in ("CRITICO", "URGENTE") and cal["n_lotes"] == 0:
+            categoria = "URGENTE_SIN_AGENDAR"
+        elif urgencia == "OK" and cal["n_lotes"] > 0:
+            categoria = "AGENDADO_SIN_URGENCIA"
+        elif kg_necesario > 0 and abs(diff_pct) <= 20:
+            categoria = "MATCH_OK"
+        elif diff_pct < -20:
+            categoria = "SUB_PRODUCCION"
+        elif diff_pct > 20:
+            categoria = "SOBRE_PRODUCCION"
+        else:
+            categoria = "MATCH_OK"
+
+        out.append({
+            "codigo_pt": nec["codigo_pt"],
+            "producto_nombre": prod,
+            "urgencia": urgencia,
+            "dias_cobertura": dias_cob,
+            "stock_uds": nec["stock_uds_total"],
+            "velocidad_uds_dia": nec["velocidad_uds_dia"],
+            "kg_necesario_horizonte": kg_necesario,
+            "kg_calendar_horizonte": kg_calendar,
+            "diff_kg": diff_kg,
+            "diff_pct": round(diff_pct, 1),
+            "n_lotes_calendar": cal["n_lotes"],
+            "fechas_calendar": cal["fechas"],
+            "categoria": categoria,
+        })
+
+    # Productos en Calendar SIN match en necesidades (productos no-Animus o
+    # que no están en formula_headers · descontinuados?)
+    productos_animus = {n["producto_nombre"] for n in necesidades}
+    rows_huerfanos = c.execute(
+        """SELECT producto, COUNT(*), SUM(cantidad_kg)
+           FROM produccion_programada
+           WHERE origen IN ('calendar','manual')
+             AND estado IN ('pendiente','programado','en_curso')
+             AND fin_real_at IS NULL
+             AND date(fecha_programada) >= date('now')
+             AND date(fecha_programada) <= date(?)
+           GROUP BY producto""",
+        (fecha_hasta,),
+    ).fetchall()
+    huerfanos = [{
+        "producto": r[0],
+        "n_lotes": int(r[1] or 0),
+        "kg_total": round(float(r[2] or 0), 2),
+    } for r in rows_huerfanos if r[0] not in productos_animus]
+
+    # Resumen
+    cats = {}
+    for o in out:
+        cats[o["categoria"]] = cats.get(o["categoria"], 0) + 1
+
+    return jsonify({
+        "horizonte_dias": horizonte,
+        "fecha_hasta": fecha_hasta,
+        "total_productos": len(out),
+        "total_calendar_lotes": sum(o["n_lotes_calendar"] for o in out) + sum(h["n_lotes"] for h in huerfanos),
+        "resumen_categorias": cats,
+        "productos": out,
+        "huerfanos_calendar": huerfanos,
+    })
+
+
+_COMPARAR_CALENDAR_HTML = """<!DOCTYPE html>
+<html lang="es"><head><meta charset="UTF-8">
+<title>Comparar Calendar vs Necesidades · EOS</title>
+<style>
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;color:#1e293b;margin:0;padding:20px}
+.wrap{max-width:1400px;margin:0 auto}
+.card{background:white;border-radius:12px;padding:20px;margin-bottom:16px;box-shadow:0 2px 6px rgba(0,0,0,.05)}
+h1{margin:0 0 6px;color:#0f766e;font-size:22px}
+.muted{color:#64748b;font-size:13px}
+button{background:#0f766e;color:white;border:none;padding:10px 18px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer}
+select{padding:9px 14px;border:1px solid #cbd5e1;border-radius:8px;font-size:13px}
+.kpi{display:inline-block;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 18px;margin-right:10px;margin-bottom:8px;text-align:center;min-width:130px;vertical-align:top}
+.kpi-lbl{font-size:11px;color:#64748b}
+.kpi-val{font-size:22px;font-weight:800}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{text-align:left;padding:8px;background:#f1f5f9;color:#475569;font-weight:700;cursor:pointer}
+td{padding:7px 8px;border-bottom:1px solid #f1f5f9;vertical-align:top}
+.mono{font-family:ui-monospace,SFMono-Regular,monospace;font-weight:700;color:#1e40af}
+.cat-MATCH_OK{background:#dcfce7;color:#166534;padding:2px 8px;border-radius:6px;font-weight:700;font-size:11px}
+.cat-URGENTE_SIN_AGENDAR{background:#fee2e2;color:#991b1b;padding:2px 8px;border-radius:6px;font-weight:700;font-size:11px}
+.cat-AGENDADO_SIN_URGENCIA{background:#fef3c7;color:#854d0e;padding:2px 8px;border-radius:6px;font-weight:700;font-size:11px}
+.cat-SUB_PRODUCCION{background:#fed7aa;color:#9a3412;padding:2px 8px;border-radius:6px;font-weight:700;font-size:11px}
+.cat-SOBRE_PRODUCCION{background:#e9d5ff;color:#581c87;padding:2px 8px;border-radius:6px;font-weight:700;font-size:11px}
+.cat-SIN_VENTAS{background:#f1f5f9;color:#64748b;padding:2px 8px;border-radius:6px;font-weight:700;font-size:11px}
+.cat-AGENDADO_SIN_VENTAS{background:#fecaca;color:#7f1d1d;padding:2px 8px;border-radius:6px;font-weight:700;font-size:11px}
+.diff-pos{color:#581c87;font-weight:700}
+.diff-neg{color:#dc2626;font-weight:700}
+.diff-ok{color:#166534}
+</style></head><body>
+<div class="wrap">
+<a href="/modulos">&larr; Volver al panel</a>
+<div class="card">
+  <h1>📊 Comparar Google Calendar vs Necesidades reales</h1>
+  <div class="muted">Análisis read-only · cruza producciones agendadas en Calendar contra lo que el sistema dice que necesitás producir (basado en Shopify ventas + stock actual). NO modifica nada.</div>
+  <div style="display:flex;gap:10px;margin-top:14px;align-items:center;flex-wrap:wrap">
+    Horizonte: <select id="hz">
+      <option value="60">60 días</option>
+      <option value="90" selected>90 días</option>
+      <option value="180">180 días</option>
+      <option value="365">1 año</option>
+    </select>
+    <button onclick="cargar()">▶ Analizar</button>
+  </div>
+  <div id="kpis" style="margin-top:14px"></div>
+</div>
+<div id="resultados"></div>
+</div>
+<script>
+function escapeHtml(s){return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+
+async function cargar() {
+  document.getElementById('resultados').innerHTML = '<div class="card">Analizando…</div>';
+  var hz = document.getElementById('hz').value;
+  try {
+    var r = await fetch('/api/plan/comparar-calendar-necesidades?horizonte_dias=' + hz);
+    var d = await r.json();
+    if (!r.ok) { alert('Error: ' + (d.error||r.status)); return; }
+    render(d);
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+const CAT_NAME = {
+  MATCH_OK: '✅ Match OK',
+  URGENTE_SIN_AGENDAR: '🔴 Urgente sin agendar',
+  AGENDADO_SIN_URGENCIA: '🟠 Agendado sin urgencia',
+  SUB_PRODUCCION: '🟧 Sub-producción',
+  SOBRE_PRODUCCION: '🟪 Sobre-producción',
+  SIN_VENTAS: '⚪ Sin ventas',
+  AGENDADO_SIN_VENTAS: '🔴 Agendado SIN VENTAS',
+};
+
+function render(d) {
+  // KPIs
+  var k = '';
+  k += '<span class="kpi"><div class="kpi-lbl">Productos Animus</div><div class="kpi-val">' + d.total_productos + '</div></span>';
+  k += '<span class="kpi"><div class="kpi-lbl">📅 Lotes Calendar</div><div class="kpi-val">' + d.total_calendar_lotes + '</div></span>';
+  var cats = d.resumen_categorias || {};
+  ['MATCH_OK','URGENTE_SIN_AGENDAR','AGENDADO_SIN_URGENCIA','SUB_PRODUCCION','SOBRE_PRODUCCION','AGENDADO_SIN_VENTAS','SIN_VENTAS'].forEach(c => {
+    if (cats[c] > 0) k += '<span class="kpi"><div class="kpi-lbl">' + CAT_NAME[c] + '</div><div class="kpi-val">' + cats[c] + '</div></span>';
+  });
+  document.getElementById('kpis').innerHTML = k;
+
+  // Veredicto resumen
+  var veredicto = '';
+  var totalProblemas = (cats.URGENTE_SIN_AGENDAR||0) + (cats.AGENDADO_SIN_URGENCIA||0) + (cats.SUB_PRODUCCION||0) + (cats.SOBRE_PRODUCCION||0) + (cats.AGENDADO_SIN_VENTAS||0);
+  if (totalProblemas === 0) {
+    veredicto = '<div class="card" style="border:2px solid #16a34a;background:#f0fdf4"><h2 style="margin:0;color:#166534">✅ Calendar está alineado con necesidades · podrías migrar a Plan sin pérdida</h2></div>';
+  } else if (totalProblemas > d.total_productos / 2) {
+    veredicto = '<div class="card" style="border:2px solid #dc2626;background:#fef2f2"><h2 style="margin:0 0 6px;color:#991b1b">⚠ Calendar tiene desviación significativa (' + totalProblemas + ' de ' + d.total_productos + ')</h2><div class="muted">Antes de migrar · revisar uno a uno · varios casos no reflejan necesidad real.</div></div>';
+  } else {
+    veredicto = '<div class="card" style="border:2px solid #ca8a04;background:#fefce8"><h2 style="margin:0 0 6px;color:#854d0e">🟠 Calendar mayormente bien, pero ' + totalProblemas + ' casos requieren revisión</h2><div class="muted">Lista abajo · cada uno con su categoría · podés migrar después de ajustar.</div></div>';
+  }
+
+  // Tabla agrupada por categoría · ordenadas por urgencia
+  var grupos = {};
+  d.productos.forEach(p => { (grupos[p.categoria] = grupos[p.categoria]||[]).push(p); });
+
+  var orden = ['URGENTE_SIN_AGENDAR','AGENDADO_SIN_VENTAS','SUB_PRODUCCION','SOBRE_PRODUCCION','AGENDADO_SIN_URGENCIA','MATCH_OK','SIN_VENTAS'];
+  var tbl = '';
+  orden.forEach(cat => {
+    var g = grupos[cat];
+    if (!g || g.length === 0) return;
+    tbl += '<div class="card"><h3 style="margin:0 0 12px"><span class="cat-' + cat + '">' + CAT_NAME[cat] + '</span> · ' + g.length + ' productos</h3>';
+    tbl += '<table><thead><tr><th>Cód</th><th>Producto</th><th>Stock uds</th><th>Vel/día</th><th>Días cob</th><th>kg necesario</th><th>kg Calendar</th><th>Diff</th><th>Lotes Cal</th><th>Próximas fechas</th></tr></thead><tbody>';
+    g.forEach(p => {
+      var diffCls = Math.abs(p.diff_pct) <= 20 ? 'diff-ok' : (p.diff_kg < 0 ? 'diff-neg' : 'diff-pos');
+      var fechas = (p.fechas_calendar||[]).map(f => f.fecha + ' (' + f.kg + 'kg)').join(' · ');
+      tbl += '<tr>';
+      tbl += '<td class="mono">' + escapeHtml(p.codigo_pt||'') + '</td>';
+      tbl += '<td>' + escapeHtml(p.producto_nombre) + '</td>';
+      tbl += '<td style="text-align:center">' + p.stock_uds + '</td>';
+      tbl += '<td style="text-align:center">' + (p.velocidad_uds_dia||0).toFixed(1) + '</td>';
+      tbl += '<td style="text-align:center">' + (p.dias_cobertura != null ? p.dias_cobertura + 'd' : '—') + '</td>';
+      tbl += '<td style="text-align:right">' + p.kg_necesario_horizonte + 'kg</td>';
+      tbl += '<td style="text-align:right">' + p.kg_calendar_horizonte + 'kg</td>';
+      tbl += '<td style="text-align:right" class="' + diffCls + '">' + (p.diff_kg>0?'+':'') + p.diff_kg + 'kg (' + (p.diff_pct>0?'+':'') + p.diff_pct + '%)</td>';
+      tbl += '<td style="text-align:center">' + p.n_lotes_calendar + '</td>';
+      tbl += '<td style="font-size:11px;color:#64748b">' + escapeHtml(fechas) + '</td>';
+      tbl += '</tr>';
+    });
+    tbl += '</tbody></table></div>';
+  });
+
+  // Huérfanos en Calendar
+  if (d.huerfanos_calendar && d.huerfanos_calendar.length) {
+    tbl += '<div class="card"><h3 style="margin:0 0 8px;color:#dc2626">🚧 Productos en Calendar que NO están en Animus DTC · ' + d.huerfanos_calendar.length + '</h3>';
+    tbl += '<div class="muted" style="margin-bottom:8px">Probablemente: maquila B2B, productos descontinuados, errores de tipeo. Revisar manualmente.</div>';
+    tbl += '<table><thead><tr><th>Producto</th><th>Lotes</th><th>kg total</th></tr></thead><tbody>';
+    d.huerfanos_calendar.forEach(h => {
+      tbl += '<tr><td>' + escapeHtml(h.producto) + '</td><td style="text-align:center">' + h.n_lotes + '</td><td style="text-align:right">' + h.kg_total + 'kg</td></tr>';
+    });
+    tbl += '</tbody></table></div>';
+  }
+
+  document.getElementById('resultados').innerHTML = veredicto + tbl;
+}
+cargar();
+</script>
+</body></html>"""
+
+
 @bp.route("/admin/mps-buscar", methods=["GET"])
 def mps_buscar_page():
     """Página admin · buscar MPs por nombre · ver stock individual + total + min."""
