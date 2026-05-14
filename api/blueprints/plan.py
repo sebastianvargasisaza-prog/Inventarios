@@ -2454,8 +2454,9 @@ function render(d, queries){
   let k = '';
   k += '<span class="kpi"><div class="kpi-lbl">Buscadas</div><div class="kpi-val">' + queries.length + '</div></span>';
   k += '<span class="kpi"><div class="kpi-lbl">Encontradas</div><div class="kpi-val">' + d.n_mps_encontradas + '</div></span>';
-  k += '<span class="kpi"><div class="kpi-lbl">📊 Histórico (12m)</div><div class="kpi-val" style="color:#0891b2">' + fmtKg(d.total_kg_consumido_anual_historico) + '</div></span>';
-  k += '<span class="kpi"><div class="kpi-lbl">🎯 Proyección 12m</div><div class="kpi-val" style="color:#16a34a">' + fmtKg(d.total_kg_necesidad_proyectada_anual) + '</div></span>';
+  k += '<span class="kpi"><div class="kpi-lbl">📊 Consumo histórico</div><div class="kpi-val" style="color:#0891b2">' + fmtKg(d.total_kg_consumido_anual_historico) + '</div></span>';
+  k += '<span class="kpi"><div class="kpi-lbl">📅 Calendar 12m</div><div class="kpi-val" style="color:#7c3aed">' + fmtKg(d.total_kg_necesidad_calendar_12m) + '</div></span>';
+  k += '<span class="kpi" style="border-color:#16a34a;background:#f0fdf4"><div class="kpi-lbl">🛒 COMPRAR 12m</div><div class="kpi-val" style="color:#16a34a">' + fmtKg(d.total_kg_a_comprar_12m) + '</div></span>';
   document.getElementById('kpis').innerHTML = k;
 
   let html = '<div class="card">';
@@ -2473,46 +2474,51 @@ function render(d, queries){
     return;
   }
 
-  // Ordenar por necesidad proyectada descendente (la métrica clave)
-  d.items.sort((a, b) => (b.kg_necesidad_proyectada_anual || 0) - (a.kg_necesidad_proyectada_anual || 0));
+  // Ordenar por kg_a_comprar descendente
+  d.items.sort((a, b) => (b.kg_a_comprar_para_cubrir_12m || 0) - (a.kg_a_comprar_para_cubrir_12m || 0));
 
   html += '<table>';
   html += '<thead><tr>';
   html += '<th>Cód MP</th>';
   html += '<th>Nombre comercial / INCI</th>';
-  html += '<th>Proveedor</th>';
-  html += '<th class="num">Histórico<br>12m (kg)</th>';
-  html += '<th class="num">🎯 Necesidad<br>proyectada 12m (kg)</th>';
-  html += '<th class="num">N° prod<br>activos</th>';
-  html += '<th>Productos que la usan</th>';
+  html += '<th class="num">Stock<br>actual</th>';
+  html += '<th class="num">📊 Consumo<br>histórico 12m</th>';
+  html += '<th class="num">📅 Necesidad<br>Calendar 12m</th>';
+  html += '<th class="num" style="background:#dcfce7">🛒 Comprar<br>12m</th>';
+  html += '<th>Productos que la usan (Calendar vs Ventas)</th>';
   html += '</tr></thead><tbody>';
 
   d.items.forEach((it, idx) => {
-    const sinNecesidad = (it.kg_necesidad_proyectada_anual || 0) === 0;
+    const aComprar = it.kg_a_comprar_para_cubrir_12m || 0;
     const inactivo = !it.activo;
     let badges = '';
     if (inactivo) badges += ' <span class="tag tag-warn">inactivo</span>';
-    if (sinNecesidad && !inactivo) badges += ' <span class="tag tag-warn">sin uso activo</span>';
+    if (aComprar === 0 && it.kg_necesidad_calendar_12m === 0 && !inactivo) badges += ' <span class="tag tag-warn">sin uso programado</span>';
 
     const productos = it.productos_que_la_usan || [];
     const productosActivos = productos.filter(p => !p.inactivo);
 
     html += '<tr>';
     html += '<td class="mono">' + escapeHtml(it.codigo_mp) + '</td>';
-    html += '<td><strong>' + escapeHtml(it.nombre_comercial) + '</strong>' + badges + '<br><span style="color:#94a3b8;font-size:10px">' + escapeHtml(it.nombre_inci) + '</span><br><span style="color:#64748b;font-size:10px">match: ' + escapeHtml(it.matched_query) + '</span></td>';
-    html += '<td style="font-size:11px;color:#475569">' + escapeHtml(it.proveedor || '—') + '</td>';
-    html += '<td class="num" style="color:#0891b2">' + fmtKg(it.kg_consumido_anual_extrapolado) + '<br><span style="font-size:10px;color:#94a3b8">' + (it.n_movimientos || 0) + ' mov</span></td>';
-    html += '<td class="num" style="color:#16a34a;font-size:16px;font-weight:800">' + fmtKg(it.kg_necesidad_proyectada_anual) + '</td>';
-    html += '<td class="num">' + it.n_productos_activos_que_la_usan + '</td>';
+    html += '<td><strong>' + escapeHtml(it.nombre_comercial) + '</strong>' + badges + '<br><span style="color:#94a3b8;font-size:10px">' + escapeHtml(it.nombre_inci) + '</span><br><span style="color:#475569;font-size:10px">' + escapeHtml(it.proveedor || '—') + ' · match: ' + escapeHtml(it.matched_query) + '</span></td>';
+    html += '<td class="num" style="color:#475569">' + fmtKg(it.stock_actual_kg) + '</td>';
+    html += '<td class="num" style="color:#0891b2">' + fmtKg(it.kg_consumido_anual_historico) + '<br><span style="font-size:10px;color:#94a3b8">' + (it.n_movimientos || 0) + ' mov</span></td>';
+    html += '<td class="num" style="color:#7c3aed">' + fmtKg(it.kg_necesidad_calendar_12m) + '<br><span style="font-size:10px;color:#94a3b8">ventas: ' + fmtKg(it.kg_necesidad_ventas_12m) + '</span></td>';
+    html += '<td class="num" style="background:#dcfce7;color:#16a34a;font-size:18px;font-weight:800">' + fmtKg(aComprar) + '</td>';
     html += '<td style="font-size:11px">';
     if (productosActivos.length){
       html += '<details><summary style="cursor:pointer;color:#0f766e;font-weight:700">▾ Ver ' + productosActivos.length + '</summary>';
-      html += '<table style="margin-top:5px;font-size:10px"><thead><tr><th>Producto</th><th class="num">g/lote</th><th class="num">Lotes/año</th><th class="num">kg/año</th></tr></thead><tbody>';
+      html += '<table style="margin-top:5px;font-size:10px"><thead><tr><th>Producto</th><th class="num">g/lote</th><th class="num">📅 Lotes<br>Calendar</th><th class="num">📅 kg MP<br>Calendar</th><th class="num">🛍 Lotes<br>Ventas est</th><th class="num">Fuente</th></tr></thead><tbody>';
       productosActivos.forEach(p => {
+        const fuenteTag = p.fuente_calculo === 'calendar' ?
+          '<span style="background:#e0e7ff;color:#3730a3;padding:1px 4px;border-radius:3px">Calendar</span>' :
+          '<span style="background:#fef3c7;color:#854d0e;padding:1px 4px;border-radius:3px">Ventas</span>';
         html += '<tr><td>' + escapeHtml(p.producto) + '</td>';
-        html += '<td class="num">' + p.gramos_mp_por_lote + 'g</td>';
-        html += '<td class="num">' + p.n_lotes_anuales + '</td>';
-        html += '<td class="num" style="font-weight:700">' + fmtKg(p.kg_mp_anual) + '</td></tr>';
+        html += '<td class="num">' + (p.gramos_mp_por_lote || 0) + 'g</td>';
+        html += '<td class="num">' + (p.calendar_n_lotes || 0) + '</td>';
+        html += '<td class="num" style="font-weight:700">' + fmtKg(p.calendar_kg_mp) + '</td>';
+        html += '<td class="num">' + (p.ventas_n_lotes_estimados || 0) + '</td>';
+        html += '<td class="num">' + fuenteTag + '</td></tr>';
       });
       html += '</tbody></table></details>';
     } else {
@@ -2601,15 +2607,40 @@ def gasto_anual_mps():
                 })
                 break
 
-    # ── Necesidades proyectadas · fórmulas activas × velocidad ventas ──
-    # Para cada producto en formula_headers activo:
-    #   1. Leer velocidad_kg_dia de Animus DTC
-    #   2. Calcular n_lotes_anuales = (vel_kg_dia × 365) / lote_size_kg
-    #   3. Para cada formula_items[material_id=MP] · gramos × n_lotes_anuales
-    # Resultado: kg que se PROYECTA necesitar de cada MP en 12 meses
+    # ── Necesidades proyectadas · Sebastián 14-may-2026:
+    # "para esos calculos usa google calendar que tiene la programacion
+    # de todo el año asi cruzas producciones pensadas vs formulas
+    # maestras vs estas materias primas"
+    #
+    # Combina 2 fuentes para máxima precisión:
+    #  (A) producciones_programadas próximos 365d · de produccion_programada
+    #      con origen IN (calendar, manual, eos_plan, eos_canonico) ·
+    #      estado != cancelado · esto es lo que se "PLANEÓ producir"
+    #  (B) velocidad_kg_dia de Animus DTC (Shopify ventas) · fallback si
+    #      el producto no tiene programación en Calendar
     necesidades_dtc = _calcular_animus_dtc(c, ventana=60, cob_critico=20,
                                             cob_alerta=25, cob_vigilar=45)
     nec_por_prod = {n["producto_nombre"]: n for n in necesidades_dtc}
+
+    # Producciones programadas (Calendar + EOS Plan + Canónico) próx 365d
+    # por producto · sumar n_lotes y kg_planificado
+    prog_por_producto = {}
+    for r in c.execute(
+        """SELECT producto,
+                  COUNT(*) AS n_lotes,
+                  COALESCE(SUM(cantidad_kg), 0) AS kg_total_planificado
+           FROM produccion_programada
+           WHERE estado NOT IN ('cancelado')
+             AND fin_real_at IS NULL
+             AND date(fecha_programada) >= date('now', '-5 hours')
+             AND date(fecha_programada) <= date('now', '-5 hours', '+365 day')
+             AND origen IN ('calendar','manual','eos_plan','eos_canonico')
+           GROUP BY producto""",
+    ).fetchall():
+        prog_por_producto[r[0] or ""] = {
+            "n_lotes": int(r[1] or 0),
+            "kg_planificado_12m": float(r[2] or 0),
+        }
 
     # Para cada MP matched, buscar en qué fórmulas se usa y proyectar
     items = []
@@ -2645,7 +2676,8 @@ def gasto_anual_mps():
             (cod,),
         ).fetchall()
         productos_usan = []
-        kg_proyectado_anual = 0.0
+        kg_proyectado_anual = 0.0     # según Calendar (preferido)
+        kg_estimado_ventas = 0.0      # según Shopify (fallback)
         for ru in rows_uso:
             prod = ru[0] or ""
             gramos_por_lote = float(ru[1] or 0)
@@ -2653,65 +2685,107 @@ def gasto_anual_mps():
             es_activo = bool(ru[3])
             nec = nec_por_prod.get(prod, {})
             vel_kg_dia = float(nec.get("velocidad_kg_dia", 0) or 0)
-            # Necesidad kg/año = vel_kg_dia × 365 (lo que se va a producir)
-            kg_producto_anual = vel_kg_dia * 365.0
-            # Si lote_kg > 0 → n_lotes = kg_producto_anual / lote_kg
-            # gramos MP por lote × n_lotes / 1000 = kg MP anual
-            if lote_kg > 0.01:
-                n_lotes_anual = kg_producto_anual / lote_kg
-                kg_mp_de_este_producto = (gramos_por_lote * n_lotes_anual) / 1000.0
+            prog = prog_por_producto.get(prod, {})
+            n_lotes_calendar = prog.get("n_lotes", 0)
+            kg_calendar = prog.get("kg_planificado_12m", 0)
+
+            # Cálculo A · CALENDAR (fuente principal)
+            # gramos_por_lote × n_lotes_calendar / 1000 = kg MP del Calendar
+            kg_mp_calendar = (gramos_por_lote * n_lotes_calendar) / 1000.0 if gramos_por_lote > 0 else 0.0
+
+            # Cálculo B · VENTAS Shopify (fallback)
+            kg_producto_anual_ventas = vel_kg_dia * 365.0
+            if lote_kg > 0.01 and gramos_por_lote > 0:
+                n_lotes_ventas = kg_producto_anual_ventas / lote_kg
+                kg_mp_ventas = (gramos_por_lote * n_lotes_ventas) / 1000.0
             else:
-                # Sin lote definido · proyectar lineal por kg producto
-                # gramos_por_lote es por "lote piloto" · no sabemos cuántos
-                kg_mp_de_este_producto = 0.0
-            if es_activo and kg_mp_de_este_producto > 0:
-                kg_proyectado_anual += kg_mp_de_este_producto
-                productos_usan.append({
-                    "producto": prod,
-                    "lote_kg": lote_kg,
-                    "gramos_mp_por_lote": gramos_por_lote,
-                    "vel_kg_dia": round(vel_kg_dia, 3),
-                    "kg_producto_anual": round(kg_producto_anual, 1),
-                    "n_lotes_anuales": round(n_lotes_anual, 1),
-                    "kg_mp_anual": round(kg_mp_de_este_producto, 2),
-                })
-            elif not es_activo:
+                n_lotes_ventas = 0
+                kg_mp_ventas = 0.0
+
+            if not es_activo:
                 productos_usan.append({
                     "producto": prod,
                     "inactivo": True,
                     "gramos_mp_por_lote": gramos_por_lote,
                 })
+                continue
+
+            # Sumar al total proyectado · Calendar manda si tiene lotes,
+            # sino fallback a ventas
+            if n_lotes_calendar > 0:
+                fuente = "calendar"
+                kg_mp_de_este_producto = kg_mp_calendar
+            else:
+                fuente = "ventas_shopify"
+                kg_mp_de_este_producto = kg_mp_ventas
+            kg_proyectado_anual += kg_mp_de_este_producto
+            kg_estimado_ventas += kg_mp_ventas
+
+            productos_usan.append({
+                "producto": prod,
+                "lote_kg": lote_kg,
+                "gramos_mp_por_lote": gramos_por_lote,
+                "fuente_calculo": fuente,
+                "calendar_n_lotes": n_lotes_calendar,
+                "calendar_kg_planificado": round(kg_calendar, 1),
+                "calendar_kg_mp": round(kg_mp_calendar, 2),
+                "ventas_vel_kg_dia": round(vel_kg_dia, 3),
+                "ventas_kg_producto_anual": round(kg_producto_anual_ventas, 1),
+                "ventas_n_lotes_estimados": round(n_lotes_ventas, 1),
+                "ventas_kg_mp": round(kg_mp_ventas, 2),
+                "kg_mp_anual": round(kg_mp_de_este_producto, 2),
+            })
 
         # Ordenar productos que más consumen primero
         productos_usan.sort(key=lambda x: -(x.get("kg_mp_anual") or 0))
 
+        # Stock actual (entradas - salidas, todo histórico en gramos)
+        row_stock = c.execute(
+            """SELECT
+                  COALESCE(SUM(CASE WHEN LOWER(tipo)='entrada' THEN cantidad ELSE 0 END),0) -
+                  COALESCE(SUM(CASE WHEN LOWER(tipo) IN ('salida','consumo') THEN cantidad ELSE 0 END),0)
+               FROM movimientos WHERE material_id = ?""",
+            (cod,),
+        ).fetchone()
+        stock_kg = round(float(row_stock[0] or 0) / 1000.0, 2)
+
+        # Necesidad neta de compra = proyectado anual - stock actual
+        kg_a_comprar = round(max(0, kg_proyectado_anual - stock_kg), 2)
+
         items.append({
             **mp,
             "ventana_dias": dias,
+            "stock_actual_kg": stock_kg,
             "kg_consumido_ventana": round(kg_consumo_ventana, 2),
-            "kg_consumido_anual_extrapolado": round(kg_consumo_anual, 2),
+            "kg_consumido_anual_historico": round(kg_consumo_anual, 2),
             "n_movimientos": n_mov,
-            "kg_necesidad_proyectada_anual": round(kg_proyectado_anual, 2),
+            "kg_necesidad_calendar_12m": round(kg_proyectado_anual, 2),
+            "kg_necesidad_ventas_12m": round(kg_estimado_ventas, 2),
+            "kg_a_comprar_para_cubrir_12m": kg_a_comprar,
             "productos_que_la_usan": productos_usan,
             "n_productos_activos_que_la_usan": sum(1 for p in productos_usan if not p.get("inactivo")),
         })
         total_kg_consumido += kg_consumo_anual
         total_kg_proyectado += kg_proyectado_anual
 
+    total_a_comprar = sum(it["kg_a_comprar_para_cubrir_12m"] for it in items)
     return jsonify({
         "ventana_dias": dias,
         "queries": queries,
         "items": items,
         "n_mps_encontradas": len(items),
         "total_kg_consumido_anual_historico": round(total_kg_consumido, 2),
-        "total_kg_necesidad_proyectada_anual": round(total_kg_proyectado, 2),
+        "total_kg_necesidad_calendar_12m": round(total_kg_proyectado, 2),
+        "total_kg_a_comprar_12m": round(total_a_comprar, 2),
         "no_encontrados": [q for q in queries if not any(
             _norm(q) in _norm(it["nombre_comercial"] + " " + it["nombre_inci"]) for it in items
         )],
         "metodologia": (
-            "kg_necesidad_proyectada_anual = suma por producto activo de "
-            "(gramos_mp_por_lote × kg_producto_anual / lote_size_kg / 1000). "
-            "kg_consumido_anual = movimientos tipo Salida extrapolados a 365d."
+            "kg_necesidad_calendar_12m: gramos_mp_por_lote × N_lotes_programados "
+            "(produccion_programada próx 365d · estado!=cancelado · origen "
+            "Calendar/EOS/Canónico). Fallback a velocidad_ventas si producto "
+            "no tiene programación. kg_a_comprar = max(0, necesidad - stock_actual). "
+            "kg_consumido_anual_historico: movimientos Salida extrapolados a 365d."
         ),
     })
 
