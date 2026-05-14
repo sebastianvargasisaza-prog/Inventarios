@@ -2631,6 +2631,25 @@ select,input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-si
 .lote.esperando_recurso{background:#fde68a;border-left-color:#d97706;color:#78350f;opacity:.85}
 .lote.sugerido{background:#fef3c7;border-left-color:#f59e0b;color:#92400e;border-style:dashed;border-width:1px}
 .lote.grande{font-weight:800;border-left-width:4px}
+.lote[draggable=true]{cursor:grab}
+.lote[draggable=true]:active{cursor:grabbing}
+.cal-day.drop-target{background:#dcfce7 !important;border:2px dashed #16a34a !important}
+.cal-day.drop-invalid{background:#fee2e2 !important;border:2px dashed #dc2626 !important}
+.modal-back{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.55);z-index:1000;justify-content:center;align-items:center;padding:20px;overflow-y:auto}
+.modal-back.show{display:flex}
+.modal-box{background:white;border-radius:14px;max-width:560px;width:100%;max-height:92vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.4)}
+.modal-head{background:linear-gradient(90deg,#0f766e,#0891b2);padding:14px 22px;border-radius:14px 14px 0 0;color:white;display:flex;justify-content:space-between;align-items:center}
+.modal-body{padding:18px 22px}
+.metric-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
+.metric-card{background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px}
+.metric-lbl{font-size:10px;color:#64748b;font-weight:700;text-transform:uppercase;margin-bottom:3px}
+.metric-val{font-size:16px;font-weight:800;color:#1e293b}
+.metric-sub{font-size:11px;color:#64748b;margin-top:2px}
+.banner-inline{padding:10px 14px;border-radius:8px;margin:10px 0;font-size:12px;border-left:4px solid}
+.banner-inline.ok{background:#dcfce7;border-color:#16a34a;color:#166534}
+.banner-inline.warn{background:#fef3c7;border-color:#ca8a04;color:#854d0e}
+.banner-inline.danger{background:#fee2e2;border-color:#dc2626;color:#991b1b}
+.banner-inline.info{background:#dbeafe;border-color:#1e40af;color:#1e40af}
 .lote-action{background:transparent;border:none;padding:0;color:inherit;cursor:pointer;font-size:10px;opacity:.6}
 .lote-action:hover{opacity:1}
 .kpi{display:inline-block;background:white;border:1px solid #e2e8f0;border-radius:8px;padding:8px 14px;margin-right:8px;margin-bottom:6px;text-align:center;min-width:100px;vertical-align:top}
@@ -2700,6 +2719,20 @@ select,input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-si
 <div class="card">
   <h2 style="margin:0 0 8px;color:#475569;font-size:15px">📋 Lista del autoplan · ' + horizonte + ' días</h2>
   <div id="sugerencias-lista"></div>
+</div>
+
+<!-- Modal detalle lote · Sebastián 14-may-2026: "cuando le de al producto
+     en calendario me abra, diga cuanto se vende al dia y al mes...
+     tambien deberia poder mover el producto en el calendario asi como
+     calendar permite mover eventos" -->
+<div id="loteModal" class="modal-back" onclick="if(event.target===this)cerrarLoteModal()">
+  <div class="modal-box">
+    <div class="modal-head">
+      <h3 id="lote-titulo" style="margin:0;font-size:16px;font-weight:800">Lote</h3>
+      <button onclick="cerrarLoteModal()" style="background:transparent;border:none;color:white;font-size:22px;cursor:pointer;line-height:1">✕</button>
+    </div>
+    <div class="modal-body" id="lote-body"></div>
+  </div>
 </div>
 
 </div>
@@ -2819,21 +2852,24 @@ function render(){
       if (isWeekend && !isFestivo) cls += ' weekend';
       if (lotes.some(l => l.tipo === 'sugerido')) cls += ' suggest';
 
-      grid += '<div class="' + cls + '" style="' + (isOtroMes ? 'opacity:.4' : '') + '">';
+      grid += '<div class="' + cls + '" data-date="' + fStr + '" data-weekend="' + (isWeekend ? '1':'0') + '" data-festivo="' + (isFestivo ? '1':'0') + '" style="' + (isOtroMes ? 'opacity:.4' : '') + '">';
       grid += '<div class="day-num"><span>' + fecha.getDate() + '</span>';
       if (isFestivo) grid += '<span class="festivo-tag">FEST</span>';
       grid += '</div>';
 
-      lotes.forEach(lt => {
+      lotes.forEach((lt, lotIdx) => {
         const ltCls = 'lote ' + (lt.tipo === 'sugerido' ? 'sugerido' : (lt.estado === 'esperando_recurso' ? 'esperando_recurso' : (lt.origen || 'eos_plan')));
         const esGrande = (lt.kg || 0) > 50 ? ' grande' : '';
         const prodCorto = (lt.producto || '').slice(0, 18);
+        // Identificador único para localizar el lote en drop · sugeridos
+        // usan sug:<idx> · agendados usan id:<id>
+        const dragKey = lt.tipo === 'sugerido' ? 'sug:' + lotIdx + ':' + fStr : 'id:' + lt.id;
         if (lt.tipo === 'sugerido'){
-          grid += '<div class="' + ltCls + esGrande + '" title="' + escapeHtml(lt.producto + ' · ' + lt.kg + 'kg · ' + (lt.motivo || '')) + '">';
+          grid += '<div class="' + ltCls + esGrande + '" draggable="true" data-key="' + dragKey + '" data-prod="' + escapeHtml(lt.producto) + '" data-kg="' + lt.kg + '" data-from="' + fStr + '" ondragstart="onDragStart(event)" ondragend="onDragEnd(event)" title="' + escapeHtml(lt.producto + ' · ' + lt.kg + 'kg · arrastrá para mover') + '">';
           grid += '<span>✨ ' + escapeHtml(prodCorto) + '<br><span style="opacity:.7">' + lt.kg + 'kg</span></span>';
           grid += '</div>';
         } else {
-          grid += '<div class="' + ltCls + esGrande + '" onclick="accionLote(' + lt.id + ',&quot;' + escapeHtml(lt.producto) + '&quot;,&quot;' + fStr + '&quot;)" title="' + escapeHtml(lt.producto + ' · ' + lt.kg + 'kg · ' + lt.estado + ' · click acción') + '">';
+          grid += '<div class="' + ltCls + esGrande + '" draggable="true" data-key="' + dragKey + '" data-prod="' + escapeHtml(lt.producto) + '" data-kg="' + lt.kg + '" data-from="' + fStr + '" ondragstart="onDragStart(event)" ondragend="onDragEnd(event)" onclick="abrirLoteModal(' + lt.id + ',&quot;' + escapeHtml(lt.producto) + '&quot;,&quot;' + fStr + '&quot;,' + lt.kg + ')" title="' + escapeHtml(lt.producto + ' · ' + lt.kg + 'kg · click detalle · arrastrá para mover') + '">';
           grid += '<span>' + escapeHtml(prodCorto) + '<br><span style="opacity:.7">' + lt.kg + 'kg</span></span>';
           grid += '</div>';
         }
@@ -2845,6 +2881,12 @@ function render(){
   grid += '</div>';
 
   document.getElementById('cal-grid-wrap').innerHTML = grid;
+  // Activar drop en cada cal-day
+  document.querySelectorAll('.cal-day').forEach(cell => {
+    cell.addEventListener('dragover', onDragOver);
+    cell.addEventListener('dragleave', onDragLeave);
+    cell.addEventListener('drop', onDrop);
+  });
 
   // Lista sugeridas con acciones
   renderListaSugerencias();
@@ -2900,30 +2942,133 @@ function ignorarSugerencia(i){
   render();
 }
 
-async function accionLote(id, producto, fecha){
-  const accion = prompt('Lote ' + id + ' · ' + producto + ' · ' + fecha +
-                          '\\n\\nAcción:\\n  M = Mover fecha\\n  P = Pausar (esperando MP)\\n  C = Cancelar\\n  R = Reactivar (si pausado)', 'M');
-  if (!accion) return;
-  const a = accion.trim().toUpperCase();
-  if (a === 'M'){
+// ═══════ MODAL DETALLE LOTE ═══════
+// Sebastián 14-may-2026: "cuando le de al producto en calendario me abra,
+// diga cuanto se vende al dia y al mes, que diga esta menos tantos dias o
+// esta bien calculado, que diga volumen del envase, kg para producir, y
+// diga nueva produccion en tal fecha y que esta sea automatica la calcule
+// segun los kilos programados"
+function cerrarLoteModal(){
+  document.getElementById('loteModal').classList.remove('show');
+}
+
+function buscarNecesidadProducto(producto){
+  // Busca info de Necesidades sobre el producto · velocidad, ml, etc
+  if (!PLAN_DATA || !PLAN_DATA.plan) return null;
+  const ctx = (PLAN_DATA.plan.contexto_enviado && PLAN_DATA.plan.contexto_enviado.productos) || [];
+  return ctx.find(p => (p.nombre || '').toUpperCase() === producto.toUpperCase()) || null;
+}
+
+async function abrirLoteModal(id, producto, fecha, kg){
+  document.getElementById('lote-titulo').textContent = '📅 ' + producto;
+  document.getElementById('lote-body').innerHTML = '<div class="muted" style="padding:30px;text-align:center">Cargando datos del producto…</div>';
+  document.getElementById('loteModal').classList.add('show');
+
+  // Obtener datos del producto desde /api/plan/necesidades
+  let info = null;
+  try {
+    const r = await fetch('/api/plan/necesidades');
+    const d = await r.json();
+    if (r.ok){
+      const animus = (d.clientes || []).find(c => c.cliente_id === 'ANIMUS_DTC');
+      info = (animus && animus.productos || []).find(p => p.producto_nombre.toUpperCase() === producto.toUpperCase());
+    }
+  } catch(e){}
+
+  if (!info){
+    document.getElementById('lote-body').innerHTML = '<div class="banner-inline warn">⚠ No se encontró el producto en Necesidades · datos limitados</div>' + _renderAccionesLote(id, producto, fecha);
+    return;
+  }
+
+  // Cálculos clave
+  const ml = info.ml_unidad || 30;
+  const velUds = info.velocidad_uds_dia || 0;
+  const velMes = Math.round(velUds * 30);
+  const stockUds = info.stock_uds_total || 0;
+  const stockKg = info.stock_kg_total || 0;
+  const diasCob = info.dias_cobertura;
+  const velKgDia = info.velocidad_kg_dia || 0;
+
+  // ¿Está bien calculado? · comparar fecha programada vs fecha-óptima (20d antes agotar)
+  // fecha agotamiento aproximada · hoy + diasCob días
+  // fecha óptima producción · agotamiento - 20d
+  let diagFecha = null;
+  let diagFechaTxt = '';
+  if (diasCob != null && diasCob > 0){
+    const hoy = new Date();
+    const fAgot = new Date(hoy); fAgot.setDate(fAgot.getDate() + diasCob);
+    const fOpt = new Date(fAgot); fOpt.setDate(fOpt.getDate() - 20);
+    const fProg = new Date(fecha + 'T12:00:00');
+    const diffDias = Math.round((fProg - fOpt) / 86400000);
+    if (Math.abs(diffDias) <= 7){
+      diagFecha = 'ok'; diagFechaTxt = '✅ Bien calculado · está dentro de ±7 días del óptimo';
+    } else if (diffDias > 0){
+      diagFecha = 'tarde'; diagFechaTxt = '⚠ TARDE · está ' + diffDias + ' días después del óptimo (stock se agota antes)';
+    } else {
+      diagFecha = 'temprano'; diagFechaTxt = '📌 TEMPRANO · está ' + Math.abs(diffDias) + ' días antes del óptimo (no urgente)';
+    }
+  }
+
+  // Próxima producción sugerida según los kg programados ahora
+  // kg programados / velKgDia = días que va a durar el lote
+  let proximaSugerida = null;
+  let proximaTxt = '';
+  if (velKgDia > 0.001 && kg > 0){
+    const diasDura = kg / velKgDia;
+    const diasHastaProx = diasDura - 20;  // producir 20d antes de agotar el nuevo lote
+    const fProx = new Date(fecha + 'T12:00:00');
+    fProx.setDate(fProx.getDate() + Math.round(diasHastaProx));
+    proximaSugerida = fProx.toISOString().slice(0, 10);
+    proximaTxt = 'Este lote de ' + kg + 'kg durará ~' + Math.round(diasDura) + ' días al ritmo actual · próxima producción sugerida: <strong>' + proximaSugerida + '</strong>';
+  }
+
+  let html = '';
+
+  // Sección 1: Datos de venta y stock
+  html += '<div class="metric-grid">';
+  html += '<div class="metric-card"><div class="metric-lbl">Volumen envase</div><div class="metric-val">' + ml + ' ml</div></div>';
+  html += '<div class="metric-card"><div class="metric-lbl">Kg a producir</div><div class="metric-val">' + kg + ' kg</div><div class="metric-sub">' + Math.round(kg * 1000 / ml) + ' uds aprox</div></div>';
+  html += '<div class="metric-card"><div class="metric-lbl">Vende/día</div><div class="metric-val">' + velUds.toFixed(1) + '</div><div class="metric-sub">' + velKgDia.toFixed(2) + ' kg/día</div></div>';
+  html += '<div class="metric-card"><div class="metric-lbl">Vende/mes</div><div class="metric-val">' + velMes + '</div><div class="metric-sub">' + (velKgDia * 30).toFixed(1) + ' kg/mes</div></div>';
+  html += '<div class="metric-card"><div class="metric-lbl">Stock actual</div><div class="metric-val">' + stockUds + ' uds</div><div class="metric-sub">' + stockKg.toFixed(1) + ' kg</div></div>';
+  html += '<div class="metric-card"><div class="metric-lbl">Cobertura</div><div class="metric-val">' + (diasCob != null ? diasCob + 'd' : '—') + '</div><div class="metric-sub">' + (info.urgencia || '') + '</div></div>';
+  html += '</div>';
+
+  // Sección 2: Diagnóstico fecha programada
+  if (diagFechaTxt){
+    const cls = diagFecha === 'ok' ? 'ok' : (diagFecha === 'tarde' ? 'danger' : 'info');
+    html += '<div class="banner-inline ' + cls + '"><strong>Fecha programada: ' + fecha + '</strong><br>' + diagFechaTxt + '</div>';
+  }
+
+  // Sección 3: Próxima producción sugerida
+  if (proximaTxt){
+    html += '<div class="banner-inline ok">🔁 ' + proximaTxt + '</div>';
+  }
+
+  // Sección 4: Acciones
+  html += _renderAccionesLote(id, producto, fecha);
+  document.getElementById('lote-body').innerHTML = html;
+}
+
+function _renderAccionesLote(id, producto, fecha){
+  let html = '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:14px;padding-top:14px;border-top:1px solid #e2e8f0">';
+  html += '<button onclick="loteAccion(' + id + ',&quot;M&quot;,&quot;' + escapeHtml(producto) + '&quot;,&quot;' + fecha + '&quot;)" class="secondary">📅 Mover fecha</button>';
+  html += '<button onclick="loteAccion(' + id + ',&quot;P&quot;,&quot;' + escapeHtml(producto) + '&quot;,&quot;' + fecha + '&quot;)" class="warn">⏸ Pausar</button>';
+  html += '<button onclick="loteAccion(' + id + ',&quot;R&quot;,&quot;' + escapeHtml(producto) + '&quot;,&quot;' + fecha + '&quot;)" class="success">▶ Reactivar</button>';
+  html += '<button onclick="loteAccion(' + id + ',&quot;C&quot;,&quot;' + escapeHtml(producto) + '&quot;,&quot;' + fecha + '&quot;)" class="danger">✕ Cancelar</button>';
+  html += '<div style="flex-basis:100%;font-size:11px;color:#64748b;margin-top:6px">💡 También podés arrastrar el lote a otro día del calendario para moverlo</div>';
+  html += '</div>';
+  return html;
+}
+
+async function loteAccion(id, accion, producto, fecha){
+  cerrarLoteModal();
+  if (accion === 'M'){
     const nueva = prompt('Nueva fecha (YYYY-MM-DD):', fecha);
     if (!nueva) return;
-    const r = await fetch('/api/plan/proximas/' + id + '/reprogramar', {
-      method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':getCSRF()},
-      body: JSON.stringify({nueva_fecha: nueva.trim(), razon: 'manual_calendario'}),
-    });
-    let d = await r.json();
-    if (r.status === 422 && confirm('⚠ ' + d.error + '\\n\\n¿Forzar?')){
-      const r2 = await fetch('/api/plan/proximas/' + id + '/reprogramar', {
-        method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':getCSRF()},
-        body: JSON.stringify({nueva_fecha: nueva.trim(), skip_validacion_dia: true}),
-      });
-      d = await r2.json();
-    }
-    if (!r.ok && r.status !== 422){ alert('Error: ' + (d.error || r.status)); return; }
-    cargar();
-  } else if (a === 'P'){
-    const motivo = prompt('Motivo:', 'falta_mp');
+    await reprogramarLote(id, nueva.trim(), 'manual_modal');
+  } else if (accion === 'P'){
+    const motivo = prompt('Motivo de pausa:', 'falta_mp');
     if (!motivo) return;
     const r = await fetch('/api/plan/proximas/' + id + '/pausar', {
       method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':getCSRF()},
@@ -2932,14 +3077,14 @@ async function accionLote(id, producto, fecha){
     const d = await r.json();
     if (!r.ok){ alert('Error: ' + (d.error || r.status)); return; }
     cargar();
-  } else if (a === 'C'){
+  } else if (accion === 'C'){
     if (!confirm('¿Cancelar lote?')) return;
     const r = await fetch('/api/plan/proximas/' + id, {
       method:'DELETE', headers:{'X-CSRF-Token':getCSRF()},
     });
     if (!r.ok){ const d = await r.json(); alert('Error: ' + (d.error || r.status)); return; }
     cargar();
-  } else if (a === 'R'){
+  } else if (accion === 'R'){
     const r = await fetch('/api/plan/proximas/' + id + '/reactivar', {
       method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':getCSRF()},
       body: JSON.stringify({}),
@@ -2947,6 +3092,92 @@ async function accionLote(id, producto, fecha){
     const d = await r.json();
     if (!r.ok){ alert('Error: ' + (d.error || r.status)); return; }
     cargar();
+  }
+}
+
+async function reprogramarLote(id, nuevaFecha, razon){
+  let r = await fetch('/api/plan/proximas/' + id + '/reprogramar', {
+    method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':getCSRF()},
+    body: JSON.stringify({nueva_fecha: nuevaFecha, razon: razon || 'drag_calendario'}),
+  });
+  let d = await r.json();
+  if (r.status === 422 && confirm('⚠ ' + d.error + '\\n\\n¿Forzar la reprogramación?')){
+    r = await fetch('/api/plan/proximas/' + id + '/reprogramar', {
+      method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':getCSRF()},
+      body: JSON.stringify({nueva_fecha: nuevaFecha, razon: razon || 'drag_calendario', skip_validacion_dia: true}),
+    });
+    d = await r.json();
+  }
+  if (!r.ok && r.status !== 422){ alert('Error: ' + (d.error || r.status)); return; }
+  cargar();
+}
+
+// ═══════ DRAG & DROP ═══════
+let _dragLote = null;
+
+function onDragStart(ev){
+  _dragLote = {
+    key: ev.currentTarget.dataset.key,
+    prod: ev.currentTarget.dataset.prod,
+    kg: parseFloat(ev.currentTarget.dataset.kg),
+    from: ev.currentTarget.dataset.from,
+  };
+  ev.currentTarget.style.opacity = '.4';
+  ev.dataTransfer.effectAllowed = 'move';
+}
+
+function onDragEnd(ev){
+  ev.currentTarget.style.opacity = '';
+  document.querySelectorAll('.cal-day.drop-target, .cal-day.drop-invalid').forEach(el => {
+    el.classList.remove('drop-target', 'drop-invalid');
+  });
+}
+
+function onDragOver(ev){
+  if (!_dragLote) return;
+  const fecha = ev.currentTarget.dataset.date;
+  if (!fecha || fecha === _dragLote.from) return;
+  ev.preventDefault();
+  ev.dataTransfer.dropEffect = 'move';
+  const isWE = ev.currentTarget.dataset.weekend === '1';
+  const isFest = ev.currentTarget.dataset.festivo === '1';
+  document.querySelectorAll('.cal-day.drop-target, .cal-day.drop-invalid').forEach(el => {
+    el.classList.remove('drop-target', 'drop-invalid');
+  });
+  if (isWE || isFest){
+    ev.currentTarget.classList.add('drop-invalid');
+  } else {
+    ev.currentTarget.classList.add('drop-target');
+  }
+}
+
+function onDragLeave(ev){
+  ev.currentTarget.classList.remove('drop-target', 'drop-invalid');
+}
+
+async function onDrop(ev){
+  ev.preventDefault();
+  ev.currentTarget.classList.remove('drop-target', 'drop-invalid');
+  if (!_dragLote) return;
+  const fechaNueva = ev.currentTarget.dataset.date;
+  if (!fechaNueva || fechaNueva === _dragLote.from) { _dragLote = null; return; }
+  const k = _dragLote.key;
+  if (k.startsWith('sug:')){
+    // Sugerencia del autoplan · solo modificar in-memory
+    const parts = k.split(':');
+    // Buscar el item correspondiente en plan_items
+    const it = (PLAN_DATA.plan.plan_items || []).find(x => x.producto === _dragLote.prod && x.fecha === _dragLote.from);
+    if (it){
+      it.fecha = fechaNueva;
+      if (it.from_ia && it.decision_id) feedbackIA(it.decision_id, 'movida', it.kg, fechaNueva, 'Drag desde ' + _dragLote.from);
+    }
+    _dragLote = null;
+    render();
+  } else if (k.startsWith('id:')){
+    // Lote agendado real · llamar /reprogramar
+    const id = parseInt(k.slice(3));
+    _dragLote = null;
+    await reprogramarLote(id, fechaNueva, 'drag_calendario');
   }
 }
 
