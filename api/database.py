@@ -242,7 +242,19 @@ except ImportError:
     except ImportError:
         _MIG_127_STMTS = []
 
+# Mig 130 SQL statements · canónicos 12 meses con frecuencias confirmadas
+# Sebastián (LIMP BHA 200/45d, LKJ 90/60d, SAH 90/90d, etc · 7 productos)
+try:
+    from mig_130_canonicos_data import STATEMENTS as _MIG_130_STMTS
+except ImportError:
+    try:
+        from api.mig_130_canonicos_data import STATEMENTS as _MIG_130_STMTS
+    except ImportError:
+        _MIG_130_STMTS = []
+
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (130, "Programar canónicos 12 meses con frecuencias Sebastián · paso 5/6",
+     _MIG_130_STMTS),
     (129, "Cancelar Calendar legacy duplicado/obsoleto · Sebastián 14-may-2026", [
         # Sebastián 14-may-2026: paso 2/6 limpieza de programación.
         # Calendar legacy tiene lotes que YA pasaron sin ejecutar (Alejandro
