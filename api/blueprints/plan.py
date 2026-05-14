@@ -810,6 +810,33 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
         p["tiene_pausa"] = len(pausados) > 0
         p["tiene_plan_activo"] = proximo is not None
 
+        # Detectar duplicados · Sebastián 14-may-2026: "veo mucha cosa
+        # repetida como producción esta semana y se repite la próxima, de
+        # donde está tomando ese calendario". Causa típica: mig de
+        # Calendar + Plan EOS crearon lotes del mismo producto con fechas
+        # cercanas (< 21 días = considerado duplicado).
+        # Agrupa pares (a, b) donde |fecha_a - fecha_b| < 21 días.
+        from datetime import date as _date2
+        duplicados_grupos = []
+        for i, la in enumerate(agendados):
+            for lb in agendados[i + 1:]:
+                try:
+                    fa = _date2.fromisoformat(la["fecha"][:10])
+                    fb = _date2.fromisoformat(lb["fecha"][:10])
+                    delta = abs((fa - fb).days)
+                    if delta < 21:
+                        duplicados_grupos.append({
+                            "id_a": la["id"], "fecha_a": la["fecha"],
+                            "origen_a": la["origen"], "kg_a": la["kg"],
+                            "id_b": lb["id"], "fecha_b": lb["fecha"],
+                            "origen_b": lb["origen"], "kg_b": lb["kg"],
+                            "delta_dias": delta,
+                        })
+                except Exception:
+                    pass
+        p["duplicados_detectados"] = duplicados_grupos
+        p["n_duplicados"] = len(duplicados_grupos)
+
         # Trazabilidad · Sebastián 13-may-2026: "trazabilidad del
         # calendario para saber ya esta programado o no, esa programación
         # alcanza o no alcanza, tambien ver materias primas alcanzan o no".
@@ -2008,6 +2035,100 @@ function render(d) {
 }
 </script>
 </body></html>"""
+
+
+@bp.route("/api/plan/debug-origenes", methods=["GET"])
+def plan_debug_origenes():
+    """Diagnóstico · de dónde sale cada lote del plan + detección de
+    duplicados globales.
+
+    Sebastián 14-may-2026: "veo mucha cosa repetida como producción
+    esta semana y se repite la proxima, de donde esta tomando ese
+    calendario".
+
+    Devuelve:
+      por_origen: {calendar: N, eos_plan: M, eos_canonico: K, ...}
+      duplicados: pares de lotes mismo producto + < 21 días entre fechas
+      total_activos: lotes pendientes/programados/en_curso/esperando
+    """
+    err = _require_login()
+    if err:
+        return err
+    conn = get_db()
+    c = conn.cursor()
+    from datetime import date as _date
+
+    # Conteo por origen
+    rows = c.execute(
+        """SELECT COALESCE(origen,'(NULL)'), COUNT(*),
+                  GROUP_CONCAT(producto || '|' || fecha_programada || '|' ||
+                              COALESCE(cantidad_kg,0) || '|' || id, '~~')
+           FROM produccion_programada
+           WHERE estado IN ('pendiente','programado','en_curso','esperando_recurso')
+             AND fin_real_at IS NULL
+             AND date(fecha_programada) >= date('now', '-5 hours', '-7 day')
+             AND date(fecha_programada) <= date('now', '-5 hours', '+365 day')
+           GROUP BY origen""",
+    ).fetchall()
+    por_origen = {}
+    todos_lotes = []
+    for r in rows:
+        origen = r[0]
+        n = int(r[1] or 0)
+        por_origen[origen] = n
+        for entry in (r[2] or "").split("~~"):
+            parts = entry.split("|")
+            if len(parts) == 4:
+                todos_lotes.append({
+                    "producto": parts[0],
+                    "fecha": parts[1][:10],
+                    "kg": float(parts[2] or 0),
+                    "id": int(parts[3]),
+                    "origen": origen,
+                })
+
+    # Detectar duplicados globales · mismo producto + < 21 días
+    duplicados = []
+    by_prod = {}
+    for lt in todos_lotes:
+        by_prod.setdefault(lt["producto"], []).append(lt)
+    for prod, lotes in by_prod.items():
+        lotes_sorted = sorted(lotes, key=lambda x: x["fecha"])
+        for i, la in enumerate(lotes_sorted):
+            for lb in lotes_sorted[i + 1:]:
+                try:
+                    fa = _date.fromisoformat(la["fecha"])
+                    fb = _date.fromisoformat(lb["fecha"])
+                    delta = (fb - fa).days
+                    if delta < 21:
+                        duplicados.append({
+                            "producto": prod,
+                            "id_temprano": la["id"], "fecha_temprano": la["fecha"],
+                            "origen_temprano": la["origen"], "kg_temprano": la["kg"],
+                            "id_tardio": lb["id"], "fecha_tardio": lb["fecha"],
+                            "origen_tardio": lb["origen"], "kg_tardio": lb["kg"],
+                            "delta_dias": delta,
+                            "sugerencia_cancelar_id": lb["id"] if lb["origen"] == 'calendar' else la["id"],
+                            "sugerencia_razon": "Calendar legacy reemplazado por EOS" if (lb["origen"] == 'calendar' or la["origen"] == 'calendar') else "Doble agendamiento",
+                        })
+                    else:
+                        break  # ordenado, demás están más lejos
+                except Exception:
+                    pass
+
+    return jsonify({
+        "por_origen": por_origen,
+        "total_activos": sum(por_origen.values()),
+        "duplicados": duplicados,
+        "n_duplicados": len(duplicados),
+        "info_origenes": {
+            "calendar": "Mirror de Google Calendar (legacy · animuslb.com)",
+            "manual": "Calendar legacy manual (antes de EOS Plan)",
+            "eos_plan": "Programado desde Plan-Sugerido o modal Solicitar",
+            "eos_canonico": "Programación recurrente (cada N días)",
+            "eos_retroactivo": "Back-fill · producción real ya completada",
+        },
+    })
 
 
 @bp.route("/api/plan/debug-tz", methods=["GET"])

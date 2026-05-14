@@ -1522,7 +1522,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
   <div id="solicitarModal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.55);z-index:1000;justify-content:center;align-items:center;padding:20px;overflow-y:auto">
     <div style="background:white;border-radius:14px;padding:0;max-width:600px;width:100%;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.4)">
       <div style="background:linear-gradient(90deg,#0f766e,#0891b2);padding:16px 24px;border-radius:14px 14px 0 0;color:white;display:flex;justify-content:space-between;align-items:center">
-        <h3 id="sol-titulo" style="margin:0;font-size:16px;font-weight:800">⚡ Solicitar producción</h3>
+        <h3 id="sol-titulo" style="margin:0;font-size:16px;font-weight:800">📅 Plan de producción</h3>
         <button onclick="cerrarSolicitar()" style="background:transparent;color:white;border:none;font-size:20px;cursor:pointer;line-height:1">✕</button>
       </div>
       <div id="sol-body" style="padding:20px"></div>
@@ -17144,8 +17144,12 @@ async function ckMarcar(itemId, estado){
         html += '<div style="font-size:11px;color:#1e293b;margin-top:4px;font-weight:600">' + p.stock_uds_total + ' uds · ' + (p.stock_kg_total != null ? p.stock_kg_total.toFixed(1) + 'kg' : '—') + '</div>';
         html += '</td>';
 
-        // COL 3 · Plan · ¿programado? ¿alcanza?
-        html += '<td style="padding:12px 10px;text-align:center">';
+        // COL 3 · Plan · clickeable · abre modal Plan de producción completo
+        // Sebastián 14-may-2026: "donde dice plan de produccion deberia
+        // quedar con todas las funciones, cambiar fecha, cambiar cantidad,
+        // todo lo que tiene solicitar pero bien ordenado, también allí que
+        // quede el horizonte, programar automatico cada 30,60, 90 dias".
+        html += '<td style="padding:12px 10px;text-align:center;cursor:pointer" onclick="abrirPlanProduccion(' + idx + ')" title="Click para gestionar plan completo (fecha · kg · horizonte · canónico 30/60/90)">';
         if (p.proximo_lote) {
           const fechaCorta = (p.proximo_lote.fecha || '').slice(5, 10);
           const alcanzaCfg = {
@@ -17164,9 +17168,15 @@ async function ckMarcar(itemId, estado){
           const motivosUnicos = [...new Set(p.lotes_pausados.map(lp => lp.motivo_pausa || '?'))];
           html += '<div style="margin-top:5px"><span title="Pausados: ' + p.lotes_pausados.length + '" style="background:#fde68a;color:#78350f;padding:2px 7px;border-radius:5px;font-size:10px;font-weight:700">⏸ ' + escapeHtmlNec(motivosUnicos.join(', ').slice(0, 22)) + '</span></div>';
         }
-        // Mini-lista de lotes con acciones · solo si hay
+        // Alerta duplicados · Sebastián 14-may-2026: "veo mucha cosa repetida"
+        if ((p.n_duplicados || 0) > 0) {
+          const tooltipDup = p.duplicados_detectados.map(d => '• ' + d.fecha_a + ' (' + d.origen_a + ') vs ' + d.fecha_b + ' (' + d.origen_b + ')').join('\\n');
+          html += '<div style="margin-top:5px"><span title="' + escapeHtmlNec(tooltipDup) + '" style="background:#fecaca;color:#7f1d1d;padding:2px 7px;border-radius:5px;font-size:10px;font-weight:700">⚠ ' + p.n_duplicados + ' duplicado(s)</span></div>';
+        }
+        // CTA visible · Sebastián 14-may-2026: que se entienda que es la acción
+        html += '<div style="margin-top:8px"><button onclick="event.stopPropagation();abrirPlanProduccion(' + idx + ')" style="background:#0f766e;color:#fff;border:none;padding:6px 14px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer;width:100%">📅 Gestionar plan</button></div>';
         if ((p.planificacion || []).length) {
-          html += '<details style="margin-top:6px;text-align:left;font-size:10px"><summary style="cursor:pointer;color:#64748b">▾ ' + p.planificacion.length + ' lote(s)</summary>';
+          html += '<details style="margin-top:5px;text-align:left;font-size:10px" onclick="event.stopPropagation()"><summary style="cursor:pointer;color:#64748b">▾ Ver ' + p.planificacion.length + ' lote(s) · acciones rápidas</summary>';
           html += '<div style="margin-top:4px">' + renderLotesInline(p.planificacion, p.producto_nombre) + '</div>';
           html += '</details>';
         }
@@ -17188,9 +17198,10 @@ async function ckMarcar(itemId, estado){
         }
         html += '</td>';
 
-        // COL 5 · Acción principal
+        // COL 5 · Solicitar (reservado para futuro uso · Sebastián 14-may-2026:
+        // "solicitar lo usare para algo mas")
         html += '<td style="padding:12px 10px;text-align:center">';
-        html += '<button onclick="abrirSolicitar(' + idx + ')" style="background:#0f766e;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;width:100%">⚡ Solicitar</button>';
+        html += '<button onclick="solicitarPlaceholder(&quot;' + escapeHtmlNec(p.producto_nombre) + '&quot;)" title="Reservado · pendiente definición de función" style="background:#94a3b8;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;width:100%;opacity:.8">⚡ Solicitar</button>';
         if (p.ultima_produccion_fecha) {
           html += '<div style="margin-top:5px;font-size:10px;color:#ca8a04" title="Última producción">📜 ' + (p.ultima_produccion_fecha || '').slice(5, 10) + '</div>';
         }
@@ -17319,11 +17330,27 @@ async function ckMarcar(itemId, estado){
   }
 
   // ── Modal unificado "Solicitar producción" ──────────────────────
+  // Alias semántico · Sebastián 14-may-2026: "donde dice plan de produccion
+  // deberia quedar con todas las funciones, cambiar fecha, cambiar cantidad,
+  // todo lo que tiene solicitar pero bien ordenado, también allí que quede
+  // el horizonte, programar automatico cada 30,60, 90 dias".
+  // El modal ya tenía todo · solo cambiamos punto de entrada y nombre.
+  function abrirPlanProduccion(idx) { return abrirSolicitar(idx); }
+
+  // Placeholder "Solicitar" · reservado para futura función · Sebastián
+  // 14-may-2026: "solicitar lo usare para algo mas ahora"
+  function solicitarPlaceholder(prodNombre) {
+    alert('⚡ Solicitar · función en definición\\n\\n' +
+          'Sebastián reservó este botón para un nuevo flujo. ' +
+          'Por ahora abrí el plan completo desde la columna "📅 Plan de producción".\\n\\n' +
+          'Producto: ' + prodNombre);
+  }
+
   function abrirSolicitar(idx) {
     const p = window._NEC_PRODUCTOS_CACHE[idx];
     if (!p) { alert('Producto no encontrado'); return; }
     document.getElementById('sol-titulo').textContent =
-      '⚡ ' + (p.codigo_pt || '') + ' · ' + p.producto_nombre;
+      '📅 ' + (p.codigo_pt || '') + ' · ' + p.producto_nombre;
     const cfg = URG_COLORS[p.urgencia] || URG_COLORS.OK;
     const ventaMes = Math.round(p.velocidad_uds_dia * 30);
 
@@ -17331,8 +17358,10 @@ async function ckMarcar(itemId, estado){
       ? '<img src="' + escapeHtmlNec(p.imagen_url) + '" alt="" style="width:80px;height:80px;object-fit:cover;border-radius:8px" onerror="this.style.display=&#39;none&#39;">'
       : '<div style="width:80px;height:80px;background:linear-gradient(135deg,#e2e8f0,#cbd5e1);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:32px">📦</div>';
 
-    // Presentación + 10ml info
-    let presentacion = '<strong>30 ml</strong> (presentación DTC)';
+    // Presentación + 10ml info · usa ml_unidad real (Sebastián 13-may-2026:
+    // "los sueros son de 30, los limpiadores de 150, geles e hidratantes de 50")
+    const mlReal = p.ml_unidad || 30;
+    let presentacion = '<strong>' + mlReal + ' ml</strong> (presentación DTC)';
     if (p.tiene_10ml) {
       const tipo10 = p.tipo_10ml === 'regalo' ? 'regalo automático' : 'venta';
       presentacion += '<br><span style="background:#fdf4ff;color:#7e22ce;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700">10ml · ' + p.uds_10ml_por_lote + ' uds/lote · ' + tipo10 + '</span>';
@@ -17343,9 +17372,15 @@ async function ckMarcar(itemId, estado){
     html += '<div style="flex:1">' + presentacion + '</div>';
     html += '</div>';
 
+    // ═══════ SECCIÓN 1 · DIAGNÓSTICO (read-only) ═══════
+    // Sebastián 14-may-2026: "bien ordenado" · separo en 3 secciones claras:
+    // 1) Diagnóstico (qué pasa hoy) · 2) Programar (acción rápida) · 3) Mover/Pausar (acciones sobre lo agendado)
+
+    html += '<div style="font-size:11px;color:#0f766e;font-weight:800;text-transform:uppercase;letter-spacing:.5px;margin:14px 0 6px;padding-bottom:4px;border-bottom:2px solid #0f766e">① Diagnóstico</div>';
+
     // ── Demanda actual ──
-    html += '<div style="background:#f8fafc;border-radius:8px;padding:12px;margin-bottom:12px;border-left:4px solid ' + cfg.border + '">';
-    html += '<div style="font-size:11px;color:#475569;font-weight:700;margin-bottom:6px">📊 Demanda y stock actual</div>';
+    html += '<div style="background:#f8fafc;border-radius:8px;padding:12px;margin-bottom:8px;border-left:4px solid ' + cfg.border + '">';
+    html += '<div style="font-size:11px;color:#475569;font-weight:700;margin-bottom:6px">📊 Demanda y stock</div>';
     html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:12px">';
     html += '<div>Vende/día: <strong>' + p.velocidad_uds_dia.toFixed(1) + ' uds</strong></div>';
     html += '<div>Vende/mes: <strong>' + ventaMes + ' uds</strong></div>';
@@ -17408,17 +17443,13 @@ async function ckMarcar(itemId, estado){
       html += '</div>';
     }
 
-    // ── Agendado pendiente (si hay) ──
-    if ((p.lotes_pendientes_n || 0) > 0) {
-      html += '<div style="background:#dbeafe;border-left:4px solid #1e40af;border-radius:8px;padding:10px;margin-bottom:12px;font-size:12px;color:#1e40af">';
-      html += '📅 <strong>Ya agendado:</strong> ' + p.lotes_pendientes_n + ' lote · ' + p.lotes_pendientes_kg + ' kg · ' + (p.lotes_pendientes_proximas_fechas || []).join(', ');
-      html += '</div>';
-    }
+    // ═══════ SECCIÓN 2 · PROGRAMAR PRODUCCIÓN ═══════
+    html += '<div style="font-size:11px;color:#0f766e;font-weight:800;text-transform:uppercase;letter-spacing:.5px;margin:18px 0 6px;padding-bottom:4px;border-bottom:2px solid #0f766e">② Programar producción</div>';
 
-    // ── Sugerencias inteligentes ──
+    // ── 2a. Sugerencias rápidas 30/60/90 ──
     if (p.escenarios && p.escenarios.length > 0) {
-      html += '<div style="background:#ecfeff;border-left:4px solid #0891b2;border-radius:8px;padding:12px;margin-bottom:12px">';
-      html += '<div style="font-size:11px;color:#155e75;font-weight:700;margin-bottom:8px">⚡ Sugerencias · click y agendado</div>';
+      html += '<div style="background:#ecfeff;border-left:4px solid #0891b2;border-radius:8px;padding:12px;margin-bottom:8px">';
+      html += '<div style="font-size:11px;color:#155e75;font-weight:700;margin-bottom:8px">⚡ Cobertura objetivo · 1 click agenda</div>';
       html += '<div style="display:flex;gap:8px;flex-wrap:wrap">';
       p.escenarios.forEach(esc => {
         const bg = esc.recomendado ? '#0f766e' : '#0891b2';
@@ -17432,27 +17463,81 @@ async function ckMarcar(itemId, estado){
       html += '</div></div>';
     }
 
-    // ── Programación canónica · recurrente con horizonte ──
-    // Sebastián 13-may-2026: "quieres hacer canónico, cada 60 días un año"
-    html += '<div style="background:#fef3c7;border-left:4px solid #ca8a04;border-radius:8px;padding:12px;margin-top:10px;margin-bottom:10px">';
-    html += '<div style="font-size:11px;color:#854d0e;font-weight:700;margin-bottom:8px">🔁 Programar canónico · 1 click llena el año</div>';
-    html += '<div style="font-size:11px;color:#475569;margin-bottom:6px">Genera lotes recurrentes respetando: solo lun-vie · preferir lun/mié/vie · max 2/día</div>';
-    html += '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px">';
-    html += '<label style="font-size:11px;color:#475569">Cada <select id="can-freq" style="padding:3px 6px;border:1px solid #cbd5e1;border-radius:4px;font-size:11px"><option value="30">30 días</option><option value="60" selected>60 días</option><option value="90">90 días</option><option value="45">45 días</option><option value="120">120 días</option></select></label>';
-    html += '<label style="font-size:11px;color:#475569">kg/lote <input id="can-kg" type="number" step="0.1" value="' + (p.lote_bulk_kg || 90) + '" style="padding:3px 6px;border:1px solid #cbd5e1;border-radius:4px;font-size:11px;width:70px"></label>';
-    html += '<label style="font-size:11px;color:#475569">Horizonte <select id="can-horizonte" style="padding:3px 6px;border:1px solid #cbd5e1;border-radius:4px;font-size:11px"><option value="180">6 meses</option><option value="365" selected>1 año</option><option value="540">1.5 años</option><option value="730">2 años</option></select></label>';
+    // ── 2b. Programar único · personalizar fecha + cantidad ──
+    html += '<div style="background:#f0fdf4;border-left:4px solid #16a34a;border-radius:8px;padding:12px;margin-bottom:8px">';
+    html += '<div style="font-size:11px;color:#166534;font-weight:700;margin-bottom:8px">📅 Lote único · personalizar fecha y cantidad</div>';
+    html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:11px;margin-bottom:8px">';
+    html += '<label style="color:#475569">Fecha<input id="ppd-fecha" type="date" style="padding:6px 8px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px;width:100%"></label>';
+    html += '<label style="color:#475569">Cantidad (kg)<input id="ppd-kg" type="number" step="0.1" min="0.1" value="' + (p.lote_bulk_kg || 30) + '" style="padding:6px 8px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px;width:100%"></label>';
+    html += '</div>';
+    html += '<input id="ppd-idx" type="hidden" value="' + idx + '">';
+    html += '<button onclick="programarUnicoDesdePlan()" style="background:#16a34a;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">📅 Programar este lote</button>';
+    html += '</div>';
+
+    // ── 2c. Programación canónica · recurrente 30/60/90 ──
+    html += '<div style="background:#fef3c7;border-left:4px solid #ca8a04;border-radius:8px;padding:12px;margin-bottom:8px">';
+    html += '<div style="font-size:11px;color:#854d0e;font-weight:700;margin-bottom:8px">🔁 Programa automático · cada N días</div>';
+    html += '<div style="font-size:11px;color:#475569;margin-bottom:6px">Genera lotes recurrentes respetando lun-vie · prefiere lun/mié/vie · skip festivos · max 2/día</div>';
+    html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;align-items:end;margin-bottom:8px;font-size:11px">';
+    html += '<label style="color:#475569">Cada<select id="can-freq" style="padding:6px 8px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px;width:100%"><option value="30">30 días</option><option value="60" selected>60 días</option><option value="90">90 días</option><option value="45">45 días</option><option value="120">120 días</option></select></label>';
+    html += '<label style="color:#475569">kg/lote<input id="can-kg" type="number" step="0.1" value="' + (p.lote_bulk_kg || 90) + '" style="padding:6px 8px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px;width:100%"></label>';
+    html += '<label style="color:#475569">Horizonte<select id="can-horizonte" style="padding:6px 8px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px;width:100%"><option value="180">6 meses</option><option value="365" selected>1 año</option><option value="540">1.5 años</option><option value="730">2 años</option></select></label>';
     html += '</div>';
     html += '<button onclick="programarCanonico(' + idx + ')" style="background:#ca8a04;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">🔁 Generar plan recurrente</button>';
     html += '</div>';
 
-    // ── Acciones secundarias ──
-    html += '<div style="display:flex;gap:8px;flex-wrap:wrap;padding-top:8px;border-top:1px solid #e2e8f0">';
-    html += '<button onclick="cerrarSolicitar();setTimeout(function(){abrirGenerarProduccion(' + idx + ')},100)" style="background:#475569;color:#fff;border:none;padding:9px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">⚙ Personalizar cantidad/fecha</button>';
-    html += '<button onclick="cerrarSolicitar();setTimeout(function(){abrirYaProducido(' + idx + ')},100)" style="background:#1e40af;color:#fff;border:none;padding:9px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">✓ Ya se produjo (back-fill)</button>';
+    // ═══════ SECCIÓN 3 · LOTES AGENDADOS · ACCIONES ═══════
+    if ((p.planificacion || []).length > 0) {
+      html += '<div style="font-size:11px;color:#0f766e;font-weight:800;text-transform:uppercase;letter-spacing:.5px;margin:18px 0 6px;padding-bottom:4px;border-bottom:2px solid #0f766e">③ Lotes ya agendados · ' + p.planificacion.length + '</div>';
+      html += '<div style="background:#f8fafc;border-radius:8px;padding:10px">';
+      html += renderLotesInline(p.planificacion, p.producto_nombre);
+      html += '</div>';
+    }
+
+    // ═══════ SECCIÓN 4 · OTRAS ACCIONES ═══════
+    html += '<div style="display:flex;gap:8px;flex-wrap:wrap;padding-top:12px;margin-top:12px;border-top:1px solid #e2e8f0">';
+    html += '<button onclick="cerrarSolicitar();setTimeout(function(){abrirYaProducido(' + idx + ')},100)" style="background:#1e40af;color:#fff;border:none;padding:9px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">✓ Back-fill · ya se produjo</button>';
     html += '</div>';
 
     document.getElementById('sol-body').innerHTML = html;
     document.getElementById('solicitarModal').style.display = 'flex';
+
+    // Pre-llenar fecha sugerida en el lote único
+    if (p.proxima_sugerida_fecha) {
+      document.getElementById('ppd-fecha').value = p.proxima_sugerida_fecha;
+    } else {
+      const t = new Date();
+      t.setDate(t.getDate() + 7);
+      document.getElementById('ppd-fecha').value = t.toISOString().slice(0, 10);
+    }
+  }
+
+  // Programar único desde el modal Plan de producción · Sebastián 14-may-2026
+  async function programarUnicoDesdePlan() {
+    const idx = parseInt(document.getElementById('ppd-idx').value);
+    const p = window._NEC_PRODUCTOS_CACHE[idx];
+    if (!p) { alert('Producto no encontrado'); return; }
+    const fecha = (document.getElementById('ppd-fecha').value || '').trim();
+    const kg = parseFloat(document.getElementById('ppd-kg').value);
+    if (!fecha || !/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(fecha)) { alert('Fecha inválida (YYYY-MM-DD)'); return; }
+    if (!kg || kg <= 0) { alert('Cantidad kg inválida'); return; }
+    if (!confirm('¿Programar ' + p.producto_nombre + ' · ' + kg + 'kg para ' + fecha + '?')) return;
+    try {
+      const r = await fetch('/api/plan/programar-produccion', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfTokenNec()},
+        body: JSON.stringify({
+          producto_nombre: p.producto_nombre,
+          cantidad_kg: kg,
+          fecha_programada: fecha,
+          notas: 'Lote único desde modal Plan',
+        }),
+      });
+      const d = await r.json();
+      if (!r.ok) { alert('Error: ' + (d.error || r.status)); return; }
+      cerrarSolicitar();
+      cargarNecesidades();
+    } catch(e) { alert('Error: ' + e.message); }
   }
   function cerrarSolicitar() { document.getElementById('solicitarModal').style.display = 'none'; }
 
