@@ -1,0 +1,586 @@
+{
+  "MP00121": {
+    "inci": "PROPYLENE GLYCOL",
+    "comercial": "Propilenglicol"
+  },
+  "MP00107": {
+    "inci": "UREA",
+    "comercial": "Urea"
+  },
+  "MP00148": {
+    "inci": "NIACINAMIDE",
+    "comercial": "Niacinamida"
+  },
+  "MP00201": {
+    "inci": "CETYL ALCOHOL",
+    "comercial": "Alcohol cetílico"
+  },
+  "MP00161": {
+    "inci": "CARNITINE",
+    "comercial": "L-carnitina"
+  },
+  "MP00021": {
+    "inci": "PHENOXYETHANOL",
+    "comercial": "Fenoxietanol"
+  },
+  "MP00123": {
+    "inci": "TRIETHANOLAMINE",
+    "comercial": "Trietanolamina 85%"
+  },
+  "MP00199": {
+    "inci": "DIMETHICONE",
+    "comercial": "Silicona SF-350"
+  },
+  "MP00078": {
+    "inci": "TOCOPHEROL",
+    "comercial": "Vitamina E líquida"
+  },
+  "MP00047": {
+    "inci": "ALLANTOIN",
+    "comercial": "Alantoína"
+  },
+  "MP00006": {
+    "inci": "ACRYLATES/C10-30 ALKYL ACRYLATE CROSSPOLYMER",
+    "comercial": "Pemulen EZ-4U"
+  },
+  "MP00008": {
+    "inci": "CARBOMER",
+    "comercial": "Carbopol"
+  },
+  "MP00142": {
+    "inci": "HYALURONIC ACID (1500 kD)",
+    "comercial": "Ác. hialurónico 1500 kD"
+  },
+  "MP00210": {
+    "inci": "SALICYLIC ACID",
+    "comercial": "Ácido salicílico"
+  },
+  "MP00202": {
+    "inci": "POTASSIUM SORBATE",
+    "comercial": "Sorbato de potasio"
+  },
+  "MP00045": {
+    "inci": "SODIUM BENZOATE",
+    "comercial": "Benzoato de sodio"
+  },
+  "MP00163": {
+    "inci": "HYALURONIC ACID (50 kD)",
+    "comercial": "Ác. hialurónico 50 kD"
+  },
+  "MP00277": {
+    "inci": "SILYBUM MARIANUM FRUIT EXTRACT",
+    "comercial": "Silimarina"
+  },
+  "MP00237": {
+    "inci": "KOJIC ACID",
+    "comercial": "Ácido kójico"
+  },
+  "MP00216": {
+    "inci": "ALOE BARBADENSIS LEAF JUICE POWDER",
+    "comercial": "Aloe vera polvo"
+  },
+  "MP00195": {
+    "inci": "GLYCERIN",
+    "comercial": "Glicerina"
+  },
+  "MP00265": {
+    "inci": "GLYCINE",
+    "comercial": "Glicina"
+  },
+  "MP00270": {
+    "inci": "GLUCONOLACTONE",
+    "comercial": "Gluconolactona"
+  },
+  "MP00120": {
+    "inci": "GLYCYRRHIZA GLABRA ROOT EXTRACT",
+    "comercial": "Regaliz raíz"
+  },
+  "MP00215": {
+    "inci": "BETAINE",
+    "comercial": "Betaína"
+  },
+  "MP00226": {
+    "inci": "ECTOIN",
+    "comercial": "Ectoína"
+  },
+  "MP00185": {
+    "inci": "ASIATICOSIDE",
+    "comercial": "Asiaticoside 95%"
+  },
+  "MP00176": {
+    "inci": "CENTELLA ASIATICA EXTRACT (triterpenos 80%)",
+    "comercial": "Centella triterpenos"
+  },
+  "MP00214": {
+    "inci": "BETA-GLUCAN",
+    "comercial": "Betaglucano"
+  },
+  "MP00181": {
+    "inci": "CENTELLA ASIATICA EXTRACT",
+    "comercial": "Centella asiatica extract"
+  },
+  "MP00064": {
+    "inci": "PEG-400",
+    "comercial": "Polietilenglicol 400"
+  },
+  "MP00212": {
+    "inci": "SODIUM C14-16 OLEFIN SULFONATE",
+    "comercial": "AOS-40"
+  },
+  "MP00084": {
+    "inci": "COCAMIDOPROPYL BETAINE",
+    "comercial": "Probetaína"
+  },
+  "MP00073": {
+    "inci": "XANTHAN GUM",
+    "comercial": "Goma xanthan"
+  },
+  "MP00082": {
+    "inci": "POLYSORBATE 20",
+    "comercial": "Tween 20"
+  },
+  "MP00083": {
+    "inci": "POLYSORBATE 80",
+    "comercial": "Tween 80"
+  },
+  "MP00138": {
+    "inci": "LACTIC ACID",
+    "comercial": "Ácido láctico"
+  },
+  "MP00167": {
+    "inci": "TRANEXAMIC ACID",
+    "comercial": "Ácido tranexámico"
+  },
+  "MP00282": {
+    "inci": "SQUALANE",
+    "comercial": "Squalane"
+  },
+  "MP00105": {
+    "inci": "ROSA CANINA FRUIT OIL",
+    "comercial": "Beauty Oil Rosa Mosqueta"
+  },
+  "MP00110": {
+    "inci": "PANTHENOL",
+    "comercial": "Pantenol"
+  },
+  "MP00285": {
+    "inci": "HYDROLYZED COLLAGEN",
+    "comercial": "Péptidos de colágeno"
+  },
+  "MP00160": {
+    "inci": "3-O-ETHYL ASCORBIC ACID",
+    "comercial": "Etil ascórbico"
+  },
+  "MP00169": {
+    "inci": "SODIUM ASCORBYL PHOSPHATE",
+    "comercial": "Sodium ascorbyl phosphate"
+  },
+  "MP00149": {
+    "inci": "TETRAHEXYLDECYL ASCORBATE",
+    "comercial": "Tetrahexyldecyl ascorbate"
+  },
+  "MP00071": {
+    "inci": "ACRYLATES/PALMETH-25 ACRYLATE COPOLYMER",
+    "comercial": "Quincream"
+  },
+  "MP00068": {
+    "inci": "PHENOXYETHANOL (AND) ETHYLHEXYLGLYCERIN",
+    "comercial": "Biosure FE"
+  },
+  "MP00238": {
+    "inci": "ASCORBYL GLUCOSIDE",
+    "comercial": "Ascorbyl glucoside"
+  },
+  "MP00231": {
+    "inci": "GLYCINAMIDE",
+    "comercial": "Glicinamida"
+  },
+  "MP00079": {
+    "inci": "TOCOPHEROL / TOCOPHERYL ACETATE (pendiente)",
+    "comercial": "Vitamina E polvo"
+  },
+  "MP00236": {
+    "inci": "PANTHENOL",
+    "comercial": "Pantenol polvo"
+  },
+  "MP00173": {
+    "inci": "BAKUCHIOL",
+    "comercial": "Bakuchiol"
+  },
+  "MP00192": {
+    "inci": "ACETYL HEXAPEPTIDE-8",
+    "comercial": "Acetyl hexapeptide-8"
+  },
+  "MP00090": {
+    "inci": "CAPRYLIC/CAPRIC TRIGLYCERIDE",
+    "comercial": "Triglicérido caprílico"
+  },
+  "MP00072": {
+    "inci": "BIS-PEG-12 DIMETHICONE",
+    "comercial": "Gransil VX-419"
+  },
+  "MP00063": {
+    "inci": "PENTAERYTHRITYL TETRA-DI-T-BUTYL HYDROXYHYDROCINNAMATE",
+    "comercial": "Tinogard TT"
+  },
+  "MP00230": {
+    "inci": "ASCORBIC ACID",
+    "comercial": "Ácido ascórbico"
+  },
+  "MP00183": {
+    "inci": "ALPHA-ARBUTIN",
+    "comercial": "Alfa arbutina"
+  },
+  "MP00046": {
+    "inci": "DISODIUM EDTA",
+    "comercial": "EDTA disódico"
+  },
+  "MP00065": {
+    "inci": "CITRIC ACID",
+    "comercial": "Ácido cítrico"
+  },
+  "MP00150": {
+    "inci": "ERGOTHIONEINE",
+    "comercial": "Ergotioneína"
+  },
+  "MP00145": {
+    "inci": "GLUTATHIONE",
+    "comercial": "Glutatión"
+  },
+  "MP00264": {
+    "inci": "BETA-CYCLODEXTRIN",
+    "comercial": "Beta-ciclodextrina"
+  },
+  "MP00233": {
+    "inci": "HYALURONIC ACID (300 kD)",
+    "comercial": "Ác. hialurónico 300 kD"
+  },
+  "MP00245": {
+    "inci": "1,2-HEXANEDIOL",
+    "comercial": "1,2-Hexanediol"
+  },
+  "MP00219": {
+    "inci": "MELATONIN",
+    "comercial": "Melatonina"
+  },
+  "MP00262": {
+    "inci": "N-ACETYL GLUCOSAMINE",
+    "comercial": "N-acetil glucosamina"
+  },
+  "MP00177": {
+    "inci": "OLIGOPEPTIDE-68",
+    "comercial": "Oligopéptido-68"
+  },
+  "MP00239": {
+    "inci": "SODIUM PHYTATE",
+    "comercial": "Fitato de sodio"
+  },
+  "MP00194": {
+    "inci": "COPPER TRIPEPTIDE-1",
+    "comercial": "Copper tripeptide-1"
+  },
+  "MP00190": {
+    "inci": "PALMITOYL TRIPEPTIDE-1",
+    "comercial": "Palmitoyl tripeptide-1"
+  },
+  "MP00172": {
+    "inci": "PALMITOYL TETRAPEPTIDE-7",
+    "comercial": "Palmitoyl tetrapeptide-7"
+  },
+  "MP00228": {
+    "inci": "PALMITOYL PENTAPEPTIDE-4",
+    "comercial": "Palmitoyl pentapeptide-4"
+  },
+  "MP00175": {
+    "inci": "ACETYL TETRAPEPTIDE-5",
+    "comercial": "Acetyl tetrapeptide-5"
+  },
+  "MP00179": {
+    "inci": "DIPEPTIDE DIAMINOBUTYROYL BENZYLAMIDE DIACETATE",
+    "comercial": "Dipeptide diaminobutyroyl..."
+  },
+  "MP00223": {
+    "inci": "SODIUM DNA",
+    "comercial": "PDRN"
+  },
+  "MP00152": {
+    "inci": "ADENOSINE",
+    "comercial": "Adenosina"
+  },
+  "MP00191": {
+    "inci": "PALMITOYL TRIPEPTIDE-5",
+    "comercial": "Palmitoyl tripeptide-5"
+  },
+  "MP00297": {
+    "inci": "SODIUM HYDROXIDE",
+    "comercial": "Hidróxido sodio sol. 50%"
+  },
+  "MP00221": {
+    "inci": "AZELAIC ACID",
+    "comercial": "Ácido azelaico"
+  },
+  "MP00246": {
+    "inci": "CAPRYLOYL SALICYLIC ACID",
+    "comercial": "Ácido capriloil salicílico"
+  },
+  "MP00244": {
+    "inci": "POTASSIUM AZELOYL DIGLYCINATE",
+    "comercial": "Azelolil diglicinato potasio"
+  },
+  "MP00116": {
+    "inci": "AZELAMIDOPROPYL DIMETHYL AMINE (AND) WATER (AND) BUTYLENE GLYCOL",
+    "comercial": "Epi-On"
+  },
+  "MP00283": {
+    "inci": "ZINC PCA",
+    "comercial": "Zinc PCA"
+  },
+  "MP00178": {
+    "inci": "ACETYL TETRAPEPTIDE-40",
+    "comercial": "Acetyl tetrapeptide-40"
+  },
+  "MP00118": {
+    "inci": "CAFFEINE",
+    "comercial": "Cafeína anhidra"
+  },
+  "MP00180": {
+    "inci": "L-THEANINE",
+    "comercial": "L-teanina"
+  },
+  "MP00261": {
+    "inci": "RETINALDEHYDE",
+    "comercial": "Retinaldehído"
+  },
+  "MP00134": {
+    "inci": "ISOPROPYL MYRISTATE",
+    "comercial": "Miristato de isopropilo"
+  },
+  "MP00266": {
+    "inci": "DIBUTYL ADIPATE",
+    "comercial": "Adipato de butil"
+  },
+  "MP00136": {
+    "inci": "SIMMONDSIA CHINENSIS SEED OIL",
+    "comercial": "Beauty Oil Jojoba"
+  },
+  "MP00137": {
+    "inci": "ARGANIA SPINOSA KERNEL OIL",
+    "comercial": "Beauty Oil Argán"
+  },
+  "MP00062": {
+    "inci": "PARFUM",
+    "comercial": "Fragancia pistacho"
+  },
+  "MP00020": {
+    "inci": "PARFUM",
+    "comercial": "Yogurt cremoso"
+  },
+  "MP00092": {
+    "inci": "DECYL GLUCOSIDE",
+    "comercial": "Decyl glucoside"
+  },
+  "MP00050": {
+    "inci": "CAPRYLYL/CAPRYL GLUCOSIDE",
+    "comercial": "Caprylyl/capryl glucoside"
+  },
+  "MP00184": {
+    "inci": "PEG-12 DIMETHICONE",
+    "comercial": "BM-939"
+  },
+  "MP00049": {
+    "inci": "POLOXAMER 184",
+    "comercial": "Poloxamer 184"
+  },
+  "MP00103": {
+    "inci": "CERAMIDE NP",
+    "comercial": "Beauty Oil Cerámidas"
+  },
+  "MP00043": {
+    "inci": "PROPANEDIOL",
+    "comercial": "Propanediol"
+  },
+  "MP00132": {
+    "inci": "POLYGLYCERYL-4 LAURATE (AND) POLYGLYCERYL-6 LAURATE",
+    "comercial": "Polyaquol LW"
+  },
+  "MP00040": {
+    "inci": "DICAPRYLYL CARBONATE",
+    "comercial": "Cetiol"
+  },
+  "MP00240": {
+    "inci": "CETYL TRANEXAMATE MESYLATE",
+    "comercial": "Cetyl tranexamate"
+  },
+  "MP00274": {
+    "inci": "HYDROXYPINACOLONE RETINOATE",
+    "comercial": "HPR"
+  },
+  "MP00287": {
+    "inci": "RETINYL RETINOATE",
+    "comercial": "Retinyl retinoate"
+  },
+  "MP00234": {
+    "inci": "APIGENIN",
+    "comercial": "Apigenin"
+  },
+  "MP00242": {
+    "inci": "ROSMARINUS OFFICINALIS LEAF EXTRACT",
+    "comercial": "Extracto CO2 romero"
+  },
+  "MP00174": {
+    "inci": "PALMITOYL TRIPEPTIDE-38",
+    "comercial": "Palmitoyl tripeptide-38"
+  },
+  "MP00235": {
+    "inci": "NICOTINAMIDE ADENINE DINUCLEOTIDE",
+    "comercial": "NAD+"
+  },
+  "MP00275": {
+    "inci": "NICOTINAMIDE MONONUCLEOTIDE",
+    "comercial": "NMN"
+  },
+  "MP00256": {
+    "inci": "ETHOXYDIGLYCOL",
+    "comercial": "Etoxidiglicol"
+  },
+  "MP00259": {
+    "inci": "DIMETHYL ISOSORBIDE",
+    "comercial": "Dimethyl isosorbide"
+  },
+  "MP00263": {
+    "inci": "BETAINE SALICYLATE",
+    "comercial": "Betaine salicylate"
+  },
+  "MP00260": {
+    "inci": "SUCCINIC ACID",
+    "comercial": "Ácido succínico"
+  },
+  "MP00250": {
+    "inci": "MYRISTOYL NONAPEPTIDE-3",
+    "comercial": "Myristoyl nonapeptide-3"
+  },
+  "MP00030": {
+    "inci": "PROPYLHEPTYL CAPRYLATE",
+    "comercial": "Beauty Sensoft"
+  },
+  "MP00127": {
+    "inci": "PHENYL TRIMETHICONE",
+    "comercial": "BM-956"
+  },
+  "MP00056": {
+    "inci": "PULLULAN",
+    "comercial": "Pullulan"
+  },
+  "MP00248": {
+    "inci": "HYDROLYZED SPONGE",
+    "comercial": "Hydrolyzed sponge"
+  },
+  "MP00112": {
+    "inci": "SILICA",
+    "comercial": "Aerosil 200"
+  },
+  "MP00051": {
+    "inci": "POLYGLYCERYL-2 TRIISOSTEARATE",
+    "comercial": "Polyglyceryl-2 triisostearate"
+  },
+  "MP00054": {
+    "inci": "LAUROYL LYSINE",
+    "comercial": "Lauroyl lysine"
+  },
+  "MP00257": {
+    "inci": "SYNTHETIC WAX",
+    "comercial": "Synthetic wax"
+  },
+  "MP00024": {
+    "inci": "MICROCRYSTALLINE WAX",
+    "comercial": "Microcristalina 127"
+  },
+  "MP00041": {
+    "inci": "CERESIN",
+    "comercial": "Ceresine wax"
+  },
+  "MP00077": {
+    "inci": "ASTROCARYUM MURUMURU SEED BUTTER",
+    "comercial": "Manteca murumuru"
+  },
+  "MP00055": {
+    "inci": "POLYMETHYLSILSESQUIOXANE",
+    "comercial": "PMSS"
+  },
+  "MP00207": {
+    "inci": "PHENETHYL ALCOHOL (AND) CAPRYLYL GLYCOL",
+    "comercial": "Stabil"
+  },
+  "MP00101": {
+    "inci": "VANILLA PLANIFOLIA FRUIT OIL",
+    "comercial": "AE Vainilla"
+  },
+  "MP00025": {
+    "inci": "CITRUS AURANTIUM AMARA FLOWER OIL",
+    "comercial": "AE Neroli"
+  },
+  "MP00053": {
+    "inci": "SILICA DIMETHYL SILYLATE",
+    "comercial": "Aerosil R972"
+  },
+  "MP00075": {
+    "inci": "ORBIGNYA OLEIFERA SEED OIL",
+    "comercial": "Manteca de Babasú"
+  },
+  "MP00186": {
+    "inci": "4-BUTYLRESORCINOL",
+    "comercial": "4-Butilresorcinol"
+  },
+  "MP00209": {
+    "inci": "POLYISOBUTENE",
+    "comercial": "PIB-24 (q.s.p. 100%)"
+  },
+  "MP00093": {
+    "inci": "POLYBUTENE",
+    "comercial": "Polybutene low-viscosity"
+  },
+  "MP00048": {
+    "inci": "DIISOSTEARYL MALATE",
+    "comercial": "Diisostearyl malate"
+  },
+  "MP00052": {
+    "inci": "BIS-DIGLYCERYL POLYACYLADIPATE-2",
+    "comercial": "Bis-diglyceryl polyacyladipate-2"
+  },
+  "MP00074": {
+    "inci": "THEOBROMA GRANDIFLORUM SEED BUTTER",
+    "comercial": "Manteca de cupuazú"
+  },
+  "MP00166": {
+    "inci": "MENTHYL LACTATE",
+    "comercial": "Menthyl lactate"
+  },
+  "MP00140": {
+    "inci": "VANILLYL BUTYL ETHER",
+    "comercial": "Vanillyl butyl ether"
+  },
+  "MP00253": {
+    "inci": "BENZYL NICOTINATE",
+    "comercial": "Benzyl nicotinate"
+  },
+  "MP00005": {
+    "inci": "PARFUM",
+    "comercial": "Mocaccino Lips (Disaromas)"
+  },
+  "MP00254": {
+    "inci": "C13-15 ALKANE",
+    "comercial": "C13-C15 Alkane"
+  },
+  "MP00111": {
+    "inci": "C13-15 ALKANE (AND) DIMETHICONE/VINYL DIMETHICONE CROSSPOLYMER",
+    "comercial": "Puresil ORG01"
+  },
+  "MP00035": {
+    "inci": "CAMELLIA SINENSIS LEAF EXTRACT",
+    "comercial": "Extracto té verde (Inchemical)"
+  },
+  "MP00147": {
+    "inci": "ARGININE",
+    "comercial": "L-arginina"
+  }
+}

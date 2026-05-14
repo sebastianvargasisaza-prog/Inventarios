@@ -1,5 +1,9 @@
 """Blueprint plan · Plan v3 unificado de necesidades por cliente · 13-may-2026.
 
+Incluye también /admin/verificar-codigos-mp para validar que los 146 códigos
+del Excel de fórmulas Alejandro mayo-2026 existan en maestro_mps antes de
+importar.
+
 Sprint 2A · arquitectura escalable propuesta por Sebastián:
     Necesidades = bandeja de entrada (Animus DTC auto + B2B manual)
     Plan a programar = bandeja de salida (consolidador → Calendar)
@@ -735,6 +739,233 @@ def programar_produccion():
         "producto": producto, "fecha": fecha,
         "cantidad_kg": kg, "estado": "pendiente",
     }), 201
+
+
+@bp.route("/admin/verificar-codigos-mp", methods=["GET"])
+def verificar_codigos_mp_page():
+    """Página admin · verifica los 146 códigos del Excel Alejandro
+    contra maestro_mps en vivo."""
+    if not session.get("compras_user"):
+        from flask import redirect
+        return redirect("/login?next=/admin/verificar-codigos-mp")
+    from flask import Response
+    return Response(_VERIFICAR_CODIGOS_HTML, mimetype="text/html")
+
+
+_VERIFICAR_CODIGOS_HTML = """<!DOCTYPE html>
+<html lang="es"><head><meta charset="UTF-8">
+<title>Verificar códigos MP del Excel · EOS</title>
+<style>
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;color:#1e293b;margin:0;padding:20px}
+.wrap{max-width:1100px;margin:0 auto}
+.card{background:white;border-radius:12px;padding:20px;margin-bottom:16px;box-shadow:0 2px 6px rgba(0,0,0,.05)}
+h1{margin:0 0 6px;color:#0f766e;font-size:22px}
+.muted{color:#64748b;font-size:13px}
+button{background:#0f766e;color:white;border:none;padding:10px 18px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer}
+button:hover{opacity:.9}
+.kpi{display:inline-block;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 18px;margin-right:10px;text-align:center;min-width:140px}
+.kpi-lbl{font-size:11px;color:#64748b}
+.kpi-val{font-size:24px;font-weight:800}
+.ok{color:#16a34a}
+.warn{color:#ea580c}
+.crit{color:#dc2626}
+.bad{color:#94a3b8}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{text-align:left;padding:8px;background:#f1f5f9;color:#475569;font-weight:700}
+td{padding:7px 8px;border-bottom:1px solid #f1f5f9}
+.mono{font-family:ui-monospace,SFMono-Regular,monospace;font-weight:700;color:#1e40af}
+a{color:#0f766e}
+</style></head><body>
+<div class="wrap">
+<a href="/modulos">&larr; Volver al panel</a>
+<div class="card">
+  <h1>🔍 Verificar códigos MP del Excel</h1>
+  <div class="muted">146 códigos del Excel <strong>FORMULAS_MAESTRO_v2_1 (2).xlsx</strong> de Alejandro mayo-2026 vs <code>maestro_mps</code> en BD.</div>
+  <div style="margin-top:16px"><button onclick="verificar()">▶ Verificar 146 códigos contra BD</button></div>
+  <div id="kpis" style="margin-top:16px"></div>
+</div>
+<div id="resultados"></div>
+</div>
+<script>
+var CODES_EXCEL = __CODES_EXCEL__;
+
+function csrf() {
+  var m = document.cookie.match(/(?:^|; )csrf_token=([^;]*)/);
+  return m ? decodeURIComponent(m[1]) : '';
+}
+
+async function verificar() {
+  document.getElementById('resultados').innerHTML = '<div class="card">Verificando…</div>';
+  try {
+    var r = await fetch('/api/plan/check-codigos-mp', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':csrf()},
+      body: JSON.stringify({codigos: CODES_EXCEL}),
+    });
+    var d = await r.json();
+    if (!r.ok) { alert('Error: ' + (d.error||r.status)); return; }
+    render(d);
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+function escapeHtml(s){return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+
+function render(d) {
+  var html = '';
+  html += '<span class="kpi"><div class="kpi-lbl">Total Excel</div><div class="kpi-val">' + d.total_excel + '</div></span>';
+  html += '<span class="kpi"><div class="kpi-lbl">✅ Existen activos</div><div class="kpi-val ok">' + d.total_existentes_activos + '</div></span>';
+  if (d.total_inactivos > 0) html += '<span class="kpi"><div class="kpi-lbl">⚠ Inactivos</div><div class="kpi-val warn">' + d.total_inactivos + '</div></span>';
+  if (d.total_faltantes > 0) html += '<span class="kpi"><div class="kpi-lbl">🔴 Faltan</div><div class="kpi-val crit">' + d.total_faltantes + '</div></span>';
+  document.getElementById('kpis').innerHTML = html;
+
+  var out = '';
+  if (d.total_faltantes > 0) {
+    out += '<div class="card"><h3 style="margin:0 0 8px;color:#dc2626">🔴 FALTANTES · hay que crear ' + d.total_faltantes + ' MPs antes de importar fórmulas</h3>';
+    out += '<table><thead><tr><th>Código</th><th>Nombre INCI (del Excel)</th><th>Nombre Comercial (del Excel)</th></tr></thead><tbody>';
+    d.faltantes.forEach(f => {
+      var inci = (f.info_excel && f.info_excel.inci) || '<span class="bad">—</span>';
+      var com = (f.info_excel && f.info_excel.comercial) || '<span class="bad">—</span>';
+      out += '<tr><td class="mono">' + escapeHtml(f.codigo) + '</td><td>' + escapeHtml(inci) + '</td><td>' + escapeHtml(com) + '</td></tr>';
+    });
+    out += '</tbody></table></div>';
+  }
+
+  if (d.total_inactivos > 0) {
+    out += '<div class="card"><h3 style="margin:0 0 8px;color:#ea580c">⚠ INACTIVOS · existen en BD pero activo=0 · reactivar o crear de nuevo</h3>';
+    out += '<table><thead><tr><th>Código</th><th>Nombre Comercial BD</th><th>Nombre INCI BD</th></tr></thead><tbody>';
+    d.inactivos.forEach(i => {
+      out += '<tr><td class="mono">' + escapeHtml(i.codigo) + '</td><td>' + escapeHtml(i.nombre_comercial_bd) + '</td><td>' + escapeHtml(i.nombre_inci_bd) + '</td></tr>';
+    });
+    out += '</tbody></table></div>';
+  }
+
+  if (d.total_existentes_activos > 0 && d.total_faltantes === 0 && d.total_inactivos === 0) {
+    out += '<div class="card"><h3 style="margin:0;color:#16a34a">✅ Perfecto · los ' + d.total_existentes_activos + ' códigos del Excel existen y están activos · listos para importar fórmulas.</h3></div>';
+  } else if (d.total_existentes_activos > 0) {
+    out += '<details class="card"><summary style="cursor:pointer;color:#16a34a;font-weight:700">✅ Existentes activos (' + d.total_existentes_activos + ') · click para expandir</summary>';
+    out += '<table style="margin-top:10px"><thead><tr><th>Código</th><th>Nombre Comercial BD</th><th>Nombre INCI BD</th></tr></thead><tbody>';
+    d.existentes.forEach(e => {
+      out += '<tr><td class="mono">' + escapeHtml(e.codigo) + '</td><td>' + escapeHtml(e.nombre_comercial_bd) + '</td><td>' + escapeHtml(e.nombre_inci_bd) + '</td></tr>';
+    });
+    out += '</tbody></table></details>';
+  }
+
+  document.getElementById('resultados').innerHTML = out;
+}
+
+// Auto-verificar al cargar
+verificar();
+</script>
+</body></html>"""
+
+
+# Embed CODES_EXCEL inline (lista de los 146 codigos del Excel
+# FORMULAS_MAESTRO_v2_1 Alejandro mayo-2026 · si Sebastián actualiza el
+# Excel, regenerar este array · script auxiliar:
+# python scripts/extract_excel_mp_codes.py
+_CODES_EXCEL_LIST = [
+    "MP00005", "MP00006", "MP00008", "MP00020", "MP00021", "MP00024",
+    "MP00025", "MP00030", "MP00035", "MP00040", "MP00041", "MP00043",
+    "MP00045", "MP00046", "MP00047", "MP00048", "MP00049", "MP00050",
+    "MP00051", "MP00052", "MP00053", "MP00054", "MP00055", "MP00056",
+    "MP00062", "MP00063", "MP00064", "MP00065", "MP00068", "MP00071",
+    "MP00072", "MP00073", "MP00074", "MP00075", "MP00077", "MP00078",
+    "MP00079", "MP00082", "MP00083", "MP00084", "MP00090", "MP00092",
+    "MP00093", "MP00101", "MP00103", "MP00105", "MP00107", "MP00110",
+    "MP00111", "MP00112", "MP00116", "MP00118", "MP00120", "MP00121",
+    "MP00123", "MP00127", "MP00132", "MP00134", "MP00136", "MP00137",
+    "MP00138", "MP00140", "MP00142", "MP00145", "MP00147", "MP00148",
+    "MP00149", "MP00150", "MP00152", "MP00160", "MP00161", "MP00163",
+    "MP00166", "MP00167", "MP00169", "MP00172", "MP00173", "MP00174",
+    "MP00175", "MP00176", "MP00177", "MP00178", "MP00179", "MP00180",
+    "MP00181", "MP00183", "MP00184", "MP00185", "MP00186", "MP00190",
+    "MP00191", "MP00192", "MP00194", "MP00195", "MP00199", "MP00201",
+    "MP00202", "MP00207", "MP00209", "MP00210", "MP00212", "MP00214",
+    "MP00215", "MP00216", "MP00219", "MP00221", "MP00223", "MP00226",
+    "MP00228", "MP00230", "MP00231", "MP00233", "MP00234", "MP00235",
+    "MP00236", "MP00237", "MP00238", "MP00239", "MP00240", "MP00242",
+    "MP00244", "MP00245", "MP00246", "MP00248", "MP00250", "MP00253",
+    "MP00254", "MP00256", "MP00257", "MP00259", "MP00260", "MP00261",
+    "MP00262", "MP00263", "MP00264", "MP00265", "MP00266", "MP00270",
+    "MP00274", "MP00275", "MP00277", "MP00282", "MP00283", "MP00285",
+    "MP00287", "MP00297",
+]
+import json as _json
+_VERIFICAR_CODIGOS_HTML = _VERIFICAR_CODIGOS_HTML.replace(
+    "__CODES_EXCEL__", _json.dumps(_CODES_EXCEL_LIST))
+
+
+@bp.route("/api/plan/check-codigos-mp", methods=["POST"])
+def check_codigos_mp():
+    """Verifica qué códigos de MP existen en maestro_mps.
+
+    Sebastián 13-may-2026: antes de importar fórmulas nuevas del Excel
+    Alejandro, verificar que todos los códigos batch (MPxxxxx) tengan
+    contraparte en maestro_mps. Los faltantes hay que crearlos primero
+    (con su nombre_inci y nombre_comercial) para que el trigger mig 98
+    permita insertar a formula_items.
+
+    Body:
+        codigos: [str, ...]  · lista de codigo_mp a verificar
+        info_excel: {codigo: {inci, comercial}}  · opcional, info para
+                                                   sugerir altas
+
+    Response:
+        existentes: [{codigo, nombre_comercial_bd, nombre_inci_bd, activo}]
+        faltantes: [{codigo, info_excel}]
+        inactivos: [{codigo, ...}]  · existen pero activo=0
+        total_excel: N · total_existentes_activos · total_faltantes · total_inactivos
+    """
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+
+    body = request.get_json(silent=True) or {}
+    codigos_raw = body.get("codigos") or []
+    info_excel = body.get("info_excel") or {}
+    if not isinstance(codigos_raw, list):
+        return jsonify({"error": "codigos debe ser lista"}), 400
+
+    codigos = [str(c).strip().upper() for c in codigos_raw if str(c).strip()]
+    if not codigos:
+        return jsonify({"error": "lista codigos vacía"}), 400
+    if len(codigos) > 1000:
+        return jsonify({"error": "máximo 1000 códigos por request"}), 400
+
+    conn = get_db()
+    c = conn.cursor()
+    placeholders = ",".join(["?"] * len(codigos))
+    rows = c.execute(
+        f"""SELECT codigo_mp,
+                   COALESCE(nombre_comercial, ''),
+                   COALESCE(nombre_inci, ''),
+                   COALESCE(activo, 1)
+            FROM maestro_mps
+            WHERE codigo_mp IN ({placeholders})""",
+        codigos,
+    ).fetchall()
+
+    encontrados = {r[0]: {"codigo": r[0], "nombre_comercial_bd": r[1],
+                          "nombre_inci_bd": r[2], "activo": int(r[3])}
+                   for r in rows}
+
+    existentes = [info for info in encontrados.values() if info["activo"] == 1]
+    inactivos = [info for info in encontrados.values() if info["activo"] != 1]
+    faltantes = [{
+        "codigo": cod,
+        "info_excel": info_excel.get(cod, {}),
+    } for cod in codigos if cod not in encontrados]
+
+    return jsonify({
+        "total_excel": len(codigos),
+        "total_existentes_activos": len(existentes),
+        "total_inactivos": len(inactivos),
+        "total_faltantes": len(faltantes),
+        "existentes": existentes,
+        "inactivos": inactivos,
+        "faltantes": faltantes,
+    })
 
 
 def _valida_fecha_iso(s):

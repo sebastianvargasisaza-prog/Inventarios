@@ -7337,3 +7337,49 @@ def test_golden_plan_canonico_lunvie_max2(app, db_clean):
 
     # Cleanup
     _exec("DELETE FROM produccion_programada WHERE origen='eos_canonico'")
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH PLAN-H · /api/plan/check-codigos-mp (Excel pre-import)
+# ═══════════════════════════════════════════════════════════════════
+def test_golden_plan_check_codigos_mp(app, db_clean):
+    """POST /api/plan/check-codigos-mp clasifica codigos en existentes/
+    inactivos/faltantes contra maestro_mps."""
+    cs = _login(app, 'sebastian')
+
+    # Caso 1: 3 codigos: existente (SAH usa MP00195), inexistente, otro
+    r1 = cs.post('/api/plan/check-codigos-mp', json={
+        'codigos': ['MP00195', 'MPNOEXISTE999', 'MP00040'],
+        'info_excel': {
+            'MPNOEXISTE999': {'inci': 'TEST_INCI', 'comercial': 'Test Comercial'},
+        },
+    }, headers=csrf_headers())
+    assert r1.status_code == 200, f'BUG: {r1.status_code} {r1.data}'
+    d1 = r1.get_json()
+    assert d1['total_excel'] == 3
+    # MPNOEXISTE999 debería estar en faltantes
+    faltantes = [f['codigo'] for f in d1['faltantes']]
+    assert 'MPNOEXISTE999' in faltantes
+    falt = next(f for f in d1['faltantes'] if f['codigo'] == 'MPNOEXISTE999')
+    assert falt['info_excel']['inci'] == 'TEST_INCI'
+
+    # Caso 2: lista vacía → 400
+    r2 = cs.post('/api/plan/check-codigos-mp', json={'codigos': []},
+                 headers=csrf_headers())
+    assert r2.status_code == 400
+
+    # Caso 3: codigos no-lista → 400
+    r3 = cs.post('/api/plan/check-codigos-mp', json={'codigos': 'no-lista'},
+                 headers=csrf_headers())
+    assert r3.status_code == 400
+
+    # Caso 4: mayerlin (planta) rechazado → 403
+    cs_op = _login(app, 'mayerlin')
+    r4 = cs_op.post('/api/plan/check-codigos-mp', json={'codigos': ['MP00195']},
+                    headers=csrf_headers())
+    assert r4.status_code == 403
+
+    # Caso 5: GET /admin/verificar-codigos-mp responde HTML para logueado
+    r5 = cs.get('/admin/verificar-codigos-mp')
+    assert r5.status_code == 200
+    assert b'Verificar' in r5.data
