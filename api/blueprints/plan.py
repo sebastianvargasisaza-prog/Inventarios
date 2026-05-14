@@ -2279,6 +2279,7 @@ def plan_sugerido():
             horizonte_dias = max(7, min(365, int(hd_param)))
         except ValueError:
             horizonte_dias = 35
+        horizonte_semanas = horizonte_dias // 7
     else:
         horizonte_semanas = int(request.args.get("horizonte_semanas") or 4)
         horizonte_dias = horizonte_semanas * 7 + 7
