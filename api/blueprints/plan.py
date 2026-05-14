@@ -2959,6 +2959,11 @@ function buscarNecesidadProducto(producto){
   return ctx.find(p => (p.nombre || '').toUpperCase() === producto.toUpperCase()) || null;
 }
 
+// Normaliza · sin acentos · upper · trim · útil para matching de nombres
+function _norm(s){
+  return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase().trim().replace(/\s+/g, ' ');
+}
+
 async function abrirLoteModal(id, producto, fecha, kg){
   document.getElementById('lote-titulo').textContent = '📅 ' + producto;
   document.getElementById('lote-body').innerHTML = '<div class="muted" style="padding:30px;text-align:center">Cargando datos del producto…</div>';
@@ -2966,17 +2971,37 @@ async function abrirLoteModal(id, producto, fecha, kg){
 
   // Obtener datos del producto desde /api/plan/necesidades
   let info = null;
+  let errFetch = '';
   try {
     const r = await fetch('/api/plan/necesidades');
-    const d = await r.json();
-    if (r.ok){
+    if (!r.ok){
+      errFetch = 'Status ' + r.status + ' · ' + (await r.text()).slice(0, 200);
+    } else {
+      const d = await r.json();
       const animus = (d.clientes || []).find(c => c.cliente_id === 'ANIMUS_DTC');
-      info = (animus && animus.productos || []).find(p => p.producto_nombre.toUpperCase() === producto.toUpperCase());
+      const todosProds = (animus && animus.productos) || [];
+      const target = _norm(producto);
+      // 1) match exacto normalizado
+      info = todosProds.find(p => _norm(p.producto_nombre) === target);
+      // 2) match parcial (uno contiene al otro) si no encontró
+      if (!info){
+        info = todosProds.find(p => {
+          const n = _norm(p.producto_nombre);
+          return n.includes(target) || target.includes(n);
+        });
+      }
     }
-  } catch(e){}
+  } catch(e){ errFetch = e.message; }
 
   if (!info){
-    document.getElementById('lote-body').innerHTML = '<div class="banner-inline warn">⚠ No se encontró el producto en Necesidades · datos limitados</div>' + _renderAccionesLote(id, producto, fecha);
+    // Sin datos · al menos mostrar acciones (no quedar colgado)
+    let html = '<div class="banner-inline warn">⚠ Sin datos detallados (' + escapeHtml(producto) + ' no está en /necesidades' + (errFetch ? ' · ' + escapeHtml(errFetch) : '') + ')</div>';
+    html += '<div class="metric-grid">';
+    html += '<div class="metric-card"><div class="metric-lbl">Kg a producir</div><div class="metric-val">' + kg + ' kg</div></div>';
+    html += '<div class="metric-card"><div class="metric-lbl">Fecha programada</div><div class="metric-val">' + fecha + '</div></div>';
+    html += '</div>';
+    html += _renderAccionesLote(id, producto, fecha);
+    document.getElementById('lote-body').innerHTML = html;
     return;
   }
 
@@ -3096,20 +3121,49 @@ async function loteAccion(id, accion, producto, fecha){
 }
 
 async function reprogramarLote(id, nuevaFecha, razon){
-  let r = await fetch('/api/plan/proximas/' + id + '/reprogramar', {
-    method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':getCSRF()},
-    body: JSON.stringify({nueva_fecha: nuevaFecha, razon: razon || 'drag_calendario'}),
-  });
-  let d = await r.json();
-  if (r.status === 422 && confirm('⚠ ' + d.error + '\\n\\n¿Forzar la reprogramación?')){
-    r = await fetch('/api/plan/proximas/' + id + '/reprogramar', {
-      method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':getCSRF()},
-      body: JSON.stringify({nueva_fecha: nuevaFecha, razon: razon || 'drag_calendario', skip_validacion_dia: true}),
+  try {
+    let r = await fetch('/api/plan/proximas/' + id + '/reprogramar', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':getCSRF()},
+      credentials: 'same-origin',
+      body: JSON.stringify({nueva_fecha: nuevaFecha, razon: razon || 'drag_calendario'}),
     });
-    d = await r.json();
+    let txt = '';
+    let d = null;
+    try { d = await r.json(); } catch(e){ txt = await r.text(); }
+    const errMsg = (d && (d.error || d.message)) || txt || ('HTTP ' + r.status);
+
+    if (r.status === 422){
+      if (confirm('⚠ ' + errMsg + '\\n\\n¿Forzar la reprogramación de todos modos?')){
+        const r2 = await fetch('/api/plan/proximas/' + id + '/reprogramar', {
+          method:'POST',
+          headers:{'Content-Type':'application/json','X-CSRF-Token':getCSRF()},
+          credentials: 'same-origin',
+          body: JSON.stringify({nueva_fecha: nuevaFecha, razon: razon || 'drag_calendario', skip_validacion_dia: true}),
+        });
+        let d2 = null; let txt2 = '';
+        try { d2 = await r2.json(); } catch(e){ txt2 = await r2.text(); }
+        if (!r2.ok){
+          const errMsg2 = (d2 && (d2.error || d2.message)) || txt2 || ('HTTP ' + r2.status);
+          alert('❌ No se pudo mover (forzado):\\n\\n' + errMsg2 +
+                '\\n\\nStatus: ' + r2.status +
+                (r2.status === 403 ? '\\n\\nProbable causa: MFA no activado. Ir a /seguridad para configurar.' : ''));
+          return;
+        }
+      } else {
+        return;  // usuario canceló
+      }
+    } else if (!r.ok){
+      alert('❌ No se pudo mover:\\n\\n' + errMsg +
+            '\\n\\nStatus: ' + r.status +
+            (r.status === 403 ? '\\n\\nProbable causa: MFA no activado. Ir a /seguridad para configurar MFA.' :
+             (r.status === 401 ? '\\n\\nProbable causa: sesión expirada. Recargá la página.' : '')));
+      return;
+    }
+    cargar();
+  } catch(e){
+    alert('❌ Error de red: ' + e.message);
   }
-  if (!r.ok && r.status !== 422){ alert('Error: ' + (d.error || r.status)); return; }
-  cargar();
 }
 
 // ═══════ DRAG & DROP ═══════
