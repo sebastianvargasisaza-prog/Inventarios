@@ -7352,12 +7352,18 @@ def test_golden_plan_check_codigos_mp(app, db_clean):
     assert r1.status_code == 200, f'BUG: {r1.status_code} {r1.data}'
     d1 = r1.get_json()
     assert d1['total_excel'] == 146, f'BUG: esperaba 146 codigos hardcoded, dio {d1["total_excel"]}'
-    assert d1['total_existentes_activos'] + d1['total_inactivos'] + d1['total_faltantes'] == 146
+    # Suma de categorías = total
+    suma = (d1['total_existentes_ok'] + d1['total_mismatches'] +
+            d1['total_existentes_sin_info_bd'] + d1['total_inactivos'] +
+            d1['total_faltantes'])
+    assert suma == 146, f'BUG: categorías no suman 146 · suma={suma}'
     # Estructura correcta
     if d1['total_faltantes'] > 0:
         f = d1['faltantes'][0]
-        assert 'codigo' in f
-        assert 'info_excel' in f
+        assert 'codigo' in f and 'info_excel' in f
+    if d1['total_mismatches'] > 0:
+        m = d1['mismatches'][0]
+        assert 'codigo' in m and 'nombre_inci_bd' in m and 'info_excel' in m
 
     # Caso 2: mayerlin (planta) rechazado → 403
     cs_op = _login(app, 'mayerlin')

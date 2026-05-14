@@ -820,15 +820,43 @@ function escapeHtml(s){return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;',
 function render(d) {
   var html = '';
   html += '<span class="kpi"><div class="kpi-lbl">Total Excel</div><div class="kpi-val">' + d.total_excel + '</div></span>';
-  html += '<span class="kpi"><div class="kpi-lbl">✅ Existen activos</div><div class="kpi-val ok">' + d.total_existentes_activos + '</div></span>';
+  html += '<span class="kpi"><div class="kpi-lbl">✅ Match OK</div><div class="kpi-val ok">' + d.total_existentes_ok + '</div></span>';
+  if (d.total_mismatches > 0) html += '<span class="kpi"><div class="kpi-lbl">🟠 Mismatches</div><div class="kpi-val warn">' + d.total_mismatches + '</div></span>';
+  if (d.total_existentes_sin_info_bd > 0) html += '<span class="kpi"><div class="kpi-lbl">❓ Sin info BD</div><div class="kpi-val warn">' + d.total_existentes_sin_info_bd + '</div></span>';
   if (d.total_inactivos > 0) html += '<span class="kpi"><div class="kpi-lbl">⚠ Inactivos</div><div class="kpi-val warn">' + d.total_inactivos + '</div></span>';
   if (d.total_faltantes > 0) html += '<span class="kpi"><div class="kpi-lbl">🔴 Faltan</div><div class="kpi-val crit">' + d.total_faltantes + '</div></span>';
   document.getElementById('kpis').innerHTML = html;
 
   var out = '';
+
+  // 🔴 Mismatches · CRÍTICO · el código existe pero el nombre BD ≠ Excel
+  if (d.total_mismatches > 0) {
+    out += '<div class="card" style="border:2px solid #dc2626"><h3 style="margin:0 0 8px;color:#dc2626">🟠 MISMATCHES · ' + d.total_mismatches + ' códigos con nombre BD distinto al Excel</h3>';
+    out += '<div class="muted" style="margin-bottom:10px">El código existe pero la MP en BD parece ser DISTINTA a la del Excel. Importar fórmulas con estos códigos crearía formulas que referencian MPs equivocadas. Revisar uno a uno antes de proceder.</div>';
+    out += '<table><thead><tr><th>Código</th><th>Excel · INCI</th><th>Excel · Comercial</th><th>BD · INCI</th><th>BD · Comercial</th></tr></thead><tbody>';
+    d.mismatches.forEach(m => {
+      var exInci = (m.info_excel && m.info_excel.inci) || '<span class="bad">—</span>';
+      var exCom = (m.info_excel && m.info_excel.comercial) || '<span class="bad">—</span>';
+      out += '<tr><td class="mono">' + escapeHtml(m.codigo) + '</td><td>' + escapeHtml(exInci) + '</td><td>' + escapeHtml(exCom) + '</td><td style="background:#fff7ed">' + escapeHtml(m.nombre_inci_bd || '—') + '</td><td style="background:#fff7ed">' + escapeHtml(m.nombre_comercial_bd || '—') + '</td></tr>';
+    });
+    out += '</tbody></table></div>';
+  }
+
+  if (d.total_existentes_sin_info_bd > 0) {
+    out += '<details class="card"><summary style="cursor:pointer;color:#ea580c;font-weight:700">❓ Sin info BD (' + d.total_existentes_sin_info_bd + ') · click para revisar · BD vacío</summary>';
+    out += '<div class="muted" style="margin:10px 0">Existen en maestro_mps pero nombre_inci y nombre_comercial están vacíos en BD. No se pudo comparar contra Excel. Recomendado: llenar los nombres en BD desde el Excel.</div>';
+    out += '<table><thead><tr><th>Código</th><th>Excel · INCI</th><th>Excel · Comercial</th></tr></thead><tbody>';
+    d.existentes_sin_info_bd.forEach(e => {
+      var exInci = (e.info_excel && e.info_excel.inci) || '—';
+      var exCom = (e.info_excel && e.info_excel.comercial) || '—';
+      out += '<tr><td class="mono">' + escapeHtml(e.codigo) + '</td><td>' + escapeHtml(exInci) + '</td><td>' + escapeHtml(exCom) + '</td></tr>';
+    });
+    out += '</tbody></table></details>';
+  }
+
   if (d.total_faltantes > 0) {
-    out += '<div class="card"><h3 style="margin:0 0 8px;color:#dc2626">🔴 FALTANTES · hay que crear ' + d.total_faltantes + ' MPs antes de importar fórmulas</h3>';
-    out += '<table><thead><tr><th>Código</th><th>Nombre INCI (del Excel)</th><th>Nombre Comercial (del Excel)</th></tr></thead><tbody>';
+    out += '<div class="card"><h3 style="margin:0 0 8px;color:#dc2626">🔴 FALTANTES · ' + d.total_faltantes + ' MPs no existen en BD</h3>';
+    out += '<table><thead><tr><th>Código</th><th>Nombre INCI (Excel)</th><th>Nombre Comercial (Excel)</th></tr></thead><tbody>';
     d.faltantes.forEach(f => {
       var inci = (f.info_excel && f.info_excel.inci) || '<span class="bad">—</span>';
       var com = (f.info_excel && f.info_excel.comercial) || '<span class="bad">—</span>';
@@ -838,7 +866,7 @@ function render(d) {
   }
 
   if (d.total_inactivos > 0) {
-    out += '<div class="card"><h3 style="margin:0 0 8px;color:#ea580c">⚠ INACTIVOS · existen en BD pero activo=0 · reactivar o crear de nuevo</h3>';
+    out += '<div class="card"><h3 style="margin:0 0 8px;color:#ea580c">⚠ INACTIVOS · existen pero activo=0</h3>';
     out += '<table><thead><tr><th>Código</th><th>Nombre Comercial BD</th><th>Nombre INCI BD</th></tr></thead><tbody>';
     d.inactivos.forEach(i => {
       out += '<tr><td class="mono">' + escapeHtml(i.codigo) + '</td><td>' + escapeHtml(i.nombre_comercial_bd) + '</td><td>' + escapeHtml(i.nombre_inci_bd) + '</td></tr>';
@@ -846,10 +874,12 @@ function render(d) {
     out += '</tbody></table></div>';
   }
 
-  if (d.total_existentes_activos > 0 && d.total_faltantes === 0 && d.total_inactivos === 0) {
-    out += '<div class="card"><h3 style="margin:0;color:#16a34a">✅ Perfecto · los ' + d.total_existentes_activos + ' códigos del Excel existen y están activos · listos para importar fórmulas.</h3></div>';
-  } else if (d.total_existentes_activos > 0) {
-    out += '<details class="card"><summary style="cursor:pointer;color:#16a34a;font-weight:700">✅ Existentes activos (' + d.total_existentes_activos + ') · click para expandir</summary>';
+  // Listo si TODO OK
+  var totalProblems = d.total_mismatches + d.total_existentes_sin_info_bd + d.total_inactivos + d.total_faltantes;
+  if (totalProblems === 0) {
+    out += '<div class="card"><h3 style="margin:0;color:#16a34a">✅ Perfecto · ' + d.total_existentes_ok + '/146 codigos OK · listos para importar fórmulas.</h3></div>';
+  } else if (d.total_existentes_ok > 0) {
+    out += '<details class="card"><summary style="cursor:pointer;color:#16a34a;font-weight:700">✅ Match OK (' + d.total_existentes_ok + ') · click para expandir</summary>';
     out += '<table style="margin-top:10px"><thead><tr><th>Código</th><th>Nombre Comercial BD</th><th>Nombre INCI BD</th></tr></thead><tbody>';
     d.existentes.forEach(e => {
       out += '<tr><td class="mono">' + escapeHtml(e.codigo) + '</td><td>' + escapeHtml(e.nombre_comercial_bd) + '</td><td>' + escapeHtml(e.nombre_inci_bd) + '</td></tr>';
@@ -942,6 +972,18 @@ def check_codigos_mp():
     codigos = list(_CODES_EXCEL_LIST)
     info_excel = _EXCEL_INFO
 
+    def _normalizar(s):
+        """Lowercase + strip + sin acentos para comparar nombres."""
+        import unicodedata
+        if not s:
+            return ""
+        s = unicodedata.normalize('NFD', str(s).strip().lower())
+        s = ''.join(c for c in s if unicodedata.category(c) != 'Mn')
+        # Reemplazar separadores comunes
+        for ch in ('.', ',', '-', '/', '(', ')', ' ', '\t', '\n'):
+            s = s.replace(ch, '')
+        return s
+
     conn = get_db()
     c = conn.cursor()
     placeholders = ",".join(["?"] * len(codigos))
@@ -959,7 +1001,66 @@ def check_codigos_mp():
                           "nombre_inci_bd": r[2], "activo": int(r[3])}
                    for r in rows}
 
-    existentes = [info for info in encontrados.values() if info["activo"] == 1]
+    # Comparar nombres BD vs Excel · Sebastián 13-may-2026:
+    # "el código se relaciona con la misma materia prima?"
+    # Para cada existente, verificar que BD.nombre_inci ~ Excel.inci O
+    # BD.nombre_comercial ~ Excel.comercial. Si NINGUNO matchea, flag
+    # como posible inconsistencia (riesgo: importar con MP equivocado).
+    mismatches = []
+    existentes_ok = []
+    existentes_sin_info_bd = []  # BD vacío · no se puede comparar
+    for info in encontrados.values():
+        if info["activo"] != 1:
+            continue
+        cod = info["codigo"]
+        ex_info = info_excel.get(cod, {})
+        ex_inci = ex_info.get("inci", "")
+        ex_com = ex_info.get("comercial", "")
+        bd_inci = info["nombre_inci_bd"]
+        bd_com = info["nombre_comercial_bd"]
+
+        # Si BD no tiene ni inci ni comercial · no podemos comparar
+        if not bd_inci and not bd_com:
+            existentes_sin_info_bd.append({
+                **info,
+                "info_excel": ex_info,
+            })
+            continue
+
+        # Si Excel no tiene info · solo confiamos en código
+        if not ex_inci and not ex_com:
+            existentes_ok.append(info)
+            continue
+
+        # Match si CUALQUIER campo coincide normalizado o si BD contiene
+        # palabras clave del Excel (tolerante a typos menores).
+        n_ex_inci = _normalizar(ex_inci)
+        n_ex_com = _normalizar(ex_com)
+        n_bd_inci = _normalizar(bd_inci)
+        n_bd_com = _normalizar(bd_com)
+
+        match = False
+        # INCI vs INCI (cualquiera contiene al otro · puede haber prefijos)
+        if n_ex_inci and n_bd_inci:
+            if n_ex_inci == n_bd_inci or n_ex_inci[:15] in n_bd_inci or n_bd_inci[:15] in n_ex_inci:
+                match = True
+        # Comercial vs Comercial
+        if not match and n_ex_com and n_bd_com:
+            if n_ex_com == n_bd_com or n_ex_com[:10] in n_bd_com or n_bd_com[:10] in n_ex_com:
+                match = True
+        # Cruzado · Excel inci puede estar en BD comercial (y viceversa)
+        if not match and n_ex_inci and n_bd_com:
+            if n_ex_inci[:10] in n_bd_com or n_bd_com[:10] in n_ex_inci:
+                match = True
+        if not match and n_ex_com and n_bd_inci:
+            if n_ex_com[:10] in n_bd_inci or n_bd_inci[:10] in n_ex_com:
+                match = True
+
+        if match:
+            existentes_ok.append(info)
+        else:
+            mismatches.append({**info, "info_excel": ex_info})
+
     inactivos = [info for info in encontrados.values() if info["activo"] != 1]
     faltantes = [{
         "codigo": cod,
@@ -968,10 +1069,14 @@ def check_codigos_mp():
 
     return jsonify({
         "total_excel": len(codigos),
-        "total_existentes_activos": len(existentes),
+        "total_existentes_ok": len(existentes_ok),
+        "total_mismatches": len(mismatches),
+        "total_existentes_sin_info_bd": len(existentes_sin_info_bd),
         "total_inactivos": len(inactivos),
         "total_faltantes": len(faltantes),
-        "existentes": existentes,
+        "existentes": existentes_ok,
+        "mismatches": mismatches,
+        "existentes_sin_info_bd": existentes_sin_info_bd,
         "inactivos": inactivos,
         "faltantes": faltantes,
     })
