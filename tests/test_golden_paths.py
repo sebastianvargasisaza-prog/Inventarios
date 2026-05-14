@@ -5449,9 +5449,10 @@ def test_golden_brd_reconciliacion_pesajes_mp(app, db_clean):
     rr = cs.get(f'/api/brd/ebr/{ebr_id}/reconciliacion')
     assert rr.status_code == 200
     rec = rr.get_json()
-    # Total formula items Blush Balm v1 = 18 (mig 121 reemplazó mig 104's 21)
-    # · pesamos 3 → 15 no_pesados
-    assert len(rec['no_pesados']) == 15
+    # Total formula items Blush Balm v1 = 17 (mig 121 importó 18, mig 125
+    # borró 1 entrada vacía de Phenyl Trimethicone con cantidad=0)
+    # · pesamos 3 → 14 no_pesados
+    assert len(rec['no_pesados']) == 14
     # 2 dentro de threshold + 1 outlier
     assert len(rec['ok']) == 2
     assert len(rec['outliers']) == 1

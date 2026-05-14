@@ -232,6 +232,55 @@ except ImportError:
         _MIG_121_STMTS = []  # falla silenciosa si archivo no existe en deploy
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (125, "limpieza formula_items con cantidad_g_por_lote=0 + Blush Balm dup · Sebastián 14-may-2026", [
+        # Sebastián 14-may-2026: durante análisis de necesidad anual de
+        # Phenyl Trimethicone (MP00127), apareció que GEL HIDRATANTE NF
+        # y BLUSH BALM tenían entradas en formula_items con
+        # cantidad_g_por_lote=0 → distorsionaban el cálculo de necesidad
+        # (aparecían como productos que usan la MP pero con 0g aportando
+        # ruido). Decisión: borrar entradas vacías.
+        #
+        # IDEMPOTENTE · usa NOT EXISTS para no romper si ya se aplicó.
+        # Audit: deja huella en tabla migrations_history (si existe).
+        """DELETE FROM formula_items
+           WHERE COALESCE(cantidad_g_por_lote, 0) = 0
+             AND material_id = 'MP00127'
+             AND producto_nombre IN ('GEL HIDRATANTE NF','BLUSH BALM','Blush Balm')""",
+
+        # Unificar nombres "Blush Balm" (capitalizado) → "BLUSH BALM" (upper).
+        # Sebastián 13-may-2026 mig 121 importó como "BLUSH BALM" pero
+        # hay registros viejos como "Blush Balm". Mover formula_items y
+        # producciones referenciando "Blush Balm" al canónico "BLUSH BALM"
+        # solo si BLUSH BALM existe en formula_headers (para no perder fórmula).
+        """UPDATE formula_items
+           SET producto_nombre = 'BLUSH BALM'
+           WHERE producto_nombre = 'Blush Balm'
+             AND EXISTS (SELECT 1 FROM formula_headers
+                         WHERE producto_nombre = 'BLUSH BALM')""",
+
+        # Borrar formula_headers duplicado "Blush Balm" si "BLUSH BALM"
+        # ya existe (idempotente).
+        """DELETE FROM formula_headers
+           WHERE producto_nombre = 'Blush Balm'
+             AND EXISTS (SELECT 1 FROM formula_headers
+                         WHERE producto_nombre = 'BLUSH BALM')""",
+
+        # Deduplicar formula_items: si quedaron 2+ filas con mismo
+        # (producto_nombre, material_id), dejar la que tiene MAYOR
+        # cantidad_g_por_lote (porque cantidad>0 es la real · 0 es vacía).
+        # Usa MAX por (cantidad DESC, id ASC) implícitamente con CTE.
+        """DELETE FROM formula_items
+           WHERE id IN (
+             SELECT fi1.id
+             FROM formula_items fi1
+             JOIN formula_items fi2 ON fi1.producto_nombre = fi2.producto_nombre
+                                    AND fi1.material_id = fi2.material_id
+                                    AND fi1.id != fi2.id
+             WHERE COALESCE(fi1.cantidad_g_por_lote, 0) < COALESCE(fi2.cantidad_g_por_lote, 0)
+                OR (COALESCE(fi1.cantidad_g_por_lote, 0) = COALESCE(fi2.cantidad_g_por_lote, 0)
+                    AND fi1.id > fi2.id)
+           )""",
+    ]),
     (124, "autoplan IA · tabla aprendizaje · Sebastián 14-may-2026", [
         # Sebastián: "podemos usar api kay de antropic para que lo haga,
         # ya sabemos las necesidades hay que ponerle reglas, exportan el
