@@ -1110,6 +1110,32 @@ def comparar_calendar_necesidades():
             "fechas": items[:5],
         }
 
+    # Producciones REALES finalizadas últimos 30d · pipeline + ya-en-góndola
+    # Sebastián 13-may-2026: "en la misma app aparece cuántos kilos y fechas"
+    reales_por_prod = {}
+    rows_reales = c.execute(
+        """SELECT producto, fin_real_at,
+                  COALESCE(kg_real, cantidad_kg, 0),
+                  inicio_real_at,
+                  COALESCE(inventario_descontado_at, ''),
+                  COALESCE(numero_op, ''),
+                  COALESCE(estado, '')
+           FROM produccion_programada
+           WHERE fin_real_at IS NOT NULL
+             AND date(fin_real_at) >= date('now','-30 day')
+           ORDER BY fin_real_at DESC""",
+    ).fetchall()
+    for r in rows_reales:
+        prod = r[0] or ""
+        reales_por_prod.setdefault(prod, []).append({
+            "fin_real_at": (r[1] or "")[:10],
+            "kg_real": round(float(r[2] or 0), 2),
+            "inicio_real_at": (r[3] or "")[:10] if r[3] else None,
+            "inventario_descontado": bool(r[4]),
+            "numero_op": r[5] or None,
+            "estado": r[6] or "",
+        })
+
     # Comparar por producto · Sebastián 13-may-2026 v2:
     # NUEVA lógica · "producir 20 días antes de agotamiento"
     # - stock_efectivo = stock_gondola + pipeline_7d (ya producido)
@@ -1126,8 +1152,20 @@ def comparar_calendar_necesidades():
         diff_kg = round(kg_calendar - kg_necesario, 2)
         diff_pct = (diff_kg / kg_necesario * 100) if kg_necesario > 0.01 else (100 if kg_calendar > 0 else 0)
 
-        # Stock efectivo · góndola + pipeline 7d (lo recién producido)
-        stock_kg_efectivo = (nec["stock_kg_gondola"] or 0) + (nec["pipeline_kg"] or 0)
+        # Pipeline REAL · producciones finalizadas últimos 7d que aún no
+        # están reflejadas en Shopify Available (tarda ~7d el sync)
+        reales = reales_por_prod.get(prod, [])
+        pipeline_7d_real = 0.0
+        for rl in reales:
+            try:
+                f = _date.fromisoformat(rl["fin_real_at"][:10])
+                if (hoy - f).days <= 7:
+                    pipeline_7d_real += rl["kg_real"] or 0
+            except Exception:
+                pass
+
+        # Stock efectivo · góndola + pipeline 7d real (lo recién producido)
+        stock_kg_efectivo = (nec["stock_kg_gondola"] or 0) + pipeline_7d_real
 
         # Fecha agotamiento · con stock efectivo
         if vel_kg_dia > 0.001:
@@ -1198,8 +1236,9 @@ def comparar_calendar_necesidades():
             "dias_cobertura": dias_cob,
             "stock_uds": nec["stock_uds_total"],
             "stock_kg_gondola": round(nec["stock_kg_gondola"] or 0, 2),
-            "pipeline_kg": round(nec["pipeline_kg"] or 0, 2),
+            "pipeline_kg": round(pipeline_7d_real, 2),
             "stock_kg_efectivo": round(stock_kg_efectivo, 2),
+            "producciones_reales_30d": reales,
             "velocidad_uds_dia": nec["velocidad_uds_dia"],
             "velocidad_kg_dia": round(vel_kg_dia, 3),
             "fecha_agotamiento": fecha_agotamiento,
@@ -1368,6 +1407,7 @@ function render(d) {
     tbl += '<th>Días<br>cob</th>';
     tbl += '<th>Se agota</th>';
     tbl += '<th>Producir<br>sugerido<br>(−20d)</th>';
+    tbl += '<th>Producido<br>últ 30d</th>';
     tbl += '<th>Calendar<br>1er lote</th>';
     tbl += '<th>Δ timing</th>';
     tbl += '<th>Lote<br>típico</th>';
@@ -1379,7 +1419,11 @@ function render(d) {
       var timCls = p.timing_status === 'ALINEADO' ? 'tim-OK' : (p.timing_status === 'TARDE' ? 'tim-TARDE' : (p.timing_status === 'TEMPRANO' ? 'tim-TEMPRANO' : ''));
       var timTxt = p.diff_dias_timing != null ? (p.diff_dias_timing > 0 ? '+' + p.diff_dias_timing + 'd tarde' : (p.diff_dias_timing < 0 ? p.diff_dias_timing + 'd temprano' : 'mismo día')) : '—';
       var todasFechas = (p.fechas_calendar||[]).slice(1).map(f => f.fecha + ' (' + f.kg + 'kg)').join(' · ') || '—';
-      var pipeline = (p.pipeline_kg||0) > 0 ? ' <span style="color:#0891b2;font-weight:700">+' + p.pipeline_kg + '</span>' : '';
+      var pipeline = (p.pipeline_kg||0) > 0 ? ' <span style="color:#0891b2;font-weight:700" title="ya producido últ 7d · aún no en Shopify">+' + p.pipeline_kg + ' pipe</span>' : '';
+      var realesTxt = '—';
+      if ((p.producciones_reales_30d||[]).length) {
+        realesTxt = p.producciones_reales_30d.map(r => r.fin_real_at + ' (' + r.kg_real + 'kg' + (r.numero_op ? ' · ' + r.numero_op : '') + ')').join('<br>');
+      }
       tbl += '<tr>';
       tbl += '<td class="mono">' + escapeHtml(p.codigo_pt||'') + '</td>';
       tbl += '<td><strong>' + escapeHtml(p.producto_nombre) + '</strong><br><span style="color:#64748b;font-size:10px">' + p.stock_uds + ' uds</span></td>';
@@ -1388,6 +1432,7 @@ function render(d) {
       tbl += '<td style="text-align:center">' + (p.dias_cobertura != null ? p.dias_cobertura + 'd' : '—') + '</td>';
       tbl += '<td style="text-align:center;color:#dc2626;font-weight:600">' + (p.fecha_agotamiento || '—') + '</td>';
       tbl += '<td style="text-align:center;color:#166534;font-weight:700">' + (p.fecha_producir_sugerida || '—') + '</td>';
+      tbl += '<td style="font-size:10px;color:#0891b2">' + realesTxt + '</td>';
       tbl += '<td style="text-align:center">' + (p.primer_lote_calendar_fecha || '—') + '</td>';
       tbl += '<td style="text-align:center" class="' + timCls + '">' + timTxt + '</td>';
       tbl += '<td style="text-align:right;color:#64748b;font-size:11px">' + (p.lote_bulk_kg ? p.lote_bulk_kg + 'kg' : '—') + '</td>';
