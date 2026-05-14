@@ -17037,6 +17037,10 @@ async function ckMarcar(itemId, estado){
         } else if (p.mps_status === 'SIN_FORMULA') {
           markers += '<span title="Sin fórmula registrada" style="color:#94a3b8;margin-left:4px">🧪?</span>';
         }
+        // 🛒 Sin mapeo Shopify (no se pueden contar sus ventas)
+        if (p.sin_mapeo_shopify) {
+          markers += '<span title="SIN MAPEO SHOPIFY · ventas no se cuentan · agregar SKU a sku_producto_map" style="background:#fee2e2;color:#dc2626;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:700;margin-left:4px">🛒✕</span>';
+        }
         html += '<tr style="border-bottom:1px solid #f1f5f9">';
         html += '<td style="padding:8px 6px;font-family:ui-monospace,SFMono-Regular,monospace;font-weight:700;color:#1e40af">' + codDisp + '</td>';
         html += '<td style="padding:8px 6px;color:#1e293b">' + escapeHtmlNec(p.producto_nombre) + markers + '</td>';
@@ -17181,6 +17185,19 @@ async function ckMarcar(itemId, estado){
       html += '</div>';
     } else {
       html += '<div style="background:#f1f5f9;border-radius:8px;padding:10px;margin-bottom:12px;font-size:12px;color:#64748b">📜 Sin producciones previas registradas · usá "Ya producido" abajo para back-fill</div>';
+    }
+
+    // ── Diagnostic SKUs Shopify · ¿se cuentan las ventas? ──
+    if (p.sin_mapeo_shopify) {
+      html += '<div style="background:#fee2e2;border-left:4px solid #dc2626;border-radius:8px;padding:10px;margin-bottom:12px">';
+      html += '<div style="font-size:11px;color:#991b1b;font-weight:700;margin-bottom:4px">🛒✕ SIN MAPEO SHOPIFY</div>';
+      html += '<div style="font-size:11px;color:#475569">Este producto no tiene SKUs registrados en <code>sku_producto_map</code> · sus ventas Shopify NO se imputan · por eso aparece como "sin ventas" aunque sí venda.</div>';
+      html += '<div style="font-size:11px;color:#7f1d1d;margin-top:4px">Acción: agregar el SKU Shopify al mapeo (mig o admin UI) para que cuente sus ventas.</div>';
+      html += '</div>';
+    } else {
+      html += '<div style="background:#f0fdfa;border-left:4px solid #14b8a6;border-radius:8px;padding:6px 10px;margin-bottom:12px;font-size:11px;color:#475569">';
+      html += '🛒 ' + p.n_skus_mapeados + ' SKU(s) Shopify mapeados: <code style="font-family:ui-monospace">' + (p.skus_mapeados || []).join(', ') + '</code>';
+      html += '</div>';
     }
 
     // ── Match materias primas · ¿puede fabricarse? ──

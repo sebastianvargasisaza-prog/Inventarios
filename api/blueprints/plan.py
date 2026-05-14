@@ -378,12 +378,15 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
     # 2. Mapeo producto → sku_principal (para Shopify)
     # Estructura sku_producto_map: sku → producto_nombre
     sku_to_prod = {}
+    prod_to_skus = {}  # inverso · diagnóstico: ¿qué SKUs mapean a cada producto?
     for r in c.execute(
         """SELECT sku, producto_nombre FROM sku_producto_map
            WHERE COALESCE(activo,1)=1 AND producto_nombre IS NOT NULL
              AND TRIM(producto_nombre) != ''""",
     ).fetchall():
-        sku_to_prod[r[0].upper()] = r[1]
+        sku_up = r[0].upper()
+        sku_to_prod[sku_up] = r[1]
+        prod_to_skus.setdefault(r[1], []).append(sku_up)
 
     # 3. Stock por SKU (re-uso helper)
     from blueprints.programacion import _resolved_stock_por_sku
@@ -640,6 +643,12 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
             p["duracion_lote_dias"] = None
             p["proxima_sugerida_fecha"] = None
             p["proxima_sugerida_dias"] = None
+
+        # Diagnostic SKUs · ¿este producto tiene mapeo Shopify?
+        skus_de_este = prod_to_skus.get(prod_nombre, [])
+        p["skus_mapeados"] = skus_de_este
+        p["n_skus_mapeados"] = len(skus_de_este)
+        p["sin_mapeo_shopify"] = (len(skus_de_este) == 0)
 
         # Match MPs · ¿se puede fabricar 1 lote bulk con stock actual?
         # Sebastián 13-may-2026: "match de materias primas que diga si se
