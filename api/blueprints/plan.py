@@ -2685,6 +2685,10 @@ select,input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-si
       <button class="horiz-btn" data-h="120" onclick="setHoriz(120)">120 días</button>
     </div>
     <div>
+      <label style="margin-right:10px;font-size:12px;color:#475569;cursor:pointer">
+        <input type="checkbox" id="filtro-solo-ia" onchange="render()" style="vertical-align:middle">
+        Solo sugerencias IA
+      </label>
       <button onclick="cargar()" class="secondary">↻ Recargar</button>
       <button onclick="autoplanIA()" class="warn" id="btn-ia">🤖 Autoplan con IA</button>
     </div>
@@ -2798,24 +2802,32 @@ function render(){
   const ref = new Date(hoy.getFullYear(), hoy.getMonth() + MES_OFFSET, 1);
   document.getElementById('mesActual').textContent = MESES[ref.getMonth()] + ' ' + ref.getFullYear();
 
-  // Agrupar lotes por fecha · ya agendadas
+  // Filtro · Sebastián 14-may-2026: "quiero que aparezcan solo las de
+  // la IA · las otras olvídalas así tenemos algo más preciso"
+  const filtroSoloIA = document.getElementById('filtro-solo-ia')?.checked || false;
+
+  // Agrupar lotes por fecha
   const lotesPorFecha = {};
-  PLAN_DATA.agendadas.forEach(ag => {
-    const f = (ag.fecha_programada || '').slice(0, 10);
-    if (!f) return;
-    (lotesPorFecha[f] = lotesPorFecha[f] || []).push({
-      tipo: 'agendado',
-      id: ag.id,
-      producto: ag.producto,
-      kg: ag.kg || 0,
-      estado: ag.estado,
-      origen: ag.origen,
+  if (!filtroSoloIA){
+    PLAN_DATA.agendadas.forEach(ag => {
+      const f = (ag.fecha_programada || '').slice(0, 10);
+      if (!f) return;
+      (lotesPorFecha[f] = lotesPorFecha[f] || []).push({
+        tipo: 'agendado',
+        id: ag.id,
+        producto: ag.producto,
+        kg: ag.kg || 0,
+        estado: ag.estado,
+        origen: ag.origen,
+      });
     });
-  });
-  // Lotes sugeridos del autoplan (no agendados aún)
+  }
+  // Lotes sugeridos del autoplan (no agendados aún) · siempre visibles
   (k.plan_items || []).forEach(it => {
     const f = it.fecha;
     if (!f) return;
+    // Si filtroSoloIA · solo mostrar items que vinieron de la IA (from_ia)
+    if (filtroSoloIA && !it.from_ia) return;
     (lotesPorFecha[f] = lotesPorFecha[f] || []).push({
       tipo: 'sugerido',
       producto: it.producto,
@@ -2894,9 +2906,12 @@ function render(){
 }
 
 function renderListaSugerencias(){
-  const items = (PLAN_DATA.plan.plan_items || []);
+  const filtroSoloIA = document.getElementById('filtro-solo-ia')?.checked || false;
+  const itemsAll = (PLAN_DATA.plan.plan_items || []);
+  const items = filtroSoloIA ? itemsAll.filter(it => it.from_ia) : itemsAll;
   if (!items.length){
-    document.getElementById('sugerencias-lista').innerHTML = '<div class="muted" style="padding:20px;text-align:center">No hay sugerencias para este horizonte · todo cubierto</div>';
+    const msg = filtroSoloIA ? 'No hay sugerencias de IA cargadas · apretá "🤖 Autoplan con IA"' : 'No hay sugerencias para este horizonte · todo cubierto';
+    document.getElementById('sugerencias-lista').innerHTML = '<div class="muted" style="padding:20px;text-align:center">' + msg + '</div>';
     return;
   }
   let html = '<div class="suggest-list">';
@@ -3469,7 +3484,7 @@ cargar();
 </body></html>"""
 
 
-def _ia_autoplan_sugerir(payload_contexto, modelo="claude-haiku-4-5-20251001"):
+def _ia_autoplan_sugerir(payload_contexto, modelo="claude-sonnet-4-6"):
     """Llama a Anthropic con el contexto · devuelve plan estructurado.
 
     payload_contexto debe incluir:
@@ -3490,38 +3505,55 @@ def _ia_autoplan_sugerir(payload_contexto, modelo="claude-haiku-4-5-20251001"):
         return None, "ANTHROPIC_API_KEY no configurada en Render"
 
     system_prompt = (
-        "Eres el jefe de producción de un laboratorio cosmético colombiano. "
-        "Tu trabajo es decidir QUÉ producir, CUÁNDO y CUÁNTO según las "
-        "ventas reales y reglas operativas. Devolvés SOLO JSON válido sin "
-        "explicaciones extras.\n\n"
-        "REGLAS DURAS — ERROR CERO:\n"
-        "1. NUNCA programar producciones esta semana (semana actual). "
-        "Empezar siempre la PRÓXIMA semana en adelante.\n"
-        "2. Producir 20 días antes de agotar (ideal 25d).\n"
-        "3. Solo días hábiles (Lun-Vie) · NUNCA en sábado, domingo ni "
-        "festivos colombianos.\n"
-        "4. Si la necesidad es alta, podés usar TODA la semana L-V "
-        "(no solo Lun/Mié/Vie). Una producción por día.\n"
-        "5. DOS producciones el mismo día SOLO si: ambas ≤50kg Y "
-        "ninguna es fórmula compleja. Si una es Vitamina C o Triactive "
-        "(complejos · envasado mismo día), ese día queda con UNA SOLA.\n"
-        "6. Lotes grandes (>50kg) ocupan el día ENTERO solos.\n"
-        "7. Vitamina C y Triactive (cualquier variante) solo Lunes o "
-        "Miércoles (necesitan envasado mismo día).\n"
-        "8. Si las MPs faltan (mps_status=FALTAN_MPS): NO programar · "
-        "comentar que primero hay que comprar MPs.\n"
-        "9. Si el producto ya tiene un lote agendado en el horizonte, "
-        "NO duplicar.\n"
-        "10. Aprender del historial: si el usuario movió/canceló "
-        "sugerencias previas, ajustar criterio (frecuencia, fecha o kg).\n"
-        "11. Distribuir parejo: no concentrar 3+ productos un mismo día. "
-        "Si la lista de urgencias es larga, distribuir a lo largo de "
-        "varias semanas (L-V), una/dos por día según las reglas.\n\n"
-        "FORMATO RESPUESTA (JSON estricto):\n"
+        "Eres el jefe de producción senior de un laboratorio cosmético "
+        "colombiano (ÁNIMUS Lab + Espagiria). Decidís QUÉ producir, "
+        "CUÁNDO y CUÁNTO con criterio ERROR CERO. Tu reputación depende "
+        "de propuestas precisas que el usuario pueda aceptar sin "
+        "modificarlas. Devolvés SOLO JSON válido sin explicaciones extras.\n\n"
+        "REGLAS DURAS — INVIOLABLES:\n"
+        "1. NUNCA programar producciones esta semana actual. "
+        "Empezar SIEMPRE el lunes próximo (fecha_inicio_minima_plan).\n"
+        "2. Producir 20 días antes de agotar (ideal 25d) — usa "
+        "stock_kg / velocidad_kg_dia para calcular agotamiento.\n"
+        "3. Solo días hábiles (Lun-Vie) · NUNCA sábado, domingo ni "
+        "festivos colombianos (la lista te llega en festivos_colombianos).\n"
+        "4. Si necesidad alta, usar TODA la semana L-V (no solo L/M/V).\n"
+        "5. DOS producciones mismo día SOLO si: ambas ≤50kg Y NINGUNA "
+        "es compleja. Si hay una compleja (Vit C/Triactive), ese día "
+        "queda con UNA SOLA.\n"
+        "6. Lotes grandes (>50kg): día ENTERO solo.\n"
+        "7. Vitamina C y Triactive (cualquier variante): solo Lun o Mié.\n"
+        "8. Si MPs faltan (mps_status=FALTAN_MPS): NO programar · "
+        "explicar en comentario_general que hay que comprar primero.\n"
+        "9. Si el producto YA tiene un lote agendado (mira lotes_agendados "
+        "de cada producto): NO duplicar a menos que el agendado sea "
+        "insuficiente para el horizonte.\n"
+        "10. Aprendé del historial_feedback: si el usuario movió un "
+        "producto repetidamente, ajustá la frecuencia. Si lo canceló, "
+        "no lo sugieras otra vez al menos por un mes.\n"
+        "11. Distribuir parejo: no concentrar 3+ mismo día.\n\n"
+        "CRITERIOS DE CONFIANZA (campo confianza 0.0-1.0):\n"
+        "Antes de asignar confianza, ejecutá esta checklist mental por "
+        "cada sugerencia. Cada chequeo SUMA puntos:\n"
+        "  [+0.20] La fecha respeta TODAS las reglas duras 1-7\n"
+        "  [+0.20] El producto tiene mps_status='OK' (puede fabricarse)\n"
+        "  [+0.15] El producto tiene velocidad_uds_dia > 0.5 (demanda real)\n"
+        "  [+0.15] La fecha está dentro de 25-15d antes del agotamiento\n"
+        "  [+0.10] El kg sugerido coincide con lote_size_kg (Excel)\n"
+        "  [+0.10] No hay duplicación con lotes_agendados del producto\n"
+        "  [+0.10] El historial_feedback no muestra rechazos previos similares\n"
+        "Total posible: 1.00. Si NO sumás al menos 0.95 puntos, "
+        "REVISÁ tu sugerencia o no la incluyas. Usuarios esperan "
+        "confianza ≥0.95 · si das menos, es mejor NO sugerir.\n\n"
+        "REGLA DE EXCLUSIÓN: si tu confianza para una sugerencia daría "
+        "<0.95, NO la incluyas en sugerencias[] · mejor mencionarla en "
+        "comentario_general como 'queda pendiente revisar X porque Y'.\n\n"
+        "FORMATO RESPUESTA (JSON estricto · sin markdown):\n"
         "{\"sugerencias\":[{\"producto\":\"...\",\"fecha\":\"YYYY-MM-DD\","
         "\"kg\":N,\"motivo\":\"urgente|adelanto|buffer\","
-        "\"cobertura_post_dias\":N,\"confianza\":0.0-1.0,"
-        "\"razonamiento\":\"...\"}],\"comentario_general\":\"...\"}"
+        "\"cobertura_post_dias\":N,\"confianza\":0.95-1.00,"
+        "\"razonamiento\":\"explica la checklist · qué puntos sumó\"}],"
+        "\"comentario_general\":\"resumen + casos excluidos por baja confianza\"}"
     )
     user_msg = (
         f"Contexto del cliente y productos:\n"
@@ -3532,7 +3564,7 @@ def _ia_autoplan_sugerir(payload_contexto, modelo="claude-haiku-4-5-20251001"):
 
     body = _json.dumps({
         "model": modelo,
-        "max_tokens": 2500,
+        "max_tokens": 4000,
         "system": system_prompt,
         "messages": [{"role": "user", "content": user_msg}],
     }).encode("utf-8")
