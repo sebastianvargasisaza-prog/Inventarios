@@ -2316,55 +2316,113 @@ def plan_sugerido():
             productos_con_formula[(r[0] or "").upper().strip()] = float(r[1] or 0)
 
     # 4) Iterar necesidades y proponer slots
+    # Sebastián 14-may-2026: "ya no lo haga esta semana si no que empiece
+    # la proxima colocando todo lo que falta · si la necesidad es mucha
+    # puede poner producciones una diaria de lunes a viernes, o dos en un
+    # dia si son pequeñas y la formula no es compleja · ser error cero".
     hoy = _hoy_colombia()
-    fecha_inicio = hoy + _td(days=1)  # mañana mínimo
+    # Saltar a próximo lunes (skip semana actual)
+    # weekday() · 0=lun ... 4=vie ... 6=dom
+    dias_hasta_lunes = (7 - hoy.weekday()) % 7
+    if dias_hasta_lunes == 0:
+        dias_hasta_lunes = 7  # si hoy es lunes, saltar al lunes siguiente
+    fecha_inicio = hoy + _td(days=dias_hasta_lunes)
+    # Si próximo lunes es festivo, _proxima_fecha_habil saltará automáticamente
 
     slots = []  # cada slot = un día con productos
     slots_por_fecha = {}  # fecha_iso → {fecha, productos}
     sin_formula = []
     plan_items = []  # lista de productos a programar
+    # Tracking detallado de productos por día para la regla "2 solo si
+    # ambos pequeños Y no complejos"
+    detalle_por_fecha = {}  # iso → [{kg, complejo}]
 
-    # Helper: agrupar lote pequeño en slot existente o crear nuevo
     def _registrar_slot_temporal(producto_nombre, lote_kg, motivo):
-        """Solo simula · devuelve fecha asignada usando _proxima_fecha_habil
-        contra el estado actual de BD + slots ya asignados in-memory."""
-        # Insertar virtualmente: crear una vista temporal de "ocupado"
-        ocupados = {}  # fecha_iso → list of (kg)
-        for s in slots:
-            ocupados.setdefault(s["fecha"], []).append(s["kg"])
-        # Buscar primera fecha hábil compatible respetando reglas
+        """Devuelve fecha asignada respetando reglas duras:
+        - Empieza próxima semana (fecha_inicio = lun siguiente)
+        - Skip fines de semana + festivos colombianos
+        - Lotes grandes (>50kg) ocupan el día solos
+        - Productos complejos (Vit C / Triactive) solo Lun o Mié
+        - 2 producciones mismo día SOLO si:
+            · Ambos ≤ 50kg
+            · Ninguno es complejo
+            · El producto entrante no es complejo
+          Caso contrario, busca otro día.
+        - Si hay alta necesidad y L/M/V están llenos, usa Mar/Jue
+          (no fuerza espacios largos)
+        """
         cur = fecha_inicio
         es_grande = lote_kg > LOTE_GRANDE_KG
         es_complejo = _es_producto_complejo(producto_nombre)
-        DIAS_COMPLEJOS = {0, 2}
-        DIAS_PREF_LOCAL = {0, 2, 4}
+
         for _ in range(400):
             if cur.weekday() in DIAS_HABILES and not es_festivo_colombia(cur):
-                # filtro día
-                if es_complejo:
-                    ok_dia = cur.weekday() in DIAS_COMPLEJOS
-                else:
-                    ok_dia = cur.weekday() in DIAS_PREF_LOCAL
-                if ok_dia:
-                    # contar producción real en BD + slots ya asignados
-                    db_rows = c.execute(
-                        """SELECT COALESCE(pp.cantidad_kg, fh.lote_size_kg, 0)
-                           FROM produccion_programada pp
-                           LEFT JOIN formula_headers fh
-                             ON UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(pp.producto))
-                           WHERE date(pp.fecha_programada) = ?
-                             AND pp.estado IN ('pendiente','programado','en_curso')""",
-                        (cur.isoformat(),),
-                    ).fetchall()
-                    kgs_dia = [float(r[0] or 0) for r in db_rows] + ocupados.get(cur.isoformat(), [])
-                    count = len(kgs_dia)
-                    ya_grande = any(k > LOTE_GRANDE_KG for k in kgs_dia)
-                    if es_grande and count == 0:
+                # Productos complejos: solo Lun o Mié (regla dura)
+                if es_complejo and cur.weekday() not in {0, 2}:
+                    cur = cur + _td(days=1)
+                    continue
+
+                # Datos del día · BD + slots in-memory
+                db_rows = c.execute(
+                    """SELECT COALESCE(pp.cantidad_kg, fh.lote_size_kg, 0),
+                              pp.producto
+                       FROM produccion_programada pp
+                       LEFT JOIN formula_headers fh
+                         ON UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(pp.producto))
+                       WHERE date(pp.fecha_programada) = ?
+                         AND pp.estado IN ('pendiente','programado','en_curso')""",
+                    (cur.isoformat(),),
+                ).fetchall()
+                items_db = [{
+                    "kg": float(r[0] or 0),
+                    "complejo": _es_producto_complejo(r[1] or ""),
+                } for r in db_rows]
+                items_mem = detalle_por_fecha.get(cur.isoformat(), [])
+                items_dia = items_db + items_mem
+
+                count = len(items_dia)
+                ya_grande = any(it["kg"] > LOTE_GRANDE_KG for it in items_dia)
+                ya_complejo = any(it["complejo"] for it in items_dia)
+
+                # Lote grande: solo si día vacío
+                if es_grande:
+                    if count == 0:
                         return cur
-                    if not es_grande and count < MAX_PRODUCCIONES_POR_DIA and not ya_grande:
-                        return cur
+                    cur = cur + _td(days=1)
+                    continue
+
+                # Día con grande: rechaza cualquier otro
+                if ya_grande:
+                    cur = cur + _td(days=1)
+                    continue
+
+                # Día con complejo: NO permite 2 (error cero)
+                if ya_complejo:
+                    cur = cur + _td(days=1)
+                    continue
+
+                # Lote complejo entrante: día debe estar vacío (no comparte)
+                if es_complejo and count > 0:
+                    cur = cur + _td(days=1)
+                    continue
+
+                # Caso normal: lote pequeño/mediano no-complejo
+                # Permite 2 SOLO si ambos ≤50kg Y ningún complejo (asegurado arriba)
+                if count == 0:
+                    return cur
+                if count == 1 and not es_complejo and items_dia[0]["kg"] <= LOTE_GRANDE_KG:
+                    return cur
+                # Día lleno · siguiente
             cur = cur + _td(days=1)
         return None
+
+    def _commit_slot(fecha_obj, producto_nombre, lote_kg):
+        """Helper · actualiza tracking in-memory tras asignar slot."""
+        iso = fecha_obj.isoformat()
+        detalle_por_fecha.setdefault(iso, []).append({
+            "kg": lote_kg,
+            "complejo": _es_producto_complejo(producto_nombre),
+        })
 
     # Ordenar por restricciones DESC + urgencia ASC · Sebastián 13-may-2026
     # "fechas estan raras salta mucho no tiene consistencia". Causa: si
@@ -2425,6 +2483,7 @@ def plan_sugerido():
                                                 f"cob {cob_dias:.0f}d")
         if fecha_asig is None:
             continue
+        _commit_slot(fecha_asig, prod, lote_kg)
 
         slots.append({
             "fecha": fecha_asig.isoformat(),
@@ -3011,15 +3070,29 @@ def _ia_autoplan_sugerir(payload_contexto, modelo="claude-haiku-4-5-20251001"):
         "Tu trabajo es decidir QUÉ producir, CUÁNDO y CUÁNTO según las "
         "ventas reales y reglas operativas. Devolvés SOLO JSON válido sin "
         "explicaciones extras.\n\n"
-        "REGLAS DURAS:\n"
-        "- Producir 20 días antes de agotar (ideal 25d)\n"
-        "- Solo Lun-Vie · skip festivos colombianos\n"
-        "- Max 2 producciones/día normalmente\n"
-        "- Lotes >50kg ocupan el día solos\n"
-        "- Vitamina C y Triactive solo Lun o Mié (envasado mismo día)\n"
-        "- Si MPs faltan: NO programar · sugerir comprar primero\n"
-        "- Aprendé del historial: si el usuario movió/canceló sugerencias "
-        "previas, ajustá criterio\n\n"
+        "REGLAS DURAS — ERROR CERO:\n"
+        "1. NUNCA programar producciones esta semana (semana actual). "
+        "Empezar siempre la PRÓXIMA semana en adelante.\n"
+        "2. Producir 20 días antes de agotar (ideal 25d).\n"
+        "3. Solo días hábiles (Lun-Vie) · NUNCA en sábado, domingo ni "
+        "festivos colombianos.\n"
+        "4. Si la necesidad es alta, podés usar TODA la semana L-V "
+        "(no solo Lun/Mié/Vie). Una producción por día.\n"
+        "5. DOS producciones el mismo día SOLO si: ambas ≤50kg Y "
+        "ninguna es fórmula compleja. Si una es Vitamina C o Triactive "
+        "(complejos · envasado mismo día), ese día queda con UNA SOLA.\n"
+        "6. Lotes grandes (>50kg) ocupan el día ENTERO solos.\n"
+        "7. Vitamina C y Triactive (cualquier variante) solo Lunes o "
+        "Miércoles (necesitan envasado mismo día).\n"
+        "8. Si las MPs faltan (mps_status=FALTAN_MPS): NO programar · "
+        "comentar que primero hay que comprar MPs.\n"
+        "9. Si el producto ya tiene un lote agendado en el horizonte, "
+        "NO duplicar.\n"
+        "10. Aprender del historial: si el usuario movió/canceló "
+        "sugerencias previas, ajustar criterio (frecuencia, fecha o kg).\n"
+        "11. Distribuir parejo: no concentrar 3+ productos un mismo día. "
+        "Si la lista de urgencias es larga, distribuir a lo largo de "
+        "varias semanas (L-V), una/dos por día según las reglas.\n\n"
         "FORMATO RESPUESTA (JSON estricto):\n"
         "{\"sugerencias\":[{\"producto\":\"...\",\"fecha\":\"YYYY-MM-DD\","
         "\"kg\":N,\"motivo\":\"urgente|adelanto|buffer\","
@@ -3186,24 +3259,45 @@ def autoplan_ia():
     } for r in historial_rows]
 
     # 4) Reglas resumidas para la IA
+    from datetime import timedelta as _td_ia
+    hoy_dt = _hoy_colombia()
+    dias_a_lunes = (7 - hoy_dt.weekday()) % 7
+    if dias_a_lunes == 0:
+        dias_a_lunes = 7
+    fecha_inicio_minima = (hoy_dt + _td_ia(days=dias_a_lunes)).isoformat()
+
+    # Festivos colombianos del horizonte para que la IA los vea explícitos
+    festivos_horizonte = []
+    for offset in range(horizonte + dias_a_lunes + 7):
+        d = hoy_dt + _td_ia(days=offset)
+        if es_festivo_colombia(d):
+            festivos_horizonte.append(d.isoformat())
+
     reglas = {
+        "fecha_inicio_minima": fecha_inicio_minima,
+        "regla_inicio": "NO programar esta semana · empezar el " + fecha_inicio_minima + " (próximo lunes)",
         "producir_dias_antes_agotar": 20,
         "ideal_dias_antes": 25,
         "dias_habiles": "Lun-Vie",
-        "dias_preferidos": "Lun/Mié/Vie",
+        "dias_uso_completo": "Si necesidad alta, usar L-V completo (no solo L/M/V)",
         "max_producciones_por_dia": MAX_PRODUCCIONES_POR_DIA,
+        "regla_2_por_dia": "Solo si ambos ≤50kg Y ninguno es complejo · si hay complejo, queda con UNO",
         "lote_grande_umbral_kg": LOTE_GRANDE_KG,
-        "lote_grande_regla": "Día solo · no comparte",
+        "lote_grande_regla": "Día entero solo · no comparte",
         "productos_complejos": list(PRODUCTOS_COMPLEJOS_SUBSTR),
-        "productos_complejos_regla": "Solo Lun o Mié (envasado mismo día)",
+        "productos_complejos_regla": "Solo Lun o Mié (envasado mismo día) + queda con UNA producción ese día",
+        "festivos_colombianos": festivos_horizonte,
         "festivos_skip": True,
+        "no_duplicar_si_ya_agendado": True,
         "horizontes_validos": [15, 30, 60, 90, 120],
+        "principio": "ERROR CERO · prefiere distribuir a lo largo de la semana",
     }
 
     payload_contexto = {
         "cliente": cliente,
         "horizonte_dias": horizonte,
         "fecha_hoy": _hoy_colombia().isoformat(),
+        "fecha_inicio_minima_plan": fecha_inicio_minima,
         "n_productos": len(productos_ctx),
         "productos": productos_ctx,
         "historial_feedback": historial,
