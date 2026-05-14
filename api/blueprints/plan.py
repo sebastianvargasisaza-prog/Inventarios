@@ -2274,6 +2274,40 @@ def plan_dashboard_api():
             "tiene_pausa": n.get("tiene_pausa", False),
         })
 
+    # 5b) Últimas sugerencias IA (no obsoletas) + última corrida
+    rows_ia = c.execute(
+        """SELECT producto_nombre, sugerencia_kg, sugerencia_fecha,
+                  motivo_ia, confianza_ia, accion_usuario, fecha_decision
+           FROM autoplan_decisiones
+           WHERE fecha_decision >= datetime('now','-5 hours','-7 day')
+             AND COALESCE(accion_usuario, '') NOT IN ('obsoleta_mig131', 'cancelada', 'ignorada')
+           ORDER BY fecha_decision DESC, confianza_ia DESC
+           LIMIT 10""",
+    ).fetchall()
+    ia_sugerencias = [{
+        "producto": r[0], "kg": float(r[1] or 0), "fecha": r[2],
+        "motivo": r[3], "confianza": float(r[4] or 0) if r[4] else None,
+        "accion": r[5], "fecha_decision": (r[6] or "")[:16],
+    } for r in rows_ia]
+
+    # 5c) Estadísticas de la IA (aprendizaje)
+    row_stats = c.execute(
+        """SELECT
+             COUNT(CASE WHEN accion_usuario='aceptada' THEN 1 END) AS aceptadas,
+             COUNT(CASE WHEN accion_usuario='movida' THEN 1 END) AS movidas,
+             COUNT(CASE WHEN accion_usuario='cancelada' THEN 1 END) AS canceladas,
+             COUNT(CASE WHEN accion_usuario='ignorada' THEN 1 END) AS ignoradas,
+             COUNT(CASE WHEN accion_usuario IS NULL THEN 1 END) AS pendientes
+           FROM autoplan_decisiones""",
+    ).fetchone()
+    ia_stats = {
+        "aceptadas": int(row_stats[0] or 0),
+        "movidas": int(row_stats[1] or 0),
+        "canceladas": int(row_stats[2] or 0),
+        "ignoradas": int(row_stats[3] or 0),
+        "pendientes": int(row_stats[4] or 0),
+    }
+
     # 5) KPIs
     n_canonicos = c.execute(
         """SELECT COUNT(*) FROM produccion_programada
@@ -2307,6 +2341,8 @@ def plan_dashboard_api():
         "semanas": semanas,
         "producciones_reales_28d": reales,
         "alertas_criticos": alertas,
+        "ia_sugerencias_recientes": ia_sugerencias,
+        "ia_stats": ia_stats,
     })
 
 
@@ -2353,6 +2389,20 @@ button{background:#0f766e;color:white;border:none;padding:8px 14px;border-radius
   <div class="muted">Vista única · plan + alertas + producciones reales · actualizado en vivo</div>
   <div style="margin-top:10px"><button onclick="cargar()">↻ Recargar</button></div>
   <div id="kpis" class="kpi-grid"></div>
+</div>
+
+<div class="card" style="background:linear-gradient(135deg,#fef3c7,#fef9c3);border:2px solid #ca8a04">
+  <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+    <div>
+      <h2 style="margin:0;color:#854d0e">🤖 Autoplan con IA · Claude Sonnet 4.6</h2>
+      <div class="muted">Cruza ventas Shopify + fórmulas Excel + Calendar + tu feedback histórico</div>
+    </div>
+    <div>
+      <a href="/admin/plan-calendario" target="_blank" style="background:#ca8a04;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:700;font-size:14px">▶ Ir al Calendario IA</a>
+    </div>
+  </div>
+  <div id="ia-stats" style="margin-top:10px"></div>
+  <div id="ia-sugerencias" style="margin-top:10px"></div>
 </div>
 
 <div class="cols-2">
@@ -2430,6 +2480,34 @@ function render(d){
   });
   if (!d.producciones_reales_28d.length) hr = '<div class="muted">Sin producciones reales últimos 28 días</div>';
   document.getElementById('reales').innerHTML = hr;
+
+  // IA stats + sugerencias
+  const s = d.ia_stats || {};
+  const totalAcciones = (s.aceptadas || 0) + (s.movidas || 0) + (s.canceladas || 0) + (s.ignoradas || 0);
+  let hs2 = '<div style="display:flex;gap:8px;flex-wrap:wrap;font-size:12px">';
+  hs2 += '<span style="background:#dcfce7;color:#166534;padding:4px 10px;border-radius:6px"><strong>' + (s.aceptadas || 0) + '</strong> aceptadas</span>';
+  hs2 += '<span style="background:#fef3c7;color:#854d0e;padding:4px 10px;border-radius:6px"><strong>' + (s.movidas || 0) + '</strong> movidas</span>';
+  hs2 += '<span style="background:#fee2e2;color:#991b1b;padding:4px 10px;border-radius:6px"><strong>' + (s.canceladas || 0) + '</strong> canceladas</span>';
+  hs2 += '<span style="background:#f1f5f9;color:#475569;padding:4px 10px;border-radius:6px"><strong>' + (s.ignoradas || 0) + '</strong> ignoradas</span>';
+  hs2 += '<span style="background:#dbeafe;color:#1e40af;padding:4px 10px;border-radius:6px"><strong>' + (s.pendientes || 0) + '</strong> pendientes</span>';
+  if (totalAcciones > 0) {
+    const aceptPct = Math.round(((s.aceptadas || 0) / totalAcciones) * 100);
+    hs2 += '<span style="margin-left:8px;color:#475569;font-style:italic">IA aprendizaje: ' + aceptPct + '% de sugerencias aceptadas</span>';
+  }
+  hs2 += '</div>';
+  document.getElementById('ia-stats').innerHTML = hs2;
+
+  const sugs = d.ia_sugerencias_recientes || [];
+  if (sugs.length) {
+    let hi = '<div style="font-weight:700;font-size:12px;margin-bottom:6px;color:#854d0e">Últimas sugerencias IA · click "Ir al Calendario IA" para confirmarlas:</div>';
+    sugs.forEach(s => {
+      const conf = s.confianza ? Math.round(s.confianza * 100) + '%' : '?';
+      hi += '<div style="display:flex;justify-content:space-between;font-size:11px;padding:4px 0;border-bottom:1px dashed rgba(202,138,4,.3)"><span>' + esc(s.producto) + ' · ' + s.fecha + ' · ' + s.kg + 'kg</span><span style="color:#854d0e">conf ' + conf + ' · ' + (s.motivo || '') + '</span></div>';
+    });
+    document.getElementById('ia-sugerencias').innerHTML = hi;
+  } else {
+    document.getElementById('ia-sugerencias').innerHTML = '<div class="muted" style="font-size:11px;color:#854d0e">Sin sugerencias IA recientes · click "Ir al Calendario IA" y apretá "🤖 Autoplan con IA" para generar</div>';
+  }
 }
 cargar();
 </script>

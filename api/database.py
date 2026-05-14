@@ -253,6 +253,19 @@ except ImportError:
         _MIG_130_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (131, "Limpiar autoplan_decisiones viejas · forzar re-cálculo IA con fórmulas correctas · paso 1/6", [
+        # Sebastián 14-may-2026: las decisiones IA previas fueron tomadas
+        # con fórmulas incompletas (sin agua) y sin back-fills. Hay que
+        # invalidar el cache para que próxima invocación re-piense todo
+        # con datos correctos.
+        # Marca las decisiones VIEJAS como obsoletas para que el cache 24h
+        # no las reutilice. NO borra (preserva historial · IA aprende del feedback).
+        """UPDATE autoplan_decisiones
+           SET accion_usuario = 'obsoleta_mig131',
+               accion_at = datetime('now','-5 hours'),
+               comentario_usuario = 'Auto-marcada obsoleta · fórmulas viejas pre-mig127'
+           WHERE accion_usuario IS NULL""",
+    ]),
     (130, "Programar canónicos 12 meses con frecuencias Sebastián · paso 5/6",
      _MIG_130_STMTS),
     (129, "Cancelar Calendar legacy duplicado/obsoleto · Sebastián 14-may-2026", [
