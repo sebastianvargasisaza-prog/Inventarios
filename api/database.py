@@ -221,7 +221,19 @@ _AREAS_LIMPIEZA_PROFUNDA = (
 )
 
 
+# Mig 121 SQL statements vienen del módulo api/mig_121_formulas_data.py
+# (generado por scripts/generate_mig_121_formulas.py desde Excel Alejandro mayo-2026)
+try:
+    from mig_121_formulas_data import STATEMENTS as _MIG_121_STMTS
+except ImportError:
+    try:
+        from api.mig_121_formulas_data import STATEMENTS as _MIG_121_STMTS
+    except ImportError:
+        _MIG_121_STMTS = []  # falla silenciosa si archivo no existe en deploy
+
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (121, "Importar 26 fórmulas reales del Excel Alejandro mayo-2026 · Sebastián 13-may-2026",
+     _MIG_121_STMTS),
     (120, "Reactivar 5 MPs inactivas usadas en Excel Alejandro mayo-2026 · Sebastián 13-may-2026", [
         # Verificador /admin/verificar-codigos-mp 13-may-2026: de los 146
         # códigos del Excel FORMULAS_MAESTRO_v2_1 Alejandro, 141 estaban

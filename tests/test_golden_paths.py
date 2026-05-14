@@ -5449,8 +5449,9 @@ def test_golden_brd_reconciliacion_pesajes_mp(app, db_clean):
     rr = cs.get(f'/api/brd/ebr/{ebr_id}/reconciliacion')
     assert rr.status_code == 200
     rec = rr.get_json()
-    # Total formula items = 21 · pesamos 3 → 18 no_pesados
-    assert len(rec['no_pesados']) == 18
+    # Total formula items Blush Balm v1 = 18 (mig 121 reemplazó mig 104's 21)
+    # · pesamos 3 → 15 no_pesados
+    assert len(rec['no_pesados']) == 15
     # 2 dentro de threshold + 1 outlier
     assert len(rec['ok']) == 2
     assert len(rec['outliers']) == 1
@@ -6729,20 +6730,21 @@ def test_golden_operario_mi_dia_filtra_por_asignacion(app, db_clean):
 def test_golden_animus_productos_variants_seed(app, db_clean):
     """Mig 118 · 4 productos inactivos · SAH/TRX/PHA tienen 10ml configurado
     correctamente · AZ HIBRID CLEAR tiene flag 15ml."""
-    # Caso 1: 4 productos inactivos
+    # Caso 1: 3 productos inactivos · Sebastián 13-may-2026 mig 121
+    # reactivó EMULSION HIDRATANTE  B3+BHA porque el Excel Alejandro la
+    # incluye con fórmula real · los otros 3 siguen inactivos.
     inactivos = _query(
         """SELECT producto_nombre FROM formula_headers
            WHERE activo = 0
              AND producto_nombre IN (
                'SUERO DE RETINALDEHIDO 0.05%',
                'Suero RETINAL +',
-               'SUERO ILUMINADOR AHA+AH.',
-               'EMULSION HIDRATANTE  B3+BHA'
+               'SUERO ILUMINADOR AHA+AH.'
              )
            ORDER BY producto_nombre""",
     )
-    assert len(inactivos) == 4, \
-        f'BUG: esperaba 4 productos inactivos, obtuvo {len(inactivos)}: {inactivos}'
+    assert len(inactivos) == 3, \
+        f'BUG: esperaba 3 productos inactivos, obtuvo {len(inactivos)}: {inactivos}'
 
     # Caso 2: SAH tiene 1200 regalo
     sah = _query(
