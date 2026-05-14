@@ -2180,6 +2180,178 @@ def plan_debug_tz():
     })
 
 
+@bp.route("/api/plan/diagnostico-mp", methods=["GET"])
+def diagnostico_mp():
+    """Diagnóstico completo de por qué una MP "no se rastrea" en el sistema.
+
+    Sebastián 14-may-2026: "me decia que habia dos materias primas que no
+    rastrea: COCAMIDOPROPYL BETAINE · PHENYL TRIMETHICONE".
+
+    Query: ?q=cocamidopropyl  (uno solo · busca fuzzy en INCI y comercial)
+
+    Devuelve checklist completa:
+      1. ¿Existe en maestro_mps? · todas las variantes que matchean
+      2. ¿Está activa?
+      3. ¿Aparece en formula_items? · qué productos la usan
+      4. Esos productos · ¿activos? ¿velocidad>0?
+      5. Movimientos · entradas vs salidas últ 180d
+      6. Stock actual
+      7. ¿Por qué no se rastrea? · diagnóstico textual
+    """
+    err = _require_login()
+    if err:
+        return err
+    q = (request.args.get("q") or "").strip()
+    if not q:
+        return jsonify({"error": "pasá ?q=<nombre_mp>"}), 400
+
+    conn = get_db()
+    c = conn.cursor()
+
+    import unicodedata
+    def _norm(s):
+        if not s: return ""
+        s = unicodedata.normalize('NFD', str(s).strip().lower())
+        return ''.join(ch for ch in s if unicodedata.category(ch) != 'Mn')
+
+    q_norm = _norm(q)
+
+    # 1) Buscar en maestro_mps
+    rows = c.execute(
+        """SELECT codigo_mp, nombre_comercial, nombre_inci,
+                  COALESCE(activo, 1), COALESCE(stock_minimo, 0),
+                  COALESCE(proveedor, '')
+           FROM maestro_mps""",
+    ).fetchall()
+    candidatos = []
+    for r in rows:
+        nc = r[1] or ""; ni = r[2] or ""
+        if q_norm in _norm(nc + " " + ni):
+            candidatos.append({
+                "codigo_mp": r[0],
+                "nombre_comercial": nc,
+                "nombre_inci": ni,
+                "activo": bool(r[3]),
+                "stock_minimo": float(r[4] or 0),
+                "proveedor": r[5] or "",
+            })
+
+    if not candidatos:
+        return jsonify({
+            "query": q,
+            "encontrado_en_maestro": False,
+            "diagnostico": f"❌ NO existe ninguna MP en maestro_mps cuyo nombre o INCI contenga '{q}'. Tal vez está con otra denominación · busca variantes en /admin/mps-buscar.",
+            "candidatos": [],
+        })
+
+    # 2) Para cada candidato, analizar más profundo
+    items = []
+    for cand in candidatos:
+        cod = cand["codigo_mp"]
+
+        # Stock actual
+        row_stock = c.execute(
+            """SELECT
+                  COALESCE(SUM(CASE WHEN LOWER(tipo) IN ('entrada')
+                                    THEN cantidad ELSE 0 END), 0) as entradas,
+                  COALESCE(SUM(CASE WHEN LOWER(tipo) IN ('salida','consumo')
+                                    THEN cantidad ELSE 0 END), 0) as salidas,
+                  COUNT(*) as n_total
+               FROM movimientos WHERE material_id = ?""",
+            (cod,),
+        ).fetchone()
+        entradas_g = float(row_stock[0] or 0)
+        salidas_g = float(row_stock[1] or 0)
+        n_total = int(row_stock[2] or 0)
+        stock_actual_g = entradas_g - salidas_g
+
+        # Últimos 180d
+        row_180 = c.execute(
+            """SELECT
+                  COALESCE(SUM(CASE WHEN LOWER(tipo) IN ('entrada') THEN cantidad ELSE 0 END), 0),
+                  COALESCE(SUM(CASE WHEN LOWER(tipo) IN ('salida','consumo') THEN cantidad ELSE 0 END), 0),
+                  COUNT(*)
+               FROM movimientos
+               WHERE material_id = ?
+                 AND date(fecha) >= date('now','-5 hours','-180 day')""",
+            (cod,),
+        ).fetchone()
+        entradas_180_g = float(row_180[0] or 0)
+        salidas_180_g = float(row_180[1] or 0)
+        n_mov_180 = int(row_180[2] or 0)
+
+        # Productos que la usan (formula_items)
+        rows_uso = c.execute(
+            """SELECT fi.producto_nombre,
+                      COALESCE(fi.cantidad_gramos, 0),
+                      COALESCE(fh.lote_size_kg, 0),
+                      COALESCE(fh.activo, 1)
+               FROM formula_items fi
+               LEFT JOIN formula_headers fh ON fh.producto_nombre = fi.producto_nombre
+               WHERE fi.material_id = ?""",
+            (cod,),
+        ).fetchall()
+
+        productos_que_la_usan = []
+        n_productos_activos = 0
+        for ru in rows_uso:
+            productos_que_la_usan.append({
+                "producto": ru[0],
+                "gramos_por_lote": float(ru[1] or 0),
+                "lote_kg": float(ru[2] or 0),
+                "producto_activo": bool(ru[3]),
+            })
+            if ru[3]:
+                n_productos_activos += 1
+
+        # ── Diagnóstico textual ──
+        problemas = []
+        if not cand["activo"]:
+            problemas.append("❌ MP marcada como INACTIVA en maestro_mps")
+        if not rows_uso:
+            problemas.append("❌ NO aparece en formula_items · ningún producto la tiene en su fórmula")
+        elif n_productos_activos == 0:
+            problemas.append(f"❌ Aparece en {len(rows_uso)} fórmulas pero TODAS son de productos inactivos")
+        if n_total == 0:
+            problemas.append("⚠ NUNCA tuvo movimientos (entradas ni salidas) · ¿se compró pero no se registró?")
+        elif entradas_g > 0 and salidas_g == 0:
+            problemas.append(f"⚠ Tiene {entradas_g}g de entradas pero CERO salidas registradas · se compró pero nunca se descontó (¿producción no descuenta esta MP?)")
+        elif n_mov_180 == 0:
+            problemas.append("⚠ Sin movimientos en últimos 180 días")
+
+        if not problemas:
+            diagnostico = "✅ Rastreo OK · tiene movimientos + fórmulas activas"
+        else:
+            diagnostico = " · ".join(problemas)
+
+        items.append({
+            **cand,
+            "stock_actual_g": round(stock_actual_g, 2),
+            "stock_actual_kg": round(stock_actual_g / 1000.0, 3),
+            "movimientos_total": {
+                "n_total": n_total,
+                "entradas_kg_total": round(entradas_g / 1000.0, 2),
+                "salidas_kg_total": round(salidas_g / 1000.0, 2),
+            },
+            "movimientos_ult_180d": {
+                "n": n_mov_180,
+                "entradas_kg": round(entradas_180_g / 1000.0, 2),
+                "salidas_kg": round(salidas_180_g / 1000.0, 2),
+            },
+            "productos_que_la_usan": productos_que_la_usan,
+            "n_productos_totales": len(rows_uso),
+            "n_productos_activos": n_productos_activos,
+            "diagnostico": diagnostico,
+            "problemas": problemas,
+        })
+
+    return jsonify({
+        "query": q,
+        "n_candidatos": len(items),
+        "items": items,
+    })
+
+
 @bp.route("/admin/gasto-mps", methods=["GET"])
 def gasto_mps_page():
     """Página visual · consumo y gasto anual de MPs · Alejandro 14-may-2026"""
