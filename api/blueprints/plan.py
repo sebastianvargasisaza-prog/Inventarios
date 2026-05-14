@@ -4877,7 +4877,7 @@ def _ia_autoplan_sugerir(payload_contexto, modelo="claude-sonnet-4-6"):
         method="POST",
     )
     try:
-        with _ureq.urlopen(req, timeout=45) as resp:
+        with _ureq.urlopen(req, timeout=120) as resp:
             data = _json.loads(resp.read().decode("utf-8"))
     except Exception as ex:
         return None, f"Error llamando Anthropic: {ex}"
@@ -5032,41 +5032,42 @@ def autoplan_ia():
         return lote_excel, "excel", \
                f"lote_size_kg del Excel ({lote_excel}kg) · sin historial real"
 
-    # Filtrar a productos relevantes · con velocidad real Y fórmula
+    # Filtrar a productos relevantes · velocidad real + fórmula + cobertura
+    # menor al horizonte (los que SI necesitan plan).
+    # Sebastián 14-may-2026: timeout Anthropic con contexto grande · reducir
+    # a productos que realmente requieren decisión para acelerar IA.
     productos_ctx = []
     for n in necesidades:
         if (n.get("velocidad_uds_dia") or 0) < 0.1:
-            continue  # sin ventas, no programar
+            continue  # sin ventas
         if n.get("mps_status") == "SIN_FORMULA":
+            continue
+        cob = n.get("dias_cobertura")
+        # Solo incluir productos cuya cobertura sea <= horizonte + 30 días
+        # de buffer. Los que duran 6 meses con stock actual NO necesitan
+        # plan ahora (los meteremos en otra corrida).
+        if cob is not None and cob > horizonte + 30:
             continue
         nombre = n["producto_nombre"]
         lote_excel = n.get("lote_bulk_kg", 0) or 0
-        lote_recomendado, fuente_lote, just_lote = _calcular_lote_real_promedio(nombre, lote_excel)
-        historial = historico_por_prod.get(nombre, [])[:5]
+        lote_recomendado, fuente_lote, _ = _calcular_lote_real_promedio(nombre, lote_excel)
+        # Solo últimas 2 producciones históricas (no 5) · payload menor
+        historial = historico_por_prod.get(nombre, [])[:2]
         productos_ctx.append({
             "nombre": nombre,
-            "codigo_pt": n.get("codigo_pt", ""),
-            "ml_unidad": n.get("ml_unidad", 30),
-            "lote_size_kg_excel": lote_excel,
-            "lote_recomendado_kg": lote_recomendado,
+            "ml": n.get("ml_unidad", 30),
+            "lote_kg": lote_recomendado or lote_excel,
             "lote_fuente": fuente_lote,
-            "lote_justificacion": just_lote,
-            "producciones_reales_historicas": historial,
-            "stock_uds": n.get("stock_uds_total", 0),
             "stock_kg": n.get("stock_kg_total", 0),
-            "velocidad_uds_dia": round(n.get("velocidad_uds_dia", 0), 2),
-            "velocidad_uds_mes": int((n.get("velocidad_uds_dia", 0) or 0) * 30),
-            "velocidad_kg_dia": round(n.get("velocidad_kg_dia", 0), 3),
-            "dias_cobertura": n.get("dias_cobertura"),
+            "vel_uds_dia": round(n.get("velocidad_uds_dia", 0), 2),
+            "vel_kg_dia": round(n.get("velocidad_kg_dia", 0), 3),
+            "cob_dias": cob,
             "urgencia": n.get("urgencia"),
             "mps_status": n.get("mps_status"),
-            "mps_n_faltantes": n.get("mps_n_faltantes", 0),
-            "ultima_produccion_fecha": n.get("ultima_produccion_fecha"),
-            "ultima_produccion_kg": n.get("ultima_produccion_kg"),
-            "dias_desde_ultima": n.get("dias_desde_ultima"),
-            "lotes_agendados": [{
-                "fecha": a["fecha"], "kg": a["kg"], "estado": a["estado"]
-            } for a in (n.get("planificacion") or [])][:5],
+            "ultima_prod": n.get("ultima_produccion_fecha"),
+            "ultima_kg": n.get("ultima_produccion_kg"),
+            "produc_recientes": historial,
+            "lotes_agendados_n": len(n.get("planificacion") or []),
         })
 
     # 3) Historial reciente para feedback · últimas 20 decisiones
@@ -5077,7 +5078,8 @@ def autoplan_ia():
            FROM autoplan_decisiones
            WHERE cliente = ?
              AND accion_usuario IS NOT NULL
-           ORDER BY accion_at DESC LIMIT 20""",
+             AND accion_usuario != 'obsoleta_mig131'
+           ORDER BY accion_at DESC LIMIT 10""",
         (cliente,),
     ).fetchall()
     historial = [{
