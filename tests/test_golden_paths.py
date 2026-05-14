@@ -7244,6 +7244,137 @@ def test_golden_plan_festivos_colombia(app, db_clean):
 
 
 # ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH PLAN-G · plan sugerido automático batch · Sebastián 13-may-2026
+# ═══════════════════════════════════════════════════════════════════
+def test_golden_plan_sugerido_batch_ejecutar(app, db_clean):
+    """Endpoint POST /api/plan/plan-sugerido/ejecutar aplica acciones
+    en lote · programar + cancelar Calendar + back-fill · idempotente
+    y con audit_log."""
+    _exec("DELETE FROM produccion_programada WHERE observaciones LIKE '%PLAN_SUG_TEST%' OR observaciones LIKE '%plan-sugerido%'")
+
+    cs = _login(app, 'sebastian')
+
+    # PREP: lote Calendar legacy a cancelar
+    _exec("""INSERT INTO produccion_programada
+             (producto, fecha_programada, cantidad_kg, estado, origen, observaciones)
+             VALUES ('SUERO HIDRATANTE AH 1.5%', '2026-07-27', 100,
+                     'programado', 'calendar', 'PLAN_SUG_TEST cancel candidate')""")
+    cancel_id = _query(
+        "SELECT id FROM produccion_programada WHERE observaciones LIKE '%PLAN_SUG_TEST cancel%'"
+    )[0][0]
+
+    # PAYLOAD: 1 a programar + 1 a cancelar + 1 backfill
+    payload = {
+        'programar': [
+            {'producto': 'SUERO HIDRATANTE AH 1.5%', 'fecha': '2026-08-10',
+             'kg': 90, 'motivo': 'adelanto'},
+        ],
+        'cancelar_ids': [cancel_id],
+        'backfills': [
+            {'producto': 'LIMPIADOR ILUMINADOR ACIDO KOJICO',
+             'kg': 40, 'fecha': '2026-04-15'},
+        ],
+    }
+    r = cs.post('/api/plan/plan-sugerido/ejecutar', json=payload,
+                  headers=csrf_headers())
+    assert r.status_code == 200, f'BUG: {r.status_code} {r.data}'
+    d = r.get_json()
+
+    # Caso 1: 1 programada, 1 cancelada, 1 backfill, 0 errores
+    assert d['programadas'] == 1, f'BUG programar: {d}'
+    assert d['canceladas'] == 1, f'BUG cancelar: {d}'
+    assert d['backfills_creados'] == 1, f'BUG backfill: {d}'
+    assert d['total_errores'] == 0, f'BUG errores: {d.get("errores")}'
+
+    # Caso 2: programada persistida con origen='eos_plan'
+    nuevo_id = d['programadas_ids'][0]['id']
+    row = _query(
+        """SELECT producto, fecha_programada, cantidad_kg, estado, origen
+           FROM produccion_programada WHERE id = ?""", (nuevo_id,),
+    )
+    assert row, 'BUG: no persistió'
+    assert row[0][3] == 'programado'
+    assert row[0][4] == 'eos_plan'
+
+    # Caso 3: cancelado tiene estado='cancelado' + observaciones marcadas
+    row_c = _query(
+        "SELECT estado, observaciones FROM produccion_programada WHERE id = ?",
+        (cancel_id,),
+    )
+    assert row_c[0][0] == 'cancelado', f'BUG: estado={row_c[0][0]}'
+    assert 'CANCELADO por plan-sugerido' in (row_c[0][1] or '')
+
+    # Caso 4: backfill tiene fin_real_at, kg_real, origen='eos_retroactivo'
+    bf_id = d['backfills_ids'][0]['id']
+    row_bf = _query(
+        """SELECT producto, fin_real_at, kg_real, estado, origen
+           FROM produccion_programada WHERE id = ?""", (bf_id,),
+    )
+    assert row_bf[0][1] and '2026-04-15' in row_bf[0][1]
+    assert row_bf[0][2] == 40.0
+    assert row_bf[0][3] == 'completado'
+    assert row_bf[0][4] == 'eos_retroactivo'
+
+    # Caso 5: audit_log captura las 3 acciones
+    auditas = _query(
+        """SELECT COUNT(*) FROM audit_log
+           WHERE accion LIKE 'PLAN_SUGERIDO_%'
+             AND datetime(fecha) >= datetime('now','-1 minute')"""
+    )
+    assert auditas[0][0] >= 3, f'BUG audit_log: {auditas[0][0]}'
+
+    # Caso 6: producto sin fórmula → error reportado, NO insert
+    r6 = cs.post('/api/plan/plan-sugerido/ejecutar', json={
+        'programar': [
+            {'producto': 'PRODUCTO_INEXISTENTE_XYZ', 'fecha': '2026-08-15', 'kg': 50}
+        ], 'cancelar_ids': [], 'backfills': [],
+    }, headers=csrf_headers())
+    assert r6.status_code == 200
+    d6 = r6.get_json()
+    assert d6['programadas'] == 0
+    assert d6['total_errores'] == 1
+    assert 'sin fórmula' in d6['errores'][0]['error']
+
+    # Caso 7: backfill duplicado (mismo producto+fecha+kg) → error
+    r7 = cs.post('/api/plan/plan-sugerido/ejecutar', json={
+        'programar': [], 'cancelar_ids': [],
+        'backfills': [{'producto': 'LIMPIADOR ILUMINADOR ACIDO KOJICO',
+                       'kg': 40, 'fecha': '2026-04-15'}],
+    }, headers=csrf_headers())
+    assert r7.status_code == 200
+    d7 = r7.get_json()
+    assert d7['backfills_creados'] == 0
+    assert d7['total_errores'] == 1
+    assert 'duplicado' in d7['errores'][0]['error']
+
+    # Caso 8: id ya completado → no cancelable (defensa contra mover stock)
+    _exec(f"""UPDATE produccion_programada SET fin_real_at = '2026-04-15 10:00:00'
+              WHERE id = {nuevo_id}""")
+    r8 = cs.post('/api/plan/plan-sugerido/ejecutar', json={
+        'programar': [], 'cancelar_ids': [nuevo_id], 'backfills': [],
+    }, headers=csrf_headers())
+    assert r8.status_code == 200
+    d8 = r8.get_json()
+    assert d8['canceladas'] == 0
+    assert d8['total_errores'] == 1
+    assert 'fin_real_at' in d8['errores'][0]['error']
+
+    # Caso 9: 401 sin login
+    rr = app.test_client().post('/api/plan/plan-sugerido/ejecutar', json={
+        'programar': [], 'cancelar_ids': [], 'backfills': [],
+    }, headers=csrf_headers())
+    assert rr.status_code in (401, 403)
+
+    # Caso 10: page /admin/plan-sugerido renderiza
+    rp = cs.get('/admin/plan-sugerido')
+    assert rp.status_code == 200
+    assert b'Plan sugerido' in rp.data
+
+    # Cleanup
+    _exec("DELETE FROM produccion_programada WHERE observaciones LIKE '%PLAN_SUG_TEST%' OR observaciones LIKE '%plan-sugerido%'")
+
+
+# ═══════════════════════════════════════════════════════════════════
 # GOLDEN PATH PLAN-E · escenarios sugeridos + /api/plan/proximas
 # ═══════════════════════════════════════════════════════════════════
 def test_golden_plan_escenarios_y_proximas(app, db_clean):

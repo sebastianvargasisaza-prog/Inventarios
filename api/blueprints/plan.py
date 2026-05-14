@@ -2191,6 +2191,517 @@ def plan_sugerido():
     })
 
 
+@bp.route("/admin/plan-sugerido", methods=["GET"])
+def plan_sugerido_page():
+    """Página admin · UI completa del plan sugerido automático."""
+    if not session.get("compras_user"):
+        from flask import redirect
+        return redirect("/login?next=/admin/plan-sugerido")
+    from flask import Response
+    return Response(_PLAN_SUGERIDO_HTML, mimetype="text/html")
+
+
+@bp.route("/api/plan/plan-sugerido/ejecutar", methods=["POST"])
+def plan_sugerido_ejecutar():
+    """Aplica acciones del plan sugerido en lote.
+
+    Sebastián 13-may-2026: "si armaloi". Batch endpoint para programar
+    el plan completo + cancelar Calendar legacy + back-fill producciones
+    reales pasadas. Cada acción es independiente · si falla una, las
+    demás siguen.
+
+    Body JSON:
+        programar: [{producto, fecha, kg, motivo?}, ...]
+        cancelar_ids: [int, ...] · ids de produccion_programada a cancelar
+        backfills: [{producto, kg, fecha}, ...] · registros retroactivos
+
+    Returns:
+        programadas: count + lista de IDs creados
+        canceladas: count + lista de IDs afectados
+        backfills_creados: count + lista
+        errores: [{accion, indice, error}, ...]
+    """
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+
+    body = request.get_json(silent=True) or {}
+    programar = body.get("programar") or []
+    cancelar_ids = body.get("cancelar_ids") or []
+    backfills = body.get("backfills") or []
+
+    if not isinstance(programar, list) or not isinstance(cancelar_ids, list) or not isinstance(backfills, list):
+        return jsonify({"error": "campos deben ser listas"}), 400
+
+    conn = get_db()
+    c = conn.cursor()
+    from datetime import date as _date, timedelta as _td
+
+    programadas_ids = []
+    canceladas_ids = []
+    backfills_ids = []
+    errores = []
+
+    # 1) PROGRAMAR · producciones futuras
+    for i, item in enumerate(programar):
+        try:
+            prod = (item.get("producto") or "").strip()
+            fecha = (item.get("fecha") or "").strip()
+            kg = float(item.get("kg") or 0)
+            motivo = (item.get("motivo") or "eos_plan").strip()
+            if not prod or not fecha or kg <= 0:
+                errores.append({"accion": "programar", "indice": i,
+                                "error": "producto/fecha/kg requeridos"})
+                continue
+            if not _valida_fecha_iso(fecha):
+                errores.append({"accion": "programar", "indice": i,
+                                "error": "fecha formato YYYY-MM-DD"})
+                continue
+            # Verificar producto existe en formula_headers
+            hdr = c.execute(
+                """SELECT producto_nombre FROM formula_headers
+                   WHERE UPPER(TRIM(producto_nombre)) = UPPER(TRIM(?))""",
+                (prod,),
+            ).fetchone()
+            if not hdr:
+                errores.append({"accion": "programar", "indice": i,
+                                "error": f"producto sin fórmula: {prod}"})
+                continue
+            producto_canonico = hdr[0]
+            # INSERT produccion_programada
+            c.execute(
+                """INSERT INTO produccion_programada
+                       (producto, fecha_programada, cantidad_kg, estado,
+                        origen, observaciones, lotes)
+                   VALUES (?, ?, ?, 'programado', 'eos_plan', ?, 1)""",
+                (producto_canonico, fecha, kg,
+                 f"Plan auto · motivo: {motivo} · usuario: {user}"),
+            )
+            new_id = c.lastrowid
+            programadas_ids.append({"id": new_id, "producto": producto_canonico,
+                                     "fecha": fecha, "kg": kg})
+            # Audit
+            try:
+                c.execute(
+                    """INSERT INTO audit_log
+                           (fecha, usuario, accion, tabla, registro_id, detalle)
+                       VALUES (datetime('now'), ?, 'PLAN_SUGERIDO_PROGRAMAR',
+                               'produccion_programada', ?, ?)""",
+                    (user, str(new_id),
+                     f"producto={producto_canonico} fecha={fecha} kg={kg}"),
+                )
+            except Exception:
+                pass
+        except Exception as ex:
+            errores.append({"accion": "programar", "indice": i, "error": str(ex)})
+
+    # 2) CANCELAR · soft-cancel de Calendar legacy
+    for i, pid in enumerate(cancelar_ids):
+        try:
+            pid_int = int(pid)
+            row = c.execute(
+                """SELECT producto, fecha_programada, origen, estado, fin_real_at
+                   FROM produccion_programada WHERE id = ?""",
+                (pid_int,),
+            ).fetchone()
+            if not row:
+                errores.append({"accion": "cancelar", "indice": i,
+                                "error": f"id no encontrado: {pid_int}"})
+                continue
+            if row[4]:  # fin_real_at
+                errores.append({"accion": "cancelar", "indice": i,
+                                "error": f"id {pid_int} ya tiene fin_real_at · no cancelable"})
+                continue
+            c.execute(
+                """UPDATE produccion_programada
+                   SET estado = 'cancelado',
+                       observaciones = COALESCE(observaciones,'') ||
+                           ' · CANCELADO por plan-sugerido · ' || datetime('now')
+                   WHERE id = ?""",
+                (pid_int,),
+            )
+            canceladas_ids.append({"id": pid_int, "producto": row[0],
+                                     "fecha_programada": row[1], "origen": row[2]})
+            try:
+                c.execute(
+                    """INSERT INTO audit_log
+                           (fecha, usuario, accion, tabla, registro_id, detalle)
+                       VALUES (datetime('now'), ?, 'PLAN_SUGERIDO_CANCELAR',
+                               'produccion_programada', ?, ?)""",
+                    (user, str(pid_int),
+                     f"producto={row[0]} fecha={row[1]} origen={row[2]}"),
+                )
+            except Exception:
+                pass
+        except Exception as ex:
+            errores.append({"accion": "cancelar", "indice": i, "error": str(ex)})
+
+    # 3) BACKFILLS · producciones pasadas completadas
+    for i, bf in enumerate(backfills):
+        try:
+            prod = (bf.get("producto") or "").strip()
+            kg = float(bf.get("kg") or 0)
+            fecha = (bf.get("fecha") or "").strip()
+            if not prod or kg <= 0 or not fecha or not _valida_fecha_iso(fecha):
+                errores.append({"accion": "backfill", "indice": i,
+                                "error": "producto/kg/fecha YYYY-MM-DD requeridos"})
+                continue
+            # Verificar producto existe en formula_headers
+            hdr = c.execute(
+                """SELECT producto_nombre, lote_size_kg FROM formula_headers
+                   WHERE UPPER(TRIM(producto_nombre)) = UPPER(TRIM(?))""",
+                (prod,),
+            ).fetchone()
+            if not hdr:
+                errores.append({"accion": "backfill", "indice": i,
+                                "error": f"producto sin fórmula: {prod}"})
+                continue
+            producto_canonico = hdr[0]
+            lote_size = float(hdr[1] or kg)
+            # Idempotencia: si ya existe un registro con mismo producto+fecha+kg ±5%
+            # con origen='eos_retroactivo' · no duplicar
+            dup = c.execute(
+                """SELECT id FROM produccion_programada
+                   WHERE producto = ?
+                     AND date(fin_real_at) = ?
+                     AND ABS(COALESCE(kg_real, cantidad_kg, 0) - ?) < ?
+                     AND origen = 'eos_retroactivo'""",
+                (producto_canonico, fecha, kg, max(kg * 0.05, 0.5)),
+            ).fetchone()
+            if dup:
+                errores.append({"accion": "backfill", "indice": i,
+                                "error": f"duplicado · id existente {dup[0]}"})
+                continue
+            # INSERT retroactivo
+            c.execute(
+                """INSERT INTO produccion_programada
+                       (producto, fecha_programada, cantidad_kg, kg_real,
+                        estado, origen, fin_real_at, lotes, observaciones)
+                   VALUES (?, ?, ?, ?, 'completado', 'eos_retroactivo',
+                           ? || ' 00:00:00', 1, ?)""",
+                (producto_canonico, fecha, lote_size, kg, fecha,
+                 f"Back-fill por plan-sugerido · usuario: {user}"),
+            )
+            new_id = c.lastrowid
+            backfills_ids.append({"id": new_id, "producto": producto_canonico,
+                                    "fecha": fecha, "kg_real": kg})
+            try:
+                c.execute(
+                    """INSERT INTO audit_log
+                           (fecha, usuario, accion, tabla, registro_id, detalle)
+                       VALUES (datetime('now'), ?, 'PLAN_SUGERIDO_BACKFILL',
+                               'produccion_programada', ?, ?)""",
+                    (user, str(new_id),
+                     f"producto={producto_canonico} fecha={fecha} kg={kg}"),
+                )
+            except Exception:
+                pass
+        except Exception as ex:
+            errores.append({"accion": "backfill", "indice": i, "error": str(ex)})
+
+    conn.commit()
+
+    return jsonify({
+        "programadas": len(programadas_ids),
+        "programadas_ids": programadas_ids,
+        "canceladas": len(canceladas_ids),
+        "canceladas_ids": canceladas_ids,
+        "backfills_creados": len(backfills_ids),
+        "backfills_ids": backfills_ids,
+        "errores": errores,
+        "total_errores": len(errores),
+    }), 200
+
+
+_PLAN_SUGERIDO_HTML = r"""<!DOCTYPE html>
+<html lang="es"><head><meta charset="UTF-8">
+<title>Plan sugerido · EOS</title>
+<style>
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;color:#1e293b;margin:0;padding:20px}
+.wrap{max-width:1400px;margin:0 auto}
+.card{background:white;border-radius:12px;padding:20px;margin-bottom:16px;box-shadow:0 2px 6px rgba(0,0,0,.05)}
+h1{margin:0 0 6px;color:#0f766e;font-size:22px}
+h2{margin:0 0 12px;color:#1e293b;font-size:18px}
+h3{margin:14px 0 8px;color:#475569;font-size:14px}
+.muted{color:#64748b;font-size:13px}
+button{background:#0f766e;color:white;border:none;padding:10px 18px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;margin:4px}
+button:hover{background:#0d635c}
+button.danger{background:#dc2626}
+button.danger:hover{background:#b91c1c}
+button.warn{background:#ca8a04}
+button.warn:hover{background:#a16207}
+button:disabled{background:#94a3b8;cursor:not-allowed}
+input[type="number"],input[type="date"],input[type="text"]{padding:7px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px}
+textarea{padding:10px;border:1px solid #cbd5e1;border-radius:6px;font-size:12px;font-family:ui-monospace,SFMono-Regular,monospace;width:100%;min-height:140px;resize:vertical}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{text-align:left;padding:8px;background:#f1f5f9;color:#475569;font-weight:700}
+td{padding:7px 8px;border-bottom:1px solid #f1f5f9;vertical-align:top}
+.tag{display:inline-block;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700}
+.tag-urgente{background:#fee2e2;color:#991b1b}
+.tag-adelanto{background:#fef3c7;color:#854d0e}
+.tag-buffer{background:#dbeafe;color:#1e40af}
+.tag-grande{background:#fecaca;color:#7f1d1d}
+.tag-complejo{background:#e9d5ff;color:#581c87}
+.tag-sin-formula{background:#f1f5f9;color:#64748b}
+.mono{font-family:ui-monospace,SFMono-Regular,monospace;font-weight:700;color:#1e40af}
+.kpi{display:inline-block;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 18px;margin-right:10px;margin-bottom:8px;text-align:center;min-width:130px;vertical-align:top}
+.kpi-lbl{font-size:11px;color:#64748b}
+.kpi-val{font-size:22px;font-weight:800}
+.section{border-left:4px solid #0f766e;padding:12px 16px;background:#f0fdfa;border-radius:6px;margin-bottom:14px}
+.section.danger{border-color:#dc2626;background:#fef2f2}
+.section.warn{border-color:#ca8a04;background:#fefce8}
+.section.muted{border-color:#94a3b8;background:#f8fafc}
+.bigbtn{font-size:15px;padding:14px 28px;width:auto}
+.resultado{font-size:12px;background:#f0fdf4;border:1px solid #86efac;border-radius:6px;padding:10px;margin-top:10px}
+.resultado.error{background:#fef2f2;border-color:#fca5a5}
+input[type="checkbox"]{transform:scale(1.2);margin-right:6px}
+</style></head><body>
+<div class="wrap">
+<a href="/modulos">&larr; Volver al panel</a>
+<div class="card">
+  <h1>⚙ Plan sugerido · EOS automático</h1>
+  <div class="muted">Genera plan completo aplicando reglas operativas + festivos colombianos + fórmulas del Excel (mig 121). Read-only hasta que apretes "Aplicar".</div>
+  <div style="margin-top:14px">
+    Horizonte:
+    <select id="hz">
+      <option value="2">2 semanas</option>
+      <option value="4" selected>4 semanas</option>
+      <option value="6">6 semanas</option>
+      <option value="8">8 semanas</option>
+    </select>
+    <button onclick="cargar()">▶ Generar plan</button>
+  </div>
+  <div id="reglas" class="muted" style="margin-top:10px;font-size:11px"></div>
+</div>
+<div id="kpis"></div>
+<div id="contenido"></div>
+
+<div class="card" style="background:#fff7ed;border:2px solid #f97316">
+  <h2 style="color:#9a3412">📥 Back-fill producciones reales pasadas</h2>
+  <div class="muted">Pegá las producciones completadas que NO están en el sistema con <code>fin_real_at</code>. Formato por línea: <code>NOMBRE_PRODUCTO | kg | YYYY-MM-DD</code></div>
+  <textarea id="backfill_txt" placeholder="SUERO HIDRATANTE AH 1.5% | 90 | 2026-04-30
+LIMPIADOR ILUMINADOR ACIDO KOJICO | 40 | 2026-04-15
+LIMPIADOR FACIAL BHA 2% | 150 | 2026-04-28"></textarea>
+  <div style="margin-top:10px" class="muted">El sistema mapeará el nombre al canónico del Excel · si no existe, lo reporta como error.</div>
+</div>
+
+<div class="card" style="background:#f0fdf4;border:2px solid #16a34a">
+  <h2 style="color:#166534">🚀 Aplicar acciones seleccionadas</h2>
+  <div class="muted">Esta acción es <strong>idempotente</strong>: cada acción se intenta independientemente · errores no detienen el batch. Audit_log registra todo.</div>
+  <div style="margin-top:14px">
+    <button class="bigbtn" onclick="aplicarTodo()">✅ Aplicar TODO (programar + cancelar + back-fill)</button>
+    <button class="bigbtn warn" onclick="aplicarSeleccion()">⚙ Aplicar solo seleccionados</button>
+  </div>
+  <div id="resultado_ejecucion"></div>
+</div>
+
+</div>
+<script>
+function escapeHtml(s){return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+
+function getCSRF(){
+  return document.cookie.split(';').find(c=>c.trim().startsWith('csrf_token='))?.split('=')[1] || '';
+}
+
+const DIAS_ES = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
+
+async function cargar(){
+  document.getElementById('contenido').innerHTML = '<div class="card">Analizando…</div>';
+  document.getElementById('kpis').innerHTML = '';
+  document.getElementById('reglas').innerHTML = '';
+  var hz = document.getElementById('hz').value;
+  try {
+    var r = await fetch('/api/plan/plan-sugerido?horizonte_semanas=' + hz);
+    var d = await r.json();
+    if (!r.ok){ alert('Error: ' + (d.error||r.status)); return; }
+    window._plan = d;
+    render(d);
+  } catch(e){ alert('Error: ' + e.message); }
+}
+
+function render(d){
+  // KPIs
+  var k = '';
+  k += '<span class="kpi"><div class="kpi-lbl">📅 Producciones</div><div class="kpi-val">' + d.total_producciones + '</div></span>';
+  k += '<span class="kpi"><div class="kpi-lbl">🗑 Cancelables Calendar</div><div class="kpi-val">' + (d.cancelables_calendar||[]).length + '</div></span>';
+  k += '<span class="kpi"><div class="kpi-lbl">⚠ Sin fórmula</div><div class="kpi-val">' + (d.sin_formula||[]).length + '</div></span>';
+  k += '<span class="kpi"><div class="kpi-lbl">📆 Días útiles</div><div class="kpi-val">' + (d.plan_por_dia||[]).length + '</div></span>';
+  document.getElementById('kpis').innerHTML = '<div class="card">' + k + '</div>';
+
+  var rg = d.reglas_aplicadas || {};
+  document.getElementById('reglas').innerHTML =
+    '📌 Reglas: lote grande >' + rg.lote_grande_kg + 'kg = 1/día · ' +
+    'complejos (' + (rg.productos_complejos_substr||[]).join(', ') + ') = Lun/Mié · ' +
+    'max ' + rg.max_producciones_por_dia + ' por día';
+
+  var html = '';
+
+  // 1) Plan por día
+  html += '<div class="card"><h2>📅 Plan sugerido · ' + (d.plan_por_dia||[]).length + ' días</h2>';
+  if ((d.plan_por_dia||[]).length === 0){
+    html += '<div class="muted">No hay producciones sugeridas en este horizonte</div>';
+  } else {
+    html += '<table><thead><tr><th><input type="checkbox" id="chk_all_prog" onchange="toggleAllProg(this.checked)"></th><th>Fecha</th><th>Día</th><th>Producto</th><th>kg (Excel)</th><th>Motivo</th><th>Cobertura actual</th><th>Pipeline 7d</th></tr></thead><tbody>';
+    (d.plan_por_dia||[]).forEach(g => {
+      g.productos.forEach((p, idx) => {
+        var item = (d.plan_items||[]).find(it => it.fecha === g.fecha && it.producto === p.producto) || {};
+        var fechaObj = new Date(g.fecha + 'T12:00:00');
+        var dia = DIAS_ES[fechaObj.getDay() === 0 ? 6 : fechaObj.getDay()-1];
+        var tags = '';
+        if (p.grande) tags += '<span class="tag tag-grande">GRANDE</span> ';
+        if (p.complejo) tags += '<span class="tag tag-complejo">COMPLEJO</span> ';
+        tags += '<span class="tag tag-' + (item.motivo||'buffer') + '">' + (item.motivo||'').toUpperCase() + '</span>';
+        html += '<tr data-prog="1" data-idx="' + (d.plan_items||[]).indexOf(item) + '">';
+        html += '<td><input type="checkbox" class="chk-prog" checked data-producto="' + escapeHtml(p.producto) + '" data-fecha="' + g.fecha + '" data-kg="' + p.kg + '" data-motivo="' + escapeHtml(item.motivo||'') + '"></td>';
+        html += '<td class="mono">' + g.fecha + '</td>';
+        html += '<td>' + dia + (idx===0 && g.productos.length > 1 ? ' <span class="muted">(' + g.productos.length + ' prods)</span>' : '') + '</td>';
+        html += '<td><strong>' + escapeHtml(p.producto) + '</strong> ' + tags + '</td>';
+        html += '<td style="text-align:right"><strong>' + p.kg + ' kg</strong></td>';
+        html += '<td>' + escapeHtml(item.motivo||'') + '</td>';
+        html += '<td style="text-align:right">' + (item.cob_dias_actual!=null ? item.cob_dias_actual + 'd' : '—') + '</td>';
+        html += '<td style="text-align:right">' + (item.pipeline_7d_kg||0) + ' kg</td>';
+        html += '</tr>';
+      });
+    });
+    html += '</tbody></table></div>';
+  }
+
+  // 2) Cancelables
+  if ((d.cancelables_calendar||[]).length){
+    html += '<div class="card" style="background:#fef2f2;border:1px solid #fca5a5"><h2 style="color:#991b1b">🗑 Cancelables Calendar legacy · ' + d.cancelables_calendar.length + '</h2>';
+    html += '<div class="muted" style="margin-bottom:10px">Lotes ya cubiertos por producciones recientes o reemplazados en el plan EOS.</div>';
+    html += '<table><thead><tr><th><input type="checkbox" id="chk_all_cancel" onchange="toggleAllCancel(this.checked)"></th><th>ID</th><th>Producto</th><th>Fecha</th><th>kg</th><th>Razón</th></tr></thead><tbody>';
+    d.cancelables_calendar.forEach(cn => {
+      html += '<tr>';
+      html += '<td><input type="checkbox" class="chk-cancel" checked data-id="' + cn.id + '"></td>';
+      html += '<td class="mono">' + cn.id + '</td>';
+      html += '<td>' + escapeHtml(cn.producto||'') + '</td>';
+      html += '<td>' + (cn.fecha_programada||'').substring(0,10) + '</td>';
+      html += '<td style="text-align:right">' + (cn.cantidad_kg||0) + ' kg</td>';
+      html += '<td><code>' + escapeHtml(cn.razon||'') + '</code></td>';
+      html += '</tr>';
+    });
+    html += '</tbody></table></div>';
+  }
+
+  // 3) Sin fórmula
+  if ((d.sin_formula||[]).length){
+    html += '<div class="card" style="background:#fef9c3;border:1px solid #facc15"><h2 style="color:#854d0e">⚠ Productos SIN fórmula en Excel · ' + d.sin_formula.length + '</h2>';
+    html += '<div class="muted" style="margin-bottom:10px">Estos productos aparecen con stock/ventas pero NO están en el mig 121. NO se programan automáticamente · primero hay que cargar su fórmula.</div>';
+    html += '<table><thead><tr><th>Producto</th><th>Stock kg</th><th>Cobertura</th><th>Razón</th></tr></thead><tbody>';
+    d.sin_formula.forEach(sf => {
+      html += '<tr><td><strong>' + escapeHtml(sf.producto) + '</strong></td><td style="text-align:right">' + (sf.stock_kg||0) + '</td><td style="text-align:right">' + (sf.cob_dias||0) + 'd</td><td><code>' + escapeHtml(sf.razon||'') + '</code></td></tr>';
+    });
+    html += '</tbody></table></div>';
+  }
+
+  document.getElementById('contenido').innerHTML = html;
+}
+
+function toggleAllProg(checked){
+  document.querySelectorAll('.chk-prog').forEach(el => el.checked = checked);
+}
+function toggleAllCancel(checked){
+  document.querySelectorAll('.chk-cancel').forEach(el => el.checked = checked);
+}
+
+function parseBackfills(){
+  var txt = document.getElementById('backfill_txt').value || '';
+  var lines = txt.split('\n').map(s => s.trim()).filter(s => s && !s.startsWith('#'));
+  var out = [];
+  lines.forEach(line => {
+    var parts = line.split('|').map(s => s.trim());
+    if (parts.length >= 3){
+      var kg = parseFloat(parts[1].replace(',','.'));
+      if (!isNaN(kg) && kg > 0){
+        out.push({producto: parts[0], kg: kg, fecha: parts[2]});
+      }
+    }
+  });
+  return out;
+}
+
+function recolectarSeleccion(soloSeleccionados){
+  var programar = [];
+  document.querySelectorAll('.chk-prog').forEach(el => {
+    if (!soloSeleccionados || el.checked){
+      programar.push({
+        producto: el.dataset.producto,
+        fecha: el.dataset.fecha,
+        kg: parseFloat(el.dataset.kg),
+        motivo: el.dataset.motivo,
+      });
+    }
+  });
+  var cancelar_ids = [];
+  document.querySelectorAll('.chk-cancel').forEach(el => {
+    if (!soloSeleccionados || el.checked){
+      cancelar_ids.push(parseInt(el.dataset.id));
+    }
+  });
+  var backfills = parseBackfills();
+  return {programar, cancelar_ids, backfills};
+}
+
+async function ejecutar(payload){
+  var box = document.getElementById('resultado_ejecucion');
+  box.innerHTML = '<div class="resultado">⏳ Ejecutando…</div>';
+
+  var msg = 'Vas a ejecutar:\n';
+  msg += '  • ' + payload.programar.length + ' producciones a programar\n';
+  msg += '  • ' + payload.cancelar_ids.length + ' lotes Calendar a cancelar\n';
+  msg += '  • ' + payload.backfills.length + ' back-fills de producción real\n\n¿Confirmás?';
+  if (!confirm(msg)) {
+    box.innerHTML = '';
+    return;
+  }
+
+  try {
+    var r = await fetch('/api/plan/plan-sugerido/ejecutar', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json', 'X-CSRF-Token': getCSRF()},
+      body: JSON.stringify(payload),
+    });
+    var d = await r.json();
+    if (!r.ok){
+      box.innerHTML = '<div class="resultado error"><strong>Error ' + r.status + '</strong>: ' + escapeHtml(d.error||'desconocido') + '</div>';
+      return;
+    }
+    var html = '<div class="resultado">';
+    html += '<h3 style="margin:0 0 8px;color:#166534">✅ Aplicación completa</h3>';
+    html += '<div>📅 <strong>' + d.programadas + '</strong> producciones programadas</div>';
+    html += '<div>🗑 <strong>' + d.canceladas + '</strong> Calendar canceladas</div>';
+    html += '<div>📥 <strong>' + d.backfills_creados + '</strong> back-fills registrados</div>';
+    if (d.total_errores > 0){
+      html += '<div style="margin-top:10px;color:#991b1b"><strong>⚠ ' + d.total_errores + ' errores:</strong><ul>';
+      d.errores.forEach(e => {
+        html += '<li>' + escapeHtml(e.accion) + ' #' + e.indice + ': ' + escapeHtml(e.error) + '</li>';
+      });
+      html += '</ul></div>';
+    }
+    html += '<div style="margin-top:10px"><a href="/admin/comparar-calendar-necesidades">→ Ver análisis actualizado</a></div>';
+    html += '</div>';
+    box.innerHTML = html;
+  } catch(e){
+    box.innerHTML = '<div class="resultado error">Error: ' + escapeHtml(e.message) + '</div>';
+  }
+}
+
+function aplicarTodo(){
+  if (!window._plan){ alert('Primero generá el plan'); return; }
+  ejecutar(recolectarSeleccion(false));
+}
+function aplicarSeleccion(){
+  if (!window._plan){ alert('Primero generá el plan'); return; }
+  ejecutar(recolectarSeleccion(true));
+}
+
+cargar();
+</script>
+</body></html>"""
+
+
 @bp.route("/api/plan/check-codigos-mp", methods=["GET"])
 def check_codigos_mp():
     """Verifica qué códigos de MP del Excel existen en maestro_mps.
