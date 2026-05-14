@@ -2680,33 +2680,40 @@ def gasto_anual_mps():
         kg_estimado_ventas = 0.0      # según Shopify (fallback)
         for ru in rows_uso:
             prod = ru[0] or ""
-            gramos_por_lote = float(ru[1] or 0)
-            lote_kg = float(ru[2] or 0)
+            gramos_por_lote_excel = float(ru[1] or 0)
+            lote_kg_excel = float(ru[2] or 0)
             es_activo = bool(ru[3])
             nec = nec_por_prod.get(prod, {})
             vel_kg_dia = float(nec.get("velocidad_kg_dia", 0) or 0)
             prog = prog_por_producto.get(prod, {})
             n_lotes_calendar = prog.get("n_lotes", 0)
-            kg_calendar = prog.get("kg_planificado_12m", 0)
+            kg_calendar_total = prog.get("kg_planificado_12m", 0)
 
-            # Cálculo A · CALENDAR (fuente principal)
-            # gramos_por_lote × n_lotes_calendar / 1000 = kg MP del Calendar
-            kg_mp_calendar = (gramos_por_lote * n_lotes_calendar) / 1000.0 if gramos_por_lote > 0 else 0.0
-
-            # Cálculo B · VENTAS Shopify (fallback)
-            kg_producto_anual_ventas = vel_kg_dia * 365.0
-            if lote_kg > 0.01 and gramos_por_lote > 0:
-                n_lotes_ventas = kg_producto_anual_ventas / lote_kg
-                kg_mp_ventas = (gramos_por_lote * n_lotes_ventas) / 1000.0
+            # Sebastián 14-may-2026: "en el excel todos los % estan
+            # calculados sobre 100% · son formulas puras". Es decir, la
+            # fórmula del Excel describe % del lote piloto. Cuando se
+            # produce un lote real DE DIFERENTE TAMAÑO, hay que escalar
+            # manteniendo el porcentaje.
+            # pct_mp_sobre_lote = gramos_excel / (lote_kg_excel × 1000)
+            # kg_mp_por_lote_real = pct × lote_real_kg
+            if lote_kg_excel > 0.001:
+                pct_mp = gramos_por_lote_excel / (lote_kg_excel * 1000.0)
             else:
-                n_lotes_ventas = 0
-                kg_mp_ventas = 0.0
+                pct_mp = 0.0
+
+            # Cálculo A · CALENDAR · kg MP = % × kg_planificado_total
+            kg_mp_calendar = kg_calendar_total * pct_mp
+
+            # Cálculo B · VENTAS Shopify · kg MP = % × kg vendidos al año
+            kg_producto_anual_ventas = vel_kg_dia * 365.0
+            kg_mp_ventas = kg_producto_anual_ventas * pct_mp
+            n_lotes_ventas = (kg_producto_anual_ventas / lote_kg_excel) if lote_kg_excel > 0.001 else 0
 
             if not es_activo:
                 productos_usan.append({
                     "producto": prod,
                     "inactivo": True,
-                    "gramos_mp_por_lote": gramos_por_lote,
+                    "gramos_mp_por_lote": gramos_por_lote_excel,
                 })
                 continue
 
@@ -2723,11 +2730,12 @@ def gasto_anual_mps():
 
             productos_usan.append({
                 "producto": prod,
-                "lote_kg": lote_kg,
-                "gramos_mp_por_lote": gramos_por_lote,
+                "lote_kg_excel": lote_kg_excel,
+                "gramos_mp_por_lote_excel": gramos_por_lote_excel,
+                "pct_mp_en_formula": round(pct_mp * 100, 3),  # como %
                 "fuente_calculo": fuente,
                 "calendar_n_lotes": n_lotes_calendar,
-                "calendar_kg_planificado": round(kg_calendar, 1),
+                "calendar_kg_planificado": round(kg_calendar_total, 1),
                 "calendar_kg_mp": round(kg_mp_calendar, 2),
                 "ventas_vel_kg_dia": round(vel_kg_dia, 3),
                 "ventas_kg_producto_anual": round(kg_producto_anual_ventas, 1),
