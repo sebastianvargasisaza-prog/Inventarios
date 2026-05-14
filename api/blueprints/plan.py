@@ -1110,7 +1110,12 @@ def comparar_calendar_necesidades():
             "fechas": items[:5],
         }
 
-    # Comparar por producto
+    # Comparar por producto · Sebastián 13-may-2026 v2:
+    # NUEVA lógica · "producir 20 días antes de agotamiento"
+    # - stock_efectivo = stock_gondola + pipeline_7d (ya producido)
+    # - fecha_agotamiento = hoy + stock_efectivo / velocidad
+    # - fecha_producir_sugerida = agotamiento - 20 días
+    # - Comparar FECHA del PRIMER lote Calendar vs sugerido
     out = []
     for nec in necesidades:
         prod = nec["producto_nombre"]
@@ -1121,17 +1126,62 @@ def comparar_calendar_necesidades():
         diff_kg = round(kg_calendar - kg_necesario, 2)
         diff_pct = (diff_kg / kg_necesario * 100) if kg_necesario > 0.01 else (100 if kg_calendar > 0 else 0)
 
-        # Categorización
+        # Stock efectivo · góndola + pipeline 7d (lo recién producido)
+        stock_kg_efectivo = (nec["stock_kg_gondola"] or 0) + (nec["pipeline_kg"] or 0)
+
+        # Fecha agotamiento · con stock efectivo
+        if vel_kg_dia > 0.001:
+            dias_hasta_agotamiento = stock_kg_efectivo / vel_kg_dia
+            try:
+                fecha_agotamiento = (hoy + _td(days=int(dias_hasta_agotamiento))).isoformat()
+            except Exception:
+                fecha_agotamiento = None
+        else:
+            dias_hasta_agotamiento = None
+            fecha_agotamiento = None
+
+        # Fecha producir sugerida · 20 días antes de agotamiento
+        if dias_hasta_agotamiento is not None:
+            try:
+                fecha_producir_sugerida = (hoy + _td(days=max(0, int(dias_hasta_agotamiento) - 20))).isoformat()
+            except Exception:
+                fecha_producir_sugerida = None
+        else:
+            fecha_producir_sugerida = None
+
+        # Comparar primer lote Calendar vs sugerido
+        primer_lote_fecha = cal["fechas"][0]["fecha"] if cal["fechas"] else None
+        diff_dias_timing = None
+        timing_status = None
+        if primer_lote_fecha and fecha_producir_sugerida:
+            try:
+                f1 = _date.fromisoformat(primer_lote_fecha[:10])
+                fs = _date.fromisoformat(fecha_producir_sugerida[:10])
+                diff_dias_timing = (f1 - fs).days  # positivo = tarde, negativo = temprano
+                if abs(diff_dias_timing) <= 7:
+                    timing_status = "ALINEADO"  # ±1 semana
+                elif diff_dias_timing > 7:
+                    timing_status = "TARDE"  # Calendar después de sugerido
+                else:
+                    timing_status = "TEMPRANO"  # Calendar antes de sugerido
+            except Exception:
+                pass
+
+        # Categorización · prioriza TIMING sobre cantidad
         dias_cob = nec["dias_cobertura"]
         urgencia = nec["urgencia"]
         if urgencia == "SIN_VENTAS":
             categoria = "SIN_VENTAS"
             if cal["n_lotes"] > 0:
-                categoria = "AGENDADO_SIN_VENTAS"  # ¡posible muerto!
+                categoria = "AGENDADO_SIN_VENTAS"
         elif urgencia in ("CRITICO", "URGENTE") and cal["n_lotes"] == 0:
             categoria = "URGENTE_SIN_AGENDAR"
-        elif urgencia == "OK" and cal["n_lotes"] > 0:
+        elif timing_status == "TARDE":
+            categoria = "TIMING_TARDE"  # NUEVA · más urgente que SUB
+        elif urgencia == "OK" and cal["n_lotes"] > 0 and timing_status != "ALINEADO":
             categoria = "AGENDADO_SIN_URGENCIA"
+        elif timing_status == "ALINEADO":
+            categoria = "MATCH_OK"
         elif kg_necesario > 0 and abs(diff_pct) <= 20:
             categoria = "MATCH_OK"
         elif diff_pct < -20:
@@ -1147,13 +1197,23 @@ def comparar_calendar_necesidades():
             "urgencia": urgencia,
             "dias_cobertura": dias_cob,
             "stock_uds": nec["stock_uds_total"],
+            "stock_kg_gondola": round(nec["stock_kg_gondola"] or 0, 2),
+            "pipeline_kg": round(nec["pipeline_kg"] or 0, 2),
+            "stock_kg_efectivo": round(stock_kg_efectivo, 2),
             "velocidad_uds_dia": nec["velocidad_uds_dia"],
+            "velocidad_kg_dia": round(vel_kg_dia, 3),
+            "fecha_agotamiento": fecha_agotamiento,
+            "fecha_producir_sugerida": fecha_producir_sugerida,
+            "primer_lote_calendar_fecha": primer_lote_fecha,
+            "diff_dias_timing": diff_dias_timing,
+            "timing_status": timing_status,
             "kg_necesario_horizonte": kg_necesario,
             "kg_calendar_horizonte": kg_calendar,
             "diff_kg": diff_kg,
             "diff_pct": round(diff_pct, 1),
             "n_lotes_calendar": cal["n_lotes"],
             "fechas_calendar": cal["fechas"],
+            "lote_bulk_kg": nec["lote_bulk_kg"],
             "categoria": categoria,
         })
 
@@ -1218,6 +1278,10 @@ td{padding:7px 8px;border-bottom:1px solid #f1f5f9;vertical-align:top}
 .cat-SOBRE_PRODUCCION{background:#e9d5ff;color:#581c87;padding:2px 8px;border-radius:6px;font-weight:700;font-size:11px}
 .cat-SIN_VENTAS{background:#f1f5f9;color:#64748b;padding:2px 8px;border-radius:6px;font-weight:700;font-size:11px}
 .cat-AGENDADO_SIN_VENTAS{background:#fecaca;color:#7f1d1d;padding:2px 8px;border-radius:6px;font-weight:700;font-size:11px}
+.cat-TIMING_TARDE{background:#fecaca;color:#7f1d1d;padding:2px 8px;border-radius:6px;font-weight:700;font-size:11px}
+.tim-OK{color:#166534;font-weight:700}
+.tim-TARDE{color:#dc2626;font-weight:700}
+.tim-TEMPRANO{color:#7c3aed;font-weight:700}
 .diff-pos{color:#581c87;font-weight:700}
 .diff-neg{color:#dc2626;font-weight:700}
 .diff-ok{color:#166534}
@@ -1255,11 +1319,12 @@ async function cargar() {
 }
 
 const CAT_NAME = {
-  MATCH_OK: '✅ Match OK',
+  MATCH_OK: '✅ Timing alineado',
   URGENTE_SIN_AGENDAR: '🔴 Urgente sin agendar',
+  TIMING_TARDE: '🔴 Calendar TARDE (se agota antes)',
   AGENDADO_SIN_URGENCIA: '🟠 Agendado sin urgencia',
-  SUB_PRODUCCION: '🟧 Sub-producción',
-  SOBRE_PRODUCCION: '🟪 Sobre-producción',
+  SUB_PRODUCCION: '🟧 Sub-producción (kg)',
+  SOBRE_PRODUCCION: '🟪 Sobre-producción (kg)',
   SIN_VENTAS: '⚪ Sin ventas',
   AGENDADO_SIN_VENTAS: '🔴 Agendado SIN VENTAS',
 };
@@ -1277,7 +1342,7 @@ function render(d) {
 
   // Veredicto resumen
   var veredicto = '';
-  var totalProblemas = (cats.URGENTE_SIN_AGENDAR||0) + (cats.AGENDADO_SIN_URGENCIA||0) + (cats.SUB_PRODUCCION||0) + (cats.SOBRE_PRODUCCION||0) + (cats.AGENDADO_SIN_VENTAS||0);
+  var totalProblemas = (cats.URGENTE_SIN_AGENDAR||0) + (cats.TIMING_TARDE||0) + (cats.AGENDADO_SIN_URGENCIA||0) + (cats.SUB_PRODUCCION||0) + (cats.SOBRE_PRODUCCION||0) + (cats.AGENDADO_SIN_VENTAS||0);
   if (totalProblemas === 0) {
     veredicto = '<div class="card" style="border:2px solid #16a34a;background:#f0fdf4"><h2 style="margin:0;color:#166534">✅ Calendar está alineado con necesidades · podrías migrar a Plan sin pérdida</h2></div>';
   } else if (totalProblemas > d.total_productos / 2) {
@@ -1290,27 +1355,44 @@ function render(d) {
   var grupos = {};
   d.productos.forEach(p => { (grupos[p.categoria] = grupos[p.categoria]||[]).push(p); });
 
-  var orden = ['URGENTE_SIN_AGENDAR','AGENDADO_SIN_VENTAS','SUB_PRODUCCION','SOBRE_PRODUCCION','AGENDADO_SIN_URGENCIA','MATCH_OK','SIN_VENTAS'];
+  var orden = ['URGENTE_SIN_AGENDAR','TIMING_TARDE','AGENDADO_SIN_VENTAS','SUB_PRODUCCION','SOBRE_PRODUCCION','AGENDADO_SIN_URGENCIA','MATCH_OK','SIN_VENTAS'];
   var tbl = '';
   orden.forEach(cat => {
     var g = grupos[cat];
     if (!g || g.length === 0) return;
     tbl += '<div class="card"><h3 style="margin:0 0 12px"><span class="cat-' + cat + '">' + CAT_NAME[cat] + '</span> · ' + g.length + ' productos</h3>';
-    tbl += '<table><thead><tr><th>Cód</th><th>Producto</th><th>Stock uds</th><th>Vel/día</th><th>Días cob</th><th>kg necesario</th><th>kg Calendar</th><th>Diff</th><th>Lotes Cal</th><th>Próximas fechas</th></tr></thead><tbody>';
+    tbl += '<table><thead><tr>';
+    tbl += '<th>Cód</th><th>Producto</th>';
+    tbl += '<th>Stock kg<br><span style="font-weight:400;font-size:10px">+ pipeline</span></th>';
+    tbl += '<th>Vel<br>kg/día</th>';
+    tbl += '<th>Días<br>cob</th>';
+    tbl += '<th>Se agota</th>';
+    tbl += '<th>Producir<br>sugerido<br>(−20d)</th>';
+    tbl += '<th>Calendar<br>1er lote</th>';
+    tbl += '<th>Δ timing</th>';
+    tbl += '<th>Lote<br>típico</th>';
+    tbl += '<th>kg<br>nec vs cal</th>';
+    tbl += '<th>Otros lotes Cal</th>';
+    tbl += '</tr></thead><tbody>';
     g.forEach(p => {
-      var diffCls = Math.abs(p.diff_pct) <= 20 ? 'diff-ok' : (p.diff_kg < 0 ? 'diff-neg' : 'diff-pos');
-      var fechas = (p.fechas_calendar||[]).map(f => f.fecha + ' (' + f.kg + 'kg)').join(' · ');
+      var diffCls = Math.abs(p.diff_pct||0) <= 20 ? 'diff-ok' : ((p.diff_kg||0) < 0 ? 'diff-neg' : 'diff-pos');
+      var timCls = p.timing_status === 'ALINEADO' ? 'tim-OK' : (p.timing_status === 'TARDE' ? 'tim-TARDE' : (p.timing_status === 'TEMPRANO' ? 'tim-TEMPRANO' : ''));
+      var timTxt = p.diff_dias_timing != null ? (p.diff_dias_timing > 0 ? '+' + p.diff_dias_timing + 'd tarde' : (p.diff_dias_timing < 0 ? p.diff_dias_timing + 'd temprano' : 'mismo día')) : '—';
+      var todasFechas = (p.fechas_calendar||[]).slice(1).map(f => f.fecha + ' (' + f.kg + 'kg)').join(' · ') || '—';
+      var pipeline = (p.pipeline_kg||0) > 0 ? ' <span style="color:#0891b2;font-weight:700">+' + p.pipeline_kg + '</span>' : '';
       tbl += '<tr>';
       tbl += '<td class="mono">' + escapeHtml(p.codigo_pt||'') + '</td>';
-      tbl += '<td>' + escapeHtml(p.producto_nombre) + '</td>';
-      tbl += '<td style="text-align:center">' + p.stock_uds + '</td>';
-      tbl += '<td style="text-align:center">' + (p.velocidad_uds_dia||0).toFixed(1) + '</td>';
+      tbl += '<td><strong>' + escapeHtml(p.producto_nombre) + '</strong><br><span style="color:#64748b;font-size:10px">' + p.stock_uds + ' uds</span></td>';
+      tbl += '<td style="text-align:right"><strong>' + (p.stock_kg_gondola||0) + '</strong>' + pipeline + '</td>';
+      tbl += '<td style="text-align:right">' + (p.velocidad_kg_dia||0).toFixed(2) + '</td>';
       tbl += '<td style="text-align:center">' + (p.dias_cobertura != null ? p.dias_cobertura + 'd' : '—') + '</td>';
-      tbl += '<td style="text-align:right">' + p.kg_necesario_horizonte + 'kg</td>';
-      tbl += '<td style="text-align:right">' + p.kg_calendar_horizonte + 'kg</td>';
-      tbl += '<td style="text-align:right" class="' + diffCls + '">' + (p.diff_kg>0?'+':'') + p.diff_kg + 'kg (' + (p.diff_pct>0?'+':'') + p.diff_pct + '%)</td>';
-      tbl += '<td style="text-align:center">' + p.n_lotes_calendar + '</td>';
-      tbl += '<td style="font-size:11px;color:#64748b">' + escapeHtml(fechas) + '</td>';
+      tbl += '<td style="text-align:center;color:#dc2626;font-weight:600">' + (p.fecha_agotamiento || '—') + '</td>';
+      tbl += '<td style="text-align:center;color:#166534;font-weight:700">' + (p.fecha_producir_sugerida || '—') + '</td>';
+      tbl += '<td style="text-align:center">' + (p.primer_lote_calendar_fecha || '—') + '</td>';
+      tbl += '<td style="text-align:center" class="' + timCls + '">' + timTxt + '</td>';
+      tbl += '<td style="text-align:right;color:#64748b;font-size:11px">' + (p.lote_bulk_kg ? p.lote_bulk_kg + 'kg' : '—') + '</td>';
+      tbl += '<td style="text-align:right" class="' + diffCls + '">' + (p.kg_necesario_horizonte||0) + ' / ' + (p.kg_calendar_horizonte||0) + 'kg</td>';
+      tbl += '<td style="font-size:10px;color:#64748b">' + escapeHtml(todasFechas) + '</td>';
       tbl += '</tr>';
     });
     tbl += '</tbody></table></div>';
