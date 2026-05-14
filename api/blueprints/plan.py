@@ -796,16 +796,29 @@ function csrf() {
 
 async function verificar() {
   document.getElementById('resultados').innerHTML = '<div class="card">Verificando…</div>';
+  var debug = 'Códigos a enviar: ' + CODES_EXCEL.length + ' · ';
   try {
     var r = await fetch('/api/plan/check-codigos-mp', {
       method:'POST',
       headers:{'Content-Type':'application/json','X-CSRF-Token':csrf()},
       body: JSON.stringify({codigos: CODES_EXCEL}),
     });
-    var d = await r.json();
-    if (!r.ok) { alert('Error: ' + (d.error||r.status)); return; }
+    debug += 'HTTP ' + r.status + ' ' + r.statusText + ' · ';
+    var raw = await r.text();
+    debug += 'response: ' + raw.substring(0, 300);
+    var d;
+    try { d = JSON.parse(raw); } catch(je) {
+      document.getElementById('resultados').innerHTML = '<div class="card crit"><h3>Error · response no es JSON</h3><pre style="white-space:pre-wrap;font-size:11px">' + escapeHtml(debug) + '</pre></div>';
+      return;
+    }
+    if (!r.ok) {
+      document.getElementById('resultados').innerHTML = '<div class="card crit"><h3>Error HTTP ' + r.status + '</h3><pre style="white-space:pre-wrap;font-size:11px">' + escapeHtml(JSON.stringify(d, null, 2)) + '</pre><div class="muted" style="margin-top:8px">Si dice 401 · refrescá la página y volvé a login.<br>Si dice 403 · CSRF · refrescá la página.<br>Si dice 500 · es bug del backend.</div></div>';
+      return;
+    }
     render(d);
-  } catch(e) { alert('Error: ' + e.message); }
+  } catch(e) {
+    document.getElementById('resultados').innerHTML = '<div class="card crit"><h3>Error de red o JavaScript</h3><pre>' + escapeHtml(e.message + ' · ' + debug) + '</pre></div>';
+  }
 }
 
 function escapeHtml(s){return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
@@ -853,8 +866,8 @@ function render(d) {
   document.getElementById('resultados').innerHTML = out;
 }
 
-// Auto-verificar al cargar
-verificar();
+// NO auto-verificar · click manual del botón
+// (si auto-verifica y hay error, no se ve el debug claro)
 </script>
 </body></html>"""
 
