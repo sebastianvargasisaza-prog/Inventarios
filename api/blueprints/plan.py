@@ -1889,6 +1889,66 @@ function render(d) {
 </body></html>"""
 
 
+@bp.route("/api/plan/festivos", methods=["GET"])
+def plan_festivos():
+    """Lista festivos colombianos para uno o varios años.
+
+    Sebastián 13-may-2026: usado para verificar visualmente que la lista
+    coincide con la realidad antes de programar producciones automáticas.
+    Calculado algoritmicamente (Butcher para Pascua + Ley Emiliani).
+
+    Query: ?year=2026 · ?year=2026,2027 · default año actual + siguiente
+    """
+    err = _require_login()
+    if err:
+        return err
+    from datetime import date as _date
+    years_param = (request.args.get("year") or "").strip()
+    if years_param:
+        try:
+            years = [int(y) for y in years_param.split(",")]
+        except ValueError:
+            return jsonify({"error": "year debe ser entero (separados por coma)"}), 400
+    else:
+        hoy = _date.today()
+        years = [hoy.year, hoy.year + 1]
+
+    NOMBRES = {
+        (1, 1): "Año Nuevo",
+        (5, 1): "Día del Trabajo",
+        (7, 20): "Independencia",
+        (8, 7): "Batalla de Boyacá",
+        (12, 8): "Inmaculada Concepción",
+        (12, 25): "Navidad",
+    }
+    DIAS_ES = ["lun", "mar", "mié", "jue", "vie", "sáb", "dom"]
+
+    out = {}
+    for year in years:
+        fest = sorted(_festivos_colombia_year(year))
+        pascua = _calcular_pascua(year)
+        from datetime import timedelta as _td2
+        # Mapeo fecha → descripción derivada
+        descripciones = {}
+        descripciones[pascua - _td2(days=3)] = "Jueves Santo"
+        descripciones[pascua - _td2(days=2)] = "Viernes Santo"
+        items = []
+        for f in fest:
+            nombre = NOMBRES.get((f.month, f.day))
+            if not nombre:
+                nombre = descripciones.get(f, "Festivo movido (Ley Emiliani)")
+            items.append({
+                "fecha": f.isoformat(),
+                "dia": DIAS_ES[f.weekday()],
+                "nombre": nombre,
+            })
+        out[str(year)] = items
+
+    return jsonify({"festivos_por_year": out, "pascua_por_year": {
+        str(y): _calcular_pascua(y).isoformat() for y in years
+    }})
+
+
 @bp.route("/api/plan/check-codigos-mp", methods=["GET"])
 def check_codigos_mp():
     """Verifica qué códigos de MP del Excel existen en maestro_mps.
@@ -2044,9 +2104,95 @@ DIAS_PREFERIDOS = {0, 2, 4}            # lun, mié, vie (para canónico)
 MAX_PRODUCCIONES_POR_DIA = 2
 
 
+# Festivos colombianos · Sebastián 13-may-2026
+# "revisa bien dias festivos en colombia asi evitamos errores"
+# Calculados algorítmicamente para cualquier año:
+# - Fijos sin mover: 1-ene, 1-may, 20-jul, 7-ago, 8-dic, 25-dic
+# - Semana Santa: Jueves y Viernes Santo (Pascua − 3 y − 2)
+# - Ley Emiliani (movidos al lunes siguiente si caen otro día):
+#     Reyes (6-ene), San José (19-mar), Ascensión (Pascua+39),
+#     Corpus Christi (Pascua+60), Sagrado Corazón (Pascua+68),
+#     San Pedro y San Pablo (29-jun), Asunción (15-ago),
+#     Día de la Raza (12-oct), Todos los Santos (1-nov),
+#     Independencia Cartagena (11-nov)
+_FESTIVOS_CACHE = {}
+
+
+def _calcular_pascua(year):
+    """Algoritmo de Butcher · domingo de Pascua para cualquier año.
+    Validado: 2026=5-abr, 2027=28-mar, 2028=16-abr.
+    """
+    from datetime import date as _date
+    a = year % 19
+    b = year // 100
+    c = year % 100
+    d = b // 4
+    e = b % 4
+    f = (b + 8) // 25
+    g = (b - f + 1) // 3
+    h = (19 * a + b - d - g + 15) % 30
+    i = c // 4
+    k = c % 4
+    L = (32 + 2 * e + 2 * i - h - k) % 7
+    m = (a + 11 * h + 22 * L) // 451
+    month = (h + L - 7 * m + 114) // 31
+    day = ((h + L - 7 * m + 114) % 31) + 1
+    return _date(year, month, day)
+
+
+def _festivos_colombia_year(year):
+    """Devuelve set de date con festivos colombianos del año.
+    Cacheado en _FESTIVOS_CACHE.
+    """
+    if year in _FESTIVOS_CACHE:
+        return _FESTIVOS_CACHE[year]
+    from datetime import date as _date, timedelta as _td
+
+    def _mover_a_lunes(fecha):
+        wd = fecha.weekday()
+        if wd == 0:
+            return fecha
+        return fecha + _td(days=(7 - wd))
+
+    pascua = _calcular_pascua(year)
+    fest = set()
+
+    # Fijos
+    fest.add(_date(year, 1, 1))    # Año Nuevo
+    fest.add(_date(year, 5, 1))    # Día del Trabajo
+    fest.add(_date(year, 7, 20))   # Independencia
+    fest.add(_date(year, 8, 7))    # Batalla de Boyacá
+    fest.add(_date(year, 12, 8))   # Inmaculada Concepción
+    fest.add(_date(year, 12, 25))  # Navidad
+
+    # Semana Santa (no se mueven)
+    fest.add(pascua - _td(days=3))  # Jueves Santo
+    fest.add(pascua - _td(days=2))  # Viernes Santo
+
+    # Movibles (Ley Emiliani)
+    fest.add(_mover_a_lunes(_date(year, 1, 6)))    # Reyes
+    fest.add(_mover_a_lunes(_date(year, 3, 19)))   # San José
+    fest.add(_mover_a_lunes(pascua + _td(days=39)))  # Ascensión
+    fest.add(_mover_a_lunes(pascua + _td(days=60)))  # Corpus Christi
+    fest.add(_mover_a_lunes(pascua + _td(days=68)))  # Sagrado Corazón
+    fest.add(_mover_a_lunes(_date(year, 6, 29)))   # S Pedro y Pablo
+    fest.add(_mover_a_lunes(_date(year, 8, 15)))   # Asunción
+    fest.add(_mover_a_lunes(_date(year, 10, 12)))  # Día de la Raza
+    fest.add(_mover_a_lunes(_date(year, 11, 1)))   # Todos los Santos
+    fest.add(_mover_a_lunes(_date(year, 11, 11)))  # Independencia Cartagena
+
+    _FESTIVOS_CACHE[year] = fest
+    return fest
+
+
+def es_festivo_colombia(fecha):
+    """True si la fecha (date) es festivo en Colombia."""
+    return fecha in _festivos_colombia_year(fecha.year)
+
+
 def _proxima_fecha_habil(c, fecha_obj, prefer_mwf=False, max_lookahead=400):
     """Devuelve la próxima fecha date que cumpla:
-    - Día hábil (lun-vie, no fines de semana)
+    - Día hábil (lun-vie, no fines de semana, NO festivo colombiano)
     - Cuenta de producciones activas ese día < MAX_PRODUCCIONES_POR_DIA
     - Si prefer_mwf=True · prefiere lun/mié/vie pero acepta mar/jue si los
       preferidos están saturados
@@ -2056,7 +2202,7 @@ def _proxima_fecha_habil(c, fecha_obj, prefer_mwf=False, max_lookahead=400):
     from datetime import timedelta as _td
     cur = fecha_obj
     for _ in range(max_lookahead):
-        if cur.weekday() in DIAS_HABILES:
+        if cur.weekday() in DIAS_HABILES and not es_festivo_colombia(cur):
             if (not prefer_mwf) or (cur.weekday() in DIAS_PREFERIDOS):
                 count = c.execute(
                     """SELECT COUNT(*) FROM produccion_programada

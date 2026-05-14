@@ -7114,6 +7114,96 @@ def test_golden_plan_registrar_completada_horizonte(app, db_clean):
 
 
 # ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH PLAN-F · festivos colombianos · Sebastián 13-may-2026
+# ═══════════════════════════════════════════════════════════════════
+def test_golden_plan_festivos_colombia(app, db_clean):
+    """Festivos calculados algorítmicamente + helper skip festivos.
+
+    Sebastián: "revisa bien dias festivos en colombia asi evitamos
+    errores, y que las fechas esten bien". Los canónicos automáticos
+    NO deben caer en festivos colombianos (Ascensión, Corpus, etc.).
+    """
+    from api.blueprints.plan import (
+        _calcular_pascua, _festivos_colombia_year,
+        es_festivo_colombia, _proxima_fecha_habil,
+    )
+    from datetime import date
+    import sqlite3
+
+    # Caso 1: Pascua 2026 = 5-abr (verificado astronómicamente)
+    assert _calcular_pascua(2026) == date(2026, 4, 5)
+    assert _calcular_pascua(2027) == date(2027, 3, 28)
+    assert _calcular_pascua(2028) == date(2028, 4, 16)
+
+    # Caso 2: festivos 2026 conocidos públicamente
+    fest_2026 = _festivos_colombia_year(2026)
+    esperados = [
+        date(2026, 1, 1),   # Año Nuevo
+        date(2026, 1, 12),  # Reyes movido
+        date(2026, 3, 23),  # San José movido
+        date(2026, 4, 2),   # Jueves Santo
+        date(2026, 4, 3),   # Viernes Santo
+        date(2026, 5, 1),   # Trabajo
+        date(2026, 5, 18),  # Ascensión movido
+        date(2026, 6, 8),   # Corpus Christi movido
+        date(2026, 6, 15),  # Sagrado Corazón movido
+        date(2026, 6, 29),  # S. Pedro y Pablo (cae lun ya)
+        date(2026, 7, 20),  # Independencia (cae lun ya)
+        date(2026, 8, 7),   # Boyacá fijo
+        date(2026, 8, 17),  # Asunción movido
+        date(2026, 10, 12), # Raza (cae lun ya)
+        date(2026, 11, 2),  # Todos Santos movido
+        date(2026, 11, 16), # Indep Cartagena movido
+        date(2026, 12, 8),  # Inmaculada fijo
+        date(2026, 12, 25), # Navidad
+    ]
+    for f in esperados:
+        assert f in fest_2026, f'BUG: {f} debería ser festivo'
+    assert len(fest_2026) == 18
+
+    # Caso 3: días NO festivos
+    assert not es_festivo_colombia(date(2026, 5, 19))  # mar hábil
+    assert not es_festivo_colombia(date(2026, 6, 10))  # mié hábil
+    assert not es_festivo_colombia(date(2026, 7, 21))  # mar post-fest
+
+    # Caso 4: _proxima_fecha_habil skip festivos
+    conn = sqlite3.connect(':memory:')
+    conn.execute("""CREATE TABLE produccion_programada (
+        id INTEGER PRIMARY KEY, fecha_programada TEXT, estado TEXT)""")
+    c = conn.cursor()
+
+    # Desde lun 18-may (Ascensión) → debe ir a mar 19
+    assert _proxima_fecha_habil(c, date(2026, 5, 18), prefer_mwf=False) == date(2026, 5, 19)
+    # Desde lun 18-may con prefer_mwf=True (lun/mié/vie) → mié 20
+    assert _proxima_fecha_habil(c, date(2026, 5, 18), prefer_mwf=True) == date(2026, 5, 20)
+    # Desde lun 8-jun (Corpus) prefer_mwf=True → mié 10
+    assert _proxima_fecha_habil(c, date(2026, 6, 8), prefer_mwf=True) == date(2026, 6, 10)
+    # Vie 7-ago (Boyacá) prefer_mwf=True → siguiente preferido = lun 10
+    assert _proxima_fecha_habil(c, date(2026, 8, 7), prefer_mwf=True) == date(2026, 8, 10)
+
+    # Caso 5: endpoint /api/plan/festivos
+    cs = _login(app, 'sebastian')
+    r = cs.get('/api/plan/festivos?year=2026')
+    assert r.status_code == 200, f'BUG endpoint: {r.status_code}'
+    d = r.get_json()
+    assert '2026' in d['festivos_por_year']
+    assert d['pascua_por_year']['2026'] == '2026-04-05'
+    items_2026 = d['festivos_por_year']['2026']
+    fechas = {it['fecha'] for it in items_2026}
+    assert '2026-05-18' in fechas  # Ascensión
+    assert '2026-06-08' in fechas  # Corpus
+    nombres = {it['fecha']: it['nombre'] for it in items_2026}
+    assert nombres['2026-04-02'] == 'Jueves Santo'
+    assert nombres['2026-04-03'] == 'Viernes Santo'
+
+    # Caso 6: año personalizado via query
+    r2 = cs.get('/api/plan/festivos?year=2027')
+    assert r2.status_code == 200
+    d2 = r2.get_json()
+    assert d2['pascua_por_year']['2027'] == '2027-03-28'
+
+
+# ═══════════════════════════════════════════════════════════════════
 # GOLDEN PATH PLAN-E · escenarios sugeridos + /api/plan/proximas
 # ═══════════════════════════════════════════════════════════════════
 def test_golden_plan_escenarios_y_proximas(app, db_clean):
