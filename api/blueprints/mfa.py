@@ -111,6 +111,124 @@ def _provisioning_uri(username, secret):
 
 # ── Endpoints ────────────────────────────────────────────────────────────────
 
+@bp.route('/seguridad', methods=['GET'])
+@bp.route('/seguridad/mfa', methods=['GET'])
+def seguridad_page():
+    """Página para configurar MFA · Sebastián 13-may-2026."""
+    if not session.get('compras_user'):
+        from flask import redirect
+        return redirect('/login?next=/seguridad')
+    from flask import Response
+    return Response(_SEGURIDAD_HTML, mimetype='text/html')
+
+
+_SEGURIDAD_HTML = """<!DOCTYPE html>
+<html lang="es"><head><meta charset="UTF-8">
+<title>Configurar MFA · EOS</title>
+<style>
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;color:#1e293b;margin:0;padding:20px}
+.wrap{max-width:560px;margin:0 auto}
+.card{background:white;border-radius:14px;padding:24px;margin-bottom:16px;box-shadow:0 2px 8px rgba(0,0,0,.06)}
+h1{margin:0 0 10px;color:#0f766e;font-size:22px}
+h2{margin:14px 0 8px;color:#1e293b;font-size:16px}
+.muted{color:#64748b;font-size:13px;line-height:1.5}
+button{background:#0f766e;color:white;border:none;padding:11px 22px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer}
+button:disabled{opacity:.5;cursor:not-allowed}
+input[type=text]{padding:12px 16px;border:1px solid #cbd5e1;border-radius:8px;font-size:18px;width:200px;letter-spacing:6px;font-family:ui-monospace;text-align:center}
+.qr-box{display:flex;justify-content:center;padding:20px;background:white;border-radius:10px;margin:14px 0}
+.qr-box img{display:block;max-width:240px}
+.secret{font-family:ui-monospace;background:#f1f5f9;padding:10px 14px;border-radius:6px;font-size:13px;letter-spacing:1px;word-break:break-all}
+.step{counter-increment:step;background:#f8fafc;border-left:4px solid #0f766e;padding:12px 14px;border-radius:6px;margin:10px 0}
+.step::before{content:counter(step) ". ";color:#0f766e;font-weight:800}
+ol{counter-reset:step;list-style:none;padding:0}
+.ok{color:#16a34a;font-weight:700}
+.crit{color:#dc2626}
+.backup{background:#fef3c7;border:2px solid #ca8a04;padding:14px;border-radius:10px;font-family:ui-monospace;font-size:20px;letter-spacing:4px;text-align:center;font-weight:800;color:#7c2d12}
+</style></head><body>
+<div class="wrap">
+<a href="/modulos">&larr; Volver al panel</a>
+<div class="card">
+  <h1>🔐 Configurar MFA</h1>
+  <div class="muted">Multi-factor authentication · necesario para que admins puedan ejecutar acciones que modifican datos. Una vez activado, te pedirá un código de 6 dígitos del app authenticator después del login.</div>
+
+  <div id="paso0" style="margin-top:20px">
+    <h2>¿Qué necesitás?</h2>
+    <div class="step">Una app authenticator en tu celular · <a href="https://authy.com" target="_blank">Authy</a>, <a href="https://play.google.com/store/apps/details?id=com.google.android.apps.authenticator2" target="_blank">Google Authenticator</a>, <a href="https://1password.com" target="_blank">1Password</a> o similar.</div>
+    <div class="step">~2 minutos para configurar.</div>
+    <button onclick="iniciar()" style="margin-top:14px">▶ Iniciar configuración</button>
+  </div>
+
+  <div id="paso1" style="display:none;margin-top:20px">
+    <h2>Escaneá este QR con tu app</h2>
+    <div class="qr-box"><img id="qr-img" alt="QR code"></div>
+    <div class="muted">O ingresá manualmente este secret en tu app:</div>
+    <div class="secret" id="secret-display"></div>
+    <h2 style="margin-top:18px">Ingresá el código de 6 dígitos</h2>
+    <div class="muted">La app te muestra un código que cambia cada 30 segundos. Pegalo acá:</div>
+    <div style="display:flex;gap:10px;margin-top:10px;align-items:center">
+      <input type="text" id="token" maxlength="6" placeholder="000000" autocomplete="off">
+      <button onclick="verificar()" id="btn-verificar">✓ Verificar</button>
+    </div>
+    <div id="err" style="margin-top:10px;color:#dc2626;font-size:13px"></div>
+  </div>
+
+  <div id="paso2" style="display:none;margin-top:20px">
+    <h2 class="ok">✅ MFA activado</h2>
+    <div class="muted">Guardá este código de respaldo (backup code) en lugar seguro · sirve si perdés acceso al authenticator:</div>
+    <div class="backup" id="backup-display"></div>
+    <div class="muted" style="margin-top:14px">Anotalo en papel o guardalo en tu gestor de contraseñas. NO se mostrará de nuevo.</div>
+    <button onclick="window.location.href='/modulos'" style="margin-top:16px">Volver al panel</button>
+  </div>
+</div>
+</div>
+<script>
+let SECRET = '';
+let PROVISIONING_URI = '';
+
+function csrf(){var m=document.cookie.match(/(?:^|; )csrf_token=([^;]*)/);return m?decodeURIComponent(m[1]):'';}
+
+async function iniciar() {
+  document.getElementById('err').textContent = '';
+  try {
+    var r = await fetch('/api/mfa/setup', {method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':csrf()}, body:'{}'});
+    var d = await r.json();
+    if (!r.ok) { document.getElementById('err').textContent = d.error || 'Error ' + r.status; return; }
+    SECRET = d.secret;
+    PROVISIONING_URI = d.provisioning_uri;
+    // Generar QR via API pública qrserver
+    var qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=' + encodeURIComponent(PROVISIONING_URI);
+    document.getElementById('qr-img').src = qrUrl;
+    document.getElementById('secret-display').textContent = SECRET;
+    document.getElementById('paso0').style.display = 'none';
+    document.getElementById('paso1').style.display = 'block';
+    setTimeout(function(){ document.getElementById('token').focus(); }, 200);
+  } catch(e) { document.getElementById('err').textContent = e.message; }
+}
+
+async function verificar() {
+  document.getElementById('err').textContent = '';
+  document.getElementById('btn-verificar').disabled = true;
+  var token = document.getElementById('token').value.trim();
+  if (token.length !== 6) { document.getElementById('err').textContent = 'Ingresá los 6 dígitos'; document.getElementById('btn-verificar').disabled = false; return; }
+  try {
+    var r = await fetch('/api/mfa/verify-setup', {method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':csrf()}, body:JSON.stringify({token:token})});
+    var d = await r.json();
+    if (!r.ok) { document.getElementById('err').textContent = d.error || 'Error'; document.getElementById('btn-verificar').disabled = false; return; }
+    document.getElementById('backup-display').textContent = d.backup_code || '(sin código)';
+    document.getElementById('paso1').style.display = 'none';
+    document.getElementById('paso2').style.display = 'block';
+  } catch(e) { document.getElementById('err').textContent = e.message; document.getElementById('btn-verificar').disabled = false; }
+}
+
+// Enter en el input ejecuta verify
+document.addEventListener('DOMContentLoaded', function(){
+  var t = document.getElementById('token');
+  if (t) t.addEventListener('keydown', function(e){ if(e.key==='Enter') verificar(); });
+});
+</script>
+</body></html>"""
+
+
 @bp.route('/api/mfa/status', methods=['GET'])
 def mfa_status():
     """Devuelve el estado MFA del usuario en sesión."""
