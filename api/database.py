@@ -232,6 +232,23 @@ except ImportError:
         _MIG_121_STMTS = []  # falla silenciosa si archivo no existe en deploy
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (122, "Mapeo SKU Shopify · Triactive Retinoid + Gel Hidratante · Sebastián 13-may-2026", [
+        # Sebastián 13-may-2026: estos productos aparecían SIN_VENTAS en
+        # Necesidades porque sus SKUs Shopify no estaban en sku_producto_map.
+        # SKUs extraídos de animuslb.com/products.json (mayo-2026).
+        # Booster Tensor pendiente · NO aparece en products.json público
+        # (canal B2B o draft) · Sebastián confirma.
+        """INSERT OR IGNORE INTO sku_producto_map (sku, producto_nombre, activo) VALUES
+            ('TRIAC',    'SUERO TRIACTIVE RETINOID NAD', 1),
+            ('TRIAC30',  'SUERO TRIACTIVE RETINOID NAD', 1),
+            ('GELH',     'GEL HIDRATANTE',                1)""",
+        # Si los SKUs ya existían pero con producto_nombre vacío o distinto,
+        # actualizar y reactivar
+        """UPDATE sku_producto_map SET producto_nombre = 'SUERO TRIACTIVE RETINOID NAD', activo = 1
+           WHERE sku IN ('TRIAC', 'TRIAC30')""",
+        """UPDATE sku_producto_map SET producto_nombre = 'GEL HIDRATANTE', activo = 1
+           WHERE sku = 'GELH'""",
+    ]),
     (121, "Importar 26 fórmulas reales del Excel Alejandro mayo-2026 · Sebastián 13-may-2026",
      _MIG_121_STMTS),
     (120, "Reactivar 5 MPs inactivas usadas en Excel Alejandro mayo-2026 · Sebastián 13-may-2026", [
