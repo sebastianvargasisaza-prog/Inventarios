@@ -243,6 +243,58 @@ except ImportError:
         _MIG_127_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (129, "Cancelar Calendar legacy duplicado/obsoleto · Sebastián 14-may-2026", [
+        # Sebastián 14-may-2026: paso 2/6 limpieza de programación.
+        # Calendar legacy tiene lotes que YA pasaron sin ejecutar (Alejandro
+        # nunca los marcó) y duplicados con eos_plan/eos_retroactivo.
+        # Mig 129 cancela 2 categorías:
+        #
+        # A) Calendar/manual con fecha pasada > 14 días sin ejecutar
+        #    (estado pendiente/programado · fin_real_at NULL · 14d para
+        #    margen · si pasó >2 semanas y no se hizo, no se va a hacer)
+        # B) Calendar/manual duplicado con producción ya completada (back-fill
+        #    mig 128) del mismo producto en ventana ±21 días · si se hizo
+        #    real el lote planificado de Calendar es obsoleto
+        #
+        # Idempotente: WHERE estado != 'cancelado' AND
+        # observaciones NOT LIKE '%AUTOCLEAN_MIG129%'
+        # NO toca lotes con fin_real_at o inicio_real_at (inmutabilidad).
+
+        # ── A) Cancelar Calendar legacy >14 días pasado sin ejecutar ──
+        """UPDATE produccion_programada
+           SET estado = 'cancelado',
+               observaciones = COALESCE(observaciones,'') ||
+                 ' · AUTOCLEAN_MIG129_A · fecha pasada >14d sin ejecutar · ' ||
+                 datetime('now','-5 hours')
+           WHERE origen IN ('calendar','manual')
+             AND estado IN ('pendiente','programado')
+             AND fin_real_at IS NULL
+             AND inicio_real_at IS NULL
+             AND date(fecha_programada) < date('now','-5 hours','-14 day')
+             AND COALESCE(observaciones,'') NOT LIKE '%AUTOCLEAN_MIG129%'""",
+
+        # ── B) Cancelar Calendar legacy duplicado con back-fill reciente ──
+        """UPDATE produccion_programada
+           SET estado = 'cancelado',
+               observaciones = COALESCE(observaciones,'') ||
+                 ' · AUTOCLEAN_MIG129_B · duplicado con eos_retroactivo · ' ||
+                 datetime('now','-5 hours')
+           WHERE id IN (
+             SELECT pp1.id
+             FROM produccion_programada pp1
+             JOIN produccion_programada pp2
+               ON pp2.producto = pp1.producto
+              AND pp2.id != pp1.id
+              AND pp2.origen = 'eos_retroactivo'
+              AND pp2.fin_real_at IS NOT NULL
+              AND ABS(julianday(pp1.fecha_programada) - julianday(pp2.fecha_programada)) < 21
+             WHERE pp1.origen IN ('calendar','manual')
+               AND pp1.estado IN ('pendiente','programado')
+               AND pp1.fin_real_at IS NULL
+               AND pp1.inicio_real_at IS NULL
+               AND COALESCE(pp1.observaciones,'') NOT LIKE '%AUTOCLEAN_MIG129%'
+           )""",
+    ]),
     (128, "Back-fill 13 producciones reales abril-mayo 2026 · Sebastián 14-may-2026", [
         # Sebastián 14-may-2026: registrar las producciones que Luis hizo
         # entre 15-abr y 13-may pero NO estaban en EOS con fin_real_at.
