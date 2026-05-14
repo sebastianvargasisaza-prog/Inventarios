@@ -2198,6 +2198,272 @@ def plan_debug_tz():
     })
 
 
+@bp.route("/admin/calculo-frecuencias", methods=["GET"])
+def calculo_frecuencias_page():
+    """Calcula frecuencias óptimas para productos clave con datos reales.
+    Sebastián 14-may-2026: "cuanto vendemos al mes, y si incluye a
+    fernando mesa, asi hacemos calculo reales".
+    """
+    if not session.get("compras_user"):
+        from flask import redirect
+        return redirect("/login?next=/admin/calculo-frecuencias")
+    from flask import Response
+    return Response(_CALC_FRECUENCIAS_HTML, mimetype="text/html")
+
+
+@bp.route("/api/plan/calculo-frecuencias", methods=["GET"])
+def calculo_frecuencias_api():
+    """Datos para cálculo manual de frecuencias.
+    Combina Shopify (animus DTC) + pedidos B2B (Fernando + futuros).
+    Query: ?productos=A,B,C  (default: top 5 por velocidad)
+    """
+    err = _require_login()
+    if err:
+        return err
+    conn = get_db()
+    c = conn.cursor()
+
+    # Productos pedidos (default top 5 confirmados con Sebastián)
+    productos_query = request.args.get("productos", "").strip()
+    if productos_query:
+        productos_solicitados = [p.strip() for p in productos_query.split(",") if p.strip()]
+    else:
+        productos_solicitados = [
+            "LIMPIADOR FACIAL BHA 2%",
+            "SUERO ILUMINADOR TRX",
+            "SUERO HIDRATANTE AH 1.5%",
+            "LIMPIADOR ILUMINADOR ACIDO KOJICO",
+            "GEL HIDRATANTE",
+        ]
+
+    # 1) Necesidades DTC (Shopify)
+    necesidades = _calcular_animus_dtc(c, ventana=60, cob_critico=20,
+                                        cob_alerta=25, cob_vigilar=45)
+    nec_map = {n["producto_nombre"]: n for n in necesidades}
+
+    # 2) Pedidos B2B (próximos 12 meses · todos no cancelados/despachados)
+    b2b_por_producto = {}
+    for r in c.execute(
+        """SELECT producto_nombre, cliente_nombre,
+                  SUM(cantidad_uds * COALESCE(ml_unidad, 30)) / 1000.0 AS kg_total,
+                  COUNT(*) AS n_pedidos,
+                  MIN(fecha_estimada) AS proxima_fecha
+           FROM pedidos_b2b
+           WHERE estado NOT IN ('despachado','cancelado')
+           GROUP BY producto_nombre, cliente_nombre""",
+    ).fetchall():
+        b2b_por_producto.setdefault(r[0] or "", []).append({
+            "cliente": r[1], "kg_total_pendiente": round(float(r[2] or 0), 2),
+            "n_pedidos": int(r[3] or 0),
+            "proxima_fecha": r[4],
+        })
+
+    # 3) Producciones reales últ 180d · para detectar frecuencia histórica
+    rows_real = c.execute(
+        """SELECT producto, fin_real_at, COALESCE(kg_real, cantidad_kg, 0)
+           FROM produccion_programada
+           WHERE fin_real_at IS NOT NULL
+             AND date(fin_real_at) >= date('now','-5 hours','-180 day')
+             AND COALESCE(kg_real, cantidad_kg, 0) > 0
+           ORDER BY fin_real_at DESC""",
+    ).fetchall()
+    historico_por_prod = {}
+    for r in rows_real:
+        historico_por_prod.setdefault(r[0] or "", []).append({
+            "fecha": (r[1] or "")[:10],
+            "kg": float(r[2] or 0),
+        })
+
+    # 4) Lote_size_kg del Excel
+    lote_excel = {}
+    for r in c.execute(
+        """SELECT producto_nombre, lote_size_kg
+           FROM formula_headers WHERE COALESCE(activo, 1) = 1""",
+    ).fetchall():
+        lote_excel[r[0]] = float(r[1] or 0)
+
+    # 5) Componer respuesta por producto
+    items = []
+    for prod in productos_solicitados:
+        nec = nec_map.get(prod, {})
+        vel_uds_dia_shopify = nec.get("velocidad_uds_dia", 0)
+        ml = nec.get("ml_unidad", 30)
+        kg_mes_shopify = round((vel_uds_dia_shopify * 30 * ml) / 1000.0, 2)
+
+        b2b_list = b2b_por_producto.get(prod, [])
+        kg_b2b_pendiente = sum(b["kg_total_pendiente"] for b in b2b_list)
+        # Asumir B2B pendiente se distribuye en 3 meses · kg/mes b2b
+        kg_mes_b2b = round(kg_b2b_pendiente / 3.0, 2)
+
+        kg_mes_total = round(kg_mes_shopify + kg_mes_b2b, 2)
+
+        # Frecuencia óptima · cuánto dura un lote
+        lote = lote_excel.get(prod, 0)
+        if kg_mes_total > 0.001 and lote > 0:
+            dias_dura_lote = round((lote / kg_mes_total) * 30)
+            # Producir 20 días antes de agotar
+            frecuencia_optima = max(dias_dura_lote - 20, 15)
+            # Lotes/año
+            lotes_anuales = round(365 / frecuencia_optima, 1)
+        else:
+            dias_dura_lote = None
+            frecuencia_optima = None
+            lotes_anuales = None
+
+        # Historial real · frecuencia histórica observada
+        historial = historico_por_prod.get(prod, [])
+        frecuencia_observada = None
+        if len(historial) >= 2:
+            from datetime import date as _date
+            try:
+                fechas = [_date.fromisoformat(h["fecha"][:10]) for h in historial]
+                # Diferencia promedio entre producciones consecutivas
+                diffs = [(fechas[i] - fechas[i+1]).days for i in range(len(fechas)-1)]
+                frecuencia_observada = round(sum(diffs) / len(diffs))
+            except Exception:
+                pass
+
+        items.append({
+            "producto": prod,
+            "ml_unidad": ml,
+            "lote_excel_kg": lote,
+            "shopify": {
+                "velocidad_uds_dia": round(vel_uds_dia_shopify, 2),
+                "velocidad_uds_mes": int(vel_uds_dia_shopify * 30),
+                "kg_mes": kg_mes_shopify,
+            },
+            "b2b": {
+                "kg_pendiente_total": round(kg_b2b_pendiente, 2),
+                "kg_mes_estimado": kg_mes_b2b,
+                "pedidos": b2b_list,
+            },
+            "consumo": {
+                "kg_mes_total": kg_mes_total,
+                "kg_anual_estimado": round(kg_mes_total * 12, 2),
+            },
+            "frecuencia": {
+                "dias_dura_un_lote": dias_dura_lote,
+                "frecuencia_optima_dias": frecuencia_optima,
+                "lotes_anuales": lotes_anuales,
+            },
+            "historial_180d": {
+                "n_producciones": len(historial),
+                "frecuencia_observada_dias": frecuencia_observada,
+                "ultima_fecha": historial[0]["fecha"] if historial else None,
+                "ultima_kg": historial[0]["kg"] if historial else None,
+                "producciones": historial[:5],
+            },
+            "stock_actual_kg": nec.get("stock_kg_total", 0),
+            "dias_cobertura_actual": nec.get("dias_cobertura"),
+        })
+
+    return jsonify({
+        "fecha": _hoy_colombia().isoformat(),
+        "items": items,
+        "n_productos": len(items),
+    })
+
+
+_CALC_FRECUENCIAS_HTML = r"""<!DOCTYPE html>
+<html lang="es"><head><meta charset="UTF-8">
+<title>Cálculo de frecuencias · EOS</title>
+<style>
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;color:#1e293b;margin:0;padding:20px}
+.wrap{max-width:1400px;margin:0 auto}
+.card{background:white;border-radius:12px;padding:20px;margin-bottom:14px;box-shadow:0 2px 6px rgba(0,0,0,.05)}
+h1{margin:0 0 6px;color:#0f766e;font-size:22px}
+h2{margin:0 0 10px;color:#1e293b;font-size:16px}
+.muted{color:#64748b;font-size:12px}
+button{background:#0f766e;color:white;border:none;padding:8px 14px;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer}
+.prod-card{background:white;border:1px solid #e2e8f0;border-radius:10px;padding:14px;margin-bottom:10px}
+.metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin:10px 0}
+.metric{background:#f8fafc;border-radius:6px;padding:10px;border-left:3px solid #cbd5e1}
+.metric.shopify{border-left-color:#0891b2}
+.metric.b2b{border-left-color:#7c3aed}
+.metric.total{border-left-color:#16a34a;background:#f0fdf4}
+.metric.freq{border-left-color:#ca8a04;background:#fefce8}
+.metric-lbl{font-size:10px;color:#64748b;text-transform:uppercase;font-weight:700}
+.metric-val{font-size:18px;font-weight:800;color:#1e293b;margin-top:2px}
+.metric-sub{font-size:10px;color:#64748b;margin-top:2px}
+textarea{width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:6px;font-size:12px;font-family:ui-monospace,monospace;min-height:80px}
+</style></head><body>
+<div class="wrap">
+<a href="/modulos" style="color:#0f766e;font-weight:700;font-size:13px">&larr; Volver</a>
+
+<div class="card">
+  <h1>📐 Cálculo de frecuencias con datos reales</h1>
+  <div class="muted">Combina ventas Shopify (Animus DTC) + pedidos B2B (Fernando Mesa, etc) para calcular cuánto vende cada producto/mes y derivar frecuencia óptima de producción.</div>
+  <div style="margin-top:14px">
+    <label class="muted">Productos (una línea por nombre · vacío = top 5 default):</label>
+    <textarea id="productos">LIMPIADOR FACIAL BHA 2%
+SUERO ILUMINADOR TRX
+SUERO HIDRATANTE AH 1.5%
+LIMPIADOR ILUMINADOR ACIDO KOJICO
+GEL HIDRATANTE</textarea>
+    <button onclick="cargar()" style="margin-top:8px">📊 Calcular</button>
+  </div>
+</div>
+
+<div id="resultado"></div>
+
+</div>
+<script>
+function esc(s){return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+async function cargar(){
+  const txt = document.getElementById('productos').value || '';
+  const productos = txt.split('\n').map(s => s.trim()).filter(s => s).join(',');
+  document.getElementById('resultado').innerHTML = '<div class="card">⏳ Calculando…</div>';
+  try {
+    const r = await fetch('/api/plan/calculo-frecuencias?productos=' + encodeURIComponent(productos));
+    const d = await r.json();
+    if (!r.ok){ alert('Error: ' + (d.error || r.status)); return; }
+    render(d);
+  } catch(e){ alert('Error: ' + e.message); }
+}
+function render(d){
+  let html = '';
+  (d.items || []).forEach(it => {
+    const s = it.shopify, b = it.b2b, c = it.consumo, f = it.frecuencia, h = it.historial_180d;
+    html += '<div class="prod-card">';
+    html += '<h2>' + esc(it.producto) + ' <span class="muted">· ' + it.ml_unidad + 'ml · lote ' + it.lote_excel_kg + 'kg</span></h2>';
+    html += '<div class="metric-grid">';
+    html += '<div class="metric shopify"><div class="metric-lbl">🛍 Shopify Animus DTC</div><div class="metric-val">' + s.kg_mes + ' kg/mes</div><div class="metric-sub">' + s.velocidad_uds_dia + ' uds/día · ' + s.velocidad_uds_mes + ' uds/mes</div></div>';
+    html += '<div class="metric b2b"><div class="metric-lbl">🤝 B2B (Fernando + futuros)</div><div class="metric-val">' + b.kg_mes_estimado + ' kg/mes</div><div class="metric-sub">' + b.kg_pendiente_total + ' kg pendiente / 3 meses</div></div>';
+    html += '<div class="metric total"><div class="metric-lbl">📦 TOTAL consumo</div><div class="metric-val">' + c.kg_mes_total + ' kg/mes</div><div class="metric-sub">' + c.kg_anual_estimado + ' kg/año</div></div>';
+    html += '<div class="metric freq"><div class="metric-lbl">🎯 Frecuencia óptima</div><div class="metric-val">' + (f.frecuencia_optima_dias ? 'cada ' + f.frecuencia_optima_dias + 'd' : '—') + '</div><div class="metric-sub">' + (f.lotes_anuales ? f.lotes_anuales + ' lotes/año' : '') + (f.dias_dura_un_lote ? ' · 1 lote dura ' + f.dias_dura_un_lote + 'd' : '') + '</div></div>';
+    html += '</div>';
+
+    // Histórico
+    if (h.n_producciones > 0) {
+      html += '<div style="background:#f1f5f9;border-radius:6px;padding:10px;margin-top:6px;font-size:11px"><strong>📜 Histórico últ 180d:</strong> ' + h.n_producciones + ' producciones';
+      if (h.frecuencia_observada_dias) html += ' · frecuencia observada: cada ' + h.frecuencia_observada_dias + ' días';
+      html += '<br>Producciones: ' + h.producciones.map(p => p.fecha + ' (' + p.kg + 'kg)').join(', ');
+      html += '</div>';
+    }
+
+    // B2B detail
+    if (b.pedidos && b.pedidos.length) {
+      html += '<div style="background:#faf5ff;border-radius:6px;padding:10px;margin-top:6px;font-size:11px"><strong>🤝 Pedidos B2B activos:</strong><br>';
+      b.pedidos.forEach(p => {
+        html += '• ' + esc(p.cliente) + ' · ' + p.n_pedidos + ' pedido(s) · ' + p.kg_total_pendiente + 'kg pendiente · próx ' + (p.proxima_fecha || '—') + '<br>';
+      });
+      html += '</div>';
+    } else {
+      html += '<div class="muted" style="font-size:11px;margin-top:4px">🤝 Sin pedidos B2B activos para este producto</div>';
+    }
+
+    // Stock + cobertura
+    html += '<div style="margin-top:6px;font-size:11px;color:#475569">Stock actual: <strong>' + it.stock_actual_kg + ' kg</strong> · Cobertura: <strong>' + (it.dias_cobertura_actual || '—') + ' días</strong></div>';
+
+    html += '</div>';
+  });
+  document.getElementById('resultado').innerHTML = html;
+}
+cargar();
+</script>
+</body></html>"""
+
+
 @bp.route("/admin/dashboard-plan", methods=["GET"])
 def dashboard_plan_page():
     """Dashboard ejecutivo · vista 1 página con todo el plan + alertas.
