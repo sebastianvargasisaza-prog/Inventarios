@@ -231,7 +231,20 @@ except ImportError:
     except ImportError:
         _MIG_121_STMTS = []  # falla silenciosa si archivo no existe en deploy
 
+# Mig 127 SQL statements vienen del módulo api/mig_127_data.py
+# (generado por scripts/generate_mig_127_reimport.py · regenera desde Excel
+# completo: maestro_mps + formula_headers + formula_items con agua q.s.p.)
+try:
+    from mig_127_data import STATEMENTS as _MIG_127_STMTS
+except ImportError:
+    try:
+        from api.mig_127_data import STATEMENTS as _MIG_127_STMTS
+    except ImportError:
+        _MIG_127_STMTS = []
+
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (127, "Re-import COMPLETO Excel mayo-2026 · limpia residuos viejos · Sebastián 14-may-2026",
+     _MIG_127_STMTS),
     (126, "Agregar AGUA DESIONIZADA a fórmulas (q.s.p.) · Sebastián 14-may-2026", [
         # Sebastián 14-may-2026: "las formulas deben estar perfectas para
         # que funcione · revisa eso del agua, el excel lo que tenemos en
