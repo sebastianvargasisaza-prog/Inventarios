@@ -2474,9 +2474,32 @@ def plan_sugerido():
             continue
 
         lote_kg = productos_con_formula[nombre_upper]
-        if lote_kg <= 0.01:
-            # Productos con lote mini (0.1, 0.2) · sub-producción especial
-            continue
+        # Sebastián 14-may-2026: si lote Excel <3kg es fórmula piloto ·
+        # buscar promedio real · si no hay historial, excluir.
+        if lote_kg < 3:
+            # Promedio real últimos 180d
+            real_kgs = []
+            for r in c.execute(
+                """SELECT COALESCE(kg_real, cantidad_kg, 0)
+                   FROM produccion_programada
+                   WHERE producto = ?
+                     AND fin_real_at IS NOT NULL
+                     AND COALESCE(kg_real, cantidad_kg, 0) >= 3
+                     AND date(fin_real_at) >= date('now','-5 hours','-180 day')""",
+                (prod,),
+            ).fetchall():
+                real_kgs.append(float(r[0] or 0))
+            if real_kgs:
+                lote_kg = round(sum(real_kgs) / len(real_kgs), 1)
+            else:
+                # Sin historial real · es piloto · no programar automáticamente
+                sin_formula.append({
+                    "producto": prod,
+                    "stock_kg": round(stock_efectivo, 2),
+                    "cob_dias": round(cob_dias, 1),
+                    "razon": f"lote_excel_piloto_{lote_kg}kg_sin_historial_real",
+                })
+                continue
 
         # Asignar slot
         fecha_asig = _registrar_slot_temporal(prod, lote_kg,
@@ -3532,14 +3555,31 @@ def _ia_autoplan_sugerir(payload_contexto, modelo="claude-sonnet-4-6"):
         "producto repetidamente, ajustá la frecuencia. Si lo canceló, "
         "no lo sugieras otra vez al menos por un mes.\n"
         "11. Distribuir parejo: no concentrar 3+ mismo día.\n\n"
+        "TAMAÑO DE LOTE — CRÍTICO:\n"
+        "Cada producto trae 3 campos sobre el tamaño:\n"
+        "  · lote_size_kg_excel: valor del Excel (PUEDE SER FÓRMULA PILOTO)\n"
+        "  · lote_recomendado_kg: lo que DEBÉS usar para sugerencias\n"
+        "  · lote_fuente: 'historico_real' / 'excel' / 'excel_piloto_inviable'\n"
+        "  · producciones_reales_historicas: lista con fecha+kg\n\n"
+        "REGLAS para el campo kg de tu sugerencia:\n"
+        "  · SIEMPRE usar lote_recomendado_kg (no lote_size_kg_excel)\n"
+        "  · Si lote_fuente='historico_real': USAR ese promedio · es lo\n"
+        "    que realmente se produce (ej: Triactive Excel dice 0.2kg = "
+        "fórmula piloto, pero producciones reales son 13kg)\n"
+        "  · Si lote_fuente='excel_piloto_inviable' (lote<3kg sin historial):\n"
+        "    NO INCLUIR en sugerencias[] · mencionar en comentario_general\n"
+        "    como 'X tiene fórmula piloto · necesita definir lote real'\n"
+        "  · Podés sugerir lote distinto si tiene sentido (ej: para cubrir\n"
+        "    90 días con velocidad alta podrías sugerir 1.5× el promedio),\n"
+        "    pero JAMÁS sugerir valores menores a 3kg en producción real.\n\n"
         "CRITERIOS DE CONFIANZA (campo confianza 0.0-1.0):\n"
         "Antes de asignar confianza, ejecutá esta checklist mental por "
         "cada sugerencia. Cada chequeo SUMA puntos:\n"
         "  [+0.20] La fecha respeta TODAS las reglas duras 1-7\n"
         "  [+0.20] El producto tiene mps_status='OK' (puede fabricarse)\n"
-        "  [+0.15] El producto tiene velocidad_uds_dia > 0.5 (demanda real)\n"
+        "  [+0.15] El kg viene de lote_recomendado_kg (no del Excel piloto)\n"
         "  [+0.15] La fecha está dentro de 25-15d antes del agotamiento\n"
-        "  [+0.10] El kg sugerido coincide con lote_size_kg (Excel)\n"
+        "  [+0.10] Hay al menos 1 producción real histórica del producto\n"
         "  [+0.10] No hay duplicación con lotes_agendados del producto\n"
         "  [+0.10] El historial_feedback no muestra rechazos previos similares\n"
         "Total posible: 1.00. Si NO sumás al menos 0.95 puntos, "
@@ -3663,6 +3703,46 @@ def autoplan_ia():
     necesidades = _calcular_animus_dtc(c, ventana=60, cob_critico=20,
                                         cob_alerta=25, cob_vigilar=45)
 
+    # 2b) Producciones reales últ 180 días por producto · Sebastián 14-may-2026:
+    # "sugiere triactive 0.2 gramos lo cual no tiene lógica · revisemos
+    # porque sugiere eso". Causa: el Excel tiene lote_size_kg de FÓRMULA
+    # PILOTO (Triactive=0.2kg = 200g de prueba), no lote real de producción
+    # (que es 13kg según historial). La IA debe usar el promedio real.
+    historico_por_prod = {}
+    for r in c.execute(
+        """SELECT producto, fecha_programada,
+                  COALESCE(kg_real, cantidad_kg, 0)
+           FROM produccion_programada
+           WHERE fin_real_at IS NOT NULL
+             AND COALESCE(kg_real, cantidad_kg, 0) > 0
+             AND date(fin_real_at) >= date('now', '-5 hours', '-180 day')
+           ORDER BY fin_real_at DESC""",
+    ).fetchall():
+        historico_por_prod.setdefault(r[0] or "", []).append({
+            "fecha": (r[1] or "")[:10],
+            "kg": float(r[2] or 0),
+        })
+
+    def _calcular_lote_real_promedio(prod_nombre, lote_excel):
+        """Devuelve (lote_recomendado_kg, fuente, justificacion).
+        Si hay historial real → usar promedio.
+        Si el Excel tiene <3kg pero hay velocidad alta → usar fórmula de
+        cobertura (vel × 60 días) como fallback.
+        Si no hay nada → devolver el Excel pero con flag de advertencia.
+        """
+        historial = historico_por_prod.get(prod_nombre, [])
+        if historial:
+            kgs = [h["kg"] for h in historial]
+            promedio = sum(kgs) / len(kgs)
+            return round(promedio, 1), "historico_real", \
+                   f"{len(historial)} producciones reales últ 180d · promedio {round(promedio, 1)}kg"
+        # Sin historial · si lote_excel es muy chico, advertir
+        if lote_excel and lote_excel < 3:
+            return None, "excel_piloto_inviable", \
+                   f"lote_size_kg del Excel ({lote_excel}kg) es fórmula piloto · no hay producciones reales · NO programar"
+        return lote_excel, "excel", \
+               f"lote_size_kg del Excel ({lote_excel}kg) · sin historial real"
+
     # Filtrar a productos relevantes · con velocidad real Y fórmula
     productos_ctx = []
     for n in necesidades:
@@ -3670,11 +3750,19 @@ def autoplan_ia():
             continue  # sin ventas, no programar
         if n.get("mps_status") == "SIN_FORMULA":
             continue
+        nombre = n["producto_nombre"]
+        lote_excel = n.get("lote_bulk_kg", 0) or 0
+        lote_recomendado, fuente_lote, just_lote = _calcular_lote_real_promedio(nombre, lote_excel)
+        historial = historico_por_prod.get(nombre, [])[:5]
         productos_ctx.append({
-            "nombre": n["producto_nombre"],
+            "nombre": nombre,
             "codigo_pt": n.get("codigo_pt", ""),
             "ml_unidad": n.get("ml_unidad", 30),
-            "lote_size_kg": n.get("lote_bulk_kg", 0),
+            "lote_size_kg_excel": lote_excel,
+            "lote_recomendado_kg": lote_recomendado,
+            "lote_fuente": fuente_lote,
+            "lote_justificacion": just_lote,
+            "producciones_reales_historicas": historial,
             "stock_uds": n.get("stock_uds_total", 0),
             "stock_kg": n.get("stock_kg_total", 0),
             "velocidad_uds_dia": round(n.get("velocidad_uds_dia", 0), 2),
