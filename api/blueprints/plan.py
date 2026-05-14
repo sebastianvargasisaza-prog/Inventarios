@@ -2865,7 +2865,8 @@ function render(){
         // usan sug:<idx> · agendados usan id:<id>
         const dragKey = lt.tipo === 'sugerido' ? 'sug:' + lotIdx + ':' + fStr : 'id:' + lt.id;
         if (lt.tipo === 'sugerido'){
-          grid += '<div class="' + ltCls + esGrande + '" draggable="true" data-key="' + dragKey + '" data-prod="' + escapeHtml(lt.producto) + '" data-kg="' + lt.kg + '" data-from="' + fStr + '" ondragstart="onDragStart(event)" ondragend="onDragEnd(event)" title="' + escapeHtml(lt.producto + ' · ' + lt.kg + 'kg · arrastrá para mover') + '">';
+          // Sugerencia IA · NO está en BD · click abre modal especial
+          grid += '<div class="' + ltCls + esGrande + '" draggable="true" data-key="' + dragKey + '" data-prod="' + escapeHtml(lt.producto) + '" data-kg="' + lt.kg + '" data-from="' + fStr + '" ondragstart="onDragStart(event)" ondragend="onDragEnd(event)" onclick="abrirSugerenciaModal(&quot;' + escapeHtml(lt.producto) + '&quot;,&quot;' + fStr + '&quot;,' + lt.kg + ',&quot;' + escapeHtml(lt.motivo || '') + '&quot;)" title="✨ Sugerencia IA · click para detalles · arrastrá para mover">';
           grid += '<span>✨ ' + escapeHtml(prodCorto) + '<br><span style="opacity:.7">' + lt.kg + 'kg</span></span>';
           grid += '</div>';
         } else {
@@ -2962,6 +2963,144 @@ function buscarNecesidadProducto(producto){
 // Normaliza · sin acentos · upper · trim · útil para matching de nombres
 function _norm(s){
   return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase().trim().replace(/\s+/g, ' ');
+}
+
+// Modal para sugerencias IA (✨ amarillas punteadas) · NO están en BD ·
+// permite ver detalle, agendar, modificar o ignorar antes de aplicar
+async function abrirSugerenciaModal(producto, fecha, kg, motivo){
+  document.getElementById('lote-titulo').textContent = '✨ Sugerencia · ' + producto;
+  document.getElementById('lote-body').innerHTML = '<div class="muted" style="padding:30px;text-align:center">Cargando…</div>';
+  document.getElementById('loteModal').classList.add('show');
+
+  // Datos del producto (igual que abrirLoteModal)
+  let info = null;
+  try {
+    const r = await fetch('/api/plan/necesidades');
+    if (r.ok){
+      const d = await r.json();
+      const animus = (d.clientes || []).find(c => c.cliente_id === 'ANIMUS_DTC');
+      const todos = (animus && animus.productos) || [];
+      const target = _norm(producto);
+      info = todos.find(p => _norm(p.producto_nombre) === target);
+      if (!info) info = todos.find(p => _norm(p.producto_nombre).includes(target) || target.includes(_norm(p.producto_nombre)));
+    }
+  } catch(e){}
+
+  // Buscar el item en plan_items para confianza/razonamiento
+  const it = (PLAN_DATA.plan.plan_items || []).find(x => x.producto === producto && x.fecha === fecha);
+
+  let html = '';
+  html += '<div class="banner-inline info"><strong>Esta es una sugerencia del autoplan IA</strong> · todavía NO está agendada en EOS. Apretá "Agendar ahora" para confirmarla, o "Ignorar" para descartarla.</div>';
+
+  if (info){
+    const ml = info.ml_unidad || 30;
+    const velUds = info.velocidad_uds_dia || 0;
+    const velMes = Math.round(velUds * 30);
+    const velKgDia = info.velocidad_kg_dia || 0;
+    html += '<div class="metric-grid">';
+    html += '<div class="metric-card"><div class="metric-lbl">Volumen envase</div><div class="metric-val">' + ml + ' ml</div></div>';
+    html += '<div class="metric-card"><div class="metric-lbl">Kg a producir</div><div class="metric-val">' + kg + ' kg</div><div class="metric-sub">' + Math.round(kg * 1000 / ml) + ' uds aprox</div></div>';
+    html += '<div class="metric-card"><div class="metric-lbl">Vende/día</div><div class="metric-val">' + velUds.toFixed(1) + '</div><div class="metric-sub">' + velKgDia.toFixed(2) + ' kg/día</div></div>';
+    html += '<div class="metric-card"><div class="metric-lbl">Vende/mes</div><div class="metric-val">' + velMes + '</div></div>';
+    html += '<div class="metric-card"><div class="metric-lbl">Stock actual</div><div class="metric-val">' + (info.stock_uds_total || 0) + ' uds</div></div>';
+    html += '<div class="metric-card"><div class="metric-lbl">Cobertura actual</div><div class="metric-val">' + (info.dias_cobertura != null ? info.dias_cobertura + 'd' : '—') + '</div><div class="metric-sub">' + (info.urgencia || '') + '</div></div>';
+    html += '</div>';
+    // Próxima producción tras este lote
+    if (velKgDia > 0.001 && kg > 0){
+      const diasDura = Math.round(kg / velKgDia);
+      const fProx = new Date(fecha + 'T12:00:00');
+      fProx.setDate(fProx.getDate() + diasDura - 20);
+      html += '<div class="banner-inline ok">🔁 Este lote durará ~' + diasDura + ' días · próxima producción sugerida: <strong>' + fProx.toISOString().slice(0, 10) + '</strong></div>';
+    }
+  }
+
+  // Info IA
+  if (it && it.from_ia){
+    html += '<div class="banner-inline warn"><strong>🤖 Razonamiento IA</strong>';
+    if (it.confianza) html += ' · confianza ' + Math.round(it.confianza * 100) + '%';
+    html += '<br>' + escapeHtml(it.razonamiento_ia || it.motivo || '(sin detalle)') + '</div>';
+  } else {
+    html += '<div class="banner-inline info"><strong>Motivo:</strong> ' + escapeHtml(motivo || 'auto-plan') + ' · fecha sugerida ' + fecha + ' · cantidad ' + kg + ' kg</div>';
+  }
+
+  // Acciones específicas para sugerencia
+  html += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:14px;padding-top:14px;border-top:1px solid #e2e8f0">';
+  html += '<button onclick="agendarSugerencia(&quot;' + escapeHtml(producto) + '&quot;,&quot;' + fecha + '&quot;,' + kg + ')" class="success">✅ Agendar ahora</button>';
+  html += '<button onclick="modificarSugerencia(&quot;' + escapeHtml(producto) + '&quot;,&quot;' + fecha + '&quot;)" class="secondary">📅 Cambiar fecha</button>';
+  html += '<button onclick="modificarSugerenciaKg(&quot;' + escapeHtml(producto) + '&quot;,&quot;' + fecha + '&quot;,' + kg + ')" class="secondary">⚖ Cambiar kg</button>';
+  html += '<button onclick="ignorarSugerenciaModal(&quot;' + escapeHtml(producto) + '&quot;,&quot;' + fecha + '&quot;)" class="danger">✕ Ignorar</button>';
+  html += '<div style="flex-basis:100%;font-size:11px;color:#64748b;margin-top:6px">💡 También podés arrastrar al calendario para cambiar la fecha</div>';
+  html += '</div>';
+
+  document.getElementById('lote-body').innerHTML = html;
+}
+
+async function agendarSugerencia(producto, fecha, kg){
+  cerrarLoteModal();
+  if (!confirm('¿Agendar producción de ' + producto + ' · ' + kg + 'kg para ' + fecha + '?')) return;
+  try {
+    const r = await fetch('/api/plan/programar-produccion', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':getCSRF()},
+      credentials: 'same-origin',
+      body: JSON.stringify({
+        producto_nombre: producto, cantidad_kg: kg,
+        fecha_programada: fecha, notas: 'Agendado desde calendario IA',
+      }),
+    });
+    let d = null; let txt = '';
+    try { d = await r.json(); } catch(e){ txt = await r.text(); }
+    if (!r.ok){
+      const errMsg = (d && (d.error || d.message)) || txt || ('HTTP ' + r.status);
+      alert('❌ No se pudo agendar:\\n\\n' + errMsg +
+            (r.status === 403 ? '\\n\\nProbable: MFA no activado · /seguridad' : ''));
+      return;
+    }
+    // Quitar de plan_items (ya agendada) + feedback IA
+    const idx = (PLAN_DATA.plan.plan_items || []).findIndex(x => x.producto === producto && x.fecha === fecha);
+    if (idx >= 0){
+      const it = PLAN_DATA.plan.plan_items[idx];
+      if (it.from_ia && it.decision_id) feedbackIA(it.decision_id, 'aceptada', kg, fecha, null);
+      PLAN_DATA.plan.plan_items.splice(idx, 1);
+    }
+    cargar();
+  } catch(e){ alert('Error de red: ' + e.message); }
+}
+
+function modificarSugerencia(producto, fecha){
+  cerrarLoteModal();
+  const it = (PLAN_DATA.plan.plan_items || []).find(x => x.producto === producto && x.fecha === fecha);
+  const idx = (PLAN_DATA.plan.plan_items || []).findIndex(x => x.producto === producto && x.fecha === fecha);
+  if (idx < 0) return;
+  const nueva = prompt('Cambiar fecha de la sugerencia\\n\\n' + producto + '\\nActual: ' + fecha + '\\n\\nNueva (YYYY-MM-DD):', fecha);
+  if (!nueva || nueva === fecha) return;
+  if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(nueva.trim())){ alert('Formato inválido'); return; }
+  it.fecha = nueva.trim();
+  if (it.from_ia && it.decision_id) feedbackIA(it.decision_id, 'movida', it.kg, nueva.trim(), 'Cambio desde modal');
+  render();
+}
+
+function modificarSugerenciaKg(producto, fecha, kg){
+  cerrarLoteModal();
+  const it = (PLAN_DATA.plan.plan_items || []).find(x => x.producto === producto && x.fecha === fecha);
+  if (!it) return;
+  const nuevaKg = parseFloat(prompt('Cambiar kg de la sugerencia\\n\\n' + producto + '\\nActual: ' + kg + 'kg\\n\\nNueva cantidad (kg):', kg));
+  if (isNaN(nuevaKg) || nuevaKg <= 0){ if (nuevaKg !== '') alert('Cantidad inválida'); return; }
+  it.kg = nuevaKg;
+  if (it.from_ia && it.decision_id) feedbackIA(it.decision_id, 'movida', nuevaKg, fecha, 'Cambio kg desde modal');
+  render();
+}
+
+function ignorarSugerenciaModal(producto, fecha){
+  cerrarLoteModal();
+  if (!confirm('¿Descartar esta sugerencia del autoplan?')) return;
+  const idx = (PLAN_DATA.plan.plan_items || []).findIndex(x => x.producto === producto && x.fecha === fecha);
+  if (idx >= 0){
+    const it = PLAN_DATA.plan.plan_items[idx];
+    if (it.from_ia && it.decision_id) feedbackIA(it.decision_id, 'ignorada', null, null, null);
+    PLAN_DATA.plan.plan_items.splice(idx, 1);
+    render();
+  }
 }
 
 async function abrirLoteModal(id, producto, fecha, kg){
