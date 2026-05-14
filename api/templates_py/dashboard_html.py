@@ -1485,11 +1485,24 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       title="Plan en curso · ahora integrado en Necesidades">
       &#128197; Plan en curso
     </button>
+    <button id="prog-tab-calendario" onclick="switchProgTab('calendario')"
+      style="padding:9px 22px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:700;cursor:pointer;background:linear-gradient(135deg,#ca8a04,#f59e0b);color:#fff;box-shadow:0 3px 10px rgba(245,158,11,.35)"
+      title="Calendario propio · vista mes + autoplan IA + horizontes 15-120 días">
+      &#129302; Calendario + IA
+    </button>
     <button id="prog-tab-midia" onclick="switchProgTab('midia')"
       style="padding:9px 22px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:700;cursor:pointer;background:#1e40af;color:#fff;box-shadow:0 3px 10px rgba(30,64,175,.35)">
       &#128100; Mi D&iacute;a
     </button>
     <span id="prog-tareas-badge" style="display:none;background:#dc2626;color:#fff;font-size:9px;font-weight:800;padding:2px 8px;border-radius:8px"></span>
+  </div>
+  <!-- Tab "Calendario + IA" · iframe a /admin/plan-calendario · Sebastián 14-may-2026:
+       "cuando le doy calendario con IA, pasa lo siguiente me abre otra pestaña deberia
+       quedarse alli como sub pestaña" -->
+  <div id="ptab-calendario" style="display:none">
+    <iframe id="calendario-iframe" src="about:blank"
+      style="width:100%;height:calc(100vh - 200px);min-height:700px;border:1px solid #e2e8f0;border-radius:12px;background:#f8fafc"
+      title="Calendario EOS + IA"></iframe>
   </div>
   <!-- Tab "Necesidades" · cards por cliente con semáforo 4 zonas + B2B -->
   <div id="ptab-necesidades" style="display:none">
@@ -1505,7 +1518,6 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
         <label style="color:#475569">Alerta ≤
           <input type="number" id="nec-cob-alerta" value="25" min="14" max="60" style="width:42px;padding:2px 4px;border:1px solid #cbd5e1;border-radius:3px;font-size:11px">d
         </label>
-        <a href="/admin/plan-calendario" target="_blank" style="background:linear-gradient(135deg,#ca8a04,#f59e0b);color:#fff;text-decoration:none;padding:8px 14px;border-radius:6px;font-size:11px;font-weight:800;display:inline-flex;align-items:center;gap:4px;box-shadow:0 2px 6px rgba(245,158,11,.35)" title="Calendario propio · autoplan IA · vista mes">🤖 Calendario + IA</a>
         <button onclick="abrirFormB2B()" style="background:#1e40af;color:#fff;border:none;padding:7px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">+ Pedido B2B</button>
         <button onclick="cargarNecesidades()" style="background:#0f766e;color:#fff;border:none;padding:7px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">↻ Recargar</button>
       </div>
@@ -8960,6 +8972,7 @@ async function ckMarcar(itemId, estado){
       var TAB_TO_DIV = {
         'planv2': 'ptab-planv2',
         'midia':  'ptab-midia',
+        'calendario': 'ptab-calendario',
         'necesidades': 'ptab-necesidades',
         // 'asignacion' eliminado · redirige a 'mando' (unificado en mapa)
         'asignacion': 'ptab-plano',
@@ -8984,6 +8997,14 @@ async function ckMarcar(itemId, estado){
         var fr = document.getElementById('midia-frame');
         if (fr && (!fr.src || fr.src === 'about:blank')) {
           fr.src = '/operario';
+        }
+      }
+      // Lazy-load iframe Calendario IA al activar tab · Sebastián 14-may-2026:
+      // "deberia quedarse alli como sub pestaña"
+      if (tab === 'calendario') {
+        var frCal = document.getElementById('calendario-iframe');
+        if (frCal && (!frCal.src || frCal.src === 'about:blank' || !frCal.src.includes('plan-calendario'))) {
+          frCal.src = '/admin/plan-calendario';
         }
       }
       // Lazy-load Necesidades al activar tab
@@ -9043,6 +9064,9 @@ async function ckMarcar(itemId, estado){
         else { b.style.background='#e2e8f0'; b.style.color='#1a4a7a'; b.style.boxShadow=''; }
       }
       _bg('prog-tab-planv2',     'linear-gradient(135deg,#0f766e,#0891b2)', tab==='planv2');
+      _bg('prog-tab-necesidades','linear-gradient(135deg,#0f766e,#0891b2)', tab==='necesidades');
+      _bg('prog-tab-calendario', 'linear-gradient(135deg,#ca8a04,#f59e0b)', tab==='calendario');
+      _bg('prog-tab-midia',      '#1e40af',                                  tab==='midia');
       _bg('prog-tab-mando',      '#1a4a7a',                                  tab==='mando');
       _bg('prog-tab-autoplan',   'linear-gradient(135deg,#7c3aed,#dc2626)',  tab==='autoplan');
       _bg('prog-tab-maquila',    'linear-gradient(135deg,#1a4a7a,#0891b2)', tab==='maquila');
