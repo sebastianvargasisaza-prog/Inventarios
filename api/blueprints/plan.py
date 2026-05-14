@@ -2283,7 +2283,7 @@ def diagnostico_mp():
         # Productos que la usan (formula_items)
         rows_uso = c.execute(
             """SELECT fi.producto_nombre,
-                      COALESCE(fi.cantidad_gramos, 0),
+                      COALESCE(fi.cantidad_g_por_lote, 0),
                       COALESCE(fh.lote_size_kg, 0),
                       COALESCE(fh.activo, 1)
                FROM formula_items fi
@@ -2636,7 +2636,7 @@ def gasto_anual_mps():
         # 2) Necesidad proyectada · sumar usos en fórmulas activas
         rows_uso = c.execute(
             """SELECT fi.producto_nombre,
-                      COALESCE(fi.cantidad_gramos, 0) AS gramos_por_lote,
+                      COALESCE(fi.cantidad_g_por_lote, 0) AS gramos_por_lote,
                       COALESCE(fh.lote_size_kg, 0) AS lote_kg,
                       COALESCE(fh.activo, 1) AS act
                FROM formula_items fi
