@@ -1949,6 +1949,248 @@ def plan_festivos():
     }})
 
 
+@bp.route("/api/plan/plan-sugerido", methods=["GET"])
+def plan_sugerido():
+    """Genera el plan COMPLETO de producción aplicando todas las reglas.
+
+    Sebastián 13-may-2026: "solo usa lo del excel esa es la realidad,
+    y continua". Cruza:
+      - Necesidades de Animus DTC + pedidos B2B (consolidador)
+      - Producciones reales últ 30d (pipeline + ya en góndola)
+      - Festivos colombianos (skip)
+      - Lote_size_kg del Excel mig 121 (no inventa cantidades)
+      - Reglas operativas:
+          · Lote >50kg → 1/día solo
+          · Vit C / Triactive → solo Lun/Mié
+          · Pares ≤50kg en Lun/Mié/Vie preferido
+      - Productos SIN fórmula del Excel → flag separado (no programar)
+      - Producciones ya agendadas (Calendar / EOS) → ocupan capacidad
+
+    Query: ?horizonte_semanas=4 (default)
+
+    Devuelve:
+      slots[]: {fecha, dia_semana, productos: [{nombre, kg, motivo}]}
+      sin_formula[]: productos del análisis pero sin fórmula en Excel
+      cancelables_calendar[]: lotes Calendar que se vuelven innecesarios
+      backfills[]: producciones completadas a registrar (fin_real_at)
+    """
+    err = _require_login()
+    if err:
+        return err
+    from datetime import date as _date, timedelta as _td
+
+    horizonte_semanas = int(request.args.get("horizonte_semanas") or 4)
+    horizonte_dias = horizonte_semanas * 7 + 7
+
+    conn = get_db()
+    c = conn.cursor()
+
+    # 1) Necesidades
+    necesidades = _calcular_animus_dtc(c, ventana=60, cob_critico=20,
+                                        cob_alerta=25, cob_vigilar=45)
+
+    # 2) Producciones reales últ 30d
+    reales_por_prod = {}
+    rows_reales = c.execute(
+        """SELECT producto, fin_real_at,
+                  COALESCE(kg_real, cantidad_kg, 0)
+           FROM produccion_programada
+           WHERE fin_real_at IS NOT NULL
+             AND date(fin_real_at) >= date('now','-30 day')""",
+    ).fetchall()
+    for r in rows_reales:
+        reales_por_prod.setdefault(r[0] or "", []).append({
+            "fin_real_at": (r[1] or "")[:10],
+            "kg_real": float(r[2] or 0),
+        })
+
+    # 3) Productos con fórmula del Excel · whitelist
+    productos_con_formula = {}
+    for r in c.execute(
+        """SELECT producto_nombre, lote_size_kg, COALESCE(activo, 1)
+           FROM formula_headers""",
+    ).fetchall():
+        if r[2]:
+            productos_con_formula[(r[0] or "").upper().strip()] = float(r[1] or 0)
+
+    # 4) Iterar necesidades y proponer slots
+    hoy = _date.today()
+    fecha_inicio = hoy + _td(days=1)  # mañana mínimo
+
+    slots = []  # cada slot = un día con productos
+    slots_por_fecha = {}  # fecha_iso → {fecha, productos}
+    sin_formula = []
+    plan_items = []  # lista de productos a programar
+
+    # Helper: agrupar lote pequeño en slot existente o crear nuevo
+    def _registrar_slot_temporal(producto_nombre, lote_kg, motivo):
+        """Solo simula · devuelve fecha asignada usando _proxima_fecha_habil
+        contra el estado actual de BD + slots ya asignados in-memory."""
+        # Insertar virtualmente: crear una vista temporal de "ocupado"
+        ocupados = {}  # fecha_iso → list of (kg)
+        for s in slots:
+            ocupados.setdefault(s["fecha"], []).append(s["kg"])
+        # Buscar primera fecha hábil compatible respetando reglas
+        cur = fecha_inicio
+        es_grande = lote_kg > LOTE_GRANDE_KG
+        es_complejo = _es_producto_complejo(producto_nombre)
+        DIAS_COMPLEJOS = {0, 2}
+        DIAS_PREF_LOCAL = {0, 2, 4}
+        for _ in range(400):
+            if cur.weekday() in DIAS_HABILES and not es_festivo_colombia(cur):
+                # filtro día
+                if es_complejo:
+                    ok_dia = cur.weekday() in DIAS_COMPLEJOS
+                else:
+                    ok_dia = cur.weekday() in DIAS_PREF_LOCAL
+                if ok_dia:
+                    # contar producción real en BD + slots ya asignados
+                    db_rows = c.execute(
+                        """SELECT COALESCE(pp.cantidad_kg, fh.lote_size_kg, 0)
+                           FROM produccion_programada pp
+                           LEFT JOIN formula_headers fh
+                             ON UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(pp.producto))
+                           WHERE date(pp.fecha_programada) = ?
+                             AND pp.estado IN ('pendiente','programado','en_curso')""",
+                        (cur.isoformat(),),
+                    ).fetchall()
+                    kgs_dia = [float(r[0] or 0) for r in db_rows] + ocupados.get(cur.isoformat(), [])
+                    count = len(kgs_dia)
+                    ya_grande = any(k > LOTE_GRANDE_KG for k in kgs_dia)
+                    if es_grande and count == 0:
+                        return cur
+                    if not es_grande and count < MAX_PRODUCCIONES_POR_DIA and not ya_grande:
+                        return cur
+            cur = cur + _td(days=1)
+        return None
+
+    # Ordenar por urgencia · días_cobertura ASC
+    ordenadas = sorted(necesidades, key=lambda n: (
+        n["dias_cobertura"] if n["dias_cobertura"] is not None else 99999
+    ))
+
+    # Sumar pipeline reciente al stock para recalcular cobertura
+    for nec in ordenadas:
+        prod = nec["producto_nombre"]
+        nombre_upper = prod.upper().strip()
+        velocidad_kg_dia = nec["velocidad_kg_dia"] or 0
+
+        # Pipeline reciente (suma kg producidos últ 7d)
+        pipe_7d = sum(r["kg_real"] for r in reales_por_prod.get(prod, [])
+                       if r["fin_real_at"] and (hoy - _date.fromisoformat(r["fin_real_at"])).days <= 30)
+
+        stock_efectivo = (nec["stock_kg_gondola"] or 0) + pipe_7d
+        if velocidad_kg_dia > 0.001:
+            cob_dias = stock_efectivo / velocidad_kg_dia
+        else:
+            cob_dias = 99999
+
+        # Sin ventas O cobertura > horizonte → no programar ahora
+        if velocidad_kg_dia < 0.01 or cob_dias > horizonte_dias + 30:
+            continue
+
+        # Verificar fórmula en Excel
+        if nombre_upper not in productos_con_formula:
+            sin_formula.append({
+                "producto": prod,
+                "stock_kg": round(stock_efectivo, 2),
+                "cob_dias": round(cob_dias, 1),
+                "razon": "no_en_excel_mig_121",
+            })
+            continue
+
+        lote_kg = productos_con_formula[nombre_upper]
+        if lote_kg <= 0.01:
+            # Productos con lote mini (0.1, 0.2) · sub-producción especial
+            continue
+
+        # Asignar slot
+        fecha_asig = _registrar_slot_temporal(prod, lote_kg,
+                                                f"cob {cob_dias:.0f}d")
+        if fecha_asig is None:
+            continue
+
+        slots.append({
+            "fecha": fecha_asig.isoformat(),
+            "producto": prod,
+            "kg": lote_kg,
+            "complejo": _es_producto_complejo(prod),
+            "grande": lote_kg > LOTE_GRANDE_KG,
+        })
+        plan_items.append({
+            "fecha": fecha_asig.isoformat(),
+            "producto": prod,
+            "kg": lote_kg,
+            "cob_dias_actual": round(cob_dias, 1),
+            "stock_efectivo_kg": round(stock_efectivo, 2),
+            "pipeline_7d_kg": round(pipe_7d, 2),
+            "motivo": "urgente" if cob_dias < 25 else ("adelanto" if cob_dias < 60 else "buffer"),
+        })
+
+    # Agrupar slots por fecha
+    by_date = {}
+    for s in slots:
+        by_date.setdefault(s["fecha"], []).append(s)
+    plan_por_dia = sorted([
+        {"fecha": f, "productos": prods,
+         "n_productos": len(prods),
+         "total_kg": round(sum(p["kg"] for p in prods), 2)}
+        for f, prods in by_date.items()
+    ], key=lambda x: x["fecha"])
+
+    # 5) Cancelables Calendar · todo Calendar/manual dentro del horizonte
+    #    cuyo producto está cubierto >horizonte por las producciones reales
+    fecha_hasta = (hoy + _td(days=horizonte_dias)).isoformat()
+    cancelables = []
+    for r in c.execute(
+        """SELECT pp.id, pp.producto, pp.fecha_programada, pp.cantidad_kg
+           FROM produccion_programada pp
+           WHERE pp.origen IN ('calendar','manual')
+             AND pp.estado IN ('pendiente','programado','en_curso')
+             AND pp.fin_real_at IS NULL
+             AND date(pp.fecha_programada) >= date('now')
+             AND date(pp.fecha_programada) <= date(?)""",
+        (fecha_hasta,),
+    ).fetchall():
+        pid, prod, fecha, kg = r[0], r[1], r[2], r[3]
+        # Si el producto YA está en mi plan nuevo, sugerir cancelar el Calendar
+        en_plan_nuevo = any(s["producto"] == prod for s in slots)
+        # O si tiene cobertura por producción reciente
+        pipe = sum(rr["kg_real"] for rr in reales_por_prod.get(prod, []))
+        nec_match = next((n for n in necesidades if n["producto_nombre"] == prod), None)
+        vel = nec_match["velocidad_kg_dia"] if nec_match else 0
+        stock_total = (nec_match["stock_kg_gondola"] if nec_match else 0) + pipe
+        cob_post_real = stock_total / vel if vel > 0.001 else 99999
+        razon = None
+        if en_plan_nuevo:
+            razon = "reemplazado_por_plan_eos"
+        elif cob_post_real > horizonte_dias + 30:
+            razon = f"cobertura_{int(cob_post_real)}d_con_pipeline"
+        if razon:
+            cancelables.append({
+                "id": pid, "producto": prod, "fecha_programada": fecha,
+                "cantidad_kg": kg, "razon": razon,
+            })
+
+    return jsonify({
+        "horizonte_semanas": horizonte_semanas,
+        "horizonte_dias": horizonte_dias,
+        "fecha_inicio": fecha_inicio.isoformat(),
+        "plan_por_dia": plan_por_dia,
+        "plan_items": plan_items,
+        "total_producciones": len(plan_items),
+        "sin_formula": sin_formula,
+        "cancelables_calendar": cancelables,
+        "reglas_aplicadas": {
+            "lote_grande_kg": LOTE_GRANDE_KG,
+            "productos_complejos_substr": list(PRODUCTOS_COMPLEJOS_SUBSTR),
+            "max_producciones_por_dia": MAX_PRODUCCIONES_POR_DIA,
+            "dias_habiles": "Lun-Vie excluyendo festivos colombianos",
+            "dias_preferidos": "Lun/Mié/Vie",
+        },
+    })
+
+
 @bp.route("/api/plan/check-codigos-mp", methods=["GET"])
 def check_codigos_mp():
     """Verifica qué códigos de MP del Excel existen en maestro_mps.
@@ -2190,27 +2432,79 @@ def es_festivo_colombia(fecha):
     return fecha in _festivos_colombia_year(fecha.year)
 
 
-def _proxima_fecha_habil(c, fecha_obj, prefer_mwf=False, max_lookahead=400):
+# Umbral · lotes >50kg se consideran "grandes" y van solos en su día.
+# Sebastián 13-may-2026: "si hay un lote grande de 90 kilos debe quedar
+# ese dia solo, podemos hacer dos el mismo dia si son cosas pequeñas".
+LOTE_GRANDE_KG = 50.0
+
+# Productos "complejos" que requieren envasado el mismo día → preferir
+# Lun/Mié para tener Mar/Jue/Vie para envasado + descarga. El operario
+# elaboración no puede solapar con otro lote.
+# Match por substring case-insensitive en producto_nombre canónico.
+PRODUCTOS_COMPLEJOS_SUBSTR = ("VITAMINA C", "TRIACTIVE")
+
+
+def _es_producto_complejo(producto_nombre):
+    """True si el producto requiere envasado el mismo día (Vit C / Triactive)."""
+    if not producto_nombre:
+        return False
+    pu = producto_nombre.upper()
+    return any(s in pu for s in PRODUCTOS_COMPLEJOS_SUBSTR)
+
+
+def _proxima_fecha_habil(c, fecha_obj, prefer_mwf=False, max_lookahead=400,
+                         lote_kg=None, producto_nombre=None):
     """Devuelve la próxima fecha date que cumpla:
     - Día hábil (lun-vie, no fines de semana, NO festivo colombiano)
     - Cuenta de producciones activas ese día < MAX_PRODUCCIONES_POR_DIA
     - Si prefer_mwf=True · prefiere lun/mié/vie pero acepta mar/jue si los
       preferidos están saturados
+    - Si lote_kg > LOTE_GRANDE_KG · ese día NO puede tener otra producción
+      (max 1 producción ese día, no importa el tamaño)
+    - Si ya hay UN lote grande ese día · no permite agregar más
+    - Si producto_nombre es Vit C o Triactive · fuerza lun/mié (no vie)
 
     Si no se puede encontrar dentro de max_lookahead días → retorna None.
     """
     from datetime import timedelta as _td
+
+    es_grande = lote_kg is not None and lote_kg > LOTE_GRANDE_KG
+    es_complejo = _es_producto_complejo(producto_nombre)
+    # Complejos solo Lun/Mié (weekday 0,2) · más restrictivo que prefer_mwf
+    DIAS_COMPLEJOS = {0, 2}
+
     cur = fecha_obj
     for _ in range(max_lookahead):
         if cur.weekday() in DIAS_HABILES and not es_festivo_colombia(cur):
-            if (not prefer_mwf) or (cur.weekday() in DIAS_PREFERIDOS):
-                count = c.execute(
-                    """SELECT COUNT(*) FROM produccion_programada
-                       WHERE date(fecha_programada) = ?
-                         AND estado IN ('pendiente','programado','en_curso')""",
-                    (cur.isoformat(),),
-                ).fetchone()[0]
-                if count < MAX_PRODUCCIONES_POR_DIA:
+            # Filtro día de la semana
+            if es_complejo:
+                if cur.weekday() not in DIAS_COMPLEJOS:
+                    cur = cur + _td(days=1)
+                    continue
+            elif prefer_mwf and cur.weekday() not in DIAS_PREFERIDOS:
+                cur = cur + _td(days=1)
+                continue
+
+            # Filtro capacidad · contar + considerar si hay grandes ya
+            rows = c.execute(
+                """SELECT pp.id, COALESCE(pp.cantidad_kg, fh.lote_size_kg, 0)
+                   FROM produccion_programada pp
+                   LEFT JOIN formula_headers fh
+                     ON UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(pp.producto))
+                   WHERE date(pp.fecha_programada) = ?
+                     AND pp.estado IN ('pendiente','programado','en_curso')""",
+                (cur.isoformat(),),
+            ).fetchall()
+            count = len(rows)
+            ya_hay_grande = any((r[1] or 0) > LOTE_GRANDE_KG for r in rows)
+
+            if es_grande:
+                # Lote grande · solo permitido si día está vacío
+                if count == 0:
+                    return cur
+            else:
+                # Lote normal · permitido si <MAX y NO hay grande ya
+                if count < MAX_PRODUCCIONES_POR_DIA and not ya_hay_grande:
                     return cur
         cur = cur + _td(days=1)
     return None
