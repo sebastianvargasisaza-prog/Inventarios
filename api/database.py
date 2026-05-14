@@ -232,6 +232,24 @@ except ImportError:
         _MIG_121_STMTS = []  # falla silenciosa si archivo no existe en deploy
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (123, "produccion_programada · motivo_pausa + estado esperando_recurso · Sebastián 13-may-2026", [
+        # Sebastián: "coloquemos en plan en curso un boton pendiente
+        # reprogramar o algo asi como que quede pendiente programarla
+        # digamos algunas es por materia prima entonces debemos dejarla
+        # pendiente hasta que llegue la materia prima".
+        #
+        # Diseño: estado='esperando_recurso' + motivo_pausa TEXT (razón
+        # libre). NO se borra la fecha · queda como referencia de cuándo
+        # estaba originalmente programada. Cuando llega el recurso →
+        # endpoint /reactivar pone estado='programado' + nueva_fecha.
+        "ALTER TABLE produccion_programada ADD COLUMN motivo_pausa TEXT DEFAULT NULL",
+        "ALTER TABLE produccion_programada ADD COLUMN pausado_at TEXT DEFAULT NULL",
+        "ALTER TABLE produccion_programada ADD COLUMN pausado_por TEXT DEFAULT NULL",
+        # Index para listar pausadas rápido
+        """CREATE INDEX IF NOT EXISTS idx_pp_estado_pausa
+           ON produccion_programada(estado, motivo_pausa)
+           WHERE estado='esperando_recurso'""",
+    ]),
     (122, "Mapeo SKU Shopify · Triactive Retinoid + Gel Hidratante · Sebastián 13-may-2026", [
         # Sebastián 13-may-2026: estos productos aparecían SIN_VENTAS en
         # Necesidades porque sus SKUs Shopify no estaban en sku_producto_map.

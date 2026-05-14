@@ -16844,11 +16844,12 @@ async function ckMarcar(itemId, estado){
 
   // ── Plan en curso · bitácora de lotes agendados ─────────────────
   const PEC_ESTADO_COLORS = {
-    'pendiente':   {bg:'#fef3c7', text:'#854d0e', emoji:'⏳'},
-    'programado':  {bg:'#dbeafe', text:'#1e40af', emoji:'📅'},
-    'en_curso':    {bg:'#fed7aa', text:'#9a3412', emoji:'⚙️'},
-    'completado':  {bg:'#dcfce7', text:'#166534', emoji:'✓'},
-    'cancelado':   {bg:'#fee2e2', text:'#991b1b', emoji:'✕'},
+    'pendiente':           {bg:'#fef3c7', text:'#854d0e', emoji:'⏳'},
+    'programado':          {bg:'#dbeafe', text:'#1e40af', emoji:'📅'},
+    'en_curso':            {bg:'#fed7aa', text:'#9a3412', emoji:'⚙️'},
+    'esperando_recurso':   {bg:'#fde68a', text:'#78350f', emoji:'⏸'},
+    'completado':          {bg:'#dcfce7', text:'#166534', emoji:'✓'},
+    'cancelado':           {bg:'#fee2e2', text:'#991b1b', emoji:'✕'},
   };
 
   async function cargarPlanEnCurso() {
@@ -16915,7 +16916,11 @@ async function ckMarcar(itemId, estado){
       html += '<td style="padding:9px 6px;color:#64748b;font-size:11px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escapeHtmlNec(it.observaciones || '') + '">' + escapeHtmlNec((it.observaciones || '').slice(0, 40)) + '</td>';
       html += '<td style="padding:9px 6px;text-align:right;white-space:nowrap">';
       if (it.estado === 'pendiente' || it.estado === 'programado') {
-        html += '<button onclick="moverPEC(' + it.id + ',&#39;' + escapeHtmlNec(it.producto) + '&#39;,&#39;' + escapeHtmlNec(it.fecha_programada) + '&#39;)" style="background:transparent;border:1px solid #0f766e;color:#0f766e;padding:4px 8px;border-radius:4px;font-size:11px;cursor:pointer;margin-right:4px" title="Cambiar fecha · útil cuando falta MP">📅 Mover</button>';
+        html += '<button onclick="moverPEC(' + it.id + ',&#39;' + escapeHtmlNec(it.producto) + '&#39;,&#39;' + escapeHtmlNec(it.fecha_programada) + '&#39;)" style="background:transparent;border:1px solid #0f766e;color:#0f766e;padding:4px 8px;border-radius:4px;font-size:11px;cursor:pointer;margin-right:4px" title="Cambiar fecha">📅 Mover</button>';
+        html += '<button onclick="pausarPEC(' + it.id + ',&#39;' + escapeHtmlNec(it.producto) + '&#39;)" style="background:transparent;border:1px solid #ca8a04;color:#ca8a04;padding:4px 8px;border-radius:4px;font-size:11px;cursor:pointer;margin-right:4px" title="Pausar · esperando MP u otro recurso">⏸ Pausar</button>';
+        html += '<button onclick="cancelarPEC(' + it.id + ')" style="background:transparent;border:1px solid #cbd5e1;color:#64748b;padding:4px 10px;border-radius:4px;font-size:11px;cursor:pointer">Cancelar</button>';
+      } else if (it.estado === 'esperando_recurso') {
+        html += '<button onclick="reactivarPEC(' + it.id + ',&#39;' + escapeHtmlNec(it.producto) + '&#39;,&#39;' + escapeHtmlNec(it.fecha_programada) + '&#39;)" style="background:#16a34a;color:white;border:none;padding:4px 10px;border-radius:4px;font-size:11px;cursor:pointer;margin-right:4px" title="Reactivar · ya llegó el recurso">▶ Reactivar</button>';
         html += '<button onclick="cancelarPEC(' + it.id + ')" style="background:transparent;border:1px solid #cbd5e1;color:#64748b;padding:4px 10px;border-radius:4px;font-size:11px;cursor:pointer">Cancelar</button>';
       }
       html += '</td></tr>';
@@ -16978,6 +16983,57 @@ async function ckMarcar(itemId, estado){
       if (d.noop) { alert('Misma fecha · sin cambios'); return; }
       alert('✓ Reprogramado: ' + d.fecha_antes + ' → ' + d.fecha_nueva);
       cargarPlanEnCurso();
+    } catch(e) { alert('Error: ' + e.message); }
+  }
+
+  async function pausarPEC(id, producto) {
+    const motivo = prompt('⏸ Pausar producción\\n\\n' + producto +
+                            '\\n\\nMotivo (falta_mp, operario_ausente, equipo_mantenimiento, espera_QC, etc):',
+                            'falta_mp');
+    if (!motivo || !motivo.trim()) return;
+    try {
+      const r = await fetch('/api/plan/proximas/' + id + '/pausar', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json', 'X-CSRF-Token': csrfTokenNec()},
+        body: JSON.stringify({motivo_pausa: motivo.trim()}),
+      });
+      const d = await r.json();
+      if (!r.ok) { alert('Error: ' + (d.error || r.status)); return; }
+      alert('⏸ Pausado · esperando: ' + d.motivo_pausa);
+      cargarPlanEnCurso();
+      // Recargar Necesidades también para reflejar pausa
+      if (typeof cargarNecesidades === 'function') cargarNecesidades();
+    } catch(e) { alert('Error: ' + e.message); }
+  }
+
+  async function reactivarPEC(id, producto, fechaActual) {
+    const nueva = prompt('▶ Reactivar producción\\n\\n' + producto +
+                           '\\nFecha pausada: ' + fechaActual +
+                           '\\n\\nNueva fecha (YYYY-MM-DD · deja vacío para conservar):',
+                           fechaActual);
+    if (nueva === null) return;
+    const fechaParam = (nueva && nueva.trim()) ? nueva.trim() : '';
+    try {
+      let r = await fetch('/api/plan/proximas/' + id + '/reactivar', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json', 'X-CSRF-Token': csrfTokenNec()},
+        body: JSON.stringify(fechaParam ? {nueva_fecha: fechaParam} : {}),
+      });
+      let d = await r.json();
+      if (r.status === 422) {
+        if (confirm('⚠ ' + (d.error || 'Validación falló') + '\\n\\n¿Forzar?')) {
+          r = await fetch('/api/plan/proximas/' + id + '/reactivar', {
+            method: 'POST',
+            headers: {'Content-Type':'application/json', 'X-CSRF-Token': csrfTokenNec()},
+            body: JSON.stringify({nueva_fecha: fechaParam, skip_validacion_dia: true}),
+          });
+          d = await r.json();
+        } else { return; }
+      }
+      if (!r.ok) { alert('Error: ' + (d.error || r.status)); return; }
+      alert('▶ Reactivado · fecha: ' + d.fecha_programada);
+      cargarPlanEnCurso();
+      if (typeof cargarNecesidades === 'function') cargarNecesidades();
     } catch(e) { alert('Error: ' + e.message); }
   }
 
@@ -17064,7 +17120,18 @@ async function ckMarcar(itemId, estado){
         // Indicadores compactos junto al nombre
         let markers = '';
         if (p.tiene_10ml) markers += '<span title="Presenta 10ml ' + (p.tipo_10ml || '') + '" style="background:#fdf4ff;color:#7e22ce;padding:1px 6px;border-radius:4px;font-size:10px;margin-left:4px">10ml</span>';
-        if ((p.lotes_pendientes_n || 0) > 0) markers += '<span title="Tiene producción agendada" style="color:#1e40af;margin-left:4px">📅</span>';
+        // Chip "Programado para X" · Sebastián 13-may-2026: "lo que hemos
+        // construido en plan en curso deberia estar en necesidades"
+        if (p.proximo_lote) {
+          const fechaCorta = (p.proximo_lote.fecha || '').slice(5, 10);  // MM-DD
+          const kgCorto = p.proximo_lote.kg ? ' · ' + p.proximo_lote.kg + 'kg' : '';
+          markers += '<span title="Próximo lote agendado · click Mover/Cancelar en Plan en curso" style="background:#dbeafe;color:#1e40af;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:700;margin-left:4px">📅 ' + fechaCorta + kgCorto + '</span>';
+        }
+        // Chip pausa · si hay lotes esperando_recurso
+        if (p.tiene_pausa && (p.lotes_pausados || []).length) {
+          const motivos = p.lotes_pausados.map(lp => lp.motivo_pausa || '?').join(', ');
+          markers += '<span title="Pausado · esperando: ' + escapeHtmlNec(motivos) + '" style="background:#fde68a;color:#78350f;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:700;margin-left:4px">⏸ ' + escapeHtmlNec(motivos.slice(0, 14)) + '</span>';
+        }
         if (p.ultima_produccion_fecha) markers += '<span title="Tiene histórico · ' + p.ultima_produccion_fecha + '" style="color:#ca8a04;margin-left:4px">📜</span>';
         // 🧪 Match MPs · puede fabricar?
         if (p.mps_status === 'OK') {

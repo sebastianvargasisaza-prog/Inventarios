@@ -7244,6 +7244,133 @@ def test_golden_plan_festivos_colombia(app, db_clean):
 
 
 # ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH PLAN-J · pausar/reactivar lote · Sebastián 13-may-2026
+# ═══════════════════════════════════════════════════════════════════
+def test_golden_plan_pausar_reactivar(app, db_clean):
+    """POST /pausar deja un lote en 'esperando_recurso' · POST /reactivar
+    lo vuelve a 'programado' con fecha original o nueva.
+
+    Sebastián: "algunas es por materia prima entonces debemos dejarla
+    pendiente hasta que llegue la materia prima".
+    """
+    _exec("DELETE FROM produccion_programada WHERE observaciones LIKE '%PAUSA_TEST%'")
+    cs = _login(app, 'sebastian')
+
+    # PREP: lote programado
+    _exec("""INSERT INTO produccion_programada
+             (producto, fecha_programada, cantidad_kg, estado, origen, observaciones)
+             VALUES ('SUERO HIDRATANTE AH 1.5%', '2026-05-20', 90,
+                     'programado', 'eos_plan', 'PAUSA_TEST lote')""")
+    pid = _query("SELECT id FROM produccion_programada WHERE observaciones LIKE 'PAUSA_TEST lote'")[0][0]
+
+    # Caso 1: pausar requiere motivo
+    r = cs.post(f'/api/plan/proximas/{pid}/pausar', json={}, headers=csrf_headers())
+    assert r.status_code == 400
+    assert 'motivo_pausa' in r.get_json()['error']
+
+    # Caso 2: pausar OK · estado='esperando_recurso' + motivo + auditado
+    r2 = cs.post(f'/api/plan/proximas/{pid}/pausar',
+                   json={'motivo_pausa': 'falta_mp'}, headers=csrf_headers())
+    assert r2.status_code == 200, f'BUG: {r2.data}'
+    d2 = r2.get_json()
+    assert d2['estado'] == 'esperando_recurso'
+    assert d2['motivo_pausa'] == 'falta_mp'
+
+    row = _query("""SELECT estado, motivo_pausa, pausado_at, pausado_por, observaciones
+                    FROM produccion_programada WHERE id=?""", (pid,))
+    assert row[0][0] == 'esperando_recurso'
+    assert row[0][1] == 'falta_mp'
+    assert row[0][2] is not None
+    assert row[0][3] == 'sebastian'
+    assert 'PAUSADO' in row[0][4]
+
+    # Caso 3: re-pausar mismo motivo → noop
+    r3 = cs.post(f'/api/plan/proximas/{pid}/pausar',
+                   json={'motivo_pausa': 'falta_mp'}, headers=csrf_headers())
+    assert r3.status_code == 200
+    assert r3.get_json().get('noop') is True
+
+    # Caso 4: re-pausar motivo diferente → permite cambio
+    r4 = cs.post(f'/api/plan/proximas/{pid}/pausar',
+                   json={'motivo_pausa': 'espera_QC'}, headers=csrf_headers())
+    assert r4.status_code == 200
+    assert r4.get_json()['motivo_pausa'] == 'espera_QC'
+
+    # Caso 5: reactivar requiere fecha hábil válida (la previa 2026-05-20 mié ya hábil)
+    r5 = cs.post(f'/api/plan/proximas/{pid}/reactivar',
+                   json={}, headers=csrf_headers())
+    assert r5.status_code == 200, f'BUG: {r5.data}'
+    d5 = r5.get_json()
+    assert d5['estado'] == 'programado'
+    assert d5['fecha_programada'] == '2026-05-20'
+
+    row5 = _query("""SELECT estado, motivo_pausa, fecha_programada
+                     FROM produccion_programada WHERE id=?""", (pid,))
+    assert row5[0][0] == 'programado'
+    assert row5[0][1] is None  # motivo_pausa cleared
+    assert row5[0][2] == '2026-05-20'
+
+    # Caso 6: reactivar con nueva fecha + festivo → 422
+    # Re-pausar primero
+    cs.post(f'/api/plan/proximas/{pid}/pausar',
+              json={'motivo_pausa': 'falta_mp'}, headers=csrf_headers())
+    r6 = cs.post(f'/api/plan/proximas/{pid}/reactivar',
+                   json={'nueva_fecha': '2026-05-18'},  # festivo Ascensión
+                   headers=csrf_headers())
+    assert r6.status_code == 422
+    assert 'festivo' in r6.get_json()['error']
+
+    # Caso 7: reactivar con skip permite festivo
+    r7 = cs.post(f'/api/plan/proximas/{pid}/reactivar',
+                   json={'nueva_fecha': '2026-05-18', 'skip_validacion_dia': True},
+                   headers=csrf_headers())
+    assert r7.status_code == 200
+
+    # Caso 8: pausar lote completado → 409
+    _exec(f"""UPDATE produccion_programada
+              SET estado='completado', fin_real_at='2026-05-25 10:00:00'
+              WHERE id={pid}""")
+    r8 = cs.post(f'/api/plan/proximas/{pid}/pausar',
+                   json={'motivo_pausa': 'falta_mp'}, headers=csrf_headers())
+    assert r8.status_code == 409
+    assert 'completado' in r8.get_json()['error']
+
+    # Caso 9: reactivar lote no-pausado → 409
+    r9 = cs.post(f'/api/plan/proximas/{pid}/reactivar',
+                   json={}, headers=csrf_headers())
+    assert r9.status_code == 409
+
+    # Caso 10: Necesidades incluye proximo_lote y lotes_pausados
+    _exec("DELETE FROM produccion_programada WHERE observaciones LIKE '%PAUSA_TEST%'")
+    _exec("""INSERT INTO produccion_programada
+             (producto, fecha_programada, cantidad_kg, estado, origen, observaciones)
+             VALUES ('SUERO HIDRATANTE AH 1.5%', '2026-05-25', 90,
+                     'programado', 'eos_plan', 'PAUSA_TEST activo')""")
+    _exec("""INSERT INTO produccion_programada
+             (producto, fecha_programada, cantidad_kg, estado, origen,
+              motivo_pausa, observaciones)
+             VALUES ('SUERO HIDRATANTE AH 1.5%', '2026-05-22', 90,
+                     'esperando_recurso', 'eos_plan',
+                     'falta_mp_centella', 'PAUSA_TEST pausa')""")
+    r10 = cs.get('/api/plan/necesidades')
+    assert r10.status_code == 200
+    d10 = r10.get_json()
+    animus = next(c for c in d10['clientes'] if c['cliente_id'] == 'ANIMUS_DTC')
+    sah = next((p for p in animus['productos']
+                if p['producto_nombre'] == 'SUERO HIDRATANTE AH 1.5%'), None)
+    assert sah, 'BUG: SAH no encontrado en necesidades'
+    assert sah.get('tiene_pausa') is True, 'BUG: tiene_pausa no detectado'
+    assert sah.get('tiene_plan_activo') is True, 'BUG: tiene_plan_activo no detectado'
+    assert len(sah.get('lotes_pausados', [])) >= 1
+    assert sah['lotes_pausados'][0]['motivo_pausa'] == 'falta_mp_centella'
+    assert sah.get('proximo_lote') is not None
+    assert sah['proximo_lote']['estado'] == 'programado'
+
+    # Cleanup
+    _exec("DELETE FROM produccion_programada WHERE observaciones LIKE '%PAUSA_TEST%'")
+
+
+# ═══════════════════════════════════════════════════════════════════
 # GOLDEN PATH PLAN-I · timezone Colombia · Sebastián 13-may-2026
 # ═══════════════════════════════════════════════════════════════════
 def test_golden_plan_timezone_colombia(app, db_clean):

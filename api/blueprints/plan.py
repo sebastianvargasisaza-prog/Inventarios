@@ -723,6 +723,50 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
                 })
         p["escenarios"] = escenarios
 
+    # Inyectar producciones agendadas activas por producto · Sebastián
+    # 13-may-2026: "lo que hemos construido en plan en curso deberia
+    # estar en necesidades pues alli puesto, para saber justo si ya
+    # esta programado daria una vision mas sana".
+    # Cada producto gana: planificacion[] con todas las producciones
+    # programado / esperando_recurso / pendiente · ordenadas por fecha
+    plan_por_producto = {}
+    for r in c.execute(
+        """SELECT pp.producto, pp.id, pp.fecha_programada, pp.estado,
+                  pp.origen, COALESCE(pp.cantidad_kg, 0),
+                  pp.motivo_pausa, pp.pausado_at, pp.observaciones
+           FROM produccion_programada pp
+           WHERE pp.estado IN ('pendiente','programado','en_curso','esperando_recurso')
+             AND pp.fin_real_at IS NULL
+           ORDER BY pp.fecha_programada ASC""",
+    ).fetchall():
+        prod_nombre = (r[0] or "").strip()
+        if not prod_nombre:
+            continue
+        plan_por_producto.setdefault(prod_nombre, []).append({
+            "id": int(r[1]),
+            "fecha": (r[2] or "")[:10],
+            "estado": r[3],
+            "origen": r[4],
+            "kg": float(r[5] or 0),
+            "motivo_pausa": r[6],
+            "pausado_at": r[7],
+            "obs_preview": (r[8] or "")[:80],
+        })
+
+    for p in out:
+        prod = p["producto_nombre"]
+        agendados = plan_por_producto.get(prod, [])
+        # Filtrar a no-completados y orden ASC
+        p["planificacion"] = agendados
+        # Próximo lote no-pausado (para vista compacta)
+        proximo = next((a for a in agendados if a["estado"] != 'esperando_recurso'), None)
+        p["proximo_lote"] = proximo
+        # Lotes pausados (esperando MP) destacados separadamente
+        pausados = [a for a in agendados if a["estado"] == 'esperando_recurso']
+        p["lotes_pausados"] = pausados
+        p["tiene_pausa"] = len(pausados) > 0
+        p["tiene_plan_activo"] = proximo is not None
+
     # Ordenar por urgencia + días cobertura ascendente
     ORDEN = {"CRITICO": 0, "URGENTE": 1, "VIGILAR": 2, "OK": 3, "SIN_VENTAS": 4}
     out.sort(key=lambda x: (
@@ -3386,6 +3430,169 @@ def reprogramar_proxima(pid):
     return jsonify({"ok": True, "id": pid, "producto": producto,
                     "fecha_antes": fecha_antes, "fecha_nueva": nueva_fecha,
                     "razon": razon or None})
+
+
+@bp.route("/api/plan/proximas/<int:pid>/pausar", methods=["POST"])
+def pausar_proxima(pid):
+    """Pausa un lote agendado · estado='esperando_recurso' hasta que
+    llegue la materia prima u otro insumo.
+
+    Sebastián 13-may-2026: "algunas es por materia prima entonces
+    debemos dejarla pendiente hasta que llegue la materia prima".
+
+    Body:
+        motivo_pausa: str requerido · "falta_mp", "operario_ausente",
+                      "equipo_mantenimiento", "espera_QC", etc.
+
+    409 si ya iniciado (inicio_real_at), completado o cancelado.
+    Audit_log: PAUSAR_PRODUCCION_PROGRAMADA.
+    """
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+
+    body = request.get_json(silent=True) or {}
+    motivo = (body.get("motivo_pausa") or "").strip()
+    if not motivo:
+        return jsonify({"error": "motivo_pausa requerido"}), 400
+
+    conn = get_db()
+    cur = conn.cursor()
+    row = cur.execute(
+        """SELECT estado, producto, fecha_programada,
+                  inicio_real_at, fin_real_at, motivo_pausa
+           FROM produccion_programada WHERE id = ?""",
+        (pid,),
+    ).fetchone()
+    if not row:
+        return jsonify({"error": "lote no encontrado"}), 404
+
+    estado_actual, producto, fecha, inicio_real, fin_real, motivo_prev = row
+
+    if fin_real:
+        return jsonify({"error": "lote completado · no pausable"}), 409
+    if inicio_real:
+        return jsonify({"error": "lote en curso · no pausable"}), 409
+    if estado_actual == 'cancelado':
+        return jsonify({"error": "lote cancelado · no pausable"}), 409
+    if estado_actual == 'esperando_recurso' and motivo == motivo_prev:
+        return jsonify({"ok": True, "id": pid, "noop": True}), 200
+
+    cur.execute(
+        f"""UPDATE produccion_programada
+            SET estado = 'esperando_recurso',
+                motivo_pausa = ?,
+                pausado_at = {SQLITE_NOW_COL},
+                pausado_por = ?,
+                observaciones = COALESCE(observaciones,'') ||
+                    ' · PAUSADO (' || ? || ') por ' || ? || ' · ' || {SQLITE_NOW_COL}
+            WHERE id = ?""",
+        (motivo, user, motivo, user, pid),
+    )
+    conn.commit()
+    audit_log(cur, usuario=user, accion="PAUSAR_PRODUCCION_PROGRAMADA",
+              tabla="produccion_programada", registro_id=pid,
+              antes={"estado": estado_actual, "producto": producto,
+                     "fecha": fecha, "motivo_pausa": motivo_prev},
+              despues={"estado": "esperando_recurso", "motivo_pausa": motivo})
+    conn.commit()
+    return jsonify({"ok": True, "id": pid, "estado": "esperando_recurso",
+                    "motivo_pausa": motivo})
+
+
+@bp.route("/api/plan/proximas/<int:pid>/reactivar", methods=["POST"])
+def reactivar_proxima(pid):
+    """Reactiva un lote 'esperando_recurso' → vuelve a 'programado'.
+
+    Body:
+        nueva_fecha: str YYYY-MM-DD (opcional · si no, conserva la previa)
+        skip_validacion_dia: bool (default False)
+    """
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+
+    body = request.get_json(silent=True) or {}
+    nueva_fecha = (body.get("nueva_fecha") or "").strip()
+    skip_val = bool(body.get("skip_validacion_dia"))
+
+    conn = get_db()
+    cur = conn.cursor()
+    row = cur.execute(
+        """SELECT pp.estado, pp.producto, pp.fecha_programada,
+                  COALESCE(pp.cantidad_kg, fh.lote_size_kg, 0),
+                  pp.motivo_pausa
+           FROM produccion_programada pp
+           LEFT JOIN formula_headers fh
+             ON UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(pp.producto))
+           WHERE pp.id = ?""",
+        (pid,),
+    ).fetchone()
+    if not row:
+        return jsonify({"error": "lote no encontrado"}), 404
+
+    estado_actual, producto, fecha_actual, lote_kg, motivo_prev = row
+    lote_kg = float(lote_kg or 0)
+
+    if estado_actual != 'esperando_recurso':
+        return jsonify({
+            "error": f"solo se reactiva 'esperando_recurso' · estado actual: {estado_actual}",
+        }), 409
+
+    fecha_destino = nueva_fecha or (fecha_actual or "")[:10]
+    if not fecha_destino or not _valida_fecha_iso(fecha_destino):
+        return jsonify({"error": "fecha destino inválida"}), 400
+
+    if not skip_val:
+        from datetime import date as _date
+        f_obj = _date.fromisoformat(fecha_destino)
+        if f_obj.weekday() not in DIAS_HABILES:
+            return jsonify({"error": f"{fecha_destino} es fin de semana"}), 422
+        if es_festivo_colombia(f_obj):
+            return jsonify({"error": f"{fecha_destino} es festivo colombiano"}), 422
+        if _es_producto_complejo(producto) and f_obj.weekday() not in {0, 2}:
+            return jsonify({"error": f"{producto} es complejo · solo Lun/Mié"}), 422
+        rows_dia = cur.execute(
+            """SELECT pp.id, COALESCE(pp.cantidad_kg, fh.lote_size_kg, 0)
+               FROM produccion_programada pp
+               LEFT JOIN formula_headers fh
+                 ON UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(pp.producto))
+               WHERE date(pp.fecha_programada) = ?
+                 AND pp.estado IN ('pendiente','programado','en_curso')
+                 AND pp.id != ?""",
+            (fecha_destino, pid),
+        ).fetchall()
+        kgs_dia = [float(r[1] or 0) for r in rows_dia]
+        ya_grande = any(k > LOTE_GRANDE_KG for k in kgs_dia)
+        es_grande = lote_kg > LOTE_GRANDE_KG
+        if es_grande and len(rows_dia) > 0:
+            return jsonify({"error": f"{fecha_destino} ocupado · grande necesita día solo"}), 422
+        if not es_grande and (ya_grande or len(rows_dia) >= MAX_PRODUCCIONES_POR_DIA):
+            return jsonify({"error": f"{fecha_destino} saturado"}), 422
+
+    cur.execute(
+        f"""UPDATE produccion_programada
+            SET estado = 'programado',
+                fecha_programada = ?,
+                motivo_pausa = NULL,
+                observaciones = COALESCE(observaciones,'') ||
+                    ' · REACTIVADO de pausa (motivo previo: ' ||
+                    COALESCE(?, '?') || ') por ' || ? ||
+                    ' · ' || {SQLITE_NOW_COL}
+            WHERE id = ?""",
+        (fecha_destino, motivo_prev, user, pid),
+    )
+    conn.commit()
+    audit_log(cur, usuario=user, accion="REACTIVAR_PRODUCCION_PROGRAMADA",
+              tabla="produccion_programada", registro_id=pid,
+              antes={"estado": "esperando_recurso", "producto": producto,
+                     "motivo_pausa": motivo_prev, "fecha_anterior": fecha_actual},
+              despues={"estado": "programado", "fecha_programada": fecha_destino})
+    conn.commit()
+    return jsonify({"ok": True, "id": pid, "estado": "programado",
+                    "fecha_programada": fecha_destino})
 
 
 @bp.route("/api/plan/programar-canonico", methods=["POST"])
