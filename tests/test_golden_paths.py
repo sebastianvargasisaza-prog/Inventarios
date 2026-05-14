@@ -7403,3 +7403,34 @@ def test_golden_plan_match_mps_puede_fabricar(app, db_clean):
                 assert 'disponible_g' in f
                 assert 'faltante_g' in f
                 assert f['faltante_g'] > 0
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH PLAN-J · detector MPs renombre
+# ═══════════════════════════════════════════════════════════════════
+def test_golden_plan_detector_mps_renombre(app, db_clean):
+    """Endpoint detecta MPs sin stock con candidatas similares en BD."""
+    cs = _login(app, 'sebastian')
+    r = cs.get('/api/plan/detector-mps-renombre')
+    assert r.status_code == 200, f'BUG: {r.status_code} {r.data}'
+    d = r.get_json()
+    assert 'total_sospechosos' in d
+    assert 'total_mps_usadas' in d
+    assert 'sospechosos' in d
+    # Estructura cuando hay sospechosos
+    if d['total_sospechosos'] > 0:
+        s = d['sospechosos'][0]
+        assert 'codigo_formula' in s
+        assert 'nombre_formula' in s
+        assert 'usado_en_productos' in s
+        assert 'candidatas_renombre' in s
+        assert len(s['candidatas_renombre']) > 0
+        c = s['candidatas_renombre'][0]
+        assert 'codigo' in c
+        assert 'stock_g' in c
+        assert 'similitud' in c
+        assert c['stock_g'] > 0
+    # Página HTML responde
+    r2 = cs.get('/admin/detector-mps-renombre')
+    assert r2.status_code == 200
+    assert b'Detector' in r2.data

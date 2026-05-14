@@ -1023,6 +1023,224 @@ _VERIFICAR_CODIGOS_HTML = _VERIFICAR_CODIGOS_HTML.replace(
     "__CODES_EXCEL__", _json.dumps(_CODES_EXCEL_LIST))
 
 
+@bp.route("/admin/detector-mps-renombre", methods=["GET"])
+def detector_mps_renombre_page():
+    """Página admin · detecta MPs usadas en fórmulas con stock=0 PERO con
+    MP similares en BD que SÍ tienen stock · candidatas a renombre."""
+    if not session.get("compras_user"):
+        from flask import redirect
+        return redirect("/login?next=/admin/detector-mps-renombre")
+    from flask import Response
+    return Response(_DETECTOR_RENOMBRE_HTML, mimetype="text/html")
+
+
+@bp.route("/api/plan/detector-mps-renombre", methods=["GET"])
+def detector_mps_renombre():
+    """Para cada material_id usado en formula_items con stock=0,
+    buscar candidatas en maestro_mps con nombre similar Y stock>0.
+
+    Sebastián 13-may-2026: "me preocupa que esté sucediendo con otras
+    materias primas · stock 0 pero salen como otras MPs".
+
+    Response:
+        sospechosos: [
+            {codigo_formula, nombre_formula, stock_formula:0,
+             usado_en_productos: [...],
+             candidatas_renombre: [{codigo, nombre_comercial, nombre_inci,
+                                     stock_g, similitud}]}
+        ]
+    """
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+
+    conn = get_db()
+    c = conn.cursor()
+
+    # 1. Stock por material_id
+    mp_stock = {}
+    for r in c.execute(
+        """SELECT material_id,
+                  COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA')
+                                    THEN cantidad ELSE -cantidad END), 0)
+           FROM movimientos
+           WHERE material_id IS NOT NULL AND TRIM(material_id) != ''
+           GROUP BY material_id""",
+    ).fetchall():
+        mp_stock[str(r[0]).strip()] = max(float(r[1] or 0), 0)
+
+    # 2. MPs usadas en formula_items activos · qué productos las usan
+    usados = {}
+    for r in c.execute(
+        """SELECT fi.material_id, fi.material_nombre,
+                  GROUP_CONCAT(DISTINCT fi.producto_nombre)
+           FROM formula_items fi
+           JOIN formula_headers fh ON fh.producto_nombre = fi.producto_nombre
+           WHERE COALESCE(fh.activo, 1) = 1
+             AND fi.material_id IS NOT NULL
+             AND TRIM(fi.material_id) != ''
+           GROUP BY fi.material_id, fi.material_nombre""",
+    ).fetchall():
+        cod = str(r[0]).strip()
+        usados[cod] = {
+            "codigo_formula": cod,
+            "nombre_formula": (r[1] or "")[:60],
+            "stock_formula": round(mp_stock.get(cod, 0), 2),
+            "usado_en_productos": [p for p in (r[2] or "").split(",") if p][:5],
+        }
+
+    # 3. Universo MPs en maestro_mps · nombre + stock
+    maestro_mps_info = {}
+    for r in c.execute(
+        """SELECT codigo_mp,
+                  COALESCE(nombre_comercial, ''),
+                  COALESCE(nombre_inci, ''),
+                  COALESCE(activo, 1)
+           FROM maestro_mps""",
+    ).fetchall():
+        maestro_mps_info[r[0]] = {
+            "codigo": r[0],
+            "nombre_comercial": r[1],
+            "nombre_inci": r[2],
+            "activo": int(r[3]),
+            "stock_g": round(mp_stock.get(r[0], 0), 2),
+        }
+
+    # 4. Buscar candidatas a renombre · para cada MP usada con stock=0,
+    # buscar OTRA MP con nombre parecido Y stock > 0
+    import unicodedata
+    def _norm(s):
+        if not s: return ""
+        s = unicodedata.normalize('NFD', str(s).strip().lower())
+        s = ''.join(c for c in s if unicodedata.category(c) != 'Mn')
+        for ch in ('.', ',', '-', '/', '(', ')', ' ', '\t', '\n', '%'):
+            s = s.replace(ch, '')
+        return s
+
+    sospechosos = []
+    for cod, info in usados.items():
+        if info["stock_formula"] > 0.01:
+            continue  # tiene stock · no sospechoso
+        # Buscar candidatas con nombre similar Y stock > 0
+        nom_formula = _norm(info["nombre_formula"])
+        if len(nom_formula) < 4:
+            continue
+        candidatas = []
+        for otro_cod, otro_info in maestro_mps_info.items():
+            if otro_cod == cod:
+                continue
+            if otro_info["stock_g"] <= 0:
+                continue
+            nom_otro_com = _norm(otro_info["nombre_comercial"])
+            nom_otro_inci = _norm(otro_info["nombre_inci"])
+            # Match si prefijo 5-7 chars matchea
+            match_score = 0
+            if nom_formula[:6] and nom_otro_com[:6] and nom_formula[:6] == nom_otro_com[:6]:
+                match_score = 90
+            elif nom_formula[:6] and nom_otro_inci[:6] and nom_formula[:6] == nom_otro_inci[:6]:
+                match_score = 85
+            elif nom_formula[:4] in nom_otro_com or nom_otro_com[:4] in nom_formula:
+                match_score = 60
+            elif nom_formula[:4] in nom_otro_inci or nom_otro_inci[:4] in nom_formula:
+                match_score = 55
+            if match_score >= 55:
+                candidatas.append({
+                    "codigo": otro_cod,
+                    "nombre_comercial": otro_info["nombre_comercial"],
+                    "nombre_inci": otro_info["nombre_inci"],
+                    "stock_g": otro_info["stock_g"],
+                    "similitud": match_score,
+                })
+        if candidatas:
+            candidatas.sort(key=lambda x: -x["similitud"])
+            info["candidatas_renombre"] = candidatas[:5]
+            sospechosos.append(info)
+
+    sospechosos.sort(key=lambda x: -len(x.get("candidatas_renombre", [])))
+    return jsonify({
+        "total_sospechosos": len(sospechosos),
+        "total_mps_usadas_sin_stock": sum(1 for u in usados.values() if u["stock_formula"] <= 0.01),
+        "total_mps_usadas": len(usados),
+        "sospechosos": sospechosos,
+    })
+
+
+_DETECTOR_RENOMBRE_HTML = """<!DOCTYPE html>
+<html lang="es"><head><meta charset="UTF-8">
+<title>Detector MPs renombre · EOS</title>
+<style>
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;color:#1e293b;margin:0;padding:20px}
+.wrap{max-width:1300px;margin:0 auto}
+.card{background:white;border-radius:12px;padding:20px;margin-bottom:16px;box-shadow:0 2px 6px rgba(0,0,0,.05)}
+h1{margin:0 0 6px;color:#dc2626;font-size:22px}
+.muted{color:#64748b;font-size:13px}
+button{background:#0f766e;color:white;border:none;padding:10px 18px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer}
+.kpi{display:inline-block;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 18px;margin-right:10px;text-align:center;min-width:140px}
+.kpi-lbl{font-size:11px;color:#64748b}
+.kpi-val{font-size:24px;font-weight:800}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{text-align:left;padding:8px;background:#f1f5f9;color:#475569;font-weight:700}
+td{padding:7px 8px;border-bottom:1px solid #f1f5f9;vertical-align:top}
+.mono{font-family:ui-monospace,SFMono-Regular,monospace;font-weight:700;color:#1e40af}
+.crit{color:#dc2626}
+.bad{color:#94a3b8}
+.sim-alta{background:#dcfce7;color:#166534;padding:2px 6px;border-radius:4px;font-weight:700}
+.sim-media{background:#fef3c7;color:#854d0e;padding:2px 6px;border-radius:4px;font-weight:700}
+</style></head><body>
+<div class="wrap">
+<a href="/modulos">&larr; Volver al panel</a>
+<div class="card">
+  <h1>🔍 Detector MPs renombre · stock 0 con candidatas</h1>
+  <div class="muted">Busca MPs usadas en fórmulas activas con stock=0 PERO con otra MP de nombre similar que SÍ tiene stock. Probable causa: rename de Alejandro · stock quedó en código viejo.</div>
+  <div style="margin-top:16px"><button onclick="cargar()">▶ Buscar candidatas</button></div>
+  <div id="kpis" style="margin-top:16px"></div>
+</div>
+<div id="resultados"></div>
+</div>
+<script>
+function csrf() { var m = document.cookie.match(/(?:^|; )csrf_token=([^;]*)/); return m ? decodeURIComponent(m[1]) : ''; }
+function escapeHtml(s){return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+
+async function cargar() {
+  document.getElementById('resultados').innerHTML = '<div class="card">Buscando…</div>';
+  try {
+    var r = await fetch('/api/plan/detector-mps-renombre');
+    var d = await r.json();
+    if (!r.ok) { alert('Error: ' + (d.error || r.status)); return; }
+    render(d);
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+function render(d) {
+  var k = '';
+  k += '<span class="kpi"><div class="kpi-lbl">Total MPs usadas</div><div class="kpi-val">' + d.total_mps_usadas + '</div></span>';
+  k += '<span class="kpi"><div class="kpi-lbl">Sin stock</div><div class="kpi-val crit">' + d.total_mps_usadas_sin_stock + '</div></span>';
+  k += '<span class="kpi"><div class="kpi-lbl">🔍 Sospechosas</div><div class="kpi-val crit">' + d.total_sospechosos + '</div></span>';
+  document.getElementById('kpis').innerHTML = k;
+
+  if (!d.sospechosos.length) {
+    document.getElementById('resultados').innerHTML = '<div class="card"><h3 style="margin:0;color:#16a34a">✅ Sin sospechosos · todas las MPs sin stock no tienen candidatas con stock similar</h3></div>';
+    return;
+  }
+  var out = '<div class="card"><h3 style="margin:0 0 8px;color:#dc2626">🔍 ' + d.sospechosos.length + ' MPs sospechosas · posibles renombres</h3>';
+  out += '<div class="muted" style="margin-bottom:12px">Cada fila muestra una MP de la fórmula con stock=0 + candidatas en BD con stock>0 y nombre similar. Revisar manualmente y consolidar.</div>';
+  out += '<table><thead><tr><th>Código fórmula</th><th>Nombre fórmula</th><th>Productos</th><th>Candidatas (código · nombre · stock · similitud)</th></tr></thead><tbody>';
+  d.sospechosos.forEach(s => {
+    var cands = '';
+    s.candidatas_renombre.forEach(c => {
+      var sim = c.similitud >= 80 ? 'sim-alta' : 'sim-media';
+      cands += '<div style="margin-bottom:4px"><span class="mono">' + escapeHtml(c.codigo) + '</span> · <strong>' + escapeHtml(c.nombre_comercial || c.nombre_inci) + '</strong> · <span style="background:#dbeafe;padding:2px 6px;border-radius:4px">' + c.stock_g + 'g</span> · <span class="' + sim + '">' + c.similitud + '%</span></div>';
+    });
+    out += '<tr><td class="mono">' + escapeHtml(s.codigo_formula) + '</td><td>' + escapeHtml(s.nombre_formula) + '</td><td style="font-size:11px;color:#475569">' + (s.usado_en_productos || []).map(escapeHtml).join(', ') + '</td><td>' + cands + '</td></tr>';
+  });
+  out += '</tbody></table></div>';
+  document.getElementById('resultados').innerHTML = out;
+}
+</script>
+</body></html>"""
+
+
 @bp.route("/api/plan/check-codigos-mp", methods=["GET"])
 def check_codigos_mp():
     """Verifica qué códigos de MP del Excel existen en maestro_mps.
