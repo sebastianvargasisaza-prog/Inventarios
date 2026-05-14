@@ -337,6 +337,48 @@ def plan_necesidades():
     })
 
 
+# ml por presentación · Sebastián 13-may-2026 ·
+# "los sueros son de 30, los limpiadores de 150, geles e hidratantes de 50 ml"
+# Si el producto contiene varios términos, gana el más específico (orden).
+_ML_PRESENTACION_RULES = [
+    # (substring case-insensitive, ml) · orden importa
+    ("CONTORNO",          15),    # contornos de ojos chiquitos
+    ("LIMPIADOR",         150),   # limpiadores faciales
+    ("EMULSION LIMPIA",   150),   # emulsión limpiadora
+    ("CREMA CORPORAL",    150),   # cuerpo
+    ("CREMA DE UREA",     150),
+    ("MASCARILLA",        100),
+    ("GEL HIDRATANTE",    50),
+    ("EMULSION HIDRATANTE", 50),
+    ("ESENCIA",           100),   # esencias 100-200ml típico
+    ("BLUSH BALM",        10),
+    ("MAXLASH",           10),
+    ("BOOSTER TENSOR",    30),
+    ("HYDRAPEPTIDE",      30),
+    ("LIP SERUM",         7),
+    ("LIP SÉRUM",         7),
+    ("HYDRA BALANCE",     50),
+    ("HYDRA-BALANCE",     50),
+    ("AZ HIBRID",         30),
+    ("SUERO",             30),    # último · cualquier suero por defecto 30
+]
+
+
+def _inferir_ml_presentacion(producto_nombre):
+    """Devuelve ml de la presentación principal del producto.
+
+    Reglas explícitas por tipo · ver _ML_PRESENTACION_RULES.
+    Default 30ml si no matchea (asume suero estándar).
+    """
+    if not producto_nombre:
+        return 30.0
+    upper = producto_nombre.upper()
+    for sub, ml in _ML_PRESENTACION_RULES:
+        if sub in upper:
+            return float(ml)
+    return 30.0
+
+
 def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
     """Calcula necesidades Animus DTC con lógica semáforo Sebastián.
 
@@ -440,8 +482,11 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
             stock_uds_total += int(stk.get("uds", 0) or 0)
             ventas_periodo_total += int(ventas_por_sku.get(sku, 0) or 0)
 
-        # ml promedio · approx 30 (la mayoría son 30ml)
-        ml_promedio = 30.0
+        # ml por presentación · Sebastián 13-may-2026: "los sueros son
+        # de 30, los limpiadores de 150, geles e hidratantes de 50 ml".
+        # Antes era hardcoded 30 para todo → bug que subestimaba stock_kg
+        # y velocidad_kg para limpiadores y geles.
+        ml_promedio = _inferir_ml_presentacion(prod_nombre)
         # Velocidad uds/día y kg/día
         velocidad_uds_dia = ventas_periodo_total / float(ventana)
         velocidad_kg_dia = (velocidad_uds_dia * ml_promedio) / 1000.0
@@ -499,6 +544,7 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
             "ventas_periodo_uds": ventas_periodo_total,
             "velocidad_uds_dia": round(velocidad_uds_dia, 2),
             "velocidad_kg_dia": round(velocidad_kg_dia, 3),
+            "ml_unidad": ml_promedio,
             "dias_cobertura": dias_cobertura,
             "urgencia": urgencia,
             "n_lotes_recomendados": n_lotes_recomendados,
@@ -756,16 +802,47 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
     for p in out:
         prod = p["producto_nombre"]
         agendados = plan_por_producto.get(prod, [])
-        # Filtrar a no-completados y orden ASC
         p["planificacion"] = agendados
-        # Próximo lote no-pausado (para vista compacta)
         proximo = next((a for a in agendados if a["estado"] != 'esperando_recurso'), None)
         p["proximo_lote"] = proximo
-        # Lotes pausados (esperando MP) destacados separadamente
         pausados = [a for a in agendados if a["estado"] == 'esperando_recurso']
         p["lotes_pausados"] = pausados
         p["tiene_pausa"] = len(pausados) > 0
         p["tiene_plan_activo"] = proximo is not None
+
+        # Trazabilidad · Sebastián 13-may-2026: "trazabilidad del
+        # calendario para saber ya esta programado o no, esa programación
+        # alcanza o no alcanza, tambien ver materias primas alcanzan o no".
+        vel_kd = p["velocidad_kg_dia"] or 0
+        # 1. ¿La programación próxima ALCANZA? · suma kg de lotes
+        #    programados/pausados activos + stock_efectivo / velocidad
+        kg_plan_activo = sum(float(a["kg"] or 0) for a in agendados)
+        cob_post_plan = None
+        if vel_kd > 0.001:
+            cob_post_plan = round((p["stock_kg_total"] + kg_plan_activo) / vel_kd, 1)
+        p["cob_post_plan_dias"] = cob_post_plan
+        # alcanza_sí si cob_post_plan >= cob_alerta+horizonte mínimo (45d)
+        if proximo is None:
+            p["plan_alcanza"] = None        # no hay plan que medir
+        elif cob_post_plan is None:
+            p["plan_alcanza"] = None
+        elif cob_post_plan >= cob_vigilar:
+            p["plan_alcanza"] = "SI"
+        elif cob_post_plan >= cob_alerta:
+            p["plan_alcanza"] = "AJUSTADO"
+        else:
+            p["plan_alcanza"] = "NO"
+
+        # 2. ¿MPs alcanzan para producir el próximo lote?
+        # Se basa en p['mps_status'] que ya viene del check upstream:
+        #   OK = todas MPs disponibles · FALTAN_MPS = no · SIN_FORMULA = ?
+        # Mapeo a etiquetas simples para UI:
+        if p.get("mps_status") == "OK":
+            p["mps_alcanza"] = "SI"
+        elif p.get("mps_status") == "FALTAN_MPS":
+            p["mps_alcanza"] = "NO"
+        else:
+            p["mps_alcanza"] = "DESCONOCIDO"
 
     # Ordenar por urgencia + días cobertura ascendente
     ORDEN = {"CRITICO": 0, "URGENTE": 1, "VIGILAR": 2, "OK": 3, "SIN_VENTAS": 4}
