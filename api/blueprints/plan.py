@@ -2180,6 +2180,262 @@ def plan_debug_tz():
     })
 
 
+@bp.route("/admin/dashboard-plan", methods=["GET"])
+def dashboard_plan_page():
+    """Dashboard ejecutivo · vista 1 página con todo el plan + alertas.
+
+    Sebastián 14-may-2026: paso 4/6.
+    """
+    if not session.get("compras_user"):
+        from flask import redirect
+        return redirect("/login?next=/admin/dashboard-plan")
+    from flask import Response
+    return Response(_DASHBOARD_PLAN_HTML, mimetype="text/html")
+
+
+@bp.route("/api/plan/dashboard", methods=["GET"])
+def plan_dashboard_api():
+    """Dashboard ejecutivo · datos agregados para 1 vista."""
+    err = _require_login()
+    if err:
+        return err
+    conn = get_db()
+    c = conn.cursor()
+
+    # 1) Plan próximas 4 semanas · agrupado por semana
+    rows_sem = c.execute(
+        """SELECT date(fecha_programada,'weekday 1','-7 day') AS semana_lunes,
+                  COUNT(*) AS n_lotes,
+                  COALESCE(SUM(cantidad_kg),0) AS total_kg,
+                  GROUP_CONCAT(producto || '|' || cantidad_kg || '|' || fecha_programada || '|' || origen, '~~')
+           FROM produccion_programada
+           WHERE estado IN ('pendiente','programado','en_curso','esperando_recurso')
+             AND fin_real_at IS NULL
+             AND date(fecha_programada) >= date('now','-5 hours')
+             AND date(fecha_programada) <= date('now','-5 hours','+28 day')
+           GROUP BY semana_lunes
+           ORDER BY semana_lunes""",
+    ).fetchall()
+    semanas = []
+    for r in rows_sem:
+        lotes_detalle = []
+        for entry in (r[3] or "").split("~~"):
+            parts = entry.split("|")
+            if len(parts) == 4:
+                lotes_detalle.append({
+                    "producto": parts[0],
+                    "kg": float(parts[1] or 0),
+                    "fecha": parts[2][:10],
+                    "origen": parts[3],
+                })
+        semanas.append({
+            "semana_lunes": r[0],
+            "n_lotes": int(r[1] or 0),
+            "total_kg": round(float(r[2] or 0), 2),
+            "lotes": sorted(lotes_detalle, key=lambda x: x["fecha"]),
+        })
+
+    # 2) Resumen 12 meses · canónicos + Calendar + eos_plan activos
+    row_12m = c.execute(
+        """SELECT COUNT(*) AS n,
+                  COALESCE(SUM(cantidad_kg),0) AS total_kg
+           FROM produccion_programada
+           WHERE estado IN ('pendiente','programado','en_curso','esperando_recurso')
+             AND fin_real_at IS NULL
+             AND date(fecha_programada) >= date('now','-5 hours')
+             AND date(fecha_programada) <= date('now','-5 hours','+365 day')""",
+    ).fetchone()
+
+    # 3) Producciones reales últimas 4 semanas (back-fills + completados)
+    rows_real = c.execute(
+        """SELECT producto, fin_real_at, COALESCE(kg_real, cantidad_kg, 0), origen
+           FROM produccion_programada
+           WHERE fin_real_at IS NOT NULL
+             AND date(fin_real_at) >= date('now','-5 hours','-28 day')
+           ORDER BY fin_real_at DESC""",
+    ).fetchall()
+    reales = [{
+        "producto": r[0], "fecha": (r[1] or "")[:10],
+        "kg": float(r[2] or 0), "origen": r[3],
+    } for r in rows_real]
+
+    # 4) Alertas · productos críticos
+    necesidades = _calcular_animus_dtc(c, ventana=60, cob_critico=20,
+                                        cob_alerta=25, cob_vigilar=45)
+    criticos = [n for n in necesidades if n["urgencia"] in ("CRITICO", "URGENTE")]
+    alertas = []
+    for n in criticos[:15]:
+        alertas.append({
+            "producto": n["producto_nombre"],
+            "urgencia": n["urgencia"],
+            "dias_cobertura": n["dias_cobertura"],
+            "stock_kg": n["stock_kg_total"],
+            "tiene_lote_agendado": n.get("tiene_plan_activo", False),
+            "tiene_pausa": n.get("tiene_pausa", False),
+        })
+
+    # 5) KPIs
+    n_canonicos = c.execute(
+        """SELECT COUNT(*) FROM produccion_programada
+           WHERE origen = 'eos_canonico'
+             AND estado IN ('pendiente','programado')
+             AND fin_real_at IS NULL"""
+    ).fetchone()[0]
+    n_calendar_legacy = c.execute(
+        """SELECT COUNT(*) FROM produccion_programada
+           WHERE origen IN ('calendar','manual')
+             AND estado IN ('pendiente','programado')
+             AND fin_real_at IS NULL"""
+    ).fetchone()[0]
+    n_pausados = c.execute(
+        """SELECT COUNT(*) FROM produccion_programada
+           WHERE estado = 'esperando_recurso'"""
+    ).fetchone()[0]
+
+    return jsonify({
+        "fecha": _hoy_colombia().isoformat(),
+        "kpis": {
+            "lotes_proximas_4_sem": sum(s["n_lotes"] for s in semanas),
+            "kg_proximas_4_sem": round(sum(s["total_kg"] for s in semanas), 2),
+            "lotes_proximos_12_meses": int(row_12m[0] or 0),
+            "kg_proximos_12_meses": round(float(row_12m[1] or 0), 2),
+            "canonicos_activos": int(n_canonicos or 0),
+            "calendar_legacy_pendientes": int(n_calendar_legacy or 0),
+            "pausados": int(n_pausados or 0),
+            "criticos": len(criticos),
+        },
+        "semanas": semanas,
+        "producciones_reales_28d": reales,
+        "alertas_criticos": alertas,
+    })
+
+
+_DASHBOARD_PLAN_HTML = r"""<!DOCTYPE html>
+<html lang="es"><head><meta charset="UTF-8">
+<title>Dashboard ejecutivo · Plan EOS</title>
+<style>
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;color:#1e293b;margin:0;padding:18px}
+.wrap{max-width:1500px;margin:0 auto}
+.card{background:white;border-radius:12px;padding:18px;margin-bottom:14px;box-shadow:0 2px 6px rgba(0,0,0,.05)}
+h1{margin:0 0 4px;color:#0f766e;font-size:22px}
+h2{margin:0 0 10px;color:#475569;font-size:15px}
+.muted{color:#64748b;font-size:12px}
+button{background:#0f766e;color:white;border:none;padding:8px 14px;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer}
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-top:10px}
+.kpi{background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:14px;text-align:center}
+.kpi.urgent{border-color:#dc2626;background:#fef2f2}
+.kpi.warn{border-color:#ca8a04;background:#fefce8}
+.kpi.good{border-color:#16a34a;background:#f0fdf4}
+.kpi-lbl{font-size:11px;color:#64748b;text-transform:uppercase;font-weight:700}
+.kpi-val{font-size:26px;font-weight:800;margin-top:4px}
+.semana-card{background:white;border:1px solid #e2e8f0;border-radius:10px;padding:12px;margin-bottom:8px}
+.semana-head{display:flex;justify-content:space-between;align-items:center;padding-bottom:8px;border-bottom:1px solid #f1f5f9;margin-bottom:8px}
+.lote-row{display:flex;justify-content:space-between;padding:4px 0;font-size:11px;border-bottom:1px dashed #f1f5f9}
+.lote-row:last-child{border:none}
+.tag{display:inline-block;padding:1px 5px;border-radius:3px;font-size:9px;font-weight:700}
+.tag-canonico{background:#e0e7ff;color:#3730a3}
+.tag-eos_plan{background:#dcfce7;color:#166534}
+.tag-calendar{background:#fef9c3;color:#854d0e}
+.tag-manual{background:#fef3c7;color:#854d0e}
+.tag-eos_retroactivo{background:#f1f5f9;color:#475569}
+.urgencia-CRITICO{background:#fee2e2;color:#991b1b}
+.urgencia-URGENTE{background:#fed7aa;color:#9a3412}
+.alerta-row{display:flex;justify-content:space-between;align-items:center;padding:8px;border-radius:6px;margin-bottom:4px;background:#f8fafc;border-left:3px solid #dc2626}
+.alerta-row.con-plan{border-left-color:#16a34a;background:#f0fdf4}
+.cols-2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:900px){.cols-2{grid-template-columns:1fr}}
+</style></head><body>
+<div class="wrap">
+<a href="/modulos" style="color:#0f766e;font-weight:700;font-size:13px">&larr; Volver</a>
+
+<div class="card">
+  <h1>📊 Dashboard ejecutivo · Plan EOS</h1>
+  <div class="muted">Vista única · plan + alertas + producciones reales · actualizado en vivo</div>
+  <div style="margin-top:10px"><button onclick="cargar()">↻ Recargar</button></div>
+  <div id="kpis" class="kpi-grid"></div>
+</div>
+
+<div class="cols-2">
+  <div>
+    <div class="card">
+      <h2>📅 Próximas 4 semanas</h2>
+      <div id="semanas"></div>
+    </div>
+  </div>
+  <div>
+    <div class="card">
+      <h2>🚨 Productos críticos (≤25 días cobertura)</h2>
+      <div id="alertas"></div>
+    </div>
+    <div class="card">
+      <h2>✅ Producciones reales últimas 4 semanas</h2>
+      <div id="reales"></div>
+    </div>
+  </div>
+</div>
+
+</div>
+<script>
+function esc(s){return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+async function cargar(){
+  try {
+    const r = await fetch('/api/plan/dashboard');
+    const d = await r.json();
+    if (!r.ok){ alert('Error: ' + (d.error || r.status)); return; }
+    render(d);
+  } catch(e){ alert('Error: ' + e.message); }
+}
+function render(d){
+  const k = d.kpis;
+  let html = '';
+  html += '<div class="kpi"><div class="kpi-lbl">Próximas 4 sem</div><div class="kpi-val" style="color:#0f766e">' + k.lotes_proximas_4_sem + '</div><div class="muted">' + k.kg_proximas_4_sem + ' kg</div></div>';
+  html += '<div class="kpi"><div class="kpi-lbl">Próximos 12 m</div><div class="kpi-val" style="color:#0891b2">' + k.lotes_proximos_12_meses + '</div><div class="muted">' + k.kg_proximos_12_meses + ' kg</div></div>';
+  html += '<div class="kpi good"><div class="kpi-lbl">🔁 Canónicos</div><div class="kpi-val" style="color:#16a34a">' + k.canonicos_activos + '</div></div>';
+  html += '<div class="kpi warn"><div class="kpi-lbl">📆 Calendar legacy</div><div class="kpi-val" style="color:#ca8a04">' + k.calendar_legacy_pendientes + '</div></div>';
+  html += '<div class="kpi warn"><div class="kpi-lbl">⏸ Pausados</div><div class="kpi-val" style="color:#ca8a04">' + k.pausados + '</div></div>';
+  const urg = k.criticos > 0;
+  html += '<div class="kpi ' + (urg ? 'urgent' : 'good') + '"><div class="kpi-lbl">🚨 Críticos</div><div class="kpi-val" style="color:' + (urg ? '#dc2626' : '#16a34a') + '">' + k.criticos + '</div></div>';
+  document.getElementById('kpis').innerHTML = html;
+
+  // Semanas
+  let hs = '';
+  (d.semanas || []).forEach(s => {
+    hs += '<div class="semana-card"><div class="semana-head"><strong>Semana del ' + s.semana_lunes + '</strong><span class="muted">' + s.n_lotes + ' lotes · ' + s.total_kg + ' kg</span></div>';
+    s.lotes.forEach(lt => {
+      hs += '<div class="lote-row"><span><span class="tag tag-' + lt.origen + '">' + lt.origen + '</span> ' + esc(lt.producto) + '</span><span>' + lt.fecha.slice(5) + ' · ' + lt.kg + 'kg</span></div>';
+    });
+    hs += '</div>';
+  });
+  if (!d.semanas.length) hs = '<div class="muted">Sin lotes programados próximas 4 semanas</div>';
+  document.getElementById('semanas').innerHTML = hs;
+
+  // Alertas críticos
+  let ha = '';
+  (d.alertas_criticos || []).forEach(a => {
+    const cls = a.tiene_lote_agendado ? 'con-plan' : '';
+    const planTxt = a.tiene_lote_agendado ? '✅ con plan' : '⚠ sin plan';
+    const pausa = a.tiene_pausa ? ' ⏸' : '';
+    ha += '<div class="alerta-row ' + cls + '">';
+    ha += '<div><span class="tag urgencia-' + a.urgencia + '">' + a.urgencia + '</span> <strong>' + esc(a.producto) + '</strong>' + pausa + '<br><span class="muted">' + a.dias_cobertura + 'd cobertura · ' + a.stock_kg + 'kg stock</span></div>';
+    ha += '<div style="font-size:11px;color:' + (a.tiene_lote_agendado ? '#16a34a' : '#dc2626') + ';font-weight:700">' + planTxt + '</div>';
+    ha += '</div>';
+  });
+  if (!d.alertas_criticos.length) ha = '<div class="muted" style="text-align:center;padding:20px;color:#16a34a">✅ Sin críticos</div>';
+  document.getElementById('alertas').innerHTML = ha;
+
+  // Producciones reales
+  let hr = '';
+  (d.producciones_reales_28d || []).forEach(p => {
+    hr += '<div class="lote-row"><span><span class="tag tag-' + p.origen + '">' + p.origen + '</span> ' + esc(p.producto) + '</span><span>' + p.fecha + ' · ' + p.kg + 'kg</span></div>';
+  });
+  if (!d.producciones_reales_28d.length) hr = '<div class="muted">Sin producciones reales últimos 28 días</div>';
+  document.getElementById('reales').innerHTML = hr;
+}
+cargar();
+</script>
+</body></html>"""
+
+
 @bp.route("/admin/validar-formulas", methods=["GET"])
 def validar_formulas_page():
     """Auditoría de fórmulas · Sebastián 14-may-2026: "quiero que
