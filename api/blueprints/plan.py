@@ -3442,21 +3442,25 @@ async function autoplanIA(){
     const n = sugerencias.length;
 
     if (n === 0){
-      // IA respondió OK pero con CERO sugerencias · explicar por qué
-      const motivos = [];
-      if (d.comentario_general) motivos.push('💬 IA: ' + d.comentario_general);
-      motivos.push('🔍 Posibles causas:');
-      motivos.push('• La IA aplicó confianza ≥0.95 · si no hay producto que sume puntos, se excluye');
-      motivos.push('• Productos con lote_size_kg <3kg (Excel piloto) y sin historial real → quedan en sin_formula');
-      motivos.push('• MPs faltantes en productos críticos');
-      motivos.push('• Stock suficiente para todo el horizonte');
-      document.getElementById('ia-comentario').innerHTML =
-        '<div class="banner warn"><strong>🤖 IA (' + escapeHtml(d.modelo_ia || '') + ') no devolvió sugerencias</strong><br>' +
-        motivos.map(m => escapeHtml(m)).join('<br>') +
-        '<br><br>Tokens usados: ' + (d.tokens_usados || 0) +
-        ' · Historial aprendido: ' + (d.n_historial_aprendido || 0) +
-        '<br><br>💡 Probá desmarcar "Solo sugerencias IA" para ver el plan determinista, o aumentá el horizonte (60/90/120 días).</div>';
-      // Limpiar plan_items y render para no mostrar cosas viejas
+      // IA respondió OK pero con CERO sugerencias · explicar y mostrar raw
+      const rawIA = d.raw_text_ia || '';
+      const comentario = d.comentario_general || '';
+      let html = '<div class="banner warn"><strong>🤖 IA (' + escapeHtml(d.modelo_ia || '') + ') no devolvió sugerencias</strong>';
+      if (comentario){
+        html += '<br><br>💬 <strong>Comentario IA:</strong><br>' + escapeHtml(comentario);
+      }
+      if (rawIA){
+        html += '<br><br><details><summary style="cursor:pointer;font-weight:700">🔍 Ver respuesta cruda de la IA (diagnóstico)</summary>';
+        html += '<pre style="background:#fff;padding:10px;border-radius:6px;font-size:10px;overflow:auto;max-height:300px;white-space:pre-wrap">' + escapeHtml(rawIA) + '</pre>';
+        html += '</details>';
+      }
+      html += '<br>Tokens: ' + (d.tokens_usados || 0) +
+              ' · Historial aprendido: ' + (d.n_historial_aprendido || 0);
+      html += '<br><br>💡 Acciones posibles:<br>' +
+              '• Probá horizonte mayor (60/90/120 días)<br>' +
+              '• Desmarcá "Solo sugerencias IA" para ver el plan determinista<br>' +
+              '• Si la IA se equivocó, mandá la respuesta cruda al admin</div>';
+      document.getElementById('ia-comentario').innerHTML = html;
       if (PLAN_DATA && PLAN_DATA.plan){
         PLAN_DATA.plan.plan_items = [];
         PLAN_DATA.plan.total_producciones = 0;
@@ -3565,77 +3569,45 @@ def _ia_autoplan_sugerir(payload_contexto, modelo="claude-sonnet-4-6"):
     if not api_key:
         return None, "ANTHROPIC_API_KEY no configurada en Render"
 
+    # System prompt simplificado · Sebastián 14-may-2026: "no sugiere
+    # nada · que hacemos?". Antes tenía 11 reglas + checklist + criterios
+    # de exclusión → IA paralizada. Ahora directo al grano + ejemplo.
     system_prompt = (
-        "Eres el jefe de producción senior de un laboratorio cosmético "
-        "colombiano (ÁNIMUS Lab + Espagiria). Decidís QUÉ producir, "
-        "CUÁNDO y CUÁNTO con criterio ERROR CERO. Tu reputación depende "
-        "de propuestas precisas que el usuario pueda aceptar sin "
-        "modificarlas. Devolvés SOLO JSON válido sin explicaciones extras.\n\n"
-        "REGLAS DURAS — INVIOLABLES:\n"
-        "1. NUNCA programar producciones esta semana actual. "
-        "Empezar SIEMPRE el lunes próximo (fecha_inicio_minima_plan).\n"
-        "2. Producir 20 días antes de agotar (ideal 25d) — usa "
-        "stock_kg / velocidad_kg_dia para calcular agotamiento.\n"
-        "3. Solo días hábiles (Lun-Vie) · NUNCA sábado, domingo ni "
-        "festivos colombianos (la lista te llega en festivos_colombianos).\n"
-        "4. Si necesidad alta, usar TODA la semana L-V (no solo L/M/V).\n"
-        "5. DOS producciones mismo día SOLO si: ambas ≤50kg Y NINGUNA "
-        "es compleja. Si hay una compleja (Vit C/Triactive), ese día "
-        "queda con UNA SOLA.\n"
-        "6. Lotes grandes (>50kg): día ENTERO solo.\n"
-        "7. Vitamina C y Triactive (cualquier variante): solo Lun o Mié.\n"
-        "8. Si MPs faltan (mps_status=FALTAN_MPS): NO programar · "
-        "explicar en comentario_general que hay que comprar primero.\n"
-        "9. Si el producto YA tiene un lote agendado (mira lotes_agendados "
-        "de cada producto): NO duplicar a menos que el agendado sea "
-        "insuficiente para el horizonte.\n"
-        "10. Aprendé del historial_feedback: si el usuario movió un "
-        "producto repetidamente, ajustá la frecuencia. Si lo canceló, "
-        "no lo sugieras otra vez al menos por un mes.\n"
-        "11. Distribuir parejo: no concentrar 3+ mismo día.\n\n"
-        "TAMAÑO DE LOTE — CRÍTICO:\n"
-        "Cada producto trae 3 campos sobre el tamaño:\n"
-        "  · lote_size_kg_excel: valor del Excel (PUEDE SER FÓRMULA PILOTO)\n"
-        "  · lote_recomendado_kg: lo que DEBÉS usar para sugerencias\n"
-        "  · lote_fuente: 'historico_real' / 'excel' / 'excel_piloto_inviable'\n"
-        "  · producciones_reales_historicas: lista con fecha+kg\n\n"
-        "REGLAS para el campo kg de tu sugerencia:\n"
-        "  · SIEMPRE usar lote_recomendado_kg (no lote_size_kg_excel)\n"
-        "  · Si lote_fuente='historico_real': USAR ese promedio · es lo\n"
-        "    que realmente se produce (ej: Triactive Excel dice 0.2kg = "
-        "fórmula piloto, pero producciones reales son 13kg)\n"
-        "  · Si lote_fuente='excel_piloto_inviable' (lote<3kg sin historial):\n"
-        "    NO INCLUIR en sugerencias[] · mencionar en comentario_general\n"
-        "    como 'X tiene fórmula piloto · necesita definir lote real'\n"
-        "  · Podés sugerir lote distinto si tiene sentido (ej: para cubrir\n"
-        "    90 días con velocidad alta podrías sugerir 1.5× el promedio),\n"
-        "    pero JAMÁS sugerir valores menores a 3kg en producción real.\n\n"
-        "CRITERIOS DE CONFIANZA (campo confianza 0.0-1.0):\n"
-        "Antes de asignar confianza, ejecutá esta checklist mental por "
-        "cada sugerencia. Cada chequeo SUMA puntos:\n"
-        "  [+0.30] La fecha respeta TODAS las reglas duras 1-7\n"
-        "  [+0.25] El producto tiene mps_status='OK' (o no aplica)\n"
-        "  [+0.20] El kg viene de lote_recomendado_kg (no del Excel piloto)\n"
-        "  [+0.15] La fecha está dentro de 25-15d antes del agotamiento\n"
-        "  [+0.05] Hay producción real histórica del producto\n"
-        "  [+0.05] El historial_feedback no muestra rechazos previos\n"
-        "Total posible: 1.00\n\n"
-        "UMBRAL DE INCLUSIÓN: confianza ≥ 0.85 → INCLUIR en sugerencias[].\n"
-        "Si confianza <0.85 → mejor mencionar en comentario_general como\n"
-        "'queda pendiente X porque Y' · NO forzar inclusión dudosa.\n"
-        "Sugerencias con confianza ≥0.95 son IDEALES · marcar razonamiento\n"
-        "con '✓ alta certeza'. Entre 0.85-0.94 son ACEPTABLES · razonamiento\n"
-        "con '⚠ confianza media · revisar antes de aplicar'.\n\n"
-        "IMPORTANTE: SIEMPRE devolvé al menos 1 sugerencia si hay productos\n"
-        "con urgencia CRITICO o URGENTE Y mps_status=OK Y lote_recomendado_kg.\n"
-        "Solo devolvé sugerencias[] vacío si TODOS los productos críticos\n"
-        "tienen MPs faltantes o lote piloto inviable (explicar en comentario).\n\n"
-        "FORMATO RESPUESTA (JSON estricto · sin markdown):\n"
-        "{\"sugerencias\":[{\"producto\":\"...\",\"fecha\":\"YYYY-MM-DD\","
-        "\"kg\":N,\"motivo\":\"urgente|adelanto|buffer\","
-        "\"cobertura_post_dias\":N,\"confianza\":0.85-1.00,"
-        "\"razonamiento\":\"explica los puntos · usa ✓ o ⚠\"}],"
-        "\"comentario_general\":\"resumen + casos excluidos\"}"
+        "Eres el jefe de producción de un laboratorio cosmético colombiano. "
+        "Analizás las ventas y stock por producto, y devolvés sugerencias "
+        "concretas de qué producir, cuándo y cuánto.\n\n"
+        "REGLAS:\n"
+        "1. Empezá el lunes próximo (campo fecha_inicio_minima_plan). "
+        "NO esta semana.\n"
+        "2. Producir 20 días antes de que se agote (stock_kg / "
+        "velocidad_kg_dia = días hasta agotar).\n"
+        "3. Solo Lun-Vie · evitá festivos_colombianos.\n"
+        "4. Lotes >50kg ocupan el día solos. Lotes ≤50kg pueden ir en "
+        "pares si ninguno es complejo (Vit C / Triactive).\n"
+        "5. Vit C y Triactive: solo Lun o Mié.\n"
+        "6. Usá lote_recomendado_kg (no lote_size_kg_excel). Si "
+        "lote_fuente='excel_piloto_inviable' → omitir y mencionar en "
+        "comentario.\n"
+        "7. Si mps_status='FALTAN_MPS' → omitir y mencionar.\n"
+        "8. Si ya hay lote agendado del producto (lotes_agendados) que "
+        "cubre el horizonte → no duplicar.\n"
+        "9. Distribuir parejo · 1-2 productos/día.\n\n"
+        "INSTRUCCIÓN: TODOS los productos del input que tengan "
+        "lote_recomendado_kg válido (no null), mps OK, y cobertura ≤ "
+        "horizonte_dias deberían tener sugerencia. Sé generoso · prefiere "
+        "sugerir y dejar al usuario aceptar/mover/cancelar.\n\n"
+        "CONFIANZA (0.0-1.0): basate en certeza, no en perfección. Por "
+        "defecto 0.90 si cumple reglas 1-5. Subí a 0.95+ si además hay "
+        "producción histórica del producto. Bajá a 0.80 si la velocidad "
+        "es baja (<0.5 uds/día). NO uses <0.70 (mejor omitir esa sugerencia).\n\n"
+        "RESPUESTA: SOLO JSON válido sin markdown. Ejemplo:\n"
+        "{\"sugerencias\":["
+        "{\"producto\":\"SUERO HIDRATANTE AH 1.5%\","
+        "\"fecha\":\"2026-05-25\",\"kg\":90,"
+        "\"motivo\":\"urgente\",\"cobertura_post_dias\":89,"
+        "\"confianza\":0.95,"
+        "\"razonamiento\":\"Stock 23d cobertura · agota 6-jun · producir 20d antes\"}],"
+        "\"comentario_general\":\"3 sugerencias programadas. BHA 2% suero omitido (lote piloto sin historial).\"}"
     )
     user_msg = (
         f"Contexto del cliente y productos:\n"
@@ -3666,21 +3638,50 @@ def _ia_autoplan_sugerir(payload_contexto, modelo="claude-sonnet-4-6"):
     except Exception as ex:
         return None, f"Error llamando Anthropic: {ex}"
 
+    raw_text = ""
     try:
-        text = data["content"][0]["text"]
-        # IA a veces devuelve con ```json
-        if "```" in text:
-            text = text.split("```")[1]
-            if text.startswith("json"):
-                text = text[4:]
-        parsed = _json.loads(text.strip())
+        raw_text = data["content"][0]["text"]
     except Exception as ex:
-        return None, f"Respuesta IA no parseable: {ex} · raw: {data}"
+        return None, f"Respuesta IA sin content: {ex} · data: {str(data)[:500]}"
+
+    # Parser robusto · acepta markdown code blocks + texto extra
+    text = raw_text.strip()
+    parsed = None
+    parse_err = None
+
+    # Estrategia 1: parsear como JSON directo
+    try:
+        parsed = _json.loads(text)
+    except Exception as ex1:
+        parse_err = str(ex1)
+        # Estrategia 2: extraer entre ```json...```
+        import re as _re
+        m = _re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, _re.DOTALL)
+        if m:
+            try:
+                parsed = _json.loads(m.group(1))
+                parse_err = None
+            except Exception as ex2:
+                parse_err = str(ex2)
+        # Estrategia 3: encontrar primer { y último } válido
+        if parsed is None:
+            try:
+                start = text.find("{")
+                end = text.rfind("}")
+                if start >= 0 and end > start:
+                    parsed = _json.loads(text[start:end+1])
+                    parse_err = None
+            except Exception as ex3:
+                parse_err = str(ex3)
+
+    if parsed is None:
+        return None, f"IA respondió pero no se pudo parsear JSON · error: {parse_err} · raw_preview: {raw_text[:800]}"
 
     tokens = data.get("usage", {}).get("input_tokens", 0) + data.get("usage", {}).get("output_tokens", 0)
     return {"sugerencias": parsed.get("sugerencias", []),
             "comentario": parsed.get("comentario_general", ""),
-            "tokens": tokens, "modelo": modelo}, None
+            "tokens": tokens, "modelo": modelo,
+            "raw_text": raw_text}, None
 
 
 @bp.route("/api/plan/autoplan-ia", methods=["POST"])
@@ -3735,9 +3736,11 @@ def autoplan_ia():
             try:
                 import json as _json
                 cached = _json.loads(cache_row[0])
-                cached["cache_hit"] = True
-                cached["cache_fecha"] = cache_row[1]
-                return jsonify(cached)
+                # NO reutilizar cache vacío · forzá recálculo si no había sugerencias
+                if cached.get("sugerencias"):
+                    cached["cache_hit"] = True
+                    cached["cache_fecha"] = cache_row[1]
+                    return jsonify(cached)
             except Exception:
                 pass  # cache corrupto · ignorar y recalcular
 
@@ -3944,6 +3947,7 @@ def autoplan_ia():
         "ids_decisiones": ids_creados,
         "contexto_enviado": payload_contexto,
         "n_historial_aprendido": len(historial),
+        "raw_text_ia": resultado.get("raw_text", "")[:3000],  # diagnóstico
         "cache_hit": False,
     })
 
