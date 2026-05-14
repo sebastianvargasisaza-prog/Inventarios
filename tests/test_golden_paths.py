@@ -7654,8 +7654,10 @@ def test_golden_plan_sugerido_batch_ejecutar(app, db_clean):
         ],
         'cancelar_ids': [cancel_id],
         'backfills': [
+            # Usar fecha distinta a backfill mig 128 (15-abr-2026)
+            # para evitar colisión con producciones reales registradas
             {'producto': 'LIMPIADOR ILUMINADOR ACIDO KOJICO',
-             'kg': 40, 'fecha': '2026-04-15'},
+             'kg': 88, 'fecha': '2026-03-15'},
         ],
     }
     r = cs.post('/api/plan/plan-sugerido/ejecutar', json=payload,
@@ -7693,8 +7695,8 @@ def test_golden_plan_sugerido_batch_ejecutar(app, db_clean):
         """SELECT producto, fin_real_at, kg_real, estado, origen
            FROM produccion_programada WHERE id = ?""", (bf_id,),
     )
-    assert row_bf[0][1] and '2026-04-15' in row_bf[0][1]
-    assert row_bf[0][2] == 40.0
+    assert row_bf[0][1] and '2026-03-15' in row_bf[0][1]
+    assert row_bf[0][2] == 88.0
     assert row_bf[0][3] == 'completado'
     assert row_bf[0][4] == 'eos_retroactivo'
 
@@ -7719,10 +7721,11 @@ def test_golden_plan_sugerido_batch_ejecutar(app, db_clean):
     assert 'sin fórmula' in d6['errores'][0]['error']
 
     # Caso 7: backfill duplicado (mismo producto+fecha+kg) → error
+    # Usar el mismo del caso 1 (88kg · 2026-03-15) que NO está en mig 128
     r7 = cs.post('/api/plan/plan-sugerido/ejecutar', json={
         'programar': [], 'cancelar_ids': [],
         'backfills': [{'producto': 'LIMPIADOR ILUMINADOR ACIDO KOJICO',
-                       'kg': 40, 'fecha': '2026-04-15'}],
+                       'kg': 88, 'fecha': '2026-03-15'}],
     }, headers=csrf_headers())
     assert r7.status_code == 200
     d7 = r7.get_json()

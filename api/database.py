@@ -243,6 +243,135 @@ except ImportError:
         _MIG_127_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (128, "Back-fill 13 producciones reales abril-mayo 2026 · Sebastián 14-may-2026", [
+        # Sebastián 14-may-2026: registrar las producciones que Luis hizo
+        # entre 15-abr y 13-may pero NO estaban en EOS con fin_real_at.
+        # Con esto el sistema sabe que ya hay stock pipeline · evita
+        # programar duplicados.
+        #
+        # Idempotente: WHERE NOT EXISTS con marcador único en observaciones.
+        # Mapeo nombres del kardex viejo (NF / + / Cód mixto) a canónico
+        # del Excel mig 127.
+        #
+        # Estado: completado · origen: eos_retroactivo (no descuenta MPs).
+        """INSERT INTO produccion_programada
+            (producto, fecha_programada, cantidad_kg, kg_real, estado, origen,
+             fin_real_at, lotes, observaciones)
+           SELECT 'LIP SERUM VOLUMINIZADOR PEPTIDOS', '2026-05-13', 12, 12,
+                  'completado', 'eos_retroactivo',
+                  '2026-05-13 20:07:00', 1, 'BACKFILL_MIG128_001 · Luis · LIP SERUM (PIB CHINO)'
+           WHERE NOT EXISTS (
+             SELECT 1 FROM produccion_programada
+             WHERE observaciones LIKE '%BACKFILL_MIG128_001%')""",
+        """INSERT INTO produccion_programada
+            (producto, fecha_programada, cantidad_kg, kg_real, estado, origen,
+             fin_real_at, lotes, observaciones)
+           SELECT 'GEL HIDRATANTE', '2026-05-05', 34.228, 34.228,
+                  'completado', 'eos_retroactivo',
+                  '2026-05-05 17:56:00', 1, 'BACKFILL_MIG128_002 · Luis · GEL HIDRATANTE NF→GEL HIDRATANTE'
+           WHERE NOT EXISTS (
+             SELECT 1 FROM produccion_programada
+             WHERE observaciones LIKE '%BACKFILL_MIG128_002%')""",
+        """INSERT INTO produccion_programada
+            (producto, fecha_programada, cantidad_kg, kg_real, estado, origen,
+             fin_real_at, lotes, observaciones)
+           SELECT 'GEL HIDRATANTE', '2026-04-30', 20.6, 20.6,
+                  'completado', 'eos_retroactivo',
+                  '2026-04-30 19:33:00', 1, 'BACKFILL_MIG128_003 · Luis · GEL HIDRATANTE NF→GEL HIDRATANTE'
+           WHERE NOT EXISTS (
+             SELECT 1 FROM produccion_programada
+             WHERE observaciones LIKE '%BACKFILL_MIG128_003%')""",
+        """INSERT INTO produccion_programada
+            (producto, fecha_programada, cantidad_kg, kg_real, estado, origen,
+             fin_real_at, lotes, observaciones)
+           SELECT 'SUERO HIDRATANTE AH 1.5%', '2026-04-30', 90, 90,
+                  'completado', 'eos_retroactivo',
+                  '2026-04-30 18:34:00', 1, 'BACKFILL_MIG128_004 · Luis · SAH'
+           WHERE NOT EXISTS (
+             SELECT 1 FROM produccion_programada
+             WHERE observaciones LIKE '%BACKFILL_MIG128_004%')""",
+        """INSERT INTO produccion_programada
+            (producto, fecha_programada, cantidad_kg, kg_real, estado, origen,
+             fin_real_at, lotes, observaciones)
+           SELECT 'LIMPIADOR FACIAL BHA 2%', '2026-04-28', 150, 150,
+                  'completado', 'eos_retroactivo',
+                  '2026-04-28 21:07:00', 1, 'BACKFILL_MIG128_005 · Luis · LIMP BHA 2%'
+           WHERE NOT EXISTS (
+             SELECT 1 FROM produccion_programada
+             WHERE observaciones LIKE '%BACKFILL_MIG128_005%')""",
+        """INSERT INTO produccion_programada
+            (producto, fecha_programada, cantidad_kg, kg_real, estado, origen,
+             fin_real_at, lotes, observaciones)
+           SELECT 'CONTORNO DE OJOS RETINALDEHIDO 0.05%', '2026-04-23', 9, 9,
+                  'completado', 'eos_retroactivo',
+                  '2026-04-23 21:59:00', 1, 'BACKFILL_MIG128_006 · Luis · CONT RETINALDEHIDO'
+           WHERE NOT EXISTS (
+             SELECT 1 FROM produccion_programada
+             WHERE observaciones LIKE '%BACKFILL_MIG128_006%')""",
+        """INSERT INTO produccion_programada
+            (producto, fecha_programada, cantidad_kg, kg_real, estado, origen,
+             fin_real_at, lotes, observaciones)
+           SELECT 'SUERO EXFOLIANTE NOVA PHA', '2026-04-23', 7, 7,
+                  'completado', 'eos_retroactivo',
+                  '2026-04-23 18:00:00', 1, 'BACKFILL_MIG128_007 · Luis · PHA'
+           WHERE NOT EXISTS (
+             SELECT 1 FROM produccion_programada
+             WHERE observaciones LIKE '%BACKFILL_MIG128_007%')""",
+        """INSERT INTO produccion_programada
+            (producto, fecha_programada, cantidad_kg, kg_real, estado, origen,
+             fin_real_at, lotes, observaciones)
+           SELECT 'EMULSION LIMPIADORA', '2026-04-22', 20, 20,
+                  'completado', 'eos_retroactivo',
+                  '2026-04-22 21:46:00', 1, 'BACKFILL_MIG128_008 · Luis · EMUL LIMP NF→EMUL LIMPIADORA'
+           WHERE NOT EXISTS (
+             SELECT 1 FROM produccion_programada
+             WHERE observaciones LIKE '%BACKFILL_MIG128_008%')""",
+        """INSERT INTO produccion_programada
+            (producto, fecha_programada, cantidad_kg, kg_real, estado, origen,
+             fin_real_at, lotes, observaciones)
+           SELECT 'LIP SERUM VOLUMINIZADOR PEPTIDOS', '2026-04-21', 2.323, 2.323,
+                  'completado', 'eos_retroactivo',
+                  '2026-04-21 14:20:00', 1, 'BACKFILL_MIG128_009 · Luis · LIP SERUM VOLUMINIZADOR'
+           WHERE NOT EXISTS (
+             SELECT 1 FROM produccion_programada
+             WHERE observaciones LIKE '%BACKFILL_MIG128_009%')""",
+        """INSERT INTO produccion_programada
+            (producto, fecha_programada, cantidad_kg, kg_real, estado, origen,
+             fin_real_at, lotes, observaciones)
+           SELECT 'SUERO TRIACTIVE RETINOID NAD', '2026-04-17', 13, 13,
+                  'completado', 'eos_retroactivo',
+                  '2026-04-17 14:06:00', 1, 'BACKFILL_MIG128_010 · Luis · TRIACTIVE NAD'
+           WHERE NOT EXISTS (
+             SELECT 1 FROM produccion_programada
+             WHERE observaciones LIKE '%BACKFILL_MIG128_010%')""",
+        """INSERT INTO produccion_programada
+            (producto, fecha_programada, cantidad_kg, kg_real, estado, origen,
+             fin_real_at, lotes, observaciones)
+           SELECT 'CONTORNO DE OJOS MULTIPEPTIDOS', '2026-04-16', 6, 6,
+                  'completado', 'eos_retroactivo',
+                  '2026-04-16 15:26:00', 1, 'BACKFILL_MIG128_011 · Luis · CONT MULTIPEPTIDOS'
+           WHERE NOT EXISTS (
+             SELECT 1 FROM produccion_programada
+             WHERE observaciones LIKE '%BACKFILL_MIG128_011%')""",
+        """INSERT INTO produccion_programada
+            (producto, fecha_programada, cantidad_kg, kg_real, estado, origen,
+             fin_real_at, lotes, observaciones)
+           SELECT 'BLUSH BALM', '2026-04-15', 1, 1,
+                  'completado', 'eos_retroactivo',
+                  '2026-04-15 16:37:00', 1, 'BACKFILL_MIG128_012 · Luis · BLUSH BALM'
+           WHERE NOT EXISTS (
+             SELECT 1 FROM produccion_programada
+             WHERE observaciones LIKE '%BACKFILL_MIG128_012%')""",
+        """INSERT INTO produccion_programada
+            (producto, fecha_programada, cantidad_kg, kg_real, estado, origen,
+             fin_real_at, lotes, observaciones)
+           SELECT 'LIMPIADOR ILUMINADOR ACIDO KOJICO', '2026-04-15', 40, 40,
+                  'completado', 'eos_retroactivo',
+                  '2026-04-15 03:53:00', 1, 'BACKFILL_MIG128_013 · Luis · LKJ'
+           WHERE NOT EXISTS (
+             SELECT 1 FROM produccion_programada
+             WHERE observaciones LIKE '%BACKFILL_MIG128_013%')""",
+    ]),
     (127, "Re-import COMPLETO Excel mayo-2026 · limpia residuos viejos · Sebastián 14-may-2026",
      _MIG_127_STMTS),
     (126, "Agregar AGUA DESIONIZADA a fórmulas (q.s.p.) · Sebastián 14-may-2026", [
