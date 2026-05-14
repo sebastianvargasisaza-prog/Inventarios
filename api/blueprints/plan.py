@@ -583,15 +583,20 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
 
     # Stock MP por material_id · SUM(movimientos)
     mp_stock_g = {}
+    mp_tiene_movimientos = set()  # set de material_id con al menos 1 movimiento
     for r in c.execute(
         """SELECT material_id,
                   COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA')
-                                    THEN cantidad ELSE -cantidad END), 0)
+                                    THEN cantidad ELSE -cantidad END), 0),
+                  COUNT(*) AS n_mov
            FROM movimientos
            WHERE material_id IS NOT NULL AND TRIM(material_id) != ''
            GROUP BY material_id""",
     ).fetchall():
-        mp_stock_g[str(r[0]).strip()] = max(float(r[1] or 0), 0)
+        mid = str(r[0]).strip()
+        mp_stock_g[mid] = max(float(r[1] or 0), 0)
+        if int(r[2] or 0) > 0:
+            mp_tiene_movimientos.add(mid)
 
     # 7. Lotes pendientes/en curso por producto (ya agendados)
     # Sebastián 13-may-2026: todo vive en EOS · sin Calendar. Cualquier lote
@@ -707,9 +712,22 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
             p["mps_n_faltantes"] = 0
             p["puede_fabricar"] = False
         else:
+            # Sebastián 14-may-2026: MPs SIN historial de movimientos
+            # (nunca entradas ni salidas) NO se chequean · son códigos
+            # nuevos importados desde Excel · planta probablemente las
+            # tiene en bodega · y AGUA (MPAGUALI01) se hace en planta.
+            # Solo bloquear si la MP tiene movimientos previos (probó
+            # ser una MP "trackeada") Y su stock actual no cubre lo necesario.
             faltantes = []
             for it in items_form:
-                disponible_g = mp_stock_g.get(str(it["material_id"]).strip(), 0.0)
+                mid = str(it["material_id"]).strip()
+                # Agua: nunca chequear (consumible infinito)
+                if mid == 'MPAGUALI01':
+                    continue
+                # MPs sin historial de movimientos: asumir disponibles
+                if mid not in mp_stock_g and mid not in mp_tiene_movimientos:
+                    continue
+                disponible_g = mp_stock_g.get(mid, 0.0)
                 falta = it["necesario_g"] - disponible_g
                 if falta > 0.01:  # tolerancia gramos
                     faltantes.append({
