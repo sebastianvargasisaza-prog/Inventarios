@@ -2180,6 +2180,173 @@ def plan_debug_tz():
     })
 
 
+@bp.route("/admin/gasto-mps", methods=["GET"])
+def gasto_mps_page():
+    """Página visual · consumo y gasto anual de MPs · Alejandro 14-may-2026"""
+    if not session.get("compras_user"):
+        from flask import redirect
+        return redirect("/login?next=/admin/gasto-mps")
+    from flask import Response
+    return Response(_GASTO_MPS_HTML, mimetype="text/html")
+
+
+_GASTO_MPS_HTML = r"""<!DOCTYPE html>
+<html lang="es"><head><meta charset="UTF-8">
+<title>Gasto anual MPs · EOS</title>
+<style>
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;color:#1e293b;margin:0;padding:20px}
+.wrap{max-width:1200px;margin:0 auto}
+.card{background:white;border-radius:12px;padding:20px;margin-bottom:14px;box-shadow:0 2px 6px rgba(0,0,0,.05)}
+h1{margin:0 0 6px;color:#0f766e;font-size:22px}
+.muted{color:#64748b;font-size:13px}
+button{background:#0f766e;color:white;border:none;padding:10px 18px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer}
+button:hover{background:#0d635c}
+textarea{width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;font-family:ui-monospace,monospace;min-height:100px;resize:vertical}
+select{padding:7px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{text-align:left;padding:10px 8px;background:#f1f5f9;color:#475569;font-weight:700}
+td{padding:8px;border-bottom:1px solid #f1f5f9}
+.kpi{display:inline-block;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 18px;margin-right:10px;margin-bottom:8px;text-align:center;min-width:130px;vertical-align:top}
+.kpi-lbl{font-size:11px;color:#64748b}
+.kpi-val{font-size:22px;font-weight:800}
+.tag{display:inline-block;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700}
+.tag-warn{background:#fef3c7;color:#854d0e}
+.mono{font-family:ui-monospace,monospace;font-weight:700;color:#1e40af}
+.num{text-align:right;font-variant-numeric:tabular-nums}
+</style></head><body>
+<div class="wrap">
+<a href="/modulos" style="color:#0f766e;font-weight:700;font-size:13px">&larr; Volver</a>
+
+<div class="card">
+  <h1>💰 Gasto anual de materias primas</h1>
+  <div class="muted">Cruza consumo histórico (movimientos tipo Salida) con precio_referencia de maestro_mps. Para Alejandro · 14-may-2026.</div>
+  <div style="margin-top:14px">
+    <label style="display:block;font-size:12px;color:#475569;margin-bottom:4px">Materias primas (una por línea · busca por nombre):</label>
+    <textarea id="queries" placeholder="Cetiol AB
+Phenyl trimeticone
+PEG-12 dimethicone
+CAPB">Cetiol AB
+Phenyl trimeticone
+PEG-12 dimethicone
+CAPB</textarea>
+  </div>
+  <div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+    <label style="font-size:12px;color:#475569">Ventana:
+      <select id="dias">
+        <option value="90">3 meses</option>
+        <option value="180">6 meses</option>
+        <option value="365" selected>12 meses</option>
+        <option value="730">24 meses</option>
+      </select>
+    </label>
+    <button onclick="calcular()">📊 Calcular gasto</button>
+  </div>
+  <div id="kpis" style="margin-top:14px"></div>
+</div>
+
+<div id="resultado"></div>
+
+</div>
+<script>
+function escapeHtml(s){return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function fmtCOP(n){
+  if (n == null) return '—';
+  return '$ ' + Math.round(n).toLocaleString('es-CO');
+}
+function fmtKg(n){
+  if (n == null) return '—';
+  return n.toLocaleString('es-CO', {maximumFractionDigits: 2}) + ' kg';
+}
+
+async function calcular(){
+  const txt = document.getElementById('queries').value || '';
+  const queries = txt.split('\n').map(s => s.trim()).filter(s => s);
+  if (!queries.length){ alert('Pegá al menos 1 MP'); return; }
+  const dias = parseInt(document.getElementById('dias').value);
+  document.getElementById('resultado').innerHTML = '<div class="card">⏳ Calculando…</div>';
+  document.getElementById('kpis').innerHTML = '';
+
+  const params = new URLSearchParams();
+  queries.forEach(q => params.append('q', q));
+  params.append('dias', dias);
+  try {
+    const r = await fetch('/api/plan/gasto-mps?' + params.toString());
+    const d = await r.json();
+    if (!r.ok){ alert('Error: ' + (d.error || r.status)); document.getElementById('resultado').innerHTML = ''; return; }
+    render(d, queries);
+  } catch(e){ alert('Error: ' + e.message); }
+}
+
+function render(d, queries){
+  // KPIs
+  let k = '';
+  k += '<span class="kpi"><div class="kpi-lbl">Buscadas</div><div class="kpi-val">' + queries.length + '</div></span>';
+  k += '<span class="kpi"><div class="kpi-lbl">Encontradas</div><div class="kpi-val">' + d.n_mps_encontradas + '</div></span>';
+  k += '<span class="kpi"><div class="kpi-lbl">kg/año total</div><div class="kpi-val" style="color:#0891b2">' + fmtKg(d.total_kg_anual) + '</div></span>';
+  k += '<span class="kpi"><div class="kpi-lbl">💰 Gasto anual</div><div class="kpi-val" style="color:#16a34a">' + fmtCOP(d.total_gasto_anual_cop) + '</div></span>';
+  document.getElementById('kpis').innerHTML = k;
+
+  let html = '<div class="card">';
+
+  if (d.no_encontrados && d.no_encontrados.length){
+    html += '<div style="background:#fef3c7;border:1px solid #fde68a;color:#854d0e;padding:10px;border-radius:8px;margin-bottom:12px">';
+    html += '⚠ <strong>NO encontradas en maestro_mps:</strong> ' + d.no_encontrados.map(q => '<code>' + escapeHtml(q) + '</code>').join(', ');
+    html += '<br><span style="font-size:11px">Probá variaciones de nombre · busca en <a href="/admin/mps-buscar" target="_blank">/admin/mps-buscar</a></span></div>';
+  }
+
+  if (!d.items || !d.items.length){
+    html += '<div class="muted" style="padding:20px;text-align:center">No hay items para mostrar</div>';
+    html += '</div>';
+    document.getElementById('resultado').innerHTML = html;
+    return;
+  }
+
+  // Tabla detalle · ordenar por gasto anual descendente
+  d.items.sort((a, b) => (b.gasto_anual_estimado_cop || 0) - (a.gasto_anual_estimado_cop || 0));
+
+  html += '<table>';
+  html += '<thead><tr>';
+  html += '<th>Cód MP</th>';
+  html += '<th>Nombre comercial / INCI</th>';
+  html += '<th>Proveedor</th>';
+  html += '<th class="num">Precio<br>(COP/kg)</th>';
+  html += '<th class="num">Consumo<br>ventana (kg)</th>';
+  html += '<th class="num">N° mov</th>';
+  html += '<th class="num">Promedio<br>mensual (kg)</th>';
+  html += '<th class="num">Proyección<br>anual (kg)</th>';
+  html += '<th class="num">💰 Gasto<br>anual (COP)</th>';
+  html += '</tr></thead><tbody>';
+
+  d.items.forEach(it => {
+    const sinDatos = (it.n_movimientos || 0) === 0;
+    const sinPrecio = (it.precio_referencia || 0) === 0;
+    let badges = '';
+    if (sinDatos) badges += ' <span class="tag tag-warn">sin consumo</span>';
+    if (sinPrecio) badges += ' <span class="tag tag-warn">sin precio</span>';
+    if (!it.activo) badges += ' <span class="tag tag-warn">inactivo</span>';
+    html += '<tr>';
+    html += '<td class="mono">' + escapeHtml(it.codigo_mp) + '</td>';
+    html += '<td><strong>' + escapeHtml(it.nombre_comercial) + '</strong>' + badges + '<br><span style="color:#94a3b8;font-size:10px">' + escapeHtml(it.nombre_inci) + '</span></td>';
+    html += '<td style="font-size:11px;color:#475569">' + escapeHtml(it.proveedor || '—') + '</td>';
+    html += '<td class="num">' + fmtCOP(it.precio_referencia) + '</td>';
+    html += '<td class="num">' + fmtKg(it.kg_consumidos_ventana) + '</td>';
+    html += '<td class="num">' + (it.n_movimientos || 0) + '</td>';
+    html += '<td class="num">' + fmtKg(it.kg_promedio_mensual) + '</td>';
+    html += '<td class="num"><strong>' + fmtKg(it.kg_proyeccion_anual) + '</strong></td>';
+    html += '<td class="num"><strong style="color:#16a34a">' + fmtCOP(it.gasto_anual_estimado_cop) + '</strong></td>';
+    html += '</tr>';
+  });
+
+  html += '</tbody></table></div>';
+  document.getElementById('resultado').innerHTML = html;
+}
+
+// Auto-calcular al cargar
+calcular();
+</script>
+</body></html>"""
+
+
 @bp.route("/api/plan/gasto-mps", methods=["GET"])
 def gasto_anual_mps():
     """Calcula consumo anual y gasto estimado de una o varias MPs.
