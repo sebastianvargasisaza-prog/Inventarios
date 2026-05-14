@@ -7434,3 +7434,35 @@ def test_golden_plan_detector_mps_renombre(app, db_clean):
     r2 = cs.get('/admin/detector-mps-renombre')
     assert r2.status_code == 200
     assert b'Detector' in r2.data
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH PLAN-K · buscador MPs por nombre
+# ═══════════════════════════════════════════════════════════════════
+def test_golden_plan_mps_buscar(app, db_clean):
+    """/api/plan/mps-buscar devuelve MPs matching query + stock + min."""
+    cs = _login(app, 'sebastian')
+    # Query con resultados (centella debería existir)
+    r = cs.get('/api/plan/mps-buscar?q=centella')
+    assert r.status_code == 200
+    d = r.get_json()
+    assert 'total' in d and 'items' in d and 'stock_total_g' in d
+    if d['total'] > 0:
+        it = d['items'][0]
+        for k in ['codigo','nombre_comercial','nombre_inci','stock_minimo',
+                  'stock_actual','activo','usado_en']:
+            assert k in it
+
+    # Query corta → 400
+    r2 = cs.get('/api/plan/mps-buscar?q=ab')
+    assert r2.status_code == 400
+
+    # mayerlin → 403
+    cs_op = _login(app, 'mayerlin')
+    r3 = cs_op.get('/api/plan/mps-buscar?q=centella')
+    assert r3.status_code == 403
+
+    # HTML page
+    r4 = cs.get('/admin/mps-buscar')
+    assert r4.status_code == 200
+    assert b'Buscar' in r4.data

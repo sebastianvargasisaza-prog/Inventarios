@@ -1023,6 +1023,204 @@ _VERIFICAR_CODIGOS_HTML = _VERIFICAR_CODIGOS_HTML.replace(
     "__CODES_EXCEL__", _json.dumps(_CODES_EXCEL_LIST))
 
 
+@bp.route("/admin/mps-buscar", methods=["GET"])
+def mps_buscar_page():
+    """Página admin · buscar MPs por nombre · ver stock individual + total + min."""
+    if not session.get("compras_user"):
+        from flask import redirect
+        return redirect("/login?next=/admin/mps-buscar")
+    from flask import Response
+    return Response(_BUSCADOR_MPS_HTML, mimetype="text/html")
+
+
+@bp.route("/api/plan/mps-buscar", methods=["GET"])
+def mps_buscar():
+    """Busca MPs cuyo nombre INCI/comercial contiene query.
+
+    Sebastián 13-may-2026: "mira todas las centellas que hay · todos los
+    lotes deben sumar entre sí para evitar alertas falsas".
+
+    Devuelve grupo con suma de stocks + qué productos usan cada MP +
+    stock_minimo de cada una. Útil para identificar MPs equivalentes
+    candidatas a consolidación.
+
+    Query: ?q=centella · normalizado (sin acentos)
+    """
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+
+    q = (request.args.get("q") or "").strip().lower()
+    if len(q) < 3:
+        return jsonify({"error": "query mínimo 3 chars"}), 400
+
+    conn = get_db()
+    c = conn.cursor()
+
+    # Stock por material_id
+    mp_stock = {}
+    for r in c.execute(
+        """SELECT material_id,
+                  COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA')
+                                    THEN cantidad ELSE -cantidad END), 0)
+           FROM movimientos
+           WHERE material_id IS NOT NULL AND TRIM(material_id) != ''
+           GROUP BY material_id""",
+    ).fetchall():
+        mp_stock[str(r[0]).strip()] = max(float(r[1] or 0), 0)
+
+    # Productos que usan cada MP (formula_items activos)
+    usos = {}
+    for r in c.execute(
+        """SELECT fi.material_id, GROUP_CONCAT(DISTINCT fi.producto_nombre)
+           FROM formula_items fi
+           JOIN formula_headers fh ON fh.producto_nombre = fi.producto_nombre
+           WHERE COALESCE(fh.activo, 1) = 1
+             AND fi.material_id IS NOT NULL AND TRIM(fi.material_id) != ''
+           GROUP BY fi.material_id""",
+    ).fetchall():
+        usos[str(r[0]).strip()] = [p for p in (r[1] or "").split(",") if p]
+
+    # Buscar en maestro_mps por nombre LIKE
+    import unicodedata
+    def _norm(s):
+        if not s: return ""
+        s = unicodedata.normalize('NFD', str(s).strip().lower())
+        return ''.join(ch for ch in s if unicodedata.category(ch) != 'Mn')
+
+    rows = c.execute(
+        """SELECT codigo_mp,
+                  COALESCE(nombre_comercial, ''),
+                  COALESCE(nombre_inci, ''),
+                  COALESCE(stock_minimo, 0),
+                  COALESCE(activo, 1),
+                  COALESCE(proveedor, '')
+           FROM maestro_mps""",
+    ).fetchall()
+    q_norm = _norm(q)
+    items = []
+    for r in rows:
+        cod, ncom, ninci, stmin, act, prov = r
+        if q_norm in _norm(ncom) or q_norm in _norm(ninci):
+            items.append({
+                "codigo": cod,
+                "nombre_comercial": ncom,
+                "nombre_inci": ninci,
+                "stock_minimo": float(stmin or 0),
+                "stock_actual": round(mp_stock.get(cod, 0), 2),
+                "activo": int(act),
+                "proveedor": prov,
+                "usado_en": usos.get(cod, [])[:5],
+            })
+
+    # Ordenar: activos primero · stock_actual DESC
+    items.sort(key=lambda x: (-x["activo"], -x["stock_actual"]))
+    stock_total = sum(it["stock_actual"] for it in items)
+    stock_min_total = sum(it["stock_minimo"] for it in items)
+    n_activos = sum(1 for it in items if it["activo"] == 1)
+    return jsonify({
+        "query": q,
+        "total": len(items),
+        "n_activos": n_activos,
+        "stock_total_g": round(stock_total, 2),
+        "stock_min_total_g": round(stock_min_total, 2),
+        "items": items,
+    })
+
+
+_BUSCADOR_MPS_HTML = """<!DOCTYPE html>
+<html lang="es"><head><meta charset="UTF-8">
+<title>Buscar MPs · EOS</title>
+<style>
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;color:#1e293b;margin:0;padding:20px}
+.wrap{max-width:1300px;margin:0 auto}
+.card{background:white;border-radius:12px;padding:20px;margin-bottom:16px;box-shadow:0 2px 6px rgba(0,0,0,.05)}
+h1{margin:0 0 6px;color:#0f766e;font-size:22px}
+.muted{color:#64748b;font-size:13px}
+input[type=text]{padding:10px 14px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px;width:300px}
+button{background:#0f766e;color:white;border:none;padding:10px 18px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer}
+.kpi{display:inline-block;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 18px;margin-right:10px;text-align:center;min-width:140px}
+.kpi-lbl{font-size:11px;color:#64748b}
+.kpi-val{font-size:24px;font-weight:800}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{text-align:left;padding:8px;background:#f1f5f9;color:#475569;font-weight:700}
+td{padding:7px 8px;border-bottom:1px solid #f1f5f9;vertical-align:top}
+.mono{font-family:ui-monospace,SFMono-Regular,monospace;font-weight:700;color:#1e40af}
+.ok{color:#16a34a}
+.crit{color:#dc2626}
+.inactivo{background:#fee2e2;color:#991b1b;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700}
+.suger{display:inline-block;background:#dbeafe;color:#1e40af;padding:2px 8px;border-radius:4px;font-size:11px;margin-right:4px;cursor:pointer;text-decoration:none}
+</style></head><body>
+<div class="wrap">
+<a href="/modulos">&larr; Volver al panel</a>
+<div class="card">
+  <h1>🔍 Buscar MPs · ver stock por grupo</h1>
+  <div class="muted">Buscá una palabra clave (ej: <a class="suger" onclick="buscarTermino(&quot;centella&quot;)">centella</a>
+  <a class="suger" onclick="buscarTermino(&quot;hialuronico&quot;)">hialurónico</a>
+  <a class="suger" onclick="buscarTermino(&quot;pantenol&quot;)">pantenol</a>
+  <a class="suger" onclick="buscarTermino(&quot;soda&quot;)">soda</a>
+  <a class="suger" onclick="buscarTermino(&quot;niacinamida&quot;)">niacinamida</a>
+  <a class="suger" onclick="buscarTermino(&quot;palmitoyl&quot;)">palmitoyl</a>) y mirá si hay varias MPs equivalentes con stock disperso.</div>
+  <div style="margin-top:16px;display:flex;gap:10px;align-items:center">
+    <input type="text" id="q" placeholder="ej: centella" onkeydown="if(event.key==='Enter')buscar()">
+    <button onclick="buscar()">▶ Buscar</button>
+  </div>
+  <div id="kpis" style="margin-top:16px"></div>
+</div>
+<div id="resultados"></div>
+</div>
+<script>
+function escapeHtml(s){return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function buscarTermino(t){ document.getElementById('q').value = t; buscar(); }
+
+async function buscar() {
+  const q = document.getElementById('q').value.trim();
+  if (q.length < 3) { alert('Ingresá al menos 3 caracteres'); return; }
+  document.getElementById('resultados').innerHTML = '<div class="card">Buscando…</div>';
+  try {
+    var r = await fetch('/api/plan/mps-buscar?q=' + encodeURIComponent(q));
+    var d = await r.json();
+    if (!r.ok) { alert('Error: ' + (d.error||r.status)); return; }
+    render(d);
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+function render(d) {
+  var k = '';
+  k += '<span class="kpi"><div class="kpi-lbl">Resultados</div><div class="kpi-val">' + d.total + '</div></span>';
+  k += '<span class="kpi"><div class="kpi-lbl">Activos</div><div class="kpi-val ok">' + d.n_activos + '</div></span>';
+  k += '<span class="kpi"><div class="kpi-lbl">📦 Stock total grupo</div><div class="kpi-val">' + Number(d.stock_total_g).toLocaleString() + ' g</div></span>';
+  k += '<span class="kpi"><div class="kpi-lbl">⚠ Min total</div><div class="kpi-val">' + Number(d.stock_min_total_g).toLocaleString() + ' g</div></span>';
+  document.getElementById('kpis').innerHTML = k;
+
+  if (!d.items.length) {
+    document.getElementById('resultados').innerHTML = '<div class="card">Sin resultados para "' + escapeHtml(d.query) + '"</div>';
+    return;
+  }
+  var out = '<div class="card"><h3 style="margin:0 0 8px">Resultados · "' + escapeHtml(d.query) + '"</h3>';
+  out += '<table><thead><tr><th>Código</th><th>Comercial</th><th>INCI</th><th>Proveedor</th><th style="text-align:right">Stock actual</th><th style="text-align:right">Stock min</th><th>Estado</th><th>Usado en (productos)</th></tr></thead><tbody>';
+  d.items.forEach(it => {
+    var stockClass = (it.stock_actual === 0 ? 'crit' : (it.stock_actual < it.stock_minimo ? 'crit' : 'ok'));
+    var estado = it.activo === 1 ? '✅ activo' : '<span class="inactivo">inactivo</span>';
+    var usos = (it.usado_en || []).slice(0,3).map(escapeHtml).join(', ');
+    if ((it.usado_en || []).length > 3) usos += ' +' + (it.usado_en.length - 3);
+    out += '<tr><td class="mono">' + escapeHtml(it.codigo) + '</td>'
+       + '<td>' + escapeHtml(it.nombre_comercial) + '</td>'
+       + '<td style="font-size:11px;color:#64748b">' + escapeHtml(it.nombre_inci) + '</td>'
+       + '<td style="font-size:11px">' + escapeHtml(it.proveedor) + '</td>'
+       + '<td style="text-align:right" class="' + stockClass + '">' + Number(it.stock_actual).toLocaleString() + ' g</td>'
+       + '<td style="text-align:right">' + Number(it.stock_minimo).toLocaleString() + ' g</td>'
+       + '<td>' + estado + '</td>'
+       + '<td style="font-size:11px;color:#475569">' + usos + '</td></tr>';
+  });
+  out += '</tbody></table></div>';
+  document.getElementById('resultados').innerHTML = out;
+}
+</script>
+</body></html>"""
+
+
 @bp.route("/admin/detector-mps-renombre", methods=["GET"])
 def detector_mps_renombre_page():
     """Página admin · detecta MPs usadas en fórmulas con stock=0 PERO con
