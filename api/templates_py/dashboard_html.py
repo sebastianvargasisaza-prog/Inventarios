@@ -17106,17 +17106,20 @@ async function ckMarcar(itemId, estado){
       // vende día/mes, alcanza, estado, botón solicitar. Todo lo demás
       // (presentación, horizonte, sugerencias) vive en el modal único
       // que abre el botón.
-      // Rediseño · Sebastián 13-may-2026: "visual quedo super fea, debe
-      // quedar ordenado · trazabilidad del calendario para saber ya esta
-      // programado o no, esa programación alcanza o no, MPs alcanzan o no".
-      // 4 columnas claras: Producto+urgencia · Demanda · Plan · MPs · Acción
-      html += '<table style="width:100%;border-collapse:collapse;font-size:12px;min-width:880px;table-layout:fixed">';
+      // Vista mínima · Sebastián 14-may-2026: "siento que necesidades
+      // quedo cargado de mil cosas que necesitamos poner es en este
+      // calendario EOS ia, y dejamos mejor las necesidades solitas que
+      // diga nada mas y programar te parece?"
+      // Solo: producto + urgencia · demanda · cobertura · stock · botón
+      // Todo lo complejo (plan / MPs / IA / horizonte) vive en /admin/plan-calendario
+      html += '<table style="width:100%;border-collapse:collapse;font-size:13px">';
       html += '<thead><tr style="background:#f8fafc;color:#475569">';
-      html += '<th style="text-align:left;padding:10px 8px;font-weight:700;width:28%">Producto</th>';
-      html += '<th style="text-align:center;padding:10px 8px;font-weight:700;width:18%">Demanda · Stock</th>';
-      html += '<th style="text-align:center;padding:10px 8px;font-weight:700;width:24%">📅 Plan de producción</th>';
-      html += '<th style="text-align:center;padding:10px 8px;font-weight:700;width:12%">🧪 MPs</th>';
-      html += '<th style="text-align:center;padding:10px 8px;font-weight:700;width:18%">Acción</th>';
+      html += '<th style="text-align:left;padding:10px 8px;font-weight:700">Producto</th>';
+      html += '<th style="text-align:center;padding:10px 8px;font-weight:700">Vende/día</th>';
+      html += '<th style="text-align:center;padding:10px 8px;font-weight:700">Vende/mes</th>';
+      html += '<th style="text-align:center;padding:10px 8px;font-weight:700">Stock</th>';
+      html += '<th style="text-align:center;padding:10px 8px;font-weight:700">Alcanza</th>';
+      html += '<th style="text-align:right;padding:10px 8px;font-weight:700">Programar</th>';
       html += '</tr></thead><tbody>';
       prods.forEach((p, j) => {
         const idx = baseIdx + j;
@@ -17124,90 +17127,32 @@ async function ckMarcar(itemId, estado){
         const dias = p.dias_cobertura != null ? p.dias_cobertura + 'd' : '—';
         const codDisp = escapeHtmlNec(p.codigo_pt || '');
         const ventaMes = Math.round(p.velocidad_uds_dia * 30);
-
-        html += '<tr style="border-top:1px solid #e2e8f0;vertical-align:top">';
-
-        // COL 1 · Producto + urgencia + presentación + alerts
-        html += '<td style="padding:12px 10px">';
-        html += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px"><span style="background:' + cfg.bg + ';color:' + cfg.text + ';padding:2px 8px;border-radius:6px;font-size:11px;font-weight:800">' + cfg.emoji + ' ' + p.urgencia + '</span>';
-        if (p.sin_mapeo_shopify) html += '<span title="Sin mapeo Shopify · ventas no contadas" style="background:#fee2e2;color:#dc2626;padding:1px 5px;border-radius:4px;font-size:10px;font-weight:700">🛒 sin SKU</span>';
-        if (p.tiene_10ml) html += '<span title="Presenta 10ml · ' + (p.tipo_10ml || '') + '" style="background:#fdf4ff;color:#7e22ce;padding:1px 5px;border-radius:4px;font-size:10px">10ml</span>';
-        html += '</div>';
-        html += '<div style="font-weight:700;color:#1e293b;font-size:13px;line-height:1.3">' + escapeHtmlNec(p.producto_nombre) + '</div>';
-        html += '<div style="font-family:ui-monospace,monospace;font-size:10px;color:#94a3b8;margin-top:2px">' + codDisp + ' · ' + (p.ml_unidad || 30) + 'ml</div>';
-        html += '</td>';
-
-        // COL 2 · Demanda + stock + cobertura
-        html += '<td style="padding:12px 10px;text-align:center">';
-        html += '<div style="font-size:13px;font-weight:700;color:' + cfg.text + '">' + dias + '</div>';
-        html += '<div style="font-size:10px;color:#64748b;margin-top:2px">' + p.velocidad_uds_dia.toFixed(1) + ' uds/día</div>';
-        html += '<div style="font-size:10px;color:#64748b">' + ventaMes + ' uds/mes</div>';
-        html += '<div style="font-size:11px;color:#1e293b;margin-top:4px;font-weight:600">' + p.stock_uds_total + ' uds · ' + (p.stock_kg_total != null ? p.stock_kg_total.toFixed(1) + 'kg' : '—') + '</div>';
-        html += '</td>';
-
-        // COL 3 · Plan · clickeable · abre modal Plan de producción completo
-        // Sebastián 14-may-2026: "donde dice plan de produccion deberia
-        // quedar con todas las funciones, cambiar fecha, cambiar cantidad,
-        // todo lo que tiene solicitar pero bien ordenado, también allí que
-        // quede el horizonte, programar automatico cada 30,60, 90 dias".
-        html += '<td style="padding:12px 10px;text-align:center;cursor:pointer" onclick="abrirPlanProduccion(' + idx + ')" title="Click para gestionar plan completo (fecha · kg · horizonte · canónico 30/60/90)">';
-        if (p.proximo_lote) {
-          const fechaCorta = (p.proximo_lote.fecha || '').slice(5, 10);
-          const alcanzaCfg = {
-            'SI':        {bg:'#dcfce7', text:'#166534', emoji:'✓',  txt:'Alcanza'},
-            'AJUSTADO':  {bg:'#fef3c7', text:'#854d0e', emoji:'⚠',  txt:'Ajustado'},
-            'NO':        {bg:'#fee2e2', text:'#991b1b', emoji:'✕',  txt:'NO alcanza'},
-          };
-          const ac = alcanzaCfg[p.plan_alcanza] || {bg:'#f1f5f9', text:'#64748b', emoji:'·', txt:'—'};
-          html += '<div style="background:#dbeafe;color:#1e40af;padding:3px 8px;border-radius:6px;font-size:11px;font-weight:700;display:inline-block">📅 ' + fechaCorta + ' · ' + p.proximo_lote.kg + 'kg</div>';
-          html += '<div style="margin-top:5px"><span style="background:' + ac.bg + ';color:' + ac.text + ';padding:2px 7px;border-radius:5px;font-size:10px;font-weight:700">' + ac.emoji + ' ' + ac.txt + (p.cob_post_plan_dias != null ? ' · ' + p.cob_post_plan_dias + 'd' : '') + '</span></div>';
-        } else {
-          html += '<span style="background:#fee2e2;color:#991b1b;padding:3px 8px;border-radius:6px;font-size:11px;font-weight:700">⚠ Sin programar</span>';
-        }
-        // Pausas si las hay
-        if (p.tiene_pausa && (p.lotes_pausados || []).length) {
-          const motivosUnicos = [...new Set(p.lotes_pausados.map(lp => lp.motivo_pausa || '?'))];
-          html += '<div style="margin-top:5px"><span title="Pausados: ' + p.lotes_pausados.length + '" style="background:#fde68a;color:#78350f;padding:2px 7px;border-radius:5px;font-size:10px;font-weight:700">⏸ ' + escapeHtmlNec(motivosUnicos.join(', ').slice(0, 22)) + '</span></div>';
-        }
-        // Alerta duplicados · Sebastián 14-may-2026: "veo mucha cosa repetida"
-        if ((p.n_duplicados || 0) > 0) {
-          const tooltipDup = p.duplicados_detectados.map(d => '• ' + d.fecha_a + ' (' + d.origen_a + ') vs ' + d.fecha_b + ' (' + d.origen_b + ')').join('\\n');
-          html += '<div style="margin-top:5px"><span title="' + escapeHtmlNec(tooltipDup) + '" style="background:#fecaca;color:#7f1d1d;padding:2px 7px;border-radius:5px;font-size:10px;font-weight:700">⚠ ' + p.n_duplicados + ' duplicado(s)</span></div>';
-        }
-        // CTA visible · Sebastián 14-may-2026: que se entienda que es la acción
-        html += '<div style="margin-top:8px"><button onclick="event.stopPropagation();abrirPlanProduccion(' + idx + ')" style="background:#0f766e;color:#fff;border:none;padding:6px 14px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer;width:100%">📅 Gestionar plan</button></div>';
+        const mlReal = p.ml_unidad || 30;
+        // Alerts mínimos · solo si crítico
+        let alertSinSku = p.sin_mapeo_shopify ? ' <span title="Sin mapeo Shopify" style="color:#dc2626;font-size:11px">🛒</span>' : '';
+        // Indicador "ya programado" minimal (cuántos lotes activos)
+        let chipPlan = '';
         if ((p.planificacion || []).length) {
-          html += '<details style="margin-top:5px;text-align:left;font-size:10px" onclick="event.stopPropagation()"><summary style="cursor:pointer;color:#64748b">▾ Ver ' + p.planificacion.length + ' lote(s) · acciones rápidas</summary>';
-          html += '<div style="margin-top:4px">' + renderLotesInline(p.planificacion, p.producto_nombre) + '</div>';
-          html += '</details>';
+          const proxFecha = (p.proximo_lote && p.proximo_lote.fecha) ? p.proximo_lote.fecha.slice(5, 10) : '';
+          chipPlan = ' <span title="' + p.planificacion.length + ' lote(s) agendado(s) · click Programar para gestionar" style="background:#dbeafe;color:#1e40af;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:700">📅 ' + proxFecha + '</span>';
         }
-        html += '</td>';
 
-        // COL 4 · MPs alcanzan
-        html += '<td style="padding:12px 10px;text-align:center">';
-        const mpsCfg = {
-          'SI':           {bg:'#dcfce7', text:'#166534', emoji:'✓', txt:'OK'},
-          'NO':           {bg:'#fee2e2', text:'#991b1b', emoji:'✕', txt:'Faltan'},
-          'DESCONOCIDO':  {bg:'#f1f5f9', text:'#64748b', emoji:'?', txt: p.mps_status === 'SIN_FORMULA' ? 'Sin fórmula' : '—'},
-        };
-        const mc = mpsCfg[p.mps_alcanza] || mpsCfg.DESCONOCIDO;
-        html += '<div style="background:' + mc.bg + ';color:' + mc.text + ';padding:3px 8px;border-radius:6px;font-size:11px;font-weight:700;display:inline-block">' + mc.emoji + ' ' + mc.txt + '</div>';
-        if (p.mps_status === 'FALTAN_MPS' && p.mps_n_faltantes != null) {
-          html += '<div style="font-size:10px;color:#dc2626;margin-top:3px">' + p.mps_n_faltantes + ' MPs</div>';
-        } else if (p.mps_status === 'OK' && p.mps_total_items != null) {
-          html += '<div style="font-size:10px;color:#64748b;margin-top:3px">' + p.mps_total_items + ' items</div>';
-        }
+        html += '<tr style="border-top:1px solid #e2e8f0">';
+        // Producto + urgencia
+        html += '<td style="padding:10px 8px">';
+        html += '<div style="display:flex;align-items:center;gap:6px"><span style="background:' + cfg.bg + ';color:' + cfg.text + ';padding:2px 8px;border-radius:6px;font-size:11px;font-weight:800">' + cfg.emoji + '</span>';
+        html += '<span style="font-weight:700;color:#1e293b">' + escapeHtmlNec(p.producto_nombre) + '</span>';
+        html += alertSinSku + chipPlan;
+        html += '</div>';
+        html += '<div style="font-family:ui-monospace,monospace;font-size:10px;color:#94a3b8;margin-top:2px">' + codDisp + ' · ' + mlReal + 'ml</div>';
         html += '</td>';
-
-        // COL 5 · Solicitar (reservado para futuro uso · Sebastián 14-may-2026:
-        // "solicitar lo usare para algo mas")
-        html += '<td style="padding:12px 10px;text-align:center">';
-        html += '<button onclick="solicitarPlaceholder(&quot;' + escapeHtmlNec(p.producto_nombre) + '&quot;)" title="Reservado · pendiente definición de función" style="background:#94a3b8;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;width:100%;opacity:.8">⚡ Solicitar</button>';
-        if (p.ultima_produccion_fecha) {
-          html += '<div style="margin-top:5px;font-size:10px;color:#ca8a04" title="Última producción">📜 ' + (p.ultima_produccion_fecha || '').slice(5, 10) + '</div>';
-        }
-        html += '</td>';
-
+        // Vende día / mes / stock / cobertura
+        html += '<td style="padding:10px 8px;text-align:center">' + p.velocidad_uds_dia.toFixed(1) + '</td>';
+        html += '<td style="padding:10px 8px;text-align:center">' + ventaMes + '</td>';
+        html += '<td style="padding:10px 8px;text-align:center">' + p.stock_uds_total + '</td>';
+        html += '<td style="padding:10px 8px;text-align:center;font-weight:700;color:' + cfg.text + '">' + dias + '</td>';
+        // Programar
+        html += '<td style="padding:10px 8px;text-align:right"><button onclick="abrirPlanProduccion(' + idx + ')" style="background:#0f766e;color:#fff;border:none;padding:7px 16px;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer">📅 Programar</button></td>';
         html += '</tr>';
       });
       html += '</tbody></table>';
