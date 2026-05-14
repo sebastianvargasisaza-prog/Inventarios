@@ -350,7 +350,7 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
     from datetime import date as _date, timedelta as _td
     import json as _json
 
-    hoy = _date.today()
+    hoy = _hoy_colombia()
     ventana_desde = (hoy - _td(days=ventana)).isoformat()
     pipeline_desde = (hoy - _td(days=7)).isoformat()
 
@@ -419,7 +419,7 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
            FROM produccion_programada
            WHERE fin_real_at IS NOT NULL
              AND date(fin_real_at) >= ?
-             AND date(fin_real_at) <= date('now')
+             AND date(fin_real_at) <= date('now', '-5 hours')
            GROUP BY producto""",
         (pipeline_desde,),
     ).fetchall():
@@ -559,7 +559,7 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
            FROM produccion_programada
            WHERE estado IN ('pendiente','programado','en_curso')
              AND fin_real_at IS NULL
-             AND date(fecha_programada) >= date('now', '-7 day')
+             AND date(fecha_programada) >= date('now', '-5 hours', '-7 day')
            GROUP BY producto""",
     ).fetchall():
         fechas = sorted(set([f.strip() for f in (r[3] or "").split(",") if f.strip()]))
@@ -597,7 +597,7 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
 
     # Inyectar lotes pendientes + horizonte en cada producto
     from datetime import date as _date, timedelta as _td
-    hoy = _date.today()
+    hoy = _hoy_colombia()
     for p in out:
         info = lotes_pendientes.get(p["producto_nombre"])
         if info:
@@ -1077,7 +1077,7 @@ def comparar_calendar_necesidades():
 
     # Producciones en Calendar (y manual legacy) próximos N días
     from datetime import date as _date, timedelta as _td
-    hoy = _date.today()
+    hoy = _hoy_colombia()
     fecha_hasta = (hoy + _td(days=horizonte)).isoformat()
     cal_por_prod = {}
     rows = c.execute(
@@ -1090,7 +1090,7 @@ def comparar_calendar_necesidades():
            WHERE origen IN ('calendar','manual')
              AND estado IN ('pendiente','programado','en_curso')
              AND fin_real_at IS NULL
-             AND date(fecha_programada) >= date('now')
+             AND date(fecha_programada) >= date('now', '-5 hours')
              AND date(fecha_programada) <= date(?)
            GROUP BY producto""",
         (fecha_hasta,),
@@ -1122,7 +1122,7 @@ def comparar_calendar_necesidades():
                   pp.id
            FROM produccion_programada pp
            WHERE pp.fin_real_at IS NOT NULL
-             AND date(pp.fin_real_at) >= date('now','-30 day')
+             AND date(pp.fin_real_at) >= date('now','-5 hours','-30 day')
            ORDER BY pp.fin_real_at DESC""",
     ).fetchall()
     # numero_op vive en ebr_ejecuciones · lookup separado por produccion_id
@@ -1277,7 +1277,7 @@ def comparar_calendar_necesidades():
            WHERE origen IN ('calendar','manual')
              AND estado IN ('pendiente','programado','en_curso')
              AND fin_real_at IS NULL
-             AND date(fecha_programada) >= date('now')
+             AND date(fecha_programada) >= date('now', '-5 hours')
              AND date(fecha_programada) <= date(?)
            GROUP BY producto""",
         (fecha_hasta,),
@@ -1889,6 +1889,55 @@ function render(d) {
 </body></html>"""
 
 
+@bp.route("/api/plan/debug-tz", methods=["GET"])
+def plan_debug_tz():
+    """Diagnóstico timezone · UTC vs Colombia · valida fix Sebastián.
+
+    "veo errores en la programacion las fechas estan raras... te pasaba
+    cuando lo extraias de google calendar". Causa: Render en UTC, planta
+    en UTC-5. Después de 7pm Colombia, date.today() salta al día siguiente.
+    """
+    err = _require_login()
+    if err:
+        return err
+    from datetime import datetime as _dt, date as _date, timezone as _tz
+    import time as _time
+    now_utc = _dt.now(_tz.utc)
+    now_col = _now_colombia()
+    hoy_buggy = _date.today()        # depende de TZ del servidor
+    hoy_correcto = _hoy_colombia()   # siempre Colombia
+
+    # SQLite comparison
+    conn = get_db()
+    c = conn.cursor()
+    sql_now_utc = c.execute("SELECT datetime('now')").fetchone()[0]
+    sql_now_col = c.execute("SELECT datetime('now', '-5 hours')").fetchone()[0]
+    sql_date_utc = c.execute("SELECT date('now')").fetchone()[0]
+    sql_date_col = c.execute("SELECT date('now', '-5 hours')").fetchone()[0]
+
+    es_consistente = (hoy_correcto.isoformat() == sql_date_col)
+    bug_activo = (hoy_buggy != hoy_correcto) or (sql_date_utc != sql_date_col)
+
+    return jsonify({
+        "now_utc": now_utc.isoformat(),
+        "now_colombia": now_col.isoformat(),
+        "hoy_buggy_servidor": hoy_buggy.isoformat(),
+        "hoy_correcto_colombia": hoy_correcto.isoformat(),
+        "sqlite_datetime_now_utc": sql_now_utc,
+        "sqlite_datetime_now_colombia": sql_now_col,
+        "sqlite_date_now_utc": sql_date_utc,
+        "sqlite_date_now_colombia": sql_date_col,
+        "es_consistente_python_vs_sqlite": es_consistente,
+        "bug_activo_ahora_mismo": bug_activo,
+        "diagnostico": (
+            "✅ Plan v3 usa hoy_correcto_colombia y date('now','-5 hours') "
+            "para evitar inconsistencias. Si bug_activo_ahora_mismo=true significa que "
+            "el server está después de 7pm Colombia y los cálculos legacy "
+            "estarían 1 día desplazados (pero plan v3 está protegido)."
+        ),
+    })
+
+
 @bp.route("/api/plan/festivos", methods=["GET"])
 def plan_festivos():
     """Lista festivos colombianos para uno o varios años.
@@ -1910,7 +1959,7 @@ def plan_festivos():
         except ValueError:
             return jsonify({"error": "year debe ser entero (separados por coma)"}), 400
     else:
-        hoy = _date.today()
+        hoy = _hoy_colombia()
         years = [hoy.year, hoy.year + 1]
 
     NOMBRES = {
@@ -1996,7 +2045,7 @@ def plan_sugerido():
                   COALESCE(kg_real, cantidad_kg, 0)
            FROM produccion_programada
            WHERE fin_real_at IS NOT NULL
-             AND date(fin_real_at) >= date('now','-30 day')""",
+             AND date(fin_real_at) >= date('now','-5 hours','-30 day')""",
     ).fetchall()
     for r in rows_reales:
         reales_por_prod.setdefault(r[0] or "", []).append({
@@ -2014,7 +2063,7 @@ def plan_sugerido():
             productos_con_formula[(r[0] or "").upper().strip()] = float(r[1] or 0)
 
     # 4) Iterar necesidades y proponer slots
-    hoy = _date.today()
+    hoy = _hoy_colombia()
     fecha_inicio = hoy + _td(days=1)  # mañana mínimo
 
     slots = []  # cada slot = un día con productos
@@ -2064,10 +2113,24 @@ def plan_sugerido():
             cur = cur + _td(days=1)
         return None
 
-    # Ordenar por urgencia · días_cobertura ASC
-    ordenadas = sorted(necesidades, key=lambda n: (
-        n["dias_cobertura"] if n["dias_cobertura"] is not None else 99999
-    ))
+    # Ordenar por restricciones DESC + urgencia ASC · Sebastián 13-may-2026
+    # "fechas estan raras salta mucho no tiene consistencia". Causa: si
+    # asignábamos solo por urgencia, productos restrictivos (grandes,
+    # complejos) llegaban tarde y eran forzados a saltar semanas porque
+    # los días que podían usar ya estaban ocupados. Solución: asignar
+    # primero los más restrictivos para que tomen sus huecos óptimos.
+    # Orden: (complejos, grandes, medianos+pequeños) × urgencia ASC
+    def _prioridad_asig(n):
+        prod = n["producto_nombre"] or ""
+        nombre_upper = prod.upper().strip()
+        lote_kg = productos_con_formula.get(nombre_upper, 0)
+        es_compl = _es_producto_complejo(prod)
+        es_grande = lote_kg > LOTE_GRANDE_KG
+        # Tier: 0=complejos (más restrictivos), 1=grandes, 2=otros
+        tier = 0 if es_compl else (1 if es_grande else 2)
+        cob = n["dias_cobertura"] if n["dias_cobertura"] is not None else 99999
+        return (tier, cob)
+    ordenadas = sorted(necesidades, key=_prioridad_asig)
 
     # Sumar pipeline reciente al stock para recalcular cobertura
     for nec in ordenadas:
@@ -2148,7 +2211,7 @@ def plan_sugerido():
            WHERE pp.origen IN ('calendar','manual')
              AND pp.estado IN ('pendiente','programado','en_curso')
              AND pp.fin_real_at IS NULL
-             AND date(pp.fecha_programada) >= date('now')
+             AND date(pp.fecha_programada) >= date('now', '-5 hours')
              AND date(pp.fecha_programada) <= date(?)""",
         (fecha_hasta,),
     ).fetchall():
@@ -2856,6 +2919,31 @@ DIAS_HABILES = {0, 1, 2, 3, 4}        # lun=0 ... vie=4
 DIAS_PREFERIDOS = {0, 2, 4}            # lun, mié, vie (para canónico)
 MAX_PRODUCCIONES_POR_DIA = 2
 
+# Timezone Colombia (UTC-5 sin DST) · Sebastián 13-may-2026
+# "veo errores en la programacion las fechas estan raras como hacemos
+# para solucionar esas fechas? porque si revisas salta mucho no tiene
+# consistencia · te pasaba cuando lo extraias de google calendar".
+# Causa raíz: Render corre en UTC. Después de 7pm Colombia, date.today()
+# del server salta al día siguiente. date('now') de SQLite también UTC.
+# Solución: forzar UTC-5 para CUALQUIER cálculo de "hoy" o "ahora".
+from datetime import timezone as _tz, timedelta as _td_init
+TZ_COLOMBIA = _tz(_td_init(hours=-5))
+SQLITE_NOW_COL = "datetime('now', '-5 hours')"
+SQLITE_DATE_COL = "date('now', '-5 hours')"
+
+
+def _hoy_colombia():
+    """Fecha de hoy en zona horaria Colombia (UTC-5).
+    Reemplaza date.today() del server (que está en UTC en Render)."""
+    from datetime import datetime as _dt
+    return _dt.now(TZ_COLOMBIA).date()
+
+
+def _now_colombia():
+    """Datetime ahora en zona horaria Colombia."""
+    from datetime import datetime as _dt
+    return _dt.now(TZ_COLOMBIA)
+
 
 # Festivos colombianos · Sebastián 13-may-2026
 # "revisa bien dias festivos en colombia asi evitamos errores"
@@ -3085,7 +3173,7 @@ def plan_proximas():
         params.append(desde)
     else:
         # Default: últimos 7 días + futuro
-        where.append("date(pp.fecha_programada) >= date('now', '-7 day')")
+        where.append("date(pp.fecha_programada) >= date('now', '-5 hours', '-7 day')")
 
     if hasta:
         where.append("date(pp.fecha_programada) <= date(?)")
@@ -3363,7 +3451,7 @@ def programar_canonico():
         return jsonify({"error": "horizonte_dias debe estar entre 30 y 730"}), 400
 
     from datetime import date as _date, timedelta as _td
-    hoy = _date.today()
+    hoy = _hoy_colombia()
     if fecha_inicio:
         if not _valida_fecha_iso(fecha_inicio):
             return jsonify({"error": "fecha_inicio formato YYYY-MM-DD"}), 400

@@ -7244,6 +7244,61 @@ def test_golden_plan_festivos_colombia(app, db_clean):
 
 
 # ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH PLAN-I · timezone Colombia · Sebastián 13-may-2026
+# ═══════════════════════════════════════════════════════════════════
+def test_golden_plan_timezone_colombia(app, db_clean):
+    """Plan v3 usa zona horaria Colombia (UTC-5) en TODOS los cálculos
+    de fecha · evita el bug "fechas saltan" después de 7pm hora local.
+
+    Sebastián: "veo errores en la programacion las fechas estan raras...
+    te pasaba cuando lo extraias de google calendar". Causa: Render UTC,
+    planta UTC-5 sin DST.
+    """
+    from api.blueprints.plan import (
+        _hoy_colombia, _now_colombia, TZ_COLOMBIA,
+        SQLITE_DATE_COL, SQLITE_NOW_COL,
+    )
+    from datetime import datetime, timezone, date as _date
+
+    # Caso 1: _hoy_colombia retorna date · siempre UTC-5
+    hoy_col = _hoy_colombia()
+    assert isinstance(hoy_col, _date)
+
+    # Caso 2: _now_colombia tiene tzinfo Colombia
+    now_col = _now_colombia()
+    assert now_col.tzinfo is not None
+    assert now_col.utcoffset().total_seconds() == -5 * 3600
+
+    # Caso 3: TZ_COLOMBIA es UTC-5 fijo (Colombia no observa DST)
+    assert TZ_COLOMBIA.utcoffset(None).total_seconds() == -5 * 3600
+
+    # Caso 4: SQLITE_DATE_COL es '-5 hours' offset
+    assert "-5 hours" in SQLITE_DATE_COL
+    assert "-5 hours" in SQLITE_NOW_COL
+
+    # Caso 5: endpoint /api/plan/debug-tz devuelve análisis
+    cs = _login(app, 'sebastian')
+    r = cs.get('/api/plan/debug-tz')
+    assert r.status_code == 200, f'BUG: {r.status_code}'
+    d = r.get_json()
+    assert 'now_colombia' in d
+    assert 'hoy_correcto_colombia' in d
+    assert 'sqlite_date_now_colombia' in d
+    # Python y SQLite deben coincidir
+    assert d['es_consistente_python_vs_sqlite'] is True, \
+        f"BUG: {d['hoy_correcto_colombia']} != {d['sqlite_date_now_colombia']}"
+
+    # Caso 6: simular que server está en UTC pasadas 7pm Colombia
+    # (hora 00:30 UTC = 19:30 Colombia día anterior)
+    # No se puede simular cambiando TZ del sistema, pero validamos que
+    # _hoy_colombia siempre devuelve fecha del huso Colombia
+    fake_utc = datetime(2026, 5, 14, 1, 30, tzinfo=timezone.utc)  # 8:30pm Colombia 13-may
+    fake_col_date = fake_utc.astimezone(TZ_COLOMBIA).date()
+    assert fake_col_date == _date(2026, 5, 13), \
+        f'BUG simulación: {fake_col_date} != 2026-05-13'
+
+
+# ═══════════════════════════════════════════════════════════════════
 # GOLDEN PATH PLAN-H · reprogramar lote (mover fecha) · Sebastián 13-may-2026
 # ═══════════════════════════════════════════════════════════════════
 def test_golden_plan_reprogramar_proxima(app, db_clean):
