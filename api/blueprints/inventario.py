@@ -3076,6 +3076,29 @@ def registrar_recepcion():
     lote = (d.get('lote') or '').strip()
     if not lote or lote.upper()=='AUTO':
         from datetime import date; lote = f"ESP{date.today().strftime('%y%m%d')}{codigo[-3:]}"
+    # Sebastián 15-may-2026: guard de idempotencia. Tras el incidente de
+    # corrupción de BD, si la analista vio "error interno" y reintentó un
+    # ingreso que en realidad sí se había guardado, se duplicaba el
+    # movimiento de Entrada (stock inflado al doble). Ahora: si ya existe
+    # una Entrada idéntica (material+lote+cantidad) en los últimos 10 min,
+    # se rechaza con 409 salvo que se pase forzar_duplicado=true.
+    if not d.get('forzar_duplicado'):
+        dup = c.execute(
+            """SELECT id, fecha FROM movimientos
+               WHERE material_id=? AND lote=? AND cantidad=? AND tipo='Entrada'
+                 AND (julianday('now') - julianday(fecha)) BETWEEN 0 AND ?
+               ORDER BY id DESC LIMIT 1""",
+            (codigo, lote, cantidad_recibida, 10.0 / 1440.0),
+        ).fetchone()
+        if dup:
+            return jsonify({
+                'error': (f'Ya hay un ingreso idéntico de {codigo} · lote {lote} · '
+                          f'{cantidad_recibida:.0f}g registrado hace menos de 10 min '
+                          f'(movimiento #{dup[0]}). Si de verdad querés registrarlo '
+                          f'otra vez, reintentá marcando "forzar duplicado".'),
+                'posible_duplicado': True,
+                'movimiento_existente_id': dup[0],
+            }), 409
     c.execute("""INSERT INTO movimientos
                  (material_id,material_nombre,cantidad,tipo,fecha,observaciones,
                   lote,fecha_vencimiento,estanteria,posicion,proveedor,estado_lote,operador,
@@ -3149,6 +3172,93 @@ def registrar_recepcion():
     if numero_oc and not oc_warning: msg += f' | OC {numero_oc} actualizada'
     if oc_warning: msg += f' | ⚠ {oc_warning}'
     return jsonify({'message': msg,'lote':lote,'codigo':codigo,'nombre':nombre,'cantidad':cantidad_recibida,'cuarentena':cuarentena,'oc_warning':oc_warning}), 201
+
+@bp.route('/api/inventario/diagnostico-post-incidente', methods=['GET'])
+def diagnostico_post_incidente():
+    """Detecta inconsistencias que pudo dejar el incidente de corrupción
+    de BD del 15-may-2026. Read-only · no modifica nada.
+
+    Sebastián 15-may-2026: "me preocupa que planta quedara con algo roto,
+    revisemos antes de seguir". Chequea 3 cosas:
+      1. Movimientos de Entrada duplicados (reintento tras error 500)
+      2. Producciones iniciadas que quedaron sin terminar
+      3. Lotes con stock negativo (imposible · señal de drift)
+    """
+    u = session.get('compras_user', '')
+    if not u:
+        return jsonify({'error': 'No autenticado'}), 401
+    conn = get_db(); c = conn.cursor()
+
+    # 1) Movimientos Entrada duplicados · mismo material+lote+cantidad,
+    # < 10 min entre sí, en los últimos 4 días.
+    dup_rows = c.execute(
+        """SELECT m1.id, m2.id, m1.material_id, m1.material_nombre,
+                  m1.lote, m1.cantidad, m1.fecha, m2.fecha
+           FROM movimientos m1
+           JOIN movimientos m2
+             ON m1.material_id = m2.material_id
+            AND m1.lote = m2.lote
+            AND m1.cantidad = m2.cantidad
+            AND m1.tipo = m2.tipo
+            AND m1.id < m2.id
+            AND ABS(julianday(m2.fecha) - julianday(m1.fecha)) < 0.0070
+           WHERE m1.tipo = 'Entrada'
+             AND (julianday('now') - julianday(m1.fecha)) < 4
+           ORDER BY m1.material_id, m1.fecha""",
+    ).fetchall()
+    duplicados = [{
+        'mov_id_1': r[0], 'mov_id_2': r[1], 'material_id': r[2],
+        'material_nombre': r[3], 'lote': r[4], 'cantidad': r[5],
+        'fecha_1': r[6], 'fecha_2': r[7],
+    } for r in dup_rows]
+
+    # 2) Producciones iniciadas sin terminar
+    colg_rows = c.execute(
+        """SELECT id, producto, fecha_programada, inicio_real_at, estado,
+                  COALESCE(inventario_descontado_at,'')
+           FROM produccion_programada
+           WHERE inicio_real_at IS NOT NULL
+             AND fin_real_at IS NULL
+             AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado')
+           ORDER BY inicio_real_at DESC""",
+    ).fetchall()
+    colgadas = [{
+        'id': r[0], 'producto': r[1], 'fecha_programada': r[2],
+        'inicio_real_at': r[3], 'estado': r[4],
+        'inventario_descontado': bool(r[5]),
+    } for r in colg_rows]
+
+    # 3) Lotes con stock negativo (tolerancia float -0.01)
+    neg_rows = c.execute(
+        """SELECT material_id, lote,
+                  SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) AS stock
+           FROM movimientos
+           GROUP BY material_id, lote
+           HAVING stock < -0.01
+           ORDER BY stock ASC""",
+    ).fetchall()
+    negativos = [{
+        'material_id': r[0], 'lote': r[1], 'stock_neto': round(r[2], 2),
+    } for r in neg_rows]
+
+    todo_ok = not duplicados and not negativos
+    return jsonify({
+        'fecha_revision': datetime.now().isoformat(),
+        'resumen': {
+            'movimientos_entrada_duplicados': len(duplicados),
+            'producciones_colgadas': len(colgadas),
+            'lotes_stock_negativo': len(negativos),
+        },
+        'planta_ok': todo_ok,
+        'duplicados_entrada': duplicados,
+        'producciones_colgadas': colgadas,
+        'lotes_stock_negativo': negativos,
+        'nota': ('Si planta_ok=true, el incidente no dejó inconsistencias. '
+                 'duplicados_entrada → anular el mov más nuevo con '
+                 '/api/movimientos/<id>/anular. producciones_colgadas suele '
+                 'ser estado intermedio legítimo (revisar manualmente).'),
+    })
+
 
 @bp.route('/api/lotes/cuarentena', methods=['GET'])
 def lotes_cuarentena():
