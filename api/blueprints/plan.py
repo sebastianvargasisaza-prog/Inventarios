@@ -7281,8 +7281,10 @@ def _ia_autoplan_sugerir(payload_contexto, modelo="claude-sonnet-4-6"):
         "COMPLETO (horizonte_dias días). NO pares hasta cubrir los "
         "horizonte_dias completos. Si horizonte=365 y un lote dura 45 días, "
         "necesitás ~8 lotes de ese producto.\n"
-        "2. Primer lote: hoy + cob_dias - 20 (o lunes próximo "
-        "fecha_inicio_minima_plan si más temprano).\n"
+        "2. Primer lote: hoy + cob_dias - 20. Si esa fecha cae antes de "
+        "fecha_inicio_minima_plan, usá fecha_inicio_minima_plan (próximo "
+        "día hábil). Programá lotes en mayo si la cobertura lo exige · "
+        "NO empujes todo a meses futuros.\n"
         "3. Lotes siguientes: cada (kg_lote / velocidad_kg_dia) días desde "
         "el lote anterior. Repetí hasta llegar a hoy + horizonte_dias.\n"
         "4. kg por lote: usá lote_recomendado_kg (no lote_size_kg_excel). Si "
@@ -7631,21 +7633,28 @@ def autoplan_ia():
     # 4) Reglas resumidas para la IA
     from datetime import timedelta as _td_ia
     hoy_dt = _hoy_colombia()
-    dias_a_lunes = (7 - hoy_dt.weekday()) % 7
-    if dias_a_lunes == 0:
-        dias_a_lunes = 7
-    fecha_inicio_minima = (hoy_dt + _td_ia(days=dias_a_lunes)).isoformat()
+    # Sebastián 15-may-2026: "necesito que recomiende en mayo también ·
+    # el martes después del lunes debemos producir". El inicio del plan
+    # es el PRÓXIMO DÍA HÁBIL (L-V no festivo), arrancando mañana. Si el
+    # lunes es festivo (ej. 18-may-2026 Ascensión), arranca el martes.
+    # Antes era "el próximo lunes" fijo · empujaba el plan a junio.
+    _d_ini = hoy_dt + _td_ia(days=1)
+    _guard = 0
+    while (_d_ini.weekday() >= 5 or es_festivo_colombia(_d_ini)) and _guard < 30:
+        _d_ini = _d_ini + _td_ia(days=1)
+        _guard += 1
+    fecha_inicio_minima = _d_ini.isoformat()
 
     # Festivos colombianos del horizonte para que la IA los vea explícitos
     festivos_horizonte = []
-    for offset in range(horizonte + dias_a_lunes + 7):
+    for offset in range(horizonte + 14):
         d = hoy_dt + _td_ia(days=offset)
         if es_festivo_colombia(d):
             festivos_horizonte.append(d.isoformat())
 
     reglas = {
         "fecha_inicio_minima": fecha_inicio_minima,
-        "regla_inicio": "NO programar esta semana · empezar el " + fecha_inicio_minima + " (próximo lunes)",
+        "regla_inicio": "Empezar a programar desde el " + fecha_inicio_minima + " (próximo día hábil) · NO antes",
         "producir_dias_antes_agotar": 20,
         "ideal_dias_antes": 25,
         "dias_habiles": "Lun-Vie",
