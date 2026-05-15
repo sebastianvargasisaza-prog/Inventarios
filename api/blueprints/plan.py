@@ -2423,6 +2423,73 @@ def configurar_canonicos_api():
     })
 
 
+@bp.route("/api/plan/lotes-producto", methods=["GET"])
+def lotes_producto_diag():
+    """Diagnóstico · lista TODOS los lotes activos de un producto (con
+    matching normalizado). Útil cuando hay duplicados visibles.
+
+    Sebastián 14-may-2026: "sigue apareciendo Limpiador facial H
+    viernes 22 y lunes 25". Endpoint para ver TODOS los lotes que
+    pueden estar generando ese duplicado.
+
+    Query: ?q=limpiador hidratante (substring fuzzy en producto)
+    """
+    err = _require_login()
+    if err:
+        return err
+    q = (request.args.get("q") or "").strip()
+    if not q:
+        return jsonify({"error": "pasá ?q=nombre_producto"}), 400
+
+    import unicodedata
+    def _norm(s):
+        if not s: return ""
+        s = unicodedata.normalize('NFD', str(s).strip().upper())
+        return ''.join(ch for ch in s if unicodedata.category(ch) != 'Mn')
+
+    q_norm = _norm(q)
+    conn = get_db()
+    c = conn.cursor()
+
+    rows = c.execute(
+        """SELECT id, producto, fecha_programada, origen, estado,
+                  cantidad_kg, fin_real_at, inicio_real_at,
+                  motivo_pausa, observaciones
+           FROM produccion_programada
+           ORDER BY fecha_programada DESC""",
+    ).fetchall()
+
+    matched = []
+    for r in rows:
+        if q_norm in _norm(r[1]):
+            matched.append({
+                "id": r[0], "producto": r[1],
+                "fecha": (r[2] or "")[:10],
+                "origen": r[3], "estado": r[4],
+                "kg": float(r[5] or 0),
+                "fin_real_at": r[6],
+                "inicio_real_at": r[7],
+                "motivo_pausa": r[8],
+                "obs_preview": (r[9] or "")[:120],
+                "es_activo": (r[4] in ('pendiente','programado','en_curso','esperando_recurso')
+                              and not r[6] and not r[7]),
+            })
+
+    # Agrupar por nombre exacto · para ver variantes
+    variantes = {}
+    for m in matched:
+        variantes.setdefault(m["producto"], 0)
+        variantes[m["producto"]] += 1
+
+    return jsonify({
+        "query": q,
+        "n_total": len(matched),
+        "n_activos": sum(1 for m in matched if m["es_activo"]),
+        "variantes_nombre": variantes,
+        "lotes": matched[:100],
+    })
+
+
 @bp.route("/api/plan/limpiar-duplicados", methods=["POST"])
 def limpiar_duplicados():
     """Detecta y cancela duplicados activos · mismo producto + fecha cercana.
@@ -2467,12 +2534,25 @@ def limpiar_duplicados():
            ORDER BY producto, fecha_programada""",
     ).fetchall()
 
-    # 2) Agrupar por producto y detectar duplicados ±21d
+    # 2) Agrupar por producto NORMALIZADO · Sebastián 14-may-2026:
+    # "sigue apareciendo Limpiador facial H viernes 22 y lunes 25". Causa:
+    # produccion_programada tenía variantes del mismo producto con
+    # nombres ligeramente distintos (Calendar legacy "Limpiador Hidratante"
+    # vs canónico "LIMPIADOR FACIAL HIDRATANTE"). El detector previo
+    # agrupaba por nombre exacto · ahora normaliza upper+trim+sin acentos.
+    import unicodedata
+    def _norm_prod(s):
+        if not s: return ""
+        s = unicodedata.normalize('NFD', str(s).strip().upper())
+        return ''.join(ch for ch in s if unicodedata.category(ch) != 'Mn').replace('  ', ' ')
+
     from datetime import date as _date
     por_producto = {}
     for r in rows:
-        por_producto.setdefault(r[1], []).append({
-            "id": r[0], "fecha": r[2][:10] if r[2] else None,
+        key_norm = _norm_prod(r[1])
+        por_producto.setdefault(key_norm, []).append({
+            "id": r[0], "producto_real": r[1],
+            "fecha": r[2][:10] if r[2] else None,
             "origen": r[3] or "manual", "kg": float(r[4] or 0),
         })
 
@@ -2500,17 +2580,17 @@ def limpiar_duplicados():
                             cancelar_ids.append(lb["id"])
                             marcados_cancelados.add(lb["id"])
                             duplicados_detectados.append({
-                                "producto": prod,
-                                "conserva": {"id": la["id"], "fecha": la["fecha"], "origen": la["origen"]},
-                                "cancela": {"id": lb["id"], "fecha": lb["fecha"], "origen": lb["origen"]},
+                                "producto": la.get("producto_real") or prod,
+                                "conserva": {"id": la["id"], "fecha": la["fecha"], "origen": la["origen"], "nombre": la.get("producto_real")},
+                                "cancela": {"id": lb["id"], "fecha": lb["fecha"], "origen": lb["origen"], "nombre": lb.get("producto_real")},
                             })
                         else:
                             cancelar_ids.append(la["id"])
                             marcados_cancelados.add(la["id"])
                             duplicados_detectados.append({
-                                "producto": prod,
-                                "conserva": {"id": lb["id"], "fecha": lb["fecha"], "origen": lb["origen"]},
-                                "cancela": {"id": la["id"], "fecha": la["fecha"], "origen": la["origen"]},
+                                "producto": lb.get("producto_real") or prod,
+                                "conserva": {"id": lb["id"], "fecha": lb["fecha"], "origen": lb["origen"], "nombre": lb.get("producto_real")},
+                                "cancela": {"id": la["id"], "fecha": la["fecha"], "origen": la["origen"], "nombre": la.get("producto_real")},
                             })
                             break  # la ya no existe, sigue con próximo i
                 except Exception:
