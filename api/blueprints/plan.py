@@ -6040,7 +6040,9 @@ select,input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-si
       <button onclick="irHoy()" class="secondary">Hoy</button>
     </div>
     <div>
-      <button onclick="confirmarAplicar()" class="success" id="btn-aplicar" disabled>✅ Confirmar y programar TODO</button>
+      <button onclick="generarPlanIA()" class="success" id="btn-generar-ia-2"
+        style="font-size:14px;padding:10px 18px">🤖 Generar plan IA</button>
+      <button onclick="confirmarAplicar()" class="success" id="btn-aplicar" style="display:none" disabled>✅ Confirmar y programar TODO</button>
     </div>
   </div>
   <div class="legend">
@@ -6947,9 +6949,10 @@ async function generarPlanIA(){
                '⚠ Esto REEMPLAZA el plan actual (incluido lo que hayas\n' +
                'movido a mano). ¿Continuar?')) return;
 
-  const btn = document.getElementById('btn-generar-ia');
-  btn.disabled = true;
-  btn.textContent = '⏳ La IA está calculando el plan…';
+  // Hay 2 botones con esta acción (barra superior + barra del grid).
+  const btns = [document.getElementById('btn-generar-ia'),
+                document.getElementById('btn-generar-ia-2')].filter(Boolean);
+  btns.forEach(b => { b.disabled = true; b.textContent = '⏳ Calculando plan…'; });
   document.getElementById('ia-comentario').innerHTML =
     '<div class="banner info">⏳ Paso 1/2 · La IA analiza ventas, stock y reglas… (~30-60s, modelo Sonnet 4.6)</div>';
 
@@ -6978,7 +6981,7 @@ async function generarPlanIA(){
     }
 
     // PASO 2 · persistir como canónico (eos_plan) en el calendario
-    btn.textContent = '⏳ Guardando plan en el calendario…';
+    btns.forEach(b => b.textContent = '⏳ Guardando plan…');
     document.getElementById('ia-comentario').innerHTML =
       '<div class="banner info">⏳ Paso 2/2 · Guardando ' + sugerencias.length +
       ' lotes en el calendario…</div>';
@@ -7017,8 +7020,7 @@ async function generarPlanIA(){
     document.getElementById('ia-comentario').innerHTML =
       '<div class="banner danger">❌ Error de red: ' + escapeHtml(e.message) + '</div>';
   } finally {
-    btn.disabled = false;
-    btn.textContent = '🤖 Generar plan IA';
+    btns.forEach(b => { b.disabled = false; b.textContent = '🤖 Generar plan IA'; });
   }
 }
 
