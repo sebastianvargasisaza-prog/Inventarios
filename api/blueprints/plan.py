@@ -6011,9 +6011,9 @@ select,input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-si
       <span class="muted" style="margin-right:8px">Horizonte autoplan:</span>
       <button class="horiz-btn" data-h="30" onclick="setHoriz(30)">30 días</button>
       <button class="horiz-btn" data-h="60" onclick="setHoriz(60)">60 días</button>
-      <button class="horiz-btn active" data-h="90" onclick="setHoriz(90)">90 días</button>
+      <button class="horiz-btn" data-h="90" onclick="setHoriz(90)">90 días</button>
       <button class="horiz-btn" data-h="180" onclick="setHoriz(180)">180 días</button>
-      <button class="horiz-btn" data-h="365" onclick="setHoriz(365)">365 días</button>
+      <button class="horiz-btn active" data-h="365" onclick="setHoriz(365)">365 días</button>
     </div>
     <div>
       <label style="margin-right:10px;font-size:12px;color:#475569;cursor:pointer">
@@ -6022,7 +6022,7 @@ select,input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-si
       </label>
       <button onclick="cargar()" class="secondary">↻ Recargar</button>
       <button onclick="autoplanIA()" class="warn" id="btn-ia">🤖 Autoplan con IA</button>
-      <button onclick="aplicarIAanual()" class="success" id="btn-ia-anual" style="display:none">🎯 Aplicar plan IA como CANÓNICO 365d</button>
+      <button onclick="aplicarIAanual()" class="success" id="btn-ia-anual" style="display:none">🎯 Aplicar plan IA</button>
       <button onclick="diagCalendar()" class="secondary">🔍 Diag</button>
     </div>
   </div>
@@ -6080,7 +6080,7 @@ select,input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-si
 
 </div>
 <script>
-let HORIZONTE = 90;  // Sebastián 14-may-2026: "la IA solo me pone producciones por mayo" · subir default
+let HORIZONTE = 365;  // Sebastián 15-may-2026: default 365 · "elegi 365 pero solo programa mayo"
 let MES_OFFSET = 0;  // 0 = mes actual · -1/+1 navegar
 let PLAN_DATA = null;
 const DIAS = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
@@ -7003,45 +7003,37 @@ async function aplicarIAanual(){
     alert('No hay sugerencias IA cargadas');
     return;
   }
-  // Productos únicos · primera sugerencia de cada uno como base
-  // Sebastián 14-may-2026: la IA ahora devuelve frecuencia_dias en cada
-  // sugerencia · usamos esa frecuencia POR PRODUCTO (no una global)
-  const productosUnicos = {};
+  // Sebastián 15-may-2026: la IA ahora propone UNA sugerencia POR LOTE
+  // físico (no por producto con frecuencia). Se persisten TODAS tal cual.
+  // El backend valida L-V + no festivo + max 2/día · mueve si no cumple.
+  const porProducto = {};
   sugIA.forEach(s => {
-    if (!productosUnicos[s.producto]){
-      productosUnicos[s.producto] = {
-        producto: s.producto, kg: s.kg, fecha_inicio: s.fecha,
-        frecuencia_dias: s.frecuencia_dias || 30,
-      };
-    }
+    porProducto[s.producto] = (porProducto[s.producto] || 0) + 1;
   });
-  const productos = Object.values(productosUnicos);
-  // Resumen con frecuencias de la IA
-  const resumenFreq = productos.map(p => '  · ' + p.producto + ' · ' + p.kg + 'kg cada ' + p.frecuencia_dias + 'd').join('\n');
-  if (!confirm('¿Aplicar plan IA como CANÓNICO 365 días?\n\n' +
-               'Productos: ' + productos.length + '\n\n' +
-               resumenFreq + '\n\n' +
-               'Esto BORRA el plan canónico actual y crea series de 1 año\n' +
-               'con la frecuencia que la IA calculó para CADA producto.\n\n' +
+  const resumen = Object.keys(porProducto).sort().map(p =>
+    '  · ' + p + ' · ' + porProducto[p] + ' lote' + (porProducto[p]>1?'s':'')
+  ).join('\n');
+  if (!confirm('¿Aplicar plan IA?\n\n' +
+               sugIA.length + ' lotes en total · ' + Object.keys(porProducto).length + ' productos:\n\n' +
+               resumen + '\n\n' +
+               'Esto BORRA el plan actual (eos_canonico + eos_plan) y\n' +
+               'persiste los lotes IA tal cual los propuso. Validación L-V\n' +
+               'sin festivos (mueve al siguiente día hábil si choca).\n\n' +
                '¿Confirmás?')) return;
   const btn = document.getElementById('btn-ia-anual');
   btn.disabled = true;
   btn.textContent = '⏳ Aplicando…';
   try {
-    const sugerencias = productos.map(p => ({
-      producto: p.producto, kg: p.kg,
-      fecha_inicio: p.fecha_inicio,
-      frecuencia_dias: p.frecuencia_dias,  // de la IA
+    const sugerencias = sugIA.map(s => ({
+      producto: s.producto, kg: s.kg, fecha: s.fecha,
     }));
-    const r = await fetch('/api/plan/aplicar-ia-anual', {
+    const r = await fetch('/api/plan/aplicar-ia-bulk', {
       method:'POST',
       headers:{'Content-Type':'application/json','X-CSRF-Token':getCSRF()},
       credentials: 'same-origin',
       body: JSON.stringify({
         sugerencias: sugerencias,
         cancelar_actual: true,
-        horizonte_dias: 365,
-        frecuencia_default: 30,
       }),
     });
     const d = await r.json();
@@ -7049,26 +7041,26 @@ async function aplicarIAanual(){
       alert('❌ Error: ' + (d.error || r.status));
       return;
     }
-    let msg = '✅ Plan IA aplicado como CANÓNICO 365 días\n\n' +
-      '· Productos: ' + d.n_productos_aplicados + '\n' +
+    let msg = '✅ Plan IA aplicado\n\n' +
       '· Lotes creados: ' + d.n_lotes_creados + '\n' +
-      '· Lotes cancelados (plan anterior): ' + d.n_lotes_cancelados + '\n';
-    if (d.productos_sin_formula_skipped && d.productos_sin_formula_skipped.length){
-      msg += '\n⚠ Productos sin fórmula (no agendados):\n  ' +
-        d.productos_sin_formula_skipped.join('\n  ');
+      '· Lotes cancelados (plan anterior): ' + d.n_lotes_cancelados + '\n' +
+      '· Lotes movidos al sig día hábil: ' + d.lotes_movidos + '\n' +
+      '· Lotes rechazados: ' + d.n_rechazados + '\n';
+    if (d.sin_formula && d.sin_formula.length){
+      msg += '\n⚠ Productos sin fórmula (no agendados):\n  ' + d.sin_formula.join('\n  ');
     }
-    msg += '\n\nDetalle por producto:\n' +
-      (d.detalle_por_producto || []).map(x =>
-        '  · ' + x.producto + ' · ' + x.lotes_creados + ' lotes · ' + x.kg + 'kg cada ' + x.frecuencia_dias + 'd'
+    if (d.rechazados && d.rechazados.length){
+      msg += '\n⚠ Rechazados:\n' + d.rechazados.slice(0,5).map(x =>
+        '  · ' + x.producto + ' · ' + x.razon
       ).join('\n');
+    }
     alert(msg);
-    // Recargar calendar para que muestre el nuevo plan
     cargar();
   } catch(e){
     alert('❌ Error red: ' + e.message);
   } finally {
     btn.disabled = false;
-    btn.textContent = '🎯 Aplicar plan IA como CANÓNICO 365d';
+    btn.textContent = '🎯 Aplicar plan IA';
   }
 }
 
@@ -7158,55 +7150,91 @@ def _ia_autoplan_sugerir(payload_contexto, modelo="claude-sonnet-4-6"):
     # El backend expande a serie completa (365d) respetando reglas operativas.
     system_prompt = (
         "Eres el jefe de producción de un laboratorio cosmético colombiano. "
-        "Tu tarea: proponer un PLAN CANÓNICO ANUAL · UNA línea por producto "
-        "con frecuencia (cada cuántos días) y kg por lote.\n\n"
-        "REGLAS PARA CADA PRODUCTO:\n"
-        "1. fecha (primer lote): lunes próximo o más adelante. Calcular como "
-        "stock_kg / velocidad_kg_dia → agotar fecha → restar 20 días.\n"
-        "2. kg (por lote): usá lote_recomendado_kg (no lote_size_kg_excel). "
-        "Si lote_fuente='excel_piloto_inviable' → OMITIR el producto y mencionar.\n"
-        "3. frecuencia_dias: cuántos días entre lote y lote del mismo producto. "
-        "Calculá como kg_lote / velocidad_kg_dia (cuánto dura 1 lote). "
-        "Redondeá a múltiplos de 15 (15/30/45/60/90). Mínimo 15, máximo 120.\n"
-        "4. Solo proponé Lun-Vie · evitá festivos_colombianos en fecha.\n"
+        "Analizás las ventas y stock por producto, y devolvés sugerencias "
+        "concretas de qué producir, cuándo y cuánto. Tu lógica: producir "
+        "20 días antes de que se agote cada producto.\n\n"
+        "REGLAS DE PRODUCCIÓN (obligatorias):\n"
+        "1. OBLIGATORIO: para cada producto del input con velocidad > 0, "
+        "devolvé TANTOS lotes como sean necesarios para CUBRIR EL HORIZONTE "
+        "COMPLETO (horizonte_dias días). NO pares hasta cubrir los "
+        "horizonte_dias completos. Si horizonte=365 y un lote dura 45 días, "
+        "necesitás ~8 lotes de ese producto.\n"
+        "2. Primer lote: hoy + cob_dias - 20 (o lunes próximo "
+        "fecha_inicio_minima_plan si más temprano).\n"
+        "3. Lotes siguientes: cada (kg_lote / velocidad_kg_dia) días desde "
+        "el lote anterior. Repetí hasta llegar a hoy + horizonte_dias.\n"
+        "4. kg por lote: usá lote_recomendado_kg (no lote_size_kg_excel). Si "
+        "lote_fuente='excel_piloto_inviable' → OMITIR producto y mencionar.\n"
         "5. Si mps_status='FALTAN_MPS' → OMITIR producto y mencionar.\n\n"
-        "INSTRUCCIÓN CRÍTICA: devolver UNA SUGERENCIA POR PRODUCTO del input "
-        "(no varias). El campo frecuencia_dias indica cada cuántos días se "
-        "repite ese lote por el horizonte completo (365 días por ejemplo). "
-        "TODOS los productos con lote_recomendado_kg válido y mps OK deben "
-        "tener entrada · no filtres por cobertura.\n\n"
-        "ESCALONAR FECHAS · NO poner TODOS los productos el mismo lunes. "
-        "Distribuir las fechas del primer lote entre los próximos 15 días "
-        "hábiles · máximo 2 productos por día (ninguno si uno es grande >50kg). "
-        "Ordená por urgencia: productos con menor cobertura primero.\n\n"
+        "REGLAS DE CALENDARIO (críticas):\n"
+        "A. SOLO L-V · NUNCA programes sábado/domingo.\n"
+        "B. EVITAR festivos_colombianos · si la fecha cae festivo, mover al "
+        "siguiente día hábil.\n"
+        "C. MÁXIMO 2 producciones por día.\n"
+        "D. Lotes >50kg ocupan el día SOLO · no comparte con otro.\n"
+        "E. Vit C y Triactive (productos complejos): SOLO lun o mié, ocupan "
+        "el día solo.\n"
+        "F. ESCALONAR: distribuí los lotes L-V a lo largo del horizonte. NO "
+        "apiles todos el mismo día. Si dos productos chocan, mové el menos "
+        "urgente al siguiente día hábil disponible.\n\n"
+        "FORMATO: devolvé UNA sugerencia POR CADA LOTE físico (no una por "
+        "producto · UNA POR LOTE). Si GEL necesita 8 lotes en horizonte "
+        "365d, devolvés 8 sugerencias GEL con fechas distintas. Ordená "
+        "cronológicamente por fecha.\n\n"
         "CONFIANZA (0.0-1.0): defecto 0.90 si reglas cumplen. 0.95+ si hay "
         "historial real. 0.80 si velocidad baja (<0.5 uds/día). NO uses <0.70.\n\n"
-        "RESPUESTA: SOLO JSON válido sin markdown. Ejemplo:\n"
+        "RESPUESTA: SOLO JSON válido sin markdown. Ejemplo para horizonte "
+        "365 días con GEL HIDRATANTE (58kg dura ~45d → 8 lotes/año):\n"
         "{\"sugerencias\":["
-        "{\"producto\":\"GEL HIDRATANTE\","
-        "\"fecha\":\"2026-05-25\",\"kg\":58,"
-        "\"frecuencia_dias\":45,"
-        "\"motivo\":\"canonico\",\"cobertura_post_dias\":50,"
-        "\"confianza\":0.95,"
-        "\"razonamiento\":\"58kg dura 45d · plan cada 45d cubre demanda anual\"},"
-        "{\"producto\":\"SUERO HIDRATANTE AH 1.5%\","
-        "\"fecha\":\"2026-06-02\",\"kg\":90,"
-        "\"frecuencia_dias\":60,"
-        "\"motivo\":\"canonico\",\"cobertura_post_dias\":60,"
-        "\"confianza\":0.90,"
-        "\"razonamiento\":\"90kg dura 60d · plan bimestral\"}],"
-        "\"comentario_general\":\"8 productos en plan canónico anual. BHA 2% suero omitido (lote piloto).\"}"
+        "{\"producto\":\"GEL HIDRATANTE\",\"fecha\":\"2026-05-25\",\"kg\":58,"
+        "\"motivo\":\"urgente\",\"cobertura_post_dias\":45,\"confianza\":0.95,"
+        "\"razonamiento\":\"Stock 23d · agota 6-jun · primer lote 20d antes\"},"
+        "{\"producto\":\"GEL HIDRATANTE\",\"fecha\":\"2026-07-08\",\"kg\":58,"
+        "\"motivo\":\"plan\",\"cobertura_post_dias\":45,\"confianza\":0.90,"
+        "\"razonamiento\":\"Lote 2 · 58kg/1.3kg-dia = 45d después del 1\"},"
+        "{\"producto\":\"GEL HIDRATANTE\",\"fecha\":\"2026-08-21\",\"kg\":58,"
+        "\"motivo\":\"plan\",\"cobertura_post_dias\":45,\"confianza\":0.90,"
+        "\"razonamiento\":\"Lote 3 · serie continúa\"},"
+        "{\"producto\":\"GEL HIDRATANTE\",\"fecha\":\"2026-10-05\",\"kg\":58,"
+        "\"motivo\":\"plan\",\"cobertura_post_dias\":45,\"confianza\":0.90,"
+        "\"razonamiento\":\"Lote 4\"},"
+        "{\"producto\":\"GEL HIDRATANTE\",\"fecha\":\"2026-11-19\",\"kg\":58,"
+        "\"motivo\":\"plan\",\"cobertura_post_dias\":45,\"confianza\":0.90,"
+        "\"razonamiento\":\"Lote 5\"},"
+        "{\"producto\":\"GEL HIDRATANTE\",\"fecha\":\"2027-01-04\",\"kg\":58,"
+        "\"motivo\":\"plan\",\"cobertura_post_dias\":45,\"confianza\":0.90,"
+        "\"razonamiento\":\"Lote 6\"},"
+        "{\"producto\":\"GEL HIDRATANTE\",\"fecha\":\"2027-02-18\",\"kg\":58,"
+        "\"motivo\":\"plan\",\"cobertura_post_dias\":45,\"confianza\":0.90,"
+        "\"razonamiento\":\"Lote 7\"},"
+        "{\"producto\":\"GEL HIDRATANTE\",\"fecha\":\"2027-04-05\",\"kg\":58,"
+        "\"motivo\":\"plan\",\"cobertura_post_dias\":45,\"confianza\":0.90,"
+        "\"razonamiento\":\"Lote 8 · cubre hasta may-2027\"},"
+        "{\"producto\":\"LIMP BHA 2%\",\"fecha\":\"2026-05-27\",\"kg\":200,"
+        "\"motivo\":\"urgente\",\"cobertura_post_dias\":150,\"confianza\":0.95,"
+        "\"razonamiento\":\"Día solo (>50kg) · escalonado vs GEL\"}],"
+        "\"comentario_general\":\"GEL: 8 lotes (365d). BHA: serie iniciada.\"}"
     )
+    # Sebastián 15-may-2026: quitado el [:8000] que truncaba productos.
+    # Con 8 productos canónicos + reglas + historial + 365d festivos el
+    # payload sano cabe en context window de Sonnet 4.6.
+    h = payload_contexto.get('horizonte_dias', 30)
     user_msg = (
         f"Contexto del cliente y productos:\n"
-        f"{_json.dumps(payload_contexto, ensure_ascii=False, default=str)[:8000]}\n\n"
-        f"Generá el autoplan para horizonte {payload_contexto.get('horizonte_dias', 30)} días. "
-        f"Devolvé SOLO JSON."
+        f"{_json.dumps(payload_contexto, ensure_ascii=False, default=str)}\n\n"
+        f"Generá el autoplan para horizonte {h} días. CRÍTICO: cubrí los "
+        f"{h} días COMPLETOS · si un producto necesita 8 lotes en el año, "
+        f"devolvé 8 sugerencias de ese producto con fechas escalonadas. "
+        f"NO truncar · NO devolver solo el primer lote. Devolvé SOLO JSON."
     )
 
+    # Sebastián 15-may-2026: max_tokens subido 4000 → 16000.
+    # Razón: ahora IA devuelve UNA sugerencia POR LOTE (no por producto).
+    # En horizonte 180d con 8 productos puede dar 30-60 sugerencias,
+    # cada una con razonamiento de 150-200 caracteres · 4000 truncaba.
     body = _json.dumps({
         "model": modelo,
-        "max_tokens": 4000,
+        "max_tokens": 16000,
         "system": system_prompt,
         "messages": [{"role": "user", "content": user_msg}],
     }).encode("utf-8")
@@ -7509,7 +7537,7 @@ def autoplan_ia():
         "festivos_colombianos": festivos_horizonte,
         "festivos_skip": True,
         "no_duplicar_si_ya_agendado": True,
-        "horizontes_validos": [15, 30, 60, 90, 120],
+        "horizontes_validos": [15, 30, 60, 90, 120, 180, 365, 730],
         "principio": "ERROR CERO · prefiere distribuir a lo largo de la semana",
     }
 
@@ -9044,6 +9072,126 @@ def programar_canonico():
         "producto": producto,
         "frecuencia_dias": freq,
         "horizonte_dias": horizonte,
+    }), 201
+
+
+@bp.route("/api/plan/aplicar-ia-bulk", methods=["POST"])
+def aplicar_ia_bulk():
+    """Persiste las N sugerencias IA tal cual · valida L-V + no festivo +
+    max 2/día. Si fecha cae mal, mueve al siguiente día hábil disponible.
+
+    Sebastián 15-may-2026: "vamos por paso, logica adecuada, L-V no
+    festivos, logica de produccion". Ahora la IA propone UNA sugerencia
+    POR LOTE FÍSICO (no por producto). Este endpoint persiste cada
+    una sin expandir con frecuencia.
+
+    Body:
+        sugerencias: list of {producto, kg, fecha}
+        cancelar_actual: bool (default true) · cancela eos_canonico+eos_plan
+    """
+    user, err = _require_admin_or_compras()
+    if err:
+        body_err, code = err
+        return jsonify(body_err), code
+
+    body = request.get_json(silent=True) or {}
+    sugerencias = body.get("sugerencias") or []
+    cancelar_actual = bool(body.get("cancelar_actual", True))
+
+    if not isinstance(sugerencias, list) or not sugerencias:
+        return jsonify({"error": "sugerencias debe ser lista no vacía"}), 400
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    # 1) Cancelar plan canónico + eos_plan actual
+    n_cancelados = 0
+    if cancelar_actual:
+        n_cancelados = cur.execute(
+            """UPDATE produccion_programada
+               SET estado='cancelado',
+                   observaciones=COALESCE(observaciones,'') ||
+                     ' · CANCELADO_BULK_IA_' || datetime('now','-5 hours')
+               WHERE origen IN ('eos_canonico','eos_plan')
+                 AND estado IN ('pendiente','programado','esperando_recurso')
+                 AND fin_real_at IS NULL
+                 AND inicio_real_at IS NULL""",
+        ).rowcount or 0
+
+    # 2) Insertar cada sugerencia · validando fecha hábil
+    from datetime import date as _date
+    creados = []
+    rechazados = []
+    sin_formula = []
+
+    for s in sugerencias:
+        prod = (s.get("producto") or "").strip()
+        if not prod:
+            rechazados.append({"producto": "", "razon": "sin nombre"})
+            continue
+        try:
+            kg = float(s.get("kg") or 0)
+        except (ValueError, TypeError):
+            rechazados.append({"producto": prod, "razon": "kg inválido"})
+            continue
+        if kg <= 0:
+            rechazados.append({"producto": prod, "razon": "kg <= 0"})
+            continue
+        fecha_str = (s.get("fecha") or "").strip()
+        if not fecha_str or not _valida_fecha_iso(fecha_str):
+            rechazados.append({"producto": prod, "razon": "fecha inválida"})
+            continue
+        if not cur.execute(
+            "SELECT 1 FROM formula_headers WHERE producto_nombre = ?",
+            (prod,),
+        ).fetchone():
+            sin_formula.append(prod)
+            continue
+
+        # Validar L-V no festivo · si no cumple, mover al sig hábil
+        f = _date.fromisoformat(fecha_str[:10])
+        f_real = _proxima_fecha_habil(
+            cur, f, prefer_mwf=False,
+            lote_kg=kg, producto_nombre=prod,
+        )
+        if f_real is None:
+            rechazados.append({"producto": prod, "razon": "sin slot hábil"})
+            continue
+        movida = (f_real != f)
+
+        cur.execute(
+            """INSERT INTO produccion_programada
+                 (producto, fecha_programada, cantidad_kg, lotes, estado,
+                  origen, observaciones, creado_en)
+               VALUES (?, ?, ?, 1, 'pendiente', 'eos_plan', ?,
+                       datetime('now','-5 hours'))""",
+            (prod, f_real.isoformat(), kg,
+             f"IA-bulk · {kg}kg" + (f" · movida de {fecha_str[:10]} (festivo/sat)" if movida else "")),
+        )
+        creados.append({
+            "id": cur.lastrowid, "producto": prod, "kg": kg,
+            "fecha_pedida": fecha_str[:10],
+            "fecha_real": f_real.isoformat(),
+            "movida": movida,
+        })
+
+    audit_log(cur, usuario=user, accion="APLICAR_IA_BULK",
+              tabla="produccion_programada", registro_id=None,
+              despues={"n_creados": len(creados),
+                       "n_cancelados": n_cancelados,
+                       "n_rechazados": len(rechazados),
+                       "sin_formula": sin_formula})
+    conn.commit()
+
+    return jsonify({
+        "ok": True,
+        "n_lotes_creados": len(creados),
+        "n_lotes_cancelados": n_cancelados,
+        "n_rechazados": len(rechazados),
+        "lotes_movidos": sum(1 for c in creados if c["movida"]),
+        "creados": creados,
+        "rechazados": rechazados,
+        "sin_formula": sin_formula,
     }), 201
 
 
