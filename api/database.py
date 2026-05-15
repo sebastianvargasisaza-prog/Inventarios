@@ -253,6 +253,82 @@ except ImportError:
         _MIG_130_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (133, "FIX URGENTE · sincronizar produccion_programada con nombres canónicos del Excel mig 127 · Sebastián 14-may-2026", [
+        # Sebastián 14-may-2026: "en planta no salen ni materias primas".
+        # Causa raíz: mig 127 importó fórmulas con nombres CANÓNICOS pero
+        # produccion_programada tiene lotes legacy con nombres viejos.
+        # El JOIN `UPPER(TRIM(fh.producto_nombre))=UPPER(TRIM(pp.producto))`
+        # falla cuando los nombres difieren · planta ve "sin MPs".
+        #
+        # Fix: UPDATE produccion_programada SET producto = canónico
+        # donde producto = legacy. Solo lotes NO completados (preserva
+        # historial · audit trail).
+        #
+        # Mapeo extraído de SHEET_TO_BD en scripts/generate_mig_127_reimport.py
+        """UPDATE produccion_programada SET producto = 'LIMPIADOR FACIAL HIDRATANTE'
+           WHERE producto = 'Limpiador Hidratante' AND fin_real_at IS NULL""",
+        """UPDATE produccion_programada SET producto = 'SUERO DE VITAMINA C+ FORMULA NUEVA'
+           WHERE producto = 'Suero Vitamina C' AND fin_real_at IS NULL""",
+        """UPDATE produccion_programada SET producto = 'SUERO DE NIACINAMIDA 5% FORMULA NUEVA'
+           WHERE producto = 'Suero Niacinamida 5%' AND fin_real_at IS NULL""",
+        """UPDATE produccion_programada SET producto = 'SUERO ANTIOXIDANTE RENOVA C10'
+           WHERE producto = 'Suero Antioxidante Renova C' AND fin_real_at IS NULL""",
+        """UPDATE produccion_programada SET producto = 'SUERO TRIACTIVE RETINOID NAD'
+           WHERE producto = 'Suero Triactive Retinoid + NAD' AND fin_real_at IS NULL""",
+        """UPDATE produccion_programada SET producto = 'CONTORNO DE OJOS RETINALDEHIDO 0.05%'
+           WHERE producto IN ('Contorno de Ojos Retinaldehído',
+                              'Contorno de Ojos Retinaldehído ')
+             AND fin_real_at IS NULL""",
+        """UPDATE produccion_programada SET producto = 'ESENCIA DE CENTELLA ASIATICA'
+           WHERE producto = 'Esencia Centella Asiática' AND fin_real_at IS NULL""",
+        """UPDATE produccion_programada SET producto = 'EMULSION HIDRATANTE  B3+BHA'
+           WHERE producto = 'Emulsión Hidratante B3 BHA' AND fin_real_at IS NULL""",
+        """UPDATE produccion_programada SET producto = 'LIMPIADOR ILUMINADOR ACIDO KOJICO'
+           WHERE producto IN ('Limpiador Iluminador Ácido Kójico',
+                              'Limpiador Iluminador Ácido Kóji')
+             AND fin_real_at IS NULL""",
+        """UPDATE produccion_programada SET producto = 'EMULSION LIMPIADORA'
+           WHERE producto IN ('Emulsión Limpiadora','EMULSION LIMPIADORA NF')
+             AND fin_real_at IS NULL""",
+        """UPDATE produccion_programada SET producto = 'GEL HIDRATANTE'
+           WHERE producto IN ('Gel Hidratante','GEL HIDRATANTE NF')
+             AND fin_real_at IS NULL""",
+        """UPDATE produccion_programada SET producto = 'LIMPIADOR FACIAL BHA 2%'
+           WHERE producto = 'Limpiador Facial BHA 2%' AND fin_real_at IS NULL""",
+        """UPDATE produccion_programada SET producto = 'MASCARILLA HIDRATANTE'
+           WHERE producto = 'Mascarilla Hidratante' AND fin_real_at IS NULL""",
+        """UPDATE produccion_programada SET producto = 'SUERO HIDRATANTE AH 1.5%'
+           WHERE producto = 'Suero Hidratante AH 1.5%' AND fin_real_at IS NULL""",
+        """UPDATE produccion_programada SET producto = 'SUERO ILUMINADOR TRX'
+           WHERE producto = 'Suero Iluminador TRX' AND fin_real_at IS NULL""",
+        """UPDATE produccion_programada SET producto = 'SUERO MULTIPEPTIDOS'
+           WHERE producto = 'Suero Multipéptidos' AND fin_real_at IS NULL""",
+        """UPDATE produccion_programada SET producto = 'SUERO EXFOLIANTE NOVA PHA'
+           WHERE producto = 'Suero Exfoliante Nova PHA' AND fin_real_at IS NULL""",
+        """UPDATE produccion_programada SET producto = 'AZ HIBRID CLEAR'
+           WHERE producto = 'AZ Híbrid Clear' AND fin_real_at IS NULL""",
+        """UPDATE produccion_programada SET producto = 'CONTORNO DE CAFEINA'
+           WHERE producto = 'Contorno de Cafeína' AND fin_real_at IS NULL""",
+        """UPDATE produccion_programada SET producto = 'CONTORNO DE OJOS MULTIPEPTIDOS'
+           WHERE producto = 'Contorno de Ojos Multipéptidos' AND fin_real_at IS NULL""",
+        """UPDATE produccion_programada SET producto = 'CREMA CORPORAL RENOVA BODY'
+           WHERE producto = 'Crema Corporal Renova Body' AND fin_real_at IS NULL""",
+        """UPDATE produccion_programada SET producto = 'BOOSTER TENSOR'
+           WHERE producto = 'Booster Tensor' AND fin_real_at IS NULL""",
+        """UPDATE produccion_programada SET producto = 'HYDRAPEPTIDE'
+           WHERE producto = 'HydraPeptide' AND fin_real_at IS NULL""",
+        """UPDATE produccion_programada SET producto = 'EMULSION HIDRATANTE ILUMINADORA'
+           WHERE producto = 'Emulsión Hidratante Iluminadora' AND fin_real_at IS NULL""",
+        """UPDATE produccion_programada SET producto = 'LIP SERUM VOLUMINIZADOR PEPTIDOS'
+           WHERE producto IN ('Lip Sérum Voluminizador','LIP SERUM (PIB CHINO)')
+             AND fin_real_at IS NULL""",
+        """UPDATE produccion_programada SET producto = 'BLUSH BALM'
+           WHERE producto = 'Blush Balm' AND fin_real_at IS NULL""",
+        """UPDATE produccion_programada SET producto = 'HYDRA BALANCE'
+           WHERE producto = 'Hydra-Balance' AND fin_real_at IS NULL""",
+        """UPDATE produccion_programada SET producto = 'Suero Exfoliante BHA 2%'
+           WHERE producto = 'SUERO EXFOLIANTE BHA 2%' AND fin_real_at IS NULL""",
+    ]),
     (132, "producto_canonico_config · tabla para frecuencias de canónicos · Sebastián 14-may-2026", [
         # Tabla para que Sebastián configure manualmente kg/lote, ml y
         # frecuencia_dias por producto. UI /admin/configurar-canonicos.
