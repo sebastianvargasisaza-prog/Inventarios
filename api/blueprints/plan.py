@@ -2423,6 +2423,155 @@ def configurar_canonicos_api():
     })
 
 
+@bp.route("/admin/calendario-simple", methods=["GET"])
+def calendario_simple_page():
+    """Calendario grid server-side · sin JS · render directo desde BD.
+    Sebastián 14-may-2026: el calendario JS oculta lotes · vista alternativa.
+    Query: ?mes=YYYY-MM (default = mes actual)
+    """
+    if not session.get("compras_user"):
+        from flask import redirect
+        return redirect("/login?next=/admin/calendario-simple")
+    from datetime import date as _date, timedelta as _td
+    from flask import Response
+    import html as _h
+
+    mes_param = (request.args.get("mes") or "").strip()
+    hoy = _hoy_colombia()
+    try:
+        if mes_param:
+            year, mm = mes_param.split("-")
+            ref = _date(int(year), int(mm), 1)
+        else:
+            ref = _date(hoy.year, hoy.month, 1)
+    except Exception:
+        ref = _date(hoy.year, hoy.month, 1)
+
+    # Mes anterior y siguiente
+    if ref.month == 1:
+        prev_m = _date(ref.year - 1, 12, 1)
+    else:
+        prev_m = _date(ref.year, ref.month - 1, 1)
+    if ref.month == 12:
+        next_m = _date(ref.year + 1, 1, 1)
+    else:
+        next_m = _date(ref.year, ref.month + 1, 1)
+
+    # Lotes activos del mes
+    inicio_mes = ref
+    if ref.month == 12:
+        fin_mes = _date(ref.year + 1, 1, 1) - _td(days=1)
+    else:
+        fin_mes = _date(ref.year, ref.month + 1, 1) - _td(days=1)
+
+    # Lunes de la primera semana
+    offset_lun = inicio_mes.weekday()
+    inicio_grid = inicio_mes - _td(days=offset_lun)
+    # 6 semanas
+    fin_grid = inicio_grid + _td(days=42)
+
+    conn = get_db()
+    c = conn.cursor()
+    rows = c.execute(
+        """SELECT producto, fecha_programada, COALESCE(cantidad_kg, 0),
+                  estado, origen, id
+           FROM produccion_programada
+           WHERE estado IN ('pendiente','programado','esperando_recurso','en_curso')
+             AND fin_real_at IS NULL
+             AND date(fecha_programada) >= ?
+             AND date(fecha_programada) <= ?
+           ORDER BY fecha_programada""",
+        (inicio_grid.isoformat(), fin_grid.isoformat()),
+    ).fetchall()
+    por_fecha = {}
+    for r in rows:
+        f = (r[1] or "")[:10]
+        por_fecha.setdefault(f, []).append({
+            "producto": r[0], "kg": float(r[2] or 0),
+            "estado": r[3], "origen": r[4], "id": r[5],
+        })
+
+    # Festivos del rango
+    festivos = set()
+    for off in range(45):
+        d = inicio_grid + _td(days=off)
+        if es_festivo_colombia(d):
+            festivos.add(d.isoformat())
+
+    MESES_ES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+                "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
+    DIAS_ES = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"]
+
+    h = """<!DOCTYPE html><html><head><meta charset="UTF-8">
+<title>Calendario simple · EOS</title>
+<style>
+body{font-family:-apple-system,sans-serif;background:#f8fafc;margin:0;padding:18px;color:#1e293b}
+.wrap{max-width:1500px;margin:0 auto}
+h1{color:#0f766e;margin:0}
+.bar{display:flex;justify-content:space-between;align-items:center;background:white;padding:14px;border-radius:10px;margin-bottom:14px;box-shadow:0 2px 6px rgba(0,0,0,.05)}
+.bar a, .bar .lbl{font-size:14px;font-weight:700;color:#475569;text-decoration:none;padding:8px 14px;background:#f1f5f9;border-radius:6px}
+.bar a:hover{background:#e2e8f0}
+.lbl{font-size:18px !important;color:#0f766e !important;background:transparent !important}
+.grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;background:white;padding:8px;border-radius:10px;box-shadow:0 2px 6px rgba(0,0,0,.05)}
+.head{background:#f1f5f9;padding:8px;text-align:center;font-weight:800;color:#475569;font-size:12px;border-radius:5px}
+.day{background:white;border:1px solid #e2e8f0;border-radius:6px;padding:6px;min-height:110px;font-size:11px}
+.day.fest{background:#fef2f2;border-color:#fca5a5}
+.day.fdesem{background:#f8fafc;opacity:.6}
+.day.hoy{border:2px solid #0f766e;background:#f0fdfa}
+.day.otro{opacity:.35}
+.dnum{font-weight:800;color:#1e293b;margin-bottom:4px;display:flex;justify-content:space-between}
+.fmark{background:#fecaca;color:#7f1d1d;padding:1px 4px;border-radius:3px;font-size:9px;font-weight:700}
+.lote{background:#e0e7ff;color:#3730a3;padding:3px 5px;border-radius:4px;margin-bottom:3px;border-left:3px solid #6366f1;font-weight:600;line-height:1.2}
+</style></head><body><div class="wrap">
+<a href="/modulos" style="color:#0f766e;font-weight:700">&larr; Volver</a>
+<h1>📅 Calendario simple · vista directa desde BD</h1>
+"""
+    h += f'<div class="bar">'
+    h += f'<div><a href="?mes={prev_m.isoformat()[:7]}">← Anterior</a>'
+    h += f'<a href="?mes={hoy.isoformat()[:7]}" style="margin-left:6px">Hoy</a></div>'
+    h += f'<div class="lbl">{MESES_ES[ref.month - 1]} {ref.year}</div>'
+    h += f'<div><a href="?mes={next_m.isoformat()[:7]}">Siguiente →</a></div>'
+    h += '</div>'
+
+    h += '<div class="grid">'
+    for d in DIAS_ES:
+        h += f'<div class="head">{d}</div>'
+
+    for sem in range(6):
+        for d in range(7):
+            fecha = inicio_grid + _td(days=sem * 7 + d)
+            f_iso = fecha.isoformat()
+            es_finde = d >= 5
+            es_fest = f_iso in festivos
+            es_hoy = fecha == hoy
+            es_otro_mes = fecha.month != ref.month
+            lotes = por_fecha.get(f_iso, [])
+
+            cls = "day"
+            if es_hoy:
+                cls += " hoy"
+            if es_fest:
+                cls += " fest"
+            if es_finde and not es_fest:
+                cls += " fdesem"
+            if es_otro_mes:
+                cls += " otro"
+
+            h += f'<div class="{cls}">'
+            h += f'<div class="dnum"><span>{fecha.day}</span>'
+            if es_fest:
+                h += '<span class="fmark">FEST</span>'
+            h += '</div>'
+            for lt in lotes:
+                prod_corto = _h.escape(lt["producto"])[:24]
+                h += f'<div class="lote" title="{_h.escape(lt["producto"])} · {lt["kg"]:.0f}kg · {lt["estado"]}">'
+                h += f'{prod_corto}<br><span style="opacity:.7">{lt["kg"]:.0f}kg</span></div>'
+            h += '</div>'
+
+    h += '</div></div></body></html>'
+    return Response(h, mimetype="text/html")
+
+
 @bp.route("/admin/plan-simple", methods=["GET"])
 def plan_simple_page():
     """Vista simple server-side · solo lee BD · renderiza HTML directo.
