@@ -2423,6 +2423,103 @@ def configurar_canonicos_api():
     })
 
 
+@bp.route("/admin/plan-simple", methods=["GET"])
+def plan_simple_page():
+    """Vista simple server-side · solo lee BD · renderiza HTML directo.
+    Sebastián 14-may-2026: "sigue saliendo solo 3 productos" en
+    calendario JS · vista alternativa sin lógica JS compleja.
+    """
+    if not session.get("compras_user"):
+        from flask import redirect
+        return redirect("/login?next=/admin/plan-simple")
+    conn = get_db()
+    c = conn.cursor()
+    rows = c.execute(
+        """SELECT producto, fecha_programada, COALESCE(cantidad_kg,0),
+                  estado, origen
+           FROM produccion_programada
+           WHERE estado IN ('pendiente','programado','esperando_recurso','en_curso')
+             AND fin_real_at IS NULL
+             AND date(fecha_programada) >= date('now','-5 hours')
+           ORDER BY fecha_programada, producto""",
+    ).fetchall()
+
+    # Agrupar por mes
+    from collections import defaultdict
+    por_mes = defaultdict(list)
+    for r in rows:
+        fecha = (r[1] or "")[:10]
+        mes = fecha[:7]  # YYYY-MM
+        por_mes[mes].append({
+            "producto": r[0], "fecha": fecha, "kg": float(r[2] or 0),
+            "estado": r[3], "origen": r[4],
+        })
+
+    MESES_ES = {
+        "01": "Enero", "02": "Febrero", "03": "Marzo", "04": "Abril",
+        "05": "Mayo", "06": "Junio", "07": "Julio", "08": "Agosto",
+        "09": "Septiembre", "10": "Octubre", "11": "Noviembre", "12": "Diciembre",
+    }
+
+    from flask import Response
+    import html
+    html_str = """<!DOCTYPE html><html><head><meta charset="UTF-8">
+<title>Plan simple · EOS</title>
+<style>
+body{font-family:-apple-system,sans-serif;background:#f8fafc;color:#1e293b;margin:0;padding:20px}
+.wrap{max-width:1100px;margin:0 auto}
+h1{color:#0f766e;margin:0 0 6px}
+.mes{background:white;border-radius:10px;padding:14px;margin-bottom:14px;box-shadow:0 2px 6px rgba(0,0,0,.05)}
+.mes h2{margin:0 0 10px;color:#475569;font-size:16px;padding-bottom:6px;border-bottom:2px solid #e2e8f0}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:6px 8px;text-align:left}
+tr{border-bottom:1px solid #f1f5f9}
+.kg{text-align:right;font-weight:700;color:#0f766e;font-variant-numeric:tabular-nums}
+.tag{display:inline-block;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:700}
+.tag-eos_canonico{background:#e0e7ff;color:#3730a3}
+.tag-eos_plan{background:#dcfce7;color:#166534}
+.tag-calendar{background:#fef9c3;color:#854d0e}
+.dia{color:#64748b;font-size:11px}
+.kpi{display:inline-block;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:8px 14px;margin-right:8px;text-align:center;min-width:90px}
+.kpi-val{font-size:22px;font-weight:800;color:#0f766e}
+.kpi-lbl{font-size:10px;color:#64748b;text-transform:uppercase}
+</style></head><body><div class="wrap">
+<a href="/modulos" style="color:#0f766e;font-weight:700">&larr; Volver</a>
+<h1>📋 Plan simple · vista directa BD</h1>
+<div style="color:#64748b;font-size:12px;margin-bottom:14px">Server-side · sin JavaScript · si acá los ves todos pero en el calendario no, el bug es del JS visual.</div>
+"""
+    total_lotes = sum(len(v) for v in por_mes.values())
+    total_kg = sum(it["kg"] for v in por_mes.values() for it in v)
+    productos_unicos = len({it["producto"] for v in por_mes.values() for it in v})
+    html_str += f'<div style="margin-bottom:14px">'
+    html_str += f'<span class="kpi"><div class="kpi-lbl">Lotes</div><div class="kpi-val">{total_lotes}</div></span>'
+    html_str += f'<span class="kpi"><div class="kpi-lbl">Productos</div><div class="kpi-val">{productos_unicos}</div></span>'
+    html_str += f'<span class="kpi"><div class="kpi-lbl">Total kg</div><div class="kpi-val">{total_kg:.0f}</div></span>'
+    html_str += '</div>'
+
+    DIAS_ES = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"]
+    from datetime import date as _date
+
+    for mes in sorted(por_mes.keys()):
+        year, mm = mes.split("-")
+        nombre_mes = f"{MESES_ES.get(mm, mm)} {year}"
+        lotes = por_mes[mes]
+        html_str += f'<div class="mes"><h2>{nombre_mes} · {len(lotes)} lotes · {sum(l["kg"] for l in lotes):.0f} kg</h2>'
+        html_str += '<table><tr><th>Día</th><th>Fecha</th><th>Producto</th><th class="kg">kg</th><th>Origen</th></tr>'
+        for lt in lotes:
+            try:
+                dt = _date.fromisoformat(lt["fecha"])
+                dia = DIAS_ES[dt.weekday()]
+            except Exception:
+                dia = "?"
+            tag_class = f"tag tag-{lt['origen']}" if lt["origen"] else "tag"
+            html_str += f'<tr><td class="dia">{dia}</td><td>{html.escape(lt["fecha"])}</td><td><strong>{html.escape(lt["producto"])}</strong></td><td class="kg">{lt["kg"]:.0f}</td><td><span class="{tag_class}">{html.escape(lt["origen"] or "—")}</span></td></tr>'
+        html_str += '</table></div>'
+
+    html_str += '</div></body></html>'
+    return Response(html_str, mimetype="text/html")
+
+
 @bp.route("/api/plan/listar-canonicos", methods=["GET"])
 def listar_canonicos():
     """Lista TODOS los eos_canonico activos · debug rápido para Sebastián.
