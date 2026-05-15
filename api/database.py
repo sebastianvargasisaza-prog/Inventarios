@@ -253,6 +253,22 @@ except ImportError:
         _MIG_130_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (132, "producto_canonico_config · tabla para frecuencias de canónicos · Sebastián 14-may-2026", [
+        # Tabla para que Sebastián configure manualmente kg/lote, ml y
+        # frecuencia_dias por producto. UI /admin/configurar-canonicos.
+        """CREATE TABLE IF NOT EXISTS producto_canonico_config (
+            producto_nombre TEXT PRIMARY KEY,
+            kg_por_lote REAL DEFAULT 0,
+            ml_unidad INTEGER DEFAULT 30,
+            frecuencia_dias INTEGER DEFAULT 0,
+            activo INTEGER DEFAULT 1,
+            actualizado_at TEXT,
+            actualizado_por TEXT,
+            notas TEXT DEFAULT ''
+        )""",
+        """CREATE INDEX IF NOT EXISTS idx_canonico_config_activo
+           ON producto_canonico_config(activo) WHERE activo = 1""",
+    ]),
     (131, "Limpiar autoplan_decisiones viejas · forzar re-cálculo IA con fórmulas correctas · paso 1/6", [
         # Sebastián 14-may-2026: las decisiones IA previas fueron tomadas
         # con fórmulas incompletas (sin agua) y sin back-fills. Hay que

@@ -2198,6 +2198,187 @@ def plan_debug_tz():
     })
 
 
+@bp.route("/admin/configurar-canonicos", methods=["GET"])
+def configurar_canonicos_page():
+    """Página única editable · todos los productos · kg, ml, frecuencia."""
+    if not session.get("compras_user"):
+        from flask import redirect
+        return redirect("/login?next=/admin/configurar-canonicos")
+    from flask import Response
+    return Response(_CONFIG_CANONICOS_HTML, mimetype="text/html")
+
+
+@bp.route("/api/plan/configurar-canonicos", methods=["GET", "POST"])
+def configurar_canonicos_api():
+    """GET: lista de productos con datos calculados + valores actuales.
+    POST: persiste cambios masivos en producto_canonico_config.
+    """
+    err = _require_login()
+    if err:
+        return err
+    user = session.get("compras_user", "")
+    conn = get_db()
+    c = conn.cursor()
+
+    if request.method == "POST":
+        body = request.get_json(silent=True) or {}
+        items = body.get("items") or []
+        if not isinstance(items, list):
+            return jsonify({"error": "items debe ser lista"}), 400
+        n_saved = 0
+        for it in items:
+            prod = (it.get("producto") or "").strip()
+            if not prod:
+                continue
+            try:
+                kg = float(it.get("kg_por_lote") or 0)
+                ml = int(it.get("ml_unidad") or 30)
+                freq = int(it.get("frecuencia_dias") or 0)
+            except (ValueError, TypeError):
+                continue
+            notas = (it.get("notas") or "").strip()
+            activo = 1 if it.get("activo", True) else 0
+            c.execute(
+                f"""INSERT INTO producto_canonico_config
+                    (producto_nombre, kg_por_lote, ml_unidad, frecuencia_dias,
+                     activo, actualizado_at, actualizado_por, notas)
+                    VALUES (?,?,?,?,?,{SQLITE_NOW_COL},?,?)
+                    ON CONFLICT(producto_nombre) DO UPDATE SET
+                      kg_por_lote = excluded.kg_por_lote,
+                      ml_unidad = excluded.ml_unidad,
+                      frecuencia_dias = excluded.frecuencia_dias,
+                      activo = excluded.activo,
+                      actualizado_at = {SQLITE_NOW_COL},
+                      actualizado_por = excluded.actualizado_por,
+                      notas = excluded.notas""",
+                (prod, kg, ml, freq, activo, user, notas),
+            )
+            n_saved += 1
+        conn.commit()
+        audit_log(c, usuario=user, accion="CONFIGURAR_CANONICOS",
+                  tabla="producto_canonico_config", registro_id=None,
+                  antes={"n_items": len(items)},
+                  despues={"n_saved": n_saved})
+        conn.commit()
+        return jsonify({"ok": True, "saved": n_saved})
+
+    # GET · construir lista
+    # 1) Productos activos en formula_headers
+    productos_fh = {}
+    for r in c.execute(
+        """SELECT producto_nombre, COALESCE(lote_size_kg, 0)
+           FROM formula_headers WHERE COALESCE(activo, 1) = 1
+           ORDER BY producto_nombre""",
+    ).fetchall():
+        productos_fh[r[0]] = float(r[1] or 0)
+
+    # 2) Config existente
+    config_existente = {}
+    for r in c.execute(
+        """SELECT producto_nombre, kg_por_lote, ml_unidad, frecuencia_dias,
+                  activo, actualizado_at, actualizado_por, notas
+           FROM producto_canonico_config""",
+    ).fetchall():
+        config_existente[r[0]] = {
+            "kg_por_lote": float(r[1] or 0),
+            "ml_unidad": int(r[2] or 30),
+            "frecuencia_dias": int(r[3] or 0),
+            "activo": bool(r[4]),
+            "actualizado_at": r[5],
+            "actualizado_por": r[6],
+            "notas": r[7] or "",
+        }
+
+    # 3) Necesidades para cálculo Shopify
+    necesidades = _calcular_animus_dtc(c, ventana=60, cob_critico=20,
+                                        cob_alerta=25, cob_vigilar=45)
+    nec_map = {n["producto_nombre"]: n for n in necesidades}
+
+    # 4) Pedidos B2B
+    b2b_por_producto = {}
+    for r in c.execute(
+        """SELECT producto_nombre,
+                  SUM(cantidad_uds * COALESCE(ml_unidad, 30)) / 1000.0 AS kg_total,
+                  COUNT(*) AS n_pedidos
+           FROM pedidos_b2b
+           WHERE estado NOT IN ('despachado','cancelado')
+           GROUP BY producto_nombre""",
+    ).fetchall():
+        b2b_por_producto[r[0]] = {
+            "kg_pendiente": round(float(r[1] or 0), 2),
+            "n_pedidos": int(r[2] or 0),
+        }
+
+    # 5) Histórico
+    historico_por_prod = {}
+    for r in c.execute(
+        """SELECT producto, COUNT(*),
+                  AVG(COALESCE(kg_real, cantidad_kg, 0)),
+                  MAX(fin_real_at)
+           FROM produccion_programada
+           WHERE fin_real_at IS NOT NULL
+             AND date(fin_real_at) >= date('now','-5 hours','-180 day')
+             AND COALESCE(kg_real, cantidad_kg, 0) > 0
+           GROUP BY producto""",
+    ).fetchall():
+        historico_por_prod[r[0]] = {
+            "n_producciones": int(r[1] or 0),
+            "kg_promedio": round(float(r[2] or 0), 1),
+            "ultima_fecha": (r[3] or "")[:10] if r[3] else None,
+        }
+
+    items = []
+    for prod, lote_excel in productos_fh.items():
+        nec = nec_map.get(prod, {})
+        b2b = b2b_por_producto.get(prod, {})
+        hist = historico_por_prod.get(prod, {})
+        cfg = config_existente.get(prod, {})
+
+        vel_uds_dia = nec.get("velocidad_uds_dia", 0) or 0
+        ml_actual = cfg.get("ml_unidad") or nec.get("ml_unidad") or 30
+        kg_mes_shopify = round((vel_uds_dia * 30 * ml_actual) / 1000.0, 2)
+        kg_mes_b2b = round((b2b.get("kg_pendiente", 0)) / 3.0, 2)
+        kg_mes_total = round(kg_mes_shopify + kg_mes_b2b, 2)
+
+        # Frecuencia sugerida
+        kg_lote = cfg.get("kg_por_lote") or hist.get("kg_promedio") or lote_excel
+        if kg_mes_total > 0.001 and kg_lote > 0:
+            dias_dura = (kg_lote / kg_mes_total) * 30
+            freq_sugerida = max(int(dias_dura - 20), 15)
+        else:
+            freq_sugerida = 0
+
+        items.append({
+            "producto": prod,
+            "lote_excel_kg": lote_excel,
+            "kg_lote_actual": cfg.get("kg_por_lote", 0) or 0,
+            "ml_actual": ml_actual,
+            "frecuencia_actual": cfg.get("frecuencia_dias", 0) or 0,
+            "activo": cfg.get("activo", True) if cfg else True,
+            "notas": cfg.get("notas", ""),
+            "actualizado_at": cfg.get("actualizado_at"),
+            "actualizado_por": cfg.get("actualizado_por"),
+            "kg_mes_shopify": kg_mes_shopify,
+            "kg_mes_b2b": kg_mes_b2b,
+            "kg_mes_total": kg_mes_total,
+            "frecuencia_sugerida": freq_sugerida,
+            "vel_uds_dia": round(vel_uds_dia, 2),
+            "stock_kg": nec.get("stock_kg_total", 0),
+            "dias_cobertura": nec.get("dias_cobertura"),
+            "urgencia": nec.get("urgencia", "SIN_VENTAS"),
+            "histor_n": hist.get("n_producciones", 0),
+            "histor_kg_prom": hist.get("kg_promedio", 0),
+            "histor_ultima": hist.get("ultima_fecha"),
+            "b2b_n_pedidos": b2b.get("n_pedidos", 0),
+            "b2b_kg_pendiente": b2b.get("kg_pendiente", 0),
+        })
+
+    return jsonify({
+        "items": items,
+        "n": len(items),
+    })
+
+
 @bp.route("/admin/calculo-frecuencias", methods=["GET"])
 def calculo_frecuencias_page():
     """Calcula frecuencias óptimas para productos clave con datos reales.
@@ -2362,6 +2543,222 @@ def calculo_frecuencias_api():
         "items": items,
         "n_productos": len(items),
     })
+
+
+_CONFIG_CANONICOS_HTML = r"""<!DOCTYPE html>
+<html lang="es"><head><meta charset="UTF-8">
+<title>Configurar canónicos · EOS</title>
+<style>
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;color:#1e293b;margin:0;padding:16px}
+.wrap{max-width:1600px;margin:0 auto}
+.card{background:white;border-radius:12px;padding:16px;margin-bottom:14px;box-shadow:0 2px 6px rgba(0,0,0,.05)}
+h1{margin:0 0 6px;color:#0f766e;font-size:22px}
+.muted{color:#64748b;font-size:12px}
+button{background:#0f766e;color:white;border:none;padding:9px 18px;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer}
+button.big{font-size:15px;padding:12px 28px}
+button.secondary{background:#475569}
+table{width:100%;border-collapse:collapse;font-size:11px}
+th{text-align:left;padding:8px 6px;background:#f1f5f9;color:#475569;font-weight:700;position:sticky;top:0;border-bottom:2px solid #cbd5e1}
+td{padding:6px;border-bottom:1px solid #f1f5f9;vertical-align:top}
+tr:hover{background:#fafbff}
+tr.modified{background:#fef9c3}
+input.cell{width:100%;padding:5px 7px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px;font-family:ui-monospace,monospace}
+input.cell:focus{outline:none;border-color:#0f766e;background:#f0fdfa}
+input.cell.dirty{background:#fef3c7;border-color:#ca8a04}
+.urg-CRITICO{background:#fee2e2;color:#991b1b;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700}
+.urg-URGENTE{background:#fed7aa;color:#9a3412;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700}
+.urg-VIGILAR{background:#fef3c7;color:#854d0e;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700}
+.urg-OK{background:#dcfce7;color:#166534;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700}
+.urg-SIN_VENTAS{background:#f1f5f9;color:#64748b;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700}
+.kpi{display:inline-block;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:8px 14px;margin-right:8px;text-align:center;min-width:90px}
+.kpi-val{font-size:18px;font-weight:800}
+.kpi-lbl{font-size:9px;color:#64748b;text-transform:uppercase}
+.actions-bar{position:sticky;top:0;background:white;padding:10px 0;border-bottom:1px solid #e2e8f0;z-index:10;display:flex;gap:10px;justify-content:space-between;align-items:center}
+.btn-sug{background:#0891b2;color:white;border:none;padding:2px 6px;border-radius:3px;font-size:10px;cursor:pointer;margin-left:4px}
+</style></head><body>
+<div class="wrap">
+<a href="/modulos" style="color:#0f766e;font-weight:700;font-size:13px">&larr; Volver</a>
+
+<div class="card">
+  <h1>⚙ Configurar canónicos · todos los productos</h1>
+  <div class="muted">Llená kg/lote, ml de presentación y frecuencia para cada producto. El sistema calcula sugerencia con ventas reales (Shopify + B2B) · podés aceptarla con click en el chip 💡.</div>
+  <div id="kpis" style="margin-top:12px"></div>
+</div>
+
+<div class="card">
+  <div class="actions-bar">
+    <div>
+      <button onclick="cargar()" class="secondary">↻ Recargar</button>
+      <button onclick="aplicarSugeridos()" class="secondary">💡 Aplicar TODOS los sugeridos</button>
+    </div>
+    <div>
+      <span id="modif-count" style="margin-right:10px;color:#ca8a04;font-weight:700"></span>
+      <button onclick="guardar()" class="big" id="btn-guardar" disabled>💾 Guardar cambios</button>
+    </div>
+  </div>
+
+  <div style="overflow-x:auto;margin-top:8px">
+    <table id="tabla">
+      <thead><tr>
+        <th>Producto</th>
+        <th>Urgencia</th>
+        <th>Histórico<br>kg/lote</th>
+        <th style="background:#dcfce7">kg/lote<br>REAL</th>
+        <th style="background:#dcfce7">ml<br>presentación</th>
+        <th>Sugerida<br>freq d</th>
+        <th style="background:#dcfce7">Frecuencia<br>días</th>
+        <th>Shopify<br>kg/mes</th>
+        <th>B2B<br>kg/mes</th>
+        <th>Total<br>kg/mes</th>
+        <th>Stock<br>actual kg</th>
+        <th>Cob<br>días</th>
+        <th>Notas</th>
+      </tr></thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+</div>
+
+</div>
+<script>
+let DATA = null;
+let DIRTY = new Set();
+
+function esc(s){return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+
+function getCSRF(){return document.cookie.split(';').find(c=>c.trim().startsWith('csrf_token='))?.split('=')[1] || '';}
+
+async function cargar(){
+  document.getElementById('tbody').innerHTML = '<tr><td colspan="13" style="text-align:center;padding:30px;color:#64748b">Cargando…</td></tr>';
+  try {
+    const r = await fetch('/api/plan/configurar-canonicos');
+    const d = await r.json();
+    if (!r.ok){ alert('Error: ' + (d.error || r.status)); return; }
+    DATA = d;
+    DIRTY.clear();
+    render();
+    actualizarBtnGuardar();
+  } catch(e){ alert('Error: ' + e.message); }
+}
+
+function render(){
+  const items = (DATA.items || []).sort((a,b) => {
+    const ORD = {CRITICO:0, URGENTE:1, VIGILAR:2, OK:3, SIN_VENTAS:4};
+    return (ORD[a.urgencia] || 9) - (ORD[b.urgencia] || 9);
+  });
+  // KPIs
+  let kpis = '';
+  kpis += '<span class="kpi"><div class="kpi-lbl">Total productos</div><div class="kpi-val">' + items.length + '</div></span>';
+  const conConfig = items.filter(it => it.kg_lote_actual > 0).length;
+  kpis += '<span class="kpi"><div class="kpi-lbl">✅ Configurados</div><div class="kpi-val" style="color:#16a34a">' + conConfig + '</div></span>';
+  kpis += '<span class="kpi"><div class="kpi-lbl">⚠ Por configurar</div><div class="kpi-val" style="color:#ca8a04">' + (items.length - conConfig) + '</div></span>';
+  const conB2B = items.filter(it => it.b2b_n_pedidos > 0).length;
+  kpis += '<span class="kpi"><div class="kpi-lbl">🤝 Con B2B</div><div class="kpi-val" style="color:#7c3aed">' + conB2B + '</div></span>';
+  document.getElementById('kpis').innerHTML = kpis;
+
+  // Tabla
+  let html = '';
+  items.forEach((it, idx) => {
+    const cls = DIRTY.has(it.producto) ? 'modified' : '';
+    html += '<tr class="' + cls + '" data-prod="' + esc(it.producto) + '" data-idx="' + idx + '">';
+    html += '<td><strong>' + esc(it.producto) + '</strong>';
+    if (it.actualizado_por) html += '<br><span class="muted" style="font-size:9px">✓ ' + (it.actualizado_at || '').slice(0,16) + '</span>';
+    html += '</td>';
+    html += '<td><span class="urg-' + it.urgencia + '">' + it.urgencia + '</span></td>';
+    html += '<td style="text-align:right">' + (it.histor_kg_prom || '—') + (it.histor_n > 0 ? '<br><span class="muted" style="font-size:9px">' + it.histor_n + ' lotes</span>' : '') + '</td>';
+    html += '<td><input class="cell" type="number" step="0.1" min="0" value="' + (it.kg_lote_actual || it.histor_kg_prom || it.lote_excel_kg || 0) + '" data-field="kg" oninput="onChange(this)"></td>';
+    html += '<td><input class="cell" type="number" min="1" value="' + it.ml_actual + '" data-field="ml" oninput="onChange(this)"></td>';
+    html += '<td style="text-align:right;color:#0891b2;font-weight:700">' + (it.frecuencia_sugerida || '—') + (it.frecuencia_sugerida ? ' <button class="btn-sug" onclick="aplicarSug(this)">💡</button>' : '') + '</td>';
+    html += '<td><input class="cell" type="number" min="0" value="' + (it.frecuencia_actual || '') + '" data-field="freq" oninput="onChange(this)" placeholder="días"></td>';
+    html += '<td style="text-align:right">' + it.kg_mes_shopify + '</td>';
+    html += '<td style="text-align:right;color:' + (it.b2b_n_pedidos > 0 ? '#7c3aed' : '#94a3b8') + '">' + it.kg_mes_b2b + (it.b2b_n_pedidos > 0 ? '<br><span class="muted" style="font-size:9px">' + it.b2b_n_pedidos + ' ped</span>' : '') + '</td>';
+    html += '<td style="text-align:right;font-weight:700;color:#16a34a">' + it.kg_mes_total + '</td>';
+    html += '<td style="text-align:right">' + (it.stock_kg || 0) + '</td>';
+    html += '<td style="text-align:right">' + (it.dias_cobertura !== null ? it.dias_cobertura + 'd' : '—') + '</td>';
+    html += '<td><input class="cell" type="text" value="' + esc(it.notas || '') + '" data-field="notas" oninput="onChange(this)" placeholder="opcional" style="min-width:120px"></td>';
+    html += '</tr>';
+  });
+  document.getElementById('tbody').innerHTML = html;
+}
+
+function onChange(input){
+  const tr = input.closest('tr');
+  const prod = tr.dataset.prod;
+  DIRTY.add(prod);
+  tr.classList.add('modified');
+  input.classList.add('dirty');
+  actualizarBtnGuardar();
+}
+
+function aplicarSug(btn){
+  const tr = btn.closest('tr');
+  const idx = parseInt(tr.dataset.idx);
+  const it = DATA.items.sort((a,b) => {
+    const ORD = {CRITICO:0, URGENTE:1, VIGILAR:2, OK:3, SIN_VENTAS:4};
+    return (ORD[a.urgencia] || 9) - (ORD[b.urgencia] || 9);
+  })[idx];
+  if (!it) return;
+  const inp = tr.querySelector('input[data-field="freq"]');
+  inp.value = it.frecuencia_sugerida;
+  onChange(inp);
+}
+
+function aplicarSugeridos(){
+  if (!confirm('¿Aplicar frecuencia sugerida a TODOS los productos con cálculo válido?')) return;
+  document.querySelectorAll('tbody tr').forEach(tr => {
+    const idx = parseInt(tr.dataset.idx);
+    const it = (DATA.items.sort((a,b) => {
+      const ORD = {CRITICO:0, URGENTE:1, VIGILAR:2, OK:3, SIN_VENTAS:4};
+      return (ORD[a.urgencia] || 9) - (ORD[b.urgencia] || 9);
+    }))[idx];
+    if (it && it.frecuencia_sugerida > 0){
+      const inp = tr.querySelector('input[data-field="freq"]');
+      if (inp.value != it.frecuencia_sugerida){
+        inp.value = it.frecuencia_sugerida;
+        onChange(inp);
+      }
+    }
+  });
+}
+
+function actualizarBtnGuardar(){
+  const n = DIRTY.size;
+  document.getElementById('btn-guardar').disabled = n === 0;
+  document.getElementById('modif-count').textContent = n > 0 ? n + ' productos modificados' : '';
+}
+
+async function guardar(){
+  if (DIRTY.size === 0) return;
+  if (!confirm('¿Guardar ' + DIRTY.size + ' productos modificados?')) return;
+  const items = [];
+  document.querySelectorAll('tbody tr.modified').forEach(tr => {
+    const prod = tr.dataset.prod;
+    items.push({
+      producto: prod,
+      kg_por_lote: parseFloat(tr.querySelector('input[data-field="kg"]').value || 0),
+      ml_unidad: parseInt(tr.querySelector('input[data-field="ml"]').value || 30),
+      frecuencia_dias: parseInt(tr.querySelector('input[data-field="freq"]').value || 0),
+      notas: tr.querySelector('input[data-field="notas"]').value || '',
+      activo: true,
+    });
+  });
+  try {
+    const r = await fetch('/api/plan/configurar-canonicos', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json','X-CSRF-Token':getCSRF()},
+      credentials: 'same-origin',
+      body: JSON.stringify({items: items}),
+    });
+    const d = await r.json();
+    if (!r.ok){ alert('Error: ' + (d.error || r.status)); return; }
+    alert('✓ Guardados ' + d.saved + ' productos');
+    cargar();
+  } catch(e){ alert('Error: ' + e.message); }
+}
+
+cargar();
+</script>
+</body></html>"""
 
 
 _CALC_FRECUENCIAS_HTML = r"""<!DOCTYPE html>
