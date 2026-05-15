@@ -6360,22 +6360,47 @@ async function abrirSugerenciaModal(producto, fecha, kg, motivo){
 
 async function agendarSugerencia(producto, fecha, kg){
   cerrarLoteModal();
-  if (!confirm('¿Agendar producción de ' + producto + ' · ' + kg + 'kg para ' + fecha + '?')) return;
+  // Sebastián 14-may-2026: "no sé es como hacer que quede ya allí como
+  // plan y todos lo vean, y además empezar a moverlo si al aceptar
+  // aparece en futuro durante un año".
+  // Cambio: en vez de 1 lote único, preguntar frecuencia y crear serie
+  // anual (eos_canonico). Default 60 días si el usuario no responde.
+  const rawFreq = prompt(
+    '¿Agendar este producto como CANÓNICO ANUAL?\\n\\n' +
+    'Producto: ' + producto + '\\n' +
+    'Primer lote: ' + fecha + ' · ' + kg + 'kg\\n\\n' +
+    'Frecuencia días entre lotes (cada cuántos días se produce):\\n' +
+    '• 30 = mensual\\n' +
+    '• 45 = cada 45 días\\n' +
+    '• 60 = cada 2 meses (default)\\n' +
+    '• 90 = trimestral',
+    '60'
+  );
+  if (rawFreq === null) return;  // usuario canceló
+  const freq = parseInt(rawFreq);
+  if (isNaN(freq) || freq < 7 || freq > 180){
+    alert('Frecuencia inválida · debe estar entre 7 y 180 días');
+    return;
+  }
   try {
-    const r = await fetch('/api/plan/programar-produccion', {
+    const r = await fetch('/api/plan/programar-canonico', {
       method:'POST',
       headers:{'Content-Type':'application/json','X-CSRF-Token':getCSRF()},
       credentials: 'same-origin',
       body: JSON.stringify({
-        producto_nombre: producto, cantidad_kg: kg,
-        fecha_programada: fecha, notas: 'Agendado desde calendario IA',
+        producto_nombre: producto,
+        cantidad_kg: kg,
+        frecuencia_dias: freq,
+        horizonte_dias: 365,
+        fecha_inicio: fecha,
+        notas: 'Agendado desde IA · serie anual cada ' + freq + 'd',
       }),
     });
     let d = null; let txt = '';
     try { d = await r.json(); } catch(e){ txt = await r.text(); }
     if (!r.ok){
       const errMsg = (d && (d.error || d.message)) || txt || ('HTTP ' + r.status);
-      alert('❌ No se pudo agendar:\\n\\n' + errMsg +
+      alert('❌ No se pudo agendar serie anual:\\n\\n' + errMsg +
             (r.status === 403 ? '\\n\\nProbable: MFA no activado · /seguridad' : ''));
       return;
     }
@@ -6386,6 +6411,11 @@ async function agendarSugerencia(producto, fecha, kg){
       if (it.from_ia && it.decision_id) feedbackIA(it.decision_id, 'aceptada', kg, fecha, null);
       PLAN_DATA.plan.plan_items.splice(idx, 1);
     }
+    alert('✅ Serie anual creada\\n\\n' +
+          '• ' + (d.lotes_creados ? d.lotes_creados.length : (d.total || 0)) + ' lotes generados\\n' +
+          '• Cada ' + freq + ' días\\n' +
+          '• Horizonte 365 días\\n\\n' +
+          'Aparecerán en el calendario · arrastrá cualquiera para moverlo.');
     cargar();
   } catch(e){ alert('Error de red: ' + e.message); }
 }
@@ -6975,6 +7005,42 @@ def _ia_autoplan_sugerir(payload_contexto, modelo="claude-sonnet-4-6"):
                     parse_err = None
             except Exception as ex3:
                 parse_err = str(ex3)
+        # Estrategia 4 · Sebastián 14-may-2026: respuestas largas se truncan
+        # extraer cada sugerencia individual con regex robusta
+        if parsed is None:
+            try:
+                # Buscar bloque "sugerencias": [
+                m_sug = _re.search(r'"sugerencias"\s*:\s*\[(.*)', text, _re.DOTALL)
+                if m_sug:
+                    inner = m_sug.group(1)
+                    # Extraer objetos { ... } balanceados uno a uno
+                    sugs = []
+                    depth = 0
+                    start_obj = -1
+                    for i, ch in enumerate(inner):
+                        if ch == '{':
+                            if depth == 0:
+                                start_obj = i
+                            depth += 1
+                        elif ch == '}':
+                            depth -= 1
+                            if depth == 0 and start_obj >= 0:
+                                obj_text = inner[start_obj:i+1]
+                                try:
+                                    obj = _json.loads(obj_text)
+                                    if isinstance(obj, dict) and obj.get("producto"):
+                                        sugs.append(obj)
+                                except Exception:
+                                    pass
+                                start_obj = -1
+                    if sugs:
+                        # Comentario general · buscar después del último ]
+                        m_com = _re.search(r'"comentario_general"\s*:\s*"([^"]*)"', text, _re.DOTALL)
+                        comentario = m_com.group(1) if m_com else f"Parser recuperó {len(sugs)} sugerencias de respuesta truncada"
+                        parsed = {"sugerencias": sugs, "comentario_general": comentario}
+                        parse_err = None
+            except Exception as ex4:
+                parse_err = f"truncamiento_recovery: {ex4}"
 
     if parsed is None:
         return None, f"IA respondió pero no se pudo parsear JSON · error: {parse_err} · raw_preview: {raw_text[:800]}"
