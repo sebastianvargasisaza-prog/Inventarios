@@ -49,12 +49,15 @@ BACKUPS_DIR = os.environ.get(
 #   - MONTHLY: 36 meses (3 años) snapshot mensual marcado con sufijo
 #              "__monthly" que NO entra en la rotación diaria. Auditoría.
 # El snapshot mensual se hace copiando el primer backup de cada mes natural.
-RETENTION_DAYS = int(os.environ.get("BACKUP_RETENTION_DAYS", "30"))
+# Sebastián 15-may-2026: corrupción intermitente recurrente del disco
+# de Render. Retención horaria 14 días (suficiente para recovery),
+# snapshot mensual 3 años para auditoría INVIMA.
+RETENTION_DAYS = int(os.environ.get("BACKUP_RETENTION_DAYS", "14"))
 MONTHLY_RETENTION_DAYS = int(os.environ.get("BACKUP_MONTHLY_RETENTION_DAYS", "1100"))
-# Sebastián 12-may-2026: tras incidente 'database disk image is malformed'
-# (perdimos ~24h de data), reducimos intervalo de 23h a 6h. 4 backups/día.
-# Con retention 30 días = ~120 backups guardados (~6GB asumiendo 50MB c/u).
-BACKUP_INTERVAL_HOURS = int(os.environ.get("BACKUP_INTERVAL_HOURS", "6"))
+# Sebastián 15-may-2026: tras 2da corrupción del disco en un día,
+# intervalo bajado de 6h a 1h. 24 backups/día · una corrupción pierde
+# 1 hora máximo. Con retention 14 días = ~336 backups (~2-3GB).
+BACKUP_INTERVAL_HOURS = int(os.environ.get("BACKUP_INTERVAL_HOURS", "1"))
 
 # Off-site backup opcional · Día 5 ROADMAP zero-error
 # Si BACKUP_OFFSITE_URL está configurado (S3/B2/GCS pre-signed PUT URL),
