@@ -2379,6 +2379,132 @@ def configurar_canonicos_api():
     })
 
 
+@bp.route("/api/plan/limpiar-duplicados", methods=["POST"])
+def limpiar_duplicados():
+    """Detecta y cancela duplicados activos · mismo producto + fecha cercana.
+
+    Sebastián 14-may-2026: "limpiador hidratante dos veces · calendario
+    tiene cosas viejas y mezcla google calendar con propuesta nueva".
+
+    Regla: si hay 2+ lotes activos del MISMO producto en ventana ±21 días,
+    conservar SOLO el más nuevo por origen-prioridad:
+    1. eos_plan (manual del usuario · prioridad máxima)
+    2. eos_canonico (algoritmo)
+    3. calendar (legacy)
+    4. manual (legacy)
+
+    NUNCA toca lotes con fin_real_at, inicio_real_at, o estado completado.
+    Audit log LIMPIAR_DUPLICADOS.
+    """
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+
+    conn = get_db()
+    c = conn.cursor()
+
+    # Prioridad por origen · 0 = mejor (no se cancela)
+    PRIORIDAD = {
+        'eos_plan': 0,
+        'eos_canonico': 1,
+        'calendar': 2,
+        'manual': 3,
+    }
+
+    # 1) Listar todos los lotes activos por producto
+    rows = c.execute(
+        """SELECT id, producto, fecha_programada, origen, cantidad_kg
+           FROM produccion_programada
+           WHERE estado IN ('pendiente','programado','en_curso','esperando_recurso')
+             AND fin_real_at IS NULL
+             AND inicio_real_at IS NULL
+             AND date(fecha_programada) >= date('now','-5 hours')
+           ORDER BY producto, fecha_programada""",
+    ).fetchall()
+
+    # 2) Agrupar por producto y detectar duplicados ±21d
+    from datetime import date as _date
+    por_producto = {}
+    for r in rows:
+        por_producto.setdefault(r[1], []).append({
+            "id": r[0], "fecha": r[2][:10] if r[2] else None,
+            "origen": r[3] or "manual", "kg": float(r[4] or 0),
+        })
+
+    cancelar_ids = []
+    duplicados_detectados = []
+    for prod, lotes in por_producto.items():
+        if len(lotes) < 2:
+            continue
+        # Para cada par, ver si están a <21d
+        marcados_cancelados = set()
+        for i, la in enumerate(lotes):
+            if la["id"] in marcados_cancelados or la["fecha"] is None:
+                continue
+            for j, lb in enumerate(lotes[i + 1:], start=i + 1):
+                if lb["id"] in marcados_cancelados or lb["fecha"] is None:
+                    continue
+                try:
+                    fa = _date.fromisoformat(la["fecha"])
+                    fb = _date.fromisoformat(lb["fecha"])
+                    if abs((fb - fa).days) < 21:
+                        # Conflicto · cancelar el de menor prioridad
+                        pa = PRIORIDAD.get(la["origen"], 9)
+                        pb = PRIORIDAD.get(lb["origen"], 9)
+                        if pa <= pb:
+                            cancelar_ids.append(lb["id"])
+                            marcados_cancelados.add(lb["id"])
+                            duplicados_detectados.append({
+                                "producto": prod,
+                                "conserva": {"id": la["id"], "fecha": la["fecha"], "origen": la["origen"]},
+                                "cancela": {"id": lb["id"], "fecha": lb["fecha"], "origen": lb["origen"]},
+                            })
+                        else:
+                            cancelar_ids.append(la["id"])
+                            marcados_cancelados.add(la["id"])
+                            duplicados_detectados.append({
+                                "producto": prod,
+                                "conserva": {"id": lb["id"], "fecha": lb["fecha"], "origen": lb["origen"]},
+                                "cancela": {"id": la["id"], "fecha": la["fecha"], "origen": la["origen"]},
+                            })
+                            break  # la ya no existe, sigue con próximo i
+                except Exception:
+                    pass
+
+    # 3) Aplicar cancelaciones
+    n_canceladas = 0
+    if cancelar_ids:
+        placeholders = ",".join(["?"] * len(cancelar_ids))
+        n_canceladas = c.execute(
+            f"""UPDATE produccion_programada
+                SET estado = 'cancelado',
+                    observaciones = COALESCE(observaciones,'') ||
+                      ' · CANCELADO_LIMPIAR_DUPLICADOS_' || {SQLITE_NOW_COL}
+                WHERE id IN ({placeholders})""",
+            cancelar_ids,
+        ).rowcount
+    conn.commit()
+
+    audit_log(c, usuario=user, accion="LIMPIAR_DUPLICADOS",
+              tabla="produccion_programada", registro_id=None,
+              antes={"detectados": len(duplicados_detectados)},
+              despues={"canceladas": n_canceladas})
+    conn.commit()
+
+    return jsonify({
+        "ok": True,
+        "duplicados_detectados": len(duplicados_detectados),
+        "canceladas": n_canceladas,
+        "detalle": duplicados_detectados[:50],
+        "metodologia": (
+            "Detecta pares de lotes activos del mismo producto con fechas "
+            "a ±21 días. Conserva el de mayor prioridad: eos_plan > "
+            "eos_canonico > calendar > manual. Cancela el otro."
+        ),
+    })
+
+
 @bp.route("/api/plan/generar-plan-perfecto", methods=["POST"])
 def generar_plan_perfecto():
     """Genera el calendario PERFECTO · algoritmo determinista para
@@ -2493,14 +2619,22 @@ def generar_plan_perfecto():
         return 2  # mediano/pequeño
     configs_ordenados = sorted(configs, key=lambda c: (_tier(c), c["freq_final"]))
 
-    # ── PASO PREVIO · cancelar canónicos viejos sin ejecutar ──
+    # ── PASO PREVIO · LIMPIEZA TOTAL · cancelar TODO lo viejo sin ejecutar ──
+    # Sebastián 14-may-2026: "limpiador hidratante dos veces · siento que
+    # el calendario tiene cosas viejas y mezcla". Antes solo cancelaba
+    # eos_canonico, pero quedaban Calendar legacy + Manual de mig viejas.
+    # Ahora cancela TODO con origen IN (eos_canonico, calendar, manual)
+    # con fecha pendiente/programado sin ejecutar. NUNCA toca:
+    # - eos_plan (lo que el usuario programó manualmente)
+    # - eos_retroactivo (back-fills · historial)
+    # - estados completado / en_curso / cancelado
     n_cancelados = c.execute(
         f"""UPDATE produccion_programada
             SET estado = 'cancelado',
                 observaciones = COALESCE(observaciones,'') ||
                   ' · CANCELADO_PLAN_PERFECTO_' || {SQLITE_NOW_COL}
-            WHERE origen = 'eos_canonico'
-              AND estado IN ('pendiente','programado')
+            WHERE origen IN ('eos_canonico','calendar','manual')
+              AND estado IN ('pendiente','programado','esperando_recurso')
               AND fin_real_at IS NULL
               AND inicio_real_at IS NULL
               AND producto IN ({placeholders})""",
@@ -3161,6 +3295,7 @@ input.cell.dirty{background:#fef3c7;border-color:#ca8a04}
     <div>
       <button onclick="cargar()" class="secondary">↻ Recargar</button>
       <button onclick="aplicarSugeridos()" class="secondary">💡 Aplicar TODOS los sugeridos</button>
+      <button onclick="limpiarDuplicados()" style="background:#dc2626;color:white;font-size:12px;padding:9px 18px;border:none;border-radius:7px;font-weight:700;cursor:pointer">🧹 Limpiar duplicados</button>
     </div>
     <div>
       <span id="modif-count" style="margin-right:10px;color:#ca8a04;font-weight:700"></span>
@@ -3298,6 +3433,30 @@ function actualizarBtnGuardar(){
   const n = DIRTY.size;
   document.getElementById('btn-guardar').disabled = n === 0;
   document.getElementById('modif-count').textContent = n > 0 ? n + ' productos modificados' : '';
+}
+
+async function limpiarDuplicados(){
+  if (!confirm('🧹 Limpiar duplicados\\n\\nDetecta lotes activos del mismo producto a ±21 días.\\nConserva el de mayor prioridad (eos_plan > canónico > calendar > manual)\\ny cancela el resto.\\n\\n¿Continuar?')) return;
+  try {
+    const r = await fetch('/api/plan/limpiar-duplicados', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json','X-CSRF-Token':getCSRF()},
+      credentials: 'same-origin',
+      body: '{}',
+    });
+    const d = await r.json();
+    if (!r.ok){ alert('Error: ' + (d.error || r.status)); return; }
+    let msg = '🧹 Limpieza completa\\n\\n';
+    msg += '• Duplicados detectados: ' + d.duplicados_detectados + '\\n';
+    msg += '• Canceladas: ' + d.canceladas + '\\n';
+    if (d.detalle && d.detalle.length){
+      msg += '\\nPrimeros casos:\\n';
+      d.detalle.slice(0, 10).forEach(c => {
+        msg += '• ' + c.producto + ': cancelar ' + c.cancela.origen + ' (' + c.cancela.fecha + ') · conserva ' + c.conserva.origen + ' (' + c.conserva.fecha + ')\\n';
+      });
+    }
+    alert(msg);
+  } catch(e){ alert('Error: ' + e.message); }
 }
 
 async function planPerfecto(){
