@@ -7175,6 +7175,10 @@ def _ia_autoplan_sugerir(payload_contexto, modelo="claude-sonnet-4-6"):
         "repite ese lote por el horizonte completo (365 días por ejemplo). "
         "TODOS los productos con lote_recomendado_kg válido y mps OK deben "
         "tener entrada · no filtres por cobertura.\n\n"
+        "ESCALONAR FECHAS · NO poner TODOS los productos el mismo lunes. "
+        "Distribuir las fechas del primer lote entre los próximos 15 días "
+        "hábiles · máximo 2 productos por día (ninguno si uno es grande >50kg). "
+        "Ordená por urgencia: productos con menor cobertura primero.\n\n"
         "CONFIANZA (0.0-1.0): defecto 0.90 si reglas cumplen. 0.95+ si hay "
         "historial real. 0.80 si velocidad baja (<0.5 uds/día). NO uses <0.70.\n\n"
         "RESPUESTA: SOLO JSON válido sin markdown. Ejemplo:\n"
@@ -9146,7 +9150,11 @@ def aplicar_ia_anual():
     detalle_por_producto = []
     productos_sin_formula = []
 
-    for prod, info in plan_por_producto.items():
+    # Sebastián 14-may-2026: "acumula todo en un solo dia"
+    # Escalonar por producto · cada producto empieza 2 días hábiles
+    # después que el anterior · evita pico el primer día.
+    productos_lista = list(plan_por_producto.items())
+    for idx, (prod, info) in enumerate(productos_lista):
         if not cur.execute(
             "SELECT 1 FROM formula_headers WHERE producto_nombre = ?",
             (prod,),
@@ -9162,13 +9170,20 @@ def aplicar_ia_anual():
         else:
             f_ini = hoy + _td(days=3)
 
+        # OFFSET por producto · escalonar primer lote ·  + 2 días por orden
+        f_ini = f_ini + _td(days=idx * 2)
+
         freq = info["frecuencia_dias"]
         kg = info["kg"]
         fecha_objetivo = f_ini
         creados_prod = 0
 
         while fecha_objetivo <= f_fin:
-            fecha_real = _proxima_fecha_habil(cur, fecha_objetivo, prefer_mwf=True)
+            # Pasar lote_kg y producto · respeta grandes solos + complejos lun/mié
+            fecha_real = _proxima_fecha_habil(
+                cur, fecha_objetivo, prefer_mwf=True,
+                lote_kg=kg, producto_nombre=prod,
+            )
             if fecha_real is None or fecha_real > f_fin:
                 break
             # Origen='eos_plan' · plan aceptado por usuario (Sebastián).
@@ -9188,7 +9203,7 @@ def aplicar_ia_anual():
 
         detalle_por_producto.append({
             "producto": prod, "kg": kg, "frecuencia_dias": freq,
-            "fecha_inicio": (f_ini.isoformat()),
+            "fecha_inicio_real": (f_ini.isoformat()),
             "lotes_creados": creados_prod,
         })
 
