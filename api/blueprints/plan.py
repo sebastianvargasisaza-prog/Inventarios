@@ -5728,12 +5728,9 @@ select,input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-si
     </div>
   </div>
   <div class="legend">
-    <span><span class="legend-dot" style="background:#16a34a"></span>EOS Plan</span>
-    <span><span class="legend-dot" style="background:#6366f1"></span>Canónico</span>
-    <span><span class="legend-dot" style="background:#ca8a04"></span>Calendar legacy</span>
-    <span><span class="legend-dot" style="background:#d97706"></span>⏸ Pausado</span>
-    <span><span class="legend-dot" style="background:#f59e0b;opacity:.7"></span>✨ Sugerido (autoplan)</span>
-    <span><span class="legend-dot" style="background:#fca5a5"></span>Festivo</span>
+    <span><span class="legend-dot" style="background:#6366f1"></span>🔁 Canónico (el plan real)</span>
+    <span><span class="legend-dot" style="background:#f59e0b;opacity:.7"></span>✨ Autoplan IA (sugerencia)</span>
+    <span><span class="legend-dot" style="background:#fca5a5"></span>Festivo colombiano</span>
   </div>
   <div id="cal-grid-wrap"></div>
 </div>
