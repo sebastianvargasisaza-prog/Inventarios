@@ -6958,18 +6958,61 @@ async function autoplanIA(){
       return;
     }
 
-    // IA devolvió sugerencias · inyectarlas
-    // Sebastián 14-may-2026: ahora la IA devuelve frecuencia_dias en
-    // cada sugerencia (plan canónico) · la guardamos para usar al aplicar
-    PLAN_DATA.plan.plan_items = sugerencias.map((s, i) => ({
-      producto: s.producto, fecha: s.fecha, kg: s.kg,
-      frecuencia_dias: s.frecuencia_dias || null,  // NUEVO
-      motivo: s.motivo, cob_dias_actual: s.cobertura_post_dias,
-      razonamiento_ia: s.razonamiento, confianza: s.confianza,
-      decision_id: (d.ids_decisiones || [])[i],
-      from_ia: true,
-    }));
-    PLAN_DATA.plan.total_producciones = n;
+    // IA devolvió sugerencias · expandir a serie completa (preview)
+    // Sebastián 14-may-2026: "elegi 365 pero solo programa IA en mayo".
+    // Fix: llamar a /api/plan/preview-expandir-ia para que el backend
+    // expanda cada sugerencia (con frecuencia_dias) a serie 365d usando
+    // _proxima_fecha_habil + escalonamiento. Luego aplanar a plan_items
+    // para que el calendar pinte TODOS los lotes proyectados.
+    let planItemsExpandido = [];
+    try {
+      const rExp = await fetch('/api/plan/preview-expandir-ia', {
+        method:'POST',
+        headers:{'Content-Type':'application/json','X-CSRF-Token':getCSRF()},
+        credentials: 'same-origin',
+        body: JSON.stringify({
+          sugerencias: sugerencias.map(s => ({
+            producto: s.producto, kg: s.kg,
+            fecha: s.fecha, frecuencia_dias: s.frecuencia_dias,
+          })),
+          horizonte_dias: HORIZONTE >= 365 ? 365 : Math.max(HORIZONTE, 90),
+        }),
+      });
+      if (rExp.ok){
+        const expData = await rExp.json();
+        (expData.series || []).forEach((serie, sIdx) => {
+          const sug = sugerencias[sIdx] || {};
+          (serie.fechas || []).forEach((f, fIdx) => {
+            planItemsExpandido.push({
+              producto: serie.producto, fecha: f, kg: serie.kg,
+              frecuencia_dias: serie.frecuencia_dias,
+              motivo: sug.motivo || 'canonico',
+              cob_dias_actual: sug.cobertura_post_dias,
+              razonamiento_ia: sug.razonamiento,
+              confianza: sug.confianza,
+              decision_id: fIdx === 0 ? (d.ids_decisiones || [])[sIdx] : null,
+              from_ia: true,
+              es_recurrente: fIdx > 0,  // primer lote vs recurrentes
+            });
+          });
+        });
+        console.log('[CAL] preview expandido · ' + planItemsExpandido.length + ' plan_items desde ' + sugerencias.length + ' sugerencias IA');
+      }
+    } catch(e){ console.warn('preview-expandir-ia falló:', e); }
+
+    // Fallback · si preview falló, usar sugerencias planas (primer lote)
+    if (!planItemsExpandido.length){
+      planItemsExpandido = sugerencias.map((s, i) => ({
+        producto: s.producto, fecha: s.fecha, kg: s.kg,
+        frecuencia_dias: s.frecuencia_dias || null,
+        motivo: s.motivo, cob_dias_actual: s.cobertura_post_dias,
+        razonamiento_ia: s.razonamiento, confianza: s.confianza,
+        decision_id: (d.ids_decisiones || [])[i],
+        from_ia: true,
+      }));
+    }
+    PLAN_DATA.plan.plan_items = planItemsExpandido;
+    PLAN_DATA.plan.total_producciones = planItemsExpandido.length;
     document.getElementById('btn-aplicar').disabled = false;
     // Sebastián 14-may-2026: mostrar botón "Aplicar plan IA anual"
     // cuando hay sugerencias IA cargadas
@@ -9045,6 +9088,107 @@ def programar_canonico():
         "frecuencia_dias": freq,
         "horizonte_dias": horizonte,
     }), 201
+
+
+@bp.route("/api/plan/preview-expandir-ia", methods=["POST"])
+def preview_expandir_ia():
+    """Expande sugerencias IA a serie completa hasta horizonte (readonly).
+
+    Sebastián 14-may-2026: "elegi 365 pero solo programa IA en mayo,
+    junio en adelante aparece canónico". Causa: frontend pintaba solo
+    UN lote por sugerencia · IA propone plan canónico con frecuencia,
+    pero solo se veía primer lote.
+
+    Reutiliza la lógica de aplicar-ia-anual pero NO escribe BD · solo
+    devuelve fechas calculadas para preview visual. Cuando Sebastián
+    aprieta '🎯 Aplicar', aplicar-ia-anual persiste con la misma lógica.
+
+    Body:
+        sugerencias: list of {producto, kg, fecha (primer lote),
+                              frecuencia_dias}
+        horizonte_dias: int default 365
+
+    Returns:
+        {series: [{producto, kg, frecuencia_dias, fechas: [iso, ...]}]}
+    """
+    user, err = _require_admin_or_compras()
+    if err:
+        body_err, code = err
+        return jsonify(body_err), code
+
+    body = request.get_json(silent=True) or {}
+    sugerencias = body.get("sugerencias") or []
+    try:
+        horizonte = max(30, min(730, int(body.get("horizonte_dias") or 365)))
+    except (ValueError, TypeError):
+        horizonte = 365
+
+    if not isinstance(sugerencias, list) or not sugerencias:
+        return jsonify({"error": "sugerencias debe ser lista no vacía"}), 400
+
+    from datetime import date as _date, timedelta as _td
+    hoy = _hoy_colombia()
+    f_fin = hoy + _td(days=horizonte)
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    series = []
+    for idx, s in enumerate(sugerencias):
+        prod = (s.get("producto") or "").strip()
+        try:
+            kg = float(s.get("kg") or 0)
+        except (ValueError, TypeError):
+            continue
+        if not prod or kg <= 0:
+            continue
+        try:
+            freq = max(7, min(180, int(s.get("frecuencia_dias") or 30)))
+        except (ValueError, TypeError):
+            freq = 30
+
+        fecha_ini_str = (s.get("fecha_inicio") or s.get("fecha") or "").strip()
+        if fecha_ini_str and _valida_fecha_iso(fecha_ini_str):
+            f_ini = _date.fromisoformat(fecha_ini_str[:10])
+            if f_ini < hoy:
+                f_ini = hoy + _td(days=3)
+        else:
+            f_ini = hoy + _td(days=3)
+
+        # Escalonado idx*2 · mismo que aplicar-ia-anual
+        f_ini = f_ini + _td(days=idx * 2)
+
+        fechas = []
+        fecha_objetivo = f_ini
+        # Capa de seguridad · max 100 lotes por producto
+        for _ in range(100):
+            if fecha_objetivo > f_fin:
+                break
+            f_real = _proxima_fecha_habil(
+                cur, fecha_objetivo, prefer_mwf=True,
+                lote_kg=kg, producto_nombre=prod,
+            )
+            if f_real is None or f_real > f_fin:
+                break
+            fechas.append(f_real.isoformat())
+            fecha_objetivo = f_real + _td(days=freq)
+
+        series.append({
+            "producto": prod, "kg": kg, "frecuencia_dias": freq,
+            "fecha_inicio_real": f_ini.isoformat(),
+            "fechas": fechas,
+            "n_lotes": len(fechas),
+        })
+
+    # NO conn.commit() · readonly. Pero _proxima_fecha_habil hace SELECTs
+    # que no necesitan commit, así que está bien dejarlo así.
+
+    return jsonify({
+        "horizonte_dias": horizonte,
+        "n_productos": len(series),
+        "n_lotes_totales": sum(s["n_lotes"] for s in series),
+        "series": series,
+    })
 
 
 @bp.route("/api/plan/aplicar-ia-anual", methods=["POST"])
