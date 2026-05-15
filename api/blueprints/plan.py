@@ -3032,15 +3032,19 @@ def regenerar_canonicos():
 
     productos_a_regenerar = [r[0] for r in configs]
 
-    # 2) Cancelar canónicos viejos sin ejecutar de esos productos
+    # 2) Cancelar TODO lo viejo sin ejecutar de esos productos · Sebastián
+    # 14-may-2026: "veo dos limpiadores h ambos de 80kg" · regenerar-simple
+    # solo cancelaba eos_canonico · ahora también cancela calendar/manual
+    # (igual que generar-plan-perfecto). NUNCA toca eos_plan ni eos_retroactivo
+    # ni lotes con fin_real_at o inicio_real_at.
     placeholders = ",".join(["?"] * len(productos_a_regenerar))
     n_cancelados = c.execute(
         f"""UPDATE produccion_programada
             SET estado = 'cancelado',
                 observaciones = COALESCE(observaciones,'') ||
                   ' · CANCELADO_REGEN_CANON_' || {SQLITE_NOW_COL}
-            WHERE origen = 'eos_canonico'
-              AND estado IN ('pendiente','programado')
+            WHERE origen IN ('eos_canonico','calendar','manual')
+              AND estado IN ('pendiente','programado','esperando_recurso')
               AND fin_real_at IS NULL
               AND inicio_real_at IS NULL
               AND producto IN ({placeholders})""",
