@@ -2379,6 +2379,153 @@ def configurar_canonicos_api():
     })
 
 
+@bp.route("/api/plan/alertas-ventas", methods=["GET"])
+def alertas_ventas():
+    """Detecta productos donde las ventas RECIENTES superan al baseline
+    histórico · sugiere adelantar próximo canónico.
+
+    Sebastián 14-may-2026: "ia para sugerir si se debe adelantar porque
+    las ventas aumentaron".
+
+    Lógica:
+    1. Para cada producto activo:
+       - vel_reciente = ventas últ 14 días / 14
+       - vel_baseline = ventas últ 60 días / 60
+       - delta_pct = (reciente - baseline) / baseline × 100
+    2. Si delta_pct > 30% (configurable via ?umbral=30):
+       - Calcular nueva cobertura con vel_reciente
+       - Si próximo canónico cae DESPUÉS del agotamiento ajustado:
+         sugerir adelantar X días
+    3. Devolver lista ordenada por riesgo (cobertura ajustada ASC)
+    """
+    err = _require_login()
+    if err:
+        return err
+
+    try:
+        umbral_pct = max(10, min(200, int(request.args.get("umbral") or 30)))
+    except ValueError:
+        umbral_pct = 30
+
+    conn = get_db()
+    c = conn.cursor()
+    from datetime import date as _date, timedelta as _td
+
+    hoy = _hoy_colombia()
+
+    # 1) Necesidades base (ventana 60d) · da velocidad baseline
+    nec_baseline = _calcular_animus_dtc(c, ventana=60, cob_critico=20,
+                                          cob_alerta=25, cob_vigilar=45)
+    # 2) Necesidades reciente (ventana 14d) · da velocidad reciente
+    nec_reciente = _calcular_animus_dtc(c, ventana=14, cob_critico=20,
+                                          cob_alerta=25, cob_vigilar=45)
+
+    rec_map = {n["producto_nombre"]: n for n in nec_reciente}
+
+    # 3) Para cada producto comparar
+    alertas = []
+    for n_bl in nec_baseline:
+        prod = n_bl["producto_nombre"]
+        n_rc = rec_map.get(prod, {})
+
+        vel_baseline = n_bl.get("velocidad_kg_dia", 0) or 0
+        vel_reciente = n_rc.get("velocidad_kg_dia", 0) or 0
+
+        # Solo productos con baseline > 0 (con ventas históricas)
+        if vel_baseline < 0.01:
+            continue
+        # Solo si velocidad reciente es significativa
+        if vel_reciente < 0.01:
+            continue
+
+        delta_kg_dia = vel_reciente - vel_baseline
+        delta_pct = (delta_kg_dia / vel_baseline) * 100.0
+
+        # Solo alerta si supera umbral
+        if delta_pct < umbral_pct:
+            continue
+
+        # Cobertura ajustada con vel_reciente
+        stock_kg = n_bl.get("stock_kg_total", 0) or 0
+        cob_baseline_dias = stock_kg / vel_baseline if vel_baseline > 0 else None
+        cob_reciente_dias = stock_kg / vel_reciente if vel_reciente > 0 else None
+
+        # Buscar próximo canónico para este producto
+        row_prox = c.execute(
+            """SELECT MIN(fecha_programada)
+               FROM produccion_programada
+               WHERE producto = ?
+                 AND estado IN ('pendiente','programado','en_curso','esperando_recurso')
+                 AND fin_real_at IS NULL
+                 AND date(fecha_programada) >= date('now','-5 hours')""",
+            (prod,),
+        ).fetchone()
+        proximo_canonico = row_prox[0] if row_prox else None
+        dias_hasta_proximo = None
+        adelantar_dias = 0
+        if proximo_canonico and cob_reciente_dias is not None:
+            try:
+                f_prox = _date.fromisoformat(proximo_canonico[:10])
+                dias_hasta_proximo = (f_prox - hoy).days
+                # Producir 20 días antes de agotar (regla Sebastián)
+                fecha_optima = hoy + _td(days=int(cob_reciente_dias - 20))
+                if fecha_optima < f_prox:
+                    adelantar_dias = (f_prox - fecha_optima).days
+            except Exception:
+                pass
+
+        # Severidad
+        if cob_reciente_dias and cob_reciente_dias < 15:
+            severidad = "CRITICO"
+        elif cob_reciente_dias and cob_reciente_dias < 25:
+            severidad = "URGENTE"
+        elif delta_pct > 100:
+            severidad = "BOOM"  # ventas más que duplicadas
+        else:
+            severidad = "ACELERACION"
+
+        alertas.append({
+            "producto": prod,
+            "severidad": severidad,
+            "delta_pct": round(delta_pct, 1),
+            "vel_baseline_kg_dia": round(vel_baseline, 3),
+            "vel_reciente_kg_dia": round(vel_reciente, 3),
+            "vel_baseline_uds_mes": int((n_bl.get("velocidad_uds_dia", 0) or 0) * 30),
+            "vel_reciente_uds_mes": int((n_rc.get("velocidad_uds_dia", 0) or 0) * 30),
+            "stock_actual_kg": round(stock_kg, 2),
+            "cobertura_baseline_dias": round(cob_baseline_dias, 1) if cob_baseline_dias is not None else None,
+            "cobertura_ajustada_dias": round(cob_reciente_dias, 1) if cob_reciente_dias is not None else None,
+            "proximo_canonico": proximo_canonico[:10] if proximo_canonico else None,
+            "dias_hasta_proximo_canonico": dias_hasta_proximo,
+            "adelantar_dias": adelantar_dias,
+            "accion_sugerida": (
+                "🔥 PRODUCIR YA · stock crítico con velocidad nueva"
+                if severidad == "CRITICO"
+                else f"⚡ Adelantar próximo canónico {adelantar_dias} días"
+                if adelantar_dias > 0
+                else "📊 Monitorear · ventas en alza pero cobertura OK"
+            ),
+        })
+
+    # Ordenar por severidad + cobertura ajustada
+    SEVERIDAD_ORDEN = {"CRITICO": 0, "URGENTE": 1, "BOOM": 2, "ACELERACION": 3}
+    alertas.sort(key=lambda x: (
+        SEVERIDAD_ORDEN.get(x["severidad"], 9),
+        x["cobertura_ajustada_dias"] or 99999,
+    ))
+
+    return jsonify({
+        "umbral_pct": umbral_pct,
+        "n_alertas": len(alertas),
+        "alertas": alertas,
+        "metodologia": (
+            f"Compara vel_kg_dia últ 14d vs últ 60d. Alerta si delta >={umbral_pct}%. "
+            "Calcula cobertura ajustada con vel_reciente. Sugiere adelantar próximo "
+            "canónico si el agotamiento estimado es ANTES de la próxima producción."
+        ),
+    })
+
+
 @bp.route("/api/plan/regenerar-canonicos", methods=["POST"])
 def regenerar_canonicos():
     """Lee producto_canonico_config y regenera lotes próximos 365d.
@@ -3170,6 +3317,43 @@ def plan_dashboard_api():
            WHERE estado = 'esperando_recurso'"""
     ).fetchone()[0]
 
+    # 6) Alertas de ventas que aumentaron (paso 6/6 · IA-alerta inline)
+    alertas_ventas_data = []
+    try:
+        nec_rec = _calcular_animus_dtc(c, ventana=14, cob_critico=20,
+                                         cob_alerta=25, cob_vigilar=45)
+        rec_map = {n["producto_nombre"]: n for n in nec_rec}
+        for n_bl in necesidades:
+            prod = n_bl["producto_nombre"]
+            n_rc = rec_map.get(prod, {})
+            vel_bl = n_bl.get("velocidad_kg_dia", 0) or 0
+            vel_rc = n_rc.get("velocidad_kg_dia", 0) or 0
+            if vel_bl < 0.01 or vel_rc < 0.01:
+                continue
+            delta_pct = ((vel_rc - vel_bl) / vel_bl) * 100.0
+            if delta_pct < 30:
+                continue
+            stock_kg = n_bl.get("stock_kg_total", 0) or 0
+            cob_rec = stock_kg / vel_rc if vel_rc > 0 else None
+            severidad = (
+                "CRITICO" if cob_rec and cob_rec < 15
+                else "URGENTE" if cob_rec and cob_rec < 25
+                else "BOOM" if delta_pct > 100
+                else "ACELERACION"
+            )
+            alertas_ventas_data.append({
+                "producto": prod,
+                "delta_pct": round(delta_pct, 1),
+                "cob_ajustada_dias": round(cob_rec, 1) if cob_rec is not None else None,
+                "severidad": severidad,
+            })
+        alertas_ventas_data.sort(key=lambda x: (
+            {"CRITICO": 0, "URGENTE": 1, "BOOM": 2, "ACELERACION": 3}.get(x["severidad"], 9),
+            x.get("cob_ajustada_dias") or 99999,
+        ))
+    except Exception:
+        pass  # silencioso · si falla, no rompe el dashboard
+
     return jsonify({
         "fecha": _hoy_colombia().isoformat(),
         "kpis": {
@@ -3181,10 +3365,12 @@ def plan_dashboard_api():
             "calendar_legacy_pendientes": int(n_calendar_legacy or 0),
             "pausados": int(n_pausados or 0),
             "criticos": len(criticos),
+            "alertas_ventas_aumento": len(alertas_ventas_data),
         },
         "semanas": semanas,
         "producciones_reales_28d": reales,
         "alertas_criticos": alertas,
+        "alertas_ventas_aumento": alertas_ventas_data[:10],
         "ia_sugerencias_recientes": ia_sugerencias,
         "ia_stats": ia_stats,
     })
@@ -3234,6 +3420,8 @@ button{background:#0f766e;color:white;border:none;padding:8px 14px;border-radius
   <div style="margin-top:10px"><button onclick="cargar()">↻ Recargar</button></div>
   <div id="kpis" class="kpi-grid"></div>
 </div>
+
+<div id="alertas-ventas-wrap"></div>
 
 <div class="card" style="background:linear-gradient(135deg,#fef3c7,#fef9c3);border:2px solid #ca8a04">
   <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
@@ -3289,7 +3477,31 @@ function render(d){
   html += '<div class="kpi warn"><div class="kpi-lbl">⏸ Pausados</div><div class="kpi-val" style="color:#ca8a04">' + k.pausados + '</div></div>';
   const urg = k.criticos > 0;
   html += '<div class="kpi ' + (urg ? 'urgent' : 'good') + '"><div class="kpi-lbl">🚨 Críticos</div><div class="kpi-val" style="color:' + (urg ? '#dc2626' : '#16a34a') + '">' + k.criticos + '</div></div>';
+  const ventasAlerts = k.alertas_ventas_aumento || 0;
+  html += '<div class="kpi ' + (ventasAlerts > 0 ? 'urgent' : 'good') + '"><div class="kpi-lbl">📈 Ventas ↑</div><div class="kpi-val" style="color:' + (ventasAlerts > 0 ? '#dc2626' : '#16a34a') + '">' + ventasAlerts + '</div></div>';
   document.getElementById('kpis').innerHTML = html;
+
+  // Alertas ventas que aumentaron
+  const ventasArr = d.alertas_ventas_aumento || [];
+  if (ventasArr.length) {
+    let hv = '<div class="card" style="background:linear-gradient(135deg,#fef2f2,#fefce8);border:2px solid #ea580c"><h2 style="margin:0 0 6px;color:#9a3412">📈 Ventas en aumento · ' + ventasArr.length + ' producto(s) · adelantar producción</h2>';
+    hv += '<div class="muted">Velocidad últ 14d supera baseline 60d en ≥30%. Si la cobertura ajustada cae <25d, hay riesgo de stockout antes del próximo canónico.</div>';
+    ventasArr.forEach(a => {
+      const sev = a.severidad;
+      const col = sev === 'CRITICO' ? '#dc2626' : (sev === 'URGENTE' ? '#ea580c' : (sev === 'BOOM' ? '#7c3aed' : '#ca8a04'));
+      hv += '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px;border-radius:6px;margin-top:6px;background:white;border-left:4px solid ' + col + '">';
+      hv += '<div><strong>' + esc(a.producto) + '</strong> <span style="background:' + col + ';color:white;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700">' + sev + '</span></div>';
+      hv += '<div style="font-size:12px;text-align:right"><span style="color:' + col + ';font-weight:800">+' + a.delta_pct + '%</span> ventas<br><span class="muted">cobertura ajustada: ' + (a.cob_ajustada_dias || '—') + 'd</span></div>';
+      hv += '</div>';
+    });
+    hv += '</div>';
+    // Insertar antes de la sección semanas
+    const existente = document.getElementById('alertas-ventas-wrap');
+    if (existente) existente.innerHTML = hv;
+  } else {
+    const existente = document.getElementById('alertas-ventas-wrap');
+    if (existente) existente.innerHTML = '';
+  }
 
   // Semanas
   let hs = '';
