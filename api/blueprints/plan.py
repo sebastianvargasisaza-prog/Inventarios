@@ -6136,8 +6136,30 @@ async function cargar(){
       festivos: festivosSet,
     };
     document.getElementById('btn-aplicar').disabled = true;  // no hay sugerencias hasta apretar IA
+    // Sebastián 15-may-2026: "no veo nada en calendario". Causa: el
+    // calendario abría en el mes actual (mayo) que está vacío · el plan
+    // arranca meses adelante. Auto-saltar al primer mes con lotes.
+    MES_OFFSET = _primerMesConLotesOffset();
     render();
   } catch(e){ alert('Error: ' + e.message); }
+}
+
+// Sebastián 15-may-2026: devuelve el MES_OFFSET del primer mes que
+// tiene lotes agendados. Si el mes actual ya tiene lotes → 0.
+function _primerMesConLotesOffset(){
+  if (!PLAN_DATA || !PLAN_DATA.agendadas || !PLAN_DATA.agendadas.length) return 0;
+  let minFecha = null;
+  PLAN_DATA.agendadas.forEach(a => {
+    const f = (a.fecha_programada || '').slice(0, 10);
+    if (f && (!minFecha || f < minFecha)) minFecha = f;
+  });
+  if (!minFecha) return 0;
+  const partes = minFecha.split('-');
+  const y = parseInt(partes[0]), m = parseInt(partes[1]);
+  if (isNaN(y) || isNaN(m)) return 0;
+  const hoy = new Date();
+  const offset = (y - hoy.getFullYear()) * 12 + (m - 1 - hoy.getMonth());
+  return offset > 0 ? offset : 0;
 }
 
 // Sebastián 14-may-2026: helper local · evita bug toISOString() que
@@ -6325,10 +6347,21 @@ function render(){
       ' · ' + _prodPintados.size + ' productos únicos visibles' +
       ' · ' + _fechasConLotes.length + ' días con lote en mes navegado';
     if (ag.length > 0 && _pintados.length === 0){
-      diagMsg = '<span style="color:#dc2626;font-weight:700">⚠ BUG · Backend tiene ' + ag.length + ' lotes pero grid pintó 0</span> · primeras fechas BD: ' + ag.slice(0,5).map(a=>(a.fecha_programada||'').slice(0,10)).join(',') + ' · navegá entre meses con ← →';
+      // El mes navegado no tiene lotes · ver en qué meses SÍ hay
+      const _meses = {};
+      ag.forEach(a => {
+        const mm = (a.fecha_programada || '').slice(0, 7);
+        if (mm) _meses[mm] = (_meses[mm] || 0) + 1;
+      });
+      const _listaMeses = Object.keys(_meses).sort()
+        .map(mm => mm + ' (' + _meses[mm] + ')').join(' · ');
+      diagMsg = '📭 <strong>' + mesMostrado + ' no tiene lotes.</strong> ' +
+        'Hay ' + ag.length + ' lotes en otros meses · usá <strong>Siguiente →</strong> ' +
+        'para verlos.<br><span style="font-size:10px">Meses con lotes: ' +
+        escapeHtml(_listaMeses) + '</span>';
     }
     if (ag.length === 0){
-      diagMsg = '<span style="color:#dc2626;font-weight:700">⚠ Backend devolvió 0 lotes</span> · revisar /api/programacion/produccion-programada/listado';
+      diagMsg = '<span style="color:#dc2626;font-weight:700">⚠ Backend devolvió 0 lotes</span> · el plan está vacío · apretá "🤖 Generar plan IA"';
     }
     document.getElementById('cal-diag').innerHTML = diagMsg;
     console.log('[CAL.render] mes=' + mesMostrado + ' pintados=' + _pintados.length + ' productos_pintados=[' + [..._prodPintados].join('|') + '] fechas_con_lote=' + _fechasConLotes.length);
