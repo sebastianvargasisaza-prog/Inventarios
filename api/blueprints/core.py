@@ -673,8 +673,29 @@ def login():
                         _ensure_csrf_token()
                         nxt = request.args.get('next', '')
                         if nxt and nxt.startswith('/') and not nxt.startswith('//'):
-                            return redirect(nxt)
-                        return redirect('/modulos')
+                            resp = redirect(nxt)
+                        else:
+                            resp = redirect('/modulos')
+                        # Sebastián 15-may-2026: "la verificación dos pasos
+                        # me cansa · estaría bien cada mes". Cookie ROLLING:
+                        # se renueva con timestamp nuevo en cada login válido,
+                        # así 60 días cuentan desde el ÚLTIMO acceso, no desde
+                        # el TOTP original. Un usuario que entra seguido casi
+                        # nunca vuelve a ver el código.
+                        try:
+                            import hashlib as _hl, hmac as _hm, os as _osr
+                            _secret = _osr.environ.get('SECRET_KEY', 'devsecret')
+                            _tt = f"{username}|{int(time.time())}"
+                            _sig = _hm.new(_secret.encode(), _tt.encode(),
+                                           _hl.sha256).hexdigest()[:32]
+                            resp.set_cookie(
+                                'mfa_trusted', f"{_tt}|{_sig}",
+                                max_age=60 * 24 * 3600,
+                                httponly=True, secure=True, samesite='Lax',
+                            )
+                        except Exception:
+                            pass  # renovar cookie es best-effort
+                        return resp
                     session.clear()
                     session['mfa_pending_user'] = username
                     session['mfa_pending_next'] = next_url
