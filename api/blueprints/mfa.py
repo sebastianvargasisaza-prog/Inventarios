@@ -619,7 +619,26 @@ def login_mfa_verify():
 
     from auth import _ensure_csrf_token
     _ensure_csrf_token()
-    return redirect('/modulos')
+
+    # Sebastián 14-may-2026: "que no me lo pida cada momentico". Cookie
+    # mfa_trusted=<username>·<timestamp> 60 días · permite saltar paso
+    # MFA en próximos login si la cookie está vigente desde el mismo
+    # navegador. Cookie HTTP-only · no accesible por JS.
+    import hashlib, hmac, os as _os
+    secret = _os.environ.get('SECRET_KEY', 'devsecret')
+    token_trust = f"{pending}|{int(time.time())}"
+    sig = hmac.new(secret.encode(), token_trust.encode(), hashlib.sha256).hexdigest()[:32]
+    cookie_val = f"{token_trust}|{sig}"
+    resp = redirect('/modulos')
+    resp.set_cookie(
+        'mfa_trusted',
+        cookie_val,
+        max_age=60 * 24 * 3600,  # 60 días
+        httponly=True,
+        secure=True,
+        samesite='Lax',
+    )
+    return resp
 
 
 @bp.route('/login/mfa-backup', methods=['GET', 'POST'])

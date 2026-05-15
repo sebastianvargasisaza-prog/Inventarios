@@ -119,7 +119,9 @@ app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SECURE=True,
     SESSION_COOKIE_SAMESITE='Lax',
-    PERMANENT_SESSION_LIFETIME=timedelta(days=30),
+    # Sebastián 14-may-2026: "que no me lo pida cada momentico · de vez
+    # en cuando". Sesiones duran 60 días sin re-login (antes 30).
+    PERMANENT_SESSION_LIFETIME=timedelta(days=60),
 )
 register_hooks(app)
 

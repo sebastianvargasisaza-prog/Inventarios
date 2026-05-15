@@ -635,9 +635,46 @@ def login():
             # Guardamos username en 'mfa_pending_user' y redirigimos a /login/mfa
             # donde se pide el token TOTP. Solo después de verificar TOTP se
             # establece session['compras_user'] = username (en blueprints/mfa.py).
+            #
+            # Sebastián 14-may-2026: "que no me lo pida cada momentico".
+            # Cookie 'mfa_trusted' permite saltar el paso TOTP si fue
+            # verificado en los últimos 60 días desde este navegador.
             try:
                 from blueprints.mfa import _is_mfa_enabled
                 if _is_mfa_enabled(username):
+                    # Validar cookie mfa_trusted (firmada con SECRET_KEY)
+                    trusted_cookie = request.cookies.get('mfa_trusted', '')
+                    skip_mfa = False
+                    if trusted_cookie:
+                        import hashlib, hmac as _hmac, os as _os
+                        secret = _os.environ.get('SECRET_KEY', 'devsecret')
+                        parts = trusted_cookie.split('|')
+                        if len(parts) == 3:
+                            user_c, ts_c, sig_c = parts
+                            try:
+                                ts_int = int(ts_c)
+                                # Verificar firma
+                                msg = f"{user_c}|{ts_c}"
+                                expected = _hmac.new(secret.encode(), msg.encode(), hashlib.sha256).hexdigest()[:32]
+                                if (_hmac.compare_digest(expected, sig_c)
+                                        and user_c == username
+                                        and (time.time() - ts_int) < 60 * 24 * 3600):
+                                    skip_mfa = True
+                            except (ValueError, TypeError):
+                                pass
+                    if skip_mfa:
+                        # Bypass MFA · cookie trusted válida
+                        _clear_attempts(ip, username)
+                        _log_sec("login_success_mfa_trusted", username, ip)
+                        session.clear()
+                        session.permanent = True
+                        session['compras_user'] = username
+                        session['login_time'] = time.time()
+                        _ensure_csrf_token()
+                        nxt = request.args.get('next', '')
+                        if nxt and nxt.startswith('/') and not nxt.startswith('//'):
+                            return redirect(nxt)
+                        return redirect('/modulos')
                     session.clear()
                     session['mfa_pending_user'] = username
                     session['mfa_pending_next'] = next_url
