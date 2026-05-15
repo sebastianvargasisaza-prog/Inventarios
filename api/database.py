@@ -252,7 +252,19 @@ except ImportError:
     except ImportError:
         _MIG_130_STMTS = []
 
+# Mig 136 · PLAN LIMPIO · cancela TODO y genera solo eos_canonico
+# Sebastián 14-may-2026: "quiero que quede solo una cosa, canónico"
+try:
+    from mig_136_plan_limpio_data import STATEMENTS as _MIG_136_STMTS
+except ImportError:
+    try:
+        from api.mig_136_plan_limpio_data import STATEMENTS as _MIG_136_STMTS
+    except ImportError:
+        _MIG_136_STMTS = []
+
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (136, "PLAN LIMPIO · cancela TODO activo + genera solo eos_canonico · Sebastián 14-may-2026",
+     _MIG_136_STMTS),
     (135, "Cancelar TODO Calendar/manual legacy · solo dejar eos_plan + eos_canonico · Sebastián 14-may-2026", [
         # Sebastián: "siguen apareciendo los canónicos legacy y eos,
         # debemos resolver eso, que solo aparezca lo que construí contigo
