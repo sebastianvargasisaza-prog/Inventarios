@@ -6046,7 +6046,16 @@ select,input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-si
     <span><span class="legend-dot" style="background:#f59e0b;opacity:.7"></span>✨ Autoplan IA (sugerencia)</span>
     <span><span class="legend-dot" style="background:#fca5a5"></span>Festivo colombiano</span>
   </div>
+  <!-- Panel diag visible · Sebastián 14-may-2026 "no sale nada" -->
+  <div id="cal-diag" style="background:#fef3c7;border:1px solid #fde68a;border-radius:8px;padding:8px 12px;margin:8px 0;font-size:11px;color:#854d0e;font-family:monospace"></div>
   <div id="cal-grid-wrap"></div>
+</div>
+
+<!-- Lista TODOS los lotes · fallback siempre visible si grid falla -->
+<div class="card">
+  <h2 style="margin:0 0 8px;color:#475569;font-size:15px">📋 Todos los lotes agendados (fallback · siempre visible)</h2>
+  <div style="color:#64748b;font-size:11px;margin-bottom:8px">Si el calendario visual aparece vacío, abajo ves lista textual de los mismos lotes desde el backend.</div>
+  <div id="lista-completa"></div>
 </div>
 
 <div class="card">
@@ -6129,10 +6138,22 @@ async function cargar(){
   } catch(e){ alert('Error: ' + e.message); }
 }
 
-function render(){
-  if (!PLAN_DATA) return;
+// Sebastián 14-may-2026: helper local · evita bug toISOString() que
+// desplaza días según zona horaria. Devuelve YYYY-MM-DD en hora local.
+function fechaLocalStr(d){
+  const y = d.getFullYear();
+  const m = String(d.getMonth()+1).padStart(2,'0');
+  const dd = String(d.getDate()).padStart(2,'0');
+  return y + '-' + m + '-' + dd;
+}
 
-  // Diagnóstico Sebastián 14-may-2026: "solo me salen 3 productos"
+function render(){
+  if (!PLAN_DATA){
+    document.getElementById('cal-diag').textContent = '⚠ PLAN_DATA null · llamá a cargar()';
+    return;
+  }
+
+  // Diagnóstico Sebastián 14-may-2026: "solo me salen 3 productos" / "no sale nada"
   // Loguear conteo de productos únicos para depurar bug visual
   try {
     const _prodSet = new Set();
@@ -6141,6 +6162,36 @@ function render(){
                 ' productos_unicos=' + _prodSet.size +
                 ' lista=' + [..._prodSet].join('|'));
   } catch(e){ console.warn('diag err', e); }
+
+  // Fallback lista textual · SIEMPRE rellena ANTES del grid, así si el
+  // grid falla, Sebastián igual ve los lotes.
+  try {
+    const ag = PLAN_DATA.agendadas || [];
+    if (ag.length === 0){
+      document.getElementById('lista-completa').innerHTML = '<div class="muted" style="padding:20px;text-align:center">No hay lotes agendados · backend devolvió 0</div>';
+    } else {
+      // Agrupar por mes
+      const porMes = {};
+      ag.forEach(a => {
+        const f = (a.fecha_programada || '').slice(0,10);
+        if (!f) return;
+        const mes = f.slice(0,7);
+        (porMes[mes] = porMes[mes] || []).push(a);
+      });
+      let html = '<div style="font-size:11px;color:#64748b;margin-bottom:6px">Total: <strong>'+ag.length+' lotes · '+(new Set(ag.map(x=>x.producto))).size+' productos únicos</strong></div>';
+      Object.keys(porMes).sort().forEach(mes => {
+        html += '<details style="margin:4px 0;border:1px solid #e2e8f0;border-radius:6px;padding:6px 10px"><summary style="cursor:pointer;font-weight:700;color:#0f766e">'+mes+' · '+porMes[mes].length+' lotes</summary>';
+        html += '<table style="width:100%;font-size:11px;margin-top:6px"><tr style="color:#64748b;text-align:left"><th>Fecha</th><th>Producto</th><th>kg</th><th>Origen</th></tr>';
+        porMes[mes].sort((a,b)=>(a.fecha_programada||'').localeCompare(b.fecha_programada||'')).forEach(l => {
+          html += '<tr style="border-top:1px solid #f1f5f9"><td>'+escapeHtml((l.fecha_programada||'').slice(0,10))+'</td><td>'+escapeHtml(l.producto||'')+'</td><td style="text-align:right">'+(l.kg||0)+'</td><td>'+escapeHtml(l.origen||'')+'</td></tr>';
+        });
+        html += '</table></details>';
+      });
+      document.getElementById('lista-completa').innerHTML = html;
+    }
+  } catch(e){
+    document.getElementById('lista-completa').innerHTML = '<div style="color:#dc2626;padding:10px">Error rellenando lista fallback: ' + e.message + '</div>';
+  }
 
   // KPIs
   const k = PLAN_DATA.plan;
@@ -6203,7 +6254,9 @@ function render(){
   const offsetLun = (dia1.getDay() + 6) % 7;  // 0=lun ... 6=dom
   const inicio = new Date(dia1);
   inicio.setDate(dia1.getDate() - offsetLun);
-  const hoyStr = hoy.toISOString().slice(0, 10);
+  // Sebastián 14-may-2026 "no sale nada" · usar fecha local en vez de
+  // toISOString para evitar bug de zona horaria que desplazaba días.
+  const hoyStr = fechaLocalStr(hoy);
 
   let grid = '<div class="cal-grid">';
   DIAS.forEach(d => grid += '<div class="cal-head">' + d + '</div>');
@@ -6211,7 +6264,7 @@ function render(){
     for (let d = 0; d < 7; d++){
       const fecha = new Date(inicio);
       fecha.setDate(inicio.getDate() + sem * 7 + d);
-      const fStr = fecha.toISOString().slice(0, 10);
+      const fStr = fechaLocalStr(fecha);
       const isWeekend = d >= 5;
       const isFestivo = PLAN_DATA.festivos.has(fStr);
       const isHoy = fStr === hoyStr;
@@ -6254,16 +6307,33 @@ function render(){
   grid += '</div>';
 
   document.getElementById('cal-grid-wrap').innerHTML = grid;
-  // Sebastián 14-may-2026: diag pintado en DOM · "solo sale gel hidratante"
+  // Sebastián 14-may-2026: diag pintado en DOM · "no sale nada"
+  // Mostrar VISIBLE en pantalla (no solo consola)
   try {
     const _pintados = document.querySelectorAll('#cal-grid-wrap .lote');
     const _prodPintados = new Set();
     _pintados.forEach(el => _prodPintados.add(el.dataset.prod));
-    console.log('[CAL.render] pintados en DOM: ' + _pintados.length + ' divs.lote · productos únicos=' + _prodPintados.size + ' lista=' + [..._prodPintados].join('|'));
-    // Reporte por fecha en lotesPorFecha
     const _fechasConLotes = Object.keys(lotesPorFecha).filter(f => lotesPorFecha[f].length > 0);
-    console.log('[CAL.render] lotesPorFecha cubre ' + _fechasConLotes.length + ' fechas únicas · primeras 5: ' + _fechasConLotes.sort().slice(0,5).join(','));
-  } catch(e){ console.warn('diag pintado err', e); }
+    const ag = PLAN_DATA.agendadas || [];
+    const _prodBackend = new Set(); ag.forEach(a => _prodBackend.add(a.producto));
+    const mesMostrado = MESES[ref.getMonth()] + ' ' + ref.getFullYear();
+    let diagMsg = '📊 ' + mesMostrado +
+      ' · Backend devolvió <strong>' + ag.length + ' lotes</strong> en <strong>' + _prodBackend.size + ' productos</strong>' +
+      ' · Pintados en grid: <strong>' + _pintados.length + ' div.lote</strong>' +
+      ' · ' + _prodPintados.size + ' productos únicos visibles' +
+      ' · ' + _fechasConLotes.length + ' días con lote en mes navegado';
+    if (ag.length > 0 && _pintados.length === 0){
+      diagMsg = '<span style="color:#dc2626;font-weight:700">⚠ BUG · Backend tiene ' + ag.length + ' lotes pero grid pintó 0</span> · primeras fechas BD: ' + ag.slice(0,5).map(a=>(a.fecha_programada||'').slice(0,10)).join(',') + ' · navegá entre meses con ← →';
+    }
+    if (ag.length === 0){
+      diagMsg = '<span style="color:#dc2626;font-weight:700">⚠ Backend devolvió 0 lotes</span> · revisar /api/programacion/produccion-programada/listado';
+    }
+    document.getElementById('cal-diag').innerHTML = diagMsg;
+    console.log('[CAL.render] mes=' + mesMostrado + ' pintados=' + _pintados.length + ' productos_pintados=[' + [..._prodPintados].join('|') + '] fechas_con_lote=' + _fechasConLotes.length);
+  } catch(e){
+    document.getElementById('cal-diag').textContent = '⚠ diag error: ' + e.message;
+    console.warn('diag pintado err', e);
+  }
   // Activar drop en cada cal-day
   document.querySelectorAll('.cal-day').forEach(cell => {
     cell.addEventListener('dragover', onDragOver);
