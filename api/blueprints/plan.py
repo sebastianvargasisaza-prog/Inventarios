@@ -6022,6 +6022,7 @@ select,input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-si
       </label>
       <button onclick="cargar()" class="secondary">↻ Recargar</button>
       <button onclick="autoplanIA()" class="warn" id="btn-ia">🤖 Autoplan con IA</button>
+      <button onclick="diagCalendar()" class="secondary">🔍 Diag</button>
     </div>
   </div>
   <div id="ia-comentario" style="margin-top:10px"></div>
@@ -6781,6 +6782,29 @@ async function onDrop(ev){
     _dragLote = null;
     await reprogramarLote(id, fechaNueva, 'drag_calendario');
   }
+}
+
+// Sebastián 14-may-2026: "solo sale el gel hidratante" · diag in-situ
+async function diagCalendar(){
+  try {
+    const r = await fetch('/api/plan/health-canonicos');
+    if (!r.ok){ alert('Error diag: ' + r.status); return; }
+    const d = await r.json();
+    const lr = d.listado_calendar_replica || {};
+    const prods = lr.productos || [];
+    const lista = prods.map(p => '  - ' + p.producto + ' · ' + p.n_lotes + ' lotes').join('\\n');
+    const msg = '🔍 DIAGNÓSTICO BACKEND\\n\\n' +
+      '· Última mig aplicada: ' + d.ultima_mig_aplicada + '\\n' +
+      '· Mig 136 aplicada: ' + d.mig_136_aplicada + ' · inserts visibles: ' + d.mig_136_inserts_visible + '\\n' +
+      '· Mig 137 aplicada: ' + d.mig_137_aplicada + ' · inserts visibles: ' + d.mig_137_inserts_visible + ' (esperado 96)\\n' +
+      '· Total eos_canonico activos: ' + d.total_eos_canonico_activos + '\\n\\n' +
+      'LO QUE DEVUELVE LA QUERY DEL CALENDARIO:\\n' +
+      '  total lotes: ' + lr.total_lotes + '\\n' +
+      '  productos únicos: ' + lr.productos_unicos + '\\n\\n' +
+      'Productos detectados:\\n' + (lista || '  (ninguno)');
+    alert(msg);
+    console.log('DIAG full:', d);
+  } catch(e){ alert('Error: ' + e.message); }
 }
 
 async function autoplanIA(){
