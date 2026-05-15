@@ -7789,13 +7789,15 @@ def test_golden_plan_escenarios_y_proximas(app, db_clean):
             assert 'etiqueta' in e
 
     # Caso 2: POST programar-produccion + GET proximas devuelve el lote
+    # Fecha 2026-06-16 (martes hábil) · 2026-06-15 es festivo Sagrado Corazón.
+    # Sebastián 14-may-2026 (audit W4): programar-produccion ahora valida reglas.
     r2 = cs.post('/api/plan/programar-produccion', json={
         'producto_nombre': 'SUERO HIDRATANTE AH 1.5%',
         'cantidad_kg': 60,
-        'fecha_programada': '2026-06-15',
+        'fecha_programada': '2026-06-16',
         'notas': 'TEST_ESC_próximas',
     }, headers=csrf_headers())
-    assert r2.status_code == 201
+    assert r2.status_code == 201, f'BUG: {r2.status_code} {r2.data}'
     pid = r2.get_json()['id']
 
     r3 = cs.get('/api/plan/proximas')

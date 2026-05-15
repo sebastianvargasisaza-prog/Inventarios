@@ -964,6 +964,50 @@ def programar_produccion():
         ).fetchone():
             return jsonify({"error": f"area_id {area_id} no existe o inactiva"}), 404
 
+    # Validar reglas operativas · Sebastián 14-may-2026 (auditoría W4):
+    # - No fin de semana ni festivo (skip_validacion_dia override)
+    # - Lotes grandes >50kg ocupan el día solos
+    # - Complejos (Vit C / Triactive) solo Lun o Mié
+    # - Max 2 producciones por día
+    skip_val = bool(body.get("skip_validacion_dia"))
+    if not skip_val:
+        from datetime import date as _date
+        try:
+            f_obj = _date.fromisoformat(fecha)
+        except ValueError:
+            return jsonify({"error": "fecha inválida"}), 400
+        if f_obj.weekday() not in DIAS_HABILES:
+            return jsonify({
+                "error": f"{fecha} es fin de semana · usá skip_validacion_dia=true para forzar",
+            }), 422
+        if es_festivo_colombia(f_obj):
+            return jsonify({
+                "error": f"{fecha} es festivo colombiano · usá skip_validacion_dia=true para forzar",
+            }), 422
+        if _es_producto_complejo(producto) and f_obj.weekday() not in {0, 2}:
+            return jsonify({
+                "error": f"{producto} es complejo · solo Lun/Mié · usá skip_validacion_dia=true para forzar",
+            }), 422
+        # Capacidad del día
+        rows_dia = cur.execute(
+            """SELECT pp.id, COALESCE(pp.cantidad_kg, fh.lote_size_kg, 0)
+               FROM produccion_programada pp
+               LEFT JOIN formula_headers fh
+                 ON UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(pp.producto))
+               WHERE date(pp.fecha_programada) = ?
+                 AND pp.estado IN ('pendiente','programado','en_curso')""",
+            (fecha,),
+        ).fetchall()
+        kgs_dia = [float(r[1] or 0) for r in rows_dia]
+        ya_grande = any(k > LOTE_GRANDE_KG for k in kgs_dia)
+        es_grande_nuevo = kg > LOTE_GRANDE_KG
+        if es_grande_nuevo and len(rows_dia) > 0:
+            return jsonify({"error": f"{fecha} ocupado · este lote grande necesita el día solo"}), 422
+        if not es_grande_nuevo and ya_grande:
+            return jsonify({"error": f"{fecha} ya tiene un lote grande · no se pueden agregar más"}), 422
+        if not es_grande_nuevo and len(rows_dia) >= MAX_PRODUCCIONES_POR_DIA:
+            return jsonify({"error": f"{fecha} ya tiene {len(rows_dia)} producciones (max {MAX_PRODUCCIONES_POR_DIA})"}), 422
+
     # Insertar con origen='eos_plan' (identifica origen post-Calendar)
     cur.execute(
         """INSERT INTO produccion_programada
@@ -5504,7 +5548,7 @@ select,input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-si
 </div>
 
 <div class="card">
-  <h2 style="margin:0 0 8px;color:#475569;font-size:15px">📋 Lista del autoplan · ' + horizonte + ' días</h2>
+  <h2 id="lista-titulo" style="margin:0 0 8px;color:#475569;font-size:15px">📋 Lista del autoplan</h2>
   <div id="sugerencias-lista"></div>
 </div>
 
@@ -5759,8 +5803,15 @@ function buscarNecesidadProducto(producto){
 }
 
 // Normaliza · sin acentos · upper · trim · útil para matching de nombres
+// Fix B-4 · usar unicode escapes en lugar de literales combinantes
 function _norm(s){
   return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase().trim().replace(/\s+/g, ' ');
+}
+
+// Fix B-2 · escape para atributos HTML (previene XSS si producto tiene comilla)
+// Reemplaza " por &quot; y ' por &#39; antes de meter en onclick.
+function escAttr(s){
+  return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
 // Modal para sugerencias IA (✨ amarillas punteadas) · NO están en BD ·
@@ -6866,7 +6917,8 @@ def plan_sugerido_ejecutar():
         try:
             pid_int = int(pid)
             row = c.execute(
-                """SELECT producto, fecha_programada, origen, estado, fin_real_at
+                """SELECT producto, fecha_programada, origen, estado, fin_real_at,
+                          inicio_real_at
                    FROM produccion_programada WHERE id = ?""",
                 (pid_int,),
             ).fetchone()
@@ -6877,6 +6929,10 @@ def plan_sugerido_ejecutar():
             if row[4]:  # fin_real_at
                 errores.append({"accion": "cancelar", "indice": i,
                                 "error": f"id {pid_int} ya tiene fin_real_at · no cancelable"})
+                continue
+            if row[5]:  # inicio_real_at · lote en curso · inmutable
+                errores.append({"accion": "cancelar", "indice": i,
+                                "error": f"id {pid_int} en curso (inicio_real_at) · no cancelable"})
                 continue
             c.execute(
                 """UPDATE produccion_programada
