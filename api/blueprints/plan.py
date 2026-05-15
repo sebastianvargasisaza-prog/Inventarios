@@ -2423,6 +2423,71 @@ def configurar_canonicos_api():
     })
 
 
+@bp.route("/api/plan/health-canonicos", methods=["GET"])
+def health_canonicos():
+    """Diagnóstico · cuenta lotes activos por origen + última mig aplicada.
+    Sebastián 14-may-2026: "solo me salen 2" · ver si mig 136 corrió.
+    """
+    err = _require_login()
+    if err:
+        return err
+    conn = get_db()
+    c = conn.cursor()
+
+    # Última mig aplicada
+    try:
+        ultima_mig = c.execute(
+            "SELECT MAX(version) FROM schema_migrations"
+        ).fetchone()
+        ultima = int(ultima_mig[0] or 0) if ultima_mig else 0
+    except Exception:
+        ultima = -1
+
+    # Conteos por origen · solo activos futuros
+    por_origen = {}
+    for r in c.execute(
+        """SELECT origen, COUNT(*), MIN(fecha_programada), MAX(fecha_programada)
+           FROM produccion_programada
+           WHERE estado IN ('pendiente','programado','esperando_recurso','en_curso')
+             AND fin_real_at IS NULL
+             AND date(fecha_programada) >= date('now','-5 hours')
+           GROUP BY origen""",
+    ).fetchall():
+        por_origen[r[0] or "(NULL)"] = {
+            "n_lotes": int(r[1] or 0),
+            "primer_fecha": r[2],
+            "ultima_fecha": r[3],
+        }
+
+    # Conteo total · ver si mig 136 se aplicó
+    total_eos_canonico = c.execute(
+        """SELECT COUNT(*) FROM produccion_programada
+           WHERE origen = 'eos_canonico' AND estado = 'programado'
+             AND fin_real_at IS NULL"""
+    ).fetchone()[0]
+
+    # Buscar marker mig 136 en observaciones (señal de que corrió)
+    mig136_evidence = c.execute(
+        """SELECT COUNT(*) FROM produccion_programada
+           WHERE observaciones LIKE '%Plan-limpio mig 136%'"""
+    ).fetchone()[0]
+
+    mig136_cancelado = c.execute(
+        """SELECT COUNT(*) FROM produccion_programada
+           WHERE observaciones LIKE '%CANCELADO_PLAN_LIMPIO_MIG136%'"""
+    ).fetchone()[0]
+
+    return jsonify({
+        "ultima_mig_aplicada": ultima,
+        "mig_136_aplicada": mig136_evidence > 0,
+        "mig_136_inserts_visible": mig136_evidence,
+        "mig_136_cancelados_visible": mig136_cancelado,
+        "total_eos_canonico_activos": int(total_eos_canonico or 0),
+        "esperado_post_mig_136": 48,
+        "por_origen_activos_futuros": por_origen,
+    })
+
+
 @bp.route("/api/plan/lotes-producto", methods=["GET"])
 def lotes_producto_diag():
     """Diagnóstico · lista TODOS los lotes activos de un producto (con
