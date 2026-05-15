@@ -784,11 +784,21 @@ def admin_emergency_restore():
         finally:
             _conn_check.close()
     except _sql_pre.DatabaseError as e:
-        # "database disk image is malformed" cae aquí
-        if 'malformed' in str(e).lower() or 'corrupt' in str(e).lower():
+        # "database disk image is malformed" cae aquí · Sebastián
+        # 15-may-2026: también "disk I/O error" (corrupción a nivel
+        # de filesystem) y "not a database" deben permitir el restore
+        # sin login · si ni siquiera se puede chequear integridad,
+        # la BD está inservible y nadie puede loguearse.
+        _m = str(e).lower()
+        if any(p in _m for p in ('malformed', 'corrupt', 'disk i/o',
+                                  'i/o error', 'not a database',
+                                  'database is locked')):
             db_malformed = True
     except Exception:
-        pass
+        # Cualquier otro fallo chequeando integridad → tratar como
+        # malformed (best-effort · mejor permitir el restore que
+        # dejar la BD rota inalcanzable).
+        db_malformed = True
 
     u = 'emergency-anon'
     if not db_malformed:
