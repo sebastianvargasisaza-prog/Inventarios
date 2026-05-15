@@ -6088,6 +6088,16 @@ async function cargar(){
 function render(){
   if (!PLAN_DATA) return;
 
+  // Diagnóstico Sebastián 14-may-2026: "solo me salen 3 productos"
+  // Loguear conteo de productos únicos para depurar bug visual
+  try {
+    const _prodSet = new Set();
+    (PLAN_DATA.agendadas || []).forEach(a => _prodSet.add(a.producto));
+    console.log('[CAL] agendadas=' + (PLAN_DATA.agendadas || []).length +
+                ' productos_unicos=' + _prodSet.size +
+                ' lista=' + [..._prodSet].join('|'));
+  } catch(e){ console.warn('diag err', e); }
+
   // KPIs
   const k = PLAN_DATA.plan;
   let html = '';
@@ -6095,6 +6105,12 @@ function render(){
   html += '<span class="kpi"><div class="kpi-lbl">🗑 Cancelables</div><div class="kpi-val" style="color:#dc2626">' + ((k.cancelables_calendar || []).length) + '</div></span>';
   html += '<span class="kpi"><div class="kpi-lbl">⚠ Sin fórmula</div><div class="kpi-val" style="color:#ca8a04">' + ((k.sin_formula || []).length) + '</div></span>';
   html += '<span class="kpi"><div class="kpi-lbl">📅 Ya agendadas</div><div class="kpi-val" style="color:#475569">' + (PLAN_DATA.agendadas.length || 0) + '</div></span>';
+  // KPI productos únicos detectados (diag visual del bug)
+  try {
+    const _ps = new Set();
+    (PLAN_DATA.agendadas || []).forEach(a => _ps.add(a.producto));
+    html += '<span class="kpi"><div class="kpi-lbl">🎯 Productos únicos</div><div class="kpi-val" style="color:#0f766e">' + _ps.size + '</div></span>';
+  } catch(e){}
   document.getElementById('kpis').innerHTML = html;
 
   // Calcular mes a mostrar

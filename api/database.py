@@ -262,7 +262,17 @@ except ImportError:
     except ImportError:
         _MIG_136_STMTS = []
 
+try:
+    from mig_137_plan_denso_data import STATEMENTS as _MIG_137_STMTS
+except ImportError:
+    try:
+        from api.mig_137_plan_denso_data import STATEMENTS as _MIG_137_STMTS
+    except ImportError:
+        _MIG_137_STMTS = []
+
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (137, "PLAN DENSO MENSUAL · cada producto = 1 lote/mes × 12 meses · Sebastián 14-may-2026",
+     _MIG_137_STMTS),
     (136, "PLAN LIMPIO · cancela TODO activo + genera solo eos_canonico · Sebastián 14-may-2026",
      _MIG_136_STMTS),
     (135, "Cancelar TODO Calendar/manual legacy · solo dejar eos_plan + eos_canonico · Sebastián 14-may-2026", [
