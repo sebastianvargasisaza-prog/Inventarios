@@ -5713,14 +5713,13 @@ function cambiarMes(delta){ MES_OFFSET += delta; render(); }
 function irHoy(){ MES_OFFSET = 0; render(); }
 
 async function cargar(){
-  document.getElementById('cal-grid-wrap').innerHTML = '<div class="muted" style="padding:30px;text-align:center">Generando autoplan…</div>';
+  document.getElementById('cal-grid-wrap').innerHTML = '<div class="muted" style="padding:30px;text-align:center">Cargando calendario…</div>';
   try {
-    // Plan sugerido (lotes propuestos sin agendar todavía)
-    const rPlan = await fetch('/api/plan/plan-sugerido?horizonte_dias=' + HORIZONTE);
-    const dPlan = await rPlan.json();
-    if (!rPlan.ok){ alert('Error plan: ' + (dPlan.error || rPlan.status)); return; }
-
-    // Producciones ya agendadas (calendar/eos_plan/canonico/manual/esperando)
+    // Sebastián 14-may-2026: "siento que canónico era el perfecto · muy
+    // en la realidad". Por default solo mostramos lotes AGENDADOS en BD
+    // (eos_canonico es el principal · eos_plan si Sebastián agregó manual).
+    // Las sugerencias del algoritmo NO se cargan inicialmente · solo si
+    // aprieta "🤖 Autoplan con IA".
     const rAgendadas = await fetch('/api/programacion/produccion-programada/listado');
     const dAgendadas = await rAgendadas.json();
     if (!rAgendadas.ok){ alert('Error agendadas: ' + rAgendadas.status); return; }
@@ -5732,8 +5731,12 @@ async function cargar(){
     const festivosSet = new Set();
     Object.values(dFest.festivos_por_year || {}).forEach(arr => arr.forEach(f => festivosSet.add(f.fecha)));
 
-    PLAN_DATA = {plan: dPlan, agendadas: dAgendadas.producciones || [], festivos: festivosSet};
-    document.getElementById('btn-aplicar').disabled = (dPlan.total_producciones || 0) === 0;
+    PLAN_DATA = {
+      plan: {plan_items: [], cancelables_calendar: [], sin_formula: [], total_producciones: 0},
+      agendadas: dAgendadas.producciones || [],
+      festivos: festivosSet,
+    };
+    document.getElementById('btn-aplicar').disabled = true;  // no hay sugerencias hasta apretar IA
     render();
   } catch(e){ alert('Error: ' + e.message); }
 }
