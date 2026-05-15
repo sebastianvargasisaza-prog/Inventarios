@@ -3481,6 +3481,9 @@ function actualizarBtnGuardar(){
 
 async function limpiarDuplicados(){
   if (!confirm('🧹 Limpiar duplicados\\n\\nDetecta lotes activos del mismo producto a ±21 días.\\nConserva el de mayor prioridad (eos_plan > canónico > calendar > manual)\\ny cancela el resto.\\n\\n¿Continuar?')) return;
+  // Fix B-6 · disable propio + finally
+  const btns = document.querySelectorAll('button');
+  btns.forEach(b => b.disabled = true);
   try {
     const r = await fetch('/api/plan/limpiar-duplicados', {
       method: 'POST',
@@ -3501,6 +3504,7 @@ async function limpiarDuplicados(){
     }
     alert(msg);
   } catch(e){ alert('Error: ' + e.message); }
+  finally { btns.forEach(b => b.disabled = false); actualizarBtnGuardar(); }
 }
 
 async function planPerfecto(){
@@ -3509,7 +3513,9 @@ async function planPerfecto(){
     await guardar();
   }
   if (!confirm('🎯 Generar Plan PERFECTO\\n\\nAlgoritmo:\\n1. Lee tu config (kg/lote, ml, frecuencia)\\n2. Ajusta frecuencia si ventas aumentaron >30%\\n3. Prioriza: complejos > grandes > otros\\n4. Respeta: L-V, festivos, max 2/día, complejos Lun/Mié\\n5+6. IA escribe reporte ejecutivo\\n\\n¿Continuar?')) return;
-  document.getElementById('btn-guardar').disabled = true;
+  // Fix B-5 · disable todos los botones + finally
+  const btns = document.querySelectorAll('button');
+  btns.forEach(b => b.disabled = true);
   try {
     const r = await fetch('/api/plan/generar-plan-perfecto', {
       method: 'POST',
@@ -3532,6 +3538,7 @@ async function planPerfecto(){
     }
     alert(msg);
   } catch(e){ alert('Error: ' + e.message); }
+  finally { btns.forEach(b => b.disabled = false); actualizarBtnGuardar(); }
 }
 
 async function regenerarCanonicos(){
@@ -3540,7 +3547,9 @@ async function regenerarCanonicos(){
     await guardar();
   }
   if (!confirm('🔄 Esto va a:\\n\\n1. CANCELAR todos los canónicos viejos sin ejecutar\\n2. GENERAR lotes nuevos para 12 meses con tu configuración\\n\\n¿Continuar?')) return;
-  document.getElementById('btn-guardar').disabled = true;
+  // Fix B-5 · disable todos los botones durante fetch
+  const btns = document.querySelectorAll('button');
+  btns.forEach(b => b.disabled = true);
   try {
     const r = await fetch('/api/plan/regenerar-canonicos', {
       method: 'POST',
@@ -3557,6 +3566,7 @@ async function regenerarCanonicos(){
     msg += 'Ver detalle en /admin/dashboard-plan';
     alert(msg);
   } catch(e){ alert('Error: ' + e.message); }
+  finally { btns.forEach(b => b.disabled = false); actualizarBtnGuardar(); }
 }
 
 async function guardar(){
@@ -5803,9 +5813,10 @@ function buscarNecesidadProducto(producto){
 }
 
 // Normaliza · sin acentos · upper · trim · útil para matching de nombres
-// Fix B-4 · usar unicode escapes en lugar de literales combinantes
+// Fix B-4 · regex creado con string + new RegExp para evitar literales combinantes
 function _norm(s){
-  return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase().trim().replace(/\s+/g, ' ');
+  const reMarks = new RegExp('[\\u0300-\\u036F]', 'g');
+  return String(s || '').normalize('NFD').replace(reMarks,'').toUpperCase().trim().replace(/\s+/g, ' ');
 }
 
 // Fix B-2 · escape para atributos HTML (previene XSS si producto tiene comilla)
@@ -5933,8 +5944,11 @@ function modificarSugerenciaKg(producto, fecha, kg){
   cerrarLoteModal();
   const it = (PLAN_DATA.plan.plan_items || []).find(x => x.producto === producto && x.fecha === fecha);
   if (!it) return;
-  const nuevaKg = parseFloat(prompt('Cambiar kg de la sugerencia\\n\\n' + producto + '\\nActual: ' + kg + 'kg\\n\\nNueva cantidad (kg):', kg));
-  if (isNaN(nuevaKg) || nuevaKg <= 0){ if (nuevaKg !== '') alert('Cantidad inválida'); return; }
+  // Fix B-3 · check del raw string ANTES de parseFloat para detectar cancel vs valor inválido
+  const raw = prompt('Cambiar kg de la sugerencia\\n\\n' + producto + '\\nActual: ' + kg + 'kg\\n\\nNueva cantidad (kg):', String(kg));
+  if (raw === null) return;  // usuario canceló
+  const nuevaKg = parseFloat(raw);
+  if (isNaN(nuevaKg) || nuevaKg <= 0){ alert('Cantidad inválida'); return; }
   it.kg = nuevaKg;
   if (it.from_ia && it.decision_id) feedbackIA(it.decision_id, 'movida', nuevaKg, fecha, 'Cambio kg desde modal');
   render();
@@ -6084,7 +6098,9 @@ async function loteAccion(id, accion, producto, fecha){
     const motivo = prompt('Motivo de pausa:', 'falta_mp');
     if (!motivo) return;
     const r = await fetch('/api/plan/proximas/' + id + '/pausar', {
-      method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':getCSRF()},
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':getCSRF()},
+      credentials: 'same-origin',
       body: JSON.stringify({motivo_pausa: motivo.trim()}),
     });
     const d = await r.json();
@@ -6093,13 +6109,17 @@ async function loteAccion(id, accion, producto, fecha){
   } else if (accion === 'C'){
     if (!confirm('¿Cancelar lote?')) return;
     const r = await fetch('/api/plan/proximas/' + id, {
-      method:'DELETE', headers:{'X-CSRF-Token':getCSRF()},
+      method:'DELETE',
+      headers:{'X-CSRF-Token':getCSRF()},
+      credentials: 'same-origin',
     });
     if (!r.ok){ const d = await r.json(); alert('Error: ' + (d.error || r.status)); return; }
     cargar();
   } else if (accion === 'R'){
     const r = await fetch('/api/plan/proximas/' + id + '/reactivar', {
-      method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':getCSRF()},
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':getCSRF()},
+      credentials: 'same-origin',
       body: JSON.stringify({}),
     });
     const d = await r.json();
@@ -6312,7 +6332,9 @@ async function feedbackIA(decisionId, accion, kgReal, fechaReal, comentario){
   if (!decisionId) return;
   try {
     await fetch('/api/plan/autoplan-ia/feedback', {
-      method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':getCSRF()},
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':getCSRF()},
+      credentials: 'same-origin',
       body: JSON.stringify({
         decision_id: decisionId, accion: accion,
         kg_real: kgReal, fecha_real: fechaReal, comentario: comentario,
@@ -6337,9 +6359,14 @@ async function confirmarAplicar(){
     cancelar_ids: cancelables.map(c => c.id),
     backfills: [],
   };
+  // Fix B-7 · disable btn-aplicar durante POST + S-1 credentials same-origin
+  const btnAp = document.getElementById('btn-aplicar');
+  if (btnAp) btnAp.disabled = true;
   try {
     const r = await fetch('/api/plan/plan-sugerido/ejecutar', {
-      method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':getCSRF()},
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':getCSRF()},
+      credentials: 'same-origin',
       body: JSON.stringify(payload),
     });
     const d = await r.json();
@@ -6353,6 +6380,7 @@ async function confirmarAplicar(){
     alert('✅ Aplicado\\n\\n• ' + d.programadas + ' programadas\\n• ' + d.canceladas + ' canceladas\\n• ' + d.total_errores + ' errores');
     cargar();
   } catch(e){ alert('Error: ' + e.message); }
+  finally { if (btnAp) btnAp.disabled = false; }
 }
 
 cargar();
@@ -6994,14 +7022,17 @@ def plan_sugerido_ejecutar():
                 errores.append({"accion": "backfill", "indice": i,
                                 "error": f"duplicado · id existente {dup[0]}"})
                 continue
-            # INSERT retroactivo
+            # INSERT retroactivo · Sebastián 14-may-2026 (audit W3):
+            # Setear inicio_real_at + fin_real_at consistente con
+            # registrar-produccion-completada (placeholders 8:00/17:00)
             c.execute(
                 """INSERT INTO produccion_programada
                        (producto, fecha_programada, cantidad_kg, kg_real,
-                        estado, origen, fin_real_at, lotes, observaciones)
+                        estado, origen, inicio_real_at, fin_real_at,
+                        lotes, observaciones)
                    VALUES (?, ?, ?, ?, 'completado', 'eos_retroactivo',
-                           ? || ' 00:00:00', 1, ?)""",
-                (producto_canonico, fecha, lote_size, kg, fecha,
+                           ? || ' 08:00:00', ? || ' 17:00:00', 1, ?)""",
+                (producto_canonico, fecha, lote_size, kg, fecha, fecha,
                  f"Back-fill por plan-sugerido · usuario: {user}"),
             )
             new_id = c.lastrowid
@@ -8278,6 +8309,22 @@ def registrar_produccion_completada():
         "SELECT 1 FROM formula_headers WHERE producto_nombre = ?", (producto,),
     ).fetchone():
         return jsonify({"error": f"producto '{producto}' no existe"}), 404
+
+    # Dedup · Sebastián 14-may-2026 (audit W5): si ya hay back-fill mismo
+    # producto + fecha ± 5% kg en últ 7 días, devolver el existente (no doble click).
+    dup = cur.execute(
+        """SELECT id FROM produccion_programada
+           WHERE producto = ?
+             AND date(fin_real_at) = ?
+             AND ABS(COALESCE(kg_real, cantidad_kg, 0) - ?) < ?
+             AND origen = 'eos_retroactivo'""",
+        (producto, fecha, kg, max(kg * 0.05, 0.5)),
+    ).fetchone()
+    if dup:
+        return jsonify({
+            "ok": True, "duplicado": True, "id": dup[0],
+            "mensaje": f"Ya existe back-fill similar (id={dup[0]}) · no se crea duplicado",
+        }), 200
 
     # Auto-generar lote si no se proporciona: PRODSHORT-YYYYMMDD-id
     if not lote:
