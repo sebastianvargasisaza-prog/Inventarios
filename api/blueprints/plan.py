@@ -6096,9 +6096,21 @@ async function cargar(){
     // (eos_canonico es el principal · eos_plan si Sebastián agregó manual).
     // Las sugerencias del algoritmo NO se cargan inicialmente · solo si
     // aprieta "🤖 Autoplan con IA".
-    const rAgendadas = await fetch('/api/programacion/produccion-programada/listado');
+    // Sebastián 14-may-2026: bust cache · "solo sale el gel hidratante"
+    // Posible cache del browser sirviendo respuesta vieja con 1 producto.
+    const _ts = Date.now();
+    const rAgendadas = await fetch('/api/programacion/produccion-programada/listado?_t=' + _ts, {cache: 'no-store'});
     const dAgendadas = await rAgendadas.json();
     if (!rAgendadas.ok){ alert('Error agendadas: ' + rAgendadas.status); return; }
+    // Diag · cuántos llegaron y qué productos únicos hay en la respuesta
+    try {
+      const _set = new Set();
+      (dAgendadas.producciones || []).forEach(p => _set.add(p.producto));
+      console.log('[CAL.cargar] respuesta listado:',
+        'total_lotes=' + (dAgendadas.producciones||[]).length,
+        'productos_unicos=' + _set.size,
+        'productos=' + [..._set].join('|'));
+    } catch(e){}
 
     // Festivos colombianos del rango
     const year = new Date().getFullYear();
@@ -6242,6 +6254,16 @@ function render(){
   grid += '</div>';
 
   document.getElementById('cal-grid-wrap').innerHTML = grid;
+  // Sebastián 14-may-2026: diag pintado en DOM · "solo sale gel hidratante"
+  try {
+    const _pintados = document.querySelectorAll('#cal-grid-wrap .lote');
+    const _prodPintados = new Set();
+    _pintados.forEach(el => _prodPintados.add(el.dataset.prod));
+    console.log('[CAL.render] pintados en DOM: ' + _pintados.length + ' divs.lote · productos únicos=' + _prodPintados.size + ' lista=' + [..._prodPintados].join('|'));
+    // Reporte por fecha en lotesPorFecha
+    const _fechasConLotes = Object.keys(lotesPorFecha).filter(f => lotesPorFecha[f].length > 0);
+    console.log('[CAL.render] lotesPorFecha cubre ' + _fechasConLotes.length + ' fechas únicas · primeras 5: ' + _fechasConLotes.sort().slice(0,5).join(','));
+  } catch(e){ console.warn('diag pintado err', e); }
   // Activar drop en cada cal-day
   document.querySelectorAll('.cal-day').forEach(cell => {
     cell.addEventListener('dragover', onDragOver);
