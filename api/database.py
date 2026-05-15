@@ -253,6 +253,30 @@ except ImportError:
         _MIG_130_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (135, "Cancelar TODO Calendar/manual legacy · solo dejar eos_plan + eos_canonico · Sebastián 14-may-2026", [
+        # Sebastián: "siguen apareciendo los canónicos legacy y eos,
+        # debemos resolver eso, que solo aparezca lo que construí contigo
+        # que es la realidad".
+        #
+        # Mig 134 solo cancela duplicados (≤21d). Pero los Calendar legacy
+        # con fechas que NO chocan con eos_canonico sobreviven.
+        # Mig 135 cancela TODO origen calendar/manual activo · solo deja:
+        # - eos_plan (lo que Sebastián programó manualmente)
+        # - eos_canonico (algoritmo nuevo)
+        # - eos_retroactivo (historial · back-fills)
+        # - completados / en_curso / cancelados (no se tocan)
+        #
+        # Idempotente · marca AUTO_LIMPIEZA_LEGACY_MIG135
+        """UPDATE produccion_programada
+           SET estado = 'cancelado',
+               observaciones = COALESCE(observaciones,'') ||
+                 ' · AUTO_LIMPIEZA_LEGACY_MIG135_' || datetime('now','-5 hours')
+           WHERE origen IN ('calendar','manual')
+             AND estado IN ('pendiente','programado','esperando_recurso')
+             AND fin_real_at IS NULL
+             AND inicio_real_at IS NULL
+             AND COALESCE(observaciones,'') NOT LIKE '%AUTO_LIMPIEZA_LEGACY_MIG135%'""",
+    ]),
     (134, "Auto-limpieza duplicados post-mig133 · Sebastián 14-may-2026", [
         # Sebastián: "ah entonces como solucionamos legacy y canonico
         # porque entonces me van a quedar programadas dos producciones

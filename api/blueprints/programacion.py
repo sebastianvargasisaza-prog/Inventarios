@@ -9164,12 +9164,17 @@ def _start_calendar_sync_background_loop():
     import threading, os, time as _t
     if getattr(_start_calendar_sync_background_loop, '_running', False):
         return
+    # Sebastián 14-may-2026: "solo aparezca lo que construí contigo · es
+    # la realidad". Calendar legacy se reemplaza por canónicos eos_canonico
+    # configurables en /admin/configurar-canonicos. Default desactivado.
+    # Si se necesita reactivar, setear env CALENDAR_SYNC_INTERVAL_MIN > 0
+    # explícitamente en Render.
     try:
-        interval_min = int(os.environ.get('CALENDAR_SYNC_INTERVAL_MIN', '10'))
+        interval_min = int(os.environ.get('CALENDAR_SYNC_INTERVAL_MIN', '0'))
     except ValueError:
-        interval_min = 10
+        interval_min = 0
     if interval_min <= 0:
-        return  # desactivado
+        return  # desactivado por default (Sebastián 14-may-2026)
     _start_calendar_sync_background_loop._running = True
 
     def _worker():
