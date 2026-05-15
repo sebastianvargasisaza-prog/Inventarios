@@ -2379,6 +2379,143 @@ def configurar_canonicos_api():
     })
 
 
+@bp.route("/api/plan/regenerar-canonicos", methods=["POST"])
+def regenerar_canonicos():
+    """Lee producto_canonico_config y regenera lotes próximos 365d.
+    Sebastián 14-may-2026: después de llenar la tabla, click 1 botón
+    y el sistema arma todos los canónicos basados en esa config.
+
+    Pasos:
+    1. Cancela canónicos viejos (origen='eos_canonico') sin ejecutar
+       cuyo producto está en config (mantiene los completados).
+    2. Para cada producto en producto_canonico_config con kg_por_lote>0
+       y frecuencia_dias>0 y activo=1:
+       a. Calcula fecha_base = última producción real + frecuencia
+          (o próximo lunes si no hay histórico)
+       b. Genera lotes cada frecuencia_dias hasta hoy+365d
+       c. Respeta festivos + L-V
+    3. Audit log REGENERAR_CANONICOS
+    """
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+
+    conn = get_db()
+    c = conn.cursor()
+    from datetime import date as _date, timedelta as _td
+
+    # 1) Productos con config válida
+    configs = c.execute(
+        """SELECT producto_nombre, kg_por_lote, ml_unidad, frecuencia_dias
+           FROM producto_canonico_config
+           WHERE COALESCE(activo, 1) = 1
+             AND kg_por_lote > 0
+             AND frecuencia_dias > 0""",
+    ).fetchall()
+    if not configs:
+        return jsonify({
+            "error": "Sin config válida · llená la tabla en /admin/configurar-canonicos primero",
+        }), 400
+
+    productos_a_regenerar = [r[0] for r in configs]
+
+    # 2) Cancelar canónicos viejos sin ejecutar de esos productos
+    placeholders = ",".join(["?"] * len(productos_a_regenerar))
+    n_cancelados = c.execute(
+        f"""UPDATE produccion_programada
+            SET estado = 'cancelado',
+                observaciones = COALESCE(observaciones,'') ||
+                  ' · CANCELADO_REGEN_CANON_' || {SQLITE_NOW_COL}
+            WHERE origen = 'eos_canonico'
+              AND estado IN ('pendiente','programado')
+              AND fin_real_at IS NULL
+              AND inicio_real_at IS NULL
+              AND producto IN ({placeholders})""",
+        productos_a_regenerar,
+    ).rowcount
+
+    # 3) Última producción real por producto (para calcular base)
+    ultima_real = {}
+    for r in c.execute(
+        f"""SELECT producto, MAX(fin_real_at)
+            FROM produccion_programada
+            WHERE fin_real_at IS NOT NULL
+              AND producto IN ({placeholders})
+            GROUP BY producto""",
+        productos_a_regenerar,
+    ).fetchall():
+        ultima_real[r[0]] = (r[1] or "")[:10]
+
+    # 4) Generar lotes nuevos
+    hoy = _hoy_colombia()
+    horizon_end = hoy + _td(days=365)
+    n_generados = 0
+    detalles_por_producto = {}
+
+    for cfg in configs:
+        prod, kg, ml, freq = cfg[0], float(cfg[1]), int(cfg[2] or 30), int(cfg[3])
+
+        # Base · última real + freq · o próximo lunes
+        if prod in ultima_real:
+            try:
+                base = _date.fromisoformat(ultima_real[prod]) + _td(days=freq)
+            except Exception:
+                base = hoy + _td(days=(7 - hoy.weekday()) % 7 or 7)
+        else:
+            base = hoy + _td(days=(7 - hoy.weekday()) % 7 or 7)
+
+        cur = _proxima_fecha_habil(c, base, prefer_mwf=False,
+                                    lote_kg=kg, producto_nombre=prod)
+        if cur is None:
+            cur = base
+
+        lotes_de_este = []
+        slot = 1
+        while cur and cur <= horizon_end:
+            c.execute(
+                f"""INSERT INTO produccion_programada
+                    (producto, fecha_programada, cantidad_kg, estado, origen,
+                     lotes, observaciones)
+                    VALUES (?, ?, ?, 'programado', 'eos_canonico', 1, ?)""",
+                (prod, cur.isoformat(), kg,
+                 f"Canónico auto-regenerado · {kg}kg cada {freq}d · slot {slot}"),
+            )
+            lotes_de_este.append(cur.isoformat())
+            n_generados += 1
+            slot += 1
+            # Próximo en cur + freq
+            siguiente = _proxima_fecha_habil(c, cur + _td(days=freq),
+                                              prefer_mwf=False,
+                                              lote_kg=kg, producto_nombre=prod)
+            if siguiente is None or siguiente <= cur:
+                break
+            cur = siguiente
+
+        detalles_por_producto[prod] = lotes_de_este
+
+    conn.commit()
+
+    audit_log(c, usuario=user, accion="REGENERAR_CANONICOS",
+              tabla="produccion_programada", registro_id=None,
+              antes={"n_cancelados": n_cancelados},
+              despues={"n_generados": n_generados,
+                       "n_productos": len(configs)})
+    conn.commit()
+
+    return jsonify({
+        "ok": True,
+        "n_productos_config": len(configs),
+        "n_lotes_cancelados_viejos": n_cancelados,
+        "n_lotes_generados_nuevos": n_generados,
+        "detalle_por_producto": {
+            p: {"n_lotes": len(fechas), "primer_lote": fechas[0] if fechas else None,
+                "ultimo_lote": fechas[-1] if fechas else None}
+            for p, fechas in detalles_por_producto.items()
+        },
+    })
+
+
 @bp.route("/admin/calculo-frecuencias", methods=["GET"])
 def calculo_frecuencias_page():
     """Calcula frecuencias óptimas para productos clave con datos reales.
@@ -2594,6 +2731,7 @@ input.cell.dirty{background:#fef3c7;border-color:#ca8a04}
     <div>
       <span id="modif-count" style="margin-right:10px;color:#ca8a04;font-weight:700"></span>
       <button onclick="guardar()" class="big" id="btn-guardar" disabled>💾 Guardar cambios</button>
+      <button onclick="regenerarCanonicos()" style="background:#16a34a;color:white;font-size:15px;padding:12px 28px;border:none;border-radius:7px;font-weight:700;cursor:pointer;margin-left:10px">🔄 Regenerar canónicos 12 meses</button>
     </div>
   </div>
 
@@ -2725,6 +2863,31 @@ function actualizarBtnGuardar(){
   const n = DIRTY.size;
   document.getElementById('btn-guardar').disabled = n === 0;
   document.getElementById('modif-count').textContent = n > 0 ? n + ' productos modificados' : '';
+}
+
+async function regenerarCanonicos(){
+  if (DIRTY.size > 0){
+    if (!confirm('Tenés ' + DIRTY.size + ' cambios sin guardar · ¿guardar ANTES de regenerar?')) return;
+    await guardar();
+  }
+  if (!confirm('🔄 Esto va a:\\n\\n1. CANCELAR todos los canónicos viejos sin ejecutar\\n2. GENERAR lotes nuevos para 12 meses con tu configuración\\n\\n¿Continuar?')) return;
+  document.getElementById('btn-guardar').disabled = true;
+  try {
+    const r = await fetch('/api/plan/regenerar-canonicos', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json','X-CSRF-Token':getCSRF()},
+      credentials: 'same-origin',
+      body: '{}',
+    });
+    const d = await r.json();
+    if (!r.ok){ alert('Error: ' + (d.error || r.status)); return; }
+    let msg = '✅ Canónicos regenerados\\n\\n';
+    msg += '• Productos config: ' + d.n_productos_config + '\\n';
+    msg += '• Lotes viejos cancelados: ' + d.n_lotes_cancelados_viejos + '\\n';
+    msg += '• Lotes nuevos generados: ' + d.n_lotes_generados_nuevos + '\\n\\n';
+    msg += 'Ver detalle en /admin/dashboard-plan';
+    alert(msg);
+  } catch(e){ alert('Error: ' + e.message); }
 }
 
 async function guardar(){
