@@ -253,6 +253,77 @@ except ImportError:
         _MIG_130_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (134, "Auto-limpieza duplicados post-mig133 · Sebastián 14-may-2026", [
+        # Sebastián: "ah entonces como solucionamos legacy y canonico
+        # porque entonces me van a quedar programadas dos producciones
+        # siempre". Mig 133 unificó nombres → ahora los duplicados son
+        # visibles. Esta mig los cancela automáticamente.
+        #
+        # Regla: para cada producto, si hay 2+ lotes ACTIVOS con fechas
+        # a ≤21 días entre sí, conservar el de MAYOR prioridad por origen:
+        #   eos_plan > eos_canonico > calendar > manual
+        # Si misma prioridad, conserva el de menor id (más viejo).
+        #
+        # NUNCA toca lotes con fin_real_at, inicio_real_at, o cancelados.
+        # NUNCA toca eos_retroactivo (historial).
+        # Idempotente · WHERE NOT LIKE marca.
+        """UPDATE produccion_programada
+           SET estado = 'cancelado',
+               observaciones = COALESCE(observaciones,'') ||
+                 ' · AUTO_DEDUP_MIG134_' || datetime('now','-5 hours')
+           WHERE id IN (
+             SELECT pp1.id
+             FROM produccion_programada pp1
+             JOIN produccion_programada pp2
+               ON UPPER(TRIM(pp1.producto)) = UPPER(TRIM(pp2.producto))
+              AND pp1.id != pp2.id
+              AND ABS(julianday(pp1.fecha_programada) - julianday(pp2.fecha_programada)) <= 21
+             WHERE pp1.estado IN ('pendiente','programado','esperando_recurso')
+               AND pp1.fin_real_at IS NULL
+               AND pp1.inicio_real_at IS NULL
+               AND pp1.origen != 'eos_retroactivo'
+               AND pp2.estado IN ('pendiente','programado','esperando_recurso','en_curso')
+               AND pp2.fin_real_at IS NULL
+               AND pp2.origen != 'eos_retroactivo'
+               -- pp2 es PRIORITARIO sobre pp1 si:
+               --   a) pp2 tiene mayor prioridad de origen (más bajo número), o
+               --   b) misma prioridad pero pp2 tiene menor id
+               AND (
+                 CASE pp2.origen
+                   WHEN 'eos_plan' THEN 0
+                   WHEN 'eos_canonico' THEN 1
+                   WHEN 'calendar' THEN 2
+                   WHEN 'manual' THEN 3
+                   ELSE 4
+                 END <
+                 CASE pp1.origen
+                   WHEN 'eos_plan' THEN 0
+                   WHEN 'eos_canonico' THEN 1
+                   WHEN 'calendar' THEN 2
+                   WHEN 'manual' THEN 3
+                   ELSE 4
+                 END
+                 OR (
+                   CASE pp2.origen
+                     WHEN 'eos_plan' THEN 0
+                     WHEN 'eos_canonico' THEN 1
+                     WHEN 'calendar' THEN 2
+                     WHEN 'manual' THEN 3
+                     ELSE 4
+                   END =
+                   CASE pp1.origen
+                     WHEN 'eos_plan' THEN 0
+                     WHEN 'eos_canonico' THEN 1
+                     WHEN 'calendar' THEN 2
+                     WHEN 'manual' THEN 3
+                     ELSE 4
+                   END
+                   AND pp2.id < pp1.id
+                 )
+               )
+           )
+           AND COALESCE(observaciones,'') NOT LIKE '%AUTO_DEDUP_MIG134%'""",
+    ]),
     (133, "FIX URGENTE · sincronizar produccion_programada con nombres canónicos del Excel mig 127 · Sebastián 14-may-2026", [
         # Sebastián 14-may-2026: "en planta no salen ni materias primas".
         # Causa raíz: mig 127 importó fórmulas con nombres CANÓNICOS pero
