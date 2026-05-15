@@ -2759,14 +2759,45 @@ def health_canonicos():
            WHERE observaciones LIKE '%CANCELADO_PLAN_LIMPIO_MIG136%'"""
     ).fetchone()[0]
 
+    # Sebastián 14-may-2026 ronda 2: "solo sale el gel hidratante"
+    # Agregar info de mig 137 (plan denso 96 lotes)
+    mig137_evidence = c.execute(
+        """SELECT COUNT(*) FROM produccion_programada
+           WHERE observaciones LIKE '%Plan-denso mig137%'"""
+    ).fetchone()[0]
+    mig137_cancelado = c.execute(
+        """SELECT COUNT(*) FROM produccion_programada
+           WHERE observaciones LIKE '%CANCELADO_PLAN_DENSO_MIG137%'"""
+    ).fetchone()[0]
+    # Replica EXACTA de la consulta del listado que usa el calendario
+    listado_rows = c.execute(
+        """SELECT pp.producto, COUNT(*) as n
+             FROM produccion_programada pp
+             WHERE LOWER(COALESCE(pp.estado,'')) NOT IN ('cancelado','completado')
+               AND pp.fecha_programada >= date('now', '-5 hours', '-7 day')
+             GROUP BY pp.producto
+             ORDER BY pp.producto""",
+    ).fetchall()
+    productos_listado = [{"producto": r[0], "n_lotes": int(r[1])} for r in listado_rows]
+    total_listado = sum(p["n_lotes"] for p in productos_listado)
+
     return jsonify({
         "ultima_mig_aplicada": ultima,
         "mig_136_aplicada": mig136_evidence > 0,
         "mig_136_inserts_visible": mig136_evidence,
         "mig_136_cancelados_visible": mig136_cancelado,
+        "mig_137_aplicada": mig137_evidence > 0,
+        "mig_137_inserts_visible": mig137_evidence,
+        "mig_137_cancelados_visible": mig137_cancelado,
+        "esperado_post_mig_137": 96,
         "total_eos_canonico_activos": int(total_eos_canonico or 0),
-        "esperado_post_mig_136": 48,
         "por_origen_activos_futuros": por_origen,
+        # Esto es lo MISMO que devuelve el listado al calendar visual
+        "listado_calendar_replica": {
+            "total_lotes": total_listado,
+            "productos_unicos": len(productos_listado),
+            "productos": productos_listado,
+        },
     })
 
 
