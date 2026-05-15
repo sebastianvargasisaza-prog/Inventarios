@@ -6021,7 +6021,8 @@ select,input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-si
         Solo sugerencias IA
       </label>
       <button onclick="cargar()" class="secondary">↻ Recargar</button>
-      <button onclick="autoplanIA()" class="warn" id="btn-ia">🤖 Autoplan con IA</button>
+      <button onclick="generarPlanIA()" class="success" id="btn-generar-ia">🤖 Generar plan IA</button>
+      <button onclick="autoplanIA()" class="warn" id="btn-ia" style="display:none">🤖 Autoplan con IA</button>
       <button onclick="aplicarIAanual()" class="success" id="btn-ia-anual" style="display:none">🎯 Aplicar plan IA</button>
       <button onclick="diagCalendar()" class="secondary">🔍 Diag</button>
     </div>
@@ -6898,6 +6899,94 @@ async function diagCalendar(){
     alert(msg);
     console.log('DIAG full:', d);
   } catch(e){ alert('Error: ' + e.message); }
+}
+
+// Sebastián 15-may-2026: "usamos las sugerencias de la IA con los
+// parámetros que establecimos y volvemos eso canónico y los ponemos
+// allí, yo muevo lo que sea necesario". Botón ÚNICO · 1 sola acción:
+// genera plan IA + lo persiste como eos_plan (canónico) + recarga.
+async function generarPlanIA(){
+  if (!confirm('¿Generar el plan de producción con IA?\n\n' +
+               '· La IA calcula qué producir, cuándo y cuánto\n' +
+               '  (horizonte ' + HORIZONTE + ' días · L-V · sin festivos)\n' +
+               '· El plan queda FIJO en el calendario\n' +
+               '· Después movés a mano los lotes que quieras\n\n' +
+               '⚠ Esto REEMPLAZA el plan actual (incluido lo que hayas\n' +
+               'movido a mano). ¿Continuar?')) return;
+
+  const btn = document.getElementById('btn-generar-ia');
+  btn.disabled = true;
+  btn.textContent = '⏳ La IA está calculando el plan…';
+  document.getElementById('ia-comentario').innerHTML =
+    '<div class="banner info">⏳ Paso 1/2 · La IA analiza ventas, stock y reglas… (~30-60s, modelo Sonnet 4.6)</div>';
+
+  try {
+    // PASO 1 · generar sugerencias con IA
+    const rIA = await fetch('/api/plan/autoplan-ia', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':getCSRF()},
+      credentials: 'same-origin',
+      body: JSON.stringify({cliente:'ANIMUS_DTC', horizonte_dias: HORIZONTE, forzar_recalcular: true}),
+    });
+    let dIA = null;
+    try { dIA = await rIA.json(); } catch(e){}
+    if (!rIA.ok || !dIA){
+      const em = (dIA && (dIA.error || dIA.message)) || ('HTTP ' + rIA.status);
+      document.getElementById('ia-comentario').innerHTML =
+        '<div class="banner danger">❌ Error generando plan IA: ' + escapeHtml(em) + '</div>';
+      return;
+    }
+    const sugerencias = dIA.sugerencias || [];
+    if (!sugerencias.length){
+      document.getElementById('ia-comentario').innerHTML =
+        '<div class="banner warn">🤖 La IA no devolvió sugerencias.<br>' +
+        escapeHtml(dIA.comentario_general || '') + '</div>';
+      return;
+    }
+
+    // PASO 2 · persistir como canónico (eos_plan) en el calendario
+    btn.textContent = '⏳ Guardando plan en el calendario…';
+    document.getElementById('ia-comentario').innerHTML =
+      '<div class="banner info">⏳ Paso 2/2 · Guardando ' + sugerencias.length +
+      ' lotes en el calendario…</div>';
+    const rBulk = await fetch('/api/plan/aplicar-ia-bulk', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':getCSRF()},
+      credentials: 'same-origin',
+      body: JSON.stringify({
+        sugerencias: sugerencias.map(s => ({
+          producto: s.producto, kg: s.kg, fecha: s.fecha,
+        })),
+        cancelar_actual: true,
+      }),
+    });
+    const dBulk = await rBulk.json();
+    if (!rBulk.ok){
+      document.getElementById('ia-comentario').innerHTML =
+        '<div class="banner danger">❌ Error guardando el plan: ' +
+        escapeHtml(dBulk.error || rBulk.status) + '</div>';
+      return;
+    }
+
+    // PASO 3 · recargar el calendario para mostrar el plan fijo
+    let resumen = '<div class="banner success">✅ <strong>Plan IA generado y guardado</strong><br>' +
+      '· ' + dBulk.n_lotes_creados + ' lotes en el calendario<br>' +
+      '· ' + dBulk.n_lotes_cancelados + ' lotes del plan anterior reemplazados<br>';
+    if (dBulk.lotes_movidos) resumen += '· ' + dBulk.lotes_movidos + ' movidos al sig día hábil (festivo/finde)<br>';
+    if (dBulk.sin_formula && dBulk.sin_formula.length)
+      resumen += '⚠ Sin fórmula (omitidos): ' + escapeHtml(dBulk.sin_formula.join(', ')) + '<br>';
+    resumen += '<span style="font-size:11px">' + escapeHtml(dIA.comentario_general || '') +
+      '</span><br><strong>Ahora podés arrastrar los lotes para moverlos.</strong></div>';
+    document.getElementById('ia-comentario').innerHTML = resumen;
+
+    await cargar();  // recarga el calendar · muestra el plan persistido
+  } catch(e){
+    document.getElementById('ia-comentario').innerHTML =
+      '<div class="banner danger">❌ Error de red: ' + escapeHtml(e.message) + '</div>';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🤖 Generar plan IA';
+  }
 }
 
 async function autoplanIA(){
