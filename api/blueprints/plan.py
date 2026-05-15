@@ -6009,11 +6009,11 @@ select,input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-si
   <div class="actions-bar" style="margin-top:10px">
     <div>
       <span class="muted" style="margin-right:8px">Horizonte autoplan:</span>
-      <button class="horiz-btn" data-h="15" onclick="setHoriz(15)">15 días</button>
-      <button class="horiz-btn active" data-h="30" onclick="setHoriz(30)">30 días</button>
+      <button class="horiz-btn" data-h="30" onclick="setHoriz(30)">30 días</button>
       <button class="horiz-btn" data-h="60" onclick="setHoriz(60)">60 días</button>
-      <button class="horiz-btn" data-h="90" onclick="setHoriz(90)">90 días</button>
-      <button class="horiz-btn" data-h="120" onclick="setHoriz(120)">120 días</button>
+      <button class="horiz-btn active" data-h="90" onclick="setHoriz(90)">90 días</button>
+      <button class="horiz-btn" data-h="180" onclick="setHoriz(180)">180 días</button>
+      <button class="horiz-btn" data-h="365" onclick="setHoriz(365)">365 días</button>
     </div>
     <div>
       <label style="margin-right:10px;font-size:12px;color:#475569;cursor:pointer">
@@ -6022,6 +6022,7 @@ select,input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-si
       </label>
       <button onclick="cargar()" class="secondary">↻ Recargar</button>
       <button onclick="autoplanIA()" class="warn" id="btn-ia">🤖 Autoplan con IA</button>
+      <button onclick="aplicarIAanual()" class="success" id="btn-ia-anual" style="display:none">🎯 Aplicar plan IA como CANÓNICO 365d</button>
       <button onclick="diagCalendar()" class="secondary">🔍 Diag</button>
     </div>
   </div>
@@ -6079,7 +6080,7 @@ select,input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-si
 
 </div>
 <script>
-let HORIZONTE = 30;
+let HORIZONTE = 90;  // Sebastián 14-may-2026: "la IA solo me pone producciones por mayo" · subir default
 let MES_OFFSET = 0;  // 0 = mes actual · -1/+1 navegar
 let PLAN_DATA = null;
 const DIAS = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
@@ -6967,6 +6968,9 @@ async function autoplanIA(){
     }));
     PLAN_DATA.plan.total_producciones = n;
     document.getElementById('btn-aplicar').disabled = false;
+    // Sebastián 14-may-2026: mostrar botón "Aplicar plan IA anual"
+    // cuando hay sugerencias IA cargadas
+    document.getElementById('btn-ia-anual').style.display = 'inline-block';
     const cacheTag = d.cache_hit ? ' <span style="background:#dbeafe;color:#1e40af;padding:1px 5px;border-radius:3px;font-size:10px">cache 24h</span>' : '';
     // Confianza promedio para mostrar
     const confs = sugerencias.map(s => s.confianza || 0).filter(c => c > 0);
@@ -6981,6 +6985,95 @@ async function autoplanIA(){
   } finally {
     btn.disabled = false;
     btn.textContent = '🤖 Autoplan con IA';
+  }
+}
+
+// Sebastián 14-may-2026: "el plan de la IA es mejor, cómo hago para
+// que quede y replique por un año exactamente lo que pensamos"
+async function aplicarIAanual(){
+  if (!PLAN_DATA || !PLAN_DATA.plan || !PLAN_DATA.plan.plan_items){
+    alert('No hay sugerencias IA · primero apretá "🤖 Autoplan con IA"');
+    return;
+  }
+  const sugIA = PLAN_DATA.plan.plan_items.filter(it => it.from_ia);
+  if (!sugIA.length){
+    alert('No hay sugerencias IA cargadas');
+    return;
+  }
+  // Productos únicos · primera sugerencia de cada uno como base
+  const productosUnicos = {};
+  sugIA.forEach(s => {
+    if (!productosUnicos[s.producto]){
+      productosUnicos[s.producto] = {producto: s.producto, kg: s.kg, fecha_inicio: s.fecha};
+    }
+  });
+  const productos = Object.values(productosUnicos);
+  const rawFreq = prompt(
+    '¿Aplicar las ' + sugIA.length + ' sugerencias IA como PLAN CANÓNICO de 1 AÑO?\n\n' +
+    'Productos únicos: ' + productos.length + '\n' +
+    'Esto va a:\n' +
+    '  1) Cancelar TODOS los lotes activos actuales (mig 137 + viejos)\n' +
+    '  2) Generar serie de 365 días para cada producto IA escalonando\n' +
+    '     L-V, sin festivos, max 2/día.\n\n' +
+    'Frecuencia días entre lotes (cada producto):\n' +
+    '• 30 = mensual (recomendado)\n' +
+    '• 45 = cada 45 días\n' +
+    '• 60 = cada 2 meses\n' +
+    '• 90 = trimestral',
+    '30'
+  );
+  if (rawFreq === null) return;
+  const freq = parseInt(rawFreq);
+  if (isNaN(freq) || freq < 7 || freq > 180){
+    alert('Frecuencia inválida · debe estar entre 7 y 180 días');
+    return;
+  }
+  if (!confirm('⚠ Esto BORRA el plan actual y crea uno nuevo de 1 año con ' +
+               productos.length + ' productos × frecuencia ' + freq + 'd.\n\n¿Confirmás?')) return;
+  const btn = document.getElementById('btn-ia-anual');
+  btn.disabled = true;
+  btn.textContent = '⏳ Aplicando…';
+  try {
+    const sugerencias = productos.map(p => ({
+      producto: p.producto, kg: p.kg,
+      fecha_inicio: p.fecha_inicio, frecuencia_dias: freq,
+    }));
+    const r = await fetch('/api/plan/aplicar-ia-anual', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':getCSRF()},
+      credentials: 'same-origin',
+      body: JSON.stringify({
+        sugerencias: sugerencias,
+        cancelar_actual: true,
+        horizonte_dias: 365,
+        frecuencia_default: freq,
+      }),
+    });
+    const d = await r.json();
+    if (!r.ok){
+      alert('❌ Error: ' + (d.error || r.status));
+      return;
+    }
+    let msg = '✅ Plan IA aplicado como CANÓNICO 365 días\n\n' +
+      '· Productos: ' + d.n_productos_aplicados + '\n' +
+      '· Lotes creados: ' + d.n_lotes_creados + '\n' +
+      '· Lotes cancelados (plan anterior): ' + d.n_lotes_cancelados + '\n';
+    if (d.productos_sin_formula_skipped && d.productos_sin_formula_skipped.length){
+      msg += '\n⚠ Productos sin fórmula (no agendados):\n  ' +
+        d.productos_sin_formula_skipped.join('\n  ');
+    }
+    msg += '\n\nDetalle por producto:\n' +
+      (d.detalle_por_producto || []).map(x =>
+        '  · ' + x.producto + ' · ' + x.lotes_creados + ' lotes · ' + x.kg + 'kg cada ' + x.frecuencia_dias + 'd'
+      ).join('\n');
+    alert(msg);
+    // Recargar calendar para que muestre el nuevo plan
+    cargar();
+  } catch(e){
+    alert('❌ Error red: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🎯 Aplicar plan IA como CANÓNICO 365d';
   }
 }
 
@@ -8946,6 +9039,175 @@ def programar_canonico():
         "producto": producto,
         "frecuencia_dias": freq,
         "horizonte_dias": horizonte,
+    }), 201
+
+
+@bp.route("/api/plan/aplicar-ia-anual", methods=["POST"])
+def aplicar_ia_anual():
+    """Toma las sugerencias IA actuales y las convierte en plan anual
+    canónico (eos_canonico × 365 días). Reemplaza el plan activo.
+
+    Sebastián 14-may-2026: "el plan de la IA es mejor, cómo hago para que
+    quede y replique por un año exactamente lo que pensamos".
+
+    Para cada producto único en sugerencias:
+      - Usa fecha_inicio (primera sugerencia de ese producto en el body)
+      - Usa frecuencia_dias del body o frecuencia_default (30)
+      - Genera serie hasta horizonte_dias (default 365) respetando L-V,
+        festivos colombianos, max 2/día.
+
+    Body:
+        sugerencias: list of {producto, kg, fecha_inicio, frecuencia_dias?}
+        cancelar_actual: bool (default true) · cancela eos_canonico activos
+        horizonte_dias: int (default 365)
+        frecuencia_default: int (default 30 · si la sugerencia no la trae)
+    """
+    user, err = _require_admin_or_compras()
+    if err:
+        body_err, code = err
+        return jsonify(body_err), code
+
+    body = request.get_json(silent=True) or {}
+    sugerencias = body.get("sugerencias") or []
+    cancelar_actual = bool(body.get("cancelar_actual", True))
+    try:
+        horizonte = int(body.get("horizonte_dias") or 365)
+    except (ValueError, TypeError):
+        horizonte = 365
+    if not (30 <= horizonte <= 730):
+        horizonte = 365
+    try:
+        freq_default = int(body.get("frecuencia_default") or 30)
+    except (ValueError, TypeError):
+        freq_default = 30
+
+    if not isinstance(sugerencias, list) or not sugerencias:
+        return jsonify({"error": "sugerencias debe ser lista no vacía"}), 400
+
+    # Agrupar sugerencias por producto · primera fecha + frecuencia
+    from collections import OrderedDict
+    plan_por_producto = OrderedDict()
+    for s in sugerencias:
+        prod = (s.get("producto") or "").strip()
+        if not prod:
+            continue
+        try:
+            kg = float(s.get("kg") or 0)
+        except (ValueError, TypeError):
+            continue
+        if kg <= 0:
+            continue
+        fecha_ini = (s.get("fecha_inicio") or s.get("fecha") or "").strip()
+        try:
+            freq = int(s.get("frecuencia_dias") or freq_default)
+        except (ValueError, TypeError):
+            freq = freq_default
+        if not (7 <= freq <= 180):
+            freq = freq_default
+        if prod not in plan_por_producto:
+            plan_por_producto[prod] = {
+                "producto": prod, "kg": kg, "fecha_inicio": fecha_ini,
+                "frecuencia_dias": freq,
+            }
+
+    if not plan_por_producto:
+        return jsonify({"error": "ninguna sugerencia válida"}), 400
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    # 1) Cancelar todos los lotes auto-generados · plan limpio.
+    # Sebastián 14-may-2026: "necesito que pueda aceptar y que no se
+    # borre y ya quede ese plan que me propone".
+    # SOLO se cancelan eos_canonico (algoritmo auto) · NO se cancelan
+    # eos_plan (plan IA aceptado previamente) para preservar decisiones
+    # del usuario. Si Sebastián quiere re-aceptar, este endpoint los
+    # reemplaza limpiamente porque luego inserta los nuevos.
+    n_cancelados = 0
+    if cancelar_actual:
+        n_cancelados = cur.execute(
+            """UPDATE produccion_programada
+               SET estado='cancelado',
+                   observaciones=COALESCE(observaciones,'') ||
+                     ' · CANCELADO_PLAN_IA_ANUAL_' || datetime('now','-5 hours')
+               WHERE origen IN ('eos_canonico','eos_plan')
+                 AND estado IN ('pendiente','programado','esperando_recurso')
+                 AND fin_real_at IS NULL
+                 AND inicio_real_at IS NULL""",
+        ).rowcount or 0
+
+    # 2) Generar serie anual para cada producto único
+    from datetime import date as _date, timedelta as _td
+    hoy = _hoy_colombia()
+    f_fin = hoy + _td(days=horizonte)
+
+    total_creados = 0
+    detalle_por_producto = []
+    productos_sin_formula = []
+
+    for prod, info in plan_por_producto.items():
+        if not cur.execute(
+            "SELECT 1 FROM formula_headers WHERE producto_nombre = ?",
+            (prod,),
+        ).fetchone():
+            productos_sin_formula.append(prod)
+            continue
+
+        fecha_ini_str = info["fecha_inicio"]
+        if fecha_ini_str and _valida_fecha_iso(fecha_ini_str):
+            f_ini = _date.fromisoformat(fecha_ini_str[:10])
+            if f_ini < hoy:
+                f_ini = hoy + _td(days=3)
+        else:
+            f_ini = hoy + _td(days=3)
+
+        freq = info["frecuencia_dias"]
+        kg = info["kg"]
+        fecha_objetivo = f_ini
+        creados_prod = 0
+
+        while fecha_objetivo <= f_fin:
+            fecha_real = _proxima_fecha_habil(cur, fecha_objetivo, prefer_mwf=True)
+            if fecha_real is None or fecha_real > f_fin:
+                break
+            # Origen='eos_plan' · plan aceptado por usuario (Sebastián).
+            # Tiene prioridad máxima · ninguna mig ni cron lo cancela auto.
+            cur.execute(
+                """INSERT INTO produccion_programada
+                     (producto, fecha_programada, cantidad_kg, lotes, estado,
+                      origen, observaciones, creado_en)
+                   VALUES (?, ?, ?, 1, 'pendiente', 'eos_plan', ?,
+                           datetime('now','-5 hours'))""",
+                (prod, fecha_real.isoformat(), kg,
+                 f"Plan-IA-anual ACEPTADO · {kg}kg cada {freq}d · desde sugerencia IA {fecha_ini_str or '(default)'}"),
+            )
+            creados_prod += 1
+            total_creados += 1
+            fecha_objetivo = fecha_real + _td(days=freq)
+
+        detalle_por_producto.append({
+            "producto": prod, "kg": kg, "frecuencia_dias": freq,
+            "fecha_inicio": (f_ini.isoformat()),
+            "lotes_creados": creados_prod,
+        })
+
+    audit_log(cur, usuario=user, accion="APLICAR_IA_ANUAL",
+              tabla="produccion_programada", registro_id=None,
+              despues={"productos": list(plan_por_producto.keys()),
+                       "horizonte_dias": horizonte,
+                       "total_creados": total_creados,
+                       "n_cancelados": n_cancelados,
+                       "cancelar_actual": cancelar_actual})
+    conn.commit()
+
+    return jsonify({
+        "ok": True,
+        "n_productos_aplicados": len(detalle_por_producto),
+        "n_lotes_creados": total_creados,
+        "n_lotes_cancelados": n_cancelados,
+        "horizonte_dias": horizonte,
+        "detalle_por_producto": detalle_por_producto,
+        "productos_sin_formula_skipped": productos_sin_formula,
     }), 201
 
 
