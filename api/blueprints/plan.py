@@ -2379,6 +2379,293 @@ def configurar_canonicos_api():
     })
 
 
+@bp.route("/api/plan/generar-plan-perfecto", methods=["POST"])
+def generar_plan_perfecto():
+    """Genera el calendario PERFECTO · algoritmo determinista para
+    reglas duras + IA opcional para reporte ejecutivo.
+
+    Sebastián 14-may-2026: "4 primeros puntos nosotros, 2 últimos IA".
+
+    Algoritmo determinista (puntos 1-4):
+      1. Input: producto_canonico_config + histórico + ventas
+      2. Ajuste por velocidad: si vel_reciente >30% baseline →
+         reducir frecuencia (60d→45d, etc)
+      3. Prioridad: complejos (Vit C/Triactive) > grandes (>50kg) > otros
+      4. Reglas duras: L-V, skip festivos, max 2/día, grandes solos,
+         complejos Lun/Mié, producir 20d antes agotamiento
+
+    IA (puntos 5-6 · opcional):
+      5. Reporte ejecutivo · qué se programó y por qué
+      6. Análisis de conflictos · si hay productos sin slot
+
+    Body: {usar_ia: bool (default true), horizonte_dias: int (default 365)}
+
+    Returns:
+      plan[]: lotes generados
+      cancelados_viejos: N
+      conflictos[]: productos sin slot disponible
+      reporte_ia: texto con explicación (si usar_ia=true)
+      stats_ajuste_velocidad: productos con frecuencia ajustada
+    """
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+
+    body = request.get_json(silent=True) or {}
+    usar_ia = bool(body.get("usar_ia", True))
+    try:
+        horizonte_dias = max(30, min(730, int(body.get("horizonte_dias") or 365)))
+    except (ValueError, TypeError):
+        horizonte_dias = 365
+
+    conn = get_db()
+    c = conn.cursor()
+    from datetime import date as _date, timedelta as _td
+
+    # ── PUNTO 1 · INPUT: producto_canonico_config ──
+    rows_cfg = c.execute(
+        """SELECT producto_nombre, kg_por_lote, ml_unidad, frecuencia_dias, notas
+           FROM producto_canonico_config
+           WHERE COALESCE(activo, 1) = 1
+             AND kg_por_lote > 0
+             AND frecuencia_dias > 0""",
+    ).fetchall()
+    if not rows_cfg:
+        return jsonify({"error": "Sin config válida · llená /admin/configurar-canonicos primero"}), 400
+    configs = [{
+        "producto": r[0], "kg": float(r[1]), "ml": int(r[2] or 30),
+        "freq_base": int(r[3]), "notas": r[4] or "",
+    } for r in rows_cfg]
+
+    # Última producción real por producto
+    ultima_real = {}
+    productos_lista = [c["producto"] for c in configs]
+    placeholders = ",".join(["?"] * len(productos_lista))
+    for r in c.execute(
+        f"""SELECT producto, MAX(fin_real_at)
+            FROM produccion_programada
+            WHERE fin_real_at IS NOT NULL AND producto IN ({placeholders})
+            GROUP BY producto""",
+        productos_lista,
+    ).fetchall():
+        ultima_real[r[0]] = (r[1] or "")[:10]
+
+    # ── PUNTO 2 · AJUSTE POR VELOCIDAD ──
+    nec_baseline = _calcular_animus_dtc(c, ventana=60, cob_critico=20,
+                                          cob_alerta=25, cob_vigilar=45)
+    nec_reciente = _calcular_animus_dtc(c, ventana=14, cob_critico=20,
+                                          cob_alerta=25, cob_vigilar=45)
+    bl_map = {n["producto_nombre"]: n.get("velocidad_kg_dia", 0) or 0
+              for n in nec_baseline}
+    rc_map = {n["producto_nombre"]: n.get("velocidad_kg_dia", 0) or 0
+              for n in nec_reciente}
+
+    ajustes_velocidad = []
+    for cfg in configs:
+        prod = cfg["producto"]
+        vel_bl = bl_map.get(prod, 0)
+        vel_rc = rc_map.get(prod, 0)
+        cfg["vel_baseline_kg_dia"] = vel_bl
+        cfg["vel_reciente_kg_dia"] = vel_rc
+        freq_original = cfg["freq_base"]
+        cfg["freq_final"] = freq_original  # default · sin ajuste
+        if vel_bl > 0.01 and vel_rc > vel_bl * 1.30:
+            # Velocidad aumentó >30% · reducir frecuencia proporcionalmente
+            factor = vel_bl / vel_rc  # menor que 1
+            nueva_freq = max(int(freq_original * factor), 14)
+            cfg["freq_final"] = nueva_freq
+            ajustes_velocidad.append({
+                "producto": prod,
+                "vel_baseline_kg_dia": round(vel_bl, 3),
+                "vel_reciente_kg_dia": round(vel_rc, 3),
+                "delta_pct": round((vel_rc - vel_bl) / vel_bl * 100, 1),
+                "freq_original": freq_original,
+                "freq_ajustada": nueva_freq,
+            })
+
+    # ── PUNTO 3 · PRIORIDAD: complejos > grandes > otros ──
+    def _tier(cfg):
+        if _es_producto_complejo(cfg["producto"]):
+            return 0  # complejo · más restrictivo
+        if cfg["kg"] > LOTE_GRANDE_KG:
+            return 1  # grande
+        return 2  # mediano/pequeño
+    configs_ordenados = sorted(configs, key=lambda c: (_tier(c), c["freq_final"]))
+
+    # ── PASO PREVIO · cancelar canónicos viejos sin ejecutar ──
+    n_cancelados = c.execute(
+        f"""UPDATE produccion_programada
+            SET estado = 'cancelado',
+                observaciones = COALESCE(observaciones,'') ||
+                  ' · CANCELADO_PLAN_PERFECTO_' || {SQLITE_NOW_COL}
+            WHERE origen = 'eos_canonico'
+              AND estado IN ('pendiente','programado')
+              AND fin_real_at IS NULL
+              AND inicio_real_at IS NULL
+              AND producto IN ({placeholders})""",
+        productos_lista,
+    ).rowcount
+
+    # ── PUNTO 4 · REGLAS DURAS · generar lotes con _proxima_fecha_habil ──
+    hoy = _hoy_colombia()
+    horizon_end = hoy + _td(days=horizonte_dias)
+
+    plan_lotes = []
+    conflictos = []
+
+    for cfg in configs_ordenados:
+        prod = cfg["producto"]
+        kg = cfg["kg"]
+        freq = cfg["freq_final"]
+
+        # Fecha base · última real + freq, sino próximo lunes
+        if prod in ultima_real:
+            try:
+                base = _date.fromisoformat(ultima_real[prod]) + _td(days=freq)
+            except Exception:
+                base = hoy + _td(days=(7 - hoy.weekday()) % 7 or 7)
+        else:
+            base = hoy + _td(days=(7 - hoy.weekday()) % 7 or 7)
+
+        # Generar slots
+        cur = _proxima_fecha_habil(c, base, prefer_mwf=False,
+                                    lote_kg=kg, producto_nombre=prod)
+        if cur is None:
+            conflictos.append({
+                "producto": prod,
+                "razon": "No se encontró ningún día hábil compatible en 400 días",
+            })
+            continue
+
+        slot = 1
+        lotes_de_este = []
+        while cur and cur <= horizon_end and slot <= 30:  # safety cap
+            try:
+                cur_iter = c.execute(
+                    f"""INSERT INTO produccion_programada
+                        (producto, fecha_programada, cantidad_kg, estado, origen,
+                         lotes, observaciones)
+                        VALUES (?, ?, ?, 'programado', 'eos_canonico', 1, ?)""",
+                    (prod, cur.isoformat(), kg,
+                     f"Plan-perfecto · {kg}kg cada {freq}d · slot {slot}" +
+                     (f" · ajustado por vel +{round((cfg['vel_reciente_kg_dia']-cfg['vel_baseline_kg_dia'])/max(cfg['vel_baseline_kg_dia'],0.001)*100)}%" if freq != cfg["freq_base"] else "")),
+                )
+                plan_lotes.append({
+                    "producto": prod, "fecha": cur.isoformat(),
+                    "kg": kg, "slot": slot,
+                    "ajustado_velocidad": freq != cfg["freq_base"],
+                })
+                lotes_de_este.append(cur.isoformat())
+                slot += 1
+            except Exception as ex:
+                conflictos.append({
+                    "producto": prod, "slot": slot,
+                    "razon": f"Error insert: {ex}",
+                })
+                break
+
+            siguiente = _proxima_fecha_habil(c, cur + _td(days=freq),
+                                              prefer_mwf=False,
+                                              lote_kg=kg, producto_nombre=prod)
+            if siguiente is None or siguiente <= cur:
+                break
+            cur = siguiente
+
+    conn.commit()
+
+    # ── PUNTOS 5-6 · IA · reporte ejecutivo ──
+    reporte_ia = None
+    ia_error = None
+    if usar_ia and plan_lotes:
+        import os
+        api_key = os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("CLAUDE_API_KEY")
+        if not api_key:
+            ia_error = "ANTHROPIC_API_KEY no configurada · reporte sin IA"
+        else:
+            import json as _json
+            import urllib.request as _ureq
+            # Resumen compacto para la IA
+            contexto = {
+                "productos_planificados": len(configs_ordenados),
+                "total_lotes_generados": len(plan_lotes),
+                "ajustes_por_velocidad": ajustes_velocidad,
+                "conflictos": conflictos,
+                "horizonte_dias": horizonte_dias,
+                "fecha_inicio": hoy.isoformat(),
+                "resumen_por_producto": [
+                    {"producto": cfg["producto"], "kg_lote": cfg["kg"],
+                     "freq_dias": cfg["freq_final"],
+                     "n_lotes_generados": sum(1 for p in plan_lotes if p["producto"] == cfg["producto"]),
+                     "ajustado": cfg["freq_final"] != cfg["freq_base"]}
+                    for cfg in configs_ordenados
+                ],
+            }
+            sys_prompt = (
+                "Eres el COO de un laboratorio cosmético. Acabamos de "
+                "generar el calendario de producción para 12 meses con "
+                "un algoritmo determinista. Tu trabajo es escribir un "
+                "REPORTE EJECUTIVO de 3 párrafos para el CEO (Sebastián):\n"
+                "- Párrafo 1: Resumen general (N productos, N lotes, total kg).\n"
+                "- Párrafo 2: Hallazgos importantes · ajustes por aumento "
+                "de velocidad de ventas (qué productos y por qué).\n"
+                "- Párrafo 3: Acciones recomendadas · si hay conflictos, "
+                "qué hacer · si todo OK, qué monitorear.\n"
+                "Máximo 250 palabras. Tono ejecutivo, directo, en español."
+            )
+            body_ia = _json.dumps({
+                "model": "claude-sonnet-4-6",
+                "max_tokens": 800,
+                "system": sys_prompt,
+                "messages": [{"role": "user", "content":
+                              _json.dumps(contexto, ensure_ascii=False)[:6000]}],
+            }).encode("utf-8")
+            req = _ureq.Request(
+                "https://api.anthropic.com/v1/messages",
+                data=body_ia,
+                headers={"x-api-key": api_key,
+                         "anthropic-version": "2023-06-01",
+                         "content-type": "application/json"},
+                method="POST",
+            )
+            try:
+                with _ureq.urlopen(req, timeout=60) as resp:
+                    data = _json.loads(resp.read().decode("utf-8"))
+                reporte_ia = data["content"][0]["text"]
+            except Exception as ex:
+                ia_error = f"Error IA: {ex}"
+
+    audit_log(c, usuario=user, accion="GENERAR_PLAN_PERFECTO",
+              tabla="produccion_programada", registro_id=None,
+              antes={"cancelados": n_cancelados},
+              despues={"generados": len(plan_lotes),
+                       "conflictos": len(conflictos),
+                       "ajustes_velocidad": len(ajustes_velocidad)})
+    conn.commit()
+
+    return jsonify({
+        "ok": True,
+        "n_productos_config": len(configs),
+        "n_lotes_cancelados_viejos": n_cancelados,
+        "n_lotes_generados_nuevos": len(plan_lotes),
+        "n_conflictos": len(conflictos),
+        "n_ajustes_velocidad": len(ajustes_velocidad),
+        "ajustes_velocidad": ajustes_velocidad,
+        "conflictos": conflictos,
+        "reporte_ia": reporte_ia,
+        "ia_error": ia_error,
+        "horizonte_dias": horizonte_dias,
+        "metodologia": {
+            "punto_1": "Input · producto_canonico_config (algoritmo)",
+            "punto_2": "Ajuste velocidad · si vel_reciente >30% baseline reducir freq (algoritmo)",
+            "punto_3": "Prioridad · complejos > grandes > otros (algoritmo)",
+            "punto_4": "Reglas duras · L-V, festivos, max 2/día, etc (algoritmo)",
+            "punto_5": "Reporte ejecutivo · Claude Sonnet 4.6 (IA)",
+            "punto_6": "Análisis conflictos · Claude Sonnet 4.6 (IA)",
+        },
+    })
+
+
 @bp.route("/api/plan/alertas-ventas", methods=["GET"])
 def alertas_ventas():
     """Detecta productos donde las ventas RECIENTES superan al baseline
@@ -2878,7 +3165,8 @@ input.cell.dirty{background:#fef3c7;border-color:#ca8a04}
     <div>
       <span id="modif-count" style="margin-right:10px;color:#ca8a04;font-weight:700"></span>
       <button onclick="guardar()" class="big" id="btn-guardar" disabled>💾 Guardar cambios</button>
-      <button onclick="regenerarCanonicos()" style="background:#16a34a;color:white;font-size:15px;padding:12px 28px;border:none;border-radius:7px;font-weight:700;cursor:pointer;margin-left:10px">🔄 Regenerar canónicos 12 meses</button>
+      <button onclick="regenerarCanonicos()" style="background:#16a34a;color:white;font-size:15px;padding:12px 28px;border:none;border-radius:7px;font-weight:700;cursor:pointer;margin-left:10px">🔄 Regenerar simple</button>
+      <button onclick="planPerfecto()" style="background:linear-gradient(135deg,#0f766e,#0891b2);color:white;font-size:15px;padding:12px 28px;border:none;border-radius:7px;font-weight:700;cursor:pointer;margin-left:10px;box-shadow:0 3px 10px rgba(8,145,178,.35)">🎯 Generar Plan PERFECTO</button>
     </div>
   </div>
 
@@ -3010,6 +3298,37 @@ function actualizarBtnGuardar(){
   const n = DIRTY.size;
   document.getElementById('btn-guardar').disabled = n === 0;
   document.getElementById('modif-count').textContent = n > 0 ? n + ' productos modificados' : '';
+}
+
+async function planPerfecto(){
+  if (DIRTY.size > 0){
+    if (!confirm('Tenés ' + DIRTY.size + ' cambios sin guardar · ¿guardar ANTES?')) return;
+    await guardar();
+  }
+  if (!confirm('🎯 Generar Plan PERFECTO\\n\\nAlgoritmo:\\n1. Lee tu config (kg/lote, ml, frecuencia)\\n2. Ajusta frecuencia si ventas aumentaron >30%\\n3. Prioriza: complejos > grandes > otros\\n4. Respeta: L-V, festivos, max 2/día, complejos Lun/Mié\\n5+6. IA escribe reporte ejecutivo\\n\\n¿Continuar?')) return;
+  document.getElementById('btn-guardar').disabled = true;
+  try {
+    const r = await fetch('/api/plan/generar-plan-perfecto', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json','X-CSRF-Token':getCSRF()},
+      credentials: 'same-origin',
+      body: JSON.stringify({usar_ia: true, horizonte_dias: 365}),
+    });
+    const d = await r.json();
+    if (!r.ok){ alert('Error: ' + (d.error || r.status)); return; }
+    let msg = '✅ Plan PERFECTO generado\\n\\n';
+    msg += '• Productos config: ' + d.n_productos_config + '\\n';
+    msg += '• Lotes viejos cancelados: ' + d.n_lotes_cancelados_viejos + '\\n';
+    msg += '• Lotes nuevos: ' + d.n_lotes_generados_nuevos + '\\n';
+    msg += '• Ajustes por velocidad: ' + d.n_ajustes_velocidad + '\\n';
+    msg += '• Conflictos: ' + d.n_conflictos + '\\n\\n';
+    if (d.reporte_ia){
+      msg += '🤖 REPORTE IA:\\n\\n' + d.reporte_ia;
+    } else if (d.ia_error){
+      msg += '⚠ IA: ' + d.ia_error;
+    }
+    alert(msg);
+  } catch(e){ alert('Error: ' + e.message); }
 }
 
 async function regenerarCanonicos(){
