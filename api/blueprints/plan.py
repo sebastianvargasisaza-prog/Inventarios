@@ -2423,6 +2423,42 @@ def configurar_canonicos_api():
     })
 
 
+@bp.route("/api/plan/listar-canonicos", methods=["GET"])
+def listar_canonicos():
+    """Lista TODOS los eos_canonico activos · debug rápido para Sebastián.
+    Devuelve agrupado por producto con conteo + primer/último lote.
+    """
+    err = _require_login()
+    if err:
+        return err
+    conn = get_db()
+    c = conn.cursor()
+    rows = c.execute(
+        """SELECT producto, COUNT(*),
+                  MIN(fecha_programada), MAX(fecha_programada),
+                  GROUP_CONCAT(fecha_programada, '|')
+           FROM produccion_programada
+           WHERE origen = 'eos_canonico'
+             AND estado IN ('pendiente','programado','esperando_recurso')
+             AND fin_real_at IS NULL
+             AND date(fecha_programada) >= date('now','-5 hours')
+           GROUP BY producto
+           ORDER BY producto""",
+    ).fetchall()
+    out = [{
+        "producto": r[0],
+        "n_lotes": int(r[1] or 0),
+        "primera_fecha": r[2],
+        "ultima_fecha": r[3],
+        "todas_fechas": (r[4] or "").split("|"),
+    } for r in rows]
+    return jsonify({
+        "n_productos": len(out),
+        "total_lotes": sum(x["n_lotes"] for x in out),
+        "productos": out,
+    })
+
+
 @bp.route("/api/plan/health-canonicos", methods=["GET"])
 def health_canonicos():
     """Diagnóstico · cuenta lotes activos por origen + última mig aplicada.
