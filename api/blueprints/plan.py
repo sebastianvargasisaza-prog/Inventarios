@@ -2697,10 +2697,20 @@ def generar_plan_perfecto():
         kg = cfg["kg"]
         freq = cfg["freq_final"]
 
-        # Fecha base · última real + freq, sino próximo lunes
+        # Fecha base · Sebastián 14-may-2026: aplicar regla "20 días antes
+        # de agotamiento" con velocidad real, comparada contra freq config.
+        # Usamos el MÁS TEMPRANO de los dos.
+        vel = cfg.get("vel_reciente_kg_dia", 0) or cfg.get("vel_baseline_kg_dia", 0)
         if prod in ultima_real:
             try:
-                base = _date.fromisoformat(ultima_real[prod]) + _td(days=freq)
+                ult = _date.fromisoformat(ultima_real[prod])
+                base_freq = ult + _td(days=freq)
+                if vel > 0.001:
+                    dias_dura = int(kg / vel)
+                    base_20d = ult + _td(days=max(dias_dura - 20, 14))
+                    base = min(base_freq, base_20d)
+                else:
+                    base = base_freq
             except Exception:
                 base = hoy + _td(days=(7 - hoy.weekday()) % 7 or 7)
         else:
@@ -3063,6 +3073,14 @@ def regenerar_canonicos():
     ).fetchall():
         ultima_real[r[0]] = (r[1] or "")[:10]
 
+    # 3b) Velocidad de ventas por producto (kg/día · ventana 60d)
+    # Sebastián 14-may-2026: "la producción es 20 días antes de que se
+    # acabe el producto". Aplicamos regla 20d con velocidad REAL.
+    necs_canon = _calcular_animus_dtc(c, ventana=60, cob_critico=20,
+                                        cob_alerta=25, cob_vigilar=45)
+    vel_kg_dia_por_prod = {n["producto_nombre"]: (n.get("velocidad_kg_dia") or 0)
+                             for n in necs_canon}
+
     # 4) Generar lotes nuevos
     hoy = _hoy_colombia()
     horizon_end = hoy + _td(days=365)
@@ -3071,11 +3089,25 @@ def regenerar_canonicos():
 
     for cfg in configs:
         prod, kg, ml, freq = cfg[0], float(cfg[1]), int(cfg[2] or 30), int(cfg[3])
+        vel = vel_kg_dia_por_prod.get(prod, 0)
 
-        # Base · última real + freq · o próximo lunes
+        # Base · regla "20 días antes de agotamiento" + frecuencia config
+        # Usamos el MÁS TEMPRANO entre:
+        #  a) última_real + freq (input del usuario)
+        #  b) última_real + (lote/vel) - 20 (agotamiento real - 20d)
+        # Si (b) es menor, significa que la vel actual hace que el lote
+        # dure menos · adelantamos. Si (a) es menor, el usuario eligió
+        # margen extra · respetamos.
         if prod in ultima_real:
             try:
-                base = _date.fromisoformat(ultima_real[prod]) + _td(days=freq)
+                ult = _date.fromisoformat(ultima_real[prod])
+                base_freq = ult + _td(days=freq)
+                if vel > 0.001:
+                    dias_dura = int(kg / vel)
+                    base_20d = ult + _td(days=max(dias_dura - 20, 14))
+                    base = min(base_freq, base_20d)
+                else:
+                    base = base_freq
             except Exception:
                 base = hoy + _td(days=(7 - hoy.weekday()) % 7 or 7)
         else:
