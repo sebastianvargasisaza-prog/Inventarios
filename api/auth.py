@@ -241,7 +241,15 @@ def register_hooks(app):
             return  # Rutas HTML se manejan individualmente
         PUBLIC_API = {'/api/login', '/api/logout', '/api/health',
                       '/api/health/debug',
-                      '/api/publico/empleado-reporte'}
+                      '/api/publico/empleado-reporte',
+                      # Sebastián 15-may-2026: emergency-restore debe ser
+                      # alcanzable SIN login · si la BD está malformed nadie
+                      # puede loguearse. El handler valida internamente:
+                      # solo permite acceso anónimo si la BD está corrupta;
+                      # si está sana exige admin. Antes el before_request lo
+                      # bloqueaba → el endpoint de emergencia era inútil en
+                      # la emergencia real.
+                      '/api/admin/emergency-restore'}
         if request.path in PUBLIC_API:
             return
         if not session.get('compras_user'):
