@@ -10,20 +10,26 @@ from config import DB_PATH
 
 def _configure_conn(conn):
     """Aplica pragmas de performance y seguridad a cada conexion SQLite.
-    
-    WAL (Write-Ahead Log): permite N lectores concurrentes mientras hay
-    un escritor activo. Critico para multiples workers Gunicorn.
-    busy_timeout: los workers esperan hasta 5s por el lock de escritura
-    en lugar de fallar inmediatamente — elimina 'database is locked'.
-    cache_size: 20MB de cache en memoria por conexion.
-    temp_store: tablas temporales en RAM (mas rapido para sorts/joins).
+
+    Sebastian 16-may-2026: BD corrompida 4 veces en 2 dias ('database
+    disk image is malformed' / 'disk I/O error'). Causa raiz: WAL mode
+    usa un archivo de memoria compartida (-shm) via mmap; el disco
+    persistente de Render no es local sino un volumen montado, y mmap
+    sobre filesystem de red corrompe el WAL.
+    FIX: journal_mode=DELETE (el default robusto de SQLite). No usa
+    -wal ni -shm, no depende de mmap. Mas lento bajo concurrencia
+    (un escritor bloquea), pero con busy_timeout=15s y el bajo volumen
+    de este ERP es perfectamente aceptable. synchronous=FULL para
+    maxima durabilidad (cada commit se fuerza a disco).
+    busy_timeout: los workers esperan por el lock de escritura en
+    lugar de fallar — elimina 'database is locked'.
     """
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA synchronous=NORMAL")   # durabilidad vs velocidad optima
+    conn.execute("PRAGMA journal_mode=DELETE")  # robusto en disco de red
+    conn.execute("PRAGMA synchronous=FULL")     # maxima durabilidad
     conn.execute("PRAGMA cache_size=-20000")    # 20MB cache (negativo = KB)
     conn.execute("PRAGMA temp_store=MEMORY")
-    conn.execute("PRAGMA busy_timeout=5000")    # 5s espera por lock — multi-worker
+    conn.execute("PRAGMA busy_timeout=15000")   # 15s espera por lock — multi-worker
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
 

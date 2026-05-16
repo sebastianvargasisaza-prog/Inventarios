@@ -1430,17 +1430,25 @@ def test_golden_auto_asignar_endpoint(app, db_clean):
 
 
 # ═══════════════════════════════════════════════════════════════════
-# GOLDEN PATH 48 · OPS-8 · WAL mode activo
+# GOLDEN PATH 48 · OPS-8 · journal_mode robusto (DELETE)
 # ═══════════════════════════════════════════════════════════════════
 
-def test_golden_wal_mode_activo(app):
-    """SQLite debe estar en WAL mode para concurrent writes seguros."""
+def test_golden_journal_mode_robusto(app):
+    """SQLite debe estar en journal_mode DELETE, NO WAL.
+
+    Sebastián 16-may-2026: la BD se corrompió 4 veces en 2 días en
+    producción ('database disk image is malformed' / 'disk I/O error').
+    Causa: WAL mode usa un archivo de memoria compartida (-shm) vía
+    mmap; el disco persistente de Render es un volumen montado (red) y
+    mmap sobre filesystem de red corrompe el WAL. DELETE es el modo
+    robusto clásico · no usa -wal ni -shm, no depende de mmap.
+    Este test impide que alguien vuelva a poner WAL sin querer."""
     conn = sqlite3.connect(os.environ['DB_PATH'])
     mode = conn.execute("PRAGMA journal_mode").fetchone()[0]
     conn.close()
-    assert mode.lower() == 'wal', \
-        f'BUG PERFORMANCE: SQLite NO en WAL mode · {mode} · ' \
-        'concurrent writes pueden corromperse'
+    assert mode.lower() != 'wal', \
+        f'BUG CRÍTICO: SQLite volvió a WAL mode · {mode} · ' \
+        'WAL corrompe la BD en el disco de red de Render · usar DELETE'
 
 
 # ═══════════════════════════════════════════════════════════════════
