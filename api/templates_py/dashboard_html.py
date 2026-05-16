@@ -9056,36 +9056,68 @@ async function ckMarcar(itemId, estado){
         _abastKpi('Materias primas faltan', mps.length, mps.length ? '#dc2626' : '#16a34a') +
         _abastKpi('Envases faltan', mees.length, mees.length ? '#dc2626' : '#16a34a') +
         '</div>';
+      var prods = d.producciones || [];
       var html = '';
-      html += '<h3 style="margin:14px 0 6px;color:#1e293b;font-size:14px">Materias primas que faltan comprar</h3>';
+
+      // ═══ SECCIÓN 1 · Materias primas → Compras (agrupadas por proveedor) ═══
+      html += '<h3 style="margin:14px 0 8px;color:#6d28d9;font-size:15px">' +
+        '1 · Materias primas &rarr; Compras</h3>';
       if(!mps.length){
         html += '<div class="abast-ok" style="padding:10px">El stock de materias primas alcanza para todo el horizonte.</div>';
       } else {
-        html += '<table><tr><th>Material</th><th>Necesario</th><th>En stock</th><th>Falta comprar</th><th>Proveedor sugerido</th></tr>';
+        // Agrupar por proveedor · un bloque por proveedor
+        var porProv = {};
         for(var a=0;a<mps.length;a++){
-          var m = mps[a];
-          html += '<tr><td>' + _abastEsc(m.nombre) + '</td>' +
-            '<td>' + _abastG(m.necesario_total_g) + '</td>' +
-            '<td>' + _abastG(m.stock_actual_g) + '</td>' +
-            '<td class="abast-falta">' + _abastG(m.faltante_g) + '</td>' +
-            '<td>' + _abastEsc(m.proveedor_sugerido || '—') + '</td></tr>';
+          var prov = mps[a].proveedor_sugerido || 'Sin proveedor asignado';
+          (porProv[prov] = porProv[prov] || []).push(mps[a]);
         }
-        html += '</table>';
+        Object.keys(porProv).sort().forEach(function(prov){
+          html += '<div style="border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;margin:8px 0;background:#faf8ff">';
+          html += '<div style="font-weight:800;color:#7c3aed;margin-bottom:6px">' +
+            '&#127981; ' + _abastEsc(prov) + ' &middot; ' + porProv[prov].length + ' material(es)</div>';
+          html += '<table><tr><th>Material</th><th>Necesario</th><th>En stock</th><th>Falta comprar</th></tr>';
+          porProv[prov].forEach(function(m){
+            html += '<tr><td>' + _abastEsc(m.nombre) + '</td>' +
+              '<td>' + _abastG(m.necesario_total_g) + '</td>' +
+              '<td>' + _abastG(m.stock_actual_g) + '</td>' +
+              '<td class="abast-falta">' + _abastG(m.faltante_g) + '</td></tr>';
+          });
+          html += '</table></div>';
+        });
       }
-      html += '<h3 style="margin:16px 0 6px;color:#1e293b;font-size:14px">Envases / material de empaque que falta</h3>';
+
+      // ═══ SECCIÓN 2 · Envases → alerta compartida (planta + Catalina) ═══
+      html += '<h3 style="margin:18px 0 8px;color:#6d28d9;font-size:15px">' +
+        '2 · Envases &rarr; alerta planta + Compras</h3>';
       if(!mees.length){
-        html += '<div class="abast-ok" style="padding:10px">El stock de envases alcanza.</div>';
+        html += '<div class="abast-ok" style="padding:10px">El stock de envases en la Bodega MEE alcanza.</div>';
       } else {
-        html += '<table><tr><th>Envase</th><th>Necesario</th><th>En stock</th><th>Falta comprar</th><th>Proveedor sugerido</th></tr>';
+        // "Para cuándo" · fecha más temprana de una producción que usa cada envase
+        var fechaPorMee = {};
+        prods.forEach(function(p){
+          var f = (p.fecha || '').slice(0, 10);
+          if(!f) return;
+          (p.mees_necesarios || []).forEach(function(mn){
+            var cod = (mn.codigo || '').toUpperCase();
+            if(cod && (!fechaPorMee[cod] || f < fechaPorMee[cod])) fechaPorMee[cod] = f;
+          });
+        });
+        html += '<table><tr><th>Envase</th><th>Necesario</th><th>En bodega MEE</th>' +
+          '<th>Falta</th><th>Para cuándo</th><th>Proveedor</th></tr>';
         for(var b=0;b<mees.length;b++){
           var e = mees[b];
+          var cuando = fechaPorMee[(e.codigo || '').toUpperCase()] || '—';
           html += '<tr><td>' + _abastEsc(e.descripcion) + '</td>' +
             '<td>' + Math.round(e.necesario_total_u) + ' u</td>' +
             '<td>' + Math.round(e.stock_actual_u) + ' u</td>' +
             '<td class="abast-falta">' + Math.round(e.faltante_u) + ' u</td>' +
+            '<td style="font-weight:700">' + _abastEsc(cuando) + '</td>' +
             '<td>' + _abastEsc(e.proveedor_sugerido || '—') + '</td></tr>';
         }
         html += '</table>';
+        html += '<div style="font-size:11px;color:#64748b;margin-top:6px">' +
+          '&#128161; Planta revisa la Bodega MEE y alista lo que ya tiene &middot; ' +
+          'Catalina compra lo que falte. La misma alerta la ven los dos.</div>';
       }
       cont.innerHTML = html;
       if(mps.length || mees.length){
