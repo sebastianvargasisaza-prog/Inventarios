@@ -145,12 +145,108 @@ def crear_pedido_b2b():
          fecha_estimada or None, notas, user),
     )
     pid = cur.lastrowid
-    conn.commit()
     audit_log(cur, usuario=user, accion="CREAR_PEDIDO_B2B",
               tabla="pedidos_b2b", registro_id=pid,
               despues={"cliente_id": cliente_id, "producto": producto,
                        "cantidad_uds": cantidad, "fecha": fecha_estimada})
-    return jsonify({"ok": True, "id": pid}), 201
+    conn.commit()
+
+    # Sebastián 15-may-2026: integrar el pedido B2B al plan AL INSTANTE.
+    # Híbrido: si hay un lote canónico del mismo producto cerca de la
+    # fecha que necesita el cliente (±10d), le suma los kg; si no, crea
+    # un lote dedicado. Ver _integrar_pedido_b2b_al_plan.
+    kg_b2b = round(cantidad * ml / 1000.0, 2)
+    integracion = None
+    try:
+        integracion = _integrar_pedido_b2b_al_plan(
+            cur, pid, producto, kg_b2b, fecha_estimada, cliente_nombre, user)
+        conn.commit()
+    except Exception as _e:
+        # La integración es best-effort · si falla, el pedido igual queda
+        # registrado y se puede agendar a mano.
+        integracion = {"error": str(_e)[:200]}
+
+    return jsonify({"ok": True, "id": pid, "kg_b2b": kg_b2b,
+                    "integracion_plan": integracion}), 201
+
+
+def _integrar_pedido_b2b_al_plan(cur, pedido_id, producto, kg_b2b,
+                                   fecha_estimada, cliente_nombre, user):
+    """Ubica un pedido B2B en el calendario de producción.
+
+    Sebastián 15-may-2026 · modo HÍBRIDO:
+    - Si hay un lote canónico del mismo producto a ±10 días de la fecha
+      objetivo de producción → suma los kg a ese lote (y lo marca como
+      eos_plan para que el regenerador NO lo borre).
+    - Si no hay ninguno cerca → crea un lote dedicado origen='eos_b2b'
+      (también sobrevive al regenerador).
+
+    Fecha objetivo = fecha_estimada del cliente − 10 días (margen para
+    producir + QC + despacho). Sin fecha → hoy + 7d.
+    """
+    from datetime import date as _date, timedelta as _td
+    hoy = _hoy_colombia()
+    if fecha_estimada and _valida_fecha_iso(fecha_estimada):
+        f_target = _date.fromisoformat(fecha_estimada[:10]) - _td(days=10)
+    else:
+        f_target = hoy + _td(days=7)
+    if f_target < hoy:
+        f_target = hoy + _td(days=3)
+
+    # Buscar lote canónico del mismo producto cerca de f_target (±10d)
+    cercano = cur.execute(
+        """SELECT id, fecha_programada, COALESCE(cantidad_kg,0)
+           FROM produccion_programada
+           WHERE UPPER(TRIM(producto)) = UPPER(TRIM(?))
+             AND estado IN ('pendiente','programado','esperando_recurso')
+             AND inicio_real_at IS NULL AND fin_real_at IS NULL
+             AND ABS(julianday(fecha_programada) - julianday(?)) <= 10
+           ORDER BY ABS(julianday(fecha_programada) - julianday(?)) ASC
+           LIMIT 1""",
+        (producto, f_target.isoformat(), f_target.isoformat()),
+    ).fetchone()
+
+    if cercano:
+        lid, lfecha, lkg = cercano[0], cercano[1], float(cercano[2] or 0)
+        nuevo_kg = round(lkg + kg_b2b, 2)
+        # origen → eos_plan: protege el lote de ser cancelado al regenerar
+        cur.execute(
+            """UPDATE produccion_programada
+               SET cantidad_kg = ?, origen = 'eos_plan',
+                   observaciones = COALESCE(observaciones,'') ||
+                     ' · +' || ? || 'kg B2B ' || ? || ' (pedido #' || ? || ')'
+               WHERE id = ?""",
+            (nuevo_kg, kg_b2b, cliente_nombre, pedido_id, lid),
+        )
+        audit_log(cur, usuario=user, accion="B2B_SUMADO_A_LOTE",
+                  tabla="produccion_programada", registro_id=lid,
+                  despues={"pedido_b2b": pedido_id, "kg_sumados": kg_b2b,
+                           "kg_total": nuevo_kg})
+        return {"modo": "sumado_a_lote_canonico", "lote_id": lid,
+                "fecha": (lfecha or "")[:10], "kg_total": nuevo_kg,
+                "kg_b2b": kg_b2b}
+
+    # Sin lote cercano → lote dedicado
+    f_real = _proxima_fecha_habil(cur, f_target, prefer_mwf=False,
+                                   lote_kg=kg_b2b, producto_nombre=producto)
+    if f_real is None:
+        f_real = f_target
+    cur.execute(
+        """INSERT INTO produccion_programada
+             (producto, fecha_programada, cantidad_kg, estado, origen,
+              lotes, observaciones)
+           VALUES (?, ?, ?, 'programado', 'eos_b2b', 1, ?)""",
+        (producto, f_real.isoformat(), kg_b2b,
+         f"Pedido B2B {cliente_nombre} · #{pedido_id} · "
+         f"entrega estimada {fecha_estimada or 's/f'}"),
+    )
+    nuevo_lote = cur.lastrowid
+    audit_log(cur, usuario=user, accion="B2B_LOTE_DEDICADO",
+              tabla="produccion_programada", registro_id=nuevo_lote,
+              despues={"pedido_b2b": pedido_id, "producto": producto,
+                       "kg": kg_b2b, "fecha": f_real.isoformat()})
+    return {"modo": "lote_dedicado", "lote_id": nuevo_lote,
+            "fecha": f_real.isoformat(), "kg_b2b": kg_b2b}
 
 
 @bp.route("/api/pedidos-b2b/<int:pid>", methods=["PATCH"])
@@ -6066,6 +6162,7 @@ select,input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-si
 .lote.calendar{background:#fef9c3;border-left-color:#ca8a04;color:#854d0e}
 .lote.eos_plan{background:#dcfce7;border-left-color:#16a34a;color:#166534}
 .lote.eos_canonico{background:#e0e7ff;border-left-color:#6366f1;color:#3730a3}
+.lote.eos_b2b{background:#fce7f3;border-left-color:#db2777;color:#9d174d}
 .lote.esperando_recurso{background:#fde68a;border-left-color:#d97706;color:#78350f;opacity:.85}
 .lote.sugerido{background:#fef3c7;border-left-color:#f59e0b;color:#92400e;border-style:dashed;border-width:1px}
 .lote.grande{font-weight:800;border-left-width:4px}
@@ -6154,7 +6251,8 @@ select,input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-si
   </div>
   <div class="legend">
     <span><span class="legend-dot" style="background:#6366f1"></span>🔁 Canónico (el plan real)</span>
-    <span><span class="legend-dot" style="background:#f59e0b;opacity:.7"></span>✨ Autoplan IA (sugerencia)</span>
+    <span><span class="legend-dot" style="background:#16a34a"></span>🟢 Plan / ajustado a mano</span>
+    <span><span class="legend-dot" style="background:#db2777"></span>📦 Pedido B2B (Fernando Mesa)</span>
     <span><span class="legend-dot" style="background:#fca5a5"></span>Festivo colombiano</span>
   </div>
   <!-- Panel diag visible · Sebastián 14-may-2026 "no sale nada" -->
