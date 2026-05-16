@@ -2840,6 +2840,89 @@ def job_drift_detector_inventario(app):
             return False, {'error': str(e)[:300]}, 0
 
 
+def _db_autoheal_check(app):
+    """Auto-healing de la BD · Sebastián 16-may-2026.
+
+    Chequea la integridad de la BD; si está corrupta ('malformed' /
+    'disk I/O error'), la restaura automáticamente del backup más
+    reciente · sin intervención manual. Cooldown de 2h para no
+    restaurar en cadena si el problema (disco) persiste.
+
+    Devuelve dict con el resultado para incluir en el reporte watcher.
+    """
+    from config import DB_PATH
+    import time as _time
+    corrupta = False
+    detalle = ''
+    try:
+        cx = sqlite3.connect(DB_PATH, timeout=5.0)
+        try:
+            row = cx.execute('PRAGMA quick_check').fetchone()
+            if row and str(row[0]).lower() != 'ok':
+                corrupta = True
+                detalle = str(row[0])[:120]
+        finally:
+            cx.close()
+    except sqlite3.DatabaseError as e:
+        m = str(e).lower()
+        if any(p in m for p in ('malformed', 'corrupt', 'disk i/o',
+                                 'i/o error', 'not a database')):
+            corrupta = True
+            detalle = str(e)[:120]
+    except Exception as e:
+        log.warning('autoheal quick_check no concluyente: %s', e)
+
+    if not corrupta:
+        return {'bd': 'ok'}
+
+    log.error('AUTOHEAL · BD corrupta detectada: %s', detalle)
+    marker = DB_PATH + '.autoheal-ts'
+    ahora = _time.time()
+    # Cooldown · si ya se restauró hace <2h, NO repetir · solo alertar
+    try:
+        if os.path.exists(marker):
+            with open(marker) as f:
+                last = float((f.read() or '0').strip() or 0)
+            if ahora - last < 2 * 3600:
+                log.error('AUTOHEAL · restore reciente (<2h) · no repito · alerto')
+                return {'bd': 'corrupta', 'accion': 'cooldown', 'detalle': detalle,
+                        'mensaje': 'BD corrupta y ya restaurada hace <2h · '
+                                   'el disco de Render sigue fallando · escalar'}
+    except Exception:
+        pass
+
+    # Restaurar · invocar emergency-restore internamente
+    resultado = {'bd': 'corrupta', 'detalle': detalle}
+    try:
+        from blueprints.admin import admin_emergency_restore
+        from config import ADMIN_USERS as _ADMIN
+        with app.test_request_context('/api/admin/emergency-restore',
+                                       method='POST', json={'confirm': True}):
+            from flask import session as _s
+            _s['compras_user'] = next(iter(_ADMIN), 'sebastian')
+            resp = admin_emergency_restore()
+        if isinstance(resp, tuple):
+            payload = resp[0].get_json() if hasattr(resp[0], 'get_json') else {}
+            code = resp[1]
+        else:
+            payload = resp.get_json() if hasattr(resp, 'get_json') else {}
+            code = getattr(resp, 'status_code', 200)
+        resultado['accion'] = 'restaurado'
+        resultado['http'] = code
+        resultado['restore'] = payload
+        log.error('AUTOHEAL · BD restaurada · code=%s · %s', code, str(payload)[:300])
+        try:
+            with open(marker, 'w') as f:
+                f.write(str(ahora))
+        except Exception:
+            pass
+    except Exception as e:
+        log.exception('AUTOHEAL · fallo restaurando: %s', e)
+        resultado['accion'] = 'error_restaurando'
+        resultado['error'] = str(e)[:200]
+    return resultado
+
+
 def job_watcher_health(app):
     """Watcher hourly · ejecuta /api/admin/health/critical-paths internamente
     y manda mail a EMAIL_GERENCIA si status='critical'.
@@ -2848,9 +2931,20 @@ def job_watcher_health(app):
     bugs en prod antes que los descubra el usuario. Se ejecuta cada
     hora a :07 (24 entries en JOBS_SCHEDULE con dedup separado).
 
+    Sebastián 16-may-2026: ANTES de chequear paths, corre el auto-healing
+    de la BD · si está corrupta se restaura sola del backup.
+
     Returns: (ok, resumen_dict, _)
     """
     with app.app_context():
+        # Auto-healing de BD · primero, porque si la BD está corrupta
+        # el resto del watcher no puede consultar nada.
+        autoheal = {}
+        try:
+            autoheal = _db_autoheal_check(app)
+        except Exception as e:
+            log.exception('autoheal fallo: %s', e)
+            autoheal = {'error': str(e)[:200]}
         try:
             # Ejecutar el endpoint internamente (sin HTTP request).
             # Replica la lógica del endpoint admin_health_critical_paths
@@ -2879,6 +2973,7 @@ def job_watcher_health(app):
                     'critical_count': crit_count,
                     'warn_count': payload.get('warn_count', 0),
                     'mail_sent': True,
+                    'autoheal': autoheal,
                     'failing_checks': [
                         c['name'] for c in payload.get('checks', [])
                         if c.get('status') == 'critical'
@@ -2889,6 +2984,7 @@ def job_watcher_health(app):
                 'critical_count': 0,
                 'warn_count': payload.get('warn_count', 0),
                 'mail_sent': False,
+                'autoheal': autoheal,
             }, 0
         except Exception as e:
             log.exception('watcher_health fallo: %s', e)
