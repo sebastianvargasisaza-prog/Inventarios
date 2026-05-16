@@ -1494,6 +1494,14 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       style="padding:9px 22px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:700;cursor:pointer;background:#1e40af;color:#fff;box-shadow:0 3px 10px rgba(30,64,175,.35)">
       &#128100; Mi D&iacute;a
     </button>
+    <!-- Sebastián 15-may-2026: pestaña Abastecimiento · consolida las MP
+         y envases que el plan va a consumir en 1-12 meses y genera las
+         solicitudes de compra de planta hacia Compras. -->
+    <button id="prog-tab-abastecimiento" onclick="switchProgTab('abastecimiento')"
+      style="padding:9px 22px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:700;cursor:pointer;background:#7c3aed;color:#fff;box-shadow:0 3px 10px rgba(124,58,237,.35)"
+      title="Materias primas y envases que faltan para el plan · genera solicitudes a Compras">
+      &#128230; Abastecimiento
+    </button>
     <span id="prog-tareas-badge" style="display:none;background:#dc2626;color:#fff;font-size:9px;font-weight:800;padding:2px 8px;border-radius:8px"></span>
   </div>
   <!-- Tab "Calendario + IA" · iframe a /admin/plan-calendario · Sebastián 14-may-2026:
@@ -1634,6 +1642,35 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     <iframe id="midia-frame" src="about:blank" loading="lazy"
             style="width:100%;height:80vh;min-height:600px;border:0;display:block;background:#0f172a"
             sandbox="allow-same-origin allow-scripts allow-forms allow-popups"></iframe>
+  </div>
+  <!-- Pestaña Abastecimiento · Sebastián 15-may-2026 -->
+  <div id="ptab-abastecimiento" style="display:none;background:#fff;border-radius:12px;padding:18px;box-shadow:0 2px 8px rgba(0,0,0,.06)">
+    <h2 style="margin:0 0 4px;color:#6d28d9;font-size:19px">&#128230; Abastecimiento</h2>
+    <div style="color:#64748b;font-size:12px;margin-bottom:12px">
+      Materias primas y envases que el plan de producción va a consumir ·
+      qué falta comprar · generá las solicitudes a Compras.
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
+      <span style="font-size:12px;color:#475569;font-weight:700;margin-right:4px">Horizonte:</span>
+      <button class="abast-h" data-dias="30"  onclick="abastSetHoriz(30)">1 mes</button>
+      <button class="abast-h" data-dias="60"  onclick="abastSetHoriz(60)">2 meses</button>
+      <button class="abast-h" data-dias="90"  onclick="abastSetHoriz(90)">3 meses</button>
+      <button class="abast-h" data-dias="180" onclick="abastSetHoriz(180)">6 meses</button>
+      <button class="abast-h" data-dias="365" onclick="abastSetHoriz(365)">1 año</button>
+      <button onclick="cargarAbastecimiento()" style="margin-left:8px;padding:7px 14px;border:1px solid #cbd5e1;background:#fff;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer">&#8635; Recargar</button>
+    </div>
+    <style>
+      .abast-h{padding:7px 14px;border:2px solid #e2e8f0;background:#fff;color:#475569;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer}
+      .abast-h.active{border-color:#7c3aed;background:#7c3aed;color:#fff}
+      #ptab-abastecimiento table{width:100%;border-collapse:collapse;font-size:12px}
+      #ptab-abastecimiento th{text-align:left;color:#64748b;font-size:11px;padding:6px 8px;border-bottom:2px solid #e2e8f0}
+      #ptab-abastecimiento td{padding:6px 8px;border-bottom:1px solid #f1f5f9}
+      .abast-falta{color:#dc2626;font-weight:800}
+      .abast-ok{color:#16a34a;font-weight:700}
+    </style>
+    <div id="abast-resumen" style="margin-bottom:12px"></div>
+    <div id="abast-contenido"><div style="padding:30px;text-align:center;color:#94a3b8">Elegí un horizonte para ver qué falta…</div></div>
+    <div id="abast-accion" style="margin-top:14px"></div>
   </div>
   <!-- Botones HIDDEN para no romper switchProgTab() y JS existente -->
   <div style="display:none">
@@ -8965,6 +9002,123 @@ async function ckMarcar(itemId, estado){
     cargarProgramacion(null);
   }
 
+  // ── Pestaña Abastecimiento · Sebastián 15-may-2026 ───────────────────────
+  var ABAST_HORIZ = 90;  // default 3 meses
+  function _abastEsc(s){
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+  function _abastG(gr){
+    gr = parseFloat(gr) || 0;
+    if(gr >= 1000) return (gr/1000).toFixed(1) + ' kg';
+    return Math.round(gr) + ' g';
+  }
+  function _abastKpi(lbl, val, color){
+    return '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:8px 14px;min-width:120px;text-align:center">' +
+      '<div style="font-size:21px;font-weight:800;color:' + color + '">' + val + '</div>' +
+      '<div style="font-size:10px;color:#64748b;text-transform:uppercase">' + lbl + '</div></div>';
+  }
+  function abastSetHoriz(dias){
+    ABAST_HORIZ = dias;
+    var btns = document.querySelectorAll('.abast-h');
+    for(var i=0;i<btns.length;i++){
+      btns[i].classList.toggle('active', parseInt(btns[i].dataset.dias) === dias);
+    }
+    cargarAbastecimiento();
+  }
+  async function cargarAbastecimiento(){
+    var btns = document.querySelectorAll('.abast-h');
+    var hayActivo = document.querySelector('.abast-h.active');
+    if(!hayActivo){
+      for(var i=0;i<btns.length;i++){
+        if(parseInt(btns[i].dataset.dias) === ABAST_HORIZ) btns[i].classList.add('active');
+      }
+    }
+    var cont = document.getElementById('abast-contenido');
+    var resu = document.getElementById('abast-resumen');
+    var acc = document.getElementById('abast-accion');
+    if(!cont) return;
+    cont.innerHTML = '<div style="padding:30px;text-align:center;color:#94a3b8">Calculando materias primas y envases del plan…</div>';
+    resu.innerHTML = ''; acc.innerHTML = '';
+    try {
+      var r = await fetch('/api/programacion/producciones-faltantes?dias=' + ABAST_HORIZ, {cache:'no-store'});
+      var d = await r.json();
+      if(!r.ok){
+        cont.innerHTML = '<div style="color:#dc2626;padding:20px">Error: ' + _abastEsc(d.error || r.status) + '</div>';
+        return;
+      }
+      var mps = d.faltantes_mps || [];
+      var mees = d.faltantes_mees || [];
+      var nProd = (d.resumen && d.resumen.n_producciones) || (d.producciones || []).length;
+      resu.innerHTML = '<div style="display:flex;gap:10px;flex-wrap:wrap">' +
+        _abastKpi('Lotes en el horizonte', nProd, '#475569') +
+        _abastKpi('Materias primas faltan', mps.length, mps.length ? '#dc2626' : '#16a34a') +
+        _abastKpi('Envases faltan', mees.length, mees.length ? '#dc2626' : '#16a34a') +
+        '</div>';
+      var html = '';
+      html += '<h3 style="margin:14px 0 6px;color:#1e293b;font-size:14px">Materias primas que faltan comprar</h3>';
+      if(!mps.length){
+        html += '<div class="abast-ok" style="padding:10px">El stock de materias primas alcanza para todo el horizonte.</div>';
+      } else {
+        html += '<table><tr><th>Material</th><th>Necesario</th><th>En stock</th><th>Falta comprar</th><th>Proveedor sugerido</th></tr>';
+        for(var a=0;a<mps.length;a++){
+          var m = mps[a];
+          html += '<tr><td>' + _abastEsc(m.nombre) + '</td>' +
+            '<td>' + _abastG(m.necesario_total_g) + '</td>' +
+            '<td>' + _abastG(m.stock_actual_g) + '</td>' +
+            '<td class="abast-falta">' + _abastG(m.faltante_g) + '</td>' +
+            '<td>' + _abastEsc(m.proveedor_sugerido || '—') + '</td></tr>';
+        }
+        html += '</table>';
+      }
+      html += '<h3 style="margin:16px 0 6px;color:#1e293b;font-size:14px">Envases / material de empaque que falta</h3>';
+      if(!mees.length){
+        html += '<div class="abast-ok" style="padding:10px">El stock de envases alcanza.</div>';
+      } else {
+        html += '<table><tr><th>Envase</th><th>Necesario</th><th>En stock</th><th>Falta comprar</th><th>Proveedor sugerido</th></tr>';
+        for(var b=0;b<mees.length;b++){
+          var e = mees[b];
+          html += '<tr><td>' + _abastEsc(e.descripcion) + '</td>' +
+            '<td>' + Math.round(e.necesario_total_u) + ' u</td>' +
+            '<td>' + Math.round(e.stock_actual_u) + ' u</td>' +
+            '<td class="abast-falta">' + Math.round(e.faltante_u) + ' u</td>' +
+            '<td>' + _abastEsc(e.proveedor_sugerido || '—') + '</td></tr>';
+        }
+        html += '</table>';
+      }
+      cont.innerHTML = html;
+      if(mps.length || mees.length){
+        acc.innerHTML = '<button onclick="abastGenerarSols()" style="background:#16a34a;color:#fff;border:none;padding:11px 22px;border-radius:8px;font-size:14px;font-weight:800;cursor:pointer">&#128228; Generar solicitudes a Compras</button>' +
+          '<div style="font-size:11px;color:#64748b;margin-top:6px">Crea las solicitudes agrupadas por proveedor · aparecen en el módulo Compras (Catalina).</div>';
+      } else {
+        acc.innerHTML = '<div style="color:#16a34a;font-weight:700">Nada que solicitar · el stock cubre el plan de este horizonte.</div>';
+      }
+    } catch(e){
+      cont.innerHTML = '<div style="color:#dc2626;padding:20px">Error de red: ' + _abastEsc(e.message) + '</div>';
+    }
+  }
+  async function abastGenerarSols(){
+    if(!confirm('¿Generar las solicitudes de compra para el horizonte de ' + ABAST_HORIZ + ' días?\\n\\nSe crean agrupadas por proveedor y aparecen en el módulo Compras.')) return;
+    try {
+      var r = await fetch('/api/programacion/solicitar-faltantes-bulk', {
+        method:'POST',
+        headers:{'Content-Type':'application/json','X-CSRF-Token':(typeof csrfTokenNec==='function'?csrfTokenNec():'')},
+        body: JSON.stringify({dias: ABAST_HORIZ, urgencia:'Alta'}),
+      });
+      var d = await r.json();
+      if(!r.ok){ alert('Error: ' + (d.error || ('HTTP ' + r.status))); return; }
+      var msg = '✅ ' + d.total_solicitudes + ' solicitud(es) creada(s) para ' +
+        d.total_proveedores + ' proveedor(es):\\n\\n';
+      (d.solicitudes_creadas || []).forEach(function(s){
+        msg += '· ' + s.numero + ' · ' + s.proveedor + ' · ' + s.items_count + ' items\\n';
+      });
+      msg += '\\nYa están en el módulo Compras.';
+      alert(msg);
+      cargarAbastecimiento();
+    } catch(e){ alert('Error de red: ' + e.message); }
+  }
+
   // ── Sub-tabs internos de Programacion ────────────────────────────────────
   function switchProgTab(tab){
     try {
@@ -8974,6 +9128,7 @@ async function ckMarcar(itemId, estado){
         'midia':  'ptab-midia',
         'calendario': 'ptab-calendario',
         'necesidades': 'ptab-necesidades',
+        'abastecimiento': 'ptab-abastecimiento',
         // 'asignacion' eliminado · redirige a 'mando' (unificado en mapa)
         'asignacion': 'ptab-plano',
         'mando': 'ptab-plano',
@@ -9010,6 +9165,10 @@ async function ckMarcar(itemId, estado){
       // Lazy-load Necesidades al activar tab
       if (tab === 'necesidades') {
         if (typeof cargarNecesidades === 'function') cargarNecesidades();
+      }
+      // Lazy-load Abastecimiento al activar tab
+      if (tab === 'abastecimiento') {
+        if (typeof cargarAbastecimiento === 'function') cargarAbastecimiento();
       }
       // Lazy-load Plan en curso al activar tab
       if (tab === 'planv2') {
@@ -9067,6 +9226,7 @@ async function ckMarcar(itemId, estado){
       _bg('prog-tab-necesidades','linear-gradient(135deg,#0f766e,#0891b2)', tab==='necesidades');
       _bg('prog-tab-calendario', 'linear-gradient(135deg,#ca8a04,#f59e0b)', tab==='calendario');
       _bg('prog-tab-midia',      '#1e40af',                                  tab==='midia');
+      _bg('prog-tab-abastecimiento', '#7c3aed',                              tab==='abastecimiento');
       _bg('prog-tab-mando',      '#1a4a7a',                                  tab==='mando');
       _bg('prog-tab-autoplan',   'linear-gradient(135deg,#7c3aed,#dc2626)',  tab==='autoplan');
       _bg('prog-tab-maquila',    'linear-gradient(135deg,#1a4a7a,#0891b2)', tab==='maquila');
