@@ -3538,6 +3538,12 @@ def regenerar_canonicos():
                                         cob_alerta=25, cob_vigilar=45)
     vel_kg_dia_por_prod = {n["producto_nombre"]: (n.get("velocidad_kg_dia") or 0)
                              for n in necs_canon}
+    # Sebastián 15-may-2026: "me sugiere contorno de cafeína en mayo
+    # cuando tiene stock para 86 días". El primer lote DEBE salir de la
+    # cobertura real del stock (regla 20d), no del histórico ni de
+    # "próximo lunes". Mapa de cobertura por producto.
+    cobertura_por_prod = {n["producto_nombre"]: n.get("dias_cobertura")
+                            for n in necs_canon}
 
     # 4) Generar lotes nuevos
     hoy = _hoy_colombia()
@@ -3545,31 +3551,37 @@ def regenerar_canonicos():
     n_generados = 0
     detalles_por_producto = {}
 
+    # Ordenar configs por cobertura ASC · los productos más urgentes
+    # (menos días de stock) toman primero los slots tempranos del
+    # calendario · evita que un producto holgado le quite el lugar a
+    # uno crítico cuando _proxima_fecha_habil escalona.
+    def _cob_orden(cfg):
+        cob = cobertura_por_prod.get(cfg[0])
+        return cob if cob is not None else 99999
+    configs = sorted(configs, key=_cob_orden)
+
     for cfg in configs:
         prod, kg, ml, freq = cfg[0], float(cfg[1]), int(cfg[2] or 30), int(cfg[3])
         vel = vel_kg_dia_por_prod.get(prod, 0)
 
-        # Base · regla "20 días antes de agotamiento" + frecuencia config
-        # Usamos el MÁS TEMPRANO entre:
-        #  a) última_real + freq (input del usuario)
-        #  b) última_real + (lote/vel) - 20 (agotamiento real - 20d)
-        # Si (b) es menor, significa que la vel actual hace que el lote
-        # dure menos · adelantamos. Si (a) es menor, el usuario eligió
-        # margen extra · respetamos.
-        if prod in ultima_real:
+        # Primer lote · Sebastián 15-may-2026: SIEMPRE desde la cobertura
+        # real del stock. Regla "producir 20 días antes de agotar":
+        #   base = hoy + dias_cobertura - 20
+        # Un producto con 86d de stock → primer lote en ~66d. Uno con 11d
+        # → primer lote YA. El histórico solo se usa de respaldo si el
+        # producto no tiene cobertura calculable (sin ventas).
+        cob = cobertura_por_prod.get(prod)
+        if cob is not None and cob >= 0:
+            base = hoy + _td(days=max(int(cob) - 20, 0))
+        elif prod in ultima_real:
             try:
-                ult = _date.fromisoformat(ultima_real[prod])
-                base_freq = ult + _td(days=freq)
-                if vel > 0.001:
-                    dias_dura = int(kg / vel)
-                    base_20d = ult + _td(days=max(dias_dura - 20, 14))
-                    base = min(base_freq, base_20d)
-                else:
-                    base = base_freq
+                base = _date.fromisoformat(ultima_real[prod]) + _td(days=freq)
             except Exception:
                 base = hoy + _td(days=(7 - hoy.weekday()) % 7 or 7)
         else:
             base = hoy + _td(days=(7 - hoy.weekday()) % 7 or 7)
+        if base < hoy:
+            base = hoy
 
         cur = _proxima_fecha_habil(c, base, prefer_mwf=False,
                                     lote_kg=kg, producto_nombre=prod)
@@ -6205,8 +6217,28 @@ function render(){
         (porMes[mes] = porMes[mes] || []).push(a);
       });
       let html = '<div style="font-size:11px;color:#64748b;margin-bottom:6px">Total: <strong>'+ag.length+' lotes · '+(new Set(ag.map(x=>x.producto))).size+' productos únicos</strong></div>';
+      // Sebastián 15-may-2026: "que aparezca todo". Tabla resumen de
+      // TODOS los productos del plan · próximo lote + cuántos lotes ·
+      // siempre visible, sin clics. Es la vista "ver todo".
+      const porProd = {};
+      ag.forEach(a => {
+        const p = a.producto || '—';
+        (porProd[p] = porProd[p] || []).push((a.fecha_programada||'').slice(0,10));
+      });
+      html += '<div style="font-weight:700;color:#0f766e;margin:8px 0 4px">📦 Los ' +
+        Object.keys(porProd).length + ' productos del plan</div>';
+      html += '<table style="width:100%;font-size:11px;margin-bottom:10px">' +
+        '<tr style="color:#64748b;text-align:left"><th>Producto</th><th>Próximo lote</th><th>Lotes/año</th></tr>';
+      Object.keys(porProd).sort().forEach(p => {
+        const fechas = porProd[p].filter(Boolean).sort();
+        html += '<tr style="border-top:1px solid #f1f5f9"><td>' + escapeHtml(p) +
+          '</td><td>' + escapeHtml(fechas[0] || '—') +
+          '</td><td style="text-align:right">' + porProd[p].length + '</td></tr>';
+      });
+      html += '</table>';
+      // Detalle por mes · abierto por defecto
       Object.keys(porMes).sort().forEach(mes => {
-        html += '<details style="margin:4px 0;border:1px solid #e2e8f0;border-radius:6px;padding:6px 10px"><summary style="cursor:pointer;font-weight:700;color:#0f766e">'+mes+' · '+porMes[mes].length+' lotes</summary>';
+        html += '<details open style="margin:4px 0;border:1px solid #e2e8f0;border-radius:6px;padding:6px 10px"><summary style="cursor:pointer;font-weight:700;color:#0f766e">'+mes+' · '+porMes[mes].length+' lotes</summary>';
         html += '<table style="width:100%;font-size:11px;margin-top:6px"><tr style="color:#64748b;text-align:left"><th>Fecha</th><th>Producto</th><th>kg</th><th>Origen</th></tr>';
         porMes[mes].sort((a,b)=>(a.fecha_programada||'').localeCompare(b.fecha_programada||'')).forEach(l => {
           html += '<tr style="border-top:1px solid #f1f5f9"><td>'+escapeHtml((l.fecha_programada||'').slice(0,10))+'</td><td>'+escapeHtml(l.producto||'')+'</td><td style="text-align:right">'+(l.kg||0)+'</td><td>'+escapeHtml(l.origen||'')+'</td></tr>';
