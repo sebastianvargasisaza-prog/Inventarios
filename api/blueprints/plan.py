@@ -6863,7 +6863,16 @@ async function abrirLoteModal(id, producto, fecha, kg){
   // Sección 1: Datos de venta y stock
   html += '<div class="metric-grid">';
   html += '<div class="metric-card"><div class="metric-lbl">Volumen envase</div><div class="metric-val">' + ml + ' ml</div></div>';
-  html += '<div class="metric-card"><div class="metric-lbl">Kg a producir</div><div class="metric-val">' + kg + ' kg</div><div class="metric-sub">' + Math.round(kg * 1000 / ml) + ' uds aprox</div></div>';
+  // Sebastián 15-may-2026: "kilogramos a producir" editable desde el popup
+  html += '<div class="metric-card"><div class="metric-lbl">Kg a producir</div>' +
+    '<div style="display:flex;gap:4px;align-items:center;margin-top:2px">' +
+    '<input id="edit-kg-lote" type="number" min="1" max="1000" step="1" value="' + kg + '" ' +
+    'oninput="var u=document.getElementById(&quot;edit-kg-uds&quot;);if(u)u.textContent=Math.round((parseFloat(this.value)||0)*1000/' + ml + ')+&quot; uds aprox&quot;" ' +
+    'style="width:64px;font-size:16px;font-weight:800;padding:3px 5px;border:1px solid #cbd5e1;border-radius:5px">' +
+    '<span style="font-size:12px;color:#64748b">kg</span>' +
+    '<button onclick="guardarKgLote(' + id + ')" style="padding:5px 9px;font-size:11px;margin:0">💾 Guardar</button>' +
+    '</div>' +
+    '<div class="metric-sub" id="edit-kg-uds">' + Math.round(kg * 1000 / ml) + ' uds aprox</div></div>';
   html += '<div class="metric-card"><div class="metric-lbl">Vende/día</div><div class="metric-val">' + velUds.toFixed(1) + '</div><div class="metric-sub">' + velKgDia.toFixed(2) + ' kg/día</div></div>';
   html += '<div class="metric-card"><div class="metric-lbl">Vende/mes</div><div class="metric-val">' + velMes + '</div><div class="metric-sub">' + (velKgDia * 30).toFixed(1) + ' kg/mes</div></div>';
   html += '<div class="metric-card"><div class="metric-lbl">Stock actual</div><div class="metric-val">' + stockUds + ' uds</div><div class="metric-sub">' + stockKg.toFixed(1) + ' kg</div></div>';
@@ -6884,6 +6893,30 @@ async function abrirLoteModal(id, producto, fecha, kg){
   // Sección 4: Acciones
   html += _renderAccionesLote(id, producto, fecha);
   document.getElementById('lote-body').innerHTML = html;
+}
+
+// Sebastián 15-may-2026: editar kg a producir desde el popup del lote
+async function guardarKgLote(id){
+  const inp = document.getElementById('edit-kg-lote');
+  if (!inp) return;
+  const nuevo = parseFloat(inp.value);
+  if (isNaN(nuevo) || nuevo <= 0 || nuevo > 1000){
+    alert('Kg inválido · debe estar entre 1 y 1000');
+    return;
+  }
+  try {
+    const r = await fetch('/api/plan/proximas/' + id + '/cantidad', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':getCSRF()},
+      credentials:'same-origin',
+      body: JSON.stringify({cantidad_kg: nuevo}),
+    });
+    const d = await r.json();
+    if (!r.ok){ alert('❌ ' + (d.error || ('Error ' + r.status))); return; }
+    alert('✅ Kg actualizado: ' + d.kg_antes + ' → ' + d.kg_nuevo + ' kg');
+    cerrarLoteModal();
+    cargar();  // recargar calendario con el cambio
+  } catch(e){ alert('Error de red: ' + e.message); }
 }
 
 function _renderAccionesLote(id, producto, fecha){
@@ -9065,6 +9098,68 @@ def reprogramar_proxima(pid):
     return jsonify({"ok": True, "id": pid, "producto": producto,
                     "fecha_antes": fecha_antes, "fecha_nueva": nueva_fecha,
                     "razon": razon or None})
+
+
+@bp.route("/api/plan/proximas/<int:pid>/cantidad", methods=["POST"])
+def actualizar_cantidad_proxima(pid):
+    """Cambia los kg a producir de un lote agendado.
+
+    Sebastián 15-may-2026: "cuando le doy click al producto quiero
+    poder cambiar los kilogramos a producir".
+
+    Body: {cantidad_kg: float > 0}
+
+    Inmutabilidad: si el lote ya inició o terminó → 409.
+    """
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+
+    body = request.get_json(silent=True) or {}
+    try:
+        nueva_kg = float(body.get("cantidad_kg") or 0)
+    except (ValueError, TypeError):
+        return jsonify({"error": "cantidad_kg inválida"}), 400
+    if not (0 < nueva_kg <= 1000):
+        return jsonify({"error": "cantidad_kg debe estar entre 0 y 1000"}), 400
+
+    conn = get_db()
+    cur = conn.cursor()
+    row = cur.execute(
+        """SELECT estado, producto, cantidad_kg, inicio_real_at, fin_real_at
+           FROM produccion_programada WHERE id = ?""",
+        (pid,),
+    ).fetchone()
+    if not row:
+        return jsonify({"error": "lote no encontrado"}), 404
+    estado_actual, producto, kg_antes, inicio_real, fin_real = row
+
+    if fin_real:
+        return jsonify({"error": "lote ya completado · no editable"}), 409
+    if inicio_real:
+        return jsonify({"error": "lote en curso · no editable"}), 409
+    if estado_actual not in ('pendiente', 'programado', 'esperando_recurso'):
+        return jsonify({
+            "error": f"solo editable en pendiente/programado · estado: {estado_actual}",
+        }), 409
+
+    cur.execute(
+        """UPDATE produccion_programada
+           SET cantidad_kg = ?,
+               observaciones = COALESCE(observaciones,'') ||
+                 ' · KG editado de ' || COALESCE(CAST(? AS TEXT),'?') ||
+                 ' a ' || CAST(? AS TEXT) || ' · ' || datetime('now','-5 hours')
+           WHERE id = ?""",
+        (nueva_kg, kg_antes, nueva_kg, pid),
+    )
+    audit_log(cur, usuario=user, accion="EDITAR_KG_PRODUCCION",
+              tabla="produccion_programada", registro_id=pid,
+              antes={"cantidad_kg": kg_antes, "producto": producto},
+              despues={"cantidad_kg": nueva_kg})
+    conn.commit()
+    return jsonify({"ok": True, "id": pid, "producto": producto,
+                    "kg_antes": kg_antes, "kg_nuevo": nueva_kg})
 
 
 @bp.route("/api/plan/proximas/<int:pid>/pausar", methods=["POST"])
