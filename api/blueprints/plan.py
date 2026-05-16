@@ -3536,14 +3536,83 @@ def regenerar_canonicos():
     # acabe el producto". Aplicamos regla 20d con velocidad REAL.
     necs_canon = _calcular_animus_dtc(c, ventana=60, cob_critico=20,
                                         cob_alerta=25, cob_vigilar=45)
-    vel_kg_dia_por_prod = {n["producto_nombre"]: (n.get("velocidad_kg_dia") or 0)
-                             for n in necs_canon}
+
     # Sebastián 15-may-2026: "me sugiere contorno de cafeína en mayo
     # cuando tiene stock para 86 días". El primer lote DEBE salir de la
-    # cobertura real del stock (regla 20d), no del histórico ni de
-    # "próximo lunes". Mapa de cobertura por producto.
-    cobertura_por_prod = {n["producto_nombre"]: n.get("dias_cobertura")
-                            for n in necs_canon}
+    # cobertura real del stock (regla 20d). PERO los nombres de producto
+    # difieren entre producto_canonico_config y _calcular_animus_dtc
+    # (orden de palabras, español/inglés, plurales). Match difuso por
+    # palabras-prefijo para que SIEMPRE se encuentre la cobertura.
+    import unicodedata as _ud
+    def _palabras(s):
+        t = _ud.normalize('NFD', str(s or '').upper())
+        t = ''.join(ch for ch in t if _ud.category(ch) != 'Mn')
+        t = t.replace('+', ' ').replace('%', ' ').replace('.', ' ')
+        return [w for w in t.split() if len(w) >= 3]
+
+    # Palabras genéricas · NO sirven para distinguir productos (casi
+    # todos las comparten) · se excluyen del scoring para evitar que
+    # "CREMA X" matchee "CREMA Y" solo por compartir "CREMA".
+    _GENERICAS = {'SUERO','CREMA','GEL','LIMPIADOR','EMULSION','ESENCIA',
+                  'CONTORNO','SERUM','FORMULA','NUEVA','NUEVO','DE','DEL',
+                  'CORPORAL','FACIAL','FACIALES','HIDRATANTE'}
+
+    def _buscar_nec(prod_config):
+        """Devuelve la entrada de necs_canon que matchea prod_config.
+        1) match exacto de conjunto de palabras · 2) match difuso por
+        prefijos de palabras SIGNIFICATIVAS (>=70%). Rechaza empates
+        para no asignar la cobertura de un producto equivocado."""
+        objetivo = _palabras(prod_config)
+        if not objetivo:
+            return None
+        obj_set = set(objetivo)
+        # palabras significativas (no genéricas) para el scoring
+        obj_sig = [w for w in objetivo if w not in _GENERICAS] or objetivo
+        candidatos = []  # (score, nec)
+        for n in necs_canon:
+            cand = _palabras(n.get("producto_nombre"))
+            if not cand:
+                continue
+            if obj_set == set(cand):
+                return n  # match exacto de palabras
+            cand_sig = [w for w in cand if w not in _GENERICAS] or cand
+            aciertos = 0
+            for ow in obj_sig:
+                for cw in cand_sig:
+                    p = min(len(ow), len(cw), 5)
+                    if p >= 4 and ow[:p] == cw[:p]:
+                        aciertos += 1
+                        break
+            # divisor = palabras significativas del objetivo (config)
+            score = aciertos / max(len(obj_sig), 1)
+            candidatos.append((score, n))
+        if not candidatos:
+            return None
+        candidatos.sort(key=lambda x: x[0], reverse=True)
+        mejor_score = candidatos[0][0]
+        if mejor_score < 0.7:
+            return None  # ningún candidato suficientemente parecido
+        # Rechazar empate · si 2+ candidatos casi igual de buenos, es
+        # ambiguo · mejor None que arriesgar el match equivocado.
+        empatados = [x for x in candidatos if x[0] >= mejor_score - 0.01]
+        if len(empatados) > 1:
+            return None
+        return candidatos[0][1]
+
+    # Pre-resolver cobertura + velocidad por cada producto de config
+    cob_por_cfg = {}
+    vel_por_cfg = {}
+    for cfg in configs:
+        prod_cfg = cfg[0]
+        nec = _buscar_nec(prod_cfg)
+        if nec:
+            cob_por_cfg[prod_cfg] = nec.get("dias_cobertura")
+            vel_por_cfg[prod_cfg] = nec.get("velocidad_kg_dia") or 0
+        else:
+            cob_por_cfg[prod_cfg] = None
+            vel_por_cfg[prod_cfg] = 0
+    cobertura_por_prod = cob_por_cfg
+    vel_kg_dia_por_prod = vel_por_cfg
 
     # 4) Generar lotes nuevos
     hoy = _hoy_colombia()
@@ -3560,18 +3629,37 @@ def regenerar_canonicos():
         return cob if cob is not None else 99999
     configs = sorted(configs, key=_cob_orden)
 
+    productos_saltados = []  # productos con datos inválidos · se reportan
     for cfg in configs:
-        prod, kg, ml, freq = cfg[0], float(cfg[1]), int(cfg[2] or 30), int(cfg[3])
+        # Parseo defensivo · un dato sucio NO debe abortar todo el plan
+        try:
+            prod = cfg[0]
+            kg = float(cfg[1])
+            ml = int(cfg[2] or 30)
+            freq = int(cfg[3])
+        except (ValueError, TypeError):
+            productos_saltados.append({
+                "producto": (cfg[0] if cfg else "?"), "razon": "datos inválidos"})
+            continue
+        # Rangos · kg/freq absurdos rompen el calendario (lote 99999kg
+        # monopoliza días, freq=1 genera 365 lotes de un solo producto)
+        if not (1 <= freq <= 365):
+            productos_saltados.append({
+                "producto": prod, "razon": f"frecuencia {freq} fuera de rango 1-365"})
+            continue
+        if not (0 < kg <= 1000):
+            productos_saltados.append({
+                "producto": prod, "razon": f"kg {kg} fuera de rango 0-1000"})
+            continue
         vel = vel_kg_dia_por_prod.get(prod, 0)
 
         # Primer lote · Sebastián 15-may-2026: SIEMPRE desde la cobertura
         # real del stock. Regla "producir 20 días antes de agotar":
         #   base = hoy + dias_cobertura - 20
-        # Un producto con 86d de stock → primer lote en ~66d. Uno con 11d
-        # → primer lote YA. El histórico solo se usa de respaldo si el
-        # producto no tiene cobertura calculable (sin ventas).
+        # Cobertura negativa (ya agotado) = más urgente → base = hoy.
+        # Sin cobertura (sin ventas) → histórico o próximo día hábil.
         cob = cobertura_por_prod.get(prod)
-        if cob is not None and cob >= 0:
+        if cob is not None:
             base = hoy + _td(days=max(int(cob) - 20, 0))
         elif prod in ultima_real:
             try:
@@ -3586,11 +3674,16 @@ def regenerar_canonicos():
         cur = _proxima_fecha_habil(c, base, prefer_mwf=False,
                                     lote_kg=kg, producto_nombre=prod)
         if cur is None:
-            cur = base
+            # Sin slot hábil en 400 días · saltar (NO forzar fecha cruda
+            # que podría caer sábado/festivo)
+            productos_saltados.append({
+                "producto": prod, "razon": "sin slot hábil disponible"})
+            continue
 
         lotes_de_este = []
         slot = 1
-        while cur and cur <= horizon_end:
+        # Tope 400 iteraciones · salvaguarda anti loop infinito
+        while cur and cur <= horizon_end and slot <= 400:
             c.execute(
                 f"""INSERT INTO produccion_programada
                     (producto, fecha_programada, cantidad_kg, estado, origen,
@@ -3624,8 +3717,10 @@ def regenerar_canonicos():
     return jsonify({
         "ok": True,
         "n_productos_config": len(configs),
+        "n_productos_generados": len(detalles_por_producto),
         "n_lotes_cancelados_viejos": n_cancelados,
         "n_lotes_generados_nuevos": n_generados,
+        "productos_saltados": productos_saltados,
         "detalle_por_producto": {
             p: {"n_lotes": len(fechas), "primer_lote": fechas[0] if fechas else None,
                 "ultimo_lote": fechas[-1] if fechas else None}
@@ -6541,8 +6636,8 @@ async function abrirSugerenciaModal(producto, fecha, kg, motivo){
     if (velKgDia > 0.001 && kg > 0){
       const diasDura = Math.round(kg / velKgDia);
       const fProx = new Date(fecha + 'T12:00:00');
-      fProx.setDate(fProx.getDate() + diasDura - 20);
-      html += '<div class="banner-inline ok">🔁 Este lote durará ~' + diasDura + ' días · próxima producción sugerida: <strong>' + fProx.toISOString().slice(0, 10) + '</strong></div>';
+      fProx.setDate(fProx.getDate() + Math.max(diasDura - 20, 1));
+      html += '<div class="banner-inline ok">🔁 Este lote durará ~' + diasDura + ' días · próxima producción sugerida: <strong>' + fechaLocalStr(fProx) + '</strong></div>';
     }
   }
 
@@ -6723,7 +6818,19 @@ async function abrirLoteModal(id, producto, fecha, kg){
   // fecha óptima producción · agotamiento - 20d
   let diagFecha = null;
   let diagFechaTxt = '';
-  if (diasCob != null && diasCob > 0){
+  // Sebastián 15-may-2026: el diagnóstico TARDE/TEMPRANO solo tiene
+  // sentido para el PRIMER lote futuro de cada producto. Los lotes
+  // siguientes son la serie planificada (cada Xd) · compararlos contra
+  // "hoy + cobertura" siempre los marca TARDE falsamente.
+  const _lotesProd = (PLAN_DATA.agendadas || [])
+    .filter(a => a.producto === producto)
+    .map(a => (a.fecha_programada || '').slice(0, 10))
+    .filter(Boolean).sort();
+  const _esPrimerLote = _lotesProd.length === 0 || fecha <= _lotesProd[0];
+  if (!_esPrimerLote){
+    diagFecha = 'serie';
+    diagFechaTxt = '📋 Lote de la serie planificada · el diagnóstico de timing (TARDE/a tiempo) aplica solo al PRIMER lote del producto, no a los siguientes';
+  } else if (diasCob != null && diasCob > 0){
     const hoy = new Date();
     const fAgot = new Date(hoy); fAgot.setDate(fAgot.getDate() + diasCob);
     const fOpt = new Date(fAgot); fOpt.setDate(fOpt.getDate() - 20);
@@ -6744,10 +6851,10 @@ async function abrirLoteModal(id, producto, fecha, kg){
   let proximaTxt = '';
   if (velKgDia > 0.001 && kg > 0){
     const diasDura = kg / velKgDia;
-    const diasHastaProx = diasDura - 20;  // producir 20d antes de agotar el nuevo lote
+    const diasHastaProx = Math.max(Math.round(diasDura) - 20, 1);  // 20d antes de agotar · mín 1
     const fProx = new Date(fecha + 'T12:00:00');
-    fProx.setDate(fProx.getDate() + Math.round(diasHastaProx));
-    proximaSugerida = fProx.toISOString().slice(0, 10);
+    fProx.setDate(fProx.getDate() + diasHastaProx);
+    proximaSugerida = fechaLocalStr(fProx);
     proximaTxt = 'Este lote de ' + kg + 'kg durará ~' + Math.round(diasDura) + ' días al ritmo actual · próxima producción sugerida: <strong>' + proximaSugerida + '</strong>';
   }
 
@@ -6765,7 +6872,7 @@ async function abrirLoteModal(id, producto, fecha, kg){
 
   // Sección 2: Diagnóstico fecha programada
   if (diagFechaTxt){
-    const cls = diagFecha === 'ok' ? 'ok' : (diagFecha === 'tarde' ? 'danger' : 'info');
+    const cls = (diagFecha === 'ok' || diagFecha === 'serie') ? 'ok' : (diagFecha === 'tarde' ? 'danger' : 'info');
     html += '<div class="banner-inline ' + cls + '"><strong>Fecha programada: ' + fecha + '</strong><br>' + diagFechaTxt + '</div>';
   }
 
