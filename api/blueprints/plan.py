@@ -3602,13 +3602,16 @@ def regenerar_canonicos():
     # (igual que generar-plan-perfecto). NUNCA toca eos_plan ni eos_retroactivo
     # ni lotes con fin_real_at o inicio_real_at.
     placeholders = ",".join(["?"] * len(productos_a_regenerar))
+    # Sebastián 16-may-2026: incluir 'propuesto' en los estados a cancelar.
+    # Un lote 'propuesto' (sin confirmar, sin iniciar) que sobreviviera a
+    # la regeneración quedaría duplicado con el nuevo lote generado.
     n_cancelados = c.execute(
         f"""UPDATE produccion_programada
             SET estado = 'cancelado',
                 observaciones = COALESCE(observaciones,'') ||
                   ' · CANCELADO_REGEN_CANON_' || {SQLITE_NOW_COL}
             WHERE origen IN ('eos_canonico','calendar','manual')
-              AND estado IN ('pendiente','programado','esperando_recurso')
+              AND estado IN ('pendiente','programado','esperando_recurso','propuesto')
               AND fin_real_at IS NULL
               AND inicio_real_at IS NULL
               AND producto IN ({placeholders})""",
@@ -6350,7 +6353,17 @@ async function cargar(){
     // arranca meses adelante. Auto-saltar al primer mes con lotes.
     MES_OFFSET = _primerMesConLotesOffset();
     render();
-  } catch(e){ alert('Error: ' + e.message); }
+  } catch(e){
+    // Sebastián 16-may-2026: error visible en el grid + botón reintentar
+    // (antes solo alert · el grid quedaba en "Cargando…" para siempre).
+    const _w = document.getElementById('cal-grid-wrap');
+    if (_w){
+      _w.innerHTML = '<div style="padding:30px;text-align:center;color:#dc2626">' +
+        '<div style="font-weight:700;margin-bottom:8px">⚠ No se pudo cargar el calendario</div>' +
+        '<div style="font-size:12px;color:#64748b;margin-bottom:12px">' + escapeHtml(e.message) + '</div>' +
+        '<button onclick="cargar()" class="secondary">↻ Reintentar</button></div>';
+    }
+  }
 }
 
 // Sebastián 15-may-2026: devuelve el MES_OFFSET del primer mes que
@@ -6429,10 +6442,14 @@ function render(){
         Object.keys(porProd).length + ' productos del plan</div>';
       html += '<table style="width:100%;font-size:11px;margin-bottom:10px">' +
         '<tr style="color:#64748b;text-align:left"><th>Producto</th><th>Próximo lote</th><th>Lotes/año</th></tr>';
+      // Sebastián 16-may-2026: "próximo lote" = primera fecha de HOY en
+      // adelante (antes mostraba fechas pasadas como si fueran próximas).
+      const _hoyP = fechaLocalStr(new Date());
       Object.keys(porProd).sort().forEach(p => {
         const fechas = porProd[p].filter(Boolean).sort();
+        const prox = fechas.find(f => f >= _hoyP) || fechas[fechas.length - 1] || '—';
         html += '<tr style="border-top:1px solid #f1f5f9"><td>' + escapeHtml(p) +
-          '</td><td>' + escapeHtml(fechas[0] || '—') +
+          '</td><td>' + escapeHtml(prox) +
           '</td><td style="text-align:right">' + porProd[p].length + '</td></tr>';
       });
       html += '</table>';
