@@ -237,6 +237,8 @@ def rrhh_nomina_guardar():
     for r in registros:
         c.execute("INSERT OR REPLACE INTO nomina_registros (periodo,empleado_id,salario_base,dias_trabajados,horas_extras,valor_horas_extras,subsidio_transporte,bonificaciones,descuento_salud,descuento_pension,otros_descuentos,salario_neto,estado) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
                  (periodo,r["id"],r["salario_base"],r.get("dias_trabajados",30),r.get("horas_extras",0),r.get("valor_horas_extras",0),r.get("aux_transporte",0),r.get("bonificaciones",0),r["desc_salud"],r["desc_pension"],r.get("otros_descuentos",0),r["neto"],"Generada"))
+    audit_log(c, usuario=u, accion='GUARDAR_NOMINA', tabla='nomina_registros',
+              registro_id=periodo, despues={'registros': len(registros)})
     conn.commit()
     return jsonify({"ok":True,"periodo":periodo,"registros":len(registros)})
 
@@ -248,6 +250,10 @@ def rrhh_ausencias():
         d=request.get_json(silent=True) or {}
         c.execute("INSERT INTO ausencias (empleado_id,tipo,fecha_inicio,fecha_fin,dias,estado,observaciones) VALUES (?,?,?,?,?,'Pendiente',?)",
                  (int(d.get("empleado_id",0)),d.get("tipo","Vacaciones"),d.get("fecha_inicio",""),d.get("fecha_fin",""),int(d.get("dias",0)),d.get("observaciones","")))
+        audit_log(c, usuario=u, accion='CREAR_AUSENCIA', tabla='ausencias',
+                  registro_id=c.lastrowid,
+                  despues={'empleado_id': int(d.get("empleado_id",0)),
+                           'tipo': d.get("tipo"), 'dias': int(d.get("dias",0))})
         conn.commit(); return jsonify({"ok":True}),201
     c.execute("SELECT a.id,e.nombre||' '||e.apellido,a.tipo,a.fecha_inicio,a.fecha_fin,a.dias,a.estado,a.observaciones,a.aprobado_por FROM ausencias a JOIN empleados e ON a.empleado_id=e.id ORDER BY a.creado_en DESC LIMIT 200")
     rows=c.fetchall()
@@ -259,6 +265,8 @@ def rrhh_ausencia_upd(aid):
     d=request.get_json(silent=True) or {}
     conn = get_db(); c = conn.cursor()
     c.execute("UPDATE ausencias SET estado=?,aprobado_por=? WHERE id=?", (d.get("estado",""),session.get("compras_user",""),aid))
+    audit_log(c, usuario=u, accion='ACTUALIZAR_AUSENCIA', tabla='ausencias',
+              registro_id=aid, despues={'estado': d.get("estado","")})
     conn.commit(); return jsonify({"ok":True})
 
 @bp.route("/api/rrhh/capacitaciones", methods=["GET","POST"])
@@ -674,6 +682,9 @@ def rrhh_seed_bancos():
         if c.rowcount > 0:
             actualizados += 1
             detalles.append(ced)
+    audit_log(c, usuario=u, accion='SEED_BANCOS_EMPLEADOS', tabla='empleados',
+              registro_id='*', despues={'actualizados': actualizados,
+                                         'cedulas': detalles})
     conn.commit()
     return jsonify({"ok": True, "actualizados": actualizados, "cedulas": detalles})
 
