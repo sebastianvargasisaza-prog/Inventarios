@@ -3055,6 +3055,11 @@ def _watcher_clear_email_marker():
 
 def _enviar_mail_watcher(payload):
     """Manda mail a EMAIL_GERENCIA con los críticos detectados."""
+    # ── Correo del watcher DESACTIVADO · Sebastián 17-may-2026 ─────────────
+    # "elimina que me lleguen esos mensajes". El watcher SIGUE corriendo:
+    # ejecuta los chequeos y el auto-healing de la BD igual. El estado se
+    # ve en /admin. Solo se cortó el correo. Reactivar = quitar este return.
+    return
     try:
         from notificaciones import SistemaNotificaciones
         import os as _os
