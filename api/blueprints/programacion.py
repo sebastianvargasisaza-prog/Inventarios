@@ -9872,6 +9872,11 @@ def _notificar_tarea_operativa(tarea_id):
                     )
             except Exception as _e:
                 logger.warning('push_notif tarea_operativa fallo: %s', _e)
+            # ── Email DESACTIVADO · Sebastián 16-may-2026 ──────────────────
+            # El email por CADA tarea operativa generaba cientos de correos
+            # al día. La notificación in-app (campana · push_notif arriba) ya
+            # avisa al asignado. Para reactivar el email: quitar este return.
+            return
             emails = _resolver_emails_asignados(asignado_a)
             if not emails:
                 return  # nadie con email configurado, no hay nada que enviar

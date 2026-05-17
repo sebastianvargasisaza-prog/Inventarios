@@ -48,6 +48,11 @@ def _enviar_email_async(asunto, body_html, destinatarios):
 
 def _email_tarea_asignada(tarea_id, usuarios, rol, asignador):
     """Notifica por email a una lista de usuarios que les fue asignada una tarea."""
+    # ── Email DESACTIVADO · Sebastián 16-may-2026 ──────────────────────────
+    # El email por cada tarea RACI (uno por cada Responsable y cada Aprobador)
+    # inundaba el correo. La campana in-app ya notifica. Quitar este return
+    # para reactivar.
+    return
     if not usuarios:
         return
     try:

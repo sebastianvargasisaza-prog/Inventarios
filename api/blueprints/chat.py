@@ -799,7 +799,10 @@ def chat_messages(thread_id):
         # Email solo a los mencionados (no a todos los miembros).
         # Sebastian (29-abr-2026): asi en grupos grandes no se spamea
         # cuando alguien escribe algo no relevante para todos.
-        if valid_mentions:
+        # Email de @menciones DESACTIVADO · Sebastián 16-may-2026 · la campana
+        # in-app (push_notif arriba, importante=True) ya avisa la mención · el
+        # email duplicaba. Reactivar = volver a `if valid_mentions:`.
+        if False and valid_mentions:
             try:
                 import sys, os, threading as _th
                 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -1027,7 +1030,9 @@ def chat_asignar_tarea(thread_id):
             email = USER_EMAILS.get(asig_clean, '')
             if email:
                 destinos.append(email)
-        if destinos:
+        # Email de tarea-desde-chat DESACTIVADO · Sebastián 16-may-2026 · la
+        # campana in-app ya avisa la tarea asignada · reactivar = `if destinos:`.
+        if False and destinos:
             asunto = f"📋 Nueva tarea asignada: {titulo[:80]}"
             body = (
                 f"<h2>Nueva tarea desde el chat EOS</h2>"
