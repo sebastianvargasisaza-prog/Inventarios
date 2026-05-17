@@ -6704,6 +6704,7 @@ def producciones_faltantes():
     producciones_out = []
     consumo_mp_agregado = {}   # codigo_mp -> g_total
     consumo_mee_agregado = {}  # mee_codigo -> unidades_total
+    _claves_vistas = set()     # anti-clon · ver _clave_clon abajo
     hoy_iso = hoy.isoformat()
     for row in prod_rows:
         # Sebastian 5-may-2026: unpack soporta ambos esquemas (con/sin areas_planta)
@@ -6738,8 +6739,18 @@ def producciones_faltantes():
         es_en_proceso = (bool(inicio_real_at) or bool(desc_at)) and not es_realizada
         es_pasada = (fecha or '') < hoy_iso
         es_atrasada = es_pasada and not es_realizada and not es_en_proceso
-        # Solo sumar al consumo si NO se ha descontado y aún hay que hacerla
-        cuenta_para_faltantes = not bool(desc_at) and not es_realizada
+        # Dedup anti-clon · si el sync de Calendar insertó un duplicado
+        # EXACTO (mismo producto, fecha, lotes y kg), solo el primero cuenta
+        # para el agregado de faltantes · si no, se pediría comprar el doble.
+        # Clave EXACTA (no la heurística de ventana de 7d, que daría falsos
+        # positivos): el scheduling real no repite lo idéntico el mismo día.
+        _clave_clon = (producto_norm, (fecha or '')[:10], lotes, round(cant_kg_total, 3))
+        es_clon = _clave_clon in _claves_vistas
+        if not es_clon:
+            _claves_vistas.add(_clave_clon)
+        # Solo sumar al consumo si NO se ha descontado, aún hay que hacerla
+        # y NO es un clon exacto ya contado.
+        cuenta_para_faltantes = not bool(desc_at) and not es_realizada and not es_clon
 
         if es_realizada:
             estado_display = 'realizada'
@@ -6812,6 +6823,7 @@ def producciones_faltantes():
             'en_proceso': es_en_proceso,
             'atrasada': es_atrasada,
             'inventario_descontado_at': desc_at or None,
+            'es_clon_ignorado': es_clon,
         })
 
     # 10. Calcular faltantes agregados

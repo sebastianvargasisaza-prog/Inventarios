@@ -163,7 +163,12 @@ def crear_pedido_b2b():
         conn.commit()
     except Exception as _e:
         # La integración es best-effort · si falla, el pedido igual queda
-        # registrado y se puede agendar a mano.
+        # registrado y se puede agendar a mano. rollback() descarta los
+        # writes parciales de la integración (el pedido ya está committeado).
+        try:
+            conn.rollback()
+        except Exception:
+            pass
         integracion = {"error": str(_e)[:200]}
 
     return jsonify({"ok": True, "id": pid, "kg_b2b": kg_b2b,
@@ -249,6 +254,68 @@ def _integrar_pedido_b2b_al_plan(cur, pedido_id, producto, kg_b2b,
             "fecha": f_real.isoformat(), "kg_b2b": kg_b2b}
 
 
+def _revertir_pedido_b2b_del_plan(cur, pedido_id, user):
+    """Revierte la integración de un pedido B2B al plan cuando se cancela.
+
+    Espejo de _integrar_pedido_b2b_al_plan:
+    - Lote dedicado (origen='eos_b2b'): se cancela (estado='cancelado').
+    - Lote canónico con kg sumados: se restan los kg que aportó el pedido,
+      parseados de la observación '+Xkg B2B ... (pedido #N)'.
+    Lotes ya iniciados o terminados NO se tocan · la producción ya ocurrió.
+    """
+    import re as _re
+    resultado = {"lotes_revertidos": []}
+    marca_sumado = f"(pedido #{pedido_id})"
+    marca_dedicado = f"· #{pedido_id} ·"
+
+    # 1. Lote dedicado eos_b2b → cancelar
+    for (lid,) in cur.execute(
+        """SELECT id FROM produccion_programada
+           WHERE origen = 'eos_b2b'
+             AND observaciones LIKE ?
+             AND inicio_real_at IS NULL AND fin_real_at IS NULL
+             AND estado NOT IN ('cancelado','completado')""",
+        (f"%{marca_dedicado}%",),
+    ).fetchall():
+        cur.execute(
+            """UPDATE produccion_programada
+               SET estado = 'cancelado',
+                   observaciones = COALESCE(observaciones,'') ||
+                       ' · CANCELADO (pedido B2B #' || ? || ' cancelado)'
+               WHERE id = ?""",
+            (pedido_id, lid),
+        )
+        resultado["lotes_revertidos"].append(
+            {"lote_id": lid, "modo": "lote_dedicado_cancelado"})
+
+    # 2. Lote canónico con kg B2B sumados → restar esos kg
+    for lid, lkg, lobs in cur.execute(
+        """SELECT id, COALESCE(cantidad_kg,0), COALESCE(observaciones,'')
+           FROM produccion_programada
+           WHERE observaciones LIKE ?
+             AND inicio_real_at IS NULL AND fin_real_at IS NULL
+             AND estado NOT IN ('cancelado','completado')""",
+        (f"%{marca_sumado}%",),
+    ).fetchall():
+        m = _re.search(r'\+\s*([\d.]+)kg B2B[^(]*\(pedido #' + str(pedido_id) + r'\)', lobs)
+        if not m:
+            continue
+        kg_quita = float(m.group(1))
+        nuevo_kg = round(max(0.0, float(lkg) - kg_quita), 2)
+        cur.execute(
+            """UPDATE produccion_programada
+               SET cantidad_kg = ?,
+                   observaciones = COALESCE(observaciones,'') ||
+                       ' · −' || ? || 'kg (pedido B2B #' || ? || ' cancelado)'
+               WHERE id = ?""",
+            (nuevo_kg, kg_quita, pedido_id, lid),
+        )
+        resultado["lotes_revertidos"].append(
+            {"lote_id": lid, "modo": "kg_restados",
+             "kg_restados": kg_quita, "kg_nuevo": nuevo_kg})
+    return resultado
+
+
 @bp.route("/api/pedidos-b2b/<int:pid>", methods=["PATCH"])
 def actualizar_pedido_b2b(pid):
     user, err = _require_admin_or_compras()
@@ -294,12 +361,16 @@ def actualizar_pedido_b2b(pid):
 
     params.append(pid)
     cur.execute(f"UPDATE pedidos_b2b SET {', '.join(fields)} WHERE id = ?", params)
-    conn.commit()
+    # Si se cancela vía PATCH, revertir la integración al plan igual que el DELETE.
+    reversion = None
+    if body.get("estado") == "cancelado" and row[3] not in ('despachado', 'cancelado'):
+        reversion = _revertir_pedido_b2b_del_plan(cur, pid, user)
     audit_log(cur, usuario=user, accion="ACTUALIZAR_PEDIDO_B2B",
               tabla="pedidos_b2b", registro_id=pid,
               antes={"cliente_id": row[0], "estado": row[3]},
               despues=body)
-    return jsonify({"ok": True, "id": pid})
+    conn.commit()
+    return jsonify({"ok": True, "id": pid, "reversion_plan": reversion})
 
 
 @bp.route("/api/pedidos-b2b/<int:pid>", methods=["DELETE"])
@@ -320,11 +391,16 @@ def cancelar_pedido_b2b(pid):
         return jsonify({"error": f"pedido ya está en estado terminal: {row[0]}"}), 409
 
     cur.execute("UPDATE pedidos_b2b SET estado = 'cancelado' WHERE id = ?", (pid,))
-    conn.commit()
+    # Revertir la integración al plan · sin esto el lote queda agendado
+    # para un pedido que ya no existe → sobreproducción.
+    reversion = _revertir_pedido_b2b_del_plan(cur, pid, user)
     audit_log(cur, usuario=user, accion="CANCELAR_PEDIDO_B2B",
               tabla="pedidos_b2b", registro_id=pid,
-              antes={"estado": row[0]}, despues={"estado": "cancelado"})
-    return jsonify({"ok": True, "id": pid, "estado": "cancelado"})
+              antes={"estado": row[0]},
+              despues={"estado": "cancelado", "reversion_plan": reversion})
+    conn.commit()
+    return jsonify({"ok": True, "id": pid, "estado": "cancelado",
+                    "reversion_plan": reversion})
 
 
 # ─── Consolidador de necesidades ───────────────────────────────────────────
