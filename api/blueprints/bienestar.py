@@ -725,10 +725,12 @@ def publico_empleado_reporte():
     emp = c.execute(
         "SELECT id, codigo, nombre, apellido, cargo, area, estado FROM empleados WHERE cedula=?",
         (cedula,)).fetchone()
-    if not emp:
-        return jsonify({'error': 'Cédula no encontrada en empleados activos. Contacta a RH.'}), 404
-    if emp['estado'] != 'Activo':
-        return jsonify({'error': f'Empleado en estado {emp["estado"]}. Contacta a RH.'}), 403
+    # Respuesta UNIFORME · no revelar si la cédula existe ni el estado del
+    # empleado · endpoint público sin sesión → distinguir 404 de 403 permite
+    # enumerar cédulas válidas de empleados y su estado laboral (PII).
+    if not emp or emp['estado'] != 'Activo':
+        return jsonify({'error': 'No pudimos registrar el reporte con esos datos. '
+                                 'Si el problema persiste, contacta a RH directamente.'}), 400
 
     # Rate limit
     from flask import request as _req
