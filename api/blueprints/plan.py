@@ -6330,9 +6330,11 @@ async function cargar(){
         'productos=' + [..._set].join('|'));
     } catch(e){}
 
-    // Festivos colombianos del rango
+    // Festivos colombianos del rango · Sebastián 16-may-2026: pedir
+    // year-1, year y year+1 · cubre bordes de año y el plan a 365d sin
+    // depender de la zona horaria exacta del navegador.
     const year = new Date().getFullYear();
-    const rFest = await fetch('/api/plan/festivos?year=' + year + ',' + (year + 1));
+    const rFest = await fetch('/api/plan/festivos?year=' + (year - 1) + ',' + year + ',' + (year + 1));
     const dFest = await rFest.json();
     const festivosSet = new Set();
     Object.values(dFest.festivos_por_year || {}).forEach(arr => arr.forEach(f => festivosSet.add(f.fecha)));
@@ -6355,12 +6357,17 @@ async function cargar(){
 // tiene lotes agendados. Si el mes actual ya tiene lotes → 0.
 function _primerMesConLotesOffset(){
   if (!PLAN_DATA || !PLAN_DATA.agendadas || !PLAN_DATA.agendadas.length) return 0;
+  // Sebastián 16-may-2026: tomar la fecha más temprana SOLO entre lotes
+  // de hoy en adelante. Antes tomaba el mínimo absoluto · si había un
+  // lote viejo sin completar (el listado trae desde hoy-7d), el offset
+  // salía negativo → 0 → mes actual vacío → volvía el "no sale nada".
+  const hoyStr = fechaLocalStr(new Date());
   let minFecha = null;
   PLAN_DATA.agendadas.forEach(a => {
     const f = (a.fecha_programada || '').slice(0, 10);
-    if (f && (!minFecha || f < minFecha)) minFecha = f;
+    if (f && f >= hoyStr && (!minFecha || f < minFecha)) minFecha = f;
   });
-  if (!minFecha) return 0;
+  if (!minFecha) return 0;  // todo es pasado · quedarse en mes actual
   const partes = minFecha.split('-');
   const y = parseInt(partes[0]), m = parseInt(partes[1]);
   if (isNaN(y) || isNaN(m)) return 0;
@@ -6564,7 +6571,11 @@ function render(){
     const _pintados = document.querySelectorAll('#cal-grid-wrap .lote');
     const _prodPintados = new Set();
     _pintados.forEach(el => _prodPintados.add(el.dataset.prod));
-    const _fechasConLotes = Object.keys(lotesPorFecha).filter(f => lotesPorFecha[f].length > 0);
+    // Sebastián 16-may-2026: contar días con lote SOLO del mes navegado
+    // (antes contaba lotesPorFecha global · mezclaba todos los meses).
+    const _mesRef = ref.getFullYear() + '-' + String(ref.getMonth()+1).padStart(2,'0');
+    const _fechasConLotes = Object.keys(lotesPorFecha).filter(
+      f => f.slice(0,7) === _mesRef && lotesPorFecha[f].length > 0);
     const ag = PLAN_DATA.agendadas || [];
     const _prodBackend = new Set(); ag.forEach(a => _prodBackend.add(a.producto));
     const mesMostrado = MESES[ref.getMonth()] + ' ' + ref.getFullYear();
@@ -6572,7 +6583,7 @@ function render(){
       ' · Backend devolvió <strong>' + ag.length + ' lotes</strong> en <strong>' + _prodBackend.size + ' productos</strong>' +
       ' · Pintados en grid: <strong>' + _pintados.length + ' div.lote</strong>' +
       ' · ' + _prodPintados.size + ' productos únicos visibles' +
-      ' · ' + _fechasConLotes.length + ' días con lote en mes navegado';
+      ' · ' + _fechasConLotes.length + ' días con lote en ' + mesMostrado;
     if (ag.length > 0 && _pintados.length === 0){
       // El mes navegado no tiene lotes · ver en qué meses SÍ hay
       const _meses = {};
@@ -9241,6 +9252,32 @@ def actualizar_cantidad_proxima(pid):
         return jsonify({
             "error": f"solo editable en pendiente/programado · estado: {estado_actual}",
         }), 409
+
+    # Sebastián 16-may-2026: si la nueva cantidad convierte el lote en
+    # GRANDE (>50kg), ese día debe quedar SOLO. Si el día ya tiene otro
+    # lote, avisar · salvo que se pase forzar=true.
+    if nueva_kg > LOTE_GRANDE_KG and not body.get("forzar"):
+        fila_fecha = cur.execute(
+            "SELECT fecha_programada FROM produccion_programada WHERE id = ?",
+            (pid,),
+        ).fetchone()
+        if fila_fecha and fila_fecha[0]:
+            otros = cur.execute(
+                """SELECT COUNT(*) FROM produccion_programada
+                   WHERE date(fecha_programada) = date(?)
+                     AND id != ?
+                     AND estado IN ('pendiente','programado','en_curso','esperando_recurso')""",
+                (fila_fecha[0], pid),
+            ).fetchone()[0]
+            if otros and otros > 0:
+                return jsonify({
+                    "error": (f"Con {nueva_kg:.0f}kg este lote pasa a ser GRANDE "
+                              f"(>{LOTE_GRANDE_KG}kg) y necesita el día solo · "
+                              f"ese día ya tiene {otros} producción(es). Movelo a "
+                              f"otro día o reintentá marcando forzar."),
+                    "lote_grande_conflicto": True,
+                    "otros_ese_dia": otros,
+                }), 409
 
     cur.execute(
         """UPDATE produccion_programada
