@@ -147,7 +147,12 @@ def health_debug():
     Sebastian 4-may-2026: tablas mostraban 'err' generico en /api/health,
     sin saber por que. Este endpoint retorna el str() de la excepcion
     para diagnosticar issues post-deploy.
+
+    Admin-only · expone esquema, conteos de tablas y movimientos recientes.
     """
+    from config import ADMIN_USERS
+    if session.get('compras_user', '') not in ADMIN_USERS:
+        return jsonify({'error': 'Solo administradores'}), 403
     import sqlite3 as _sq, os as _os, traceback as _tb
     db_exists = _os.path.exists(DB_PATH)
     out = {'db_exists': db_exists, 'db_path': DB_PATH, 'tables': {}}

@@ -3503,6 +3503,7 @@ async function loadAlertas(){
   try{
     var r=await fetch('/api/alertas'), d=await r.json();
     var tb=document.querySelector('#alertas-table tbody');
+    if(!tb) return;
     if(d.alertas&&d.alertas.length){
       tb.innerHTML=d.alertas.map(function(a){return '<tr><td>'+a.material_nombre+'</td><td>'+a.stock_actual+'</td><td>'+a.stock_minimo+'</td><td>'+a.estado+'</td><td style="font-size:0.85em;">'+a.fecha+'</td></tr>';}).join('');
     }else{tb.innerHTML='<tr><td colspan="5" style="text-align:center;color:#999;">Sin alertas</td></tr>';}
@@ -4746,12 +4747,10 @@ function calcDiff(i, stockSis, precioRef){
   var fis = parseFloat(document.getElementById('cnt-fis-'+i).value);
   var diffEl = document.getElementById('cnt-diff-'+i);
   var pctEl = document.getElementById('cnt-pct-'+i);
-  var valEl = document.getElementById('cnt-val-'+i);
   var row = document.getElementById('cnt-row-'+i);
-  if(isNaN(fis)){diffEl.textContent='--';pctEl.textContent='--';valEl.textContent='--';return;}
+  if(isNaN(fis)){diffEl.textContent='--';pctEl.textContent='--';return;}
   var diff = fis - stockSis;
   var pct = stockSis > 0 ? Math.abs(diff/stockSis)*100 : 0;
-  var valDiff = Math.abs(diff/1000) * precioRef;
   diffEl.textContent = (diff >= 0 ? '+' : '') + diff.toLocaleString('es-CO',{maximumFractionDigits:1});
   diffEl.style.color = diff === 0 ? '#27ae60' : diff > 0 ? '#2980b9' : '#e74c3c';
   pctEl.textContent = pct.toFixed(1) + '%';
@@ -4763,7 +4762,6 @@ function calcDiff(i, stockSis, precioRef){
     pctEl.style.color = pct > 2 ? '#e67e22' : '#27ae60';
     row.style.background = '';
   }
-  valEl.textContent = valDiff > 0 ? '$'+valDiff.toLocaleString('es-CO',{maximumFractionDigits:0}) : '--';
 }
 
 async function guardarConteo(){

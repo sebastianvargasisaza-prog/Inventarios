@@ -240,7 +240,9 @@ def register_hooks(app):
         if not request.path.startswith('/api/'):
             return  # Rutas HTML se manejan individualmente
         PUBLIC_API = {'/api/login', '/api/logout', '/api/health',
-                      '/api/health/debug',
+                      # /api/health/debug ya NO es público · exponía esquema,
+                      # conteos de tablas y últimos movimientos sin login.
+                      # Ahora exige sesión + el handler exige admin.
                       '/api/publico/empleado-reporte',
                       # Sebastián 15-may-2026: emergency-restore debe ser
                       # alcanzable SIN login · si la BD está malformed nadie

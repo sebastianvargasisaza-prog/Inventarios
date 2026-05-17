@@ -3488,6 +3488,14 @@ def actualizar_estado_solicitud(numero):
         # (gerencia ya aprobo la solicitud en su tab — no necesita doble autorizacion)
         _FAST_TRACK = ('Influencer/Marketing Digital', 'Cuenta de Cobro')
         estado_oc = 'Autorizada' if categoria_oc in _FAST_TRACK else 'Revisada'
+        # Fast-track Influencer/CC va directo a Autorizada · pero respetar el
+        # límite de aprobación del usuario · si el monto lo excede, NO se
+        # autoriza directo · queda 'Revisada' para que un admin la autorice
+        # (autorizar_oc vuelve a aplicar _check_monto_limit).
+        if estado_oc == 'Autorizada' and valor_oc and valor_oc > 0:
+            _err_lim, _ = _check_monto_limit(session.get('compras_user', ''), valor_oc)
+            if _err_lim:
+                estado_oc = 'Revisada'
         cur.execute(
             "INSERT INTO ordenes_compra "
             "(numero_oc, fecha, estado, proveedor, observaciones, creado_por, valor_total, fecha_entrega_est, categoria) "
@@ -3673,7 +3681,12 @@ def recibir_oc(numero_oc):
                     "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                     (codigo, nombre, cant_recibida, 'Entrada', fecha,
                      f'Recepcion OC {numero_oc}' + (f' | {notas_item}' if notas_item else ''),
-                     prov_nombre, operador, lote_num or None, fv or None, 'CUARENTENA', numero_oc))
+                     prov_nombre, operador,
+                     # Lote sintético si el receptor no ingresó uno · un
+                     # lote NULL crea stock huérfano que el dashboard de
+                     # vencimientos y estados de lote no contabiliza.
+                     lote_num or f'OC-{numero_oc}-{_idx+1}',
+                     fv or None, 'CUARENTENA', numero_oc))
             ingresos += 1
         # Actualizar item OC · audit zero-error 2-may-2026: usar += en
         # cantidad_recibida_g para soportar recepciones múltiples parciales
