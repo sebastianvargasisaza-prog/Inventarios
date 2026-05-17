@@ -2976,19 +2976,25 @@ def job_watcher_health(app):
                 payload, status_code = resp.get_json(), resp.status_code
             crit_count = (payload or {}).get('critical_count', 0)
             if crit_count > 0:
-                # Hay críticos · alertar
-                _enviar_mail_watcher(payload)
+                # Dedup · solo mandar mail si el set de críticos CAMBIÓ o
+                # pasaron >24h. Antes mandaba el MISMO mail cada hora.
+                failing = [c['name'] for c in payload.get('checks', [])
+                           if c.get('status') == 'critical']
+                mail_sent = False
+                if _watcher_should_email(failing):
+                    _enviar_mail_watcher(payload)
+                    mail_sent = True
                 return True, {
                     'status': payload.get('status'),
                     'critical_count': crit_count,
                     'warn_count': payload.get('warn_count', 0),
-                    'mail_sent': True,
+                    'mail_sent': mail_sent,
                     'autoheal': autoheal,
-                    'failing_checks': [
-                        c['name'] for c in payload.get('checks', [])
-                        if c.get('status') == 'critical'
-                    ],
+                    'failing_checks': failing,
                 }, 0
+            # Sin críticos · limpiar el marcador para que un crítico futuro
+            # mande mail de inmediato.
+            _watcher_clear_email_marker()
             return True, {
                 'status': payload.get('status', 'unknown'),
                 'critical_count': 0,
@@ -2999,6 +3005,52 @@ def job_watcher_health(app):
         except Exception as e:
             log.exception('watcher_health fallo: %s', e)
             return False, {'error': str(e)[:300]}, 0
+
+
+def _watcher_should_email(crit_names):
+    """Dedup del mail del watcher. Devuelve True solo si el set de checks
+    críticos cambió respecto al último mail enviado, o si pasaron >24h.
+
+    Antes el watcher mandaba el MISMO mail cada hora · un crítico persistente
+    (ej. last_calendar_sync) generaba ~24 correos/día. Ahora: mail al aparecer
+    un crítico nuevo, y a lo sumo un recordatorio diario si persiste."""
+    import time as _t
+    from config import DB_PATH
+    marker = DB_PATH + '.watcher-crit'
+    sig = '|'.join(sorted(crit_names))
+    ahora = _t.time()
+    last_sig, last_ts = '', 0.0
+    try:
+        if os.path.exists(marker):
+            with open(marker) as f:
+                raw = (f.read() or '').strip()
+            parts = raw.rsplit('::', 1)
+            last_sig = parts[0]
+            last_ts = float(parts[1]) if len(parts) == 2 else 0.0
+    except Exception:
+        last_sig, last_ts = '', 0.0
+    if sig == last_sig and (ahora - last_ts) <= 24 * 3600:
+        return False  # mismo problema, hace <24h · no re-enviar
+    try:
+        tmp = marker + '.tmp'
+        with open(tmp, 'w') as f:
+            f.write(f"{sig}::{ahora}")
+        os.replace(tmp, marker)
+    except Exception:
+        pass
+    return True
+
+
+def _watcher_clear_email_marker():
+    """Borra el marcador de dedup · tras resolverse los críticos, el próximo
+    crítico nuevo debe mandar mail de inmediato."""
+    try:
+        from config import DB_PATH
+        marker = DB_PATH + '.watcher-crit'
+        if os.path.exists(marker):
+            os.remove(marker)
+    except Exception:
+        pass
 
 
 def _enviar_mail_watcher(payload):

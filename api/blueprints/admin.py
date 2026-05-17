@@ -2219,38 +2219,46 @@ def admin_health_critical_paths():
     except Exception as e:
         _check('sols_planta_huerfanas', 'warn', f'Error: {e}')
 
-    # 5. last calendar sync < 2h
-    # Sebastian 7-may-2026: tabla es `sync_log` (sin underscore prefix).
-    # _ensure_sync_log_table() en programacion.py la crea on-demand.
+    # 5. last calendar sync
+    # El sync automático de Calendar está OFF por default desde 14-may-2026
+    # (Sebastián · el plan usa canónicos eos_canonico, no Google Calendar).
+    # Solo corre si CALENDAR_SYNC_INTERVAL_MIN>0. Si está OFF, "no corre" es
+    # lo ESPERADO · NO es un crítico y NO debe disparar la alerta del watcher.
     try:
-        row = c.execute("""
-            SELECT MAX(last_run_at) FROM sync_log WHERE sync_type='calendar'
-        """).fetchone()
-        last_sync = row[0] if row else None
-        if not last_sync:
-            _check('last_calendar_sync', 'warn',
-                   'Nunca corrió un sync de calendar (tabla vacía o sin runs)')
-        else:
-            # Parse ISO timestamp
-            from datetime import datetime as _dt, timezone as _tz
-            try:
-                ts = _dt.fromisoformat(last_sync.replace('Z', '+00:00'))
-                age_min = (_dt.now(_tz.utc).replace(tzinfo=None) - ts.replace(tzinfo=None)).total_seconds() / 60
-            except Exception:
-                age_min = 99999
-            if age_min > 120:
-                _check('last_calendar_sync', 'critical',
-                       f'Sync no corre desde {age_min:.0f}min (>2h)',
-                       value=round(age_min), threshold='>120 min')
+        _cal_sync_on = int(os.environ.get('CALENDAR_SYNC_INTERVAL_MIN', '0')) > 0
+    except (ValueError, TypeError):
+        _cal_sync_on = False
+    if not _cal_sync_on:
+        _check('last_calendar_sync', 'ok',
+               'Sync automático de Calendar desactivado · el plan usa canónicos')
+    else:
+        try:
+            row = c.execute("""
+                SELECT MAX(last_run_at) FROM sync_log WHERE sync_type='calendar'
+            """).fetchone()
+            last_sync = row[0] if row else None
+            if not last_sync:
+                _check('last_calendar_sync', 'warn',
+                       'Nunca corrió un sync de calendar (tabla vacía o sin runs)')
             else:
-                _check('last_calendar_sync', 'ok',
-                       f'Sync hace {age_min:.0f}min', value=round(age_min))
-    except sqlite3.OperationalError:
-        # Tabla puede no existir aún si nunca corrió un sync
-        _check('last_calendar_sync', 'warn',
-               'Tabla sync_log aún no creada (sync nunca corrió en este worker)')
-    except Exception as e:
-        _check('last_calendar_sync', 'warn', f'Error: {e}')
+                from datetime import datetime as _dt, timezone as _tz
+                try:
+                    ts = _dt.fromisoformat(last_sync.replace('Z', '+00:00'))
+                    age_min = (_dt.now(_tz.utc).replace(tzinfo=None) - ts.replace(tzinfo=None)).total_seconds() / 60
+                except Exception:
+                    age_min = 99999
+                if age_min > 120:
+                    _check('last_calendar_sync', 'critical',
+                           f'Sync no corre desde {age_min:.0f}min (>2h)',
+                           value=round(age_min), threshold='>120 min')
+                else:
+                    _check('last_calendar_sync', 'ok',
+                           f'Sync hace {age_min:.0f}min', value=round(age_min))
+        except sqlite3.OperationalError:
+            _check('last_calendar_sync', 'warn',
+                   'Tabla sync_log aún no creada (sync nunca corrió en este worker)')
+        except Exception as e:
+            _check('last_calendar_sync', 'warn', f'Error: {e}')
 
     # 6. last backup < 30h
     try:
