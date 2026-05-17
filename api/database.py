@@ -5115,7 +5115,7 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         # Índice para queries del centro-mando que filtran por fecha + estado
         "CREATE INDEX IF NOT EXISTS idx_pp_fecha_estado ON produccion_programada(fecha_programada, estado)",
     ]),
-    (97, "Performance: indexes faltantes detectados por health/critical-paths", [
+    (138, "Performance: indexes faltantes detectados por health/critical-paths", [
         # Sebastián 7-may-2026: dashboard zero-error detectó que estos 5
         # indexes no estaban creados. Sin ellos las queries de movimientos
         # por material/lote/fecha hacen full table scan en una tabla con

@@ -4067,17 +4067,21 @@ def anular_movimiento(mov_id):
     # Verificar que no esté ya anulado
     if mov.get('observaciones','').startswith('[ANULADO]'):
         return jsonify({'error': 'Movimiento ya anulado'}), 400
-    # Solo admin puede anular movimientos de otros usuarios
-    if user not in ADMIN_USERS and mov.get('responsable','') != user:
+    # Solo admin puede anular movimientos de otros usuarios.
+    # El operario que registró el movimiento vive en la columna 'operador'
+    # (movimientos no tiene 'responsable').
+    if user not in ADMIN_USERS and mov.get('operador','') != user:
         return jsonify({'error': 'Solo puedes anular tus propios movimientos o ser administrador'}), 403
-    # Generar contra-movimiento (invierte el tipo)
+    # Generar contra-movimiento (invierte el tipo). Mismo lote y estado_lote
+    # que el original para que el kardex (_get_mp_stock) lo concilie bien.
     tipo_inv = 'Salida' if mov['tipo'] == 'Entrada' else 'Entrada'
     obs_contra = f'[ANULACION] del movimiento #{mov_id} — {motivo} — por {user}'
     c.execute("""INSERT INTO movimientos
-                 (material_id, tipo, cantidad, unidad, lote_ref, responsable, observaciones, fecha)
-                 VALUES (?,?,?,?,?,?,?,datetime('now', '-5 hours'))""",
-              (mov['material_id'], tipo_inv, mov['cantidad'], mov.get('unidad','g'),
-               mov.get('lote_ref',''), user, obs_contra))
+                 (material_id, material_nombre, tipo, cantidad, lote, estado_lote, operador, observaciones, fecha)
+                 VALUES (?,?,?,?,?,?,?,?,datetime('now', '-5 hours'))""",
+              (mov['material_id'], mov.get('material_nombre',''), tipo_inv,
+               mov['cantidad'], mov.get('lote',''), mov.get('estado_lote',''),
+               user, obs_contra))
     # Marcar original como anulado
     c.execute("UPDATE movimientos SET observaciones=? WHERE id=?",
               ('[ANULADO] ' + (mov.get('observaciones') or ''), mov_id))
@@ -5779,26 +5783,31 @@ def alertas_vivas_planta():
     # ── 3. Discrepancias de conteo cíclico no resueltas ───────────────────────
     discrepancias = []
     try:
+        # ajuste_aplicado vive en conteo_items, NO en conteos_fisicos.
+        # La fecha de cierre es fecha_cierre. Un conteo está "no resuelto"
+        # si tiene items con diferencia != 0 y ajuste_aplicado = 0.
         c.execute("""
-            SELECT cf.id, cf.numero, cf.estanteria, cf.cerrado_en,
+            SELECT cf.id, cf.numero, cf.fecha_cierre,
                    COUNT(ci.id) as n_items,
-                   SUM(CASE WHEN ABS(ci.diferencia) > 0 THEN 1 ELSE 0 END) as n_dif
+                   SUM(CASE WHEN ABS(COALESCE(ci.diferencia,0)) > 0
+                             AND COALESCE(ci.ajuste_aplicado,0) = 0
+                            THEN 1 ELSE 0 END) as n_dif
             FROM conteos_fisicos cf
             LEFT JOIN conteo_items ci ON cf.id = ci.conteo_id
-            WHERE cf.estado = 'Cerrado' AND cf.ajuste_aplicado = 0
+            WHERE cf.estado = 'Cerrado'
             GROUP BY cf.id
             HAVING n_dif > 0
-            ORDER BY cf.cerrado_en DESC
+            ORDER BY cf.fecha_cierre DESC
             LIMIT 20
         """)
         for r in c.fetchall():
             discrepancias.append({
-                'conteo_id': r[0], 'numero': r[1], 'estanteria': r[2],
-                'cerrado_en': r[3], 'items_con_diferencia': r[5],
+                'conteo_id': r[0], 'numero': r[1], 'estanteria': '',
+                'cerrado_en': r[2], 'items_con_diferencia': r[4],
                 'severidad': 'alto'
             })
     except sqlite3.OperationalError:
-        # Tabla puede no tener columna ajuste_aplicado en versiones legacy
+        # Red de seguridad ante esquema legacy · no debería dispararse
         pass
 
     # ── 4. Cuarentenas extendidas (>5 días esperando QC) ──────────────────────

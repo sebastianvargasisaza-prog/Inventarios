@@ -20,7 +20,7 @@ import sqlite3
 import time
 import secrets
 import hmac
-from flask import Blueprint, request, jsonify, session, redirect, Response
+from flask import Blueprint, request, jsonify, session, redirect, Response, current_app
 from werkzeug.security import generate_password_hash, check_password_hash
 
 from config import DB_PATH, ADMIN_USERS
@@ -624,8 +624,10 @@ def login_mfa_verify():
     # mfa_trusted=<username>·<timestamp> 60 días · permite saltar paso
     # MFA en próximos login si la cookie está vigente desde el mismo
     # navegador. Cookie HTTP-only · no accesible por JS.
-    import hashlib, hmac, os as _os
-    secret = _os.environ.get('SECRET_KEY', 'devsecret')
+    import hashlib, hmac
+    # Firmar con app.secret_key (la misma llave de las sesiones Flask), nunca
+    # un literal 'devsecret' que sería público y permitiría forjar la cookie.
+    secret = current_app.secret_key or ''
     token_trust = f"{pending}|{int(time.time())}"
     sig = hmac.new(secret.encode(), token_trust.encode(), hashlib.sha256).hexdigest()[:32]
     cookie_val = f"{token_trust}|{sig}"

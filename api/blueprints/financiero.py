@@ -1082,7 +1082,7 @@ def financiero_working_capital():
     ventas_90 = c.fetchone()[0] or 1
     c.execute("SELECT COALESCE(SUM(valor_total),0) FROM ordenes_compra WHERE fecha >= ? AND estado NOT IN ('Pendiente','Cancelada')", (cutoff90,))
     compras_90 = c.fetchone()[0] or 1
-    c.execute("SELECT COALESCE(SUM(fi.cantidad * fi.precio_unitario),0) FROM flujo_egresos fi WHERE fi.fecha >= ? AND fi.categoria IN ('MP','Materia Prima','Insumo')", (cutoff90,))
+    c.execute("SELECT COALESCE(SUM(fi.monto),0) FROM flujo_egresos fi WHERE fi.fecha >= ? AND fi.categoria IN ('MP','MPs','Materia Prima','Insumo')", (cutoff90,))
     cogs_90 = c.fetchone()[0] or 1
     # Burn rate: promedio mensual de OCs pagadas (últimos 3 meses)
     cutoff3m = (today - timedelta(days=90)).isoformat()

@@ -5,7 +5,7 @@ import sqlite3
 import hmac
 import time
 from datetime import datetime, timedelta
-from flask import Blueprint, jsonify, request, Response, session, redirect, url_for
+from flask import Blueprint, jsonify, request, Response, session, redirect, url_for, current_app
 from werkzeug.security import generate_password_hash, check_password_hash
 from config import DB_PATH, COMPRAS_USERS, ADMIN_USERS, CONTADORA_USERS, PLANTA_USERS, CALIDAD_USERS, COMPRAS_ACCESS, CLIENTES_ACCESS
 from auth import (
@@ -646,8 +646,13 @@ def login():
                     trusted_cookie = request.cookies.get('mfa_trusted', '')
                     skip_mfa = False
                     if trusted_cookie:
-                        import hashlib, hmac as _hmac, os as _os
-                        secret = _os.environ.get('SECRET_KEY', 'devsecret')
+                        import hashlib, hmac as _hmac
+                        # La cookie mfa_trusted se firma con la MISMA llave que
+                        # las sesiones Flask (app.secret_key). Nunca un literal
+                        # 'devsecret': sería público y permitiría forjar la
+                        # cookie y saltar MFA. Si SECRET_KEY no está en env,
+                        # app.secret_key es aleatoria por proceso (segura).
+                        secret = current_app.secret_key or ''
                         parts = trusted_cookie.split('|')
                         if len(parts) == 3:
                             user_c, ts_c, sig_c = parts
@@ -683,8 +688,8 @@ def login():
                         # el TOTP original. Un usuario que entra seguido casi
                         # nunca vuelve a ver el código.
                         try:
-                            import hashlib as _hl, hmac as _hm, os as _osr
-                            _secret = _osr.environ.get('SECRET_KEY', 'devsecret')
+                            import hashlib as _hl, hmac as _hm
+                            _secret = current_app.secret_key or ''
                             _tt = f"{username}|{int(time.time())}"
                             _sig = _hm.new(_secret.encode(), _tt.encode(),
                                            _hl.sha256).hexdigest()[:32]

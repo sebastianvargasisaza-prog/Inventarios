@@ -790,15 +790,19 @@ def admin_emergency_restore():
         # sin login · si ni siquiera se puede chequear integridad,
         # la BD está inservible y nadie puede loguearse.
         _m = str(e).lower()
+        # 'database is locked' NO va aquí. Un lock es transitorio (otro
+        # escritor con journal_mode=DELETE bloquea lecturas); un atacante
+        # podría inducirlo a propósito para forzar el restore anónimo.
+        # Solo corrupción REAL del archivo habilita el restore sin login.
         if any(p in _m for p in ('malformed', 'corrupt', 'disk i/o',
-                                  'i/o error', 'not a database',
-                                  'database is locked')):
+                                  'i/o error', 'not a database')):
             db_malformed = True
     except Exception:
-        # Cualquier otro fallo chequeando integridad → tratar como
-        # malformed (best-effort · mejor permitir el restore que
-        # dejar la BD rota inalcanzable).
-        db_malformed = True
+        # Fallo NO clasificado como corrupción (permiso de archivo, path,
+        # OOM, etc.) → fail-CLOSED: exigir admin. Un atacante podría
+        # provocar una excepción genérica para abrir el restore anónimo;
+        # solo la corrupción real (rama DatabaseError de arriba) lo habilita.
+        db_malformed = False
 
     u = 'emergency-anon'
     if not db_malformed:

@@ -5260,7 +5260,7 @@ def rechazar_oc(numero_oc):
     if _ya_pagada or 'ya' in _motivo_lower and 'pag' in _motivo_lower:
         try:
             ce_row = cur.execute(
-                "SELECT codigo, fecha, monto FROM comprobantes_pago "
+                "SELECT numero_ce, fecha_emision, total_pagado FROM comprobantes_pago "
                 "WHERE numero_oc=? OR observaciones LIKE ? ORDER BY id DESC LIMIT 1",
                 (numero_oc, f'%{numero_oc}%')
             ).fetchone()
