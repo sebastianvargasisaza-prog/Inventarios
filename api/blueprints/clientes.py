@@ -1157,6 +1157,8 @@ def delete_aliado(cid):
         return jsonify({'error': 'Solo Admin puede desactivar aliados'}), 403
     conn = get_db(); c = conn.cursor()
     c.execute("UPDATE clientes SET activo=0 WHERE id=? AND empresa='ANIMUS'", (cid,))
+    if c.rowcount == 0:
+        return jsonify({'error': 'Aliado no encontrado'}), 404
     conn.commit()
     try:
         c.execute("""

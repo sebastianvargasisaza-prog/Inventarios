@@ -416,6 +416,16 @@ def rrhh_comprobante(periodo, eid):
         badge = "background:#dcfce7;color:#166534"
     else:
         badge = "background:#fef3c7;color:#92400e"
+    # Escapar TODO dato de texto antes de meterlo al HTML · evita XSS
+    # almacenado si un registro de empleado trae <script> en nombre/cargo/
+    # banco/etc. _e() devuelve '' para None (antes ced=NULL tumbaba el +).
+    import html as _html
+    def _e(v):
+        return _html.escape(str(v)) if v not in (None, '') else ''
+    nom, ape, ced, cargo, empresa = _e(nom), _e(ape), _e(ced), _e(cargo), _e(empresa)
+    banco, num_cta, tipo_cta = _e(banco), _e(num_cta), _e(tipo_cta)
+    ap_por, ap_en, pag_por, pag_en = _e(ap_por), _e(ap_en), _e(pag_por), _e(pag_en)
+    periodo, estado = _e(periodo), _e(estado)
     aprobado_txt = (" &nbsp;|&nbsp; Aprobada por: <strong>"+ap_por+"</strong> el "+ap_en) if ap_por else ""
     pagado_txt = (" &nbsp;|&nbsp; &#128184; Pagada por: <strong>"+pag_por+"</strong> el "+pag_en) if pag_por else ""
     html = (

@@ -5344,6 +5344,12 @@ def prog_revertir_completado(evento_id):
         return jsonify({'error': 'Esta producción no tenía inventario descontado'}), 400
 
     obs_filtro = f"Producción COMPLETADA: {producto} — {fecha}"
+    # El descuento de MP puede haber ocurrido en /iniciar ("Producción
+    # INICIADA: ...") o en /completar ("Producción COMPLETADA: ..."). La
+    # reversión DEBE buscar ambos prefijos · si solo busca COMPLETADA, una
+    # producción descontada al iniciar limpia inventario_descontado_at sin
+    # devolver la MP al stock → doble descuento al re-iniciar.
+    obs_filtro_ini = f"Producción INICIADA: {producto} — {fecha}"
     revertidos_mps = []
     revertidos_mees = []
     fecha_iso = __import__('datetime').datetime.now().isoformat(timespec='seconds')
@@ -5354,8 +5360,9 @@ def prog_revertir_completado(evento_id):
         rows = c.execute("""
             SELECT id, material_id, material_nombre, cantidad, lote, fecha_vencimiento
             FROM movimientos
-            WHERE tipo='Salida' AND observaciones LIKE ?
-        """, (f"{obs_filtro}%",)).fetchall()
+            WHERE tipo='Salida'
+              AND (observaciones LIKE ? OR observaciones LIKE ?)
+        """, (f"{obs_filtro}%", f"{obs_filtro_ini}%")).fetchall()
         for mid, cod, nom, cant, lote, fv in rows:
             c.execute("""
                 INSERT INTO movimientos

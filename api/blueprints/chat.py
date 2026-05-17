@@ -21,7 +21,7 @@ Endpoints:
 """
 from flask import Blueprint, jsonify, request, session, Response
 from database import get_db
-from config import COMPRAS_USERS
+from config import COMPRAS_USERS, ADMIN_USERS
 
 bp = Blueprint('chat', __name__)
 
@@ -619,6 +619,10 @@ def chat_threads():
             existing = c.execute("SELECT id FROM chat_threads WHERE tipo='broadcast' LIMIT 1").fetchone()
             if existing:
                 return jsonify({'ok': True, 'thread_id': existing[0], 'ya_existia': True})
+            # Crear el canal de difusión (mete a toda la empresa) es acción
+            # de admin · evita que cualquier usuario lo genere.
+            if user not in ADMIN_USERS:
+                return jsonify({'error': 'Solo un administrador puede crear el canal de difusión'}), 403
             nombre = nombre or 'Todos · HHA Group'
 
         cur = c.execute("""
