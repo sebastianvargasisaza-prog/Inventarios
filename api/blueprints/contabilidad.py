@@ -36,15 +36,21 @@ def _next_numero(conn, empresa: str, tipo: str = 'FV') -> str:
         "INSERT OR IGNORE INTO config_facturacion(empresa,anio,tipo,siguiente) VALUES(?,?,?,1)",
         (empresa, anio, tipo)
     )
-    row = conn.execute(
-        "SELECT siguiente FROM config_facturacion WHERE empresa=? AND anio=? AND tipo=?",
-        (empresa, anio, tipo)
-    ).fetchone()
-    seq = row[0] if row else 1
+    # Incrementar PRIMERO y leer el valor resultante. El UPDATE toma el
+    # write-lock de SQLite, así otro worker no puede incrementar hasta que
+    # este commitee → cada request obtiene un número distinto. Antes era
+    # SELECT-luego-UPDATE: dos requests leían el mismo 'siguiente' y
+    # generaban facturas con el MISMO número (ilegal DIAN).
     conn.execute(
         "UPDATE config_facturacion SET siguiente=siguiente+1 WHERE empresa=? AND anio=? AND tipo=?",
         (empresa, anio, tipo)
     )
+    row = conn.execute(
+        "SELECT siguiente FROM config_facturacion WHERE empresa=? AND anio=? AND tipo=?",
+        (empresa, anio, tipo)
+    ).fetchone()
+    # 'siguiente' ya apunta al PRÓXIMO · el número de ESTA factura es uno menos.
+    seq = (row[0] if row else 2) - 1
     conn.commit()
     return f"{tipo}-{prefix}-{anio}-{seq:04d}"
 

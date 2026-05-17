@@ -3675,6 +3675,15 @@ def conteo_guardar(conteo_id):
                    item.get('observaciones',''), item.get('lote','') or ''))
     c.execute("UPDATE conteos_fisicos SET items_diferencia=?,total_items=? WHERE id=?",
               (items_con_diff, len(items), conteo_id))
+    try:
+        c.execute("""INSERT INTO audit_log (usuario,accion,tabla,registro_id,detalle,ip,fecha)
+                     VALUES (?,?,?,?,?,?,datetime('now', '-5 hours'))""",
+                  (session.get('compras_user',''), 'GUARDAR_CONTEO', 'conteos_fisicos',
+                   str(conteo_id),
+                   f'Conteo #{conteo_id}: {len(items)} items, {items_con_diff} con diferencia',
+                   request.remote_addr if request else ''))
+    except sqlite3.OperationalError:
+        pass
     conn.commit()
     # Sebastian 7-may-2026: devolver items con sus IDs para que la UI pueda
     # llamar /ajustar(item_id) directo en cada fila (botón "Aplicar ajuste")

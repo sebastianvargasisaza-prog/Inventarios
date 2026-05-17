@@ -580,6 +580,9 @@ def hub_despachar():
     num_ped = d.get('numero_pedido','')
     if num_ped:
         c.execute("UPDATE pedidos SET estado='Despachado',fecha_despacho=datetime('now', '-5 hours') WHERE numero=?", (num_ped,))
+    audit_log(c, usuario=session.get('compras_user', 'sistema'), accion='HUB_DESPACHAR',
+              tabla='despachos', registro_id=numero,
+              despues={'numero_pedido': num_ped, 'items': len(d.get('items') or [])})
     conn.commit()
     return jsonify({'message': f'Despacho {numero} registrado', 'numero': numero}), 201
 

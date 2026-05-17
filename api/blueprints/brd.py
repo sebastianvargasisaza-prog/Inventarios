@@ -35,7 +35,7 @@ import logging
 from flask import Blueprint, Response, jsonify, request, session
 
 from database import get_db
-from config import ADMIN_USERS, CALIDAD_USERS
+from config import ADMIN_USERS, CALIDAD_USERS, PLANTA_USERS
 from audit_helpers import audit_log
 
 bp = Blueprint("brd", __name__)
@@ -73,6 +73,18 @@ def _require_qa_or_admin():
     u = session.get("compras_user", "")
     if u not in ADMIN_USERS and u not in CALIDAD_USERS:
         return jsonify({"error": "Solo admin o calidad pueden aprobar/obsoletar MBR"}), 403
+    return None
+
+
+def _require_brd_ejecutor():
+    """Solo personal que ejecuta lotes: Planta, Calidad o Admin. Evita que
+    un usuario de otra área (compras, marketing, RRHH...) ejecute pasos de
+    un registro de lote regulado (INVIMA · escalada de privilegios)."""
+    u = session.get("compras_user", "")
+    if not u:
+        return jsonify({"error": "No autorizado"}), 401
+    if u not in (PLANTA_USERS | CALIDAD_USERS | ADMIN_USERS):
+        return jsonify({"error": "Solo Planta/Calidad/Admin pueden ejecutar pasos del registro de lote"}), 403
     return None
 
 
@@ -333,6 +345,10 @@ def agregar_paso(mbr_id):
          (body.get("notas") or "").strip()),
     )
     paso_id = cur.lastrowid
+    audit_log(cur, usuario=session.get("compras_user", ""), accion="AGREGAR_PASO_MBR",
+              tabla="mbr_pasos", registro_id=paso_id,
+              despues={"mbr_id": mbr_id, "orden": siguiente_orden,
+                       "descripcion": descripcion[:120]})
     conn.commit()
     return jsonify({"ok": True, "id": paso_id, "orden": siguiente_orden}), 201
 
@@ -371,6 +387,8 @@ def editar_paso(mbr_id, paso_id):
     )
     if cur.rowcount == 0:
         return jsonify({"error": "paso no encontrado o no pertenece al MBR"}), 404
+    audit_log(cur, usuario=session.get("compras_user", ""), accion="EDITAR_PASO_MBR",
+              tabla="mbr_pasos", registro_id=paso_id, despues=cambios)
     conn.commit()
     return jsonify({"ok": True})
 
@@ -393,6 +411,8 @@ def borrar_paso(mbr_id, paso_id):
     )
     if cur.rowcount == 0:
         return jsonify({"error": "paso no encontrado"}), 404
+    audit_log(cur, usuario=session.get("compras_user", ""), accion="BORRAR_PASO_MBR",
+              tabla="mbr_pasos", registro_id=paso_id, detalle=f"MBR {mbr_id}")
     conn.commit()
     return jsonify({"ok": True})
 
@@ -716,7 +736,7 @@ def detalle_ebr(ebr_id):
 
 @bp.route("/api/brd/ebr/<int:ebr_id>/pasos/<int:orden>/iniciar", methods=["POST"])
 def iniciar_paso_ebr(ebr_id, orden):
-    err = _require_login()
+    err = _require_brd_ejecutor()
     if err:
         return err
     conn = get_db()
@@ -751,13 +771,16 @@ def iniciar_paso_ebr(ebr_id, orden):
         """UPDATE ebr_ejecuciones SET estado = 'en_proceso'
            WHERE id = ? AND estado = 'iniciado'""", (ebr_id,),
     )
+    audit_log(cur, usuario=user, accion="INICIAR_PASO_EBR",
+              tabla="ebr_pasos_ejecutados", registro_id=paso["id"],
+              despues={"ebr_id": ebr_id, "orden": orden, "operario": user})
     conn.commit()
     return jsonify({"ok": True, "estado": "en_proceso"})
 
 
 @bp.route("/api/brd/ebr/<int:ebr_id>/pasos/<int:orden>/completar", methods=["POST"])
 def completar_paso_ebr(ebr_id, orden):
-    err = _require_login()
+    err = _require_brd_ejecutor()
     if err:
         return err
     body = request.get_json(silent=True) or {}
@@ -815,6 +838,10 @@ def completar_paso_ebr(ebr_id, orden):
         if not qc_sig:
             return jsonify({"error": "qc_signature_id inválido"}), 400
         qc_username = qc_sig["signer_username"]
+        # Segregación de funciones GMP · el QC (supervisa) no puede ser la
+        # misma persona que ejecuta el paso · auto-aprobación rompe el control.
+        if qc_username and qc_username == (paso["operario_username"] or user):
+            return jsonify({"error": "El QC (supervisa) no puede ser el mismo operario que ejecutó el paso"}), 409
 
     op_username = paso["operario_username"] or user
     cur.execute(
@@ -834,13 +861,17 @@ def completar_paso_ebr(ebr_id, orden):
          int(qc_signature_id) if qc_signature_id else None,
          paso["id"]),
     )
+    audit_log(cur, usuario=user, accion="COMPLETAR_PASO_EBR",
+              tabla="ebr_pasos_ejecutados", registro_id=paso["id"],
+              despues={"ebr_id": ebr_id, "orden": orden,
+                       "operario": op_username, "qc": qc_username or None})
     conn.commit()
     return jsonify({"ok": True, "estado": "completado"})
 
 
 @bp.route("/api/brd/ebr/<int:ebr_id>/completar", methods=["POST"])
 def completar_ebr(ebr_id):
-    err = _require_login()
+    err = _require_brd_ejecutor()
     if err:
         return err
     body = request.get_json(silent=True) or {}
