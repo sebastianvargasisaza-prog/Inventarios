@@ -130,8 +130,17 @@ def _is_locked(ip, username=None):
         for key in expired_keys:
             _clear_attempts(key)
         return False
-    except Exception:
-        return False   # En caso de error de DB, no bloquear
+    except Exception as e:
+        # No fallar CERRADO (return True) · dejaría a TODOS sin poder entrar
+        # ante cualquier hipo de la BD. Pero el fallo ya NO es silencioso:
+        # se registra como evento de seguridad · si alguien intenta inducir
+        # errores de DB para evadir el rate limit, queda rastro visible.
+        try:
+            _log_sec("rate_limit_check_error", username or "", ip or "",
+                     details=str(e)[:200])
+        except Exception:
+            pass
+        return False   # En caso de error de DB, no bloquear (ver arriba)
 
 
 def _record_failure(ip, username=None):

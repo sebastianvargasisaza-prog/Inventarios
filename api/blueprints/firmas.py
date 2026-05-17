@@ -296,8 +296,28 @@ def list_signatures(record_table, record_id):
            ORDER BY signed_at_utc, id""",
         (record_table, record_id),
     ).fetchall()
+    # Re-verificar el HMAC de cada firma al leerla · tamper-evidence Part 11.
+    # Si alguien modificó una fila de e_signatures saltándose el trigger
+    # append-only, el hash recalculado NO coincide → tampered=True. La firma
+    # ya no se cree solo porque está en la tabla.
+    sigs = []
+    for r in rows:
+        d = dict(r)
+        try:
+            recalculado = _sign_payload(
+                record_table=d.get("record_table"), record_id=d.get("record_id"),
+                meaning=d.get("meaning"), signer_username=d.get("signer_username"),
+                signed_at_utc=d.get("signed_at_utc"), ip=d.get("ip"),
+                auth_factor=d.get("auth_factor"), comment=d.get("comment"),
+                record_hash=d.get("record_hash"),
+            )
+            d["tampered"] = not hmac.compare_digest(
+                recalculado, d.get("signature_hash") or "")
+        except Exception:
+            d["tampered"] = None  # no se pudo verificar
+        sigs.append(d)
     return jsonify({
         "record_table": record_table,
         "record_id": record_id,
-        "signatures": [dict(r) for r in rows],
+        "signatures": sigs,
     })

@@ -749,7 +749,12 @@ def logout():
     # mfa_pending_user, login_time, must_reenroll_mfa vivos. Una sesión
     # robada post-logout aún tenía artefactos válidos.
     session.clear()
-    return redirect('/')
+    resp = redirect('/')
+    # Borrar también la cookie mfa_trusted · si no, sigue válida 60 días y
+    # un login posterior en ese navegador salta el MFA sin re-verificar
+    # (incluso tras un logout explícito).
+    resp.delete_cookie('mfa_trusted')
+    return resp
 
 @bp.route('/compras')
 def compras():
