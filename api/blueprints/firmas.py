@@ -91,8 +91,11 @@ def _verify_totp_if_enrolled(username, totp_token):
     try:
         from blueprints.mfa import _is_mfa_enabled, _get_mfa_record, _verify_totp
     except Exception as e:
-        log.warning("mfa import falló: %s", e)
-        return (True, "password")  # graceful degradation
+        # Fail-closed: si no se puede verificar el estado de MFA, NO degradar
+        # a solo-password · una firma electrónica regulada (Part 11) exige
+        # certeza del segundo factor. Rechazar es más seguro que degradar.
+        log.error("mfa import falló · firma rechazada por seguridad: %s", e)
+        return (False, None)
     if not _is_mfa_enabled(username):
         return (True, "password")
     rec = _get_mfa_record(username)

@@ -600,6 +600,9 @@ def get_cronograma():
 
 @bp.route('/api/calidad/cronograma/iniciar', methods=['POST'])
 def iniciar_tarea_cron():
+    err, code = _require_calidad()
+    if err:
+        return err, code
     d = request.get_json(silent=True) or {}
     tarea_id = d.get('tarea_id')
     fecha = d.get('fecha', datetime.now().strftime('%Y-%m-%d'))
@@ -620,6 +623,9 @@ def iniciar_tarea_cron():
 
 @bp.route('/api/calidad/cronograma/completar', methods=['POST'])
 def completar_tarea_cron():
+    err, code = _require_calidad()
+    if err:
+        return err, code
     d = request.get_json(silent=True) or {}
     tarea_id = d.get('tarea_id')
     fecha = d.get('fecha', datetime.now().strftime('%Y-%m-%d'))
@@ -742,11 +748,17 @@ def especificaciones_list():
 
 @bp.route('/api/calidad/especificaciones/<int:eid>', methods=['PATCH','DELETE'])
 def especificacion_update(eid):
-    if 'compras_user' not in session:
-        return jsonify({'error':'No autorizado'}), 401
+    # RBAC · alterar/borrar specs de farmacopea cambia los rangos que
+    # auto-validan los CoA · solo Calidad/Admin.
+    err, code = _require_calidad()
+    if err:
+        return err, code
+    user = session.get('compras_user', '')
     conn = get_db(); c = conn.cursor()
     if request.method == 'DELETE':
         c.execute("DELETE FROM especificaciones_mp WHERE id=?", (eid,))
+        audit_log(c, usuario=user, accion='ELIMINAR_SPEC_MP',
+                  tabla='especificaciones_mp', registro_id=eid)
         conn.commit()
         return jsonify({'ok':True})
     d = request.json or {}
@@ -757,6 +769,8 @@ def especificacion_update(eid):
     if not sets: return jsonify({'error':'Nada que actualizar'}), 400
     vals.append(eid)
     c.execute(f"UPDATE especificaciones_mp SET {sets} WHERE id=?", vals)
+    audit_log(c, usuario=user, accion='MODIFICAR_SPEC_MP',
+              tabla='especificaciones_mp', registro_id=eid, despues=d)
     conn.commit()
     return jsonify({'ok':True})
 
@@ -1720,11 +1734,17 @@ def calidad_oos_list():
 @bp.route('/api/calidad/oos/<int:oos_id>', methods=['PATCH'])
 def calidad_oos_update(oos_id):
     """Actualiza OOS — flujo investigación → aprobación → cierre."""
-    if 'compras_user' not in session:
-        return jsonify({'error': 'No autorizado'}), 401
+    err, code = _require_calidad()
+    if err:
+        return err, code
     user = session.get('compras_user', '')
     d = request.get_json(silent=True) or {}
     conn = get_db(); c = conn.cursor()
+    fila = c.execute(
+        "SELECT causa_raiz, disposicion FROM calidad_oos WHERE id=?", (oos_id,)
+    ).fetchone()
+    if not fila:
+        return jsonify({'error': 'OOS no encontrado'}), 404
     sets = []; params = []
     for col in ('accion_inmediata','causa_raiz','disposicion','aprobado_por',
                 'fecha_objetivo_cierre','capa_id'):
@@ -1734,6 +1754,15 @@ def calidad_oos_update(oos_id):
         nuevo = d['estado']
         if nuevo not in ('abierto','en_investigacion','en_aprobacion','cerrado','rechazado'):
             return jsonify({'error': 'estado invalido'}), 400
+        if nuevo == 'cerrado':
+            # Cerrar un OOS libera un lote fuera de especificación de la
+            # cuarentena · exigir causa raíz documentada y disposición.
+            causa = str(d.get('causa_raiz') if 'causa_raiz' in d else (fila[0] or '') or '')
+            disp = str(d.get('disposicion') if 'disposicion' in d else (fila[1] or '') or '')
+            if len(causa.strip()) < 20:
+                return jsonify({'error': 'No se puede cerrar un OOS sin causa raíz documentada (mín. 20 caracteres)'}), 422
+            if not disp.strip():
+                return jsonify({'error': 'No se puede cerrar un OOS sin disposición del lote'}), 422
         sets.append('estado=?'); params.append(nuevo)
         if nuevo == 'cerrado':
             sets.append('fecha_cierre=?'); params.append(datetime.now().date().isoformat())
@@ -1743,6 +1772,11 @@ def calidad_oos_update(oos_id):
         return jsonify({'error': 'nada que actualizar'}), 400
     params.append(oos_id)
     c.execute(f"UPDATE calidad_oos SET {', '.join(sets)} WHERE id=?", params)
+    try:
+        audit_log(c, usuario=user, accion='ACTUALIZAR_OOS', tabla='calidad_oos',
+                  registro_id=oos_id, despues=d)
+    except Exception as e:
+        log.warning('audit_log ACTUALIZAR_OOS fallo: %s', e)
     conn.commit()
     return jsonify({'ok': True})
 
