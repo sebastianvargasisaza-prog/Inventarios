@@ -3671,9 +3671,14 @@ def recibir_oc(numero_oc):
         # Solo registrar movimiento si hay algo recibido
         if cant_recibida > 0:
             if categoria == 'MEE':
-                cur.execute("UPDATE maestro_mee SET stock_actual = stock_actual + ? WHERE codigo=?", (cant_recibida, codigo))
-                cur.execute("INSERT INTO movimientos_mee (mee_codigo, tipo, cantidad, lote_ref, observaciones, responsable, fecha) VALUES (?,?,?,?,?,?,?)",
-                           (codigo, 'Entrada', cant_recibida, numero_oc, f'Recepcion OC {numero_oc}', operador, fecha))
+                # Sin codigo_mp no se puede imputar el MEE · un INSERT con
+                # mee_codigo='' + UPDATE que no matchea nada = drift permanente.
+                if codigo:
+                    cur.execute("UPDATE maestro_mee SET stock_actual = stock_actual + ? WHERE codigo=?", (cant_recibida, codigo))
+                    cur.execute("INSERT INTO movimientos_mee (mee_codigo, tipo, cantidad, lote_ref, observaciones, responsable, fecha) VALUES (?,?,?,?,?,?,?)",
+                               (codigo, 'Entrada', cant_recibida, numero_oc, f'Recepcion OC {numero_oc}', operador, fecha))
+                else:
+                    log.warning('recibir_oc MEE sin codigo_mp · OC %s · item no imputado', numero_oc)
             else:
                 cur.execute(
                     "INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, fecha, "

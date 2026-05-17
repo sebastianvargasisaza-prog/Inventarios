@@ -4877,22 +4877,37 @@ def mee_registrar_movimiento():
     mee = c.fetchone()
     if not mee:
         return jsonify({'error': f'Codigo MEE {codigo} no encontrado'}), 404
+    stock_ant = float(mee[2] or 0)
+
+    # Para 'Ajuste', 'cantidad' es el stock OBJETIVO (absoluto). El movimiento
+    # debe registrar el DELTA (objetivo - actual) · si registrara el absoluto,
+    # SUM(movimientos_mee) driftearía contra stock_actual. Entrada/Salida sí
+    # registran su propia magnitud (ya son deltas).
+    mov_cantidad = round(cantidad - stock_ant, 2) if tipo == 'Ajuste' else cantidad
 
     c.execute("""INSERT INTO movimientos_mee
                  (mee_codigo, tipo, cantidad, unidad, lote_ref, batch_ref, responsable, observaciones)
                  VALUES (?,?,?,?,?,?,?,?)""",
-              (codigo, tipo, cantidad, unidad, lote_ref, batch_ref, responsable, obs))
+              (codigo, tipo, mov_cantidad, unidad, lote_ref, batch_ref, responsable, obs))
     mov_id = c.lastrowid
 
     if tipo == 'Entrada':
         c.execute("UPDATE maestro_mee SET stock_actual = stock_actual + ? WHERE codigo=?", (cantidad, codigo))
     elif tipo == 'Salida':
         c.execute("UPDATE maestro_mee SET stock_actual = MAX(0, stock_actual - ?) WHERE codigo=?", (cantidad, codigo))
-    else:
+    else:  # Ajuste · cantidad = stock objetivo absoluto
         c.execute("UPDATE maestro_mee SET stock_actual = ? WHERE codigo=?", (cantidad, codigo))
 
     c.execute("SELECT stock_actual, stock_minimo FROM maestro_mee WHERE codigo=?", (codigo,))
     s_new, s_min = c.fetchone()
+    try:
+        c.execute("""INSERT INTO audit_log (usuario,accion,tabla,registro_id,detalle,ip,fecha)
+                     VALUES (?,?,?,?,?,?,datetime('now', '-5 hours'))""",
+                  (responsable, 'MOVIMIENTO_MEE', 'movimientos_mee', str(mov_id),
+                   f'{tipo} {mov_cantidad} de {codigo} · stock {stock_ant}->{s_new}',
+                   request.remote_addr if request else ''))
+    except sqlite3.OperationalError:
+        pass
     conn.commit()
 
     alerta = None

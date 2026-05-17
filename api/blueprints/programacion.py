@@ -5418,6 +5418,16 @@ def prog_revertir_completado(evento_id):
             # (el operador ve "Salida X · Reversión X" como pares en logs).
             from inventario_helpers import aplicar_movimiento_mee as _aplicar_mee_rev
             for mid, mee_cod, cant in rows_mee:
+                # No revertir dos veces el mismo movimiento · si ya existe su
+                # Entrada compensatoria, saltar. Evita inflar stock en un ciclo
+                # completar→revertir→completar→revertir (la salida original
+                # nunca se anula, así que volvería a aparecer en el query).
+                if c.execute(
+                    "SELECT 1 FROM movimientos_mee WHERE tipo='Entrada' "
+                    "AND observaciones LIKE ? LIMIT 1",
+                    (f"%mov_mee #{mid}%",),
+                ).fetchone():
+                    continue
                 _aplicar_mee_rev(
                     c.connection, mee_cod, 'Entrada', cant,
                     observaciones=f"REVERSIÓN producción completada — original mov_mee #{mid}",
