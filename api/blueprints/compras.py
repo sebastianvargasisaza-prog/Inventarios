@@ -3811,6 +3811,10 @@ def autorizar_oc(numero_oc):
     if not row:
         return jsonify({'error': 'OC no encontrada'}), 404
     estado_ant = row[0]
+    # No re-autorizar una OC ya avanzada/terminal · evita revertir el ciclo
+    # Autorizada→Pagada→Recibida o resucitar una OC cancelada.
+    if (estado_ant or '') in ('Pagada', 'Recibida', 'Cancelada', 'Anulada'):
+        return jsonify({'error': f'No se puede autorizar una OC en estado {estado_ant}'}), 409
     valor = float(row[1] or 0)
     # Sprint 4: límite de aprobación por usuario
     err_lim, code_lim = _check_monto_limit(usuario_actual, valor)

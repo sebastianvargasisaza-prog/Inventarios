@@ -460,10 +460,21 @@ def admin_cleanup_test_data():
     deleted = {}
     # Test OCs from audit
     test_oc_nums = ['OC-2026-0002','OC-2026-0003']
+    _ocs_borradas = 0
     for num in test_oc_nums:
+        # Solo borrar si REALMENTE es una OC de prueba (proveedor con 'test'
+        # o sin proveedor). El precedence bug AND/OR previo (... AND ... OR
+        # numero_oc=?) borraba la OC sin importar el proveedor · podía
+        # eliminar una OC real con ese número.
+        prov_row = c.execute("SELECT proveedor FROM ordenes_compra WHERE numero_oc=?", (num,)).fetchone()
+        if prov_row:
+            prov = (prov_row[0] or '').strip()
+            if prov and 'test' not in prov.lower():
+                continue  # OC real · no tocar
         c.execute("DELETE FROM ordenes_compra_items WHERE numero_oc=?", (num,))
-        c.execute("DELETE FROM ordenes_compra WHERE numero_oc=? AND proveedor LIKE '%test%' OR numero_oc=?", (num, num))
-    deleted['ocs'] = len(test_oc_nums)
+        c.execute("DELETE FROM ordenes_compra WHERE numero_oc=?", (num,))
+        _ocs_borradas += 1
+    deleted['ocs'] = _ocs_borradas
     # Test solicitudes
     c.execute("DELETE FROM solicitudes_compra WHERE numero='SOL-2026-0001' OR solicitante LIKE '%test%' OR observaciones LIKE '%prueba%'")
     deleted['solicitudes'] = c.rowcount

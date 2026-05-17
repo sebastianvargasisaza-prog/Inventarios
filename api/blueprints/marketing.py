@@ -2581,11 +2581,15 @@ def mkt_ejecutar_agente(agente):
             # 6) IG: top posts últimos 30d (engagement)
             ig_top_posts = []
             try:
+                # Nombres reales de columna en animus_instagram_posts:
+                # descripcion / tipo / url_permalink / publicado_en. Se
+                # aliasan para no romper a los consumidores del dict.
                 ig_top_posts = [dict(r) for r in c.execute("""
-                    SELECT id, caption, likes, comentarios, media_type, permalink,
-                           timestamp_post
+                    SELECT id, descripcion AS caption, likes, comentarios,
+                           tipo AS media_type, url_permalink AS permalink,
+                           publicado_en AS timestamp_post
                     FROM animus_instagram_posts
-                    WHERE timestamp_post >= ?
+                    WHERE publicado_en >= ?
                     ORDER BY (COALESCE(likes,0) + COALESCE(comentarios,0)*5) DESC
                     LIMIT 8
                 """, (hace30,)).fetchall()]

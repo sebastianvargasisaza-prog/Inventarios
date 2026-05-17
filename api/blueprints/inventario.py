@@ -996,6 +996,12 @@ def eliminar_movimiento(mov_id):
     row = c.fetchone()
     if not row:
         return jsonify({'error': 'Movimiento no encontrado'}), 404
+    # audit_log obligatorio · borrar una fila del kardex es destructivo
+    c.execute("""INSERT INTO audit_log (usuario,accion,tabla,registro_id,detalle,ip,fecha)
+                 VALUES (?,?,?,?,?,?,datetime('now', '-5 hours'))""",
+              (usuario, 'ELIMINAR_MOVIMIENTO', 'movimientos', str(mov_id),
+               f'Eliminado mov #{mov_id} ({row[5]} {row[4]} de {row[1]}) lote {row[3]}',
+               request.remote_addr))
     c.execute('DELETE FROM movimientos WHERE id=?', (mov_id,))
     conn.commit()
     return jsonify({'message': f'Movimiento {mov_id} eliminado. Lote: {row[3]}, MP: {row[2]}', 'id': mov_id}), 200
@@ -1261,9 +1267,12 @@ def handle_produccion():
 @bp.route('/api/produccion/simular', methods=['POST'])
 def simular_produccion():
     """Pre-check de stock FEFO + estimado de costo sin commitear ningun movimiento."""
-    data = request.json
+    data = request.get_json(silent=True) or {}
     producto = data.get('producto', '')
-    cantidad_kg = float(data.get('cantidad_kg', 1))
+    try:
+        cantidad_kg = float(data.get('cantidad_kg', 1))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'cantidad_kg inválida', 'factible': False}), 400
     cantidad_g = cantidad_kg * 1000
     conn = get_db()
     c = conn.cursor()
@@ -1327,9 +1336,12 @@ def formulas_unlock():
 @bp.route('/api/formula/costo', methods=['POST'])
 def calcular_costo_formula():
     """Calcula costo estimado de un batch sin verificar stock."""
-    data = request.json
+    data = request.get_json(silent=True) or {}
     producto = data.get('producto', '')
-    cantidad_kg = float(data.get('cantidad_kg', 1))
+    try:
+        cantidad_kg = float(data.get('cantidad_kg', 1))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'cantidad_kg inválida'}), 400
     cantidad_g = cantidad_kg * 1000
     conn = get_db()
     c = conn.cursor()
@@ -1515,10 +1527,13 @@ def handle_alertas():
     conn = get_db()
     c = conn.cursor()
     if request.method == 'POST':
-        data = request.json
+        data = request.get_json(silent=True) or {}
+        mat_id = data.get('material_id')
+        if not mat_id:
+            return jsonify({'error': 'material_id requerido'}), 400
         c.execute('INSERT INTO alertas (material_id, material_nombre, stock_actual, stock_minimo, fecha, estado) VALUES (?,?,?,?,?,?)',
-                  (data['material_id'], data['material_nombre'], data['stock_actual'],
-                   data['stock_minimo'], datetime.now().isoformat(), 'Activa'))
+                  (mat_id, data.get('material_nombre',''), data.get('stock_actual',0),
+                   data.get('stock_minimo',0), datetime.now().isoformat(), 'Activa'))
         conn.commit()
         return jsonify({'message': 'Alerta creada'}), 201
     c.execute('SELECT material_nombre, stock_actual, stock_minimo, estado, fecha FROM alertas ORDER BY fecha DESC')

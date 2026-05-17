@@ -491,7 +491,10 @@ def cont_factura_pago(numero):
     if not f:
         return jsonify({'error': 'Factura no encontrada'}), 404
 
-    f_total = dict(f)['total']
+    f_dict = dict(f)
+    if (f_dict.get('estado') or '') == 'Anulada':
+        return jsonify({'error': 'No se puede registrar pago sobre una factura anulada'}), 422
+    f_total = f_dict['total']
     # Audit zero-error 2-may-2026: validar over-payment
     total_actual = conn.execute(
         "SELECT COALESCE(SUM(monto),0) FROM facturas_pagos WHERE numero_factura=?", (numero,)
@@ -514,7 +517,9 @@ def cont_factura_pago(numero):
     total_pagado = conn.execute(
         "SELECT COALESCE(SUM(monto),0) FROM facturas_pagos WHERE numero_factura=?", (numero,)
     ).fetchone()[0]
-    nuevo_estado = 'Pagada' if total_pagado >= f_total else 'Parcial'
+    # Tolerancia de 1 centavo · evita que un redondeo deje la factura
+    # eternamente 'Parcial' por un saldo fantasma de céntimos.
+    nuevo_estado = 'Pagada' if total_pagado >= f_total - 0.01 else 'Parcial'
     conn.execute("UPDATE facturas SET estado=? WHERE numero=?", (nuevo_estado, numero))
     # Audit log INVIMA · cobro de factura es operación financiera regulada
     try:
@@ -575,8 +580,15 @@ def cont_factura_anular(numero):
     conn = get_db()
     # Estado anterior para audit
     f_ant = conn.execute("SELECT estado, total FROM facturas WHERE numero=?", (numero,)).fetchone()
+    if not f_ant:
+        return jsonify({'error': 'Factura no encontrada'}), 404
+    if (f_ant[0] or '') == 'Anulada':
+        return jsonify({'ok': True, 'message': 'La factura ya estaba anulada'})
+    # COALESCE: en SQLite NULL||texto = NULL · sin esto el motivo se perdía
+    # cuando notas era NULL.
     conn.execute(
-        "UPDATE facturas SET estado='Anulada', notas=notas||' | ANULADA: '||? WHERE numero=?",
+        "UPDATE facturas SET estado='Anulada', "
+        "notas=COALESCE(notas,'')||' | ANULADA: '||? WHERE numero=?",
         (motivo, numero)
     )
     # Audit log · anulación de factura es operación financiera SENSIBLE

@@ -569,9 +569,13 @@ def hub_despachar():
                          WHERE sku=? AND lote_pt=?""",
                       (int(it.get('cantidad',0)), it.get('sku',''), lote))
         else:
+            # SQLite estándar NO soporta ORDER BY/LIMIT en UPDATE (requiere
+            # compilar con SQLITE_ENABLE_UPDATE_DELETE_LIMIT) · usar subquery
+            # por rowid para descontar del lote FEFO más antiguo.
             c.execute("""UPDATE stock_pt SET unidades_disponible=MAX(0,unidades_disponible-?)
-                         WHERE sku=? AND unidades_disponible>0
-                         ORDER BY fecha_produccion ASC LIMIT 1""",
+                         WHERE rowid = (SELECT rowid FROM stock_pt
+                                        WHERE sku=? AND unidades_disponible>0
+                                        ORDER BY fecha_produccion ASC LIMIT 1)""",
                       (int(it.get('cantidad',0)), it.get('sku','')))
     num_ped = d.get('numero_pedido','')
     if num_ped:
