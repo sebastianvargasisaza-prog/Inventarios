@@ -3553,7 +3553,7 @@ def recibir_oc(numero_oc):
         return jsonify({'error': f'OC en estado {oc_row[0]} no permite recepcion'}), 409
     prov_nombre = oc_row[1] or ''
     categoria = oc_row[2] or 'MP'
-    cur.execute("SELECT codigo_mp, nombre_mp, cantidad_g FROM ordenes_compra_items WHERE numero_oc=?", (numero_oc,))
+    cur.execute("SELECT rowid, codigo_mp, nombre_mp, cantidad_g FROM ordenes_compra_items WHERE numero_oc=?", (numero_oc,))
     items_oc = cur.fetchall()
     fecha = datetime.now().isoformat()
     operador = session.get('compras_user', '')
@@ -3579,7 +3579,7 @@ def recibir_oc(numero_oc):
     hoy_iso = _date.today().isoformat()
 
     for _idx, item in enumerate(items_oc):
-        codigo, nombre, cantidad_pedida = item
+        _oci_rowid, codigo, nombre, cantidad_pedida = item
         ir = rec_map_idx.get(_idx) or rec_map_cod.get(codigo, {})
         cant_raw = ir.get('cantidad_recibida', 0)
         cantidad_explicita = not (cant_raw is None or cant_raw == '')
@@ -3641,7 +3641,7 @@ def recibir_oc(numero_oc):
     # ── INSERT real (post-validación) ──────────────────────────────────
     ingresos = 0
     for _idx, item in enumerate(items_oc):
-        codigo, nombre, cantidad_pedida = item
+        _oci_rowid, codigo, nombre, cantidad_pedida = item
         ir = rec_map_idx.get(_idx) or rec_map_cod.get(codigo, {})
         cant_raw = ir.get('cantidad_recibida', 0)
         if cant_raw is None or cant_raw == '':
@@ -3679,13 +3679,16 @@ def recibir_oc(numero_oc):
         # cantidad_recibida_g para soportar recepciones múltiples parciales
         # sobre el mismo item. Antes era SET = ? que pisaba el acumulado.
         try:
+            # UPDATE por rowid del item · antes era WHERE numero_oc+codigo_mp,
+            # que con dos items del mismo codigo_mp (o ambos vacíos, común en
+            # OCs de servicio) actualizaba AMBAS filas y duplicaba lo recibido.
             cur.execute(
                 "UPDATE ordenes_compra_items "
                 "SET cantidad_recibida_g = COALESCE(cantidad_recibida_g, 0) + ?, "
                 "    estado_recepcion=?, notas_recepcion=?, "
                 "    lote_asignado=COALESCE(lote_asignado, ?) "
-                " WHERE numero_oc=? AND codigo_mp=?",
-                (cant_recibida, estado_item, notas_item, lote_num, numero_oc, codigo))
+                " WHERE rowid=?",
+                (cant_recibida, estado_item, notas_item, lote_num, _oci_rowid))
         except Exception as e:
             log.warning('UPDATE oci en recibir_oc fallo: %s', e)
 

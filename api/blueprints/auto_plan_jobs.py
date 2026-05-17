@@ -2878,18 +2878,33 @@ def _db_autoheal_check(app):
     log.error('AUTOHEAL · BD corrupta detectada: %s', detalle)
     marker = DB_PATH + '.autoheal-ts'
     ahora = _time.time()
-    # Cooldown · si ya se restauró hace <2h, NO repetir · solo alertar
-    try:
-        if os.path.exists(marker):
+    # Cooldown · si ya se restauró hace <2h, NO repetir · solo alertar.
+    # Si el marker es ilegible/corrupto → asumir cooldown ACTIVO (fail-safe):
+    # mejor alertar de más que entrar en un loop de restores en cadena.
+    if os.path.exists(marker):
+        try:
             with open(marker) as f:
                 last = float((f.read() or '0').strip() or 0)
-            if ahora - last < 2 * 3600:
-                log.error('AUTOHEAL · restore reciente (<2h) · no repito · alerto')
-                return {'bd': 'corrupta', 'accion': 'cooldown', 'detalle': detalle,
-                        'mensaje': 'BD corrupta y ya restaurada hace <2h · '
-                                   'el disco de Render sigue fallando · escalar'}
-    except Exception:
-        pass
+        except Exception:
+            last = ahora  # ilegible → tratar como restore recién hecho
+        if ahora - last < 2 * 3600:
+            log.error('AUTOHEAL · restore reciente (<2h) · no repito · alerto')
+            return {'bd': 'corrupta', 'accion': 'cooldown', 'detalle': detalle,
+                    'mensaje': 'BD corrupta y ya restaurada hace <2h · '
+                               'el disco de Render sigue fallando · escalar'}
+
+    # Escribir el marker ANTES de restaurar. Si se escribiera DESPUÉS y esa
+    # escritura fallara (disco lleno · el mismo fallo que corrompió la BD),
+    # el cooldown nunca se activaría y el autoheal restauraría en cadena
+    # cada hora. Escribir antes garantiza el cooldown aunque el restore
+    # falle (en ese caso alerta en vez de loopear). Escritura atómica.
+    try:
+        _tmp_marker = marker + '.tmp'
+        with open(_tmp_marker, 'w') as f:
+            f.write(str(ahora))
+        os.replace(_tmp_marker, marker)
+    except Exception as e:
+        log.warning('AUTOHEAL · no se pudo escribir marker de cooldown: %s', e)
 
     # Restaurar · invocar emergency-restore internamente
     resultado = {'bd': 'corrupta', 'detalle': detalle}
@@ -2911,11 +2926,6 @@ def _db_autoheal_check(app):
         resultado['http'] = code
         resultado['restore'] = payload
         log.error('AUTOHEAL · BD restaurada · code=%s · %s', code, str(payload)[:300])
-        try:
-            with open(marker, 'w') as f:
-                f.write(str(ahora))
-        except Exception:
-            pass
     except Exception as e:
         log.exception('AUTOHEAL · fallo restaurando: %s', e)
         resultado['accion'] = 'error_restaurando'
