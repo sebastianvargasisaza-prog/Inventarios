@@ -34,21 +34,39 @@ def _configure_conn(conn):
     return conn
 
 
-def get_db():
-    """Conexion SQLite per-request usando Flask g (patron recomendado Flask).
+def _usa_postgres() -> bool:
+    """True si el backend es PostgreSQL (migración Fase 3+).
 
-    Cerrada automaticamente por teardown_appcontext al final del request
-    incluyendo error paths. Con WAL mode y busy_timeout, segura para uso
-    con multiples workers Gunicorn simultaneos.
+    Por DEFAULT es False -> SQLite, producción sin cambios. Solo se activa
+    seteando EOS_DB_BACKEND=postgres en el entorno.
+    """
+    return os.environ.get('EOS_DB_BACKEND', '').strip().lower() == 'postgres'
+
+
+def _abrir_conn():
+    """Abre una conexión nueva del backend configurado."""
+    if _usa_postgres():
+        # Import perezoso · en modo SQLite no se necesita psycopg instalado.
+        from pg_adapter import connect as _pg_connect
+        return _pg_connect()
+    return _configure_conn(sqlite3.connect(DB_PATH))
+
+
+def get_db():
+    """Conexion per-request usando Flask g (patron recomendado Flask).
+
+    Backend conmutable: SQLite (default) o PostgreSQL si EOS_DB_BACKEND=
+    postgres. Cerrada automaticamente por teardown_appcontext al final del
+    request incluyendo error paths.
     """
     try:
         from flask import g
         if "db" not in g:
-            g.db = _configure_conn(sqlite3.connect(DB_PATH))
+            g.db = _abrir_conn()
         return g.db
     except RuntimeError:
         # Sin app context: scripts de init, tests, herramientas CLI
-        return _configure_conn(sqlite3.connect(DB_PATH))
+        return _abrir_conn()
 
 
 # ── Helper para migraciones idempotentes ──────────────────────────────────────
@@ -6493,6 +6511,11 @@ def run_migrations(conn: "sqlite3.Connection") -> int:
     return applied_count
 
 def init_db():
+    if _usa_postgres():
+        # En modo PostgreSQL el esquema se carga aparte (conftest para los
+        # tests, script de cutover para producción). No corre el init de
+        # SQLite (CREATE TABLE / migraciones / pragmas son SQLite-only).
+        return
     # Sebastián 12-may-2026: integrity_check al startup ANTES de
     # cualquier escritura. Si la BD está corrupta ('database disk
     # image is malformed'), logueamos CRITICAL para que el dev se
@@ -7932,6 +7955,8 @@ def apply_production_corrections(c):
 
 def run_seed_rrhh():
     """Ejecuta seed_rrhh con su propia conexiÃ³n (llamada al arranque)."""
+    if _usa_postgres():
+        return  # los seeds en modo PostgreSQL se cargan aparte
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     seed_rrhh(c)
