@@ -6715,6 +6715,7 @@ def producciones_faltantes():
     consumo_mp_agregado = {}   # codigo_mp -> g_total
     consumo_mee_agregado = {}  # mee_codigo -> unidades_total
     _claves_vistas = set()     # anti-clon · ver _clave_clon abajo
+    productos_sin_volumen = set()  # con MEE configurado pero sin volumen_ml
     hoy_iso = hoy.isoformat()
     for row in prod_rows:
         # Sebastian 5-may-2026: unpack soporta ambos esquemas (con/sin areas_planta)
@@ -6795,6 +6796,12 @@ def producciones_faltantes():
         if vol_ml > 0 and cant_kg_total > 0:
             # Aproximación: 1g ≈ 1ml para productos cosméticos (densidad ~1)
             unidades_envasadas = int(round((cant_kg_total * 1000.0) / vol_ml))
+        elif cant_kg_total > 0 and cuenta_para_faltantes and mee_por_producto.get(producto_norm):
+            # Producto con envases configurados pero SIN volumen_ml registrado:
+            # no se puede calcular cuántos envases necesita → su faltante de
+            # MEE quedaría en CERO (sub-conteo silencioso). Lo reportamos para
+            # que el usuario complete el volumen.
+            productos_sin_volumen.add(producto or producto_norm)
 
         mees_nec = []
         for me in mee_por_producto.get(producto_norm, []):
@@ -6837,22 +6844,58 @@ def producciones_faltantes():
         })
 
     # 10. Calcular faltantes agregados
+    # Lo que YA está pedido NO se vuelve a pedir: OCs activas sin recibir +
+    # SOLs pendientes sin OC. Sin esto el panel muestra como "faltante" lo
+    # que Catalina ya compró → sobrecompra y SOLs duplicadas en cada recarga.
+    # Clave en MAYÚSCULA · MP y MEE no comparten código.
+    pedido_por_codigo = {}
+    try:
+        for r in c.execute("""
+            SELECT UPPER(TRIM(i.codigo_mp)),
+                   COALESCE(SUM(i.cantidad_g - COALESCE(i.cantidad_recibida_g,0)),0)
+            FROM ordenes_compra_items i
+            JOIN ordenes_compra oc ON oc.numero_oc = i.numero_oc
+            WHERE oc.estado IN ('Borrador','Pendiente','Revisada','Aprobada',
+                                'Autorizada','Parcial','Pagada')
+              AND COALESCE(TRIM(i.codigo_mp),'') != ''
+            GROUP BY UPPER(TRIM(i.codigo_mp))
+        """).fetchall():
+            pedido_por_codigo[r[0]] = pedido_por_codigo.get(r[0], 0.0) + float(r[1] or 0)
+    except sqlite3.OperationalError:
+        pass
+    try:
+        for r in c.execute("""
+            SELECT UPPER(TRIM(si.codigo_mp)), COALESCE(SUM(si.cantidad_g),0)
+            FROM solicitudes_compra_items si
+            JOIN solicitudes_compra s ON s.numero = si.numero
+            WHERE s.estado IN ('Pendiente','En revision','Aprobada')
+              AND COALESCE(s.numero_oc,'') = ''
+              AND COALESCE(TRIM(si.codigo_mp),'') != ''
+            GROUP BY UPPER(TRIM(si.codigo_mp))
+        """).fetchall():
+            pedido_por_codigo[r[0]] = pedido_por_codigo.get(r[0], 0.0) + float(r[1] or 0)
+    except sqlite3.OperationalError:
+        pass
+
     faltantes_mps = []
     for cod, g_total in consumo_mp_agregado.items():
         info = mp_info.get(cod, {'nombre': cod, 'proveedor': ''})
         s_actual = float(stock_mp.get(cod, 0))
-        if s_actual == 0:
-            # Fallback: buscar por nombre canonico
+        if cod not in stock_mp:
+            # Fallback por nombre canónico · solo si el código NO está en el
+            # mapa (stock 0 es un valor legítimo · no dispara el fallback).
             nom_up = (info.get('nombre') or '').upper()
             if nom_up in stock_mp:
                 s_actual = float(stock_mp[nom_up])
-        faltante = max(0.0, g_total - s_actual)
+        ya_pedido = pedido_por_codigo.get((cod or '').strip().upper(), 0.0)
+        faltante = max(0.0, g_total - s_actual - ya_pedido)
         if faltante > 0:
             faltantes_mps.append({
                 'codigo_mp': cod,
                 'nombre': info['nombre'],
                 'necesario_total_g': round(g_total, 2),
                 'stock_actual_g': round(s_actual, 2),
+                'ya_pedido_g': round(ya_pedido, 2),
                 'faltante_g': round(faltante, 2),
                 'proveedor_sugerido': info['proveedor'],
             })
@@ -6862,7 +6905,8 @@ def producciones_faltantes():
     for cod, u_total in consumo_mee_agregado.items():
         info = mee_info.get(cod, {'descripcion': cod, 'proveedor': ''})
         s_actual = float(stock_mee.get(cod, 0))
-        faltante = max(0.0, u_total - s_actual)
+        ya_pedido = pedido_por_codigo.get((cod or '').strip().upper(), 0.0)
+        faltante = max(0.0, u_total - s_actual - ya_pedido)
         if faltante > 0:
             faltantes_mees.append({
                 'codigo': cod,
@@ -6870,6 +6914,7 @@ def producciones_faltantes():
                 'tipo': '',
                 'necesario_total_u': round(u_total, 0),
                 'stock_actual_u': round(s_actual, 0),
+                'ya_pedido_u': round(ya_pedido, 0),
                 'faltante_u': round(faltante, 0),
                 'proveedor_sugerido': info['proveedor'],
             })
@@ -7050,6 +7095,7 @@ def producciones_faltantes():
         'producciones_agrupadas': producciones_agrupadas,
         'faltantes_mps': faltantes_mps,
         'faltantes_mees': faltantes_mees,
+        'productos_sin_volumen': sorted(productos_sin_volumen),
         'resumen': {
             'n_producciones': len(producciones_out),
             'n_productos_unicos': len(producciones_agrupadas),
@@ -7057,6 +7103,7 @@ def producciones_faltantes():
                                                 if g['duplicado_sospechoso']),
             'n_mps_faltantes': len(faltantes_mps),
             'n_mees_faltantes': len(faltantes_mees),
+            'n_productos_sin_volumen': len(productos_sin_volumen),
             'n_proveedores_unicos': len(provs),
             'n_realizadas': n_realizadas,
             'n_en_proceso': n_en_proceso,

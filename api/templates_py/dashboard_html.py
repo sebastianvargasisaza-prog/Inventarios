@@ -9057,6 +9057,18 @@ async function ckMarcar(itemId, estado){
       var prods = d.producciones || [];
       var html = '';
 
+      // Advertencia · productos con envases configurados pero SIN volumen_ml
+      // registrado · su faltante de envases NO se puede calcular (queda en 0).
+      var sinVol = d.productos_sin_volumen || [];
+      if(sinVol.length){
+        html += '<div style="background:#fffbeb;border:1px solid #fbbf24;border-left:4px solid #f59e0b;' +
+          'border-radius:8px;padding:10px 12px;margin:10px 0;color:#92400e;font-size:12px">' +
+          '<b>&#9888; ' + sinVol.length + ' producto(s) sin volumen registrado.</b> ' +
+          'No se puede calcular cuántos envases necesitan &middot; el faltante de envases puede estar incompleto. ' +
+          'Registrá el volumen (ml) de: ' + sinVol.map(_abastEsc).join(', ') +
+          '</div>';
+      }
+
       // ═══ SECCIÓN 1 · Materias primas → Compras (agrupadas por proveedor) ═══
       html += '<h3 style="margin:14px 0 8px;color:#6d28d9;font-size:15px">' +
         '1 · Materias primas &rarr; Compras</h3>';
@@ -9093,6 +9105,9 @@ async function ckMarcar(itemId, estado){
         // "Para cuándo" · fecha más temprana de una producción que usa cada envase
         var fechaPorMee = {};
         prods.forEach(function(p){
+          // Saltar producciones ya hechas/en proceso · su fecha no es un
+          // "para cuándo" futuro (mostraba fechas en el pasado).
+          if(p.realizada || p.en_proceso) return;
           var f = (p.fecha || '').slice(0, 10);
           if(!f) return;
           (p.mees_necesarios || []).forEach(function(mn){
