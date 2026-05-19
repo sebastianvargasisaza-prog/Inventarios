@@ -1432,7 +1432,9 @@ def handle_proveedores_compras():
             conn.commit()
             return jsonify({'ok': True, 'message': f"Proveedor '{nombre}' creado",
                              'id': new_id, 'nombre': nombre}), 201
-        except Exception as e: return jsonify({'error': str(e)}), 400
+        except Exception as e:
+            log.exception('crear proveedor fallo: %s', e)
+            return jsonify({'error': 'No se pudo crear el proveedor'}), 400
     c.execute("""SELECT nombre,contacto,email,telefono,categoria,condiciones_pago,
                        nit,direccion,num_cuenta,tipo_cuenta,banco,concepto_compra
                 FROM proveedores WHERE activo=1 ORDER BY nombre""")
@@ -1672,8 +1674,8 @@ def handle_solicitudes_compra():
                     # Rollback puede fallar si no había transacción abierta —
                     # no es crítico, ya estamos en error path.
                     pass
-            import traceback as _tb
-            return jsonify({'error': str(e), 'detail': _tb.format_exc()[-500:]}), 500
+            log.exception('crear solicitud-compra fallo: %s', e)
+            return jsonify({'error': 'No se pudo crear la solicitud'}), 500
     conn = get_db(); c = conn.cursor()
     # GET: listar todas las solicitudes
     filtro_estado = request.args.get('estado', '')
@@ -2322,7 +2324,7 @@ def crear_oc_desde_solicitudes():
         except Exception:
             pass
         log.exception('crear_oc_desde_solicitudes fallo: %s', e)
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'No se pudo crear la OC desde las solicitudes'}), 500
 
 
 # ── Sebastián 4-may-2026 (Catalina): consolidar AUTO-XXXX pendientes ────
@@ -2626,7 +2628,7 @@ def consolidar_auto_pendientes():
         except Exception:
             pass
         log.exception('consolidar_auto_pendientes fallo: %s', e)
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'No se pudo consolidar las solicitudes'}), 500
 
     return jsonify({
         'ok': True,
@@ -2709,7 +2711,7 @@ def limpiar_solicitudes_planta():
         try: conn.rollback()
         except Exception: pass
         log.exception('limpiar_solicitudes_planta fallo: %s', e)
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'No se pudieron limpiar las solicitudes de planta'}), 500
     return jsonify({
         'ok': True,
         'eliminadas': len(nums),
@@ -5449,7 +5451,8 @@ def handle_mee():
             conn.commit()
             return jsonify({'message':f"MEE '{d['codigo']}' creado"}), 201
         except Exception as e:
-            return jsonify({'error':str(e)}), 400
+            log.exception('crear MEE fallo: %s', e)
+            return jsonify({'error': 'No se pudo crear el MEE'}), 400
     # GET
     cat = request.args.get('cat','')
     q   = request.args.get('q','')
