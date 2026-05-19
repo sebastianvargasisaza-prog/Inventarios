@@ -371,10 +371,17 @@ def generar_oc_automatica():
     # Crear OC por cada proveedor
     ordenes_creadas = []
     for prov, items in por_proveedor.items():
-        c.execute("SELECT COALESCE(MAX(CAST(SUBSTR(numero_oc,9) AS INTEGER)),0) FROM ordenes_compra WHERE numero_oc LIKE ?", (f"OC-{datetime.now().strftime('%Y')}-%",)); num=(c.fetchone()[0] or 0)+1
-        numero_oc = f"OC-{datetime.now().strftime('%Y')}-{num:04d}"
-        c.execute("INSERT INTO ordenes_compra (numero_oc, fecha, estado, proveedor, observaciones) VALUES (?,?,?,?,?)",
-                  (numero_oc, datetime.now().isoformat(), 'Pendiente', prov, 'Generada automaticamente por stock bajo minimo'))
+        # numero único con reintento ante carrera MAX+1 entre workers
+        for _intento in range(6):
+            c.execute("SELECT COALESCE(MAX(CAST(SUBSTR(numero_oc,9) AS INTEGER)),0) FROM ordenes_compra WHERE numero_oc LIKE ?", (f"OC-{datetime.now().strftime('%Y')}-%",))
+            numero_oc = f"OC-{datetime.now().strftime('%Y')}-{(c.fetchone()[0] or 0)+1:04d}"
+            try:
+                c.execute("INSERT INTO ordenes_compra (numero_oc, fecha, estado, proveedor, observaciones) VALUES (?,?,?,?,?)",
+                          (numero_oc, datetime.now().isoformat(), 'Pendiente', prov, 'Generada automaticamente por stock bajo minimo'))
+                break
+            except sqlite3.IntegrityError:
+                if _intento == 5:
+                    raise
         for item in items:
             c.execute("INSERT INTO ordenes_compra_items (numero_oc, codigo_mp, nombre_mp, cantidad_g) VALUES (?,?,?,?)",
                       (numero_oc, item['codigo_mp'], item['nombre_mp'], item['cantidad_pedir']))
@@ -644,12 +651,19 @@ def handle_ordenes_compra():
             return err, code
         d = request.get_json(silent=True) or {}
         if not d.get('proveedor'): return jsonify({'error': 'Proveedor requerido'}), 400
-        c.execute("SELECT COALESCE(MAX(CAST(SUBSTR(numero_oc,9) AS INTEGER)),0) FROM ordenes_compra WHERE numero_oc LIKE ?", (f"OC-{datetime.now().strftime('%Y')}-%",)); num = (c.fetchone()[0] or 0) + 1
-        numero_oc = f"OC-{datetime.now().strftime('%Y')}-{num:04d}"
         categoria = d.get('categoria', 'MP')
-        c.execute("INSERT INTO ordenes_compra (numero_oc,fecha,estado,proveedor,observaciones,creado_por,fecha_entrega_est,categoria) VALUES (?,?,?,?,?,?,?,?)",
-                  (numero_oc, datetime.now().isoformat(), 'Borrador', d['proveedor'],
-                   d.get('observaciones',''), d.get('creado_por',''), d.get('fecha_entrega_est',''), categoria))
+        # numero único con reintento ante carrera MAX+1 entre workers
+        for _intento in range(6):
+            c.execute("SELECT COALESCE(MAX(CAST(SUBSTR(numero_oc,9) AS INTEGER)),0) FROM ordenes_compra WHERE numero_oc LIKE ?", (f"OC-{datetime.now().strftime('%Y')}-%",))
+            numero_oc = f"OC-{datetime.now().strftime('%Y')}-{(c.fetchone()[0] or 0)+1:04d}"
+            try:
+                c.execute("INSERT INTO ordenes_compra (numero_oc,fecha,estado,proveedor,observaciones,creado_por,fecha_entrega_est,categoria) VALUES (?,?,?,?,?,?,?,?)",
+                          (numero_oc, datetime.now().isoformat(), 'Borrador', d['proveedor'],
+                           d.get('observaciones',''), d.get('creado_por',''), d.get('fecha_entrega_est',''), categoria))
+                break
+            except sqlite3.IntegrityError:
+                if _intento == 5:
+                    raise
 
         # ── FIX Catalina: auto-persistir proveedor en tabla proveedores
         # Antes el proveedor solo quedaba como string en ordenes_compra.proveedor.
@@ -1614,8 +1628,6 @@ def handle_solicitudes_compra():
         try:
             conn = get_db(); c = conn.cursor()
             d = request.json or {}
-            c.execute("SELECT COALESCE(MAX(CAST(SUBSTR(numero,10) AS INTEGER)),0) FROM solicitudes_compra WHERE numero LIKE ?", (f"SOL-{datetime.now().strftime('%Y')}-%",)); num = (c.fetchone()[0] or 0) + 1
-            numero = f"SOL-{datetime.now().strftime('%Y')}-{num:04d}"
             emp = d.get('empresa','Espagiria')
             cat = d.get('categoria','Materia Prima')
             tip = d.get('tipo','Compra')
@@ -1623,12 +1635,21 @@ def handle_solicitudes_compra():
             email_sol = d.get('email_solicitante', '').strip().lower()
             fecha_req = d.get('fecha_requerida', '').strip()
             val_sol = float(d.get('valor') or 0)
-            c.execute("""INSERT INTO solicitudes_compra
-                         (numero,fecha,estado,solicitante,urgencia,observaciones,area,empresa,categoria,tipo,email_solicitante,fecha_requerida,valor)
-                         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                      (numero, datetime.now().isoformat(), 'Pendiente',
-                       d.get('solicitante',''), d.get('urgencia','Normal'), d.get('observaciones',''),
-                       area, emp, cat, tip, email_sol, fecha_req, val_sol))
+            # numero único con reintento ante carrera MAX+1 entre workers
+            for _intento in range(6):
+                c.execute("SELECT COALESCE(MAX(CAST(SUBSTR(numero,10) AS INTEGER)),0) FROM solicitudes_compra WHERE numero LIKE ?", (f"SOL-{datetime.now().strftime('%Y')}-%",))
+                numero = f"SOL-{datetime.now().strftime('%Y')}-{(c.fetchone()[0] or 0)+1:04d}"
+                try:
+                    c.execute("""INSERT INTO solicitudes_compra
+                                 (numero,fecha,estado,solicitante,urgencia,observaciones,area,empresa,categoria,tipo,email_solicitante,fecha_requerida,valor)
+                                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                              (numero, datetime.now().isoformat(), 'Pendiente',
+                               d.get('solicitante',''), d.get('urgencia','Normal'), d.get('observaciones',''),
+                               area, emp, cat, tip, email_sol, fecha_req, val_sol))
+                    break
+                except sqlite3.IntegrityError:
+                    if _intento == 5:
+                        raise
             for it in (d.get('items') or []):
                 # proveedor_sugerido es opcional. Migración 19xx aseguró que la
                 # columna exista. Si por alguna razón no, fallback al INSERT
@@ -2186,24 +2207,30 @@ def crear_oc_desde_solicitudes():
             ]
 
         # 4. Crear la OC
-        c.execute(
-            "SELECT COALESCE(MAX(CAST(SUBSTR(numero_oc,9) AS INTEGER)),0) "
-            "FROM ordenes_compra WHERE numero_oc LIKE ?",
-            (f"OC-{datetime.now().strftime('%Y')}-%",),
-        )
-        next_n = (c.fetchone()[0] or 0) + 1
-        numero_oc = f"OC-{datetime.now().strftime('%Y')}-{next_n:04d}"
         obs = f"OC consolidada desde {len(nums)} solicitudes"
         if obs_extra:
             obs = obs_extra + ' · ' + obs
-        c.execute(
-            """INSERT INTO ordenes_compra
-               (numero_oc, fecha, estado, proveedor, observaciones,
-                creado_por, fecha_entrega_est, categoria)
-               VALUES (?,?,?,?,?,?,?,?)""",
-            (numero_oc, datetime.now().isoformat(), 'Borrador', proveedor,
-             obs, usuario, fecha_entrega_est, categoria),
-        )
+        # numero único con reintento ante carrera MAX+1 entre workers
+        for _intento in range(6):
+            c.execute(
+                "SELECT COALESCE(MAX(CAST(SUBSTR(numero_oc,9) AS INTEGER)),0) "
+                "FROM ordenes_compra WHERE numero_oc LIKE ?",
+                (f"OC-{datetime.now().strftime('%Y')}-%",),
+            )
+            numero_oc = f"OC-{datetime.now().strftime('%Y')}-{(c.fetchone()[0] or 0)+1:04d}"
+            try:
+                c.execute(
+                    """INSERT INTO ordenes_compra
+                       (numero_oc, fecha, estado, proveedor, observaciones,
+                        creado_por, fecha_entrega_est, categoria)
+                       VALUES (?,?,?,?,?,?,?,?)""",
+                    (numero_oc, datetime.now().isoformat(), 'Borrador', proveedor,
+                     obs, usuario, fecha_entrega_est, categoria),
+                )
+                break
+            except sqlite3.IntegrityError:
+                if _intento == 5:
+                    raise
 
         # 5. Auto-crear proveedor si no existe (con audit_log)
         try:
@@ -2544,13 +2571,6 @@ def consolidar_auto_pendientes():
     sols_a_eliminar = []
     try:
         for g in plan_grupos:
-            # Generar numero AUTO-XXXX nuevo
-            next_n = c.execute("""
-                SELECT COALESCE(MAX(CAST(SUBSTR(numero, 6) AS INTEGER)), 0) + 1
-                FROM solicitudes_compra WHERE numero LIKE 'AUTO-%'
-            """).fetchone()[0] or 1
-            new_num = f'AUTO-{next_n:04d}'
-
             top = sorted(g['_items_payload'], key=lambda x: -float(x.get('cantidad_g') or 0))[:3]
             resumen = ', '.join(
                 f"{(it.get('nombre_mp') or '')[:25]} {round(float(it.get('cantidad_g') or 0)/1000.0,1)}kg"
@@ -2563,14 +2583,25 @@ def consolidar_auto_pendientes():
                 f"{g['items_count']} MPs · {round(g['total_g']/1000.0,1)}kg total · "
                 f"{resumen} · (consolidacion legacy {datetime.now().date().isoformat()})"
             )
-
-            c.execute("""
-                INSERT INTO solicitudes_compra
-                  (numero, fecha, estado, solicitante, urgencia,
-                   observaciones, area, empresa, categoria, tipo, valor)
-                VALUES (?, date('now', '-5 hours'), 'Pendiente', 'AUTO-PLAN', ?, ?,
-                        'Producción', 'Espagiria', ?, 'Compra', 0)
-            """, (new_num, g['urgencia'], obs, g['categoria']))
+            # numero AUTO-XXXX único con reintento ante carrera MAX+1
+            for _intento in range(6):
+                next_n = c.execute("""
+                    SELECT COALESCE(MAX(CAST(SUBSTR(numero, 6) AS INTEGER)), 0) + 1
+                    FROM solicitudes_compra WHERE numero LIKE 'AUTO-%'
+                """).fetchone()[0] or 1
+                new_num = f'AUTO-{next_n:04d}'
+                try:
+                    c.execute("""
+                        INSERT INTO solicitudes_compra
+                          (numero, fecha, estado, solicitante, urgencia,
+                           observaciones, area, empresa, categoria, tipo, valor)
+                        VALUES (?, date('now', '-5 hours'), 'Pendiente', 'AUTO-PLAN', ?, ?,
+                                'Producción', 'Espagiria', ?, 'Compra', 0)
+                    """, (new_num, g['urgencia'], obs, g['categoria']))
+                    break
+                except sqlite3.IntegrityError:
+                    if _intento == 5:
+                        raise
             for it in g['_items_payload']:
                 try:
                     c.execute("""
@@ -3550,9 +3581,6 @@ def actualizar_estado_solicitud(numero):
                 pass
         fent_oc = d.get('fecha_entrega_est', '')
         obs_oc = d.get('observaciones_oc') or f'Generado desde {numero.upper()}'
-        cur.execute("SELECT COALESCE(MAX(CAST(SUBSTR(numero_oc,9) AS INTEGER)),0) FROM ordenes_compra WHERE numero_oc LIKE ?", (f"OC-{datetime.now().year}-%",))
-        n_oc = (cur.fetchone()[0] or 0) + 1
-        oc_num = f"OC-{datetime.now().year}-{n_oc:04d}"
         # Influencer y Cuenta de Cobro saltan directo a Autorizada
         # (gerencia ya aprobo la solicitud en su tab — no necesita doble autorizacion)
         _FAST_TRACK = ('Influencer/Marketing Digital', 'Cuenta de Cobro')
@@ -3565,13 +3593,22 @@ def actualizar_estado_solicitud(numero):
             _err_lim, _ = _check_monto_limit(session.get('compras_user', ''), valor_oc)
             if _err_lim:
                 estado_oc = 'Revisada'
-        cur.execute(
-            "INSERT INTO ordenes_compra "
-            "(numero_oc, fecha, estado, proveedor, observaciones, creado_por, valor_total, fecha_entrega_est, categoria) "
-            "VALUES (?,?,?,?,?,?,?,?,?)",
-            (oc_num, datetime.now().isoformat(), estado_oc, proveedor_oc,
-             obs_oc, session.get('compras_user',''),
-             valor_oc if valor_oc > 0 else None, fent_oc or None, categoria_oc))
+        # numero único con reintento ante carrera MAX+1 entre workers
+        for _intento in range(6):
+            cur.execute("SELECT COALESCE(MAX(CAST(SUBSTR(numero_oc,9) AS INTEGER)),0) FROM ordenes_compra WHERE numero_oc LIKE ?", (f"OC-{datetime.now().year}-%",))
+            oc_num = f"OC-{datetime.now().year}-{(cur.fetchone()[0] or 0)+1:04d}"
+            try:
+                cur.execute(
+                    "INSERT INTO ordenes_compra "
+                    "(numero_oc, fecha, estado, proveedor, observaciones, creado_por, valor_total, fecha_entrega_est, categoria) "
+                    "VALUES (?,?,?,?,?,?,?,?,?)",
+                    (oc_num, datetime.now().isoformat(), estado_oc, proveedor_oc,
+                     obs_oc, session.get('compras_user',''),
+                     valor_oc if valor_oc > 0 else None, fent_oc or None, categoria_oc))
+                break
+            except sqlite3.IntegrityError:
+                if _intento == 5:
+                    raise
         for it in items_sol:
             cur.execute("INSERT INTO ordenes_compra_items (numero_oc, codigo_mp, nombre_mp, cantidad_g) VALUES (?,?,?,?)",
                       (oc_num, it[0], it[1], it[2]))
