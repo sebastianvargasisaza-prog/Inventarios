@@ -9770,6 +9770,108 @@ def diagnostico_migracion():
     })
 
 
+@bp.route("/api/admin/diagnostico-migracion-detalle", methods=["GET"])
+def diagnostico_migracion_detalle():
+    """Diagnóstico granular fila-por-fila · compara IDs específicos entre
+    SQLite viejo y PostgreSQL actual. Confirma con certeza que ninguna
+    producción ejecutada ni movimiento de kardex se perdió."""
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+
+    import os
+    import sqlite3 as _sq
+    SQLITE_PATH = '/var/data/inventario.db'
+    if not os.path.exists(SQLITE_PATH):
+        return jsonify({'error': f'SQLite viejo no existe en {SQLITE_PATH}'}), 404
+
+    pg_cur = get_db().cursor()
+    sq_conn = _sq.connect(SQLITE_PATH)
+    sq_cur = sq_conn.cursor()
+
+    # ── 1) Producciones ejecutadas (fin_real_at o inventario_descontado_at) ──
+    Q_EJEC = ("""SELECT id, COALESCE(producto,''), COALESCE(fecha_programada,''),
+                        COALESCE(fin_real_at,''), COALESCE(cantidad_kg, 0),
+                        COALESCE(estado,''),
+                        COALESCE(inventario_descontado_at,''),
+                        COALESCE(origen,'')
+                 FROM produccion_programada
+                 WHERE fin_real_at IS NOT NULL
+                    OR inventario_descontado_at IS NOT NULL
+                 ORDER BY id""")
+    sq_cur.execute(Q_EJEC)
+    sq_prods = {r[0]: r for r in sq_cur.fetchall()}
+    pg_cur.execute(Q_EJEC)
+    pg_prods = {r[0]: r for r in pg_cur.fetchall()}
+    prod_faltan = []
+    for pid in sorted(sq_prods.keys() - pg_prods.keys()):
+        r = sq_prods[pid]
+        prod_faltan.append({
+            'id': r[0], 'producto': r[1], 'fecha_programada': r[2],
+            'fin_real_at': r[3], 'cantidad_kg': r[4], 'estado': r[5],
+            'inventario_descontado_at': r[6], 'origen': r[7],
+        })
+
+    # ── 2) Movimientos (kardex MP) — comparar todos los IDs ──
+    sq_cur.execute("SELECT id FROM movimientos")
+    sq_mov = {r[0] for r in sq_cur.fetchall()}
+    pg_cur.execute("SELECT id FROM movimientos")
+    pg_mov = {r[0] for r in pg_cur.fetchall()}
+    mov_faltan_ids = sorted(sq_mov - pg_mov)
+
+    mov_faltan_detalle = []
+    if mov_faltan_ids:
+        ph = ','.join(['?'] * len(mov_faltan_ids))
+        sq_cur.execute(f"""SELECT id, COALESCE(material_id,''),
+                          COALESCE(material_nombre,''), COALESCE(cantidad,0),
+                          COALESCE(fecha,''), COALESCE(lote,''),
+                          COALESCE(tipo,'')
+                          FROM movimientos WHERE id IN ({ph})
+                          ORDER BY id""", mov_faltan_ids)
+        for r in sq_cur.fetchall():
+            mov_faltan_detalle.append({
+                'id': r[0], 'material_id': r[1], 'material_nombre': r[2],
+                'cantidad': r[3], 'fecha': r[4], 'lote': r[5], 'tipo': r[6],
+            })
+
+    # ── 3) Últimas 15 Entradas (ingresos de MP) · verificación visual ──
+    Q_ENT = """SELECT id, COALESCE(material_id,''),
+                      COALESCE(material_nombre,''), COALESCE(cantidad,0),
+                      COALESCE(fecha,''), COALESCE(lote,'')
+               FROM movimientos WHERE tipo='Entrada'
+               ORDER BY fecha DESC, id DESC LIMIT 15"""
+    sq_cur.execute(Q_ENT)
+    sq_ent = [{'id': r[0], 'material_id': r[1], 'material_nombre': r[2],
+               'cantidad': r[3], 'fecha': r[4], 'lote': r[5]}
+              for r in sq_cur.fetchall()]
+    pg_cur.execute(Q_ENT)
+    pg_ent = [{'id': r[0], 'material_id': r[1], 'material_nombre': r[2],
+               'cantidad': r[3], 'fecha': r[4], 'lote': r[5]}
+              for r in pg_cur.fetchall()]
+
+    sq_conn.close()
+    return jsonify({
+        'producciones_ejecutadas': {
+            'sqlite_total': len(sq_prods),
+            'postgres_total': len(pg_prods),
+            'faltan_en_postgres': prod_faltan,
+            'todas_intactas': len(prod_faltan) == 0,
+        },
+        'movimientos_kardex': {
+            'sqlite_total': len(sq_mov),
+            'postgres_total': len(pg_mov),
+            'ids_faltan_en_postgres': mov_faltan_ids,
+            'detalle_faltantes': mov_faltan_detalle,
+            'todos_intactos': len(mov_faltan_ids) == 0,
+        },
+        'ultimas_15_entradas_mp': {
+            'sqlite': sq_ent,
+            'postgres': pg_ent,
+        },
+    })
+
+
 @bp.route("/api/plan/recuperar-semana-19may2026", methods=["GET", "POST"])
 def recuperar_semana_19may2026():
     """Recuperación puntual · Sebastián 19-may-2026.
