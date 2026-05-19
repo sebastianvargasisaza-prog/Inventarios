@@ -10,3 +10,6 @@ pyotp==2.9.0
 # qrcode: genera QR server-side para setup MFA (CSP-safe · sin servicio externo)
 # Sebastian 13-may-2026: QR escaneable desde iPhone Camera nativa
 qrcode[pil]==7.4.2
+# psycopg: driver PostgreSQL · migración Fase 3+ · solo se usa cuando
+# EOS_DB_BACKEND=postgres (import perezoso) · sin esa env var, no se carga.
+psycopg[binary]==3.3.4
