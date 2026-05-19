@@ -477,6 +477,15 @@ def translate_placeholders(sql: str) -> str:
                 out.append('%s')
             elif ch == '%':
                 out.append('%%')
+            elif ch == '"' and i + 1 < n and sql[i + 1] == '"':
+                # `""` fuera de un literal `'...'` en SQLite es un string
+                # vacío · en PostgreSQL `""` sería un identificador vacío
+                # (inválido). Lo traducimos a `''` (string vacío SQL estándar).
+                # Sebastián 19-may-2026: vino del bug "Sin producciones
+                # registradas" en el historial · el COALESCE(col,"") rompía.
+                out.append("''")
+                i += 2
+                continue
             else:
                 out.append(ch)
         i += 1

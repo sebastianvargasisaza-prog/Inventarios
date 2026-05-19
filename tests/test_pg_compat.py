@@ -70,3 +70,23 @@ def test_idempotencia_no_aplica_doble():
     dos = tr(una)
     assert una == "WHERE id=%s"
     assert dos == "WHERE id=%%s"
+
+
+def test_string_vacio_doble_comilla_se_traduce():
+    # En SQLite `""` es un string vacío; en PostgreSQL sería un identificador
+    # vacío inválido. El traductor lo convierte a `''`. Bug que cazaría: el
+    # "Sin producciones registradas" del 19-may-2026 (COALESCE(col, "")).
+    assert tr('COALESCE(presentacion, "") FROM t') == \
+        "COALESCE(presentacion, '') FROM t"
+
+
+def test_string_vacio_dentro_de_literal_no_se_toca():
+    # Si `""` aparece DENTRO de un literal `'...'`, es data del usuario y
+    # NO se debe rewrite (cambiar `''` ahí cambia el valor almacenado).
+    assert tr("WHERE x = 'dijo \"\" hola'") == "WHERE x = 'dijo \"\" hola'"
+
+
+def test_identificador_con_comillas_dobles_no_se_toca():
+    # `"foo"` (no vacío) es un identificador en PG · se preserva.
+    assert tr('SELECT "miCol" FROM t WHERE id=?') == \
+        'SELECT "miCol" FROM t WHERE id=%s'
