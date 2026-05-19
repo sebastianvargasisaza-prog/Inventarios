@@ -1507,6 +1507,14 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       style="padding:9px 22px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:700;cursor:pointer;background:#1e40af;color:#fff;box-shadow:0 3px 10px rgba(30,64,175,.35)">
       &#128100; Mi D&iacute;a
     </button>
+    <!-- Sebastián 19-may-2026: Centro de Mando visible · vista live de planta
+         (plano + áreas limpias/sucias + qué hace cada operario). El sueño de
+         Alejandro · se desglosa paso a paso desde acá. -->
+    <button id="prog-tab-mando" onclick="switchProgTab('mando')"
+      style="padding:9px 22px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:700;cursor:pointer;background:#1a4a7a;color:#fff;box-shadow:0 3px 10px rgba(26,74,122,.35)"
+      title="Vista live de la planta · plano, áreas limpias o sucias y qué hace cada operario">
+      &#127919; Centro de Mando
+    </button>
     <span id="prog-tareas-badge" style="display:none;background:#dc2626;color:#fff;font-size:9px;font-weight:800;padding:2px 8px;border-radius:8px"></span>
   </div>
   <!-- Tab "Calendario + IA" · iframe a /admin/plan-calendario · Sebastián 14-may-2026:
@@ -1685,7 +1693,6 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
   </div>
   <!-- Botones HIDDEN para no romper switchProgTab() y JS existente -->
   <div style="display:none">
-    <button id="prog-tab-mando"></button>
     <button id="prog-tab-autoplan"></button>
     <button id="prog-tab-maquila"></button>
     <button id="prog-tab-config"></button>
