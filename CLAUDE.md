@@ -55,8 +55,18 @@ Before touching `inventario.py`, `compras.py`, or `programacion.py`, read in thi
 ### Stock = SUM(movimientos), always
 The `movimientos` table is the canonical kardex. Compute stock with `_get_mp_stock(conn)` from `programacion.py` — never with a parallel `stock_actual_g` cache (caused drift in the past). Every `INSERT INTO movimientos` requires a real `lote`; the synthetic fallback `'AJUSTE-CICLICO-<id>'` is only allowed when the source row has no lote at all.
 
-### Calendar is the single source of truth for production
-Google Calendar (account `animuslb.com`) defines what gets produced and when. The app reads via iCal (`GCAL_ICAL_URL`) or API (`GCAL_API_KEY`) and mirrors into `produccion_programada`. The app **never writes to Calendar** — Alejandro does that manually. `_sync_calendar_a_produccion_programada()` in `programacion.py` is the mirror; `force_mirror=True` hard-deletes orphans (only fired by the explicit "Re-sync Calendar" admin button — background crons must always pass `False`). Rows with `inicio_real_at` or `inventario_descontado_at` set are never touched by sync.
+### Production planning has TWO layers · Fijo vs Sugerido
+Sebastián 19-may-2026 (rediseño post-incidente): `produccion_programada` separa lo que el usuario **fijó** de lo que la IA **sugiere**. Esto es ley dura · violarla pierde el plan del usuario.
+
+- **Fijo** — `origen IN ('eos_plan', 'eos_b2b', 'eos_retroactivo')`. Lo que el usuario decidió (arrastró o editó en el calendario), pedidos B2B y backfills históricos. **NUNCA tocado por procesos automáticos.** Cualquier `UPDATE ... SET estado='cancelado'` o `DELETE` que opere sobre un conjunto de filas DEBE excluir explícitamente esos orígenes:
+  `AND COALESCE(origen,'') NOT IN ('eos_plan', 'eos_b2b', 'eos_retroactivo')`
+- **Sugerido** — `origen IN ('eos_canonico', 'calendar', 'manual', 'auto_plan', 'sugerido')`. La IA, el plan canónico y Google Calendar lo producen. Los regeneradores (`regenerar_canonicos`, `generar_plan_perfecto`), la limpieza Calendar-first y `LIMPIAR_PRODUCCION_ZOMBIES` pueden cancelarlo.
+
+**Promoción automática a Fijo**: `REPROGRAMAR_PRODUCCION_PROGRAMADA` y `EDITAR_KG_PRODUCCION` ponen `origen='eos_plan'` al UPDATE — tocar = fijar. Test que lo protege: `test_golden_plan_fijo_sobrevive_regenerar`.
+
+**Google Calendar** sigue como entrada de sugerencias (ya no es la única fuente de verdad). `_sync_calendar_a_produccion_programada()` con `force_mirror=True` ya NO borra Fijo (fix 19-may). Background crons pasan `force_mirror=False`. Rows con `inicio_real_at` o `inventario_descontado_at` set tampoco se tocan.
+
+**Botones peligrosos** ("Regenerar canónicos", "Generar plan perfecto") muestran confirmación honesta: cancelan solo las Sugeridas, lo Fijo NO se toca.
 
 ### Three sources of purchase requests (SOLs) that must not bleed into each other
 `?fuente=` filters `/api/solicitudes-compra` and `/api/compras/solicitudes-agrupadas-por-proveedor`:
@@ -84,7 +94,8 @@ Catalina's UI tabs depend on these never overlapping. PATCHing a SOL item also w
 - **MP stock for planning uses Shopify `Available`, not `On hand`** — `Committed` is already sold.
 - **A fabricated lot takes ~7 days** to be Available in Shopify; add the production pipeline to effective stock when planning.
 - **Mayerlin is fixed in dispensación** — operario assignments enforce this with DB triggers (migration 82). When adding planta features, verify `fija_en_dispensacion=1` is honored, or `trg_pp_fija_*` will block the INSERT.
-- **`audit_log` is mandatory** on any operation that mutates inventory, SOLs, OCs, or regulated quality records. Reviewer flags missing audits.
+- **`audit_log` is mandatory** on any operation that mutates inventory, SOLs, OCs, regulated quality records, **o `produccion_programada`**. Reviewer flags missing audits. Una cancelación/borrado de `produccion_programada` que no auditó es la que hizo desaparecer la programación del 19-may sin dejar rastro.
+- **SQL string literals usan `''`, no `""`**. En PostgreSQL `""` es identificador vacío (inválido) — `COALESCE(col,"")` falla silenciosamente y la vista queda vacía. `pg_compat.translate_placeholders` ahora reescribe `""` → `''` fuera de literales, pero escribilo bien desde el principio. Tests en `test_pg_compat.py` protegen el comportamiento.
 - Use the **`safe_alter`** helper for migrations; never wrap DDL in bare `try/except: pass` (silences typos).
 
 ## Operational references

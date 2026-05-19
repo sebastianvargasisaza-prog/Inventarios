@@ -3557,12 +3557,18 @@ def planta_centro_mando():
         # placeholder · debe desaparecer. Si necesita mostrarse, Calendar
         # debe tenerla.
         # Guard único: máximo 200 por GET.
+        # Sebastián 19-may-2026 (post-incidente): NUNCA tocar lo FIJO
+        # (eos_plan / eos_b2b / eos_retroactivo). El auto-clean estricto
+        # Calendar-first cancelaba lo que el usuario fijó si no estaba en
+        # Google Calendar · ése fue el bug que borró las 4 producciones de
+        # la semana del 19-may. Ahora solo aplica a sugerencias.
         _db_rows = _ac.execute("""
             SELECT id, producto, date(fecha_programada)
             FROM produccion_programada
             WHERE date(fecha_programada) BETWEEN ? AND ?
               AND COALESCE(estado, 'programado') IN ('', 'programado', 'planeado')
               AND inicio_real_at IS NULL
+              AND COALESCE(origen,'') NOT IN ('eos_plan','eos_b2b','eos_retroactivo')
             LIMIT 200
         """, (_f_inicio, _f_fin)).fetchall()
         auto_clean_diag['db_rows_check'] = len(_db_rows)
@@ -3584,6 +3590,15 @@ def planta_centro_mando():
                 WHERE id=?
             """, (pid,))
             auto_canceladas_inicial += 1
+            try:
+                audit_log(_ac, usuario='sistema_centro_mando_auto_clean',
+                          accion='AUTO_CANCELAR_PRODUCCION',
+                          tabla='produccion_programada', registro_id=pid,
+                          despues={'razon': 'estricto Calendar-first · sin match',
+                                   'producto': prod, 'fecha': fecha})
+            except Exception as _e:
+                logging.getLogger('programacion').warning(
+                    f'[centro-mando auto-clean] audit fallo id={pid}: {_e}')
             if len(auto_cancel_detalle_inicial) < 5:
                 auto_cancel_detalle_inicial.append(f"{(prod or '?')[:30]} {fecha}")
         # FORZAR commit siempre
@@ -4132,11 +4147,14 @@ def limpiar_db_sin_calendar():
         return jsonify({'ok': False, 'error': f'Calendar fetch falla: {e}'}), 500
 
     # 2) DB rows en horizonte sin match Calendar (no iniciadas)
+    # Sebastián 19-may-2026: respetar lo FIJO · esta limpieza solo aplica
+    # a sugerencias (canónico/calendar/manual), nunca a lo que el usuario fijó.
     rows = c.execute("""
         SELECT id, producto, date(fecha_programada) as f, COALESCE(estado,'')
         FROM produccion_programada
         WHERE date(fecha_programada) BETWEEN ? AND ?
           AND COALESCE(estado, 'programado') IN ('', 'programado', 'planeado')
+          AND COALESCE(origen,'') NOT IN ('eos_plan','eos_b2b','eos_retroactivo')
     """, (fechas_horizonte[0].isoformat(), fechas_horizonte[-1].isoformat())).fetchall()
 
     a_cancelar = []
@@ -4165,6 +4183,13 @@ def limpiar_db_sin_calendar():
                 WHERE id=?
             """, (user, pid))
             canceladas += 1
+            try:
+                audit_log(c, usuario=user, accion='AUTO_CANCELAR_PRODUCCION',
+                          tabla='produccion_programada', registro_id=pid,
+                          despues={'razon': 'limpieza · sin match Calendar',
+                                   'producto': prod, 'fecha': f})
+            except Exception:
+                pass
         except Exception:
             continue
     conn.commit()

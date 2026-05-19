@@ -20971,6 +20971,9 @@ def limpiar_produccion_zombies():
         """).fetchall()
 
         # B. Programadas viejas sin iniciar (>7d pasado)
+        # Sebastián 19-may-2026: NUNCA cancelar lo FIJO (eos_plan / eos_b2b /
+        # eos_retroactivo). Si el usuario fijó algo, es decisión suya — la
+        # limpieza automática no la toca aunque pase el deadline.
         prog_viejas = c.execute("""
             SELECT id, producto, fecha_programada, estado
             FROM produccion_programada
@@ -20978,6 +20981,7 @@ def limpiar_produccion_zombies():
               AND date(fecha_programada) < date('now', '-5 hours', '-7 days')
               AND COALESCE(inicio_real_at,'') = ''
               AND COALESCE(inventario_descontado_at,'') = ''
+              AND COALESCE(origen,'') NOT IN ('eos_plan','eos_b2b','eos_retroactivo')
             ORDER BY fecha_programada
         """).fetchall()
 
@@ -21064,7 +21068,8 @@ def limpiar_produccion_zombies():
                                 || ' [auto-dedup: duplicado gcal_event_id]'
                         WHERE id IN ({ph})
                           AND COALESCE(inicio_real_at,'') = ''
-                          AND COALESCE(inventario_descontado_at,'') = ''""",
+                          AND COALESCE(inventario_descontado_at,'') = ''
+                          AND COALESCE(origen,'') NOT IN ('eos_plan','eos_b2b','eos_retroactivo')""",
                     discard
                 )
                 dedup += c.rowcount or 0

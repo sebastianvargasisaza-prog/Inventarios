@@ -3331,9 +3331,13 @@ def limpiar_duplicados():
     conn = get_db()
     c = conn.cursor()
 
-    # Prioridad por origen · 0 = mejor (no se cancela)
+    # Prioridad por origen · 0 = mejor (no se cancela en dedup)
+    # Sebastián 19-may-2026: orígenes FIJOS (lo que el usuario fijó / B2B
+    # / históricos) tienen máxima prioridad y nunca son los cancelados.
     PRIORIDAD = {
         'eos_plan': 0,
+        'eos_b2b': 0,
+        'eos_retroactivo': 0,
         'eos_canonico': 1,
         'calendar': 2,
         'manual': 3,
@@ -10245,7 +10249,9 @@ def aplicar_ia_bulk():
     conn = get_db()
     cur = conn.cursor()
 
-    # 1) Cancelar plan canónico + eos_plan actual
+    # 1) Cancelar plan canónico sugerido · NUNCA toca lo FIJO (eos_plan)
+    # Sebastián 19-may-2026: antes incluía eos_plan, lo que borraba lo que
+    # el usuario fijó. Ahora respeta la separación Fijo vs Sugerido.
     n_cancelados = 0
     if cancelar_actual:
         n_cancelados = cur.execute(
@@ -10253,7 +10259,7 @@ def aplicar_ia_bulk():
                SET estado='cancelado',
                    observaciones=COALESCE(observaciones,'') ||
                      ' · CANCELADO_BULK_IA_' || datetime('now','-5 hours')
-               WHERE origen IN ('eos_canonico','eos_plan')
+               WHERE origen IN ('eos_canonico','calendar','manual')
                  AND estado IN ('pendiente','programado','esperando_recurso')
                  AND fin_real_at IS NULL
                  AND inicio_real_at IS NULL""",
@@ -10424,7 +10430,7 @@ def aplicar_ia_anual():
                SET estado='cancelado',
                    observaciones=COALESCE(observaciones,'') ||
                      ' · CANCELADO_PLAN_IA_ANUAL_' || datetime('now','-5 hours')
-               WHERE origen IN ('eos_canonico','eos_plan')
+               WHERE origen IN ('eos_canonico','calendar','manual')
                  AND estado IN ('pendiente','programado','esperando_recurso')
                  AND fin_real_at IS NULL
                  AND inicio_real_at IS NULL""",
