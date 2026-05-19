@@ -45,11 +45,14 @@ def hub_resumen():
     cnt_por_autorizar = oc_data.get('Revisada',{}).get('count',0)
     # Stock crítico
     c.execute("""SELECT COUNT(*) FROM (
-        SELECT m.material_id, COALESCE(SUM(CASE WHEN m.tipo='Entrada' THEN m.cantidad WHEN m.tipo='Salida' THEN -m.cantidad ELSE 0 END),0) as stock,
-               mp.stock_minimo FROM movimientos m
+        SELECT m.material_id,
+               COALESCE(SUM(CASE WHEN m.tipo='Entrada' THEN m.cantidad WHEN m.tipo='Salida' THEN -m.cantidad ELSE 0 END),0) as stock,
+               MAX(mp.stock_minimo) as stock_minimo
+        FROM movimientos m
         LEFT JOIN maestro_mps mp ON m.material_id=mp.codigo_mp
-        GROUP BY m.material_id HAVING stock < COALESCE(mp.stock_minimo,0) AND COALESCE(mp.stock_minimo,0)>0
-    )""")
+        GROUP BY m.material_id
+    ) sub
+    WHERE sub.stock < COALESCE(sub.stock_minimo,0) AND COALESCE(sub.stock_minimo,0)>0""")
     stock_crit = c.fetchone()[0] or 0
     # Compromisos
     c.execute("SELECT estado, prioridad, COUNT(*) FROM compromisos GROUP BY estado, prioridad")

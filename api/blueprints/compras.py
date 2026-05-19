@@ -729,9 +729,9 @@ def handle_ordenes_compra():
         " FROM ordenes_compra o LEFT JOIN ordenes_compra_items i ON o.numero_oc=i.numero_oc"
     )
     if cat_filter:
-        c.execute(_sql + " WHERE o.categoria=? GROUP BY o.numero_oc ORDER BY o.fecha DESC LIMIT 300", (cat_filter,))
+        c.execute(_sql + " WHERE o.categoria=? GROUP BY o.id ORDER BY o.fecha DESC LIMIT 300", (cat_filter,))
     else:
-        c.execute(_sql + " GROUP BY o.numero_oc ORDER BY o.fecha DESC LIMIT 300")
+        c.execute(_sql + " GROUP BY o.id ORDER BY o.fecha DESC LIMIT 300")
     cols = ['numero_oc','fecha','estado','proveedor','fecha_entrega_est','observaciones',
             'creado_por','num_items','categoria','remision_code','autorizado_por','valor_total',
             'con_iva','valor_sin_iva']

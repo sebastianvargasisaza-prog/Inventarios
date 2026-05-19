@@ -305,44 +305,136 @@ def forzar_date_texto(sql: str) -> str:
     return ''.join(out)
 
 
+def _kw_en(sql, idx, palabra, n):
+    """¿La keyword `palabra` (mayúsculas) empieza en `idx` con límites de
+    palabra a ambos lados?"""
+    if sql[idx:idx + len(palabra)].upper() != palabra:
+        return False
+    antes = sql[idx - 1] if idx > 0 else ' '
+    desp = sql[idx + len(palabra)] if idx + len(palabra) < n else ' '
+    return not (antes.isalnum() or antes == '_'
+                or desp.isalnum() or desp == '_')
+
+
 def rewrite_having_alias(sql: str) -> str:
-    """Reescribe `HAVING <alias>` sustituyendo el alias por su expresión.
+    """Reescribe `HAVING <alias>` (a cualquier nivel de anidación) sustituyendo
+    el alias por su expresión del SELECT de su mismo scope.
 
     SQLite permite usar un alias del SELECT en HAVING · PostgreSQL no (solo
-    en GROUP BY y ORDER BY). EOS tiene ~40 consultas con este patrón
-    (`SELECT SUM(...) AS stock ... HAVING stock > 0`). Aquí el alias se
-    reemplaza por `(SUM(...))` para que la consulta sea válida en Postgres.
+    en GROUP BY y ORDER BY). EOS tiene decenas de consultas con este patrón,
+    muchas dentro de subconsultas (`SELECT COUNT(*) FROM (... HAVING alias)`)
+    o CTEs · este reescritor las cubre en cualquier profundidad.
     """
-    up = sql.upper()
-    if 'HAVING' not in up or 'GROUP BY' not in up:
+    if 'having' not in sql.lower():
         return sql
-    h = _find_kw(sql, 'HAVING')
-    sel = _find_kw(sql, 'SELECT')
-    if h < 0 or sel < 0:
+    n = len(sql)
+    # Recorrido único · pila de scopes (cada paréntesis abre uno). Cada
+    # scope recuerda dónde empieza su select-list y dónde su FROM.
+    pila = [{'sel': None, 'frm': None}]
+    havings = []                       # (pos_HAVING, sel, frm)
+    i = 0
+    in_str = False
+    while i < n:
+        ch = sql[i]
+        if in_str:
+            if ch == "'":
+                if i + 1 < n and sql[i + 1] == "'":
+                    i += 2
+                    continue
+                in_str = False
+            i += 1
+            continue
+        if ch == "'":
+            in_str = True
+            i += 1
+            continue
+        if ch == '-' and i + 1 < n and sql[i + 1] == '-':
+            j = sql.find('\n', i)
+            i = n if j < 0 else j + 1
+            continue
+        if ch == '/' and i + 1 < n and sql[i + 1] == '*':
+            j = sql.find('*/', i + 2)
+            i = n if j < 0 else j + 2
+            continue
+        if ch == '(':
+            pila.append({'sel': None, 'frm': None})
+            i += 1
+            continue
+        if ch == ')':
+            if len(pila) > 1:
+                pila.pop()
+            i += 1
+            continue
+        sc = pila[-1]
+        if _kw_en(sql, i, 'SELECT', n) and sc['sel'] is None:
+            sc['sel'] = i + 6
+            i += 6
+            continue
+        if _kw_en(sql, i, 'FROM', n) and sc['sel'] is not None \
+                and sc['frm'] is None:
+            sc['frm'] = i
+            i += 4
+            continue
+        if _kw_en(sql, i, 'HAVING', n):
+            havings.append((i, sc['sel'], sc['frm']))
+            i += 6
+            continue
+        i += 1
+    if not havings:
         return sql
-    frm = _find_kw(sql, 'FROM', sel + 6)
-    if frm < 0 or frm < sel:
-        return sql
-    alias_expr = {}
-    for item in _split_top_level(sql[sel + 6:frm]):
-        it = item.strip()
-        m = _re.search(r'\bAS\s+"?(\w+)"?\s*$', it, _re.I)
-        if m:
-            alias_expr[m.group(1).lower()] = it[:m.start()].strip()
-    if not alias_expr:
-        return sql
-    fin = len(sql)
-    for kw in ('ORDER BY', 'LIMIT'):
-        k = _find_kw(sql, kw, h + 6)
-        if k >= 0:
-            fin = min(fin, k)
-    having = sql[h + 6:fin]
 
-    def _repl(m):
-        e = alias_expr.get(m.group(0).lower())
-        return '(' + e + ')' if e else m.group(0)
+    def _fin_having(desde):
+        """Fin de la cláusula HAVING: ORDER BY / LIMIT / UNION / cierre."""
+        depth = 0
+        j = desde
+        s_in = False
+        while j < n:
+            c = sql[j]
+            if s_in:
+                if c == "'":
+                    if j + 1 < n and sql[j + 1] == "'":
+                        j += 2
+                        continue
+                    s_in = False
+            elif c == "'":
+                s_in = True
+            elif c == '(':
+                depth += 1
+            elif c == ')':
+                if depth == 0:
+                    return j
+                depth -= 1
+            elif depth == 0 and (_kw_en(sql, j, 'ORDER', n)
+                                 or _kw_en(sql, j, 'LIMIT', n)
+                                 or _kw_en(sql, j, 'UNION', n)
+                                 or _kw_en(sql, j, 'OFFSET', n)):
+                return j
+            j += 1
+        return n
 
-    return sql[:h + 6] + _re.sub(r'\b\w+\b', _repl, having) + sql[fin:]
+    resultado = sql
+    # De atrás hacia adelante · no corre los índices de los HAVING previos.
+    for hpos, sel, frm in sorted(havings, reverse=True):
+        if sel is None or frm is None or frm <= sel:
+            continue
+        alias_expr = {}
+        for item in _split_top_level(sql[sel:frm]):
+            it = item.strip()
+            m = _re.search(r'\bAS\s+"?(\w+)"?\s*$', it, _re.I)
+            if m:
+                alias_expr[m.group(1).lower()] = it[:m.start()].strip()
+        if not alias_expr:
+            continue
+        fin = _fin_having(hpos + 6)
+
+        def _repl(m, _ae=alias_expr):
+            e = _ae.get(m.group(0).lower())
+            return '(' + e + ')' if e else m.group(0)
+
+        resultado = (resultado[:hpos + 6]
+                     + _re.sub(r'\b\w+\b', _repl, resultado[hpos + 6:fin])
+                     + resultado[fin:])
+    return resultado
 
 
 def translate_placeholders(sql: str) -> str:
