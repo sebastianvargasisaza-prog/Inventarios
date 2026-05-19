@@ -176,12 +176,18 @@ def main():
         resumen, omitidas = copiar_datos(args.sqlite, pg)
         total = sum(n for _, n in resumen)
         print(f"  · {len(resumen)} tablas copiadas, {total} filas en total")
-        for tabla, motivo in omitidas:
+        # "relation does not exist" = tabla del SQLite que no es parte del
+        # esquema EOS (backups manuales ad-hoc, tablas lazy) · es benigno.
+        benignas = [(t, m) for t, m in omitidas if 'does not exist' in m]
+        reales = [(t, m) for t, m in omitidas if 'does not exist' not in m]
+        for tabla, _ in benignas:
+            print(f"  · saltada {tabla} (no es del esquema EOS · backup/lazy)")
+        for tabla, motivo in reales:
             print(f"  ! OMITIDA {tabla}: {motivo}")
         print()
         print("Verificando conteos...")
         fallos = verificar(args.sqlite, pg, resumen)
-        if fallos or omitidas:
+        if fallos or reales:
             for tabla, n_sq, n_pg in fallos:
                 print(f"  ! {tabla}: SQLite={n_sq} PostgreSQL={n_pg}")
             sys.exit("MIGRACION CON ERRORES · revisar lo de arriba")
