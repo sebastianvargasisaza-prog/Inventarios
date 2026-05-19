@@ -2,7 +2,7 @@
 
 > **Para agentes IA · LEER ANTES de modificar este blueprint.**
 
-Última revisión: 2026-05-07
+Última revisión: 2026-05-19
 
 ---
 
@@ -110,3 +110,11 @@ Cuando Catalina edita un item:
   auto_plan (que lee `mp_lead_time_config` con COALESCE).
 - **Fix**: PATCH ahora UPSERT a `mp_lead_time_config`.
 - **Test que cazaría**: `test_golden_patch_sol_sincroniza_global`.
+
+### 2026-05-19 · RBAC inconsistente · 4 endpoints sin guarda (auditoría)
+- **Bug**: `DELETE /api/ordenes-compra/<oc>`, `POST /api/generar-oc-automatica`
+  y `PATCH /api/solicitudes-compra/<n>/estado` no verificaban permisos de
+  Compras (solo sesión, o nada); `PUT /api/ordenes-compra/<oc>` permitía
+  revertir una OC Pagada a cualquier estado → violaba INV-4.
+- **Fix**: los tres primeros ahora exigen `_require_compras_write`; el PUT
+  rechaza cambiar el estado de una OC Pagada. Las cuatro operaciones auditan.

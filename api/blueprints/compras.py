@@ -333,6 +333,9 @@ def dashboard_stats():
 @bp.route('/api/generar-oc-automatica', methods=['POST'])
 def generar_oc_automatica():
     """Genera OCs automaticas por proveedor para todas las MPs bajo minimo"""
+    usuario, err, code = _require_compras_write()
+    if err:
+        return err, code
     conn = get_db(); c = conn.cursor()
 
     # Obtener MPs bajo minimo
@@ -375,6 +378,16 @@ def generar_oc_automatica():
         for item in items:
             c.execute("INSERT INTO ordenes_compra_items (numero_oc, codigo_mp, nombre_mp, cantidad_g) VALUES (?,?,?,?)",
                       (numero_oc, item['codigo_mp'], item['nombre_mp'], item['cantidad_pedir']))
+        try:
+            audit_log(c, usuario=usuario, accion='CREAR_OC',
+                      tabla='ordenes_compra', registro_id=numero_oc,
+                      despues={'proveedor': prov[:200], 'estado': 'Pendiente',
+                               'items_count': len(items),
+                               'origen': 'generar_oc_automatica'},
+                      detalle=f"OC automática {numero_oc} · {prov} · "
+                              f"{len(items)} items (stock bajo mínimo)")
+        except Exception as e:
+            log.warning('audit_log CREAR_OC (auto) fallo: %s', e)
         # Generar cuerpo del email
         sep = '-' * 50
         fecha_str = datetime.now().strftime('%d/%m/%Y')
@@ -742,6 +755,9 @@ def handle_ordenes_compra():
 def handle_oc_detalle(numero_oc):
     conn = get_db(); c = conn.cursor()
     if request.method == 'DELETE':
+        usuario, err, code = _require_compras_write()
+        if err:
+            return err, code
         c.execute("SELECT estado FROM ordenes_compra WHERE numero_oc=?", (numero_oc,))
         _row = c.fetchone()
         if not _row:
@@ -750,6 +766,13 @@ def handle_oc_detalle(numero_oc):
             return jsonify({'error': f'No se puede eliminar una OC en estado {_row[0]}. Solo Borrador o Rechazada.'}), 400
         c.execute('DELETE FROM ordenes_compra_items WHERE numero_oc=?', (numero_oc,))
         c.execute('DELETE FROM ordenes_compra WHERE numero_oc=?', (numero_oc,))
+        try:
+            audit_log(c, usuario=usuario, accion='ELIMINAR_OC',
+                      tabla='ordenes_compra', registro_id=numero_oc,
+                      antes={'estado': _row[0]},
+                      detalle=f"Eliminó OC {numero_oc} (estado {_row[0]})")
+        except Exception as e:
+            log.warning('audit_log ELIMINAR_OC fallo: %s', e)
         conn.commit()
         return jsonify({'ok': True, 'message': f'OC {numero_oc} eliminada'})
 
@@ -758,9 +781,28 @@ def handle_oc_detalle(numero_oc):
         if err:
             return err, code
         d = request.get_json(silent=True) or {}
-        if d.get('estado'):
+        nuevo_estado = d.get('estado')
+        if nuevo_estado:
+            c.execute("SELECT estado FROM ordenes_compra WHERE numero_oc=?", (numero_oc,))
+            _row = c.fetchone()
+            if not _row:
+                return jsonify({'error': 'OC no encontrada'}), 404
+            estado_actual = _row[0]
+            # INV-4 · una OC Pagada no puede revertir de estado. Si hubo un
+            # error, se cancela con motivo o se crea una OC nueva.
+            if estado_actual == 'Pagada' and nuevo_estado != 'Pagada':
+                return jsonify({'error': 'Una OC Pagada no puede cambiar de estado. '
+                                         'Cancelá la OC con motivo o creá una nueva.'}), 409
             c.execute("UPDATE ordenes_compra SET estado=? WHERE numero_oc=?",
-                      (d['estado'], numero_oc))
+                      (nuevo_estado, numero_oc))
+            try:
+                audit_log(c, usuario=u, accion='ACTUALIZAR_ESTADO_OC',
+                          tabla='ordenes_compra', registro_id=numero_oc,
+                          antes={'estado': estado_actual},
+                          despues={'estado': nuevo_estado},
+                          detalle=f"OC {numero_oc}: {estado_actual} → {nuevo_estado}")
+            except Exception as e:
+                log.warning('audit_log ACTUALIZAR_ESTADO_OC fallo: %s', e)
         conn.commit()
         return jsonify({'message': f'OC {numero_oc} actualizada'})
     c.execute("SELECT * FROM ordenes_compra WHERE numero_oc=?", (numero_oc,))
@@ -3371,9 +3413,11 @@ def solicitudes_page():
 
 @bp.route('/api/solicitudes-compra/<numero>/estado', methods=['PATCH'])
 def actualizar_estado_solicitud(numero):
-    if 'compras_user' not in session:
-        return jsonify({'error': 'No autorizado'}), 401
-    user_act = session.get('compras_user', '')
+    # INV-3 · cambiar el estado de una SOL (aprobar/rechazar/crear OC) es
+    # operación de Compras, no de cualquier usuario logueado.
+    user_act, err, code = _require_compras_write()
+    if err:
+        return err, code
     d = request.get_json() or {}
     nuevo = d.get('estado', 'Aprobada')
     numero_oc_param = d.get('numero_oc', '')
