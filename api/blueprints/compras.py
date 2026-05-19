@@ -1231,8 +1231,9 @@ def actualizar_precios_items_oc(numero_oc):
     asi empezamos a tener almacenado los valores de las cosas para que
     sea mas automatico'.
     """
-    if 'compras_user' not in session:
-        return jsonify({'error': 'No autorizado'}), 401
+    usuario, err, code = _require_compras_write()
+    if err:
+        return err, code
     d = request.get_json() or {}
     items_in = d.get('items') or []
     if not items_in:
@@ -1244,6 +1245,8 @@ def actualizar_precios_items_oc(numero_oc):
     ).fetchone()
     if not row:
         return jsonify({'error': 'OC no encontrada'}), 404
+    if row[0] in ('Pagada', 'Cancelada', 'Rechazada'):
+        return jsonify({'error': f'No se pueden editar precios de una OC en estado {row[0]}.'}), 409
     proveedor = row[1] or ''
 
     # Actualizar cada item por codigo_mp (y opcionalmente cantidad_g)
@@ -1440,6 +1443,9 @@ def handle_proveedores_compras():
 
 @bp.route('/api/proveedores-compras/<path:nombre>', methods=['PATCH','DELETE'])
 def handle_proveedor(nombre):
+    usuario, err, code = _require_compras_write()
+    if err:
+        return err, code
     conn = get_db(); c = conn.cursor()
     if request.method == 'DELETE':
         d = request.json or {}
@@ -1453,6 +1459,13 @@ def handle_proveedor(nombre):
             "UPDATE proveedores SET activo=0, motivo_baja=?, fecha_baja=? WHERE nombre=?",
             (motivo, datetime.now().isoformat(), nombre)
         )
+        try:
+            audit_log(c, usuario=usuario, accion='BAJA_PROVEEDOR',
+                      tabla='proveedores', registro_id=nombre,
+                      despues={'activo': 0, 'motivo_baja': motivo[:300]},
+                      detalle=f"Dio de baja al proveedor '{nombre}'")
+        except Exception as e:
+            log.warning('audit_log BAJA_PROVEEDOR fallo: %s', e)
         conn.commit()
         return jsonify({'ok': True, 'message': f"Proveedor '{nombre}' dado de baja"})
     # PATCH — edit
@@ -1488,6 +1501,7 @@ def handle_proveedor(nombre):
         propagar = [
             ('ordenes_compra',     'proveedor'),
             ('solicitudes_compra', 'proveedor_sugerido'),
+            ('solicitudes_compra_items', 'proveedor_sugerido'),
             ('precios_mp_historico', 'proveedor'),
         ]
         for tabla, col in propagar:
@@ -1518,6 +1532,15 @@ def handle_proveedor(nombre):
         c.execute(f"UPDATE proveedores SET {', '.join(sets)} WHERE nombre=? AND activo=1", vals)
         if c.rowcount == 0:
             return jsonify({'error': 'Proveedor no encontrado'}), 404
+    try:
+        audit_log(c, usuario=usuario, accion='ACTUALIZAR_PROVEEDOR',
+                  tabla='proveedores', registro_id=nombre,
+                  despues={'campos': [f for f in fields if f in d],
+                           'rename_propagado': rename_propagado or None},
+                  detalle=f"Actualizó proveedor '{nombre}'"
+                          + (' (renombrado)' if rename_propagado else ''))
+    except Exception as e:
+        log.warning('audit_log ACTUALIZAR_PROVEEDOR fallo: %s', e)
     conn.commit()
     msg = f"Proveedor actualizado"
     if rename_propagado:
@@ -3601,8 +3624,9 @@ def recibir_oc(numero_oc):
     oc_row = cur.fetchone()
     if not oc_row:
         return jsonify({'error': 'OC no encontrada'}), 404
-    if oc_row[0] not in ('Autorizada', 'Parcial'):
+    if oc_row[0] not in ('Autorizada', 'Parcial', 'Pagada'):
         return jsonify({'error': f'OC en estado {oc_row[0]} no permite recepcion'}), 409
+    estado_oc_original = oc_row[0]
     prov_nombre = oc_row[1] or ''
     categoria = oc_row[2] or 'MP'
     cur.execute("SELECT id, codigo_mp, nombre_mp, cantidad_g FROM ordenes_compra_items WHERE numero_oc=?", (numero_oc,))
@@ -3772,7 +3796,12 @@ def recibir_oc(numero_oc):
     except Exception as e:
         log.warning('chequeo parcial post-update fallo: %s', e)
 
-    nuevo_estado = 'Parcial' if es_parcial else 'Recibida'
+    # Si la OC ya estaba Pagada (anticipo · pago antes de la recepción), la
+    # recepción registra el kardex pero NO revierte el estado (INV-4).
+    if estado_oc_original == 'Pagada':
+        nuevo_estado = 'Pagada'
+    else:
+        nuevo_estado = 'Parcial' if es_parcial else 'Recibida'
     try:
         cur.execute(
             "UPDATE ordenes_compra SET estado=?, fecha_recepcion=?,"
@@ -5404,6 +5433,9 @@ def buscar_remision(remision_code):
 def handle_mee():
     conn = get_db(); cur = conn.cursor()
     if request.method == 'POST':
+        usuario, err, code = _require_compras_write()
+        if err:
+            return err, code
         d = request.get_json(silent=True) or {}
         if not d.get('codigo') or not d.get('descripcion'):
             return jsonify({'error':'codigo y descripcion requeridos'}), 400
@@ -5437,6 +5469,9 @@ def handle_mee():
 def handle_mee_item(codigo):
     conn = get_db(); cur = conn.cursor()
     if request.method == 'PUT':
+        usuario, err, code = _require_compras_write()
+        if err:
+            return err, code
         d = request.get_json(silent=True) or {}
         fields=[]; vals=[]
         for f in ['descripcion','categoria','proveedor','stock_minimo','estado']:
@@ -5454,6 +5489,9 @@ def handle_mee_item(codigo):
 
 @bp.route('/api/mee/<codigo>/ajuste', methods=['POST'])
 def ajuste_mee(codigo):
+    usuario, err, code = _require_compras_write()
+    if err:
+        return err, code
     conn = get_db(); cur = conn.cursor()
     d = request.get_json(silent=True) or {}
     nuevo = float(d.get('nuevo_stock',0))
@@ -5467,6 +5505,14 @@ def ajuste_mee(codigo):
     cur.execute("UPDATE maestro_mee SET stock_actual=? WHERE codigo=?", (nuevo,codigo))
     cur.execute("INSERT INTO movimientos_mee (mee_codigo,tipo,cantidad,lote_ref,observaciones,responsable,fecha) VALUES (?,?,?,?,?,?,?)",
                 (codigo,'Ajuste',diff,'ajuste_manual',obs,oper,datetime.now().isoformat()))
+    try:
+        audit_log(cur, usuario=usuario, accion='AJUSTE_MEE',
+                  tabla='maestro_mee', registro_id=codigo,
+                  antes={'stock_actual': anterior},
+                  despues={'stock_actual': nuevo, 'diferencia': diff},
+                  detalle=f"Ajuste manual de stock MEE {codigo}: {anterior} -> {nuevo}")
+    except Exception as e:
+        log.warning('audit_log AJUSTE_MEE fallo: %s', e)
     conn.commit()
     return jsonify({'ok':True,'nuevo_stock':nuevo})
 
@@ -5474,6 +5520,9 @@ def ajuste_mee(codigo):
 def handle_movimientos_mee():
     conn = get_db(); cur = conn.cursor()
     if request.method == 'POST':
+        u, err, code = _require_compras_session()
+        if err:
+            return err, code
         d = request.get_json(silent=True) or {}
         cod  = d.get('codigo_mee') or d.get('mee_codigo', '')
         tipo_raw = d.get('tipo','Entrada'); tipo = tipo_raw[0].upper()+tipo_raw[1:].lower() if tipo_raw else 'Entrada'
@@ -5510,6 +5559,9 @@ def handle_movimientos_mee():
 
 @bp.route('/api/movimientos-mee/lote', methods=['POST'])
 def movimientos_mee_lote():
+    u, err, code = _require_compras_session()
+    if err:
+        return err, code
     conn = get_db(); cur = conn.cursor()
     d = request.get_json(silent=True) or {}
     movs = d.get('movimientos',[])
@@ -6155,6 +6207,8 @@ def update_sol_observaciones(numero):
                 updates.pop()
     if fecha_requerida is not None:
         updates.append("fecha_requerida=?"); params.append(str(fecha_requerida))
+    if not updates:
+        return jsonify({'error': 'Nada válido para actualizar'}), 400
     params.append(numero.upper())
     c.execute(f"UPDATE solicitudes_compra SET {','.join(updates)} WHERE numero=?", params)
     conn.commit()

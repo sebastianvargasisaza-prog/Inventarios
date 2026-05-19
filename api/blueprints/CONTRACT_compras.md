@@ -118,3 +118,13 @@ Cuando Catalina edita un item:
   revertir una OC Pagada a cualquier estado → violaba INV-4.
 - **Fix**: los tres primeros ahora exigen `_require_compras_write`; el PUT
   rechaza cambiar el estado de una OC Pagada. Las cuatro operaciones auditan.
+
+### 2026-05-19 · Hallazgos MEDIO de la auditoría
+- `actualizar_precios_items_oc`: exige `_require_compras_write` y rechaza
+  editar precios de una OC Pagada/Cancelada/Rechazada.
+- `recibir_oc`: ahora acepta recibir una OC ya Pagada (anticipo / pago
+  antes de recepción) — registra el kardex y deja el estado en Pagada,
+  no lo revierte a Recibida (INV-4).
+- `handle_proveedor` + endpoints MEE: exigen permiso de Compras y auditan;
+  el rename de proveedor propaga también a `solicitudes_compra_items`.
+- `update_sol_observaciones`: rechaza un UPDATE vacío con 400 en vez de 500.
