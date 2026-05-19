@@ -9896,7 +9896,7 @@ def _notificar_tarea_operativa(tarea_id):
         try:
             from config import DB_PATH
             import sqlite3 as _sql
-            con = _sql.connect(DB_PATH, timeout=30)
+            con = db_connect(timeout=30)
             try:
                 row = con.execute("""
                     SELECT id, titulo, descripcion, tipo, asignado_a,

@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from flask import Blueprint, jsonify, request, Response, session, redirect, url_for
 from werkzeug.security import generate_password_hash, check_password_hash
 from config import DB_PATH, COMPRAS_USERS, ADMIN_USERS, CONTADORA_USERS
-from database import get_db
+from database import get_db, db_connect
 from auth import _client_ip, _is_locked, _record_failure, _clear_attempts, _log_sec
 from http_helpers import validate_money
 from audit_helpers import audit_log
@@ -809,7 +809,7 @@ def _start_shopify_ingresos_background_loop():
         _t.sleep(45)  # delay inicial
         while True:
             try:
-                local_conn = _sql.connect(DB_PATH, timeout=30)
+                local_conn = db_connect(timeout=30)
                 try:
                     _sync_shopify_a_flujo_ingresos(local_conn, solo_pagados=True)
                 finally:

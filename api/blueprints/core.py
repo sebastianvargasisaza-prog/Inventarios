@@ -74,59 +74,76 @@ def csrf_token():
 
 @bp.route('/api/health')
 def health():
-    """Diagnostico publico — version, DB, tablas clave.
+    """Diagnostico publico — backend, version, tablas clave.
 
     Sebastián 12-may-2026: tras incidente 'database disk image is malformed',
-    el endpoint ahora retorna 503 si detecta malformed (en lugar de 200 con
-    tables.err). Esto permite a Render auto-detect el problema y alerta a
-    cualquier monitoreo externo (Pingdom, UptimeRobot, etc).
+    el endpoint retorna 503 si detecta malformed (SQLite) o si la BD no
+    responde, para que Render y el monitoreo externo lo detecten.
+
+    Migración Fase 5: el endpoint consulta el BACKEND ACTIVO (PostgreSQL o
+    SQLite) vía db_connect() · antes leía siempre el archivo SQLite, lo que
+    en modo PostgreSQL reportaba datos obsoletos.
     """
-    import sqlite3 as _sq, os as _os, subprocess as _sp
+    import os as _os, subprocess as _sp
+    from database import db_connect, _usa_postgres
     try:
-        commit = _sp.check_output(['git','rev-parse','--short','HEAD'],
+        commit = _sp.check_output(['git', 'rev-parse', '--short', 'HEAD'],
             cwd=_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))),
             stderr=_sp.DEVNULL).decode().strip()
     except Exception:
         commit = 'unknown'
-    db_exists = _os.path.exists(DB_PATH)
-    db_size = round(_os.path.getsize(DB_PATH)/1024, 1) if db_exists else 0
+    es_pg = _usa_postgres()
     tables = {}
     malformed = False
+    error = None
+    conn = None
     try:
-        conn = _sq.connect(DB_PATH, timeout=3.0)
-        # Integrity check rápido (no quick) · más confiable que solo intentar query
-        try:
-            ic = conn.execute('PRAGMA quick_check').fetchone()
-            if ic and ic[0] != 'ok':
-                malformed = True
-        except _sq.DatabaseError:
-            malformed = True
-        for tbl in ['maestro_mps','solicitudes_compra','ordenes_compra','movimientos']:
+        conn = db_connect()
+        if not es_pg:
+            # PRAGMA quick_check solo aplica a SQLite.
             try:
-                tables[tbl] = conn.execute(f'SELECT COUNT(*) FROM {tbl}').fetchone()[0]
-            except _sq.DatabaseError as e:
+                ic = conn.execute('PRAGMA quick_check').fetchone()
+                if ic and ic[0] != 'ok':
+                    malformed = True
+            except sqlite3.DatabaseError:
+                malformed = True
+        for tbl in ['maestro_mps', 'solicitudes_compra', 'ordenes_compra',
+                    'movimientos']:
+            try:
+                tables[tbl] = conn.execute(
+                    'SELECT COUNT(*) FROM %s' % tbl).fetchone()[0]
+            except Exception as e:
                 tables[tbl] = 'err'
                 if 'malformed' in str(e).lower() or 'corrupt' in str(e).lower():
                     malformed = True
         try:
             tables['planta_pendientes'] = conn.execute(
-                "SELECT COUNT(*) FROM solicitudes_compra WHERE estado='Aprobada' AND area='Produccion' AND (numero_oc IS NULL OR numero_oc='')").fetchone()[0]
-        except: pass
-    except _sq.DatabaseError as e:
-        tables['error'] = str(e)
+                "SELECT COUNT(*) FROM solicitudes_compra WHERE estado='Aprobada' "
+                "AND area='Produccion' AND (numero_oc IS NULL OR numero_oc='')"
+            ).fetchone()[0]
+        except Exception:
+            pass
+    except Exception as e:
+        error = str(e)
         if 'malformed' in str(e).lower() or 'corrupt' in str(e).lower():
             malformed = True
-    except Exception as e:
-        tables['error'] = str(e)
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
     payload = {
-        'status': 'error' if malformed else 'ok',
+        'status': 'error' if (malformed or error) else 'ok',
         'commit': commit,
-        'db_exists': db_exists,
-        'db_size_kb': db_size,
-        'tables': tables,
+        'db': {
+            'backend': 'postgres' if es_pg else 'sqlite',
+            'tables': tables,
+        },
     }
+    if error:
+        payload['db']['error'] = error
     if malformed:
-        # Log SEC HIGH para alerta externa
         try:
             from auth import _log_sec
             _log_sec('db_malformed_detected', None, None,
@@ -137,7 +154,9 @@ def health():
             'DB MALFORMED · restaurar via POST /api/admin/emergency-restore '
             '(con body {confirm:true})'
         )
-        return jsonify(payload), 503  # Service Unavailable
+        return jsonify(payload), 503
+    if error:
+        return jsonify(payload), 503
     return jsonify(payload), 200
 
 
@@ -160,7 +179,7 @@ def health_debug():
     if not db_exists:
         return jsonify(out)
     try:
-        conn = _sq.connect(DB_PATH, timeout=2)
+        conn = db_connect(timeout=2)
         # PRAGMA info
         try:
             out['journal_mode'] = conn.execute('PRAGMA journal_mode').fetchone()[0]

@@ -36,6 +36,7 @@ def _utcnow_naive():
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 from config import DB_PATH
+from database import db_connect
 
 # ── Configuración ────────────────────────────────────────────────────────────
 BACKUPS_DIR = os.environ.get(
@@ -320,7 +321,7 @@ def do_backup(triggered_by="auto"):
     conn = None
     slot_id = None
     try:
-        conn = sqlite3.connect(DB_PATH, timeout=10.0)
+        conn = db_connect(timeout=10.0)
         slot_id = _claim_backup_slot(conn, triggered_by)
         if slot_id is None:
             return {"ok": False, "skipped": True,

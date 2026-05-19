@@ -775,10 +775,9 @@ def admin_emergency_restore():
     """
     # AUTH: chequear integrity ANTES de require_admin.
     # Si BD malformed, permitir sin admin (emergencia).
-    import sqlite3 as _sql_pre
     db_malformed = False
     try:
-        _conn_check = _sql_pre.connect(DB_PATH, timeout=2.0)
+        _conn_check = db_connect(timeout=2.0)
         try:
             _row = _conn_check.execute('PRAGMA integrity_check').fetchone()
             db_malformed = (_row and _row[0] != 'ok')
@@ -918,7 +917,7 @@ def admin_emergency_restore():
     # 5. Verificar post-restore
     post = {}
     try:
-        c2 = _sql.connect(DB_PATH)
+        c2 = db_connect()
         row = c2.execute('PRAGMA integrity_check').fetchone()
         post['integrity'] = row[0] if row else 'unknown'
         tables_ok = 0
