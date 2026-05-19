@@ -1502,6 +1502,11 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       title="Materias primas y envases que faltan para el plan · genera solicitudes a Compras">
       &#128230; Abastecimiento
     </button>
+    <button id="prog-tab-factibilidad" onclick="switchProgTab('factibilidad')"
+      style="padding:9px 22px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:700;cursor:pointer;background:#059669;color:#fff;box-shadow:0 3px 10px rgba(5,150,105,.35)"
+      title="¿Alcanzan las materias primas para todo el plan? · solo lectura">
+      &#9989; Factibilidad
+    </button>
     <span id="prog-tareas-badge" style="display:none;background:#dc2626;color:#fff;font-size:9px;font-weight:800;padding:2px 8px;border-radius:8px"></span>
   </div>
   <!-- Tab "Calendario + IA" · iframe a /admin/plan-calendario · Sebastián 14-may-2026:
@@ -1511,6 +1516,12 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     <iframe id="calendario-iframe" src="about:blank"
       style="width:100%;height:calc(100vh - 200px);min-height:700px;border:1px solid #e2e8f0;border-radius:12px;background:#f8fafc"
       title="Calendario EOS + IA"></iframe>
+  </div>
+  <!-- Tab "Factibilidad" · iframe a /admin/factibilidad-plan · ¿alcanzan las MP? -->
+  <div id="ptab-factibilidad" style="display:none">
+    <iframe id="factibilidad-iframe" src="about:blank"
+      style="width:100%;height:calc(100vh - 200px);min-height:700px;border:1px solid #e2e8f0;border-radius:12px;background:#0d1117"
+      title="Factibilidad del Plan"></iframe>
   </div>
   <!-- Tab "Necesidades" · cards por cliente con semáforo 4 zonas + B2B -->
   <div id="ptab-necesidades" style="display:none">
@@ -9174,6 +9185,7 @@ async function ckMarcar(itemId, estado){
         'calendario': 'ptab-calendario',
         'necesidades': 'ptab-necesidades',
         'abastecimiento': 'ptab-abastecimiento',
+        'factibilidad': 'ptab-factibilidad',
         // 'asignacion' eliminado · redirige a 'mando' (unificado en mapa)
         'asignacion': 'ptab-plano',
         'mando': 'ptab-plano',
@@ -9205,6 +9217,13 @@ async function ckMarcar(itemId, estado){
         var frCal = document.getElementById('calendario-iframe');
         if (frCal && (!frCal.src || frCal.src === 'about:blank' || !frCal.src.includes('plan-calendario'))) {
           frCal.src = '/admin/plan-calendario';
+        }
+      }
+      // Lazy-load iframe Factibilidad del Plan al activar la pestaña.
+      if (tab === 'factibilidad') {
+        var frFact = document.getElementById('factibilidad-iframe');
+        if (frFact && (!frFact.src || frFact.src === 'about:blank' || !frFact.src.includes('factibilidad-plan'))) {
+          frFact.src = '/admin/factibilidad-plan';
         }
       }
       // Lazy-load Necesidades al activar tab
