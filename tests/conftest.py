@@ -55,69 +55,24 @@ def _conninfo():
     )
 
 
-def _cargar_esquema_postgres():
-    """Carga el esquema PostgreSQL fresco en la base de tests (eos_test).
+def _migrar_a_postgres(sqlite_path):
+    """Carga el esquema PostgreSQL en eos_test y copia los datos del SQLite.
 
-    Migración Fase 3-4. Solo se usa cuando EOS_DB_BACKEND=postgres.
+    Migración Fase 3-4. Usa las MISMAS funciones que el script de cutover
+    (scripts/migrar_datos_a_postgres.py) · así los golden tests validan el
+    código real de migración a producción.
     """
     import psycopg
 
-    api_dir = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "api")
-    with psycopg.connect(_conninfo(), autocommit=True) as conn:
-        with conn.cursor() as cur:
-            cur.execute("DROP SCHEMA public CASCADE; CREATE SCHEMA public;")
-            for archivo in ("pg_functions.sql", "pg_schema.sql", "pg_triggers.sql"):
-                with open(os.path.join(api_dir, archivo), encoding="utf-8") as f:
-                    cur.execute(f.read())
+    scripts_dir = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts")
+    if scripts_dir not in sys.path:
+        sys.path.insert(0, scripts_dir)
+    from migrar_datos_a_postgres import cargar_esquema, copiar_datos
 
-
-def _copiar_datos_a_postgres(sqlite_path):
-    """Copia todos los datos de la BD SQLite recién construida a Postgres.
-
-    Re-ejecutar las 134 migraciones SQLite sobre el esquema PG no es viable
-    (los triggers precargados rechazan datos de migraciones tempranas), así
-    que se construye un SQLite completo y se copian las filas. Se desactivan
-    triggers y FK (`session_replication_role=replica`) para poder insertar
-    en cualquier orden · al final se reajustan las secuencias IDENTITY.
-    """
-    import sqlite3
-    import psycopg
-
-    sq = sqlite3.connect(sqlite_path)
-    sq.row_factory = sqlite3.Row
-    tablas = [r[0] for r in sq.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' "
-        "AND name NOT LIKE 'sqlite_%'").fetchall()]
     with psycopg.connect(_conninfo(), autocommit=True) as pg:
-        pg.execute("SET session_replication_role = replica")
-        for t in tablas:
-            filas = sq.execute('SELECT * FROM "%s"' % t).fetchall()
-            if not filas:
-                continue
-            cols = list(filas[0].keys())
-            collist = ', '.join('"%s"' % c for c in cols)
-            ph = ', '.join(['%s'] * len(cols))
-            sql = 'INSERT INTO "%s" (%s) VALUES (%s)' % (t, collist, ph)
-            datos = [tuple(f) for f in filas]
-            try:
-                with pg.cursor() as cur:
-                    cur.executemany(sql, datos)
-            except psycopg.Error:
-                pass  # tabla ausente en el esquema PG · se ignora
-        # Reajustar las secuencias IDENTITY al MAX(id)+1.
-        for t in tablas:
-            try:
-                with pg.cursor() as cur:
-                    cur.execute("SELECT pg_get_serial_sequence(%s, 'id')", (t,))
-                    fila = cur.fetchone()
-                    if fila and fila[0]:
-                        cur.execute(
-                            'SELECT setval(%%s, COALESCE((SELECT MAX(id) '
-                            'FROM "%s"), 0) + 1, false)' % t, (fila[0],))
-            except psycopg.Error:
-                pass
-    sq.close()
+        cargar_esquema(pg)
+        copiar_datos(sqlite_path, pg)
 
 
 @pytest.fixture(scope="session")
@@ -157,8 +112,7 @@ def app(test_workspace):
         _dbmod.run_seed_rrhh()
         os.environ["EOS_DB_BACKEND"] = "postgres"
         # 2. Cargar el esquema PG y copiar los datos del SQLite.
-        _cargar_esquema_postgres()
-        _copiar_datos_a_postgres(os.environ["DB_PATH"])
+        _migrar_a_postgres(os.environ["DB_PATH"])
         # 3. El harness (_exec/_query y ~40 sitios) abre la BD con
         #    sqlite3.connect(DB_PATH) directo · se redirige al adaptador
         #    Postgres (las conexiones a :memory: y temporales quedan en

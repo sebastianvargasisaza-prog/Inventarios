@@ -28,7 +28,8 @@ import psycopg
 from pg_compat import (translate_placeholders, translate_ddl,
                        es_ddl_a_saltar, es_ddl_a_traducir,
                        es_insert_or, reescribir_insert_or_ignore,
-                       rewrite_having_alias, traducir_pragma)
+                       rewrite_having_alias, traducir_pragma,
+                       forzar_date_texto)
 
 
 # Cache de columnas PK por tabla (para reescribir INSERT OR REPLACE).
@@ -263,6 +264,8 @@ class _Cursor:
             sql = self._reescribir_insert_or_replace(sql)
         # `HAVING <alias>` no es válido en Postgres · se sustituye el alias.
         sql = rewrite_having_alias(sql)
+        # `date(X)` de 1 arg -> `date(X,'')` para que devuelva texto.
+        sql = forzar_date_texto(sql)
         translated = translate_placeholders(sql)
         p = params if params is not None else ()
         # INSERT plano: Postgres no tiene lastrowid · se resuelve con

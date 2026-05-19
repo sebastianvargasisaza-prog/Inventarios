@@ -16,6 +16,10 @@ PGUSER/PGDATABASE si DATABASE_URL no está definida.
 
 ADVERTENCIA: `--esquema` hace `DROP SCHEMA public CASCADE` · borra todo
 lo que haya en la base PostgreSQL destino. Úsalo solo en una base nueva.
+
+No requiere superusuario: el orden de dependencias FK se resuelve con un
+bucle de reintentos (una tabla que falla por FK se reintenta cuando su
+tabla padre ya fue copiada).
 """
 import argparse
 import os
@@ -47,22 +51,24 @@ def cargar_esquema(pg):
     with pg.cursor() as cur:
         cur.execute("DROP SCHEMA public CASCADE; CREATE SCHEMA public;")
         for archivo in ARCHIVOS_ESQUEMA:
-            ruta = os.path.join(API_DIR, archivo)
-            with open(ruta, encoding="utf-8") as f:
+            with open(os.path.join(API_DIR, archivo), encoding="utf-8") as f:
                 cur.execute(f.read())
             print(f"  · esquema cargado: {archivo}")
 
 
 def copiar_datos(sqlite_path, pg):
-    """Copia todas las filas SQLite -> PostgreSQL. Devuelve [(tabla, n)]."""
+    """Copia todas las filas SQLite -> PostgreSQL. Devuelve (resumen, omitidas).
+
+    Cada tabla se copia en su propia transacción · si falla (típicamente
+    por una FK cuya tabla padre aún no se copió) se reintenta en la
+    siguiente vuelta. El bucle termina cuando ya no hay progreso.
+    """
     sq = sqlite3.connect(sqlite_path)
     sq.row_factory = sqlite3.Row
     tablas = [r[0] for r in sq.execute(
         "SELECT name FROM sqlite_master WHERE type='table' "
         "AND name NOT LIKE 'sqlite_%' ORDER BY name").fetchall()]
-    # Triggers y FK desactivados · permite copiar en cualquier orden.
-    pg.execute("SET session_replication_role = replica")
-    resumen, omitidas = [], []
+    pendientes = {}
     for t in tablas:
         filas = sq.execute('SELECT * FROM "%s"' % t).fetchall()
         if not filas:
@@ -71,15 +77,53 @@ def copiar_datos(sqlite_path, pg):
         collist = ", ".join('"%s"' % c for c in cols)
         ph = ", ".join(["%s"] * len(cols))
         sql = 'INSERT INTO "%s" (%s) VALUES (%s)' % (t, collist, ph)
-        datos = [tuple(f) for f in filas]
+        pendientes[t] = (sql, [tuple(f) for f in filas])
+    sq.close()
+
+    # Desactivar los triggers de USUARIO de EOS durante la copia · un
+    # trigger creado por una migración tardía (p.ej. trg_fi_material_id_fk)
+    # no debe rechazar filas sembradas por una migración temprana. No toca
+    # las FK (triggers de sistema) · el bucle de reintentos las resuelve.
+    # `DISABLE TRIGGER USER` lo puede hacer el dueño de la tabla, sin
+    # superusuario.
+    for t in tablas:
         try:
             with pg.cursor() as cur:
-                cur.executemany(sql, datos)
-            resumen.append((t, len(filas)))
-        except psycopg.Error as e:
-            omitidas.append((t, str(e).splitlines()[0][:80]))
-    # Reajustar las secuencias IDENTITY al MAX(id)+1.
+                cur.execute('ALTER TABLE "%s" DISABLE TRIGGER USER' % t)
+        except psycopg.Error:
+            pass
+
+    resumen = []
+    ultimo_error = {}
+    while pendientes:
+        progreso = False
+        for t in list(pendientes):
+            sql, datos = pendientes[t]
+            try:
+                with pg.transaction():
+                    with pg.cursor() as cur:
+                        cur.executemany(sql, datos)
+            except psycopg.Error as e:
+                ultimo_error[t] = str(e).splitlines()[0][:90]
+                continue
+            resumen.append((t, len(datos)))
+            del pendientes[t]
+            progreso = True
+        if not progreso:
+            break
+    omitidas = [(t, ultimo_error.get(t, "no se pudo copiar"))
+                for t in pendientes]
+
+    # Reactivar los triggers de usuario.
     for t in tablas:
+        try:
+            with pg.cursor() as cur:
+                cur.execute('ALTER TABLE "%s" ENABLE TRIGGER USER' % t)
+        except psycopg.Error:
+            pass
+
+    # Reajustar las secuencias IDENTITY al MAX(id)+1.
+    for t, _ in resumen:
         try:
             with pg.cursor() as cur:
                 cur.execute("SELECT pg_get_serial_sequence(%s, 'id')", (t,))
@@ -90,8 +134,6 @@ def copiar_datos(sqlite_path, pg):
                         'FROM "%s"), 0) + 1, false)' % t, (fila[0],))
         except psycopg.Error:
             pass
-    pg.execute("SET session_replication_role = origin")
-    sq.close()
     return resumen, omitidas
 
 
@@ -122,7 +164,7 @@ def main():
 
     info = conninfo()
     print(f"Origen SQLite : {args.sqlite}")
-    print(f"Destino PG    : {info.split('password')[0].strip()}")
+    print(f"Destino PG    : {info.split('@')[-1] if '@' in info else info}")
     print()
 
     with psycopg.connect(info, autocommit=True) as pg:
@@ -139,11 +181,10 @@ def main():
         print()
         print("Verificando conteos...")
         fallos = verificar(args.sqlite, pg, resumen)
-        if fallos:
-            print("  DISCREPANCIAS:")
+        if fallos or omitidas:
             for tabla, n_sq, n_pg in fallos:
                 print(f"  ! {tabla}: SQLite={n_sq} PostgreSQL={n_pg}")
-            sys.exit("MIGRACION CON ERRORES · revisar las discrepancias")
+            sys.exit("MIGRACION CON ERRORES · revisar lo de arriba")
         print(f"  · OK · {len(resumen)} tablas verificadas")
 
     print()

@@ -79,12 +79,12 @@ RETURNS text AS $$
   SELECT to_char(_eos_sqlite_ts(ARRAY[p_arg]), 'YYYY-MM-DD');
 $$ LANGUAGE sql STABLE;
 
--- `date('x')` de 1 argumento Postgres siempre lo resuelve como cast al
--- tipo date (no a la función de arriba). EOS compara esos resultados
--- contra columnas TEXT · este cast implícito date->text hace que un valor
--- date se comporte como texto 'YYYY-MM-DD' en cualquier comparación.
-DROP CAST IF EXISTS (date AS text);
-CREATE CAST (date AS text) WITH INOUT AS IMPLICIT;
+-- NOTA: `date('x')` de 1 argumento Postgres lo resuelve como cast al tipo
+-- date (no a la función de arriba). Para que devuelva texto, el adaptador
+-- reescribe `date(X)` -> `date(X, '')` (ver pg_compat.forzar_date_texto) ·
+-- así siempre se usa la función date(variadic text[]) que devuelve texto.
+-- No se usa CREATE CAST porque requiere superusuario (no disponible en
+-- el PostgreSQL gestionado de Render).
 
 -- strftime(formato, timestring, modificadores...) -> texto formateado.
 -- Traduce los códigos de formato SQLite a los de to_char de Postgres.

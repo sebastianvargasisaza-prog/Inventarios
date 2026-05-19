@@ -222,6 +222,89 @@ def _split_top_level(s):
     return partes
 
 
+def _fin_parentesis(s, abre):
+    """Dado el índice del '(' en `abre`, devuelve (idx_cierre, hay_coma_a
+    profundidad 1, hay_contenido). idx_cierre = -1 si no cierra."""
+    depth = 0
+    in_str = False
+    coma = False
+    contenido = False
+    i = abre
+    n = len(s)
+    while i < n:
+        ch = s[i]
+        if in_str:
+            if ch == "'":
+                if i + 1 < n and s[i + 1] == "'":
+                    i += 2
+                    continue
+                in_str = False
+        elif ch == "'":
+            in_str = True
+            contenido = True
+        elif ch == '(':
+            depth += 1
+        elif ch == ')':
+            depth -= 1
+            if depth == 0:
+                return i, coma, contenido
+        elif ch == ',' and depth == 1:
+            coma = True
+        elif depth >= 1 and ch not in ' \t\r\n':
+            contenido = True
+        i += 1
+    return -1, coma, contenido
+
+
+def forzar_date_texto(sql: str) -> str:
+    """Fuerza `date(X)` de 1 argumento a `date(X, '')`.
+
+    Postgres resuelve `date(x)` de 1 argumento como el cast al tipo `date`
+    (devuelve un valor date), NO la función date() de pg_functions. EOS
+    trata las fechas como texto · con un 2º argumento Postgres usa la
+    función date(variadic text[]) que devuelve 'YYYY-MM-DD' texto. Así no
+    quedan valores tipo date y se evitan los errores `text = date`.
+    """
+    if 'date' not in sql.lower():
+        return sql
+    out = []
+    i, n = 0, len(sql)
+    bajo = sql.lower()
+    in_str = False
+    while i < n:
+        ch = sql[i]
+        if in_str:
+            out.append(ch)
+            if ch == "'":
+                if i + 1 < n and sql[i + 1] == "'":
+                    out.append("'")
+                    i += 2
+                    continue
+                in_str = False
+            i += 1
+            continue
+        if ch == "'":
+            in_str = True
+            out.append(ch)
+            i += 1
+            continue
+        if (bajo.startswith('date', i)
+                and (i == 0 or not (sql[i - 1].isalnum() or sql[i - 1] == '_'))):
+            k = i + 4
+            while k < n and sql[k] in ' \t\r\n':
+                k += 1
+            if k < n and sql[k] == '(':
+                cierre, coma, contenido = _fin_parentesis(sql, k)
+                if cierre > 0 and not coma and contenido:
+                    out.append(sql[i:cierre])      # 'date(...contenido'
+                    out.append(", '')")
+                    i = cierre + 1
+                    continue
+        out.append(ch)
+        i += 1
+    return ''.join(out)
+
+
 def rewrite_having_alias(sql: str) -> str:
     """Reescribe `HAVING <alias>` sustituyendo el alias por su expresión.
 
