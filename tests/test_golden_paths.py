@@ -7000,6 +7000,62 @@ def test_golden_plan_factibilidad(app, db_clean):
 
 
 # ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH PLANTA · Tablero "Equipo HOY" del Centro de Mando
+# ═══════════════════════════════════════════════════════════════════
+# Bug que cazaría: que un operario con producción asignada hoy no
+# apareciera con su tarea en el tablero, o que el endpoint mutara la
+# programación (debe ser solo lectura).
+
+def test_golden_planta_tablero_equipo(app, db_clean):
+    """Tablero 'Equipo HOY' · /api/planta/tablero-equipo lista a cada
+    operario activo con su tarea de hoy (etapa + producto) · SOLO LECTURA."""
+    from datetime import date
+    hoy = date.today().isoformat()
+
+    for sql in (
+        "DELETE FROM produccion_programada WHERE producto='TEST_TABLERO_PRODUCTO'",
+        "DELETE FROM operarios_planta WHERE nombre='OPTESTTABLERO'",
+    ):
+        _exec(sql)
+
+    # Operario de prueba (no jefe · no fijo en dispensación) + 1 producción
+    # programada HOY donde es el responsable de elaboración.
+    op_id = _exec("INSERT INTO operarios_planta (nombre, apellido, "
+                  "rol_predeterminado, fija_en_dispensacion, es_jefe_produccion, "
+                  "activo) VALUES ('OPTESTTABLERO','Equipo','envasado',0,0,1)")
+    _exec("INSERT INTO produccion_programada (producto, fecha_programada, "
+          "cantidad_kg, lotes, estado, operario_elaboracion_id) VALUES "
+          "('TEST_TABLERO_PRODUCTO', ?, 10, 1, 'programado', ?)",
+          (hoy, op_id))
+
+    cs = _login(app, 'sebastian')
+    r = cs.get('/api/planta/tablero-equipo')
+    assert r.status_code == 200, f'BUG: {r.status_code} {r.data}'
+    d = r.get_json()
+    assert 'operarios' in d and 'resumen' in d and d.get('fecha') == hoy
+
+    op = next((o for o in d['operarios'] if o['id'] == op_id), None)
+    assert op, 'BUG: el operario de prueba no aparece en el tablero'
+    assert len(op['tareas']) == 1, f'BUG: tareas del operario · {op}'
+    t = op['tareas'][0]
+    assert t['producto'] == 'TEST_TABLERO_PRODUCTO', f'BUG: producto · {t}'
+    assert t['etapa'] == 'elaboracion', f'BUG: etapa · {t}'
+    assert t['etapa_label'] == 'Producción', f'BUG: etapa_label · {t}'
+
+    # SOLO LECTURA · la producción programada queda intacta
+    rows = _query("SELECT estado FROM produccion_programada "
+                  "WHERE producto='TEST_TABLERO_PRODUCTO'")
+    assert len(rows) == 1 and rows[0][0] == 'programado', \
+        'BUG: el endpoint modificó la programación (debe ser solo lectura)'
+
+    for sql in (
+        "DELETE FROM produccion_programada WHERE producto='TEST_TABLERO_PRODUCTO'",
+        "DELETE FROM operarios_planta WHERE nombre='OPTESTTABLERO'",
+    ):
+        _exec(sql)
+
+
+# ═══════════════════════════════════════════════════════════════════
 # GOLDEN PATH PLAN-C · POST /api/plan/programar-produccion · todo en EOS
 # ═══════════════════════════════════════════════════════════════════
 # Bug que cazaría: si el endpoint no setea origen='eos_plan' o estado

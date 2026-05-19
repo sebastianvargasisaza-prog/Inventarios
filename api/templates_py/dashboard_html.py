@@ -6829,6 +6829,22 @@ function _renderProgramacion(d){
     <!-- KPIs en vivo -->
     <div id="cm-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:14px"></div>
 
+    <!-- ── Equipo HOY · tablero de operarios (Sebastián 19-may-2026)
+         El sueño de Alejandro: ver de un vistazo qué hace cada operario,
+         en qué área y si esa área está limpia o sucia. Solo lectura. ── -->
+    <div id="cm-equipo-panel" style="background:#fff;border:2px solid #1a4a7a;border-radius:10px;padding:12px 14px;margin-bottom:14px">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+        <div>
+          <b style="font-size:14px;color:#1a4a7a">&#128101; Equipo HOY</b>
+          <span id="cm-equipo-sub" style="font-size:11px;color:#64748b;margin-left:8px">Cargando&hellip;</span>
+        </div>
+        <button onclick="cmCargarEquipo()" style="padding:4px 10px;background:#1a4a7a;color:#fff;border:none;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">&#8635; Refrescar</button>
+      </div>
+      <div id="cm-equipo-cards" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:8px">
+        <div style="padding:14px;text-align:center;color:#94a3b8;font-size:12px">Cargando equipo&hellip;</div>
+      </div>
+    </div>
+
     <!-- ── Producciones HOY · Calendar-first cards (Sebastián 1-may-2026)
          "unifiquemos todo en el mapa, que cargue automatico ocupada/libre,
          cuando digan termine quede sucia hasta que digan que la limpiaron" -->
@@ -9435,10 +9451,74 @@ async function ckMarcar(itemId, estado){
       // ── Producciones HOY · cards encima del mapa (Sebastián 1-may-2026)
       renderProduccionesDiaCards(d.producciones_dia || [], k);
       renderProduccionesDiag(d.producciones_diag || {});
+      if(typeof cmCargarEquipo === 'function') cmCargarEquipo();
       var lu = document.getElementById('cm-last-update');
       if(lu) lu.textContent = 'actualizado ' + new Date().toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
     }catch(e){
       if(!silent){ _toast('Error al cargar Centro de Mando: '+e.message, 0); }
+    }
+  }
+
+  // ── Equipo HOY · tablero de operarios (paso 2 · Sebastián 19-may-2026) ──
+  function _cmEstadoArea(est){
+    var M = {
+      libre:     {dot:'#16a34a', txt:'Limpia / libre'},
+      ocupada:   {dot:'#ca8a04', txt:'Ocupada'},
+      sucia:     {dot:'#b91c1c', txt:'Sucia'},
+      limpiando: {dot:'#1d4ed8', txt:'Limpiando'}
+    };
+    return M[est] || M.libre;
+  }
+  async function cmCargarEquipo(){
+    var cont = document.getElementById('cm-equipo-cards');
+    var sub  = document.getElementById('cm-equipo-sub');
+    if(!cont) return;
+    try{
+      var r = await fetch('/api/planta/tablero-equipo', {credentials:'same-origin'});
+      var d = await r.json();
+      if(!r.ok){
+        if(sub) sub.textContent = '⚠️ ' + (d.error || ('HTTP ' + r.status));
+        cont.innerHTML = '<div style="padding:14px;text-align:center;color:#b91c1c;font-size:12px">No se pudo cargar el equipo</div>';
+        return;
+      }
+      var ops = d.operarios || [];
+      var res = d.resumen || {};
+      if(sub) sub.textContent = (res.con_tarea||0) + ' con tarea · ' + (res.sin_tarea||0) + ' disponibles';
+      if(!ops.length){
+        cont.innerHTML = '<div style="padding:14px;text-align:center;color:#94a3b8;font-size:12px">Sin operarios activos</div>';
+        return;
+      }
+      cont.innerHTML = ops.map(function(o){
+        var chip = o.es_jefe
+          ? '<span style="font-size:9px;background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:6px;font-weight:700">JEFE</span>'
+          : (o.rol ? '<span style="font-size:9px;background:#e2e8f0;color:#475569;padding:1px 6px;border-radius:6px">'+_escHTML(o.rol)+'</span>' : '');
+        var cuerpo;
+        if(o.tareas && o.tareas.length){
+          cuerpo = o.tareas.map(function(t){
+            var ea = _cmEstadoArea(t.area_estado);
+            var area = t.area_codigo
+              ? '<span style="white-space:nowrap"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:'+ea.dot+';margin-right:3px;vertical-align:middle"></span>'+_escHTML(t.area_nombre||t.area_codigo)+' · '+ea.txt+'</span>'
+              : '<span style="color:#94a3b8">sin área asignada</span>';
+            var lp = t.area_requiere_limpieza ? ' <span title="requiere limpieza profunda">🧽</span>' : '';
+            return '<div style="margin-top:6px;padding:6px 8px;background:#f8fafc;border-radius:6px;border-left:3px solid #1a4a7a">'
+              + '<div style="font-size:11px;font-weight:700;color:#1a4a7a">'+_escHTML(t.etapa_label||'Tarea')+'</div>'
+              + '<div style="font-size:12px;color:#0f172a;font-weight:600">'+_escHTML(t.producto||'(sin producto)')+'</div>'
+              + '<div style="font-size:10px;color:#64748b;margin-top:2px">'+area+lp+'</div>'
+              + '</div>';
+          }).join('');
+        } else {
+          cuerpo = '<div style="margin-top:6px;padding:8px;background:#f8fafc;border-radius:6px;font-size:11px;color:#94a3b8;text-align:center">Sin tarea asignada hoy</div>';
+        }
+        var borde = (o.tareas && o.tareas.length) ? '#1a4a7a' : '#cbd5e1';
+        return '<div style="background:#fff;border:1px solid #e2e8f0;border-top:3px solid '+borde+';border-radius:8px;padding:10px 12px">'
+          + '<div style="display:flex;justify-content:space-between;align-items:center;gap:6px">'
+          + '<b style="font-size:13px;color:#0f172a">'+_escHTML(o.nombre||('op#'+o.id))+'</b>'
+          + chip + '</div>'
+          + cuerpo
+          + '</div>';
+      }).join('');
+    }catch(e){
+      if(sub) sub.textContent = '⚠️ ' + (e.message || e);
     }
   }
 

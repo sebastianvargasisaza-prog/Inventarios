@@ -7487,6 +7487,99 @@ def mi_dia():
     })
 
 
+@bp.route('/api/planta/tablero-equipo', methods=['GET'])
+def tablero_equipo():
+    """Tablero 'Equipo HOY' del Centro de Mando · Sebastián 19-may-2026.
+
+    Una tarjeta por operario activo: quién es, qué le toca hoy (etapa +
+    producto + área) y si esa área está limpia o sucia. El sueño de
+    Alejandro — ver a todo el equipo de un vistazo. SOLO LECTURA.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    hoy = datetime.now().date().isoformat()
+    ETAPA_LABEL = {
+        'dispensacion': 'Dispensación',
+        'elaboracion': 'Producción',
+        'envasado': 'Envasado',
+        'acondicionamiento': 'Acondicionamiento',
+    }
+    rows = c.execute("""
+        SELECT op.id,
+               TRIM(op.nombre || ' ' || COALESCE(op.apellido, '')) AS nombre,
+               COALESCE(op.rol_predeterminado, '') AS rol,
+               COALESCE(op.es_jefe_produccion, 0) AS es_jefe,
+               COALESCE(op.fija_en_dispensacion, 0) AS fija_disp,
+               pp.id AS prod_id, pp.producto, pp.lotes,
+               COALESCE(pp.cantidad_kg, 0) AS kg,
+               COALESCE(pp.estado, 'programado') AS prod_estado,
+               CASE
+                 WHEN pp.operario_dispensacion_id = op.id THEN 'dispensacion'
+                 WHEN pp.operario_elaboracion_id = op.id THEN 'elaboracion'
+                 WHEN pp.operario_envasado_id = op.id THEN 'envasado'
+                 WHEN pp.operario_acondicionamiento_id = op.id THEN 'acondicionamiento'
+               END AS etapa,
+               COALESCE(ap.codigo, '') AS area_codigo,
+               COALESCE(ap.nombre, '') AS area_nombre,
+               COALESCE(ap.estado, 'libre') AS area_estado,
+               COALESCE(ap.requiere_limpieza_profunda, 0) AS area_lp
+        FROM operarios_planta op
+        LEFT JOIN produccion_programada pp
+          ON date(pp.fecha_programada) = ?
+          AND COALESCE(pp.estado, 'programado') NOT IN ('completado', 'cancelado')
+          AND (pp.operario_dispensacion_id = op.id
+               OR pp.operario_elaboracion_id = op.id
+               OR pp.operario_envasado_id = op.id
+               OR pp.operario_acondicionamiento_id = op.id)
+        LEFT JOIN areas_planta ap ON ap.id = pp.area_id
+        WHERE COALESCE(op.activo, 1) = 1
+        ORDER BY COALESCE(op.es_jefe_produccion, 0), op.nombre, pp.id
+    """, (hoy,)).fetchall()
+
+    operarios = {}
+    orden = []
+    for r in rows:
+        oid = r[0]
+        if oid not in operarios:
+            operarios[oid] = {
+                'id': oid,
+                'nombre': r[1] or '',
+                'rol': r[2] or '',
+                'es_jefe': bool(r[3]),
+                'fija_dispensacion': bool(r[4]),
+                'tareas': [],
+            }
+            orden.append(oid)
+        if r[5] is not None:  # prod_id no nulo → tiene tarea hoy
+            etapa = r[10] or ''
+            operarios[oid]['tareas'].append({
+                'prod_id': r[5],
+                'producto': r[6] or '',
+                'lotes': r[7] or '',
+                'kg': r[8] or 0,
+                'prod_estado': r[9] or 'programado',
+                'etapa': etapa,
+                'etapa_label': ETAPA_LABEL.get(etapa, etapa),
+                'area_codigo': r[11] or '',
+                'area_nombre': r[12] or '',
+                'area_estado': r[13] or 'libre',
+                'area_requiere_limpieza': bool(r[14]),
+            })
+
+    lista = [operarios[oid] for oid in orden]
+    con_tarea = sum(1 for o in lista if o['tareas'])
+    return jsonify({
+        'fecha': hoy,
+        'operarios': lista,
+        'resumen': {
+            'total': len(lista),
+            'con_tarea': con_tarea,
+            'sin_tarea': len(lista) - con_tarea,
+        },
+    })
+
+
 @bp.route('/api/planta/semana-produccion', methods=['GET'])
 def semana_produccion():
     """Vista CLARA · ARQUITECTURA CALENDAR-FIRST.
