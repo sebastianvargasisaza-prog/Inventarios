@@ -6912,8 +6912,13 @@ function render(){
           grid += '<span>✨ ' + escapeHtml(prodCorto) + '<br><span style="opacity:.7">' + lt.kg + 'kg</span></span>';
           grid += '</div>';
         } else {
-          grid += '<div class="' + ltCls + esGrande + '" draggable="true" data-key="' + dragKey + '" data-prod="' + escapeHtml(lt.producto) + '" data-kg="' + lt.kg + '" data-from="' + fStr + '" ondragstart="onDragStart(event)" ondragend="onDragEnd(event)" onclick="abrirLoteModal(' + lt.id + ',&quot;' + escapeHtml(lt.producto) + '&quot;,&quot;' + fStr + '&quot;,' + lt.kg + ')" title="' + escapeHtml(lt.producto + ' · ' + lt.kg + 'kg · click detalle · arrastrá para mover') + '">';
-          grid += '<span>' + escapeHtml(prodCorto) + '<br><span style="opacity:.7">' + lt.kg + 'kg</span></span>';
+          // Sebastián 19-may-2026: lo Fijo (eos_plan / eos_b2b / eos_retroactivo)
+          // se ve con candado · los procesos automáticos no lo tocan.
+          const esFijo = ['eos_plan','eos_b2b','eos_retroactivo'].indexOf(lt.origen) >= 0;
+          const candado = esFijo ? '🔒 ' : '';
+          const fijoTip = esFijo ? ' · 🔒 FIJO (los automáticos no lo tocan)' : '';
+          grid += '<div class="' + ltCls + esGrande + '" draggable="true" data-key="' + dragKey + '" data-prod="' + escapeHtml(lt.producto) + '" data-kg="' + lt.kg + '" data-from="' + fStr + '" ondragstart="onDragStart(event)" ondragend="onDragEnd(event)" onclick="abrirLoteModal(' + lt.id + ',&quot;' + escapeHtml(lt.producto) + '&quot;,&quot;' + fStr + '&quot;,' + lt.kg + ')" title="' + escapeHtml(lt.producto + ' · ' + lt.kg + 'kg · click detalle · arrastrá para mover' + fijoTip) + '">';
+          grid += '<span>' + candado + escapeHtml(prodCorto) + '<br><span style="opacity:.7">' + lt.kg + 'kg</span></span>';
           grid += '</div>';
         }
       });
