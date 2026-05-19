@@ -9662,7 +9662,7 @@ def actualizar_cantidad_proxima(pid):
                     "kg_antes": kg_antes, "kg_nuevo": nueva_kg})
 
 
-@bp.route("/api/plan/recuperar-semana-19may2026", methods=["POST"])
+@bp.route("/api/plan/recuperar-semana-19may2026", methods=["GET", "POST"])
 def recuperar_semana_19may2026():
     """Recuperación puntual · Sebastián 19-may-2026.
 
@@ -9671,6 +9671,10 @@ def recuperar_semana_19may2026():
     el audit_log con origen='eos_plan' → Fija · intocable por procesos
     automáticos. Idempotente: si ya existe (mismo producto + fecha, no
     cancelada) no la duplica.
+
+    Acepta GET para que Sebastián solo abra la URL en el navegador (está
+    logueado como admin) y ejecute la recuperación de un solo uso. Si se
+    vuelve a abrir, no duplica nada (idempotente).
     """
     user, err = _require_admin_or_compras()
     if err:
