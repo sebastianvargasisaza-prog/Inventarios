@@ -1545,17 +1545,23 @@ def handle_alertas():
 def alertas_reabastecimiento():
     conn = get_db(); c = conn.cursor()
     # MPs bajo minimo
-    c.execute("""SELECT m.material_id,
-                        COALESCE(mp.nombre_comercial, m.material_nombre) as nombre,
-                        COALESCE(mp.proveedor,'') as proveedor,
-                        COALESCE(mp.stock_minimo,0) as stock_minimo,
-                        SUM(CASE WHEN m.tipo='Entrada' THEN m.cantidad ELSE -m.cantidad END) as stock_actual,
-                        'MP' as tipo_material,
-                        COALESCE(mp.tipo,'') as subtipo
-                 FROM movimientos m
-                 LEFT JOIN maestro_mps mp ON m.material_id=mp.codigo_mp
-                 GROUP BY m.material_id
-                 HAVING stock_actual < stock_minimo AND stock_minimo > 0
+    # Subconsulta: las columnas de maestro_mps y los alias no se pueden
+    # usar en WHERE/ORDER BY de la query agrupada en Postgres · envueltas
+    # en un FROM (...) se vuelven columnas reales (portátil SQLite/PG).
+    c.execute("""SELECT material_id, nombre, proveedor, stock_minimo,
+                        stock_actual, tipo_material, subtipo FROM (
+                   SELECT m.material_id AS material_id,
+                          COALESCE(MAX(mp.nombre_comercial), MAX(m.material_nombre)) AS nombre,
+                          COALESCE(MAX(mp.proveedor),'') AS proveedor,
+                          COALESCE(MAX(mp.stock_minimo),0) AS stock_minimo,
+                          SUM(CASE WHEN m.tipo='Entrada' THEN m.cantidad ELSE -m.cantidad END) AS stock_actual,
+                          'MP' AS tipo_material,
+                          COALESCE(MAX(mp.tipo),'') AS subtipo
+                   FROM movimientos m
+                   LEFT JOIN maestro_mps mp ON m.material_id=mp.codigo_mp
+                   GROUP BY m.material_id
+                 ) sub
+                 WHERE stock_actual < stock_minimo AND stock_minimo > 0
                  ORDER BY (stock_actual/stock_minimo) ASC""")
     rows_mp = c.fetchall()
     # MEE bajo minimo
