@@ -9469,6 +9469,42 @@ async function ckMarcar(itemId, estado){
     };
     return M[est] || M.libre;
   }
+  // Paso 3 · click un operario → resalta su área en el plano SVG
+  function cmResaltarArea(cod){
+    var svg = document.getElementById('plano-svg');
+    if(!svg || !cod) return;
+    var g = svg.querySelector('[data-codigo="'+cod+'"]');
+    var rect = g ? (g.querySelector('rect.r') || g.querySelector('rect')) : null;
+    if(!rect) return;
+    var NS = 'http://www.w3.org/2000/svg';
+    var hi = document.getElementById('cm-area-highlight');
+    if(!hi){
+      hi = document.createElementNS(NS, 'rect');
+      hi.setAttribute('id', 'cm-area-highlight');
+      hi.setAttribute('fill', 'none');
+      hi.setAttribute('stroke', '#f59e0b');
+      hi.setAttribute('stroke-width', '6');
+      hi.setAttribute('rx', '6');
+      hi.setAttribute('pointer-events', 'none');
+      var an = document.createElementNS(NS, 'animate');
+      an.setAttribute('attributeName', 'stroke-opacity');
+      an.setAttribute('values', '1;0.2;1');
+      an.setAttribute('dur', '1.1s');
+      an.setAttribute('repeatCount', 'indefinite');
+      hi.appendChild(an);
+      svg.appendChild(hi);
+    }
+    var x = parseFloat(rect.getAttribute('x')) || 0;
+    var y = parseFloat(rect.getAttribute('y')) || 0;
+    var w = parseFloat(rect.getAttribute('width')) || 0;
+    var h = parseFloat(rect.getAttribute('height')) || 0;
+    hi.setAttribute('x', x - 4);
+    hi.setAttribute('y', y - 4);
+    hi.setAttribute('width', w + 8);
+    hi.setAttribute('height', h + 8);
+    hi.style.display = '';
+    if(svg.scrollIntoView) svg.scrollIntoView({behavior:'smooth', block:'center'});
+  }
   async function cmCargarEquipo(){
     var cont = document.getElementById('cm-equipo-cards');
     var sub  = document.getElementById('cm-equipo-sub');
@@ -9500,10 +9536,12 @@ async function ckMarcar(itemId, estado){
               ? '<span style="white-space:nowrap"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:'+ea.dot+';margin-right:3px;vertical-align:middle"></span>'+_escHTML(t.area_nombre||t.area_codigo)+' · '+ea.txt+'</span>'
               : '<span style="color:#94a3b8">sin área asignada</span>';
             var lp = t.area_requiere_limpieza ? ' <span title="requiere limpieza profunda">🧽</span>' : '';
-            return '<div style="margin-top:6px;padding:6px 8px;background:#f8fafc;border-radius:6px;border-left:3px solid #1a4a7a">'
+            var dataArea = t.area_codigo ? ' data-area="'+_escHTML(t.area_codigo)+'"' : '';
+            var verPlano = t.area_codigo ? ' <span style="font-size:9px;color:#1a4a7a;font-weight:700">📍 ver en plano</span>' : '';
+            return '<div'+dataArea+' style="margin-top:6px;padding:6px 8px;background:#f8fafc;border-radius:6px;border-left:3px solid #1a4a7a">'
               + '<div style="font-size:11px;font-weight:700;color:#1a4a7a">'+_escHTML(t.etapa_label||'Tarea')+'</div>'
               + '<div style="font-size:12px;color:#0f172a;font-weight:600">'+_escHTML(t.producto||'(sin producto)')+'</div>'
-              + '<div style="font-size:10px;color:#64748b;margin-top:2px">'+area+lp+'</div>'
+              + '<div style="font-size:10px;color:#64748b;margin-top:2px">'+area+lp+verPlano+'</div>'
               + '</div>';
           }).join('');
         } else {
@@ -9517,6 +9555,11 @@ async function ckMarcar(itemId, estado){
           + cuerpo
           + '</div>';
       }).join('');
+      cont.querySelectorAll('[data-area]').forEach(function(el){
+        el.style.cursor = 'pointer';
+        el.title = 'Click para resaltar el área en el plano';
+        el.onclick = function(){ cmResaltarArea(el.getAttribute('data-area')); };
+      });
     }catch(e){
       if(sub) sub.textContent = '⚠️ ' + (e.message || e);
     }
