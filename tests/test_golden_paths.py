@@ -6937,6 +6937,68 @@ def test_golden_plan_necesidades_agrega_animus_y_b2b(app, db_clean):
     _exec("DELETE FROM pedidos_b2b WHERE cliente_id LIKE 'TEST_CLI_%'")
 
 
+def test_golden_plan_factibilidad(app, db_clean):
+    """Factibilidad del plan · /api/plan/factibilidad detecta producciones
+    bloqueadas por falta de MP y arma la compra consolidada · SOLO LECTURA."""
+    for sql in (
+        "DELETE FROM produccion_programada WHERE producto='TEST_FACT_PRODUCTO'",
+        "DELETE FROM movimientos WHERE material_id='MPTESTFACT01'",
+        "DELETE FROM formula_items WHERE producto_nombre='TEST_FACT_PRODUCTO'",
+        "DELETE FROM formula_headers WHERE producto_nombre='TEST_FACT_PRODUCTO'",
+        "DELETE FROM maestro_mps WHERE codigo_mp='MPTESTFACT01'",
+    ):
+        _exec(sql)
+
+    # Fórmula: lote de 10 kg necesita 5000 g de la MP · stock 3000 g (falta
+    # 2000) · 1 producción programada de 10 kg.
+    _exec("INSERT INTO maestro_mps (codigo_mp, nombre_comercial, activo) "
+          "VALUES ('MPTESTFACT01','MP Test Factibilidad',1)")
+    _exec("INSERT INTO formula_headers (producto_nombre, lote_size_kg, activo) "
+          "VALUES ('TEST_FACT_PRODUCTO',10,1)")
+    _exec("INSERT INTO formula_items (producto_nombre, material_id, "
+          "material_nombre, cantidad_g_por_lote) VALUES "
+          "('TEST_FACT_PRODUCTO','MPTESTFACT01','MP Test Factibilidad',5000)")
+    _exec("INSERT INTO movimientos (material_id, material_nombre, cantidad, "
+          "tipo, fecha, lote) VALUES ('MPTESTFACT01','MP Test Factibilidad',"
+          "3000,'Entrada','2026-05-01','LOTE-TESTFACT')")
+    _exec("INSERT INTO produccion_programada (producto, fecha_programada, "
+          "cantidad_kg, lotes, estado) VALUES "
+          "('TEST_FACT_PRODUCTO','2026-06-15',10,1,'pendiente')")
+
+    cs = _login(app, 'sebastian')
+    r = cs.get('/api/plan/factibilidad?dias=120')
+    assert r.status_code == 200, f'BUG: {r.status_code} {r.data}'
+    d = r.get_json()
+    assert 'resumen' in d and 'producciones' in d and 'compra_consolidada' in d
+
+    prod = next((p for p in d['producciones']
+                 if p['producto'] == 'TEST_FACT_PRODUCTO'), None)
+    assert prod, 'BUG: la producción de prueba no aparece'
+    assert prod['factible'] is False, f'BUG: debería estar bloqueada · {prod}'
+    falt = prod['mps_faltantes']
+    assert len(falt) == 1 and falt[0]['material_id'] == 'MPTESTFACT01', \
+        f'BUG: mps_faltantes · {falt}'
+    assert abs(falt[0]['faltante_g'] - 2000) < 1, f'BUG: faltante_g · {falt}'
+
+    compra_ids = [x['material_id'] for x in d['compra_consolidada']]
+    assert 'MPTESTFACT01' in compra_ids, 'BUG: MP faltante no está en compra'
+
+    # SOLO LECTURA · la producción programada queda intacta
+    rows = _query("SELECT estado FROM produccion_programada "
+                  "WHERE producto='TEST_FACT_PRODUCTO'")
+    assert len(rows) == 1 and rows[0][0] == 'pendiente', \
+        'BUG: el endpoint modificó la programación (debe ser solo lectura)'
+
+    for sql in (
+        "DELETE FROM produccion_programada WHERE producto='TEST_FACT_PRODUCTO'",
+        "DELETE FROM movimientos WHERE material_id='MPTESTFACT01'",
+        "DELETE FROM formula_items WHERE producto_nombre='TEST_FACT_PRODUCTO'",
+        "DELETE FROM formula_headers WHERE producto_nombre='TEST_FACT_PRODUCTO'",
+        "DELETE FROM maestro_mps WHERE codigo_mp='MPTESTFACT01'",
+    ):
+        _exec(sql)
+
+
 # ═══════════════════════════════════════════════════════════════════
 # GOLDEN PATH PLAN-C · POST /api/plan/programar-produccion · todo en EOS
 # ═══════════════════════════════════════════════════════════════════

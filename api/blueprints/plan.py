@@ -1070,6 +1070,272 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
     return out
 
 
+@bp.route("/api/plan/factibilidad", methods=["GET"])
+def plan_factibilidad():
+    """Factibilidad del plan completo · ¿alcanzan las MP para todo lo programado?
+
+    Toma las producciones de `produccion_programada` en un horizonte (default
+    30 días) que aún NO descontaron inventario, explota cada fórmula × cantidad
+    y hace una asignación greedy por fecha contra el stock real de MP. A
+    diferencia del chequeo por-producto de /api/plan/necesidades (que evalúa
+    cada producto aislado), esto detecta cuando varias producciones comparten
+    una MP y entre todas no alcanza.
+
+    SOLO LECTURA · no modifica ninguna programación ni el calendario.
+
+    Query params:
+        dias: horizonte en días (default 30, máx 365)
+
+    Devuelve: resumen, lista de producciones (factible/bloqueada + MP faltante)
+    y compra_consolidada (qué MP comprar para que el plan entero sea ejecutable).
+    """
+    err = _require_login()
+    if err:
+        return err
+    from datetime import datetime, timedelta, timezone
+    try:
+        dias = max(1, min(365, int(request.args.get("dias", 30))))
+    except Exception:
+        dias = 30
+    conn = get_db()
+    c = conn.cursor()
+
+    # 1. Fórmula por producto · necesario_g por MP para UN lote bulk.
+    formula_por_prod = {}
+    lote_size = {}
+    for r in c.execute(
+        """SELECT fi.producto_nombre, fi.material_id,
+                  COALESCE(fi.material_nombre,'') AS mat_nom,
+                  COALESCE(fi.cantidad_g_por_lote,0) AS cant_g,
+                  COALESCE(fi.porcentaje,0) AS pct,
+                  COALESCE(fh.lote_size_kg,0) AS lote_kg
+           FROM formula_items fi
+           JOIN formula_headers fh ON fh.producto_nombre = fi.producto_nombre
+           WHERE COALESCE(fh.activo,1)=1
+             AND fi.material_id IS NOT NULL AND TRIM(fi.material_id)!=''""",
+    ).fetchall():
+        prod, mid, mnom, cant_g, pct, lote_kg = r
+        if lote_kg and float(lote_kg) > 0:
+            lote_size[prod] = float(lote_kg)
+        nec_g = float(cant_g or 0)
+        if nec_g <= 0 and pct and lote_kg and float(lote_kg) > 0:
+            nec_g = (float(pct)/100.0) * float(lote_kg) * 1000.0
+        if nec_g <= 0:
+            continue
+        formula_por_prod.setdefault(prod, []).append({
+            "material_id": str(mid).strip(),
+            "material_nombre": str(mnom)[:50],
+            "necesario_g_lote": round(nec_g, 2),
+        })
+
+    # 2. Stock MP actual = SUM(movimientos).
+    mp_stock_g = {}
+    mp_tiene_mov = set()
+    for r in c.execute(
+        """SELECT material_id,
+                  COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA')
+                                    THEN cantidad ELSE -cantidad END),0),
+                  COUNT(*)
+           FROM movimientos
+           WHERE material_id IS NOT NULL AND TRIM(material_id)!=''
+           GROUP BY material_id""",
+    ).fetchall():
+        mid = str(r[0]).strip()
+        mp_stock_g[mid] = max(float(r[1] or 0), 0.0)
+        if int(r[2] or 0) > 0:
+            mp_tiene_mov.add(mid)
+
+    # 3. Producciones programadas en el horizonte que aún no descontaron MP.
+    hoy = datetime.now(timezone.utc) - timedelta(hours=5)   # hora Colombia
+    desde = hoy.strftime("%Y-%m-%d")
+    hasta = (hoy + timedelta(days=dias)).strftime("%Y-%m-%d")
+    filas = c.execute(
+        """SELECT id, producto, fecha_programada, COALESCE(cantidad_kg,0),
+                  COALESCE(lotes,1)
+           FROM produccion_programada
+           WHERE substr(fecha_programada,1,10) >= ?
+             AND substr(fecha_programada,1,10) <= ?
+             AND inventario_descontado_at IS NULL
+             AND LOWER(COALESCE(estado,'')) NOT IN
+                 ('cancelada','cancelado','completada','completado')
+           ORDER BY fecha_programada ASC, id ASC""",
+        (desde, hasta),
+    ).fetchall()
+
+    # 4. Asignación greedy por fecha · el stock se va consumiendo.
+    stock = dict(mp_stock_g)
+    producciones = []
+    sin_formula = 0
+    necesidad_total = {}          # material_id -> gramos que pide TODO el plan
+    nombre_mp = {}
+    for fid, prod, fecha, cant_kg, lotes in filas:
+        items = formula_por_prod.get(prod)
+        if not items:
+            sin_formula += 1
+            producciones.append({
+                "id": fid, "producto": prod, "fecha": fecha,
+                "cantidad_kg": round(float(cant_kg or 0), 1),
+                "factible": None, "sin_formula": True, "mps_faltantes": [],
+            })
+            continue
+        lk = lote_size.get(prod, 0)
+        if cant_kg and float(cant_kg) > 0 and lk > 0:
+            n_lotes = float(cant_kg) / lk
+        else:
+            n_lotes = float(lotes or 1)
+        req = []
+        for it in items:
+            mid = it["material_id"]
+            if mid == 'MPAGUALI01':       # agua · consumible infinito
+                continue
+            if mid not in mp_stock_g and mid not in mp_tiene_mov:
+                continue                  # MP nueva sin historial · asumir disponible
+            need = it["necesario_g_lote"] * n_lotes
+            req.append((mid, it["material_nombre"], need))
+            necesidad_total[mid] = necesidad_total.get(mid, 0.0) + need
+            nombre_mp[mid] = it["material_nombre"]
+        faltantes = []
+        for mid, mnom, need in req:
+            disp = stock.get(mid, 0.0)
+            if need - disp > 0.01:
+                faltantes.append({
+                    "material_id": mid, "material_nombre": mnom,
+                    "necesario_g": round(need, 1),
+                    "disponible_g": round(max(disp, 0.0), 1),
+                    "faltante_g": round(need - disp, 1),
+                })
+        factible = len(faltantes) == 0
+        if factible:                      # solo consume stock si SÍ se hace
+            for mid, _mnom, need in req:
+                stock[mid] = stock.get(mid, 0.0) - need
+        producciones.append({
+            "id": fid, "producto": prod, "fecha": fecha,
+            "cantidad_kg": round(float(cant_kg or 0), 1),
+            "factible": factible, "sin_formula": False,
+            "mps_faltantes": faltantes,
+        })
+
+    # 5. Compra consolidada · necesidad total del plan vs stock original.
+    compra = []
+    for mid, total_need in necesidad_total.items():
+        falta = total_need - mp_stock_g.get(mid, 0.0)
+        if falta > 0.01:
+            compra.append({
+                "material_id": mid,
+                "material_nombre": nombre_mp.get(mid, ''),
+                "faltante_g": round(falta, 1),
+                "faltante_kg": round(falta/1000.0, 2),
+            })
+    compra.sort(key=lambda x: -x["faltante_g"])
+
+    n_fact = sum(1 for p in producciones if p["factible"] is True)
+    n_bloq = sum(1 for p in producciones if p["factible"] is False)
+    return jsonify({
+        "horizonte_dias": dias,
+        "resumen": {
+            "total": len(producciones),
+            "factibles": n_fact,
+            "bloqueadas": n_bloq,
+            "sin_formula": sin_formula,
+            "mps_a_comprar": len(compra),
+        },
+        "producciones": producciones,
+        "compra_consolidada": compra,
+    })
+
+
+_FACTIBILIDAD_PLAN_HTML = """<!doctype html>
+<html lang="es-CO"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Factibilidad del Plan · EOS</title>
+<style>
+  body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;background:#0d1117;color:#e6edf3;margin:0;padding:20px;}
+  h1{font-size:20px;margin:0 0 4px;}
+  .sub{color:#8b949e;font-size:13px;margin-bottom:18px;}
+  .cards{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:8px;}
+  .card{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:14px 18px;min-width:110px;}
+  .card .n{font-size:1.9em;font-weight:700;}
+  .card .l{font-size:11px;color:#8b949e;}
+  .verde{color:#3fb950;} .rojo{color:#f85149;} .gris{color:#8b949e;} .ama{color:#d29922;}
+  select{background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:5px 8px;}
+  table{width:100%;border-collapse:collapse;margin-top:6px;font-size:13px;}
+  th,td{text-align:left;padding:7px 10px;border-bottom:1px solid #21262d;vertical-align:top;}
+  th{color:#8b949e;font-weight:600;}
+  .sec{font-size:15px;font-weight:700;margin:24px 0 4px;}
+  .pill{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;}
+  .pill.ok{background:#1f3b27;color:#3fb950;}
+  .pill.bloq{background:#3d1f1f;color:#f85149;}
+  .pill.sf{background:#2a2a2a;color:#8b949e;}
+  .falta{color:#f85149;font-size:12px;}
+  #err{color:#f85149;margin:8px 0;}
+</style></head><body>
+<h1>Factibilidad del Plan</h1>
+<div class="sub">&iquest;Alcanzan las materias primas para todo lo programado? &middot; solo lectura &mdash; no cambia ninguna programaci&oacute;n</div>
+<div>Horizonte:
+  <select id="dias" onchange="cargar()">
+    <option value="15">15 d&iacute;as</option>
+    <option value="30" selected>30 d&iacute;as</option>
+    <option value="60">60 d&iacute;as</option>
+    <option value="90">90 d&iacute;as</option>
+  </select>
+</div>
+<div id="err"></div>
+<div class="cards" id="cards"></div>
+<div class="sec">Producciones programadas</div>
+<table id="tprod"><thead><tr><th>Producto</th><th>Fecha</th><th>Cantidad</th><th>Estado</th><th>Falta</th></tr></thead><tbody></tbody></table>
+<div class="sec">Compra consolidada &mdash; qu&eacute; comprar para que el plan entero sea ejecutable</div>
+<table id="tcompra"><thead><tr><th>Material</th><th>C&oacute;digo</th><th>Faltante</th></tr></thead><tbody></tbody></table>
+<script>
+async function cargar(){
+  var dias=document.getElementById('dias').value;
+  document.getElementById('err').textContent='';
+  try{
+    var r=await fetch('/api/plan/factibilidad?dias='+dias);
+    if(!r.ok){document.getElementById('err').textContent='Error '+r.status;return;}
+    render(await r.json());
+  }catch(e){document.getElementById('err').textContent='Error: '+e;}
+}
+function render(d){
+  var s=d.resumen||{};
+  document.getElementById('cards').innerHTML=
+    card(s.total,'producciones','gris')+
+    card(s.factibles,'factibles','verde')+
+    card(s.bloqueadas,'bloqueadas','rojo')+
+    card(s.mps_a_comprar,'MP a comprar','ama')+
+    (s.sin_formula?card(s.sin_formula,'sin formula','gris'):'');
+  var tb=document.querySelector('#tprod tbody');
+  tb.innerHTML=(d.producciones||[]).map(function(p){
+    var pill=p.sin_formula?'<span class="pill sf">sin formula</span>':
+      (p.factible?'<span class="pill ok">factible</span>':'<span class="pill bloq">bloqueada</span>');
+    var falta=(p.mps_faltantes||[]).map(function(m){
+      return esc(m.material_nombre)+' (falta '+fmt(m.faltante_g)+' g)';}).join('<br>');
+    return '<tr><td>'+esc(p.producto)+'</td><td>'+esc(p.fecha)+'</td><td>'+
+      (p.cantidad_kg||0)+' kg</td><td>'+pill+'</td><td class="falta">'+falta+'</td></tr>';
+  }).join('')||'<tr><td colspan="5" class="gris">No hay producciones programadas en el horizonte</td></tr>';
+  var tc=document.querySelector('#tcompra tbody');
+  tc.innerHTML=(d.compra_consolidada||[]).map(function(m){
+    return '<tr><td>'+esc(m.material_nombre)+'</td><td>'+esc(m.material_id)+
+      '</td><td class="falta">'+fmt(m.faltante_g)+' g ('+m.faltante_kg+' kg)</td></tr>';
+  }).join('')||'<tr><td colspan="3" class="verde">Nada que comprar &mdash; el plan es ejecutable</td></tr>';
+}
+function card(n,l,cls){return '<div class="card"><div class="n '+cls+'">'+(n||0)+'</div><div class="l">'+l+'</div></div>';}
+function fmt(n){return (n||0).toLocaleString('es-CO');}
+function esc(s){var e=document.createElement('div');e.textContent=s==null?'':s;return e.innerHTML;}
+cargar();
+</script></body></html>
+"""
+
+
+@bp.route("/admin/factibilidad-plan", methods=["GET"])
+def plan_factibilidad_page():
+    """Página · análisis de factibilidad del plan de producción (solo lectura)."""
+    if not session.get("compras_user"):
+        from flask import redirect
+        return redirect("/login?next=/admin/factibilidad-plan")
+    from flask import Response
+    return Response(_FACTIBILIDAD_PLAN_HTML, mimetype="text/html")
+
+
 # ─── Programar producción · todo vive en EOS · sin Calendar ───────────────
 
 @bp.route("/api/plan/programar-produccion", methods=["POST"])
