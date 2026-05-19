@@ -52,6 +52,23 @@ def _abrir_conn():
     return _configure_conn(sqlite3.connect(DB_PATH))
 
 
+def db_connect(*args, **kwargs):
+    """Conexión nueva al backend activo · para call sites que abren y
+    cierran su propia conexión (fuera del scope per-request de get_db()).
+
+    Migración Fase 3: ~135 call sites hacían `sqlite3.connect(DB_PATH)`
+    directo, saltándose get_db(). Este helper los hace conmutables.
+
+    SQLite: equivale a `sqlite3.connect(DB_PATH, ...)` — producción sin
+    cambios (los args extra, p.ej. timeout, se pasan tal cual). Postgres:
+    devuelve el adaptador (los kwargs estilo SQLite se ignoran).
+    """
+    if _usa_postgres():
+        from pg_adapter import connect as _pg_connect
+        return _pg_connect()
+    return sqlite3.connect(DB_PATH, *args, **kwargs)
+
+
 def get_db():
     """Conexion per-request usando Flask g (patron recomendado Flask).
 
@@ -6511,10 +6528,12 @@ def run_migrations(conn: "sqlite3.Connection") -> int:
     return applied_count
 
 def init_db():
+    # Migración Fase 3: en modo PostgreSQL init_db NO corre las migraciones
+    # SQLite (re-ejecutarlas sobre el esquema PG ya construido falla: los
+    # triggers precargados rechazan datos históricos). El esquema y los
+    # datos PG se cargan aparte: conftest para tests, script de cutover
+    # para producción (construye un SQLite con init_db y copia los datos).
     if _usa_postgres():
-        # En modo PostgreSQL el esquema se carga aparte (conftest para los
-        # tests, script de cutover para producción). No corre el init de
-        # SQLite (CREATE TABLE / migraciones / pragmas son SQLite-only).
         return
     # Sebastián 12-may-2026: integrity_check al startup ANTES de
     # cualquier escritura. Si la BD está corrupta ('database disk
@@ -7956,8 +7975,8 @@ def apply_production_corrections(c):
 def run_seed_rrhh():
     """Ejecuta seed_rrhh con su propia conexiÃ³n (llamada al arranque)."""
     if _usa_postgres():
-        return  # los seeds en modo PostgreSQL se cargan aparte
-    conn = sqlite3.connect(DB_PATH)
+        return  # en PostgreSQL los datos se cargan aparte (ver init_db)
+    conn = db_connect()
     c = conn.cursor()
     seed_rrhh(c)
     conn.commit()

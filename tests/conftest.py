@@ -42,6 +42,84 @@ def test_workspace():
     shutil.rmtree(workspace, ignore_errors=True)
 
 
+def _postgres_mode():
+    return os.environ.get("EOS_DB_BACKEND", "").strip().lower() == "postgres"
+
+
+def _conninfo():
+    return (
+        f"host={os.environ.get('PGHOST', '127.0.0.1')} "
+        f"port={os.environ.get('PGPORT', '5432')} "
+        f"user={os.environ.get('PGUSER', 'postgres')} "
+        f"dbname={os.environ.get('PGDATABASE', 'eos_test')}"
+    )
+
+
+def _cargar_esquema_postgres():
+    """Carga el esquema PostgreSQL fresco en la base de tests (eos_test).
+
+    Migración Fase 3-4. Solo se usa cuando EOS_DB_BACKEND=postgres.
+    """
+    import psycopg
+
+    api_dir = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "api")
+    with psycopg.connect(_conninfo(), autocommit=True) as conn:
+        with conn.cursor() as cur:
+            cur.execute("DROP SCHEMA public CASCADE; CREATE SCHEMA public;")
+            for archivo in ("pg_functions.sql", "pg_schema.sql", "pg_triggers.sql"):
+                with open(os.path.join(api_dir, archivo), encoding="utf-8") as f:
+                    cur.execute(f.read())
+
+
+def _copiar_datos_a_postgres(sqlite_path):
+    """Copia todos los datos de la BD SQLite recién construida a Postgres.
+
+    Re-ejecutar las 134 migraciones SQLite sobre el esquema PG no es viable
+    (los triggers precargados rechazan datos de migraciones tempranas), así
+    que se construye un SQLite completo y se copian las filas. Se desactivan
+    triggers y FK (`session_replication_role=replica`) para poder insertar
+    en cualquier orden · al final se reajustan las secuencias IDENTITY.
+    """
+    import sqlite3
+    import psycopg
+
+    sq = sqlite3.connect(sqlite_path)
+    sq.row_factory = sqlite3.Row
+    tablas = [r[0] for r in sq.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' "
+        "AND name NOT LIKE 'sqlite_%'").fetchall()]
+    with psycopg.connect(_conninfo(), autocommit=True) as pg:
+        pg.execute("SET session_replication_role = replica")
+        for t in tablas:
+            filas = sq.execute('SELECT * FROM "%s"' % t).fetchall()
+            if not filas:
+                continue
+            cols = list(filas[0].keys())
+            collist = ', '.join('"%s"' % c for c in cols)
+            ph = ', '.join(['%s'] * len(cols))
+            sql = 'INSERT INTO "%s" (%s) VALUES (%s)' % (t, collist, ph)
+            datos = [tuple(f) for f in filas]
+            try:
+                with pg.cursor() as cur:
+                    cur.executemany(sql, datos)
+            except psycopg.Error:
+                pass  # tabla ausente en el esquema PG · se ignora
+        # Reajustar las secuencias IDENTITY al MAX(id)+1.
+        for t in tablas:
+            try:
+                with pg.cursor() as cur:
+                    cur.execute("SELECT pg_get_serial_sequence(%s, 'id')", (t,))
+                    fila = cur.fetchone()
+                    if fila and fila[0]:
+                        cur.execute(
+                            'SELECT setval(%%s, COALESCE((SELECT MAX(id) '
+                            'FROM "%s"), 0) + 1, false)' % t, (fila[0],))
+            except psycopg.Error:
+                pass
+    sq.close()
+
+
 @pytest.fixture(scope="session")
 def app(test_workspace):
     """App Flask con env vars de test — instanciada UNA vez por sesión."""
@@ -52,9 +130,49 @@ def app(test_workspace):
     os.environ["BACKUP_RETENTION_DAYS"] = "7"
     os.environ["BACKUP_INTERVAL_HOURS"] = "23"
 
-    # Setear hash de password para todos los users (todos comparten TEST_PASSWORD)
+    # Hash de password para todos los users · DEBE setearse antes de que
+    # se importe config.py (lo evalúa en import time) · en modo Postgres
+    # el bloque de abajo importa database -> config, así que va primero.
     for u in ALL_USERS:
         os.environ[f"PASS_{u.upper()}"] = TEST_PASSWORD_HASH
+
+    # Modo PostgreSQL (migración Fase 3-4): construir un SQLite completo y
+    # copiar sus datos a eos_test.
+    if _postgres_mode():
+        os.environ.setdefault("PGHOST", "127.0.0.1")
+        os.environ.setdefault("PGPORT", "5432")
+        os.environ.setdefault("PGUSER", "postgres")
+        os.environ.setdefault("PGDATABASE", "eos_test")
+        os.environ.setdefault(
+            "PG_DUMP", r"C:\Users\sebas\pgdev\pg2\pgsql\bin\pg_dump.exe")
+        api_dir = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "api")
+        if api_dir not in sys.path:
+            sys.path.insert(0, api_dir)
+        # 1. Construir el SQLite (esquema + migraciones + seeds) corriendo
+        #    init_db en modo SQLite (con EOS_DB_BACKEND temporalmente fuera).
+        os.environ.pop("EOS_DB_BACKEND", None)
+        import database as _dbmod
+        _dbmod.init_db()
+        _dbmod.run_seed_rrhh()
+        os.environ["EOS_DB_BACKEND"] = "postgres"
+        # 2. Cargar el esquema PG y copiar los datos del SQLite.
+        _cargar_esquema_postgres()
+        _copiar_datos_a_postgres(os.environ["DB_PATH"])
+        # 3. El harness (_exec/_query y ~40 sitios) abre la BD con
+        #    sqlite3.connect(DB_PATH) directo · se redirige al adaptador
+        #    Postgres (las conexiones a :memory: y temporales quedan en
+        #    SQLite real).
+        import sqlite3 as _sq
+        _orig_connect = _sq.connect
+
+        def _connect_pg_shim(database, *a, **kw):
+            if database == os.environ.get("DB_PATH"):
+                from pg_adapter import connect as _pg_connect
+                return _pg_connect()
+            return _orig_connect(database, *a, **kw)
+
+        _sq.connect = _connect_pg_shim
 
     # Asegurar que api/ esté en sys.path (igual que en index.py)
     api_dir = os.path.join(
@@ -158,21 +276,34 @@ def db_clean(app):
             pass
     except Exception:
         pass
+    _tablas_volatiles = ('rate_limit', 'users_passwords', 'backup_log',
+                         'security_events', 'users_mfa')
     try:
-        conn = sqlite3.connect(os.environ["DB_PATH"])
-        conn.execute("DELETE FROM rate_limit")
-        conn.execute("DELETE FROM users_passwords")
-        conn.execute("DELETE FROM backup_log")
-        conn.execute("DELETE FROM security_events")
-        # Sebastian (30-abr-2026): users_mfa también debe limpiarse — sino el
-        # state de MFA enrolado de un test contamina al siguiente (login flow
-        # cambia si MFA está activo).
-        try:
-            conn.execute("DELETE FROM users_mfa")
-        except sqlite3.OperationalError:
-            pass  # tabla puede no existir si migration 58 aún no corrió en este test
-        conn.commit()
-        conn.close()
+        if _postgres_mode():
+            import psycopg
+            conninfo = (
+                f"host={os.environ.get('PGHOST', '127.0.0.1')} "
+                f"port={os.environ.get('PGPORT', '5432')} "
+                f"user={os.environ.get('PGUSER', 'postgres')} "
+                f"dbname={os.environ.get('PGDATABASE', 'eos_test')}"
+            )
+            conn = psycopg.connect(conninfo, autocommit=True)
+            for t in _tablas_volatiles:
+                try:
+                    with conn.cursor() as cur:
+                        cur.execute(f"DELETE FROM {t}")
+                except Exception:
+                    pass
+            conn.close()
+        else:
+            conn = sqlite3.connect(os.environ["DB_PATH"])
+            for t in _tablas_volatiles:
+                try:
+                    conn.execute(f"DELETE FROM {t}")
+                except sqlite3.OperationalError:
+                    pass
+            conn.commit()
+            conn.close()
     except Exception:
         pass
 

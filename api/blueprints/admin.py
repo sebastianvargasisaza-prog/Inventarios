@@ -17,6 +17,7 @@ from config import (
     CLIENTES_ACCESS, TECNICA_USERS, MARKETING_USERS, ANIMUS_ACCESS,
     ESPAGIRIA_ACCESS, CALIDAD_USERS, PLANTA_USERS,
 )
+from database import db_connect
 from auth import _client_ip, _log_sec
 from audit_helpers import audit_log
 from backup import (
@@ -50,7 +51,7 @@ def admin_backups_list():
 
     # Trae stats del backup_log para mostrar contexto
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = db_connect()
         recent = conn.execute(
             """SELECT id, started_at, completed_at, status, size_bytes,
                       triggered_by, error
@@ -90,7 +91,7 @@ def admin_backup_now():
     result = do_backup(triggered_by=f"manual:{u}")
     # Audit log INVIMA · backup manual queda en trail regulatorio
     try:
-        conn_a = sqlite3.connect(DB_PATH)
+        conn_a = db_connect()
         conn_a.execute("PRAGMA busy_timeout=2000")
         cur_a = conn_a.cursor()
         audit_log(cur_a, usuario=u, accion='BACKUP_MANUAL',
@@ -156,7 +157,7 @@ def animus_prioridad_agotamiento():
     except Exception:
         cobertura = 30
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA busy_timeout=2000")
     c = conn.cursor()
@@ -654,7 +655,7 @@ def cron_db_integrity_check():
         pass
 
     try:
-        check_conn = sqlite3.connect(DB_PATH, timeout=5.0)
+        check_conn = db_connect(timeout=5.0)
         try:
             # quick_check es más rápido que integrity_check, suficiente para detección
             row = check_conn.execute('PRAGMA quick_check').fetchone()
@@ -670,7 +671,7 @@ def cron_db_integrity_check():
 
     # Guardar histórico (intentar; si BD está corrupta esto fallará y es OK)
     try:
-        log_conn = sqlite3.connect(DB_PATH, timeout=3.0)
+        log_conn = db_connect(timeout=3.0)
         log_conn.execute(
             """INSERT INTO db_health_log
                  (integrity, db_size_kb, wal_size_kb, error, origen)
@@ -725,7 +726,7 @@ def db_health_historial():
     if limit < 1: limit = 1
     if limit > 200: limit = 200
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.row_factory = sqlite3.Row
     try:
         rows = conn.execute(
@@ -1054,7 +1055,7 @@ def admin_restore_backup():
         # 6. Verificar que la nueva DB abre limpia
         verify = "ok"
         try:
-            verify_conn = sqlite3.connect(DB_PATH)
+            verify_conn = db_connect()
             row = verify_conn.execute("PRAGMA integrity_check").fetchone()
             verify = str(row[0]) if row else "(empty)"
             verify_conn.close()
@@ -1149,7 +1150,7 @@ def admin_users_list():
     if err:
         return err, code
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.row_factory = sqlite3.Row
 
     out = []
@@ -1570,7 +1571,7 @@ def admin_sku_producto_map():
     if err:
         return err, code
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     c = conn.cursor()
 
     if request.method == "GET":
@@ -1719,7 +1720,7 @@ def admin_zero_error_status():
         out['golden_paths'] = {'error': str(e)}
 
     # 2. Watcher · últimos 5 runs
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     c = conn.cursor()
     try:
         # Sebastian 7-may-2026: schema correcto es resultado_json + error
@@ -2123,7 +2124,7 @@ def admin_health_critical_paths():
 
     import time as _time
     t0 = _time.time()
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     c = conn.cursor()
     checks = []
 
@@ -2355,7 +2356,7 @@ def admin_agent_memory():
     if err:
         return err, code
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     c = conn.cursor()
 
     if request.method == "GET":
@@ -2480,7 +2481,7 @@ def admin_diag_login(username):
         return jsonify(out)
 
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = db_connect()
         conn.execute("PRAGMA busy_timeout=2000")
         # password_source via helper existente
         out["password_source"] = _password_source(target, conn)
@@ -2537,7 +2538,7 @@ def admin_diag_login(username):
         # _is_locked toma (ip, username) · sin IP no podemos saber por IP
         # exacta; pero si username está bloqueado en cualquier IP, lo
         # reportamos. _is_locked usa rate_limit table.
-        conn = sqlite3.connect(DB_PATH)
+        conn = db_connect()
         # Contar entries en rate_limit para este username
         try:
             row = conn.execute(
@@ -2637,7 +2638,7 @@ def admin_reset_password():
     new_hash = generate_password_hash(new_pwd, method="pbkdf2:sha256:600000")
 
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = db_connect()
         conn.execute("PRAGMA busy_timeout=2000")
         cur = conn.cursor()
         cur.execute("""
@@ -2693,7 +2694,7 @@ def admin_security_events():
     except ValueError:
         limit = 50
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.row_factory = sqlite3.Row
     try:
         if event_filter:
@@ -3002,7 +3003,7 @@ def admin_import_mps_nombres_excel():
             'sugerencia': 'El Excel debe tener al menos columnas "código" y "nombre"',
         }), 400
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
 
@@ -3404,7 +3405,7 @@ def admin_audit_inventario_vs_excel():
         excel_total_g += cant
 
     # ── Estado actual del kardex ─────────────────────────────────────────
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     c = conn.cursor()
 
     db_lotes = {}  # (cod, lote) -> dict
@@ -3555,7 +3556,7 @@ def admin_inventario_snapshot_pre_reset():
     import json as _json
     from datetime import datetime as _dt, timezone as _tz
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
 
@@ -3635,7 +3636,7 @@ def admin_inventario_reset_preview():
     if excel_verde is None:
         return jsonify({'error': errs[0] if errs else 'Excel invalido'}), 400
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
 
@@ -3844,7 +3845,7 @@ def admin_inventario_reset_aplicar():
 
     # Verificar backup reciente
     from datetime import datetime as _dt, timedelta as _td, timezone as _tz
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
     backup_reciente = False
@@ -4262,7 +4263,7 @@ def admin_diagnosticar_formulas():
         """Set de palabras significativas (sin stopwords)."""
         return set(p for p in _norm(s).split() if p and p not in _STOPWORDS)
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
 
@@ -4506,7 +4507,7 @@ def admin_corregir_formulas():
     except Exception as e:
         return jsonify({'error': f'Backup fallo: {str(e)[:200]}'}), 500
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     c = conn.cursor()
 
     aplicados = []
@@ -4610,7 +4611,7 @@ def admin_revertir_formulas_desde_backup():
     bk_db_path = None
     bk_info = None
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = db_connect()
         c = conn.cursor()
         row = c.execute("""
             SELECT file_path, started_at, triggered_by FROM backup_log
@@ -4672,7 +4673,7 @@ def admin_revertir_formulas_desde_backup():
         pass
 
     # Reemplazar formula_items en BD actual con el del backup
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     c = conn.cursor()
     try:
         actuales = c.execute("SELECT COUNT(*) FROM formula_items").fetchone()[0]
@@ -4752,7 +4753,7 @@ def admin_eliminar_formulas_obsoletas():
     except Exception as e:
         return jsonify({'error': f'Backup fallo: {str(e)[:200]}'}), 500
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     c = conn.cursor()
 
     eliminados = []
@@ -4843,7 +4844,7 @@ def admin_aplicar_correcciones_formulas_batch_20260428():
     except Exception as _e:
         return jsonify({'error': f'No pude leer SQL: {_e}'}), 500
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     c = conn.cursor()
 
     # Parsear los INSERTs del SQL para saber que MPs queremos crear (codigo_planeado, inci, comercial)
@@ -5076,7 +5077,7 @@ def admin_sembrar_maestro_desde_excel():
         if cod not in todos_por_codigo:
             todos_por_codigo[cod] = info
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     c = conn.cursor()
 
     # Códigos ya presentes en maestro_mps
@@ -5188,7 +5189,7 @@ def admin_inventario_health_monitor():
     if err:
         return err, code
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     c = conn.cursor()
 
     alertas = []
@@ -5344,7 +5345,7 @@ def admin_health_check_post_reset():
     if err:
         return err, code
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     c = conn.cursor()
 
     checks = {}
@@ -5497,7 +5498,7 @@ def admin_inventario_diagnostico_entradas():
     if err:
         return err, code
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     c = conn.cursor()
 
     # 1. Lotes con MULTIPLES entradas (doble carga sospechosa)
@@ -5629,7 +5630,7 @@ def admin_debug_solicitud(numero):
     u, err, code = _require_admin()
     if err:
         return err, code
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
     sol = c.execute(
@@ -5677,7 +5678,7 @@ def admin_stock_mp_diagnostico():
     cods = [x.strip() for x in codigos.split(',') if x.strip()] if codigos else []
     noms = [x.strip() for x in nombres.split(',') if x.strip()] if nombres else []
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
 
@@ -5763,7 +5764,7 @@ def admin_mps_proveedores_status():
     if err:
         return err, code
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
 
@@ -5829,7 +5830,7 @@ def admin_mps_asignar_proveedor():
     proveedor = (d.get('proveedor') or '').strip()
     if not codigo:
         return jsonify({'error': 'codigo_mp requerido'}), 400
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     c = conn.cursor()
     # Capturar antes para audit
     antes_row = c.execute("SELECT proveedor FROM maestro_mps WHERE codigo_mp=?",
@@ -5871,7 +5872,7 @@ def admin_tipos_mp_stats():
     if err:
         return err, code
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
 
@@ -5998,7 +5999,7 @@ def admin_sync_influencers_excel():
         "tipo_creador":  "tipo",
     }
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
     c.execute("PRAGMA table_info(marketing_influencers)")
@@ -6265,7 +6266,7 @@ def admin_import_pagos_influencers_excel():
         }), 400
 
     # Cargar tabla de influencers para matching
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
     c.execute("SELECT id, nombre FROM marketing_influencers")
@@ -9034,7 +9035,7 @@ def admin_auditoria_lotes():
     dias = int(request.args.get("dias", 2))
     fecha_corte = f"-{dias} day"
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
     out = {"ventana_dias": dias}
@@ -9409,7 +9410,7 @@ def admin_audit_limpiar_drift_mee():
     if u not in ADMIN_USERS:
         return jsonify({'error': 'Solo admin'}), 403
 
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = db_connect(); c = conn.cursor()
     fecha_iso = __import__('datetime').datetime.now().isoformat(timespec='seconds')
 
     # Calcular drift por MEE — misma query que el endpoint GET
@@ -9465,13 +9466,13 @@ def admin_audit_inventario():
     if u not in ADMIN_USERS:
         return Response("403", status=403)
 
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = db_connect(); c = conn.cursor()
 
     # ── 1. MPs con stock NEGATIVO (imposible — más salidas que entradas) ──
     mps_negativos = []
     try:
         rows = c.execute("""
-            SELECT m.material_id, m.material_nombre,
+            SELECT m.material_id, MAX(m.material_nombre) as material_nombre,
                    ROUND(SUM(CASE WHEN m.tipo='Entrada' THEN m.cantidad ELSE -m.cantidad END), 0) as stock_calc,
                    COUNT(*) as n_movs
             FROM movimientos m
@@ -9704,7 +9705,7 @@ def admin_influencers_limpieza():
     u = session.get("compras_user", "")
     if u not in ADMIN_USERS:
         return Response("403", status=403)
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = db_connect(); c = conn.cursor()
 
     # Filas con pi.estado='Pagada' SIN OC valida en ordenes_compra
     sin_oc = c.execute("""
@@ -9817,7 +9818,7 @@ def admin_influencers_limpieza_post():
     ids = [int(x) for x in (d.get("ids") or []) if str(x).isdigit()]
     if not ids:
         return jsonify({"error": "ids vacio"}), 400
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = db_connect(); c = conn.cursor()
     placeholders = ",".join("?" * len(ids))
     c.execute(f"DELETE FROM pagos_influencers WHERE id IN ({placeholders})", ids)
     conn.commit()
@@ -9840,7 +9841,7 @@ def admin_influencers_reset_pendientes():
     if u not in ADMIN_USERS:
         return jsonify({'error': 'Solo admin'}), 403
 
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = db_connect(); c = conn.cursor()
     eliminado = {'pagos_influencers': 0, 'solicitudes_compra': 0, 'ordenes_compra': 0}
 
     # 1. Pagos influencers en estado Pendiente
@@ -9915,7 +9916,7 @@ def admin_influencers_bulk_import():
 
 def _do_bulk_import(items, usuario):
     """Lógica compartida: carga lote de pagos pendientes de influencers."""
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = db_connect(); c = conn.cursor()
     creados = []
     skipped = []
 
@@ -10138,7 +10139,7 @@ def admin_influencers_hoy():
     if u not in ADMIN_USERS:
         return Response("403", status=403)
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     c = conn.cursor()
     creados = solicitudes = ocs_inf = pagos_inf = []
 
@@ -10247,7 +10248,7 @@ def admin_sku_map_listar():
     u, err, code = _require_admin()
     if err:
         return err, code
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = db_connect(); c = conn.cursor()
     rows = c.execute(
         "SELECT sku, producto_nombre, COALESCE(activo,1) FROM sku_producto_map ORDER BY sku"
     ).fetchall()
@@ -10284,7 +10285,7 @@ def admin_sku_map_upsert():
     producto_anterior = (d.get('producto_anterior') or '').strip()
     if not sku or not producto:
         return jsonify({'error': 'sku y producto_nombre requeridos'}), 400
-    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
+    conn = db_connect(); c = conn.cursor()
     # Capturar antes para audit
     antes_row = c.execute("SELECT producto_nombre, activo FROM sku_producto_map WHERE sku=?",
                           (sku,)).fetchone()
@@ -10433,7 +10434,7 @@ def admin_mee_fugas_check():
     u, err, code = _require_admin()
     if err:
         return err, code
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     c = conn.cursor()
     fugas = {}
 
@@ -10967,7 +10968,7 @@ def admin_import_inventario_envase_xlsx():
             'mensaje': f'{len(items)} items detectados. Re-envia sin dry_run para escribir.',
         })
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     c = conn.cursor()
     insertados = 0; actualizados = 0; archivados = 0; ajustes_stock = 0
 
@@ -11090,7 +11091,7 @@ def auditoria_catalogo():
     quick_mode = request.args.get('quick', '').strip() in ('1', 'true', 'yes')
 
     from datetime import datetime as _dtcls, timezone as _tzcls
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.execute("PRAGMA busy_timeout=2000")
     c = conn.cursor()
     findings = {'alta': {}, 'media': {}, 'baja': {}}
@@ -11531,7 +11532,7 @@ def maestro_mps_unificar():
             'detail': 'Máximo 20 MPs por fusión para evitar operaciones masivas accidentales.',
         }), 400
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.execute("PRAGMA busy_timeout=2000")
     c = conn.cursor()
 
@@ -11784,7 +11785,7 @@ def maestro_mps_unificar_bulk():
             continue
 
         # Procesar este grupo con su propia conexión
-        conn = sqlite3.connect(DB_PATH)
+        conn = db_connect()
         conn.execute("PRAGMA busy_timeout=2000")
         c = conn.cursor()
         try:
@@ -11929,7 +11930,7 @@ def material_ids_huerfanos():
     if err:
         return err, code
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.execute("PRAGMA busy_timeout=2000")
     c = conn.cursor()
 
@@ -12008,7 +12009,7 @@ def crear_mps_huerfanas():
 
     mids = [str(x).strip().upper() for x in mids if str(x).strip()]
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.execute("PRAGMA busy_timeout=2000")
     c = conn.cursor()
 
@@ -12110,7 +12111,7 @@ def anular_movimiento():
     if not motivo or len(motivo) < 10:
         return jsonify({'error': 'motivo requerido (mín 10 chars)'}), 400
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.execute("PRAGMA busy_timeout=2000")
     c = conn.cursor()
 
@@ -12191,7 +12192,7 @@ def formula_duplicados_listado():
     if err:
         return err, code
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.execute("PRAGMA busy_timeout=2000")
     c = conn.cursor()
 
@@ -12265,7 +12266,7 @@ def formula_limpiar_duplicados():
     producto_filter = (d.get('producto') or '').strip()
     dry_run = bool(d.get('dry_run'))
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.execute("PRAGMA busy_timeout=2000")
     c = conn.cursor()
 
@@ -12397,7 +12398,7 @@ def marcar_lotes_vencidos():
     if len(lotes) > 200:
         return jsonify({'error': 'max 200 lotes por request'}), 400
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.execute("PRAGMA busy_timeout=2000")
     c = conn.cursor()
     total_actualizados = 0
@@ -12472,7 +12473,7 @@ def marcar_vencidos_bulk_todos():
     if err:
         return err, code
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.execute("PRAGMA busy_timeout=2000")
     c = conn.cursor()
     try:
@@ -12484,7 +12485,7 @@ def marcar_vencidos_bulk_todos():
               AND TRIM(fecha_vencimiento) != ''
               AND date(fecha_vencimiento) < date('now', '-5 hours')
               AND UPPER(COALESCE(estado_lote,'')) = 'VIGENTE'
-            GROUP BY material_id, lote
+            GROUP BY material_id, lote, fecha_vencimiento
             ORDER BY fecha_vencimiento ASC
             LIMIT 500
         """).fetchall()
@@ -12594,7 +12595,7 @@ def mps_sin_uso():
 
     incluir_con_stock = request.args.get('incluir_con_stock', '0') == '1'
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.execute("PRAGMA busy_timeout=2000")
     c = conn.cursor()
     try:
@@ -12723,7 +12724,7 @@ def archivar_mps_sin_uso_bulk():
     if not codigos_limpios:
         return jsonify({'error': 'codigos vacíos tras limpieza'}), 400
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.execute("PRAGMA busy_timeout=2000")
     c = conn.cursor()
     archivadas = []
@@ -12843,7 +12844,7 @@ def investigar_mp(codigo):
     if not codigo:
         return jsonify({'error': 'codigo requerido'}), 400
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.execute("PRAGMA busy_timeout=2000")
     c = conn.cursor()
 
@@ -12938,7 +12939,7 @@ def formula_huerfanos_con_sugerencias():
     if err:
         return err, code
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.execute("PRAGMA busy_timeout=2000")
     c = conn.cursor()
 
@@ -13082,7 +13083,7 @@ def auditoria_formulas_completa():
     if err:
         return err, code
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.execute("PRAGMA busy_timeout=2000")
     c = conn.cursor()
 
@@ -13340,7 +13341,7 @@ def auditoria_producciones_descuento():
     except Exception:
         dias = 90
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.execute("PRAGMA busy_timeout=2000")
     c = conn.cursor()
 
@@ -13440,7 +13441,7 @@ def auditoria_producciones_descuento():
     n_legacy_sin_movs = 0
     try:
         # Re-abrir conn
-        conn2 = sqlite3.connect(DB_PATH)
+        conn2 = db_connect()
         conn2.execute("PRAGMA busy_timeout=2000")
         c2 = conn2.cursor()
         # Flujo legacy (inventario.py · /api/producciones POST) genera movs
@@ -13564,7 +13565,7 @@ def auditoria_kardex_drift():
     if err:
         return err, code
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.execute("PRAGMA busy_timeout=2000")
 
     try:
@@ -13823,7 +13824,7 @@ def auditoria_mps_nuevas():
     except Exception:
         dias = 30
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.execute("PRAGMA busy_timeout=2000")
     c = conn.cursor()
 
@@ -13961,7 +13962,7 @@ def auditoria_lotes_nuevos():
     except Exception:
         dias = 30
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.execute("PRAGMA busy_timeout=2000")
     c = conn.cursor()
 
@@ -14115,7 +14116,7 @@ def formula_remapear_material_id():
     if len(remapeos) > 200:
         return jsonify({'error': 'max 200 remapeos por request'}), 400
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.execute("PRAGMA busy_timeout=2000")
     c = conn.cursor()
 
@@ -14232,7 +14233,7 @@ def explicar_stock_min(codigo):
     except (ValueError, TypeError):
         cobertura = 90
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.execute("PRAGMA busy_timeout=2000")
     c = conn.cursor()
 
@@ -14519,7 +14520,7 @@ def sugerir_stock_minimos():
     #   1. g_por_lote × (kg_prod / lote_size_kg)        si g_por_lote > 0
     #   2. (porcentaje/100) × kg_prod × 1000            fallback si pct > 0
     consumo_proyectado = {}
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.execute("PRAGMA busy_timeout=2000")
     c = conn.cursor()
 
@@ -14682,7 +14683,7 @@ def aplicar_stock_minimos_sugeridos():
     if len(items) > 500:
         return jsonify({'error': 'max 500 items por request'}), 400
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.execute("PRAGMA busy_timeout=2000")
     c = conn.cursor()
 
@@ -14810,7 +14811,7 @@ def validar_planta_invariantes():
         return err, code
 
     from datetime import datetime as _dtcls, timezone as _tzcls
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.execute("PRAGMA busy_timeout=2000")
     c = conn.cursor()
 
@@ -17111,7 +17112,7 @@ def reconciliar_produccion_mp():
             'error': 'motivo debe tener al menos 20 caracteres (auditabilidad INVIMA)'
         }), 400
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.execute("PRAGMA busy_timeout=2000")
     c = conn.cursor()
 
@@ -17260,7 +17261,7 @@ def reporte_invima_lote(material_id, lote):
     if not mid or not lt:
         return jsonify({'error': 'material_id y lote requeridos'}), 400
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.execute("PRAGMA busy_timeout=2000")
     c = conn.cursor()
 
@@ -17545,7 +17546,7 @@ def reporte_audit_trail_csv():
         from datetime import date as _date
         hasta = _date.today().isoformat()
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.execute("PRAGMA busy_timeout=2000")
     c = conn.cursor()
 
@@ -17643,7 +17644,7 @@ def producciones_inconsistentes():
     if err:
         return err, code
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.execute("PRAGMA busy_timeout=2000")
     c = conn.cursor()
     inconsistencias = []
@@ -17804,7 +17805,7 @@ def auditoria_fefo_descuento():
     except Exception:
         dias = 180
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.execute("PRAGMA busy_timeout=2000")
     c = conn.cursor()
 
@@ -18036,7 +18037,7 @@ def mp_alcanza_multi():
         ventana = 60
 
     HORIZONTES = [60, 90, 180]
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA busy_timeout=2000")
     c = conn.cursor()
@@ -18543,7 +18544,7 @@ def programacion_sku_status():
         dias_vel = 60
     solo_animus = request.args.get('solo_animus', '1') == '1'
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA busy_timeout=2000")
     c = conn.cursor()
@@ -18895,7 +18896,7 @@ def mp_actualizar_inci():
     if len(items) > 50:
         return jsonify({'error': 'max 50 items'}), 400
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.execute("PRAGMA busy_timeout=2000")
     c = conn.cursor()
     actualizados = []
@@ -18993,7 +18994,7 @@ def asignar_operador_bulk():
     if len(motivo) < 20:
         return jsonify({'error': 'motivo min 20 chars (auditabilidad)'}), 400
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.execute("PRAGMA busy_timeout=2000")
     c = conn.cursor()
     aplicados = []
@@ -19073,7 +19074,7 @@ def forensic_trazabilidad():
     if err:
         return err, code
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.execute("PRAGMA busy_timeout=2000")
     c = conn.cursor()
 
@@ -19171,7 +19172,7 @@ def validacion_profunda():
     if err:
         return err, code
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.execute("PRAGMA busy_timeout=2000")
     c = conn.cursor()
     hallazgos = []
@@ -19506,7 +19507,7 @@ def completar_info_lote_bulk():
     if len(items) > 100:
         return jsonify({'error': 'max 100 items por request'}), 400
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.execute("PRAGMA busy_timeout=2000")
     c = conn.cursor()
     actualizados = []
@@ -19636,7 +19637,7 @@ def investigar_mee(codigo):
     if not cod:
         return jsonify({'error': 'codigo requerido'}), 400
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.execute("PRAGMA busy_timeout=2000")
     c = conn.cursor()
 
@@ -19767,7 +19768,7 @@ def reconciliar_mee():
     if sentido not in ('subir_calculado', 'bajar_calculado'):
         return jsonify({'error': 'sentido invalido (debe ser subir_calculado o bajar_calculado)'}), 400
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.execute("PRAGMA busy_timeout=2000")
     c = conn.cursor()
     try:
@@ -19876,7 +19877,7 @@ def api_zero_error_historial():
     except Exception:
         dias = 30
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.execute("PRAGMA busy_timeout=2000")
     c = conn.cursor()
     try:
@@ -20325,7 +20326,7 @@ def debug_formula_items():
     if err:
         return err, code
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
     try:
@@ -20434,7 +20435,7 @@ def ocs_revision_limpieza():
     if err:
         return err, code
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
     try:
@@ -20557,7 +20558,7 @@ def email_alejandro_formulas_faltantes():
     if err:
         return err, code
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
     try:
@@ -20771,7 +20772,7 @@ def programacion_vs_calendar():
     cal_events = cal.get('events', [])
     cal_error = cal.get('error')
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
     try:
@@ -20957,7 +20958,7 @@ def limpiar_produccion_zombies():
         return err, code
 
     es_post = request.method == 'POST'
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
     try:
@@ -21171,7 +21172,7 @@ def cron_snapshot_mp_alcanza():
     # date.today() Python local que en máquinas con TZ != UTC daba mismatch.
     hoy = _dt.now(_tz.utc).date().isoformat()
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.execute("PRAGMA busy_timeout=2000")
     c = conn.cursor()
     try:
@@ -21301,7 +21302,7 @@ def mp_alcanza_historial():
     if dias < 1: dias = 1
     if dias > 90: dias = 90
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
     try:
@@ -21348,7 +21349,7 @@ def productos_calendar_sin_formula():
     if err:
         return err, code
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
     try:
@@ -21447,7 +21448,7 @@ def debug_formulas_recientes():
     if err:
         return err, code
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
     try:
@@ -21580,7 +21581,7 @@ def debug_ocs_transito():
     if err:
         return err, code
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
     try:
@@ -21672,7 +21673,7 @@ def debug_calendar_producto():
     if not nombre and not contiene:
         return jsonify({'error': 'pasa ?nombre=X o ?contiene=Y'}), 400
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
     try:
@@ -21797,7 +21798,7 @@ def debug_consumo_mp(codigo_mp):
         ventana = 60
 
     HORIZONTES = [60, 90, 180]
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
     try:
@@ -22027,7 +22028,7 @@ def auditoria_unidad_base():
     if err:
         return err, code
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA busy_timeout=2000")
     c = conn.cursor()
@@ -22231,7 +22232,7 @@ def corregir_unidad_base_bulk():
     if len(motivo) < 10:
         return jsonify({'error': 'motivo requerido (min 10 chars)'}), 400
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.execute("PRAGMA busy_timeout=2000")
     c = conn.cursor()
     actualizados = []

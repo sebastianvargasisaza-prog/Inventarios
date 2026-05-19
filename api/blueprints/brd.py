@@ -1540,9 +1540,9 @@ def pdf_ebr(ebr_id):
            FROM e_signatures
            WHERE (record_table='ebr_ejecuciones' AND record_id=?)
               OR (record_table='ebr_pasos_ejecutados' AND record_id IN
-                  (SELECT id FROM ebr_pasos_ejecutados WHERE ebr_id=?))
+                  (SELECT CAST(id AS TEXT) FROM ebr_pasos_ejecutados WHERE ebr_id=?))
               OR (record_table='ipc_resultados' AND record_id IN
-                  (SELECT id FROM ipc_resultados WHERE ebr_id=?))
+                  (SELECT CAST(id AS TEXT) FROM ipc_resultados WHERE ebr_id=?))
            ORDER BY signed_at_utc""",
         (str(ebr_id), ebr_id, ebr_id),
     ).fetchall()

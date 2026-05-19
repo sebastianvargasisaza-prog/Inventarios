@@ -3561,7 +3561,7 @@ def recibir_oc(numero_oc):
         return jsonify({'error': f'OC en estado {oc_row[0]} no permite recepcion'}), 409
     prov_nombre = oc_row[1] or ''
     categoria = oc_row[2] or 'MP'
-    cur.execute("SELECT rowid, codigo_mp, nombre_mp, cantidad_g FROM ordenes_compra_items WHERE numero_oc=?", (numero_oc,))
+    cur.execute("SELECT id, codigo_mp, nombre_mp, cantidad_g FROM ordenes_compra_items WHERE numero_oc=?", (numero_oc,))
     items_oc = cur.fetchall()
     fecha = datetime.now().isoformat()
     operador = session.get('compras_user', '')
@@ -3705,7 +3705,7 @@ def recibir_oc(numero_oc):
                 "SET cantidad_recibida_g = COALESCE(cantidad_recibida_g, 0) + ?, "
                 "    estado_recepcion=?, notas_recepcion=?, "
                 "    lote_asignado=COALESCE(lote_asignado, ?) "
-                " WHERE rowid=?",
+                " WHERE id=?",
                 (cant_recibida, estado_item, notas_item, lote_num, _oci_rowid))
         except Exception as e:
             log.warning('UPDATE oci en recibir_oc fallo: %s', e)

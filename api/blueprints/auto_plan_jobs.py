@@ -23,6 +23,7 @@ import threading
 import logging
 import sqlite3
 from datetime import datetime, timedelta, time as dtime
+from database import db_connect
 from flask import current_app
 
 log = logging.getLogger('auto_plan_jobs')
@@ -2855,7 +2856,7 @@ def _db_autoheal_check(app):
     corrupta = False
     detalle = ''
     try:
-        cx = sqlite3.connect(DB_PATH, timeout=5.0)
+        cx = db_connect(timeout=5.0)
         try:
             row = cx.execute('PRAGMA quick_check').fetchone()
             if row and str(row[0]).lower() != 'ok':
@@ -3277,7 +3278,7 @@ def job_marcar_vencidos(app):
                   AND TRIM(fecha_vencimiento) != ''
                   AND date(fecha_vencimiento) < date('now', '-5 hours')
                   AND UPPER(COALESCE(estado_lote,'')) = 'VIGENTE'
-                GROUP BY material_id, lote
+                GROUP BY material_id, lote, fecha_vencimiento
                 ORDER BY fecha_vencimiento ASC
                 LIMIT 200
             """).fetchall()

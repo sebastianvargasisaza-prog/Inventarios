@@ -166,17 +166,45 @@ def _close_backup_slot(conn, slot_id, file_path=None, size_bytes=None,
     conn.commit()
 
 
+def _do_pg_backup_to_gz(target_gz_path):
+    """Backup PostgreSQL → archivo .gz vía pg_dump (migración Fase 3+).
+
+    Reemplaza al backup .backup() de SQLite cuando EOS_DB_BACKEND=postgres.
+    El dump SQL se comprime con gzip · restauración: gunzip + psql.
+    """
+    import subprocess
+    Path(target_gz_path).parent.mkdir(parents=True, exist_ok=True)
+    pg_dump = os.environ.get("PG_DUMP", "pg_dump")
+    args = [
+        pg_dump, "--no-owner", "--no-acl",
+        "-h", os.environ.get("PGHOST", "127.0.0.1"),
+        "-p", os.environ.get("PGPORT", "5432"),
+        "-U", os.environ.get("PGUSER", "postgres"),
+        "-d", os.environ.get("PGDATABASE", "eos_dev"),
+    ]
+    proc = subprocess.run(args, capture_output=True)
+    if proc.returncode != 0:
+        raise RuntimeError(
+            "pg_dump fallo: " + proc.stderr.decode("utf-8", "replace")[:300])
+    with gzip.open(target_gz_path, "wb", compresslevel=6) as f_out:
+        f_out.write(proc.stdout)
+
+
 def _do_sqlite_backup_to_gz(target_gz_path):
     """Backup atómico de la DB → archivo .db.gz.
 
-    Usa sqlite3.Connection.backup() que es online (no bloquea writes).
-    Pasos:
+    En modo PostgreSQL delega a pg_dump (_do_pg_backup_to_gz). En SQLite
+    usa sqlite3.Connection.backup() que es online (no bloquea writes).
+    Pasos (SQLite):
       1. Copia la DB a un .db temporal usando .backup() (transaccionalmente
          consistente, incluso con writes activos).
       2. Comprime con gzip.
       3. Borra el .db temporal.
       4. Verifica integridad: PRAGMA integrity_check sobre la copia.
     """
+    if os.environ.get("EOS_DB_BACKEND", "").strip().lower() == "postgres":
+        _do_pg_backup_to_gz(target_gz_path)
+        return
     target_dir = Path(target_gz_path).parent
     target_dir.mkdir(parents=True, exist_ok=True)
     tmp_db = str(target_gz_path) + ".tmp.db"

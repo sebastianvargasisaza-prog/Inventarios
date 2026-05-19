@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from flask import Blueprint, jsonify, request, Response, session, redirect, url_for, current_app
 from werkzeug.security import generate_password_hash, check_password_hash
 from config import DB_PATH, COMPRAS_USERS, ADMIN_USERS, CONTADORA_USERS, PLANTA_USERS, CALIDAD_USERS, COMPRAS_ACCESS, CLIENTES_ACCESS
+from database import db_connect
 from auth import (
     _client_ip, _is_locked, _record_failure, _clear_attempts, _log_sec,
     sin_acceso_html, _ensure_csrf_token,
@@ -44,7 +45,7 @@ def _resolve_password_hash(username):
     if not username:
         return ''
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = db_connect()
         conn.execute("PRAGMA busy_timeout=2000")
         row = conn.execute(
             "SELECT password_hash FROM users_passwords WHERE username=?",
@@ -915,7 +916,7 @@ def cambiar_password():
     # Hashear y guardar
     new_hash = generate_password_hash(nueva, method='pbkdf2:sha256:600000')
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = db_connect()
         conn.execute("PRAGMA busy_timeout=2000")
         conn.execute("""
             INSERT INTO users_passwords (username, password_hash, changed_at, changed_by)

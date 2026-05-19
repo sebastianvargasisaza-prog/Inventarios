@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from flask import request, session, redirect, jsonify
 
 from config import DB_PATH, ADMIN_USERS
+from database import db_connect
 
 # ── Rate limiter persistente (SQLite — multi-worker safe) ────────────────────
 _MAX_ATTEMPTS = 5
@@ -22,7 +23,7 @@ def _user_has_mfa_active(username):
     """
     if not username:
         return False
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.execute("PRAGMA busy_timeout=2000")
     try:
         row = conn.execute(
@@ -105,7 +106,7 @@ def _is_locked(ip, username=None):
     if username:
         keys_to_check.append(_rate_key(ip, username))
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = db_connect()
         conn.execute("PRAGMA busy_timeout=2000")
         placeholders = ",".join("?" * len(keys_to_check))
         rows = conn.execute(
@@ -153,7 +154,7 @@ def _record_failure(ip, username=None):
     if username:
         keys_to_record.append(_rate_key(ip, username))
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = db_connect()
         conn.execute("PRAGMA busy_timeout=2000")
         for key in keys_to_record:
             conn.execute("""
@@ -182,7 +183,7 @@ def _clear_attempts(ip_or_key, username=None):
     if username:
         keys_to_clear.append(_rate_key(ip_or_key, username))
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = db_connect()
         conn.execute("PRAGMA busy_timeout=2000")
         placeholders = ",".join("?" * len(keys_to_clear))
         conn.execute(
@@ -199,7 +200,7 @@ def _log_sec(event, username=None, ip=None, details=None):
     try:
         ua = request.headers.get("User-Agent", "")[:200]
         ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
-        conn2 = sqlite3.connect(DB_PATH)
+        conn2 = db_connect()
         conn2.execute(
             "INSERT INTO security_events(ts,event,username,ip,user_agent,details)"
             " VALUES(?,?,?,?,?,?)",

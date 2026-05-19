@@ -5,6 +5,7 @@ import sqlite3
 import hmac
 import time
 from datetime import datetime, timedelta
+from database import db_connect
 from flask import Blueprint, jsonify, request, Response, session, redirect, url_for
 from werkzeug.security import generate_password_hash, check_password_hash
 from config import DB_PATH, COMPRAS_USERS, ADMIN_USERS, CONTADORA_USERS, CALIDAD_USERS
@@ -679,7 +680,7 @@ def _sync_shopify_pendientes_background(max_edad_horas=24, max_productos=50):
         try:
             from config import DB_PATH
             import sqlite3
-            local_conn = sqlite3.connect(DB_PATH, timeout=30)
+            local_conn = db_connect(timeout=30)
             try:
                 token, shop = _shopify_creds(local_conn)
                 if not token or not shop:
@@ -1629,7 +1630,7 @@ def get_lotes():
     conn = get_db(); c = conn.cursor()
 
     # Construir query con filtros opcionales
-    sql = """SELECT m.material_id, m.material_nombre, m.lote,
+    sql = """SELECT m.material_id, MAX(m.material_nombre) as material_nombre, m.lote,
                         SUM(CASE WHEN m.tipo='Entrada' THEN m.cantidad ELSE -m.cantidad END) as stock_neto,
                         MAX(m.fecha_vencimiento) as fecha_vencimiento,
                         MAX(m.estanteria) as estanteria, MAX(m.posicion) as posicion,
@@ -1646,7 +1647,7 @@ def get_lotes():
         sql += (" AND MAX(m.fecha_vencimiento) IS NOT NULL"
                 " AND MAX(m.fecha_vencimiento) != ''"
                 " AND MAX(m.fecha_vencimiento) <= date('now', '-5 hours', '+30 day')")
-    sql += " ORDER BY m.material_nombre ASC, fecha_vencimiento ASC"
+    sql += " ORDER BY material_nombre ASC, fecha_vencimiento ASC"
     if limit > 0:
         sql += f" LIMIT {limit} OFFSET {offset}"
     c.execute(sql)
@@ -3372,7 +3373,7 @@ def conteo_materiales_estanteria():
     )
     type_args = (tipo,) if type_filter else ()
     if est and est != 'Sin estanteria':
-        c.execute(f"""SELECT m.material_id, m.material_nombre,
+        c.execute(f"""SELECT m.material_id, MAX(m.material_nombre) as material_nombre,
                             COALESCE(mp.nombre_inci,'') as inci,
                             COALESCE(mp.precio_referencia,0) as precio_ref,
                             SUM(CASE WHEN m.tipo='Entrada' THEN m.cantidad ELSE -m.cantidad END) as stock_sistema,
@@ -3385,10 +3386,10 @@ def conteo_materiales_estanteria():
                      FROM movimientos m
                      LEFT JOIN maestro_mps mp ON m.material_id=mp.codigo_mp
                      WHERE m.estanteria=?{type_filter}
-                     GROUP BY m.material_id, m.lote HAVING stock_sistema > 0
-                     ORDER BY m.material_nombre, m.lote""", (est,) + type_args)
+                     GROUP BY m.material_id, m.lote, mp.codigo_mp HAVING stock_sistema > 0
+                     ORDER BY material_nombre, m.lote""", (est,) + type_args)
     else:
-        c.execute(f"""SELECT m.material_id, m.material_nombre,
+        c.execute(f"""SELECT m.material_id, MAX(m.material_nombre) as material_nombre,
                             COALESCE(mp.nombre_inci,'') as inci,
                             COALESCE(mp.precio_referencia,0) as precio_ref,
                             SUM(CASE WHEN m.tipo='Entrada' THEN m.cantidad ELSE -m.cantidad END) as stock_sistema,
@@ -3401,8 +3402,8 @@ def conteo_materiales_estanteria():
                      FROM movimientos m
                      LEFT JOIN maestro_mps mp ON m.material_id=mp.codigo_mp
                      WHERE (m.estanteria IS NULL OR m.estanteria=''){type_filter}
-                     GROUP BY m.material_id, m.lote HAVING stock_sistema > 0
-                     ORDER BY m.material_nombre, m.lote""", type_args)
+                     GROUP BY m.material_id, m.lote, mp.codigo_mp HAVING stock_sistema > 0
+                     ORDER BY material_nombre, m.lote""", type_args)
     rows = c.fetchall()
     cols = ['codigo_mp','nombre','inci','precio_ref','stock_sistema',
             'estanteria','tipo_material','lote','proveedor','posicion',

@@ -16,6 +16,7 @@ Dependencias de env:
 """
 
 from flask import Blueprint, jsonify, request, session
+from database import db_connect
 import os, json, logging, sqlite3, urllib.request, urllib.error, urllib.parse
 from datetime import datetime, timedelta, date, timezone
 from database import get_db
@@ -756,7 +757,7 @@ def _resolved_stock_por_sku(conn, empresa=None):
     try:
         rows = conn.execute(f"""
             SELECT UPPER(TRIM(sku)) AS sku,
-                   COALESCE(lote_produccion, '') AS lote,
+                   MAX(COALESCE(lote_produccion, '')) AS lote,
                    COALESCE(SUM(unidades_disponible), 0) AS uds,
                    MAX(COALESCE(descripcion, '')) AS descripcion,
                    MAX(COALESCE(fecha_liberacion, fecha_creacion, '')) AS fmax
@@ -769,7 +770,7 @@ def _resolved_stock_por_sku(conn, empresa=None):
     except sqlite3.OperationalError:
         rows = conn.execute(f"""
             SELECT UPPER(TRIM(sku)) AS sku,
-                   COALESCE(lote_produccion, '') AS lote,
+                   MAX(COALESCE(lote_produccion, '')) AS lote,
                    COALESCE(SUM(unidades_disponible), 0) AS uds,
                    MAX(COALESCE(descripcion, '')) AS descripcion,
                    '' AS fmax
@@ -4837,16 +4838,21 @@ def _distribuir_fefo(c, codigo_mp, cantidad_a_descontar):
     # mismo lote · ORDER BY podía elegir el grupo NULL primero.
     # Fix: agrupar SOLO por lote y tomar la fv real desde la Entrada
     # (que es donde el proveedor la declara · MAX ignora NULLs).
+    # Subconsulta: los alias fv_real/stock_lote no se pueden usar en HAVING
+    # ni dentro de expresiones de ORDER BY en Postgres · envolviéndolos en
+    # un FROM (...) se vuelven columnas reales (portátil SQLite/Postgres).
     sql = f"""
-        SELECT lote,
-               MAX(CASE WHEN tipo='Entrada' THEN fecha_vencimiento END) AS fv_real,
-               SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) as stock_lote
-        FROM movimientos
-        WHERE material_id = ?
-          AND COALESCE(lote, '') != ''
-          AND UPPER(COALESCE(estado_lote, '')) NOT IN ({placeholders})
-        GROUP BY lote
-        HAVING stock_lote > 0
+        SELECT lote, fv_real, stock_lote FROM (
+            SELECT lote,
+                   MAX(CASE WHEN tipo='Entrada' THEN fecha_vencimiento END) AS fv_real,
+                   SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) AS stock_lote
+            FROM movimientos
+            WHERE material_id = ?
+              AND COALESCE(lote, '') != ''
+              AND UPPER(COALESCE(estado_lote, '')) NOT IN ({placeholders})
+            GROUP BY lote
+        ) sub
+        WHERE stock_lote > 0
         ORDER BY COALESCE(fv_real, '9999-12-31') ASC,
                  lote ASC
     """
@@ -9262,7 +9268,7 @@ def _start_calendar_sync_background_loop():
         _t.sleep(20)
         while True:
             try:
-                local_conn = sqlite3.connect(DB_PATH, timeout=30)
+                local_conn = db_connect(timeout=30)
                 try:
                     _sync_calendar_a_produccion_programada(local_conn, days_ahead=120)
                 finally:

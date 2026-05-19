@@ -61,6 +61,11 @@ def _audit_conn():
     al mismo tiempo. SQLite WAL permite N readers + 1 writer concurrente, así
     que el lock real es muy breve (sub-milisegundo en INSERTs cortos).
     """
+    if _os.environ.get('EOS_DB_BACKEND', '').strip().lower() == 'postgres':
+        # Migración Fase 3 · conexión Postgres autocommit (equivale al
+        # isolation_level=None de SQLite · cada INSERT se confirma solo).
+        from pg_adapter import connect as _pg_connect
+        return _pg_connect(autocommit=True)
     db_path = _os.environ.get("DB_PATH", "/var/data/inventario.db")
     conn = _sqlite3.connect(db_path, isolation_level=None, timeout=10.0)
     conn.execute("PRAGMA busy_timeout=10000")

@@ -24,6 +24,7 @@ from flask import Blueprint, request, jsonify, session, redirect, Response, curr
 from werkzeug.security import generate_password_hash, check_password_hash
 
 from config import DB_PATH, ADMIN_USERS
+from database import db_connect
 from auth import _client_ip, _is_locked, _record_failure, _clear_attempts, _log_sec
 
 bp = Blueprint('mfa', __name__)
@@ -35,7 +36,7 @@ def _get_mfa_record(username):
     """Lee el registro MFA del usuario. Devuelve dict o None si no existe."""
     if not username:
         return None
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.execute("PRAGMA busy_timeout=2000")
     conn.row_factory = sqlite3.Row
     try:
@@ -321,7 +322,7 @@ def mfa_setup():
     except ImportError:
         return jsonify({'error': 'pyotp no instalado en el servidor.'}), 503
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.execute("PRAGMA busy_timeout=2000")
     try:
         conn.execute("""
@@ -376,7 +377,7 @@ def mfa_verify_setup():
     backup_code = _gen_backup_code()
     backup_hash = generate_password_hash(backup_code, method='pbkdf2:sha256:600000')
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.execute("PRAGMA busy_timeout=2000")
     try:
         conn.execute("""
@@ -442,7 +443,7 @@ def mfa_disable():
         _log_sec("mfa_disable_failed_token", username, ip)
         return jsonify({'error': 'Token TOTP incorrecto.'}), 400
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.execute("PRAGMA busy_timeout=2000")
     try:
         conn.execute("""
@@ -487,7 +488,7 @@ def mfa_admin_disable():
     if not rec or not rec.get('enabled'):
         return jsonify({'error': f'MFA de {target} no está activo.'}), 400
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.execute("PRAGMA busy_timeout=2000")
     try:
         conn.execute("""
@@ -606,7 +607,7 @@ def login_mfa_verify():
     session['login_time'] = time.time()
 
     # Update last_used_at
-    conn = sqlite3.connect(DB_PATH)
+    conn = db_connect()
     conn.execute("PRAGMA busy_timeout=2000")
     try:
         conn.execute("UPDATE users_mfa SET last_used_at=datetime('now','utc') WHERE username=?", (pending,))
@@ -669,7 +670,7 @@ def login_mfa_backup():
             return redirect('/login/mfa-backup')
 
         # Backup code válido — desactivar MFA (de un solo uso) y completar login
-        conn = sqlite3.connect(DB_PATH)
+        conn = db_connect()
         conn.execute("PRAGMA busy_timeout=2000")
         try:
             conn.execute("""
