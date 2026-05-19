@@ -7569,13 +7569,52 @@ def tablero_equipo():
 
     lista = [operarios[oid] for oid in orden]
     con_tarea = sum(1 for o in lista if o['tareas'])
+
+    # ── Paso 4 · limpieza: qué salas necesitan limpieza y quién las hace ──
+    limp_rows = c.execute("""
+        SELECT ap.codigo, ap.nombre, COALESCE(ap.estado, 'libre') AS area_estado,
+               COALESCE(ap.requiere_limpieza_profunda, 0) AS req_prof,
+               COALESCE(lpc.asignado_a, '') AS asignado_a,
+               COALESCE(lpc.estado, '') AS limpieza_estado
+        FROM areas_planta ap
+        LEFT JOIN limpieza_profunda_calendario lpc
+          ON lpc.area_codigo = ap.codigo
+          AND date(lpc.fecha) = ?
+          AND lpc.estado NOT IN ('completada', 'cancelada')
+        WHERE COALESCE(ap.activo, 1) = 1
+          AND (ap.estado IN ('sucia', 'limpiando')
+               OR lpc.id IS NOT NULL
+               OR COALESCE(ap.requiere_limpieza_profunda, 0) = 1)
+        ORDER BY ap.codigo
+    """, (hoy,)).fetchall()
+    salas_limpieza = [
+        {'area_codigo': r[0], 'area_nombre': r[1] or r[0],
+         'area_estado': r[2], 'requiere_profunda': bool(r[3]),
+         'asignado_a': r[4], 'limpieza_estado': r[5]}
+        for r in limp_rows
+    ]
+    sin_asignar = sum(1 for s in salas_limpieza if not s['asignado_a'])
+
+    # Adjuntar a cada operario las salas que le toca limpiar hoy (match por nombre)
+    for op in lista:
+        nom = (op['nombre'] or '').strip().lower()
+        op['limpiezas'] = [
+            {'area_codigo': s['area_codigo'], 'area_nombre': s['area_nombre'],
+             'area_estado': s['area_estado'], 'limpieza_estado': s['limpieza_estado']}
+            for s in salas_limpieza
+            if nom and s['asignado_a'].strip().lower() == nom
+        ]
+
     return jsonify({
         'fecha': hoy,
         'operarios': lista,
+        'salas_limpieza': salas_limpieza,
         'resumen': {
             'total': len(lista),
             'con_tarea': con_tarea,
             'sin_tarea': len(lista) - con_tarea,
+            'salas_para_limpiar': len(salas_limpieza),
+            'salas_sin_limpiador': sin_asignar,
         },
     })
 

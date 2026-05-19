@@ -7014,6 +7014,7 @@ def test_golden_planta_tablero_equipo(app, db_clean):
 
     for sql in (
         "DELETE FROM produccion_programada WHERE producto='TEST_TABLERO_PRODUCTO'",
+        "DELETE FROM limpieza_profunda_calendario WHERE asignado_a='OPTESTTABLERO Equipo'",
         "DELETE FROM operarios_planta WHERE nombre='OPTESTTABLERO'",
     ):
         _exec(sql)
@@ -7027,6 +7028,8 @@ def test_golden_planta_tablero_equipo(app, db_clean):
           "cantidad_kg, lotes, estado, operario_elaboracion_id) VALUES "
           "('TEST_TABLERO_PRODUCTO', ?, 10, 1, 'programado', ?)",
           (hoy, op_id))
+    _exec("INSERT INTO limpieza_profunda_calendario (fecha, area_codigo, "
+          "asignado_a) VALUES (?, 'PROD2', 'OPTESTTABLERO Equipo')", (hoy,))
 
     cs = _login(app, 'sebastian')
     r = cs.get('/api/planta/tablero-equipo')
@@ -7042,6 +7045,14 @@ def test_golden_planta_tablero_equipo(app, db_clean):
     assert t['etapa'] == 'elaboracion', f'BUG: etapa · {t}'
     assert t['etapa_label'] == 'Producción', f'BUG: etapa_label · {t}'
 
+    # Paso 4 · la limpieza asignada aparece en salas_limpieza y en el operario
+    assert 'salas_limpieza' in d, 'BUG: falta salas_limpieza en la respuesta'
+    assert any(s['area_codigo'] == 'PROD2' and s['asignado_a'] == 'OPTESTTABLERO Equipo'
+               for s in d['salas_limpieza']), \
+        f'BUG: la limpieza de PROD2 no aparece · {d["salas_limpieza"]}'
+    assert any(l['area_codigo'] == 'PROD2' for l in op.get('limpiezas', [])), \
+        f'BUG: la limpieza no se adjuntó al operario · {op}'
+
     # SOLO LECTURA · la producción programada queda intacta
     rows = _query("SELECT estado FROM produccion_programada "
                   "WHERE producto='TEST_TABLERO_PRODUCTO'")
@@ -7050,6 +7061,7 @@ def test_golden_planta_tablero_equipo(app, db_clean):
 
     for sql in (
         "DELETE FROM produccion_programada WHERE producto='TEST_TABLERO_PRODUCTO'",
+        "DELETE FROM limpieza_profunda_calendario WHERE asignado_a='OPTESTTABLERO Equipo'",
         "DELETE FROM operarios_planta WHERE nombre='OPTESTTABLERO'",
     ):
         _exec(sql)

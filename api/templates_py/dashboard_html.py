@@ -6845,6 +6845,16 @@ function _renderProgramacion(d){
       </div>
     </div>
 
+    <!-- ── Limpieza de salas · paso 4 · qué salas necesitan limpieza y quién
+         las hace (Sebastián 19-may-2026). El panel se oculta si no hay nada. -->
+    <div id="cm-limpieza-panel" style="display:none;background:#fff;border:2px solid #0891b2;border-radius:10px;padding:12px 14px;margin-bottom:14px">
+      <div style="margin-bottom:8px">
+        <b style="font-size:14px;color:#0e7490">🧽 Limpieza de salas</b>
+        <span id="cm-limpieza-sub" style="font-size:11px;color:#64748b;margin-left:8px"></span>
+      </div>
+      <div id="cm-limpieza-cards" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px"></div>
+    </div>
+
     <!-- ── Producciones HOY · Calendar-first cards (Sebastián 1-may-2026)
          "unifiquemos todo en el mapa, que cargue automatico ocupada/libre,
          cuando digan termine quede sucia hasta que digan que la limpiaron" -->
@@ -9544,18 +9554,55 @@ async function ckMarcar(itemId, estado){
               + '<div style="font-size:10px;color:#64748b;margin-top:2px">'+area+lp+verPlano+'</div>'
               + '</div>';
           }).join('');
-        } else {
+        } else if(!(o.limpiezas && o.limpiezas.length)){
           cuerpo = '<div style="margin-top:6px;padding:8px;background:#f8fafc;border-radius:6px;font-size:11px;color:#94a3b8;text-align:center">Sin tarea asignada hoy</div>';
+        } else {
+          cuerpo = '';
         }
-        var borde = (o.tareas && o.tareas.length) ? '#1a4a7a' : '#cbd5e1';
+        var limp = '';
+        if(o.limpiezas && o.limpiezas.length){
+          limp = o.limpiezas.map(function(l){
+            return '<div data-area="'+_escHTML(l.area_codigo)+'" style="margin-top:6px;padding:6px 8px;background:#ecfeff;border-radius:6px;border-left:3px solid #0891b2">'
+              + '<div style="font-size:11px;font-weight:700;color:#0e7490">🧽 Limpiar '+_escHTML(l.area_nombre||l.area_codigo)+'</div>'
+              + '<div style="font-size:10px;color:#64748b;margin-top:1px">'+_escHTML(l.limpieza_estado||'pendiente')+' · 📍 ver en plano</div>'
+              + '</div>';
+          }).join('');
+        }
+        var activo = (o.tareas && o.tareas.length) || (o.limpiezas && o.limpiezas.length);
+        var borde = activo ? '#1a4a7a' : '#cbd5e1';
         return '<div style="background:#fff;border:1px solid #e2e8f0;border-top:3px solid '+borde+';border-radius:8px;padding:10px 12px">'
           + '<div style="display:flex;justify-content:space-between;align-items:center;gap:6px">'
           + '<b style="font-size:13px;color:#0f172a">'+_escHTML(o.nombre||('op#'+o.id))+'</b>'
           + chip + '</div>'
           + cuerpo
+          + limp
           + '</div>';
       }).join('');
-      cont.querySelectorAll('[data-area]').forEach(function(el){
+      // Panel de limpieza de salas (paso 4)
+      var limpPanel = document.getElementById('cm-limpieza-panel');
+      var limpCards = document.getElementById('cm-limpieza-cards');
+      var limpSub   = document.getElementById('cm-limpieza-sub');
+      var salas = d.salas_limpieza || [];
+      if(limpPanel && limpCards){
+        if(!salas.length){
+          limpPanel.style.display = 'none';
+        } else {
+          limpPanel.style.display = '';
+          if(limpSub) limpSub.textContent = salas.length + ' sala(s) · ' + (res.salas_sin_limpiador||0) + ' sin responsable';
+          limpCards.innerHTML = salas.map(function(s){
+            var ea = _cmEstadoArea(s.area_estado);
+            var quien = s.asignado_a
+              ? '<span style="font-size:11px;color:#0f172a;font-weight:600">👤 '+_escHTML(s.asignado_a)+'</span>'
+              : '<span style="font-size:11px;color:#b91c1c;font-weight:700">⚠️ sin asignar</span>';
+            return '<div data-area="'+_escHTML(s.area_codigo)+'" style="background:#fff;border:1px solid #e2e8f0;border-top:3px solid '+ea.dot+';border-radius:8px;padding:10px 12px">'
+              + '<div style="font-size:13px;font-weight:700;color:#0f172a">'+_escHTML(s.area_nombre||s.area_codigo)+'</div>'
+              + '<div style="font-size:10px;color:'+ea.dot+';font-weight:700;margin:2px 0">'+_escHTML(ea.txt)+(s.requiere_profunda?' · limpieza profunda':'')+'</div>'
+              + quien
+              + '</div>';
+          }).join('');
+        }
+      }
+      document.querySelectorAll('#cm-equipo-cards [data-area], #cm-limpieza-cards [data-area]').forEach(function(el){
         el.style.cursor = 'pointer';
         el.title = 'Click para resaltar el área en el plano';
         el.onclick = function(){ cmResaltarArea(el.getAttribute('data-area')); };
