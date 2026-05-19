@@ -7068,6 +7068,59 @@ def test_golden_planta_tablero_equipo(app, db_clean):
 
 
 # ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH PLAN · Lo FIJO (eos_plan) es intocable por automáticos
+# ═══════════════════════════════════════════════════════════════════
+# Bug que cazaría: que "Regenerar canónicos" cancele una producción que
+# el usuario fijó (arrastró/editó). Incidente 19-may-2026: se perdió la
+# programación de la semana.
+
+def test_golden_plan_fijo_sobrevive_regenerar(app, db_clean):
+    """Una producción FIJA (origen='eos_plan') sobrevive a Regenerar
+    Canónicos; una SUGERIDA (eos_canonico) del mismo producto sí se
+    cancela. Ningún proceso automático toca lo que el usuario fijó."""
+    from datetime import date, timedelta
+    futuro = (date.today() + timedelta(days=45)).isoformat()
+
+    for sql in (
+        "DELETE FROM produccion_programada WHERE producto='TEST_FIJO_PRODUCTO'",
+        "DELETE FROM producto_canonico_config WHERE producto_nombre='TEST_FIJO_PRODUCTO'",
+    ):
+        _exec(sql)
+
+    _exec("INSERT INTO producto_canonico_config (producto_nombre, kg_por_lote, "
+          "ml_unidad, frecuencia_dias, activo) VALUES "
+          "('TEST_FIJO_PRODUCTO', 20, 30, 60, 1)")
+    pid_fijo = _exec("INSERT INTO produccion_programada (producto, fecha_programada,"
+                     " cantidad_kg, lotes, estado, origen) VALUES "
+                     "('TEST_FIJO_PRODUCTO', ?, 20, 1, 'programado', 'eos_plan')",
+                     (futuro,))
+    pid_sug = _exec("INSERT INTO produccion_programada (producto, fecha_programada,"
+                    " cantidad_kg, lotes, estado, origen) VALUES "
+                    "('TEST_FIJO_PRODUCTO', ?, 20, 1, 'programado', 'eos_canonico')",
+                    (futuro,))
+
+    cs = _login(app, 'sebastian')
+    r = cs.post('/api/plan/regenerar-canonicos', headers=csrf_headers(), json={})
+    assert r.status_code == 200, f'BUG: regenerar {r.status_code} {r.data}'
+
+    fijo = _query("SELECT estado, origen FROM produccion_programada WHERE id=?",
+                  (pid_fijo,))
+    assert len(fijo) == 1 and fijo[0][0] == 'programado', \
+        f'BUG: regenerar canceló/borró una producción FIJA · {fijo}'
+    assert fijo[0][1] == 'eos_plan', f'BUG: cambió el origen de la Fija · {fijo}'
+
+    sug = _query("SELECT estado FROM produccion_programada WHERE id=?", (pid_sug,))
+    assert sug and sug[0][0] == 'cancelado', \
+        f'BUG: la sugerida no se canceló · regenerar no corrió bien · {sug}'
+
+    for sql in (
+        "DELETE FROM produccion_programada WHERE producto='TEST_FIJO_PRODUCTO'",
+        "DELETE FROM producto_canonico_config WHERE producto_nombre='TEST_FIJO_PRODUCTO'",
+    ):
+        _exec(sql)
+
+
+# ═══════════════════════════════════════════════════════════════════
 # GOLDEN PATH PLAN-C · POST /api/plan/programar-produccion · todo en EOS
 # ═══════════════════════════════════════════════════════════════════
 # Bug que cazaría: si el endpoint no setea origen='eos_plan' o estado

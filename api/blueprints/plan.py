@@ -4554,7 +4554,7 @@ async function planPerfecto(){
     if (!confirm('Tenés ' + DIRTY.size + ' cambios sin guardar · ¿guardar ANTES?')) return;
     await guardar();
   }
-  if (!confirm('🎯 Generar Plan PERFECTO\\n\\nAlgoritmo:\\n1. Lee tu config (kg/lote, ml, frecuencia)\\n2. Ajusta frecuencia si ventas aumentaron >30%\\n3. Prioriza: complejos > grandes > otros\\n4. Respeta: L-V, festivos, max 2/día, complejos Lun/Mié\\n5+6. IA escribe reporte ejecutivo\\n\\n¿Continuar?')) return;
+  if (!confirm('\\u26a0\\ufe0f GENERAR PLAN PERFECTO\\n\\nEsto CANCELA todas las producciones SUGERIDAS no iniciadas (canonicas / calendar) y arma el plan de cero para 12 meses.\\n\\nLo que vos FIJASTE (arrastraste o editaste en el calendario) NO se toca.\\n\\n¿Continuar?')) return;
   // Fix B-5 · disable todos los botones + finally
   const btns = document.querySelectorAll('button');
   btns.forEach(b => b.disabled = true);
@@ -4588,7 +4588,7 @@ async function regenerarCanonicos(){
     if (!confirm('Tenés ' + DIRTY.size + ' cambios sin guardar · ¿guardar ANTES de regenerar?')) return;
     await guardar();
   }
-  if (!confirm('🔄 Esto va a:\\n\\n1. CANCELAR todos los canónicos viejos sin ejecutar\\n2. GENERAR lotes nuevos para 12 meses con tu configuración\\n\\n¿Continuar?')) return;
+  if (!confirm('\\u26a0\\ufe0f REGENERAR CANONICOS\\n\\nEsto CANCELA todas las producciones canonicas SUGERIDAS no iniciadas y genera lotes nuevos para 12 meses.\\n\\nLo que vos FIJASTE (arrastraste o editaste en el calendario) NO se toca.\\n\\n¿Continuar?')) return;
   // Fix B-5 · disable todos los botones durante fetch
   const btns = document.querySelectorAll('button');
   btns.forEach(b => b.disabled = true);
@@ -9544,13 +9544,17 @@ def reprogramar_proxima(pid):
             }), 422
 
     # UPDATE + audit
+    # Sebastián 19-may-2026: arrastrar una producción la FIJA (origen=eos_plan).
+    # Es una decisión del usuario → los procesos automáticos (regenerar
+    # canónicos, generar-plan-perfecto, sync) ya no la tocan.
     cur.execute(
         """UPDATE produccion_programada
            SET fecha_programada = ?,
+               origen = 'eos_plan',
                observaciones = COALESCE(observaciones,'') ||
                    ' · REPROGRAMADO de ' || COALESCE(?,'?') || ' a ' || ? ||
                    CASE WHEN ? != '' THEN ' (razón: ' || ? || ')' ELSE '' END ||
-                   ' · ' || datetime('now', '-5 hours')
+                   ' · FIJADO · ' || datetime('now', '-5 hours')
            WHERE id = ?""",
         (nueva_fecha, fecha_antes, nueva_fecha, razon, razon, pid),
     )
@@ -9638,12 +9642,14 @@ def actualizar_cantidad_proxima(pid):
                     "otros_ese_dia": otros,
                 }), 409
 
+    # Sebastián 19-may-2026: editar los kg también FIJA la producción.
     cur.execute(
         """UPDATE produccion_programada
            SET cantidad_kg = ?,
+               origen = 'eos_plan',
                observaciones = COALESCE(observaciones,'') ||
                  ' · KG editado de ' || COALESCE(CAST(? AS TEXT),'?') ||
-                 ' a ' || CAST(? AS TEXT) || ' · ' || datetime('now','-5 hours')
+                 ' a ' || CAST(? AS TEXT) || ' · FIJADO · ' || datetime('now','-5 hours')
            WHERE id = ?""",
         (nueva_kg, kg_antes, nueva_kg, pid),
     )
@@ -9654,6 +9660,66 @@ def actualizar_cantidad_proxima(pid):
     conn.commit()
     return jsonify({"ok": True, "id": pid, "producto": producto,
                     "kg_antes": kg_antes, "kg_nuevo": nueva_kg})
+
+
+@bp.route("/api/plan/recuperar-semana-19may2026", methods=["POST"])
+def recuperar_semana_19may2026():
+    """Recuperación puntual · Sebastián 19-may-2026.
+
+    La programación del 19-22 may (4 producciones que Alejandro arregló
+    el 18-may) se perdió de produccion_programada. Se reconstruye desde
+    el audit_log con origen='eos_plan' → Fija · intocable por procesos
+    automáticos. Idempotente: si ya existe (mismo producto + fecha, no
+    cancelada) no la duplica.
+    """
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+
+    PLAN_SEMANA = [
+        ('LIMPIADOR FACIAL HIDRATANTE',  '2026-05-19', 70.0),
+        ('SUERO TRIACTIVE RETINOID NAD', '2026-05-20', 20.0),
+        ('GEL HIDRATANTE',               '2026-05-21', 60.0),
+        ('AZ HIBRID CLEAR',              '2026-05-22', 50.0),
+    ]
+    conn = get_db()
+    c = conn.cursor()
+    creadas, ya_existian = [], []
+    for producto, fecha, kg in PLAN_SEMANA:
+        existe = c.execute(
+            """SELECT id FROM produccion_programada
+               WHERE UPPER(TRIM(producto)) = UPPER(TRIM(?))
+                 AND date(fecha_programada) = ?
+                 AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado')""",
+            (producto, fecha),
+        ).fetchone()
+        if existe:
+            ya_existian.append({'producto': producto, 'fecha': fecha, 'id': existe[0]})
+            continue
+        c.execute(
+            """INSERT INTO produccion_programada
+               (producto, fecha_programada, cantidad_kg, lotes, estado, origen,
+                observaciones)
+               VALUES (?,?,?,1,'programado','eos_plan',
+                       'Recuperado del audit_log (perdido 19-may) · FIJADO · '
+                       || datetime('now','-5 hours'))""",
+            (producto, fecha, kg),
+        )
+        new_id = c.lastrowid
+        creadas.append({'producto': producto, 'fecha': fecha,
+                        'cantidad_kg': kg, 'id': new_id})
+        try:
+            audit_log(c, usuario=user, accion='RECUPERAR_PRODUCCION',
+                      tabla='produccion_programada', registro_id=new_id,
+                      despues={'producto': producto, 'fecha': fecha,
+                               'cantidad_kg': kg, 'origen': 'eos_plan'},
+                      detalle=f'Recuperación semana 19-may · {producto} · {fecha}')
+        except Exception as _e:
+            log.warning('audit RECUPERAR_PRODUCCION falló: %s', _e)
+    conn.commit()
+    return jsonify({'ok': True, 'creadas': creadas, 'ya_existian': ya_existian,
+                    'total_creadas': len(creadas)})
 
 
 @bp.route("/api/plan/proximas/<int:pid>/pausar", methods=["POST"])

@@ -9106,7 +9106,11 @@ def _sync_calendar_a_produccion_programada(conn, days_ahead=90,
         # IMPORTANTE: capturar inicio_real_at + inventario_descontado_at para
         # decidir si es seguro cancelar (no corromper inventario en curso).
         if force_mirror:
-            origen_filter = ''   # cualquier origen
+            # Sebastián 19-may-2026: el espejo duro NUNCA borra lo que el
+            # usuario fijó (eos_plan) ni pedidos B2B ni históricos. Solo
+            # espeja lo que es sugerencia (canónico / calendar / manual).
+            origen_filter = ("AND COALESCE(origen,'') "
+                             "NOT IN ('eos_plan','eos_b2b','eos_retroactivo')")
         else:
             origen_filter = "AND origen='calendar'"
         # Sebastián 12-may-2026: ventana ampliada de -1d a -14d.
