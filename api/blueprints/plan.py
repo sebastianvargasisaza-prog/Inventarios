@@ -9667,6 +9667,109 @@ def actualizar_cantidad_proxima(pid):
                     "kg_antes": kg_antes, "kg_nuevo": nueva_kg})
 
 
+@bp.route("/api/admin/diagnostico-migracion", methods=["GET"])
+def diagnostico_migracion():
+    """Compara conteos de la base vieja (SQLite en /var/data/inventario.db)
+    contra la nueva (PostgreSQL) · diagnóstico de pérdida de datos en la
+    migración 18-may-2026. Solo admin / Compras.
+
+    Crítico: detectar si movimientos (kardex MPs) o produccion_programada
+    perdieron filas en la migración.
+    """
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+
+    import os
+    import sqlite3 as _sq
+    SQLITE_PATH = '/var/data/inventario.db'
+    if not os.path.exists(SQLITE_PATH):
+        return jsonify({'error': f'SQLite viejo no existe en {SQLITE_PATH}',
+                        'hint': 'puede haberse borrado'}), 404
+
+    TABLAS = [
+        'movimientos', 'produccion_programada', 'maestro_mps',
+        'ordenes_compra', 'ordenes_compra_items',
+        'solicitudes_compra', 'solicitudes_compra_items',
+        'pagos_oc', 'comprobantes_pago',
+        'conteos_fisicos', 'conteo_items',
+        'lotes_mp',
+    ]
+    pg_cur = get_db().cursor()
+    sq_conn = _sq.connect(SQLITE_PATH)
+    sq_cur = sq_conn.cursor()
+
+    resumen = []
+    for t in TABLAS:
+        try:
+            sq_cur.execute(f"SELECT COUNT(*) FROM {t}")
+            sq_count = sq_cur.fetchone()[0]
+        except Exception as e:
+            sq_count = f'ERR: {str(e)[:80]}'
+        try:
+            pg_cur.execute(f"SELECT COUNT(*) FROM {t}")
+            pg_count = pg_cur.fetchone()[0]
+        except Exception as e:
+            pg_count = f'ERR: {str(e)[:80]}'
+        diff = None
+        try:
+            diff = int(sq_count) - int(pg_count)
+        except Exception:
+            pass
+        resumen.append({
+            'tabla': t, 'sqlite_viejo': sq_count,
+            'postgres_actual': pg_count, 'diff_faltan_en_pg': diff,
+            'alerta': isinstance(diff, int) and diff != 0,
+        })
+
+    estados = []
+    try:
+        sq_cur.execute("""SELECT LOWER(COALESCE(estado,'')), COUNT(*)
+                          FROM produccion_programada GROUP BY 1""")
+        sq_e = dict(sq_cur.fetchall())
+    except Exception:
+        sq_e = {}
+    try:
+        pg_cur.execute("""SELECT LOWER(COALESCE(estado,'')), COUNT(*)
+                          FROM produccion_programada GROUP BY 1""")
+        pg_e = dict(pg_cur.fetchall())
+    except Exception:
+        pg_e = {}
+    for e in sorted(set(sq_e.keys()) | set(pg_e.keys())):
+        s = sq_e.get(e, 0)
+        p = pg_e.get(e, 0)
+        estados.append({'estado': e or '(vacío)',
+                        'sqlite_viejo': s, 'postgres_actual': p,
+                        'diff_faltan_en_pg': s - p})
+
+    movs_tipo = []
+    try:
+        sq_cur.execute("""SELECT tipo, COUNT(*) FROM movimientos GROUP BY 1""")
+        sq_m = dict(sq_cur.fetchall())
+    except Exception:
+        sq_m = {}
+    try:
+        pg_cur.execute("""SELECT tipo, COUNT(*) FROM movimientos GROUP BY 1""")
+        pg_m = dict(pg_cur.fetchall())
+    except Exception:
+        pg_m = {}
+    for t in sorted(set(sq_m.keys()) | set(pg_m.keys())):
+        s = sq_m.get(t, 0)
+        p = pg_m.get(t, 0)
+        movs_tipo.append({'tipo': t or '(vacío)',
+                          'sqlite_viejo': s, 'postgres_actual': p,
+                          'diff_faltan_en_pg': s - p})
+
+    sq_conn.close()
+    return jsonify({
+        'sqlite_path': SQLITE_PATH,
+        'tablas': resumen,
+        'produccion_por_estado': estados,
+        'movimientos_por_tipo': movs_tipo,
+    })
+
+
 @bp.route("/api/plan/recuperar-semana-19may2026", methods=["GET", "POST"])
 def recuperar_semana_19may2026():
     """Recuperación puntual · Sebastián 19-may-2026.
