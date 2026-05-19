@@ -1490,9 +1490,10 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       title="Calendario propio · vista mes + autoplan IA + horizontes 15-120 días">
       &#129302; Calendario + IA
     </button>
-    <button id="prog-tab-midia" onclick="switchProgTab('midia')"
-      style="padding:9px 22px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:700;cursor:pointer;background:#1e40af;color:#fff;box-shadow:0 3px 10px rgba(30,64,175,.35)">
-      &#128100; Mi D&iacute;a
+    <button id="prog-tab-factibilidad" onclick="switchProgTab('factibilidad')"
+      style="padding:9px 22px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:700;cursor:pointer;background:#059669;color:#fff;box-shadow:0 3px 10px rgba(5,150,105,.35)"
+      title="¿Alcanzan las materias primas para todo el plan? · solo lectura">
+      &#9989; Factibilidad
     </button>
     <!-- Sebastián 15-may-2026: pestaña Abastecimiento · consolida las MP
          y envases que el plan va a consumir en 1-12 meses y genera las
@@ -1502,10 +1503,9 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       title="Materias primas y envases que faltan para el plan · genera solicitudes a Compras">
       &#128230; Abastecimiento
     </button>
-    <button id="prog-tab-factibilidad" onclick="switchProgTab('factibilidad')"
-      style="padding:9px 22px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:700;cursor:pointer;background:#059669;color:#fff;box-shadow:0 3px 10px rgba(5,150,105,.35)"
-      title="¿Alcanzan las materias primas para todo el plan? · solo lectura">
-      &#9989; Factibilidad
+    <button id="prog-tab-midia" onclick="switchProgTab('midia')"
+      style="padding:9px 22px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:700;cursor:pointer;background:#1e40af;color:#fff;box-shadow:0 3px 10px rgba(30,64,175,.35)">
+      &#128100; Mi D&iacute;a
     </button>
     <span id="prog-tareas-badge" style="display:none;background:#dc2626;color:#fff;font-size:9px;font-weight:800;padding:2px 8px;border-radius:8px"></span>
   </div>
