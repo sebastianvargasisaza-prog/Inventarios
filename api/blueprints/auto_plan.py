@@ -33,6 +33,7 @@ import logging
 from database import get_db
 from config import ADMIN_USERS, COMPRAS_USERS, PLANTA_USERS
 from inventario_helpers import stock_mp_total, stock_mp_disponible
+from audit_helpers import audit_log
 
 bp = Blueprint('auto_plan', __name__)
 log = logging.getLogger('auto_plan')
@@ -7553,7 +7554,11 @@ def tablero_kanban():
                pp.operario_dispensacion_id, pp.operario_elaboracion_id,
                pp.operario_envasado_id, pp.operario_acondicionamiento_id,
                COALESCE(ap.codigo,''), COALESCE(ap.nombre,''),
-               COALESCE(ap.estado,'libre')
+               COALESCE(ap.estado,'libre'),
+               COALESCE(pp.etapa_disp_inicio_at,''), COALESCE(pp.etapa_disp_fin_at,''),
+               COALESCE(pp.etapa_elab_inicio_at,''), COALESCE(pp.etapa_elab_fin_at,''),
+               COALESCE(pp.etapa_env_inicio_at,''), COALESCE(pp.etapa_env_fin_at,''),
+               COALESCE(pp.etapa_acond_inicio_at,''), COALESCE(pp.etapa_acond_fin_at,'')
         FROM produccion_programada pp
         LEFT JOIN areas_planta ap ON ap.id = pp.area_id
         WHERE date(pp.fecha_programada) = ?
@@ -7583,14 +7588,20 @@ def tablero_kanban():
         'envasado':          {'rol_label': '🍶 Envasado', 'tarjetas': []},
         'acondicionamiento': {'rol_label': '📦 Acondicionamiento', 'tarjetas': []},
     }
-    rol_a_col_idx = {'dispensacion': 6, 'elaboracion': 7,
-                      'envasado': 8, 'acondicionamiento': 9}
+    # rol → (índice operario_*_id, índice etapa_inicio_at, índice etapa_fin_at)
+    ROL_IDXS = {
+        'dispensacion':      (6, 13, 14),
+        'elaboracion':       (7, 15, 16),
+        'envasado':          (8, 17, 18),
+        'acondicionamiento': (9, 19, 20),
+    }
     en_curso = terminadas = sin_iniciar = 0
     salas_sucias_set = set()
     for r in rows:
         (pid, prod, kg, estado, inicio_at, fin_at,
          op_disp, op_elab, op_env, op_acond,
-         a_cod, a_nom, a_est) = r
+         a_cod, a_nom, a_est,
+         _e_di, _e_df, _e_li, _e_lf, _e_ni, _e_nf, _e_ai, _e_af) = r
         # Estado de la producción en general · cycle time
         minutos_corridos = None
         if inicio_at and not fin_at:
@@ -7610,10 +7621,28 @@ def tablero_kanban():
         if a_est == 'sucia' and a_cod:
             salas_sucias_set.add(a_cod)
 
-        for rol, idx in rol_a_col_idx.items():
-            op_id = r[idx]
+        for rol, (op_idx, ini_idx, fin_idx) in ROL_IDXS.items():
+            op_id = r[op_idx]
             if not op_id:
                 continue  # no hay operario en este rol · no genera tarjeta
+            ini_etapa = r[ini_idx] or ''
+            fin_etapa = r[fin_idx] or ''
+            if fin_etapa:
+                estado_etapa = 'terminada'
+            elif ini_etapa:
+                estado_etapa = 'en_curso'
+            else:
+                estado_etapa = 'pendiente'
+            # Minutos en curso de esta ETAPA específica
+            min_etapa = None
+            if ini_etapa and not fin_etapa:
+                try:
+                    from datetime import datetime as _dt2
+                    _i = _dt2.fromisoformat(ini_etapa[:19])
+                    _now = _dt2.now() - timedelta(hours=5)
+                    min_etapa = max(0, int((_now - _i).total_seconds() / 60))
+                except Exception:
+                    pass
             tarjeta = {
                 'produccion_id': pid,
                 'producto': prod or '',
@@ -7627,6 +7656,11 @@ def tablero_kanban():
                 'inicio_real_at': inicio_at or None,
                 'fin_real_at': fin_at or None,
                 'minutos_corridos': minutos_corridos,
+                # Pieza 3 · estado y timestamps por etapa
+                'estado_etapa': estado_etapa,
+                'etapa_inicio_at': ini_etapa or None,
+                'etapa_fin_at': fin_etapa or None,
+                'etapa_minutos_corridos': min_etapa,
             }
             columnas[rol]['tarjetas'].append(tarjeta)
 
@@ -7641,6 +7675,227 @@ def tablero_kanban():
             'salas_sucias': len(salas_sucias_set),
         },
     })
+
+
+_ROL_TO_COL = {
+    'dispensacion':      ('etapa_disp_inicio_at',  'etapa_disp_fin_at',  'operario_dispensacion_id'),
+    'elaboracion':       ('etapa_elab_inicio_at',  'etapa_elab_fin_at',  'operario_elaboracion_id'),
+    'envasado':          ('etapa_env_inicio_at',   'etapa_env_fin_at',   'operario_envasado_id'),
+    'acondicionamiento': ('etapa_acond_inicio_at', 'etapa_acond_fin_at', 'operario_acondicionamiento_id'),
+}
+_ROL_ORDEN = ('dispensacion', 'elaboracion', 'envasado', 'acondicionamiento')
+
+
+def _caller_puede_operar_etapa(c, user, pid, rol):
+    """Pieza 3 Kanban · 19-may-2026 · valida que el caller pueda mutar esta
+    etapa de la producción.
+
+    Reglas:
+      - ADMIN → siempre OK
+      - jefe (es_jefe_produccion=1) → OK
+      - operario cuyo id coincida con operario_<rol>_id de la producción → OK
+      - otro → 403
+    """
+    if not user:
+        return False, (jsonify({'error': 'No autorizado'}), 401)
+    if user in ADMIN_USERS:
+        return True, None
+    if rol not in _ROL_TO_COL:
+        return False, (jsonify({'error': f'rol inválido: {rol}'}), 400)
+    _, _, col_op = _ROL_TO_COL[rol]
+    u = (user or '').lower().strip()
+    # Mapeo username → operario_id (mismo patrón que operario.py)
+    op = c.execute(
+        "SELECT id, COALESCE(es_jefe_produccion,0) FROM operarios_planta "
+        "WHERE LOWER(nombre)=? AND COALESCE(activo,1)=1 LIMIT 1", (u,),
+    ).fetchone()
+    if not op and len(u) >= 4:
+        op = c.execute(
+            "SELECT id, COALESCE(es_jefe_produccion,0) FROM operarios_planta "
+            "WHERE LOWER(apellido)=? AND LOWER(SUBSTR(nombre,1,1))=? "
+            "AND COALESCE(activo,1)=1 LIMIT 1", (u[1:], u[0]),
+        ).fetchone()
+    if not op:
+        op = c.execute(
+            "SELECT id, COALESCE(es_jefe_produccion,0) FROM operarios_planta "
+            "WHERE LOWER(nombre) LIKE ? AND COALESCE(activo,1)=1 LIMIT 1",
+            (u + '%',),
+        ).fetchone()
+    if not op:
+        return False, (jsonify({'error': 'usuario no mapeado a operario'}), 403)
+    op_id, es_jefe = int(op[0]), bool(op[1])
+    if es_jefe:
+        return True, None
+    row = c.execute(
+        f"SELECT {col_op} FROM produccion_programada WHERE id=?", (pid,),
+    ).fetchone()
+    if not row:
+        return False, (jsonify({'error': 'produccion no existe'}), 404)
+    if row[0] == op_id:
+        return True, None
+    return False, (jsonify({
+        'error': f'No estás asignado a la etapa {rol} de esta producción',
+        'codigo': 'no_asignado_etapa',
+    }), 403)
+
+
+@bp.route('/api/planta/tablero-kanban/<int:pid>/etapa/<rol>/<accion>',
+           methods=['POST'])
+def kanban_etapa_accion(pid, rol, accion):
+    """Pieza 3 Kanban · 19-may-2026 · mutar el estado de UNA etapa.
+
+    URL: /api/planta/tablero-kanban/<pid>/etapa/<rol>/<accion>
+      rol: dispensacion / elaboracion / envasado / acondicionamiento
+      accion: iniciar / terminar
+
+    Validaciones:
+      - Caller debe estar asignado a la etapa (o admin/jefe)
+      - Solo se puede iniciar UNA etapa si la anterior ya terminó
+        (excepto dispensación, que es la primera · puede iniciar libre)
+      - Solo se puede terminar UNA etapa si ya está iniciada
+      - Idempotente: iniciar 2× o terminar 2× no rompe ni duplica
+      - Audit log por cada mutación
+
+    Cuando termina acondicionamiento, hooks futuros (pieza 4) podrán
+    cerrar fin_real_at de la producción · por ahora dejamos pendiente.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    if rol not in _ROL_TO_COL:
+        return jsonify({'error': f'rol inválido · use {list(_ROL_TO_COL)}'}), 400
+    if accion not in ('iniciar', 'terminar'):
+        return jsonify({'error': 'accion debe ser iniciar|terminar'}), 400
+    conn = get_db(); c = conn.cursor()
+
+    # Permiso
+    ok, err = _caller_puede_operar_etapa(c, user, pid, rol)
+    if not ok:
+        return err
+
+    col_ini, col_fin, _ = _ROL_TO_COL[rol]
+    pp = c.execute(
+        """SELECT COALESCE(estado,''), COALESCE(inicio_real_at,''),
+                  COALESCE(fin_real_at,''),
+                  COALESCE(etapa_disp_inicio_at,''), COALESCE(etapa_disp_fin_at,''),
+                  COALESCE(etapa_elab_inicio_at,''), COALESCE(etapa_elab_fin_at,''),
+                  COALESCE(etapa_env_inicio_at,''), COALESCE(etapa_env_fin_at,''),
+                  COALESCE(etapa_acond_inicio_at,''), COALESCE(etapa_acond_fin_at,''),
+                  producto
+           FROM produccion_programada WHERE id=?""", (pid,),
+    ).fetchone()
+    if not pp:
+        return jsonify({'error': 'produccion no existe'}), 404
+    estado_pp = (pp[0] or '').lower()
+    if estado_pp in ('cancelado', 'completado'):
+        return jsonify({'error': f'producción {estado_pp} · etapas selladas'}), 409
+
+    # Mapa de estado actual por rol
+    etapas_estado = {
+        'dispensacion':      (pp[3], pp[4]),
+        'elaboracion':       (pp[5], pp[6]),
+        'envasado':          (pp[7], pp[8]),
+        'acondicionamiento': (pp[9], pp[10]),
+    }
+    ini_actual, fin_actual = etapas_estado[rol]
+
+    if accion == 'iniciar':
+        if ini_actual:
+            # Idempotente: ya iniciada
+            return jsonify({'ok': True, 'ya_iniciada': True,
+                            'etapa_inicio_at': ini_actual})
+        # Validar que la etapa anterior haya terminado (si no es la primera)
+        idx_rol = _ROL_ORDEN.index(rol)
+        if idx_rol > 0:
+            rol_prev = _ROL_ORDEN[idx_rol - 1]
+            _, fin_prev = etapas_estado[rol_prev]
+            if not fin_prev:
+                return jsonify({
+                    'error': f'No podés iniciar {rol} hasta que termine {rol_prev}',
+                    'codigo': 'etapa_anterior_pendiente',
+                }), 409
+        c.execute(
+            f"UPDATE produccion_programada SET {col_ini} = datetime('now', '-5 hours') "
+            f"WHERE id=? AND COALESCE({col_ini},'')=''",
+            (pid,),
+        )
+        # Re-leer
+        ini_after = c.execute(
+            f"SELECT {col_ini} FROM produccion_programada WHERE id=?", (pid,),
+        ).fetchone()[0]
+        try:
+            audit_log(c, usuario=user, accion='ETAPA_INICIAR',
+                       tabla='produccion_programada', registro_id=pid,
+                       despues={'rol': rol, 'inicio_at': ini_after,
+                                'producto': pp[11]})
+        except Exception:
+            pass
+        conn.commit()
+        return jsonify({'ok': True, 'rol': rol, 'accion': 'iniciar',
+                        'etapa_inicio_at': ini_after})
+
+    # accion == 'terminar'
+    if not ini_actual:
+        return jsonify({'error': f'No podés terminar {rol} sin haberla iniciado'}), 409
+    if fin_actual:
+        return jsonify({'ok': True, 'ya_terminada': True,
+                        'etapa_fin_at': fin_actual})
+    c.execute(
+        f"UPDATE produccion_programada SET {col_fin} = datetime('now', '-5 hours') "
+        f"WHERE id=? AND COALESCE({col_fin},'')=''",
+        (pid,),
+    )
+    fin_after = c.execute(
+        f"SELECT {col_fin} FROM produccion_programada WHERE id=?", (pid,),
+    ).fetchone()[0]
+    try:
+        audit_log(c, usuario=user, accion='ETAPA_TERMINAR',
+                   tabla='produccion_programada', registro_id=pid,
+                   despues={'rol': rol, 'fin_at': fin_after,
+                            'producto': pp[11]})
+    except Exception:
+        pass
+
+    # Pieza 4 · pase de testigo: si hay siguiente etapa con operario asignado,
+    # mandar push_notif. Best-effort · no romper si push_notif no está disponible.
+    notif_data = None
+    try:
+        idx_rol = _ROL_ORDEN.index(rol)
+        if idx_rol < len(_ROL_ORDEN) - 1:
+            rol_sig = _ROL_ORDEN[idx_rol + 1]
+            _, _, col_op_sig = _ROL_TO_COL[rol_sig]
+            op_sig_row = c.execute(
+                f"SELECT {col_op_sig} FROM produccion_programada WHERE id=?", (pid,),
+            ).fetchone()
+            op_sig_id = op_sig_row[0] if op_sig_row else None
+            if op_sig_id:
+                op_user_row = c.execute(
+                    "SELECT LOWER(nombre) FROM operarios_planta WHERE id=?",
+                    (op_sig_id,),
+                ).fetchone()
+                op_user = op_user_row[0] if op_user_row else None
+                if op_user:
+                    try:
+                        from blueprints.notif import push_notif as _push_notif
+                        _push_notif(
+                            destinatario=op_user,
+                            tipo='kanban_pase_testigo',
+                            titulo=f'🏭 Te toca {rol_sig.title()}',
+                            body=f'{pp[11]} · listo para {rol_sig} (lote #{pid})',
+                            link='/planta/kanban',
+                            remitente=user,
+                            importante=False,
+                        )
+                        notif_data = {'rol_siguiente': rol_sig, 'usuario_notificado': op_user}
+                    except Exception as _e:
+                        log.warning(f'push_notif fallo pase testigo pid={pid} → {op_user}: {_e}')
+    except Exception as _e:
+        log.warning(f'pase testigo fallo pid={pid} rol={rol}: {_e}')
+
+    conn.commit()
+    return jsonify({'ok': True, 'rol': rol, 'accion': 'terminar',
+                    'etapa_fin_at': fin_after,
+                    'pase_testigo': notif_data})
 
 
 @bp.route('/planta/kanban', methods=['GET'])
@@ -7711,6 +7966,12 @@ input[type=date]{background:#1e293b;color:#e2e8f0;border:1px solid #334155;borde
 }
 .diag{font-size:10px;color:#475569;margin-top:14px;text-align:center;font-family:monospace}
 .timer{color:#fbbf24;font-weight:700}
+.card-btn{width:100%;padding:8px 10px;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;color:#fff}
+.card-btn.iniciar{background:#0891b2}
+.card-btn.iniciar:hover{background:#0e7490}
+.card-btn.terminar{background:#16a34a}
+.card-btn.terminar:hover{background:#15803d}
+.card-btn:disabled{opacity:.6;cursor:not-allowed}
 </style>
 </head><body>
 
@@ -7722,6 +7983,7 @@ input[type=date]{background:#1e293b;color:#e2e8f0;border:1px solid #334155;borde
   <div class="toolbar">
     <input type="date" id="fecha-input" onchange="cargar()">
     <button class="btn primary" onclick="cargar()">↻ Refrescar</button>
+    <a href="/operario" class="btn" title="Mi Día del operario">👤 Mi Día</a>
     <a href="/modulos" class="btn">← Volver</a>
   </div>
 </div>
@@ -7748,6 +8010,13 @@ input[type=date]{background:#1e293b;color:#e2e8f0;border:1px solid #334155;borde
 function esc(s){return String(s||'').replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
 function fmtMin(m){if(m==null)return '';if(m<60)return m+'min';return Math.floor(m/60)+'h '+(m%60)+'min';}
 function hoyISO(){return new Date(new Date().getTime()-5*3600*1000).toISOString().slice(0,10);}
+// Pieza 3 · cargar CSRF al boot para los botones de etapa
+window._csrfTok = '';
+fetch('/api/csrf-token', {credentials:'same-origin'})
+  .then(r => r.ok ? r.json() : null)
+  .then(d => { if(d && d.csrf_token) window._csrfTok = d.csrf_token; })
+  .catch(() => {});
+
 var inFlight = false;
 async function cargar(){
   if(inFlight) return;
@@ -7782,7 +8051,7 @@ async function cargar(){
         body.innerHTML = '<div class="empty">Sin tareas hoy</div>';
         return;
       }
-      body.innerHTML = info.tarjetas.map(renderCard).join('');
+      body.innerHTML = info.tarjetas.map(function(t){ return renderCard(t, rol); }).join('');
     });
     document.getElementById('diag').textContent = 'última actualización ' + new Date().toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
   } catch(e){
@@ -7796,16 +8065,18 @@ function kpiCard(lbl, val, cls){
   return '<div class="kpi '+cls+'"><div class="kpi-lbl">'+esc(lbl)+'</div><div class="kpi-val">'+esc(val)+'</div></div>';
 }
 
-function renderCard(t){
+function renderCard(t, rol){
+  // Pieza 3 · estado_etapa (por rol) vs estado de la producción global
   var estado = 'pendiente';
   var badge = '';
-  if(t.fin_real_at){ estado='terminada'; badge='<span class="chip terminada">✓ Terminada</span>'; }
-  else if(t.inicio_real_at){
+  if(t.estado_etapa === 'terminada'){
+    estado='terminada'; badge='<span class="chip terminada">✓ Etapa terminada</span>';
+  } else if(t.estado_etapa === 'en_curso'){
     estado='curso';
-    var tm = t.minutos_corridos!=null ? ' <span class="timer">⏱ '+fmtMin(t.minutos_corridos)+'</span>' : '';
+    var tm = t.etapa_minutos_corridos!=null ? ' <span class="timer">⏱ '+fmtMin(t.etapa_minutos_corridos)+'</span>' : '';
     badge='<span class="chip curso">EN CURSO</span>'+tm;
   } else {
-    badge='<span class="chip">Sin iniciar</span>';
+    badge='<span class="chip">Etapa sin iniciar</span>';
   }
   var areaChip = '';
   if(t.area_codigo){
@@ -7818,11 +8089,52 @@ function renderCard(t){
   var meta = '';
   if(t.operario_nombre) meta += '<span>👤 '+esc(t.operario_nombre)+'</span>';
   meta += '<span>'+(parseFloat(t.kg)||0).toFixed(1)+' kg</span>';
+
+  // Botón de acción contextual
+  var btn = '';
+  if(t.estado_etapa === 'pendiente'){
+    btn = '<button class="card-btn iniciar" data-pid="'+t.produccion_id+'" data-rol="'+esc(rol)+'" onclick="etapaAccion(this,&quot;iniciar&quot;)">▶ Iniciar etapa</button>';
+  } else if(t.estado_etapa === 'en_curso'){
+    btn = '<button class="card-btn terminar" data-pid="'+t.produccion_id+'" data-rol="'+esc(rol)+'" onclick="etapaAccion(this,&quot;terminar&quot;)">✓ Terminar etapa</button>';
+  }
   return '<div class="card '+estado+'">'
        + '<div class="card-prod">'+esc((t.producto||'').slice(0,30))+'</div>'
        + '<div class="card-meta">'+meta+'</div>'
        + '<div style="margin-top:6px;display:flex;gap:4px;flex-wrap:wrap">'+areaChip+badge+'</div>'
+       + (btn?'<div style="margin-top:8px">'+btn+'</div>':'')
        + '</div>';
+}
+
+async function etapaAccion(btn, accion){
+  var pid = btn.dataset.pid;
+  var rol = btn.dataset.rol;
+  if(!confirm((accion==='iniciar'?'▶ Iniciar':'✓ Terminar') + ' etapa ' + rol + ' de lote #' + pid + '?')) return;
+  btn.disabled = true; var prev = btn.textContent; btn.textContent = '...';
+  try {
+    var csrf = window._csrfTok || '';
+    if(!csrf){
+      try { var tr = await fetch('/api/csrf-token',{credentials:'same-origin'}); if(tr.ok){ var td=await tr.json(); csrf=td.csrf_token||''; window._csrfTok=csrf; } } catch(_e){}
+    }
+    var r = await fetch('/api/planta/tablero-kanban/'+encodeURIComponent(pid)+'/etapa/'+encodeURIComponent(rol)+'/'+encodeURIComponent(accion), {
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},
+      credentials:'same-origin',
+      body:'{}',
+    });
+    var d = await r.json();
+    if(!r.ok){
+      alert('Error: ' + (d.error || r.status) + (d.codigo?' ('+d.codigo+')':''));
+      btn.disabled = false; btn.textContent = prev;
+      return;
+    }
+    if(d.pase_testigo && d.pase_testigo.usuario_notificado){
+      alert('✓ Etapa cerrada · avisamos a ' + d.pase_testigo.usuario_notificado + ' que le toca ' + d.pase_testigo.rol_siguiente);
+    }
+    cargar();
+  } catch(e){
+    alert('Error: ' + e.message);
+    btn.disabled = false; btn.textContent = prev;
+  }
 }
 
 function setColMobile(rol){

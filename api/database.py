@@ -6432,6 +6432,31 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
            ('ESENCIA DE CENTELLA ASIATICA',         'esencia', NULL, 60, 90, 30, 3.0, 3, NULL),
            ('ESENCIA ILUMINADORA',                  'esencia', NULL, 60, 90, 30, 3.0, 3, NULL)""",
     ]),
+
+    (139, "Kanban de Estaciones · timestamps por etapa · Sebastián 19-may-2026", [
+        # Sebastián 19-may-2026: pieza 3 del Kanban de Estaciones de Planta.
+        # Hasta hoy `produccion_programada` solo guardaba inicio_real_at y
+        # fin_real_at a nivel de la producción TOTAL. Con esto NO se puede
+        # representar el flujo "Mayerlin terminó dispensación · Camilo
+        # arranca elaboración · ahora le toca a Milton envasar". 8 columnas
+        # nuevas (4 etapas × 2 timestamps) hacen el pase de testigo posible.
+        #
+        # Modelo:
+        #   etapa_X_inicio_at NULL → etapa pendiente (no ha empezado)
+        #   etapa_X_inicio_at SET y etapa_X_fin_at NULL → etapa en curso
+        #   etapa_X_fin_at SET → etapa terminada
+        #
+        # Convención fechas: ISO local Colombia (igual que inicio_real_at).
+        # NULL por default · todas las producciones legacy siguen funcionando.
+        "ALTER TABLE produccion_programada ADD COLUMN etapa_disp_inicio_at TEXT",
+        "ALTER TABLE produccion_programada ADD COLUMN etapa_disp_fin_at TEXT",
+        "ALTER TABLE produccion_programada ADD COLUMN etapa_elab_inicio_at TEXT",
+        "ALTER TABLE produccion_programada ADD COLUMN etapa_elab_fin_at TEXT",
+        "ALTER TABLE produccion_programada ADD COLUMN etapa_env_inicio_at TEXT",
+        "ALTER TABLE produccion_programada ADD COLUMN etapa_env_fin_at TEXT",
+        "ALTER TABLE produccion_programada ADD COLUMN etapa_acond_inicio_at TEXT",
+        "ALTER TABLE produccion_programada ADD COLUMN etapa_acond_fin_at TEXT",
+    ]),
 ]
 
 

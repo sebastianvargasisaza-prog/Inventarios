@@ -2279,7 +2279,7 @@ CREATE TABLE produccion_programada (
             observaciones TEXT,
             creado_en TEXT DEFAULT (to_char(now(),'YYYY-MM-DD HH24:MI:SS')),
             gcal_event_id TEXT
-        , origen TEXT DEFAULT 'manual', cantidad_kg DOUBLE PRECISION DEFAULT 0, inventario_descontado_at TEXT, area_id INTEGER, operario_dispensacion_id INTEGER, operario_elaboracion_id INTEGER, operario_envasado_id INTEGER, operario_acondicionamiento_id INTEGER, inicio_real_at TEXT, fin_real_at TEXT, area_envasado_id INTEGER, bloqueado_at TEXT, bloqueado_por TEXT DEFAULT '', semana_workflow_id TEXT DEFAULT '', kg_real DOUBLE PRECISION DEFAULT NULL, unidades_real INTEGER DEFAULT NULL, merma_pct DOUBLE PRECISION DEFAULT NULL, motivo_pausa TEXT DEFAULT NULL, pausado_at TEXT DEFAULT NULL, pausado_por TEXT DEFAULT NULL);
+        , origen TEXT DEFAULT 'manual', cantidad_kg DOUBLE PRECISION DEFAULT 0, inventario_descontado_at TEXT, area_id INTEGER, operario_dispensacion_id INTEGER, operario_elaboracion_id INTEGER, operario_envasado_id INTEGER, operario_acondicionamiento_id INTEGER, inicio_real_at TEXT, fin_real_at TEXT, area_envasado_id INTEGER, bloqueado_at TEXT, bloqueado_por TEXT DEFAULT '', semana_workflow_id TEXT DEFAULT '', kg_real DOUBLE PRECISION DEFAULT NULL, unidades_real INTEGER DEFAULT NULL, merma_pct DOUBLE PRECISION DEFAULT NULL, motivo_pausa TEXT DEFAULT NULL, pausado_at TEXT DEFAULT NULL, pausado_por TEXT DEFAULT NULL, etapa_disp_inicio_at TEXT, etapa_disp_fin_at TEXT, etapa_elab_inicio_at TEXT, etapa_elab_fin_at TEXT, etapa_env_inicio_at TEXT, etapa_env_fin_at TEXT, etapa_acond_inicio_at TEXT, etapa_acond_fin_at TEXT);
 
 -- tabla: producciones
 CREATE TABLE producciones

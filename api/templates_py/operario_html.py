@@ -88,7 +88,16 @@ main { padding:16px; padding-bottom:80px; max-width:600px; margin:0 auto; }
 </header>
 <main>
   <div id="contenido" class="loading">Cargando tu día</div>
-  <div style="text-align:center;margin-top:32px;padding-top:24px;border-top:1px solid #334155">
+  <!-- Pieza 6 Kanban · 19-may-2026 · navegación cruzada para que admin/jefe
+       no se pierdan entre Mi Día (operario) y vistas de equipo. -->
+  <div id="nav-equipo" style="display:none;margin-top:24px;padding:14px;background:#1e293b;border-radius:10px;border:1px solid #334155">
+    <div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">📊 Vistas de equipo (admin/jefe)</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <a href="/planta/kanban" style="flex:1;min-width:140px;background:#0891b2;color:#fff;text-decoration:none;padding:10px 14px;border-radius:8px;font-weight:700;font-size:13px;text-align:center">🏭 Kanban planta</a>
+      <a href="/dashboard#programacion" onclick="try{sessionStorage.setItem('prog_tab','mando')}catch(e){}" style="flex:1;min-width:140px;background:#1a4a7a;color:#fff;text-decoration:none;padding:10px 14px;border-radius:8px;font-weight:700;font-size:13px;text-align:center">🎯 Centro de Mando</a>
+    </div>
+  </div>
+  <div style="text-align:center;margin-top:24px;padding-top:24px;border-top:1px solid #334155">
     <a href="/inventarios" style="color:#94a3b8;font-size:13px;text-decoration:none">
       &larr; Ver inventario completo de Planta
     </a>
@@ -165,6 +174,10 @@ function renderHeader(d) {
   if (d.ve_todas) partes.push(d.es_admin ? 'admin · ves todas' : 'jefe · ves todas');
   partes.push(d.fecha);
   document.getElementById('hdr-meta').textContent = partes.join(' · ');
+  // Pieza 6 Kanban · 19-may-2026 · navegación cruzada solo para admin/jefe.
+  // Operario común no ve estos links · mantiene Mi Día simple.
+  const navEq = document.getElementById('nav-equipo');
+  if (navEq) navEq.style.display = (d.es_admin || d.es_jefe || d.ve_todas) ? 'block' : 'none';
 }
 
 function renderProducciones(d) {

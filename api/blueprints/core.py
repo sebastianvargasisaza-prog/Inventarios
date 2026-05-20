@@ -716,7 +716,18 @@ def login():
                         if nxt and nxt.startswith('/') and not nxt.startswith('//'):
                             resp = redirect(nxt)
                         else:
-                            resp = redirect('/modulos')
+                            # Sebastián 19-may-2026 · Kanban pieza 5: redirect
+                            # por rol también en path MFA-trusted. Operario
+                            # planta no admin → /operario (Mi Día). Antes
+                            # iba a /modulos como cualquier otro · "que todos
+                            # sepan qué hacer cuando llegan" requiere aterrizar
+                            # directo en su pantalla.
+                            from config import (ADMIN_USERS as _AU_T,
+                                                 PLANTA_USERS as _PU_T)
+                            if username in _PU_T and username not in _AU_T:
+                                resp = redirect('/operario')
+                            else:
+                                resp = redirect('/modulos')
                         # Sebastián 15-may-2026: "la verificación dos pasos
                         # me cansa · estaría bien cada mes". Cookie ROLLING:
                         # se renueva con timestamp nuevo en cada login válido,

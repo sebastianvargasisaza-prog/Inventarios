@@ -7264,6 +7264,98 @@ def test_golden_tablero_kanban_estructura_y_permisos(app, db_clean):
         _exec("DELETE FROM produccion_programada WHERE producto='TEST_GP_KANBAN'")
 
 
+def test_golden_kanban_etapa_flujo_y_permisos(app, db_clean):
+    """Pieza 3+4 Kanban · 19-may-2026 · iniciar/terminar etapa por rol.
+
+    Reglas:
+      - Solo operario asignado a la etapa puede mutarla (o admin/jefe).
+      - No se puede iniciar una etapa si la anterior no terminó.
+      - Terminar la última etapa genera pase de testigo (push_notif al
+        operario del siguiente rol) · pieza 4.
+      - Idempotente: re-iniciar/re-terminar no rompe.
+    """
+    rows = _query(
+        "SELECT id, LOWER(nombre), LOWER(COALESCE(apellido,'')) "
+        "FROM operarios_planta WHERE COALESCE(activo,1)=1"
+    )
+    op_by_name = {r[1]: r[0] for r in rows}
+    smurillo_op = next((r[0] for r in rows
+                        if r[2] == 'murillo' and (r[1] or '').startswith('s')), None)
+    if not (op_by_name.get('mayerlin') and op_by_name.get('camilo') and smurillo_op):
+        import pytest
+        pytest.skip('operarios planta no seedeados')
+
+    # Producción con 3 roles asignados (disp=mayerlin, elab=camilo, env=smurillo)
+    pid = _exec(
+        """INSERT INTO produccion_programada
+           (producto, fecha_programada, lotes, cantidad_kg, estado,
+            operario_dispensacion_id, operario_elaboracion_id,
+            operario_envasado_id)
+           VALUES ('TEST_GP_ETAPA','2026-05-22',1,5,'programado',?,?,?)""",
+        (op_by_name['mayerlin'], op_by_name['camilo'], smurillo_op),
+    )
+    try:
+        # 1) Caller NO asignado al rol rechaza (camilo intenta dispensación de mayerlin)
+        cs_camilo = _login(app, 'camilo')
+        r = cs_camilo.post(f'/api/planta/tablero-kanban/{pid}/etapa/dispensacion/iniciar',
+                            json={}, headers=csrf_headers())
+        assert r.status_code == 403, f'BUG: camilo pudo iniciar disp ajena · {r.status_code}'
+
+        # 2) No se puede iniciar elaboración antes de terminar dispensación
+        r2 = cs_camilo.post(f'/api/planta/tablero-kanban/{pid}/etapa/elaboracion/iniciar',
+                             json={}, headers=csrf_headers())
+        assert r2.status_code == 409, f'BUG: dejó iniciar elab sin terminar disp · {r2.status_code}'
+        assert 'etapa_anterior_pendiente' in (r2.get_json().get('codigo') or '')
+
+        # 3) mayerlin sí inicia disp
+        cs_may = _login(app, 'mayerlin')
+        r3 = cs_may.post(f'/api/planta/tablero-kanban/{pid}/etapa/dispensacion/iniciar',
+                          json={}, headers=csrf_headers())
+        assert r3.status_code == 200, f'BUG: mayerlin no inició disp · {r3.status_code}'
+
+        # 4) Idempotente: re-iniciar OK
+        r3b = cs_may.post(f'/api/planta/tablero-kanban/{pid}/etapa/dispensacion/iniciar',
+                           json={}, headers=csrf_headers())
+        assert r3b.status_code == 200
+        assert r3b.get_json().get('ya_iniciada') is True
+
+        # 5) mayerlin termina disp · pase de testigo a camilo (elab)
+        r4 = cs_may.post(f'/api/planta/tablero-kanban/{pid}/etapa/dispensacion/terminar',
+                         json={}, headers=csrf_headers())
+        assert r4.status_code == 200
+        d4 = r4.get_json()
+        assert d4.get('etapa_fin_at')
+        # Pase de testigo: si push_notif funciona, viene info
+        pase = d4.get('pase_testigo')
+        if pase:
+            assert pase.get('rol_siguiente') == 'elaboracion'
+            assert pase.get('usuario_notificado') == 'camilo'
+
+        # 6) Ahora camilo SÍ puede iniciar elaboración
+        r5 = cs_camilo.post(f'/api/planta/tablero-kanban/{pid}/etapa/elaboracion/iniciar',
+                             json={}, headers=csrf_headers())
+        assert r5.status_code == 200, f'BUG: camilo no pudo iniciar elab · {r5.status_code}'
+
+        # 7) Tablero refleja: disp.estado_etapa=terminada, elab.estado_etapa=en_curso
+        cs_admin = _login(app, 'sebastian')
+        r6 = cs_admin.get('/api/planta/tablero-kanban?fecha=2026-05-22')
+        d6 = r6.get_json()
+        disp = next(t for t in d6['columnas']['dispensacion']['tarjetas']
+                     if t['produccion_id'] == pid)
+        elab = next(t for t in d6['columnas']['elaboracion']['tarjetas']
+                     if t['produccion_id'] == pid)
+        assert disp['estado_etapa'] == 'terminada'
+        assert elab['estado_etapa'] == 'en_curso'
+
+        # 8) admin puede mutar cualquier etapa
+        r7 = cs_admin.post(f'/api/planta/tablero-kanban/{pid}/etapa/elaboracion/terminar',
+                            json={}, headers=csrf_headers())
+        assert r7.status_code == 200
+    finally:
+        _exec("DELETE FROM notificaciones_app WHERE link='/planta/kanban'")
+        _exec("DELETE FROM produccion_programada WHERE producto='TEST_GP_ETAPA'")
+
+
 def test_golden_kanban_pagina_html_se_sirve(app, db_clean):
     """Sebastián 19-may-2026 · pieza 2 Kanban · página HTML standalone.
 
