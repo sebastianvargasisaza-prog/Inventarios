@@ -417,6 +417,27 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
   </div>
 </div>
 
+<!-- Modal UNIFICAR MPs DUPLICADAS · Sebastián 20-may-2026 -->
+<div id="modal-unif-mp" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.78);z-index:9998;display:none;align-items:center;justify-content:center;">
+  <div style="background:white;border-radius:16px;padding:0;max-width:1100px;width:96%;max-height:92vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.5);">
+    <div style="background:#be185d;color:white;padding:18px 22px;border-radius:16px 16px 0 0;display:flex;justify-content:space-between;align-items:center;">
+      <h2 style="color:white;margin:0;font-size:1.2em;">&#129529; Unificar MPs duplicadas</h2>
+      <button onclick="cerrarUnificarMPs()" style="background:none;border:none;font-size:1.5em;cursor:pointer;color:white;padding:0 4px;line-height:1;" title="Cerrar">&#10005;</button>
+    </div>
+    <div style="padding:22px;">
+      <div style="background:#fef2f2;border:1px solid #fecaca;color:#991b1b;border-radius:8px;padding:12px;margin-bottom:14px;font-size:12px">
+        <b>&#9888; Acción admin · transaccional.</b> Detecta MPs que tienen el mismo nombre/INCI pero código distinto (ej: 'purisil' con 2 códigos). Al unificar, TODAS las referencias (movimientos, fórmulas, SOLs, OCs, conteos, EBR, etc.) se reescriben al código canónico y los demás se desactivan (NO se borran · auditoría). <b>Hacer dry-run primero</b> para revisar impacto.
+      </div>
+      <div id="umpd-content" style="font-size:13px;color:#475569;text-align:center;padding:24px">
+        <button onclick="cargarDuplicadosMP()" style="background:#be185d;color:#fff;padding:10px 22px;font-size:14px;font-weight:700">&#x1F50D; Detectar duplicados</button>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:14px;justify-content:flex-end">
+        <button onclick="cerrarUnificarMPs()" style="background:#6c757d;padding:8px 16px;">Cerrar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Modal ELIMINAR LOTE (a nivel lote, motivo obligatorio) -->
 <div id="modal-eliminar-lote" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.78);z-index:9998;display:none;align-items:center;justify-content:center;">
   <div style="background:white;border-radius:16px;padding:0;max-width:520px;width:96%;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.5);">
@@ -645,7 +666,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px;">
       <input type="text" id="stock-search" placeholder="MP, INCI, proveedor..." oninput="filterStock()" style="width:200px;margin-top:0;">
       <input type="text" id="stock-search-lote" placeholder="&#127991; Solo por lote" oninput="filterStock()" style="width:170px;margin-top:0;border:2px solid #1e63a8;background:#f0f8ff;">
-      <div style="display:flex;gap:10px;flex-wrap:wrap;"><button onclick="loadStock()">&#8635; Actualizar</button><button onclick="exportarExcelStock()" style="background:#217346;">&#128196; Descargar Excel</button><button onclick="abrirLimpiezaProveedores()" style="background:#7c3aed;" title="Detecta proveedores duplicados por typo y los unifica">&#129529; Limpiar proveedores</button><button onclick="abrirRevisarMinimos()" style="background:#0e7490;" title="Audita stock minimo de cada MP vs consumo proyectado · evita alertas falsas">&#128202; Revisar m&iacute;nimos</button></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;"><button onclick="loadStock()">&#8635; Actualizar</button><button onclick="exportarExcelStock()" style="background:#217346;">&#128196; Descargar Excel</button><button onclick="abrirLimpiezaProveedores()" style="background:#7c3aed;" title="Detecta proveedores duplicados por typo y los unifica">&#129529; Limpiar proveedores</button><button onclick="abrirUnificarMPs()" style="background:#be185d;" title="Detecta MPs con dos códigos (purisil, etc) y unifica en uno · admin">&#129529; Unificar MPs</button><button onclick="abrirRevisarMinimos()" style="background:#0e7490;" title="Audita stock minimo de cada MP vs consumo proyectado · evita alertas falsas">&#128202; Revisar m&iacute;nimos</button></div>
       <span id="stock-count" style="color:#888;font-size:0.88em;"></span>
     </div>
     <!-- Sprint Bodega MP PRO · 20-may-2026 fix #6: headers clickeables ordenan -->
@@ -2353,6 +2374,110 @@ async function aplicarRevisarMinimos(){
     btn.disabled = false; btn.innerHTML='&#x1F4A5; Aplicar recálculo';
     alert('Error de red: '+e.message);
   }
+}
+
+// Sprint Inventario MP · 20-may-2026 · Unificar MPs duplicadas (purisil, etc).
+// Detecta MPs con nombre/INCI normalizados iguales pero codigo_mp distintos.
+function abrirUnificarMPs(){
+  document.getElementById('modal-unif-mp').style.display='flex';
+  // Reset contenido para que sea fresh cada vez
+  document.getElementById('umpd-content').innerHTML =
+    '<button onclick="cargarDuplicadosMP()" style="background:#be185d;color:#fff;padding:10px 22px;font-size:14px;font-weight:700">&#x1F50D; Detectar duplicados</button>';
+}
+function cerrarUnificarMPs(){document.getElementById('modal-unif-mp').style.display='none';}
+async function cargarDuplicadosMP(){
+  var box=document.getElementById('umpd-content');
+  box.innerHTML='<div style="color:#94a3b8;padding:14px">Detectando grupos... (puede tardar 5-10s con 400 MPs)</div>';
+  try{
+    var r=await fetch('/api/maestro-mps/duplicados-deteccion');
+    if(r.status===403){ box.innerHTML='<div style="color:#dc2626;padding:14px">Solo admins · contactá a Sebastián o Alejandro.</div>'; return; }
+    var d=await r.json();
+    if(!r.ok){ box.innerHTML='<div style="color:#dc2626;padding:14px">Error: '+_escHTML(d.error||r.status)+'</div>'; return; }
+    var grupos=d.grupos||[];
+    if(!grupos.length){
+      box.innerHTML='<div style="color:#16a34a;padding:24px;text-align:center;font-size:14px;font-weight:600">&#x2705; Sin duplicados detectados · catálogo está normalizado.</div>';
+      return;
+    }
+    var html='<div style="font-size:12px;color:#64748b;margin-bottom:10px"><b>'+grupos.length+'</b> grupos · <b>'+(d.total_mps_afectadas||0)+'</b> MPs duplicadas. Elegí el código canónico (el que va a quedar) en cada grupo. Los demás se desactivan + sus referencias se redirigen al canónico.</div>';
+    html += '<div style="max-height:55vh;overflow-y:auto;border:1px solid #e2e8f0;border-radius:6px">';
+    grupos.forEach(function(g, gIdx){
+      var gid='gump-'+gIdx;
+      html += '<div style="border-bottom:1px solid #e2e8f0;padding:10px 14px;background:#fafafa">';
+      html += '<div style="font-size:11px;color:#7c2d12;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px"><b>Grupo '+(gIdx+1)+'</b> · match por <code>'+_escHTML(g.tipo_match)+'</code> · "'+_escHTML(g.nombre_normalizado)+'"</div>';
+      html += '<table style="width:100%;font-size:12px;border-collapse:collapse"><thead><tr style="background:#fff;color:#475569"><th style="padding:4px 6px;text-align:center">Canónico</th><th style="padding:4px 6px;text-align:left">Código</th><th style="padding:4px 6px;text-align:left">Nombre</th><th style="padding:4px 6px;text-align:left">INCI</th><th style="padding:4px 6px;text-align:left">Proveedor</th><th style="padding:4px 6px;text-align:right">Stock g</th><th style="padding:4px 6px;text-align:right">Movs</th><th style="padding:4px 6px;text-align:right">Lotes</th><th style="padding:4px 6px;text-align:right">Fórm</th><th style="padding:4px 6px;text-align:right">SOLs</th><th style="padding:4px 6px;text-align:center">Activo</th></tr></thead><tbody>';
+      g.variantes.forEach(function(v, idx){
+        // default canonico = primero (que es el más movido)
+        html += '<tr style="border-top:1px solid #f1f5f9">';
+        html += '<td style="text-align:center;padding:3px"><input type="radio" name="'+gid+'-canon" value="'+_escHTML(v.codigo_mp)+'"'+(idx===0?' checked':'')+'></td>';
+        html += '<td style="font-family:monospace;padding:3px 6px">'+_escHTML(v.codigo_mp)+'</td>';
+        html += '<td style="padding:3px 6px;font-weight:600">'+_escHTML(v.nombre_comercial)+'</td>';
+        html += '<td style="padding:3px 6px;color:#475569">'+_escHTML(v.nombre_inci)+'</td>';
+        html += '<td style="padding:3px 6px;color:#64748b">'+_escHTML(v.proveedor)+'</td>';
+        html += '<td style="text-align:right;padding:3px 6px;font-family:monospace">'+v.stock_actual_g.toLocaleString('es-CO')+'</td>';
+        html += '<td style="text-align:right;padding:3px 6px">'+v.n_movimientos+'</td>';
+        html += '<td style="text-align:right;padding:3px 6px">'+v.n_lotes+'</td>';
+        html += '<td style="text-align:right;padding:3px 6px">'+v.n_formulas+'</td>';
+        html += '<td style="text-align:right;padding:3px 6px">'+v.n_sols+'</td>';
+        html += '<td style="text-align:center;padding:3px">'+(v.activo?'&#x2705;':'<span style="color:#dc2626">&#x274C;</span>')+'</td>';
+        html += '</tr>';
+      });
+      html += '</tbody></table>';
+      html += '<div style="display:flex;gap:6px;margin-top:6px;justify-content:flex-end">';
+      html += '<button onclick="dryRunUnificarMP('+gIdx+')" style="background:#0e7490;color:#fff;padding:5px 12px;font-size:12px">Dry-run (preview)</button>';
+      html += '<button onclick="aplicarUnificarMP('+gIdx+')" style="background:#be185d;color:#fff;padding:5px 12px;font-size:12px">&#x1F4A5; Unificar grupo</button>';
+      html += '<span id="ump-msg-'+gIdx+'" style="font-size:11px;align-self:center;color:#475569"></span>';
+      html += '</div></div>';
+    });
+    html += '</div>';
+    box.innerHTML = html;
+    window._UMP_GRUPOS = grupos;
+  }catch(e){
+    box.innerHTML='<div style="color:#dc2626;padding:14px">Error red: '+_escHTML(e.message)+'</div>';
+  }
+}
+function _ump_get_canon_y_unir(gIdx){
+  var g = (window._UMP_GRUPOS||[])[gIdx];
+  if(!g) return null;
+  var inputs = document.getElementsByName('gump-'+gIdx+'-canon');
+  var canon = '';
+  for(var i=0;i<inputs.length;i++){ if(inputs[i].checked){ canon = inputs[i].value; break; } }
+  if(!canon){ alert('Elegí un canónico para el grupo'); return null; }
+  var aUnir = g.variantes.map(function(v){return v.codigo_mp;}).filter(function(c){return c!==canon;});
+  return {canon: canon, a_unir: aUnir};
+}
+async function dryRunUnificarMP(gIdx){
+  var sel = _ump_get_canon_y_unir(gIdx); if(!sel) return;
+  var msg = document.getElementById('ump-msg-'+gIdx);
+  msg.textContent = 'Calculando preview...';
+  try{
+    var r = await fetch('/api/maestro-mps/unificar', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({canonico: sel.canon, codigos_a_unir: sel.a_unir, dry_run: true}),
+    });
+    var d = await r.json();
+    if(!r.ok){ msg.innerHTML = '<span style="color:#dc2626">Error: '+_escHTML(d.error||r.status)+'</span>'; return; }
+    var plan = d.plan_updates_por_tabla || {};
+    var lineas = Object.keys(plan).map(function(t){return t+': '+plan[t];}).join(' · ');
+    msg.innerHTML = '<span style="color:#0e7490;font-weight:700">'+(d.total_filas_a_actualizar||0)+' filas (' + lineas + ')</span>';
+  }catch(e){ msg.innerHTML = '<span style="color:#dc2626">Error red: '+_escHTML(e.message)+'</span>'; }
+}
+async function aplicarUnificarMP(gIdx){
+  var sel = _ump_get_canon_y_unir(gIdx); if(!sel) return;
+  var token = prompt('Esto reescribe TODAS las referencias al canónico ' + sel.canon + ' y desactiva ' + sel.a_unir.length + ' códigos. ESCRIBÍ EXACTO: UNIFICAR_MP_2026');
+  if(token !== 'UNIFICAR_MP_2026'){ alert('Token incorrecto, cancelado.'); return; }
+  var msg = document.getElementById('ump-msg-'+gIdx);
+  msg.textContent = 'Aplicando...';
+  try{
+    var r = await fetch('/api/maestro-mps/unificar', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({canonico: sel.canon, codigos_a_unir: sel.a_unir, dry_run: false, token: token}),
+    });
+    var d = await r.json();
+    if(!r.ok){ msg.innerHTML = '<span style="color:#dc2626">Error: '+_escHTML(d.error||r.status)+'</span>'; return; }
+    msg.innerHTML = '<span style="color:#16a34a;font-weight:700">&#x2705; '+(d.mensaje||'Unificado')+'</span>';
+    // Refrescar inventario después de unificar
+    if(typeof loadStock==='function') setTimeout(loadStock, 800);
+  }catch(e){ msg.innerHTML = '<span style="color:#dc2626">Error red: '+_escHTML(e.message)+'</span>'; }
 }
 
 async function abrirLimpiezaProveedores(){

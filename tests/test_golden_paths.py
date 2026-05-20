@@ -7310,6 +7310,118 @@ def test_golden_portal_b2b_flujo_completo(app, db_clean):
     _exec("DELETE FROM portal_clientes_credenciales WHERE email LIKE 'test_portal_%'")
 
 
+def test_golden_unificar_mps_duplicados_flujo(app, db_clean):
+    """Sprint Inventario MP · 20-may-2026.
+
+    Caso real: 'purisil' (o equivalente) con 2 códigos distintos.
+    Verifica:
+    - Detector encuentra el grupo
+    - dry_run cuenta filas sin tocar
+    - apply con token actualiza movimientos/formula_items/sol_items y
+      desactiva el código viejo
+    - audit_log registra UNIFICAR_MP_DUPLICADOS
+    - No-admin recibe 403
+    """
+    _exec("DELETE FROM movimientos WHERE material_id LIKE 'TEST_UMP_%'")
+    _exec("DELETE FROM formula_items WHERE material_id LIKE 'TEST_UMP_%'")
+    _exec("DELETE FROM solicitudes_compra_items WHERE codigo_mp LIKE 'TEST_UMP_%'")
+    _exec("DELETE FROM maestro_mps WHERE codigo_mp LIKE 'TEST_UMP_%'")
+
+    # Crear 2 MPs duplicadas (mismo nombre / INCI normalizado)
+    _exec("""INSERT INTO maestro_mps (codigo_mp, nombre_comercial, nombre_inci, tipo, activo)
+             VALUES ('TEST_UMP_001', 'Purisil 100', 'Silica', 'Activo', 1)""")
+    _exec("""INSERT INTO maestro_mps (codigo_mp, nombre_comercial, nombre_inci, tipo, activo)
+             VALUES ('TEST_UMP_002', 'PURISIL 100', 'Silica', 'Activo', 1)""")
+
+    # Movimientos en ambos
+    _exec("""INSERT INTO movimientos
+             (material_id, material_nombre, cantidad, tipo, lote, fecha, operador)
+             VALUES ('TEST_UMP_001','Purisil 100',500,'Entrada','L1', datetime('now'),'test')""")
+    _exec("""INSERT INTO movimientos
+             (material_id, material_nombre, cantidad, tipo, lote, fecha, operador)
+             VALUES ('TEST_UMP_002','PURISIL 100',300,'Entrada','L2', datetime('now'),'test')""")
+
+    # Sin sesión
+    with app.test_client() as cs_anon:
+        r0 = cs_anon.get('/api/maestro-mps/duplicados-deteccion')
+        assert r0.status_code == 401
+
+    # No-admin
+    cs_user = _login(app, 'mayerlin')
+    r_noadm = cs_user.get('/api/maestro-mps/duplicados-deteccion')
+    assert r_noadm.status_code == 403
+
+    cs = _login(app, 'sebastian')
+
+    # 1) Detección
+    r1 = cs.get('/api/maestro-mps/duplicados-deteccion')
+    assert r1.status_code == 200, f'BUG: {r1.status_code} {r1.data[:200]}'
+    d1 = r1.get_json()
+    codigos_en_grupos = set()
+    for g in d1['grupos']:
+        for v in g['variantes']:
+            codigos_en_grupos.add(v['codigo_mp'])
+    assert 'TEST_UMP_001' in codigos_en_grupos
+    assert 'TEST_UMP_002' in codigos_en_grupos
+
+    # 2) Dry-run · cuenta sin tocar
+    r2 = cs.post('/api/maestro-mps/unificar', json={
+        'canonico': 'TEST_UMP_001',
+        'codigos_a_unir': ['TEST_UMP_002'],
+        'dry_run': True,
+    }, headers=csrf_headers())
+    assert r2.status_code == 200
+    d2 = r2.get_json()
+    assert d2['dry_run'] is True
+    assert d2['plan_updates_por_tabla'].get('movimientos') == 1
+    # Verificar que NADA se actualizó aún
+    pre_check = _query(
+        "SELECT material_id FROM movimientos WHERE material_id='TEST_UMP_002'")
+    assert len(pre_check) == 1, 'dry_run NO debe modificar'
+
+    # 3) Apply sin token → 403
+    r3 = cs.post('/api/maestro-mps/unificar', json={
+        'canonico': 'TEST_UMP_001',
+        'codigos_a_unir': ['TEST_UMP_002'],
+        'dry_run': False,
+    }, headers=csrf_headers())
+    assert r3.status_code == 403
+
+    # 4) Apply con token válido
+    r4 = cs.post('/api/maestro-mps/unificar', json={
+        'canonico': 'TEST_UMP_001',
+        'codigos_a_unir': ['TEST_UMP_002'],
+        'dry_run': False,
+        'token': 'UNIFICAR_MP_2026',
+    }, headers=csrf_headers())
+    assert r4.status_code == 200, f'BUG: {r4.status_code} {r4.data[:200]}'
+    d4 = r4.get_json()
+    assert d4['ok'] is True
+    # Movimientos del 002 ahora son del 001
+    post_movs = _query(
+        "SELECT material_id FROM movimientos WHERE material_id='TEST_UMP_002'")
+    assert len(post_movs) == 0, 'BUG: movimientos NO se redirigieron'
+    post_canon = _query(
+        "SELECT COUNT(*) FROM movimientos WHERE material_id='TEST_UMP_001'")
+    assert post_canon[0][0] == 2, f'BUG: canónico debería tener 2 movs, tiene {post_canon[0][0]}'
+    # 002 desactivado en maestro
+    post_002 = _query(
+        "SELECT activo FROM maestro_mps WHERE codigo_mp='TEST_UMP_002'")
+    assert post_002[0][0] == 0, 'BUG: 002 NO se desactivó'
+    # 001 sigue activo
+    post_001 = _query(
+        "SELECT activo FROM maestro_mps WHERE codigo_mp='TEST_UMP_001'")
+    assert post_001[0][0] == 1
+    # audit_log
+    audit_rows = _query(
+        "SELECT COUNT(*) FROM audit_log WHERE accion='UNIFICAR_MP_DUPLICADOS'")
+    assert audit_rows[0][0] >= 1, 'BUG: falta audit_log'
+
+    # Cleanup
+    _exec("DELETE FROM movimientos WHERE material_id LIKE 'TEST_UMP_%'")
+    _exec("DELETE FROM maestro_mps WHERE codigo_mp LIKE 'TEST_UMP_%'")
+
+
 def test_golden_lote_movimientos_filtro_server_side(app, db_clean):
     """Sprint Bodega MP PRO · 20-may-2026 fix #1+#14.
 

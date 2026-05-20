@@ -1873,6 +1873,275 @@ def get_lotes():
             )
     return jsonify(response)
 
+# ────────────────────────────────────────────────────────────────────
+# Maestro MPs · Detector + Unificador de duplicados · Sebastián
+# 20-may-2026. Caso real: 'purisil' tiene 2 codigos distintos. Normaliza
+# nombre + INCI, agrupa, permite unificar con audit_log completo.
+# ────────────────────────────────────────────────────────────────────
+
+def _normalizar_nombre_mp(s):
+    """Normaliza nombre MP para detección de duplicados.
+    - lowercase, strip
+    - quitar tildes
+    - quitar puntos, comas, paréntesis, guiones, slashes
+    - colapsar espacios múltiples
+    """
+    import re, unicodedata
+    if not s:
+        return ''
+    n = str(s).lower().strip()
+    n = unicodedata.normalize('NFD', n)
+    n = ''.join(c for c in n if unicodedata.category(c) != 'Mn')
+    n = re.sub(r'[.,;:()\[\]/\\\-_*]', ' ', n)
+    n = re.sub(r'\s+', ' ', n).strip()
+    return n
+
+
+@bp.route('/api/maestro-mps/duplicados-deteccion', methods=['GET'])
+def maestro_mps_duplicados_deteccion():
+    """Detecta MPs duplicadas (nombre_comercial o nombre_inci similares
+    con codigos distintos). Solo lectura · admin.
+
+    Devuelve grupos con ≥ 2 codigos que normalizan al mismo nombre. Para
+    cada variante incluye: codigo_mp, nombre, INCI, proveedor, activo,
+    stock_actual_g (suma de movimientos), n_movimientos, n_lotes,
+    n_formulas (usado en formula_items), n_sols (en SOLs).
+
+    Usa esto para identificar duplicados antes de unificar con
+    /api/maestro-mps/unificar.
+    """
+    u, err, code = _require_session()
+    if err:
+        return err, code
+    if u not in ADMIN_USERS:
+        return jsonify({'error': 'solo admin'}), 403
+
+    conn = get_db(); c = conn.cursor()
+    mps = c.execute(
+        """SELECT codigo_mp, nombre_comercial, nombre_inci, proveedor,
+                  COALESCE(activo,1) as activo
+           FROM maestro_mps
+           ORDER BY nombre_comercial ASC""",
+    ).fetchall()
+    grupos = {}
+    for r in mps:
+        cod, nom, inci, prov, activo = r
+        key_nom = _normalizar_nombre_mp(nom)
+        key_inci = _normalizar_nombre_mp(inci)
+        # Clave compuesta: si ambos coinciden cuentan como mismo grupo.
+        # Si solo coincide nombre o solo INCI, también es grupo
+        # candidato (puede ser ambiguo, el usuario decidirá).
+        keys = []
+        if key_nom: keys.append(('nombre', key_nom))
+        if key_inci and key_inci != key_nom: keys.append(('inci', key_inci))
+        for ktipo, k in keys:
+            grupos.setdefault((ktipo, k), []).append(
+                {'codigo_mp': cod, 'nombre_comercial': nom or '',
+                 'nombre_inci': inci or '', 'proveedor': prov or '',
+                 'activo': bool(activo)})
+
+    # Filtrar solo grupos con > 1 codigo distinto
+    duplicados = []
+    for (ktipo, k), variantes in grupos.items():
+        codigos = {v['codigo_mp'] for v in variantes}
+        if len(codigos) < 2:
+            continue
+        # Para cada variante, traer stats: stock, movs, lotes, formulas, sols
+        for v in variantes:
+            stock_row = c.execute(
+                "SELECT COALESCE(SUM(CASE WHEN tipo='Entrada' THEN cantidad "
+                "ELSE -cantidad END),0), COUNT(*), COUNT(DISTINCT COALESCE(lote,'')) "
+                "FROM movimientos WHERE material_id = ?",
+                (v['codigo_mp'],),
+            ).fetchone()
+            v['stock_actual_g'] = round(float(stock_row[0] or 0), 2)
+            v['n_movimientos'] = int(stock_row[1] or 0)
+            v['n_lotes'] = int(stock_row[2] or 0)
+            try:
+                n_form = c.execute(
+                    "SELECT COUNT(*) FROM formula_items WHERE material_id = ?",
+                    (v['codigo_mp'],)).fetchone()[0]
+            except Exception:
+                n_form = 0
+            v['n_formulas'] = int(n_form or 0)
+            try:
+                n_sol = c.execute(
+                    "SELECT COUNT(*) FROM solicitudes_compra_items WHERE codigo_mp = ?",
+                    (v['codigo_mp'],)).fetchone()[0]
+            except Exception:
+                n_sol = 0
+            v['n_sols'] = int(n_sol or 0)
+        duplicados.append({
+            'tipo_match': ktipo,
+            'nombre_normalizado': k,
+            'variantes': sorted(variantes,
+                                key=lambda x: (-x['n_movimientos'],
+                                               -x['stock_actual_g'])),
+        })
+
+    # Ordenar grupos por cantidad de impacto
+    duplicados.sort(
+        key=lambda g: -sum(v['n_movimientos'] for v in g['variantes']))
+    return jsonify({
+        'grupos': duplicados,
+        'total_grupos': len(duplicados),
+        'total_mps_afectadas': sum(len(g['variantes']) for g in duplicados),
+    })
+
+
+# Tablas que referencian material_id / codigo_mp · USADAS por el
+# unificador para reescribir referencias del codigo_origen al canonico.
+# Tupla: (tabla, columna).
+_TABLAS_REF_MP = [
+    ('movimientos', 'material_id'),
+    ('formula_items', 'material_id'),
+    ('solicitudes_compra_items', 'codigo_mp'),
+    ('ordenes_compra_items', 'material_id'),
+    ('mp_lead_time_config', 'material_id'),
+    ('mp_formula_bridge', 'material_id'),
+    ('precios_mp_historico', 'material_id'),
+    ('conteo_items', 'material_id'),
+    ('conteo_ciclico_calendario', 'material_id'),
+    ('conteo_ciclico_config', 'material_id'),
+    ('ebr_pesajes', 'material_id'),
+    ('especificaciones_mp', 'material_id'),
+    ('alertas', 'codigo_mp'),
+]
+
+
+@bp.route('/api/maestro-mps/unificar', methods=['POST'])
+def maestro_mps_unificar():
+    """Unifica códigos duplicados de MP en un único canónico.
+
+    Body: { canonico: str, codigos_a_unir: [str, ...],
+            dry_run: bool (default true), token: str }
+
+    Por defecto dry_run=true · cuenta cuántas filas se actualizarían en
+    cada tabla sin tocar nada. Si dry_run=false, requiere token válido
+    'UNIFICAR_MP_2026' y aplica TODO en transacción:
+
+    1. UPDATE tabla.col = canonico WHERE col IN (codigos_a_unir) en cada
+       una de las _TABLAS_REF_MP.
+    2. UPDATE maestro_mps SET activo=0 WHERE codigo_mp IN (codigos_a_unir)
+       AND codigo_mp != canonico · NO los borra (auditoría histórica).
+    3. audit_log por cada tabla afectada + log master MERGE.
+    """
+    u, err, code = _require_session()
+    if err:
+        return err, code
+    if u not in ADMIN_USERS:
+        return jsonify({'error': 'solo admin'}), 403
+
+    body = request.get_json(silent=True) or {}
+    canonico = (body.get('canonico') or '').strip()
+    a_unir_raw = body.get('codigos_a_unir') or []
+    if not isinstance(a_unir_raw, list):
+        return jsonify({'error': 'codigos_a_unir debe ser lista'}), 400
+    a_unir = [str(x).strip() for x in a_unir_raw if str(x).strip()]
+    if not canonico:
+        return jsonify({'error': 'canonico requerido'}), 400
+    if not a_unir:
+        return jsonify({'error': 'codigos_a_unir vacía'}), 400
+    if canonico in a_unir:
+        a_unir = [x for x in a_unir if x != canonico]
+    if not a_unir:
+        return jsonify({'error': 'codigos_a_unir solo contiene al canonico'}), 400
+    dry_run = bool(body.get('dry_run', True))
+    token = (body.get('token') or '').strip()
+    if not dry_run and token != 'UNIFICAR_MP_2026':
+        return jsonify({
+            'error': 'token inválido para apply',
+            'hint': 'usa token=UNIFICAR_MP_2026 cuando dry_run=false',
+        }), 403
+
+    conn = get_db(); c = conn.cursor()
+    # Validar canonico existe y está activo
+    canon_row = c.execute(
+        "SELECT codigo_mp, nombre_comercial, COALESCE(activo,1) "
+        "FROM maestro_mps WHERE codigo_mp = ?", (canonico,)).fetchone()
+    if not canon_row:
+        return jsonify({'error': f'canonico {canonico} no existe en maestro_mps'}), 404
+    # Validar que cada codigo_a_unir existe
+    a_unir_existentes = []
+    for cod in a_unir:
+        r = c.execute(
+            "SELECT codigo_mp FROM maestro_mps WHERE codigo_mp = ?",
+            (cod,)).fetchone()
+        if r:
+            a_unir_existentes.append(cod)
+    if not a_unir_existentes:
+        return jsonify({'error': 'ningún codigo_a_unir existe en maestro_mps'}), 404
+
+    placeholders = ','.join('?' * len(a_unir_existentes))
+    plan = {}  # tabla → cantidad de filas que serían actualizadas
+
+    if dry_run:
+        # Contar (no UPDATE)
+        for tabla, col in _TABLAS_REF_MP:
+            try:
+                n = c.execute(
+                    f"SELECT COUNT(*) FROM {tabla} WHERE {col} IN ({placeholders})",
+                    a_unir_existentes,
+                ).fetchone()[0]
+                plan[tabla] = int(n or 0)
+            except Exception as _e:
+                plan[tabla] = f'ERR: {str(_e)[:80]}'
+        return jsonify({
+            'dry_run': True,
+            'canonico': canonico,
+            'codigos_a_unir': a_unir_existentes,
+            'plan_updates_por_tabla': plan,
+            'total_filas_a_actualizar': sum(
+                v for v in plan.values() if isinstance(v, int)),
+            'mps_a_desactivar': len(a_unir_existentes),
+        })
+
+    # APPLY · transacción
+    afectados = {}
+    try:
+        for tabla, col in _TABLAS_REF_MP:
+            try:
+                cur = c.execute(
+                    f"UPDATE {tabla} SET {col} = ? WHERE {col} IN ({placeholders})",
+                    [canonico] + a_unir_existentes,
+                )
+                afectados[tabla] = cur.rowcount or 0
+            except Exception as _e:
+                __import__('logging').getLogger('inventario').warning(
+                    'unificar fallo tabla %s: %s', tabla, _e)
+                afectados[tabla] = f'ERR: {str(_e)[:80]}'
+        # Desactivar (NO borrar) los codigos viejos
+        cur2 = c.execute(
+            f"UPDATE maestro_mps SET activo = 0 "
+            f"WHERE codigo_mp IN ({placeholders})",
+            a_unir_existentes,
+        )
+        afectados['maestro_mps_desactivados'] = cur2.rowcount or 0
+        # audit_log master
+        from audit_helpers import audit_log
+        audit_log(c, usuario=u, accion='UNIFICAR_MP_DUPLICADOS',
+                  tabla='maestro_mps', registro_id=canonico,
+                  despues={'canonico': canonico,
+                           'codigos_unidos': a_unir_existentes,
+                           'filas_actualizadas': afectados})
+        conn.commit()
+    except Exception as _e:
+        try: conn.rollback()
+        except Exception: pass
+        return jsonify({
+            'error': f'transacción falló: {_e}',
+            'afectados_parcial': afectados,
+        }), 500
+
+    return jsonify({
+        'ok': True,
+        'canonico': canonico,
+        'codigos_unidos': a_unir_existentes,
+        'filas_actualizadas': afectados,
+        'mensaje': f'{len(a_unir_existentes)} MPs unificadas en {canonico}',
+    })
+
+
 @bp.route('/api/lotes/<material_id>/<path:lote>/movimientos', methods=['GET'])
 def get_lote_movimientos(material_id, lote):
     """Sprint Bodega MP PRO · 20-may-2026 · Sebastián.

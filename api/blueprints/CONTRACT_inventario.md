@@ -85,6 +85,18 @@
   todos los movimientos y filtraba en JS).
 - `GET  /api/dashboard/insights` · widgets Dashboard PRO #2 (Planta AHORA,
   mes actual, stats extra) en una sola llamada
+- `GET  /api/maestro-mps/duplicados-deteccion` · admin · detecta MPs con
+  nombre_comercial/nombre_inci normalizados iguales pero codigo_mp distinto.
+  Retorna grupos + stats por variante (stock, movs, lotes, fórmulas, sols)
+- `POST /api/maestro-mps/unificar` · admin · unifica códigos duplicados en
+  uno canónico. Body: `{canonico, codigos_a_unir, dry_run, token}`. dry_run
+  default true (cuenta filas sin tocar). dry_run=false requiere token
+  `UNIFICAR_MP_2026`. Transaccional: UPDATEa 13 tablas que referencian
+  material_id/codigo_mp (movimientos, formula_items, solicitudes_compra_items,
+  ordenes_compra_items, mp_lead_time_config, mp_formula_bridge,
+  precios_mp_historico, conteo_items, conteo_ciclico_calendario,
+  conteo_ciclico_config, ebr_pesajes, especificaciones_mp, alertas) y
+  desactiva (activo=0) los codigos viejos. audit_log UNIFICAR_MP_DUPLICADOS.
 - `POST /api/movimientos` · INSERT recepción/salida
 - `GET  /api/conteo/estanterias` · agrupación por estantería
 - `GET  /api/conteo/materiales` · MPs en estantería
