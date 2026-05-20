@@ -9972,10 +9972,11 @@ async function ckMarcar(itemId, estado){
       ocupHTML = '<div style="margin-top:12px"><b>Producciones asignadas / en curso:</b>' +
         a.ocupada_por.map(function(o){
           var ops = [];
-          if(o.operario_dispensacion)      ops.push('Disp: '+o.operario_dispensacion);
-          if(o.operario_elaboracion)       ops.push('Elab: '+o.operario_elaboracion);
-          if(o.operario_envasado)          ops.push('Env: '+o.operario_envasado);
-          if(o.operario_acondicionamiento) ops.push('Acon: '+o.operario_acondicionamiento);
+          // BUG-16 fix · 19-may-2026: escapar nombres operarios (vienen de DB)
+          if(o.operario_dispensacion)      ops.push('Disp: '+_escHTML(o.operario_dispensacion));
+          if(o.operario_elaboracion)       ops.push('Elab: '+_escHTML(o.operario_elaboracion));
+          if(o.operario_envasado)          ops.push('Env: '+_escHTML(o.operario_envasado));
+          if(o.operario_acondicionamiento) ops.push('Acon: '+_escHTML(o.operario_acondicionamiento));
           var liveBadge = '';
           if(o.en_curso){
             liveBadge = '<span style="background:#dc2626;color:#fff;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700;letter-spacing:.5px;margin-left:6px;text-transform:uppercase">EN CURSO ⏱'+_fmtMin(o.minutos_corridos)+'</span>';
@@ -9992,7 +9993,8 @@ async function ckMarcar(itemId, estado){
             btns = '<button onclick="cmTerminarProduccion('+o.produccion_id+')" style="background:#dc2626;color:#fff;border:none;padding:6px 12px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">⏹ Terminar producción</button>';
           }
           return '<div style="background:#f8fafc;border-radius:6px;padding:10px 14px;margin-top:8px;border-left:3px solid '+(o.en_curso?'#ca8a04':o.fin_real_at?'#16a34a':'#94a3b8')+'">' +
-            '<div><b>'+o.producto+'</b> · '+o.lotes+' lote(s) · '+(o.kg||0)+' kg' + liveBadge + '</div>' +
+            // BUG-16 fix · 19-may-2026: escapar producto (viene de DB)
+            '<div><b>'+_escHTML(o.producto)+'</b> · '+(parseInt(o.lotes,10)||0)+' lote(s) · '+(parseFloat(o.kg)||0)+' kg' + liveBadge + '</div>' +
             (ops.length?'<div style="font-size:11px;color:#64748b;margin-top:4px">'+ops.join(' · ')+'</div>':'') +
             (btns?'<div style="margin-top:8px">'+btns+'</div>':'') +
             '</div>';
@@ -10002,7 +10004,8 @@ async function ckMarcar(itemId, estado){
     }
     box.innerHTML =
       '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">'+
-        '<h3 style="margin:0;color:#1a4a7a">🏭 '+a.nombre+' <span style="font-size:12px;color:#64748b;font-weight:500">('+a.codigo+')</span></h3>'+
+        // BUG-16 fix · 19-may-2026: escapar nombre/código del área
+        '<h3 style="margin:0;color:#1a4a7a">🏭 '+_escHTML(a.nombre)+' <span style="font-size:12px;color:#64748b;font-weight:500">('+_escHTML(a.codigo)+')</span></h3>'+
         '<div style="display:flex;gap:6px;flex-wrap:wrap">'+
           ['libre','sucia','limpiando','ocupada'].map(function(est){
             var current = a.estado===est;
@@ -10039,8 +10042,9 @@ async function ckMarcar(itemId, estado){
           var icon = {produccion:'🏭',dispensacion:'⚖',envasado:'📦',acondicionamiento:'🎁',conteo_ciclico:'📊',limpieza:'🧹',mantenimiento:'🔧',otro:'📋'}[t.tipo]||'📋';
           return '<div style="background:#fff;border-left:3px solid #ca8a04;padding:8px 10px;margin-bottom:6px;border-radius:0 6px 6px 0;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">' +
             '<div style="flex:1;min-width:140px">' +
-              '<div style="font-weight:600;color:#0f172a">'+icon+' <b>'+t.operario_nombre+'</b> · <span style="color:#64748b">'+t.tipo+'</span></div>' +
-              (t.descripcion?'<div style="font-size:11px;color:#64748b;margin-top:2px">'+t.descripcion+'</div>':'') +
+              // BUG-16 fix · 19-may-2026: escapar operario_nombre / tipo / descripcion (vienen de DB)
+              '<div style="font-weight:600;color:#0f172a">'+icon+' <b>'+_escHTML(t.operario_nombre)+'</b> · <span style="color:#64748b">'+_escHTML(t.tipo)+'</span></div>' +
+              (t.descripcion?'<div style="font-size:11px;color:#64748b;margin-top:2px">'+_escHTML(t.descripcion)+'</div>':'') +
               '<div style="font-size:11px;color:#ca8a04;font-weight:700;margin-top:3px">⏱ '+_fmtMin(t.minutos_corridos)+' transcurridos</div>' +
             '</div>' +
             '<button onclick="terminarTurno('+t.id+','+area_id+')" style="background:#dc2626;color:#fff;border:none;padding:5px 10px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">⏹ Terminar</button>' +
@@ -10054,7 +10058,8 @@ async function ckMarcar(itemId, estado){
         html += cerradas.map(function(t){
           var icon = {produccion:'🏭',dispensacion:'⚖',envasado:'📦',acondicionamiento:'🎁',conteo_ciclico:'📊',limpieza:'🧹',mantenimiento:'🔧',otro:'📋'}[t.tipo]||'📋';
           return '<div style="font-size:11px;color:#475569;padding:4px 8px;background:#f8fafc;border-radius:4px;margin-top:3px;display:flex;justify-content:space-between">' +
-            '<span>'+icon+' '+t.operario_nombre+' · '+t.tipo+'</span>' +
+            // BUG-16 fix · 19-may-2026: escapar operario_nombre + tipo
+            '<span>'+icon+' '+_escHTML(t.operario_nombre)+' · '+_escHTML(t.tipo)+'</span>' +
             '<span style="color:#64748b">⏱ '+_fmtMin(t.duracion_min)+'</span>' +
           '</div>';
         }).join('');

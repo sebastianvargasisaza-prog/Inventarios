@@ -317,17 +317,31 @@ def _integrar_pedido_b2b_al_plan(cur, pedido_id, producto, kg_b2b,
     ).fetchone()
 
     if cercano:
-        lid, lfecha, lkg = cercano[0], cercano[1], float(cercano[2] or 0)
-        nuevo_kg = round(lkg + kg_b2b, 2)
-        # origen → eos_plan: protege el lote de ser cancelado al regenerar
+        lid, lfecha = cercano[0], cercano[1]
+        # BUG-22 fix · 19-may-2026 audit Planta PERFECTA: el cálculo previo
+        # leía cantidad_kg en Python (`lkg`), sumaba kg_b2b y escribía con
+        # UPDATE SET cantidad_kg=?. Dos pedidos B2B concurrentes del mismo
+        # producto leían el mismo lkg y el último write ganaba (lost update,
+        # uno de los aportes desaparecía). Ahora el UPDATE es atómico vía
+        # `SET cantidad_kg = COALESCE(cantidad_kg,0) + ?` · cualquier orden
+        # de commits suma correctamente.
         cur.execute(
             """UPDATE produccion_programada
-               SET cantidad_kg = ?, origen = 'eos_plan',
+               SET cantidad_kg = COALESCE(cantidad_kg, 0) + ?,
+                   origen = 'eos_plan',
                    observaciones = COALESCE(observaciones,'') ||
                      ' · +' || ? || 'kg B2B ' || ? || ' (pedido #' || ? || ')'
                WHERE id = ?""",
-            (nuevo_kg, kg_b2b, cliente_nombre, pedido_id, lid),
+            (kg_b2b, kg_b2b, cliente_nombre, pedido_id, lid),
         )
+        # Releer el total real post-UPDATE para reportarlo (los concurrentes
+        # pueden haber sumado también en este intervalo · valor canónico
+        # viene de la BD, no de la copia local).
+        row_post = cur.execute(
+            "SELECT cantidad_kg FROM produccion_programada WHERE id=?",
+            (lid,),
+        ).fetchone()
+        nuevo_kg = float(row_post[0] or 0) if row_post else 0
         audit_log(cur, usuario=user, accion="B2B_SUMADO_A_LOTE",
                   tabla="produccion_programada", registro_id=lid,
                   despues={"pedido_b2b": pedido_id, "kg_sumados": kg_b2b,
@@ -4205,6 +4219,38 @@ def regenerar_canonicos():
     c = conn.cursor()
     from datetime import date as _date, timedelta as _td
 
+    # BUG-21 fix · 19-may-2026 audit Planta PERFECTA:
+    # Antes 2 admins (o doble-click) podían ejecutar regenerar_canonicos en
+    # paralelo · ambos cancelaban (idempotente, OK) y ambos insertaban
+    # generando 2× 365 lotes por producto. Ahora lock vía cron_locks (mismo
+    # patrón del multi-cron) con TTL 5 min, libera al final del request.
+    _LOCK_NAME = 'plan_regenerar_canonicos'
+    _lock_ok = False
+    try:
+        # 1ro: limpiar locks stale (>5min) por si alguien crasheó
+        c.execute(
+            "DELETE FROM cron_locks WHERE job_name = ? "
+            "AND datetime(locked_at) < datetime('now','-5 minutes')",
+            (_LOCK_NAME,),
+        )
+        # 2do: intentar tomar el lock (INSERT con UNIQUE)
+        c.execute(
+            "INSERT INTO cron_locks (job_name, locked_at, locked_by) "
+            "VALUES (?, datetime('now'), ?)",
+            (_LOCK_NAME, user),
+        )
+        _lock_ok = True
+        conn.commit()
+    except Exception:
+        # Otro request ya tiene el lock
+        try: conn.rollback()
+        except Exception: pass
+        return jsonify({
+            'error': 'Otro regenerar-canonicos ya está corriendo · esperá '
+                     'que termine (máximo 5 minutos) y reintentá.',
+            'codigo': 'lock_busy',
+        }), 409
+
     # 1) Productos con config válida
     configs = c.execute(
         """SELECT producto_nombre, kg_por_lote, ml_unidad, frecuencia_dias
@@ -4436,6 +4482,15 @@ def regenerar_canonicos():
               despues={"n_generados": n_generados,
                        "n_productos": len(configs)})
     conn.commit()
+
+    # BUG-21 fix · liberar lock antes del return (en caso de crash, el TTL
+    # de 5 min en cron_locks lo libera automáticamente).
+    if _lock_ok:
+        try:
+            c.execute("DELETE FROM cron_locks WHERE job_name = ?", (_LOCK_NAME,))
+            conn.commit()
+        except Exception:
+            pass
 
     return jsonify({
         "ok": True,

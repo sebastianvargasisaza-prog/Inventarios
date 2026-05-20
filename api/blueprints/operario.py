@@ -144,8 +144,10 @@ def mi_dia():
     # Sebastián 19-may-2026: admin puede ver Mi Día de otro operario
     # (drill-down desde Centro de Mando → tarjeta del operario).
     as_op = request.args.get('as_operario_id', type=int)
+    drill_down_activo = False
     if as_op and es_admin:
         operario_id = as_op
+        drill_down_activo = True
     operario_info = None
     es_jefe = False
     if operario_id is not None:
@@ -162,7 +164,15 @@ def mi_dia():
             }
             es_jefe = bool(row[4])
 
-    ve_todas = es_admin or es_jefe
+    # BUG-3 fix · 19-may-2026 audit Planta PERFECTA:
+    # Cuando admin/jefe usa drill-down (?as_operario_id=X), queremos ver
+    # las producciones DE ESE operario, no TODAS. Antes ve_todas seguía
+    # True por es_admin/es_jefe → el filtro WHERE no se aplicaba → admin
+    # con ?as_operario_id=3 veía TODAS las producciones del día.
+    if drill_down_activo:
+        ve_todas = False
+    else:
+        ve_todas = es_admin or es_jefe
 
     # Producciones del día · ventana [hoy-1d, hoy+1d] para cubrir
     # ambigüedad UTC vs Bogotá (UTC-5)

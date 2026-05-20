@@ -191,29 +191,43 @@ function renderProducciones(d) {
     }
     if (ebr && ebr.numero_op) chips += '<span class="chip chip-op">' + escapeHtml(ebr.numero_op) + '</span>';
 
+    // Sebastián 19-may-2026: BUG-2 audit Planta PERFECTA · XSS fix.
+    // mi_rol_aqui viene del backend (whitelist hardcoded en operario.py:213-221)
+    // pero por defensa en profundidad lo escapamos también.
     const miRol = p.mi_rol_aqui
-      ? '<div class="tag-mi-rol">Tu fase: ' + (ROL_NOMBRES[p.mi_rol_aqui] || p.mi_rol_aqui) + '</div>'
+      ? '<div class="tag-mi-rol">Tu fase: ' + escapeHtml(ROL_NOMBRES[p.mi_rol_aqui] || p.mi_rol_aqui) + '</div>'
       : '';
 
-    // Botón principal
+    // Botón principal · Sebastián 19-may-2026: BUG-2 audit · XSS fix.
+    // Antes se interpolaba sala/nombreSala en onclick="..." con replace
+    // solo de comillas simples · si area_nombre tenía `"` o `<` rompía
+    // el atributo. Ahora pasamos los datos por data-* (que SÍ pasa por
+    // escapeHtml en attrs) y un handler lee del dataset.
     let btn = '';
     if (accion === 'iniciar') {
-      const sala = (p.area_nombre || p.area_codigo || '').replace(/'/g, '');
+      const sala = p.area_nombre || p.area_codigo || '';
       btn = '<button class="btn btn-iniciar btn-big" '
-          + 'onclick="iniciarProd(' + p.id + ',\\'' + (p.area_estado||'') + '\\',\\'' + sala + '\\')">'
+          + 'data-pid="' + p.id + '" '
+          + 'data-area-est="' + escapeHtml(p.area_estado || '') + '" '
+          + 'data-area-nom="' + escapeHtml(sala) + '" '
+          + 'onclick="iniciarProdBtn(this)">'
           + ACCION_LABEL.iniciar + '</button>';
     } else if (accion === 'continuar') {
-      btn = '<button class="btn btn-continuar btn-big" onclick="window.location.href=\\'/brd#ebr-' + (ebr && ebr.id) + '\\'">' + ACCION_LABEL.continuar + ' · ' + pasosLabel + '</button>';
+      btn = '<button class="btn btn-continuar btn-big" '
+          + 'data-ebr-id="' + (ebr && ebr.id ? ebr.id : '') + '" '
+          + 'onclick="continuarProdBtn(this)">' + ACCION_LABEL.continuar + ' · ' + pasosLabel + '</button>';
     } else if (accion === 'completar_pp') {
       btn = '<button class="btn btn-completar btn-big" onclick="completarProd(' + p.id + ')">' + ACCION_LABEL.completar_pp + '</button>';
     } else {
       // Producción ya completada · si la sala quedó sucia, dejar marcarla limpia desde acá
       const ya = '<div class="muted" style="text-align:center;padding:10px;">' + ACCION_LABEL.ya_completado + ' · ' + (p.kg_real ? fmt(p.kg_real, 1) + ' kg · merma ' + fmt(p.merma_pct, 1) + '%' : 'sin reporte') + '</div>';
       if (p.area_estado === 'sucia' && p.area_id) {
-        const nombreSala = (p.area_nombre || p.area_codigo || 'sala').replace(/'/g, '');
+        const nombreSala = p.area_nombre || p.area_codigo || 'sala';
         btn = ya
             + '<button class="btn btn-big" style="background:#0e7490;color:#fff;margin-top:8px" '
-            + 'onclick="marcarLimpia(' + p.area_id + ',\\'' + nombreSala + '\\')">'
+            + 'data-area-id="' + p.area_id + '" '
+            + 'data-area-nom="' + escapeHtml(nombreSala) + '" '
+            + 'onclick="marcarLimpiaBtn(this)">'
             + '🧽 Marcar ' + escapeHtml(nombreSala) + ' LIMPIA</button>';
       } else {
         btn = ya;
@@ -236,6 +250,21 @@ function renderProducciones(d) {
       + '</div>';
   });
   div.innerHTML = html;
+}
+
+// Sebastián 19-may-2026 BUG-2 audit Planta PERFECTA · wrappers para data-*
+// que evitan interpolar valores controlados por DB en onclick="...".
+function iniciarProdBtn(btn) {
+  const pid = parseInt(btn.dataset.pid, 10);
+  iniciarProd(pid, btn.dataset.areaEst || '', btn.dataset.areaNom || '');
+}
+function continuarProdBtn(btn) {
+  const eid = parseInt(btn.dataset.ebrId, 10);
+  if (isFinite(eid)) window.location.href = '/brd#ebr-' + eid;
+}
+function marcarLimpiaBtn(btn) {
+  const aid = parseInt(btn.dataset.areaId, 10);
+  marcarLimpia(aid, btn.dataset.areaNom || 'sala');
 }
 
 async function iniciarProd(id, areaEstado, areaNombre) {

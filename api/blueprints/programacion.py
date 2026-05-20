@@ -3240,7 +3240,14 @@ def prog_terminar_produccion(evento_id):
                     'planeado_kg': cantidad_kg, 'real_kg': kg_real,
                     'ratio_pct': round(ratio * 100, 2),
                 }), 400
-            merma_pct = round((1 - ratio) * 100, 2)
+            # BUG-7 fix · 19-may-2026 audit Planta PERFECTA · INVIMA distingue
+            # merma (pérdida real, kg_real<planeado) de sobreproducción
+            # (kg_real>planeado). Si reportamos merma_pct=-10% para una
+            # sobreproducción del 10%, los reportes a INVIMA confunden ambos
+            # casos y la auditoría queda contaminada. Clamp merma a >=0:
+            # cuando hay sobreproducción, merma_pct=0 (no se "ganó" MP) y
+            # la diferencia queda visible en kg_real vs cantidad_kg.
+            merma_pct = round(max((1 - ratio) * 100, 0.0), 2)
     if unidades_real is not None:
         try:
             unidades_real = int(unidades_real)
@@ -4873,11 +4880,23 @@ def _descontar_mp_produccion(c, evento_id, user, forzar=False):
             {'faltantes': faltantes, 'producto': meta['producto']},
         )
 
-    # ATOMIC CLAIM
+    # ATOMIC CLAIM · 19-may-2026 BUG-6 audit Planta PERFECTA:
+    # Antes el path `forzar=True` (re-descontar tras revertir manual) hacía
+    # UPDATE sin condición → 2 requests paralelos pasaban el claim, ambos
+    # llegaban al loop de INSERT a movimientos y descontaban 2×. Ahora
+    # `forzar=True` también es atómico: lee el descontado_at previo y solo
+    # gana el claim si ese valor sigue intacto (compare-and-swap).
     if forzar:
+        prev = c.execute(
+            "SELECT COALESCE(inventario_descontado_at,'') "
+            "FROM produccion_programada WHERE id=?",
+            (evento_id,),
+        ).fetchone()
+        prev_at = (prev[0] if prev else '') or ''
         cur = c.execute(
-            "UPDATE produccion_programada SET inventario_descontado_at=? WHERE id=?",
-            (fecha_iso, evento_id),
+            "UPDATE produccion_programada SET inventario_descontado_at=? "
+            "WHERE id=? AND COALESCE(inventario_descontado_at,'')=?",
+            (fecha_iso, evento_id, prev_at),
         )
     else:
         cur = c.execute(
@@ -4891,9 +4910,12 @@ def _descontar_mp_produccion(c, evento_id, user, forzar=False):
             (evento_id,),
         ).fetchone()
         actual_at = (actual[0] if actual else '') or ''
+        # En `forzar`, rowcount=0 puede significar: ya cambió desde que
+        # leímos (otro request paralelo lo descontó) · reportamos race.
+        codigo_err = 'YA_DESCONTADO_RACE' if forzar else 'YA_DESCONTADO'
         raise _DescuentoError(
             f'Inventario ya fue descontado el {actual_at}',
-            'YA_DESCONTADO',
+            codigo_err,
             {'inventario_descontado_at': actual_at},
         )
 
@@ -11239,11 +11261,18 @@ def _auto_asignar_operarios(c, produccion_id, fecha_iso, user='auto-ia'):
     return asignaciones
 
 
-def _seleccionar_area_optima(c, lote_kg, fecha_iso, excluir_sucias=True):
+def _seleccionar_area_optima(c, lote_kg, fecha_iso, excluir_sucias=True,
+                               excluir_produccion_id=None):
     """IA: elige el ÁREA con tanque más chico que aguante el lote (eficiencia).
 
     Sebastián 1-may-2026: "si producción 200 kilos debe decir producción
     donde está marmita 250 litros".
+
+    Sebastián 19-may-2026 · BUG-12 audit Planta PERFECTA:
+    `excluir_produccion_id` evita que el query de areas_ocupadas_hoy
+    cuente como ocupada la propia producción que se está re-asignando
+    (antes: re-asignar una prod que ya tenía area_id la dejaba sin
+    alternativa porque su propia área aparecía como "ocupada").
 
     Returns: {area_codigo, area_id, tanque_codigo, capacidad_litros, score, razon}
               o None si nada candidato (incluye lote_kg<=0).
@@ -11273,16 +11302,27 @@ def _seleccionar_area_optima(c, lote_kg, fecha_iso, excluir_sucias=True):
         ORDER BY t.capacidad_litros ASC
     """, (capacidad_min,)).fetchall()
 
-    # Producciones ya programadas en otras áreas ese día
+    # Producciones ya programadas en otras áreas ese día.
+    # BUG-12 fix: excluir la prod que se está re-asignando del cómputo.
     areas_ocupadas_hoy = set()
     try:
-        rows = c.execute("""
-            SELECT DISTINCT pp.area_id
-            FROM produccion_programada pp
-            WHERE date(pp.fecha_programada) = ?
-              AND pp.area_id IS NOT NULL
-              AND COALESCE(pp.estado, 'programado') NOT IN ('cancelado','completado')
-        """, (fecha_iso,)).fetchall()
+        if excluir_produccion_id is not None:
+            rows = c.execute("""
+                SELECT DISTINCT pp.area_id
+                FROM produccion_programada pp
+                WHERE date(pp.fecha_programada) = ?
+                  AND pp.area_id IS NOT NULL
+                  AND pp.id != ?
+                  AND COALESCE(pp.estado, 'programado') NOT IN ('cancelado','completado')
+            """, (fecha_iso, excluir_produccion_id)).fetchall()
+        else:
+            rows = c.execute("""
+                SELECT DISTINCT pp.area_id
+                FROM produccion_programada pp
+                WHERE date(pp.fecha_programada) = ?
+                  AND pp.area_id IS NOT NULL
+                  AND COALESCE(pp.estado, 'programado') NOT IN ('cancelado','completado')
+            """, (fecha_iso,)).fetchall()
         areas_ocupadas_hoy = {r[0] for r in rows}
     except Exception:
         pass
@@ -11441,6 +11481,17 @@ def auto_asignar_hoy_bulk():
                 if res.get('cambios'):
                     detalles.append({'id': pid, 'producto': prod,
                                      'cambios': res.get('cambios', [])})
+                # BUG-12 fix · 19-may-2026 audit Planta PERFECTA:
+                # commitear DESPUÉS de cada producción exitosa para que la
+                # siguiente vea el area_id asignado en la query de
+                # areas_ocupadas_hoy. Antes el commit estaba afuera del
+                # loop, todas las producciones del día veían area_id=NULL
+                # entre sí y la IA podía asignar la MISMA área a varias.
+                try:
+                    conn.commit()
+                except Exception as _e_commit:
+                    logging.getLogger('programacion').warning(
+                        f'commit intra-loop fallo pid={pid}: {_e_commit}')
             else:
                 fallidas.append({'id': pid, 'producto': prod,
                                  'error': res.get('error')})
@@ -11500,10 +11551,17 @@ def _auto_asignar_produccion(c, produccion_id, user='auto-ia'):
 
     # 1) Área óptima (si no la tiene)
     if not prod[5]:
-        area = _seleccionar_area_optima(c, lote_kg, fecha_iso)
+        # BUG-12 fix · 19-may-2026 audit Planta PERFECTA: pasar
+        # excluir_produccion_id para que la propia prod no figure como
+        # "área ocupada" si por algún motivo ya estaba apuntando a un
+        # area_id que ahora se está descartando.
+        area = _seleccionar_area_optima(c, lote_kg, fecha_iso,
+                                          excluir_produccion_id=produccion_id)
         if not area:
             # Reintentar incluyendo sucias (con limpieza inmediata)
-            area = _seleccionar_area_optima(c, lote_kg, fecha_iso, excluir_sucias=False)
+            area = _seleccionar_area_optima(c, lote_kg, fecha_iso,
+                                              excluir_sucias=False,
+                                              excluir_produccion_id=produccion_id)
             if not area:
                 return {'ok': False, 'error': f'Sin área disponible para {lote_kg:.0f}kg ese día'}
             else:
