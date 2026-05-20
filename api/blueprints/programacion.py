@@ -20,7 +20,7 @@ from database import db_connect
 import os, json, logging, sqlite3, urllib.request, urllib.error, urllib.parse
 from datetime import datetime, timedelta, date, timezone
 from database import get_db
-from config import ADMIN_USERS, APP_BASE_URL, CALIDAD_USERS, COMPRAS_USERS
+from config import ADMIN_USERS, APP_BASE_URL, CALIDAD_USERS, COMPRAS_USERS, PLANTA_USERS
 from inventario_helpers import stock_mp_total, stock_mp_disponible
 from audit_helpers import audit_log
 
@@ -3146,31 +3146,46 @@ def _intentar_crear_ebr_auto(c, evento_id, producto, total_g_descontado, user):
         from blueprints.brd import assign_numero_op
         numero_op = assign_numero_op(c)
 
-        c.execute(
-            """INSERT INTO ebr_ejecuciones
-                 (mbr_template_id, mbr_version, produccion_id, lote, numero_op,
-                  estado, iniciado_por, iniciado_at_utc, cantidad_objetivo_g, notas)
-               VALUES (?, ?, ?, ?, ?, 'iniciado', ?, datetime('now', '-5 hours', 'utc'), ?, ?)""",
-            (mbr[0], mbr[1], evento_id, lote, numero_op, user, cantidad_obj,
-             f'Auto-creado al iniciar producción Calendar id={evento_id}'),
-        )
-        ebr_id = c.lastrowid
-
-        # Clonar pasos del MBR
-        pasos_mbr = c.execute(
-            """SELECT id, orden, descripcion, tipo_paso, equipo_requerido,
-                      requiere_e_sign, requiere_qc
-               FROM mbr_pasos WHERE mbr_template_id = ? ORDER BY orden""",
-            (mbr[0],),
-        ).fetchall()
-        for p in pasos_mbr:
+        # BUG-8 fix · 19-may-2026 audit Planta PERFECTA: SAVEPOINT antes de
+        # crear ebr_ejecuciones y clonar pasos · si el clonado falla a mitad
+        # de bucle, ROLLBACK TO SAVEPOINT deja la BD consistente (NO crea
+        # ebr_ejecuciones huérfano con pasos parciales). El SAVEPOINT vive
+        # dentro de la transacción del caller · solo aborta el bloque EBR.
+        c.execute('SAVEPOINT ebr_auto')
+        try:
             c.execute(
-                """INSERT INTO ebr_pasos_ejecutados
-                     (ebr_id, mbr_paso_id, orden, descripcion, tipo_paso,
-                      equipo_requerido, requiere_e_sign, requiere_qc, estado)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pendiente')""",
-                (ebr_id, p[0], p[1], p[2], p[3], p[4], p[5], p[6]),
+                """INSERT INTO ebr_ejecuciones
+                     (mbr_template_id, mbr_version, produccion_id, lote, numero_op,
+                      estado, iniciado_por, iniciado_at_utc, cantidad_objetivo_g, notas)
+                   VALUES (?, ?, ?, ?, ?, 'iniciado', ?, datetime('now', '-5 hours', 'utc'), ?, ?)""",
+                (mbr[0], mbr[1], evento_id, lote, numero_op, user, cantidad_obj,
+                 f'Auto-creado al iniciar producción Calendar id={evento_id}'),
             )
+            ebr_id = c.lastrowid
+
+            # Clonar pasos del MBR
+            pasos_mbr = c.execute(
+                """SELECT id, orden, descripcion, tipo_paso, equipo_requerido,
+                          requiere_e_sign, requiere_qc
+                   FROM mbr_pasos WHERE mbr_template_id = ? ORDER BY orden""",
+                (mbr[0],),
+            ).fetchall()
+            for p in pasos_mbr:
+                c.execute(
+                    """INSERT INTO ebr_pasos_ejecutados
+                         (ebr_id, mbr_paso_id, orden, descripcion, tipo_paso,
+                          equipo_requerido, requiere_e_sign, requiere_qc, estado)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pendiente')""",
+                    (ebr_id, p[0], p[1], p[2], p[3], p[4], p[5], p[6]),
+                )
+            c.execute('RELEASE SAVEPOINT ebr_auto')
+        except Exception as _ebr_e:
+            try:
+                c.execute('ROLLBACK TO SAVEPOINT ebr_auto')
+                c.execute('RELEASE SAVEPOINT ebr_auto')
+            except Exception:
+                pass
+            raise _ebr_e
 
         log.info('BRD auto-EBR creado · evento=%s ebr=%s lote=%s op=%s pasos=%d',
                   evento_id, ebr_id, lote, numero_op, len(pasos_mbr))
@@ -3606,6 +3621,13 @@ def planta_centro_mando():
     """
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
+    # BUG-18 fix · 19-may-2026 audit Planta PERFECTA · restringir a roles
+    # de planta/admin · antes cualquier user logueado (contadora, comercial)
+    # podía ver KPIs operativos + asignaciones + producto/lotes/kg.
+    _user = session.get('compras_user', '')
+    _permitidos = set(ADMIN_USERS) | set(COMPRAS_USERS) | set(PLANTA_USERS)
+    if _user not in _permitidos:
+        return jsonify({'error': 'Solo planta/compras/admin'}), 403
     conn = get_db()
     # Sebastián 1-may-2026: respeta selector de fecha + horizonte 7 días
     # si el día seleccionado está vacío, muestra próximos 7 días (no dejar
@@ -3774,7 +3796,10 @@ def planta_centro_mando():
         })
     area_by_id = {a['id']: a for a in areas}
     # Sebastián 1-may-2026: 'área sucia por fabricar tal'
-    # Para cada sala, buscar la ÚLTIMA producción que ocupó/completó esa sala
+    # Para cada sala, buscar la ÚLTIMA producción que ocupó/completó esa sala.
+    # BUG-20 fix · 19-may-2026 audit Planta PERFECTA: ventana de 30 días y
+    # LIMIT 200. Antes el query barría TODA produccion_programada cada 30s
+    # (auto-refresh) sin filtro de fecha · degradación lineal con histórico.
     try:
         for r in conn.execute("""
             SELECT pp.area_id, pp.producto, pp.fin_real_at,
@@ -3782,7 +3807,9 @@ def planta_centro_mando():
             FROM produccion_programada pp
             WHERE pp.area_id IS NOT NULL
               AND pp.fin_real_at IS NOT NULL
+              AND date(pp.fin_real_at) >= date('now', '-5 hours', '-30 day')
             ORDER BY pp.fin_real_at DESC
+            LIMIT 200
         """):
             aid = r[0]
             if aid in area_by_id and area_by_id[aid]['ultima_produccion'] is None:
@@ -5396,9 +5423,18 @@ def prog_completar_evento(evento_id):
                          WHERE id = ?
                     """, (fecha_iso, user, me['cantidad_unidades'], me['item_id']))
                 descontados_mees.append(me)
-            except sqlite3.OperationalError:
-                # Si tabla mee no existe, seguimos
-                continue
+            except sqlite3.OperationalError as _oe:
+                # BUG-9 fix · 19-may-2026 audit Planta PERFECTA: catch
+                # demasiado amplio · antes silenciaba "database locked",
+                # "constraint failed" y dejaba el checklist en estado
+                # inconsistente (verificado_ok sin consumido_at). Ahora
+                # solo continuar si es "no such table" (caso esperado de
+                # MEE no migrado); cualquier otro error es real → re-raise
+                # para que la transacción rollbackee.
+                _msg = str(_oe).lower()
+                if 'no such table' in _msg or 'no existe la' in _msg:
+                    continue
+                raise
         # Actualizar produccion_programada · estado + observaciones
         # (inventario_descontado_at YA fue seteado por el ATOMIC CLAIM al inicio)
         c.execute("""
@@ -5508,6 +5544,15 @@ def prog_revertir_completado(evento_id):
     # producción descontada al iniciar limpia inventario_descontado_at sin
     # devolver la MP al stock → doble descuento al re-iniciar.
     obs_filtro_ini = f"Producción INICIADA: {producto} — {fecha}"
+    # BUG-10 fix · 19-may-2026 audit Planta PERFECTA: SQL LIKE trata
+    # `%` y `_` como wildcards. Si producto contiene `%` literal (ej.
+    # "Crema 50%"), el LIKE matchea OTRAS producciones con el mismo
+    # prefijo. Escapamos %/_/\\ usando ESCAPE '\\'. También ayuda con
+    # underscore: "Suero_X" → "Suero\\_X".
+    def _escape_like(s):
+        return (s or '').replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+    obs_filtro_esc = _escape_like(obs_filtro)
+    obs_filtro_ini_esc = _escape_like(obs_filtro_ini)
     revertidos_mps = []
     revertidos_mees = []
     fecha_iso = __import__('datetime').datetime.now().isoformat(timespec='seconds')
@@ -5519,8 +5564,9 @@ def prog_revertir_completado(evento_id):
             SELECT id, material_id, material_nombre, cantidad, lote, fecha_vencimiento
             FROM movimientos
             WHERE tipo='Salida'
-              AND (observaciones LIKE ? OR observaciones LIKE ?)
-        """, (f"{obs_filtro}%", f"{obs_filtro_ini}%")).fetchall()
+              AND (observaciones LIKE ? ESCAPE '\\'
+                   OR observaciones LIKE ? ESCAPE '\\')
+        """, (f"{obs_filtro_esc}%", f"{obs_filtro_ini_esc}%")).fetchall()
         for mid, cod, nom, cant, lote, fv in rows:
             c.execute("""
                 INSERT INTO movimientos
@@ -11014,7 +11060,13 @@ def _siguiente_operario_rotando(c, rol, candidatos_ids):
 
     Lee rotacion_operarios_state[rol], devuelve el próximo en la lista.
     Si el último estaba al final → vuelve al primero.
-    Si el último ya no está en candidatos (operario inactivo) → primero.
+
+    BUG-15 fix · 19-may-2026 audit Planta PERFECTA: si el último ya no
+    está en candidatos (operario inactivado), antes devolvíamos
+    `candidatos_ids[0]` (el id menor) → la rotación se sesgaba hacia el
+    id mínimo cada vez que se inactivaba alguien. Ahora buscamos el id
+    inmediatamente superior a `ultimo`; si todos son menores, recién
+    volvemos al primero.
     """
     if not candidatos_ids:
         return None
@@ -11026,13 +11078,19 @@ def _siguiente_operario_rotando(c, rol, candidatos_ids):
         ultimo = row[0] if row else None
     except Exception:
         ultimo = None
-    if not ultimo or ultimo not in candidatos_ids:
+    if not ultimo:
         return candidatos_ids[0]
-    try:
-        idx = candidatos_ids.index(ultimo)
-        return candidatos_ids[(idx + 1) % len(candidatos_ids)]
-    except ValueError:
-        return candidatos_ids[0]
+    if ultimo in candidatos_ids:
+        try:
+            idx = candidatos_ids.index(ultimo)
+            return candidatos_ids[(idx + 1) % len(candidatos_ids)]
+        except ValueError:
+            return candidatos_ids[0]
+    # ultimo no está en candidatos · buscar el siguiente id mayor a ultimo;
+    # si no hay (todos los candidatos < ultimo), wrap a candidatos_ids[0]
+    siguiente_mayor = next((c_id for c_id in candidatos_ids if c_id > ultimo),
+                            None)
+    return siguiente_mayor if siguiente_mayor is not None else candidatos_ids[0]
 
 
 def _registrar_rotacion(c, rol, operario_id, user='auto-ia'):

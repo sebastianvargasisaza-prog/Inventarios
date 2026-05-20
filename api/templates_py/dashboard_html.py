@@ -9394,12 +9394,29 @@ async function ckMarcar(itemId, estado){
       if(document.getElementById('ptab-plano').style.display === 'none'){
         cmStopAutoRefresh(); return;
       }
+      // BUG-19 fix · 19-may-2026 audit Planta PERFECTA: si la pestaña del
+      // navegador está en background (visibilityState='hidden'), saltar el
+      // refresh. Evita 11,520 fetches/día por usuario que dejó la pestaña
+      // abierta en background sin necesitar datos frescos.
+      if(typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
       var c = document.getElementById('cm-auto');
       if(c && c.checked) renderCentroMando(true /*silent*/);
     }, 30000);
   }
   function cmStopAutoRefresh(){
     if(_CM_TIMER){ clearInterval(_CM_TIMER); _CM_TIMER = null; }
+  }
+  // BUG-19 fix · escuchar visibilitychange para refrescar al volver a la
+  // pestaña (datos pueden estar stale tras minutos en background).
+  if(typeof document !== 'undefined' && !window._CM_VIS_LISTENER){
+    window._CM_VIS_LISTENER = true;
+    document.addEventListener('visibilitychange', function(){
+      if(document.visibilityState !== 'visible') return;
+      var ptab = document.getElementById('ptab-plano');
+      if(ptab && ptab.style.display !== 'none' && typeof renderCentroMando === 'function'){
+        renderCentroMando(true /*silent*/);
+      }
+    });
   }
 
   function _fmtMin(min){
@@ -9507,10 +9524,18 @@ async function ckMarcar(itemId, estado){
   async function cmReasignarHoy(){
     if(!confirm('🤖 ¿Re-correr auto-asignación para HOY?\\n\\nSolo afecta producciones SUGERIDAS (canónicas / calendar / manual). Lo FIJO (lo que arrastraste/editaste) no se toca.')) return;
     try{
-      const csrf = (document.cookie.match(/(?:^|; )csrf_token=([^;]*)/) || ['',''])[1] || '';
+      // BUG-17 fix · 19-may-2026: token CSRF desde endpoint, no cookie
+      // (la cookie nunca tenía el token · vive en session Flask).
+      let csrf = window._csrfTok || '';
+      if(!csrf){
+        try {
+          const tr = await fetch('/api/csrf-token', {credentials:'same-origin'});
+          if(tr.ok){ const td = await tr.json(); csrf = td.csrf_token || ''; window._csrfTok = csrf; }
+        } catch(_e){}
+      }
       const r = await fetch('/api/planta/auto-asignar-hoy', {
         method:'POST',
-        headers:{'Content-Type':'application/json','X-CSRF-Token': decodeURIComponent(csrf)},
+        headers:{'Content-Type':'application/json','X-CSRF-Token': csrf},
         credentials:'same-origin',
         body:'{}'
       });

@@ -3374,10 +3374,16 @@ def _loop_multi_cron(app):
                 from database import get_db
                 conn = get_db()
                 ahora = _dt.now()
+                # BUG-14 fix · 19-may-2026 audit Planta PERFECTA: jobs
+                # NO idempotentes (insertan producciones, mandan emails)
+                # no deben re-ejecutarse a las 2h tras fallo · subir a 24h
+                # mitiga duplicación hasta que cada paso sea idempotente.
+                _RETRY_24H_JOBS = {'lunes_7am_workflow'}
                 for job_name, hora, minuto, dias_sem, dias_mes, callable_name in JOBS_SCHEDULE:
                     if not _es_hora_de(ahora, hora, minuto, dias_sem, dias_mes):
                         continue
-                    if _ya_ejecutado_hoy(conn, job_name):
+                    _retry_h = 24 if job_name in _RETRY_24H_JOBS else 2
+                    if _ya_ejecutado_hoy(conn, job_name, retry_si_fallo_horas=_retry_h):
                         continue
                     if not _adquirir_lock_cron(conn, job_name):
                         log.info(f'[multi-cron] {job_name}: lock ocupado · otro worker ejecutando')

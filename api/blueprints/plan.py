@@ -407,7 +407,12 @@ def _revertir_pedido_b2b_del_plan(cur, pedido_id, user):
         resultado["lotes_revertidos"].append(
             {"lote_id": lid, "modo": "lote_dedicado_cancelado"})
 
-    # 2. Lote canónico con kg B2B sumados → restar esos kg
+    # 2. Lote canónico con kg B2B sumados → restar esos kg.
+    # BUG-22 fix · usar UPDATE atómico SET cantidad_kg = ... - ? (no leer
+    # cantidad_kg local). BUG-23 fix · si tras restar no quedan más pedidos
+    # #N en observaciones, devolver origen a 'eos_canonico' para que el
+    # regenerador lo gestione normalmente · sin esto, el lote queda
+    # 'eos_plan' (Fijo) para siempre y regenerar genera duplicados.
     for lid, lkg, lobs in cur.execute(
         """SELECT id, COALESCE(cantidad_kg,0), COALESCE(observaciones,'')
            FROM produccion_programada
@@ -420,18 +425,46 @@ def _revertir_pedido_b2b_del_plan(cur, pedido_id, user):
         if not m:
             continue
         kg_quita = float(m.group(1))
-        nuevo_kg = round(max(0.0, float(lkg) - kg_quita), 2)
         cur.execute(
             """UPDATE produccion_programada
-               SET cantidad_kg = ?,
+               SET cantidad_kg = CASE
+                                   WHEN COALESCE(cantidad_kg, 0) > ?
+                                   THEN COALESCE(cantidad_kg, 0) - ?
+                                   ELSE 0
+                                 END,
                    observaciones = COALESCE(observaciones,'') ||
                        ' · −' || ? || 'kg (pedido B2B #' || ? || ' cancelado)'
                WHERE id = ?""",
-            (nuevo_kg, kg_quita, pedido_id, lid),
+            (kg_quita, kg_quita, kg_quita, pedido_id, lid),
         )
+        # Releer obs post-UPDATE para saber si quedan otros pedidos B2B
+        post = cur.execute(
+            "SELECT COALESCE(cantidad_kg,0), COALESCE(observaciones,'') "
+            "FROM produccion_programada WHERE id=?", (lid,),
+        ).fetchone()
+        nuevo_kg = float(post[0] or 0)
+        obs_post = post[1] if post else ''
+        # ¿quedan otros pedidos #N pendientes? buscar el patrón
+        # `(pedido #N)` que NO haya sido cancelado.
+        otros_pedidos = _re.findall(
+            r'\+\s*[\d.]+kg B2B[^(]*\(pedido #(\d+)\)', obs_post or ''
+        )
+        cancelados = _re.findall(
+            r'pedido B2B #(\d+) cancelado\)', obs_post or ''
+        )
+        # IDs vivos = los sumados que NO aparecen como cancelados
+        vivos = set(otros_pedidos) - set(cancelados)
+        if not vivos:
+            # Sin pedidos B2B activos sumados → restaurar a Sugerido
+            cur.execute(
+                "UPDATE produccion_programada SET origen='eos_canonico' "
+                "WHERE id=? AND origen='eos_plan'",
+                (lid,),
+            )
         resultado["lotes_revertidos"].append(
             {"lote_id": lid, "modo": "kg_restados",
-             "kg_restados": kg_quita, "kg_nuevo": nuevo_kg})
+             "kg_restados": kg_quita, "kg_nuevo": nuevo_kg,
+             "origen_restaurado": (not vivos)})
     return resultado
 
 
@@ -4275,6 +4308,20 @@ def regenerar_canonicos():
     # Sebastián 16-may-2026: incluir 'propuesto' en los estados a cancelar.
     # Un lote 'propuesto' (sin confirmar, sin iniciar) que sobreviviera a
     # la regeneración quedaría duplicado con el nuevo lote generado.
+    # BUG-24 fix · 19-may-2026 audit Planta PERFECTA: capturar los IDs
+    # ANTES del UPDATE y auditar cada uno · misma trampa del 19-may
+    # ("desapareció sin rastro"). Sin audit por id, si después aparece un
+    # lote perdido no hay cómo saber cuándo/por qué se canceló.
+    ids_a_cancelar = [r[0] for r in c.execute(
+        f"""SELECT id, producto, fecha_programada, COALESCE(cantidad_kg,0), origen
+            FROM produccion_programada
+            WHERE origen IN ('eos_canonico','calendar','manual')
+              AND estado IN ('pendiente','programado','esperando_recurso','propuesto')
+              AND fin_real_at IS NULL
+              AND inicio_real_at IS NULL
+              AND producto IN ({placeholders})""",
+        productos_a_regenerar,
+    ).fetchall()]
     n_cancelados = c.execute(
         f"""UPDATE produccion_programada
             SET estado = 'cancelado',
@@ -4287,6 +4334,15 @@ def regenerar_canonicos():
               AND producto IN ({placeholders})""",
         productos_a_regenerar,
     ).rowcount
+    # Audit log por cada id cancelado (no romper si la lista es larga ·
+    # cap a 500 para no explotar audit_log en regenerados masivos).
+    for _pid in ids_a_cancelar[:500]:
+        try:
+            audit_log(c, usuario=user, accion='CANCELAR_REGEN_CANON',
+                      tabla='produccion_programada', registro_id=_pid,
+                      despues={'razon': 'regenerar_canonicos · cancelado bulk'})
+        except Exception:
+            pass
 
     # 3) Última producción real por producto (para calcular base)
     ultima_real = {}
@@ -4447,6 +4503,17 @@ def regenerar_canonicos():
             # que podría caer sábado/festivo)
             productos_saltados.append({
                 "producto": prod, "razon": "sin slot hábil disponible"})
+            continue
+        # BUG-25 fix · 19-may-2026 audit Planta PERFECTA: si la fecha base
+        # ya supera el horizonte 365d (cobertura altísima · stock holgado),
+        # antes el `while cur <= horizon_end` no entraba y el producto
+        # quedaba saltado SIN avisar. Ahora lo reportamos explícito.
+        if cur > horizon_end:
+            productos_saltados.append({
+                "producto": prod,
+                "razon": (f"cobertura empuja primer lote a {cur.isoformat()} "
+                          f"(después del horizonte 365d) · stock holgado"),
+            })
             continue
 
         lotes_de_este = []

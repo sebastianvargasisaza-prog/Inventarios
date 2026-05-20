@@ -31,7 +31,7 @@ import sqlite3
 import json
 import logging
 from database import get_db
-from config import ADMIN_USERS
+from config import ADMIN_USERS, COMPRAS_USERS, PLANTA_USERS
 from inventario_helpers import stock_mp_total, stock_mp_disponible
 
 bp = Blueprint('auto_plan', __name__)
@@ -7497,6 +7497,11 @@ def tablero_equipo():
     """
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
+    # BUG-18 fix · 19-may-2026 audit Planta PERFECTA · solo planta/admin
+    _user = session.get('compras_user', '')
+    _permitidos = set(ADMIN_USERS) | set(COMPRAS_USERS) | set(PLANTA_USERS)
+    if _user not in _permitidos:
+        return jsonify({'error': 'Solo planta/compras/admin'}), 403
     conn = get_db(); c = conn.cursor()
     hoy = datetime.now().date().isoformat()
     ETAPA_LABEL = {

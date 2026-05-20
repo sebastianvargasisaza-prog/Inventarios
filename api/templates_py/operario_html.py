@@ -122,7 +122,16 @@ function fmt(n, d=0) {
   return Number(n).toLocaleString('es-CO', {maximumFractionDigits: d});
 }
 
+// BUG-5 fix · 19-may-2026 audit Planta PERFECTA · mutex anti-race.
+// setInterval cada 30s + prompt() bloqueante en completarProd permitía
+// que 2 fetches simultáneos terminaran en orden invertido, el response
+// del viejo pisaba el nuevo. Ahora _miDiaInFlight evita solapamiento.
+window._miDiaInFlight = false;
 async function loadMiDia() {
+  if (window._miDiaInFlight) return;
+  // BUG-19 fix · saltar refresh si pestaña no está visible
+  if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+  window._miDiaInFlight = true;
   try {
     // Admin puede ver Mi Día de otro operario via ?as_operario_id=X
     const urlParams = new URLSearchParams(window.location.search);
@@ -133,6 +142,9 @@ async function loadMiDia() {
     const r = await fetch(apiUrl);
     if (r.status === 401) { window.location.href = '/login'; return; }
     const d = await r.json();
+    // BUG-4 fix · cachear producciones para que completarProd compare
+    // kg_real vs cantidad_kg planeado.
+    window._miDiaCache = d.producciones || [];
     renderHeader(d);
     renderProducciones(d);
   } catch(e) {
@@ -140,6 +152,8 @@ async function loadMiDia() {
       '<div class="empty"><div class="empty-icon">⚠️</div>'
       + '<div>Error cargando · ' + escapeHtml(e.message) + '</div>'
       + '<div class="muted" style="margin-top:12px">Reintenta tocando ↻</div></div>';
+  } finally {
+    window._miDiaInFlight = false;
   }
 }
 
@@ -302,6 +316,23 @@ async function completarProd(id) {
   if (!kg) return;
   const kgNum = parseFloat(kg);
   if (!isFinite(kgNum) || kgNum <= 0) { alert('kg inválido'); return; }
+  // BUG-4 fix · 19-may-2026 audit Planta PERFECTA: confirm si kg_real es
+  // muy distinto al planeado · evita dedo-gordo (99999) contaminando KPIs.
+  // Buscar cantidad_kg planeada del cache local _miDiaCache.
+  try {
+    const prod = (window._miDiaCache || []).find(p => p.id === id);
+    if (prod && prod.cantidad_kg > 0) {
+      const ratio = kgNum / prod.cantidad_kg;
+      if (ratio > 1.5 || ratio < 0.5) {
+        const pct = Math.round(ratio * 100);
+        const tipo = ratio > 1.5 ? 'mucho MÁS' : 'mucho MENOS';
+        if (!confirm('⚠ kg_real ' + kgNum + ' kg es ' + tipo + ' del planeado (' +
+                     prod.cantidad_kg + ' kg = ' + pct + '%).\\n\\n¿Seguro que no fue un error de dedo?')) {
+          return;
+        }
+      }
+    }
+  } catch(e){ /* cache opcional · no bloquear */ }
   const unidades = prompt('Unidades reales (opcional · enter para saltar):');
   const body = {kg_real: kgNum};
   if (unidades) body.unidades_real = parseInt(unidades);
@@ -343,10 +374,18 @@ async function marcarLimpia(areaId, nombre) {
   }
 }
 
+// BUG-17 fix · 19-may-2026 audit Planta PERFECTA · CSRF token cliente.
+// Antes leía de document.cookie pero el token vive en Flask session, no
+// en cookie expuesta · siempre devolvía '' · Capa 2 CSRF dead-code.
+// Ahora fetcheamos /api/csrf-token al boot y lo guardamos en window._csrfTok.
+window._csrfTok = '';
+fetch('/api/csrf-token', {credentials: 'same-origin'})
+  .then(r => r.ok ? r.json() : null)
+  .then(d => { if (d && d.csrf_token) window._csrfTok = d.csrf_token; })
+  .catch(() => {});
+
 function csrfToken() {
-  // Lee cookie csrf si existe, sino vacío (defense-in-depth)
-  const m = document.cookie.match(/(?:^|; )csrf_token=([^;]*)/);
-  return m ? decodeURIComponent(m[1]) : '';
+  return window._csrfTok || '';
 }
 
 function refreshNow() { loadMiDia(); }
