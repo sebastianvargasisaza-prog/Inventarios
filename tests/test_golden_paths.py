@@ -7310,6 +7310,59 @@ def test_golden_portal_b2b_flujo_completo(app, db_clean):
     _exec("DELETE FROM portal_clientes_credenciales WHERE email LIKE 'test_portal_%'")
 
 
+def test_golden_minimos_modo_uniforme_90d(app, db_clean):
+    """Sprint Inventario MP · 20-may-2026.
+
+    Sebastián: "los mínimos sean para 90 días, que sí sean reales".
+    Modo uniforme · sobreescribe lead+buffer del proveedor:
+      minimo_recomendado = consumo_diario × dias_cobertura_minimo
+
+    Verifica:
+    - GET /api/planta/auditar-minimos?dias_cobertura_minimo=90 retorna
+      modo_uniforme=true y aplica la fórmula
+    - Sin param → modo viejo (lead+buffer)
+    - Metodología refleja el modo
+    """
+    cs = _login(app, 'sebastian')
+
+    # Modo viejo (sin param)
+    r1 = cs.get('/api/planta/auditar-minimos?proyeccion_dias=90')
+    assert r1.status_code == 200
+    d1 = r1.get_json()
+    assert d1.get('modo_uniforme') is False
+    assert 'lead_times' in d1['metodologia']
+
+    # Modo uniforme 90d
+    r2 = cs.get('/api/planta/auditar-minimos?proyeccion_dias=90&dias_cobertura_minimo=90')
+    assert r2.status_code == 200
+    d2 = r2.get_json()
+    assert d2.get('modo_uniforme') is True
+    assert d2.get('dias_cobertura_minimo') == 90
+    assert d2['metodologia']['modo'] == 'uniforme'
+    assert '90' in d2['metodologia']['formula']
+
+    # Verificar que algún MP con consumo > 0 tiene minimo_recomendado =
+    # consumo_diario × 90 (sin lead+buffer del proveedor)
+    for item in (d2.get('auditoria') or []):
+        if item['consumo_diario_g'] > 0 and item['estado'] != 'SIN_USO':
+            expected = item['consumo_diario_g'] * 90
+            # Permitir piso de 50g para peptides
+            min_rec = item['minimo_recomendado_g']
+            if item['consumo_diario_g'] < 0.5:
+                assert min_rec >= 50, f'BUG piso peptides: {item}'
+            else:
+                # Tolerancia 0.5g por redondeos
+                assert abs(min_rec - expected) < 1.0, \
+                    f'BUG fórmula uniforme: esperaba {expected}, fue {min_rec}'
+            break  # uno basta para confirmar la fórmula
+
+    # Modo uniforme 30d cobertura distinta
+    r3 = cs.get('/api/planta/auditar-minimos?proyeccion_dias=90&dias_cobertura_minimo=30')
+    assert r3.status_code == 200
+    d3 = r3.get_json()
+    assert d3.get('dias_cobertura_minimo') == 30
+
+
 def test_golden_unificar_mps_duplicados_flujo(app, db_clean):
     """Sprint Inventario MP · 20-may-2026.
 

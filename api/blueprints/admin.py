@@ -6556,14 +6556,23 @@ def admin_import_pagos_influencers_excel():
 # ─── Auditoría de Mínimos ─────────────────────────────────────────────────────
 
 
-def _compute_audit_minimos(horizonte_proyeccion_dias: int = 90) -> dict:
-    """Helper compartido (Sebastian 5-may-2026): calcula audit de
-    stock_minimo sin requerir auth · permite que /api/admin/auditar-minimos
-    (admin only · full + apply) y /api/planta/auditar-minimos (read-only ·
-    todos los users) compartan la misma lógica.
+def _compute_audit_minimos(horizonte_proyeccion_dias: int = 90,
+                            dias_cobertura_minimo: int | None = None) -> dict:
+    """Helper compartido (Sebastian 5-may-2026, actualizado 20-may-2026):
+    calcula audit de stock_minimo sin requerir auth.
+
+    Sebastián 20-may-2026: agregado `dias_cobertura_minimo`. Si se pasa,
+    el mínimo se calcula como `consumo_diario × dias_cobertura_minimo`
+    (típicamente 90) en vez de lead_time + buffer del proveedor. Esto da
+    una regla SIMPLE y UNIFORME: "todos los MPs deben tener mínimo para
+    cubrir N días reales del calendario". Si no se pasa, mantiene la
+    lógica vieja por compatibilidad.
 
     Args:
-        horizonte_proyeccion_dias: 30-180 días (default 90).
+        horizonte_proyeccion_dias: 30-180 días (default 90) · ventana
+            para proyectar consumo desde calendario.
+        dias_cobertura_minimo: si se pasa, fuerza fórmula `consumo × N`.
+            Si None, usa lead_time + buffer del proveedor (lógica vieja).
 
     Returns:
         dict con stats + auditoria + metodologia.
@@ -6575,6 +6584,15 @@ def _compute_audit_minimos(horizonte_proyeccion_dias: int = 90) -> dict:
         horizonte_proyeccion_dias = max(30, min(int(horizonte_proyeccion_dias), 180))
     except (ValueError, TypeError):
         horizonte_proyeccion_dias = 90
+
+    modo_uniforme = False
+    if dias_cobertura_minimo is not None:
+        try:
+            dias_cobertura_minimo = max(7, min(int(dias_cobertura_minimo), 365))
+            modo_uniforme = True
+        except (ValueError, TypeError):
+            dias_cobertura_minimo = None
+            modo_uniforme = False
 
     # 1. Cargar planificacion estratégica para el horizonte
     try:
@@ -6649,7 +6667,14 @@ def _compute_audit_minimos(horizonte_proyeccion_dias: int = 90) -> dict:
                 lead_time, buffer_d = 7, 14
             else:
                 lead_time, buffer_d = 14, 14
-        dias_buffer = lead_time + buffer_d
+        # Sebastián 20-may-2026: modo uniforme · todos cubren N días
+        # fijos (típico 90). Modo viejo (compat) usa lead+buffer.
+        if modo_uniforme:
+            dias_buffer = dias_cobertura_minimo
+            metodo_str = f'{dias_cobertura_minimo}d cobertura uniforme'
+        else:
+            dias_buffer = lead_time + buffer_d
+            metodo_str = f'{lead_time}d lead + {buffer_d}d buffer'
 
         if consumo_diario_g <= 0:
             minimo_recomendado = 0.0
@@ -6663,7 +6688,7 @@ def _compute_audit_minimos(horizonte_proyeccion_dias: int = 90) -> dict:
                 estado = 'SIN_MINIMO_CONFIGURADO'
                 razonamiento = (
                     f'Sin mínimo configurado · Recomendado {int(round(minimo_recomendado))} g '
-                    f'({lead_time}d lead + {buffer_d}d buffer × {round(consumo_diario_g, 2)} g/día)'
+                    f'({metodo_str} × {round(consumo_diario_g, 2)} g/día)'
                 )
             else:
                 ratio = stock_min_actual / minimo_recomendado if minimo_recomendado > 0 else 1.0
@@ -6672,13 +6697,13 @@ def _compute_audit_minimos(horizonte_proyeccion_dias: int = 90) -> dict:
                     estado = 'SUB_PROTEGIDO'
                     razonamiento = (
                         f'Mínimo cubre solo ~{round(cobertura_dias_actual, 1)} días '
-                        f'(necesita ~{dias_buffer} días para origen {origen})'
+                        f'(necesita ~{dias_buffer} días{": uniforme" if modo_uniforme else f" para origen {origen}"})'
                     )
                 elif ratio > 1.5:
                     estado = 'SOBRE_PROTEGIDO'
                     razonamiento = (
                         f'Mínimo cubre ~{round(cobertura_dias_actual, 1)} días '
-                        f'(suficiente con ~{dias_buffer} días para {origen})'
+                        f'(suficiente con ~{dias_buffer} días{": uniforme" if modo_uniforme else f" para {origen}"})'
                     )
                 else:
                     estado = 'OK'
@@ -6713,19 +6738,34 @@ def _compute_audit_minimos(horizonte_proyeccion_dias: int = 90) -> dict:
         'sin_uso': sum(1 for a in auditoria if a['estado'].startswith('SIN_USO')),
     }
 
+    metodologia = {
+        'piso_peptides': 'min 50g si consumo < 0.5 g/día',
+    }
+    if modo_uniforme:
+        metodologia['modo'] = 'uniforme'
+        metodologia['formula'] = (
+            f'minimo_recomendado = consumo_diario × {dias_cobertura_minimo} días'
+        )
+        metodologia['dias_cobertura_minimo'] = dias_cobertura_minimo
+        metodologia['nota'] = (
+            'Modo simple · todos los MPs cubren el mismo horizonte. '
+            'Recomendado por Sebastián 20-may-2026 para tener regla única.'
+        )
+    else:
+        metodologia['modo'] = 'lead_time_buffer'
+        metodologia['formula'] = 'minimo_recomendado = consumo_diario × (lead_time + buffer)'
+        metodologia['lead_times'] = {
+            'china': '60d lead + 30d buffer = 90d',
+            'colombia/local': '7d lead + 14d buffer = 21d',
+            'desconocido_sin_proveedor': '14d + 14d = 28d',
+        }
     return {
         'horizonte_proyeccion_dias': horizonte_proyeccion_dias,
+        'dias_cobertura_minimo': dias_cobertura_minimo if modo_uniforme else None,
+        'modo_uniforme': modo_uniforme,
         'stats': stats,
         'auditoria': auditoria,
-        'metodologia': {
-            'formula': 'minimo_recomendado = consumo_diario × (lead_time + buffer)',
-            'piso_peptides': 'min 50g si consumo < 0.5 g/día',
-            'lead_times': {
-                'china': '60d lead + 30d buffer = 90d',
-                'colombia/local': '7d lead + 14d buffer = 21d',
-                'desconocido_sin_proveedor': '14d + 14d = 28d',
-            },
-        },
+        'metodologia': metodologia,
     }
 
 
@@ -6762,7 +6802,15 @@ def auditar_minimos():
         horizonte_proyeccion_dias = max(30, min(int(request.args.get('proyeccion_dias', 90)), 180))
     except ValueError:
         horizonte_proyeccion_dias = 90
-    return jsonify(_compute_audit_minimos(horizonte_proyeccion_dias))
+    # Sebastián 20-may-2026: dias_cobertura_minimo activa modo uniforme.
+    dias_cob_raw = request.args.get('dias_cobertura_minimo')
+    dias_cob = None
+    if dias_cob_raw:
+        try:
+            dias_cob = max(7, min(int(dias_cob_raw), 365))
+        except ValueError:
+            dias_cob = None
+    return jsonify(_compute_audit_minimos(horizonte_proyeccion_dias, dias_cob))
 
 
 @bp.route("/api/admin/aplicar-minimos", methods=["POST"])
@@ -6792,6 +6840,16 @@ def aplicar_minimos():
         horizonte = max(30, min(int(d.get('proyeccion_dias', 90)), 180))
     except ValueError:
         horizonte = 90
+
+    # Sebastián 20-may-2026: dias_cobertura_minimo activa modo uniforme
+    # · todos los MPs cubren el mismo horizonte (típico 90d).
+    dias_cob_raw = d.get('dias_cobertura_minimo')
+    dias_cob = None
+    if dias_cob_raw is not None:
+        try:
+            dias_cob = max(7, min(int(dias_cob_raw), 365))
+        except (ValueError, TypeError):
+            dias_cob = None
 
     solo_estados = d.get('solo_estados') or [
         'SUB_PROTEGIDO', 'SOBRE_PROTEGIDO', 'SIN_MINIMO_CONFIGURADO'
@@ -6835,7 +6893,7 @@ def aplicar_minimos():
     # 500 al usuario ("Aplicar recálculo da error"). Fix: llamar
     # `_compute_audit_minimos()` directo (es la función pura que calcula,
     # sin guard de auth).
-    audit_data = _compute_audit_minimos(horizonte) or {}
+    audit_data = _compute_audit_minimos(horizonte, dias_cob) or {}
 
     from database import get_db as _get_db
     conn = _get_db()

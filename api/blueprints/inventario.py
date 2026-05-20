@@ -113,12 +113,20 @@ def planta_auditar_minimos():
         horizonte = max(30, min(int(request.args.get('proyeccion_dias', 90)), 180))
     except (ValueError, TypeError):
         horizonte = 90
+    # Sebastián 20-may-2026: dias_cobertura_minimo activa modo uniforme.
+    dias_cob_raw = request.args.get('dias_cobertura_minimo')
+    dias_cob = None
+    if dias_cob_raw:
+        try:
+            dias_cob = max(7, min(int(dias_cob_raw), 365))
+        except (ValueError, TypeError):
+            dias_cob = None
     try:
         from blueprints.admin import _compute_audit_minimos
     except ImportError:
         from api.blueprints.admin import _compute_audit_minimos
     try:
-        data = _compute_audit_minimos(horizonte)
+        data = _compute_audit_minimos(horizonte, dias_cob)
         return jsonify(data)
     except Exception as e:
         __import__('logging').getLogger('inventario').warning(

@@ -361,6 +361,16 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
           <option value="120">120 d&iacute;as</option>
           <option value="180">180 d&iacute;as</option>
         </select>
+        <!-- Sebastián 20-may-2026: cobertura uniforme · m&iacute;nimo = consumo &times; N d&iacute;as -->
+        <label style="font-size:13px;color:#475569;">D&iacute;as cobertura m&iacute;nimo:</label>
+        <select id="rmin-cob" style="padding:6px 10px;border:1px solid #be185d;border-radius:6px;font-size:13px;background:#fdf2f8;font-weight:600;" title="Modo uniforme · TODOS los MPs deben tener m&iacute;nimo para cubrir este horizonte de consumo real. Sobreescribe el lead+buffer del proveedor.">
+          <option value="">Por lead+buffer (compat viejo)</option>
+          <option value="30">30 d&iacute;as</option>
+          <option value="60">60 d&iacute;as</option>
+          <option value="90" selected>90 d&iacute;as (Sebasti&aacute;n)</option>
+          <option value="120">120 d&iacute;as</option>
+          <option value="180">180 d&iacute;as</option>
+        </select>
         <button onclick="cargarRevisarMinimos()" id="btn-rmin-load" style="background:#0e7490;color:#fff;padding:6px 14px;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;">&#x1F50D; Calcular</button>
       </div>
       <div id="rmin-stats" style="display:none;margin-bottom:14px;display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;">
@@ -2286,7 +2296,9 @@ async function cargarRevisarMinimos(){
   document.getElementById('rmin-aplicar-box').style.display='none';
   try{
     var proy = document.getElementById('rmin-proy').value || '90';
-    var r = await fetch('/api/planta/auditar-minimos?proyeccion_dias='+encodeURIComponent(proy));
+    var cob = (document.getElementById('rmin-cob')||{}).value || '';
+    var qsCob = cob ? ('&dias_cobertura_minimo='+encodeURIComponent(cob)) : '';
+    var r = await fetch('/api/planta/auditar-minimos?proyeccion_dias='+encodeURIComponent(proy)+qsCob);
     var d = await r.json();
     btn.disabled = false; btn.innerHTML='&#x1F50D; Calcular';
     if(!r.ok){
@@ -2315,7 +2327,14 @@ async function cargarRevisarMinimos(){
     });
     var colors = {OK:'#22c55e',SUB_PROTEGIDO:'#dc2626',SOBRE_PROTEGIDO:'#f59e0b',SIN_MINIMO_CONFIGURADO:'#6366f1',SIN_USO:'#94a3b8',SIN_USO_CON_MIN:'#94a3b8'};
     var labels = {OK:'OK',SUB_PROTEGIDO:'SUB',SOBRE_PROTEGIDO:'SOBRE',SIN_MINIMO_CONFIGURADO:'VACIO',SIN_USO:'SIN USO',SIN_USO_CON_MIN:'SIN USO'};
-    var html = '<div style="font-size:11px;color:#64748b;margin-bottom:8px;">Metodologia: <code>minimo = consumo_diario × (lead_time + buffer)</code> · China 90d, local 21d, sin proveedor 28d. Piso 50g para peptides.</div>';
+    // Render metodología según modo (uniforme vs lead+buffer)
+    var metoTxt;
+    if(d.modo_uniforme && d.dias_cobertura_minimo){
+      metoTxt = 'Modo uniforme · <code>m&iacute;nimo = consumo_diario &times; '+d.dias_cobertura_minimo+'d</code> · TODOS los MPs cubren el mismo horizonte. Piso 50g para peptides.';
+    } else {
+      metoTxt = 'Modo lead+buffer · <code>m&iacute;nimo = consumo_diario &times; (lead_time + buffer)</code> · China 90d, local 21d, sin proveedor 28d. Piso 50g para peptides.';
+    }
+    var html = '<div style="font-size:11px;color:#64748b;margin-bottom:8px;">Metodolog&iacute;a: '+metoTxt+'</div>';
     html += '<div style="overflow-x:auto;"><table style="width:100%;font-size:11px;border-collapse:collapse;">';
     html += '<thead><tr style="background:#f1f5f9;"><th style="text-align:left;padding:6px 8px;border-bottom:2px solid #e2e8f0;">Estado</th><th style="text-align:left;padding:6px 8px;border-bottom:2px solid #e2e8f0;">Material</th><th style="text-align:left;padding:6px 8px;border-bottom:2px solid #e2e8f0;">Origen</th><th style="text-align:right;padding:6px 8px;border-bottom:2px solid #e2e8f0;">Consumo/día</th><th style="text-align:right;padding:6px 8px;border-bottom:2px solid #e2e8f0;">Mín. actual</th><th style="text-align:right;padding:6px 8px;border-bottom:2px solid #e2e8f0;">Mín. recomendado</th><th style="text-align:left;padding:6px 8px;border-bottom:2px solid #e2e8f0;">Razonamiento</th></tr></thead><tbody>';
     items.forEach(function(a){
@@ -2347,12 +2366,15 @@ async function aplicarRevisarMinimos(){
   }
   if(!confirm('Esto va a actualizar stock_minimo en maestro_mps para los SUB/SOBRE/SIN_MINIMO. Crea backup automatico previo. ¿Continuar?')) return;
   var proy = document.getElementById('rmin-proy').value || '90';
+  var cob = (document.getElementById('rmin-cob')||{}).value || '';
   var btn = document.getElementById('btn-rmin-aplicar');
   btn.disabled = true; btn.innerHTML='Aplicando...';
   try{
+    var bodyApl = {token: token, proyeccion_dias: parseInt(proy)};
+    if(cob) bodyApl.dias_cobertura_minimo = parseInt(cob);
     var r = await fetch('/api/admin/aplicar-minimos', {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({token: token, proyeccion_dias: parseInt(proy)})
+      body: JSON.stringify(bodyApl)
     });
     var d = await r.json();
     btn.disabled = false; btn.innerHTML='&#x1F4A5; Aplicar recálculo';
