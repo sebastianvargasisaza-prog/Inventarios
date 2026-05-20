@@ -103,6 +103,17 @@
   `. , ; : & - _ / \\`). Capa 2: Levenshtein ≥ threshold para typos. Carga
   desde 11 tablas que tienen proveedor (no solo movs+maestro). Retorna
   grupos con stats (refs_totales, usos, count_variantes).
+- `GET  /api/recepcion/recientes[?limit=N&offset=N&q=X]` · listado entradas
+  recientes server-side con paginación y búsqueda (LIKE escape para %_).
+  JOIN con maestro_mps para INCI · incluye numero_oc + numero_factura.
+  Sebastián 20-may-2026 Sprint Recepciones PRO #7+#13.
+- `POST /api/recepcion/<mov_id>/anular` · admin · crea movimiento Salida
+  inverso con `estado_lote='ANULADO'` + audit_log ANULAR_RECEPCION_MP.
+  Idempotente (segunda llamada → 409). Si la recepción venía de OC,
+  descuenta `cantidad_recibida_g` de `ordenes_compra_items`.
+  Sebastián 20-may-2026 fix #8.
+- `GET  /api/recepcion/<codigo_mp>/precio-historico` · últimos 10 precios
+  para frontend (alerta delta).
 - `POST /api/proveedores-unificar` · acepta `dry_run` (cuenta sin tocar) o
   apply real. Transaccional sobre 11 tablas:
   movimientos.proveedor, maestro_mps.proveedor, maestro_mee.proveedor,

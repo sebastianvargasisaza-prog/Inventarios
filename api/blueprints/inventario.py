@@ -3731,6 +3731,13 @@ def archivar_mp(codigo):
 
 @bp.route('/api/recepcion', methods=['POST'])
 def registrar_recepcion():
+    """Sprint Recepciones PRO · 20-may-2026 · validaciones reforzadas:
+    - #1 duplicado lote+material_id (ya existía 10min, ampliado)
+    - #2 cantidad ≤ pendiente de la OC (warning hard)
+    - #3 cuarentena → push_notif a Calidad
+    - #4 factura obligatoria si vinculó OC
+    - #12 alerta precio cambió >30% vs último ingreso
+    """
     u, err, code = _require_planta_write()
     if err:
         return err, code
@@ -3740,6 +3747,66 @@ def registrar_recepcion():
     if cantidad_recibida <= 0:
         return jsonify({'error': 'La cantidad debe ser mayor a 0'}), 400
     conn = get_db(); c = conn.cursor()
+
+    # Sprint Recepciones PRO fix #4: factura obligatoria si hay OC
+    numero_factura_pre = (d.get('numero_factura') or '').strip()
+    numero_oc_pre = (d.get('numero_oc') or '').strip()
+    if numero_oc_pre and not numero_factura_pre and not d.get('factura_omitida_explicita'):
+        return jsonify({
+            'error': (f'Factura obligatoria · vinculaste OC {numero_oc_pre} '
+                      'pero no llenaste el campo "N° Factura/Remisión". '
+                      'Audit contable lo requiere.'),
+            'factura_obligatoria': True,
+        }), 400
+
+    # Sprint Recepciones PRO fix #2: cantidad ≤ pendiente de la OC
+    if numero_oc_pre and not d.get('forzar_excedente'):
+        try:
+            row_pend = c.execute(
+                """SELECT COALESCE(SUM(cantidad_g - COALESCE(cantidad_recibida_g,0)), 0)
+                   FROM ordenes_compra_items
+                   WHERE numero_oc = ? AND codigo_mp = ?""",
+                (numero_oc_pre, codigo),
+            ).fetchone()
+            pendiente_g = float(row_pend[0] or 0)
+            if pendiente_g > 0 and cantidad_recibida > pendiente_g * 1.05:
+                # Tolerancia 5% (frascos pueden venir con leve sobrante)
+                return jsonify({
+                    'error': (
+                        f'Cantidad excede lo pendiente de OC {numero_oc_pre} · '
+                        f'recibís {cantidad_recibida:.0f}g pero quedan '
+                        f'{pendiente_g:.0f}g por recibir. Si recibiste de más, '
+                        'reintentá con forzar_excedente=true.'),
+                    'cantidad_excede_oc': True,
+                    'pendiente_oc_g': pendiente_g,
+                }), 409
+        except Exception:
+            pass  # si query falla, no bloqueamos · solo perdemos la validación
+
+    # Sprint Recepciones PRO fix #12: alerta si precio cambió >30%
+    precio_pre = float(d.get('precio_kg') or 0)
+    alerta_precio = None
+    if precio_pre > 0:
+        try:
+            prev_row = c.execute(
+                """SELECT precio_kg FROM precios_mp_historico
+                   WHERE codigo_mp = ? AND precio_kg > 0
+                   ORDER BY fecha DESC LIMIT 1""",
+                (codigo,),
+            ).fetchone()
+            if prev_row and prev_row[0]:
+                prev_precio = float(prev_row[0])
+                if prev_precio > 0:
+                    delta_pct = abs(precio_pre - prev_precio) / prev_precio * 100
+                    if delta_pct >= 30:
+                        direccion = 'subió' if precio_pre > prev_precio else 'bajó'
+                        alerta_precio = (
+                            f'⚠ Precio {direccion} {delta_pct:.0f}% vs último '
+                            f'ingreso (${prev_precio:,.0f}/kg → ${precio_pre:,.0f}/kg). '
+                            'Verificá que sea correcto.'
+                        )
+        except Exception:
+            pass
     c.execute("SELECT nombre_inci,nombre_comercial,tipo,proveedor FROM maestro_mps WHERE codigo_mp=?", (codigo,))
     mp = c.fetchone()
     nombre = d.get('nombre_comercial','') or (mp[1] if mp else codigo)
@@ -3858,11 +3925,244 @@ def registrar_recepcion():
             "audit_log INGRESAR_MP fallo · mov_id=%s err=%s", mov_id, _ae,
         )
     conn.commit()
+
+    # Sprint Recepciones PRO fix #3: push_notif a Calidad si cuarentena
+    if cuarentena:
+        try:
+            from blueprints.notif import push_notif as _push_notif
+            from config import CALIDAD_USERS
+            for dest in (CALIDAD_USERS or set()):
+                _push_notif(
+                    destinatario=dest,
+                    tipo='cuarentena_nueva',
+                    titulo=f'🔒 MP nueva en cuarentena · {codigo}',
+                    body=(f'{nombre} · lote {lote} · {cantidad_recibida:.0f}g · '
+                          f'{proveedor or "sin proveedor"}'),
+                    link='/dashboard#cuarentena',
+                    remitente=u,
+                    importante=True,
+                )
+        except Exception as _ne:
+            __import__('logging').getLogger('inventario').warning(
+                'push_notif cuarentena fallo: %s', _ne)
+
     msg = f'{nombre} ingresada. Lote: {lote}'
     if cuarentena: msg += ' — En CUARENTENA (pendiente aprobacion QC)'
     if numero_oc and not oc_warning: msg += f' | OC {numero_oc} actualizada'
     if oc_warning: msg += f' | ⚠ {oc_warning}'
-    return jsonify({'message': msg,'lote':lote,'codigo':codigo,'nombre':nombre,'cantidad':cantidad_recibida,'cuarentena':cuarentena,'oc_warning':oc_warning}), 201
+    return jsonify({
+        'message': msg, 'lote': lote, 'codigo': codigo, 'nombre': nombre,
+        'cantidad': cantidad_recibida, 'cuarentena': cuarentena,
+        'oc_warning': oc_warning,
+        'mov_id': mov_id,
+        'alerta_precio': alerta_precio,
+    }), 201
+
+@bp.route('/api/recepcion/recientes', methods=['GET'])
+def recepcion_recientes():
+    """Sprint Recepciones PRO · 20-may-2026 · fix #7 + #13.
+
+    Endpoint dedicado para "Últimas entradas" con paginación y búsqueda
+    server-side. Antes el frontend bajaba TODOS los movimientos y filtraba
+    en JS · perf horrible.
+
+    Query params:
+      limit (default 25, max 200)
+      offset (default 0)
+      q: busca en material_nombre, material_id, lote, proveedor (case-insensitive)
+    """
+    u, err, code = _require_session()
+    if err:
+        return err, code
+    try:
+        limit = max(1, min(int(request.args.get('limit', 25)), 200))
+    except (ValueError, TypeError):
+        limit = 25
+    try:
+        offset = max(0, int(request.args.get('offset', 0)))
+    except (ValueError, TypeError):
+        offset = 0
+    q = (request.args.get('q') or '').strip().lower()
+    params = []
+    where = ["m.tipo IN ('Entrada','entrada','ENTRADA')"]
+    if q:
+        # Escape LIKE wildcards (% y _) para evitar match fantasma
+        q_safe = q.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+        like = f'%{q_safe}%'
+        where.append(
+            "(LOWER(COALESCE(m.material_nombre,'')) LIKE ? ESCAPE '\\' OR "
+            "LOWER(COALESCE(m.material_id,'')) LIKE ? ESCAPE '\\' OR "
+            "LOWER(COALESCE(m.lote,'')) LIKE ? ESCAPE '\\' OR "
+            "LOWER(COALESCE(m.proveedor,'')) LIKE ? ESCAPE '\\')",
+        )
+        params.extend([like, like, like, like])
+    where_sql = ' AND '.join(where)
+    conn = get_db(); c = conn.cursor()
+    # Total count para paginación
+    try:
+        total = c.execute(
+            f"SELECT COUNT(*) FROM movimientos m WHERE {where_sql}", params,
+        ).fetchone()[0]
+    except Exception:
+        total = 0
+    # Datos con OC vinculada (LEFT JOIN para no perder rows sin OC)
+    try:
+        rows = c.execute(
+            f"""SELECT m.id, m.material_id, m.material_nombre, m.lote,
+                       m.cantidad, COALESCE(m.proveedor,'') as proveedor,
+                       COALESCE(m.fecha_vencimiento,'') as venc,
+                       m.fecha, COALESCE(m.estado_lote,'') as estado_lote,
+                       COALESCE(m.numero_oc,'') as numero_oc,
+                       COALESCE(m.numero_factura,'') as numero_factura,
+                       COALESCE(m.precio_kg, 0) as precio_kg,
+                       COALESCE(m.operador,'') as operador,
+                       COALESCE(mp.nombre_inci,'') as nombre_inci
+                FROM movimientos m
+                LEFT JOIN maestro_mps mp ON m.material_id = mp.codigo_mp
+                WHERE {where_sql}
+                ORDER BY m.fecha DESC, m.id DESC
+                LIMIT ? OFFSET ?""",
+            params + [limit, offset],
+        ).fetchall()
+    except Exception as _e:
+        rows = []
+    items = [{
+        'id': r[0], 'material_id': r[1] or '',
+        'material_nombre': r[2] or '', 'lote': r[3] or '',
+        'cantidad_g': float(r[4] or 0), 'proveedor': r[5] or '',
+        'fecha_vencimiento': r[6] or '', 'fecha': r[7] or '',
+        'estado_lote': r[8] or '', 'numero_oc': r[9] or '',
+        'numero_factura': r[10] or '', 'precio_kg': float(r[11] or 0),
+        'operador': r[12] or '', 'nombre_inci': r[13] or '',
+    } for r in rows]
+    return jsonify({
+        'items': items, 'total': total, 'limit': limit, 'offset': offset,
+        'has_more': (offset + len(items)) < total,
+    })
+
+
+@bp.route('/api/recepcion/<int:mov_id>/anular', methods=['POST'])
+def anular_recepcion(mov_id):
+    """Sprint Recepciones PRO · 20-may-2026 · fix #8 · admin.
+
+    Anula una recepción ingresada por error. NO borra el movimiento original
+    (audit reversible) · crea movimiento Salida inverso con observaciones
+    "ANULACIÓN: <motivo>". Si la recepción venía de OC, descuenta también el
+    cantidad_recibida_g de ordenes_compra_items.
+    """
+    u, err, code = _require_session()
+    if err:
+        return err, code
+    if u not in ADMIN_USERS:
+        return jsonify({'error': 'solo admin'}), 403
+    body = request.get_json(silent=True) or {}
+    motivo = (body.get('motivo') or '').strip()
+    if len(motivo) < 10:
+        return jsonify({'error': 'motivo requerido (≥10 chars)'}), 400
+    conn = get_db(); c = conn.cursor()
+    # Buscar movimiento original
+    row = c.execute(
+        """SELECT material_id, material_nombre, cantidad, tipo, lote,
+                  proveedor, COALESCE(numero_oc,''), COALESCE(numero_factura,''),
+                  COALESCE(estado_lote,'')
+           FROM movimientos WHERE id = ?""",
+        (mov_id,),
+    ).fetchone()
+    if not row:
+        return jsonify({'error': f'movimiento {mov_id} no existe'}), 404
+    if (row[3] or '').lower() != 'entrada':
+        return jsonify({'error': 'solo se anula movimientos tipo Entrada'}), 400
+    # Buscar si ya hay una anulación previa (idempotencia)
+    prev = c.execute(
+        """SELECT id FROM movimientos
+           WHERE tipo='Salida' AND material_id=? AND lote=? AND cantidad=?
+             AND COALESCE(observaciones,'') LIKE ?
+           LIMIT 1""",
+        (row[0], row[4], row[2], f'%ANULACI%mov#{mov_id}%'),
+    ).fetchone()
+    if prev:
+        return jsonify({
+            'error': f'ya hay anulación previa (mov #{prev[0]})',
+            'anulacion_existente': prev[0],
+        }), 409
+    # Insertar movimiento Salida inverso
+    obs_anul = (
+        f'ANULACIÓN mov#{mov_id} · motivo: {motivo[:300]} · '
+        f'por {u} {datetime.now().isoformat()}'
+    )
+    c.execute(
+        """INSERT INTO movimientos
+             (material_id, material_nombre, cantidad, tipo, fecha,
+              observaciones, lote, proveedor, operador, estado_lote)
+           VALUES (?,?,?,?,?,?,?,?,?,?)""",
+        (row[0], row[1], row[2], 'Salida',
+         datetime.now().isoformat(), obs_anul, row[4], row[5], u,
+         'ANULADO'),
+    )
+    mov_anul_id = c.lastrowid
+    # Si tenía OC, descontar de cantidad_recibida_g
+    numero_oc = row[6]
+    if numero_oc:
+        try:
+            c.execute(
+                """UPDATE ordenes_compra_items
+                   SET cantidad_recibida_g = MAX(0, cantidad_recibida_g - ?)
+                   WHERE numero_oc = ? AND codigo_mp = ?""",
+                (row[2], numero_oc, row[0]),
+            )
+        except Exception:
+            pass
+    # Audit
+    try:
+        audit_log(
+            c, usuario=u, accion='ANULAR_RECEPCION_MP',
+            tabla='movimientos', registro_id=mov_id,
+            antes={'tipo': 'Entrada', 'cantidad': row[2],
+                   'lote': row[4], 'material_id': row[0]},
+            despues={'mov_anulacion_id': mov_anul_id,
+                     'motivo': motivo[:300],
+                     'numero_oc': numero_oc,
+                     'numero_factura': row[7]},
+            detalle=f'Anulación recepción mov#{mov_id}: {motivo[:300]}',
+        )
+    except Exception as _ae:
+        __import__('logging').getLogger('inventario').warning(
+            'audit_log ANULAR_RECEPCION_MP fallo: %s', _ae)
+    conn.commit()
+    return jsonify({
+        'ok': True,
+        'mensaje': f'Recepción mov#{mov_id} anulada · mov anulación #{mov_anul_id}',
+        'mov_anulacion_id': mov_anul_id,
+    })
+
+
+@bp.route('/api/recepcion/<codigo_mp>/precio-historico', methods=['GET'])
+def precio_historico_mp(codigo_mp):
+    """Sprint Recepciones PRO · 20-may-2026 · auxiliar para alerta precio.
+
+    Devuelve últimos 10 precios de un codigo_mp · para que el frontend
+    pueda mostrar tendencia o pre-validar antes de submit.
+    """
+    u, err, code = _require_session()
+    if err:
+        return err, code
+    conn = get_db(); c = conn.cursor()
+    try:
+        rows = c.execute(
+            """SELECT fecha, precio_kg, proveedor, numero_factura
+               FROM precios_mp_historico
+               WHERE codigo_mp = ? AND precio_kg > 0
+               ORDER BY fecha DESC LIMIT 10""",
+            (codigo_mp.upper(),),
+        ).fetchall()
+    except Exception:
+        rows = []
+    items = [{
+        'fecha': r[0] or '', 'precio_kg': float(r[1] or 0),
+        'proveedor': r[2] or '', 'numero_factura': r[3] or '',
+    } for r in rows]
+    return jsonify({'historial': items, 'codigo_mp': codigo_mp.upper()})
+
 
 @bp.route('/api/inventario/diagnostico-post-incidente', methods=['GET'])
 def diagnostico_post_incidente():

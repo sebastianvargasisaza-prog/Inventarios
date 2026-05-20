@@ -7310,6 +7310,161 @@ def test_golden_portal_b2b_flujo_completo(app, db_clean):
     _exec("DELETE FROM portal_clientes_credenciales WHERE email LIKE 'test_portal_%'")
 
 
+def test_golden_recepcion_pro_validaciones(app, db_clean):
+    """Sprint Recepciones PRO · 20-may-2026 · 4 validaciones críticas.
+
+    1. Factura obligatoria si hay OC (#4)
+    2. Cantidad ≤ pendiente OC (#2)
+    3. Alerta precio si delta >30% vs último (#12)
+    4. Endpoint /api/recepcion/recientes paginado con búsqueda (#7, #13)
+    """
+    _exec("DELETE FROM movimientos WHERE material_id LIKE 'TEST_RPRO_%'")
+    _exec("DELETE FROM maestro_mps WHERE codigo_mp LIKE 'TEST_RPRO_%'")
+    _exec("DELETE FROM ordenes_compra_items WHERE codigo_mp LIKE 'TEST_RPRO_%'")
+    _exec("DELETE FROM ordenes_compra WHERE numero_oc LIKE 'TEST_OC_R%'")
+    _exec("DELETE FROM precios_mp_historico WHERE codigo_mp LIKE 'TEST_RPRO_%'")
+
+    _exec("""INSERT INTO maestro_mps (codigo_mp, nombre_comercial, nombre_inci, tipo, activo)
+             VALUES ('TEST_RPRO_001','Test MP Recepción','INCI Test','Activo',1)""")
+    _exec("""INSERT INTO ordenes_compra (numero_oc, proveedor, estado, fecha)
+             VALUES ('TEST_OC_R001','Proveedor X','Autorizada',datetime('now'))""")
+    _exec("""INSERT INTO ordenes_compra_items
+             (numero_oc, codigo_mp, nombre_mp, cantidad_g, cantidad_recibida_g)
+             VALUES ('TEST_OC_R001','TEST_RPRO_001','Test MP Recepción',5000,0)""")
+
+    cs = _login(app, 'sebastian')
+
+    # 1) Sin factura + con OC → 400 factura_obligatoria
+    r1 = cs.post('/api/recepcion', json={
+        'codigo_mp': 'TEST_RPRO_001',
+        'cantidad': 1000,
+        'lote': 'LOT_R1',
+        'numero_oc': 'TEST_OC_R001',
+        'proveedor': 'Proveedor X',
+    }, headers=csrf_headers())
+    assert r1.status_code == 400, f'BUG #4: esperaba 400, fue {r1.status_code}'
+    d1 = r1.get_json()
+    assert d1.get('factura_obligatoria') is True
+
+    # 2) Con factura pero cantidad > pendiente → 409 cantidad_excede_oc
+    r2 = cs.post('/api/recepcion', json={
+        'codigo_mp': 'TEST_RPRO_001',
+        'cantidad': 6000,  # > 5000 pendiente
+        'lote': 'LOT_R2',
+        'numero_oc': 'TEST_OC_R001',
+        'numero_factura': 'FAC-TEST-001',
+        'proveedor': 'Proveedor X',
+    }, headers=csrf_headers())
+    assert r2.status_code == 409, f'BUG #2: esperaba 409, fue {r2.status_code}'
+    d2 = r2.get_json()
+    assert d2.get('cantidad_excede_oc') is True
+    assert d2.get('pendiente_oc_g') == 5000
+
+    # 3) Ingreso con precio · siguiente con delta >30% dispara alerta
+    r3a = cs.post('/api/recepcion', json={
+        'codigo_mp': 'TEST_RPRO_001',
+        'cantidad': 2000,
+        'lote': 'LOT_R3A',
+        'numero_factura': 'FAC-A',
+        'precio_kg': 40000,
+        'proveedor': 'Proveedor X',
+    }, headers=csrf_headers())
+    assert r3a.status_code == 201, f'BUG: primer ingreso falló {r3a.status_code}'
+
+    r3b = cs.post('/api/recepcion', json={
+        'codigo_mp': 'TEST_RPRO_001',
+        'cantidad': 1500,
+        'lote': 'LOT_R3B',
+        'numero_factura': 'FAC-B',
+        'precio_kg': 80000,  # +100% vs anterior
+        'proveedor': 'Proveedor X',
+    }, headers=csrf_headers())
+    assert r3b.status_code == 201
+    d3b = r3b.get_json()
+    assert d3b.get('alerta_precio') is not None, 'BUG #12: falta alerta_precio'
+    assert 'subió' in d3b['alerta_precio']
+
+    # 4) Endpoint /api/recepcion/recientes
+    r4 = cs.get('/api/recepcion/recientes?limit=50&q=TEST_RPRO')
+    assert r4.status_code == 200
+    d4 = r4.get_json()
+    assert d4['total'] >= 2  # los 2 que insertamos en (3)
+    ids_test = [it for it in d4['items'] if 'TEST_RPRO' in (it.get('material_id') or '')]
+    assert len(ids_test) >= 2
+    # Debe traer numero_factura y numero_oc en cada row
+    for it in ids_test:
+        assert 'numero_factura' in it
+        assert 'numero_oc' in it
+
+    # Cleanup
+    _exec("DELETE FROM movimientos WHERE material_id='TEST_RPRO_001'")
+    _exec("DELETE FROM precios_mp_historico WHERE codigo_mp='TEST_RPRO_001'")
+    _exec("DELETE FROM ordenes_compra_items WHERE numero_oc='TEST_OC_R001'")
+    _exec("DELETE FROM ordenes_compra WHERE numero_oc='TEST_OC_R001'")
+    _exec("DELETE FROM maestro_mps WHERE codigo_mp='TEST_RPRO_001'")
+
+
+def test_golden_recepcion_anular_admin(app, db_clean):
+    """Sprint Recepciones PRO fix #8 · anular recepción crea Salida inverso."""
+    _exec("DELETE FROM movimientos WHERE material_id='TEST_ANU_001'")
+    _exec("DELETE FROM maestro_mps WHERE codigo_mp='TEST_ANU_001'")
+
+    _exec("""INSERT INTO maestro_mps (codigo_mp, nombre_comercial, tipo, activo)
+             VALUES ('TEST_ANU_001','MP Anular','Activo',1)""")
+
+    cs = _login(app, 'sebastian')
+    # Registrar ingreso
+    r = cs.post('/api/recepcion', json={
+        'codigo_mp': 'TEST_ANU_001',
+        'cantidad': 800,
+        'lote': 'LOT_ANU',
+        'proveedor': 'Test',
+    }, headers=csrf_headers())
+    assert r.status_code == 201
+    mov_id = r.get_json()['mov_id']
+
+    # No-admin → 403
+    cs_user = _login(app, 'mayerlin')
+    r_no = cs_user.post(f'/api/recepcion/{mov_id}/anular',
+                        json={'motivo': 'prueba motivo largo suficiente'},
+                        headers=csrf_headers())
+    assert r_no.status_code == 403
+
+    # Motivo corto → 400
+    r_short = cs.post(f'/api/recepcion/{mov_id}/anular',
+                      json={'motivo': 'corto'}, headers=csrf_headers())
+    assert r_short.status_code == 400
+
+    # Apply OK
+    r_ok = cs.post(f'/api/recepcion/{mov_id}/anular',
+                   json={'motivo': 'Lote llegó dañado · devuelto al proveedor'},
+                   headers=csrf_headers())
+    assert r_ok.status_code == 200
+    d_ok = r_ok.get_json()
+    assert d_ok['ok'] is True
+    mov_anul = d_ok['mov_anulacion_id']
+
+    # Verificar movimiento Salida inverso creado
+    rows = _query("SELECT tipo, cantidad, estado_lote FROM movimientos WHERE id=?",
+                   (mov_anul,))
+    assert rows[0][0] == 'Salida'
+    assert rows[0][1] == 800
+    assert rows[0][2] == 'ANULADO'
+
+    # Idempotencia: segundo intento → 409
+    r_dup = cs.post(f'/api/recepcion/{mov_id}/anular',
+                    json={'motivo': 'segundo intento debería fallar'},
+                    headers=csrf_headers())
+    assert r_dup.status_code == 409
+
+    # audit_log
+    audit = _query("SELECT COUNT(*) FROM audit_log WHERE accion='ANULAR_RECEPCION_MP'")
+    assert audit[0][0] >= 1
+
+    _exec("DELETE FROM movimientos WHERE material_id='TEST_ANU_001'")
+    _exec("DELETE FROM maestro_mps WHERE codigo_mp='TEST_ANU_001'")
+
+
 def test_golden_unificar_proveedores_completo(app, db_clean):
     """Sprint Proveedores · 20-may-2026.
 

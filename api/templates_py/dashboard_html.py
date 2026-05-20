@@ -759,6 +759,8 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
   <div id="ingreso" class="tab-content">
     <div id="ing-panel-mp">
     <h2>&#128666; Ingreso de Materia Prima</h2>
+    <!-- Sprint Recepciones PRO fix #6: banner último ingreso persistido -->
+    <div id="ing-ultimo-persistido" style="display:none;background:#ecfeff;border:1px solid #0891b2;color:#0e7490;padding:8px 12px;border-radius:8px;font-size:13px;margin-bottom:10px"></div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;">
       <p style="color:#666;">Escribe el codigo MP y el sistema completa automaticamente desde el catalogo.</p>
       <button onclick="mostrarFormNuevaMP()" style="background:#27ae60;white-space:nowrap;margin-left:15px;">&#43; Nueva MP en Catalogo</button>
@@ -866,11 +868,17 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       </div>
       <div id="ing-msg" style="margin-top:12px;"></div>
     </div>
-    <h3 style="margin-bottom:10px;">Ultimas Entradas</h3>
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+      <h3 style="margin:0">Últimas Entradas</h3>
+      <!-- Sprint Recepciones PRO fix #7: buscador en histórico -->
+      <input type="text" placeholder="Buscar MP, lote, proveedor…" oninput="histBuscar(this.value)" style="padding:6px 10px;width:240px;font-size:13px;border:1px solid #cbd5e1;border-radius:6px">
+    </div>
     <div style="overflow-x:auto;"><table class="table" id="ing-hist">
-      <thead><tr><th>Codigo</th><th>INCI</th><th>Nombre Comercial</th><th>Lote</th><th style="text-align:right;">g</th><th>Proveedor</th><th>Vence</th><th>Fecha</th></tr></thead>
-      <tbody><tr><td colspan="8" style="text-align:center;color:#999;">Sin entradas</td></tr></tbody>
+      <thead><tr><th>Codigo</th><th>INCI</th><th>Nombre Comercial</th><th>Lote</th><th style="text-align:right;">g</th><th>Proveedor</th><th>OC</th><th>Vence</th><th>Fecha</th><th></th></tr></thead>
+      <tbody><tr><td colspan="10" style="text-align:center;color:#999;">Sin entradas</td></tr></tbody>
     </table></div>
+    <!-- Sprint Recepciones PRO fix #7: paginación -->
+    <div id="ing-hist-pager"></div>
     </div><!-- end ing-panel-mp -->
   </div>
 
@@ -3663,8 +3671,12 @@ async function initIngreso(){
   if(Object.keys(_cat).length===0){
     try{var r=await fetch('/api/maestro-mps'),d=await r.json();(d.mps||[]).forEach(function(mp){_cat[mp.codigo_mp]=mp;});}catch(e){}
   }
-  cargarHistIngreso();
+  cargarHistIngreso(true);
   cargarOCsPendientes();
+  // Sprint Recepciones PRO: persistencia + auto-save + restore draft
+  if(typeof mostrarUltimoIngresoPersistido==='function') mostrarUltimoIngresoPersistido();
+  if(typeof engancharAutoSaveIngreso==='function') engancharAutoSaveIngreso();
+  if(typeof restaurarIngresoDraft==='function') restaurarIngresoDraft();
 }
 function ocultarDropMP(){var d=document.getElementById('mp-dropdown');if(d)d.style.display='none';}
 function seleccionarMP(mp){
@@ -3748,12 +3760,21 @@ function autocompletarDesdeOC(){
   var inci=document.getElementById('ing-inci');
   var prov=document.getElementById('ing-prov');
   var precio=document.getElementById('ing-precio-kg');
+  // Sprint Recepciones PRO fix #16: confirm si OC pisa proveedor manual escrito
+  if(prov && prov.value && prov.value.trim() && opt.dataset.proveedor &&
+     prov.value.trim().toLowerCase() !== (opt.dataset.proveedor||'').toLowerCase()){
+    if(!confirm('Ya escribiste proveedor "'+prov.value+'" y la OC tiene "'+opt.dataset.proveedor+'". ¿Reemplazar con el de la OC?')){
+      // mantener el manual · solo autocompletar el resto
+    } else {
+      prov.value = opt.dataset.proveedor || '';
+    }
+  } else if(prov) {
+    prov.value = opt.dataset.proveedor || '';
+  }
   if(cod) cod.value=opt.dataset.codigo;
   if(nom) nom.value=opt.dataset.nombre||'';
   if(inci) inci.value=opt.dataset.inci||'';
-  if(prov) prov.value=opt.dataset.proveedor||'';
   if(precio && opt.dataset.precio) precio.value=opt.dataset.precio;
-  // trigger lookup & valor total
   if(cod) cod.dispatchEvent(new Event('input'));
   calcularValorTotal();
 }
@@ -3799,18 +3820,36 @@ async function registrarIngreso(){
     var res=await r.json();
     if(r.ok){
       _ultimoIng=res;
-      var ocWarn=res.oc_warning?'<br><span style="color:#e65100;font-size:0.9em;">⚠ '+res.oc_warning+'</span>':'';
-      var successMsg='<div class="alert-success">'+res.message+(enCuarentena?' — CUARENTENA activa':'')+ocWarn+'</div>';
+      // Sprint Recepciones PRO fix #6: persistir en localStorage
+      try{ localStorage.setItem('eos_ultimo_ingreso', JSON.stringify({
+        codigo:res.codigo, lote:res.lote, cantidad:res.cantidad,
+        nombre:res.nombre, mov_id:res.mov_id, at:Date.now(),
+      })); }catch(_ls){}
+      // Sprint Recepciones PRO fix #12: alerta precio si llegó
+      var alertaP = res.alerta_precio ? '<div style="background:#fef3c7;color:#92400e;border:1px solid #f59e0b;padding:8px 12px;margin-top:4px;border-radius:6px;font-size:13px">'+res.alerta_precio+'</div>' : '';
+      var ocWarn = res.oc_warning?'<br><span style="color:#e65100;font-size:0.9em;">⚠ '+res.oc_warning+'</span>':'';
+      var successMsg='<div class="alert-success">'+res.message+(enCuarentena?' — CUARENTENA (Calidad notificada)':'')+ocWarn+'</div>' + alertaP;
       limpiarIngreso();
-      // Show success AFTER limpiarIngreso so it is not wiped immediately
+      // Sprint Recepciones PRO fix #11: limpiar auto-save draft
+      try{ localStorage.removeItem('eos_ing_draft'); }catch(_ls2){}
       document.getElementById('ing-msg').innerHTML=successMsg;
-      // Re-enable button so user can register another MP
       if(btn){btn.disabled=false;btn.textContent='✓ Registrar Entrada';}
-      await cargarHistIngreso();
+      if(typeof mostrarUltimoIngresoPersistido==='function') mostrarUltimoIngresoPersistido();
+      await cargarHistIngreso(true);
       await cargarOCsPendientes();
     } else {
-      document.getElementById('ing-msg').innerHTML='<div class="alert-error">'+(res.error||'Error al registrar')+'</div>';
-      if(btn){btn.disabled=false;btn.textContent='\u2713 Registrar Entrada';}
+      // Sprint Recepciones PRO · errores con hints accionables
+      var errMsg = res.error || 'Error al registrar';
+      var hint = '';
+      if(res.factura_obligatoria){
+        hint = '<div style="margin-top:6px;font-size:12px"><b>Cómo arreglarlo:</b> escribí el N° de factura en el campo "N° Factura / Remisión" antes de registrar.</div>';
+      } else if(res.cantidad_excede_oc){
+        hint = '<div style="margin-top:6px;font-size:12px">Pendiente real: <b>'+(res.pendiente_oc_g||0).toLocaleString()+'g</b>. Si recibiste de más a propósito, registrá la diferencia como ingreso libre (sin vincular OC).</div>';
+      } else if(res.posible_duplicado){
+        hint = '<div style="margin-top:6px;font-size:12px">Si es un ingreso intencional distinto, cambiá <b>lote</b> o <b>cantidad</b> y reintentá.</div>';
+      }
+      document.getElementById('ing-msg').innerHTML='<div class="alert-error">'+errMsg+hint+'</div>';
+      if(btn){btn.disabled=false;btn.textContent='✓ Registrar Entrada';}
     }
   }catch(e){
     document.getElementById('ing-msg').innerHTML='<div class="alert-error">Error de red: '+e.message+'</div>';
@@ -3818,8 +3857,77 @@ async function registrarIngreso(){
   }
 }
 function generarRotuloIngreso(){
+  // Sprint Recepciones PRO fix #6: si _ultimoIng está vacío, leer de localStorage
+  if(!_ultimoIng){
+    try{ _ultimoIng = JSON.parse(localStorage.getItem('eos_ultimo_ingreso')||'null'); }catch(e){}
+  }
   if(!_ultimoIng){alert('Registra un ingreso primero');return;}
   window.open('/rotulo-recepcion/'+encodeURIComponent(_ultimoIng.codigo)+'/'+encodeURIComponent(_ultimoIng.lote||'SL')+'/'+(parseFloat(_ultimoIng.cantidad)||0).toFixed(1),'_blank');
+}
+
+// Sprint Recepciones PRO · 20-may-2026 · fix #6: mostrar último ingreso
+// persistido al cargar el tab (sobrevive refresh por hasta 24h).
+function mostrarUltimoIngresoPersistido(){
+  var box = document.getElementById('ing-ultimo-persistido');
+  if(!box) return;
+  try{
+    var data = localStorage.getItem('eos_ultimo_ingreso');
+    if(!data){ box.style.display='none'; return; }
+    var u = JSON.parse(data);
+    var hace = Math.round((Date.now() - (u.at||0))/60000);
+    if(hace > 60*24){ localStorage.removeItem('eos_ultimo_ingreso'); box.style.display='none'; return; }
+    box.style.display='block';
+    box.innerHTML = '📋 Último ingreso: <b>'+_escHTML(u.nombre||u.codigo)+'</b> · lote <code>'+_escHTML(u.lote||'')+'</code> · ' +
+      (u.cantidad||0).toLocaleString()+'g · hace '+(hace<1?'<1':hace)+'min · ' +
+      '<a href="#" onclick="generarRotuloIngreso();return false" style="color:#0e7490;text-decoration:underline;font-weight:600">🏷 Generar rótulo</a>';
+  }catch(e){ box.style.display='none'; }
+}
+
+// Sprint Recepciones PRO · 20-may-2026 · fix #11 · auto-save draft del form.
+var _ING_DRAFT_TIMER = null;
+function _autoSaveIngresoDraft(){
+  if(_ING_DRAFT_TIMER) clearTimeout(_ING_DRAFT_TIMER);
+  _ING_DRAFT_TIMER = setTimeout(function(){
+    try{
+      var ids=['ing-cod','ing-inci','ing-nombre','ing-tipo','ing-prov','ing-lote','ing-cant','ing-vence','ing-est','ing-pos','ing-obs','ing-factura','ing-precio-kg'];
+      var draft={};
+      ids.forEach(function(id){var el=document.getElementById(id); if(el && el.value) draft[id]=el.value;});
+      if(Object.keys(draft).length > 0){
+        localStorage.setItem('eos_ing_draft', JSON.stringify({d:draft, at:Date.now()}));
+      }
+    }catch(e){}
+  }, 800);
+}
+function restaurarIngresoDraft(){
+  try{
+    var saved = localStorage.getItem('eos_ing_draft');
+    if(!saved) return;
+    var raw = JSON.parse(saved);
+    if(!raw || !raw.d) return;
+    // Si el draft tiene >2 horas, descartar
+    if(Date.now() - (raw.at||0) > 2*60*60*1000){
+      localStorage.removeItem('eos_ing_draft'); return;
+    }
+    if(!confirm('Hay un borrador de ingreso sin enviar de hace '+Math.round((Date.now()-(raw.at||0))/60000)+'min · ¿Restaurarlo?')){
+      localStorage.removeItem('eos_ing_draft'); return;
+    }
+    var draft = raw.d;
+    Object.keys(draft).forEach(function(id){
+      var el=document.getElementById(id); if(el) el.value=draft[id];
+    });
+    if(typeof calcularValorTotal==='function') calcularValorTotal();
+  }catch(e){}
+}
+// Engancha auto-save a los inputs cuando el tab carga
+function engancharAutoSaveIngreso(){
+  var ids=['ing-cod','ing-inci','ing-nombre','ing-tipo','ing-prov','ing-lote','ing-cant','ing-vence','ing-est','ing-pos','ing-obs','ing-factura','ing-precio-kg'];
+  ids.forEach(function(id){
+    var el=document.getElementById(id);
+    if(el && !el._autoSaveBound){
+      el._autoSaveBound = true;
+      el.addEventListener('input', _autoSaveIngresoDraft);
+    }
+  });
 }
 function limpiarIngreso(){
   ['ing-cod','ing-inci','ing-nombre','ing-tipo','ing-prov','ing-lote','ing-cant','ing-vence','ing-est','ing-pos','ing-obs','ing-factura','ing-precio-kg','ing-valor-total'].forEach(function(id){var el=document.getElementById(id);if(el)el.value='';});
@@ -3829,26 +3937,90 @@ function limpiarIngreso(){
   var st=document.getElementById('ing-status');if(st){st.textContent='';st.style.color='#667eea';}
   document.getElementById('ing-msg').innerHTML='';
 }
-async function cargarHistIngreso(){
+// Sprint Recepciones PRO · 20-may-2026 · estado paginado + búsqueda
+var _ING_HIST_STATE = {limit: 25, offset: 0, q: '', total: 0};
+async function cargarHistIngreso(reset){
+  if(reset){ _ING_HIST_STATE.offset = 0; }
   try{
-    var r=await fetch('/api/movimientos'),d=await r.json();
-    var entradas=(d.movimientos||[]).filter(function(m){return m.tipo==='Entrada';}).slice(0,20);
-    var tb=document.querySelector('#ing-hist tbody'); if(!tb) return;
-    if(!entradas.length){tb.innerHTML='<tr><td colspan="8" style="text-align:center;color:#999;">Sin entradas</td></tr>';return;}
-    var h='';
-    entradas.forEach(function(m){
-      h+='<tr><td style="font-family:monospace;font-size:0.85em;">'+(m.material_id||'')+'</td>';
-      var cat=_cat[m.material_id]||{};
-      h+='<td style="font-size:0.8em;color:#444;">'+(cat.nombre_inci||'')+'</td>';
-      h+='<td>'+m.material_nombre+'</td>';
-      h+='<td style="font-family:monospace;">'+(m.lote||'')+'</td>';
-      h+='<td style="text-align:right;font-weight:600;">'+m.cantidad.toLocaleString()+'</td>';
-      h+='<td style="font-size:0.85em;">'+(m.proveedor||'')+'</td>';
-      h+='<td style="color:#c0392b;font-size:0.85em;">'+(m.fecha_vencimiento?m.fecha_vencimiento.substring(0,10):'')+'</td>';
-      h+='<td style="font-size:0.82em;color:#888;">'+m.fecha.substring(0,10)+'</td></tr>';
+    var qs = 'limit='+_ING_HIST_STATE.limit+'&offset='+_ING_HIST_STATE.offset+
+             (_ING_HIST_STATE.q?'&q='+encodeURIComponent(_ING_HIST_STATE.q):'');
+    var r = await fetch('/api/recepcion/recientes?'+qs);
+    if(!r.ok) return;
+    var d = await r.json();
+    _ING_HIST_STATE.total = d.total || 0;
+    var items = d.items || [];
+    var tb = document.querySelector('#ing-hist tbody'); if(!tb) return;
+    if(!items.length){
+      tb.innerHTML='<tr><td colspan="10" style="text-align:center;color:#999;padding:18px;">Sin entradas'+(_ING_HIST_STATE.q?' que coincidan con "'+_escHTML(_ING_HIST_STATE.q)+'"':'')+'</td></tr>';
+      _refreshHistPager(); return;
+    }
+    var esAdmin = window._ES_ADMIN_DASH === true;
+    tb.innerHTML = items.map(function(m){
+      var fec = (m.fecha||'').substring(0,16).replace('T',' ');
+      var venc = m.fecha_vencimiento ? m.fecha_vencimiento.substring(0,10) : '';
+      var ocLink = m.numero_oc ? '<a href="/oc/'+encodeURIComponent(m.numero_oc)+'" target="_blank" style="color:#0e7490;font-family:monospace">'+_escHTML(m.numero_oc)+'</a>' : '<span style="color:#cbd5e1">—</span>';
+      var cuarTag = (m.estado_lote==='CUARENTENA') ? '<span style="background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:8px;font-size:9px;font-weight:700;margin-left:4px">🔒 CUAR</span>' : '';
+      var anulado = (m.estado_lote==='ANULADO') ? 'opacity:.5;text-decoration:line-through;' : '';
+      var anularBtn = (esAdmin && m.estado_lote!=='ANULADO') ?
+        '<button onclick="anularRecepcion('+m.id+')" style="padding:2px 6px;font-size:0.7em;background:#dc2626;color:#fff;border-radius:3px" title="Anular esta entrada">×</button>' : '';
+      return '<tr style="'+anulado+'">' +
+        '<td style="font-family:monospace;font-size:0.85em">'+_escHTML(m.material_id)+'</td>'+
+        '<td style="font-size:0.8em;color:#444">'+_escHTML(m.nombre_inci)+'</td>'+
+        '<td>'+_escHTML(m.material_nombre)+cuarTag+'</td>'+
+        '<td style="font-family:monospace">'+_escHTML(m.lote)+'</td>'+
+        '<td style="text-align:right;font-weight:600">'+m.cantidad_g.toLocaleString()+'</td>'+
+        '<td style="font-size:0.85em">'+_escHTML(m.proveedor)+'</td>'+
+        '<td>'+ocLink+'</td>'+
+        '<td style="color:#c0392b;font-size:0.85em">'+_escHTML(venc)+'</td>'+
+        '<td style="font-size:0.82em;color:#888">'+_escHTML(fec)+'</td>'+
+        '<td style="text-align:center">'+anularBtn+'</td></tr>';
+    }).join('');
+    _refreshHistPager();
+  }catch(e){ console.warn('cargarHistIngreso:', e); }
+}
+function _refreshHistPager(){
+  var box = document.getElementById('ing-hist-pager');
+  if(!box) return;
+  var s = _ING_HIST_STATE;
+  var hasta = Math.min(s.offset + s.limit, s.total);
+  var hayMas = s.offset + s.limit < s.total;
+  box.innerHTML =
+    '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12px;color:#475569;margin-top:8px">' +
+    '<span>Mostrando '+(s.offset+1)+'-'+hasta+' de '+s.total+'</span>' +
+    '<button onclick="histAvanzar(-1)" '+(s.offset===0?'disabled':'')+' style="padding:3px 10px;font-size:11px">‹ Atrás</button>' +
+    '<button onclick="histAvanzar(1)" '+(!hayMas?'disabled':'')+' style="padding:3px 10px;font-size:11px">Siguiente ›</button>' +
+    '</div>';
+}
+function histAvanzar(dir){
+  _ING_HIST_STATE.offset = Math.max(0, _ING_HIST_STATE.offset + dir * _ING_HIST_STATE.limit);
+  cargarHistIngreso();
+}
+var _HIST_BUSC_TIMER = null;
+function histBuscar(val){
+  if(_HIST_BUSC_TIMER) clearTimeout(_HIST_BUSC_TIMER);
+  _HIST_BUSC_TIMER = setTimeout(function(){
+    _ING_HIST_STATE.q = (val||'').trim();
+    _ING_HIST_STATE.offset = 0;
+    cargarHistIngreso();
+  }, 220);
+}
+// Sprint Recepciones PRO fix #8: anular recepción (admin)
+async function anularRecepcion(mov_id){
+  var motivo = prompt('Motivo de anulación (≥10 chars) · esto NO borra el movimiento original, crea un Salida inverso con audit:');
+  if(motivo === null) return;
+  motivo = motivo.trim();
+  if(motivo.length < 10){ alert('Motivo demasiado corto (mín 10 chars)'); return; }
+  try{
+    var r = await fetch('/api/recepcion/'+mov_id+'/anular', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({motivo: motivo}),
     });
-    tb.innerHTML=h;
-  }catch(e){}
+    var d = await r.json();
+    if(!r.ok){ alert('Error: '+(d.error||r.status)); return; }
+    alert('✓ '+d.mensaje);
+    cargarHistIngreso();
+    if(typeof loadStock==='function') loadStock();
+  }catch(e){ alert('Error red: '+e.message); }
 }
 function abrirRotulos(){
   var prod=document.getElementById('prod-sel')?document.getElementById('prod-sel').value:'';
