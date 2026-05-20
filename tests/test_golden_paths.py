@@ -7047,6 +7047,156 @@ def test_golden_plan_pedido_b2b_mp_check(app, db_clean):
 # GOLDEN PATH PLAN-A3 · /api/plan/alertas-ia devuelve estructura válida
 # Sebastián 19-may-2026: el banner del calendario depende de este endpoint.
 # ═══════════════════════════════════════════════════════════════════
+def test_golden_operario_no_puede_iniciar_produccion_ajena(app, db_clean):
+    """Sebastián 19-may-2026 · BUG-1 audit Planta PERFECTA · cierra hueco
+    crítico de seguridad.
+
+    Antes: /iniciar /terminar /completar solo chequeaban login. Un operario
+    podía iniciar/descontar MPs de producción asignada a OTRO operario.
+    Ahora: _caller_puede_operar_produccion valida que el caller sea
+    admin / jefe / o esté en los 4 operario_*_id de la producción.
+    """
+    # IDs reales seedeados (respetando trigger fija_en_dispensacion + cuentas
+    # de login disponibles). PLANTA_USERS = mayerlin/camilo/smurillo/luis/sergio.
+    rows = _query(
+        "SELECT id, LOWER(nombre), LOWER(COALESCE(apellido,'')) "
+        "FROM operarios_planta WHERE COALESCE(activo,1)=1"
+    )
+    op_by_name = {r[1]: r[0] for r in rows}
+    # 'smurillo' login → operario con apellido='murillo' + nombre[0]='s'
+    smurillo_op = next((r[0] for r in rows
+                        if r[2] == 'murillo' and (r[1] or '').startswith('s')), None)
+    if not (op_by_name.get('mayerlin') and smurillo_op
+            and op_by_name.get('camilo')):
+        import pytest
+        pytest.skip('operarios planta no seedeados · skip')
+
+    # Producción asignada: mayerlin (disp) · smurillo (env)
+    # camilo NO está → debe ser rechazado
+    pid = _exec(
+        """INSERT INTO produccion_programada
+           (producto, fecha_programada, lotes, cantidad_kg, estado,
+            operario_dispensacion_id, operario_envasado_id)
+           VALUES ('TEST_GP_BUG1','2026-05-20',1,5,'programado',?,?)""",
+        (op_by_name['mayerlin'], smurillo_op),
+    )
+    try:
+        # camilo NO asignado · debe rechazar
+        cs_camilo = _login(app, 'camilo')
+        r = cs_camilo.post(f'/api/programacion/programar/{pid}/iniciar',
+                            json={}, headers=csrf_headers())
+        assert r.status_code == 403, \
+            f'BUG: camilo pudo iniciar producción ajena · {r.status_code}'
+        r2 = cs_camilo.post(f'/api/programacion/programar/{pid}/terminar',
+                            json={}, headers=csrf_headers())
+        assert r2.status_code == 403, f'BUG terminar: {r2.status_code}'
+        r3 = cs_camilo.post(f'/api/programacion/programar/{pid}/completar',
+                            json={}, headers=csrf_headers())
+        assert r3.status_code == 403, f'BUG completar: {r3.status_code}'
+
+        # smurillo SÍ puede (está en envasado_id) · login 'smurillo'
+        cs_smurillo = _login(app, 'smurillo')
+        r4 = cs_smurillo.post(f'/api/programacion/programar/{pid}/iniciar',
+                              json={}, headers=csrf_headers())
+        assert r4.status_code != 403, \
+            f'BUG: smurillo asignado bloqueado · {r4.status_code}'
+
+        # admin (sebastian) también puede en otra producción limpia
+        pid2 = _exec(
+            """INSERT INTO produccion_programada
+               (producto, fecha_programada, lotes, cantidad_kg, estado,
+                operario_dispensacion_id)
+               VALUES ('TEST_GP_BUG1_B','2026-05-21',1,5,'programado',?)""",
+            (op_by_name['mayerlin'],),
+        )
+        cs_admin = _login(app, 'sebastian')
+        r5 = cs_admin.post(f'/api/programacion/programar/{pid2}/iniciar',
+                            json={}, headers=csrf_headers())
+        assert r5.status_code != 403, \
+            f'BUG: admin sebastian bloqueado · {r5.status_code}'
+        _exec("DELETE FROM produccion_programada WHERE id=?", (pid2,))
+    finally:
+        _exec("DELETE FROM movimientos WHERE lote LIKE 'TEST_GP_BUG1%'")
+        _exec("DELETE FROM produccion_programada WHERE producto LIKE 'TEST_GP_BUG1%'")
+
+
+def test_golden_auto_asignar_operarios_no_deja_roles_null_parcial(app, db_clean):
+    """Sebastián 19-may-2026 · BUG-11 audit Planta PERFECTA.
+
+    Si pool_móviles está vacío (todos los operarios son fijos en dispensación
+    o jefes), _auto_asignar_operarios antes dejaba roles parcialmente NULL.
+    Ahora valida que los 4 roles tengan candidato; si falta alguno, aborta
+    SIN tocar la BD y los operarios previos quedan intactos.
+    """
+    # Crear producción con operarios previos válidos (válido para baseline)
+    rows = _query(
+        "SELECT id, LOWER(nombre), LOWER(COALESCE(apellido,'')), "
+        "       COALESCE(activo,1), COALESCE(es_jefe_produccion,0), "
+        "       COALESCE(fija_en_dispensacion,0) "
+        "FROM operarios_planta WHERE COALESCE(activo,1)=1"
+    )
+    op_by_name = {r[1]: r[0] for r in rows}
+    if not (op_by_name.get('mayerlin') and op_by_name.get('camilo')
+            and op_by_name.get('milton')):
+        import pytest
+        pytest.skip('operarios planta no seedeados · skip')
+
+    pid = _exec(
+        """INSERT INTO produccion_programada
+           (producto, fecha_programada, lotes, cantidad_kg, estado,
+            operario_dispensacion_id, operario_elaboracion_id,
+            operario_envasado_id, operario_acondicionamiento_id)
+           VALUES ('TEST_GP_BUG11','2026-06-15',1,5,'programado',?,?,?,?)""",
+        (op_by_name['mayerlin'], op_by_name['camilo'],
+         op_by_name['milton'], op_by_name['camilo']),  # duplicado intencional
+    )
+    # Snapshot previo (con duplicado de camilo en elaboración y acondic.)
+    prev_ops = _query(
+        "SELECT operario_dispensacion_id, operario_elaboracion_id, "
+        "       operario_envasado_id, operario_acondicionamiento_id "
+        "FROM produccion_programada WHERE id=?", (pid,)
+    )[0]
+
+    # Forzar pool vacío: inactivar TODOS los móviles (no jefes, no fijos)
+    # para simular el caso extremo · luego invocar _auto_asignar_produccion.
+    inactivados = []
+    for r in rows:
+        oid, nom, ap, activo, jefe, fija = r
+        if not jefe and not fija:
+            _exec("UPDATE operarios_planta SET activo=0 WHERE id=?", (oid,))
+            inactivados.append(oid)
+
+    try:
+        # Importar y llamar directamente
+        import sys
+        sys.path.insert(0, str(__import__('pathlib').Path(__file__).parent.parent / 'api'))
+        from blueprints.programacion import _auto_asignar_produccion
+        from database import get_db
+        with app.app_context():
+            conn = get_db()
+            c = conn.cursor()
+            res = _auto_asignar_produccion(c, pid, user='test')
+            conn.commit()
+
+        # Producción debe tener operarios INTACTOS (no NULL parcial)
+        post = _query(
+            "SELECT operario_dispensacion_id, operario_elaboracion_id, "
+            "       operario_envasado_id, operario_acondicionamiento_id "
+            "FROM produccion_programada WHERE id=?", (pid,)
+        )[0]
+        # Ningún campo debe haberse vuelto NULL si antes tenía valor
+        for prev, after, rol in zip(prev_ops, post,
+                                     ('disp', 'elab', 'env', 'acond')):
+            if prev is not None:
+                assert after is not None, \
+                    f'BUG: rol {rol} pasó de {prev} a NULL · roles parciales prohibidos'
+    finally:
+        # Restaurar operarios + limpiar
+        for oid in inactivados:
+            _exec("UPDATE operarios_planta SET activo=1 WHERE id=?", (oid,))
+        _exec("DELETE FROM produccion_programada WHERE id=?", (pid,))
+
+
 def test_golden_aplicar_minimos_backup_non_blocking(app, db_clean):
     """Sebastián 19-may-2026 · "Aplicar recálculo" daba error 500 cuando
     do_backup() fallaba (pg_dump faltante/credenciales mal en Render).

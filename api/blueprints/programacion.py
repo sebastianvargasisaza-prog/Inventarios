@@ -32,6 +32,75 @@ logger = log  # alias compatible con call-sites históricos
 
 bp = Blueprint('programacion', __name__)
 
+
+def _caller_puede_operar_produccion(c, user, evento_id):
+    """Sebastián 19-may-2026 · BUG-1 audit Planta PERFECTA · cierra hueco
+    crítico: hasta hoy /iniciar y /completar solo chequeaban login. Un
+    operario podía POST con id de producción ajena y descontar MPs en
+    nombre de otro.
+
+    Retorna (ok: bool, error_response: tuple|None). Si ok=False, retornar
+    error_response directamente desde el endpoint.
+
+    Reglas:
+      - user en ADMIN_USERS → siempre ok (Sebastián / Alejandro)
+      - user es operarios_planta.es_jefe_produccion=1 → ok (Luis Enrique)
+      - user mapea a un operario_id que figura en alguno de los 4 roles
+        (operario_dispensacion_id / elaboracion / envasado / acondicionamiento)
+        de la producción → ok
+      - en cualquier otro caso → 403
+    """
+    if not user:
+        return False, (jsonify({'error': 'No autorizado'}), 401)
+    if user in ADMIN_USERS:
+        return True, None
+    # Mapear user → operario_id (mismo patrón que operario.py:_username_to_operario_id)
+    u = user.lower().strip()
+    op_row = c.execute(
+        "SELECT id, COALESCE(es_jefe_produccion,0) FROM operarios_planta "
+        "WHERE LOWER(nombre) = ? AND COALESCE(activo,1) = 1 LIMIT 1",
+        (u,),
+    ).fetchone()
+    if not op_row and len(u) >= 4:
+        # match 2: primer-letra + apellido (smurillo → Sebastian Murillo)
+        op_row = c.execute(
+            """SELECT id, COALESCE(es_jefe_produccion,0) FROM operarios_planta
+               WHERE LOWER(apellido) = ?
+                 AND LOWER(SUBSTR(nombre, 1, 1)) = ?
+                 AND COALESCE(activo,1) = 1 LIMIT 1""",
+            (u[1:], u[0]),
+        ).fetchone()
+    if not op_row:
+        op_row = c.execute(
+            """SELECT id, COALESCE(es_jefe_produccion,0) FROM operarios_planta
+               WHERE LOWER(nombre) LIKE ? AND COALESCE(activo,1) = 1 LIMIT 1""",
+            (u + '%',),
+        ).fetchone()
+    if not op_row:
+        return False, (jsonify({
+            'error': 'Tu usuario no está mapeado a un operario en planta. '
+                     'Pídele acceso a Sebastián.',
+        }), 403)
+    op_id, es_jefe = int(op_row[0]), bool(op_row[1])
+    if es_jefe:
+        return True, None
+    # Verificar que el operario_id sea uno de los 4 roles asignados
+    rol_row = c.execute(
+        """SELECT operario_dispensacion_id, operario_elaboracion_id,
+                  operario_envasado_id, operario_acondicionamiento_id
+           FROM produccion_programada WHERE id = ?""",
+        (evento_id,),
+    ).fetchone()
+    if not rol_row:
+        return False, (jsonify({'error': 'produccion no existe'}), 404)
+    if op_id in [r for r in rol_row if r is not None]:
+        return True, None
+    return False, (jsonify({
+        'error': 'No estás asignado a esta producción · pídele al admin '
+                 'que te asigne o se la pase a otro operario.',
+        'codigo': 'no_asignado',
+    }), 403)
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Sebastián 12-may-2026: constante global NON_FAB_KW unificada.
 # Antes había 4 definiciones duplicadas (líneas 938, 3937, 7103, 8414) con
@@ -2933,6 +3002,12 @@ def prog_iniciar_produccion(evento_id):
         return jsonify({'error': 'Solo admin puede forzar re-descuento'}), 403
 
     conn = get_db(); c = conn.cursor()
+    # BUG-1 fix · 19-may-2026: validar que el caller esté asignado a esta
+    # producción (o sea admin/jefe). Antes solo se chequeaba login → un
+    # operario podía iniciar/descontar MPs de producción ajena.
+    ok_caller, err_caller = _caller_puede_operar_produccion(c, user, evento_id)
+    if not ok_caller:
+        return err_caller
     pp = c.execute("""SELECT id, producto, area_id, inicio_real_at, fin_real_at,
                               COALESCE(inventario_descontado_at,'') as desc_at
                       FROM produccion_programada WHERE id=?""", (evento_id,)).fetchone()
@@ -3127,6 +3202,11 @@ def prog_terminar_produccion(evento_id):
     user = session.get('compras_user', '')
     body = request.get_json(silent=True) or {}
     conn = get_db(); c = conn.cursor()
+    # BUG-1 fix · 19-may-2026: solo el operario asignado / jefe / admin
+    # puede terminar esta producción.
+    ok_caller, err_caller = _caller_puede_operar_produccion(c, user, evento_id)
+    if not ok_caller:
+        return err_caller
     pp = c.execute("""SELECT id, producto, area_id, inicio_real_at, fin_real_at,
                               cantidad_kg
                       FROM produccion_programada WHERE id=?""", (evento_id,)).fetchone()
@@ -5104,6 +5184,11 @@ def prog_completar_evento(evento_id):
         return jsonify({'error': 'Solo admin puede forzar re-descuento'}), 403
 
     conn = get_db(); c = conn.cursor()
+    # BUG-1 fix · 19-may-2026: solo operario asignado / jefe / admin
+    # puede completar y descontar MPs/MEEs de la producción.
+    ok_caller, err_caller = _caller_puede_operar_produccion(c, user, evento_id)
+    if not ok_caller:
+        return err_caller
     prod = c.execute("""
         SELECT pp.id, pp.producto, pp.fecha_programada, pp.lotes,
                pp.estado, COALESCE(pp.inventario_descontado_at,'') as descontado_at,
@@ -11119,18 +11204,37 @@ def _auto_asignar_operarios(c, produccion_id, fecha_iso, user='auto-ia'):
         globalmente_usados.get(rol, set()).add(elegido)
         _registrar_rotacion(c, rol, elegido, user)
 
-    # UPDATE produccion_programada
+    # BUG-11 fix · 19-may-2026: validar que TODOS los 4 roles tengan operario
+    # asignado ANTES de tocar la BD. Si pool_moviles está vacío (caso extremo:
+    # todos los activos son fijos en dispensación o jefes), algún rol queda
+    # sin candidato → producción con roles NULL parcial = estado inconsistente.
+    # Antes: el UPDATE con COALESCE dejaba NULL los faltantes sin avisar.
+    # Ahora: abortamos sin tocar la BD si falta cualquier rol.
+    roles_esperados = ('dispensacion', 'elaboracion', 'envasado', 'acondicionamiento')
+    faltantes = [r for r in roles_esperados if asignaciones.get(r) is None]
+    if faltantes:
+        _log = logging.getLogger('inventario.programacion')
+        _log.warning(
+            'auto_asignar_operarios ABORTÓ prod=%s fecha=%s · roles sin candidato: %s · '
+            'producción NO modificada (estado previo preservado)',
+            produccion_id, fecha_iso, faltantes,
+        )
+        return None
+
+    # UPDATE produccion_programada · valores ABSOLUTOS (ya garantizamos
+    # que los 4 están). Si alguien pasó valores previos para "preservar",
+    # esta función reemplaza todo el set de operarios atómicamente.
     c.execute("""
         UPDATE produccion_programada SET
-          operario_dispensacion_id = COALESCE(?, operario_dispensacion_id),
-          operario_elaboracion_id = COALESCE(?, operario_elaboracion_id),
-          operario_envasado_id = COALESCE(?, operario_envasado_id),
-          operario_acondicionamiento_id = COALESCE(?, operario_acondicionamiento_id)
+          operario_dispensacion_id = ?,
+          operario_elaboracion_id = ?,
+          operario_envasado_id = ?,
+          operario_acondicionamiento_id = ?
         WHERE id = ?
-    """, (asignaciones.get('dispensacion'),
-          asignaciones.get('elaboracion'),
-          asignaciones.get('envasado'),
-          asignaciones.get('acondicionamiento'),
+    """, (asignaciones['dispensacion'],
+          asignaciones['elaboracion'],
+          asignaciones['envasado'],
+          asignaciones['acondicionamiento'],
           produccion_id))
     return asignaciones
 
@@ -11450,17 +11554,13 @@ def _auto_asignar_produccion(c, produccion_id, user='auto-ia'):
             if jefes_asignados:
                 necesita_reasignar = True
                 resultado['cambios'].append('⚠️ Reasignando: jefe asignado como operario (Luis Enrique no rota)')
-        if necesita_reasignar:
-            # NULL los operarios para que _auto_asignar_operarios los repueble
-            c.execute("""
-                UPDATE produccion_programada SET
-                  operario_dispensacion_id = NULL,
-                  operario_elaboracion_id = NULL,
-                  operario_envasado_id = NULL,
-                  operario_acondicionamiento_id = NULL
-                WHERE id = ?
-            """, (produccion_id,))
     if necesita_reasignar:
+        # BUG-11 fix · 19-may-2026: ya NO NULLeamos los operarios previos
+        # ANTES de llamar _auto_asignar_operarios. La función ahora hace
+        # UPDATE absoluto si y solo si puede llenar los 4 roles, o aborta
+        # sin tocar nada si pool no alcanza. Así si el caller falla,
+        # el estado previo (jefes / duplicados) queda intacto para
+        # debugging en vez de quedar parcialmente NULL.
         asigns = _auto_asignar_operarios(c, produccion_id, fecha_iso, user)
         if asigns:
             # Lookup nombres
@@ -11478,6 +11578,12 @@ def _auto_asignar_produccion(c, produccion_id, user='auto-ia'):
             resultado['cambios'].append(
                 'Operarios asignados (rotación): ' +
                 ' · '.join(f'{k}: {v}' for k, v in asigns_nom.items())
+            )
+        else:
+            # _auto_asignar_operarios devolvió None · pool no alcanza
+            resultado['cambios'].append(
+                '⚠️ No se pudo reasignar operarios (pool insuficiente o '
+                'todos fijos/jefes) · operarios previos NO modificados'
             )
 
     # 3) Log

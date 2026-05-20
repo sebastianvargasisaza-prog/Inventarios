@@ -77,6 +77,30 @@
   preservar evidencia y permitir recuperación.
 - Test que protege: `test_golden_limpiar_duplicados_respeta_fijo`.
 
+### INV-8 · Solo operario asignado / jefe / admin puede iniciar/terminar/completar (19-may-2026)
+
+`POST /api/programacion/programar/<id>/iniciar`, `/terminar` y `/completar` validan
+con `_caller_puede_operar_produccion()`:
+- `ADMIN_USERS` (sebastian / alejandro) → siempre OK
+- `es_jefe_produccion=1` (Luis Enrique) → OK
+- Operario mapeado desde `compras_user` cuyo `id` figure en uno de los 4
+  `operario_*_id` de la producción → OK
+- Cualquier otro caso → 403 con código `no_asignado`
+
+Antes los endpoints solo chequeaban login → operario A descontaba MPs de
+producciones asignadas a operario B. Test: `test_golden_operario_no_puede_iniciar_produccion_ajena`.
+
+### INV-9 · `_auto_asignar_operarios` es atómico (todo-o-nada) (19-may-2026)
+
+La función valida que los 4 roles tengan candidato antes de tocar la BD.
+Si el pool no alcanza (todos fijos o jefes), aborta retornando `None` sin
+modificar la producción, preservando el estado previo. El UPDATE final usa
+valores absolutos (no COALESCE) porque los 4 están garantizados.
+
+Antes el caller NULLeaba los 4 operarios ANTES de invocar el helper · si el
+helper no podía llenar todos, quedaba la producción con roles parciales NULL.
+Test: `test_golden_auto_asignar_operarios_no_deja_roles_null_parcial`.
+
 ### INV-7 · Auditoría bulk-mutaciones a `produccion_programada` (19-may-2026)
 
 Auditoría completa post-incidente del 19-may. Lista de TODOS los puntos
