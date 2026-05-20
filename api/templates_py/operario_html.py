@@ -124,7 +124,13 @@ function fmt(n, d=0) {
 
 async function loadMiDia() {
   try {
-    const r = await fetch('/api/operario/mi-dia');
+    // Admin puede ver Mi Día de otro operario via ?as_operario_id=X
+    const urlParams = new URLSearchParams(window.location.search);
+    const asOp = urlParams.get('as_operario_id');
+    const apiUrl = asOp
+      ? '/api/operario/mi-dia?as_operario_id=' + encodeURIComponent(asOp)
+      : '/api/operario/mi-dia';
+    const r = await fetch(apiUrl);
     if (r.status === 401) { window.location.href = '/login'; return; }
     const d = await r.json();
     renderHeader(d);
@@ -192,7 +198,10 @@ function renderProducciones(d) {
     // Botón principal
     let btn = '';
     if (accion === 'iniciar') {
-      btn = '<button class="btn btn-iniciar btn-big" onclick="iniciarProd(' + p.id + ')">' + ACCION_LABEL.iniciar + '</button>';
+      const sala = (p.area_nombre || p.area_codigo || '').replace(/'/g, '');
+      btn = '<button class="btn btn-iniciar btn-big" '
+          + 'onclick="iniciarProd(' + p.id + ',\\'' + (p.area_estado||'') + '\\',\\'' + sala + '\\')">'
+          + ACCION_LABEL.iniciar + '</button>';
     } else if (accion === 'continuar') {
       btn = '<button class="btn btn-continuar btn-big" onclick="window.location.href=\\'/brd#ebr-' + (ebr && ebr.id) + '\\'">' + ACCION_LABEL.continuar + ' · ' + pasosLabel + '</button>';
     } else if (accion === 'completar_pp') {
@@ -229,7 +238,13 @@ function renderProducciones(d) {
   div.innerHTML = html;
 }
 
-async function iniciarProd(id) {
+async function iniciarProd(id, areaEstado, areaNombre) {
+  // Sebastián 19-may-2026: aviso si la sala quedó sucia del lote anterior
+  if (areaEstado === 'sucia') {
+    if (!confirm('⚠️ La sala ' + (areaNombre || '') + ' está SUCIA del lote anterior.\\n\\nSe recomienda marcarla limpia ANTES de iniciar otra producción acá.\\n\\n¿Iniciar de todos modos?')) return;
+  } else if (areaEstado === 'ocupada') {
+    if (!confirm('⚠️ La sala ' + (areaNombre || '') + ' figura OCUPADA · ya hay otra producción en curso ahí.\\n\\n¿Iniciar de todos modos?')) return;
+  }
   if (!confirm('¿Iniciar producción ' + id + '?\\nEsto descuenta MPs del inventario y crea el lote.')) return;
   try {
     const r = await fetch('/api/programacion/programar/' + id + '/iniciar', {

@@ -9572,7 +9572,7 @@ async function ckMarcar(itemId, estado){
         var borde = activo ? '#1a4a7a' : '#cbd5e1';
         return '<div style="background:#fff;border:1px solid #e2e8f0;border-top:3px solid '+borde+';border-radius:8px;padding:10px 12px">'
           + '<div style="display:flex;justify-content:space-between;align-items:center;gap:6px">'
-          + '<b style="font-size:13px;color:#0f172a">'+_escHTML(o.nombre||('op#'+o.id))+'</b>'
+          + '<a href="/mi-dia?as_operario_id='+o.id+'" target="_blank" style="font-size:13px;color:#0f172a;font-weight:700;text-decoration:none" title="Abrir Mi Día de '+_escHTML(o.nombre||'')+'">'+_escHTML(o.nombre||('op#'+o.id))+' <span style="font-size:9px;color:#1a4a7a;font-weight:500">↗</span></a>'
           + chip + '</div>'
           + cuerpo
           + limp

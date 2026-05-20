@@ -140,6 +140,12 @@ def mi_dia():
 
     # Identificar operario
     operario_id = _username_to_operario_id(c, user)
+
+    # Sebastián 19-may-2026: admin puede ver Mi Día de otro operario
+    # (drill-down desde Centro de Mando → tarjeta del operario).
+    as_op = request.args.get('as_operario_id', type=int)
+    if as_op and es_admin:
+        operario_id = as_op
     operario_info = None
     es_jefe = False
     if operario_id is not None:
