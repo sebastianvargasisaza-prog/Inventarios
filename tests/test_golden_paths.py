@@ -7047,6 +7047,72 @@ def test_golden_plan_pedido_b2b_mp_check(app, db_clean):
 # GOLDEN PATH PLAN-A3 · /api/plan/alertas-ia devuelve estructura válida
 # Sebastián 19-may-2026: el banner del calendario depende de este endpoint.
 # ═══════════════════════════════════════════════════════════════════
+def test_golden_aplicar_minimos_backup_non_blocking(app, db_clean):
+    """Sebastián 19-may-2026 · "Aplicar recálculo" daba error 500 cuando
+    do_backup() fallaba (pg_dump faltante/credenciales mal en Render).
+
+    Garantías:
+      - Si do_backup falla, el endpoint NO devuelve 500 · sigue y aplica.
+      - audit_log queda con APLICAR_MINIMOS_BACKUP_FALLO para investigar.
+      - Cada cambio individual queda en audit_log (APLICAR_MINIMOS_CAMBIO_ITEM)
+        para permitir reversión sin depender del backup.
+    """
+    from unittest.mock import patch
+    cs = _login(app, 'sebastian')
+
+    # Simular fallo de do_backup
+    with patch('blueprints.admin.do_backup',
+               side_effect=RuntimeError('pg_dump no encontrado · test')):
+        r = cs.post('/api/admin/aplicar-minimos', json={
+            'token': 'APLICAR_MINIMOS_RECALCULADOS_2026',
+            'proyeccion_dias': 90,
+        }, headers=csrf_headers())
+
+    assert r.status_code == 200, \
+        f'BUG: backup fallo bloquea el endpoint · {r.status_code} {r.data[:300]}'
+    d = r.get_json()
+    assert d.get('ok') is True
+    assert 'backup_estado' in d
+    assert 'fallo_no_critico' in (d['backup_estado'] or ''), \
+        f'BUG: backup_estado no marca fallo · {d.get("backup_estado")}'
+
+    # audit_log debe tener la entrada de fallo de backup
+    rows = _query("""SELECT COUNT(*) FROM audit_log
+                     WHERE accion='APLICAR_MINIMOS_BACKUP_FALLO'
+                       AND fecha >= datetime('now','-5 hours','-1 minute')""")
+    assert rows[0][0] >= 1, 'BUG: falta audit_log APLICAR_MINIMOS_BACKUP_FALLO'
+
+
+def test_golden_aplicar_minimos_token_y_audit(app, db_clean):
+    """Token inválido → 403 · token válido → 200 y audit_log con resumen."""
+    from unittest.mock import patch
+    cs = _login(app, 'sebastian')
+
+    # Token incorrecto rechaza
+    r1 = cs.post('/api/admin/aplicar-minimos', json={
+        'token': 'TOKEN_INCORRECTO',
+        'proyeccion_dias': 90,
+    }, headers=csrf_headers())
+    assert r1.status_code == 403
+
+    # Token correcto + mock backup OK · debe terminar 200
+    with patch('blueprints.admin.do_backup', return_value={'ok': True}):
+        r2 = cs.post('/api/admin/aplicar-minimos', json={
+            'token': 'APLICAR_MINIMOS_RECALCULADOS_2026',
+            'proyeccion_dias': 90,
+        }, headers=csrf_headers())
+    assert r2.status_code == 200, f'BUG: {r2.status_code} {r2.data[:200]}'
+    d = r2.get_json()
+    assert d.get('ok') is True
+    assert d.get('backup_estado') == 'ok'
+
+    # Resumen en audit_log
+    rows = _query("""SELECT COUNT(*) FROM audit_log
+                     WHERE accion='APLICAR_MINIMOS_RECALCULADOS'
+                       AND fecha >= datetime('now','-5 hours','-1 minute')""")
+    assert rows[0][0] >= 1, 'BUG: falta resumen en audit_log'
+
+
 def test_golden_inv_export_lista_simple(app, db_clean):
     """Sebastián 19-may-2026: Alejandro pide lista Excel de materias primas.
 

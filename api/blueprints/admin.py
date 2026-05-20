@@ -6797,24 +6797,51 @@ def aplicar_minimos():
         'SUB_PROTEGIDO', 'SOBRE_PROTEGIDO', 'SIN_MINIMO_CONFIGURADO'
     ]
 
-    # Backup previo
+    # Backup previo · best-effort · si falla NO bloquea (Sebastián 19-may-2026).
+    # Causa del bug "Aplicar recálculo da error": do_backup() invocaba pg_dump
+    # que en Render fallaba si el binario o credenciales PG no estaban OK,
+    # devolviendo 500 al usuario. Como YA hay cron de backup horario activo,
+    # el snapshot dedicado pre-recálculo es redundante. Si falla, log y sigue.
+    # Adicionalmente, cada UPDATE escribe audit_log con antes/después →
+    # cualquier cambio es individualmente reversible sin depender del backup.
+    backup_estado = None
     try:
-        do_backup(triggered_by='pre_minimos_recalc')
+        res = do_backup(triggered_by='pre_minimos_recalc')
+        if isinstance(res, dict) and res.get('ok'):
+            backup_estado = 'ok'
+        else:
+            backup_estado = 'skipped'
     except Exception as e:
-        return jsonify({'error': f'Backup falló: {str(e)[:200]}'}), 500
+        backup_estado = f'fallo_no_critico: {str(e)[:120]}'
+        # NO devolvemos error · seguimos · audit_log preserva la trazabilidad
+        try:
+            from database import get_db as _gdb_for_log
+            _gc = _gdb_for_log().cursor()
+            _gc.execute(
+                """INSERT INTO audit_log
+                   (usuario, accion, tabla, registro_id, detalle, ip, fecha)
+                   VALUES (?,?,?,?,?,?,datetime('now', '-5 hours'))""",
+                (u, 'APLICAR_MINIMOS_BACKUP_FALLO', 'maestro_mps', '_BULK_',
+                 f'do_backup fallo (non-blocking): {str(e)[:300]}',
+                 request.remote_addr),
+            )
+        except Exception:
+            pass
 
-    # Reusar la lógica de auditoría
-    from flask import current_app
-    with current_app.test_request_context(
-        f'/api/admin/auditar-minimos?proyeccion_dias={horizonte}'
-    ):
-        audit_resp = auditar_minimos()
-    audit_data = audit_resp.get_json() or {}
+    # Reusar la lógica de auditoría · Sebastián 19-may-2026: ANTES llamaba
+    # `auditar_minimos()` con test_request_context, pero esa función exige
+    # `_require_admin()` y como el contexto no propaga sesión, retornaba
+    # tupla (json, 401) · luego `.get_json()` rompía con AttributeError →
+    # 500 al usuario ("Aplicar recálculo da error"). Fix: llamar
+    # `_compute_audit_minimos()` directo (es la función pura que calcula,
+    # sin guard de auth).
+    audit_data = _compute_audit_minimos(horizonte) or {}
 
     from database import get_db as _get_db
     conn = _get_db()
     c = conn.cursor()
 
+    import json as _json
     cambios = []
     for item in (audit_data.get('auditoria') or []):
         if item['estado'] not in solo_estados:
@@ -6824,11 +6851,31 @@ def aplicar_minimos():
         codigo = item['codigo_mp']
         nuevo = float(item['minimo_recomendado_g'])
         previo = float(item['stock_minimo_actual_g'])
+        if abs(nuevo - previo) < 0.5:
+            continue  # nada que cambiar
         try:
             c.execute(
                 "UPDATE maestro_mps SET stock_minimo = ? WHERE codigo_mp = ?",
                 (nuevo, codigo),
             )
+            # Sebastián 19-may-2026: audit por cada cambio (antes/despues)
+            # para permitir reversión individual sin depender del backup.
+            try:
+                c.execute(
+                    """INSERT INTO audit_log
+                       (usuario, accion, tabla, registro_id, detalle, ip, fecha)
+                       VALUES (?,?,?,?,?,?,datetime('now', '-5 hours'))""",
+                    (u, 'APLICAR_MINIMOS_CAMBIO_ITEM', 'maestro_mps', codigo,
+                     _json.dumps({
+                         'codigo_mp': codigo,
+                         'antes': {'stock_minimo_g': round(previo, 1)},
+                         'despues': {'stock_minimo_g': round(nuevo, 1)},
+                         'estado_previo': item['estado'],
+                     }, ensure_ascii=False),
+                     request.remote_addr),
+                )
+            except Exception:
+                pass
             cambios.append({
                 'codigo_mp': codigo,
                 'nombre': item['nombre'],
@@ -6840,9 +6887,8 @@ def aplicar_minimos():
             continue
     conn.commit()
 
-    # Audit log
+    # Audit log resumen
     try:
-        import json as _json
         c.execute(
             """INSERT INTO audit_log
                (usuario, accion, tabla, registro_id, detalle, ip, fecha)
@@ -6852,6 +6898,7 @@ def aplicar_minimos():
                  'count': len(cambios),
                  'horizonte_proyeccion_dias': horizonte,
                  'estados_aplicados': solo_estados,
+                 'backup_estado': backup_estado,
              }, ensure_ascii=False),
              request.remote_addr),
         )
@@ -6859,11 +6906,15 @@ def aplicar_minimos():
     except Exception:
         pass
 
+    msg_backup = ('backup previo creado' if backup_estado == 'ok'
+                  else 'sin backup adicional (cron horario cubre)')
     return jsonify({
         'ok': True,
         'count_cambios': len(cambios),
         'cambios': cambios[:50],
-        'mensaje': f'{len(cambios)} mínimos actualizados. Backup previo creado.',
+        'backup_estado': backup_estado,
+        'mensaje': f'{len(cambios)} mínimos actualizados · {msg_backup} · '
+                   f'cada cambio queda en audit_log para reversión',
     })
 
 
