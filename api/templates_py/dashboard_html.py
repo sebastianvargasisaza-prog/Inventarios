@@ -1515,6 +1515,12 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       title="Vista live de la planta · plano, áreas limpias o sucias y qué hace cada operario">
       &#127919; Centro de Mando
     </button>
+    <!-- Sebastián 19-may-2026: Kanban de Estaciones · pieza 2 · iframe a /planta/kanban -->
+    <button id="prog-tab-kanban" onclick="switchProgTab('kanban')"
+      style="padding:9px 22px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:700;cursor:pointer;background:#0891b2;color:#fff;box-shadow:0 3px 10px rgba(8,145,178,.35)"
+      title="Kanban de 4 estaciones · Dispensación → Elaboración → Envasado → Acondicionamiento">
+      &#127981; Kanban
+    </button>
     <span id="prog-tareas-badge" style="display:none;background:#dc2626;color:#fff;font-size:9px;font-weight:800;padding:2px 8px;border-radius:8px"></span>
   </div>
   <!-- Tab "Calendario + IA" · iframe a /admin/plan-calendario · Sebastián 14-may-2026:
@@ -1524,6 +1530,12 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     <iframe id="calendario-iframe" src="about:blank"
       style="width:100%;height:calc(100vh - 200px);min-height:700px;border:1px solid #e2e8f0;border-radius:12px;background:#f8fafc"
       title="Calendario EOS + IA"></iframe>
+  </div>
+  <!-- Tab "Kanban" · iframe a /planta/kanban · pieza 2 · Sebastián 19-may-2026 -->
+  <div id="ptab-kanban" style="display:none">
+    <iframe id="kanban-iframe" src="about:blank"
+      style="width:100%;height:calc(100vh - 200px);min-height:700px;border:1px solid #e2e8f0;border-radius:12px;background:#0f172a"
+      title="Kanban de Planta"></iframe>
   </div>
   <!-- Tab "Factibilidad" · iframe a /admin/factibilidad-plan · ¿alcanzan las MP? -->
   <div id="ptab-factibilidad" style="display:none">
@@ -9219,6 +9231,7 @@ async function ckMarcar(itemId, estado){
         'planv2': 'ptab-planv2',
         'midia':  'ptab-midia',
         'calendario': 'ptab-calendario',
+        'kanban': 'ptab-kanban',
         'necesidades': 'ptab-necesidades',
         'abastecimiento': 'ptab-abastecimiento',
         'factibilidad': 'ptab-factibilidad',
@@ -9274,6 +9287,22 @@ async function ckMarcar(itemId, estado){
                 frCal.contentWindow.cargar();
               }
             } catch(e) { console.warn('refresh calendario falló:', e); }
+          }
+        }
+      }
+      // Lazy-load iframe Kanban de Planta · pieza 2 · Sebastián 19-may-2026.
+      // Mismo patrón anti-stale: si ya estaba cargado, llamar contentWindow.cargar()
+      if (tab === 'kanban') {
+        var frKb = document.getElementById('kanban-iframe');
+        if (frKb) {
+          if (!frKb.src || frKb.src === 'about:blank' || !frKb.src.includes('/planta/kanban')) {
+            frKb.src = '/planta/kanban';
+          } else {
+            try {
+              if (frKb.contentWindow && typeof frKb.contentWindow.cargar === 'function') {
+                frKb.contentWindow.cargar();
+              }
+            } catch(e) { console.warn('refresh kanban falló:', e); }
           }
         }
       }

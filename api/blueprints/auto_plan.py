@@ -7643,6 +7643,207 @@ def tablero_kanban():
     })
 
 
+@bp.route('/planta/kanban', methods=['GET'])
+def planta_kanban_page():
+    """Página standalone del Kanban de Estaciones · Sebastián 19-may-2026.
+
+    Sirve HTML que polea /api/planta/tablero-kanban cada 30s. Mobile-first:
+    en pantallas <900px muestra tabs horizontales (Disp/Elab/Env/Acond)
+    para que sea usable en tablet del operario. Visibility check para no
+    consumir requests con la pestaña en background.
+    """
+    from flask import Response, redirect
+    if 'compras_user' not in session:
+        return redirect('/login?next=/planta/kanban')
+    return Response(_KANBAN_HTML, mimetype='text/html')
+
+
+_KANBAN_HTML = r"""<!DOCTYPE html>
+<html lang="es"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🏭 Kanban Planta · EOS</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0f172a;color:#e2e8f0;min-height:100vh;padding:14px;font-size:14px}
+.hdr{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:14px}
+.hdr h1{font-size:18px;font-weight:800;color:#fff}
+.hdr .sub{font-size:11px;opacity:.7}
+.kpis{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
+.kpi{background:#1e293b;border:1px solid #334155;border-radius:8px;padding:8px 14px;text-align:center;min-width:88px}
+.kpi-lbl{font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px}
+.kpi-val{font-size:18px;font-weight:800;color:#fff;margin-top:2px}
+.kpi.danger .kpi-val{color:#f87171}
+.kpi.warn .kpi-val{color:#fbbf24}
+.kpi.ok .kpi-val{color:#34d399}
+.kpi.live .kpi-val{color:#60a5fa}
+.toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.btn{background:#334155;color:#e2e8f0;border:none;padding:7px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer}
+.btn:hover{background:#475569}
+.btn.primary{background:#0891b2;color:#fff}
+input[type=date]{background:#1e293b;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:6px 10px;font-size:12px}
+.cols-wrap{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;align-items:start}
+.col{background:#1e293b;border:1px solid #334155;border-radius:10px;padding:12px;min-height:120px}
+.col-hdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.col-title{font-size:13px;font-weight:800;color:#fff}
+.col-count{font-size:10px;color:#94a3b8;background:#0f172a;padding:2px 8px;border-radius:10px}
+.card{background:#0f172a;border:1px solid #334155;border-radius:8px;padding:10px;margin-bottom:8px;border-left:4px solid #64748b;font-size:12px}
+.card.curso{border-left-color:#fbbf24}
+.card.terminada{border-left-color:#34d399;opacity:.7}
+.card.pendiente{border-left-color:#64748b}
+.card-prod{font-weight:700;color:#fff;font-size:13px}
+.card-meta{font-size:10px;color:#94a3b8;margin-top:3px;display:flex;gap:8px;flex-wrap:wrap}
+.chip{background:#1e293b;color:#cbd5e1;padding:2px 7px;border-radius:6px;font-size:10px;display:inline-block}
+.chip.area{background:#1e3a8a;color:#dbeafe}
+.chip.sucia{background:#7f1d1d;color:#fecaca}
+.chip.ocupada{background:#854d0e;color:#fef3c7}
+.chip.libre{background:#065f46;color:#d1fae5}
+.chip.curso{background:#854d0e;color:#fef3c7}
+.chip.terminada{background:#065f46;color:#d1fae5}
+.empty{text-align:center;color:#475569;font-size:11px;padding:20px;font-style:italic}
+.tabs-mobile{display:none;gap:6px;margin-bottom:12px;overflow-x:auto;padding-bottom:4px}
+.tab{flex-shrink:0;background:#1e293b;color:#94a3b8;border:1px solid #334155;border-radius:6px;padding:7px 12px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap}
+.tab.active{background:#0891b2;color:#fff;border-color:#0891b2}
+@media (max-width:900px){
+  .cols-wrap{grid-template-columns:1fr;gap:8px}
+  .col{display:none}
+  .col.active{display:block}
+  .tabs-mobile{display:flex}
+}
+.diag{font-size:10px;color:#475569;margin-top:14px;text-align:center;font-family:monospace}
+.timer{color:#fbbf24;font-weight:700}
+</style>
+</head><body>
+
+<div class="hdr">
+  <div>
+    <h1>🏭 Kanban de Planta</h1>
+    <div class="sub" id="sub-fecha">Cargando...</div>
+  </div>
+  <div class="toolbar">
+    <input type="date" id="fecha-input" onchange="cargar()">
+    <button class="btn primary" onclick="cargar()">↻ Refrescar</button>
+    <a href="/modulos" class="btn">← Volver</a>
+  </div>
+</div>
+
+<div class="kpis" id="kpis"></div>
+
+<div class="tabs-mobile" id="tabs-mobile">
+  <button class="tab active" data-col="dispensacion" onclick="setColMobile('dispensacion')">🧪 Disp</button>
+  <button class="tab" data-col="elaboracion" onclick="setColMobile('elaboracion')">⚗️ Elab</button>
+  <button class="tab" data-col="envasado" onclick="setColMobile('envasado')">🍶 Env</button>
+  <button class="tab" data-col="acondicionamiento" onclick="setColMobile('acondicionamiento')">📦 Acond</button>
+</div>
+
+<div class="cols-wrap" id="cols-wrap">
+  <div class="col active" id="col-dispensacion"><div class="col-hdr"><span class="col-title">🧪 Dispensación</span><span class="col-count">0</span></div><div class="col-body"></div></div>
+  <div class="col" id="col-elaboracion"><div class="col-hdr"><span class="col-title">⚗️ Elaboración</span><span class="col-count">0</span></div><div class="col-body"></div></div>
+  <div class="col" id="col-envasado"><div class="col-hdr"><span class="col-title">🍶 Envasado</span><span class="col-count">0</span></div><div class="col-body"></div></div>
+  <div class="col" id="col-acondicionamiento"><div class="col-hdr"><span class="col-title">📦 Acondicionamiento</span><span class="col-count">0</span></div><div class="col-body"></div></div>
+</div>
+
+<div class="diag" id="diag"></div>
+
+<script>
+function esc(s){return String(s||'').replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+function fmtMin(m){if(m==null)return '';if(m<60)return m+'min';return Math.floor(m/60)+'h '+(m%60)+'min';}
+function hoyISO(){return new Date(new Date().getTime()-5*3600*1000).toISOString().slice(0,10);}
+var inFlight = false;
+async function cargar(){
+  if(inFlight) return;
+  if(typeof document!=='undefined' && document.visibilityState==='hidden') return;
+  inFlight = true;
+  var fechaInp = document.getElementById('fecha-input');
+  if(!fechaInp.value) fechaInp.value = hoyISO();
+  try {
+    var r = await fetch('/api/planta/tablero-kanban?fecha=' + fechaInp.value, {cache:'no-store'});
+    if(r.status === 401){ window.location.href = '/login?next=/planta/kanban'; return; }
+    if(r.status === 403){ document.getElementById('diag').textContent = '⚠ Sin permisos · solo planta/compras/admin'; return; }
+    var d = await r.json();
+    document.getElementById('sub-fecha').textContent = '📅 ' + d.fecha + ' · auto-refresh 30s';
+    // KPIs
+    var k = d.kpis || {};
+    var html = '';
+    html += kpiCard('🎯 Total', k.total_producciones||0, '');
+    html += kpiCard('⏱ En curso', k.en_curso||0, 'live');
+    html += kpiCard('✅ Terminadas', k.terminadas||0, 'ok');
+    html += kpiCard('⌛ Sin iniciar', k.sin_iniciar||0, 'warn');
+    if((k.salas_sucias||0) > 0) html += kpiCard('🔴 Salas sucias', k.salas_sucias, 'danger');
+    document.getElementById('kpis').innerHTML = html;
+    // Columnas
+    var cols = d.columnas || {};
+    ['dispensacion','elaboracion','envasado','acondicionamiento'].forEach(function(rol){
+      var info = cols[rol] || {tarjetas:[]};
+      var box = document.getElementById('col-'+rol);
+      if(!box) return;
+      box.querySelector('.col-count').textContent = (info.tarjetas||[]).length;
+      var body = box.querySelector('.col-body');
+      if(!(info.tarjetas||[]).length){
+        body.innerHTML = '<div class="empty">Sin tareas hoy</div>';
+        return;
+      }
+      body.innerHTML = info.tarjetas.map(renderCard).join('');
+    });
+    document.getElementById('diag').textContent = 'última actualización ' + new Date().toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  } catch(e){
+    document.getElementById('diag').textContent = '⚠ Error: ' + e.message;
+  } finally {
+    inFlight = false;
+  }
+}
+
+function kpiCard(lbl, val, cls){
+  return '<div class="kpi '+cls+'"><div class="kpi-lbl">'+esc(lbl)+'</div><div class="kpi-val">'+esc(val)+'</div></div>';
+}
+
+function renderCard(t){
+  var estado = 'pendiente';
+  var badge = '';
+  if(t.fin_real_at){ estado='terminada'; badge='<span class="chip terminada">✓ Terminada</span>'; }
+  else if(t.inicio_real_at){
+    estado='curso';
+    var tm = t.minutos_corridos!=null ? ' <span class="timer">⏱ '+fmtMin(t.minutos_corridos)+'</span>' : '';
+    badge='<span class="chip curso">EN CURSO</span>'+tm;
+  } else {
+    badge='<span class="chip">Sin iniciar</span>';
+  }
+  var areaChip = '';
+  if(t.area_codigo){
+    var aCls = 'area';
+    if(t.area_estado === 'sucia') aCls = 'sucia';
+    else if(t.area_estado === 'ocupada') aCls = 'ocupada';
+    else if(t.area_estado === 'libre') aCls = 'libre';
+    areaChip = '<span class="chip '+aCls+'">'+esc(t.area_codigo)+' · '+esc(t.area_estado)+'</span>';
+  }
+  var meta = '';
+  if(t.operario_nombre) meta += '<span>👤 '+esc(t.operario_nombre)+'</span>';
+  meta += '<span>'+(parseFloat(t.kg)||0).toFixed(1)+' kg</span>';
+  return '<div class="card '+estado+'">'
+       + '<div class="card-prod">'+esc((t.producto||'').slice(0,30))+'</div>'
+       + '<div class="card-meta">'+meta+'</div>'
+       + '<div style="margin-top:6px;display:flex;gap:4px;flex-wrap:wrap">'+areaChip+badge+'</div>'
+       + '</div>';
+}
+
+function setColMobile(rol){
+  document.querySelectorAll('.tabs-mobile .tab').forEach(function(t){
+    t.classList.toggle('active', t.dataset.col === rol);
+  });
+  document.querySelectorAll('.cols-wrap .col').forEach(function(c){
+    c.classList.toggle('active', c.id === 'col-'+rol);
+  });
+}
+
+cargar();
+setInterval(cargar, 30000);
+document.addEventListener('visibilitychange', function(){
+  if(document.visibilityState === 'visible') cargar();
+});
+</script>
+</body></html>
+"""
+
+
 @bp.route('/api/planta/tablero-equipo', methods=['GET'])
 def tablero_equipo():
     """Tablero 'Equipo HOY' del Centro de Mando · Sebastián 19-may-2026.

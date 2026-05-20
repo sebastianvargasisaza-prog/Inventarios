@@ -7264,6 +7264,30 @@ def test_golden_tablero_kanban_estructura_y_permisos(app, db_clean):
         _exec("DELETE FROM produccion_programada WHERE producto='TEST_GP_KANBAN'")
 
 
+def test_golden_kanban_pagina_html_se_sirve(app, db_clean):
+    """Sebastián 19-may-2026 · pieza 2 Kanban · página HTML standalone.
+
+    GET /planta/kanban responde HTML cuando logueado · redirige a login
+    si no. La página polea /api/planta/tablero-kanban cada 30s.
+    """
+    # Sin login: redirige a /login
+    with app.test_client() as cs:
+        r = cs.get('/planta/kanban', follow_redirects=False)
+        assert r.status_code in (302, 401), f'BUG: sin login debería redirect/401 · {r.status_code}'
+
+    # Con login: 200 HTML
+    cs_admin = _login(app, 'sebastian')
+    r = cs_admin.get('/planta/kanban')
+    assert r.status_code == 200, f'BUG: {r.status_code}'
+    assert 'text/html' in (r.headers.get('Content-Type') or '').lower()
+    html = r.data.decode('utf-8', errors='replace')
+    # Verificar las 4 columnas en el HTML
+    for rol in ('Dispensación', 'Elaboración', 'Envasado', 'Acondicionamiento'):
+        assert rol in html, f'BUG: falta columna {rol} en HTML'
+    # Verificar que polea el endpoint correcto
+    assert '/api/planta/tablero-kanban' in html
+
+
 def test_golden_aplicar_minimos_backup_non_blocking(app, db_clean):
     """Sebastián 19-may-2026 · "Aplicar recálculo" daba error 500 cuando
     do_backup() fallaba (pg_dump faltante/credenciales mal en Render).
