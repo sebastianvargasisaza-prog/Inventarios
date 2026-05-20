@@ -56,6 +56,24 @@ body { font-family:'Segoe UI',sans-serif; background:#F5F4F0; min-height:100vh; 
   [style*="grid-template-columns:1fr 1fr"] { grid-template-columns:1fr !important; }
   [style*="grid-template-columns:repeat(4"] { grid-template-columns:repeat(2,1fr) !important; }
 }
+/* Dashboard PRO · responsive de grids inline (3 y 5 cols → 2 en tablet, 1 en mobile) */
+@media (max-width: 760px) {
+  #dashboard [style*="grid-template-columns:repeat(3,1fr)"],
+  #dashboard [style*="grid-template-columns:repeat(3, 1fr)"],
+  #dashboard [style*="grid-template-columns:repeat(5,1fr)"],
+  #dashboard [style*="grid-template-columns:repeat(5, 1fr)"] {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+}
+@media (max-width: 420px) {
+  #dashboard [style*="grid-template-columns:repeat(3,1fr)"],
+  #dashboard [style*="grid-template-columns:repeat(3, 1fr)"],
+  #dashboard [style*="grid-template-columns:repeat(5,1fr)"],
+  #dashboard [style*="grid-template-columns:repeat(5, 1fr)"] {
+    grid-template-columns: 1fr !important;
+  }
+  #dashboard h2 { font-size:1.1em; }
+}
 /* Safe area para iPhone notch */
 @supports (padding: max(0px)) {
   body { padding-top:max(20px, env(safe-area-inset-top)); padding-bottom:max(20px, env(safe-area-inset-bottom)); }
@@ -461,9 +479,21 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
   </div>
 
   <div id="dashboard" class="tab-content active">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
-      <h2 style="margin:0;">Dashboard Ejecutivo</h2>
-      <button onclick="loadDashboardCompleto();loadAcond();loadLiberaciones('');" style="padding:7px 16px;font-size:0.88em;">&#8635; Actualizar</button>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
+      <div>
+        <h2 style="margin:0;">Dashboard Ejecutivo</h2>
+        <!-- Dashboard PRO · timestamp última actualización + auto-refresh status -->
+        <div id="dash-last-update" style="font-size:11px;color:#94a3b8;margin-top:2px;">Cargando…</div>
+      </div>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <!-- Dashboard PRO · acciones rápidas (Nivel 2) -->
+        <button onclick="switchGroup('bar-bodegaMP','ingreso',null);" style="padding:6px 12px;font-size:0.85em;background:#1e40af;color:#fff;" title="Crear nueva recepción de MP">📥 Recepción</button>
+        <button onclick="switchGroup('bar-bodegaMP','alertas',null);" style="padding:6px 12px;font-size:0.85em;background:#dc2626;color:#fff;" title="Ver alertas críticas">🚨 Alertas</button>
+        <label style="font-size:11px;color:#64748b;display:flex;align-items:center;gap:4px;cursor:pointer;margin:0 6px;">
+          <input type="checkbox" id="dash-autorefresh" checked> auto 60s
+        </label>
+        <button onclick="loadDashboardCompleto();" style="padding:7px 16px;font-size:0.88em;">&#8635; Actualizar</button>
+      </div>
     </div>
 
     <!-- ═══ ZONA AHORA — qué requiere acción hoy ═══ -->
@@ -475,7 +505,8 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     <div class="grid" style="margin-bottom:24px;grid-template-columns:repeat(3,1fr);">
       <div class="card" style="border-left:4px solid #dc2626;cursor:pointer;" onclick="switchGroup('bar-bodegaMP','alertas',null)"><h3>MPs sin stock</h3><p id="kpi-mps-sin-stock" style="color:#dc2626;font-size:1.8em;">-</p><div style="font-size:10px;color:#78716c;">críticas — bloquean producción</div></div>
       <div class="card" id="card-alertas" style="border-left:4px solid #f59e0b;cursor:pointer;" onclick="switchGroup('bar-bodegaMP','alertas',null)"><h3>MPs bajo mínimo</h3><p id="alertas-count" style="color:#e65100;font-size:1.8em;">-</p><div style="font-size:10px;color:#78716c;">incluye las en cero</div></div>
-      <div class="card" style="border-left:4px solid #dc2626;"><h3>Lotes vencidos</h3><p id="kpi-lotes-vencidos" style="color:#dc2626;font-size:1.8em;">-</p><div style="font-size:10px;color:#78716c;">en bodega — dar de baja</div></div>
+      <!-- Dashboard PRO · click → Bodega MP → Stock filtrado por VENCIDO -->
+      <div class="card" style="border-left:4px solid #dc2626;cursor:pointer;" onclick="switchGroup('bar-bodegaMP','stock',null);setTimeout(function(){var s=document.getElementById('stock-search');if(s){s.value='';s.dispatchEvent(new Event('input'));}},150);" title="Ver lotes vencidos en Bodega"><h3>Lotes vencidos</h3><p id="kpi-lotes-vencidos" style="color:#dc2626;font-size:1.8em;">-</p><div style="font-size:10px;color:#78716c;">en bodega — dar de baja</div></div>
     </div>
 
     <!-- ═══ ZONA CERCA — próximos 7-30 días ═══ -->
@@ -486,10 +517,11 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     </div>
     <div class="grid" style="margin-bottom:24px;grid-template-columns:repeat(5,1fr);">
       <div class="card" style="border-left:4px solid #16a34a;cursor:pointer;" onclick="switchTab('programacion');" title="Programación / Checklist"><h3>Próximas a producir <span style="font-size:9px;color:#94a3b8;font-weight:500;">60d</span></h3><p id="producciones-proximas-count" style="color:#16a34a;font-size:1.8em;">-</p><div style="font-size:10px;color:#78716c;">click → checklist</div></div>
-      <div class="card" style="border-left:4px solid #f59e0b;"><h3>Vencimientos &lt;30d</h3><p id="kpi-venc-criticos" style="color:#d97706;font-size:1.8em;">-</p><div style="font-size:10px;color:#78716c;">priorizar uso FEFO</div></div>
-      <div class="card" style="border-left:4px solid #7c3aed;"><h3>Lotes en cuarentena</h3><p id="kpi-cuarentena" style="color:#7c3aed;font-size:1.8em;">-</p><div style="font-size:10px;color:#78716c;">esperando QC</div></div>
+      <!-- Dashboard PRO · cards ahora todas clickeables -->
+      <div class="card" style="border-left:4px solid #f59e0b;cursor:pointer;" onclick="switchGroup('bar-bodegaMP','stock',null);" title="Ver stock por vencimiento (FEFO)"><h3>Vencimientos &lt;30d</h3><p id="kpi-venc-criticos" style="color:#d97706;font-size:1.8em;">-</p><div style="font-size:10px;color:#78716c;">priorizar uso FEFO</div></div>
+      <div class="card" style="border-left:4px solid #7c3aed;cursor:pointer;" onclick="switchGroup('bar-calidadHub','cuarentena',null);" title="Ir a Calidad · Cuarentena"><h3>Lotes en cuarentena</h3><p id="kpi-cuarentena" style="color:#7c3aed;font-size:1.8em;">-</p><div style="font-size:10px;color:#78716c;">esperando QC</div></div>
       <div class="card" style="border-left:4px solid #1e40af;cursor:pointer;" onclick="window.location.href='/recepcion'" title="Ir a Recepción"><h3>OCs en tránsito</h3><p id="kpi-ocs-transito" style="color:#1e40af;font-size:1.8em;">-</p><div style="font-size:10px;color:#78716c;">por recibir</div></div>
-      <div class="card" style="border-left:4px solid #f59e0b;"><h3>MEE bajo mínimo</h3><p id="kpi-mees-bajo" style="color:#d97706;font-size:1.8em;">-</p><div style="font-size:10px;color:#78716c;">envases / etiquetas</div></div>
+      <div class="card" style="border-left:4px solid #f59e0b;cursor:pointer;" onclick="switchTab('empaque');" title="Ir a Bodega MEE"><h3>MEE bajo mínimo</h3><p id="kpi-mees-bajo" style="color:#d97706;font-size:1.8em;">-</p><div style="font-size:10px;color:#78716c;">envases / etiquetas</div></div>
     </div>
 
     <!-- ═══ ZONA CONTEXTO — composición y tendencia ═══ -->
@@ -524,23 +556,15 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       </div>
     </div>
 
-    <!-- Estado de lotes -->
-    <div style="background:white;border:1px solid #dde;border-radius:8px;padding:16px;">
-      <h4 style="margin-bottom:12px;color:#333;">Estado general de lotes</h4>
-      <div style="display:flex;gap:15px;flex-wrap:wrap;" id="dash-estados">
-        <div style="text-align:center;padding:10px 20px;background:#ffebeb;border-radius:8px;">
-          <div style="font-size:1.8em;font-weight:700;color:#cc0000;" id="dash-vencidos">-</div>
-          <div style="font-size:0.82em;color:#888;">Vencidos</div>
-        </div>
-        <div style="text-align:center;padding:10px 20px;background:#fff3e0;border-radius:8px;">
-          <div style="font-size:1.8em;font-weight:700;color:#e65100;" id="dash-criticos">-</div>
-          <div style="font-size:0.82em;color:#888;">Críticos &lt;30d</div>
-        </div>
-        <div style="text-align:center;padding:10px 20px;background:#fffde7;border-radius:8px;">
-          <div style="font-size:1.8em;font-weight:700;color:#f57f17;" id="dash-proximos">-</div>
-          <div style="font-size:0.82em;color:#888;">Próximos &lt;90d</div>
-        </div>
-      </div>
+    <!-- Dashboard PRO · sección "Estado de lotes" eliminada · redundante
+         con cards "Lotes vencidos" (AHORA) + "Vencimientos <30d" (CERCA).
+         Refs IDs viejos (dash-vencidos, dash-criticos, dash-proximos)
+         siguen seteándose por loadDashboardCompleto · están en DOM oculto
+         (div display:none) por si alguna otra función los referencia. -->
+    <div style="display:none">
+      <span id="dash-vencidos">-</span>
+      <span id="dash-criticos">-</span>
+      <span id="dash-proximos">-</span>
     </div>
   </div>
 
@@ -1844,6 +1868,17 @@ var fData=[], allStock=[], _cat={}, _ultimoIng=null;
 var formulasPin=false;
 var _lotes=[], _lotesFull=[], _meeData=[], _prodPendiente=null;
 var OPER_ACTUAL='{usuario}';
+// BUG-4 fix · 20-may-2026 Dashboard PRO audit · es_admin REAL desde
+// backend (core.py:444 inyecta el placeholder desde ADMIN_USERS).
+// Antes había listas hardcoded en JS que mentían a la UI.
+window._ES_ADMIN_DASH=({es_admin}===true);
+// BUG-6 fix · 20-may-2026 Dashboard PRO audit: cargar CSRF token al boot
+// y guardar en window._csrfTok. Antes los helpers leían cookie inexistente.
+window._csrfTok=window._csrfTok||'';
+fetch('/api/csrf-token', {credentials:'same-origin'})
+  .then(function(r){return r.ok ? r.json() : null;})
+  .then(function(d){if(d&&d.csrf_token) window._csrfTok=d.csrf_token;})
+  .catch(function(){});
 document.addEventListener('DOMContentLoaded',function(){
   // Restaurar operador desde localStorage si no vino por sesión
   if(!OPER_ACTUAL){
@@ -2973,10 +3008,50 @@ async function loadDashboard(){
   }catch(e){ console.error(e); }
 }
 
-async function loadDashboardCompleto(){
-  loadDashboard();
-  try{
-    var r=await fetch('/api/dashboard-stats'), d=await r.json();
+// Dashboard PRO · timer global auto-refresh + helper toast errores
+var _DASH_TIMER=null;
+function _dashToast(msg, isErr){
+  var box=document.createElement('div');
+  box.textContent=msg;
+  box.style.cssText='position:fixed;bottom:20px;right:20px;background:'+(isErr?'#dc2626':'#16a34a')+';color:#fff;padding:10px 16px;border-radius:8px;font-size:13px;font-weight:600;box-shadow:0 4px 14px rgba(0,0,0,.25);z-index:99999';
+  document.body.appendChild(box);
+  setTimeout(function(){box.style.opacity='0';box.style.transition='opacity .4s';},2500);
+  setTimeout(function(){if(box.parentNode)box.parentNode.removeChild(box);},3000);
+}
+function _dashStartAutoRefresh(){
+  if(_DASH_TIMER) clearInterval(_DASH_TIMER);
+  _DASH_TIMER=setInterval(function(){
+    var chk=document.getElementById('dash-autorefresh');
+    if(!chk||!chk.checked) return;
+    if(typeof document!=='undefined' && document.visibilityState==='hidden') return;
+    var dashTab=document.getElementById('dashboard');
+    if(!dashTab||dashTab.style.display==='none') return;
+    loadDashboardCompleto(true /*silent*/);
+  }, 60000);
+}
+if(typeof document!=='undefined' && !window._DASH_VIS_LISTENER){
+  window._DASH_VIS_LISTENER=true;
+  document.addEventListener('visibilitychange',function(){
+    if(document.visibilityState!=='visible') return;
+    var dashTab=document.getElementById('dashboard');
+    if(dashTab && dashTab.style.display!=='none') loadDashboardCompleto(true);
+  });
+}
+
+async function loadDashboardCompleto(silent){
+  // Dashboard PRO · Promise.all paraleliza los 3 fetches (antes serial).
+  // Sebastián 20-may-2026 · audit Dashboard PRO.
+  var t0=Date.now();
+  var errores=[];
+  try {
+    // 2 fetches paralelos · loadDashboard ya hace su propio fetch interno
+    // a /api/inventario + /api/alertas-reabastecimiento. dashboard-stats
+    // es independiente · va aparte.
+    var [statsR, _ignored] = await Promise.all([
+      fetch('/api/dashboard-stats').then(function(r){return r.ok?r.json():null;}).catch(function(){errores.push('dashboard-stats');return null;}),
+      loadDashboard(silent),  // KPIs principales · /api/inventario + alertas
+    ]);
+    var d=statsR||{};
     var estados=d.estados_lotes||{};
     var ev=document.getElementById('dash-vencidos'); if(ev) ev.textContent=estados.VENCIDO||0;
     var ec=document.getElementById('dash-criticos'); if(ec) ec.textContent=estados.CRITICO||0;
@@ -3010,7 +3085,24 @@ async function loadDashboardCompleto(){
         });
       } else { ctx2.style.display='none'; if(emp2) emp2.style.display='block'; }
     }
-  }catch(e){ console.error('Stats error:',e); }
+    // Alertas reabastecimiento ya las pinta loadDashboard internamente.
+    // Dashboard PRO · timestamp última actualización + toast si hubo errores
+    var lu=document.getElementById('dash-last-update');
+    if(lu){
+      var hora=new Date().toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+      var dur=Math.max(1,Math.round((Date.now()-t0)/100)/10);
+      var sufijo=errores.length?(' · ⚠ '+errores.length+' fallos: '+errores.join(',')):'';
+      lu.textContent='Última actualización '+hora+' · '+dur+'s'+sufijo;
+      lu.style.color=errores.length?'#dc2626':'#94a3b8';
+    }
+    if(errores.length && !silent) _dashToast('Falló: '+errores.join(', '), true);
+  }catch(e){
+    console.error('Dashboard error:',e);
+    if(!silent) _dashToast('Error cargando dashboard: '+(e.message||e), true);
+    var lu=document.getElementById('dash-last-update');
+    if(lu){ lu.textContent='⚠ Error · reintentá'; lu.style.color='#dc2626'; }
+  }
+  if(!_DASH_TIMER) _dashStartAutoRefresh();
 }
 
 async function loadStock(){
@@ -4155,7 +4247,11 @@ async function cargarCuarentena(){
     if(!data.length){tb.innerHTML='<tr><td colspan="10" style="text-align:center;color:#999;padding:20px;">Sin lotes pendientes de revision QC</td></tr>';return;}
     var h='';
     data.forEach(function(l){
-      var esAdmin=(['sebastian','alejandro','hernando'].includes((OPER_ACTUAL||'').toLowerCase()));
+      // BUG-4 fix · 20-may-2026 Dashboard PRO audit: leer el placeholder
+      // {es_admin} que core.py:444 inyecta desde ADMIN_USERS de config.
+      // Antes la lista hardcoded incluía 'hernando' que NO es admin →
+      // la UI le pintaba botones que el backend rechazaba con 403.
+      var esAdmin=(window._ES_ADMIN_DASH===true);
       var estadoColor=l.estado_lote==='CUARENTENA'?'#e67e22':l.estado_lote==='CUARENTENA_EXTENDIDA'?'#c0392b':'#888';
       h+='<tr>';
       h+='<td style="font-family:monospace;font-size:0.85em;">'+l.codigo_mp+'</td>';
@@ -4263,7 +4359,10 @@ async function buscarTrazabilidad(){
   var lote=(document.getElementById('trz-lote').value||'').trim();
   if(!lote){alert('Ingresa un numero de lote');return;}
   try{
-    var r=await fetch('/api/trazabilidad/'+encodeURIComponent(lote));
+    // BUG-2 fix · 20-may-2026 Dashboard PRO audit: la ruta corta
+    // /api/trazabilidad/<lote> fue eliminada · usar /lote/<path:lote>
+    // (mismo patrón que líneas siguientes con /lote-pt/ y /lote-mp/).
+    var r=await fetch('/api/trazabilidad/lote/'+encodeURIComponent(lote));
     var data=await r.json();
     if(!data.ingreso){
       document.getElementById('trz-msg').innerHTML='<div class="alert-error">Lote no encontrado: '+lote+'</div>';
@@ -6235,7 +6334,12 @@ function _renderProgramacion(d){
       var skuKey = p.sku || p.producto;
       var calIcon = p.cal_ok ? '\u2705' : (p.prox_produccion === 'No programado' ? '\u274C' : '\u26A0\uFE0F');
       var diasStr = p.dias_cobertura !== null && p.dias_cobertura !== undefined ? p.dias_cobertura + 'd' : '---';
-      var diasColor = p.dias_cobertura < 20 ? '#dc3545' : (p.dias_cobertura < 40 ? '#fd7e14' : '#28a745');
+      // BUG-5 fix · 20-may-2026 Dashboard PRO audit · null<20 === true en JS:
+      // SKUs con cobertura infinita (sin ventas) se pintaban en ROJO crítico
+      // aunque el texto al lado fuera '---'. Guard explícito para null/undefined.
+      var diasColor = (p.dias_cobertura == null) ? '#94a3b8'
+                     : (p.dias_cobertura < 20 ? '#dc3545'
+                     : (p.dias_cobertura < 40 ? '#fd7e14' : '#28a745'));
       var isPast = p.prox_prod_pasada === true;
       var progLabel, progBtnColor;
       if (p.prox_produccion === 'No programado') {
@@ -12356,7 +12460,9 @@ async function ckMarcar(itemId, estado){
     if(!box) return;
     try {
       var [cobR, calR, audR] = await Promise.all([
-        fetch('/api/planta/kpi-cobertura-skus').then(function(r){return r.json();}).catch(function(){return null;}),
+        // BUG-1 fix · 20-may-2026 Dashboard PRO audit: URL real es
+        // /api/planta/kpi-cobertura (sin -skus). Antes 404 silencioso.
+        fetch('/api/planta/kpi-cobertura').then(function(r){return r.json();}).catch(function(){return null;}),
         fetch('/api/planta/calendar-debug').then(function(r){return r.json();}).catch(function(){return null;}),
         fetch('/api/planta/auditoria-calendar').then(function(r){return r.json();}).catch(function(){return null;}),
       ]);
@@ -18295,9 +18401,12 @@ async function ckMarcar(itemId, estado){
     } catch(e) { alert('Error: ' + e.message); }
   }
 
+  // BUG-6 fix · 20-may-2026 Dashboard PRO audit: el token CSRF vive en
+  // session Flask, NO en cookie · document.cookie nunca lo encuentra,
+  // helper devolvía ''. Ahora usa window._csrfTok cargado al boot del
+  // dashboard (mismo patrón que cmReasignarHoy y operario_html).
   function csrfTokenNec() {
-    const m = document.cookie.match(/(?:^|; )csrf_token=([^;]*)/);
-    return m ? decodeURIComponent(m[1]) : '';
+    return window._csrfTok || '';
   }
   </script>
 

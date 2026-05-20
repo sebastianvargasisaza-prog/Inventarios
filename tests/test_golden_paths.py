@@ -7310,6 +7310,46 @@ def test_golden_portal_b2b_flujo_completo(app, db_clean):
     _exec("DELETE FROM portal_clientes_credenciales WHERE email LIKE 'test_portal_%'")
 
 
+def test_golden_confirmar_proyeccion_es_fijo(app, db_clean):
+    """Dashboard PRO BUG-3 · 20-may-2026. Una proyección confirmada por
+    el usuario desde Plan v2 debe crear el lote con origen='eos_plan'
+    (Fijo · intocable por zombie cleanup).
+
+    Antes usaba 'confirmacion_manual' que NO está en allowlist Fijo · el
+    auto-clean del Centro de Mando (cada 30s) y LIMPIAR_PRODUCCION_ZOMBIES
+    lo borraban silenciosamente. Mismo patrón del incidente del 19-may.
+    """
+    _exec("DELETE FROM produccion_programada WHERE producto='TEST_BUG3_PROYECCION'")
+    cs = _login(app, 'sebastian')
+
+    r = cs.post('/api/planta/confirmar-proyeccion', json={
+        'producto': 'TEST_BUG3_PROYECCION',
+        'fecha_programada': '2026-06-20',
+        'lotes': 1,
+        'kg': 10,
+    }, headers=csrf_headers())
+    assert r.status_code == 200, f'BUG: {r.status_code} {r.data[:200]}'
+    d = r.get_json()
+    assert d.get('ok') or d.get('id')
+    pid = d.get('id')
+
+    # Verificar origen='eos_plan' (Fijo) en DB
+    row = _query(
+        "SELECT origen, estado FROM produccion_programada WHERE id=?", (pid,))
+    assert row, 'BUG: proyección no se insertó'
+    assert row[0][0] == 'eos_plan', \
+        f'BUG-3: origen debería ser eos_plan (Fijo) · es {row[0][0]} · ' \
+        'el zombie cleanup la borrará silenciosamente'
+
+    # Verificar audit_log
+    audit_rows = _query(
+        "SELECT COUNT(*) FROM audit_log WHERE accion='CONFIRMAR_PROYECCION_FIJO' "
+        "AND registro_id=?", (str(pid),))
+    assert audit_rows[0][0] >= 1, 'BUG: falta audit_log CONFIRMAR_PROYECCION_FIJO'
+
+    _exec("DELETE FROM produccion_programada WHERE id=?", (pid,))
+
+
 def test_golden_portal_timeline_pedido(app, db_clean):
     """Sprint D Portal · 20-may-2026 · timeline visual del pedido.
 

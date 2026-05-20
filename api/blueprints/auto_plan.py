@@ -1352,16 +1352,31 @@ def confirmar_proyeccion():
     if existing:
         return jsonify({'ok': True, 'id': existing[0], 'ya_existia': True})
     kg_total = float(d.get('kg') or d.get('lote_size_kg') or 0)
+    # BUG-3 fix · 20-may-2026 · Dashboard PRO audit: usar origen='eos_plan'
+    # (Fijo) en vez de 'confirmacion_manual'. Una confirmación manual del
+    # usuario es una decisión EXPLÍCITA · debe ser intocable por procesos
+    # automáticos (zombie cleanup, sync espejo, regeneradores). Con
+    # 'confirmacion_manual' el lote desaparecía silencioso porque NO está
+    # en el allowlist Fijo (eos_plan/eos_b2b/eos_retroactivo) · mismo
+    # patrón del incidente del 19-may.
     cur = c.execute("""
         INSERT INTO produccion_programada
           (producto, fecha_programada, lotes, estado, observaciones, origen, cantidad_kg)
-        VALUES (?, ?, ?, 'pendiente', ?, 'confirmacion_manual', ?)
+        VALUES (?, ?, ?, 'pendiente', ?, 'eos_plan', ?)
     """, (
         producto, fecha, int(d.get('lotes') or 1),
-        f'Confirmado desde proyección por {user} el {datetime.now().isoformat()}',
+        f'Confirmado desde proyección por {user} el {datetime.now().isoformat()} '
+        f'· FIJADO (eos_plan) · BUG-3 audit Dashboard PRO',
         kg_total,
     ))
     nuevo_id = cur.lastrowid
+    try:
+        audit_log(c, usuario=user, accion='CONFIRMAR_PROYECCION_FIJO',
+                  tabla='produccion_programada', registro_id=nuevo_id,
+                  despues={'producto': producto, 'fecha': fecha,
+                           'kg': kg_total, 'origen': 'eos_plan'})
+    except Exception:
+        pass
     # Auto-asignar área + operarios
     try:
         if kg_total > 0:
