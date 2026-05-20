@@ -103,6 +103,16 @@
   `. , ; : & - _ / \\`). Capa 2: Levenshtein ≥ threshold para typos. Carga
   desde 11 tablas que tienen proveedor (no solo movs+maestro). Retorna
   grupos con stats (refs_totales, usos, count_variantes).
+- `GET  /api/movimientos/recientes[?limit&offset&q&tipo&desde&hasta&solo_anulados]`
+  · Sprint Movimientos PRO 20-may-2026 · paginado + filtros server-side.
+  Antes el frontend bajaba todo /api/movimientos y filtraba en JS.
+  Devuelve items[] con id + material_id + lote + cantidad + tipo +
+  proveedor + numero_oc + numero_factura + operador + observaciones +
+  estado_lote + flag anulado. Limit max 500.
+- `POST /api/movimientos` ahora exige lote para tipo='Entrada' (sin
+  lote rompe kardex y FEFO) · 400 con lote_obligatorio=true. Si vacío
+  para Salida/Ajuste sigue permitiendo (puede ser conteo cíclico).
+  Agregado audit_log REGISTRAR_MOVIMIENTO_MANUAL.
 - `GET  /api/alertas/all` · endpoint consolidado Sprint Alertas PRO
   20-may-2026 · 6 categorías en una llamada (mps_sin_stock,
   mps_bajo_minimo, lotes_vencidos, lotes_proximos, mees_bajo_minimo,

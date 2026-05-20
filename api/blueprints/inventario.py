@@ -1112,18 +1112,44 @@ def handle_movimientos():
                     'cantidad_pedida': cantidad,
                     'sugerencia': 'Verificar stock disponible en /api/stock o registrar Entrada primero'
                 }), 422
+        # Sprint Movimientos PRO · 20-may-2026: lote requerido para Entrada
+        # (sin lote → kardex roto, no FEFO posible). Para Salida/Ajuste sigue
+        # opcional · pueden ser de conteo cíclico o ajuste sin lote específico.
+        lote_in = (data.get('lote') or '').strip()
+        if tipo == 'Entrada' and not lote_in:
+            return jsonify({
+                'error': 'lote requerido para movimientos tipo Entrada · sin lote el kardex queda roto y no se puede aplicar FEFO',
+                'lote_obligatorio': True,
+            }), 400
         c.execute("""INSERT INTO movimientos
                      (material_id, material_nombre, cantidad, tipo, fecha, observaciones,
                       lote, fecha_vencimiento, estanteria, posicion, proveedor, estado_lote, operador)
                      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                   (material_id, material_nombre, cantidad,
                    tipo, datetime.now().isoformat(), data.get('observaciones',''),
-                   data.get('lote',''), data.get('fecha_vencimiento',''),
+                   lote_in, data.get('fecha_vencimiento',''),
                    data.get('estanteria',''), data.get('posicion',''),
                    data.get('proveedor',''), data.get('estado_lote','VIGENTE'),
-                   data.get('operador','')))
+                   data.get('operador','') or u))
+        mov_id = c.lastrowid
+        # Sprint Movimientos PRO: audit_log (faltaba en este endpoint)
+        try:
+            audit_log(
+                c, usuario=u, accion='REGISTRAR_MOVIMIENTO_MANUAL',
+                tabla='movimientos', registro_id=mov_id,
+                despues={'material_id': material_id, 'tipo': tipo,
+                         'cantidad': cantidad, 'lote': lote_in,
+                         'observaciones': (data.get('observaciones') or '')[:200]},
+                detalle=f"Movimiento manual {tipo} {cantidad}g de {material_id} · lote {lote_in or '(sin lote)'}",
+            )
+        except Exception as _ae:
+            __import__('logging').getLogger('inventario').warning(
+                'audit_log REGISTRAR_MOVIMIENTO_MANUAL fallo: %s', _ae)
         conn.commit()
-        return jsonify({'message': 'Movimiento registrado exitosamente'}), 201
+        return jsonify({
+            'message': 'Movimiento registrado exitosamente',
+            'mov_id': mov_id, 'lote': lote_in,
+        }), 201
     c.execute('SELECT id, material_id, material_nombre, cantidad, tipo, fecha, observaciones, operador, lote, proveedor, fecha_vencimiento, numero_factura FROM movimientos ORDER BY fecha DESC LIMIT 500')
     movimientos = [{'id': r[0], 'material_id': r[1] or '', 'material_nombre': r[2], 'cantidad': r[3], 'tipo': r[4], 'fecha': r[5], 'observaciones': r[6], 'operador': r[7] or '', 'lote': r[8] or '', 'proveedor': r[9] or '', 'fecha_vencimiento': r[10] or '', 'numero_factura': r[11] or ''} for r in c.fetchall()]
     return jsonify({'movimientos': movimientos})
@@ -2662,6 +2688,104 @@ def maestro_mps_unificar():
         'codigos_unidos': a_unir_existentes,
         'filas_actualizadas': afectados,
         'mensaje': f'{len(a_unir_existentes)} MPs unificadas en {canonico}',
+    })
+
+
+@bp.route('/api/movimientos/recientes', methods=['GET'])
+def movimientos_recientes():
+    """Sprint Movimientos PRO · 20-may-2026 · paginado + filtros server-side.
+
+    Antes el frontend bajaba TODOS los movimientos via /api/movimientos
+    y filtraba en JS · perf horrible con 50k+ filas.
+
+    Query params:
+      limit (default 50, max 500)
+      offset (default 0)
+      q: busca en material_nombre / material_id / lote / observaciones
+      tipo: Entrada | Salida | Ajuste (case-insensitive)
+      desde: YYYY-MM-DD (>=)
+      hasta: YYYY-MM-DD (<=)
+      solo_anulados: 1 para mostrar solo anulados
+    """
+    u, err, code = _require_session()
+    if err:
+        return err, code
+    try:
+        limit = max(1, min(int(request.args.get('limit', 50)), 500))
+    except (ValueError, TypeError):
+        limit = 50
+    try:
+        offset = max(0, int(request.args.get('offset', 0)))
+    except (ValueError, TypeError):
+        offset = 0
+    q = (request.args.get('q') or '').strip().lower()
+    tipo = (request.args.get('tipo') or '').strip()
+    desde = (request.args.get('desde') or '').strip()
+    hasta = (request.args.get('hasta') or '').strip()
+    solo_anul = (request.args.get('solo_anulados') or '').strip() in ('1','true','yes')
+
+    where = ['1=1']
+    params = []
+    if q:
+        q_safe = q.replace('\\','\\\\').replace('%','\\%').replace('_','\\_')
+        like = f'%{q_safe}%'
+        where.append(
+            "(LOWER(COALESCE(material_nombre,'')) LIKE ? ESCAPE '\\' OR "
+            "LOWER(COALESCE(material_id,'')) LIKE ? ESCAPE '\\' OR "
+            "LOWER(COALESCE(lote,'')) LIKE ? ESCAPE '\\' OR "
+            "LOWER(COALESCE(observaciones,'')) LIKE ? ESCAPE '\\')",
+        )
+        params.extend([like, like, like, like])
+    if tipo:
+        where.append("UPPER(COALESCE(tipo,'')) = UPPER(?)")
+        params.append(tipo)
+    if desde:
+        where.append("fecha >= ?"); params.append(desde)
+    if hasta:
+        where.append("fecha <= ?"); params.append(hasta + ' 23:59:59')
+    if solo_anul:
+        where.append("COALESCE(observaciones,'') LIKE '[ANULADO]%'")
+    where_sql = ' AND '.join(where)
+    conn = get_db(); c = conn.cursor()
+    try:
+        total = c.execute(
+            f"SELECT COUNT(*) FROM movimientos WHERE {where_sql}", params,
+        ).fetchone()[0]
+    except Exception:
+        total = 0
+    try:
+        rows = c.execute(
+            f"""SELECT id, material_id, material_nombre, cantidad, tipo,
+                       COALESCE(lote,'') as lote, fecha,
+                       COALESCE(observaciones,'') as obs,
+                       COALESCE(operador,'') as oper,
+                       COALESCE(proveedor,'') as prov,
+                       COALESCE(numero_oc,'') as numero_oc,
+                       COALESCE(numero_factura,'') as numero_factura,
+                       COALESCE(estado_lote,'') as estado_lote
+                FROM movimientos
+                WHERE {where_sql}
+                ORDER BY fecha DESC, id DESC
+                LIMIT ? OFFSET ?""",
+            params + [limit, offset],
+        ).fetchall()
+    except Exception as _e:
+        __import__('logging').getLogger('inventario').warning(
+            'movimientos_recientes query fallo: %s', _e)
+        rows = []
+    items = [{
+        'id': r[0], 'material_id': r[1] or '',
+        'material_nombre': r[2] or '', 'cantidad': float(r[3] or 0),
+        'tipo': r[4] or '', 'lote': r[5] or '', 'fecha': r[6] or '',
+        'observaciones': r[7] or '', 'operador': r[8] or '',
+        'proveedor': r[9] or '', 'numero_oc': r[10] or '',
+        'numero_factura': r[11] or '', 'estado_lote': r[12] or '',
+        'anulado': (r[7] or '').startswith('[ANULADO]'),
+    } for r in rows]
+    return jsonify({
+        'items': items, 'total': total,
+        'limit': limit, 'offset': offset,
+        'has_more': (offset + len(items)) < total,
     })
 
 

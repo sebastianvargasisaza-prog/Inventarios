@@ -7310,6 +7310,86 @@ def test_golden_portal_b2b_flujo_completo(app, db_clean):
     _exec("DELETE FROM portal_clientes_credenciales WHERE email LIKE 'test_portal_%'")
 
 
+def test_golden_movimientos_pro_paginado_filtros(app, db_clean):
+    """Sprint Movimientos PRO · 20-may-2026.
+
+    Verifica:
+    - GET /api/movimientos/recientes paginado + filtros (q, tipo, fecha)
+    - POST /api/movimientos exige lote para Entrada
+    - audit_log REGISTRAR_MOVIMIENTO_MANUAL
+    - Anulado se detecta correctamente
+    """
+    _exec("DELETE FROM movimientos WHERE material_id LIKE 'TEST_MOV_%'")
+    _exec("DELETE FROM maestro_mps WHERE codigo_mp LIKE 'TEST_MOV_%'")
+    _exec("""INSERT INTO maestro_mps (codigo_mp, nombre_comercial, activo) VALUES ('TEST_MOV_AAA','MP A',1)""")
+    # Insertar 3 movs
+    _exec("""INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, lote, fecha)
+             VALUES ('TEST_MOV_AAA','MP A',100,'Entrada','L1',datetime('now','-3 days'))""")
+    _exec("""INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, lote, fecha, observaciones)
+             VALUES ('TEST_MOV_AAA','MP A',30,'Salida','L1',datetime('now','-1 days'),'consumo prod')""")
+    _exec("""INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, lote, fecha, observaciones)
+             VALUES ('TEST_MOV_AAA','MP A',5,'Ajuste','L1',datetime('now'),'[ANULADO] motivo test')""")
+
+    cs = _login(app, 'sebastian')
+
+    # 1) Sin sesión → 401
+    with app.test_client() as anon:
+        r0 = anon.get('/api/movimientos/recientes')
+        assert r0.status_code == 401
+
+    # 2) Listar todos
+    r1 = cs.get('/api/movimientos/recientes?q=TEST_MOV')
+    assert r1.status_code == 200
+    d1 = r1.get_json()
+    items = d1['items']
+    assert d1['total'] >= 3
+    ids_test = [it for it in items if it['material_id']=='TEST_MOV_AAA']
+    assert len(ids_test) >= 3
+
+    # 3) Filtro tipo=Entrada
+    r2 = cs.get('/api/movimientos/recientes?q=TEST_MOV&tipo=Entrada')
+    d2 = r2.get_json()
+    for it in d2['items']:
+        if it['material_id']=='TEST_MOV_AAA':
+            assert it['tipo'] == 'Entrada'
+
+    # 4) Filtro solo_anulados
+    r3 = cs.get('/api/movimientos/recientes?q=TEST_MOV&solo_anulados=1')
+    d3 = r3.get_json()
+    test_anul = [it for it in d3['items'] if it['material_id']=='TEST_MOV_AAA']
+    assert all(it['anulado'] for it in test_anul), 'BUG: solo_anulados trae no-anulados'
+
+    # 5) POST sin lote para Entrada → 400 lote_obligatorio
+    r_no_lote = cs.post('/api/movimientos', json={
+        'material_id': 'TEST_MOV_AAA',
+        'material_nombre': 'MP A',
+        'cantidad': 100,
+        'tipo': 'Entrada',
+    }, headers=csrf_headers())
+    assert r_no_lote.status_code == 400
+    assert r_no_lote.get_json().get('lote_obligatorio') is True
+
+    # 6) POST con lote → OK + audit_log
+    r_ok = cs.post('/api/movimientos', json={
+        'material_id': 'TEST_MOV_AAA',
+        'material_nombre': 'MP A',
+        'cantidad': 50,
+        'tipo': 'Entrada',
+        'lote': 'L_NUEVO',
+        'observaciones': 'test sprint movimientos',
+    }, headers=csrf_headers())
+    assert r_ok.status_code == 201
+    d_ok = r_ok.get_json()
+    assert 'mov_id' in d_ok
+    audit = _query("SELECT COUNT(*) FROM audit_log WHERE accion='REGISTRAR_MOVIMIENTO_MANUAL' AND registro_id=?",
+                    (str(d_ok['mov_id']),))
+    assert audit[0][0] >= 1
+
+    # Cleanup
+    _exec("DELETE FROM movimientos WHERE material_id LIKE 'TEST_MOV_%'")
+    _exec("DELETE FROM maestro_mps WHERE codigo_mp LIKE 'TEST_MOV_%'")
+
+
 def test_golden_alertas_all_consolidado(app, db_clean):
     """Sprint Alertas PRO · 20-may-2026.
 

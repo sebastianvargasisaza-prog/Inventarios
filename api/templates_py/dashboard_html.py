@@ -706,54 +706,6 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     </table>
     </div>
   
-  <!-- MEE STOCK -->
-  <div style="margin-top:32px;border-top:3px solid #2B7A78;padding-top:24px;">
-    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:14px;">
-      <h2 style="margin:0;">&#128230; Stock Materiales de Envase & Empaque</h2>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;">
-        <select id="mee-cat-filter" onchange="loadMEE()" style="width:auto;margin:0;padding:7px 12px;font-size:0.88em;">
-          <option value="">Todas las categorias</option>
-          <option>Envase</option><option>Tapa</option><option>Etiqueta</option>
-          <option>Plegable</option><option>Serigrafia</option><option>Gotero</option>
-          <option>Frasco</option><option>Contorno</option><option>Otro</option>
-        </select>
-        <input type="text" id="mee-search" placeholder="Buscar..." oninput="loadMEE()" style="width:160px;margin:0;padding:7px 12px;font-size:0.88em;">
-        <button onclick="loadMEE()" style="padding:7px 14px;font-size:0.85em;">&#8635;</button>
-        <button onclick="abrirNuevoMEE()" style="background:#27ae60;padding:7px 14px;font-size:0.85em;">+ Nuevo</button>
-      </div>
-    </div>
-    <div id="nuevo-mee-form" style="display:none;background:#e8f5e9;border:2px solid #27ae60;border-radius:8px;padding:18px;margin-bottom:16px;">
-      <h4 style="color:#1b5e20;margin-bottom:12px;">+ Nuevo Material E&E</h4>
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
-        <div><label style="font-size:0.82em;font-weight:700;display:block;margin-bottom:4px;">Codigo *</label><input type="text" id="nmee-cod" placeholder="ENV-XXX-01" style="text-transform:uppercase;"></div>
-        <div><label style="font-size:0.82em;font-weight:700;display:block;margin-bottom:4px;">Descripcion *</label><input type="text" id="nmee-desc" placeholder="Descripcion del material"></div>
-        <div><label style="font-size:0.82em;font-weight:700;display:block;margin-bottom:4px;">Categoria *</label>
-          <select id="nmee-cat" style="width:100%;"><option>Envase</option><option>Tapa</option><option>Etiqueta</option><option>Plegable</option><option>Serigrafia</option><option>Gotero</option><option>Frasco</option><option>Contorno</option><option>Otro</option></select></div>
-        <div><label style="font-size:0.82em;font-weight:700;display:block;margin-bottom:4px;">Proveedor</label><input type="text" id="nmee-prov" list="prov-list-global" placeholder="Selecciona o escribe nuevo" autocomplete="off"></div>
-        <div><label style="font-size:0.82em;font-weight:700;display:block;margin-bottom:4px;">Stock Inicial (und)</label><input type="number" id="nmee-stock" value="2000"></div>
-        <div><label style="font-size:0.82em;font-weight:700;display:block;margin-bottom:4px;">Stock Minimo (und)</label><input type="number" id="nmee-min" value="1000"></div>
-      </div>
-      <div style="display:flex;gap:10px;margin-top:12px;">
-        <button onclick="crearMEE()" style="background:#1b5e20;">Crear</button>
-        <button onclick="document.getElementById('nuevo-mee-form').style.display='none'" style="background:#95a5a6;">Cancelar</button>
-      </div>
-      <div id="nmee-msg" style="margin-top:8px;"></div>
-    </div>
-    <div style="overflow-x:auto;">
-      <table class="table" style="font-size:0.84em;">
-        <thead><tr>
-          <th>Codigo</th><th>Descripcion</th><th>Categoria</th><th>Proveedor</th>
-          <th style="text-align:right;">Stock Min</th>
-          <th style="text-align:right;">Stock Actual</th>
-          <th style="text-align:center;">Estado</th>
-          <th style="text-align:center;">Ajuste</th>
-          <th style="text-align:center;">Historial</th>
-          <th style="text-align:center;">Compra</th>
-        </tr></thead>
-        <tbody id="mee-stock-body"><tr><td colspan="10" style="text-align:center;color:#999;padding:20px;">Cargando...</td></tr></tbody>
-      </table>
-    </div>
-  </div>
   </div>
 
   <div id="ingreso" class="tab-content">
@@ -1052,26 +1004,66 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
   </div>
 
   <div id="movimientos" class="tab-content">
-    <h2>&#128203; Movimientos de Inventario</h2>
-    <div style="background:#f8f9ff;border:1px solid #dde;border-radius:10px;padding:18px;margin-bottom:18px;">
-      <h3 style="margin-bottom:12px;">Registrar Movimiento Manual</h3>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-        <div class="form-group"><label>Codigo MP</label><input type="text" id="mov-id" placeholder="MP00001"></div>
-        <div class="form-group"><label>Nombre Material</label><input type="text" id="mov-nombre" placeholder="Nombre"></div>
-        <div class="form-group"><label>Cantidad (g)</label><input type="number" id="mov-cant" placeholder="0" step="0.01"></div>
-        <div class="form-group"><label>Tipo</label>
-          <select id="mov-tipo"><option value="Entrada">Entrada</option><option value="Salida">Salida</option></select>
-        </div>
+    <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+      <div>
+        <h2 style="margin:0">&#128203; Movimientos de Inventario</h2>
+        <div id="mov-last-update" style="font-size:11px;color:#94a3b8;margin-top:2px">—</div>
       </div>
-      <div class="form-group"><label>Observaciones</label><input type="text" id="mov-obs" placeholder="Opcional"></div>
-      <button onclick="registrarMov()">Registrar</button>
-      <div id="mov-msg"></div>
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+        <label style="font-size:11px;color:#64748b;display:flex;align-items:center;gap:4px;cursor:pointer">
+          <input type="checkbox" id="mov-autorefresh"> auto 60s
+        </label>
+        <button onclick="exportarExcelMovimientosNuevo()" style="padding:6px 14px;font-size:13px;background:#217346;color:#fff;border-radius:6px">📄 Excel</button>
+        <button onclick="loadMovimientosNuevo(true)" style="padding:6px 14px;font-size:13px;background:#0e7490;color:#fff;border-radius:6px">🔄 Actualizar</button>
+      </div>
     </div>
-    <div style="display:flex;gap:10px;margin-bottom:10px;"><button onclick="loadMovimientos()">Ver Ultimos Movimientos</button><button onclick="exportarExcelMovimientos()" style="background:#217346;">&#128196; Descargar Excel</button></div>
-    <table class="table" id="mov-table">
-      <thead><tr><th>Material</th><th>Cantidad (g)</th><th>Tipo</th><th>Fecha</th><th>Observaciones</th><th>Anular</th></tr></thead>
-      <tbody><tr><td colspan="6" style="text-align:center;color:#999;">Sin movimientos</td></tr></tbody>
-    </table>
+    <!-- Sprint Movimientos PRO · 20-may-2026 · form mejorado -->
+    <div style="background:#f8f9ff;border:1px solid #dde;border-radius:10px;padding:14px 18px;margin-bottom:14px">
+      <h3 style="margin:0 0 10px;font-size:14px">✏️ Registrar Movimiento Manual</h3>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px">
+        <div class="form-group" style="margin:0"><label style="font-size:11px">Código MP *</label><input type="text" id="mov-id" placeholder="MP00001" style="text-transform:uppercase"></div>
+        <div class="form-group" style="margin:0"><label style="font-size:11px">Nombre Material *</label><input type="text" id="mov-nombre" placeholder="Nombre"></div>
+        <div class="form-group" style="margin:0"><label style="font-size:11px">Tipo *</label>
+          <select id="mov-tipo"><option value="Entrada">📥 Entrada</option><option value="Salida">📤 Salida</option><option value="Ajuste">⚖ Ajuste</option></select>
+        </div>
+        <div class="form-group" style="margin:0"><label style="font-size:11px">Lote * (req. para Entrada)</label><input type="text" id="mov-lote" placeholder="Ej: LYP240520"></div>
+        <div class="form-group" style="margin:0"><label style="font-size:11px">Cantidad (g) *</label><input type="number" id="mov-cant" placeholder="0" step="0.01" min="0"></div>
+        <div class="form-group" style="margin:0"><label style="font-size:11px">Proveedor</label><input type="text" id="mov-prov" list="prov-list-global" placeholder="Opcional"></div>
+      </div>
+      <div class="form-group" style="margin:10px 0 0"><label style="font-size:11px">Observaciones</label><input type="text" id="mov-obs" placeholder="Motivo / contexto"></div>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <button onclick="registrarMovNuevo()" id="btn-mov-reg" style="background:#27ae60">✓ Registrar</button>
+        <button onclick="limpiarFormMov()" style="background:#95a5a6">Limpiar</button>
+      </div>
+      <div id="mov-msg" style="margin-top:8px"></div>
+    </div>
+    <!-- Filtros -->
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px;background:#f1f5f9;padding:10px;border-radius:6px">
+      <input type="text" id="mov-q" placeholder="🔍 Buscar (MP, lote, obs…)" oninput="movBuscar(this.value)" style="flex:1;min-width:200px;padding:6px 10px;font-size:13px">
+      <select id="mov-tipo-filtro" onchange="movFiltrar()" style="padding:6px 10px;font-size:13px">
+        <option value="">Todos los tipos</option>
+        <option value="Entrada">📥 Solo Entradas</option>
+        <option value="Salida">📤 Solo Salidas</option>
+        <option value="Ajuste">⚖ Solo Ajustes</option>
+      </select>
+      <input type="date" id="mov-desde" onchange="movFiltrar()" title="Desde" style="padding:6px 10px;font-size:13px">
+      <input type="date" id="mov-hasta" onchange="movFiltrar()" title="Hasta" style="padding:6px 10px;font-size:13px">
+      <label style="font-size:11px;color:#64748b;display:flex;align-items:center;gap:4px;cursor:pointer">
+        <input type="checkbox" id="mov-anul" onchange="movFiltrar()"> Solo anulados
+      </label>
+    </div>
+    <div style="overflow-x:auto">
+      <table class="table" id="mov-table" style="font-size:12px">
+        <thead><tr>
+          <th>ID</th><th>Cod MP</th><th>Material</th><th>Lote</th>
+          <th style="text-align:right">Cantidad (g)</th><th>Tipo</th>
+          <th>Proveedor</th><th>OC</th><th>Fecha</th>
+          <th>Operador</th><th>Obs</th><th></th>
+        </tr></thead>
+        <tbody><tr><td colspan="12" style="text-align:center;color:#999">Cargando…</td></tr></tbody>
+      </table>
+    </div>
+    <div id="mov-pager"></div>
   </div>
 
   <div id="cuarentena" class="tab-content">
@@ -3234,12 +3226,12 @@ function switchTab(n,btn){
   if(n==='conteo'){ cargarEstanterias(); cargarHistorialConteos(); cargarProgramacionCiclica(); }
   if(n==='empaque'){ cargarMeeAlertas(); cargarMeeStock(); cargarMeeHistorial(); }
   if(n==='alertas'){ loadAlertasAll(); }
-  if(n==='stock') loadMEE();
+  // 'stock' (Inventario MP) ya NO incluye MEE · vive en tab 'empaque' aparte.
   if(n==='acondicionamiento'){loadAcond();cargarMeeParaAcond();}
   if(n==='liberacion'){loadLiberaciones('');cargarClientesLib();}
-  if(n==='movimientos') loadMovimientos();
+  if(n==='movimientos') loadMovimientosNuevo(true);
   if(n==='produccion') cargarHistProd();
-  if(n==='movimientos') loadMovimientos();
+  if(n==='movimientos') loadMovimientosNuevo(true);
   if(n==='programacion'){
     cargarProgramacion(null);
     // Sebastián 13-may-2026: default a Necesidades (no a Plan v2 legacy)
@@ -3266,7 +3258,7 @@ function subSwitchTab(tabId,btn,barId){
   if(btn) btn.classList.add('active');
   var target=document.getElementById(tabId);
   if(target) target.classList.add('active');
-  if(tabId==='stock'){loadStock();loadMEE();}
+  if(tabId==='stock'){loadStock();}  /* MEE vive en tab 'empaque' separado */
   if(tabId==='formulas'||tabId==='produccion') loadFormulas();
   if(tabId==='produccion') cargarHistProd();
   if(tabId==='envasado') cargarEnvasadoSimpleTab();
@@ -4370,20 +4362,204 @@ async function loadAlertas(){
 }
 
 async function loadMovimientos(){
+  // Sprint Movimientos PRO · 20-may-2026 · usa endpoint paginado
+  return loadMovimientosNuevo(false);
+}
+
+// ============== Sprint Movimientos PRO · 20-may-2026 ==============
+var _MOV_STATE = {limit:50, offset:0, q:'', tipo:'', desde:'', hasta:'', solo_anul:false};
+var _MOV_TIMER = null;
+var _MOV_LAST_DATA = null;
+async function loadMovimientosNuevo(reset){
+  if(reset){ _MOV_STATE.offset = 0; }
+  var t0 = Date.now();
+  var tb = document.querySelector('#mov-table tbody'); if(!tb) return;
   try{
-    var r=await fetch('/api/movimientos'), d=await r.json();
-    var tb=document.querySelector('#mov-table tbody');
-    if(d.movimientos&&d.movimientos.length){
-      tb.innerHTML=d.movimientos.map(function(m){
-        var t=m.tipo==='Entrada'?'<span style="color:#28a745;font-weight:600;">Entrada</span>':'<span style="color:#cc4444;font-weight:600;">Salida</span>';
-        var esAnulado=m.observaciones&&m.observaciones.indexOf('[ANULADO]')===0;
-        var btnAnular=esAnulado
-          ?'<span style="color:#aaa;font-size:0.8em;">Anulado</span>'
-          :'<button onclick="anularMovimiento('+m.id+')" style="background:#cc4444;color:#fff;border:none;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:0.82em;">Anular</button>';
-        return '<tr style="'+(esAnulado?'opacity:0.5;text-decoration:line-through;':'')+'">'+'<td>'+m.material_nombre+'</td>'+'<td style="text-align:right;">'+m.cantidad.toLocaleString()+'</td>'+'<td>'+t+'</td>'+'<td style="font-size:0.82em;color:#888;">'+m.fecha+'</td>'+'<td style="font-size:0.82em;color:#888;">'+m.observaciones+'</td>'+'<td>'+btnAnular+'</td>'+'</tr>';
-      }).join('');
-    }else{tb.innerHTML='<tr><td colspan="6" style="text-align:center;color:#999;">Sin movimientos</td></tr>';}
-  }catch(e){}
+    var s = _MOV_STATE;
+    var qs = 'limit='+s.limit+'&offset='+s.offset+
+             (s.q?'&q='+encodeURIComponent(s.q):'')+
+             (s.tipo?'&tipo='+encodeURIComponent(s.tipo):'')+
+             (s.desde?'&desde='+encodeURIComponent(s.desde):'')+
+             (s.hasta?'&hasta='+encodeURIComponent(s.hasta):'')+
+             (s.solo_anul?'&solo_anulados=1':'');
+    var r = await fetch('/api/movimientos/recientes?'+qs);
+    if(!r.ok){ tb.innerHTML='<tr><td colspan="12" style="text-align:center;color:#c00">Error '+r.status+'</td></tr>'; return; }
+    var d = await r.json();
+    _MOV_LAST_DATA = d;
+    var items = d.items||[];
+    if(!items.length){
+      tb.innerHTML='<tr><td colspan="12" style="text-align:center;color:#999;padding:18px">Sin movimientos para los filtros'+(s.q?' "'+_escHTML(s.q)+'"':'')+'</td></tr>';
+      _refreshMovPager(d); _updateMovTimestamp(t0, d); return;
+    }
+    var esAdmin = window._ES_ADMIN_DASH === true;
+    tb.innerHTML = items.map(function(m){
+      var fec = (m.fecha||'').substring(0,16).replace('T',' ');
+      var tipoBadge;
+      if(m.tipo==='Entrada') tipoBadge = '<span style="background:#dcfce7;color:#166534;padding:1px 7px;border-radius:8px;font-size:10px;font-weight:700">📥 IN</span>';
+      else if(m.tipo==='Salida') tipoBadge = '<span style="background:#fee2e2;color:#991b1b;padding:1px 7px;border-radius:8px;font-size:10px;font-weight:700">📤 OUT</span>';
+      else tipoBadge = '<span style="background:#fef3c7;color:#92400e;padding:1px 7px;border-radius:8px;font-size:10px;font-weight:700">⚖ AJU</span>';
+      var ocLink = m.numero_oc ? '<a href="/oc/'+encodeURIComponent(m.numero_oc)+'" target="_blank" style="color:#0e7490;font-family:monospace">'+_escHTML(m.numero_oc)+'</a>' : '<span style="color:#cbd5e1">—</span>';
+      var anulBtn = m.anulado
+        ? '<span style="color:#aaa;font-size:10px">Anulado</span>'
+        : (esAdmin ? '<button data-act="mov-anul" data-id="'+m.id+'" data-mat="'+_escHTML(m.material_nombre)+'" data-cant="'+m.cantidad+'" data-tipo="'+_escHTML(m.tipo)+'" style="padding:2px 7px;font-size:11px;background:#c0392b;color:#fff;border-radius:3px" title="Anular movimiento">✕</button>' : '<span style="color:#cbd5e1;font-size:10px">—</span>');
+      var rowStyle = m.anulado ? 'opacity:.5;text-decoration:line-through' : '';
+      return '<tr style="'+rowStyle+'">' +
+        '<td style="font-family:monospace;color:#94a3b8">'+m.id+'</td>'+
+        '<td style="font-family:monospace;font-size:11px">'+_escHTML(m.material_id)+'</td>'+
+        '<td style="font-weight:600">'+_escHTML(m.material_nombre)+'</td>'+
+        '<td style="font-family:monospace;font-size:11px">'+_escHTML(m.lote||'—')+'</td>'+
+        '<td style="text-align:right;font-weight:600">'+m.cantidad.toLocaleString()+'</td>'+
+        '<td>'+tipoBadge+'</td>'+
+        '<td style="font-size:11px">'+_escHTML(m.proveedor||'—')+'</td>'+
+        '<td>'+ocLink+'</td>'+
+        '<td style="font-size:11px;color:#475569">'+_escHTML(fec)+'</td>'+
+        '<td style="font-size:11px;color:#475569">'+_escHTML(m.operador||'—')+'</td>'+
+        '<td style="font-size:11px;color:#475569;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+_escHTML(m.observaciones)+'">'+_escHTML(m.observaciones||'')+'</td>'+
+        '<td style="text-align:center">'+anulBtn+'</td>'+
+      '</tr>';
+    }).join('');
+    _refreshMovPager(d);
+    _updateMovTimestamp(t0, d);
+    if(!_MOV_TIMER) _startMovAutoRefresh();
+  }catch(e){
+    tb.innerHTML='<tr><td colspan="12" style="text-align:center;color:#c00">Error: '+_escHTML(e.message)+'</td></tr>';
+  }
+}
+function _updateMovTimestamp(t0, d){
+  var lu = document.getElementById('mov-last-update');
+  if(!lu) return;
+  var hora = new Date().toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  var dur = Math.max(1, Math.round((Date.now()-t0)/100)/10);
+  lu.textContent = 'Actualizado '+hora+' · '+dur+'s · '+(d.total||0)+' total';
+}
+function _refreshMovPager(d){
+  var box = document.getElementById('mov-pager'); if(!box) return;
+  var s = _MOV_STATE;
+  var hasta = Math.min(s.offset + s.limit, d.total||0);
+  var hayMas = d.has_more;
+  box.innerHTML =
+    '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12px;color:#475569;margin-top:8px">' +
+    '<span>Mostrando '+(s.offset+1)+'-'+hasta+' de '+(d.total||0)+'</span>' +
+    '<button onclick="movPag(-1)" '+(s.offset===0?'disabled':'')+' style="padding:3px 10px;font-size:11px">‹ Atrás</button>' +
+    '<button onclick="movPag(1)" '+(!hayMas?'disabled':'')+' style="padding:3px 10px;font-size:11px">Siguiente ›</button>' +
+    '</div>';
+}
+function movPag(dir){
+  _MOV_STATE.offset = Math.max(0, _MOV_STATE.offset + dir * _MOV_STATE.limit);
+  loadMovimientosNuevo(false);
+}
+var _MOV_BUSC_TIMER = null;
+function movBuscar(val){
+  if(_MOV_BUSC_TIMER) clearTimeout(_MOV_BUSC_TIMER);
+  _MOV_BUSC_TIMER = setTimeout(function(){
+    _MOV_STATE.q = (val||'').trim();
+    loadMovimientosNuevo(true);
+  }, 220);
+}
+function movFiltrar(){
+  _MOV_STATE.tipo = (document.getElementById('mov-tipo-filtro')||{}).value || '';
+  _MOV_STATE.desde = (document.getElementById('mov-desde')||{}).value || '';
+  _MOV_STATE.hasta = (document.getElementById('mov-hasta')||{}).value || '';
+  _MOV_STATE.solo_anul = document.getElementById('mov-anul') && document.getElementById('mov-anul').checked;
+  loadMovimientosNuevo(true);
+}
+function _startMovAutoRefresh(){
+  if(_MOV_TIMER) clearInterval(_MOV_TIMER);
+  _MOV_TIMER = setInterval(function(){
+    var chk = document.getElementById('mov-autorefresh');
+    if(!chk || !chk.checked) return;
+    if(document.visibilityState==='hidden') return;
+    var tab = document.getElementById('movimientos');
+    if(!tab || tab.style.display==='none') return;
+    loadMovimientosNuevo(false);
+  }, 60000);
+}
+async function registrarMovNuevo(){
+  var btn = document.getElementById('btn-mov-reg');
+  var msg = document.getElementById('mov-msg');
+  msg.innerHTML = '';
+  var data = {
+    material_id: (document.getElementById('mov-id').value||'').trim().toUpperCase(),
+    material_nombre: (document.getElementById('mov-nombre').value||'').trim(),
+    cantidad: parseFloat(document.getElementById('mov-cant').value||'0'),
+    tipo: document.getElementById('mov-tipo').value,
+    lote: (document.getElementById('mov-lote').value||'').trim(),
+    proveedor: (document.getElementById('mov-prov').value||'').trim(),
+    observaciones: (document.getElementById('mov-obs').value||'').trim(),
+    operador: window.OPER_ACTUAL || '',
+  };
+  // Validación frontend rápida (backend valida también)
+  if(!data.material_id){ msg.innerHTML='<div class="alert-error">Código MP requerido</div>'; return; }
+  if(!data.material_nombre){ msg.innerHTML='<div class="alert-error">Nombre Material requerido</div>'; return; }
+  if(!data.cantidad || data.cantidad <= 0){ msg.innerHTML='<div class="alert-error">Cantidad debe ser > 0</div>'; return; }
+  if(data.tipo==='Entrada' && !data.lote){ msg.innerHTML='<div class="alert-error">Lote requerido para Entrada · sin lote rompe el kardex</div>'; return; }
+  if(btn){ btn.disabled = true; btn.textContent = 'Registrando…'; }
+  try{
+    var r = await fetch('/api/movimientos', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(data),
+    });
+    var res = await r.json();
+    if(r.ok){
+      msg.innerHTML = '<div class="alert-success">✓ '+res.message+' · mov #'+res.mov_id+'</div>';
+      limpiarFormMov();
+      loadMovimientosNuevo(true);
+    } else {
+      // Sprint Movimientos PRO fix #9: muestra res.error real
+      var hint = res.lote_obligatorio ? '<div style="font-size:11px;margin-top:4px">Tip: poné el lote del proveedor o de ajuste cíclico.</div>' : '';
+      msg.innerHTML = '<div class="alert-error">'+(res.error||'Error al registrar')+hint+'</div>';
+    }
+  }catch(e){
+    msg.innerHTML = '<div class="alert-error">Error de red: '+_escHTML(e.message)+'</div>';
+  }
+  if(btn){ btn.disabled = false; btn.textContent = '✓ Registrar'; }
+}
+function limpiarFormMov(){
+  ['mov-id','mov-nombre','mov-cant','mov-lote','mov-prov','mov-obs'].forEach(function(id){
+    var el = document.getElementById(id); if(el) el.value = '';
+  });
+}
+async function anularMovDelegado(movId, matNombre, cantidad, tipo){
+  if(!confirm('Anular movimiento #'+movId+'? '+tipo+' · '+matNombre+' · '+cantidad+' g · Se creará nota [ANULADO] en observaciones.')) return;
+  var motivo = prompt('Motivo de anulación (≥3 chars):');
+  if(!motivo || motivo.trim().length < 3){ alert('Motivo requerido'); return; }
+  try{
+    var r = await fetch('/api/movimientos/'+movId+'/anular',{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({motivo: motivo.trim()}),
+    });
+    var d = await r.json();
+    if(r.ok){
+      loadMovimientosNuevo(false);
+    } else {
+      alert('Error: '+(d.error||r.status));
+    }
+  }catch(e){ alert('Error red: '+e.message); }
+}
+// Delegate clicks para [data-act="mov-anul"]
+if(typeof document !== 'undefined' && !window._MOV_DELEG){
+  window._MOV_DELEG = true;
+  document.addEventListener('click', function(ev){
+    var btn = ev.target && ev.target.closest && ev.target.closest('[data-act="mov-anul"]');
+    if(!btn) return;
+    anularMovDelegado(btn.dataset.id, btn.dataset.mat,
+                       parseFloat(btn.dataset.cant)||0, btn.dataset.tipo);
+  });
+}
+function exportarExcelMovimientosNuevo(){
+  if(!_MOV_LAST_DATA || !(_MOV_LAST_DATA.items||[]).length){
+    alert('Cargá movimientos primero'); return;
+  }
+  var cols = ['ID','Cod MP','Material','Lote','Cantidad g','Tipo','Proveedor',
+              'OC','Factura','Fecha','Operador','Estado lote','Observaciones'];
+  var rows = (_MOV_LAST_DATA.items||[]).map(function(m){
+    return [m.id, m.material_id, m.material_nombre, m.lote||'',
+            Number(m.cantidad)||0, m.tipo, m.proveedor||'',
+            m.numero_oc||'', m.numero_factura||'',
+            (m.fecha||'').substring(0,19).replace('T',' '),
+            m.operador||'', m.estado_lote||'', m.observaciones||''];
+  });
+  dlExcelHTML('Movimientos_'+fhoy(), cols, rows);
 }
 
 async function anularMovimiento(movId){
@@ -4412,6 +4588,29 @@ async function registrarMov(){
 }
 
 // Sprint Alertas PRO · 20-may-2026 · endpoint consolidado + 6 secciones
+function scrollAlertaSec(anchor){
+  var el = document.getElementById(anchor);
+  if(el) el.scrollIntoView({behavior:'smooth'});
+}
+// Event delegation · evita onclick inline con apostrofes anidados
+if(typeof document !== 'undefined' && !window._ALERTAS_DELEG){
+  window._ALERTAS_DELEG = true;
+  document.addEventListener('click', function(ev){
+    var btn = ev.target && ev.target.closest && ev.target.closest('[data-act]');
+    if(!btn) return;
+    var act = btn.getAttribute('data-act');
+    if(act === 'sol-mp'){
+      solicitarMPAlerta(btn.dataset.cod, btn.dataset.nom,
+        parseFloat(btn.dataset.def)||0, btn.dataset.prov||'');
+    } else if(act === 'silenciar'){
+      silenciarAlerta(btn.dataset.tipo, btn.dataset.cod);
+    } else if(act === 'dar-baja'){
+      darBajaLoteAlerta(btn.dataset.mid, btn.dataset.lote);
+    } else if(act === 'ir-qc'){
+      if(typeof switchGroup === 'function') switchGroup('bar-calidadHub','cuarentena',null);
+    }
+  });
+}
 var _ALERTAS_DATA = null;
 var _ALERTAS_TIMER = null;
 var _ALERTAS_PREV_TOTAL = -1;
@@ -4435,7 +4634,7 @@ async function loadAlertasAll(silent){
       function statCard(label, val, color, icon, anchor){
         var bg = color==='red'?'#fef2f2':color==='orange'?'#fff7ed':color==='yellow'?'#fefce8':color==='purple'?'#faf5ff':color==='teal'?'#f0fdfa':'#f8fafc';
         var fg = color==='red'?'#dc2626':color==='orange'?'#ea580c':color==='yellow'?'#ca8a04':color==='purple'?'#7c3aed':color==='teal'?'#0e7490':'#475569';
-        return '<a href="#" onclick="document.getElementById(\''+anchor+'\').scrollIntoView({behavior:\'smooth\'});return false" style="text-decoration:none;background:'+bg+';border-left:4px solid '+fg+';padding:10px;border-radius:6px;display:block">'+
+        return '<a href="#" onclick="scrollAlertaSec(\\''+anchor+'\\');return false" style="text-decoration:none;background:'+bg+';border-left:4px solid '+fg+';padding:10px;border-radius:6px;display:block">'+
           '<div style="font-size:10px;color:'+fg+';text-transform:uppercase;font-weight:700;letter-spacing:.5px">'+icon+' '+label+'</div>'+
           '<div style="font-size:1.4em;font-weight:800;color:'+fg+';margin-top:2px">'+val+'</div>'+
         '</a>';
@@ -4539,8 +4738,8 @@ function _renderSeccionMP(titulo, items, color, tipoSilen){
       '<td style="text-align:right;color:#dc2626;font-weight:700">'+Math.round(it.deficit_g).toLocaleString()+'</td>'+
       '<td style="text-align:center"><span style="color:'+pctColor+';font-weight:700">'+pct+'%</span></td>'+
       '<td style="text-align:center;white-space:nowrap">'+
-        '<button onclick="solicitarMPAlerta(\''+_escHTML(it.codigo_mp)+'\',\''+_escHTML(it.nombre).replace(/\\\'/g,"\\\\'")+'\','+it.deficit_g+',\''+_escHTML(it.proveedor||'')+'\')" style="padding:2px 7px;font-size:11px;background:#27ae60;color:#fff;border-radius:3px">Solicitar</button> '+
-        '<button onclick="silenciarAlerta(\''+tipoSilen+'\',\''+_escHTML(it.codigo_mp)+'\')" style="padding:2px 7px;font-size:11px;background:#94a3b8;color:#fff;border-radius:3px" title="Silenciar esta alerta">🔇</button>'+
+        '<button data-act="sol-mp" data-cod="'+_escHTML(it.codigo_mp)+'" data-nom="'+_escHTML(it.nombre)+'" data-def="'+it.deficit_g+'" data-prov="'+_escHTML(it.proveedor||'')+'" style="padding:2px 7px;font-size:11px;background:#27ae60;color:#fff;border-radius:3px">Solicitar</button> '+
+        '<button data-act="silenciar" data-tipo="'+tipoSilen+'" data-cod="'+_escHTML(it.codigo_mp)+'" style="padding:2px 7px;font-size:11px;background:#94a3b8;color:#fff;border-radius:3px" title="Silenciar esta alerta">🔇</button>'+
       '</td></tr>';
   });
   h += '</tbody></table></div></div>';
@@ -4568,8 +4767,8 @@ function _renderSeccionLotes(titulo, items, color, esVencido){
       '<td style="text-align:center">'+_escHTML(it.fecha_vencimiento)+'</td>'+
       '<td style="text-align:center;color:'+dCol+';font-weight:700">'+(it.dias_para_vencer<0?(it.dias_para_vencer+'d (VENCIDO)'):(it.dias_para_vencer+'d'))+'</td>'+
       '<td style="text-align:center;white-space:nowrap">'+
-        (esVencido ? '<button onclick="darBajaLoteAlerta(\''+_escHTML(it.material_id)+'\',\''+_escHTML(it.lote)+'\')" style="padding:2px 7px;font-size:11px;background:#c0392b;color:#fff;border-radius:3px">Dar de baja</button>' : '') + ' ' +
-        '<button onclick="silenciarAlerta(\'lote_venc\',\''+_escHTML(it.material_id)+'::'+_escHTML(it.lote)+'\')" style="padding:2px 7px;font-size:11px;background:#94a3b8;color:#fff;border-radius:3px" title="Silenciar">🔇</button>'+
+        (esVencido ? '<button data-act="dar-baja" data-mid="'+_escHTML(it.material_id)+'" data-lote="'+_escHTML(it.lote)+'" style="padding:2px 7px;font-size:11px;background:#c0392b;color:#fff;border-radius:3px">Dar de baja</button>' : '') + ' ' +
+        '<button data-act="silenciar" data-tipo="lote_venc" data-cod="'+_escHTML(it.material_id)+'::'+_escHTML(it.lote)+'" style="padding:2px 7px;font-size:11px;background:#94a3b8;color:#fff;border-radius:3px" title="Silenciar">🔇</button>'+
       '</td></tr>';
   });
   h += '</tbody></table></div></div>';
@@ -4594,7 +4793,7 @@ function _renderSeccionMEE(items){
       '<td style="text-align:right">'+m.stock_minimo+'</td>'+
       '<td style="text-align:right;color:#dc2626;font-weight:700">'+m.stock_actual+'</td>'+
       '<td style="text-align:right;color:#dc2626;font-weight:700">'+m.deficit+'</td>'+
-      '<td style="text-align:center"><button onclick="silenciarAlerta(\'mee_bajo_minimo\',\''+_escHTML(m.codigo)+'\')" style="padding:2px 7px;font-size:11px;background:#94a3b8;color:#fff;border-radius:3px" title="Silenciar">🔇</button></td>'+
+      '<td style="text-align:center"><button data-act="silenciar" data-tipo="mee_bajo_minimo" data-cod="'+_escHTML(m.codigo)+'" style="padding:2px 7px;font-size:11px;background:#94a3b8;color:#fff;border-radius:3px" title="Silenciar">🔇</button></td>'+
     '</tr>';
   });
   h += '</tbody></table></div></div>';
@@ -4618,7 +4817,7 @@ function _renderSeccionCuarentena(items){
       '<td style="font-family:monospace;font-size:11px">'+_escHTML(it.numero_oc||'—')+'</td>'+
       '<td style="text-align:right">'+Math.round(it.cantidad_g).toLocaleString()+'</td>'+
       '<td style="font-size:11px;color:#475569">'+_escHTML(it.fecha_ingreso)+'</td>'+
-      '<td><button onclick="switchGroup(\'bar-calidadHub\',\'cuarentena\',null)" style="padding:2px 7px;font-size:11px;background:#7c3aed;color:#fff;border-radius:3px">Ir a QC</button></td>'+
+      '<td><button data-act="ir-qc" style="padding:2px 7px;font-size:11px;background:#7c3aed;color:#fff;border-radius:3px">Ir a QC</button></td>'+
     '</tr>';
   });
   h += '</tbody></table></div></div>';
