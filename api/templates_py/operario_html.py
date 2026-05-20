@@ -176,7 +176,13 @@ function renderProducciones(d) {
       : '';
 
     let chips = '';
-    if (p.area_codigo) chips += '<span class="chip chip-area">' + escapeHtml(p.area_codigo) + ' · ' + escapeHtml(p.area_nombre) + '</span>';
+    if (p.area_codigo) {
+      let stateMark = '';
+      if (p.area_estado === 'sucia') stateMark = ' · 🔴 sucia';
+      else if (p.area_estado === 'limpiando') stateMark = ' · 🧹 limpiando';
+      else if (p.area_estado === 'ocupada') stateMark = ' · 🟡 ocupada';
+      chips += '<span class="chip chip-area">' + escapeHtml(p.area_codigo) + ' · ' + escapeHtml(p.area_nombre) + stateMark + '</span>';
+    }
     if (ebr && ebr.numero_op) chips += '<span class="chip chip-op">' + escapeHtml(ebr.numero_op) + '</span>';
 
     const miRol = p.mi_rol_aqui
@@ -192,7 +198,17 @@ function renderProducciones(d) {
     } else if (accion === 'completar_pp') {
       btn = '<button class="btn btn-completar btn-big" onclick="completarProd(' + p.id + ')">' + ACCION_LABEL.completar_pp + '</button>';
     } else {
-      btn = '<div class="muted" style="text-align:center;padding:12px;">' + ACCION_LABEL.ya_completado + ' · ' + (p.kg_real ? fmt(p.kg_real, 1) + ' kg · merma ' + fmt(p.merma_pct, 1) + '%' : 'sin reporte') + '</div>';
+      // Producción ya completada · si la sala quedó sucia, dejar marcarla limpia desde acá
+      const ya = '<div class="muted" style="text-align:center;padding:10px;">' + ACCION_LABEL.ya_completado + ' · ' + (p.kg_real ? fmt(p.kg_real, 1) + ' kg · merma ' + fmt(p.merma_pct, 1) + '%' : 'sin reporte') + '</div>';
+      if (p.area_estado === 'sucia' && p.area_id) {
+        const nombreSala = (p.area_nombre || p.area_codigo || 'sala').replace(/'/g, '');
+        btn = ya
+            + '<button class="btn btn-big" style="background:#0e7490;color:#fff;margin-top:8px" '
+            + 'onclick="marcarLimpia(' + p.area_id + ',\\'' + nombreSala + '\\')">'
+            + '🧽 Marcar ' + escapeHtml(nombreSala) + ' LIMPIA</button>';
+      } else {
+        btn = ya;
+      }
     }
 
     let progreso = '';
@@ -257,6 +273,26 @@ async function completarProd(id) {
       return;
     }
     alert('✓ Completado · merma ' + (d.merma_pct != null ? d.merma_pct.toFixed(1) + '%' : '—'));
+    loadMiDia();
+  } catch(e) {
+    alert('Error: ' + e.message);
+  }
+}
+
+async function marcarLimpia(areaId, nombre) {
+  if (!confirm('¿Confirmás que la sala ' + nombre + ' ya quedó LIMPIA?\\n\\nLa siguiente producción podrá iniciar acá.')) return;
+  try {
+    const r = await fetch('/api/planta/areas/' + areaId + '/estado', {
+      method: 'PATCH',
+      headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken()},
+      body: JSON.stringify({estado: 'libre'}),
+    });
+    const d = await r.json();
+    if (!r.ok) {
+      alert('Error: ' + (d.error || r.status));
+      return;
+    }
+    alert('✓ Sala ' + nombre + ' marcada limpia');
     loadMiDia();
   } catch(e) {
     alert('Error: ' + e.message);

@@ -192,7 +192,8 @@ def mi_dia():
                      pp.operario_dispensacion_id, pp.operario_elaboracion_id,
                      pp.operario_envasado_id, pp.operario_acondicionamiento_id,
                      pp.inicio_real_at, pp.fin_real_at,
-                     pp.inventario_descontado_at, pp.kg_real, pp.merma_pct
+                     pp.inventario_descontado_at, pp.kg_real, pp.merma_pct,
+                     COALESCE(ap.estado, '') as area_estado
               FROM produccion_programada pp
               LEFT JOIN areas_planta ap ON ap.id = pp.area_id
               WHERE {where_fecha}{where_op}
@@ -250,6 +251,7 @@ def mi_dia():
             "area_id": r[5],
             "area_codigo": r[6] or "",
             "area_nombre": r[7] or "",
+            "area_estado": r[17] or "",
             "mi_rol_aqui": mi_rol,
             "inicio_real_at": r[12],
             "fin_real_at": r[13],

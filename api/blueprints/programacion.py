@@ -2588,11 +2588,20 @@ def planta_actualizar_estado_area(area_id):
     quedo sucia despues de produccion."""
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
     data = request.get_json(force=True, silent=True) or {}
     nuevo = (data.get('estado') or '').strip().lower()
     if nuevo not in ('libre', 'ocupada', 'sucia', 'limpiando'):
         return jsonify({'error': 'estado invalido'}), 400
     conn = get_db()
+    # Capturar estado anterior para audit
+    prev_row = conn.execute(
+        "SELECT estado FROM areas_planta WHERE id=? AND activo=1",
+        (area_id,)
+    ).fetchone()
+    if not prev_row:
+        return jsonify({'error': 'sala no encontrada'}), 404
+    estado_anterior = prev_row[0]
     cur = conn.execute(
         "UPDATE areas_planta SET estado=? WHERE id=? AND activo=1",
         (nuevo, area_id)
@@ -2600,7 +2609,18 @@ def planta_actualizar_estado_area(area_id):
     conn.commit()
     if cur.rowcount == 0:
         return jsonify({'error': 'sala no encontrada'}), 404
-    return jsonify({'ok': True, 'id': area_id, 'estado': nuevo})
+    try:
+        audit_log(conn.cursor(), usuario=user,
+                  accion='ACTUALIZAR_ESTADO_AREA',
+                  tabla='areas_planta', registro_id=area_id,
+                  antes={'estado': estado_anterior},
+                  despues={'estado': nuevo},
+                  detalle=f"Cambió estado de sala {area_id}: {estado_anterior} → {nuevo}")
+    except Exception as _e:
+        logging.getLogger('programacion').warning(
+            f'audit ACTUALIZAR_ESTADO_AREA fallo: {_e}')
+    return jsonify({'ok': True, 'id': area_id, 'estado': nuevo,
+                    'estado_anterior': estado_anterior})
 
 
 @bp.route('/api/planta/operarios', methods=['GET', 'POST'])
