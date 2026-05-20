@@ -50,6 +50,20 @@ MFA_EXEMPT_PATHS = {
 }
 MFA_EXEMPT_PREFIXES = ('/static/', '/favicon')
 
+# Usuarios admin EXENTOS de exigencia de MFA · Sebastián 19-may-2026.
+# Default vacío · todos los admin necesitan MFA. Para eximir uno: setear env
+# var `MFA_EXEMPT_USERS` con nombres comma-separated (ej. 'alejandro').
+# Caso: Alejandro es CEO operativo, no toca código ni entra a Compras a hacer
+# pagos, solo planea producción · MFA agrega fricción innecesaria. Sebastián
+# decidió 19-may. Para revertir: borrar el env var · NO commitear nombres.
+def _load_mfa_exempt_users():
+    raw = os.environ.get('MFA_EXEMPT_USERS', '').strip()
+    if not raw:
+        return set()
+    return {u.strip().lower() for u in raw.split(',') if u.strip()}
+
+MFA_EXEMPT_USERS = _load_mfa_exempt_users()
+
 
 def _client_ip():
     hdr = request.headers.get('X-Forwarded-For', request.remote_addr or '0.0.0.0')
@@ -287,6 +301,11 @@ def register_hooks(app):
         user = session.get('compras_user')
         if not user or user not in ADMIN_USERS:
             return  # No es admin → no aplica
+        # Sebastián 19-may-2026: usuarios admin en MFA_EXEMPT_USERS (env var)
+        # no son exigidos a tener MFA · ver auth.py:55
+        if user and user.lower() in MFA_EXEMPT_USERS:
+            session.pop('mfa_warning', None)
+            return
         if _user_has_mfa_active(user):
             session.pop('mfa_warning', None)
             return  # Tiene MFA activo → OK

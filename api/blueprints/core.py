@@ -666,7 +666,18 @@ def login():
             # verificado en los últimos 60 días desde este navegador.
             try:
                 from blueprints.mfa import _is_mfa_enabled
-                if _is_mfa_enabled(username):
+                # Sebastián 19-may-2026: usuarios en MFA_EXEMPT_USERS (env var)
+                # saltan TODO el flujo MFA · ni redirect ni bloqueo posterior.
+                # Ver auth.py:55 para configuración.
+                try:
+                    from auth import MFA_EXEMPT_USERS as _MFA_EXEMPT
+                except Exception:
+                    _MFA_EXEMPT = set()
+                if (username or '').lower() in _MFA_EXEMPT:
+                    _is_mfa_enabled_eff = lambda _u: False  # noqa: E731
+                else:
+                    _is_mfa_enabled_eff = _is_mfa_enabled
+                if _is_mfa_enabled_eff(username):
                     # Validar cookie mfa_trusted (firmada con SECRET_KEY)
                     trusted_cookie = request.cookies.get('mfa_trusted', '')
                     skip_mfa = False
