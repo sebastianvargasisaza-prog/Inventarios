@@ -349,6 +349,84 @@ def test_golden_limpiar_duplicados_respeta_guard(app, db_clean):
         _exec("DELETE FROM produccion_programada WHERE producto=?", (producto,))
 
 
+def test_golden_limpiar_duplicados_respeta_fijo(app, db_clean):
+    """Sebastián 19-may-2026 · cierra hueco del principio Fijo vs Sugerido.
+
+    limpiar-duplicados-producciones detectaba pares por (producto + lotes +
+    kg) en ventana de 7d y hacía DELETE duro · si un eos_plan (Fijo, lo que
+    Alejandro arrastró/editó) coincidía por azar con un eos_canonico cercano,
+    el job borraba uno de los dos sin importar el origen. Producción
+    desaparecía sin rastro.
+
+    Garantías que protege este test:
+      1. eos_plan SOBREVIVE intacto (estado != cancelado).
+      2. eos_b2b SOBREVIVE intacto.
+      3. eos_canonico cercano sí se cancela (es Sugerido, puede ir).
+      4. Es SOFT cancel: el row sigue en la tabla, marcado.
+    """
+    cs = _login(app, 'sebastian')
+    producto = 'GP-LIMPIAR-FIJO'
+    # 3 candidatos misma (producto, lotes, kg), fechas dentro de 7d:
+    pid_canonico = _exec("""
+        INSERT INTO produccion_programada
+          (producto, fecha_programada, lotes, estado, cantidad_kg, origen)
+        VALUES (?, date('now', '+10 days'), 1, 'programado', 30, 'eos_canonico')
+    """, (producto,))
+    pid_plan = _exec("""
+        INSERT INTO produccion_programada
+          (producto, fecha_programada, lotes, estado, cantidad_kg, origen)
+        VALUES (?, date('now', '+12 days'), 1, 'programado', 30, 'eos_plan')
+    """, (producto,))
+    pid_b2b = _exec("""
+        INSERT INTO produccion_programada
+          (producto, fecha_programada, lotes, estado, cantidad_kg, origen)
+        VALUES (?, date('now', '+14 days'), 1, 'programado', 30, 'eos_b2b')
+    """, (producto,))
+
+    try:
+        r = cs.post('/api/programacion/limpiar-duplicados-producciones',
+                    json={'dry_run': False, 'horizonte_dias': 30},
+                    headers=csrf_headers())
+        assert r.status_code == 200, f'BUG: {r.status_code} {r.data}'
+
+        # CRÍTICO: eos_plan NO debe haber sido tocado
+        row = _query("SELECT estado, origen FROM produccion_programada WHERE id=?",
+                     (pid_plan,))
+        assert row, 'BUG: el eos_plan ya no existe en la tabla'
+        assert row[0][0] != 'cancelado', \
+            f'BUG: el eos_plan (id={pid_plan}) quedó en estado={row[0][0]} · ' \
+            'limpiar-duplicados NO debe cancelar Fijos'
+        assert row[0][1] == 'eos_plan'
+
+        # CRÍTICO: eos_b2b tampoco
+        row = _query("SELECT estado FROM produccion_programada WHERE id=?",
+                     (pid_b2b,))
+        assert row and row[0][0] != 'cancelado', \
+            f'BUG: el eos_b2b (id={pid_b2b}) fue cancelado · Fijos protegidos'
+
+        # eos_canonico, si era el que arrastra, podría seguir vivo si fue
+        # tomado como "ancla" o cancelado si fue tomado como "clone". Pero el
+        # row debe seguir existiendo (soft cancel, no DELETE duro).
+        row_canon = _query("SELECT id FROM produccion_programada WHERE id=?",
+                           (pid_canonico,))
+        assert row_canon, \
+            f'BUG: eos_canonico (id={pid_canonico}) fue BORRADO duro · debe ser soft cancel'
+
+        # Test dry_run no debe contar Fijos como "a borrar"
+        r2 = cs.post('/api/programacion/limpiar-duplicados-producciones',
+                     json={'dry_run': True, 'horizonte_dias': 30},
+                     headers=csrf_headers())
+        d2 = r2.get_json()
+        # En el plan, ningún pid debería corresponder al eos_plan ni eos_b2b
+        for g in d2.get('plan', []):
+            for f in g.get('fechas', []):
+                if f.get('accion') == 'BORRAR':
+                    assert f.get('pid') not in (pid_plan, pid_b2b), \
+                        f'BUG: dry_run lista borrar un Fijo (pid={f.get("pid")})'
+    finally:
+        _exec("DELETE FROM produccion_programada WHERE producto=?", (producto,))
+
+
 # ═══════════════════════════════════════════════════════════════════
 # GOLDEN PATH 5 · 3 fuentes SOL filtran correctamente
 # ═══════════════════════════════════════════════════════════════════

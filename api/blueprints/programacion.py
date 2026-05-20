@@ -7208,6 +7208,10 @@ def limpiar_duplicados_producciones():
 
     # Cargar candidatos · producciones que NO están descontadas, ni canceladas/
     # completadas, ni ya empezadas, en el horizonte.
+    # Sebastián 19-may-2026 · FIX hueco principio Fijo vs Sugerido:
+    # excluir 'eos_plan' / 'eos_b2b' / 'eos_retroactivo'. Antes este endpoint
+    # podía borrar Fijos (lo que Alejandro arrastró/editó o pedidos B2B)
+    # si por azar coincidían producto+lotes+kg con una canónica cercana.
     rows = c.execute("""
         SELECT id, producto, fecha_programada,
                COALESCE(lotes, 1), COALESCE(cantidad_kg, 0),
@@ -7218,6 +7222,7 @@ def limpiar_duplicados_producciones():
         WHERE COALESCE(inventario_descontado_at, '') = ''
           AND LOWER(COALESCE(estado, '')) NOT IN ('cancelado', 'completado')
           AND COALESCE(inicio_real_at, '') = ''
+          AND COALESCE(origen, '') NOT IN ('eos_plan', 'eos_b2b', 'eos_retroactivo')
           AND fecha_programada >= ?
           AND fecha_programada <= ?
         ORDER BY producto, fecha_programada ASC
@@ -7295,18 +7300,34 @@ def limpiar_duplicados_producciones():
     try:
         pids = [b['pid'] for b in a_borrar]
         ph = ','.join(['?'] * len(pids))
-        c.execute(f"DELETE FROM produccion_programada WHERE id IN ({ph})", pids)
-        deleted = c.rowcount or 0
+        # Sebastián 19-may-2026 · FIX: era DELETE duro que dejaba la
+        # producción sin rastro. Ahora soft-cancel con marca en observaciones
+        # y mantiene el row para auditoría / recuperación. Defensa en
+        # profundidad: el WHERE TAMBIÉN excluye orígenes Fijos por si el
+        # SELECT cambiara en el futuro (cinturón + tirantes).
+        c.execute(
+            f"""UPDATE produccion_programada
+                SET estado = 'cancelado',
+                    observaciones = COALESCE(observaciones, '')
+                      || ' · CANCELADO_LIMPIAR_DUPLICADOS_'
+                      || datetime('now', '-5 hours')
+                WHERE id IN ({ph})
+                  AND COALESCE(origen, '') NOT IN ('eos_plan', 'eos_b2b', 'eos_retroactivo')""",
+            pids,
+        )
+        canceladas = c.rowcount or 0
         try:
             audit_log(
                 c, usuario=user,
                 accion='LIMPIAR_DUPLICADOS_PRODUCCIONES',
                 tabla='produccion_programada',
                 registro_id='bulk',
-                despues={'grupos': len(plan), 'borradas': deleted,
+                antes={'ids': pids},
+                despues={'grupos': len(plan), 'canceladas': canceladas,
                           'horizonte_dias': horizonte},
-                detalle=(f"Borró {deleted} producciones duplicadas en "
-                          f"{len(plan)} grupos · horizonte {horizonte}d"),
+                detalle=(f"Soft-canceló {canceladas} producciones duplicadas en "
+                          f"{len(plan)} grupos · horizonte {horizonte}d · "
+                          f"excluyó eos_plan/eos_b2b/eos_retroactivo"),
             )
         except Exception as e:
             log.warning('audit_log LIMPIAR_DUPLICADOS_PRODUCCIONES falló: %s', e)
@@ -7322,10 +7343,13 @@ def limpiar_duplicados_producciones():
     return jsonify({
         'ok': True, 'dry_run': False,
         'grupos_detectados': len(plan),
-        'producciones_borradas': deleted,
+        # mantener clave `producciones_borradas` para compat con frontend existente
+        'producciones_borradas': canceladas,
+        'producciones_canceladas': canceladas,
         'plan': plan,
-        'mensaje': (f'✓ Eliminadas {deleted} producciones duplicadas en '
-                     f'{len(plan)} grupos · horizonte {horizonte}d'),
+        'mensaje': (f'✓ Canceladas {canceladas} producciones duplicadas en '
+                     f'{len(plan)} grupos · horizonte {horizonte}d · '
+                     f'lo Fijo NO se tocó'),
     }), 200
 
 

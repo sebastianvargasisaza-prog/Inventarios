@@ -62,6 +62,21 @@
 - `/producciones-faltantes` usa `_get_mp_stock(conn)` (NO query directo a tabla).
 - Aggregación por `material_id` + nombre normalizado (acentos, etc.).
 
+### INV-6 · Fijo vs Sugerido en `produccion_programada` (19-may-2026)
+- **Fijo**: `origen IN ('eos_plan', 'eos_b2b', 'eos_retroactivo')`. Lo que el
+  usuario arrastró/editó, pedidos B2B, backfills. **Intocable** por procesos
+  automáticos.
+- **Sugerido**: `origen IN ('eos_canonico', 'calendar', 'manual', 'auto_plan',
+  'sugerido')`. Mutable por regeneradores.
+- Cualquier UPDATE/DELETE bulk en `produccion_programada` que no sea
+  iniciado-por-usuario-explícito debe incluir
+  `AND COALESCE(origen,'') NOT IN ('eos_plan','eos_b2b','eos_retroactivo')`
+  tanto en SELECT de candidatos como en el UPDATE/DELETE.
+- `limpiar_duplicados_producciones` ahora hace **soft cancel** (UPDATE
+  estado='cancelado' + observaciones marcadas) en lugar de DELETE duro, para
+  preservar evidencia y permitir recuperación.
+- Test que protege: `test_golden_limpiar_duplicados_respeta_fijo`.
+
 ---
 
 ## Endpoints downstream que CONSUMEN sus datos
