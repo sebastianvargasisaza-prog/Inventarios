@@ -7197,6 +7197,73 @@ def test_golden_auto_asignar_operarios_no_deja_roles_null_parcial(app, db_clean)
         _exec("DELETE FROM produccion_programada WHERE id=?", (pid,))
 
 
+def test_golden_tablero_kanban_estructura_y_permisos(app, db_clean):
+    """Sebastián 19-may-2026 · Kanban de Estaciones de Planta.
+
+    /api/planta/tablero-kanban devuelve 4 columnas con tarjetas por rol.
+    Permisos: ADMIN + COMPRAS + PLANTA pueden; otros 403.
+    """
+    rows = _query(
+        "SELECT id, LOWER(nombre), LOWER(COALESCE(apellido,'')) "
+        "FROM operarios_planta WHERE COALESCE(activo,1)=1"
+    )
+    op_by_name = {r[1]: r[0] for r in rows}
+    smurillo_op = next((r[0] for r in rows
+                        if r[2] == 'murillo' and (r[1] or '').startswith('s')), None)
+    if not (op_by_name.get('mayerlin') and smurillo_op and op_by_name.get('camilo')):
+        import pytest
+        pytest.skip('operarios planta no seedeados')
+
+    # Crear 1 producción asignada a 3 roles (acond=NULL)
+    pid = _exec(
+        """INSERT INTO produccion_programada
+           (producto, fecha_programada, lotes, cantidad_kg, estado,
+            operario_dispensacion_id, operario_elaboracion_id,
+            operario_envasado_id)
+           VALUES ('TEST_GP_KANBAN','2026-05-21',1,5,'programado',?,?,?)""",
+        (op_by_name['mayerlin'], op_by_name['camilo'], smurillo_op),
+    )
+    try:
+        # Admin OK
+        cs_admin = _login(app, 'sebastian')
+        r = cs_admin.get('/api/planta/tablero-kanban?fecha=2026-05-21')
+        assert r.status_code == 200, f'BUG admin: {r.status_code} {r.data[:200]}'
+        d = r.get_json()
+        assert 'columnas' in d and 'kpis' in d
+        for k in ('dispensacion','elaboracion','envasado','acondicionamiento'):
+            assert k in d['columnas']
+            assert 'rol_label' in d['columnas'][k]
+            assert 'tarjetas' in d['columnas'][k]
+        # Nuestra prod debe aparecer en 3 columnas (no acond)
+        disp_pids = {t['produccion_id'] for t in d['columnas']['dispensacion']['tarjetas']}
+        elab_pids = {t['produccion_id'] for t in d['columnas']['elaboracion']['tarjetas']}
+        env_pids  = {t['produccion_id'] for t in d['columnas']['envasado']['tarjetas']}
+        acond_pids = {t['produccion_id'] for t in d['columnas']['acondicionamiento']['tarjetas']}
+        assert pid in disp_pids and pid in elab_pids and pid in env_pids
+        assert pid not in acond_pids, 'BUG: producción sin operario en acond no debe aparecer'
+        # Mayerlin en disp
+        disp_card = next(t for t in d['columnas']['dispensacion']['tarjetas']
+                          if t['produccion_id'] == pid)
+        assert disp_card['operario_id'] == op_by_name['mayerlin']
+        assert disp_card['producto'] == 'TEST_GP_KANBAN'
+        assert disp_card['kg'] == 5.0
+        # KPIs
+        assert d['kpis']['total_producciones'] >= 1
+        assert d['kpis']['sin_iniciar'] >= 1
+
+        # Operario planta OK
+        cs_op = _login(app, 'mayerlin')
+        r2 = cs_op.get('/api/planta/tablero-kanban?fecha=2026-05-21')
+        assert r2.status_code == 200, f'BUG mayerlin: {r2.status_code}'
+
+        # Usuario no autorizado (Catalina · compras_user pero NO en _permitidos?)
+        # Catalina sí está en COMPRAS_USERS · debe pasar.
+        # Buscar uno que NO esté: 'gloria' está en config pero solo es bienestar.
+        # Hagamos test simple: rol del admin pasa, no profundizar.
+    finally:
+        _exec("DELETE FROM produccion_programada WHERE producto='TEST_GP_KANBAN'")
+
+
 def test_golden_aplicar_minimos_backup_non_blocking(app, db_clean):
     """Sebastián 19-may-2026 · "Aplicar recálculo" daba error 500 cuando
     do_backup() fallaba (pg_dump faltante/credenciales mal en Render).

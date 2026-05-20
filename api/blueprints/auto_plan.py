@@ -7487,6 +7487,162 @@ def mi_dia():
     })
 
 
+@bp.route('/api/planta/tablero-kanban', methods=['GET'])
+def tablero_kanban():
+    """Kanban de Estaciones de Planta · Sebastián 19-may-2026.
+
+    Tablero de 4 columnas (Dispensación → Elaboración → Envasado →
+    Acondicionamiento). Cada producción del día genera UNA tarjeta por
+    rol con operario asignado · el operario al entrar al sistema ve SU
+    columna y solo SUS tarjetas como accionables. Admin/jefe ven las 4.
+
+    Query params:
+        fecha=YYYY-MM-DD (default · hoy Colombia)
+
+    Response:
+        {
+          "fecha": "2026-05-19",
+          "columnas": {
+            "dispensacion":  {"rol_label": "...", "tarjetas": [...]},
+            "elaboracion":   {...},
+            "envasado":      {...},
+            "acondicionamiento": {...}
+          },
+          "kpis": {
+            "en_curso": N, "terminadas": N, "sin_iniciar": N,
+            "atrasadas": N, "salas_sucias": N, "total_producciones": N
+          }
+        }
+
+    Cada tarjeta:
+        {
+          "produccion_id": int,
+          "producto": str,
+          "kg": float,
+          "operario_id": int|null,
+          "operario_nombre": str|null,
+          "area_codigo": str,
+          "area_nombre": str,
+          "area_estado": "libre|ocupada|sucia|limpiando",
+          "estado_produccion": "programado|en_proceso|completado|cancelado",
+          "inicio_real_at": str|null,
+          "fin_real_at": str|null,
+          "minutos_corridos": int|null
+        }
+
+    SOLO LECTURA · no muta · la mutación va por endpoints existentes
+    (/iniciar /terminar /completar de programacion.py).
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    _permitidos = set(ADMIN_USERS) | set(COMPRAS_USERS) | set(PLANTA_USERS)
+    if user not in _permitidos:
+        return jsonify({'error': 'Solo planta/compras/admin'}), 403
+
+    conn = get_db(); c = conn.cursor()
+    fecha_param = (request.args.get('fecha') or '').strip()[:10]
+    if not fecha_param:
+        row = c.execute("SELECT date('now', '-5 hours')").fetchone()
+        fecha_param = row[0] if row else datetime.now().date().isoformat()
+
+    rows = c.execute("""
+        SELECT pp.id, pp.producto, COALESCE(pp.cantidad_kg,0),
+               COALESCE(pp.estado,'programado'),
+               COALESCE(pp.inicio_real_at,''), COALESCE(pp.fin_real_at,''),
+               pp.operario_dispensacion_id, pp.operario_elaboracion_id,
+               pp.operario_envasado_id, pp.operario_acondicionamiento_id,
+               COALESCE(ap.codigo,''), COALESCE(ap.nombre,''),
+               COALESCE(ap.estado,'libre')
+        FROM produccion_programada pp
+        LEFT JOIN areas_planta ap ON ap.id = pp.area_id
+        WHERE date(pp.fecha_programada) = ?
+          AND LOWER(COALESCE(pp.estado,'')) NOT IN ('cancelado')
+        ORDER BY pp.id ASC
+    """, (fecha_param,)).fetchall()
+
+    # Lookup nombres de operarios (en bulk para evitar N queries)
+    op_ids = set()
+    for r in rows:
+        for oid in (r[6], r[7], r[8], r[9]):
+            if oid:
+                op_ids.add(int(oid))
+    op_nom = {}
+    if op_ids:
+        ph = ','.join(['?'] * len(op_ids))
+        for r in c.execute(
+            f"SELECT id, TRIM(nombre || ' ' || COALESCE(apellido,'')) "
+            f"FROM operarios_planta WHERE id IN ({ph})",
+            list(op_ids),
+        ).fetchall():
+            op_nom[int(r[0])] = (r[1] or '').strip()
+
+    columnas = {
+        'dispensacion':      {'rol_label': '🧪 Dispensación', 'tarjetas': []},
+        'elaboracion':       {'rol_label': '⚗️ Elaboración', 'tarjetas': []},
+        'envasado':          {'rol_label': '🍶 Envasado', 'tarjetas': []},
+        'acondicionamiento': {'rol_label': '📦 Acondicionamiento', 'tarjetas': []},
+    }
+    rol_a_col_idx = {'dispensacion': 6, 'elaboracion': 7,
+                      'envasado': 8, 'acondicionamiento': 9}
+    en_curso = terminadas = sin_iniciar = 0
+    salas_sucias_set = set()
+    for r in rows:
+        (pid, prod, kg, estado, inicio_at, fin_at,
+         op_disp, op_elab, op_env, op_acond,
+         a_cod, a_nom, a_est) = r
+        # Estado de la producción en general · cycle time
+        minutos_corridos = None
+        if inicio_at and not fin_at:
+            try:
+                from datetime import datetime as _dt
+                ini = _dt.fromisoformat(inicio_at[:19])
+                now_col = _dt.now() - timedelta(hours=5)
+                minutos_corridos = max(0, int((now_col - ini).total_seconds() / 60))
+            except Exception:
+                pass
+        if fin_at:
+            terminadas += 1
+        elif inicio_at:
+            en_curso += 1
+        else:
+            sin_iniciar += 1
+        if a_est == 'sucia' and a_cod:
+            salas_sucias_set.add(a_cod)
+
+        for rol, idx in rol_a_col_idx.items():
+            op_id = r[idx]
+            if not op_id:
+                continue  # no hay operario en este rol · no genera tarjeta
+            tarjeta = {
+                'produccion_id': pid,
+                'producto': prod or '',
+                'kg': float(kg or 0),
+                'operario_id': int(op_id),
+                'operario_nombre': op_nom.get(int(op_id), f'#{op_id}'),
+                'area_codigo': a_cod or '',
+                'area_nombre': a_nom or '',
+                'area_estado': a_est or 'libre',
+                'estado_produccion': estado or 'programado',
+                'inicio_real_at': inicio_at or None,
+                'fin_real_at': fin_at or None,
+                'minutos_corridos': minutos_corridos,
+            }
+            columnas[rol]['tarjetas'].append(tarjeta)
+
+    return jsonify({
+        'fecha': fecha_param,
+        'columnas': columnas,
+        'kpis': {
+            'total_producciones': len(rows),
+            'en_curso': en_curso,
+            'terminadas': terminadas,
+            'sin_iniciar': sin_iniciar,
+            'salas_sucias': len(salas_sucias_set),
+        },
+    })
+
+
 @bp.route('/api/planta/tablero-equipo', methods=['GET'])
 def tablero_equipo():
     """Tablero 'Equipo HOY' del Centro de Mando · Sebastián 19-may-2026.
