@@ -61,6 +61,10 @@ body { font-family:'Segoe UI',sans-serif; background:#F5F4F0; min-height:100vh; 
   [style*="grid-template-columns:1fr 1fr"] { grid-template-columns:1fr !important; }
   [style*="grid-template-columns:repeat(4"] { grid-template-columns:repeat(2,1fr) !important; }
 }
+/* Sprint Bodega MEE PRO · 20-may-2026 · grid responsive (sidebar abajo) */
+@media (max-width: 900px){
+  .mee-grid{ grid-template-columns:1fr !important; }
+}
 /* Sprint Bodega MP PRO · 20-may-2026 fix #11 · vista compacta en mobile */
 @media (max-width: 700px) {
   #stock .table { font-size:11px; }
@@ -1321,16 +1325,34 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
 
   <!-- ==================== TAB: EMPAQUE MEE ==================== -->
   <div id="empaque" class="tab-content">
-    <h2>&#128230; Material de Empaque y Envase (MEE)</h2>
-    <p style="color:#666;font-size:0.9em;margin-bottom:16px;">Control de stock, recepciones, consumos y trazabilidad de material de empaque por batch de produccion.</p>
-    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:18px;">
-      <div style="background:#2B7A78;color:white;padding:16px;border-radius:10px;text-align:center;"><div style="font-size:1.5em;">&#128230;</div><div style="font-size:2em;font-weight:700;" id="mee-c-total">0</div><div style="font-size:0.82em;opacity:0.9;">Total MEE Activos</div></div>
-      <div id="mee-card-bajo" style="background:#e74c3c;color:white;padding:16px;border-radius:10px;text-align:center;"><div style="font-size:1.5em;">&#9888;</div><div style="font-size:2em;font-weight:700;" id="mee-c-bajo">0</div><div style="font-size:0.82em;opacity:0.9;">Bajo Minimo</div></div>
-      <div style="background:#3498db;color:white;padding:16px;border-radius:10px;text-align:center;"><div style="font-size:1.5em;">&#128202;</div><div style="font-size:2em;font-weight:700;" id="mee-c-semana">0</div><div style="font-size:0.82em;opacity:0.9;">Mov. Esta Semana</div></div>
-      <div style="background:#9b59b6;color:white;padding:16px;border-radius:10px;text-align:center;"><div style="font-size:1.5em;">&#128229;</div><div style="font-size:2em;font-weight:700;" id="mee-c-mes">0</div><div style="font-size:0.82em;opacity:0.9;">Entradas Este Mes</div></div>
+    <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:10px;margin-bottom:6px">
+      <div>
+        <h2 style="margin:0">&#128230; Material de Empaque y Envase (MEE)</h2>
+        <div id="mee-last-update" style="font-size:11px;color:#94a3b8;margin-top:2px">—</div>
+      </div>
+      <!-- Sprint MEE PRO · header con auto-refresh + Excel + Verificar stock -->
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+        <label style="font-size:11px;color:#64748b;display:flex;align-items:center;gap:4px;cursor:pointer">
+          <input type="checkbox" id="mee-autorefresh"> auto 60s
+        </label>
+        <button onclick="meeVerificarStock()" style="padding:6px 12px;font-size:12px;background:#0e7490;color:#fff;border-radius:6px" title="Recalcula stock_actual desde SUM(movimientos_mee) · anti-drift cache">⚙️ Verificar stock</button>
+        <button onclick="meeExportarExcel()" style="padding:6px 12px;font-size:12px;background:#217346;color:#fff;border-radius:6px">📄 Excel</button>
+      </div>
+    </div>
+    <p style="color:#666;font-size:0.9em;margin-bottom:14px;">Control de stock, recepciones, consumos y trazabilidad de material de empaque por batch de producción.</p>
+    <!-- 5 cards (agregada Valor COP) · grid responsive -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px">
+      <div style="background:#2B7A78;color:white;padding:14px;border-radius:10px;text-align:center;"><div style="font-size:1.3em;">&#128230;</div><div style="font-size:1.7em;font-weight:700;" id="mee-c-total">0</div><div style="font-size:0.78em;opacity:0.9;">MEE Activos</div></div>
+      <div id="mee-card-bajo" style="background:#e74c3c;color:white;padding:14px;border-radius:10px;text-align:center;cursor:pointer" onclick="meeScrollToObsoletos('mee-bajo-anchor')"><div style="font-size:1.3em;">&#9888;</div><div style="font-size:1.7em;font-weight:700;" id="mee-c-bajo">0</div><div style="font-size:0.78em;opacity:0.9;">Bajo Mínimo</div></div>
+      <div style="background:#3498db;color:white;padding:14px;border-radius:10px;text-align:center;"><div style="font-size:1.3em;">&#128202;</div><div style="font-size:1.7em;font-weight:700;" id="mee-c-semana">0</div><div style="font-size:0.78em;opacity:0.9;">Movs / sem</div></div>
+      <div style="background:#9b59b6;color:white;padding:14px;border-radius:10px;text-align:center;"><div style="font-size:1.3em;">&#128229;</div><div style="font-size:1.7em;font-weight:700;" id="mee-c-mes">0</div><div style="font-size:0.78em;opacity:0.9;">Entradas / mes</div></div>
+      <div style="background:#16a34a;color:white;padding:14px;border-radius:10px;text-align:center;"><div style="font-size:1.3em;">💰</div><div style="font-size:1.4em;font-weight:700;" id="mee-c-valor">$0</div><div style="font-size:0.78em;opacity:0.9;">Valor stock COP</div></div>
+      <div id="mee-card-obs" style="background:#ca8a04;color:white;padding:14px;border-radius:10px;text-align:center;cursor:pointer" onclick="meeScrollToObsoletos('mee-obs-anchor')"><div style="font-size:1.3em;">⏰</div><div style="font-size:1.7em;font-weight:700;" id="mee-c-obs">0</div><div style="font-size:0.78em;opacity:0.9;">Obsoletos >90d</div></div>
     </div>
     <div id="mee-alertas-panel" style="margin-bottom:18px;"></div>
-    <div style="display:grid;grid-template-columns:1fr 370px;gap:18px;margin-bottom:22px;">
+    <a name="mee-bajo-anchor"></a>
+    <!-- Sprint MEE PRO · grid responsive (sidebar abajo en mobile) -->
+    <div class="mee-grid" style="display:grid;grid-template-columns:1fr 370px;gap:18px;margin-bottom:22px;">
       <div>
         <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;flex-wrap:wrap">
           <select id="mee-cat-filter-bodega" style="flex:1;min-width:180px;width:auto;" onchange="cargarMeeStock()"><option value="">Todas las categorias</option></select>
@@ -1374,6 +1396,13 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
         <table class="table"><thead><tr><th>#</th><th>Codigo</th><th>Descripcion</th><th>Tipo</th><th>Cantidad</th><th>Lote/Batch</th><th>Responsable</th><th>Fecha</th><th></th></tr></thead>
         <tbody id="mee-hist-tbody"><tr><td colspan="9" style="text-align:center;color:#999;">Sin movimientos</td></tr></tbody></table>
       </div>
+    </div>
+    <!-- Sprint MEE PRO · sección obsoletos destacada -->
+    <a name="mee-obs-anchor"></a>
+    <div id="mee-obsoletos-wrap" style="background:#fffbeb;border:1px solid #f59e0b;border-radius:10px;padding:14px 18px;margin-bottom:22px;display:none">
+      <h3 style="margin:0 0 8px;color:#92400e;font-size:14px">⏰ MEE obsoletos · sin movimientos &gt;90 días <span style="font-size:11px;color:#a16207;font-weight:400" id="mee-obs-count">(0)</span></h3>
+      <div style="font-size:11px;color:#92400e;margin-bottom:8px">Stock parado · revisar si descontinuar o relanzar.</div>
+      <div id="mee-obsoletos-tbody"></div>
     </div>
     <div style="background:#f0f8f0;border:1px solid #c3e6cb;border-radius:10px;padding:20px;">
       <h3 style="margin-bottom:12px;color:#155724;">&#128269; Trazabilidad MEE</h3>
@@ -6344,7 +6373,11 @@ async function cargarHistorialConteos(){
   }catch(e){}
 }
 
+// Sprint MEE PRO · 20-may-2026
+var _MEE_LAST_DATA = null;
+var _MEE_TIMER = null;
 async function cargarMeeAlertas(){
+  var t0 = Date.now();
   try{
     var r=await fetch('/api/mee/alertas'); var d=await r.json(); var res=d.resumen||{};
     var cT=document.getElementById('mee-c-total'); var cB=document.getElementById('mee-c-bajo');
@@ -6353,15 +6386,96 @@ async function cargarMeeAlertas(){
     if(cB){ cB.textContent=res.bajo_minimo||0; var card=document.getElementById('mee-card-bajo'); if(card) card.style.background=(res.bajo_minimo>0)?'#e74c3c':'#27ae60'; }
     if(cS) cS.textContent=res.movimientos_semana||0;
     if(cM) cM.textContent=res.entradas_mes||0;
-    var panel=document.getElementById('mee-alertas-panel'); if(!panel) return;
-    if(d.bajo_minimo&&d.bajo_minimo.length>0){
-      var h='<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:10px;padding:14px;margin-bottom:10px;"><strong style="color:#856404;">&#9888; '+d.bajo_minimo.length+' materiales bajo stock minimo</strong><div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:8px;">';
-      d.bajo_minimo.forEach(function(m){ var pct=Math.round(m.ratio*100); var col=pct<=0?'#e74c3c':'#e67e22'; h+='<div style="background:white;border:1px solid #ffc107;border-radius:6px;padding:6px 12px;font-size:0.85em;"><span style="font-weight:700;color:'+col+';">'+m.descripcion+'</span> <span style="color:#888;">['+m.categoria+'] </span><span style="color:'+col+';">'+m.stock_actual+'/'+m.stock_minimo+' '+m.unidad+' ('+pct+'%)</span></div>'; });
-      h+='</div></div>';
-      if(d.obsolescencia&&d.obsolescencia.length>0){ h+='<div style="background:#fff;border:1px solid #dee2e6;border-radius:8px;padding:10px 14px;font-size:0.85em;color:#6c757d;margin-bottom:8px;"><strong>&#128337; Sin movimiento +90 dias:</strong> '+d.obsolescencia.map(function(o){return o.descripcion+' ('+o.stock_actual+')';}).join(' · ')+'</div>'; }
-      panel.innerHTML=h;
-    } else { panel.innerHTML='<div style="background:#d4edda;border:1px solid #c3e6cb;border-radius:8px;padding:10px 14px;color:#155724;margin-bottom:10px;">&#10003; Todos los MEE sobre stock minimo</div>'; }
+    // Sprint MEE PRO · card obsoletos + sección visible
+    var cObs = document.getElementById('mee-c-obs');
+    var obs = d.obsolescencia||[];
+    if(cObs) cObs.textContent = obs.length;
+    var obsWrap = document.getElementById('mee-obsoletos-wrap');
+    var obsBody = document.getElementById('mee-obsoletos-tbody');
+    var obsCount = document.getElementById('mee-obs-count');
+    if(obsWrap && obsBody){
+      if(obs.length){
+        obsWrap.style.display = 'block';
+        if(obsCount) obsCount.textContent = '('+obs.length+')';
+        obsBody.innerHTML = '<div style="display:flex;flex-wrap:wrap;gap:6px">'+
+          obs.slice(0,20).map(function(o){
+            return '<div style="background:#fff;border:1px solid #fde68a;border-radius:6px;padding:6px 10px;font-size:11px"><b>'+_escHTML(o.descripcion)+'</b> · '+(o.stock_actual||0)+' '+_escHTML(o.unidad||'und')+' · último '+_escHTML(o.ultimo_mov||'Nunca')+'</div>';
+          }).join('')+
+          (obs.length>20?'<div style="font-size:11px;color:#92400e;align-self:center;margin-left:6px">+'+(obs.length-20)+' más</div>':'')+
+          '</div>';
+      } else {
+        obsWrap.style.display = 'none';
+      }
+    }
+    var panel=document.getElementById('mee-alertas-panel');
+    if(panel){
+      if(d.bajo_minimo&&d.bajo_minimo.length>0){
+        var h='<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:10px;padding:14px;margin-bottom:10px;"><strong style="color:#856404;">&#9888; '+d.bajo_minimo.length+' materiales bajo stock mínimo</strong><div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:8px;">';
+        d.bajo_minimo.forEach(function(m){ var pct=Math.round(m.ratio*100); var col=pct<=0?'#e74c3c':'#e67e22'; h+='<div style="background:white;border:1px solid #ffc107;border-radius:6px;padding:6px 12px;font-size:0.85em;"><span style="font-weight:700;color:'+col+';">'+_escHTML(m.descripcion)+'</span> <span style="color:#888;">['+_escHTML(m.categoria)+'] </span><span style="color:'+col+';">'+m.stock_actual+'/'+m.stock_minimo+' '+_escHTML(m.unidad)+' ('+pct+'%)</span></div>'; });
+        h+='</div></div>';
+        panel.innerHTML=h;
+      } else { panel.innerHTML='<div style="background:#d4edda;border:1px solid #c3e6cb;border-radius:8px;padding:10px 14px;color:#155724;margin-bottom:10px;">&#10003; Todos los MEE sobre stock mínimo</div>'; }
+    }
+    // Timestamp + auto-refresh boot
+    var lu = document.getElementById('mee-last-update');
+    if(lu){
+      var hora = new Date().toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+      var dur = Math.max(1, Math.round((Date.now()-t0)/100)/10);
+      lu.textContent = 'Actualizado '+hora+' · '+dur+'s';
+    }
+    if(!_MEE_TIMER) _startMeeAutoRefresh();
   }catch(e){}
+}
+function _startMeeAutoRefresh(){
+  if(_MEE_TIMER) clearInterval(_MEE_TIMER);
+  _MEE_TIMER = setInterval(function(){
+    var chk = document.getElementById('mee-autorefresh');
+    if(!chk || !chk.checked) return;
+    if(document.visibilityState==='hidden') return;
+    var tab = document.getElementById('empaque');
+    if(!tab || tab.style.display==='none') return;
+    cargarMeeAlertas(); cargarMeeStock();
+  }, 60000);
+}
+function meeScrollToObsoletos(anchor){
+  var el = document.getElementById(anchor) || document.getElementsByName(anchor)[0];
+  if(el) el.scrollIntoView({behavior:'smooth'});
+}
+async function meeVerificarStock(){
+  if(!confirm('Recalcular stock_actual de TODOS los MEE desde SUM(movimientos_mee)? Detecta drift entre cache y movimientos. Solo admin para masivo.')) return;
+  try{
+    var r = await fetch('/api/mee/recalcular-stock', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({}),
+    });
+    var d = await r.json();
+    if(!r.ok){ alert('Error: '+(d.error||r.status)); return; }
+    if(d.cambios && d.cambios.length){
+      var resumen = d.cambios.slice(0, 10).map(function(c){
+        return c.codigo+': '+c.stock_anterior+' → '+c.stock_calculado+' ('+(c.delta>=0?'+':'')+c.delta+')';
+      }).join(' · ');
+      alert('✓ '+d.mensaje+' · Primeros 10 cambios: '+resumen);
+    } else {
+      alert('✓ '+d.mensaje);
+    }
+    cargarMeeStock(); cargarMeeAlertas();
+  }catch(e){ alert('Error red: '+e.message); }
+}
+function meeExportarExcel(){
+  if(!_MEE_LAST_DATA || !(_MEE_LAST_DATA.items||[]).length){
+    alert('Cargá MEE primero'); return;
+  }
+  var cols = ['Código','Descripción','Categoría','Proveedor','Stock','Mínimo','Unidad','Estado',
+              'Última Entrada','Última Salida','Días sin mov','Obsoleto'];
+  var rows = (_MEE_LAST_DATA.items||[]).map(function(m){
+    return [m.codigo||'', m.descripcion||'', m.categoria||'', m.proveedor||'',
+            Number(m.stock_actual)||0, Number(m.stock_minimo)||0,
+            m.unidad||'und', m.alerta||'',
+            m.ultima_entrada||'', m.ultima_salida||'',
+            m.dias_sin_mov==null?'':m.dias_sin_mov,
+            m.obsoleto?'SI':''];
+  });
+  dlExcelHTML('MEE_'+fhoy(), cols, rows);
 }
 async function cargarMeeStock(){
   var cat = '';
@@ -6402,6 +6516,16 @@ async function cargarMeeStock(){
       });
     }
     window._meeItems = items;  // cache para vista agrupada
+    _MEE_LAST_DATA = d;  // Sprint MEE PRO · para Excel + dashboard
+    // Sprint MEE PRO · calcular valor total stock COP
+    var valorTotal = 0;
+    items.forEach(function(m){
+      var precio = parseFloat(m.precio_unitario||m.precio||0)||0;
+      var stock = parseFloat(m.stock_actual)||0;
+      valorTotal += precio * stock;
+    });
+    var cVal = document.getElementById('mee-c-valor');
+    if(cVal) cVal.textContent = '$'+Math.round(valorTotal).toLocaleString('es-CO');
     if(!items.length){
       tb.innerHTML='<tr><td colspan="8" style="text-align:center;color:#999;">Sin items activos</td></tr>'; return;
     }

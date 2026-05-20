@@ -103,6 +103,13 @@
   `. , ; : & - _ / \\`). Capa 2: Levenshtein ≥ threshold para typos. Carga
   desde 11 tablas que tienen proveedor (no solo movs+maestro). Retorna
   grupos con stats (refs_totales, usos, count_variantes).
+- `GET  /api/mee/movimientos[?codigo&tipo&q&limit&offset&incluir_anulados]`
+  · Sprint MEE PRO 20-may-2026 · historial paginado server-side con
+  búsqueda full-text. Antes solo limit=50 sin offset ni q.
+- `POST /api/mee/recalcular-stock` body `{codigo?: str}` · Sprint MEE
+  PRO. Anti-drift de `maestro_mee.stock_actual` (cache) recalculando
+  desde `SUM(movimientos_mee)`. Si codigo se pasa, solo ese. Si null,
+  recalcula TODOS los activos (admin only). audit_log RECALCULAR_STOCK_MEE.
 - `GET  /api/movimientos/recientes[?limit&offset&q&tipo&desde&hasta&solo_anulados]`
   · Sprint Movimientos PRO 20-may-2026 · paginado + filtros server-side.
   Antes el frontend bajaba todo /api/movimientos y filtraba en JS.

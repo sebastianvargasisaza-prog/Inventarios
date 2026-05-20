@@ -6535,27 +6535,164 @@ def mee_registrar_movimiento():
 
 @bp.route('/api/mee/movimientos', methods=['GET'])
 def mee_historial_movimientos():
-    """Historial paginado de movimientos MEE."""
-    codigo = request.args.get('codigo','')
-    tipo   = request.args.get('tipo','')
-    limit  = min(int(request.args.get('limit', 50)), 200)
-    conn = get_db(); c = conn.cursor()
-    sql = """SELECT mv.id, mv.mee_codigo, COALESCE(m.descripcion,'') as descripcion,
-                    mv.tipo, mv.cantidad, mv.unidad, mv.lote_ref, mv.batch_ref,
-                    mv.responsable, mv.observaciones, mv.fecha, mv.anulado
-             FROM movimientos_mee mv
-             LEFT JOIN maestro_mee m ON mv.mee_codigo = m.codigo
-             WHERE mv.anulado=0"""
+    """Historial paginado de movimientos MEE. Sprint MEE PRO 20-may-2026.
+
+    Query params:
+      codigo · filtra por código MEE específico
+      tipo · Entrada/Salida/Ajuste
+      q · busca en mee_codigo / descripcion / lote_ref / batch_ref / obs
+      limit · default 50, max 500
+      offset · default 0
+      incluir_anulados · 1 para mostrar anulados
+    """
+    codigo = (request.args.get('codigo','') or '').strip()
+    tipo   = (request.args.get('tipo','') or '').strip()
+    q      = (request.args.get('q','') or '').strip().lower()
+    try:
+        limit = max(1, min(int(request.args.get('limit', 50)), 500))
+    except (ValueError, TypeError):
+        limit = 50
+    try:
+        offset = max(0, int(request.args.get('offset', 0)))
+    except (ValueError, TypeError):
+        offset = 0
+    incluir_anul = (request.args.get('incluir_anulados','') or '').strip() in ('1','true','yes')
+
+    where = ['1=1' if incluir_anul else 'mv.anulado=0']
     params = []
     if codigo:
-        sql += " AND mv.mee_codigo=?"; params.append(codigo)
+        where.append("mv.mee_codigo=?"); params.append(codigo)
     if tipo:
-        sql += " AND mv.tipo=?"; params.append(tipo)
-    sql += f" ORDER BY mv.fecha DESC LIMIT {limit}"
-    c.execute(sql, params)
-    cols = [d[0] for d in c.description]
-    rows = [dict(zip(cols, r)) for r in c.fetchall()]
-    return jsonify({'movimientos': rows, 'total': len(rows)})
+        where.append("mv.tipo=?"); params.append(tipo)
+    if q:
+        q_safe = q.replace('\\','\\\\').replace('%','\\%').replace('_','\\_')
+        like = f'%{q_safe}%'
+        where.append(
+            "(LOWER(COALESCE(mv.mee_codigo,'')) LIKE ? ESCAPE '\\' OR "
+            "LOWER(COALESCE(m.descripcion,'')) LIKE ? ESCAPE '\\' OR "
+            "LOWER(COALESCE(mv.lote_ref,'')) LIKE ? ESCAPE '\\' OR "
+            "LOWER(COALESCE(mv.batch_ref,'')) LIKE ? ESCAPE '\\' OR "
+            "LOWER(COALESCE(mv.observaciones,'')) LIKE ? ESCAPE '\\')",
+        )
+        params.extend([like]*5)
+    where_sql = ' AND '.join(where)
+    conn = get_db(); c = conn.cursor()
+    # Total
+    try:
+        total = c.execute(
+            f"""SELECT COUNT(*) FROM movimientos_mee mv
+                LEFT JOIN maestro_mee m ON mv.mee_codigo = m.codigo
+                WHERE {where_sql}""", params,
+        ).fetchone()[0]
+    except Exception:
+        total = 0
+    # Datos
+    sql = (
+        f"""SELECT mv.id, mv.mee_codigo, COALESCE(m.descripcion,'') as descripcion,
+                   mv.tipo, mv.cantidad, mv.unidad, mv.lote_ref, mv.batch_ref,
+                   mv.responsable, mv.observaciones, mv.fecha, mv.anulado
+            FROM movimientos_mee mv
+            LEFT JOIN maestro_mee m ON mv.mee_codigo = m.codigo
+            WHERE {where_sql}
+            ORDER BY mv.fecha DESC, mv.id DESC
+            LIMIT ? OFFSET ?"""
+    )
+    try:
+        c.execute(sql, params + [limit, offset])
+        cols = [d[0] for d in c.description]
+        rows = [dict(zip(cols, r)) for r in c.fetchall()]
+    except Exception:
+        rows = []
+    return jsonify({
+        'movimientos': rows, 'total': total,
+        'limit': limit, 'offset': offset,
+        'has_more': (offset + len(rows)) < total,
+    })
+
+
+@bp.route('/api/mee/recalcular-stock', methods=['POST'])
+def mee_recalcular_stock():
+    """Sprint MEE PRO · 20-may-2026 · anti-drift.
+
+    `maestro_mee.stock_actual` es un cache · puede drifear contra
+    SUM(movimientos_mee). Este endpoint recalcula el stock real desde
+    los movimientos y actualiza la columna.
+
+    Body: {codigo: str | null}
+      Si codigo se pasa · solo recalcula ese.
+      Si null · recalcula TODOS los MEE activos (admin only).
+
+    Devuelve por código: stock_anterior, stock_calculado, delta.
+    """
+    u, err, code = _require_session()
+    if err:
+        return err, code
+    body = request.get_json(silent=True) or {}
+    codigo_req = (body.get('codigo') or '').strip()
+    if not codigo_req and u not in ADMIN_USERS:
+        return jsonify({'error': 'recálculo masivo solo admin'}), 403
+
+    conn = get_db(); c = conn.cursor()
+    # Calcular stock real desde movimientos_mee (excluye anulados)
+    where_mee = "WHERE COALESCE(estado,'Activo')='Activo'"
+    params = []
+    if codigo_req:
+        where_mee += " AND codigo = ?"
+        params.append(codigo_req)
+    mps = c.execute(
+        f"SELECT codigo, stock_actual, unidad FROM maestro_mee {where_mee}",
+        params,
+    ).fetchall()
+    cambios = []
+    for r in mps:
+        cod, stock_ant, unidad = r
+        # SUM de movs (Entrada+, Salida-, Ajuste se trata como delta ya cargado)
+        sum_row = c.execute(
+            """SELECT COALESCE(SUM(CASE
+                   WHEN tipo='Entrada' THEN cantidad
+                   WHEN tipo='Salida'  THEN -cantidad
+                   WHEN tipo='Ajuste'  THEN cantidad
+                   ELSE 0
+               END), 0)
+               FROM movimientos_mee
+               WHERE mee_codigo = ? AND anulado = 0""",
+            (cod,),
+        ).fetchone()
+        stock_calc = max(float(sum_row[0] or 0), 0)
+        stock_ant_f = float(stock_ant or 0)
+        delta = round(stock_calc - stock_ant_f, 2)
+        if abs(delta) >= 0.5:
+            c.execute(
+                "UPDATE maestro_mee SET stock_actual = ? WHERE codigo = ?",
+                (stock_calc, cod),
+            )
+            cambios.append({
+                'codigo': cod, 'stock_anterior': stock_ant_f,
+                'stock_calculado': stock_calc, 'delta': delta,
+                'unidad': unidad or 'und',
+            })
+    # audit_log
+    try:
+        from json import dumps as _jdumps
+        c.execute(
+            """INSERT INTO audit_log (usuario,accion,tabla,registro_id,detalle,ip,fecha)
+               VALUES (?,?,?,?,?,?,datetime('now','-5 hours'))""",
+            (u, 'RECALCULAR_STOCK_MEE', 'maestro_mee',
+             codigo_req or '_BULK_',
+             _jdumps({'cambios': len(cambios), 'codigos': [c['codigo'] for c in cambios][:30]}),
+             request.remote_addr or ''),
+        )
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({
+        'ok': True,
+        'evaluados': len(mps),
+        'recalculados': len(cambios),
+        'cambios': cambios[:100],
+        'mensaje': (f'{len(cambios)} MEE actualizado(s) de {len(mps)} evaluados'
+                    if cambios else f'Sin drift · {len(mps)} MEE coherentes'),
+    })
 
 @bp.route('/api/mee/alertas', methods=['GET'])
 def mee_alertas_list():

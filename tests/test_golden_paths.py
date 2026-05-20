@@ -7310,6 +7310,87 @@ def test_golden_portal_b2b_flujo_completo(app, db_clean):
     _exec("DELETE FROM portal_clientes_credenciales WHERE email LIKE 'test_portal_%'")
 
 
+def test_golden_mee_recalcular_stock_antidrift(app, db_clean):
+    """Sprint Bodega MEE PRO · 20-may-2026.
+
+    Verifica que `maestro_mee.stock_actual` (cache) puede recalcularse
+    desde SUM(movimientos_mee) · evita drift.
+    """
+    _exec("DELETE FROM movimientos_mee WHERE mee_codigo LIKE 'TEST_MEEPRO%'")
+    _exec("DELETE FROM maestro_mee WHERE codigo LIKE 'TEST_MEEPRO%'")
+    _exec("""INSERT INTO maestro_mee (codigo, descripcion, categoria, unidad,
+             stock_actual, stock_minimo, estado, proveedor)
+             VALUES ('TEST_MEEPRO_A','Frasco 30ml','Frasco','und',
+                     999,100,'Activo','TestProv')""")
+    # Movs reales que deberían sumar 500-200+0 = 300 (NO 999)
+    _exec("""INSERT INTO movimientos_mee (mee_codigo, tipo, cantidad, unidad, anulado, fecha)
+             VALUES ('TEST_MEEPRO_A','Entrada',500,'und',0, datetime('now','-5 days'))""")
+    _exec("""INSERT INTO movimientos_mee (mee_codigo, tipo, cantidad, unidad, anulado, fecha)
+             VALUES ('TEST_MEEPRO_A','Salida',200,'und',0, datetime('now','-2 days'))""")
+
+    cs = _login(app, 'sebastian')
+    r = cs.post('/api/mee/recalcular-stock', json={'codigo': 'TEST_MEEPRO_A'},
+                headers=csrf_headers())
+    assert r.status_code == 200, f'BUG: {r.status_code}'
+    d = r.get_json()
+    assert d['ok']
+    assert d['recalculados'] == 1
+    assert d['cambios'][0]['stock_anterior'] == 999
+    assert d['cambios'][0]['stock_calculado'] == 300
+    # Verificar persistido
+    row = _query("SELECT stock_actual FROM maestro_mee WHERE codigo='TEST_MEEPRO_A'")
+    assert row[0][0] == 300
+
+    # Bulk sin codigo (no-admin → 403)
+    cs_user = _login(app, 'mayerlin')
+    r_bulk_no = cs_user.post('/api/mee/recalcular-stock', json={},
+                              headers=csrf_headers())
+    assert r_bulk_no.status_code == 403
+
+    # Audit
+    audit = _query("SELECT COUNT(*) FROM audit_log WHERE accion='RECALCULAR_STOCK_MEE'")
+    assert audit[0][0] >= 1
+
+    _exec("DELETE FROM movimientos_mee WHERE mee_codigo='TEST_MEEPRO_A'")
+    _exec("DELETE FROM maestro_mee WHERE codigo='TEST_MEEPRO_A'")
+
+
+def test_golden_mee_historial_paginado(app, db_clean):
+    """Sprint MEE PRO · historial con offset+q+filtros."""
+    _exec("DELETE FROM movimientos_mee WHERE mee_codigo='TEST_HMEE_X'")
+    _exec("DELETE FROM maestro_mee WHERE codigo='TEST_HMEE_X'")
+    _exec("""INSERT INTO maestro_mee (codigo, descripcion, categoria, unidad, estado)
+             VALUES ('TEST_HMEE_X','Etiqueta test','Etiqueta','und','Activo')""")
+    for i in range(5):
+        _exec("""INSERT INTO movimientos_mee (mee_codigo, tipo, cantidad, unidad, anulado, fecha, lote_ref)
+                 VALUES ('TEST_HMEE_X', ?, 10, 'und', 0, datetime('now', ?), ?)""",
+              ('Entrada' if i%2==0 else 'Salida', f'-{i} days', f'LOT_HMEE_{i}'))
+
+    cs = _login(app, 'sebastian')
+
+    r1 = cs.get('/api/mee/movimientos?codigo=TEST_HMEE_X&limit=2&offset=0')
+    assert r1.status_code == 200
+    d1 = r1.get_json()
+    assert d1['total'] == 5
+    assert len(d1['movimientos']) == 2
+
+    r2 = cs.get('/api/mee/movimientos?codigo=TEST_HMEE_X&limit=2&offset=2')
+    assert r2.get_json()['has_more'] is True
+
+    # Filtro tipo
+    r3 = cs.get('/api/mee/movimientos?codigo=TEST_HMEE_X&tipo=Salida')
+    items = r3.get_json()['movimientos']
+    assert all(m['tipo']=='Salida' for m in items)
+
+    # Búsqueda q
+    r4 = cs.get('/api/mee/movimientos?q=LOT_HMEE_2')
+    items4 = r4.get_json()['movimientos']
+    assert any(m.get('lote_ref')=='LOT_HMEE_2' for m in items4)
+
+    _exec("DELETE FROM movimientos_mee WHERE mee_codigo='TEST_HMEE_X'")
+    _exec("DELETE FROM maestro_mee WHERE codigo='TEST_HMEE_X'")
+
+
 def test_golden_movimientos_pro_paginado_filtros(app, db_clean):
     """Sprint Movimientos PRO · 20-may-2026.
 
