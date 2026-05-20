@@ -72,6 +72,9 @@
 
 - `GET  /api/maestro-mps` · listado MPs
 - `POST /api/maestro-mps` · crear MP (admin)
+- `GET  /api/maestro-mps/export-lista-simple` · CSV simple (codigo · nombre
+  comercial · nombre INCI · tipo) · solo activas · UTF-8 BOM para Excel ·
+  NO expone precio / proveedor / stock (uso de planeación, no comercial)
 - `GET  /api/proveedores-unicos` · datalist autocomplete
 - `POST /api/movimientos` · INSERT recepción/salida
 - `GET  /api/conteo/estanterias` · agrupación por estantería

@@ -6969,6 +6969,36 @@ def test_golden_plan_pedido_b2b_mp_check(app, db_clean):
 # GOLDEN PATH PLAN-A3 · /api/plan/alertas-ia devuelve estructura válida
 # Sebastián 19-may-2026: el banner del calendario depende de este endpoint.
 # ═══════════════════════════════════════════════════════════════════
+def test_golden_inv_export_lista_simple(app, db_clean):
+    """Sebastián 19-may-2026: Alejandro pide CSV simple de materias primas.
+
+    Endpoint debe devolver CSV con UTF-8 BOM, header de 4 columnas, y solo
+    MPs activas. No expone precio, proveedor, stock — sólo identificación.
+    """
+    cs = _login(app, 'sebastian')
+    r = cs.get('/api/maestro-mps/export-lista-simple')
+    assert r.status_code == 200, f'BUG status: {r.status_code} {r.data[:200]}'
+    assert 'csv' in (r.headers.get('Content-Type') or '').lower()
+    assert 'attachment' in (r.headers.get('Content-Disposition') or '').lower()
+    assert 'materias-primas-' in (r.headers.get('Content-Disposition') or '')
+    txt = r.data.decode('utf-8')
+    assert txt.startswith('﻿'), 'BUG: falta BOM UTF-8 (Excel rompe acentos)'
+    lines = txt.splitlines()
+    assert len(lines) >= 1
+    header = lines[0].lstrip('﻿')
+    # 4 columnas exactas en orden
+    assert header == 'Codigo,Nombre Comercial,Nombre INCI,Tipo', \
+        f'BUG header inesperado: {header!r}'
+    # Si hay MPs seeded, al menos una fila
+    if len(lines) > 1:
+        cols = lines[1].split(',')
+        assert len(cols) >= 4, f'BUG: fila con menos de 4 columnas · {lines[1]!r}'
+    # NO debe incluir precio/proveedor/stock en ningún lado del header
+    for prohibido in ('precio', 'proveedor', 'stock'):
+        assert prohibido not in header.lower(), \
+            f'BUG: header expone {prohibido!r} · Alejandro pidió "solo la lista"'
+
+
 def test_golden_plan_alertas_ia(app, db_clean):
     """El endpoint responde 200 con estructura {alertas, total, por_severidad}.
 

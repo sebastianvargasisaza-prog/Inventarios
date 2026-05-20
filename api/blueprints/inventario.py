@@ -2626,6 +2626,54 @@ def eliminar_lote(material_id, lote):
     }), 200
 
 
+@bp.route('/api/maestro-mps/export-lista-simple', methods=['GET'])
+def maestro_mps_export_lista_simple():
+    """Exporta CSV simple de materias primas · Sebastián 19-may-2026.
+
+    Alejandro pidió "una lista de Excel solo con las materias primas, sin
+    precio, sin proveedor, sin lo que tenemos, solo la lista". Este endpoint
+    devuelve un CSV (que Excel abre directo) con 4 columnas:
+       codigo_mp · nombre_comercial · nombre_inci · tipo
+
+    Solo MPs activos (`activo=1`), ordenadas por nombre.
+    UTF-8 BOM para que Excel respete acentos y ñ.
+
+    Devuelve un archivo descargable `materias-primas-YYYY-MM-DD.csv`.
+    """
+    from flask import make_response
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db()
+    c = conn.cursor()
+    rows = c.execute(
+        """SELECT COALESCE(codigo_mp,'') AS codigo,
+                  COALESCE(nombre_comercial,'') AS nom_com,
+                  COALESCE(nombre_inci,'') AS nom_inci,
+                  COALESCE(tipo_material, tipo, 'MP') AS tipo
+           FROM maestro_mps
+           WHERE COALESCE(activo, 1) = 1
+           ORDER BY COALESCE(nombre_comercial, nombre_inci, codigo_mp) ASC""",
+    ).fetchall()
+
+    # Construir CSV con BOM UTF-8 para Excel (sino caracteres acentuados rompen)
+    import csv as _csv
+    import io as _io
+    from datetime import datetime as _dt
+    buf = _io.StringIO()
+    buf.write('﻿')  # BOM UTF-8
+    writer = _csv.writer(buf, delimiter=',', quoting=_csv.QUOTE_MINIMAL)
+    writer.writerow(['Codigo', 'Nombre Comercial', 'Nombre INCI', 'Tipo'])
+    for r in rows:
+        writer.writerow([r[0], r[1], r[2], r[3]])
+    csv_text = buf.getvalue()
+    fname = f"materias-primas-{_dt.now().strftime('%Y-%m-%d')}.csv"
+    resp = make_response(csv_text)
+    resp.headers['Content-Type'] = 'text/csv; charset=utf-8'
+    resp.headers['Content-Disposition'] = f'attachment; filename="{fname}"'
+    resp.headers['X-Content-Type-Options'] = 'nosniff'
+    return resp
+
+
 @bp.route('/api/maestro-mps/next-codigo', methods=['GET'])
 def maestro_mps_next_codigo():
     """Devuelve el SIGUIENTE código MP disponible.
