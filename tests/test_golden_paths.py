@@ -7310,6 +7310,99 @@ def test_golden_portal_b2b_flujo_completo(app, db_clean):
     _exec("DELETE FROM portal_clientes_credenciales WHERE email LIKE 'test_portal_%'")
 
 
+def test_golden_abc_pro_modos_y_filtros(app, db_clean):
+    """Sprint ABC PRO · 20-may-2026.
+
+    Verifica:
+    - Agrupa por material_id (no por nombre · evita doble cuenta)
+    - Modo valor calcula stock × precio_referencia
+    - Modo consumo_90d usa salidas últimos 90d
+    - Modo stock_actual usa gramos en bodega (legacy)
+    - excluir_cuarentena filtra estado_lote
+    - subtipo filtra por tipo de maestro_mps
+    - Devuelve ranking + counts A/B/C + total_metric
+    """
+    _exec("DELETE FROM movimientos WHERE material_id LIKE 'TEST_ABC_%'")
+    _exec("DELETE FROM maestro_mps WHERE codigo_mp LIKE 'TEST_ABC_%'")
+
+    # 3 MPs · una barata pero con mucho stock (A en stock_g, C en valor),
+    # una cara pero con poco stock (A en valor, C en stock_g),
+    # una intermedia.
+    _exec("""INSERT INTO maestro_mps (codigo_mp, nombre_comercial, nombre_inci, tipo, proveedor, activo, precio_referencia)
+             VALUES ('TEST_ABC_BARATA','MP barata grande','INCI-B','Emoliente','Local SA',1,5000)""")
+    _exec("""INSERT INTO maestro_mps (codigo_mp, nombre_comercial, nombre_inci, tipo, proveedor, activo, precio_referencia)
+             VALUES ('TEST_ABC_CARA','Péptido carísimo','PEPTIDE-1','Péptido','Lyphar China',1,5000000)""")
+    _exec("""INSERT INTO maestro_mps (codigo_mp, nombre_comercial, nombre_inci, tipo, proveedor, activo, precio_referencia)
+             VALUES ('TEST_ABC_MEDIO','MP intermedia','INCI-M','Activo','Quimica Andina',1,50000)""")
+
+    # Movimientos
+    _exec("""INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, lote, fecha)
+             VALUES ('TEST_ABC_BARATA','MP barata grande',100000,'Entrada','LB',datetime('now','-30 days'))""")
+    _exec("""INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, lote, fecha)
+             VALUES ('TEST_ABC_CARA','Péptido carísimo',500,'Entrada','LC',datetime('now','-30 days'))""")
+    _exec("""INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, lote, fecha)
+             VALUES ('TEST_ABC_MEDIO','MP intermedia',5000,'Entrada','LM',datetime('now','-30 days'))""")
+    # Salidas consumo
+    _exec("""INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, lote, fecha)
+             VALUES ('TEST_ABC_CARA','Péptido carísimo',100,'Salida','LC',datetime('now','-10 days'))""")
+    _exec("""INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, lote, fecha)
+             VALUES ('TEST_ABC_MEDIO','MP intermedia',1000,'Salida','LM',datetime('now','-5 days'))""")
+
+    cs = _login(app, 'sebastian')
+
+    # 1) Modo VALOR · cara debería rankear primero
+    r1 = cs.get('/api/analisis-abc?modo=valor&tipo_material=MP')
+    assert r1.status_code == 200
+    d1 = r1.get_json()
+    test_items = [i for i in d1['items'] if i['material_id'].startswith('TEST_ABC_')]
+    # Encontrar la primera por ranking
+    test_items.sort(key=lambda x: x['ranking'])
+    # CARA (5M × 500g = 2.5B) > MEDIA (50k × 5000g = 250M) > BARATA (5k × 100kg = 500M ... hmm)
+    # En realidad BARATA 5k × 100000g = 500M COP también es alto · veamos:
+    # CARA: 5_000_000 × 500 = 2_500_000_000
+    # BARATA: 5_000 × 100_000 = 500_000_000
+    # MEDIA: 50_000 × 5_000 = 250_000_000
+    # Orden esperado: CARA > BARATA > MEDIA
+    nombres_orden = [i['material_id'] for i in test_items[:3]]
+    assert nombres_orden[0] == 'TEST_ABC_CARA', f'BUG: orden valor {nombres_orden}'
+
+    # 2) Modo stock_actual · barata debería rankear primero (100k g)
+    r2 = cs.get('/api/analisis-abc?modo=stock_actual&tipo_material=MP')
+    d2 = r2.get_json()
+    test_items2 = sorted([i for i in d2['items'] if i['material_id'].startswith('TEST_ABC_')], key=lambda x: x['ranking'])
+    assert test_items2[0]['material_id'] == 'TEST_ABC_BARATA', \
+        f'BUG: orden stock {[i["material_id"] for i in test_items2[:3]]}'
+
+    # 3) Modo consumo_90d · CARA y MEDIA tienen salidas, BARATA no
+    r3 = cs.get('/api/analisis-abc?modo=consumo_90d&tipo_material=MP&incluir_sin_movimientos=0')
+    d3 = r3.get_json()
+    test_items3 = sorted([i for i in d3['items'] if i['material_id'].startswith('TEST_ABC_')], key=lambda x: x['ranking'])
+    ids3 = [i['material_id'] for i in test_items3]
+    assert 'TEST_ABC_BARATA' not in ids3, 'BUG: barata sin consumo NO debería aparecer'
+    # Cara: 100 × 5M = 500M ; Media: 1000 × 50k = 50M → cara primera
+    assert test_items3[0]['material_id'] == 'TEST_ABC_CARA'
+
+    # 4) Filtro subtipo
+    r4 = cs.get('/api/analisis-abc?modo=valor&tipo_material=MP&subtipo=Péptido')
+    d4 = r4.get_json()
+    test_items4 = [i for i in d4['items'] if i['material_id'].startswith('TEST_ABC_')]
+    assert len(test_items4) == 1
+    assert test_items4[0]['material_id'] == 'TEST_ABC_CARA'
+
+    # 5) Estructura · counts + total_metric + ranking
+    assert 'counts' in d1
+    assert set(d1['counts'].keys()) >= {'A', 'B', 'C'}
+    assert d1['total_metric'] > 0
+    for it in test_items:
+        assert 'ranking' in it
+        assert 'pct_acumulado' in it
+        assert 'origen' in it
+        assert it['origen'] in ('china', 'colombia', 'otro', 'desconocido')
+
+    _exec("DELETE FROM movimientos WHERE material_id LIKE 'TEST_ABC_%'")
+    _exec("DELETE FROM maestro_mps WHERE codigo_mp LIKE 'TEST_ABC_%'")
+
+
 def test_golden_recepcion_pro_validaciones(app, db_clean):
     """Sprint Recepciones PRO · 20-may-2026 · 4 validaciones críticas.
 

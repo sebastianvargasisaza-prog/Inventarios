@@ -1645,26 +1645,236 @@ def trazabilidad_lote_mp(lote_mp):
 
 @bp.route('/api/analisis-abc')
 def get_analisis_abc():
+    """Análisis ABC Pareto · Sebastián 20-may-2026 · 3 modos + filtros.
+
+    Query params:
+      modo:
+        valor (default) · ordena por stock × precio_referencia (Pareto financiero)
+        consumo_90d · ordena por consumo proyectado (salidas últimos 90d × precio)
+        consumo_180d / consumo_365d
+        stock_actual · ordena por gramos en bodega (modo viejo, compat)
+      excluir_cuarentena: 1 (default 0)
+      subtipo: filtra por maestro_mps.tipo (Activo, Emoliente, ...) opcional
+      incluir_sin_movimientos: 1 (default 1 en modo valor, 0 en modos consumo)
+      tipo_material: MP (default) | MEE
+
+    Devuelve cada MP con:
+      material_id, nombre_comercial, nombre_inci, proveedor, subtipo,
+      origen (china/colombia/desconocido), stock_g, precio_kg, valor_cop,
+      consumo_90d_g, metric (el valor usado para Pareto · depende del modo),
+      pct_acumulado, ranking, clasificacion (A/B/C)
+    """
+    u, err, code = _require_session()
+    if err:
+        return err, code
+    modo = (request.args.get('modo') or 'valor').strip().lower()
+    excluir_cuarentena = (request.args.get('excluir_cuarentena') or '').strip() in ('1', 'true', 'yes')
+    subtipo_filtro = (request.args.get('subtipo') or '').strip()
+    tipo_material = (request.args.get('tipo_material') or 'MP').strip().upper()
+    incluir_sin_mov_raw = request.args.get('incluir_sin_movimientos')
+    if incluir_sin_mov_raw is None:
+        incluir_sin_mov = (modo == 'valor' or modo == 'stock_actual')
+    else:
+        incluir_sin_mov = incluir_sin_mov_raw in ('1', 'true', 'yes')
+
+    # Determinar ventana de consumo si modo lo requiere
+    ventana_dias = None
+    if modo.startswith('consumo_'):
+        try:
+            ventana_dias = int(modo.split('_')[1].rstrip('d'))
+        except (ValueError, IndexError):
+            ventana_dias = 90
+
     conn = get_db()
     c = conn.cursor()
-    c.execute("""SELECT material_nombre, SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) as stock
-                 FROM movimientos GROUP BY material_nombre ORDER BY stock DESC""")
-    items = [(r[0], r[1]) for r in c.fetchall() if r[1] and r[1] > 0]
-    if not items:
-        return jsonify({'items': []})
-    total = sum(i[1] for i in items)
-    cumulative = 0
-    abc = []
-    for mat, qty in items:
-        prev_pct = (cumulative / total) * 100   # % acumulado ANTES de este item
-        cumulative += qty
-        pct = (cumulative / total) * 100         # % acumulado DESPUÉS
-        # Clasificacion basada en donde EMPIEZA el item (estandar Pareto)
-        # Un item es A si al agregarlo aun no hemos superado el 80% previo
-        clasificacion = 'A' if prev_pct < 80 else ('B' if prev_pct < 95 else 'C')
-        abc.append({'material': mat, 'cantidad': qty, 'valor': f'{pct:.1f}%',
-                    'clasificacion': clasificacion})
-    return jsonify({'items': abc})
+
+    if tipo_material == 'MEE':
+        # Camino simple para MEE: usa maestro_mee directamente
+        rows = c.execute(
+            """SELECT codigo, descripcion, '' as nombre_inci, COALESCE(proveedor,''),
+                      COALESCE(categoria,''), '' as origen,
+                      COALESCE(stock_actual, 0) as stock,
+                      COALESCE(precio_unitario, 0) as precio
+               FROM maestro_mee
+               WHERE COALESCE(estado, 'Activo') = 'Activo'
+               """,
+        ).fetchall()
+        consumo_map = {}
+        if ventana_dias:
+            for r in c.execute(
+                f"""SELECT codigo_mee, COALESCE(SUM(cantidad), 0)
+                    FROM movimientos_mee
+                    WHERE tipo IN ('Salida','salida','SALIDA')
+                      AND fecha >= date('now', '-5 hours', '-{int(ventana_dias)} days')
+                    GROUP BY codigo_mee""",
+            ).fetchall():
+                consumo_map[r[0]] = float(r[1] or 0)
+        items_raw = []
+        for r in rows:
+            cod, nom, inci, prov, subt, orig, stock, precio = r
+            stock = float(stock or 0)
+            precio = float(precio or 0)
+            valor_cop = stock * precio
+            consumo = consumo_map.get(cod, 0.0)
+            items_raw.append({
+                'material_id': cod or '', 'nombre_comercial': nom or '',
+                'nombre_inci': inci, 'proveedor': prov,
+                'subtipo': subt, 'origen': orig,
+                'stock_g': round(stock, 2), 'precio_kg': round(precio, 2),
+                'valor_cop': round(valor_cop, 2),
+                'consumo_90d_g': round(consumo, 2),
+            })
+    else:
+        # MP path · LEFT JOIN desde maestro_mps + movimientos agregados
+        cuarentena_filter = ""
+        if excluir_cuarentena:
+            cuarentena_filter = " AND UPPER(COALESCE(estado_lote,'')) NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO')"
+        # Stock agregado por material_id excluyendo cuarentena si aplica
+        rows_stock = c.execute(
+            f"""SELECT material_id,
+                       COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA')
+                                          THEN cantidad ELSE -cantidad END), 0) as stock
+                FROM movimientos
+                WHERE material_id IS NOT NULL AND material_id != ''
+                  {cuarentena_filter}
+                GROUP BY material_id""",
+        ).fetchall()
+        stock_map = {r[0]: max(float(r[1] or 0), 0) for r in rows_stock}
+        # Consumo en ventana si aplica
+        consumo_map = {}
+        if ventana_dias:
+            for r in c.execute(
+                f"""SELECT material_id, COALESCE(SUM(cantidad), 0)
+                    FROM movimientos
+                    WHERE tipo IN ('Salida','salida','SALIDA')
+                      AND fecha >= date('now', '-5 hours', '-{int(ventana_dias)} days')
+                      AND material_id IS NOT NULL AND material_id != ''
+                    GROUP BY material_id""",
+            ).fetchall():
+                consumo_map[r[0]] = float(r[1] or 0)
+        # Catálogo de MPs activas (LEFT JOIN para incluir las sin mov si flag)
+        try:
+            mps = c.execute(
+                """SELECT codigo_mp, COALESCE(nombre_comercial,''),
+                          COALESCE(nombre_inci,''), COALESCE(proveedor,''),
+                          COALESCE(tipo,''), COALESCE(precio_referencia, 0)
+                   FROM maestro_mps
+                   WHERE COALESCE(activo, 1) = 1
+                     AND UPPER(COALESCE(tipo_material,'MP')) = 'MP'""",
+            ).fetchall()
+        except Exception:
+            mps = []
+        # Origen heurístico por proveedor (china/colombia/desconocido)
+        def _origen(prov):
+            p = (prov or '').lower()
+            CHINA_HINTS = ['lyphar', 'inchemical', 'guanfu', 'guangzhou',
+                            'china', 'shanghai', 'xian', 'wuhan']
+            LOCAL_HINTS = ['quimica', 'colombia', 'cosmo', 'andina', 'bogot',
+                            'medell', 'cali']
+            if any(h in p for h in CHINA_HINTS):
+                return 'china'
+            if any(h in p for h in LOCAL_HINTS):
+                return 'colombia'
+            return 'desconocido' if not p else 'otro'
+
+        items_raw = []
+        for mp in mps:
+            cod, nom, inci, prov, subt, precio_ref = mp
+            stock = stock_map.get(cod, 0.0)
+            consumo = consumo_map.get(cod, 0.0)
+            precio = float(precio_ref or 0)
+            valor_cop = stock * precio
+            # Filtros
+            if subtipo_filtro and (subt or '').lower() != subtipo_filtro.lower():
+                continue
+            if not incluir_sin_mov:
+                # Si modo es consumo · excluir items sin consumo en la ventana.
+                # Si modo es stock · excluir items sin stock.
+                # Si modo es valor · excluir solo si stock=0 Y consumo=0.
+                if modo.startswith('consumo_') and consumo <= 0:
+                    continue
+                elif modo == 'stock_actual' and stock <= 0:
+                    continue
+                elif modo == 'valor' and stock <= 0 and consumo <= 0:
+                    continue
+            items_raw.append({
+                'material_id': cod or '', 'nombre_comercial': nom,
+                'nombre_inci': inci, 'proveedor': prov,
+                'subtipo': subt, 'origen': _origen(prov),
+                'stock_g': round(stock, 2), 'precio_kg': round(precio, 2),
+                'valor_cop': round(valor_cop, 2),
+                'consumo_90d_g': round(consumo, 2),
+            })
+
+    # Elegir métrica según modo
+    def _metric(item):
+        if modo == 'valor':
+            return item['valor_cop']
+        if modo == 'stock_actual':
+            return item['stock_g']
+        # consumo_*
+        return item['consumo_90d_g'] * (item['precio_kg'] or 1) if modo.startswith('consumo_') else item['valor_cop']
+
+    items_pos = [{**it, 'metric': _metric(it)} for it in items_raw]
+    items_pos.sort(key=lambda x: -x['metric'])
+
+    total = sum(it['metric'] for it in items_pos if it['metric'] > 0)
+    if total <= 0:
+        # Modo "valor" pero sin precios cargados · fallback a stock_actual
+        if modo == 'valor':
+            for it in items_pos:
+                it['metric'] = it['stock_g']
+            items_pos.sort(key=lambda x: -x['metric'])
+            total = sum(it['metric'] for it in items_pos if it['metric'] > 0)
+
+    cumulative = 0.0
+    abc_items = []
+    for idx, it in enumerate(items_pos, start=1):
+        m = it['metric']
+        prev_pct = (cumulative / total * 100) if total > 0 else 0
+        cumulative += m
+        pct = (cumulative / total * 100) if total > 0 else 0
+        if m <= 0:
+            clasif = 'D'  # sin métrica · no califica Pareto
+        else:
+            clasif = 'A' if prev_pct < 80 else ('B' if prev_pct < 95 else 'C')
+        abc_items.append({
+            **it,
+            'metric': round(m, 2),
+            'pct_acumulado': round(pct, 2),
+            'ranking': idx,
+            'clasificacion': clasif,
+        })
+
+    # Stats summary
+    counts = {'A': 0, 'B': 0, 'C': 0, 'D': 0}
+    valor_por_clase = {'A': 0.0, 'B': 0.0, 'C': 0.0, 'D': 0.0}
+    for it in abc_items:
+        counts[it['clasificacion']] = counts.get(it['clasificacion'], 0) + 1
+        valor_por_clase[it['clasificacion']] = valor_por_clase.get(it['clasificacion'], 0) + it['metric']
+
+    return jsonify({
+        'modo': modo,
+        'tipo_material': tipo_material,
+        'excluir_cuarentena': excluir_cuarentena,
+        'subtipo_filtro': subtipo_filtro,
+        'incluir_sin_movimientos': incluir_sin_mov,
+        'ventana_consumo_dias': ventana_dias,
+        'total_items': len(abc_items),
+        'total_metric': round(total, 2),
+        'metric_unit': 'COP' if modo in ('valor',) else (
+            'COP estimado' if modo.startswith('consumo_') else 'g'),
+        'counts': counts,
+        'valor_por_clase': {k: round(v, 2) for k, v in valor_por_clase.items()},
+        'items': abc_items,
+        # Compat con UI vieja
+        'items_legacy': [
+            {'material': it['nombre_comercial'] or it['material_id'],
+             'cantidad': it['stock_g'], 'valor': f'{it["pct_acumulado"]:.1f}%',
+             'clasificacion': it['clasificacion']}
+            for it in abc_items
+        ],
+    })
 
 @bp.route('/api/alertas', methods=['GET', 'POST'])
 def handle_alertas():

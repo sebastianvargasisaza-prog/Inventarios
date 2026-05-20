@@ -983,18 +983,52 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
   </div>
 
   <div id="abc" class="tab-content">
-    <h2>&#128200; Analisis ABC de Inventario</h2>
+    <h2>&#128200; Análisis ABC de Inventario</h2>
     <div style="background:#e8f4fd;border:1px solid #bee5f8;border-radius:10px;padding:16px 20px;margin-bottom:18px;font-size:0.9em;color:#1a4a6b;">
-      <strong>&#8505; Para que sirve este modulo:</strong> Clasifica todas las materias primas segun el valor de stock que representan (Pareto 80/20).
+      <strong>&#8505; Para qué sirve:</strong> Clasifica MPs según regla de Pareto 80/20 para priorizar control, conteo físico y compras.
       <ul style="margin:8px 0 0 16px;padding:0;">
-        <li><span style="background:#28a745;color:white;padding:1px 8px;border-radius:8px;font-weight:700;font-size:0.85em;">A</span> — Top 80% del stock total. Son las MPs mas criticas: maxima atencion en control y reorden.</li>
-        <li><span style="background:#fd7e14;color:white;padding:1px 8px;border-radius:8px;font-weight:700;font-size:0.85em;">B</span> — 80-95% acumulado. Control intermedio.</li>
-        <li><span style="background:#6c757d;color:white;padding:1px 8px;border-radius:8px;font-weight:700;font-size:0.85em;">C</span> — 95-100%. Son muchos items pero representan poco stock. Control basico.</li>
+        <li><span style="background:#28a745;color:white;padding:1px 8px;border-radius:8px;font-weight:700;font-size:0.85em;">A</span> — Top 80% acumulado · pocas MPs pero el grueso del valor · <b>máxima atención</b></li>
+        <li><span style="background:#fd7e14;color:white;padding:1px 8px;border-radius:8px;font-weight:700;font-size:0.85em;">B</span> — 80-95% · control intermedio</li>
+        <li><span style="background:#6c757d;color:white;padding:1px 8px;border-radius:8px;font-weight:700;font-size:0.85em;">C</span> — 95-100% · muchas pero poco peso · control básico</li>
       </ul>
-      <p style="margin:8px 0 0;"><strong>Uso practico:</strong> Las MPs clase A son las que nunca pueden quedarse sin stock. Usar para definir frecuencia de conteo fisico y prioridad de compra.</p>
+      <p style="margin:8px 0 0;font-size:11px;color:#475569;">Sebastián 20-may-2026: ahora con 3 modos · <b>Valor</b> (stock × precio) es lo correcto financiero · <b>Consumo</b> (lo que se mueve) es lo correcto para compras · <b>Stock g</b> es modo legacy.</p>
     </div>
-    <button onclick="loadABC()" style="padding:9px 22px;background:#667eea;color:#fff;border:none;border-radius:8px;font-weight:600;cursor:pointer;">&#128257; Actualizar Analisis</button>
-    <div id="abc-results" style="margin-top:18px;"></div>
+    <!-- Sprint ABC PRO · 20-may-2026: selectores -->
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px;background:#f8fafc;padding:12px 14px;border-radius:8px">
+      <label style="font-size:12px;color:#475569;font-weight:600">Tipo:</label>
+      <select id="abc-tipo" onchange="loadABC()" style="padding:6px 10px;font-size:13px">
+        <option value="MP" selected>📦 Materias Primas</option>
+        <option value="MEE">🧤 Envase/Empaque (MEE)</option>
+      </select>
+      <label style="font-size:12px;color:#475569;font-weight:600;margin-left:8px">Modo:</label>
+      <select id="abc-modo" onchange="loadABC()" style="padding:6px 10px;font-size:13px;background:#fdf2f8;border:1px solid #be185d;font-weight:600">
+        <option value="valor" selected>💰 Por VALOR (stock × precio)</option>
+        <option value="consumo_90d">🔁 Por CONSUMO 90d</option>
+        <option value="consumo_180d">🔁 Por CONSUMO 180d</option>
+        <option value="consumo_365d">🔁 Por CONSUMO 365d</option>
+        <option value="stock_actual">📦 Por STOCK (g) · legacy</option>
+      </select>
+      <label style="font-size:12px;color:#475569;font-weight:600;margin-left:8px">Subtipo:</label>
+      <select id="abc-subtipo" onchange="loadABC()" style="padding:6px 10px;font-size:13px">
+        <option value="">Todos</option>
+        <option>Activo</option><option>Emoliente</option><option>Conservante</option>
+        <option>Humectante</option><option>Tensoactivo</option><option>Fragancia</option>
+        <option>Colorante</option><option>Vitamina</option><option>Péptido</option>
+      </select>
+      <label style="font-size:12px;color:#475569;font-weight:600;display:flex;align-items:center;gap:4px;margin-left:8px;cursor:pointer">
+        <input type="checkbox" id="abc-excluir-cuar" onchange="loadABC()"> Excluir cuarentena
+      </label>
+      <button onclick="loadABC()" style="padding:7px 16px;background:#667eea;color:#fff;border:none;border-radius:6px;font-weight:600;cursor:pointer;font-size:13px">🔄 Calcular</button>
+      <button onclick="exportarExcelABC()" style="padding:7px 16px;background:#217346;color:#fff;border:none;border-radius:6px;font-weight:600;cursor:pointer;font-size:13px">📄 Excel</button>
+    </div>
+    <!-- Stats cards arriba -->
+    <div id="abc-stats" style="display:none;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:14px"></div>
+    <!-- Gráfico Pareto -->
+    <div id="abc-chart-wrap" style="display:none;background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:14px;margin-bottom:14px">
+      <h4 style="margin:0 0 8px;font-size:13px;color:#475569">📊 Curva Pareto · top 30 items</h4>
+      <canvas id="abc-chart" height="160"></canvas>
+    </div>
+    <div id="abc-results" style="margin-top:8px;"></div>
   </div>
 
   <div id="alertas" class="tab-content">
@@ -4231,22 +4265,110 @@ async function registrarProd(){
   }catch(e){document.getElementById('prod-msg').innerHTML='<div class="alert-error">Error: '+e.message+'</div>';}
 }
 
+// Sprint ABC PRO · 20-may-2026 · render con stats + gráfico + tabla completa
+var _ABC_LAST = null;
 async function loadABC(){
+  var resBox = document.getElementById('abc-results');
+  var statsBox = document.getElementById('abc-stats');
+  if(resBox) resBox.innerHTML = '<div style="color:#94a3b8;padding:20px;text-align:center">Calculando…</div>';
   try{
-    var r=await fetch('/api/analisis-abc'), d=await r.json();
-    var html='';
-    if(d.items&&d.items.length){
-      html='<div style="overflow-x:auto;"><table class="table"><thead><tr><th>Clase</th><th>Material</th><th>Stock (g)</th><th>% Acumulado</th></tr></thead><tbody>';
-      d.items.forEach(function(i){
-        var bg=i.clasificacion==='A'?'#28a745':i.clasificacion==='B'?'#fd7e14':'#6c757d';
-        html+='<tr><td><span style="background:'+bg+';color:white;padding:3px 10px;border-radius:10px;font-weight:700;">'+i.clasificacion+'</span></td>'
-          +'<td>'+i.material+'</td><td style="text-align:right;">'+Number(i.cantidad).toLocaleString()+'</td>'
-          +'<td style="text-align:right;color:#667eea;">'+i.valor+'</td></tr>';
+    var modo = (document.getElementById('abc-modo')||{}).value || 'valor';
+    var tipo = (document.getElementById('abc-tipo')||{}).value || 'MP';
+    var sub = (document.getElementById('abc-subtipo')||{}).value || '';
+    var exc = document.getElementById('abc-excluir-cuar') && document.getElementById('abc-excluir-cuar').checked ? '1' : '';
+    var qs = 'modo='+encodeURIComponent(modo) + '&tipo_material='+encodeURIComponent(tipo) +
+             (sub?'&subtipo='+encodeURIComponent(sub):'') +
+             (exc?'&excluir_cuarentena=1':'');
+    var r = await fetch('/api/analisis-abc?'+qs);
+    if(!r.ok){ resBox.innerHTML='<div class="alert-error">Error '+r.status+'</div>'; return; }
+    var d = await r.json();
+    _ABC_LAST = d;
+    var items = d.items || [];
+    // Stats cards
+    if(statsBox){
+      statsBox.style.display = 'grid';
+      var fmt = function(v){ return d.metric_unit==='g' ? Math.round(v).toLocaleString()+' g' : '$'+Math.round(v).toLocaleString('es-CO'); };
+      var counts = d.counts||{};
+      var vals = d.valor_por_clase||{};
+      statsBox.innerHTML =
+        '<div style="background:#f0fdf4;border-left:4px solid #16a34a;padding:10px;border-radius:6px"><div style="font-size:10px;color:#166534;text-transform:uppercase;font-weight:700">Clase A</div><div style="font-size:1.4em;font-weight:800;color:#16a34a">'+(counts.A||0)+'</div><div style="font-size:11px;color:#475569">'+fmt(vals.A||0)+' · '+(vals.A?Math.round(vals.A/d.total_metric*100):0)+'%</div></div>'+
+        '<div style="background:#fff7ed;border-left:4px solid #fd7e14;padding:10px;border-radius:6px"><div style="font-size:10px;color:#9a3412;text-transform:uppercase;font-weight:700">Clase B</div><div style="font-size:1.4em;font-weight:800;color:#fd7e14">'+(counts.B||0)+'</div><div style="font-size:11px;color:#475569">'+fmt(vals.B||0)+' · '+(vals.B?Math.round(vals.B/d.total_metric*100):0)+'%</div></div>'+
+        '<div style="background:#f8fafc;border-left:4px solid #6c757d;padding:10px;border-radius:6px"><div style="font-size:10px;color:#475569;text-transform:uppercase;font-weight:700">Clase C</div><div style="font-size:1.4em;font-weight:800;color:#6c757d">'+(counts.C||0)+'</div><div style="font-size:11px;color:#475569">'+fmt(vals.C||0)+' · '+(vals.C?Math.round(vals.C/d.total_metric*100):0)+'%</div></div>'+
+        ((counts.D||0)>0 ? '<div style="background:#fef2f2;border-left:4px solid #94a3b8;padding:10px;border-radius:6px"><div style="font-size:10px;color:#475569;text-transform:uppercase;font-weight:700">Sin métrica</div><div style="font-size:1.4em;font-weight:800;color:#94a3b8">'+counts.D+'</div><div style="font-size:11px;color:#475569">sin movs y/o sin precio</div></div>' : '')+
+        '<div style="background:#eff6ff;border-left:4px solid #2563eb;padding:10px;border-radius:6px"><div style="font-size:10px;color:#1e40af;text-transform:uppercase;font-weight:700">Total métrica</div><div style="font-size:1.4em;font-weight:800;color:#2563eb">'+fmt(d.total_metric)+'</div><div style="font-size:11px;color:#475569">'+d.total_items+' MPs · modo '+_escHTML(modo)+'</div></div>';
+    }
+    // Gráfico Pareto top 30
+    var chartWrap = document.getElementById('abc-chart-wrap');
+    var ctx = document.getElementById('abc-chart');
+    if(chartWrap && ctx && items.length > 0){
+      chartWrap.style.display = 'block';
+      var top = items.filter(function(i){return i.metric>0;}).slice(0, 30);
+      if(_charts.abc){ _charts.abc.destroy(); }
+      _charts.abc = new Chart(ctx.getContext('2d'),{
+        type:'bar',
+        data:{
+          labels: top.map(function(i){var n=(i.nombre_comercial||i.material_id||''); return n.length>14?n.substring(0,12)+'…':n;}),
+          datasets:[
+            {type:'bar', label:d.metric_unit==='g'?'g':'$', data:top.map(function(i){return i.metric;}),
+             backgroundColor: top.map(function(i){return i.clasificacion==='A'?'rgba(34,197,94,0.7)':i.clasificacion==='B'?'rgba(253,126,20,0.7)':'rgba(148,163,184,0.7)';}),
+             borderRadius:3, yAxisID:'y'},
+            {type:'line', label:'% acumulado', data:top.map(function(i){return i.pct_acumulado;}),
+             borderColor:'#0891b2', backgroundColor:'rgba(8,145,178,0.1)', tension:0.2, yAxisID:'y1', borderWidth:2, pointRadius:2},
+          ],
+        },
+        options:{responsive:true, interaction:{intersect:false},
+          plugins:{legend:{position:'top'}},
+          scales:{
+            y:{position:'left', beginAtZero:true, title:{display:true, text:d.metric_unit||'metric'}},
+            y1:{position:'right', beginAtZero:true, max:100, grid:{drawOnChartArea:false}, title:{display:true, text:'%'}},
+          },
+        },
       });
-      html+='</tbody></table></div>';
-    } else { html='<p style="color:#999;">Sin datos de inventario para analizar</p>'; }
-    document.getElementById('abc-results').innerHTML=html;
-  }catch(e){document.getElementById('abc-results').innerHTML='<div class="alert-error">Error</div>';}
+    } else if(chartWrap){ chartWrap.style.display = 'none'; }
+    // Tabla detalle
+    if(!items.length){
+      resBox.innerHTML = '<p style="color:#999;padding:20px;text-align:center">Sin datos para los filtros seleccionados</p>';
+      return;
+    }
+    var html = '<div style="overflow-x:auto"><table class="table" style="font-size:12px"><thead><tr>'+
+      '<th>#</th><th>Clase</th><th>Código</th><th>Material</th><th>INCI</th><th>Proveedor</th><th>Origen</th><th style="text-align:right">Stock g</th><th style="text-align:right">Precio/kg</th><th style="text-align:right">Valor COP</th><th style="text-align:right">Consumo 90d g</th><th style="text-align:right">% Acum</th></tr></thead><tbody>';
+    items.forEach(function(i){
+      var bg = i.clasificacion==='A'?'#28a745':i.clasificacion==='B'?'#fd7e14':(i.clasificacion==='C'?'#6c757d':'#94a3b8');
+      var origenIcon = i.origen==='china'?'🇨🇳':i.origen==='colombia'?'🇨🇴':i.origen==='otro'?'🌐':'❓';
+      html += '<tr>'+
+        '<td style="text-align:right;color:#94a3b8;font-family:monospace">'+i.ranking+'</td>'+
+        '<td><span style="background:'+bg+';color:white;padding:2px 8px;border-radius:8px;font-weight:700;font-size:10px">'+i.clasificacion+'</span></td>'+
+        '<td style="font-family:monospace;color:#555">'+_escHTML(i.material_id)+'</td>'+
+        '<td style="font-weight:600">'+_escHTML(i.nombre_comercial||'—')+'</td>'+
+        '<td style="font-size:11px;color:#475569">'+_escHTML(i.nombre_inci||'')+'</td>'+
+        '<td style="font-size:11px;color:#475569">'+_escHTML(i.proveedor||'—')+'</td>'+
+        '<td style="font-size:11px">'+origenIcon+' '+_escHTML(i.origen)+'</td>'+
+        '<td style="text-align:right">'+Math.round(i.stock_g).toLocaleString()+'</td>'+
+        '<td style="text-align:right;color:#475569">'+(i.precio_kg?'$'+Math.round(i.precio_kg).toLocaleString('es-CO'):'—')+'</td>'+
+        '<td style="text-align:right;font-weight:600">'+(i.valor_cop?'$'+Math.round(i.valor_cop).toLocaleString('es-CO'):'—')+'</td>'+
+        '<td style="text-align:right;color:#475569">'+(i.consumo_90d_g?Math.round(i.consumo_90d_g).toLocaleString():'—')+'</td>'+
+        '<td style="text-align:right;color:#0891b2;font-weight:600">'+i.pct_acumulado.toFixed(1)+'%</td>'+
+      '</tr>';
+    });
+    html += '</tbody></table></div>';
+    resBox.innerHTML = html;
+  }catch(e){
+    resBox.innerHTML='<div class="alert-error">Error: '+_escHTML(e.message)+'</div>';
+  }
+}
+function exportarExcelABC(){
+  if(!_ABC_LAST || !(_ABC_LAST.items||[]).length){ alert('Calculá primero el análisis ABC'); return; }
+  var d = _ABC_LAST;
+  var cols = ['#', 'Clase', 'Código', 'Material', 'INCI', 'Proveedor', 'Origen',
+              'Stock g', 'Precio/kg COP', 'Valor COP', 'Consumo 90d g',
+              'Métrica usada', '% Acumulado'];
+  var rows = d.items.map(function(i){return [
+    i.ranking, i.clasificacion, i.material_id, i.nombre_comercial,
+    i.nombre_inci, i.proveedor, i.origen,
+    Number(i.stock_g)||0, Number(i.precio_kg)||0, Number(i.valor_cop)||0,
+    Number(i.consumo_90d_g)||0, Number(i.metric)||0, Number(i.pct_acumulado)||0,
+  ];});
+  dlExcelHTML('ABC_'+(d.modo||'valor')+'_'+(d.tipo_material||'MP')+'_'+fhoy(), cols, rows);
 }
 
 async function loadAlertas(){

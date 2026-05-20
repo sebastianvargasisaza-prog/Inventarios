@@ -103,6 +103,17 @@
   `. , ; : & - _ / \\`). Capa 2: Levenshtein ≥ threshold para typos. Carga
   desde 11 tablas que tienen proveedor (no solo movs+maestro). Retorna
   grupos con stats (refs_totales, usos, count_variantes).
+- `GET  /api/analisis-abc[?modo=&tipo_material=&subtipo=&excluir_cuarentena=]`
+  · Pareto ABC refactor 20-may-2026. Agrupa por `material_id` (no
+  por nombre · evita doble cuenta). Modos:
+  - `valor` (default) = stock × precio_referencia (Pareto financiero)
+  - `consumo_90d` / `consumo_180d` / `consumo_365d` = SUM salidas × precio
+  - `stock_actual` = gramos en bodega (modo legacy)
+  Filtros: `excluir_cuarentena=1`, `subtipo=Activo`, `tipo_material=MP|MEE`,
+  `incluir_sin_movimientos=0` (en modos consumo excluye items sin salidas).
+  Devuelve `items[]` con ranking + clasificacion (A/B/C/D) + counts +
+  total_metric + metric_unit + valor_por_clase. Compat: `items_legacy[]`
+  con shape viejo (material, cantidad, valor%, clasificacion).
 - `GET  /api/recepcion/recientes[?limit=N&offset=N&q=X]` · listado entradas
   recientes server-side con paginación y búsqueda (LIKE escape para %_).
   JOIN con maestro_mps para INCI · incluye numero_oc + numero_factura.
