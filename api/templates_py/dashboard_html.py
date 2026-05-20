@@ -6838,7 +6838,10 @@ function _renderProgramacion(d){
           <b style="font-size:14px;color:#1a4a7a">&#128101; Equipo HOY</b>
           <span id="cm-equipo-sub" style="font-size:11px;color:#64748b;margin-left:8px">Cargando&hellip;</span>
         </div>
-        <button onclick="cmCargarEquipo()" style="padding:4px 10px;background:#1a4a7a;color:#fff;border:none;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">&#8635; Refrescar</button>
+        <div style="display:flex;gap:6px;align-items:center">
+          <button onclick="cmReasignarHoy()" style="padding:4px 10px;background:#0891b2;color:#fff;border:none;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer" title="Re-corre auto-asignación (área + operarios) para HOY · respeta lo Fijo">🤖 Re-asignar hoy</button>
+          <button onclick="cmCargarEquipo()" style="padding:4px 10px;background:#1a4a7a;color:#fff;border:none;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">&#8635; Refrescar</button>
+        </div>
       </div>
       <div id="cm-equipo-cards" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:8px">
         <div style="padding:14px;text-align:center;color:#94a3b8;font-size:12px">Cargando equipo&hellip;</div>
@@ -9237,26 +9240,57 @@ async function ckMarcar(itemId, estado){
         'tareas': 'ptab-tareas',
         'plano': 'ptab-plano',
       };
-      // Lazy-load iframe Mi Día solo al activar tab (evita carga al boot)
+      // Lazy-load iframe Mi Día solo al activar tab (evita carga al boot).
+      // Sebastián 19-may-2026: si ya estaba cargado, refrescar el contenido
+      // sin recargar el iframe entero (mantiene navegación · solo refetch data).
       if (tab === 'midia') {
         var fr = document.getElementById('midia-frame');
-        if (fr && (!fr.src || fr.src === 'about:blank')) {
-          fr.src = '/operario';
+        if (fr) {
+          if (!fr.src || fr.src === 'about:blank') {
+            fr.src = '/operario';
+          } else {
+            try {
+              if (fr.contentWindow && typeof fr.contentWindow.loadMiDia === 'function') {
+                fr.contentWindow.loadMiDia();
+              }
+            } catch(e) { console.warn('refresh midia falló:', e); }
+          }
         }
       }
       // Lazy-load iframe Calendario IA al activar tab · Sebastián 14-may-2026:
-      // "deberia quedarse alli como sub pestaña"
+      // "deberia quedarse alli como sub pestaña".
+      // Sebastián 19-may-2026: fix · el iframe NO se recargaba al volver a la
+      // pestaña, quedaba con datos stale (causó la falsa alarma "desaparecio
+      // del calendario la programacion de esta semana" cuando en realidad las
+      // producciones existían en BD pero el iframe nunca refetcheó).
       if (tab === 'calendario') {
         var frCal = document.getElementById('calendario-iframe');
-        if (frCal && (!frCal.src || frCal.src === 'about:blank' || !frCal.src.includes('plan-calendario'))) {
-          frCal.src = '/admin/plan-calendario';
+        if (frCal) {
+          if (!frCal.src || frCal.src === 'about:blank' || !frCal.src.includes('plan-calendario')) {
+            frCal.src = '/admin/plan-calendario';
+          } else {
+            try {
+              if (frCal.contentWindow && typeof frCal.contentWindow.cargar === 'function') {
+                frCal.contentWindow.cargar();
+              }
+            } catch(e) { console.warn('refresh calendario falló:', e); }
+          }
         }
       }
       // Lazy-load iframe Factibilidad del Plan al activar la pestaña.
+      // Sebastián 19-may-2026: mismo patrón anti-stale que calendario.
       if (tab === 'factibilidad') {
         var frFact = document.getElementById('factibilidad-iframe');
-        if (frFact && (!frFact.src || frFact.src === 'about:blank' || !frFact.src.includes('factibilidad-plan'))) {
-          frFact.src = '/admin/factibilidad-plan';
+        if (frFact) {
+          if (!frFact.src || frFact.src === 'about:blank' || !frFact.src.includes('factibilidad-plan')) {
+            frFact.src = '/admin/factibilidad-plan';
+          } else {
+            try {
+              if (frFact.contentWindow && typeof frFact.contentWindow.cargar === 'function') {
+                frFact.contentWindow.cargar();
+              }
+            } catch(e) { console.warn('refresh factibilidad falló:', e); }
+          }
         }
       }
       // Lazy-load Necesidades al activar tab
@@ -9466,6 +9500,27 @@ async function ckMarcar(itemId, estado){
       if(lu) lu.textContent = 'actualizado ' + new Date().toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
     }catch(e){
       if(!silent){ _toast('Error al cargar Centro de Mando: '+e.message, 0); }
+    }
+  }
+
+  // ── Re-asignar HOY (Operación Live · pieza 5) — botón admin ──────────────
+  async function cmReasignarHoy(){
+    if(!confirm('🤖 ¿Re-correr auto-asignación para HOY?\\n\\nSolo afecta producciones SUGERIDAS (canónicas / calendar / manual). Lo FIJO (lo que arrastraste/editaste) no se toca.')) return;
+    try{
+      const csrf = (document.cookie.match(/(?:^|; )csrf_token=([^;]*)/) || ['',''])[1] || '';
+      const r = await fetch('/api/planta/auto-asignar-hoy', {
+        method:'POST',
+        headers:{'Content-Type':'application/json','X-CSRF-Token': decodeURIComponent(csrf)},
+        credentials:'same-origin',
+        body:'{}'
+      });
+      const d = await r.json();
+      if(!r.ok){ alert('Error: ' + (d.error || r.status)); return; }
+      alert('✓ Auto-asignación HOY\\n· ' + (d.asignadas||0) + ' de ' + (d.total||0) + ' producciones procesadas\\n· ' + ((d.fallidas||[]).length) + ' fallaron');
+      if(typeof cmCargarEquipo === 'function') cmCargarEquipo();
+      if(typeof renderCentroMando === 'function') renderCentroMando();
+    }catch(e){
+      alert('Error: ' + (e.message || e));
     }
   }
 
@@ -18150,6 +18205,24 @@ async function ckMarcar(itemId, estado){
       // Limpiar campos
       ['b2b-cliente-id','b2b-cliente-nombre','b2b-cantidad','b2b-fecha','b2b-notas'].forEach(id => document.getElementById(id).value='');
       document.getElementById('b2b-producto').value = '';
+      // Sebastián 19-may-2026: mostrar warning de MP faltante (non-blocking).
+      // El pedido YA quedó creado · el aviso es para que decidan generar SOL
+      // o ajustar cantidad antes de producir.
+      let msg = '✓ Pedido creado · ' + (d.kg_b2b || 0) + 'kg';
+      if (d.mp_check && d.mp_check.mps_faltantes && d.mp_check.mps_faltantes.length > 0) {
+        msg += '\\n\\n⚠️ ATENCIÓN · faltan ' + d.mp_check.mps_faltantes.length + ' MP(s):';
+        d.mp_check.mps_faltantes.slice(0, 6).forEach(m => {
+          msg += '\\n  · ' + (m.material_nombre || m.material_id) +
+                 ' · falta ' + (m.faltante_g || 0).toLocaleString() + ' g';
+        });
+        if (d.mp_check.mps_faltantes.length > 6) {
+          msg += '\\n  · …y ' + (d.mp_check.mps_faltantes.length - 6) + ' más';
+        }
+        msg += '\\n\\nGenerá solicitudes de compra desde "Abastecimiento" o ajustá cantidad.';
+      } else if (d.mp_check && d.mp_check.sin_formula) {
+        msg += '\\n\\n⚠️ El producto no tiene fórmula cargada · no se pudo chequear MP.';
+      }
+      alert(msg);
       cargarNecesidades();
     } catch(e) { alert('Error: ' + e.message); }
   }
