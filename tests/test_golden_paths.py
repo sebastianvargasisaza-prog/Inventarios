@@ -6884,6 +6884,116 @@ def test_golden_plan_pedidos_b2b_crud(app, db_clean):
 
 
 # ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH PLAN-A2 · POST /api/pedidos-b2b devuelve mp_check
+# Sebastián 19-may-2026: el pedido B2B avisa si faltan MPs · non-blocking.
+# ═══════════════════════════════════════════════════════════════════
+def test_golden_plan_pedido_b2b_mp_check(app, db_clean):
+    """Crear pedido B2B con MP insuficiente · 201 OK + mps_faltantes.
+
+    El check NO bloquea creación · solo avisa. El usuario decide si crea
+    igual + genera SOL a Compras, o ajusta cantidad. Protege la regla:
+    'cualquier pedido B2B debe informar si hay MP para producirlo'.
+    """
+    # Limpieza
+    for sql in (
+        "DELETE FROM pedidos_b2b WHERE cliente_id = 'TEST_CLI_MPCHECK'",
+        "DELETE FROM movimientos WHERE material_id = 'MPTESTMPCHECK01'",
+        "DELETE FROM formula_items WHERE producto_nombre = 'TEST_PROD_MPCHECK'",
+        "DELETE FROM formula_headers WHERE producto_nombre = 'TEST_PROD_MPCHECK'",
+        "DELETE FROM maestro_mps WHERE codigo_mp = 'MPTESTMPCHECK01'",
+    ):
+        _exec(sql)
+
+    # Fórmula: lote de 10 kg necesita 5000 g de la MP test.
+    _exec("INSERT INTO maestro_mps (codigo_mp, nombre_comercial, activo) "
+          "VALUES ('MPTESTMPCHECK01','MP Test mp_check',1)")
+    _exec("INSERT INTO formula_headers (producto_nombre, lote_size_kg, activo) "
+          "VALUES ('TEST_PROD_MPCHECK',10,1)")
+    _exec("INSERT INTO formula_items (producto_nombre, material_id, "
+          "material_nombre, cantidad_g_por_lote) VALUES "
+          "('TEST_PROD_MPCHECK','MPTESTMPCHECK01','MP Test mp_check',5000)")
+
+    cs = _login(app, 'sebastian')
+
+    # Caso 1: SIN stock · pedido se crea pero mp_check reporta faltante.
+    # 200 uds × 30 ml = 6 kg → necesita 3000 g de la MP, no hay stock.
+    r1 = cs.post('/api/pedidos-b2b', json={
+        'cliente_id': 'TEST_CLI_MPCHECK',
+        'cliente_nombre': 'Cliente mp_check',
+        'producto_nombre': 'TEST_PROD_MPCHECK',
+        'cantidad_uds': 200,
+        'ml_unidad': 30,
+        'fecha_estimada': '2026-06-15',
+    }, headers=csrf_headers())
+    assert r1.status_code == 201, f'BUG: pedido NO se creó · {r1.status_code} {r1.data}'
+    d1 = r1.get_json()
+    assert d1.get('mp_check') is not None, 'BUG: respuesta sin mp_check'
+    assert d1['mp_check']['ok'] is False, 'BUG: mp_check.ok debería ser False (no hay stock)'
+    faltantes = d1['mp_check']['mps_faltantes']
+    assert len(faltantes) == 1
+    assert faltantes[0]['material_id'] == 'MPTESTMPCHECK01'
+    # 6kg × 5000g/10kg = 3000g requeridos, 0g disponible → falta 3000g
+    assert abs(faltantes[0]['faltante_g'] - 3000) < 1, \
+        f'BUG: faltante_g esperado ~3000, obtuvo {faltantes[0]["faltante_g"]}'
+
+    # Caso 2: CON stock suficiente · mp_check.ok = True.
+    _exec("INSERT INTO movimientos (material_id, material_nombre, cantidad, "
+          "tipo, fecha, lote) VALUES ('MPTESTMPCHECK01','MP Test mp_check',"
+          "10000,'Entrada','2026-05-01','LOTE-MPCHECK')")
+    r2 = cs.post('/api/pedidos-b2b', json={
+        'cliente_id': 'TEST_CLI_MPCHECK',
+        'cliente_nombre': 'Cliente mp_check',
+        'producto_nombre': 'TEST_PROD_MPCHECK',
+        'cantidad_uds': 100,
+        'ml_unidad': 30,
+        'fecha_estimada': '2026-06-20',
+    }, headers=csrf_headers())
+    assert r2.status_code == 201
+    d2 = r2.get_json()
+    assert d2['mp_check']['ok'] is True, \
+        f'BUG: mp_check debería ser ok con stock 10kg · {d2["mp_check"]}'
+    assert len(d2['mp_check']['mps_faltantes']) == 0
+
+    # Cleanup
+    for sql in (
+        "DELETE FROM pedidos_b2b WHERE cliente_id = 'TEST_CLI_MPCHECK'",
+        "DELETE FROM movimientos WHERE material_id = 'MPTESTMPCHECK01'",
+        "DELETE FROM formula_items WHERE producto_nombre = 'TEST_PROD_MPCHECK'",
+        "DELETE FROM formula_headers WHERE producto_nombre = 'TEST_PROD_MPCHECK'",
+        "DELETE FROM maestro_mps WHERE codigo_mp = 'MPTESTMPCHECK01'",
+    ):
+        _exec(sql)
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH PLAN-A3 · /api/plan/alertas-ia devuelve estructura válida
+# Sebastián 19-may-2026: el banner del calendario depende de este endpoint.
+# ═══════════════════════════════════════════════════════════════════
+def test_golden_plan_alertas_ia(app, db_clean):
+    """El endpoint responde 200 con estructura {alertas, total, por_severidad}.
+
+    No verificamos contenido específico porque depende del estado real de
+    Animus DTC + B2B activos. Sí verificamos que la forma sea consistente
+    para que el frontend no se rompa.
+    """
+    cs = _login(app, 'sebastian')
+    r = cs.get('/api/plan/alertas-ia')
+    assert r.status_code == 200, f'BUG: {r.status_code} {r.data}'
+    d = r.get_json()
+    assert 'alertas' in d and isinstance(d['alertas'], list)
+    assert 'total' in d and d['total'] == len(d['alertas'])
+    assert 'por_severidad' in d
+    for sev in ('critica', 'advertencia', 'info'):
+        assert sev in d['por_severidad']
+    # Cada alerta tiene los campos mínimos
+    for a in d['alertas']:
+        assert 'tipo' in a
+        assert 'severidad' in a and a['severidad'] in ('critica','advertencia','info')
+        assert 'titulo' in a and a['titulo']
+        assert 'detalle' in a
+
+
+# ═══════════════════════════════════════════════════════════════════
 # GOLDEN PATH PLAN-B · /api/plan/necesidades agrega Animus + B2B
 # ═══════════════════════════════════════════════════════════════════
 def test_golden_plan_necesidades_agrega_animus_y_b2b(app, db_clean):

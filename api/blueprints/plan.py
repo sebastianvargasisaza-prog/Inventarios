@@ -97,6 +97,101 @@ def listar_pedidos_b2b():
     return jsonify({"items": items, "total": len(items)})
 
 
+def _check_mp_para_pedido_b2b(c, producto, kg_b2b):
+    """Verifica si hay MP suficiente para producir kg_b2b del producto.
+
+    Sebastián 19-may-2026: queremos avisar al crear pedido B2B si faltan MP,
+    sin bloquear la creación. El usuario decide si crea igual + genera SOL,
+    o ajusta cantidad antes.
+
+    Reusa el patrón de /api/plan/factibilidad pero focalizado a UN pedido:
+    explota la fórmula del producto por los kg pedidos y compara con stock
+    actual = SUM(movimientos) sin descontar otras producciones programadas
+    (heurística simple · si querés precisión, mirá /api/plan/factibilidad).
+
+    Returns dict:
+        {ok: bool, mps_faltantes: [{material_id, material_nombre,
+                                     necesario_g, disponible_g, faltante_g}],
+         sin_formula: bool, lote_size_kg, n_lotes}
+    """
+    if kg_b2b <= 0:
+        return {"ok": True, "mps_faltantes": [], "sin_formula": False,
+                "lote_size_kg": 0, "n_lotes": 0}
+
+    # Fórmula + lote_size del producto
+    items = c.execute(
+        """SELECT fi.material_id,
+                  COALESCE(fi.material_nombre,'') AS mat_nom,
+                  COALESCE(fi.cantidad_g_por_lote,0) AS cant_g,
+                  COALESCE(fi.porcentaje,0) AS pct,
+                  COALESCE(fh.lote_size_kg,0) AS lote_kg
+           FROM formula_items fi
+           JOIN formula_headers fh ON fh.producto_nombre = fi.producto_nombre
+           WHERE COALESCE(fh.activo,1)=1
+             AND UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(?))
+             AND fi.material_id IS NOT NULL AND TRIM(fi.material_id)!=''""",
+        (producto,),
+    ).fetchall()
+    if not items:
+        return {"ok": True, "mps_faltantes": [], "sin_formula": True,
+                "lote_size_kg": 0, "n_lotes": 0}
+
+    lote_kg = float(items[0][4] or 0)
+    n_lotes = kg_b2b / lote_kg if lote_kg > 0 else 1.0
+
+    # Necesidad por MP
+    requeridos = []  # [(material_id, nombre, gramos)]
+    for mid_raw, mnom, cant_g, pct, _lk in items:
+        mid = str(mid_raw).strip()
+        if mid == 'MPAGUALI01':  # agua = consumible infinito
+            continue
+        nec_g = float(cant_g or 0)
+        if nec_g <= 0 and pct and lote_kg > 0:
+            nec_g = (float(pct) / 100.0) * lote_kg * 1000.0
+        if nec_g <= 0:
+            continue
+        requeridos.append((mid, str(mnom)[:60], round(nec_g * n_lotes, 2)))
+
+    if not requeridos:
+        return {"ok": True, "mps_faltantes": [], "sin_formula": False,
+                "lote_size_kg": lote_kg, "n_lotes": round(n_lotes, 3)}
+
+    # Stock actual = SUM(movimientos) por material_id requerido
+    ids = [r[0] for r in requeridos]
+    placeholders = ','.join(['?'] * len(ids))
+    stock_g = {}
+    for r in c.execute(
+        f"""SELECT material_id,
+                   COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA')
+                                     THEN cantidad ELSE -cantidad END),0)
+            FROM movimientos
+            WHERE material_id IN ({placeholders})
+            GROUP BY material_id""",
+        ids,
+    ).fetchall():
+        stock_g[str(r[0]).strip()] = max(float(r[1] or 0), 0.0)
+
+    # Comparar
+    faltantes = []
+    for mid, mnom, need in requeridos:
+        disp = stock_g.get(mid, 0.0)
+        if need - disp > 0.01:
+            faltantes.append({
+                "material_id": mid,
+                "material_nombre": mnom,
+                "necesario_g": round(need, 1),
+                "disponible_g": round(disp, 1),
+                "faltante_g": round(need - disp, 1),
+            })
+    return {
+        "ok": len(faltantes) == 0,
+        "mps_faltantes": faltantes,
+        "sin_formula": False,
+        "lote_size_kg": lote_kg,
+        "n_lotes": round(n_lotes, 3),
+    }
+
+
 @bp.route("/api/pedidos-b2b", methods=["POST"])
 def crear_pedido_b2b():
     user, err = _require_admin_or_compras()
@@ -171,8 +266,18 @@ def crear_pedido_b2b():
             pass
         integracion = {"error": str(_e)[:200]}
 
+    # Sebastián 19-may-2026: check de MP non-blocking · avisa si faltan MPs
+    # para producir el pedido. No bloquea la creación · el usuario decide si
+    # ajusta cantidad o genera SOL a Compras. Si el check falla, sigue OK.
+    mp_check = None
+    try:
+        mp_check = _check_mp_para_pedido_b2b(cur, producto, kg_b2b)
+    except Exception as _e:
+        mp_check = {"ok": True, "error": str(_e)[:200], "mps_faltantes": []}
+
     return jsonify({"ok": True, "id": pid, "kg_b2b": kg_b2b,
-                    "integracion_plan": integracion}), 201
+                    "integracion_plan": integracion,
+                    "mp_check": mp_check}), 201
 
 
 def _integrar_pedido_b2b_al_plan(cur, pedido_id, producto, kg_b2b,
@@ -505,6 +610,179 @@ def plan_necesidades():
             "cobertura_dias_alerta": cob_alerta,
             "cobertura_dias_vigilar": cob_vigilar,
             "ventana_ventas": ventana,
+        },
+    })
+
+
+@bp.route("/api/plan/alertas-ia", methods=["GET"])
+def plan_alertas_ia():
+    """Alertas IA proactivas para el calendario · Sebastián 19-may-2026.
+
+    Banner accionable arriba del Calendario EOS. Consolida 3 tipos:
+
+    1. **cobertura_critica** · producto Animus DTC con urgencia CRITICO
+       y SIN lote programado en horizonte próximo · "se va a agotar"
+    2. **adelantar_lote** · producto con urgencia URGENTE cuyo próximo
+       lote está MÁS allá del horizonte de cobertura · "adelantar"
+    3. **mp_faltante_b2b** · pedido B2B activo con MP insuficiente · "compra"
+
+    Cada alerta trae acción sugerida + payload para que el frontend
+    pueda actuar (ej. abrir modal de generar lote prefilled).
+
+    SOLO LECTURA · no modifica nada.
+    """
+    err = _require_login()
+    if err:
+        return err
+    from datetime import timedelta as _td
+
+    try:
+        cob_critico = max(7, int(request.args.get("cobertura_dias_minimo", 20)))
+        cob_alerta = max(cob_critico + 1, int(request.args.get("cobertura_dias_alerta", 25)))
+        cob_vigilar = max(cob_alerta + 1, int(request.args.get("cobertura_dias_vigilar", 45)))
+        ventana = max(30, min(180, int(request.args.get("ventana_ventas", 60))))
+    except Exception:
+        cob_critico, cob_alerta, cob_vigilar, ventana = 20, 25, 45, 60
+
+    conn = get_db()
+    c = conn.cursor()
+
+    alertas = []
+
+    # ─── 1+2 · Animus DTC: CRITICO / URGENTE / adelantar ───────────────
+    productos_animus = _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar)
+
+    hoy = _hoy_colombia()
+    horizonte_str = (hoy + _td(days=cob_alerta * 2)).isoformat()
+
+    # próximo lote programado por producto (activo · futuro)
+    prox_lote = {}
+    for r in c.execute(
+        """SELECT UPPER(TRIM(producto)) AS p,
+                  MIN(substr(fecha_programada,1,10)) AS prox_fecha
+           FROM produccion_programada
+           WHERE LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado')
+             AND substr(fecha_programada,1,10) >= ?
+           GROUP BY UPPER(TRIM(producto))""",
+        (hoy.isoformat(),),
+    ).fetchall():
+        prox_lote[r[0]] = r[1]
+
+    for p in productos_animus:
+        urg = p.get("urgencia") or ""
+        nombre = p.get("producto_nombre") or ""
+        key = nombre.upper().strip()
+        prox = prox_lote.get(key)
+        cob = p.get("dias_cobertura")
+        cob_txt = f"{cob}d" if cob is not None else "sin datos"
+
+        if urg == "CRITICO":
+            # Si NO hay lote programado o el lote es muy lejano → alerta crítica
+            if not prox or prox > horizonte_str:
+                alertas.append({
+                    "tipo": "cobertura_critica",
+                    "severidad": "critica",
+                    "titulo": f"🚨 {nombre} · stock se agota en {cob_txt}",
+                    "detalle": (
+                        f"Cobertura {cob_txt} (≤{cob_critico}d crítico). "
+                        + (f"Próximo lote programado: {prox}" if prox else "Sin lote programado.")
+                        + f" Recomendado: producir {p.get('kg_a_producir', 0):.0f}kg ya."
+                    ),
+                    "accion": "generar_lote",
+                    "payload": {
+                        "producto": nombre,
+                        "kg_sugerido": p.get("kg_a_producir", 0),
+                        "fecha_sugerida": hoy.isoformat(),
+                    },
+                })
+        elif urg == "URGENTE":
+            # Si el lote programado es MÁS lejos que la cobertura → adelantar
+            if prox and cob is not None:
+                cob_dia = (hoy + _td(days=int(cob))).isoformat()
+                if prox > cob_dia:
+                    alertas.append({
+                        "tipo": "adelantar_lote",
+                        "severidad": "advertencia",
+                        "titulo": f"⏩ {nombre} · adelantar lote",
+                        "detalle": (
+                            f"Cobertura {cob_txt}, pero próximo lote es el {prox}. "
+                            f"Recomendado adelantarlo a {cob_dia} o antes."
+                        ),
+                        "accion": "adelantar",
+                        "payload": {
+                            "producto": nombre,
+                            "fecha_actual": prox,
+                            "fecha_sugerida": cob_dia,
+                        },
+                    })
+            elif not prox:
+                alertas.append({
+                    "tipo": "cobertura_critica",
+                    "severidad": "advertencia",
+                    "titulo": f"⚠️ {nombre} · urgencia URGENTE sin lote programado",
+                    "detalle": (
+                        f"Cobertura {cob_txt} ({cob_critico+1}-{cob_alerta}d). "
+                        f"Recomendado: programar {p.get('kg_a_producir', 0):.0f}kg."
+                    ),
+                    "accion": "generar_lote",
+                    "payload": {
+                        "producto": nombre,
+                        "kg_sugerido": p.get("kg_a_producir", 0),
+                        "fecha_sugerida": hoy.isoformat(),
+                    },
+                })
+
+    # ─── 3 · Pedidos B2B activos con MP faltante ──────────────────────
+    for r in c.execute(
+        """SELECT id, cliente_nombre, producto_nombre,
+                  COALESCE(cantidad_uds,0), COALESCE(ml_unidad,30),
+                  fecha_estimada
+           FROM pedidos_b2b
+           WHERE estado IN ('pendiente','confirmado','en_produccion')
+           ORDER BY fecha_estimada ASC""",
+    ).fetchall():
+        pid, cli, prod_b2b, uds, ml, fecha = r
+        kg = round((uds * ml) / 1000.0, 2)
+        try:
+            chk = _check_mp_para_pedido_b2b(c, prod_b2b, kg)
+        except Exception:
+            continue
+        if not chk["ok"] and chk["mps_faltantes"]:
+            n_mps = len(chk["mps_faltantes"])
+            principales = ", ".join(
+                m["material_nombre"] or m["material_id"]
+                for m in chk["mps_faltantes"][:3]
+            )
+            if n_mps > 3:
+                principales += f" (+{n_mps - 3} más)"
+            alertas.append({
+                "tipo": "mp_faltante_b2b",
+                "severidad": "advertencia",
+                "titulo": f"📦 Pedido B2B {cli} · faltan MPs",
+                "detalle": (
+                    f"{prod_b2b} ({kg}kg) para el {fecha or 'sin fecha'}. "
+                    f"Faltan {n_mps} MP(s): {principales}. "
+                    f"Generá solicitudes de compra desde Abastecimiento."
+                ),
+                "accion": "ver_abastecimiento",
+                "payload": {
+                    "pedido_id": pid,
+                    "producto": prod_b2b,
+                    "mps_faltantes": chk["mps_faltantes"][:10],
+                },
+            })
+
+    # Ordenar: crítica primero, luego advertencia, luego info
+    orden_sev = {"critica": 0, "advertencia": 1, "info": 2}
+    alertas.sort(key=lambda a: (orden_sev.get(a["severidad"], 9), a["titulo"]))
+
+    return jsonify({
+        "alertas": alertas,
+        "total": len(alertas),
+        "por_severidad": {
+            "critica": sum(1 for a in alertas if a["severidad"] == "critica"),
+            "advertencia": sum(1 for a in alertas if a["severidad"] == "advertencia"),
+            "info": sum(1 for a in alertas if a["severidad"] == "info"),
         },
     })
 
@@ -6556,6 +6834,9 @@ select,input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-si
 <div class="wrap">
 <a href="/modulos" style="color:#0f766e;font-weight:700;font-size:13px">&larr; Volver</a>
 
+<!-- Banner alertas IA · Sebastián 19-may-2026 · proactivas y accionables -->
+<div id="alertas-ia-wrap" style="display:none;margin-bottom:14px"></div>
+
 <div class="card">
   <h1>📅 Calendario EOS · Plan autónomo</h1>
   <div class="muted">Calendario propio · reemplaza Google Calendar · genera autoplan según ventas Shopify + lote_size del Excel + reglas operativas (festivos · lun-vie · max 2/día · grandes solos · Vit C/Triactive lun-mié)</div>
@@ -6699,6 +6980,8 @@ async function cargar(){
     // arranca meses adelante. Auto-saltar al primer mes con lotes.
     MES_OFFSET = _primerMesConLotesOffset();
     render();
+    // Sebastián 19-may-2026: cargar alertas IA en paralelo (no bloqueante).
+    if (typeof cargarAlertasIA === 'function') { cargarAlertasIA(); }
   } catch(e){
     // Sebastián 16-may-2026: error visible en el grid + botón reintentar
     // (antes solo alert · el grid quedaba en "Cargando…" para siempre).
@@ -6986,6 +7269,95 @@ function render(){
   renderListaSugerencias();
 }
 
+// ═══════ ALERTAS IA · Sebastián 19-may-2026 ═══════
+// Banner proactivo arriba del calendario · cobertura crítica, adelantar
+// lotes, pedidos B2B con MP faltante.
+async function cargarAlertasIA(){
+  const wrap = document.getElementById('alertas-ia-wrap');
+  if (!wrap) return;
+  try {
+    const r = await fetch('/api/plan/alertas-ia', {cache: 'no-store'});
+    if (!r.ok){ wrap.style.display = 'none'; return; }
+    const d = await r.json();
+    const al = d.alertas || [];
+    if (al.length === 0){
+      wrap.style.display = 'none';
+      return;
+    }
+    const SEV_STYLE = {
+      critica: {bg:'#fee2e2', border:'#dc2626', txt:'#991b1b'},
+      advertencia: {bg:'#fef3c7', border:'#ca8a04', txt:'#854d0e'},
+      info: {bg:'#dbeafe', border:'#1e40af', txt:'#1e40af'},
+    };
+    const totals = d.por_severidad || {};
+    let html = '<div style="background:linear-gradient(135deg,#0f172a,#1e293b);border-radius:12px;padding:12px 14px;color:#fff;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">';
+    html += '<div><span style="font-size:14px;font-weight:800">🤖 Alertas IA del Plan</span> <span style="font-size:11px;opacity:.85;margin-left:8px">' +
+      (totals.critica || 0) + ' crítica(s) · ' +
+      (totals.advertencia || 0) + ' advertencia(s) · ' +
+      (totals.info || 0) + ' info</span></div>';
+    html += '<button onclick="cargarAlertasIA()" style="background:rgba(255,255,255,.12);border:1px solid #fff;color:#fff;padding:4px 10px;border-radius:5px;font-size:11px;cursor:pointer">↻ Refrescar</button>';
+    html += '</div>';
+    al.forEach((a, idx) => {
+      const sev = SEV_STYLE[a.severidad] || SEV_STYLE.info;
+      const accionBtn = _alertaAccionBtn(a, idx);
+      html += '<div style="background:' + sev.bg + ';border-left:4px solid ' + sev.border +
+        ';border-radius:6px;padding:10px 14px;margin-bottom:6px;color:' + sev.txt +
+        ';display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">';
+      html += '<div style="flex:1;min-width:240px"><div style="font-weight:700;font-size:13px">' +
+        escapeHtml(a.titulo) + '</div>';
+      html += '<div style="font-size:11px;margin-top:2px;opacity:.95">' + escapeHtml(a.detalle) + '</div></div>';
+      html += '<div style="display:flex;gap:5px">';
+      if (accionBtn) html += accionBtn;
+      html += '<button onclick="this.parentElement.parentElement.style.display=&quot;none&quot;" style="background:transparent;border:1px solid currentColor;color:inherit;padding:3px 8px;border-radius:4px;font-size:11px;cursor:pointer" title="Ocultar esta alerta">✕</button>';
+      html += '</div></div>';
+    });
+    wrap.innerHTML = html;
+    wrap.style.display = 'block';
+  } catch(e){
+    console.warn('cargarAlertasIA falló:', e);
+    wrap.style.display = 'none';
+  }
+}
+
+function _alertaAccionBtn(a, idx){
+  if (a.accion === 'generar_lote' && a.payload){
+    const p = a.payload;
+    const onClick = 'abrirGenerarDesdeAlerta(&quot;' + escapeHtml(p.producto || '') +
+                    '&quot;,' + (p.kg_sugerido || 0) +
+                    ',&quot;' + escapeHtml(p.fecha_sugerida || '') + '&quot;)';
+    return '<button onclick="' + onClick +
+           '" style="background:#0f766e;color:#fff;border:none;padding:5px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">⚡ Programar</button>';
+  }
+  if (a.accion === 'ver_abastecimiento'){
+    return '<button onclick="window.parent && window.parent.switchProgTab ? window.parent.switchProgTab(&quot;abastecimiento&quot;) : window.open(&quot;/dashboard&quot;,&quot;_top&quot;)" style="background:#7c3aed;color:#fff;border:none;padding:5px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">📦 Abastecimiento</button>';
+  }
+  return '';
+}
+
+function abrirGenerarDesdeAlerta(producto, kg, fecha){
+  // Reusa el modal generar producción si existe en parent · sino fallback
+  if (window.parent && typeof window.parent.abrirGenerarProduccion === 'function'){
+    try { window.parent.abrirGenerarProduccion(producto, kg, fecha); return; } catch(e){}
+  }
+  // Fallback · abrir cargar lote vía endpoint admin lote-manual
+  const ok = confirm('¿Programar lote de ' + producto + '?\\n\\n' +
+                     kg + 'kg · fecha sugerida ' + fecha +
+                     '\\n\\nSe creará como FIJO (eos_plan).');
+  if (!ok) return;
+  fetch('/api/plan/lote-manual', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json', 'X-CSRF-Token': (document.cookie.match(/(?:^|; )csrf_token=([^;]*)/)||['',''])[1] || ''},
+    body: JSON.stringify({producto_nombre: producto, kg: kg, fecha: fecha}),
+  }).then(r => r.json()).then(d => {
+    if (d.ok || d.id) {
+      alert('✓ Lote programado · ID ' + (d.id || '?'));
+      cargar();
+    } else {
+      alert('No se pudo programar · ' + (d.error || 'usá Necesidades para crearlo manual'));
+    }
+  }).catch(e => alert('Error: ' + e.message));
+}
+
 function renderListaSugerencias(){
   const filtroSoloIA = document.getElementById('filtro-solo-ia')?.checked || false;
   const itemsAll = (PLAN_DATA.plan.plan_items || []);
@@ -7240,6 +7612,48 @@ function ignorarSugerenciaModal(producto, fecha){
   }
 }
 
+// Parsea observaciones del lote para extraer aportes B2B · Sebastián 19-may-2026.
+// Devuelve { kg_total, entradas: [{cliente, kg, color}], kg_residual_dtc }
+// Patrones soportados (de _integrar_pedido_b2b_al_plan):
+//   · "+Xkg B2B <Cliente> (pedido #N)" → suma a lote canónico
+//   · "Pedido B2B <Cliente> · #N · entrega estimada ..." → lote dedicado eos_b2b
+function _parsearComposicionLote(loteData, kgTotal){
+  if (!loteData) return null;
+  const obs = String(loteData.observaciones || '');
+  const origen = String(loteData.origen || '');
+  const kgT = parseFloat(kgTotal) || 0;
+  const entradas = [];
+  const PALETA = ['#db2777', '#7c3aed', '#0891b2', '#ca8a04', '#dc2626', '#16a34a'];
+  let idx = 0;
+  const _color = () => PALETA[(idx++) % PALETA.length];
+
+  // 1) Lote dedicado eos_b2b: 100% del kg al cliente del pedido
+  if (origen === 'eos_b2b'){
+    const m = obs.match(/Pedido B2B (.+?) · #(\d+)/);
+    if (m){
+      entradas.push({ cliente: m[1].trim(), kg: kgT, color: _color() });
+      return { kg_total: kgT, entradas, kg_residual_dtc: 0 };
+    }
+  }
+
+  // 2) Lote canónico con sumados: extraer cada "+Xkg B2B <Cliente> (pedido #N)"
+  const reSum = /\+(\d+(?:\.\d+)?)\s*kg\s+B2B\s+(.+?)\s*\(pedido\s+#(\d+)\)/gi;
+  let mm;
+  const aportadoTotal = { value: 0 };
+  while ((mm = reSum.exec(obs)) !== null){
+    const kg = parseFloat(mm[1]) || 0;
+    const cli = mm[2].trim();
+    entradas.push({ cliente: cli, kg: kg, color: _color() });
+    aportadoTotal.value += kg;
+  }
+  // Lo que queda (total − B2B) es DTC / Animus
+  const kgDTC = Math.max(kgT - aportadoTotal.value, 0);
+  if (kgDTC > 0.01){
+    entradas.unshift({ cliente: 'Animus DTC', kg: kgDTC, color: '#0f766e' });
+  }
+  return { kg_total: kgT, entradas, kg_residual_dtc: kgDTC };
+}
+
 async function abrirLoteModal(id, producto, fecha, kg){
   document.getElementById('lote-titulo').textContent = '📅 ' + producto;
   document.getElementById('lote-body').innerHTML = '<div class="muted" style="padding:30px;text-align:center">Cargando datos del producto…</div>';
@@ -7355,6 +7769,32 @@ async function abrirLoteModal(id, producto, fecha, kg){
   html += '<div class="metric-card"><div class="metric-lbl">Stock actual</div><div class="metric-val">' + stockUds + ' uds</div><div class="metric-sub">' + stockKg.toFixed(1) + ' kg</div></div>';
   html += '<div class="metric-card"><div class="metric-lbl">Cobertura</div><div class="metric-val">' + (diasCob != null ? diasCob + 'd' : '—') + '</div><div class="metric-sub">' + (info.urgencia || '') + '</div></div>';
   html += '</div>';
+
+  // Sección 1.5: Composición del lote · Sebastián 19-may-2026
+  // "extensión de marca · la misma producción sirve para varios clientes".
+  // Parsea observaciones para extraer aportes B2B y muestra el desglose.
+  try {
+    const loteData = (PLAN_DATA.agendadas || []).find(a => a.id === id);
+    const composicion = _parsearComposicionLote(loteData, kg);
+    if (composicion && composicion.entradas.length > 0){
+      html += '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;margin:8px 0">';
+      html += '<div style="font-size:12px;font-weight:700;color:#0f766e;margin-bottom:6px">👥 Composición del lote · este lote atiende a:</div>';
+      html += '<table style="width:100%;font-size:11px;border-collapse:collapse">';
+      composicion.entradas.forEach(e => {
+        const pct = composicion.kg_total > 0 ? Math.round((e.kg / composicion.kg_total) * 100) : 0;
+        html += '<tr style="border-top:1px solid #e2e8f0">';
+        html += '<td style="padding:4px 8px"><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:' + e.color + ';margin-right:6px;vertical-align:middle"></span>' + escapeHtml(e.cliente) + '</td>';
+        html += '<td style="padding:4px 8px;text-align:right;font-weight:600">' + e.kg.toFixed(2) + ' kg</td>';
+        html += '<td style="padding:4px 8px;text-align:right;color:#64748b">' + pct + '%</td>';
+        html += '</tr>';
+      });
+      html += '</table>';
+      if (composicion.kg_residual_dtc > 0.01){
+        html += '<div style="font-size:10px;color:#64748b;margin-top:4px;font-style:italic">DTC (Animus / inventario) = total − suma B2B</div>';
+      }
+      html += '</div>';
+    }
+  } catch(e){ console.warn('composicion lote falló:', e); }
 
   // Sección 2: Diagnóstico fecha programada
   if (diagFechaTxt){
