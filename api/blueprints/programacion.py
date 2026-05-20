@@ -11273,6 +11273,67 @@ def _crear_limpieza_post_produccion(c, area_id, area_codigo, fecha_produccion,
         return None
 
 
+@bp.route('/api/planta/auto-asignar-hoy', methods=['POST'])
+def auto_asignar_hoy_bulk():
+    """Re-corre la auto-asignación (área + operarios) para todas las
+    producciones de HOY que NO sean Fijas (eos_plan / eos_b2b /
+    eos_retroactivo). El cron de las 7am hace lo mismo automático,
+    pero esto permite re-disparar a demanda · Alejandro lo usa cuando
+    cambia algo de la planta y quiere re-armar el día.
+
+    Sebastián 19-may-2026 (Operación Live · pieza 5).
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    try:
+        from blueprints.compras import ADMIN_USERS as _ADMIN, COMPRAS_ACCESS as _ACC
+    except Exception:
+        _ADMIN = ('sebastian', 'alejandro')
+        _ACC = set()
+    if user not in (set(_ADMIN) | set(_ACC)):
+        return jsonify({'error': 'Solo admin / Compras'}), 403
+
+    conn = get_db()
+    c = conn.cursor()
+    rows = c.execute("""
+        SELECT id, producto FROM produccion_programada
+        WHERE date(fecha_programada) = date('now', '-5 hours')
+          AND COALESCE(estado,'programado') NOT IN ('completado','cancelado')
+          AND COALESCE(origen,'') NOT IN ('eos_plan','eos_b2b','eos_retroactivo')
+    """).fetchall()
+    asignadas = 0
+    fallidas = []
+    detalles = []
+    for pid, prod in rows:
+        try:
+            res = _auto_asignar_produccion(c, pid, user)
+            if res.get('ok'):
+                asignadas += 1
+                if res.get('cambios'):
+                    detalles.append({'id': pid, 'producto': prod,
+                                     'cambios': res.get('cambios', [])})
+            else:
+                fallidas.append({'id': pid, 'producto': prod,
+                                 'error': res.get('error')})
+        except Exception as _e:
+            fallidas.append({'id': pid, 'producto': prod,
+                             'error': str(_e)[:120]})
+    conn.commit()
+    try:
+        audit_log(c, usuario=user, accion='AUTO_ASIGNAR_HOY_BULK',
+                  tabla='produccion_programada', registro_id='bulk',
+                  despues={'asignadas': asignadas, 'fallidas': len(fallidas),
+                           'total': len(rows)},
+                  detalle=f'Auto-asignación bulk HOY · {asignadas}/{len(rows)} OK · '
+                          f'respeta Fijo')
+    except Exception as _e:
+        logging.getLogger('programacion').warning(
+            f'audit AUTO_ASIGNAR_HOY_BULK fallo: {_e}')
+    return jsonify({'ok': True, 'asignadas': asignadas, 'total': len(rows),
+                    'fallidas': fallidas, 'detalles': detalles[:30]})
+
+
 def _auto_asignar_produccion(c, produccion_id, user='auto-ia'):
     """Pipeline completo de auto-asignación IA para una producción:
       1. Selecciona área óptima por lote_kg (tanque más chico que aguante)

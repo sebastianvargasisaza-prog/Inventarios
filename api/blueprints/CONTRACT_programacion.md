@@ -84,6 +84,9 @@
 - `POST /api/programacion/checklist/sync-calendar` · sync · `?force_mirror=true`
 - `DELETE /api/programacion/produccion-programada/<id>/borrar` · admin
 - `GET  /api/programacion/debug-producto/<producto>` · diagnóstico admin
+- `POST /api/planta/auto-asignar-hoy` · admin · bulk re-asignación IA del día
+  (área + 4 operarios). Excluye orígenes Fijos · respeta lo Fijo · escribe
+  `auto_asignacion_log` y `audit_log` (`AUTO_ASIGNAR_HOY_BULK`).
 
 ---
 
