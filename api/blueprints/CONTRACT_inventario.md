@@ -77,6 +77,14 @@
   `;`). 4 columnas: codigo · nombre comercial · nombre INCI · tipo · solo
   activas · NO expone precio / proveedor / stock (uso de planeación)
 - `GET  /api/proveedores-unicos` · datalist autocomplete
+- `GET  /api/lotes` · listado lotes MP con stock > 0 (paginación opcional
+  via `?limit=N&offset=N`, `?solo_criticos=1` para vencidos/<30d)
+- `GET  /api/lotes/<material_id>/<lote>/movimientos` · historial del lote
+  específico server-side, ≤ 500 filas, acepta `_SIN_LOTE_` como marcador
+  · Sebastián 20-may-2026 Sprint Bodega MP PRO (antes Historial bajaba
+  todos los movimientos y filtraba en JS).
+- `GET  /api/dashboard/insights` · widgets Dashboard PRO #2 (Planta AHORA,
+  mes actual, stats extra) en una sola llamada
 - `POST /api/movimientos` · INSERT recepción/salida
 - `GET  /api/conteo/estanterias` · agrupación por estantería
 - `GET  /api/conteo/materiales` · MPs en estantería

@@ -1873,6 +1873,43 @@ def get_lotes():
             )
     return jsonify(response)
 
+@bp.route('/api/lotes/<material_id>/<path:lote>/movimientos', methods=['GET'])
+def get_lote_movimientos(material_id, lote):
+    """Sprint Bodega MP PRO · 20-may-2026 · Sebastián.
+
+    Devuelve los movimientos de UN lote específico (material_id + lote).
+    Antes la UI llamaba `/api/movimientos` que trae TODA la tabla y
+    filtraba en JS · perf horrible con miles de filas.
+
+    Acepta `_SIN_LOTE_` como marcador para movimientos sin lote.
+    """
+    u, err, code = _require_session()
+    if err:
+        return err, code
+    conn = get_db()
+    c = conn.cursor()
+    lote_real = '' if lote == '_SIN_LOTE_' else lote
+    rows = c.execute(
+        """SELECT id, material_id, material_nombre, cantidad, tipo, lote,
+                  fecha, observaciones, operador, proveedor
+           FROM movimientos
+           WHERE material_id = ? AND COALESCE(lote,'') = ?
+           ORDER BY fecha DESC, id DESC
+           LIMIT 500""",
+        (material_id, lote_real),
+    ).fetchall()
+    items = [{
+        'id': r[0], 'material_id': r[1] or '',
+        'material_nombre': r[2] or '',
+        'cantidad': float(r[3] or 0), 'tipo': r[4] or '',
+        'lote': r[5] or '', 'fecha': r[6] or '',
+        'observaciones': r[7] or '', 'operador': r[8] or '',
+        'proveedor': r[9] or '',
+    } for r in rows]
+    return jsonify({'movimientos': items, 'total': len(items),
+                    'material_id': material_id, 'lote': lote_real})
+
+
 @bp.route('/api/proveedores-unicos', methods=['GET'])
 def proveedores_unicos():
     """Lista de proveedores únicos para autocompletado en edición de lote.

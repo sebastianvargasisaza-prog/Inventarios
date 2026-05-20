@@ -7310,6 +7310,58 @@ def test_golden_portal_b2b_flujo_completo(app, db_clean):
     _exec("DELETE FROM portal_clientes_credenciales WHERE email LIKE 'test_portal_%'")
 
 
+def test_golden_lote_movimientos_filtro_server_side(app, db_clean):
+    """Sprint Bodega MP PRO · 20-may-2026 fix #1+#14.
+
+    Antes Historial del lote bajaba TODOS los movimientos y filtraba en
+    JS (perf horrible). Ahora endpoint GET /api/lotes/<mid>/<lote>/movimientos
+    filtra server-side.
+    """
+    _exec("DELETE FROM movimientos WHERE material_id LIKE 'TEST_LMV_%'")
+    _exec("""INSERT INTO movimientos
+             (material_id, material_nombre, cantidad, tipo, lote, fecha, observaciones, operador)
+             VALUES ('TEST_LMV_AAA','Material A',100,'Entrada','LOT-001',
+                     datetime('now','-2 days'),'rec inicial','testuser')""")
+    _exec("""INSERT INTO movimientos
+             (material_id, material_nombre, cantidad, tipo, lote, fecha, observaciones, operador)
+             VALUES ('TEST_LMV_AAA','Material A',30,'Salida','LOT-001',
+                     datetime('now','-1 days'),'uso prod','testuser')""")
+    _exec("""INSERT INTO movimientos
+             (material_id, material_nombre, cantidad, tipo, lote, fecha, observaciones, operador)
+             VALUES ('TEST_LMV_AAA','Material A',50,'Entrada','LOT-002',
+                     datetime('now','-1 days'),'rec extra','testuser')""")
+    _exec("""INSERT INTO movimientos
+             (material_id, material_nombre, cantidad, tipo, lote, fecha, observaciones, operador)
+             VALUES ('TEST_LMV_BBB','Material B',10,'Entrada','LOT-001',
+                     datetime('now'),'otro material','testuser')""")
+
+    with app.test_client() as cs_anon:
+        r1 = cs_anon.get('/api/lotes/TEST_LMV_AAA/LOT-001/movimientos')
+        assert r1.status_code == 401
+
+    cs = _login(app, 'sebastian')
+
+    r2 = cs.get('/api/lotes/TEST_LMV_AAA/LOT-001/movimientos')
+    assert r2.status_code == 200
+    d2 = r2.get_json()
+    assert d2['total'] == 2, f'BUG: esperaba 2 movs LOT-001, hay {d2["total"]}'
+    for m in d2['movimientos']:
+        assert m['material_id'] == 'TEST_LMV_AAA'
+        assert m['lote'] == 'LOT-001'
+
+    r3 = cs.get('/api/lotes/TEST_LMV_AAA/LOT-002/movimientos')
+    assert r3.status_code == 200
+    assert r3.get_json()['total'] == 1
+
+    r4 = cs.get('/api/lotes/TEST_LMV_BBB/LOT-001/movimientos')
+    assert r4.status_code == 200
+    d4 = r4.get_json()
+    assert d4['total'] == 1
+    assert d4['movimientos'][0]['material_nombre'] == 'Material B'
+
+    _exec("DELETE FROM movimientos WHERE material_id LIKE 'TEST_LMV_%'")
+
+
 def test_golden_dashboard_insights_estructura(app, db_clean):
     """Dashboard PRO #2 · 20-may-2026. /api/dashboard/insights consolida
     Planta AHORA + Mes actual + Stats extra para el Dashboard.

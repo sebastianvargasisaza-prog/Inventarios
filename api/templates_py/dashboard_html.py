@@ -56,6 +56,18 @@ body { font-family:'Segoe UI',sans-serif; background:#F5F4F0; min-height:100vh; 
   [style*="grid-template-columns:1fr 1fr"] { grid-template-columns:1fr !important; }
   [style*="grid-template-columns:repeat(4"] { grid-template-columns:repeat(2,1fr) !important; }
 }
+/* Sprint Bodega MP PRO · 20-may-2026 fix #11 · vista compacta en mobile */
+@media (max-width: 700px) {
+  #stock .table { font-size:11px; }
+  #stock .table th, #stock .table td { padding:5px 4px; }
+  /* Ocultar columnas menos críticas: Tipo, Est., Pos. (siguen en Excel) */
+  #stock .table thead th:nth-child(4),
+  #stock .table tbody td:nth-child(4),
+  #stock .table thead th:nth-child(9),
+  #stock .table tbody td:nth-child(9),
+  #stock .table thead th:nth-child(10),
+  #stock .table tbody td:nth-child(10) { display:none; }
+}
 /* Dashboard PRO · responsive de grids inline (3 y 5 cols → 2 en tablet, 1 en mobile) */
 @media (max-width: 760px) {
   #dashboard [style*="grid-template-columns:repeat(3,1fr)"],
@@ -623,25 +635,40 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
   </div>
 
   <div id="stock" class="tab-content">
-    <h2>&#128230; Stock por Lote</h2>
+    <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+      <div>
+        <h2 style="margin:0">&#128230; Stock por Lote</h2>
+        <!-- Sprint Bodega MP PRO · 20-may-2026 fix #10: timestamp -->
+        <div id="stock-last-update" style="font-size:11px;color:#94a3b8;margin-top:2px">—</div>
+      </div>
+    </div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px;">
       <input type="text" id="stock-search" placeholder="MP, INCI, proveedor..." oninput="filterStock()" style="width:200px;margin-top:0;">
       <input type="text" id="stock-search-lote" placeholder="&#127991; Solo por lote" oninput="filterStock()" style="width:170px;margin-top:0;border:2px solid #1e63a8;background:#f0f8ff;">
       <div style="display:flex;gap:10px;flex-wrap:wrap;"><button onclick="loadStock()">&#8635; Actualizar</button><button onclick="exportarExcelStock()" style="background:#217346;">&#128196; Descargar Excel</button><button onclick="abrirLimpiezaProveedores()" style="background:#7c3aed;" title="Detecta proveedores duplicados por typo y los unifica">&#129529; Limpiar proveedores</button><button onclick="abrirRevisarMinimos()" style="background:#0e7490;" title="Audita stock minimo de cada MP vs consumo proyectado · evita alertas falsas">&#128202; Revisar m&iacute;nimos</button></div>
       <span id="stock-count" style="color:#888;font-size:0.88em;"></span>
     </div>
-    <div style="overflow-x:auto;">
+    <!-- Sprint Bodega MP PRO · 20-may-2026 fix #6: headers clickeables ordenan -->
+    <div style="overflow-x:auto;" id="stock-tabla-wrap">
     <table class="table" style="font-size:0.83em;">
-      <thead><tr>
-        <th>Cod. MP</th><th>Nombre INCI</th><th>Nombre Comercial</th>
-        <th>Tipo</th><th>Proveedor</th>
-        <th style="text-align:right;">Stock Min (g)</th><th>Lote</th>
-        <th style="text-align:right;">Cantidad (g)</th>
-        <th style="text-align:center;">Est.</th><th style="text-align:center;">Pos.</th>
-        <th style="text-align:center;">Fecha Venc.</th>
-        <th style="text-align:right;">Dias</th><th style="text-align:center;">Estado</th><th style="text-align:center;">Ajuste</th><th style="text-align:center;">Historial</th><th style="text-align:center;">Solicitar</th><th style="text-align:center;">Eliminar</th>
+      <thead><tr id="stock-thead-row">
+        <th data-sort="material_id" style="cursor:pointer" title="Click para ordenar">Cod. MP <span class="sort-ico"></span></th>
+        <th data-sort="nombre_inci" style="cursor:pointer">Nombre INCI <span class="sort-ico"></span></th>
+        <th data-sort="material_nombre" style="cursor:pointer">Nombre Comercial <span class="sort-ico"></span></th>
+        <th data-sort="tipo" style="cursor:pointer">Tipo <span class="sort-ico"></span></th>
+        <th data-sort="proveedor" style="cursor:pointer">Proveedor <span class="sort-ico"></span></th>
+        <!-- Fix #15: tooltip claro · es el mínimo del MP completo (suma) -->
+        <th data-sort="stock_min_g" style="text-align:right;cursor:pointer" title="Stock mínimo del MP completo (suma de todos sus lotes). Es el mismo número en todas las filas del mismo MP."><span style="border-bottom:1px dotted #94a3b8">Min MP (g)</span> <span class="sort-ico"></span></th>
+        <th data-sort="lote" style="cursor:pointer">Lote <span class="sort-ico"></span></th>
+        <th data-sort="cantidad_g" style="text-align:right;cursor:pointer">Cantidad (g) <span class="sort-ico"></span></th>
+        <th style="text-align:center;">Est.</th>
+        <th style="text-align:center;">Pos.</th>
+        <th data-sort="fecha_vencimiento" style="text-align:center;cursor:pointer">Vencimiento <span class="sort-ico"></span></th>
+        <!-- Fix #8: redundancia Dias+Estado · ahora UNA columna con día + chip -->
+        <th data-sort="dias_para_vencer" style="text-align:center;cursor:pointer" title="Días para vencer + estado FEFO">Estado <span class="sort-ico"></span></th>
+        <th style="text-align:center;" title="Acciones">Acciones</th>
       </tr></thead>
-      <tbody id="stock-body"><tr><td colspan="17" style="text-align:center;color:#999;padding:20px;">Cargando...</td></tr></tbody>
+      <tbody id="stock-body"><tr><td colspan="13" style="text-align:center;color:#999;padding:20px;">Cargando...</td></tr></tbody>
     </table>
     </div>
   
@@ -2012,8 +2039,15 @@ async function enviarSolicitarLote(){
   var obs_full=obs+(prov?(' · Proveedor sugerido: '+prov):'');
   var mp_codigo = _solLote.material_id;
   var mp_nombre = _solLote.material_nombre;
+  // Sprint Bodega MP PRO · 20-may-2026 fix #12: si no hay OPER_ACTUAL,
+  // bloquear (antes mandaba 'planta' genérico · pérdida de trazabilidad).
+  var solicitante = window.OPER_ACTUAL || window._usuario || '';
+  if(!solicitante){
+    msg.innerHTML='<span style="color:#c00;">Identificate primero · click "Cambiar operador" arriba.</span>';
+    return;
+  }
   var payload={
-    solicitante:(window.OPER_ACTUAL||window._usuario||'planta'),
+    solicitante:solicitante,
     urgencia:urg,
     observaciones:obs_full,
     empresa:'Espagiria',
@@ -2413,7 +2447,9 @@ async function confirmarEliminarLote(){
   var msg=document.getElementById('del-msg');
   var motivo=document.getElementById('del-motivo').value.trim();
   if(motivo.length<10){msg.innerHTML='<span style="color:#c00;">Motivo min. 10 caracteres.</span>';return;}
-  if(!confirm('Eliminar definitivamente el lote '+(_delLote.lote||'(sin lote)')+' de '+_delLote.material_nombre+'? Esta accion borra todos los movimientos asociados.')){return;}
+  // Sprint Bodega MP PRO · 20-may-2026 fix #3: quitar confirm() nativo
+  // duplicado. El modal ya pidió motivo de 10+ chars + el user apretó
+  // "Confirmar" · doble confirmación es fricción innecesaria.
   msg.innerHTML='<span style="color:#666;">Eliminando...</span>';
   var loteSeg=_delLote.lote||'_SIN_LOTE_';
   var url='/api/lotes/'+encodeURIComponent(_delLote.material_id)+'/'+encodeURIComponent(loteSeg);
@@ -2780,17 +2816,35 @@ async function enviarSolicitudCompra(){
 }
 function cerrarHistorial(){document.getElementById('modal-historial').style.display='none';}
 async function verHistorialLote(idx){
+  // Sprint Bodega MP PRO · 20-may-2026 fix #1+#14: usa endpoint
+  // server-side /api/lotes/<mid>/<lote>/movimientos · NO baja /api/movimientos
+  // completo. Fix #9: colspan consistente en 5 columnas.
   var i=_lotes[idx];if(!i)return;
   document.getElementById('modal-historial').style.display='flex';
   document.getElementById('hist-lote-info').textContent=i.material_id+' - '+i.material_nombre+' Lote:'+(i.lote||'S/L')+' Stock:'+i.cantidad_g+'g';
   var tb=document.getElementById('hist-lote-body');
-  tb.innerHTML='<tr><td colspan=4 style=text-align:center>Cargando...</td></tr>';
+  tb.innerHTML='<tr><td colspan=5 style="text-align:center;padding:14px;color:#94a3b8">Cargando movimientos del lote...</td></tr>';
   try{
-    var r=await fetch('/api/movimientos'),d=await r.json();
-    var mv=(d.movimientos||[]).filter(function(m){return m.lote===i.lote&&m.material_id===i.material_id;});
-    if(!mv.length){tb.innerHTML='<tr><td colspan=5 style=text-align:center>Sin movimientos</td></tr>';return;}
-    tb.innerHTML=mv.map(function(m){var f=m.fecha?m.fecha.substring(0,16).replace("T"," "):"";return "<tr><td>"+_escHTML(m.tipo)+"</td><td>"+_escHTML(m.cantidad)+"</td><td>"+_escHTML(f)+"</td><td>"+_escHTML(m.observaciones||"")+"</td><td>"+_escHTML(m.operador||"")+"</td></tr>";}).join("");
-  }catch(e){tb.innerHTML='<tr><td colspan=5>Error</td></tr>';}
+    var loteSeg = i.lote || '_SIN_LOTE_';
+    var url='/api/lotes/'+encodeURIComponent(i.material_id)+'/'+encodeURIComponent(loteSeg)+'/movimientos';
+    var r=await fetch(url);
+    if(!r.ok){
+      tb.innerHTML='<tr><td colspan=5 style="text-align:center;padding:14px;color:#dc2626">Error '+r.status+' · '+(r.statusText||'')+'</td></tr>';
+      return;
+    }
+    var d=await r.json();
+    var mv=d.movimientos||[];
+    if(!mv.length){tb.innerHTML='<tr><td colspan=5 style="text-align:center;padding:14px;color:#94a3b8">Sin movimientos para este lote</td></tr>';return;}
+    tb.innerHTML=mv.map(function(m){
+      var f=m.fecha?String(m.fecha).substring(0,16).replace('T',' '):'';
+      var tipoColor=m.tipo==='Entrada'?'#16a34a':'#dc2626';
+      return '<tr><td style="color:'+tipoColor+';font-weight:600">'+_escHTML(m.tipo)+'</td>'+
+             '<td style="text-align:right;font-family:monospace">'+_escHTML(Number(m.cantidad).toLocaleString('es-CO'))+'</td>'+
+             '<td style="font-family:monospace;color:#475569">'+_escHTML(f)+'</td>'+
+             '<td>'+_escHTML(m.observaciones||'')+'</td>'+
+             '<td>'+_escHTML(m.operador||'')+'</td></tr>';
+    }).join('');
+  }catch(e){tb.innerHTML='<tr><td colspan=5 style="text-align:center;padding:14px;color:#dc2626">Error de red: '+_escHTML(e.message)+'</td></tr>';}
 }
 
 async function confirmarAjuste(){
@@ -2868,7 +2922,13 @@ function dlExcelHTML(nombre, cols, rows){
   URL.revokeObjectURL(url);
 }
 async function exportarExcelStock(){
-  var r=await fetch('/api/lotes'),d=await r.json(),L=d.lotes||[];
+  // Sprint Bodega MP PRO · 20-may-2026 fix #2: reusa _lotes en memoria.
+  // Solo refresca con fetch si _lotes está vacío (primer load).
+  var L = (Array.isArray(_lotes) && _lotes.length) ? _lotes : null;
+  if(!L){
+    try{ var r=await fetch('/api/lotes'); var d=await r.json(); L=d.lotes||[]; }
+    catch(e){ alert('Error de red: '+e.message); return; }
+  }
   if(!L.length){alert('Sin datos');return;}
   var cols=['Codigo MP','Nombre INCI','Nombre Comercial','Lote','Cantidad (g)',
             'Stock Min (g)','Total MP (g)','Estanteria','Posicion','Proveedor',
@@ -3242,83 +3302,167 @@ async function loadDashboardCompleto(silent){
 }
 
 async function loadStock(){
+  var t0 = Date.now();
   try{
     var r=await fetch('/api/lotes'), d=await r.json();
     _lotes=d.lotes||[];
     document.getElementById('stock-count').textContent=_lotes.length+' lotes';
-    // Sebastián 9-may-2026: tras cambio (ajustar/ubicación/fecha/lote/min)
-    // no perder el filtro escrito · si hay query activa, re-aplicar para
-    // que la fila editada siga visible. Antes mostraba los 298 lotes y
-    // el user tenía que volver a buscar la MP. filterStock() es seguro
-    // (si los inputs están vacíos, muestra todo igual).
+    // Fix #6 + #10: aplicar sort si user pinó alguna columna · actualizar timestamp
+    if(_STOCK_SORT && _STOCK_SORT.col) _aplicarSortStock();
     var qGen=((document.getElementById('stock-search')||{}).value||'').trim();
     var qLote=((document.getElementById('stock-search-lote')||{}).value||'').trim();
     if(qGen || qLote){
-      filterStock();  // re-aplica el filtro Y actualiza el counter
+      _filterStockNow();
     } else {
       renderStock(_lotes);
     }
+    _attachStockSortHandlers();
+    var lu = document.getElementById('stock-last-update');
+    if(lu){
+      var hora = new Date().toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+      var dur = Math.max(1, Math.round((Date.now()-t0)/100)/10);
+      lu.textContent = 'Última actualización ' + hora + ' · ' + dur + 's · ' + _lotes.length + ' lotes';
+      lu.style.color = '#94a3b8';
+    }
   }catch(e){
-    document.getElementById('stock-body').innerHTML='<tr><td colspan="17" style="padding:20px;color:#c00;">Error al cargar.</td></tr>';
+    document.getElementById('stock-body').innerHTML='<tr><td colspan="13" style="padding:20px;color:#c00;">Error al cargar: '+(e.message||e)+'</td></tr>';
+    var lu2 = document.getElementById('stock-last-update');
+    if(lu2){ lu2.textContent = '⚠ Error · reintentá'; lu2.style.color = '#dc2626'; }
   }
 }
+// Sprint Bodega MP PRO · 20-may-2026 · render con fix #4 (badge sutil),
+// #8 (Estado consolidado · sin redundancia con Días), #15 (tooltip Min MP).
 function renderStock(items){
   var tb=document.getElementById('stock-body');
-  if(!items.length){tb.innerHTML='<tr><td colspan="17" style="text-align:center;color:#999;padding:20px;">Sin datos</td></tr>';return;}
+  if(!items.length){tb.innerHTML='<tr><td colspan="13" style="text-align:center;color:#999;padding:20px;">Sin datos</td></tr>';return;}
   var bg={vencido:'#ffebeb',critico:'#fff3e0',proximo:'#fffde7',ok:'transparent'};
   var fc={vencido:'#cc0000',critico:'#e65100',proximo:'#f57f17',ok:'#1a8a1a'};
   var lb={vencido:'VENCIDO',critico:'CRITICO',proximo:'PROXIMO',ok:'VIGENTE'};
   var h='';
+  // Fix #4: badge "Solicitada" solo en la PRIMERA fila visible de cada MP.
+  // Antes aparecía en TODAS las filas del mismo MP · Luis veía "Solicitada"
+  // en 3 lotes cuando en realidad hay 1 sola SOL al material.
+  var primerLoteDelMP = {};
+  items.forEach(function(i){
+    var k = i.material_id || '';
+    if(primerLoteDelMP[k] === undefined) primerLoteDelMP[k] = i.lote;
+  });
   items.forEach(function(i,idx){ var gi=_lotes.indexOf(i); if(gi<0)gi=idx;
     var a=i.alerta||'ok';
     var qc=i.cantidad_g<=0?'color:#cc0000;font-weight:700;':i.cantidad_g<500?'color:#e68a00;font-weight:700;':'color:#1a8a1a;font-weight:700;';
-    // Sebastián 9-may-2026: bajo_min se calcula contra el TOTAL del MP
-    // (suma de lotes), NO contra el stock del lote individual. Antes pintaba
-    // rojo un lote con poco stock aunque otros lotes del mismo MP tuvieran
-    // stock de sobra · falso positivo. Si el backend no envió stock_total_mp_g
-    // (compat con respuestas viejas) cae a la lógica vieja.
     var stockTotalMP=(typeof i.stock_total_mp_g==='number')?i.stock_total_mp_g:i.cantidad_g;
     var bajo_min=i.stock_min_g>0 && stockTotalMP < i.stock_min_g;
     var min_style=bajo_min?'background:#ffebeb;color:#cc0000;font-weight:700;':'';
-    // Tooltip indica el total del MP y el mínimo para contextualizar la celda
-    var min_title='Stock min del MP: '+(i.stock_min_g||0).toLocaleString('es-CO')+' g · '+
-                  'Total MP: '+stockTotalMP.toLocaleString('es-CO')+' g'+
+    var min_title='Mínimo del MP completo: '+(i.stock_min_g||0).toLocaleString('es-CO')+' g · '+
+                  'Total MP (suma de todos sus lotes): '+stockTotalMP.toLocaleString('es-CO')+' g'+
                   (bajo_min?' · ⚠ por debajo del mínimo':' · OK');
     var dias=i.dias_para_vencer!=null?i.dias_para_vencer:'';
-    var dc=i.dias_para_vencer!=null&&i.dias_para_vencer<0?'color:#cc0000;font-weight:700;':i.dias_para_vencer<=30?'color:#e65100;font-weight:700;':'';
+    // Columna Estado consolidada: chip color + días dentro
+    var estadoCell='—';
+    if(i.fecha_vencimiento){
+      var diasTxt = (dias===''?'':' · '+dias+'d');
+      estadoCell='<div style="display:flex;flex-direction:column;align-items:center;gap:1px">'+
+        '<span style="background:'+bg[a]+';color:'+fc[a]+';padding:2px 7px;border-radius:10px;font-weight:700;font-size:0.78em;border:1px solid '+fc[a]+';">'+lb[a]+'</span>'+
+        '<span style="font-size:10px;color:#64748b">'+_escHTML(i.fecha_vencimiento)+diasTxt+'</span>'+
+      '</div>';
+    }
     h+='<tr style="background:'+bg[a]+';font-size:0.83em;">';
-    h+='<td style="font-family:monospace;color:#555;">'+i.material_id+'</td>';
-    h+='<td style="color:#444;font-size:0.82em;">'+i.nombre_inci+'</td>';
-    h+='<td style="font-weight:600;">'+i.material_nombre+'</td>';
-    h+='<td style="color:#888;">'+i.tipo+'</td>';
-    h+='<td style="color:#555;">'+(i.proveedor||'<span style="color:#bbb;">— sin proveedor —</span>')+' <button onclick="abrirEditarProveedor('+gi+')" title="Editar proveedor" style="margin-left:4px;padding:1px 6px;font-size:0.75em;background:#e8f5f5;color:#2B7A78;border:1px solid #b8dada;border-radius:4px;cursor:pointer;">&#9999;&#65039;</button></td>';
-    h+='<td style="text-align:right;'+min_style+'" title="'+_escHTML(min_title)+'">'+i.stock_min_g.toLocaleString()+'</td>';
-    h+='<td style="font-family:monospace;">'+i.lote+'</td>';
-    h+='<td style="text-align:right;'+qc+'">'+i.cantidad_g.toLocaleString()+'</td>';
-    h+='<td style="text-align:center;font-weight:700;color:#667eea;">'+i.estanteria+'</td>';
-    h+='<td style="text-align:center;">'+i.posicion+'</td>';
-    h+='<td style="text-align:center;color:'+fc[a]+';">'+i.fecha_vencimiento+'</td>';
-    h+='<td style="text-align:right;'+dc+'">'+dias+'</td>';
-    h+='<td style="text-align:center;"><span style="background:'+bg[a]+';color:'+fc[a]+';padding:2px 7px;border-radius:10px;font-weight:700;font-size:0.78em;border:1px solid '+fc[a]+';">'+lb[a]+'</span></td>';
-    h+='<td style="text-align:center;"><button onclick="abrirAjusteIdx('+gi+')" style="padding:3px 9px;font-size:0.75em;background:#f0ad4e;color:#fff;border-radius:4px;">Ajustar</button></td>';
-    h+='<td style="text-align:center;"><button onclick="verHistorialLote('+gi+')" style="padding:3px 9px;font-size:0.75em;background:#667eea;color:#fff;border-radius:4px;">Historial</button></td>';
-    // Sebastian 5-may-2026: badge "Solicitada" si ya hay solicitud pendiente
-    // para este codigo_mp · feedback visible a Luis Enrique de que su click
-    // tuvo efecto (antes decia "no hace nada" porque no veia rastro).
-    var btnSolicitar = i.tiene_solicitud_pendiente
-      ? '<button onclick="abrirSolicitarLote('+gi+')" style="padding:3px 9px;font-size:0.75em;background:#fef3c7;color:#92400e;border:1px solid #f59e0b;border-radius:4px;font-weight:700;" title="Ya hay una solicitud pendiente para esta MP · click para crear otra">&#x1F4BC; Solicitada</button>'
-      : '<button onclick="abrirSolicitarLote('+gi+')" style="padding:3px 9px;font-size:0.75em;background:#27ae60;color:#fff;border-radius:4px;">Solicitar</button>';
-    h+='<td style="text-align:center;">'+btnSolicitar+'</td>';
-    h+='<td style="text-align:center;"><button onclick="abrirEliminarLote('+gi+')" style="padding:3px 9px;font-size:0.75em;background:#c0392b;color:#fff;border-radius:4px;">Eliminar</button></td>';
+    h+='<td style="font-family:monospace;color:#555;">'+_escHTML(i.material_id||'')+'</td>';
+    h+='<td style="color:#444;font-size:0.82em;">'+_escHTML(i.nombre_inci||'')+'</td>';
+    h+='<td style="font-weight:600;">'+_escHTML(i.material_nombre||'')+'</td>';
+    h+='<td style="color:#888;">'+_escHTML(i.tipo||'')+'</td>';
+    h+='<td style="color:#555;">'+(i.proveedor?_escHTML(i.proveedor):'<span style="color:#bbb;">— sin proveedor —</span>')+' <button onclick="abrirEditarProveedor('+gi+')" title="Editar proveedor" style="margin-left:4px;padding:1px 6px;font-size:0.75em;background:#e8f5f5;color:#2B7A78;border:1px solid #b8dada;border-radius:4px;cursor:pointer;">&#9999;&#65039;</button></td>';
+    h+='<td style="text-align:right;'+min_style+'" title="'+_escHTML(min_title)+'">'+(i.stock_min_g||0).toLocaleString()+'</td>';
+    h+='<td style="font-family:monospace;">'+_escHTML(i.lote||'')+'</td>';
+    h+='<td style="text-align:right;'+qc+'">'+(i.cantidad_g||0).toLocaleString()+'</td>';
+    h+='<td style="text-align:center;font-weight:700;color:#667eea;">'+_escHTML(i.estanteria||'')+'</td>';
+    h+='<td style="text-align:center;">'+_escHTML(i.posicion||'')+'</td>';
+    h+='<td style="text-align:center;color:'+fc[a]+';white-space:nowrap">'+_escHTML(i.fecha_vencimiento||'—')+'</td>';
+    h+='<td style="text-align:center;">'+estadoCell+'</td>';
+    // Fix #4 + #13: acciones agrupadas + badge sutil solicitada
+    var esPrimerLote = primerLoteDelMP[i.material_id||''] === i.lote;
+    var btnSolicitar;
+    if(i.tiene_solicitud_pendiente && esPrimerLote){
+      btnSolicitar = '<button onclick="abrirSolicitarLote('+gi+')" style="padding:3px 7px;font-size:0.72em;background:#fef3c7;color:#92400e;border:1px solid #f59e0b;border-radius:4px;font-weight:700;" title="Ya hay SOL pendiente para este MP">&#x1F4BC;</button>';
+    } else if(i.tiene_solicitud_pendiente){
+      btnSolicitar = '<button onclick="abrirSolicitarLote('+gi+')" style="padding:3px 7px;font-size:0.72em;background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;border-radius:4px;" title="SOL pendiente al MP · podés crear otra">Sol+</button>';
+    } else {
+      btnSolicitar = '<button onclick="abrirSolicitarLote('+gi+')" style="padding:3px 7px;font-size:0.72em;background:#27ae60;color:#fff;border-radius:4px;" title="Crear SOL de compra">Sol</button>';
+    }
+    h+='<td style="text-align:center;white-space:nowrap"><div style="display:inline-flex;gap:3px;flex-wrap:wrap;justify-content:center">'+
+      '<button onclick="abrirAjusteIdx('+gi+')" style="padding:3px 7px;font-size:0.72em;background:#f0ad4e;color:#fff;border-radius:4px;" title="Ajustar stock / ubicación / fecha / lote">Ajustar</button>'+
+      '<button onclick="verHistorialLote('+gi+')" style="padding:3px 7px;font-size:0.72em;background:#667eea;color:#fff;border-radius:4px;" title="Ver movimientos del lote">Hist</button>'+
+      btnSolicitar+
+      (window._ES_ADMIN_DASH ? '<button onclick="abrirEliminarLote('+gi+')" style="padding:3px 7px;font-size:0.72em;background:#c0392b;color:#fff;border-radius:4px;" title="Eliminar lote (admin)">Borrar</button>' : '')+
+    '</div></td>';
     h+='</tr>';
   });
   tb.innerHTML=h;
+}
+
+// Sprint Bodega MP PRO · 20-may-2026 fix #6: ordenamiento por columna.
+// Cualquier <th data-sort="X"> ordena por ese campo. Click toggle asc/desc.
+var _STOCK_SORT = {col:null, dir:'asc'};
+function _attachStockSortHandlers(){
+  var row = document.getElementById('stock-thead-row');
+  if(!row || row._sortBound) return;
+  row._sortBound = true;
+  row.querySelectorAll('th[data-sort]').forEach(function(th){
+    th.addEventListener('click', function(){
+      var col = th.getAttribute('data-sort');
+      if(_STOCK_SORT.col === col){
+        _STOCK_SORT.dir = (_STOCK_SORT.dir === 'asc') ? 'desc' : 'asc';
+      } else {
+        _STOCK_SORT.col = col; _STOCK_SORT.dir = 'asc';
+      }
+      _aplicarSortStock();
+      _refreshStockSortIcons();
+    });
+  });
+}
+function _refreshStockSortIcons(){
+  var row = document.getElementById('stock-thead-row');
+  if(!row) return;
+  row.querySelectorAll('th[data-sort]').forEach(function(th){
+    var ico = th.querySelector('.sort-ico');
+    if(!ico) return;
+    if(th.getAttribute('data-sort') === _STOCK_SORT.col){
+      ico.textContent = (_STOCK_SORT.dir === 'asc') ? '▲' : '▼';
+      ico.style.color = '#0891b2';
+    } else { ico.textContent = ''; }
+  });
+}
+function _aplicarSortStock(){
+  if(!_STOCK_SORT.col) return;
+  var col = _STOCK_SORT.col, dir = _STOCK_SORT.dir;
+  _lotes.sort(function(a, b){
+    var va = a[col], vb = b[col];
+    if(va == null) va = '';
+    if(vb == null) vb = '';
+    var cmp;
+    if(typeof va === 'number' && typeof vb === 'number'){
+      cmp = va - vb;
+    } else {
+      cmp = String(va).localeCompare(String(vb), 'es', {numeric:true, sensitivity:'base'});
+    }
+    return dir === 'asc' ? cmp : -cmp;
+  });
+  // Re-aplicar filtro para que orden se vea
+  if(typeof _filterStockNow === 'function') _filterStockNow();
+  else renderStock(_lotes);
 }
 // Sebastian 8-may-2026: input dedicado para buscar por LOTE +
 // el input general (MP/INCI/proveedor). Ambos se aplican en AND.
 // Si ambos vacios → muestra todo. Si solo lote → filtra por lote.
 // Si ambos llenos → match en general Y lote.
+// Sprint Bodega MP PRO · 20-may-2026 fix #5: debounce 180ms para evitar
+// re-render en cada keystroke (387 MPs × varios lotes lag en mobile).
+var _STOCK_FILTER_TIMER = null;
 function filterStock(){
+  if(_STOCK_FILTER_TIMER) clearTimeout(_STOCK_FILTER_TIMER);
+  _STOCK_FILTER_TIMER = setTimeout(_filterStockNow, 180);
+}
+function _filterStockNow(){
   var qGen=(document.getElementById('stock-search')||{}).value||'';
   var qLote=(document.getElementById('stock-search-lote')||{}).value||'';
   qGen=qGen.toLowerCase().trim();
@@ -3329,7 +3473,6 @@ function filterStock(){
       (i.material_nombre||'').toLowerCase().includes(qGen)||
       (i.nombre_inci||'').toLowerCase().includes(qGen)||
       (i.proveedor||'').toLowerCase().includes(qGen)||
-      // Mantener compat: si pega un lote en el general, sigue funcionando
       (i.lote||'').toLowerCase().includes(qGen));
     var matchLote=!qLote||(i.lote||'').toLowerCase().includes(qLote);
     return matchGen && matchLote;
