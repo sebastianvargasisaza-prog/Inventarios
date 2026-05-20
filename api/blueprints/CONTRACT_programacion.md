@@ -77,6 +77,35 @@
   preservar evidencia y permitir recuperación.
 - Test que protege: `test_golden_limpiar_duplicados_respeta_fijo`.
 
+### INV-7 · Auditoría bulk-mutaciones a `produccion_programada` (19-may-2026)
+
+Auditoría completa post-incidente del 19-may. Lista de TODOS los puntos
+que mutan en bulk + status. Si agregas uno nuevo, debe entrar acá.
+
+| Endpoint / función | Tipo | ¿Respeta Fijo? | Notas |
+|---|---|---|---|
+| `programacion.py limpiar_duplicados_producciones` (~7211) | soft UPDATE | ✅ (commit b5edbc0) | era DELETE duro; fix 19-may |
+| `programacion.py _sync_calendar_a_produccion_programada` espejo (~9222) | DELETE bulk | ✅ | `NOT IN (Fijos)` cuando `force_mirror=True` |
+| `programacion.py _sync_calendar_a_produccion_programada` legacy (~9230) | UPDATE cancel | ✅ | solo `origen='calendar'` |
+| `admin.py` SKU remapeado cleanup (~10356) | UPDATE cancel | ✅ | solo `origen='calendar'` |
+| `admin.py limpiar_produccion_zombies` cancel-viejas (~21086) | DELETE | ✅ | filtra >30d cancelados (no afecta presente) |
+| `admin.py limpiar_produccion_zombies` prog-viejas (~21094) | UPDATE cancel | ✅ | `NOT IN (Fijos)` + >7d sin iniciar |
+| `admin.py limpiar_produccion_zombies` dedup gcal (~21116) | UPDATE cancel | ✅ | `NOT IN (Fijos)` |
+| `plan.py limpiar_duplicados_plan` (~3702) | UPDATE cancel | ✅ | `origen IN (canonico,calendar,manual)` |
+| `plan.py generar_plan_perfecto` (~3854) | UPDATE cancel | ✅ | `origen IN (canonico,calendar,manual)` |
+| `plan.py regenerar_canonicos` (~4233) | UPDATE cancel | ✅ | `origen IN (canonico,calendar,manual)` |
+| `plan.py aplicar_ia_bulk` (~10698) | UPDATE cancel | ✅ | `origen IN (canonico,calendar,manual)` |
+| `plan.py aplicar_ia_anual` (~10869) | UPDATE cancel | ✅ | `origen IN (canonico,calendar,manual)` |
+
+Single-row UPDATE/DELETE `WHERE id=?` son seguros por diseño (user-driven
+explícito, con guard de `inicio_real_at`/`inventario_descontado_at` cuando
+aplica). No necesitan filter por origen.
+
+Tests goldens que protegen:
+- `test_golden_plan_fijo_sobrevive_regenerar` (plan.py regeneradores)
+- `test_golden_limpiar_duplicados_respeta_fijo` (programacion.py limpiar_duplicados)
+- `test_golden_limpiar_duplicados_respeta_guard` (no toca iniciadas)
+
 ---
 
 ## Endpoints downstream que CONSUMEN sus datos
