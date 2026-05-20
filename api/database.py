@@ -6433,6 +6433,22 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
            ('ESENCIA ILUMINADORA',                  'esencia', NULL, 60, 90, 30, 3.0, 3, NULL)""",
     ]),
 
+    (142, "Alertas silenciadas · Sprint Alertas PRO · Sebastián 20-may-2026", [
+        # Permite "silenciar" una alerta puntual con motivo + expira_at
+        # opcional. Si vence el silencio, vuelve a aparecer.
+        """CREATE TABLE IF NOT EXISTS alertas_silenciadas (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tipo_alerta TEXT NOT NULL,
+            codigo_referencia TEXT NOT NULL,
+            motivo TEXT NOT NULL,
+            silenciado_por TEXT NOT NULL,
+            silenciado_at_utc TEXT NOT NULL DEFAULT (datetime('now','utc')),
+            expira_at_utc TEXT,
+            activo INTEGER NOT NULL DEFAULT 1
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_alertas_silenciadas_lookup ON alertas_silenciadas(tipo_alerta, codigo_referencia, activo)",
+    ]),
+
     (141, "Portal Clientes B2B Fase 2 · PQR · Sebastián 20-may-2026", [
         # Sebastián 15-may-2026: "solo tuviera dos módulos, solicitar y pqr".
         # Fase 2 = PQR. Tab adicional en /portal · cliente envía petición,

@@ -7310,6 +7310,90 @@ def test_golden_portal_b2b_flujo_completo(app, db_clean):
     _exec("DELETE FROM portal_clientes_credenciales WHERE email LIKE 'test_portal_%'")
 
 
+def test_golden_alertas_all_consolidado(app, db_clean):
+    """Sprint Alertas PRO · 20-may-2026.
+
+    Verifica endpoint /api/alertas/all + silenciar + categorización.
+    """
+    _exec("DELETE FROM movimientos WHERE material_id LIKE 'TEST_ALR_%'")
+    _exec("DELETE FROM maestro_mps WHERE codigo_mp LIKE 'TEST_ALR_%'")
+    _exec("DELETE FROM alertas_silenciadas WHERE codigo_referencia LIKE 'TEST_ALR_%'")
+
+    # MP1: con stock min pero sin stock → mps_sin_stock
+    _exec("""INSERT INTO maestro_mps (codigo_mp, nombre_comercial, tipo_material, stock_minimo, activo)
+             VALUES ('TEST_ALR_SIN','Sin stock test','MP',1000,1)""")
+    # MP2: con stock pero debajo del mínimo → mps_bajo_minimo
+    _exec("""INSERT INTO maestro_mps (codigo_mp, nombre_comercial, tipo_material, stock_minimo, activo)
+             VALUES ('TEST_ALR_BAJO','Bajo mín test','MP',5000,1)""")
+    _exec("""INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, lote, fecha)
+             VALUES ('TEST_ALR_BAJO','Bajo mín test',2000,'Entrada','L1',datetime('now'))""")
+    # Lote vencido
+    _exec("""INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, lote, fecha, fecha_vencimiento)
+             VALUES ('TEST_ALR_BAJO','Bajo mín test',500,'Entrada','LVENC',datetime('now'),'2026-01-01')""")
+
+    cs = _login(app, 'sebastian')
+
+    # 1) Llamada inicial
+    r1 = cs.get('/api/alertas/all')
+    assert r1.status_code == 200
+    d1 = r1.get_json()
+    assert 'stats' in d1
+    # MP_SIN debe aparecer en mps_sin_stock
+    sin = [it for it in d1['mps_sin_stock'] if it['codigo_mp'].startswith('TEST_ALR_')]
+    assert any(it['codigo_mp']=='TEST_ALR_SIN' for it in sin), \
+        'BUG: TEST_ALR_SIN no detectada como sin stock'
+    # MP_BAJO debe aparecer en mps_bajo_minimo
+    bajo = [it for it in d1['mps_bajo_minimo'] if it['codigo_mp'].startswith('TEST_ALR_')]
+    assert any(it['codigo_mp']=='TEST_ALR_BAJO' for it in bajo), \
+        'BUG: TEST_ALR_BAJO no detectada bajo mínimo'
+    # Lote vencido
+    venc = [it for it in d1['lotes_vencidos'] if it['lote']=='LVENC']
+    assert venc, 'BUG: LVENC no detectado como vencido'
+
+    # 2) Silenciar MP_SIN
+    r_sil = cs.post('/api/alertas/silenciar', json={
+        'tipo_alerta': 'mps_sin_stock',
+        'codigo_referencia': 'TEST_ALR_SIN',
+        'motivo': 'MP en descontinuación · no comprar más',
+    }, headers=csrf_headers())
+    assert r_sil.status_code == 200
+    silen_id = r_sil.get_json()['id']
+
+    # 3) Verificar que NO aparece más
+    r2 = cs.get('/api/alertas/all')
+    d2 = r2.get_json()
+    sin2 = [it for it in d2['mps_sin_stock'] if it['codigo_mp']=='TEST_ALR_SIN']
+    assert not sin2, 'BUG: alerta silenciada sigue apareciendo'
+    assert d2['stats']['silenciadas_activas'] >= 1
+
+    # 4) Tipo inválido → 400
+    r_bad = cs.post('/api/alertas/silenciar', json={
+        'tipo_alerta': 'xxx', 'codigo_referencia': 'X', 'motivo': 'motivo largo suficiente',
+    }, headers=csrf_headers())
+    assert r_bad.status_code == 400
+
+    # 5) Motivo corto → 400
+    r_short = cs.post('/api/alertas/silenciar', json={
+        'tipo_alerta': 'mps_bajo_minimo', 'codigo_referencia': 'X', 'motivo': 'corto',
+    }, headers=csrf_headers())
+    assert r_short.status_code == 400
+
+    # 6) Reactivar (desilenciar)
+    r_de = cs.delete(f'/api/alertas/silenciar/{silen_id}', headers=csrf_headers())
+    assert r_de.status_code == 200
+    r3 = cs.get('/api/alertas/all')
+    sin3 = [it for it in r3.get_json()['mps_sin_stock'] if it['codigo_mp']=='TEST_ALR_SIN']
+    assert sin3, 'BUG: alerta no reapareció tras desilenciar'
+
+    # 7) Agrupado por proveedor existe
+    assert 'agrupado_por_proveedor' in d1
+
+    # Cleanup
+    _exec("DELETE FROM movimientos WHERE material_id LIKE 'TEST_ALR_%'")
+    _exec("DELETE FROM maestro_mps WHERE codigo_mp LIKE 'TEST_ALR_%'")
+    _exec("DELETE FROM alertas_silenciadas WHERE codigo_referencia LIKE 'TEST_ALR_%'")
+
+
 def test_golden_abc_pro_modos_y_filtros(app, db_clean):
     """Sprint ABC PRO · 20-may-2026.
 

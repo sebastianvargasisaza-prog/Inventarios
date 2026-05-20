@@ -103,6 +103,15 @@
   `. , ; : & - _ / \\`). Capa 2: Levenshtein ≥ threshold para typos. Carga
   desde 11 tablas que tienen proveedor (no solo movs+maestro). Retorna
   grupos con stats (refs_totales, usos, count_variantes).
+- `GET  /api/alertas/all` · endpoint consolidado Sprint Alertas PRO
+  20-may-2026 · 6 categorías en una llamada (mps_sin_stock,
+  mps_bajo_minimo, lotes_vencidos, lotes_proximos, mees_bajo_minimo,
+  lotes_cuarentena) + stats + agrupado por proveedor. Filtra
+  alertas_silenciadas activas.
+- `POST /api/alertas/silenciar` · silencia alerta puntual con motivo
+  (≥10) + expira_dias opcional. Tipos: mps_sin_stock, mps_bajo_minimo,
+  lote_venc, lote_cuarentena, mee_bajo_minimo. audit_log SILENCIAR_ALERTA.
+- `DELETE /api/alertas/silenciar/<id>` · re-activar (activo=0).
 - `GET  /api/analisis-abc[?modo=&tipo_material=&subtipo=&excluir_cuarentena=]`
   · Pareto ABC refactor 20-may-2026. Agrupa por `material_id` (no
   por nombre · evita doble cuenta). Modos:

@@ -1032,36 +1032,23 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
   </div>
 
   <div id="alertas" class="tab-content">
-    <h2>&#9888; Alertas de Inventario</h2>
-    <div style="background:#fff3e0;border:2px solid #ff9800;border-radius:10px;padding:18px;margin-bottom:20px;">
-      <h3 style="color:#e65100;margin-bottom:10px;">&#128197; Lotes que vencen en 30 dias o menos</h3>
-      <div id="venc30-content" style="color:#999;">Cargando...</div>
-    </div>
-
-
-    <!-- ALERTAS MEE -->
-    <div style="margin-top:28px;border-top:3px solid #2B7A78;padding-top:24px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:14px;">
-        <h3 style="color:#c0392b;margin:0;">&#128308; Materiales E&E bajo stock minimo</h3>
-        <div style="display:flex;gap:8px;">
-          <button onclick="loadAlertasMEE()" style="padding:7px 14px;font-size:0.85em;">&#8635; Actualizar</button>
-          <button onclick="generarOCsDesdeAlertasMEE()" style="background:#4A6741;padding:7px 16px;font-size:0.85em;">&#9889; Generar OCs automaticas MEE</button>
-        </div>
+    <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:10px;margin-bottom:8px">
+      <div>
+        <h2 style="margin:0">&#9888; Alertas de Inventario</h2>
+        <div id="alertas-last-update" style="font-size:11px;color:#94a3b8;margin-top:2px">—</div>
       </div>
-      <div style="overflow-x:auto;">
-        <table class="table" style="font-size:0.85em;">
-          <thead><tr>
-            <th>Codigo</th><th>Descripcion</th><th>Categoria</th>
-            <th style="text-align:right;">Min (und)</th>
-            <th style="text-align:right;">Stock Actual (und)</th>
-            <th style="text-align:right;">Deficit</th>
-            <th style="text-align:center;">Nivel</th>
-            <th style="text-align:center;">Accion</th>
-          </tr></thead>
-          <tbody id="mee-alertas-body"><tr><td colspan="8" style="text-align:center;color:#999;padding:20px;">Cargando...</td></tr></tbody>
-        </table>
+      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+        <label style="font-size:11px;color:#64748b;display:flex;align-items:center;gap:4px;cursor:pointer">
+          <input type="checkbox" id="alertas-autorefresh" checked> auto 60s
+        </label>
+        <button onclick="exportarExcelAlertas()" style="padding:6px 14px;font-size:13px;background:#217346;color:#fff;border-radius:6px">📄 Excel</button>
+        <button onclick="loadAlertasAll()" style="padding:6px 14px;font-size:13px;background:#0e7490;color:#fff;border-radius:6px">🔄 Actualizar</button>
       </div>
     </div>
+    <!-- Stats cards -->
+    <div id="alertas-stats" style="display:none;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:14px"></div>
+    <!-- Tabs internos por categoría -->
+    <div id="alertas-secciones"></div>
   </div>
 
   <div id="movimientos" class="tab-content">
@@ -3246,7 +3233,7 @@ function switchTab(n,btn){
   if(n==='abc') loadABC();
   if(n==='conteo'){ cargarEstanterias(); cargarHistorialConteos(); cargarProgramacionCiclica(); }
   if(n==='empaque'){ cargarMeeAlertas(); cargarMeeStock(); cargarMeeHistorial(); }
-  if(n==='alertas'){ loadVenc30(); loadAlertasMEE(); }
+  if(n==='alertas'){ loadAlertasAll(); }
   if(n==='stock') loadMEE();
   if(n==='acondicionamiento'){loadAcond();cargarMeeParaAcond();}
   if(n==='liberacion'){loadLiberaciones('');cargarClientesLib();}
@@ -3289,7 +3276,7 @@ function subSwitchTab(tabId,btn,barId){
   if(tabId==='ingreso') initIngreso();
   if(tabId==='abc') loadABC();
   if(tabId==='conteo'){ cargarEstanterias(); cargarHistorialConteos(); cargarProgramacionCiclica(); }
-  if(tabId==='alertas'){ loadAlertas(); loadAlertasReabas(); loadVenc30(); loadAlertasMEE(); }
+  if(tabId==='alertas'){ loadAlertasAll(); }
   if(tabId==='movimientos') loadMovimientos();
 }
 var _charts={};
@@ -4422,6 +4409,315 @@ async function registrarMov(){
     document.getElementById('mov-msg').innerHTML='<div class="alert-success">'+res.message+'</div>';
     loadMovimientos();
   }catch(e){document.getElementById('mov-msg').innerHTML='<div class="alert-error">Error</div>';}
+}
+
+// Sprint Alertas PRO · 20-may-2026 · endpoint consolidado + 6 secciones
+var _ALERTAS_DATA = null;
+var _ALERTAS_TIMER = null;
+var _ALERTAS_PREV_TOTAL = -1;
+async function loadAlertasAll(silent){
+  var statsBox = document.getElementById('alertas-stats');
+  var secBox = document.getElementById('alertas-secciones');
+  if(!secBox) return;
+  var t0 = Date.now();
+  try{
+    var r = await fetch('/api/alertas/all');
+    if(!r.ok){
+      secBox.innerHTML = '<div class="alert-error">Error '+r.status+'</div>';
+      return;
+    }
+    var d = await r.json();
+    _ALERTAS_DATA = d;
+    var s = d.stats || {};
+    // Stats cards
+    if(statsBox){
+      statsBox.style.display = 'grid';
+      function statCard(label, val, color, icon, anchor){
+        var bg = color==='red'?'#fef2f2':color==='orange'?'#fff7ed':color==='yellow'?'#fefce8':color==='purple'?'#faf5ff':color==='teal'?'#f0fdfa':'#f8fafc';
+        var fg = color==='red'?'#dc2626':color==='orange'?'#ea580c':color==='yellow'?'#ca8a04':color==='purple'?'#7c3aed':color==='teal'?'#0e7490':'#475569';
+        return '<a href="#" onclick="document.getElementById(\''+anchor+'\').scrollIntoView({behavior:\'smooth\'});return false" style="text-decoration:none;background:'+bg+';border-left:4px solid '+fg+';padding:10px;border-radius:6px;display:block">'+
+          '<div style="font-size:10px;color:'+fg+';text-transform:uppercase;font-weight:700;letter-spacing:.5px">'+icon+' '+label+'</div>'+
+          '<div style="font-size:1.4em;font-weight:800;color:'+fg+';margin-top:2px">'+val+'</div>'+
+        '</a>';
+      }
+      statsBox.innerHTML =
+        statCard('Sin stock', s.mps_sin_stock||0, 'red', '🚫', 'sec-sin-stock') +
+        statCard('Bajo mínimo', s.mps_bajo_minimo||0, 'orange', '⚠️', 'sec-bajo-min') +
+        statCard('Vencidos', s.lotes_vencidos||0, 'red', '☠️', 'sec-vencidos') +
+        statCard('Próximos <30d', s.lotes_proximos||0, 'yellow', '📅', 'sec-proximos') +
+        statCard('MEE bajo min', s.mees_bajo_minimo||0, 'orange', '🧤', 'sec-mee') +
+        statCard('Cuarentena', s.lotes_cuarentena||0, 'purple', '🔒', 'sec-cuar');
+    }
+    // Toast si entraron nuevas alertas críticas
+    var totalCritico = (s.mps_sin_stock||0) + (s.lotes_vencidos||0);
+    if(_ALERTAS_PREV_TOTAL >= 0 && totalCritico > _ALERTAS_PREV_TOTAL && !silent){
+      if(typeof _dashToast === 'function'){
+        _dashToast('⚠ Nuevas alertas críticas detectadas', true);
+      }
+    }
+    _ALERTAS_PREV_TOTAL = totalCritico;
+    // Render secciones
+    var html = '';
+    // 1. MPs sin stock
+    html += '<a name="sec-sin-stock"></a><div id="sec-sin-stock"></div>';
+    html += _renderSeccionMP('🚫 MPs sin stock (críticas)', d.mps_sin_stock||[], '#dc2626', 'mps_sin_stock');
+    // 2. MPs bajo mínimo
+    html += '<div id="sec-bajo-min"></div>';
+    html += _renderSeccionMP('⚠️ MPs bajo stock mínimo', d.mps_bajo_minimo||[], '#ea580c', 'mps_bajo_minimo');
+    // 2.5 Agrupado por proveedor
+    if((d.agrupado_por_proveedor||[]).length){
+      html += '<div style="background:#ecfeff;border:1px solid #0891b2;border-radius:8px;padding:14px;margin:14px 0">';
+      html += '<h3 style="color:#0e7490;margin:0 0 10px;font-size:14px">📨 Agrupado por proveedor · Crear SOL combinada</h3>';
+      html += '<div style="display:flex;flex-wrap:wrap;gap:8px">';
+      d.agrupado_por_proveedor.forEach(function(g, gi){
+        html += '<div style="background:#fff;border:1px solid #bae6fd;border-radius:6px;padding:8px 12px;flex:1;min-width:240px">';
+        html += '<div style="font-weight:700;font-size:13px;color:#0e7490">'+_escHTML(g.proveedor)+'</div>';
+        html += '<div style="font-size:11px;color:#475569;margin:3px 0">'+g.items.length+' MP(s) · déficit total '+Math.round(g.deficit_total_g).toLocaleString()+' g</div>';
+        html += '<button onclick="crearSolCombinada('+gi+')" style="padding:4px 10px;font-size:11px;background:#0e7490;color:#fff;border-radius:4px">📨 Crear SOL combinada</button>';
+        html += '</div>';
+      });
+      html += '</div></div>';
+    }
+    // 3. Lotes vencidos
+    html += '<div id="sec-vencidos"></div>';
+    html += _renderSeccionLotes('☠️ Lotes YA vencidos (dar de baja)', d.lotes_vencidos||[], '#dc2626', true);
+    // 4. Lotes próximos
+    html += '<div id="sec-proximos"></div>';
+    html += _renderSeccionLotes('📅 Lotes que vencen en próximos 30 días', d.lotes_proximos||[], '#ca8a04', false);
+    // 5. MEE
+    html += '<div id="sec-mee"></div>';
+    html += _renderSeccionMEE(d.mees_bajo_minimo||[]);
+    // 6. Cuarentena
+    html += '<div id="sec-cuar"></div>';
+    html += _renderSeccionCuarentena(d.lotes_cuarentena||[]);
+    secBox.innerHTML = html;
+    // Timestamp
+    var lu = document.getElementById('alertas-last-update');
+    if(lu){
+      var hora = new Date().toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+      var dur = Math.max(1, Math.round((Date.now()-t0)/100)/10);
+      lu.textContent = 'Actualizado '+hora+' · '+dur+'s · '+s.total+' alertas total' +
+        (s.silenciadas_activas?(' · '+s.silenciadas_activas+' silenciadas'):'');
+    }
+    if(!_ALERTAS_TIMER) _startAlertasAutoRefresh();
+  }catch(e){
+    secBox.innerHTML = '<div class="alert-error">Error: '+_escHTML(e.message)+'</div>';
+  }
+}
+function _startAlertasAutoRefresh(){
+  if(_ALERTAS_TIMER) clearInterval(_ALERTAS_TIMER);
+  _ALERTAS_TIMER = setInterval(function(){
+    var chk = document.getElementById('alertas-autorefresh');
+    if(!chk || !chk.checked) return;
+    if(document.visibilityState==='hidden') return;
+    var tab = document.getElementById('alertas');
+    if(!tab || tab.style.display==='none') return;
+    loadAlertasAll(true);
+  }, 60000);
+}
+function _renderSeccionMP(titulo, items, color, tipoSilen){
+  var h = '<div style="margin-top:18px"><h3 style="color:'+color+';font-size:14px;margin-bottom:8px">'+titulo+' <span style="font-size:11px;color:#94a3b8;font-weight:400">('+items.length+')</span></h3>';
+  if(!items.length){
+    h += '<div style="background:#f0fdf4;color:#166534;border:1px solid #86efac;padding:10px;border-radius:6px;font-size:13px">✓ Sin alertas en esta categoría</div></div>';
+    return h;
+  }
+  h += '<div style="overflow-x:auto"><table class="table" style="font-size:12px"><thead><tr>'+
+    '<th>Código</th><th>Nombre</th><th>INCI</th><th>Proveedor</th>'+
+    '<th style="text-align:right">Mín g</th><th style="text-align:right">Stock g</th>'+
+    '<th style="text-align:right">Déficit</th><th style="text-align:center">Cobertura</th>'+
+    '<th style="text-align:center">Acción</th></tr></thead><tbody>';
+  items.forEach(function(it){
+    var pct = it.cobertura_pct;
+    var pctColor = pct<25?'#dc2626':pct<50?'#ea580c':'#ca8a04';
+    h += '<tr>'+
+      '<td style="font-family:monospace;font-size:11px">'+_escHTML(it.codigo_mp)+'</td>'+
+      '<td style="font-weight:600">'+_escHTML(it.nombre)+'</td>'+
+      '<td style="font-size:11px;color:#475569">'+_escHTML(it.nombre_inci||'')+'</td>'+
+      '<td style="font-size:11px;color:#475569">'+_escHTML(it.proveedor||'—')+'</td>'+
+      '<td style="text-align:right">'+Math.round(it.stock_minimo_g).toLocaleString()+'</td>'+
+      '<td style="text-align:right;color:'+pctColor+';font-weight:600">'+Math.round(it.stock_actual_g).toLocaleString()+'</td>'+
+      '<td style="text-align:right;color:#dc2626;font-weight:700">'+Math.round(it.deficit_g).toLocaleString()+'</td>'+
+      '<td style="text-align:center"><span style="color:'+pctColor+';font-weight:700">'+pct+'%</span></td>'+
+      '<td style="text-align:center;white-space:nowrap">'+
+        '<button onclick="solicitarMPAlerta(\''+_escHTML(it.codigo_mp)+'\',\''+_escHTML(it.nombre).replace(/\\\'/g,"\\\\'")+'\','+it.deficit_g+',\''+_escHTML(it.proveedor||'')+'\')" style="padding:2px 7px;font-size:11px;background:#27ae60;color:#fff;border-radius:3px">Solicitar</button> '+
+        '<button onclick="silenciarAlerta(\''+tipoSilen+'\',\''+_escHTML(it.codigo_mp)+'\')" style="padding:2px 7px;font-size:11px;background:#94a3b8;color:#fff;border-radius:3px" title="Silenciar esta alerta">🔇</button>'+
+      '</td></tr>';
+  });
+  h += '</tbody></table></div></div>';
+  return h;
+}
+function _renderSeccionLotes(titulo, items, color, esVencido){
+  var h = '<div style="margin-top:18px"><h3 style="color:'+color+';font-size:14px;margin-bottom:8px">'+titulo+' <span style="font-size:11px;color:#94a3b8;font-weight:400">('+items.length+')</span></h3>';
+  if(!items.length){
+    h += '<div style="background:#f0fdf4;color:#166534;border:1px solid #86efac;padding:10px;border-radius:6px;font-size:13px">✓ Sin lotes</div></div>';
+    return h;
+  }
+  h += '<div style="overflow-x:auto"><table class="table" style="font-size:12px"><thead><tr>'+
+    '<th>Código</th><th>Material</th><th>Lote</th><th>Proveedor</th>'+
+    '<th style="text-align:right">Cantidad g</th>'+
+    '<th style="text-align:center">Vence</th><th style="text-align:center">Días</th>'+
+    '<th style="text-align:center">Acción</th></tr></thead><tbody>';
+  items.forEach(function(it){
+    var dCol = it.dias_para_vencer<0?'#dc2626':(it.dias_para_vencer<=7?'#dc2626':'#ea580c');
+    h += '<tr>'+
+      '<td style="font-family:monospace;font-size:11px">'+_escHTML(it.material_id)+'</td>'+
+      '<td style="font-weight:600">'+_escHTML(it.nombre)+'</td>'+
+      '<td style="font-family:monospace;font-size:11px">'+_escHTML(it.lote)+'</td>'+
+      '<td style="font-size:11px;color:#475569">'+_escHTML(it.proveedor||'—')+'</td>'+
+      '<td style="text-align:right;font-weight:600">'+Math.round(it.cantidad_g).toLocaleString()+'</td>'+
+      '<td style="text-align:center">'+_escHTML(it.fecha_vencimiento)+'</td>'+
+      '<td style="text-align:center;color:'+dCol+';font-weight:700">'+(it.dias_para_vencer<0?(it.dias_para_vencer+'d (VENCIDO)'):(it.dias_para_vencer+'d'))+'</td>'+
+      '<td style="text-align:center;white-space:nowrap">'+
+        (esVencido ? '<button onclick="darBajaLoteAlerta(\''+_escHTML(it.material_id)+'\',\''+_escHTML(it.lote)+'\')" style="padding:2px 7px;font-size:11px;background:#c0392b;color:#fff;border-radius:3px">Dar de baja</button>' : '') + ' ' +
+        '<button onclick="silenciarAlerta(\'lote_venc\',\''+_escHTML(it.material_id)+'::'+_escHTML(it.lote)+'\')" style="padding:2px 7px;font-size:11px;background:#94a3b8;color:#fff;border-radius:3px" title="Silenciar">🔇</button>'+
+      '</td></tr>';
+  });
+  h += '</tbody></table></div></div>';
+  return h;
+}
+function _renderSeccionMEE(items){
+  var h = '<div style="margin-top:18px"><h3 style="color:#ea580c;font-size:14px;margin-bottom:8px">🧤 Materiales E&E bajo stock mínimo <span style="font-size:11px;color:#94a3b8;font-weight:400">('+items.length+')</span></h3>';
+  if(!items.length){
+    h += '<div style="background:#f0fdf4;color:#166534;border:1px solid #86efac;padding:10px;border-radius:6px;font-size:13px">✓ Sin MEE bajo mínimo</div></div>';
+    return h;
+  }
+  h += '<div style="overflow-x:auto"><table class="table" style="font-size:12px"><thead><tr>'+
+    '<th>Código</th><th>Descripción</th><th>Categoría</th><th>Proveedor</th>'+
+    '<th style="text-align:right">Mín und</th><th style="text-align:right">Stock</th>'+
+    '<th style="text-align:right">Déficit</th><th style="text-align:center">Acción</th></tr></thead><tbody>';
+  items.forEach(function(m){
+    h += '<tr>'+
+      '<td style="font-family:monospace;font-size:11px">'+_escHTML(m.codigo)+'</td>'+
+      '<td style="font-weight:600">'+_escHTML(m.descripcion)+'</td>'+
+      '<td>'+_escHTML(m.categoria)+'</td>'+
+      '<td style="font-size:11px">'+_escHTML(m.proveedor||'—')+'</td>'+
+      '<td style="text-align:right">'+m.stock_minimo+'</td>'+
+      '<td style="text-align:right;color:#dc2626;font-weight:700">'+m.stock_actual+'</td>'+
+      '<td style="text-align:right;color:#dc2626;font-weight:700">'+m.deficit+'</td>'+
+      '<td style="text-align:center"><button onclick="silenciarAlerta(\'mee_bajo_minimo\',\''+_escHTML(m.codigo)+'\')" style="padding:2px 7px;font-size:11px;background:#94a3b8;color:#fff;border-radius:3px" title="Silenciar">🔇</button></td>'+
+    '</tr>';
+  });
+  h += '</tbody></table></div></div>';
+  return h;
+}
+function _renderSeccionCuarentena(items){
+  var h = '<div style="margin-top:18px"><h3 style="color:#7c3aed;font-size:14px;margin-bottom:8px">🔒 Lotes en cuarentena · pendiente QC <span style="font-size:11px;color:#94a3b8;font-weight:400">('+items.length+')</span></h3>';
+  if(!items.length){
+    h += '<div style="background:#f0fdf4;color:#166534;border:1px solid #86efac;padding:10px;border-radius:6px;font-size:13px">✓ Sin lotes en cuarentena</div></div>';
+    return h;
+  }
+  h += '<div style="overflow-x:auto"><table class="table" style="font-size:12px"><thead><tr>'+
+    '<th>Código</th><th>Material</th><th>Lote</th><th>Proveedor</th>'+
+    '<th>OC</th><th style="text-align:right">Cantidad g</th><th>Ingresado</th><th>Acción</th></tr></thead><tbody>';
+  items.forEach(function(it){
+    h += '<tr>'+
+      '<td style="font-family:monospace;font-size:11px">'+_escHTML(it.material_id)+'</td>'+
+      '<td style="font-weight:600">'+_escHTML(it.nombre)+'</td>'+
+      '<td style="font-family:monospace;font-size:11px">'+_escHTML(it.lote)+'</td>'+
+      '<td style="font-size:11px">'+_escHTML(it.proveedor||'—')+'</td>'+
+      '<td style="font-family:monospace;font-size:11px">'+_escHTML(it.numero_oc||'—')+'</td>'+
+      '<td style="text-align:right">'+Math.round(it.cantidad_g).toLocaleString()+'</td>'+
+      '<td style="font-size:11px;color:#475569">'+_escHTML(it.fecha_ingreso)+'</td>'+
+      '<td><button onclick="switchGroup(\'bar-calidadHub\',\'cuarentena\',null)" style="padding:2px 7px;font-size:11px;background:#7c3aed;color:#fff;border-radius:3px">Ir a QC</button></td>'+
+    '</tr>';
+  });
+  h += '</tbody></table></div></div>';
+  return h;
+}
+async function silenciarAlerta(tipo, cod){
+  var motivo = prompt('Motivo para silenciar esta alerta (≥10 chars):\\nEj: "MP en descontinuación", "Lote rotado a Animus", etc.');
+  if(motivo === null) return;
+  motivo = motivo.trim();
+  if(motivo.length < 10){ alert('Motivo demasiado corto'); return; }
+  var dias = prompt('¿En cuántos días reactivar? (vacío = silencio permanente)');
+  try{
+    var body = {tipo_alerta: tipo, codigo_referencia: cod, motivo: motivo};
+    if(dias && parseInt(dias)>0) body.expira_dias = parseInt(dias);
+    var r = await fetch('/api/alertas/silenciar', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(body),
+    });
+    var d = await r.json();
+    if(!r.ok){ alert('Error: '+(d.error||r.status)); return; }
+    loadAlertasAll(true);
+  }catch(e){ alert('Error red: '+e.message); }
+}
+async function darBajaLoteAlerta(mid, lote){
+  if(!confirm('Dar de baja DEFINITIVA el lote '+lote+'? Esto elimina los movimientos y queda en audit_log.')) return;
+  var motivo = prompt('Motivo (≥10 chars):');
+  if(!motivo || motivo.trim().length < 10){ alert('Motivo requerido'); return; }
+  try{
+    var url = '/api/lotes/'+encodeURIComponent(mid)+'/'+encodeURIComponent(lote||'_SIN_LOTE_');
+    var r = await fetch(url, {method:'DELETE', headers:{'Content-Type':'application/json'},
+                                body: JSON.stringify({motivo: motivo.trim()})});
+    var d = await r.json();
+    if(!r.ok){ alert('Error: '+(d.error||r.status)); return; }
+    alert('✓ Lote dado de baja');
+    loadAlertasAll(true);
+  }catch(e){ alert('Error red: '+e.message); }
+}
+function solicitarMPAlerta(codigo, nombre, deficit, proveedor){
+  // Reusa el modal de Solicitar de Bodega MP
+  _solLote = {
+    material_id: codigo, material_nombre: nombre,
+    lote: '', proveedor: proveedor, stock_min_g: deficit,
+  };
+  document.getElementById('sol-mp-nombre').textContent = nombre;
+  document.getElementById('sol-mp-cod').textContent = 'Codigo: '+codigo;
+  document.getElementById('sol-mp-stock').textContent = 'Déficit: '+Math.round(deficit).toLocaleString()+' g';
+  document.getElementById('sol-prov').value = proveedor || '';
+  document.getElementById('sol-cant').value = Math.round(deficit*1.5);
+  document.getElementById('sol-unidad').value = 'g';
+  document.getElementById('sol-urg').value = 'Urgente';
+  document.getElementById('sol-obs').value = 'Generado desde Alertas · déficit '+Math.round(deficit)+' g';
+  document.getElementById('sol-msg').innerHTML = '';
+  _cargarProveedoresUnicos();
+  document.getElementById('modal-solicitar-lote').style.display = 'flex';
+}
+async function crearSolCombinada(gIdx){
+  var g = ((_ALERTAS_DATA||{}).agrupado_por_proveedor||[])[gIdx];
+  if(!g){ alert('Grupo no encontrado'); return; }
+  if(!confirm('Crear SOL combinada para '+g.proveedor+' con '+g.items.length+' MPs?')) return;
+  var items = g.items.map(function(it){
+    return {codigo_mp: it.codigo_mp, nombre_mp: it.nombre,
+            cantidad_g: Math.max(it.deficit_g*1.5, 100),
+            unidad: 'g', justificacion: 'Reabastecimiento agrupado · alerta bajo mínimo',
+            valor_estimado: 0};
+  });
+  var payload = {
+    solicitante: window.OPER_ACTUAL || 'planta',
+    urgencia: 'Urgente',
+    observaciones: 'SOL combinada generada desde Alertas · '+g.items.length+' MPs · déficit total '+Math.round(g.deficit_total_g)+' g',
+    empresa: 'Espagiria', categoria: 'Materia Prima', tipo: 'Compra', area: 'Produccion',
+    items: items,
+  };
+  try{
+    var r = await fetch('/api/solicitudes-compra', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(payload),
+    });
+    var d = await r.json();
+    if(r.ok){
+      alert('✓ SOL combinada creada: '+(d.numero||'?')+' · '+items.length+' items');
+      loadAlertasAll(true);
+    } else {
+      alert('Error: '+(d.error||r.status));
+    }
+  }catch(e){ alert('Error red: '+e.message); }
+}
+function exportarExcelAlertas(){
+  if(!_ALERTAS_DATA){ alert('Cargá primero las alertas'); return; }
+  var d = _ALERTAS_DATA;
+  var rows = [];
+  (d.mps_sin_stock||[]).forEach(function(it){ rows.push(['Sin stock', it.codigo_mp, it.nombre, it.proveedor, it.stock_minimo_g, it.stock_actual_g, it.deficit_g, it.cobertura_pct+'%']); });
+  (d.mps_bajo_minimo||[]).forEach(function(it){ rows.push(['Bajo mín', it.codigo_mp, it.nombre, it.proveedor, it.stock_minimo_g, it.stock_actual_g, it.deficit_g, it.cobertura_pct+'%']); });
+  (d.lotes_vencidos||[]).forEach(function(it){ rows.push(['Vencido', it.material_id, it.nombre+' ('+it.lote+')', it.proveedor, '', it.cantidad_g, '', it.dias_para_vencer+'d (VENCIDO)']); });
+  (d.lotes_proximos||[]).forEach(function(it){ rows.push(['Próximo', it.material_id, it.nombre+' ('+it.lote+')', it.proveedor, '', it.cantidad_g, '', it.dias_para_vencer+'d']); });
+  (d.mees_bajo_minimo||[]).forEach(function(m){ rows.push(['MEE bajo', m.codigo, m.descripcion, m.proveedor, m.stock_minimo, m.stock_actual, m.deficit, '']); });
+  (d.lotes_cuarentena||[]).forEach(function(it){ rows.push(['Cuarentena', it.material_id, it.nombre+' ('+it.lote+')', it.proveedor, '', it.cantidad_g, '', 'OC '+(it.numero_oc||'—')]); });
+  if(!rows.length){ alert('Sin alertas para exportar'); return; }
+  var cols = ['Tipo','Código','Material','Proveedor','Mín','Stock/Cant','Déficit','Detalle'];
+  dlExcelHTML('Alertas_'+fhoy(), cols, rows);
 }
 
 async function loadVenc30(){

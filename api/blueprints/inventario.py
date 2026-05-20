@@ -1894,6 +1894,311 @@ def handle_alertas():
     alertas = [{'material_nombre': r[0], 'stock_actual': r[1], 'stock_minimo': r[2], 'estado': r[3], 'fecha': r[4]} for r in c.fetchall()]
     return jsonify({'alertas': alertas})
 
+# ────────────────────────────────────────────────────────────────────
+# Sprint Alertas PRO · Sebastián 20-may-2026 · endpoint consolidado
+# Agrupa todas las alertas (sin stock / bajo mínimo / vencidos /
+# próximos / cuarentena / MEE) en una sola llamada con stats por
+# categoría y filtrado por silenciadas.
+# ────────────────────────────────────────────────────────────────────
+
+@bp.route('/api/alertas/all', methods=['GET'])
+def alertas_all():
+    """Endpoint consolidado para tab Alertas. Devuelve 6 categorías:
+      - mps_sin_stock · MPs activas con stock <= 0
+      - mps_bajo_minimo · stock < stock_minimo (excluye sin_stock)
+      - lotes_vencidos · fecha_venc < hoy (con stock > 0)
+      - lotes_proximos · vence en próximos 30d
+      - mees_bajo_minimo · MEE bajo mínimo
+      - lotes_cuarentena · estado_lote IN (CUARENTENA, CUARENTENA_EXTENDIDA)
+
+    Filtra alertas silenciadas activas. Devuelve stats + items por categoría.
+    """
+    u, err, code = _require_session()
+    if err:
+        return err, code
+    conn = get_db(); c = conn.cursor()
+
+    # Cargar set de (tipo, codigo) silenciados activos
+    silenciados = set()
+    try:
+        for r in c.execute(
+            """SELECT tipo_alerta, codigo_referencia FROM alertas_silenciadas
+               WHERE activo = 1
+                 AND (expira_at_utc IS NULL OR expira_at_utc > datetime('now','utc'))""",
+        ).fetchall():
+            silenciados.add((r[0], r[1]))
+    except Exception:
+        pass
+
+    def _no_silenciado(tipo, cod):
+        return (tipo, cod) not in silenciados
+
+    # 1. MPs sin stock + bajo mínimo (1 query agrupada)
+    rows_mp = c.execute(
+        """SELECT mp.codigo_mp, COALESCE(mp.nombre_comercial,'') as nom,
+                  COALESCE(mp.nombre_inci,'') as inci,
+                  COALESCE(mp.proveedor,'') as prov,
+                  COALESCE(mp.tipo,'') as subt,
+                  COALESCE(mp.stock_minimo, 0) as smin,
+                  COALESCE(s.stock, 0) as stock
+           FROM maestro_mps mp
+           LEFT JOIN (
+               SELECT material_id,
+                      SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA')
+                               THEN cantidad ELSE -cantidad END) as stock
+               FROM movimientos
+               WHERE UPPER(COALESCE(estado_lote,'')) NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO','ANULADO')
+               GROUP BY material_id
+           ) s ON mp.codigo_mp = s.material_id
+           WHERE COALESCE(mp.activo, 1) = 1
+             AND UPPER(COALESCE(mp.tipo_material,'MP')) = 'MP'
+             AND COALESCE(mp.stock_minimo, 0) > 0""",
+    ).fetchall()
+    mps_sin_stock = []
+    mps_bajo_minimo = []
+    for r in rows_mp:
+        cod, nom, inci, prov, subt, smin, stock = r
+        smin = float(smin or 0); stock = float(stock or 0)
+        if not _no_silenciado('mps_sin_stock' if stock <= 0 else 'mps_bajo_minimo', cod):
+            continue
+        item = {
+            'codigo_mp': cod, 'nombre': nom or inci or cod,
+            'nombre_inci': inci, 'proveedor': prov, 'subtipo': subt,
+            'stock_minimo_g': smin, 'stock_actual_g': max(stock, 0),
+            'deficit_g': max(smin - stock, 0),
+            'cobertura_pct': round((stock / smin * 100) if smin > 0 else 0, 1),
+        }
+        if stock <= 0:
+            mps_sin_stock.append(item)
+        elif stock < smin:
+            mps_bajo_minimo.append(item)
+    mps_sin_stock.sort(key=lambda x: x['nombre'])
+    mps_bajo_minimo.sort(key=lambda x: x['cobertura_pct'])
+
+    # 2. Lotes vencidos + próximos
+    rows_v = c.execute(
+        """SELECT material_id, lote, MAX(material_nombre) as nombre,
+                  MAX(fecha_vencimiento) as venc, MAX(proveedor) as prov,
+                  SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA')
+                          THEN cantidad ELSE -cantidad END) as stock
+           FROM movimientos
+           WHERE COALESCE(lote,'') != ''
+             AND fecha_vencimiento IS NOT NULL AND fecha_vencimiento != ''
+             AND UPPER(COALESCE(estado_lote,'')) NOT IN ('ANULADO','RECHAZADO')
+           GROUP BY material_id, lote
+           HAVING stock > 0""",
+    ).fetchall()
+    from datetime import date as _date
+    hoy = _date.today()
+    lotes_vencidos = []
+    lotes_proximos = []
+    for r in rows_v:
+        mid, lote, nombre, venc, prov, stock = r
+        if not venc:
+            continue
+        try:
+            from datetime import datetime as _dt
+            venc_d = _dt.strptime(str(venc)[:10], '%Y-%m-%d').date()
+        except (ValueError, TypeError):
+            continue
+        dias = (venc_d - hoy).days
+        key_silen = f'{mid}::{lote}'
+        if not _no_silenciado('lote_venc', key_silen):
+            continue
+        item = {
+            'material_id': mid or '', 'lote': lote,
+            'nombre': nombre or '', 'proveedor': prov or '',
+            'cantidad_g': float(stock or 0),
+            'fecha_vencimiento': str(venc)[:10],
+            'dias_para_vencer': dias,
+        }
+        if dias < 0:
+            lotes_vencidos.append(item)
+        elif dias <= 30:
+            lotes_proximos.append(item)
+    lotes_vencidos.sort(key=lambda x: x['dias_para_vencer'])
+    lotes_proximos.sort(key=lambda x: x['dias_para_vencer'])
+
+    # 3. MEE bajo mínimo
+    mees_bajo = []
+    try:
+        rows_mee = c.execute(
+            """SELECT codigo, descripcion, COALESCE(categoria,''),
+                      COALESCE(proveedor,''),
+                      COALESCE(stock_minimo, 0) as smin,
+                      COALESCE(stock_actual, 0) as stock
+               FROM maestro_mee
+               WHERE COALESCE(estado, 'Activo') = 'Activo'
+                 AND COALESCE(stock_minimo, 0) > 0
+                 AND COALESCE(stock_actual, 0) < COALESCE(stock_minimo, 0)
+               ORDER BY (CAST(stock_actual AS REAL) / stock_minimo) ASC""",
+        ).fetchall()
+        for r in rows_mee:
+            cod, desc, cat, prov, smin, stock = r
+            if not _no_silenciado('mee_bajo_minimo', cod):
+                continue
+            smin = float(smin or 0); stock = float(stock or 0)
+            mees_bajo.append({
+                'codigo': cod, 'descripcion': desc or '',
+                'categoria': cat, 'proveedor': prov,
+                'stock_minimo': smin, 'stock_actual': stock,
+                'deficit': max(smin - stock, 0),
+                'cobertura_pct': round((stock / smin * 100) if smin > 0 else 0, 1),
+            })
+    except Exception:
+        pass
+
+    # 4. Lotes en cuarentena (case-insensitive)
+    lotes_cuar = []
+    try:
+        rows_cuar = c.execute(
+            """SELECT material_id, lote, MAX(material_nombre), MAX(proveedor),
+                      MAX(fecha) as ult_fecha, MAX(numero_oc),
+                      SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA')
+                              THEN cantidad ELSE -cantidad END) as stock
+               FROM movimientos
+               WHERE UPPER(COALESCE(estado_lote,'')) IN ('CUARENTENA','CUARENTENA_EXTENDIDA')
+               GROUP BY material_id, lote
+               HAVING stock > 0
+               ORDER BY ult_fecha ASC""",
+        ).fetchall()
+        for r in rows_cuar:
+            mid, lote, nombre, prov, ult, oc, stock = r
+            key = f'{mid}::{lote}'
+            if not _no_silenciado('lote_cuarentena', key):
+                continue
+            lotes_cuar.append({
+                'material_id': mid or '', 'lote': lote,
+                'nombre': nombre or '', 'proveedor': prov or '',
+                'fecha_ingreso': (ult or '')[:16].replace('T', ' '),
+                'numero_oc': oc or '',
+                'cantidad_g': float(stock or 0),
+            })
+    except Exception:
+        pass
+
+    # Agrupado por proveedor (para SOL combinada · solo bajo_minimo + sin_stock)
+    by_proveedor = {}
+    for it in mps_sin_stock + mps_bajo_minimo:
+        prov = it['proveedor'] or '(sin proveedor)'
+        by_proveedor.setdefault(prov, {
+            'proveedor': prov,
+            'items': [],
+            'deficit_total_g': 0,
+        })
+        by_proveedor[prov]['items'].append({
+            'codigo_mp': it['codigo_mp'],
+            'nombre': it['nombre'],
+            'deficit_g': it['deficit_g'],
+            'urgencia': 'CRITICO' if it['cobertura_pct'] < 25 else (
+                'URGENTE' if it['cobertura_pct'] < 50 else 'BAJO'),
+        })
+        by_proveedor[prov]['deficit_total_g'] += it['deficit_g']
+    proveedores = sorted(by_proveedor.values(),
+                         key=lambda g: -len(g['items']))
+
+    return jsonify({
+        'stats': {
+            'mps_sin_stock': len(mps_sin_stock),
+            'mps_bajo_minimo': len(mps_bajo_minimo),
+            'lotes_vencidos': len(lotes_vencidos),
+            'lotes_proximos': len(lotes_proximos),
+            'mees_bajo_minimo': len(mees_bajo),
+            'lotes_cuarentena': len(lotes_cuar),
+            'total': (len(mps_sin_stock) + len(mps_bajo_minimo) +
+                      len(lotes_vencidos) + len(lotes_proximos) +
+                      len(mees_bajo) + len(lotes_cuar)),
+            'silenciadas_activas': len(silenciados),
+        },
+        'mps_sin_stock': mps_sin_stock,
+        'mps_bajo_minimo': mps_bajo_minimo,
+        'lotes_vencidos': lotes_vencidos,
+        'lotes_proximos': lotes_proximos,
+        'mees_bajo_minimo': mees_bajo,
+        'lotes_cuarentena': lotes_cuar,
+        'agrupado_por_proveedor': proveedores,
+    })
+
+
+@bp.route('/api/alertas/silenciar', methods=['POST'])
+def alertas_silenciar():
+    """Sprint Alertas PRO · 20-may-2026 · silencia alerta con motivo.
+
+    Body: {tipo_alerta, codigo_referencia, motivo, expira_dias?}
+    Tipos válidos: mps_sin_stock, mps_bajo_minimo, lote_venc, lote_cuarentena,
+                    mee_bajo_minimo
+    """
+    u, err, code = _require_session()
+    if err:
+        return err, code
+    body = request.get_json(silent=True) or {}
+    tipo = (body.get('tipo_alerta') or '').strip()
+    cod = (body.get('codigo_referencia') or '').strip()
+    motivo = (body.get('motivo') or '').strip()
+    TIPOS_VALIDOS = ('mps_sin_stock', 'mps_bajo_minimo', 'lote_venc',
+                      'lote_cuarentena', 'mee_bajo_minimo')
+    if tipo not in TIPOS_VALIDOS:
+        return jsonify({'error': f'tipo_alerta inválido · usar {TIPOS_VALIDOS}'}), 400
+    if not cod:
+        return jsonify({'error': 'codigo_referencia requerido'}), 400
+    if len(motivo) < 10:
+        return jsonify({'error': 'motivo requerido (≥10 chars)'}), 400
+    expira_dias = body.get('expira_dias')
+    expira_sql = "NULL"
+    params_expira = []
+    if expira_dias:
+        try:
+            d = int(expira_dias)
+            if d > 0:
+                expira_sql = "datetime('now','utc','+' || ? || ' days')"
+                params_expira.append(str(d))
+        except (ValueError, TypeError):
+            pass
+    conn = get_db(); c = conn.cursor()
+    c.execute(
+        f"""INSERT INTO alertas_silenciadas
+              (tipo_alerta, codigo_referencia, motivo, silenciado_por,
+               expira_at_utc, activo)
+            VALUES (?, ?, ?, ?, {expira_sql}, 1)""",
+        [tipo, cod, motivo[:500], u] + params_expira,
+    )
+    new_id = c.lastrowid
+    try:
+        audit_log(c, usuario=u, accion='SILENCIAR_ALERTA',
+                  tabla='alertas_silenciadas', registro_id=new_id,
+                  despues={'tipo': tipo, 'codigo': cod,
+                           'motivo': motivo[:200],
+                           'expira_dias': expira_dias})
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({'ok': True, 'id': new_id,
+                    'mensaje': f'Alerta silenciada · {cod}'})
+
+
+@bp.route('/api/alertas/silenciar/<int:silen_id>', methods=['DELETE'])
+def alertas_desilenciar(silen_id):
+    """Re-activar alerta silenciada (activo=0)."""
+    u, err, code = _require_session()
+    if err:
+        return err, code
+    conn = get_db(); c = conn.cursor()
+    row = c.execute(
+        "SELECT tipo_alerta, codigo_referencia FROM alertas_silenciadas WHERE id = ?",
+        (silen_id,)).fetchone()
+    if not row:
+        return jsonify({'error': 'no existe'}), 404
+    c.execute("UPDATE alertas_silenciadas SET activo = 0 WHERE id = ?", (silen_id,))
+    try:
+        audit_log(c, usuario=u, accion='DESILENCIAR_ALERTA',
+                  tabla='alertas_silenciadas', registro_id=silen_id,
+                  despues={'tipo': row[0], 'codigo': row[1]})
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({'ok': True})
+
+
 @bp.route('/api/alertas-reabastecimiento')
 def alertas_reabastecimiento():
     conn = get_db(); c = conn.cursor()
