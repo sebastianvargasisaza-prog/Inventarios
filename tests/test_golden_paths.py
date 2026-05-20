@@ -6970,33 +6970,50 @@ def test_golden_plan_pedido_b2b_mp_check(app, db_clean):
 # Sebastián 19-may-2026: el banner del calendario depende de este endpoint.
 # ═══════════════════════════════════════════════════════════════════
 def test_golden_inv_export_lista_simple(app, db_clean):
-    """Sebastián 19-may-2026: Alejandro pide CSV simple de materias primas.
+    """Sebastián 19-may-2026: Alejandro pide lista Excel de materias primas.
 
-    Endpoint debe devolver CSV con UTF-8 BOM, header de 4 columnas, y solo
-    MPs activas. No expone precio, proveedor, stock — sólo identificación.
+    Endpoint default devuelve XLSX nativo (Excel-en-ES rompe CSV-con-coma).
+    Verifica:
+      - default ?fmt=xlsx · binario Excel válido con 4 columnas
+      - ?fmt=csv · CSV con `;` + BOM (compat Excel-ES como fallback)
+      - No expone precio, proveedor, stock
     """
     cs = _login(app, 'sebastian')
+
+    # ── default · XLSX ─────────────────────────────────────────────────
     r = cs.get('/api/maestro-mps/export-lista-simple')
     assert r.status_code == 200, f'BUG status: {r.status_code} {r.data[:200]}'
-    assert 'csv' in (r.headers.get('Content-Type') or '').lower()
-    assert 'attachment' in (r.headers.get('Content-Disposition') or '').lower()
-    assert 'materias-primas-' in (r.headers.get('Content-Disposition') or '')
-    txt = r.data.decode('utf-8')
-    assert txt.startswith('﻿'), 'BUG: falta BOM UTF-8 (Excel rompe acentos)'
-    lines = txt.splitlines()
-    assert len(lines) >= 1
-    header = lines[0].lstrip('﻿')
-    # 4 columnas exactas en orden
-    assert header == 'Codigo,Nombre Comercial,Nombre INCI,Tipo', \
-        f'BUG header inesperado: {header!r}'
-    # Si hay MPs seeded, al menos una fila
-    if len(lines) > 1:
-        cols = lines[1].split(',')
-        assert len(cols) >= 4, f'BUG: fila con menos de 4 columnas · {lines[1]!r}'
-    # NO debe incluir precio/proveedor/stock en ningún lado del header
+    ctype = (r.headers.get('Content-Type') or '').lower()
+    assert 'spreadsheetml' in ctype or 'excel' in ctype, \
+        f'BUG: Content-Type debería ser XLSX, es {ctype!r}'
+    cdisp = r.headers.get('Content-Disposition') or ''
+    assert 'attachment' in cdisp.lower()
+    assert '.xlsx' in cdisp.lower(), f'BUG: filename no .xlsx · {cdisp!r}'
+    # ZIP magic bytes (XLSX es un ZIP)
+    assert r.data[:2] == b'PK', 'BUG: archivo no parece XLSX (sin magic ZIP)'
+    # Parsear con openpyxl y validar header + ausencia de columnas sensibles
+    import io as _io
+    from openpyxl import load_workbook
+    wb = load_workbook(_io.BytesIO(r.data), read_only=True)
+    ws = wb.active
+    headers = [c.value for c in next(ws.iter_rows(min_row=1, max_row=1))]
+    assert headers == ['Codigo', 'Nombre Comercial', 'Nombre INCI', 'Tipo'], \
+        f'BUG header inesperado: {headers!r}'
     for prohibido in ('precio', 'proveedor', 'stock'):
-        assert prohibido not in header.lower(), \
-            f'BUG: header expone {prohibido!r} · Alejandro pidió "solo la lista"'
+        for h in headers:
+            assert prohibido not in (h or '').lower(), \
+                f'BUG: header expone {prohibido!r}'
+
+    # ── fmt=csv · fallback ─────────────────────────────────────────────
+    r2 = cs.get('/api/maestro-mps/export-lista-simple?fmt=csv')
+    assert r2.status_code == 200
+    assert 'csv' in (r2.headers.get('Content-Type') or '').lower()
+    txt = r2.data.decode('utf-8')
+    assert txt.startswith('﻿'), 'BUG: CSV sin BOM UTF-8'
+    header_csv = txt.splitlines()[0].lstrip('﻿')
+    # Excel-ES requiere `;` para separar columnas sin "import data"
+    assert header_csv == 'Codigo;Nombre Comercial;Nombre INCI;Tipo', \
+        f'BUG CSV header inesperado: {header_csv!r}'
 
 
 def test_golden_plan_alertas_ia(app, db_clean):

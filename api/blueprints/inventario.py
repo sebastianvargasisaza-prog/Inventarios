@@ -2628,21 +2628,24 @@ def eliminar_lote(material_id, lote):
 
 @bp.route('/api/maestro-mps/export-lista-simple', methods=['GET'])
 def maestro_mps_export_lista_simple():
-    """Exporta CSV simple de materias primas · Sebastián 19-may-2026.
+    """Exporta lista simple de materias primas · Sebastián 19-may-2026.
 
     Alejandro pidió "una lista de Excel solo con las materias primas, sin
-    precio, sin proveedor, sin lo que tenemos, solo la lista". Este endpoint
-    devuelve un CSV (que Excel abre directo) con 4 columnas:
-       codigo_mp · nombre_comercial · nombre_inci · tipo
+    precio, sin proveedor, sin lo que tenemos, solo la lista".
 
-    Solo MPs activos (`activo=1`), ordenadas por nombre.
-    UTF-8 BOM para que Excel respete acentos y ñ.
+    Formato (querystring `?fmt=`):
+      - `xlsx` (default) · archivo Excel nativo · header en negrita,
+        columnas auto-ajustadas, filtro automático. Lo más cómodo para
+        Alejandro (Excel en español rompe CSVs con coma).
+      - `csv` · CSV con `;` (Excel-ES) + BOM UTF-8. Fallback liviano.
 
-    Devuelve un archivo descargable `materias-primas-YYYY-MM-DD.csv`.
+    Solo MPs activas (activo=1), ordenadas por nombre.
     """
     from flask import make_response
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
+    fmt = (request.args.get('fmt') or 'xlsx').lower().strip()
+
     conn = get_db()
     c = conn.cursor()
     rows = c.execute(
@@ -2654,22 +2657,71 @@ def maestro_mps_export_lista_simple():
            WHERE COALESCE(activo, 1) = 1
            ORDER BY COALESCE(nombre_comercial, nombre_inci, codigo_mp) ASC""",
     ).fetchall()
-
-    # Construir CSV con BOM UTF-8 para Excel (sino caracteres acentuados rompen)
-    import csv as _csv
-    import io as _io
     from datetime import datetime as _dt
-    buf = _io.StringIO()
-    buf.write('﻿')  # BOM UTF-8
-    writer = _csv.writer(buf, delimiter=',', quoting=_csv.QUOTE_MINIMAL)
-    writer.writerow(['Codigo', 'Nombre Comercial', 'Nombre INCI', 'Tipo'])
-    for r in rows:
-        writer.writerow([r[0], r[1], r[2], r[3]])
-    csv_text = buf.getvalue()
-    fname = f"materias-primas-{_dt.now().strftime('%Y-%m-%d')}.csv"
-    resp = make_response(csv_text)
-    resp.headers['Content-Type'] = 'text/csv; charset=utf-8'
-    resp.headers['Content-Disposition'] = f'attachment; filename="{fname}"'
+    fecha_str = _dt.now().strftime('%Y-%m-%d')
+
+    HEADERS = ['Codigo', 'Nombre Comercial', 'Nombre INCI', 'Tipo']
+
+    if fmt == 'csv':
+        # CSV con `;` (Excel-ES) + BOM UTF-8
+        import csv as _csv
+        import io as _io
+        buf = _io.StringIO()
+        buf.write('﻿')  # BOM UTF-8
+        writer = _csv.writer(buf, delimiter=';', quoting=_csv.QUOTE_MINIMAL)
+        writer.writerow(HEADERS)
+        for r in rows:
+            writer.writerow([r[0], r[1], r[2], r[3]])
+        resp = make_response(buf.getvalue())
+        resp.headers['Content-Type'] = 'text/csv; charset=utf-8'
+        resp.headers['Content-Disposition'] = (
+            f'attachment; filename="materias-primas-{fecha_str}.csv"')
+        resp.headers['X-Content-Type-Options'] = 'nosniff'
+        return resp
+
+    # XLSX nativo · default
+    import io as _io
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment
+    from openpyxl.utils import get_column_letter
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'Materias Primas'
+    # Header con formato
+    header_font = Font(bold=True, color='FFFFFF', size=11)
+    header_fill = PatternFill(start_color='0F766E', end_color='0F766E',
+                              fill_type='solid')
+    center = Alignment(horizontal='left', vertical='center')
+    for col_idx, h in enumerate(HEADERS, start=1):
+        cell = ws.cell(row=1, column=col_idx, value=h)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = center
+    # Filas
+    for r_idx, r in enumerate(rows, start=2):
+        for c_idx, val in enumerate(r, start=1):
+            ws.cell(row=r_idx, column=c_idx, value=val)
+    # Auto-ajustar ancho columnas (heurística por largo máximo)
+    for col_idx, _h in enumerate(HEADERS, start=1):
+        letra = get_column_letter(col_idx)
+        max_len = len(HEADERS[col_idx - 1])
+        for r_idx in range(2, len(rows) + 2):
+            v = ws.cell(row=r_idx, column=col_idx).value
+            if v is not None:
+                max_len = max(max_len, len(str(v)))
+        ws.column_dimensions[letra].width = min(max_len + 2, 60)
+    # Congelar header + filtro auto
+    ws.freeze_panes = 'A2'
+    ws.auto_filter.ref = ws.dimensions
+
+    buf = _io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    resp = make_response(buf.getvalue())
+    resp.headers['Content-Type'] = (
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    resp.headers['Content-Disposition'] = (
+        f'attachment; filename="materias-primas-{fecha_str}.xlsx"')
     resp.headers['X-Content-Type-Options'] = 'nosniff'
     return resp
 
