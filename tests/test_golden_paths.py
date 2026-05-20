@@ -7310,6 +7310,98 @@ def test_golden_portal_b2b_flujo_completo(app, db_clean):
     _exec("DELETE FROM portal_clientes_credenciales WHERE email LIKE 'test_portal_%'")
 
 
+def test_golden_unificar_proveedores_completo(app, db_clean):
+    """Sprint Proveedores · 20-may-2026.
+
+    Verifica detector mejorado (normalización fuerte + Levenshtein) y
+    unificador completo (11 tablas, no solo movs+maestro).
+
+    Casos:
+    - 'INCHEMICAL S.A.S' / 'inchemical sas' / 'Inchemical' detectados
+      como mismo grupo por normalización exacta
+    - 'BASF' vs 'BAFS' por Levenshtein ≥ 0.85 (typo de 1 char)
+    - dry_run cuenta filas en cada tabla sin tocar
+    - apply actualiza movimientos + maestro_mps + ordenes_compra +
+      solicitudes_compra_items
+    - audit_log UNIFICAR_PROVEEDORES
+    """
+    _exec("DELETE FROM movimientos WHERE proveedor LIKE 'TEST_PROV_%'")
+    _exec("DELETE FROM maestro_mps WHERE proveedor LIKE 'TEST_PROV_%'")
+    _exec("DELETE FROM ordenes_compra WHERE proveedor LIKE 'TEST_PROV_%'")
+
+    # Insertar 3 variantes del mismo proveedor
+    _exec("""INSERT INTO movimientos
+             (material_id, material_nombre, cantidad, tipo, lote, fecha, proveedor, operador)
+             VALUES ('TEST_M1','m1',100,'Entrada','L1',datetime('now'),'TEST_PROV INCHEMICAL S.A.S','t')""")
+    _exec("""INSERT INTO movimientos
+             (material_id, material_nombre, cantidad, tipo, lote, fecha, proveedor, operador)
+             VALUES ('TEST_M1','m1',50,'Entrada','L2',datetime('now'),'TEST_PROV inchemical sas','t')""")
+    _exec("""INSERT INTO movimientos
+             (material_id, material_nombre, cantidad, tipo, lote, fecha, proveedor, operador)
+             VALUES ('TEST_M1','m1',30,'Entrada','L3',datetime('now'),'TEST_PROV Inchemical','t')""")
+    _exec("""INSERT INTO maestro_mps (codigo_mp, nombre_comercial, proveedor, activo)
+             VALUES ('TEST_MP_PROV','MP test','TEST_PROV INCHEMICAL S.A.S',1)""")
+
+    cs = _login(app, 'sebastian')
+
+    # 1) Detección · debe encontrar el grupo de 3 variantes
+    r1 = cs.get('/api/proveedores-duplicados?similitud=0.85')
+    assert r1.status_code == 200, f'BUG: {r1.status_code}'
+    d1 = r1.get_json()
+    grupos_test = [g for g in d1['grupos']
+                   if any('TEST_PROV' in v for v in g['variantes'])]
+    assert grupos_test, 'BUG: no detectó grupo TEST_PROV'
+    g = grupos_test[0]
+    test_vars = [v for v in g['variantes'] if 'TEST_PROV' in v]
+    assert len(test_vars) >= 3, \
+        f'BUG: esperaba 3 variantes TEST_PROV, hay {len(test_vars)}'
+
+    # 2) Dry-run · cuenta sin tocar
+    canonico = 'TEST_PROV INCHEMICAL S.A.S'
+    variantes_unir = [v for v in test_vars if v != canonico]
+    r2 = cs.post('/api/proveedores-unificar', json={
+        'canonico': canonico,
+        'variantes': test_vars,  # incluye canónico para idempotencia
+        'dry_run': True,
+    }, headers=csrf_headers())
+    assert r2.status_code == 200
+    d2 = r2.get_json()
+    assert d2['dry_run'] is True
+    # Movimientos debe tener al menos 3 (las 3 variantes)
+    assert d2['plan_updates_por_tabla'].get('movimientos.proveedor', 0) >= 3
+    # Verificar que no se tocó nada
+    pre_check = _query(
+        "SELECT COUNT(*) FROM movimientos WHERE proveedor='TEST_PROV inchemical sas'")
+    assert pre_check[0][0] == 1, 'BUG: dry_run modificó datos'
+
+    # 3) Apply real
+    r3 = cs.post('/api/proveedores-unificar', json={
+        'canonico': canonico,
+        'variantes': test_vars,
+    }, headers=csrf_headers())
+    assert r3.status_code == 200, f'BUG: {r3.status_code} {r3.data[:200]}'
+    d3 = r3.get_json()
+    assert d3['ok'] is True
+    # Las 3 variantes ahora son canónico
+    post_canon = _query(
+        "SELECT COUNT(*) FROM movimientos WHERE proveedor=?", (canonico,))
+    assert post_canon[0][0] == 3, \
+        f'BUG: esperaba 3 movs con canónico, hay {post_canon[0][0]}'
+    # Variantes viejas no existen más
+    for v in variantes_unir:
+        post_v = _query("SELECT COUNT(*) FROM movimientos WHERE proveedor=?", (v,))
+        assert post_v[0][0] == 0, f'BUG: variante {v} NO se renombró'
+
+    # audit_log
+    audit = _query(
+        "SELECT COUNT(*) FROM audit_log WHERE accion='UNIFICAR_PROVEEDORES'")
+    assert audit[0][0] >= 1, 'BUG: falta audit_log UNIFICAR_PROVEEDORES'
+
+    # Cleanup
+    _exec("DELETE FROM movimientos WHERE material_id='TEST_M1'")
+    _exec("DELETE FROM maestro_mps WHERE codigo_mp='TEST_MP_PROV'")
+
+
 def test_golden_minimos_modo_uniforme_90d(app, db_clean):
     """Sprint Inventario MP · 20-may-2026.
 

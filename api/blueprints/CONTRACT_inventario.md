@@ -97,6 +97,20 @@
   precios_mp_historico, conteo_items, conteo_ciclico_calendario,
   conteo_ciclico_config, ebr_pesajes, especificaciones_mp, alertas) y
   desactiva (activo=0) los codigos viejos. audit_log UNIFICAR_MP_DUPLICADOS.
+- `GET  /api/proveedores-duplicados[?similitud=0.85]` · detecta proveedores
+  duplicados. Capa 1: normalización (lowercase, sin tildes, sin sufijos
+  jurídicos SAS/LTDA/SA/SL/CIA/INC/CORP/LLC/BV/GMBH/AG/CO/SRL/SAC/SPA, sin
+  `. , ; : & - _ / \\`). Capa 2: Levenshtein ≥ threshold para typos. Carga
+  desde 11 tablas que tienen proveedor (no solo movs+maestro). Retorna
+  grupos con stats (refs_totales, usos, count_variantes).
+- `POST /api/proveedores-unificar` · acepta `dry_run` (cuenta sin tocar) o
+  apply real. Transaccional sobre 11 tablas:
+  movimientos.proveedor, maestro_mps.proveedor, maestro_mee.proveedor,
+  ordenes_compra.proveedor, solicitudes_compra.proveedor,
+  solicitudes_compra_items.proveedor, solicitudes_compra_items.proveedor_sugerido,
+  pagos_oc.proveedor, mp_lead_time_config.proveedor_principal,
+  mee_lead_time_config.proveedor_default, precios_mp_historico.proveedor.
+  audit_log UNIFICAR_PROVEEDORES. Sebastián 20-may-2026.
 - `POST /api/movimientos` · INSERT recepción/salida
 - `GET  /api/conteo/estanterias` · agrupación por estantería
 - `GET  /api/conteo/materiales` · MPs en estantería

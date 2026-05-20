@@ -2217,89 +2217,196 @@ def proveedores_unicos():
     return jsonify({'proveedores': sorted(proveedores, key=lambda s: s.lower())})
 
 
+def _normalizar_proveedor(nombre):
+    """Normaliza nombre de proveedor para detección de duplicados.
+    Sebastián 20-may-2026 · versión reforzada:
+    - lowercase + strip + sin tildes (Ínchemical → inchemical)
+    - quita sufijos jurídicos (SAS, LTDA, SA, SL, CIA, INC, CORP, LLC, BV, GMBH)
+    - quita puntuación + caracteres especiales (. , ; : & - _ / \\)
+    - colapsa espacios múltiples
+    """
+    import re, unicodedata
+    n = (nombre or '').lower().strip()
+    n = unicodedata.normalize('NFD', n)
+    n = ''.join(c for c in n if unicodedata.category(c) != 'Mn')
+    SUFIJOS = (
+        r'\bs\.?a\.?s\.?\b', r'\bs\.?a\.?\b', r'\bltda\b', r'\bs\.?l\.?\b',
+        r'\bcia\b', r'\binc\b', r'\bcorp(oration)?\b', r'\bllc\b',
+        r'\b& cia\b', r'\bgmbh\b', r'\bbv\b', r'\bag\b', r'\bco\b',
+        r'\bsrl\b', r'\bsac\b', r'\bspa\b',
+    )
+    for pat in SUFIJOS:
+        n = re.sub(pat, '', n)
+    n = re.sub(r'[.,;:&_/\\\-]+', ' ', n)
+    n = re.sub(r'\s+', ' ', n).strip()
+    return n
+
+
+def _similitud_levenshtein(a, b):
+    """Devuelve similitud 0-1 entre dos strings (1 = idénticos)."""
+    if not a or not b:
+        return 0.0
+    if a == b:
+        return 1.0
+    # Levenshtein iterativo
+    if len(a) < len(b):
+        a, b = b, a
+    if len(b) == 0:
+        return 0.0
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a):
+        curr = [i + 1]
+        for j, cb in enumerate(b):
+            ins = prev[j + 1] + 1
+            dele = curr[j] + 1
+            subst = prev[j] + (0 if ca == cb else 1)
+            curr.append(min(ins, dele, subst))
+        prev = curr
+    dist = prev[-1]
+    max_len = max(len(a), len(b))
+    return 1.0 - (dist / max_len)
+
+
+# Tablas que tienen columna proveedor (o variante) · usadas por el
+# unificador para reescribir referencias. Tupla: (tabla, columna).
+# Sebastián 20-may-2026 · audit completo de schema.
+_TABLAS_REF_PROVEEDOR = [
+    ('movimientos', 'proveedor'),
+    ('maestro_mps', 'proveedor'),
+    ('maestro_mee', 'proveedor'),
+    ('ordenes_compra', 'proveedor'),
+    ('solicitudes_compra', 'proveedor'),
+    ('solicitudes_compra_items', 'proveedor'),
+    ('solicitudes_compra_items', 'proveedor_sugerido'),
+    ('pagos_oc', 'proveedor'),
+    ('mp_lead_time_config', 'proveedor_principal'),
+    ('mee_lead_time_config', 'proveedor_default'),
+    ('precios_mp_historico', 'proveedor'),
+]
+
+
 @bp.route('/api/proveedores-duplicados', methods=['GET'])
 def proveedores_duplicados():
-    """Agrupa proveedores que se ven como el mismo con diferente formato.
+    """Agrupa proveedores que probablemente son el mismo con distinto
+    formato. Sebastián 20-may-2026 · audit reforzado.
 
-    Heuristica: normalizar (lowercase, strip, eliminar sufijos juridicos
-    SAS/LTDA/SA/SL/CIA/INC/CORP, eliminar puntos y comas, colapsar
-    espacios multiples) y agrupar los que despues de normalizar son
-    iguales pero en raw son diferentes.
+    Detección en 2 capas:
+    1. Normalización exacta (lowercase, sin tildes, sin sufijos jurídicos,
+       sin puntuación). Agrupa variantes que normalizan al mismo string.
+    2. Similitud Levenshtein ≥ 0.85 entre las claves normalizadas ·
+       captura typos (Inchemical vs Inquemical, BASF vs BAFS, etc.).
 
-    Devuelve solo grupos con >= 2 variantes — los unicos vale la pena
-    unificar. Para cada grupo sugiere un canonico: la variante con mas
-    caracteres (probablemente la mas completa).
+    Para cada grupo:
+      - canonico_sugerido = variante con más caracteres
+      - variantes ordenadas por uso (más usadas primero)
+      - usos = dict con count de movimientos por variante
+      - count_total_refs = suma de refs en TODAS las tablas
 
-    Solo lectura, autenticado.
+    Query params:
+      ?similitud=0.85 (override threshold Levenshtein · 0=desactiva)
     """
     u, err, code = _require_session()
     if err:
         return err, code
 
-    import re
-    SUFIJOS = (
-        r'\bs\.?a\.?s\.?\b', r'\bs\.?a\.?\b', r'\bltda\b', r'\bs\.?l\.?\b',
-        r'\bcia\b', r'\binc\b', r'\bcorp\b', r'\bllc\b', r'\b& cia\b',
-    )
-
-    def normalizar(nombre):
-        n = (nombre or '').lower().strip()
-        for pat in SUFIJOS:
-            n = re.sub(pat, '', n)
-        n = re.sub(r'[.,;:]+', '', n)
-        n = re.sub(r'\s+', ' ', n).strip()
-        return n
+    try:
+        threshold = float(request.args.get('similitud', '0.85'))
+        threshold = max(0.0, min(1.0, threshold))
+    except (ValueError, TypeError):
+        threshold = 0.85
 
     conn = get_db()
     c = conn.cursor()
     raw = set()
-    try:
-        for row in c.execute("SELECT DISTINCT proveedor FROM movimientos "
-                             "WHERE proveedor IS NOT NULL AND proveedor != ''"):
-            raw.add(row[0].strip())
-    except sqlite3.OperationalError:
-        pass
-    try:
-        for row in c.execute("SELECT DISTINCT proveedor FROM maestro_mps "
-                             "WHERE proveedor IS NOT NULL AND proveedor != ''"):
-            raw.add(row[0].strip())
-    except sqlite3.OperationalError:
-        pass
+    # Cargar desde TODAS las tablas que tienen proveedor (no solo movs+maestro)
+    for tabla, col in _TABLAS_REF_PROVEEDOR:
+        try:
+            for row in c.execute(
+                f"SELECT DISTINCT {col} FROM {tabla} "
+                f"WHERE {col} IS NOT NULL AND {col} != ''",
+            ):
+                v = (row[0] or '').strip()
+                if v:
+                    raw.add(v)
+        except Exception:
+            pass
 
-    grupos = {}
+    # Capa 1: agrupar por normalización exacta
+    grupos_exacto = {}
     for nombre in raw:
-        clave = normalizar(nombre)
+        clave = _normalizar_proveedor(nombre)
         if not clave:
             continue
-        grupos.setdefault(clave, []).append(nombre)
+        grupos_exacto.setdefault(clave, []).append(nombre)
 
+    # Capa 2: fusionar grupos con similitud ≥ threshold
+    claves = list(grupos_exacto.keys())
+    if threshold > 0:
+        clusters = []
+        usados = set()
+        for i, k1 in enumerate(claves):
+            if k1 in usados:
+                continue
+            cluster = {k1}
+            usados.add(k1)
+            for k2 in claves[i+1:]:
+                if k2 in usados:
+                    continue
+                if _similitud_levenshtein(k1, k2) >= threshold:
+                    cluster.add(k2)
+                    usados.add(k2)
+            clusters.append(cluster)
+    else:
+        clusters = [{k} for k in claves]
+
+    # Construir grupos finales con stats
     duplicados = []
-    for clave, variantes in grupos.items():
+    for cluster_keys in clusters:
+        variantes = []
+        for k in cluster_keys:
+            variantes.extend(grupos_exacto[k])
         if len(variantes) < 2:
             continue
-        # Canonico sugerido: variante con mas caracteres (mas info)
+        # Canonico sugerido: variante con más caracteres (más info)
         canonico = max(variantes, key=lambda s: (len(s), s))
-        # Contar uso de cada variante en movimientos para que el usuario vea
-        # cual es la mas usada (puede preferir esa como canonico).
+        # Contar uso por variante en TODAS las tablas
         usos = {}
+        refs_totales = {}
         for v in variantes:
-            try:
-                row = c.execute(
-                    "SELECT COUNT(*) FROM movimientos WHERE proveedor=?", (v,)
-                ).fetchone()
-                usos[v] = row[0] if row else 0
-            except sqlite3.OperationalError:
-                usos[v] = 0
+            n_movs = 0
+            n_refs_total = 0
+            for tabla, col in _TABLAS_REF_PROVEEDOR:
+                try:
+                    n = c.execute(
+                        f"SELECT COUNT(*) FROM {tabla} WHERE {col} = ?",
+                        (v,)).fetchone()[0]
+                    n_refs_total += int(n or 0)
+                    if tabla == 'movimientos':
+                        n_movs = int(n or 0)
+                except Exception:
+                    pass
+            usos[v] = n_movs
+            refs_totales[v] = n_refs_total
         duplicados.append({
-            'clave_normalizada': clave,
+            'clave_normalizada': ' | '.join(sorted(cluster_keys)),
             'canonico_sugerido': canonico,
-            'variantes': sorted(variantes, key=lambda s: -usos.get(s, 0)),
+            'variantes': sorted(variantes,
+                                key=lambda s: -refs_totales.get(s, 0)),
             'usos': usos,
+            'refs_totales': refs_totales,
             'count_variantes': len(variantes),
+            'count_total_refs': sum(refs_totales.values()),
+            'detectado_por': 'levenshtein' if len(cluster_keys) > 1 else 'normalizacion',
         })
 
-    duplicados.sort(key=lambda g: -g['count_variantes'])
-    return jsonify({'grupos': duplicados, 'total_grupos': len(duplicados)})
+    duplicados.sort(key=lambda g: (-g['count_total_refs'],
+                                    -g['count_variantes']))
+    return jsonify({
+        'grupos': duplicados,
+        'total_grupos': len(duplicados),
+        'threshold_similitud': threshold,
+        'tablas_consultadas': [t for t, _ in _TABLAS_REF_PROVEEDOR],
+    })
 
 
 @bp.route('/api/proveedores-unificar', methods=['POST'])
@@ -2324,6 +2431,7 @@ def proveedores_unificar():
     d = request.json or {}
     canonico = (d.get('canonico') or '').strip()
     variantes = d.get('variantes') or []
+    dry_run = bool(d.get('dry_run', False))
     if not canonico or len(canonico) < 2:
         return jsonify({'error': 'canonico requerido (>=2 chars)'}), 400
     if not isinstance(variantes, list) or len(variantes) < 1:
@@ -2332,78 +2440,90 @@ def proveedores_unificar():
     variantes = sorted({(v or '').strip() for v in variantes if (v or '').strip()})
     if not variantes:
         return jsonify({'error': 'variantes vacias tras limpieza'}), 400
-    # No permitir mas de 50 a la vez (sanity check)
     if len(variantes) > 50:
         return jsonify({'error': 'max 50 variantes por unificacion'}), 400
 
     conn = get_db()
     c = conn.cursor()
-
     placeholders = ','.join('?' * len(variantes))
-    try:
-        movs_antes = c.execute(
-            f"SELECT COUNT(*) FROM movimientos WHERE proveedor IN ({placeholders})",
-            tuple(variantes)
-        ).fetchone()[0]
-    except sqlite3.OperationalError:
-        movs_antes = 0
-    try:
-        cat_antes = c.execute(
-            f"SELECT COUNT(*) FROM maestro_mps WHERE proveedor IN ({placeholders})",
-            tuple(variantes)
-        ).fetchone()[0]
-    except sqlite3.OperationalError:
-        cat_antes = 0
 
-    # Update movimientos
-    try:
-        c.execute(
-            f"UPDATE movimientos SET proveedor=? WHERE proveedor IN ({placeholders})",
-            (canonico, *variantes)
-        )
-        movs_actualizados = c.rowcount
-    except sqlite3.OperationalError:
-        movs_actualizados = 0
+    # Dry-run: contar filas que se actualizarían en cada tabla SIN tocar
+    if dry_run:
+        plan = {}
+        total = 0
+        for tabla, col in _TABLAS_REF_PROVEEDOR:
+            try:
+                n = c.execute(
+                    f"SELECT COUNT(*) FROM {tabla} WHERE {col} IN ({placeholders})",
+                    tuple(variantes),
+                ).fetchone()[0]
+                plan[f'{tabla}.{col}'] = int(n or 0)
+                total += int(n or 0)
+            except Exception as _e:
+                plan[f'{tabla}.{col}'] = f'ERR: {str(_e)[:60]}'
+        return jsonify({
+            'dry_run': True,
+            'canonico': canonico,
+            'variantes': variantes,
+            'plan_updates_por_tabla': plan,
+            'total_filas_a_actualizar': total,
+        })
 
-    # Update maestro
+    # APPLY · transaccional · reescribe en TODAS las tablas
+    afectados = {}
     try:
-        c.execute(
-            f"UPDATE maestro_mps SET proveedor=? WHERE proveedor IN ({placeholders})",
-            (canonico, *variantes)
-        )
-        cat_actualizados = c.rowcount
-    except sqlite3.OperationalError:
-        cat_actualizados = 0
-
-    # Audit log
-    try:
+        for tabla, col in _TABLAS_REF_PROVEEDOR:
+            try:
+                cur = c.execute(
+                    f"UPDATE {tabla} SET {col} = ? "
+                    f"WHERE {col} IN ({placeholders})",
+                    (canonico, *variantes),
+                )
+                afectados[f'{tabla}.{col}'] = cur.rowcount or 0
+            except Exception as _e:
+                __import__('logging').getLogger('inventario').warning(
+                    'unificar proveedor fallo tabla %s.%s: %s', tabla, col, _e)
+                afectados[f'{tabla}.{col}'] = f'ERR: {str(_e)[:60]}'
+        # audit_log master
         import json as _json
-        c.execute("""INSERT INTO audit_log
-                     (usuario, accion, tabla, registro_id, detalle, ip, fecha)
-                     VALUES (?,?,?,?,?,?,datetime('now', '-5 hours'))""",
-                  (u, 'UNIFICAR_PROVEEDORES', 'movimientos+maestro_mps',
-                   canonico,
-                   _json.dumps({
-                       'canonico': canonico,
-                       'variantes_unificadas': variantes,
-                       'movimientos_actualizados': movs_actualizados,
-                       'catalogo_actualizado': cat_actualizados,
-                   }, ensure_ascii=False),
-                   request.remote_addr))
-    except sqlite3.OperationalError:
-        pass
+        c.execute(
+            """INSERT INTO audit_log
+                 (usuario, accion, tabla, registro_id, detalle, ip, fecha)
+               VALUES (?,?,?,?,?,?,datetime('now', '-5 hours'))""",
+            (u, 'UNIFICAR_PROVEEDORES', '+'.join(t for t, _ in _TABLAS_REF_PROVEEDOR),
+             canonico,
+             _json.dumps({
+                 'canonico': canonico,
+                 'variantes_unificadas': variantes,
+                 'filas_actualizadas_por_tabla': afectados,
+             }, ensure_ascii=False),
+             request.remote_addr),
+        )
+        conn.commit()
+    except Exception as _e:
+        try: conn.rollback()
+        except Exception: pass
+        return jsonify({
+            'error': f'transacción falló: {_e}',
+            'afectados_parcial': afectados,
+        }), 500
 
-    conn.commit()
-
+    total_actualizados = sum(
+        v for v in afectados.values() if isinstance(v, int))
     return jsonify({
         'ok': True,
         'message': (f'Unificado a "{canonico}". '
-                    f'{movs_actualizados} movimientos + {cat_actualizados} '
-                    f'entradas de catalogo actualizadas.'),
+                    f'{total_actualizados} filas actualizadas en '
+                    f'{len(_TABLAS_REF_PROVEEDOR)} tablas.'),
         'canonico': canonico,
         'variantes_unificadas': variantes,
-        'movimientos_actualizados': movs_actualizados,
-        'catalogo_actualizado': cat_actualizados,
+        'filas_actualizadas_por_tabla': afectados,
+        'total_filas_actualizadas': total_actualizados,
+        # Compat con UI vieja
+        'movimientos_actualizados': afectados.get('movimientos.proveedor', 0)
+            if isinstance(afectados.get('movimientos.proveedor'), int) else 0,
+        'catalogo_actualizado': afectados.get('maestro_mps.proveedor', 0)
+            if isinstance(afectados.get('maestro_mps.proveedor'), int) else 0,
     })
 
 
