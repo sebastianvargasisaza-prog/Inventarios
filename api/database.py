@@ -6433,6 +6433,30 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
            ('ESENCIA ILUMINADORA',                  'esencia', NULL, 60, 90, 30, 3.0, 3, NULL)""",
     ]),
 
+    (141, "Portal Clientes B2B Fase 2 · PQR · Sebastián 20-may-2026", [
+        # Sebastián 15-may-2026: "solo tuviera dos módulos, solicitar y pqr".
+        # Fase 2 = PQR. Tab adicional en /portal · cliente envía petición,
+        # queja, reclamo o sugerencia · admin responde desde backoffice.
+        """CREATE TABLE IF NOT EXISTS portal_pqr (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cliente_id TEXT NOT NULL,
+            cliente_nombre TEXT NOT NULL,
+            email_cliente TEXT NOT NULL,
+            tipo TEXT NOT NULL CHECK(tipo IN ('peticion','queja','reclamo','sugerencia')),
+            titulo TEXT NOT NULL,
+            descripcion TEXT NOT NULL,
+            estado TEXT NOT NULL DEFAULT 'abierto'
+                CHECK(estado IN ('abierto','en_revision','respondido','cerrado')),
+            respuesta_admin TEXT DEFAULT '',
+            respondido_por TEXT DEFAULT '',
+            respondido_at_utc TEXT,
+            creado_at_utc TEXT NOT NULL DEFAULT (datetime('now','utc')),
+            actualizado_at_utc TEXT NOT NULL DEFAULT (datetime('now','utc'))
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_portal_pqr_cliente ON portal_pqr(cliente_id, estado)",
+        "CREATE INDEX IF NOT EXISTS idx_portal_pqr_estado ON portal_pqr(estado, creado_at_utc DESC)",
+    ]),
+
     (140, "Portal Clientes B2B Fase 1 · credenciales y sesiones · Sebastián 20-may-2026", [
         # Sebastián 15-may-2026: portal minimalista para Fernando Mesa
         # (y futuros mayoristas). Solo 2 módulos: Solicitar + PQR. Fase 1

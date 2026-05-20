@@ -257,6 +257,8 @@ button.primary:disabled{opacity:.6;cursor:not-allowed}
   <div class="tabs">
     <button class="tab active" data-tab="solicitar" onclick="setTab('solicitar')">📦 Solicitar</button>
     <button class="tab" data-tab="mis" onclick="setTab('mis')">📋 Mis pedidos</button>
+    <button class="tab" data-tab="pqr" onclick="setTab('pqr')">💬 PQR</button>
+    <button class="tab" data-tab="mis-pqr" onclick="setTab('mis-pqr')">📜 Mis PQR</button>
   </div>
 
   <div id="panel-solicitar">
@@ -292,6 +294,33 @@ button.primary:disabled{opacity:.6;cursor:not-allowed}
       <div id="mis-lista" class="lista"><div class="empty">Cargando...</div></div>
     </div>
   </div>
+
+  <div id="panel-pqr" style="display:none">
+    <div class="card">
+      <h2>💬 PQR · Petición · Queja · Reclamo · Sugerencia</h2>
+      <p style="font-size:12px;color:#64748b;margin-bottom:8px">Contanos qué pasa · revisamos en máximo 5 días hábiles.</p>
+      <label>Tipo</label>
+      <select id="pqr-tipo">
+        <option value="peticion">📨 Petición</option>
+        <option value="queja">⚠️ Queja</option>
+        <option value="reclamo">🚨 Reclamo</option>
+        <option value="sugerencia">💡 Sugerencia</option>
+      </select>
+      <label>Título corto</label>
+      <input id="pqr-titulo" type="text" maxlength="200" placeholder="Ej. Lote llegó con tapa rota">
+      <label>Descripción detallada</label>
+      <textarea id="pqr-desc" rows="5" maxlength="5000" placeholder="Contanos qué pasó, cuándo, qué esperás de solución..."></textarea>
+      <button class="primary" id="btn-pqr" onclick="enviarPqr()">📨 Enviar PQR</button>
+      <div class="msg" id="pqr-msg"></div>
+    </div>
+  </div>
+
+  <div id="panel-mis-pqr" style="display:none">
+    <div class="card">
+      <h2>📜 Mis PQR</h2>
+      <div id="mis-pqr-lista" class="lista"><div class="empty">Cargando...</div></div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -300,7 +329,76 @@ function setTab(t){
   document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active', b.dataset.tab===t));
   document.getElementById('panel-solicitar').style.display = (t==='solicitar')?'block':'none';
   document.getElementById('panel-mis').style.display = (t==='mis')?'block':'none';
+  document.getElementById('panel-pqr').style.display = (t==='pqr')?'block':'none';
+  document.getElementById('panel-mis-pqr').style.display = (t==='mis-pqr')?'block':'none';
   if(t==='mis') cargarMisPedidos();
+  if(t==='mis-pqr') cargarMisPqr();
+}
+
+async function enviarPqr(){
+  var btn = document.getElementById('btn-pqr');
+  var msg = document.getElementById('pqr-msg');
+  msg.style.display = 'none';
+  var tipo = document.getElementById('pqr-tipo').value;
+  var titulo = document.getElementById('pqr-titulo').value.trim();
+  var desc = document.getElementById('pqr-desc').value.trim();
+  if(!titulo){
+    msg.className='msg err'; msg.textContent='Falta título'; msg.style.display='block'; return;
+  }
+  if(desc.length < 10){
+    msg.className='msg err'; msg.textContent='Descripción muy corta (≥10 chars)'; msg.style.display='block'; return;
+  }
+  btn.disabled=true; btn.textContent='Enviando...';
+  try{
+    var r = await fetch('/api/portal/pqr', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      credentials:'same-origin',
+      body: JSON.stringify({tipo: tipo, titulo: titulo, descripcion: desc}),
+    });
+    var d = await r.json();
+    if(!r.ok){
+      msg.className='msg err'; msg.textContent='Error: '+(d.error||r.status);
+      msg.style.display='block';
+      btn.disabled=false; btn.textContent='📨 Enviar PQR'; return;
+    }
+    msg.className='msg ok'; msg.textContent='✓ PQR #'+d.id+' registrado · te respondemos pronto';
+    msg.style.display='block';
+    document.getElementById('pqr-titulo').value='';
+    document.getElementById('pqr-desc').value='';
+    btn.disabled=false; btn.textContent='📨 Enviar PQR';
+  }catch(e){
+    msg.className='msg err'; msg.textContent='Error red: '+e.message;
+    msg.style.display='block';
+    btn.disabled=false; btn.textContent='📨 Enviar PQR';
+  }
+}
+
+async function cargarMisPqr(){
+  var box = document.getElementById('mis-pqr-lista');
+  box.innerHTML = '<div class="empty">Cargando...</div>';
+  try{
+    var r = await fetch('/api/portal/mis-pqr', {credentials:'same-origin'});
+    if(r.status===401){ window.location.href='/portal/login'; return; }
+    var d = await r.json();
+    var items = d.pqrs || [];
+    if(!items.length){
+      box.innerHTML = '<div class="empty">Sin PQRs · usá la pestaña PQR para crear uno</div>';
+      return;
+    }
+    var EMOJI = {peticion:'📨', queja:'⚠️', reclamo:'🚨', sugerencia:'💡'};
+    box.innerHTML = items.map(p =>
+      '<div class="pedido '+esc(p.estado)+'">'
+      + '<div class="pedido-prod">'+(EMOJI[p.tipo]||'📨')+' '+esc(p.titulo)+'</div>'
+      + '<div class="pedido-meta">'+esc(p.tipo)+' · creado '+esc((p.creado_at_utc||'').slice(0,10))+'</div>'
+      + '<span class="pedido-estado">'+esc(p.estado)+'</span>'
+      + '<div style="font-size:11px;color:#475569;margin-top:6px;white-space:pre-wrap">'+esc(p.descripcion)+'</div>'
+      + (p.respuesta_admin
+          ? '<div style="margin-top:8px;padding:8px;background:#dbeafe;border-radius:6px;font-size:11px"><b>Respuesta de '+esc(p.respondido_por||'Espagiria')+':</b><br>'+esc(p.respuesta_admin)+'</div>'
+          : '')
+      + '</div>'
+    ).join('');
+  }catch(e){ box.innerHTML='<div class="empty">Error: '+esc(e.message)+'</div>'; }
 }
 
 async function cargarSesionYProductos(){
@@ -712,3 +810,219 @@ def portal_mis_pedidos():
             'creado_at': r[7] or '',
         })
     return jsonify({'pedidos': out, 'total': len(out)})
+
+
+# ────────────────────────────────────────────────────────────────────
+# FASE 2 · PQR (Peticiones, Quejas, Reclamos, Sugerencias)
+# ────────────────────────────────────────────────────────────────────
+
+_PQR_TIPOS = {'peticion', 'queja', 'reclamo', 'sugerencia'}
+
+
+@bp.route('/api/portal/pqr', methods=['POST'])
+def portal_crear_pqr():
+    """Cliente crea un PQR · tipo ∈ {peticion, queja, reclamo, sugerencia}.
+
+    Sebastián 20-may-2026 · Fase 2 del Portal · cierra el módulo PQR.
+    """
+    auth = _require_portal_login()
+    if not auth:
+        return jsonify({'error': 'No autorizado'}), 401
+    cid, cnom, email = auth
+    body = request.get_json(silent=True) or {}
+    tipo = (body.get('tipo') or '').strip().lower()
+    titulo = (body.get('titulo') or '').strip()[:200]
+    descripcion = (body.get('descripcion') or '').strip()[:5000]
+    if tipo not in _PQR_TIPOS:
+        return jsonify({
+            'error': f'tipo inválido · usar {sorted(_PQR_TIPOS)}',
+        }), 400
+    if not titulo:
+        return jsonify({'error': 'titulo requerido'}), 400
+    if len(descripcion) < 10:
+        return jsonify({'error': 'descripcion requerida (>= 10 chars)'}), 400
+    conn = get_db(); c = conn.cursor()
+    c.execute(
+        """INSERT INTO portal_pqr
+             (cliente_id, cliente_nombre, email_cliente, tipo, titulo,
+              descripcion)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (cid, cnom, email, tipo, titulo, descripcion),
+    )
+    pqr_id = c.lastrowid
+    audit_log(c, usuario=f'portal:{email}', accion='PORTAL_CREAR_PQR',
+              tabla='portal_pqr', registro_id=pqr_id,
+              despues={'cliente_id': cid, 'tipo': tipo, 'titulo': titulo})
+    conn.commit()
+
+    # Notif a Calidad + Sebastián (las quejas/reclamos a Calidad por gobierno
+    # INVIMA · peticiones/sugerencias también porque suelen ser de producto).
+    try:
+        from blueprints.notif import push_notif as _push_notif
+        destinatarios = ['sebastian']
+        try:
+            from config import CALIDAD_USERS
+            destinatarios.extend(sorted(CALIDAD_USERS))
+        except Exception:
+            pass
+        emoji = {'peticion': '📨', 'queja': '⚠️',
+                 'reclamo': '🚨', 'sugerencia': '💡'}.get(tipo, '📨')
+        # Quejas y reclamos como importantes
+        es_importante = tipo in ('queja', 'reclamo')
+        for dest in set(destinatarios):
+            _push_notif(
+                destinatario=dest,
+                tipo=f'portal_pqr_{tipo}',
+                titulo=f'{emoji} PQR · {tipo} · {cnom}',
+                body=f'{titulo[:80]} · click para ver',
+                link='/admin?tab=portal_pqr',
+                remitente=f'portal:{email}',
+                importante=es_importante,
+            )
+    except Exception:
+        pass
+
+    return jsonify({
+        'ok': True, 'id': pqr_id, 'tipo': tipo,
+        'mensaje': 'PQR registrado · te respondemos a la brevedad',
+    }), 201
+
+
+@bp.route('/api/portal/mis-pqr', methods=['GET'])
+def portal_mis_pqr():
+    """PQRs del cliente logueado · solo los SUYOS."""
+    auth = _require_portal_login()
+    if not auth:
+        return jsonify({'error': 'No autorizado'}), 401
+    cid, cnom, _ = auth
+    conn = get_db()
+    rows = conn.execute(
+        """SELECT id, tipo, titulo, descripcion, estado,
+                  respuesta_admin, respondido_por, respondido_at_utc,
+                  creado_at_utc
+           FROM portal_pqr
+           WHERE cliente_id = ?
+           ORDER BY creado_at_utc DESC, id DESC
+           LIMIT 100""",
+        (cid,),
+    ).fetchall()
+    out = []
+    for r in rows:
+        out.append({
+            'id': r[0], 'tipo': r[1], 'titulo': r[2] or '',
+            'descripcion': r[3] or '', 'estado': r[4] or 'abierto',
+            'respuesta_admin': r[5] or '',
+            'respondido_por': r[6] or '',
+            'respondido_at_utc': r[7] or '',
+            'creado_at_utc': r[8] or '',
+        })
+    return jsonify({'pqrs': out, 'total': len(out)})
+
+
+# ─── ADMIN PQR ──────────────────────────────────────────────────────
+
+@bp.route('/api/admin/portal/pqr', methods=['GET'])
+def admin_portal_pqr_lista():
+    """Lista TODOS los PQRs (admin/calidad ven todos · clientes solo los suyos).
+
+    Filtros opcionales:
+      ?estado=abierto|en_revision|respondido|cerrado
+      ?tipo=peticion|queja|reclamo|sugerencia
+      ?cliente_id=XXX
+    """
+    u, err = _require_admin_backoffice()
+    if err:
+        return err
+    estado = (request.args.get('estado') or '').strip().lower()
+    tipo = (request.args.get('tipo') or '').strip().lower()
+    cli = (request.args.get('cliente_id') or '').strip()
+    where = ['1=1']
+    params = []
+    if estado in ('abierto', 'en_revision', 'respondido', 'cerrado'):
+        where.append('estado = ?'); params.append(estado)
+    if tipo in _PQR_TIPOS:
+        where.append('tipo = ?'); params.append(tipo)
+    if cli:
+        where.append('cliente_id = ?'); params.append(cli)
+    sql = (
+        "SELECT id, cliente_id, cliente_nombre, email_cliente, tipo, "
+        "titulo, descripcion, estado, respuesta_admin, respondido_por, "
+        "respondido_at_utc, creado_at_utc, actualizado_at_utc "
+        "FROM portal_pqr "
+        f"WHERE {' AND '.join(where)} "
+        "ORDER BY (estado='abierto') DESC, creado_at_utc DESC, id DESC "
+        "LIMIT 500"
+    )
+    conn = get_db()
+    rows = conn.execute(sql, params).fetchall()
+    items = [{
+        'id': r[0], 'cliente_id': r[1], 'cliente_nombre': r[2],
+        'email_cliente': r[3], 'tipo': r[4], 'titulo': r[5],
+        'descripcion': r[6], 'estado': r[7],
+        'respuesta_admin': r[8] or '',
+        'respondido_por': r[9] or '',
+        'respondido_at_utc': r[10] or '',
+        'creado_at_utc': r[11] or '',
+        'actualizado_at_utc': r[12] or '',
+    } for r in rows]
+    return jsonify({'items': items, 'total': len(items)})
+
+
+@bp.route('/api/admin/portal/pqr/<int:pqr_id>', methods=['PATCH'])
+def admin_portal_pqr_responder(pqr_id):
+    """Admin/calidad responde un PQR o cambia su estado.
+
+    Body: {estado?, respuesta?}
+    """
+    u, err = _require_admin_backoffice()
+    if err:
+        return err
+    body = request.get_json(silent=True) or {}
+    conn = get_db(); c = conn.cursor()
+    row = c.execute(
+        "SELECT id, estado, respuesta_admin FROM portal_pqr WHERE id = ?",
+        (pqr_id,),
+    ).fetchone()
+    if not row:
+        return jsonify({'error': 'PQR no existe'}), 404
+
+    sets = []
+    params = []
+    cambios = {}
+    nuevo_estado = body.get('estado')
+    if nuevo_estado:
+        nuevo_estado = nuevo_estado.strip().lower()
+        if nuevo_estado not in ('abierto', 'en_revision', 'respondido', 'cerrado'):
+            return jsonify({'error': 'estado inválido'}), 400
+        sets.append('estado = ?'); params.append(nuevo_estado)
+        cambios['estado'] = nuevo_estado
+    respuesta = body.get('respuesta')
+    if respuesta is not None:
+        respuesta = str(respuesta).strip()[:5000]
+        sets.append('respuesta_admin = ?'); params.append(respuesta)
+        sets.append('respondido_por = ?'); params.append(u)
+        sets.append("respondido_at_utc = datetime('now','utc')")
+        cambios['respuesta_len'] = len(respuesta)
+        cambios['respondido_por'] = u
+        # Si responde y no cambió estado, marcar como respondido
+        if 'estado' not in cambios:
+            sets.append("estado = 'respondido'")
+            cambios['estado'] = 'respondido'
+    if not sets:
+        return jsonify({'error': 'nada que actualizar'}), 400
+    sets.append("actualizado_at_utc = datetime('now','utc')")
+    params.append(pqr_id)
+    c.execute(
+        f"UPDATE portal_pqr SET {', '.join(sets)} WHERE id = ?", params,
+    )
+    audit_log(c, usuario=u, accion='PORTAL_RESPONDER_PQR',
+              tabla='portal_pqr', registro_id=pqr_id,
+              antes={'estado_prev': row[1]}, despues=cambios)
+
+    # Notif al cliente vía push_notif si tiene usuario interno mapeado
+    # (no en este flujo · el cliente externo NO tiene compras_user)
+    # · simplemente actualizamos y el cliente lo ve al refrescar /portal.
+
+    conn.commit()
+    return jsonify({'ok': True, 'cambios': cambios})
+

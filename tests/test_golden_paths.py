@@ -7310,6 +7310,98 @@ def test_golden_portal_b2b_flujo_completo(app, db_clean):
     _exec("DELETE FROM portal_clientes_credenciales WHERE email LIKE 'test_portal_%'")
 
 
+def test_golden_portal_b2b_pqr_flujo(app, db_clean):
+    """Portal Clientes B2B · Fase 2 · PQR · Sebastián 20-may-2026.
+
+    Cubre:
+      - Admin crea credencial para cliente test
+      - Cliente login → crea PQR (queja con título + descripción)
+      - Cliente ve SUS PQRs (aislamiento)
+      - Admin lista PQRs (puede filtrar por tipo/estado)
+      - Admin responde el PQR → estado = respondido
+      - Cliente ve la respuesta
+      - PQR con descripcion <10 chars → 400
+      - tipo inválido → 400
+    """
+    _exec("DELETE FROM portal_pqr WHERE cliente_id LIKE 'TEST_PORTAL_PQR_%'")
+    _exec("DELETE FROM portal_clientes_credenciales WHERE email LIKE 'test_pqr_%'")
+
+    cs_admin = _login(app, 'sebastian')
+    r = cs_admin.post('/api/admin/portal/credenciales', json={
+        'cliente_id': 'TEST_PORTAL_PQR_CLI',
+        'cliente_nombre': 'Cliente PQR Test',
+        'email': 'test_pqr_cli@example.com',
+        'password': 'demoPassword123',
+    }, headers=csrf_headers())
+    assert r.status_code == 201
+    cred_id = r.get_json()['id']
+
+    with app.test_client() as cs_cli:
+        # Login
+        cs_cli.post('/api/portal/login', json={
+            'email': 'test_pqr_cli@example.com',
+            'password': 'demoPassword123',
+        }, headers=csrf_headers())
+
+        # Tipo inválido
+        r_bad = cs_cli.post('/api/portal/pqr', json={
+            'tipo': 'xx', 'titulo': 'Test', 'descripcion': 'descripcion suficiente larga',
+        }, headers=csrf_headers())
+        assert r_bad.status_code == 400
+
+        # Descripción muy corta
+        r_short = cs_cli.post('/api/portal/pqr', json={
+            'tipo': 'queja', 'titulo': 'Test', 'descripcion': 'corta',
+        }, headers=csrf_headers())
+        assert r_short.status_code == 400
+
+        # Crear PQR válido
+        r1 = cs_cli.post('/api/portal/pqr', json={
+            'tipo': 'queja',
+            'titulo': 'Lote llegó con tapa rota',
+            'descripcion': 'Recibí el envío y 3 unidades tenían la tapa fisurada.',
+        }, headers=csrf_headers())
+        assert r1.status_code == 201, f'BUG crear PQR: {r1.status_code} {r1.data}'
+        pqr_id = r1.get_json()['id']
+
+        # Cliente ve SUS PQRs
+        r2 = cs_cli.get('/api/portal/mis-pqr')
+        assert r2.status_code == 200
+        d2 = r2.get_json()
+        ids = {p['id'] for p in d2['pqrs']}
+        assert pqr_id in ids
+
+    # Admin lista PQRs · filtra por estado=abierto
+    r3 = cs_admin.get('/api/admin/portal/pqr?estado=abierto&tipo=queja')
+    assert r3.status_code == 200
+    items = r3.get_json()['items']
+    assert any(p['id'] == pqr_id for p in items)
+
+    # Admin responde
+    r4 = cs_admin.patch(f'/api/admin/portal/pqr/{pqr_id}', json={
+        'respuesta': 'Ya te enviamos repuesto por mensajería · gracias por avisar.',
+    }, headers=csrf_headers())
+    assert r4.status_code == 200
+    d4 = r4.get_json()
+    assert d4['cambios']['estado'] == 'respondido'
+
+    # Cliente vuelve a entrar y ve respuesta
+    with app.test_client() as cs_cli2:
+        cs_cli2.post('/api/portal/login', json={
+            'email': 'test_pqr_cli@example.com',
+            'password': 'demoPassword123',
+        }, headers=csrf_headers())
+        r5 = cs_cli2.get('/api/portal/mis-pqr')
+        d5 = r5.get_json()
+        pqr = next(p for p in d5['pqrs'] if p['id'] == pqr_id)
+        assert pqr['estado'] == 'respondido'
+        assert 'repuesto' in pqr['respuesta_admin'].lower()
+
+    # Cleanup
+    _exec("DELETE FROM portal_pqr WHERE cliente_id LIKE 'TEST_PORTAL_PQR_%'")
+    _exec("DELETE FROM portal_clientes_credenciales WHERE email LIKE 'test_pqr_%'")
+
+
 def test_golden_tablero_kanban_estructura_y_permisos(app, db_clean):
     """Sebastián 19-may-2026 · Kanban de Estaciones de Planta.
 
