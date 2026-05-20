@@ -7310,6 +7310,124 @@ def test_golden_portal_b2b_flujo_completo(app, db_clean):
     _exec("DELETE FROM portal_clientes_credenciales WHERE email LIKE 'test_portal_%'")
 
 
+def test_golden_portal_timeline_pedido(app, db_clean):
+    """Sprint D Portal · 20-may-2026 · timeline visual del pedido.
+
+    Cubre que GET /api/portal/mis-pedidos retorna campo `timeline` con 8
+    steps derivados de pedidos_b2b + produccion_programada + ebr_ejecuciones.
+    Estados progresan correctamente según los timestamps de etapas.
+    """
+    _exec("DELETE FROM pedidos_b2b WHERE cliente_id LIKE 'TEST_TL_%'")
+    _exec("DELETE FROM portal_clientes_credenciales WHERE email LIKE 'test_tl_%'")
+    _exec("DELETE FROM produccion_programada WHERE observaciones LIKE '%TEST_TL_%'")
+
+    cs_admin = _login(app, 'sebastian')
+    r = cs_admin.post('/api/admin/portal/credenciales', json={
+        'cliente_id': 'TEST_TL_CLI',
+        'cliente_nombre': 'Cliente Timeline',
+        'email': 'test_tl_cli@example.com',
+        'password': 'demoPassword123',
+    }, headers=csrf_headers())
+    assert r.status_code == 201
+
+    # Crear pedido directo (sin pasar por API · simulamos cliente)
+    pid_pedido = _exec(
+        """INSERT INTO pedidos_b2b
+             (cliente_id, cliente_nombre, producto_nombre, cantidad_uds,
+              ml_unidad, fecha_estimada, estado, notas, creado_por)
+           VALUES ('TEST_TL_CLI', 'Cliente Timeline',
+                   'GEL HIDRATANTE', 50, 30, '2026-06-15', 'pendiente',
+                   'test timeline', 'portal:test')""",
+    )
+
+    # Lote vinculado al pedido (lote dedicado eos_b2b con observaciones que
+    # incluyen "· #N · entrega")
+    pid_lote = _exec(
+        """INSERT INTO produccion_programada
+             (producto, fecha_programada, lotes, cantidad_kg, estado, origen,
+              observaciones)
+           VALUES ('GEL HIDRATANTE', '2026-06-05', 1, 5, 'programado',
+                   'eos_b2b', ?)""",
+        (f'Pedido B2B Cliente Timeline · #{pid_pedido} · entrega estimada 2026-06-15 · TEST_TL_PEDIDO',),
+    )
+
+    # Login del cliente
+    with app.test_client() as cs:
+        cs.post('/api/portal/login', json={
+            'email': 'test_tl_cli@example.com',
+            'password': 'demoPassword123',
+        }, headers=csrf_headers())
+
+        # Estado 1 · sólo programado (lote sin iniciar)
+        r1 = cs.get('/api/portal/mis-pedidos')
+        d1 = r1.get_json()
+        ped = next(p for p in d1['pedidos'] if p['id'] == pid_pedido)
+        tl = ped['timeline']
+        # 8 steps esperados
+        keys = [s['key'] for s in tl]
+        assert keys == ['recibido', 'confirmado', 'produciendo',
+                         'envasado', 'micro_qc', 'acondicionamiento',
+                         'liberado', 'enviado'], f'BUG keys: {keys}'
+        # Recibido + Confirmado completados, resto pendiente
+        assert tl[0]['estado'] == 'completado'  # recibido
+        assert tl[1]['estado'] == 'completado'  # confirmado
+        for i in range(2, 8):
+            assert tl[i]['estado'] == 'pendiente', \
+                f'BUG step {tl[i]["key"]} debería pendiente, es {tl[i]["estado"]}'
+
+        # Estado 2 · etapa dispensación iniciada
+        _exec("""UPDATE produccion_programada
+                 SET etapa_disp_inicio_at = datetime('now','-5 hours'),
+                     inicio_real_at = datetime('now','-5 hours')
+                 WHERE id = ?""", (pid_lote,))
+        r2 = cs.get('/api/portal/mis-pedidos')
+        ped2 = next(p for p in r2.get_json()['pedidos'] if p['id'] == pid_pedido)
+        tl2 = ped2['timeline']
+        prod_step = next(s for s in tl2 if s['key'] == 'produciendo')
+        assert prod_step['estado'] == 'en_curso'
+        assert ped2['estado_visible'] == 'En producción'
+
+        # Estado 3 · envasado terminado · debe pasar a Micro QC en_curso
+        _exec("""UPDATE produccion_programada
+                 SET etapa_disp_fin_at = datetime('now','-5 hours'),
+                     etapa_elab_fin_at = datetime('now','-5 hours'),
+                     etapa_env_fin_at = datetime('now','-5 hours')
+                 WHERE id = ?""", (pid_lote,))
+        r3 = cs.get('/api/portal/mis-pedidos')
+        ped3 = next(p for p in r3.get_json()['pedidos'] if p['id'] == pid_pedido)
+        tl3 = {s['key']: s['estado'] for s in ped3['timeline']}
+        assert tl3['envasado'] == 'completado'
+        assert tl3['micro_qc'] == 'en_curso', \
+            f'BUG: micro_qc debería en_curso post-envasado · es {tl3["micro_qc"]}'
+
+        # Estado 4 · acondicionamiento terminado · micro pasa a completado
+        _exec("""UPDATE produccion_programada
+                 SET etapa_acond_inicio_at = datetime('now','-5 hours'),
+                     etapa_acond_fin_at = datetime('now','-5 hours')
+                 WHERE id = ?""", (pid_lote,))
+        r4 = cs.get('/api/portal/mis-pedidos')
+        ped4 = next(p for p in r4.get_json()['pedidos'] if p['id'] == pid_pedido)
+        tl4 = {s['key']: s['estado'] for s in ped4['timeline']}
+        assert tl4['micro_qc'] == 'completado'
+        assert tl4['acondicionamiento'] == 'completado'
+        assert tl4['liberado'] == 'en_curso', \
+            'liberado debe estar en_curso si EBR no existe pero acond terminó'
+
+        # Estado 5 · enviado · pedidos_b2b.estado=despachado
+        _exec("UPDATE pedidos_b2b SET estado='despachado' WHERE id=?",
+              (pid_pedido,))
+        r5 = cs.get('/api/portal/mis-pedidos')
+        ped5 = next(p for p in r5.get_json()['pedidos'] if p['id'] == pid_pedido)
+        tl5 = {s['key']: s['estado'] for s in ped5['timeline']}
+        assert tl5['enviado'] == 'completado'
+        assert ped5['estado_visible'] == 'Enviado'
+
+    # Cleanup
+    _exec("DELETE FROM pedidos_b2b WHERE cliente_id = 'TEST_TL_CLI'")
+    _exec("DELETE FROM portal_clientes_credenciales WHERE email = 'test_tl_cli@example.com'")
+    _exec("DELETE FROM produccion_programada WHERE id = ?", (pid_lote,))
+
+
 def test_golden_portal_b2b_pqr_flujo(app, db_clean):
     """Portal Clientes B2B · Fase 2 · PQR · Sebastián 20-may-2026.
 

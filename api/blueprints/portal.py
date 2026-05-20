@@ -238,6 +238,24 @@ button.primary:disabled{opacity:.6;cursor:not-allowed}
 .pedido-meta{font-size:11px;color:#64748b;margin-top:3px}
 .pedido-estado{display:inline-block;background:#e2e8f0;color:#475569;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700;text-transform:uppercase;margin-top:4px}
 .empty{text-align:center;color:#94a3b8;font-style:italic;padding:30px;font-size:13px}
+.chip{display:inline-block;background:#e2e8f0;color:#475569;padding:3px 10px;border-radius:10px;font-size:11px;font-weight:700}
+.chip.libre{background:#d1fae5;color:#065f46}
+.chip.ocupada{background:#fef3c7;color:#854d0e}
+.chip.sucia{background:#fee2e2;color:#991b1b}
+.chip.area{background:#dbeafe;color:#1e40af}
+/* Timeline visual del pedido · Sprint D Portal */
+.tl{margin-top:14px;padding-top:12px;border-top:1px dashed #cbd5e1;display:flex;flex-direction:column;gap:8px}
+.tl-step{display:flex;gap:10px;align-items:flex-start;padding:6px 8px;border-radius:6px;background:#fafafa;border-left:3px solid #cbd5e1;opacity:.55}
+.tl-step.completado{opacity:1;background:#ecfdf5;border-left-color:#16a34a}
+.tl-step.en_curso{opacity:1;background:#fef3c7;border-left-color:#ca8a04}
+.tl-step.rechazado{opacity:1;background:#fee2e2;border-left-color:#dc2626}
+.tl-step.pendiente{opacity:.5}
+.tl-ico{font-size:18px;line-height:1.2;flex-shrink:0;width:24px;text-align:center}
+.tl-body{flex:1;min-width:0}
+.tl-lbl{font-size:13px;font-weight:700;color:#1e293b}
+.tl-step.pendiente .tl-lbl{color:#94a3b8}
+.tl-fecha{font-size:10px;color:#64748b;margin-top:1px}
+.tl-det{font-size:11px;color:#475569;margin-top:2px}
 .msg{padding:10px 12px;border-radius:8px;font-size:12px;margin-top:10px;display:none}
 .msg.ok{background:#d1fae5;color:#065f46}
 .msg.err{background:#fee2e2;color:#991b1b}
@@ -480,14 +498,34 @@ async function cargarMisPedidos(){
       box.innerHTML = '<div class="empty">No tenés pedidos todavía · andá a Solicitar</div>';
       return;
     }
-    box.innerHTML = items.map(p =>
-      '<div class="pedido '+esc(p.estado)+'">'
-      + '<div class="pedido-prod">'+esc(p.producto_nombre)+'</div>'
-      + '<div class="pedido-meta">'+p.cantidad_uds+' uds × '+p.ml_unidad+' ml · '+(p.kg_equivalente||0)+' kg' + (p.fecha_estimada?(' · '+esc(p.fecha_estimada)):'')+'</div>'
-      + '<span class="pedido-estado">'+esc(p.estado)+'</span>'
-      + (p.notas?'<div style="font-size:11px;color:#64748b;margin-top:6px">📝 '+esc(p.notas)+'</div>':'')
-      + '</div>'
-    ).join('');
+    box.innerHTML = items.map(p => {
+      var tlHtml = '';
+      if (p.timeline && p.timeline.length) {
+        tlHtml = '<div class="tl">' + p.timeline.map(function(s){
+          var clsState = 'tl-step ' + (s.estado || 'pendiente');
+          return '<div class="' + clsState + '">'
+               + '<div class="tl-ico">' + esc(s.icon || '·') + '</div>'
+               + '<div class="tl-body">'
+               +   '<div class="tl-lbl">' + esc(s.label || '') + '</div>'
+               +   (s.fecha ? '<div class="tl-fecha">' + esc(s.fecha) + '</div>' : '')
+               +   (s.detalle ? '<div class="tl-det">' + esc(s.detalle) + '</div>' : '')
+               + '</div></div>';
+        }).join('') + '</div>';
+      }
+      var estLbl = p.estado_visible || p.estado || 'pendiente';
+      var estKind = p.estado_visible_kind || 'pendiente';
+      var estChipCls = {
+        completado: 'libre', en_curso: 'ocupada',
+        rechazado: 'sucia', pendiente: 'area',
+      }[estKind] || 'area';
+      return '<div class="pedido '+esc(p.estado)+'">'
+        + '<div class="pedido-prod">'+esc(p.producto_nombre)+'</div>'
+        + '<div class="pedido-meta">'+p.cantidad_uds+' uds × '+p.ml_unidad+' ml · '+(p.kg_equivalente||0)+' kg' + (p.fecha_estimada?(' · entrega ~'+esc(p.fecha_estimada)):'')+'</div>'
+        + '<span class="chip '+estChipCls+'" style="margin-top:4px;display:inline-block">'+esc(estLbl)+'</span>'
+        + (p.notas?'<div style="font-size:11px;color:#64748b;margin-top:6px">📝 '+esc(p.notas)+'</div>':'')
+        + tlHtml
+        + '</div>';
+    }).join('');
   } catch(e){
     box.innerHTML = '<div class="empty">Error: '+esc(e.message)+'</div>';
   }
@@ -778,9 +816,197 @@ def admin_portal_credencial_uno(cred_id):
 # API: mis pedidos
 # ────────────────────────────────────────────────────────────────────
 
+def _construir_timeline_pedido(conn, pedido_id, pedido_creado_at, pedido_estado):
+    """Sprint D Portal · 20-may-2026 · construye 8 steps del ciclo de
+    vida del pedido B2B, derivados de:
+
+      - pedidos_b2b.estado / creado_at (recibido)
+      - produccion_programada match por observaciones (#N)
+        + sus etapas (mig 139: etapa_disp/elab/env/acond _inicio_at/_fin_at)
+      - ebr_ejecuciones.estado (liberado/rechazado)
+
+    Devuelve lista de dicts:
+      {key, label, icon, estado: 'completado'|'en_curso'|'pendiente',
+       fecha: 'YYYY-MM-DD' | None, detalle: str | None}
+
+    NO se inventa información · si no hay dato, estado='pendiente'.
+    """
+    timeline = []
+    # 1) Recibido (siempre completado si el pedido existe)
+    timeline.append({
+        'key': 'recibido', 'label': 'Recibido', 'icon': '📨',
+        'estado': 'completado',
+        'fecha': (pedido_creado_at or '')[:10],
+        'detalle': 'Solicitud entró al sistema',
+    })
+
+    # 2) Buscar lote vinculado por observaciones LIKE '%(pedido #N)%'
+    # o lote dedicado eos_b2b con '· #N · entrega'.
+    lote = conn.execute(
+        """SELECT id, COALESCE(estado,''), COALESCE(inicio_real_at,''),
+                  COALESCE(fin_real_at,''), COALESCE(area_id, 0),
+                  COALESCE(fecha_programada,''),
+                  COALESCE(etapa_disp_inicio_at,''), COALESCE(etapa_disp_fin_at,''),
+                  COALESCE(etapa_elab_inicio_at,''), COALESCE(etapa_elab_fin_at,''),
+                  COALESCE(etapa_env_inicio_at,''),  COALESCE(etapa_env_fin_at,''),
+                  COALESCE(etapa_acond_inicio_at,''), COALESCE(etapa_acond_fin_at,'')
+           FROM produccion_programada
+           WHERE (observaciones LIKE ? OR observaciones LIKE ?)
+             AND LOWER(COALESCE(estado,'')) != 'cancelado'
+           ORDER BY id DESC LIMIT 1""",
+        (f'%(pedido #{pedido_id})%', f'%· #{pedido_id} ·%'),
+    ).fetchone()
+
+    if lote:
+        (lid, lest, l_ini, l_fin, l_area, l_fecha,
+         d_ini, d_fin, e_ini, e_fin, n_ini, n_fin, a_ini, a_fin) = lote
+        # 2) Confirmado · sabemos que el pedido está integrado al plan
+        timeline.append({
+            'key': 'confirmado', 'label': 'Confirmado en plan', 'icon': '✅',
+            'estado': 'completado',
+            'fecha': (l_fecha or '')[:10],
+            'detalle': f'Lote #{lid} programado para {(l_fecha or "")[:10]}',
+        })
+        # 3) En producción · dispensación/elaboración
+        if d_fin or e_ini or l_ini:
+            est_prod = 'completado' if (e_fin and d_fin) else 'en_curso'
+            fechas_prod = [d_ini, d_fin, e_ini, e_fin, l_ini]
+            f_ref = next((x for x in fechas_prod if x), '')
+            timeline.append({
+                'key': 'produciendo', 'label': 'En producción', 'icon': '🏭',
+                'estado': est_prod,
+                'fecha': (f_ref or '')[:10],
+                'detalle': (
+                    'Mezclando / elaborando · etapa dispensación + elaboración'
+                    if est_prod == 'en_curso'
+                    else 'Elaboración terminada'
+                ),
+            })
+        else:
+            timeline.append({
+                'key': 'produciendo', 'label': 'En producción', 'icon': '🏭',
+                'estado': 'pendiente', 'fecha': None, 'detalle': None,
+            })
+
+        # 4) Envasado
+        if n_ini or n_fin:
+            timeline.append({
+                'key': 'envasado', 'label': 'Envasado', 'icon': '🍶',
+                'estado': 'completado' if n_fin else 'en_curso',
+                'fecha': (n_fin or n_ini)[:10] if (n_fin or n_ini) else None,
+                'detalle': 'Embotellado / llenado',
+            })
+        else:
+            timeline.append({
+                'key': 'envasado', 'label': 'Envasado', 'icon': '🍶',
+                'estado': 'pendiente', 'fecha': None, 'detalle': None,
+            })
+
+        # 5) Micro QC · derivado del EBR (IPCs micro) · si no hay EBR,
+        # heurística: si envasado terminó y acond NO empezó, asumimos en QC.
+        ebr_row = conn.execute(
+            """SELECT id, COALESCE(estado,''), iniciado_at_utc, completado_at_utc
+               FROM ebr_ejecuciones
+               WHERE produccion_id = ?
+               ORDER BY id DESC LIMIT 1""",
+            (lid,),
+        ).fetchone()
+        micro_estado = 'pendiente'
+        micro_fecha = None
+        micro_detalle = None
+        if n_fin and not a_ini:
+            # Envasado terminó, acond no empezó · está en QC/micro
+            micro_estado = 'en_curso'
+            micro_fecha = (n_fin or '')[:10]
+            micro_detalle = 'Esperando resultados de microbiología'
+        elif a_ini:
+            # Si acond ya empezó, micro pasó OK
+            micro_estado = 'completado'
+            micro_fecha = (n_fin or a_ini or '')[:10]
+            micro_detalle = 'Microbiología conforme'
+        timeline.append({
+            'key': 'micro_qc', 'label': 'Microbiología', 'icon': '🔬',
+            'estado': micro_estado, 'fecha': micro_fecha,
+            'detalle': micro_detalle,
+        })
+
+        # 6) Acondicionamiento
+        if a_ini or a_fin:
+            timeline.append({
+                'key': 'acondicionamiento', 'label': 'Acondicionamiento',
+                'icon': '📦',
+                'estado': 'completado' if a_fin else 'en_curso',
+                'fecha': (a_fin or a_ini)[:10] if (a_fin or a_ini) else None,
+                'detalle': 'Etiquetado / empaque',
+            })
+        else:
+            timeline.append({
+                'key': 'acondicionamiento', 'label': 'Acondicionamiento',
+                'icon': '📦',
+                'estado': 'pendiente', 'fecha': None, 'detalle': None,
+            })
+
+        # 7) Liberado QC
+        lib_estado = 'pendiente'
+        lib_fecha = None
+        lib_detalle = None
+        if ebr_row:
+            ebr_estado = (ebr_row[1] or '').lower()
+            if ebr_estado == 'liberado':
+                lib_estado = 'completado'
+                lib_fecha = (ebr_row[3] or '')[:10] if ebr_row[3] else None
+                lib_detalle = 'QC aprobó el lote'
+            elif ebr_estado == 'rechazado':
+                lib_estado = 'rechazado'
+                lib_detalle = 'QC rechazó · contactá soporte'
+            elif a_fin:
+                lib_estado = 'en_curso'
+                lib_detalle = 'En revisión final de QC'
+        elif a_fin:
+            lib_estado = 'en_curso'
+            lib_detalle = 'Pendiente firma de QC'
+        timeline.append({
+            'key': 'liberado', 'label': 'Liberado QC', 'icon': '✔️',
+            'estado': lib_estado, 'fecha': lib_fecha, 'detalle': lib_detalle,
+        })
+    else:
+        # Sin lote vinculado · pedido aún sin programar
+        for k, lbl, ico in (
+            ('confirmado', 'Confirmado en plan', '✅'),
+            ('produciendo', 'En producción', '🏭'),
+            ('envasado', 'Envasado', '🍶'),
+            ('micro_qc', 'Microbiología', '🔬'),
+            ('acondicionamiento', 'Acondicionamiento', '📦'),
+            ('liberado', 'Liberado QC', '✔️'),
+        ):
+            timeline.append({'key': k, 'label': lbl, 'icon': ico,
+                             'estado': 'pendiente', 'fecha': None,
+                             'detalle': None})
+
+    # 8) Enviado · pedidos_b2b.estado='despachado'
+    estado_pedido = (pedido_estado or '').lower()
+    if estado_pedido == 'despachado':
+        timeline.append({
+            'key': 'enviado', 'label': 'Enviado', 'icon': '🚚',
+            'estado': 'completado', 'fecha': None,
+            'detalle': 'Despachado al cliente',
+        })
+    else:
+        timeline.append({
+            'key': 'enviado', 'label': 'Enviado', 'icon': '🚚',
+            'estado': 'pendiente', 'fecha': None, 'detalle': None,
+        })
+    return timeline
+
+
 @bp.route('/api/portal/mis-pedidos', methods=['GET'])
 def portal_mis_pedidos():
-    """Pedidos del cliente logueado · solo los SUYOS, nunca de otros."""
+    """Pedidos del cliente logueado · solo los SUYOS, nunca de otros.
+
+    Sprint D Portal · 20-may-2026: cada pedido trae `timeline` con 8 steps
+    del ciclo de vida (Recibido → Confirmado → En producción → Envasado →
+    Micro QC → Acondicionamiento → Liberado QC → Enviado).
+    """
     auth = _require_portal_login()
     if not auth:
         return jsonify({'error': 'No autorizado'}), 401
@@ -798,16 +1024,34 @@ def portal_mis_pedidos():
     out = []
     for r in rows:
         uds = int(r[2] or 0); ml = float(r[3] or 0)
+        pid = r[0]
+        estado = r[5] or 'pendiente'
+        creado = r[7] or ''
+        try:
+            tl = _construir_timeline_pedido(conn, pid, creado, estado)
+        except Exception as _e:
+            log.warning('timeline pedido %s falló: %s', pid, _e)
+            tl = []
+        # estado_visible: el último step con 'completado' o 'en_curso'
+        estado_visible_lbl = 'Recibido'
+        estado_visible_est = 'completado'
+        for step in tl:
+            if step['estado'] in ('completado', 'en_curso', 'rechazado'):
+                estado_visible_lbl = step['label']
+                estado_visible_est = step['estado']
         out.append({
-            'id': r[0],
+            'id': pid,
             'producto_nombre': r[1] or '',
             'cantidad_uds': uds,
             'ml_unidad': ml,
             'kg_equivalente': round(uds * ml / 1000.0, 2),
             'fecha_estimada': r[4] or '',
-            'estado': r[5] or 'pendiente',
+            'estado': estado,
             'notas': r[6] or '',
-            'creado_at': r[7] or '',
+            'creado_at': creado,
+            'timeline': tl,
+            'estado_visible': estado_visible_lbl,
+            'estado_visible_kind': estado_visible_est,
         })
     return jsonify({'pedidos': out, 'total': len(out)})
 
