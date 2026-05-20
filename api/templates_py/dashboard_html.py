@@ -2,7 +2,12 @@
 DASHBOARD_HTML = """<!DOCTYPE html>
 <html lang="es" translate="no">
 <head>
-<meta charset="UTF-8"><script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<meta charset="UTF-8">
+<!-- Sebastián 20-may-2026 fix urgente · Chart.js con fallback. Si Cloudflare
+     está bloqueado (firewall corporativo / hospital) intentamos jsDelivr,
+     luego unpkg. Sin Chart, los charts hacen skip con aviso en lugar de
+     romper toda la UI con "Chart is not defined". -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js" onerror="this.onerror=null;var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js';s.onerror=function(){var s2=document.createElement('script');s2.src='https://unpkg.com/chart.js@4.4.0/dist/chart.umd.min.js';document.head.appendChild(s2);};document.head.appendChild(s);"></script>
 <meta name="google" content="notranslate">
 <meta http-equiv="Content-Language" content="es">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes, viewport-fit=cover">
@@ -3452,6 +3457,10 @@ async function loadDashboardCompleto(silent){
     var ep=document.getElementById('dash-proximos'); if(ep) ep.textContent=estados.PROXIMO||0;
     var venc=d.vencimientos_por_mes||{}; var meses=Object.keys(venc);
     var ctx1=document.getElementById('chart-vencimientos');
+    // Sebastián 20-may-2026 fix urgente · guard Chart.js no cargado
+    if(typeof Chart === 'undefined'){
+      ctx1 = null; // skip charts si CDN bloqueado
+    }
     if(ctx1){
       if(_charts.venc){ _charts.venc.destroy(); }
       var emp=document.getElementById('chart-venc-empty');
@@ -3466,6 +3475,7 @@ async function loadDashboardCompleto(silent){
       } else { ctx1.style.display='none'; if(emp) emp.style.display='block'; }
     }
     var top=d.top_stock||[]; var ctx2=document.getElementById('chart-top-stock');
+    if(typeof Chart === 'undefined'){ ctx2 = null; }
     if(ctx2){
       if(_charts.top){ _charts.top.destroy(); }
       var emp2=document.getElementById('chart-stock-empty');
@@ -4279,7 +4289,15 @@ async function loadABC(){
     // Gráfico Pareto top 30
     var chartWrap = document.getElementById('abc-chart-wrap');
     var ctx = document.getElementById('abc-chart');
-    if(chartWrap && ctx && items.length > 0){
+    // Sebastián 20-may-2026 fix urgente · "Chart is not defined" en ABC:
+    // si Chart.js (CDN externo) no cargó (red/firewall) seguimos pintando
+    // la tabla y stats · solo skipeamos el gráfico con aviso suave.
+    if(typeof Chart === 'undefined'){
+      if(chartWrap){
+        chartWrap.style.display = 'block';
+        chartWrap.innerHTML = '<div style="padding:14px;color:#94a3b8;font-size:12px;text-align:center">📊 Gráfico Pareto no disponible · Chart.js no se pudo cargar (verificá conexión a CDN o usá el botón Excel para análisis offline).</div>';
+      }
+    } else if(chartWrap && ctx && items.length > 0){
       chartWrap.style.display = 'block';
       var top = items.filter(function(i){return i.metric>0;}).slice(0, 30);
       if(_charts.abc){ _charts.abc.destroy(); }
