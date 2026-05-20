@@ -542,6 +542,60 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       <div id="dash-alertas-lista" style="font-size:0.88em;"></div>
     </div>
 
+    <!-- Dashboard PRO #2 · Bloque "Planta AHORA" · 20-may-2026 -->
+    <div style="display:flex;align-items:center;gap:8px;margin:18px 0 10px 0;font-size:11px;font-weight:700;color:#0891b2;text-transform:uppercase;letter-spacing:1px;">
+      <span style="width:8px;height:8px;background:#0891b2;border-radius:50%;display:inline-block;"></span>
+      🏭 Planta AHORA &middot; estado operacional en vivo
+      <span style="flex:1;height:1px;background:#bae6fd;"></span>
+    </div>
+    <div id="dash-planta-ahora" style="background:linear-gradient(135deg,#0f766e,#0891b2);color:#fff;border-radius:10px;padding:14px 16px;margin-bottom:20px;display:none;">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px">
+        <div style="background:rgba(255,255,255,.1);border-radius:8px;padding:10px 14px;text-align:center">
+          <div style="font-size:10px;opacity:.85;text-transform:uppercase;letter-spacing:.5px">⏱ Produciendo</div>
+          <div id="pa-en-curso" style="font-size:1.8em;font-weight:800;margin-top:3px">-</div>
+          <div style="font-size:10px;opacity:.75">producciones activas</div>
+        </div>
+        <div style="background:rgba(255,255,255,.1);border-radius:8px;padding:10px 14px;text-align:center">
+          <div style="font-size:10px;opacity:.85;text-transform:uppercase;letter-spacing:.5px">🟢 Salas libres</div>
+          <div id="pa-salas-libres" style="font-size:1.8em;font-weight:800;margin-top:3px">-</div>
+          <div id="pa-salas-detalle" style="font-size:10px;opacity:.75">de N · ocupadas Y · sucias Z</div>
+        </div>
+        <div style="background:rgba(255,255,255,.1);border-radius:8px;padding:10px 14px;text-align:center">
+          <div style="font-size:10px;opacity:.85;text-transform:uppercase;letter-spacing:.5px">👥 Operarios</div>
+          <div id="pa-operarios" style="font-size:1.8em;font-weight:800;margin-top:3px">-</div>
+          <div style="font-size:10px;opacity:.75">con tarea hoy</div>
+        </div>
+        <div style="background:rgba(255,255,255,.1);border-radius:8px;padding:10px 14px;cursor:pointer" onclick="switchProgTab('kanban')" title="Ver Kanban">
+          <div style="font-size:10px;opacity:.85;text-transform:uppercase;letter-spacing:.5px">📅 Próxima</div>
+          <div id="pa-proxima-prod" style="font-size:13px;font-weight:700;margin-top:3px;line-height:1.2">-</div>
+          <div id="pa-proxima-fecha" style="font-size:10px;opacity:.85;margin-top:2px">-</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Dashboard PRO #2 · Banner Alertas IA del Plan · 20-may-2026 -->
+    <div id="dash-alertas-ia" style="display:none;margin-bottom:18px"></div>
+
+    <!-- Dashboard PRO #2 · Bloque "Este mes" · 20-may-2026 -->
+    <div style="display:flex;align-items:center;gap:8px;margin:18px 0 10px 0;font-size:11px;font-weight:700;color:#16a34a;text-transform:uppercase;letter-spacing:1px;">
+      <span style="width:8px;height:8px;background:#16a34a;border-radius:50%;display:inline-block;"></span>
+      📈 Este mes &middot; progreso
+      <span style="flex:1;height:1px;background:#bbf7d0;"></span>
+    </div>
+    <div id="dash-mes-actual" style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px 18px;margin-bottom:20px;display:none">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+        <div>
+          <span id="mes-mes-label" style="font-size:13px;font-weight:700;color:#0f172a">-</span>
+          <span style="font-size:11px;color:#64748b">·</span>
+          <span id="mes-resumen" style="font-size:11px;color:#475569">- de - producciones · - kg</span>
+        </div>
+        <span id="mes-pct" style="font-size:14px;font-weight:800;color:#16a34a">-%</span>
+      </div>
+      <div style="background:#f1f5f9;border-radius:10px;height:14px;overflow:hidden">
+        <div id="mes-bar" style="background:linear-gradient(90deg,#16a34a,#22c55e);height:100%;width:0%;transition:width .4s ease"></div>
+      </div>
+    </div>
+
     <!-- Gráficas -->
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px;">
       <div style="background:white;border:1px solid #dde;border-radius:8px;padding:16px;">
@@ -3008,6 +3062,85 @@ async function loadDashboard(){
   }catch(e){ console.error(e); }
 }
 
+// Dashboard PRO #2 · render de los widgets Planta AHORA + Mes actual
+function _renderDashInsights(d){
+  if(!d) return;
+  var pa = d.planta_ahora || {};
+  var box = document.getElementById('dash-planta-ahora');
+  if(box){
+    box.style.display = 'block';
+    var elEC = document.getElementById('pa-en-curso');
+    if(elEC) elEC.textContent = pa.produciendo_ahora || 0;
+    var elSL = document.getElementById('pa-salas-libres');
+    if(elSL) elSL.textContent = pa.salas_libres || 0;
+    var elSD = document.getElementById('pa-salas-detalle');
+    if(elSD) elSD.textContent = 'de ' + (pa.salas_total||0) +
+      ' · ocupadas ' + (pa.salas_ocupadas||0) +
+      ' · sucias ' + (pa.salas_sucias||0);
+    var elOp = document.getElementById('pa-operarios');
+    if(elOp) elOp.textContent = pa.operarios_con_tarea_hoy || 0;
+    var pp = pa.proxima_produccion;
+    var elPP = document.getElementById('pa-proxima-prod');
+    var elPF = document.getElementById('pa-proxima-fecha');
+    if(pp && pp.producto){
+      if(elPP) elPP.textContent = (pp.producto||'').slice(0,28);
+      if(elPF) elPF.textContent = '📅 ' + (pp.fecha||'') + ' · ' + (pp.kg||0).toFixed(1) + ' kg';
+    } else {
+      if(elPP) elPP.textContent = 'Sin próximas';
+      if(elPF) elPF.textContent = '—';
+    }
+  }
+  // Mes actual
+  var m = d.mes_actual || {};
+  var mesBox = document.getElementById('dash-mes-actual');
+  if(mesBox){
+    mesBox.style.display = 'block';
+    var elML = document.getElementById('mes-mes-label');
+    if(elML) elML.textContent = '📊 ' + (m.mes||'');
+    var elMR = document.getElementById('mes-resumen');
+    if(elMR) elMR.textContent =
+      (m.producciones_completadas||0) + ' de ' + (m.producciones_programadas||0) +
+      ' producciones · ' + (m.kg_producidos||0).toLocaleString('es-CO') + ' kg';
+    var pct = Math.max(0, Math.min(100, m.progreso_pct||0));
+    var elPct = document.getElementById('mes-pct');
+    if(elPct){
+      elPct.textContent = pct.toFixed(0) + '%';
+      elPct.style.color = pct >= 80 ? '#16a34a' : pct >= 50 ? '#ca8a04' : '#dc2626';
+    }
+    var elBar = document.getElementById('mes-bar');
+    if(elBar) elBar.style.width = pct + '%';
+  }
+}
+function _renderDashAlertasIa(d){
+  var box = document.getElementById('dash-alertas-ia');
+  if(!box) return;
+  var al = (d && d.alertas) || [];
+  if(!al.length){ box.style.display = 'none'; return; }
+  var SEV = {
+    critica: {bg:'#fee2e2', border:'#dc2626', txt:'#991b1b', emoji:'🚨'},
+    advertencia: {bg:'#fef3c7', border:'#ca8a04', txt:'#854d0e', emoji:'⚠️'},
+    info: {bg:'#dbeafe', border:'#1e40af', txt:'#1e40af', emoji:'ℹ️'},
+  };
+  var totals = d.por_severidad || {};
+  var html = '<div style="background:#0f172a;color:#fff;border-radius:10px;padding:10px 14px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">' +
+    '<div><span style="font-size:13px;font-weight:800">🤖 Alertas IA del Plan</span> <span style="font-size:11px;opacity:.8;margin-left:8px">' +
+    (totals.critica||0) + ' crítica(s) · ' + (totals.advertencia||0) + ' advertencia(s)</span></div>' +
+    '<button onclick="switchProgTab(\\'calendario\\')" style="background:rgba(255,255,255,.15);border:1px solid #fff;color:#fff;padding:4px 10px;border-radius:5px;font-size:11px;cursor:pointer">Abrir Calendario →</button>' +
+  '</div>';
+  al.slice(0, 4).forEach(function(a){
+    var sev = SEV[a.severidad] || SEV.info;
+    html += '<div style="background:' + sev.bg + ';border-left:4px solid ' + sev.border + ';border-radius:6px;padding:8px 12px;margin-top:6px;color:' + sev.txt + '">' +
+      '<div style="font-weight:700;font-size:12px">' + sev.emoji + ' ' + _escHTML(a.titulo||'') + '</div>' +
+      '<div style="font-size:11px;margin-top:1px;opacity:.95">' + _escHTML(a.detalle||'') + '</div>' +
+    '</div>';
+  });
+  if(al.length > 4){
+    html += '<div style="text-align:center;font-size:11px;color:#64748b;margin-top:6px">+' + (al.length - 4) + ' más · ver Calendario</div>';
+  }
+  box.innerHTML = html;
+  box.style.display = 'block';
+}
+
 // Dashboard PRO · timer global auto-refresh + helper toast errores
 var _DASH_TIMER=null;
 function _dashToast(msg, isErr){
@@ -3044,13 +3177,16 @@ async function loadDashboardCompleto(silent){
   var t0=Date.now();
   var errores=[];
   try {
-    // 2 fetches paralelos · loadDashboard ya hace su propio fetch interno
-    // a /api/inventario + /api/alertas-reabastecimiento. dashboard-stats
-    // es independiente · va aparte.
-    var [statsR, _ignored] = await Promise.all([
+    // Dashboard PRO #2 · 4 fetches paralelos · loadDashboard ya hace su
+    // propio fetch interno a /api/inventario + /api/alertas-reabastecimiento.
+    var [statsR, _ignored, insightsR, alertasIaR] = await Promise.all([
       fetch('/api/dashboard-stats').then(function(r){return r.ok?r.json():null;}).catch(function(){errores.push('dashboard-stats');return null;}),
       loadDashboard(silent),  // KPIs principales · /api/inventario + alertas
+      fetch('/api/dashboard/insights').then(function(r){return r.ok?r.json():null;}).catch(function(){errores.push('insights');return null;}),
+      fetch('/api/plan/alertas-ia').then(function(r){return r.ok?r.json():null;}).catch(function(){return null;}),
     ]);
+    if(insightsR) _renderDashInsights(insightsR);
+    if(alertasIaR) _renderDashAlertasIa(alertasIaR);
     var d=statsR||{};
     var estados=d.estados_lotes||{};
     var ev=document.getElementById('dash-vencidos'); if(ev) ev.textContent=estados.VENCIDO||0;

@@ -7310,6 +7310,39 @@ def test_golden_portal_b2b_flujo_completo(app, db_clean):
     _exec("DELETE FROM portal_clientes_credenciales WHERE email LIKE 'test_portal_%'")
 
 
+def test_golden_dashboard_insights_estructura(app, db_clean):
+    """Dashboard PRO #2 · 20-may-2026. /api/dashboard/insights consolida
+    Planta AHORA + Mes actual + Stats extra para el Dashboard.
+
+    Verifica estructura · no contenido (depende del estado runtime).
+    """
+    cs = _login(app, 'sebastian')
+    r = cs.get('/api/dashboard/insights')
+    assert r.status_code == 200, f'BUG: {r.status_code} {r.data[:200]}'
+    d = r.get_json()
+    # Planta AHORA
+    assert 'planta_ahora' in d
+    pa = d['planta_ahora']
+    for k in ('produciendo_ahora', 'salas_libres', 'salas_ocupadas',
+              'salas_sucias', 'salas_total', 'operarios_con_tarea_hoy'):
+        assert k in pa, f'BUG: falta planta_ahora.{k}'
+        assert isinstance(pa[k], int), f'BUG: {k} no es int · {type(pa[k])}'
+    assert 'proxima_produccion' in pa  # puede ser None
+    # Mes actual
+    assert 'mes_actual' in d
+    m = d['mes_actual']
+    for k in ('producciones_completadas', 'producciones_programadas',
+              'progreso_pct', 'kg_producidos', 'mes'):
+        assert k in m, f'BUG: falta mes_actual.{k}'
+    assert isinstance(m['progreso_pct'], (int, float))
+    assert 0 <= m['progreso_pct'] <= 100
+    # Stats extra
+    assert 'stats_extra' in d
+    se = d['stats_extra']
+    for k in ('mps_activas', 'formulas_activas', 'operarios_pool'):
+        assert k in se
+
+
 def test_golden_confirmar_proyeccion_es_fijo(app, db_clean):
     """Dashboard PRO BUG-3 · 20-may-2026. Una proyección confirmada por
     el usuario desde Plan v2 debe crear el lote con origen='eos_plan'

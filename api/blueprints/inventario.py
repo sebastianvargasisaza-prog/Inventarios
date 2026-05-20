@@ -281,6 +281,141 @@ def get_inventario():
         },
     })
 
+@bp.route('/api/dashboard/insights', methods=['GET'])
+def dashboard_insights():
+    """Sprint Dashboard PRO #2 · Sebastián 20-may-2026.
+
+    Consolida 3 widgets nuevos del Dashboard en una sola llamada:
+
+    1. **planta_ahora** · producciones en curso, salas (libres/ocupadas/sucias),
+       próxima programada · operario más activo.
+    2. **mes_actual** · producciones del mes (terminadas / programadas) +
+       kg producidos · sirve para mostrar progreso de mes vs estimado.
+    3. **stats_extra** · MPs total activas, formula activas, operarios activos
+       · contexto para Sebastián/Alejandro.
+
+    Reusa queries existentes · no muta nada · cacheable a futuro.
+    """
+    from datetime import date as _date, datetime as _dt, timedelta as _td
+    conn = get_db()
+    c = conn.cursor()
+
+    def _scalar(query, params=(), default=0):
+        try:
+            r = c.execute(query, params).fetchone()
+            return r[0] if r and r[0] is not None else default
+        except Exception as _e:
+            __import__('logging').getLogger('inventario').warning(
+                'dashboard_insights scalar fallo: %s · q=%s', _e,
+                query[:80].replace('\n', ' '))
+            return default
+
+    # 1) Planta AHORA
+    hoy = _date.today().isoformat()
+    prod_en_curso = _scalar("""
+        SELECT COUNT(*) FROM produccion_programada
+        WHERE inicio_real_at IS NOT NULL
+          AND fin_real_at IS NULL
+          AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado')
+    """)
+    salas_libres = _scalar(
+        "SELECT COUNT(*) FROM areas_planta WHERE COALESCE(activo,1)=1 "
+        "AND COALESCE(estado,'libre')='libre'")
+    salas_ocupadas = _scalar(
+        "SELECT COUNT(*) FROM areas_planta WHERE COALESCE(activo,1)=1 "
+        "AND COALESCE(estado,'')='ocupada'")
+    salas_sucias = _scalar(
+        "SELECT COUNT(*) FROM areas_planta WHERE COALESCE(activo,1)=1 "
+        "AND COALESCE(estado,'')='sucia'")
+    salas_total = _scalar(
+        "SELECT COUNT(*) FROM areas_planta WHERE COALESCE(activo,1)=1")
+    # Próxima producción programada (>= hoy)
+    prox_row = c.execute(
+        """SELECT producto, fecha_programada, COALESCE(cantidad_kg,0)
+           FROM produccion_programada
+           WHERE fecha_programada >= date('now', '-5 hours')
+             AND inicio_real_at IS NULL
+             AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado')
+           ORDER BY fecha_programada ASC, id ASC LIMIT 1""",
+    ).fetchone()
+    proxima = None
+    if prox_row:
+        proxima = {'producto': prox_row[0] or '',
+                   'fecha': prox_row[1] or '',
+                   'kg': float(prox_row[2] or 0)}
+    # Operarios con tarea hoy (sirve para "X operarios trabajando")
+    operarios_activos = _scalar("""
+        SELECT COUNT(DISTINCT op_id) FROM (
+            SELECT operario_dispensacion_id AS op_id FROM produccion_programada
+              WHERE date(fecha_programada)=? AND operario_dispensacion_id IS NOT NULL
+            UNION
+            SELECT operario_elaboracion_id FROM produccion_programada
+              WHERE date(fecha_programada)=? AND operario_elaboracion_id IS NOT NULL
+            UNION
+            SELECT operario_envasado_id FROM produccion_programada
+              WHERE date(fecha_programada)=? AND operario_envasado_id IS NOT NULL
+            UNION
+            SELECT operario_acondicionamiento_id FROM produccion_programada
+              WHERE date(fecha_programada)=? AND operario_acondicionamiento_id IS NOT NULL
+        )
+    """, (hoy, hoy, hoy, hoy))
+
+    # 2) Mes actual
+    hoy_dt = _dt.now()
+    primer_dia_mes = hoy_dt.replace(day=1).date().isoformat()
+    fin_mes = (hoy_dt.replace(day=28) + _td(days=4)).replace(day=1).date().isoformat()
+    prod_mes_completadas = _scalar("""
+        SELECT COUNT(*) FROM produccion_programada
+        WHERE LOWER(COALESCE(estado,''))='completado'
+          AND fecha_programada >= ? AND fecha_programada < ?
+    """, (primer_dia_mes, fin_mes))
+    prod_mes_programadas = _scalar("""
+        SELECT COUNT(*) FROM produccion_programada
+        WHERE LOWER(COALESCE(estado,'')) NOT IN ('cancelado')
+          AND fecha_programada >= ? AND fecha_programada < ?
+    """, (primer_dia_mes, fin_mes))
+    kg_producidos_mes = _scalar("""
+        SELECT COALESCE(SUM(COALESCE(kg_real, cantidad_kg, 0)), 0)
+        FROM produccion_programada
+        WHERE LOWER(COALESCE(estado,''))='completado'
+          AND fecha_programada >= ? AND fecha_programada < ?
+    """, (primer_dia_mes, fin_mes), default=0.0)
+
+    # 3) Stats extra
+    mps_activas = _scalar(
+        "SELECT COUNT(*) FROM maestro_mps WHERE COALESCE(activo,1)=1")
+    formulas_activas = _scalar(
+        "SELECT COUNT(*) FROM formula_headers WHERE COALESCE(activo,1)=1")
+    operarios_pool = _scalar(
+        "SELECT COUNT(*) FROM operarios_planta WHERE COALESCE(activo,1)=1")
+
+    return jsonify({
+        'planta_ahora': {
+            'produciendo_ahora': prod_en_curso,
+            'salas_libres': salas_libres,
+            'salas_ocupadas': salas_ocupadas,
+            'salas_sucias': salas_sucias,
+            'salas_total': salas_total,
+            'proxima_produccion': proxima,
+            'operarios_con_tarea_hoy': operarios_activos,
+        },
+        'mes_actual': {
+            'producciones_completadas': prod_mes_completadas,
+            'producciones_programadas': prod_mes_programadas,
+            'progreso_pct': round(
+                (prod_mes_completadas / prod_mes_programadas * 100)
+                if prod_mes_programadas > 0 else 0, 1),
+            'kg_producidos': round(float(kg_producidos_mes or 0), 1),
+            'mes': hoy_dt.strftime('%Y-%m'),
+        },
+        'stats_extra': {
+            'mps_activas': mps_activas,
+            'formulas_activas': formulas_activas,
+            'operarios_pool': operarios_pool,
+        },
+    })
+
+
 @bp.route('/api/formulas', methods=['GET', 'POST'])
 def handle_formulas():
     conn = get_db()
