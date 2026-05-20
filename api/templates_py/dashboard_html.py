@@ -381,12 +381,15 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
         <div style="background:#eef2ff;border-left:3px solid #6366f1;padding:10px;border-radius:4px;"><div style="font-size:11px;color:#4338ca;">Sin m&iacute;nimo</div><div style="font-size:1.4em;font-weight:700;color:#6366f1;" id="rmin-vacio">-</div></div>
         <div style="background:#f8fafc;border-left:3px solid #94a3b8;padding:10px;border-radius:4px;"><div style="font-size:11px;color:#64748b;">Sin uso</div><div style="font-size:1.4em;font-weight:700;color:#94a3b8;" id="rmin-uso">-</div></div>
       </div>
+      <!-- Sebastián 20-may-2026: resumen del impacto · cuantifica cambio antes de aplicar -->
+      <div id="rmin-impacto" style="display:none;margin-bottom:10px;padding:10px 14px;background:#ecfeff;border:1px solid #0891b2;border-radius:8px;font-size:12px;color:#0e7490"></div>
       <div id="rmin-aplicar-box" style="display:none;margin-bottom:14px;padding:12px;background:#fef3c7;border:1px solid #f59e0b;border-radius:8px;">
         <div style="font-weight:700;color:#92400e;font-size:13px;margin-bottom:6px;">&#x26A0; Aplicar recálculo (solo admins)</div>
         <div style="font-size:11px;color:#7c2d12;margin-bottom:8px;">Actualiza stock_minimo en maestro_mps para los SUB/SOBRE/SIN_MINIMO. Crea backup automático previo + audit_log. NO toca SIN_USO.</div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
           <input id="rmin-token" placeholder="Token: APLICAR_MINIMOS_RECALCULADOS_2026" style="padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:11px;flex:1;min-width:280px;">
           <button onclick="aplicarRevisarMinimos()" id="btn-rmin-aplicar" style="background:#dc2626;color:#fff;padding:6px 14px;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;">&#x1F4A5; Aplicar recálculo</button>
+          <button onclick="autollenarTokenMinimos()" style="background:#0e7490;color:#fff;padding:6px 12px;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;" title="Pre-llena el token correcto · admin">&#x1F4DD; Token</button>
         </div>
       </div>
       <div id="rmin-result" style="font-size:0.85em;"></div>
@@ -2317,6 +2320,25 @@ async function cargarRevisarMinimos(){
     // Aplicar box solo si hay algo que aplicar
     var totalAplic = d.stats.sub_protegido + d.stats.sobre_protegido + d.stats.sin_minimo;
     document.getElementById('rmin-aplicar-box').style.display = totalAplic > 0 ? 'block' : 'none';
+    // Sebastián 20-may-2026: resumen del impacto si se aplicara
+    var impactoBox = document.getElementById('rmin-impacto');
+    if(impactoBox && totalAplic > 0){
+      var deltaTotal = 0, sumActual = 0, sumNuevo = 0;
+      (d.auditoria||[]).forEach(function(a){
+        if(['SUB_PROTEGIDO','SOBRE_PROTEGIDO','SIN_MINIMO_CONFIGURADO'].indexOf(a.estado) === -1) return;
+        sumActual += a.stock_minimo_actual_g||0;
+        sumNuevo += a.minimo_recomendado_g||0;
+      });
+      deltaTotal = sumNuevo - sumActual;
+      var modoTxt = d.modo_uniforme ? ('cobertura uniforme '+d.dias_cobertura_minimo+'d') : 'lead+buffer por proveedor';
+      impactoBox.innerHTML = '<b>'+totalAplic+'</b> MPs cambiarían si aplicás · '+
+        'método: <i>'+modoTxt+'</i> · suma mínimos actual <b>'+Math.round(sumActual).toLocaleString('es-CO')+
+        ' g</b> → nuevo <b>'+Math.round(sumNuevo).toLocaleString('es-CO')+' g</b> · ' +
+        (deltaTotal>=0?'incremento neto +':'reducción neta ')+Math.abs(Math.round(deltaTotal)).toLocaleString('es-CO')+' g';
+      impactoBox.style.display = 'block';
+    } else if(impactoBox){
+      impactoBox.style.display = 'none';
+    }
     // Render tabla con orden por prioridad
     var orden = {'SUB_PROTEGIDO':0, 'SIN_MINIMO_CONFIGURADO':1, 'SOBRE_PROTEGIDO':2, 'OK':3, 'SIN_USO_CON_MIN':4, 'SIN_USO':5};
     var items = (d.auditoria||[]).slice().sort(function(a,b){
@@ -2358,10 +2380,18 @@ async function cargarRevisarMinimos(){
   }
 }
 
+// Sebastián 20-may-2026: helper para pre-llenar el token (admin de
+// confianza · evita typo manual). Sigue requiriendo click "Aplicar"
+// y confirm() · doble fricción.
+function autollenarTokenMinimos(){
+  var inp = document.getElementById('rmin-token');
+  if(inp){ inp.value = 'APLICAR_MINIMOS_RECALCULADOS_2026'; inp.focus(); }
+}
+
 async function aplicarRevisarMinimos(){
   var token = (document.getElementById('rmin-token').value||'').trim();
   if(token !== 'APLICAR_MINIMOS_RECALCULADOS_2026'){
-    alert('Token incorrecto. Debe ser exactamente: APLICAR_MINIMOS_RECALCULADOS_2026');
+    alert('Token incorrecto. Debe ser exactamente: APLICAR_MINIMOS_RECALCULADOS_2026 · usá el botón 📝 Token para autollenarlo.');
     return;
   }
   if(!confirm('Esto va a actualizar stock_minimo en maestro_mps para los SUB/SOBRE/SIN_MINIMO. Crea backup automatico previo. ¿Continuar?')) return;
