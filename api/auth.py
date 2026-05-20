@@ -260,6 +260,10 @@ def register_hooks(app):
         """Bloquea TODAS las rutas /api/ si no hay sesion activa.
         Excepcion: /api/login (publico).
         Esto cierra la brecha donde ~45 endpoints aceptaban mutaciones sin auth.
+
+        Sebastián 20-may-2026: rutas /api/portal/* tienen su propia sesión
+        (session['portal_cliente_id']) · NO usan compras_user. El portal
+        es un namespace aislado para clientes B2B externos.
         """
         if not request.path.startswith('/api/'):
             return  # Rutas HTML se manejan individualmente
@@ -275,8 +279,21 @@ def register_hooks(app):
                       # si está sana exige admin. Antes el before_request lo
                       # bloqueaba → el endpoint de emergencia era inútil en
                       # la emergencia real.
-                      '/api/admin/emergency-restore'}
+                      '/api/admin/emergency-restore',
+                      # Portal B2B login · cliente externo aún no tiene sesión.
+                      '/api/portal/login'}
         if request.path in PUBLIC_API:
+            return
+        # Portal B2B: rutas /api/portal/* validan portal_cliente_id
+        # en lugar de compras_user. El blueprint del portal hace su
+        # propia validación interna; aquí solo aseguramos que HAYA
+        # algún tipo de sesión (cliente o user interno).
+        if request.path.startswith('/api/portal/'):
+            if not (session.get('portal_cliente_id')
+                    or session.get('compras_user')):
+                return jsonify({
+                    'error': 'No autorizado · login en /portal/login',
+                }), 401
             return
         if not session.get('compras_user'):
             return jsonify({'error': 'No autorizado. Inicia sesion primero.'}), 401

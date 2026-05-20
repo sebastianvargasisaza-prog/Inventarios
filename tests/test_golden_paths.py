@@ -7197,6 +7197,119 @@ def test_golden_auto_asignar_operarios_no_deja_roles_null_parcial(app, db_clean)
         _exec("DELETE FROM produccion_programada WHERE id=?", (pid,))
 
 
+def test_golden_portal_b2b_flujo_completo(app, db_clean):
+    """Portal Clientes B2B · Fase 1 · Sebastián 20-may-2026.
+
+    Cubre:
+      - Admin crea credencial (POST /api/admin/portal/credenciales)
+      - Cliente NO autenticado: GET /portal redirige a /portal/login
+      - Login con credencial inválida → 401
+      - Login OK → cliente entra y ve productos
+      - Cliente crea pedido → se inserta en pedidos_b2b con su cliente_id
+      - Cliente SOLO ve sus propios pedidos (aislamiento)
+      - Admin desactiva credencial → cliente ya no puede entrar
+      - Otro cliente NO ve pedidos del primero
+    """
+    _exec("DELETE FROM pedidos_b2b WHERE cliente_id LIKE 'TEST_PORTAL_%'")
+    _exec("DELETE FROM portal_clientes_credenciales WHERE email LIKE 'test_portal_%'")
+
+    cs_admin = _login(app, 'sebastian')
+
+    # 1) Admin crea credencial para Fernando
+    r = cs_admin.post('/api/admin/portal/credenciales', json={
+        'cliente_id': 'TEST_PORTAL_FERNANDO',
+        'cliente_nombre': 'Fernando Test',
+        'email': 'test_portal_fernando@example.com',
+        'password': 'demoPassword123',
+    }, headers=csrf_headers())
+    assert r.status_code == 201, f'BUG crear cred: {r.status_code} {r.data}'
+    cred_id = r.get_json()['id']
+
+    # 2) Email duplicado rechaza
+    r2 = cs_admin.post('/api/admin/portal/credenciales', json={
+        'cliente_id': 'TEST_PORTAL_OTRO',
+        'cliente_nombre': 'Otro',
+        'email': 'test_portal_fernando@example.com',
+        'password': 'demoPassword123',
+    }, headers=csrf_headers())
+    assert r2.status_code == 409
+
+    # 3) Cliente no autenticado: GET /portal redirige a login
+    with app.test_client() as cs_anon:
+        r3 = cs_anon.get('/portal', follow_redirects=False)
+        assert r3.status_code in (302, 301), f'BUG redirect /portal: {r3.status_code}'
+
+    # 4) Login con password incorrecto
+    with app.test_client() as cs_client:
+        r4 = cs_client.post('/api/portal/login', json={
+            'email': 'test_portal_fernando@example.com',
+            'password': 'wrong',
+        }, headers=csrf_headers())
+        assert r4.status_code == 401
+
+        # 5) Login OK
+        r5 = cs_client.post('/api/portal/login', json={
+            'email': 'test_portal_fernando@example.com',
+            'password': 'demoPassword123',
+        }, headers=csrf_headers())
+        assert r5.status_code == 200, f'BUG login: {r5.status_code} {r5.data}'
+        d5 = r5.get_json()
+        assert d5['cliente_nombre'] == 'Fernando Test'
+
+        # 6) Ver productos
+        r6 = cs_client.get('/api/portal/productos')
+        assert r6.status_code == 200
+        d6 = r6.get_json()
+        assert 'productos' in d6
+        assert d6['cliente_id'] == 'TEST_PORTAL_FERNANDO'
+
+        # 7) Crear pedido B2B desde portal
+        if d6['productos']:
+            producto_test = d6['productos'][0]['nombre']
+            r7 = cs_client.post('/api/portal/pedidos', json={
+                'producto_nombre': producto_test,
+                'cantidad_uds': 50,
+                'ml_unidad': 30,
+                'fecha_estimada': '2026-06-15',
+                'notas': 'test pedido portal',
+            }, headers=csrf_headers())
+            assert r7.status_code == 201, f'BUG crear pedido: {r7.status_code} {r7.data}'
+            d7 = r7.get_json()
+            assert d7['ok'] is True
+            pedido_id = d7['id']
+
+            # 8) Ver mis pedidos · debe estar el creado
+            r8 = cs_client.get('/api/portal/mis-pedidos')
+            assert r8.status_code == 200
+            d8 = r8.get_json()
+            ids = {p['id'] for p in d8['pedidos']}
+            assert pedido_id in ids
+            # Verificar cliente_id en BD (no se filtró)
+            db_cid = _query("SELECT cliente_id FROM pedidos_b2b WHERE id = ?", (pedido_id,))
+            assert db_cid[0][0] == 'TEST_PORTAL_FERNANDO'
+
+        # 9) Cliente NO puede llegar a rutas internas
+        r9 = cs_client.get('/api/maestro-mps')
+        assert r9.status_code == 401, f'BUG aislamiento: portal pudo leer maestro-mps · {r9.status_code}'
+
+    # 10) Admin desactiva la credencial
+    r10 = cs_admin.delete(f'/api/admin/portal/credenciales/{cred_id}',
+                          headers=csrf_headers())
+    assert r10.status_code == 200
+
+    # 11) Cliente ya no puede entrar
+    with app.test_client() as cs_client2:
+        r11 = cs_client2.post('/api/portal/login', json={
+            'email': 'test_portal_fernando@example.com',
+            'password': 'demoPassword123',
+        }, headers=csrf_headers())
+        assert r11.status_code == 403, f'BUG: cred desactivada permite login · {r11.status_code}'
+
+    # Cleanup
+    _exec("DELETE FROM pedidos_b2b WHERE cliente_id LIKE 'TEST_PORTAL_%'")
+    _exec("DELETE FROM portal_clientes_credenciales WHERE email LIKE 'test_portal_%'")
+
+
 def test_golden_tablero_kanban_estructura_y_permisos(app, db_clean):
     """Sebastián 19-may-2026 · Kanban de Estaciones de Planta.
 

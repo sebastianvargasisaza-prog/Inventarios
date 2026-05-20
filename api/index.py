@@ -231,6 +231,7 @@ from blueprints.firmas import bp as firmas_bp
 from blueprints.brd import bp as brd_bp
 from blueprints.operario import bp as operario_bp
 from blueprints.plan import bp as plan_bp
+from blueprints.portal import bp as portal_bp
 
 app.register_blueprint(core_bp)
 app.register_blueprint(hub_bp)
@@ -264,6 +265,7 @@ app.register_blueprint(firmas_bp)
 app.register_blueprint(brd_bp)
 app.register_blueprint(operario_bp)
 app.register_blueprint(plan_bp)
+app.register_blueprint(portal_bp)
 
 # ─── DB init + migraciones de esquema (idempotente) ────────────────────────
 init_db()   # crea tablas + ejecuta run_migrations() internamente

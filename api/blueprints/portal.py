@@ -1,0 +1,714 @@
+"""Portal de Clientes B2B · Fase 1 · Sebastián 20-may-2026.
+
+Portal MINIMALISTA · 2 módulos: Solicitar (Fase 1) + PQR (Fase 2 · pendiente).
+Para Fernando Mesa y mayoristas que hoy mandan pedidos por WhatsApp/email.
+
+Aislamiento:
+- Sesión separada del backoffice: usa `session['portal_cliente_id']` en lugar
+  de `compras_user`. El cliente NUNCA toca inventario, fórmulas, otros clientes.
+- Rutas únicas: `/portal/*` (HTML) y `/api/portal/*` (JSON).
+- Sebastián crea las credenciales manualmente (no hay self-signup) ·
+  ver /api/admin/portal/credenciales (admin).
+
+Endpoints:
+    GET  /portal/login                      · form de login
+    POST /api/portal/login                  · valida email + password
+    GET  /portal/logout                     · cierra sesión + redirect
+    GET  /portal                            · página app (solicitar)
+    GET  /api/portal/productos              · catálogo público para pedir
+    POST /api/portal/pedidos                · crea pedido B2B
+                                             (reusa _integrar_pedido_b2b_al_plan)
+    GET  /api/portal/mis-pedidos            · pedidos del cliente logueado
+"""
+import logging
+import time
+from flask import Blueprint, jsonify, request, session, redirect, Response
+
+from database import get_db
+from audit_helpers import audit_log
+from config import ADMIN_USERS
+
+try:
+    from werkzeug.security import generate_password_hash, check_password_hash
+except ImportError:
+    # Fallback PBKDF2 si werkzeug no disponible (no debería pasar en EOS)
+    import hashlib
+    def generate_password_hash(pw):
+        salt = hashlib.sha256(str(time.time()).encode()).hexdigest()[:16]
+        h = hashlib.pbkdf2_hmac('sha256', pw.encode(), salt.encode(), 100_000)
+        return f'pbkdf2:sha256:100000${salt}${h.hex()}'
+    def check_password_hash(stored, pw):
+        try:
+            _, sch, rest = stored.split(':', 2)
+            iters = int(sch.split('sha256:')[1]) if 'sha256:' in sch else 100_000
+            salt, h_hex = rest.split('$', 1)[1].split('$')
+            h = hashlib.pbkdf2_hmac('sha256', pw.encode(), salt.encode(), iters)
+            return h.hex() == h_hex
+        except Exception:
+            return False
+
+bp = Blueprint('portal', __name__)
+log = logging.getLogger('portal')
+
+
+# ────────────────────────────────────────────────────────────────────
+# AUTH HELPERS
+# ────────────────────────────────────────────────────────────────────
+
+def _require_portal_login():
+    """Devuelve (cliente_id, cliente_nombre, email) o None si no logueado."""
+    cid = session.get('portal_cliente_id')
+    if not cid:
+        return None
+    return (
+        cid,
+        session.get('portal_cliente_nombre', ''),
+        session.get('portal_email', ''),
+    )
+
+
+# ────────────────────────────────────────────────────────────────────
+# LOGIN / LOGOUT
+# ────────────────────────────────────────────────────────────────────
+
+_LOGIN_HTML = r"""<!DOCTYPE html>
+<html lang="es"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Portal Clientes · Espagiria</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:linear-gradient(135deg,#0f766e,#0891b2);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;color:#1e293b}
+.card{background:#fff;border-radius:16px;padding:32px;max-width:380px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+h1{color:#0f766e;font-size:22px;margin-bottom:6px}
+.sub{color:#64748b;font-size:13px;margin-bottom:22px}
+label{display:block;font-size:12px;color:#475569;font-weight:600;margin:14px 0 6px}
+input{width:100%;padding:11px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px;outline:none}
+input:focus{border-color:#0f766e}
+button{width:100%;background:#0f766e;color:#fff;border:none;padding:13px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;margin-top:18px}
+button:hover{background:#0d635c}
+.err{background:#fee2e2;color:#991b1b;padding:10px 12px;border-radius:8px;font-size:12px;margin-top:12px;display:none}
+.foot{text-align:center;color:#94a3b8;font-size:11px;margin-top:18px}
+</style></head><body>
+<div class="card">
+  <h1>🌿 Portal Clientes</h1>
+  <div class="sub">Espagiria & ÁNIMUS Lab · acceso B2B</div>
+  <form id="form-login">
+    <label>Email</label>
+    <input type="email" id="email" required autocomplete="username">
+    <label>Contraseña</label>
+    <input type="password" id="password" required autocomplete="current-password">
+    <button type="submit">Entrar</button>
+    <div class="err" id="err"></div>
+  </form>
+  <div class="foot">¿No tienes credenciales? Contacta a Sebastián.</div>
+</div>
+<script>
+document.getElementById('form-login').addEventListener('submit', async function(e){
+  e.preventDefault();
+  var email = document.getElementById('email').value.trim().toLowerCase();
+  var pw = document.getElementById('password').value;
+  var err = document.getElementById('err');
+  err.style.display = 'none';
+  try {
+    var r = await fetch('/api/portal/login', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({email: email, password: pw}),
+      credentials: 'same-origin',
+    });
+    var d = await r.json();
+    if (!r.ok) {
+      err.textContent = d.error || 'Login fallido';
+      err.style.display = 'block';
+      return;
+    }
+    window.location.href = '/portal';
+  } catch(ex){
+    err.textContent = 'Error de red: ' + ex.message;
+    err.style.display = 'block';
+  }
+});
+</script></body></html>
+"""
+
+
+@bp.route('/portal/login', methods=['GET'])
+def portal_login_page():
+    if session.get('portal_cliente_id'):
+        return redirect('/portal')
+    return Response(_LOGIN_HTML, mimetype='text/html')
+
+
+@bp.route('/api/portal/login', methods=['POST'])
+def portal_login_api():
+    body = request.get_json(silent=True) or {}
+    email = (body.get('email') or '').strip().lower()
+    pw = body.get('password') or ''
+    if not email or not pw:
+        return jsonify({'error': 'email y password requeridos'}), 400
+    conn = get_db()
+    row = conn.execute(
+        """SELECT id, cliente_id, cliente_nombre, email, password_hash, activo
+           FROM portal_clientes_credenciales
+           WHERE LOWER(email) = ? LIMIT 1""",
+        (email,),
+    ).fetchone()
+    if not row:
+        # Mensaje genérico anti-enumeración
+        log.info('portal login fallo · email no existe · %s', email)
+        return jsonify({'error': 'Credenciales incorrectas'}), 401
+    cred_id, cid, cnom, _email, pw_hash, activo = row
+    if not activo:
+        return jsonify({'error': 'Cuenta desactivada · contactá a Sebastián'}), 403
+    try:
+        ok = check_password_hash(pw_hash, pw)
+    except Exception:
+        ok = False
+    if not ok:
+        log.info('portal login fallo · password incorrecto · %s', email)
+        return jsonify({'error': 'Credenciales incorrectas'}), 401
+    # Sesión nueva para evitar fixation
+    session.clear()
+    session.permanent = True
+    session['portal_cliente_id'] = cid
+    session['portal_cliente_nombre'] = cnom
+    session['portal_email'] = email
+    session['portal_login_time'] = time.time()
+    # Track last login
+    ip = (request.headers.get('X-Forwarded-For', request.remote_addr or '')
+          .split(',')[0].strip())
+    try:
+        conn.execute(
+            """UPDATE portal_clientes_credenciales
+               SET ultimo_login_at_utc = datetime('now','utc'),
+                   ultimo_login_ip = ?
+               WHERE id = ?""",
+            (ip, cred_id),
+        )
+        conn.commit()
+    except Exception:
+        pass
+    return jsonify({'ok': True, 'cliente_nombre': cnom})
+
+
+@bp.route('/portal/logout', methods=['GET', 'POST'])
+def portal_logout():
+    session.pop('portal_cliente_id', None)
+    session.pop('portal_cliente_nombre', None)
+    session.pop('portal_email', None)
+    session.pop('portal_login_time', None)
+    return redirect('/portal/login')
+
+
+# ────────────────────────────────────────────────────────────────────
+# PÁGINA DEL PORTAL
+# ────────────────────────────────────────────────────────────────────
+
+_PORTAL_HTML = r"""<!DOCTYPE html>
+<html lang="es"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Portal Clientes · Espagiria</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;color:#1e293b;min-height:100vh;font-size:14px}
+header{background:linear-gradient(135deg,#0f766e,#0891b2);color:#fff;padding:16px 18px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px}
+header h1{font-size:18px;font-weight:800}
+header .meta{font-size:11px;opacity:.9}
+header a{color:#fff;text-decoration:none;font-size:12px;background:rgba(255,255,255,.15);padding:6px 10px;border-radius:6px}
+.wrap{max-width:780px;margin:0 auto;padding:20px}
+.tabs{display:flex;gap:8px;margin-bottom:16px}
+.tab{flex:1;padding:11px;background:#fff;border:1px solid #cbd5e1;border-radius:10px 10px 0 0;font-size:14px;font-weight:700;cursor:pointer;color:#475569}
+.tab.active{background:#0f766e;color:#fff;border-color:#0f766e}
+.card{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:18px;margin-bottom:14px}
+.card h2{font-size:15px;color:#0f766e;margin-bottom:10px}
+label{display:block;font-size:12px;color:#475569;font-weight:600;margin:10px 0 4px}
+input,select,textarea{width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:6px;font-size:14px;outline:none;font-family:inherit}
+input:focus,select:focus,textarea:focus{border-color:#0f766e}
+button.primary{background:#0f766e;color:#fff;border:none;padding:12px 24px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;margin-top:14px}
+button.primary:hover{background:#0d635c}
+button.primary:disabled{opacity:.6;cursor:not-allowed}
+.lista{display:flex;flex-direction:column;gap:8px}
+.pedido{background:#f8fafc;border:1px solid #e2e8f0;border-left:4px solid #0891b2;border-radius:6px;padding:10px 14px}
+.pedido.pendiente{border-left-color:#94a3b8}
+.pedido.confirmado{border-left-color:#0891b2}
+.pedido.en_produccion{border-left-color:#ca8a04}
+.pedido.despachado{border-left-color:#16a34a}
+.pedido.cancelado{border-left-color:#dc2626;opacity:.7}
+.pedido-prod{font-weight:700;font-size:14px}
+.pedido-meta{font-size:11px;color:#64748b;margin-top:3px}
+.pedido-estado{display:inline-block;background:#e2e8f0;color:#475569;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700;text-transform:uppercase;margin-top:4px}
+.empty{text-align:center;color:#94a3b8;font-style:italic;padding:30px;font-size:13px}
+.msg{padding:10px 12px;border-radius:8px;font-size:12px;margin-top:10px;display:none}
+.msg.ok{background:#d1fae5;color:#065f46}
+.msg.err{background:#fee2e2;color:#991b1b}
+@media (min-width:680px){
+  .row{display:flex;gap:10px}
+  .row > div{flex:1}
+}
+</style></head><body>
+<header>
+  <div>
+    <h1>🌿 Portal Clientes</h1>
+    <div class="meta" id="hdr-cliente">Cargando...</div>
+  </div>
+  <a href="/portal/logout">Cerrar sesión</a>
+</header>
+<div class="wrap">
+  <div class="tabs">
+    <button class="tab active" data-tab="solicitar" onclick="setTab('solicitar')">📦 Solicitar</button>
+    <button class="tab" data-tab="mis" onclick="setTab('mis')">📋 Mis pedidos</button>
+  </div>
+
+  <div id="panel-solicitar">
+    <div class="card">
+      <h2>Solicitar producto</h2>
+      <p style="font-size:12px;color:#64748b;margin-bottom:8px">Elegí producto, cantidad y fecha estimada · te confirmamos por correo.</p>
+      <label>Producto</label>
+      <select id="sol-producto">
+        <option value="">— Cargando productos —</option>
+      </select>
+      <div class="row">
+        <div>
+          <label>Cantidad (unidades)</label>
+          <input id="sol-cant" type="number" min="1" step="1" placeholder="Ej. 100">
+        </div>
+        <div>
+          <label>ml por unidad</label>
+          <input id="sol-ml" type="number" min="1" step="1" value="30">
+        </div>
+      </div>
+      <label>Fecha estimada de entrega</label>
+      <input id="sol-fecha" type="date">
+      <label>Notas (opcional)</label>
+      <textarea id="sol-notas" rows="3" placeholder="Detalles, urgencia, etc."></textarea>
+      <button class="primary" id="btn-enviar" onclick="enviarPedido()">📨 Enviar solicitud</button>
+      <div class="msg" id="sol-msg"></div>
+    </div>
+  </div>
+
+  <div id="panel-mis" style="display:none">
+    <div class="card">
+      <h2>Mis pedidos</h2>
+      <div id="mis-lista" class="lista"><div class="empty">Cargando...</div></div>
+    </div>
+  </div>
+</div>
+
+<script>
+function esc(s){return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function setTab(t){
+  document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active', b.dataset.tab===t));
+  document.getElementById('panel-solicitar').style.display = (t==='solicitar')?'block':'none';
+  document.getElementById('panel-mis').style.display = (t==='mis')?'block':'none';
+  if(t==='mis') cargarMisPedidos();
+}
+
+async function cargarSesionYProductos(){
+  try{
+    var rp = await fetch('/api/portal/productos', {credentials:'same-origin'});
+    if(rp.status === 401){ window.location.href = '/portal/login'; return; }
+    var d = await rp.json();
+    document.getElementById('hdr-cliente').textContent = d.cliente_nombre ? ('Hola, ' + d.cliente_nombre) : '';
+    var sel = document.getElementById('sol-producto');
+    sel.innerHTML = '<option value="">— Elegí un producto —</option>' +
+      (d.productos||[]).map(p=>'<option value="'+esc(p.nombre)+'">'+esc(p.nombre)+'</option>').join('');
+  } catch(e){
+    document.getElementById('hdr-cliente').textContent = 'Error: ' + e.message;
+  }
+}
+
+async function enviarPedido(){
+  var btn = document.getElementById('btn-enviar');
+  var msg = document.getElementById('sol-msg');
+  msg.style.display = 'none';
+  var producto = document.getElementById('sol-producto').value;
+  var cant = parseInt(document.getElementById('sol-cant').value);
+  var ml = parseFloat(document.getElementById('sol-ml').value || '30');
+  var fecha = document.getElementById('sol-fecha').value;
+  var notas = document.getElementById('sol-notas').value.trim();
+  if(!producto || !cant || cant<=0){
+    msg.className = 'msg err';
+    msg.textContent = 'Falta producto o cantidad';
+    msg.style.display = 'block';
+    return;
+  }
+  btn.disabled = true; btn.textContent = 'Enviando...';
+  try{
+    var r = await fetch('/api/portal/pedidos', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      credentials:'same-origin',
+      body: JSON.stringify({
+        producto_nombre: producto,
+        cantidad_uds: cant,
+        ml_unidad: ml,
+        fecha_estimada: fecha,
+        notas: notas,
+      }),
+    });
+    var d = await r.json();
+    if(!r.ok){
+      msg.className = 'msg err';
+      msg.textContent = 'Error: ' + (d.error || r.status);
+      msg.style.display = 'block';
+      btn.disabled = false; btn.textContent = '📨 Enviar solicitud';
+      return;
+    }
+    msg.className = 'msg ok';
+    msg.textContent = '✓ Pedido enviado · #' + d.id + ' · ' + (d.kg_b2b||0) + ' kg · te avisamos pronto';
+    msg.style.display = 'block';
+    // limpiar form
+    document.getElementById('sol-cant').value = '';
+    document.getElementById('sol-fecha').value = '';
+    document.getElementById('sol-notas').value = '';
+    btn.disabled = false; btn.textContent = '📨 Enviar solicitud';
+  } catch(e){
+    msg.className = 'msg err';
+    msg.textContent = 'Error de red: ' + e.message;
+    msg.style.display = 'block';
+    btn.disabled = false; btn.textContent = '📨 Enviar solicitud';
+  }
+}
+
+async function cargarMisPedidos(){
+  var box = document.getElementById('mis-lista');
+  box.innerHTML = '<div class="empty">Cargando...</div>';
+  try{
+    var r = await fetch('/api/portal/mis-pedidos', {credentials:'same-origin'});
+    if(r.status === 401){ window.location.href = '/portal/login'; return; }
+    var d = await r.json();
+    var items = d.pedidos || [];
+    if(!items.length){
+      box.innerHTML = '<div class="empty">No tenés pedidos todavía · andá a Solicitar</div>';
+      return;
+    }
+    box.innerHTML = items.map(p =>
+      '<div class="pedido '+esc(p.estado)+'">'
+      + '<div class="pedido-prod">'+esc(p.producto_nombre)+'</div>'
+      + '<div class="pedido-meta">'+p.cantidad_uds+' uds × '+p.ml_unidad+' ml · '+(p.kg_equivalente||0)+' kg' + (p.fecha_estimada?(' · '+esc(p.fecha_estimada)):'')+'</div>'
+      + '<span class="pedido-estado">'+esc(p.estado)+'</span>'
+      + (p.notas?'<div style="font-size:11px;color:#64748b;margin-top:6px">📝 '+esc(p.notas)+'</div>':'')
+      + '</div>'
+    ).join('');
+  } catch(e){
+    box.innerHTML = '<div class="empty">Error: '+esc(e.message)+'</div>';
+  }
+}
+
+cargarSesionYProductos();
+</script></body></html>
+"""
+
+
+@bp.route('/portal', methods=['GET'])
+def portal_app_page():
+    if not session.get('portal_cliente_id'):
+        return redirect('/portal/login')
+    return Response(_PORTAL_HTML, mimetype='text/html')
+
+
+# ────────────────────────────────────────────────────────────────────
+# API: productos disponibles para pedir
+# ────────────────────────────────────────────────────────────────────
+
+@bp.route('/api/portal/productos', methods=['GET'])
+def portal_productos():
+    """Catálogo público del portal · solo productos activos con fórmula.
+
+    Sebastián 20-may-2026: el cliente externo NO ve precios ni stock ni
+    fórmulas · solo el nombre del producto que puede solicitar.
+    """
+    auth = _require_portal_login()
+    if not auth:
+        return jsonify({'error': 'No autorizado'}), 401
+    cid, cnom, email = auth
+    conn = get_db()
+    rows = conn.execute(
+        """SELECT DISTINCT producto_nombre
+           FROM formula_headers
+           WHERE COALESCE(activo, 1) = 1
+             AND producto_nombre IS NOT NULL
+             AND TRIM(producto_nombre) != ''
+           ORDER BY producto_nombre ASC""",
+    ).fetchall()
+    productos = [{'nombre': r[0]} for r in rows if r[0]]
+    return jsonify({
+        'productos': productos,
+        'total': len(productos),
+        'cliente_id': cid,
+        'cliente_nombre': cnom,
+    })
+
+
+# ────────────────────────────────────────────────────────────────────
+# API: crear pedido
+# ────────────────────────────────────────────────────────────────────
+
+@bp.route('/api/portal/pedidos', methods=['POST'])
+def portal_crear_pedido():
+    """El cliente externo envía un pedido · se inserta en `pedidos_b2b` con
+    cliente_id de su credencial · luego invocamos `_integrar_pedido_b2b_al_plan`
+    para que se agende automáticamente (misma lógica que el backoffice).
+    """
+    auth = _require_portal_login()
+    if not auth:
+        return jsonify({'error': 'No autorizado'}), 401
+    cid, cnom, email = auth
+    body = request.get_json(silent=True) or {}
+    producto = (body.get('producto_nombre') or '').strip()
+    try:
+        cantidad = int(body.get('cantidad_uds') or 0)
+    except (TypeError, ValueError):
+        return jsonify({'error': 'cantidad_uds inválida'}), 400
+    try:
+        ml = float(body.get('ml_unidad') or 30)
+    except (TypeError, ValueError):
+        return jsonify({'error': 'ml_unidad inválida'}), 400
+    fecha = (body.get('fecha_estimada') or '').strip() or None
+    notas = (body.get('notas') or '').strip()[:500]
+
+    if not producto:
+        return jsonify({'error': 'producto_nombre requerido'}), 400
+    if cantidad <= 0:
+        return jsonify({'error': 'cantidad_uds debe ser > 0'}), 400
+    if ml <= 0:
+        return jsonify({'error': 'ml_unidad debe ser > 0'}), 400
+
+    conn = get_db()
+    cur = conn.cursor()
+    # Validar que el producto exista
+    prod_row = cur.execute(
+        "SELECT producto_nombre FROM formula_headers WHERE producto_nombre = ?",
+        (producto,),
+    ).fetchone()
+    if not prod_row:
+        return jsonify({'error': f"producto '{producto}' no disponible"}), 404
+
+    cur.execute(
+        """INSERT INTO pedidos_b2b
+             (cliente_id, cliente_nombre, producto_nombre, cantidad_uds,
+              ml_unidad, fecha_estimada, notas, creado_por)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        (cid, cnom, producto, cantidad, ml, fecha,
+         notas + (' [via portal]' if notas else 'via portal'),
+         f'portal:{email}'),
+    )
+    pid = cur.lastrowid
+    audit_log(cur, usuario=f'portal:{email}', accion='PORTAL_CREAR_PEDIDO',
+              tabla='pedidos_b2b', registro_id=pid,
+              despues={'cliente_id': cid, 'producto': producto,
+                       'cantidad_uds': cantidad, 'ml': ml, 'fecha': fecha})
+    conn.commit()
+
+    kg_b2b = round(cantidad * ml / 1000.0, 2)
+    integracion = None
+    try:
+        from blueprints.plan import _integrar_pedido_b2b_al_plan
+        integracion = _integrar_pedido_b2b_al_plan(
+            cur, pid, producto, kg_b2b, fecha, cnom, f'portal:{email}')
+        conn.commit()
+    except Exception as _e:
+        try: conn.rollback()
+        except Exception: pass
+        log.warning('integracion B2B portal fallo pid=%s: %s', pid, _e)
+        integracion = {'error': str(_e)[:200]}
+
+    # Notif in-app a Sebastián+Catalina (no email · CLAUDE.md memoria)
+    try:
+        from blueprints.notif import push_notif as _push_notif
+        for dest in ('sebastian', 'catalina'):
+            _push_notif(
+                destinatario=dest,
+                tipo='portal_pedido_nuevo',
+                titulo=f'📦 Nuevo pedido portal · {cnom}',
+                body=f'{producto} · {cantidad} uds × {ml} ml · {kg_b2b} kg' +
+                      (f' para {fecha}' if fecha else ''),
+                link='/dashboard#programacion',
+                remitente=f'portal:{email}',
+                importante=False,
+            )
+    except Exception:
+        pass
+
+    return jsonify({
+        'ok': True, 'id': pid, 'kg_b2b': kg_b2b,
+        'integracion_plan': integracion,
+    }), 201
+
+
+# ────────────────────────────────────────────────────────────────────
+# API: mis pedidos
+# ────────────────────────────────────────────────────────────────────
+
+# ────────────────────────────────────────────────────────────────────
+# ADMIN · CRUD de credenciales (sólo admin backoffice)
+# ────────────────────────────────────────────────────────────────────
+
+def _require_admin_backoffice():
+    """Valida que el caller sea admin del backoffice (no portal)."""
+    u = session.get('compras_user', '')
+    if not u:
+        return None, (jsonify({'error': 'No autenticado'}), 401)
+    if u not in ADMIN_USERS:
+        return None, (jsonify({'error': 'Solo admin'}), 403)
+    return u, None
+
+
+@bp.route('/api/admin/portal/credenciales', methods=['GET', 'POST'])
+def admin_portal_credenciales():
+    """GET · lista credenciales del portal (sin password_hash).
+       POST · crea credencial nueva · body: {cliente_id, cliente_nombre,
+              email, password}.
+    """
+    u, err = _require_admin_backoffice()
+    if err:
+        return err
+    conn = get_db(); c = conn.cursor()
+    if request.method == 'GET':
+        rows = c.execute(
+            """SELECT id, cliente_id, cliente_nombre, email, activo,
+                      creado_por, creado_at_utc, ultimo_login_at_utc,
+                      ultimo_login_ip
+               FROM portal_clientes_credenciales
+               ORDER BY creado_at_utc DESC, id DESC""",
+        ).fetchall()
+        items = [{
+            'id': r[0], 'cliente_id': r[1], 'cliente_nombre': r[2],
+            'email': r[3], 'activo': bool(r[4]),
+            'creado_por': r[5], 'creado_at_utc': r[6],
+            'ultimo_login_at_utc': r[7], 'ultimo_login_ip': r[8],
+        } for r in rows]
+        return jsonify({'items': items, 'total': len(items)})
+
+    body = request.get_json(silent=True) or {}
+    cid = (body.get('cliente_id') or '').strip()
+    cnom = (body.get('cliente_nombre') or '').strip()
+    email = (body.get('email') or '').strip().lower()
+    pw = body.get('password') or ''
+    if not (cid and cnom and email and pw):
+        return jsonify({'error': 'cliente_id, cliente_nombre, email y password requeridos'}), 400
+    if '@' not in email or '.' not in email.split('@')[-1]:
+        return jsonify({'error': 'email inválido'}), 400
+    if len(pw) < 8:
+        return jsonify({'error': 'password debe ser >= 8 chars'}), 400
+    # Check email único
+    existe = c.execute(
+        "SELECT id FROM portal_clientes_credenciales WHERE LOWER(email) = ?",
+        (email,),
+    ).fetchone()
+    if existe:
+        return jsonify({'error': f'email ya registrado (id={existe[0]})'}), 409
+    pw_hash = generate_password_hash(pw)
+    c.execute(
+        """INSERT INTO portal_clientes_credenciales
+             (cliente_id, cliente_nombre, email, password_hash,
+              activo, creado_por)
+           VALUES (?, ?, ?, ?, 1, ?)""",
+        (cid, cnom, email, pw_hash, u),
+    )
+    new_id = c.lastrowid
+    audit_log(c, usuario=u, accion='PORTAL_CREAR_CREDENCIAL',
+              tabla='portal_clientes_credenciales', registro_id=new_id,
+              despues={'cliente_id': cid, 'email': email,
+                       'cliente_nombre': cnom})
+    conn.commit()
+    return jsonify({
+        'ok': True, 'id': new_id,
+        'mensaje': f'Credencial creada para {cnom} ({email})',
+    }), 201
+
+
+@bp.route('/api/admin/portal/credenciales/<int:cred_id>', methods=['PATCH', 'DELETE'])
+def admin_portal_credencial_uno(cred_id):
+    """PATCH · cambia activo / reset password · body: {activo?: bool,
+              password?: str}.
+       DELETE · soft delete (activo=0).
+    """
+    u, err = _require_admin_backoffice()
+    if err:
+        return err
+    conn = get_db(); c = conn.cursor()
+    row = c.execute(
+        "SELECT id, cliente_id, email, activo FROM portal_clientes_credenciales WHERE id = ?",
+        (cred_id,),
+    ).fetchone()
+    if not row:
+        return jsonify({'error': 'credencial no existe'}), 404
+
+    if request.method == 'DELETE':
+        c.execute(
+            "UPDATE portal_clientes_credenciales SET activo = 0 WHERE id = ?",
+            (cred_id,),
+        )
+        audit_log(c, usuario=u, accion='PORTAL_DESACTIVAR_CREDENCIAL',
+                  tabla='portal_clientes_credenciales', registro_id=cred_id,
+                  antes={'activo': bool(row[3])}, despues={'activo': False})
+        conn.commit()
+        return jsonify({'ok': True, 'desactivada': True})
+
+    body = request.get_json(silent=True) or {}
+    cambios = []
+    sets = []
+    params = []
+    if 'activo' in body:
+        nuevo_activo = 1 if bool(body['activo']) else 0
+        sets.append("activo = ?")
+        params.append(nuevo_activo)
+        cambios.append(f'activo→{bool(nuevo_activo)}')
+    if 'password' in body and body['password']:
+        pw = body['password']
+        if len(pw) < 8:
+            return jsonify({'error': 'password debe ser >= 8 chars'}), 400
+        sets.append("password_hash = ?")
+        params.append(generate_password_hash(pw))
+        cambios.append('password reset')
+    if not sets:
+        return jsonify({'error': 'nada que actualizar'}), 400
+    params.append(cred_id)
+    c.execute(
+        f"UPDATE portal_clientes_credenciales SET {', '.join(sets)} WHERE id = ?",
+        params,
+    )
+    audit_log(c, usuario=u, accion='PORTAL_ACTUALIZAR_CREDENCIAL',
+              tabla='portal_clientes_credenciales', registro_id=cred_id,
+              despues={'cambios': cambios})
+    conn.commit()
+    return jsonify({'ok': True, 'cambios': cambios})
+
+
+# ────────────────────────────────────────────────────────────────────
+# API: mis pedidos
+# ────────────────────────────────────────────────────────────────────
+
+@bp.route('/api/portal/mis-pedidos', methods=['GET'])
+def portal_mis_pedidos():
+    """Pedidos del cliente logueado · solo los SUYOS, nunca de otros."""
+    auth = _require_portal_login()
+    if not auth:
+        return jsonify({'error': 'No autorizado'}), 401
+    cid, cnom, _ = auth
+    conn = get_db()
+    rows = conn.execute(
+        """SELECT id, producto_nombre, cantidad_uds, ml_unidad, fecha_estimada,
+                  estado, notas, creado_at_utc
+           FROM pedidos_b2b
+           WHERE cliente_id = ?
+           ORDER BY creado_at_utc DESC, id DESC
+           LIMIT 100""",
+        (cid,),
+    ).fetchall()
+    out = []
+    for r in rows:
+        uds = int(r[2] or 0); ml = float(r[3] or 0)
+        out.append({
+            'id': r[0],
+            'producto_nombre': r[1] or '',
+            'cantidad_uds': uds,
+            'ml_unidad': ml,
+            'kg_equivalente': round(uds * ml / 1000.0, 2),
+            'fecha_estimada': r[4] or '',
+            'estado': r[5] or 'pendiente',
+            'notas': r[6] or '',
+            'creado_at': r[7] or '',
+        })
+    return jsonify({'pedidos': out, 'total': len(out)})

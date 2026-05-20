@@ -6433,6 +6433,28 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
            ('ESENCIA ILUMINADORA',                  'esencia', NULL, 60, 90, 30, 3.0, 3, NULL)""",
     ]),
 
+    (140, "Portal Clientes B2B Fase 1 · credenciales y sesiones · Sebastián 20-may-2026", [
+        # Sebastián 15-may-2026: portal minimalista para Fernando Mesa
+        # (y futuros mayoristas). Solo 2 módulos: Solicitar + PQR. Fase 1
+        # = Solicitar. Acceso aislado · NUNCA toca compras_user / rutas
+        # internas. Sebastián crea las credenciales manualmente desde
+        # admin (no hay self-signup).
+        """CREATE TABLE IF NOT EXISTS portal_clientes_credenciales (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cliente_id TEXT NOT NULL,
+            cliente_nombre TEXT NOT NULL,
+            email TEXT NOT NULL UNIQUE,
+            password_hash TEXT NOT NULL,
+            activo INTEGER NOT NULL DEFAULT 1,
+            creado_por TEXT NOT NULL,
+            creado_at_utc TEXT NOT NULL DEFAULT (datetime('now','utc')),
+            ultimo_login_at_utc TEXT,
+            ultimo_login_ip TEXT
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_portal_creds_email ON portal_clientes_credenciales(email)",
+        "CREATE INDEX IF NOT EXISTS idx_portal_creds_cliente ON portal_clientes_credenciales(cliente_id, activo)",
+    ]),
+
     (139, "Kanban de Estaciones · timestamps por etapa · Sebastián 19-may-2026", [
         # Sebastián 19-may-2026: pieza 3 del Kanban de Estaciones de Planta.
         # Hasta hoy `produccion_programada` solo guardaba inicio_real_at y
