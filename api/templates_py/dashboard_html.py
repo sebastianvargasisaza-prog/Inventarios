@@ -8399,6 +8399,34 @@ function _renderProgramacion(d){
       <div id="cm-dia-msg" style="display:none;margin-top:8px;padding:6px 10px;border-radius:5px;font-size:11px"></div>
     </div>
 
+    <!-- OLA 2 · Andon alertas (operarios reportan problemas en vivo) -->
+    <div id="cm-andon-panel" style="display:none;background:#fff;border:2px solid #dc2626;border-radius:10px;padding:12px 14px;margin-bottom:14px">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+        <div>
+          <b style="font-size:14px;color:#dc2626">🚨 Alertas ANDON · operarios reportan</b>
+          <span id="cm-andon-sub" style="font-size:11px;color:#64748b;margin-left:8px"></span>
+        </div>
+        <button onclick="cmCargarAndon()" style="padding:4px 10px;background:#dc2626;color:#fff;border:none;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">&#8635; Refrescar</button>
+      </div>
+      <div id="cm-andon-cards" style="display:flex;flex-direction:column;gap:6px"></div>
+    </div>
+
+    <!-- OLA 3 IA · botón Asistente flotante "Pregúntale a la planta" -->
+    <button id="cm-asistente-btn" onclick="cmAbrirAsistente()"
+      style="position:fixed;bottom:24px;right:24px;width:56px;height:56px;border-radius:50%;background:linear-gradient(135deg,#0f766e,#0891b2);color:#fff;border:none;cursor:pointer;font-size:22px;box-shadow:0 6px 20px rgba(15,118,110,.4);z-index:9999"
+      title="Asistente IA · Pregúntale a la planta">💬</button>
+    <div id="cm-asistente-modal" style="display:none;position:fixed;bottom:90px;right:24px;width:380px;max-height:600px;background:#fff;border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,.25);z-index:9999;flex-direction:column;border:1px solid #cbd5e1">
+      <div style="background:linear-gradient(135deg,#0f766e,#0891b2);color:#fff;padding:12px 16px;border-radius:14px 14px 0 0;display:flex;justify-content:space-between;align-items:center">
+        <b style="font-size:14px">💬 Pregúntale a la planta</b>
+        <button onclick="cmCerrarAsistente()" style="background:none;border:none;color:#fff;font-size:1.3em;cursor:pointer;padding:0 4px;line-height:1">×</button>
+      </div>
+      <div id="cm-asistente-historial" style="flex:1;overflow-y:auto;padding:12px;font-size:12px;min-height:200px;max-height:400px"></div>
+      <div style="border-top:1px solid #e2e8f0;padding:8px 10px;display:flex;gap:6px">
+        <input id="cm-asistente-input" type="text" placeholder="¿Qué bloquea Envasado 1?" onkeydown="if(event.key==='Enter')cmAsistentePreguntar()" style="flex:1;padding:7px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:12px">
+        <button onclick="cmAsistentePreguntar()" id="cm-asistente-send" style="padding:7px 12px;background:#0891b2;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700">Enviar</button>
+      </div>
+    </div>
+
     <!-- Sebastián 1-may-2026: panel 'Turnos operarios' eliminado · era
          legacy · requería iniciar turno manual que nadie usaba. Las horas
          se infieren de inicio_real_at / fin_real_at de produccion_programada -->
@@ -11134,6 +11162,8 @@ async function ckMarcar(itemId, estado){
       renderProduccionesDiaCards(d.producciones_dia || [], k);
       renderProduccionesDiag(d.producciones_diag || {});
       if(typeof cmCargarEquipo === 'function') cmCargarEquipo();
+      // OLA 2 · Andon panel
+      if(typeof cmCargarAndon === 'function') cmCargarAndon();
       var lu = document.getElementById('cm-last-update');
       if(lu) lu.textContent = 'actualizado ' + new Date().toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
     }catch(e){
@@ -11216,6 +11246,109 @@ async function ckMarcar(itemId, estado){
     hi.style.display = '';
     if(svg.scrollIntoView) svg.scrollIntoView({behavior:'smooth', block:'center'});
   }
+  // OLA 2 · Andon · operario reporta problemas en vivo
+  async function cmCargarAndon(){
+    var panel = document.getElementById('cm-andon-panel');
+    var sub = document.getElementById('cm-andon-sub');
+    var cards = document.getElementById('cm-andon-cards');
+    if(!panel || !cards) return;
+    try{
+      var r = await fetch('/api/planta/andon');
+      if(!r.ok){ panel.style.display='none'; return; }
+      var d = await r.json();
+      var items = d.alertas || [];
+      if(!items.length){ panel.style.display='none'; return; }
+      panel.style.display = 'block';
+      if(sub) sub.textContent = items.length + ' abierta(s)';
+      var TIPO_EMOJI = {mp_faltante:'📦', equipo_caido:'⚠️', consulta_qc:'🔬', accidente:'🚨', otro:'❓'};
+      cards.innerHTML = items.map(function(a){
+        var fec = (a.ts_abierta||'').substring(5,16).replace('T',' ');
+        var atendBadge = a.estado==='en_atencion'
+          ? '<span style="background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:8px;font-size:10px;font-weight:700;margin-left:4px">EN ATENCIÓN · '+_escHTML(a.atendida_por)+'</span>'
+          : '';
+        return '<div style="display:flex;justify-content:space-between;align-items:center;background:#fef2f2;border-left:3px solid #dc2626;padding:7px 10px;border-radius:5px">'+
+          '<div style="flex:1">'+
+            '<div style="font-size:12px;font-weight:600;color:#991b1b">'+
+              (TIPO_EMOJI[a.tipo]||'❓')+' '+_escHTML(a.tipo)+' · '+_escHTML(a.operario)+atendBadge+
+            '</div>'+
+            '<div style="font-size:11px;color:#475569;margin-top:1px">'+_escHTML(a.descripcion)+'</div>'+
+            '<div style="font-size:10px;color:#94a3b8;margin-top:1px">'+fec+(a.area_codigo?' · '+_escHTML(a.area_codigo):'')+'</div>'+
+          '</div>'+
+          '<div style="display:flex;gap:4px;margin-left:8px">'+
+            (a.estado==='abierta' ? '<button data-andon-act="atender" data-id="'+a.id+'" style="padding:3px 8px;font-size:10px;background:#ca8a04;color:#fff;border:none;border-radius:4px;cursor:pointer">Atender</button>' : '')+
+            '<button data-andon-act="resolver" data-id="'+a.id+'" style="padding:3px 8px;font-size:10px;background:#16a34a;color:#fff;border:none;border-radius:4px;cursor:pointer">✓ Resuelta</button>'+
+          '</div>'+
+        '</div>';
+      }).join('');
+    }catch(e){ panel.style.display='none'; }
+  }
+  if(typeof document !== 'undefined' && !window._CM_ANDON_DELEG){
+    window._CM_ANDON_DELEG = true;
+    document.addEventListener('click', async function(ev){
+      var btn = ev.target && ev.target.closest && ev.target.closest('[data-andon-act]');
+      if(!btn) return;
+      var act = btn.getAttribute('data-andon-act');
+      var id = btn.getAttribute('data-id');
+      var body = {};
+      if(act==='atender'){ body.estado = 'en_atencion'; }
+      else if(act==='resolver'){
+        var resol = prompt('Resolución (≥3 chars · qué se hizo):');
+        if(!resol || resol.trim().length < 3){ alert('Resolución requerida'); return; }
+        body.estado = 'resuelta'; body.resolucion = resol.trim();
+      }
+      try{
+        var r = await fetch('/api/planta/andon/'+id+'/resolver', {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify(body),
+        });
+        var d = await r.json();
+        if(!r.ok){ alert('Error: '+(d.error||r.status)); return; }
+        cmCargarAndon();
+      }catch(e){ alert('Error red: '+e.message); }
+    });
+  }
+
+  // OLA 3 IA · Asistente "Pregúntale a la planta"
+  function cmAbrirAsistente(){
+    var m = document.getElementById('cm-asistente-modal');
+    if(m){ m.style.display = 'flex'; document.getElementById('cm-asistente-input').focus(); }
+  }
+  function cmCerrarAsistente(){
+    var m = document.getElementById('cm-asistente-modal');
+    if(m) m.style.display = 'none';
+  }
+  async function cmAsistentePreguntar(){
+    var inp = document.getElementById('cm-asistente-input');
+    var hist = document.getElementById('cm-asistente-historial');
+    var btn = document.getElementById('cm-asistente-send');
+    var pregunta = (inp.value||'').trim();
+    if(pregunta.length < 3) return;
+    hist.innerHTML += '<div style="text-align:right;margin-bottom:6px"><span style="background:#0891b2;color:#fff;padding:6px 10px;border-radius:10px;display:inline-block;max-width:80%">'+_escHTML(pregunta)+'</span></div>';
+    hist.innerHTML += '<div id="cm-asist-pending" style="margin-bottom:6px"><span style="background:#f1f5f9;color:#475569;padding:6px 10px;border-radius:10px;display:inline-block;font-style:italic">pensando…</span></div>';
+    hist.scrollTop = hist.scrollHeight;
+    inp.value = ''; btn.disabled = true;
+    try{
+      var fecha = document.getElementById('plano-fecha') ? document.getElementById('plano-fecha').value : '';
+      var r = await fetch('/api/asistente/operacion', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({pregunta: pregunta, fecha: fecha}),
+      });
+      var d = await r.json();
+      var pending = document.getElementById('cm-asist-pending');
+      if(pending) pending.remove();
+      if(!r.ok){
+        hist.innerHTML += '<div style="margin-bottom:6px"><span style="background:#fee2e2;color:#991b1b;padding:6px 10px;border-radius:10px;display:inline-block">⚠ '+_escHTML(d.error || ('HTTP '+r.status))+'</span></div>';
+      } else {
+        hist.innerHTML += '<div style="margin-bottom:6px"><span style="background:#f0fdfa;color:#134e4a;padding:6px 10px;border-radius:10px;display:inline-block;max-width:90%;white-space:pre-wrap">'+_escHTML(d.respuesta||'(sin respuesta)')+'</span></div>';
+      }
+      hist.scrollTop = hist.scrollHeight;
+    }catch(e){
+      var pending2 = document.getElementById('cm-asist-pending'); if(pending2) pending2.remove();
+      hist.innerHTML += '<div style="margin-bottom:6px"><span style="background:#fee2e2;color:#991b1b;padding:6px 10px;border-radius:10px;display:inline-block">⚠ red: '+_escHTML(e.message)+'</span></div>';
+    }
+    btn.disabled = false;
+  }
+
   async function cmCargarEquipo(){
     var cont = document.getElementById('cm-equipo-cards');
     var sub  = document.getElementById('cm-equipo-sub');
