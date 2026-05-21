@@ -9741,8 +9741,48 @@ def tablero_equipo():
                 'area_requiere_limpieza': bool(r[14]),
             })
 
+    # BUG-7 fix · 20-may-2026: query paralela para tareas COMPLETADAS hoy
+    # del operario · antes sólo se mostraban las activas, los operarios
+    # que terminaron todas sus tareas aparecían "sin tarea hoy" (incorrecto
+    # · sí trabajaron). Ahora se cuentan y muestran como historial del día.
+    try:
+        compl_rows = c.execute("""
+            SELECT op.id, pp.producto,
+                   CASE
+                     WHEN pp.operario_dispensacion_id = op.id THEN 'dispensacion'
+                     WHEN pp.operario_elaboracion_id = op.id THEN 'elaboracion'
+                     WHEN pp.operario_envasado_id = op.id THEN 'envasado'
+                     WHEN pp.operario_acondicionamiento_id = op.id THEN 'acondicionamiento'
+                   END AS etapa,
+                   COALESCE(pp.fin_real_at,'') AS fin_at
+            FROM operarios_planta op
+            JOIN produccion_programada pp
+              ON date(pp.fecha_programada) = ?
+              AND LOWER(COALESCE(pp.estado, '')) = 'completado'
+              AND (pp.operario_dispensacion_id = op.id
+                   OR pp.operario_elaboracion_id = op.id
+                   OR pp.operario_envasado_id = op.id
+                   OR pp.operario_acondicionamiento_id = op.id)
+            WHERE COALESCE(op.activo, 1) = 1
+            ORDER BY pp.fin_real_at DESC
+        """, (hoy,)).fetchall()
+    except Exception:
+        compl_rows = []
+    completadas_por_op = {}
+    for r in compl_rows:
+        oid = r[0]
+        completadas_por_op.setdefault(oid, []).append({
+            'producto': r[1] or '',
+            'etapa': r[2] or '',
+            'etapa_label': ETAPA_LABEL.get(r[2] or '', r[2] or ''),
+            'fin_at': r[3] or '',
+        })
+    for oid, op in operarios.items():
+        op['completadas_hoy'] = completadas_por_op.get(oid, [])
+        op['completadas_hoy_count'] = len(op['completadas_hoy'])
+
     lista = [operarios[oid] for oid in orden]
-    con_tarea = sum(1 for o in lista if o['tareas'])
+    con_tarea = sum(1 for o in lista if o['tareas'] or o.get('completadas_hoy'))
 
     # ── Paso 4 · limpieza: qué salas necesitan limpieza y quién las hace ──
     limp_rows = c.execute("""

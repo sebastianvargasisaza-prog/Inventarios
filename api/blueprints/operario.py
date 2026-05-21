@@ -68,15 +68,20 @@ def _username_to_operario_id(c, username):
         ).fetchone()
         if row:
             return int(row[0])
-    # Match 3 · primer nombre del operario contiene el username
-    # (luis → Luis Enrique)
-    row = c.execute(
-        """SELECT id FROM operarios_planta
-           WHERE LOWER(nombre) LIKE ? AND activo = 1 LIMIT 1""",
-        (u + '%',),
-    ).fetchone()
-    if row:
-        return int(row[0])
+    # BUG-6 fix · 20-may-2026: Match 3 antes hacía LIKE 'u%' con LIMIT 1
+    # · colisión silenciosa si dos operarios empezaban con la misma
+    # letra (ej. 'm' → Mayerlin o Milton aleatorio). Ahora:
+    #   - exige username ≥ 3 chars (evita matches genéricos 'm'/'a')
+    #   - exige resultado ÚNICO (si LIKE devuelve >1, devolver None ·
+    #     mejor falle limpio que mapee a operario equivocado)
+    if len(u) >= 3:
+        rows = c.execute(
+            """SELECT id FROM operarios_planta
+               WHERE LOWER(nombre) LIKE ? AND activo = 1 LIMIT 2""",
+            (u + '%',),
+        ).fetchall()
+        if len(rows) == 1:
+            return int(rows[0][0])
     return None
 
 

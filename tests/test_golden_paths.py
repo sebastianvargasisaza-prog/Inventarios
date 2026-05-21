@@ -7310,6 +7310,60 @@ def test_golden_portal_b2b_flujo_completo(app, db_clean):
     _exec("DELETE FROM portal_clientes_credenciales WHERE email LIKE 'test_portal_%'")
 
 
+def test_golden_bug6_username_mapping_unicidad(app, db_clean):
+    """BUG-6 · _username_to_operario_id no debe colisionar cuando 2
+    operarios empiezan con la misma letra · debe devolver None ambiguo."""
+    from blueprints.operario import _username_to_operario_id
+    _exec("DELETE FROM operarios_planta WHERE nombre IN ('TestBugSeis_A','TestBugSeis_B')")
+    _exec("INSERT INTO operarios_planta (nombre, apellido, activo) VALUES ('TestBugSeis_A','Xx',1)")
+    _exec("INSERT INTO operarios_planta (nombre, apellido, activo) VALUES ('TestBugSeis_B','Yy',1)")
+    import sqlite3
+    from api.database import get_db
+    with app.app_context():
+        conn = get_db()
+        c = conn.cursor()
+        # 'testbug' = ambiguo (matchea ambos)
+        r = _username_to_operario_id(c, 'testbug')
+        assert r is None, f'Esperaba None ambiguo, fue {r}'
+        # 'testbugseis_a' = único
+        r2 = _username_to_operario_id(c, 'testbugseis_a')
+        assert r2 is not None
+        # 'te' < 3 chars → None
+        r3 = _username_to_operario_id(c, 'te')
+        assert r3 is None
+    _exec("DELETE FROM operarios_planta WHERE nombre IN ('TestBugSeis_A','TestBugSeis_B')")
+
+
+def test_golden_bug7_terminados_visibles_equipo(app, db_clean):
+    """BUG-7 · operarios que terminaron sus tareas hoy deben aparecer
+    en Equipo HOY con 'completadas_hoy_count' > 0, no como 'sin tarea'."""
+    _exec("DELETE FROM produccion_programada WHERE producto='TEST_BUG7'")
+    op_id_row = _query(
+        "SELECT id FROM operarios_planta WHERE LOWER(nombre)='mayerlin' AND activo=1 LIMIT 1")
+    if not op_id_row:
+        return  # No hay Mayerlin (env de test minimal)
+    op_id = op_id_row[0][0]
+    pid = _exec("""INSERT INTO produccion_programada
+                   (producto, fecha_programada, lotes, cantidad_kg, estado,
+                    operario_dispensacion_id, inicio_real_at, fin_real_at)
+                   VALUES ('TEST_BUG7', date('now','-5 hours'), 1, 1,
+                           'completado', ?, datetime('now','-5 hours','-2 hours'),
+                           datetime('now','-5 hours','-30 minutes'))""",
+                  (op_id,))
+
+    cs = _login(app, 'sebastian')
+    r = cs.get('/api/planta/tablero-equipo')
+    assert r.status_code == 200
+    d = r.get_json()
+    # Mayerlin debe aparecer con completadas_hoy >= 1
+    mayerlin = next((o for o in d.get('operarios', [])
+                      if o['nombre'].lower().startswith('mayerlin')), None)
+    assert mayerlin is not None, 'Mayerlin debe aparecer en Equipo HOY'
+    assert mayerlin.get('completadas_hoy_count', 0) >= 1
+
+    _exec("DELETE FROM produccion_programada WHERE id=?", (pid,))
+
+
 def test_golden_formulas_pro_pin_duplicar_import(app, db_clean):
     """Sprint Fórmulas PRO · 20-may-2026 · pedido directo Sebastián.
 

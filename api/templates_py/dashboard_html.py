@@ -4142,34 +4142,62 @@ function filtrarFormulas(q){
 }
 
 async function cambiarFormulaPin(){
-  // Verificar si soy admin
+  // Helper CSRF · usa el patrón del dashboard
+  function _csrfTokFP(){
+    try{
+      if(typeof csrfTokenNec === 'function') return csrfTokenNec();
+      var m = document.cookie.match(/(?:^|; )csrf_token=([^;]*)/);
+      return m ? decodeURIComponent(m[1]) : (window._csrfTok || '');
+    }catch(_){ return window._csrfTok || ''; }
+  }
   try{
-    var info = await fetch('/api/admin/formulas/pin').then(r => r.ok ? r.json() : null);
-    if(!info){ alert('Solo admin (Sebastián / Alejandro) puede cambiar el PIN'); return; }
-    var origen = info.configurado_en_bd ? 'BD (cambiado por '+info.cambiado_por+')'
-                : (info.configurado_en_env ? 'env var FORMULA_PIN'
-                : (info.es_pin_random_efimero ? 'PIN aleatorio (nadie lo conoce)' : 'desconocido'));
-    var msg = 'PIN actual: '+origen+'. Nuevo PIN (≥4 chars):';
+    // GET info (sin CSRF · es GET)
+    var rInfo = await fetch('/api/admin/formulas/pin');
+    if(rInfo.status === 401){ alert('Sesión expirada · iniciá sesión de nuevo y reintentá'); return; }
+    if(rInfo.status === 403){ alert('Solo admin (Sebastián / Alejandro) puede cambiar el PIN'); return; }
+    if(!rInfo.ok){
+      var txt = '';
+      try{ txt = (await rInfo.json()).error || ''; }catch(_){ txt = 'HTTP ' + rInfo.status; }
+      alert('Error consultando PIN: ' + txt);
+      return;
+    }
+    var info = await rInfo.json();
+    var origen = info.configurado_en_bd ? ('BD · último cambio por ' + (info.cambiado_por||'?'))
+                : (info.configurado_en_env ? 'env var FORMULA_PIN (Render)'
+                : (info.es_pin_random_efimero ? 'PIN aleatorio efímero (NADIE lo conoce)' : 'desconocido'));
+    var msg = 'PIN actual: ' + origen + '\\n\\nNuevo PIN (≥4 chars, máx 32):';
     var nuevo = prompt(msg);
     if(!nuevo) return;
     nuevo = nuevo.trim();
     if(nuevo.length < 4){ alert('PIN debe tener ≥4 chars'); return; }
+    if(nuevo.length > 32){ alert('PIN máximo 32 chars'); return; }
     var r = await fetch('/api/admin/formulas/pin', {
-      method:'POST', headers:{'Content-Type':'application/json'},
+      method: 'POST',
+      headers: {
+        'Content-Type':'application/json',
+        'X-CSRF-Token': _csrfTokFP(),
+      },
+      credentials: 'same-origin',
       body: JSON.stringify({nuevo_pin: nuevo}),
     });
-    var d = await r.json();
-    if(!r.ok){ alert('Error: '+(d.error||r.status)); return; }
-    alert('✓ PIN actualizado · ahora "' + nuevo + '" desbloquea las fórmulas. Guárdalo bien.');
+    var d = null;
+    try{ d = await r.json(); }catch(_){ d = {error: 'respuesta no-JSON · HTTP ' + r.status}; }
+    if(!r.ok){
+      alert('No se cambió el PIN · ' + (d && d.error ? d.error : ('HTTP ' + r.status)));
+      return;
+    }
+    alert('✓ PIN actualizado · ahora "' + nuevo + '" desbloquea las fórmulas. Guardalo bien.');
     // Auto-desbloquear con el nuevo PIN
     try{
       var rUn = await fetch('/api/formulas/unlock', {
-        method:'POST', headers:{'Content-Type':'application/json'},
+        method:'POST',
+        headers:{'Content-Type':'application/json','X-CSRF-Token': _csrfTokFP()},
+        credentials:'same-origin',
         body: JSON.stringify({pin: nuevo}),
       });
       if(rUn.ok){ formulasPin = true; _setFormulasPinPersistido(true); renderFormulas(fData); }
     }catch(_){}
-  }catch(e){ alert('Error red: '+e.message); }
+  }catch(e){ alert('Error de red: ' + (e && e.message ? e.message : e)); }
 }
 
 function abrirImportExcelFormulas(){
@@ -4213,8 +4241,12 @@ async function impFormulasPreview(){
   var fd = new FormData();
   fd.append('file', fp.files[0]);
   msg.innerHTML = '<span style="color:#94a3b8">Analizando…</span>';
+  var _csrf = (typeof csrfTokenNec === 'function') ? csrfTokenNec() : (window._csrfTok || '');
   try{
-    var r = await fetch('/api/formulas/import-excel?dry_run=1', {method:'POST', body:fd});
+    var r = await fetch('/api/formulas/import-excel?dry_run=1', {
+      method:'POST', body:fd, credentials:'same-origin',
+      headers: {'X-CSRF-Token': _csrf},
+    });
     var d = await r.json();
     if(!r.ok){
       msg.innerHTML = '<div style="color:#dc2626;font-weight:700">Error: '+_escHTML(d.error||r.status)+'</div>'+
@@ -4253,8 +4285,12 @@ async function impFormulasApply(){
   var fd = new FormData();
   fd.append('file', fp.files[0]);
   msg.innerHTML = '<span style="color:#94a3b8">Aplicando…</span>';
+  var _csrf = (typeof csrfTokenNec === 'function') ? csrfTokenNec() : (window._csrfTok || '');
   try{
-    var r = await fetch('/api/formulas/import-excel', {method:'POST', body:fd});
+    var r = await fetch('/api/formulas/import-excel', {
+      method:'POST', body:fd, credentials:'same-origin',
+      headers: {'X-CSRF-Token': _csrf},
+    });
     var d = await r.json();
     if(!r.ok){ msg.innerHTML = '<div style="color:#dc2626">Error: '+_escHTML(d.error||r.status)+'</div>'; return; }
     msg.innerHTML = '<div style="background:#dcfce7;color:#166534;padding:10px;border-radius:6px;font-weight:700">✓ '+_escHTML(d.mensaje)+'</div>'+
@@ -4349,9 +4385,11 @@ async function duplicarFormula(prod){
   if(!nuevo) return;
   nuevo = nuevo.trim();
   if(!nuevo) return;
+  var _csrf = (typeof csrfTokenNec === 'function') ? csrfTokenNec() : (window._csrfTok || '');
   try{
     var r = await fetch('/api/formulas/duplicar', {
-      method:'POST', headers:{'Content-Type':'application/json'},
+      method:'POST', credentials:'same-origin',
+      headers:{'Content-Type':'application/json', 'X-CSRF-Token': _csrf},
       body: JSON.stringify({producto_origen: prod, producto_nuevo: nuevo}),
     });
     var d = await r.json();
