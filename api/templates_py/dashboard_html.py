@@ -845,10 +845,16 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
 
   <div id="formulas" class="tab-content">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:10px">
-      <h2 style="margin:0">&#129514; Formulas Maestras de Produccion</h2>
-      <button onclick="abrirNuevoProducto()" style="background:linear-gradient(135deg,#0f766e,#0891b2);color:#fff;border:none;padding:9px 18px;border-radius:6px;font-size:13px;font-weight:800;cursor:pointer;box-shadow:0 2px 6px rgba(8,145,178,.3)">🚀 Lanzar producto nuevo</button>
+      <h2 style="margin:0">&#129514; Fórmulas Maestras de Producción</h2>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <button onclick="abrirImportExcelFormulas()" style="background:#7c3aed;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer" title="Subir XLSX/CSV de Alejandro · la app crea fórmulas automáticamente">📤 Import Excel</button>
+        <button onclick="window.open('/api/formulas/export-excel','_blank')" style="background:#217346;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">📄 Export</button>
+        <button id="formulas-pin-btn" onclick="cambiarFormulaPin()" style="background:#ca8a04;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer" title="Cambiar / setear PIN de fórmulas (admin)">🔑 PIN</button>
+        <button onclick="abrirNuevoProducto()" style="background:linear-gradient(135deg,#0f766e,#0891b2);color:#fff;border:none;padding:9px 18px;border-radius:6px;font-size:13px;font-weight:800;cursor:pointer;box-shadow:0 2px 6px rgba(8,145,178,.3)">🚀 Lanzar producto nuevo</button>
+      </div>
     </div>
-    <p style="color:#666;margin-bottom:18px;">Define la receta de cada producto. Al registrar una produccion, las MPs se descuentan automaticamente del inventario. Para <b>lanzamientos nuevos</b> usa "🚀 Lanzar producto nuevo" — crea fórmula + config + (opcional) primera producción prioritaria.</p>
+    <p style="color:#666;margin-bottom:14px;">Define la receta de cada producto. Al registrar una producción, las MPs se descuentan automático.</p>
+    <input type="text" id="formulas-search" placeholder="🔍 Buscar fórmula por nombre…" oninput="filtrarFormulas(this.value)" style="width:100%;max-width:400px;padding:8px 12px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;margin-bottom:14px">
     <div style="background:#f8f9ff;border:1px solid #dde;border-radius:10px;padding:18px;margin-bottom:22px;">
       <h3 style="margin-bottom:12px;">Nueva Formula / Editar Existente</h3>
       <div style="display:grid;grid-template-columns:1fr 200px;gap:12px;">
@@ -4112,6 +4118,151 @@ function abrirRotulos(){
   window.open('/rotulos/'+encodeURIComponent(producto)+'/'+(parseFloat(kg)||0).toFixed(1),'_blank');
 }
 
+// Sprint Fórmulas PRO · 20-may-2026
+function _formulasPinPersistido(){
+  try{ return localStorage.getItem('eos_formulas_pin_ok') === '1'; }catch(_){ return false; }
+}
+function _setFormulasPinPersistido(ok){
+  try{
+    if(ok) localStorage.setItem('eos_formulas_pin_ok','1');
+    else localStorage.removeItem('eos_formulas_pin_ok');
+  }catch(_){}
+}
+// Init: si ya desbloqueó antes en esta máquina, mantenerlo (TTL implícito
+// por la sesión del navegador)
+if(typeof formulasPin !== 'undefined') formulasPin = _formulasPinPersistido();
+
+function filtrarFormulas(q){
+  q = (q||'').trim().toLowerCase();
+  if(!q){ renderFormulas(fData); return; }
+  var f = fData.filter(function(x){
+    return (x.producto_nombre||'').toLowerCase().indexOf(q) >= 0;
+  });
+  renderFormulas(f);
+}
+
+async function cambiarFormulaPin(){
+  // Verificar si soy admin
+  try{
+    var info = await fetch('/api/admin/formulas/pin').then(r => r.ok ? r.json() : null);
+    if(!info){ alert('Solo admin (Sebastián / Alejandro) puede cambiar el PIN'); return; }
+    var origen = info.configurado_en_bd ? 'BD (cambiado por '+info.cambiado_por+')'
+                : (info.configurado_en_env ? 'env var FORMULA_PIN'
+                : (info.es_pin_random_efimero ? 'PIN aleatorio (nadie lo conoce)' : 'desconocido'));
+    var msg = 'PIN actual: '+origen+'. Nuevo PIN (≥4 chars):';
+    var nuevo = prompt(msg);
+    if(!nuevo) return;
+    nuevo = nuevo.trim();
+    if(nuevo.length < 4){ alert('PIN debe tener ≥4 chars'); return; }
+    var r = await fetch('/api/admin/formulas/pin', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({nuevo_pin: nuevo}),
+    });
+    var d = await r.json();
+    if(!r.ok){ alert('Error: '+(d.error||r.status)); return; }
+    alert('✓ PIN actualizado · ahora "' + nuevo + '" desbloquea las fórmulas. Guárdalo bien.');
+    // Auto-desbloquear con el nuevo PIN
+    try{
+      var rUn = await fetch('/api/formulas/unlock', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({pin: nuevo}),
+      });
+      if(rUn.ok){ formulasPin = true; _setFormulasPinPersistido(true); renderFormulas(fData); }
+    }catch(_){}
+  }catch(e){ alert('Error red: '+e.message); }
+}
+
+function abrirImportExcelFormulas(){
+  var modal = document.getElementById('modal-import-formulas');
+  if(!modal){
+    // Crear modal lazy
+    var m = document.createElement('div');
+    m.id = 'modal-import-formulas';
+    m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9998;display:flex;align-items:center;justify-content:center;padding:20px';
+    m.innerHTML =
+      '<div style="background:#fff;border-radius:14px;padding:24px;max-width:720px;width:100%;max-height:90vh;overflow-y:auto">'+
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><h3 style="margin:0;color:#7c3aed">📤 Importar fórmulas desde Excel</h3>'+
+      '<button id="imp-form-close-btn" style="background:none;border:none;font-size:1.3em;cursor:pointer">×</button></div>'+
+      '<div style="background:#f0f9ff;border:1px solid #0891b2;border-radius:8px;padding:12px;margin-bottom:14px;font-size:12px;color:#0e7490">'+
+      '<b>Formato requerido</b> · 1 fila por ingrediente:<br>'+
+      'Columnas obligatorias: <code>producto</code>, <code>codigo_mp</code>, <code>porcentaje</code><br>'+
+      'Columnas opcionales: <code>nombre_mp</code>, <code>unidad_base_g</code>, <code>descripcion</code><br>'+
+      '<a href="/api/formulas/export-excel" target="_blank" style="color:#0891b2;font-weight:700">📥 Descargar plantilla (export actual)</a>'+
+      '</div>'+
+      '<input type="file" id="imp-form-file" accept=".xlsx,.csv" style="margin-bottom:14px">'+
+      '<div style="display:flex;gap:8px;margin-bottom:14px">'+
+      '<button onclick="impFormulasPreview()" style="background:#0e7490;color:#fff;padding:8px 16px;border:none;border-radius:6px;cursor:pointer;font-weight:700">🔍 Preview (dry-run)</button>'+
+      '<button onclick="impFormulasApply()" id="imp-form-apply" style="background:#7c3aed;color:#fff;padding:8px 16px;border:none;border-radius:6px;cursor:pointer;font-weight:700" disabled>💾 Aplicar import</button>'+
+      '</div>'+
+      '<div id="imp-form-msg" style="font-size:12px"></div>'+
+      '</div>';
+    document.body.appendChild(m);
+    var cb = document.getElementById('imp-form-close-btn');
+    if(cb) cb.onclick = function(){
+      var x = document.getElementById('modal-import-formulas');
+      if(x) x.remove();
+    };
+  } else {
+    modal.style.display = 'flex';
+  }
+}
+async function impFormulasPreview(){
+  var fp = document.getElementById('imp-form-file');
+  var msg = document.getElementById('imp-form-msg');
+  if(!fp.files.length){ msg.innerHTML = '<span style="color:#dc2626">Elegí un archivo</span>'; return; }
+  var fd = new FormData();
+  fd.append('file', fp.files[0]);
+  msg.innerHTML = '<span style="color:#94a3b8">Analizando…</span>';
+  try{
+    var r = await fetch('/api/formulas/import-excel?dry_run=1', {method:'POST', body:fd});
+    var d = await r.json();
+    if(!r.ok){
+      msg.innerHTML = '<div style="color:#dc2626;font-weight:700">Error: '+_escHTML(d.error||r.status)+'</div>'+
+        (d.headers_detectados ? '<div style="font-size:11px;color:#64748b;margin-top:4px">Headers detectados: '+_escHTML(JSON.stringify(d.headers_detectados))+'</div>' : '')+
+        (d.hint ? '<div style="font-size:11px;color:#475569;margin-top:4px">'+_escHTML(d.hint)+'</div>' : '');
+      return;
+    }
+    var html = '<div style="background:#ecfdf5;border:1px solid #16a34a;color:#065f46;padding:10px;border-radius:6px;margin-bottom:10px"><b>'+(d.formulas_detectadas||0)+' fórmulas detectadas</b> · '+(d.errores_filas?d.errores_filas.length:0)+' filas con error</div>';
+    if((d.plan||[]).length){
+      html += '<table class="table" style="font-size:11px"><thead><tr><th>Producto</th><th>Base g</th><th>Items</th><th>Total %</th><th>Existe?</th><th>MPs faltantes</th></tr></thead><tbody>';
+      d.plan.forEach(function(p){
+        var rowCol = (!p.pct_ok || p.mps_faltantes.length) ? 'background:#fef3c7' : '';
+        html += '<tr style="'+rowCol+'">';
+        html += '<td><b>'+_escHTML(p.producto)+'</b></td><td>'+p.unidad_base_g+'</td>';
+        html += '<td>'+p.items_count+'</td><td style="color:'+(p.pct_ok?'#16a34a':'#dc2626')+'">'+p.total_pct+'%</td>';
+        html += '<td>'+(p.ya_existe?'✓ Actualiza':'+ Nueva')+'</td>';
+        html += '<td style="color:#dc2626">'+(p.mps_faltantes.length?p.mps_faltantes.join(', '):'—')+'</td>';
+        html += '</tr>';
+      });
+      html += '</tbody></table>';
+    }
+    if((d.errores_filas||[]).length){
+      html += '<div style="margin-top:10px;background:#fee2e2;padding:8px;border-radius:6px;font-size:11px;color:#991b1b"><b>Errores fila:</b><br>'+
+        d.errores_filas.slice(0,10).map(function(e){return 'Fila '+e.fila+': '+_escHTML(e.razon);}).join('<br>')+
+        '</div>';
+    }
+    msg.innerHTML = html;
+    document.getElementById('imp-form-apply').disabled = !(d.formulas_detectadas > 0);
+  }catch(e){ msg.innerHTML = '<span style="color:#dc2626">Error red: '+_escHTML(e.message)+'</span>'; }
+}
+async function impFormulasApply(){
+  var fp = document.getElementById('imp-form-file');
+  var msg = document.getElementById('imp-form-msg');
+  if(!fp.files.length){ msg.innerHTML = '<span style="color:#dc2626">Elegí archivo</span>'; return; }
+  if(!confirm('Aplicar import? Las fórmulas existentes se ACTUALIZAN (versión anterior queda archivada).')) return;
+  var fd = new FormData();
+  fd.append('file', fp.files[0]);
+  msg.innerHTML = '<span style="color:#94a3b8">Aplicando…</span>';
+  try{
+    var r = await fetch('/api/formulas/import-excel', {method:'POST', body:fd});
+    var d = await r.json();
+    if(!r.ok){ msg.innerHTML = '<div style="color:#dc2626">Error: '+_escHTML(d.error||r.status)+'</div>'; return; }
+    msg.innerHTML = '<div style="background:#dcfce7;color:#166534;padding:10px;border-radius:6px;font-weight:700">✓ '+_escHTML(d.mensaje)+'</div>'+
+      ((d.rechazadas||[]).length ? '<div style="margin-top:8px;background:#fee2e2;color:#991b1b;padding:8px;border-radius:6px;font-size:11px"><b>Rechazadas:</b><br>'+d.rechazadas.map(function(r){return _escHTML(r.producto)+': '+_escHTML(r.razon);}).join('<br>')+'</div>' : '');
+    await loadFormulas();
+  }catch(e){ msg.innerHTML = '<span style="color:#dc2626">Error red: '+_escHTML(e.message)+'</span>'; }
+}
+
 async function loadFormulas(){
   try{
     var r=await fetch('/api/formulas'), d=await r.json();
@@ -4160,6 +4311,7 @@ function renderFormulas(fl){
     html+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">';
     html+='<h4 style="color:#667eea;">'+f.producto_nombre+' <span style="font-weight:normal;color:#888;font-size:0.82em;">(base '+f.unidad_base_g+'g)</span></h4>';
     html+='<div style="display:flex;gap:6px;">'+editBtn;
+    html+='<button data-form-act="duplicar" data-prod="'+_escHTML(f.producto_nombre)+'" style="background:#7c3aed;padding:5px 10px;font-size:0.82em;" title="Crear copia con nuevo nombre">Duplicar</button>';
     html+='<button onclick="delFormula('+idx+')" style="background:#cc4444;padding:5px 10px;font-size:0.82em;">Eliminar</button>';
     html+='</div></div>';
     html+='<table class="table" style="font-size:0.85em;"><thead><tr><th>Codigo MP</th><th>Material</th><th>%</th><th>g/kg</th></tr></thead><tbody>'+rows+'</tbody></table>';
@@ -4170,13 +4322,43 @@ function renderFormulas(fl){
 }
 
 async function pedirPinFormula(){
-  var pin=prompt('PIN de acceso a f\u00f3rmulas:');
+  var pin=prompt('PIN de acceso a f\u00f3rmulas (admin puede cambiarlo con bot\u00f3n PIN):');
   if(!pin) return;
   try{
     var r=await fetch('/api/formulas/unlock',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pin:pin})});
-    if(r.ok){formulasPin=true;renderFormulas(fData);}
-    else{alert('PIN incorrecto');}
+    if(r.ok){
+      formulasPin=true;
+      if(typeof _setFormulasPinPersistido==='function') _setFormulasPinPersistido(true);
+      renderFormulas(fData);
+    }
+    else{alert('PIN incorrecto \u00b7 si lo olvidaste, ped\u00edselo a Sebasti\u00e1n / Alejandro o us\u00e1 el bot\u00f3n PIN para resetear');}
   }catch(e){alert('Error al verificar PIN');}
+}
+if(typeof document !== 'undefined' && !window._FORMULAS_DELEG){
+  window._FORMULAS_DELEG = true;
+  document.addEventListener('click', function(ev){
+    var btn = ev.target && ev.target.closest && ev.target.closest('[data-form-act="duplicar"]');
+    if(!btn) return;
+    var prod = btn.getAttribute('data-prod') || '';
+    if(prod) duplicarFormula(prod);
+  });
+}
+async function duplicarFormula(prod){
+  if(!formulasPin){ pedirPinFormula(); return; }
+  var nuevo = prompt('Duplicar "'+prod+'" como nueva f\u00f3rmula. Nombre nuevo:');
+  if(!nuevo) return;
+  nuevo = nuevo.trim();
+  if(!nuevo) return;
+  try{
+    var r = await fetch('/api/formulas/duplicar', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({producto_origen: prod, producto_nuevo: nuevo}),
+    });
+    var d = await r.json();
+    if(!r.ok){ alert('Error: '+(d.error||r.status)); return; }
+    alert('Duplicado: '+d.mensaje+' \u00b7 '+d.items_count+' items copiados');
+    await loadFormulas();
+  }catch(e){ alert('Error red: '+e.message); }
 }
 
 function addFRow(){

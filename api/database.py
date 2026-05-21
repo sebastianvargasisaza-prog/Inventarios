@@ -6433,6 +6433,29 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
            ('ESENCIA ILUMINADORA',                  'esencia', NULL, 60, 90, 30, 3.0, 3, NULL)""",
     ]),
 
+    (147, "Fórmulas PRO · app_settings + versionado + import_excel · 20-may-2026", [
+        """CREATE TABLE IF NOT EXISTS app_settings (
+            clave TEXT PRIMARY KEY,
+            valor TEXT NOT NULL,
+            descripcion TEXT,
+            actualizado_at_utc TEXT DEFAULT (datetime('now','utc')),
+            actualizado_por TEXT,
+            tenant_id INTEGER DEFAULT 1
+        )""",
+        """CREATE TABLE IF NOT EXISTS formula_versiones (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            producto_nombre TEXT NOT NULL,
+            version INTEGER NOT NULL DEFAULT 1,
+            unidad_base_g REAL NOT NULL DEFAULT 1000,
+            descripcion TEXT,
+            items_json TEXT NOT NULL,
+            creado_at_utc TEXT DEFAULT (datetime('now','utc')),
+            creado_por TEXT,
+            motivo_cambio TEXT
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_formula_versiones_producto ON formula_versiones(producto_nombre, version DESC)",
+    ]),
+
     (146, "OLA 3 Op Live · roles + notificaciones_outbox (bases futuras) · 20-may-2026", [
         # Tabla roles · futura migración desde {sebastian,alejandro} hardcoded
         # en config.py a tabla. Por ahora coexisten (compat).

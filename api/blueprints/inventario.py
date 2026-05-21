@@ -486,6 +486,48 @@ def handle_formulas():
         if not items_validados:
             return jsonify({'error': 'items todos inválidos (id, nombre y porcentaje>0 requeridos)'}), 400
 
+        # Sprint Fórmulas PRO · 20-may-2026: versionar ANTES de pisar.
+        # Si ya existe esa fórmula, archivamos versión actual en
+        # formula_versiones. INVIMA puede pedir trazabilidad de cambios.
+        prev_header = c.execute(
+            "SELECT unidad_base_g, descripcion FROM formula_headers WHERE producto_nombre=?",
+            (prod,),
+        ).fetchone()
+        if prev_header:
+            prev_items = c.execute(
+                "SELECT material_id, material_nombre, porcentaje, cantidad_g_por_lote "
+                "FROM formula_items WHERE producto_nombre=?",
+                (prod,),
+            ).fetchall()
+            if prev_items:
+                try:
+                    import json as _json
+                    prev_items_json = _json.dumps([{
+                        'material_id': r[0], 'material_nombre': r[1],
+                        'porcentaje': r[2], 'cantidad_g_por_lote': r[3],
+                    } for r in prev_items], ensure_ascii=False)
+                    next_ver_row = c.execute(
+                        "SELECT COALESCE(MAX(version),0)+1 FROM formula_versiones "
+                        "WHERE producto_nombre=?", (prod,),
+                    ).fetchone()
+                    next_ver = next_ver_row[0] if next_ver_row else 1
+                    motivo_change = (data.get('motivo_cambio') or '').strip()[:300]
+                    c.execute(
+                        """INSERT INTO formula_versiones
+                             (producto_nombre, version, unidad_base_g,
+                              descripcion, items_json, creado_por, motivo_cambio)
+                           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                        (prod, next_ver,
+                         float(prev_header[0] or 1000),
+                         prev_header[1] or '',
+                         prev_items_json,
+                         session.get('compras_user', '_'),
+                         motivo_change or 'edición sin motivo'),
+                    )
+                except Exception as _e:
+                    __import__('logging').getLogger('inventario').warning(
+                        'formula_versiones snapshot fallo: %s', _e)
+
         try:
             c.execute(
                 """INSERT OR REPLACE INTO formula_headers
@@ -504,6 +546,15 @@ def handle_formulas():
                     (prod, it['material_id'], it['material_nombre'],
                      it['porcentaje'], it['cantidad_g_por_lote'])
                 )
+            try:
+                audit_log(c, usuario=session.get('compras_user',''),
+                          accion='FORMULA_GUARDAR',
+                          tabla='formula_headers', registro_id=prod,
+                          despues={'unidad_base_g': unidad_base_g,
+                                    'items_count': len(items_validados),
+                                    'era_edicion': bool(prev_header)})
+            except Exception:
+                pass
             conn.commit()
             return jsonify({
                 'message': f'Fórmula de {prod} guardada · {len(items_validados)} items',
@@ -528,6 +579,416 @@ def handle_formulas():
         formulas.append({'producto_nombre': h[0], 'unidad_base_g': h[1], 'descripcion': h[2],
                          'fecha_creacion': h[3], 'items': items})
     return jsonify({'formulas': formulas})
+
+@bp.route('/api/formulas/<path:producto_nombre>/versiones', methods=['GET'])
+def formulas_versiones(producto_nombre):
+    """Sprint Fórmulas PRO · historial de versiones de una fórmula."""
+    u, err, code = _require_session()
+    if err:
+        return err, code
+    conn = get_db(); c = conn.cursor()
+    try:
+        rows = c.execute(
+            """SELECT id, version, unidad_base_g, descripcion, items_json,
+                      creado_at_utc, creado_por, motivo_cambio
+               FROM formula_versiones
+               WHERE producto_nombre=?
+               ORDER BY version DESC LIMIT 50""",
+            (producto_nombre,),
+        ).fetchall()
+    except Exception:
+        rows = []
+    import json as _json
+    items = []
+    for r in rows:
+        try:
+            its = _json.loads(r[4]) if r[4] else []
+        except Exception:
+            its = []
+        items.append({
+            'id': r[0], 'version': r[1],
+            'unidad_base_g': float(r[2] or 0),
+            'descripcion': r[3] or '',
+            'items_count': len(its), 'items': its,
+            'creado_at_utc': r[5], 'creado_por': r[6] or '',
+            'motivo_cambio': r[7] or '',
+        })
+    return jsonify({'producto': producto_nombre, 'versiones': items,
+                    'total': len(items)})
+
+
+@bp.route('/api/formulas/duplicar', methods=['POST'])
+def formulas_duplicar():
+    """Sprint Fórmulas PRO · duplica una fórmula con nombre nuevo.
+
+    Body: {producto_origen, producto_nuevo}
+    Útil para crear variantes (Renova C 10 → Renova C 5).
+    """
+    u, err, code = _require_session()
+    if err:
+        return err, code
+    body = request.get_json(silent=True) or {}
+    origen = (body.get('producto_origen') or '').strip()
+    nuevo = (body.get('producto_nuevo') or '').strip()
+    if not origen or not nuevo:
+        return jsonify({'error': 'producto_origen y producto_nuevo requeridos'}), 400
+    conn = get_db(); c = conn.cursor()
+    h_orig = c.execute(
+        "SELECT unidad_base_g, lote_size_kg, descripcion FROM formula_headers "
+        "WHERE producto_nombre=?", (origen,),
+    ).fetchone()
+    if not h_orig:
+        return jsonify({'error': f'fórmula origen "{origen}" no existe'}), 404
+    if c.execute(
+        "SELECT 1 FROM formula_headers WHERE LOWER(producto_nombre)=LOWER(?)",
+        (nuevo,),
+    ).fetchone():
+        return jsonify({'error': f'fórmula "{nuevo}" ya existe'}), 409
+    c.execute(
+        "INSERT INTO formula_headers (producto_nombre, unidad_base_g, lote_size_kg, descripcion, fecha_creacion) VALUES (?,?,?,?,?)",
+        (nuevo, h_orig[0], h_orig[1],
+         (h_orig[2] or '') + ' · duplicado de ' + origen,
+         datetime.now().isoformat()),
+    )
+    items_orig = c.execute(
+        "SELECT material_id, material_nombre, porcentaje, cantidad_g_por_lote "
+        "FROM formula_items WHERE producto_nombre=?", (origen,),
+    ).fetchall()
+    for it in items_orig:
+        c.execute(
+            "INSERT INTO formula_items (producto_nombre, material_id, material_nombre, porcentaje, cantidad_g_por_lote) VALUES (?,?,?,?,?)",
+            (nuevo, it[0], it[1], it[2], it[3]),
+        )
+    try:
+        audit_log(c, usuario=u, accion='FORMULA_DUPLICAR',
+                  tabla='formula_headers', registro_id=nuevo,
+                  despues={'origen': origen, 'items_count': len(items_orig)})
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({'ok': True, 'producto': nuevo,
+                    'mensaje': f'Fórmula duplicada de {origen}',
+                    'items_count': len(items_orig)})
+
+
+@bp.route('/api/formulas/import-excel', methods=['POST'])
+def formulas_import_excel():
+    """Sprint Fórmulas PRO · 20-may-2026 · IMPORT EXCEL.
+
+    Pedido directo de Sebastián: "Alejandro crea las fórmulas y las envía
+    en Excel, entonces que se pueda cargar y la app la vuelva fórmula".
+
+    Body: archivo XLSX/CSV en el campo `file` (multipart) o `contenido_b64`
+    en JSON.
+
+    Formato esperado · 1 fila por ingrediente:
+      producto | unidad_base_g | descripcion | codigo_mp | nombre_mp | porcentaje
+
+    Hojas se ignoran · solo se lee la primera. Headers se buscan
+    case-insensitive con variantes ("producto"/"product"/"nombre_producto",
+    "% en fórmula"/"porcentaje"/"%"/"pct", etc.). dry_run=true devuelve
+    preview sin guardar.
+    """
+    u, err, code = _require_session()
+    if err:
+        return err, code
+    if u not in ADMIN_USERS:
+        return jsonify({'error': 'solo admin puede importar fórmulas masivo'}), 403
+    dry_run = (request.args.get('dry_run') or '').strip() in ('1','true','yes')
+
+    # Leer file desde multipart o b64
+    raw_bytes = None
+    filename = ''
+    if request.files and 'file' in request.files:
+        fp = request.files['file']
+        filename = fp.filename or 'upload.xlsx'
+        raw_bytes = fp.read()
+    else:
+        body = request.get_json(silent=True) or {}
+        b64 = body.get('contenido_b64') or ''
+        if b64:
+            import base64 as _b64
+            try:
+                raw_bytes = _b64.b64decode(b64)
+                filename = body.get('filename') or 'upload.xlsx'
+            except Exception:
+                return jsonify({'error': 'base64 inválido'}), 400
+    if not raw_bytes:
+        return jsonify({'error': 'archivo requerido (file= o contenido_b64)'}), 400
+    if len(raw_bytes) > 10 * 1024 * 1024:
+        return jsonify({'error': 'archivo muy grande (max 10MB)'}), 413
+
+    # Parser · soporta XLSX (openpyxl) y CSV/TSV
+    is_xlsx = filename.lower().endswith('.xlsx')
+    rows_raw = []
+    try:
+        if is_xlsx:
+            try:
+                import openpyxl  # type: ignore
+            except ImportError:
+                return jsonify({
+                    'error': 'openpyxl no disponible · subí el archivo como CSV',
+                    'codigo': 'NO_OPENPYXL',
+                }), 503
+            import io as _io
+            wb = openpyxl.load_workbook(_io.BytesIO(raw_bytes), read_only=True, data_only=True)
+            ws = wb.active
+            for row in ws.iter_rows(values_only=True):
+                rows_raw.append([
+                    (str(c).strip() if c is not None else '') for c in row
+                ])
+        else:
+            text = raw_bytes.decode('utf-8-sig', errors='replace')
+            import csv as _csv, io as _io
+            sniffer = _csv.Sniffer()
+            try:
+                dialect = sniffer.sniff(text[:2000], delimiters=',;\t|')
+            except Exception:
+                dialect = _csv.excel
+            reader = _csv.reader(_io.StringIO(text), dialect)
+            rows_raw = [list(r) for r in reader]
+    except Exception as e:
+        return jsonify({'error': f'parser falló: {e}'}), 400
+
+    if len(rows_raw) < 2:
+        return jsonify({'error': 'archivo vacío o sin headers'}), 400
+
+    # Detectar columnas
+    headers = [str(h).strip().lower() for h in rows_raw[0]]
+    def _find(*keys):
+        for i, h in enumerate(headers):
+            for k in keys:
+                if k in h:
+                    return i
+        return -1
+    col_prod = _find('producto', 'product', 'nombre_producto', 'producto_nombre')
+    col_base = _find('unidad_base', 'base', 'base_g', 'lote_g')
+    col_desc = _find('descripcion', 'description')
+    col_mp_cod = _find('codigo_mp', 'cod_mp', 'codigo', 'code', 'sku')
+    col_mp_nom = _find('nombre_mp', 'nombre_material', 'material', 'ingrediente', 'mp_nombre')
+    col_pct = _find('porcentaje', '% en', '%', 'pct', 'percent')
+    missing = []
+    if col_prod == -1: missing.append('producto')
+    if col_mp_cod == -1: missing.append('codigo_mp')
+    if col_pct == -1: missing.append('porcentaje')
+    if missing:
+        return jsonify({
+            'error': f'faltan columnas requeridas: {missing}',
+            'headers_detectados': headers,
+            'hint': 'Usá columnas: producto, codigo_mp, porcentaje (opcional: nombre_mp, unidad_base_g, descripcion)',
+        }), 400
+
+    # Agrupar por producto
+    formulas_por_prod = {}
+    errores_filas = []
+    for idx, row in enumerate(rows_raw[1:], start=2):
+        if not row or all(not c for c in row):
+            continue
+        try:
+            prod = (row[col_prod] if col_prod < len(row) else '').strip()
+            if not prod:
+                continue
+            mid = (row[col_mp_cod] if col_mp_cod < len(row) else '').strip().upper()
+            if not mid:
+                errores_filas.append({'fila': idx, 'razon': 'codigo_mp vacío'})
+                continue
+            try:
+                pct = float(str(row[col_pct] if col_pct < len(row) else '0').replace(',','.'))
+            except (ValueError, TypeError):
+                errores_filas.append({'fila': idx, 'razon': f'porcentaje inválido: {row[col_pct]}'})
+                continue
+            if pct <= 0:
+                continue
+            nom = (row[col_mp_nom] if col_mp_nom >= 0 and col_mp_nom < len(row) else '').strip()
+            base = 1000.0
+            if col_base >= 0 and col_base < len(row):
+                try:
+                    base = float(str(row[col_base]).replace(',','.') or 1000)
+                except (ValueError, TypeError):
+                    pass
+            desc = (row[col_desc] if col_desc >= 0 and col_desc < len(row) else '').strip()
+            formulas_por_prod.setdefault(prod, {
+                'producto_nombre': prod,
+                'unidad_base_g': base,
+                'descripcion': desc,
+                'items': [],
+            })
+            formulas_por_prod[prod]['items'].append({
+                'material_id': mid,
+                'material_nombre': nom or mid,
+                'porcentaje': pct,
+            })
+        except Exception as _e:
+            errores_filas.append({'fila': idx, 'razon': f'parse error: {_e}'})
+
+    # Validar contra maestro_mps
+    conn = get_db(); c = conn.cursor()
+    plan = []
+    for prod_nom, f in formulas_por_prod.items():
+        total_pct = sum(it['porcentaje'] for it in f['items'])
+        mps_faltantes = []
+        for it in f['items']:
+            row = c.execute(
+                "SELECT nombre_comercial FROM maestro_mps WHERE codigo_mp=? AND COALESCE(activo,1)=1",
+                (it['material_id'],),
+            ).fetchone()
+            if not row:
+                mps_faltantes.append(it['material_id'])
+            elif not it['material_nombre']:
+                it['material_nombre'] = row[0]
+        existe = c.execute(
+            "SELECT 1 FROM formula_headers WHERE LOWER(producto_nombre)=LOWER(?)",
+            (prod_nom,),
+        ).fetchone()
+        plan.append({
+            'producto': prod_nom,
+            'unidad_base_g': f['unidad_base_g'],
+            'items_count': len(f['items']),
+            'total_pct': round(total_pct, 2),
+            'pct_ok': abs(total_pct - 100) < 1,
+            'ya_existe': bool(existe),
+            'mps_faltantes': mps_faltantes,
+            'descripcion': f['descripcion'],
+        })
+
+    if dry_run:
+        return jsonify({
+            'dry_run': True,
+            'archivo': filename,
+            'formulas_detectadas': len(plan),
+            'plan': plan,
+            'errores_filas': errores_filas[:50],
+            'headers_detectados': headers,
+        })
+
+    # APPLY
+    aplicadas = []
+    rechazadas = []
+    for prod_nom, f in formulas_por_prod.items():
+        # Validar MPs antes de tocar BD
+        mps_faltantes = [it['material_id'] for it in f['items']
+                         if not c.execute(
+                             "SELECT 1 FROM maestro_mps WHERE codigo_mp=? AND COALESCE(activo,1)=1",
+                             (it['material_id'],),
+                         ).fetchone()]
+        if mps_faltantes:
+            rechazadas.append({
+                'producto': prod_nom, 'razon': 'MPs no existen',
+                'mps': mps_faltantes,
+            })
+            continue
+        try:
+            unidad_base_g = float(f['unidad_base_g'])
+            # Reusa la lógica del POST /api/formulas via test_request_context
+            # Simplificado: insertar directo
+            c.execute(
+                """INSERT OR REPLACE INTO formula_headers
+                   (producto_nombre, unidad_base_g, lote_size_kg, descripcion, fecha_creacion)
+                   VALUES (?,?,?,?,?)""",
+                (prod_nom, unidad_base_g, round(unidad_base_g / 1000.0, 3),
+                 f['descripcion'], datetime.now().isoformat()),
+            )
+            c.execute('DELETE FROM formula_items WHERE producto_nombre=?', (prod_nom,))
+            for it in f['items']:
+                gpl = round((it['porcentaje'] / 100.0) * unidad_base_g, 2)
+                c.execute(
+                    """INSERT INTO formula_items
+                       (producto_nombre, material_id, material_nombre,
+                        porcentaje, cantidad_g_por_lote)
+                       VALUES (?,?,?,?,?)""",
+                    (prod_nom, it['material_id'], it['material_nombre'],
+                     it['porcentaje'], gpl),
+                )
+            aplicadas.append({
+                'producto': prod_nom, 'items_count': len(f['items']),
+            })
+        except Exception as e:
+            rechazadas.append({'producto': prod_nom, 'razon': str(e)[:200]})
+    try:
+        audit_log(c, usuario=u, accion='FORMULAS_IMPORT_EXCEL',
+                  tabla='formula_headers', registro_id='_BULK_',
+                  despues={'archivo': filename,
+                           'aplicadas': len(aplicadas),
+                           'rechazadas': len(rechazadas)})
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({
+        'ok': True, 'archivo': filename,
+        'aplicadas': aplicadas,
+        'rechazadas': rechazadas,
+        'errores_filas': errores_filas[:50],
+        'mensaje': f'{len(aplicadas)} fórmulas importadas · {len(rechazadas)} rechazadas',
+    })
+
+
+@bp.route('/api/formulas/export-excel', methods=['GET'])
+def formulas_export_excel():
+    """Sprint Fórmulas PRO · export para que Alejandro edite en Excel y
+    luego importe. Devuelve XLS HTML (mismo método que otros exports)."""
+    u, err, code = _require_session()
+    if err:
+        return err, code
+    conn = get_db(); c = conn.cursor()
+    rows = c.execute(
+        """SELECT h.producto_nombre, h.unidad_base_g, COALESCE(h.descripcion,''),
+                  i.material_id, COALESCE(i.material_nombre,''),
+                  i.porcentaje, COALESCE(i.cantidad_g_por_lote, 0)
+           FROM formula_headers h
+           LEFT JOIN formula_items i ON i.producto_nombre = h.producto_nombre
+           ORDER BY h.producto_nombre, i.material_id""",
+    ).fetchall()
+    def _esc(s):
+        return str(s or '').replace('&','&amp;').replace('<','&lt;').replace('>','&gt;')
+    body = ''.join(
+        '<tr><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td><td>{}</td></tr>'
+        .format(_esc(r[0]), r[1] or '', _esc(r[2]), _esc(r[3]),
+                _esc(r[4]), r[5] or '', r[6] or '')
+        for r in rows
+    )
+    html = (
+        '<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>'
+        '<table border="1"><thead><tr>'
+        '<th>producto</th><th>unidad_base_g</th><th>descripcion</th>'
+        '<th>codigo_mp</th><th>nombre_mp</th><th>porcentaje</th>'
+        '<th>cantidad_g_por_lote</th></tr></thead><tbody>'
+        + body + '</tbody></table></body></html>'
+    )
+    from datetime import date as _d
+    fname = f'formulas_eos_{_d.today().isoformat()}.xls'
+    from flask import Response as _Resp
+    resp = _Resp('﻿' + html, mimetype='application/vnd.ms-excel; charset=utf-8')
+    resp.headers['Content-Disposition'] = f'attachment; filename="{fname}"'
+    return resp
+
+
+@bp.route('/api/formulas/<path:producto_nombre>/uso', methods=['GET'])
+def formulas_uso(producto_nombre):
+    """Sprint Fórmulas PRO · cuántos lotes han usado esta fórmula."""
+    u, err, code = _require_session()
+    if err:
+        return err, code
+    conn = get_db(); c = conn.cursor()
+    try:
+        row = c.execute(
+            """SELECT COUNT(*),
+                      MAX(fecha_programada) as ultima_prog,
+                      MAX(fin_real_at) as ultimo_real,
+                      COALESCE(SUM(COALESCE(kg_real,cantidad_kg,0)),0) as kg_total
+               FROM produccion_programada
+               WHERE LOWER(producto) = LOWER(?)""",
+            (producto_nombre,),
+        ).fetchone()
+    except Exception:
+        row = (0, None, None, 0)
+    return jsonify({
+        'producto': producto_nombre,
+        'lotes_total': row[0] or 0,
+        'ultima_programada': row[1] or '',
+        'ultima_terminada': row[2] or '',
+        'kg_producido_total': float(row[3] or 0),
+    })
+
 
 @bp.route('/api/formulas/<producto_nombre>', methods=['DELETE'])
 def del_formula(producto_nombre):
@@ -1494,14 +1955,87 @@ def simular_produccion():
         'ingredientes': sorted(resultado, key=lambda x: x['suficiente'])
     })
 
+def _get_formula_pin():
+    """Sprint Fórmulas PRO · 20-may-2026 · PIN runtime con override en
+    app_settings. Si admin lo cambia desde UI, queda en BD (no requiere
+    setear env var en Render). Sino, fallback al env FORMULA_PIN.
+    """
+    try:
+        conn = get_db()
+        row = conn.execute(
+            "SELECT valor FROM app_settings WHERE clave='formula_pin' LIMIT 1",
+        ).fetchone()
+        if row and row[0]:
+            return str(row[0])
+    except Exception:
+        pass
+    from config import FORMULA_PIN
+    return FORMULA_PIN
+
+
 @bp.route('/api/formulas/unlock', methods=['POST'])
 def formulas_unlock():
-    from config import FORMULA_PIN
     data = request.get_json() or {}
     pin = str(data.get('pin', ''))
-    if pin == FORMULA_PIN:
+    if pin and pin == _get_formula_pin():
         return jsonify({'ok': True})
     return jsonify({'ok': False, 'error': 'PIN incorrecto'}), 403
+
+
+@bp.route('/api/admin/formulas/pin', methods=['GET', 'POST'])
+def admin_formulas_pin():
+    """Sprint Fórmulas PRO · admin cambia PIN desde UI (sin tocar Render).
+
+    GET  · devuelve {configurado_en: 'app_settings' | 'env' | 'random'}
+            sin revelar el valor.
+    POST · body {nuevo_pin} · solo admin · ≥4 chars.
+    """
+    u, err, code = _require_session()
+    if err:
+        return err, code
+    if u not in ADMIN_USERS:
+        return jsonify({'error': 'solo admin'}), 403
+    conn = get_db(); c = conn.cursor()
+    if request.method == 'GET':
+        row = c.execute(
+            "SELECT actualizado_at_utc, actualizado_por FROM app_settings "
+            "WHERE clave='formula_pin' LIMIT 1",
+        ).fetchone()
+        try:
+            from config import _FORMULA_PIN_INSECURE
+            es_random = bool(_FORMULA_PIN_INSECURE)
+        except Exception:
+            es_random = False
+        return jsonify({
+            'configurado_en_bd': bool(row),
+            'configurado_en_env': not es_random and not bool(row),
+            'es_pin_random_efimero': es_random and not bool(row),
+            'ultima_actualizacion': row[0] if row else None,
+            'cambiado_por': row[1] if row else None,
+        })
+    body = request.get_json(silent=True) or {}
+    nuevo = str(body.get('nuevo_pin') or '').strip()
+    if len(nuevo) < 4:
+        return jsonify({'error': 'PIN debe tener ≥4 caracteres'}), 400
+    if len(nuevo) > 32:
+        return jsonify({'error': 'PIN máximo 32 caracteres'}), 400
+    c.execute(
+        """INSERT INTO app_settings (clave, valor, descripcion, actualizado_por)
+           VALUES ('formula_pin', ?, 'PIN runtime fórmulas · override de env', ?)
+           ON CONFLICT(clave) DO UPDATE SET
+             valor=excluded.valor,
+             actualizado_at_utc=datetime('now','utc'),
+             actualizado_por=excluded.actualizado_por""",
+        (nuevo, u),
+    )
+    try:
+        audit_log(c, usuario=u, accion='FORMULA_PIN_CAMBIADO',
+                  tabla='app_settings', registro_id='formula_pin',
+                  despues={'len': len(nuevo)})
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({'ok': True, 'mensaje': f'PIN actualizado por {u}'})
 
 @bp.route('/api/formula/costo', methods=['POST'])
 def calcular_costo_formula():

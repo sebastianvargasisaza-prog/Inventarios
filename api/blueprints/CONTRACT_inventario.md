@@ -68,6 +68,39 @@
 
 ---
 
+## Sprint Fórmulas PRO · 20-may-2026
+
+Nuevas tablas (mig 147):
+- `app_settings (clave, valor, descripcion, actualizado_at_utc, actualizado_por)` ·
+  k-v genérico para overrides runtime. clave='formula_pin' permite admin
+  cambiar PIN de fórmulas desde UI sin tocar env vars en Render.
+- `formula_versiones (producto_nombre, version, items_json, motivo_cambio,
+  creado_por)` · INVIMA compliance · cada edición de fórmula archiva la
+  versión anterior antes de UPDATE.
+
+Nuevos endpoints:
+- `GET/POST /api/admin/formulas/pin` (admin) · ver origen del PIN sin
+  revelar valor / setear nuevo PIN ≥4 chars · audit_log FORMULA_PIN_CAMBIADO.
+- `POST /api/formulas/import-excel?dry_run=0|1` (admin) · acepta XLSX
+  (openpyxl) o CSV/TSV auto-detect. Headers case-insensitive: producto,
+  codigo_mp, porcentaje (obligatorios) + nombre_mp, unidad_base_g,
+  descripcion (opcionales). Valida contra maestro_mps activo · rechaza
+  fórmulas con MPs inexistentes. dry_run devuelve plan sin tocar BD.
+  audit_log FORMULAS_IMPORT_EXCEL.
+- `GET /api/formulas/export-excel` · descarga XLS HTML con 1 fila por
+  ingrediente · round-trip con import.
+- `POST /api/formulas/duplicar {producto_origen, producto_nuevo}` ·
+  copia fórmula con nuevo nombre · 409 si destino ya existe ·
+  audit_log FORMULA_DUPLICAR.
+- `GET /api/formulas/<prod>/versiones` · historial JSON últimas 50.
+- `GET /api/formulas/<prod>/uso` · count lotes + última prog + última
+  terminada + kg totales producidos.
+
+Invariante nueva:
+- POST /api/formulas que EDITA existente DEBE archivar versión anterior
+  en formula_versiones (INVIMA). body.motivo_cambio opcional pero
+  recomendado · queda en motivo_cambio de la versión.
+
 ## Endpoints que expone
 
 - `GET  /api/maestro-mps` · listado MPs

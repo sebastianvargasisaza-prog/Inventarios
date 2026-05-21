@@ -7310,6 +7310,150 @@ def test_golden_portal_b2b_flujo_completo(app, db_clean):
     _exec("DELETE FROM portal_clientes_credenciales WHERE email LIKE 'test_portal_%'")
 
 
+def test_golden_formulas_pro_pin_duplicar_import(app, db_clean):
+    """Sprint Fórmulas PRO · 20-may-2026 · pedido directo Sebastián.
+
+    Cubre:
+    - GET /api/admin/formulas/pin · info sin revelar valor
+    - POST /api/admin/formulas/pin · cambiar PIN (admin only)
+    - POST /api/formulas/duplicar · crear variante
+    - POST /api/formulas/import-excel?dry_run=1 · preview CSV
+    - GET  /api/formulas/<prod>/uso · contador lotes
+    """
+    _exec("DELETE FROM formula_items WHERE producto_nombre LIKE 'TEST_FPRO%'")
+    _exec("DELETE FROM formula_headers WHERE producto_nombre LIKE 'TEST_FPRO%'")
+    _exec("DELETE FROM formula_versiones WHERE producto_nombre LIKE 'TEST_FPRO%'")
+    _exec("DELETE FROM app_settings WHERE clave='formula_pin'")
+    _exec("DELETE FROM maestro_mps WHERE codigo_mp IN ('TEST_FPRO_MP1','TEST_FPRO_MP2')")
+    _exec("INSERT INTO maestro_mps (codigo_mp, nombre_comercial, tipo_material, activo) VALUES ('TEST_FPRO_MP1','Test MP 1','MP',1)")
+    _exec("INSERT INTO maestro_mps (codigo_mp, nombre_comercial, tipo_material, activo) VALUES ('TEST_FPRO_MP2','Test MP 2','MP',1)")
+
+    cs = _login(app, 'sebastian')
+
+    # 1. PIN info (sin valor)
+    r1 = cs.get('/api/admin/formulas/pin')
+    assert r1.status_code == 200
+    d1 = r1.get_json()
+    assert 'configurado_en_bd' in d1
+
+    # 2. Cambiar PIN
+    r2 = cs.post('/api/admin/formulas/pin', json={'nuevo_pin': 'TestPin2026'},
+                 headers=csrf_headers())
+    assert r2.status_code == 200
+
+    # 3. Unlock con el nuevo
+    r3 = cs.post('/api/formulas/unlock', json={'pin': 'TestPin2026'},
+                 headers=csrf_headers())
+    assert r3.status_code == 200
+
+    # 4. Crear fórmula origen
+    r4 = cs.post('/api/formulas', json={
+        'producto_nombre': 'TEST_FPRO_ORIGEN',
+        'unidad_base_g': 1000,
+        'items': [
+            {'material_id': 'TEST_FPRO_MP1', 'material_nombre': 'Test MP 1', 'porcentaje': 60},
+            {'material_id': 'TEST_FPRO_MP2', 'material_nombre': 'Test MP 2', 'porcentaje': 40},
+        ],
+    }, headers=csrf_headers())
+    assert r4.status_code == 201
+
+    # 5. Duplicar
+    r5 = cs.post('/api/formulas/duplicar', json={
+        'producto_origen': 'TEST_FPRO_ORIGEN',
+        'producto_nuevo': 'TEST_FPRO_COPIA',
+    }, headers=csrf_headers())
+    assert r5.status_code == 200, r5.data[:300]
+    assert r5.get_json()['items_count'] == 2
+
+    # 6. Duplicar a nombre ya existente → 409
+    r6 = cs.post('/api/formulas/duplicar', json={
+        'producto_origen': 'TEST_FPRO_ORIGEN',
+        'producto_nuevo': 'TEST_FPRO_COPIA',
+    }, headers=csrf_headers())
+    assert r6.status_code == 409
+
+    # 7. Editar la fórmula origen → debe versionar
+    r7 = cs.post('/api/formulas', json={
+        'producto_nombre': 'TEST_FPRO_ORIGEN',
+        'unidad_base_g': 1000,
+        'items': [
+            {'material_id': 'TEST_FPRO_MP1', 'material_nombre': 'Test MP 1', 'porcentaje': 100},
+        ],
+        'motivo_cambio': 'TEST · simplificado a 1 MP',
+    }, headers=csrf_headers())
+    assert r7.status_code == 201
+
+    # 8. Versiones · debe tener 1 versión archivada
+    r8 = cs.get('/api/formulas/TEST_FPRO_ORIGEN/versiones')
+    assert r8.status_code == 200
+    assert len(r8.get_json()['versiones']) >= 1
+
+    # 9. Uso
+    r9 = cs.get('/api/formulas/TEST_FPRO_ORIGEN/uso')
+    assert r9.status_code == 200
+    assert 'lotes_total' in r9.get_json()
+
+    # 10. Import CSV dry-run
+    csv_data = (
+        b'producto,codigo_mp,nombre_mp,porcentaje,unidad_base_g\n'
+        b'TEST_FPRO_IMPORT,TEST_FPRO_MP1,Test MP 1,70,1000\n'
+        b'TEST_FPRO_IMPORT,TEST_FPRO_MP2,Test MP 2,30,1000\n'
+    )
+    from io import BytesIO
+    r10 = cs.post(
+        '/api/formulas/import-excel?dry_run=1',
+        data={'file': (BytesIO(csv_data), 'test.csv')},
+        content_type='multipart/form-data',
+        headers=csrf_headers(),
+    )
+    assert r10.status_code == 200, r10.data[:300]
+    d10 = r10.get_json()
+    assert d10['dry_run'] is True
+    assert d10['formulas_detectadas'] == 1
+    assert d10['plan'][0]['producto'] == 'TEST_FPRO_IMPORT'
+    assert d10['plan'][0]['total_pct'] == 100.0
+
+    # 11. Import CSV apply
+    r11 = cs.post(
+        '/api/formulas/import-excel',
+        data={'file': (BytesIO(csv_data), 'test.csv')},
+        content_type='multipart/form-data',
+        headers=csrf_headers(),
+    )
+    assert r11.status_code == 200, r11.data[:300]
+    assert len(r11.get_json()['aplicadas']) == 1
+
+    # 12. Verificar persistió
+    chk = _query("SELECT COUNT(*) FROM formula_headers WHERE producto_nombre='TEST_FPRO_IMPORT'")
+    assert chk[0][0] == 1
+
+    # 13. Import con MP inexistente → rechaza
+    bad_csv = (
+        b'producto,codigo_mp,porcentaje\n'
+        b'TEST_FPRO_BAD,MP_INEXISTENTE_999,100\n'
+    )
+    r13 = cs.post(
+        '/api/formulas/import-excel',
+        data={'file': (BytesIO(bad_csv), 'bad.csv')},
+        content_type='multipart/form-data',
+        headers=csrf_headers(),
+    )
+    d13 = r13.get_json()
+    assert len(d13.get('rechazadas', [])) >= 1
+
+    # 14. Export Excel (HTML)
+    r14 = cs.get('/api/formulas/export-excel')
+    assert r14.status_code == 200
+    assert b'TEST_FPRO_ORIGEN' in r14.data
+
+    # Cleanup
+    _exec("DELETE FROM formula_items WHERE producto_nombre LIKE 'TEST_FPRO%'")
+    _exec("DELETE FROM formula_headers WHERE producto_nombre LIKE 'TEST_FPRO%'")
+    _exec("DELETE FROM formula_versiones WHERE producto_nombre LIKE 'TEST_FPRO%'")
+    _exec("DELETE FROM app_settings WHERE clave='formula_pin'")
+    _exec("DELETE FROM maestro_mps WHERE codigo_mp IN ('TEST_FPRO_MP1','TEST_FPRO_MP2')")
+
+
 def test_golden_ola4_ocr_y_prediccion(app, db_clean):
     """OLA 4 IA · OCR MP etiqueta + Predicción demanda · sin API key
     en test env devuelven graceful 503 o fallback."""
