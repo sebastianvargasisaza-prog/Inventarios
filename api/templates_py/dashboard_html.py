@@ -920,8 +920,9 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     <div class="form-group"><label>Observaciones</label><textarea id="prod-obs" rows="2" placeholder="Opcional"></textarea></div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;">
       <button onclick="simularProduccion()" style="background:#6c5ce7;">&#128269; Verificar Stock</button>
-      <button onclick="iniciarRegistroProd()">&#9989; Registrar Produccion</button>
-      <button onclick="abrirRotulos()" style="background:#c0392b;">&#128209; Generar Rotulos</button>
+      <button onclick="iniciarRegistroProd()">&#9989; Registrar Producción</button>
+      <button onclick="abrirRotulos()" style="background:#c0392b;">&#128209; Generar Rótulos</button>
+      <button onclick="diagnosticarFormulaActual()" style="background:#0e7490;" title="Mostrar por qué la fórmula no encuentra stock (debug INVIMA)">&#128270; Diagnosticar fórmula</button>
     </div>
     <div id="prod-simul-result" style="margin-top:12px;"></div>
     <div id="prod-msg"></div>
@@ -3461,7 +3462,8 @@ async function verDetalleProduccion(pid){
       (snapRows ? '<h4 style="margin:14px 0 6px;color:#475569;font-size:13px">🧪 Fórmula al momento de producir (snapshot inmutable INVIMA)</h4>'+
       '<table class="table" style="font-size:11px"><thead><tr><th>Código</th><th>Material</th><th style="text-align:right">%</th></tr></thead><tbody>'+snapRows+'</tbody></table>' : '')+
       (d.observaciones ? '<div style="margin-top:12px;padding:8px;background:#fef3c7;border-left:3px solid #ca8a04;font-size:12px"><b>Observaciones:</b><br>'+_escHTML(d.observaciones)+'</div>' : '')+
-      '<div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end">'+
+      '<div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">'+
+        '<button id="prod-det-ajustar" data-pid="'+pid+'" data-actual="'+d.cantidad_kg+'" style="background:#ca8a04;color:#fff;padding:8px 16px;border:none;border-radius:6px;font-weight:700;cursor:pointer" title="Corregir cantidad registrada (admin)">✏ Corregir cantidad</button>'+
         '<button id="prod-det-reimp" data-pid="'+pid+'" style="background:#c0392b;color:#fff;padding:8px 16px;border:none;border-radius:6px;font-weight:700;cursor:pointer">🏷 Re-imprimir rótulos</button>'+
       '</div>'+
       '</div>';
@@ -3472,6 +3474,45 @@ async function verDetalleProduccion(pid){
     var reimpBtn = document.getElementById('prod-det-reimp');
     if(reimpBtn) reimpBtn.onclick = function(){
       window.open('/api/produccion/' + reimpBtn.getAttribute('data-pid') + '/rotulo-reimprimir', '_blank');
+    };
+    var ajustBtn = document.getElementById('prod-det-ajustar');
+    if(ajustBtn) ajustBtn.onclick = async function(){
+      var aPid = ajustBtn.getAttribute('data-pid');
+      var aAct = parseFloat(ajustBtn.getAttribute('data-actual')) || 0;
+      var nueva = prompt('Cantidad actual: ' + aAct + ' kg\\n\\nNueva cantidad correcta (kg):', aAct.toString());
+      if(!nueva) return;
+      var nVal = parseFloat(nueva);
+      if(!nVal || nVal <= 0){ alert('Cantidad inválida'); return; }
+      if(Math.abs(nVal - aAct) < 0.001){ alert('Sin cambio · misma cantidad'); return; }
+      var delta = (nVal - aAct).toFixed(2);
+      var motivo = prompt('Motivo del ajuste (≥10 chars · INVIMA audit):\\n\\nEj: "registré 29kg por error, eran 30kg"');
+      if(!motivo || motivo.trim().length < 10){ alert('Motivo requerido (≥10 chars)'); return; }
+      if(!confirm('Ajustar de '+aAct+'kg → '+nVal+'kg (delta '+(delta>=0?'+':'')+delta+'kg)?\\n\\nSe ajustará el descuento de MPs automáticamente:\\n- Si +: descontará más MP (FEFO)\\n- Si -: devolverá MP al stock')) return;
+      try{
+        var r = await fetch('/api/produccion/'+aPid+'/ajustar-cantidad', {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({nueva_cantidad_kg: nVal, motivo: motivo.trim()}),
+        });
+        var dr = await r.json();
+        if(!r.ok){
+          var det = '';
+          if(dr.faltantes && dr.faltantes.length){
+            det = '\\n\\nMPs sin stock para subir cantidad:\\n' + dr.faltantes.map(function(f){ return '• '+f.material+': faltan '+f.falta_g+'g'; }).join('\\n');
+          }
+          alert('No se pudo ajustar: ' + (dr.error||r.status) + det);
+          return;
+        }
+        var lines = ['✓ '+dr.mensaje];
+        if((dr.movimientos_aplicados||[]).length){
+          lines.push('\\nMovimientos aplicados:');
+          dr.movimientos_aplicados.forEach(function(m){
+            lines.push('• '+m.tipo+': '+m.material+' · '+m.g+'g');
+          });
+        }
+        alert(lines.join('\\n'));
+        var m = document.getElementById('modal-prod-detalle'); if(m) m.remove();
+        if(typeof cargarHistProd === 'function') cargarHistProd();
+      }catch(e){ alert('Error red: '+e.message); }
     };
     div.addEventListener('click', function(e){
       if(e.target === div){ var m = document.getElementById('modal-prod-detalle'); if(m) m.remove(); }
@@ -5872,6 +5913,124 @@ function _showStockInsuficientePopup(producto, cantidad_kg, faltantes){
   });
 }
 
+async function diagnosticarFormulaActual(){
+  var prod = (document.getElementById('prod-sel').value || document.getElementById('prod-manual').value || '').trim();
+  if(!prod){ alert('Seleccioná un producto primero'); return; }
+  return diagnosticarFormula(prod);
+}
+if(typeof document !== 'undefined' && !window._DIAG_FORM_DELEG){
+  window._DIAG_FORM_DELEG = true;
+  document.addEventListener('click', function(ev){
+    var b = ev.target && ev.target.closest && ev.target.closest('[data-act-diag-form]');
+    if(!b) return;
+    var prod = b.getAttribute('data-prod') || '';
+    if(prod) diagnosticarFormula(prod);
+  });
+}
+async function diagnosticarFormula(producto){
+  try{
+    var r = await fetch('/api/produccion/diagnose/' + encodeURIComponent(producto));
+    var d = await r.json();
+    if(!r.ok){ alert('Error: ' + (d.error || r.status)); return; }
+    var existe = document.getElementById('modal-diag-form'); if(existe) existe.remove();
+    var div = document.createElement('div');
+    div.id = 'modal-diag-form';
+    div.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9998;display:flex;align-items:center;justify-content:center;padding:20px';
+    var html = '<div style="background:#fff;border-radius:14px;padding:24px;max-width:920px;width:100%;max-height:90vh;overflow-y:auto">';
+    html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><h3 style="margin:0;color:#0e7490">🔍 Diagnóstico fórmula · '+_escHTML(producto)+'</h3>';
+    html += '<button id="diag-close" style="background:none;border:none;font-size:1.4em;cursor:pointer">×</button></div>';
+    var probTotal = 0;
+    (d.diagnostico||[]).forEach(function(it){ probTotal += (it.problemas||[]).length; });
+    if(probTotal === 0){
+      html += '<div style="background:#dcfce7;color:#166534;padding:14px;border-radius:8px;font-weight:700">✓ Todos los ingredientes OK · sin problemas detectados</div>';
+    } else {
+      html += '<div style="background:#fef3c7;color:#78350f;padding:12px;border-radius:8px;margin-bottom:14px;font-weight:700">⚠ '+probTotal+' problema(s) detectado(s) · revisar abajo</div>';
+      // Si hay MPs huérfanos (con similares), botón auto-reparar
+      var huerfanos = (d.diagnostico||[]).filter(function(it){
+        return (it.mps_similares_por_nombre||[]).length > 0;
+      });
+      if(huerfanos.length){
+        html += '<div style="background:#fff7ed;border:1px solid #fb923c;padding:12px;border-radius:8px;margin-bottom:14px">';
+        html += '<b style="color:#9a3412">🔧 Auto-reparar (admin)</b><br>';
+        html += '<span style="font-size:12px;color:#7c2d12">Detectados '+huerfanos.length+' codigo_mp huérfanos con candidatos en catálogo. Click "Auto-reparar" para reemplazar en la fórmula (audit_log).</span><br>';
+        html += '<button id="diag-autoreparar" data-prod="'+_escHTML(d.producto||'')+'" style="margin-top:8px;background:#9a3412;color:#fff;border:none;padding:8px 16px;border-radius:5px;font-weight:700;cursor:pointer">🔧 Auto-reparar fórmula</button>';
+        html += '</div>';
+      }
+    }
+    (d.diagnostico||[]).forEach(function(it){
+      var hasIssue = (it.problemas||[]).length > 0;
+      var bg = hasIssue ? '#fff7ed' : '#f8fafc';
+      var border = hasIssue ? '#fb923c' : '#cbd5e1';
+      html += '<div style="background:'+bg+';border:1px solid '+border+';border-radius:8px;padding:12px;margin-bottom:10px">';
+      html += '<div style="display:flex;justify-content:space-between;align-items:start;flex-wrap:wrap;gap:8px">';
+      html += '<div><b style="color:#0f172a">'+_escHTML(it.material_nombre||'')+'</b> <span style="font-family:monospace;color:#475569;font-size:12px">('+_escHTML(it.material_id||'')+')</span><br><span style="font-size:11px;color:#64748b">'+it.porcentaje+'% en fórmula</span></div>';
+      html += '<div style="text-align:right;font-size:11px">'+
+        '<div>Stock total con stock: <b>'+(it.stock_total_g||0).toLocaleString()+' g</b> ('+(it.lotes_con_stock||0)+' lotes)</div>'+
+        '<div>FEFO disponible: <b style="color:'+(it.fefo_g>0?'#16a34a':'#dc2626')+'">'+(it.fefo_g||0).toLocaleString()+' g</b> ('+(it.fefo_disponibles||0)+' lotes usables)</div>'+
+        '</div></div>';
+      if((it.problemas||[]).length){
+        html += '<ul style="margin:8px 0 4px;padding-left:18px;font-size:12px;color:#7f1d1d">';
+        it.problemas.forEach(function(p){ html += '<li>'+_escHTML(p)+'</li>'; });
+        html += '</ul>';
+      }
+      if((it.lotes_detalle||[]).length){
+        html += '<details style="margin-top:6px"><summary style="cursor:pointer;font-size:11px;color:#475569">Ver lotes ('+it.lotes_detalle.length+')</summary>';
+        html += '<table style="width:100%;font-size:11px;margin-top:4px;border-collapse:collapse">';
+        html += '<thead><tr style="background:#e2e8f0"><th style="text-align:left;padding:3px 6px">Lote</th><th style="text-align:right;padding:3px 6px">Stock g</th><th style="padding:3px 6px">Estado</th></tr></thead><tbody>';
+        it.lotes_detalle.forEach(function(l){
+          var estCol = (l.estado_lote && /(cuarentena|rechazado)/i.test(l.estado_lote)) ? '#dc2626' : '#475569';
+          html += '<tr><td style="padding:3px 6px;font-family:monospace">'+_escHTML(l.lote)+'</td><td style="text-align:right;padding:3px 6px">'+l.stock_g+'</td><td style="padding:3px 6px;color:'+estCol+'">'+_escHTML(l.estado_lote||'OK')+'</td></tr>';
+        });
+        html += '</tbody></table></details>';
+      }
+      if((it.mps_similares_por_nombre||[]).length){
+        html += '<div style="margin-top:8px;padding:8px;background:#fef2f2;border-left:3px solid #dc2626;font-size:11px">';
+        html += '<b style="color:#991b1b">🔥 MPs similares en catálogo (probable duplicado huérfano):</b><br>';
+        it.mps_similares_por_nombre.forEach(function(s){
+          html += '• <span style="font-family:monospace">'+_escHTML(s.codigo_mp)+'</span> · '+_escHTML(s.nombre_comercial)+' · INCI: '+_escHTML(s.nombre_inci||'—')+'<br>';
+        });
+        html += '<div style="margin-top:6px;color:#7f1d1d">→ Ir a Bodega MP → "Maestro" → "Detector de duplicados" → unificar (incluye actualización de fórmulas).</div>';
+        html += '</div>';
+      }
+      html += '</div>';
+    });
+    html += '</div>';
+    div.innerHTML = html;
+    document.body.appendChild(div);
+    document.getElementById('diag-close').onclick = function(){ var m = document.getElementById('modal-diag-form'); if(m) m.remove(); };
+    div.addEventListener('click', function(e){ if(e.target === div){ var m = document.getElementById('modal-diag-form'); if(m) m.remove(); } });
+    var arBtn = document.getElementById('diag-autoreparar');
+    if(arBtn) arBtn.onclick = async function(){
+      var prod = arBtn.getAttribute('data-prod');
+      // 1) Dry-run preview
+      try{
+        var rp = await fetch('/api/produccion/auto-reparar-formula/'+encodeURIComponent(prod), {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({dry_run: true}),
+        });
+        var dp = await rp.json();
+        if(!rp.ok){ alert('Error preview: '+(dp.error||rp.status)); return; }
+        var cambios = dp.cambios_propuestos || [];
+        if(!cambios.length){ alert('Sin cambios propuestos · no hay codigo_mp huérfanos con candidatos.'); return; }
+        var preview = cambios.map(function(c){
+          return '• '+c.huerfano.nombre+'\\n  '+c.huerfano.codigo+' → '+c.reemplazo.codigo+' ('+c.reemplazo.stock_g+'g disponibles)';
+        }).join('\\n\\n');
+        if(!confirm('Aplicar '+cambios.length+' cambio(s) en la fórmula de "'+prod+'"?\\n\\n'+preview+'\\n\\nLos % NO se tocan · solo el material_id se reemplaza por el candidato con stock.')) return;
+        // 2) Apply
+        var ra = await fetch('/api/produccion/auto-reparar-formula/'+encodeURIComponent(prod), {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({dry_run: false}),
+        });
+        var da = await ra.json();
+        if(!ra.ok){ alert('Error aplicando: '+(da.error||ra.status)); return; }
+        alert('✓ '+da.mensaje+' · ahora reintentá registrar la producción');
+        var m = document.getElementById('modal-diag-form'); if(m) m.remove();
+        if(typeof loadFormulas==='function') loadFormulas();
+      }catch(e){ alert('Error red: '+e.message); }
+    };
+  }catch(e){ alert('Error: '+e.message); }
+}
+
 async function cargarPendientesFab(){
   var banner = document.getElementById('fab-pendientes-banner');
   if(!banner) return;
@@ -5960,6 +6119,10 @@ async function iniciarRegistroProd(){
       // Tambien mostrar detalle inline (para historial visual)
       var html='<div style="background:#fee2e2;border:1px solid #dc2626;border-radius:8px;padding:12px 16px;color:#7f1d1d;">';
       html+='<b style="font-size:14px;">&#x274C; '+(d.error||'Error registrando produccion')+'</b>';
+      // Si hubo MPs faltantes · botón diagnóstico para auto-detectar duplicados
+      if(d.faltantes && d.faltantes.length){
+        html+='<div style="margin-top:8px"><button data-act-diag-form data-prod="'+_escHTML(prod)+'" style="background:#0e7490;color:#fff;border:none;padding:6px 14px;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer">🔍 Diagnosticar fórmula</button> <span style="font-size:11px;color:#7f1d1d">← detectar si hay codigo_mp huérfano (post-unificación)</span></div>';
+      }
       if(d.faltantes && d.faltantes.length){
         html+='<div style="margin-top:8px;font-size:13px;">No se descontó nada (transacción atómica abortó).</div>';
         html+='<div style="margin-top:8px;font-size:12px;font-weight:700;color:#991b1b;">MPs faltantes:</div>';

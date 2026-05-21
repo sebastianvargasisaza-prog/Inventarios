@@ -2267,6 +2267,400 @@ def produccion_detalle(pid):
     })
 
 
+@bp.route('/api/produccion/auto-reparar-formula/<path:producto>', methods=['POST'])
+def produccion_auto_reparar_formula(producto):
+    """Sprint Fabricación PRO · 20-may-2026.
+
+    Si una fórmula tiene material_id huérfanos (sin lotes ni stock pero
+    hay un código MP similar con stock real), ofrece reemplazar el código
+    huérfano por el verdadero, basado en match por nombre normalizado.
+
+    Body: {dry_run: bool}  dry_run=true (default) → preview · false → aplica
+    Solo admin.
+    """
+    u, err, code = _require_session()
+    if err:
+        return err, code
+    if (u or '').strip().lower() not in {x.lower() for x in ADMIN_USERS}:
+        return jsonify({'error': 'solo admin puede auto-reparar fórmulas'}), 403
+    body = request.get_json(silent=True) or {}
+    dry_run = body.get('dry_run', True) is True
+    conn = get_db(); c = conn.cursor()
+    items = c.execute(
+        "SELECT material_id, material_nombre, porcentaje FROM formula_items WHERE producto_nombre=?",
+        (producto,),
+    ).fetchall()
+    if not items:
+        return jsonify({'error': f'producto "{producto}" sin fórmula'}), 404
+    cambios_propuestos = []
+    aplicados = []
+    for mid, mnom, pct in items:
+        # ¿Tiene stock FEFO?
+        try:
+            row = c.execute(
+                """SELECT COALESCE(SUM(stock_t),0) FROM (
+                     SELECT lote, SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) as stock_t
+                     FROM movimientos
+                     WHERE material_id=? AND lote IS NOT NULL AND lote!='' AND lote!='S/L'
+                       AND (estado_lote IS NULL OR estado_lote NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO'))
+                     GROUP BY lote HAVING stock_t > 0)""",
+                (mid,),
+            ).fetchone()
+            stock_fefo = float(row[0] or 0) if row else 0
+        except Exception:
+            stock_fefo = 0
+        if stock_fefo > 0:
+            continue  # OK, no necesita reparación
+        # Buscar candidatos: codigo_mp con nombre normalizado similar Y con stock
+        nom_norm = (mnom or '').strip().lower()
+        if len(nom_norm) < 4:
+            continue
+        candidatos = c.execute(
+            """SELECT mp.codigo_mp, mp.nombre_comercial,
+                      COALESCE(SUM(CASE WHEN m.tipo='Entrada' THEN m.cantidad ELSE -m.cantidad END), 0) as stock_act
+               FROM maestro_mps mp
+               LEFT JOIN movimientos m ON m.material_id = mp.codigo_mp
+                 AND (m.estado_lote IS NULL OR m.estado_lote NOT IN ('CUARENTENA','RECHAZADO'))
+               WHERE COALESCE(mp.activo,1)=1
+                 AND mp.codigo_mp != ?
+                 AND (LOWER(COALESCE(mp.nombre_comercial,'')) LIKE ?
+                      OR LOWER(COALESCE(mp.nombre_inci,'')) LIKE ?)
+               GROUP BY mp.codigo_mp, mp.nombre_comercial
+               HAVING stock_act > 0
+               ORDER BY stock_act DESC LIMIT 1""",
+            (mid, f'%{nom_norm[:30]}%', f'%{nom_norm[:30]}%'),
+        ).fetchone()
+        if not candidatos:
+            continue
+        candidato_id, candidato_nom, candidato_stock = candidatos
+        cambios_propuestos.append({
+            'huerfano': {'codigo': mid, 'nombre': mnom},
+            'reemplazo': {'codigo': candidato_id, 'nombre': candidato_nom,
+                          'stock_g': candidato_stock},
+        })
+        if not dry_run:
+            c.execute(
+                "UPDATE formula_items SET material_id=?, material_nombre=? "
+                "WHERE producto_nombre=? AND material_id=?",
+                (candidato_id, candidato_nom, producto, mid),
+            )
+            aplicados.append({
+                'producto': producto,
+                'huerfano': mid, 'reemplazo': candidato_id,
+            })
+    if not dry_run and aplicados:
+        try:
+            audit_log(c, usuario=u, accion='AUTO_REPARAR_FORMULA',
+                      tabla='formula_items', registro_id=producto,
+                      despues={'cambios': aplicados})
+        except Exception:
+            pass
+        conn.commit()
+    return jsonify({
+        'producto': producto,
+        'dry_run': dry_run,
+        'cambios_propuestos': cambios_propuestos,
+        'aplicados': aplicados,
+        'mensaje': (
+            f'{len(cambios_propuestos)} cambio(s) propuesto(s)'
+            if dry_run else f'{len(aplicados)} cambio(s) aplicado(s)'
+        ),
+    })
+
+
+@bp.route('/api/produccion/diagnose/<path:producto>', methods=['GET'])
+def produccion_diagnose(producto):
+    """Sprint Fabricación PRO · 20-may-2026 · Sebastián:
+    "necesita Centella extract 7g · dice hay 0g pero en Bodega hay lotes".
+
+    Diagnostica por qué una fórmula no encuentra stock que SÍ existe.
+    Causas comunes:
+      a) material_id en formula_items quedó huérfano tras unificación
+         (UPDATEó movimientos pero NO formula_items)
+      b) Los lotes están en cuarentena/rechazados
+      c) Lotes sin código de lote (lote='S/L' o NULL)
+      d) maestro_mps.activo = 0 para ese material_id
+
+    GET · devuelve por MP: material_id buscado · existe en maestro · stock
+    encontrado · lotes similares por nombre (potenciales matches).
+    """
+    u, err, code = _require_session()
+    if err:
+        return err, code
+    conn = get_db(); c = conn.cursor()
+    items = c.execute(
+        "SELECT material_id, material_nombre, porcentaje FROM formula_items WHERE producto_nombre=?",
+        (producto,),
+    ).fetchall()
+    if not items:
+        return jsonify({'error': f'producto "{producto}" sin fórmula'}), 404
+    diag = []
+    for mid, mnom, pct in items:
+        info = {
+            'material_id': mid,
+            'material_nombre': mnom,
+            'porcentaje': float(pct or 0),
+            'problemas': [],
+        }
+        # 1. Existe en maestro_mps?
+        mp_row = c.execute(
+            "SELECT nombre_comercial, nombre_inci, COALESCE(activo,1), tipo "
+            "FROM maestro_mps WHERE codigo_mp=?", (mid,),
+        ).fetchone()
+        if not mp_row:
+            info['en_maestro'] = False
+            info['problemas'].append(f'codigo_mp "{mid}" NO existe en maestro_mps')
+        else:
+            info['en_maestro'] = True
+            info['maestro_nombre'] = mp_row[0]
+            info['maestro_inci'] = mp_row[1]
+            info['maestro_activo'] = bool(mp_row[2])
+            if not mp_row[2]:
+                info['problemas'].append(f'maestro_mps.activo=0 para "{mid}"')
+        # 2. Stock por lote (sin filtros cuarentena/rechazado)
+        try:
+            todos = c.execute(
+                """SELECT lote,
+                          SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) as stock,
+                          MAX(COALESCE(estado_lote,''))
+                   FROM movimientos
+                   WHERE material_id=?
+                   GROUP BY lote HAVING stock > 0""",
+                (mid,),
+            ).fetchall()
+        except Exception:
+            todos = []
+        info['lotes_con_stock'] = len(todos)
+        info['stock_total_g'] = sum(float(l[1] or 0) for l in todos)
+        info['lotes_detalle'] = [{
+            'lote': r[0] or 'S/L',
+            'stock_g': float(r[1] or 0),
+            'estado_lote': r[2] or '',
+        } for r in todos[:10]]
+        # 3. Stock DESPUÉS de aplicar filtros del FEFO
+        try:
+            disp = c.execute(
+                """SELECT COUNT(*),
+                          COALESCE(SUM(stock_t),0)
+                   FROM (SELECT lote,
+                                SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) as stock_t
+                         FROM movimientos
+                         WHERE material_id=? AND lote IS NOT NULL AND lote!='' AND lote!='S/L'
+                           AND (estado_lote IS NULL OR estado_lote NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO'))
+                         GROUP BY lote HAVING stock_t > 0)""",
+                (mid,),
+            ).fetchone()
+            info['fefo_disponibles'] = int(disp[0] or 0)
+            info['fefo_g'] = float(disp[1] or 0)
+        except Exception:
+            info['fefo_disponibles'] = 0
+            info['fefo_g'] = 0
+        # 4. Si stock_total > 0 pero fefo_g = 0 → todo está en cuarentena/rechazado/sin lote
+        if info['stock_total_g'] > 0 and info['fefo_g'] == 0:
+            info['problemas'].append(
+                'Stock existe pero TODO está en cuarentena/rechazado o sin código de lote · '
+                'no es usable por FEFO'
+            )
+        # 5. Si stock_total = 0 · buscar por nombre similar en maestro_mps
+        if info['stock_total_g'] == 0 and mnom:
+            nom_norm = mnom.strip().lower()[:30]
+            similares = c.execute(
+                """SELECT codigo_mp, nombre_comercial, COALESCE(nombre_inci,'')
+                   FROM maestro_mps
+                   WHERE LOWER(COALESCE(nombre_comercial,'')) LIKE ?
+                      OR LOWER(COALESCE(nombre_inci,'')) LIKE ?
+                   LIMIT 5""",
+                (f'%{nom_norm}%', f'%{nom_norm}%'),
+            ).fetchall()
+            info['mps_similares_por_nombre'] = [{
+                'codigo_mp': s[0], 'nombre_comercial': s[1], 'nombre_inci': s[2],
+            } for s in similares]
+            if similares:
+                info['problemas'].append(
+                    f'codigo_mp "{mid}" sin stock · pero hay {len(similares)} MPs con '
+                    'nombre similar (posible duplicado unificado mal · usar Maestro MP '
+                    '→ Unificar duplicados → Actualizar fórmulas)'
+                )
+        diag.append(info)
+    return jsonify({'producto': producto, 'diagnostico': diag})
+
+
+@bp.route('/api/produccion/<int:pid>/ajustar-cantidad', methods=['POST'])
+def produccion_ajustar_cantidad(pid):
+    """Sprint Fabricación PRO · 20-may-2026 · Sebastián:
+    "registró 29 kg cuando era 30 kg, me ayudas a corregirlo".
+
+    Permite a admin ajustar la cantidad de una producción ya registrada.
+    Recalcula el delta de MPs descontadas:
+      - Si delta > 0: descontar más MP (FEFO sobre lotes ya usados u otros)
+      - Si delta < 0: crear Entrada compensatoria (devolver MP al stock)
+
+    Body: {nueva_cantidad_kg: float, motivo: str (≥10 chars)}
+    """
+    u, err, code = _require_session()
+    if err:
+        return err, code
+    if (u or '').strip().lower() not in {x.lower() for x in ADMIN_USERS}:
+        return jsonify({'error': 'solo admin puede ajustar cantidad de producción'}), 403
+    body = request.get_json(silent=True) or {}
+    try:
+        nueva = float(body.get('nueva_cantidad_kg') or 0)
+    except (ValueError, TypeError):
+        nueva = 0
+    motivo = (body.get('motivo') or '').strip()
+    if nueva <= 0:
+        return jsonify({'error': 'nueva_cantidad_kg > 0 requerida'}), 400
+    if len(motivo) < 10:
+        return jsonify({'error': 'motivo ≥10 chars requerido (audit INVIMA)'}), 400
+    conn = get_db(); c = conn.cursor()
+    row = c.execute(
+        "SELECT producto, cantidad, COALESCE(lote,'') FROM producciones WHERE id=?",
+        (pid,),
+    ).fetchone()
+    if not row:
+        return jsonify({'error': 'producción no existe'}), 404
+    producto, actual, lote_ref = row[0], float(row[1] or 0), row[2] or f'PROD-{pid:05d}'
+    delta_kg = round(nueva - actual, 4)
+    if abs(delta_kg) < 0.001:
+        return jsonify({'ok': True, 'mensaje': 'Sin cambio (diferencia <0.001kg)',
+                        'cantidad_kg': actual})
+    delta_g = delta_kg * 1000
+    # Obtener fórmula al momento (snapshot si existe, sino actual)
+    items = []
+    try:
+        snap_row = c.execute(
+            "SELECT formula_snapshot_json FROM producciones WHERE id=?", (pid,),
+        ).fetchone()
+        if snap_row and snap_row[0]:
+            import json as _json
+            items = _json.loads(snap_row[0])
+    except Exception:
+        items = []
+    if not items:
+        items_rows = c.execute(
+            "SELECT material_id, material_nombre, porcentaje FROM formula_items WHERE producto_nombre=?",
+            (producto,),
+        ).fetchall()
+        items = [{'material_id': r[0], 'material_nombre': r[1], 'porcentaje': r[2]} for r in items_rows]
+    if not items:
+        return jsonify({'error': f'Producto "{producto}" sin fórmula · no se puede ajustar MPs'}), 400
+    from datetime import datetime as _dt
+    fecha_ajuste = _dt.now().isoformat()
+    movimientos_aplicados = []
+    try:
+        # MPs ilimitadas (agua, etc.) saltan validación stock
+        try:
+            from .programacion import _MP_UNLIMITED, _norm_mp_name
+            unlimited = {x.upper() for x in _MP_UNLIMITED}
+            def _is_unl(n):
+                return _norm_mp_name(n or '').upper() in unlimited
+        except Exception:
+            def _is_unl(n): return False
+
+        if delta_kg > 0:
+            # ─ Descontar MP adicional (FEFO) ─
+            faltantes = []
+            plan = []
+            for it in items:
+                mid = it['material_id']
+                mnom = it['material_nombre']
+                pct = float(it['porcentaje'] or 0)
+                g_extra = round((pct / 100.0) * delta_g, 2)
+                if g_extra <= 0: continue
+                if _is_unl(mnom):
+                    plan.append({'mid': mid, 'mnom': mnom, 'g': g_extra, 'lote': 'unlimited', 'unlimited': True})
+                    continue
+                # FEFO
+                fefo = c.execute("""SELECT lote,
+                    SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) as stock
+                    FROM movimientos
+                    WHERE material_id=? AND lote IS NOT NULL AND lote!='' AND lote!='S/L'
+                      AND (estado_lote IS NULL OR estado_lote NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO'))
+                    GROUP BY lote HAVING stock > 0
+                    ORDER BY COALESCE(NULLIF(CAST(MAX(CASE WHEN tipo='Entrada' THEN fecha_vencimiento END) AS TEXT),''),'9999-12-31') ASC""",
+                    (mid,)).fetchall()
+                disp = sum(float(l[1] or 0) for l in fefo)
+                if disp + 0.01 < g_extra:
+                    faltantes.append({'material': mnom, 'falta_g': round(g_extra - disp, 2)})
+                    continue
+                g_rest = g_extra
+                for l in fefo:
+                    if g_rest <= 0: break
+                    g_use = round(min(g_rest, float(l[1])), 2)
+                    plan.append({'mid': mid, 'mnom': mnom, 'g': g_use, 'lote': l[0], 'unlimited': False})
+                    g_rest = round(g_rest - g_use, 2)
+            if faltantes:
+                return jsonify({
+                    'error': 'Stock insuficiente para ajustar +' + str(delta_kg) + 'kg',
+                    'faltantes': faltantes,
+                }), 422
+            for p in plan:
+                c.execute(
+                    "INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, fecha, observaciones, lote, operador) VALUES (?,?,?,?,?,?,?,?)",
+                    (p['mid'], p['mnom'], p['g'], 'Salida', fecha_ajuste,
+                     f"AJUSTE+:{lote_ref}:{producto} +{delta_kg}kg · " + motivo[:120],
+                     None if p['unlimited'] else p['lote'], u),
+                )
+                movimientos_aplicados.append({'material': p['mnom'], 'g': p['g'], 'tipo': 'Salida extra'})
+        else:
+            # ─ Devolver MP (delta negativo) · Entrada compensatoria ─
+            # Buscar movimientos de Salida originales del lote para
+            # devolver al mismo lote MP de procedencia.
+            for it in items:
+                mid = it['material_id']
+                mnom = it['material_nombre']
+                pct = float(it['porcentaje'] or 0)
+                g_dev = round((pct / 100.0) * abs(delta_g), 2)
+                if g_dev <= 0: continue
+                # Buscar la salida original más grande de este MP en esta producción
+                orig = c.execute(
+                    """SELECT lote, SUM(cantidad)
+                       FROM movimientos
+                       WHERE material_id=? AND tipo='Salida'
+                         AND observaciones LIKE ?
+                       GROUP BY lote
+                       ORDER BY SUM(cantidad) DESC LIMIT 1""",
+                    (mid, f'%FEFO:{lote_ref}:%'),
+                ).fetchone()
+                lote_dev = orig[0] if orig and orig[0] else None
+                if _is_unl(mnom): lote_dev = None
+                c.execute(
+                    "INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, fecha, observaciones, lote, operador) VALUES (?,?,?,?,?,?,?,?)",
+                    (mid, mnom, g_dev, 'Entrada', fecha_ajuste,
+                     f"AJUSTE-:{lote_ref}:{producto} {delta_kg}kg (devolución) · " + motivo[:120],
+                     lote_dev, u),
+                )
+                movimientos_aplicados.append({'material': mnom, 'g': g_dev, 'tipo': 'Entrada devolución'})
+        # Update cantidad
+        c.execute("UPDATE producciones SET cantidad=? WHERE id=?", (nueva, pid))
+        # Audit
+        try:
+            audit_log(c, usuario=u, accion='AJUSTAR_CANTIDAD_PRODUCCION',
+                      tabla='producciones', registro_id=pid,
+                      antes={'cantidad_kg': actual},
+                      despues={'cantidad_kg': nueva, 'delta_kg': delta_kg,
+                               'motivo': motivo[:200],
+                               'movs': len(movimientos_aplicados)})
+        except Exception:
+            pass
+        conn.commit()
+        return jsonify({
+            'ok': True,
+            'pid': pid, 'lote': lote_ref,
+            'cantidad_anterior_kg': actual,
+            'cantidad_nueva_kg': nueva,
+            'delta_kg': delta_kg,
+            'movimientos_aplicados': movimientos_aplicados,
+            'mensaje': f'Producción {lote_ref} ajustada de {actual}kg a {nueva}kg ({"+" if delta_kg>0 else ""}{delta_kg}kg)',
+        })
+    except Exception as e:
+        try: conn.rollback()
+        except Exception: pass
+        __import__('logging').getLogger('inventario').exception(
+            'ajustar_cantidad_produccion · pid=%s err=%s', pid, e)
+        return jsonify({'error': f'Falla al ajustar: {e}', 'tipo': type(e).__name__}), 500
+
+
 @bp.route('/api/produccion/<int:pid>/rotulo-reimprimir', methods=['GET'])
 def produccion_rotulo_reimprimir(pid):
     """Sprint Fabricación PRO · genera HTML imprimible con los rótulos
