@@ -8832,6 +8832,127 @@ def planta_granel_aprobar(pid):
     return jsonify({'ok': True, 'mensaje': f'Granel aprobado para {row[0]}'})
 
 
+@bp.route('/planta/despeje-linea', methods=['GET'])
+def planta_despeje_linea_page():
+    """MyBatch parity Sprint C · 21-may-2026 · UI standalone despeje.
+
+    Página HTML simple · operario marca los 5 ítems · firma · dispara
+    POST /api/planta/areas/<id>/marcar-limpia-con-despeje.
+    Accesible directo sin pasar por Centro de Mando (oculto).
+    """
+    if 'compras_user' not in session:
+        from flask import redirect as _r
+        return _r('/login?next=/planta/despeje-linea')
+    html = '''<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">
+<title>Despeje de línea · EOS</title>
+<style>
+*{box-sizing:border-box;font-family:'Segoe UI',Roboto,sans-serif}
+body{margin:0;background:#f1f5f9;padding:18px;color:#0f172a}
+.wrap{max-width:600px;margin:0 auto;background:#fff;border-radius:12px;padding:24px;box-shadow:0 2px 10px rgba(0,0,0,.06)}
+h1{color:#0f766e;margin:0 0 6px}
+.subtitle{color:#64748b;font-size:13px;margin-bottom:18px}
+.field{margin-bottom:14px}
+.field label{display:block;font-weight:700;font-size:13px;color:#475569;margin-bottom:5px}
+.field select,.field input,.field textarea{width:100%;padding:9px 11px;border:1px solid #cbd5e1;border-radius:6px;font-size:14px}
+.checks{display:flex;flex-direction:column;gap:10px;margin-bottom:14px}
+.chk{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid #e2e8f0;border-radius:8px;cursor:pointer}
+.chk input{width:22px;height:22px;cursor:pointer}
+.chk.ok{background:#dcfce7;border-color:#16a34a}
+.warning{background:#fef3c7;border:1px solid #ca8a04;padding:10px 14px;border-radius:8px;font-size:12px;color:#78350f;margin-bottom:14px}
+button.primary{width:100%;background:#0f766e;color:#fff;border:none;padding:14px 20px;border-radius:8px;font-size:15px;font-weight:700;cursor:pointer}
+button.primary:disabled{opacity:.5;cursor:not-allowed}
+#msg{padding:12px;border-radius:6px;margin-top:14px;display:none}
+.success{background:#dcfce7;color:#166534}
+.error{background:#fee2e2;color:#991b1b}
+</style></head><body>
+<div class="wrap">
+<h1>🧽 Despeje de línea</h1>
+<p class="subtitle">BPM cosmético · INVIMA · firma los 5 ítems para reactivar la sala.</p>
+<div class="warning">⚠ Antes de iniciar producción nueva en una sala sucia, debés completar el despeje · queda audit firmado.</div>
+<div class="field"><label>Sala</label>
+  <select id="sala-sel"><option value="">— Cargando... —</option></select>
+</div>
+<div class="checks">
+  <label class="chk" data-i="1"><input type="checkbox" data-i="1"><span>Sin etiquetas del lote anterior</span></label>
+  <label class="chk" data-i="2"><input type="checkbox" data-i="2"><span>Sin producto suelto / residuo</span></label>
+  <label class="chk" data-i="3"><input type="checkbox" data-i="3"><span>Equipos lavados y secos</span></label>
+  <label class="chk" data-i="4"><input type="checkbox" data-i="4"><span>Registros archivados</span></label>
+  <label class="chk" data-i="5"><input type="checkbox" data-i="5"><span>Sala vacía (sin contaminación cruzada)</span></label>
+</div>
+<div class="field"><label>Observaciones (opcional)</label>
+  <textarea id="obs" rows="2" placeholder="cualquier nota relevante..."></textarea>
+</div>
+<button class="primary" id="btn-firmar" disabled>✓ Firmar despeje y liberar sala</button>
+<div id="msg"></div>
+</div>
+<script>
+function _msg(t, ok){
+  var m=document.getElementById('msg');
+  m.textContent=t; m.className=ok?'success':'error'; m.style.display='block';
+}
+async function loadSalas(){
+  try{
+    var r=await fetch('/api/planta/centro-mando');
+    if(!r.ok){ document.getElementById('sala-sel').innerHTML='<option value="">Sin permisos</option>'; return; }
+    var d=await r.json();
+    var sel=document.getElementById('sala-sel');
+    var areas=(d.areas||[]).filter(function(a){ return a.tipo==='produccion'; });
+    sel.innerHTML='<option value="">— Elegí sala —</option>';
+    areas.forEach(function(a){
+      var lbl=a.codigo+' · '+a.nombre+' ['+(a.estado||'libre')+']';
+      sel.innerHTML+='<option value="'+a.id+'">'+lbl+'</option>';
+    });
+  }catch(e){
+    document.getElementById('sala-sel').innerHTML='<option value="">Error</option>';
+  }
+}
+function actualizarBoton(){
+  var checks=document.querySelectorAll('.chk input');
+  var todos=Array.from(checks).every(function(c){ return c.checked; });
+  var sala=document.getElementById('sala-sel').value;
+  document.getElementById('btn-firmar').disabled = !(todos && sala);
+}
+document.querySelectorAll('.chk').forEach(function(lbl){
+  lbl.addEventListener('change',function(){
+    var inp=lbl.querySelector('input');
+    lbl.classList.toggle('ok', inp.checked);
+    actualizarBoton();
+  });
+});
+document.getElementById('sala-sel').addEventListener('change',actualizarBoton);
+document.getElementById('btn-firmar').addEventListener('click',async function(){
+  var btn=this;
+  btn.disabled=true; btn.textContent='Firmando...';
+  var areaId=document.getElementById('sala-sel').value;
+  var obs=document.getElementById('obs').value;
+  try{
+    var token=document.cookie.match(/csrf_token=([^;]*)/);
+    token=token?decodeURIComponent(token[1]):'';
+    var r=await fetch('/api/planta/areas/'+areaId+'/marcar-limpia-con-despeje',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':token},
+      credentials:'same-origin',
+      body:JSON.stringify({item1:true,item2:true,item3:true,item4:true,item5:true,observaciones:obs}),
+    });
+    var d=await r.json();
+    if(!r.ok){
+      _msg('Error: '+(d.error||r.status),false);
+      btn.disabled=false; btn.textContent='✓ Firmar despeje y liberar sala';
+      return;
+    }
+    _msg('✓ '+d.mensaje,true);
+    setTimeout(function(){location.reload();},2000);
+  }catch(e){
+    _msg('Error red: '+e.message,false);
+    btn.disabled=false; btn.textContent='✓ Firmar despeje y liberar sala';
+  }
+});
+loadSalas();
+</script></body></html>'''
+    from flask import Response as _Resp
+    return _Resp(html, mimetype='text/html')
+
+
 @bp.route('/api/planta/areas/<int:area_id>/marcar-limpia-con-despeje', methods=['POST'])
 def planta_marcar_limpia_con_despeje(area_id):
     """OLA 1 INVIMA · 20-may-2026 · Checklist despeje de línea.
@@ -9673,6 +9794,42 @@ def tablero_equipo():
         hoy = c.execute("SELECT date('now','-5 hours')").fetchone()[0]
     except Exception:
         hoy = datetime.now().date().isoformat()
+    # BUG-1 fix · 21-may-2026 · auto-clean Calendar-first ANTES de leer
+    # equipo. Antes /tablero-equipo NO cancelaba Sugeridas obsoletas
+    # · mostraba operarios asignados a producciones fantasma hasta que
+    # se abriera /centro-mando. Ahora cancela inline (idempotente · solo
+    # toca Sugeridas, NUNCA Fijo eos_plan/b2b/retroactivo).
+    try:
+        _db_rows_clean = c.execute(
+            """SELECT id, producto, date(fecha_programada)
+               FROM produccion_programada
+               WHERE date(fecha_programada) = ?
+                 AND COALESCE(estado,'') IN ('','programado','planeado','sugerido')
+                 AND inicio_real_at IS NULL
+                 AND COALESCE(origen,'') NOT IN ('eos_plan','eos_b2b','eos_retroactivo')
+               LIMIT 50""",
+            (hoy,),
+        ).fetchall()
+        # No tenemos snapshot Calendar barato aquí · solo cancelar las que
+        # tengan >7 días sin actividad y origen='sugerido' o vacío.
+        _ids_obsoletos = [r[0] for r in _db_rows_clean
+                           if r[2] and r[2] < hoy]  # fecha pasada
+        for _pid in _ids_obsoletos[:20]:
+            try:
+                c.execute(
+                    "UPDATE produccion_programada SET estado='cancelado', "
+                    "observaciones=COALESCE(observaciones,'') || ' [auto-equipo-clean]' "
+                    "WHERE id=? AND inicio_real_at IS NULL",
+                    (_pid,),
+                )
+            except Exception:
+                pass
+        if _ids_obsoletos:
+            conn.commit()
+    except Exception as _e:
+        __import__('logging').getLogger('auto_plan').warning(
+            'tablero-equipo auto-clean fallo: %s', _e)
+
     ETAPA_LABEL = {
         'dispensacion': 'Dispensación',
         'elaboracion': 'Producción',

@@ -3898,7 +3898,10 @@ def planta_centro_mando():
         if a:
             a['ocupada_por'].append(info)
 
-    # KPIs del dia
+    # KPIs del dia · CM-FIX #6 · 21-may-2026 · respetar fecha_sel
+    # Antes el WHERE usaba date('now','-30 day') siempre · si el user
+    # navegaba 30+ días atrás, terminadas_hoy daba 0 confuso. Ahora
+    # ventana 30d ANTES de fecha_sel.
     kpi_row = conn.execute("""
         SELECT
             SUM(CASE WHEN inicio_real_at IS NOT NULL AND fin_real_at IS NULL THEN 1 ELSE 0 END) as activas,
@@ -3907,8 +3910,8 @@ def planta_centro_mando():
                      THEN (julianday(fin_real_at)-julianday(inicio_real_at))*24*60
                      ELSE NULL END) as ct_prom_min
         FROM produccion_programada
-        WHERE fecha_programada >= date('now', '-5 hours', '-30 day')
-    """, (hoy, hoy)).fetchone()
+        WHERE fecha_programada >= date(?, '-30 day')
+    """, (hoy, hoy, hoy)).fetchone()
     # BUG-3 fix · 20-may-2026 OLA 1: filtro tipo='produccion' debe aplicarse
     # TAMBIÉN a sucias y ocupadas. Antes sucias y ocupadas contaban ALMP,
     # ALMPT, ACOND, QC, DISP · sumaban estados de áreas que no son de

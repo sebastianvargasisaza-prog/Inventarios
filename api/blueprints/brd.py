@@ -179,6 +179,67 @@ def assign_numero_op(c, year=None):
 
 # ── endpoints ───────────────────────────────────────────────────────────────
 
+@bp.route("/api/brd/cuarentena-explicita", methods=["GET"])
+def brd_cuarentena_explicita():
+    """MyBatch parity Sprint E · 21-may-2026 · Estado cuarentena explícito.
+
+    Lista TODOS los EBRs en cuarentena (completados pero no liberados):
+    - lote · producto · fecha completado · días en cuarentena
+    - flag bandera_roja si >7 días sin liberar
+    - acción: link al detalle + botón liberar/rechazar visible
+    """
+    err = _require_login()
+    if err:
+        return err
+    conn = get_db()
+    try:
+        rows = conn.execute(
+            """SELECT e.id, e.lote_codigo, e.completado_at_utc, e.operario,
+                      mb.producto_nombre,
+                      julianday('now','-5 hours') - julianday(e.completado_at_utc) as dias
+               FROM ebr_ejecuciones e
+               LEFT JOIN mbr_templates mb ON mb.id = e.mbr_template_id
+               WHERE e.estado = 'completado'
+                 AND e.completado_at_utc IS NOT NULL
+                 AND (e.liberado_at_utc IS NULL OR e.liberado_at_utc = '')
+                 AND (e.rechazado_at_utc IS NULL OR e.rechazado_at_utc = '')
+               ORDER BY e.completado_at_utc ASC""",
+        ).fetchall()
+    except Exception as e:
+        return jsonify({'error': f'query fallo: {e}'}), 500
+    items = []
+    bandera_roja_count = 0
+    for r in rows:
+        dias = round(float(r[5] or 0), 1) if r[5] else 0
+        bandera = dias > 7
+        if bandera:
+            bandera_roja_count += 1
+        items.append({
+            'ebr_id': r[0], 'lote': r[1] or '',
+            'completado_at_utc': r[2] or '',
+            'operario': r[3] or '',
+            'producto': r[4] or '',
+            'dias_en_cuarentena': dias,
+            'bandera_roja': bandera,
+        })
+    # Estadísticas adicionales: rechazados últimos 30d
+    rechazados_30d = 0
+    try:
+        rechazados_30d = int((conn.execute(
+            """SELECT COUNT(*) FROM ebr_ejecuciones
+               WHERE rechazado_at_utc IS NOT NULL AND rechazado_at_utc != ''
+                 AND date(rechazado_at_utc) >= date('now','-5 hours','-30 days')""",
+        ).fetchone() or [0])[0])
+    except Exception:
+        pass
+    return jsonify({
+        'items': items,
+        'total_cuarentena': len(items),
+        'bandera_roja_count': bandera_roja_count,
+        'rechazados_30d': rechazados_30d,
+    })
+
+
 @bp.route("/api/brd/dashboard-estados", methods=["GET"])
 def brd_dashboard_estados():
     """MyBatch parity Sprint A · 21-may-2026 · Sebastián.
@@ -802,6 +863,119 @@ def listar_ebr():
     sql += " ORDER BY iniciado_at_utc DESC"
     rows = get_db().execute(sql, params).fetchall()
     return jsonify({"items": [_ebr_to_dict(r) for r in rows]})
+
+
+@bp.route("/brd/timeline/<int:ebr_id>", methods=["GET"])
+def brd_timeline_page(ebr_id):
+    """MyBatch parity Sprint D · 21-may-2026 · Timeline visual del BR.
+
+    Página HTML standalone con timeline cronológico de eventos del lote:
+    pesajes · pasos · IPC · liberación · todo en orden temporal con
+    badges de estado. Renderiza vista-completa pero como línea de tiempo.
+    """
+    err = _require_login()
+    if err:
+        return err
+    html = '''<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">
+<title>Timeline BR · ''' + str(ebr_id) + '''</title>
+<style>
+*{box-sizing:border-box;font-family:'Segoe UI',Roboto,sans-serif}
+body{margin:0;background:#f1f5f9;padding:18px;color:#0f172a}
+.wrap{max-width:900px;margin:0 auto;background:#fff;border-radius:12px;padding:24px;box-shadow:0 2px 10px rgba(0,0,0,.06)}
+h1{color:#0f766e;margin:0 0 6px}
+.subtitle{color:#64748b;font-size:13px;margin-bottom:20px}
+.header-card{background:#f8fafc;border-radius:8px;padding:14px;margin-bottom:20px;display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;font-size:13px}
+.tl{position:relative;padding-left:38px;margin-top:14px}
+.tl::before{content:'';position:absolute;left:14px;top:0;bottom:0;width:2px;background:#cbd5e1}
+.evt{position:relative;margin-bottom:18px;padding:12px 14px;background:#fff;border:1px solid #e2e8f0;border-radius:8px}
+.evt::before{content:'';position:absolute;left:-31px;top:14px;width:18px;height:18px;border-radius:50%;background:#fff;border:3px solid #cbd5e1}
+.evt.ok::before{border-color:#16a34a;background:#dcfce7}
+.evt.warn::before{border-color:#ca8a04;background:#fef3c7}
+.evt.err::before{border-color:#dc2626;background:#fee2e2}
+.evt.info::before{border-color:#0891b2;background:#cffafe}
+.evt .ts{font-size:11px;color:#94a3b8;font-family:monospace}
+.evt .tit{font-weight:700;font-size:14px;color:#0f172a;margin:3px 0}
+.evt .det{font-size:12px;color:#475569;line-height:1.5}
+.badge{display:inline-block;padding:2px 8px;border-radius:8px;font-size:10px;font-weight:700;margin-left:6px}
+.b-ok{background:#dcfce7;color:#166534}
+.b-warn{background:#fef3c7;color:#78350f}
+.b-err{background:#fee2e2;color:#991b1b}
+</style></head><body>
+<div class="wrap">
+<h1>📜 Timeline del BR</h1>
+<p class="subtitle">Vista cronológica de eventos · INVIMA-ready · genera PDF con Ctrl+P</p>
+<div id="head"></div>
+<div class="tl" id="timeline"></div>
+</div>
+<script>
+async function load(){
+  try{
+    var r = await fetch('/api/brd/ebr/''' + str(ebr_id) + '''/vista-completa');
+    var d = await r.json();
+    if(!r.ok){
+      document.getElementById('timeline').innerHTML = '<div style="color:#dc2626">Error: '+(d.error||r.status)+'</div>';
+      return;
+    }
+    var h = d.header || {};
+    document.getElementById('head').innerHTML =
+      '<div class="header-card">'+
+        '<div><b>Producto</b><br>'+(h.producto||'—')+'</div>'+
+        '<div><b>Lote</b><br><span style="font-family:monospace;color:#dc2626;font-weight:700">'+(h.lote_codigo||'—')+'</span></div>'+
+        '<div><b>Estado</b><br>'+(h.estado||'—')+'</div>'+
+        '<div><b>Operario</b><br>'+(h.operario||'—')+'</div>'+
+        '<div><b>Iniciado</b><br>'+(h.iniciado_at_utc||'').substring(0,16)+'</div>'+
+        '<div><b>Completado</b><br>'+((h.completado_at_utc||'—').substring(0,16))+'</div>'+
+        '<div><b>Progreso</b><br><span style="color:#0891b2;font-weight:700">'+(d.progreso_pasos_pct||0)+'%</span></div>'+
+        '<div><b>IPC OK</b><br>'+(d.ipc_dentro_rango||0)+' / '+(d.ipc_total||0)+'</div>'+
+      '</div>';
+    // Construir eventos cronológicos
+    var eventos = [];
+    if(h.iniciado_at_utc) eventos.push({ts:h.iniciado_at_utc,tipo:'info',tit:'🚀 EBR iniciado',det:'Operario: '+(h.operario||'?')});
+    (d.pesajes||[]).forEach(function(p){
+      var ok = Math.abs(p.delta_pct) <= 3;
+      eventos.push({
+        ts:p.fecha,
+        tipo:ok?'ok':'warn',
+        tit:'⚖ Pesaje: '+p.material_nombre,
+        det:'Esperado: '+p.esperada_g+' g · Real: '+p.real_g+' g · Δ '+p.delta_pct+'%'+(p.lote_mp?' · Lote MP: '+p.lote_mp:'')+(p.operario?' · Op: '+p.operario:'')
+      });
+    });
+    (d.pasos||[]).forEach(function(s){
+      if(s.iniciado) eventos.push({ts:s.iniciado,tipo:'info',tit:'▶ Paso #'+s.orden+': '+s.descripcion+' (inicio)',det:'Operario: '+(s.operario||'?')});
+      if(s.completado) eventos.push({ts:s.completado,tipo:'ok',tit:'✓ Paso #'+s.orden+': '+s.descripcion+' (fin)',det:s.observaciones||'sin notas'});
+    });
+    (d.ipc||[]).forEach(function(i){
+      eventos.push({
+        ts:i.fecha,
+        tipo:i.dentro_rango?'ok':'err',
+        tit:(i.dentro_rango?'✓':'✗')+' IPC: '+i.nombre,
+        det:'Esperado: '+i.esperado+' · Real: '+i.real+(i.observaciones?' · '+i.observaciones:'')
+      });
+    });
+    if(h.completado_at_utc) eventos.push({ts:h.completado_at_utc,tipo:'ok',tit:'🏁 EBR completado',det:'Tiempo total: '+(h.tiempo_total_min||0)+' min'});
+    if(h.liberado_at_utc) eventos.push({ts:h.liberado_at_utc,tipo:'ok',tit:'🔓 LIBERADO QC',det:'Por: '+(h.liberado_por||'?')});
+    if(h.rechazado_at_utc) eventos.push({ts:h.rechazado_at_utc,tipo:'err',tit:'⛔ RECHAZADO',det:h.rechazado_motivo||''});
+    // Sort cronológico
+    eventos.sort(function(a,b){ return (a.ts||'').localeCompare(b.ts||''); });
+    var tl = document.getElementById('timeline');
+    if(!eventos.length){
+      tl.innerHTML = '<div style="color:#94a3b8;text-align:center;padding:30px">Sin eventos registrados todavía</div>';
+      return;
+    }
+    tl.innerHTML = eventos.map(function(e){
+      return '<div class="evt '+e.tipo+'">'+
+        '<div class="ts">'+(e.ts||'').substring(0,16)+'</div>'+
+        '<div class="tit">'+e.tit+'</div>'+
+        '<div class="det">'+(e.det||'')+'</div>'+
+      '</div>';
+    }).join('');
+  }catch(e){
+    document.getElementById('timeline').innerHTML = '<div style="color:#dc2626">Error red: '+e.message+'</div>';
+  }
+}
+load();
+</script></body></html>'''
+    return Response(html, mimetype='text/html')
 
 
 @bp.route("/api/brd/ebr/<int:ebr_id>/vista-completa", methods=["GET"])

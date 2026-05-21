@@ -1668,23 +1668,29 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
 
   <div id="ac-table-wrap">
     <h3 style="margin:0 0 10px;color:#2B7A78;font-size:14px">&#128202; Historial Acondicionamiento</h3>
+    <!-- Sprint Acondicionamiento PRO UI · 21-may-2026 -->
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px;font-size:12px">
+      <input id="ac-q" type="text" placeholder="🔍 Buscar lote / producto / operador…" oninput="_acHistDebounced()" style="flex:1;min-width:200px;padding:7px 10px;border:1px solid #cbd5e1;border-radius:5px">
+      <button onclick="document.getElementById('ac-q').value='';window._acHistOffset=0;cargarAcondHistorial()" style="background:#94a3b8;color:#fff;padding:6px 10px;font-size:11px;border:none;border-radius:5px;cursor:pointer">Limpiar</button>
+    </div>
     <div style="overflow-x:auto">
       <table style="width:100%;border-collapse:collapse;font-size:13px">
         <thead>
           <tr style="background:#1a4a7a;color:#fff">
-            <th style="padding:8px">Lote</th>
+            <th style="padding:8px">Lote PT</th>
             <th style="padding:8px">Producto</th>
             <th style="padding:8px">Uds</th>
-            <th style="padding:8px">Etiquetas</th>
-            <th style="padding:8px">Plegadizas</th>
-            <th style="padding:8px">Destino</th>
+            <th style="padding:8px">Presentación</th>
+            <th style="padding:8px">SKU</th>
             <th style="padding:8px">Fecha</th>
             <th style="padding:8px">Operador</th>
+            <th style="padding:8px;text-align:center">Acciones</th>
           </tr>
         </thead>
         <tbody id="ac-tbody"></tbody>
       </table>
     </div>
+    <div id="ac-hist-footer" style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;font-size:12px;color:#64748b"></div>
   </div>
 </div>
 </div>
@@ -8496,23 +8502,105 @@ async function registrarAcondSimple(){
   }
 }
 
-function loadAcondSimple(){
-  fetch('/api/acondicionamiento').then(function(r){return r.json();}).then(function(rows){
-    var tb = document.getElementById('ac-tbody'); if(!tb) return;
-    if(!rows.length){ tb.innerHTML='<tr><td colspan="8" style="text-align:center;color:#999;padding:12px;">Sin registros</td></tr>'; return; }
+function loadAcondSimple(){ cargarAcondHistorial(); }
+
+// Sprint Acondicionamiento PRO UI · 21-may-2026 · paginación + búsqueda + detalle
+window._acHistOffset = 0;
+window._acHistLimit = 50;
+window._acHistDebounceT = null;
+function _acHistDebounced(){
+  if(window._acHistDebounceT) clearTimeout(window._acHistDebounceT);
+  window._acHistDebounceT = setTimeout(function(){
+    window._acHistOffset = 0;
+    cargarAcondHistorial();
+  }, 350);
+}
+async function cargarAcondHistorial(){
+  var tb = document.getElementById('ac-tbody');
+  var ft = document.getElementById('ac-hist-footer');
+  if(!tb) return;
+  var q = (document.getElementById('ac-q')||{}).value || '';
+  var limit = window._acHistLimit;
+  var offset = window._acHistOffset || 0;
+  var url = '/api/acondicionamiento?limit='+limit+'&offset='+offset+(q ? '&q='+encodeURIComponent(q) : '');
+  try{
+    var r = await fetch(url, {credentials:'same-origin'});
+    var d = await r.json();
+    // Backward compat: si response es array (schema viejo), usar directo
+    var rows = Array.isArray(d) ? d : (d.items || []);
+    var total = Array.isArray(d) ? rows.length : (d.total || 0);
+    if(!rows.length){
+      tb.innerHTML = '<tr><td colspan="8" style="text-align:center;color:#999;padding:12px;">Sin registros</td></tr>';
+      if(ft) ft.innerHTML = 'Total: 0';
+      return;
+    }
     tb.innerHTML = rows.map(function(r){
-      return '<tr style="border-bottom:1px solid #eee">' +
-        '<td style="padding:7px;font-family:monospace;font-size:12px">'+r.lote+'</td>' +
-        '<td style="padding:7px">'+r.producto+'</td>' +
-        '<td style="padding:7px;text-align:center">'+r.unidades_producidas+'</td>' +
-        '<td style="padding:7px;text-align:center;color:#555;font-size:12px">'+(r.observaciones||'--')+'</td>' +
-        '<td style="padding:7px;text-align:center">'+(r.presentacion||'--')+'</td>' +
-        '<td style="padding:7px;text-align:center">'+(r.sku||'--')+'</td>' +
-        '<td style="padding:7px;font-size:12px">'+(r.fecha||'--')+'</td>' +
-        '<td style="padding:7px;font-size:12px">'+(r.operador||'--')+'</td>' +
-        '</tr>';
+      var fec = (r.fecha||'').substring(0,16);
+      return '<tr style="border-bottom:1px solid #eee">'+
+        '<td style="padding:7px;font-family:monospace;font-size:12px;color:#0d47a1;font-weight:700">'+_escHTML(r.lote||'')+'</td>'+
+        '<td style="padding:7px">'+_escHTML(r.producto||'')+'</td>'+
+        '<td style="padding:7px;text-align:center;font-weight:700">'+(r.unidades_producidas||0)+'</td>'+
+        '<td style="padding:7px;text-align:center">'+_escHTML(r.presentacion||'—')+'</td>'+
+        '<td style="padding:7px;text-align:center;font-family:monospace;font-size:11px">'+_escHTML(r.sku||'—')+'</td>'+
+        '<td style="padding:7px;font-size:12px">'+_escHTML(fec)+'</td>'+
+        '<td style="padding:7px;font-size:12px">'+_escHTML(r.operador||'—')+'</td>'+
+        '<td style="padding:7px;text-align:center"><button data-acond-act="detalle" data-aid="'+r.id+'" style="background:#0891b2;color:#fff;border:none;padding:3px 8px;border-radius:4px;font-size:10px;cursor:pointer">📋</button></td>'+
+      '</tr>';
     }).join('');
-  }).catch(function(){});
+    if(ft){
+      var d_n = (offset||0) + 1;
+      var h_n = (offset||0) + rows.length;
+      var pag = '';
+      if(offset > 0) pag += '<button onclick="window._acHistOffset=Math.max(0,window._acHistOffset-'+limit+');cargarAcondHistorial()" style="padding:4px 10px;background:#475569;color:#fff;border:none;border-radius:4px;font-size:11px;cursor:pointer;margin-right:4px">← Anterior</button>';
+      if(offset + limit < total) pag += '<button onclick="window._acHistOffset+='+limit+';cargarAcondHistorial()" style="padding:4px 10px;background:#0d47a1;color:#fff;border:none;border-radius:4px;font-size:11px;cursor:pointer">Siguiente →</button>';
+      ft.innerHTML = '<span>Mostrando '+d_n+'–'+h_n+' de '+total.toLocaleString()+'</span><span>'+pag+'</span>';
+    }
+  }catch(e){
+    tb.innerHTML = '<tr><td colspan="8" style="color:#c00;text-align:center;padding:10px">Error: '+_escHTML(e.message)+'</td></tr>';
+  }
+}
+if(typeof document !== 'undefined' && !window._ACOND_DELEG){
+  window._ACOND_DELEG = true;
+  document.addEventListener('click', function(ev){
+    var b = ev.target && ev.target.closest && ev.target.closest('[data-acond-act="detalle"]');
+    if(!b) return;
+    verDetalleAcond(b.getAttribute('data-aid'));
+  });
+}
+async function verDetalleAcond(aid){
+  try{
+    var r = await fetch('/api/acondicionamiento/'+aid+'/detalle');
+    var d = await r.json();
+    if(!r.ok){ alert('Error: '+(d.error||r.status)); return; }
+    var ex = document.getElementById('m-acond-det'); if(ex) ex.remove();
+    var div = document.createElement('div');
+    div.id = 'm-acond-det';
+    div.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9998;display:flex;align-items:center;justify-content:center;padding:20px';
+    var meeRows = (d.mee_consumido_parsed||[]).map(function(m){
+      return '<tr><td style="font-family:monospace">'+_escHTML(m.codigo||m.codigo_mee||'')+'</td><td>'+_escHTML(m.descripcion||m.nombre_mee||'')+'</td><td style="text-align:right;font-weight:700">'+(m.cantidad||0)+'</td></tr>';
+    }).join('');
+    div.innerHTML = '<div style="background:#fff;border-radius:12px;padding:20px;max-width:720px;width:100%;max-height:90vh;overflow-y:auto">'+
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><h3 style="margin:0;color:#0d47a1">🔧 Detalle Acondicionamiento · '+_escHTML(d.lote||'')+'</h3><button id="ac-det-close" style="background:none;border:none;font-size:1.4em;cursor:pointer">×</button></div>'+
+      '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;background:#f8fafc;padding:12px;border-radius:8px;margin-bottom:14px;font-size:13px">'+
+        '<div><b>Producto</b><br>'+_escHTML(d.producto||'')+'</div>'+
+        '<div><b>Lote PT</b><br><span style="font-family:monospace;color:#dc2626;font-weight:700">'+_escHTML(d.lote||'')+'</span></div>'+
+        '<div><b>SKU</b><br>'+_escHTML(d.sku||'—')+'</div>'+
+        '<div><b>Unidades</b><br><span style="font-size:18px;font-weight:800;color:#0d47a1">'+(d.unidades_producidas||0)+'</span></div>'+
+        '<div><b>Batch</b><br>'+(d.cantidad_batch_g||0)+' g</div>'+
+        '<div><b>Presentación</b><br>'+_escHTML(d.presentacion||'—')+'</div>'+
+        '<div><b>Fecha</b><br>'+_escHTML((d.fecha||'').substring(0,16))+'</div>'+
+        '<div><b>Operador</b><br>'+_escHTML(d.operador||'—')+'</div>'+
+      '</div>'+
+      '<h4 style="margin:14px 0 6px;color:#475569;font-size:13px">📦 MEE consumido</h4>'+
+      '<table class="table" style="font-size:11px"><thead><tr><th>Código</th><th>Descripción</th><th style="text-align:right">Unidades</th></tr></thead><tbody>'+
+        (meeRows || '<tr><td colspan="3" style="text-align:center;color:#94a3b8">Sin MEE registrados</td></tr>')+
+      '</tbody></table>'+
+      (d.observaciones ? '<div style="margin-top:12px;padding:8px;background:#fef3c7;border-left:3px solid #ca8a04;font-size:12px"><b>Observaciones:</b><br>'+_escHTML(d.observaciones)+'</div>' : '')+
+      '</div>';
+    document.body.appendChild(div);
+    document.getElementById('ac-det-close').onclick = function(){ div.remove(); };
+    div.addEventListener('click', function(e){ if(e.target === div) div.remove(); });
+  }catch(e){ alert('Error red: '+e.message); }
 }
 
 /* ============================================================

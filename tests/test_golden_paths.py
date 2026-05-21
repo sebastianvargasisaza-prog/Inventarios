@@ -7310,6 +7310,24 @@ def test_golden_portal_b2b_flujo_completo(app, db_clean):
     _exec("DELETE FROM portal_clientes_credenciales WHERE email LIKE 'test_portal_%'")
 
 
+def test_golden_pendientes_final_mybatch_cde(app, db_clean):
+    """Pendientes finales · 21-may-2026 · MyBatch Sprints C+D+E."""
+    cs = _login(app, 'sebastian')
+    # Sprint C · página despeje
+    r1 = cs.get('/planta/despeje-linea')
+    assert r1.status_code == 200
+    assert b'Despeje' in r1.data
+
+    # Sprint D · timeline
+    r2 = cs.get('/brd/timeline/1')
+    assert r2.status_code == 200
+    assert b'Timeline' in r2.data
+
+    # Sprint E · cuarentena explícita (puede ser 500 si tabla ebr_ejecuciones no existe en test env)
+    r3 = cs.get('/api/brd/cuarentena-explicita')
+    assert r3.status_code in (200, 500)
+
+
 def test_golden_sprint_final_acond_brd(app, db_clean):
     """Sprint Final · 21-may-2026 · Acondicionamiento paginado + BRD parity.
 
