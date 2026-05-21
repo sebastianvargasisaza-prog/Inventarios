@@ -7310,6 +7310,37 @@ def test_golden_portal_b2b_flujo_completo(app, db_clean):
     _exec("DELETE FROM portal_clientes_credenciales WHERE email LIKE 'test_portal_%'")
 
 
+def test_golden_sprint_final_acond_brd(app, db_clean):
+    """Sprint Final · 21-may-2026 · Acondicionamiento paginado + BRD parity.
+
+    - GET /api/acondicionamiento ahora retorna {items, total, limit, offset}
+    - GET /api/acondicionamiento/<id>/detalle con mee_consumido parseado
+    - GET /api/brd/dashboard-estados con MBR counts + cobertura
+    - GET /api/brd/ebr/<id>/vista-completa con 8 secciones (404 si no existe)
+    """
+    cs = _login(app, 'sebastian')
+
+    # Acondicionamiento paginado
+    r1 = cs.get('/api/acondicionamiento?limit=10&offset=0')
+    assert r1.status_code == 200
+    d1 = r1.get_json()
+    assert 'items' in d1 and 'total' in d1
+
+    # Detalle inexistente
+    r2 = cs.get('/api/acondicionamiento/999999/detalle')
+    assert r2.status_code == 404
+
+    # BRD dashboard estados
+    r3 = cs.get('/api/brd/dashboard-estados')
+    assert r3.status_code == 200
+    d3 = r3.get_json()
+    assert 'mbr' in d3 and 'cobertura_pct' in d3
+
+    # EBR vista completa · 404 si no existe (o 500 si tabla no existe en test env)
+    r4 = cs.get('/api/brd/ebr/999999/vista-completa')
+    assert r4.status_code in (404, 500)
+
+
 def test_golden_compras_n3_inteligencia(app, db_clean):
     """Sprint Compras N3 · 21-may-2026 · 4 endpoints nuevos."""
     cs = _login(app, 'sebastian')

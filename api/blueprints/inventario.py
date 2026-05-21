@@ -9076,12 +9076,57 @@ def acondicionamiento_list():
                        f'Consumo acondicionamiento {lote_ref}'))
         conn.commit()
         return jsonify({'ok': True, 'id': new_id}), 201
-    c.execute("""SELECT id, produccion_id, lote, producto, cantidad_batch_g, unidades_producidas,
-                        presentacion, fecha, operador, estado, observaciones
-                 FROM acondicionamiento ORDER BY creado_en DESC LIMIT 100""")
-    cols = [d[0] for d in c.description]
+    # Sprint Acondicionamiento PRO · 21-may-2026 · paginación + filtros
+    try:
+        limit = max(1, min(int(request.args.get('limit', 100)), 500))
+    except (ValueError, TypeError):
+        limit = 100
+    try:
+        offset = max(0, int(request.args.get('offset', 0)))
+    except (ValueError, TypeError):
+        offset = 0
+    q = (request.args.get('q') or '').strip()
+    where = ['1=1']
+    params = []
+    if q:
+        qesc = q.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+        where.append("(LOWER(COALESCE(producto,'')) LIKE LOWER(?) ESCAPE '\\' OR LOWER(COALESCE(lote,'')) LIKE LOWER(?) ESCAPE '\\' OR LOWER(COALESCE(operador,'')) LIKE LOWER(?) ESCAPE '\\')")
+        params += [f'%{qesc}%', f'%{qesc}%', f'%{qesc}%']
+    where_sql = ' AND '.join(where)
+    try:
+        total = int(c.execute(f"SELECT COUNT(*) FROM acondicionamiento WHERE {where_sql}", params).fetchone()[0] or 0)
+    except Exception:
+        total = 0
+    c.execute(f"""SELECT id, produccion_id, lote, producto, cantidad_batch_g, unidades_producidas,
+                        presentacion, fecha, operador, estado, observaciones, sku
+                 FROM acondicionamiento
+                 WHERE {where_sql}
+                 ORDER BY creado_en DESC, id DESC
+                 LIMIT ? OFFSET ?""", params + [limit, offset])
+    cols = [dd[0] for dd in c.description]
     rows = [dict(zip(cols, r)) for r in c.fetchall()]
-    return jsonify(rows)
+    return jsonify({'items': rows, 'total': total, 'limit': limit, 'offset': offset})
+
+
+@bp.route('/api/acondicionamiento/<int:aid>/detalle', methods=['GET'])
+def acondicionamiento_detalle(aid):
+    """Sprint Acondicionamiento PRO · detalle completo del lote."""
+    u, err, code = _require_session()
+    if err:
+        return err, code
+    conn = get_db(); c = conn.cursor()
+    row = c.execute("SELECT * FROM acondicionamiento WHERE id=?", (aid,)).fetchone()
+    if not row:
+        return jsonify({'error': 'acondicionamiento no existe'}), 404
+    cols = [dd[0] for dd in c.description]
+    info = dict(zip(cols, row))
+    # MEE consumido (JSON)
+    try:
+        import json as _j
+        info['mee_consumido_parsed'] = _j.loads(info.get('mee_consumido') or '[]')
+    except Exception:
+        info['mee_consumido_parsed'] = []
+    return jsonify(info)
 
 @bp.route('/api/acondicionamiento/<int:aid>', methods=['PATCH'])
 def acondicionamiento_update(aid):

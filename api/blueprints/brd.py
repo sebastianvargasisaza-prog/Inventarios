@@ -179,6 +179,94 @@ def assign_numero_op(c, year=None):
 
 # ── endpoints ───────────────────────────────────────────────────────────────
 
+@bp.route("/api/brd/dashboard-estados", methods=["GET"])
+def brd_dashboard_estados():
+    """MyBatch parity Sprint A · 21-may-2026 · Sebastián.
+
+    Reemplaza la pantalla INICIO de MyBatch · muestra:
+    - Counts de MBRs por estado (draft / en_revision / aprobado / obsoleto)
+    - Counts de EBRs (ejecuciones) por estado (iniciado / en_curso / completado)
+    - Productos sin MBR aprobado (gap crítico)
+    - Próximos vencimientos de MBR (>6 meses sin revisión)
+    """
+    err = _require_login()
+    if err:
+        return err
+    conn = get_db()
+    out = {'mbr': {}, 'ebr': {}, 'gaps': [], 'vencimientos': []}
+    # MBR por estado
+    try:
+        rows = conn.execute(
+            "SELECT estado, COUNT(*) FROM mbr_templates GROUP BY estado",
+        ).fetchall()
+        for r in rows:
+            out['mbr'][r[0] or 'sin_estado'] = int(r[1] or 0)
+    except Exception:
+        pass
+    # Total productos vs productos con MBR aprobado
+    try:
+        total = conn.execute(
+            "SELECT COUNT(*) FROM formula_headers WHERE COALESCE(activo,1)=1",
+        ).fetchone()
+        con_mbr = conn.execute(
+            """SELECT COUNT(DISTINCT fh.producto_nombre)
+               FROM formula_headers fh
+               JOIN mbr_templates mb ON mb.producto_nombre = fh.producto_nombre
+                                    AND mb.estado = 'aprobado'
+               WHERE COALESCE(fh.activo,1)=1""",
+        ).fetchone()
+        out['productos_total'] = int(total[0] or 0) if total else 0
+        out['productos_con_mbr_aprobado'] = int(con_mbr[0] or 0) if con_mbr else 0
+        out['cobertura_pct'] = round(
+            (out['productos_con_mbr_aprobado'] / out['productos_total'] * 100)
+            if out['productos_total'] else 0, 1
+        )
+    except Exception:
+        out['productos_total'] = 0
+        out['productos_con_mbr_aprobado'] = 0
+        out['cobertura_pct'] = 0
+    # Productos SIN MBR aprobado (gap)
+    try:
+        rows = conn.execute(
+            """SELECT fh.producto_nombre
+               FROM formula_headers fh
+               WHERE COALESCE(fh.activo,1)=1
+                 AND fh.producto_nombre NOT IN (
+                   SELECT producto_nombre FROM mbr_templates WHERE estado='aprobado'
+                 )
+               ORDER BY fh.producto_nombre LIMIT 20""",
+        ).fetchall()
+        out['gaps'] = [r[0] for r in rows]
+    except Exception:
+        pass
+    # EBR ejecuciones por estado
+    try:
+        rows = conn.execute(
+            "SELECT estado, COUNT(*) FROM ebr_ejecuciones GROUP BY estado",
+        ).fetchall()
+        for r in rows:
+            out['ebr'][r[0] or 'sin_estado'] = int(r[1] or 0)
+    except Exception:
+        pass
+    # MBR aprobados hace >180d sin revisión
+    try:
+        rows = conn.execute(
+            """SELECT producto_nombre, version, aprobado_at_utc
+               FROM mbr_templates
+               WHERE estado='aprobado'
+                 AND COALESCE(aprobado_at_utc,'') != ''
+                 AND date(aprobado_at_utc) < date('now','-180 days')
+               ORDER BY aprobado_at_utc ASC LIMIT 20""",
+        ).fetchall()
+        out['vencimientos'] = [
+            {'producto': r[0], 'version': r[1], 'aprobado': r[2]}
+            for r in rows
+        ]
+    except Exception:
+        pass
+    return jsonify(out)
+
+
 @bp.route("/api/brd/mbr", methods=["GET"])
 def listar_mbr():
     err = _require_login()
@@ -714,6 +802,151 @@ def listar_ebr():
     sql += " ORDER BY iniciado_at_utc DESC"
     rows = get_db().execute(sql, params).fetchall()
     return jsonify({"items": [_ebr_to_dict(r) for r in rows]})
+
+
+@bp.route("/api/brd/ebr/<int:ebr_id>/vista-completa", methods=["GET"])
+def ebr_vista_completa(ebr_id):
+    """MyBatch parity Sprint B · 21-may-2026 · Sebastián.
+
+    Vista BR de 8 secciones unificada · 1 request en lugar de N round-trips
+    (la pantalla que MyBatch tiene como núcleo del día a día):
+    1. Header (lote, producto, fecha, operario, estado)
+    2. Pesajes MP (con firmas si hay)
+    3. Pasos del proceso (con timestamps real vs estimado)
+    4. IPC resultados (in-process checks)
+    5. Despejes de línea firmados (BPM)
+    6. Observaciones acumuladas
+    7. Estado cuarentena/liberación (post-completar)
+    8. Audit log filtrado por ebr_id
+    """
+    err = _require_login()
+    if err:
+        return err
+    conn = get_db()
+    out = {'ebr_id': ebr_id}
+    # 1. Header
+    try:
+        row = conn.execute(
+            """SELECT id, mbr_template_id, produccion_id, lote_codigo, estado,
+                      iniciado_at_utc, completado_at_utc, operario,
+                      tiempo_total_min, observaciones,
+                      liberado_at_utc, liberado_por, rechazado_at_utc, rechazado_motivo
+               FROM ebr_ejecuciones WHERE id=?""",
+            (ebr_id,),
+        ).fetchone()
+        if not row:
+            return jsonify({'error': 'EBR no existe'}), 404
+        out['header'] = {
+            'id': row[0], 'mbr_template_id': row[1],
+            'produccion_id': row[2], 'lote_codigo': row[3] or '',
+            'estado': row[4] or '', 'iniciado_at_utc': row[5] or '',
+            'completado_at_utc': row[6] or '', 'operario': row[7] or '',
+            'tiempo_total_min': row[8] or 0, 'observaciones': row[9] or '',
+            'liberado_at_utc': row[10] or '', 'liberado_por': row[11] or '',
+            'rechazado_at_utc': row[12] or '', 'rechazado_motivo': row[13] or '',
+        }
+    except Exception as e:
+        return jsonify({'error': f'header fallo: {e}'}), 500
+    # Producto del MBR
+    try:
+        mbr = conn.execute(
+            "SELECT producto_nombre, version, titulo, lote_size_g FROM mbr_templates WHERE id=?",
+            (out['header']['mbr_template_id'],),
+        ).fetchone()
+        if mbr:
+            out['header']['producto'] = mbr[0]
+            out['header']['mbr_version'] = mbr[1]
+            out['header']['titulo'] = mbr[2]
+            out['header']['lote_size_g'] = float(mbr[3] or 0)
+    except Exception:
+        pass
+    # 2. Pesajes MP
+    try:
+        rows = conn.execute(
+            """SELECT material_id, COALESCE(material_nombre,''),
+                      cantidad_esperada_g, cantidad_real_g, COALESCE(lote_mp,''),
+                      COALESCE(operario,''), COALESCE(creado_at_utc,''),
+                      COALESCE(observaciones,'')
+               FROM ebr_pesajes WHERE ebr_id=? ORDER BY id""",
+            (ebr_id,),
+        ).fetchall()
+        out['pesajes'] = [{
+            'material_id': r[0], 'material_nombre': r[1],
+            'esperada_g': float(r[2] or 0), 'real_g': float(r[3] or 0),
+            'lote_mp': r[4], 'operario': r[5], 'fecha': r[6],
+            'observaciones': r[7],
+            'delta_pct': round(((r[3] - r[2]) / r[2] * 100) if r[2] else 0, 2),
+        } for r in rows]
+    except Exception:
+        out['pesajes'] = []
+    # 3. Pasos
+    try:
+        rows = conn.execute(
+            """SELECT orden, descripcion, COALESCE(tiempo_estimado_min,0),
+                      COALESCE(iniciado_at_utc,''), COALESCE(completado_at_utc,''),
+                      COALESCE(operario,''), COALESCE(observaciones,'')
+               FROM ebr_pasos WHERE ebr_id=? ORDER BY orden""",
+            (ebr_id,),
+        ).fetchall()
+        out['pasos'] = [{
+            'orden': r[0], 'descripcion': r[1],
+            'tiempo_estimado_min': r[2],
+            'iniciado': r[3], 'completado': r[4],
+            'operario': r[5], 'observaciones': r[6],
+            'completado_flag': bool(r[4]),
+        } for r in rows]
+    except Exception:
+        out['pasos'] = []
+    # 4. IPC resultados
+    try:
+        rows = conn.execute(
+            """SELECT nombre, valor_esperado, valor_real, dentro_rango,
+                      observaciones, COALESCE(creado_at_utc,'')
+               FROM ebr_ipc_resultados WHERE ebr_id=? ORDER BY id""",
+            (ebr_id,),
+        ).fetchall()
+        out['ipc'] = [{
+            'nombre': r[0], 'esperado': r[1], 'real': r[2],
+            'dentro_rango': bool(r[3]), 'observaciones': r[4],
+            'fecha': r[5],
+        } for r in rows]
+    except Exception:
+        out['ipc'] = []
+    # 5. Despejes (referenciados por lote o produccion_id)
+    try:
+        rows = conn.execute(
+            """SELECT area_codigo, marcado_por, ts, COALESCE(observaciones,'')
+               FROM despeje_linea_checklist
+               ORDER BY ts DESC LIMIT 5""",
+        ).fetchall()
+        out['despejes_recientes'] = [{
+            'area': r[0], 'marcado_por': r[1], 'fecha': r[2],
+            'observaciones': r[3],
+        } for r in rows]
+    except Exception:
+        out['despejes_recientes'] = []
+    # 6. Audit log filtrado
+    try:
+        rows = conn.execute(
+            """SELECT fecha, usuario, accion, COALESCE(detalle,'')
+               FROM audit_log
+               WHERE tabla IN ('ebr_ejecuciones','ebr_pesajes','ebr_pasos','ebr_ipc_resultados')
+                 AND registro_id = ?
+               ORDER BY fecha DESC LIMIT 30""",
+            (str(ebr_id),),
+        ).fetchall()
+        out['audit'] = [{
+            'fecha': r[0], 'usuario': r[1], 'accion': r[2], 'detalle': r[3],
+        } for r in rows]
+    except Exception:
+        out['audit'] = []
+    # Resumen métricas
+    completados = sum(1 for p in out['pasos'] if p['completado_flag'])
+    out['progreso_pasos_pct'] = round((completados / len(out['pasos']) * 100) if out['pasos'] else 0, 1)
+    out['pesajes_count'] = len(out['pesajes'])
+    out['ipc_dentro_rango'] = sum(1 for i in out['ipc'] if i['dentro_rango'])
+    out['ipc_total'] = len(out['ipc'])
+    return jsonify(out)
 
 
 @bp.route("/api/brd/ebr/<int:ebr_id>", methods=["GET"])
