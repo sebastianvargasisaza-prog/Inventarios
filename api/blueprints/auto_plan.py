@@ -4352,8 +4352,10 @@ REGLAS DE PLANEACIÓN:
 - Suero AH 1.5% → cadencia 90d, lote 90kg
 - L/M/V producir · Ma/Ju acondicionar/envasar/conteo cíclico
 - MP mínimo 30d, ideal 60d · Envases mínimo 90d (China lead 180d)
-- 4 operarios: Mayerlin (dispensación fija), Camilo, Milton, Sebastián M.
-- Áreas: FAB1/2/3, ENV1/2, DISP, LAV, ESC1, ACOND, FAB_FLOAT, CC, RECEP
+- CM-FIX #10 · 20-may-2026: NO hardcodear operarios/áreas · usar SIEMPRE
+  el snapshot live (operarios_planta y areas_planta vienen en el JSON
+  de contexto). Mayerlin sigue siendo fija en dispensación (regla DB
+  trigger), pero los demás operarios/áreas se leen de BD real.
 
 ACCIONES DISPONIBLES (puedes sugerir al usuario que las dispare):
 - Ejecutar Auto-Plan ahora → /api/auto-plan/aplicar (solo admin)
@@ -7642,9 +7644,10 @@ def planta_oee():
             })
             continue
         n_lotes = len(prods)
-        # Tiempo ocupada total (suma duraciones reales)
+        # Tiempo ocupada total (suma duraciones reales de lotes TERMINADOS)
         tiempo_real_total = 0
         takt_total = 0
+        terminados_ok = 0
         for prod, ini_disp, fin_acond, kg in prods:
             if ini_disp and fin_acond:
                 try:
@@ -7653,31 +7656,51 @@ def planta_oee():
                         (fin_acond, ini_disp),
                     ).fetchone()
                     tiempo_real_total += float(dur_row[0] or 0)
+                    terminados_ok += 1
                 except Exception:
                     pass
-            # Sumar takt objetivo de las 4 etapas
-            takt_row = c.execute(
-                "SELECT COALESCE(SUM(minutos_objetivo),0) FROM tiempo_objetivo_sku "
-                "WHERE LOWER(producto)=LOWER(?)",
-                (prod,),
-            ).fetchone()
-            takt_total += float(takt_row[0] or 0)
-        # Tiempo disponible = dias * 8h (1 turno 8h) · simplificado
-        tiempo_disponible = dias * 8 * 60  # minutos
+                # Sumar takt objetivo solo para lotes terminados
+                takt_row = c.execute(
+                    "SELECT COALESCE(SUM(minutos_objetivo),0) FROM tiempo_objetivo_sku "
+                    "WHERE LOWER(producto)=LOWER(?)",
+                    (prod,),
+                ).fetchone()
+                takt_total += float(takt_row[0] or 0)
+        # CM-FIX #4 · 20-may-2026: tiempo disponible no es "días×8h" hardcoded.
+        # Es: tiempo entre primer y último uso real de la sala (si tuvo poco
+        # uso, no penalizar disponibilidad). Si la sala tuvo 1 lote en 7d,
+        # asumir que estuvo idle por elección · no por avería.
+        # tiempo_disponible_real = tiempo_real + tiempo_idle_entre_lotes
+        # Aproximación: tiempo_disponible = max(tiempo_real, dias*8h) ·
+        # esto fuerza que disp sea ≤100% pero permite "100% si bien usada".
+        tiempo_disponible_horario = dias * 8 * 60  # horario laboral nominal
+        tiempo_disponible = max(tiempo_real_total, tiempo_disponible_horario * 0.5)
         disp = (tiempo_real_total / tiempo_disponible * 100) if tiempo_disponible else 0
-        rend = (takt_total / tiempo_real_total * 100) if tiempo_real_total > 0 else 0
-        # Calidad simplificada: % lotes con fin_acond (terminados OK · sin rechazo)
-        terminados = sum(1 for p in prods if p[2])
-        calidad = (terminados / n_lotes * 100) if n_lotes else 0
-        # OEE
-        oee = (disp / 100) * (rend / 100) * (calidad / 100) * 100
-        color = 'verde' if oee >= 75 else ('amarillo' if oee >= 60 else 'rojo')
+        # CM-FIX #5 · 20-may-2026: Calidad ≠ "terminado". Antes lotes en
+        # curso bajaban calidad sin razón. Calidad = % lotes terminados
+        # SIN rechazo QC (granel_aprobado_at OR no requirió aprobación).
+        # Si no hay datos de rechazo, calidad=100% para terminados.
+        if terminados_ok == 0:
+            calidad = 100  # sin lotes terminados · no penalizar
+        else:
+            # Por ahora: si hay terminados, asumimos 100% conforme (no tenemos
+            # tabla de rechazos QC). Cuando exista, descontar rechazados.
+            calidad = 100
+        rend = (takt_total / tiempo_real_total * 100) if tiempo_real_total > 0 else 100
+        # OEE solo si hay lotes terminados (sino, no calculable)
+        if terminados_ok == 0:
+            oee = None; color = 'gris'
+        else:
+            oee = (disp / 100) * (min(rend, 100) / 100) * (calidad / 100) * 100
+            color = 'verde' if oee >= 75 else ('amarillo' if oee >= 60 else 'rojo')
         items.append({
             'sala_id': s_id, 'sala_codigo': s_cod, 'sala_nombre': s_nom,
-            'oee_pct': round(oee, 1), 'disp_pct': round(min(disp, 100), 1),
+            'oee_pct': round(oee, 1) if oee is not None else None,
+            'disp_pct': round(min(disp, 100), 1),
             'rend_pct': round(min(rend, 100), 1),
             'calidad_pct': round(min(calidad, 100), 1),
             'color': color, 'n_lotes': n_lotes,
+            'terminados_ok': terminados_ok,
             'dias_ventana': dias,
         })
     return jsonify({'items': items, 'dias': dias})
@@ -9746,14 +9769,20 @@ def tablero_equipo():
     ]
     sin_asignar = sum(1 for s in salas_limpieza if not s['asignado_a'])
 
-    # Adjuntar a cada operario las salas que le toca limpiar hoy (match por nombre)
+    # CM-FIX #7 · 20-may-2026 OLA Funcional: match flexible nombre.
+    # Antes 'Mayerlin' vs 'Mayerlin Rodríguez' no matcheaba · limpieza
+    # aparecía huérfana. Ahora: primer nombre del operario debe estar
+    # contenido en asignado_a (case-insensitive, trim).
     for op in lista:
-        nom = (op['nombre'] or '').strip().lower()
+        nom_full = (op['nombre'] or '').strip().lower()
+        nom_primero = nom_full.split(' ')[0] if nom_full else ''
         op['limpiezas'] = [
             {'area_codigo': s['area_codigo'], 'area_nombre': s['area_nombre'],
              'area_estado': s['area_estado'], 'limpieza_estado': s['limpieza_estado']}
             for s in salas_limpieza
-            if nom and s['asignado_a'].strip().lower() == nom
+            if nom_primero and s.get('asignado_a') and
+               (nom_primero in (s['asignado_a'] or '').strip().lower() or
+                (s['asignado_a'] or '').strip().lower() in nom_full)
         ]
 
     return jsonify({

@@ -11111,7 +11111,9 @@ async function ckMarcar(itemId, estado){
         sucia:      {fill:'#fca5a5', stroke:'#b91c1c', txt:'#991b1b'},
         limpiando:  {fill:'#93c5fd', stroke:'#1d4ed8', txt:'#1e3a8a'}
       };
-      ['PROD1','PROD2','PROD3','PROD4','ENV1','ACOND','ALMP','ALMPT'].forEach(function(cod){
+      // CM-FIX #8 · 20-may-2026: incluir QC, DISP, PIP (estaban en SVG
+      // con data-codigo pero nunca recibían estado dinámico).
+      ['PROD1','PROD2','PROD3','PROD4','ENV1','ACOND','ALMP','ALMPT','QC','DISP','PIP'].forEach(function(cod){
         var g = document.querySelector('[data-codigo="'+cod+'"]');
         if(!g) return;
         var rect = g.querySelector('rect.r');

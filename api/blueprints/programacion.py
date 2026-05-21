@@ -4014,8 +4014,12 @@ def planta_centro_mando():
             LEFT JOIN operarios_planta o4 ON o4.id = pp.operario_acondicionamiento_id
             WHERE date(pp.fecha_programada) BETWEEN ? AND ?
               AND COALESCE(pp.estado, 'programado') != 'cancelado'
-              AND (pp.inicio_real_at IS NOT NULL
-                   OR COALESCE(pp.estado, 'programado') IN ('en_proceso','iniciado','completado'))
+            -- CM-FIX #2 · 20-may-2026 OLA Funcional: SACAR el filtro
+            -- inicio_real_at NOT NULL OR estado IN(en_proceso, ...). Antes
+            -- las Fijas (eos_plan) que el usuario arrastró pero no inició
+            -- NO aparecían en las cards · pérdida de visibilidad real.
+            -- Ahora muestra TODO lo programado del horizonte (excepto
+            -- canceladas) · estado='programado' es válido.
             ORDER BY pp.fecha_programada, pp.id
         """, (fechas_horizonte[0].isoformat(), fechas_horizonte[-1].isoformat())).fetchall()
         productos_db_por_fecha = set()  # (fecha, producto_upper)
@@ -4127,16 +4131,26 @@ def planta_centro_mando():
                     continue
                 productos_calendar_por_fecha.add(key_cal)
                 kg = _parsear_kg_evento(ev.get('titulo'), ev.get('descripcion','')) or 0
-                ops = _ops_para(producto_final, f_ev)
+                # CM-FIX #3 · 20-may-2026 OLA Funcional · _ops_para()
+                # INVENTABA operarios por hash determinístico · NO eran
+                # persistidos · usuario veía "Mayerlin · Camilo" en card
+                # que NUNCA se guardó. Ahora mostramos vacíos · cuando el
+                # operario abre la card y aprieta "Iniciar (Calendar)" se
+                # crea la fila DB con sus operarios reales (auto-asignación
+                # honesta, no inventada).
                 producciones_dia.append({
                     'id': None, 'producto': producto_final,
                     'kg': kg, 'lotes': 1,
                     'estado': 'planeado', 'fecha': f_ev,
                     'area': {'codigo': '', 'nombre': ''},
-                    'operarios': ops,
+                    'operarios': {
+                        'dispensacion': '', 'elaboracion': '',
+                        'envasado': '', 'acondicionamiento': '',
+                    },
                     'accion': 'iniciar_calendar',
                     'accion_label': '▶ Iniciar (Calendar)',
                     'desde_calendar': True,
+                    'operarios_no_persistidos': True,  # señal a UI
                     'tiene_match_sku': tiene_match_sku,
                     'titulo_calendar': titulo_orig[:120],
                     'payload_iniciar': {
@@ -4258,6 +4272,12 @@ def planta_centro_mando():
             'producciones_dia_pendientes': sum(1 for p in producciones_dia
                                                   if p['estado'] in ('planeado','programado')),
             'auto_canceladas': auto_canceladas,
+            # CM-FIX #6 · 20-may-2026: explicitar fecha de los KPIs.
+            # 'activas_ahora' y 'terminadas_hoy' SIEMPRE son LIVE (no
+            # respetan fecha_sel) · evita confusión cuando el usuario
+            # navega días futuros desde el selector.
+            'kpis_fecha': hoy,
+            'kpis_son_live': True,
         },
         'producciones_dia': producciones_dia,
         'producciones_diag': {
