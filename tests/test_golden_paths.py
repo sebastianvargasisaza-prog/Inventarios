@@ -7310,6 +7310,31 @@ def test_golden_portal_b2b_flujo_completo(app, db_clean):
     _exec("DELETE FROM portal_clientes_credenciales WHERE email LIKE 'test_portal_%'")
 
 
+def test_golden_ola3_eta_oee_mass_audit(app, db_clean):
+    """OLA 3 · ETA + OEE + Mass balance + Auditoría sorpresa PDF."""
+    cs = _login(app, 'sebastian')
+
+    # ETA · sin producciones activas devuelve vacío
+    r1 = cs.get('/api/planta/kanban-eta')
+    assert r1.status_code == 200
+    assert 'items' in r1.get_json()
+
+    # OEE
+    r2 = cs.get('/api/planta/oee?dias=7')
+    assert r2.status_code == 200
+    d2 = r2.get_json()
+    assert 'items' in d2 and 'dias' in d2
+
+    # Mass balance · pid inexistente → 404
+    r3 = cs.get('/api/planta/mass-balance/999999')
+    assert r3.status_code == 404
+
+    # Auditoría sorpresa · HTML 200
+    r4 = cs.get('/api/planta/auditoria-sorpresa-pdf?horas=24')
+    assert r4.status_code == 200
+    assert b'Auditor' in r4.data  # contiene "Auditoría"
+
+
 def test_golden_ola3_asistente_operacion(app, db_clean):
     """OLA 3 IA · "Pregúntale a la planta".
 

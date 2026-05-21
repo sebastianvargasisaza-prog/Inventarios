@@ -7507,6 +7507,394 @@ def mi_dia():
 # OLA 2 Op Live · 20-may-2026 · Andon + Takt + IA quick wins
 # ────────────────────────────────────────────────────────────────────
 
+@bp.route('/api/planta/kanban-eta', methods=['GET'])
+def planta_kanban_eta():
+    """OLA 3 · ETA + riesgo de retraso por lote en curso.
+
+    Para cada producción con inicio_real_at sin fin_real_at:
+    - Calcula minutos transcurridos en etapa actual
+    - Compara contra tiempo_objetivo_sku (o p50 histórico)
+    - Devuelve: etapa_actual, transcurridos_min, objetivo_min,
+      eta_minutos (cuánto le falta), riesgo_pct (0-100)
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    # Producciones activas
+    rows = c.execute(
+        """SELECT id, producto, COALESCE(area_id,0),
+                  COALESCE(etapa_disp_inicio_at,''), COALESCE(etapa_disp_fin_at,''),
+                  COALESCE(etapa_elab_inicio_at,''), COALESCE(etapa_elab_fin_at,''),
+                  COALESCE(etapa_env_inicio_at,''),  COALESCE(etapa_env_fin_at,''),
+                  COALESCE(etapa_acond_inicio_at,''), COALESCE(etapa_acond_fin_at,'')
+           FROM produccion_programada
+           WHERE inicio_real_at IS NOT NULL AND fin_real_at IS NULL
+             AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado')
+           ORDER BY inicio_real_at""",
+    ).fetchall()
+    ETAPAS = ['dispensacion','elaboracion','envasado','acondicionamiento']
+    items = []
+    for r in rows:
+        pid, prod, area_id = r[0], r[1], r[2]
+        etapas_data = [
+            ('dispensacion', r[3], r[4]),
+            ('elaboracion', r[5], r[6]),
+            ('envasado', r[7], r[8]),
+            ('acondicionamiento', r[9], r[10]),
+        ]
+        # Encontrar etapa actual (la más reciente iniciada sin terminar)
+        etapa_actual = None
+        ini_act = None
+        for etapa, ini, fin in etapas_data:
+            if ini and not fin:
+                etapa_actual = etapa
+                ini_act = ini
+                break
+        if not etapa_actual:
+            continue
+        # Minutos transcurridos
+        try:
+            transc_row = c.execute(
+                "SELECT (julianday('now','-5 hours') - julianday(?)) * 24 * 60",
+                (ini_act,),
+            ).fetchone()
+            transcurridos = float(transc_row[0] or 0)
+        except Exception:
+            transcurridos = 0
+        # Buscar objetivo (preferir minutos_objetivo · fallback p50 · fallback 60)
+        obj_row = c.execute(
+            """SELECT minutos_objetivo, minutos_p50_historico, minutos_p90_historico
+               FROM tiempo_objetivo_sku
+               WHERE LOWER(producto)=LOWER(?) AND etapa=?""",
+            (prod, etapa_actual),
+        ).fetchone()
+        if obj_row and obj_row[0]:
+            objetivo = float(obj_row[0])
+            p90 = float(obj_row[2] or obj_row[0] * 1.5)
+        elif obj_row and obj_row[1]:
+            objetivo = float(obj_row[1])
+            p90 = float(obj_row[2] or obj_row[1] * 1.5)
+        else:
+            objetivo = 60
+            p90 = 90
+        eta_min = max(0, objetivo - transcurridos)
+        # Riesgo: 0% si transc < obj · 50% si transc = obj · 100% si transc >= p90
+        if transcurridos < objetivo:
+            riesgo = min(50, int(transcurridos / objetivo * 50))
+        else:
+            rango = max(1, p90 - objetivo)
+            extra = transcurridos - objetivo
+            riesgo = min(100, 50 + int(extra / rango * 50))
+        items.append({
+            'pid': pid, 'producto': prod, 'area_id': area_id,
+            'etapa_actual': etapa_actual,
+            'transcurridos_min': round(transcurridos, 1),
+            'objetivo_min': round(objetivo, 1),
+            'p90_min': round(p90, 1),
+            'eta_minutos_restantes': round(eta_min, 1),
+            'riesgo_pct': riesgo,
+        })
+    return jsonify({'items': items, 'total': len(items)})
+
+
+@bp.route('/api/planta/oee', methods=['GET'])
+def planta_oee():
+    """OLA 3 · OEE (Overall Equipment Effectiveness) por sala últimos 7 días.
+
+    OEE = Disponibilidad × Rendimiento × Calidad
+      Disponibilidad = tiempo_ocupada / tiempo_total
+      Rendimiento = takt_total / tiempo_ocupada_real
+      Calidad = (1 - merma_pct/100)  · simplificado por ahora
+
+    Returns: por sala · oee, disp, rend, cal, color (verde/amarillo/rojo)
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    try:
+        dias = max(1, min(int(request.args.get('dias', 7)), 90))
+    except (ValueError, TypeError):
+        dias = 7
+    # Salas activas de producción
+    salas = c.execute(
+        "SELECT id, codigo, nombre FROM areas_planta "
+        "WHERE COALESCE(activo,1)=1 AND tipo='produccion'",
+    ).fetchall()
+    items = []
+    for s_id, s_cod, s_nom in salas:
+        # Producciones que pasaron por esta sala últimos N días
+        prods = c.execute(
+            f"""SELECT producto,
+                      COALESCE(etapa_disp_inicio_at,''), COALESCE(etapa_acond_fin_at,''),
+                      COALESCE(kg_real, cantidad_kg, 0)
+               FROM produccion_programada
+               WHERE area_id = ?
+                 AND date(fecha_programada) >= date('now','-5 hours','-{int(dias)} days')
+                 AND inicio_real_at IS NOT NULL""",
+            (s_id,),
+        ).fetchall()
+        if not prods:
+            items.append({
+                'sala_id': s_id, 'sala_codigo': s_cod, 'sala_nombre': s_nom,
+                'oee_pct': None, 'disp_pct': None, 'rend_pct': None,
+                'calidad_pct': None, 'color': 'gris', 'n_lotes': 0,
+                'mensaje': 'sin lotes en ventana',
+            })
+            continue
+        n_lotes = len(prods)
+        # Tiempo ocupada total (suma duraciones reales)
+        tiempo_real_total = 0
+        takt_total = 0
+        for prod, ini_disp, fin_acond, kg in prods:
+            if ini_disp and fin_acond:
+                try:
+                    dur_row = c.execute(
+                        "SELECT (julianday(?) - julianday(?)) * 24 * 60",
+                        (fin_acond, ini_disp),
+                    ).fetchone()
+                    tiempo_real_total += float(dur_row[0] or 0)
+                except Exception:
+                    pass
+            # Sumar takt objetivo de las 4 etapas
+            takt_row = c.execute(
+                "SELECT COALESCE(SUM(minutos_objetivo),0) FROM tiempo_objetivo_sku "
+                "WHERE LOWER(producto)=LOWER(?)",
+                (prod,),
+            ).fetchone()
+            takt_total += float(takt_row[0] or 0)
+        # Tiempo disponible = dias * 8h (1 turno 8h) · simplificado
+        tiempo_disponible = dias * 8 * 60  # minutos
+        disp = (tiempo_real_total / tiempo_disponible * 100) if tiempo_disponible else 0
+        rend = (takt_total / tiempo_real_total * 100) if tiempo_real_total > 0 else 0
+        # Calidad simplificada: % lotes con fin_acond (terminados OK · sin rechazo)
+        terminados = sum(1 for p in prods if p[2])
+        calidad = (terminados / n_lotes * 100) if n_lotes else 0
+        # OEE
+        oee = (disp / 100) * (rend / 100) * (calidad / 100) * 100
+        color = 'verde' if oee >= 75 else ('amarillo' if oee >= 60 else 'rojo')
+        items.append({
+            'sala_id': s_id, 'sala_codigo': s_cod, 'sala_nombre': s_nom,
+            'oee_pct': round(oee, 1), 'disp_pct': round(min(disp, 100), 1),
+            'rend_pct': round(min(rend, 100), 1),
+            'calidad_pct': round(min(calidad, 100), 1),
+            'color': color, 'n_lotes': n_lotes,
+            'dias_ventana': dias,
+        })
+    return jsonify({'items': items, 'dias': dias})
+
+
+@bp.route('/api/planta/mass-balance/<int:pid>', methods=['GET'])
+def planta_mass_balance(pid):
+    """OLA 3 · Trazabilidad reverse (mass balance) de un lote PT.
+
+    Devuelve árbol: lote_pt → ebr → pesajes MP (cada uno con lote MP,
+    cantidad, operario, fecha, firmas). INVIMA y B2B Fernando lo piden.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    pp = c.execute(
+        """SELECT id, producto, COALESCE(cantidad_kg,0), COALESCE(kg_real,0),
+                  estado, COALESCE(fecha_programada,''),
+                  COALESCE(inicio_real_at,''), COALESCE(fin_real_at,''),
+                  COALESCE(granel_aprobado_at,''),
+                  COALESCE(granel_aprobado_por,'')
+           FROM produccion_programada WHERE id=?""",
+        (pid,),
+    ).fetchone()
+    if not pp:
+        return jsonify({'error': 'producción no existe'}), 404
+    out = {
+        'pid': pid, 'producto': pp[1], 'cantidad_kg': pp[2],
+        'kg_real': pp[3], 'estado': pp[4], 'fecha': pp[5],
+        'inicio': pp[6], 'fin': pp[7],
+        'granel_aprobado_at': pp[8], 'granel_aprobado_por': pp[9],
+    }
+    # EBR vinculado
+    try:
+        ebr_row = c.execute(
+            """SELECT id, lote_codigo, estado, iniciado_at_utc, completado_at_utc
+               FROM ebr_ejecuciones WHERE produccion_id=? ORDER BY id DESC LIMIT 1""",
+            (pid,),
+        ).fetchone()
+        if ebr_row:
+            out['ebr'] = {
+                'id': ebr_row[0], 'lote': ebr_row[1] or '',
+                'estado': ebr_row[2] or '', 'iniciado': ebr_row[3] or '',
+                'completado': ebr_row[4] or '',
+            }
+            # Pesajes MP del EBR
+            try:
+                pesajes = c.execute(
+                    """SELECT material_id, COALESCE(material_nombre,''),
+                              cantidad_real_g, COALESCE(lote_mp,''),
+                              COALESCE(operario,''), COALESCE(creado_at_utc,'')
+                       FROM ebr_pesajes WHERE ebr_id=? ORDER BY id""",
+                    (ebr_row[0],),
+                ).fetchall()
+                out['ebr']['pesajes_mp'] = [{
+                    'material_id': p[0], 'material_nombre': p[1],
+                    'cantidad_real_g': float(p[2] or 0),
+                    'lote_mp': p[3], 'operario': p[4],
+                    'creado_at': p[5],
+                } for p in pesajes]
+            except Exception:
+                out['ebr']['pesajes_mp'] = []
+        else:
+            out['ebr'] = None
+    except Exception:
+        out['ebr'] = None
+    # Movimientos de salida del kardex vinculados a esta producción
+    try:
+        movs = c.execute(
+            """SELECT material_id, COALESCE(material_nombre,''), cantidad,
+                      COALESCE(lote,''), COALESCE(fecha,'')
+               FROM movimientos
+               WHERE tipo='Salida'
+                 AND (observaciones LIKE ? OR observaciones LIKE ?)
+               ORDER BY id LIMIT 100""",
+            (f'%producci%n {pid}%', f'%prod #{pid}%'),
+        ).fetchall()
+        out['movimientos_salida'] = [{
+            'material_id': m[0], 'material_nombre': m[1],
+            'cantidad_g': float(m[2] or 0),
+            'lote_mp': m[3], 'fecha': m[4],
+        } for m in movs]
+    except Exception:
+        out['movimientos_salida'] = []
+    return jsonify(out)
+
+
+@bp.route('/api/planta/auditoria-sorpresa-pdf', methods=['GET'])
+def planta_auditoria_sorpresa_pdf():
+    """OLA 3 · Modo "Auditoría sorpresa" · genera PDF/HTML imprimible
+    con las últimas 48h de actividad de planta · INVIMA-ready.
+
+    Devuelve HTML que el browser puede imprimir → PDF · más simple que
+    generar PDF binario (Render no tiene LibreOffice). Sebastián abre la
+    puerta a INVIMA con esto.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    try:
+        horas = max(1, min(int(request.args.get('horas', 48)), 168))
+    except (ValueError, TypeError):
+        horas = 48
+    # Eventos del kardex + producciones + andon + despeje
+    movs = c.execute(
+        f"""SELECT id, material_id, COALESCE(material_nombre,''), cantidad,
+                   tipo, COALESCE(lote,''), fecha, COALESCE(operador,''),
+                   COALESCE(observaciones,'')
+            FROM movimientos
+            WHERE fecha >= datetime('now','-5 hours','-{int(horas)} hours')
+            ORDER BY fecha DESC LIMIT 500""",
+    ).fetchall()
+    prods = c.execute(
+        f"""SELECT id, producto, COALESCE(cantidad_kg,0), estado,
+                   COALESCE(inicio_real_at,''), COALESCE(fin_real_at,''),
+                   COALESCE(granel_aprobado_at,''), COALESCE(granel_aprobado_por,'')
+            FROM produccion_programada
+            WHERE (inicio_real_at >= datetime('now','-5 hours','-{int(horas)} hours')
+                   OR fin_real_at >= datetime('now','-5 hours','-{int(horas)} hours'))
+            ORDER BY COALESCE(fin_real_at, inicio_real_at) DESC LIMIT 100""",
+    ).fetchall()
+    andon = []
+    try:
+        andon = c.execute(
+            f"""SELECT tipo, operario, descripcion, estado, ts_abierta,
+                       COALESCE(resolucion,''), COALESCE(ts_resuelta,'')
+                FROM andon_alertas
+                WHERE ts_abierta >= datetime('now','utc','-{int(horas)} hours')
+                ORDER BY ts_abierta DESC LIMIT 100""",
+        ).fetchall()
+    except Exception:
+        pass
+    despejes = []
+    try:
+        despejes = c.execute(
+            f"""SELECT area_codigo, marcado_por, ts, COALESCE(observaciones,'')
+                FROM despeje_linea_checklist
+                WHERE ts >= datetime('now','utc','-{int(horas)} hours')
+                ORDER BY ts DESC LIMIT 100""",
+        ).fetchall()
+    except Exception:
+        pass
+    audits = c.execute(
+        f"""SELECT usuario, accion, tabla, registro_id, COALESCE(detalle,''), fecha
+            FROM audit_log
+            WHERE fecha >= datetime('now','-5 hours','-{int(horas)} hours')
+            ORDER BY fecha DESC LIMIT 500""",
+    ).fetchall()
+    user = session.get('compras_user', '')
+    from datetime import datetime as _dt
+    ts_gen = _dt.now().strftime('%Y-%m-%d %H:%M')
+    def _esc(s):
+        return (str(s or '').replace('&','&amp;').replace('<','&lt;')
+                .replace('>','&gt;'))
+    html = f"""<!DOCTYPE html><html><head><meta charset="UTF-8">
+<title>Auditoría Sorpresa · últimas {horas}h · {ts_gen}</title>
+<style>
+*{{box-sizing:border-box;font-family:Arial,sans-serif}}
+body{{margin:14px;color:#1e293b;font-size:11px}}
+h1{{margin:0 0 4px;color:#0f766e;font-size:18px}}
+h2{{margin:14px 0 6px;color:#475569;font-size:13px;border-bottom:1px solid #cbd5e1;padding-bottom:3px}}
+table{{width:100%;border-collapse:collapse;font-size:10px;margin-bottom:8px}}
+th{{background:#0f766e;color:#fff;padding:4px 6px;text-align:left}}
+td{{padding:3px 6px;border-bottom:1px solid #e2e8f0}}
+.cabecera{{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #0f766e;padding-bottom:8px;margin-bottom:10px}}
+.sello{{background:#0f766e;color:#fff;padding:4px 10px;border-radius:4px;font-weight:700;font-size:10px}}
+@media print{{button{{display:none}}}}
+</style></head><body>
+<div class="cabecera">
+  <div>
+    <h1>📋 Auditoría Sorpresa · {horas}h</h1>
+    <div style="color:#64748b">Espagiria Laboratorio · ÁNIMUS Lab · Generado por <b>{_esc(user)}</b> el {ts_gen}</div>
+  </div>
+  <div class="sello">EOS · post-INVIMA abr-2026</div>
+</div>
+<button onclick="window.print()" style="background:#0f766e;color:#fff;padding:8px 16px;border:none;border-radius:5px;cursor:pointer;float:right">🖨 Imprimir / Guardar PDF</button>
+<h2>🏭 Producciones (inicio o fin en últimas {horas}h)</h2>
+<table><thead><tr><th>ID</th><th>Producto</th><th>kg</th><th>Estado</th><th>Inicio</th><th>Fin</th><th>Granel aprob.</th></tr></thead><tbody>"""
+    for r in prods:
+        html += f"<tr><td>{r[0]}</td><td>{_esc(r[1])}</td><td>{r[2]}</td><td>{_esc(r[3])}</td><td>{_esc(r[4])}</td><td>{_esc(r[5])}</td><td>{_esc(r[6])} {('· '+_esc(r[7])) if r[7] else ''}</td></tr>"
+    html += f"</tbody></table>"
+    html += f"<h2>📥📤 Movimientos de inventario · {len(movs)} en últimas {horas}h</h2>"
+    html += "<table><thead><tr><th>ID</th><th>Fecha</th><th>Tipo</th><th>Material</th><th>Lote</th><th>Cant g</th><th>Operario</th></tr></thead><tbody>"
+    for r in movs[:200]:
+        html += f"<tr><td>{r[0]}</td><td>{_esc(r[6])[:16]}</td><td>{_esc(r[4])}</td><td>{_esc(r[2])}</td><td>{_esc(r[5])}</td><td>{r[3]}</td><td>{_esc(r[7])}</td></tr>"
+    html += "</tbody></table>"
+    if andon:
+        html += f"<h2>🚨 Alertas ANDON</h2><table><thead><tr><th>Tipo</th><th>Operario</th><th>Descripción</th><th>Estado</th><th>Abierta</th><th>Resolución</th></tr></thead><tbody>"
+        for r in andon:
+            html += f"<tr><td>{_esc(r[0])}</td><td>{_esc(r[1])}</td><td>{_esc(r[2])}</td><td>{_esc(r[3])}</td><td>{_esc(r[4])[:16]}</td><td>{_esc(r[5])}</td></tr>"
+        html += "</tbody></table>"
+    if despejes:
+        html += f"<h2>🧽 Despejes de línea firmados</h2><table><thead><tr><th>Área</th><th>Marcado por</th><th>Fecha</th><th>Obs</th></tr></thead><tbody>"
+        for r in despejes:
+            html += f"<tr><td>{_esc(r[0])}</td><td>{_esc(r[1])}</td><td>{_esc(r[2])[:16]}</td><td>{_esc(r[3])}</td></tr>"
+        html += "</tbody></table>"
+    html += f"<h2>📒 Audit log completo · {len(audits)} eventos</h2>"
+    html += "<table><thead><tr><th>Fecha</th><th>Usuario</th><th>Acción</th><th>Tabla</th><th>Registro</th><th>Detalle</th></tr></thead><tbody>"
+    for r in audits[:300]:
+        html += f"<tr><td>{_esc(r[5])[:16]}</td><td>{_esc(r[0])}</td><td>{_esc(r[1])}</td><td>{_esc(r[2])}</td><td>{_esc(r[3])}</td><td>{_esc(r[4])[:200]}</td></tr>"
+    html += "</tbody></table>"
+    html += f"<div style='margin-top:20px;font-size:9px;color:#94a3b8'>Documento generado automáticamente · EOS · {ts_gen} · usuario {_esc(user)}</div>"
+    html += "</body></html>"
+    # audit
+    try:
+        audit_log(c, usuario=user, accion='AUDITORIA_SORPRESA_GENERADA',
+                  tabla='_', registro_id=str(horas),
+                  despues={'horas_ventana': horas, 'prods': len(prods),
+                           'movs': len(movs), 'andon': len(andon),
+                           'audits': len(audits)})
+        conn.commit()
+    except Exception:
+        pass
+    from flask import Response as _Response
+    return _Response(html, mimetype='text/html; charset=utf-8')
+
+
 @bp.route('/api/asistente/operacion', methods=['POST'])
 def asistente_operacion():
     """OLA 3 IA · 20-may-2026 · "Pregúntale a la planta".

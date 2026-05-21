@@ -8355,6 +8355,14 @@ function _renderProgramacion(d){
     <!-- KPIs en vivo -->
     <div id="cm-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:14px"></div>
 
+    <!-- OLA 3 · OEE por sala + Auditoría sorpresa -->
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
+      <div id="cm-oee-cards" style="display:flex;gap:8px;flex-wrap:wrap;flex:1"></div>
+      <a href="/api/planta/auditoria-sorpresa-pdf" target="_blank"
+        style="padding:8px 14px;background:#0f172a;color:#fff;border-radius:6px;font-size:12px;font-weight:700;text-decoration:none;white-space:nowrap"
+        title="PDF de las últimas 48h · INVIMA-ready">📋 Auditoría sorpresa</a>
+    </div>
+
     <!-- ── Equipo HOY · tablero de operarios (Sebastián 19-may-2026)
          El sueño de Alejandro: ver de un vistazo qué hace cada operario,
          en qué área y si esa área está limpia o sucia. Solo lectura. ── -->
@@ -11164,6 +11172,8 @@ async function ckMarcar(itemId, estado){
       if(typeof cmCargarEquipo === 'function') cmCargarEquipo();
       // OLA 2 · Andon panel
       if(typeof cmCargarAndon === 'function') cmCargarAndon();
+      // OLA 3 · OEE por sala
+      if(typeof cmCargarOee === 'function') cmCargarOee();
       var lu = document.getElementById('cm-last-update');
       if(lu) lu.textContent = 'actualizado ' + new Date().toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
     }catch(e){
@@ -11246,6 +11256,28 @@ async function ckMarcar(itemId, estado){
     hi.style.display = '';
     if(svg.scrollIntoView) svg.scrollIntoView({behavior:'smooth', block:'center'});
   }
+  // OLA 3 · OEE por sala
+  async function cmCargarOee(){
+    var cont = document.getElementById('cm-oee-cards');
+    if(!cont) return;
+    try{
+      var r = await fetch('/api/planta/oee?dias=7');
+      if(!r.ok) return;
+      var d = await r.json();
+      cont.innerHTML = (d.items||[]).map(function(s){
+        var pct = s.oee_pct;
+        var col = s.color==='verde'?'#16a34a':s.color==='amarillo'?'#ca8a04':s.color==='rojo'?'#dc2626':'#94a3b8';
+        var pctTxt = pct==null ? '—' : pct.toFixed(0)+'%';
+        var det = pct==null ? 'sin lotes' : ('D '+s.disp_pct+'% · R '+s.rend_pct+'% · C '+s.calidad_pct+'%');
+        return '<div style="background:#fff;border:2px solid '+col+';border-radius:8px;padding:6px 10px;min-width:120px" title="OEE 7d · '+s.n_lotes+' lotes">'+
+          '<div style="font-size:10px;color:#475569;text-transform:uppercase;font-weight:700">'+_escHTML(s.sala_codigo)+' · OEE</div>'+
+          '<div style="font-size:1.4em;font-weight:800;color:'+col+'">'+pctTxt+'</div>'+
+          '<div style="font-size:9px;color:#64748b">'+det+'</div>'+
+        '</div>';
+      }).join('');
+    }catch(e){}
+  }
+
   // OLA 2 · Andon · operario reporta problemas en vivo
   async function cmCargarAndon(){
     var panel = document.getElementById('cm-andon-panel');
