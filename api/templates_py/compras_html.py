@@ -268,6 +268,7 @@ async function cxIAPreguntar(pregunta){
       <option value="svc">Servicios</option><option value="adm">Adm</option>
       <option value="inf">Infra</option><option value="cc">CC</option>
     </select>
+    <button onclick="abrirOCRFactura()" style="padding:7px 14px;background:#7c3aed;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer" title="Subí foto de factura · la IA extrae items, totales · auto-match con OC pendiente">📤 Subir factura</button>
   </div>
   <div id="pagos-kpis" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;"></div>
   <div id="pagos-wrap">
@@ -364,6 +365,7 @@ async function cxIAPreguntar(pregunta){
   <div class="bar">
     <input type="text" id="q-prov" placeholder="Buscar proveedor..." oninput="renderProv()">
     <button class="btn bp" onclick="openModal('m-nprov')">+ Nuevo Proveedor</button>
+    <button onclick="abrirROIProveedores()" style="padding:6px 14px;background:#0e7490;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;margin-left:8px" title="Ver ROI 12 meses · cumplimiento · top por monto">📊 ROI 12m</button>
   </div>
   <div id="prov-grid" class="pg"><div class="empty">Cargando...</div></div>
 </div>
@@ -1636,6 +1638,11 @@ async function renderDashHome2(){
       }
     }
 
+    // Gap #4 · widgets Cash Flow + Predicción demanda (solo admin)
+    if(d.role === 'admin'){
+      html += '<div id="dash-extra-widgets" style="margin-top:14px;display:grid;grid-template-columns:1fr 1fr;gap:14px"></div>';
+    }
+
     // Alertas críticas (ambos roles)
     if((d.alertas_ocs_viejas||[]).length){
       html += '<div style="margin-top:14px;background:#fef2f2;border:1px solid #dc2626;border-radius:10px;padding:12px"><b style="color:#991b1b;font-size:13px">🚨 OCs autorizadas hace >10 días sin recibirse</b>';
@@ -1647,9 +1654,67 @@ async function renderDashHome2(){
     }
 
     cont.innerHTML = html;
+    // Cargar widgets extra (Cash Flow + Predicción) si admin
+    if(d.role === 'admin'){
+      cargarWidgetsExtra();
+    }
   }catch(e){
     cont.innerHTML = '<div style="color:#dc2626;padding:14px">Error: '+_esc(e.message)+'</div>';
   }
+}
+// Gap #4 · widgets Cash Flow + Predicción demanda
+async function cargarWidgetsExtra(){
+  var cont = document.getElementById('dash-extra-widgets');
+  if(!cont) return;
+  // Cash Flow
+  try{
+    var rc = await fetch('/api/compras/cash-flow');
+    var dc = await rc.json();
+    var p30 = (dc.proyecciones||[]).find(function(x){return x.dias===30;}) || {};
+    var p90 = (dc.proyecciones||[]).find(function(x){return x.dias===90;}) || {};
+    var cashHtml = '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px">'+
+      '<div style="font-weight:800;color:#0f172a;font-size:13px;margin-bottom:8px">💰 Cash Flow proyectado</div>'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:11px">'+
+      '<div style="background:#fef3c7;padding:8px;border-radius:5px"><div style="color:#78350f;font-weight:700">30 días</div><div style="font-size:1.4em;font-weight:800;color:#92400e">$'+fmt(((p30.total_salida||0)).toFixed(0))+'</div><div style="color:#92400e;font-size:9px">'+(p30.ocs_por_pagar?p30.ocs_por_pagar.count:0)+' OCs + '+(p30.influencers?p30.influencers.count:0)+' infl.</div></div>'+
+      '<div style="background:#fee2e2;padding:8px;border-radius:5px"><div style="color:#991b1b;font-weight:700">90 días</div><div style="font-size:1.4em;font-weight:800;color:#7f1d1d">$'+fmt(((p90.total_salida||0)).toFixed(0))+'</div><div style="color:#7f1d1d;font-size:9px">'+(p90.ocs_por_pagar?p90.ocs_por_pagar.count:0)+' OCs proyectadas</div></div>'+
+      '</div>'+
+      '<div style="margin-top:8px;font-size:11px;color:#475569"><b>Real pagado 30d:</b> $'+fmt(((dc.pagado_30d||{}).monto||0).toFixed(0))+' ('+((dc.pagado_30d||{}).count||0)+' pagos)</div>'+
+    '</div>';
+    cont.innerHTML += cashHtml;
+  }catch(_){}
+  // Predicción demanda · top 5 urgentes
+  try{
+    var rp = await fetch('/api/compras/prediccion-demanda');
+    var dp = await rp.json();
+    var urgentes = (dp.items||[]).filter(function(x){return x.accion==='URGENTE';}).slice(0,5);
+    var pronto = (dp.items||[]).filter(function(x){return x.accion==='PEDIR_PRONTO';}).slice(0,5);
+    var predHtml = '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px">'+
+      '<div style="font-weight:800;color:#0f172a;font-size:13px;margin-bottom:8px">🔮 Predicción demanda</div>'+
+      '<div style="display:flex;gap:8px;margin-bottom:8px;font-size:11px">'+
+        '<span style="background:#fee2e2;color:#991b1b;padding:3px 10px;border-radius:8px;font-weight:700">🔴 '+((dp.counts||{}).URGENTE||0)+' urgentes</span>'+
+        '<span style="background:#fef3c7;color:#78350f;padding:3px 10px;border-radius:8px;font-weight:700">🟡 '+((dp.counts||{}).PEDIR_PRONTO||0)+' pronto</span>'+
+        '<span style="background:#dcfce7;color:#166534;padding:3px 10px;border-radius:8px;font-weight:700">🟢 '+((dp.counts||{}).OK||0)+' OK</span>'+
+      '</div>';
+    if(urgentes.length){
+      predHtml += '<div style="font-size:11px"><b style="color:#991b1b">🔴 Pedir AHORA:</b>';
+      urgentes.forEach(function(it){
+        predHtml += '<div style="background:#fef2f2;padding:4px 8px;border-radius:5px;margin-top:3px;display:flex;justify-content:space-between"><span><b>'+_esc(it.nombre)+'</b> <span style="color:#94a3b8;font-size:10px">'+it.codigo_mp+'</span></span><span style="color:#dc2626;font-weight:700">'+it.dias_hasta_quiebre+'d · '+fmt(it.cantidad_sugerida_g.toFixed(0))+'g</span></div>';
+      });
+      predHtml += '</div>';
+    }
+    if(pronto.length){
+      predHtml += '<div style="margin-top:6px;font-size:11px"><b style="color:#78350f">🟡 Pedir pronto:</b>';
+      pronto.forEach(function(it){
+        predHtml += '<div style="background:#fffbeb;padding:4px 8px;border-radius:5px;margin-top:3px;display:flex;justify-content:space-between"><span>'+_esc(it.nombre)+'</span><span style="color:#92400e">'+it.dias_hasta_quiebre+'d</span></div>';
+      });
+      predHtml += '</div>';
+    }
+    if(!urgentes.length && !pronto.length){
+      predHtml += '<div style="color:#166534;text-align:center;padding:14px;font-size:12px">✓ Stock adecuado · sin urgencias</div>';
+    }
+    predHtml += '</div>';
+    cont.innerHTML += predHtml;
+  }catch(_){}
 }
 function _esc(s){return String(s||'').replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
 
@@ -3264,8 +3329,12 @@ function autorizarOC(num){
 async function decidirOC(decision){
   var num=document.getElementById('aut-num').value;
   var motivo=document.getElementById('aut-motivo').value.trim();
-  if(decision==='Rechazada'&&!motivo){
-    if(!confirm('Rechazar sin motivo. Confirmar?')) return;
+  if(decision==='Rechazada' && !motivo){
+    // Gap #5 · 21-may-2026 · motivo OBLIGATORIO (≥10 chars · queda audit)
+    motivo = prompt('Motivo de rechazo (≥10 chars · el solicitante verá esto):');
+    if(!motivo) return;
+    motivo = motivo.trim();
+    if(motivo.length < 10){ alert('Motivo debe tener ≥10 chars'); return; }
   }
   if(decision==='Autorizada'){
     try{
@@ -5100,6 +5169,134 @@ function toggleGrupo(gi){
   }
 }
 
+// Gap bonus · 21-may-2026 · ROI proveedores 12m
+async function abrirROIProveedores(){
+  var ex = document.getElementById('m-roi-prov'); if(ex) ex.remove();
+  var m = document.createElement('div');
+  m.id = 'm-roi-prov';
+  m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9998;display:flex;align-items:center;justify-content:center;padding:20px';
+  m.innerHTML = '<div style="background:#fff;border-radius:12px;padding:20px;max-width:880px;width:100%;max-height:90vh;overflow-y:auto">'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><h3 style="margin:0;color:#0e7490">📊 ROI Proveedores · últimos 12 meses</h3><button id="roi-close" style="background:none;border:none;font-size:1.4em;cursor:pointer">×</button></div>'+
+    '<div id="roi-body" style="text-align:center;color:#94a3b8;padding:20px">Cargando…</div>'+
+    '</div>';
+  document.body.appendChild(m);
+  document.getElementById('roi-close').onclick = function(){ m.remove(); };
+  m.addEventListener('click', function(e){ if(e.target === m) m.remove(); });
+  try{
+    var r = await fetch('/api/compras/roi-proveedores');
+    var d = await r.json();
+    if(!r.ok){ document.getElementById('roi-body').innerHTML = '<div style="color:#dc2626">Error: '+(d.error||r.status)+'</div>'; return; }
+    var items = d.proveedores || [];
+    if(!items.length){ document.getElementById('roi-body').innerHTML = '<div>Sin datos en 12 meses</div>'; return; }
+    var html = '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#0f172a;color:#fff">'+
+      '<th style="padding:7px;text-align:left">Proveedor</th>'+
+      '<th style="padding:7px;text-align:right">OCs 12m</th>'+
+      '<th style="padding:7px;text-align:right">Monto 12m</th>'+
+      '<th style="padding:7px;text-align:right">Pagadas</th>'+
+      '<th style="padding:7px;text-align:right">Recibidas</th>'+
+      '<th style="padding:7px;text-align:right">Cumpl %</th>'+
+      '<th style="padding:7px;text-align:left">Última</th>'+
+    '</tr></thead><tbody>';
+    items.forEach(function(p){
+      var colCump = p.cumplimiento_pct >= 80 ? '#16a34a' : (p.cumplimiento_pct >= 50 ? '#ca8a04' : '#dc2626');
+      html += '<tr style="border-bottom:1px solid #e2e8f0">'+
+        '<td style="padding:6px;font-weight:600">'+esc(p.proveedor)+'</td>'+
+        '<td style="padding:6px;text-align:right">'+p.ocs_12m+'</td>'+
+        '<td style="padding:6px;text-align:right;font-weight:700">$'+fmt(p.monto_12m.toFixed(0))+'</td>'+
+        '<td style="padding:6px;text-align:right">'+p.pagadas+'</td>'+
+        '<td style="padding:6px;text-align:right">'+p.recibidas+'</td>'+
+        '<td style="padding:6px;text-align:right;color:'+colCump+';font-weight:700">'+p.cumplimiento_pct+'%</td>'+
+        '<td style="padding:6px;font-size:11px;color:#64748b">'+esc((p.ultima_compra||'').substring(0,10))+'</td>'+
+      '</tr>';
+    });
+    html += '</tbody></table>';
+    html += '<div style="margin-top:10px;font-size:11px;color:#64748b">Verde >=80% · Ámbar 50-79% · Rojo <50% cumplimiento (recibidas/total)</div>';
+    document.getElementById('roi-body').innerHTML = html;
+  }catch(e){ document.getElementById('roi-body').innerHTML = '<div style="color:#dc2626">Error red: '+e.message+'</div>'; }
+}
+
+// Gap #3 · 21-may-2026 · OCR factura proveedor con Claude Vision
+function abrirOCRFactura(){
+  var ex = document.getElementById('m-ocr-fact'); if(ex) ex.remove();
+  var m = document.createElement('div');
+  m.id = 'm-ocr-fact';
+  m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9998;display:flex;align-items:center;justify-content:center;padding:20px';
+  m.innerHTML = '<div style="background:#fff;border-radius:12px;padding:20px;max-width:720px;width:100%;max-height:90vh;overflow-y:auto">'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><h3 style="margin:0;color:#7c3aed">📤 Subir factura del proveedor</h3>'+
+    '<button id="ocr-close" style="background:none;border:none;font-size:1.4em;cursor:pointer">×</button></div>'+
+    '<div style="background:#faf5ff;border:1px solid #7c3aed;padding:10px 12px;border-radius:6px;margin-bottom:12px;font-size:12px;color:#5b21b6">La IA Vision (Claude 4.6) extraerá automáticamente: proveedor · NIT · número factura · items · totales · IVA. Después sugiere match con OC pendiente.</div>'+
+    '<input type="file" id="ocr-file" accept="image/jpeg,image/png" style="margin-bottom:12px">'+
+    '<button id="ocr-process" style="background:#7c3aed;color:#fff;padding:10px 20px;border:none;border-radius:6px;font-weight:700;cursor:pointer">🔍 Procesar factura</button>'+
+    '<div id="ocr-result" style="margin-top:16px"></div>'+
+    '</div>';
+  document.body.appendChild(m);
+  document.getElementById('ocr-close').onclick = function(){ m.remove(); };
+  m.addEventListener('click', function(e){ if(e.target === m) m.remove(); });
+  document.getElementById('ocr-process').onclick = async function(){
+    var fp = document.getElementById('ocr-file');
+    if(!fp.files.length){ alert('Elegí una imagen primero'); return; }
+    var file = fp.files[0];
+    if(file.size > 5 * 1024 * 1024){ alert('Imagen muy grande · max 5MB'); return; }
+    var btn = this; btn.disabled = true; btn.textContent = 'Procesando…';
+    var resultDiv = document.getElementById('ocr-result');
+    resultDiv.innerHTML = '<div style="text-align:center;padding:20px;color:#7c3aed">⏳ La IA está leyendo la factura · ~15-30s...</div>';
+    var reader = new FileReader();
+    reader.onload = async function(e){
+      var b64 = e.target.result.split(',')[1];
+      var tipo = file.type.includes('png') ? 'png' : 'jpeg';
+      try{
+        var r = await fetch('/api/compras/ocr-factura', _fetchOpts('POST', {
+          imagen_base64: b64, tipo: tipo,
+        }));
+        var d = await r.json();
+        if(!r.ok){
+          resultDiv.innerHTML = '<div style="background:#fee2e2;color:#991b1b;padding:12px;border-radius:6px">Error: '+esc(d.error||r.status)+'</div>';
+          btn.disabled = false; btn.textContent = '🔍 Procesar factura';
+          return;
+        }
+        var f = d.factura || {};
+        var ocs = d.ocs_sugeridas || [];
+        var html = '<div style="background:#dcfce7;color:#166534;padding:10px;border-radius:6px;margin-bottom:12px;font-weight:700">✓ Factura procesada · confianza '+(f.confianza_pct||0)+'%</div>';
+        html += '<div style="background:#f8fafc;padding:12px;border-radius:6px;margin-bottom:12px"><b>Datos extraídos:</b>';
+        html += '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:6px;margin-top:6px;font-size:12px">';
+        html += '<div><b>Proveedor:</b><br>'+esc(f.proveedor||'—')+'</div>';
+        html += '<div><b>NIT:</b><br>'+esc(f.nit||'—')+'</div>';
+        html += '<div><b>N° Factura:</b><br><span style="font-family:monospace;color:#7c3aed;font-weight:700">'+esc(f.numero_factura||'—')+'</span></div>';
+        html += '<div><b>Fecha:</b><br>'+esc(f.fecha_emision||'—')+'</div>';
+        html += '<div><b>Subtotal:</b><br>$'+fmt((f.subtotal||0).toFixed(0))+'</div>';
+        html += '<div><b>IVA:</b><br>$'+fmt((f.iva||0).toFixed(0))+'</div>';
+        html += '<div style="grid-column:span 2"><b>Total:</b><br><span style="font-size:20px;font-weight:800;color:#7c3aed">$'+fmt((f.total||0).toFixed(0))+'</span></div>';
+        html += '</div></div>';
+        if((f.items||[]).length){
+          html += '<div style="background:#fff;border:1px solid #e2e8f0;padding:10px;border-radius:6px;margin-bottom:12px"><b style="font-size:12px">Items ('+f.items.length+'):</b>';
+          html += '<table style="width:100%;font-size:11px;margin-top:6px;border-collapse:collapse">';
+          html += '<thead><tr style="background:#f1f5f9"><th style="padding:4px 6px;text-align:left">Desc</th><th style="padding:4px 6px;text-align:right">Cant</th><th style="padding:4px 6px;text-align:right">$ unit</th><th style="padding:4px 6px;text-align:right">Sub</th></tr></thead><tbody>';
+          f.items.forEach(function(it){
+            html += '<tr><td style="padding:3px 6px">'+esc(it.descripcion||'')+'</td><td style="padding:3px 6px;text-align:right">'+(it.cantidad||0)+' '+esc(it.unidad||'')+'</td><td style="padding:3px 6px;text-align:right">$'+fmt((it.precio_unitario||0).toFixed(0))+'</td><td style="padding:3px 6px;text-align:right;font-weight:700">$'+fmt((it.subtotal||0).toFixed(0))+'</td></tr>';
+          });
+          html += '</tbody></table></div>';
+        }
+        if(ocs.length){
+          html += '<div style="background:#fef3c7;border:1px solid #ca8a04;padding:12px;border-radius:6px"><b style="color:#78350f;font-size:13px">🔗 OCs pendientes del mismo proveedor:</b>';
+          ocs.forEach(function(oc){
+            var colMatch = oc.match_score === 'alto' ? '#16a34a' : (oc.match_score === 'medio' ? '#ca8a04' : '#94a3b8');
+            html += '<div style="background:#fff;border-left:3px solid '+colMatch+';padding:8px 10px;margin-top:6px;display:flex;justify-content:space-between;align-items:center"><div><b style="font-family:monospace">'+esc(oc.numero_oc)+'</b> · '+esc(oc.proveedor)+' · estado '+esc(oc.estado)+'<br><span style="font-size:10px;color:#94a3b8">OC: $'+fmt(oc.valor_total.toFixed(0))+' vs Factura: $'+fmt((f.total||0).toFixed(0))+' · Δ '+oc.delta_vs_factura_pct+'%</span></div><span style="background:'+colMatch+';color:#fff;padding:2px 8px;border-radius:8px;font-size:10px;font-weight:700">match '+oc.match_score+'</span></div>';
+          });
+          html += '</div>';
+        } else {
+          html += '<div style="background:#fef2f2;color:#991b1b;padding:10px;border-radius:6px;font-size:12px">⚠ No se encontraron OCs pendientes con el proveedor "'+esc(f.proveedor||'')+'" · revisar manualmente.</div>';
+        }
+        resultDiv.innerHTML = html;
+        btn.disabled = false; btn.textContent = '🔍 Procesar otra factura';
+      }catch(e){
+        resultDiv.innerHTML = '<div style="background:#fee2e2;color:#991b1b;padding:12px;border-radius:6px">Error red: '+esc(e.message)+'</div>';
+        btn.disabled = false; btn.textContent = '🔍 Procesar factura';
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+}
+
 // Gap #2 · 21-may-2026 · Pedir cotización a top 3 proveedores históricos
 async function abrirPedirCotizacion(gi){
   if(!_GRUPOS_CACHE || !_GRUPOS_CACHE.grupos[gi]) return;
@@ -5630,8 +5827,12 @@ async function gestionarSol(decision){
   var valor=parseFloat((document.getElementById('sol-valor')||{value:0}).value||0);
   var motivo=(document.getElementById('sol-motivo')||{value:''}).value.trim();
   var fent=(document.getElementById('sol-fent')||{value:''}).value;
-  if(decision==='Rechazada'&&!motivo){
-    if(!confirm('Rechazar sin motivo. Confirmar?')) return;
+  if(decision==='Rechazada' && !motivo){
+    // Gap #5 · 21-may-2026 · motivo OBLIGATORIO (≥10 chars · queda audit)
+    motivo = prompt('Motivo de rechazo (≥10 chars · el solicitante verá esto):');
+    if(!motivo) return;
+    motivo = motivo.trim();
+    if(motivo.length < 10){ alert('Motivo debe tener ≥10 chars'); return; }
   }
   var _areaEl=document.getElementById('sol-det-area');
   var _esProduccion=(_areaEl&&_areaEl.value.trim()==='Produccion');
