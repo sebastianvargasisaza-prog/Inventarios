@@ -2658,6 +2658,17 @@ def planta_actualizar_estado_area(area_id):
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
     user = session.get('compras_user', '')
+    # BUG-8 fix · 20-may-2026 OLA 1: cualquier user logueado podía marcar
+    # libre/sucia/ocupada una sala · contadora/comercial/marketing podían
+    # marcar PROD1 'libre' con producción activa → contaminación. Solo
+    # PLANTA_USERS o ADMIN_USERS pueden tocar estado de salas.
+    try:
+        from config import PLANTA_USERS, ADMIN_USERS
+        _permitidos = set(ADMIN_USERS) | set(PLANTA_USERS)
+        if user not in _permitidos:
+            return jsonify({'error': 'Solo planta/admin pueden cambiar estado de sala'}), 403
+    except ImportError:
+        pass
     data = request.get_json(force=True, silent=True) or {}
     nuevo = (data.get('estado') or '').strip().lower()
     if nuevo not in ('libre', 'ocupada', 'sucia', 'limpiando'):
@@ -3020,6 +3031,38 @@ def prog_iniciar_produccion(evento_id):
         })
     if pp[4]:  # ya terminada
         return jsonify({'error': 'produccion ya terminada'}), 400
+
+    # BUG-5 fix · 20-may-2026 OLA 1: GATE SALA SUCIA. UI Mi Día solo MUESTRA
+    # un confirm("¿iniciar de todos modos?") pero el backend aceptaba y
+    # descontaba MP en sala sucia → contaminación cruzada post-INVIMA.
+    # Ahora backend BLOQUEA · admin puede saltarlo con ?force_sucia=1
+    # (registrado en audit_log con motivo).
+    area_id = pp[2]
+    force_sucia = bool(body.get('force_sucia'))
+    if area_id and not force_sucia:
+        area_row = c.execute(
+            "SELECT estado, codigo FROM areas_planta WHERE id=? AND activo=1",
+            (area_id,),
+        ).fetchone()
+        if area_row and (area_row[0] or '').lower() == 'sucia':
+            return jsonify({
+                'ok': False,
+                'error': (f'Sala {area_row[1]} está SUCIA · debe marcarse '
+                          'limpia antes de iniciar producción (contaminación '
+                          'cruzada · BPM/INVIMA). Admin puede saltarlo con '
+                          'force_sucia=true + motivo en observaciones.'),
+                'codigo': 'SALA_SUCIA',
+                'sala_codigo': area_row[1],
+            }), 409
+    if area_id and force_sucia and user not in ADMIN_USERS:
+        return jsonify({
+            'ok': False,
+            'error': 'Solo admin puede saltarse el gate de sala sucia',
+        }), 403
+    if force_sucia:
+        log.warning(
+            'INICIAR_PRODUCCION OVERRIDE sala sucia · user=%s evento=%s',
+            user, evento_id)
 
     # ── DESCONTAR INVENTARIO MP ATOMICAMENTE ──────────────────────────
     descuento = None
@@ -3866,9 +3909,14 @@ def planta_centro_mando():
         FROM produccion_programada
         WHERE fecha_programada >= date('now', '-5 hours', '-30 day')
     """, (hoy, hoy)).fetchone()
-    salas_libres = sum(1 for a in areas if a['estado'] == 'libre' and a['tipo']=='produccion')
-    salas_sucias = sum(1 for a in areas if a['estado'] == 'sucia')
-    salas_ocupadas = sum(1 for a in areas if a['estado'] == 'ocupada')
+    # BUG-3 fix · 20-may-2026 OLA 1: filtro tipo='produccion' debe aplicarse
+    # TAMBIÉN a sucias y ocupadas. Antes sucias y ocupadas contaban ALMP,
+    # ALMPT, ACOND, QC, DISP · sumaban estados de áreas que no son de
+    # producción · KPIs no cuadraban con realidad ("8 sucias 2 libres"
+    # cuando había 0 sucias en producción).
+    salas_libres   = sum(1 for a in areas if a['estado']=='libre'   and a['tipo']=='produccion')
+    salas_sucias   = sum(1 for a in areas if a['estado']=='sucia'   and a['tipo']=='produccion')
+    salas_ocupadas = sum(1 for a in areas if a['estado']=='ocupada' and a['tipo']=='produccion')
 
     # Eventos recientes (ultimos 15)
     eventos = []

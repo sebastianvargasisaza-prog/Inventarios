@@ -7846,8 +7846,31 @@ def kanban_etapa_accion(pid, rol, accion):
         except Exception:
             pass
         conn.commit()
+        # BUG-1 fix · 20-may-2026 OLA 1: si es dispensación (primera etapa)
+        # y la producción NO tiene inicio_real_at, dispará el flujo canónico
+        # que descuenta MP (FEFO), marca sala 'ocupada' y crea audit
+        # INICIAR_PRODUCCION. Sin esto, Kanban marcaba la etapa pero el
+        # stock seguía sin reflejar la salida → drift kardex.
+        descuento_resp = None
+        if rol == 'dispensacion':
+            try:
+                pp_chk = c.execute(
+                    "SELECT inicio_real_at FROM produccion_programada WHERE id=?",
+                    (pid,),
+                ).fetchone()
+                if pp_chk and not pp_chk[0]:
+                    try:
+                        from blueprints.programacion import prog_iniciar_produccion as _prog_ini
+                    except ImportError:
+                        from api.blueprints.programacion import prog_iniciar_produccion as _prog_ini
+                    inner = _prog_ini(int(pid))
+                    if hasattr(inner, 'get_json'):
+                        descuento_resp = inner.get_json()
+            except Exception as _e:
+                log.warning('Kanban iniciar dispensacion · descuento MP fallo · pid=%s err=%s', pid, _e)
         return jsonify({'ok': True, 'rol': rol, 'accion': 'iniciar',
-                        'etapa_inicio_at': ini_after})
+                        'etapa_inicio_at': ini_after,
+                        'flujo_canonico': descuento_resp})
 
     # accion == 'terminar'
     if not ini_actual:
@@ -7870,6 +7893,41 @@ def kanban_etapa_accion(pid, rol, accion):
                             'producto': pp[11]})
     except Exception:
         pass
+
+    # BUG-1 fix · 20-may-2026 OLA 1: si es acondicionamiento (última etapa)
+    # cerrar producción · marcar fin_real_at + estado='completado' + sala
+    # 'sucia' (post-INVIMA · contaminación cruzada). Sin esto, Kanban
+    # marcaba la etapa pero la producción quedaba indefinidamente abierta
+    # y la sala seguía 'ocupada' bloqueando nueva producción.
+    if rol == 'acondicionamiento':
+        try:
+            pp_post = c.execute(
+                "SELECT fin_real_at, area_id FROM produccion_programada WHERE id=?",
+                (pid,),
+            ).fetchone()
+            if pp_post and not pp_post[0]:
+                c.execute(
+                    """UPDATE produccion_programada
+                       SET fin_real_at = datetime('now','-5 hours'),
+                           estado = 'completado'
+                       WHERE id=? AND fin_real_at IS NULL""",
+                    (pid,),
+                )
+                if pp_post[1]:
+                    c.execute(
+                        "UPDATE areas_planta SET estado='sucia' "
+                        "WHERE id=? AND estado='ocupada'",
+                        (pp_post[1],),
+                    )
+                try:
+                    audit_log(c, usuario=user, accion='COMPLETAR_PRODUCCION_KANBAN',
+                               tabla='produccion_programada', registro_id=pid,
+                               despues={'producto': pp[11], 'area_id': pp_post[1],
+                                        'via': 'kanban_terminar_acondicionamiento'})
+                except Exception:
+                    pass
+        except Exception as _e:
+            log.warning('Kanban terminar acondicionamiento · cierre auto fallo · pid=%s err=%s', pid, _e)
 
     # Pieza 4 · pase de testigo: si hay siguiente etapa con operario asignado,
     # mandar push_notif. Best-effort · no romper si push_notif no está disponible.
@@ -8187,7 +8245,14 @@ def tablero_equipo():
     if _user not in _permitidos:
         return jsonify({'error': 'Solo planta/compras/admin'}), 403
     conn = get_db(); c = conn.cursor()
-    hoy = datetime.now().date().isoformat()
+    # BUG-4 fix · 20-may-2026 OLA 1: TZ UTC bug · datetime.now() en Render
+    # devuelve UTC · a partir de las ~7pm Bogotá ya es mañana en UTC y
+    # mostraba producciones del día siguiente. Mismo patrón -5h que usa
+    # /centro-mando (programacion.py:3637) y operario.py:_hoy_str.
+    try:
+        hoy = c.execute("SELECT date('now','-5 hours')").fetchone()[0]
+    except Exception:
+        hoy = datetime.now().date().isoformat()
     ETAPA_LABEL = {
         'dispensacion': 'Dispensación',
         'elaboracion': 'Producción',
@@ -8807,36 +8872,21 @@ def planta_accion_rapida():
     conn = get_db(); c = conn.cursor()
 
     if tipo == 'iniciar_produccion':
+        # BUG-2 fix · 20-may-2026 OLA 1: este endpoint NO descontaba MP/audit
+        # · permitía iniciar producción ajena. Ahora REDIRIGE al endpoint
+        # canónico /api/programacion/programar/<pid>/iniciar que YA hace:
+        # descuento FEFO + permission check + audit + gate sala sucia (BUG-5).
         pid = d.get('produccion_id')
         if not pid: return jsonify({'error': 'produccion_id requerido'}), 400
         try:
-            row = c.execute("SELECT area_id, estado FROM produccion_programada WHERE id=?", (pid,)).fetchone()
-            if not row: return jsonify({'error': 'producción no existe'}), 404
-            if row[1] in ('en_proceso', 'iniciado'):
-                return jsonify({'ok': True, 'mensaje': 'Ya estaba iniciada'})
-            if row[1] == 'completado':
-                return jsonify({'error': 'Ya completada'}), 400
-            # Sebastián 1-may-2026: rechazar si sala está sucia (necesita limpieza)
-            if row[0]:
-                area_st = c.execute("SELECT codigo, estado FROM areas_planta WHERE id=?", (row[0],)).fetchone()
-                if area_st and area_st[1] == 'sucia':
-                    return jsonify({
-                        'error': f'Sala {area_st[0]} está SUCIA · marca limpia primero antes de iniciar producción',
-                    }), 409
-            c.execute("""
-                UPDATE produccion_programada
-                  SET estado='en_proceso', inicio_real_at=datetime('now', '-5 hours')
-                WHERE id=?
-            """, (pid,))
-            # Marcar área como ocupada
-            if row[0]:
-                c.execute("UPDATE areas_planta SET estado='ocupada' WHERE id=? AND estado IN ('libre','limpiando')", (row[0],))
-            conn.commit()
-            return jsonify({'ok': True, 'mensaje': '▶ Producción iniciada'})
+            try:
+                from blueprints.programacion import prog_iniciar_produccion
+            except ImportError:
+                from api.blueprints.programacion import prog_iniciar_produccion
+            return prog_iniciar_produccion(int(pid))
         except Exception as e:
-            try: conn.rollback()
-            except Exception as _r: log.debug('rollback no aplicable: %s', _r)
-            return jsonify({'error': str(e)}), 500
+            log.warning('accion-rapida iniciar_produccion redirect fallo · pid=%s err=%s', pid, e)
+            return jsonify({'error': f'redirect interno falló: {e}'}), 500
 
     elif tipo == 'terminar_produccion':
         pid = d.get('produccion_id')
