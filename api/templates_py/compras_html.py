@@ -157,8 +157,10 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
     <button class="tn"      data-tab="solic" id="tn-solic" title="Solicitudes generales (papelería, servicios, EPP, mantenimiento)">📋 Solicitudes</button>
     <!-- Producción · OCULTO 21-may-2026 · fusionado en Planta con badge Pre-Prod -->
     <button class="tn" data-tab="solprod" id="tn-solprod" style="display:none">🛠️ Producción <span id="solprod-badge" style="display:none;background:#dc2626;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
-    <!-- Influencers · OCULTO 21-may-2026 · ver /admin/influencers -->
-    <button class="tn" data-tab="influencer" id="tn-influencer" style="display:none">💸 Influencers</button>
+    <!-- Influencers · visible SOLO para Sebastián / Alejandro (data-admin-only)
+         · Catalina nunca lo ve · JS lo desoculta al boot si el user es admin. -->
+    <button class="tn" data-tab="influencer" id="tn-influencer" data-admin-only="1"
+      style="display:none" title="Privado · pagos influencers (solo admin)">💸 Influencers <span style="font-size:9px;background:#dc2626;color:#fff;padding:1px 5px;border-radius:6px;margin-left:2px;font-weight:700">admin</span></button>
   </span>
   <!-- Sub-tabs del grupo OCs Y PAGOS -->
   <span data-cx-sub="ocs" style="display:none;gap:6px;flex-wrap:wrap">
@@ -1095,6 +1097,15 @@ document.addEventListener('change', function(ev){
 var OCS = [];
 var PROVS = [];
 var ES_C = {es_contadora};
+var ES_ADMIN = {es_admin};
+// Sebastián 21-may-2026 · mostrar [data-admin-only] solo a admins (Influencers)
+if(ES_ADMIN){
+  document.addEventListener('DOMContentLoaded',function(){
+    document.querySelectorAll('[data-admin-only]').forEach(function(el){
+      el.style.display = 'inline-block';
+    });
+  });
+}
 // Sebastian (29-abr-2026): "influencers no lo gestiona la asistente solo yo".
 // Tab Influencers oculto para Catalina; visible para Sebastian + Alejandro.
 if (ES_C) {
