@@ -7310,6 +7310,24 @@ def test_golden_portal_b2b_flujo_completo(app, db_clean):
     _exec("DELETE FROM portal_clientes_credenciales WHERE email LIKE 'test_portal_%'")
 
 
+def test_golden_ola3_reasign_ia_y_cron_noche(app, db_clean):
+    """OLA 3 · Reasign IA dry_run sin API key → 503 ·
+    cron resumen ejecutivo callable directo."""
+    cs = _login(app, 'sebastian')
+
+    # Reasign IA sin API key
+    r = cs.post('/api/planta/reasignar-ia', json={'dry_run': True},
+                headers=csrf_headers())
+    assert r.status_code in (200, 503)
+
+    # Cron resumen ejecutivo callable directo (no via scheduler)
+    from blueprints.auto_plan_jobs import job_resumen_ejecutivo_noche
+    ok, data, mensaje = job_resumen_ejecutivo_noche(app)
+    assert ok is True
+    assert 'cumplimiento_pct' in data
+    assert isinstance(mensaje, str) and len(mensaje) > 10
+
+
 def test_golden_ola3_eta_oee_mass_audit(app, db_clean):
     """OLA 3 · ETA + OEE + Mass balance + Auditoría sorpresa PDF."""
     cs = _login(app, 'sebastian')

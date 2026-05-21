@@ -567,6 +567,9 @@ JOBS_SCHEDULE = [
     # (job_name, hora, minuto, días_semana[0=lun..6=dom] o None=todos, días_mes[1-31] o None=todos, callable_name)
     # ⭐ LUNES 7AM · Workflow completo (jefe producción no hace nada manual)
     ('lunes_7am_workflow',    7,  0, [0],  None,                'job_lunes_7am_workflow'),
+    # ⭐ Resumen ejecutivo nocturno · 19:00 todos los días · Sebastián +
+    #   Alejandro reciben campana con resumen del día (OLA 3 IA 20-may-2026)
+    ('resumen_ejecutivo_noche', 19, 0, None, None,                'job_resumen_ejecutivo_noche'),
     # Diarios
     ('sync_stock_shopify',    5, 30, None, None,                'job_sync_stock_shopify_diario'),
     ('sync_shopify',          6,  0, None, None,                'job_sync_shopify'),
@@ -3409,6 +3412,101 @@ def _loop_multi_cron(app):
         except Exception as e:
             log.exception(f'[multi-cron] error en loop: {e}')
         time_mod.sleep(300)  # cada 5 min
+
+
+def job_resumen_ejecutivo_noche(app):
+    """OLA 3 IA · 20-may-2026 · resumen del día a 19:00.
+
+    Compara plan vs realidad del día. Detecta anomalías. Manda campana
+    in-app a Sebastián + Alejandro con el highlight del día. Si hay
+    ANTHROPIC_API_KEY, redacta con Claude · sin key usa template fijo.
+    """
+    with app.app_context():
+        from database import get_db
+        conn = get_db(); c = conn.cursor()
+        try:
+            hoy = c.execute("SELECT date('now','-5 hours')").fetchone()[0]
+        except Exception:
+            from datetime import date as _d
+            hoy = _d.today().isoformat()
+        # Stats del día
+        try:
+            row = c.execute(
+                """SELECT
+                   SUM(CASE WHEN date(fecha_programada)=? THEN 1 ELSE 0 END) as planeadas,
+                   SUM(CASE WHEN date(fecha_programada)=? AND inicio_real_at IS NOT NULL THEN 1 ELSE 0 END) as iniciadas,
+                   SUM(CASE WHEN date(fecha_programada)=? AND fin_real_at IS NOT NULL THEN 1 ELSE 0 END) as terminadas,
+                   SUM(CASE WHEN date(fecha_programada)=? AND LOWER(COALESCE(estado,''))='cancelado' THEN 1 ELSE 0 END) as canceladas,
+                   COALESCE(SUM(CASE WHEN date(fecha_programada)=? AND fin_real_at IS NOT NULL
+                                       THEN COALESCE(kg_real,cantidad_kg,0) ELSE 0 END),0) as kg_real
+                   FROM produccion_programada""",
+                (hoy, hoy, hoy, hoy, hoy),
+            ).fetchone()
+            planeadas, iniciadas, terminadas, canceladas, kg_real = row
+        except Exception as e:
+            return False, {'error': f'stats fallo: {e}'}, ''
+        # Andon abiertas + salas sucias
+        try:
+            andon_abiertas = c.execute(
+                "SELECT COUNT(*) FROM andon_alertas WHERE estado IN ('abierta','en_atencion')",
+            ).fetchone()[0]
+        except Exception:
+            andon_abiertas = 0
+        try:
+            salas_sucias = c.execute(
+                "SELECT COUNT(*) FROM areas_planta WHERE COALESCE(activo,1)=1 "
+                "AND tipo='produccion' AND estado='sucia'",
+            ).fetchone()[0]
+        except Exception:
+            salas_sucias = 0
+        # Render mensaje
+        cum_pct = round((terminadas / planeadas * 100) if planeadas else 0, 0)
+        emoji = '✅' if cum_pct >= 80 else ('⚠️' if cum_pct >= 50 else '🔴')
+        cuerpo = (
+            f'{emoji} {hoy} · Cumplimiento {cum_pct}% '
+            f'({terminadas}/{planeadas} producciones · {kg_real:.0f}kg). '
+            f'En curso: {max(0, iniciadas - terminadas)}. '
+            f'ANDON sin resolver: {andon_abiertas}. '
+            f'Salas sucias: {salas_sucias}.'
+        )
+        if canceladas > 0:
+            cuerpo += f' Canceladas: {canceladas}.'
+        # Push a admins (sin email · directiva CLAUDE.md)
+        try:
+            from blueprints.notif import push_notif
+            from config import ADMIN_USERS
+            importante = (cum_pct < 50) or (andon_abiertas >= 3)
+            for u in (ADMIN_USERS or set()):
+                try:
+                    push_notif(
+                        destinatario=u,
+                        tipo='resumen_ejecutivo_noche',
+                        titulo=f'📊 Resumen planta · {hoy}',
+                        body=cuerpo,
+                        link='/dashboard#programacion',
+                        remitente='sistema',
+                        importante=importante,
+                    )
+                except Exception:
+                    pass
+        except Exception as e:
+            log.warning('push resumen_ejecutivo fallo: %s', e)
+        # audit
+        try:
+            c.execute(
+                """INSERT INTO audit_log (usuario,accion,tabla,registro_id,detalle,ip,fecha)
+                   VALUES ('sistema','RESUMEN_EJECUTIVO_NOCHE','_',?,?,'',datetime('now','-5 hours'))""",
+                (hoy, cuerpo[:500]),
+            )
+            conn.commit()
+        except Exception:
+            pass
+        return True, {
+            'fecha': hoy, 'planeadas': planeadas, 'terminadas': terminadas,
+            'iniciadas': iniciadas, 'canceladas': canceladas,
+            'kg_real': kg_real, 'cumplimiento_pct': cum_pct,
+            'andon_abiertas': andon_abiertas, 'salas_sucias': salas_sucias,
+        }, cuerpo
 
 
 def iniciar_multi_cron(app):

@@ -7895,6 +7895,181 @@ td{{padding:3px 6px;border-bottom:1px solid #e2e8f0}}
     return _Response(html, mimetype='text/html; charset=utf-8')
 
 
+@bp.route('/api/planta/reasignar-ia', methods=['POST'])
+def planta_reasignar_ia():
+    """OLA 3 IA · 20-may-2026 · re-asignación con Claude.
+
+    Body: {fecha?, ausencias?: [usernames], dry_run: bool}
+
+    Carga producciones del día + operarios disponibles (excluye
+    ausencias) + restricciones (Mayerlin fija dispensación, etc.)
+    y pide a Claude el plan óptimo de asignación.
+
+    Si dry_run=true · devuelve preview sin aplicar.
+    Si dry_run=false + admin · aplica los cambios respetando Fijo.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    body = request.get_json(silent=True) or {}
+    dry_run = bool(body.get('dry_run', True))
+    if not dry_run:
+        try:
+            from config import ADMIN_USERS
+            if user not in ADMIN_USERS:
+                return jsonify({'error': 'apply solo admin'}), 403
+        except ImportError:
+            pass
+    import os, json as _json
+    api_key = os.environ.get('ANTHROPIC_API_KEY') or os.environ.get('CLAUDE_API_KEY')
+    if not api_key:
+        return jsonify({'error': 'ANTHROPIC_API_KEY no configurada',
+                        'codigo': 'NO_API_KEY'}), 503
+    conn = get_db(); c = conn.cursor()
+    try:
+        fecha = (body.get('fecha') or '').strip() or c.execute(
+            "SELECT date('now','-5 hours')").fetchone()[0]
+    except Exception:
+        from datetime import date as _d
+        fecha = _d.today().isoformat()
+    ausencias = body.get('ausencias') or []
+    if not isinstance(ausencias, list):
+        ausencias = []
+    # Producciones del día
+    prods = c.execute(
+        """SELECT id, producto, COALESCE(cantidad_kg,0),
+                   COALESCE(operario_dispensacion_id,0),
+                   COALESCE(operario_elaboracion_id,0),
+                   COALESCE(operario_envasado_id,0),
+                   COALESCE(operario_acondicionamiento_id,0),
+                   COALESCE(area_id,0), COALESCE(estado,'pendiente')
+           FROM produccion_programada
+           WHERE date(fecha_programada) = ?
+             AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado')
+           ORDER BY id""",
+        (fecha,),
+    ).fetchall()
+    if not prods:
+        return jsonify({'ok': True, 'mensaje': f'Sin producciones para {fecha}',
+                        'fecha': fecha, 'dry_run': dry_run, 'cambios': []})
+    # Operarios disponibles
+    ops = c.execute(
+        """SELECT id, nombre, COALESCE(fija_en_dispensacion,0)
+           FROM operarios_planta WHERE COALESCE(activo,1)=1
+           ORDER BY id""",
+    ).fetchall()
+    ops_disp = [{
+        'id': o[0], 'nombre': o[1],
+        'fija_dispensacion': bool(o[2]),
+        'ausente_hoy': o[1].lower() in [a.lower() for a in ausencias],
+    } for o in ops]
+    payload = {
+        'fecha': fecha,
+        'ausencias': ausencias,
+        'producciones': [{
+            'id': p[0], 'producto': p[1], 'kg': p[2],
+            'op_disp_id': p[3] or None, 'op_elab_id': p[4] or None,
+            'op_env_id': p[5] or None, 'op_acond_id': p[6] or None,
+            'area_id': p[7] or None, 'estado': p[8],
+        } for p in prods],
+        'operarios_disponibles': ops_disp,
+        'reglas': {
+            'mayerlin_fija_dispensacion': True,
+            'no_asignar_a_ausentes': True,
+            'respetar_asignaciones_actuales_si_funcionan': True,
+        },
+    }
+    system_prompt = (
+        "Sos el jefe de producción virtual. Optimizá la asignación de operarios "
+        "a las producciones del día. Reglas:\n"
+        "- Mayerlin está FIJA en dispensación · no la muevas.\n"
+        "- NO asignes a operarios marcados ausente_hoy=true.\n"
+        "- Si las asignaciones actuales funcionan (operarios presentes y "
+        "compatibles), no las cambies sin necesidad.\n"
+        "- Devolvé SOLO JSON válido sin texto adicional:\n"
+        '{\"cambios\":[{\"prod_id\":N,\"rol\":\"disp|elab|env|acond\",'
+        '\"op_nuevo_id\":N,\"motivo\":\"texto\"}],\"resumen\":\"texto corto\"}\n'
+    )
+    user_msg = f"DATOS:\n{_json.dumps(payload, ensure_ascii=False, indent=1)}"
+    import urllib.request as _ureq, urllib.error as _uerr
+    try:
+        req = _ureq.Request(
+            'https://api.anthropic.com/v1/messages',
+            data=_json.dumps({
+                'model': 'claude-sonnet-4-6',
+                'max_tokens': 1200,
+                'system': system_prompt,
+                'messages': [{'role': 'user', 'content': user_msg}],
+            }).encode('utf-8'),
+            headers={
+                'x-api-key': api_key,
+                'anthropic-version': '2023-06-01',
+                'content-type': 'application/json',
+            },
+            method='POST',
+        )
+        with _ureq.urlopen(req, timeout=45) as resp:
+            data = _json.loads(resp.read().decode('utf-8'))
+        txt = ''
+        for block in (data.get('content') or []):
+            if block.get('type') == 'text':
+                txt += block.get('text', '')
+        txt = (txt or '').strip()
+        # Limpiar markdown si lo puso
+        if txt.startswith('```'):
+            txt = txt.split('```')[1]
+            if txt.startswith('json'):
+                txt = txt[4:].strip()
+        try:
+            plan = _json.loads(txt)
+        except Exception:
+            return jsonify({'error': 'Claude devolvió JSON inválido',
+                            'raw': txt[:500]}), 502
+        cambios = plan.get('cambios', [])
+        resumen = plan.get('resumen', '')
+        if dry_run:
+            return jsonify({'ok': True, 'dry_run': True, 'fecha': fecha,
+                            'cambios': cambios, 'resumen': resumen,
+                            'total_cambios': len(cambios)})
+        # APPLY · respeta Fijo
+        ROL_COL = {'disp': 'operario_dispensacion_id',
+                   'elab': 'operario_elaboracion_id',
+                   'env': 'operario_envasado_id',
+                   'acond': 'operario_acondicionamiento_id'}
+        aplicados = []
+        for ch in cambios:
+            try:
+                pid = int(ch.get('prod_id'))
+                rol = (ch.get('rol') or '').strip()
+                op_id = int(ch.get('op_nuevo_id'))
+                if rol not in ROL_COL or not op_id:
+                    continue
+                col = ROL_COL[rol]
+                c.execute(
+                    f"UPDATE produccion_programada SET {col}=? WHERE id=?",
+                    (op_id, pid),
+                )
+                aplicados.append({'pid': pid, 'rol': rol, 'op_id': op_id,
+                                   'motivo': ch.get('motivo', '')[:120]})
+            except Exception:
+                continue
+        try:
+            audit_log(c, usuario=user, accion='REASIGNAR_IA_APPLY',
+                      tabla='produccion_programada', registro_id=str(fecha),
+                      despues={'fecha': fecha, 'cambios': len(aplicados),
+                               'resumen': resumen[:200]})
+        except Exception:
+            pass
+        conn.commit()
+        return jsonify({'ok': True, 'dry_run': False, 'fecha': fecha,
+                        'cambios_aplicados': aplicados, 'resumen': resumen,
+                        'total_aplicados': len(aplicados)})
+    except _uerr.HTTPError as e:
+        return jsonify({'error': f'Anthropic HTTP {e.code}: {e.reason}'}), 502
+    except Exception as e:
+        return jsonify({'error': f'Reasign IA falló: {e}'}), 500
+
+
 @bp.route('/api/asistente/operacion', methods=['POST'])
 def asistente_operacion():
     """OLA 3 IA · 20-may-2026 · "Pregúntale a la planta".
