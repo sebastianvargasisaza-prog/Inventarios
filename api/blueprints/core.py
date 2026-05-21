@@ -47,12 +47,27 @@ def _resolve_password_hash(username):
     try:
         conn = db_connect()
         conn.execute("PRAGMA busy_timeout=2000")
-        row = conn.execute(
-            "SELECT password_hash FROM users_passwords WHERE username=?",
-            (username,)
-        ).fetchone()
+        # Sebastián 21-may-2026 mig 149: respetar activo flag · si user
+        # está desactivado (activo=0), devolver '' como si no existiera
+        # · bloquea login efectivamente. NULL activo = 1 (default
+        # legacy users).
+        try:
+            row = conn.execute(
+                "SELECT password_hash, COALESCE(activo,1) FROM users_passwords WHERE username=?",
+                (username,)
+            ).fetchone()
+        except Exception:
+            row = conn.execute(
+                "SELECT password_hash FROM users_passwords WHERE username=?",
+                (username,)
+            ).fetchone()
+            if row:
+                row = (row[0], 1)
         conn.close()
         if row and row[0]:
+            if len(row) > 1 and not row[1]:
+                # Usuario desactivado · bloquear login (no devolver hash)
+                return ''
             return row[0]
     except Exception:
         # Tabla no existe (pre-migración) o DB no responde —
@@ -454,6 +469,538 @@ def hub():
         return redirect('/login?next=/modulos')
     from templates_py.hub_html import HUB_HTML
     return Response(HUB_HTML, mimetype='text/html')
+
+
+# ─── Módulo Usuarios PRO · Sebastián 21-may-2026 ────────────────────────
+# Reemplaza la dependencia de Render env vars (PASS_<USER>) por gestión
+# desde UI. Admin (Sebastián/Alejandro) puede crear/desactivar/resetear
+# password de cualquier usuario sin tocar Render.
+# ────────────────────────────────────────────────────────────────────────
+
+def _require_admin_session():
+    """Helper: solo admin · case-insensitive · devuelve username o (None, error, code)."""
+    u = session.get('compras_user', '')
+    if not u:
+        return None, jsonify({'error': 'No autenticado'}), 401
+    if (u or '').strip().lower() not in {x.lower() for x in ADMIN_USERS}:
+        return None, jsonify({'error': 'solo admin (Sebastián / Alejandro)'}), 403
+    return u, None, None
+
+
+@bp.route('/api/admin/usuarios', methods=['GET'])
+def admin_usuarios_list():
+    """Lista TODOS los usuarios · BD + env vars · admin only."""
+    u, err, code = _require_admin_session()
+    if err:
+        return err, code
+    try:
+        conn = db_connect()
+        conn.execute("PRAGMA busy_timeout=2000")
+        try:
+            rows = conn.execute(
+                """SELECT username, COALESCE(activo,1), COALESCE(nombre_completo,''),
+                          COALESCE(cargo,''), COALESCE(email,''),
+                          COALESCE(roles_csv,''), COALESCE(creado_por,''),
+                          COALESCE(creado_at_utc,''), COALESCE(ultimo_login_at_utc,''),
+                          COALESCE(changed_at,''), COALESCE(baja_motivo,'')
+                   FROM users_passwords ORDER BY username""",
+            ).fetchall()
+        except Exception:
+            # Mig 149 no aplicó · fallback minimal
+            rows_min = conn.execute(
+                "SELECT username, password_hash, COALESCE(changed_at,'') FROM users_passwords"
+            ).fetchall()
+            rows = [(r[0], 1, '', '', '', '', '', '', '', r[2], '') for r in rows_min]
+        conn.close()
+    except Exception as e:
+        return jsonify({'error': f'BD inaccesible: {e}'}), 500
+    db_users = {r[0]: r for r in rows}
+    users_list = []
+    for un, fila in db_users.items():
+        users_list.append({
+            'username': un,
+            'activo': bool(fila[1]),
+            'nombre_completo': fila[2],
+            'cargo': fila[3],
+            'email': fila[4],
+            'roles': [r.strip() for r in (fila[5] or '').split(',') if r.strip()],
+            'creado_por': fila[6],
+            'creado_at_utc': fila[7],
+            'ultimo_login_at_utc': fila[8],
+            'password_changed_at': fila[9],
+            'baja_motivo': fila[10],
+            'fuente': 'bd',
+        })
+    # También listar users que SOLO viven en env vars (no migrados todavía)
+    for env_user in (COMPRAS_USERS or {}).keys():
+        if env_user not in db_users:
+            users_list.append({
+                'username': env_user,
+                'activo': True,  # env vars no tienen flag
+                'nombre_completo': '',
+                'cargo': '',
+                'email': '',
+                'roles': [],
+                'fuente': 'env_var',
+            })
+    users_list.sort(key=lambda x: (not x['activo'], x['username']))
+    # Roles disponibles para dropdown
+    roles_catalogo = [
+        'admin', 'compras', 'planta', 'calidad', 'marketing',
+        'contadora', 'comercial', 'gerencia', 'maquila',
+        'aseguramiento', 'firmas',
+    ]
+    return jsonify({
+        'usuarios': users_list,
+        'total': len(users_list),
+        'roles_catalogo': roles_catalogo,
+    })
+
+
+@bp.route('/api/admin/usuarios', methods=['POST'])
+def admin_usuarios_crear():
+    """Crear usuario nuevo · genera password temporal · admin only."""
+    u, err, code = _require_admin_session()
+    if err:
+        return err, code
+    body = request.get_json(silent=True) or {}
+    username = (body.get('username') or '').strip().lower()
+    nombre = (body.get('nombre_completo') or '').strip()
+    cargo = (body.get('cargo') or '').strip()
+    email = (body.get('email') or '').strip()
+    roles = body.get('roles') or []
+    password_temp = (body.get('password_temporal') or '').strip()
+    # Validaciones
+    import re as _re
+    if not _re.match(r'^[a-z][a-z0-9_-]{2,30}$', username):
+        return jsonify({'error': 'username: 3-31 chars · [a-z0-9_-] · iniciar con letra'}), 400
+    if len(password_temp) < 8:
+        return jsonify({'error': 'password_temporal mínimo 8 chars'}), 400
+    if not nombre:
+        return jsonify({'error': 'nombre_completo requerido'}), 400
+    if not isinstance(roles, list):
+        roles = []
+    roles_csv = ','.join(r.strip().lower() for r in roles if r.strip())
+    # Hash password
+    from werkzeug.security import generate_password_hash
+    pw_hash = generate_password_hash(password_temp, method='pbkdf2:sha256')
+    from datetime import datetime as _dt
+    now = _dt.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+    try:
+        conn = db_connect()
+        conn.execute("PRAGMA busy_timeout=2000")
+        # Verificar que no exista
+        ex = conn.execute("SELECT 1 FROM users_passwords WHERE username=?", (username,)).fetchone()
+        if ex:
+            conn.close()
+            return jsonify({'error': f'username "{username}" ya existe en BD'}), 409
+        if username in (COMPRAS_USERS or {}):
+            conn.close()
+            return jsonify({'error': f'username "{username}" ya existe en env vars (PASS_{username.upper()})'}), 409
+        conn.execute(
+            """INSERT INTO users_passwords (username, password_hash, changed_at, changed_by,
+                                             activo, nombre_completo, cargo, email,
+                                             roles_csv, creado_por, creado_at_utc)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+            (username, pw_hash, now, u, 1, nombre, cargo, email, roles_csv, u, now),
+        )
+        # Audit
+        try:
+            conn.execute(
+                "INSERT INTO audit_log (usuario, accion, tabla, registro_id, detalle, ip, fecha) "
+                "VALUES (?,?,?,?,?,'',?)",
+                (u, 'CREAR_USUARIO', 'users_passwords', username,
+                 f'nombre={nombre} · cargo={cargo} · roles={roles_csv}', now),
+            )
+        except Exception:
+            pass
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        return jsonify({'error': f'Falla crear: {e}'}), 500
+    return jsonify({
+        'ok': True,
+        'username': username,
+        'password_temporal': password_temp,
+        'mensaje': f'Usuario "{username}" creado · password temporal: {password_temp} · pedíle que la cambie en /cambiar-password al primer login.',
+    }), 201
+
+
+@bp.route('/api/admin/usuarios/<username>', methods=['PATCH'])
+def admin_usuarios_editar(username):
+    """Editar metadata o activo flag · admin only · NO toca password (usar reset)."""
+    u, err, code = _require_admin_session()
+    if err:
+        return err, code
+    username = (username or '').strip().lower()
+    body = request.get_json(silent=True) or {}
+    cambios = {}
+    for campo in ('nombre_completo', 'cargo', 'email', 'baja_motivo'):
+        if campo in body:
+            cambios[campo] = (body.get(campo) or '').strip()
+    if 'activo' in body:
+        cambios['activo'] = 1 if body['activo'] else 0
+    if 'roles' in body:
+        rs = body['roles'] or []
+        if not isinstance(rs, list):
+            rs = []
+        cambios['roles_csv'] = ','.join(r.strip().lower() for r in rs if r.strip())
+    if not cambios:
+        return jsonify({'error': 'sin cambios'}), 400
+    try:
+        conn = db_connect()
+        conn.execute("PRAGMA busy_timeout=2000")
+        # Verificar existe
+        ex = conn.execute("SELECT 1 FROM users_passwords WHERE username=?", (username,)).fetchone()
+        if not ex:
+            # Auto-crear stub en BD si solo vive en env var (para poder editarlo)
+            if username in (COMPRAS_USERS or {}):
+                from datetime import datetime as _dt
+                now = _dt.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+                conn.execute(
+                    "INSERT INTO users_passwords (username, password_hash, changed_at, changed_by, activo, creado_at_utc) VALUES (?,?,?,?,1,?)",
+                    (username, COMPRAS_USERS[username], now, '_migrado_de_env', now),
+                )
+            else:
+                conn.close()
+                return jsonify({'error': f'usuario "{username}" no existe'}), 404
+        sets = ', '.join(f'{k}=?' for k in cambios.keys())
+        params = list(cambios.values()) + [username]
+        conn.execute(f"UPDATE users_passwords SET {sets} WHERE username=?", params)
+        # Audit
+        try:
+            from datetime import datetime as _dt
+            now = _dt.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+            conn.execute(
+                "INSERT INTO audit_log (usuario, accion, tabla, registro_id, detalle, ip, fecha) VALUES (?,?,?,?,?,'',?)",
+                (u, 'EDITAR_USUARIO', 'users_passwords', username, str(cambios)[:300], now),
+            )
+        except Exception:
+            pass
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        return jsonify({'error': f'Falla edit: {e}'}), 500
+    return jsonify({'ok': True, 'username': username, 'cambios': cambios})
+
+
+@bp.route('/api/admin/usuarios/<username>/reset-password', methods=['POST'])
+def admin_usuarios_reset_password(username):
+    """Resetea password con una temporal · admin only."""
+    u, err, code = _require_admin_session()
+    if err:
+        return err, code
+    username = (username or '').strip().lower()
+    body = request.get_json(silent=True) or {}
+    nueva = (body.get('password_temporal') or '').strip()
+    if len(nueva) < 8:
+        return jsonify({'error': 'password_temporal mínimo 8 chars'}), 400
+    from werkzeug.security import generate_password_hash
+    pw_hash = generate_password_hash(nueva, method='pbkdf2:sha256')
+    from datetime import datetime as _dt
+    now = _dt.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+    try:
+        conn = db_connect()
+        conn.execute("PRAGMA busy_timeout=2000")
+        ex = conn.execute("SELECT 1 FROM users_passwords WHERE username=?", (username,)).fetchone()
+        if ex:
+            conn.execute(
+                "UPDATE users_passwords SET password_hash=?, changed_at=?, changed_by=? WHERE username=?",
+                (pw_hash, now, u, username),
+            )
+        elif username in (COMPRAS_USERS or {}):
+            conn.execute(
+                "INSERT INTO users_passwords (username, password_hash, changed_at, changed_by, activo, creado_at_utc, creado_por) VALUES (?,?,?,?,1,?,?)",
+                (username, pw_hash, now, u, now, '_reset_por_admin'),
+            )
+        else:
+            conn.close()
+            return jsonify({'error': f'usuario "{username}" no existe'}), 404
+        try:
+            conn.execute(
+                "INSERT INTO audit_log (usuario, accion, tabla, registro_id, detalle, ip, fecha) VALUES (?,?,?,?,?,'',?)",
+                (u, 'RESET_PASSWORD_USUARIO', 'users_passwords', username, 'admin reset', now),
+            )
+        except Exception:
+            pass
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        return jsonify({'error': f'Falla reset: {e}'}), 500
+    return jsonify({
+        'ok': True, 'username': username,
+        'password_temporal': nueva,
+        'mensaje': f'Password reseteada · entregar al usuario: "{nueva}" · que la cambie en /cambiar-password',
+    })
+
+
+_USERS_ADMIN_HTML = '''<!DOCTYPE html>
+<html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Usuarios · EOS</title>
+<style>
+*{box-sizing:border-box;font-family:'Segoe UI',Roboto,sans-serif}
+body{margin:0;background:#f1f5f9;color:#0f172a;padding:20px}
+.container{max-width:1200px;margin:0 auto;background:#fff;border-radius:12px;padding:24px;box-shadow:0 2px 8px rgba(0,0,0,.05)}
+h1{margin:0 0 6px;color:#0f766e}
+.subtitle{color:#64748b;font-size:13px;margin-bottom:18px}
+.toolbar{display:flex;gap:8px;align-items:center;margin-bottom:16px;flex-wrap:wrap}
+button.primary{background:#0f766e;color:#fff;padding:9px 18px;border:none;border-radius:6px;font-weight:700;cursor:pointer}
+button.primary:hover{background:#115e59}
+button.secondary{background:#475569;color:#fff;padding:8px 14px;border:none;border-radius:5px;font-size:12px;cursor:pointer}
+button.danger{background:#dc2626;color:#fff;padding:5px 10px;border:none;border-radius:4px;font-size:11px;cursor:pointer}
+button.warn{background:#ca8a04;color:#fff;padding:5px 10px;border:none;border-radius:4px;font-size:11px;cursor:pointer}
+input.search{flex:1;max-width:300px;padding:8px 12px;border:1px solid #cbd5e1;border-radius:5px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+thead{background:#0f172a;color:#fff}
+th,td{padding:8px 10px;text-align:left;border-bottom:1px solid #e2e8f0}
+tr:hover{background:#f8fafc}
+.badge{display:inline-block;padding:2px 8px;border-radius:8px;font-size:11px;font-weight:600}
+.b-active{background:#dcfce7;color:#166534}
+.b-inactive{background:#fee2e2;color:#991b1b}
+.b-env{background:#fef3c7;color:#78350f}
+.b-bd{background:#dbeafe;color:#1e40af}
+.role{background:#f1f5f9;color:#475569;padding:1px 6px;border-radius:8px;font-size:10px;margin-right:3px}
+#msg{padding:10px 14px;border-radius:6px;margin-bottom:14px;display:none}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:20px;z-index:99}
+.modal-content{background:#fff;border-radius:10px;padding:24px;max-width:500px;width:100%;max-height:90vh;overflow-y:auto}
+.modal h2{margin:0 0 14px;color:#0f766e}
+.field{margin-bottom:12px}
+.field label{display:block;font-weight:600;font-size:12px;color:#475569;margin-bottom:4px}
+.field input,.field select{width:100%;padding:8px 10px;border:1px solid #cbd5e1;border-radius:5px;font-size:13px}
+.actions{display:flex;gap:8px;justify-content:flex-end;margin-top:18px}
+.role-chk{display:inline-block;margin-right:8px;font-size:12px;color:#475569;cursor:pointer}
+.role-chk input{margin-right:3px}
+</style></head>
+<body>
+<div class="container">
+<h1>👥 Gestión de Usuarios</h1>
+<p class="subtitle">Crear / editar / desactivar / resetear password sin tocar Render env vars. Solo admin (Sebastián / Alejandro).</p>
+<div id="msg"></div>
+<div class="toolbar">
+  <input id="q" class="search" placeholder="🔍 Buscar usuario o nombre..." oninput="renderUsers()">
+  <select id="filtro-estado" onchange="renderUsers()" style="padding:8px;border:1px solid #cbd5e1;border-radius:5px">
+    <option value="todos">Todos</option>
+    <option value="activos">Activos</option>
+    <option value="inactivos">Inactivos</option>
+  </select>
+  <button class="primary" onclick="openCrearModal()">➕ Nuevo usuario</button>
+  <button class="secondary" onclick="loadUsers()">🔄 Refrescar</button>
+  <a href="/modulos" style="margin-left:auto;color:#64748b;font-size:12px;text-decoration:none">← Volver</a>
+</div>
+<div style="overflow-x:auto">
+<table>
+<thead><tr>
+  <th>Usuario</th><th>Estado</th><th>Nombre</th><th>Cargo</th><th>Roles</th>
+  <th>Último login</th><th>Fuente</th><th>Acciones</th>
+</tr></thead>
+<tbody id="users-tbody"><tr><td colspan="8" style="text-align:center;padding:20px;color:#94a3b8">Cargando…</td></tr></tbody>
+</table>
+</div>
+</div>
+<script>
+var _allUsers = [];
+var _rolesCatalogo = [];
+function _esc(s){return String(s||'').replace(/[&<>]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c];});}
+function _msg(txt, ok){
+  var m = document.getElementById('msg');
+  m.textContent = txt;
+  m.style.display = 'block';
+  m.style.background = ok ? '#dcfce7' : '#fee2e2';
+  m.style.color = ok ? '#166534' : '#991b1b';
+  setTimeout(function(){ m.style.display = 'none'; }, 5000);
+}
+async function loadUsers(){
+  try{
+    var r = await fetch('/api/admin/usuarios', {credentials:'same-origin'});
+    var d = await r.json();
+    if(!r.ok){ _msg('Error: ' + (d.error||r.status), false); return; }
+    _allUsers = d.usuarios || [];
+    _rolesCatalogo = d.roles_catalogo || [];
+    renderUsers();
+  }catch(e){ _msg('Red: '+e.message, false); }
+}
+function renderUsers(){
+  var q = (document.getElementById('q').value||'').toLowerCase();
+  var filtro = document.getElementById('filtro-estado').value;
+  var tb = document.getElementById('users-tbody');
+  var list = _allUsers.filter(function(u){
+    if(filtro==='activos' && !u.activo) return false;
+    if(filtro==='inactivos' && u.activo) return false;
+    if(q && !((u.username||'').toLowerCase().includes(q) || (u.nombre_completo||'').toLowerCase().includes(q))) return false;
+    return true;
+  });
+  if(!list.length){ tb.innerHTML='<tr><td colspan="8" style="text-align:center;padding:16px;color:#94a3b8">Sin usuarios que coincidan</td></tr>'; return; }
+  tb.innerHTML = list.map(function(u){
+    var roles = (u.roles||[]).map(function(r){return '<span class="role">'+_esc(r)+'</span>';}).join('');
+    var fuenteBadge = u.fuente==='bd' ? '<span class="badge b-bd">BD</span>' : '<span class="badge b-env">env</span>';
+    var estado = u.activo ? '<span class="badge b-active">✓ activo</span>' : '<span class="badge b-inactive">⛔ inactivo</span>';
+    var ult = (u.ultimo_login_at_utc||'').substring(0,16) || '<span style="color:#cbd5e1">—</span>';
+    var btnDes = u.activo
+      ? '<button class="danger" data-act="desactivar" data-u="'+_esc(u.username)+'" title="Bloquear acceso">⛔ Desactivar</button>'
+      : '<button class="warn" data-act="activar" data-u="'+_esc(u.username)+'" title="Reactivar">✓ Activar</button>';
+    return '<tr>'+
+      '<td><b style="font-family:monospace">'+_esc(u.username)+'</b></td>'+
+      '<td>'+estado+'</td>'+
+      '<td>'+_esc(u.nombre_completo||'')+'</td>'+
+      '<td>'+_esc(u.cargo||'')+'</td>'+
+      '<td>'+(roles||'<span style="color:#cbd5e1">—</span>')+'</td>'+
+      '<td style="font-size:11px;color:#64748b">'+ult+'</td>'+
+      '<td>'+fuenteBadge+'</td>'+
+      '<td style="white-space:nowrap">'+
+        '<button class="warn" data-act="editar" data-u="'+_esc(u.username)+'" title="Editar nombre/cargo/roles">✏ Editar</button> '+
+        '<button class="warn" data-act="reset" data-u="'+_esc(u.username)+'" title="Resetear password">🔑 Reset</button> '+
+        btnDes+
+      '</td></tr>';
+  }).join('');
+}
+document.addEventListener('click', function(ev){
+  var b = ev.target.closest('[data-act]');
+  if(!b) return;
+  var act = b.getAttribute('data-act');
+  var un = b.getAttribute('data-u');
+  if(act==='desactivar') return doSetActivo(un, false);
+  if(act==='activar') return doSetActivo(un, true);
+  if(act==='reset') return doResetPwd(un);
+  if(act==='editar') return openEditarModal(un);
+});
+async function doSetActivo(un, activo){
+  var motivo = '';
+  if(!activo){
+    motivo = prompt('Motivo de baja (opcional · queda en audit):') || '';
+    if(motivo===null) return;
+  }
+  if(!confirm((activo?'Reactivar':'Desactivar')+' usuario "'+un+'"?')) return;
+  try{
+    var r = await fetch('/api/admin/usuarios/'+encodeURIComponent(un), {
+      method:'PATCH', credentials:'same-origin',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({activo: activo, baja_motivo: motivo}),
+    });
+    var d = await r.json();
+    if(!r.ok){ _msg('Error: '+(d.error||r.status), false); return; }
+    _msg('✓ '+un+(activo?' reactivado':' desactivado · ya no podrá hacer login'), true);
+    loadUsers();
+  }catch(e){ _msg('Red: '+e.message, false); }
+}
+async function doResetPwd(un){
+  var nueva = prompt('Password temporal para "'+un+'" (≥8 chars · entregársela en persona):');
+  if(!nueva) return;
+  nueva = nueva.trim();
+  if(nueva.length < 8){ _msg('Password mínimo 8 chars', false); return; }
+  try{
+    var r = await fetch('/api/admin/usuarios/'+encodeURIComponent(un)+'/reset-password', {
+      method:'POST', credentials:'same-origin',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({password_temporal: nueva}),
+    });
+    var d = await r.json();
+    if(!r.ok){ _msg('Error: '+(d.error||r.status), false); return; }
+    alert('✓ Password reseteada · entregale al usuario:\\n\\n'+nueva+'\\n\\nQue la cambie en /cambiar-password al loguearse.');
+    loadUsers();
+  }catch(e){ _msg('Red: '+e.message, false); }
+}
+function openCrearModal(){
+  var m = document.createElement('div');
+  m.className = 'modal';
+  m.id = 'modal-crear';
+  var rolesHtml = _rolesCatalogo.map(function(r){
+    return '<label class="role-chk"><input type="checkbox" value="'+_esc(r)+'" name="roles-crear"> '+_esc(r)+'</label>';
+  }).join('');
+  m.innerHTML = '<div class="modal-content">'+
+    '<h2>➕ Nuevo usuario</h2>'+
+    '<div class="field"><label>Username (lowercase, sin espacios) *</label><input id="c-username" placeholder="ej: laura"></div>'+
+    '<div class="field"><label>Password temporal (≥8 chars) *</label><input id="c-password" type="text" value="EOS-Temp-'+(new Date().getFullYear())+'-X" placeholder="EOS-Temp-2026-X"></div>'+
+    '<div class="field"><label>Nombre completo *</label><input id="c-nombre" placeholder="Laura Martínez"></div>'+
+    '<div class="field"><label>Cargo</label><input id="c-cargo" placeholder="Jefe de Producción"></div>'+
+    '<div class="field"><label>Email</label><input id="c-email" type="email" placeholder="laura@espagiria.co"></div>'+
+    '<div class="field"><label>Roles</label><div>'+rolesHtml+'</div></div>'+
+    '<div class="actions">'+
+      '<button class="secondary" onclick="document.getElementById(\\'modal-crear\\').remove()">Cancelar</button>'+
+      '<button class="primary" onclick="doCrear()">Crear</button>'+
+    '</div>'+
+    '</div>';
+  document.body.appendChild(m);
+}
+async function doCrear(){
+  var username = (document.getElementById('c-username').value||'').trim().toLowerCase();
+  var password = (document.getElementById('c-password').value||'').trim();
+  var nombre = (document.getElementById('c-nombre').value||'').trim();
+  var cargo = (document.getElementById('c-cargo').value||'').trim();
+  var email = (document.getElementById('c-email').value||'').trim();
+  var roles = [];
+  document.querySelectorAll('input[name=roles-crear]:checked').forEach(function(el){ roles.push(el.value); });
+  if(!username || !password || !nombre){ alert('username, password y nombre obligatorios'); return; }
+  try{
+    var r = await fetch('/api/admin/usuarios', {
+      method:'POST', credentials:'same-origin',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({username:username, password_temporal:password, nombre_completo:nombre, cargo:cargo, email:email, roles:roles}),
+    });
+    var d = await r.json();
+    if(!r.ok){ alert('Error: '+(d.error||r.status)); return; }
+    alert('✓ Usuario creado:\\n\\nUsuario: '+d.username+'\\nPassword temporal: '+d.password_temporal+'\\n\\nEntregársela al usuario · debe cambiarla en /cambiar-password.');
+    document.getElementById('modal-crear').remove();
+    loadUsers();
+  }catch(e){ alert('Red: '+e.message); }
+}
+function openEditarModal(un){
+  var u = _allUsers.find(function(x){return x.username===un;});
+  if(!u){ alert('No encontrado'); return; }
+  var m = document.createElement('div');
+  m.className = 'modal'; m.id = 'modal-edit';
+  var userRoles = u.roles || [];
+  var rolesHtml = _rolesCatalogo.map(function(r){
+    var chk = userRoles.indexOf(r) >= 0 ? ' checked' : '';
+    return '<label class="role-chk"><input type="checkbox" value="'+_esc(r)+'" name="roles-edit"'+chk+'> '+_esc(r)+'</label>';
+  }).join('');
+  m.innerHTML = '<div class="modal-content">'+
+    '<h2>✏ Editar usuario · '+_esc(un)+'</h2>'+
+    '<div class="field"><label>Nombre completo</label><input id="e-nombre" value="'+_esc(u.nombre_completo||'')+'"></div>'+
+    '<div class="field"><label>Cargo</label><input id="e-cargo" value="'+_esc(u.cargo||'')+'"></div>'+
+    '<div class="field"><label>Email</label><input id="e-email" type="email" value="'+_esc(u.email||'')+'"></div>'+
+    '<div class="field"><label>Roles</label><div>'+rolesHtml+'</div></div>'+
+    '<div class="actions">'+
+      '<button class="secondary" onclick="document.getElementById(\\'modal-edit\\').remove()">Cancelar</button>'+
+      '<button class="primary" onclick="doEditar(\\''+_esc(un)+'\\')">Guardar</button>'+
+    '</div></div>';
+  document.body.appendChild(m);
+}
+async function doEditar(un){
+  var nombre = (document.getElementById('e-nombre').value||'').trim();
+  var cargo = (document.getElementById('e-cargo').value||'').trim();
+  var email = (document.getElementById('e-email').value||'').trim();
+  var roles = [];
+  document.querySelectorAll('input[name=roles-edit]:checked').forEach(function(el){ roles.push(el.value); });
+  try{
+    var r = await fetch('/api/admin/usuarios/'+encodeURIComponent(un), {
+      method:'PATCH', credentials:'same-origin',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({nombre_completo:nombre, cargo:cargo, email:email, roles:roles}),
+    });
+    var d = await r.json();
+    if(!r.ok){ alert('Error: '+(d.error||r.status)); return; }
+    _msg('✓ Usuario "'+un+'" actualizado', true);
+    document.getElementById('modal-edit').remove();
+    loadUsers();
+  }catch(e){ alert('Red: '+e.message); }
+}
+loadUsers();
+</script>
+</body></html>'''
+
+
+@bp.route('/admin/usuarios')
+def admin_usuarios_page():
+    """Página HTML admin · /admin/usuarios · Sebastián 21-may-2026."""
+    if 'compras_user' not in session:
+        return redirect('/login?next=/admin/usuarios')
+    u = session.get('compras_user', '')
+    if (u or '').strip().lower() not in {x.lower() for x in ADMIN_USERS}:
+        return Response(
+            '<h1>403 · Solo admin</h1><p>Solo Sebastián / Alejandro pueden gestionar usuarios.</p><p><a href="/modulos">← Volver</a></p>',
+            mimetype='text/html', status=403,
+        )
+    return Response(_USERS_ADMIN_HTML, mimetype='text/html')
 
 
 @bp.route('/cambiar-password')

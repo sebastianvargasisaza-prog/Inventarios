@@ -2166,6 +2166,18 @@ CREATE TABLE pedidos (
                  observaciones TEXT DEFAULT '', creado_por TEXT DEFAULT '',
                  fecha_despacho TEXT DEFAULT '', numero_factura TEXT DEFAULT '', monto_pagado DOUBLE PRECISION DEFAULT 0, estado_pago TEXT DEFAULT 'Pendiente', canal_venta TEXT DEFAULT 'Directo', descuento_total_cop DOUBLE PRECISION DEFAULT 0);
 
+-- mig 149 · Usuarios PRO · metadata + activo · 21-may-2026
+ALTER TABLE users_passwords ADD COLUMN activo INTEGER DEFAULT 1;
+ALTER TABLE users_passwords ADD COLUMN nombre_completo TEXT;
+ALTER TABLE users_passwords ADD COLUMN cargo TEXT;
+ALTER TABLE users_passwords ADD COLUMN email TEXT;
+ALTER TABLE users_passwords ADD COLUMN roles_csv TEXT DEFAULT 'compras';
+ALTER TABLE users_passwords ADD COLUMN creado_por TEXT;
+ALTER TABLE users_passwords ADD COLUMN creado_at_utc TEXT;
+ALTER TABLE users_passwords ADD COLUMN ultimo_login_at_utc TEXT;
+ALTER TABLE users_passwords ADD COLUMN baja_motivo TEXT;
+CREATE INDEX idx_users_activo ON users_passwords(activo);
+
 -- mig 148 · Fabricación PRO · costo_estimado + indices · 20-may-2026
 ALTER TABLE producciones ADD COLUMN costo_estimado_cop DOUBLE PRECISION;
 CREATE INDEX idx_producciones_lote ON producciones(lote);

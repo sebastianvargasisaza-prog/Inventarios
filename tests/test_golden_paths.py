@@ -7310,6 +7310,79 @@ def test_golden_portal_b2b_flujo_completo(app, db_clean):
     _exec("DELETE FROM portal_clientes_credenciales WHERE email LIKE 'test_portal_%'")
 
 
+def test_golden_usuarios_admin_crud(app, db_clean):
+    """Módulo Usuarios PRO · Sebastián 21-may-2026 · CRUD admin completo.
+
+    Verifica:
+    - GET /api/admin/usuarios lista
+    - POST crea (admin only)
+    - PATCH edita (activo flag bloquea login)
+    - POST reset-password resetea hash
+    - 403 si no es admin
+    """
+    _exec("DELETE FROM users_passwords WHERE username='test_user_pro'")
+
+    cs = _login(app, 'sebastian')
+
+    # GET lista
+    r1 = cs.get('/api/admin/usuarios')
+    assert r1.status_code == 200
+    assert 'usuarios' in r1.get_json()
+    assert 'roles_catalogo' in r1.get_json()
+
+    # POST crear
+    r2 = cs.post('/api/admin/usuarios', json={
+        'username': 'test_user_pro',
+        'password_temporal': 'TestPass2026!',
+        'nombre_completo': 'Test User Pro',
+        'cargo': 'Test',
+        'email': 'test@espagiria.co',
+        'roles': ['compras', 'planta'],
+    }, headers=csrf_headers())
+    assert r2.status_code == 201, r2.data[:300]
+
+    # Crear duplicado → 409
+    r3 = cs.post('/api/admin/usuarios', json={
+        'username': 'test_user_pro',
+        'password_temporal': 'OtraPass2026',
+        'nombre_completo': 'X',
+    }, headers=csrf_headers())
+    assert r3.status_code == 409
+
+    # PATCH editar
+    r4 = cs.patch('/api/admin/usuarios/test_user_pro', json={
+        'nombre_completo': 'Test User Pro EDITADO',
+        'cargo': 'Jefe Test',
+    }, headers=csrf_headers())
+    assert r4.status_code == 200
+    chk = _query("SELECT nombre_completo, cargo FROM users_passwords WHERE username='test_user_pro'")
+    assert chk[0][0] == 'Test User Pro EDITADO'
+
+    # Desactivar
+    r5 = cs.patch('/api/admin/usuarios/test_user_pro', json={
+        'activo': False, 'baja_motivo': 'TEST',
+    }, headers=csrf_headers())
+    assert r5.status_code == 200
+
+    # Reset password
+    r6 = cs.post('/api/admin/usuarios/test_user_pro/reset-password', json={
+        'password_temporal': 'NuevaPass2026X',
+    }, headers=csrf_headers())
+    assert r6.status_code == 200
+    assert r6.get_json()['password_temporal'] == 'NuevaPass2026X'
+
+    # Username inválido → 400
+    r7 = cs.post('/api/admin/usuarios', json={
+        'username': 'AB!',
+        'password_temporal': 'TestPass2026',
+        'nombre_completo': 'X',
+    }, headers=csrf_headers())
+    assert r7.status_code == 400
+
+    # Cleanup
+    _exec("DELETE FROM users_passwords WHERE username='test_user_pro'")
+
+
 def test_golden_envasado_pro_paginacion_detalle(app, db_clean):
     """Sprint Envasado PRO · 20-may-2026 · paginación + detalle."""
     cs = _login(app, 'sebastian')

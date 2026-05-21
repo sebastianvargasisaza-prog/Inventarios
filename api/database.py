@@ -6433,6 +6433,24 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
            ('ESENCIA ILUMINADORA',                  'esencia', NULL, 60, 90, 30, 3.0, 3, NULL)""",
     ]),
 
+    (149, "Usuarios PRO · metadata + activo flag · 21-may-2026", [
+        # Sebastián 21-may-2026: "hoy entra jefe de producción nuevo y
+        # sale Luis · no tenemos donde generar usuarios". Tabla
+        # users_passwords ya existe (mig 25) pero le falta metadata
+        # (rol, activo, nombre, cargo, email) para gestionar usuarios
+        # desde UI sin tocar Render env vars.
+        "ALTER TABLE users_passwords ADD COLUMN activo INTEGER DEFAULT 1",
+        "ALTER TABLE users_passwords ADD COLUMN nombre_completo TEXT",
+        "ALTER TABLE users_passwords ADD COLUMN cargo TEXT",
+        "ALTER TABLE users_passwords ADD COLUMN email TEXT",
+        "ALTER TABLE users_passwords ADD COLUMN roles_csv TEXT DEFAULT 'compras'",
+        "ALTER TABLE users_passwords ADD COLUMN creado_por TEXT",
+        "ALTER TABLE users_passwords ADD COLUMN creado_at_utc TEXT",
+        "ALTER TABLE users_passwords ADD COLUMN ultimo_login_at_utc TEXT",
+        "ALTER TABLE users_passwords ADD COLUMN baja_motivo TEXT",
+        "CREATE INDEX IF NOT EXISTS idx_users_activo ON users_passwords(activo)",
+    ]),
+
     (148, "Fabricación PRO · costo_estimado_cop + lote_pt index · 20-may-2026", [
         # Costo estimado guardado al registrar producción (calculado de
         # precio_referencia × cantidad_g por MP). Antes solo se computaba
