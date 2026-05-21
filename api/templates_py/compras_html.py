@@ -4545,42 +4545,96 @@ function toggleGrupo(gi){
   }
 }
 
+// Sprint Compras N2 · 21-may-2026 · modal preview con comparador precios
 async function abrirCrearOCDesdeGrupo(gi){
   if(!_GRUPOS_CACHE || !_GRUPOS_CACHE.grupos[gi]) return;
   var g = _GRUPOS_CACHE.grupos[gi];
-  var totalCnt = 0;
-  (g.items_consolidados||[]).forEach(function(it){ totalCnt += parseFloat(it.cantidad_g||0); });
-  var msg = 'Crear UNA SOLA OC con:\\n\\n'+
-    '  Proveedor: '+g.proveedor+'\\n'+
-    '  '+g.solicitudes_count+' solicitudes consolidadas\\n'+
-    '  '+g.items_count+' MPs distintas\\n'+
-    '  '+fmt(totalCnt)+' g totales\\n\\n'+
-    'Las solicitudes pasaran a estado "Aprobada" y quedaran vinculadas a la OC nueva.\\n\\n'+
-    'Continuar?';
-  if(!confirm(msg)) return;
   var nums = (g.solicitudes||[]).map(function(s){ return s.numero; });
-  try{
-    var r = await fetch('/api/compras/oc-desde-solicitudes', _fetchOpts('POST', {
-      proveedor: g.proveedor,
-      solicitudes: nums,
-      consolidar_iguales: true,
-      categoria: 'MP',
-    }));
-    var d = await r.json();
-    if(!r.ok || d.error){
-      alert('Error creando OC: '+(d.error || 'codigo '+r.status));
-      return;
+  // Preview modal con tabla items + delta precio vs histórico
+  var hist = window.PLANTA_PRECIOS_HIST || {};
+  var totalOC = 0;
+  var rowsHtml = (g.items_consolidados||[]).map(function(it){
+    var cant = parseFloat(it.cantidad_g||0);
+    var val = parseFloat(it.valor_estimado||0);
+    var pu = cant > 0 ? (val / cant) : 0;
+    totalOC += val;
+    var h = hist[it.codigo_mp];
+    var deltaCell = '<span style="color:#cbd5e1">—</span>';
+    if(h && h.precio_promedio_90d > 0 && pu > 0){
+      var delta = ((pu - h.precio_promedio_90d) / h.precio_promedio_90d) * 100;
+      var color = delta > 15 ? '#dc2626' : (delta > 5 ? '#ca8a04' : (delta < -5 ? '#16a34a' : '#475569'));
+      var sign = delta > 0 ? '+' : '';
+      deltaCell = '<span style="color:'+color+';font-weight:700">'+sign+delta.toFixed(1)+'%</span>';
     }
-    alert('✓ OC '+d.numero_oc+' creada\\n'+
-          d.solicitudes_vinculadas+' solicitudes vinculadas\\n'+
-          d.items_creados+' items consolidados\\n'+
-          'Total: $'+fmt(d.valor_total));
-    // Refresh data + re-render grupo
-    await loadData();
-    await renderSolicitudesAgrupadas();
-  }catch(e){
-    alert('Error red: '+e.message);
-  }
+    var histPrice = (h && h.precio_promedio_90d > 0) ? ('$'+h.precio_promedio_90d.toFixed(3)+'/g') : '<span style="color:#cbd5e1">sin hist.</span>';
+    return '<tr style="border-bottom:1px solid #f1f5f9">'+
+      '<td style="padding:5px 8px;font-size:11px"><b>'+esc(it.nombre_mp||'')+'</b><br><span style="color:#94a3b8;font-family:monospace;font-size:10px">'+esc(it.codigo_mp||'')+'</span></td>'+
+      '<td style="padding:5px 8px;text-align:right;font-size:11px">'+fmt(cant)+' g</td>'+
+      '<td style="padding:5px 8px;text-align:right;font-size:11px">$'+pu.toFixed(3)+'/g</td>'+
+      '<td style="padding:5px 8px;text-align:right;font-size:11px">'+histPrice+'</td>'+
+      '<td style="padding:5px 8px;text-align:right">'+deltaCell+'</td>'+
+      '<td style="padding:5px 8px;text-align:right;font-size:11px;font-weight:700">$'+fmt(val.toFixed(0))+'</td>'+
+    '</tr>';
+  }).join('');
+  // Modal
+  var ex = document.getElementById('m-oc-preview'); if(ex) ex.remove();
+  var m = document.createElement('div');
+  m.id = 'm-oc-preview';
+  m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9998;display:flex;align-items:center;justify-content:center;padding:20px';
+  m.innerHTML = '<div style="background:#fff;border-radius:12px;padding:20px;max-width:900px;width:100%;max-height:90vh;overflow-y:auto">'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><h3 style="margin:0;color:#0e7490">🛒 Confirmar OC · '+esc(g.proveedor)+'</h3>'+
+    '<button id="oc-prev-close" style="background:none;border:none;font-size:1.4em;cursor:pointer">×</button></div>'+
+    '<div style="background:#f0f9ff;border:1px solid #0891b2;padding:8px 12px;border-radius:6px;margin-bottom:12px;font-size:12px;color:#0c4a6e">'+
+      '<b>'+g.solicitudes_count+' SOLs</b> · <b>'+g.items_count+' MPs</b> · vincular y aprobar'+
+    '</div>'+
+    '<table style="width:100%;border-collapse:collapse">'+
+      '<thead><tr style="background:#0f172a;color:#fff"><th style="padding:6px 8px;text-align:left">MP</th><th style="padding:6px 8px;text-align:right">Cant</th><th style="padding:6px 8px;text-align:right">$ nuevo</th><th style="padding:6px 8px;text-align:right">$ prom 90d</th><th style="padding:6px 8px;text-align:right">Δ%</th><th style="padding:6px 8px;text-align:right">Subtotal</th></tr></thead>'+
+      '<tbody>'+rowsHtml+'</tbody>'+
+      '<tfoot><tr style="background:#f1f5f9;font-weight:700"><td colspan="5" style="padding:8px;text-align:right">TOTAL OC</td><td style="padding:8px;text-align:right">$'+fmt(totalOC.toFixed(0))+'</td></tr></tfoot>'+
+    '</table>'+
+    '<div style="margin-top:10px;font-size:11px;color:#64748b;display:flex;gap:14px;flex-wrap:wrap">'+
+      '<span><span style="color:#16a34a;font-weight:700">verde</span>: precio bajó 5%+</span>'+
+      '<span><span style="color:#ca8a04;font-weight:700">ámbar</span>: subió 5-15%</span>'+
+      '<span><span style="color:#dc2626;font-weight:700">rojo</span>: subió >15% (revisar)</span>'+
+    '</div>'+
+    '<div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end">'+
+      '<button id="oc-prev-cancel" style="background:#94a3b8;color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer">Cancelar</button>'+
+      '<button id="oc-prev-confirm" style="background:#0e7490;color:#fff;border:none;padding:8px 20px;border-radius:6px;font-weight:700;cursor:pointer">✓ Confirmar y crear OC</button>'+
+    '</div>'+
+    '</div>';
+  document.body.appendChild(m);
+  document.getElementById('oc-prev-close').onclick = function(){ m.remove(); };
+  document.getElementById('oc-prev-cancel').onclick = function(){ m.remove(); };
+  m.addEventListener('click', function(e){ if(e.target === m) m.remove(); });
+  document.getElementById('oc-prev-confirm').onclick = async function(){
+    var btn = this; btn.disabled = true; btn.textContent = 'Creando...';
+    try{
+      var r = await fetch('/api/compras/oc-desde-solicitudes', _fetchOpts('POST', {
+        proveedor: g.proveedor,
+        solicitudes: nums,
+        consolidar_iguales: true,
+        categoria: 'MP',
+      }));
+      var d = await r.json();
+      if(!r.ok || d.error){
+        var det = '';
+        if(d.codigo === 'EXCEDE_LIMITE_APROBACION'){
+          det = '\\n\\nMonto solicitado: $'+fmt(d.monto_solicitado||0)+'\\nTu límite: $'+fmt(d.limite_usuario||0)+'\\n\\nPedíle a un admin que la cree o autorice.';
+        }
+        alert('Error creando OC: '+(d.error || 'codigo '+r.status)+det);
+        btn.disabled = false; btn.textContent = '✓ Confirmar y crear OC';
+        return;
+      }
+      alert('✓ OC '+d.numero_oc+' creada\\n'+(d.solicitudes_vinculadas||0)+' SOLs vinculadas\\n'+(d.items_creados||0)+' items\\nTotal: $'+fmt(d.valor_total||0));
+      m.remove();
+      if(typeof loadData==='function') await loadData();
+      if(typeof renderSolicitudesAgrupadas==='function') await renderSolicitudesAgrupadas();
+      if(typeof loadPlanta==='function') await loadPlanta();
+    }catch(e){
+      alert('Error red: '+e.message);
+      btn.disabled = false; btn.textContent = '✓ Confirmar y crear OC';
+    }
+  };
 }
 
 function renderCCSolicitudes(){
