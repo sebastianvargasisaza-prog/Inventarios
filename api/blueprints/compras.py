@@ -8198,39 +8198,33 @@ def compras_dashboard_home():
     out['kpis'] = kpis
 
     # Counts por tab (badges)
+    # MEDIA-7 fix · loggear excepciones · antes el except silencioso ocultaba
+    # bugs SQL y mostraba "0 SOLs" falsos (Sebastián no actuaba).
     counts = {}
-    try:
-        counts['planta'] = int((c.execute(
-            """SELECT COUNT(*) FROM solicitudes_compra
-               WHERE estado='Pendiente'
-                 AND categoria IN ('Materia Prima','Empaque','Material de Empaque')""",
-        ).fetchone() or [0])[0])
-    except Exception: counts['planta'] = 0
-    try:
-        counts['solic'] = int((c.execute(
-            """SELECT COUNT(*) FROM solicitudes_compra
-               WHERE estado='Pendiente'
-                 AND categoria NOT IN ('Materia Prima','Empaque','Material de Empaque',
-                                       'Influencer/Marketing Digital','Cuenta de Cobro')""",
-        ).fetchone() or [0])[0])
-    except Exception: counts['solic'] = 0
-    try:
-        counts['influencer'] = int((c.execute(
-            """SELECT COUNT(*) FROM solicitudes_compra
-               WHERE estado IN ('Pendiente','Aprobada')
-                 AND categoria IN ('Influencer/Marketing Digital','Cuenta de Cobro')""",
-        ).fetchone() or [0])[0])
-    except Exception: counts['influencer'] = 0
-    try:
-        counts['por_pagar'] = int((c.execute(
-            "SELECT COUNT(*) FROM ordenes_compra WHERE estado='Autorizada'",
-        ).fetchone() or [0])[0])
-    except Exception: counts['por_pagar'] = 0
-    try:
-        counts['consol'] = int((c.execute(
-            "SELECT COUNT(*) FROM ordenes_compra WHERE estado IN ('Borrador','Revisada','Autorizada')",
-        ).fetchone() or [0])[0])
-    except Exception: counts['consol'] = 0
+    _log = __import__('logging').getLogger('compras.dashboard')
+    def _count(key, sql, params=()):
+        try:
+            counts[key] = int((c.execute(sql, params).fetchone() or [0])[0])
+        except Exception as e:
+            _log.warning('counts.%s SQL fallo: %s', key, e)
+            counts[key] = 0
+    _count('planta',
+        """SELECT COUNT(*) FROM solicitudes_compra
+           WHERE estado='Pendiente'
+             AND categoria IN ('Materia Prima','Empaque','Material de Empaque')""")
+    _count('solic',
+        """SELECT COUNT(*) FROM solicitudes_compra
+           WHERE estado='Pendiente'
+             AND categoria NOT IN ('Materia Prima','Empaque','Material de Empaque',
+                                   'Influencer/Marketing Digital','Cuenta de Cobro')""")
+    _count('influencer',
+        """SELECT COUNT(*) FROM solicitudes_compra
+           WHERE estado IN ('Pendiente','Aprobada')
+             AND categoria IN ('Influencer/Marketing Digital','Cuenta de Cobro')""")
+    _count('por_pagar',
+        "SELECT COUNT(*) FROM ordenes_compra WHERE estado='Autorizada'")
+    _count('consol',
+        "SELECT COUNT(*) FROM ordenes_compra WHERE estado IN ('Borrador','Revisada','Autorizada')")
     out['counts'] = counts
 
     # Buzón · SOLs nuevas hoy (ambos roles)
@@ -8248,6 +8242,16 @@ def compras_dashboard_home():
         } for r in rows]
     except Exception:
         out['buzon_recientes'] = []
+    # BUG-CRITICA-2 fix · count REAL sin LIMIT (antes KPI mentía con >10)
+    try:
+        bt = c.execute(
+            """SELECT COUNT(*) FROM solicitudes_compra
+               WHERE estado='Pendiente'
+                 AND date(fecha) >= date('now','-5 hours','-2 days')""",
+        ).fetchone()
+        out['buzon_total_48h'] = int(bt[0] or 0)
+    except Exception:
+        out['buzon_total_48h'] = len(out.get('buzon_recientes', []))
 
     # Influencers (solo admin)
     if is_admin:

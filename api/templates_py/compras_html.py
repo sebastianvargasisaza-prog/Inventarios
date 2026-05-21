@@ -170,7 +170,11 @@ async function cxIAPreguntar(pregunta){
     var d=await r.json();
     var pend=document.getElementById('cx-ia-pend');if(pend) pend.remove();
     if(!r.ok){
-      hist.innerHTML+='<div style="margin-bottom:6px"><span style="background:#fee2e2;color:#991b1b;padding:6px 10px;border-radius:10px">⚠ '+(d.error||r.status)+'</span></div>';
+      // ALTA-6 fix · NO_API_KEY mensaje user-friendly (no exponer detalle interno)
+      var msgErr = (d.codigo === 'NO_API_KEY')
+        ? '⚠ Asistente IA temporalmente no disponible · configurar en Render'
+        : ('⚠ '+(d.error||r.status));
+      hist.innerHTML+='<div style="margin-bottom:6px"><span style="background:#fee2e2;color:#991b1b;padding:6px 10px;border-radius:10px">'+msgErr+'</span></div>';
     } else {
       hist.innerHTML+='<div style="margin-bottom:6px"><span style="background:#f0fdfa;color:#134e4a;padding:6px 10px;border-radius:10px;display:inline-block;max-width:90%;white-space:pre-wrap">'+(d.respuesta||'(sin respuesta)')+'</span></div>';
     }
@@ -333,33 +337,7 @@ async function cxIAPreguntar(pregunta){
 </div>
 
 <!-- Modal rechazo influencer -->
-<div id="m-rechazar-inf" class="ov">
-  <div class="mdl" style="max-width:440px;">
-    <div class="mh" style="background:#fef2f2;border-bottom:1px solid #fecaca;">
-      <div style="display:flex;align-items:center;gap:10px;">
-        <span style="font-size:22px;line-height:1;">&#x274C;</span>
-        <div>
-          <div style="font-size:15px;font-weight:700;color:#991b1b;">Rechazar solicitud</div>
-          <div id="m-rechazar-inf-sub" style="font-size:12px;color:#b91c1c;margin-top:1px;"></div>
-        </div>
-      </div>
-      <button class="mx" onclick="closeModal('m-rechazar-inf')">&#x2715;</button>
-    </div>
-    <div class="mb">
-      <div class="fg">
-        <label>Motivo del rechazo <span style="color:#dc2626;">*</span> <span style="font-weight:400;color:#78716c;">(visible para el solicitante)</span></label>
-        <textarea id="motivo-rechazo-inf" rows="4" placeholder="Ej: Falta información de cuenta, monto incorrecto, valor no coincide..."></textarea>
-      </div>
-      <div style="background:#fef9c3;border:1px solid #fde047;border-radius:6px;padding:10px 12px;font-size:12px;color:#854d0e;">
-        ⚠️ El solicitante recibirá un correo con este motivo. Sé específico para evitar reenvíos innecesarios.
-      </div>
-    </div>
-    <div class="mf">
-      <button class="btn" onclick="closeModal('m-rechazar-inf')" style="background:#f5f5f4;color:#44403c;border:1px solid #d6d3d1;">Cancelar</button>
-      <button class="btn" id="btn-confirmar-rechazo" style="background:#dc2626;color:#fff;">&#x274C; Confirmar Rechazo</button>
-    </div>
-  </div>
-</div>
+<!-- MEDIA-8 fix · Modal m-rechazar-inf duplicado eliminado (ya existe en línea 311) -->
 
 <div id="pane-prov" class="pane">
   <div class="bar">
@@ -1318,7 +1296,7 @@ document.querySelectorAll('.tn').forEach(function(btn){
     this.classList.add('on');
     var pane = document.getElementById('pane-'+tab);
     if(pane) pane.classList.add('on');
-    if(tab==='dash'){ renderDashHome2(); renderDash(); }
+    if(tab==='dash'){ renderDashHome2(); /* renderDash() legacy queda en oculto · no se llama (MEDIA-10) */ }
     else if(tab==='prov') renderProv();
     else if(tab==='solic') loadSolicitudes();
     else if(tab==='planta') loadPlanta();
@@ -1520,8 +1498,8 @@ async function verDetalleOS(num){
         '<div><b>Estado</b><br>'+_esc(d.estado||'')+'</div>'+
         '<div><b>F. solicitud</b><br>'+_esc((d.fecha_solicitud||'').substring(0,10))+'</div>'+
         '<div><b>F. requerida</b><br>'+_esc((d.fecha_requerida_entrega||'').substring(0,10) || '—')+'</div>'+
-        '<div><b>Costo est.</b><br>$'+fmt((d.costo_estimado_cop||0).toFixed(0))+'</div>'+
-        '<div><b>Costo real</b><br>$'+fmt((d.costo_real_cop||0).toFixed(0))+'</div>'+
+        '<div><b>Costo est.</b><br>'+fmt((d.costo_estimado_cop||0).toFixed(0))+'</div>'+
+        '<div><b>Costo real</b><br>'+fmt((d.costo_real_cop||0).toFixed(0))+'</div>'+
       '</div>'+
       '<div style="margin-bottom:10px;background:#fef3c7;border-left:3px solid #ca8a04;padding:10px;font-size:12px"><b>Arte solicitado:</b><br>'+_esc(d.arte_descripcion||'—')+'</div>'+
       (d.observaciones ? '<div style="margin-bottom:10px;padding:8px;background:#f1f5f9;font-size:12px"><b>Observaciones:</b><br>'+_esc(d.observaciones)+'</div>' : '')+
@@ -1540,7 +1518,14 @@ async function renderDashHome2(){
   if(!cont) return;
   try{
     var r = await fetch('/api/compras/dashboard-home');
-    if(!r.ok){ cont.innerHTML = ''; return; }
+    if(r.status === 401){
+      cont.innerHTML = '<div style="background:#fef2f2;color:#991b1b;padding:14px;border-radius:8px;font-weight:700">⚠ Sesión expirada · <a href="/login?next=/compras" style="color:#dc2626;text-decoration:underline">re-loguear</a></div>';
+      return;
+    }
+    if(!r.ok){
+      cont.innerHTML = '<div style="color:#dc2626;padding:14px">Error '+r.status+' al cargar dashboard</div>';
+      return;
+    }
     var d = await r.json();
     // Actualizar badges en sub-tabs
     var counts = d.counts || {};
@@ -1575,14 +1560,14 @@ async function renderDashHome2(){
         '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;font-size:12px">'+
           '<div style="background:#f8fafc;padding:8px 10px;border-radius:6px"><div style="color:#64748b;font-size:10px">SOLs sin tocar</div><div style="font-size:1.4em;font-weight:800;color:'+((k.sols_sin_tocar_3d||0)>0?'#dc2626':'#16a34a')+'">'+(k.sols_sin_tocar_3d||0)+'</div><div style="font-size:9px;color:#94a3b8">>3 días</div></div>'+
           '<div style="background:#f8fafc;padding:8px 10px;border-radius:6px"><div style="color:#64748b;font-size:10px">OCs sin autorizar</div><div style="font-size:1.4em;font-weight:800;color:'+((k.ocs_sin_autorizar_5d||0)>0?'#ca8a04':'#16a34a')+'">'+(k.ocs_sin_autorizar_5d||0)+'</div><div style="font-size:9px;color:#94a3b8">>5 días</div></div>'+
-          '<div style="background:#f8fafc;padding:8px 10px;border-radius:6px"><div style="color:#64748b;font-size:10px">Catalina hoy</div><div style="font-size:1.4em;font-weight:800;color:#0e7490">'+(d.buzon_recientes||[]).length+'</div><div style="font-size:9px;color:#94a3b8">SOLs nuevas 48h</div></div>'+
+          '<div style="background:#f8fafc;padding:8px 10px;border-radius:6px"><div style="color:#64748b;font-size:10px">Catalina hoy</div><div style="font-size:1.4em;font-weight:800;color:#0e7490">'+(d.buzon_total_48h||0)+'</div><div style="font-size:9px;color:#94a3b8">SOLs nuevas 48h</div></div>'+
           '<div style="background:#f8fafc;padding:8px 10px;border-radius:6px"><div style="color:#64748b;font-size:10px">OCs viejas (>10d)</div><div style="font-size:1.4em;font-weight:800;color:#dc2626">'+(d.alertas_ocs_viejas||[]).length+'</div><div style="font-size:9px;color:#94a3b8">revisar</div></div>'+
         '</div>'+
         // Top proveedores 30d
         '<div style="margin-top:12px;font-size:11px;color:#475569">'+
           '<b>Top proveedores 30d:</b><br>'+
           ((d.top_proveedores_30d||[]).map(function(p){
-            return '<span style="background:#f1f5f9;padding:3px 8px;border-radius:8px;margin:2px 3px 0 0;display:inline-block">'+_esc(p.proveedor)+' · $'+fmt(p.monto.toFixed(0))+'</span>';
+            return '<span style="background:#f1f5f9;padding:3px 8px;border-radius:8px;margin:2px 3px 0 0;display:inline-block">'+_esc(p.proveedor)+' · '+fmt(p.monto.toFixed(0))+'</span>';
           }).join('') || '<span style="color:#cbd5e1">sin datos</span>')+
         '</div>'+
       '</div>';
@@ -1592,11 +1577,11 @@ async function renderDashHome2(){
       html += '<div style="background:linear-gradient(135deg,#fdf2f8,#fce7f3);border:2px solid #db2777;border-radius:10px;padding:16px">'+
         '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><div style="font-weight:800;font-size:14px;color:#9f1239">💸 Influencers (privado · solo tú)</div>'+
         '<a href="/admin/influencers" style="font-size:11px;color:#9f1239;font-weight:700">Ver todos →</a></div>'+
-        '<div style="background:#fff;padding:10px 12px;border-radius:8px;margin-bottom:10px"><div style="font-size:10px;color:#9f1239">Por pagar</div><div style="font-size:1.8em;font-weight:800;color:#be185d">$'+fmt(inflTot.toFixed(0))+'</div><div style="font-size:11px;color:#9f1239">'+inflList.length+' pendiente(s)</div></div>';
+        '<div style="background:#fff;padding:10px 12px;border-radius:8px;margin-bottom:10px"><div style="font-size:10px;color:#9f1239">Por pagar</div><div style="font-size:1.8em;font-weight:800;color:#be185d">'+fmt(inflTot.toFixed(0))+'</div><div style="font-size:11px;color:#9f1239">'+inflList.length+' pendiente(s)</div></div>';
       if(inflList.length){
         html += '<div style="font-size:11px;color:#9f1239;max-height:160px;overflow-y:auto">';
         inflList.slice(0,5).forEach(function(it){
-          html += '<div style="background:#fff;padding:6px 8px;border-radius:5px;margin-bottom:4px;display:flex;justify-content:space-between"><div><b>'+_esc(it.solicitante||'?')+'</b><br><span style="color:#94a3b8;font-size:10px">'+_esc(it.concepto||'')+'</span></div><div style="text-align:right"><b style="color:#be185d">$'+fmt(it.monto.toFixed(0))+'</b><br><a href="/admin/influencers" style="font-size:9px;color:#0e7490">marcar pagado</a></div></div>';
+          html += '<div style="background:#fff;padding:6px 8px;border-radius:5px;margin-bottom:4px;display:flex;justify-content:space-between"><div><b>'+_esc(it.solicitante||'?')+'</b><br><span style="color:#94a3b8;font-size:10px">'+_esc(it.concepto||'')+'</span></div><div style="text-align:right"><b style="color:#be185d">'+fmt(it.monto.toFixed(0))+'</b><br><a href="/admin/influencers" style="font-size:9px;color:#0e7490">marcar pagado</a></div></div>';
         });
         html += '</div>';
       }
@@ -1632,7 +1617,7 @@ async function renderDashHome2(){
         html += '<div style="margin-top:14px;background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:12px"><b style="color:#0f172a;font-size:13px">Últimas SOLs (48h):</b>';
         html += '<div style="margin-top:8px;display:flex;flex-direction:column;gap:5px;font-size:12px">';
         d.buzon_recientes.slice(0,5).forEach(function(s){
-          html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 8px;background:#f8fafc;border-radius:5px"><div><b style="font-family:monospace">'+_esc(s.numero)+'</b> · '+_esc(s.solicitante)+' <span style="color:#94a3b8;font-size:10px">('+_esc(s.categoria)+')</span></div><div style="font-weight:700;color:#0f172a">$'+fmt(s.valor.toFixed(0))+'</div></div>';
+          html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 8px;background:#f8fafc;border-radius:5px"><div><b style="font-family:monospace">'+_esc(s.numero)+'</b> · '+_esc(s.solicitante)+' <span style="color:#94a3b8;font-size:10px">('+_esc(s.categoria)+')</span></div><div style="font-weight:700;color:#0f172a">'+fmt(s.valor.toFixed(0))+'</div></div>';
         });
         html += '</div></div>';
       }
@@ -1648,7 +1633,7 @@ async function renderDashHome2(){
       html += '<div style="margin-top:14px;background:#fef2f2;border:1px solid #dc2626;border-radius:10px;padding:12px"><b style="color:#991b1b;font-size:13px">🚨 OCs autorizadas hace >10 días sin recibirse</b>';
       html += '<div style="margin-top:6px;font-size:12px">';
       d.alertas_ocs_viejas.forEach(function(o){
-        html += '<div style="display:flex;justify-content:space-between;padding:4px 0;border-top:1px solid #fecaca"><span><b>'+_esc(o.numero_oc)+'</b> · '+_esc(o.proveedor)+' <span style="color:#94a3b8">'+_esc((o.fecha||'').substring(0,10))+'</span></span><b>$'+fmt(o.monto.toFixed(0))+'</b></div>';
+        html += '<div style="display:flex;justify-content:space-between;padding:4px 0;border-top:1px solid #fecaca"><span><b>'+_esc(o.numero_oc)+'</b> · '+_esc(o.proveedor)+' <span style="color:#94a3b8">'+_esc((o.fecha||'').substring(0,10))+'</span></span><b>'+fmt(o.monto.toFixed(0))+'</b></div>';
       });
       html += '</div></div>';
     }
@@ -1675,10 +1660,10 @@ async function cargarWidgetsExtra(){
     var cashHtml = '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px">'+
       '<div style="font-weight:800;color:#0f172a;font-size:13px;margin-bottom:8px">💰 Cash Flow proyectado</div>'+
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:11px">'+
-      '<div style="background:#fef3c7;padding:8px;border-radius:5px"><div style="color:#78350f;font-weight:700">30 días</div><div style="font-size:1.4em;font-weight:800;color:#92400e">$'+fmt(((p30.total_salida||0)).toFixed(0))+'</div><div style="color:#92400e;font-size:9px">'+(p30.ocs_por_pagar?p30.ocs_por_pagar.count:0)+' OCs + '+(p30.influencers?p30.influencers.count:0)+' infl.</div></div>'+
-      '<div style="background:#fee2e2;padding:8px;border-radius:5px"><div style="color:#991b1b;font-weight:700">90 días</div><div style="font-size:1.4em;font-weight:800;color:#7f1d1d">$'+fmt(((p90.total_salida||0)).toFixed(0))+'</div><div style="color:#7f1d1d;font-size:9px">'+(p90.ocs_por_pagar?p90.ocs_por_pagar.count:0)+' OCs proyectadas</div></div>'+
+      '<div style="background:#fef3c7;padding:8px;border-radius:5px"><div style="color:#78350f;font-weight:700">30 días</div><div style="font-size:1.4em;font-weight:800;color:#92400e">'+fmt(((p30.total_salida||0)).toFixed(0))+'</div><div style="color:#92400e;font-size:9px">'+(p30.ocs_por_pagar?p30.ocs_por_pagar.count:0)+' OCs + '+(p30.influencers?p30.influencers.count:0)+' infl.</div></div>'+
+      '<div style="background:#fee2e2;padding:8px;border-radius:5px"><div style="color:#991b1b;font-weight:700">90 días</div><div style="font-size:1.4em;font-weight:800;color:#7f1d1d">'+fmt(((p90.total_salida||0)).toFixed(0))+'</div><div style="color:#7f1d1d;font-size:9px">'+(p90.ocs_por_pagar?p90.ocs_por_pagar.count:0)+' OCs proyectadas</div></div>'+
       '</div>'+
-      '<div style="margin-top:8px;font-size:11px;color:#475569"><b>Real pagado 30d:</b> $'+fmt(((dc.pagado_30d||{}).monto||0).toFixed(0))+' ('+((dc.pagado_30d||{}).count||0)+' pagos)</div>'+
+      '<div style="margin-top:8px;font-size:11px;color:#475569"><b>Real pagado 30d:</b> '+fmt(((dc.pagado_30d||{}).monto||0).toFixed(0))+' ('+((dc.pagado_30d||{}).count||0)+' pagos)</div>'+
     '</div>';
     cont.innerHTML += cashHtml;
   }catch(_){}
@@ -1698,7 +1683,7 @@ async function cargarWidgetsExtra(){
     if(urgentes.length){
       predHtml += '<div style="font-size:11px"><b style="color:#991b1b">🔴 Pedir AHORA:</b>';
       urgentes.forEach(function(it){
-        predHtml += '<div style="background:#fef2f2;padding:4px 8px;border-radius:5px;margin-top:3px;display:flex;justify-content:space-between"><span><b>'+_esc(it.nombre)+'</b> <span style="color:#94a3b8;font-size:10px">'+it.codigo_mp+'</span></span><span style="color:#dc2626;font-weight:700">'+it.dias_hasta_quiebre+'d · '+fmt(it.cantidad_sugerida_g.toFixed(0))+'g</span></div>';
+        predHtml += '<div style="background:#fef2f2;padding:4px 8px;border-radius:5px;margin-top:3px;display:flex;justify-content:space-between"><span><b>'+_esc(it.nombre)+'</b> <span style="color:#94a3b8;font-size:10px">'+_esc(it.codigo_mp)+'</span></span><span style="color:#dc2626;font-weight:700">'+it.dias_hasta_quiebre+'d · '+fmt(it.cantidad_sugerida_g)+'g</span></div>';
       });
       predHtml += '</div>';
     }
@@ -1731,7 +1716,7 @@ async function loadDashboardEjecutivo(){
                 (k.salud_color === 'amarillo' ? '#ca8a04' : '#dc2626');
     var topProv = (d.top_proveedores_mes||[]).slice(0,3);
     var topHtml = topProv.map(function(p){
-      return '<span style="background:#f1f5f9;padding:3px 8px;border-radius:8px;font-size:11px;margin-right:5px"><b>'+esc(p.proveedor)+'</b> · '+p.ocs+' OCs · $'+fmt(p.monto.toFixed(0))+'</span>';
+      return '<span style="background:#f1f5f9;padding:3px 8px;border-radius:8px;font-size:11px;margin-right:5px"><b>'+esc(p.proveedor)+'</b> · '+p.ocs+' OCs · '+fmt(p.monto.toFixed(0))+'</span>';
     }).join('');
     cont.innerHTML =
       '<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:10px">'+
@@ -3221,7 +3206,7 @@ async function crearOCSugerida(){
       else{ errores.push(prov+': '+((res&&res.error)||'Error '+r.status)); }
     }catch(e){ errores.push(prov+': '+e.message); }
   }
-  await loadData(); renderDash();
+  await loadData(); renderDash(); renderDashHome2();
   if(errores.length){
     alert('Creadas: '+creadas.join(', ')+'\\nErrores:\\n'+errores.join('\\n'));
   } else {
@@ -3247,7 +3232,7 @@ async function crearOCFila(i){
       if(actEl) actEl.innerHTML='<span style="color:#16a34a;font-size:13px;">&#x2713; '+esc(res.numero_oc||'OK')+'</span>';
       var row=document.getElementById('sugr'+i);
       if(row) row.style.background='#f0fdf4';
-      await loadData(); renderDash();
+      await loadData(); renderDash(); renderDashHome2();
     } else {
       var msg=(res&&res.error)?res.error:'Error '+r.status;
       if(actEl) actEl.innerHTML='<span style="color:#dc2626;font-size:11px;">'+esc(msg)+'</span>';
@@ -5142,7 +5127,7 @@ function _renderGrupoCard(g, gi){
             '<td style="padding:6px 8px;font-family:monospace;font-size:11px;color:#475569;">'+esc(it.codigo_mp||'-')+'</td>'+
             '<td style="padding:6px 8px;">'+esc((it.nombre_mp||'').substring(0,50))+'</td>'+
             '<td style="padding:6px 8px;text-align:right;font-weight:600;">'+fmt(it.cantidad_g)+' g</td>'+
-            '<td style="padding:6px 8px;text-align:right;color:#78716c;">'+(it.valor_estimado>0?'$'+fmt(it.valor_estimado):'-')+'</td>'+
+            '<td style="padding:6px 8px;text-align:right;color:#78716c;">'+(it.valor_estimado>0?fmt(it.valor_estimado):'-')+'</td>'+
             '<td style="padding:6px 8px;text-align:center;font-size:10px;color:#78716c;font-family:monospace;" title="'+esc((it.solicitudes_origen||[]).join(', '))+'">'+esc(origStr)+'</td>'+
           '</tr>';
         }).join('')+
@@ -5202,7 +5187,7 @@ async function abrirROIProveedores(){
       html += '<tr style="border-bottom:1px solid #e2e8f0">'+
         '<td style="padding:6px;font-weight:600">'+esc(p.proveedor)+'</td>'+
         '<td style="padding:6px;text-align:right">'+p.ocs_12m+'</td>'+
-        '<td style="padding:6px;text-align:right;font-weight:700">$'+fmt(p.monto_12m.toFixed(0))+'</td>'+
+        '<td style="padding:6px;text-align:right;font-weight:700">'+fmt(p.monto_12m.toFixed(0))+'</td>'+
         '<td style="padding:6px;text-align:right">'+p.pagadas+'</td>'+
         '<td style="padding:6px;text-align:right">'+p.recibidas+'</td>'+
         '<td style="padding:6px;text-align:right;color:'+colCump+';font-weight:700">'+p.cumplimiento_pct+'%</td>'+
@@ -5263,16 +5248,16 @@ function abrirOCRFactura(){
         html += '<div><b>NIT:</b><br>'+esc(f.nit||'—')+'</div>';
         html += '<div><b>N° Factura:</b><br><span style="font-family:monospace;color:#7c3aed;font-weight:700">'+esc(f.numero_factura||'—')+'</span></div>';
         html += '<div><b>Fecha:</b><br>'+esc(f.fecha_emision||'—')+'</div>';
-        html += '<div><b>Subtotal:</b><br>$'+fmt((f.subtotal||0).toFixed(0))+'</div>';
-        html += '<div><b>IVA:</b><br>$'+fmt((f.iva||0).toFixed(0))+'</div>';
-        html += '<div style="grid-column:span 2"><b>Total:</b><br><span style="font-size:20px;font-weight:800;color:#7c3aed">$'+fmt((f.total||0).toFixed(0))+'</span></div>';
+        html += '<div><b>Subtotal:</b><br>'+fmt((f.subtotal||0).toFixed(0))+'</div>';
+        html += '<div><b>IVA:</b><br>'+fmt((f.iva||0).toFixed(0))+'</div>';
+        html += '<div style="grid-column:span 2"><b>Total:</b><br><span style="font-size:20px;font-weight:800;color:#7c3aed">'+fmt((f.total||0).toFixed(0))+'</span></div>';
         html += '</div></div>';
         if((f.items||[]).length){
           html += '<div style="background:#fff;border:1px solid #e2e8f0;padding:10px;border-radius:6px;margin-bottom:12px"><b style="font-size:12px">Items ('+f.items.length+'):</b>';
           html += '<table style="width:100%;font-size:11px;margin-top:6px;border-collapse:collapse">';
           html += '<thead><tr style="background:#f1f5f9"><th style="padding:4px 6px;text-align:left">Desc</th><th style="padding:4px 6px;text-align:right">Cant</th><th style="padding:4px 6px;text-align:right">$ unit</th><th style="padding:4px 6px;text-align:right">Sub</th></tr></thead><tbody>';
           f.items.forEach(function(it){
-            html += '<tr><td style="padding:3px 6px">'+esc(it.descripcion||'')+'</td><td style="padding:3px 6px;text-align:right">'+(it.cantidad||0)+' '+esc(it.unidad||'')+'</td><td style="padding:3px 6px;text-align:right">$'+fmt((it.precio_unitario||0).toFixed(0))+'</td><td style="padding:3px 6px;text-align:right;font-weight:700">$'+fmt((it.subtotal||0).toFixed(0))+'</td></tr>';
+            html += '<tr><td style="padding:3px 6px">'+esc(it.descripcion||'')+'</td><td style="padding:3px 6px;text-align:right">'+(it.cantidad||0)+' '+esc(it.unidad||'')+'</td><td style="padding:3px 6px;text-align:right">'+fmt((it.precio_unitario||0).toFixed(0))+'</td><td style="padding:3px 6px;text-align:right;font-weight:700">'+fmt((it.subtotal||0).toFixed(0))+'</td></tr>';
           });
           html += '</tbody></table></div>';
         }
@@ -5280,7 +5265,7 @@ function abrirOCRFactura(){
           html += '<div style="background:#fef3c7;border:1px solid #ca8a04;padding:12px;border-radius:6px"><b style="color:#78350f;font-size:13px">🔗 OCs pendientes del mismo proveedor:</b>';
           ocs.forEach(function(oc){
             var colMatch = oc.match_score === 'alto' ? '#16a34a' : (oc.match_score === 'medio' ? '#ca8a04' : '#94a3b8');
-            html += '<div style="background:#fff;border-left:3px solid '+colMatch+';padding:8px 10px;margin-top:6px;display:flex;justify-content:space-between;align-items:center"><div><b style="font-family:monospace">'+esc(oc.numero_oc)+'</b> · '+esc(oc.proveedor)+' · estado '+esc(oc.estado)+'<br><span style="font-size:10px;color:#94a3b8">OC: $'+fmt(oc.valor_total.toFixed(0))+' vs Factura: $'+fmt((f.total||0).toFixed(0))+' · Δ '+oc.delta_vs_factura_pct+'%</span></div><span style="background:'+colMatch+';color:#fff;padding:2px 8px;border-radius:8px;font-size:10px;font-weight:700">match '+oc.match_score+'</span></div>';
+            html += '<div style="background:#fff;border-left:3px solid '+colMatch+';padding:8px 10px;margin-top:6px;display:flex;justify-content:space-between;align-items:center"><div><b style="font-family:monospace">'+esc(oc.numero_oc)+'</b> · '+esc(oc.proveedor)+' · estado '+esc(oc.estado)+'<br><span style="font-size:10px;color:#94a3b8">OC: '+fmt(oc.valor_total.toFixed(0))+' vs Factura: '+fmt((f.total||0).toFixed(0))+' · Δ '+oc.delta_vs_factura_pct+'%</span></div><span style="background:'+colMatch+';color:#fff;padding:2px 8px;border-radius:8px;font-size:10px;font-weight:700">match '+oc.match_score+'</span></div>';
           });
           html += '</div>';
         } else {
@@ -5391,7 +5376,7 @@ async function abrirCrearOCDesdeGrupo(gi){
       '<td style="padding:5px 8px;text-align:right;font-size:11px">$'+pu.toFixed(3)+'/g</td>'+
       '<td style="padding:5px 8px;text-align:right;font-size:11px">'+histPrice+'</td>'+
       '<td style="padding:5px 8px;text-align:right">'+deltaCell+'</td>'+
-      '<td style="padding:5px 8px;text-align:right;font-size:11px;font-weight:700">$'+fmt(val.toFixed(0))+'</td>'+
+      '<td style="padding:5px 8px;text-align:right;font-size:11px;font-weight:700">'+fmt(val.toFixed(0))+'</td>'+
     '</tr>';
   }).join('');
   // Modal
@@ -5408,7 +5393,7 @@ async function abrirCrearOCDesdeGrupo(gi){
     '<table style="width:100%;border-collapse:collapse">'+
       '<thead><tr style="background:#0f172a;color:#fff"><th style="padding:6px 8px;text-align:left">MP</th><th style="padding:6px 8px;text-align:right">Cant</th><th style="padding:6px 8px;text-align:right">$ nuevo</th><th style="padding:6px 8px;text-align:right">$ prom 90d</th><th style="padding:6px 8px;text-align:right">Δ%</th><th style="padding:6px 8px;text-align:right">Subtotal</th></tr></thead>'+
       '<tbody>'+rowsHtml+'</tbody>'+
-      '<tfoot><tr style="background:#f1f5f9;font-weight:700"><td colspan="5" style="padding:8px;text-align:right">TOTAL OC</td><td style="padding:8px;text-align:right">$'+fmt(totalOC.toFixed(0))+'</td></tr></tfoot>'+
+      '<tfoot><tr style="background:#f1f5f9;font-weight:700"><td colspan="5" style="padding:8px;text-align:right">TOTAL OC</td><td style="padding:8px;text-align:right">'+fmt(totalOC.toFixed(0))+'</td></tr></tfoot>'+
     '</table>'+
     '<div style="margin-top:10px;font-size:11px;color:#64748b;display:flex;gap:14px;flex-wrap:wrap">'+
       '<span><span style="color:#16a34a;font-weight:700">verde</span>: precio bajó 5%+</span>'+
@@ -5437,13 +5422,13 @@ async function abrirCrearOCDesdeGrupo(gi){
       if(!r.ok || d.error){
         var det = '';
         if(d.codigo === 'EXCEDE_LIMITE_APROBACION'){
-          det = '\\n\\nMonto solicitado: $'+fmt(d.monto_solicitado||0)+'\\nTu límite: $'+fmt(d.limite_usuario||0)+'\\n\\nPedíle a un admin que la cree o autorice.';
+          det = '\\n\\nMonto solicitado: '+fmt(d.monto_solicitado||0)+'\\nTu límite: '+fmt(d.limite_usuario||0)+'\\n\\nPedíle a un admin que la cree o autorice.';
         }
         alert('Error creando OC: '+(d.error || 'codigo '+r.status)+det);
         btn.disabled = false; btn.textContent = '✓ Confirmar y crear OC';
         return;
       }
-      alert('✓ OC '+d.numero_oc+' creada\\n'+(d.solicitudes_vinculadas||0)+' SOLs vinculadas\\n'+(d.items_creados||0)+' items\\nTotal: $'+fmt(d.valor_total||0));
+      alert('✓ OC '+d.numero_oc+' creada\\n'+(d.solicitudes_vinculadas||0)+' SOLs vinculadas\\n'+(d.items_creados||0)+' items\\nTotal: '+fmt(d.valor_total||0));
       m.remove();
       if(typeof loadData==='function') await loadData();
       if(typeof renderSolicitudesAgrupadas==='function') await renderSolicitudesAgrupadas();
@@ -6732,7 +6717,7 @@ async function eliminarSolicitud(num){
 // Tab "Por Pagar" — vista unificada de pendientes de pago
 // ════════════════════════════════════════════════════════════════════════
 
-function _esc(s){return String(s||'').replace(/[<>&"']/g,function(c){return {'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c];});}
+// ALTA-5 fix · _esc duplicado borrado (ya está declarado en línea 1730)
 function _money(n){return '$'+Number(n||0).toLocaleString('es-CO');}
 
 // Abre el modal de pago con info de la OC + historial de pagos previos.
