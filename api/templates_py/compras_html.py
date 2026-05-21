@@ -145,7 +145,7 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
   <button class="tn" data-tab="solic" id="tn-solic" title="Solicitudes de usuarios (Papelería, Servicios, EPP, Mantenimiento, etc.)">&#128203; Solicitudes</button>
   <button class="tn" data-tab="planta" id="tn-planta" title="Materia Prima + Empaque agrupado por proveedor (vienen del Centro de Programación)">&#x1F3ED; Planta</button>
   <button class="tn" data-tab="solprod" id="tn-solprod">&#128737;&#65039; Producción <span id="solprod-badge" style="display:none;background:#dc2626;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
-  <button class="tn" data-tab="consol" id="tn-consol">&#x1F4E6; Consolidado</button>
+  <button class="tn" data-tab="consol" id="tn-consol" title="Órdenes de compra activas agrupadas por proveedor (NO es la cola de SOLs pendientes · esa es la tab Planta)">&#x1F4E6; OCs por Proveedor <span style="font-size:9px;background:#cbd5e1;color:#475569;padding:1px 5px;border-radius:6px;margin-left:2px;font-weight:600">+OCs activas</span></button>
   <button class="tn" data-tab="mis-sol" id="tn-mis-sol" title="Tus solicitudes con seguimiento del ciclo completo">&#128100; Mis Solicitudes <span id="mis-sol-badge" style="display:none;background:#1e40af;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
 </div>
 
@@ -415,7 +415,10 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
 
 <div id="pane-consol" class="pane">
   <div class="bar" style="flex-wrap:wrap;gap:8px;">
-    <span style="font-weight:700;color:#1e293b;font-size:15px;">&#x1F4E6; Pedidos consolidados por proveedor</span>
+    <div>
+      <span style="font-weight:700;color:#1e293b;font-size:15px;">&#x1F4E6; Órdenes de compra activas · agrupadas por proveedor</span>
+      <div style="font-size:11px;color:#64748b;margin-top:2px">OCs ya creadas (Borrador / Revisada / Autorizada) · NO la cola de SOLs pendientes (esa va en tab "🏭 Planta")</div>
+    </div>
     <div style="display:flex;gap:8px;margin-left:auto;align-items:center;">
       <label style="font-size:12px;color:#64748b;">Estados:</label>
       <label style="font-size:12px;"><input type="checkbox" class="consol-est" value="Borrador" checked> Borrador</label>
@@ -3693,19 +3696,25 @@ function _plantaCardHTML(g, idx){
 }
 
 function _plantaItemRowHTML(g, it){
-  // Cada item de items_consolidados es la SUMA de un codigo_mp por todas las
-  // SOLs del grupo. Para edición individual buscamos cuál SOL/item original
-  // fue: el primero. (En la práctica, las SOLs auto-gen tienen 1 item por
-  // codigo_mp, así que es 1-a-1.) Si hay varios, sólo edita el primero.
-  var ref = null;
-  (g.solicitudes||[]).some(function(s){
-    var match = (s.items||[]).find(function(x){ return (x.codigo_mp||'')===(it.codigo_mp||''); });
-    if(match){ ref = {numero: s.numero, item_id: match.id, codigo_mp: match.codigo_mp}; return true; }
-    return false;
+  // BUG #3 fix · Sprint Compras N1 · 21-may-2026 ·
+  // Sebastián: agente detectó que el código solo editaba el PRIMER item
+  // cuando hay varias SOLs con mismo codigo_mp. Si planta envió 2 SOLs
+  // separadas del mismo MP, una queda intocada.
+  // FIX: recolectar TODAS las refs (numero, item_id) y guardarlas en
+  // data-refs como JSON. plantaGuardarItem itera y manda N PATCH.
+  var refs = [];
+  (g.solicitudes||[]).forEach(function(s){
+    (s.items||[]).forEach(function(x){
+      if((x.codigo_mp||'')===(it.codigo_mp||'')){
+        refs.push({numero: s.numero, item_id: x.id});
+      }
+    });
   });
-  var sigla = ref ? ref.numero : '-';
-  var rowId = 'planta-row-'+(ref ? ref.numero+'-'+ref.item_id : Math.random().toString(36).slice(2));
-  return '<tr id="'+rowId+'" style="border-bottom:1px solid #f1f5f9;" data-numero="'+esc(ref ? ref.numero : '')+'" data-item-id="'+(ref ? ref.item_id : '')+'" data-codigo-mp="'+esc(it.codigo_mp||'')+'">' +
+  var refsCount = refs.length;
+  var sigla = refsCount === 0 ? '-' : (refsCount === 1 ? refs[0].numero : (refsCount + ' SOLs'));
+  var refsAttr = encodeURIComponent(JSON.stringify(refs));
+  var rowId = 'planta-row-'+(it.codigo_mp || Math.random().toString(36).slice(2));
+  return '<tr id="'+rowId+'" style="border-bottom:1px solid #f1f5f9;" data-refs="'+refsAttr+'" data-codigo-mp="'+esc(it.codigo_mp||'')+'">' +
     '<td style="padding:6px;">' +
       '<div style="font-weight:600;color:#1e293b;">'+esc(it.nombre_mp||it.codigo_mp||'')+'</div>' +
       '<div style="font-size:10px;color:#94a3b8;">'+esc(it.codigo_mp||'')+'</div>' +
@@ -3719,9 +3728,9 @@ function _plantaItemRowHTML(g, it){
     '<td style="padding:6px;text-align:right;">' +
       '<input type="number" step="any" class="planta-val-inp" value="'+(parseFloat(it.valor_estimado||0))+'" style="width:100%;padding:4px 6px;border:1px solid #cbd5e1;border-radius:4px;font-size:12px;text-align:right;">' +
     '</td>' +
-    '<td style="padding:6px;text-align:right;font-size:11px;color:#64748b;font-weight:600;">'+esc(sigla)+'</td>' +
+    '<td style="padding:6px;text-align:right;font-size:11px;color:#64748b;font-weight:600;" title="'+(refs.map(function(r){return r.numero;}).join(', '))+'">'+esc(sigla)+'</td>' +
     '<td style="padding:6px;text-align:right;">' +
-      (ref ? '<button class="btn" onclick="plantaGuardarItem(this)" style="padding:4px 10px;font-size:11px;background:#16a34a;color:#fff;">&#x1F4BE; Guardar</button>' :
+      (refsCount > 0 ? '<button class="btn" onclick="plantaGuardarItem(this)" style="padding:4px 10px;font-size:11px;background:#16a34a;color:#fff;" title="'+(refsCount > 1 ? 'Guarda los '+refsCount+' items relacionados' : 'Guardar')+'">&#x1F4BE; Guardar'+(refsCount > 1 ? ' ('+refsCount+')' : '')+'</button>' :
              '<span style="font-size:10px;color:#94a3b8;">—</span>') +
     '</td>' +
   '</tr>';
@@ -3730,39 +3739,54 @@ function _plantaItemRowHTML(g, it){
 window.plantaGuardarItem = async function(btn){
   var tr = btn.closest('tr');
   if(!tr) return;
-  var numero = tr.dataset.numero;
-  var itemId = tr.dataset.itemId;
-  if(!numero || !itemId){ alert('Item sin referencia · no se puede guardar'); return; }
+  // BUG #3 fix · iterar TODAS las refs · antes solo guardaba la primera
+  var refs = [];
+  try{ refs = JSON.parse(decodeURIComponent(tr.dataset.refs || '%5B%5D')); }catch(_){ refs = []; }
+  if(!refs.length){ alert('Item sin referencia · no se puede guardar'); return; }
   var prov = (tr.querySelector('.planta-prov-inp')||{value:''}).value.trim();
   var cant = parseFloat((tr.querySelector('.planta-cant-inp')||{value:'0'}).value) || 0;
   var val = parseFloat((tr.querySelector('.planta-val-inp')||{value:'0'}).value) || 0;
   var precioUnit = cant > 0 ? (val / cant) : 0;
+  // Distribución proporcional si hay múltiples SOLs:
+  // dejamos cada item con SU cantidad_g original, pero proveedor y precio_unit_g
+  // van uniformes (es lo que la card del grupo representa).
   btn.disabled = true; btn.textContent = '...';
+  // Agrupar items por numero de SOL · cada SOL recibe un PATCH con sus ítems
+  var porSol = {};
+  refs.forEach(function(r){ (porSol[r.numero] = porSol[r.numero] || []).push(r.item_id); });
+  // Si hay varias SOLs, la "cantidad" del input es el TOTAL · no la tocamos
+  // (sería tricky redistribuir); solo actualizamos proveedor + precio_unit_g.
+  // Si es 1 SOL · permitimos cambiar la cantidad también.
+  var soloUnaSol = (Object.keys(porSol).length === 1 && refs.length === 1);
   try{
-    var r = await fetch('/api/solicitudes-compra/'+encodeURIComponent(numero)+'/items',
-      _fetchOpts('PATCH', {
-        items: [{
+    var resultados = await Promise.all(Object.keys(porSol).map(function(num){
+      var items = porSol[num].map(function(itemId){
+        var patch = {
           id: parseInt(itemId, 10),
           proveedor: prov,
-          cantidad_g: cant,
-          precio_unit_g: precioUnit
-        }]
-      }));
-    var d = await r.json();
-    if(!r.ok){
-      alert('Error: '+(d.error || r.status));
-      btn.disabled = false; btn.innerHTML = '&#x1F4BE; Guardar';
+          precio_unit_g: precioUnit,
+        };
+        if(soloUnaSol){ patch.cantidad_g = cant; }
+        return patch;
+      });
+      return fetch('/api/solicitudes-compra/'+encodeURIComponent(num)+'/items',
+        _fetchOpts('PATCH', {items: items}))
+        .then(function(r){ return r.ok ? {ok:true, num:num} : r.json().then(function(d){return {ok:false, num:num, err:d.error||r.status};}); });
+    }));
+    var fallos = resultados.filter(function(x){ return !x.ok; });
+    if(fallos.length){
+      alert('Errores en '+fallos.length+' SOL(s): '+fallos.map(function(f){return f.num+': '+f.err;}).join(' · '));
+      btn.disabled = false; btn.innerHTML = '&#x1F4BE; Guardar'+(refs.length > 1 ? ' ('+refs.length+')' : '');
       return;
     }
     btn.style.background = '#0e7490';
-    btn.innerHTML = '&#x2713; Guardado';
+    btn.innerHTML = '&#x2713; '+(refs.length > 1 ? refs.length+' OK' : 'Guardado');
     setTimeout(function(){
-      // Refrescar todo el tab para reflejar el regroup por nuevo proveedor
       loadPlanta();
     }, 600);
   }catch(e){
     alert('Error de red: '+e.message);
-    btn.disabled = false; btn.innerHTML = '&#x1F4BE; Guardar';
+    btn.disabled = false; btn.innerHTML = '&#x1F4BE; Guardar'+(refs.length > 1 ? ' ('+refs.length+')' : '');
   }
 };
 

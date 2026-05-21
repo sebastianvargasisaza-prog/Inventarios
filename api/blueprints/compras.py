@@ -332,10 +332,34 @@ def dashboard_stats():
 
 @bp.route('/api/generar-oc-automatica', methods=['POST'])
 def generar_oc_automatica():
-    """Genera OCs automaticas por proveedor para todas las MPs bajo minimo"""
-    usuario, err, code = _require_compras_write()
-    if err:
-        return err, code
+    """⚠️ DEPRECATED · Sprint Compras N1 · 21-may-2026.
+
+    Endpoint LEGACY. Crea OCs en estado 'Pendiente' (no 'Borrador'),
+    sin creado_por, sin categoria, sin audit_log consistente · conflicto
+    con flujo nuevo `oc-desde-solicitudes` (que SÍ cumple invariantes).
+
+    Sebastián decidió: redirigir todo al flujo canónico. Este endpoint
+    devuelve 410 GONE con instrucción de migrar.
+
+    Para reactivar (NO recomendado): borrar este wrapper y desambiguar
+    el flujo · pero todos los call sites del frontend ya migraron a
+    `crear_oc_desde_solicitudes`.
+    """
+    return jsonify({
+        'error': 'Endpoint DEPRECATED · usar /api/compras/oc-desde-solicitudes',
+        'detalle': (
+            'generar-oc-automatica fue reemplazado por el flujo canónico que '
+            'crea OCs en estado Borrador con auditoría completa · monto-limit '
+            'check · vinculación a SOLs · histórico de precios.'
+        ),
+        'reemplazo': '/api/compras/oc-desde-solicitudes',
+        'desde': '2026-05-21',
+    }), 410
+
+
+def _generar_oc_automatica_legacy_DISABLED():
+    """Cuerpo original guardado para referencia · NO se ejecuta."""
+    usuario = ''
     conn = get_db(); c = conn.cursor()
 
     # Obtener MPs bajo minimo
@@ -2205,6 +2229,27 @@ def crear_oc_desde_solicitudes():
                  'unidad': it['unidad']}
                 for it in items_raw
             ]
+
+        # BUG #1 CRITICA · Sprint Compras N1 · 21-may-2026 ·
+        # Sebastián: agente detectó que oc-desde-solicitudes NO chequea
+        # _check_monto_limit antes de crear OC bulk · cualquier user
+        # Compras puede crear OC de $500M sin escalado.
+        # FIX: pre-calcular valor_total preview y validar contra límite
+        # del usuario · si excede → 403 sin tocar BD.
+        valor_total_preview = 0.0
+        for _it in items_oc:
+            try:
+                _cant = float(_it.get('cantidad_g') or 0)
+                _pu = float(_it.get('precio_unitario') or 0)
+                valor_total_preview += _cant * _pu
+            except (ValueError, TypeError):
+                pass
+        if valor_total_preview > 0:
+            err_lim, code_lim = _check_monto_limit(usuario, valor_total_preview)
+            if err_lim:
+                # NO tocar BD · solo devolver el error con el valor calculado
+                # para que la UI muestre cuánto excede.
+                return err_lim, code_lim
 
         # 4. Crear la OC
         obs = f"OC consolidada desde {len(nums)} solicitudes"
