@@ -5057,6 +5057,7 @@ function _renderGrupoCard(g, gi){
       '</div>'+
       '<div style="background:'+urgColor+';color:#fff;padding:3px 8px;border-radius:6px;font-size:10px;font-weight:700;text-transform:uppercase;">'+esc(g.urgencia_max)+'</div>'+
       '<button onclick="abrirCrearOCDesdeGrupo('+gi+')" style="background:#fff;color:#0e7490;border:none;border-radius:6px;padding:8px 16px;font-size:12px;font-weight:700;cursor:pointer;">&#x1F6D2; Crear OC con todos</button>'+
+      '<button onclick="abrirPedirCotizacion('+gi+')" style="background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.4);border-radius:6px;padding:8px 14px;font-size:11px;font-weight:700;cursor:pointer" title="Pedir 3 cotizaciones a los top proveedores históricos · IA elige los mejores">&#x1F4AC; Pedir cotización</button>'+
       '<button onclick="toggleGrupo('+gi+')" id="btnTg'+gi+'" style="background:rgba(255,255,255,0.2);color:#fff;border:none;border-radius:6px;width:32px;height:32px;cursor:pointer;font-size:13px;font-weight:700;" title="Mostrar/ocultar items">&#x25BC;</button>'+
     '</div>'+
     // Body — items consolidados (oculto por defecto)
@@ -5097,6 +5098,72 @@ function toggleGrupo(gi){
     body.style.display='none';
     if(btn) btn.innerHTML='&#x25BC;';
   }
+}
+
+// Gap #2 · 21-may-2026 · Pedir cotización a top 3 proveedores históricos
+async function abrirPedirCotizacion(gi){
+  if(!_GRUPOS_CACHE || !_GRUPOS_CACHE.grupos[gi]) return;
+  var g = _GRUPOS_CACHE.grupos[gi];
+  var items = (g.items_consolidados||[]).map(function(it){
+    return {codigo_mp: it.codigo_mp, nombre_mp: it.nombre_mp, cantidad_g: parseFloat(it.cantidad_g||0)};
+  });
+  if(!items.length){ alert('Sin items en este grupo'); return; }
+  // Abrir modal preview
+  var ex = document.getElementById('m-cot-preview'); if(ex) ex.remove();
+  var m = document.createElement('div');
+  m.id = 'm-cot-preview';
+  m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9998;display:flex;align-items:center;justify-content:center;padding:20px';
+  m.innerHTML = '<div style="background:#fff;border-radius:12px;padding:20px;max-width:600px;width:100%;max-height:90vh;overflow-y:auto">'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><h3 style="margin:0;color:#0e7490">💬 Pedir cotización · 3 proveedores</h3><button id="cot-close" style="background:none;border:none;font-size:1.4em;cursor:pointer">×</button></div>'+
+    '<div style="background:#f0f9ff;border:1px solid #0891b2;padding:10px 12px;border-radius:6px;margin-bottom:12px;font-size:12px;color:#0c4a6e">La IA detecta los top 3 proveedores históricos que han vendido los MPs del grupo · creará una ronda y vos enviás manualmente (email/WhatsApp) y registrás las respuestas cuando vuelvan.</div>'+
+    '<div style="background:#f8fafc;padding:10px 12px;border-radius:6px;margin-bottom:12px;font-size:12px">'+
+      '<b style="color:#475569">Grupo: '+esc(g.proveedor)+'</b><br>'+
+      g.solicitudes_count+' SOLs · '+g.items_count+' MPs · '+items.length+' productos'+
+    '</div>'+
+    '<div><label style="font-size:12px;font-weight:600;color:#475569">Observaciones para la cotización (opcional)</label>'+
+    '<textarea id="cot-obs" rows="2" placeholder="Ej: necesito entrega antes del 15-jun · piden volumen X" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:5px;margin-top:4px;font-size:12px"></textarea></div>'+
+    '<div id="cot-preview" style="margin-top:12px"></div>'+
+    '<div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end">'+
+      '<button id="cot-cancel" style="background:#94a3b8;color:#fff;padding:8px 16px;border:none;border-radius:6px;cursor:pointer">Cancelar</button>'+
+      '<button id="cot-crear" style="background:#0e7490;color:#fff;padding:8px 20px;border:none;border-radius:6px;font-weight:700;cursor:pointer">💬 Crear ronda con top 3</button>'+
+    '</div></div>';
+  document.body.appendChild(m);
+  document.getElementById('cot-close').onclick = function(){ m.remove(); };
+  document.getElementById('cot-cancel').onclick = function(){ m.remove(); };
+  m.addEventListener('click', function(e){ if(e.target === m) m.remove(); });
+  document.getElementById('cot-crear').onclick = async function(){
+    var btn = this; btn.disabled = true; btn.textContent = 'Creando...';
+    var obs = (document.getElementById('cot-obs')||{value:''}).value.trim();
+    try{
+      var r = await fetch('/api/compras/cotizaciones/desde-grupo', _fetchOpts('POST', {
+        proveedor_sugerido: g.proveedor,
+        items: items,
+        observaciones: obs,
+      }));
+      var d = await r.json();
+      if(!r.ok){
+        var det = '';
+        if((d.top_encontrados||[]).length) det = '\\n\\nProveedores en histórico: '+(d.top_encontrados||[]).map(function(p){return p.nombre;}).join(', ')+'\\n\\nNecesitás al menos 2 proveedores con histórico.';
+        alert('Error: '+(d.error||r.status)+det);
+        btn.disabled = false; btn.textContent = '💬 Crear ronda con top 3';
+        return;
+      }
+      // Mostrar preview de ronda creada
+      var prevHtml = '<div style="background:#dcfce7;color:#166534;padding:12px;border-radius:6px;margin-top:10px;font-weight:700">✓ Ronda '+d.ronda_id+' creada</div>';
+      prevHtml += '<div style="margin-top:10px;font-size:12px"><b>Proveedores a contactar:</b><br>';
+      (d.cotizaciones||[]).forEach(function(c){
+        prevHtml += '<div style="background:#fff;border:1px solid #cbd5e1;padding:6px 10px;border-radius:5px;margin-top:4px;display:flex;justify-content:space-between"><span><b>'+esc(c.proveedor)+'</b></span><span style="color:#94a3b8;font-size:10px">COT-ID '+c.id+'</span></div>';
+      });
+      prevHtml += '</div>';
+      prevHtml += '<div style="margin-top:10px;background:#fef3c7;color:#78350f;padding:10px;border-radius:6px;font-size:12px"><b>📧 Siguiente paso:</b><br>Enviar a cada proveedor el detalle de items · pedir precio · plazo · cuando respondan, vas a "Cotizaciones" para registrar las respuestas y elegir ganadora.</div>';
+      document.getElementById('cot-preview').innerHTML = prevHtml;
+      btn.style.display = 'none';
+      document.getElementById('cot-cancel').textContent = 'Cerrar';
+    }catch(e){
+      alert('Error red: '+e.message);
+      btn.disabled = false; btn.textContent = '💬 Crear ronda con top 3';
+    }
+  };
 }
 
 // Sprint Compras N2 · 21-may-2026 · modal preview con comparador precios
