@@ -5922,10 +5922,43 @@ if(typeof document !== 'undefined' && !window._DIAG_FORM_DELEG){
   window._DIAG_FORM_DELEG = true;
   document.addEventListener('click', function(ev){
     var b = ev.target && ev.target.closest && ev.target.closest('[data-act-diag-form]');
-    if(!b) return;
-    var prod = b.getAttribute('data-prod') || '';
-    if(prod) diagnosticarFormula(prod);
+    if(b){
+      var prod = b.getAttribute('data-prod') || '';
+      if(prod) diagnosticarFormula(prod);
+      return;
+    }
+    var br = ev.target && ev.target.closest && ev.target.closest('[data-act-autorep-retry]');
+    if(br){
+      var prod2 = br.getAttribute('data-prod') || '';
+      var kg2 = parseFloat(br.getAttribute('data-kg')) || 0;
+      if(prod2) autoRepararYReintentar(prod2, kg2, br);
+    }
   });
+}
+async function autoRepararYReintentar(prod, kg, btn){
+  if(!confirm('Auto-reparar la fórmula de "'+prod+'" reemplazando codigo_mp huérfanos por los reales con stock · y luego reintentar registrar la producción?')) return;
+  if(btn) btn.disabled = true;
+  try{
+    // 1) Apply auto-repair
+    var ra = await fetch('/api/produccion/auto-reparar-formula/'+encodeURIComponent(prod), {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({dry_run: false}),
+    });
+    var da = await ra.json();
+    if(!ra.ok){ alert('Error auto-repair: '+(da.error||ra.status)); if(btn) btn.disabled = false; return; }
+    if(!(da.aplicados||[]).length){
+      alert('Sin cambios aplicados · no se detectaron candidatos válidos.');
+      if(btn) btn.disabled = false; return;
+    }
+    // 2) Recargar fórmulas para que el preview funcione si vuelve a usarse
+    if(typeof loadFormulas==='function') await loadFormulas();
+    // 3) Reintentar registro
+    var msgEl = document.getElementById('prod-msg');
+    if(msgEl) msgEl.innerHTML = '<div style="background:#dbeafe;color:#1e40af;padding:8px 12px;border-radius:6px;font-size:12px">✓ Fórmula auto-reparada ('+da.aplicados.length+' cambios) · reintentando registro…</div>';
+    setTimeout(function(){
+      if(typeof iniciarRegistroProd === 'function') iniciarRegistroProd();
+    }, 600);
+  }catch(e){ alert('Error red: '+e.message); if(btn) btn.disabled = false; }
 }
 async function diagnosticarFormula(producto){
   try{
@@ -6121,7 +6154,19 @@ async function iniciarRegistroProd(){
       html+='<b style="font-size:14px;">&#x274C; '+(d.error||'Error registrando produccion')+'</b>';
       // Si hubo MPs faltantes · botón diagnóstico para auto-detectar duplicados
       if(d.faltantes && d.faltantes.length){
-        html+='<div style="margin-top:8px"><button data-act-diag-form data-prod="'+_escHTML(prod)+'" style="background:#0e7490;color:#fff;border:none;padding:6px 14px;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer">🔍 Diagnosticar fórmula</button> <span style="font-size:11px;color:#7f1d1d">← detectar si hay codigo_mp huérfano (post-unificación)</span></div>';
+        // 21-may-2026: si auto_repair_candidatos > 0, mostrar botón de
+        // auto-repair PROMINENTE arriba del diagnóstico · arregla en 1 clic.
+        if(d.auto_repair_disponible && (d.auto_repair_candidatos||[]).length){
+          html+='<div style="margin-top:10px;background:#fff7ed;border:2px solid #fb923c;border-radius:8px;padding:10px 14px">';
+          html+='<b style="color:#9a3412;font-size:13px">🔥 Codigo_mp huérfano detectado · auto-reparable</b><br>';
+          html+='<span style="font-size:11px;color:#7c2d12">Tu fórmula apunta a un código sin stock, pero existe el MISMO material con otro código que SÍ tiene lotes:</span><br>';
+          d.auto_repair_candidatos.forEach(function(ar){
+            html+='<div style="margin-top:4px;font-size:12px;color:#7c2d12">• <b>'+_escHTML(ar.huerfano.nombre)+'</b>: <span style="font-family:monospace">'+_escHTML(ar.huerfano.codigo)+'</span> → <span style="font-family:monospace;color:#16a34a;font-weight:700">'+_escHTML(ar.reemplazo.codigo)+'</span> ('+Number(ar.reemplazo.stock_g).toLocaleString()+'g disponibles)</div>';
+          });
+          html+='<button data-act-autorep-retry data-prod="'+_escHTML(prod)+'" data-kg="'+kg+'" style="margin-top:10px;background:#9a3412;color:#fff;border:none;padding:8px 18px;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer">🔧 Auto-reparar Y reintentar registro</button>';
+          html+='</div>';
+        }
+        html+='<div style="margin-top:8px"><button data-act-diag-form data-prod="'+_escHTML(prod)+'" style="background:#0e7490;color:#fff;border:none;padding:6px 14px;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer">🔍 Diagnosticar fórmula</button> <span style="font-size:11px;color:#7f1d1d">← ver detalle completo</span></div>';
       }
       if(d.faltantes && d.faltantes.length){
         html+='<div style="margin-top:8px;font-size:13px;">No se descontó nada (transacción atómica abortó).</div>';

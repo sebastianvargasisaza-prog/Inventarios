@@ -1948,15 +1948,56 @@ def _handle_produccion_inner():
             plan_descuentos.append(entry)
 
         if faltantes:
+            # Sebastián 21-may-2026: AUTO-DETECTAR codigo_mp huérfanos en el
+            # mismo response · si la fórmula apunta a un código sin stock
+            # pero existe MP con nombre similar QUE SÍ tiene stock, ofrecer
+            # auto-repair sin tener que apretar otro botón.
+            auto_repair_candidatos = []
+            for f in faltantes:
+                mid = f.get('material_id', '')
+                mnom = (f.get('material', '') or '').strip()
+                if not mid or not mnom:
+                    continue
+                nom_norm = mnom.lower()[:30]
+                if len(nom_norm) < 4:
+                    continue
+                try:
+                    cand = c.execute(
+                        """SELECT mp.codigo_mp, mp.nombre_comercial,
+                                  COALESCE(SUM(CASE WHEN m.tipo='Entrada' THEN m.cantidad ELSE -m.cantidad END), 0) as stock_act
+                           FROM maestro_mps mp
+                           LEFT JOIN movimientos m ON m.material_id = mp.codigo_mp
+                             AND (m.estado_lote IS NULL OR m.estado_lote NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO'))
+                           WHERE COALESCE(mp.activo,1)=1
+                             AND mp.codigo_mp != ?
+                             AND (LOWER(COALESCE(mp.nombre_comercial,'')) LIKE ?
+                                  OR LOWER(COALESCE(mp.nombre_inci,'')) LIKE ?)
+                           GROUP BY mp.codigo_mp, mp.nombre_comercial
+                           HAVING stock_act > 0
+                           ORDER BY stock_act DESC LIMIT 1""",
+                        (mid, f'%{nom_norm}%', f'%{nom_norm}%'),
+                    ).fetchone()
+                except Exception:
+                    cand = None
+                if cand:
+                    auto_repair_candidatos.append({
+                        'huerfano': {'codigo': mid, 'nombre': mnom},
+                        'reemplazo': {'codigo': cand[0], 'nombre': cand[1],
+                                      'stock_g': float(cand[2] or 0)},
+                    })
             return jsonify({
                 'error': 'Stock insuficiente para producir',
                 'producto': producto,
                 'cantidad_kg': cantidad_kg,
                 'faltantes': faltantes,
+                'auto_repair_candidatos': auto_repair_candidatos,
+                'auto_repair_disponible': len(auto_repair_candidatos) > 0,
                 'mensaje': (
                     f"No se puede producir {cantidad_kg}kg de {producto}: "
                     f"{len(faltantes)} MP(s) sin stock suficiente. "
-                    f"Verifica entradas en /planta o crea OC en /compras."
+                    + (f"Detectados {len(auto_repair_candidatos)} codigo_mp huérfanos · "
+                       "usar botón 🔧 Auto-reparar." if auto_repair_candidatos else
+                       "Verifica entradas en Bodega MP o crea OC en /compras.")
                 ),
             }), 422  # Unprocessable Entity
 
