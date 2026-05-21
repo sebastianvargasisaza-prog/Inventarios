@@ -6433,6 +6433,59 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
            ('ESENCIA ILUMINADORA',                  'esencia', NULL, 60, 90, 30, 3.0, 3, NULL)""",
     ]),
 
+    (146, "OLA 3 Op Live · roles + notificaciones_outbox (bases futuras) · 20-may-2026", [
+        # Tabla roles · futura migración desde {sebastian,alejandro} hardcoded
+        # en config.py a tabla. Por ahora coexisten (compat).
+        """CREATE TABLE IF NOT EXISTS roles_catalogo (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            codigo TEXT UNIQUE NOT NULL,
+            descripcion TEXT,
+            activo INTEGER DEFAULT 1,
+            creado_at_utc TEXT DEFAULT (datetime('now','utc'))
+        )""",
+        """CREATE TABLE IF NOT EXISTS usuario_roles (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            usuario TEXT NOT NULL,
+            rol_codigo TEXT NOT NULL,
+            asignado_por TEXT,
+            asignado_at_utc TEXT DEFAULT (datetime('now','utc')),
+            activo INTEGER DEFAULT 1,
+            UNIQUE(usuario, rol_codigo)
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_usuario_roles_lookup ON usuario_roles(usuario, activo)",
+        # Seed de roles base (idempotente con INSERT OR IGNORE)
+        """INSERT OR IGNORE INTO roles_catalogo (codigo, descripcion) VALUES
+            ('admin', 'Administrador completo (Sebastián, Alejandro)'),
+            ('jefe_planta', 'Jefe de planta · operación + aprobación QC'),
+            ('operario', 'Operario de planta'),
+            ('calidad', 'Control de calidad · libera lotes'),
+            ('compras', 'Compras · gestiona SOLs y OCs'),
+            ('contabilidad', 'Contabilidad'),
+            ('comercial', 'Comercial · ÁNIMUS DTC'),
+            ('cliente_b2b', 'Cliente B2B · solo portal /portal'),
+            ('auditor_externo', 'Auditor externo · solo lectura')""",
+        # Outbox de notificaciones · permite fan-out async cuando crezca
+        # el sistema. Por ahora se llena para visibilidad pero NO se usa
+        # como reemplazo de push_notif sincrónico (sería breaking).
+        """CREATE TABLE IF NOT EXISTS notificaciones_outbox (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            destinatario TEXT NOT NULL,
+            tipo TEXT NOT NULL,
+            titulo TEXT NOT NULL,
+            body TEXT,
+            link TEXT,
+            remitente TEXT,
+            importante INTEGER DEFAULT 0,
+            estado TEXT NOT NULL DEFAULT 'pendiente' CHECK(estado IN ('pendiente','enviada','fallida','descartada')),
+            intentos INTEGER DEFAULT 0,
+            ultimo_error TEXT,
+            creado_at_utc TEXT DEFAULT (datetime('now','utc')),
+            enviado_at_utc TEXT,
+            tenant_id INTEGER DEFAULT 1
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_outbox_pendientes ON notificaciones_outbox(estado, creado_at_utc)",
+    ]),
+
     (145, "OLA 2 Op Live · Takt time + Andon · 20-may-2026", [
         # Tiempo objetivo (takt) por producto + etapa · base para OEE, ETA,
         # score productividad operario. Sin esto no hay benchmark.
