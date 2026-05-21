@@ -1527,23 +1527,32 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
 
   <div id="env-historial">
     <h3 style="margin:0 0 10px;color:#2B7A78;font-size:14px">&#128202; Historial Envasado</h3>
+    <!-- Sprint Envasado PRO 20-may-2026 · paginación + búsqueda -->
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px;font-size:12px">
+      <input id="env-q" type="text" placeholder="🔍 Buscar lote / producto / operador…" oninput="_envHistDebounced()" style="flex:1;min-width:200px;padding:7px 10px;border:1px solid #cbd5e1;border-radius:5px">
+      <label style="color:#475569">Desde: <input id="env-desde" type="date" onchange="cargarEnvHistorial()" style="padding:5px 8px;border:1px solid #cbd5e1;border-radius:5px"></label>
+      <label style="color:#475569">Hasta: <input id="env-hasta" type="date" onchange="cargarEnvHistorial()" style="padding:5px 8px;border:1px solid #cbd5e1;border-radius:5px"></label>
+      <button onclick="document.getElementById('env-q').value='';document.getElementById('env-desde').value='';document.getElementById('env-hasta').value='';window._envHistOffset=0;cargarEnvHistorial()" style="background:#94a3b8;color:#fff;padding:6px 10px;font-size:11px;border:none;border-radius:5px;cursor:pointer">Limpiar</button>
+    </div>
     <div style="overflow-x:auto">
       <table style="width:100%;border-collapse:collapse;font-size:13px">
         <thead>
           <tr style="background:#1a4a7a;color:#fff">
             <th style="padding:8px">Lote</th>
             <th style="padding:8px">Producto</th>
-            <th style="padding:8px">Presentacion</th>
+            <th style="padding:8px">Presentación</th>
             <th style="padding:8px">Uds</th>
             <th style="padding:8px">Envase</th>
             <th style="padding:8px">Tapa</th>
             <th style="padding:8px">Fecha</th>
             <th style="padding:8px">Operador</th>
+            <th style="padding:8px;text-align:center">Acciones</th>
           </tr>
         </thead>
         <tbody id="env-tbody"></tbody>
       </table>
     </div>
+    <div id="env-hist-footer" style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;font-size:12px;color:#64748b"></div>
   </div>
 </div>
 </div>
@@ -7469,13 +7478,112 @@ async function registrarEnvasado(){
   await cargarHistEnvasado();
   if(typeof loadAlertasMEE==='function') setTimeout(loadAlertasMEE,500);
 }
-async function cargarHistEnvasado(){
-  var tb=document.getElementById('env-tbody');if(!tb) return;
+window._envHistOffset = 0;
+window._envHistLimit = 50;
+window._envHistDebounceT = null;
+function _envHistDebounced(){
+  if(window._envHistDebounceT) clearTimeout(window._envHistDebounceT);
+  window._envHistDebounceT = setTimeout(function(){
+    window._envHistOffset = 0;
+    cargarEnvHistorial();
+  }, 350);
+}
+async function cargarHistEnvasado(){ return cargarEnvHistorial(); }
+async function cargarEnvHistorial(){
+  var tb=document.getElementById('env-tbody');
+  var ft=document.getElementById('env-hist-footer');
+  if(!tb) return;
+  var q = (document.getElementById('env-q')||{}).value || '';
+  var desde = (document.getElementById('env-desde')||{}).value || '';
+  var hasta = (document.getElementById('env-hasta')||{}).value || '';
+  var limit = window._envHistLimit;
+  var offset = window._envHistOffset || 0;
+  var url = '/api/envasado?limit='+limit+'&offset='+offset
+          +(q ? '&q='+encodeURIComponent(q) : '')
+          +(desde ? '&desde='+encodeURIComponent(desde) : '')
+          +(hasta ? '&hasta='+encodeURIComponent(hasta) : '');
   try{
-    var r=await fetch('/api/envasado');var d=await r.json();var rows=d.envasados||[];
-    if(!rows.length){tb.innerHTML='<tr><td colspan="8" style="text-align:center;color:#999;padding:12px;">Sin registros</td></tr>';return;}
-    tb.innerHTML=rows.map(function(e){return '<tr style="border-bottom:1px solid #eee;"><td style="padding:6px;font-family:monospace;font-size:12px;">'+e.lote+'</td><td style="padding:6px;">'+e.producto+'</td><td style="padding:6px;">'+e.presentacion+'</td><td style="padding:6px;text-align:center;">'+e.unidades+'</td><td style="padding:6px;font-size:11px;color:#666;">'+e.envase_codigo+'</td><td style="padding:6px;font-size:11px;color:#666;">'+e.tapa_codigo+'</td><td style="padding:6px;font-size:12px;">'+e.fecha+'</td><td style="padding:6px;font-size:12px;">'+e.operador+'</td></tr>';}).join('');
-  }catch(e){if(tb)tb.innerHTML='<tr><td colspan="8">Error</td></tr>';}
+    var r=await fetch(url, {credentials:'same-origin'});
+    var d=await r.json();
+    var rows=d.envasados||[];
+    if(!rows.length){
+      tb.innerHTML='<tr><td colspan="9" style="text-align:center;color:#999;padding:12px;">Sin registros que coincidan</td></tr>';
+      if(ft) ft.innerHTML = 'Total: 0';
+      return;
+    }
+    tb.innerHTML=rows.map(function(e){
+      var fec = (e.fecha||'').substring(0,16).replace('T',' ');
+      return '<tr style="border-bottom:1px solid #eee;">'+
+        '<td style="padding:6px;font-family:monospace;font-size:12px;color:#0f766e;font-weight:700">'+_escHTML(e.lote||'')+'</td>'+
+        '<td style="padding:6px;">'+_escHTML(e.producto||'')+'</td>'+
+        '<td style="padding:6px;">'+_escHTML(e.presentacion||'')+'</td>'+
+        '<td style="padding:6px;text-align:center;font-weight:700">'+(e.unidades||0)+'</td>'+
+        '<td style="padding:6px;font-size:11px;color:#666;">'+_escHTML(e.envase_codigo||'—')+'</td>'+
+        '<td style="padding:6px;font-size:11px;color:#666;">'+_escHTML(e.tapa_codigo||'—')+'</td>'+
+        '<td style="padding:6px;font-size:12px;">'+_escHTML(fec)+'</td>'+
+        '<td style="padding:6px;font-size:12px;">'+_escHTML(e.operador||'')+'</td>'+
+        '<td style="padding:6px;text-align:center"><button data-env-act="detalle" data-eid="'+e.id+'" style="background:#0891b2;color:#fff;border:none;padding:3px 8px;border-radius:4px;font-size:10px;cursor:pointer" title="Ver MEE descontado + costo">📋</button></td>'+
+      '</tr>';
+    }).join('');
+    if(ft){
+      var total = d.total || 0;
+      var d_n = (offset||0) + 1;
+      var h_n = (offset||0) + rows.length;
+      var pag = '';
+      if(offset > 0) pag += '<button onclick="window._envHistOffset=Math.max(0,window._envHistOffset-'+limit+');cargarEnvHistorial()" style="padding:4px 10px;background:#475569;color:#fff;border:none;border-radius:4px;font-size:11px;cursor:pointer;margin-right:4px">← Anterior</button>';
+      if(offset + limit < total) pag += '<button onclick="window._envHistOffset+='+limit+';cargarEnvHistorial()" style="padding:4px 10px;background:#1a4a7a;color:#fff;border:none;border-radius:4px;font-size:11px;cursor:pointer">Siguiente →</button>';
+      ft.innerHTML = '<span>Mostrando '+d_n+'–'+h_n+' de '+total.toLocaleString()+'</span><span>'+pag+'</span>';
+    }
+  }catch(err){
+    if(tb) tb.innerHTML='<tr><td colspan="9" style="color:#c00;text-align:center;padding:10px">Error: '+_escHTML(err.message)+'</td></tr>';
+  }
+}
+
+if(typeof document !== 'undefined' && !window._ENV_HIST_DELEG){
+  window._ENV_HIST_DELEG = true;
+  document.addEventListener('click', function(ev){
+    var b = ev.target && ev.target.closest && ev.target.closest('[data-env-act="detalle"]');
+    if(!b) return;
+    verDetalleEnvasado(b.getAttribute('data-eid'));
+  });
+}
+async function verDetalleEnvasado(eid){
+  try{
+    var r = await fetch('/api/envasado/'+eid+'/detalle');
+    var d = await r.json();
+    if(!r.ok){ alert('Error: '+(d.error||r.status)); return; }
+    var existe = document.getElementById('modal-env-det'); if(existe) existe.remove();
+    var div = document.createElement('div');
+    div.id = 'modal-env-det';
+    div.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9998;display:flex;align-items:center;justify-content:center;padding:20px';
+    var costoStr = d.costo_estimado_mee_cop ? '$'+Number(d.costo_estimado_mee_cop).toLocaleString('es-CO') : '—';
+    var meeRows = (d.mee_descontados||[]).map(function(m){
+      return '<tr><td style="font-family:monospace">'+_escHTML(m.codigo||'')+'</td><td>'+_escHTML(m.descripcion||'')+'</td><td style="text-align:right;font-weight:700">'+(m.unidades||0)+'</td></tr>';
+    }).join('');
+    div.innerHTML =
+      '<div style="background:#fff;border-radius:14px;padding:24px;max-width:720px;width:100%;max-height:90vh;overflow-y:auto">'+
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><h3 style="margin:0;color:#1a4a7a">📦 Detalle envasado · '+_escHTML(d.lote||'')+'</h3>'+
+      '<button id="env-det-close" style="background:none;border:none;font-size:1.4em;cursor:pointer">×</button></div>'+
+      '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;background:#f8fafc;padding:12px;border-radius:8px;margin-bottom:14px;font-size:13px">'+
+        '<div><b>Producto</b><br>'+_escHTML(d.producto||'')+'</div>'+
+        '<div><b>Presentación</b><br>'+_escHTML(d.presentacion||'')+'</div>'+
+        '<div><b>Unidades</b><br><span style="font-size:18px;font-weight:800;color:#1a4a7a">'+(d.unidades||0)+'</span></div>'+
+        '<div><b>Lote</b><br><span style="font-family:monospace;color:#dc2626;font-weight:700">'+_escHTML(d.lote||'')+'</span></div>'+
+        '<div><b>Envase</b><br>'+_escHTML(d.envase_codigo||'—')+'</div>'+
+        '<div><b>Tapa</b><br>'+_escHTML(d.tapa_codigo||'—')+'</div>'+
+        '<div><b>Costo MEE</b><br><span style="color:#0f766e;font-weight:700">'+costoStr+'</span></div>'+
+        '<div><b>Operador</b><br>'+_escHTML(d.operador||'')+'</div>'+
+      '</div>'+
+      '<h4 style="margin:14px 0 6px;color:#475569;font-size:13px">📉 MEE descontados</h4>'+
+      '<table class="table" style="font-size:11px"><thead><tr><th>Código</th><th>Descripción</th><th style="text-align:right">Unidades</th></tr></thead><tbody>'+
+        (meeRows || '<tr><td colspan="3" style="text-align:center;color:#94a3b8">Sin MEE registrados</td></tr>')+
+      '</tbody></table>'+
+      (d.observaciones ? '<div style="margin-top:12px;padding:8px;background:#fef3c7;border-left:3px solid #ca8a04;font-size:12px"><b>Observaciones:</b><br>'+_escHTML(d.observaciones)+'</div>' : '')+
+      '</div>';
+    document.body.appendChild(div);
+    document.getElementById('env-det-close').onclick = function(){ var m = document.getElementById('modal-env-det'); if(m) m.remove(); };
+    div.addEventListener('click', function(e){ if(e.target === div){ var m = document.getElementById('modal-env-det'); if(m) m.remove(); } });
+  }catch(e){ alert('Error red: '+e.message); }
 }
 async function cargarEnvasadosPendientes(){
   var sel=document.getElementById('ac-envasado-sel');if(!sel) return;

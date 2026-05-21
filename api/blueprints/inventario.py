@@ -1753,6 +1753,33 @@ def eliminar_movimiento(mov_id):
 
 @bp.route('/api/produccion', methods=['GET', 'POST'])
 def handle_produccion():
+    """Wrapper defensivo · captura cualquier excepción NO esperada y la
+    devuelve como JSON con detalle · evita el HTML genérico 500.
+
+    Sebastián 20-may-2026 · "no me dejo registrar produccion dice error
+    interno del servidor" · si algo se nos escapa, AL MENOS sabemos qué.
+    """
+    try:
+        return _handle_produccion_inner()
+    except Exception as _outer_e:
+        try:
+            from flask import g as _g_outer
+            _conn = getattr(_g_outer, '_conn', None) or get_db()
+            try: _conn.rollback()
+            except Exception: pass
+        except Exception:
+            pass
+        __import__('logging').getLogger('inventario').exception(
+            'handle_produccion · EXCEPCIÓN NO ESPERADA: %s', _outer_e)
+        return jsonify({
+            'error': 'Falla interna · revisar logs',
+            'detalle': str(_outer_e)[:500],
+            'tipo': type(_outer_e).__name__,
+            'rollback': 'intentado',
+        }), 500
+
+
+def _handle_produccion_inner():
     """Registra una producción con descuento atómico de MPs (FEFO).
 
     Flujo robusto (todo o nada):
@@ -2018,11 +2045,26 @@ def handle_produccion():
                         (round(costo_total_cop, 2), prod_id),
                     )
                     conn.commit()
-                except sqlite3.OperationalError as _e:
-                    if 'no such column' not in str(_e).lower():
-                        raise
-        except Exception:
-            pass  # costo es nice-to-have · no romper el flow
+                except Exception as _e:
+                    # PostgreSQL: psycopg2.UndefinedColumn · SQLite: OperationalError
+                    # Si la columna no existe (mig 148 no aplicada), no romper
+                    # el flujo y rollback para evitar tx zombie en PG.
+                    err_msg = str(_e).lower()
+                    if 'no such column' in err_msg or 'undefined column' in err_msg or 'does not exist' in err_msg:
+                        try: conn.rollback()
+                        except Exception: pass
+                    else:
+                        try: conn.rollback()
+                        except Exception: pass
+                        __import__('logging').getLogger('inventario').warning(
+                            'costo_estimado_cop UPDATE fallo no-schema: %s', _e)
+        except Exception as _e_outer:
+            # Defensivo: cualquier otro error en cálculo de costo NO debe
+            # romper la respuesta del POST. Loguear y seguir.
+            try: conn.rollback()
+            except Exception: pass
+            __import__('logging').getLogger('inventario').warning(
+                'costo_estimado_cop calc fallo: %s', _e_outer)
 
         # Stock PT se crea via Acondicionamiento → Liberacion (flujo BPM correcto)
         msg = f'Produccion registrada: {producto} x {cantidad_kg}kg (FEFO)'
@@ -2074,8 +2116,11 @@ def handle_produccion():
                 LIMIT ? OFFSET ?""",
             params + [limit, offset],
         ).fetchall()
-    except sqlite3.OperationalError:
-        # Fallback sin costo_estimado_cop si la columna no existe
+    except Exception as _e_main:
+        # PG/SQLite agnostic · si columna costo_estimado_cop no existe,
+        # rollback la tx zombie y reintentar sin esa columna.
+        try: conn.rollback()
+        except Exception: pass
         rows = c.execute(
             f"""SELECT id, producto, cantidad, fecha, estado, operador,
                        COALESCE(presentacion,'') AS pres,
@@ -2153,7 +2198,11 @@ def produccion_detalle(pid):
                FROM producciones WHERE id=?""",
             (pid,),
         ).fetchone()
-    except sqlite3.OperationalError:
+    except Exception:
+        # PG/SQLite agnostic: fallback sin costo_estimado_cop si la
+        # mig 148 no aplicó. Rollback tx zombie en PG.
+        try: conn.rollback()
+        except Exception: pass
         h = c.execute(
             """SELECT id, producto, cantidad, fecha, estado, operador,
                       COALESCE(presentacion,''), COALESCE(lote,''),
@@ -8258,15 +8307,110 @@ def envasado_list():
         conn.commit()
         return jsonify({'ok': True, 'id': nuevo_id, 'alertas_mee': alertas_mee}), 201
 
-    # GET
+    # GET · Sprint Envasado PRO 20-may-2026: paginación + búsqueda
     prod_id = request.args.get('produccion_id', '')
     if prod_id:
         c.execute("SELECT * FROM envasado WHERE produccion_id=? ORDER BY id DESC", (prod_id,))
-    else:
-        c.execute("SELECT * FROM envasado ORDER BY id DESC LIMIT 100")
+        cols = [d[0] for d in c.description]
+        rows = [dict(zip(cols, r)) for r in c.fetchall()]
+        return jsonify({'envasados': rows, 'total': len(rows)})
+    try:
+        limit = max(1, min(int(request.args.get('limit', 50)), 500))
+    except (ValueError, TypeError):
+        limit = 50
+    try:
+        offset = max(0, int(request.args.get('offset', 0)))
+    except (ValueError, TypeError):
+        offset = 0
+    q = (request.args.get('q') or '').strip()
+    desde = (request.args.get('desde') or '').strip()
+    hasta = (request.args.get('hasta') or '').strip()
+    where = ['1=1']
+    params = []
+    if q:
+        qesc = q.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+        where.append("(LOWER(COALESCE(producto,'')) LIKE LOWER(?) ESCAPE '\\' OR LOWER(COALESCE(lote,'')) LIKE LOWER(?) ESCAPE '\\' OR LOWER(COALESCE(operador,'')) LIKE LOWER(?) ESCAPE '\\')")
+        params += [f'%{qesc}%', f'%{qesc}%', f'%{qesc}%']
+    if desde:
+        where.append("fecha >= ?"); params.append(desde)
+    if hasta:
+        where.append("fecha <= ?"); params.append(hasta + ' 23:59:59')
+    where_sql = ' AND '.join(where)
+    try:
+        total = int(c.execute(f"SELECT COUNT(*) FROM envasado WHERE {where_sql}", params).fetchone()[0] or 0)
+    except Exception:
+        total = 0
+    c.execute(f"SELECT * FROM envasado WHERE {where_sql} ORDER BY id DESC LIMIT ? OFFSET ?", params + [limit, offset])
     cols = [d[0] for d in c.description]
     rows = [dict(zip(cols, r)) for r in c.fetchall()]
-    return jsonify({'envasados': rows})
+    return jsonify({
+        'envasados': rows,
+        'total': total, 'limit': limit, 'offset': offset,
+        'q': q, 'desde': desde, 'hasta': hasta,
+    })
+
+
+@bp.route('/api/envasado/<int:eid>/detalle', methods=['GET'])
+def envasado_detalle(eid):
+    """Sprint Envasado PRO 20-may-2026 · detalle completo de un envasado:
+    header + MEE descontados + costo + producción origen."""
+    u, err, code = _require_session()
+    if err:
+        return err, code
+    conn = get_db(); c = conn.cursor()
+    c.execute("SELECT * FROM envasado WHERE id=?", (eid,))
+    row = c.fetchone()
+    if not row:
+        return jsonify({'error': 'envasado no existe'}), 404
+    cols = [d[0] for d in c.description]
+    env = dict(zip(cols, row))
+    # MEE descontados · buscar movimientos_mee con lote igual al envasado
+    mee_movs = []
+    try:
+        mee_rows = c.execute(
+            """SELECT material_id, COALESCE(material_nombre,''),
+                      cantidad, COALESCE(observaciones,'')
+               FROM movimientos_mee
+               WHERE tipo='Salida'
+                 AND observaciones LIKE ?
+               ORDER BY id""",
+            (f"%Envasado #{eid}%",),
+        ).fetchall()
+        mee_movs = [{
+            'codigo': r[0], 'descripcion': r[1],
+            'unidades': int(r[2] or 0),
+            'observaciones': r[3],
+        } for r in mee_rows]
+    except Exception:
+        mee_movs = []
+    # Costo estimado MEE
+    costo_total = 0.0
+    for m in mee_movs:
+        try:
+            pr_row = c.execute(
+                "SELECT COALESCE(precio_unitario, 0) FROM maestro_mee WHERE codigo=?",
+                (m['codigo'],),
+            ).fetchone()
+            if pr_row and pr_row[0]:
+                costo_total += float(pr_row[0]) * m['unidades']
+        except Exception:
+            pass
+    return jsonify({
+        'id': env.get('id'),
+        'lote': env.get('lote'),
+        'producto': env.get('producto'),
+        'presentacion': env.get('presentacion'),
+        'unidades': env.get('unidades'),
+        'envase_codigo': env.get('envase_codigo'),
+        'tapa_codigo': env.get('tapa_codigo'),
+        'fecha': env.get('fecha'),
+        'operador': env.get('operador'),
+        'observaciones': env.get('observaciones', ''),
+        'produccion_id': env.get('produccion_id'),
+        'estado': env.get('estado', ''),
+        'mee_descontados': mee_movs,
+        'costo_estimado_mee_cop': round(costo_total, 2),
+    })
 
 @bp.route('/api/envasado/pendientes-acond', methods=['GET'])
 def envasado_pendientes():
