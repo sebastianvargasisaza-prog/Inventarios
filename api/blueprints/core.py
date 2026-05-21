@@ -1042,6 +1042,174 @@ def admin_usuarios_page():
     return Response(_USERS_ADMIN_HTML, mimetype='text/html')
 
 
+_INFLUENCERS_ADMIN_HTML = '''<!DOCTYPE html>
+<html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Influencers · EOS</title>
+<style>
+*{box-sizing:border-box;font-family:'Segoe UI',Roboto,sans-serif}
+body{margin:0;background:#f1f5f9;color:#0f172a;padding:20px}
+.container{max-width:1200px;margin:0 auto;background:#fff;border-radius:12px;padding:24px;box-shadow:0 2px 8px rgba(0,0,0,.05)}
+h1{margin:0 0 6px;color:#0f766e}
+.subtitle{color:#64748b;font-size:13px;margin-bottom:18px}
+.tabs{display:flex;gap:8px;margin-bottom:16px;border-bottom:2px solid #e2e8f0}
+.tb{padding:9px 18px;background:transparent;border:none;cursor:pointer;font-weight:700;font-size:13px;color:#64748b}
+.tb.on{color:#0f766e;border-bottom:3px solid #0f766e}
+table{width:100%;border-collapse:collapse;font-size:13px}
+thead{background:#0f172a;color:#fff}
+th,td{padding:8px 10px;text-align:left;border-bottom:1px solid #e2e8f0}
+tr:hover{background:#f8fafc}
+.badge{display:inline-block;padding:2px 8px;border-radius:8px;font-size:11px;font-weight:700}
+.b-pend{background:#fef3c7;color:#78350f}
+.b-pag{background:#dcfce7;color:#166534}
+.b-rech{background:#fee2e2;color:#991b1b}
+.toolbar{display:flex;gap:8px;align-items:center;margin-bottom:14px}
+button.primary{background:#0f766e;color:#fff;padding:9px 16px;border:none;border-radius:6px;font-weight:700;cursor:pointer}
+button.secondary{background:#475569;color:#fff;padding:7px 14px;border:none;border-radius:5px;font-size:12px;cursor:pointer}
+button.success{background:#16a34a;color:#fff;padding:5px 12px;border:none;border-radius:5px;font-size:11px;cursor:pointer}
+input.search{flex:1;max-width:300px;padding:8px 12px;border:1px solid #cbd5e1;border-radius:5px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}
+.stat{background:#f1f5f9;padding:10px 14px;border-radius:6px;font-size:12px}
+.stat b{font-size:1.6em;color:#0f766e;display:block}
+</style></head>
+<body>
+<div class="container">
+<h1>💸 Influencers · pagos</h1>
+<p class="subtitle">Vista privada de Sebastián · Catalina NO tiene acceso a este flujo · pagos Marketing</p>
+<div class="stats" id="stats"></div>
+<div class="tabs">
+  <button class="tb on" data-tb="pendientes">⏳ Pendientes</button>
+  <button class="tb" data-tb="pagados">✓ Histórico pagados</button>
+  <button class="tb" data-tb="rechazados">⛔ Rechazados</button>
+</div>
+<div class="toolbar">
+  <input id="q" class="search" placeholder="🔍 Buscar influencer o número SOL..." oninput="render()">
+  <button class="secondary" onclick="load()">🔄 Refrescar</button>
+  <a href="/modulos" style="margin-left:auto;color:#64748b;font-size:12px;text-decoration:none">← Volver</a>
+</div>
+<div style="overflow-x:auto">
+<table>
+<thead><tr>
+  <th>#SOL</th><th>Influencer</th><th>Concepto</th><th>Monto</th><th>Fecha sol</th>
+  <th>Fecha pago</th><th>Estado</th><th>Acción</th>
+</tr></thead>
+<tbody id="tbody"><tr><td colspan="8" style="text-align:center;padding:18px;color:#94a3b8">Cargando…</td></tr></tbody>
+</table>
+</div>
+</div>
+<script>
+var _all = [];
+var _curTab = 'pendientes';
+function _esc(s){return String(s||'').replace(/[&<>]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c];});}
+function _fmt(n){ try{return Number(n||0).toLocaleString('es-CO');}catch(e){return n;} }
+document.querySelectorAll('.tb').forEach(function(b){
+  b.addEventListener('click',function(){
+    _curTab=b.getAttribute('data-tb');
+    document.querySelectorAll('.tb').forEach(function(x){x.classList.remove('on');});
+    b.classList.add('on');
+    render();
+  });
+});
+async function load(){
+  try{
+    var r=await fetch('/api/solicitudes-compra?fuente=influencers&limit=500',{credentials:'same-origin'});
+    var d=await r.json();
+    _all=d.solicitudes||d||[];
+    renderStats(); render();
+  }catch(e){
+    document.getElementById('tbody').innerHTML='<tr><td colspan="8" style="color:#dc2626;text-align:center;padding:18px">Error: '+_esc(e.message)+'</td></tr>';
+  }
+}
+function renderStats(){
+  var pend=_all.filter(function(s){return s.estado==='Pendiente';}).length;
+  var apr=_all.filter(function(s){return s.estado==='Aprobada';}).length;
+  var pag=_all.filter(function(s){return s.estado==='Pagada' || s.estado==='Reconciliada';}).length;
+  var rech=_all.filter(function(s){return s.estado==='Rechazada' || s.estado==='Cancelada';}).length;
+  var totalMonto=_all.filter(function(s){return s.estado==='Pendiente';}).reduce(function(a,s){return a+Number(s.valor||0);},0);
+  document.getElementById('stats').innerHTML=
+    '<div class="stat">Pendientes<b>'+pend+'</b></div>'+
+    '<div class="stat">Por pagar (monto)<b>$'+_fmt(totalMonto)+'</b></div>'+
+    '<div class="stat">Aprobados<b>'+apr+'</b></div>'+
+    '<div class="stat">Pagados (histórico)<b>'+pag+'</b></div>'+
+    '<div class="stat">Rechazados<b>'+rech+'</b></div>';
+}
+function render(){
+  var q=(document.getElementById('q').value||'').toLowerCase();
+  var filt;
+  if(_curTab==='pendientes') filt=_all.filter(function(s){return s.estado==='Pendiente' || s.estado==='Aprobada';});
+  else if(_curTab==='pagados') filt=_all.filter(function(s){return s.estado==='Pagada' || s.estado==='Reconciliada';});
+  else filt=_all.filter(function(s){return s.estado==='Rechazada' || s.estado==='Cancelada';});
+  if(q) filt=filt.filter(function(s){
+    return ((s.solicitante||'').toLowerCase().includes(q) ||
+            (s.numero||'').toLowerCase().includes(q) ||
+            (s.observaciones||'').toLowerCase().includes(q));
+  });
+  var tb=document.getElementById('tbody');
+  if(!filt.length){
+    tb.innerHTML='<tr><td colspan="8" style="text-align:center;padding:18px;color:#94a3b8">Sin registros</td></tr>';
+    return;
+  }
+  tb.innerHTML=filt.map(function(s){
+    var clBadge=s.estado==='Pendiente'?'b-pend':(s.estado==='Pagada' || s.estado==='Reconciliada'?'b-pag':'b-rech');
+    var accion='';
+    if(s.estado==='Pendiente' || s.estado==='Aprobada'){
+      accion='<button class="success" data-num="'+_esc(s.numero)+'" data-act="pagar">💸 Marcar pagado</button>';
+    }
+    return '<tr>'+
+      '<td style="font-family:monospace;font-weight:700">'+_esc(s.numero)+'</td>'+
+      '<td>'+_esc(s.solicitante||'—')+'</td>'+
+      '<td style="font-size:11px;color:#475569">'+_esc((s.observaciones||'').substring(0,60))+'</td>'+
+      '<td style="text-align:right;font-weight:700">$'+_fmt(s.valor)+'</td>'+
+      '<td style="font-size:11px">'+_esc((s.fecha||'').substring(0,10))+'</td>'+
+      '<td style="font-size:11px">'+_esc((s.fecha_pago||'').substring(0,10) || '—')+'</td>'+
+      '<td><span class="badge '+clBadge+'">'+_esc(s.estado)+'</span></td>'+
+      '<td>'+accion+'</td>'+
+    '</tr>';
+  }).join('');
+}
+document.addEventListener('click',async function(ev){
+  var b=ev.target.closest('[data-act="pagar"]');
+  if(!b) return;
+  var num=b.getAttribute('data-num');
+  var ref=prompt('Referencia / comprobante del pago a '+num+':');
+  if(!ref) return;
+  try{
+    var token=document.cookie.match(/csrf_token=([^;]*)/);
+    token=token?decodeURIComponent(token[1]):'';
+    var r=await fetch('/api/solicitudes-compra/'+encodeURIComponent(num)+'/estado',{
+      method:'PATCH',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':token},
+      credentials:'same-origin',
+      body:JSON.stringify({estado:'Pagada',observaciones_extra:'Pago directo Sebastián · ref: '+ref}),
+    });
+    var d=await r.json();
+    if(!r.ok){ alert('Error: '+(d.error||r.status)); return; }
+    alert('✓ Pago registrado · '+num);
+    load();
+  }catch(e){ alert('Error red: '+e.message); }
+});
+load();
+</script>
+</body></html>'''
+
+
+@bp.route('/admin/influencers')
+def admin_influencers_page():
+    """Sebastián 21-may-2026 · página privada para gestionar influencers.
+
+    Catalina NO tiene acceso (no aparece en su /compras). Vive aquí porque
+    es flujo Marketing → directamente Sebastián.
+    """
+    if 'compras_user' not in session:
+        return redirect('/login?next=/admin/influencers')
+    u = session.get('compras_user', '')
+    if (u or '').strip().lower() not in {x.lower() for x in ADMIN_USERS}:
+        return Response(
+            '<h1>403 · Solo admin</h1><p>Solo Sebastián paga influencers.</p><p><a href="/modulos">← Volver</a></p>',
+            mimetype='text/html', status=403,
+        )
+    return Response(_INFLUENCERS_ADMIN_HTML, mimetype='text/html')
+
+
 @bp.route('/cambiar-password')
 def cambiar_password_page():
     """Página standalone para que cualquier user logueado cambie su password.

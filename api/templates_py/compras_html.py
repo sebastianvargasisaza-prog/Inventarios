@@ -127,26 +127,56 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
 </header>
 <script>function cxToggleTheme(){var h=document.documentElement;var c=h.getAttribute('data-theme');var n=c==='dark'?'light':'dark';if(n==='dark')h.setAttribute('data-theme','dark');else h.removeAttribute('data-theme');try{localStorage.setItem('cx-theme',n);}catch(e){}}</script>
 
-<div class="tab-nav">
-  <button class="tn on"  data-tab="dash">&#x1F4CA; Dashboard</button>
-  <button class="tn"     data-tab="pagos">&#x1F4B8; Pagos</button>
-  <button class="tn"     data-tab="por-pagar">&#x1F4B0; Por Pagar</button>
-  <button class="tn"     data-tab="alertas">&#x1F6A8; Alertas</button>
-  <button class="tn"     data-tab="prov">&#x1F3ED; Proveedores</button>
-  <!-- Tab Influencers RESTAURADO por solicitud de Sebastian (29-abr-2026):
-       el flujo de Jefferson (Marketing) → Catalina (Compras) → Pagada
-       requiere visibilidad desde Compras. Toda la logica (pane, loadInfluencers,
-       renderInfluencers) ya estaba en el codigo, solo se habia ocultado el boton. -->
-  <button class="tn" data-tab="influencer" id="tn-influencer">&#x1F4B8; Influencers</button>
-  <!-- Sebastian 5-may-2026: 3 fuentes de SOLs claras
-       · Solicitudes = usuarios (Papelería, Servicios, EPP, etc · NO planta · NO influencers)
-       · Planta = MP + Empaque agrupado por proveedor (lo que sale de Centro Programación)
-       · Influencers = ya separado arriba -->
-  <button class="tn" data-tab="solic" id="tn-solic" title="Solicitudes de usuarios (Papelería, Servicios, EPP, Mantenimiento, etc.)">&#128203; Solicitudes</button>
-  <button class="tn" data-tab="planta" id="tn-planta" title="Materia Prima + Empaque agrupado por proveedor (vienen del Centro de Programación)">&#x1F3ED; Planta</button>
-  <button class="tn" data-tab="solprod" id="tn-solprod">&#128737;&#65039; Producción <span id="solprod-badge" style="display:none;background:#dc2626;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
-  <button class="tn" data-tab="consol" id="tn-consol" title="Órdenes de compra activas agrupadas por proveedor (NO es la cola de SOLs pendientes · esa es la tab Planta)">&#x1F4E6; OCs por Proveedor <span style="font-size:9px;background:#cbd5e1;color:#475569;padding:1px 5px;border-radius:6px;margin-left:2px;font-weight:600">+OCs activas</span></button>
-  <button class="tn" data-tab="mis-sol" id="tn-mis-sol" title="Tus solicitudes con seguimiento del ciclo completo">&#128100; Mis Solicitudes <span id="mis-sol-badge" style="display:none;background:#1e40af;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
+<!-- Sebastián 21-may-2026 · 11 tabs → 4 grupos top (como hicimos con
+     Programación 8→4). Catalina ya tenía muscular memory · IDs originales
+     (data-tab) se mantienen para que las funciones loadX no se rompan. -->
+<div class="tab-nav" id="cx-grp-bar" style="display:flex;gap:8px;padding:8px 0;border-bottom:2px solid #e2e8f0;margin-bottom:12px">
+  <button class="cx-grp-btn on" data-cx-grp="entradas"  data-default-tab="planta"
+    style="padding:9px 22px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:800;cursor:pointer;background:linear-gradient(135deg,#0e7490,#0891b2);color:#fff;box-shadow:0 3px 10px rgba(8,145,178,.35)"
+    title="Las 3 fuentes de pedidos: Planta (MP+Empaque) · Influencers · Solicitudes generales">📥 Entradas</button>
+  <button class="cx-grp-btn" data-cx-grp="ocs"          data-default-tab="consol"
+    style="padding:9px 22px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:800;cursor:pointer;background:#e2e8f0;color:#475569"
+    title="Órdenes de Compra · gestión post-entrada">📦 OCs y Pagos</button>
+  <button class="cx-grp-btn" data-cx-grp="maestros"     data-default-tab="prov"
+    style="padding:9px 22px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:800;cursor:pointer;background:#e2e8f0;color:#475569"
+    title="Maestro de Proveedores">🏭 Proveedores</button>
+  <button class="cx-grp-btn" data-cx-grp="analitica"    data-default-tab="dash"
+    style="padding:9px 22px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:800;cursor:pointer;background:#e2e8f0;color:#475569"
+    title="Vista global: Dashboard · Alertas · Mis Solicitudes">📊 Vista Ejecutiva</button>
+</div>
+
+<!-- Sub-barras por grupo (1 visible a la vez) -->
+<div class="tab-nav" id="cx-sub-bar" style="padding:6px 4px;border-bottom:1px dashed #cbd5e1;margin-bottom:14px;flex-wrap:wrap">
+  <!-- Sub-tabs del grupo ENTRADAS (default visible) -->
+  <!-- Sebastián 21-may-2026 · INFLUENCERS quitado de Compras · solo
+       lo paga Sebastián · Catalina no tiene visibilidad. Botón sigue
+       en DOM (display:none) para deep links · página standalone vive
+       en /admin/influencers. -->
+  <span data-cx-sub="entradas" style="display:flex;gap:6px;flex-wrap:wrap">
+    <button class="tn on"   data-tab="planta" id="tn-planta" title="MP+Empaque · Centro Programación + Pre-Producción fusionado">🏭 Planta</button>
+    <button class="tn"      data-tab="solic" id="tn-solic" title="Solicitudes generales (papelería, servicios, EPP, mantenimiento)">📋 Solicitudes</button>
+    <!-- Producción · OCULTO 21-may-2026 · fusionado en Planta con badge Pre-Prod -->
+    <button class="tn" data-tab="solprod" id="tn-solprod" style="display:none">🛠️ Producción <span id="solprod-badge" style="display:none;background:#dc2626;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
+    <!-- Influencers · OCULTO 21-may-2026 · ver /admin/influencers -->
+    <button class="tn" data-tab="influencer" id="tn-influencer" style="display:none">💸 Influencers</button>
+  </span>
+  <!-- Sub-tabs del grupo OCs Y PAGOS -->
+  <span data-cx-sub="ocs" style="display:none;gap:6px;flex-wrap:wrap">
+    <button class="tn"      data-tab="consol" id="tn-consol" title="OCs activas (Borrador/Revisada/Autorizada) agrupadas por proveedor">📦 OCs Activas <span style="font-size:9px;background:#cbd5e1;color:#475569;padding:1px 5px;border-radius:6px;margin-left:2px;font-weight:600">activas</span></button>
+    <!-- Pagos y Por Pagar · fusionadas en una sola con filtro de estado -->
+    <button class="tn"      data-tab="por-pagar" id="tn-por-pagar" title="Pendientes · OCs autorizadas sin pagar">💰 Por Pagar</button>
+    <button class="tn"      data-tab="pagos" id="tn-pagos" title="Histórico · pagos ya ejecutados">💸 Pagos</button>
+  </span>
+  <!-- Sub-tabs del grupo MAESTROS -->
+  <span data-cx-sub="maestros" style="display:none;gap:6px;flex-wrap:wrap">
+    <button class="tn"      data-tab="prov" id="tn-prov" title="Maestro de proveedores">🏭 Proveedores</button>
+  </span>
+  <!-- Sub-tabs del grupo ANALÍTICA -->
+  <span data-cx-sub="analitica" style="display:none;gap:6px;flex-wrap:wrap">
+    <button class="tn"      data-tab="dash" id="tn-dash" title="KPIs · salud · top proveedores">📊 Dashboard</button>
+    <button class="tn"      data-tab="alertas" id="tn-alertas" title="Alertas vivas · acción rápida">🚨 Alertas</button>
+    <button class="tn"      data-tab="mis-sol" id="tn-mis-sol" title="Tus solicitudes con ciclo completo">👤 Mis Solicitudes <span id="mis-sol-badge" style="display:none;background:#1e40af;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
+  </span>
 </div>
 
 <!-- PANES -->
@@ -1110,10 +1140,69 @@ function badge(e){
   return '<span class="badge '+(m[e]||'b-bor')+'">'+e+'</span>';
 }
 
+// ─── Grupos top · Sebastián 21-may-2026 ────────────────────────────
+// 11 tabs → 4 grupos top con sub-bars (mismo patrón Programación 8→4).
+// Cada grupo muestra solo SUS sub-tabs · al cambiar grupo, se activa
+// su sub-tab por defecto (data-default-tab).
+function _cxSwitchGroup(grp){
+  // Activar botón top + visualmente
+  document.querySelectorAll('.cx-grp-btn').forEach(function(b){
+    var on = b.getAttribute('data-cx-grp') === grp;
+    b.classList.toggle('on', on);
+    if(on){
+      b.style.background = 'linear-gradient(135deg,#0e7490,#0891b2)';
+      b.style.color = '#fff';
+      b.style.boxShadow = '0 3px 10px rgba(8,145,178,.35)';
+    } else {
+      b.style.background = '#e2e8f0';
+      b.style.color = '#475569';
+      b.style.boxShadow = 'none';
+    }
+  });
+  // Mostrar sub-bar del grupo · ocultar otras
+  document.querySelectorAll('[data-cx-sub]').forEach(function(span){
+    span.style.display = (span.getAttribute('data-cx-sub') === grp) ? 'flex' : 'none';
+  });
+  // Activar default-tab del grupo
+  var btn = document.querySelector('.cx-grp-btn[data-cx-grp="'+grp+'"]');
+  if(!btn) return;
+  var defaultTab = btn.getAttribute('data-default-tab');
+  if(defaultTab){
+    var subBtn = document.querySelector('.tn[data-tab="'+defaultTab+'"]');
+    if(subBtn && !subBtn.classList.contains('on')) subBtn.click();
+  }
+}
+document.querySelectorAll('.cx-grp-btn').forEach(function(b){
+  b.addEventListener('click', function(){
+    _cxSwitchGroup(b.getAttribute('data-cx-grp'));
+  });
+});
+// Auto-detectar grupo cuando se activa un sub-tab via deep link / código
+window._cxTabToGrp = {
+  // Entradas
+  'planta':'entradas', 'solic':'entradas', 'solprod':'entradas',
+  'influencer':'entradas',  // por compat · aunque oculto
+  // OCs y Pagos
+  'consol':'ocs', 'por-pagar':'ocs', 'pagos':'ocs',
+  // Maestros
+  'prov':'maestros',
+  // Vista Ejecutiva
+  'dash':'analitica', 'alertas':'analitica', 'mis-sol':'analitica',
+};
+
 // ─── Tabs ─────────────────────────────────────────────────────────
 document.querySelectorAll('.tn').forEach(function(btn){
   btn.addEventListener('click', function(){
     var tab = this.getAttribute('data-tab');
+    // Sebastián 21-may-2026 · si el click viene de código externo
+    // (deep link, querySelector(...).click()), mostrar el grupo correcto.
+    var grp = (window._cxTabToGrp || {})[tab];
+    if(grp){
+      var bar = document.querySelector('[data-cx-sub="'+grp+'"]');
+      if(bar && bar.style.display === 'none'){
+        _cxSwitchGroup(grp);
+      }
+    }
     document.querySelectorAll('.tn').forEach(function(b){ b.classList.remove('on'); });
     document.querySelectorAll('.pane').forEach(function(p){ p.classList.remove('on'); });
     this.classList.add('on');
