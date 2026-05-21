@@ -7503,6 +7503,281 @@ def mi_dia():
     })
 
 
+# ────────────────────────────────────────────────────────────────────
+# OLA 2 Op Live · 20-may-2026 · Andon + Takt + IA quick wins
+# ────────────────────────────────────────────────────────────────────
+
+@bp.route('/api/planta/andon', methods=['GET', 'POST'])
+def planta_andon():
+    """OLA 2 · botón "Problema" en Mi Día · operario reporta sin WhatsApp.
+
+    POST body: {tipo, produccion_id?, area_codigo?, descripcion}
+      tipo ∈ {mp_faltante, equipo_caido, consulta_qc, accidente, otro}
+    GET: lista alertas abiertas/en_atencion (sirve al Centro de Mando).
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    conn = get_db(); c = conn.cursor()
+    if request.method == 'GET':
+        estado = (request.args.get('estado') or '').strip()
+        sql = "SELECT id, tipo, operario, produccion_id, area_codigo, descripcion, estado, ts_abierta, atendida_por, ts_atendida, resolucion FROM andon_alertas"
+        params = []
+        if estado in ('abierta','en_atencion','resuelta','cancelada'):
+            sql += " WHERE estado = ?"; params.append(estado)
+        else:
+            sql += " WHERE estado IN ('abierta','en_atencion')"
+        sql += " ORDER BY ts_abierta DESC LIMIT 100"
+        rows = c.execute(sql, params).fetchall()
+        items = [{
+            'id': r[0], 'tipo': r[1], 'operario': r[2],
+            'produccion_id': r[3], 'area_codigo': r[4] or '',
+            'descripcion': r[5], 'estado': r[6], 'ts_abierta': r[7],
+            'atendida_por': r[8] or '', 'ts_atendida': r[9] or '',
+            'resolucion': r[10] or '',
+        } for r in rows]
+        return jsonify({'alertas': items, 'total': len(items)})
+    # POST
+    body = request.get_json(silent=True) or {}
+    tipo = (body.get('tipo') or '').strip()
+    TIPOS = ('mp_faltante','equipo_caido','consulta_qc','accidente','otro')
+    if tipo not in TIPOS:
+        return jsonify({'error': f'tipo inválido · usar {TIPOS}'}), 400
+    desc = (body.get('descripcion') or '').strip()
+    if len(desc) < 3:
+        return jsonify({'error': 'descripción requerida (≥3 chars)'}), 400
+    pid = body.get('produccion_id') or None
+    area_cod = (body.get('area_codigo') or '').strip()
+    c.execute(
+        """INSERT INTO andon_alertas
+             (tipo, operario, produccion_id, area_codigo, descripcion)
+           VALUES (?, ?, ?, ?, ?)""",
+        (tipo, user, pid, area_cod or None, desc[:500]),
+    )
+    aid = c.lastrowid
+    try:
+        audit_log(c, usuario=user, accion='ANDON_ABRIR',
+                  tabla='andon_alertas', registro_id=aid,
+                  despues={'tipo': tipo, 'descripcion': desc[:200]})
+    except Exception:
+        pass
+    # Push al jefe (Luis Enrique) + admins · importante=true para accidente/equipo
+    try:
+        from blueprints.notif import push_notif as _push_notif
+        from config import ADMIN_USERS, CALIDAD_USERS
+        destinatarios = set(ADMIN_USERS) | set(CALIDAD_USERS) | {'luis'}
+        emoji = {'mp_faltante':'📦','equipo_caido':'⚠️','consulta_qc':'🔬','accidente':'🚨','otro':'❓'}.get(tipo,'❓')
+        es_urgente = tipo in ('accidente','equipo_caido')
+        for dest in destinatarios:
+            try:
+                _push_notif(
+                    destinatario=dest,
+                    tipo=f'andon_{tipo}',
+                    titulo=f'{emoji} ANDON · {tipo} · {user}',
+                    body=desc[:140],
+                    link='/dashboard#programacion',
+                    remitente=user, importante=es_urgente,
+                )
+            except Exception:
+                pass
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({'ok': True, 'id': aid, 'tipo': tipo}), 201
+
+
+@bp.route('/api/planta/andon/<int:aid>/resolver', methods=['POST'])
+def planta_andon_resolver(aid):
+    """Jefe/admin marca alerta atendida o resuelta."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    body = request.get_json(silent=True) or {}
+    nuevo_estado = (body.get('estado') or '').strip()
+    resolucion = (body.get('resolucion') or '').strip()
+    if nuevo_estado not in ('en_atencion','resuelta','cancelada'):
+        return jsonify({'error': 'estado debe ser en_atencion / resuelta / cancelada'}), 400
+    conn = get_db(); c = conn.cursor()
+    row = c.execute("SELECT estado FROM andon_alertas WHERE id=?", (aid,)).fetchone()
+    if not row:
+        return jsonify({'error': 'alerta no existe'}), 404
+    if nuevo_estado == 'en_atencion':
+        c.execute(
+            "UPDATE andon_alertas SET estado='en_atencion', atendida_por=?, "
+            "ts_atendida=datetime('now','-5 hours') WHERE id=?",
+            (user, aid),
+        )
+    elif nuevo_estado == 'resuelta':
+        if len(resolucion) < 3:
+            return jsonify({'error': 'resolucion requerida (≥3 chars)'}), 400
+        c.execute(
+            "UPDATE andon_alertas SET estado='resuelta', resolucion=?, "
+            "ts_resuelta=datetime('now','-5 hours'), "
+            "atendida_por=COALESCE(atendida_por, ?), "
+            "ts_atendida=COALESCE(ts_atendida, datetime('now','-5 hours')) "
+            "WHERE id=?",
+            (resolucion[:500], user, aid),
+        )
+    else:  # cancelada
+        c.execute("UPDATE andon_alertas SET estado='cancelada' WHERE id=?", (aid,))
+    try:
+        audit_log(c, usuario=user, accion=f'ANDON_{nuevo_estado.upper()}',
+                  tabla='andon_alertas', registro_id=aid,
+                  despues={'estado': nuevo_estado, 'resolucion': resolucion[:200]})
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({'ok': True, 'estado': nuevo_estado})
+
+
+@bp.route('/api/planta/tiempos-objetivo', methods=['GET', 'POST'])
+def planta_tiempos_objetivo():
+    """OLA 2 · CRUD takt time por producto + etapa.
+
+    POST body: {producto, etapa, minutos_objetivo}
+    GET ?producto=X · listado completo o filtrado
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    conn = get_db(); c = conn.cursor()
+    if request.method == 'GET':
+        prod = (request.args.get('producto') or '').strip()
+        sql = ("SELECT id, producto, etapa, minutos_objetivo, "
+               "minutos_p50_historico, minutos_p90_historico, "
+               "actualizado_at_utc, actualizado_por "
+               "FROM tiempo_objetivo_sku")
+        params = []
+        if prod:
+            sql += " WHERE LOWER(producto) = LOWER(?)"
+            params.append(prod)
+        sql += " ORDER BY producto, etapa"
+        rows = c.execute(sql, params).fetchall()
+        items = [{
+            'id': r[0], 'producto': r[1], 'etapa': r[2],
+            'minutos_objetivo': float(r[3] or 0),
+            'minutos_p50_historico': float(r[4] or 0) if r[4] else None,
+            'minutos_p90_historico': float(r[5] or 0) if r[5] else None,
+            'actualizado_at_utc': r[6], 'actualizado_por': r[7] or '',
+        } for r in rows]
+        return jsonify({'items': items, 'total': len(items)})
+    body = request.get_json(silent=True) or {}
+    prod = (body.get('producto') or '').strip()
+    etapa = (body.get('etapa') or '').strip().lower()
+    try:
+        minutos = float(body.get('minutos_objetivo') or 0)
+    except (ValueError, TypeError):
+        minutos = 0
+    if not prod or etapa not in ('dispensacion','elaboracion','envasado','acondicionamiento'):
+        return jsonify({'error': 'producto + etapa válida requeridos'}), 400
+    if minutos <= 0:
+        return jsonify({'error': 'minutos_objetivo > 0 requerido'}), 400
+    # Upsert
+    c.execute(
+        "SELECT id FROM tiempo_objetivo_sku WHERE producto=? AND etapa=?",
+        (prod, etapa),
+    )
+    ex = c.fetchone()
+    if ex:
+        c.execute(
+            "UPDATE tiempo_objetivo_sku SET minutos_objetivo=?, "
+            "actualizado_at_utc=datetime('now','utc'), actualizado_por=? "
+            "WHERE id=?",
+            (minutos, user, ex[0]),
+        )
+    else:
+        c.execute(
+            "INSERT INTO tiempo_objetivo_sku (producto, etapa, minutos_objetivo, actualizado_por) "
+            "VALUES (?, ?, ?, ?)",
+            (prod, etapa, minutos, user),
+        )
+    conn.commit()
+    return jsonify({'ok': True, 'producto': prod, 'etapa': etapa,
+                    'minutos_objetivo': minutos})
+
+
+@bp.route('/api/planta/tiempos-objetivo/recalcular-historico', methods=['POST'])
+def planta_tiempos_recalcular():
+    """OLA 2 · admin · recalcula p50/p90 históricos por producto+etapa
+    desde produccion_programada.etapa_*_inicio_at / fin_at.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    try:
+        from config import ADMIN_USERS
+        if user not in ADMIN_USERS:
+            return jsonify({'error': 'solo admin'}), 403
+    except ImportError:
+        pass
+    conn = get_db(); c = conn.cursor()
+    ETAPAS = [
+        ('dispensacion', 'etapa_disp_inicio_at', 'etapa_disp_fin_at'),
+        ('elaboracion', 'etapa_elab_inicio_at', 'etapa_elab_fin_at'),
+        ('envasado', 'etapa_env_inicio_at', 'etapa_env_fin_at'),
+        ('acondicionamiento', 'etapa_acond_inicio_at', 'etapa_acond_fin_at'),
+    ]
+    actualizados = []
+    for etapa, c_ini, c_fin in ETAPAS:
+        try:
+            rows = c.execute(
+                f"""SELECT producto,
+                           (julianday({c_fin}) - julianday({c_ini})) * 24 * 60 as min_dur
+                    FROM produccion_programada
+                    WHERE {c_ini} IS NOT NULL AND {c_fin} IS NOT NULL
+                      AND {c_fin} > {c_ini}
+                    ORDER BY producto""",
+            ).fetchall()
+        except Exception:
+            continue
+        # Agrupar por producto
+        por_prod = {}
+        for r in rows:
+            p = (r[0] or '').strip()
+            if not p:
+                continue
+            por_prod.setdefault(p, []).append(float(r[1] or 0))
+        for p, durs in por_prod.items():
+            if not durs:
+                continue
+            durs.sort()
+            n = len(durs)
+            p50 = durs[int(n * 0.5)]
+            p90 = durs[min(n - 1, int(n * 0.9))]
+            # Upsert
+            ex = c.execute(
+                "SELECT id, minutos_objetivo FROM tiempo_objetivo_sku WHERE producto=? AND etapa=?",
+                (p, etapa),
+            ).fetchone()
+            if ex:
+                c.execute(
+                    "UPDATE tiempo_objetivo_sku SET minutos_p50_historico=?, "
+                    "minutos_p90_historico=? WHERE id=?",
+                    (p50, p90, ex[0]),
+                )
+            else:
+                # Sembrar minutos_objetivo = p50 si no existe
+                c.execute(
+                    "INSERT INTO tiempo_objetivo_sku "
+                    "(producto, etapa, minutos_objetivo, minutos_p50_historico, "
+                    "minutos_p90_historico, actualizado_por) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    (p, etapa, p50, p50, p90, user),
+                )
+            actualizados.append({'producto': p, 'etapa': etapa,
+                                  'n_muestras': n, 'p50_min': round(p50, 1),
+                                  'p90_min': round(p90, 1)})
+    try:
+        audit_log(c, usuario=user, accion='TIEMPOS_OBJETIVO_RECALCULAR',
+                  tabla='tiempo_objetivo_sku', registro_id='_BULK_',
+                  despues={'actualizados': len(actualizados)})
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({'ok': True, 'actualizados': len(actualizados),
+                    'detalle': actualizados[:50]})
+
+
 @bp.route('/api/planta/produccion/<int:pid>/granel-aprobar', methods=['POST'])
 def planta_granel_aprobar(pid):
     """OLA 1 INVIMA · 20-may-2026 · Gate QC release Elab→Env.

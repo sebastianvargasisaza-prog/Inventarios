@@ -7310,6 +7310,79 @@ def test_golden_portal_b2b_flujo_completo(app, db_clean):
     _exec("DELETE FROM portal_clientes_credenciales WHERE email LIKE 'test_portal_%'")
 
 
+def test_golden_ola2_andon_y_takt(app, db_clean):
+    """OLA 2 · Andon (operario reporta) + Takt time (objetivos por SKU)."""
+    _exec("DELETE FROM andon_alertas WHERE operario LIKE 'TEST_%' OR descripcion LIKE 'TEST_%'")
+    _exec("DELETE FROM tiempo_objetivo_sku WHERE producto='TEST_TAKT'")
+
+    cs = _login(app, 'sebastian')
+
+    # 1. Andon · tipo inválido → 400
+    r_bad = cs.post('/api/planta/andon', json={
+        'tipo': 'foo', 'descripcion': 'TEST bla bla',
+    }, headers=csrf_headers())
+    assert r_bad.status_code == 400
+
+    # 2. Andon · descripción corta → 400
+    r_short = cs.post('/api/planta/andon', json={
+        'tipo': 'mp_faltante', 'descripcion': 'x',
+    }, headers=csrf_headers())
+    assert r_short.status_code == 400
+
+    # 3. Andon · OK
+    r_ok = cs.post('/api/planta/andon', json={
+        'tipo': 'equipo_caido',
+        'descripcion': 'TEST_ANDON marmita 1 no calienta',
+        'area_codigo': 'PROD1',
+    }, headers=csrf_headers())
+    assert r_ok.status_code == 201
+    aid = r_ok.get_json()['id']
+
+    # 4. GET listado abiertas
+    r_lst = cs.get('/api/planta/andon')
+    items = r_lst.get_json()['alertas']
+    assert any(it['id'] == aid for it in items)
+
+    # 5. Resolver
+    r_res = cs.post(f'/api/planta/andon/{aid}/resolver', json={
+        'estado': 'resuelta', 'resolucion': 'TEST cambiamos termocupla',
+    }, headers=csrf_headers())
+    assert r_res.status_code == 200
+
+    # 6. Takt · POST upsert
+    r_t = cs.post('/api/planta/tiempos-objetivo', json={
+        'producto': 'TEST_TAKT',
+        'etapa': 'elaboracion',
+        'minutos_objetivo': 90,
+    }, headers=csrf_headers())
+    assert r_t.status_code == 200
+
+    # 7. Takt · GET filtrado
+    r_g = cs.get('/api/planta/tiempos-objetivo?producto=TEST_TAKT')
+    assert len(r_g.get_json()['items']) == 1
+    assert r_g.get_json()['items'][0]['minutos_objetivo'] == 90
+
+    # 8. Upsert sobre existente
+    r_up = cs.post('/api/planta/tiempos-objetivo', json={
+        'producto': 'TEST_TAKT',
+        'etapa': 'elaboracion',
+        'minutos_objetivo': 120,
+    }, headers=csrf_headers())
+    assert r_up.status_code == 200
+    r_g2 = cs.get('/api/planta/tiempos-objetivo?producto=TEST_TAKT')
+    assert r_g2.get_json()['items'][0]['minutos_objetivo'] == 120
+
+    # 9. Recalcular histórico → ok (puede no encontrar datos para TEST_TAKT
+    # pero no debe fallar)
+    r_rec = cs.post('/api/planta/tiempos-objetivo/recalcular-historico',
+                    json={}, headers=csrf_headers())
+    assert r_rec.status_code == 200
+
+    # Cleanup
+    _exec("DELETE FROM andon_alertas WHERE id=?", (aid,))
+    _exec("DELETE FROM tiempo_objetivo_sku WHERE producto='TEST_TAKT'")
+
+
 def test_golden_ola1_gates_invima_op_live(app, db_clean):
     """OLA 1 Operación Live · 20-may-2026 · Sebastián.
 

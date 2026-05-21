@@ -6433,6 +6433,39 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
            ('ESENCIA ILUMINADORA',                  'esencia', NULL, 60, 90, 30, 3.0, 3, NULL)""",
     ]),
 
+    (145, "OLA 2 Op Live · Takt time + Andon · 20-may-2026", [
+        # Tiempo objetivo (takt) por producto + etapa · base para OEE, ETA,
+        # score productividad operario. Sin esto no hay benchmark.
+        """CREATE TABLE IF NOT EXISTS tiempo_objetivo_sku (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            producto TEXT NOT NULL,
+            etapa TEXT NOT NULL,
+            minutos_objetivo REAL NOT NULL,
+            minutos_p50_historico REAL,
+            minutos_p90_historico REAL,
+            actualizado_at_utc TEXT DEFAULT (datetime('now','utc')),
+            actualizado_por TEXT
+        )""",
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_tiempo_objetivo ON tiempo_objetivo_sku(producto, etapa)",
+        # Andon · botón "Problema" en Mi Día · operario reporta sin WhatsApp
+        """CREATE TABLE IF NOT EXISTS andon_alertas (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tipo TEXT NOT NULL CHECK(tipo IN ('mp_faltante','equipo_caido','consulta_qc','accidente','otro')),
+            operario TEXT NOT NULL,
+            produccion_id INTEGER,
+            area_codigo TEXT,
+            descripcion TEXT NOT NULL,
+            estado TEXT NOT NULL DEFAULT 'abierta' CHECK(estado IN ('abierta','en_atencion','resuelta','cancelada')),
+            ts_abierta TEXT NOT NULL DEFAULT (datetime('now','utc')),
+            atendida_por TEXT,
+            ts_atendida TEXT,
+            resolucion TEXT,
+            ts_resuelta TEXT,
+            tenant_id INTEGER DEFAULT 1
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_andon_estado ON andon_alertas(estado, ts_abierta DESC)",
+    ]),
+
     (144, "OLA 1 Op Live · multi-tenant + turnos_operario (decisiones FUTURO) · 20-may-2026", [
         # tenant_id default 1 en las 15 tablas grandes · NO usar todavía,
         # solo dejar listo para multi-planta / multi-cliente cuando llegue.
