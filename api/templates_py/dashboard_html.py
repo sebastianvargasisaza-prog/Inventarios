@@ -1662,60 +1662,83 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
        Los otros (Operación Live / Auto-Plan / Maquila / Configuración)
        generaban ruido + posibles errores · ocultos pero los IDs siguen
        en el DOM por compatibilidad con switchProgTab() y JS existente. -->
-  <div style="display:flex;gap:10px;margin-bottom:18px;border-bottom:2px solid #e2e8f0;padding-bottom:12px;align-items:center;flex-wrap:wrap">
-    <!-- Sebastián 13-may-2026: Necesidades = bandeja entrada (Animus DTC
-         + B2B Fernando + futuros clientes). Cada cliente B2B nuevo se
-         agrega como sección sin tocar UI. -->
-    <button id="prog-tab-necesidades" onclick="switchProgTab('necesidades')"
-      style="padding:9px 22px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:800;cursor:pointer;background:linear-gradient(135deg,#0f766e,#0891b2);color:#fff;box-shadow:0 3px 10px rgba(8,145,178,.35)">
-      &#128202; Necesidades
+  <!-- Sprint Programación · 20-may-2026 · Sebastián eligió Opción A:
+       de 8 sub-tabs visibles a 4 grupos lógicos. Mantenemos los botones
+       individuales OCULTOS (display:none) para no romper switchProgTab()
+       ni deeplinks JS existentes. Los 3 grupos nuevos muestran una
+       sub-bar al activarse y disparan switchProgTab al default del grupo.
+  -->
+  <div style="display:flex;gap:10px;margin-bottom:8px;border-bottom:2px solid #e2e8f0;padding-bottom:10px;align-items:center;flex-wrap:wrap">
+    <button data-prog-grp="plan" onclick="switchProgGroup('plan')"
+      style="padding:9px 24px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:800;cursor:pointer;background:linear-gradient(135deg,#0f766e,#0891b2);color:#fff;box-shadow:0 3px 10px rgba(8,145,178,.35)"
+      title="Demanda + oferta del plan · Necesidades · Abastecimiento">
+      &#128202; Plan
     </button>
-    <!-- Sebastián 13-may-2026: "que en plan al dia deje de aparecer la
-         programacion, mejor todo junto en necesidades asi esta integrado".
-         Plan en curso oculto · sus controles (Mover/Pausar/Cancelar/
-         Reactivar) ahora viven inline en cada card de Necesidades. -->
-    <button id="prog-tab-planv2" onclick="switchProgTab('planv2')"
-      style="display:none"
-      title="Plan en curso · ahora integrado en Necesidades">
-      &#128197; Plan en curso
+    <button data-prog-grp="calendario_grp" onclick="switchProgGroup('calendario_grp')"
+      style="padding:9px 24px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:800;cursor:pointer;background:linear-gradient(135deg,#ca8a04,#f59e0b);color:#fff;box-shadow:0 3px 10px rgba(245,158,11,.35);opacity:.6"
+      title="Calendario IA · Vista calendario · Factibilidad de MPs">
+      &#129302; Calendario IA
     </button>
-    <button id="prog-tab-calendario" onclick="switchProgTab('calendario')"
-      style="padding:9px 22px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:700;cursor:pointer;background:linear-gradient(135deg,#ca8a04,#f59e0b);color:#fff;box-shadow:0 3px 10px rgba(245,158,11,.35)"
-      title="Calendario propio · vista mes + autoplan IA + horizontes 15-120 días">
-      &#129302; Calendario + IA
-    </button>
-    <button id="prog-tab-factibilidad" onclick="switchProgTab('factibilidad')"
-      style="padding:9px 22px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:700;cursor:pointer;background:#059669;color:#fff;box-shadow:0 3px 10px rgba(5,150,105,.35)"
-      title="¿Alcanzan las materias primas para todo el plan? · solo lectura">
-      &#9989; Factibilidad
-    </button>
-    <!-- Sebastián 15-may-2026: pestaña Abastecimiento · consolida las MP
-         y envases que el plan va a consumir en 1-12 meses y genera las
-         solicitudes de compra de planta hacia Compras. -->
-    <button id="prog-tab-abastecimiento" onclick="switchProgTab('abastecimiento')"
-      style="padding:9px 22px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:700;cursor:pointer;background:#7c3aed;color:#fff;box-shadow:0 3px 10px rgba(124,58,237,.35)"
-      title="Materias primas y envases que faltan para el plan · genera solicitudes a Compras">
-      &#128230; Abastecimiento
-    </button>
-    <button id="prog-tab-midia" onclick="switchProgTab('midia')"
-      style="padding:9px 22px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:700;cursor:pointer;background:#1e40af;color:#fff;box-shadow:0 3px 10px rgba(30,64,175,.35)">
-      &#128100; Mi D&iacute;a
-    </button>
-    <!-- Sebastián 19-may-2026: Centro de Mando visible · vista live de planta
-         (plano + áreas limpias/sucias + qué hace cada operario). El sueño de
-         Alejandro · se desglosa paso a paso desde acá. -->
-    <button id="prog-tab-mando" onclick="switchProgTab('mando')"
-      style="padding:9px 22px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:700;cursor:pointer;background:#1a4a7a;color:#fff;box-shadow:0 3px 10px rgba(26,74,122,.35)"
-      title="Vista live de la planta · plano, áreas limpias o sucias y qué hace cada operario">
-      &#127919; Centro de Mando
-    </button>
-    <!-- Sebastián 19-may-2026: Kanban de Estaciones · pieza 2 · iframe a /planta/kanban -->
-    <button id="prog-tab-kanban" onclick="switchProgTab('kanban')"
-      style="padding:9px 22px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:700;cursor:pointer;background:#0891b2;color:#fff;box-shadow:0 3px 10px rgba(8,145,178,.35)"
-      title="Kanban de 4 estaciones · Dispensación → Elaboración → Envasado → Acondicionamiento">
-      &#127981; Kanban
+    <button data-prog-grp="opera_grp" onclick="switchProgGroup('opera_grp')"
+      style="padding:9px 24px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:800;cursor:pointer;background:linear-gradient(135deg,#1a4a7a,#0891b2);color:#fff;box-shadow:0 3px 10px rgba(26,74,122,.35);opacity:.6"
+      title="Operación Live · Centro de Mando · Kanban · Mi Día">
+      &#127981; Operación Live
     </button>
     <span id="prog-tareas-badge" style="display:none;background:#dc2626;color:#fff;font-size:9px;font-weight:800;padding:2px 8px;border-radius:8px"></span>
+  </div>
+  <!-- Sub-bars · solo una visible a la vez según el grupo activo -->
+  <div id="prog-sub-plan" class="prog-subbar" style="display:flex;gap:8px;margin-bottom:14px;padding:8px 4px;border-bottom:1px dashed #cbd5e1;flex-wrap:wrap">
+    <button data-prog-sub="plan" onclick="switchProgTab('necesidades')"
+      style="padding:6px 14px;border:1px solid #0f766e;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;background:#0f766e;color:#fff"
+      title="Bandeja entrada · Animus DTC + B2B">
+      &#128202; Necesidades
+    </button>
+    <button data-prog-sub="plan" onclick="switchProgTab('abastecimiento')"
+      style="padding:6px 14px;border:1px solid #7c3aed;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;background:#fff;color:#7c3aed"
+      title="MP/envases que faltan · genera SOLs a Compras">
+      &#128230; Abastecimiento
+    </button>
+  </div>
+  <div id="prog-sub-calendario_grp" class="prog-subbar" style="display:none;gap:8px;margin-bottom:14px;padding:8px 4px;border-bottom:1px dashed #cbd5e1;flex-wrap:wrap">
+    <button data-prog-sub="calendario_grp" onclick="switchProgTab('calendario')"
+      style="padding:6px 14px;border:1px solid #ca8a04;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;background:#ca8a04;color:#fff"
+      title="Vista mes + autoplan IA">
+      &#129302; Vista calendario
+    </button>
+    <button data-prog-sub="calendario_grp" onclick="switchProgTab('factibilidad')"
+      style="padding:6px 14px;border:1px solid #059669;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;background:#fff;color:#059669"
+      title="¿Alcanzan las MP para todo el plan?">
+      &#9989; Factibilidad
+    </button>
+  </div>
+  <div id="prog-sub-opera_grp" class="prog-subbar" style="display:none;gap:8px;margin-bottom:14px;padding:8px 4px;border-bottom:1px dashed #cbd5e1;flex-wrap:wrap">
+    <button data-prog-sub="opera_grp" onclick="switchProgTab('mando')"
+      style="padding:6px 14px;border:1px solid #1a4a7a;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;background:#1a4a7a;color:#fff"
+      title="Vista live · plano + áreas + operarios (vista jefe)">
+      &#127919; Centro de Mando
+    </button>
+    <button data-prog-sub="opera_grp" onclick="switchProgTab('kanban')"
+      style="padding:6px 14px;border:1px solid #0891b2;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;background:#fff;color:#0891b2"
+      title="Kanban 4 estaciones · Dispensación → Elaboración → Envasado → Acondicionamiento">
+      &#127981; Kanban
+    </button>
+    <button data-prog-sub="opera_grp" onclick="switchProgTab('midia')"
+      style="padding:6px 14px;border:1px solid #1e40af;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;background:#fff;color:#1e40af"
+      title="Vista operario · tareas asignadas">
+      &#128100; Mi Día
+    </button>
+  </div>
+  <!-- Botones INDIVIDUALES viejos · ocultos pero presentes para compat
+       de switchProgTab() y deeplinks JS · NO borrar. -->
+  <div style="display:none">
+    <button id="prog-tab-necesidades" onclick="switchProgTab('necesidades')"></button>
+    <button id="prog-tab-planv2" onclick="switchProgTab('planv2')"></button>
+    <button id="prog-tab-calendario" onclick="switchProgTab('calendario')"></button>
+    <button id="prog-tab-factibilidad" onclick="switchProgTab('factibilidad')"></button>
+    <button id="prog-tab-abastecimiento" onclick="switchProgTab('abastecimiento')"></button>
+    <button id="prog-tab-midia" onclick="switchProgTab('midia')"></button>
+    <button id="prog-tab-mando" onclick="switchProgTab('mando')"></button>
+    <button id="prog-tab-kanban" onclick="switchProgTab('kanban')"></button>
   </div>
   <!-- Tab "Calendario + IA" · iframe a /admin/plan-calendario · Sebastián 14-may-2026:
        "cuando le doy calendario con IA, pasa lo siguiente me abre otra pestaña deberia
@@ -10715,8 +10738,86 @@ async function ckMarcar(itemId, estado){
   }
 
   // ── Sub-tabs internos de Programacion ────────────────────────────────────
+  // Sprint Programación 20-may-2026 · Opción A · 4 grupos visuales.
+  // Mapeo tab→grupo · cuando switchProgTab cambia de tab, también
+  // actualizamos el grupo activo + el sub-tab seleccionado.
+  var _PROG_TAB_TO_GROUP = {
+    'necesidades': 'plan',
+    'planv2': 'plan',  // legacy oculto · si llaman, queda en grupo plan
+    'abastecimiento': 'plan',
+    'calendario': 'calendario_grp',
+    'factibilidad': 'calendario_grp',
+    'mando': 'opera_grp',
+    'kanban': 'opera_grp',
+    'midia': 'opera_grp',
+  };
+  function switchProgGroup(group){
+    try {
+      // Activar/desactivar botones grupo
+      var btns = document.querySelectorAll('[data-prog-grp]');
+      btns.forEach(function(b){
+        var isActive = b.getAttribute('data-prog-grp') === group;
+        b.style.opacity = isActive ? '1' : '0.6';
+      });
+      // Mostrar sub-bar correcta
+      ['plan','calendario_grp','opera_grp'].forEach(function(g){
+        var sb = document.getElementById('prog-sub-'+g);
+        if(sb) sb.style.display = (g===group) ? 'flex' : 'none';
+      });
+      // Default sub-tab por grupo
+      var DEF = {plan:'necesidades', calendario_grp:'calendario', opera_grp:'mando'};
+      if(DEF[group]) switchProgTab(DEF[group]);
+    } catch(err) { console.warn('switchProgGroup:', err); }
+  }
+  function _highlightProgSubTab(tab){
+    // Resalta el sub-tab activo dentro de su grupo (fill vs outline)
+    var group = _PROG_TAB_TO_GROUP[tab];
+    if(!group) return;
+    var COLORS = {
+      'necesidades': '#0f766e', 'abastecimiento': '#7c3aed',
+      'calendario': '#ca8a04', 'factibilidad': '#059669',
+      'mando': '#1a4a7a', 'kanban': '#0891b2', 'midia': '#1e40af',
+    };
+    var SUB_TAB_FROM = {
+      'necesidades': "switchProgTab('necesidades')",
+      'abastecimiento': "switchProgTab('abastecimiento')",
+      'calendario': "switchProgTab('calendario')",
+      'factibilidad': "switchProgTab('factibilidad')",
+      'mando': "switchProgTab('mando')",
+      'kanban': "switchProgTab('kanban')",
+      'midia': "switchProgTab('midia')",
+    };
+    var sb = document.getElementById('prog-sub-'+group);
+    if(!sb) return;
+    sb.querySelectorAll('button[data-prog-sub]').forEach(function(b){
+      var onc = b.getAttribute('onclick') || '';
+      var matchTab = null;
+      Object.keys(SUB_TAB_FROM).forEach(function(t){
+        if(onc.indexOf(SUB_TAB_FROM[t]) !== -1) matchTab = t;
+      });
+      if(matchTab && matchTab === tab){
+        b.style.background = COLORS[matchTab] || '#475569';
+        b.style.color = '#fff';
+      } else if(matchTab){
+        b.style.background = '#fff';
+        b.style.color = COLORS[matchTab] || '#475569';
+      }
+    });
+  }
   function switchProgTab(tab){
     try {
+      // Auto-sincronizar grupo + sub-tab activo (Opción A 20-may-2026)
+      var grp = _PROG_TAB_TO_GROUP[tab];
+      if(grp){
+        ['plan','calendario_grp','opera_grp'].forEach(function(g){
+          var sb = document.getElementById('prog-sub-'+g);
+          if(sb) sb.style.display = (g===grp) ? 'flex' : 'none';
+        });
+        document.querySelectorAll('[data-prog-grp]').forEach(function(b){
+          b.style.opacity = (b.getAttribute('data-prog-grp')===grp) ? '1' : '0.6';
+        });
+        _highlightProgSubTab(tab);
+      }
       // Mapeo tab → ID del div objetivo
       var TAB_TO_DIV = {
         'planv2': 'ptab-planv2',
