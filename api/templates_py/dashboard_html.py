@@ -924,9 +924,19 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     <div id="prod-simul-result" style="margin-top:12px;"></div>
     <div id="prod-msg"></div>
     <div style="margin-top:28px;border-top:2px solid #eee;padding-top:20px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;"><h3 style="color:#2B7A78;margin:0;">&#128202; Historial de Producciones</h3><button onclick="exportarExcelProducciones()" style="background:#217346;padding:7px 14px;font-size:0.85em;">&#128196; Descargar Excel</button></div>
-      <table class="table"><thead><tr><th>Producto</th><th style="text-align:right;">Cantidad (kg)</th><th>Fecha</th><th>Operador</th><th style="text-align:center;">Estado</th></tr></thead>
-      <tbody id="hist-prod-body"><tr><td colspan="6" style="text-align:center;color:#999;padding:16px;">Cargando...</td></tr></tbody></table>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px"><h3 style="color:#2B7A78;margin:0;">&#128202; Historial de Producciones</h3>
+        <button onclick="exportarExcelProducciones()" style="background:#217346;padding:7px 14px;font-size:0.85em;">&#128196; Descargar Excel</button>
+      </div>
+      <!-- Sprint Fabricación PRO 20-may-2026: buscador + filtros + paginación -->
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px;font-size:12px">
+        <input id="hist-prod-q" type="text" placeholder="🔍 Buscar producto / lote / operador…" oninput="_histProdDebounced()" style="flex:1;min-width:200px;padding:7px 10px;border:1px solid #cbd5e1;border-radius:5px">
+        <label style="color:#475569">Desde: <input id="hist-prod-desde" type="date" onchange="cargarHistProd()" style="padding:5px 8px;border:1px solid #cbd5e1;border-radius:5px"></label>
+        <label style="color:#475569">Hasta: <input id="hist-prod-hasta" type="date" onchange="cargarHistProd()" style="padding:5px 8px;border:1px solid #cbd5e1;border-radius:5px"></label>
+        <button onclick="document.getElementById('hist-prod-q').value='';document.getElementById('hist-prod-desde').value='';document.getElementById('hist-prod-hasta').value='';cargarHistProd()" style="background:#94a3b8;color:#fff;padding:6px 10px;font-size:11px;border:none;border-radius:5px;cursor:pointer">Limpiar</button>
+      </div>
+      <table class="table"><thead><tr><th>Producto</th><th>Lote PT</th><th style="text-align:right;">kg</th><th style="text-align:right;">Costo COP</th><th>Fecha</th><th>Operador</th><th style="text-align:center;">Estado</th><th style="text-align:center;">Acciones</th></tr></thead>
+      <tbody id="hist-prod-body"><tr><td colspan="8" style="text-align:center;color:#999;padding:16px;">Cargando...</td></tr></tbody></table>
+      <div id="hist-prod-footer" style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;font-size:12px;color:#64748b"></div>
     </div>
     <!-- TRAZABILIDAD INVIMA -->
     <div style="margin-top:28px;border-top:2px solid #eee;padding-top:20px;">
@@ -3262,22 +3272,152 @@ function descargarCSV(nombre,cols,rows){
   URL.revokeObjectURL(url);
 }
 
+// Sprint Fabricación PRO · 20-may-2026 · paginación + búsqueda server-side
+window._histProdOffset = 0;
+window._histProdLimit = 50;
+window._histProdDebounceTimer = null;
+function _histProdDebounced(){
+  if(window._histProdDebounceTimer) clearTimeout(window._histProdDebounceTimer);
+  window._histProdDebounceTimer = setTimeout(function(){
+    window._histProdOffset = 0;
+    cargarHistProd();
+  }, 350);
+}
 async function cargarHistProd(){
+  var tb=document.getElementById('hist-prod-body');
+  var ft=document.getElementById('hist-prod-footer');
+  if(!tb)return;
+  var q = (document.getElementById('hist-prod-q')||{}).value || '';
+  var desde = (document.getElementById('hist-prod-desde')||{}).value || '';
+  var hasta = (document.getElementById('hist-prod-hasta')||{}).value || '';
+  var limit = window._histProdLimit;
+  var offset = window._histProdOffset || 0;
+  var url = '/api/produccion?limit='+limit+'&offset='+offset
+          +(q ? '&q='+encodeURIComponent(q) : '')
+          +(desde ? '&desde='+encodeURIComponent(desde) : '')
+          +(hasta ? '&hasta='+encodeURIComponent(hasta) : '');
   try{
-    var r=await fetch('/api/produccion'),d=await r.json();
+    var r=await fetch(url, {credentials:'same-origin'}),d=await r.json();
     var ps=d.producciones||[];
-    var tb=document.getElementById('hist-prod-body');
-    if(!tb)return;
-    if(!ps.length){tb.innerHTML='<tr><td colspan="5" style="text-align:center;color:#999;padding:16px;">Sin producciones registradas</td></tr>';return;}
+    if(!ps.length){
+      tb.innerHTML='<tr><td colspan="8" style="text-align:center;color:#999;padding:16px;">Sin producciones que coincidan</td></tr>';
+      if(ft) ft.innerHTML='Total: 0';
+      return;
+    }
     tb.innerHTML=ps.map(function(p){
       var f=p.fecha?p.fecha.substring(0,16).replace('T',' '):'';
       var op=p.operador||'<span style="color:#bbb;font-style:italic;">-</span>';
-      return '<tr><td style="font-weight:600;">'+_escHTML(p.producto)+'</td><td style="text-align:right;font-weight:700;color:#2B7A78;">'+p.cantidad.toLocaleString()+' kg</td><td style="font-size:0.85em;color:#666;">'+_escHTML(f)+'</td><td>'+op+'</td><td style="text-align:center;"><span style="background:#d4edda;color:#155724;padding:2px 8px;border-radius:10px;font-size:0.8em;font-weight:600;">'+_escHTML(p.estado)+'</span></td></tr>';
+      var costo = p.costo_estimado_cop ? '$'+Number(p.costo_estimado_cop).toLocaleString('es-CO') : '<span style="color:#94a3b8">—</span>';
+      var lote = '<span style="font-family:monospace;font-weight:700;color:#0f766e">'+_escHTML(p.lote||'')+'</span>';
+      var estadoBg = (p.estado||'').toLowerCase()==='completado'?'#d4edda':'#fde68a';
+      var estadoCol = (p.estado||'').toLowerCase()==='completado'?'#155724':'#92400e';
+      return '<tr>'+
+        '<td style="font-weight:600;">'+_escHTML(p.producto)+'</td>'+
+        '<td>'+lote+'</td>'+
+        '<td style="text-align:right;font-weight:700;color:#2B7A78;">'+Number(p.cantidad).toLocaleString()+' kg</td>'+
+        '<td style="text-align:right;font-size:0.85em">'+costo+'</td>'+
+        '<td style="font-size:0.85em;color:#666;">'+_escHTML(f)+'</td>'+
+        '<td>'+op+'</td>'+
+        '<td style="text-align:center;"><span style="background:'+estadoBg+';color:'+estadoCol+';padding:2px 8px;border-radius:10px;font-size:0.8em;font-weight:600;">'+_escHTML(p.estado||'')+'</span></td>'+
+        '<td style="text-align:center;white-space:nowrap">'+
+          '<button data-prod-act="detalle" data-pid="'+p.id+'" style="background:#0891b2;color:#fff;border:none;padding:3px 8px;border-radius:4px;font-size:10px;cursor:pointer;margin-right:3px" title="Ver MPs descontadas + lotes FEFO + costo">📋</button>'+
+          '<button data-prod-act="rotulo" data-pid="'+p.id+'" style="background:#c0392b;color:#fff;border:none;padding:3px 8px;border-radius:4px;font-size:10px;cursor:pointer" title="Re-imprimir rótulos">🏷</button>'+
+        '</td>'+
+      '</tr>';
     }).join('');
+    // Footer paginación
+    if(ft){
+      var total = d.total || 0;
+      var desde_n = (offset||0) + 1;
+      var hasta_n = (offset||0) + ps.length;
+      var pagBtns = '';
+      if(offset > 0){
+        pagBtns += '<button onclick="window._histProdOffset=Math.max(0,window._histProdOffset-'+limit+');cargarHistProd()" style="padding:4px 10px;background:#475569;color:#fff;border:none;border-radius:4px;font-size:11px;cursor:pointer;margin-right:4px">← Anterior</button>';
+      }
+      if(offset + limit < total){
+        pagBtns += '<button onclick="window._histProdOffset+='+limit+';cargarHistProd()" style="padding:4px 10px;background:#0891b2;color:#fff;border:none;border-radius:4px;font-size:11px;cursor:pointer">Siguiente →</button>';
+      }
+      ft.innerHTML = '<span>Mostrando '+desde_n+'–'+hasta_n+' de '+total.toLocaleString()+'</span><span>'+pagBtns+'</span>';
+    }
   }catch(e){
     console.error('cargarProduccionesHistorial fallo:',e);
-    tb.innerHTML='<tr><td colspan="5" style="text-align:center;color:#c00;padding:16px;">Error cargando histórico</td></tr>';
+    tb.innerHTML='<tr><td colspan="8" style="text-align:center;color:#c00;padding:16px;">Error cargando histórico: '+_escHTML(e.message)+'</td></tr>';
   }
+}
+
+// Event delegation · ver detalle / reimprimir rótulos
+if(typeof document !== 'undefined' && !window._PROD_HIST_DELEG){
+  window._PROD_HIST_DELEG = true;
+  document.addEventListener('click', function(ev){
+    var btn = ev.target && ev.target.closest && ev.target.closest('[data-prod-act]');
+    if(!btn) return;
+    var act = btn.getAttribute('data-prod-act');
+    var pid = btn.getAttribute('data-pid');
+    if(!pid) return;
+    if(act === 'rotulo'){
+      window.open('/api/produccion/'+pid+'/rotulo-reimprimir', '_blank');
+    } else if(act === 'detalle'){
+      verDetalleProduccion(pid);
+    }
+  });
+}
+
+async function verDetalleProduccion(pid){
+  try{
+    var r = await fetch('/api/produccion/'+pid+'/detalle', {credentials:'same-origin'});
+    var d = await r.json();
+    if(!r.ok){ alert('Error: '+(d.error||r.status)); return; }
+    var existe = document.getElementById('modal-prod-detalle');
+    if(existe) existe.remove();
+    var div = document.createElement('div');
+    div.id = 'modal-prod-detalle';
+    div.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9998;display:flex;align-items:center;justify-content:center;padding:20px';
+    var costoStr = d.costo_estimado_cop ? '$'+Number(d.costo_estimado_cop).toLocaleString('es-CO') : '—';
+    var descRows = (d.descuentos||[]).map(function(dt){
+      return '<tr><td style="font-family:monospace">'+_escHTML(dt.material_id)+'</td><td>'+_escHTML(dt.material_nombre)+'</td>'+
+        '<td style="font-family:monospace">'+_escHTML(dt.lote||'—')+'</td>'+
+        '<td style="text-align:right;font-weight:700">'+Number(dt.cantidad_g).toLocaleString()+' g</td></tr>';
+    }).join('');
+    var snapRows = (d.formula_snapshot||[]).map(function(s){
+      return '<tr><td style="font-family:monospace">'+_escHTML(s.material_id||'')+'</td><td>'+_escHTML(s.material_nombre||'')+'</td><td style="text-align:right">'+(s.porcentaje||0)+'%</td></tr>';
+    }).join('');
+    div.innerHTML =
+      '<div style="background:#fff;border-radius:14px;padding:24px;max-width:840px;width:100%;max-height:90vh;overflow-y:auto">'+
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><h3 style="margin:0;color:#0f766e">📋 Detalle producción · '+_escHTML(d.lote)+'</h3>'+
+      '<button id="prod-det-close" style="background:none;border:none;font-size:1.4em;cursor:pointer">×</button></div>'+
+      '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;background:#f8fafc;padding:12px;border-radius:8px;margin-bottom:14px;font-size:13px">'+
+        '<div><b>Producto</b><br>'+_escHTML(d.producto)+'</div>'+
+        '<div><b>Cantidad</b><br>'+d.cantidad_kg+' kg</div>'+
+        '<div><b>Lote PT</b><br><span style="font-family:monospace;color:#dc2626;font-weight:700">'+_escHTML(d.lote)+'</span></div>'+
+        '<div><b>Fecha</b><br>'+_escHTML((d.fecha||'').substring(0,16).replace('T',' '))+'</div>'+
+        '<div><b>Operador</b><br>'+_escHTML(d.operador)+'</div>'+
+        '<div><b>Presentación</b><br>'+_escHTML(d.presentacion||'—')+'</div>'+
+        '<div><b>Costo estimado</b><br><span style="color:#0f766e;font-weight:700">'+costoStr+'</span></div>'+
+        '<div><b>Estado</b><br>'+_escHTML(d.estado)+'</div>'+
+      '</div>'+
+      '<h4 style="margin:14px 0 6px;color:#475569;font-size:13px">📉 MPs descontadas (con lotes FEFO usados)</h4>'+
+      '<table class="table" style="font-size:11px"><thead><tr><th>Código</th><th>Material</th><th>Lote MP</th><th style="text-align:right">Cantidad</th></tr></thead><tbody>'+
+        (descRows || '<tr><td colspan="4" style="text-align:center;color:#94a3b8">Sin descuentos registrados</td></tr>')+
+      '</tbody></table>'+
+      (snapRows ? '<h4 style="margin:14px 0 6px;color:#475569;font-size:13px">🧪 Fórmula al momento de producir (snapshot inmutable INVIMA)</h4>'+
+      '<table class="table" style="font-size:11px"><thead><tr><th>Código</th><th>Material</th><th style="text-align:right">%</th></tr></thead><tbody>'+snapRows+'</tbody></table>' : '')+
+      (d.observaciones ? '<div style="margin-top:12px;padding:8px;background:#fef3c7;border-left:3px solid #ca8a04;font-size:12px"><b>Observaciones:</b><br>'+_escHTML(d.observaciones)+'</div>' : '')+
+      '<div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end">'+
+        '<button id="prod-det-reimp" data-pid="'+pid+'" style="background:#c0392b;color:#fff;padding:8px 16px;border:none;border-radius:6px;font-weight:700;cursor:pointer">🏷 Re-imprimir rótulos</button>'+
+      '</div>'+
+      '</div>';
+    document.body.appendChild(div);
+    document.getElementById('prod-det-close').onclick = function(){
+      var m = document.getElementById('modal-prod-detalle'); if(m) m.remove();
+    };
+    var reimpBtn = document.getElementById('prod-det-reimp');
+    if(reimpBtn) reimpBtn.onclick = function(){
+      window.open('/api/produccion/' + reimpBtn.getAttribute('data-pid') + '/rotulo-reimprimir', '_blank');
+    };
+    div.addEventListener('click', function(e){
+      if(e.target === div){ var m = document.getElementById('modal-prod-detalle'); if(m) m.remove(); }
+    });
+  }catch(e){ alert('Error red: '+e.message); }
 }
 
 
@@ -5732,7 +5872,9 @@ async function iniciarRegistroProd(){
     document.getElementById('prod-kg').value='';
     document.getElementById('prod-obs').value='';
     cargarHistProd();
-    setTimeout(function(){document.getElementById('prod-msg').innerHTML='';},10000);
+    // Sprint Fabricación PRO 20-may-2026: mensaje PERSISTENTE (no auto-hide).
+    // Antes desaparecía a 10s · si Sebastián no lo veía perdía el lote.
+    // Ahora queda hasta que el usuario lo cierre o registre otra producción.
   }catch(e){document.getElementById('prod-msg').innerHTML='<span style="color:red;">Error: '+e.message+'</span>';}
 }
 

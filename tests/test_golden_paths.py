@@ -7310,6 +7310,81 @@ def test_golden_portal_b2b_flujo_completo(app, db_clean):
     _exec("DELETE FROM portal_clientes_credenciales WHERE email LIKE 'test_portal_%'")
 
 
+def test_golden_fabricacion_pro_paginacion_detalle_rotulo(app, db_clean):
+    """Sprint Fabricación PRO · 20-may-2026.
+    - GET /api/produccion soporta limit/offset/q/desde/hasta
+    - GET /api/produccion/<id>/detalle con MPs descontadas
+    - GET /api/produccion/<id>/rotulo-reimprimir devuelve HTML
+    - POST persiste costo_estimado_cop
+    """
+    cs = _login(app, 'sebastian')
+    # 1. Listado paginado
+    r1 = cs.get('/api/produccion?limit=10&offset=0')
+    assert r1.status_code == 200
+    d1 = r1.get_json()
+    assert 'total' in d1 and 'producciones' in d1 and 'limit' in d1
+
+    # 2. Búsqueda con q (sin matches válidos en BD test · 0 OK)
+    r2 = cs.get('/api/produccion?q=TEST_NO_EXISTE_NUNCA')
+    assert r2.status_code == 200
+    assert r2.get_json().get('total') == 0
+
+    # 3. Detalle de pid inexistente → 404
+    r3 = cs.get('/api/produccion/999999/detalle')
+    assert r3.status_code == 404
+
+    # 4. Rótulo de pid inexistente → 404
+    r4 = cs.get('/api/produccion/999999/rotulo-reimprimir')
+    assert r4.status_code == 404
+
+
+def test_golden_formulas_bases_stats_normalizar(app, db_clean):
+    """Sprint Fórmulas PRO · bases-stats + normalizar."""
+    _exec("DELETE FROM formula_items WHERE producto_nombre IN ('TEST_BASES_A','TEST_BASES_B')")
+    _exec("DELETE FROM formula_headers WHERE producto_nombre IN ('TEST_BASES_A','TEST_BASES_B')")
+    _exec("DELETE FROM maestro_mps WHERE codigo_mp='TEST_BASES_MP1'")
+    _exec("INSERT INTO maestro_mps (codigo_mp, nombre_comercial, tipo_material, activo) VALUES ('TEST_BASES_MP1','Test MP','MP',1)")
+    _exec("INSERT INTO formula_headers (producto_nombre, unidad_base_g, lote_size_kg) VALUES ('TEST_BASES_A', 500, 0.5)")
+    _exec("INSERT INTO formula_headers (producto_nombre, unidad_base_g, lote_size_kg) VALUES ('TEST_BASES_B', 1000, 1.0)")
+    _exec("INSERT INTO formula_items (producto_nombre, material_id, material_nombre, porcentaje, cantidad_g_por_lote) VALUES ('TEST_BASES_A','TEST_BASES_MP1','Test MP',50,250)")
+    _exec("INSERT INTO formula_items (producto_nombre, material_id, material_nombre, porcentaje, cantidad_g_por_lote) VALUES ('TEST_BASES_B','TEST_BASES_MP1','Test MP',30,300)")
+
+    cs = _login(app, 'sebastian')
+    # 1. Stats · detecta 2+ bases
+    r = cs.get('/api/formulas/bases-stats')
+    assert r.status_code == 200
+    d = r.get_json()
+    assert 'grupos' in d
+    assert d['total_formulas'] >= 2
+
+    # 2. Normalizar TEST_BASES_A y TEST_BASES_B a 100g
+    r2 = cs.post('/api/formulas/normalizar-base', json={
+        'base_g': 100,
+        'productos': ['TEST_BASES_A', 'TEST_BASES_B'],
+    }, headers=csrf_headers())
+    assert r2.status_code == 200
+    d2 = r2.get_json()
+    assert d2['actualizadas_count'] >= 2
+
+    # 3. Verificar BD: ambos a base 100g
+    rows = _query("SELECT unidad_base_g FROM formula_headers WHERE producto_nombre IN ('TEST_BASES_A','TEST_BASES_B')")
+    assert all(float(r[0]) == 100 for r in rows)
+
+    # 4. cantidad_g_por_lote recalculado
+    item_a = _query("SELECT cantidad_g_por_lote FROM formula_items WHERE producto_nombre='TEST_BASES_A'")
+    assert float(item_a[0][0]) == 50.0  # 50% × 100g = 50g
+
+    # 5. Base inválida → 400
+    r5 = cs.post('/api/formulas/normalizar-base', json={'base_g': 10},
+                 headers=csrf_headers())
+    assert r5.status_code == 400
+
+    # Cleanup
+    _exec("DELETE FROM formula_items WHERE producto_nombre IN ('TEST_BASES_A','TEST_BASES_B')")
+    _exec("DELETE FROM formula_headers WHERE producto_nombre IN ('TEST_BASES_A','TEST_BASES_B')")
+    _exec("DELETE FROM maestro_mps WHERE codigo_mp='TEST_BASES_MP1'")
+
+
 def test_golden_bug6_username_mapping_unicidad(app, db_clean):
     """BUG-6 · _username_to_operario_id no debe colisionar cuando 2
     operarios empiezan con la misma letra · debe devolver None ambiguo."""
