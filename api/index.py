@@ -407,6 +407,91 @@ def _no_cache_html(response):
 
 
 @app.after_request
+def _perf_cache_headers(response):
+    """OLA Performance · 20-may-2026 · Cache-Control para endpoints de
+    lectura que se llaman cada 30-60s por auto-refresh. Evita re-fetch
+    si el browser tiene una copia de hace 20s.
+
+    Solo aplica a GET de endpoints listados · max-age corto (20-30s)
+    porque son datos vivos · no static assets.
+    """
+    try:
+        if request.method != 'GET':
+            return response
+        if response.status_code != 200:
+            return response
+        p = request.path or ''
+        CACHE_20S = (
+            '/api/dashboard/insights',
+            '/api/dashboard-stats',
+            '/api/planta/oee',
+            '/api/planta/kanban-eta',
+            '/api/planta/alertas-mee',
+        )
+        CACHE_30S = (
+            '/api/inventario',
+            '/api/alertas-reabastecimiento',
+            '/api/planta/tablero-equipo',
+        )
+        if any(p.startswith(x) for x in CACHE_20S):
+            response.headers['Cache-Control'] = 'private, max-age=20, must-revalidate'
+        elif any(p.startswith(x) for x in CACHE_30S):
+            response.headers['Cache-Control'] = 'private, max-age=30, must-revalidate'
+        # /planta y /inventarios (HTML) cache corto · 60s
+        elif p in ('/planta', '/inventarios'):
+            response.headers['Cache-Control'] = 'private, max-age=60, must-revalidate'
+    except Exception:
+        pass
+    return response
+
+
+@app.after_request
+def _gzip_response(response):
+    """OLA Performance · 20-may-2026 · Sebastián.
+
+    Comprime HTML/JSON > 1KB con gzip si el cliente lo soporta. Reduce
+    el dashboard de planta (1.3MB HTML) a ~180KB (~7x más rápido en red).
+
+    No comprime:
+      - Respuestas binarias (imágenes, PDF, etc.)
+      - Respuestas ya comprimidas (Content-Encoding ya set)
+      - Streaming responses (direct_passthrough)
+      - <1KB (overhead no vale)
+    """
+    try:
+        accept_enc = request.headers.get('Accept-Encoding', '')
+        if 'gzip' not in accept_enc.lower():
+            return response
+        # Solo HTML / JSON / texto / JS / CSS
+        ct = (response.content_type or '').lower()
+        if not any(t in ct for t in ('text/', 'application/json', 'application/javascript',
+                                       'application/xml')):
+            return response
+        if response.direct_passthrough:
+            return response
+        if response.headers.get('Content-Encoding'):
+            return response
+        # Status no comprimibles
+        if response.status_code < 200 or response.status_code >= 300:
+            return response
+        body = response.get_data()
+        if len(body) < 1024:
+            return response
+        import gzip as _gzip
+        compressed = _gzip.compress(body, compresslevel=6)
+        response.set_data(compressed)
+        response.headers['Content-Encoding'] = 'gzip'
+        response.headers['Content-Length'] = str(len(compressed))
+        # Vary: para que proxies cacheen distinto según Accept-Encoding
+        vary = response.headers.get('Vary', '')
+        if 'Accept-Encoding' not in vary:
+            response.headers['Vary'] = (vary + ', Accept-Encoding').strip(', ')
+    except Exception:
+        pass
+    return response
+
+
+@app.after_request
 def _log_request(response):
     """Log estructurado de cada request — parseable por Render/Datadog/Grafana.
 
