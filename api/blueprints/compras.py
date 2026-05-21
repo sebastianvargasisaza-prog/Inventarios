@@ -7118,6 +7118,340 @@ def reporte_ejecutivo_compras():
 # de generar la OC. Cada ronda tiene un ronda_id que agrupa N cotizaciones de
 # distintos proveedores.
 
+# ════════════════════════════════════════════════════════════════════════
+# ÓRDENES DE SERVICIO · Sebastián 21-may-2026
+# Flujo: Catalina crea OS → envía proveedor → recogen envases planta →
+# proveedor procesa (serigrafía/tampografía/etiquetado) → entrega →
+# planta confirma recepción.
+# ════════════════════════════════════════════════════════════════════════
+
+_OS_ESTADOS_VALIDOS = (
+    'Borrador', 'Enviada', 'Recogida', 'En proceso',
+    'Entregada', 'Confirmada', 'Cancelada',
+)
+
+# Transiciones permitidas
+_OS_TRANSICIONES = {
+    'Borrador': {'Enviada', 'Cancelada'},
+    'Enviada': {'Recogida', 'Cancelada'},
+    'Recogida': {'En proceso', 'Cancelada'},
+    'En proceso': {'Entregada', 'Cancelada'},
+    'Entregada': {'Confirmada', 'Cancelada'},  # planta confirma
+    'Confirmada': set(),  # final
+    'Cancelada': set(),   # final
+}
+
+
+def _ensure_os_tables(conn):
+    """Defensivo · si mig 150 no aplicó en PG, crea las tablas al primer uso."""
+    try:
+        conn.execute("""CREATE TABLE IF NOT EXISTS ordenes_servicio (
+            numero_os TEXT PRIMARY KEY,
+            proveedor TEXT NOT NULL,
+            tipo_servicio TEXT NOT NULL DEFAULT 'Serigrafía',
+            producto_final TEXT, envase_codigo_mee TEXT, envase_descripcion TEXT,
+            cantidad_unidades INTEGER NOT NULL DEFAULT 0,
+            arte_descripcion TEXT, arte_archivo_url TEXT,
+            fecha_solicitud TEXT NOT NULL,
+            fecha_requerida_entrega TEXT, fecha_real_entrega TEXT,
+            estado TEXT NOT NULL DEFAULT 'Borrador',
+            costo_estimado_cop REAL DEFAULT 0, costo_real_cop REAL DEFAULT 0,
+            observaciones TEXT, creado_por TEXT NOT NULL,
+            creado_at_utc TEXT, planta_confirmado_por TEXT,
+            planta_confirmado_at_utc TEXT, cancelada_motivo TEXT,
+            tenant_id INTEGER DEFAULT 1
+        )""")
+        conn.execute("""CREATE TABLE IF NOT EXISTS ordenes_servicio_eventos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            numero_os TEXT NOT NULL, estado_anterior TEXT,
+            estado_nuevo TEXT NOT NULL, usuario TEXT NOT NULL,
+            ts_utc TEXT, observaciones TEXT
+        )""")
+    except Exception:
+        pass
+
+
+@bp.route('/api/compras/ordenes-servicio', methods=['GET', 'POST'])
+def ordenes_servicio_list():
+    """Lista todas las OS (GET con filtros) o crea una nueva (POST)."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    conn = get_db(); c = conn.cursor()
+    _ensure_os_tables(conn)
+
+    if request.method == 'POST':
+        # Solo Catalina/admin/compras-write puede crear
+        d = request.get_json(silent=True) or {}
+        proveedor = (d.get('proveedor') or '').strip()
+        tipo = (d.get('tipo_servicio') or 'Serigrafía').strip()
+        producto = (d.get('producto_final') or '').strip()
+        envase_cod = (d.get('envase_codigo_mee') or '').strip()
+        envase_desc = (d.get('envase_descripcion') or '').strip()
+        try:
+            cant = int(d.get('cantidad_unidades') or 0)
+        except (ValueError, TypeError):
+            cant = 0
+        arte = (d.get('arte_descripcion') or '').strip()
+        fecha_req = (d.get('fecha_requerida_entrega') or '').strip()
+        obs = (d.get('observaciones') or '').strip()
+        try:
+            costo_est = float(d.get('costo_estimado_cop') or 0)
+        except (ValueError, TypeError):
+            costo_est = 0
+        if not proveedor:
+            return jsonify({'error': 'proveedor requerido'}), 400
+        if cant <= 0:
+            return jsonify({'error': 'cantidad_unidades > 0 requerido'}), 400
+        if not producto:
+            return jsonify({'error': 'producto_final requerido'}), 400
+        # Generar numero_os con reintento
+        from datetime import datetime as _dt
+        anio = _dt.now().strftime('%Y')
+        numero_os = None
+        for _ in range(6):
+            try:
+                row = c.execute(
+                    "SELECT COALESCE(MAX(CAST(SUBSTR(numero_os,9) AS INTEGER)),0) "
+                    "FROM ordenes_servicio WHERE numero_os LIKE ?",
+                    (f'OS-{anio}-%',),
+                ).fetchone()
+                numero_os = f'OS-{anio}-{(row[0] or 0) + 1:04d}'
+                fecha_sol = _dt.now().isoformat()
+                c.execute(
+                    """INSERT INTO ordenes_servicio
+                       (numero_os, proveedor, tipo_servicio, producto_final,
+                        envase_codigo_mee, envase_descripcion, cantidad_unidades,
+                        arte_descripcion, fecha_solicitud, fecha_requerida_entrega,
+                        estado, costo_estimado_cop, observaciones, creado_por,
+                        creado_at_utc)
+                       VALUES (?,?,?,?,?,?,?,?,?,?, 'Borrador', ?, ?, ?, ?)""",
+                    (numero_os, proveedor, tipo, producto, envase_cod, envase_desc,
+                     cant, arte, fecha_sol, fecha_req or '',
+                     costo_est, obs, user, fecha_sol),
+                )
+                # Evento inicial
+                c.execute(
+                    """INSERT INTO ordenes_servicio_eventos
+                       (numero_os, estado_anterior, estado_nuevo, usuario,
+                        ts_utc, observaciones)
+                       VALUES (?, NULL, 'Borrador', ?, ?, 'OS creada')""",
+                    (numero_os, user, fecha_sol),
+                )
+                break
+            except Exception:
+                continue
+        if not numero_os:
+            return jsonify({'error': 'No se pudo asignar numero_os'}), 500
+        try:
+            audit_log(c, usuario=user, accion='CREAR_ORDEN_SERVICIO',
+                      tabla='ordenes_servicio', registro_id=numero_os,
+                      despues={'proveedor': proveedor, 'tipo': tipo,
+                               'cantidad': cant, 'producto': producto})
+        except Exception:
+            pass
+        conn.commit()
+        return jsonify({'ok': True, 'numero_os': numero_os}), 201
+
+    # GET · listar con filtros
+    estado = (request.args.get('estado') or '').strip()
+    proveedor = (request.args.get('proveedor') or '').strip()
+    where = ['1=1']
+    params = []
+    if estado:
+        where.append('estado = ?'); params.append(estado)
+    if proveedor:
+        where.append('LOWER(COALESCE(proveedor,"")) LIKE LOWER(?)')
+        params.append(f'%{proveedor}%')
+    rows = c.execute(
+        f"""SELECT numero_os, proveedor, tipo_servicio, producto_final,
+                  envase_codigo_mee, COALESCE(envase_descripcion,''),
+                  cantidad_unidades, fecha_solicitud, fecha_requerida_entrega,
+                  fecha_real_entrega, estado, COALESCE(costo_estimado_cop,0),
+                  COALESCE(costo_real_cop,0), creado_por,
+                  COALESCE(planta_confirmado_por,''),
+                  COALESCE(planta_confirmado_at_utc,'')
+           FROM ordenes_servicio
+           WHERE {' AND '.join(where)}
+           ORDER BY fecha_solicitud DESC LIMIT 200""",
+        params,
+    ).fetchall()
+    items = [{
+        'numero_os': r[0], 'proveedor': r[1], 'tipo_servicio': r[2],
+        'producto_final': r[3], 'envase_codigo_mee': r[4],
+        'envase_descripcion': r[5], 'cantidad_unidades': int(r[6] or 0),
+        'fecha_solicitud': r[7], 'fecha_requerida_entrega': r[8],
+        'fecha_real_entrega': r[9], 'estado': r[10],
+        'costo_estimado_cop': float(r[11] or 0), 'costo_real_cop': float(r[12] or 0),
+        'creado_por': r[13], 'planta_confirmado_por': r[14],
+        'planta_confirmado_at_utc': r[15],
+    } for r in rows]
+    # Counts por estado
+    try:
+        cs_rows = c.execute(
+            "SELECT estado, COUNT(*) FROM ordenes_servicio GROUP BY estado",
+        ).fetchall()
+        counts = {r[0]: int(r[1] or 0) for r in cs_rows}
+    except Exception:
+        counts = {}
+    return jsonify({'items': items, 'total': len(items), 'counts': counts})
+
+
+@bp.route('/api/compras/ordenes-servicio/<numero_os>', methods=['GET'])
+def ordenes_servicio_detalle(numero_os):
+    """Detalle completo + timeline de eventos."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    _ensure_os_tables(conn)
+    row = c.execute(
+        "SELECT * FROM ordenes_servicio WHERE numero_os=?", (numero_os,),
+    ).fetchone()
+    if not row:
+        return jsonify({'error': 'OS no existe'}), 404
+    cols = [d[0] for d in c.description]
+    info = dict(zip(cols, row))
+    # Timeline
+    try:
+        ev_rows = c.execute(
+            """SELECT estado_anterior, estado_nuevo, usuario, ts_utc,
+                      COALESCE(observaciones,'')
+               FROM ordenes_servicio_eventos
+               WHERE numero_os=? ORDER BY id ASC""",
+            (numero_os,),
+        ).fetchall()
+        info['timeline'] = [{
+            'estado_anterior': e[0], 'estado_nuevo': e[1],
+            'usuario': e[2], 'ts': e[3], 'observaciones': e[4],
+        } for e in ev_rows]
+    except Exception:
+        info['timeline'] = []
+    return jsonify(info)
+
+
+@bp.route('/api/compras/ordenes-servicio/<numero_os>/estado', methods=['PATCH'])
+def ordenes_servicio_cambiar_estado(numero_os):
+    """Cambia el estado validando transición permitida.
+
+    Body: {estado_nuevo, observaciones?, costo_real_cop? (en Entregada)}
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    body = request.get_json(silent=True) or {}
+    estado_nuevo = (body.get('estado_nuevo') or '').strip()
+    obs = (body.get('observaciones') or '').strip()
+    if estado_nuevo not in _OS_ESTADOS_VALIDOS:
+        return jsonify({'error': f'estado inválido · usar {_OS_ESTADOS_VALIDOS}'}), 400
+    conn = get_db(); c = conn.cursor()
+    _ensure_os_tables(conn)
+    row = c.execute(
+        "SELECT estado FROM ordenes_servicio WHERE numero_os=?", (numero_os,),
+    ).fetchone()
+    if not row:
+        return jsonify({'error': 'OS no existe'}), 404
+    estado_anterior = row[0]
+    # Validar transición
+    transiciones_ok = _OS_TRANSICIONES.get(estado_anterior, set())
+    if estado_nuevo not in transiciones_ok:
+        return jsonify({
+            'error': f'Transición no permitida: {estado_anterior} → {estado_nuevo}',
+            'transiciones_permitidas': list(transiciones_ok),
+        }), 409
+    from datetime import datetime as _dt
+    now = _dt.now().isoformat()
+    # Update con campos especiales según estado
+    extra_sets = ''
+    extra_params = []
+    if estado_nuevo == 'Entregada':
+        extra_sets += ', fecha_real_entrega=?'
+        extra_params.append(now)
+        if 'costo_real_cop' in body:
+            try:
+                extra_sets += ', costo_real_cop=?'
+                extra_params.append(float(body['costo_real_cop'] or 0))
+            except (ValueError, TypeError):
+                pass
+    elif estado_nuevo == 'Confirmada':
+        extra_sets += ', planta_confirmado_por=?, planta_confirmado_at_utc=?'
+        extra_params.extend([user, now])
+    elif estado_nuevo == 'Cancelada':
+        if not obs:
+            return jsonify({'error': 'motivo de cancelación requerido (observaciones)'}), 400
+        extra_sets += ', cancelada_motivo=?'
+        extra_params.append(obs)
+    c.execute(
+        f"UPDATE ordenes_servicio SET estado=?{extra_sets} WHERE numero_os=?",
+        [estado_nuevo] + extra_params + [numero_os],
+    )
+    c.execute(
+        """INSERT INTO ordenes_servicio_eventos
+           (numero_os, estado_anterior, estado_nuevo, usuario, ts_utc, observaciones)
+           VALUES (?,?,?,?,?,?)""",
+        (numero_os, estado_anterior, estado_nuevo, user, now, obs),
+    )
+    try:
+        audit_log(c, usuario=user, accion=f'OS_{estado_nuevo.upper()}',
+                  tabla='ordenes_servicio', registro_id=numero_os,
+                  antes={'estado': estado_anterior},
+                  despues={'estado': estado_nuevo, 'obs': obs[:200]})
+    except Exception:
+        pass
+    # Push notif cuando pasa a 'Entregada' (planta debe confirmar)
+    if estado_nuevo == 'Entregada':
+        try:
+            from blueprints.notif import push_notif as _push
+            from config import PLANTA_USERS
+            os_row = c.execute(
+                "SELECT proveedor, producto_final, cantidad_unidades FROM ordenes_servicio WHERE numero_os=?",
+                (numero_os,),
+            ).fetchone()
+            if os_row:
+                titulo = f'📦 OS {numero_os} entregada · confirmar recepción'
+                cuerpo = f'{os_row[0]} entregó {os_row[2]} uds para {os_row[1]}'
+                for u in (PLANTA_USERS or set()):
+                    try:
+                        _push(destinatario=u, tipo='os_entregada',
+                              titulo=titulo, body=cuerpo,
+                              link='/planta/ordenes-servicio',
+                              remitente=user, importante=True)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+    conn.commit()
+    return jsonify({
+        'ok': True, 'numero_os': numero_os,
+        'estado_anterior': estado_anterior, 'estado_nuevo': estado_nuevo,
+    })
+
+
+@bp.route('/api/planta/ordenes-servicio', methods=['GET'])
+def planta_ordenes_servicio_pendientes():
+    """Lista para Planta · OS Entregadas pendientes de confirmar recepción."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    _ensure_os_tables(conn)
+    rows = c.execute(
+        """SELECT numero_os, proveedor, tipo_servicio, producto_final,
+                  COALESCE(envase_descripcion,''), cantidad_unidades,
+                  fecha_real_entrega, COALESCE(observaciones,''),
+                  estado
+           FROM ordenes_servicio
+           WHERE estado = 'Entregada'
+           ORDER BY fecha_real_entrega DESC LIMIT 50""",
+    ).fetchall()
+    items = [{
+        'numero_os': r[0], 'proveedor': r[1], 'tipo_servicio': r[2],
+        'producto_final': r[3], 'envase_descripcion': r[4],
+        'cantidad_unidades': int(r[5] or 0),
+        'fecha_real_entrega': r[6], 'observaciones': r[7],
+        'estado': r[8],
+    } for r in rows]
+    return jsonify({'items': items, 'total': len(items)})
+
+
 @bp.route('/api/compras/cash-flow', methods=['GET'])
 def compras_cash_flow():
     """Compras MAX · 21-may-2026 · Cash flow proyección 30/60/90 días."""

@@ -7359,6 +7359,75 @@ def test_golden_sprint_final_acond_brd(app, db_clean):
     assert r4.status_code in (404, 500)
 
 
+def test_golden_ordenes_servicio(app, db_clean):
+    """Órdenes de Servicio · 21-may-2026 · Sebastián.
+    Flujo Catalina crea → estado transiciones → planta confirma."""
+    cs = _login(app, 'sebastian')
+    # Crear OS
+    r1 = cs.post('/api/compras/ordenes-servicio', json={
+        'proveedor': 'Serigrafías ABC',
+        'tipo_servicio': 'Serigrafía',
+        'producto_final': 'Renova C 10 30ml',
+        'envase_codigo_mee': 'MEE9999',
+        'envase_descripcion': 'Frasco vidrio ambar 30ml',
+        'cantidad_unidades': 500,
+        'arte_descripcion': 'Logo Espagiria + lote + venc',
+        'fecha_requerida_entrega': '2026-06-15',
+        'costo_estimado_cop': 450000,
+    }, headers=csrf_headers())
+    assert r1.status_code == 201
+    num_os = r1.get_json()['numero_os']
+
+    # Crear sin proveedor → 400
+    r2 = cs.post('/api/compras/ordenes-servicio',
+                  json={'producto_final': 'X', 'cantidad_unidades': 10},
+                  headers=csrf_headers())
+    assert r2.status_code == 400
+
+    # Listar
+    r3 = cs.get('/api/compras/ordenes-servicio')
+    assert r3.status_code == 200
+    items = r3.get_json()['items']
+    assert any(it['numero_os'] == num_os for it in items)
+
+    # Detalle + timeline
+    r4 = cs.get('/api/compras/ordenes-servicio/' + num_os)
+    assert r4.status_code == 200
+    d4 = r4.get_json()
+    assert d4['estado'] == 'Borrador'
+    assert len(d4['timeline']) >= 1
+
+    # Transición Borrador → Enviada
+    r5 = cs.patch(f'/api/compras/ordenes-servicio/{num_os}/estado',
+                   json={'estado_nuevo': 'Enviada'}, headers=csrf_headers())
+    assert r5.status_code == 200
+
+    # Transición inválida → 409
+    r6 = cs.patch(f'/api/compras/ordenes-servicio/{num_os}/estado',
+                   json={'estado_nuevo': 'Confirmada'}, headers=csrf_headers())
+    assert r6.status_code == 409
+
+    # Cancelar sin motivo → 400
+    r7 = cs.patch(f'/api/compras/ordenes-servicio/{num_os}/estado',
+                   json={'estado_nuevo': 'Cancelada'}, headers=csrf_headers())
+    assert r7.status_code == 400
+
+    # Cancelar con motivo → 200
+    r8 = cs.patch(f'/api/compras/ordenes-servicio/{num_os}/estado',
+                   json={'estado_nuevo': 'Cancelada',
+                         'observaciones': 'TEST · cancelar para test'},
+                   headers=csrf_headers())
+    assert r8.status_code == 200
+
+    # Planta pendientes (puede estar vacía)
+    r9 = cs.get('/api/planta/ordenes-servicio')
+    assert r9.status_code == 200
+
+    # Cleanup
+    _exec("DELETE FROM ordenes_servicio_eventos WHERE numero_os=?", (num_os,))
+    _exec("DELETE FROM ordenes_servicio WHERE numero_os=?", (num_os,))
+
+
 def test_golden_compras_max_ia_ocr_traz(app, db_clean):
     """Compras MAX · 21-may-2026 · 6 endpoints nuevos."""
     cs = _login(app, 'sebastian')

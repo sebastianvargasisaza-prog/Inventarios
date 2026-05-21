@@ -218,9 +218,10 @@ async function cxIAPreguntar(pregunta){
   <!-- Sub-tabs del grupo OCs Y PAGOS -->
   <span data-cx-sub="ocs" style="display:none;gap:6px;flex-wrap:wrap">
     <button class="tn"      data-tab="consol" id="tn-consol" title="OCs activas (Borrador/Revisada/Autorizada) agrupadas por proveedor">📦 OCs Activas <span style="font-size:9px;background:#cbd5e1;color:#475569;padding:1px 5px;border-radius:6px;margin-left:2px;font-weight:600">activas</span></button>
-    <!-- Pagos y Por Pagar · fusionadas en una sola con filtro de estado -->
     <button class="tn"      data-tab="por-pagar" id="tn-por-pagar" title="Pendientes · OCs autorizadas sin pagar">💰 Por Pagar</button>
     <button class="tn"      data-tab="pagos" id="tn-pagos" title="Histórico · pagos ya ejecutados">💸 Pagos</button>
+    <!-- Sebastián 21-may-2026 · Órdenes de Servicio (serigrafía/tampografía) -->
+    <button class="tn"      data-tab="ordserv" id="tn-ordserv" title="Órdenes de Servicio · serigrafía, tampografía, etiquetado">🎨 Órdenes de Servicio</button>
   </span>
   <!-- Sub-tabs del grupo MAESTROS -->
   <span data-cx-sub="maestros" style="display:none;gap:6px;flex-wrap:wrap">
@@ -427,6 +428,48 @@ async function cxIAPreguntar(pregunta){
 </div>
 
 <!-- Pane: Solicitudes de Producción (cola de Catalina desde el checklist Pre-Produccion) -->
+<!-- Sebastián 21-may-2026 · Órdenes de Servicio (serigrafía/tampografía) -->
+<div id="pane-ordserv" class="pane">
+  <div class="bar" style="flex-wrap:wrap;gap:8px">
+    <div>
+      <span style="font-weight:700;color:#1e293b;font-size:15px">🎨 Órdenes de Servicio</span>
+      <div style="font-size:11px;color:#64748b;margin-top:2px">Serigrafía · Tampografía · Etiquetado · cualquier servicio sobre envases existentes</div>
+    </div>
+    <div style="margin-left:auto;display:flex;gap:6px;align-items:center">
+      <select id="os-filtro-estado" onchange="loadOrdenesServicio()" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:12px">
+        <option value="">Todos los estados</option>
+        <option value="Borrador">Borrador</option>
+        <option value="Enviada">Enviada</option>
+        <option value="Recogida">Recogida</option>
+        <option value="En proceso">En proceso</option>
+        <option value="Entregada">Entregada</option>
+        <option value="Confirmada">Confirmada</option>
+        <option value="Cancelada">Cancelada</option>
+      </select>
+      <button class="btn bp" onclick="loadOrdenesServicio()" style="padding:6px 14px;font-size:12px">↺ Actualizar</button>
+      <button class="btn" onclick="abrirNuevaOS()" style="padding:6px 14px;font-size:12px;background:#0f766e;color:#fff;font-weight:700">➕ Nueva OS</button>
+    </div>
+  </div>
+  <div id="os-counts" style="display:flex;gap:6px;flex-wrap:wrap;margin:10px 0;font-size:11px"></div>
+  <div style="overflow-x:auto">
+    <table style="width:100%;border-collapse:collapse;font-size:13px">
+      <thead><tr style="background:#0f766e;color:#fff">
+        <th style="padding:8px">N° OS</th>
+        <th style="padding:8px">Proveedor</th>
+        <th style="padding:8px">Servicio</th>
+        <th style="padding:8px">Producto</th>
+        <th style="padding:8px">Envase</th>
+        <th style="padding:8px;text-align:center">Uds</th>
+        <th style="padding:8px">Fecha sol.</th>
+        <th style="padding:8px">F. requerida</th>
+        <th style="padding:8px">Estado</th>
+        <th style="padding:8px;text-align:center">Acciones</th>
+      </tr></thead>
+      <tbody id="os-tbody"><tr><td colspan="10" style="text-align:center;padding:18px;color:#94a3b8">Cargando…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
 <div id="pane-solprod" class="pane">
   <div class="bar" style="flex-wrap:wrap;gap:8px;">
     <div>
@@ -1248,7 +1291,7 @@ window._cxTabToGrp = {
   'planta':'entradas', 'solic':'entradas', 'solprod':'entradas',
   'influencer':'entradas',  // por compat · aunque oculto
   // OCs y Pagos
-  'consol':'ocs', 'por-pagar':'ocs', 'pagos':'ocs',
+  'consol':'ocs', 'por-pagar':'ocs', 'pagos':'ocs', 'ordserv':'ocs',
   // Maestros
   'prov':'maestros',
   // Vista Ejecutiva
@@ -1284,6 +1327,7 @@ document.querySelectorAll('.tn').forEach(function(btn){
     else if(tab==='alertas'){ loadAlertasCompras(); }
     else if(tab==='solprod'){ loadSolicitudesProduccion(); }
     else if(tab==='mis-sol'){ loadMisSolicitudes(); }
+    else if(tab==='ordserv'){ loadOrdenesServicio(); }
     var fab = document.getElementById('fab-btn');
     if(tab==='prov'||tab==='solic'||tab==='planta'||tab==='influencer'||tab==='consol'||tab==='pagos'||tab==='por-pagar'||tab==='alertas'||tab==='mis-sol'){ fab.style.display='none'; }
     else{ fab.style.display='flex'; fab.onclick=function(){
@@ -1294,6 +1338,200 @@ document.querySelectorAll('.tn').forEach(function(btn){
 });
 
 // ─── Carga de datos ───────────────────────────────────────────────
+// ════════════════════════════════════════════════════════════════════════
+// Órdenes de Servicio · Sebastián 21-may-2026
+// Catalina crea · proveedor procesa · planta confirma recepción
+// ════════════════════════════════════════════════════════════════════════
+async function loadOrdenesServicio(){
+  var tb = document.getElementById('os-tbody');
+  if(!tb) return;
+  var estado = (document.getElementById('os-filtro-estado')||{}).value || '';
+  try{
+    var url = '/api/compras/ordenes-servicio' + (estado ? '?estado='+encodeURIComponent(estado) : '');
+    var r = await fetch(url, {credentials:'same-origin'});
+    var d = await r.json();
+    if(!r.ok){
+      tb.innerHTML = '<tr><td colspan="10" style="color:#dc2626;text-align:center;padding:14px">Error: '+(d.error||r.status)+'</td></tr>';
+      return;
+    }
+    var items = d.items || [];
+    var counts = d.counts || {};
+    // Pills counts
+    var pillsCont = document.getElementById('os-counts');
+    var estados_ord = ['Borrador','Enviada','Recogida','En proceso','Entregada','Confirmada','Cancelada'];
+    var colorEst = {Borrador:'#94a3b8',Enviada:'#0891b2','Recogida':'#ca8a04','En proceso':'#7c3aed',Entregada:'#16a34a','Confirmada':'#0f766e','Cancelada':'#dc2626'};
+    pillsCont.innerHTML = estados_ord.map(function(e){
+      var n = counts[e] || 0;
+      var color = colorEst[e] || '#475569';
+      return '<span style="background:'+color+';color:#fff;padding:3px 10px;border-radius:10px;font-weight:700">'+e+' · '+n+'</span>';
+    }).join(' ');
+    if(!items.length){
+      tb.innerHTML = '<tr><td colspan="10" style="color:#94a3b8;text-align:center;padding:18px">Sin órdenes de servicio</td></tr>';
+      return;
+    }
+    tb.innerHTML = items.map(function(o){
+      var col = colorEst[o.estado] || '#475569';
+      var acc = '';
+      if(o.estado === 'Borrador'){
+        acc = '<button class="btn" data-os-act="estado" data-num="'+_esc(o.numero_os)+'" data-nuevo="Enviada" style="background:#0891b2;color:#fff;padding:3px 8px;font-size:10px;border:none;border-radius:4px;cursor:pointer">📧 Enviar</button>';
+      } else if(o.estado === 'Enviada'){
+        acc = '<button class="btn" data-os-act="estado" data-num="'+_esc(o.numero_os)+'" data-nuevo="Recogida" style="background:#ca8a04;color:#fff;padding:3px 8px;font-size:10px;border:none;border-radius:4px;cursor:pointer">🚚 Recogida</button>';
+      } else if(o.estado === 'Recogida'){
+        acc = '<button class="btn" data-os-act="estado" data-num="'+_esc(o.numero_os)+'" data-nuevo="En proceso" style="background:#7c3aed;color:#fff;padding:3px 8px;font-size:10px;border:none;border-radius:4px;cursor:pointer">⚙️ En proceso</button>';
+      } else if(o.estado === 'En proceso'){
+        acc = '<button class="btn" data-os-act="estado" data-num="'+_esc(o.numero_os)+'" data-nuevo="Entregada" style="background:#16a34a;color:#fff;padding:3px 8px;font-size:10px;border:none;border-radius:4px;cursor:pointer">✓ Entregada</button>';
+      } else if(o.estado === 'Entregada'){
+        acc = '<span style="color:#16a34a;font-size:10px;font-weight:700">⏳ Esperando confirmación planta</span>';
+      } else if(o.estado === 'Confirmada'){
+        acc = '<span style="color:#0f766e;font-size:10px;font-weight:700">✓ '+_esc(o.planta_confirmado_por||'')+' confirmó</span>';
+      }
+      acc += ' <button data-os-act="detalle" data-num="'+_esc(o.numero_os)+'" style="background:#475569;color:#fff;padding:3px 8px;font-size:10px;border:none;border-radius:4px;cursor:pointer">📋</button>';
+      return '<tr style="border-bottom:1px solid #e7e5e4">'+
+        '<td style="padding:6px;font-family:monospace;font-weight:700;color:#0f766e">'+_esc(o.numero_os)+'</td>'+
+        '<td style="padding:6px">'+_esc(o.proveedor)+'</td>'+
+        '<td style="padding:6px;font-size:11px">'+_esc(o.tipo_servicio)+'</td>'+
+        '<td style="padding:6px;font-size:12px">'+_esc(o.producto_final)+'</td>'+
+        '<td style="padding:6px;font-size:11px">'+_esc(o.envase_descripcion||o.envase_codigo_mee||'—')+'</td>'+
+        '<td style="padding:6px;text-align:center;font-weight:700">'+o.cantidad_unidades+'</td>'+
+        '<td style="padding:6px;font-size:11px">'+_esc((o.fecha_solicitud||'').substring(0,10))+'</td>'+
+        '<td style="padding:6px;font-size:11px">'+_esc((o.fecha_requerida_entrega||'').substring(0,10))+'</td>'+
+        '<td style="padding:6px"><span style="background:'+col+';color:#fff;padding:2px 8px;border-radius:8px;font-size:10px;font-weight:700">'+_esc(o.estado)+'</span></td>'+
+        '<td style="padding:6px;text-align:center;white-space:nowrap">'+acc+'</td>'+
+      '</tr>';
+    }).join('');
+  }catch(e){
+    tb.innerHTML = '<tr><td colspan="10" style="color:#dc2626;text-align:center;padding:14px">Error red: '+_esc(e.message)+'</td></tr>';
+  }
+}
+
+function abrirNuevaOS(){
+  var ex = document.getElementById('modal-nueva-os'); if(ex) ex.remove();
+  var m = document.createElement('div');
+  m.id = 'modal-nueva-os';
+  m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9998;display:flex;align-items:center;justify-content:center;padding:20px';
+  m.innerHTML = '<div style="background:#fff;border-radius:14px;padding:24px;max-width:560px;width:100%;max-height:90vh;overflow-y:auto">'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><h3 style="margin:0;color:#0f766e">🎨 Nueva Orden de Servicio</h3>'+
+    '<button id="os-close" style="background:none;border:none;font-size:1.4em;cursor:pointer">×</button></div>'+
+    '<div style="font-size:11px;color:#64748b;margin-bottom:12px">Para serigrafía, tampografía, etiquetado u otro servicio sobre envases existentes (NO compra de material)</div>'+
+    '<div style="display:grid;gap:10px">'+
+      '<div><label style="font-size:12px;font-weight:600;color:#475569">Tipo de servicio *</label><select id="os-tipo" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:5px;margin-top:4px">'+
+        '<option>Serigrafía</option><option>Tampografía</option><option>Etiquetado</option><option>Sleeve termoencogible</option><option>Hot stamping</option><option>Otro</option>'+
+      '</select></div>'+
+      '<div><label style="font-size:12px;font-weight:600;color:#475569">Proveedor *</label><input id="os-proveedor" type="text" list="planta-prov-datalist" placeholder="Nombre del taller" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:5px;margin-top:4px"></div>'+
+      '<div><label style="font-size:12px;font-weight:600;color:#475569">Producto final *</label><input id="os-producto" type="text" placeholder="Ej: Renova C 10 30ml" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:5px;margin-top:4px"></div>'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
+        '<div><label style="font-size:12px;font-weight:600;color:#475569">Envase (cód MEE)</label><input id="os-envase-cod" type="text" placeholder="MEE0023" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:5px;margin-top:4px"></div>'+
+        '<div><label style="font-size:12px;font-weight:600;color:#475569">Cantidad uds *</label><input id="os-cantidad" type="number" min="1" placeholder="500" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:5px;margin-top:4px"></div>'+
+      '</div>'+
+      '<div><label style="font-size:12px;font-weight:600;color:#475569">Envase descripción</label><input id="os-envase-desc" type="text" placeholder="Frasco vidrio ambar 30ml gotero" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:5px;margin-top:4px"></div>'+
+      '<div><label style="font-size:12px;font-weight:600;color:#475569">Arte / descripción del trabajo *</label><textarea id="os-arte" rows="3" placeholder="Logo Espagiria + lote + fecha venc · color blanco · ubicación frente" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:5px;margin-top:4px"></textarea></div>'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
+        '<div><label style="font-size:12px;font-weight:600;color:#475569">Fecha requerida entrega</label><input id="os-fecha-req" type="date" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:5px;margin-top:4px"></div>'+
+        '<div><label style="font-size:12px;font-weight:600;color:#475569">Costo estimado ($)</label><input id="os-costo" type="number" min="0" placeholder="450000" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:5px;margin-top:4px"></div>'+
+      '</div>'+
+      '<div><label style="font-size:12px;font-weight:600;color:#475569">Observaciones</label><textarea id="os-obs" rows="2" placeholder="(opcional)" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:5px;margin-top:4px"></textarea></div>'+
+    '</div>'+
+    '<div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end">'+
+      '<button id="os-cancel" style="background:#94a3b8;color:#fff;padding:8px 16px;border:none;border-radius:6px;cursor:pointer">Cancelar</button>'+
+      '<button id="os-crear" style="background:#0f766e;color:#fff;padding:8px 20px;border:none;border-radius:6px;font-weight:700;cursor:pointer">✓ Crear OS</button>'+
+    '</div></div>';
+  document.body.appendChild(m);
+  document.getElementById('os-close').onclick = function(){ m.remove(); };
+  document.getElementById('os-cancel').onclick = function(){ m.remove(); };
+  document.getElementById('os-crear').onclick = async function(){
+    var btn = this;
+    var data = {
+      tipo_servicio: (document.getElementById('os-tipo')||{value:''}).value,
+      proveedor: (document.getElementById('os-proveedor')||{value:''}).value.trim(),
+      producto_final: (document.getElementById('os-producto')||{value:''}).value.trim(),
+      envase_codigo_mee: (document.getElementById('os-envase-cod')||{value:''}).value.trim(),
+      envase_descripcion: (document.getElementById('os-envase-desc')||{value:''}).value.trim(),
+      cantidad_unidades: parseInt((document.getElementById('os-cantidad')||{value:'0'}).value) || 0,
+      arte_descripcion: (document.getElementById('os-arte')||{value:''}).value.trim(),
+      fecha_requerida_entrega: (document.getElementById('os-fecha-req')||{value:''}).value,
+      costo_estimado_cop: parseFloat((document.getElementById('os-costo')||{value:'0'}).value) || 0,
+      observaciones: (document.getElementById('os-obs')||{value:''}).value.trim(),
+    };
+    if(!data.proveedor || !data.producto_final || !data.cantidad_unidades || !data.arte_descripcion){
+      alert('Proveedor · producto · cantidad · arte son obligatorios');
+      return;
+    }
+    btn.disabled = true; btn.textContent = 'Creando...';
+    try{
+      var r = await fetch('/api/compras/ordenes-servicio', _fetchOpts('POST', data));
+      var d = await r.json();
+      if(!r.ok){ alert('Error: '+(d.error||r.status)); btn.disabled = false; btn.textContent='✓ Crear OS'; return; }
+      alert('✓ OS creada: '+d.numero_os+'\\n\\nSiguiente paso: apretar "📧 Enviar" para mandar al proveedor');
+      m.remove();
+      loadOrdenesServicio();
+    }catch(e){ alert('Error red: '+e.message); btn.disabled = false; btn.textContent='✓ Crear OS'; }
+  };
+}
+
+if(typeof document !== 'undefined' && !window._OS_DELEG){
+  window._OS_DELEG = true;
+  document.addEventListener('click', async function(ev){
+    var b = ev.target && ev.target.closest && ev.target.closest('[data-os-act]');
+    if(!b) return;
+    var act = b.getAttribute('data-os-act');
+    var num = b.getAttribute('data-num');
+    if(act === 'estado'){
+      var nuevo = b.getAttribute('data-nuevo');
+      var obs = '';
+      if(nuevo === 'Enviada'){
+        if(!confirm('¿Marcar OS '+num+' como Enviada al proveedor?')) return;
+      } else if(nuevo === 'Entregada'){
+        obs = prompt('Observaciones de la entrega (ej. cantidad recibida real):') || '';
+      }
+      try{
+        var r = await fetch('/api/compras/ordenes-servicio/'+encodeURIComponent(num)+'/estado',
+          _fetchOpts('PATCH', {estado_nuevo: nuevo, observaciones: obs}));
+        var d = await r.json();
+        if(!r.ok){ alert('Error: '+(d.error||r.status)); return; }
+        loadOrdenesServicio();
+      }catch(e){ alert('Error red: '+e.message); }
+    } else if(act === 'detalle'){
+      verDetalleOS(num);
+    }
+  });
+}
+async function verDetalleOS(num){
+  try{
+    var r = await fetch('/api/compras/ordenes-servicio/'+encodeURIComponent(num));
+    var d = await r.json();
+    if(!r.ok){ alert('Error: '+(d.error||r.status)); return; }
+    var ex = document.getElementById('modal-os-det'); if(ex) ex.remove();
+    var m = document.createElement('div');
+    m.id = 'modal-os-det';
+    m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9998;display:flex;align-items:center;justify-content:center;padding:20px';
+    var tl = (d.timeline||[]).map(function(e){
+      return '<div style="border-left:3px solid #0891b2;padding:6px 10px;margin-bottom:6px;background:#f8fafc;font-size:12px"><b>'+_esc(e.estado_nuevo)+'</b> <span style="color:#94a3b8">'+(e.ts||'').substring(0,16)+' · '+_esc(e.usuario)+'</span>'+(e.observaciones?'<br><span style="color:#475569">'+_esc(e.observaciones)+'</span>':'')+'</div>';
+    }).join('');
+    m.innerHTML = '<div style="background:#fff;border-radius:12px;padding:20px;max-width:640px;width:100%;max-height:90vh;overflow-y:auto">'+
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><h3 style="margin:0;color:#0f766e">🎨 '+_esc(d.numero_os)+'</h3><button id="osd-close" style="background:none;border:none;font-size:1.4em;cursor:pointer">×</button></div>'+
+      '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;background:#f8fafc;padding:12px;border-radius:8px;margin-bottom:14px;font-size:12px">'+
+        '<div><b>Proveedor</b><br>'+_esc(d.proveedor||'')+'</div>'+
+        '<div><b>Tipo</b><br>'+_esc(d.tipo_servicio||'')+'</div>'+
+        '<div><b>Producto</b><br>'+_esc(d.producto_final||'')+'</div>'+
+        '<div><b>Envase</b><br>'+_esc(d.envase_descripcion||d.envase_codigo_mee||'—')+'</div>'+
+        '<div><b>Unidades</b><br><span style="font-size:18px;font-weight:800;color:#0f766e">'+(d.cantidad_unidades||0)+'</span></div>'+
+        '<div><b>Estado</b><br>'+_esc(d.estado||'')+'</div>'+
+        '<div><b>F. solicitud</b><br>'+_esc((d.fecha_solicitud||'').substring(0,10))+'</div>'+
+        '<div><b>F. requerida</b><br>'+_esc((d.fecha_requerida_entrega||'').substring(0,10) || '—')+'</div>'+
+        '<div><b>Costo est.</b><br>$'+fmt((d.costo_estimado_cop||0).toFixed(0))+'</div>'+
+        '<div><b>Costo real</b><br>$'+fmt((d.costo_real_cop||0).toFixed(0))+'</div>'+
+      '</div>'+
+      '<div style="margin-bottom:10px;background:#fef3c7;border-left:3px solid #ca8a04;padding:10px;font-size:12px"><b>Arte solicitado:</b><br>'+_esc(d.arte_descripcion||'—')+'</div>'+
+      (d.observaciones ? '<div style="margin-bottom:10px;padding:8px;background:#f1f5f9;font-size:12px"><b>Observaciones:</b><br>'+_esc(d.observaciones)+'</div>' : '')+
+      '<h4 style="margin:14px 0 6px;color:#475569">📜 Timeline</h4>'+
+      (tl || '<div style="color:#94a3b8;font-size:12px">Sin eventos</div>')+
+      '</div>';
+    document.body.appendChild(m);
+    document.getElementById('osd-close').onclick = function(){ m.remove(); };
+    m.addEventListener('click', function(e){ if(e.target === m) m.remove(); });
+  }catch(e){ alert('Error red: '+e.message); }
+}
+
 // Compras 2.0 · 21-may-2026 · Dashboard HOME dual por rol
 async function renderDashHome2(){
   var cont = document.getElementById('dash-home-2');

@@ -6433,6 +6433,52 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
            ('ESENCIA ILUMINADORA',                  'esencia', NULL, 60, 90, 30, 3.0, 3, NULL)""",
     ]),
 
+    (150, "Órdenes de Servicio · Serigrafía/Tampografía · 21-may-2026", [
+        # Sebastián 21-may-2026: "planta pide envases o toca hacer serigrafía
+        # · Catalina da la orden desde compras preparar tales envases · recogen
+        # · envían · planta confirma recibido". Distinto de OC: NO compra
+        # material, manda a procesar material existente.
+        """CREATE TABLE IF NOT EXISTS ordenes_servicio (
+            numero_os TEXT PRIMARY KEY,
+            proveedor TEXT NOT NULL,
+            tipo_servicio TEXT NOT NULL DEFAULT 'Serigrafía',
+            producto_final TEXT,
+            envase_codigo_mee TEXT,
+            envase_descripcion TEXT,
+            cantidad_unidades INTEGER NOT NULL DEFAULT 0,
+            arte_descripcion TEXT,
+            arte_archivo_url TEXT,
+            fecha_solicitud TEXT NOT NULL,
+            fecha_requerida_entrega TEXT,
+            fecha_real_entrega TEXT,
+            estado TEXT NOT NULL DEFAULT 'Borrador'
+                CHECK(estado IN ('Borrador','Enviada','Recogida','En proceso',
+                                  'Entregada','Confirmada','Cancelada')),
+            costo_estimado_cop REAL DEFAULT 0,
+            costo_real_cop REAL DEFAULT 0,
+            observaciones TEXT,
+            creado_por TEXT NOT NULL,
+            creado_at_utc TEXT DEFAULT (datetime('now','utc')),
+            planta_confirmado_por TEXT,
+            planta_confirmado_at_utc TEXT,
+            cancelada_motivo TEXT,
+            tenant_id INTEGER DEFAULT 1
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_os_estado ON ordenes_servicio(estado, fecha_solicitud DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_os_proveedor ON ordenes_servicio(proveedor)",
+        # Tabla de eventos · timeline auditable de cada cambio de estado
+        """CREATE TABLE IF NOT EXISTS ordenes_servicio_eventos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            numero_os TEXT NOT NULL,
+            estado_anterior TEXT,
+            estado_nuevo TEXT NOT NULL,
+            usuario TEXT NOT NULL,
+            ts_utc TEXT DEFAULT (datetime('now','utc')),
+            observaciones TEXT
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_os_eventos_os ON ordenes_servicio_eventos(numero_os, id)",
+    ]),
+
     (149, "Usuarios PRO · metadata + activo flag · 21-may-2026", [
         # Sebastián 21-may-2026: "hoy entra jefe de producción nuevo y
         # sale Luis · no tenemos donde generar usuarios". Tabla
