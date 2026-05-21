@@ -580,6 +580,120 @@ def handle_formulas():
                          'fecha_creacion': h[3], 'items': items})
     return jsonify({'formulas': formulas})
 
+@bp.route('/api/formulas/bases-stats', methods=['GET'])
+def formulas_bases_stats():
+    """Sprint Fórmulas PRO · Sebastián 20-may-2026: "las bases, todas
+    tienen una base diferente, revisemos".
+
+    Devuelve la distribución de `unidad_base_g` agrupada · permite
+    detectar inconsistencias (Renova C 10 = 1000g vs otra = 500g).
+
+    NOTA: `unidad_base_g` es solo el lote nominal · NO afecta los
+    descuentos reales (que usan % × cantidad_kg pedida). Igual mostrar
+    todas con la misma base ayuda a comparar fórmulas visualmente.
+    """
+    u, err, code = _require_session()
+    if err:
+        return err, code
+    conn = get_db(); c = conn.cursor()
+    rows = c.execute(
+        """SELECT unidad_base_g,
+                  COUNT(*) AS n,
+                  GROUP_CONCAT(producto_nombre, ' | ') AS productos
+           FROM formula_headers
+           GROUP BY unidad_base_g
+           ORDER BY n DESC, unidad_base_g""",
+    ).fetchall()
+    grupos = [{
+        'unidad_base_g': float(r[0] or 0),
+        'count': r[1],
+        'productos': (r[2] or '').split(' | ') if r[2] else [],
+    } for r in rows]
+    total = sum(g['count'] for g in grupos)
+    base_dominante = max(grupos, key=lambda g: g['count'])['unidad_base_g'] if grupos else None
+    return jsonify({
+        'grupos': grupos,
+        'total_formulas': total,
+        'base_dominante_g': base_dominante,
+        'es_uniforme': len(grupos) <= 1,
+        'mensaje': (
+            f'Todas las fórmulas usan {base_dominante}g como base.'
+            if len(grupos) <= 1
+            else f'{len(grupos)} bases distintas detectadas · {base_dominante}g es la más común'
+        ),
+    })
+
+
+@bp.route('/api/formulas/normalizar-base', methods=['POST'])
+def formulas_normalizar_base():
+    """Sprint Fórmulas PRO · admin · normaliza la base de todas las
+    fórmulas (o un subset) a una unidad común.
+
+    Body: {base_g: float, productos?: [str]}
+    Si productos vacío → afecta TODAS. Si lista → solo esas.
+
+    SAFE: los % NO se tocan · solo `unidad_base_g` y `cantidad_g_por_lote`
+    (recalculado = pct × base_nueva / 100). Esto NO afecta los descuentos
+    reales porque /api/produccion calcula con la cantidad_kg pedida × pct.
+    """
+    u, err, code = _require_session()
+    if err:
+        return err, code
+    if (u or '').strip().lower() not in {x.lower() for x in ADMIN_USERS}:
+        return jsonify({'error': 'solo admin'}), 403
+    body = request.get_json(silent=True) or {}
+    try:
+        base_g = float(body.get('base_g') or 0)
+    except (ValueError, TypeError):
+        base_g = 0
+    if base_g < 50 or base_g > 100000:
+        return jsonify({'error': 'base_g debe ser 50-100000 (g)'}), 400
+    productos_filtro = body.get('productos') or []
+    conn = get_db(); c = conn.cursor()
+    if productos_filtro:
+        placeholders = ','.join(['?'] * len(productos_filtro))
+        target = c.execute(
+            f"SELECT producto_nombre FROM formula_headers "
+            f"WHERE producto_nombre IN ({placeholders})",
+            productos_filtro,
+        ).fetchall()
+    else:
+        target = c.execute("SELECT producto_nombre FROM formula_headers").fetchall()
+    actualizadas = []
+    for (prod,) in target:
+        try:
+            c.execute(
+                "UPDATE formula_headers SET unidad_base_g=?, "
+                "lote_size_kg=? WHERE producto_nombre=?",
+                (base_g, round(base_g / 1000.0, 3), prod),
+            )
+            # Recalcular cantidad_g_por_lote de cada item (pct × base / 100)
+            c.execute(
+                "UPDATE formula_items "
+                "SET cantidad_g_por_lote = ROUND(porcentaje * ? / 100.0, 2) "
+                "WHERE producto_nombre = ?",
+                (base_g, prod),
+            )
+            actualizadas.append(prod)
+        except Exception:
+            continue
+    try:
+        audit_log(c, usuario=u, accion='FORMULAS_NORMALIZAR_BASE',
+                  tabla='formula_headers', registro_id='_BULK_',
+                  despues={'base_g': base_g,
+                            'actualizadas': len(actualizadas)})
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({
+        'ok': True,
+        'base_g': base_g,
+        'actualizadas_count': len(actualizadas),
+        'productos': actualizadas[:50],
+        'mensaje': f'{len(actualizadas)} fórmulas normalizadas a base {base_g}g',
+    })
+
+
 @bp.route('/api/formulas/<path:producto_nombre>/versiones', methods=['GET'])
 def formulas_versiones(producto_nombre):
     """Sprint Fórmulas PRO · historial de versiones de una fórmula."""
@@ -1883,17 +1997,232 @@ def handle_produccion():
                 'rollback': 'aplicado — no se descontó nada y no quedó producción registrada',
             }), 500
 
+        # Sprint Fabricación PRO 20-may-2026: persistir costo estimado
+        try:
+            costo_total_cop = 0.0
+            for plan in plan_descuentos:
+                if plan.get('unlimited'):
+                    continue
+                # Buscar precio_referencia (COP/kg) en maestro_mps
+                pr_row = c.execute(
+                    "SELECT COALESCE(precio_referencia, 0) FROM maestro_mps "
+                    "WHERE codigo_mp=? LIMIT 1", (plan['mat_id'],),
+                ).fetchone()
+                if pr_row and pr_row[0]:
+                    # precio es por kg · cantidad es en g
+                    costo_total_cop += float(pr_row[0]) * (plan['g_total'] / 1000.0)
+            if costo_total_cop > 0:
+                try:
+                    c.execute(
+                        "UPDATE producciones SET costo_estimado_cop=? WHERE id=?",
+                        (round(costo_total_cop, 2), prod_id),
+                    )
+                    conn.commit()
+                except sqlite3.OperationalError as _e:
+                    if 'no such column' not in str(_e).lower():
+                        raise
+        except Exception:
+            pass  # costo es nice-to-have · no romper el flow
+
         # Stock PT se crea via Acondicionamiento → Liberacion (flujo BPM correcto)
         msg = f'Produccion registrada: {producto} x {cantidad_kg}kg (FEFO)'
         if descuentos:
             msg += f'. {len(descuentos)} MPs descontadas.'
         return jsonify({'message': msg, 'descuentos': descuentos, 'lote': lote_ref}), 201
-    c.execute('SELECT id, producto, cantidad, fecha, estado, operador, COALESCE(presentacion,""), COALESCE(lote,"") FROM producciones ORDER BY fecha DESC LIMIT 50')
-    prod = [{'id': r[0], 'lote': r[7] or f'PROD-{r[0]:05d}',
-             'producto': r[1], 'cantidad': r[2], 'fecha': r[3],
-             'estado': r[4], 'operador': r[5] or '', 'presentacion': r[6] or ''}
-            for r in c.fetchall()]
-    return jsonify({'producciones': prod})
+    # Sprint Fabricación PRO 20-may-2026: paginación + búsqueda + filtros
+    # server-side. Antes solo LIMIT 50 sin offset ni q · imposible navegar.
+    try:
+        limit = max(1, min(int(request.args.get('limit', 50)), 500))
+    except (ValueError, TypeError):
+        limit = 50
+    try:
+        offset = max(0, int(request.args.get('offset', 0)))
+    except (ValueError, TypeError):
+        offset = 0
+    q = (request.args.get('q') or '').strip()
+    desde = (request.args.get('desde') or '').strip()
+    hasta = (request.args.get('hasta') or '').strip()
+    where_parts = ['1=1']
+    params = []
+    if q:
+        # Escapar % y _ para LIKE
+        qesc = q.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+        where_parts.append("(LOWER(producto) LIKE LOWER(?) ESCAPE '\\' OR LOWER(COALESCE(lote,'')) LIKE LOWER(?) ESCAPE '\\' OR LOWER(COALESCE(operador,'')) LIKE LOWER(?) ESCAPE '\\')")
+        params += [f'%{qesc}%', f'%{qesc}%', f'%{qesc}%']
+    if desde:
+        where_parts.append("fecha >= ?"); params.append(desde)
+    if hasta:
+        where_parts.append("fecha <= ?"); params.append(hasta + ' 23:59:59')
+    where_sql = ' AND '.join(where_parts)
+    # Total count para paginación
+    try:
+        total_row = c.execute(f"SELECT COUNT(*) FROM producciones WHERE {where_sql}", params).fetchone()
+        total = int(total_row[0]) if total_row else 0
+    except Exception:
+        total = 0
+    # Query principal (COALESCE columna costo_estimado_cop puede no existir aún en BDs sin mig 148)
+    try:
+        rows = c.execute(
+            f"""SELECT id, producto, cantidad, fecha, estado, operador,
+                       COALESCE(presentacion,'') AS pres,
+                       COALESCE(lote,'') AS lote,
+                       COALESCE(observaciones,'') AS obs,
+                       COALESCE(costo_estimado_cop, 0) AS costo
+                FROM producciones
+                WHERE {where_sql}
+                ORDER BY fecha DESC, id DESC
+                LIMIT ? OFFSET ?""",
+            params + [limit, offset],
+        ).fetchall()
+    except sqlite3.OperationalError:
+        # Fallback sin costo_estimado_cop si la columna no existe
+        rows = c.execute(
+            f"""SELECT id, producto, cantidad, fecha, estado, operador,
+                       COALESCE(presentacion,'') AS pres,
+                       COALESCE(lote,'') AS lote,
+                       COALESCE(observaciones,'') AS obs,
+                       0 AS costo
+                FROM producciones
+                WHERE {where_sql}
+                ORDER BY fecha DESC, id DESC
+                LIMIT ? OFFSET ?""",
+            params + [limit, offset],
+        ).fetchall()
+    prod = [{
+        'id': r[0],
+        'lote': r[7] or f'PROD-{r[0]:05d}',
+        'producto': r[1], 'cantidad': r[2], 'fecha': r[3],
+        'estado': r[4], 'operador': r[5] or '',
+        'presentacion': r[6] or '',
+        'observaciones': r[8] or '',
+        'costo_estimado_cop': float(r[9] or 0),
+    } for r in rows]
+    return jsonify({
+        'producciones': prod,
+        'total': total, 'limit': limit, 'offset': offset,
+        'q': q, 'desde': desde, 'hasta': hasta,
+    })
+
+
+@bp.route('/api/produccion/<int:pid>/detalle', methods=['GET'])
+def produccion_detalle(pid):
+    """Sprint Fabricación PRO · detalle completo de una producción para
+    el modal "Ver detalle" del historial.
+
+    Devuelve: header + MPs descontadas con lotes FEFO usados + costo +
+    snapshot fórmula al momento.
+    """
+    u, err, code = _require_session()
+    if err:
+        return err, code
+    conn = get_db(); c = conn.cursor()
+    try:
+        h = c.execute(
+            """SELECT id, producto, cantidad, fecha, estado, operador,
+                      COALESCE(presentacion,''), COALESCE(lote,''),
+                      COALESCE(observaciones,''),
+                      COALESCE(formula_snapshot_json,''),
+                      COALESCE(costo_estimado_cop, 0)
+               FROM producciones WHERE id=?""",
+            (pid,),
+        ).fetchone()
+    except sqlite3.OperationalError:
+        h = c.execute(
+            """SELECT id, producto, cantidad, fecha, estado, operador,
+                      COALESCE(presentacion,''), COALESCE(lote,''),
+                      COALESCE(observaciones,''),
+                      '' AS snap, 0 AS costo
+               FROM producciones WHERE id=?""",
+            (pid,),
+        ).fetchone()
+    if not h:
+        return jsonify({'error': 'producción no existe'}), 404
+    lote_ref = h[7] or f'PROD-{h[0]:05d}'
+    # Movimientos de salida vinculados a esta producción (por observaciones)
+    movs = c.execute(
+        """SELECT material_id, material_nombre, cantidad, lote,
+                  COALESCE(observaciones,'')
+           FROM movimientos
+           WHERE tipo='Salida'
+             AND (observaciones LIKE ? OR observaciones LIKE ?)
+           ORDER BY id""",
+        (f'%FEFO:{lote_ref}:%', f'%UNLIMITED:{lote_ref}:%'),
+    ).fetchall()
+    descuentos = [{
+        'material_id': r[0], 'material_nombre': r[1],
+        'cantidad_g': float(r[2] or 0),
+        'lote': r[3] or 'unlimited',
+        'observaciones': r[4],
+    } for r in movs]
+    snap = []
+    if h[9]:
+        try:
+            import json as _json
+            snap = _json.loads(h[9])
+        except Exception:
+            snap = []
+    return jsonify({
+        'id': h[0], 'producto': h[1], 'cantidad_kg': h[2],
+        'fecha': h[3], 'estado': h[4], 'operador': h[5] or '',
+        'presentacion': h[6], 'lote': lote_ref,
+        'observaciones': h[8],
+        'costo_estimado_cop': float(h[10] or 0),
+        'descuentos': descuentos,
+        'formula_snapshot': snap,
+    })
+
+
+@bp.route('/api/produccion/<int:pid>/rotulo-reimprimir', methods=['GET'])
+def produccion_rotulo_reimprimir(pid):
+    """Sprint Fabricación PRO · genera HTML imprimible con los rótulos
+    del lote PT · sirve para reimprimir si se perdieron los originales."""
+    u, err, code = _require_session()
+    if err:
+        return err, code
+    conn = get_db(); c = conn.cursor()
+    h = c.execute(
+        """SELECT id, producto, cantidad, fecha, COALESCE(presentacion,''),
+                  COALESCE(lote,''), COALESCE(operador,'')
+           FROM producciones WHERE id=?""",
+        (pid,),
+    ).fetchone()
+    if not h:
+        return jsonify({'error': 'producción no existe'}), 404
+    lote_ref = h[5] or f'PROD-{h[0]:05d}'
+    presentacion = h[4] or '—'
+    fecha_corta = (h[3] or '')[:10]
+    def _esc(s):
+        return str(s or '').replace('&','&amp;').replace('<','&lt;').replace('>','&gt;')
+    html = f"""<!DOCTYPE html><html><head><meta charset="UTF-8">
+<title>Rótulos · {_esc(lote_ref)}</title>
+<style>
+@page {{ size: A4; margin: 8mm; }}
+body {{ font-family: Arial, sans-serif; margin: 0; padding: 10px; }}
+h1 {{ margin: 0 0 14px; color: #0f766e; font-size: 18px; }}
+.rot {{ display: inline-block; width: 90mm; height: 50mm; border: 1px dashed #94a3b8; padding: 6mm; margin: 2mm; vertical-align: top; box-sizing: border-box; }}
+.rot b {{ font-size: 14px; color: #0f172a; }}
+.rot .meta {{ font-size: 10px; color: #475569; margin-top: 4px; line-height: 1.4; }}
+.rot .lote {{ font-size: 18px; font-weight: 800; color: #dc2626; margin-top: 6px; letter-spacing: 1px; }}
+@media print {{ button {{ display: none; }} }}
+</style></head><body>
+<button onclick="window.print()" style="background:#0f766e;color:#fff;padding:10px 20px;border:none;border-radius:5px;cursor:pointer">🖨 Imprimir</button>
+<h1>Rótulos · {_esc(lote_ref)}</h1>"""
+    for i in range(6):
+        html += f"""
+<div class="rot">
+  <b>Espagiria Laboratorio · ÁNIMUS Lab</b><br>
+  <span style="font-size:13px;font-weight:700">{_esc(h[1] or '—')}</span>
+  <div class="lote">LOTE {_esc(lote_ref)}</div>
+  <div class="meta">
+    Presentación: {_esc(presentacion)}<br>
+    Cantidad: {h[2]} kg total · Fab: {fecha_corta}<br>
+    Operario: {_esc(h[6])}<br>
+    Hecho en Colombia · INVIMA cosmético
+  </div>
+</div>"""
+    html += '</body></html>'
+    from flask import Response as _R
+    return _R(html, mimetype='text/html; charset=utf-8')
 
 @bp.route('/api/produccion/simular', methods=['POST'])
 def simular_produccion():

@@ -2166,6 +2166,11 @@ CREATE TABLE pedidos (
                  observaciones TEXT DEFAULT '', creado_por TEXT DEFAULT '',
                  fecha_despacho TEXT DEFAULT '', numero_factura TEXT DEFAULT '', monto_pagado DOUBLE PRECISION DEFAULT 0, estado_pago TEXT DEFAULT 'Pendiente', canal_venta TEXT DEFAULT 'Directo', descuento_total_cop DOUBLE PRECISION DEFAULT 0);
 
+-- mig 148 · Fabricación PRO · costo_estimado + indices · 20-may-2026
+ALTER TABLE producciones ADD COLUMN costo_estimado_cop DOUBLE PRECISION;
+CREATE INDEX idx_producciones_lote ON producciones(lote);
+CREATE INDEX idx_producciones_producto_fecha ON producciones(producto, fecha DESC);
+
 -- mig 147 · Fórmulas PRO · app_settings + versionado · 20-may-2026
 CREATE TABLE app_settings (
     clave TEXT PRIMARY KEY,

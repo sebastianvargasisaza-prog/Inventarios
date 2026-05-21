@@ -6433,6 +6433,15 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
            ('ESENCIA ILUMINADORA',                  'esencia', NULL, 60, 90, 30, 3.0, 3, NULL)""",
     ]),
 
+    (148, "Fabricación PRO · costo_estimado_cop + lote_pt index · 20-may-2026", [
+        # Costo estimado guardado al registrar producción (calculado de
+        # precio_referencia × cantidad_g por MP). Antes solo se computaba
+        # en /simular sin persistir.
+        "ALTER TABLE producciones ADD COLUMN costo_estimado_cop REAL",
+        "CREATE INDEX IF NOT EXISTS idx_producciones_lote ON producciones(lote)",
+        "CREATE INDEX IF NOT EXISTS idx_producciones_producto_fecha ON producciones(producto, fecha DESC)",
+    ]),
+
     (147, "Fórmulas PRO · app_settings + versionado + import_excel · 20-may-2026", [
         """CREATE TABLE IF NOT EXISTS app_settings (
             clave TEXT PRIMARY KEY,

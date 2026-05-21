@@ -847,6 +847,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:10px">
       <h2 style="margin:0">&#129514; Fórmulas Maestras de Producción</h2>
       <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <button onclick="abrirBasesFormulas()" style="background:#0e7490;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer" title="Ver distribución de bases · normalizar a un valor común (admin)">📊 Bases</button>
         <button onclick="abrirImportExcelFormulas()" style="background:#7c3aed;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer" title="Subir XLSX/CSV de Alejandro · la app crea fórmulas automáticamente">📤 Import Excel</button>
         <button onclick="window.open('/api/formulas/export-excel','_blank')" style="background:#217346;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">📄 Export</button>
         <button id="formulas-pin-btn" onclick="cambiarFormulaPin()" style="background:#ca8a04;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer" title="Cambiar / setear PIN de fórmulas (admin)">🔑 PIN</button>
@@ -4206,6 +4207,71 @@ async function cambiarFormulaPin(){
       if(rUn.ok){ formulasPin = true; _setFormulasPinPersistido(true); renderFormulas(fData); }
     }catch(_){}
   }catch(e){ alert('Error de red: ' + (e && e.message ? e.message : e)); }
+}
+
+async function abrirBasesFormulas(){
+  try{
+    var r = await fetch('/api/formulas/bases-stats', {credentials:'same-origin'});
+    if(!r.ok){ alert('Error: HTTP ' + r.status); return; }
+    var d = await r.json();
+    var grupos = d.grupos || [];
+    var existe = document.getElementById('modal-bases-form');
+    if(existe) existe.remove();
+    var html = '<div id="modal-bases-form" style="position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9998;display:flex;align-items:center;justify-content:center;padding:20px">';
+    html += '<div style="background:#fff;border-radius:14px;padding:24px;max-width:780px;width:100%;max-height:90vh;overflow-y:auto">';
+    html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><h3 style="margin:0;color:#0e7490">📊 Distribución de bases de fórmulas</h3>';
+    html += '<button id="bases-close-btn" style="background:none;border:none;font-size:1.4em;cursor:pointer">×</button></div>';
+    var color = d.es_uniforme ? '#16a34a' : '#ca8a04';
+    html += '<div style="background:#f0f9ff;border:1px solid '+color+';border-radius:8px;padding:10px 14px;margin-bottom:14px;color:#0e7490;font-size:13px"><b>'+_escHTML(d.mensaje||'')+'</b><br>Total fórmulas: '+(d.total_formulas||0)+'</div>';
+    if(grupos.length){
+      html += '<table class="table" style="font-size:12px"><thead><tr><th>Base (g)</th><th>Cantidad</th><th>Productos (primeros 5)</th></tr></thead><tbody>';
+      grupos.forEach(function(g){
+        var dominante = (d.base_dominante_g === g.unidad_base_g);
+        var rowStyle = dominante ? 'background:#dcfce7' : '';
+        var prods = (g.productos||[]).slice(0,5).join(', ');
+        if((g.productos||[]).length > 5) prods += ' …+' + (g.productos.length - 5);
+        html += '<tr style="'+rowStyle+'"><td><b>'+g.unidad_base_g+' g</b>'+(dominante?' <span style="color:#16a34a;font-size:10px">(dominante)</span>':'')+'</td>';
+        html += '<td>'+g.count+'</td><td style="font-size:11px;color:#475569">'+_escHTML(prods)+'</td></tr>';
+      });
+      html += '</tbody></table>';
+    }
+    if(!d.es_uniforme){
+      html += '<div style="margin-top:14px;border-top:1px solid #e2e8f0;padding-top:14px">';
+      html += '<h4 style="margin:0 0 8px;color:#0e7490">🔧 Normalizar todas a una base común (admin)</h4>';
+      html += '<p style="font-size:11px;color:#475569;margin:0 0 8px">Los porcentajes NO se tocan · solo cambia el lote nominal y se recalcula la cantidad_g_por_lote.<br>Recomendado: 1000g (1kg) si es el lote estándar.</p>';
+      html += '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">';
+      html += '<label style="font-size:12px;color:#475569">Base nueva (g):</label>';
+      html += '<input id="bases-nuevo-input" type="number" value="'+(d.base_dominante_g || 1000)+'" min="50" max="100000" step="100" style="width:120px;padding:6px 10px;border:1px solid #cbd5e1;border-radius:5px">';
+      html += '<button id="bases-aplicar-btn" style="background:#0e7490;color:#fff;border:none;padding:8px 16px;border-radius:6px;font-weight:700;cursor:pointer">⚙ Normalizar TODAS</button>';
+      html += '</div></div>';
+    }
+    html += '</div></div>';
+    var div = document.createElement('div');
+    div.innerHTML = html;
+    document.body.appendChild(div.firstChild);
+    document.getElementById('bases-close-btn').onclick = function(){
+      var m = document.getElementById('modal-bases-form'); if(m) m.remove();
+    };
+    var btnAplicar = document.getElementById('bases-aplicar-btn');
+    if(btnAplicar){
+      btnAplicar.onclick = async function(){
+        var base = parseFloat(document.getElementById('bases-nuevo-input').value);
+        if(!base || base < 50 || base > 100000){ alert('Base debe ser 50-100000'); return; }
+        if(!confirm('Normalizar TODAS las fórmulas a base ' + base + 'g? Los % se mantienen.')) return;
+        var _csrf = (typeof csrfTokenNec === 'function') ? csrfTokenNec() : (window._csrfTok || '');
+        var r2 = await fetch('/api/formulas/normalizar-base', {
+          method:'POST', credentials:'same-origin',
+          headers:{'Content-Type':'application/json','X-CSRF-Token':_csrf},
+          body: JSON.stringify({base_g: base}),
+        });
+        var d2 = await r2.json();
+        if(!r2.ok){ alert('Error: ' + (d2.error||r2.status)); return; }
+        alert('✓ ' + d2.mensaje);
+        var m = document.getElementById('modal-bases-form'); if(m) m.remove();
+        await loadFormulas();
+      };
+    }
+  }catch(e){ alert('Error red: ' + e.message); }
 }
 
 function abrirImportExcelFormulas(){
