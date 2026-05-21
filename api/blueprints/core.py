@@ -487,6 +487,41 @@ def _require_admin_session():
     return u, None, None
 
 
+def _ensure_users_meta_columns(conn):
+    """Sebastián 21-may-2026: si la mig 149 no se aplicó en PostgreSQL
+    (deploy en curso, o ALTER TABLE falló silenciosamente), crear las
+    columnas requeridas al primer uso del endpoint admin. Idempotente.
+
+    Usa `ADD COLUMN IF NOT EXISTS` que soportan tanto PG como SQLite≥3.35.
+    Si igual falla, captura silenciosamente y deja que la query del
+    endpoint use COALESCE o fallback.
+    """
+    cols_needed = [
+        ('activo', 'INTEGER DEFAULT 1'),
+        ('nombre_completo', 'TEXT'),
+        ('cargo', 'TEXT'),
+        ('email', 'TEXT'),
+        ('roles_csv', "TEXT DEFAULT 'compras'"),
+        ('creado_por', 'TEXT'),
+        ('creado_at_utc', 'TEXT'),
+        ('ultimo_login_at_utc', 'TEXT'),
+        ('baja_motivo', 'TEXT'),
+    ]
+    for col, tipo in cols_needed:
+        try:
+            conn.execute(f"ALTER TABLE users_passwords ADD COLUMN IF NOT EXISTS {col} {tipo}")
+        except Exception:
+            # Fallback sin IF NOT EXISTS (SQLite viejo) · try/except por columna
+            try:
+                conn.execute(f"ALTER TABLE users_passwords ADD COLUMN {col} {tipo}")
+            except Exception:
+                pass  # ya existe o no se puede crear · seguir
+    try:
+        conn.commit()
+    except Exception:
+        pass
+
+
 @bp.route('/api/admin/usuarios', methods=['GET'])
 def admin_usuarios_list():
     """Lista TODOS los usuarios · BD + env vars · admin only."""
@@ -496,6 +531,7 @@ def admin_usuarios_list():
     try:
         conn = db_connect()
         conn.execute("PRAGMA busy_timeout=2000")
+        _ensure_users_meta_columns(conn)
         try:
             rows = conn.execute(
                 """SELECT username, COALESCE(activo,1), COALESCE(nombre_completo,''),
@@ -589,6 +625,7 @@ def admin_usuarios_crear():
     try:
         conn = db_connect()
         conn.execute("PRAGMA busy_timeout=2000")
+        _ensure_users_meta_columns(conn)
         # Verificar que no exista
         ex = conn.execute("SELECT 1 FROM users_passwords WHERE username=?", (username,)).fetchone()
         if ex:
@@ -650,6 +687,7 @@ def admin_usuarios_editar(username):
     try:
         conn = db_connect()
         conn.execute("PRAGMA busy_timeout=2000")
+        _ensure_users_meta_columns(conn)
         # Verificar existe
         ex = conn.execute("SELECT 1 FROM users_passwords WHERE username=?", (username,)).fetchone()
         if not ex:
@@ -702,6 +740,7 @@ def admin_usuarios_reset_password(username):
     try:
         conn = db_connect()
         conn.execute("PRAGMA busy_timeout=2000")
+        _ensure_users_meta_columns(conn)
         ex = conn.execute("SELECT 1 FROM users_passwords WHERE username=?", (username,)).fetchone()
         if ex:
             conn.execute(
