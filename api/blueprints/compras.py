@@ -7118,6 +7118,579 @@ def reporte_ejecutivo_compras():
 # de generar la OC. Cada ronda tiene un ronda_id que agrupa N cotizaciones de
 # distintos proveedores.
 
+@bp.route('/api/compras/cash-flow', methods=['GET'])
+def compras_cash_flow():
+    """Compras MAX · 21-may-2026 · Cash flow proyección 30/60/90 días."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    ventanas = [30, 60, 90]
+    out = {'proyecciones': []}
+    for d in ventanas:
+        v = {'dias': d}
+        # OCs por pagar (no Pagada · sin fecha_pago)
+        try:
+            r = c.execute(
+                """SELECT COUNT(*), COALESCE(SUM(valor_total),0)
+                   FROM ordenes_compra
+                   WHERE estado IN ('Borrador','Revisada','Autorizada','Recibida')
+                     AND date(fecha) <= date('now','-5 hours','+' || ? || ' days')""",
+                (str(d),),
+            ).fetchone()
+            v['ocs_por_pagar'] = {'count': int(r[0] or 0), 'monto': float(r[1] or 0)}
+        except Exception:
+            v['ocs_por_pagar'] = {'count': 0, 'monto': 0}
+        # Influencers pendientes
+        try:
+            r = c.execute(
+                """SELECT COUNT(*), COALESCE(SUM(valor),0)
+                   FROM solicitudes_compra
+                   WHERE estado IN ('Pendiente','Aprobada')
+                     AND categoria IN ('Influencer/Marketing Digital','Cuenta de Cobro')""",
+            ).fetchone()
+            v['influencers'] = {'count': int(r[0] or 0), 'monto': float(r[1] or 0)}
+        except Exception:
+            v['influencers'] = {'count': 0, 'monto': 0}
+        v['total_salida'] = v['ocs_por_pagar']['monto'] + v['influencers']['monto']
+        out['proyecciones'].append(v)
+    # Histórico últimos 30d (real pagado)
+    try:
+        r = c.execute(
+            """SELECT COUNT(*), COALESCE(SUM(monto),0)
+               FROM pagos_oc
+               WHERE date(fecha) >= date('now','-5 hours','-30 days')""",
+        ).fetchone()
+        out['pagado_30d'] = {'count': int(r[0] or 0), 'monto': float(r[1] or 0)}
+    except Exception:
+        out['pagado_30d'] = {'count': 0, 'monto': 0}
+    return jsonify(out)
+
+
+@bp.route('/api/compras/trazabilidad-oc/<numero_oc>', methods=['GET'])
+def compras_trazabilidad_oc(numero_oc):
+    """Compras MAX · 21-may-2026 · Trazabilidad full-chain.
+
+    OC → SOLs origen → items MP → producciones que usaron las MPs.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    # 1. Header OC
+    h = c.execute(
+        """SELECT numero_oc, proveedor, COALESCE(valor_total,0), estado, fecha,
+                  COALESCE(observaciones,'')
+           FROM ordenes_compra WHERE numero_oc=?""",
+        (numero_oc,),
+    ).fetchone()
+    if not h:
+        return jsonify({'error': 'OC no existe'}), 404
+    out = {
+        'numero_oc': h[0], 'proveedor': h[1], 'valor_total': float(h[2] or 0),
+        'estado': h[3], 'fecha': h[4], 'observaciones': h[5],
+    }
+    # 2. Items
+    try:
+        rows = c.execute(
+            """SELECT codigo_mp, nombre_mp, COALESCE(cantidad_g,0),
+                      COALESCE(precio_unitario,0), COALESCE(subtotal,0)
+               FROM ordenes_compra_items WHERE numero_oc=?""",
+            (numero_oc,),
+        ).fetchall()
+        out['items'] = [{
+            'codigo_mp': r[0], 'nombre_mp': r[1],
+            'cantidad_g': float(r[2] or 0),
+            'precio_unitario': float(r[3] or 0),
+            'subtotal': float(r[4] or 0),
+        } for r in rows]
+    except Exception:
+        out['items'] = []
+    # 3. SOLs origen
+    try:
+        rows = c.execute(
+            """SELECT numero, solicitante, fecha, COALESCE(valor,0)
+               FROM solicitudes_compra
+               WHERE numero_oc=? OR observaciones LIKE ?""",
+            (numero_oc, f'%{numero_oc}%'),
+        ).fetchall()
+        out['sols_origen'] = [{
+            'numero': r[0], 'solicitante': r[1], 'fecha': r[2], 'valor': float(r[3] or 0),
+        } for r in rows]
+    except Exception:
+        out['sols_origen'] = []
+    # 4. Pagos
+    try:
+        rows = c.execute(
+            """SELECT fecha, monto, COALESCE(medio,''), COALESCE(referencia,''),
+                      COALESCE(numero_factura_proveedor,'')
+               FROM pagos_oc WHERE numero_oc=?""",
+            (numero_oc,),
+        ).fetchall()
+        out['pagos'] = [{
+            'fecha': r[0], 'monto': float(r[1] or 0),
+            'medio': r[2], 'referencia': r[3], 'factura': r[4],
+        } for r in rows]
+    except Exception:
+        out['pagos'] = []
+    # 5. Producciones que usaron las MPs de esta OC (último mes)
+    codigos = [it['codigo_mp'] for it in out.get('items', []) if it.get('codigo_mp')]
+    producciones_relacionadas = []
+    if codigos:
+        try:
+            placeholders = ','.join(['?'] * len(codigos))
+            rows = c.execute(
+                f"""SELECT DISTINCT pp.id, pp.producto, pp.fecha_programada,
+                           COALESCE(pp.lote_codigo, pp.id) as lote
+                    FROM produccion_programada pp
+                    JOIN movimientos m ON m.material_id IN ({placeholders})
+                    WHERE date(pp.fecha_programada) >= date('now','-5 hours','-60 days')
+                    ORDER BY pp.fecha_programada DESC LIMIT 20""",
+                codigos,
+            ).fetchall()
+            producciones_relacionadas = [{
+                'pid': r[0], 'producto': r[1], 'fecha': r[2], 'lote': r[3],
+            } for r in rows]
+        except Exception:
+            pass
+    out['producciones_relacionadas'] = producciones_relacionadas
+    return jsonify(out)
+
+
+@bp.route('/api/compras/roi-proveedores', methods=['GET'])
+def compras_roi_proveedores():
+    """Compras MAX · 21-may-2026 · ROI por proveedor."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    try:
+        rows = c.execute(
+            """SELECT proveedor,
+                      COUNT(*) ocs,
+                      COALESCE(SUM(valor_total),0) monto_total,
+                      AVG(julianday(fecha) - julianday(fecha)) lead_time_real_dias,
+                      SUM(CASE WHEN estado='Pagada' THEN 1 ELSE 0 END) pagadas,
+                      SUM(CASE WHEN estado='Recibida' THEN 1 ELSE 0 END) recibidas,
+                      MAX(fecha) ultima_compra
+               FROM ordenes_compra
+               WHERE proveedor IS NOT NULL AND proveedor != ''
+                 AND date(fecha) >= date('now','-5 hours','-365 days')
+               GROUP BY proveedor
+               ORDER BY monto_total DESC LIMIT 30""",
+        ).fetchall()
+    except Exception:
+        rows = []
+    items = []
+    for r in rows:
+        items.append({
+            'proveedor': r[0],
+            'ocs_12m': int(r[1] or 0),
+            'monto_12m': float(r[2] or 0),
+            'pagadas': int(r[4] or 0),
+            'recibidas': int(r[5] or 0),
+            'ultima_compra': r[6] or '',
+            'cumplimiento_pct': round((r[5] / r[1] * 100) if r[1] else 0, 1),
+        })
+    return jsonify({'proveedores': items, 'total': len(items)})
+
+
+@bp.route('/api/compras/ocr-factura', methods=['POST'])
+def compras_ocr_factura():
+    """Compras MAX · 21-may-2026 · OCR factura proveedor.
+
+    Body: {imagen_base64, ocs_candidatas?: [str]}
+    Devuelve datos extraídos + sugiere match con OC pendiente.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    body = request.get_json(silent=True) or {}
+    b64 = (body.get('imagen_base64') or '').strip()
+    if not b64:
+        return jsonify({'error': 'imagen_base64 requerido'}), 400
+    if b64.startswith('data:'):
+        try: b64 = b64.split(',', 1)[1]
+        except Exception: return jsonify({'error': 'data URL inválido'}), 400
+    if len(b64) > 7_000_000:
+        return jsonify({'error': 'imagen muy grande (max ~5MB)'}), 413
+    media_type = 'image/jpeg' if body.get('tipo','jpeg').lower() in ('jpg','jpeg') else 'image/png'
+    import os, json as _json
+    api_key = os.environ.get('ANTHROPIC_API_KEY') or os.environ.get('CLAUDE_API_KEY')
+    if not api_key:
+        return jsonify({'error': 'ANTHROPIC_API_KEY no configurada',
+                        'codigo': 'NO_API_KEY'}), 503
+    system_prompt = (
+        "Sos OCR especializado en facturas de proveedores en español "
+        "(Colombia). Extraé los datos de la factura y devolvelos como "
+        "JSON puro sin texto adicional:\n"
+        '{\"proveedor\":\"\",\"nit\":\"\",\"numero_factura\":\"\",'
+        '\"fecha_emision\":\"YYYY-MM-DD o null\",'
+        '\"fecha_vencimiento\":\"YYYY-MM-DD o null\",'
+        '\"subtotal\":0,\"iva\":0,\"total\":0,'
+        '\"items\":[{\"descripcion\":\"\",\"cantidad\":0,'
+        '\"unidad\":\"\",\"precio_unitario\":0,\"subtotal\":0}],'
+        '\"confianza_pct\":85}\n'
+        "Si un campo no está visible, dejá string vacío o null. "
+        "confianza_pct (0-100) es tu certeza global."
+    )
+    import urllib.request as _ureq, urllib.error as _uerr
+    try:
+        req = _ureq.Request(
+            'https://api.anthropic.com/v1/messages',
+            data=_json.dumps({
+                'model': 'claude-sonnet-4-6',
+                'max_tokens': 1500,
+                'system': system_prompt,
+                'messages': [{
+                    'role': 'user',
+                    'content': [
+                        {'type': 'image', 'source': {
+                            'type': 'base64', 'media_type': media_type, 'data': b64,
+                        }},
+                        {'type': 'text', 'text': 'Extraé los campos.'},
+                    ],
+                }],
+            }).encode('utf-8'),
+            headers={
+                'x-api-key': api_key,
+                'anthropic-version': '2023-06-01',
+                'content-type': 'application/json',
+            },
+            method='POST',
+        )
+        with _ureq.urlopen(req, timeout=60) as resp:
+            data = _json.loads(resp.read().decode('utf-8'))
+        txt = ''
+        for b in (data.get('content') or []):
+            if b.get('type') == 'text':
+                txt += b.get('text', '')
+        txt = (txt or '').strip()
+        if txt.startswith('```'):
+            txt = txt.split('```')[1]
+            if txt.startswith('json'):
+                txt = txt[4:].strip()
+        try:
+            parsed = _json.loads(txt)
+        except Exception:
+            return jsonify({'error': 'OCR devolvió JSON inválido', 'raw': txt[:500]}), 502
+        # Sugerir match con OC pendiente
+        conn = get_db(); c = conn.cursor()
+        sugerencias_oc = []
+        if parsed.get('proveedor'):
+            try:
+                prov_norm = parsed['proveedor'].strip().lower()[:30]
+                total_factura = float(parsed.get('total') or 0)
+                rows = c.execute(
+                    """SELECT numero_oc, proveedor, COALESCE(valor_total,0), estado, fecha
+                       FROM ordenes_compra
+                       WHERE LOWER(COALESCE(proveedor,'')) LIKE ?
+                         AND estado IN ('Autorizada','Recibida','Revisada')
+                       ORDER BY fecha DESC LIMIT 5""",
+                    (f'%{prov_norm}%',),
+                ).fetchall()
+                for r in rows:
+                    valor_oc = float(r[2] or 0)
+                    delta_pct = abs(valor_oc - total_factura) / valor_oc * 100 if valor_oc > 0 else 999
+                    sugerencias_oc.append({
+                        'numero_oc': r[0], 'proveedor': r[1],
+                        'valor_total': valor_oc,
+                        'estado': r[3],
+                        'fecha': r[4],
+                        'delta_vs_factura_pct': round(delta_pct, 1),
+                        'match_score': 'alto' if delta_pct < 3 else ('medio' if delta_pct < 10 else 'bajo'),
+                    })
+            except Exception:
+                pass
+        try:
+            audit_log(c, usuario=user, accion='OCR_FACTURA_PROVEEDOR',
+                      tabla='_', registro_id='_',
+                      despues={'proveedor': parsed.get('proveedor',''),
+                                'total': parsed.get('total', 0),
+                                'confianza': parsed.get('confianza_pct', 0)})
+            conn.commit()
+        except Exception:
+            pass
+        return jsonify({
+            'ok': True,
+            'factura': parsed,
+            'ocs_sugeridas': sugerencias_oc,
+        })
+    except _uerr.HTTPError as e:
+        return jsonify({'error': f'Anthropic HTTP {e.code}: {e.reason}'}), 502
+    except Exception as e:
+        return jsonify({'error': f'OCR falló: {e}'}), 500
+
+
+@bp.route('/api/compras/prediccion-demanda', methods=['GET'])
+def compras_prediccion_demanda():
+    """Compras MAX · 21-may-2026 · Predicción demanda MPs.
+
+    Por cada MP con stock + consumo histórico 90d:
+    - calcula consumo_diario_promedio
+    - estima fecha_quiebre = hoy + (stock / consumo_diario)
+    - sugiere acción: 'OK', 'PEDIR_PRONTO' (<30d), 'URGENTE' (<14d)
+    - calcula cantidad sugerida = consumo_90d × factor_buffer
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    # Stock actual por material_id
+    stock = {}
+    try:
+        rows = c.execute(
+            """SELECT material_id,
+                      COALESCE(SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END),0)
+               FROM movimientos
+               WHERE material_id IS NOT NULL AND material_id != ''
+               GROUP BY material_id""",
+        ).fetchall()
+        for r in rows:
+            stock[r[0]] = max(float(r[1] or 0), 0)
+    except Exception:
+        pass
+    # Consumo 90d (Salidas)
+    consumo = {}
+    try:
+        rows = c.execute(
+            """SELECT material_id, SUM(cantidad)
+               FROM movimientos
+               WHERE tipo='Salida'
+                 AND date(fecha) >= date('now','-5 hours','-90 days')
+                 AND material_id IS NOT NULL AND material_id != ''
+               GROUP BY material_id""",
+        ).fetchall()
+        for r in rows:
+            consumo[r[0]] = float(r[1] or 0)
+    except Exception:
+        pass
+    # Metadata MPs
+    metadata = {}
+    try:
+        rows = c.execute(
+            """SELECT codigo_mp, nombre_comercial, COALESCE(proveedor,''),
+                      COALESCE(precio_referencia,0)
+               FROM maestro_mps WHERE COALESCE(activo,1)=1""",
+        ).fetchall()
+        for r in rows:
+            metadata[r[0]] = {'nombre': r[1], 'proveedor': r[2] or '',
+                              'precio_kg': float(r[3] or 0)}
+    except Exception:
+        pass
+    # Lead times
+    lead_times = {}
+    try:
+        rows = c.execute(
+            """SELECT codigo_mp, COALESCE(dias_lead_time_promedio, 15)
+               FROM mp_lead_time_config""",
+        ).fetchall()
+        for r in rows:
+            lead_times[r[0]] = int(r[1] or 15)
+    except Exception:
+        pass
+    # Construir predicción
+    items = []
+    for mid, c_total in consumo.items():
+        if c_total <= 0:
+            continue
+        st = stock.get(mid, 0)
+        consumo_diario = c_total / 90.0
+        if consumo_diario <= 0:
+            continue
+        dias_quiebre = st / consumo_diario if consumo_diario > 0 else 999
+        lt = lead_times.get(mid, 15)
+        meta = metadata.get(mid, {})
+        # Acción
+        if dias_quiebre < lt + 3:
+            accion = 'URGENTE'
+            color = 'rojo'
+        elif dias_quiebre < lt + 14:
+            accion = 'PEDIR_PRONTO'
+            color = 'amarillo'
+        else:
+            accion = 'OK'
+            color = 'verde'
+        # Cantidad sugerida: consumo (lt + 30d) - stock_actual
+        cantidad_sugerida = max(0, consumo_diario * (lt + 30) - st)
+        costo_estimado = (cantidad_sugerida / 1000.0) * meta.get('precio_kg', 0)
+        items.append({
+            'codigo_mp': mid,
+            'nombre': meta.get('nombre', mid),
+            'proveedor_default': meta.get('proveedor', ''),
+            'stock_g': round(st, 1),
+            'consumo_90d_g': round(c_total, 1),
+            'consumo_diario_g': round(consumo_diario, 1),
+            'dias_hasta_quiebre': round(dias_quiebre, 1),
+            'lead_time_dias': lt,
+            'accion': accion,
+            'color': color,
+            'cantidad_sugerida_g': round(cantidad_sugerida, 1),
+            'costo_estimado_cop': round(costo_estimado, 0),
+        })
+    # Ordenar por urgencia
+    orden = {'URGENTE': 0, 'PEDIR_PRONTO': 1, 'OK': 2}
+    items.sort(key=lambda x: (orden.get(x['accion'], 99), x['dias_hasta_quiebre']))
+    counts = {'URGENTE': 0, 'PEDIR_PRONTO': 0, 'OK': 0}
+    for it in items:
+        counts[it['accion']] += 1
+    return jsonify({
+        'items': items[:100],
+        'counts': counts,
+        'total_evaluados': len(items),
+    })
+
+
+@bp.route('/api/compras/asistente-ia', methods=['POST'])
+def compras_asistente_ia():
+    """Compras MAX · 21-may-2026 · IA Agente "Pregúntale a Compras".
+
+    Chat con Claude Sonnet 4.6 · contexto auto del módulo Compras:
+    - Top 10 proveedores históricos
+    - SOLs pendientes
+    - OCs autorizadas sin pago
+    - Cash flow próximos 30d
+    - Histórico precios MPs
+
+    Body: {pregunta: str}
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    body = request.get_json(silent=True) or {}
+    pregunta = (body.get('pregunta') or '').strip()
+    if len(pregunta) < 3:
+        return jsonify({'error': 'pregunta requerida (≥3 chars)'}), 400
+    import os, json as _json
+    api_key = os.environ.get('ANTHROPIC_API_KEY') or os.environ.get('CLAUDE_API_KEY')
+    if not api_key:
+        return jsonify({'error': 'ANTHROPIC_API_KEY no configurada',
+                        'codigo': 'NO_API_KEY'}), 503
+    conn = get_db(); c = conn.cursor()
+    # Contexto auto
+    contexto = {}
+    try:
+        rows = c.execute(
+            """SELECT proveedor, COUNT(*) ocs, COALESCE(SUM(valor_total),0) m
+               FROM ordenes_compra
+               WHERE date(fecha) >= date('now','-5 hours','-90 days')
+                 AND proveedor IS NOT NULL AND proveedor != ''
+               GROUP BY proveedor ORDER BY m DESC LIMIT 10""",
+        ).fetchall()
+        contexto['top_proveedores_90d'] = [
+            {'nombre': r[0], 'ocs': r[1], 'monto': float(r[2] or 0)} for r in rows
+        ]
+    except Exception:
+        contexto['top_proveedores_90d'] = []
+    try:
+        rows = c.execute(
+            """SELECT estado, COUNT(*) FROM solicitudes_compra
+               WHERE estado IN ('Pendiente','Aprobada')
+               GROUP BY estado""",
+        ).fetchall()
+        contexto['sols_por_estado'] = {r[0]: r[1] for r in rows}
+    except Exception:
+        contexto['sols_por_estado'] = {}
+    try:
+        r = c.execute(
+            "SELECT COUNT(*), COALESCE(SUM(valor_total),0) FROM ordenes_compra WHERE estado='Autorizada'",
+        ).fetchone()
+        contexto['ocs_por_pagar'] = {'count': int(r[0] or 0), 'monto': float(r[1] or 0)}
+    except Exception:
+        contexto['ocs_por_pagar'] = {'count': 0, 'monto': 0}
+    try:
+        r = c.execute(
+            """SELECT SUM(CASE WHEN estado='Pagada' THEN valor_total ELSE 0 END),
+                      SUM(CASE WHEN estado IN ('Borrador','Revisada','Autorizada') THEN valor_total ELSE 0 END)
+               FROM ordenes_compra
+               WHERE date(fecha) >= date('now','-5 hours','-30 days')""",
+        ).fetchone()
+        contexto['cash_flow_30d'] = {
+            'pagado': float(r[0] or 0),
+            'por_pagar': float(r[1] or 0),
+        }
+    except Exception:
+        contexto['cash_flow_30d'] = {}
+    # Top MPs por valor compra
+    try:
+        rows = c.execute(
+            """SELECT oci.codigo_mp, oci.nombre_mp,
+                      COALESCE(SUM(oci.subtotal),0) m,
+                      COUNT(DISTINCT oc.numero_oc) ocs
+               FROM ordenes_compra_items oci
+               JOIN ordenes_compra oc ON oc.numero_oc = oci.numero_oc
+               WHERE date(oc.fecha) >= date('now','-5 hours','-90 days')
+               GROUP BY oci.codigo_mp, oci.nombre_mp
+               ORDER BY m DESC LIMIT 5""",
+        ).fetchall()
+        contexto['top_mps_90d'] = [{
+            'codigo': r[0], 'nombre': r[1], 'monto': float(r[2] or 0), 'ocs': r[3],
+        } for r in rows]
+    except Exception:
+        contexto['top_mps_90d'] = []
+    contexto['usuario_actual'] = user
+
+    system_prompt = (
+        "Sos el asistente IA del módulo Compras de un laboratorio cosmético "
+        "(Espagiria + ÁNIMUS Lab). Tenés acceso a contexto live de la BD: "
+        "top proveedores, SOLs pendientes, OCs por pagar, cash flow, top MPs.\n\n"
+        "REGLAS:\n"
+        "- Respondé en español neutro · max 6 oraciones · directo\n"
+        "- Si pregunta sobre proveedor/MP/cash flow · usá los datos del contexto\n"
+        "- Si falta data en el contexto · decilo (no inventes números)\n"
+        "- Si la pregunta requiere acción · sugerí el botón exacto en /compras\n"
+        "- NO digas 'soy una IA' · sos el asistente de Compras\n"
+        "- Para preguntas como '¿qué proveedor me conviene?' · ofrecé el top 3 "
+        "con argumentos basados en el contexto (frecuencia, monto, etc.)\n"
+    )
+    user_msg = (
+        f"PREGUNTA: {pregunta}\n\n"
+        f"CONTEXTO LIVE COMPRAS:\n"
+        f"{_json.dumps(contexto, ensure_ascii=False, indent=1)}"
+    )
+    import urllib.request as _ureq, urllib.error as _uerr
+    try:
+        req = _ureq.Request(
+            'https://api.anthropic.com/v1/messages',
+            data=_json.dumps({
+                'model': 'claude-sonnet-4-6',
+                'max_tokens': 700,
+                'system': system_prompt,
+                'messages': [{'role': 'user', 'content': user_msg}],
+            }).encode('utf-8'),
+            headers={
+                'x-api-key': api_key,
+                'anthropic-version': '2023-06-01',
+                'content-type': 'application/json',
+            },
+            method='POST',
+        )
+        with _ureq.urlopen(req, timeout=30) as resp:
+            data = _json.loads(resp.read().decode('utf-8'))
+        respuesta = ''
+        for b in (data.get('content') or []):
+            if b.get('type') == 'text':
+                respuesta += b.get('text', '')
+        respuesta = (respuesta or '').strip()
+        try:
+            audit_log(c, usuario=user, accion='COMPRAS_ASISTENTE_IA',
+                      tabla='_', registro_id='_',
+                      despues={'pregunta_chars': len(pregunta),
+                                'respuesta_chars': len(respuesta)})
+            conn.commit()
+        except Exception:
+            pass
+        return jsonify({
+            'ok': True,
+            'respuesta': respuesta or '(sin respuesta · reintentá)',
+            'contexto_resumen': {
+                'proveedores': len(contexto.get('top_proveedores_90d', [])),
+                'sols_pendientes': sum(contexto.get('sols_por_estado', {}).values()),
+                'ocs_por_pagar': contexto.get('ocs_por_pagar', {}).get('count', 0),
+            },
+        })
+    except _uerr.HTTPError as e:
+        return jsonify({'error': f'Anthropic HTTP {e.code}: {e.reason}'}), 502
+    except Exception as e:
+        return jsonify({'error': f'Asistente falló: {e}'}), 500
+
+
 @bp.route('/api/compras/dashboard-home', methods=['GET'])
 def compras_dashboard_home():
     """Compras 2.0 · Sebastián 21-may-2026 · Dashboard dual por rol.

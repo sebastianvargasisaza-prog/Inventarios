@@ -130,6 +130,59 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
 <!-- Sebastián 21-may-2026 · 11 tabs → 4 grupos top (como hicimos con
      Programación 8→4). Catalina ya tenía muscular memory · IDs originales
      (data-tab) se mantienen para que las funciones loadX no se rompan. -->
+<!-- Compras MAX · 21-may-2026 · Botón flotante IA Agente + acciones rápidas -->
+<button id="cx-ia-btn" onclick="cxAbrirIA()" style="position:fixed;bottom:24px;right:24px;width:60px;height:60px;border-radius:50%;background:linear-gradient(135deg,#0f766e,#0891b2);color:#fff;border:none;cursor:pointer;font-size:24px;box-shadow:0 6px 20px rgba(15,118,110,.4);z-index:9999" title="Pregúntale a Compras (IA)">💬</button>
+<div id="cx-ia-modal" style="display:none;position:fixed;bottom:96px;right:24px;width:400px;max-height:600px;background:#fff;border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,.25);z-index:9999;flex-direction:column;border:1px solid #cbd5e1">
+  <div style="background:linear-gradient(135deg,#0f766e,#0891b2);color:#fff;padding:12px 16px;border-radius:14px 14px 0 0;display:flex;justify-content:space-between;align-items:center">
+    <b style="font-size:14px">💬 Pregúntale a Compras</b>
+    <button onclick="cxCerrarIA()" style="background:none;border:none;color:#fff;font-size:1.3em;cursor:pointer;padding:0 4px">×</button>
+  </div>
+  <div id="cx-ia-hist" style="flex:1;overflow-y:auto;padding:12px;font-size:12px;min-height:200px;max-height:380px"></div>
+  <div style="padding:8px;border-top:1px solid #e2e8f0">
+    <div style="display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap">
+      <button onclick="cxIAPreguntar('¿Qué proveedor me conviene más este mes?')" style="background:#f1f5f9;border:1px solid #cbd5e1;padding:4px 8px;border-radius:5px;font-size:10px;cursor:pointer">Top proveedor</button>
+      <button onclick="cxIAPreguntar('¿Cuánto tengo por pagar?')" style="background:#f1f5f9;border:1px solid #cbd5e1;padding:4px 8px;border-radius:5px;font-size:10px;cursor:pointer">Por pagar</button>
+      <button onclick="cxIAPreguntar('¿Hay alertas urgentes?')" style="background:#f1f5f9;border:1px solid #cbd5e1;padding:4px 8px;border-radius:5px;font-size:10px;cursor:pointer">Alertas</button>
+    </div>
+    <div style="display:flex;gap:6px">
+      <input id="cx-ia-input" type="text" placeholder="¿qué proveedor me conviene?" onkeydown="if(event.key==='Enter')cxIAPreguntar()" style="flex:1;padding:7px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:12px">
+      <button onclick="cxIAPreguntar()" id="cx-ia-send" style="padding:7px 12px;background:#0891b2;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700">Enviar</button>
+    </div>
+  </div>
+</div>
+<script>
+function cxAbrirIA(){var m=document.getElementById('cx-ia-modal');if(m){m.style.display='flex';document.getElementById('cx-ia-input').focus();}}
+function cxCerrarIA(){var m=document.getElementById('cx-ia-modal');if(m)m.style.display='none';}
+async function cxIAPreguntar(pregunta){
+  var inp=document.getElementById('cx-ia-input');
+  var hist=document.getElementById('cx-ia-hist');
+  var btn=document.getElementById('cx-ia-send');
+  if(typeof pregunta!=='string') pregunta=(inp.value||'').trim();
+  if(pregunta.length<3) return;
+  if(!document.getElementById('cx-ia-modal').style.display||document.getElementById('cx-ia-modal').style.display==='none') cxAbrirIA();
+  hist.innerHTML+='<div style="text-align:right;margin-bottom:6px"><span style="background:#0891b2;color:#fff;padding:6px 10px;border-radius:10px;display:inline-block;max-width:85%">'+pregunta+'</span></div>';
+  hist.innerHTML+='<div id="cx-ia-pend" style="margin-bottom:6px"><span style="background:#f1f5f9;color:#475569;padding:6px 10px;border-radius:10px;font-style:italic">pensando…</span></div>';
+  hist.scrollTop=hist.scrollHeight;
+  if(inp) inp.value='';
+  btn.disabled=true;
+  try{
+    var r=await fetch('/api/compras/asistente-ia',_fetchOpts('POST',{pregunta:pregunta}));
+    var d=await r.json();
+    var pend=document.getElementById('cx-ia-pend');if(pend) pend.remove();
+    if(!r.ok){
+      hist.innerHTML+='<div style="margin-bottom:6px"><span style="background:#fee2e2;color:#991b1b;padding:6px 10px;border-radius:10px">⚠ '+(d.error||r.status)+'</span></div>';
+    } else {
+      hist.innerHTML+='<div style="margin-bottom:6px"><span style="background:#f0fdfa;color:#134e4a;padding:6px 10px;border-radius:10px;display:inline-block;max-width:90%;white-space:pre-wrap">'+(d.respuesta||'(sin respuesta)')+'</span></div>';
+    }
+    hist.scrollTop=hist.scrollHeight;
+  }catch(e){
+    var p=document.getElementById('cx-ia-pend');if(p) p.remove();
+    hist.innerHTML+='<div style="margin-bottom:6px"><span style="background:#fee2e2;color:#991b1b;padding:6px 10px;border-radius:10px">⚠ red: '+e.message+'</span></div>';
+  }
+  btn.disabled=false;
+}
+</script>
+
 <div class="tab-nav" id="cx-grp-bar" style="display:flex;gap:8px;padding:8px 0;border-bottom:2px solid #e2e8f0;margin-bottom:12px">
   <button class="cx-grp-btn on" data-cx-grp="entradas"  data-default-tab="planta"
     style="padding:9px 22px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:800;cursor:pointer;background:linear-gradient(135deg,#0e7490,#0891b2);color:#fff;box-shadow:0 3px 10px rgba(8,145,178,.35)"

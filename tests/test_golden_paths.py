@@ -7359,6 +7359,37 @@ def test_golden_sprint_final_acond_brd(app, db_clean):
     assert r4.status_code in (404, 500)
 
 
+def test_golden_compras_max_ia_ocr_traz(app, db_clean):
+    """Compras MAX · 21-may-2026 · 6 endpoints nuevos."""
+    cs = _login(app, 'sebastian')
+    # IA Asistente · sin API key → 503
+    r1 = cs.post('/api/compras/asistente-ia', json={'pregunta': 'TEST hola'},
+                  headers=csrf_headers())
+    assert r1.status_code in (200, 503)
+    # Predicción demanda
+    r2 = cs.get('/api/compras/prediccion-demanda')
+    assert r2.status_code == 200
+    assert 'items' in r2.get_json()
+    # Dashboard home
+    r3 = cs.get('/api/compras/dashboard-home')
+    assert r3.status_code == 200
+    assert 'role' in r3.get_json() and 'counts' in r3.get_json()
+    # Cash flow
+    r4 = cs.get('/api/compras/cash-flow')
+    assert r4.status_code == 200
+    assert 'proyecciones' in r4.get_json()
+    # Trazabilidad OC inexistente
+    r5 = cs.get('/api/compras/trazabilidad-oc/OC-NO-EXISTE')
+    assert r5.status_code == 404
+    # ROI proveedores
+    r6 = cs.get('/api/compras/roi-proveedores')
+    assert r6.status_code == 200
+    assert 'proveedores' in r6.get_json()
+    # OCR sin imagen
+    r7 = cs.post('/api/compras/ocr-factura', json={}, headers=csrf_headers())
+    assert r7.status_code == 400
+
+
 def test_golden_compras_n3_inteligencia(app, db_clean):
     """Sprint Compras N3 · 21-may-2026 · 4 endpoints nuevos."""
     cs = _login(app, 'sebastian')
