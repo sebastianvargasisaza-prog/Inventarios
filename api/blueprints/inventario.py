@@ -2021,9 +2021,24 @@ def admin_formulas_pin():
     u, err, code = _require_session()
     if err:
         return err, code
-    if u not in ADMIN_USERS:
-        return jsonify({'error': 'solo admin'}), 403
-    conn = get_db(); c = conn.cursor()
+    # Case-insensitive admin check · defensivo si la sesión guardó
+    # 'Sebastian' o 'SEBASTIAN' por cualquier razón.
+    u_norm = (u or '').strip().lower()
+    admin_norm = {x.lower() for x in ADMIN_USERS}
+    if u_norm not in admin_norm:
+        __import__('logging').getLogger('inventario').warning(
+            'admin_formulas_pin · acceso denegado · user=%r admin_set=%r',
+            u, list(ADMIN_USERS))
+        return jsonify({
+            'error': f'solo admin · sesión actual: "{u}"',
+            'admin_users_esperados': sorted(ADMIN_USERS),
+        }), 403
+    try:
+        conn = get_db(); c = conn.cursor()
+    except Exception as _e:
+        __import__('logging').getLogger('inventario').error(
+            'admin_formulas_pin · get_db falló: %s', _e)
+        return jsonify({'error': f'BD inaccesible: {_e}'}), 500
     _ensure_app_settings_table(c)
 
     try:

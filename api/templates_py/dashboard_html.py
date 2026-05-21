@@ -4152,16 +4152,24 @@ async function cambiarFormulaPin(){
   }
   try{
     // GET info (sin CSRF · es GET)
-    var rInfo = await fetch('/api/admin/formulas/pin');
-    if(rInfo.status === 401){ alert('Sesión expirada · iniciá sesión de nuevo y reintentá'); return; }
-    if(rInfo.status === 403){ alert('Solo admin (Sebastián / Alejandro) puede cambiar el PIN'); return; }
-    if(!rInfo.ok){
-      var txt = '';
-      try{ txt = (await rInfo.json()).error || ''; }catch(_){ txt = 'HTTP ' + rInfo.status; }
-      alert('Error consultando PIN: ' + txt);
+    var rInfo = await fetch('/api/admin/formulas/pin', {credentials:'same-origin'});
+    var dInfo = null;
+    try{ dInfo = await rInfo.json(); }catch(_){}
+    if(rInfo.status === 401){
+      alert('Sesión expirada · iniciá sesión de nuevo y reintentá');
       return;
     }
-    var info = await rInfo.json();
+    if(rInfo.status === 403){
+      var msg403 = (dInfo && dInfo.error) ? dInfo.error : 'No autorizado';
+      alert('Solo admin puede cambiar el PIN · ' + msg403);
+      return;
+    }
+    if(!rInfo.ok){
+      var errTxt = (dInfo && dInfo.error) ? dInfo.error : ('HTTP ' + rInfo.status);
+      alert('Error consultando PIN (HTTP ' + rInfo.status + '): ' + errTxt + '\\n\\nReporta este texto a soporte si persiste.');
+      return;
+    }
+    var info = dInfo || {};
     var origen = info.configurado_en_bd ? ('BD · último cambio por ' + (info.cambiado_por||'?'))
                 : (info.configurado_en_env ? 'env var FORMULA_PIN (Render)'
                 : (info.es_pin_random_efimero ? 'PIN aleatorio efímero (NADIE lo conoce)' : 'desconocido'));
