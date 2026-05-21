@@ -7310,6 +7310,23 @@ def test_golden_portal_b2b_flujo_completo(app, db_clean):
     _exec("DELETE FROM portal_clientes_credenciales WHERE email LIKE 'test_portal_%'")
 
 
+def test_golden_envasado_pro_paginacion_detalle(app, db_clean):
+    """Sprint Envasado PRO · 20-may-2026 · paginación + detalle."""
+    cs = _login(app, 'sebastian')
+    # Listado paginado
+    r1 = cs.get('/api/envasado?limit=10&offset=0')
+    assert r1.status_code == 200
+    d1 = r1.get_json()
+    assert 'total' in d1 and 'envasados' in d1 and 'limit' in d1
+    # Búsqueda sin match
+    r2 = cs.get('/api/envasado?q=TEST_NO_EXISTE_NUNCA_ENV')
+    assert r2.status_code == 200
+    assert r2.get_json().get('total') == 0
+    # Detalle inexistente → 404
+    r3 = cs.get('/api/envasado/999999/detalle')
+    assert r3.status_code == 404
+
+
 def test_golden_fabricacion_pro_paginacion_detalle_rotulo(app, db_clean):
     """Sprint Fabricación PRO · 20-may-2026.
     - GET /api/produccion soporta limit/offset/q/desde/hasta

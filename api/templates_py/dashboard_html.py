@@ -1446,8 +1446,11 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
   <p style="color:#666;font-size:13px;margin-bottom:16px">Registra el uso de envases y tapas por lote de produccion terminado.</p>
 
   <div id="cola-sin-envasar" style="background:#e8f5e9;border:1px solid #a5d6a7;border-radius:8px;padding:14px;margin-bottom:18px">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-      <h3 style="margin:0;font-size:14px;color:#1b5e20">&#128230; Cola: lotes listos para envasar</h3>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+      <div>
+        <h3 style="margin:0;font-size:14px;color:#1b5e20;display:inline">&#128230; Cola: lotes listos para envasar</h3>
+        <span id="cola-env-count" style="background:#1b5e20;color:#fff;padding:2px 9px;border-radius:10px;font-size:11px;font-weight:700;margin-left:8px"></span>
+      </div>
       <button onclick="loadColaSinEnvasar()" style="background:#1b5e20;color:#fff;border:none;border-radius:4px;padding:4px 12px;font-size:12px;cursor:pointer">&#8635; Actualizar</button>
     </div>
     <div id="cola-env-tbody-wrap" style="overflow-x:auto">
@@ -5941,8 +5944,18 @@ async function iniciarRegistroProd(){
         _showStockInsuficientePopup(prod, kg, d.faltantes);
       } else {
         // Otros errores (sin formula, validacion, etc.) → alert nativo
-        alert('No se puede registrar produccion\\n\\n'+(d.error||'Error desconocido')+
-              (d.detalle?'\\n\\n'+d.detalle:''));
+        // CRÍTICO 20-may-2026: incluir tipo + detalle + status code para
+        // diagnóstico inmediato cuando Sebastián reporte fallas.
+        var detTxt = '';
+        if(d.tipo) detTxt += '\\n\\nTipo: ' + d.tipo;
+        if(d.detalle) detTxt += '\\n\\nDetalle: ' + d.detalle;
+        if(d.origen) detTxt += '\\n\\nOrigen: ' + d.origen;
+        if(d.rollback) detTxt += '\\n\\nRollback: ' + d.rollback;
+        if(!detTxt && d){ try{ detTxt = '\\n\\nResp: ' + JSON.stringify(d).substring(0,500); }catch(_){} }
+        alert('No se puede registrar producción\\n\\nHTTP '+r.status+': '+(d.error||'Error desconocido')+
+              detTxt+'\\n\\nReporta este texto a soporte.');
+        // También log en consola para devtools
+        console.error('[registrar-produccion] HTTP', r.status, d);
       }
       // Tambien mostrar detalle inline (para historial visual)
       var html='<div style="background:#fee2e2;border:1px solid #dc2626;border-radius:8px;padding:12px 16px;color:#7f1d1d;">';
@@ -7661,6 +7674,8 @@ function loadColaSinEnvasar(){
     .then(function(r){return r.json();})
     .then(function(d){
       var rows=d.cola||[];
+      var countEl = document.getElementById('cola-env-count');
+      if(countEl) countEl.textContent = rows.length + (rows.length === 1 ? ' lote' : ' lotes');
       if(!rows.length){tb.innerHTML='<tr><td colspan="6" style="text-align:center;color:#27ae60;padding:10px">&#10003; Sin lotes pendientes de envasar</td></tr>';return;}
       _sinEnvasarMap={};
       rows.forEach(function(r){_sinEnvasarMap[r.id]=r;});
@@ -7683,12 +7698,24 @@ var _envActObj = null;
 var _sinEnvasarMap = {};
 var _pendAcondMap  = {};
 function _buildMeeOpts(selectedVal){
+  // Sprint Envasado PRO · 20-may-2026 · destacar MEE con stock crítico
+  // (bajo mínimo o agotado) y ordenar por stock disponible desc para que
+  // el operario vea primero lo que sí hay.
   var envCats=['Envase','Frasco','Gotero','Tarro'];
   var eOpts='<option value="">-- Sin envase --</option>';
   var tOpts='<option value="">-- Sin tapa --</option>';
-  (_envSimpleMEE||[]).forEach(function(m){
-    var opt='<option value="'+m.codigo+'"'+(m.codigo===selectedVal?' selected':'')+'>'
-      +m.codigo+' - '+m.descripcion+' ('+m.stock_actual+')</option>';
+  var sorted = (_envSimpleMEE||[]).slice().sort(function(a,b){
+    return (b.stock_actual||0) - (a.stock_actual||0);
+  });
+  sorted.forEach(function(m){
+    var stock = Number(m.stock_actual||0);
+    var min = Number(m.stock_minimo||0);
+    var badge = '';
+    if(stock === 0) badge = ' ⛔ AGOTADO';
+    else if(min > 0 && stock < min) badge = ' ⚠ bajo mínimo';
+    var opt='<option value="'+m.codigo+'"'+(m.codigo===selectedVal?' selected':'')+
+      (stock === 0 ? ' disabled' : '')+'>'+
+      m.codigo+' - '+m.descripcion+' ('+stock+')'+badge+'</option>';
     if(envCats.indexOf(m.categoria)>=0) eOpts+=opt;
     else if(m.categoria==='Tapa') tOpts+=opt;
   });

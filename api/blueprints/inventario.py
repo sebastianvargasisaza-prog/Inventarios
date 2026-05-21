@@ -1769,12 +1769,28 @@ def handle_produccion():
             except Exception: pass
         except Exception:
             pass
+        import traceback as _tb
+        stack = _tb.format_exc()
         __import__('logging').getLogger('inventario').exception(
             'handle_produccion · EXCEPCIÓN NO ESPERADA: %s', _outer_e)
+        # Devolver MÁS info para diagnóstico inmediato cuando Sebastián
+        # reporta fallas (no requiere acceso a Render logs).
+        detalle = str(_outer_e) or '(excepción sin mensaje)'
+        # Última línea del stack (la que tiene file:line:func)
+        ultima = ''
+        try:
+            lines = [l for l in stack.split('\n') if l.strip()]
+            for ln in reversed(lines):
+                if ln.strip().startswith('File '):
+                    ultima = ln.strip()[:200]
+                    break
+        except Exception:
+            pass
         return jsonify({
             'error': 'Falla interna · revisar logs',
-            'detalle': str(_outer_e)[:500],
+            'detalle': detalle[:500],
             'tipo': type(_outer_e).__name__,
+            'origen': ultima,
             'rollback': 'intentado',
         }), 500
 
