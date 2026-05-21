@@ -2094,6 +2094,51 @@ fetch('/api/csrf-token', {credentials:'same-origin'})
   .then(function(r){return r.ok ? r.json() : null;})
   .then(function(d){if(d&&d.csrf_token) window._csrfTok=d.csrf_token;})
   .catch(function(){});
+
+// Sebastián 20-may-2026 · Fix masivo: 84 fetch POST en dashboard solo 26
+// tenían X-CSRF-Token explícito · el resto fallaba con 403/400 cuando el
+// middleware exigía CSRF (PIN, registrar producción, etc.). Este
+// interceptor parchea window.fetch UNA VEZ y agrega:
+//   - X-CSRF-Token automático en todo non-GET/HEAD
+//   - credentials: 'same-origin' default
+// Idempotente (window._FETCH_CSRF_PATCHED). No toca llamadas que ya
+// pusieron su propio header (case-insensitive).
+(function(){
+  if(window._FETCH_CSRF_PATCHED) return;
+  window._FETCH_CSRF_PATCHED = true;
+  var origFetch = window.fetch;
+  window.fetch = function(input, init){
+    try{
+      init = init || {};
+      var method = ((init.method) || (typeof input === 'object' && input && input.method) || 'GET').toUpperCase();
+      if(method !== 'GET' && method !== 'HEAD'){
+        // Normalizar headers a plain object para inspeccionar/agregar
+        var h = init.headers;
+        if(!h) h = {};
+        else if(h instanceof Headers){
+          var tmp = {};
+          h.forEach(function(v,k){ tmp[k] = v; });
+          h = tmp;
+        }
+        var hasCsrf = false;
+        for(var k in h){ if(k.toLowerCase() === 'x-csrf-token'){ hasCsrf = true; break; } }
+        if(!hasCsrf){
+          var tok = '';
+          if(typeof csrfTokenNec === 'function'){ try{ tok = csrfTokenNec(); }catch(_){} }
+          if(!tok && window._csrfTok) tok = window._csrfTok;
+          if(!tok){
+            var m = (document.cookie || '').match(/(?:^|; )csrf_token=([^;]*)/);
+            if(m) try{ tok = decodeURIComponent(m[1]); }catch(_){ tok = m[1]; }
+          }
+          if(tok) h['X-CSRF-Token'] = tok;
+        }
+        init.headers = h;
+        if(!init.credentials) init.credentials = 'same-origin';
+      }
+    }catch(_){}
+    return origFetch.call(this, input, init);
+  };
+})();
 document.addEventListener('DOMContentLoaded',function(){
   // Restaurar operador desde localStorage si no vino por sesión
   if(!OPER_ACTUAL){
@@ -4734,7 +4779,8 @@ async function registrarProd(){
     if(!confirm(msg)) return;
   }
   try{
-    var r=await fetch('/api/produccion',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({producto:prod,cantidad:kg,observaciones:document.getElementById('prod-obs').value,operador:OPER_ACTUAL})});
+    var _csrf3 = (typeof csrfTokenNec === 'function') ? csrfTokenNec() : (window._csrfTok || '');
+    var r=await fetch('/api/produccion',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':_csrf3},body:JSON.stringify({producto:prod,cantidad:kg,observaciones:document.getElementById('prod-obs').value,operador:OPER_ACTUAL})});
     var res=await r.json();
     var html='<div class="alert-success">'+res.message+'</div>';
     if(res.descuentos&&res.descuentos.length){
@@ -5655,7 +5701,8 @@ async function simularProduccion(){
   if(!kg||kg<=0){panel.innerHTML='<span style="color:#e74c3c;">Ingresa la cantidad (kg) primero</span>';return;}
   panel.innerHTML='<span style="color:#667eea;">&#9203; Verificando stock y estimando costos...</span>';
   try{
-    var r=await fetch('/api/produccion/simular',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({producto:prod,cantidad_kg:kg})});
+    var _csrf = (typeof csrfTokenNec === 'function') ? csrfTokenNec() : (window._csrfTok || '');
+    var r=await fetch('/api/produccion/simular',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':_csrf},body:JSON.stringify({producto:prod,cantidad_kg:kg})});
     var d=await r.json();
     if(!r.ok){panel.innerHTML='<span style="color:#e74c3c;">'+(d.error||'Error al simular')+'</span>';return;}
     var bg=d.factible?'#f0fff4':'#fff5f5';
@@ -5817,7 +5864,9 @@ async function iniciarRegistroProd(){
   var obs=document.getElementById('prod-obs').value;
   var pres=document.getElementById('prod-presentacion').value;
   try{
-    var r=await fetch('/api/produccion',{method:'POST',headers:{'Content-Type':'application/json'},
+    var _csrf2 = (typeof csrfTokenNec === 'function') ? csrfTokenNec() : (window._csrfTok || '');
+    var r=await fetch('/api/produccion',{method:'POST',credentials:'same-origin',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':_csrf2},
       body:JSON.stringify({producto:prod,cantidad_kg:kg,observaciones:obs,presentacion:pres,operador:OPER_ACTUAL})});
     var d=await r.json();
     if(!r.ok){
