@@ -1679,9 +1679,16 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       title="Calendario IA · Vista calendario · Factibilidad de MPs">
       &#129302; Calendario IA
     </button>
+    <!-- Sebastián 20-may-2026: Operación Live OCULTA completa · "no la
+         logramos, después la repensamos". Mantiene el botón en DOM
+         (display:none) para que switchProgGroup('opera_grp') siga
+         funcionando si algún deeplink JS lo llama. Endpoints backend
+         (Andon, OEE, Mass balance, Auditoría, Asistente IA, Kanban,
+         Mi Día) siguen activos · solo se quita el botón visible.
+    -->
     <button data-prog-grp="opera_grp" onclick="switchProgGroup('opera_grp')"
-      style="padding:9px 24px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:800;cursor:pointer;background:linear-gradient(135deg,#1a4a7a,#0891b2);color:#fff;box-shadow:0 3px 10px rgba(26,74,122,.35);opacity:.6"
-      title="Operación Live · Centro de Mando · Kanban · Mi Día">
+      style="display:none"
+      title="Operación Live · OCULTO temporalmente (en rediseño)">
       &#127981; Operación Live
     </button>
     <span id="prog-tareas-badge" style="display:none;background:#dc2626;color:#fff;font-size:9px;font-weight:800;padding:2px 8px;border-radius:8px"></span>
@@ -1712,13 +1719,11 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     </button>
   </div>
   <div id="prog-sub-opera_grp" class="prog-subbar" style="display:none;gap:8px;margin-bottom:14px;padding:8px 4px;border-bottom:1px dashed #cbd5e1;flex-wrap:wrap">
-    <button data-prog-sub="opera_grp" onclick="switchProgTab('mando')"
-      style="padding:6px 14px;border:1px solid #1a4a7a;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;background:#1a4a7a;color:#fff"
-      title="Vista live · plano + áreas + operarios (vista jefe)">
-      &#127919; Centro de Mando
-    </button>
+    <!-- Sebastián 20-may-2026: Centro de Mando OCULTO · "no lo logramos"
+         · sigue accesible vía switchProgTab('mando') desde deeplinks ·
+         botón visible se reactiva cuando esté rediseñado. -->
     <button data-prog-sub="opera_grp" onclick="switchProgTab('kanban')"
-      style="padding:6px 14px;border:1px solid #0891b2;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;background:#fff;color:#0891b2"
+      style="padding:6px 14px;border:1px solid #0891b2;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;background:#0891b2;color:#fff"
       title="Kanban 4 estaciones · Dispensación → Elaboración → Envasado → Acondicionamiento">
       &#127981; Kanban
     </button>
@@ -8419,9 +8424,12 @@ function _renderProgramacion(d){
       <div id="cm-andon-cards" style="display:flex;flex-direction:column;gap:6px"></div>
     </div>
 
-    <!-- OLA 3 IA · botón Asistente flotante "Pregúntale a la planta" -->
+    <!-- OLA 3 IA · botón Asistente flotante OCULTO 20-may-2026 junto con
+         Operación Live ("la repensamos después"). Endpoint
+         /api/asistente/operacion sigue activo · botón se reactivará
+         cuando rediseñemos el grupo. -->
     <button id="cm-asistente-btn" onclick="cmAbrirAsistente()"
-      style="position:fixed;bottom:24px;right:24px;width:56px;height:56px;border-radius:50%;background:linear-gradient(135deg,#0f766e,#0891b2);color:#fff;border:none;cursor:pointer;font-size:22px;box-shadow:0 6px 20px rgba(15,118,110,.4);z-index:9999"
+      style="display:none"
       title="Asistente IA · Pregúntale a la planta">💬</button>
     <div id="cm-asistente-modal" style="display:none;position:fixed;bottom:90px;right:24px;width:380px;max-height:600px;background:#fff;border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,.25);z-index:9999;flex-direction:column;border:1px solid #cbd5e1">
       <div style="background:linear-gradient(135deg,#0f766e,#0891b2);color:#fff;padding:12px 16px;border-radius:14px 14px 0 0;display:flex;justify-content:space-between;align-items:center">
