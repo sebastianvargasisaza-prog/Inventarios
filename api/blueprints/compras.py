@@ -7118,6 +7118,154 @@ def reporte_ejecutivo_compras():
 # de generar la OC. Cada ronda tiene un ronda_id que agrupa N cotizaciones de
 # distintos proveedores.
 
+@bp.route('/api/compras/dashboard-home', methods=['GET'])
+def compras_dashboard_home():
+    """Compras 2.0 · Sebastián 21-may-2026 · Dashboard dual por rol.
+
+    Devuelve TODO lo que necesita la pantalla home en 1 request:
+      - role: 'admin' o 'operativo'
+      - kpis (salud_score, sols_pendientes_3d, ocs_5d, etc)
+      - buzon (SOLs nuevas hoy por fuente · solo si operativo)
+      - influencers (pendientes con monto · solo si admin)
+      - alertas críticas (todos)
+      - counts por tab (para badges)
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '').lower()
+    is_admin = user in {x.lower() for x in ADMIN_USERS}
+    conn = get_db(); c = conn.cursor()
+    out = {'role': 'admin' if is_admin else 'operativo', 'usuario': user}
+
+    # KPIs salud (igual que dashboard-ejecutivo existente · reusable)
+    kpis = {}
+    try:
+        r = c.execute(
+            """SELECT COUNT(*) FROM solicitudes_compra
+               WHERE estado = 'Pendiente'
+                 AND date(fecha) < date('now','-5 hours','-3 days')""",
+        ).fetchone()
+        kpis['sols_sin_tocar_3d'] = int(r[0] or 0)
+    except Exception: kpis['sols_sin_tocar_3d'] = 0
+    try:
+        r = c.execute(
+            """SELECT COUNT(*) FROM ordenes_compra
+               WHERE estado IN ('Borrador','Revisada')
+                 AND date(fecha) < date('now','-5 hours','-5 days')""",
+        ).fetchone()
+        kpis['ocs_sin_autorizar_5d'] = int(r[0] or 0)
+    except Exception: kpis['ocs_sin_autorizar_5d'] = 0
+    pendientes = (kpis['sols_sin_tocar_3d'] + kpis['ocs_sin_autorizar_5d'])
+    kpis['salud_score'] = max(0, 100 - pendientes * 5)
+    kpis['salud_color'] = 'verde' if kpis['salud_score'] >= 80 else ('amarillo' if kpis['salud_score'] >= 60 else 'rojo')
+    out['kpis'] = kpis
+
+    # Counts por tab (badges)
+    counts = {}
+    try:
+        counts['planta'] = int((c.execute(
+            """SELECT COUNT(*) FROM solicitudes_compra
+               WHERE estado='Pendiente'
+                 AND categoria IN ('Materia Prima','Empaque','Material de Empaque')""",
+        ).fetchone() or [0])[0])
+    except Exception: counts['planta'] = 0
+    try:
+        counts['solic'] = int((c.execute(
+            """SELECT COUNT(*) FROM solicitudes_compra
+               WHERE estado='Pendiente'
+                 AND categoria NOT IN ('Materia Prima','Empaque','Material de Empaque',
+                                       'Influencer/Marketing Digital','Cuenta de Cobro')""",
+        ).fetchone() or [0])[0])
+    except Exception: counts['solic'] = 0
+    try:
+        counts['influencer'] = int((c.execute(
+            """SELECT COUNT(*) FROM solicitudes_compra
+               WHERE estado IN ('Pendiente','Aprobada')
+                 AND categoria IN ('Influencer/Marketing Digital','Cuenta de Cobro')""",
+        ).fetchone() or [0])[0])
+    except Exception: counts['influencer'] = 0
+    try:
+        counts['por_pagar'] = int((c.execute(
+            "SELECT COUNT(*) FROM ordenes_compra WHERE estado='Autorizada'",
+        ).fetchone() or [0])[0])
+    except Exception: counts['por_pagar'] = 0
+    try:
+        counts['consol'] = int((c.execute(
+            "SELECT COUNT(*) FROM ordenes_compra WHERE estado IN ('Borrador','Revisada','Autorizada')",
+        ).fetchone() or [0])[0])
+    except Exception: counts['consol'] = 0
+    out['counts'] = counts
+
+    # Buzón · SOLs nuevas hoy (ambos roles)
+    try:
+        rows = c.execute(
+            """SELECT numero, solicitante, fecha, categoria, COALESCE(valor,0) as v
+               FROM solicitudes_compra
+               WHERE estado='Pendiente'
+                 AND date(fecha) >= date('now','-5 hours','-2 days')
+               ORDER BY fecha DESC LIMIT 10""",
+        ).fetchall()
+        out['buzon_recientes'] = [{
+            'numero': r[0], 'solicitante': r[1], 'fecha': r[2],
+            'categoria': r[3], 'valor': float(r[4] or 0),
+        } for r in rows]
+    except Exception:
+        out['buzon_recientes'] = []
+
+    # Influencers (solo admin)
+    if is_admin:
+        try:
+            rows = c.execute(
+                """SELECT numero, solicitante, fecha, COALESCE(valor,0) as v,
+                          estado, COALESCE(observaciones,'')
+                   FROM solicitudes_compra
+                   WHERE estado IN ('Pendiente','Aprobada')
+                     AND categoria IN ('Influencer/Marketing Digital','Cuenta de Cobro')
+                   ORDER BY fecha DESC LIMIT 10""",
+            ).fetchall()
+            out['influencers_pendientes'] = [{
+                'numero': r[0], 'solicitante': r[1], 'fecha': r[2],
+                'monto': float(r[3] or 0), 'estado': r[4],
+                'concepto': (r[5] or '')[:80],
+            } for r in rows]
+            out['influencers_monto_total'] = sum(float(r[3] or 0) for r in rows)
+        except Exception:
+            out['influencers_pendientes'] = []
+            out['influencers_monto_total'] = 0
+        # Top proveedores 30d (solo admin)
+        try:
+            rows = c.execute(
+                """SELECT proveedor, COUNT(*) as ocs, COALESCE(SUM(valor_total),0) as monto
+                   FROM ordenes_compra
+                   WHERE date(fecha) >= date('now','-5 hours','-30 days')
+                     AND proveedor IS NOT NULL AND proveedor != ''
+                   GROUP BY proveedor ORDER BY monto DESC LIMIT 5""",
+            ).fetchall()
+            out['top_proveedores_30d'] = [{
+                'proveedor': r[0], 'ocs': int(r[1] or 0), 'monto': float(r[2] or 0),
+            } for r in rows]
+        except Exception:
+            out['top_proveedores_30d'] = []
+
+    # Alertas críticas (top 5 vencimientos próximos · todos los roles)
+    try:
+        rows = c.execute(
+            """SELECT numero_oc, proveedor, COALESCE(valor_total,0), estado, fecha
+               FROM ordenes_compra
+               WHERE estado='Autorizada'
+                 AND date(fecha) < date('now','-5 hours','-10 days')
+               ORDER BY fecha ASC LIMIT 5""",
+        ).fetchall()
+        out['alertas_ocs_viejas'] = [{
+            'numero_oc': r[0], 'proveedor': r[1], 'monto': float(r[2] or 0),
+            'estado': r[3], 'fecha': r[4],
+        } for r in rows]
+    except Exception:
+        out['alertas_ocs_viejas'] = []
+
+    return jsonify(out)
+
+
 @bp.route('/api/compras/dashboard-ejecutivo', methods=['GET'])
 def compras_dashboard_ejecutivo():
     """Sprint Compras N3 · 21-may-2026 · widget ejecutivo Catalina.

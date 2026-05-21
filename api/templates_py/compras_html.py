@@ -183,18 +183,19 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
 
 <!-- PANES -->
 <div id="pane-dash" class="pane on">
-  <!-- Sprint Compras N3 · 21-may-2026 · widget ejecutivo Catalina -->
-  <div id="dashboard-ejecutivo" style="background:#fff;border:1px solid #e7e5e4;border-radius:10px;padding:12px 14px;margin-bottom:14px"></div>
-  <div id="kpi-area" class="kpis"></div>
-  <div class="queue-row">
+  <!-- Compras 2.0 · Sebastián 21-may-2026 · Dashboard DUAL por rol.
+       Catalina ve buzón priorizado · admin ve panel ejecutivo + Influencers. -->
+  <div id="dash-home-2" style="margin-bottom:14px"></div>
+  <!-- Fallback legacy widgets (oculto por default · solo si dash-home falla) -->
+  <div id="dashboard-ejecutivo" style="display:none"></div>
+  <div id="kpi-area" class="kpis" style="display:none"></div>
+  <div class="queue-row" style="display:none">
     <div class="qbox">
       <div class="qtit">&#x26A1; SOLs esperando aprobaci&#xF3;n</div>
-      <div style="font-size:11px;color:#94a3b8;margin-bottom:8px;">Solicitudes de compra pendientes de revisi&#xF3;n gerencial</div>
       <div id="q-aut"></div>
     </div>
     <div class="qbox">
-      <div class="qtit">&#x1F4B8; OCs en proceso &middot; <span style="font-size:11px;color:#94a3b8;font-weight:400">Borrador → Recibida</span></div>
-      <div style="font-size:11px;color:#94a3b8;margin-bottom:8px;">&#xD3;rdenes aprobadas sin pago ejecutado</div>
+      <div class="qtit">&#x1F4B8; OCs en proceso</div>
       <div id="q-pag"></div>
     </div>
   </div>
@@ -1219,7 +1220,7 @@ document.querySelectorAll('.tn').forEach(function(btn){
     this.classList.add('on');
     var pane = document.getElementById('pane-'+tab);
     if(pane) pane.classList.add('on');
-    if(tab==='dash') renderDash();
+    if(tab==='dash'){ renderDashHome2(); renderDash(); }
     else if(tab==='prov') renderProv();
     else if(tab==='solic') loadSolicitudes();
     else if(tab==='planta') loadPlanta();
@@ -1240,6 +1241,127 @@ document.querySelectorAll('.tn').forEach(function(btn){
 });
 
 // ─── Carga de datos ───────────────────────────────────────────────
+// Compras 2.0 · 21-may-2026 · Dashboard HOME dual por rol
+async function renderDashHome2(){
+  var cont = document.getElementById('dash-home-2');
+  if(!cont) return;
+  try{
+    var r = await fetch('/api/compras/dashboard-home');
+    if(!r.ok){ cont.innerHTML = ''; return; }
+    var d = await r.json();
+    // Actualizar badges en sub-tabs
+    var counts = d.counts || {};
+    function _setBadge(tabId, n){
+      var btn = document.getElementById('tn-'+tabId);
+      if(!btn) return;
+      // Limpiar badges previos
+      var b = btn.querySelector('.cx-tab-badge');
+      if(b) b.remove();
+      if(n > 0){
+        var span = document.createElement('span');
+        span.className = 'cx-tab-badge';
+        span.style.cssText = 'background:#dc2626;color:#fff;font-size:10px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:6px';
+        span.textContent = n;
+        btn.appendChild(span);
+      }
+    }
+    _setBadge('planta', counts.planta||0);
+    _setBadge('solic', counts.solic||0);
+    _setBadge('por-pagar', counts.por_pagar||0);
+    if(d.role === 'admin') _setBadge('influencer', counts.influencer||0);
+
+    var html = '';
+    if(d.role === 'admin'){
+      // VISTA ADMIN · Panel ejecutivo + Influencers prominente
+      var k = d.kpis || {};
+      var col = k.salud_color === 'verde' ? '#16a34a' : (k.salud_color === 'amarillo' ? '#ca8a04' : '#dc2626');
+      html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">';
+      // Card izq · Salud Compras
+      html += '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:16px">'+
+        '<div style="font-weight:800;font-size:14px;color:#0f172a;margin-bottom:10px">📊 Salud Compras <span style="background:'+col+';color:#fff;padding:2px 10px;border-radius:10px;font-size:12px;margin-left:6px">'+k.salud_score+'/100</span></div>'+
+        '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;font-size:12px">'+
+          '<div style="background:#f8fafc;padding:8px 10px;border-radius:6px"><div style="color:#64748b;font-size:10px">SOLs sin tocar</div><div style="font-size:1.4em;font-weight:800;color:'+((k.sols_sin_tocar_3d||0)>0?'#dc2626':'#16a34a')+'">'+(k.sols_sin_tocar_3d||0)+'</div><div style="font-size:9px;color:#94a3b8">>3 días</div></div>'+
+          '<div style="background:#f8fafc;padding:8px 10px;border-radius:6px"><div style="color:#64748b;font-size:10px">OCs sin autorizar</div><div style="font-size:1.4em;font-weight:800;color:'+((k.ocs_sin_autorizar_5d||0)>0?'#ca8a04':'#16a34a')+'">'+(k.ocs_sin_autorizar_5d||0)+'</div><div style="font-size:9px;color:#94a3b8">>5 días</div></div>'+
+          '<div style="background:#f8fafc;padding:8px 10px;border-radius:6px"><div style="color:#64748b;font-size:10px">Catalina hoy</div><div style="font-size:1.4em;font-weight:800;color:#0e7490">'+(d.buzon_recientes||[]).length+'</div><div style="font-size:9px;color:#94a3b8">SOLs nuevas 48h</div></div>'+
+          '<div style="background:#f8fafc;padding:8px 10px;border-radius:6px"><div style="color:#64748b;font-size:10px">OCs viejas (>10d)</div><div style="font-size:1.4em;font-weight:800;color:#dc2626">'+(d.alertas_ocs_viejas||[]).length+'</div><div style="font-size:9px;color:#94a3b8">revisar</div></div>'+
+        '</div>'+
+        // Top proveedores 30d
+        '<div style="margin-top:12px;font-size:11px;color:#475569">'+
+          '<b>Top proveedores 30d:</b><br>'+
+          ((d.top_proveedores_30d||[]).map(function(p){
+            return '<span style="background:#f1f5f9;padding:3px 8px;border-radius:8px;margin:2px 3px 0 0;display:inline-block">'+_esc(p.proveedor)+' · $'+fmt(p.monto.toFixed(0))+'</span>';
+          }).join('') || '<span style="color:#cbd5e1">sin datos</span>')+
+        '</div>'+
+      '</div>';
+      // Card der · Influencers prominente
+      var inflTot = (d.influencers_monto_total || 0);
+      var inflList = d.influencers_pendientes || [];
+      html += '<div style="background:linear-gradient(135deg,#fdf2f8,#fce7f3);border:2px solid #db2777;border-radius:10px;padding:16px">'+
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><div style="font-weight:800;font-size:14px;color:#9f1239">💸 Influencers (privado · solo tú)</div>'+
+        '<a href="/admin/influencers" style="font-size:11px;color:#9f1239;font-weight:700">Ver todos →</a></div>'+
+        '<div style="background:#fff;padding:10px 12px;border-radius:8px;margin-bottom:10px"><div style="font-size:10px;color:#9f1239">Por pagar</div><div style="font-size:1.8em;font-weight:800;color:#be185d">$'+fmt(inflTot.toFixed(0))+'</div><div style="font-size:11px;color:#9f1239">'+inflList.length+' pendiente(s)</div></div>';
+      if(inflList.length){
+        html += '<div style="font-size:11px;color:#9f1239;max-height:160px;overflow-y:auto">';
+        inflList.slice(0,5).forEach(function(it){
+          html += '<div style="background:#fff;padding:6px 8px;border-radius:5px;margin-bottom:4px;display:flex;justify-content:space-between"><div><b>'+_esc(it.solicitante||'?')+'</b><br><span style="color:#94a3b8;font-size:10px">'+_esc(it.concepto||'')+'</span></div><div style="text-align:right"><b style="color:#be185d">$'+fmt(it.monto.toFixed(0))+'</b><br><a href="/admin/influencers" style="font-size:9px;color:#0e7490">marcar pagado</a></div></div>';
+        });
+        html += '</div>';
+      }
+      html += '</div>';
+      html += '</div>';
+    } else {
+      // VISTA CATALINA · Buzón de pedidos priorizado
+      html += '<div style="background:linear-gradient(135deg,#ecfdf5,#dcfce7);border:1px solid #16a34a;border-radius:10px;padding:16px;margin-bottom:14px">'+
+        '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">'+
+          '<div><h2 style="margin:0;color:#166534;font-size:18px">📥 Tu buzón de hoy</h2><div style="font-size:12px;color:#15803d;margin-top:2px">SOLs nuevas que requieren acción</div></div>'+
+          '<div style="text-align:right"><div style="font-size:2em;font-weight:800;color:#166534">'+((counts.planta||0) + (counts.solic||0))+'</div><div style="font-size:11px;color:#15803d">total pendientes</div></div>'+
+        '</div></div>';
+      // Cards de las 2 fuentes
+      html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px">';
+      html += '<div onclick="document.querySelector(\\'[data-tab=planta]\\').click()" style="background:#fff;border:1px solid #0e7490;border-radius:10px;padding:14px;cursor:pointer;transition:transform .15s" onmouseover="this.style.transform=\\'translateY(-2px)\\'" onmouseout="this.style.transform=\\'\\'">'+
+        '<div style="font-size:11px;color:#0e7490;font-weight:700;text-transform:uppercase">🏭 Planta</div>'+
+        '<div style="font-size:2.4em;font-weight:800;color:#0e7490;line-height:1">'+(counts.planta||0)+'</div>'+
+        '<div style="font-size:11px;color:#64748b;margin-top:4px">MP+Empaque pendientes · agrupar por proveedor</div>'+
+      '</div>';
+      html += '<div onclick="document.querySelector(\\'[data-tab=solic]\\').click()" style="background:#fff;border:1px solid #475569;border-radius:10px;padding:14px;cursor:pointer;transition:transform .15s" onmouseover="this.style.transform=\\'translateY(-2px)\\'" onmouseout="this.style.transform=\\'\\'">'+
+        '<div style="font-size:11px;color:#475569;font-weight:700;text-transform:uppercase">📋 Solicitudes</div>'+
+        '<div style="font-size:2.4em;font-weight:800;color:#475569;line-height:1">'+(counts.solic||0)+'</div>'+
+        '<div style="font-size:11px;color:#64748b;margin-top:4px">Generales (papelería, EPP, servicios)</div>'+
+      '</div>';
+      html += '<div onclick="document.querySelector(\\'[data-tab=por-pagar]\\').click()" style="background:#fff;border:1px solid #ca8a04;border-radius:10px;padding:14px;cursor:pointer;transition:transform .15s" onmouseover="this.style.transform=\\'translateY(-2px)\\'" onmouseout="this.style.transform=\\'\\'">'+
+        '<div style="font-size:11px;color:#ca8a04;font-weight:700;text-transform:uppercase">💰 Por pagar</div>'+
+        '<div style="font-size:2.4em;font-weight:800;color:#ca8a04;line-height:1">'+(counts.por_pagar||0)+'</div>'+
+        '<div style="font-size:11px;color:#64748b;margin-top:4px">OCs autorizadas sin pago</div>'+
+      '</div>';
+      html += '</div>';
+      // Lista de últimas SOLs entrantes
+      if((d.buzon_recientes||[]).length){
+        html += '<div style="margin-top:14px;background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:12px"><b style="color:#0f172a;font-size:13px">Últimas SOLs (48h):</b>';
+        html += '<div style="margin-top:8px;display:flex;flex-direction:column;gap:5px;font-size:12px">';
+        d.buzon_recientes.slice(0,5).forEach(function(s){
+          html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 8px;background:#f8fafc;border-radius:5px"><div><b style="font-family:monospace">'+_esc(s.numero)+'</b> · '+_esc(s.solicitante)+' <span style="color:#94a3b8;font-size:10px">('+_esc(s.categoria)+')</span></div><div style="font-weight:700;color:#0f172a">$'+fmt(s.valor.toFixed(0))+'</div></div>';
+        });
+        html += '</div></div>';
+      }
+    }
+
+    // Alertas críticas (ambos roles)
+    if((d.alertas_ocs_viejas||[]).length){
+      html += '<div style="margin-top:14px;background:#fef2f2;border:1px solid #dc2626;border-radius:10px;padding:12px"><b style="color:#991b1b;font-size:13px">🚨 OCs autorizadas hace >10 días sin recibirse</b>';
+      html += '<div style="margin-top:6px;font-size:12px">';
+      d.alertas_ocs_viejas.forEach(function(o){
+        html += '<div style="display:flex;justify-content:space-between;padding:4px 0;border-top:1px solid #fecaca"><span><b>'+_esc(o.numero_oc)+'</b> · '+_esc(o.proveedor)+' <span style="color:#94a3b8">'+_esc((o.fecha||'').substring(0,10))+'</span></span><b>$'+fmt(o.monto.toFixed(0))+'</b></div>';
+      });
+      html += '</div></div>';
+    }
+
+    cont.innerHTML = html;
+  }catch(e){
+    cont.innerHTML = '<div style="color:#dc2626;padding:14px">Error: '+_esc(e.message)+'</div>';
+  }
+}
+function _esc(s){return String(s||'').replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
+
 async function loadDashboardEjecutivo(){
   // Sprint Compras N3 · 21-may-2026
   var cont = document.getElementById('dashboard-ejecutivo');
