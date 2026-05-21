@@ -7895,6 +7895,217 @@ td{{padding:3px 6px;border-bottom:1px solid #e2e8f0}}
     return _Response(html, mimetype='text/html; charset=utf-8')
 
 
+@bp.route('/api/recepcion/ocr-etiqueta', methods=['POST'])
+def recepcion_ocr_etiqueta():
+    """OLA 4 IA · 20-may-2026 · OCR de etiqueta de MP recibida.
+
+    Body: {imagen_base64: str}  (foto de la etiqueta del proveedor)
+    Devuelve: {producto, lote, fecha_vencimiento, cantidad_kg,
+                proveedor} extraídos.
+
+    Usa Anthropic Claude Vision (claude-sonnet-4-6) · imagen JPEG/PNG
+    base64 hasta 5MB. Operario saca foto en mobile, sube, formulario
+    de recepción se llena solo.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    body = request.get_json(silent=True) or {}
+    b64 = (body.get('imagen_base64') or '').strip()
+    if not b64:
+        return jsonify({'error': 'imagen_base64 requerido'}), 400
+    # Quitar prefijo data:image/jpeg;base64,
+    if b64.startswith('data:'):
+        try:
+            b64 = b64.split(',', 1)[1]
+        except Exception:
+            return jsonify({'error': 'data URL inválido'}), 400
+    if len(b64) > 7_000_000:
+        return jsonify({'error': 'imagen muy grande (max ~5MB)'}), 413
+    media_type = 'image/jpeg' if body.get('tipo', 'jpeg').lower() in ('jpg','jpeg') else 'image/png'
+    import os, json as _json
+    api_key = os.environ.get('ANTHROPIC_API_KEY') or os.environ.get('CLAUDE_API_KEY')
+    if not api_key:
+        return jsonify({'error': 'ANTHROPIC_API_KEY no configurada',
+                        'codigo': 'NO_API_KEY'}), 503
+    system_prompt = (
+        "Sos un sistema OCR especializado en etiquetas de materias primas "
+        "cosméticas en español. Extraé del JPG/PNG los siguientes campos y "
+        "devolvelos como JSON puro sin texto adicional:\n"
+        '{\"producto_nombre\":\"\",\"nombre_inci\":\"\","'
+        '\"lote\":\"\",\"fecha_vencimiento\":\"YYYY-MM-DD o null\","'
+        '\"cantidad_kg\":0,\"proveedor\":\"\",\"confianza_pct\":85}\n'
+        "Si un campo no está visible, dejá string vacío o null. confianza_pct "
+        "(0-100) es tu certeza global del OCR."
+    )
+    import urllib.request as _ureq, urllib.error as _uerr
+    try:
+        req = _ureq.Request(
+            'https://api.anthropic.com/v1/messages',
+            data=_json.dumps({
+                'model': 'claude-sonnet-4-6',
+                'max_tokens': 600,
+                'system': system_prompt,
+                'messages': [{
+                    'role': 'user',
+                    'content': [
+                        {'type': 'image', 'source': {
+                            'type': 'base64', 'media_type': media_type,
+                            'data': b64,
+                        }},
+                        {'type': 'text', 'text': 'Extraé los campos del JSON.'},
+                    ],
+                }],
+            }).encode('utf-8'),
+            headers={
+                'x-api-key': api_key,
+                'anthropic-version': '2023-06-01',
+                'content-type': 'application/json',
+            },
+            method='POST',
+        )
+        with _ureq.urlopen(req, timeout=60) as resp:
+            data = _json.loads(resp.read().decode('utf-8'))
+        txt = ''
+        for block in (data.get('content') or []):
+            if block.get('type') == 'text':
+                txt += block.get('text', '')
+        txt = (txt or '').strip()
+        if txt.startswith('```'):
+            txt = txt.split('```')[1]
+            if txt.startswith('json'):
+                txt = txt[4:].strip()
+        try:
+            parsed = _json.loads(txt)
+        except Exception:
+            return jsonify({'error': 'OCR devolvió JSON inválido',
+                            'raw': txt[:500]}), 502
+        conn = get_db(); c = conn.cursor()
+        try:
+            audit_log(c, usuario=user, accion='OCR_MP_ETIQUETA',
+                      tabla='_', registro_id='_',
+                      despues={'producto': parsed.get('producto_nombre',''),
+                               'lote': parsed.get('lote',''),
+                               'confianza': parsed.get('confianza_pct', 0)})
+            conn.commit()
+        except Exception:
+            pass
+        return jsonify({'ok': True, **parsed})
+    except _uerr.HTTPError as e:
+        return jsonify({'error': f'Anthropic HTTP {e.code}: {e.reason}'}), 502
+    except Exception as e:
+        return jsonify({'error': f'OCR falló: {e}'}), 500
+
+
+@bp.route('/api/planta/prediccion-demanda', methods=['GET'])
+def planta_prediccion_demanda():
+    """OLA 4 IA · 20-may-2026 · Predicción demanda por SKU.
+
+    Analiza últimos 90d de salidas + estacionalidad simple (mes año
+    anterior si hay datos) y pide a Claude predicción para próximos 30d.
+    Devuelve por producto: estimado_uds_30d, confianza, factores.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    conn = get_db(); c = conn.cursor()
+    # Histórico 90d por producto (de producciones completadas)
+    try:
+        rows = c.execute(
+            """SELECT producto, date(fecha_programada) as d,
+                      COALESCE(SUM(COALESCE(kg_real, cantidad_kg, 0)),0) as kg
+               FROM produccion_programada
+               WHERE LOWER(COALESCE(estado,''))='completado'
+                 AND fecha_programada >= date('now','-5 hours','-90 days')
+               GROUP BY producto, date(fecha_programada)
+               ORDER BY producto, d""",
+        ).fetchall()
+    except Exception:
+        rows = []
+    historia = {}
+    for r in rows:
+        historia.setdefault(r[0], []).append({'fecha': r[1], 'kg': float(r[2] or 0)})
+    if not historia:
+        return jsonify({'ok': True, 'fecha_calculo': None,
+                        'predicciones': [],
+                        'mensaje': 'Sin histórico de 90d para predecir'})
+    import os, json as _json
+    api_key = os.environ.get('ANTHROPIC_API_KEY') or os.environ.get('CLAUDE_API_KEY')
+    if not api_key:
+        # Sin API key · devolver predicción simple (promedio 30d × 1)
+        from datetime import date as _d
+        preds = []
+        for p, hist in historia.items():
+            kgs = [h['kg'] for h in hist]
+            if not kgs: continue
+            prom_dia = sum(kgs) / 90
+            preds.append({
+                'producto': p,
+                'estimado_kg_30d': round(prom_dia * 30, 1),
+                'confianza_pct': 60,
+                'metodo': 'promedio_simple',
+            })
+        return jsonify({'ok': True, 'fecha_calculo': _d.today().isoformat(),
+                        'predicciones': preds,
+                        'metodo': 'fallback_sin_ia'})
+    # Con IA · pasar top 10 productos
+    top = sorted(historia.items(), key=lambda x: -sum(h['kg'] for h in x[1]))[:10]
+    payload = {p: hist[-30:] for p, hist in top}  # últimos 30 puntos por producto
+    system_prompt = (
+        "Sos analista de demanda de productos cosméticos. Para cada producto, "
+        "analizá la serie histórica de kg/día y predecí los próximos 30 días. "
+        "Considerá tendencia + estacionalidad (si hay patrón). Devolvé JSON "
+        "puro:\n"
+        '{\"predicciones\":[{\"producto\":\"X\",\"estimado_kg_30d\":N,'
+        '\"confianza_pct\":N,\"factores\":\"texto\"}]}\n'
+    )
+    user_msg = (
+        f"HISTÓRICO (últimos 30 días/producto · kg producidos):\n"
+        f"{_json.dumps(payload, ensure_ascii=False, indent=1)}"
+    )
+    import urllib.request as _ureq, urllib.error as _uerr
+    try:
+        req = _ureq.Request(
+            'https://api.anthropic.com/v1/messages',
+            data=_json.dumps({
+                'model': 'claude-sonnet-4-6',
+                'max_tokens': 1500,
+                'system': system_prompt,
+                'messages': [{'role': 'user', 'content': user_msg}],
+            }).encode('utf-8'),
+            headers={
+                'x-api-key': api_key,
+                'anthropic-version': '2023-06-01',
+                'content-type': 'application/json',
+            },
+            method='POST',
+        )
+        with _ureq.urlopen(req, timeout=60) as resp:
+            data = _json.loads(resp.read().decode('utf-8'))
+        txt = ''
+        for b in (data.get('content') or []):
+            if b.get('type') == 'text':
+                txt += b.get('text', '')
+        txt = (txt or '').strip()
+        if txt.startswith('```'):
+            txt = txt.split('```')[1]
+            if txt.startswith('json'):
+                txt = txt[4:].strip()
+        try:
+            parsed = _json.loads(txt)
+        except Exception:
+            return jsonify({'error': 'Claude devolvió JSON inválido',
+                            'raw': txt[:500]}), 502
+        from datetime import date as _d
+        return jsonify({'ok': True, 'fecha_calculo': _d.today().isoformat(),
+                        'predicciones': parsed.get('predicciones', []),
+                        'metodo': 'claude_sonnet_4_6'})
+    except _uerr.HTTPError as e:
+        return jsonify({'error': f'Anthropic HTTP {e.code}: {e.reason}'}), 502
+    except Exception as e:
+        return jsonify({'error': f'Predicción falló: {e}'}), 500
+
+
 @bp.route('/api/planta/reasignar-ia', methods=['POST'])
 def planta_reasignar_ia():
     """OLA 3 IA · 20-may-2026 · re-asignación con Claude.

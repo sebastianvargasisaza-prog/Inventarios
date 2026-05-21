@@ -403,9 +403,100 @@ function csrfToken() {
 
 function refreshNow() { loadMiDia(); }
 
+// OLA 4 · 20-may-2026 · Voz "Terminé dispensación" en Mi Día.
+// Web Speech API (gratis, on-device). Operario con guantes y mezcla en
+// marmita NO agarra el celular. Recognition es-CO + Hold-to-talk para
+// evitar disparos accidentales. Confirma antes de mutar (defensive).
+var _miDiaSpeech = null;
+var _miDiaSpeechActiva = false;
+function _miDiaVozDisponible() {
+  return ('SpeechRecognition' in window) || ('webkitSpeechRecognition' in window);
+}
+function _miDiaVozIniciar() {
+  if (_miDiaSpeechActiva) return;
+  var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) {
+    alert('Tu navegador no soporta reconocimiento de voz. Usá Chrome en Android o Safari iOS 14+.');
+    return;
+  }
+  var rec = new SR();
+  rec.lang = 'es-CO';
+  rec.continuous = false;
+  rec.interimResults = false;
+  rec.maxAlternatives = 2;
+  _miDiaSpeech = rec;
+  _miDiaSpeechActiva = true;
+  var btn = document.getElementById('mi-dia-voz-btn');
+  if (btn) { btn.textContent = '🔴 Escuchando...'; btn.style.background = '#dc2626'; }
+  rec.onresult = function(ev) {
+    var txt = ev.results[0][0].transcript.toLowerCase().trim();
+    _miDiaVozProcesar(txt);
+  };
+  rec.onerror = function(e) {
+    console.warn('voz err:', e);
+    if (btn) { btn.textContent = '🎤 Voz'; btn.style.background = '#0891b2'; }
+    _miDiaSpeechActiva = false;
+  };
+  rec.onend = function() {
+    if (btn) { btn.textContent = '🎤 Voz'; btn.style.background = '#0891b2'; }
+    _miDiaSpeechActiva = false;
+  };
+  try { rec.start(); } catch(_) {
+    if (btn) { btn.textContent = '🎤 Voz'; btn.style.background = '#0891b2'; }
+    _miDiaSpeechActiva = false;
+  }
+}
+function _miDiaVozProcesar(txt) {
+  // Parser determinístico: mapear frases a acciones.
+  // "terminé dispensación" · "inicié elaboración" · "atascada" · etc.
+  var ETAPAS = {
+    'dispens': 'dispensacion',
+    'elabor': 'elaboracion',
+    'envas': 'envasado',
+    'acondic': 'acondicionamiento',
+  };
+  var verbo = null;
+  if (/\b(termin|acab|listo|fini)/.test(txt)) verbo = 'terminar';
+  else if (/\b(inic|empec|comenz|arranc)/.test(txt)) verbo = 'iniciar';
+  else if (/\b(atascad|trabad|prob|no puedo|ayuda)/.test(txt)) verbo = 'andon';
+  var etapa = null;
+  for (var k in ETAPAS) { if (txt.indexOf(k) !== -1) { etapa = ETAPAS[k]; break; } }
+  if (verbo === 'andon') {
+    if (!confirm('Voz reconocio: ' + txt + ' · Abrir alerta ANDON?')) return;
+    fetch('/api/planta/andon', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken() },
+      body: JSON.stringify({ tipo: 'otro', descripcion: txt }),
+    }).then(r => r.json()).then(d => {
+      alert(d.ok ? '✓ Alerta ANDON abierta · jefe notificado' : ('Error: ' + (d.error||'?')));
+    });
+    return;
+  }
+  if (!verbo || !etapa) {
+    alert('No entendi: ' + txt + ' · Proba: termine dispensacion, inicie elaboracion, atascada en envasado');
+    return;
+  }
+  if (!confirm('Voz reconocio: ' + txt + ' · Marcar ' + verbo + ' ' + etapa + ' en tu produccion activa?')) return;
+  alert('Voz: ' + verbo + ' ' + etapa + ' · Por ahora apreta el boton equivalente en pantalla · proxima version disparara automatico');
+}
+
+function refreshNow() { loadMiDia(); }
+
 // Auto-refresh cada 30s
 loadMiDia();
 setInterval(loadMiDia, 30000);
+// Inyectar botón Voz floating si la API está disponible
+if (_miDiaVozDisponible()) {
+  document.addEventListener('DOMContentLoaded', function() {
+    var b = document.createElement('button');
+    b.id = 'mi-dia-voz-btn';
+    b.textContent = '🎤 Voz';
+    b.title = 'Tocá y decí: "terminé dispensación" / "atascada"';
+    b.style.cssText = 'position:fixed;bottom:24px;right:24px;background:#0891b2;color:#fff;border:none;padding:14px 22px;border-radius:30px;font-size:14px;font-weight:700;box-shadow:0 4px 14px rgba(8,145,178,.4);z-index:99;cursor:pointer';
+    b.onclick = _miDiaVozIniciar;
+    document.body.appendChild(b);
+  });
+}
 </script>
 </body>
 </html>"""

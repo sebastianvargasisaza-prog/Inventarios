@@ -7310,6 +7310,30 @@ def test_golden_portal_b2b_flujo_completo(app, db_clean):
     _exec("DELETE FROM portal_clientes_credenciales WHERE email LIKE 'test_portal_%'")
 
 
+def test_golden_ola4_ocr_y_prediccion(app, db_clean):
+    """OLA 4 IA · OCR MP etiqueta + Predicción demanda · sin API key
+    en test env devuelven graceful 503 o fallback."""
+    cs = _login(app, 'sebastian')
+
+    # OCR sin imagen → 400
+    r1 = cs.post('/api/recepcion/ocr-etiqueta', json={}, headers=csrf_headers())
+    assert r1.status_code == 400
+
+    # OCR con imagen base64 fake · sin API key → 503
+    r2 = cs.post('/api/recepcion/ocr-etiqueta',
+                 json={'imagen_base64': 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII='},
+                 headers=csrf_headers())
+    assert r2.status_code in (200, 503, 502)
+
+    # Predicción · sin histórico devuelve mensaje · con histórico fallback
+    # simple sin API key
+    r3 = cs.get('/api/planta/prediccion-demanda')
+    assert r3.status_code == 200
+    d3 = r3.get_json()
+    assert d3.get('ok') is True
+    assert 'predicciones' in d3
+
+
 def test_golden_ola3_reasign_ia_y_cron_noche(app, db_clean):
     """OLA 3 · Reasign IA dry_run sin API key → 503 ·
     cron resumen ejecutivo callable directo."""
