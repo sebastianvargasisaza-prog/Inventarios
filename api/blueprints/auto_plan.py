@@ -7507,6 +7507,184 @@ def mi_dia():
 # OLA 2 Op Live · 20-may-2026 · Andon + Takt + IA quick wins
 # ────────────────────────────────────────────────────────────────────
 
+@bp.route('/api/asistente/operacion', methods=['POST'])
+def asistente_operacion():
+    """OLA 3 IA · 20-may-2026 · "Pregúntale a la planta".
+
+    Body: {pregunta: str, fecha?: YYYY-MM-DD}
+
+    Carga contexto auto del Centro de Mando (producciones hoy + salas
+    + equipo + andon abiertas) y consulta a Claude Sonnet 4.6. Respuesta
+    en lenguaje natural · acciones sugeridas opcionales.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    body = request.get_json(silent=True) or {}
+    pregunta = (body.get('pregunta') or '').strip()
+    if len(pregunta) < 3:
+        return jsonify({'error': 'pregunta requerida (≥3 chars)'}), 400
+    import os, json as _json
+    api_key = os.environ.get('ANTHROPIC_API_KEY') or os.environ.get('CLAUDE_API_KEY')
+    if not api_key:
+        return jsonify({
+            'error': 'ANTHROPIC_API_KEY no configurada · pedile a Sebastián que la setee en Render',
+            'codigo': 'NO_API_KEY',
+        }), 503
+
+    fecha = (body.get('fecha') or '').strip()
+    conn = get_db(); c = conn.cursor()
+    if not fecha:
+        try:
+            fecha = c.execute("SELECT date('now','-5 hours')").fetchone()[0]
+        except Exception:
+            from datetime import date as _d
+            fecha = _d.today().isoformat()
+
+    # ─── Cargar contexto ────────────────────────────────────────────
+    contexto = {'fecha': fecha, 'pregunta_user': user}
+    # 1. Producciones del día
+    try:
+        rows = c.execute(
+            """SELECT id, producto, COALESCE(cantidad_kg,0), estado,
+                       COALESCE(inicio_real_at,''), COALESCE(fin_real_at,''),
+                       COALESCE(operario_dispensacion_id,0),
+                       COALESCE(operario_elaboracion_id,0),
+                       COALESCE(operario_envasado_id,0),
+                       COALESCE(operario_acondicionamiento_id,0),
+                       COALESCE(granel_aprobado_at,'')
+               FROM produccion_programada
+               WHERE date(fecha_programada) = ?
+                 AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado')
+               ORDER BY id LIMIT 30""",
+            (fecha,),
+        ).fetchall()
+        contexto['producciones_hoy'] = [{
+            'id': r[0], 'producto': r[1], 'kg': r[2], 'estado': r[3],
+            'inicio_real': (r[4] or '')[:16].replace('T', ' '),
+            'fin_real': (r[5] or '')[:16].replace('T', ' '),
+            'granel_aprobado': bool(r[10]),
+        } for r in rows]
+    except Exception:
+        contexto['producciones_hoy'] = []
+    # 2. Salas
+    try:
+        salas = c.execute(
+            "SELECT codigo, estado FROM areas_planta "
+            "WHERE COALESCE(activo,1)=1 AND tipo='produccion' "
+            "ORDER BY codigo",
+        ).fetchall()
+        contexto['salas'] = [{'codigo': s[0], 'estado': s[1] or 'libre'} for s in salas]
+    except Exception:
+        contexto['salas'] = []
+    # 3. Andon abiertas
+    try:
+        ad = c.execute(
+            """SELECT tipo, operario, descripcion
+               FROM andon_alertas
+               WHERE estado IN ('abierta','en_atencion')
+               ORDER BY ts_abierta DESC LIMIT 10""",
+        ).fetchall()
+        contexto['andon_abiertas'] = [{
+            'tipo': a[0], 'operario': a[1], 'descripcion': (a[2] or '')[:200],
+        } for a in ad]
+    except Exception:
+        contexto['andon_abiertas'] = []
+    # 4. Stock crítico (top 5 más urgentes)
+    try:
+        sc = c.execute(
+            """SELECT mp.codigo_mp, mp.nombre_comercial, mp.stock_minimo,
+                       COALESCE(s.stock,0) as stock
+               FROM maestro_mps mp
+               LEFT JOIN (
+                  SELECT material_id, SUM(CASE WHEN tipo='Entrada' THEN cantidad
+                                                ELSE -cantidad END) as stock
+                  FROM movimientos GROUP BY material_id
+               ) s ON mp.codigo_mp = s.material_id
+               WHERE COALESCE(mp.activo,1)=1 AND COALESCE(mp.stock_minimo,0)>0
+                 AND COALESCE(s.stock,0) < COALESCE(mp.stock_minimo,0)
+               ORDER BY (CAST(COALESCE(s.stock,0) AS REAL) / mp.stock_minimo) ASC
+               LIMIT 5""",
+        ).fetchall()
+        contexto['stock_critico_top'] = [{
+            'codigo': r[0], 'nombre': r[1],
+            'minimo_g': r[2], 'actual_g': r[3],
+        } for r in sc]
+    except Exception:
+        contexto['stock_critico_top'] = []
+
+    # ─── Llamada Claude ────────────────────────────────────────────
+    system_prompt = (
+        "Sos el jefe de producción virtual de un laboratorio cosmético "
+        "colombiano (Espagiria + ÁNIMUS Lab). Respondés preguntas sobre el "
+        "estado live de la planta de forma BREVE y ACCIONABLE.\n\n"
+        "Tenés acceso a un snapshot de hoy: producciones programadas, "
+        "salas (libre/sucia/ocupada), alertas ANDON abiertas, MPs bajo "
+        "stock mínimo.\n\n"
+        "REGLAS:\n"
+        "- Respondé en español neutro · MAX 4 oraciones · directo\n"
+        "- Si la pregunta es sobre un operario · usá el nombre real del contexto\n"
+        "- Si hay datos faltantes · decilo en vez de inventar\n"
+        "- Si la pregunta requiere acción · sugerí el botón exacto que existe "
+        "(ej: 'Aprobar granel desde Centro de Mando · botón ✅ junto al lote')\n"
+        "- NO menciones la palabra 'IA' o 'modelo' · sos el jefe virtual\n"
+    )
+    user_msg = (
+        f"PREGUNTA: {pregunta}\n\n"
+        f"CONTEXTO LIVE PLANTA (fecha={fecha}):\n"
+        f"{_json.dumps(contexto, ensure_ascii=False, indent=1)}"
+    )
+    import urllib.request as _ureq, urllib.error as _uerr
+    try:
+        req = _ureq.Request(
+            'https://api.anthropic.com/v1/messages',
+            data=_json.dumps({
+                'model': 'claude-sonnet-4-6',
+                'max_tokens': 600,
+                'system': system_prompt,
+                'messages': [{'role': 'user', 'content': user_msg}],
+            }).encode('utf-8'),
+            headers={
+                'x-api-key': api_key,
+                'anthropic-version': '2023-06-01',
+                'content-type': 'application/json',
+            },
+            method='POST',
+        )
+        with _ureq.urlopen(req, timeout=30) as resp:
+            data = _json.loads(resp.read().decode('utf-8'))
+        respuesta = ''
+        for block in (data.get('content') or []):
+            if block.get('type') == 'text':
+                respuesta += block.get('text', '')
+        respuesta = (respuesta or '').strip()
+        try:
+            audit_log(c, usuario=user, accion='ASISTENTE_OPERACION_CONSULTA',
+                      tabla='asistente', registro_id='_',
+                      despues={'pregunta_chars': len(pregunta),
+                                'respuesta_chars': len(respuesta)})
+            conn.commit()
+        except Exception:
+            pass
+        return jsonify({
+            'ok': True,
+            'respuesta': respuesta or '(sin respuesta · reintentá)',
+            'contexto_usado': {
+                'producciones_hoy': len(contexto['producciones_hoy']),
+                'salas': len(contexto['salas']),
+                'andon_abiertas': len(contexto['andon_abiertas']),
+                'stock_critico_top': len(contexto['stock_critico_top']),
+            },
+        })
+    except _uerr.HTTPError as e:
+        return jsonify({
+            'error': f'Anthropic API HTTP {e.code}: {e.reason}',
+            'codigo': 'HTTP_ERR',
+        }), 502
+    except Exception as e:
+        return jsonify({'error': f'Asistente falló: {e}'}), 500
+
+
 @bp.route('/api/planta/andon', methods=['GET', 'POST'])
 def planta_andon():
     """OLA 2 · botón "Problema" en Mi Día · operario reporta sin WhatsApp.
