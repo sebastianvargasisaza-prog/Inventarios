@@ -847,6 +847,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:10px">
       <h2 style="margin:0">&#129514; Fórmulas Maestras de Producción</h2>
       <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <button onclick="auditarFormulasHuerfanas()" style="background:#9a3412;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer" title="Detecta y repara material_id huérfanos en TODAS las fórmulas (post-unificación)">🔧 Huérfanos</button>
         <button onclick="abrirBasesFormulas()" style="background:#0e7490;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer" title="Ver distribución de bases · normalizar a un valor común (admin)">📊 Bases</button>
         <button onclick="abrirImportExcelFormulas()" style="background:#7c3aed;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer" title="Subir XLSX/CSV de Alejandro · la app crea fórmulas automáticamente">📤 Import Excel</button>
         <button onclick="window.open('/api/formulas/export-excel','_blank')" style="background:#217346;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">📄 Export</button>
@@ -5911,6 +5912,61 @@ function _showStockInsuficientePopup(producto, cantidad_kg, faltantes){
   modal.addEventListener('click', function(e){
     if(e.target === modal) modal.remove();
   });
+}
+
+async function auditarFormulasHuerfanas(){
+  try{
+    var r = await fetch('/api/produccion/auditar-formulas-huerfanas');
+    var d = await r.json();
+    if(!r.ok){ alert('Error: '+(d.error||r.status)); return; }
+    var prods = d.productos || [];
+    if(!prods.length){
+      alert('✓ Sin codigo_mp huérfanos detectados · todas las fórmulas OK');
+      return;
+    }
+    var existe = document.getElementById('modal-huerf');
+    if(existe) existe.remove();
+    var div = document.createElement('div');
+    div.id = 'modal-huerf';
+    div.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9998;display:flex;align-items:center;justify-content:center;padding:20px';
+    var html = '<div style="background:#fff;border-radius:14px;padding:24px;max-width:960px;width:100%;max-height:90vh;overflow-y:auto">';
+    html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><h3 style="margin:0;color:#9a3412">🔧 Auditoría fórmulas con codigo_mp huérfanos</h3>';
+    html += '<button id="huerf-close" style="background:none;border:none;font-size:1.4em;cursor:pointer">×</button></div>';
+    html += '<div style="background:#fef3c7;color:#78350f;padding:12px;border-radius:8px;margin-bottom:14px;font-weight:700">⚠ '+(d.total_huerfanos||0)+' codigo_mp huérfanos en '+(d.productos_afectados_count||0)+' fórmula(s)</div>';
+    html += '<table class="table" style="font-size:12px"><thead><tr><th>Producto</th><th>Huérfano</th><th>Reemplazo sugerido</th><th style="text-align:right">Stock g</th></tr></thead><tbody>';
+    prods.forEach(function(p){
+      p.cambios.forEach(function(ch, i){
+        html += '<tr>';
+        html += '<td>' + (i===0 ? '<b>'+_escHTML(p.producto)+'</b>' : '') + '</td>';
+        html += '<td style="font-family:monospace;color:#dc2626">'+_escHTML(ch.huerfano.codigo)+' · '+_escHTML(ch.huerfano.nombre)+'</td>';
+        html += '<td style="font-family:monospace;color:#16a34a;font-weight:700">'+_escHTML(ch.reemplazo.codigo)+' · '+_escHTML(ch.reemplazo.nombre)+'</td>';
+        html += '<td style="text-align:right;font-weight:700">'+Number(ch.reemplazo.stock_g).toLocaleString()+'</td>';
+        html += '</tr>';
+      });
+    });
+    html += '</tbody></table>';
+    html += '<div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end">';
+    html += '<button id="huerf-aplicar" style="background:#9a3412;color:#fff;padding:10px 20px;border:none;border-radius:6px;font-weight:700;cursor:pointer">🔧 Aplicar TODAS las correcciones</button>';
+    html += '</div></div>';
+    div.innerHTML = html;
+    document.body.appendChild(div);
+    document.getElementById('huerf-close').onclick = function(){ var m = document.getElementById('modal-huerf'); if(m) m.remove(); };
+    div.addEventListener('click', function(e){ if(e.target === div){ var m = document.getElementById('modal-huerf'); if(m) m.remove(); } });
+    document.getElementById('huerf-aplicar').onclick = async function(){
+      if(!confirm('Aplicar '+(d.total_huerfanos||0)+' correcciones masivamente?\\n\\nLos % NO se tocan · solo los material_id huérfanos se reemplazan por los candidatos con stock real.')) return;
+      try{
+        var ra = await fetch('/api/produccion/auto-reparar-todas', {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({dry_run: false}),
+        });
+        var da = await ra.json();
+        if(!ra.ok){ alert('Error: '+(da.error||ra.status)); return; }
+        alert('✓ '+da.mensaje+' · ahora las producciones encontrarán los lotes correctos');
+        var m = document.getElementById('modal-huerf'); if(m) m.remove();
+        if(typeof loadFormulas==='function') loadFormulas();
+      }catch(e){ alert('Error red: '+e.message); }
+    };
+  }catch(e){ alert('Error red: '+e.message); }
 }
 
 async function diagnosticarFormulaActual(){

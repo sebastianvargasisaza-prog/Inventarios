@@ -2308,6 +2308,149 @@ def produccion_detalle(pid):
     })
 
 
+@bp.route('/api/produccion/auditar-formulas-huerfanas', methods=['GET'])
+def produccion_auditar_formulas_huerfanas():
+    """Sprint Fabricación PRO · 21-may-2026.
+
+    Recorre TODAS las fórmulas y detecta material_id huérfanos
+    (sin stock FEFO disponible) que tienen UN candidato claro por
+    nombre similar (otro codigo_mp con stock).
+
+    Útil para reparar masivo post-unificación de duplicados.
+    Solo lectura (no aplica nada · dry-run global).
+    """
+    u, err, code = _require_session()
+    if err:
+        return err, code
+    conn = get_db(); c = conn.cursor()
+    rows = c.execute(
+        """SELECT producto_nombre, material_id, material_nombre
+           FROM formula_items
+           WHERE material_id IS NOT NULL AND material_id != ''
+           ORDER BY producto_nombre, material_id""",
+    ).fetchall()
+    formulas_afectadas = {}
+    for prod, mid, mnom in rows:
+        # ¿Stock FEFO usable?
+        try:
+            r = c.execute(
+                """SELECT COALESCE(SUM(stock_t),0) FROM (
+                     SELECT lote, SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) as stock_t
+                     FROM movimientos
+                     WHERE material_id=? AND lote IS NOT NULL AND lote!='' AND lote!='S/L'
+                       AND (estado_lote IS NULL OR estado_lote NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO'))
+                     GROUP BY lote HAVING stock_t > 0)""",
+                (mid,),
+            ).fetchone()
+            stock_fefo = float(r[0] or 0) if r else 0
+        except Exception:
+            stock_fefo = 0
+        if stock_fefo > 0:
+            continue  # OK
+        # Buscar candidato
+        nom_norm = (mnom or '').strip().lower()
+        if len(nom_norm) < 4:
+            continue
+        try:
+            cand = c.execute(
+                """SELECT mp.codigo_mp, mp.nombre_comercial,
+                          COALESCE(SUM(CASE WHEN m.tipo='Entrada' THEN m.cantidad ELSE -m.cantidad END), 0) as stock_act
+                   FROM maestro_mps mp
+                   LEFT JOIN movimientos m ON m.material_id = mp.codigo_mp
+                     AND (m.estado_lote IS NULL OR m.estado_lote NOT IN ('CUARENTENA','RECHAZADO'))
+                   WHERE COALESCE(mp.activo,1)=1
+                     AND mp.codigo_mp != ?
+                     AND (LOWER(COALESCE(mp.nombre_comercial,'')) LIKE ?
+                          OR LOWER(COALESCE(mp.nombre_inci,'')) LIKE ?)
+                   GROUP BY mp.codigo_mp, mp.nombre_comercial
+                   HAVING stock_act > 0
+                   ORDER BY stock_act DESC LIMIT 1""",
+                (mid, f'%{nom_norm[:30]}%', f'%{nom_norm[:30]}%'),
+            ).fetchone()
+        except Exception:
+            cand = None
+        if not cand:
+            continue
+        formulas_afectadas.setdefault(prod, []).append({
+            'huerfano': {'codigo': mid, 'nombre': mnom},
+            'reemplazo': {'codigo': cand[0], 'nombre': cand[1],
+                          'stock_g': float(cand[2] or 0)},
+        })
+    return jsonify({
+        'productos_afectados_count': len(formulas_afectadas),
+        'total_huerfanos': sum(len(v) for v in formulas_afectadas.values()),
+        'productos': [{'producto': k, 'cambios': v} for k, v in formulas_afectadas.items()],
+        'mensaje': (
+            f'{len(formulas_afectadas)} fórmula(s) con codigo_mp huérfanos · '
+            f'{sum(len(v) for v in formulas_afectadas.values())} cambios sugeridos · '
+            'usar /api/produccion/auto-reparar-todas para aplicar masivo (admin).'
+        ),
+    })
+
+
+@bp.route('/api/produccion/auto-reparar-todas', methods=['POST'])
+def produccion_auto_reparar_todas():
+    """Sprint Fabricación PRO · 21-may-2026 · admin · aplica auto-reparar
+    a TODAS las fórmulas con codigo_mp huérfanos detectables.
+
+    Body: {dry_run: bool} · default true.
+    """
+    u, err, code = _require_session()
+    if err:
+        return err, code
+    if (u or '').strip().lower() not in {x.lower() for x in ADMIN_USERS}:
+        return jsonify({'error': 'solo admin'}), 403
+    body = request.get_json(silent=True) or {}
+    dry_run = body.get('dry_run', True) is True
+    # Re-usar la auditoría
+    import json as _json
+    from flask import url_for
+    # Llamamos al endpoint internamente para no duplicar lógica
+    audit_resp = produccion_auditar_formulas_huerfanas()
+    if hasattr(audit_resp, 'get_json'):
+        audit_data = audit_resp.get_json()
+    else:
+        audit_data = _json.loads(audit_resp[0].data) if isinstance(audit_resp, tuple) else {}
+    productos = audit_data.get('productos', [])
+    conn = get_db(); c = conn.cursor()
+    aplicados = []
+    if not dry_run:
+        for p_info in productos:
+            prod = p_info['producto']
+            for ch in p_info['cambios']:
+                try:
+                    c.execute(
+                        "UPDATE formula_items SET material_id=?, material_nombre=? "
+                        "WHERE producto_nombre=? AND material_id=?",
+                        (ch['reemplazo']['codigo'], ch['reemplazo']['nombre'],
+                         prod, ch['huerfano']['codigo']),
+                    )
+                    aplicados.append({
+                        'producto': prod,
+                        'huerfano': ch['huerfano']['codigo'],
+                        'reemplazo': ch['reemplazo']['codigo'],
+                    })
+                except Exception:
+                    continue
+        try:
+            audit_log(c, usuario=u, accion='AUTO_REPARAR_FORMULAS_BULK',
+                      tabla='formula_items', registro_id='_BULK_',
+                      despues={'aplicados': len(aplicados)})
+        except Exception:
+            pass
+        conn.commit()
+    return jsonify({
+        'dry_run': dry_run,
+        'productos_con_cambios': len(productos),
+        'cambios_totales': audit_data.get('total_huerfanos', 0),
+        'aplicados': aplicados,
+        'mensaje': (
+            f'{audit_data.get("total_huerfanos",0)} cambio(s) propuestos en {len(productos)} fórmula(s)'
+            if dry_run else f'{len(aplicados)} cambio(s) aplicado(s)'
+        ),
+    })
+
+
 @bp.route('/api/produccion/auto-reparar-formula/<path:producto>', methods=['POST'])
 def produccion_auto_reparar_formula(producto):
     """Sprint Fabricación PRO · 20-may-2026.
