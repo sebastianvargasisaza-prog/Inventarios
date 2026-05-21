@@ -883,8 +883,10 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
   </div>
 
   <div id="produccion" class="tab-content">
-    <h2>&#127981; Registrar Produccion</h2>
-    <p style="color:#666;margin-bottom:16px;">Si el producto tiene formula maestra, las MPs se descuentan automaticamente del inventario al registrar.</p>
+    <h2>&#127981; Registrar Producción</h2>
+    <p style="color:#666;margin-bottom:16px;">Si el producto tiene fórmula maestra, las MPs se descuentan automáticamente del inventario al registrar.</p>
+    <!-- Sprint Fabricación PRO 20-may-2026: banner "Pendientes hoy" según programación -->
+    <div id="fab-pendientes-banner" style="display:none;background:#fef3c7;border:1px solid #ca8a04;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:13px;color:#78350f"></div>
     <div class="form-group">
       <label>Producto (con formula maestra)</label>
       <select id="prod-sel" onchange="previewProd()">
@@ -3474,6 +3476,7 @@ function switchTab(n,btn){
   if(btn) btn.classList.add('active');
   if(n==='stock') loadStock();
   if(n==='formulas'||n==='produccion') loadFormulas();
+  if(n==='produccion'){ if(typeof cargarPendientesFab==='function') cargarPendientesFab(); if(typeof cargarHistProd==='function') cargarHistProd(); }
   if(n==='cuarentena') cargarCuarentena();
   if(n==='ingreso') initIngreso();
   if(n==='abc') loadABC();
@@ -5857,12 +5860,63 @@ function _showStockInsuficientePopup(producto, cantidad_kg, faltantes){
   });
 }
 
+async function cargarPendientesFab(){
+  var banner = document.getElementById('fab-pendientes-banner');
+  if(!banner) return;
+  try{
+    var r = await fetch('/api/produccion/pendientes-hoy');
+    if(!r.ok){ banner.style.display='none'; return; }
+    var d = await r.json();
+    var items = d.items || [];
+    if(!items.length){ banner.style.display='none'; return; }
+    banner.style.display = 'block';
+    var html = '<b style="font-size:14px">📋 Pendientes hoy según Programación · ' + items.length + ' lote(s)</b><div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:6px">';
+    items.forEach(function(p){
+      html += '<button data-fab-pend-prod="'+_escHTML(p.producto)+'" data-fab-pend-kg="'+p.kg+'" style="background:#fff;border:1px solid #ca8a04;color:#78350f;padding:4px 10px;border-radius:5px;font-size:11px;cursor:pointer">▶ '+_escHTML(p.producto)+' · '+p.kg+'kg</button>';
+    });
+    html += '</div>';
+    banner.innerHTML = html;
+  }catch(_){ banner.style.display='none'; }
+}
+if(typeof document !== 'undefined' && !window._FAB_PEND_DELEG){
+  window._FAB_PEND_DELEG = true;
+  document.addEventListener('click', function(ev){
+    var b = ev.target && ev.target.closest && ev.target.closest('[data-fab-pend-prod]');
+    if(!b) return;
+    var prod = b.getAttribute('data-fab-pend-prod') || '';
+    var kg = b.getAttribute('data-fab-pend-kg') || '';
+    var sel = document.getElementById('prod-sel');
+    var inp = document.getElementById('prod-kg');
+    if(sel){
+      // si el producto está en select, seleccionarlo
+      var found = false;
+      Array.from(sel.options).forEach(function(o){ if(o.value === prod){ sel.value = prod; found = true; } });
+      if(!found){ var pm = document.getElementById('prod-manual'); if(pm) pm.value = prod; }
+    }
+    if(inp) inp.value = kg;
+    if(typeof previewProd === 'function') previewProd();
+    var pmsg = document.getElementById('prod-msg');
+    if(pmsg) pmsg.innerHTML = '<div style="background:#dbeafe;color:#1e40af;padding:8px 12px;border-radius:6px;font-size:12px">📋 Pre-cargado de Programación: '+_escHTML(prod)+' · '+kg+'kg · Revisá y apretá ▶ Registrar Producción</div>';
+  });
+}
+
 async function iniciarRegistroProd(){
+  var msgEl = document.getElementById('prod-msg');
   var prod=document.getElementById('prod-sel').value||document.getElementById('prod-manual').value;
   var kg=parseFloat(document.getElementById('prod-kg').value);
-  if(!prod||!kg||kg<=0){document.getElementById('prod-msg').innerHTML='<span style="color:red;">Completa producto y cantidad</span>';return;}
+  if(!prod){
+    if(msgEl) msgEl.innerHTML = '<div style="background:#fee2e2;color:#991b1b;padding:8px 12px;border-radius:6px;font-size:12px">❌ Seleccioná un producto (con fórmula) o escribí uno manual</div>';
+    return;
+  }
+  if(!kg || kg<=0){
+    if(msgEl) msgEl.innerHTML = '<div style="background:#fee2e2;color:#991b1b;padding:8px 12px;border-radius:6px;font-size:12px">❌ Ingresá cantidad en kg (mayor a 0)</div>';
+    return;
+  }
   var obs=document.getElementById('prod-obs').value;
   var pres=document.getElementById('prod-presentacion').value;
+  if(!pres || !pres.trim()){
+    if(!confirm('⚠ Sin presentación · los rótulos saldrán incompletos. ¿Continuar sin presentación?')) return;
+  }
   try{
     var _csrf2 = (typeof csrfTokenNec === 'function') ? csrfTokenNec() : (window._csrfTok || '');
     var r=await fetch('/api/produccion',{method:'POST',credentials:'same-origin',

@@ -2104,6 +2104,33 @@ def handle_produccion():
     })
 
 
+@bp.route('/api/produccion/pendientes-hoy', methods=['GET'])
+def produccion_pendientes_hoy():
+    """Sprint Fabricación PRO · 20-may-2026 · banner "Pendientes hoy".
+
+    Lista producciones programadas para HOY que aún no se iniciaron ni
+    completaron · sirve para que Luis Enrique/Mayerlin sepan qué falta
+    al abrir la pestaña Fabricación.
+    """
+    u, err, code = _require_session()
+    if err:
+        return err, code
+    conn = get_db(); c = conn.cursor()
+    try:
+        rows = c.execute(
+            """SELECT id, producto, COALESCE(cantidad_kg, 0)
+               FROM produccion_programada
+               WHERE date(fecha_programada) = date('now','-5 hours')
+                 AND COALESCE(estado, 'programado') NOT IN ('cancelado', 'completado')
+                 AND inicio_real_at IS NULL
+               ORDER BY id LIMIT 20""",
+        ).fetchall()
+    except Exception:
+        rows = []
+    items = [{'id': r[0], 'producto': r[1], 'kg': float(r[2] or 0)} for r in rows]
+    return jsonify({'items': items, 'count': len(items)})
+
+
 @bp.route('/api/produccion/<int:pid>/detalle', methods=['GET'])
 def produccion_detalle(pid):
     """Sprint Fabricación PRO · detalle completo de una producción para
