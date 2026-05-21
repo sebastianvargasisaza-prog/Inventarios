@@ -7310,6 +7310,110 @@ def test_golden_portal_b2b_flujo_completo(app, db_clean):
     _exec("DELETE FROM portal_clientes_credenciales WHERE email LIKE 'test_portal_%'")
 
 
+def test_golden_ola1_gates_invima_op_live(app, db_clean):
+    """OLA 1 Operación Live · 20-may-2026 · Sebastián.
+
+    Cubre los 3 gates INVIMA críticos:
+    1. Gate sala sucia en /iniciar (BUG-5)
+    2. Gate QC release granel para envasado
+    3. Checklist despeje de línea firmado
+    """
+    _exec("DELETE FROM produccion_programada WHERE producto LIKE 'TEST_OLA1%'")
+    _exec("DELETE FROM areas_planta WHERE codigo='TEST_OLA1_SALA'")
+    _exec("DELETE FROM despeje_linea_checklist WHERE area_codigo='TEST_OLA1_SALA'")
+
+    # Sala sucia
+    sala_id = _exec("""INSERT INTO areas_planta
+                       (codigo, nombre, tipo, estado, activo)
+                       VALUES ('TEST_OLA1_SALA','Test Sala OLA1','produccion','sucia',1)""")
+
+    # Producción en esa sala
+    pid = _exec("""INSERT INTO produccion_programada
+                   (producto, fecha_programada, lotes, cantidad_kg, estado,
+                    origen, area_id, etapa_elab_fin_at)
+                   VALUES ('TEST_OLA1_PROD', date('now','-5 hours'), 1, 5,
+                           'pendiente', 'eos_plan', ?, NULL)""",
+                  (sala_id,))
+
+    cs = _login(app, 'sebastian')
+
+    # GATE 1 · sala sucia bloquea /iniciar
+    r = cs.post(f'/api/programacion/programar/{pid}/iniciar',
+                json={}, headers=csrf_headers())
+    assert r.status_code == 409, f'BUG-5: esperaba 409 sala sucia, fue {r.status_code}'
+    d = r.get_json()
+    assert d.get('codigo') == 'SALA_SUCIA'
+
+    # Marcar limpia (con despeje firmado)
+    r_lim = cs.post(f'/api/planta/areas/{sala_id}/marcar-limpia-con-despeje',
+                    json={'item1': True, 'item2': True, 'item3': True,
+                          'item4': True, 'item5': True,
+                          'observaciones': 'test ola1'},
+                    headers=csrf_headers())
+    assert r_lim.status_code == 200
+    # Verificar checklist guardado
+    chk = _query(
+        "SELECT COUNT(*) FROM despeje_linea_checklist WHERE area_codigo='TEST_OLA1_SALA'")
+    assert chk[0][0] == 1
+
+    # Despeje incompleto → 400
+    r_no = cs.post(f'/api/planta/areas/{sala_id}/marcar-limpia-con-despeje',
+                   json={'item1': True, 'item2': False, 'item3': True,
+                         'item4': True, 'item5': True},
+                   headers=csrf_headers())
+    assert r_no.status_code == 400
+    assert r_no.get_json().get('codigo') == 'DESPEJE_INCOMPLETO'
+
+    # GATE 2 · envasado sin granel aprobado bloquea
+    # Simular que dispensación + elaboración terminaron
+    _exec("""UPDATE produccion_programada
+             SET etapa_disp_inicio_at=datetime('now','-5 hours','-2 hours'),
+                 etapa_disp_fin_at=datetime('now','-5 hours','-90 minutes'),
+                 etapa_elab_inicio_at=datetime('now','-5 hours','-90 minutes'),
+                 etapa_elab_fin_at=datetime('now','-5 hours','-30 minutes')
+             WHERE id=?""", (pid,))
+    r_env_no = cs.post(f'/api/planta/tablero-kanban/{pid}/etapa/envasado/iniciar',
+                        headers=csrf_headers())
+    assert r_env_no.status_code == 409
+    assert r_env_no.get_json().get('codigo') == 'GRANEL_NO_APROBADO'
+
+    # Aprobar granel (admin = sebastian)
+    r_apr = cs.post(f'/api/planta/produccion/{pid}/granel-aprobar',
+                    json={'motivo': 'pH OK, viscosidad OK, apariencia OK'},
+                    headers=csrf_headers())
+    assert r_apr.status_code == 200, f'BUG: {r_apr.status_code} {r_apr.data[:200]}'
+
+    # Idempotencia: 2da llamada
+    r_apr2 = cs.post(f'/api/planta/produccion/{pid}/granel-aprobar',
+                      json={}, headers=csrf_headers())
+    assert r_apr2.status_code == 200
+    assert r_apr2.get_json().get('ya_aprobado') is True
+
+    # Audit_log
+    audit = _query(
+        "SELECT COUNT(*) FROM audit_log WHERE accion IN ('GRANEL_APROBAR_QC','DESPEJE_LINEA_FIRMADO')")
+    assert audit[0][0] >= 2
+
+    # Cleanup
+    _exec("DELETE FROM produccion_programada WHERE id=?", (pid,))
+    _exec("DELETE FROM areas_planta WHERE id=?", (sala_id,))
+    _exec("DELETE FROM despeje_linea_checklist WHERE area_codigo='TEST_OLA1_SALA'")
+
+
+def test_golden_ola1_bug8_permisos_estado_sala(app, db_clean):
+    """OLA 1 · BUG-8 · solo PLANTA_USERS|ADMIN pueden tocar estado de sala."""
+    _exec("DELETE FROM areas_planta WHERE codigo='TEST_BUG8'")
+    sala = _exec("""INSERT INTO areas_planta (codigo, nombre, tipo, estado, activo)
+                    VALUES ('TEST_BUG8','Test BUG8','produccion','libre',1)""")
+    # Mayerlin (PLANTA_USERS) sí puede
+    cs_planta = _login(app, 'mayerlin')
+    r_ok = cs_planta.patch(f'/api/planta/areas/{sala}/estado',
+                            json={'estado': 'sucia'}, headers=csrf_headers())
+    assert r_ok.status_code == 200, f'BUG: planta debería poder · {r_ok.status_code}'
+
+    _exec("DELETE FROM areas_planta WHERE id=?", (sala,))
+
+
 def test_golden_mee_recalcular_stock_antidrift(app, db_clean):
     """Sprint Bodega MEE PRO · 20-may-2026.
 

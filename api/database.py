@@ -6433,6 +6433,30 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
            ('ESENCIA ILUMINADORA',                  'esencia', NULL, 60, 90, 30, 3.0, 3, NULL)""",
     ]),
 
+    (143, "OLA 1 Op Live · gates INVIMA (QC release + despeje línea) · 20-may-2026", [
+        # Gate QC release Elaboración → Envasado · Luis Enrique firma
+        # "granel aprobado" antes que Envasado pueda iniciar (hallazgo
+        # INVIMA esperando ocurrir · auditoría 20-may).
+        "ALTER TABLE produccion_programada ADD COLUMN granel_aprobado_at TEXT",
+        "ALTER TABLE produccion_programada ADD COLUMN granel_aprobado_por TEXT",
+        "ALTER TABLE produccion_programada ADD COLUMN granel_aprobado_motivo TEXT",
+        # Checklist despeje de línea (5 ítems BPM) · al marcar sala limpia
+        """CREATE TABLE IF NOT EXISTS despeje_linea_checklist (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            area_id INTEGER NOT NULL,
+            area_codigo TEXT NOT NULL,
+            marcado_por TEXT NOT NULL,
+            ts TEXT NOT NULL DEFAULT (datetime('now','utc')),
+            item1_sin_etiquetas INTEGER NOT NULL DEFAULT 0,
+            item2_sin_producto_suelto INTEGER NOT NULL DEFAULT 0,
+            item3_equipos_lavados INTEGER NOT NULL DEFAULT 0,
+            item4_registros_archivados INTEGER NOT NULL DEFAULT 0,
+            item5_sala_vacia INTEGER NOT NULL DEFAULT 0,
+            observaciones TEXT
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_despeje_area_ts ON despeje_linea_checklist(area_id, ts DESC)",
+    ]),
+
     (142, "Alertas silenciadas · Sprint Alertas PRO · Sebastián 20-may-2026", [
         # Permite "silenciar" una alerta puntual con motivo + expira_at
         # opcional. Si vence el silencio, vuelve a aparecer.

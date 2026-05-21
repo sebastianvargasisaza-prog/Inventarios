@@ -7503,6 +7503,158 @@ def mi_dia():
     })
 
 
+@bp.route('/api/planta/produccion/<int:pid>/granel-aprobar', methods=['POST'])
+def planta_granel_aprobar(pid):
+    """OLA 1 INVIMA · 20-may-2026 · Gate QC release Elab→Env.
+
+    Luis Enrique (CALIDAD_USERS) o admin firma "granel aprobado" después
+    de elaboración. Bloquea inicio de envasado si no se hace.
+
+    Body: {motivo?: str}
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    try:
+        from config import ADMIN_USERS, CALIDAD_USERS
+        permitidos = set(ADMIN_USERS) | set(CALIDAD_USERS)
+        if user not in permitidos:
+            return jsonify({
+                'error': 'Solo Calidad (Luis Enrique) o admin puede aprobar granel',
+            }), 403
+    except ImportError:
+        pass
+    body = request.get_json(silent=True) or {}
+    motivo = (body.get('motivo') or '').strip()
+    conn = get_db(); c = conn.cursor()
+    row = c.execute(
+        """SELECT producto, granel_aprobado_at, etapa_elab_fin_at
+           FROM produccion_programada WHERE id=?""", (pid,),
+    ).fetchone()
+    if not row:
+        return jsonify({'error': 'producción no existe'}), 404
+    if row[1]:
+        return jsonify({
+            'ok': True, 'ya_aprobado': True,
+            'granel_aprobado_at': row[1],
+        })
+    if not row[2]:
+        return jsonify({
+            'error': 'No se puede aprobar granel · etapa Elaboración no terminada',
+            'codigo': 'ELABORACION_PENDIENTE',
+        }), 409
+    c.execute(
+        """UPDATE produccion_programada
+           SET granel_aprobado_at = datetime('now','-5 hours'),
+               granel_aprobado_por = ?, granel_aprobado_motivo = ?
+           WHERE id=?""",
+        (user, motivo[:300], pid),
+    )
+    try:
+        audit_log(c, usuario=user, accion='GRANEL_APROBAR_QC',
+                  tabla='produccion_programada', registro_id=pid,
+                  despues={'producto': row[0], 'motivo': motivo[:200]})
+    except Exception:
+        pass
+    conn.commit()
+    # Notif al operario de envasado si está asignado
+    try:
+        op_env = c.execute(
+            """SELECT op.nombre FROM produccion_programada pp
+               LEFT JOIN operarios_planta op ON op.id = pp.operario_envasado_id
+               WHERE pp.id=?""", (pid,),
+        ).fetchone()
+        if op_env and op_env[0]:
+            try:
+                from blueprints.notif import push_notif as _push_notif
+                _push_notif(
+                    destinatario=op_env[0].lower(),
+                    tipo='granel_aprobado',
+                    titulo=f'✅ Granel aprobado · podés envasar',
+                    body=f'{row[0]} · aprobado por {user}',
+                    link='/planta/kanban',
+                    remitente=user, importante=True,
+                )
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return jsonify({'ok': True, 'mensaje': f'Granel aprobado para {row[0]}'})
+
+
+@bp.route('/api/planta/areas/<int:area_id>/marcar-limpia-con-despeje', methods=['POST'])
+def planta_marcar_limpia_con_despeje(area_id):
+    """OLA 1 INVIMA · 20-may-2026 · Checklist despeje de línea.
+
+    Para marcar una sala 'limpia' (libre) tras producción, exige checklist
+    firmado de 5 ítems BPM:
+      1. Sin etiquetas del lote anterior
+      2. Sin producto suelto
+      3. Equipos lavados
+      4. Registros archivados
+      5. Sala vacía
+
+    Body: {item1: bool, item2: bool, item3: bool, item4: bool, item5: bool,
+           observaciones?: str}
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    try:
+        from config import ADMIN_USERS, PLANTA_USERS
+        permitidos = set(ADMIN_USERS) | set(PLANTA_USERS)
+        if user not in permitidos:
+            return jsonify({'error': 'Solo planta/admin'}), 403
+    except ImportError:
+        pass
+    body = request.get_json(silent=True) or {}
+    items = [bool(body.get(f'item{i}')) for i in range(1, 6)]
+    if not all(items):
+        return jsonify({
+            'error': 'Los 5 ítems del despeje deben estar marcados ✓ antes de habilitar la sala',
+            'codigo': 'DESPEJE_INCOMPLETO',
+            'items_marcados': sum(items),
+        }), 400
+    obs = (body.get('observaciones') or '').strip()[:500]
+    conn = get_db(); c = conn.cursor()
+    area_row = c.execute(
+        "SELECT codigo, estado FROM areas_planta WHERE id=? AND activo=1",
+        (area_id,),
+    ).fetchone()
+    if not area_row:
+        return jsonify({'error': 'sala no existe'}), 404
+    area_codigo, estado_prev = area_row
+    # Insertar checklist
+    c.execute(
+        """INSERT INTO despeje_linea_checklist
+             (area_id, area_codigo, marcado_por,
+              item1_sin_etiquetas, item2_sin_producto_suelto,
+              item3_equipos_lavados, item4_registros_archivados,
+              item5_sala_vacia, observaciones)
+           VALUES (?, ?, ?, 1, 1, 1, 1, 1, ?)""",
+        (area_id, area_codigo, user, obs),
+    )
+    checklist_id = c.lastrowid
+    # Marcar sala libre
+    c.execute(
+        "UPDATE areas_planta SET estado='libre' WHERE id=? AND activo=1",
+        (area_id,),
+    )
+    try:
+        audit_log(c, usuario=user, accion='DESPEJE_LINEA_FIRMADO',
+                  tabla='despeje_linea_checklist', registro_id=checklist_id,
+                  despues={'area_codigo': area_codigo, 'estado_prev': estado_prev,
+                           'observaciones': obs[:200]})
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({
+        'ok': True, 'checklist_id': checklist_id,
+        'area_codigo': area_codigo, 'estado': 'libre',
+        'mensaje': f'Sala {area_codigo} liberada · despeje firmado por {user}',
+    })
+
+
 @bp.route('/api/planta/tablero-kanban', methods=['GET'])
 def tablero_kanban():
     """Kanban de Estaciones de Planta · Sebastián 19-may-2026.
@@ -7829,6 +7981,24 @@ def kanban_etapa_accion(pid, rol, accion):
                     'error': f'No podés iniciar {rol} hasta que termine {rol_prev}',
                     'codigo': 'etapa_anterior_pendiente',
                 }), 409
+        # GATE QC RELEASE · OLA 1 INVIMA · 20-may-2026.
+        # Elaboración → Envasado: requiere granel_aprobado por QC (Luis
+        # Enrique o admin). Hallazgo INVIMA esperando ocurrir.
+        if rol == 'envasado':
+            try:
+                qc_row = c.execute(
+                    "SELECT granel_aprobado_at, granel_aprobado_por "
+                    "FROM produccion_programada WHERE id=?", (pid,),
+                ).fetchone()
+                if not (qc_row and qc_row[0]):
+                    return jsonify({
+                        'error': 'GATE QC: granel sin aprobación. Luis Enrique '
+                                  '(QC) debe firmar "granel aprobado" antes de '
+                                  'envasar (BPM cosmético post-INVIMA).',
+                        'codigo': 'GRANEL_NO_APROBADO',
+                    }), 409
+            except Exception:
+                pass  # si la columna no existe (mig pendiente), no bloquea
         c.execute(
             f"UPDATE produccion_programada SET {col_ini} = datetime('now', '-5 hours') "
             f"WHERE id=? AND COALESCE({col_ini},'')=''",
