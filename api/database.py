@@ -6433,6 +6433,40 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
            ('ESENCIA ILUMINADORA',                  'esencia', NULL, 60, 90, 30, 3.0, 3, NULL)""",
     ]),
 
+    (144, "OLA 1 Op Live · multi-tenant + turnos_operario (decisiones FUTURO) · 20-may-2026", [
+        # tenant_id default 1 en las 15 tablas grandes · NO usar todavía,
+        # solo dejar listo para multi-planta / multi-cliente cuando llegue.
+        # Costo HOY: 1 migración trivial. Costo si se hace después: tocar
+        # 200+ queries (analizado por agente FUTURO 20-may).
+        "ALTER TABLE produccion_programada ADD COLUMN tenant_id INTEGER DEFAULT 1",
+        "ALTER TABLE movimientos ADD COLUMN tenant_id INTEGER DEFAULT 1",
+        "ALTER TABLE maestro_mps ADD COLUMN tenant_id INTEGER DEFAULT 1",
+        "ALTER TABLE maestro_mee ADD COLUMN tenant_id INTEGER DEFAULT 1",
+        "ALTER TABLE ordenes_compra ADD COLUMN tenant_id INTEGER DEFAULT 1",
+        "ALTER TABLE solicitudes_compra ADD COLUMN tenant_id INTEGER DEFAULT 1",
+        "ALTER TABLE pedidos_b2b ADD COLUMN tenant_id INTEGER DEFAULT 1",
+        "ALTER TABLE formula_headers ADD COLUMN tenant_id INTEGER DEFAULT 1",
+        "ALTER TABLE areas_planta ADD COLUMN tenant_id INTEGER DEFAULT 1",
+        "ALTER TABLE operarios_planta ADD COLUMN tenant_id INTEGER DEFAULT 1",
+        # turnos_operario · clock-in/clock-out · soporte nómina + 3 turnos.
+        # Empieza vacía · cuando llegue el segundo turno, todo listo.
+        """CREATE TABLE IF NOT EXISTS turnos_operario (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            operario_id INTEGER NOT NULL,
+            operario_nombre TEXT NOT NULL,
+            fecha TEXT NOT NULL,
+            turno TEXT NOT NULL DEFAULT 'unico',
+            inicio_at_utc TEXT,
+            fin_at_utc TEXT,
+            horas_extra_min INTEGER DEFAULT 0,
+            ausencia INTEGER DEFAULT 0,
+            motivo_ausencia TEXT,
+            tenant_id INTEGER DEFAULT 1
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_turnos_operario_fecha ON turnos_operario(fecha, operario_id)",
+        "CREATE INDEX IF NOT EXISTS idx_turnos_operario_op ON turnos_operario(operario_id, fecha DESC)",
+    ]),
+
     (143, "OLA 1 Op Live · gates INVIMA (QC release + despeje línea) · 20-may-2026", [
         # Gate QC release Elaboración → Envasado · Luis Enrique firma
         # "granel aprobado" antes que Envasado pueda iniciar (hallazgo
