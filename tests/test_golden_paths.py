@@ -7359,6 +7359,14 @@ def test_golden_sprint_final_acond_brd(app, db_clean):
     assert r4.status_code in (404, 500)
 
 
+def test_golden_planta_ordenes_servicio_page(app, db_clean):
+    """Gap #1 · UI Planta /planta/ordenes-servicio existe y devuelve HTML."""
+    cs = _login(app, 'sebastian')
+    r = cs.get('/planta/ordenes-servicio')
+    assert r.status_code == 200
+    assert b'Recibir' in r.data or b'Confirmar' in r.data
+
+
 def test_golden_ordenes_servicio(app, db_clean):
     """Órdenes de Servicio · 21-may-2026 · Sebastián.
     Flujo Catalina crea → estado transiciones → planta confirma."""

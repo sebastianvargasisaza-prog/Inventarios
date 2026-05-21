@@ -7426,6 +7426,136 @@ def ordenes_servicio_cambiar_estado(numero_os):
     })
 
 
+@bp.route('/planta/ordenes-servicio', methods=['GET'])
+def planta_ordenes_servicio_page():
+    """Sebastián 21-may-2026 · UI Planta · confirmar recepción de OS.
+
+    Página standalone donde planta_users ven OS estado 'Entregada' y
+    pueden marcarlas como Confirmadas (cierre del loop creado por Catalina).
+    """
+    if 'compras_user' not in session:
+        from flask import redirect as _r
+        return _r('/login?next=/planta/ordenes-servicio')
+    html = '''<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Recibir Órdenes de Servicio · Planta</title>
+<style>
+*{box-sizing:border-box;font-family:'Segoe UI',Roboto,sans-serif}
+body{margin:0;background:#f1f5f9;padding:18px;color:#0f172a}
+.wrap{max-width:900px;margin:0 auto;background:#fff;border-radius:12px;padding:24px;box-shadow:0 2px 10px rgba(0,0,0,.06)}
+h1{color:#0f766e;margin:0 0 6px}
+.subtitle{color:#64748b;font-size:13px;margin-bottom:18px}
+.banner{background:#fef3c7;border:1px solid #ca8a04;padding:10px 14px;border-radius:8px;font-size:12px;color:#78350f;margin-bottom:14px}
+.os-card{background:#fff;border:2px solid #16a34a;border-radius:10px;padding:14px;margin-bottom:12px}
+.os-head{display:flex;justify-content:space-between;align-items:start;flex-wrap:wrap;gap:8px;margin-bottom:8px}
+.os-num{font-family:monospace;font-weight:800;font-size:15px;color:#0f766e}
+.os-prov{font-size:13px;color:#475569;font-weight:600}
+.os-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px;margin:8px 0;font-size:12px}
+.os-grid > div{background:#f8fafc;padding:6px 10px;border-radius:5px}
+.os-grid b{display:block;font-size:10px;color:#64748b;text-transform:uppercase;margin-bottom:2px}
+.arte{background:#fef3c7;border-left:3px solid #ca8a04;padding:8px 10px;margin-top:8px;font-size:12px;color:#78350f}
+.actions{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+button.confirm{background:#16a34a;color:#fff;border:none;padding:9px 18px;border-radius:6px;font-weight:700;cursor:pointer;font-size:13px}
+button.confirm:hover{background:#15803d}
+button.cancel{background:#94a3b8;color:#fff;border:none;padding:7px 14px;border-radius:5px;font-size:12px;cursor:pointer}
+#empty{text-align:center;padding:40px;color:#94a3b8;font-size:14px}
+#msg{padding:10px 14px;border-radius:6px;margin-bottom:14px;display:none;font-size:13px}
+</style></head>
+<body>
+<div class="wrap">
+<h1>📦 Recibir Órdenes de Servicio</h1>
+<p class="subtitle">Confirmá recepción de envases serigrafiados / etiquetados / preparados · Catalina queda notificada.</p>
+<div class="banner">⚠ Al confirmar, verificá que la cantidad entregada coincida y la calidad del trabajo sea OK. Si hay problema, agregá observaciones detalladas.</div>
+<div id="msg"></div>
+<div id="lista"></div>
+<div id="empty" style="display:none">✓ No hay OS pendientes de confirmar · todo al día</div>
+<p style="text-align:center;margin-top:20px"><a href="/modulos" style="color:#64748b;font-size:12px;text-decoration:none">← Volver al hub</a></p>
+</div>
+<script>
+function _esc(s){return String(s||'').replace(/[&<>"\\\x27]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"\\x27":'&#39;'}[c];});}
+function _fmt(n){try{return Number(n||0).toLocaleString('es-CO');}catch(e){return n;}}
+function _msg(t, ok){
+  var m=document.getElementById('msg');
+  m.textContent=t;
+  m.style.display='block';
+  m.style.background=ok?'#dcfce7':'#fee2e2';
+  m.style.color=ok?'#166534':'#991b1b';
+  setTimeout(function(){m.style.display='none';},5000);
+}
+async function load(){
+  try{
+    var r=await fetch('/api/planta/ordenes-servicio',{credentials:'same-origin'});
+    var d=await r.json();
+    var items=d.items||[];
+    var lista=document.getElementById('lista');
+    var empty=document.getElementById('empty');
+    if(!items.length){
+      lista.innerHTML='';
+      empty.style.display='block';
+      return;
+    }
+    empty.style.display='none';
+    lista.innerHTML=items.map(function(o){
+      var fec=(o.fecha_real_entrega||'').substring(0,16);
+      return '<div class="os-card">'+
+        '<div class="os-head">'+
+          '<div><div class="os-num">'+_esc(o.numero_os)+'</div><div class="os-prov">'+_esc(o.proveedor)+' · '+_esc(o.tipo_servicio)+'</div></div>'+
+          '<span style="background:#16a34a;color:#fff;padding:3px 12px;border-radius:10px;font-size:11px;font-weight:700">📦 ENTREGADA</span>'+
+        '</div>'+
+        '<div class="os-grid">'+
+          '<div><b>Producto</b>'+_esc(o.producto_final)+'</div>'+
+          '<div><b>Envase</b>'+_esc(o.envase_descripcion||'—')+'</div>'+
+          '<div><b>Cantidad</b><span style="font-size:18px;font-weight:800;color:#0f766e">'+(o.cantidad_unidades||0)+' uds</span></div>'+
+          '<div><b>Entregada</b>'+_esc(fec)+'</div>'+
+        '</div>'+
+        (o.observaciones?'<div class="arte"><b>Observaciones entrega:</b><br>'+_esc(o.observaciones)+'</div>':'')+
+        '<div class="actions">'+
+          '<button class="confirm" data-num="'+_esc(o.numero_os)+'" data-cant="'+(o.cantidad_unidades||0)+'">✓ Confirmar recepción y calidad OK</button>'+
+        '</div>'+
+      '</div>';
+    }).join('');
+  }catch(e){
+    document.getElementById('lista').innerHTML='<div style="color:#dc2626;padding:14px">Error: '+_esc(e.message)+'</div>';
+  }
+}
+document.addEventListener('click',async function(ev){
+  var b=ev.target.closest('.confirm');
+  if(!b) return;
+  var num=b.getAttribute('data-num');
+  var cant=b.getAttribute('data-cant');
+  var obs=prompt('Confirmar recepción de '+num+'\\n\\nCantidad esperada: '+cant+' uds\\n¿Recibiste esa cantidad y calidad OK?\\n\\nObservaciones (opcional · si hay diferencias o problemas):');
+  if(obs===null) return;
+  if(!confirm('Confirmás recepción de '+num+'? (Catalina quedará notificada)')) return;
+  b.disabled=true; b.textContent='Confirmando...';
+  try{
+    var token=document.cookie.match(/csrf_token=([^;]*)/);
+    token=token?decodeURIComponent(token[1]):'';
+    var r=await fetch('/api/compras/ordenes-servicio/'+encodeURIComponent(num)+'/estado',{
+      method:'PATCH',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':token},
+      credentials:'same-origin',
+      body:JSON.stringify({estado_nuevo:'Confirmada',observaciones:obs||'Recepción confirmada por planta · calidad OK'}),
+    });
+    var d=await r.json();
+    if(!r.ok){
+      _msg('Error: '+(d.error||r.status),false);
+      b.disabled=false; b.textContent='✓ Confirmar recepción y calidad OK';
+      return;
+    }
+    _msg('✓ '+num+' confirmada. Catalina recibe la notificación.',true);
+    setTimeout(load,1500);
+  }catch(e){
+    _msg('Error red: '+e.message,false);
+    b.disabled=false; b.textContent='✓ Confirmar recepción y calidad OK';
+  }
+});
+load();
+setInterval(load,30000);  // auto-refresh
+</script></body></html>'''
+    from flask import Response as _Resp
+    return _Resp(html, mimetype='text/html')
+
+
 @bp.route('/api/planta/ordenes-servicio', methods=['GET'])
 def planta_ordenes_servicio_pendientes():
     """Lista para Planta · OS Entregadas pendientes de confirmar recepción."""
