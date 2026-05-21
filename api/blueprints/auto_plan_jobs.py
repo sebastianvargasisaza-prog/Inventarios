@@ -570,6 +570,8 @@ JOBS_SCHEDULE = [
     # ⭐ Resumen ejecutivo nocturno · 19:00 todos los días · Sebastián +
     #   Alejandro reciben campana con resumen del día (OLA 3 IA 20-may-2026)
     ('resumen_ejecutivo_noche', 19, 0, None, None,                'job_resumen_ejecutivo_noche'),
+    # ⭐ Compras N3 · reconciliar SOLs influencer >60d sin pago · diario 9:00
+    ('reconciliar_influencer_60d', 9, 0, None, None,              'job_reconciliar_influencer_60d'),
     # Diarios
     ('sync_stock_shopify',    5, 30, None, None,                'job_sync_stock_shopify_diario'),
     ('sync_shopify',          6,  0, None, None,                'job_sync_shopify'),
@@ -3507,6 +3509,99 @@ def job_resumen_ejecutivo_noche(app):
             'kg_real': kg_real, 'cumplimiento_pct': cum_pct,
             'andon_abiertas': andon_abiertas, 'salas_sucias': salas_sucias,
         }, cuerpo
+
+
+def job_reconciliar_influencer_60d(app):
+    """Sprint Compras N3 · 21-may-2026 · cron diario 9:00.
+
+    Cierra SOLs influencer/CC en estado 'Aprobada' con más de 60 días
+    sin pago (no se encontró pago en la tabla pagos_oc/oc-pago). Manda
+    resumen a admins via push_notif. INV-1: solo toca categoría
+    Influencer/Marketing Digital o Cuenta de Cobro.
+    """
+    with app.app_context():
+        from database import get_db
+        conn = get_db(); c = conn.cursor()
+        try:
+            # SOLs influencer Aprobadas > 60d sin movimiento de pago
+            rows = c.execute(
+                """SELECT s.numero, s.solicitante, s.fecha, s.numero_oc,
+                          COALESCE(s.valor,0)
+                   FROM solicitudes_compra s
+                   WHERE s.estado = 'Aprobada'
+                     AND s.categoria IN ('Influencer/Marketing Digital','Cuenta de Cobro')
+                     AND date(s.fecha) < date('now','-5 hours','-60 days')
+                   ORDER BY s.fecha ASC LIMIT 200""",
+            ).fetchall()
+        except Exception as e:
+            return False, {'error': f'query fallo: {e}'}, ''
+        cerradas = []
+        for r in rows:
+            numero, solicitante, fecha, oc, valor = r
+            # ¿Tiene pago registrado en pagos_oc?
+            pagado = False
+            if oc:
+                try:
+                    p = c.execute(
+                        "SELECT 1 FROM pagos_oc WHERE numero_oc=? LIMIT 1",
+                        (oc,),
+                    ).fetchone()
+                    if p:
+                        pagado = True
+                except Exception:
+                    pass
+            if pagado:
+                continue
+            # Cerrar como Reconciliada
+            try:
+                c.execute(
+                    "UPDATE solicitudes_compra SET estado='Reconciliada', "
+                    "observaciones=COALESCE(observaciones,'') || "
+                    "' · Auto-reconciliada >60d sin pago (cron 9:00)' "
+                    "WHERE numero=?",
+                    (numero,),
+                )
+                cerradas.append({'numero': numero, 'solicitante': solicitante,
+                                 'fecha': fecha, 'valor': valor})
+            except Exception:
+                continue
+        # Notif a admins si hay cierres
+        if cerradas:
+            try:
+                from blueprints.notif import push_notif
+                from config import ADMIN_USERS
+                cuerpo = (
+                    f'🧹 {len(cerradas)} SOL(s) influencer auto-cerradas '
+                    f'(>60 días sin pago) · revisar lista en Compras → Influencers.'
+                )
+                for u in (ADMIN_USERS or set()):
+                    try:
+                        push_notif(
+                            destinatario=u,
+                            tipo='reconciliar_influencer',
+                            titulo='🧹 Reconciliación influencers',
+                            body=cuerpo,
+                            link='/compras',
+                            remitente='sistema',
+                        )
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+        # Audit
+        try:
+            from datetime import datetime as _dt
+            now = _dt.now().strftime('%Y-%m-%d %H:%M:%S')
+            c.execute(
+                "INSERT INTO audit_log (usuario, accion, tabla, registro_id, detalle, ip, fecha) "
+                "VALUES ('sistema','RECONCILIAR_INFLUENCER_60D','solicitudes_compra','_BULK_',?,'',?)",
+                (f'cerradas={len(cerradas)}', now),
+            )
+        except Exception:
+            pass
+        conn.commit()
+        return True, {'cerradas': len(cerradas),
+                      'detalle': cerradas[:20]}, f'{len(cerradas)} reconciliadas'
 
 
 def iniciar_multi_cron(app):

@@ -151,6 +151,8 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
 
 <!-- PANES -->
 <div id="pane-dash" class="pane on">
+  <!-- Sprint Compras N3 · 21-may-2026 · widget ejecutivo Catalina -->
+  <div id="dashboard-ejecutivo" style="background:#fff;border:1px solid #e7e5e4;border-radius:10px;padding:12px 14px;margin-bottom:14px"></div>
   <div id="kpi-area" class="kpis"></div>
   <div class="queue-row">
     <div class="qbox">
@@ -1138,7 +1140,46 @@ document.querySelectorAll('.tn').forEach(function(btn){
 });
 
 // ─── Carga de datos ───────────────────────────────────────────────
+async function loadDashboardEjecutivo(){
+  // Sprint Compras N3 · 21-may-2026
+  var cont = document.getElementById('dashboard-ejecutivo');
+  if(!cont) return;
+  try{
+    var r = await fetch('/api/compras/dashboard-ejecutivo');
+    if(!r.ok) return;
+    var d = await r.json();
+    var k = d.kpis || {};
+    var color = k.salud_color === 'verde' ? '#16a34a' :
+                (k.salud_color === 'amarillo' ? '#ca8a04' : '#dc2626');
+    var topProv = (d.top_proveedores_mes||[]).slice(0,3);
+    var topHtml = topProv.map(function(p){
+      return '<span style="background:#f1f5f9;padding:3px 8px;border-radius:8px;font-size:11px;margin-right:5px"><b>'+esc(p.proveedor)+'</b> · '+p.ocs+' OCs · $'+fmt(p.monto.toFixed(0))+'</span>';
+    }).join('');
+    cont.innerHTML =
+      '<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:10px">'+
+        '<div style="font-weight:700;font-size:14px;color:#0f172a">📊 Dashboard ejecutivo Catalina</div>'+
+        '<div style="background:'+color+';color:#fff;padding:3px 10px;border-radius:10px;font-size:12px;font-weight:700">Salud '+k.salud_score+'/100</div>'+
+      '</div>'+
+      '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px">'+
+        _wkpi('⏰ SOLs sin tocar', k.sols_sin_tocar_3d, '>3 días', k.sols_sin_tocar_3d > 0 ? '#dc2626' : '#475569')+
+        _wkpi('📝 OCs sin autorizar', k.ocs_sin_autorizar_5d, '>5 días', k.ocs_sin_autorizar_5d > 0 ? '#ca8a04' : '#475569')+
+        _wkpi('💸 Influencers vencidos', k.influencers_vencidos, 'pagar ya', k.influencers_vencidos > 0 ? '#dc2626' : '#475569')+
+        _wkpi('📋 Cotizaciones', k.cotizaciones_pendientes, 'sin respuesta', '#0e7490')+
+        _wkpi('📄 OCs Borrador', k.ocs_borrador, 'sin enviar', '#475569')+
+      '</div>'+
+      (topHtml ? '<div style="margin-top:10px;font-size:11px;color:#64748b">Top proveedores 30d: '+topHtml+'</div>' : '');
+  }catch(e){ /* silenciar · widget opcional */ }
+}
+function _wkpi(label, valor, sub, color){
+  return '<div style="background:#fff;border:1px solid #e7e5e4;border-radius:6px;padding:7px 9px">'+
+    '<div style="font-size:10px;color:#64748b">'+label+'</div>'+
+    '<div style="font-size:1.4em;font-weight:800;color:'+color+'">'+(valor||0)+'</div>'+
+    '<div style="font-size:9px;color:#94a3b8">'+sub+'</div>'+
+  '</div>';
+}
+
 async function loadData(){
+  loadDashboardEjecutivo();  // Sprint N3 · paralelo, no bloquea
   try{
     var r = await fetch('/api/ordenes-compra');
     if(!r.ok) throw new Error('OC API '+r.status);

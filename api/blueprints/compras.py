@@ -7118,6 +7118,383 @@ def reporte_ejecutivo_compras():
 # de generar la OC. Cada ronda tiene un ronda_id que agrupa N cotizaciones de
 # distintos proveedores.
 
+@bp.route('/api/compras/dashboard-ejecutivo', methods=['GET'])
+def compras_dashboard_ejecutivo():
+    """Sprint Compras N3 · 21-may-2026 · widget ejecutivo Catalina.
+
+    Devuelve KPIs operativos:
+      - sols_sin_tocar_3d (Pendientes hace >3 días)
+      - ocs_sin_autorizar_5d (Borrador/Revisada hace >5 días)
+      - influencers_por_pagar_vencidos (Aprobadas con fecha_requerida pasada)
+      - cotizaciones_pendientes (rondas con respuestas <2)
+      - top_proveedores_mes (por valor OC último 30d)
+      - total_ocs_borrador (count)
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    kpis = {}
+    # SOLs sin tocar >3d
+    try:
+        r = c.execute(
+            """SELECT COUNT(*) FROM solicitudes_compra
+               WHERE estado = 'Pendiente'
+                 AND date(fecha) < date('now','-5 hours','-3 days')""",
+        ).fetchone()
+        kpis['sols_sin_tocar_3d'] = int(r[0] or 0)
+    except Exception:
+        kpis['sols_sin_tocar_3d'] = 0
+    # OCs sin autorizar >5d (Borrador o Revisada antiguas)
+    try:
+        r = c.execute(
+            """SELECT COUNT(*) FROM ordenes_compra
+               WHERE estado IN ('Borrador','Revisada')
+                 AND date(fecha) < date('now','-5 hours','-5 days')""",
+        ).fetchone()
+        kpis['ocs_sin_autorizar_5d'] = int(r[0] or 0)
+    except Exception:
+        kpis['ocs_sin_autorizar_5d'] = 0
+    # Influencers vencidos sin pagar
+    try:
+        r = c.execute(
+            """SELECT COUNT(*) FROM solicitudes_compra
+               WHERE categoria IN ('Influencer/Marketing Digital','Cuenta de Cobro')
+                 AND estado = 'Aprobada'
+                 AND fecha_requerida != ''
+                 AND date(fecha_requerida) < date('now','-5 hours')""",
+        ).fetchone()
+        kpis['influencers_vencidos'] = int(r[0] or 0)
+    except Exception:
+        kpis['influencers_vencidos'] = 0
+    # OCs Borrador total
+    try:
+        r = c.execute(
+            "SELECT COUNT(*) FROM ordenes_compra WHERE estado='Borrador'",
+        ).fetchone()
+        kpis['ocs_borrador'] = int(r[0] or 0)
+    except Exception:
+        kpis['ocs_borrador'] = 0
+    # Top 5 proveedores mes (último 30d)
+    top_proveedores = []
+    try:
+        rows = c.execute(
+            """SELECT proveedor, COUNT(*) as ocs, COALESCE(SUM(valor_total),0) as monto
+               FROM ordenes_compra
+               WHERE date(fecha) >= date('now','-5 hours','-30 days')
+                 AND proveedor IS NOT NULL AND proveedor != ''
+               GROUP BY proveedor
+               ORDER BY monto DESC LIMIT 5""",
+        ).fetchall()
+        top_proveedores = [{
+            'proveedor': r[0], 'ocs': int(r[1] or 0),
+            'monto': float(r[2] or 0),
+        } for r in rows]
+    except Exception:
+        pass
+    # Cotizaciones pendientes (rondas con <2 respuestas)
+    cot_pendientes = 0
+    try:
+        rows = c.execute(
+            """SELECT ronda_id, SUM(CASE WHEN estado='Recibida' THEN 1 ELSE 0 END) as recibidas,
+                      COUNT(*) as total
+               FROM cotizaciones
+               WHERE date(fecha_creacion) >= date('now','-5 hours','-30 days')
+               GROUP BY ronda_id
+               HAVING recibidas < 2""",
+        ).fetchall()
+        cot_pendientes = len(rows)
+    except Exception:
+        pass
+    kpis['cotizaciones_pendientes'] = cot_pendientes
+    # Score salud (0-100): menos pendientes = mejor
+    pendientes_total = (kpis['sols_sin_tocar_3d'] + kpis['ocs_sin_autorizar_5d']
+                         + kpis['influencers_vencidos'])
+    score = max(0, 100 - pendientes_total * 5)
+    kpis['salud_score'] = score
+    kpis['salud_color'] = (
+        'verde' if score >= 80 else 'amarillo' if score >= 60 else 'rojo'
+    )
+    return jsonify({
+        'kpis': kpis,
+        'top_proveedores_mes': top_proveedores,
+    })
+
+
+@bp.route('/api/compras/validar-precios-bulk', methods=['POST'])
+def validar_precios_bulk():
+    """Sprint Compras N3 · 21-may-2026 · alerta precio inflado.
+
+    Recibe lista de {codigo_mp, precio_propuesto} y devuelve por
+    cada uno un veredicto:
+      - 'normal' si precio dentro de ±10% del promedio_90d
+      - 'inflado' si > 115% del promedio
+      - 'sospechoso_bajo' si < 50% del promedio
+      - 'sin_historia' si no hay datos previos
+
+    Body: {items: [{codigo_mp, precio_propuesto}, ...]}
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    body = request.get_json(silent=True) or {}
+    items = body.get('items') or []
+    if not items:
+        return jsonify({'validaciones': []})
+    conn = get_db(); c = conn.cursor()
+    out = []
+    for it in items:
+        cod = (it.get('codigo_mp') or '').strip()
+        try:
+            precio = float(it.get('precio_propuesto') or 0)
+        except (ValueError, TypeError):
+            precio = 0
+        if not cod or precio <= 0:
+            out.append({'codigo_mp': cod, 'veredicto': 'sin_precio'})
+            continue
+        promedio = 0
+        for col_precio in ('precio_unitario', 'precio_kg'):
+            try:
+                r = c.execute(
+                    f"""SELECT AVG({col_precio})
+                        FROM precios_mp_historico
+                        WHERE codigo_mp=?
+                          AND date(fecha) >= date('now','-5 hours','-90 days')""",
+                    (cod,),
+                ).fetchone()
+                if r and r[0]:
+                    promedio = float(r[0])
+                    break
+            except Exception:
+                try: conn.rollback()
+                except Exception: pass
+                continue
+        if promedio <= 0:
+            out.append({
+                'codigo_mp': cod, 'veredicto': 'sin_historia',
+                'precio_propuesto': precio,
+            })
+            continue
+        delta_pct = ((precio - promedio) / promedio) * 100
+        if delta_pct > 15:
+            ver = 'inflado'
+        elif delta_pct < -50:
+            ver = 'sospechoso_bajo'
+        elif abs(delta_pct) <= 10:
+            ver = 'normal'
+        elif delta_pct > 10:
+            ver = 'mayor'
+        else:
+            ver = 'menor'
+        out.append({
+            'codigo_mp': cod,
+            'veredicto': ver,
+            'precio_propuesto': precio,
+            'precio_promedio_90d': round(promedio, 4),
+            'delta_pct': round(delta_pct, 1),
+            'requiere_justificacion': ver == 'inflado',
+        })
+    return jsonify({'validaciones': out, 'total': len(out)})
+
+
+@bp.route('/api/compras/proveedor-recomendado/<path:codigo_mp>', methods=['GET'])
+def proveedor_recomendado(codigo_mp):
+    """Sprint Compras N3 · 21-may-2026 · auto-detección mejor proveedor.
+
+    Calcula score por proveedor histórico para un codigo_mp:
+      score = (1 - precio_normalizado) × peso_precio
+            + (1 - lead_time_normalizado) × peso_tiempo
+            + (frec_uso_normalizado) × peso_confianza
+
+    Devuelve top 3 con su score y explicación.
+    """
+    u, err, code = _require_compras_write()
+    if err:
+        return err, code
+    conn = get_db(); c = conn.cursor()
+    # Datos por proveedor para este MP
+    proveedores = {}
+    for col_precio in ('precio_unitario', 'precio_kg'):
+        try:
+            rows = c.execute(
+                f"""SELECT proveedor, COUNT(*) as n, AVG({col_precio}) as avg_p,
+                          MIN({col_precio}) as min_p, MAX({col_precio}) as max_p,
+                          MAX(fecha) as ultima_fecha
+                   FROM precios_mp_historico
+                   WHERE codigo_mp=? AND proveedor IS NOT NULL AND proveedor != ''
+                   GROUP BY proveedor
+                   ORDER BY n DESC""",
+                (codigo_mp,),
+            ).fetchall()
+            for r in rows:
+                proveedores[r[0]] = {
+                    'nombre': r[0],
+                    'usos': int(r[1] or 0),
+                    'precio_promedio': float(r[2] or 0),
+                    'precio_min': float(r[3] or 0),
+                    'precio_max': float(r[4] or 0),
+                    'ultima_compra': r[5] or '',
+                }
+            break
+        except Exception:
+            try: conn.rollback()
+            except Exception: pass
+            continue
+    # Lead time desde mp_lead_time_config si existe
+    try:
+        lt_rows = c.execute(
+            "SELECT proveedor_principal, dias_lead_time_promedio FROM mp_lead_time_config WHERE codigo_mp=?",
+            (codigo_mp,),
+        ).fetchall()
+        for r in lt_rows:
+            if r[0] and r[0] in proveedores:
+                proveedores[r[0]]['lead_time_dias'] = int(r[1] or 0)
+    except Exception:
+        pass
+    if not proveedores:
+        return jsonify({
+            'codigo_mp': codigo_mp,
+            'recomendados': [],
+            'mensaje': 'Sin historial · no se puede recomendar',
+        })
+    # Normalizar y score
+    lista = list(proveedores.values())
+    precios = [p['precio_promedio'] for p in lista if p['precio_promedio'] > 0]
+    usos = [p['usos'] for p in lista]
+    lead_times = [p.get('lead_time_dias', 30) for p in lista]
+    p_max = max(precios) if precios else 1
+    p_min = min(precios) if precios else 0
+    u_max = max(usos) if usos else 1
+    lt_max = max(lead_times) if lead_times else 30
+    lt_min = min(lead_times) if lead_times else 0
+    for p in lista:
+        precio_norm = (p['precio_promedio'] - p_min) / (p_max - p_min) if p_max > p_min else 0
+        usos_norm = p['usos'] / u_max if u_max > 0 else 0
+        lt = p.get('lead_time_dias', 30)
+        lt_norm = (lt - lt_min) / (lt_max - lt_min) if lt_max > lt_min else 0
+        # Pesos: 50% precio · 30% confianza · 20% lead time
+        score = (
+            (1 - precio_norm) * 0.50 +
+            usos_norm * 0.30 +
+            (1 - lt_norm) * 0.20
+        ) * 100
+        p['score'] = round(score, 1)
+        # Explicación corta
+        ventajas = []
+        if precio_norm < 0.3: ventajas.append('precio bajo')
+        if usos_norm > 0.6: ventajas.append('usado frecuente')
+        if lt_norm < 0.3: ventajas.append('entrega rápida')
+        p['ventajas'] = ventajas or ['default']
+    lista.sort(key=lambda x: -x['score'])
+    return jsonify({
+        'codigo_mp': codigo_mp,
+        'recomendados': lista[:3],
+        'total_proveedores': len(proveedores),
+    })
+
+
+@bp.route('/api/compras/cotizaciones/desde-grupo', methods=['POST'])
+def cotizar_desde_grupo_planta():
+    """Sprint Compras N3 · 21-may-2026 · activar cotizaciones · Sebastián.
+
+    Catalina selecciona un grupo Planta (proveedor + items consolidados)
+    y dispara una ronda de cotizaciones con los TOP 3 proveedores
+    históricos de las MPs del grupo (calculados desde precios_mp_historico).
+
+    Body: {
+      proveedor_sugerido: str,
+      items: [{codigo_mp, nombre_mp, cantidad_g}],
+      observaciones?: str
+    }
+    Returns: ronda_id + 3 cotizaciones Pendientes para que Catalina las
+    envíe a los proveedores (email/WA) y vuelva a registrar respuestas.
+    """
+    u, err, code = _require_compras_write()
+    if err:
+        return err, code
+    body = request.get_json(silent=True) or {}
+    items = body.get('items') or []
+    if not items or not isinstance(items, list):
+        return jsonify({'error': 'items requerido'}), 400
+    obs = (body.get('observaciones') or '').strip()
+    prov_sug = (body.get('proveedor_sugerido') or '').strip()
+    conn = get_db(); c = conn.cursor()
+    # Top 3 proveedores históricos para CUALQUIER MP del grupo
+    codigos = [it.get('codigo_mp') for it in items if it.get('codigo_mp')]
+    proveedores_scores = {}
+    for cod in codigos:
+        for col_precio in ('precio_unitario', 'precio_kg'):
+            try:
+                rows = c.execute(
+                    f"""SELECT proveedor, COUNT(*) as n, AVG({col_precio}) as avg_p
+                        FROM precios_mp_historico
+                        WHERE codigo_mp=? AND proveedor IS NOT NULL AND proveedor != ''
+                        GROUP BY proveedor
+                        ORDER BY n DESC LIMIT 5""",
+                    (cod,),
+                ).fetchall()
+                for r in rows:
+                    nombre = (r[0] or '').strip()
+                    if not nombre:
+                        continue
+                    if nombre not in proveedores_scores:
+                        proveedores_scores[nombre] = {
+                            'nombre': nombre, 'usos': 0,
+                            'precio_promedio_sum': 0.0,
+                        }
+                    proveedores_scores[nombre]['usos'] += int(r[1] or 0)
+                    proveedores_scores[nombre]['precio_promedio_sum'] += float(r[2] or 0)
+                break
+            except Exception:
+                try: conn.rollback()
+                except Exception: pass
+                continue
+    top = sorted(proveedores_scores.values(), key=lambda x: -x['usos'])[:3]
+    # Si el proveedor sugerido no está en el top, agregarlo
+    if prov_sug and not any(p['nombre'].lower() == prov_sug.lower() for p in top):
+        top.insert(0, {'nombre': prov_sug, 'usos': 0, 'precio_promedio_sum': 0})
+        top = top[:3]
+    if len(top) < 2:
+        return jsonify({
+            'error': 'Sin suficientes proveedores históricos · ingresar manualmente',
+            'top_encontrados': top,
+        }), 400
+    # Descripción auto-generada
+    items_desc = ', '.join(f"{it.get('nombre_mp','?')} ({it.get('cantidad_g',0):.0f}g)" for it in items[:5])
+    if len(items) > 5:
+        items_desc += f' +{len(items)-5} más'
+    descripcion = f"Cotización: {items_desc}"
+    if obs:
+        descripcion += ' · ' + obs
+    from datetime import datetime as _dt
+    ronda_id = f"COT-{_dt.now().strftime('%Y%m%d%H%M%S')}"
+    creadas = []
+    try:
+        for p in top:
+            c.execute(
+                """INSERT INTO cotizaciones
+                   (ronda_id, proveedor, descripcion, condiciones,
+                    tiempo_entrega_dias, creado_por, estado)
+                   VALUES (?,?,?,?,?,?, 'Pendiente')""",
+                (ronda_id, p['nombre'], descripcion, '', 0, u),
+            )
+            creadas.append({'id': c.lastrowid, 'proveedor': p['nombre']})
+        try:
+            audit_log(c, usuario=u, accion='COTIZACION_RONDA_AUTO',
+                      tabla='cotizaciones', registro_id=ronda_id,
+                      despues={'proveedores': [p['nombre'] for p in top],
+                               'items_count': len(items)})
+        except Exception:
+            pass
+        conn.commit()
+    except Exception as e:
+        return jsonify({'error': f'Falla crear ronda: {e}'}), 500
+    return jsonify({
+        'ok': True, 'ronda_id': ronda_id,
+        'cotizaciones': creadas, 'count': len(creadas),
+        'proveedores_top': top,
+        'mensaje': f'Ronda {ronda_id} creada · {len(creadas)} proveedores · enviar y registrar respuestas',
+    }), 201
+
+
 @bp.route('/api/compras/cotizaciones/rondas', methods=['POST'])
 def crear_ronda_cotizaciones():
     """Crea una nueva ronda de cotizaciones (3 proveedores).

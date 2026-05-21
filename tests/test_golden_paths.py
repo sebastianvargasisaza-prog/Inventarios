@@ -7310,6 +7310,42 @@ def test_golden_portal_b2b_flujo_completo(app, db_clean):
     _exec("DELETE FROM portal_clientes_credenciales WHERE email LIKE 'test_portal_%'")
 
 
+def test_golden_compras_n3_inteligencia(app, db_clean):
+    """Sprint Compras N3 · 21-may-2026 · 4 endpoints nuevos."""
+    cs = _login(app, 'sebastian')
+
+    # 1. Dashboard ejecutivo
+    r1 = cs.get('/api/compras/dashboard-ejecutivo')
+    assert r1.status_code == 200
+    assert 'kpis' in r1.get_json()
+    assert 'salud_score' in r1.get_json()['kpis']
+
+    # 2. Validar precios bulk · sin historial → sin_historia
+    r2 = cs.post('/api/compras/validar-precios-bulk',
+                  json={'items': [{'codigo_mp': 'TST_NO_EXISTE_N3', 'precio_propuesto': 100}]},
+                  headers=csrf_headers())
+    assert r2.status_code == 200
+    val = r2.get_json()['validaciones'][0]
+    assert val['veredicto'] in ('sin_historia', 'sin_precio')
+
+    # 3. Proveedor recomendado · sin datos
+    r3 = cs.get('/api/compras/proveedor-recomendado/TST_NO_EXISTE_N3')
+    assert r3.status_code == 200
+    d3 = r3.get_json()
+    assert d3.get('recomendados') == [] or d3.get('total_proveedores', 0) == 0
+
+    # 4. Cotizar desde grupo · sin items → 400
+    r4 = cs.post('/api/compras/cotizaciones/desde-grupo', json={},
+                  headers=csrf_headers())
+    assert r4.status_code == 400
+
+    # 5. Cron callable directo
+    from blueprints.auto_plan_jobs import job_reconciliar_influencer_60d
+    ok, data, msg = job_reconciliar_influencer_60d(app)
+    assert ok is True
+    assert 'cerradas' in data
+
+
 def test_golden_compras_n2_split_sol_y_bulk_precios(app, db_clean):
     """Sprint Compras N2 · 21-may-2026.
     - POST /api/solicitudes-compra/<n>/split divide SOL mixta en hijas
