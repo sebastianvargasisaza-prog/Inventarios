@@ -1908,6 +1908,10 @@ def _handle_produccion_inner():
             # FEFO sobre lotes disponibles (excluye CUARENTENA/RECHAZADO)
             # Sebastian 8-may-2026 zero-error: tomar fv REAL de la Entrada
             # original (no del primer mov que SQLite escoja arbitrariamente).
+            # Sebastián 20-may-2026 HOTFIX: en PostgreSQL `fv_real = ''`
+            # falla con error de tipo si fecha_vencimiento es columna DATE
+            # (no TEXT). Cambiado a COALESCE + CAST a TEXT que funciona en
+            # ambos. Antes "no me dejo registrar producción" 500 silencioso.
             c.execute("""SELECT lote,
                                 MAX(CASE WHEN tipo='Entrada' THEN fecha_vencimiento END) AS fv_real,
                                 SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) as stock
@@ -1915,8 +1919,7 @@ def _handle_produccion_inner():
                          WHERE material_id=? AND lote IS NOT NULL AND lote!='' AND lote!='S/L'
                            AND (estado_lote IS NULL OR estado_lote NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO'))
                          GROUP BY lote HAVING stock > 0
-                         ORDER BY CASE WHEN fv_real IS NULL OR fv_real=''
-                                  THEN '9999' ELSE fv_real END ASC""", (mat_id,))
+                         ORDER BY COALESCE(NULLIF(CAST(MAX(CASE WHEN tipo='Entrada' THEN fecha_vencimiento END) AS TEXT), ''), '9999-12-31') ASC""", (mat_id,))
             lotes_fefo = c.fetchall()
             stock_total_disp = sum(float(l[2] or 0) for l in lotes_fefo)
             if stock_total_disp + 0.01 < g_total:  # tolerancia 0.01g por floats
@@ -6844,7 +6847,8 @@ def generar_rotulos(producto_nombre, cantidad_str):
     for r in items:
         mid = r[0]
         c.execute("SELECT nombre_inci FROM maestro_mps WHERE codigo_mp=?", (mid,)); ir=c.fetchone(); incis[mid]=ir[0] if ir and ir[0] else ''
-        c.execute("SELECT lote,estanteria,posicion,fecha_vencimiento FROM movimientos WHERE material_id=? AND tipo='Entrada' AND lote IS NOT NULL AND lote!='' AND lote!='S/L' ORDER BY CASE WHEN fecha_vencimiento IS NULL OR fecha_vencimiento='' THEN '9999' ELSE fecha_vencimiento END ASC LIMIT 1", (mid,))
+        # Sebastián 20-may-2026: PG-compat · CAST a TEXT antes de comparar con ''
+        c.execute("SELECT lote,estanteria,posicion,fecha_vencimiento FROM movimientos WHERE material_id=? AND tipo='Entrada' AND lote IS NOT NULL AND lote!='' AND lote!='S/L' ORDER BY COALESCE(NULLIF(CAST(fecha_vencimiento AS TEXT),''),'9999-12-31') ASC LIMIT 1", (mid,))
         row=c.fetchone(); lotes[mid]={'lote':row[0] if row else 'S/L','est':row[1] if row else '','pos':row[2] if row else '','vence':str(row[3])[:10] if row and row[3] else ''}
     if not items: return '<h2>Formula no encontrada: '+prod+'</h2>', 404
     rhtml=''; barcodes=''
