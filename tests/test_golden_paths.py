@@ -7310,6 +7310,53 @@ def test_golden_portal_b2b_flujo_completo(app, db_clean):
     _exec("DELETE FROM portal_clientes_credenciales WHERE email LIKE 'test_portal_%'")
 
 
+def test_golden_compras_n2_split_sol_y_bulk_precios(app, db_clean):
+    """Sprint Compras N2 · 21-may-2026.
+    - POST /api/solicitudes-compra/<n>/split divide SOL mixta en hijas
+    - POST /api/compras/sugerir-mp-bulk devuelve precio histórico múltiples
+    """
+    cs = _login(app, 'sebastian')
+
+    # Limpiar
+    _exec("DELETE FROM solicitudes_compra_items WHERE numero='TEST-SPLIT-N2'")
+    _exec("DELETE FROM solicitudes_compra WHERE numero='TEST-SPLIT-N2'")
+
+    # Crear SOL con items de 2 proveedores distintos
+    _exec("INSERT INTO solicitudes_compra (numero, fecha, estado, solicitante, categoria, empresa, area) VALUES ('TEST-SPLIT-N2', datetime('now'), 'Pendiente', 'sebastian', 'Materia Prima', 'Espagiria', 'Test')")
+    _exec("INSERT INTO solicitudes_compra_items (numero, codigo_mp, nombre_mp, cantidad_g, unidad, proveedor_sugerido) VALUES ('TEST-SPLIT-N2', 'TST_MP_A', 'Test A', 1000, 'g', 'Proveedor X')")
+    _exec("INSERT INTO solicitudes_compra_items (numero, codigo_mp, nombre_mp, cantidad_g, unidad, proveedor_sugerido) VALUES ('TEST-SPLIT-N2', 'TST_MP_B', 'Test B', 500, 'g', 'Proveedor Y')")
+
+    # 1. Bulk sugerir precios
+    r1 = cs.post('/api/compras/sugerir-mp-bulk',
+                  json={'codigos': ['TST_MP_A', 'TST_MP_B', 'NO_EXISTE']},
+                  headers=csrf_headers())
+    assert r1.status_code == 200
+    assert 'datos' in r1.get_json()
+
+    # 2. Split
+    r2 = cs.post('/api/solicitudes-compra/TEST-SPLIT-N2/split', json={},
+                  headers=csrf_headers())
+    assert r2.status_code == 200, r2.data[:300]
+    d2 = r2.get_json()
+    assert len(d2['hijas_creadas']) == 2
+
+    # 3. SOL original quedó Reemplazada
+    chk = _query("SELECT estado FROM solicitudes_compra WHERE numero='TEST-SPLIT-N2'")
+    assert chk[0][0] == 'Reemplazada'
+
+    # 4. Split de SOL ya reemplazada → 409
+    r3 = cs.post('/api/solicitudes-compra/TEST-SPLIT-N2/split', json={},
+                  headers=csrf_headers())
+    assert r3.status_code == 409
+
+    # Cleanup hijas
+    for h in d2['hijas_creadas']:
+        _exec("DELETE FROM solicitudes_compra_items WHERE numero=?", (h['numero'],))
+        _exec("DELETE FROM solicitudes_compra WHERE numero=?", (h['numero'],))
+    _exec("DELETE FROM solicitudes_compra_items WHERE numero='TEST-SPLIT-N2'")
+    _exec("DELETE FROM solicitudes_compra WHERE numero='TEST-SPLIT-N2'")
+
+
 def test_golden_compras_n1_monto_limit_y_deprecate(app, db_clean):
     """Sprint Compras N1 · 21-may-2026:
     - BUG #1 · oc-desde-solicitudes valida monto-limit antes de crear OC

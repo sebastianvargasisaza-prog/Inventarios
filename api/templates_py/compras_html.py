@@ -2847,6 +2847,27 @@ async function crearProv(){
   }catch(e){ alert('Error: '+e); }
 }
 
+// Sprint Compras N2 · 21-may-2026 · split SOL mixta en N hijas
+async function splitSolicitud(numero){
+  if(!numero) return;
+  if(!confirm('Dividir SOL '+numero+' en N solicitudes hijas, una por cada proveedor distinto?\\n\\nLa SOL original quedará "Reemplazada" (no se borra · histórico).')) return;
+  try{
+    var r = await fetch('/api/solicitudes-compra/'+encodeURIComponent(numero)+'/split',
+      _fetchOpts('POST', {por_campo: 'proveedor_sugerido'}));
+    var d = await r.json();
+    if(!r.ok){
+      alert('No se puede dividir: '+(d.error||r.status)+(d.proveedor_unico?'\\n\\nProveedor único: '+d.proveedor_unico:''));
+      return;
+    }
+    var lines = ['✓ '+d.mensaje];
+    (d.hijas_creadas||[]).forEach(function(h){
+      lines.push('• '+h.numero+' → '+h.proveedor+' · '+h.items_count+' MP(s)');
+    });
+    alert(lines.join('\\n'));
+    if(typeof loadPlanta==='function') loadPlanta();
+  }catch(e){ alert('Error red: '+e.message); }
+}
+
 // ─── Event delegation para botones de OC ────────────────────
 document.addEventListener('click',function(e){
   var btn=e.target.closest('[data-act]');
@@ -2860,6 +2881,7 @@ document.addEventListener('click',function(e){
   else if(act==='det') openOCDetail(oc);
   else if(act==='sdet') openSolicitudDetail(btn.getAttribute('data-sol')||'');
   else if(act==='del-sol') eliminarSolicitud(btn.getAttribute('data-sol')||'');
+  else if(act==='split-sol') splitSolicitud(btn.getAttribute('data-sol')||'');
   else if(act==='edit') editarOC(oc);
   else if(act==='del') eliminarOC(oc);
 });
@@ -3601,6 +3623,24 @@ async function loadPlanta(){
     var dp = await rp.json();
     PLANTA_PROVEEDORES_LIST = (dp.proveedores||[]).map(function(p){ return p.nombre || p; });
   }catch(_){ PLANTA_PROVEEDORES_LIST = []; }
+  // Sprint Compras N2 · 21-may-2026 · auto-fill precio histórico
+  // Prefetch en bulk de todos los códigos visibles · 1 round-trip vs N
+  try{
+    var codigos = [];
+    PLANTA_GRUPOS.forEach(function(g){
+      (g.items_consolidados||[]).forEach(function(it){
+        if(it.codigo_mp && codigos.indexOf(it.codigo_mp) < 0) codigos.push(it.codigo_mp);
+      });
+    });
+    if(codigos.length){
+      var rb = await fetch('/api/compras/sugerir-mp-bulk',
+        _fetchOpts('POST', {codigos: codigos}));
+      var db = await rb.json();
+      window.PLANTA_PRECIOS_HIST = db.datos || {};
+    } else {
+      window.PLANTA_PRECIOS_HIST = {};
+    }
+  }catch(_){ window.PLANTA_PRECIOS_HIST = {}; }
   renderPlanta();
 }
 
@@ -3726,7 +3766,25 @@ function _plantaItemRowHTML(g, it){
       '<input type="number" step="any" class="planta-cant-inp" value="'+(parseFloat(it.cantidad_g||0))+'" style="width:100%;padding:4px 6px;border:1px solid #cbd5e1;border-radius:4px;font-size:12px;text-align:right;">' +
     '</td>' +
     '<td style="padding:6px;text-align:right;">' +
-      '<input type="number" step="any" class="planta-val-inp" value="'+(parseFloat(it.valor_estimado||0))+'" style="width:100%;padding:4px 6px;border:1px solid #cbd5e1;border-radius:4px;font-size:12px;text-align:right;">' +
+      (function(){
+        // Sprint Compras N2 · auto-fill desde precios_mp_historico
+        var hist = (window.PLANTA_PRECIOS_HIST||{})[it.codigo_mp];
+        var valActual = parseFloat(it.valor_estimado||0);
+        var cantActual = parseFloat(it.cantidad_g||0);
+        var valFinal = valActual;
+        var badgeHtml = '';
+        if(hist && hist.precio_ultimo > 0){
+          if(valActual <= 0 && cantActual > 0){
+            valFinal = (hist.precio_ultimo * cantActual).toFixed(2);
+          }
+          var dias = hist.dias_atras != null ? hist.dias_atras + 'd' : '?';
+          var oc = hist.oc_ultima ? ' · '+hist.oc_ultima : '';
+          var color = (hist.dias_atras != null && hist.dias_atras > 180) ? '#dc2626' :
+                      ((hist.dias_atras != null && hist.dias_atras > 60) ? '#ca8a04' : '#16a34a');
+          badgeHtml = '<div style="font-size:9px;color:'+color+';margin-top:2px;line-height:1.2" title="Precio último: $'+hist.precio_ultimo+'/g · OC '+(hist.oc_ultima||'?')+'">$'+(Number(hist.precio_ultimo).toFixed(3))+'/g · hace '+dias+oc+'</div>';
+        }
+        return '<input type="number" step="any" class="planta-val-inp" value="'+valFinal+'" style="width:100%;padding:4px 6px;border:1px solid #cbd5e1;border-radius:4px;font-size:12px;text-align:right;">' + badgeHtml;
+      })() +
     '</td>' +
     '<td style="padding:6px;text-align:right;font-size:11px;color:#64748b;font-weight:600;" title="'+(refs.map(function(r){return r.numero;}).join(', '))+'">'+esc(sigla)+'</td>' +
     '<td style="padding:6px;text-align:right;">' +
@@ -4413,10 +4471,12 @@ async function renderSolicitudesAgrupadas(){
         '<div style="font-size:11px;color:#9a3412;margin-bottom:10px;">Estas requieren gestion manual: clic en "Ver & Gestionar" para asignar proveedor.</div>'+
         '<div style="display:flex;flex-wrap:wrap;gap:8px;">'+
           d.sin_proveedor.map(function(s){
-            return '<span style="background:#fff;border:1px solid #fdba74;border-radius:6px;padding:6px 10px;font-size:11px;font-family:monospace;cursor:pointer;" data-act="sdet" data-sol="'+esc(s.numero)+'" title="'+esc(s.urgencia||'Normal')+'">'+
-              esc(s.numero)+' &middot; '+esc((s.area||'-').substring(0,20))+
-            '</span>';
-          }).join('')+
+            // Sprint Compras N2 · 21-may-2026 · botón Split visible al lado
+            return '<div style="display:inline-flex;gap:4px;align-items:center;background:#fff;border:1px solid #fdba74;border-radius:6px;padding:4px 8px;font-size:11px;">'+
+              '<span data-act="sdet" data-sol="'+esc(s.numero)+'" style="cursor:pointer;font-family:monospace" title="'+esc(s.urgencia||'Normal')+'">'+esc(s.numero)+' · '+esc((s.area||'-').substring(0,20))+'</span>'+
+              '<button data-act="split-sol" data-sol="'+esc(s.numero)+'" style="background:#9a3412;color:#fff;border:none;padding:2px 7px;border-radius:4px;cursor:pointer;font-size:10px;font-weight:700" title="Dividir esta SOL en N hijas, una por proveedor distinto">✂ Split</button>'+
+            '</div>';
+          }).join(' ')+
         '</div>'+
       '</div>';
     }

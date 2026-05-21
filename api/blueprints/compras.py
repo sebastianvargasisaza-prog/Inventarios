@@ -1361,6 +1361,102 @@ def actualizar_precios_items_oc(numero_oc):
     })
 
 
+@bp.route('/api/compras/sugerir-mp-bulk', methods=['POST'])
+def sugerir_mp_bulk():
+    """Sprint Compras N2 · 21-may-2026 · auto-fill precio desde histórico.
+
+    Devuelve precio último + proveedor + fecha para una LISTA de codigo_mp
+    en una sola llamada. Evita N round-trips cuando la tab Planta tiene
+    20-30 items consolidados.
+
+    Body: {codigos: [str, ...]}  (max 200)
+    Returns: {datos: {codigo_mp: {precio_ultimo, proveedor_ultimo,
+              fecha_ultimo, oc_ultima, dias_atras, precio_promedio_90d}}}
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    body = request.get_json(silent=True) or {}
+    codigos = body.get('codigos') or []
+    if not isinstance(codigos, list):
+        return jsonify({'error': 'codigos debe ser lista'}), 400
+    codigos = [str(c).strip() for c in codigos if str(c).strip()][:200]
+    if not codigos:
+        return jsonify({'datos': {}})
+    conn = get_db(); c = conn.cursor()
+    placeholders = ','.join(['?'] * len(codigos))
+    datos = {}
+    # Último precio por código · COALESCE columna depende del schema
+    # (precio_unitario en algunos schemas legacy, precio_kg en el actual).
+    # Probamos primero precio_unitario · si falla, usar precio_kg.
+    rows = []
+    for col_precio in ('precio_unitario', 'precio_kg'):
+        rows = []
+        try:
+            for cod in codigos:
+                r = c.execute(
+                    f"""SELECT codigo_mp, {col_precio}, COALESCE(proveedor,''),
+                              COALESCE(fecha,''), COALESCE(numero_oc,'')
+                       FROM precios_mp_historico
+                       WHERE codigo_mp=?
+                       ORDER BY fecha DESC, id DESC LIMIT 1""",
+                    (cod,),
+                ).fetchone()
+                if r:
+                    rows.append((r[0], r[1], r[2], r[3], r[4], r[3]))
+            break  # query exitosa, salir del for
+        except Exception:
+            try: conn.rollback()
+            except Exception: pass
+            rows = []
+            continue
+    from datetime import datetime as _dt, date as _d
+    hoy = _d.today()
+    seen = set()
+    for r in rows:
+        cod = r[0]
+        # Si usamos window, solo tomar la fila más reciente por código
+        if len(r) >= 6 and r[3] != r[5]:
+            continue
+        if cod in seen:
+            continue
+        seen.add(cod)
+        fecha_str = (r[3] or '')[:10]
+        dias_atras = None
+        if fecha_str:
+            try:
+                d_obj = _dt.strptime(fecha_str, '%Y-%m-%d').date()
+                dias_atras = (hoy - d_obj).days
+            except Exception:
+                pass
+        datos[cod] = {
+            'precio_ultimo': float(r[1] or 0),
+            'proveedor_ultimo': r[2] or '',
+            'fecha_ultimo': fecha_str,
+            'oc_ultima': r[4] or '',
+            'dias_atras': dias_atras,
+        }
+    # Precio promedio 90d por código · misma estrategia de columna
+    for col_precio in ('precio_unitario', 'precio_kg'):
+        try:
+            avg_rows = c.execute(
+                f"""SELECT codigo_mp, AVG({col_precio})
+                    FROM precios_mp_historico
+                    WHERE codigo_mp IN ({placeholders})
+                      AND date(fecha) >= date('now','-5 hours','-90 days')
+                    GROUP BY codigo_mp""",
+                codigos,
+            ).fetchall()
+            for r in avg_rows:
+                if r[0] in datos:
+                    datos[r[0]]['precio_promedio_90d'] = float(r[1] or 0)
+            break
+        except Exception:
+            try: conn.rollback()
+            except Exception: pass
+            continue
+    return jsonify({'datos': datos, 'codigos_consultados': len(codigos)})
+
+
 @bp.route('/api/compras/sugerir-mp/<path:codigo_mp>')
 def sugerir_mp(codigo_mp):
     """Devuelve datos sugeridos para autocompletar un MP en una OC.
@@ -1958,7 +2054,30 @@ def solicitudes_agrupadas_por_proveedor():
     if categoria_filtro:
         sql += " AND s.categoria=?"
         params.append(categoria_filtro)
-    sql += " ORDER BY s.fecha DESC LIMIT 500"
+    # Sprint Compras N2 · 21-may-2026 · paginación por SOLs.
+    # Antes LIMIT 500 fijo · con 300+ SOLs auto-plan + influencer se
+    # truncaba silenciosamente. Ahora respeta ?limit=N&offset=N.
+    try:
+        limit = max(1, min(int(request.args.get('limit', 500)), 1000))
+    except (ValueError, TypeError):
+        limit = 500
+    try:
+        offset = max(0, int(request.args.get('offset', 0)))
+    except (ValueError, TypeError):
+        offset = 0
+    # Total count antes de paginar (para footer "X de N")
+    try:
+        count_sql = sql.replace(
+            "SELECT s.numero, s.fecha, s.estado, s.solicitante, s.urgencia, "
+            "s.observaciones, s.empresa, s.categoria, s.tipo, s.area, "
+            "s.fecha_requerida, s.numero_oc, s.valor_total",
+            "SELECT COUNT(*)", 1
+        )
+        # Quitar JOIN si hay (count solo necesita la tabla principal)
+        total_sols = int((c.execute(count_sql, params).fetchone() or [0])[0])
+    except Exception:
+        total_sols = 0
+    sql += f" ORDER BY s.fecha DESC LIMIT {limit} OFFSET {offset}"
 
     c.execute(sql, params)
     sol_cols = ['numero','fecha','estado','solicitante','urgencia','observaciones',
@@ -2084,6 +2203,11 @@ def solicitudes_agrupadas_por_proveedor():
         'grupos': grupos,
         'sin_proveedor': sin_proveedor,
         'total_solicitudes': len(solicitudes),
+        'total_solicitudes_full': total_sols,
+        'mostrando_sols': len(solicitudes),
+        'limit': limit,
+        'offset': offset,
+        'hay_mas': total_sols > (offset + len(solicitudes)),
         'total_grupos': len(grupos),
         'estado_filtro': estado_filtro,
         'categoria_filtro': categoria_filtro,
@@ -3511,6 +3635,136 @@ def solicitudes_page():
     if 'compras_user' not in session:
         return redirect('/login?next=/solicitudes')
     return Response(SOLICITUDES_HTML, mimetype='text/html')
+
+@bp.route('/api/solicitudes-compra/<numero>/split', methods=['POST'])
+def solicitud_split(numero):
+    """Sprint Compras N2 · 21-may-2026.
+
+    Cuando una SOL tiene items de varios proveedores distintos, queda
+    como '__MIXTO__' en la card consolidada · Catalina no puede crear
+    UNA OC porque los items van a proveedores distintos. ANTES tenía
+    que borrar y recrear · ahora puede hacer SPLIT.
+
+    Toma una SOL existente y la divide en N SOLs nuevas, una por cada
+    proveedor distinto en sus items. La SOL original queda como
+    "Reemplazada" y guarda referencia a las hijas.
+
+    Body opcional: {por_campo: 'proveedor'|'proveedor_sugerido'} default
+    'proveedor_sugerido'.
+    """
+    usuario, err, code = _require_compras_write()
+    if err:
+        return err, code
+    body = request.get_json(silent=True) or {}
+    por = (body.get('por_campo') or 'proveedor_sugerido').strip()
+    if por not in ('proveedor', 'proveedor_sugerido'):
+        por = 'proveedor_sugerido'
+    conn = get_db(); c = conn.cursor()
+    sol = c.execute(
+        """SELECT numero, estado, COALESCE(numero_oc,''), categoria,
+                  COALESCE(empresa,''), COALESCE(area,''), COALESCE(tipo,''),
+                  COALESCE(solicitante,''), COALESCE(urgencia,''),
+                  COALESCE(observaciones,''), COALESCE(fecha_requerida,'')
+           FROM solicitudes_compra WHERE numero=?""",
+        (numero,),
+    ).fetchone()
+    if not sol:
+        return jsonify({'error': f'SOL {numero} no existe'}), 404
+    if sol[1] != 'Pendiente':
+        return jsonify({'error': f'SOL {numero} no está Pendiente (estado: {sol[1]})'}), 409
+    if sol[2]:
+        return jsonify({'error': f'SOL {numero} ya tiene OC asociada'}), 409
+    # Cargar items
+    items = c.execute(
+        f"""SELECT id, codigo_mp, nombre_mp, cantidad_g, unidad,
+                   COALESCE(valor_estimado,0), COALESCE(precio_unit_g,0),
+                   COALESCE({por},''), COALESCE(justificacion,'')
+            FROM solicitudes_compra_items WHERE numero=?""",
+        (numero,),
+    ).fetchall()
+    if not items:
+        return jsonify({'error': f'SOL {numero} sin items'}), 400
+    # Agrupar por proveedor
+    por_prov = {}
+    for it in items:
+        prov = (it[7] or '_SIN_PROVEEDOR_').strip()
+        por_prov.setdefault(prov, []).append(it)
+    if len(por_prov) <= 1:
+        return jsonify({
+            'error': 'SOL no es mixta · todos los items tienen mismo proveedor',
+            'proveedor_unico': list(por_prov.keys())[0] if por_prov else None,
+        }), 400
+    # Crear N SOLs hijas
+    from datetime import datetime as _dt
+    hijas_creadas = []
+    anio = _dt.now().strftime('%Y')
+    try:
+        for prov, prov_items in por_prov.items():
+            # Buscar siguiente numero AUTO-XXXX
+            for _intento in range(6):
+                row = c.execute(
+                    "SELECT COALESCE(MAX(CAST(SUBSTR(numero, 6) AS INTEGER)),0) "
+                    "FROM solicitudes_compra WHERE numero LIKE 'AUTO-%'",
+                ).fetchone()
+                nuevo_n = f"AUTO-{(row[0] or 0)+1:04d}"
+                try:
+                    c.execute(
+                        """INSERT INTO solicitudes_compra
+                           (numero, fecha, estado, solicitante, urgencia, observaciones,
+                            empresa, area, categoria, tipo, fecha_requerida)
+                           VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                        (nuevo_n, _dt.now().isoformat(), 'Pendiente',
+                         sol[7] or usuario, sol[8] or 'Media',
+                         f'SPLIT de {numero} · proveedor {prov} · ' + (sol[9] or ''),
+                         sol[4], sol[5], sol[3], sol[6], sol[10] or ''),
+                    )
+                    break
+                except Exception:
+                    continue
+            else:
+                raise RuntimeError(f'No se pudo asignar numero para split de {numero}')
+            # Insertar items
+            for it in prov_items:
+                c.execute(
+                    f"""INSERT INTO solicitudes_compra_items
+                        (numero, codigo_mp, nombre_mp, cantidad_g, unidad,
+                         valor_estimado, precio_unit_g, {por}, justificacion)
+                        VALUES (?,?,?,?,?,?,?,?,?)""",
+                    (nuevo_n, it[1], it[2], it[3], it[4],
+                     it[5], it[6], prov, it[8]),
+                )
+            hijas_creadas.append({
+                'numero': nuevo_n, 'proveedor': prov,
+                'items_count': len(prov_items),
+            })
+        # Marcar original como Reemplazada (no Cancelada para no perder histórico)
+        c.execute(
+            "UPDATE solicitudes_compra SET estado='Reemplazada', "
+            "observaciones=COALESCE(observaciones,'') || ' · SPLIT en ' || ? "
+            "WHERE numero=?",
+            (', '.join(h['numero'] for h in hijas_creadas), numero),
+        )
+        # Audit
+        try:
+            audit_log(c, usuario=usuario, accion='SPLIT_SOLICITUD',
+                      tabla='solicitudes_compra', registro_id=numero,
+                      despues={'hijas': hijas_creadas,
+                               'proveedores': list(por_prov.keys())})
+        except Exception:
+            pass
+        conn.commit()
+    except Exception as e:
+        try: conn.rollback()
+        except Exception: pass
+        return jsonify({'error': f'Falla split: {e}', 'tipo': type(e).__name__}), 500
+    return jsonify({
+        'ok': True,
+        'original': numero,
+        'estado_original': 'Reemplazada',
+        'hijas_creadas': hijas_creadas,
+        'mensaje': f'SOL {numero} dividida en {len(hijas_creadas)} hijas por proveedor',
+    })
+
 
 @bp.route('/api/solicitudes-compra/<numero>/estado', methods=['PATCH'])
 def actualizar_estado_solicitud(numero):
