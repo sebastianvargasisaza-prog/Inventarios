@@ -4235,16 +4235,20 @@ async function abrirBasesFormulas(){
       });
       html += '</tbody></table>';
     }
-    if(!d.es_uniforme){
-      html += '<div style="margin-top:14px;border-top:1px solid #e2e8f0;padding-top:14px">';
-      html += '<h4 style="margin:0 0 8px;color:#0e7490">🔧 Normalizar todas a una base común (admin)</h4>';
-      html += '<p style="font-size:11px;color:#475569;margin:0 0 8px">Los porcentajes NO se tocan · solo cambia el lote nominal y se recalcula la cantidad_g_por_lote.<br>Recomendado: 1000g (1kg) si es el lote estándar.</p>';
-      html += '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">';
-      html += '<label style="font-size:12px;color:#475569">Base nueva (g):</label>';
-      html += '<input id="bases-nuevo-input" type="number" value="'+(d.base_dominante_g || 1000)+'" min="50" max="100000" step="100" style="width:120px;padding:6px 10px;border:1px solid #cbd5e1;border-radius:5px">';
-      html += '<button id="bases-aplicar-btn" style="background:#0e7490;color:#fff;border:none;padding:8px 16px;border-radius:6px;font-weight:700;cursor:pointer">⚙ Normalizar TODAS</button>';
-      html += '</div></div>';
-    }
+    html += '<div style="margin-top:14px;border-top:1px solid #e2e8f0;padding-top:14px">';
+    html += '<h4 style="margin:0 0 8px;color:#0e7490">🔧 Normalizar todas a una base común (admin)</h4>';
+    html += '<div style="background:#fef3c7;border:1px solid #ca8a04;border-radius:6px;padding:10px 12px;margin-bottom:10px;font-size:11px;color:#78350f">';
+    html += '<b>Por qué 100g es el estándar cosmético:</b><br>';
+    html += '• Los % de la fórmula suman 100% · base 100g = "% es exactamente igual a g"<br>';
+    html += '• Ejemplo: si Vit C es 10%, en base 100g leés "10g de Vit C" directamente<br>';
+    html += '• Los descuentos REALES al producir NO cambian (siempre usan % × kg pedidos)';
+    html += '</div>';
+    html += '<p style="font-size:11px;color:#475569;margin:0 0 8px">Los porcentajes NO se tocan · solo cambia el lote nominal mostrado.</p>';
+    html += '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">';
+    html += '<label style="font-size:12px;color:#475569">Base nueva (g):</label>';
+    html += '<input id="bases-nuevo-input" type="number" value="100" min="50" max="100000" step="50" style="width:120px;padding:6px 10px;border:1px solid #cbd5e1;border-radius:5px">';
+    html += '<button id="bases-aplicar-btn" style="background:#0e7490;color:#fff;border:none;padding:8px 16px;border-radius:6px;font-weight:700;cursor:pointer">⚙ Normalizar TODAS a esta base</button>';
+    html += '</div></div>';
     html += '</div></div>';
     var div = document.createElement('div');
     div.innerHTML = html;
@@ -4408,11 +4412,16 @@ function renderFormulas(fl){
     var total=f.items.reduce(function(s,i){return s+i.porcentaje;},0);
     var ok=Math.abs(total-100)<0.1;
     var rows='';
+    // Sprint Fórmulas PRO · 20-may-2026: mostrar "g por base de la fórmula"
+    // en vez de "g/kg" hardcoded · si la fórmula está en base 100g (estándar
+    // cosmético), el valor es el % directamente. Si está en 1000g, es ×10.
+    var baseF = parseFloat(f.unidad_base_g) || 1000;
     f.items.forEach(function(it){
       var pctVal=formulasPin?it.porcentaje+'%':MASK+'%';
-      var gVal=formulasPin?(it.porcentaje*10).toFixed(2)+'g':MASK+'g';
-      rows+='<tr><td style="font-family:monospace;">'+it.material_id+'</td><td>'+it.material_nombre+'</td><td>'+pctVal+'</td><td style="font-weight:600;">'+gVal+'</td></tr>';
+      var gPorBase = formulasPin ? (it.porcentaje * baseF / 100).toFixed(2) + 'g' : MASK + 'g';
+      rows+='<tr><td style="font-family:monospace;">'+it.material_id+'</td><td>'+it.material_nombre+'</td><td>'+pctVal+'</td><td style="font-weight:600;">'+gPorBase+'</td></tr>';
     });
+    var unidadCol = 'g por ' + baseF + 'g';
     var totalStr=formulasPin?total.toFixed(2)+'%'+(ok?' OK':' revisar'):MASK+'%';
     var editBtn=formulasPin
       ?'<button onclick="editFormula('+idx+')" style="background:#667eea;padding:5px 10px;font-size:0.82em;">Editar</button>'
@@ -4424,7 +4433,7 @@ function renderFormulas(fl){
     html+='<button data-form-act="duplicar" data-prod="'+_escHTML(f.producto_nombre)+'" style="background:#7c3aed;padding:5px 10px;font-size:0.82em;" title="Crear copia con nuevo nombre">Duplicar</button>';
     html+='<button onclick="delFormula('+idx+')" style="background:#cc4444;padding:5px 10px;font-size:0.82em;">Eliminar</button>';
     html+='</div></div>';
-    html+='<table class="table" style="font-size:0.85em;"><thead><tr><th>Codigo MP</th><th>Material</th><th>%</th><th>g/kg</th></tr></thead><tbody>'+rows+'</tbody></table>';
+    html+='<table class="table" style="font-size:0.85em;"><thead><tr><th>Código MP</th><th>Material</th><th>%</th><th>'+_escHTML(unidadCol)+'</th></tr></thead><tbody>'+rows+'</tbody></table>';
     html+='<small style="color:'+(ok?'#28a745':'#e68a00')+';"> '+totalStr+'</small>';
     html+='</div>';
   });
