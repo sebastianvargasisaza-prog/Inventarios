@@ -1959,9 +1959,22 @@ def _get_formula_pin():
     """Sprint Fórmulas PRO · 20-may-2026 · PIN runtime con override en
     app_settings. Si admin lo cambia desde UI, queda en BD (no requiere
     setear env var en Render). Sino, fallback al env FORMULA_PIN.
+    Defensivo: si la tabla no existe (mig 147 no aplicó aún), no rompe.
     """
     try:
         conn = get_db()
+        # Crear tabla si no existe · defensivo en producción
+        try:
+            conn.execute("""CREATE TABLE IF NOT EXISTS app_settings (
+                clave TEXT PRIMARY KEY,
+                valor TEXT NOT NULL,
+                descripcion TEXT,
+                actualizado_at_utc TEXT,
+                actualizado_por TEXT,
+                tenant_id INTEGER DEFAULT 1
+            )""")
+        except Exception:
+            pass
         row = conn.execute(
             "SELECT valor FROM app_settings WHERE clave='formula_pin' LIMIT 1",
         ).fetchone()
@@ -1982,13 +1995,28 @@ def formulas_unlock():
     return jsonify({'ok': False, 'error': 'PIN incorrecto'}), 403
 
 
+def _ensure_app_settings_table(c):
+    """Crea app_settings si no existe (defensivo · si mig 147 no se aplicó
+    en producción, esto la crea al primer acceso). Idempotente."""
+    try:
+        c.execute("""CREATE TABLE IF NOT EXISTS app_settings (
+            clave TEXT PRIMARY KEY,
+            valor TEXT NOT NULL,
+            descripcion TEXT,
+            actualizado_at_utc TEXT,
+            actualizado_por TEXT,
+            tenant_id INTEGER DEFAULT 1
+        )""")
+    except Exception:
+        pass  # tabla ya existe o BD no acepta · sigue
+
+
 @bp.route('/api/admin/formulas/pin', methods=['GET', 'POST'])
 def admin_formulas_pin():
     """Sprint Fórmulas PRO · admin cambia PIN desde UI (sin tocar Render).
 
-    GET  · devuelve {configurado_en: 'app_settings' | 'env' | 'random'}
-            sin revelar el valor.
-    POST · body {nuevo_pin} · solo admin · ≥4 chars.
+    GET  · devuelve estado actual sin revelar valor.
+    POST · body {nuevo_pin} · solo admin · 4-32 chars.
     """
     u, err, code = _require_session()
     if err:
@@ -1996,38 +2024,64 @@ def admin_formulas_pin():
     if u not in ADMIN_USERS:
         return jsonify({'error': 'solo admin'}), 403
     conn = get_db(); c = conn.cursor()
+    _ensure_app_settings_table(c)
+
+    try:
+        from config import _FORMULA_PIN_INSECURE
+        es_random = bool(_FORMULA_PIN_INSECURE)
+    except Exception:
+        es_random = False
+
     if request.method == 'GET':
-        row = c.execute(
-            "SELECT actualizado_at_utc, actualizado_por FROM app_settings "
-            "WHERE clave='formula_pin' LIMIT 1",
-        ).fetchone()
         try:
-            from config import _FORMULA_PIN_INSECURE
-            es_random = bool(_FORMULA_PIN_INSECURE)
-        except Exception:
-            es_random = False
+            row = c.execute(
+                "SELECT actualizado_at_utc, actualizado_por FROM app_settings "
+                "WHERE clave='formula_pin' LIMIT 1",
+            ).fetchone()
+        except Exception as _e:
+            __import__('logging').getLogger('inventario').warning(
+                'admin_formulas_pin GET · query falló: %s', _e)
+            row = None
         return jsonify({
             'configurado_en_bd': bool(row),
             'configurado_en_env': not es_random and not bool(row),
             'es_pin_random_efimero': es_random and not bool(row),
-            'ultima_actualizacion': row[0] if row else None,
-            'cambiado_por': row[1] if row else None,
+            'ultima_actualizacion': (row[0] if row else None),
+            'cambiado_por': (row[1] if row else None),
         })
+
     body = request.get_json(silent=True) or {}
     nuevo = str(body.get('nuevo_pin') or '').strip()
     if len(nuevo) < 4:
         return jsonify({'error': 'PIN debe tener ≥4 caracteres'}), 400
     if len(nuevo) > 32:
         return jsonify({'error': 'PIN máximo 32 caracteres'}), 400
-    c.execute(
-        """INSERT INTO app_settings (clave, valor, descripcion, actualizado_por)
-           VALUES ('formula_pin', ?, 'PIN runtime fórmulas · override de env', ?)
-           ON CONFLICT(clave) DO UPDATE SET
-             valor=excluded.valor,
-             actualizado_at_utc=datetime('now','utc'),
-             actualizado_por=excluded.actualizado_por""",
-        (nuevo, u),
-    )
+    # Upsert manual · compatible SQLite y PostgreSQL · sin ON CONFLICT
+    # con expresiones potencialmente problemáticas.
+    from datetime import datetime as _dt
+    now_utc = _dt.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+    try:
+        existe = c.execute(
+            "SELECT 1 FROM app_settings WHERE clave='formula_pin' LIMIT 1",
+        ).fetchone()
+        if existe:
+            c.execute(
+                "UPDATE app_settings SET valor=?, actualizado_at_utc=?, "
+                "actualizado_por=? WHERE clave='formula_pin'",
+                (nuevo, now_utc, u),
+            )
+        else:
+            c.execute(
+                "INSERT INTO app_settings (clave, valor, descripcion, "
+                "actualizado_at_utc, actualizado_por) VALUES "
+                "('formula_pin', ?, 'PIN runtime fórmulas · override de env', ?, ?)",
+                (nuevo, now_utc, u),
+            )
+    except Exception as _e:
+        __import__('logging').getLogger('inventario').error(
+            'admin_formulas_pin POST · upsert falló: %s', _e)
+        return jsonify({'error': f'No se pudo guardar el PIN: {_e}',
+                        'detalle': 'Revisar logs del servidor'}), 500
     try:
         audit_log(c, usuario=u, accion='FORMULA_PIN_CAMBIADO',
                   tabla='app_settings', registro_id='formula_pin',
