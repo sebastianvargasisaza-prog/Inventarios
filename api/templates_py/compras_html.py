@@ -187,19 +187,23 @@ async function cxIAPreguntar(pregunta){
 }
 </script>
 
+<!-- Compras PRO · Sebastián 21-may-2026 · reagrupación 11 sub-tabs → 5 grupos.
+     De 4 grupos top a 4 con menos sub-tabs cada uno · "Mis Solicitudes" pasa a
+     widget en Dashboard · default landing = Dashboard (consolidado · KPIs grandes
+     arriba). Influencers solo admin. -->
 <div class="tab-nav" id="cx-grp-bar" style="display:flex;gap:8px;padding:8px 0;border-bottom:2px solid #e2e8f0;margin-bottom:12px">
-  <button class="cx-grp-btn on" data-cx-grp="entradas"  data-default-tab="planta"
+  <button class="cx-grp-btn on" data-cx-grp="analitica"  data-default-tab="dash"
     style="padding:9px 22px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:800;cursor:pointer;background:linear-gradient(135deg,#0e7490,#0891b2);color:#fff;box-shadow:0 3px 10px rgba(8,145,178,.35)"
-    title="Las 3 fuentes de pedidos: Planta (MP+Empaque) · Influencers · Solicitudes generales">📥 Entradas</button>
-  <button class="cx-grp-btn" data-cx-grp="ocs"          data-default-tab="consol"
+    title="Vista ejecutiva · 4 KPIs + alertas + tus solicitudes">📊 Dashboard</button>
+  <button class="cx-grp-btn" data-cx-grp="entradas"      data-default-tab="planta"
     style="padding:9px 22px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:800;cursor:pointer;background:#e2e8f0;color:#475569"
-    title="Órdenes de Compra · gestión post-entrada">📦 OCs y Pagos</button>
-  <button class="cx-grp-btn" data-cx-grp="maestros"     data-default-tab="prov"
+    title="Bandeja: SOLs de Planta (MP+Empaque) y Solicitudes generales">📋 Bandeja</button>
+  <button class="cx-grp-btn" data-cx-grp="ocs"           data-default-tab="consol"
     style="padding:9px 22px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:800;cursor:pointer;background:#e2e8f0;color:#475569"
-    title="Maestro de Proveedores">🏭 Proveedores</button>
-  <button class="cx-grp-btn" data-cx-grp="analitica"    data-default-tab="dash"
+    title="Órdenes de Compra · OCs activas · pagos · servicios">📦 OCs</button>
+  <button class="cx-grp-btn" data-cx-grp="maestros"      data-default-tab="prov"
     style="padding:9px 22px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:800;cursor:pointer;background:#e2e8f0;color:#475569"
-    title="Vista global: Dashboard · Alertas · Mis Solicitudes">📊 Vista Ejecutiva</button>
+    title="Maestro de Proveedores + scorecard + ROI">🏭 Proveedores</button>
 </div>
 
 <!-- Sub-barras por grupo (1 visible a la vez) -->
@@ -231,19 +235,25 @@ async function cxIAPreguntar(pregunta){
   <span data-cx-sub="maestros" style="display:none;gap:6px;flex-wrap:wrap">
     <button class="tn"      data-tab="prov" id="tn-prov" title="Maestro de proveedores">🏭 Proveedores</button>
   </span>
-  <!-- Sub-tabs del grupo ANALÍTICA -->
-  <span data-cx-sub="analitica" style="display:none;gap:6px;flex-wrap:wrap">
-    <button class="tn"      data-tab="dash" id="tn-dash" title="KPIs · salud · top proveedores">📊 Dashboard</button>
-    <button class="tn"      data-tab="alertas" id="tn-alertas" title="Alertas vivas · acción rápida">🚨 Alertas</button>
-    <button class="tn"      data-tab="mis-sol" id="tn-mis-sol" title="Tus solicitudes con ciclo completo">👤 Mis Solicitudes <span id="mis-sol-badge" style="display:none;background:#1e40af;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
+  <!-- Sub-tabs del grupo DASHBOARD (consolidado · sin sub-tabs)
+       Sebastián 21-may-2026 · Mis Solicitudes pasa a widget · Alertas pasa
+       a banner arriba · todo unificado en una sola vista ejecutiva. -->
+  <span data-cx-sub="analitica" style="display:flex;gap:6px;flex-wrap:wrap">
+    <button class="tn on"   data-tab="dash" id="tn-dash" title="KPIs grandes · alertas · tus solicitudes · todo en uno">📊 Vista consolidada</button>
+    <!-- Mantener data-tab="mis-sol" + "alertas" en DOM oculto para no romper deep links -->
+    <button class="tn" data-tab="alertas" id="tn-alertas" style="display:none">🚨 Alertas</button>
+    <button class="tn" data-tab="mis-sol" id="tn-mis-sol" style="display:none">👤 Mis Solicitudes</button>
   </span>
 </div>
 
 <!-- PANES -->
 <div id="pane-dash" class="pane on">
-  <!-- Compras 2.0 · Sebastián 21-may-2026 · Dashboard DUAL por rol.
-       Catalina ve buzón priorizado · admin ve panel ejecutivo + Influencers. -->
+  <!-- Compras PRO · Sebastián 21-may-2026 · Dashboard CONSOLIDADO.
+       Una sola vista con: KPIs grandes arriba + buzón Catalina / panel admin
+       + alertas widget + mis solicitudes widget (todo lo que antes era 3 tabs). -->
+  <div id="dash-alertas-banner" style="margin-bottom:10px"></div>
   <div id="dash-home-2" style="margin-bottom:14px"></div>
+  <div id="dash-mis-solic-widget" style="margin-bottom:14px"></div>
   <!-- Fallback legacy widgets (oculto por default · solo si dash-home falla) -->
   <div id="dashboard-ejecutivo" style="display:none"></div>
   <div id="kpi-area" class="kpis" style="display:none"></div>
@@ -1274,8 +1284,9 @@ window._cxTabToGrp = {
   'consol':'ocs', 'por-pagar':'ocs', 'pagos':'ocs', 'ordserv':'ocs',
   // Maestros
   'prov':'maestros',
-  // Vista Ejecutiva
+  // Dashboard (consolidado · alertas + mis-sol son widgets dentro)
   'dash':'analitica', 'alertas':'analitica', 'mis-sol':'analitica',
+  // PRO Fase 1: estos 2 ya no son tabs visibles · siguen en map por deep links
 };
 
 // ─── Tabs ─────────────────────────────────────────────────────────
@@ -1296,7 +1307,12 @@ document.querySelectorAll('.tn').forEach(function(btn){
     this.classList.add('on');
     var pane = document.getElementById('pane-'+tab);
     if(pane) pane.classList.add('on');
-    if(tab==='dash'){ renderDashHome2(); /* renderDash() legacy queda en oculto · no se llama (MEDIA-10) */ }
+    if(tab==='dash'){
+      renderDashHome2();
+      // Compras PRO · widgets consolidados dentro de Dashboard
+      if(typeof renderAlertasBanner==='function') renderAlertasBanner();
+      if(typeof renderMisSolicWidget==='function') renderMisSolicWidget();
+    }
     else if(tab==='prov') renderProv();
     else if(tab==='solic') loadSolicitudes();
     else if(tab==='planta') loadPlanta();
@@ -1510,6 +1526,45 @@ async function verDetalleOS(num){
     document.getElementById('osd-close').onclick = function(){ m.remove(); };
     m.addEventListener('click', function(e){ if(e.target === m) m.remove(); });
   }catch(e){ alert('Error red: '+e.message); }
+}
+
+// Compras PRO · Sebastián 21-may-2026 · widgets consolidados Dashboard
+async function renderAlertasBanner(){
+  var cont = document.getElementById('dash-alertas-banner');
+  if(!cont) return;
+  try{
+    var r = await fetch('/api/alertas-mp');
+    if(!r.ok){ cont.innerHTML = ''; return; }
+    var d = await r.json();
+    var alertas = (d.alertas || d.items || []).filter(function(a){
+      return a.severidad === 'critica' || a.severidad === 'alta';
+    }).slice(0, 5);
+    if(!alertas.length){ cont.innerHTML = ''; return; }
+    cont.innerHTML = '<div style="background:#fef2f2;border:2px solid #dc2626;border-radius:10px;padding:12px 16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">'+
+      '<div style="font-size:1.4em">🚨</div>'+
+      '<div style="flex:1;font-size:13px;color:#991b1b"><b>'+alertas.length+' alerta(s) críticas:</b> '+
+      alertas.map(function(a){return _esc(a.mensaje||a.titulo||a.tipo||'');}).join(' · ')+
+      '</div></div>';
+  }catch(e){ cont.innerHTML = ''; }
+}
+async function renderMisSolicWidget(){
+  var cont = document.getElementById('dash-mis-solic-widget');
+  if(!cont) return;
+  try{
+    var r = await fetch('/api/mis-solicitudes-compra');
+    if(!r.ok){ cont.innerHTML = ''; return; }
+    var d = await r.json();
+    var sols = (d.solicitudes || d.items || []).slice(0, 5);
+    if(!sols.length){ cont.innerHTML = ''; return; }
+    var html = '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px"><div style="font-weight:800;color:#0f172a;font-size:13px;margin-bottom:8px">👤 Tus solicitudes recientes</div>';
+    html += '<div style="font-size:12px">';
+    sols.forEach(function(s){
+      var col = s.estado === 'Aprobada' ? '#16a34a' : (s.estado === 'Rechazada' ? '#dc2626' : (s.estado === 'Pendiente' ? '#ca8a04' : '#64748b'));
+      html += '<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f1f5f9"><span><b style="font-family:monospace">'+_esc(s.numero)+'</b> · '+_esc((s.observaciones||s.categoria||'').substring(0,60))+'</span><span style="background:'+col+';color:#fff;padding:2px 8px;border-radius:8px;font-size:10px;font-weight:700">'+_esc(s.estado)+'</span></div>';
+    });
+    html += '</div></div>';
+    cont.innerHTML = html;
+  }catch(e){ cont.innerHTML = ''; }
 }
 
 // Compras 2.0 · 21-may-2026 · Dashboard HOME dual por rol
