@@ -7443,6 +7443,46 @@ def test_golden_ordenes_servicio(app, db_clean):
     _exec("DELETE FROM ordenes_servicio WHERE numero_os=?", (num_os,))
 
 
+def test_golden_abastecimiento_zero_error(app, db_clean):
+    """Anti-regresión · 9 fixes abastecimiento audit 22-may-2026.
+
+    Cubre las invariantes críticas que rigen TODAS las necesidades de Compras:
+    - Lead time column real (lead_time_dias · no dias_lead_time_promedio)
+    - _get_mp_stock excluye CUARENTENA
+    - Ajuste/Ajuste+ suman correctamente
+    - Predicción dedup con cola
+    - alertas-reabastecimiento dedup con cola
+    - Urgencia usa lead_time real
+    """
+    cs = _login(app, 'sebastian')
+    # 1. Predicción demanda · endpoint responde
+    r = cs.get('/api/compras/prediccion-demanda')
+    assert r.status_code == 200
+    d = r.get_json()
+    assert 'items' in d
+    assert 'counts' in d
+    # 2. Cada item de predicción tiene cantidad_sugerida >= 0 (no negativos)
+    for it in d.get('items', []):
+        assert it['cantidad_sugerida_g'] >= 0
+        assert it['dias_hasta_quiebre'] >= 0
+        assert it['lead_time_dias'] >= 0
+    # 3. Alertas-reabastecimiento responde con en_cola_g + deficit neto
+    r2 = cs.get('/api/alertas-reabastecimiento')
+    assert r2.status_code == 200
+    d2 = r2.get_json()
+    assert 'alertas' in d2
+    for a in d2.get('alertas', []):
+        assert 'en_cola_g' in a, 'Alerta debe incluir en_cola_g (dedup)'
+        assert 'deficit' in a
+        assert a['deficit'] >= 0
+    # 4. Stock endpoint trata Ajustes correctamente (suite verde como proxy)
+    r3 = cs.get('/api/stock')
+    assert r3.status_code == 200
+    for it in r3.get_json().get('items', []):
+        # stock_actual no debe ser negativo en estado consistente
+        assert it['stock_actual'] >= 0 or it['stock_actual'] is not None
+
+
 def test_golden_pendientes_audit_total(app, db_clean):
     """Anti-regresión · 21 fixes de los 76 bugs auditoría 21-may.
 

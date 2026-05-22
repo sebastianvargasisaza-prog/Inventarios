@@ -709,11 +709,25 @@ def generar_plan(horizonte_dias=60, tipo='auto', usuario='cron'):
             FROM formula_items
             WHERE UPPER(TRIM(producto_nombre)) = UPPER(TRIM(?))
         """, (prop['producto'],)).fetchall()
+        # Bug #11 fix · 22-may-2026 · respetar flag incluye_merma de fórmula
+        # · Si formula_items.incluye_merma=1 · NO re-aplicar merma (evita doble)
+        # · Si =0 (default) · sigue aplicando merma como antes (compat)
+        try:
+            items_meta = c.execute("""
+                SELECT material_id, COALESCE(incluye_merma, 0)
+                FROM formula_items
+                WHERE UPPER(TRIM(producto_nombre)) = UPPER(TRIM(?))
+            """, (prop['producto'],)).fetchall()
+            merma_flag = {r[0]: int(r[1] or 0) for r in items_meta}
+        except Exception:
+            merma_flag = {}
         for mat_id, mat_nom, cant_lote_g, pct in items:
             req_g = (cant_lote_g or 0) * prop['lotes']
             if not req_g and pct:
                 req_g = (pct / 100.0) * (prop['lote_size_kg'] or 0) * 1000 * prop['lotes']
-            req_g = req_g * (1 + prop['merma_pct'] / 100.0)
+            # Re-aplicar merma solo si formula NO la incluye ya
+            if not merma_flag.get(mat_id, 0):
+                req_g = req_g * (1 + prop['merma_pct'] / 100.0)
             consumo_acumulado[mat_id] = consumo_acumulado.get(mat_id, 0) + req_g
 
     compras_propuestas = []

@@ -6433,6 +6433,14 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
            ('ESENCIA ILUMINADORA',                  'esencia', NULL, 60, 90, 30, 3.0, 3, NULL)""",
     ]),
 
+    (154, "formula_items · flag incluye_merma · doble-merma fix · 22-may-2026", [
+        # Sebastián 22-may-2026 · Bug #11 audit abastecimiento.
+        # Si `cantidad_g_por_lote` ya tiene merma incluida (convención cosmética),
+        # auto_plan línea 716 la inflaba otra vez → over-ordering 5-15%.
+        # Flag opt-in (default 0) · si =1 auto_plan NO re-aplica merma.
+        "ALTER TABLE formula_items ADD COLUMN incluye_merma INTEGER DEFAULT 0",
+    ]),
+
     (153, "BRD · alias columnas para MyBatch · 21-may-2026", [
         # Sebastián 21-may-2026 · BRD vista-completa, timeline, cuarentena
         # explícita usaban columnas con nombres distintos al schema real.
