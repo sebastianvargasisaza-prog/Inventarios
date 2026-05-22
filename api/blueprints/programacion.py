@@ -2466,16 +2466,44 @@ def prog_cancelar_evento(evento_id):
         "UPDATE produccion_programada SET estado='cancelado' WHERE id=?",
         (evento_id,)
     )
+    # Fix #4 · 21-may-2026 · liberar SOLs vinculadas a esta producción
+    # (canal Pre-Producción · `produccion_checklist`). Antes quedaban
+    # huérfanas · Catalina aprobaba compras para producción que ya no existía.
+    sols_liberadas = []
+    try:
+        r_pcl = c.execute(
+            """SELECT DISTINCT solicitud_numero
+               FROM produccion_checklist
+               WHERE produccion_id=? AND COALESCE(solicitud_numero,'') != ''""",
+            (evento_id,),
+        ).fetchall()
+        nums = [r[0] for r in r_pcl if r[0]]
+        for num in nums:
+            try:
+                c.execute(
+                    """UPDATE solicitudes_compra
+                       SET estado='Cancelada',
+                           observaciones = COALESCE(observaciones,'') ||
+                                          ' | Producción origen cancelada (id='||?||')'
+                       WHERE numero=? AND estado IN ('Pendiente','Aprobada')""",
+                    (str(evento_id), num),
+                )
+                if c.rowcount > 0:
+                    sols_liberadas.append(num)
+            except Exception:
+                continue
+    except Exception as e:
+        log.warning('liberar SOLs pre-prod fallo: %s', e)
     try:
         audit_log(c, usuario=user, accion='CANCELAR_PRODUCCION',
                   tabla='produccion_programada', registro_id=evento_id,
                   antes={'estado': estado_anterior},
-                  despues={'estado': 'cancelado'},
-                  detalle=f"Canceló producción id={evento_id} (estaba {estado_anterior})")
+                  despues={'estado': 'cancelado', 'sols_liberadas': sols_liberadas},
+                  detalle=f"Canceló producción id={evento_id} (estaba {estado_anterior}) · liberó {len(sols_liberadas)} SOLs")
     except Exception as e:
         log.warning('audit_log CANCELAR_PRODUCCION fallo: %s', e)
     conn.commit()
-    return jsonify({'ok': True, 'id': evento_id})
+    return jsonify({'ok': True, 'id': evento_id, 'sols_liberadas': sols_liberadas})
 
 
 # ─── Planta: catalogo areas + operarios + asignacion (Capa 2) ──────────────
@@ -9001,6 +9029,11 @@ def checklist_item_solicitar(item_id):
     sol_num = f'SOL-{year}-{seq:04d}'
 
     # Determinar categoria segun tipo
+    # Fix #5 · 21-may-2026 · serigrafía/tampografía pasan a 'Material de
+    # Empaque' (antes 'Servicios' → invisible en tab Planta de Catalina).
+    # El servicio de decoración va sobre envases existentes pero Catalina
+    # los gestiona junto al resto de empaque. Tipo='Servicio decoracion'
+    # preserva la distinción interna.
     cat_map = {
         'mp': 'Materia Prima',
         'envase_primario': 'Material de Empaque',
@@ -9010,12 +9043,13 @@ def checklist_item_solicitar(item_id):
         'etiqueta_posterior': 'Material de Empaque',
         'etiqueta_lateral': 'Material de Empaque',
         'caja_exterior': 'Material de Empaque',
-        'serigrafia': 'Servicios',
-        'tampografia': 'Servicios',
+        'serigrafia': 'Material de Empaque',
+        'tampografia': 'Material de Empaque',
         'instructivo': 'Material de Empaque',
         'estuche': 'Material de Empaque',
     }
     categoria = cat_map.get(item_dict.get('item_tipo'), 'Material de Empaque')
+    tipo_servicio_deco = item_dict.get('item_tipo') in ('serigrafia', 'tampografia')
 
     descripcion = (
         f"[Checklist Produccion] {item_dict.get('descripcion','')}"
@@ -9033,13 +9067,32 @@ def checklist_item_solicitar(item_id):
     except Exception:
         pass
 
+    # Fix #8 · 21-may-2026 · urgencia dinámica según fecha planeada
+    # (antes hardcoded 'Alta'). Si producción es mañana y MP falta → 'Critica'.
+    urg_dinamica = 'Alta'
+    try:
+        from datetime import datetime as _dt, date as _date
+        fp = item_dict.get('fecha_planeada')
+        if fp:
+            fpd = _dt.strptime(str(fp)[:10], '%Y-%m-%d').date()
+            dias_falta = (fpd - _date.today()).days
+            if dias_falta <= 1:
+                urg_dinamica = 'Critica'
+            elif dias_falta <= 3:
+                urg_dinamica = 'Urgente'
+            elif dias_falta <= 7:
+                urg_dinamica = 'Alta'
+            else:
+                urg_dinamica = 'Normal'
+    except Exception:
+        pass
+    tipo_sol = 'Servicio decoracion' if tipo_servicio_deco else 'Material'
     c.execute("""INSERT INTO solicitudes_compra
         (numero, fecha, estado, solicitante, email_solicitante, urgencia,
          observaciones, area, empresa, categoria, tipo)
         VALUES (?,date('now', '-5 hours'),'Pendiente',?,?,?,?,?,?,?,?)""",
-        (sol_num, user, user_email, 'Alta', descripcion,
-         'Produccion', 'Espagiria', categoria,
-         'Servicio' if categoria == 'Servicios' else 'Material'))
+        (sol_num, user, user_email, urg_dinamica, descripcion,
+         'Produccion', 'Espagiria', categoria, tipo_sol))
 
     # Si es MP con codigo + cantidad: tambien insertar el item
     try:

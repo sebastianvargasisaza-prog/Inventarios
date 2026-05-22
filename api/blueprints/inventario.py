@@ -7274,14 +7274,58 @@ def cc_review():
          'Lote '+d.get('lote','')+' AQL:'+resultado_aql+' Solub:'+solubilidad+' Firma:'+d.get('firmante',user),
          request.remote_addr))
     if estado_final == 'RECHAZADO':
+        # Fix #2 · 21-may-2026 · schema actualizado de solicitudes_compra.
+        # Antes usaba columnas fantasma (material_codigo, cantidad, unidad...)
+        # que ya no existen · INSERT fallaba silencioso · Catalina no se
+        # enteraba del lote rechazado · zombie en bodega.
         try:
+            from datetime import datetime as _dt
+            anio_qc = _dt.now().strftime('%Y')
+            cod_mp = d.get('codigo_mp', '')
+            lote_rech = d.get('lote', '')
+            nombre_mp = ''
+            try:
+                r_mp = c.execute(
+                    "SELECT nombre_comercial FROM maestro_mps WHERE codigo_mp=?",
+                    (cod_mp,),
+                ).fetchone()
+                if r_mp:
+                    nombre_mp = r_mp[0] or ''
+            except Exception:
+                pass
+            # numero único · DEV-YYYY-NNNN
+            row_n = c.execute(
+                "SELECT COALESCE(MAX(CAST(SUBSTR(numero,10) AS INTEGER)),0) "
+                "FROM solicitudes_compra WHERE numero LIKE ?",
+                (f'DEV-{anio_qc}-%',),
+            ).fetchone()
+            sol_num = f'DEV-{anio_qc}-{(row_n[0] or 0)+1:04d}'
+            obs = f'LOTE RECHAZADO QC · devolución proveedor · lote: {lote_rech}'
             c.execute(
-                "INSERT INTO solicitudes_compra (material_codigo,material_nombre,cantidad,unidad,justificacion,estado,empresa,area,solicitante,fecha) "
-                "VALUES (?,?,0,'kg',?,'PENDIENTE','Espagiria','Calidad',?,datetime('now', '-5 hours'))",
-                (d.get('codigo_mp',''), d.get('lote',''),
-                 'LOTE RECHAZADO QC - Devolucion proveedor. Lote: '+d.get('lote',''), user))
-        except sqlite3.OperationalError as _e:
-            # Si la tabla solicitudes_compra cambió de schema, no romper el rechazo QC.
+                """INSERT INTO solicitudes_compra
+                   (numero, fecha, estado, solicitante, urgencia, observaciones,
+                    area, empresa, categoria, tipo, valor)
+                   VALUES (?, datetime('now','-5 hours'), 'Pendiente', ?,
+                           'Alta', ?, 'Calidad', 'Espagiria', 'Materia Prima',
+                           'Devolucion', 0)""",
+                (sol_num, user or 'qc_user', obs),
+            )
+            try:
+                c.execute(
+                    """INSERT INTO solicitudes_compra_items
+                       (numero, codigo_mp, nombre_mp, cantidad_g, valor_estimado)
+                       VALUES (?, ?, ?, 0, 0)""",
+                    (sol_num, cod_mp, nombre_mp or cod_mp),
+                )
+            except Exception:
+                pass
+            try:
+                audit_log(c, usuario=user, accion='SOL_DEVOLUCION_QC',
+                          tabla='solicitudes_compra', registro_id=sol_num,
+                          despues={'lote': lote_rech, 'mp': cod_mp})
+            except Exception:
+                pass
+        except Exception as _e:
             __import__('logging').getLogger('inventario').error(
                 "Auto-creación de solicitud devolución falló: %s", _e
             )

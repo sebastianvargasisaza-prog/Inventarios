@@ -750,8 +750,34 @@ def generar_plan(horizonte_dias=60, tipo='auto', usuario='cron'):
             prov = (mm_row[0] if mm_row else '') or ''
             nombre = (mm_row[1] if mm_row else mat_id) or mat_id
             lead, buffer, cob_min, cob_ideal, origen, es_envase = 14, 30, 30, 60, 'local', 0
-        # ¿Falta?
-        deficit_g = req_g - stock_g
+        # Fix #1 · 21-may-2026 · descontar lo que YA está en cola de compras
+        # (SOLs Pendientes/Aprobadas + OCs Borrador/Revisada/Autorizada no Recibida).
+        # Antes solo restaba stock_g · resultado: auto-plan duplicaba SOLs cada
+        # lunes si Catalina no había procesado las anteriores → compra ×2 silenciosa.
+        en_cola_g = 0
+        try:
+            r_sol = c.execute(
+                """SELECT COALESCE(SUM(sci.cantidad_g),0)
+                   FROM solicitudes_compra_items sci
+                   JOIN solicitudes_compra sc ON sc.numero=sci.numero
+                   WHERE sci.codigo_mp=?
+                     AND sc.estado IN ('Pendiente','Aprobada')
+                     AND COALESCE(sc.numero_oc,'') = ''""",
+                (mat_id,),
+            ).fetchone()
+            en_cola_g += float((r_sol or [0])[0] or 0)
+            r_oc = c.execute(
+                """SELECT COALESCE(SUM(oci.cantidad_g),0)
+                   FROM ordenes_compra_items oci
+                   JOIN ordenes_compra oc ON oc.numero_oc=oci.numero_oc
+                   WHERE oci.codigo_mp=?
+                     AND oc.estado IN ('Borrador','Revisada','Autorizada')""",
+                (mat_id,),
+            ).fetchone()
+            en_cola_g += float((r_oc or [0])[0] or 0)
+        except Exception:
+            en_cola_g = 0
+        deficit_g = req_g - stock_g - en_cola_g
         if deficit_g <= 0:
             continue
         # Cuánto pedir: deficit + cobertura ideal extra

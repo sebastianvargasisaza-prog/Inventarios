@@ -802,17 +802,38 @@ def handle_oc_detalle(numero_oc):
             return jsonify({'error': 'OC no encontrada'}), 404
         if _row[0] not in ('Borrador', 'Rechazada'):
             return jsonify({'error': f'No se puede eliminar una OC en estado {_row[0]}. Solo Borrador o Rechazada.'}), 400
+        # Fix #3 · 21-may-2026 · revertir SOLs vinculadas a Pendiente antes
+        # de borrar la OC · sino quedaban con numero_oc apuntando a fantasma
+        # y estado='Aprobada' · invisible al regenerar.
+        try:
+            r_sols = c.execute(
+                "SELECT numero FROM solicitudes_compra WHERE numero_oc=?",
+                (numero_oc,),
+            ).fetchall()
+            sols_revertidas = [r[0] for r in r_sols]
+            c.execute(
+                "UPDATE solicitudes_compra SET estado='Pendiente', numero_oc='' WHERE numero_oc=?",
+                (numero_oc,),
+            )
+        except Exception as e:
+            log.warning('revert SOLs fallo (eliminar OC): %s', e)
+            sols_revertidas = []
         c.execute('DELETE FROM ordenes_compra_items WHERE numero_oc=?', (numero_oc,))
         c.execute('DELETE FROM ordenes_compra WHERE numero_oc=?', (numero_oc,))
         try:
             audit_log(c, usuario=usuario, accion='ELIMINAR_OC',
                       tabla='ordenes_compra', registro_id=numero_oc,
                       antes={'estado': _row[0]},
-                      detalle=f"Eliminó OC {numero_oc} (estado {_row[0]})")
+                      despues={'sols_revertidas': sols_revertidas},
+                      detalle=f"Eliminó OC {numero_oc} (estado {_row[0]}) · revirtió {len(sols_revertidas)} SOLs")
         except Exception as e:
             log.warning('audit_log ELIMINAR_OC fallo: %s', e)
         conn.commit()
-        return jsonify({'ok': True, 'message': f'OC {numero_oc} eliminada'})
+        return jsonify({
+            'ok': True,
+            'message': f'OC {numero_oc} eliminada',
+            'sols_revertidas': sols_revertidas,
+        })
 
     if request.method == 'PUT':
         u, err, code = _require_compras_write()
@@ -2468,12 +2489,36 @@ def crear_oc_desde_solicitudes():
                     )
                 except Exception:
                     pass
+            # Fix #6 · 21-may-2026 · precio_real escribe back en SOL items
+            # (antes valor_estimado quedaba 0 eternamente · reportes mentían)
+            if cod_mp and pu > 0:
+                try:
+                    c.execute(
+                        """UPDATE solicitudes_compra_items
+                           SET valor_estimado=?
+                           WHERE numero IN ({}) AND codigo_mp=?""".format(placeholders),
+                        [round(cant_g * pu, 2)] + nums + [cod_mp],
+                    )
+                except Exception:
+                    pass
 
         if valor_total > 0:
             c.execute(
                 "UPDATE ordenes_compra SET valor_total=? WHERE numero_oc=?",
                 (valor_total, numero_oc),
             )
+            # Fix #6 cont · valor total back en SOL (suma items)
+            try:
+                for _num in nums:
+                    c.execute(
+                        """UPDATE solicitudes_compra
+                           SET valor = (SELECT COALESCE(SUM(valor_estimado),0)
+                                        FROM solicitudes_compra_items WHERE numero=?)
+                           WHERE numero=?""",
+                        (_num, _num),
+                    )
+            except Exception:
+                pass
 
         # 7. Vincular las solicitudes a la nueva OC y marcarlas Aprobada
         c.execute(
@@ -4056,6 +4101,7 @@ def recibir_oc(numero_oc):
 
     # ── INSERT real (post-validación) ──────────────────────────────────
     ingresos = 0
+    lotes_sinteticos_advertencia = []  # Fix #9 · 21-may-2026
     for _idx, item in enumerate(items_oc):
         _oci_rowid, codigo, nombre, cantidad_pedida = item
         ir = rec_map_idx.get(_idx) or rec_map_cod.get(codigo, {})
@@ -4088,6 +4134,16 @@ def recibir_oc(numero_oc):
                 else:
                     log.warning('recibir_oc MEE sin codigo_mp · OC %s · item no imputado', numero_oc)
             else:
+                # Fix #9 · 21-may-2026 · lote sintético tracking (INVIMA).
+                # Antes silencioso · receptor no se enteraba que su recepción
+                # quedó con lote sintético que rompe trazabilidad con CoA.
+                lote_final = lote_num
+                if not lote_final:
+                    lote_final = f'OC-{numero_oc}-{_idx+1}'
+                    lotes_sinteticos_advertencia.append({
+                        'codigo_mp': codigo, 'lote_asignado': lote_final,
+                        'advertencia': 'Lote sintético · pedir lote real al proveedor para trazabilidad CoA/INVIMA',
+                    })
                 cur.execute(
                     "INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, fecha, "
                     "observaciones, proveedor, operador, lote, fecha_vencimiento, estado_lote, numero_oc) "
@@ -4095,10 +4151,7 @@ def recibir_oc(numero_oc):
                     (codigo, nombre, cant_recibida, 'Entrada', fecha,
                      f'Recepcion OC {numero_oc}' + (f' | {notas_item}' if notas_item else ''),
                      prov_nombre, operador,
-                     # Lote sintético si el receptor no ingresó uno · un
-                     # lote NULL crea stock huérfano que el dashboard de
-                     # vencimientos y estados de lote no contabiliza.
-                     lote_num or f'OC-{numero_oc}-{_idx+1}',
+                     lote_final,
                      fv or None, 'CUARENTENA', numero_oc))
             ingresos += 1
         # Actualizar item OC · audit zero-error 2-may-2026: usar += en
@@ -4149,6 +4202,30 @@ def recibir_oc(numero_oc):
             (nuevo_estado, fecha, obs_r, disc_r, receptor_nombre, numero_oc))
     except Exception:
         cur.execute("UPDATE ordenes_compra SET estado=?, fecha_recepcion=? WHERE numero_oc=?", (nuevo_estado, fecha, numero_oc))
+    # Fix #7 · 21-may-2026 · lead_time real aprende del histórico (EWMA 0.7/0.3)
+    # Antes: mp_lead_time_config quedaba con 14d default eternamente · auto_plan
+    # y predicción demanda usaban datos falsos.
+    try:
+        oc_fecha_row = cur.execute(
+            "SELECT fecha FROM ordenes_compra WHERE numero_oc=?", (numero_oc,)
+        ).fetchone()
+        if oc_fecha_row and oc_fecha_row[0]:
+            from datetime import datetime as _dtle
+            f_oc = _dtle.strptime(str(oc_fecha_row[0])[:10], '%Y-%m-%d').date()
+            f_rec = _dtle.strptime(str(fecha)[:10], '%Y-%m-%d').date()
+            lead_real_dias = max(1, (f_rec - f_oc).days)
+            for codigo_mp_item in {it[1] for it in items_oc if it[1]}:
+                cur.execute(
+                    """INSERT INTO mp_lead_time_config (material_id, dias_lead_time_promedio)
+                       VALUES (?, ?)
+                       ON CONFLICT(material_id) DO UPDATE SET
+                         dias_lead_time_promedio = ROUND(
+                           0.7 * COALESCE(dias_lead_time_promedio, ?) + 0.3 * ?
+                         )""",
+                    (codigo_mp_item, lead_real_dias, lead_real_dias, lead_real_dias),
+                )
+    except Exception as _e:
+        log.warning('lead_time learn fallo: %s', _e)
     # Cierre automatico de cadena: si la OC esta linkeada a items del checklist
     # Pre-Produccion (via produccion_checklist.oc_numero) o solicitudes anticipadas,
     # marcarlos como 'recibido'. Solo cuando recepcion es completa, no parcial.
@@ -4186,6 +4263,7 @@ def recibir_oc(numero_oc):
         'ok': True, 'numero_oc': numero_oc, 'ingresos': ingresos,
         'estado': nuevo_estado, 'parcial': es_parcial,
         'checklist_actualizados': items_checklist_actualizados,
+        'lotes_sinteticos': lotes_sinteticos_advertencia,  # Fix #9
     })
 
 # ============================================================

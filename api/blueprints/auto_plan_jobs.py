@@ -1010,12 +1010,17 @@ def job_auto_d20(app):
                 """, (f"SOL-{_dt.now().strftime('%Y')}-%",)).fetchone()[0] + 1
                 numero = f"SOL-{_dt.now().strftime('%Y')}-{n:04d}"
                 observ = f'🎨 Cron D-20 · decoración D-20 · {prod_match} · producción {f.isoformat()} · {unidades} ud · proveedor {prov}'
+                # Fix #5 · 21-may-2026 · categoria='Material de Empaque'
+                # (antes 'Servicios' → invisible en tab Planta de Catalina).
+                # La serigrafía/tampografía D-20 es decoración de envase ·
+                # conceptualmente material de empaque · debe aparecer junto
+                # a las MPs y empaques que Catalina maneja en Planta.
                 c.execute("""
                     INSERT INTO solicitudes_compra
                       (numero, fecha, estado, solicitante, urgencia, observaciones,
                        area, empresa, categoria, tipo, fecha_requerida, valor)
                     VALUES (?, ?, 'Pendiente', 'cron-d20-auto', 'Alta', ?, 'Produccion',
-                            'Espagiria', 'Servicios', 'Compra', ?, ?)
+                            'Espagiria', 'Material de Empaque', 'Servicio decoracion', ?, ?)
                 """, (numero, _dt.now().isoformat(), observ, f.isoformat(),
                       sum(it['valor'] for it in items)))
                 for it in items:
