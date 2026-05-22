@@ -419,9 +419,22 @@ def register_hooks(app):
 
         # ── Capa 2: CSRF token explícito (defense in depth) ──────────────
         # Si el cliente envía X-CSRF-Token, DEBE matchear con session['csrf_token'].
-        # Si NO lo envía, se permite (los frontends viejos siguen funcionando).
-        # El frontend nuevo puede activar este check enviando el header.
+        # SEC-FIX · 21-may-2026 · OBLIGATORIO para /api/admin/* + paths sensibles.
+        # Antes: si no enviaba, pasaba · ahora admin/sensibles requieren token.
         provided_token = request.headers.get('X-CSRF-Token', '').strip()
+        _admin_paths = ('/api/admin/', '/api/maestro-mps/', '/api/maestros-mps/')
+        _csrf_obligatorio = any(request.path.startswith(p) for p in _admin_paths)
+        if _csrf_obligatorio and not provided_token and not app.testing:
+            _log_sec(
+                "csrf_token_missing_required",
+                session.get('compras_user', '-'),
+                _client_ip(),
+                f"path={request.path}",
+            )
+            return jsonify({
+                "error": "CSRF token requerido para endpoint admin/sensible",
+                "hint": "Frontend debe enviar X-CSRF-Token header",
+            }), 403
         if provided_token:
             session_token = session.get('csrf_token', '')
             if not session_token or not _constant_time_eq(provided_token, session_token):

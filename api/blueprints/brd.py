@@ -1403,11 +1403,35 @@ def liberar_ebr(ebr_id):
            WHERE id = ?""",
         (user, int(signature_id), ebr_id),
     )
+    # INVIMA-FIX · 21-may-2026 · promociona lote PT a VIGENTE
+    # Antes: estado solo cambiaba en ebr_ejecuciones · movimientos PT
+    # seguía CUARENTENA · Compras/Despachos no podía facturarlo aunque
+    # QC firmó · doble operación manual + riesgo despacho sin liberación.
+    pt_lote_promovidos = 0
+    try:
+        lote_row = cur.execute(
+            "SELECT lote, lote_codigo FROM ebr_ejecuciones WHERE id=?",
+            (ebr_id,),
+        ).fetchone()
+        lote_ref = (lote_row['lote'] or lote_row.get('lote_codigo', '') if lote_row else '') or ''
+        if lote_ref:
+            cur.execute(
+                """UPDATE movimientos SET estado_lote='VIGENTE'
+                   WHERE lote=? AND tipo='Entrada'
+                     AND estado_lote IN ('CUARENTENA','CUARENTENA_EXTENDIDA')""",
+                (lote_ref,),
+            )
+            pt_lote_promovidos = cur.rowcount or 0
+    except Exception as _e:
+        import logging as _log
+        _log.getLogger('inventario.brd').warning('liberar_ebr promocion PT fallo: %s', _e)
     conn.commit()
     audit_log(cur, usuario=user, accion="LIBERAR_EBR",
               tabla="ebr_ejecuciones", registro_id=ebr_id,
-              despues={"liberado_por": user, "signature_id": signature_id})
-    return jsonify({"ok": True, "estado": "liberado"})
+              despues={"liberado_por": user, "signature_id": signature_id,
+                       "pt_lotes_promovidos": pt_lote_promovidos})
+    return jsonify({"ok": True, "estado": "liberado",
+                    "pt_lotes_promovidos": pt_lote_promovidos})
 
 
 @bp.route("/api/brd/ebr/<int:ebr_id>/rechazar", methods=["POST"])
@@ -1440,10 +1464,12 @@ def rechazar_ebr(ebr_id):
     ):
         return jsonify({"error": "signature_id no corresponde a una firma 'rechaza' de este EBR por vos"}), 400
 
+    # INVIMA-FIX · 21-may-2026 · grabar timestamp rechazo (KPI 30d en dashboard)
     cur.execute(
         """UPDATE ebr_ejecuciones
              SET estado = 'rechazado',
-                 rechazado_motivo = ?
+                 rechazado_motivo = ?,
+                 rechazado_at_utc = datetime('now', 'utc')
            WHERE id = ?""",
         (motivo, ebr_id),
     )

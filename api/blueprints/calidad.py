@@ -847,11 +847,17 @@ def coa_list():
             if d.get('conforme') is not None:
                 conforme = 1 if d.get('conforme') else 0
 
+        # INVIMA-FIX · 21-may-2026 · analista FORZADO al user · decision derivada
+        # Antes: payload podía falsificar analista=otro + override decision='Aprobado'
+        # aún con conforme=0 · violación 21 CFR Part 11 §11.10(b)(g)
         decision = 'Aprobado' if conforme else 'Rechazado'
-        if d.get('decision'):
-            decision = d['decision']
-
+        # Solo permitir override de decision cuando es CONFORME (downgrade es legal)
+        if d.get('decision') and conforme:
+            _allowed = ('Aprobado', 'Condicional', 'Pendiente revisión')
+            if d['decision'] in _allowed:
+                decision = d['decision']
         user = session.get('compras_user','sistema')
+        analista_forzado = user  # FORZADO · no aceptar d.get('analista')
         c.execute("""INSERT INTO coa_resultados
             (lote, codigo_mp, material_nombre, parametro, unidad,
              valor_obtenido, valor_min_spec, valor_max_spec, conforme,
@@ -861,7 +867,7 @@ def coa_list():
             (d['lote'], d['codigo_mp'], d.get('material_nombre',''),
              d['parametro'], unidad, d['valor_obtenido'],
              valor_min_spec, valor_max_spec, conforme, metodo,
-             d.get('analista', user),
+             analista_forzado,
              d.get('fecha_analisis'),
              d.get('equipo_id'), d.get('observaciones',''), decision))
         coa_id = c.lastrowid

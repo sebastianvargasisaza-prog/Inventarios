@@ -1905,11 +1905,26 @@ def job_desv_plazos(app):
                   AND date(capa_fecha_limite) < date('now', '-5 hours')
                 LIMIT 30
             """).fetchall()
+            # INVIMA-FIX · 21-may-2026 · también capa_acciones (otra tabla)
+            # Antes solo monitoreaba desviaciones.capa_fecha_limite
+            # · capa_acciones.fecha_compromiso quedaba invisible (creadas
+            # via /api/calidad/capa endpoint).
+            try:
+                capa_acc_vencido = c.execute("""
+                    SELECT id, responsable, fecha_compromiso, descripcion
+                    FROM capa_acciones
+                    WHERE estado IN ('Pendiente','En curso','Ejecutada')
+                      AND fecha_compromiso IS NOT NULL AND fecha_compromiso != ''
+                      AND date(fecha_compromiso) < date('now', '-5 hours')
+                    LIMIT 30
+                """).fetchall()
+            except Exception:
+                capa_acc_vencido = []
         except Exception as e:
             log.warning('desv_plazos read fallo: %s', e)
             return False, {'error': str(e)[:200]}, 0
 
-        if not sin_clasif and not sin_invest and not capa_vencido:
+        if not sin_clasif and not sin_invest and not capa_vencido and not capa_acc_vencido:
             return True, {'mensaje': 'Sin desviaciones en plazo vencido'}, 0
 
         try:
@@ -1924,14 +1939,17 @@ def job_desv_plazos(app):
                 partes.append(f'🔍 {len(sin_invest)} sin investigar (>5d)')
                 for r in sin_invest[:3]: partes.append(f'  · {r[0]} ({r[1] or "?"}): {(r[2] or "")[:60]}')
             if capa_vencido:
-                partes.append(f'⛔ {len(capa_vencido)} CAPA VENCIDO')
+                partes.append(f'⛔ {len(capa_vencido)} CAPA-DESV VENCIDO')
                 for r in capa_vencido[:3]: partes.append(f'  · {r[0]}: resp {r[1]} · venció {r[2]}')
+            if capa_acc_vencido:
+                partes.append(f'⛔ {len(capa_acc_vencido)} CAPA-ACC VENCIDO')
+                for r in capa_acc_vencido[:3]: partes.append(f'  · CAPA-{r[0]}: resp {r[1]} · venció {r[2]}')
             push_notif_multi(
                 destinatarios, 'capa',
                 f'⚠ Desviaciones en plazo vencido (ASG-PRO-001)',
                 body='\n'.join(partes),
                 link='/aseguramiento', remitente='cron-desv',
-                importante=bool(capa_vencido or len(sin_clasif) >= 3),
+                importante=bool(capa_vencido or capa_acc_vencido or len(sin_clasif) >= 3),
             )
         except Exception as e:
             log.warning('desv_plazos notif fallo: %s', e)

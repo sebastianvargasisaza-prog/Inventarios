@@ -5204,7 +5204,10 @@ def listar_comprobantes_pago():
 
     Query: ?desde=&hasta=&beneficiario=  (filtros opcionales)
     """
-    u, err, code = _require_compras_session()
+    # SEC-FIX · 21-may-2026 · privilege leak · datos bancarios PII expuestos
+    # Antes: cualquier compras_user logueado (mayerlin, operarios, sergio) veía
+    # comprobantes con beneficiario_cedula + total_pagado. Ahora solo compras_write.
+    u, err, code = _require_compras_write()
     if err:
         return err, code
     desde = request.args.get('desde', '')
@@ -5236,7 +5239,8 @@ def listar_comprobantes_pago():
 @bp.route('/api/comprobantes-pago/<int:comp_id>/pdf', methods=['GET'])
 def descargar_comprobante_pdf(comp_id):
     """Descarga el PDF del comprobante."""
-    u, err, code = _require_compras_session()
+    # SEC-FIX · 21-may-2026 · IDOR · solo compras_write puede descargar PDFs PII
+    u, err, code = _require_compras_write()
     if err:
         return err, code
     import base64

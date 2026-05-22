@@ -76,7 +76,27 @@ def _verify_totp(secret, token):
     if not token.isdigit() or len(token) != 6:
         return False
     try:
-        return pyotp.TOTP(secret).verify(token, valid_window=1)
+        ok = pyotp.TOTP(secret).verify(token, valid_window=1)
+        # SEC-FIX · 21-may-2026 · replay protection
+        # Antes: mismo token aceptado durante ~90s (window=1) → MITM podía reusar
+        # Ahora: track tokens usados via cache in-memory por (secret_hash, token)
+        # TTL 90s (cubre window completa) · multi-worker: cache local OK porque
+        # próximo token será otro · solo bloquea reuse INMEDIATO.
+        if ok:
+            import hashlib, time as _t
+            global _MFA_USED_TOKENS  # noqa
+            try:
+                _MFA_USED_TOKENS  # type: ignore
+            except NameError:
+                _MFA_USED_TOKENS = {}  # noqa
+            now = _t.time()
+            # Cleanup TTL
+            _MFA_USED_TOKENS = {k: v for k, v in _MFA_USED_TOKENS.items() if v > now - 90}
+            key = hashlib.sha256(f'{secret}:{token}'.encode()).hexdigest()[:16]
+            if key in _MFA_USED_TOKENS:
+                return False  # REPLAY detectado
+            _MFA_USED_TOKENS[key] = now
+        return ok
     except Exception:
         return False
 
