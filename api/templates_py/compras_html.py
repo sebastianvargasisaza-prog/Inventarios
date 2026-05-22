@@ -248,9 +248,10 @@ async function cxIAPreguntar(pregunta){
 
 <!-- PANES -->
 <div id="pane-dash" class="pane on">
-  <!-- Compras PRO · Sebastián 21-may-2026 · Dashboard CONSOLIDADO.
-       Una sola vista con: KPIs grandes arriba + buzón Catalina / panel admin
-       + alertas widget + mis solicitudes widget (todo lo que antes era 3 tabs). -->
+  <!-- Compras PRO · Sebastián 21-may-2026 · Dashboard CONSOLIDADO con 4 KPIs grandes. -->
+  <!-- Franja superior · 4 KPIs CLAVE que el consultor procurement recomendó:
+       1. Cash a pagar 30d · 2. OCs en riesgo · 3. SOLs sin tocar · 4. Salud score -->
+  <div id="dash-kpis-grandes" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-bottom:14px"></div>
   <div id="dash-alertas-banner" style="margin-bottom:10px"></div>
   <div id="dash-home-2" style="margin-bottom:14px"></div>
   <div id="dash-mis-solic-widget" style="margin-bottom:14px"></div>
@@ -1308,8 +1309,9 @@ document.querySelectorAll('.tn').forEach(function(btn){
     var pane = document.getElementById('pane-'+tab);
     if(pane) pane.classList.add('on');
     if(tab==='dash'){
+      // Compras PRO · 4 KPIs grandes + widgets consolidados
+      if(typeof renderKpisGrandes==='function') renderKpisGrandes();
       renderDashHome2();
-      // Compras PRO · widgets consolidados dentro de Dashboard
       if(typeof renderAlertasBanner==='function') renderAlertasBanner();
       if(typeof renderMisSolicWidget==='function') renderMisSolicWidget();
     }
@@ -1526,6 +1528,50 @@ async function verDetalleOS(num){
     document.getElementById('osd-close').onclick = function(){ m.remove(); };
     m.addEventListener('click', function(e){ if(e.target === m) m.remove(); });
   }catch(e){ alert('Error red: '+e.message); }
+}
+
+// Compras PRO · Sebastián 21-may-2026 · 4 KPIs grandes franja superior
+// Consultor procurement: "Sebas debería ver 4 KPIs que importan al entrar, no 20"
+async function renderKpisGrandes(){
+  var cont = document.getElementById('dash-kpis-grandes');
+  if(!cont) return;
+  try{
+    var [rHome, rCash] = await Promise.all([
+      fetch('/api/compras/dashboard-home').then(function(r){return r.ok?r.json():{};}).catch(function(){return{};}),
+      fetch('/api/compras/cash-flow').then(function(r){return r.ok?r.json():{};}).catch(function(){return{};}),
+    ]);
+    var p30 = ((rCash.proyecciones||[]).find(function(x){return x.dias===30;})) || {};
+    var kpis = rHome.kpis || {};
+    var counts = rHome.counts || {};
+    var cashCol = p30.total_salida > 50000000 ? '#dc2626' : (p30.total_salida > 20000000 ? '#ca8a04' : '#16a34a');
+    var ocsRiesgo = (rHome.alertas_ocs_viejas||[]).length;
+    var solsSinTocar = kpis.sols_sin_tocar_3d || 0;
+    var salud = kpis.salud_score || 0;
+    var saludCol = salud >= 80 ? '#16a34a' : (salud >= 60 ? '#ca8a04' : '#dc2626');
+    cont.innerHTML = ''+
+      '<div style="background:linear-gradient(135deg,'+cashCol+',rgba(0,0,0,.1));color:#fff;padding:14px;border-radius:10px;box-shadow:0 3px 8px rgba(0,0,0,.1)">'+
+        '<div style="font-size:10px;text-transform:uppercase;opacity:.85;font-weight:700">💰 Cash 30 días</div>'+
+        '<div style="font-size:1.9em;font-weight:800;line-height:1;margin-top:2px">'+fmt(p30.total_salida||0)+'</div>'+
+        '<div style="font-size:10px;opacity:.85;margin-top:2px">'+((p30.ocs_por_pagar||{}).count||0)+' OCs + '+((p30.influencers||{}).count||0)+' infl.</div>'+
+      '</div>'+
+      '<div style="background:linear-gradient(135deg,'+(ocsRiesgo>0?'#dc2626':'#16a34a')+',rgba(0,0,0,.1));color:#fff;padding:14px;border-radius:10px;box-shadow:0 3px 8px rgba(0,0,0,.1)">'+
+        '<div style="font-size:10px;text-transform:uppercase;opacity:.85;font-weight:700">🚨 OCs en riesgo</div>'+
+        '<div style="font-size:1.9em;font-weight:800;line-height:1;margin-top:2px">'+ocsRiesgo+'</div>'+
+        '<div style="font-size:10px;opacity:.85;margin-top:2px">>10d sin recibir</div>'+
+      '</div>'+
+      '<div style="background:linear-gradient(135deg,'+(solsSinTocar>0?'#ca8a04':'#16a34a')+',rgba(0,0,0,.1));color:#fff;padding:14px;border-radius:10px;box-shadow:0 3px 8px rgba(0,0,0,.1)">'+
+        '<div style="font-size:10px;text-transform:uppercase;opacity:.85;font-weight:700">⏰ SOLs sin tocar</div>'+
+        '<div style="font-size:1.9em;font-weight:800;line-height:1;margin-top:2px">'+solsSinTocar+'</div>'+
+        '<div style="font-size:10px;opacity:.85;margin-top:2px">>3 días pendientes</div>'+
+      '</div>'+
+      '<div style="background:linear-gradient(135deg,'+saludCol+',rgba(0,0,0,.1));color:#fff;padding:14px;border-radius:10px;box-shadow:0 3px 8px rgba(0,0,0,.1)">'+
+        '<div style="font-size:10px;text-transform:uppercase;opacity:.85;font-weight:700">📊 Salud Compras</div>'+
+        '<div style="font-size:1.9em;font-weight:800;line-height:1;margin-top:2px">'+salud+'/100</div>'+
+        '<div style="font-size:10px;opacity:.85;margin-top:2px">'+(counts.por_pagar||0)+' por pagar · '+((counts.planta||0)+(counts.solic||0))+' SOLs</div>'+
+      '</div>';
+  }catch(e){
+    cont.innerHTML = '<div style="color:#64748b;padding:10px;text-align:center;font-size:12px">⚠ KPIs no disponibles</div>';
+  }
 }
 
 // Compras PRO · Sebastián 21-may-2026 · widgets consolidados Dashboard
@@ -3261,7 +3307,7 @@ async function crearOCSugerida(){
       else{ errores.push(prov+': '+((res&&res.error)||'Error '+r.status)); }
     }catch(e){ errores.push(prov+': '+e.message); }
   }
-  await loadData(); renderDash(); renderDashHome2();
+  await loadData(); renderDash(); renderDashHome2(); if(typeof renderKpisGrandes==='function') renderKpisGrandes(); if(typeof renderAlertasBanner==='function') renderAlertasBanner(); if(typeof renderMisSolicWidget==='function') renderMisSolicWidget();
   if(errores.length){
     alert('Creadas: '+creadas.join(', ')+'\\nErrores:\\n'+errores.join('\\n'));
   } else {
@@ -3287,7 +3333,7 @@ async function crearOCFila(i){
       if(actEl) actEl.innerHTML='<span style="color:#16a34a;font-size:13px;">&#x2713; '+esc(res.numero_oc||'OK')+'</span>';
       var row=document.getElementById('sugr'+i);
       if(row) row.style.background='#f0fdf4';
-      await loadData(); renderDash(); renderDashHome2();
+      await loadData(); renderDash(); renderDashHome2(); if(typeof renderKpisGrandes==='function') renderKpisGrandes(); if(typeof renderAlertasBanner==='function') renderAlertasBanner(); if(typeof renderMisSolicWidget==='function') renderMisSolicWidget();
     } else {
       var msg=(res&&res.error)?res.error:'Error '+r.status;
       if(actEl) actEl.innerHTML='<span style="color:#dc2626;font-size:11px;">'+esc(msg)+'</span>';
