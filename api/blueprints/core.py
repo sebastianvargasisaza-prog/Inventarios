@@ -1445,28 +1445,48 @@ def login():
                     _is_mfa_enabled_eff = _is_mfa_enabled
                 if _is_mfa_enabled_eff(username):
                     # Validar cookie mfa_trusted (firmada con SECRET_KEY)
+                    # SEC-FIX · 22-may-2026 · session_version invalida cookies
+                    # cuando user cambia password. Cookie incluye sv (session
+                    # version actual al momento de firmar) · compara con DB.
                     trusted_cookie = request.cookies.get('mfa_trusted', '')
                     skip_mfa = False
                     if trusted_cookie:
                         import hashlib, hmac as _hmac
-                        # La cookie mfa_trusted se firma con la MISMA llave que
-                        # las sesiones Flask (app.secret_key). Nunca un literal
-                        # 'devsecret': sería público y permitiría forjar la
-                        # cookie y saltar MFA. Si SECRET_KEY no está en env,
-                        # app.secret_key es aleatoria por proceso (segura).
                         secret = current_app.secret_key or ''
                         parts = trusted_cookie.split('|')
-                        if len(parts) == 3:
-                            user_c, ts_c, sig_c = parts
+                        # Soportar formato legacy (3 partes) + nuevo (4 con sv)
+                        if len(parts) in (3, 4):
                             try:
+                                if len(parts) == 4:
+                                    user_c, ts_c, sv_c, sig_c = parts
+                                    msg = f"{user_c}|{ts_c}|{sv_c}"
+                                else:
+                                    user_c, ts_c, sig_c = parts
+                                    sv_c = '0'
+                                    msg = f"{user_c}|{ts_c}"
                                 ts_int = int(ts_c)
-                                # Verificar firma
-                                msg = f"{user_c}|{ts_c}"
                                 expected = _hmac.new(secret.encode(), msg.encode(), hashlib.sha256).hexdigest()[:32]
                                 if (_hmac.compare_digest(expected, sig_c)
                                         and user_c == username
                                         and (time.time() - ts_int) < 60 * 24 * 3600):
-                                    skip_mfa = True
+                                    # SEC-FIX 22-may · validar session_version actual vs cookie
+                                    sv_db = '0'
+                                    try:
+                                        _c2 = db_connect()
+                                        _row = _c2.execute(
+                                            "SELECT COALESCE(session_version, 1) FROM users_passwords WHERE username=?",
+                                            (username,),
+                                        ).fetchone()
+                                        _c2.close()
+                                        sv_db = str(_row[0]) if _row else '1'
+                                    except Exception:
+                                        sv_db = '1'
+                                    if sv_c == sv_db:
+                                        skip_mfa = True
+                                    else:
+                                        _log_sec("mfa_trusted_revoked_sv_mismatch",
+                                                 username, ip,
+                                                 f"cookie_sv={sv_c} db_sv={sv_db}")
                             except (ValueError, TypeError):
                                 pass
                     if skip_mfa:

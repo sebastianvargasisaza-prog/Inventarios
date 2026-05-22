@@ -648,8 +648,22 @@ def login_mfa_verify():
     import hashlib, hmac
     # Firmar con app.secret_key (la misma llave de las sesiones Flask), nunca
     # un literal 'devsecret' que sería público y permitiría forjar la cookie.
+    # SEC-FIX · 22-may-2026 · session_version incluido en cookie · al cambiar
+    # password (incrementa sv) las cookies viejas quedan inválidas.
     secret = current_app.secret_key or ''
-    token_trust = f"{pending}|{int(time.time())}"
+    sv_actual = '1'
+    try:
+        from database import db_connect as _db_c
+        _c = _db_c()
+        _row = _c.execute(
+            "SELECT COALESCE(session_version, 1) FROM users_passwords WHERE username=?",
+            (pending,),
+        ).fetchone()
+        _c.close()
+        sv_actual = str(_row[0]) if _row else '1'
+    except Exception:
+        pass
+    token_trust = f"{pending}|{int(time.time())}|{sv_actual}"
     sig = hmac.new(secret.encode(), token_trust.encode(), hashlib.sha256).hexdigest()[:32]
     cookie_val = f"{token_trust}|{sig}"
     resp = redirect('/modulos')

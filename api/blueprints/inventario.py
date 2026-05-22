@@ -94,6 +94,35 @@ def _require_admin():
         return None, jsonify({'error': 'Solo administradores'}), 403
     return u, None, None
 
+
+def _mee_stock_real(c, codigo_mee):
+    """MEE-FIX · 22-may-2026 · stock CANONICAL desde SUM(movimientos_mee).
+
+    Reemplaza lectura de cache `maestro_mee.stock_actual` que podía
+    drifear bajo carga. Ahora: una sola fuente de verdad = SUM movimientos.
+
+    Args:
+        c: cursor SQLite/PG
+        codigo_mee: código del envase
+
+    Returns:
+        float · stock real (siempre >= 0)
+    """
+    try:
+        r = c.execute(
+            """SELECT COALESCE(SUM(CASE
+                   WHEN tipo='Entrada' THEN cantidad
+                   WHEN tipo='Salida'  THEN -cantidad
+                   WHEN tipo='Ajuste'  THEN cantidad
+                   ELSE 0 END), 0)
+               FROM movimientos_mee
+               WHERE mee_codigo=? AND COALESCE(anulado,0)=0""",
+            (codigo_mee,),
+        ).fetchone()
+        return max(float(r[0] or 0), 0)
+    except Exception:
+        return 0.0
+
 # ── Sebastian 5-may-2026: revisar stock_minimo desde Planta ────────
 # El equipo (no solo admin) necesita ver si los stock_minimo configurados
 # son reales antes de fiarse de las alertas. Endpoint read-only que
