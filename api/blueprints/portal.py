@@ -203,8 +203,21 @@ def portal_login_api():
         ok = False
     if not ok:
         log.info('portal login fallo · password incorrecto · %s', email)
+        # SEC-FIX · 22-may-2026 · Bug #4 audit Despachos · record también fail password
+        # Antes: solo registraba si email no existía · brute-force ilimitado en email enumerado
+        try:
+            if _is_locked:
+                from auth import _record_failure as _rf2
+                _rf2(ip_req, email)
+        except Exception: pass
         return jsonify({'error': 'Credenciales incorrectas'}), 401
     # Sesión nueva para evitar fixation
+    # SEC-FIX · 22-may-2026 · reset failures tras login exitoso
+    try:
+        if _is_locked:
+            from auth import _reset_failures as _rstf
+            _rstf(ip_req, email)
+    except Exception: pass
     session.clear()
     session.permanent = True
     session['portal_cliente_id'] = cid

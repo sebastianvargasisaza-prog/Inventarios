@@ -1033,6 +1033,30 @@ def handle_despachos():
             if err:
                 return jsonify(err), 400
             sku = it.get('sku', '')
+            # INVIMA-FIX · 22-may-2026 · Bug #10 audit Despachos · valida pedidos_items
+            # · Antes: operario podía despachar SKUs no presentes en pedido vinculado
+            # · Ahora: si hay numero_ped · validar que (sku, cantidad) coincide con pedido
+            if numero_ped:
+                try:
+                    pi_row = c.execute(
+                        """SELECT cantidad FROM pedidos_items
+                           WHERE numero_pedido=? AND sku=?""",
+                        (numero_ped, sku),
+                    ).fetchone()
+                    if not pi_row:
+                        return jsonify({
+                            'error': f'SKU {sku} no está en el pedido {numero_ped}',
+                            'codigo': 'SKU_NO_EN_PEDIDO',
+                        }), 409
+                    cant_pedida = float(pi_row[0] or 0)
+                    if cantidad > cant_pedida * 1.05:  # 5% tolerancia overshoot
+                        return jsonify({
+                            'error': f'Cantidad {cantidad} excede lo pedido para {sku} ({cant_pedida:.0f})',
+                            'codigo': 'CANTIDAD_EXCEDE_PEDIDO',
+                            'sku': sku, 'pedida': cant_pedida, 'despachada': cantidad,
+                        }), 409
+                except Exception:
+                    pass  # graceful · si tabla pedidos_items no existe, sigue
             # PERF/SEC-FIX · 21-may-2026 · race condition FEFO con CAS atómico
             # Antes: SELECT + UPDATE separados · 2 despachos concurrentes
             # del mismo SKU descontaban del mismo lote · stock virtualmente

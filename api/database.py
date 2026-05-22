@@ -6433,6 +6433,16 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
            ('ESENCIA ILUMINADORA',                  'esencia', NULL, 60, 90, 30, 3.0, 3, NULL)""",
     ]),
 
+    (155, "turnos_operario · UNIQUE constraint anti-overlap · 22-may-2026", [
+        # Sebastián 22-may-2026 · Bug #10 audit Operario.
+        # Antes: operario podía estar en 2 turnos paralelos (capacidad fantasma)
+        # · _asignar_operarios_a_produccion no chequeaba overlap
+        # · mi_dia mostraba 4 lotes en paralelo al mismo operario
+        # Fix: UNIQUE INDEX previene INSERT duplicado (operario+fecha+turno)
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_turnos_op_fecha "
+        "ON turnos_operario(operario_id, fecha, turno)",
+    ]),
+
     (154, "formula_items · flag incluye_merma · doble-merma fix · 22-may-2026", [
         # Sebastián 22-may-2026 · Bug #11 audit abastecimiento.
         # Si `cantidad_g_por_lote` ya tiene merma incluida (convención cosmética),

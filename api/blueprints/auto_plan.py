@@ -3958,11 +3958,38 @@ def _asignar_operarios_a_produccion(conn, produccion_id):
         return {'ok': False, 'error': str(_e)}
 
 
+def _es_jefe_o_admin(user):
+    """SEC-FIX · 22-may-2026 · helper para Bug #8 audit Operario.
+    Cualquier operario logueado NO puede reasignar operarios masivamente.
+    Solo admin o jefes_produccion (operarios_planta.es_jefe_produccion=1)."""
+    if not user:
+        return False
+    if user in ADMIN_USERS:
+        return True
+    try:
+        conn_chk = get_db()
+        row = conn_chk.execute(
+            "SELECT 1 FROM operarios_planta WHERE LOWER(nombre)=? "
+            "AND COALESCE(es_jefe_produccion,0)=1 AND COALESCE(activo,1)=1 LIMIT 1",
+            ((user or '').lower(),),
+        ).fetchone()
+        return bool(row)
+    except Exception:
+        return False
+
+
 @bp.route('/api/planta/produccion/<int:prod_id>/asignar-operarios-auto', methods=['POST'])
 def asignar_operarios_auto(prod_id):
     """Asigna operarios automáticamente (Mayerlin fija + rotación)."""
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    # SEC-FIX · 22-may-2026 · Bug #8 audit Operario · solo jefe/admin
+    if not _es_jefe_o_admin(user):
+        return jsonify({
+            'error': 'Solo jefe de producción o admin pueden reasignar operarios',
+            'codigo': 'ASIGNAR_SOLO_JEFE_ADMIN',
+        }), 403
     conn = get_db()
     _asignar_operarios_a_produccion(conn, prod_id)
     conn.commit()
@@ -3976,10 +4003,16 @@ def asignar_operarios_bulk():
 
     Sebastián 1-may-2026 audit zero-error: wrap en transacción explícita con
     rollback granular — antes era best-effort sin atomicidad.
+    SEC-FIX · 22-may-2026 · Bug #8 audit Operario · solo jefe/admin (era cualquier user)
     """
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
     user = session.get('compras_user', '?')
+    if not _es_jefe_o_admin(user):
+        return jsonify({
+            'error': 'Solo jefe de producción o admin pueden reasignar operarios masivamente',
+            'codigo': 'ASIGNAR_BULK_SOLO_JEFE_ADMIN',
+        }), 403
     conn = get_db(); c = conn.cursor()
     log = logging.getLogger('inventario.planta')
     rows = c.execute("""
@@ -7135,15 +7168,19 @@ def reasignar_operarios_conflictos():
     """Re-asigna operarios IA a producciones con CUALQUIERA de:
     - duplicados (mismo operario en 2+ roles de la misma producción)
     - jefe asignado a un rol operario
-    - operario fija_en_dispensacion=1 en rol ≠ dispensación (Sebastián 1-may-2026
-      round 2: regla dura · enforce sobre datos viejos pre-fix)
+    - operario fija_en_dispensacion=1 en rol ≠ dispensación
 
-    1. Encuentra producciones próximas 14 días con cualquier violación
-    2. NULL todos los operarios de esas filas
-    3. Llama _auto_asignar_operarios para repoblar respetando regla fija
+    SEC-FIX · 22-may-2026 · Bug #8 audit Operario · solo jefe/admin
+    (antes cualquier user podía NULL+reasignar operarios 14 días)
     """
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
+    _u = session.get('compras_user', '')
+    if not _es_jefe_o_admin(_u):
+        return jsonify({
+            'error': 'Solo jefe/admin pueden reasignar operarios masivamente',
+            'codigo': 'REASIGNAR_SOLO_JEFE_ADMIN',
+        }), 403
     user = session.get('compras_user', '')
     conn = get_db(); c = conn.cursor()
     fecha_hoy = datetime.now().date()
@@ -7699,6 +7736,9 @@ def planta_oee():
     items = []
     for s_id, s_cod, s_nom in salas:
         # Producciones que pasaron por esta sala últimos N días
+        # FIX · 22-may-2026 · Bug #5 audit Operario · OEE excluye canceladas
+        # · Antes: cancelar() solo SET estado='cancelado' sin tocar etapa_*_inicio_at
+        #   · OEE incluía esas filas · distorsionaba rendimiento
         prods = c.execute(
             f"""SELECT producto,
                       COALESCE(etapa_disp_inicio_at,''), COALESCE(etapa_acond_fin_at,''),
@@ -7706,7 +7746,8 @@ def planta_oee():
                FROM produccion_programada
                WHERE area_id = ?
                  AND date(fecha_programada) >= date('now','-5 hours','-{int(dias)} days')
-                 AND inicio_real_at IS NOT NULL""",
+                 AND inicio_real_at IS NOT NULL
+                 AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado')""",
             (s_id,),
         ).fetchall()
         if not prods:
@@ -8648,6 +8689,35 @@ def planta_andon_resolver(aid):
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
     user = session.get('compras_user', '')
+    # SEC-FIX · 22-may-2026 · Bug #7 audit Operario · role check
+    # · Antes: cualquier compras_user podía cancelar alerta ajena
+    # · Ahora: solo admin/calidad/jefes producción · segregación BPM
+    try:
+        from config import CALIDAD_USERS as _CU
+    except Exception:
+        _CU = set()
+    _allowed = (
+        user in ADMIN_USERS
+        or (user or '').lower() in {x.lower() for x in _CU}
+    )
+    if not _allowed:
+        # Verificar si es jefe planta
+        try:
+            conn_chk = get_db()
+            row_j = conn_chk.execute(
+                "SELECT 1 FROM operarios_planta WHERE LOWER(nombre)=? "
+                "AND COALESCE(es_jefe_produccion,0)=1 AND COALESCE(activo,1)=1 LIMIT 1",
+                ((user or '').lower(),),
+            ).fetchone()
+            if row_j:
+                _allowed = True
+        except Exception:
+            pass
+    if not _allowed:
+        return jsonify({
+            'error': 'Solo admin/calidad/jefes producción pueden resolver ANDON',
+            'codigo': 'ANDON_SOLO_AUTORIZADOS',
+        }), 403
     body = request.get_json(silent=True) or {}
     nuevo_estado = (body.get('estado') or '').strip()
     resolucion = (body.get('resolucion') or '').strip()
@@ -8675,7 +8745,16 @@ def planta_andon_resolver(aid):
             (resolucion[:500], user, aid),
         )
     else:  # cancelada
-        c.execute("UPDATE andon_alertas SET estado='cancelada' WHERE id=?", (aid,))
+        # FIX · 22-may-2026 · Bug #7b · setear atendida_por/ts_atendida también
+        # · Antes: cancelada sin estos campos · fila anónima
+        c.execute(
+            "UPDATE andon_alertas SET estado='cancelada', atendida_por=?, "
+            "ts_atendida=COALESCE(ts_atendida, datetime('now','-5 hours')), "
+            "ts_resuelta=datetime('now','-5 hours'), "
+            "resolucion=COALESCE(NULLIF(?, ''), 'cancelada sin resolución') "
+            "WHERE id=?",
+            (user, resolucion[:500], aid),
+        )
     try:
         audit_log(c, usuario=user, accion=f'ANDON_{nuevo_estado.upper()}',
                   tabla='andon_alertas', registro_id=aid,
@@ -9451,28 +9530,30 @@ def kanban_etapa_accion(pid, rol, accion):
                     }), 409
             except Exception:
                 pass  # si la columna no existe (mig pendiente), no bloquea
+        # FIX · 22-may-2026 · Bug #9 audit Operario · check rowcount anti-race
+        # · Antes: si otro operario ya inició simultáneo, audit_log duplicado
+        # · Ahora: si rowcount=0 → ya_iniciada · sin audit ni flujo canónico
         c.execute(
             f"UPDATE produccion_programada SET {col_ini} = datetime('now', '-5 hours') "
             f"WHERE id=? AND COALESCE({col_ini},'')=''",
             (pid,),
         )
+        if c.rowcount == 0:
+            # Otro request ganó la carrera · devolver ya_iniciada sin duplicar
+            ini_existing = c.execute(
+                f"SELECT {col_ini} FROM produccion_programada WHERE id=?", (pid,),
+            ).fetchone()[0]
+            return jsonify({
+                'ok': True, 'ya_iniciada': True,
+                'rol': rol, 'etapa_inicio_at': ini_existing,
+                'race_detected': True,
+            })
         # Re-leer
-        ini_after = c.execute(
-            f"SELECT {col_ini} FROM produccion_programada WHERE id=?", (pid,),
-        ).fetchone()[0]
-        try:
-            audit_log(c, usuario=user, accion='ETAPA_INICIAR',
-                       tabla='produccion_programada', registro_id=pid,
-                       despues={'rol': rol, 'inicio_at': ini_after,
-                                'producto': pp[11]})
-        except Exception:
-            pass
-        conn.commit()
-        # BUG-1 fix · 20-may-2026 OLA 1: si es dispensación (primera etapa)
-        # y la producción NO tiene inicio_real_at, dispará el flujo canónico
-        # que descuenta MP (FEFO), marca sala 'ocupada' y crea audit
-        # INICIAR_PRODUCCION. Sin esto, Kanban marcaba la etapa pero el
-        # stock seguía sin reflejar la salida → drift kardex.
+        # FIX · 22-may-2026 · Bug #2 audit Operario · ANTI-DRIFT
+        # · Antes: COMMIT etapa antes de prog_iniciar_produccion → si descuento
+        #   falla, etapa queda "iniciada" pero MP no descontada · drift kardex
+        # · Ahora: para dispensación · descontar MP ANTES de COMMIT · si falla,
+        #   rollback de la etapa también
         descuento_resp = None
         if rol == 'dispensacion':
             try:
@@ -9488,8 +9569,34 @@ def kanban_etapa_accion(pid, rol, accion):
                     inner = _prog_ini(int(pid))
                     if hasattr(inner, 'get_json'):
                         descuento_resp = inner.get_json()
+                    # Si descuento falló (status >= 400), rollback de etapa
+                    if hasattr(inner, 'status_code') and inner.status_code >= 400:
+                        conn.rollback()
+                        return jsonify({
+                            'error': 'Descuento MP falló · etapa NO iniciada',
+                            'codigo': 'DESCUENTO_FALLO',
+                            'flujo_canonico': descuento_resp,
+                            'status': inner.status_code,
+                        }), 409
             except Exception as _e:
                 log.warning('Kanban iniciar dispensacion · descuento MP fallo · pid=%s err=%s', pid, _e)
+                conn.rollback()
+                return jsonify({
+                    'error': f'Descuento MP excepción: {_e}',
+                    'codigo': 'DESCUENTO_EXCEPCION',
+                }), 500
+        # Solo COMMIT si descuento OK (o no aplica)
+        ini_after = c.execute(
+            f"SELECT {col_ini} FROM produccion_programada WHERE id=?", (pid,),
+        ).fetchone()[0]
+        try:
+            audit_log(c, usuario=user, accion='ETAPA_INICIAR',
+                       tabla='produccion_programada', registro_id=pid,
+                       despues={'rol': rol, 'inicio_at': ini_after,
+                                'producto': pp[11]})
+        except Exception:
+            pass
+        conn.commit()
         return jsonify({'ok': True, 'rol': rol, 'accion': 'iniciar',
                         'etapa_inicio_at': ini_after,
                         'flujo_canonico': descuento_resp})
@@ -9524,16 +9631,21 @@ def kanban_etapa_accion(pid, rol, accion):
     if rol == 'acondicionamiento':
         try:
             pp_post = c.execute(
-                "SELECT fin_real_at, area_id FROM produccion_programada WHERE id=?",
+                "SELECT fin_real_at, area_id, cantidad_kg, kg_real FROM produccion_programada WHERE id=?",
                 (pid,),
             ).fetchone()
             if pp_post and not pp_post[0]:
+                # FIX · 22-may-2026 · Bug #4 audit Operario · setear kg_real
+                # · Antes: kg_real NULL · OEE rendimiento=0% · MEEs sin marcar consumidos
+                # · Ahora: si kg_real ya NO está, copiar de cantidad_kg como default
+                kg_real_default = pp_post[3] if pp_post[3] else pp_post[2]
                 c.execute(
                     """UPDATE produccion_programada
                        SET fin_real_at = datetime('now','-5 hours'),
-                           estado = 'completado'
+                           estado = 'completado',
+                           kg_real = COALESCE(kg_real, ?)
                        WHERE id=? AND fin_real_at IS NULL""",
-                    (pid,),
+                    (kg_real_default, pid),
                 )
                 if pp_post[1]:
                     c.execute(
@@ -9541,10 +9653,21 @@ def kanban_etapa_accion(pid, rol, accion):
                         "WHERE id=? AND estado='ocupada'",
                         (pp_post[1],),
                     )
+                # Bug #4 audit · marcar MEEs como consumidos via produccion_checklist
+                try:
+                    c.execute(
+                        """UPDATE produccion_checklist SET consumido_at=datetime('now','-5 hours')
+                           WHERE produccion_id=? AND consumido_at IS NULL
+                             AND item_tipo IN ('envase_primario','envase_secundario','tapa','etiqueta_frontal','etiqueta_posterior','etiqueta_lateral','caja_exterior','instructivo','estuche')""",
+                        (pid,),
+                    )
+                except Exception:
+                    pass
                 try:
                     audit_log(c, usuario=user, accion='COMPLETAR_PRODUCCION_KANBAN',
                                tabla='produccion_programada', registro_id=pid,
                                despues={'producto': pp[11], 'area_id': pp_post[1],
+                                        'kg_real_default': kg_real_default,
                                         'via': 'kanban_terminar_acondicionamiento'})
                 except Exception:
                     pass
