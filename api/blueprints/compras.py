@@ -2746,7 +2746,14 @@ def crear_oc_desde_solicitudes():
 # ya esta consolidado, no rompe nada.
 @bp.route('/api/compras/consolidar-auto-pendientes', methods=['POST'])
 def consolidar_auto_pendientes():
-    """Consolida solicitudes AUTO-XXXX Pendientes existentes por proveedor.
+    """[DEPRECATED 21-may-2026] One-shot migración 4-may-2026 completada.
+
+    No borrar todavía · frontend lo usa pero ahora es no-op silencioso
+    si no hay AUTO-XXXX legacy. Sebastián 21-may: marcado deprecated ·
+    candidato a borrar en próxima limpieza (~30 LOC + endpoint).
+
+    [Original docstring]
+    Consolida solicitudes AUTO-XXXX Pendientes existentes por proveedor.
 
     Body JSON (opcional):
       {
