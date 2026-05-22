@@ -4229,6 +4229,11 @@ def recibir_oc(numero_oc):
         fv = ir.get('fecha_vencimiento', '').strip()
         estado_item = ir.get('estado', 'OK')
         notas_item = ir.get('notas', '')
+        # COA + lote proveedor (Fase 2 · INVIMA · mig 151)
+        coa_url = (ir.get('coa_url') or '').strip()
+        coa_filename = (ir.get('coa_filename') or '').strip()
+        lote_proveedor = (ir.get('lote_proveedor') or '').strip()
+        ficha_seguridad_url = (ir.get('ficha_seguridad_url') or '').strip()
         # Solo registrar movimiento si hay algo recibido
         if cant_recibida > 0:
             if categoria == 'MEE':
@@ -4251,15 +4256,35 @@ def recibir_oc(numero_oc):
                         'codigo_mp': codigo, 'lote_asignado': lote_final,
                         'advertencia': 'Lote sintético · pedir lote real al proveedor para trazabilidad CoA/INVIMA',
                     })
-                cur.execute(
-                    "INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, fecha, "
-                    "observaciones, proveedor, operador, lote, fecha_vencimiento, estado_lote, numero_oc) "
-                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-                    (codigo, nombre, cant_recibida, 'Entrada', fecha,
-                     f'Recepcion OC {numero_oc}' + (f' | {notas_item}' if notas_item else ''),
-                     prov_nombre, operador,
-                     lote_final,
-                     fv or None, 'CUARENTENA', numero_oc))
+                # Fase 2 · INVIMA · INSERT con campos COA/lote_proveedor (mig 151)
+                # Si la columna no existe (mig no aplicó), cae a INSERT legacy
+                _coa_ok = False
+                try:
+                    cur.execute(
+                        "INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, fecha, "
+                        "observaciones, proveedor, operador, lote, fecha_vencimiento, estado_lote, numero_oc, "
+                        "coa_url, coa_filename, lote_proveedor, ficha_seguridad_url) "
+                        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                        (codigo, nombre, cant_recibida, 'Entrada', fecha,
+                         f'Recepcion OC {numero_oc}' + (f' | {notas_item}' if notas_item else ''),
+                         prov_nombre, operador, lote_final,
+                         fv or None, 'CUARENTENA', numero_oc,
+                         coa_url or None, coa_filename or None,
+                         lote_proveedor or None, ficha_seguridad_url or None))
+                    _coa_ok = True
+                except Exception as _e:
+                    log.info('movimientos sin columnas COA · cae a legacy: %s', _e)
+                if _coa_ok:
+                    pass  # INSERT ya hecho · pasar a actualizar cantidad
+                else:
+                    cur.execute(
+                        "INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, fecha, "
+                        "observaciones, proveedor, operador, lote, fecha_vencimiento, estado_lote, numero_oc) "
+                        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                        (codigo, nombre, cant_recibida, 'Entrada', fecha,
+                         f'Recepcion OC {numero_oc}' + (f' | {notas_item}' if notas_item else ''),
+                         prov_nombre, operador, lote_final,
+                         fv or None, 'CUARENTENA', numero_oc))
             ingresos += 1
         # Actualizar item OC · audit zero-error 2-may-2026: usar += en
         # cantidad_recibida_g para soportar recepciones múltiples parciales

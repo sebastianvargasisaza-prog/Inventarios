@@ -6433,6 +6433,18 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
            ('ESENCIA ILUMINADORA',                  'esencia', NULL, 60, 90, 30, 3.0, 3, NULL)""",
     ]),
 
+    (151, "COA + lote proveedor en movimientos · INVIMA · 21-may-2026", [
+        # Sebastián 21-may-2026 · consultor procurement: 'COA + lote proveedor
+        # en recepción es no-negociable para GMP cosmético INVIMA. Cuando llegue
+        # auditoría no perdés 2 días armando el dossier.'
+        # safe_alter trata IF NOT EXISTS para ser idempotente entre boots.
+        "ALTER TABLE movimientos ADD COLUMN coa_url TEXT",
+        "ALTER TABLE movimientos ADD COLUMN coa_filename TEXT",
+        "ALTER TABLE movimientos ADD COLUMN lote_proveedor TEXT",
+        "ALTER TABLE movimientos ADD COLUMN ficha_seguridad_url TEXT",
+        "CREATE INDEX IF NOT EXISTS idx_mov_lote_proveedor ON movimientos(lote_proveedor)",
+    ]),
+
     (150, "Órdenes de Servicio · Serigrafía/Tampografía · 21-may-2026", [
         # Sebastián 21-may-2026: "planta pide envases o toca hacer serigrafía
         # · Catalina da la orden desde compras preparar tales envases · recogen
