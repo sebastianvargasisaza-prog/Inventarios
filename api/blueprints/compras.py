@@ -8871,7 +8871,11 @@ def compras_dashboard_home():
 
 @bp.route('/api/compras/dashboard-ejecutivo', methods=['GET'])
 def compras_dashboard_ejecutivo():
-    """Sprint Compras N3 · 21-may-2026 · widget ejecutivo Catalina.
+    """[LEGACY 22-may-2026] · Compras 2.0 dashboard-home cubre estas KPIs.
+    Endpoint mantenido por compat con código viejo · ver compras_dashboard_home
+    para el dashboard CONSOLIDADO que reemplaza este + dashboard-stats + reporte-ejecutivo.
+
+    Sprint Compras N3 · 21-may-2026 · widget ejecutivo Catalina.
 
     Devuelve KPIs operativos:
       - sols_sin_tocar_3d (Pendientes hace >3 días)

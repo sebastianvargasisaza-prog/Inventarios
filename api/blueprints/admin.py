@@ -2667,14 +2667,47 @@ def admin_reset_password():
         f"target={target}"
     )
 
-    return jsonify({
+    # SEC-FIX · 22-may-2026 · si target tiene email, enviarlo out-of-band
+    # · password NO devuelta en JSON · solo log message + email
+    # · si email_password fails o no hay email · fallback al JSON (admin debe
+    #   leer el password una vez · log warning)
+    target_email = ''
+    try:
+        from config import USER_EMAILS as _UE
+        target_email = _UE.get(target, '')
+    except Exception:
+        pass
+    email_enviado = False
+    if target_email and '@' in target_email:
+        try:
+            from blueprints.comunicacion import _enviar_email_async
+            body = (
+                f'<html><body style="font-family:Arial">'
+                f'<h2>Tu password en EOS fue reseteado</h2>'
+                f'<p>Hola {target},</p>'
+                f'<p>Tu nueva password temporal:</p>'
+                f'<p style="font-family:monospace;font-size:1.4em;background:#f1f5f9;padding:10px 14px;border-radius:6px">{new_pwd}</p>'
+                f'<p>Por seguridad · cambiala en tu primer login.</p>'
+                f'<p style="color:#6b7280;font-size:11px">EOS · HHA Group</p>'
+                f'</body></html>'
+            )
+            _enviar_email_async(f'Password reseteado · EOS', body, [target_email])
+            email_enviado = True
+        except Exception as _e:
+            _log_sec("password_reset_email_fail", admin_user, _client_ip(), str(_e)[:200])
+    resp = {
         "ok": True,
         "username": target,
-        "new_password": new_pwd,
-        "warning": "Esta password se muestra UNA SOLA VEZ. Comunícala al "
-                   "usuario por canal seguro y dile que la cambie en su "
-                   "primer login."
-    })
+        "email_enviado": email_enviado,
+        "email_destino": target_email if email_enviado else None,
+        "warning": ("Password enviado por email." if email_enviado
+                    else "Esta password se muestra UNA SOLA VEZ · "
+                         "compártela por canal seguro y forzá cambio en primer login."),
+    }
+    if not email_enviado:
+        # Sin email · admin DEBE leer plaintext (log warning)
+        resp["new_password"] = new_pwd
+    return jsonify(resp)
 
 
 # ─── Security events ─────────────────────────────────────────────────────────
