@@ -79,6 +79,51 @@ def _require_authorize_oc():
     return _require_compras_write()
 
 
+def _pendiente_en_compras_g(c, codigo_mp):
+    """Compras PRO · Sebastián 21-may-2026 · helper anti-duplicación.
+
+    Devuelve la cantidad (gramos) de un MP que YA está en cola de Compras:
+      - SOLs Pendientes/Aprobadas sin OC asociada
+      - OCs Borrador/Revisada/Autorizada no recibidas (cant pedida - recibida)
+
+    Cualquier generador automático de SOLs (auto_plan, mínimos, programación,
+    pre-prod) DEBE restar esto al déficit antes de crear nuevas SOLs · evita
+    duplicación cross-canales que llevaba a compras ×2 silenciosas.
+
+    Es la implementación del Fix #1 del agente auditor Planta↔Compras como
+    función reusable.
+    """
+    total = 0.0
+    if not codigo_mp:
+        return 0.0
+    try:
+        r = c.execute(
+            """SELECT COALESCE(SUM(sci.cantidad_g), 0)
+               FROM solicitudes_compra_items sci
+               JOIN solicitudes_compra sc ON sc.numero = sci.numero
+               WHERE sci.codigo_mp = ?
+                 AND sc.estado IN ('Pendiente','Aprobada')
+                 AND COALESCE(sc.numero_oc,'') = ''""",
+            (codigo_mp,),
+        ).fetchone()
+        total += float((r or [0])[0] or 0)
+    except Exception:
+        pass
+    try:
+        r = c.execute(
+            """SELECT COALESCE(SUM(oci.cantidad_g - COALESCE(oci.cantidad_recibida_g,0)), 0)
+               FROM ordenes_compra_items oci
+               JOIN ordenes_compra oc ON oc.numero_oc = oci.numero_oc
+               WHERE oci.codigo_mp = ?
+                 AND oc.estado IN ('Borrador','Revisada','Autorizada','Parcial')""",
+            (codigo_mp,),
+        ).fetchone()
+        total += float((r or [0])[0] or 0)
+    except Exception:
+        pass
+    return max(total, 0.0)
+
+
 def _check_monto_limit(usuario, monto):
     """Valida que el usuario pueda autorizar el monto.
 
