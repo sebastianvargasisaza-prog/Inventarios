@@ -79,6 +79,69 @@ def _require_authorize_oc():
     return _require_compras_write()
 
 
+def _evaluar_auto_aprobacion(c, proveedor, monto_total, items):
+    """Compras Fase 2 · Sebastián 21-may-2026 · auto-aprobación por reglas.
+
+    Recomendación del consultor procurement: OCs pequeñas a proveedores
+    recurrentes con precio en rango histórico deben pasarse automáticamente
+    a estado 'Autorizada' (saltean revisión gerencial · liberan 30-40 min/día
+    de Catalina).
+
+    REGLAS (las 3 deben cumplirse):
+    1. monto_total < LIMITE_AUTO_APROB_COP (default $500.000)
+    2. proveedor con ≥3 OCs en últimos 90 días (recurrente)
+    3. cada item con precio_unitario en rango ±15% del promedio 90d
+       (si no hay histórico del MP, permite por default)
+
+    Variable de entorno opcional: COMPRAS_AUTO_APROB_OFF=1 para apagar.
+
+    Retorna (auto_aprobar: bool, razon: str)
+    """
+    import os
+    if (os.environ.get('COMPRAS_AUTO_APROB_OFF') or '0').strip() == '1':
+        return False, 'auto-aprob deshabilitada (env)'
+    LIMITE = float(os.environ.get('COMPRAS_AUTO_APROB_LIMITE_COP') or 500_000)
+    if not proveedor:
+        return False, 'sin proveedor'
+    if monto_total >= LIMITE:
+        return False, f'monto {monto_total:.0f} >= límite {LIMITE:.0f}'
+    # Recurrencia · ≥3 OCs últimos 90d
+    try:
+        r = c.execute(
+            """SELECT COUNT(*) FROM ordenes_compra
+               WHERE LOWER(TRIM(proveedor))=LOWER(TRIM(?))
+                 AND date(fecha) >= date('now','-5 hours','-90 days')""",
+            (proveedor,),
+        ).fetchone()
+        ocs_90d = int((r or [0])[0] or 0)
+    except Exception:
+        ocs_90d = 0
+    if ocs_90d < 3:
+        return False, f'proveedor con solo {ocs_90d} OCs en 90d (<3)'
+    # Precio en rango · cada item ±15% promedio 90d
+    for it in (items or []):
+        cod = it.get('codigo_mp') or ''
+        pu = float(it.get('precio_unitario') or 0)
+        if not cod or pu <= 0:
+            continue
+        try:
+            r = c.execute(
+                """SELECT AVG(precio_unitario)
+                   FROM precios_mp_historico
+                   WHERE codigo_mp=?
+                     AND date(fecha) >= date('now','-5 hours','-90 days')""",
+                (cod,),
+            ).fetchone()
+            prom = float((r or [0])[0] or 0)
+        except Exception:
+            prom = 0
+        if prom > 0:
+            delta_pct = abs(pu - prom) / prom * 100
+            if delta_pct > 15:
+                return False, f'precio {cod} fuera de rango (Δ{delta_pct:.1f}%)'
+    return True, f'monto<{LIMITE:.0f} · recurrente ({ocs_90d} OCs/90d) · precios en rango'
+
+
 def _pendiente_en_compras_g(c, codigo_mp):
     """Compras PRO · Sebastián 21-may-2026 · helper anti-duplicación.
 
@@ -2504,6 +2567,48 @@ def crear_oc_desde_solicitudes():
             except Exception:
                 pass
 
+        # Fase 2 · 21-may-2026 · auto-aprobación por reglas
+        # Si OC cumple: monto<$500k + proveedor recurrente (≥3 OCs/90d) +
+        # precios en rango ±15% promedio, pasa Borrador → Autorizada automático.
+        # Catalina solo aprueba excepciones · libera 30-40 min/día.
+        auto_aprobada = False
+        auto_razon = ''
+        try:
+            auto_aprobada, auto_razon = _evaluar_auto_aprobacion(
+                c, proveedor, valor_total, items_oc,
+            )
+            if auto_aprobada:
+                from datetime import datetime as _dtauto
+                _fecha_aut = _dtauto.now().isoformat()
+                _fecha_hoy = _dtauto.now().strftime('%Y%m%d')
+                # Generar remision_code
+                _last = c.execute(
+                    "SELECT remision_code FROM ordenes_compra WHERE remision_code LIKE ? "
+                    "ORDER BY remision_code DESC LIMIT 1",
+                    (f'REM-ESP-{_fecha_hoy}-%',),
+                ).fetchone()
+                _n = int(_last[0].split('-')[-1]) + 1 if _last and _last[0] else 1
+                _rem = f'REM-ESP-{_fecha_hoy}-{_n:03d}'
+                c.execute(
+                    """UPDATE ordenes_compra SET estado='Autorizada',
+                                                 remision_code=?,
+                                                 autorizado_por='auto-aprob-reglas',
+                                                 fecha_autorizacion=?,
+                                                 observaciones=COALESCE(observaciones,'') || ' | AUTO-APROB: ' || ?
+                       WHERE numero_oc=?""",
+                    (_rem, _fecha_aut, auto_razon, numero_oc),
+                )
+                try:
+                    audit_log(c, usuario='auto-aprob-reglas',
+                              accion='OC_AUTO_APROBADA',
+                              tabla='ordenes_compra', registro_id=numero_oc,
+                              despues={'monto': valor_total, 'proveedor': proveedor,
+                                       'razon': auto_razon})
+                except Exception:
+                    pass
+        except Exception as _e:
+            log.warning('auto-aprob fallo: %s', _e)
+
         # 7. Vincular las solicitudes a la nueva OC y marcarlas Aprobada
         c.execute(
             f"""UPDATE solicitudes_compra
@@ -2543,7 +2648,9 @@ def crear_oc_desde_solicitudes():
             'items_creados': len(items_oc),
             'solicitudes_vinculadas': vinculadas,
             'valor_total': round(valor_total, 2),
-            'estado': 'Borrador',
+            'estado': 'Autorizada' if auto_aprobada else 'Borrador',
+            'auto_aprobada': auto_aprobada,  # Fase 2 · feedback al frontend
+            'auto_razon': auto_razon if auto_aprobada else '',
         }), 201
     except Exception as e:
         try:
