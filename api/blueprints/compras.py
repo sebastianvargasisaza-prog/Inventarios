@@ -3146,7 +3146,13 @@ def limpiar_solicitudes_planta():
 
 @bp.route('/api/compras/limpiar-y-regenerar-auto-plan', methods=['POST'])
 def limpiar_y_regenerar_auto_plan():
-    """Borra TODAS las AUTO-XXXX Pendientes (sin OC) y vuelve a generar.
+    """[ADMIN-NUCLEAR] Borra TODAS las AUTO-XXXX Pendientes y regenera.
+
+    SEC-FIX · 21-may-2026 · solo ADMIN puede ejecutar · era riesgo de
+    botón rojo accidental que volaba 200+ solicitudes pendientes.
+
+    [Original docstring]
+    Borra TODAS las AUTO-XXXX Pendientes (sin OC) y vuelve a generar.
 
     Caso de uso: los AUTO-XXXX existentes vienen del cron que leia
     mp_lead_time_config sin fallback a maestro_mps.proveedor → muchas
@@ -3170,6 +3176,13 @@ def limpiar_y_regenerar_auto_plan():
     usuario, err, code = _require_compras_write()
     if err:
         return err, code
+    # SEC-FIX · 21-may-2026 · solo ADMIN puede ejecutar (era riesgo accidental)
+    if (usuario or '').lower() not in {x.lower() for x in ADMIN_USERS}:
+        return jsonify({
+            'error': 'Operación nuclear · solo admin (Sebas/Alejandro)',
+            'codigo': 'NUCLEAR_SOLO_ADMIN',
+            'hint': 'Esta operación borra 200+ SOLs · solo admin para evitar accidentes',
+        }), 403
 
     body = request.get_json(silent=True) or {}
     dry_run = bool(body.get('dry_run', False))
