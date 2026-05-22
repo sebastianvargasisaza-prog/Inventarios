@@ -300,6 +300,35 @@ if not app.config.get("TESTING"):
     except Exception as _e:
         _log.getLogger(__name__).warning("multi-cron NO arrancó: %s", _e)
 
+    # Sebastián 22-may-2026 · One-shot al deploy · normalizar fórmulas con
+    # abreviaturas. Corre en background después del startup para no bloquear.
+    # Idempotente · si no hay nada que normalizar, no hace nada.
+    def _normalizar_formulas_one_shot():
+        import time as _t
+        _t.sleep(60)  # esperar 60s a que el deploy estabilice (migrations finish)
+        try:
+            with app.app_context():
+                from blueprints.auto_plan_jobs import job_auto_normalizar_formulas
+                ok, resultado, _ = job_auto_normalizar_formulas(app)
+                _log.getLogger('inventario').info(
+                    "[deploy-normalizar-formulas] ok=%s resultado=%s",
+                    ok, resultado,
+                )
+        except Exception as _e:
+            _log.getLogger('inventario').warning(
+                "[deploy-normalizar-formulas] fallo: %s", _e,
+            )
+
+    try:
+        import threading as _threading
+        _threading.Thread(
+            target=_normalizar_formulas_one_shot,
+            daemon=True,
+            name='deploy-normalizar-formulas',
+        ).start()
+    except Exception as _e:
+        _log.getLogger(__name__).warning("normalizar-formulas one-shot NO arrancó: %s", _e)
+
 
 
 @app.before_request

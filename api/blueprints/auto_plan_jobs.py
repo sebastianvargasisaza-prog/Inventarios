@@ -631,6 +631,9 @@ JOBS_SCHEDULE = [
     # quedar apuntando a un código viejo sin lotes. El error "Hay 0g" cuando
     # SÍ hay stock viene de aquí. Cron diario 4:00 AM repara automático.
     ('auto_reparar_huerfanas',4,  0, None, None,                'job_auto_reparar_huerfanas'),
+    # ⭐ Auto-normalizar abbreviaturas en fórmulas · 4:30 AM (después huérfanas)
+    # SAP → Sodium Ascorbyl Phosphate · HA → Hyaluronic Acid · etc.
+    ('auto_normalizar_formulas', 4, 30, None, None,             'job_auto_normalizar_formulas'),
     # PQR SLA · Ley 1755/2015 CO · diario 8:15 AM
     ('pqr_sla_vencido',       8, 15, None, None,                'job_pqr_sla_vencido'),
     # MEE drift sync · cache vs SUM(movimientos_mee) · diario 3:00 AM
@@ -3698,6 +3701,129 @@ def job_pqr_sla_vencido(app):
         return True, {'pqr_vencidos': len(rows)}, 0
 
 
+def job_auto_normalizar_formulas(app):
+    """Sebastián 22-may-2026 · cron diario 4:30 AM (post auto_reparar_huerfanas).
+
+    Detecta materiales en formula_items con nombre/código que NO matchea
+    con maestro_mps · usa mp_aliases para auto-normalizar (renombrar +
+    vincular código_mp correcto).
+
+    Casos: 'SAP' → 'Sodium Ascorbyl Phosphate' · 'HA' → 'Hyaluronic Acid' · etc.
+
+    Solo normaliza casos con alias detectado + MP existente con ese INCI.
+    Casos sin alias o sin MP los reporta via notif a Sebastián para acción manual.
+    """
+    with app.app_context():
+        from database import get_db as _gdb
+        conn = _gdb(); c = conn.cursor()
+
+        # Aliases cargados
+        aliases_dict = {}
+        try:
+            for al, inci in c.execute(
+                "SELECT alias, nombre_inci_canonical FROM mp_aliases WHERE COALESCE(activo,1)=1"
+            ).fetchall():
+                aliases_dict[al.lower().strip()] = inci
+        except Exception:
+            return False, {'error': 'mp_aliases tabla no existe · mig 158 no aplicada'}, 0
+
+        # MPs por INCI
+        mp_por_inci = {}
+        try:
+            for cod, inci, activo in c.execute(
+                "SELECT codigo_mp, COALESCE(nombre_inci,''), COALESCE(activo,1) FROM maestro_mps"
+            ).fetchall():
+                if inci and activo:
+                    mp_por_inci[inci.lower().strip()] = (cod, inci)
+        except Exception:
+            pass
+
+        # Materiales únicos en formula_items
+        rows_form = c.execute(
+            """SELECT DISTINCT material_id, material_nombre FROM formula_items
+               WHERE COALESCE(material_nombre,'')!=''"""
+        ).fetchall()
+
+        normalizados = 0
+        sin_mp = []
+        for mat_id, mat_nom in rows_form:
+            nom_lower = (mat_nom or '').lower().strip()
+            alias_inci = aliases_dict.get(nom_lower)
+            if not alias_inci:
+                continue  # no es abreviatura conocida · skip
+            alias_lower = alias_inci.lower().strip()
+            mp_match = mp_por_inci.get(alias_lower)
+            if not mp_match:
+                # Match parcial INCI
+                for k, v in mp_por_inci.items():
+                    if alias_lower in k:
+                        mp_match = v
+                        break
+            if not mp_match:
+                # No existe MP con ese INCI · reportar
+                if len(sin_mp) < 20:
+                    sin_mp.append({'alias': mat_nom, 'inci_canonical': alias_inci})
+                continue
+            cod_new, nom_new = mp_match
+            try:
+                c.execute(
+                    """UPDATE formula_items
+                       SET material_id=?, material_nombre=?
+                       WHERE COALESCE(material_id,'')=? AND material_nombre=?""",
+                    (cod_new, nom_new, mat_id or '', mat_nom),
+                )
+                if c.rowcount > 0:
+                    normalizados += c.rowcount
+                    try:
+                        from audit_helpers import audit_log as _alog
+                        _alog(c, usuario='cron-normalizar-formulas',
+                              accion='AUTO_NORMALIZAR_FORMULA_MP',
+                              tabla='formula_items',
+                              registro_id=f'{mat_id}/{mat_nom}',
+                              antes={'material_id': mat_id, 'material_nombre': mat_nom},
+                              despues={'material_id': cod_new, 'material_nombre': nom_new})
+                    except Exception:
+                        pass
+            except Exception as e:
+                log.warning('[normalizar-formulas] %s/%s fallo: %s', mat_id, mat_nom, e)
+        try:
+            conn.commit()
+        except Exception:
+            pass
+
+        # Notif a Sebastián si hay MPs faltantes para crear
+        if sin_mp:
+            try:
+                from blueprints.notif import push_notif
+                from config import ADMIN_USERS
+                cuerpo = (
+                    f'⚠ {len(sin_mp)} abreviaturas en fórmulas SIN MP cargado: '
+                    + ', '.join(f"{s['alias']}→{s['inci_canonical']}" for s in sin_mp[:5])
+                    + ('...' if len(sin_mp) > 5 else '')
+                    + ' · cargar MPs en maestro o agregar alias.'
+                )
+                for u in (ADMIN_USERS or set()):
+                    try:
+                        push_notif(destinatario=u, tipo='normalizar_formulas_alerta',
+                                   titulo='⚠ MPs faltantes en maestro',
+                                   cuerpo=cuerpo,
+                                   link='/dashboard#inventario',
+                                   remitente='cron-normalizar-formulas',
+                                   importante=False)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
+        return True, {
+            'normalizados': normalizados,
+            'sin_mp_cargado': len(sin_mp),
+            'sin_mp_detalle': sin_mp[:20],
+            'aliases_cargados': len(aliases_dict),
+            'mps_disponibles_por_inci': len(mp_por_inci),
+        }, 0
+
+
 def job_auto_reparar_huerfanas(app):
     """Sebastián 21-may-2026 · cron diario 4:00 AM.
 
@@ -3822,6 +3948,7 @@ def _loop_multi_cron(app):
                     'reconciliar_influencer_60d',   # UPDATE masivo
                     'marcar_vencidos',              # notif + UPDATE estado_lote
                     'auto_reparar_huerfanas',       # UPDATE formula_items
+                    'auto_normalizar_formulas',     # UPDATE formula_items
                     'mee_drift_sync',               # UPDATE stock_actual
                 }
                 for job_name, hora, minuto, dias_sem, dias_mes, callable_name in JOBS_SCHEDULE:
