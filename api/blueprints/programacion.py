@@ -8069,8 +8069,18 @@ def planificacion_estrategica():
         for item in formula.get('items', []):
             mid    = item['material_id']
             nombre = item['material_nombre']
-            g_lote = item.get('cantidad_g_por_lote', 0)
+            g_lote = float(item.get('cantidad_g_por_lote', 0) or 0)
+            pct    = float(item.get('porcentaje', 0) or 0)
+            # ABASTECIMIENTO-FIX · 22-may-2026 · fallback porcentaje (#5 audit 22-may)
+            # · Si fórmula tiene porcentaje pero cant_lote=0, calcular con %
+            #   asume formula.lote_size_kg como base · sino usa factor directo
             g_need = round(g_lote * factor, 1)
+            if g_need <= 0 and pct > 0:
+                # Fallback: pct% del batch (kg de la producción × 1000 × %/100)
+                kg_batch = formula.get('lote_size_kg') or formula.get('kg_total') or 1
+                g_need = round(float(kg_batch) * 1000 * pct / 100 * factor, 1)
+            if g_need <= 0:
+                continue
 
             if mid not in mp_needed:
                 mp_needed[mid] = {
@@ -8251,10 +8261,37 @@ def planificacion_solicitar_bulk():
         return jsonify({'error': 'No pude obtener planificacion'}), 500
 
     deficits = plan_data.get('mps_deficit', []) or []
+    # ABASTECIMIENTO-FIX · 22-may-2026 · dedup con cola pendiente (#9 audit 22-may)
+    # · Antes: solicitar-bulk insertaba déficit completo aun si ya había SOLs Pendientes
+    # · Ahora: para cada MP resta _pendiente_en_compras_g · si neto <= 0 skip MP
+    try:
+        from blueprints.compras import _pendiente_en_compras_g
+        conn = get_db()
+        cur = conn.cursor()
+        deficits_neto = []
+        for mp in deficits:
+            cod_mp = mp.get('material_id') or mp.get('codigo_mp', '')
+            if not cod_mp:
+                deficits_neto.append(mp)
+                continue
+            try:
+                en_cola = _pendiente_en_compras_g(cur, cod_mp)
+            except Exception:
+                en_cola = 0
+            deficit_g = float(mp.get('deficit_g') or 0)
+            if en_cola >= deficit_g:
+                continue  # ya cubierto · skip
+            mp_copy = dict(mp)
+            mp_copy['deficit_g'] = max(0, deficit_g - en_cola)
+            mp_copy['en_cola_g'] = en_cola
+            deficits_neto.append(mp_copy)
+        deficits = deficits_neto
+    except Exception:
+        pass  # graceful · sigue con déficits crudos
     if not deficits:
         return jsonify({
             'ok': True,
-            'mensaje': 'Sin déficits — no hay nada que pedir.',
+            'mensaje': 'Sin déficits netos — todo ya está en cola de compras.',
             'solicitudes_creadas': [],
         })
 
