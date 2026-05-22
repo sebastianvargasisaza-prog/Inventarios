@@ -1002,13 +1002,23 @@ def ebr_vista_completa(ebr_id):
         return err
     conn = get_db()
     out = {'ebr_id': ebr_id}
-    # 1. Header
+    # 1. Header · INVIMA-FIX 21-may-2026 · usar columnas originales + COALESCE
+    # con aliases (mig 153) para que funcione antes y después de la migración.
     try:
         row = conn.execute(
-            """SELECT id, mbr_template_id, produccion_id, lote_codigo, estado,
-                      iniciado_at_utc, completado_at_utc, operario,
-                      tiempo_total_min, observaciones,
-                      liberado_at_utc, liberado_por, rechazado_at_utc, rechazado_motivo
+            """SELECT id, mbr_template_id, produccion_id,
+                      COALESCE(lote_codigo, lote) AS lote_codigo,
+                      estado,
+                      iniciado_at_utc, completado_at_utc,
+                      COALESCE(operario, iniciado_por) AS operario,
+                      COALESCE(tiempo_total_min,
+                               CASE WHEN completado_at_utc IS NOT NULL
+                                    THEN (julianday(completado_at_utc) - julianday(iniciado_at_utc)) * 24 * 60
+                                    ELSE 0 END) AS tiempo_total_min,
+                      COALESCE(observaciones, notas) AS observaciones,
+                      liberado_at_utc, liberado_por,
+                      COALESCE(rechazado_at_utc, '') AS rechazado_at_utc,
+                      rechazado_motivo
                FROM ebr_ejecuciones WHERE id=?""",
             (ebr_id,),
         ).fetchone()

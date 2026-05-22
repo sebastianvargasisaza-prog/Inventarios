@@ -7975,8 +7975,24 @@ def liberar_cuarentena(mov_id):
     u, err, code = _require_qc()
     if err:
         return err, code
-    d = request.json or {}; decision = d.get('decision','Aprobado')
+    d = request.json or {}
+    # INVIMA-FIX · 21-may-2026 · decision whitelist (antes cualquier string)
+    decision = d.get('decision','Aprobado')
+    if decision not in ('Aprobado', 'Rechazado'):
+        return jsonify({'error': "decision debe ser 'Aprobado' o 'Rechazado'"}), 400
+    # INVIMA-FIX · 21-may-2026 · filtrar estado actual (no revivir RECHAZADO)
     conn = get_db(); c = conn.cursor()
+    estado_actual_row = c.execute(
+        "SELECT estado_lote FROM movimientos WHERE id=?", (mov_id,),
+    ).fetchone()
+    if not estado_actual_row:
+        return jsonify({'error': 'Movimiento no existe'}), 404
+    estado_actual = estado_actual_row[0] or ''
+    if estado_actual not in ('CUARENTENA', 'CUARENTENA_EXTENDIDA'):
+        return jsonify({
+            'error': f'No se puede liberar lote en estado {estado_actual}',
+            'codigo': 'ESTADO_NO_LIBERABLE',
+        }), 409
     nuevo_estado = 'VIGENTE' if decision == 'Aprobado' else 'RECHAZADO'
     c.execute("UPDATE movimientos SET estado_lote=? WHERE id=?", (nuevo_estado, mov_id))
     c.execute("""INSERT INTO audit_log (usuario,accion,tabla,registro_id,detalle,ip,fecha)
@@ -9757,10 +9773,17 @@ def planta_valoracion_inventario():
         return err, code
 
     tipo_filter = (request.args.get('tipo_material') or '').strip()
+    # FIX · 21-may-2026 · whitelist estricta (antes valores fuera lista colapsaban a 'TODOS')
+    TIPOS_VALIDOS = ('MP', 'Envase Primario', 'Envase Secundario', 'Empaque')
+    if tipo_filter and tipo_filter not in TIPOS_VALIDOS:
+        return jsonify({
+            'error': f'tipo_material inválido · usar {TIPOS_VALIDOS} o vacío',
+            'codigo': 'TIPO_MATERIAL_INVALIDO',
+        }), 400
     conn = get_db(); c = conn.cursor()
 
     # MPs candidatas
-    if tipo_filter in ('MP', 'Envase Primario', 'Envase Secundario', 'Empaque'):
+    if tipo_filter in TIPOS_VALIDOS:
         c.execute("""SELECT codigo_mp, nombre_comercial, COALESCE(tipo_material,'MP')
                      FROM maestro_mps WHERE activo=1 AND tipo_material=?""",
                   (tipo_filter,))

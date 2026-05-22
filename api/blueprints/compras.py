@@ -2662,6 +2662,10 @@ def crear_oc_desde_solicitudes():
                 ).fetchone()
                 _n = int(_last[0].split('-')[-1]) + 1 if _last and _last[0] else 1
                 _rem = f'REM-ESP-{_fecha_hoy}-{_n:03d}'
+                # SEC-FIX · 21-may-2026 · auto-aprob respeta segregation
+                # autorizado_por='auto-aprob-reglas' (sistema), no usuario.
+                # · contadora NUNCA debe aparecer como autorizadora aunque
+                # la OC se auto-apruebe via su acción de crear.
                 c.execute(
                     """UPDATE ordenes_compra SET estado='Autorizada',
                                                  remision_code=?,
@@ -4363,9 +4367,7 @@ def recibir_oc(numero_oc):
         # cantidad_recibida_g para soportar recepciones múltiples parciales
         # sobre el mismo item. Antes era SET = ? que pisaba el acumulado.
         try:
-            # UPDATE por rowid del item · antes era WHERE numero_oc+codigo_mp,
-            # que con dos items del mismo codigo_mp (o ambos vacíos, común en
-            # OCs de servicio) actualizaba AMBAS filas y duplicaba lo recibido.
+            # UPDATE por rowid del item · antes era WHERE numero_oc+codigo_mp.
             cur.execute(
                 "UPDATE ordenes_compra_items "
                 "SET cantidad_recibida_g = COALESCE(cantidad_recibida_g, 0) + ?, "
@@ -4375,6 +4377,32 @@ def recibir_oc(numero_oc):
                 (cant_recibida, estado_item, notas_item, lote_num, _oci_rowid))
         except Exception as e:
             log.warning('UPDATE oci en recibir_oc fallo: %s', e)
+        # SEC-FIX · 21-may-2026 · validación POST-UPDATE de sobre-recepción
+        # · race condition · 2 workers reciben mismo item en paralelo
+        # · ambos pasan pre-check 5% pero acumulado total supera
+        try:
+            row_post = cur.execute(
+                "SELECT COALESCE(cantidad_g,0), COALESCE(cantidad_recibida_g,0) "
+                "FROM ordenes_compra_items WHERE id=?", (_oci_rowid,),
+            ).fetchone()
+            if row_post:
+                cant_pedida_post = float(row_post[0] or 0)
+                cant_recib_post = float(row_post[1] or 0)
+                if cant_pedida_post > 0 and cant_recib_post > cant_pedida_post * 1.05:
+                    # REVERTIR el UPDATE (race detectado)
+                    cur.execute(
+                        "UPDATE ordenes_compra_items "
+                        "SET cantidad_recibida_g = COALESCE(cantidad_recibida_g, 0) - ? "
+                        "WHERE id=?",
+                        (cant_recibida, _oci_rowid),
+                    )
+                    return jsonify({
+                        'error': f'Sobre-recepción detectada · {cant_recib_post:.2f}g > {cant_pedida_post*1.05:.2f}g (5% tolerancia)',
+                        'codigo': 'SOBRE_RECEPCION_RACE',
+                        'codigo_mp': codigo,
+                    }), 422
+        except Exception as _e:
+            log.warning('post-recepcion guard fallo: %s', _e)
 
     # Estado final · usar acumulado de items, no solo la cantidad del request actual.
     # Bug fix Sebastián 8-may-2026: antes `es_parcial` chequeaba cant_recibida
