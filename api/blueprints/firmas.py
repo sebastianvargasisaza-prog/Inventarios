@@ -232,6 +232,31 @@ def sign_record():
         # Otro request lo consumió en paralelo
         return jsonify({"error": "challenge_token consumido en paralelo"}), 409
     auth_factor = chall["auth_factor"] or "password"
+    # INVIMA-FIX · 21-may-2026 · 21 CFR Part 11 §11.200 · MFA obligatorio
+    # para meanings críticos (libera/rechaza/aprueba) en admin/QC.
+    # Si user es admin y meaning crítico → exigir auth_factor='totp' (MFA real)
+    _MEANINGS_CRITICOS = {'libera', 'rechaza', 'aprueba', 'autoriza'}
+    if meaning in _MEANINGS_CRITICOS:
+        try:
+            from config import ADMIN_USERS as _ADM, CALIDAD_USERS as _QC
+            _grupo_estricto = {x.lower() for x in (set(_ADM) | set(_QC))}
+        except Exception:
+            _grupo_estricto = set()
+        if username.lower() in _grupo_estricto and auth_factor != 'totp':
+            # Verificar que MFA esté enrolado (no exigir si user no tiene MFA setup)
+            try:
+                mfa_row = cur.execute(
+                    "SELECT enabled FROM mfa_secrets WHERE username=? AND COALESCE(enabled,0)=1",
+                    (username,),
+                ).fetchone()
+                if mfa_row:
+                    # Sí tiene MFA · debe usarlo para meanings críticos
+                    return jsonify({
+                        'error': 'Meaning crítico requiere firma con MFA TOTP · re-firmá con auth_factor=totp',
+                        'codigo': 'MFA_REQUIRED_FOR_CRITICAL_SIGN',
+                    }), 403
+            except Exception:
+                pass  # graceful · no bloquear si tabla no existe
 
     # Snapshot identidad humana del firmante (Part 11 §11.50: printed name)
     ident = cur.execute(
