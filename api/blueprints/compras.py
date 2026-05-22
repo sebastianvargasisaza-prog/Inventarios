@@ -6032,10 +6032,41 @@ def get_por_pagar():
 
 @bp.route('/api/ordenes-compra/<numero_oc>/comprobante', methods=['GET'])
 def get_comprobante(numero_oc):
-    """Return only the comprobante_imagen for a specific OC (lazy load)."""
+    """Return comprobantes for an OC.
+
+    Comportamiento:
+    - ?all=1 → lista de TODOS los comprobantes de pagos_oc (multi-pago)
+    - default → comprobante de ordenes_compra (último · legacy compat)
+
+    FIX · 22-may-2026 · Bug #6 OCs · multi-pago no sobreescribe historial
+    · cada pago en pagos_oc puede tener su propio comprobante_imagen.
+    """
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
     conn = get_db(); cur = conn.cursor()
+    if request.args.get('all') == '1':
+        # Multi-pago · histórico completo
+        try:
+            rows = cur.execute(
+                """SELECT id, fecha, monto, medio, COALESCE(referencia,''),
+                          COALESCE(numero_factura_proveedor,''),
+                          COALESCE(comprobante_imagen,'')
+                   FROM pagos_oc WHERE numero_oc=? ORDER BY fecha DESC""",
+                (numero_oc,),
+            ).fetchall()
+            return jsonify({
+                'numero_oc': numero_oc,
+                'comprobantes': [{
+                    'id': r[0], 'fecha': r[1], 'monto': float(r[2] or 0),
+                    'medio': r[3], 'referencia': r[4],
+                    'numero_factura_proveedor': r[5],
+                    'imagen': r[6] if r[6] else None,
+                } for r in rows],
+                'count': len(rows),
+            })
+        except Exception as e:
+            return jsonify({'error': f'lista comprobantes fallo: {e}'}), 500
+    # Default · imagen de ordenes_compra (legacy último pago)
     cur.execute("SELECT comprobante_imagen FROM ordenes_compra WHERE numero_oc=?", (numero_oc,))
     row = cur.fetchone()
     if not row or not row[0]:
