@@ -193,8 +193,13 @@ def brd_cuarentena_explicita():
         return err
     conn = get_db()
     try:
+        # FIX · 21-may-2026 · usar COALESCE(lote_codigo, lote) + COALESCE(operario, iniciado_por)
+        # · compat con BD sin mig 153 aplicada (aliases nuevos)
         rows = conn.execute(
-            """SELECT e.id, e.lote_codigo, e.completado_at_utc, e.operario,
+            """SELECT e.id,
+                      COALESCE(e.lote_codigo, e.lote) AS lote_codigo,
+                      e.completado_at_utc,
+                      COALESCE(e.operario, e.iniciado_por) AS operario,
                       mb.producto_nombre,
                       julianday('now','-5 hours') - julianday(e.completado_at_utc) as dias
                FROM ebr_ejecuciones e
@@ -202,7 +207,7 @@ def brd_cuarentena_explicita():
                WHERE e.estado = 'completado'
                  AND e.completado_at_utc IS NOT NULL
                  AND (e.liberado_at_utc IS NULL OR e.liberado_at_utc = '')
-                 AND (e.rechazado_at_utc IS NULL OR e.rechazado_at_utc = '')
+                 AND (COALESCE(e.rechazado_at_utc,'') = '')
                ORDER BY e.completado_at_utc ASC""",
         ).fetchall()
     except Exception as e:
@@ -225,10 +230,14 @@ def brd_cuarentena_explicita():
     # Estadísticas adicionales: rechazados últimos 30d
     rechazados_30d = 0
     try:
+        # FIX · 21-may-2026 · cutoff Python (date multi-arg falla en PG)
+        from datetime import datetime as _dtbrd2, timedelta as _tdbrd2
+        cutoff_30d = (_dtbrd2.now() - _tdbrd2(days=30)).date().isoformat()
         rechazados_30d = int((conn.execute(
             """SELECT COUNT(*) FROM ebr_ejecuciones
-               WHERE rechazado_at_utc IS NOT NULL AND rechazado_at_utc != ''
-                 AND date(rechazado_at_utc) >= date('now','-5 hours','-30 days')""",
+               WHERE COALESCE(rechazado_at_utc,'') != ''
+                 AND date(rechazado_at_utc) >= ?""",
+            (cutoff_30d,),
         ).fetchone() or [0])[0])
     except Exception:
         pass

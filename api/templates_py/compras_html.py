@@ -1932,7 +1932,10 @@ async function generarOCDesdeCompras(btnEl){
 
 // ─── Dashboard ────────────────────────────────────────────────────
 async function renderDash(){
-  // Ensure SOLIC loaded (covers both regular + CC categories)
+  // Compras PRO · 21-may-2026 · renderDash legacy · no-op (paneles ocultos)
+  // Antes corría 2 fetches + actualizaba DOM oculto · ahora skip silencioso
+  // Las funciones widgets nuevas (renderDashHome2, renderKpisGrandes...) cubren.
+  if(true) return;
   if(!SOLIC||!SOLIC.length){
     try{
       var _r1=await fetch('/api/solicitudes-compra');

@@ -1404,14 +1404,16 @@ def _sync_shopify_pendientes_background(max_edad_horas=24, max_productos=50):
                 token, shop = _shopify_creds(local_conn)
                 if not token or not shop:
                     return
-                # Productos pendientes: nunca sincronizados o sync viejo
-                cutoff_sql = f"datetime('now', '-5 hours', '-{int(max_edad_horas)} hours')"
-                rows = local_conn.execute(f"""
+                # SEC-FIX · 21-may-2026 · param `?` en vez de f-string (anti-SQLi defensa profunda)
+                # Calcular cutoff en Python (compatible PG · evita date multi-arg)
+                from datetime import datetime as _dtcut, timedelta as _tdcut
+                cutoff_str = (_dtcut.now() - _tdcut(hours=5 + int(max_edad_horas))).isoformat()
+                rows = local_conn.execute("""
                     SELECT producto_nombre FROM formula_headers
                     WHERE COALESCE(shopify_synced_at,'') = ''
-                       OR shopify_synced_at < {cutoff_sql}
+                       OR shopify_synced_at < ?
                     LIMIT ?
-                """, (max_productos,)).fetchall()
+                """, (cutoff_str, max_productos)).fetchall()
                 for (prod,) in rows:
                     try:
                         _shopify_sync_producto(local_conn, prod, token, shop, timeout=8)
