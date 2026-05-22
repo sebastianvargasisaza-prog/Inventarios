@@ -159,6 +159,26 @@ def _cargar_afinidad(c):
 # UTILIDADES
 # ───────────────────────────────────────────────────────────────────────
 
+def _shopify_created_at_bogota_local(created_at_str):
+    """SHOPIFY-FIX · 22-may-2026 · Bug #7 · convertir ISO UTC→Bogotá date.
+
+    Shopify devuelve created_at UTC. Si hacemos [:10] sin convertir, venta
+    de hoy 22:30 Bogotá queda guardada como AYER UTC → cae fuera ventana.
+    """
+    if not created_at_str:
+        return ''
+    try:
+        from datetime import datetime as _dt2, timezone as _tz, timedelta as _td2
+        s = (created_at_str or '').replace('Z', '+00:00')
+        dt = _dt2.fromisoformat(s)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=_tz.utc)
+        bogota = _tz(_td2(hours=-5))
+        return dt.astimezone(bogota).strftime('%Y-%m-%d')
+    except Exception:
+        return (created_at_str or '')[:10]
+
+
 def _next_dia_produccion(desde_fecha):
     """Devuelve la próxima fecha L/M/V desde una fecha base."""
     f = desde_fecha
@@ -218,7 +238,14 @@ def _ventas_diarias_por_sku(c, sku, dias=60):
                 for it in items:
                     sk = (it.get('sku') or it.get('SKU') or '').strip()
                     if sk == sku:
-                        cantidad += float(it.get('cantidad') or it.get('quantity') or 0)
+                        # SHOPIFY-FIX · 22-may-2026 · Bug #1 CRÍTICO audit Shopify→Necesidades
+                        # · 4 writers escriben 'qty' (auto_plan.py:7313, animus.py:129,
+                        #   marketing.py:1804, auto_plan_jobs.py:951)
+                        # · este reader buscaba solo 'cantidad' o 'quantity' · NUNCA matcheaba
+                        # · resultado: _ventas_diarias_por_sku devolvía [] siempre
+                        # · velocidad=0 → ningún producto entraba al plan nocturno
+                        # · CAUSA RAÍZ del síntoma "productos que se venden no aparecen"
+                        cantidad += float(it.get('cantidad') or it.get('quantity') or it.get('qty') or 0)
                 if cantidad > 0:
                     por_dia[fecha] = por_dia.get(fecha, 0) + cantidad
             return sorted([(f, q) for f, q in por_dia.items()])
@@ -574,6 +601,8 @@ def generar_plan(horizonte_dias=60, tipo='auto', usuario='cron'):
     conn = get_db(); c = conn.cursor()
 
     log_lineas = []
+    # SHOPIFY-FIX · 22-may-2026 · Bug #3 audit · expone alertas a respuesta
+    alertas_planeacion = []
     log_lineas.append(f"🤖 Generación auto-plan iniciada {inicio.isoformat()}")
     log_lineas.append(f"   Horizonte: {horizonte_dias}d · tipo={tipo} · usuario={usuario}")
 
@@ -611,7 +640,20 @@ def generar_plan(horizonte_dias=60, tipo='auto', usuario='cron'):
         # disparo, anulando el cob_min de la config si era mayor.
         cob_min = min(cob_min or 30, 20)
         if not lote_size_kg:
+            # SHOPIFY-FIX · 22-may-2026 · Bug #3 · alerta visible (no skip silente)
+            # · Producto nuevo sin formula_headers o lote_size_kg=0 era invisible
+            # · Ahora también emite alerta en respuesta para que UI lo muestre
             log_lineas.append(f"   ⊘ {producto}: sin lote_size_kg en formula — saltado")
+            try:
+                alertas_planeacion.append({
+                    'tipo': 'sin_lote_size',
+                    'producto': producto,
+                    'mensaje': f'{producto} se vende pero no tiene lote_size_kg en formula_headers · cargar fórmula',
+                    'accion': 'Cargar fórmula maestra con lote_size_kg > 0',
+                })
+            except NameError:
+                # Variable alertas_planeacion no existe en scope local · crearla
+                pass
             continue
 
         velocidad, factor_tendencia = _velocidad_total_producto(c, producto)
@@ -867,6 +909,7 @@ def generar_plan(horizonte_dias=60, tipo='auto', usuario='cron'):
         'compras_propuestas': compras_propuestas,
         'conteos_propuestos': conteos_propuestos,
         'alertas': alertas,
+        'alertas_planeacion': alertas_planeacion,  # Bug #3 audit · productos invisibles
         'log': log_lineas,
         'duracion_ms': duracion_ms,
         'horizonte_dias': horizonte_dias,
@@ -7325,7 +7368,7 @@ def sync_shopify_cron():
                       o.get("fulfillment_status",""), o.get("financial_status",""),
                       items_sku, total_uds,
                       addr.get("city",""), addr.get("country_code","CO"),
-                      o.get("created_at","")[:10]))
+                      _shopify_created_at_bogota_local(o.get("created_at",""))))
                 synced += 1
             conn.commit()
         except Exception as e:

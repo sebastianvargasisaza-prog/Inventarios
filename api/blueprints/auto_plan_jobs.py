@@ -37,6 +37,32 @@ DIAS_CRON = (0, 1, 2, 3, 4)  # lunes a viernes
 # Email engine — usa SistemaNotificaciones existente del proyecto
 # ───────────────────────────────────────────────────────────────────────
 
+def _shopify_created_at_bogota(created_at_str):
+    """SHOPIFY-FIX · 22-may-2026 · Bug #7 audit · convertir TZ Shopify→Bogotá.
+
+    Shopify devuelve created_at en ISO UTC (ej '2026-05-22T03:30:00Z').
+    Si hacemos [:10] sin convertir, venta de hoy 22:30 Bogotá queda guardada
+    como AYER UTC (porque UTC ya pasó medianoche). Al filtrar `WHERE date >= N`
+    esa venta cae fuera de ventana cuando NO debería.
+
+    Solución: parsear ISO + convertir a TZ Bogotá (UTC-5) + extraer date.
+    """
+    if not created_at_str:
+        return ''
+    try:
+        from datetime import datetime as _dt2, timezone as _tz, timedelta as _td2
+        # ISO con Z o +00:00 · normalizar
+        s = (created_at_str or '').replace('Z', '+00:00')
+        dt = _dt2.fromisoformat(s)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=_tz.utc)
+        bogota = _tz(_td2(hours=-5))
+        return dt.astimezone(bogota).strftime('%Y-%m-%d')
+    except Exception:
+        # Fallback: si parse falla, usar slice [:10] (legacy behavior)
+        return (created_at_str or '')[:10]
+
+
 def _enviar_email_async(asunto, html, destinos):
     """Envía email en thread separado. Nunca falla.
 
@@ -907,16 +933,21 @@ def job_sync_stock_shopify_diario(app):
             else:
                 qty = int(v['inv_qty'] or 0)
                 fuente = 'On hand'
-            if not sku or qty <= 0:
+            if not sku:
                 skipped += 1
                 continue
+            # SHOPIFY-FIX · 22-may-2026 · Bug #4 audit · NO skipear SKU agotado
+            # · Antes: qty<=0 → skip · _velocidad lookup vía sku_producto_map se rompía
+            # · Ahora: insert qty=0 con estado='Agotado' · señal "existe pero sin stock"
             producto = sku_map.get(sku)
             if not producto:
                 prefix = sku.split('-')[0] if '-' in sku else sku[:6]
                 producto = sku_map.get(prefix) or v['titulo']
+            estado_pt = 'Disponible' if qty > 0 else 'Agotado'
+            qty_safe = max(qty, 0)
             conn.execute(
-                "INSERT INTO stock_pt (sku,descripcion,lote_produccion,fecha_produccion,unidades_inicial,unidades_disponible,precio_base,empresa,estado,observaciones) VALUES (?,?,?,?,?,?,0,'ANIMUS','Disponible',?)",
-                (sku, producto, 'SHOPIFY-' + today, today, qty, qty, f'Sync Shopify CRON ({fuente})')
+                "INSERT INTO stock_pt (sku,descripcion,lote_produccion,fecha_produccion,unidades_inicial,unidades_disponible,precio_base,empresa,estado,observaciones) VALUES (?,?,?,?,?,?,0,'ANIMUS',?,?)",
+                (sku, producto, 'SHOPIFY-' + today, today, qty_safe, qty_safe, estado_pt, f'Sync Shopify CRON ({fuente})')
             )
             synced += 1
 
@@ -963,7 +994,7 @@ def job_sync_shopify(app):
                   o.get("fulfillment_status",""), o.get("financial_status",""),
                   items_sku, total_uds,
                   addr.get("city",""), addr.get("country_code","CO"),
-                  o.get("created_at","")[:10]))
+                  _shopify_created_at_bogota(o.get("created_at",""))))
             synced += 1
         conn.commit()
         return True, {'orders_synced': synced}, 0
@@ -1227,7 +1258,7 @@ def job_lunes_7am_workflow(app):
                           o.get("fulfillment_status",""), o.get("financial_status",""),
                           items_sku, total_uds,
                           addr.get("city",""), addr.get("country_code","CO"),
-                          o.get("created_at","")[:10]))
+                          _shopify_created_at_bogota(o.get("created_at",""))))
                     synced += 1
                 resumen['pasos'].append(f'Sync Shopify: {synced} órdenes')
             else:

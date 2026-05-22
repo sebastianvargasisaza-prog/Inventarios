@@ -7979,7 +7979,7 @@ def planificacion_estrategica():
                WHERE estado NOT IN ('completado','cancelado')
                  AND fecha_programada >= date('now', '-5 hours', '-7 days')
                  AND fecha_programada <= ?
-                 AND COALESCE(origen,'manual') != 'calendar'
+                 AND COALESCE(origen,'manual') NOT IN ('calendar','eos_canonico')
                ORDER BY fecha_programada""",
             (cutoff.isoformat(),)
         ).fetchall()

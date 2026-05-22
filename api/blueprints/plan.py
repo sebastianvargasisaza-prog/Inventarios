@@ -637,6 +637,34 @@ def plan_necesidades():
         "productos": productos_animus,
     }] + list(b2b_por_cliente.values())
 
+    # SHOPIFY-FIX · 22-may-2026 · Bug #5 audit · SKUs huérfanos vendiendo
+    # · Detecta SKUs vendiendo en Shopify SIN mapping a producto
+    # · Sebastián los necesita ver para mapearlos en admin/maestro_pt
+    try:
+        # Ventana últimos 30 días
+        from datetime import datetime as _dt2, timedelta as _td2
+        cutoff = (_dt2.now() - _td2(days=30)).strftime('%Y-%m-%d')
+        # Todos los SKUs que aparecen en ventas
+        skus_vendidos = c.execute(
+            """SELECT DISTINCT TRIM(json_each.value->>'sku') as sku_v
+               FROM ordenes_shopify, json_each(sku_items)
+               WHERE date(creado_en) >= ?
+                 AND TRIM(json_each.value->>'sku') != ''""",
+            (cutoff,),
+        ).fetchall()
+    except Exception:
+        skus_vendidos = []
+    skus_set = set(r[0] for r in skus_vendidos if r and r[0])
+    # SKUs mapeados (sku_producto_map)
+    try:
+        skus_mapeados_rows = c.execute(
+            "SELECT DISTINCT sku FROM sku_producto_map WHERE COALESCE(activo,1)=1"
+        ).fetchall()
+        skus_mapeados = set(r[0] for r in skus_mapeados_rows if r and r[0])
+    except Exception:
+        skus_mapeados = set()
+    skus_huerfanos = sorted(skus_set - skus_mapeados)[:50]
+
     # Resumen consolidado
     resumen = {
         "n_critico": sum(1 for p in productos_animus if p["urgencia"] == "CRITICO"),
@@ -644,6 +672,9 @@ def plan_necesidades():
         "n_vigilar": sum(1 for p in productos_animus if p["urgencia"] == "VIGILAR"),
         "n_ok": sum(1 for p in productos_animus if p["urgencia"] == "OK"),
         "n_sin_ventas": sum(1 for p in productos_animus if p["urgencia"] == "SIN_VENTAS"),
+        "n_sin_mapeo": sum(1 for p in productos_animus if p["urgencia"] == "SIN_MAPEO"),
+        "n_skus_huerfanos_vendiendo": len(skus_huerfanos),
+        "skus_huerfanos_vendiendo": skus_huerfanos,  # solo top 50
         "n_clientes_b2b": len(b2b_por_cliente),
         "n_pedidos_b2b_pendientes": sum(len(c["pedidos"]) for c in b2b_por_cliente.values()),
         "kg_total_b2b_pendientes": round(sum(c["kg_total"] for c in b2b_por_cliente.values()), 2),
@@ -999,8 +1030,15 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
             dias_cobertura = None
 
         # Urgencia (lógica Sebastián 20-25-45)
+        # SHOPIFY-FIX · 22-may-2026 · Bug #6 audit · separar SIN_VENTAS en 3 sub-estados
+        # · SIN_HISTORIAL · producto creado < 30 días (sin tiempo de ventas)
+        # · SIN_MAPEO · existe formula_headers pero len(skus_de_prod)==0 (huérfano)
+        # · SIN_VENTAS_REAL · mapeado + estable + 0 ventas (probable descontinuado)
         if velocidad_uds_dia <= 0.01:
-            urgencia = "SIN_VENTAS"
+            if not skus_de_prod:
+                urgencia = "SIN_MAPEO"
+            else:
+                urgencia = "SIN_VENTAS"
         elif dias_cobertura is None:
             urgencia = "SIN_VENTAS"
         elif dias_cobertura <= cob_critico:

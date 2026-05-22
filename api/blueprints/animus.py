@@ -21,6 +21,20 @@ CALENDARIO_COSMETICO = [
     {"evento": "Fin de Año / Rituales",  "fecha": "2026-12-31", "color": "#6a1b9a", "multiplicador": 2.0},
 ]
 
+def _ani_created_at_bogota(s):
+    """SHOPIFY-FIX · 22-may-2026 · Bug #7 · ISO UTC→Bogotá date (slice safe)."""
+    if not s:
+        return ''
+    try:
+        from datetime import datetime as _dt2, timezone as _tz, timedelta as _td2
+        dt = _dt2.fromisoformat((s or '').replace('Z', '+00:00'))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=_tz.utc)
+        return dt.astimezone(_tz(_td2(hours=-5))).strftime('%Y-%m-%d')
+    except Exception:
+        return (s or '')[:10]
+
+
 def _db():
     conn = get_db()
 
@@ -137,7 +151,7 @@ def animus_sync(platform):
                          o.get("fulfillment_status",""), o.get("financial_status",""),
                          items_sku, total_uds,
                          addr.get("city",""), addr.get("country_code","CO"),
-                         o.get("created_at","")[:10]))
+                         _ani_created_at_bogota(o.get("created_at",""))))
                     synced += 1
                 conn.commit()
                 # Reflejar ventas Shopify como movimientos SHOPIFY_VENTA en

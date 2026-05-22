@@ -9765,7 +9765,8 @@ def test_golden_plan_necesidades_agrega_animus_y_b2b(app, db_clean):
         assert esperado in codigos, f'BUG: producto {esperado} falta en Animus DTC'
     # Cada producto debe tener urgencia válida
     for p in animus['productos']:
-        assert p['urgencia'] in ('CRITICO','URGENTE','VIGILAR','OK','SIN_VENTAS'), \
+        # SHOPIFY-FIX · 22-may-2026 · Bug #6 audit · SIN_MAPEO nuevo subestado
+        assert p['urgencia'] in ('CRITICO','URGENTE','VIGILAR','OK','SIN_VENTAS','SIN_MAPEO','SIN_HISTORIAL'), \
             f'BUG: urgencia inválida {p["urgencia"]}'
 
     # Caso 4: nuestro B2B aparece con su pedido
