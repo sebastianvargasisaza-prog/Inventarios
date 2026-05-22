@@ -1737,6 +1737,17 @@ def cambiar_password():
                 changed_at    = excluded.changed_at,
                 changed_by    = excluded.changed_by
         """, (username, new_hash, username))
+        # SEC-FIX · 21-may-2026 · invalidar todas las sesiones tras password change
+        # Agregamos columna session_version · cada request valida que la session
+        # tenga la última version · si no, fuerza re-login.
+        try:
+            conn.execute("ALTER TABLE users_passwords ADD COLUMN session_version INTEGER DEFAULT 1")
+        except Exception:
+            pass  # ya existe
+        conn.execute(
+            "UPDATE users_passwords SET session_version = COALESCE(session_version, 1) + 1 WHERE username=?",
+            (username,),
+        )
         conn.commit()
         conn.close()
     except Exception as e:
@@ -1745,5 +1756,12 @@ def cambiar_password():
 
     _clear_attempts(ip, username)
     _log_sec("password_changed", username, ip)
-    return jsonify({'ok': True, 'message': 'Contraseña actualizada correctamente.'})
+    # Forzar re-login en este browser y revocar mfa_trusted cookie
+    resp = jsonify({'ok': True, 'message': 'Contraseña actualizada · sesión cerrada · re-loguear.'})
+    try:
+        session.clear()
+        resp.delete_cookie('mfa_trusted')
+    except Exception:
+        pass
+    return resp
 

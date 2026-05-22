@@ -1372,11 +1372,50 @@ def completar_ebr(ebr_id):
            WHERE id = ?""",
         (cantidad_real, yield_pct, ebr_id),
     )
+    # INVIMA-FIX · 21-may-2026 · cuarentena explícita auto al completar
+    # Antes: lote PT quedaba 'completado' pero NO había movimiento de
+    # Entrada con estado_lote='CUARENTENA' · podía usarse antes de QC.
+    # Ahora: INSERT movimientos · libera_ebr promueve a VIGENTE (Fix prev).
+    cuarentena_creada = False
+    try:
+        lote_ref = ebr_full['lote'] if ebr_full.get('lote') else (ebr_full.get('lote_codigo') or '')
+        if lote_ref and cantidad_real and cantidad_real > 0:
+            # Buscar producto del producción para material_id (puede ser PT)
+            prod_row = cur.execute(
+                """SELECT pp.producto FROM produccion_programada pp
+                   WHERE pp.id = (SELECT produccion_id FROM ebr_ejecuciones WHERE id=?)""",
+                (ebr_id,),
+            ).fetchone()
+            prod_nombre = prod_row[0] if prod_row else ''
+            # Check si ya existe el movimiento para no duplicar
+            existe = cur.execute(
+                "SELECT 1 FROM movimientos WHERE lote=? AND tipo='Entrada' LIMIT 1",
+                (lote_ref,),
+            ).fetchone()
+            if not existe:
+                cur.execute(
+                    """INSERT INTO movimientos
+                       (material_id, material_nombre, cantidad, tipo, fecha,
+                        observaciones, operador, lote, estado_lote)
+                       VALUES (?, ?, ?, 'Entrada', datetime('now','-5 hours'),
+                               ?, ?, ?, 'CUARENTENA')""",
+                    ('PT_' + (prod_nombre[:20] if prod_nombre else 'GENERICO'),
+                     prod_nombre or 'PT',
+                     cantidad_real,
+                     f'Granel BRD completado · EBR #{ebr_id} · pendiente liberación QC',
+                     user, lote_ref),
+                )
+                cuarentena_creada = True
+    except Exception as _e:
+        import logging as _logc
+        _logc.getLogger('inventario.brd').warning('cuarentena auto completar_ebr fallo: %s', _e)
     conn.commit()
     audit_log(cur, usuario=user, accion="COMPLETAR_EBR",
               tabla="ebr_ejecuciones", registro_id=ebr_id,
-              despues={"cantidad_real_g": cantidad_real, "yield_pct": yield_pct})
-    return jsonify({"ok": True, "estado": "completado", "yield_pct": yield_pct})
+              despues={"cantidad_real_g": cantidad_real, "yield_pct": yield_pct,
+                       "cuarentena_auto_creada": cuarentena_creada})
+    return jsonify({"ok": True, "estado": "completado", "yield_pct": yield_pct,
+                    "cuarentena_creada": cuarentena_creada})
 
 
 @bp.route("/api/brd/ebr/<int:ebr_id>/liberar", methods=["POST"])
