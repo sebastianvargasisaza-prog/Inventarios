@@ -6453,7 +6453,17 @@ var _consolEditMode = {};
 
 function renderConsolCard(p, idx){
   if (_consolEditMode[idx]) return renderConsolCardEdit(p, idx);
-  var estadoColors = {'Borrador':'#94a3b8','Revisada':'#f59e0b','Autorizada':'#22c55e'};
+  // Compras PRO · 21-may-2026 · UI unifica 8 estados → 5 buckets visuales
+  // Borrador/Revisada → mismo color (etapa pre-autorización)
+  // Recibida/Parcial → mismo color (con detalle parcial inline)
+  // Cancelada/Rechazada → mismo color (terminal negativo)
+  var estadoColors = {
+    'Borrador':'#94a3b8','Revisada':'#94a3b8',
+    'Autorizada':'#22c55e',
+    'Recibida':'#0891b2','Parcial':'#0891b2',
+    'Pagada':'#16a34a',
+    'Cancelada':'#dc2626','Rechazada':'#dc2626',
+  };
 
   // Contenido principal: ítems si los hay, OCs con observaciones si no
   var contenidoHtml;

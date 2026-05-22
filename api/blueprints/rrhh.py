@@ -935,6 +935,11 @@ def rrhh_empleado_timeline(emp_id):
     """Timeline completo del empleado: eventos + capacitaciones + nomina."""
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
+    # PRIVACY-FIX · 21-may-2026 · CIE10 + diagnostico solo RRHH senior + admin
+    # Habeas Data sensible (Ley 1581 art. 6 · datos salud) · NO todos los
+    # RRHH operativos pueden ver diagnósticos médicos del personal.
+    u = session.get('compras_user', '').lower()
+    _es_rrhh_senior = u in {'gloria', 'sebastian', 'alejandro'}
     conn = get_db(); c = conn.cursor()
     emp = c.execute("SELECT * FROM empleados WHERE id=?", (emp_id,)).fetchone()
     if not emp:
@@ -948,6 +953,16 @@ def rrhh_empleado_timeline(emp_id):
     ).fetchall()
     eventos_cols = [x[0] for x in c.description]
     eventos_list = [dict(zip(eventos_cols, r)) for r in eventos]
+    # Filtrar diagnóstico/CIE10 si NO es senior
+    if not _es_rrhh_senior:
+        for ev in eventos_list:
+            if 'diagnostico' in ev:
+                ev['diagnostico'] = '[restringido · Habeas Data]'
+            if 'cie10' in ev:
+                ev['cie10'] = ''
+            if 'descripcion' in ev and ev.get('tipo') in ('incapacidad', 'accidente_trabajo'):
+                # No exponer descripción detallada de incapacidades a RRHH operativo
+                ev['descripcion'] = '[detalle médico restringido]'
 
     # Resumen por tipo
     resumen = {}
