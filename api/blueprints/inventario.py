@@ -5931,10 +5931,23 @@ def consumo_manual():
     ).fetchone()
     stock_antes = float(stock_antes_row[0] or 0)
     if cantidad > stock_antes:
-        # No bloqueamos (puede ser un ajuste correctivo deliberado) pero
-        # el audit_log lo deja claro como warning para revision QC.
+        # SEC-FIX · 21-may-2026 · bloquear stock negativo · flag forzar para excepciones
+        # Antes: solo loguea warning · permite stock fantasma · drift FEFO/ABC/costing
+        if not d.get('forzar_sobreconsumo'):
+            return jsonify({
+                'error': f'Stock insuficiente · disponible {stock_antes:.2f}g · solicitado {cantidad:.2f}g',
+                'codigo': 'STOCK_INSUFICIENTE',
+                'stock_disponible': stock_antes,
+                'hint': 'Si es ajuste correctivo deliberado, enviar forzar_sobreconsumo=true (admin)',
+            }), 422
+        # Solo admins pueden forzar
+        if u not in ADMIN_USERS:
+            return jsonify({
+                'error': 'Solo admin puede forzar consumo > stock',
+                'codigo': 'FORZAR_SOLO_ADMIN',
+            }), 403
         __import__('logging').getLogger('inventario').warning(
-            "consumo_manual descontando MAS de lo disponible · codigo=%s "
+            "consumo_manual FORZADO descontando MAS de lo disponible · codigo=%s "
             "cantidad=%s stock=%s usuario=%s",
             codigo, cantidad, stock_antes, u,
         )

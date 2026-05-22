@@ -4,7 +4,15 @@ import json
 import sqlite3
 import hmac
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+
+# TZ-FIX · 21-may-2026 · Bogotá UTC-5 explícito (Render corre en UTC)
+# Antes: datetime.now() naive · comprobantes y exports impriman fecha UTC
+# Ahora: helper _now_bogota() para todos los timestamps user-facing
+_TZ_BOGOTA = timezone(timedelta(hours=-5))
+def _now_bogota():
+    """Fecha+hora Bogotá UTC-5 (sin DST · Colombia no aplica DST)."""
+    return datetime.now(_TZ_BOGOTA).replace(tzinfo=None)
 from flask import Blueprint, jsonify, request, Response, session, redirect, url_for
 from werkzeug.security import generate_password_hash, check_password_hash
 from config import DB_PATH, COMPRAS_USERS, ADMIN_USERS, CONTADORA_USERS, RRHH_USERS
@@ -80,7 +88,7 @@ def rrhh_dashboard():
     headcount = c.fetchone()[0]
     c.execute("SELECT COALESCE(SUM(salario_base),0) FROM empleados WHERE estado='Activo'")
     nomina_bruta = c.fetchone()[0]
-    mes_actual = datetime.now().strftime("%Y-%m")
+    mes_actual = _now_bogota().strftime("%Y-%m")
     c.execute("SELECT COALESCE(SUM(dias),0) FROM ausencias WHERE estado='Aprobada' AND fecha_inicio LIKE ?", (mes_actual+"%",))
     dias_ausentes = c.fetchone()[0]
     ausentismo_pct = round(dias_ausentes/(headcount*22)*100,1) if headcount>0 else 0
@@ -511,7 +519,7 @@ def rrhh_nomina_aprobar(periodo):
     n_registros, total_neto = info[0], float(info[1] or 0)
     if n_registros == 0:
         return jsonify({"error": "No hay registros para este período"}), 404
-    ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+    ts = _now_bogota().strftime("%Y-%m-%d %H:%M")
     c.execute("UPDATE nomina_registros SET estado='Aprobada',aprobado_por=?,aprobado_en=? WHERE periodo=?", (u, ts, periodo))
     updated = c.rowcount
     audit_log(c, usuario=u, accion='APROBAR_NOMINA', tabla='nomina_registros',
@@ -539,7 +547,7 @@ def rrhh_nomina_pagar(periodo):
     no_aprobados = c.fetchone()[0]
     if no_aprobados > 0:
         return jsonify({"error": "La nómina debe estar aprobada antes de marcar como pagada"}), 400
-    ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+    ts = _now_bogota().strftime("%Y-%m-%d %H:%M")
     c.execute("UPDATE nomina_registros SET estado='Pagada',pagado_por=?,pagado_en=? WHERE periodo=?", (u, ts, periodo))
     pagados = c.rowcount
 
@@ -562,7 +570,7 @@ def rrhh_nomina_pagar(periodo):
             ref = f'NOM-{periodo}'
             ya = c.execute("SELECT id FROM flujo_egresos WHERE referencia=?", (ref,)).fetchone()
             if not ya:
-                fecha = datetime.now().strftime('%Y-%m-%d')
+                fecha = _now_bogota().strftime('%Y-%m-%d')
                 # Periodo en flujo se interpreta como YYYY-MM. Si el periodo
                 # de nomina viene como 2026-04 lo usamos directo; si viene
                 # con dia tomamos los primeros 7 chars

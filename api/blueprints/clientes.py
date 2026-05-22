@@ -1025,22 +1025,35 @@ def handle_despachos():
             if err:
                 return jsonify(err), 400
             sku = it.get('sku', '')
-            # 1. Identificar el lote FEFO que se va a descontar
+            # PERF/SEC-FIX · 21-may-2026 · race condition FEFO con CAS atómico
+            # Antes: SELECT + UPDATE separados · 2 despachos concurrentes
+            # del mismo SKU descontaban del mismo lote · stock virtualmente
+            # negativo · MAX(0,...) enmascaraba el underflow · drift inventario.
+            # Ahora: UPDATE con WHERE unidades_disponible >= ? + retry FEFO
             lote_real = None
-            row_lote = c.execute("""
-                SELECT id, lote_produccion FROM stock_pt
-                WHERE sku=? AND unidades_disponible>0
-                ORDER BY fecha_produccion ASC LIMIT 1
-            """, (sku,)).fetchone()
-            if row_lote:
-                lote_real = row_lote[1] or it.get('lote_pt', '')
-                # 2. Descontar del lote identificado (atómico por id)
+            qty_pendiente = float(cantidad or 0)
+            for _intento_fefo in range(10):  # max 10 lotes (FEFO chain)
+                if qty_pendiente <= 0:
+                    break
+                row_lote = c.execute("""
+                    SELECT id, lote_produccion, unidades_disponible FROM stock_pt
+                    WHERE sku=? AND unidades_disponible>0
+                    ORDER BY fecha_produccion ASC LIMIT 1
+                """, (sku,)).fetchone()
+                if not row_lote:
+                    break
+                _id, _lote, _disp = row_lote[0], row_lote[1], float(row_lote[2] or 0)
+                take = min(qty_pendiente, _disp)
+                # CAS atómico · si otro worker ya descontó, rowcount=0 → retry
                 c.execute("""UPDATE stock_pt
-                              SET unidades_disponible=MAX(0, unidades_disponible-?)
-                              WHERE id=?""",
-                          (cantidad, row_lote[0]))
-            else:
-                # No hay stock disponible · usar lote del frontend como fallback
+                              SET unidades_disponible = unidades_disponible - ?
+                              WHERE id=? AND unidades_disponible >= ?""",
+                          (take, _id, take))
+                if c.rowcount == 1:
+                    lote_real = _lote or it.get('lote_pt', '')
+                    qty_pendiente -= take
+                # rowcount=0 → race · próxima iteración busca siguiente lote
+            if lote_real is None:
                 lote_real = it.get('lote_pt', '')
             # 3. Persistir el lote REAL en despachos_items (recall-ready)
             c.execute("""INSERT INTO despachos_items

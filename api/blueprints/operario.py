@@ -221,6 +221,48 @@ def mi_dia():
               ORDER BY pp.fecha_programada ASC, pp.id ASC"""
     rows = c.execute(sql, params).fetchall()
 
+    # PERF-FIX · 21-may-2026 · pre-cargar EBRs + pasos pendientes en bulk
+    # Antes: 1 query EBR + 2 sub-COUNT por producción · 20 prods → 60 queries
+    # Ahora: 2 queries totales sin importar # de producciones
+    pp_ids = [r[0] for r in rows]
+    ebr_map = {}
+    if pp_ids:
+        placeholders = ','.join(['?'] * len(pp_ids))
+        try:
+            ebr_rows = c.execute(
+                f"""SELECT produccion_id, id, numero_op, lote, estado FROM ebr_ejecuciones
+                    WHERE produccion_id IN ({placeholders})""",
+                pp_ids,
+            ).fetchall()
+            ebr_ids_all = [e[1] for e in ebr_rows]
+            pasos_pend = {}
+            pasos_total = {}
+            if ebr_ids_all:
+                eph = ','.join(['?'] * len(ebr_ids_all))
+                p_pend = c.execute(
+                    f"""SELECT ebr_id, COUNT(*) FROM ebr_pasos_ejecutados
+                        WHERE ebr_id IN ({eph}) AND estado='pendiente'
+                        GROUP BY ebr_id""",
+                    ebr_ids_all,
+                ).fetchall()
+                pasos_pend = {pp[0]: pp[1] for pp in p_pend}
+                p_tot = c.execute(
+                    f"""SELECT ebr_id, COUNT(*) FROM ebr_pasos_ejecutados
+                        WHERE ebr_id IN ({eph})
+                        GROUP BY ebr_id""",
+                    ebr_ids_all,
+                ).fetchall()
+                pasos_total = {pp[0]: pp[1] for pp in p_tot}
+            for er in ebr_rows:
+                ebr_map[er[0]] = {
+                    'id': er[1], 'numero_op': er[2], 'lote': er[3],
+                    'estado': er[4],
+                    'pasos_pendientes': pasos_pend.get(er[1], 0),
+                    'pasos_total': pasos_total.get(er[1], 0),
+                }
+        except Exception:
+            pass
+
     out = []
     for r in rows:
         # Determinar el rol del operario actual en esta producción
@@ -235,26 +277,8 @@ def mi_dia():
             elif r[11] == operario_id:
                 mi_rol = "acondicionamiento"
 
-        # Buscar EBR vinculado (si existe)
-        ebr_row = c.execute(
-            """SELECT e.id, e.numero_op, e.lote, e.estado,
-                      (SELECT COUNT(*) FROM ebr_pasos_ejecutados
-                       WHERE ebr_id = e.id AND estado = 'pendiente') as pasos_pendientes,
-                      (SELECT COUNT(*) FROM ebr_pasos_ejecutados
-                       WHERE ebr_id = e.id) as pasos_total
-               FROM ebr_ejecuciones e WHERE e.produccion_id = ? LIMIT 1""",
-            (r[0],),
-        ).fetchone()
-        ebr_info = None
-        if ebr_row:
-            ebr_info = {
-                "id": ebr_row[0],
-                "numero_op": ebr_row[1],
-                "lote": ebr_row[2],
-                "estado": ebr_row[3],
-                "pasos_pendientes": ebr_row[4] or 0,
-                "pasos_total": ebr_row[5] or 0,
-            }
+        # PERF-FIX · usar pre-cargado en bulk (era N+1)
+        ebr_info = ebr_map.get(r[0])
 
         # Estado simplificado para el operario
         pp_dict = {

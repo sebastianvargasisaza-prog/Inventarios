@@ -1116,16 +1116,31 @@ def mkt_influencer_detail(iid):
                       "nicho", "tarifa", "estado", "email", "telefono", "notas",
                       "discount_code", "ciclo_pago",
                       "banco", "cuenta_bancaria", "tipo_cuenta", "cedula_nit"]
+            # Solo admin puede modificar campos bancarios sensibles
+            campos_sensibles = {"banco", "cuenta_bancaria", "tipo_cuenta", "cedula_nit"}
+            if not _is_admin:
+                d_filtered = {k: v for k, v in d.items() if k not in campos_sensibles}
+                d = d_filtered
             updates = {k: d[k] for k in campos if k in d}
-            # Normalizar discount_code: uppercase, sin espacios, prefijo ANIMUS_ opcional
             if "discount_code" in updates:
                 dc = (updates["discount_code"] or "").strip().upper().replace(" ", "")
                 updates["discount_code"] = dc
             if not updates:
                 return jsonify({"error": "Nada que actualizar"}), 400
+            # SEC-FIX · 21-may-2026 · audit_log obligatorio
+            antes_row = c.execute("SELECT * FROM marketing_influencers WHERE id=?", (iid,)).fetchone()
+            antes_dict = dict(antes_row) if antes_row else {}
             set_clause = ", ".join(f"{k}=?" for k in updates)
             c.execute(f"UPDATE marketing_influencers SET {set_clause} WHERE id=?",
                       list(updates.values()) + [iid])
+            try:
+                from audit_helpers import audit_log
+                audit_log(c, usuario=u, accion='MODIFICAR_INFLUENCER',
+                          tabla='marketing_influencers', registro_id=iid,
+                          antes={k: antes_dict.get(k) for k in updates},
+                          despues=updates)
+            except Exception:
+                pass
             conn.commit()
             return jsonify({"ok": True})
 
