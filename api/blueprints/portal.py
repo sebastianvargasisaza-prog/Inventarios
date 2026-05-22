@@ -141,9 +141,20 @@ def portal_login_page():
 
 @bp.route('/api/portal/login', methods=['POST'])
 def portal_login_api():
+    # SEC-FIX · 21-may-2026 · rate-limit + lockout (CVSS 7.5 · brute-force público)
+    # Antes: endpoint público B2B sin throttle · enumeración + crack ilimitado.
+    # Ahora: usa _is_locked/_record_failure del módulo auth (5 fallos/15min).
     body = request.get_json(silent=True) or {}
     email = (body.get('email') or '').strip().lower()
     pw = body.get('password') or ''
+    ip_req = request.headers.get('X-Forwarded-For', request.remote_addr or '0.0.0.0').split(',')[0].strip()
+    try:
+        from auth import _is_locked, _record_failure, _reset_failures
+        if _is_locked(ip_req, email):
+            return jsonify({'error': 'Demasiados intentos · esperá 15 min',
+                            'codigo': 'RATE_LIMITED'}), 429
+    except Exception:
+        _is_locked = None
     if not email or not pw:
         return jsonify({'error': 'email y password requeridos'}), 400
     conn = get_db()
@@ -154,8 +165,13 @@ def portal_login_api():
         (email,),
     ).fetchone()
     if not row:
-        # Mensaje genérico anti-enumeración
+        # Mensaje genérico anti-enumeración + record failure
         log.info('portal login fallo · email no existe · %s', email)
+        try:
+            if _is_locked:
+                from auth import _record_failure as _rf
+                _rf(ip_req, email)
+        except Exception: pass
         return jsonify({'error': 'Credenciales incorrectas'}), 401
     cred_id, cid, cnom, _email, pw_hash, activo = row
     if not activo:

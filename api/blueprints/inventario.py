@@ -3837,6 +3837,9 @@ def alertas_reabastecimiento():
     # Subconsulta: las columnas de maestro_mps y los alias no se pueden
     # usar en WHERE/ORDER BY de la query agrupada en Postgres · envueltas
     # en un FROM (...) se vuelven columnas reales (portátil SQLite/PG).
+    # INVIMA-FIX · 21-may-2026 · alertas excluyen CUARENTENA/RECHAZADO
+    # Antes: MP con 1000g en CUARENTENA contaba como stock · alerta NO se
+    # disparaba pero FEFO bloqueaba producción · inconsistencia grave.
     c.execute("""SELECT material_id, nombre, proveedor, stock_minimo,
                         stock_actual, tipo_material, subtipo FROM (
                    SELECT m.material_id AS material_id,
@@ -3848,6 +3851,8 @@ def alertas_reabastecimiento():
                           COALESCE(MAX(mp.tipo),'') AS subtipo
                    FROM movimientos m
                    LEFT JOIN maestro_mps mp ON m.material_id=mp.codigo_mp
+                   WHERE m.estado_lote IS NULL
+                      OR UPPER(COALESCE(m.estado_lote,'')) NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO','VENCIDO')
                    GROUP BY m.material_id
                  ) sub
                  WHERE stock_actual < stock_minimo AND stock_minimo > 0
@@ -3873,6 +3878,9 @@ def alertas_reabastecimiento():
 
 @bp.route('/api/stock')
 def get_stock():
+    # SEC-FIX · 21-may-2026 · auth obligatorio (antes endpoint público)
+    u, err, code = _require_session()
+    if err: return err, code
     conn = get_db(); c = conn.cursor()
     c.execute("SELECT material_id, material_nombre, SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE 0 END), SUM(CASE WHEN tipo='Salida' THEN cantidad ELSE 0 END), SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) FROM movimientos GROUP BY material_id, material_nombre ORDER BY material_nombre")
     rows = c.fetchall()
@@ -3880,6 +3888,9 @@ def get_stock():
 
 @bp.route('/api/lotes')
 def get_lotes():
+    # SEC-FIX · 21-may-2026 · auth obligatorio (antes endpoint público)
+    _u, _err, _code = _require_session()
+    if _err: return _err, _code
     """Lista lotes de Materia Prima con stock disponible (stock_neto > 0).
 
     Sebastian 5-may-2026 (audit zero-error Bodega MP): 3 fixes criticos.
@@ -5725,6 +5736,9 @@ def handle_maestro():
 
 @bp.route('/api/maestro-mps/<codigo>')
 def get_mp(codigo):
+    # SEC-FIX · 21-may-2026 · auth obligatorio
+    u, err, code_a = _require_session()
+    if err: return err, code_a
     conn = get_db(); c = conn.cursor()
     c.execute("SELECT codigo_mp,nombre_inci,nombre_comercial,tipo,proveedor,stock_minimo FROM maestro_mps WHERE codigo_mp=?", (codigo,))
     r = c.fetchone()
@@ -5733,14 +5747,33 @@ def get_mp(codigo):
 @bp.route('/api/maestro-mps/<codigo>/stock-minimo', methods=['PUT'])
 def update_stock_minimo(codigo):
     """Actualiza el stock minimo de una MP."""
+    # SEC-FIX · 21-may-2026 · auth + audit_log obligatorio
+    # Antes: cualquier request PUT modificaba umbrales · sin rastro
+    # Riesgo: manipulación silenciosa de flujo de compras
+    u, err, code_a = _require_session()
+    if err: return err, code_a
+    if u not in (set(COMPRAS_USERS) | set(ADMIN_USERS)):
+        return jsonify({'error': 'Solo Compras/Admin pueden editar mínimos'}), 403
     d = request.json or {}
     nuevo_min = d.get('stock_minimo')
     if nuevo_min is None:
         return jsonify({'error': 'stock_minimo requerido'}), 400
     conn = get_db(); c = conn.cursor()
+    # Capturar valor anterior para audit
+    prev_row = c.execute("SELECT stock_minimo FROM maestro_mps WHERE codigo_mp=?", (codigo,)).fetchone()
+    if not prev_row:
+        return jsonify({'error': 'MP no encontrada'}), 404
+    prev_min = float(prev_row[0] or 0)
     c.execute("UPDATE maestro_mps SET stock_minimo=? WHERE codigo_mp=?", (float(nuevo_min), codigo))
     if c.rowcount == 0:
         return jsonify({'error': 'MP no encontrada'}), 404
+    try:
+        audit_log(c, usuario=u, accion='UPDATE_STOCK_MINIMO',
+                  tabla='maestro_mps', registro_id=codigo,
+                  antes={'stock_minimo': prev_min},
+                  despues={'stock_minimo': float(nuevo_min)})
+    except Exception as _e:
+        __import__('logging').getLogger('inventario').warning('audit update_stock_minimo: %s', _e)
     conn.commit()
     return jsonify({'message': f'Stock minimo de {codigo} actualizado a {nuevo_min}'})
 
@@ -6523,7 +6556,13 @@ def liberar_lote():
         return jsonify({'error': 'Accion debe ser APROBAR o RECHAZAR'}), 400
     nuevo_estado = 'VIGENTE' if accion == 'APROBAR' else 'RECHAZADO'
     conn = get_db(); c = conn.cursor()
-    c.execute("UPDATE movimientos SET estado_lote=? WHERE id=? AND estado_lote='CUARENTENA'", (nuevo_estado, mov_id))
+    # INVIMA-FIX · 21-may-2026 · aceptar CUARENTENA_EXTENDIDA también
+    # Antes: lotes en cuarentena extendida quedaban zombies (rowcount=0)
+    c.execute(
+        "UPDATE movimientos SET estado_lote=? "
+        "WHERE id=? AND estado_lote IN ('CUARENTENA','CUARENTENA_EXTENDIDA')",
+        (nuevo_estado, mov_id),
+    )
     if c.rowcount == 0:
         return jsonify({'error': 'Lote no encontrado o ya procesado'}), 404
     c.execute("""INSERT INTO audit_log (usuario,accion,tabla,registro_id,detalle,ip,fecha)
@@ -7339,6 +7378,11 @@ def cc_review():
 def anular_movimiento(mov_id):
     """Anula un movimiento generando un contra-movimiento. Requiere autenticacion."""
     user = session.get('compras_user', '')
+    # SEC-FIX · 21-may-2026 · bloquear bypass user vacío
+    # Antes: user='' pasaba el check `operador != user` con operador=''
+    # Resultado: usuario sin sesión anulaba movimientos legacy
+    if not user:
+        return jsonify({'error': 'No autorizado'}), 401
     d = request.json or {}
     motivo = d.get('motivo', '').strip()
     if not motivo:

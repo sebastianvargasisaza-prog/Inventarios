@@ -74,9 +74,16 @@ def comercial_page():
 # ─── MAQUILA PIPELINE ─────────────────────────────────────────────────────
 @bp.route('/api/comercial/maquila', methods=['GET', 'POST'])
 def maquila_handler():
+    # SEC-FIX · 21-may-2026 · solo admin (pipeline B2B confidencial)
+    # Antes: cualquier compras_user (Mayerlin, Catalina) veía pipeline
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
     user = session.get('compras_user', '')
+    if (user or '').lower() not in {x.lower() for x in ADMIN_USERS}:
+        return jsonify({
+            'error': 'Pipeline comercial · solo admin (Sebas/Alejandro)',
+            'codigo': 'PIPELINE_PRIVADO',
+        }), 403
     conn = get_db(); c = conn.cursor()
 
     if request.method == 'POST':

@@ -925,13 +925,23 @@ def mkt_influencers():
     u, err, code = _auth()
     if err:
         return err, code
+    # PRIVACY-FIX · 21-may-2026 · datos bancarios solo admin (Habeas Data L1581)
+    # Antes: Jefferson/Felipe/Daniela veían banco+cuenta+cedula_nit
+    # Ahora: campos sensibles solo admin · resto ve campos públicos
+    _is_admin = (u or '').lower() in {x.lower() for x in ADMIN_USERS}
     conn = _db()
     c = conn.cursor()
     try:
         if request.method == "GET":
             q = request.args.get("q", "")
             estado = request.args.get("estado", "")
-            base = "SELECT * FROM marketing_influencers"
+            # SELECT explícito · oculta sensibles para no-admin
+            if _is_admin:
+                base = "SELECT * FROM marketing_influencers"
+            else:
+                base = ("SELECT id, nombre, usuario_red, red_social, nicho, "
+                        "categoria, estado, ciudad, pais, fecha_creacion, notas "
+                        "FROM marketing_influencers")
             conds, params = [], []
             if q:
                 conds.append("(nombre LIKE ? OR usuario_red LIKE ? OR nicho LIKE ?)")
@@ -1072,11 +1082,21 @@ def mkt_influencer_detail(iid):
     u, err, code = _auth()
     if err:
         return err, code
+    # PRIVACY-FIX · 21-may-2026 · GET datos bancarios solo admin
+    _is_admin = (u or '').lower() in {x.lower() for x in ADMIN_USERS}
     conn = _db()
     c = conn.cursor()
     try:
         if request.method == "GET":
-            row = c.execute("SELECT * FROM marketing_influencers WHERE id=?", (iid,)).fetchone()
+            if _is_admin:
+                row = c.execute("SELECT * FROM marketing_influencers WHERE id=?", (iid,)).fetchone()
+            else:
+                row = c.execute(
+                    "SELECT id, nombre, usuario_red, red_social, nicho, categoria, "
+                    "estado, ciudad, pais, fecha_creacion, notas "
+                    "FROM marketing_influencers WHERE id=?",
+                    (iid,),
+                ).fetchone()
             if not row:
                 return jsonify({"error": "No encontrado"}), 404
             r = dict(row)

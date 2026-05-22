@@ -1388,7 +1388,11 @@ def modulos():
 def login():
     error = ''
     next_url = request.args.get('next', '/modulos')
-    if not next_url.startswith('/') or next_url.startswith('//'):
+    # SEC-FIX · 21-may-2026 · XSS reflejado en next_url (CVSS 7.5)
+    # Antes: solo bloqueaba // · aceptaba /x"><script>alert()</script>
+    # Ahora: whitelist regex estricta (solo paths internos seguros)
+    import re as _re_secfix
+    if not _re_secfix.match(r'^/[a-zA-Z0-9/_\-?=&%.]{0,200}$', next_url) or next_url.startswith('//'):
         next_url = '/modulos'
     if request.method == 'POST':
         ip = _client_ip()
@@ -1403,11 +1407,19 @@ def login():
         # si no hay entry en DB, usar env var (PASS_<USER>). Esto permite
         # self-service de password sin migrar todos los users de una vez.
         expected = _resolve_password_hash(username)
-        # Soporte PBKDF2 (env var con hash) y plaintext legacy
+        # SEC-FIX · 21-may-2026 · login plaintext fallback (CRÍTICA · CVSS 7+)
+        # Antes: si env var quedaba plaintext, hmac.compare_digest aceptaba ·
+        # config.py warning CRITICAL pero NO bloqueaba arranque · brecha total.
+        # Ahora: SOLO hashes pbkdf2/scrypt aceptados · plaintext rechazado.
         if expected and (expected.startswith('pbkdf2:') or expected.startswith('scrypt:')):
             match = check_password_hash(expected, password)
         else:
-            match = bool(expected) and hmac.compare_digest(expected, password)
+            # Plaintext legacy bloqueado · forzar reset via /admin/usuarios
+            __import__('logging').getLogger('inventario.security').error(
+                'login.plaintext_blocked user=%s · env var no hasheada · reset password',
+                username,
+            )
+            match = False
         if match:
             # ── MFA gate (paso 2) ──────────────────────────────────────────────
             # Si el usuario tiene MFA enabled, NO completamos login todavía.

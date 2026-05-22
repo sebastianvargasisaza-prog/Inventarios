@@ -75,8 +75,24 @@ def _require_compras_write():
 
 
 def _require_authorize_oc():
-    """Para AUTORIZAR/PAGAR OCs: COMPRAS_ACCESS o ADMIN."""
-    return _require_compras_write()
+    """Para AUTORIZAR/PAGAR OCs: COMPRAS_ACCESS_WRITE o ADMIN · NUNCA contadora."""
+    # SEC-FIX · 21-may-2026 · segregation of duties (CVSS 6.5)
+    # Antes: alias literal de _require_compras_write incluía contadora
+    # Ahora: bloquear CONTADORA explícitamente (solo registra pagos, no autoriza)
+    usuario, err, code = _require_compras_write()
+    if err:
+        return None, err, code
+    try:
+        from config import CONTADORA_USERS as _CU
+    except Exception:
+        _CU = set()
+    if (usuario or '').lower() in {x.lower() for x in _CU}:
+        if (usuario or '').lower() not in {x.lower() for x in ADMIN_USERS}:
+            return None, jsonify({
+                'error': 'Contadora no autoriza OCs · solo admin/compras',
+                'codigo': 'SEGREGATION_OF_DUTIES',
+            }), 403
+    return usuario, None, None
 
 
 def _enviar_oc_a_proveedor(numero_oc, proveedor, email_proveedor, items, monto_total, observaciones=''):

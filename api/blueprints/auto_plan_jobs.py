@@ -3409,8 +3409,14 @@ def job_auto_reparar_huerfanas(app):
             if not nombre_huerfano:
                 continue
             try:
+                # SEC-FIX · 21-may-2026 · ORDER BY determinístico (antes era random)
+                # + audit_log obligatorio (modifica data INVIMA-regulada)
+                # ORDER BY (stock DESC, codigo_mp ASC) garantiza mismo resultado
+                # entre corridas · audit_log permite reconstruir cambios.
                 cand = c.execute("""
-                    SELECT m.codigo_mp, m.nombre_comercial
+                    SELECT m.codigo_mp, m.nombre_comercial,
+                           (SELECT COALESCE(SUM(CASE WHEN mv.tipo='Entrada' THEN mv.cantidad ELSE -mv.cantidad END), 0)
+                            FROM movimientos mv WHERE mv.material_id = m.codigo_mp) AS stock_g
                     FROM maestro_mps m
                     WHERE COALESCE(m.activo,1)=1
                       AND m.codigo_mp != ?
@@ -3419,8 +3425,9 @@ def job_auto_reparar_huerfanas(app):
                         OR LOWER(m.nombre_inci) = LOWER(?)
                       )
                       AND EXISTS (
-                        SELECT 1 FROM movimientos mv WHERE mv.material_id = m.codigo_mp
+                        SELECT 1 FROM movimientos mv2 WHERE mv2.material_id = m.codigo_mp
                       )
+                    ORDER BY stock_g DESC, m.codigo_mp ASC
                     LIMIT 1
                 """, (cod_huerfano, nombre_huerfano, nombre_huerfano)).fetchone()
                 if cand:
@@ -3429,7 +3436,19 @@ def job_auto_reparar_huerfanas(app):
                         WHERE material_id=?
                     """, (cand[0], cand[1] or nombre_huerfano, cod_huerfano))
                     reparados += 1
-                    log.info('[auto_reparar_huerfanas] %s -> %s (%s)', cod_huerfano, cand[0], nombre_huerfano)
+                    log.info('[auto_reparar_huerfanas] %s -> %s (%s · stock=%s)',
+                             cod_huerfano, cand[0], nombre_huerfano, cand[2])
+                    # audit_log INVIMA-required
+                    try:
+                        from audit_helpers import audit_log as _audit
+                        _audit(c, usuario='cron-auto-repair',
+                              accion='REPARAR_HUERFANO_FORMULA',
+                              tabla='formula_items',
+                              registro_id=cod_huerfano,
+                              antes={'material_id': cod_huerfano, 'nombre': nombre_huerfano},
+                              despues={'material_id': cand[0], 'nombre': cand[1] or nombre_huerfano, 'stock_disponible': float(cand[2] or 0)})
+                    except Exception as _ae:
+                        log.warning('[auto_reparar_huerfanas] audit fallo: %s', _ae)
             except Exception as e:
                 log.warning('[auto_reparar_huerfanas] %s fallo: %s', cod_huerfano, e)
                 continue

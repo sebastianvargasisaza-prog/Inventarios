@@ -6433,6 +6433,21 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
            ('ESENCIA ILUMINADORA',                  'esencia', NULL, 60, 90, 30, 3.0, 3, NULL)""",
     ]),
 
+    (153, "BRD · alias columnas para MyBatch · 21-may-2026", [
+        # Sebastián 21-may-2026 · BRD vista-completa, timeline, cuarentena
+        # explícita usaban columnas con nombres distintos al schema real.
+        # Agregamos los aliases para que las queries no rompan en PG/SQLite.
+        "ALTER TABLE ebr_ejecuciones ADD COLUMN lote_codigo TEXT",
+        "ALTER TABLE ebr_ejecuciones ADD COLUMN operario TEXT",
+        "ALTER TABLE ebr_ejecuciones ADD COLUMN observaciones TEXT",
+        "ALTER TABLE ebr_ejecuciones ADD COLUMN tiempo_total_min REAL",
+        "ALTER TABLE ebr_ejecuciones ADD COLUMN rechazado_at_utc TEXT",
+        # Sync inicial · poblar aliases desde columnas originales
+        "UPDATE ebr_ejecuciones SET lote_codigo = COALESCE(lote_codigo, lote)",
+        "UPDATE ebr_ejecuciones SET operario = COALESCE(operario, iniciado_por)",
+        "UPDATE ebr_ejecuciones SET observaciones = COALESCE(observaciones, notas)",
+    ]),
+
     (152, "Indexes performance · queries frecuentes · 21-may-2026", [
         # Sebastián 21-may-2026 · auditoría performance · indexes faltantes
         # en columnas que se filtran/joinean en endpoints calientes.
