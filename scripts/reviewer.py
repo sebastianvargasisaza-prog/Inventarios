@@ -247,7 +247,50 @@ def main():
                             try: _os.unlink(tf_path)
                             except Exception: pass
 
-    # Check 6: commit message significativo (heurística: hooks no acceden al
+    # ──────────────────────────────────────────────────────────────────
+    # Check 6: PROTOCOLO ZERO-ERROR (22-may-2026) · Sebastián
+    # Detecta antipatrones de los 76 bugs de auditoría 21-may.
+    # Memoria viva: project_bugs_patrones_recurrentes_21may.md
+    # ──────────────────────────────────────────────────────────────────
+    ZERO_ERROR_PATTERNS = [
+        # (regex, error/warning, descripción)
+        (r'CASE WHEN tipo="', 'ERROR', 'SQL doble comilla "" inválido en PG · usar single quotes'),
+        (r"date\('now',\s*'-?\d", 'WARN',
+         "date('now',...) multi-arg falla en PG · usar timedelta Python + ?"),
+        (r"f['\"]SELECT .*WHERE.*=.*\\{", 'WARN',
+         'f-string SQL · usar params ? (anti-SQLi + PG compat)'),
+        (r'session\.get\([\'\"]compras_user[\'\"]\)\s*\)\s*not in', 'WARN',
+         'Comparación user vacío sin guard previo · validar `if not user: return 401`'),
+        (r"COALESCE\((\w+),''\)\s*=\s*\"\"", 'WARN',
+         'COALESCE(col,"") es identificador vacío en PG · usar \'\''),
+        (r"hmac\.compare_digest\(expected,\s*password\)", 'ERROR',
+         'Plaintext password fallback prohibido · solo pbkdf2/scrypt'),
+        (r"innerHTML\s*=\s*[^;]*\$\{[^}]*\.(?:nombre|descripcion|lote|observaciones)\b", 'WARN',
+         'Template literal sin esc() · XSS stored · escapar strings de DB'),
+        (r"INSERT INTO movimientos.*lote.*=.*''", 'WARN',
+         'lote vacío en INSERT movimientos · usar lote real o sintético con advertencia'),
+        (r"check_password_hash\([^,]+,\s*[^)]+\)\s*$", 'WARN',
+         'check_password_hash sin validar formato hash · verificar pbkdf2:/scrypt: prefix'),
+        (r"_require_compras_session\(\)\s*$", 'WARN',
+         'Endpoint con _require_compras_session · si toca PII upgrade a _require_compras_write'),
+    ]
+    for f in files:
+        if not f.endswith('.py') and not f.endswith('.html'):
+            continue
+        diff = _staged_diff_content(f)
+        if not diff:
+            continue
+        for added_line in [l[1:] for l in diff.split('\n') if l.startswith('+') and not l.startswith('+++')]:
+            for regex, severity, desc in ZERO_ERROR_PATTERNS:
+                if re.search(regex, added_line):
+                    msg = f'ZERO-ERROR · {f} · {desc} · ej: {added_line.strip()[:80]}'
+                    if severity == 'ERROR':
+                        errors.append(msg)
+                    else:
+                        warnings.append(msg)
+                    break
+
+    # Check 7: commit message significativo (heurística: hooks no acceden al
     # mensaje en pre-commit, solo en commit-msg. Skip por ahora.)
 
     # Reportar (ASCII-safe para Windows cmd)
