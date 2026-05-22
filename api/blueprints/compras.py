@@ -191,6 +191,20 @@ def _evaluar_auto_aprobacion(c, proveedor, monto_total, items):
         ocs_90d = 0
     if ocs_90d < 3:
         return False, f'proveedor con solo {ocs_90d} OCs en 90d (<3)'
+    # FASE 3 cont · 22-may-2026 · regla 4 opcional · scorecard ≥70
+    # Si env COMPRAS_AUTO_APROB_REQ_SCORE=70 (o N) · exigir score >= N
+    try:
+        import os as _os_sc
+        score_min = int(_os_sc.environ.get('COMPRAS_AUTO_APROB_REQ_SCORE') or 0)
+    except Exception:
+        score_min = 0
+    if score_min > 0:
+        try:
+            sc = _scorecard_proveedor_dict(c, proveedor)
+            if sc.get('score_global', 0) < score_min:
+                return False, f'score {sc.get("score_global",0)} < mínimo {score_min}'
+        except Exception:
+            pass
     # Precio en rango · cada item ±15% promedio 90d
     for it in (items or []):
         cod = it.get('codigo_mp') or ''
