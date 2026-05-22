@@ -169,7 +169,7 @@ def get_inventario():
     # ── CONTEXTO (totales / composición) ──────────────────────────────
     mov = _safe('SELECT COUNT(*) FROM movimientos')
     prod_historico = _safe('SELECT COUNT(*) FROM producciones')
-    stock_total = _safe('SELECT COALESCE(SUM(CASE WHEN tipo="Entrada" THEN cantidad ELSE -cantidad END),0) FROM movimientos')
+    stock_total = _safe("SELECT COALESCE(SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END),0) FROM movimientos")
     alrt = _safe('SELECT COUNT(*) FROM alertas')
 
     # ── AHORA (crítico — acción hoy) ──────────────────────────────────
@@ -253,9 +253,10 @@ def get_inventario():
               ('Influencer/Marketing Digital','Cuenta de Cobro','SVC')
     """)
     # MEE bajo mínimo (envases)
+    # FIX · 21-may-2026 · maestro_mee usa `estado` no `activo`
     mees_bajo_min = _safe("""
         SELECT COUNT(*) FROM maestro_mee
-        WHERE COALESCE(activo,1)=1 AND COALESCE(stock_minimo,0)>0
+        WHERE COALESCE(estado,'Activo')='Activo' AND COALESCE(stock_minimo,0)>0
           AND COALESCE(stock_actual,0) < COALESCE(stock_minimo,0)
     """)
 
@@ -8737,6 +8738,15 @@ def mee_import_bulk():
             if cod not in codigos_recibidos:
                 c.execute("UPDATE maestro_mee SET estado='Archivado' WHERE codigo=?", (cod,))
                 archivados += 1
+    # INVIMA-FIX · 21-may-2026 · audit_log obligatorio (BPM Resolución 2214/2021)
+    try:
+        audit_log(c, usuario=user, accion='IMPORT_BULK_MEE',
+                  tabla='maestro_mee', registro_id='_BULK_',
+                  despues={'insertados': insertados, 'actualizados': actualizados,
+                           'archivados': archivados, 'modo': modo,
+                           'items_count': len(items)})
+    except Exception as _e:
+        __import__('logging').getLogger('inventario').warning('audit IMPORT_BULK_MEE: %s', _e)
     conn.commit()
     return jsonify({
         'ok': True,

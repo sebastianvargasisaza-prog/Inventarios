@@ -1391,6 +1391,32 @@ def liberar_ebr(ebr_id):
     if ebr["estado"] not in ("completado", "en_revision_qc"):
         return jsonify({"error": f"solo completado puede liberarse (actual: {ebr['estado']})"}), 409
 
+    # INVIMA-FIX · 21-may-2026 · tiempo mínimo cuarentena antes de liberar
+    # Antes: QA podía liberar EBR completado inmediatamente
+    # Default: 0 días (sin gate) · env BRD_CUARENTENA_MIN_DIAS=N para gate
+    try:
+        import os as _os_brd
+        min_dias_cuarentena = int(_os_brd.environ.get('BRD_CUARENTENA_MIN_DIAS', '0'))
+    except Exception:
+        min_dias_cuarentena = 0
+    if min_dias_cuarentena > 0:
+        try:
+            row_t = cur.execute(
+                "SELECT completado_at_utc FROM ebr_ejecuciones WHERE id=?",
+                (ebr_id,),
+            ).fetchone()
+            if row_t and row_t[0]:
+                from datetime import datetime as _dtbrd
+                completado_dt = _dtbrd.fromisoformat(str(row_t[0]).replace('Z', '+00:00').split('.')[0])
+                horas_transc = (_dtbrd.utcnow() - completado_dt).total_seconds() / 3600
+                if horas_transc < min_dias_cuarentena * 24:
+                    return jsonify({
+                        'error': f'Tiempo mínimo cuarentena: {min_dias_cuarentena} días · transcurridos {horas_transc/24:.1f}d',
+                        'codigo': 'CUARENTENA_TIEMPO_MINIMO',
+                    }), 409
+        except Exception:
+            pass  # graceful
+
     user = session.get("compras_user", "")
     if not _validar_signature(
         cur, signature_id, record_table="ebr_ejecuciones",
@@ -1641,7 +1667,9 @@ def listar_ipc_resultados(ebr_id):
 def reportar_ipc_resultado(ebr_id):
     """Operario reporta medición de un IPC. Calcula conforme automáticamente
     si hay rango numérico; para parámetros cualitativos QC debe firmar después."""
-    err = _require_login()
+    # SEC-FIX · 21-may-2026 · solo ejecutores BRD (planta/admin/QC)
+    # Antes: cualquier compras_user podía falsificar IPCs
+    err = _require_brd_ejecutor()
     if err:
         return err
     body = request.get_json(silent=True) or {}
