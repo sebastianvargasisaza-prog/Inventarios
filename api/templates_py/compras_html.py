@@ -275,7 +275,7 @@ async function cxIAPreguntar(pregunta){
 <div id="pane-pagos" class="pane">
   <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;flex-wrap:wrap;">
     <div style="font-weight:700;font-size:15px;color:#1c1917;">&#x1F4B8; Registro de Pagos</div>
-    <input type="text" id="q-pagos" placeholder="Buscar proveedor, OC, medio..." oninput="renderPagos()"
+    <input type="text" id="q-pagos" placeholder="Buscar proveedor, OC, medio, factura, referencia..." oninput="renderPagos()"
       style="flex:1;min-width:180px;padding:7px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;">
     <select id="s-pagos-cat" onchange="renderPagos()" style="padding:7px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px;">
       <option value="">Todas las categorias</option>
@@ -2236,10 +2236,12 @@ function renderPagos(){
   var catF=(document.getElementById('s-pagos-cat')||{value:''}).value;
   var list=PAGOS.filter(function(p){
     if(catF&&!inGroup(p.categoria,catF)) return false;
-    if(q&&(p.numero_oc||'').toLowerCase().indexOf(q)<0&&(p.proveedor||'').toLowerCase().indexOf(q)<0&&(p.medio_pago||'').toLowerCase().indexOf(q)<0) return false;
+    // Bug #9 fix · 21-may-2026 · buscar también por numero_factura_proveedor (3-way matching)
+    if(q&&(p.numero_oc||'').toLowerCase().indexOf(q)<0&&(p.proveedor||'').toLowerCase().indexOf(q)<0&&(p.medio_pago||'').toLowerCase().indexOf(q)<0&&(p.numero_factura_proveedor||'').toLowerCase().indexOf(q)<0&&(p.referencia||'').toLowerCase().indexOf(q)<0) return false;
     return true;
   });
-  var vTotal=list.reduce(function(s,p){ return s+parseFloat(p.monto||p.valor_total||0); },0);
+  // Bug #2 fix · 21-may-2026 · sin fallback a valor_total (race condition daba doble cuenta)
+  var vTotal=list.reduce(function(s,p){ return s+parseFloat(p.monto||0); },0);
   var kpiHTML='<div class="kpi"><div class="kpi-l">Pagos filtrados</div><div class="kpi-v">'+list.length+'</div></div>';
   kpiHTML+='<div class="kpi"><div class="kpi-l">Monto total</div><div class="kpi-v g">'+fmt(vTotal)+'</div></div>';
   document.getElementById('pagos-kpis').innerHTML=kpiHTML;
@@ -3459,7 +3461,23 @@ async function confirmarPago(){
   var medio=document.getElementById('pago-medio').value;
   var obs=document.getElementById('pago-obs').value;
   var factura=(document.getElementById('pago-factura').value||'').trim().toUpperCase();
-  if(!monto||parseFloat(monto)<=0){ alert('Ingresa el monto'); return; }
+  // Bug #1 fix · 21-may-2026 · validar monto explícitamente (no vacío)
+  if(monto==='' || monto==null){
+    alert('⚠ Ingresá el monto del pago · si querés pagar el saldo completo, escribilo explícito.');
+    return;
+  }
+  if(parseFloat(monto)<=0){ alert('Monto debe ser >0'); return; }
+  // Bug #1 fix · confirmación adicional si pagás el saldo completo de la OC
+  var saldoSpan=document.getElementById('pago-saldo-info');
+  var saldoTxt=saldoSpan?saldoSpan.textContent:'';
+  // Heurística · si saldo info dice "saldo: $X" y monto coincide en magnitud
+  var saldoMatch=saldoTxt.match(/\\$([\\d.,]+)/);
+  if(saldoMatch){
+    var saldoNum=parseFloat(saldoMatch[1].replace(/[.,]/g,''));
+    if(saldoNum>1000000 && Math.abs(parseFloat(monto)-saldoNum)<saldoNum*0.01){
+      if(!confirm('⚠ Estás pagando el saldo COMPLETO: $'+saldoNum.toLocaleString('es-CO')+'\\n\\n¿Es correcto?')) return;
+    }
+  }
   var imgData=null;
   var imgFile=document.getElementById('pago-img-file').files[0];
   if(imgFile){
@@ -5394,7 +5412,13 @@ function abrirOCRFactura(){
         }
         var f = d.factura || {};
         var ocs = d.ocs_sugeridas || [];
-        var html = '<div style="background:#dcfce7;color:#166534;padding:10px;border-radius:6px;margin-bottom:12px;font-weight:700">✓ Factura procesada · confianza '+(f.confianza_pct||0)+'%</div>';
+        // Bug #5 fix · 21-may-2026 · alerta visual según confianza
+        var conf = f.confianza_pct || 0;
+        var confBg, confColor, confLabel;
+        if(conf >= 80){ confBg='#dcfce7'; confColor='#166534'; confLabel='✓ Factura procesada'; }
+        else if(conf >= 50){ confBg='#fef3c7'; confColor='#78350f'; confLabel='⚠ REVISAR MANUAL · datos pueden estar incompletos'; }
+        else{ confBg='#fee2e2'; confColor='#991b1b'; confLabel='🚨 BAJA CONFIANZA · validar TODO antes de usar'; }
+        var html = '<div style="background:'+confBg+';color:'+confColor+';padding:10px;border-radius:6px;margin-bottom:12px;font-weight:700">'+confLabel+' · confianza '+conf+'%</div>';
         html += '<div style="background:#f8fafc;padding:12px;border-radius:6px;margin-bottom:12px"><b>Datos extraídos:</b>';
         html += '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:6px;margin-top:6px;font-size:12px">';
         html += '<div><b>Proveedor:</b><br>'+esc(f.proveedor||'—')+'</div>';
@@ -6287,8 +6311,9 @@ function renderConsolCard(p, idx){
       var col = estadoColors[o.estado] || '#94a3b8';
       var desc = o.observaciones || o.categoria || '—';
       return '<tr>'
-        +'<td style="padding:5px 8px;font-weight:600;color:#0f172a;">'+o.numero_oc+'</td>'
-        +'<td style="padding:5px 8px;"><span style="color:'+col+';">'+o.estado+'</span></td>'
+        // Bug #11 fix · 21-may-2026 · escape numero_oc + estado (consistencia XSS)
+        +'<td style="padding:5px 8px;font-weight:600;color:#0f172a;">'+escConH(o.numero_oc||'')+'</td>'
+        +'<td style="padding:5px 8px;"><span style="color:'+col+';">'+escConH(o.estado||'')+'</span></td>'
         +'<td style="padding:5px 8px;color:#475569;">'+escConH(desc)+'</td>'
         +'<td style="padding:5px 8px;color:#0f172a;">$'+Number(o.valor_total).toLocaleString('es-CO',{maximumFractionDigits:0})+'</td>'
         +'</tr>';
@@ -6309,7 +6334,7 @@ function renderConsolCard(p, idx){
     var col = estadoColors[o.estado] || '#94a3b8';
     var ivaTag = o.con_iva ? ' <span style="color:#0891b2;font-weight:700;font-size:10px;">+IVA</span>' : '';
     return '<span style="font-size:11px;background:#f1f5f9;border-radius:4px;padding:2px 8px;margin-right:4px;">'
-      +o.numero_oc+' <span style="color:'+col+';">'+o.estado+'</span>'+ivaTag+'</span>';
+      +escConH(o.numero_oc||'')+' <span style="color:'+col+';">'+escConH(o.estado||'')+'</span>'+ivaTag+'</span>';
   }).join('');
 
   var totalFmt = p.valor_total > 0 ? '$'+Number(p.valor_total).toLocaleString('es-CO',{maximumFractionDigits:0}) : '--';
@@ -6370,7 +6395,7 @@ function renderConsolCardEdit(p, idx){
     return '<div data-oc-id="'+ocId+'" data-oc-num="'+o.numero_oc+'" '
       +'style="background:#fafaf9;border:1px solid #e7e5e4;border-radius:10px;padding:12px;margin-bottom:10px;">'
       +'<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">'
-        +'<div style="font-weight:700;font-family:monospace;color:#1e293b;">'+o.numero_oc+' <span style="font-size:11px;color:#64748b;font-weight:500;">('+o.estado+')</span></div>'
+        +'<div style="font-weight:700;font-family:monospace;color:#1e293b;">'+escConH(o.numero_oc||'')+' <span style="font-size:11px;color:#64748b;font-weight:500;">('+escConH(o.estado||'')+')</span></div>'
         +'<label style="font-size:12px;color:#0891b2;display:inline-flex;align-items:center;gap:6px;cursor:pointer;">'
           +'<input type="checkbox" data-field="con_iva" '+(o.con_iva?'checked':'')+' '
           +'onchange="recalcConsolOCFromEl(this)"> Con IVA 19%</label>'

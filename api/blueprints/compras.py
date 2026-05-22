@@ -3966,6 +3966,15 @@ def recibir_oc(numero_oc):
     estado_oc_original = oc_row[0]
     prov_nombre = oc_row[1] or ''
     categoria = oc_row[2] or 'MP'
+    # Bug #3 fix · 21-may-2026 · OCs de pago directo (servicios/cuotas/CC)
+    # no deben aceptar recepción · son pagos puros sin material físico.
+    # Antes creaba movimientos fantasma con lote sintético si receptor confundía.
+    if categoria in CATEGORIAS_PAGO_DIRECTO:
+        return jsonify({
+            'error': f'OC categoría {categoria} es pago directo · no recibe material físico',
+            'codigo': 'OC_PAGO_DIRECTO_SIN_RECEPCION',
+            'hint': 'Si necesitás cerrar el ciclo, usá registrar_pago_oc o marca como Pagada directo',
+        }), 409
     cur.execute("SELECT id, codigo_mp, nombre_mp, cantidad_g FROM ordenes_compra_items WHERE numero_oc=?", (numero_oc,))
     items_oc = cur.fetchall()
     fecha = datetime.now().isoformat()
@@ -4291,8 +4300,24 @@ def autorizar_oc(numero_oc):
     n = int(last[0].split('-')[-1]) + 1 if last and last[0] else 1
     remision_code = f'REM-ESP-{fecha_hoy}-{n:03d}'
     fecha_aut = datetime.now().isoformat()
-    cur.execute("UPDATE ordenes_compra SET estado='Autorizada', remision_code=?, autorizado_por=?, fecha_autorizacion=? WHERE numero_oc=?",
-                (remision_code, usuario_actual, fecha_aut, numero_oc))
+    # Bug #7 fix · 21-may-2026 · UPDATE con CAS (compare-and-swap) anti-race
+    # · si otro admin ya autorizó simultáneamente, rowcount=0 y devuelve 409
+    cur.execute(
+        "UPDATE ordenes_compra SET estado='Autorizada', remision_code=?, "
+        "autorizado_por=?, fecha_autorizacion=? WHERE numero_oc=? AND estado=?",
+        (remision_code, usuario_actual, fecha_aut, numero_oc, estado_ant))
+    if cur.rowcount == 0:
+        # Race · otro admin lo autorizó primero · re-leer y devolver info
+        re_row = cur.execute(
+            "SELECT estado, autorizado_por FROM ordenes_compra WHERE numero_oc=?",
+            (numero_oc,),
+        ).fetchone()
+        return jsonify({
+            'error': 'Race condition · otro usuario ya autorizó la OC',
+            'codigo': 'RACE_AUTORIZACION',
+            'estado_actual': re_row[0] if re_row else '?',
+            'autorizado_por': re_row[1] if re_row else '?',
+        }), 409
     # Audit log · autorización es decisión regulatoria/financiera
     try:
         audit_log(cur, usuario=usuario_actual, accion='AUTORIZAR_OC',
@@ -4362,7 +4387,8 @@ def pagar_oc(numero_oc):
     if err_lim:
         return err_lim, code_lim
     # Audit zero-error 2-may-2026: bloquear pagos sobre OC en estado inválido
-    if estado_oc in ('Cancelada', 'Rechazada', 'Borrador'):
+    # Bug #8 fix · 21-may-2026 · bloquear pagar Revisada (bypass autorización gerencial)
+    if estado_oc in ('Cancelada', 'Rechazada', 'Borrador', 'Revisada'):
         return jsonify({
             'error': f"OC {numero_oc} en estado '{estado_oc}' no admite pagos",
             'codigo': 'ESTADO_INVALIDO'
@@ -7807,7 +7833,24 @@ def compras_ocr_factura():
         except Exception: return jsonify({'error': 'data URL inválido'}), 400
     if len(b64) > 7_000_000:
         return jsonify({'error': 'imagen muy grande (max ~5MB)'}), 413
-    media_type = 'image/jpeg' if body.get('tipo','jpeg').lower() in ('jpg','jpeg') else 'image/png'
+    # Bug #4 fix · 21-may-2026 · validar magic bytes antes de mandar a Claude
+    # · si llega PDF/HEIC/otro, devolver 415 explícito (no esperar al 502 de Anthropic).
+    try:
+        import base64 as _b64
+        head = _b64.b64decode(b64[:32] + '=' * (-len(b64[:32]) % 4))
+    except Exception:
+        return jsonify({'error': 'imagen_base64 inválido', 'codigo': 'B64_INVALIDO'}), 400
+    if head[:4] == b'%PDF':
+        return jsonify({'error': 'PDF no soportado · convertí a JPG/PNG',
+                        'codigo': 'PDF_NO_SOPORTADO'}), 415
+    if head[:3] == b'\xff\xd8\xff':
+        media_type = 'image/jpeg'
+    elif head[:8] == b'\x89PNG\r\n\x1a\n':
+        media_type = 'image/png'
+    else:
+        return jsonify({'error': 'Formato no soportado · usar JPG o PNG',
+                        'codigo': 'FORMATO_NO_SOPORTADO',
+                        'magic_hex': head[:8].hex()}), 415
     import os, json as _json
     api_key = os.environ.get('ANTHROPIC_API_KEY') or os.environ.get('CLAUDE_API_KEY')
     if not api_key:
