@@ -5007,7 +5007,19 @@ def auto_sc_generar():
               'Alta' if modo == 'urgente' else 'Normal',
               observ, fecha_hoy_iso))
 
-        for it in items:
+        # Compras PRO · 21-may-2026 · dedup motor SC IA · descontar pendientes
+        items_dedup = []
+        try:
+            from blueprints.compras import _pendiente_en_compras_g
+            for it in items:
+                en_cola = _pendiente_en_compras_g(c, it['material_id'])
+                cant_neta = max(0, float(it['cantidad_g']) - en_cola)
+                if cant_neta > 0:
+                    it_copy = dict(it); it_copy['cantidad_g'] = cant_neta
+                    items_dedup.append(it_copy)
+        except Exception:
+            items_dedup = items
+        for it in items_dedup:
             try:
                 c.execute("""
                     INSERT INTO solicitudes_compra_items
