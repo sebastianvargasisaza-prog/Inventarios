@@ -3604,16 +3604,21 @@ def job_reconciliar_influencer_60d(app):
     with app.app_context():
         from database import get_db
         conn = get_db(); c = conn.cursor()
+        # PG-FIX · 21-may-2026 · date('now','-5 hours','-60 days') con 3 args
+        # rompe en PostgreSQL (pg_compat solo traduce mono-arg). Calculamos
+        # cutoff en Python y lo pasamos como param literal.
+        from datetime import datetime as _dtcron, timedelta as _tdcron
+        _cutoff = (_dtcron.now() - _tdcron(days=60)).date().isoformat()
         try:
-            # SOLs influencer Aprobadas > 60d sin movimiento de pago
             rows = c.execute(
                 """SELECT s.numero, s.solicitante, s.fecha, s.numero_oc,
                           COALESCE(s.valor,0)
                    FROM solicitudes_compra s
                    WHERE s.estado = 'Aprobada'
                      AND s.categoria IN ('Influencer/Marketing Digital','Cuenta de Cobro')
-                     AND date(s.fecha) < date('now','-5 hours','-60 days')
+                     AND date(s.fecha) < ?
                    ORDER BY s.fecha ASC LIMIT 200""",
+                (_cutoff,),
             ).fetchall()
         except Exception as e:
             return False, {'error': f'query fallo: {e}'}, ''

@@ -473,8 +473,15 @@ def test_golden_3_fuentes_solicitudes_no_se_mezclan(app, db_clean):
         assert 'GP5-INFLUENCER' not in nums, \
             'BUG: influencer NO debe aparecer en tab Solicitudes'
 
-        # Tab "Influencers" → solo Marketing + CC
+        # PRIVACY-FIX · 21-may-2026 · Catalina NO debe ver Influencers
+        # (datos bancarios privados · solo admin)
         r = cs.get('/api/solicitudes-compra?fuente=influencers')
+        assert r.status_code == 403, \
+            'PRIVACY: Catalina NO debe ver Influencers · debe ser 403'
+        # Admin SÍ puede ver Influencers
+        cs_admin = _login(app, 'sebastian')
+        r = cs_admin.get('/api/solicitudes-compra?fuente=influencers')
+        assert r.status_code == 200
         nums = {s['numero'] for s in r.get_json()['solicitudes']}
         assert 'GP5-INFLUENCER' in nums and 'GP5-CC' in nums
         assert 'GP5-PLANTA-MP' not in nums, \

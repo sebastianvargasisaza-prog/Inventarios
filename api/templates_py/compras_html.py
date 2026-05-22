@@ -2283,7 +2283,7 @@ function renderProv(){
   if(!list.length){ document.getElementById('prov-grid').innerHTML='<div class="empty">No hay proveedores</div>'; return; }
   document.getElementById('prov-grid').innerHTML=list.map(function(p){
     return '<div class="pc"><div style="display:flex;justify-content:space-between;align-items:flex-start;">'
-      +'<div><div class="pn">'+esc(p.nombre)+'</div><div class="pnit">NIT: '+(p.nit||'-')+'</div></div>'
+      +'<div><div class="pn">'+esc(p.nombre)+'</div><div class="pnit">NIT: '+esc(p.nit||'-')+'</div></div>'
       +'<button class="btn" style="font-size:11px;padding:4px 10px;white-space:nowrap;" data-ficha360="'+esc(p.nombre)+'">&#x1F4CA; Ver 360</button>'
       +'</div><div class="pd">'+
       (p.contacto?'<span>&#x1F464; '+esc(p.contacto)+'</span>':'')+
@@ -2515,7 +2515,11 @@ function fillProv(selId, boxId){
     var frm=document.getElementById('noc-new-prov-form');
     if(frm){
       frm.style.display='block';
-      ['np-nombre','np-nit','np-tel','np-email','np-concepto'].forEach(function(id){
+      // PROV-FIX#7 · 21-may-2026 · limpiar TODOS los 11 campos del form
+      // antes solo limpiaba 5 · datos bancarios se filtraban entre proveedores.
+      ['np-nombre','np-nit','np-tel','np-email','np-concepto',
+       'np-contacto','np-direccion','np-banco','np-tipo-cuenta',
+       'np-num-cuenta','np-cond-pago'].forEach(function(id){
         var el=document.getElementById(id); if(el) el.value='';
       });
     }
@@ -6350,7 +6354,7 @@ function renderConsolCard(p, idx){
         +'<div style="font-size:12px;color:#64748b;margin-top:2px;">'+metaLine+'</div>'
         +(p.nit||p.contacto||p.telefono
           ? '<div style="font-size:11px;color:#94a3b8;margin-top:3px;">'
-            +(p.nit?'NIT: '+p.nit+' &nbsp;':'')
+            +(p.nit?'NIT: '+esc(p.nit)+' &nbsp;':'')
             +(p.contacto?'&#x1F464; '+escConH(p.contacto)+' &nbsp;':'')
             +(p.telefono?'&#x1F4DE; '+p.telefono:'')
             +'</div>'

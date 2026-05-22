@@ -552,13 +552,31 @@ def eliminar_solicitud(numero):
     """
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
+    user_actual = session.get('compras_user', '').lower()
     conn = get_db(); c = conn.cursor()
-    c.execute("SELECT estado, numero_oc, categoria FROM solicitudes_compra WHERE numero=?",
+    # SOL-FIX#2 · 21-may-2026 · DELETE requiere autoría o admin/compras_access
+    # Antes: cualquier user logueado borraba SOLs de otros · riesgo accidental.
+    c.execute("SELECT estado, numero_oc, categoria, solicitante FROM solicitudes_compra WHERE numero=?",
               (numero.upper(),))
     row = c.fetchone()
     if not row:
         return jsonify({'error': 'No encontrada'}), 404
-    estado, numero_oc, categoria = row[0], row[1], (row[2] or '').strip()
+    estado, numero_oc, categoria, solicitante_orig = row[0], row[1], (row[2] or '').strip(), (row[3] or '').lower()
+    # Permitido: creador, admin, o compras_access_write (Catalina puede borrar)
+    try:
+        from config import COMPRAS_ACCESS as _CA
+    except Exception:
+        _CA = set()
+    _allowed = (
+        user_actual == solicitante_orig
+        or user_actual in {x.lower() for x in ADMIN_USERS}
+        or user_actual in {x.lower() for x in _CA}
+    )
+    if not _allowed:
+        return jsonify({
+            'error': 'Solo el creador, Compras o Admin pueden borrar esta SOL',
+            'codigo': 'SOL_DELETE_PERMISO',
+        }), 403
 
     oc_borrada = False
     pagos_inf_borrados = 0
@@ -1849,6 +1867,20 @@ def handle_solicitudes_compra():
     fuente = (request.args.get('fuente') or '').strip().lower()
     _CATS_PLANTA = ('Materia Prima', 'Empaque', 'Material de Empaque')
     _CATS_INFLUENCER = ('Influencer/Marketing Digital', 'Cuenta de Cobro')
+    # PRIVACY-FIX · 21-may-2026 · Influencers solo admin (Sebas/Alejandro).
+    # Antes: Catalina y cualquier compras_user podían ver banco + cuenta
+    # bancaria via fetch directo. Ahora 403 si no es admin.
+    filtro_cat_actual = (filtro_categoria or '').strip()
+    _es_influencer_req = (fuente == 'influencers'
+                          or filtro_cat_actual in _CATS_INFLUENCER)
+    if _es_influencer_req:
+        _user_actual = session.get('compras_user', '').lower()
+        _admins_lower = {x.lower() for x in ADMIN_USERS}
+        if _user_actual not in _admins_lower:
+            return jsonify({
+                'error': 'Privado · solo admin puede ver pagos a influencers',
+                'codigo': 'PRIVATE_INFLUENCERS',
+            }), 403
     if fuente == 'planta':
         ph = ','.join(['?'] * len(_CATS_PLANTA))
         sql += f" AND sc.categoria IN ({ph})"
@@ -3790,7 +3822,14 @@ def actualizar_estado_solicitud(numero):
     if numero_oc_param:
         cur.execute("UPDATE solicitudes_compra SET numero_oc=? WHERE numero=?", (numero_oc_param, numero.upper()))
     if nuevo == 'Rechazada' and obs:
-        cur.execute("UPDATE solicitudes_compra SET observaciones=? WHERE numero=?", (obs, numero.upper()))
+        # SOL-FIX#1 · 21-may-2026 · concatenar motivo (no reemplazar)
+        # Antes destruía la observación original del solicitante.
+        cur.execute(
+            "UPDATE solicitudes_compra SET observaciones=COALESCE(observaciones,'') || ' | RECHAZADA: ' || ? WHERE numero=?",
+            (obs, numero.upper()),
+        )
+    # SOL-FIX#1b · race UPDATE inicial con WHERE estado='Pendiente' para evitar doble OC
+    # se valida re-checando rowcount del UPDATE de arriba (ya hecho)
     try:
         audit_log(cur, usuario=user_act, accion='ACTUALIZAR_ESTADO_SOL',
                   tabla='solicitudes_compra', registro_id=numero.upper(),
@@ -7401,6 +7440,21 @@ def ordenes_servicio_cambiar_estado(numero_os):
     obs = (body.get('observaciones') or '').strip()
     if estado_nuevo not in _OS_ESTADOS_VALIDOS:
         return jsonify({'error': f'estado inválido · usar {_OS_ESTADOS_VALIDOS}'}), 400
+    # ROLE-FIX · 21-may-2026 · Confirmada solo planta/admin (cierre cruzado)
+    # Antes cualquier compras_user (incluso Catalina creadora) confirmaba ·
+    # rompía la separación creador ≠ confirmador del flujo INVIMA.
+    if estado_nuevo == 'Confirmada':
+        try:
+            from config import PLANTA_USERS
+        except Exception:
+            PLANTA_USERS = set()
+        u_lower = (user or '').lower()
+        allowed = {x.lower() for x in (set(PLANTA_USERS) | set(ADMIN_USERS))}
+        if u_lower not in allowed:
+            return jsonify({
+                'error': 'Solo planta o admin pueden confirmar recepción de OS',
+                'codigo': 'OS_CONFIRMAR_SOLO_PLANTA',
+            }), 403
     conn = get_db(); c = conn.cursor()
     _ensure_os_tables(conn)
     row = c.execute(
@@ -7646,18 +7700,21 @@ def compras_cash_flow():
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
     conn = get_db(); c = conn.cursor()
+    # PG-FIX · 21-may-2026 · date(... '+' || ? || ' days') multi-arg rompe
+    # en PG. Calculamos cutoff en Python para cada ventana.
+    from datetime import datetime as _dtcash, timedelta as _tdcash
     ventanas = [30, 60, 90]
     out = {'proyecciones': []}
     for d in ventanas:
         v = {'dias': d}
-        # OCs por pagar (no Pagada · sin fecha_pago)
+        cutoff = (_dtcash.now() + _tdcash(days=d)).date().isoformat()
         try:
             r = c.execute(
                 """SELECT COUNT(*), COALESCE(SUM(valor_total),0)
                    FROM ordenes_compra
                    WHERE estado IN ('Borrador','Revisada','Autorizada','Recibida')
-                     AND date(fecha) <= date('now','-5 hours','+' || ? || ' days')""",
-                (str(d),),
+                     AND date(fecha) <= ?""",
+                (cutoff,),
             ).fetchone()
             v['ocs_por_pagar'] = {'count': int(r[0] or 0), 'monto': float(r[1] or 0)}
         except Exception:
@@ -7788,9 +7845,10 @@ def compras_roi_proveedores():
             """SELECT proveedor,
                       COUNT(*) ocs,
                       COALESCE(SUM(valor_total),0) monto_total,
-                      AVG(julianday(fecha) - julianday(fecha)) lead_time_real_dias,
+                      AVG(CASE WHEN fecha_recepcion IS NOT NULL AND fecha_recepcion != ''
+                          THEN julianday(fecha_recepcion) - julianday(fecha) END) lead_time_real_dias,
                       SUM(CASE WHEN estado='Pagada' THEN 1 ELSE 0 END) pagadas,
-                      SUM(CASE WHEN estado='Recibida' THEN 1 ELSE 0 END) recibidas,
+                      SUM(CASE WHEN estado IN ('Recibida','Pagada','Parcial') THEN 1 ELSE 0 END) recibidas,
                       MAX(fecha) ultima_compra
                FROM ordenes_compra
                WHERE proveedor IS NOT NULL AND proveedor != ''
