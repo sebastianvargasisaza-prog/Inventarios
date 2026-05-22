@@ -963,6 +963,18 @@ def rrhh_empleado_timeline(emp_id):
             if 'descripcion' in ev and ev.get('tipo') in ('incapacidad', 'accidente_trabajo'):
                 # No exponer descripción detallada de incapacidades a RRHH operativo
                 ev['descripcion'] = '[detalle médico restringido]'
+    else:
+        # PRIVACY-FIX · 22-may-2026 · audit log quién ve datos médicos
+        # · Habeas Data art. 17 Ley 1581/2012 · trazabilidad acceso
+        try:
+            audit_log(c, usuario=u, accion='VER_TIMELINE_EMPLEADO',
+                      tabla='empleados', registro_id=emp_id,
+                      despues={'sensible': True,
+                               'cie10_visible': True,
+                               'diagnosticos_count': sum(1 for x in eventos_list
+                                                          if x.get('cie10'))})
+        except Exception:
+            pass
 
     # Resumen por tipo
     resumen = {}
