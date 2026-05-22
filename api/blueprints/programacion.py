@@ -2710,6 +2710,21 @@ def planta_actualizar_estado_area(area_id):
     if not prev_row:
         return jsonify({'error': 'sala no encontrada'}), 404
     estado_anterior = prev_row[0]
+    # INVIMA-FIX · 21-may-2026 · bloquear bypass de despeje
+    # Transición sucia → libre solo via /api/planta/despeje-linea (checklist 5 ítems)
+    # · admin puede forzar con flag forzar_sin_despeje=true (queda en audit)
+    if estado_anterior == 'sucia' and nuevo == 'libre':
+        if not data.get('forzar_sin_despeje'):
+            return jsonify({
+                'error': 'Transición sucia→libre requiere despeje firmado · usar /api/planta/despeje-linea',
+                'codigo': 'DESPEJE_REQUERIDO',
+                'hint': 'Si excepción autorizada admin, enviar forzar_sin_despeje=true',
+            }), 409
+        if user not in ADMIN_USERS:
+            return jsonify({
+                'error': 'Forzar despeje solo admin · contactá Sebastián',
+                'codigo': 'FORZAR_SOLO_ADMIN',
+            }), 403
     cur = conn.execute(
         "UPDATE areas_planta SET estado=? WHERE id=? AND activo=1",
         (nuevo, area_id)

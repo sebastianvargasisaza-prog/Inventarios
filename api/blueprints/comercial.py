@@ -300,8 +300,17 @@ def eos_lead_webhook():
         log.warning('eos_lead_webhook rate-limited · ip=%s', ip)
         return jsonify({'error': 'rate limit excedido', 'codigo': 'RATE_LIMIT'}), 429
 
-    # ── HMAC signature (opcional, recomendado en prod) ────────────────────
+    # ── HMAC signature (fail-close en producción · SEC-FIX 21-may-2026) ──
+    # Antes: si EOS_WEBHOOK_SECRET no estaba en env, aceptaba cualquier payload
+    # Ahora: en prod (env ENV=production) FAIL-CLOSE · 503 sin secret configurado
     secret = os.environ.get('EOS_WEBHOOK_SECRET', '').strip()
+    is_prod = (os.environ.get('ENV') or os.environ.get('FLASK_ENV') or '').lower() == 'production'
+    if not secret and is_prod:
+        log.critical('eos_lead_webhook · EOS_WEBHOOK_SECRET no configurado en producción · DENY')
+        return jsonify({
+            'error': 'Webhook no configurado · contactar admin',
+            'codigo': 'WEBHOOK_NO_CONFIG',
+        }), 503
     if secret:
         body_bytes = request.get_data(cache=True) or b''
         signature = (request.headers.get('X-EOS-Signature') or '').strip()
