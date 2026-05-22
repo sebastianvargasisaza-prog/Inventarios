@@ -3910,14 +3910,32 @@ def alertas_reabastecimiento():
                  WHERE estado='Activo' AND stock_minimo > 0 AND stock_actual < stock_minimo
                  ORDER BY (stock_actual/stock_minimo) ASC""")
     rows_mee = c.fetchall()
+    # ABASTECIMIENTO-FIX · 22-may-2026 · dedup cola pendiente (#8 audit 22-may)
+    # · Antes: alertas crónicas para MPs ya en cola · ruido en dashboard
+    # · Ahora: muestra 'en_cola_g' · deficit considera cola · alerta solo si
+    #   stock+cola aún no cubre mínimo
+    try:
+        from blueprints.compras import _pendiente_en_compras_g
+    except Exception:
+        _pendiente_en_compras_g = None
     alertas = []
     for r in list(rows_mp) + list(rows_mee):
         stock_actual = round(r[4] or 0, 1)
         stock_minimo = round(r[3], 1)
-        alertas.append({'codigo_mp': r[0] or '', 'nombre': r[1] or '', 'proveedor': r[2] or '',
+        cod = r[0] or ''
+        en_cola_g = 0
+        if _pendiente_en_compras_g and cod:
+            try:
+                en_cola_g = round(_pendiente_en_compras_g(c, cod), 1)
+            except Exception:
+                en_cola_g = 0
+        deficit_neto = round(max(stock_minimo - stock_actual - en_cola_g, 0), 1)
+        alertas.append({'codigo_mp': cod, 'nombre': r[1] or '', 'proveedor': r[2] or '',
                         'stock_minimo': stock_minimo, 'stock_actual': max(stock_actual, 0),
-                        'deficit': round(max(stock_minimo - stock_actual, 0), 1),
-                        'tipo': r[5] or 'MP', 'subtipo': r[6] or ''})
+                        'en_cola_g': en_cola_g,
+                        'deficit': deficit_neto,
+                        'tipo': r[5] or 'MP', 'subtipo': r[6] or '',
+                        'cubierto_por_cola': en_cola_g > 0 and deficit_neto <= 0})
     alertas.sort(key=lambda x: x['stock_actual']/x['stock_minimo'] if x['stock_minimo'] else 1)
     return jsonify({'alertas': alertas, 'total': len(alertas)})
 
