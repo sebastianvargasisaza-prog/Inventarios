@@ -6433,6 +6433,27 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
            ('ESENCIA ILUMINADORA',                  'esencia', NULL, 60, 90, 30, 3.0, 3, NULL)""",
     ]),
 
+    (152, "Indexes performance · queries frecuentes · 21-may-2026", [
+        # Sebastián 21-may-2026 · auditoría performance · indexes faltantes
+        # en columnas que se filtran/joinean en endpoints calientes.
+        # Acelera FEFO, factibilidad, scorecard proveedor, dedup motor SOL.
+        "CREATE INDEX IF NOT EXISTS idx_mov_material_id ON movimientos(material_id, tipo, fecha)",
+        "CREATE INDEX IF NOT EXISTS idx_mov_lote ON movimientos(lote, fecha_vencimiento)",
+        "CREATE INDEX IF NOT EXISTS idx_mov_estado_lote ON movimientos(estado_lote)",
+        "CREATE INDEX IF NOT EXISTS idx_oc_proveedor ON ordenes_compra(proveedor, fecha DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_oc_fecha_recepcion ON ordenes_compra(fecha_recepcion)",
+        "CREATE INDEX IF NOT EXISTS idx_pagos_factura ON pagos_oc(numero_factura_proveedor)",
+        "CREATE INDEX IF NOT EXISTS idx_sol_numero_oc ON solicitudes_compra(numero_oc)",
+        "CREATE INDEX IF NOT EXISTS idx_sol_categoria ON solicitudes_compra(categoria, estado)",
+        "CREATE INDEX IF NOT EXISTS idx_sci_codigo_mp ON solicitudes_compra_items(codigo_mp)",
+        "CREATE INDEX IF NOT EXISTS idx_oci_codigo_mp ON ordenes_compra_items(codigo_mp)",
+        "CREATE INDEX IF NOT EXISTS idx_fi_material_id ON formula_items(material_id)",
+        "CREATE INDEX IF NOT EXISTS idx_precios_mp_codigo ON precios_mp_historico(codigo_mp, fecha DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_precios_mp_proveedor ON precios_mp_historico(proveedor)",
+        "CREATE INDEX IF NOT EXISTS idx_pp_estado_fecha ON produccion_programada(estado, fecha_programada)",
+        "CREATE INDEX IF NOT EXISTS idx_pp_origen ON produccion_programada(origen)",
+    ]),
+
     (151, "COA + lote proveedor en movimientos · INVIMA · 21-may-2026", [
         # Sebastián 21-may-2026 · consultor procurement: 'COA + lote proveedor
         # en recepción es no-negociable para GMP cosmético INVIMA. Cuando llegue
