@@ -187,9 +187,12 @@ def mi_dia():
         ve_todas = es_admin or es_jefe
 
     # FIX · 21-may-2026 · ventana exacta hoy Bogotá (UTC-5)
-    # Antes: ±1 día abría posibilidad de iniciar producción de mañana por error
-    # Ahora: date('now', '-5 hours') exacto (compatible PG + SQLite)
-    where_fecha = "date(fecha_programada) = date('now', '-5 hours')"
+    # FIX · 22-may-2026 · excluir estado='cancelado' y 'completado' (Bug #3 Operario audit 22-may)
+    # · Antes: producción cancelada del día seguía apareciendo · operario tocaba "iniciar"
+    #   · sistema descontaba MP de lote abortado · drift inventario + sala fantasma
+    # · Calificar pp.estado · JOIN con areas_planta también tiene columna estado (ambiguous)
+    where_fecha = ("date(pp.fecha_programada) = date('now', '-5 hours') "
+                   "AND COALESCE(pp.estado,'') NOT IN ('cancelado','completado')")
     where_op = ""
     params = []
     if not ve_todas and operario_id is not None:

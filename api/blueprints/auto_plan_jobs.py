@@ -3433,6 +3433,16 @@ def job_mee_drift_sync(app):
                         "UPDATE maestro_mee SET stock_actual=? WHERE codigo=?",
                         (real, cod),
                     )
+                    # INVIMA-FIX · 22-may-2026 · Bug #3 audit Crons · audit_log obligatorio
+                    # · Antes: drift "reparado" silente sin huella · viola CLAUDE.md
+                    try:
+                        from audit_helpers import audit_log as _alog
+                        _alog(c, usuario='cron-mee-drift', accion='MEE_DRIFT_RESYNC',
+                              tabla='maestro_mee', registro_id=cod,
+                              antes={'stock_actual': cache_f},
+                              despues={'stock_actual': real, 'delta': real - cache_f})
+                    except Exception:
+                        pass
                     drift_count += 1
                     if len(drift_codes) < 10:
                         drift_codes.append({'codigo': cod, 'cache': cache_f, 'real': real})
@@ -3455,11 +3465,15 @@ def job_pqr_sla_vencido(app):
     with app.app_context():
         from database import get_db as _gdb
         conn = _gdb(); c = conn.cursor()
+        # SEC-FIX · 22-may-2026 · estado real es 'en_revision' (no 'en_progreso')
+        # · Bug #5 audit Despachos · cron filtraba estado inexistente · alertas
+        #   legales Ley 1755/2015 NUNCA llegaban a tiempo cuando Calidad ponía
+        #   PQR en revisión.
         try:
             rows = c.execute(
                 """SELECT id, cliente_nombre, tipo, titulo, sla_vence_at_utc
                    FROM portal_pqr
-                   WHERE estado IN ('abierto','en_progreso')
+                   WHERE estado IN ('abierto','en_revision')
                      AND sla_vence_at_utc IS NOT NULL
                      AND sla_vence_at_utc != ''
                      AND datetime(sla_vence_at_utc) < datetime('now','utc')
@@ -3600,7 +3614,18 @@ def _loop_multi_cron(app):
                 # NO idempotentes (insertan producciones, mandan emails)
                 # no deben re-ejecutarse a las 2h tras fallo · subir a 24h
                 # mitiga duplicación hasta que cada paso sea idempotente.
-                _RETRY_24H_JOBS = {'lunes_7am_workflow'}
+                # FIX · 22-may-2026 · Bug #1 audit Crons · jobs NO idempotentes
+                # · Antes: solo lunes_7am_workflow · resto retry 2h → SCs duplicadas
+                # · Ahora: TODOS los jobs que insertan/mutan datos críticos a 24h
+                _RETRY_24H_JOBS = {
+                    'lunes_7am_workflow',
+                    'auto_sc_mensual', 'auto_sc_mee_mensual', 'auto_sc_urgente_lun',
+                    'auto_d20',                     # crea SCs decoración
+                    'reconciliar_influencer_60d',   # UPDATE masivo
+                    'marcar_vencidos',              # notif + UPDATE estado_lote
+                    'auto_reparar_huerfanas',       # UPDATE formula_items
+                    'mee_drift_sync',               # UPDATE stock_actual
+                }
                 for job_name, hora, minuto, dias_sem, dias_mes, callable_name in JOBS_SCHEDULE:
                     if not _es_hora_de(ahora, hora, minuto, dias_sem, dias_mes):
                         continue

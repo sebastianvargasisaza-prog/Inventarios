@@ -998,12 +998,20 @@ def handle_despachos():
         if not cli_row:
             return jsonify({'error': 'cliente_id no existe'}), 400
         # Validar pedido si se especifica
+        # INVIMA-FIX · 22-may-2026 · cliente_id del despacho DEBE coincidir con pedido
+        # · Bug #6 audit Despachos · evitaba trazabilidad recall-ready
         numero_ped = d.get('numero_pedido', '')
         if numero_ped:
             ped_row = c.execute(
-                "SELECT estado FROM pedidos WHERE numero=?", (numero_ped,)).fetchone()
+                "SELECT estado, cliente_id FROM pedidos WHERE numero=?", (numero_ped,)).fetchone()
             if not ped_row:
                 return jsonify({'error': f'Pedido {numero_ped} no existe'}), 400
+            ped_cliente_id = ped_row[1] if len(ped_row) > 1 else None
+            if ped_cliente_id and int(d.get('cliente_id') or 0) != int(ped_cliente_id):
+                return jsonify({
+                    'error': f'cliente_id del despacho ({d.get("cliente_id")}) no coincide con pedido (cliente {ped_cliente_id})',
+                    'codigo': 'CLIENTE_PEDIDO_MISMATCH',
+                }), 400
         c.execute("SELECT COALESCE(MAX(CAST(SUBSTR(numero,10) AS INTEGER)),0) FROM despachos WHERE numero LIKE ?", (f"DSP-{datetime.now().strftime('%Y')}-%",)); n = (c.fetchone()[0] or 0) + 1
         numero = f"DSP-{datetime.now().strftime('%Y')}-{n:04d}"
         c.execute("INSERT INTO despachos (numero,numero_pedido,cliente_id,fecha,operador,observaciones,estado) VALUES (?,?,?,datetime('now', '-5 hours'),?,?,?)",
@@ -1035,9 +1043,12 @@ def handle_despachos():
             for _intento_fefo in range(10):  # max 10 lotes (FEFO chain)
                 if qty_pendiente <= 0:
                     break
+                # INVIMA-FIX · 22-may-2026 · solo lotes 'Disponible' (NO recall · cuarentena)
+                # Bug #1 audit · antes despachaba lote en estado='Recall' al cliente
                 row_lote = c.execute("""
                     SELECT id, lote_produccion, unidades_disponible FROM stock_pt
                     WHERE sku=? AND unidades_disponible>0
+                      AND COALESCE(estado,'Disponible')='Disponible'
                     ORDER BY fecha_produccion ASC LIMIT 1
                 """, (sku,)).fetchone()
                 if not row_lote:
@@ -1047,12 +1058,23 @@ def handle_despachos():
                 # CAS atómico · si otro worker ya descontó, rowcount=0 → retry
                 c.execute("""UPDATE stock_pt
                               SET unidades_disponible = unidades_disponible - ?
-                              WHERE id=? AND unidades_disponible >= ?""",
+                              WHERE id=? AND unidades_disponible >= ?
+                                AND COALESCE(estado,'Disponible')='Disponible'""",
                           (take, _id, take))
                 if c.rowcount == 1:
                     lote_real = _lote or it.get('lote_pt', '')
                     qty_pendiente -= take
                 # rowcount=0 → race · próxima iteración busca siguiente lote
+            # Bug #2 audit · si no cubrimos toda la cantidad, FALLAR explícito
+            # · antes facturaba completo pero despachaba parcial · cliente reclamaba
+            if qty_pendiente > 0:
+                conn.rollback()
+                return jsonify({
+                    'error': f'Stock insuficiente · faltan {qty_pendiente:.0f} uds de {sku} (sólo lotes Disponibles)',
+                    'codigo': 'STOCK_INSUFICIENTE_DESPACHO',
+                    'sku': sku,
+                    'faltante': qty_pendiente,
+                }), 409
             if lote_real is None:
                 lote_real = it.get('lote_pt', '')
             # 3. Persistir el lote REAL en despachos_items (recall-ready)

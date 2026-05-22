@@ -128,3 +128,70 @@ Cuando Catalina edita un item:
 - `handle_proveedor` + endpoints MEE: exigen permiso de Compras y auditan;
   el rename de proveedor propaga también a `solicitudes_compra_items`.
 - `update_sol_observaciones`: rechaza un UPDATE vacío con 400 en vez de 500.
+
+### 2026-05-21 · Sesión enterprise zero-error · 70+ bugs cerrados
+
+**Nuevos endpoints:**
+- `POST /api/compras/asistente-ia` · chat Claude Sonnet 4.6 con contexto live
+- `POST /api/compras/ocr-factura` · Claude Vision extrae factura proveedor
+- `GET /api/compras/dashboard-home` · dashboard CONSOLIDADO (reemplaza 4 dashes legacy)
+- `GET /api/compras/cash-flow` · proyección 30/60/90 días
+- `GET /api/compras/trazabilidad-oc/<num>` · OC → SOL → producción → cliente
+- `GET /api/compras/roi-proveedores` · ROI 12m con cumplimiento
+- `GET /api/compras/proveedor-scorecard/<nombre>` · 5 métricas + score 0-100
+- `GET|POST /api/compras/ordenes-servicio` · Serigrafía/Tampografía OS (mig 150)
+- `GET /api/compras/prediccion-demanda` · con dedup cola (audit 22-may)
+
+**Nuevas tablas (mig 150-154):**
+- `ordenes_servicio` + `ordenes_servicio_eventos` · ciclo Catalina→Proveedor→Planta
+- `movimientos.coa_url/coa_filename/lote_proveedor/ficha_seguridad_url` (mig 151 · INVIMA)
+- 15 indexes performance hot path (mig 152)
+- `ebr_ejecuciones` aliases columnas (mig 153)
+- `formula_items.incluye_merma` flag opt-in (mig 154)
+
+**Helpers compartidos nuevos:**
+- `_pendiente_en_compras_g(c, codigo_mp)` · anti-duplicación SOLs cross-canales
+- `_evaluar_auto_aprobacion(c, prov, monto, items)` · reglas auto-aprob
+- `_enviar_oc_a_proveedor(...)` · email HTML al autorizar
+- `_scorecard_proveedor_dict(c, nombre_prov)` · 5 métricas live
+
+**Variables env nuevas:**
+- `COMPRAS_AUTO_APROB_OFF=1` · desactiva auto-aprobación reglas
+- `COMPRAS_AUTO_APROB_LIMITE_COP=500000` · monto límite
+- `COMPRAS_AUTO_APROB_REQ_SCORE=70` · score mínimo (opcional)
+- `COMPRAS_AUTO_EMAIL_PROV_OFF=1` · desactiva email auto al proveedor
+- `BRD_CUARENTENA_MIN_DIAS=N` · tiempo mínimo antes liberar EBR
+- `RRHH_BANCOS_JSON='[[...]]'` · cédulas+cuentas (PII fuera de código)
+
+**Crons nuevos:**
+- `auto_reparar_huerfanas` 4 AM · auto-repara formula_items con material_id huérfano
+- `mee_drift_sync` 3 AM · resincroniza maestro_mee.stock_actual vs SUM(movimientos_mee)
+- `pqr_sla_vencido` 8:15 AM · notif Ley 1755/2015 CO
+
+**Invariantes nuevas (zero-error):**
+1. CONTADORA NUNCA autoriza OCs (segregation of duties) · `_require_authorize_oc` bloquea
+2. Influencers · datos bancarios SOLO admin (Habeas Data Ley 1581)
+3. SOL DELETE: solo creador / admin / compras_access (no cualquier user)
+4. Auto-aprobación: si OC cumple reglas (monto<X + recurrente + precio en rango + score opcional) → `Borrador → Autorizada` automático con `autorizado_por='auto-aprob-reglas'`
+5. recibir_oc: bloquea `CATEGORIAS_PAGO_DIRECTO` (servicios sin material físico)
+6. OCR factura: valida magic bytes (PDF rechazado · solo JPG/PNG)
+7. Pagar Revisada bloqueado (bypass autorización gerencial)
+8. autorizar_oc: CAS atómico anti-race
+9. Borrar OC: revierte SOLs vinculadas a Pendiente automático
+10. Cancelar producción: libera SOLs Pre-Producción asociadas
+
+### 2026-05-22 · Auditoría abastecimiento · 12 bugs cerrados
+
+**Bugs críticos cerrados:**
+- Lead time: column real `lead_time_dias` (3 sitios escribían `dias_lead_time_promedio` inexistente)
+- `_get_mp_stock` excluye CUARENTENA/VENCIDO/RECHAZADO/AGOTADO
+- Ajuste/Ajuste+ suman en TODOS los cálculos de stock (4 sitios)
+- Auto-SC IA fallback `cantidad_g_por_lote` cuando porcentaje=0
+- Predicción demanda dedup `_pendiente_en_compras_g`
+- Pre-Prod checklist dedup cross-checklist
+- alertas-reabastecimiento incluye `en_cola_g`
+- Auto-SC MEE dedup
+- Urgencia con lead_time real (lt+3/+14/+30) en vez de ratios estáticos
+- Flag `formula_items.incluye_merma=1` evita doble merma
+
+**Tests goldens nuevos:** test_golden_abastecimiento_zero_error · test_golden_pendientes_audit_total.

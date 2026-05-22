@@ -211,3 +211,52 @@ Invariante nueva:
 - **Síntoma**: Bodega muestra stock viejo del lote original.
 - **Fix**: usar `it['lote']` real. Fallback solo si vacío.
 - **Test que cazaría**: `test_golden_conteo_ciclico_ajuste_afecta_lote_real`.
+
+### 2026-05-21 · Auditoría TOTAL · 76 bugs cerrados
+
+**Endpoints sin auth (CRÍTICO · expuestos públicamente):**
+- `/api/stock` · `/api/lotes` · `/api/maestro-mps/<x>` ahora exigen `_require_session`
+- `update_stock_minimo` exige COMPRAS/ADMIN + audit_log UPDATE_STOCK_MINIMO
+- `anular_movimiento` bloquea bypass user='' (validación previa)
+- `consumo_manual` rechaza stock negativo (422 STOCK_INSUFICIENTE)
+  · flag `forzar_sobreconsumo` solo admin
+
+**INVIMA mejoras:**
+- `liberar_lote` acepta CUARENTENA_EXTENDIDA (no solo CUARENTENA)
+- `liberar_cuarentena`: decision whitelist + estado actual validado · no revive RECHAZADO
+- COA + lote_proveedor + ficha_seguridad en `movimientos` (mig 151)
+- `mee_import_bulk` ahora `audit_log` IMPORT_BULK_MEE
+- Alertas reabastecimiento excluyen CUARENTENA/RECHAZADO/VENCIDO
+
+**Helpers nuevos:**
+- `_mee_stock_real(c, codigo_mee)` · stock canonical desde SUM(movimientos_mee)
+- `_pendiente_en_compras_g` (import desde compras) · dedup cola SOLs+OCs
+
+**Cron `auto_reparar_huerfanas` (4 AM):**
+- Detecta `formula_items.material_id` sin movimientos asociados
+- Auto-repara con MP correcto (nombre/INCI match · stock real)
+- ORDER BY stock DESC, codigo_mp ASC determinístico
+- audit_log REPARAR_HUERFANO_FORMULA con antes/después
+
+**Cron `mee_drift_sync` (3 AM):**
+- Detecta drift > 0.5g entre `maestro_mee.stock_actual` y SUM(movimientos_mee)
+- Resincroniza cache automático · log top 10 drifts
+
+### 2026-05-22 · Auditoría abastecimiento · 12 bugs cerrados
+
+**_get_mp_stock corregido (programacion.py):**
+- WHERE excluye `UPPER(estado_lote) IN ('CUARENTENA','CUARENTENA_EXTENDIDA','VENCIDO','RECHAZADO','AGOTADO')`
+- CASE explícito: Entrada+Ajuste+Ajuste+ suman · Salida+Ajuste- restan
+- Aplicado en pass 1, pass 2 y bridge tier
+
+**Mismo fix replicado en 3 sitios:**
+- `/api/stock` (inventario.py:3924)
+- `/api/alertas-reabastecimiento` (inventario.py:3884)
+- `/api/compras/prediccion-demanda` (compras.py:8506)
+
+**Alertas reabastecimiento incluye dedup:**
+- Cada item: `en_cola_g` + `deficit` neto + `cubierto_por_cola` flag
+- Frontend puede mostrar badge informativo si en_cola > 0
+
+**Migración 154:** `formula_items.incluye_merma INTEGER DEFAULT 0`
+- Si =1, auto_plan NO re-aplica merma (cantidad_g_por_lote ya la incluye)

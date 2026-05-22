@@ -56,10 +56,31 @@ log = logging.getLogger('portal')
 # ────────────────────────────────────────────────────────────────────
 
 def _require_portal_login():
-    """Devuelve (cliente_id, cliente_nombre, email) o None si no logueado."""
+    """Devuelve (cliente_id, cliente_nombre, email) o None si no logueado.
+
+    SEC-FIX · 22-may-2026 · Bug #3 audit Portal · revalida activo=1
+    contra portal_clientes_credenciales · cliente desactivado por mora/fraude
+    no sigue operando 60 días. Cache 60s para evitar query por request.
+    """
+    import time as _t
     cid = session.get('portal_cliente_id')
     if not cid:
         return None
+    last_check = session.get('portal_activo_check_ts', 0)
+    now_ts = _t.time()
+    if now_ts - last_check > 60:  # revalidar cada 60s
+        try:
+            conn = get_db()
+            row = conn.execute(
+                "SELECT activo FROM portal_clientes_credenciales WHERE cliente_id=? LIMIT 1",
+                (cid,),
+            ).fetchone()
+            if not row or not row[0]:
+                session.clear()
+                return None
+            session['portal_activo_check_ts'] = now_ts
+        except Exception:
+            pass  # graceful · si falla DB no expulsamos al cliente
     return (
         cid,
         session.get('portal_cliente_nombre', ''),
@@ -625,6 +646,13 @@ def portal_crear_pedido():
         return jsonify({'error': 'cantidad_uds debe ser > 0'}), 400
     if ml <= 0:
         return jsonify({'error': 'ml_unidad debe ser > 0'}), 400
+    # SEC-FIX · 22-may-2026 · límites superiores (Bug #7 audit Portal)
+    # · Antes: cantidad=2e9 + ml=1e6 → kg_b2b=2e15 polluía plan canonical
+    # · Ahora: límites razonables · cliente debe contactar comercial para >50k uds
+    if cantidad > 50_000:
+        return jsonify({'error': 'cantidad máxima 50.000 uds · contactar comercial para volúmenes mayores'}), 400
+    if ml > 5_000:
+        return jsonify({'error': 'ml_unidad máximo 5.000 · contactar comercial'}), 400
 
     conn = get_db()
     cur = conn.cursor()

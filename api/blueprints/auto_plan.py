@@ -7843,14 +7843,21 @@ def planta_mass_balance(pid):
         out['ebr'] = None
     # Movimientos de salida del kardex vinculados a esta producción
     try:
+        # INVIMA-FIX · 22-may-2026 · LIKE con delimitador exacto (Bug #6 Operario)
+        # · Antes: '%prod #1%' matcheaba prod #1, #10, #11, #199 → contaminación recall
+        # · Ahora: incluye espacio o $ después del número · solo matches exactos
         movs = c.execute(
             """SELECT material_id, COALESCE(material_nombre,''), cantidad,
                       COALESCE(lote,''), COALESCE(fecha,'')
                FROM movimientos
                WHERE tipo='Salida'
-                 AND (observaciones LIKE ? OR observaciones LIKE ?)
+                 AND (observaciones LIKE ?
+                      OR observaciones LIKE ?
+                      OR observaciones LIKE ?
+                      OR observaciones LIKE ?)
                ORDER BY id LIMIT 100""",
-            (f'%producci%n {pid}%', f'%prod #{pid}%'),
+            (f'%producci%n {pid} %', f'%producci%n {pid}',
+             f'%prod #{pid} %',     f'%prod #{pid}'),
         ).fetchall()
         out['movimientos_salida'] = [{
             'material_id': m[0], 'material_nombre': m[1],

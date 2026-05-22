@@ -483,7 +483,8 @@ function _miDiaVozProcesar(txt) {
   fetch('/api/operario/mi-dia').then(function(r){return r.json();}).then(function(d){
     var prods = (d && d.producciones) || [];
     // Filtrar producciones donde el operario es el rol que está nombrando
-    var match = prods.find(function(p){ return p.mi_rol === etapa; });
+    // PLANTA-FIX · 22-may-2026 · backend devuelve mi_rol_aqui (no mi_rol)
+    var match = prods.find(function(p){ return p.mi_rol_aqui === etapa; });
     if (!match) {
       alert('No encontré producción activa con tu rol ' + etapa + ' · pedí ayuda a jefe planta');
       return;
