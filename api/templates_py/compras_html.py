@@ -3472,7 +3472,10 @@ async function splitSolicitud(numero){
       lines.push('• '+h.numero+' → '+h.proveedor+' · '+h.items_count+' MP(s)');
     });
     alert(lines.join('\\n'));
+    // MEDIA-8 fix · 21-may-2026 · refrescar también Solicitudes Agrupadas
+    // si Catalina hizo split desde esa pestaña (no solo Planta)
     if(typeof loadPlanta==='function') loadPlanta();
+    if(typeof renderSolicitudesAgrupadas==='function') renderSolicitudesAgrupadas();
   }catch(e){ alert('Error red: '+e.message); }
 }
 
@@ -4219,7 +4222,24 @@ async function loadPlanta(){
         '<div style="color:#dc2626;padding:20px;">Error: '+esc(d.error||r.status)+'</div>';
       return;
     }
-    PLANTA_GRUPOS = (d.grupos||[]).concat(d.sin_proveedor||[]);
+    // CRITICA-1 fix · sin_proveedor son SOLs sueltas con shape distinto a grupos.
+    // Antes se concatenaban directo → cards rotos. Ahora se envuelven en
+    // grupos sintéticos con items_consolidados + solicitudes para que
+    // _plantaCardHTML las renderice igual que un grupo real.
+    var _gruposReales = d.grupos || [];
+    var _huerfanas = (d.sin_proveedor || []).map(function(s){
+      return {
+        proveedor: s._motivo_sin_grupo || '(sin proveedor sugerido)',
+        es_sin_proveedor: true,
+        solicitudes_count: 1,
+        items_count: (s.items||[]).length,
+        urgencia_max: s.urgencia || 'Normal',
+        valor_total: s.valor || 0,
+        items_consolidados: s.items || [],
+        solicitudes: [s],
+      };
+    });
+    PLANTA_GRUPOS = _gruposReales.concat(_huerfanas);
   }catch(e){
     document.getElementById('planta-body').innerHTML =
       '<div style="color:#dc2626;padding:20px;">Error de red: '+esc(e.message)+'</div>';
@@ -4270,21 +4290,35 @@ function renderPlanta(){
       return hits2;
     });
   }
-  // KPIs
+  // ALTA-6 fix · 21-may-2026 · KPIs claros (totales reales vs filtrados)
+  // + parseFloat guards para evitar NaN propagado por items sin_proveedor.
   var kpis = document.getElementById('planta-kpis');
   if(kpis){
     var totalGrupos = grupos.length;
     var totalSols = 0, totalValor = 0, totalGr = 0;
     grupos.forEach(function(g){
       totalSols += (g.solicitudes||[]).length;
-      totalValor += (g.valor_total||0);
-      (g.items_consolidados||[]).forEach(function(it){ totalGr += parseFloat(it.cantidad_g||0); });
+      totalValor += parseFloat(g.valor_total||0) || 0;
+      (g.items_consolidados||[]).forEach(function(it){
+        totalGr += parseFloat(it.cantidad_g||0) || 0;
+      });
     });
+    // Totales reales (sin filtro)
+    var globalGrupos = (PLANTA_GRUPOS||[]).length;
+    var globalSols = 0, globalValor = 0;
+    (PLANTA_GRUPOS||[]).forEach(function(g){
+      globalSols += (g.solicitudes||[]).length;
+      globalValor += parseFloat(g.valor_total||0) || 0;
+    });
+    var filtroActivo = (q && q.length > 0);
+    var sufijo = filtroActivo
+      ? '<span style="color:#94a3b8;font-size:11px;margin-left:8px">(filtrado · total: '+globalGrupos+' grupos · '+globalSols+' SOLs · '+fmt(globalValor)+')</span>'
+      : '';
     kpis.innerHTML =
       '<span><b>'+totalGrupos+'</b> proveedores</span> · ' +
       '<span><b>'+totalSols+'</b> SOLs</span> · ' +
       '<span><b>'+(totalGr.toLocaleString('es-CO',{maximumFractionDigits:0}))+' g</b> total</span> · ' +
-      '<span><b>'+fmt(totalValor)+'</b> valor estimado</span>';
+      '<span><b>'+fmt(totalValor)+'</b> valor estimado</span>' + sufijo;
   }
   if(!grupos.length){
     body.innerHTML = '<div style="color:#94a3b8;text-align:center;padding:40px;">' +
@@ -4323,9 +4357,20 @@ function _plantaCardHTML(g, idx){
       '<span style="background:rgba(255,255,255,.2);padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700;">'+itemCount+' items</span>' +
       '<span style="background:rgba(255,255,255,.2);padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700;">'+totalGr.toLocaleString('es-CO',{maximumFractionDigits:0})+' g</span>' +
       '<span style="background:rgba(255,255,255,.2);padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700;">'+fmt(g.valor_total||0)+'</span>' +
+      // CRITICA-3 fix · 21-may-2026 · botones Crear OC + Pedir cotización
+      // Antes solo existían en tab "Solicitudes Agrupadas" · ahora visibles
+      // donde Catalina realmente está (Planta).
+      (!g.es_sin_proveedor ?
+        '<button onclick="abrirCrearOCDesdeGrupoPlanta('+idx+')" style="background:#fff;color:#0e7490;border:none;border-radius:6px;padding:6px 14px;font-size:11px;font-weight:700;cursor:pointer;margin-left:8px" title="Crear UNA OC con todos los items del grupo · preview con Δ% precios">&#x1F6D2; Crear OC</button>' +
+        '<button onclick="abrirPedirCotizacionPlanta('+idx+')" style="background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.4);border-radius:6px;padding:6px 12px;font-size:10px;font-weight:700;cursor:pointer;margin-left:4px" title="Pedir 3 cotizaciones a top proveedores históricos">&#x1F4AC; Cotizar</button>'
+      : '<span style="font-size:10px;color:#fff;opacity:.8;margin-left:6px">⚠ asignar proveedor</span>') +
     '</div>' +
     '<div style="padding:10px 14px;font-size:11px;color:#64748b;">SOLs incluidas: ' +
       (g.solicitudes||[]).map(function(s){ return '<span style="background:#f1f5f9;padding:2px 6px;border-radius:4px;margin-right:4px;font-weight:600;color:#334155;">'+esc(s.numero)+'</span>'; }).join('') +
+      // Botón split inline si es sin_proveedor (mixto)
+      (g.es_sin_proveedor && (g.solicitudes||[])[0] ?
+        '<button data-act="split-sol" data-sol="'+esc(g.solicitudes[0].numero)+'" style="background:#9a3412;color:#fff;border:none;padding:3px 10px;border-radius:4px;cursor:pointer;font-size:10px;font-weight:700;margin-left:6px" title="Dividir esta SOL en N hijas, una por proveedor distinto">&#x2702; Split</button>'
+      : '') +
     '</div>' +
     '<div style="padding:0 14px 14px;">' +
       '<table style="width:100%;border-collapse:collapse;font-size:12px;">' +
@@ -4371,30 +4416,37 @@ function _plantaItemRowHTML(g, it){
       '<input type="text" class="planta-prov-inp" value="'+esc((it.proveedor_sugerido)||g.proveedor||'')+'" list="planta-prov-datalist" placeholder="(sin proveedor)" style="width:100%;padding:4px 6px;border:1px solid #cbd5e1;border-radius:4px;font-size:12px;">' +
     '</td>' +
     '<td style="padding:6px;text-align:right;">' +
-      '<input type="number" step="any" class="planta-cant-inp" value="'+(parseFloat(it.cantidad_g||0))+'" style="width:100%;padding:4px 6px;border:1px solid #cbd5e1;border-radius:4px;font-size:12px;text-align:right;">' +
+      // MEDIA-9 fix · 21-may-2026 · readonly cantidad si hay >1 SOL (no se
+      // puede redistribuir cantidad entre SOLs sin lógica explícita)
+      '<input type="number" step="any" class="planta-cant-inp" value="'+(parseFloat(it.cantidad_g||0))+'"' +
+      (refsCount > 1 ? ' readonly title="Cantidad consolidada de '+refsCount+' SOLs · solo modificable individualmente"' : '') +
+      ' style="width:100%;padding:4px 6px;border:1px solid '+(refsCount>1?'#cbd5e1;background:#f1f5f9':'#cbd5e1')+';border-radius:4px;font-size:12px;text-align:right;">' +
     '</td>' +
     '<td style="padding:6px;text-align:right;">' +
       (function(){
-        // Sprint Compras N2 · auto-fill desde precios_mp_historico
+        // CRITICA-2 fix · 21-may-2026: precios_mp_historico.precio_kg está en $/kg
+        // pero antes se multiplicaba por gramos directamente · inflaba OC ×1000.
+        // Ahora: precio_por_g = precio_kg / 1000 · todo en $/g para sumar consistente.
         var hist = (window.PLANTA_PRECIOS_HIST||{})[it.codigo_mp];
         var valActual = parseFloat(it.valor_estimado||0);
         var cantActual = parseFloat(it.cantidad_g||0);
         var valFinal = valActual;
         var badgeHtml = '';
         if(hist && hist.precio_ultimo > 0){
+          var precioPorGramo = hist.precio_ultimo / 1000;  // $/kg → $/g
           if(valActual <= 0 && cantActual > 0){
-            valFinal = (hist.precio_ultimo * cantActual).toFixed(2);
+            valFinal = (precioPorGramo * cantActual).toFixed(2);
           }
           var dias = hist.dias_atras != null ? hist.dias_atras + 'd' : '?';
           var oc = hist.oc_ultima ? ' · '+hist.oc_ultima : '';
           var color = (hist.dias_atras != null && hist.dias_atras > 180) ? '#dc2626' :
                       ((hist.dias_atras != null && hist.dias_atras > 60) ? '#ca8a04' : '#16a34a');
-          badgeHtml = '<div style="font-size:9px;color:'+color+';margin-top:2px;line-height:1.2" title="Precio último: $'+hist.precio_ultimo+'/g · OC '+(hist.oc_ultima||'?')+'">$'+(Number(hist.precio_ultimo).toFixed(3))+'/g · hace '+dias+oc+'</div>';
+          badgeHtml = '<div style="font-size:9px;color:'+color+';margin-top:2px;line-height:1.2" title="Precio último: $'+Number(hist.precio_ultimo).toFixed(0)+'/kg · OC '+(hist.oc_ultima||'?')+'">$'+(Number(hist.precio_ultimo).toLocaleString('es-CO',{maximumFractionDigits:0}))+'/kg · hace '+dias+oc+'</div>';
         }
         return '<input type="number" step="any" class="planta-val-inp" value="'+valFinal+'" style="width:100%;padding:4px 6px;border:1px solid #cbd5e1;border-radius:4px;font-size:12px;text-align:right;">' + badgeHtml;
       })() +
     '</td>' +
-    '<td style="padding:6px;text-align:right;font-size:11px;color:#64748b;font-weight:600;" title="'+(refs.map(function(r){return r.numero;}).join(', '))+'">'+esc(sigla)+'</td>' +
+    '<td style="padding:6px;text-align:right;font-size:11px;color:#64748b;font-weight:600;" title="'+esc(refs.map(function(r){return r.numero;}).join(', '))+'">'+esc(sigla)+'</td>' +
     '<td style="padding:6px;text-align:right;">' +
       (refsCount > 0 ? '<button class="btn" onclick="plantaGuardarItem(this)" style="padding:4px 10px;font-size:11px;background:#16a34a;color:#fff;" title="'+(refsCount > 1 ? 'Guarda los '+refsCount+' items relacionados' : 'Guardar')+'">&#x1F4BE; Guardar'+(refsCount > 1 ? ' ('+refsCount+')' : '')+'</button>' :
              '<span style="font-size:10px;color:#94a3b8;">—</span>') +
@@ -5281,6 +5333,24 @@ function abrirOCRFactura(){
     reader.readAsDataURL(file);
   };
 }
+
+// CRITICA-3 fix · 21-may-2026 · wrappers para Planta que usan PLANTA_GRUPOS
+// (no _GRUPOS_CACHE que vive en otra pestaña).
+window.abrirCrearOCDesdeGrupoPlanta = async function(idx){
+  if(!PLANTA_GRUPOS || !PLANTA_GRUPOS[idx]){ alert('Card no disponible · recargá Planta'); return; }
+  // Inyectar temporalmente en _GRUPOS_CACHE para reusar la función existente
+  _GRUPOS_CACHE = _GRUPOS_CACHE || {grupos: []};
+  _GRUPOS_CACHE.grupos = _GRUPOS_CACHE.grupos || [];
+  _GRUPOS_CACHE.grupos[idx] = PLANTA_GRUPOS[idx];
+  return abrirCrearOCDesdeGrupo(idx);
+};
+window.abrirPedirCotizacionPlanta = async function(idx){
+  if(!PLANTA_GRUPOS || !PLANTA_GRUPOS[idx]){ alert('Card no disponible · recargá Planta'); return; }
+  _GRUPOS_CACHE = _GRUPOS_CACHE || {grupos: []};
+  _GRUPOS_CACHE.grupos = _GRUPOS_CACHE.grupos || [];
+  _GRUPOS_CACHE.grupos[idx] = PLANTA_GRUPOS[idx];
+  return abrirPedirCotizacion(idx);
+};
 
 // Gap #2 · 21-may-2026 · Pedir cotización a top 3 proveedores históricos
 async function abrirPedirCotizacion(gi){

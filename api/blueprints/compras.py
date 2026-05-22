@@ -2065,17 +2065,19 @@ def solicitudes_agrupadas_por_proveedor():
         offset = max(0, int(request.args.get('offset', 0)))
     except (ValueError, TypeError):
         offset = 0
-    # Total count antes de paginar (para footer "X de N")
+    # ALTA-4 fix · 21-may-2026: rewrite count manualmente.
+    # Antes el .replace() buscaba un literal que NO matcheaba el SELECT real
+    # (tiene COALESCE) · count_sql quedaba con el SELECT original devolviendo
+    # filas en lugar de COUNT · int() reventaba → 0 silencioso siempre.
     try:
-        count_sql = sql.replace(
-            "SELECT s.numero, s.fecha, s.estado, s.solicitante, s.urgencia, "
-            "s.observaciones, s.empresa, s.categoria, s.tipo, s.area, "
-            "s.fecha_requerida, s.numero_oc, s.valor_total",
-            "SELECT COUNT(*)", 1
-        )
-        # Quitar JOIN si hay (count solo necesita la tabla principal)
+        # Extraer la parte FROM ... WHERE ... del sql actual
+        idx_from = sql.upper().find(' FROM ')
+        from_clause = sql[idx_from:] if idx_from > 0 else ''
+        count_sql = 'SELECT COUNT(*)' + from_clause
         total_sols = int((c.execute(count_sql, params).fetchone() or [0])[0])
-    except Exception:
+    except Exception as _e:
+        __import__('logging').getLogger('compras').warning(
+            'count_sql fallo (paginación): %s', _e)
         total_sols = 0
     sql += f" ORDER BY s.fecha DESC LIMIT {limit} OFFSET {offset}"
 
@@ -8607,35 +8609,44 @@ def cotizar_desde_grupo_planta():
     prov_sug = (body.get('proveedor_sugerido') or '').strip()
     conn = get_db(); c = conn.cursor()
     # Top 3 proveedores históricos para CUALQUIER MP del grupo
+    # ALTA-7 fix · 21-may-2026: detectar columna 1 vez antes del loop · evita
+    # rollbacks consecutivos y queries inconsistentes entre MPs.
     codigos = [it.get('codigo_mp') for it in items if it.get('codigo_mp')]
+    col_precio = 'precio_kg'  # default canónico actual
+    try:
+        # Query rápida de descubrimiento · si precio_unitario existe lo usa
+        c.execute("SELECT precio_unitario FROM precios_mp_historico LIMIT 1")
+        col_precio = 'precio_unitario'
+    except Exception:
+        try: conn.rollback()
+        except Exception: pass
+        col_precio = 'precio_kg'
     proveedores_scores = {}
     for cod in codigos:
-        for col_precio in ('precio_unitario', 'precio_kg'):
-            try:
-                rows = c.execute(
-                    f"""SELECT proveedor, COUNT(*) as n, AVG({col_precio}) as avg_p
-                        FROM precios_mp_historico
-                        WHERE codigo_mp=? AND proveedor IS NOT NULL AND proveedor != ''
-                        GROUP BY proveedor
-                        ORDER BY n DESC LIMIT 5""",
-                    (cod,),
-                ).fetchall()
-                for r in rows:
-                    nombre = (r[0] or '').strip()
-                    if not nombre:
-                        continue
-                    if nombre not in proveedores_scores:
-                        proveedores_scores[nombre] = {
-                            'nombre': nombre, 'usos': 0,
-                            'precio_promedio_sum': 0.0,
-                        }
-                    proveedores_scores[nombre]['usos'] += int(r[1] or 0)
-                    proveedores_scores[nombre]['precio_promedio_sum'] += float(r[2] or 0)
-                break
-            except Exception:
-                try: conn.rollback()
-                except Exception: pass
-                continue
+        try:
+            rows = c.execute(
+                f"""SELECT proveedor, COUNT(*) as n, AVG({col_precio}) as avg_p
+                    FROM precios_mp_historico
+                    WHERE codigo_mp=? AND proveedor IS NOT NULL AND proveedor != ''
+                    GROUP BY proveedor
+                    ORDER BY n DESC LIMIT 5""",
+                (cod,),
+            ).fetchall()
+            for r in rows:
+                nombre = (r[0] or '').strip()
+                if not nombre:
+                    continue
+                if nombre not in proveedores_scores:
+                    proveedores_scores[nombre] = {
+                        'nombre': nombre, 'usos': 0,
+                        'precio_promedio_sum': 0.0,
+                    }
+                proveedores_scores[nombre]['usos'] += int(r[1] or 0)
+                proveedores_scores[nombre]['precio_promedio_sum'] += float(r[2] or 0)
+        except Exception:
+            try: conn.rollback()
+            except Exception: pass
+            continue
     top = sorted(proveedores_scores.values(), key=lambda x: -x['usos'])[:3]
     # Si el proveedor sugerido no está en el top, agregarlo
     if prov_sug and not any(p['nombre'].lower() == prov_sug.lower() for p in top):
