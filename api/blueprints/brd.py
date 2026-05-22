@@ -941,8 +941,9 @@ async function load(){
       });
     });
     (d.pasos||[]).forEach(function(s){
-      if(s.iniciado) eventos.push({ts:s.iniciado,tipo:'info',tit:'▶ Paso #'+s.orden+': '+s.descripcion+' (inicio)',det:'Operario: '+(s.operario||'?')});
-      if(s.completado) eventos.push({ts:s.completado,tipo:'ok',tit:'✓ Paso #'+s.orden+': '+s.descripcion+' (fin)',det:s.observaciones||'sin notas'});
+      // SEC-FIX · 21-may-2026 · _escBRD aplica luego (al render). Aquí solo data.
+      if(s.iniciado) eventos.push({ts:s.iniciado,tipo:'info',tit:'▶ Paso #'+s.orden+': '+(s.descripcion||'')+' (inicio)',det:'Operario: '+(s.operario||'?')});
+      if(s.completado) eventos.push({ts:s.completado,tipo:'ok',tit:'✓ Paso #'+s.orden+': '+(s.descripcion||'')+' (fin)',det:s.observaciones||'sin notas'});
     });
     (d.ipc||[]).forEach(function(i){
       eventos.push({
@@ -962,11 +963,14 @@ async function load(){
       tl.innerHTML = '<div style="color:#94a3b8;text-align:center;padding:30px">Sin eventos registrados todavía</div>';
       return;
     }
+    // SEC-FIX · 21-may-2026 · XSS · escapar todos los strings concatenados
+    // Antes: tit/det/operario/observaciones de DB sin escape · XSS stored
+    function _escBRD(s){return String(s||'').replace(/[&<>"\\\\'/]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;',"/":'&#47;'}[c];});}
     tl.innerHTML = eventos.map(function(e){
-      return '<div class="evt '+e.tipo+'">'+
-        '<div class="ts">'+(e.ts||'').substring(0,16)+'</div>'+
-        '<div class="tit">'+e.tit+'</div>'+
-        '<div class="det">'+(e.det||'')+'</div>'+
+      return '<div class="evt '+_escBRD(e.tipo)+'">'+
+        '<div class="ts">'+_escBRD((e.ts||'').substring(0,16))+'</div>'+
+        '<div class="tit">'+_escBRD(e.tit)+'</div>'+
+        '<div class="det">'+_escBRD(e.det||'')+'</div>'+
       '</div>';
     }).join('');
   }catch(e){

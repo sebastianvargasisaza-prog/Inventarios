@@ -1011,11 +1011,26 @@ def capa_list():
     conn = get_db(); c = conn.cursor()
     if request.method == 'POST':
         d = request.json or {}
-        for k in ('nc_id','tipo','descripcion'):
+        # INVIMA-FIX · 21-may-2026 · fecha_compromiso obligatoria (PDCA)
+        # Antes: aceptaba null · CAPA sin plazo nunca aparecía vencida
+        # · auditor INVIMA detecta CAPA sin ciclo cerrable
+        for k in ('nc_id','tipo','descripcion','fecha_compromiso'):
             if not d.get(k):
                 return jsonify({'error':f'{k} requerido'}), 400
         if d['tipo'] not in ('correctiva','preventiva','contencion'):
             return jsonify({'error':'tipo debe ser correctiva/preventiva/contencion'}), 400
+        # Validar fecha_compromiso ≥ hoy (no aceptar fechas pasadas)
+        try:
+            from datetime import date as _date, datetime as _dt
+            fc_str = str(d['fecha_compromiso'])[:10]
+            fc_date = _dt.strptime(fc_str, '%Y-%m-%d').date()
+            if fc_date < _date.today():
+                return jsonify({
+                    'error': 'fecha_compromiso debe ser hoy o futuro',
+                    'codigo': 'FECHA_PASADA',
+                }), 400
+        except (ValueError, TypeError):
+            return jsonify({'error': 'fecha_compromiso formato YYYY-MM-DD'}), 400
         user = session.get('compras_user','sistema')
         c.execute("""INSERT INTO capa_acciones
             (nc_id, tipo, descripcion, responsable, fecha_compromiso, estado)
@@ -1051,10 +1066,37 @@ def capa_update(cid):
     conn = get_db(); c = conn.cursor()
     fields = ['descripcion','responsable','fecha_compromiso','fecha_ejecucion',
               'evidencia_url','efectiva','verificada_por','fecha_verificacion','estado']
+    # INVIMA-FIX · 21-may-2026 · validar transiciones + evidencia para Verificada/Cerrada
+    if d.get('estado') in ('Verificada', 'Cerrada'):
+        # Leer estado actual + fecha_ejecucion + evidencia_url
+        row_act = c.execute(
+            "SELECT estado, fecha_ejecucion, evidencia_url FROM capa_acciones WHERE id=?",
+            (cid,),
+        ).fetchone()
+        if not row_act:
+            return jsonify({'error': 'CAPA no existe'}), 404
+        # Si pasa a Verificada · debe tener fecha_ejecucion previa
+        fej_actual = row_act[1] or d.get('fecha_ejecucion', '')
+        evid_actual = row_act[2] or d.get('evidencia_url', '')
+        if not fej_actual:
+            return jsonify({
+                'error': 'fecha_ejecucion requerida antes de Verificar/Cerrar',
+                'codigo': 'FECHA_EJECUCION_REQUERIDA',
+            }), 400
+        # evidencia_url debe ser http(s) · no javascript: ni data:
+        if evid_actual and not str(evid_actual).startswith(('http://', 'https://')):
+            return jsonify({
+                'error': 'evidencia_url debe ser http(s)://',
+                'codigo': 'EVIDENCIA_URL_INVALIDA',
+            }), 400
+        if not evid_actual:
+            return jsonify({
+                'error': 'evidencia_url requerida para Verificada/Cerrada',
+                'codigo': 'EVIDENCIA_REQUERIDA',
+            }), 400
     sets = ', '.join(f+'=?' for f in fields if f in d)
     vals = [d[f] for f in fields if f in d]
     if not sets: return jsonify({'error':'Nada que actualizar'}), 400
-    # Si pasa a Verificada, registrar fecha
     if d.get('estado') == 'Verificada' and 'fecha_verificacion' not in d:
         sets += ', fecha_verificacion=date(\'now\')'
     vals.append(cid)
