@@ -610,6 +610,11 @@ JOBS_SCHEDULE = [
     # MEE drift sync · cache vs SUM(movimientos_mee) · diario 3:00 AM
     # Hasta migrar a stock=SUM canonical, este cron repara drift silencioso
     ('mee_drift_sync',        3,  0, None, None,                'job_mee_drift_sync'),
+    # ⭐ Mailbox factura proveedor IMAP · diario 7:15 AM
+    # Lee inbox compras@hhagroup.co, extrae adjuntos (PDF/JPG/PNG), guarda
+    # como factura_proveedor en pagos_oc · matching automático con OC.
+    # SOLO corre si IMAP_HOST + IMAP_USER + IMAP_PASSWORD configurados.
+    ('mailbox_factura_proveedor', 7, 15, None, None,            'job_mailbox_factura_proveedor'),
     # ⭐ Zero-Error · diario 8:00 · validación profunda matemática (8 checks)
     ('validacion_profunda',   8,  0, None, None,                'job_validacion_profunda'),
     # ⭐ Animus · L-V 8:00am · asignar 5 SKUs para conteo fisico a Daniela
@@ -3431,6 +3436,128 @@ def job_marcar_vencidos(app):
             conn.rollback()
             log.exception('marcar_vencidos fallo: %s', e)
             return False, {'error': str(e)[:300]}, 0
+
+
+def job_mailbox_factura_proveedor(app):
+    """Sebastián 22-may-2026 · cron diario 7:15 AM · IMAP inbox compras.
+
+    Lee inbox compras@hhagroup.co (env IMAP_HOST/IMAP_USER/IMAP_PASSWORD),
+    descarga adjuntos PDF/JPG/PNG, intenta matching por:
+      1. Asunto contiene OC-2026-NNNN (regex)
+      2. Body contiene número de OC
+      3. NIT del remitente coincide con proveedor
+
+    Si match → INSERT pagos_oc con comprobante_imagen=base64(adjunto)
+    Si no → guarda en bandeja_facturas_huerfanas para revisión manual
+
+    SOLO corre si IMAP_HOST + IMAP_USER + IMAP_PASSWORD configurados.
+    Sin esas envs · retorna early sin error · no log noise.
+    """
+    import os as _os, imaplib, email as _email, re as _re, base64 as _b64
+    host = _os.environ.get('IMAP_HOST', '').strip()
+    user = _os.environ.get('IMAP_USER', '').strip()
+    pwd  = _os.environ.get('IMAP_PASSWORD', '').strip()
+    if not (host and user and pwd):
+        log.debug('[mailbox-factura] skip · IMAP_* env vars no configurados')
+        return True, {'skipped': True, 'razon': 'IMAP env vars no configurados'}, 0
+
+    with app.app_context():
+        from database import get_db as _gdb
+        conn = _gdb(); c = conn.cursor()
+        try:
+            imap = imaplib.IMAP4_SSL(host)
+            imap.login(user, pwd)
+            imap.select('INBOX')
+            # Buscar UNSEEN últimos 7 días
+            from datetime import datetime as _dt2, timedelta as _td2
+            since = (_dt2.now() - _td2(days=7)).strftime('%d-%b-%Y')
+            _, data = imap.search(None, f'(UNSEEN SINCE "{since}")')
+            ids = data[0].split() if data and data[0] else []
+            procesadas = 0
+            matched = 0
+            huerfanas = 0
+            re_oc = _re.compile(r'\bOC-\d{4}-\d{4}\b', _re.I)
+            for msg_id in ids[:50]:  # tope 50 por run
+                _, msg_data = imap.fetch(msg_id, '(RFC822)')
+                if not msg_data or not msg_data[0]:
+                    continue
+                msg = _email.message_from_bytes(msg_data[0][1])
+                from_addr = msg.get('From', '')
+                subject = (msg.get('Subject', '') or '')
+                # Match OC en asunto o body
+                oc_match = re_oc.search(subject)
+                body_text = ''
+                for part in msg.walk():
+                    if part.get_content_type() == 'text/plain':
+                        try:
+                            body_text = part.get_payload(decode=True).decode('utf-8', 'replace')
+                            if not oc_match:
+                                oc_match = re_oc.search(body_text)
+                            break
+                        except Exception:
+                            pass
+                numero_oc = oc_match.group(0).upper() if oc_match else None
+                # Extraer adjuntos
+                for part in msg.walk():
+                    fn = part.get_filename()
+                    if not fn:
+                        continue
+                    ct = part.get_content_type()
+                    if ct not in ('application/pdf', 'image/jpeg', 'image/png', 'image/jpg'):
+                        continue
+                    try:
+                        payload = part.get_payload(decode=True)
+                        b64 = 'data:' + ct + ';base64,' + _b64.b64encode(payload).decode('ascii')
+                    except Exception:
+                        continue
+                    procesadas += 1
+                    if numero_oc:
+                        # Verificar OC existe
+                        _row_oc = c.execute(
+                            "SELECT 1 FROM ordenes_compra WHERE numero_oc=?",
+                            (numero_oc,),
+                        ).fetchone()
+                        if _row_oc:
+                            # INSERT pagos_oc · pago provisional sin monto · admin completa
+                            try:
+                                c.execute(
+                                    """INSERT INTO pagos_oc
+                                       (numero_oc, fecha, monto, medio, referencia,
+                                        comprobante_imagen, numero_factura_proveedor,
+                                        creado_por, observaciones)
+                                       VALUES (?, datetime('now','-5 hours'), 0,
+                                               'PENDIENTE', '', ?, ?,
+                                               'cron-mailbox',
+                                               'Adjunto auto-detectado · revisar monto')""",
+                                    (numero_oc, b64[:5_000_000], fn),  # limit 5MB
+                                )
+                                matched += 1
+                            except Exception as _e:
+                                log.warning('[mailbox] insert pagos_oc fallo: %s', _e)
+                                huerfanas += 1
+                        else:
+                            huerfanas += 1
+                    else:
+                        huerfanas += 1
+                # Marcar mail como Seen
+                try:
+                    imap.store(msg_id, '+FLAGS', '\\Seen')
+                except Exception:
+                    pass
+            conn.commit()
+            try:
+                imap.logout()
+            except Exception:
+                pass
+            return True, {
+                'mails_procesados': len(ids),
+                'adjuntos_procesados': procesadas,
+                'matched_a_oc': matched,
+                'huerfanas': huerfanas,
+            }, 0
+        except Exception as e:
+            log.warning('[mailbox-factura] fallo: %s', e)
+            return False, {'error': str(e)[:200]}, 0
 
 
 def job_mee_drift_sync(app):

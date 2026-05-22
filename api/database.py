@@ -6433,6 +6433,23 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
            ('ESENCIA ILUMINADORA',                  'esencia', NULL, 60, 90, 30, 3.0, 3, NULL)""",
     ]),
 
+    (157, "Estados OC simplificación 8→6 · 22-may-2026", [
+        # Sebastián 22-may-2026 · consultor LEAN: menos estados = menos confusión.
+        # Antes 8: Borrador, Revisada, Autorizada, Parcial, Recibida, Pagada, Cancelada, Rechazada
+        # Después 6: Borrador, Autorizada, Recibida, Pagada, Cancelada, Rechazada
+        # · Revisada → Borrador (revisión es un sub-estado interno · no expone)
+        # · Parcial → Autorizada (count parcial via cantidad_recibida_g per item)
+        # Migración data: traslada existentes (sin perder histórico via observaciones)
+        "UPDATE ordenes_compra SET "
+        "  observaciones = COALESCE(observaciones,'') || ' [migrado-Revisada→Borrador 22-may-2026]', "
+        "  estado='Borrador' "
+        "WHERE estado='Revisada'",
+        "UPDATE ordenes_compra SET "
+        "  observaciones = COALESCE(observaciones,'') || ' [migrado-Parcial→Autorizada 22-may-2026]', "
+        "  estado='Autorizada' "
+        "WHERE estado='Parcial'",
+    ]),
+
     (156, "cron_jobs_runs · indices performance · 22-may-2026", [
         # Sebastián 22-may-2026 · Bug #7 audit Crons.
         # _ya_ejecutado_hoy hacía full-scan sin índice · 5 min × 30 jobs = caro

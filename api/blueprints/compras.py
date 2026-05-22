@@ -35,6 +35,13 @@ from templates_py.dashboard_html import DASHBOARD_HTML
 
 bp = Blueprint('compras', __name__)
 
+# ── Estados OC canonical · simplificación 8→6 · 22-may-2026 ─────────────────
+# Consultor LEAN: menos estados = menos confusión Catalina.
+# Eliminados: 'Revisada' (sub-estado interno) y 'Parcial' (calc por cantidad_recibida_g)
+ESTADOS_OC_VALIDOS = ('Borrador', 'Autorizada', 'Recibida', 'Pagada', 'Cancelada', 'Rechazada')
+ESTADOS_OC_ACTIVAS = ('Borrador', 'Autorizada', 'Recibida')  # NO cerradas (Pagada/Cancelada/Rechazada)
+ESTADOS_OC_LEGACY = ('Revisada', 'Parcial')                  # solo lectura · mig 157 los migró
+
 
 # ── Helpers de permisos granulares ────────────────────────────────────────────
 # Los grupos:
@@ -393,7 +400,10 @@ def _notificar_solicitante_email(dest_email, asunto, body_html):
 
 @bp.route('/api/dashboard-stats')
 def dashboard_stats():
-    """Dashboard stats. Sebastian (30-abr-2026): los paneles 'Vencimientos
+    """[LEGACY 22-may-2026] Reemplazado por /api/compras/dashboard-home (consolidado).
+    Mantenido por compat con código viejo · NO usar en código nuevo.
+
+    Dashboard stats. Sebastian (30-abr-2026): los paneles 'Vencimientos
     próximos', 'Top 5 MPs' y 'Estado general de lotes' aparecían vacíos —
     el cálculo dependía del campo estado_lote que NO se mantiene
     automáticamente. Fix: calcular los estados dinámicamente desde
@@ -4539,6 +4549,10 @@ def recibir_oc(numero_oc):
 
 @bp.route('/api/ordenes-compra/<numero_oc>/revisar', methods=['PATCH'])
 def revisar_oc(numero_oc):
+    """[LEGACY 22-may-2026] · estado 'Revisada' eliminado del flujo (mig 157).
+    Endpoint mantiene compat · pero ahora deja la OC en 'Borrador' (no avanza).
+    Usar directamente PATCH /autorizar para mover Borrador→Autorizada.
+    """
     # Audit zero-error 2-may-2026: RBAC + bloqueo si OC ya pagada
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
@@ -4553,7 +4567,8 @@ def revisar_oc(numero_oc):
                               (numero_oc,)).fetchone()
     if estado_row and estado_row[0] in ('Pagada', 'Cancelada', 'Rechazada'):
         return jsonify({'error': f'No se puede revisar OC en estado {estado_row[0]}'}), 409
-    sets = ["estado='Revisada'"]; params = []
+    # FIX · 22-may-2026 · mig 157 elimina 'Revisada' · queda en Borrador
+    sets = ["estado='Borrador'"]; params = []
     if d.get('proveedor'):
         sets.append('proveedor=?'); params.append(str(d['proveedor']))
     if d.get('valor_total') not in (None, '', 0):
@@ -7420,11 +7435,14 @@ def alertas_vivas_compras():
     })
 
 
-# ─── REPORTE EJECUTIVO COMPRAS (Sprint 4) ────────────────────────────────────
+# ─── REPORTE EJECUTIVO COMPRAS [LEGACY] ──────────────────────────────────────
 
 @bp.route('/api/compras/reporte-ejecutivo', methods=['GET'])
 def reporte_ejecutivo_compras():
-    """Reporte gerencial mensual: top proveedores, gasto por categoría,
+    """[LEGACY 22-may-2026] · /api/compras/dashboard-home consolida estas KPIs.
+    Mantenido por compat · usar dashboard-home en código nuevo.
+
+    Reporte gerencial mensual: top proveedores, gasto por categoría,
     pasivo corriente, variaciones de precio.
 
     Query: ?desde=YYYY-MM-DD&hasta=YYYY-MM-DD (default últimos 12 meses)
@@ -8344,6 +8362,108 @@ def compras_roi_proveedores():
             'cumplimiento_pct': round((r[5] / r[1] * 100) if r[1] else 0, 1),
         })
     return jsonify({'proveedores': items, 'total': len(items)})
+
+
+@bp.route('/api/compras/coa-upload', methods=['POST'])
+def compras_coa_upload():
+    """Sebastián 22-may-2026 · upload binario COA · INVIMA closure.
+
+    Acepta PDF/JPG/PNG (≤10MB) · guarda en Render persistent disk (/var/data/coa/)
+    · NO requiere S3/Cloudinary · path local persistente.
+
+    Body multipart/form-data:
+      - archivo: PDF/JPG/PNG
+      - codigo_mp (opt): asocia el COA a un MP específico
+      - lote_proveedor (opt): identifica lote del COA
+
+    Returns: { coa_url: '/api/compras/coa-download/<id>', coa_filename, size_kb }
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    if not (user in ADMIN_USERS or user in COMPRAS_ACCESS):
+        return jsonify({'error': 'Solo Compras/Admin pueden subir COA'}), 403
+    if 'archivo' not in request.files:
+        return jsonify({'error': 'Falta archivo (campo multipart \'archivo\')'}), 400
+    f = request.files['archivo']
+    if not f or not f.filename:
+        return jsonify({'error': 'Archivo vacío'}), 400
+    # Validar magic bytes (no confiar solo extensión)
+    head = f.read(8)
+    f.seek(0)
+    if head[:4] == b'%PDF':
+        ext = 'pdf'; mime = 'application/pdf'
+    elif head[:3] == b'\xff\xd8\xff':
+        ext = 'jpg'; mime = 'image/jpeg'
+    elif head[:8] == b'\x89PNG\r\n\x1a\n':
+        ext = 'png'; mime = 'image/png'
+    else:
+        return jsonify({'error': 'Formato no soportado · solo PDF/JPG/PNG'}), 400
+    # Tamaño max 10MB
+    f.seek(0, 2); size = f.tell(); f.seek(0)
+    if size > 10 * 1024 * 1024:
+        return jsonify({'error': f'Archivo > 10MB ({size//1024}KB)'}), 413
+    # Carpeta destino
+    import os as _os, uuid as _uuid
+    coa_dir = _os.environ.get('COA_STORAGE_DIR', '/var/data/coa')
+    try:
+        _os.makedirs(coa_dir, exist_ok=True)
+    except Exception as e:
+        log.warning('No pude crear %s: %s · fallback /tmp/coa', coa_dir, e)
+        coa_dir = '/tmp/coa'
+        _os.makedirs(coa_dir, exist_ok=True)
+    # Guardar con nombre único
+    file_id = _uuid.uuid4().hex[:12]
+    safe_name = f'coa_{datetime.now().strftime("%Y%m%d")}_{file_id}.{ext}'
+    full_path = _os.path.join(coa_dir, safe_name)
+    try:
+        f.save(full_path)
+    except Exception as e:
+        return jsonify({'error': f'No pude guardar: {e}'}), 500
+    # audit log
+    conn = get_db(); c = conn.cursor()
+    try:
+        audit_log(c, usuario=user, accion='COA_UPLOAD',
+                  tabla='movimientos', registro_id=file_id,
+                  despues={'filename': safe_name, 'mime': mime,
+                           'size_kb': size // 1024,
+                           'codigo_mp': request.form.get('codigo_mp', ''),
+                           'lote_proveedor': request.form.get('lote_proveedor', '')})
+        conn.commit()
+    except Exception:
+        pass
+    return jsonify({
+        'ok': True,
+        'coa_url': f'/api/compras/coa-download/{safe_name}',
+        'coa_filename': safe_name,
+        'size_kb': size // 1024,
+        'mime': mime,
+    })
+
+
+@bp.route('/api/compras/coa-download/<path:filename>', methods=['GET'])
+def compras_coa_download(filename):
+    """Descarga binaria de COA · session requerida."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    import os as _os
+    # Sanitize · solo nombre del archivo · NO path traversal
+    safe = _os.path.basename(filename)
+    if safe != filename or '..' in filename:
+        return jsonify({'error': 'Nombre inválido'}), 400
+    coa_dir = _os.environ.get('COA_STORAGE_DIR', '/var/data/coa')
+    full = _os.path.join(coa_dir, safe)
+    if not _os.path.exists(full):
+        # Fallback a /tmp/coa si var/data no existe (dev local)
+        full = _os.path.join('/tmp/coa', safe)
+    if not _os.path.exists(full):
+        return jsonify({'error': 'COA no encontrado'}), 404
+    from flask import send_file
+    mime_by_ext = {'pdf': 'application/pdf', 'jpg': 'image/jpeg',
+                   'jpeg': 'image/jpeg', 'png': 'image/png'}
+    ext = safe.rsplit('.', 1)[-1].lower()
+    return send_file(full, mimetype=mime_by_ext.get(ext, 'application/octet-stream'),
+                     as_attachment=False, download_name=safe)
 
 
 @bp.route('/api/compras/ocr-factura', methods=['POST'])
