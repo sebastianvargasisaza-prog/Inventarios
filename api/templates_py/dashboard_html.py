@@ -924,6 +924,11 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       <button onclick="iniciarRegistroProd()">&#9989; Registrar Producción</button>
       <button onclick="abrirRotulos()" style="background:#c0392b;">&#128209; Generar Rótulos</button>
       <button onclick="diagnosticarFormulaActual()" style="background:#0e7490;" title="Mostrar por qué la fórmula no encuentra stock (debug INVIMA)">&#128270; Diagnosticar fórmula</button>
+      <!-- Sebastián 21-may-2026 · acceso directo a "🔧 Huérfanos" desde
+           Producción · antes solo vivía en tab Fórmulas. Catalina ve el error
+           "Stock insuficiente" y desde ACÁ puede reparar TODAS las fórmulas
+           con material_id huérfano (no solo la del producto actual). -->
+      <button onclick="auditarFormulasHuerfanas()" style="background:#9a3412;color:#fff;" title="Detecta y repara material_id huérfanos en TODAS las fórmulas (post-unificación) · arregla 'hay 0g cuando hay stock'">🔧 Reparar TODAS las fórmulas huérfanas</button>
     </div>
     <div id="prod-simul-result" style="margin-top:12px;"></div>
     <div id="prod-msg"></div>
@@ -3867,8 +3872,18 @@ function renderStock(items){
     var k = i.material_id || '';
     if(primerLoteDelMP[k] === undefined) primerLoteDelMP[k] = i.lote;
   });
+  // Sebastián 21-may-2026 · marcar la primera fila de cada MP para que el
+  // Min MP (g) solo se muestre una vez (las demás filas del mismo MP
+  // muestran "↑" para indicar "ver fila de arriba"). Antes parecía que
+  // cada lote tenía mínimo propio · confundía a Sebastián.
+  var __primerLoteVisto = {};
+  items.forEach(function(i){
+    var mid = i.material_id || '';
+    if(!__primerLoteVisto[mid]){ __primerLoteVisto[mid] = i.lote; }
+  });
   items.forEach(function(i,idx){ var gi=_lotes.indexOf(i); if(gi<0)gi=idx;
     var a=i.alerta||'ok';
+    var esPrimerLoteDeMP = __primerLoteVisto[i.material_id||''] === i.lote;
     var qc=i.cantidad_g<=0?'color:#cc0000;font-weight:700;':i.cantidad_g<500?'color:#e68a00;font-weight:700;':'color:#1a8a1a;font-weight:700;';
     var stockTotalMP=(typeof i.stock_total_mp_g==='number')?i.stock_total_mp_g:i.cantidad_g;
     var bajo_min=i.stock_min_g>0 && stockTotalMP < i.stock_min_g;
@@ -3892,7 +3907,11 @@ function renderStock(items){
     h+='<td style="font-weight:600;">'+_escHTML(i.material_nombre||'')+'</td>';
     h+='<td style="color:#888;">'+_escHTML(i.tipo||'')+'</td>';
     h+='<td style="color:#555;">'+(i.proveedor?_escHTML(i.proveedor):'<span style="color:#bbb;">— sin proveedor —</span>')+' <button onclick="abrirEditarProveedor('+gi+')" title="Editar proveedor" style="margin-left:4px;padding:1px 6px;font-size:0.75em;background:#e8f5f5;color:#2B7A78;border:1px solid #b8dada;border-radius:4px;cursor:pointer;">&#9999;&#65039;</button></td>';
-    h+='<td style="text-align:right;'+min_style+'" title="'+_escHTML(min_title)+'">'+(i.stock_min_g||0).toLocaleString()+'</td>';
+    // Mostrar Min solo en primera fila de cada MP · "↑" en las demás (gris)
+    var celdaMin = esPrimerLoteDeMP
+      ? (i.stock_min_g||0).toLocaleString()
+      : '<span style="color:#cbd5e1" title="Mínimo aplica al material completo · ver primera fila del mismo MP">↑</span>';
+    h+='<td style="text-align:right;'+(esPrimerLoteDeMP?min_style:'')+'" title="'+_escHTML(min_title)+'">'+celdaMin+'</td>';
     h+='<td style="font-family:monospace;">'+_escHTML(i.lote||'')+'</td>';
     h+='<td style="text-align:right;'+qc+'">'+(i.cantidad_g||0).toLocaleString()+'</td>';
     h+='<td style="text-align:center;font-weight:700;color:#667eea;">'+_escHTML(i.estanteria||'')+'</td>';

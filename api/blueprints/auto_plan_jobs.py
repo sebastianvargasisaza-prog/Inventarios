@@ -592,6 +592,11 @@ JOBS_SCHEDULE = [
     ('tecnica_vencimientos',  7, 45, None, None,                'job_tecnica_vencimientos'),
     # ⭐ Planta · diario 7:50 · marca VENCIDO en lotes con fecha_venc pasada (INVIMA)
     ('marcar_vencidos',       7, 50, None, None,                'job_marcar_vencidos'),
+    # Sebastián 21-may-2026 · auto-reparar fórmulas con material_id huérfano.
+    # Causa raíz: cuando se unifican MPs, formula_items.material_id puede
+    # quedar apuntando a un código viejo sin lotes. El error "Hay 0g" cuando
+    # SÍ hay stock viene de aquí. Cron diario 4:00 AM repara automático.
+    ('auto_reparar_huerfanas',4,  0, None, None,                'job_auto_reparar_huerfanas'),
     # ⭐ Zero-Error · diario 8:00 · validación profunda matemática (8 checks)
     ('validacion_profunda',   8,  0, None, None,                'job_validacion_profunda'),
     # ⭐ Animus · L-V 8:00am · asignar 5 SKUs para conteo fisico a Daniela
@@ -3361,6 +3366,78 @@ def job_marcar_vencidos(app):
             conn.rollback()
             log.exception('marcar_vencidos fallo: %s', e)
             return False, {'error': str(e)[:300]}, 0
+
+
+def job_auto_reparar_huerfanas(app):
+    """Sebastián 21-may-2026 · cron diario 4:00 AM.
+
+    Detecta fórmulas con `formula_items.material_id` huérfano (apunta a un
+    código que no tiene lotes en movimientos) y las repara automáticamente
+    apuntándolas al MP correcto (mismo nombre/INCI · con stock real).
+
+    Causa raíz: cuando se unifican MPs duplicados, las fórmulas que tenían
+    el código viejo quedan huérfanas → "Stock insuficiente · hay 0g".
+    Antes había que correr el repair manualmente desde UI.
+    """
+    with app.app_context():
+        from database import get_db as _gdb
+        conn = _gdb(); c = conn.cursor()
+        try:
+            rows = c.execute("""
+                SELECT DISTINCT fi.material_id, fi.material_nombre
+                FROM formula_items fi
+                WHERE fi.material_id IS NOT NULL AND fi.material_id != ''
+                  AND NOT EXISTS (
+                    SELECT 1 FROM movimientos m
+                    WHERE m.material_id = fi.material_id
+                  )
+            """).fetchall()
+            huerfanos = [(r[0], r[1] or '') for r in rows]
+        except Exception as e:
+            log.exception('auto_reparar_huerfanas detectar fallo')
+            return False, {'error': str(e)[:200]}, 0
+        if not huerfanos:
+            return True, {'huerfanos': 0, 'reparados': 0}, 0
+        reparados = 0
+        log.info('[auto_reparar_huerfanas] detectados %d codigos huerfanos', len(huerfanos))
+        for cod_huerfano, nombre_huerfano in huerfanos:
+            if not nombre_huerfano:
+                continue
+            try:
+                cand = c.execute("""
+                    SELECT m.codigo_mp, m.nombre_comercial
+                    FROM maestro_mps m
+                    WHERE COALESCE(m.activo,1)=1
+                      AND m.codigo_mp != ?
+                      AND (
+                        LOWER(m.nombre_comercial) = LOWER(?)
+                        OR LOWER(m.nombre_inci) = LOWER(?)
+                      )
+                      AND EXISTS (
+                        SELECT 1 FROM movimientos mv WHERE mv.material_id = m.codigo_mp
+                      )
+                    LIMIT 1
+                """, (cod_huerfano, nombre_huerfano, nombre_huerfano)).fetchone()
+                if cand:
+                    c.execute("""
+                        UPDATE formula_items SET material_id=?, material_nombre=?
+                        WHERE material_id=?
+                    """, (cand[0], cand[1] or nombre_huerfano, cod_huerfano))
+                    reparados += 1
+                    log.info('[auto_reparar_huerfanas] %s -> %s (%s)', cod_huerfano, cand[0], nombre_huerfano)
+            except Exception as e:
+                log.warning('[auto_reparar_huerfanas] %s fallo: %s', cod_huerfano, e)
+                continue
+        try:
+            conn.commit()
+        except Exception:
+            try: conn.rollback()
+            except Exception: pass
+        return True, {
+            'huerfanos_detectados': len(huerfanos),
+            'reparados_auto': reparados,
+            'pendientes_manual': len(huerfanos) - reparados,
+        }, 0
 
 
 def _loop_multi_cron(app):
