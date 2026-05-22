@@ -6433,6 +6433,66 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
            ('ESENCIA ILUMINADORA',                  'esencia', NULL, 60, 90, 30, 3.0, 3, NULL)""",
     ]),
 
+    (158, "MP aliases · búsqueda inteligente por abreviatura INCI · 22-may-2026", [
+        # Sebastián 22-may-2026: 'fórmula MAXLASH dice SAP es Sodium Ascorbyl
+        # Phosphate · cuando busco SAP en inventario no sale'.
+        # Solución: tabla de alias que mapea abbreviatura ↔ código_mp + INCI completo.
+        """CREATE TABLE IF NOT EXISTS mp_aliases (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            alias TEXT NOT NULL,
+            codigo_mp TEXT,
+            nombre_inci_canonical TEXT,
+            tipo TEXT DEFAULT 'abreviatura'
+                CHECK(tipo IN ('abreviatura','sinonimo','typo_comun','translation')),
+            fuente TEXT DEFAULT 'manual'
+                CHECK(fuente IN ('manual','seed','auto-detectado','catalina','sebastian')),
+            creado_en TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            creado_por TEXT,
+            activo INTEGER NOT NULL DEFAULT 1
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_mp_aliases_alias ON mp_aliases(LOWER(alias))",
+        "CREATE INDEX IF NOT EXISTS idx_mp_aliases_codigo ON mp_aliases(codigo_mp)",
+        # Seed abreviaturas comunes INCI cosmética
+        "INSERT OR IGNORE INTO mp_aliases (alias, nombre_inci_canonical, tipo, fuente) VALUES ('SAP', 'Sodium Ascorbyl Phosphate', 'abreviatura', 'seed')",
+        "INSERT OR IGNORE INTO mp_aliases (alias, nombre_inci_canonical, tipo, fuente) VALUES ('MAP', 'Magnesium Ascorbyl Phosphate', 'abreviatura', 'seed')",
+        "INSERT OR IGNORE INTO mp_aliases (alias, nombre_inci_canonical, tipo, fuente) VALUES ('HA',  'Hyaluronic Acid', 'abreviatura', 'seed')",
+        "INSERT OR IGNORE INTO mp_aliases (alias, nombre_inci_canonical, tipo, fuente) VALUES ('SHA', 'Sodium Hyaluronate', 'abreviatura', 'seed')",
+        "INSERT OR IGNORE INTO mp_aliases (alias, nombre_inci_canonical, tipo, fuente) VALUES ('PG',  'Propylene Glycol', 'abreviatura', 'seed')",
+        "INSERT OR IGNORE INTO mp_aliases (alias, nombre_inci_canonical, tipo, fuente) VALUES ('BG',  'Butylene Glycol', 'abreviatura', 'seed')",
+        "INSERT OR IGNORE INTO mp_aliases (alias, nombre_inci_canonical, tipo, fuente) VALUES ('CG',  'Caprylyl Glycol', 'abreviatura', 'seed')",
+        "INSERT OR IGNORE INTO mp_aliases (alias, nombre_inci_canonical, tipo, fuente) VALUES ('SCI', 'Sodium Cocoyl Isethionate', 'abreviatura', 'seed')",
+        "INSERT OR IGNORE INTO mp_aliases (alias, nombre_inci_canonical, tipo, fuente) VALUES ('SLES','Sodium Laureth Sulfate', 'abreviatura', 'seed')",
+        "INSERT OR IGNORE INTO mp_aliases (alias, nombre_inci_canonical, tipo, fuente) VALUES ('CAPB','Cocamidopropyl Betaine', 'abreviatura', 'seed')",
+        "INSERT OR IGNORE INTO mp_aliases (alias, nombre_inci_canonical, tipo, fuente) VALUES ('EDTA','Ethylenediaminetetraacetic Acid', 'abreviatura', 'seed')",
+        "INSERT OR IGNORE INTO mp_aliases (alias, nombre_inci_canonical, tipo, fuente) VALUES ('TEA', 'Triethanolamine', 'abreviatura', 'seed')",
+        "INSERT OR IGNORE INTO mp_aliases (alias, nombre_inci_canonical, tipo, fuente) VALUES ('DEA', 'Diethanolamine', 'abreviatura', 'seed')",
+        "INSERT OR IGNORE INTO mp_aliases (alias, nombre_inci_canonical, tipo, fuente) VALUES ('MEA', 'Monoethanolamine', 'abreviatura', 'seed')",
+        "INSERT OR IGNORE INTO mp_aliases (alias, nombre_inci_canonical, tipo, fuente) VALUES ('SLS', 'Sodium Lauryl Sulfate', 'abreviatura', 'seed')",
+        "INSERT OR IGNORE INTO mp_aliases (alias, nombre_inci_canonical, tipo, fuente) VALUES ('PEG', 'Polyethylene Glycol', 'abreviatura', 'seed')",
+        "INSERT OR IGNORE INTO mp_aliases (alias, nombre_inci_canonical, tipo, fuente) VALUES ('DMDM','DMDM Hydantoin', 'abreviatura', 'seed')",
+        "INSERT OR IGNORE INTO mp_aliases (alias, nombre_inci_canonical, tipo, fuente) VALUES ('BHT', 'Butylated Hydroxytoluene', 'abreviatura', 'seed')",
+        "INSERT OR IGNORE INTO mp_aliases (alias, nombre_inci_canonical, tipo, fuente) VALUES ('BHA', 'Butylated Hydroxyanisole', 'abreviatura', 'seed')",
+        "INSERT OR IGNORE INTO mp_aliases (alias, nombre_inci_canonical, tipo, fuente) VALUES ('AHA', 'Alpha Hydroxy Acid', 'abreviatura', 'seed')",
+        "INSERT OR IGNORE INTO mp_aliases (alias, nombre_inci_canonical, tipo, fuente) VALUES ('BHA', 'Beta Hydroxy Acid', 'abreviatura', 'seed')",
+        "INSERT OR IGNORE INTO mp_aliases (alias, nombre_inci_canonical, tipo, fuente) VALUES ('PCA', 'Pyrrolidone Carboxylic Acid', 'abreviatura', 'seed')",
+        "INSERT OR IGNORE INTO mp_aliases (alias, nombre_inci_canonical, tipo, fuente) VALUES ('NaPCA','Sodium PCA', 'abreviatura', 'seed')",
+        "INSERT OR IGNORE INTO mp_aliases (alias, nombre_inci_canonical, tipo, fuente) VALUES ('VitC','Ascorbic Acid', 'abreviatura', 'seed')",
+        "INSERT OR IGNORE INTO mp_aliases (alias, nombre_inci_canonical, tipo, fuente) VALUES ('VitE','Tocopherol', 'abreviatura', 'seed')",
+        "INSERT OR IGNORE INTO mp_aliases (alias, nombre_inci_canonical, tipo, fuente) VALUES ('VitB5','Panthenol', 'abreviatura', 'seed')",
+        "INSERT OR IGNORE INTO mp_aliases (alias, nombre_inci_canonical, tipo, fuente) VALUES ('VitB3','Niacinamide', 'abreviatura', 'seed')",
+        "INSERT OR IGNORE INTO mp_aliases (alias, nombre_inci_canonical, tipo, fuente) VALUES ('CoQ10','Ubiquinone', 'abreviatura', 'seed')",
+        # Typos comunes
+        "INSERT OR IGNORE INTO mp_aliases (alias, nombre_inci_canonical, tipo, fuente) VALUES ('ascorbil', 'Ascorbic Acid', 'typo_comun', 'seed')",
+        "INSERT OR IGNORE INTO mp_aliases (alias, nombre_inci_canonical, tipo, fuente) VALUES ('ascorbyl', 'Ascorbic Acid', 'typo_comun', 'seed')",
+        "INSERT OR IGNORE INTO mp_aliases (alias, nombre_inci_canonical, tipo, fuente) VALUES ('hialuronic', 'Hyaluronic Acid', 'typo_comun', 'seed')",
+        "INSERT OR IGNORE INTO mp_aliases (alias, nombre_inci_canonical, tipo, fuente) VALUES ('hialuronico', 'Hyaluronic Acid', 'typo_comun', 'seed')",
+        "INSERT OR IGNORE INTO mp_aliases (alias, nombre_inci_canonical, tipo, fuente) VALUES ('niacinamida', 'Niacinamide', 'translation', 'seed')",
+        "INSERT OR IGNORE INTO mp_aliases (alias, nombre_inci_canonical, tipo, fuente) VALUES ('pantenol', 'Panthenol', 'translation', 'seed')",
+        "INSERT OR IGNORE INTO mp_aliases (alias, nombre_inci_canonical, tipo, fuente) VALUES ('glicerina', 'Glycerin', 'translation', 'seed')",
+        "INSERT OR IGNORE INTO mp_aliases (alias, nombre_inci_canonical, tipo, fuente) VALUES ('propilenglicol', 'Propylene Glycol', 'translation', 'seed')",
+        "INSERT OR IGNORE INTO mp_aliases (alias, nombre_inci_canonical, tipo, fuente) VALUES ('butilenglicol', 'Butylene Glycol', 'translation', 'seed')",
+    ]),
+
     (157, "Estados OC simplificación 8→6 · 22-may-2026", [
         # Sebastián 22-may-2026 · consultor LEAN: menos estados = menos confusión.
         # Antes 8: Borrador, Revisada, Autorizada, Parcial, Recibida, Pagada, Cancelada, Rechazada

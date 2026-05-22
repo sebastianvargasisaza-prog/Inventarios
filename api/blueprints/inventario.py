@@ -5695,6 +5695,227 @@ def maestro_mps_next_codigo():
     })
 
 
+@bp.route('/api/maestro-mps/buscar-inteligente', methods=['GET'])
+def maestro_mps_buscar_inteligente():
+    """SHOPIFY-FIX · 22-may-2026 · búsqueda inteligente por abreviatura INCI.
+
+    Sebastián 22-may-2026: 'fórmula MAXLASH dice SAP es Sodium Ascorbyl Phosphate
+    · cuando busco SAP en inventario no me sale'.
+
+    Estrategia:
+      1. Query exacta en codigo_mp, nombre_comercial, nombre_inci (LIKE)
+      2. Si la query matchea un alias (mp_aliases.alias case-insensitive) ·
+         expandir a INCI canonical + buscar por ese INCI
+      3. Normalización: sin acentos, sin guiones, lowercase
+      4. Devolver ranked por relevancia (exact > startswith > contains)
+
+    Query params:
+      q: string mínimo 2 chars
+      limit: max 20 (default 12)
+      include_inactive: '1' incluye activo=0
+
+    Returns: {mps: [{codigo_mp, nombre_inci, nombre_comercial, ...,
+                     match_via: 'codigo'|'comercial'|'inci'|'alias'|'norm',
+                     match_score: 0-100}], aliases_aplicados: [...]}
+    """
+    u, err, code = _require_session()
+    if err: return err, code
+    q = (request.args.get('q') or '').strip()
+    if len(q) < 2:
+        return jsonify({'mps': [], 'mensaje': 'Query mínimo 2 chars'})
+    try:
+        limit = max(1, min(int(request.args.get('limit', 12)), 50))
+    except (TypeError, ValueError):
+        limit = 12
+    include_inactive = request.args.get('include_inactive') == '1'
+
+    import unicodedata as _ud, re as _re
+    def _norm(s):
+        if not s:
+            return ''
+        s2 = _ud.normalize('NFD', str(s)).encode('ascii', 'ignore').decode('ascii')
+        return _re.sub(r'[\-_\.\s]+', ' ', s2.lower()).strip()
+
+    q_norm = _norm(q)
+    conn = get_db(); c = conn.cursor()
+
+    # 1. Aliases · expandir abreviatura a INCI canonical
+    aliases_aplicados = []
+    inci_expansion = []
+    try:
+        alias_rows = c.execute(
+            """SELECT alias, codigo_mp, nombre_inci_canonical, tipo
+               FROM mp_aliases
+               WHERE LOWER(alias)=? AND COALESCE(activo,1)=1""",
+            (q.lower(),),
+        ).fetchall()
+        for ar in alias_rows:
+            aliases_aplicados.append({
+                'alias': ar[0], 'inci_canonical': ar[2], 'tipo': ar[3],
+            })
+            if ar[2]:
+                inci_expansion.append(ar[2])
+    except Exception:
+        pass
+
+    # 2. Búsqueda principal
+    where_activo = '' if include_inactive else 'AND activo=1 '
+    # Q literal
+    rows = c.execute(
+        f"""SELECT codigo_mp, COALESCE(nombre_inci,''), COALESCE(nombre_comercial,''),
+                   COALESCE(tipo,''), COALESCE(proveedor,''),
+                   COALESCE(stock_minimo,0), COALESCE(precio_referencia,0),
+                   COALESCE(tipo_material,'MP'), activo
+            FROM maestro_mps
+            WHERE 1=1 {where_activo}
+              AND (LOWER(codigo_mp) LIKE ?
+                   OR LOWER(COALESCE(nombre_comercial,'')) LIKE ?
+                   OR LOWER(COALESCE(nombre_inci,'')) LIKE ?)
+            LIMIT 200""",
+        (f'%{q.lower()}%', f'%{q.lower()}%', f'%{q.lower()}%'),
+    ).fetchall()
+
+    matches = {}
+    for r in rows:
+        cod = r[0]
+        score = 0
+        via = 'norm'
+        if q.lower() in cod.lower():
+            score = 100; via = 'codigo'
+        elif q.lower() in (r[2] or '').lower():
+            score = 80; via = 'comercial'
+        elif q.lower() in (r[1] or '').lower():
+            score = 70; via = 'inci'
+        matches[cod] = (score, via, r)
+
+    # 3. Expansión vía alias (búsqueda extra)
+    for inci_can in inci_expansion:
+        rows_alias = c.execute(
+            f"""SELECT codigo_mp, COALESCE(nombre_inci,''), COALESCE(nombre_comercial,''),
+                       COALESCE(tipo,''), COALESCE(proveedor,''),
+                       COALESCE(stock_minimo,0), COALESCE(precio_referencia,0),
+                       COALESCE(tipo_material,'MP'), activo
+                FROM maestro_mps
+                WHERE 1=1 {where_activo}
+                  AND (LOWER(COALESCE(nombre_inci,'')) LIKE ?
+                       OR LOWER(COALESCE(nombre_comercial,'')) LIKE ?)
+                LIMIT 50""",
+            (f'%{inci_can.lower()}%', f'%{inci_can.lower()}%'),
+        ).fetchall()
+        for r in rows_alias:
+            cod = r[0]
+            if cod not in matches:
+                matches[cod] = (90, 'alias', r)
+
+    # 4. Búsqueda por normalización (sin acentos, sin guiones)
+    if len(matches) < limit:
+        try:
+            # Lista todos los MPs y filtro en Python (no hay func normalize en SQLite)
+            all_rows = c.execute(
+                f"""SELECT codigo_mp, COALESCE(nombre_inci,''), COALESCE(nombre_comercial,''),
+                           COALESCE(tipo,''), COALESCE(proveedor,''),
+                           COALESCE(stock_minimo,0), COALESCE(precio_referencia,0),
+                           COALESCE(tipo_material,'MP'), activo
+                    FROM maestro_mps
+                    WHERE 1=1 {where_activo}
+                    LIMIT 5000""",
+            ).fetchall()
+            for r in all_rows:
+                if r[0] in matches:
+                    continue
+                if (q_norm in _norm(r[2]) or q_norm in _norm(r[1])):
+                    matches[r[0]] = (50, 'norm', r)
+                    if len(matches) >= limit + 5:
+                        break
+        except Exception:
+            pass
+
+    # Ranking + format
+    sorted_matches = sorted(matches.values(), key=lambda x: -x[0])[:limit]
+    out = []
+    for score, via, r in sorted_matches:
+        out.append({
+            'codigo_mp': r[0],
+            'nombre_inci': r[1],
+            'nombre_comercial': r[2],
+            'tipo': r[3],
+            'proveedor': r[4],
+            'stock_minimo': r[5],
+            'precio_referencia': r[6],
+            'tipo_material': r[7],
+            'activo': bool(r[8]),
+            'match_via': via,
+            'match_score': score,
+        })
+    return jsonify({
+        'mps': out,
+        'total': len(out),
+        'query': q,
+        'aliases_aplicados': aliases_aplicados,
+    })
+
+
+@bp.route('/api/maestro-mps/alias', methods=['GET', 'POST', 'DELETE'])
+def maestro_mps_alias():
+    """Sebastián 22-may-2026 · CRUD aliases de MP · agregar abreviaturas
+    cuando aparecen casos nuevos · auto-aprendizaje.
+
+    GET ?q=SAP → busca aliases por substring
+    POST {alias, codigo_mp?, nombre_inci_canonical, tipo} → INSERT
+    DELETE ?id=N → remove
+    """
+    u, err, code = _require_session()
+    if err: return err, code
+    conn = get_db(); c = conn.cursor()
+    if request.method == 'GET':
+        q = (request.args.get('q') or '').strip()
+        sql = "SELECT id, alias, codigo_mp, nombre_inci_canonical, tipo, fuente, creado_por, creado_en, activo FROM mp_aliases WHERE COALESCE(activo,1)=1"
+        params = []
+        if q:
+            sql += " AND (LOWER(alias) LIKE ? OR LOWER(nombre_inci_canonical) LIKE ?)"
+            params.extend([f'%{q.lower()}%', f'%{q.lower()}%'])
+        sql += " ORDER BY alias LIMIT 100"
+        rows = c.execute(sql, params).fetchall()
+        return jsonify({'aliases': [
+            {'id': r[0], 'alias': r[1], 'codigo_mp': r[2],
+             'nombre_inci_canonical': r[3], 'tipo': r[4], 'fuente': r[5],
+             'creado_por': r[6], 'creado_en': r[7], 'activo': bool(r[8])}
+            for r in rows
+        ]})
+    if request.method == 'POST':
+        d = request.json or {}
+        alias = (d.get('alias') or '').strip()
+        inci = (d.get('nombre_inci_canonical') or '').strip()
+        if not alias or not inci:
+            return jsonify({'error': 'alias y nombre_inci_canonical requeridos'}), 400
+        tipo = d.get('tipo', 'abreviatura')
+        if tipo not in ('abreviatura', 'sinonimo', 'typo_comun', 'translation'):
+            tipo = 'abreviatura'
+        codigo_mp = d.get('codigo_mp') or None
+        try:
+            c.execute(
+                """INSERT INTO mp_aliases (alias, codigo_mp, nombre_inci_canonical,
+                                            tipo, fuente, creado_por)
+                   VALUES (?, ?, ?, ?, 'manual', ?)""",
+                (alias, codigo_mp, inci, tipo, u),
+            )
+            conn.commit()
+            return jsonify({'ok': True, 'id': c.lastrowid})
+        except Exception as e:
+            return jsonify({'error': str(e)}), 400
+    if request.method == 'DELETE':
+        try:
+            aid = int(request.args.get('id', 0))
+        except (TypeError, ValueError):
+            return jsonify({'error': 'id inválido'}), 400
+        if not aid:
+            return jsonify({'error': 'id requerido'}), 400
+        c.execute("UPDATE mp_aliases SET activo=0 WHERE id=?", (aid,))
+        conn.commit()
+        return jsonify({'ok': True})
+    return jsonify({'error': 'método no permitido'}), 405
+
+
 @bp.route('/api/maestro-mps', methods=['GET','POST'])
 def handle_maestro():
     conn = get_db(); c = conn.cursor()

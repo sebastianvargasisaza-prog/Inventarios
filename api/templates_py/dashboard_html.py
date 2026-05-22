@@ -4044,7 +4044,7 @@ function seleccionarMP(mp){
   var panel=document.getElementById('ing-nueva-mp-inline');if(panel)panel.style.display='none';
   ocultarDropMP();
 }
-function buscarMPIngreso(val){
+async function buscarMPIngreso(val){
   val=(val||'').trim();
   var st=document.getElementById('ing-status'),panel=document.getElementById('ing-nueva-mp-inline'),dd=document.getElementById('mp-dropdown');
   if(val.length<2){
@@ -4054,18 +4054,44 @@ function buscarMPIngreso(val){
     if(dd)dd.style.display='none';
     return;
   }
-  // Use cached catalog (_cat loaded by initIngreso) — avoids HTTP request on every keypress
+  // Búsqueda local primero (rápido · sin HTTP)
   var mps=Object.values(_cat);
   var busq=val.toLowerCase();
   var matches=mps.filter(function(m){
     return (m.codigo_mp||'').toLowerCase().includes(busq)||(m.nombre_comercial||'').toLowerCase().includes(busq)||(m.nombre_inci||'').toLowerCase().includes(busq);
   }).slice(0,12);
+
+  // SHOPIFY-FIX · 22-may-2026 · si no matchea local · fallback a endpoint
+  // inteligente con aliases INCI (SAP → Sodium Ascorbyl Phosphate)
+  var aliasInfo=null;
+  if(!matches.length && val.length>=2){
+    try{
+      var r=await fetch('/api/maestro-mps/buscar-inteligente?q='+encodeURIComponent(val));
+      if(r.ok){
+        var d=await r.json();
+        if(d.mps && d.mps.length){
+          matches=d.mps.slice(0,12);
+          if(d.aliases_aplicados && d.aliases_aplicados.length){
+            aliasInfo=d.aliases_aplicados[0];
+          }
+        }
+      }
+    }catch(e){}
+  }
+
   window._mpMatches=matches;
   if(dd){
     if(!matches.length){dd.style.display='none';}
     else{
       dd.style.display='block';
-      dd.innerHTML=matches.map(function(m,i){return '<div class="mp-item" style="padding:9px 14px;cursor:pointer;border-bottom:1px solid #eee;font-size:0.9em;" onmousedown="seleccionarMP(_mpMatches['+i+'])">'+'<span style="font-family:monospace;color:#667eea;font-size:0.85em;">'+m.codigo_mp+'</span> &mdash; <strong>'+m.nombre_comercial+'</strong>'+(m.proveedor?' <span style="color:#888;font-size:0.82em;">('+m.proveedor+')</span>':'')+'</div>';}).join('');
+      var header='';
+      if(aliasInfo){
+        header='<div style="padding:7px 14px;background:#fff3cd;border-bottom:1px solid #ffc107;font-size:0.82em;color:#856404">💡 <b>'+escapeHtml(aliasInfo.alias)+'</b> = <i>'+escapeHtml(aliasInfo.inci_canonical)+'</i></div>';
+      }
+      dd.innerHTML=header+matches.map(function(m,i){
+        var via=m.match_via?' <span style="color:#10b981;font-size:0.75em">['+m.match_via+']</span>':'';
+        return '<div class="mp-item" style="padding:9px 14px;cursor:pointer;border-bottom:1px solid #eee;font-size:0.9em;" onmousedown="seleccionarMP(_mpMatches['+i+'])">'+'<span style="font-family:monospace;color:#667eea;font-size:0.85em;">'+escapeHtml(m.codigo_mp)+'</span> &mdash; <strong>'+escapeHtml(m.nombre_comercial||m.nombre_inci||'')+'</strong>'+via+(m.proveedor?' <span style="color:#888;font-size:0.82em;">('+escapeHtml(m.proveedor)+')</span>':'')+'</div>';
+      }).join('');
     }
   }
   var found=mps.find(function(m){return (m.codigo_mp||'').toLowerCase()===busq;});
