@@ -599,6 +599,9 @@ JOBS_SCHEDULE = [
     ('auto_reparar_huerfanas',4,  0, None, None,                'job_auto_reparar_huerfanas'),
     # PQR SLA · Ley 1755/2015 CO · diario 8:15 AM
     ('pqr_sla_vencido',       8, 15, None, None,                'job_pqr_sla_vencido'),
+    # MEE drift sync · cache vs SUM(movimientos_mee) · diario 3:00 AM
+    # Hasta migrar a stock=SUM canonical, este cron repara drift silencioso
+    ('mee_drift_sync',        3,  0, None, None,                'job_mee_drift_sync'),
     # ⭐ Zero-Error · diario 8:00 · validación profunda matemática (8 checks)
     ('validacion_profunda',   8,  0, None, None,                'job_validacion_profunda'),
     # ⭐ Animus · L-V 8:00am · asignar 5 SKUs para conteo fisico a Daniela
@@ -3391,6 +3394,56 @@ def job_marcar_vencidos(app):
             conn.rollback()
             log.exception('marcar_vencidos fallo: %s', e)
             return False, {'error': str(e)[:300]}, 0
+
+
+def job_mee_drift_sync(app):
+    """Sebastián 21-may-2026 · cron diario 3:00 AM · sync MEE cache vs movimientos.
+
+    `maestro_mee.stock_actual` es cache derivable. Antes había riesgo de drift
+    cuando UPDATE de cache fallaba pero INSERT movimiento sí · este cron
+    detecta drift > 0.5g y resincroniza desde SUM(movimientos_mee).
+    """
+    with app.app_context():
+        from database import get_db as _gdb
+        conn = _gdb(); c = conn.cursor()
+        try:
+            rows = c.execute(
+                "SELECT codigo, COALESCE(stock_actual,0) FROM maestro_mee "
+                "WHERE COALESCE(estado,'Activo')='Activo'",
+            ).fetchall()
+        except Exception as e:
+            return False, {'error': str(e)[:200]}, 0
+        drift_count = 0
+        drift_codes = []
+        for cod, cache_val in rows:
+            try:
+                sum_row = c.execute(
+                    """SELECT COALESCE(SUM(CASE
+                           WHEN tipo='Entrada' THEN cantidad
+                           WHEN tipo='Salida'  THEN -cantidad
+                           WHEN tipo='Ajuste'  THEN cantidad
+                           ELSE 0 END), 0)
+                       FROM movimientos_mee WHERE mee_codigo=? AND COALESCE(anulado,0)=0""",
+                    (cod,),
+                ).fetchone()
+                real = max(float(sum_row[0] or 0), 0)
+                cache_f = float(cache_val or 0)
+                if abs(real - cache_f) > 0.5:
+                    c.execute(
+                        "UPDATE maestro_mee SET stock_actual=? WHERE codigo=?",
+                        (real, cod),
+                    )
+                    drift_count += 1
+                    if len(drift_codes) < 10:
+                        drift_codes.append({'codigo': cod, 'cache': cache_f, 'real': real})
+            except Exception:
+                continue
+        try:
+            conn.commit()
+        except Exception:
+            pass
+        log.info('[mee_drift_sync] reparados=%d', drift_count)
+        return True, {'reparados': drift_count, 'top_drift': drift_codes}, 0
 
 
 def job_pqr_sla_vencido(app):
