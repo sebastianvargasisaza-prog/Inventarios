@@ -8289,6 +8289,8 @@ function registrarLiberacion(){
 }
 function loadLiberaciones(estado){
   var url="/api/liberacion"+(estado?"?estado="+encodeURIComponent(estado):"");
+  // SEC-FIX · 22-may-2026 · escape strings DB (XSS stored prevention)
+  function _eLib(s){return String(s||'').replace(/[&<>"'/]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;',"/":'&#47;'}[c];});}
   fetch(url).then(function(r){return r.json();}).then(function(rows){
     var tb=document.getElementById("lb-tbody"); if(!tb)return;
     tb.innerHTML="";
@@ -8299,7 +8301,7 @@ function loadLiberaciones(estado){
             btns=`<button onclick="aprobarLib(${r.id})" style="background:#28a745;color:#fff;border:none;border-radius:3px;padding:3px 7px;cursor:pointer;font-size:11px;margin-right:3px">Liberar</button>`;
             btns+=`<button onclick="rechazarLib(${r.id})" style="background:#dc3545;color:#fff;border:none;border-radius:3px;padding:3px 7px;cursor:pointer;font-size:11px">Rechazar</button>`;
       }
-        tb.innerHTML+=`<tr><td style="padding:7px;border-bottom:1px solid #eee">${r.lote}</td><td style="padding:7px;border-bottom:1px solid #eee">${r.producto}</td><td style="padding:7px;border-bottom:1px solid #eee">${r.unidades}</td><td style="padding:7px;border-bottom:1px solid #eee">${r.destino}</td><td style="padding:7px;border-bottom:1px solid #eee">${r.cliente||'--'}</td><td style="padding:7px;border-bottom:1px solid #eee">${r.fecha_produccion||'--'}</td><td style="padding:7px;border-bottom:1px solid #eee">${r.fecha_liberacion||'--'}</td><td style="padding:7px;border-bottom:1px solid #eee">${r.aprobado_por||'--'}</td><td style="padding:7px;border-bottom:1px solid #eee"><span style="background:${ec};color:#fff;padding:2px 7px;border-radius:10px;font-size:11px">${r.estado}</span></td><td style="padding:7px;border-bottom:1px solid #eee">${btns}</td></tr>`;
+        tb.innerHTML+=`<tr><td style="padding:7px;border-bottom:1px solid #eee">${_eLib(r.lote)}</td><td style="padding:7px;border-bottom:1px solid #eee">${_eLib(r.producto)}</td><td style="padding:7px;border-bottom:1px solid #eee">${r.unidades||0}</td><td style="padding:7px;border-bottom:1px solid #eee">${_eLib(r.destino)}</td><td style="padding:7px;border-bottom:1px solid #eee">${_eLib(r.cliente||'--')}</td><td style="padding:7px;border-bottom:1px solid #eee">${_eLib(r.fecha_produccion||'--')}</td><td style="padding:7px;border-bottom:1px solid #eee">${_eLib(r.fecha_liberacion||'--')}</td><td style="padding:7px;border-bottom:1px solid #eee">${_eLib(r.aprobado_por||'--')}</td><td style="padding:7px;border-bottom:1px solid #eee"><span style="background:${ec};color:#fff;padding:2px 7px;border-radius:10px;font-size:11px">${_eLib(r.estado)}</span></td><td style="padding:7px;border-bottom:1px solid #eee">${btns}</td></tr>`;
     });
   }).catch(function(){});
 }
