@@ -5522,6 +5522,303 @@ def eliminar_lote(material_id, lote):
     }), 200
 
 
+@bp.route('/api/admin/auditar-formula-mp-match', methods=['GET'])
+def auditar_formula_mp_match():
+    """Sebastián 22-may-2026: auditar TODAS las fórmulas vs maestro MPs.
+
+    Detecta materiales en formula_items que NO matchean con ningún MP en
+    maestro_mps (huérfanos). Para cada huérfano:
+      - Intenta expansión vía mp_aliases (SAP→Sodium Ascorbyl Phosphate)
+      - Busca MP con INCI canonical · si existe sugiere fix
+      - Si NO existe MP · sugiere crearlo
+
+    Returns: {
+      huerfanos: [{material_id, material_nombre, productos_usando[], sugerencia}],
+      conteo: {total_formulas, huerfanos_count, auto_reparables, requiere_crear_mp},
+      aliases_usados: int,
+    }
+    """
+    u, err, code = _require_admin()
+    if err: return err, code
+    conn = get_db(); c = conn.cursor()
+
+    # 1. Set de TODOS los códigos + nombres en maestro_mps
+    mp_codigos = set()
+    mp_por_nombre = {}  # LOWER(nombre) → codigo_mp
+    mp_por_inci = {}    # LOWER(inci) → codigo_mp
+    try:
+        rows_mp = c.execute(
+            """SELECT codigo_mp, COALESCE(nombre_comercial,''),
+                      COALESCE(nombre_inci,''), COALESCE(activo,1)
+               FROM maestro_mps"""
+        ).fetchall()
+    except Exception:
+        rows_mp = []
+    for cod, nom_c, nom_i, activo in rows_mp:
+        mp_codigos.add(cod)
+        if nom_c:
+            mp_por_nombre[nom_c.lower().strip()] = (cod, activo)
+        if nom_i:
+            mp_por_inci[nom_i.lower().strip()] = (cod, activo)
+
+    # 2. Aliases conocidos
+    aliases_dict = {}  # LOWER(alias) → INCI canonical
+    try:
+        rows_al = c.execute(
+            """SELECT alias, nombre_inci_canonical
+               FROM mp_aliases WHERE COALESCE(activo,1)=1"""
+        ).fetchall()
+        for al, inci in rows_al:
+            aliases_dict[al.lower().strip()] = inci
+    except Exception:
+        pass
+
+    # 3. Materiales únicos en formula_items
+    huerfanos = {}
+    auto_reparables = 0
+    requiere_crear = 0
+    try:
+        rows_form = c.execute(
+            """SELECT material_id, material_nombre, producto_nombre, COUNT(*) as usos
+               FROM formula_items
+               WHERE COALESCE(material_nombre,'')!='' OR COALESCE(material_id,'')!=''
+               GROUP BY material_id, material_nombre, producto_nombre"""
+        ).fetchall()
+    except Exception:
+        rows_form = []
+
+    materiales_unicos = {}  # (mat_id, mat_nom) → {productos: [], usos: int}
+    for mat_id, mat_nom, producto, usos in rows_form:
+        key = ((mat_id or '').strip(), (mat_nom or '').strip())
+        if key not in materiales_unicos:
+            materiales_unicos[key] = {'productos': [], 'usos': 0}
+        materiales_unicos[key]['productos'].append(producto)
+        materiales_unicos[key]['usos'] += int(usos or 0)
+
+    total_formulas = len(materiales_unicos)
+
+    for (mat_id, mat_nom), data in materiales_unicos.items():
+        # Match por codigo
+        if mat_id and mat_id in mp_codigos:
+            continue
+        # Match por nombre comercial (exact lowercase)
+        nom_lower = mat_nom.lower().strip()
+        match_por_nombre = mp_por_nombre.get(nom_lower) or mp_por_inci.get(nom_lower)
+        if match_por_nombre:
+            cod_real, activo_real = match_por_nombre
+            if activo_real:
+                continue
+            # Existe pero inactivo
+            huerfanos[(mat_id, mat_nom)] = {
+                'material_id': mat_id,
+                'material_nombre': mat_nom,
+                'productos': data['productos'][:5],
+                'usos_total': data['usos'],
+                'estado': 'MP_INACTIVO',
+                'sugerencia': f'MP existe ({cod_real}) pero activo=0 · reactivar',
+                'accion': 'reactivar',
+                'codigo_sugerido': cod_real,
+            }
+            continue
+        # Match parcial INCI o comercial (contains)
+        sugerencia_match = None
+        for inci_lower, (cod_i, act_i) in mp_por_inci.items():
+            if nom_lower in inci_lower or inci_lower in nom_lower:
+                sugerencia_match = (cod_i, inci_lower, 'inci_parcial')
+                break
+        if not sugerencia_match:
+            for nom2_lower, (cod_n, act_n) in mp_por_nombre.items():
+                if nom_lower in nom2_lower or nom2_lower in nom_lower:
+                    sugerencia_match = (cod_n, nom2_lower, 'nombre_parcial')
+                    break
+
+        # Match por alias
+        alias_inci = aliases_dict.get(nom_lower)
+        if alias_inci:
+            # Buscar MP con ese INCI
+            alias_inci_lower = alias_inci.lower().strip()
+            mp_via_alias = mp_por_inci.get(alias_inci_lower)
+            if not mp_via_alias:
+                # parcial
+                for inci_lower, (cod_i, act_i) in mp_por_inci.items():
+                    if alias_inci_lower in inci_lower:
+                        mp_via_alias = (cod_i, act_i)
+                        break
+            if mp_via_alias:
+                cod_via_alias, act_via = mp_via_alias
+                huerfanos[(mat_id, mat_nom)] = {
+                    'material_id': mat_id,
+                    'material_nombre': mat_nom,
+                    'productos': data['productos'][:5],
+                    'usos_total': data['usos'],
+                    'estado': 'ALIAS_DETECTADO',
+                    'alias_expandido': alias_inci,
+                    'sugerencia': f'Abreviatura {mat_nom} = {alias_inci} → MP {cod_via_alias}',
+                    'accion': 'renombrar_y_vincular',
+                    'codigo_sugerido': cod_via_alias,
+                    'nombre_sugerido': alias_inci,
+                }
+                auto_reparables += 1
+                continue
+            else:
+                # Alias detectado pero MP no existe
+                huerfanos[(mat_id, mat_nom)] = {
+                    'material_id': mat_id,
+                    'material_nombre': mat_nom,
+                    'productos': data['productos'][:5],
+                    'usos_total': data['usos'],
+                    'estado': 'ALIAS_SIN_MP',
+                    'alias_expandido': alias_inci,
+                    'sugerencia': f'{mat_nom} = {alias_inci} pero NO existe MP con ese INCI · CREAR',
+                    'accion': 'crear_mp',
+                    'nombre_sugerido': alias_inci,
+                }
+                requiere_crear += 1
+                continue
+        if sugerencia_match:
+            cod_s, nom_s, tipo_s = sugerencia_match
+            huerfanos[(mat_id, mat_nom)] = {
+                'material_id': mat_id,
+                'material_nombre': mat_nom,
+                'productos': data['productos'][:5],
+                'usos_total': data['usos'],
+                'estado': 'MATCH_PARCIAL',
+                'sugerencia': f'Match parcial ({tipo_s}) con {cod_s} ({nom_s})',
+                'accion': 'verificar',
+                'codigo_sugerido': cod_s,
+            }
+            continue
+        # No match en nada
+        huerfanos[(mat_id, mat_nom)] = {
+            'material_id': mat_id,
+            'material_nombre': mat_nom,
+            'productos': data['productos'][:5],
+            'usos_total': data['usos'],
+            'estado': 'SIN_MATCH',
+            'sugerencia': f'NO existe en maestro_mps · ¿crear o agregar alias?',
+            'accion': 'crear_mp_o_alias',
+        }
+        requiere_crear += 1
+
+    huerfanos_list = sorted(huerfanos.values(),
+                            key=lambda x: (-x['usos_total'], x['material_nombre']))
+
+    return jsonify({
+        'huerfanos': huerfanos_list,
+        'conteo': {
+            'total_materiales_formula': total_formulas,
+            'huerfanos': len(huerfanos),
+            'porcentaje_huerfanos': round(len(huerfanos) / max(total_formulas, 1) * 100, 1),
+            'auto_reparables_alias': auto_reparables,
+            'requiere_crear_mp': requiere_crear,
+        },
+        'aliases_cargados': len(aliases_dict),
+    })
+
+
+@bp.route('/api/admin/normalizar-formulas-mp', methods=['POST'])
+def normalizar_formulas_mp():
+    """Sebastián 22-may-2026 · aplica fix automático a fórmulas con abbreviaturas.
+
+    Body: {
+      dry_run: bool (default True) · si False realmente actualiza
+      solo_alias: bool (default True) · solo normaliza casos con alias detectado
+    }
+
+    Para cada material en formula_items con alias detectado:
+      - UPDATE material_nombre = alias.nombre_inci_canonical
+      - UPDATE material_id = código del MP que matchea ese INCI
+      - audit_log NORMALIZAR_FORMULA_MP por cada fila
+    """
+    u, err, code = _require_admin()
+    if err: return err, code
+    d = request.json or {}
+    dry_run = d.get('dry_run', True)
+    solo_alias = d.get('solo_alias', True)
+
+    conn = get_db(); c = conn.cursor()
+
+    # Cargar aliases + MPs (mismo prep que auditoría)
+    aliases_dict = {}
+    try:
+        for al, inci in c.execute(
+            "SELECT alias, nombre_inci_canonical FROM mp_aliases WHERE COALESCE(activo,1)=1"
+        ).fetchall():
+            aliases_dict[al.lower().strip()] = inci
+    except Exception:
+        pass
+    mp_por_inci = {}
+    try:
+        for cod, inci, activo in c.execute(
+            "SELECT codigo_mp, COALESCE(nombre_inci,''), COALESCE(activo,1) FROM maestro_mps"
+        ).fetchall():
+            if inci and activo:
+                mp_por_inci[inci.lower().strip()] = (cod, inci)
+    except Exception:
+        pass
+
+    # Lista materiales únicos
+    rows_form = c.execute(
+        """SELECT DISTINCT material_id, material_nombre FROM formula_items
+           WHERE COALESCE(material_nombre,'')!=''"""
+    ).fetchall()
+
+    cambios = []
+    for mat_id, mat_nom in rows_form:
+        nom_lower = (mat_nom or '').lower().strip()
+        # Solo procesar si es abreviatura conocida
+        alias_inci = aliases_dict.get(nom_lower)
+        if not alias_inci:
+            continue
+        alias_lower = alias_inci.lower().strip()
+        mp_match = mp_por_inci.get(alias_lower)
+        if not mp_match:
+            # parcial
+            for k, v in mp_por_inci.items():
+                if alias_lower in k:
+                    mp_match = v
+                    break
+        if not mp_match:
+            continue
+        cod_new, nom_new = mp_match
+        cambios.append({
+            'mat_id_antes': mat_id,
+            'mat_nom_antes': mat_nom,
+            'mat_id_despues': cod_new,
+            'mat_nom_despues': nom_new,
+        })
+        if not dry_run:
+            try:
+                c.execute(
+                    """UPDATE formula_items
+                       SET material_id=?, material_nombre=?
+                       WHERE COALESCE(material_id,'')=? AND material_nombre=?""",
+                    (cod_new, nom_new, mat_id or '', mat_nom),
+                )
+                try:
+                    audit_log(c, usuario=u, accion='NORMALIZAR_FORMULA_MP',
+                              tabla='formula_items', registro_id=f'{mat_id}/{mat_nom}',
+                              antes={'material_id': mat_id, 'material_nombre': mat_nom},
+                              despues={'material_id': cod_new, 'material_nombre': nom_new})
+                except Exception:
+                    pass
+            except Exception as e:
+                log.warning('normalizar fila fallo %s/%s: %s', mat_id, mat_nom, e)
+    if not dry_run:
+        conn.commit()
+
+    return jsonify({
+        'ok': True,
+        'dry_run': dry_run,
+        'cambios_aplicados' if not dry_run else 'cambios_propuestos': len(cambios),
+        'detalle': cambios[:50],
+        'mensaje': (
+            f'{len(cambios)} fórmulas {"normalizadas" if not dry_run else "se normalizarían"} · '
+            f'pasá dry_run=false para aplicar' if dry_run else ''
+        ),
+    })
+
+
 @bp.route('/api/maestro-mps/export-lista-simple', methods=['GET'])
 def maestro_mps_export_lista_simple():
     """Exporta lista simple de materias primas · Sebastián 19-may-2026.
