@@ -5607,7 +5607,11 @@ def _calcular_auto_sc_mee(conn, modo='mensual', origen_filtro=None, generico=Fal
             'origen': cfg['origen'],
             'lead_time_dias': cfg['lead_time_dias'],
             'precio_unit': cfg['precio_unit'],
-            'valor_estimado': round(cant_a_pedir * cfg['precio_unit'], 2) if cfg['precio_unit'] else 0,
+            # FIX · 22-may-2026 · Bug #8 audit Crons · NaN-safe + flag falta_precio
+            'valor_estimado': (round(cant_a_pedir * cfg['precio_unit'], 2)
+                               if cfg['precio_unit'] and cfg['precio_unit'] == cfg['precio_unit']  # NaN check
+                               else 0),
+            'falta_precio': not bool(cfg['precio_unit']),
             'justificaciones': dem['justificaciones'][:5],
             'proveedor_sugerido': prov,
         }

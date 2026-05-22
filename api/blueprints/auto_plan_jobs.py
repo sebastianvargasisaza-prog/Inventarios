@@ -42,8 +42,16 @@ def _enviar_email_async(asunto, html, destinos):
 
     Sebastián 1-may-2026 audit zero-error: el thread loguea el resultado
     real del envío. Antes silencioso · si SMTP fallaba nadie sabía.
+
+    FIX · 22-may-2026 · Bug #5 audit Crons · check EMAIL_PASSWORD antes de thread
+    · Antes: si pwd vacío, thread creado → notif._enviar_email loguea WARN y vuelve
+    · Cada cron mensual creaba 5-10 threads que no servían · log noise + zombies
+    · Ahora: short-circuit ANTES de crear thread si no hay pwd configurado
     """
     if not destinos:
+        return False
+    if not os.environ.get('EMAIL_PASSWORD'):
+        log.debug('[auto-plan-email] skip · EMAIL_PASSWORD no configurado · asunto=%r', asunto[:60])
         return False
     try:
         import sys
@@ -632,14 +640,22 @@ JOBS_SCHEDULE = [
 
 
 def _es_hora_de(ahora, hora, minuto, dias_sem, dias_mes):
-    """¿La fecha 'ahora' coincide con el schedule? (ventana de 5 min)."""
+    """¿La fecha 'ahora' coincide con el schedule? (ventana 5 min unidireccional).
+
+    FIX · 22-may-2026 · Bug #2 audit Crons.
+    Antes: `abs(ahora.minute - minuto) > 5` → ventana de 10 min (5 antes + 5 después).
+    Si minuto=0, matcheaba a 12:00 y 12:55 (hour=11) o 12:00 y 12:05 → doble disparo.
+    Ahora: solo después del horario configurado · ventana 0..4 min · single trigger.
+    Para minuto=0: matchea 12:00, 12:01, 12:02, 12:03, 12:04 (todos hour=12). OK.
+    """
     if dias_sem is not None and ahora.weekday() not in dias_sem:
         return False
     if dias_mes is not None and ahora.day not in dias_mes:
         return False
     if ahora.hour != hora:
         return False
-    if abs(ahora.minute - minuto) > 5:
+    delta = ahora.minute - minuto
+    if delta < 0 or delta > 4:
         return False
     return True
 
@@ -688,17 +704,29 @@ def _adquirir_lock_cron(conn, job_name, ttl_horas=2):
     otro worker ya lo tiene activo.
     """
     try:
-        # Limpiar locks vencidos antes de intentar reclamar
-        conn.execute("""
-            DELETE FROM cron_locks
-            WHERE locked_at < datetime('now', '-5 hours', '-' || ? || ' hours')
-        """, (ttl_horas,))
-        cur = conn.execute("""
-            INSERT OR IGNORE INTO cron_locks (job_name, locked_at, locked_by)
-            VALUES (?, datetime('now', '-5 hours'), 'multi-cron')
-        """, (job_name,))
+        # FIX · 22-may-2026 · Bug #10 audit Crons · PG date multi-arg fail
+        # · Antes: datetime('now','-5 hours','-N hours') multi-arg NO funciona PG
+        # · Locks huérfanos quedaban permanentes en PG · cron bloqueado por siempre
+        # · Ahora: cutoff calculado en Python · pasado como param
+        from datetime import datetime as _dt2, timedelta as _td2
+        cutoff = (_dt2.now() - _td2(hours=ttl_horas + 5)).strftime('%Y-%m-%d %H:%M:%S')
+        bog_now = (_dt2.now() - _td2(hours=5)).strftime('%Y-%m-%d %H:%M:%S')
+        # Limpiar locks vencidos antes de intentar reclamar (PG-safe)
+        conn.execute("DELETE FROM cron_locks WHERE locked_at < ?", (cutoff,))
+        cur = conn.execute(
+            "INSERT INTO cron_locks (job_name, locked_at, locked_by) "
+            "VALUES (?, ?, 'multi-cron') "
+            "ON CONFLICT(job_name) DO NOTHING",
+            (job_name, bog_now),
+        )
         conn.commit()
-        return cur.rowcount > 0
+        # cur.rowcount no funciona uniformly entre PG y SQLite con ON CONFLICT
+        # · verificar con SELECT post-INSERT
+        row = conn.execute(
+            "SELECT locked_at, locked_by FROM cron_locks WHERE job_name=?",
+            (job_name,),
+        ).fetchone()
+        return bool(row and row[1] == 'multi-cron' and row[0] == bog_now)
     except Exception as e:
         log.warning('_adquirir_lock_cron(%s) fallo: %s', job_name, e)
         return False
@@ -1464,7 +1492,16 @@ def job_cleanup_logs(app):
         n_runs = 0; n_apr = 0; n_aal = 0
         errores = []
         try:
-            n_runs = c.execute("DELETE FROM cron_jobs_runs WHERE date(ejecutado_at) < date('now', '-5 hours', '-30 days')").rowcount
+            # FIX · 22-may-2026 · Bug #7 audit Crons · 30→90d preservar patrón mensual
+            # · Antes: cron_jobs_runs borrado a 30d perdía contexto auto_sc_mensual
+            # · Ahora: 90d retención · permite detectar fallos crónicos mensuales
+            # · date multi-arg solo SQLite · usar timedelta Python para PG-compat
+            from datetime import datetime as _dt2, timedelta as _td2
+            _cutoff_runs = (_dt2.now() - _td2(days=90, hours=5)).strftime('%Y-%m-%d')
+            n_runs = c.execute(
+                "DELETE FROM cron_jobs_runs WHERE date(ejecutado_at) < ?",
+                (_cutoff_runs,),
+            ).rowcount
         except Exception as e:
             log.warning('cleanup cron_jobs_runs fallo: %s', e)
             errores.append(f'cron_jobs_runs:{e}')
@@ -3606,6 +3643,9 @@ def _loop_multi_cron(app):
     from datetime import datetime as _dt
     while True:
         try:
+            # FIX · 22-may-2026 · Bug #9 audit Crons · NO reusar conn entre jobs
+            # · Antes: app_context global · 30 jobs compartían conn · PG tx 5min abierta
+            # · Ahora: app_context para SELECT schedule sólo · cada job tiene su context
             with app.app_context():
                 from database import get_db
                 conn = get_db()
@@ -3808,6 +3848,20 @@ def job_reconciliar_influencer_60d(app):
                     "WHERE numero=?",
                     (numero,),
                 )
+                # FIX · 22-may-2026 · Bug #4 audit Crons · audit per-row (no _BULK_)
+                # · Antes: 1 audit_log con registro_id='_BULK_' y count global
+                # · Ahora: 1 audit_log per SOL · permite reconstruir quién cerró qué
+                try:
+                    from audit_helpers import audit_log as _alog
+                    _alog(c, usuario='cron-reconciliar-influencer',
+                          accion='AUTO_RECONCILIAR_60D',
+                          tabla='solicitudes_compra', registro_id=numero,
+                          antes={'estado': 'Aprobada'},
+                          despues={'estado': 'Reconciliada',
+                                   'razon': '>60d sin pago',
+                                   'solicitante': solicitante, 'valor': valor})
+                except Exception:
+                    pass
                 cerradas.append({'numero': numero, 'solicitante': solicitante,
                                  'fecha': fecha, 'valor': valor})
             except Exception:

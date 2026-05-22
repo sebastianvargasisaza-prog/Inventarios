@@ -6433,6 +6433,13 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
            ('ESENCIA ILUMINADORA',                  'esencia', NULL, 60, 90, 30, 3.0, 3, NULL)""",
     ]),
 
+    (156, "cron_jobs_runs · indices performance · 22-may-2026", [
+        # Sebastián 22-may-2026 · Bug #7 audit Crons.
+        # _ya_ejecutado_hoy hacía full-scan sin índice · 5 min × 30 jobs = caro
+        "CREATE INDEX IF NOT EXISTS idx_cron_runs_job_date "
+        "ON cron_jobs_runs(job_name, ejecutado_at DESC)",
+    ]),
+
     (155, "turnos_operario · UNIQUE constraint anti-overlap · 22-may-2026", [
         # Sebastián 22-may-2026 · Bug #10 audit Operario.
         # Antes: operario podía estar en 2 turnos paralelos (capacidad fantasma)

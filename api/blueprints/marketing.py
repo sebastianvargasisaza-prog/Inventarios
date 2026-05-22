@@ -4073,13 +4073,21 @@ def _start_marketing_metrics_loop():
     global _marketing_metrics_thread_started
     if _marketing_metrics_thread_started:
         return
-    _marketing_metrics_thread_started = True
 
     import threading
     import time as _time
 
     def _loop():
-        from index import app as _app
+        # FIX · 22-may-2026 · Bug #6 audit Crons · catch errores import inicial
+        # · Antes: from index falla → loop zombie · flag True for life of process
+        # · Ahora: wrap completo + flag se resetea en except final
+        try:
+            from index import app as _app
+        except Exception as _e:
+            global _marketing_metrics_thread_started
+            _marketing_metrics_thread_started = False
+            log.error('[marketing-metrics] import inicial fallo · loop NO arrancó: %s', _e)
+            return
         # Esperar 5 min al arranque para no chocar con migrations
         _time.sleep(300)
         while True:
@@ -4123,7 +4131,12 @@ def _start_marketing_metrics_loop():
             _time.sleep(24 * 3600)
 
     t = threading.Thread(target=_loop, daemon=True, name='marketing-metrics-loop')
-    t.start()
+    try:
+        t.start()
+        _marketing_metrics_thread_started = True
+    except Exception as _e:
+        _marketing_metrics_thread_started = False
+        log.error('[marketing-metrics] thread.start fallo: %s', _e)
 
 
 def _save_metrics_snapshot(conn, influencer_id, datos, fuente):
