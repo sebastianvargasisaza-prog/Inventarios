@@ -832,7 +832,9 @@ def admin_portal_credencial_uno(cred_id):
 # API: mis pedidos
 # ────────────────────────────────────────────────────────────────────
 
-def _construir_timeline_pedido(conn, pedido_id, pedido_creado_at, pedido_estado):
+def _construir_timeline_pedido(conn, pedido_id, pedido_creado_at, pedido_estado, lote_pre=None):
+    """PERF-FIX · 21-may-2026 · acepta lote_pre opcional para skip query.
+    Si lote_pre se pasa (tupla con 14 cols · ver bulk load), usa directo."""
     """Sprint D Portal · 20-may-2026 · construye 8 steps del ciclo de
     vida del pedido B2B, derivados de:
 
@@ -856,22 +858,28 @@ def _construir_timeline_pedido(conn, pedido_id, pedido_creado_at, pedido_estado)
         'detalle': 'Solicitud entró al sistema',
     })
 
-    # 2) Buscar lote vinculado por observaciones LIKE '%(pedido #N)%'
-    # o lote dedicado eos_b2b con '· #N · entrega'.
-    lote = conn.execute(
-        """SELECT id, COALESCE(estado,''), COALESCE(inicio_real_at,''),
-                  COALESCE(fin_real_at,''), COALESCE(area_id, 0),
-                  COALESCE(fecha_programada,''),
-                  COALESCE(etapa_disp_inicio_at,''), COALESCE(etapa_disp_fin_at,''),
-                  COALESCE(etapa_elab_inicio_at,''), COALESCE(etapa_elab_fin_at,''),
-                  COALESCE(etapa_env_inicio_at,''),  COALESCE(etapa_env_fin_at,''),
-                  COALESCE(etapa_acond_inicio_at,''), COALESCE(etapa_acond_fin_at,'')
-           FROM produccion_programada
-           WHERE (observaciones LIKE ? OR observaciones LIKE ?)
-             AND LOWER(COALESCE(estado,'')) != 'cancelado'
-           ORDER BY id DESC LIMIT 1""",
-        (f'%(pedido #{pedido_id})%', f'%· #{pedido_id} ·%'),
-    ).fetchone()
+    # 2) Buscar lote vinculado · si bulk pre-load lo tiene · skip query
+    # PERF-FIX · 21-may-2026 · evita N+1 cuando portal_mis_pedidos llama bulk
+    if lote_pre:
+        # lote_pre viene de bulk: (id, observaciones, estado, ini, fin, area,
+        #                          fecha, d_ini, d_fin, e_ini, e_fin, n_ini, n_fin, a_ini, a_fin)
+        # Reconstruir tupla en formato esperado (sin observaciones)
+        lote = (lote_pre[0],) + tuple(lote_pre[2:])
+    else:
+        lote = conn.execute(
+            """SELECT id, COALESCE(estado,''), COALESCE(inicio_real_at,''),
+                      COALESCE(fin_real_at,''), COALESCE(area_id, 0),
+                      COALESCE(fecha_programada,''),
+                      COALESCE(etapa_disp_inicio_at,''), COALESCE(etapa_disp_fin_at,''),
+                      COALESCE(etapa_elab_inicio_at,''), COALESCE(etapa_elab_fin_at,''),
+                      COALESCE(etapa_env_inicio_at,''),  COALESCE(etapa_env_fin_at,''),
+                      COALESCE(etapa_acond_inicio_at,''), COALESCE(etapa_acond_fin_at,'')
+               FROM produccion_programada
+               WHERE (observaciones LIKE ? OR observaciones LIKE ?)
+                 AND LOWER(COALESCE(estado,'')) != 'cancelado'
+               ORDER BY id DESC LIMIT 1""",
+            (f'%(pedido #{pedido_id})%', f'%· #{pedido_id} ·%'),
+        ).fetchone()
 
     if lote:
         (lid, lest, l_ini, l_fin, l_area, l_fecha,
@@ -1019,9 +1027,9 @@ def _construir_timeline_pedido(conn, pedido_id, pedido_creado_at, pedido_estado)
 def portal_mis_pedidos():
     """Pedidos del cliente logueado · solo los SUYOS, nunca de otros.
 
-    Sprint D Portal · 20-may-2026: cada pedido trae `timeline` con 8 steps
-    del ciclo de vida (Recibido → Confirmado → En producción → Envasado →
-    Micro QC → Acondicionamiento → Liberado QC → Enviado).
+    Sprint D Portal · 20-may-2026: cada pedido trae `timeline` con 8 steps.
+    PERF-FIX · 21-may-2026 · Antes 1-3 queries por pedido (N+1, hasta 300
+    queries en LIMIT 100). Ahora · pre-carga bulk de lotes + EBRs.
     """
     auth = _require_portal_login()
     if not auth:
@@ -1037,6 +1045,41 @@ def portal_mis_pedidos():
            LIMIT 100""",
         (cid,),
     ).fetchall()
+    # PERF-FIX · pre-cargar lotes vinculados via bulk OR LIKE
+    pedido_ids = [r[0] for r in rows]
+    lotes_pre = {}
+    if pedido_ids:
+        try:
+            # 1 query con N condiciones LIKE en vez de N queries
+            like_parts = []
+            params_b = []
+            for pid in pedido_ids:
+                like_parts.append('(observaciones LIKE ? OR observaciones LIKE ?)')
+                params_b.extend([f'%(pedido #{pid})%', f'%· #{pid} ·%'])
+            lote_rows = conn.execute(
+                f"""SELECT id, observaciones,
+                          COALESCE(estado,''), COALESCE(inicio_real_at,''),
+                          COALESCE(fin_real_at,''), COALESCE(area_id,0),
+                          COALESCE(fecha_programada,''),
+                          COALESCE(etapa_disp_inicio_at,''), COALESCE(etapa_disp_fin_at,''),
+                          COALESCE(etapa_elab_inicio_at,''), COALESCE(etapa_elab_fin_at,''),
+                          COALESCE(etapa_env_inicio_at,''), COALESCE(etapa_env_fin_at,''),
+                          COALESCE(etapa_acond_inicio_at,''), COALESCE(etapa_acond_fin_at,'')
+                   FROM produccion_programada
+                   WHERE ({' OR '.join(like_parts)})
+                     AND LOWER(COALESCE(estado,'')) != 'cancelado'
+                   ORDER BY id DESC""",
+                params_b,
+            ).fetchall()
+            # Asignar el primero match por pedido_id
+            for lr in lote_rows:
+                obs_l = lr[1] or ''
+                for pid in pedido_ids:
+                    if (f'(pedido #{pid})' in obs_l or f'· #{pid} ·' in obs_l) and pid not in lotes_pre:
+                        lotes_pre[pid] = lr
+                        break
+        except Exception as _e:
+            log.warning('bulk lotes pre-load fallo: %s', _e)
     out = []
     for r in rows:
         uds = int(r[2] or 0); ml = float(r[3] or 0)
@@ -1044,7 +1087,7 @@ def portal_mis_pedidos():
         estado = r[5] or 'pendiente'
         creado = r[7] or ''
         try:
-            tl = _construir_timeline_pedido(conn, pid, creado, estado)
+            tl = _construir_timeline_pedido(conn, pid, creado, estado, lote_pre=lotes_pre.get(pid))
         except Exception as _e:
             log.warning('timeline pedido %s falló: %s', pid, _e)
             tl = []
