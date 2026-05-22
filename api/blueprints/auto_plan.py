@@ -763,15 +763,22 @@ def generar_plan(horizonte_dias=60, tipo='auto', usuario='cron'):
             continue
         # Cuánto pedir: deficit + cobertura ideal extra
         cantidad_a_pedir_g = deficit_g + (req_g / horizonte_dias * cob_ideal)
-        # Urgencia
-        if origen in ('china', 'usa', 'europa') and stock_g < req_g * 0.5:
+        # Urgencia · ABASTECIMIENTO-FIX · 22-may-2026 · usa lead_time real (#12 audit)
+        # · Antes: ratios estáticos (30%/50%/60%) sin considerar lead_time
+        # · Ahora: días_disponibles = stock / consumo_diario · compara con lt + buffer
+        consumo_diario = req_g / max(horizonte_dias, 1)
+        dias_disp = (stock_g / consumo_diario) if consumo_diario > 0 else 999
+        if dias_disp < (lead + 3):
             urgencia = 'critica'
-        elif stock_g < req_g * 0.3:
-            urgencia = 'critica'
-        elif stock_g < req_g * 0.6:
+        elif dias_disp < (lead + 14):
             urgencia = 'alta'
-        else:
+        elif dias_disp < (lead + 30):
             urgencia = 'normal'
+        else:
+            urgencia = 'baja'
+        # Origen importado siempre eleva un nivel (buffer extra)
+        if origen in ('china', 'usa', 'europa') and urgencia in ('alta', 'normal', 'baja'):
+            urgencia = {'baja': 'normal', 'normal': 'alta', 'alta': 'critica'}.get(urgencia, urgencia)
         compras_propuestas.append({
             'material_id': mat_id,
             'material_nombre': nombre or mat_id,
@@ -5513,10 +5520,23 @@ def _calcular_auto_sc_mee(conn, modo='mensual', origen_filtro=None, generico=Fal
     # 6) Déficit + MOQ + agrupar por (proveedor, origen)
     scs_por_proveedor = {}
     items_huerfanos = []
+    # ABASTECIMIENTO-FIX · 22-may-2026 · MEE dedup (#10 audit 22-may)
+    try:
+        from blueprints.compras import _pendiente_en_compras_g
+    except Exception:
+        _pendiente_en_compras_g = None
     for mee_cod, dem in demanda_mee.items():
         cant_demanda = dem['cantidad_total']
         stock = stock_mee.get(mee_cod, 0)
-        deficit = max(0, cant_demanda - stock)
+        # Restar cola pendiente de SOLs/OCs para MEE (mismo helper · funciona porque
+        # solicitudes_compra_items.codigo_mp guarda también códigos MEE)
+        en_cola_mee = 0
+        if _pendiente_en_compras_g:
+            try:
+                en_cola_mee = _pendiente_en_compras_g(conn.cursor(), mee_cod)
+            except Exception:
+                en_cola_mee = 0
+        deficit = max(0, cant_demanda - stock - en_cola_mee)
         if deficit <= 0:
             continue
         cfg = mee_config[mee_cod]
