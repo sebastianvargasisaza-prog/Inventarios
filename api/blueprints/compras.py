@@ -4483,11 +4483,11 @@ def recibir_oc(numero_oc):
             lead_real_dias = max(1, (f_rec - f_oc).days)
             for codigo_mp_item in {it[1] for it in items_oc if it[1]}:
                 cur.execute(
-                    """INSERT INTO mp_lead_time_config (material_id, dias_lead_time_promedio)
+                    """INSERT INTO mp_lead_time_config (material_id, lead_time_dias)
                        VALUES (?, ?)
                        ON CONFLICT(material_id) DO UPDATE SET
-                         dias_lead_time_promedio = ROUND(
-                           0.7 * COALESCE(dias_lead_time_promedio, ?) + 0.3 * ?
+                         lead_time_dias = ROUND(
+                           0.7 * COALESCE(lead_time_dias, ?) + 0.3 * ?
                          )""",
                     (codigo_mp_item, lead_real_dias, lead_real_dias, lead_real_dias),
                 )
@@ -8504,13 +8504,22 @@ def compras_prediccion_demanda():
         return jsonify({'error': 'No autorizado'}), 401
     conn = get_db(); c = conn.cursor()
     # Stock actual por material_id
+    # ABASTECIMIENTO-FIX · 22-may-2026 · Ajuste/Ajuste+ suman · CUARENTENA excluida
     stock = {}
     try:
         rows = c.execute(
             """SELECT material_id,
-                      COALESCE(SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END),0)
+                      COALESCE(SUM(
+                        CASE
+                          WHEN tipo IN ('Entrada','Ajuste +','Ajuste') THEN cantidad
+                          WHEN tipo IN ('Salida','Ajuste -') THEN -cantidad
+                          ELSE 0
+                        END),0)
                FROM movimientos
                WHERE material_id IS NOT NULL AND material_id != ''
+                 AND (estado_lote IS NULL
+                      OR UPPER(COALESCE(estado_lote,'')) NOT IN
+                         ('CUARENTENA','CUARENTENA_EXTENDIDA','VENCIDO','RECHAZADO','AGOTADO'))
                GROUP BY material_id""",
         ).fetchall()
         for r in rows:
@@ -8549,7 +8558,7 @@ def compras_prediccion_demanda():
     lead_times = {}
     try:
         rows = c.execute(
-            """SELECT codigo_mp, COALESCE(dias_lead_time_promedio, 15)
+            """SELECT material_id, COALESCE(lead_time_dias, 15)
                FROM mp_lead_time_config""",
         ).fetchall()
         for r in rows:
@@ -8578,8 +8587,12 @@ def compras_prediccion_demanda():
         else:
             accion = 'OK'
             color = 'verde'
-        # Cantidad sugerida: consumo (lt + 30d) - stock_actual
-        cantidad_sugerida = max(0, consumo_diario * (lt + 30) - st)
+        # ABASTECIMIENTO-FIX · 22-may-2026 · dedup con cola pendiente (#6 audit 22-may)
+        # · Antes: si ya hay 50kg en SOL Pendiente y 30kg en OC Autorizada,
+        #   predicción seguía pidiendo todo desde cero · duplicación al aprobar.
+        # · Ahora: resta `_pendiente_en_compras_g` del déficit antes de sugerir.
+        en_cola_g = _pendiente_en_compras_g(c, mid)
+        cantidad_sugerida = max(0, consumo_diario * (lt + 30) - st - en_cola_g)
         costo_estimado = (cantidad_sugerida / 1000.0) * meta.get('precio_kg', 0)
         items.append({
             'codigo_mp': mid,
@@ -9141,7 +9154,7 @@ def proveedor_recomendado(codigo_mp):
     # Lead time desde mp_lead_time_config si existe
     try:
         lt_rows = c.execute(
-            "SELECT proveedor_principal, dias_lead_time_promedio FROM mp_lead_time_config WHERE codigo_mp=?",
+            "SELECT proveedor_principal, lead_time_dias FROM mp_lead_time_config WHERE material_id=?",
             (codigo_mp,),
         ).fetchall()
         for r in lt_rows:

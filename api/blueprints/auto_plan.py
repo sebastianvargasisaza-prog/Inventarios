@@ -4735,9 +4735,15 @@ def _calcular_auto_sc(conn, horizontes_dias=(60, 90), modo='mensual'):
     buffer_ia_cache = {}
 
     def _get_formula(prod):
+        # ABASTECIMIENTO-FIX · 22-may-2026 · incluir cantidad_g_por_lote (#4 audit 22-may)
+        # · Antes: fórmulas con porcentaje=0 pero cantidad_g_por_lote != 0 (común
+        #   en activos minoritarios por gramos) generaban req_g_neto=0 → AUTO-SC
+        #   nunca pedía ese MP · silencioso
+        # · Ahora: ambos campos disponibles · cálculo posterior usa fallback
         if prod not in formulas_cache:
             rows = c.execute("""
-                SELECT material_id, material_nombre, porcentaje
+                SELECT material_id, material_nombre, porcentaje,
+                       COALESCE(cantidad_g_por_lote, 0) as cant_lote_g
                 FROM formula_items WHERE UPPER(TRIM(producto_nombre)) = UPPER(TRIM(?))
             """, (prod,)).fetchall()
             formulas_cache[prod] = rows
@@ -4796,10 +4802,25 @@ def _calcular_auto_sc(conn, horizontes_dias=(60, 90), modo='mensual'):
         total_g = kg * 1000
         buf_ia = _get_buffer_ia(prod_evento['producto'])
         buf_est = _factor_buffer_estacional(prod_evento['fecha'])
-        for mat_id, mat_nom, pct in items:
+        # ABASTECIMIENTO-FIX · 22-may-2026 · fallback cantidad_g_por_lote (#4)
+        # Si fórmula tiene cant_lote_g definido (gramos específicos) Y NO porcentaje,
+        # usar gramos directos (común para activos minoritarios cosméticos).
+        # Calcular lotes equivalentes desde kg producción.
+        for fr in items:
+            mat_id = fr[0]; mat_nom = fr[1]
+            pct = fr[2] if len(fr) > 2 else 0
+            cant_lote_g = fr[3] if len(fr) > 3 else 0
             try: pct_f = float(pct or 0)
             except Exception: pct_f = 0
+            try: cant_lote_f = float(cant_lote_g or 0)
+            except Exception: cant_lote_f = 0
             req_g_neto = total_g * pct_f / 100
+            # Fallback · si porcentaje da 0 pero hay cantidad_g_por_lote · usar
+            # gramos directos × proporción de batch (asume cant_lote_g por 1 lote)
+            if req_g_neto <= 0 and cant_lote_f > 0:
+                # cant_lote_g = gramos por lote canonical · escalar por kg/lote_canonical
+                # Sin info de lote_canonical_kg, asumir 1 lote = batch completo
+                req_g_neto = cant_lote_f * (kg / 1.0 if kg <= 10 else 1)
             if req_g_neto <= 0: continue
             req_g_ajustado = req_g_neto * buf_ia * buf_est
             key = (mat_id, mat_nom or mat_id)

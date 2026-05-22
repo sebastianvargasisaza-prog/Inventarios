@@ -3887,7 +3887,11 @@ def alertas_reabastecimiento():
                           COALESCE(MAX(mp.nombre_comercial), MAX(m.material_nombre)) AS nombre,
                           COALESCE(MAX(mp.proveedor),'') AS proveedor,
                           COALESCE(MAX(mp.stock_minimo),0) AS stock_minimo,
-                          SUM(CASE WHEN m.tipo='Entrada' THEN m.cantidad ELSE -m.cantidad END) AS stock_actual,
+                          SUM(CASE
+                                WHEN m.tipo IN ('Entrada','Ajuste +','Ajuste') THEN m.cantidad
+                                WHEN m.tipo IN ('Salida','Ajuste -') THEN -m.cantidad
+                                ELSE 0
+                              END) AS stock_actual,
                           'MP' AS tipo_material,
                           COALESCE(MAX(mp.tipo),'') AS subtipo
                    FROM movimientos m
@@ -3923,7 +3927,16 @@ def get_stock():
     u, err, code = _require_session()
     if err: return err, code
     conn = get_db(); c = conn.cursor()
-    c.execute("SELECT material_id, material_nombre, SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE 0 END), SUM(CASE WHEN tipo='Salida' THEN cantidad ELSE 0 END), SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) FROM movimientos GROUP BY material_id, material_nombre ORDER BY material_nombre")
+    # ABASTECIMIENTO-FIX · 22-may-2026 · Ajustes + Ajuste+ suman · Salida + Ajuste- restan
+    c.execute("""SELECT material_id, material_nombre,
+                   SUM(CASE WHEN tipo IN ('Entrada','Ajuste +','Ajuste') THEN cantidad ELSE 0 END) as entradas,
+                   SUM(CASE WHEN tipo IN ('Salida','Ajuste -') THEN cantidad ELSE 0 END) as salidas,
+                   SUM(CASE
+                         WHEN tipo IN ('Entrada','Ajuste +','Ajuste') THEN cantidad
+                         WHEN tipo IN ('Salida','Ajuste -') THEN -cantidad
+                         ELSE 0
+                       END) as stock_actual
+                 FROM movimientos GROUP BY material_id, material_nombre ORDER BY material_nombre""")
     rows = c.fetchall()
     return jsonify({'items': [{'material_id':r[0],'material_nombre':r[1],'entradas':round(r[2] or 0,2),'salidas':round(r[3] or 0,2),'stock_actual':round(r[4] or 0,2)} for r in rows]})
 

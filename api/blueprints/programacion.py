@@ -683,14 +683,27 @@ def _get_mp_stock(conn):
     Pass 2 – collect all (material_id, material_nombre) pairs; map every name
              to the canonical stock for that material_id.
     """
+    # INVIMA-FIX · 22-may-2026 · ABASTECIMIENTO ZERO-ERROR (#2 + #3 audit 22-may)
+    # · ANTES: SUM no excluía CUARENTENA/RECHAZADO/VENCIDO → planificación
+    #   creía stock disponible y NO recomendaba compra → paro producción.
+    # · ANTES: Ajuste/Ajuste+ contaba como Salida (bug suma) → over-ordering.
+    # · AHORA: Entrada+Ajuste+Ajuste+ suman · Salida+Ajuste- restan · excluye
+    #   estados no-disponibles · consistente con inventario_helpers canonical.
     # Pass 1: canonical stock per material_id
     id_stock = {}
     for mid, sg in conn.execute("""
         SELECT material_id,
-               COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA')
-                                 THEN cantidad ELSE -cantidad END), 0)
+               COALESCE(SUM(
+                 CASE
+                   WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad
+                   WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad
+                   ELSE 0
+                 END), 0)
         FROM movimientos
         WHERE material_id IS NOT NULL AND material_id != ''
+          AND (estado_lote IS NULL
+               OR UPPER(COALESCE(estado_lote,'')) NOT IN
+                  ('CUARENTENA','CUARENTENA_EXTENDIDA','VENCIDO','RECHAZADO','AGOTADO'))
         GROUP BY material_id
     """).fetchall():
         id_stock[str(mid).strip()] = max(float(sg or 0), 0)
@@ -721,13 +734,21 @@ def _get_mp_stock(conn):
             stock[key_norm] = val
 
     # Also index materials that only appear without a material_id (legacy rows)
+    # ABASTECIMIENTO-FIX · 22-may-2026 · misma corrección Ajuste/CUARENTENA
     for nombre, sg in conn.execute("""
         SELECT material_nombre,
-               COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA')
-                                 THEN cantidad ELSE -cantidad END), 0)
+               COALESCE(SUM(
+                 CASE
+                   WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad
+                   WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad
+                   ELSE 0
+                 END), 0)
         FROM movimientos
         WHERE (material_id IS NULL OR material_id = '')
           AND material_nombre IS NOT NULL AND material_nombre != ''
+          AND (estado_lote IS NULL
+               OR UPPER(COALESCE(estado_lote,'')) NOT IN
+                  ('CUARENTENA','CUARENTENA_EXTENDIDA','VENCIDO','RECHAZADO','AGOTADO'))
         GROUP BY material_nombre
     """).fetchall():
         val = max(float(sg or 0), 0)
@@ -9041,6 +9062,46 @@ def checklist_item_solicitar(item_id):
     if item_dict.get('solicitud_numero'):
         return jsonify({'ok': True, 'ya_solicitado': True,
                         'solicitud_numero': item_dict['solicitud_numero']})
+
+    # ABASTECIMIENTO-FIX · 22-may-2026 · dedup cross-checklist (#7 audit 22-may)
+    # · Antes: 5 producciones del mismo SKU → 5 SOLs separadas del mismo activo
+    # · Ahora: si helper _pendiente_en_compras_g(codigo_mp) ya cubre cantidad
+    #   requerida, NO crear SOL (link al ya existente queda como observación)
+    codigo_mp_req = (item_dict.get('codigo_mp') or '').strip()
+    cant_req = float(item_dict.get('cantidad_requerida') or 0)
+    if codigo_mp_req and cant_req > 0:
+        try:
+            from blueprints.compras import _pendiente_en_compras_g
+            en_cola = _pendiente_en_compras_g(c, codigo_mp_req)
+            if en_cola >= cant_req:
+                # Ya hay cola suficiente · marcar como solicitado sin duplicar
+                # Buscar el SOL más reciente del mismo codigo_mp para link
+                r_sol = c.execute(
+                    """SELECT sc.numero FROM solicitudes_compra sc
+                       JOIN solicitudes_compra_items sci ON sci.numero=sc.numero
+                       WHERE sci.codigo_mp=?
+                         AND sc.estado IN ('Pendiente','Aprobada')
+                       ORDER BY sc.fecha DESC LIMIT 1""",
+                    (codigo_mp_req,),
+                ).fetchone()
+                sol_link = r_sol[0] if r_sol else None
+                if sol_link:
+                    c.execute(
+                        """UPDATE produccion_checklist
+                           SET solicitud_numero=?, estado='solicitado'
+                           WHERE id=?""",
+                        (sol_link, item_id),
+                    )
+                    conn.commit()
+                    return jsonify({
+                        'ok': True, 'ya_solicitado': True,
+                        'solicitud_numero': sol_link,
+                        'dedup': True,
+                        'en_cola_g': en_cola,
+                        'mensaje': f'MP {codigo_mp_req} ya tiene {en_cola:.0f}g en cola (SOL {sol_link}) · vinculado sin duplicar',
+                    })
+        except Exception as _e:
+            log.warning('checklist dedup _pendiente fallo: %s', _e)
 
     # Generar numero SOL
     from datetime import datetime as _dt
