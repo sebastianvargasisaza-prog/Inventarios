@@ -8641,7 +8641,21 @@ def mee_ajustar_stock(codigo):
     row = c.execute("SELECT stock_actual FROM maestro_mee WHERE codigo=?", (codigo,)).fetchone()
     if not row:
         return jsonify({'error':'No encontrado'}), 404
-    stock_anterior = float(row[0] or 0)
+    # FIX · 21-may-2026 · stock_anterior REAL desde SUM(movimientos_mee)
+    # No usar cache (puede estar drifteado) · ajuste compounding sino.
+    try:
+        real_row = c.execute(
+            """SELECT COALESCE(SUM(CASE
+                   WHEN tipo='Entrada' THEN cantidad
+                   WHEN tipo='Salida'  THEN -cantidad
+                   WHEN tipo='Ajuste'  THEN cantidad
+                   ELSE 0 END), 0)
+               FROM movimientos_mee WHERE mee_codigo=? AND COALESCE(anulado,0)=0""",
+            (codigo,),
+        ).fetchone()
+        stock_anterior = max(float(real_row[0] or 0), 0)
+    except Exception:
+        stock_anterior = float(row[0] or 0)
     delta = cantidad_nueva - stock_anterior
     c.execute("UPDATE maestro_mee SET stock_actual=? WHERE codigo=?", (cantidad_nueva, codigo))
     # Audit zero-error 2-may-2026: usar Entrada/Salida según signo del delta
