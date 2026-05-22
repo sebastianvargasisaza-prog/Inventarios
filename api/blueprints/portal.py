@@ -1102,12 +1102,23 @@ def portal_crear_pqr():
     if len(descripcion) < 10:
         return jsonify({'error': 'descripcion requerida (>= 10 chars)'}), 400
     conn = get_db(); c = conn.cursor()
+    # SLA-FIX · 21-may-2026 · Ley 1755/2015 CO · plazos PQR
+    # peticion=15 días hábiles · queja/reclamo=15 días · sugerencia=30 días
+    from datetime import datetime as _dtpqr, timedelta as _tdpqr
+    SLA_DIAS = {'peticion': 15, 'queja': 15, 'reclamo': 15, 'sugerencia': 30}
+    sla_dias = SLA_DIAS.get(tipo, 15)
+    sla_vence = (_dtpqr.utcnow() + _tdpqr(days=sla_dias)).isoformat()
+    # Defensive · agregar columna si no existe (idempotente)
+    try:
+        c.execute("ALTER TABLE portal_pqr ADD COLUMN sla_vence_at_utc TEXT")
+    except Exception:
+        pass
     c.execute(
         """INSERT INTO portal_pqr
              (cliente_id, cliente_nombre, email_cliente, tipo, titulo,
-              descripcion)
-           VALUES (?, ?, ?, ?, ?, ?)""",
-        (cid, cnom, email, tipo, titulo, descripcion),
+              descripcion, sla_vence_at_utc)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (cid, cnom, email, tipo, titulo, descripcion, sla_vence),
     )
     pqr_id = c.lastrowid
     audit_log(c, usuario=f'portal:{email}', accion='PORTAL_CREAR_PQR',

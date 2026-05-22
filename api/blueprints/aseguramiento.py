@@ -502,6 +502,12 @@ def sgd_crear_o_actualizar():
         if existe:
             # Si la versión cambió, archivar la anterior
             ver_anterior = existe[1]
+            # INVIMA-FIX · 21-may-2026 · proteger campos críticos si versión NO cambió
+            # Antes: mismo número de versión podía sobreescribir PDF/aprobador sin
+            # archivar la versión previa · ruptura GDP/BPM (auditor INVIMA lo detecta)
+            campos_blindados_si_misma_version = (
+                'archivo_pdf_url', 'aprobado_por', 'fecha_aprobacion', 'estado',
+            )
             if version != ver_anterior:
                 c.execute("""
                     INSERT OR IGNORE INTO sgd_versiones
@@ -510,6 +516,25 @@ def sgd_crear_o_actualizar():
                            ?, aprobado_por
                     FROM sgd_documentos WHERE codigo=?
                 """, (d.get('motivo_cambio') or 'Versión anterior archivada', codigo))
+            else:
+                # MISMA versión · ignorar cambios a campos blindados
+                # (forzar a quien cambia que haga bump de versión)
+                cambios_blindados = [k for k in campos_blindados_si_misma_version if k in d]
+                if cambios_blindados:
+                    return jsonify({
+                        'error': 'Cambios a campos críticos requieren nueva versión',
+                        'codigo': 'VERSION_BUMP_REQUERIDO',
+                        'campos_bloqueados': cambios_blindados,
+                        'version_actual': ver_anterior,
+                        'hint': 'Cambiar version y enviar nuevo PDF · versión previa queda archivada',
+                    }), 409
+            # Validar archivo_pdf_url (http/https only)
+            arch_url = d.get('archivo_pdf_url')
+            if arch_url and not str(arch_url).startswith(('http://', 'https://')):
+                return jsonify({
+                    'error': 'archivo_pdf_url debe ser http(s)://',
+                    'codigo': 'URL_INVALIDA',
+                }), 400
             # UPDATE
             c.execute("""
                 UPDATE sgd_documentos SET

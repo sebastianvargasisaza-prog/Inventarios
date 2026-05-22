@@ -597,6 +597,8 @@ JOBS_SCHEDULE = [
     # quedar apuntando a un código viejo sin lotes. El error "Hay 0g" cuando
     # SÍ hay stock viene de aquí. Cron diario 4:00 AM repara automático.
     ('auto_reparar_huerfanas',4,  0, None, None,                'job_auto_reparar_huerfanas'),
+    # PQR SLA · Ley 1755/2015 CO · diario 8:15 AM
+    ('pqr_sla_vencido',       8, 15, None, None,                'job_pqr_sla_vencido'),
     # ⭐ Zero-Error · diario 8:00 · validación profunda matemática (8 checks)
     ('validacion_profunda',   8,  0, None, None,                'job_validacion_profunda'),
     # ⭐ Animus · L-V 8:00am · asignar 5 SKUs para conteo fisico a Daniela
@@ -3389,6 +3391,49 @@ def job_marcar_vencidos(app):
             conn.rollback()
             log.exception('marcar_vencidos fallo: %s', e)
             return False, {'error': str(e)[:300]}, 0
+
+
+def job_pqr_sla_vencido(app):
+    """Sebastián 21-may-2026 · cron diario 8:15 AM · PQR vencidos SLA.
+
+    Ley 1755/2015 CO · responder PQR en plazos legales.
+    Notif a Calidad + Sebastián con PQRs cuyo sla_vence_at_utc < ahora.
+    """
+    with app.app_context():
+        from database import get_db as _gdb
+        conn = _gdb(); c = conn.cursor()
+        try:
+            rows = c.execute(
+                """SELECT id, cliente_nombre, tipo, titulo, sla_vence_at_utc
+                   FROM portal_pqr
+                   WHERE estado IN ('abierto','en_progreso')
+                     AND sla_vence_at_utc IS NOT NULL
+                     AND sla_vence_at_utc != ''
+                     AND datetime(sla_vence_at_utc) < datetime('now','utc')
+                   ORDER BY sla_vence_at_utc ASC LIMIT 50""",
+            ).fetchall()
+        except Exception as e:
+            return False, {'error': f'query fallo: {e}'}, 0
+        if not rows:
+            return True, {'mensaje': 'Sin PQR SLA vencidos'}, 0
+        try:
+            from blueprints.notif import push_notif_multi
+            from config import CALIDAD_USERS as _CU
+            destinatarios = list({'sebastian'} | set(_CU))
+            partes = [f'⚠ {len(rows)} PQR con SLA VENCIDO (Ley 1755/2015):']
+            for r in rows[:10]:
+                partes.append(f'  · {r[2].upper()} #{r[0]} · {r[1]} · {(r[3] or "")[:60]} · venció {r[4]}')
+            push_notif_multi(
+                destinatarios, 'pqr',
+                f'🚨 {len(rows)} PQR con SLA legal vencido',
+                body='\n'.join(partes),
+                link='/admin/portal/pqr',
+                remitente='cron-pqr-sla',
+                importante=True,
+            )
+        except Exception as _e:
+            log.warning('pqr_sla notif fallo: %s', _e)
+        return True, {'pqr_vencidos': len(rows)}, 0
 
 
 def job_auto_reparar_huerfanas(app):
