@@ -79,6 +79,63 @@ def _require_authorize_oc():
     return _require_compras_write()
 
 
+def _enviar_oc_a_proveedor(numero_oc, proveedor, email_proveedor, items, monto_total, observaciones=''):
+    """Compras Fase 2 · Sebastián 21-may-2026 · email auto al proveedor.
+
+    Recomendación consultor: 'Catalina hoy seguro reenvía manual · un email
+    automático cuando la OC pasa a Autorizada ahorra 10 min/OC × 75 OCs =
+    12h/mes liberadas.'
+
+    Genera HTML con OC formal · usa _enviar_email_async (existente en
+    comunicacion.py · thread daemon · no bloquea).
+    """
+    if not email_proveedor or '@' not in email_proveedor:
+        return False, 'sin email proveedor'
+    asunto = f'OC {numero_oc} · {proveedor} · Espagiria Laboratorio'
+    items_html = ''
+    for it in (items or []):
+        items_html += (
+            '<tr>'
+            f'<td style="padding:8px;border-bottom:1px solid #e5e7eb">{(it.get("codigo_mp") or "")}</td>'
+            f'<td style="padding:8px;border-bottom:1px solid #e5e7eb">{(it.get("nombre_mp") or "")}</td>'
+            f'<td style="padding:8px;border-bottom:1px solid #e5e7eb;text-align:right">{float(it.get("cantidad_g") or 0):,.0f}</td>'
+            f'<td style="padding:8px;border-bottom:1px solid #e5e7eb;text-align:right">${float(it.get("precio_unitario") or 0):,.2f}</td>'
+            f'<td style="padding:8px;border-bottom:1px solid #e5e7eb;text-align:right">${(float(it.get("cantidad_g") or 0)*float(it.get("precio_unitario") or 0)):,.0f}</td>'
+            '</tr>'
+        )
+    body_html = (
+        '<html><body style="font-family:Arial,sans-serif;max-width:680px;margin:auto">'
+        '<div style="background:#0e7490;color:#fff;padding:20px;border-radius:8px 8px 0 0">'
+        '<h2 style="margin:0">Orden de Compra Autorizada</h2>'
+        f'<div style="opacity:.9;margin-top:4px">N° {numero_oc} · {proveedor}</div>'
+        '</div>'
+        '<div style="background:#f9fafb;padding:20px;border-radius:0 0 8px 8px">'
+        '<p>Estimado proveedor,</p>'
+        f'<p>Se ha autorizado la siguiente Orden de Compra:</p>'
+        '<table style="width:100%;border-collapse:collapse;background:#fff;border-radius:6px;overflow:hidden">'
+        '<thead style="background:#1e293b;color:#fff"><tr>'
+        '<th style="padding:10px;text-align:left">Código</th>'
+        '<th style="padding:10px;text-align:left">Material</th>'
+        '<th style="padding:10px;text-align:right">Cant (g)</th>'
+        '<th style="padding:10px;text-align:right">Precio unit.</th>'
+        '<th style="padding:10px;text-align:right">Subtotal</th>'
+        '</tr></thead><tbody>' + items_html + '</tbody>'
+        f'<tfoot><tr><td colspan="4" style="padding:10px;text-align:right;font-weight:700">TOTAL:</td>'
+        f'<td style="padding:10px;text-align:right;font-weight:800;color:#0e7490">${monto_total:,.0f}</td></tr></tfoot>'
+        '</table>'
+        + (f'<p style="margin-top:14px"><b>Observaciones:</b><br>{observaciones}</p>' if observaciones else '')
+        + '<p style="margin-top:18px">Confirmar recepción de esta OC respondiendo a este correo.</p>'
+        '<p style="color:#6b7280;font-size:12px;margin-top:20px">Espagiria Laboratorio · Compras HHA Group</p>'
+        '</div></body></html>'
+    )
+    try:
+        from blueprints.comunicacion import _enviar_email_async
+        _enviar_email_async(asunto, body_html, [email_proveedor])
+        return True, 'enviado'
+    except Exception as e:
+        return False, f'email fallo: {e}'
+
+
 def _evaluar_auto_aprobacion(c, proveedor, monto_total, items):
     """Compras Fase 2 · Sebastián 21-may-2026 · auto-aprobación por reglas.
 
@@ -4497,8 +4554,48 @@ def autorizar_oc(numero_oc):
                   despues={'estado': 'Autorizada', 'remision_code': remision_code})
     except Exception as e:
         log.warning('audit_log AUTORIZAR_OC fallo: %s', e)
+    # Fase 2 · 21-may-2026 · email auto al proveedor con detalle OC
+    # Toggle: env COMPRAS_AUTO_EMAIL_PROV_OFF=1 desactiva (default ON)
+    email_enviado = False
+    email_status = 'sin email proveedor'
+    import os as _os_mail
+    if (_os_mail.environ.get('COMPRAS_AUTO_EMAIL_PROV_OFF') or '0') != '1':
+        try:
+            prov_row = cur.execute(
+                "SELECT proveedor FROM ordenes_compra WHERE numero_oc=?",
+                (numero_oc,),
+            ).fetchone()
+            prov_nombre = prov_row[0] if prov_row else ''
+            email_row = cur.execute(
+                "SELECT email FROM proveedores WHERE LOWER(TRIM(nombre))=LOWER(TRIM(?))",
+                (prov_nombre,),
+            ).fetchone()
+            email_prov = (email_row[0] if email_row else '') or ''
+            items_rows = cur.execute(
+                """SELECT codigo_mp, nombre_mp, cantidad_g, precio_unitario
+                   FROM ordenes_compra_items WHERE numero_oc=?""",
+                (numero_oc,),
+            ).fetchall()
+            items_list = [{
+                'codigo_mp': r[0], 'nombre_mp': r[1],
+                'cantidad_g': r[2], 'precio_unitario': r[3],
+            } for r in items_rows]
+            obs_row = cur.execute(
+                "SELECT COALESCE(observaciones,'') FROM ordenes_compra WHERE numero_oc=?",
+                (numero_oc,),
+            ).fetchone()
+            email_enviado, email_status = _enviar_oc_a_proveedor(
+                numero_oc, prov_nombre, email_prov, items_list, valor,
+                obs_row[0] if obs_row else '',
+            )
+        except Exception as _e:
+            email_status = f'fallo: {_e}'
     conn.commit()
-    return jsonify({'ok': True, 'estado': 'Autorizada', 'remision_code': remision_code})
+    return jsonify({
+        'ok': True, 'estado': 'Autorizada', 'remision_code': remision_code,
+        'email_proveedor_enviado': email_enviado,
+        'email_status': email_status,
+    })
 
 @bp.route('/api/ordenes-compra/<numero_oc>/pagar', methods=['PATCH'])
 def pagar_oc(numero_oc):
