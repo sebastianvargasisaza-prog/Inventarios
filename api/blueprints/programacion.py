@@ -3727,11 +3727,23 @@ def planta_centro_mando():
     # ── AUTO-LIMPIEZA INDEPENDIENTE AL INICIO (Sebastián 1-may-2026) ──
     # 'sigue mostrando lunes todas, martes mezcla' → cancelar huérfanas SQL-first.
     # Cursor explícito + commit forzado + logs de diagnóstico.
+    #
+    # PERF-FIX · 22-may-2026 · skip cleanup si header X-Skip-Cleanup=1 o
+    # ?skip_cleanup=1 · permite que UI pida sin esperar 200 cancelaciones.
+    # El cron diario sigue limpiando · este auto-clean inline ahora es opcional.
     auto_canceladas_inicial = 0
     auto_cancel_detalle_inicial = []
-    auto_clean_diag = {'cal_set_size': 0, 'db_rows_check': 0, 'matched': 0}
+    auto_clean_diag = {'cal_set_size': 0, 'db_rows_check': 0, 'matched': 0, 'skipped': False}
+    _skip_cleanup = (
+        request.headers.get('X-Skip-Cleanup') == '1'
+        or request.args.get('skip_cleanup') == '1'
+    )
     _ac = conn.cursor()
+    if _skip_cleanup:
+        auto_clean_diag['skipped'] = True
     try:
+        if _skip_cleanup:
+            raise StopIteration('skip_cleanup activado')  # salta al except
         _f_inicio = fecha_sel.isoformat()
         _f_fin = (fecha_sel + timedelta(days=6)).isoformat()
         # Set de Calendar (fecha, producto_upper) en horizonte
