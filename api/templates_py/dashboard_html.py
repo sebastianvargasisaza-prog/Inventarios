@@ -8237,11 +8237,13 @@ function loadAcond(){
   fetch("/api/acondicionamiento").then(function(r){return r.json();}).then(function(rows){
     var tb=document.getElementById("ac-tbody"); if(!tb)return;
     tb.innerHTML="";
+    // SEC-FIX · 21-may-2026 · escape strings de DB (XSS stored)
+    function _eAc(s){return String(s||'').replace(/[&<>"'/]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;',"/":'&#47;'}[c];});}
     rows.forEach(function(r){
       var estadoColor=r.estado==="Completado"?"#28a745":r.estado==="Rechazado"?"#dc3545":"#fd7e14";
       var btn="";
         if(r.estado==="En proceso") btn=`<button onclick="updateAcond(${r.id},'Completado')" style="background:#28a745;color:#fff;border:none;border-radius:3px;padding:3px 7px;cursor:pointer;font-size:11px">Completar</button>`;
-        tb.innerHTML+=`<tr><td style="padding:7px;border-bottom:1px solid #eee">${r.lote}</td><td style="padding:7px;border-bottom:1px solid #eee">${r.producto}</td><td style="padding:7px;border-bottom:1px solid #eee">${r.presentacion}</td><td style="padding:7px;border-bottom:1px solid #eee">${r.cantidad_batch_g}</td><td style="padding:7px;border-bottom:1px solid #eee">${r.unidades_producidas}</td><td style="padding:7px;border-bottom:1px solid #eee">${r.fecha}</td><td style="padding:7px;border-bottom:1px solid #eee">${r.operador}</td><td style="padding:7px;border-bottom:1px solid #eee"><span style="background:${estadoColor};color:#fff;padding:2px 7px;border-radius:10px;font-size:11px">${r.estado}</span></td><td style="padding:7px;border-bottom:1px solid #eee">${btn}</td></tr>`;
+        tb.innerHTML+=`<tr><td style="padding:7px;border-bottom:1px solid #eee">${_eAc(r.lote)}</td><td style="padding:7px;border-bottom:1px solid #eee">${_eAc(r.producto)}</td><td style="padding:7px;border-bottom:1px solid #eee">${_eAc(r.presentacion)}</td><td style="padding:7px;border-bottom:1px solid #eee">${r.cantidad_batch_g||0}</td><td style="padding:7px;border-bottom:1px solid #eee">${r.unidades_producidas||0}</td><td style="padding:7px;border-bottom:1px solid #eee">${_eAc(r.fecha)}</td><td style="padding:7px;border-bottom:1px solid #eee">${_eAc(r.operador)}</td><td style="padding:7px;border-bottom:1px solid #eee"><span style="background:${estadoColor};color:#fff;padding:2px 7px;border-radius:10px;font-size:11px">${_eAc(r.estado)}</span></td><td style="padding:7px;border-bottom:1px solid #eee">${btn}</td></tr>`;
     });
   }).catch(function(){});
 }

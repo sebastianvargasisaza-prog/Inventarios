@@ -1821,6 +1821,15 @@ def _handle_produccion_inner():
         u, err, code = _require_planta_write()
         if err:
             return err, code
+        # SEC-FIX · 21-may-2026 · BEGIN IMMEDIATE atómico (race FEFO multi-worker)
+        # Antes: pre-check + INSERT con 3 workers Gunicorn · dos producciones
+        # concurrentes del mismo MP pasaban pre-check ambos → stock negativo
+        # silencioso. Ahora: BEGIN IMMEDIATE bloquea otras escrituras hasta
+        # commit · sin riesgo de race (cost: serialización por DB lock).
+        try:
+            conn.execute('BEGIN IMMEDIATE')
+        except Exception:
+            pass  # PG no soporta · usa SERIALIZABLE implícito
 
         data = request.json or {}
         producto = (data.get('producto') or '').strip()
