@@ -2284,7 +2284,11 @@ function renderProv(){
   document.getElementById('prov-grid').innerHTML=list.map(function(p){
     return '<div class="pc"><div style="display:flex;justify-content:space-between;align-items:flex-start;">'
       +'<div><div class="pn">'+esc(p.nombre)+'</div><div class="pnit">NIT: '+esc(p.nit||'-')+'</div></div>'
+      // Fase 3 · 21-may-2026 · botón scorecard inline (5 métricas live)
+      +'<div style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end">'
+      +'<button class="btn" style="font-size:11px;padding:4px 10px;white-space:nowrap;background:#7c3aed;color:#fff" data-scorecard="'+esc(p.nombre)+'" title="Score · cumplimiento · on-time · rechazo QC · variación precio">🎯 Score</button>'
       +'<button class="btn" style="font-size:11px;padding:4px 10px;white-space:nowrap;" data-ficha360="'+esc(p.nombre)+'">&#x1F4CA; Ver 360</button>'
+      +'</div>'
       +'</div><div class="pd">'+
       (p.contacto?'<span>&#x1F464; '+esc(p.contacto)+'</span>':'')+
       (p.telefono?'<span>&#x1F4F1; '+esc(p.telefono)+'</span>':'')+
@@ -3546,15 +3550,117 @@ async function confirmarPago(){
   }catch(e){ alert('Error: '+e); }
 }
 
-// ─── Recibir ──────────────────────────────────────────────────────
+// ─── Recibir · Fase 3 · 21-may-2026 · modal completo INVIMA ────────
 async function marcarRecibida(num){
-  if(!confirm('Marcar '+num+' como Recibida?')) return;
+  // Abrir modal con items + campos COA/lote_proveedor (mig 151)
+  // Antes era un confirm() simple · ahora cumple GMP cosmético.
+  var ex = document.getElementById('m-recepcion'); if(ex) ex.remove();
+  var m = document.createElement('div');
+  m.id = 'm-recepcion';
+  m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9998;display:flex;align-items:center;justify-content:center;padding:20px';
+  m.innerHTML = '<div style="background:#fff;border-radius:14px;padding:24px;max-width:920px;width:100%;max-height:90vh;overflow-y:auto">'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">'+
+      '<h3 style="margin:0;color:#0e7490">📦 Recibir OC '+esc(num)+'</h3>'+
+      '<button id="rec-close" style="background:none;border:none;font-size:1.4em;cursor:pointer">×</button></div>'+
+    '<div style="background:#fef3c7;color:#78350f;padding:10px 14px;border-radius:6px;margin-bottom:14px;font-size:12px"><b>⚠ INVIMA:</b> ingresá lote del proveedor + link al COA · queda en audit · dossier auditoría se arma solo.</div>'+
+    '<div id="rec-items" style="text-align:center;color:#94a3b8;padding:14px">Cargando items…</div>'+
+    '<div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end">'+
+      '<button id="rec-cancel" style="background:#94a3b8;color:#fff;padding:8px 18px;border:none;border-radius:6px;cursor:pointer">Cancelar</button>'+
+      '<button id="rec-confirm" style="background:#16a34a;color:#fff;padding:8px 22px;border:none;border-radius:6px;font-weight:700;cursor:pointer">✓ Confirmar recepción</button>'+
+    '</div></div>';
+  document.body.appendChild(m);
+  document.getElementById('rec-close').onclick = function(){ m.remove(); };
+  document.getElementById('rec-cancel').onclick = function(){ m.remove(); };
+  m.addEventListener('click', function(e){ if(e.target === m) m.remove(); });
   try{
-    var r=await fetch('/api/ordenes-compra/'+num+'/recibir',_fetchOpts('POST', {}));
-    var d=await r.json();
-    if(d.error){ alert('Error: '+d.error); return; }
-    await loadData();
-  }catch(e){ alert('Error: '+e); }
+    var r = await fetch('/api/ordenes-compra/'+encodeURIComponent(num));
+    var d = await r.json();
+    if(!r.ok){ document.getElementById('rec-items').innerHTML = '<div style="color:#dc2626">Error: '+(d.error||r.status)+'</div>'; return; }
+    var items = d.items || d.ordenes_compra_items || [];
+    if(!items.length){
+      document.getElementById('rec-items').innerHTML = '<div style="color:#64748b;padding:14px">Esta OC no tiene items</div>';
+      return;
+    }
+    var html = '<div style="display:flex;flex-direction:column;gap:14px">';
+    items.forEach(function(it, idx){
+      html += '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px" data-rec-idx="'+idx+'" data-codigo="'+esc(it.codigo_mp||'')+'">'+
+        '<div style="font-weight:700;color:#0f172a;margin-bottom:6px">'+esc(it.nombre_mp||it.codigo_mp||'item '+idx)+' <span style="font-size:11px;color:#94a3b8">'+esc(it.codigo_mp||'')+'</span></div>'+
+        '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px">'+
+          '<div><label style="font-size:11px;color:#64748b;font-weight:600">Cantidad recibida (g)</label><input type="number" step="any" class="rec-cant" data-idx="'+idx+'" value="'+(it.cantidad_g||0)+'" style="width:100%;padding:6px 8px;border:1px solid #cbd5e1;border-radius:5px;font-size:13px"></div>'+
+          '<div><label style="font-size:11px;color:#64748b;font-weight:600">Lote interno</label><input type="text" class="rec-lote" data-idx="'+idx+'" placeholder="auto si vacío" style="width:100%;padding:6px 8px;border:1px solid #cbd5e1;border-radius:5px;font-size:13px"></div>'+
+          '<div><label style="font-size:11px;color:#7c3aed;font-weight:700">📋 Lote proveedor *</label><input type="text" class="rec-lote-prov" data-idx="'+idx+'" placeholder="según etiqueta proveedor" style="width:100%;padding:6px 8px;border:1px solid #7c3aed;border-radius:5px;font-size:13px"></div>'+
+          '<div><label style="font-size:11px;color:#64748b;font-weight:600">Fecha vencimiento</label><input type="date" class="rec-fv" data-idx="'+idx+'" style="width:100%;padding:6px 8px;border:1px solid #cbd5e1;border-radius:5px;font-size:13px"></div>'+
+          '<div style="grid-column:span 2"><label style="font-size:11px;color:#dc2626;font-weight:700">📑 Link al COA (Drive/Dropbox) *</label><input type="url" class="rec-coa-url" data-idx="'+idx+'" placeholder="https://drive.google.com/file/..." style="width:100%;padding:6px 8px;border:1px solid #dc2626;border-radius:5px;font-size:13px"></div>'+
+          '<div style="grid-column:span 2"><label style="font-size:11px;color:#64748b;font-weight:600">Link ficha seguridad (MSDS · opcional)</label><input type="url" class="rec-ficha" data-idx="'+idx+'" placeholder="https://..." style="width:100%;padding:6px 8px;border:1px solid #cbd5e1;border-radius:5px;font-size:13px"></div>'+
+          '<div style="grid-column:span 2"><label style="font-size:11px;color:#64748b;font-weight:600">Notas / discrepancias</label><input type="text" class="rec-notas" data-idx="'+idx+'" placeholder="opcional" style="width:100%;padding:6px 8px;border:1px solid #cbd5e1;border-radius:5px;font-size:13px"></div>'+
+        '</div>'+
+      '</div>';
+    });
+    html += '</div>';
+    document.getElementById('rec-items').innerHTML = html;
+  }catch(e){
+    document.getElementById('rec-items').innerHTML = '<div style="color:#dc2626;padding:14px">Error red: '+esc(e.message)+'</div>';
+  }
+  document.getElementById('rec-confirm').onclick = async function(){
+    var btn = this;
+    btn.disabled = true; btn.textContent = 'Procesando...';
+    // Recolectar items
+    var cards = m.querySelectorAll('[data-rec-idx]');
+    var items_rec = [];
+    var falta_coa = [];
+    var falta_lote_prov = [];
+    cards.forEach(function(card, idx){
+      var codigo = card.getAttribute('data-codigo');
+      var get = function(sel){ var el = card.querySelector(sel); return el ? el.value.trim() : ''; };
+      var cant = parseFloat(get('.rec-cant')) || 0;
+      if(cant <= 0) return;
+      var lote_prov = get('.rec-lote-prov');
+      var coa = get('.rec-coa-url');
+      if(!lote_prov) falta_lote_prov.push(codigo||idx);
+      if(!coa) falta_coa.push(codigo||idx);
+      items_rec.push({
+        codigo_mp: codigo,
+        cantidad_recibida: cant,
+        lote: get('.rec-lote'),
+        lote_proveedor: lote_prov,
+        fecha_vencimiento: get('.rec-fv'),
+        coa_url: coa,
+        ficha_seguridad_url: get('.rec-ficha'),
+        notas: get('.rec-notas'),
+        estado: 'OK',
+      });
+    });
+    if(falta_lote_prov.length || falta_coa.length){
+      var msg = '⚠ INVIMA · faltan campos obligatorios:';
+      if(falta_lote_prov.length) msg += '\\n• Lote proveedor en: '+falta_lote_prov.join(', ');
+      if(falta_coa.length) msg += '\\n• Link COA en: '+falta_coa.join(', ');
+      msg += '\\n\\n¿Continuar igual? (queda como excepción para auditoría)';
+      if(!confirm(msg)){
+        btn.disabled = false; btn.textContent = '✓ Confirmar recepción';
+        return;
+      }
+    }
+    try{
+      var rr = await fetch('/api/ordenes-compra/'+encodeURIComponent(num)+'/recibir',
+        _fetchOpts('POST', {items: items_rec, forzar: (falta_lote_prov.length || falta_coa.length) > 0}));
+      var dd = await rr.json();
+      if(!rr.ok){
+        alert('Error: '+(dd.error||rr.status));
+        btn.disabled = false; btn.textContent = '✓ Confirmar recepción';
+        return;
+      }
+      var lotes_sint = dd.lotes_sinteticos || [];
+      var aviso = 'Recepción OK · '+dd.ingresos+' items · estado: '+dd.estado;
+      if(lotes_sint.length) aviso += '\\n\\n⚠ '+lotes_sint.length+' lotes sintéticos · pedir lote real al proveedor';
+      alert(aviso);
+      m.remove();
+      await loadData();
+      if(typeof loadConsolidado === 'function') loadConsolidado();
+    }catch(e){
+      alert('Error red: '+e.message);
+      btn.disabled = false; btn.textContent = '✓ Confirmar recepción';
+    }
+  };
 }
 
 // ─── Nuevo proveedor ──────────────────────────────────────────────
@@ -5326,6 +5432,71 @@ function toggleGrupo(gi){
   } else {
     body.style.display='none';
     if(btn) btn.innerHTML='&#x25BC;';
+  }
+}
+
+// Fase 3 · 21-may-2026 · Scorecard live de proveedor (5 métricas + score 0-100)
+if(typeof document !== 'undefined' && !window._SCORECARD_DELEG){
+  window._SCORECARD_DELEG = true;
+  document.addEventListener('click', function(e){
+    var btn = e.target.closest('[data-scorecard]');
+    if(!btn) return;
+    abrirScorecardProveedor(btn.getAttribute('data-scorecard'));
+  });
+}
+async function abrirScorecardProveedor(nombre){
+  var ex = document.getElementById('m-scorecard'); if(ex) ex.remove();
+  var m = document.createElement('div');
+  m.id = 'm-scorecard';
+  m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9998;display:flex;align-items:center;justify-content:center;padding:20px';
+  m.innerHTML = '<div style="background:#fff;border-radius:14px;padding:24px;max-width:680px;width:100%;max-height:90vh;overflow-y:auto">'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">'+
+      '<h3 style="margin:0;color:#7c3aed">🎯 Scorecard · '+esc(nombre)+'</h3>'+
+      '<button id="sc-close" style="background:none;border:none;font-size:1.4em;cursor:pointer">×</button></div>'+
+    '<div id="sc-body" style="text-align:center;color:#94a3b8;padding:30px">Calculando métricas live…</div>'+
+    '</div>';
+  document.body.appendChild(m);
+  document.getElementById('sc-close').onclick = function(){ m.remove(); };
+  m.addEventListener('click', function(e){ if(e.target === m) m.remove(); });
+  try{
+    var r = await fetch('/api/compras/proveedor-scorecard/'+encodeURIComponent(nombre));
+    if(!r.ok){ document.getElementById('sc-body').innerHTML = '<div style="color:#dc2626;padding:20px">Error: '+r.status+'</div>'; return; }
+    var d = await r.json();
+    var col = d.score_color === 'verde' ? '#16a34a' : (d.score_color === 'amarillo' ? '#ca8a04' : '#dc2626');
+    var html = '';
+    // Header score grande
+    html += '<div style="background:linear-gradient(135deg,'+col+',rgba(0,0,0,.15));color:#fff;padding:20px;border-radius:10px;margin-bottom:14px;text-align:center">';
+    html += '<div style="font-size:11px;opacity:.85;text-transform:uppercase;font-weight:700">Score global</div>';
+    html += '<div style="font-size:3em;font-weight:800;line-height:1;margin:6px 0">'+d.score_global+'<span style="font-size:.5em;opacity:.8">/100</span></div>';
+    html += '<div style="font-size:13px;font-weight:600;opacity:.95">'+esc(d.recomendacion||'')+'</div>';
+    html += '</div>';
+    // 5 métricas en grid
+    html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:14px">';
+    var metricas = [
+      {l:'📦 OCs 12m', v:d.ocs_total_12m, suf:''},
+      {l:'💰 Monto 12m', v:'$'+(d.monto_12m||0).toLocaleString('es-CO'), suf:''},
+      {l:'✅ Cumplimiento', v:d.cumplimiento_pct, suf:'%', col:d.cumplimiento_pct>=80?'#16a34a':(d.cumplimiento_pct>=50?'#ca8a04':'#dc2626')},
+      {l:'⏱ On-time (≤30d)', v:d.on_time_pct, suf:'%', col:d.on_time_pct>=80?'#16a34a':(d.on_time_pct>=50?'#ca8a04':'#dc2626')},
+      {l:'❌ Rechazo QC', v:d.rechazo_qc_pct, suf:'%', col:d.rechazo_qc_pct<=2?'#16a34a':(d.rechazo_qc_pct<=10?'#ca8a04':'#dc2626'), nota:d.lotes_evaluados+' lotes evaluados'},
+      {l:'📈 Variación precio', v:(d.variacion_precio_12m_pct>0?'+':'')+d.variacion_precio_12m_pct, suf:'%', col:Math.abs(d.variacion_precio_12m_pct)<=10?'#16a34a':(Math.abs(d.variacion_precio_12m_pct)<=25?'#ca8a04':'#dc2626')},
+      {l:'🚚 Lead time real', v:d.lead_time_real_dias, suf:'d'},
+    ];
+    metricas.forEach(function(m){
+      var bg = m.col ? m.col : '#475569';
+      html += '<div style="background:#f8fafc;border-left:4px solid '+bg+';padding:10px 12px;border-radius:6px">';
+      html += '<div style="font-size:10px;color:#64748b;text-transform:uppercase;font-weight:700">'+m.l+'</div>';
+      html += '<div style="font-size:1.4em;font-weight:800;color:#0f172a;margin-top:2px">'+m.v+'<span style="font-size:.65em;color:#64748b">'+(m.suf||'')+'</span></div>';
+      if(m.nota) html += '<div style="font-size:9px;color:#94a3b8;margin-top:2px">'+m.nota+'</div>';
+      html += '</div>';
+    });
+    html += '</div>';
+    // Ponderación
+    html += '<div style="background:#f1f5f9;padding:10px 14px;border-radius:6px;font-size:11px;color:#475569">';
+    html += '<b>Ponderación score:</b> Cumplimiento 30% · On-time 25% · Sin rechazo QC 30% · Precio estable 15%';
+    html += '</div>';
+    document.getElementById('sc-body').innerHTML = html;
+  }catch(e){
+    document.getElementById('sc-body').innerHTML = '<div style="color:#dc2626;padding:20px">Error red: '+esc(e.message)+'</div>';
   }
 }
 

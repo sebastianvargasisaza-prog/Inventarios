@@ -8063,6 +8063,138 @@ def compras_trazabilidad_oc(numero_oc):
     return jsonify(out)
 
 
+def _scorecard_proveedor_dict(c, nombre_prov):
+    """Compras Fase 3 · Sebastián 21-may-2026 · scorecard live de proveedor.
+
+    Calcula 5 métricas reales que el consultor procurement recomendó como
+    base para renegociación y para reglas de auto-aprobación más finas.
+
+    Métricas (todas últimos 12 meses):
+    1. ocs_total          · # OCs creadas
+    2. on_time_pct        · % OCs recibidas dentro del lead time prometido
+    3. rechazo_qc_pct     · % lotes que QC marcó como RECHAZADO
+    4. variacion_precio_12m_pct · % cambio promedio precio MP (1er trim vs último)
+    5. cumplimiento_pct   · recibidas+pagadas / total (ya estaba en ROI)
+    6. lead_time_real_dias · promedio real (mp_lead_time_config)
+    7. score_global       · 0-100 ponderado
+
+    Retorna dict listo para serializar a JSON.
+    """
+    out = {'proveedor': nombre_prov}
+    if not nombre_prov:
+        return out
+    # 1+5. ocs_total + cumplimiento + monto
+    try:
+        r = c.execute(
+            """SELECT COUNT(*),
+                      SUM(CASE WHEN estado IN ('Recibida','Pagada','Parcial') THEN 1 ELSE 0 END),
+                      COALESCE(SUM(valor_total),0)
+               FROM ordenes_compra
+               WHERE LOWER(TRIM(proveedor))=LOWER(TRIM(?))
+                 AND date(fecha) >= date('now','-5 hours','-365 days')""",
+            (nombre_prov,),
+        ).fetchone()
+        ocs_total = int((r or [0,0,0])[0] or 0)
+        ocs_cumplidas = int((r or [0,0,0])[1] or 0)
+        monto_12m = float((r or [0,0,0])[2] or 0)
+        out['ocs_total_12m'] = ocs_total
+        out['monto_12m'] = monto_12m
+        out['cumplimiento_pct'] = round(ocs_cumplidas / ocs_total * 100, 1) if ocs_total else 0
+    except Exception:
+        out['ocs_total_12m'] = 0
+        out['monto_12m'] = 0
+        out['cumplimiento_pct'] = 0
+    # 2. on_time_pct
+    try:
+        r = c.execute(
+            """SELECT COUNT(*),
+                      SUM(CASE WHEN julianday(fecha_recepcion) - julianday(fecha) <= 30 THEN 1 ELSE 0 END)
+               FROM ordenes_compra
+               WHERE LOWER(TRIM(proveedor))=LOWER(TRIM(?))
+                 AND fecha_recepcion IS NOT NULL AND fecha_recepcion != ''
+                 AND date(fecha) >= date('now','-5 hours','-365 days')""",
+            (nombre_prov,),
+        ).fetchone()
+        total_recibidas = int((r or [0,0])[0] or 0)
+        on_time = int((r or [0,0])[1] or 0)
+        out['on_time_pct'] = round(on_time / total_recibidas * 100, 1) if total_recibidas else 0
+    except Exception:
+        out['on_time_pct'] = 0
+    # 3. rechazo_qc_pct (lotes RECHAZADO de movimientos)
+    try:
+        r = c.execute(
+            """SELECT COUNT(*),
+                      SUM(CASE WHEN estado_lote='RECHAZADO' THEN 1 ELSE 0 END)
+               FROM movimientos
+               WHERE LOWER(TRIM(proveedor))=LOWER(TRIM(?))
+                 AND tipo='Entrada'
+                 AND date(fecha) >= date('now','-5 hours','-365 days')""",
+            (nombre_prov,),
+        ).fetchone()
+        total_lotes = int((r or [0,0])[0] or 0)
+        rechazados = int((r or [0,0])[1] or 0)
+        out['rechazo_qc_pct'] = round(rechazados / total_lotes * 100, 1) if total_lotes else 0
+        out['lotes_evaluados'] = total_lotes
+    except Exception:
+        out['rechazo_qc_pct'] = 0
+        out['lotes_evaluados'] = 0
+    # 4. variacion_precio_12m_pct
+    try:
+        r = c.execute(
+            """SELECT AVG(CASE WHEN date(fecha) >= date('now','-5 hours','-90 days') THEN precio_unitario END),
+                      AVG(CASE WHEN date(fecha) <  date('now','-5 hours','-275 days') THEN precio_unitario END)
+               FROM precios_mp_historico
+               WHERE LOWER(TRIM(proveedor))=LOWER(TRIM(?))
+                 AND date(fecha) >= date('now','-5 hours','-365 days')""",
+            (nombre_prov,),
+        ).fetchone()
+        p_reciente = float((r or [0,0])[0] or 0)
+        p_inicial = float((r or [0,0])[1] or 0)
+        if p_inicial > 0:
+            out['variacion_precio_12m_pct'] = round((p_reciente - p_inicial) / p_inicial * 100, 1)
+        else:
+            out['variacion_precio_12m_pct'] = 0
+    except Exception:
+        out['variacion_precio_12m_pct'] = 0
+    # 6. lead_time_real promedio
+    try:
+        r = c.execute(
+            """SELECT AVG(julianday(fecha_recepcion) - julianday(fecha))
+               FROM ordenes_compra
+               WHERE LOWER(TRIM(proveedor))=LOWER(TRIM(?))
+                 AND fecha_recepcion IS NOT NULL AND fecha_recepcion != ''
+                 AND date(fecha) >= date('now','-5 hours','-365 days')""",
+            (nombre_prov,),
+        ).fetchone()
+        out['lead_time_real_dias'] = round(float((r or [0])[0] or 0), 1)
+    except Exception:
+        out['lead_time_real_dias'] = 0
+    # 7. score_global (0-100 ponderado · 4 dimensiones)
+    cumpl = out['cumplimiento_pct'] / 100
+    on_time = out['on_time_pct'] / 100
+    no_rechazo = max(0, 1 - out['rechazo_qc_pct'] / 100)
+    precio_estable = max(0, 1 - abs(out['variacion_precio_12m_pct']) / 50)  # >50% var = 0
+    score = (cumpl * 0.30 + on_time * 0.25 + no_rechazo * 0.30 + precio_estable * 0.15) * 100
+    out['score_global'] = round(score, 1)
+    out['score_color'] = 'verde' if score >= 80 else ('amarillo' if score >= 60 else 'rojo')
+    out['recomendacion'] = (
+        'Excelente · usar para auto-aprob' if score >= 85
+        else 'Bueno · monitorear' if score >= 70
+        else 'Regular · renegociar' if score >= 50
+        else 'Crítico · evaluar reemplazo'
+    )
+    return out
+
+
+@bp.route('/api/compras/proveedor-scorecard/<nombre_prov>', methods=['GET'])
+def proveedor_scorecard(nombre_prov):
+    """Compras Fase 3 · Scorecard live de un proveedor (5 métricas + score)."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    return jsonify(_scorecard_proveedor_dict(c, nombre_prov))
+
+
 @bp.route('/api/compras/roi-proveedores', methods=['GET'])
 def compras_roi_proveedores():
     """Compras MAX · 21-may-2026 · ROI por proveedor."""

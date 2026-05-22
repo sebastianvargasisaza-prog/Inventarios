@@ -7443,6 +7443,23 @@ def test_golden_ordenes_servicio(app, db_clean):
     _exec("DELETE FROM ordenes_servicio WHERE numero_os=?", (num_os,))
 
 
+def test_golden_compras_scorecard_proveedor(app, db_clean):
+    """Fase 3 · Scorecard live proveedor (5 métricas + score)."""
+    cs = _login(app, 'sebastian')
+    # Proveedor inexistente · devuelve 200 con métricas en 0
+    r = cs.get('/api/compras/proveedor-scorecard/Proveedor%20Inexistente')
+    assert r.status_code == 200
+    d = r.get_json()
+    assert d['proveedor'] == 'Proveedor Inexistente'
+    assert 'score_global' in d
+    assert 'cumplimiento_pct' in d
+    assert 'on_time_pct' in d
+    assert 'rechazo_qc_pct' in d
+    assert 'variacion_precio_12m_pct' in d
+    assert 'score_color' in d
+    assert d['score_color'] in ('verde', 'amarillo', 'rojo')
+
+
 def test_golden_compras_max_ia_ocr_traz(app, db_clean):
     """Compras MAX · 21-may-2026 · 6 endpoints nuevos."""
     cs = _login(app, 'sebastian')
