@@ -502,8 +502,7 @@ function _miDiaVozProcesar(txt) {
       .catch(function(e){ alert('Error red: ' + e.message); });
   });
 }
-
-function refreshNow() { loadMiDia(); }
+// refreshNow definida arriba (línea 404) · esta declaración duplicada eliminada 21-may-2026
 
 // Auto-refresh cada 30s
 loadMiDia();

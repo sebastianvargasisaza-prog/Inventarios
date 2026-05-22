@@ -30,6 +30,13 @@ bp = Blueprint("operario", __name__)
 log = logging.getLogger("operario")
 
 
+def _hoy_str(c):
+    """Fecha Bogotá (UTC-5) · usada por mi_dia. Movido arriba (21-may-2026)
+    para definir antes de su uso (era footgun de hoisting Python)."""
+    row = c.execute("SELECT date('now', '-5 hours')").fetchone()
+    return row[0] if row else ""
+
+
 def _require_login():
     if not session.get("compras_user"):
         return jsonify({"error": "login requerido"}), 401
@@ -179,10 +186,10 @@ def mi_dia():
     else:
         ve_todas = es_admin or es_jefe
 
-    # Producciones del día · ventana [hoy-1d, hoy+1d] para cubrir
-    # ambigüedad UTC vs Bogotá (UTC-5)
-    where_fecha = """fecha_programada >= date('now', '-1 day')
-                  AND fecha_programada <= date('now', '+1 day')"""
+    # FIX · 21-may-2026 · ventana exacta hoy Bogotá (UTC-5)
+    # Antes: ±1 día abría posibilidad de iniciar producción de mañana por error
+    # Ahora: date('now', '-5 hours') exacto (compatible PG + SQLite)
+    where_fecha = "date(fecha_programada) = date('now', '-5 hours')"
     where_op = ""
     params = []
     if not ve_todas and operario_id is not None:
@@ -318,8 +325,3 @@ def mi_dia():
         "producciones": out,
         "fecha": _hoy_str(c),
     })
-
-
-def _hoy_str(c):
-    row = c.execute("SELECT date('now', '-5 hours')").fetchone()
-    return row[0] if row else ""
