@@ -222,12 +222,16 @@ def _ventas_diarias_por_sku(c, sku, dias=60):
         pass
 
     # Estrategia 2: animus_shopify_orders con sku_items JSON
+    # SHOPIFY-AUDIT 23-may-2026 PM · agente cazó que refunds/cancelled
+    # contaban como ventas → velocidad inflada. Ahora filtramos.
     try:
         rows = c.execute("""
             SELECT date(creado_en), sku_items
             FROM animus_shopify_orders
             WHERE date(creado_en) >= ?
               AND sku_items IS NOT NULL AND sku_items != ''
+              AND LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided')
+              AND LOWER(COALESCE(estado_pago,'')) NOT IN ('refunded','voided','partially_refunded')
         """, (cutoff_str,)).fetchall()
         if rows:
             por_dia = {}
@@ -7365,7 +7369,9 @@ def sync_shopify_cron():
         try:
             while url:
                 req = ur.Request(url, headers={"X-Shopify-Access-Token": token})
-                with ur.urlopen(req, timeout=30) as r:
+                # SHOPIFY-AUDIT 23-may-PM · fetch_with_retry para 429/5xx
+                from http_helpers import fetch_with_retry as _fwr
+                with _fwr(req, timeout=30, max_intentos=3) as r:
                     body = r.read()
                     link_hdr = r.headers.get("Link", "") or ""
                 orders = json.loads(body)["orders"]

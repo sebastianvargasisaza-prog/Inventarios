@@ -882,7 +882,9 @@ def job_sync_stock_shopify_diario(app):
         while url:
             req = _ur.Request(url, headers={'X-Shopify-Access-Token': token})
             try:
-                with _ur.urlopen(req, timeout=20) as r:
+                # SHOPIFY-AUDIT 23-may-PM · fetch_with_retry maneja 429/5xx
+                from http_helpers import fetch_with_retry as _fwr
+                with _fwr(req, timeout=20, max_intentos=3) as r:
                     data = _json.loads(r.read())
                     link_header = r.headers.get('Link', '')
             except _uerr.HTTPError as e:
@@ -990,7 +992,9 @@ def job_sync_shopify(app):
         synced = 0
         while url:
             req = ur.Request(url, headers={"X-Shopify-Access-Token": token})
-            with ur.urlopen(req, timeout=30) as r:
+            # SHOPIFY-AUDIT 23-may-PM · fetch_with_retry maneja 429/5xx
+            from http_helpers import fetch_with_retry as _fwr
+            with _fwr(req, timeout=30, max_intentos=3) as r:
                 body = r.read()
                 link_hdr = r.headers.get("Link", "") or ""
             orders = _json.loads(body)["orders"]
@@ -1268,7 +1272,9 @@ def job_lunes_7am_workflow(app):
                 synced = 0
                 while url:
                     req = _ur.Request(url, headers={"X-Shopify-Access-Token": token})
-                    with _ur.urlopen(req, timeout=30) as r:
+                    # SHOPIFY-AUDIT 23-may-PM · fetch_with_retry para 429/5xx
+                    from http_helpers import fetch_with_retry as _fwr
+                    with _fwr(req, timeout=30, max_intentos=3) as r:
                         body = r.read()
                         link_hdr = r.headers.get("Link", "") or ""
                     orders = _json.loads(body)["orders"]

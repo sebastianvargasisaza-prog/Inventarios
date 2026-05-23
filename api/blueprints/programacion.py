@@ -167,7 +167,9 @@ def _sync_shopify_orders(conn, days=60):
     while url:
         req = urllib.request.Request(url, headers={"X-Shopify-Access-Token": token})
         try:
-            with urllib.request.urlopen(req, timeout=25) as r:
+            # SHOPIFY-AUDIT 23-may-PM · fetch_with_retry para 429/5xx
+            from http_helpers import fetch_with_retry as _fwr
+            with _fwr(req, timeout=25, max_intentos=3) as r:
                 data = json.loads(r.read())
                 link_hdr = r.headers.get("Link", "")
         except urllib.error.HTTPError as e:

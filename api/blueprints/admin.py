@@ -2260,6 +2260,38 @@ def admin_health_critical_paths():
         except Exception as e:
             _check('last_calendar_sync', 'warn', f'Error: {e}')
 
+    # 5b. last Shopify sync · SHOPIFY-AUDIT 23-may-2026 PM agente cazó esto
+    # · sin alerta el cron 6 AM podía fallar N días y velocidad caía
+    # artificialmente · ahora critical si > 26h sin sync
+    try:
+        from datetime import datetime as _dt, timedelta as _td
+        row_sh = c.execute(
+            "SELECT MAX(synced_at) FROM animus_shopify_orders"
+        ).fetchone()
+        last_sh = row_sh[0] if row_sh and row_sh[0] else None
+        if not last_sh:
+            _check('last_shopify_sync', 'warn',
+                   'animus_shopify_orders vacío (sync nunca corrió)')
+        else:
+            try:
+                ts_sh = _dt.fromisoformat(str(last_sh).replace('Z', '').replace('T', ' ')[:19])
+                age_h = (_dt.utcnow() - ts_sh).total_seconds() / 3600
+            except Exception:
+                age_h = 9999
+            if age_h > 26:
+                _check('last_shopify_sync', 'critical',
+                       f'Sin sync Shopify en {age_h:.1f}h (>26h) · velocidad puede estar desactualizada',
+                       value=round(age_h, 1), threshold=26)
+            elif age_h > 12:
+                _check('last_shopify_sync', 'warn',
+                       f'Sync Shopify hace {age_h:.1f}h (cron corre 6 AM diario)',
+                       value=round(age_h, 1))
+            else:
+                _check('last_shopify_sync', 'ok',
+                       f'Sync Shopify hace {age_h:.1f}h', value=round(age_h, 1))
+    except Exception as e:
+        _check('last_shopify_sync', 'warn', f'Error check Shopify: {str(e)[:120]}')
+
     # 6. last backup < 30h
     try:
         row = c.execute("""

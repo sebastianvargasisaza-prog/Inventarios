@@ -1196,10 +1196,14 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
     # contra timestamp · index usable
     ventas_por_sku = {}
     _vd_iso = ventana_desde + 'T00:00:00' if 'T' not in ventana_desde else ventana_desde
+    # SHOPIFY-AUDIT 23-may-PM · filtrar cancelled/refunded para no inflar
+    # velocidad con devoluciones (agente Shopify cazó este bug).
     for r in c.execute(
         """SELECT sku_items FROM animus_shopify_orders
            WHERE creado_en >= ?
-             AND sku_items IS NOT NULL AND sku_items != ''""",
+             AND sku_items IS NOT NULL AND sku_items != ''
+             AND LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided')
+             AND LOWER(COALESCE(estado_pago,'')) NOT IN ('refunded','voided','partially_refunded')""",
         (_vd_iso,),
     ).fetchall():
         try:

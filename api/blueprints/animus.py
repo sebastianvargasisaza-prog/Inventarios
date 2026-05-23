@@ -141,7 +141,9 @@ def animus_sync(platform):
                 synced = 0
                 while url:
                     req = ur.Request(url, headers={"X-Shopify-Access-Token": token})
-                    with ur.urlopen(req, timeout=15) as r:
+                    # SHOPIFY-AUDIT 23-may-PM · fetch_with_retry para 429/5xx
+                    from http_helpers import fetch_with_retry as _fwr
+                    with _fwr(req, timeout=15, max_intentos=3) as r:
                         body = r.read()
                         link_hdr = r.headers.get("Link", "") or ""
                     orders = json.loads(body)["orders"]
