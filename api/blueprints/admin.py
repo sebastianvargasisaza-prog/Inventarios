@@ -6287,9 +6287,12 @@ def admin_aplicar_migraciones_pg():
                 break
         if ok:
             try:
+                # Usar ? · el adaptador pg_compat.translate_placeholders lo
+                # convierte a %s. Poner %s directo aquí falla porque el mismo
+                # adaptador escapa los % literales a %% cuando hay args.
                 c.execute(
                     "INSERT INTO schema_migrations (version, description) "
-                    "VALUES (%s, %s) ON CONFLICT DO NOTHING",
+                    "VALUES (?, ?) ON CONFLICT DO NOTHING",
                     (version, p['description'])
                 )
                 conn.commit()
