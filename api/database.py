@@ -312,6 +312,28 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (161, "limpiar Sugeridas > 2026-06-07 + fix AZH lote_size_kg=33 · Sebastián 23-may-2026 PM", [
+        # Sebastián 23-may-2026 PM · "limpiarlo dejando lo que ya puse yo en
+        # mayo y la primera semana de junio" + "AZ HIBRID CLEAR tenía lote
+        # 0.1 kg en BD generando 23 lotes diarios". Como el usuario no pudo
+        # ejecutar los endpoints vía consola/UI, lo hacemos via migración
+        # idempotente. Se ejecuta UNA VEZ al primer arranque post-deploy.
+        # NUNCA toca Fijo (eos_plan/b2b/retroactivo).
+        # NUNCA toca lo ya descontado (fin_real_at o inventario_descontado_at).
+        """UPDATE produccion_programada
+            SET estado = 'cancelado',
+                observaciones = COALESCE(observaciones,'') || ' · cancelado limpieza mig161 23-may-PM'
+          WHERE substr(fecha_programada,1,10) > '2026-06-07'
+            AND COALESCE(origen,'') IN ('eos_canonico','auto_plan','sugerido','manual','calendar')
+            AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado')
+            AND fin_real_at IS NULL
+            AND inventario_descontado_at IS NULL""",
+        # Fix AZH lote_size_kg correcto · 33 kg (según mig 127)
+        """UPDATE formula_headers
+            SET lote_size_kg = 33, unidad_base_g = 33000
+          WHERE UPPER(TRIM(producto_nombre)) = 'AZ HIBRID CLEAR'
+            AND COALESCE(lote_size_kg, 0) < 1""",
+    ]),
     (160, "clientes_b2b_maestro · tabla maestra para módulo solicitud B2B · Sebastián 23-may-2026", [
         # FIX #4 · auditoría · "cliente B2B" hasta hoy es derivado de
         # DISTINCT pedidos_b2b.cliente_id (TEXT libre sin FK) · cualquier
