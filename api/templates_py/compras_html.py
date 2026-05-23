@@ -229,6 +229,7 @@ async function cxIAPreguntar(pregunta){
     <button class="tn"      data-tab="por-pagar" id="tn-por-pagar" title="Pendientes · OCs autorizadas sin pagar">💰 Por Pagar</button>
     <button class="tn"      data-tab="pagos" id="tn-pagos" title="Histórico · pagos ya ejecutados">💸 Pagos</button>
     <button class="tn"      data-tab="atrasadas" id="tn-atrasadas" title="OCs sin recibir tras lead_time + buffer · Sebastián 23-may">🚨 Atrasadas <span id="atrasadas-badge" style="display:none;background:#dc2626;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
+    <button class="tn"      data-tab="discrep" id="tn-discrep" title="Recepciones con faltante · ranking calidad proveedor · Sebastián 23-may">📋 Calidad recepción <span id="discrep-badge" style="display:none;background:#dc2626;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
     <!-- Sebastián 21-may-2026 · Órdenes de Servicio (serigrafía/tampografía) -->
     <button class="tn"      data-tab="ordserv" id="tn-ordserv" title="Órdenes de Servicio · serigrafía, tampografía, etiquetado">🎨 Órdenes de Servicio</button>
   </span>
@@ -617,6 +618,43 @@ async function cxIAPreguntar(pregunta){
   <div id="atrasadas-resumen" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;font-size:12px;color:#475569"></div>
   <div id="atrasadas-contenido" style="background:white;border:1px solid #e2e8f0;border-radius:10px;overflow-x:auto">
     <div style="text-align:center;color:#94a3b8;padding:30px">Click &#x21BA; Actualizar para cargar</div>
+  </div>
+</div>
+
+<!-- ════════════ TAB: CALIDAD RECEPCIÓN · Sebastián 23-may-2026 ════════════ -->
+<!-- Histórico de OCs recibidas con discrepancia + ranking proveedores -->
+<div id="pane-discrep" class="pane">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
+    <div>
+      <h2 style="margin:0;font-size:18px;color:#1e293b;">&#x1F4CB; Calidad de recepción</h2>
+      <div style="font-size:12px;color:#64748b;margin-top:2px;">
+        OCs recibidas con faltante en últimos
+        <input type="number" id="discrep-dias" value="30" min="7" max="365" style="width:50px;padding:2px 6px;border:1px solid #cbd5e1;border-radius:4px;font-size:12px" onchange="cargarDiscrepancias()"> d&iacute;as &middot;
+        ranking proveedores por tasa de discrepancia
+      </div>
+    </div>
+    <button class="btn bp" onclick="cargarDiscrepancias()" style="padding:6px 14px;font-size:12px;">&#x21BA; Actualizar</button>
+  </div>
+
+  <div id="discrep-resumen" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;font-size:12px;color:#475569"></div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px">
+    <!-- Ranking proveedores -->
+    <div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px;">
+      <div style="font-weight:700;font-size:13px;color:#1e293b;margin-bottom:10px;">&#x1F3C6; Ranking proveedores (tasa discrepancia)</div>
+      <div id="discrep-ranking" style="font-size:12px;max-height:340px;overflow-y:auto">Cargando&hellip;</div>
+    </div>
+    <!-- Tip educativo -->
+    <div style="background:#eff6ff;border:1px solid #93c5fd;border-radius:10px;padding:14px;font-size:12px;color:#1e40af">
+      <div style="font-weight:700;margin-bottom:6px">&#x1F4A1; C&oacute;mo se detectan</div>
+      <div>1. Receptor marca <strong>tiene_discrepancias</strong> en /recibir</div>
+      <div>2. <strong>Auto-detecci&oacute;n</strong>: si alg&uacute;n item recibe &lt;95% de lo pedido, sistema marca discrepancia + push_notif a creador OC + admins</div>
+      <div style="margin-top:6px;color:#64748b">Cron diario notifica OCs atrasadas. Pesta&ntilde;a vecina 🚨 Atrasadas.</div>
+    </div>
+  </div>
+
+  <div id="discrep-contenido" style="background:white;border:1px solid #e2e8f0;border-radius:10px;overflow-x:auto">
+    <div style="text-align:center;color:#94a3b8;padding:30px">Click &#x21BA; Actualizar</div>
   </div>
 </div>
 
@@ -1304,6 +1342,7 @@ window._cxTabToGrp = {
   'influencer':'entradas',  // por compat · aunque oculto
   // OCs y Pagos
   'consol':'ocs', 'por-pagar':'ocs', 'pagos':'ocs', 'ordserv':'ocs',
+  'atrasadas':'ocs', 'discrep':'ocs',
   // Maestros
   'prov':'maestros',
   // Dashboard (consolidado · alertas + mis-sol son widgets dentro)
@@ -1344,6 +1383,7 @@ document.querySelectorAll('.tn').forEach(function(btn){
     else if(tab==='pagos'){ loadPagos(); }
     else if(tab==='por-pagar'){ loadPorPagar(); }
     else if(tab==='atrasadas'){ cargarOcsAtrasadas(); }
+    else if(tab==='discrep'){ cargarDiscrepancias(); }
     else if(tab==='alertas'){ loadAlertasCompras(); }
     else if(tab==='solprod'){ loadSolicitudesProduccion(); }
     else if(tab==='mis-sol'){ loadMisSolicitudes(); }
@@ -7244,6 +7284,118 @@ async function cargarOcsAtrasadas(){
     });
     html += '</tbody></table>';
     html += '<div style="font-size:11px;color:#64748b;padding:10px 12px;background:#f8fafc;border-top:1px solid #e2e8f0">💡 <strong>Cómo leer:</strong> "Atraso" = días sobre el lead_time del proveedor + buffer. Rojo &gt;30d, naranja &gt;14d, amarillo el resto. El lead_time se aprende automáticamente con cada recepción completa (EWMA 70/30).</div>';
+    div.innerHTML = html;
+  }catch(e){
+    div.innerHTML = '<div style="color:#dc2626;padding:20px">Error red: ' + e.message + '</div>';
+  }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// Tab "Calidad recepción" · Sebastián 23-may-2026
+// Histórico OCs con discrepancia + ranking proveedores
+// ═══════════════════════════════════════════════════════════════════
+async function cargarDiscrepancias(){
+  var div = document.getElementById('discrep-contenido');
+  var resumen = document.getElementById('discrep-resumen');
+  var ranking = document.getElementById('discrep-ranking');
+  var diasEl = document.getElementById('discrep-dias');
+  var dias = diasEl ? parseInt(diasEl.value, 10) : 30;
+  if(isNaN(dias) || dias < 1) dias = 30;
+  div.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:30px">Cargando…</div>';
+  ranking.innerHTML = 'Cargando…';
+  resumen.innerHTML = '';
+  try{
+    var r = await fetch('/api/compras/recepciones-discrepancias?dias=' + dias);
+    if(r.status === 401){ window.location.href = '/login'; return; }
+    if(!r.ok){
+      div.innerHTML = '<div style="color:#dc2626;padding:20px">Error HTTP ' + r.status + '</div>';
+      return;
+    }
+    var d = await r.json();
+    function _esc(s){
+      if(s == null) return '';
+      return String(s).replace(/[&<>"\']/g, function(c){
+        return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+      });
+    }
+    function _fmtCop(n){
+      if(!n) return '—';
+      return '$' + Math.round(n).toLocaleString('es-CO');
+    }
+    // Resumen
+    var n = d.total_ocs_con_discrepancia || 0;
+    resumen.innerHTML = '<span style="background:' + (n>0?'#fee2e2':'#dcfce7') + ';color:' + (n>0?'#991b1b':'#15803d') + ';padding:6px 12px;border-radius:8px;font-weight:700;font-size:13px">' +
+      (n>0 ? ('⚠ ' + n + ' OC(s) con discrepancia en ' + dias + 'd') : '✓ Sin discrepancias en ' + dias + 'd') +
+      '</span>' +
+      '<span style="color:#64748b">Hoy ' + d.hoy + '</span>';
+    var badge = document.getElementById('discrep-badge');
+    if(badge){
+      if(n > 0){ badge.style.display = 'inline-block'; badge.textContent = n; }
+      else { badge.style.display = 'none'; }
+    }
+    // Ranking proveedores
+    var rk = d.ranking_proveedores || [];
+    if(!rk.length){
+      ranking.innerHTML = '<div style="color:#94a3b8">Sin recepciones en la ventana</div>';
+    } else {
+      var rkHtml = '<table style="width:100%;border-collapse:collapse;font-size:12px">';
+      rkHtml += '<thead><tr style="color:#475569;border-bottom:1px solid #e2e8f0"><th style="text-align:left;padding:5px 6px">Proveedor</th><th style="text-align:right;padding:5px 6px">Recibidas</th><th style="text-align:right;padding:5px 6px">Discrep.</th><th style="text-align:right;padding:5px 6px">Tasa</th></tr></thead><tbody>';
+      rk.forEach(function(p){
+        var tasaCol = p.tasa_discrepancia_pct > 30 ? '#dc2626' : (p.tasa_discrepancia_pct > 10 ? '#ea580c' : (p.tasa_discrepancia_pct > 0 ? '#ca8a04' : '#16a34a'));
+        rkHtml += '<tr style="border-bottom:1px solid #f1f5f9">';
+        rkHtml += '<td style="padding:6px;font-weight:600">' + _esc(p.proveedor) + '</td>';
+        rkHtml += '<td style="padding:6px;text-align:right;font-family:ui-monospace">' + p.total_recibidas + '</td>';
+        rkHtml += '<td style="padding:6px;text-align:right;font-family:ui-monospace">' + p.con_discrepancia + '</td>';
+        rkHtml += '<td style="padding:6px;text-align:right;font-family:ui-monospace;color:' + tasaCol + ';font-weight:700">' + p.tasa_discrepancia_pct + '%</td>';
+        rkHtml += '</tr>';
+      });
+      rkHtml += '</tbody></table>';
+      ranking.innerHTML = rkHtml;
+    }
+    // Tabla OCs con discrepancia
+    if(n === 0){
+      div.innerHTML = '<div style="text-align:center;color:#15803d;padding:30px;background:#f0fdf4">✓ Sin OCs con discrepancia en últimos ' + dias + 'd</div>';
+      return;
+    }
+    var html = '<table style="width:100%;border-collapse:collapse;font-size:13px">';
+    html += '<thead><tr style="background:#f8fafc;color:#475569;border-bottom:1px solid #e2e8f0">';
+    html += '<th style="text-align:left;padding:10px 12px;font-weight:700">OC</th>';
+    html += '<th style="text-align:left;padding:10px 12px;font-weight:700">Proveedor</th>';
+    html += '<th style="text-align:left;padding:10px 12px;font-weight:700">Fecha recep.</th>';
+    html += '<th style="text-align:left;padding:10px 12px;font-weight:700">Recibió</th>';
+    html += '<th style="text-align:center;padding:10px 12px;font-weight:700">Items con faltante</th>';
+    html += '<th style="text-align:right;padding:10px 12px;font-weight:700">Valor</th>';
+    html += '<th style="text-align:left;padding:10px 12px;font-weight:700">Observaciones</th>';
+    html += '</tr></thead><tbody>';
+    (d.ocs || []).forEach(function(oc){
+      var maxPct = 0;
+      (oc.items_faltantes || []).forEach(function(it){ if(it.pct_faltante > maxPct) maxPct = it.pct_faltante; });
+      var bg = maxPct > 30 ? '#fef2f2' : (maxPct > 10 ? '#fff7ed' : '#fefce8');
+      html += '<tr style="border-bottom:1px solid #f1f5f9;background:' + bg + '">';
+      html += '<td style="padding:8px 12px;font-family:ui-monospace;font-weight:700">' + _esc(oc.numero_oc) + '</td>';
+      html += '<td style="padding:8px 12px">' + _esc(oc.proveedor) + '</td>';
+      html += '<td style="padding:8px 12px">' + _esc(oc.fecha_recepcion) + '</td>';
+      html += '<td style="padding:8px 12px;color:#64748b">' + _esc(oc.recibido_por || '—') + '</td>';
+      // Items faltantes · expandible
+      var itemsHtml = '<span style="font-weight:700;color:#dc2626">' + oc.n_items_faltantes + '</span>';
+      if(oc.items_faltantes && oc.items_faltantes.length){
+        itemsHtml += '<div style="font-size:11px;color:#64748b;margin-top:3px">';
+        oc.items_faltantes.slice(0, 3).forEach(function(it){
+          itemsHtml += '<div>' + _esc(it.codigo_mp) + ': ' + it.recibido + '/' + it.pedido + 'g (-' + it.pct_faltante + '%)</div>';
+        });
+        if(oc.items_faltantes.length > 3){
+          itemsHtml += '<div style="color:#94a3b8">+' + (oc.items_faltantes.length - 3) + ' más</div>';
+        }
+        itemsHtml += '</div>';
+      }
+      html += '<td style="padding:8px 12px;text-align:center">' + itemsHtml + '</td>';
+      html += '<td style="padding:8px 12px;text-align:right;font-family:ui-monospace">' + _fmtCop(oc.valor_total) + '</td>';
+      html += '<td style="padding:8px 12px;font-size:11px;color:#64748b;max-width:280px">' + _esc(oc.observaciones_recepcion || '—') + '</td>';
+      html += '</tr>';
+    });
+    html += '</tbody></table>';
+    html += '<div style="font-size:11px;color:#64748b;padding:10px 12px;background:#f8fafc;border-top:1px solid #e2e8f0">💡 Filas rojas = faltante &gt;30%, naranja &gt;10%, ámbar el resto. Usá el ranking arriba para identificar proveedores recurrentes.</div>';
     div.innerHTML = html;
   }catch(e){
     div.innerHTML = '<div style="color:#dc2626;padding:20px">Error red: ' + e.message + '</div>';

@@ -1762,6 +1762,131 @@ def sugerir_mp(codigo_mp):
     return jsonify(out)
 
 
+@bp.route('/api/compras/recepciones-discrepancias', methods=['GET'])
+def listar_recepciones_discrepancias():
+    """Sebastián 23-may-2026 · histórico de recepciones con discrepancia
+    en últimos N días · útil para ranking de calidad de despacho por
+    proveedor.
+
+    Una OC se incluye si:
+    - estado IN ('Recibida','Pagada','Parcial')
+    - tiene_discrepancias=1 (marcada manual o auto en recibir_oc)
+    - fecha_recepcion en últimos `dias` (default 30)
+
+    Devuelve:
+    - lista de OCs con items faltantes (pedido vs recibido)
+    - resumen por proveedor: # discrepancias, # recepciones totales, tasa
+    """
+    u, err, code = _require_compras_session()
+    if err: return err, code
+    try:
+        dias = max(1, min(int(request.args.get('dias', 30)), 365))
+    except Exception:
+        dias = 30
+    conn = get_db(); c = conn.cursor()
+    from datetime import datetime as _dt, timedelta as _td
+    hoy = (_dt.utcnow() - _td(hours=5)).date()
+    desde = (hoy - _td(days=dias)).isoformat()
+
+    # OCs con discrepancia en ventana
+    try:
+        rows = c.execute("""
+            SELECT oc.numero_oc, oc.fecha, oc.estado, oc.proveedor,
+                   COALESCE(oc.creado_por,''),
+                   COALESCE(oc.fecha_recepcion,''),
+                   COALESCE(oc.recibido_por,''),
+                   COALESCE(oc.observaciones_recepcion,''),
+                   COALESCE(oc.valor_total, 0)
+            FROM ordenes_compra oc
+            WHERE oc.tiene_discrepancias = 1
+              AND oc.estado IN ('Recibida','Pagada','Parcial')
+              AND COALESCE(oc.fecha_recepcion,'') >= ?
+            ORDER BY oc.fecha_recepcion DESC
+        """, (desde,)).fetchall()
+    except Exception as e:
+        return jsonify({'error': f'query fallo: {e}'}), 500
+
+    ocs_lista = []
+    for r in rows:
+        # Items con faltante
+        items_faltantes = []
+        try:
+            item_rows = c.execute("""
+                SELECT codigo_mp, COALESCE(nombre_mp,''),
+                       COALESCE(cantidad_g, 0),
+                       COALESCE(cantidad_recibida_g, 0)
+            FROM ordenes_compra_items
+            WHERE numero_oc=?
+            """, (r[0],)).fetchall()
+            for it in item_rows:
+                ped = float(it[2] or 0)
+                recib = float(it[3] or 0)
+                if ped > 0 and recib < ped * 0.999:
+                    faltante = ped - recib
+                    items_faltantes.append({
+                        'codigo_mp': it[0],
+                        'nombre_mp': it[1],
+                        'pedido': round(ped, 1),
+                        'recibido': round(recib, 1),
+                        'faltante': round(faltante, 1),
+                        'pct_faltante': round((faltante / ped) * 100, 1),
+                    })
+        except Exception:
+            pass
+        ocs_lista.append({
+            'numero_oc': r[0],
+            'fecha': str(r[1])[:10] if r[1] else '',
+            'estado': r[2],
+            'proveedor': r[3] or '',
+            'creador': r[4],
+            'fecha_recepcion': str(r[5])[:10] if r[5] else '',
+            'recibido_por': r[6],
+            'observaciones_recepcion': r[7],
+            'valor_total': float(r[8] or 0),
+            'items_faltantes': items_faltantes,
+            'n_items_faltantes': len(items_faltantes),
+        })
+
+    # Ranking por proveedor: # OCs con discrepancia / total OCs recibidas en ventana
+    ranking = {}
+    try:
+        for r in c.execute("""
+            SELECT proveedor,
+                   COUNT(*) AS total_recibidas,
+                   SUM(CASE WHEN tiene_discrepancias=1 THEN 1 ELSE 0 END) AS con_discrep
+            FROM ordenes_compra
+            WHERE estado IN ('Recibida','Pagada','Parcial')
+              AND COALESCE(fecha_recepcion,'') >= ?
+              AND COALESCE(proveedor,'') != ''
+            GROUP BY proveedor
+            ORDER BY con_discrep DESC, total_recibidas DESC
+        """, (desde,)).fetchall():
+            total_rec = int(r[1] or 0)
+            con_dis = int(r[2] or 0)
+            if total_rec > 0:
+                tasa = round((con_dis / total_rec) * 100, 1)
+                ranking[r[0]] = {
+                    'proveedor': r[0],
+                    'total_recibidas': total_rec,
+                    'con_discrepancia': con_dis,
+                    'tasa_discrepancia_pct': tasa,
+                }
+    except Exception:
+        pass
+    ranking_lista = sorted(
+        ranking.values(),
+        key=lambda x: (-x['tasa_discrepancia_pct'], -x['con_discrepancia']),
+    )
+
+    return jsonify({
+        'hoy': hoy.isoformat(),
+        'dias_ventana': dias,
+        'total_ocs_con_discrepancia': len(ocs_lista),
+        'ocs': ocs_lista,
+        'ranking_proveedores': ranking_lista,
+    })
+
+
 @bp.route('/api/compras/ocs-atrasadas', methods=['GET'])
 def listar_ocs_atrasadas():
     """Sebastián 23-may-2026 · cierre flujo Compras · OCs sin recibir

@@ -10126,6 +10126,65 @@ def test_golden_abastecimiento_consumo_bruto_excel(app, db_clean):
     assert len(r.data) > 1000
 
 
+def test_golden_compras_recepciones_discrepancias(app, db_clean):
+    """Endpoint /api/compras/recepciones-discrepancias · histórico de OCs
+    con discrepancia + ranking calidad proveedor.
+
+    Sebastián 23-may-2026 · cierre flujo Compras.
+    """
+    # Cleanup
+    _exec("DELETE FROM ordenes_compra_items WHERE numero_oc LIKE 'OC-DISCTEST-%'")
+    _exec("DELETE FROM ordenes_compra WHERE numero_oc LIKE 'OC-DISCTEST-%'")
+
+    from datetime import date as _d, timedelta as _td
+    f_recep = _d.today().isoformat()
+    f_oc = (_d.today() - _td(days=10)).isoformat()
+    _exec(f"""INSERT INTO ordenes_compra (numero_oc, fecha, fecha_recepcion,
+              estado, proveedor, creado_por, recibido_por,
+              tiene_discrepancias, observaciones_recepcion, valor_total)
+             VALUES ('OC-DISCTEST-01','{f_oc}','{f_recep}','Recibida',
+                     'ProvDiscTest','tester','receptor1',1,
+                     'Faltante en 1 item',100000)""")
+    _exec("""INSERT INTO ordenes_compra_items (numero_oc, codigo_mp,
+             nombre_mp, cantidad_g, cantidad_recibida_g, precio_unitario,
+             subtotal)
+             VALUES ('OC-DISCTEST-01','MPTESTDIS01','MP X',
+                     1000, 700, 100, 100000)""")
+    # OC sin discrepancia (control)
+    _exec(f"""INSERT INTO ordenes_compra (numero_oc, fecha, fecha_recepcion,
+              estado, proveedor, tiene_discrepancias, valor_total)
+             VALUES ('OC-DISCTEST-02','{f_oc}','{f_recep}','Recibida',
+                     'ProvDiscTest',0,50000)""")
+
+    # 401 sin sesión
+    cs_no = app.test_client()
+    r_no = cs_no.get('/api/compras/recepciones-discrepancias')
+    assert r_no.status_code == 401
+
+    cs = _login(app, 'sebastian')
+    r = cs.get('/api/compras/recepciones-discrepancias?dias=30')
+    assert r.status_code == 200, r.data
+    d = r.get_json()
+    # OC con discrepancia debe aparecer
+    nums = [oc['numero_oc'] for oc in d['ocs']]
+    assert 'OC-DISCTEST-01' in nums
+    assert 'OC-DISCTEST-02' not in nums  # sin discrepancia
+    oc = next(x for x in d['ocs'] if x['numero_oc'] == 'OC-DISCTEST-01')
+    assert oc['n_items_faltantes'] == 1
+    assert oc['items_faltantes'][0]['faltante'] == 300
+    assert oc['items_faltantes'][0]['pct_faltante'] == 30.0
+    # Ranking debe incluir ProvDiscTest con 2 recibidas, 1 con discrepancia
+    rk = next((p for p in d['ranking_proveedores'] if p['proveedor'] == 'ProvDiscTest'), None)
+    assert rk, 'BUG: ranking no incluye proveedor'
+    assert rk['total_recibidas'] == 2
+    assert rk['con_discrepancia'] == 1
+    assert rk['tasa_discrepancia_pct'] == 50.0
+
+    # Cleanup
+    _exec("DELETE FROM ordenes_compra_items WHERE numero_oc LIKE 'OC-DISCTEST-%'")
+    _exec("DELETE FROM ordenes_compra WHERE numero_oc LIKE 'OC-DISCTEST-%'")
+
+
 def test_golden_compras_ocs_atrasadas_endpoint(app, db_clean):
     """Endpoint /api/compras/ocs-atrasadas · cierre flujo Compras.
 
