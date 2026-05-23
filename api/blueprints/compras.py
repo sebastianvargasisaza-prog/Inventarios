@@ -185,11 +185,33 @@ def _evaluar_auto_aprobacion(c, proveedor, monto_total, items):
         return False, 'sin proveedor'
     if monto_total >= LIMITE:
         return False, f'monto {monto_total:.0f} >= límite {LIMITE:.0f}'
+    # AUDITORÍA-FIX 23-may-2026 · C21 · guard de exposición acumulada diaria
+    # · 10 SOLs concurrentes de $499K c/u al mismo proveedor podían auto-
+    # aprobarse y dar $4.99M de exposure sin revisión gerencial
+    LIMITE_DIARIO = float(os.environ.get('COMPRAS_AUTO_APROB_LIMITE_DIARIO_COP') or (LIMITE * 5))
+    try:
+        r_dia = c.execute(
+            """SELECT COALESCE(SUM(valor_total),0) FROM ordenes_compra
+               WHERE LOWER(TRIM(proveedor))=LOWER(TRIM(?))
+                 AND date(fecha) = date('now','-5 hours')
+                 AND estado IN ('Autorizada','Parcial','Recibida','Pagada')""",
+            (proveedor,),
+        ).fetchone()
+        suma_dia = float((r_dia or [0])[0] or 0)
+    except Exception:
+        suma_dia = 0
+    if (suma_dia + monto_total) >= LIMITE_DIARIO:
+        return False, f'exposición diaria del proveedor {suma_dia + monto_total:.0f} >= límite diario {LIMITE_DIARIO:.0f}'
     # Recurrencia · ≥3 OCs últimos 90d
+    # AUDITORÍA-FIX 23-may-2026 · C7 · antes contaba TODAS las OCs incluyendo
+    # Canceladas/Rechazadas/Borrador · un proveedor con 3 OCs todas canceladas
+    # quedaba como "recurrente" y auto-aprobado · ahora solo cuenta OCs que
+    # realmente avanzaron (Autorizada/Parcial/Recibida/Pagada)
     try:
         r = c.execute(
             """SELECT COUNT(*) FROM ordenes_compra
                WHERE LOWER(TRIM(proveedor))=LOWER(TRIM(?))
+                 AND estado IN ('Autorizada','Parcial','Recibida','Pagada')
                  AND date(fecha) >= date('now','-5 hours','-90 days')""",
             (proveedor,),
         ).fetchone()
@@ -267,12 +289,20 @@ def _pendiente_en_compras_g(c, codigo_mp):
     except Exception:
         pass
     try:
+        # AUDITORÍA-FIX 23-may-2026 · C6 · OCs 'Pagada' SIN recibir
+        # (anticipo · pago directo previo a recepción) son material pendiente
+        # de llegar · antes se excluían · resultado: generadores automáticos
+        # creaban SOL duplicada para una MP que ya estaba en OC pagada
+        # · ahora se incluyen mientras fecha_recepcion esté vacía
         r = c.execute(
             """SELECT COALESCE(SUM(oci.cantidad_g - COALESCE(oci.cantidad_recibida_g,0)), 0)
                FROM ordenes_compra_items oci
                JOIN ordenes_compra oc ON oc.numero_oc = oci.numero_oc
                WHERE oci.codigo_mp = ?
-                 AND oc.estado IN ('Borrador','Revisada','Autorizada','Parcial')""",
+                 AND (
+                       oc.estado IN ('Borrador','Revisada','Autorizada','Parcial')
+                    OR (oc.estado='Pagada' AND COALESCE(oc.fecha_recepcion,'')='')
+                 )""",
             (codigo_mp,),
         ).fetchone()
         total += float((r or [0])[0] or 0)
@@ -787,6 +817,25 @@ def eliminar_solicitud(numero):
     except sqlite3.OperationalError:
         pass
     c.execute("DELETE FROM solicitudes_compra WHERE numero=?", (numero.upper(),))
+    # SEC-FIX 23-may-2026 · INVIMA Res 2214/2021 · DELETE sin audit es la
+    # causa raíz del incidente 19-may (programación desaparecida sin rastro)
+    # · ahora SIEMPRE registramos qué se borró
+    try:
+        audit_log(c, usuario=user_actual, accion='ELIMINAR_SOLICITUD',
+                  tabla='solicitudes_compra', registro_id=numero.upper(),
+                  antes={
+                      'numero': numero.upper(),
+                      'estado': estado,
+                      'numero_oc': numero_oc,
+                      'categoria': categoria,
+                      'solicitante': solicitante_orig,
+                  },
+                  despues={
+                      'oc_borrada': oc_borrada,
+                      'pagos_influencers_borrados': pagos_inf_borrados,
+                  })
+    except Exception:
+        pass
     conn.commit()
     return jsonify({
         'ok': True,
@@ -984,11 +1033,30 @@ def handle_oc_detalle(numero_oc):
                                          'Cancelá la OC con motivo o creá una nueva.'}), 409
             c.execute("UPDATE ordenes_compra SET estado=? WHERE numero_oc=?",
                       (nuevo_estado, numero_oc))
+            # AUDITORÍA-FIX 23-may-2026 · C3 · si la OC se cancela, liberar
+            # las SOLs vinculadas a Pendiente · antes quedaban apuntando a
+            # OC terminal y auto-plan no las re-emitía
+            sols_revertidas_pp = []
+            if str(nuevo_estado).strip().lower() in ('cancelada','cancelado'):
+                try:
+                    rows = c.execute(
+                        "SELECT numero FROM solicitudes_compra WHERE numero_oc=?",
+                        (numero_oc,),
+                    ).fetchall()
+                    sols_revertidas_pp = [r[0] for r in rows if r and r[0]]
+                    c.execute(
+                        "UPDATE solicitudes_compra SET estado='Pendiente', numero_oc='' "
+                        "WHERE numero_oc=?",
+                        (numero_oc,),
+                    )
+                except Exception:
+                    pass
             try:
                 audit_log(c, usuario=u, accion='ACTUALIZAR_ESTADO_OC',
                           tabla='ordenes_compra', registro_id=numero_oc,
                           antes={'estado': estado_actual},
-                          despues={'estado': nuevo_estado},
+                          despues={'estado': nuevo_estado,
+                                   'sols_revertidas': sols_revertidas_pp},
                           detalle=f"OC {numero_oc}: {estado_actual} → {nuevo_estado}")
             except Exception as e:
                 log.warning('audit_log ACTUALIZAR_ESTADO_OC fallo: %s', e)
@@ -1238,8 +1306,9 @@ def modificar_item_oc(numero_oc, item_id):
 
     Estados permitidos: Borrador, Pendiente, Revisada, Aprobada, Autorizada.
     """
-    if 'compras_user' not in session:
-        return jsonify({'error': 'No autorizado'}), 401
+    # SEC-FIX 23-may-2026 · auditoría · era 'compras_user in session' permisivo
+    u, err, code = _require_compras_write()
+    if err: return err, code
     conn = get_db(); c = conn.cursor()
     row = c.execute('SELECT estado, con_iva FROM ordenes_compra WHERE numero_oc=?',
                     (numero_oc,)).fetchone()
@@ -1269,8 +1338,17 @@ def modificar_item_oc(numero_oc, item_id):
                                 (item_id, numero_oc)).fetchone()
             if not cur_row:
                 return jsonify({'error': 'Item no encontrado'}), 404
-            cant = float(d.get('cantidad_g', cur_row[0] or 0))
-            prec = float(d.get('precio_unitario', cur_row[1] or 0))
+            # SEC-FIX 23-may-2026 · auditoría · validate_money rechaza NaN/Inf/neg
+            import math as _math
+            try:
+                cant = float(d.get('cantidad_g', cur_row[0] or 0))
+                prec = float(d.get('precio_unitario', cur_row[1] or 0))
+            except (TypeError, ValueError):
+                return jsonify({'error': 'cantidad/precio inválido'}), 400
+            if _math.isnan(cant) or _math.isinf(cant) or cant < 0:
+                return jsonify({'error': 'cantidad debe ser número finito >= 0'}), 400
+            if _math.isnan(prec) or _math.isinf(prec) or prec < 0:
+                return jsonify({'error': 'precio debe ser número finito >= 0'}), 400
             sets += ['cantidad_g=?', 'precio_unitario=?', 'subtotal=?']
             params += [cant, prec, round(cant * prec, 2)]
         if not sets:
@@ -1318,8 +1396,11 @@ def confirmar_proveedor_oc(numero_oc):
     que aparezca en futuros selectores. Esto es lo que el user pidió:
     'sirve para confirmar y que el sistema se alimente'.
     """
-    if 'compras_user' not in session:
-        return jsonify({'error': 'No autorizado'}), 401
+    # SEC-FIX 23-may-2026 · auditoría · solo compras_user permitía a
+    # cualquier user logueado redirigir OC a un proveedor distinto antes
+    # de autorize · ataque potencial · ahora _require_compras_write
+    u, err, code = _require_compras_write()
+    if err: return err, code
     d = request.get_json() or {}
     nuevo_prov = (d.get('proveedor') or '').strip()
     if not nuevo_prov:
@@ -1330,6 +1411,13 @@ def confirmar_proveedor_oc(numero_oc):
         'SELECT estado, proveedor, categoria FROM ordenes_compra WHERE numero_oc=?',
         (numero_oc,)
     ).fetchone()
+    # SEC-FIX 23-may-2026 · bloquear cambio post-autorización · evita que
+    # alguien redirija OC ya validada a otro proveedor (ataque o error)
+    if row and row[0] and row[0] in ('Autorizada', 'Pagada', 'Recibida', 'Parcial'):
+        return jsonify({
+            'error': f'No se puede cambiar proveedor con estado {row[0]} · '
+                     'requiere cancelar OC y crear nueva',
+        }), 409
     if not row:
         return jsonify({'error': 'OC no encontrada'}), 404
     estado_oc, proveedor_actual, categoria = row[0], (row[1] or ''), (row[2] or 'MP')
@@ -1676,9 +1764,17 @@ def sugerir_mp(codigo_mp):
 
 @bp.route('/api/proveedores-compras', methods=['GET','POST'])
 def handle_proveedores_compras():
+    # SEC-FIX 23-may-2026 · auditoría · era endpoint público · expone
+    # num_cuenta/banco/nit/tipo_cuenta · viola Ley 1581 CO
+    if request.method == 'GET':
+        u, err, code = _require_compras_session()
+        if err: return err, code
+    else:
+        u, err, code = _require_compras_write()
+        if err: return err, code
     conn = get_db(); c = conn.cursor()
     if request.method == 'POST':
-        u = session.get('compras_user', '')
+        # u ya seteado arriba con _require_compras_write
         d = request.get_json(silent=True) or {}
         nombre = (d.get('nombre') or '').strip()
         if not nombre:
@@ -1838,6 +1934,9 @@ def handle_proveedor(nombre):
 @bp.route('/api/proveedores-compras/<path:nombre>/ficha')
 def proveedor_ficha_360(nombre):
     """Proveedor 360: datos completos + historial OCs + scoring."""
+    # SEC-FIX 23-may-2026 · auditoría · expone num_cuenta/banco/nit · Ley 1581
+    u, err, code = _require_compras_session()
+    if err: return err, code
     conn = get_db(); c = conn.cursor()
     c.execute("""SELECT id, nombre, contacto, email, telefono, categoria,
                         nit, direccion, num_cuenta, tipo_cuenta, banco, concepto_compra,
@@ -3406,7 +3505,23 @@ def mis_solicitudes_con_ciclo():
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
     user = session.get('compras_user', '')
-    usuario_filtro = (request.args.get('usuario') or user).strip().lower()
+    user_lower = user.strip().lower()
+    raw_filtro = (request.args.get('usuario') or user).strip().lower()
+    # SEC-FIX 23-may-2026 · auditoría · antes ?usuario=X permitía
+    # impersonación · cualquier user veía SOLs de otro · ahora solo
+    # admin puede pasar usuario distinto al propio
+    if raw_filtro != user_lower:
+        try:
+            from config import ADMIN_USERS as _AU
+            admin_lower = {x.lower() for x in _AU}
+        except Exception:
+            admin_lower = set()
+        if user_lower not in admin_lower:
+            return jsonify({
+                'error': 'Solo admin puede ver SOLs de otros usuarios',
+                'codigo': 'IMPERSONACION_NO_PERMITIDA',
+            }), 403
+    usuario_filtro = raw_filtro
     estado_q = (request.args.get('estado') or 'abiertas').strip().lower()
 
     conn = get_db(); c = conn.cursor()
@@ -4149,15 +4264,18 @@ def actualizar_estado_solicitud(numero):
         # Influencer y Cuenta de Cobro saltan directo a Autorizada
         # (gerencia ya aprobo la solicitud en su tab — no necesita doble autorizacion)
         _FAST_TRACK = ('Influencer/Marketing Digital', 'Cuenta de Cobro')
-        estado_oc = 'Autorizada' if categoria_oc in _FAST_TRACK else 'Revisada'
+        # SEC-FIX 23-may-2026 · C5 · mig 157 eliminó 'Revisada' del flujo ·
+        # pagar_oc bloquea ese estado · OCs se quedaban inpagables · ahora
+        # default 'Borrador' (requiere autorización explícita posterior)
+        estado_oc = 'Autorizada' if categoria_oc in _FAST_TRACK else 'Borrador'
         # Fast-track Influencer/CC va directo a Autorizada · pero respetar el
-        # límite de aprobación del usuario · si el monto lo excede, NO se
-        # autoriza directo · queda 'Revisada' para que un admin la autorice
-        # (autorizar_oc vuelve a aplicar _check_monto_limit).
+        # límite de aprobación del usuario · si el monto lo excede, queda
+        # 'Borrador' para que un admin la autorice (autorizar_oc vuelve a
+        # aplicar _check_monto_limit).
         if estado_oc == 'Autorizada' and valor_oc and valor_oc > 0:
             _err_lim, _ = _check_monto_limit(session.get('compras_user', ''), valor_oc)
             if _err_lim:
-                estado_oc = 'Revisada'
+                estado_oc = 'Borrador'
         # numero único con reintento ante carrera MAX+1 entre workers
         for _intento in range(6):
             cur.execute("SELECT COALESCE(MAX(CAST(SUBSTR(numero_oc,9) AS INTEGER)),0) FROM ordenes_compra WHERE numero_oc LIKE ?", (f"OC-{datetime.now().year}-%",))
@@ -4482,27 +4600,71 @@ def recibir_oc(numero_oc):
     # Fix #7 · 21-may-2026 · lead_time real aprende del histórico (EWMA 0.7/0.3)
     # Antes: mp_lead_time_config quedaba con 14d default eternamente · auto_plan
     # y predicción demanda usaban datos falsos.
+    # AUDITORÍA-FIX 23-may-2026 · C15 · solo aprender en recepción completa
+    # · antes 3 partials = 3 updates EWMA encadenados (peso 0.7³=0.34 a histórico)
+    # distorsionando el aprendizaje · ahora solo si not es_parcial
+    if not es_parcial:
+        try:
+            oc_fecha_row = cur.execute(
+                "SELECT fecha FROM ordenes_compra WHERE numero_oc=?", (numero_oc,)
+            ).fetchone()
+            if oc_fecha_row and oc_fecha_row[0]:
+                from datetime import datetime as _dtle
+                f_oc = _dtle.strptime(str(oc_fecha_row[0])[:10], '%Y-%m-%d').date()
+                f_rec = _dtle.strptime(str(fecha)[:10], '%Y-%m-%d').date()
+                lead_real_dias = max(1, (f_rec - f_oc).days)
+                for codigo_mp_item in {it[1] for it in items_oc if it[1]}:
+                    cur.execute(
+                        """INSERT INTO mp_lead_time_config (material_id, lead_time_dias)
+                           VALUES (?, ?)
+                           ON CONFLICT(material_id) DO UPDATE SET
+                             lead_time_dias = ROUND(
+                               0.7 * COALESCE(lead_time_dias, ?) + 0.3 * ?
+                             )""",
+                        (codigo_mp_item, lead_real_dias, lead_real_dias, lead_real_dias),
+                    )
+        except Exception as _e:
+            log.warning('lead_time learn fallo: %s', _e)
+
+    # AUDITORÍA-FIX 23-may-2026 · C4 · maestro_mps.ultima_compra_at +
+    # precio_referencia (canonical para sugeridor de proveedor) · antes
+    # solo se actualizaba en update_sol_items y crear_oc · datos quedaban
+    # stale después de recibir si el precio facturado cambió
     try:
-        oc_fecha_row = cur.execute(
-            "SELECT fecha FROM ordenes_compra WHERE numero_oc=?", (numero_oc,)
-        ).fetchone()
-        if oc_fecha_row and oc_fecha_row[0]:
-            from datetime import datetime as _dtle
-            f_oc = _dtle.strptime(str(oc_fecha_row[0])[:10], '%Y-%m-%d').date()
-            f_rec = _dtle.strptime(str(fecha)[:10], '%Y-%m-%d').date()
-            lead_real_dias = max(1, (f_rec - f_oc).days)
-            for codigo_mp_item in {it[1] for it in items_oc if it[1]}:
+        # Re-leer items con precio para tener el dato canonical
+        precios_rows = cur.execute(
+            "SELECT codigo_mp, precio_unitario FROM ordenes_compra_items WHERE numero_oc=?",
+            (numero_oc,),
+        ).fetchall()
+        for codigo_mp_item, precio_item in precios_rows:
+            if not codigo_mp_item:
+                continue
+            sets = []
+            params_u = []
+            sets.append("ultima_compra_at=?")
+            params_u.append(fecha)
+            if precio_item and float(precio_item) > 0:
+                sets.append("precio_referencia=?")
+                params_u.append(float(precio_item))
+            params_u.append(codigo_mp_item)
+            try:
                 cur.execute(
-                    """INSERT INTO mp_lead_time_config (material_id, lead_time_dias)
-                       VALUES (?, ?)
-                       ON CONFLICT(material_id) DO UPDATE SET
-                         lead_time_dias = ROUND(
-                           0.7 * COALESCE(lead_time_dias, ?) + 0.3 * ?
-                         )""",
-                    (codigo_mp_item, lead_real_dias, lead_real_dias, lead_real_dias),
+                    f"UPDATE maestro_mps SET {','.join(sets)} WHERE codigo_mp=?",
+                    params_u,
                 )
-    except Exception as _e:
-        log.warning('lead_time learn fallo: %s', _e)
+            except sqlite3.OperationalError:
+                # Columna ultima_compra_at puede no existir en esquemas viejos
+                # · intentar solo precio_referencia
+                if precio_item and float(precio_item) > 0:
+                    try:
+                        cur.execute(
+                            "UPDATE maestro_mps SET precio_referencia=? WHERE codigo_mp=?",
+                            (float(precio_item), codigo_mp_item),
+                        )
+                    except Exception:
+                        pass
+    except Exception as _e2:
+        log.warning('maestro_mps update tras recepción fallo: %s', _e2)
     # Cierre automatico de cadena: si la OC esta linkeada a items del checklist
     # Pre-Produccion (via produccion_checklist.oc_numero) o solicitudes anticipadas,
     # marcarlos como 'recibido'. Solo cuando recepcion es completa, no parcial.
@@ -4972,6 +5134,16 @@ def pagar_oc(numero_oc):
                                (codigo_mp, precio_kg, numero_factura, proveedor, fecha)
                                VALUES (?, ?, ?, ?, datetime('now', '-5 hours'))""",
                             (codigo_mp, precio, numero_factura, proveedor))
+                # AUDITORÍA-FIX 23-may-2026 · C14 · sincronizar precio_referencia
+                # en maestro_mps (canonical para sugeridor) · antes solo se
+                # actualizaba precios_mp_historico
+                try:
+                    cur.execute(
+                        "UPDATE maestro_mps SET precio_referencia=? WHERE codigo_mp=?",
+                        (float(precio), codigo_mp),
+                    )
+                except Exception:
+                    pass
     except sqlite3.OperationalError as _e:
         if 'no such table' not in str(_e).lower():
             __import__('logging').getLogger('compras').error(
@@ -6970,8 +7142,9 @@ def solicitudes_pdf_resumen():
 @bp.route('/api/solicitudes-compra/<numero>/observaciones', methods=['PUT'])
 def update_sol_observaciones(numero):
     """Admin: actualiza observaciones (y opcionalmente solicitante) de una solicitud."""
-    if 'compras_user' not in session:
-        return jsonify({'error': 'No autorizado. Inicia sesion primero.'}), 401
+    # SEC-FIX 23-may-2026 · auditoría · era 'compras_user in session' permisivo
+    user, err, code = _require_compras_write()
+    if err: return err, code
     conn = get_db(); c = conn.cursor()
     d = request.json or {}
     obs = d.get('observaciones')
@@ -6980,9 +7153,19 @@ def update_sol_observaciones(numero):
     fecha_requerida = d.get('fecha_requerida')
     if not obs and not solicitante and valor is None and not fecha_requerida:
         return jsonify({'error': 'Nada que actualizar'}), 400
-    row = c.execute("SELECT numero FROM solicitudes_compra WHERE numero=?", (numero.upper(),)).fetchone()
+    row = c.execute(
+        "SELECT numero, observaciones, solicitante, valor, fecha_requerida "
+        "FROM solicitudes_compra WHERE numero=?",
+        (numero.upper(),),
+    ).fetchone()
     if not row:
         return jsonify({'error': 'Solicitud no encontrada'}), 404
+    antes_dict = {
+        'observaciones': row[1] if len(row) > 1 else None,
+        'solicitante': row[2] if len(row) > 2 else None,
+        'valor': row[3] if len(row) > 3 else None,
+        'fecha_requerida': row[4] if len(row) > 4 else None,
+    }
     updates, params = [], []
     if obs is not None:
         updates.append("observaciones=?"); params.append(obs)
@@ -7004,6 +7187,19 @@ def update_sol_observaciones(numero):
         return jsonify({'error': 'Nada válido para actualizar'}), 400
     params.append(numero.upper())
     c.execute(f"UPDATE solicitudes_compra SET {','.join(updates)} WHERE numero=?", params)
+    # SEC-FIX 23-may-2026 · audit_log faltante · INVIMA
+    try:
+        despues_dict = {
+            'observaciones': obs if obs is not None else antes_dict['observaciones'],
+            'solicitante': solicitante if solicitante is not None else antes_dict['solicitante'],
+            'valor': valor if valor is not None else antes_dict['valor'],
+            'fecha_requerida': fecha_requerida if fecha_requerida is not None else antes_dict['fecha_requerida'],
+        }
+        audit_log(c, usuario=user, accion='ACTUALIZAR_SOL_OBSERVACIONES',
+                  tabla='solicitudes_compra', registro_id=numero.upper(),
+                  antes=antes_dict, despues=despues_dict)
+    except Exception:
+        pass
     conn.commit()
     return jsonify({'ok': True, 'numero': numero.upper()})
 
@@ -7025,9 +7221,11 @@ def update_sol_items(numero):
       3. maestro_mps.proveedor actualizado si proveedor != actual
       4. precio_historico_mp insertado si precio_unit_g cambio
     """
-    if 'compras_user' not in session:
-        return jsonify({'error': 'No autorizado. Inicia sesion primero.'}), 401
-    user = session.get('compras_user', '')
+    # SEC-FIX 23-may-2026 · auditoría · era 'compras_user in session' permisivo
+    # · este endpoint también sincroniza maestro_mps.proveedor + precio
+    # globalmente · debe restringirse a compras_write
+    user, err, code = _require_compras_write()
+    if err: return err, code
     d = request.json or {}
     items_in = d.get('items') or []
     if not items_in:
@@ -7035,11 +7233,16 @@ def update_sol_items(numero):
 
     conn = get_db(); c = conn.cursor()
     sol = c.execute(
-        "SELECT numero FROM solicitudes_compra WHERE numero=?",
+        "SELECT numero, estado FROM solicitudes_compra WHERE numero=?",
         (numero.upper(),)
     ).fetchone()
     if not sol:
         return jsonify({'error': 'SOL no encontrada'}), 404
+    # SEC-FIX 23-may-2026 · C13 · solo sincronizar maestro_mps si SOL está
+    # en estado editable · evita contaminar el catálogo desde SOL Rechazada/
+    # Cancelada/Pagada · variable sync_global controla el bloque después
+    estado_sol = (sol[1] or '').strip()
+    sync_global_permitido = estado_sol in ('Pendiente', 'Aprobada', 'Borrador')
 
     cambios = {
         'items_actualizados': 0,
@@ -7087,7 +7290,9 @@ def update_sol_items(numero):
         # próxima vez que el calendario detecte falta de esta MP, sugiera
         # automáticamente el proveedor correcto sin que Catalina tenga que
         # repetirlo.
-        if codigo_mp and prov_nuevo and prov_nuevo != prov_actual:
+        # SEC-FIX 23-may-2026 · C13 · solo sincronizar si SOL editable ·
+        # evita contaminar maestro_mps desde SOL Rechazada/Cancelada/Pagada
+        if codigo_mp and prov_nuevo and prov_nuevo != prov_actual and sync_global_permitido:
             try:
                 c.execute("UPDATE maestro_mps SET proveedor=? WHERE codigo_mp=?",
                            (prov_nuevo, codigo_mp))
