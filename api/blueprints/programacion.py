@@ -7830,8 +7830,11 @@ def abastecimiento_consumo_horizontes():
         ORDER BY pp.fecha_programada ASC
     """, (hoy_iso, cutoff_max)).fetchall()
 
-    # 2. Pedidos B2B pendientes (sin producción aún asignada al lote)
-    # Estos suman consumo al horizonte de su fecha_estimada
+    # 2. Pedidos B2B PENDIENTES (sin producción Fija eos_b2b aún)
+    # AUDITORÍA-FIX 23-may-2026 · agente cazó 3 bugs:
+    #   · 'programado' no existe en CHECK · era 'pendiente','confirmado','en_produccion'
+    #   · 'confirmado'/'en_produccion' suelen ya tener Fija eos_b2b · doble-conteo
+    #   · solución conservadora: solo 'pendiente' (lo no convertido a Fija aún)
     b2b_rows = []
     try:
         b2b_rows = c.execute("""
@@ -7839,7 +7842,7 @@ def abastecimiento_consumo_horizontes():
                    COALESCE(cantidad_uds,0), COALESCE(ml_unidad,30),
                    COALESCE(fecha_estimada,'')
             FROM pedidos_b2b
-            WHERE LOWER(COALESCE(estado,'pendiente')) IN ('pendiente','programado')
+            WHERE LOWER(COALESCE(estado,'pendiente')) = 'pendiente'
               AND COALESCE(fecha_estimada,'') >= ?
               AND COALESCE(fecha_estimada,'') <= ?
         """, (hoy_iso, cutoff_max)).fetchall()
@@ -7847,25 +7850,47 @@ def abastecimiento_consumo_horizontes():
         b2b_rows = []
 
     # 3. Fórmulas por producto (g por lote_kg)
+    # AUDITORÍA-FIX 23-may-2026 · agente cazó 2 bugs:
+    #   · No filtraba formula_headers.activo=1 · fórmulas archivadas inflaban
+    #   · codigo_mp se guardaba raw (sin UPPER+TRIM) · luego mismatch con
+    #     pendientes_mp (UPPER+TRIM) y stock_mp (en _get_mp_stock guarda raw
+    #     pero hay name-variant lookup · mejor normalizar consistente)
     formulas = {}
+    # Pre-cargar lote_size_kg por producto (también para B2B · evita N+1)
+    lote_size_por_prod = {}
     for r in c.execute("""
-        SELECT UPPER(TRIM(producto_nombre)), material_id,
-               COALESCE(material_nombre,''),
-               COALESCE(porcentaje,0), COALESCE(cantidad_g_por_lote,0)
-        FROM formula_items
-        WHERE material_id IS NOT NULL AND TRIM(material_id) != ''
+        SELECT UPPER(TRIM(fi.producto_nombre)), fi.material_id,
+               COALESCE(fi.material_nombre,''),
+               COALESCE(fi.porcentaje,0), COALESCE(fi.cantidad_g_por_lote,0),
+               COALESCE(fh.lote_size_kg, 0)
+        FROM formula_items fi
+        JOIN formula_headers fh ON fh.producto_nombre = fi.producto_nombre
+        WHERE fi.material_id IS NOT NULL AND TRIM(fi.material_id) != ''
+          AND COALESCE(fh.activo,1) = 1
     """).fetchall():
+        cm_norm = str(r[1] or '').strip().upper()
+        if not cm_norm:
+            continue
         formulas.setdefault(r[0], []).append({
-            'codigo_mp': r[1],
+            'codigo_mp': cm_norm,
             'nombre': r[2],
             'pct': float(r[3] or 0),
             'g_por_lote': float(r[4] or 0),
         })
+        if r[0] not in lote_size_por_prod:
+            lote_size_por_prod[r[0]] = float(r[5] or 0)
 
-    # 4. MEE por SKU (volumen-aware)
-    mee_por_sku = {}
+    # 4. MEE por producto (volumen-aware)
+    # AUDITORÍA-FIX 23-may-2026 · agente P0-2 · sku_mee_config.sku_codigo es
+    # un SKU comercial (ej 'SAH-30') pero el endpoint indexaba por
+    # producto_norm (ej 'SUERO HIDRATANTE AH 1.5%') → match imposible · TODO
+    # MEE devolvía 0 silente · ahora resuelve producto → SKUs (via
+    # sku_producto_map) → MEE configs (via sku_mee_config)
+    mee_por_producto = {}    # producto_nombre_upper → [{codigo, cant_x_uds, tipo}]
     volumen_por_producto = {}
     if incluir_mee:
+        # Primero: SKU → MEE configs
+        sku_to_mee = {}
         try:
             for r in c.execute("""
                 SELECT UPPER(TRIM(s.sku_codigo)), s.mee_codigo,
@@ -7874,13 +7899,32 @@ def abastecimiento_consumo_horizontes():
                 FROM sku_mee_config s
                 WHERE COALESCE(s.aplica,1)=1
             """).fetchall():
-                mee_por_sku.setdefault(r[0], []).append({
+                sku_to_mee.setdefault(r[0], []).append({
                     'codigo': r[1],
                     'cant_x_uds': float(r[2] or 1),
                     'tipo': r[3] or 'envase',
                 })
         except sqlite3.OperationalError:
             pass
+        # Segundo: SKU → producto vía sku_producto_map (sí existe)
+        try:
+            for r in c.execute("""
+                SELECT UPPER(TRIM(sku)), UPPER(TRIM(producto_nombre))
+                FROM sku_producto_map
+                WHERE COALESCE(activo,1)=1
+                  AND producto_nombre IS NOT NULL AND TRIM(producto_nombre) != ''
+            """).fetchall():
+                sku_u, prod_u = r[0], r[1]
+                if sku_u in sku_to_mee:
+                    for me in sku_to_mee[sku_u]:
+                        # Cada producto agrega TODOS los MEEs de TODOS sus SKUs
+                        mee_por_producto.setdefault(prod_u, []).append(me)
+        except sqlite3.OperationalError:
+            pass
+        # Fallback: si sku_codigo coincide directo con producto_nombre (caso edge)
+        for sku_u, mees in sku_to_mee.items():
+            if sku_u not in mee_por_producto:
+                mee_por_producto[sku_u] = mees
         try:
             for r in c.execute("""
                 SELECT UPPER(TRIM(producto_nombre)), COALESCE(volumen_ml,0)
@@ -7978,6 +8022,7 @@ def abastecimiento_consumo_horizontes():
             if dias_hasta <= h:
                 d[h] = d.get(h, 0.0) + uds
 
+    productos_sin_lote_size = set()  # AUDITORÍA P1-5 · reporte en respuesta
     # 8a. Producciones Fijas
     for pid, producto, fecha, lotes, cant_kg_expl, lote_size in prod_rows:
         producto_norm = (producto or '').strip().upper()
@@ -7997,6 +8042,10 @@ def abastecimiento_consumo_horizontes():
                 gramos = it['g_por_lote'] * (cant_kg / float(lote_size))
             elif it['pct'] > 0:
                 gramos = (it['pct'] / 100.0) * cant_kg * 1000.0
+            elif it['g_por_lote'] > 0:
+                # AUDITORÍA-FIX P1-5 · lote_size NO definido · skip + flag
+                productos_sin_lote_size.add(producto_norm)
+                continue
             else:
                 continue
             if incluir_mp:
@@ -8008,7 +8057,7 @@ def abastecimiento_consumo_horizontes():
                 uds_envasadas = (cant_kg * 1000.0) / vol
                 # Buscar MEE registrados por producto/sku · usar producto_norm
                 # como key (sku_mee_config.sku_codigo) o fallback al codigo_pt
-                mee_items = mee_por_sku.get(producto_norm, [])
+                mee_items = mee_por_producto.get(producto_norm, [])
                 for me in mee_items:
                     _agregar_consumo_mee(
                         (me['codigo'] or '').strip().upper(),
@@ -8019,10 +8068,14 @@ def abastecimiento_consumo_horizontes():
     # 8b. Pedidos B2B pendientes (sin producción Fija aún)
     for bid, cli_id, cli_nom, prod_nom, cant_uds, ml_u, f_est in b2b_rows:
         producto_norm = (prod_nom or '').strip().upper()
+        # AUDITORÍA-FIX 23-may-2026 · P1-4 · f_est vacío caía a dias_hasta=0
+        # inflaba horizonte 15d con pedidos sin fecha · ahora skip si no hay
+        if not f_est:
+            continue
         try:
             dias_hasta = (date.fromisoformat(str(f_est)[:10]) - hoy).days
         except Exception:
-            dias_hasta = 0
+            continue
         if dias_hasta < 0:
             dias_hasta = 0
         # Convertir uds × ml a kg
@@ -8030,30 +8083,26 @@ def abastecimiento_consumo_horizontes():
         if cant_kg <= 0:
             continue
         items = formulas.get(producto_norm) or []
-        # Buscar lote_size del producto · fallback a cant_kg si no hay
-        lote_size_b2b = 0.0
-        try:
-            r_ls = c.execute(
-                "SELECT COALESCE(lote_size_kg,0) FROM formula_headers "
-                "WHERE UPPER(TRIM(producto_nombre))=?",
-                (producto_norm,)
-            ).fetchone()
-            if r_ls:
-                lote_size_b2b = float(r_ls[0] or 0)
-        except Exception:
-            pass
+        # AUDITORÍA-FIX P1-2 · usar lote_size pre-cargado (no N+1 query)
+        lote_size_b2b = lote_size_por_prod.get(producto_norm, 0.0)
         for it in items:
+            # AUDITORÍA-FIX P1-5 · si lote_size=0 pero hay g_por_lote, reportar
+            # producto para que Sebastián lo complete · NO inflar con default
             if it['g_por_lote'] > 0 and lote_size_b2b > 0:
                 gramos = it['g_por_lote'] * (cant_kg / lote_size_b2b)
             elif it['pct'] > 0:
                 gramos = (it['pct'] / 100.0) * cant_kg * 1000.0
+            elif it['g_por_lote'] > 0:
+                # lote_size NO definido · skip con flag
+                productos_sin_lote_size.add(producto_norm)
+                continue
             else:
                 continue
             if incluir_mp:
                 _agregar_consumo_mp(it['codigo_mp'], gramos, dias_hasta)
         if incluir_mee:
             uds_envasadas = float(cant_uds or 0)
-            for me in mee_por_sku.get(producto_norm, []):
+            for me in mee_por_producto.get(producto_norm, []):
                 _agregar_consumo_mee(
                     (me['codigo'] or '').strip().upper(),
                     uds_envasadas * me['cant_x_uds'],
@@ -8171,7 +8220,7 @@ def abastecimiento_consumo_horizontes():
                         d = consumo_mp.setdefault(it['codigo_mp'], dict(_zero_mp))
                         d[h] = d.get(h, 0.0) + gramos
                 if incluir_mee:
-                    mee_items = mee_por_sku.get(prod_up, [])
+                    mee_items = mee_por_producto.get(prod_up, [])
                     if mee_items:
                         ml = _inf_ml(prod_up.title() if not any(prod_up.startswith(p) for p in ('SUERO','EMULSION','CREMA','GEL')) else prod_up)
                         if ml > 0:
@@ -8273,6 +8322,7 @@ def abastecimiento_consumo_horizontes():
         'mps': items_out_mp,
         'mees': items_out_mee,
         'resumen_por_horizonte': resumen,
+        'productos_sin_lote_size': sorted(productos_sin_lote_size),
     })
 
 
