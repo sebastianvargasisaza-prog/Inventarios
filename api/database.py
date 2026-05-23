@@ -312,6 +312,25 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (162, "limpieza AGRESIVA · cancela TODAS las Sugeridas futuras (incluida primera semana junio) · Sebastián 23-may-2026 PM", [
+        # Sebastián 23-may-2026 PM · "me siguen apareciendo, son las azules"
+        # · screenshot Junio 2026 muestra Sugeridas del 1-7 jun que tampoco
+        # quiere (mig 161 solo borraba > 2026-06-07, dejaba 1-7 jun).
+        # Esta limpieza es total: cancela TODAS las Sugeridas con fecha >=
+        # hoy (2026-05-23). El usuario crea las nuevas manualmente desde
+        # el botón 🤖 Programar · o el cron 5 AM las regenera con la
+        # lógica nueva ya correcta (Fix #2-b lote_kg_efectivo).
+        # NUNCA toca Fijo (eos_plan/b2b/retroactivo).
+        # NUNCA toca lo ya descontado.
+        """UPDATE produccion_programada
+            SET estado = 'cancelado',
+                observaciones = COALESCE(observaciones,'') || ' · cancelado limpieza total mig162'
+          WHERE substr(fecha_programada,1,10) >= '2026-05-23'
+            AND COALESCE(origen,'') IN ('eos_canonico','auto_plan','sugerido','manual','calendar')
+            AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado')
+            AND fin_real_at IS NULL
+            AND inventario_descontado_at IS NULL""",
+    ]),
     (161, "limpiar Sugeridas > 2026-06-07 + fix AZH lote_size_kg=33 · Sebastián 23-may-2026 PM", [
         # Sebastián 23-may-2026 PM · "limpiarlo dejando lo que ya puse yo en
         # mayo y la primera semana de junio" + "AZ HIBRID CLEAR tenía lote

@@ -673,7 +673,10 @@ JOBS_SCHEDULE = [
     # ⭐ Planta · diario 5:00 · auto-programar Sugeridas en calendario
     # Sebastián 23-may-2026 · "el sistema calcula próxima producción
     # pero no la coloca · se pierde la sugerencia · que sea eficiente"
-    ('auto_programar_sugeridas', 5, 0, None, None,              'job_auto_programar_sugeridas'),
+    # DESACTIVADO 23-may-PM · "me siguen apareciendo, son las azules · no
+    # las quiero" · Sebastián prefiere crear Sugeridas manualmente desde
+    # botón 🤖 Programar. Reactivar descomentando esta línea.
+    # ('auto_programar_sugeridas', 5, 0, None, None,              'job_auto_programar_sugeridas'),
 ] + [
     (f'watcher_health_{h:02d}', h, 7, None, None, 'job_watcher_health')
     for h in range(24)
