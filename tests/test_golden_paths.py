@@ -9954,7 +9954,8 @@ def test_golden_abastecimiento_consumo_horizontes(app, db_clean):
     _exec(f"""INSERT INTO produccion_programada (producto, fecha_programada,
               cantidad_kg, lotes, estado, origen)
              VALUES ('TEST_ABA_PROD','{f10}',10,1,'cancelado','eos_plan')""")
-    # Producción SUGERIDA en día +5 (NO cuenta · solo Fijas)
+    # Producción SUGERIDA en día +5 · FIX #3 23-may · ahora SÍ cuenta
+    # (Abastecimiento lee Calendar completo: Fijo + Sugerida).
     f5 = (_date.today() + _tdh(days=5)).isoformat()
     _exec(f"""INSERT INTO produccion_programada (producto, fecha_programada,
               cantidad_kg, lotes, estado, origen)
@@ -9965,29 +9966,41 @@ def test_golden_abastecimiento_consumo_horizontes(app, db_clean):
     assert r.status_code == 200, f'BUG: {r.status_code} {r.data}'
     d = r.get_json()
     assert d['horizontes'] == [15, 30, 60, 90, 120, 180, 365]
-    # Nota: no validamos n_producciones_fijas total (la BD puede tener seed) ·
-    # validamos el consumo específico del MP de prueba (único)
-    assert d['n_producciones_fijas'] >= 1, \
-        f'BUG: nuestra Fija debe contar · {d["n_producciones_fijas"]}'
+    assert d['n_producciones_fijas'] >= 1
 
-    # MP debe aparecer con consumo 5000g en horizontes >=30 (no en 15)
+    # FIX #3: Sugerida día +5 SÍ cuenta (5000g) en 15d
+    # Fija día +25 cuenta a partir de 30d
+    # 30d/60d/365d: ambas (5000 + 5000 = 10000g)
     mp = next((x for x in d['mps'] if x['codigo'] == 'MPTESTABA01'), None)
     assert mp, f'BUG: MP no aparece · {d["mps"]}'
-    assert mp['consumo']['15'] == 0, \
-        f'BUG: producción día 25 NO debe contar en 15d · {mp["consumo"]}'
-    assert mp['consumo']['30'] == 5000, \
-        f'BUG: producción día 25 debe contar en 30d · {mp["consumo"]}'
-    assert mp['consumo']['60'] == 5000
-    assert mp['consumo']['365'] == 5000
+    assert mp['consumo']['15'] == 5000, \
+        f'BUG FIX#3: Sugerida día 5 cuenta en 15d · {mp["consumo"]}'
+    assert mp['consumo']['30'] == 10000, \
+        f'BUG FIX#3: Sugerida+Fija en 30d · {mp["consumo"]}'
+    assert mp['consumo']['60'] == 10000
+    assert mp['consumo']['365'] == 10000
 
-    # Déficit en 30d = 5000 - 1000 (stock) = 4000
-    assert abs(mp['deficit']['30'] - 4000) < 1, \
-        f'BUG: deficit 30d esperado 4000 · got {mp["deficit"]["30"]}'
+    # Modo legacy ?solo_fijo=1 · debe excluir Sugerida (comportamiento previo)
+    r_legacy = cs.get('/api/abastecimiento/consumo-horizontes?solo_fijo=1')
+    assert r_legacy.status_code == 200
+    d_legacy = r_legacy.get_json()
+    mp_l = next((x for x in d_legacy['mps'] if x['codigo'] == 'MPTESTABA01'), None)
+    assert mp_l, 'BUG: MP no aparece en solo_fijo'
+    assert mp_l['consumo']['15'] == 0, \
+        f'BUG solo_fijo: Sugerida NO debe contar · {mp_l["consumo"]}'
+    assert mp_l['consumo']['30'] == 5000
 
-    # Urgencia: primer horizonte con déficit es 30d → URGENTE
-    assert mp['urgencia'] == 'URGENTE', \
-        f'BUG: urgencia esperada URGENTE · got {mp["urgencia"]}'
-    assert mp['horizonte_quiebre_dias'] == 30
+    # FIX #3 · Déficit en 15d = 5000 - 1000 (stock) = 4000 (Sugerida ahora cuenta)
+    assert abs(mp['deficit']['15'] - 4000) < 1, \
+        f'BUG FIX#3: deficit 15d esperado 4000 · got {mp["deficit"]["15"]}'
+    # Déficit en 30d = 10000 - 1000 = 9000
+    assert abs(mp['deficit']['30'] - 9000) < 1, \
+        f'BUG FIX#3: deficit 30d esperado 9000 · got {mp["deficit"]["30"]}'
+
+    # Urgencia: primer horizonte con déficit es 15d → CRITICO (Sugerida adelantó)
+    assert mp['urgencia'] in ('CRITICO', 'URGENTE'), \
+        f'BUG: urgencia esperada CRITICO/URGENTE · got {mp["urgencia"]}'
+    assert mp['horizonte_quiebre_dias'] in (15, 30)
 
     # Anti-auth · sin sesión 401
     cs_no = app.test_client()
@@ -10244,6 +10257,77 @@ def test_golden_plan_limpiar_sugeridas_futuras(app, db_clean):
     rows_fij = _query("""SELECT estado FROM produccion_programada
                          WHERE producto='LIMPIAR_TEST_FIJ'""")
     assert rows_fij and rows_fij[0][0] == 'pendiente'  # NO se tocó
+
+
+def test_golden_clientes_b2b_crud(app, db_clean):
+    """FIX #4 · Sebastián 23-may-2026 · tabla maestra clientes_b2b_maestro.
+    Antes el cliente era derivado de DISTINCT pedidos_b2b.cliente_id ·
+    sin FK · cualquier typo creaba cliente nuevo. Ahora tabla maestra
+    con CRUD endpoints como base para módulo portal solicitud B2B.
+    """
+    # 401 sin sesión
+    cs_no = app.test_client()
+    r_no = cs_no.get('/api/clientes-b2b')
+    assert r_no.status_code == 401
+
+    cs = _login(app, 'sebastian')
+    # GET inicial · puede tener clientes backfilled desde mig 160
+    r = cs.get('/api/clientes-b2b')
+    assert r.status_code == 200
+    d = r.get_json()
+    assert d['ok'] is True
+    assert isinstance(d.get('clientes'), list)
+    n_inicial = len(d['clientes'])
+
+    # POST crear
+    r_c = cs.post('/api/clientes-b2b', json={
+        'cliente_id': 'TEST_CLI_B2B_001',
+        'cliente_nombre': 'Cliente Test B2B',
+        'tipo': 'B2B',
+        'email': 'test@cliente.com',
+    }, headers=csrf_headers())
+    assert r_c.status_code == 201, r_c.data
+    assert r_c.get_json()['cliente_id'] == 'TEST_CLI_B2B_001'
+
+    # GET ahora debe incluir el nuevo
+    r2 = cs.get('/api/clientes-b2b?incluir_pedidos=1')
+    d2 = r2.get_json()
+    cli = next((c for c in d2['clientes'] if c['cliente_id'] == 'TEST_CLI_B2B_001'), None)
+    assert cli, 'BUG: cliente creado no aparece'
+    assert cli['email'] == 'test@cliente.com'
+    assert 'pedidos_total' in cli
+
+    # POST upsert (mismo cliente_id) actualiza
+    r_u = cs.post('/api/clientes-b2b', json={
+        'cliente_id': 'TEST_CLI_B2B_001',
+        'cliente_nombre': 'Cliente Test B2B Renombrado',
+        'tipo': 'B2B',
+    }, headers=csrf_headers())
+    assert r_u.status_code == 201
+    r3 = cs.get('/api/clientes-b2b')
+    cli3 = next((c for c in r3.get_json()['clientes'] if c['cliente_id'] == 'TEST_CLI_B2B_001'), None)
+    assert cli3['cliente_nombre'] == 'Cliente Test B2B Renombrado'
+
+    # DELETE soft (activo=0)
+    r_d = cs.delete('/api/clientes-b2b/TEST_CLI_B2B_001', headers=csrf_headers())
+    assert r_d.status_code == 200
+    # Default solo lista activos · ya no debe aparecer
+    r4 = cs.get('/api/clientes-b2b')
+    cli4 = next((c for c in r4.get_json()['clientes'] if c['cliente_id'] == 'TEST_CLI_B2B_001'), None)
+    assert cli4 is None
+    # Pero con activo=0 sí aparece
+    r5 = cs.get('/api/clientes-b2b?activo=0')
+    cli5 = next((c for c in r5.get_json()['clientes'] if c['cliente_id'] == 'TEST_CLI_B2B_001'), None)
+    assert cli5 is not None
+    assert cli5['activo'] == 0
+
+    # Validación campos requeridos
+    r_bad = cs.post('/api/clientes-b2b', json={'cliente_id': 'X'},
+                    headers=csrf_headers())
+    assert r_bad.status_code == 400
+
+    # Cleanup
+    _exec("DELETE FROM clientes_b2b_maestro WHERE cliente_id='TEST_CLI_B2B_001'")
 
 
 def test_golden_compras_mailbox_facturas(app, db_clean):

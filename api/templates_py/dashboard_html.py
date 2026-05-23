@@ -21312,10 +21312,18 @@ async function ckMarcar(itemId, estado){
       const tipo10 = p.tipo_10ml === 'regalo' ? 'regalo automático' : 'venta';
       presentacion += '<br><span style="background:#fdf4ff;color:#7e22ce;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700">10ml · ' + p.uds_10ml_por_lote + ' uds/lote · ' + tipo10 + '</span>';
     }
+    // FIX #2 · 23-may-2026 Sebastián · flags de calidad del dato
+    let avisos = '';
+    if (p.ml_inferido) {
+      avisos += '<div style="background:#fef3c7;color:#92400e;border-left:3px solid #f59e0b;padding:6px 10px;border-radius:5px;font-size:11px;font-weight:600;margin-top:6px">⚠ ml inferido por nombre · agregá envase en producto_presentaciones para precisión</div>';
+    }
+    if (p.lote_size_faltante) {
+      avisos += '<div style="background:#fee2e2;color:#991b1b;border-left:3px solid #dc2626;padding:6px 10px;border-radius:5px;font-size:11px;font-weight:600;margin-top:6px">⚠ lote_size_kg = 0 · definí en formula_headers para que aparezcan kg sugeridos</div>';
+    }
 
     let html = '<div style="display:flex;gap:14px;margin-bottom:16px;align-items:center">';
     html += imgHtml;
-    html += '<div style="flex:1">' + presentacion + '</div>';
+    html += '<div style="flex:1">' + presentacion + avisos + '</div>';
     html += '</div>';
 
     // ═══════ SECCIÓN 1 · DIAGNÓSTICO (read-only) ═══════

@@ -312,6 +312,33 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (160, "clientes_b2b_maestro · tabla maestra para módulo solicitud B2B · Sebastián 23-may-2026", [
+        # FIX #4 · auditoría · "cliente B2B" hasta hoy es derivado de
+        # DISTINCT pedidos_b2b.cliente_id (TEXT libre sin FK) · cualquier
+        # typo crea cliente nuevo silencioso · cliente sin pedidos no
+        # aparece en Necesidades. Tabla maestra unifica el universo
+        # de clientes y es base para el portal de solicitudes futuro.
+        """CREATE TABLE IF NOT EXISTS clientes_b2b_maestro (
+            cliente_id TEXT PRIMARY KEY,
+            cliente_nombre TEXT NOT NULL,
+            contacto TEXT DEFAULT '',
+            telefono TEXT DEFAULT '',
+            email TEXT DEFAULT '',
+            activo INTEGER NOT NULL DEFAULT 1,
+            tipo TEXT NOT NULL DEFAULT 'B2B'
+                CHECK(tipo IN ('B2B','MAQUILA','INFLUENCER','OTRO')),
+            notas TEXT DEFAULT '',
+            creado_at_utc TEXT NOT NULL DEFAULT (datetime('now','utc')),
+            actualizado_at_utc TEXT NOT NULL DEFAULT (datetime('now','utc'))
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_clientes_b2b_activo ON clientes_b2b_maestro(activo)",
+        "CREATE INDEX IF NOT EXISTS idx_clientes_b2b_tipo ON clientes_b2b_maestro(tipo, activo)",
+        # Backfill desde pedidos_b2b · upsert idempotente
+        """INSERT OR IGNORE INTO clientes_b2b_maestro (cliente_id, cliente_nombre, tipo, activo)
+           SELECT DISTINCT cliente_id, cliente_nombre, 'B2B', 1
+             FROM pedidos_b2b
+            WHERE cliente_id IS NOT NULL AND TRIM(cliente_id) != ''""",
+    ]),
     (159, "OC Pagada+parcial flag separado · cierre flujo · Sebastián 23-may-2026", [
         # AUDITORÍA C17 · 23-may-2026 · OC pagada con anticipo + recepción
         # parcial quedaba en estado='Pagada' sin distinguir que aún falta

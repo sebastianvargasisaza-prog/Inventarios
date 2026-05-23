@@ -557,6 +557,118 @@ def cancelar_pedido_b2b(pid):
 
 # ─── Consolidador de necesidades ───────────────────────────────────────────
 
+@bp.route("/api/clientes-b2b", methods=["GET"])
+def clientes_b2b_listar():
+    """Lista clientes_b2b_maestro · Sebastián 23-may-2026 FIX #4.
+    Query params:
+      activo=1 (default) · solo activos
+      incluir_pedidos=1 · adjunta count de pedidos por cliente
+    """
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+    solo_activos = request.args.get('activo', '1') == '1'
+    incluir_pedidos = request.args.get('incluir_pedidos') == '1'
+    conn = get_db()
+    cur = conn.cursor()
+    where = "WHERE activo=1" if solo_activos else ""
+    rows = cur.execute(
+        f"""SELECT cliente_id, cliente_nombre, contacto, telefono, email,
+                    activo, tipo, COALESCE(notas,''), creado_at_utc
+            FROM clientes_b2b_maestro {where}
+            ORDER BY cliente_nombre""",
+    ).fetchall()
+    items = []
+    for r in rows:
+        item = {
+            'cliente_id': r[0], 'cliente_nombre': r[1], 'contacto': r[2],
+            'telefono': r[3], 'email': r[4], 'activo': int(r[5] or 0),
+            'tipo': r[6], 'notas': r[7], 'creado_at_utc': r[8],
+        }
+        if incluir_pedidos:
+            row_pc = cur.execute(
+                """SELECT COUNT(*), SUM(CASE WHEN estado='pendiente' THEN 1 ELSE 0 END)
+                   FROM pedidos_b2b WHERE cliente_id = ?""",
+                (r[0],),
+            ).fetchone()
+            item['pedidos_total'] = int((row_pc and row_pc[0]) or 0)
+            item['pedidos_pendientes'] = int((row_pc and row_pc[1]) or 0)
+        items.append(item)
+    return jsonify({'ok': True, 'clientes': items})
+
+
+@bp.route("/api/clientes-b2b", methods=["POST"])
+def clientes_b2b_crear():
+    """Crea cliente en clientes_b2b_maestro · upsert por cliente_id."""
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+    d = request.get_json(silent=True) or {}
+    cliente_id = (d.get('cliente_id') or '').strip()
+    cliente_nombre = (d.get('cliente_nombre') or '').strip()
+    if not cliente_id or not cliente_nombre:
+        return jsonify({'error': 'cliente_id y cliente_nombre requeridos'}), 400
+    tipo = (d.get('tipo') or 'B2B').upper()
+    if tipo not in ('B2B', 'MAQUILA', 'INFLUENCER', 'OTRO'):
+        tipo = 'B2B'
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        """INSERT INTO clientes_b2b_maestro
+            (cliente_id, cliente_nombre, contacto, telefono, email, tipo, notas, activo)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 1)
+            ON CONFLICT(cliente_id) DO UPDATE SET
+              cliente_nombre = excluded.cliente_nombre,
+              contacto = excluded.contacto,
+              telefono = excluded.telefono,
+              email = excluded.email,
+              tipo = excluded.tipo,
+              notas = excluded.notas,
+              activo = 1,
+              actualizado_at_utc = datetime('now','utc')""",
+        (cliente_id, cliente_nombre,
+         (d.get('contacto') or '').strip(),
+         (d.get('telefono') or '').strip(),
+         (d.get('email') or '').strip(),
+         tipo,
+         (d.get('notas') or '').strip()),
+    )
+    try:
+        audit_log(cur, usuario=user, accion='UPSERT_CLIENTE_B2B',
+                  tabla='clientes_b2b_maestro', registro_id=cliente_id,
+                  despues=d)
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({'ok': True, 'cliente_id': cliente_id}), 201
+
+
+@bp.route("/api/clientes-b2b/<cliente_id>", methods=["DELETE"])
+def clientes_b2b_desactivar(cliente_id):
+    """Soft-delete · marca activo=0 · NUNCA borra para preservar pedidos."""
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        """UPDATE clientes_b2b_maestro SET activo=0,
+            actualizado_at_utc = datetime('now','utc')
+           WHERE cliente_id = ?""",
+        (cliente_id,),
+    )
+    try:
+        audit_log(cur, usuario=user, accion='DESACTIVAR_CLIENTE_B2B',
+                  tabla='clientes_b2b_maestro', registro_id=cliente_id)
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({'ok': True})
+
+
 @bp.route("/api/plan/necesidades", methods=["GET"])
 def plan_necesidades():
     """Agregador de necesidades por cliente · core del Plan v3.
@@ -969,6 +1081,27 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
         sku_to_prod[sku_up] = r[1]
         prod_to_skus.setdefault(r[1], []).append(sku_up)
 
+    # FIX #2 · 23-may-2026 Sebastián · "velocidad o cantidad mal" · auditoría:
+    # _inferir_ml_presentacion usaba heurística por substring del nombre (default
+    # 30ml si no matchea) → cualquier producto nuevo o con nombre inusual
+    # caía silenciosamente al default. Ahora se consulta producto_presentaciones
+    # (tabla canónica de envases con volumen_ml por SKU Shopify). Si no hay
+    # data, fallback heurística + flag ml_inferido visible en UI.
+    ml_por_sku = {}
+    try:
+        for r in c.execute(
+            """SELECT UPPER(TRIM(sku_shopify)), volumen_ml
+               FROM producto_presentaciones
+               WHERE COALESCE(activo,1)=1
+                 AND sku_shopify IS NOT NULL
+                 AND TRIM(sku_shopify) != ''
+                 AND COALESCE(volumen_ml,0) > 0""",
+        ).fetchall():
+            ml_por_sku[r[0]] = float(r[1])
+    except Exception:
+        # Tabla puede no existir en tests antiguos
+        pass
+
     # 3. Stock por SKU (re-uso helper)
     from blueprints.programacion import _resolved_stock_por_sku
     resolved_stock = _resolved_stock_por_sku(c.connection, empresa='ANIMUS')
@@ -1038,9 +1171,34 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
 
         # ml por presentación · Sebastián 13-may-2026: "los sueros son
         # de 30, los limpiadores de 150, geles e hidratantes de 50 ml".
-        # Antes era hardcoded 30 para todo → bug que subestimaba stock_kg
-        # y velocidad_kg para limpiadores y geles.
-        ml_promedio = _inferir_ml_presentacion(prod_nombre)
+        # FIX #2 · 23-may-2026 · primero buscar ml en producto_presentaciones
+        # ponderado por ventas reales · si no hay match, fallback heurística
+        # del nombre + flag ml_inferido visible al usuario.
+        ml_inferido = False
+        ml_total_pond = 0.0
+        uds_total_pond = 0
+        for _sku in skus_de_prod:
+            ml_sku = ml_por_sku.get(_sku.upper().strip())
+            uds_sku = int(ventas_por_sku.get(_sku, 0) or 0)
+            if ml_sku and uds_sku > 0:
+                ml_total_pond += ml_sku * uds_sku
+                uds_total_pond += uds_sku
+        if uds_total_pond > 0:
+            ml_promedio = ml_total_pond / uds_total_pond
+        else:
+            # Fallback: 1) ml de cualquier SKU mapeado aunque no haya vendido
+            #          2) heurística por nombre (legacy)
+            ml_fallback_sku = None
+            for _sku in skus_de_prod:
+                ml_sku = ml_por_sku.get(_sku.upper().strip())
+                if ml_sku:
+                    ml_fallback_sku = ml_sku
+                    break
+            if ml_fallback_sku:
+                ml_promedio = ml_fallback_sku
+            else:
+                ml_promedio = _inferir_ml_presentacion(prod_nombre)
+                ml_inferido = True
         # Velocidad uds/día y kg/día
         velocidad_uds_dia = ventas_periodo_total / float(ventana)
         velocidad_kg_dia = (velocidad_uds_dia * ml_promedio) / 1000.0
@@ -1120,6 +1278,8 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
             "velocidad_uds_dia": round(velocidad_uds_dia, 2),
             "velocidad_kg_dia": round(velocidad_kg_dia, 3),
             "ml_unidad": ml_promedio,
+            "ml_inferido": ml_inferido,  # FIX #2 · True = heurística por nombre, no SKU real
+            "lote_size_faltante": float(lote_kg or 0) <= 0,  # FIX #2 · lote_size_kg sin definir
             "dias_cobertura": dias_cobertura,
             "urgencia": urgencia,
             "n_lotes_recomendados": n_lotes_recomendados,

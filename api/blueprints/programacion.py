@@ -7821,13 +7821,21 @@ def abastecimiento_consumo_horizontes():
     incluir_mee = 'mee' in tipo
 
     # Modo de demanda · Sebastián 23-may-2026 · dual sin inflar
-    # · 'comprometido' (default): solo Fijas + B2B (lo aprobado)
+    # · 'comprometido' (default): TODO lo del Calendario (Fijo + Sugerida)
     # · 'run_rate': agrega proyección por velocidad de ventas Shopify
-    #   (consumo proyectado = velocidad_kg_dia × h · descuenta lo ya Fijo del
-    #   mismo producto para evitar doble-contar)
+    #   (consumo proyectado = velocidad_kg_dia × h · descuenta lo ya en
+    #   Calendario para evitar doble-contar)
+    # FIX #3 · 23-may-2026 · "el abastecimiento debería ser tomado desde el
+    # calendario donde tenemos programado todo por varios meses". Antes solo
+    # consideraba origen eos_plan/b2b/retroactivo (Fijo) · ahora también
+    # lee eos_canonico/auto_plan/sugerido (Sugeridas autoprogramadas).
+    # Cuando el usuario fija algo Sugerido, REPROGRAMAR lo promueve a
+    # eos_plan automáticamente · sin duplicar.
+    # Param ?solo_fijo=1 para conservar comportamiento legacy.
     modo = (request.args.get('modo', 'comprometido') or '').lower()
     if modo not in ('comprometido', 'run_rate'):
         modo = 'comprometido'
+    solo_fijo = request.args.get('solo_fijo', '').lower() in ('1','true','yes','si')
 
     conn = get_db()
     c = conn.cursor()
@@ -7836,22 +7844,29 @@ def abastecimiento_consumo_horizontes():
     cutoff_max = (hoy + _td(days=max(horizontes))).isoformat()
     hoy_iso = hoy.isoformat()
 
-    # 1. Producciones Fijas en ventana · solo planes confirmados
+    # 1. Producciones del Calendario · Fijo + Sugerida (a menos que solo_fijo)
     # exclude: cancelado, completado y ya descontadas (su MP ya bajó del stock)
-    prod_rows = c.execute("""
+    if solo_fijo:
+        origenes_in = ('eos_plan', 'eos_b2b', 'eos_retroactivo')
+    else:
+        origenes_in = ('eos_plan', 'eos_b2b', 'eos_retroactivo',
+                        'eos_canonico', 'auto_plan', 'sugerido')
+    placeholders = ','.join(['?'] * len(origenes_in))
+    prod_rows = c.execute(f"""
         SELECT pp.id, pp.producto, pp.fecha_programada,
                COALESCE(pp.lotes, 1), COALESCE(pp.cantidad_kg, 0),
-               COALESCE(fh.lote_size_kg, 0)
+               COALESCE(fh.lote_size_kg, 0),
+               COALESCE(pp.origen, '')
         FROM produccion_programada pp
         LEFT JOIN formula_headers fh
                ON UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(pp.producto))
-        WHERE COALESCE(pp.origen,'') IN ('eos_plan','eos_b2b','eos_retroactivo')
+        WHERE COALESCE(pp.origen,'') IN ({placeholders})
           AND LOWER(COALESCE(pp.estado,'')) NOT IN ('cancelado','completado')
           AND COALESCE(pp.inventario_descontado_at,'') = ''
           AND pp.fecha_programada >= ?
           AND pp.fecha_programada <= ?
         ORDER BY pp.fecha_programada ASC
-    """, (hoy_iso, cutoff_max)).fetchall()
+    """, origenes_in + (hoy_iso, cutoff_max)).fetchall()
 
     # 2. Pedidos B2B PENDIENTES (sin producción Fija eos_b2b aún)
     # AUDITORÍA-FIX 23-may-2026 · agente cazó 3 bugs:
@@ -8139,8 +8154,8 @@ def abastecimiento_consumo_horizontes():
                 d[h] = d.get(h, 0.0) + uds
 
     productos_sin_lote_size = set()  # AUDITORÍA P1-5 · reporte en respuesta
-    # 8a. Producciones Fijas
-    for pid, producto, fecha, lotes, cant_kg_expl, lote_size in prod_rows:
+    # 8a. Producciones del Calendario (Fijo + Sugerida desde FIX #3 23-may)
+    for pid, producto, fecha, lotes, cant_kg_expl, lote_size, _origen in prod_rows:
         producto_norm = (producto or '').strip().upper()
         try:
             dias_hasta = (date.fromisoformat(str(fecha)[:10]) - hoy).days
@@ -8285,7 +8300,7 @@ def abastecimiento_consumo_horizontes():
         # + kg_b2b_por_prod_por_horizonte para descontar del run-rate y
         # evitar doble-conteo (AUDITORÍA P2 · agente cazó este caso)
         kg_fijo_acum_por_prod = {}  # prod_up → {h: kg_acumulado}
-        for pid, producto, fecha, lotes, cant_kg_expl, lote_size in prod_rows:
+        for pid, producto, fecha, lotes, cant_kg_expl, lote_size, _origen2 in prod_rows:
             producto_norm = (producto or '').strip().upper()
             try:
                 dias_hasta_f = (date.fromisoformat(str(fecha)[:10]) - hoy).days
