@@ -975,30 +975,42 @@ def job_sync_shopify(app):
             return False, {'error': 'Shopify no configurado'}, 0
         import urllib.request as ur
         import json as _json
+        # FIX 23-may-2026 · auditoría · paginación Link header (antes 1 fetch)
         url = f"https://{shop}/admin/api/2024-01/orders.json?status=any&limit=250"
-        req = ur.Request(url, headers={"X-Shopify-Access-Token": token})
         synced = 0
-        with ur.urlopen(req, timeout=30) as r:
-            orders = _json.loads(r.read())["orders"]
-        for o in orders:
-            items_sku = _json.dumps([
-                {"sku": li.get("sku",""), "qty": li.get("quantity",0)}
-                for li in o.get("line_items",[])
-            ])
-            total_uds = sum(li.get("quantity",0) for li in o.get("line_items",[]))
-            addr = o.get("billing_address") or {}
-            conn.execute("""
-                INSERT OR REPLACE INTO animus_shopify_orders
-                  (shopify_id, nombre, email, total, moneda, estado, estado_pago,
-                   sku_items, unidades_total, ciudad, pais, creado_en, synced_at)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,datetime('now', '-5 hours'))
-            """, (str(o["id"]), o.get("name",""), o.get("email",""),
-                  float(o.get("total_price",0)), o.get("currency","COP"),
-                  o.get("fulfillment_status",""), o.get("financial_status",""),
-                  items_sku, total_uds,
-                  addr.get("city",""), addr.get("country_code","CO"),
-                  _shopify_created_at_bogota(o.get("created_at",""))))
-            synced += 1
+        while url:
+            req = ur.Request(url, headers={"X-Shopify-Access-Token": token})
+            with ur.urlopen(req, timeout=30) as r:
+                body = r.read()
+                link_hdr = r.headers.get("Link", "") or ""
+            orders = _json.loads(body)["orders"]
+            for o in orders:
+                items_sku = _json.dumps([
+                    {"sku": li.get("sku",""), "qty": li.get("quantity",0)}
+                    for li in o.get("line_items",[])
+                ])
+                total_uds = sum(li.get("quantity",0) for li in o.get("line_items",[]))
+                addr = o.get("billing_address") or {}
+                conn.execute("""
+                    INSERT OR REPLACE INTO animus_shopify_orders
+                      (shopify_id, nombre, email, total, moneda, estado, estado_pago,
+                       sku_items, unidades_total, ciudad, pais, creado_en, synced_at)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,datetime('now', '-5 hours'))
+                """, (str(o["id"]), o.get("name",""), o.get("email",""),
+                      float(o.get("total_price",0)), o.get("currency","COP"),
+                      o.get("fulfillment_status",""), o.get("financial_status",""),
+                      items_sku, total_uds,
+                      addr.get("city",""), addr.get("country_code","CO"),
+                      _shopify_created_at_bogota(o.get("created_at",""))))
+                synced += 1
+            next_url = None
+            for part in link_hdr.split(","):
+                if 'rel="next"' in part:
+                    s = part.find("<") + 1
+                    e2 = part.find(">")
+                    if s > 0 and e2 > s:
+                        next_url = part[s:e2].strip()
+            url = next_url
         conn.commit()
         return True, {'orders_synced': synced}, 0
 
@@ -1241,28 +1253,40 @@ def job_lunes_7am_workflow(app):
             shop = _cfg(conn, 'shopify_shop')
             if token and shop:
                 import urllib.request as _ur
+                # FIX 23-may-2026 · auditoría · paginación Link header
                 url = f"https://{shop}/admin/api/2024-01/orders.json?status=any&limit=250"
-                req = _ur.Request(url, headers={"X-Shopify-Access-Token": token})
                 synced = 0
-                with _ur.urlopen(req, timeout=30) as r:
-                    orders = _json.loads(r.read())["orders"]
-                for o in orders:
-                    items_sku = _json.dumps([{"sku": li.get("sku",""), "qty": li.get("quantity",0)}
-                                              for li in o.get("line_items",[])])
-                    total_uds = sum(li.get("quantity",0) for li in o.get("line_items",[]))
-                    addr = o.get("billing_address") or {}
-                    conn.execute("""
-                        INSERT OR REPLACE INTO animus_shopify_orders
-                          (shopify_id, nombre, email, total, moneda, estado, estado_pago,
-                           sku_items, unidades_total, ciudad, pais, creado_en, synced_at)
-                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,datetime('now', '-5 hours'))
-                    """, (str(o["id"]), o.get("name",""), o.get("email",""),
-                          float(o.get("total_price",0)), o.get("currency","COP"),
-                          o.get("fulfillment_status",""), o.get("financial_status",""),
-                          items_sku, total_uds,
-                          addr.get("city",""), addr.get("country_code","CO"),
-                          _shopify_created_at_bogota(o.get("created_at",""))))
-                    synced += 1
+                while url:
+                    req = _ur.Request(url, headers={"X-Shopify-Access-Token": token})
+                    with _ur.urlopen(req, timeout=30) as r:
+                        body = r.read()
+                        link_hdr = r.headers.get("Link", "") or ""
+                    orders = _json.loads(body)["orders"]
+                    for o in orders:
+                        items_sku = _json.dumps([{"sku": li.get("sku",""), "qty": li.get("quantity",0)}
+                                                  for li in o.get("line_items",[])])
+                        total_uds = sum(li.get("quantity",0) for li in o.get("line_items",[]))
+                        addr = o.get("billing_address") or {}
+                        conn.execute("""
+                            INSERT OR REPLACE INTO animus_shopify_orders
+                              (shopify_id, nombre, email, total, moneda, estado, estado_pago,
+                               sku_items, unidades_total, ciudad, pais, creado_en, synced_at)
+                            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,datetime('now', '-5 hours'))
+                        """, (str(o["id"]), o.get("name",""), o.get("email",""),
+                              float(o.get("total_price",0)), o.get("currency","COP"),
+                              o.get("fulfillment_status",""), o.get("financial_status",""),
+                              items_sku, total_uds,
+                              addr.get("city",""), addr.get("country_code","CO"),
+                              _shopify_created_at_bogota(o.get("created_at",""))))
+                        synced += 1
+                    next_url = None
+                    for part in link_hdr.split(","):
+                        if 'rel="next"' in part:
+                            s = part.find("<") + 1
+                            e2 = part.find(">")
+                            if s > 0 and e2 > s:
+                                next_url = part[s:e2].strip()
+                    url = next_url
                 resumen['pasos'].append(f'Sync Shopify: {synced} órdenes')
             else:
                 resumen['pasos'].append('Sync Shopify: skipped (sin token)')

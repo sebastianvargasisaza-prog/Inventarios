@@ -9767,8 +9767,10 @@ def test_golden_plan_necesidades_agrega_animus_y_b2b(app, db_clean):
         assert esperado in codigos, f'BUG: producto {esperado} falta en Animus DTC'
     # Cada producto debe tener urgencia válida
     for p in animus['productos']:
-        # SHOPIFY-FIX · 22-may-2026 · Bug #6 audit · SIN_MAPEO nuevo subestado
-        assert p['urgencia'] in ('CRITICO','URGENTE','VIGILAR','OK','SIN_VENTAS','SIN_MAPEO','SIN_HISTORIAL'), \
+        # SHOPIFY-FIX · 22-may-2026 · Bug #6 audit · sub-estados nuevos
+        # FIX 23-may-2026 · auditoría · SIN_VENTAS_REAL ahora SÍ se emite
+        # (antes solo se prometía en comentario · ver plan.py:1044)
+        assert p['urgencia'] in ('CRITICO','URGENTE','VIGILAR','OK','SIN_VENTAS','SIN_MAPEO','SIN_HISTORIAL','SIN_VENTAS_REAL'), \
             f'BUG: urgencia inválida {p["urgencia"]}'
 
     # Caso 4: nuestro B2B aparece con su pedido
@@ -9904,6 +9906,27 @@ def test_golden_necesidades_skus_huerfanos_detectados(app, db_clean):
 # Shopify simulada para que _calcular_animus_dtc considere el producto.
 # Por ahora el fix está aplicado en plan.py:1262-1283 · validación manual
 # via UI post-deploy.
+
+
+def test_golden_endpoints_shopify_debug_requieren_auth(app, db_clean):
+    """SEC-FIX · 3 endpoints estaban públicos · auditoría 23-may.
+
+    /api/programacion/test-shopify    · exponía shop + token_prefix
+    /api/programacion/debug-stock     · exponía inventario completo
+    /api/programacion/debug-ventas    · exponía órdenes muestra + sku_items
+
+    Anti-regresión: sin sesión deben devolver 401.
+    """
+    cs_no_auth = app.test_client()
+    for ruta in (
+        '/api/programacion/test-shopify',
+        '/api/programacion/debug-stock',
+        '/api/programacion/debug-ventas',
+    ):
+        r = cs_no_auth.get(ruta)
+        assert r.status_code == 401, (
+            f'BUG: {ruta} accesible sin auth · status {r.status_code}'
+        )
 
 
 # ═══════════════════════════════════════════════════════════════════

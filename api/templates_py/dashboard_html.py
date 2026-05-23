@@ -20160,14 +20160,15 @@ async function ckMarcar(itemId, estado){
   // Tab "Necesidades" · Sebastián 13-may-2026 · Sprint 2A Plan v3
   // ═══════════════════════════════════════════════════════════════════
   const URG_COLORS = {
-    'CRITICO':    {bg:'#fee2e2', border:'#dc2626', text:'#991b1b', emoji:'🔴'},
-    'URGENTE':    {bg:'#fff7ed', border:'#ea580c', text:'#9a3412', emoji:'🟠'},
-    'VIGILAR':    {bg:'#fefce8', border:'#ca8a04', text:'#854d0e', emoji:'🟡'},
-    'OK':         {bg:'#f0fdf4', border:'#16a34a', text:'#15803d', emoji:'🟢'},
-    'SIN_VENTAS': {bg:'#f1f5f9', border:'#94a3b8', text:'#475569', emoji:'⚪'},
-    // FIX 23-may-2026 · auditoría · backend emite 'SIN_MAPEO' (plan.py:1039)
-    // pero UI lo caía a OK verde · productos huérfanos invisibles · ahora ⁉ ambar
-    'SIN_MAPEO':  {bg:'#fef3c7', border:'#d97706', text:'#92400e', emoji:'❓'},
+    'CRITICO':         {bg:'#fee2e2', border:'#dc2626', text:'#991b1b', emoji:'🔴'},
+    'URGENTE':         {bg:'#fff7ed', border:'#ea580c', text:'#9a3412', emoji:'🟠'},
+    'VIGILAR':         {bg:'#fefce8', border:'#ca8a04', text:'#854d0e', emoji:'🟡'},
+    'OK':              {bg:'#f0fdf4', border:'#16a34a', text:'#15803d', emoji:'🟢'},
+    'SIN_VENTAS':      {bg:'#f1f5f9', border:'#94a3b8', text:'#475569', emoji:'⚪'},
+    // FIX 23-may-2026 · auditoría · backend emite estos sub-estados pero UI los caía a OK
+    'SIN_MAPEO':       {bg:'#fef3c7', border:'#d97706', text:'#92400e', emoji:'❓'},
+    'SIN_HISTORIAL':   {bg:'#e0f2fe', border:'#0284c7', text:'#075985', emoji:'🆕'},
+    'SIN_VENTAS_REAL': {bg:'#f3f4f6', border:'#6b7280', text:'#374151', emoji:'⏸️'},
   };
 
   function escapeHtmlNec(s) {
@@ -20477,10 +20478,10 @@ async function ckMarcar(itemId, estado){
     const baseIdx = window._NEC_PRODUCTOS_CACHE.length;
     prods.forEach(p => { window._NEC_PRODUCTOS_CACHE.push(p); });
     // Chips resumen por urgencia
-    const conteos = {CRITICO:0, URGENTE:0, VIGILAR:0, OK:0, SIN_VENTAS:0, SIN_MAPEO:0};
+    const conteos = {CRITICO:0, URGENTE:0, VIGILAR:0, OK:0, SIN_VENTAS:0, SIN_MAPEO:0, SIN_HISTORIAL:0, SIN_VENTAS_REAL:0};
     prods.forEach(p => { if (conteos[p.urgencia] !== undefined) conteos[p.urgencia]++; });
     let chips = '';
-    ['CRITICO','URGENTE','VIGILAR','OK','SIN_VENTAS','SIN_MAPEO'].forEach(u => {
+    ['CRITICO','URGENTE','VIGILAR','OK','SIN_VENTAS','SIN_MAPEO','SIN_HISTORIAL','SIN_VENTAS_REAL'].forEach(u => {
       if (conteos[u] > 0) {
         const cfg = URG_COLORS[u];
         chips += '<span style="background:'+cfg.bg+';color:'+cfg.text+';padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700;margin-left:4px">' + cfg.emoji + ' ' + conteos[u] + '</span>';

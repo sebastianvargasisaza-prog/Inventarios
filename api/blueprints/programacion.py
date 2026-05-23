@@ -2136,7 +2136,13 @@ def _fetch_shopify_available(token, shop, inv_item_ids):
 
 @bp.route('/api/programacion/test-shopify')
 def prog_test_shopify():
-    """GET publico — diagnostico: verifica credenciales y cuenta productos Shopify."""
+    """GET diagnostico: verifica credenciales y cuenta productos Shopify.
+
+    SEC-FIX 23-may-2026 · auditoría · era público · exponía shop name +
+    token prefix (8 chars) · reconocimiento de credenciales.
+    """
+    if not _auth():
+        return jsonify({'error': 'No autenticado'}), 401
     try:
         conn = get_db()
         def _cfg(c):
@@ -2274,17 +2280,29 @@ def prog_sync_stock_shopify():
                 qty = max(int(avail_map[iid]), 0)
             else:
                 qty = int(v['inv_qty'])
-            if qty <= 0:
-                skipped += 1
-                continue
             producto = sku_map.get(sku)
             if not producto:
                 prefix = sku.split('-')[0] if '-' in sku else sku[:6]
                 producto = sku_map.get(prefix) or v['titulo']
-            obs = 'Sync Shopify (Available)' if (iid and iid in avail_map) else 'Sync Shopify (On hand)'
+            # FIX 23-may-2026 · auditoría · Bug #4 del 22-may estaba aplicado
+            # solo en auto_plan_jobs.job_sync_stock_shopify_diario · este
+            # endpoint (botón manual) seguía skippeando qty<=0 · lookup vía
+            # sku_producto_map se rompía después · ahora insertar con
+            # estado='Agotado' para que velocidad SÍ pueda calcular.
+            if qty <= 0:
+                skipped += 1
+                estado_row = 'Agotado'
+                obs = ('Sync Shopify · agotado (Available=0)'
+                       if (iid and iid in avail_map)
+                       else 'Sync Shopify · agotado (On hand=0)')
+            else:
+                estado_row = 'Disponible'
+                obs = ('Sync Shopify (Available)'
+                       if (iid and iid in avail_map)
+                       else 'Sync Shopify (On hand)')
             conn.execute(
-                "INSERT INTO stock_pt (sku,descripcion,lote_produccion,fecha_produccion,unidades_inicial,unidades_disponible,precio_base,empresa,estado,observaciones) VALUES (?,?,?,?,?,?,0,'ANIMUS','Disponible',?)",
-                (sku, producto, 'SHOPIFY-' + today, today, qty, qty, obs)
+                "INSERT INTO stock_pt (sku,descripcion,lote_produccion,fecha_produccion,unidades_inicial,unidades_disponible,precio_base,empresa,estado,observaciones) VALUES (?,?,?,?,?,?,0,'ANIMUS',?,?)",
+                (sku, producto, 'SHOPIFY-' + today, today, qty, qty, estado_row, obs)
             )
             synced += 1
 
@@ -2305,7 +2323,13 @@ def prog_sync_stock_shopify():
 
 @bp.route('/api/programacion/debug-stock')
 def prog_debug_stock():
-    """Debug publico: muestra stock_pt raw, sku_map y stock calculado por producto."""
+    """Debug: stock_pt raw, sku_map y stock calculado por producto.
+
+    SEC-FIX 23-may-2026 · auditoría · era público · exponía inventario
+    completo (raw + calculado + mapping).
+    """
+    if not _auth():
+        return jsonify({'error': 'No autenticado'}), 401
     conn = get_db()
 
     # Raw stock_pt
@@ -2363,7 +2387,13 @@ def prog_velocidad():
 
 @bp.route('/api/programacion/debug-ventas')
 def prog_debug_ventas():
-    # Diagnostico completo: datos crudos de animus_shopify_orders
+    """Diagnostico completo: datos crudos de animus_shopify_orders.
+
+    SEC-FIX 23-may-2026 · auditoría · era público · exponía 5 órdenes
+    muestra con sku_items + volumen / fechas (datos comerciales).
+    """
+    if not _auth():
+        return jsonify({'error': 'No autenticado'}), 401
     conn = get_db()
     meta = conn.execute(
         "SELECT COUNT(*), MIN(creado_en), MAX(creado_en) FROM animus_shopify_orders"
@@ -7737,14 +7767,6 @@ def solicitar_faltantes_bulk():
             mees_lst = items.get('mees', [])
             if not mps_lst and not mees_lst:
                 continue
-            # Crear SOL-YYYY-XXXX
-            c.execute(
-                "SELECT COALESCE(MAX(CAST(SUBSTR(numero,10) AS INTEGER)),0) "
-                "FROM solicitudes_compra WHERE numero LIKE ?",
-                (f"SOL-{datetime.now().strftime('%Y')}-%",),
-            )
-            num = (c.fetchone()[0] or 0) + 1
-            numero = f"SOL-{datetime.now().strftime('%Y')}-{num:04d}"
             prov_label = prov if prov != '__SIN_PROVEEDOR__' else ''
             obs = obs_base_horizonte
             if prov_label:
@@ -7756,12 +7778,36 @@ def solicitar_faltantes_bulk():
             if not mps_lst and mees_lst:
                 categoria = 'Empaque'
 
-            c.execute("""
-                INSERT INTO solicitudes_compra
-                  (numero, fecha, estado, solicitante, urgencia, observaciones,
-                   area, empresa, categoria, tipo)
-                VALUES (?, ?, 'Pendiente', ?, ?, ?, 'Producción', 'Espagiria', ?, 'Compra')
-            """, (numero, fecha_now, user, urgencia, obs, categoria))
+            # FIX 23-may-2026 · auditoría · race condition · SELECT MAX+1 sin
+            # lock chocaba con 2 admins concurrentes (numero UNIQUE mig 84) ·
+            # ahora retry loop con IntegrityError detection · idempotente
+            year = datetime.now().strftime('%Y')
+            numero = None
+            ultimo_err = None
+            for retry in range(6):
+                c.execute(
+                    "SELECT COALESCE(MAX(CAST(SUBSTR(numero,10) AS INTEGER)),0) "
+                    "FROM solicitudes_compra WHERE numero LIKE ?",
+                    (f"SOL-{year}-%",),
+                )
+                num = (c.fetchone()[0] or 0) + 1 + retry
+                candidato = f"SOL-{year}-{num:04d}"
+                try:
+                    c.execute("""
+                        INSERT INTO solicitudes_compra
+                          (numero, fecha, estado, solicitante, urgencia, observaciones,
+                           area, empresa, categoria, tipo)
+                        VALUES (?, ?, 'Pendiente', ?, ?, ?, 'Producción', 'Espagiria', ?, 'Compra')
+                    """, (candidato, fecha_now, user, urgencia, obs, categoria))
+                    numero = candidato
+                    break
+                except sqlite3.IntegrityError as e:
+                    ultimo_err = e
+                    continue
+            if numero is None:
+                raise RuntimeError(
+                    f"No se pudo asignar numero SOL tras 6 reintentos · {ultimo_err}"
+                )
 
             items_count = 0
             total_g_mps = 0.0

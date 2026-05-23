@@ -931,18 +931,26 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
     # "necesito que aparezcan todos y en orden de necesidades"
     # · removí el filtro `codigo_pt IS NOT NULL` que ocultaba 22 productos.
     # · codigo_pt fallback: primeras 4 letras de producto_nombre upper si está vacío.
+    # FIX 23-may-2026 · auditoría · también incluye fecha_creacion (para
+    # distinguir SIN_HISTORIAL vs SIN_VENTAS_REAL) y excluye productos
+    # marcados como descontinuados en sku_planeacion_config.
     productos = c.execute(
-        """SELECT producto_nombre,
-                  COALESCE(NULLIF(TRIM(codigo_pt),''),
-                           UPPER(SUBSTR(REPLACE(REPLACE(producto_nombre,' ',''),'.',''),1,4)))
+        """SELECT fh.producto_nombre,
+                  COALESCE(NULLIF(TRIM(fh.codigo_pt),''),
+                           UPPER(SUBSTR(REPLACE(REPLACE(fh.producto_nombre,' ',''),'.',''),1,4)))
                        AS codigo,
-                  COALESCE(lote_size_kg, 0),
-                  COALESCE(tiene_10ml,0), COALESCE(uds_10ml_por_lote,0),
-                  COALESCE(tipo_10ml,''),
-                  COALESCE(imagen_url,'')
-           FROM formula_headers
-           WHERE COALESCE(activo,1) = 1
-           ORDER BY producto_nombre""",
+                  COALESCE(fh.lote_size_kg, 0),
+                  COALESCE(fh.tiene_10ml,0), COALESCE(fh.uds_10ml_por_lote,0),
+                  COALESCE(fh.tipo_10ml,''),
+                  COALESCE(fh.imagen_url,''),
+                  COALESCE(fh.fecha_creacion,'')
+           FROM formula_headers fh
+           LEFT JOIN sku_planeacion_config spc
+                  ON UPPER(TRIM(spc.producto_nombre)) = UPPER(TRIM(fh.producto_nombre))
+           WHERE COALESCE(fh.activo,1) = 1
+             AND LOWER(COALESCE(spc.estado,'activo')) NOT IN
+                 ('descontinuado','desactivado','inactivo')
+           ORDER BY fh.producto_nombre""",
     ).fetchall()
 
     if not productos:
@@ -1005,7 +1013,7 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
 
     # 6. Procesar cada producto
     out = []
-    for prod_nombre, codigo, lote_kg, tiene_10ml, uds_10ml, tipo_10ml, imagen in productos:
+    for prod_nombre, codigo, lote_kg, tiene_10ml, uds_10ml, tipo_10ml, imagen, fecha_creacion in productos:
         # SKUs de este producto (puede haber varios: 30ml, 10ml, etc)
         skus_de_prod = [sku for sku, p in sku_to_prod.items() if p == prod_nombre]
 
@@ -1037,15 +1045,29 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
             dias_cobertura = None
 
         # Urgencia (lógica Sebastián 20-25-45)
-        # SHOPIFY-FIX · 22-may-2026 · Bug #6 audit · separar SIN_VENTAS en 3 sub-estados
+        # SHOPIFY-FIX · 22-may-2026 · Bug #6 audit · separar SIN_VENTAS en sub-estados
         # · SIN_HISTORIAL · producto creado < 30 días (sin tiempo de ventas)
         # · SIN_MAPEO · existe formula_headers pero len(skus_de_prod)==0 (huérfano)
-        # · SIN_VENTAS_REAL · mapeado + estable + 0 ventas (probable descontinuado)
+        # · SIN_VENTAS_REAL · mapeado + >=30d + 0 ventas (probable descontinuado)
+        # FIX 23-may-2026 · auditoría · sub-estados prometidos estaban sin emitir ·
+        # ahora SÍ se calculan usando formula_headers.fecha_creacion
+        def _dias_desde_creacion(fc):
+            if not fc:
+                return None
+            try:
+                from datetime import datetime as _dt_local
+                fc10 = str(fc)[:10]
+                return (hoy - _dt_local.strptime(fc10, '%Y-%m-%d').date()).days
+            except Exception:
+                return None
+        _dias_prod = _dias_desde_creacion(fecha_creacion)
         if velocidad_uds_dia <= 0.01:
             if not skus_de_prod:
                 urgencia = "SIN_MAPEO"
+            elif _dias_prod is not None and _dias_prod < 30:
+                urgencia = "SIN_HISTORIAL"
             else:
-                urgencia = "SIN_VENTAS"
+                urgencia = "SIN_VENTAS_REAL"
         elif dias_cobertura is None:
             urgencia = "SIN_VENTAS"
         elif dias_cobertura <= cob_critico:
