@@ -7155,13 +7155,28 @@ def movimientos_mee_lote():
 
 @bp.route('/api/alertas-mee', methods=['GET'])
 def alertas_mee():
+    # AUDITORÍA-FIX 23-may-2026 · C18 · canonical SUM(movimientos_mee) ·
+    # cargo TODOS los MEE activos con stock_minimo>0 + filtro en Python
+    # contra stock canonical · evita falsas alertas por drift del cache
     conn = get_db(); cur = conn.cursor()
+    try:
+        from blueprints.programacion import _get_mee_stock as _gms
+        canon = _gms(conn)
+    except Exception:
+        canon = {}
     cur.execute("""SELECT codigo,descripcion,categoria,proveedor,stock_actual,stock_minimo
-                   FROM maestro_mee WHERE estado='Activo' AND stock_actual < stock_minimo
-                   ORDER BY (stock_actual - stock_minimo) ASC""")
+                   FROM maestro_mee WHERE estado='Activo' AND stock_minimo > 0""")
     cols=['codigo','descripcion','categoria','proveedor','stock_actual','stock_minimo']
-    alertas=[dict(zip(cols,r)) for r in cur.fetchall()]
-    return jsonify({'alertas':alertas,'total':len(alertas)})
+    alertas = []
+    for row in cur.fetchall():
+        d = dict(zip(cols, row))
+        cod_up = str(d.get('codigo') or '').strip().upper()
+        # Sobrescribir con canonical
+        d['stock_actual'] = round(float(canon.get(cod_up, d['stock_actual'] or 0)), 2)
+        if d['stock_actual'] < float(d['stock_minimo'] or 0):
+            alertas.append(d)
+    alertas.sort(key=lambda x: (x['stock_actual'] or 0) - (x['stock_minimo'] or 0))
+    return jsonify({'alertas': alertas, 'total': len(alertas)})
 
 @bp.route('/api/compras/consolidado-proveedor', methods=['GET'])
 def consolidado_por_proveedor():

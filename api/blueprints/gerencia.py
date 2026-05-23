@@ -57,9 +57,19 @@ def gerencia_kpis():
     conn = get_db(); c = conn.cursor()
     c.execute("SELECT COUNT(*) FROM maestro_mps m LEFT JOIN (SELECT material_id,SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) as s FROM movimientos GROUP BY material_id) st ON m.codigo_mp=st.material_id WHERE m.activo=1 AND m.stock_minimo>0 AND COALESCE(st.s,0)<m.stock_minimo")
     mps_bajo_minimo = c.fetchone()[0] or 0
+    # AUDITORÍA-FIX 23-may-2026 · C18 · canonical SUM(movimientos_mee)
+    # · evita falso bajo_minimo por drift del cache stock_actual
     try:
-        c.execute("SELECT COUNT(*) FROM maestro_mee WHERE estado='Activo' AND stock_actual < stock_minimo AND stock_minimo > 0")
-        mee_bajo_minimo = c.fetchone()[0] or 0
+        from blueprints.programacion import _get_mee_stock as _gms
+        canon = _gms(conn)
+        rows_mee = c.execute(
+            "SELECT codigo, COALESCE(stock_minimo,0) FROM maestro_mee "
+            "WHERE estado='Activo' AND stock_minimo > 0"
+        ).fetchall()
+        mee_bajo_minimo = sum(
+            1 for cod, smin in rows_mee
+            if float(canon.get(str(cod or '').strip().upper(), 0) or 0) < float(smin or 0)
+        )
     except Exception:
         mee_bajo_minimo = 0
     c.execute("SELECT COUNT(*) FROM movimientos WHERE tipo='Entrada' AND fecha_vencimiento IS NOT NULL AND fecha_vencimiento!='' AND fecha_vencimiento<=date('now', '-5 hours', '+30 days') AND fecha_vencimiento>=date('now', '-5 hours')")

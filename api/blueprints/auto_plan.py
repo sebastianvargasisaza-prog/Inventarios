@@ -5484,12 +5484,24 @@ def _calcular_auto_sc_mee(conn, modo='mensual', origen_filtro=None, generico=Fal
                                           razon='Ningún MEE configurado en mee_lead_time_config (origen/proveedor)')
 
     # 3) Stock MEE
+    # AUDITORÍA-FIX 23-may-2026 · C18 · usar canonical SUM(movimientos_mee)
+    # via _get_mee_stock con fallback a stock_actual · evita drift en
+    # predicción de demanda · helper memoizado en flask.g
     stock_mee = {}
     try:
-        for cod, st in c.execute("SELECT codigo, COALESCE(stock_actual,0) FROM maestro_mee").fetchall():
-            stock_mee[cod] = float(st or 0)
+        from blueprints.programacion import _get_mee_stock as _gms
+        canon = _gms(c.connection if hasattr(c, 'connection') else c)
+        # Convertir keys (upper) a canonical sin upper para compat
+        for cod, st in c.execute("SELECT codigo FROM maestro_mee").fetchall():
+            cod_up = str(cod or '').strip().upper()
+            stock_mee[cod] = float(canon.get(cod_up, 0) or 0)
     except Exception:
-        pass
+        # Fallback al cache si el helper falla
+        try:
+            for cod, st in c.execute("SELECT codigo, COALESCE(stock_actual,0) FROM maestro_mee").fetchall():
+                stock_mee[cod] = float(st or 0)
+        except Exception:
+            pass
 
     # 4) SKUs activos
     skus_lista = []
