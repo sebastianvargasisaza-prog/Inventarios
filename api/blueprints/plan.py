@@ -1015,7 +1015,14 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
     out = []
     for prod_nombre, codigo, lote_kg, tiene_10ml, uds_10ml, tipo_10ml, imagen, fecha_creacion in productos:
         # SKUs de este producto (puede haber varios: 30ml, 10ml, etc)
-        skus_de_prod = [sku for sku, p in sku_to_prod.items() if p == prod_nombre]
+        # FIX 23-may-2026 · lookup case-insensitive · sku_producto_map y
+        # formula_headers pueden tener diferencias de case/espacios · antes
+        # case-sensitive perdía matches válidos
+        _prod_key_lc = (prod_nombre or '').strip().lower()
+        skus_de_prod = [
+            sku for sku, pname in sku_to_prod.items()
+            if (pname or '').strip().lower() == _prod_key_lc
+        ]
 
         # Stock total uds + venta 30d agregada
         stock_uds_total = 0
@@ -1260,7 +1267,21 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
             p["proxima_sugerida_dias"] = None
 
         # Diagnostic SKUs · ¿este producto tiene mapeo Shopify?
-        skus_de_este = prod_to_skus.get(prod_nombre, [])
+        # FIX 23-may-2026 · CRÍTICO Sebastián · antes usaba `prod_nombre`
+        # (variable del loop anterior · cerrada con el último producto) en
+        # lugar de p["producto_nombre"] · resultado: TODOS los productos
+        # marcaban sin_mapeo=true porque comparaban contra el MISMO nombre
+        # (el último iterado). Velocidad calculaba bien pero la urgencia
+        # caía a SIN_MAPEO para todo. Síntoma reportado: "todos los productos
+        # salen con SIN_MAPEO aunque están mapeados"
+        _prod_aqui = p["producto_nombre"]
+        # Lookup case-insensitive · sku_producto_map y formula_headers pueden
+        # tener diferencia de case/espacios · normalizar ambos lados
+        _prod_key = (_prod_aqui or '').strip().lower()
+        skus_de_este = [
+            s for k, vs in prod_to_skus.items() if (k or '').strip().lower() == _prod_key
+            for s in vs
+        ]
         p["skus_mapeados"] = skus_de_este
         p["n_skus_mapeados"] = len(skus_de_este)
         p["sin_mapeo_shopify"] = (len(skus_de_este) == 0)
