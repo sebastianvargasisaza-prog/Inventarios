@@ -9813,8 +9813,8 @@ def test_golden_plan_factibilidad(app, db_clean):
           "tipo, fecha, lote) VALUES ('MPTESTFACT01','MP Test Factibilidad',"
           "3000,'Entrada','2026-05-01','LOTE-TESTFACT')")
     _exec("INSERT INTO produccion_programada (producto, fecha_programada, "
-          "cantidad_kg, lotes, estado) VALUES "
-          "('TEST_FACT_PRODUCTO','2026-06-15',10,1,'pendiente')")
+          "cantidad_kg, lotes, estado, origen) VALUES "
+          "('TEST_FACT_PRODUCTO','2026-06-15',10,1,'pendiente','eos_plan')")
 
     cs = _login(app, 'sebastian')
     r = cs.get('/api/plan/factibilidad?dias=120')

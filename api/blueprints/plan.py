@@ -1520,18 +1520,34 @@ def plan_factibilidad():
 
     Toma las producciones de `produccion_programada` en un horizonte (default
     30 días) que aún NO descontaron inventario, explota cada fórmula × cantidad
-    y hace una asignación greedy por fecha contra el stock real de MP. A
-    diferencia del chequeo por-producto de /api/plan/necesidades (que evalúa
-    cada producto aislado), esto detecta cuando varias producciones comparten
-    una MP y entre todas no alcanza.
+    y hace una asignación greedy por fecha contra el stock real de MP.
 
     SOLO LECTURA · no modifica ninguna programación ni el calendario.
 
     Query params:
         dias: horizonte en días (default 30, máx 365)
+        solo_fijo: 1 (default) = solo producciones Fijas
+                   (eos_plan/eos_b2b/eos_retroactivo) · 0 = incluir todas
+                   (Sugeridas IA, manual). Sebastián 23-may pidió no inflar
+                   con sugerencias IA.
+        incluir_atrasadas: 1 (default) = producciones con fecha pasada pero
+                           estado pendiente (su MP aún se va a consumir)
 
     Devuelve: resumen, lista de producciones (factible/bloqueada + MP faltante)
     y compra_consolidada (qué MP comprar para que el plan entero sea ejecutable).
+
+    AUDITORÍA 23-may-2026 · 3 agentes encontraron 11 bugs · todos cerrados:
+      F1 · usar _get_mp_stock (cuarentena + bridge + memo)
+      F2 · descontar OCs/SOLs pendientes de compra_consolidada
+      F3 · JOIN producto con UPPER+TRIM
+      F4 · MP sin movimientos = stock 0 (no skip silente)
+      F5 · greedy consistente · consume stock incluso si bloqueada
+      F6 · default solo_fijo=1 (consistente con Abastecimiento)
+      F7 · incluir atrasadas pendientes
+      F8 · excluir productos descontinuados
+      F9 · fallback lotes mejor cuando lote_size=0
+      F10 · enriquecer compra con proveedor + lead_time
+      F11 · marcar MPs archivadas en maestro_mps
     """
     err = _require_login()
     if err:
@@ -1541,20 +1557,25 @@ def plan_factibilidad():
         dias = max(1, min(365, int(request.args.get("dias", 30))))
     except Exception:
         dias = 30
+    solo_fijo = str(request.args.get('solo_fijo', '1')).lower() in ('1', 'true', 'yes')
+    incluir_atrasadas = str(request.args.get('incluir_atrasadas', '1')).lower() in ('1', 'true', 'yes')
     conn = get_db()
     c = conn.cursor()
 
     # 1. Fórmula por producto · necesario_g por MP para UN lote bulk.
+    # F3 · UPPER+TRIM en JOIN y en la key del dict
     formula_por_prod = {}
     lote_size = {}
     for r in c.execute(
-        """SELECT fi.producto_nombre, fi.material_id,
+        """SELECT UPPER(TRIM(fi.producto_nombre)) AS prod_norm,
+                  fi.material_id,
                   COALESCE(fi.material_nombre,'') AS mat_nom,
                   COALESCE(fi.cantidad_g_por_lote,0) AS cant_g,
                   COALESCE(fi.porcentaje,0) AS pct,
                   COALESCE(fh.lote_size_kg,0) AS lote_kg
            FROM formula_items fi
-           JOIN formula_headers fh ON fh.producto_nombre = fi.producto_nombre
+           JOIN formula_headers fh
+                  ON UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(fi.producto_nombre))
            WHERE COALESCE(fh.activo,1)=1
              AND fi.material_id IS NOT NULL AND TRIM(fi.material_id)!=''""",
     ).fetchall():
@@ -1572,59 +1593,161 @@ def plan_factibilidad():
             "necesario_g_lote": round(nec_g, 2),
         })
 
-    # 2. Stock MP actual = SUM(movimientos).
+    # 2. Stock MP canonical · F1 · usar _get_mp_stock que respeta cuarentena
+    # + bridge + memoización en flask.g (no duplica scan masivo)
+    try:
+        from blueprints.programacion import _get_mp_stock as _gms
+        mp_stock_raw = _gms(conn)
+    except Exception:
+        mp_stock_raw = {}
+    # mp_stock_raw incluye keys por material_id, nombre upper, normalizado ·
+    # nos interesa solo los material_id (que son los keys que usan formulas)
     mp_stock_g = {}
     mp_tiene_mov = set()
-    for r in c.execute(
-        """SELECT material_id,
-                  COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA')
-                                    THEN cantidad ELSE -cantidad END),0),
-                  COUNT(*)
-           FROM movimientos
-           WHERE material_id IS NOT NULL AND TRIM(material_id)!=''
-           GROUP BY material_id""",
-    ).fetchall():
-        mid = str(r[0]).strip()
-        mp_stock_g[mid] = max(float(r[1] or 0), 0.0)
-        if int(r[2] or 0) > 0:
-            mp_tiene_mov.add(mid)
+    for k, v in mp_stock_raw.items():
+        # Heurística: keys con formato 'MPNNNNN' o similar (corta + sin espacios)
+        # los tratamos como material_id. El resto son nombres alternativos.
+        if k and len(k) <= 30 and ' ' not in k and v >= 0:
+            ks = str(k).strip()
+            mp_stock_g[ks] = float(v or 0)
+            if v > 0:
+                mp_tiene_mov.add(ks)
 
-    # 3. Producciones programadas en el horizonte que aún no descontaron MP.
+    # 3. Pendientes en compras (OCs activas + SOLs sin OC) · F2
+    pendientes_compras = {}
+    try:
+        for cm, gp in c.execute("""
+            SELECT UPPER(TRIM(sci.codigo_mp)),
+                   COALESCE(SUM(sci.cantidad_g),0)
+            FROM solicitudes_compra_items sci
+            JOIN solicitudes_compra sc ON sc.numero = sci.numero
+            WHERE sc.estado IN ('Pendiente','Aprobada')
+              AND COALESCE(sc.numero_oc,'')=''
+              AND sci.codigo_mp IS NOT NULL AND TRIM(sci.codigo_mp) != ''
+              AND COALESCE(sc.categoria,'') NOT IN ('Empaque','Material de Empaque')
+            GROUP BY UPPER(TRIM(sci.codigo_mp))
+        """).fetchall():
+            pendientes_compras[cm] = float(gp or 0)
+    except Exception:
+        pass
+    try:
+        for cm, gp in c.execute("""
+            SELECT UPPER(TRIM(oci.codigo_mp)),
+                   COALESCE(SUM(oci.cantidad_g - COALESCE(oci.cantidad_recibida_g,0)),0)
+            FROM ordenes_compra_items oci
+            JOIN ordenes_compra oc ON oc.numero_oc = oci.numero_oc
+            WHERE oc.estado IN ('Borrador','Revisada','Autorizada','Parcial')
+              AND oci.codigo_mp IS NOT NULL AND TRIM(oci.codigo_mp) != ''
+            GROUP BY UPPER(TRIM(oci.codigo_mp))
+        """).fetchall():
+            k = cm
+            pendientes_compras[k] = pendientes_compras.get(k, 0.0) + float(gp or 0)
+    except Exception:
+        pass
+
+    # 4. Info MP (proveedor + lead time + activo) · F10 · F11
+    mp_meta = {}
+    try:
+        for r in c.execute("""
+            SELECT mm.codigo_mp,
+                   COALESCE(mm.nombre_comercial, mm.nombre_inci, mm.codigo_mp),
+                   COALESCE(NULLIF(TRIM(mlt.proveedor_principal),''),
+                            mm.proveedor, ''),
+                   COALESCE(mlt.lead_time_dias, 14),
+                   COALESCE(mm.activo, 1)
+            FROM maestro_mps mm
+            LEFT JOIN mp_lead_time_config mlt ON mlt.material_id = mm.codigo_mp
+        """).fetchall():
+            mp_meta[r[0]] = {
+                'nombre': r[1] or r[0],
+                'proveedor': (r[2] or '').strip(),
+                'lead_time_dias': int(r[3] or 14),
+                'activo': bool(r[4]),
+            }
+    except sqlite3.OperationalError:
+        pass
+
+    # 5. Productos descontinuados · F8
+    productos_descontinuados = set()
+    try:
+        for r in c.execute("""
+            SELECT UPPER(TRIM(producto_nombre))
+            FROM sku_planeacion_config
+            WHERE LOWER(COALESCE(estado,'activo')) IN ('descontinuado','desactivado','inactivo')
+        """).fetchall():
+            if r[0]:
+                productos_descontinuados.add(r[0])
+    except sqlite3.OperationalError:
+        pass
+
+    # 6. Producciones programadas en el horizonte que aún no descontaron MP.
+    # F6 · solo_fijo · F7 · incluir atrasadas pendientes
     hoy = datetime.now(timezone.utc) - timedelta(hours=5)   # hora Colombia
     desde = hoy.strftime("%Y-%m-%d")
     hasta = (hoy + timedelta(days=dias)).strftime("%Y-%m-%d")
-    filas = c.execute(
+    where_fechas = (
+        " AND ((substr(fecha_programada,1,10) >= ? "
+        "       AND substr(fecha_programada,1,10) <= ?)"
+    )
+    params_fechas = [desde, hasta]
+    if incluir_atrasadas:
+        where_fechas += (
+            " OR (substr(fecha_programada,1,10) < ? "
+            "     AND LOWER(COALESCE(estado,'')) IN ('pendiente','programado','atrasada')"
+            "     AND inventario_descontado_at IS NULL)"
+        )
+        params_fechas.append(desde)
+    where_fechas += ")"
+    where_origen = ""
+    if solo_fijo:
+        where_origen = (
+            " AND COALESCE(origen,'') IN "
+            "     ('eos_plan','eos_b2b','eos_retroactivo')"
+        )
+    sql_prog = (
         """SELECT id, producto, fecha_programada, COALESCE(cantidad_kg,0),
-                  COALESCE(lotes,1)
+                  COALESCE(lotes,1), COALESCE(origen,'')
            FROM produccion_programada
-           WHERE substr(fecha_programada,1,10) >= ?
-             AND substr(fecha_programada,1,10) <= ?
-             AND inventario_descontado_at IS NULL
+           WHERE inventario_descontado_at IS NULL
              AND LOWER(COALESCE(estado,'')) NOT IN
-                 ('cancelada','cancelado','completada','completado')
-           ORDER BY fecha_programada ASC, id ASC""",
-        (desde, hasta),
-    ).fetchall()
+                 ('cancelada','cancelado','completada','completado')"""
+        + where_fechas + where_origen +
+        " ORDER BY fecha_programada ASC, id ASC"
+    )
+    filas = c.execute(sql_prog, params_fechas).fetchall()
 
-    # 4. Asignación greedy por fecha · el stock se va consumiendo.
+    # 7. Asignación greedy por fecha · F5 · consumir stock incluso bloqueadas
     stock = dict(mp_stock_g)
     producciones = []
     sin_formula = 0
+    descontinuados_n = 0
     necesidad_total = {}          # material_id -> gramos que pide TODO el plan
     nombre_mp = {}
-    for fid, prod, fecha, cant_kg, lotes in filas:
-        items = formula_por_prod.get(prod)
+    for fid, prod, fecha, cant_kg, lotes, origen_v in filas:
+        prod_norm = str(prod or '').strip().upper()
+        # F8 · skip descontinuados
+        if prod_norm in productos_descontinuados:
+            descontinuados_n += 1
+            continue
+        items = formula_por_prod.get(prod_norm)
         if not items:
             sin_formula += 1
             producciones.append({
                 "id": fid, "producto": prod, "fecha": fecha,
                 "cantidad_kg": round(float(cant_kg or 0), 1),
                 "factible": None, "sin_formula": True, "mps_faltantes": [],
+                "origen": origen_v,
             })
             continue
-        lk = lote_size.get(prod, 0)
+        lk = lote_size.get(prod_norm, 0)
         if cant_kg and float(cant_kg) > 0 and lk > 0:
             n_lotes = float(cant_kg) / lk
+        elif cant_kg and float(cant_kg) > 0 and lk <= 0:
+            # F9 · si hay kg explícito pero falta lote_size, asumir 1 lote
+            # con kg como tamaño · evita subestimar MP cuando lote_size no
+            # está definido
+            n_lotes = 1.0
+            lk = float(cant_kg)  # para escalar g_por_lote correctamente
         else:
             n_lotes = float(lotes or 1)
         req = []
@@ -1632,9 +1755,11 @@ def plan_factibilidad():
             mid = it["material_id"]
             if mid == 'MPAGUALI01':       # agua · consumible infinito
                 continue
-            if mid not in mp_stock_g and mid not in mp_tiene_mov:
-                continue                  # MP nueva sin historial · asumir disponible
+            # F4 · MP sin movimientos cuenta como stock=0 (no skip silente)
             need = it["necesario_g_lote"] * n_lotes
+            if lk > 0 and lk != lote_size.get(prod_norm, lk):
+                # Re-escalar si usamos cant_kg como lk fallback
+                need = it["necesario_g_lote"] * (float(cant_kg) / lk)
             req.append((mid, it["material_nombre"], need))
             necesidad_total[mid] = necesidad_total.get(mid, 0.0) + need
             nombre_mp[mid] = it["material_nombre"]
@@ -1649,38 +1774,54 @@ def plan_factibilidad():
                     "faltante_g": round(need - disp, 1),
                 })
         factible = len(faltantes) == 0
-        if factible:                      # solo consume stock si SÍ se hace
-            for mid, _mnom, need in req:
-                stock[mid] = stock.get(mid, 0.0) - need
+        # F5 · consumir stock SIEMPRE (factible o bloqueada) · si A bloquea
+        # MP-X, B que la comparte tampoco la tiene · ordenación temporal real
+        for mid, _mnom, need in req:
+            stock[mid] = max(stock.get(mid, 0.0) - need, 0.0)
         producciones.append({
             "id": fid, "producto": prod, "fecha": fecha,
             "cantidad_kg": round(float(cant_kg or 0), 1),
             "factible": factible, "sin_formula": False,
             "mps_faltantes": faltantes,
+            "origen": origen_v,
         })
 
-    # 5. Compra consolidada · necesidad total del plan vs stock original.
+    # 8. Compra consolidada · F2 descontar pendientes · F10 proveedor + LT
     compra = []
     for mid, total_need in necesidad_total.items():
-        falta = total_need - mp_stock_g.get(mid, 0.0)
+        mid_up = mid.upper()
+        pendiente = float(pendientes_compras.get(mid_up, 0))
+        stock_actual = float(mp_stock_g.get(mid, 0))
+        falta = total_need - stock_actual - pendiente
         if falta > 0.01:
+            meta = mp_meta.get(mid, {})
             compra.append({
                 "material_id": mid,
-                "material_nombre": nombre_mp.get(mid, ''),
+                "material_nombre": meta.get('nombre') or nombre_mp.get(mid, ''),
+                "proveedor_sugerido": meta.get('proveedor', ''),
+                "lead_time_dias": meta.get('lead_time_dias', 14),
+                "mp_activo": meta.get('activo', True),
+                "necesidad_total_g": round(total_need, 1),
+                "stock_actual_g": round(stock_actual, 1),
+                "pendiente_compras_g": round(pendiente, 1),
                 "faltante_g": round(falta, 1),
                 "faltante_kg": round(falta/1000.0, 2),
             })
-    compra.sort(key=lambda x: -x["faltante_g"])
+    # Ordenar por faltante desc · MPs archivadas al final
+    compra.sort(key=lambda x: (not x.get('mp_activo', True), -x["faltante_g"]))
 
     n_fact = sum(1 for p in producciones if p["factible"] is True)
     n_bloq = sum(1 for p in producciones if p["factible"] is False)
     return jsonify({
         "horizonte_dias": dias,
+        "solo_fijo": solo_fijo,
+        "incluir_atrasadas": incluir_atrasadas,
         "resumen": {
             "total": len(producciones),
             "factibles": n_fact,
             "bloqueadas": n_bloq,
             "sin_formula": sin_formula,
+            "descontinuados_excluidos": descontinuados_n,
             "mps_a_comprar": len(compra),
         },
         "producciones": producciones,
