@@ -10189,6 +10189,63 @@ def test_golden_plan_sugerir_preview(app, db_clean):
     assert r3.status_code == 200
 
 
+def test_golden_plan_limpiar_sugeridas_futuras(app, db_clean):
+    """Endpoint /api/plan/limpiar-sugeridas-futuras · Sebastián 23-may-2026
+    · "calendario salen muchas cosas mal · limpiarlo dejando lo que ya puse
+    yo en mayo y la primera semana de junio".
+
+    Valida: 401, dry_run lista candidatas, apply soft-cancel, NO toca Fijo.
+    """
+    cs_no = app.test_client()
+    r_no = cs_no.post('/api/plan/limpiar-sugeridas-futuras',
+                      json={'desde': '2026-06-07'}, headers=csrf_headers())
+    assert r_no.status_code == 401
+
+    # Setup: insertar 1 Sugerida futura + 1 Fija futura
+    _exec("""INSERT INTO produccion_programada
+             (producto, fecha_programada, cantidad_kg, estado, origen, lotes)
+             VALUES ('LIMPIAR_TEST_SUG', '2026-07-15', 30, 'pendiente', 'eos_canonico', 1)""")
+    _exec("""INSERT INTO produccion_programada
+             (producto, fecha_programada, cantidad_kg, estado, origen, lotes)
+             VALUES ('LIMPIAR_TEST_FIJ', '2026-07-15', 30, 'pendiente', 'eos_plan', 1)""")
+
+    cs = _login(app, 'sebastian')
+    # Dry-run: solo cuenta, no borra
+    r = cs.post('/api/plan/limpiar-sugeridas-futuras',
+                json={'desde': '2026-06-07', 'dry_run': True},
+                headers=csrf_headers())
+    assert r.status_code == 200, r.data
+    d = r.get_json()
+    assert d['ok'] is True
+    assert d['dry_run'] is True
+    assert d['n_dry'] >= 1
+    # La Sugerida debe estar en la lista, la Fija NO
+    productos_dry = [it['producto'] for it in d['items']]
+    assert 'LIMPIAR_TEST_SUG' in productos_dry
+    assert 'LIMPIAR_TEST_FIJ' not in productos_dry
+
+    # Validar fecha requerida
+    r_bad = cs.post('/api/plan/limpiar-sugeridas-futuras',
+                    json={'desde': 'mal'}, headers=csrf_headers())
+    assert r_bad.status_code == 400
+
+    # Apply real
+    r2 = cs.post('/api/plan/limpiar-sugeridas-futuras',
+                 json={'desde': '2026-06-07', 'dry_run': False},
+                 headers=csrf_headers())
+    assert r2.status_code == 200, r2.data
+    d2 = r2.get_json()
+    assert d2['ok'] is True
+    assert d2['n_borradas'] >= 1
+    # Verificar que la Sugerida quedó cancelada y la Fija intacta
+    rows_sug = _query("""SELECT estado FROM produccion_programada
+                         WHERE producto='LIMPIAR_TEST_SUG'""")
+    assert rows_sug and rows_sug[0][0] == 'cancelado'
+    rows_fij = _query("""SELECT estado FROM produccion_programada
+                         WHERE producto='LIMPIAR_TEST_FIJ'""")
+    assert rows_fij and rows_fij[0][0] == 'pendiente'  # NO se tocó
+
+
 def test_golden_compras_mailbox_facturas(app, db_clean):
     """Endpoint /api/compras/mailbox-facturas · Sebastián 23-may-2026
     · MBX UI · facturas detectadas por cron mailbox IMAP.

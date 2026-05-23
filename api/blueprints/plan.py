@@ -4763,6 +4763,80 @@ def plan_auto_programar_sugeridas():
     return jsonify({'ok': True, **resultado})
 
 
+@bp.route("/api/plan/limpiar-sugeridas-futuras", methods=["POST"])
+def plan_limpiar_sugeridas_futuras():
+    """Sebastián 23-may-2026 · "el calendario salen muchas cosas · limpiarlo
+    dejando lo que ya puse yo en mayo y la primera semana de junio".
+
+    Borra producciones SUGERIDAS (origen='eos_canonico' y 'auto_plan' y
+    'sugerido' y 'manual' · NO Fijo) con fecha > parámetro `desde`.
+
+    NUNCA toca Fijo (eos_plan, eos_b2b, eos_retroactivo). Soft-delete
+    via estado='cancelado' para preservar audit trail. Audit_log por
+    cada uno.
+
+    Body: {desde: 'YYYY-MM-DD' (excluido), dry_run: true/false}
+    Response: {ok, n_borradas, n_dry, items: [...]}
+    """
+    from datetime import date as _date2
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+    d = request.get_json(silent=True) or {}
+    desde = (d.get('desde') or '').strip()
+    if not desde or not _valida_fecha_iso(desde):
+        return jsonify({'error': 'desde formato YYYY-MM-DD requerido'}), 400
+    dry = bool(d.get('dry_run'))
+    conn = get_db()
+    cur = conn.cursor()
+    # Listar candidatas · solo Sugeridas · fecha estricta > desde
+    rows = cur.execute(
+        """SELECT id, producto, fecha_programada, cantidad_kg,
+                  COALESCE(origen,''), COALESCE(estado,'')
+           FROM produccion_programada
+           WHERE substr(fecha_programada,1,10) > ?
+             AND COALESCE(origen,'') IN ('eos_canonico','auto_plan','sugerido','manual','calendar')
+             AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado')
+             AND fin_real_at IS NULL
+             AND inventario_descontado_at IS NULL
+           ORDER BY fecha_programada""",
+        (desde,),
+    ).fetchall()
+    items = [{
+        'id': r[0], 'producto': r[1], 'fecha': r[2][:10] if r[2] else '',
+        'kg': float(r[3] or 0), 'origen': r[4],
+    } for r in rows]
+    if dry:
+        return jsonify({'ok': True, 'dry_run': True, 'n_dry': len(items),
+                        'items': items})
+    # Aplicar soft-cancel con audit_log
+    n = 0
+    for r in rows:
+        try:
+            cur.execute(
+                """UPDATE produccion_programada
+                   SET estado='cancelado',
+                       observaciones = COALESCE(observaciones,'') || ' · cancelado limpieza Sebastián 23-may'
+                   WHERE id = ? AND fin_real_at IS NULL""",
+                (r[0],),
+            )
+            try:
+                audit_log(cur, usuario=user, accion='LIMPIAR_SUGERIDA_FUTURA',
+                          tabla='produccion_programada', registro_id=str(r[0]),
+                          antes={'producto': r[1], 'fecha': r[2],
+                                  'kg': float(r[3] or 0), 'origen': r[4], 'estado': r[5]},
+                          despues={'estado': 'cancelado'})
+            except Exception:
+                pass
+            n += 1
+        except Exception:
+            continue
+    conn.commit()
+    return jsonify({'ok': True, 'dry_run': False, 'n_borradas': n,
+                    'items': items})
+
+
 @bp.route("/api/plan/sugerir-preview", methods=["GET"])
 def plan_sugerir_preview():
     """Sebastián 23-may-2026 · al abrir un producto en Necesidades,
@@ -8267,11 +8341,12 @@ async function abrirSugerenciaModal(producto, fecha, kg, motivo){
     html += '<div class="metric-card"><div class="metric-lbl">Stock actual</div><div class="metric-val">' + (info.stock_uds_total || 0) + ' uds</div></div>';
     html += '<div class="metric-card"><div class="metric-lbl">Cobertura actual</div><div class="metric-val">' + (info.dias_cobertura != null ? info.dias_cobertura + 'd' : '—') + '</div><div class="metric-sub">' + (info.urgencia || '') + '</div></div>';
     html += '</div>';
-    // Próxima producción tras este lote
+    // Próxima producción tras este lote · buffer 25d (sincronizado con
+    // cob_alerta backend · Sebastián 23-may-2026)
     if (velKgDia > 0.001 && kg > 0){
       const diasDura = Math.round(kg / velKgDia);
       const fProx = new Date(fecha + 'T12:00:00');
-      fProx.setDate(fProx.getDate() + Math.max(diasDura - 20, 1));
+      fProx.setDate(fProx.getDate() + Math.max(diasDura - 25, 1));
       html += '<div class="banner-inline ok">🔁 Este lote durará ~' + diasDura + ' días · próxima producción sugerida: <strong>' + fechaLocalStr(fProx) + '</strong></div>';
     }
   }
@@ -8524,15 +8599,18 @@ async function abrirLoteModal(id, producto, fecha, kg){
 
   // Próxima producción sugerida según los kg programados ahora
   // kg programados / velKgDia = días que va a durar el lote
+  // FIX 23-may-2026 Sebastián · buffer 25d (no 20) · "las sugerencias deben
+  // ser 25 días antes de que se acabe" · sincronizado con cob_alerta del
+  // backend _calcular_animus_dtc · lote 90d → próxima a los 65d, no 70d.
   let proximaSugerida = null;
   let proximaTxt = '';
   if (velKgDia > 0.001 && kg > 0){
     const diasDura = kg / velKgDia;
-    const diasHastaProx = Math.max(Math.round(diasDura) - 20, 1);  // 20d antes de agotar · mín 1
+    const diasHastaProx = Math.max(Math.round(diasDura) - 25, 1);  // 25d antes de agotar · mín 1
     const fProx = new Date(fecha + 'T12:00:00');
     fProx.setDate(fProx.getDate() + diasHastaProx);
     proximaSugerida = fechaLocalStr(fProx);
-    proximaTxt = 'Este lote de ' + kg + 'kg durará ~' + Math.round(diasDura) + ' días al ritmo actual · próxima producción sugerida: <strong>' + proximaSugerida + '</strong>';
+    proximaTxt = '✓ Lote programado para <strong>' + fecha + '</strong> · ' + kg + 'kg · durará ~' + Math.round(diasDura) + ' días al ritmo actual · próxima producción sugerida: <strong>' + proximaSugerida + '</strong>';
   }
 
   let html = '';

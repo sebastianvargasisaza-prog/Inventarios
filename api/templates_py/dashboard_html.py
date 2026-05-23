@@ -21262,27 +21262,13 @@ async function ckMarcar(itemId, estado){
     } else {
       html += '<div style="font-size:11px;color:#94a3b8;margin-top:6px;margin-bottom:6px">📜 Sin producciones registradas · usá "✓ Ya producido" para back-fill el histórico</div>';
     }
-    // Sugerencias inteligentes 30/60/90 días · Sebastián 13-may-2026:
-    // "programación inteligente, sugiero 30 días X kg, 60 Y, 90 Z, click
-    // y ya". Cada escenario = botón one-click.
-    if (p.escenarios && p.escenarios.length > 0) {
-      html += '<div style="background:#ecfeff;border-left:4px solid #0891b2;border-radius:6px;padding:10px;margin-top:8px;margin-bottom:8px">';
-      html += '<div style="font-size:11px;color:#155e75;font-weight:700;margin-bottom:6px">⚡ Sugerencias · click y agendado</div>';
-      html += '<div style="display:flex;gap:8px;flex-wrap:wrap">';
-      p.escenarios.forEach(esc => {
-        const rec = esc.recomendado;
-        const bg = rec ? '#0f766e' : '#0891b2';
-        const star = rec ? ' ⭐' : '';
-        html += '<button onclick="agendarRapido(' + idx + ', ' + esc.kg_sugerido + ', &quot;' + esc.fecha_sugerida + '&quot;, &quot;' + escapeHtmlNec(esc.etiqueta) + '&quot;)" '
-          + 'style="background:' + bg + ';color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;text-align:left;line-height:1.4">'
-          + esc.etiqueta + star + '<br>'
-          + '<span style="font-size:11px;font-weight:500;opacity:.9">' + esc.kg_sugerido + 'kg · ' + esc.fecha_sugerida + '</span>'
-          + '</button>';
-      });
-      html += '</div></div>';
-    }
+    // FIX 23-may-2026 Sebastián · "la cantidad debe ir con el horizonte" ·
+    // reemplaza botones Cubrir 30/60/90 estáticos por un único botón que
+    // abre el planificador moderno con selector de horizonte.
+    const prodEscList = (p.producto_nombre || '').replace(/'/g, "&#39;").replace(/"/g, '&quot;');
     html += '<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;border-top:1px solid #e2e8f0;padding-top:10px">';
-    html += '<button onclick="abrirGenerarProduccion(' + idx + ')" style="background:#475569;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">⚙ Personalizar</button>';
+    html += '<button onclick="previewSugeridasProducto(&quot;' + prodEscList + '&quot;)" style="background:#7c3aed;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">🤖 Programar</button>';
+    html += '<button onclick="abrirGenerarProduccion(' + idx + ')" style="background:#475569;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">⚙ Manual</button>';
     html += '<button onclick="abrirYaProducido(' + idx + ')" style="background:#1e40af;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">✓ Ya producido (back-fill)</button>';
     html += '</div>';
     html += '</div></div>';
@@ -21436,45 +21422,27 @@ async function ckMarcar(itemId, estado){
     // ═══════ SECCIÓN 2 · PROGRAMAR PRODUCCIÓN ═══════
     html += '<div style="font-size:11px;color:#0f766e;font-weight:800;text-transform:uppercase;letter-spacing:.5px;margin:18px 0 6px;padding-bottom:4px;border-bottom:2px solid #0f766e">② Programar producción</div>';
 
-    // ── 2a. Sugerencias rápidas 30/60/90 ──
-    if (p.escenarios && p.escenarios.length > 0) {
-      html += '<div style="background:#ecfeff;border-left:4px solid #0891b2;border-radius:8px;padding:12px;margin-bottom:8px">';
-      html += '<div style="font-size:11px;color:#155e75;font-weight:700;margin-bottom:8px">⚡ Cobertura objetivo · 1 click agenda</div>';
-      html += '<div style="display:flex;gap:8px;flex-wrap:wrap">';
-      p.escenarios.forEach(esc => {
-        const bg = esc.recomendado ? '#0f766e' : '#0891b2';
-        const star = esc.recomendado ? ' ⭐' : '';
-        html += '<button onclick="agendarRapido(' + idx + ', ' + esc.kg_sugerido + ', &quot;' + esc.fecha_sugerida + '&quot;, &quot;' + escapeHtmlNec(esc.etiqueta) + '&quot;)" '
-          + 'style="background:' + bg + ';color:#fff;border:none;padding:10px 14px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;text-align:left;line-height:1.4;flex:1;min-width:140px">'
-          + esc.etiqueta + star + '<br>'
-          + '<span style="font-size:11px;font-weight:500;opacity:.9">' + esc.kg_sugerido + ' kg · ' + esc.fecha_sugerida + '</span>'
-          + '</button>';
-      });
-      html += '</div></div>';
-    }
+    // FIX 23-may-2026 Sebastián · "la cantidad debe ir con el horizonte" ·
+    // unifica los 3 bloques anteriores (Cubrir 30/60/90, Lote único,
+    // Programación canónica recurrente) en un solo modal moderno con
+    // selector horizonte + tabla de lotes en cadena + cobertura calculada.
+    const prodNombreEsc = (p.producto_nombre || '').replace(/'/g, "&#39;").replace(/"/g, '&quot;');
+    html += '<div style="background:#f5f3ff;border-left:4px solid #7c3aed;border-radius:8px;padding:14px;margin-bottom:10px">';
+    html += '<div style="font-size:12px;color:#5b21b6;font-weight:700;margin-bottom:4px">🤖 Programar producción con horizonte</div>';
+    html += '<div style="font-size:11px;color:#64748b;margin-bottom:10px">Elegí cuántos meses cubrir · el sistema calcula automáticamente cuántos lotes y cuándo</div>';
+    html += '<button onclick="previewSugeridasProducto(&quot;' + prodNombreEsc + '&quot;)" style="background:#7c3aed;color:#fff;border:none;padding:10px 16px;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer">🤖 Abrir planificador</button>';
+    html += '</div>';
 
-    // ── 2b. Programar único · personalizar fecha + cantidad ──
-    html += '<div style="background:#f0fdf4;border-left:4px solid #16a34a;border-radius:8px;padding:12px;margin-bottom:8px">';
-    html += '<div style="font-size:11px;color:#166534;font-weight:700;margin-bottom:8px">📅 Lote único · personalizar fecha y cantidad</div>';
+    // Lote único · sigue disponible para casos manuales/ad-hoc fuera de cadena
+    html += '<details style="margin-bottom:8px"><summary style="cursor:pointer;font-size:11px;color:#64748b;padding:6px 10px;background:#f1f5f9;border-radius:6px;font-weight:600">📅 Programar un único lote manual (avanzado)</summary>';
+    html += '<div style="background:#f0fdf4;border-left:4px solid #16a34a;border-radius:8px;padding:12px;margin-top:6px">';
     html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:11px;margin-bottom:8px">';
     html += '<label style="color:#475569">Fecha<input id="ppd-fecha" type="date" style="padding:6px 8px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px;width:100%"></label>';
     html += '<label style="color:#475569">Cantidad (kg)<input id="ppd-kg" type="number" step="0.1" min="0.1" value="' + (p.lote_bulk_kg || 30) + '" style="padding:6px 8px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px;width:100%"></label>';
     html += '</div>';
     html += '<input id="ppd-idx" type="hidden" value="' + idx + '">';
-    html += '<button onclick="programarUnicoDesdePlan()" style="background:#16a34a;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">📅 Programar este lote</button>';
-    html += '</div>';
-
-    // ── 2c. Programación canónica · recurrente 30/60/90 ──
-    html += '<div style="background:#fef3c7;border-left:4px solid #ca8a04;border-radius:8px;padding:12px;margin-bottom:8px">';
-    html += '<div style="font-size:11px;color:#854d0e;font-weight:700;margin-bottom:8px">🔁 Programa automático · cada N días</div>';
-    html += '<div style="font-size:11px;color:#475569;margin-bottom:6px">Genera lotes recurrentes respetando lun-vie · prefiere lun/mié/vie · skip festivos · max 2/día</div>';
-    html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;align-items:end;margin-bottom:8px;font-size:11px">';
-    html += '<label style="color:#475569">Cada<select id="can-freq" style="padding:6px 8px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px;width:100%"><option value="30">30 días</option><option value="60" selected>60 días</option><option value="90">90 días</option><option value="45">45 días</option><option value="120">120 días</option></select></label>';
-    html += '<label style="color:#475569">kg/lote<input id="can-kg" type="number" step="0.1" value="' + (p.lote_bulk_kg || 90) + '" style="padding:6px 8px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px;width:100%"></label>';
-    html += '<label style="color:#475569">Horizonte<select id="can-horizonte" style="padding:6px 8px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px;width:100%"><option value="180">6 meses</option><option value="365" selected>1 año</option><option value="540">1.5 años</option><option value="730">2 años</option></select></label>';
-    html += '</div>';
-    html += '<button onclick="programarCanonico(' + idx + ')" style="background:#ca8a04;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">🔁 Generar plan recurrente</button>';
-    html += '</div>';
+    html += '<button onclick="programarUnicoDesdePlan()" style="background:#16a34a;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">Programar este lote</button>';
+    html += '</div></details>';
 
     // ═══════ SECCIÓN 3 · LOTES AGENDADOS · ACCIONES ═══════
     if ((p.planificacion || []).length > 0) {
