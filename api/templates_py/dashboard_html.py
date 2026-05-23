@@ -20391,6 +20391,7 @@ async function ckMarcar(itemId, estado){
     html += '<button onclick="_abastSelectVisibles(false)" style="padding:5px 10px;background:#e2e8f0;color:#475569;border:0;border-radius:4px;font-size:11px;cursor:pointer">☐ ninguno</button>';
     html += '<span id="abast-sel-count" style="color:#7c3aed;font-weight:700"></span>';
     html += '<button onclick="_abastAbrirSolicitar()" style="padding:6px 14px;background:#16a34a;color:#fff;border:0;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer">📩 Solicitar seleccionados</button>';
+    html += '<button onclick="_abastExportExcel()" style="padding:6px 14px;background:#1e40af;color:#fff;border:0;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer" title="Descarga Excel respeta filtros · 2 sheets: detalle + agrupado por proveedor">📊 Excel</button>';
     html += '</div>';
 
     if (!items.length) {
@@ -20507,6 +20508,26 @@ async function ckMarcar(itemId, estado){
     const el = document.getElementById('abast-sel-count');
     if (el) el.textContent = n > 0 ? ('· ' + n + ' seleccionado(s)') : '';
   }
+  function _abastExportExcel() {
+    const st = window._ABA_STATE;
+    const tipos = [];
+    if (document.getElementById('abast-mp').checked) tipos.push('mp');
+    if (document.getElementById('abast-mee').checked) tipos.push('mee');
+    const modoSel = document.getElementById('abast-modo');
+    const modo = (modoSel && modoSel.value) || 'comprometido';
+    const params = new URLSearchParams();
+    params.set('modo', modo);
+    if (tipos.length) params.set('tipo', tipos.join(','));
+    // Filtros UI · pasar al endpoint para que Excel coincida con lo visible
+    if (st.filtros.busqueda) params.set('busqueda', st.filtros.busqueda);
+    if (st.filtros.urgencia !== 'TODAS') params.set('urgencia', st.filtros.urgencia);
+    if (st.filtros.proveedor !== 'TODOS') params.set('proveedor', st.filtros.proveedor);
+    if (st.filtros.tipo !== 'TODOS') params.set('tipo_filtro', st.filtros.tipo);
+    // Trigger descarga
+    const url = '/api/abastecimiento/export-excel?' + params.toString();
+    window.open(url, '_blank');
+  }
+
   async function _abastAbrirSolicitar() {
     const st = window._ABA_STATE;
     const items = [];

@@ -8447,6 +8447,236 @@ def abastecimiento_consumo_horizontes():
     })
 
 
+@bp.route('/api/abastecimiento/export-excel', methods=['GET'])
+def abastecimiento_export_excel():
+    """Descarga Excel con el consumo de abastecimiento para enviar a Alejandro.
+
+    Sebastián 23-may-2026: 'poder descargar un excel o pdf · Alejandro a
+    veces dice manden qué necesitan · que salga consolidado para enviarle'.
+
+    Mismos query params que consumo-horizontes (modo, tipo, horizontes).
+    Filtros UI adicionales (búsqueda, urgencia, proveedor) se pasan también
+    para que el Excel coincida con lo que ve Sebastián en pantalla.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    try:
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+        from openpyxl.utils import get_column_letter
+    except ImportError:
+        return jsonify({'error': 'openpyxl no disponible'}), 500
+    from flask import current_app, send_file
+    import io as _io
+    from datetime import datetime as _dt
+
+    # Llamar internamente al endpoint consumo-horizontes (misma lógica)
+    qs = []
+    for k in ('modo', 'tipo', 'horizontes'):
+        v = request.args.get(k)
+        if v:
+            qs.append(f'{k}={v}')
+    url_interno = '/api/abastecimiento/consumo-horizontes'
+    if qs:
+        url_interno += '?' + '&'.join(qs)
+    with current_app.test_request_context(url_interno):
+        # Copiar la sesión del request actual para que el endpoint pase auth
+        from flask import session as _sess
+        _sess['compras_user'] = session.get('compras_user', 'sistema')
+        resp = abastecimiento_consumo_horizontes()
+    if isinstance(resp, tuple):
+        return resp  # error
+    d = resp.get_json() or {}
+
+    # Aplicar filtros del cliente (UI)
+    f_busq = (request.args.get('busqueda', '') or '').lower().strip()
+    f_urg = request.args.get('urgencia', 'TODAS') or 'TODAS'
+    f_prov = request.args.get('proveedor', 'TODOS') or 'TODOS'
+    f_tipo = request.args.get('tipo_filtro', 'TODOS') or 'TODOS'
+    def _pasa_filtros(it):
+        if f_urg != 'TODAS' and it['urgencia'] != f_urg:
+            return False
+        prov = it.get('proveedor_sugerido') or '(sin proveedor)'
+        if f_prov != 'TODOS' and prov != f_prov:
+            return False
+        if f_tipo != 'TODOS' and it['tipo'] != f_tipo:
+            return False
+        if f_busq:
+            blob = (it['codigo'] + ' ' + (it.get('nombre') or '') + ' ' +
+                    (it.get('proveedor_sugerido') or '')).lower()
+            if f_busq not in blob:
+                return False
+        return True
+
+    items_mp = [it for it in (d.get('mps') or []) if _pasa_filtros(it)]
+    items_mee = [it for it in (d.get('mees') or []) if _pasa_filtros(it)]
+    horizontes = d.get('horizontes') or [15, 30, 60, 90, 120, 180, 365]
+
+    # Construir Excel
+    wb = openpyxl.Workbook()
+    wb.remove(wb.active)
+    thin = Side(border_style='thin', color='CCCCCC')
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    header_fill = PatternFill('solid', fgColor='7C3AED')
+    title_fill = PatternFill('solid', fgColor='5B21B6')
+    crit_fill = PatternFill('solid', fgColor='FEE2E2')
+    urg_fill = PatternFill('solid', fgColor='FFF7ED')
+    vig_fill = PatternFill('solid', fgColor='FEFCE8')
+    ok_fill = PatternFill('solid', fgColor='F0FDF4')
+
+    def _fill_for_urg(u):
+        return {
+            'CRITICO': crit_fill, 'URGENTE': urg_fill,
+            'VIGILAR': vig_fill, 'PLANIFICAR': ok_fill, 'OK': ok_fill,
+        }.get(u, ok_fill)
+
+    # SHEET 1 · Resumen completo
+    ws = wb.create_sheet('Abastecimiento')
+    fecha_str = _dt.now().strftime('%Y-%m-%d %H:%M')
+    modo_str = d.get('modo', 'comprometido')
+    n_cols = 8 + len(horizontes) + 1
+    # Título
+    ws.cell(row=1, column=1, value=f'Abastecimiento · Modo {modo_str.upper()} · {fecha_str}')
+    ws.cell(row=1, column=1).font = Font(size=14, bold=True, color='FFFFFF')
+    ws.cell(row=1, column=1).fill = title_fill
+    ws.cell(row=1, column=1).alignment = Alignment(horizontal='left', vertical='center')
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=n_cols)
+    ws.row_dimensions[1].height = 24
+    # Subtítulo
+    ws.cell(row=2, column=1, value=f'{d.get("n_producciones_fijas",0)} producciones Fijas · {d.get("n_pedidos_b2b_pendientes",0)} pedidos B2B pendientes · {len(items_mp)} MPs + {len(items_mee)} MEEs con consumo')
+    ws.cell(row=2, column=1).font = Font(size=10, italic=True, color='6B7280')
+    ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=n_cols)
+    # Encabezados (fila 4)
+    hdr = ['Código', 'Nombre', 'Tipo', 'Proveedor', 'LT (días)',
+           'Stock actual', 'En cola', 'Urgencia']
+    for h in horizontes:
+        hdr.append(f'Déficit {h}d')
+    hdr.append('Cant. a pedir (cubrir 60d)')
+    for col, val in enumerate(hdr, start=1):
+        cell = ws.cell(row=4, column=col, value=val)
+        cell.font = Font(bold=True, color='FFFFFF')
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+        cell.border = border
+    ws.row_dimensions[4].height = 30
+
+    # Filas
+    todos = items_mp + items_mee
+    todos.sort(key=lambda x: ({'CRITICO':0,'URGENTE':1,'VIGILAR':2,'PLANIFICAR':3,'OK':4}.get(x['urgencia'], 9),
+                              x.get('horizonte_quiebre_dias') or 9999))
+    r = 5
+    for it in todos:
+        urg = it['urgencia']
+        fill = _fill_for_urg(urg)
+        stock_key = 'stock_actual_g' if it['tipo']=='MP' else 'stock_actual_u'
+        cola_key = 'pendiente_compras_g' if it['tipo']=='MP' else 'pendiente_compras_u'
+        unit = 'g' if it['tipo']=='MP' else 'u'
+        # Sugerencia de cantidad · déficit del horizonte 60d (o el menor con déficit)
+        cant_sug = it.get('deficit', {}).get('60', 0)
+        if cant_sug <= 0:
+            for h in horizontes:
+                v = it['deficit'].get(str(h), 0)
+                if v > 0:
+                    cant_sug = v
+                    break
+        valores = [
+            it['codigo'], it.get('nombre',''), it['tipo'],
+            it.get('proveedor_sugerido','') or '(sin proveedor)',
+            it.get('lead_time_dias', 14),
+            it.get(stock_key, 0), it.get(cola_key, 0), urg,
+        ]
+        for h in horizontes:
+            valores.append(it['deficit'].get(str(h), 0))
+        valores.append(round(cant_sug, 1))
+        for col, val in enumerate(valores, start=1):
+            cell = ws.cell(row=r, column=col, value=val)
+            cell.border = border
+            if col == 8:  # urgencia
+                cell.fill = fill
+                cell.font = Font(bold=True)
+                cell.alignment = Alignment(horizontal='center')
+            elif col in (1, 3):  # código/tipo
+                cell.alignment = Alignment(horizontal='center')
+                cell.font = Font(name='Consolas')
+            elif col >= 5:  # números
+                cell.alignment = Alignment(horizontal='right')
+                cell.number_format = '#,##0.0'
+        r += 1
+
+    # Anchos
+    widths = [12, 38, 6, 22, 9, 13, 11, 12]
+    for h in horizontes:
+        widths.append(12)
+    widths.append(15)
+    for col, w in enumerate(widths, start=1):
+        ws.column_dimensions[get_column_letter(col)].width = w
+    ws.freeze_panes = 'A5'
+
+    # SHEET 2 · Agrupado por proveedor (lo que Catalina/Alejandro envían)
+    ws2 = wb.create_sheet('Por proveedor')
+    ws2.cell(row=1, column=1, value='Consolidado por proveedor (lo que hay que comprar)')
+    ws2.cell(row=1, column=1).font = Font(size=14, bold=True, color='FFFFFF')
+    ws2.cell(row=1, column=1).fill = title_fill
+    ws2.merge_cells(start_row=1, start_column=1, end_row=1, end_column=6)
+    ws2.row_dimensions[1].height = 24
+    hdr2 = ['Proveedor', 'Código', 'Nombre', 'Tipo', 'Cant. a pedir', 'Urgencia']
+    for col, val in enumerate(hdr2, start=1):
+        cell = ws2.cell(row=3, column=col, value=val)
+        cell.font = Font(bold=True, color='FFFFFF')
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal='center')
+        cell.border = border
+
+    # Agrupar por proveedor con cant_sug
+    grupos = {}
+    for it in todos:
+        cant_sug = it.get('deficit', {}).get('60', 0)
+        if cant_sug <= 0:
+            for h in horizontes:
+                v = it['deficit'].get(str(h), 0)
+                if v > 0:
+                    cant_sug = v
+                    break
+        if cant_sug <= 0:
+            continue
+        prov = it.get('proveedor_sugerido') or '(sin proveedor)'
+        grupos.setdefault(prov, []).append((it, cant_sug))
+
+    r = 4
+    for prov in sorted(grupos.keys()):
+        for it, cant in grupos[prov]:
+            urg = it['urgencia']
+            valores = [prov, it['codigo'], it.get('nombre',''), it['tipo'], round(cant, 1), urg]
+            for col, val in enumerate(valores, start=1):
+                cell = ws2.cell(row=r, column=col, value=val)
+                cell.border = border
+                if col == 6:
+                    cell.fill = _fill_for_urg(urg)
+                    cell.font = Font(bold=True)
+                    cell.alignment = Alignment(horizontal='center')
+                elif col == 5:
+                    cell.alignment = Alignment(horizontal='right')
+                    cell.number_format = '#,##0.0'
+                elif col == 2:
+                    cell.alignment = Alignment(horizontal='center')
+                    cell.font = Font(name='Consolas')
+            r += 1
+        # Fila vacía entre proveedores
+        r += 1
+
+    for col, w in enumerate([24, 12, 38, 6, 14, 12], start=1):
+        ws2.column_dimensions[get_column_letter(col)].width = w
+    ws2.freeze_panes = 'A4'
+
+    # Stream out
+    buf = _io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    nombre = f'abastecimiento_{modo_str}_{_dt.now().strftime("%Y%m%d_%H%M")}.xlsx'
+    return send_file(buf, as_attachment=True, download_name=nombre,
+                     mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+
 @bp.route('/api/abastecimiento/solicitar-items', methods=['POST'])
 def abastecimiento_solicitar_items():
     """Crea SOLs agrupadas por proveedor a partir de items seleccionados

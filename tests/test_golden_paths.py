@@ -10018,6 +10018,30 @@ def test_golden_abastecimiento_consumo_horizontes(app, db_clean):
         _exec(sql)
 
 
+def test_golden_abastecimiento_export_excel(app, db_clean):
+    """Endpoint GET /api/abastecimiento/export-excel · descarga Excel para
+    enviar a Alejandro · consolida lo que hay que comprar.
+
+    Sebastián 23-may-2026: 'que salga consolidado para enviarle'.
+    """
+    cs = _login(app, 'sebastian')
+    # 401 sin sesión
+    cs_no = app.test_client()
+    r_no = cs_no.get('/api/abastecimiento/export-excel')
+    assert r_no.status_code == 401
+
+    # Con sesión · debe devolver Excel (Content-Type xlsx)
+    r = cs.get('/api/abastecimiento/export-excel?modo=comprometido&tipo=mp')
+    assert r.status_code == 200, r.data[:200]
+    ct = r.headers.get('Content-Type', '')
+    assert 'spreadsheetml' in ct or 'octet-stream' in ct, \
+        f'BUG: content-type no es xlsx · {ct}'
+    # Debe ser un Excel válido (magic bytes PK = zip)
+    body = r.data
+    assert body[:2] == b'PK', 'BUG: no es un XLSX válido (header PK esperado)'
+    assert len(body) > 1000, 'BUG: Excel demasiado pequeño'
+
+
 def test_golden_abastecimiento_solicitar_items(app, db_clean):
     """Endpoint /api/abastecimiento/solicitar-items · crea SOLs agrupadas
     por proveedor a partir de items seleccionados en el tab Abastecimiento.
