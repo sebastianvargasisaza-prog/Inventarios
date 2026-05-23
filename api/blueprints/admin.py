@@ -5892,6 +5892,255 @@ def admin_mps_asignar_proveedor():
     return jsonify({'ok': True, 'codigo_mp': codigo, 'proveedor': proveedor})
 
 
+@bp.route("/api/admin/mps-abreviaturas-audit", methods=["GET"])
+def admin_mps_abreviaturas_audit():
+    """Lista MPs cuyo nombre_inci o nombre_comercial coincida con un alias en
+    mp_aliases · indica si deberían renombrarse al INCI canonical o si hay
+    duplicado (existe otra MP con el INCI canonical en paralelo).
+
+    Sebastián 22-may-2026 noche · 'MP00169 SAP sale con abreviatura, no es el
+    nombre, no aparece en bodega · debe haber más así'. Endpoint dry-run, sin
+    cambios. El POST hermano /api/admin/mps-abreviaturas-fix aplica.
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    conn = db_connect()
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+
+    try:
+        aliases_rows = c.execute(
+            """SELECT alias, nombre_inci_canonical
+               FROM mp_aliases WHERE COALESCE(activo,1)=1"""
+        ).fetchall()
+    except Exception:
+        conn.close()
+        return jsonify({'error': 'tabla mp_aliases no existe · mig 158 no aplicada'}), 500
+
+    aliases_dict = {r['alias'].lower().strip(): r['nombre_inci_canonical']
+                    for r in aliases_rows if r['alias']}
+
+    mps_rows = c.execute(
+        """SELECT codigo_mp, COALESCE(nombre_inci,'') AS nombre_inci,
+                  COALESCE(nombre_comercial,'') AS nombre_comercial,
+                  COALESCE(activo,1) AS activo,
+                  COALESCE(tipo_material,'MP') AS tipo_material,
+                  COALESCE(proveedor,'') AS proveedor
+           FROM maestro_mps"""
+    ).fetchall()
+
+    # Mapa lower(canonical) -> codigo_mp existente que YA usa ese INCI
+    canonical_actual = {}
+    for r in mps_rows:
+        if not r['activo']:
+            continue
+        for campo in (r['nombre_inci'], r['nombre_comercial']):
+            if campo:
+                k = campo.lower().strip()
+                if k not in canonical_actual:
+                    canonical_actual[k] = r['codigo_mp']
+
+    hallazgos = []
+    for r in mps_rows:
+        for campo, valor in (('nombre_inci', r['nombre_inci']),
+                             ('nombre_comercial', r['nombre_comercial'])):
+            if not valor:
+                continue
+            kv = valor.lower().strip()
+            alias_canonical = aliases_dict.get(kv)
+            if not alias_canonical:
+                continue
+            # Esta MP tiene un campo que es una abreviatura conocida
+            canonical_key = alias_canonical.lower().strip()
+            otra_mp_canonical = canonical_actual.get(canonical_key)
+            es_duplicado = (otra_mp_canonical is not None
+                            and otra_mp_canonical != r['codigo_mp'])
+            hallazgos.append({
+                'codigo_mp': r['codigo_mp'],
+                'campo': campo,
+                'valor_actual': valor,
+                'alias_detectado': valor.strip(),
+                'inci_canonical': alias_canonical,
+                'activo': bool(r['activo']),
+                'tipo_material': r['tipo_material'],
+                'proveedor': r['proveedor'],
+                'es_duplicado_de': otra_mp_canonical if es_duplicado else None,
+                'accion_sugerida': (
+                    'merge_dedupe' if es_duplicado
+                    else 'renombrar_a_canonical'
+                ),
+            })
+
+    # Resumen contable
+    total = len(hallazgos)
+    duplicados = sum(1 for h in hallazgos if h['accion_sugerida'] == 'merge_dedupe')
+    renombrables = total - duplicados
+    inactivos = sum(1 for h in hallazgos if not h['activo'])
+
+    conn.close()
+    return jsonify({
+        'total_hallazgos': total,
+        'a_renombrar': renombrables,
+        'duplicados_a_merge': duplicados,
+        'inactivos_incluidos': inactivos,
+        'aliases_cargados': len(aliases_dict),
+        'hallazgos': hallazgos,
+    })
+
+
+@bp.route("/api/admin/mps-abreviaturas-fix", methods=["POST"])
+def admin_mps_abreviaturas_fix():
+    """Aplica el fix a las MPs detectadas por mps-abreviaturas-audit.
+
+    Body opcional: {dry_run: true} para simular sin commit.
+
+    Para cada hallazgo:
+    - accion_sugerida='renombrar_a_canonical' → UPDATE nombre_inci=nombre_comercial=canonical
+    - accion_sugerida='merge_dedupe' → mover referencias en formula_items y archivar la huérfana
+
+    Audit log por cada acción. Idempotente: si vuelves a llamar y ya están
+    canonical, no hace nada (audit limpio).
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    d = request.get_json(silent=True) or {}
+    dry_run = bool(d.get('dry_run'))
+
+    conn = db_connect()
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+
+    try:
+        aliases_rows = c.execute(
+            """SELECT alias, nombre_inci_canonical
+               FROM mp_aliases WHERE COALESCE(activo,1)=1"""
+        ).fetchall()
+    except Exception:
+        conn.close()
+        return jsonify({'error': 'tabla mp_aliases no existe · mig 158 no aplicada'}), 500
+
+    aliases_dict = {r['alias'].lower().strip(): r['nombre_inci_canonical']
+                    for r in aliases_rows if r['alias']}
+
+    mps_rows = c.execute(
+        """SELECT codigo_mp, COALESCE(nombre_inci,'') AS nombre_inci,
+                  COALESCE(nombre_comercial,'') AS nombre_comercial,
+                  COALESCE(activo,1) AS activo
+           FROM maestro_mps"""
+    ).fetchall()
+
+    # Mapa canonical_lower -> codigo_mp existente con ese INCI canonical
+    canonical_owner = {}
+    for r in mps_rows:
+        if not r['activo']:
+            continue
+        for valor in (r['nombre_inci'], r['nombre_comercial']):
+            if not valor:
+                continue
+            k = valor.lower().strip()
+            if k in aliases_dict:
+                # Es una abreviatura · no la consideramos owner del canonical
+                continue
+            canonical_owner.setdefault(k, r['codigo_mp'])
+
+    renombrados = []
+    mergeados = []
+    saltados = []
+
+    for r in mps_rows:
+        # Decidir si esta MP tiene algún campo que sea una abreviatura
+        valor_abrev = None
+        for valor in (r['nombre_inci'], r['nombre_comercial']):
+            if valor and valor.lower().strip() in aliases_dict:
+                valor_abrev = valor
+                break
+        if not valor_abrev:
+            continue
+        canonical = aliases_dict[valor_abrev.lower().strip()]
+        canonical_key = canonical.lower().strip()
+        otra_mp = canonical_owner.get(canonical_key)
+
+        if otra_mp and otra_mp != r['codigo_mp']:
+            # Duplicado · merge formula_items de esta hacia la canónica + archivar
+            if dry_run:
+                mergeados.append({'desde': r['codigo_mp'], 'hacia': otra_mp,
+                                  'canonical': canonical, 'dry_run': True})
+                continue
+            try:
+                c.execute(
+                    """UPDATE formula_items SET material_id=?, material_nombre=?
+                       WHERE material_id=?""",
+                    (otra_mp, canonical, r['codigo_mp'])
+                )
+                n_moved = c.rowcount or 0
+                c.execute("UPDATE maestro_mps SET activo=0 WHERE codigo_mp=?",
+                          (r['codigo_mp'],))
+                try:
+                    audit_log(c, usuario=u, accion='MERGE_MP_ABREVIATURA',
+                              tabla='maestro_mps', registro_id=r['codigo_mp'],
+                              antes={'nombre_inci': r['nombre_inci'],
+                                     'nombre_comercial': r['nombre_comercial'],
+                                     'activo': 1},
+                              despues={'activo': 0, 'mergeada_hacia': otra_mp,
+                                       'formula_items_movidos': n_moved,
+                                       'canonical': canonical})
+                except Exception:
+                    pass
+                mergeados.append({'desde': r['codigo_mp'], 'hacia': otra_mp,
+                                  'canonical': canonical, 'formula_items_movidos': n_moved})
+            except Exception as e:
+                saltados.append({'codigo_mp': r['codigo_mp'], 'razon': str(e)})
+        else:
+            # Renombrar al canonical en esta MP
+            if dry_run:
+                renombrados.append({'codigo_mp': r['codigo_mp'],
+                                    'antes': valor_abrev, 'despues': canonical,
+                                    'dry_run': True})
+                continue
+            try:
+                c.execute(
+                    """UPDATE maestro_mps
+                       SET nombre_inci=?, nombre_comercial=?
+                       WHERE codigo_mp=?""",
+                    (canonical, canonical, r['codigo_mp'])
+                )
+                try:
+                    audit_log(c, usuario=u, accion='RENOMBRAR_MP_DESDE_ABREVIATURA',
+                              tabla='maestro_mps', registro_id=r['codigo_mp'],
+                              antes={'nombre_inci': r['nombre_inci'],
+                                     'nombre_comercial': r['nombre_comercial']},
+                              despues={'nombre_inci': canonical,
+                                       'nombre_comercial': canonical,
+                                       'razon': f'abreviatura {valor_abrev} renombrada a INCI canonical'})
+                except Exception:
+                    pass
+                canonical_owner[canonical_key] = r['codigo_mp']
+                renombrados.append({'codigo_mp': r['codigo_mp'],
+                                    'antes': valor_abrev, 'despues': canonical})
+            except Exception as e:
+                saltados.append({'codigo_mp': r['codigo_mp'], 'razon': str(e)})
+
+    if not dry_run:
+        conn.commit()
+    conn.close()
+
+    _log_sec(u, _client_ip(), "admin_mps_abreviaturas_fix",
+             f"dry_run={dry_run} renombrados={len(renombrados)} mergeados={len(mergeados)}")
+    return jsonify({
+        'dry_run': dry_run,
+        'renombrados': len(renombrados),
+        'mergeados': len(mergeados),
+        'saltados': len(saltados),
+        'detalle_renombrados': renombrados,
+        'detalle_mergeados': mergeados,
+        'detalle_saltados': saltados,
+    })
+
+
 @bp.route("/api/admin/tipos-mp-stats", methods=["GET"])
 def admin_tipos_mp_stats():
     """Cuenta items en maestro_mps agrupados por tipo_material.

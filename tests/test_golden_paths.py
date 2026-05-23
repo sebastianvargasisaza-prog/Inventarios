@@ -11155,3 +11155,165 @@ def test_golden_plan_mps_buscar(app, db_clean):
     r4 = cs.get('/admin/mps-buscar')
     assert r4.status_code == 200
     assert b'Buscar' in r4.data
+
+
+def test_golden_mps_abreviaturas_audit_y_fix_renombra(app, db_clean):
+    """Sebastián 22-may-2026 noche · caso MP00169 SAP.
+
+    Usa un alias custom 'ZZTEST_AB1' → 'Zztest Compound Alpha' para aislarse
+    del seed real (donde SAP/HA ya tienen canonical existente).
+
+    Reproduce: MP existente activa cuyo nombre_inci='ZZTEST_AB1' (abreviatura).
+    Audit debe detectarla. Fix debe renombrarla al INCI canonical
+    sin crear MP duplicado.
+    """
+    _exec("DELETE FROM maestro_mps WHERE codigo_mp='TEST_MP_AB1'")
+    _exec("DELETE FROM mp_aliases WHERE alias='ZZTEST_AB1'")
+    _exec(
+        """INSERT INTO mp_aliases
+           (alias, nombre_inci_canonical, tipo, fuente, activo)
+           VALUES ('ZZTEST_AB1', 'Zztest Compound Alpha',
+                   'abreviatura', 'manual', 1)"""
+    )
+    _exec(
+        """INSERT INTO maestro_mps
+           (codigo_mp, nombre_inci, nombre_comercial, tipo, tipo_material,
+            proveedor, stock_minimo, precio_referencia, activo)
+           VALUES ('TEST_MP_AB1', 'ZZTEST_AB1', 'ZZTEST_AB1', 'Activo', 'MP',
+                   '', 0, 0, 1)"""
+    )
+
+    cs = _login(app, 'sebastian')
+    try:
+        # Audit detecta el hallazgo
+        r = cs.get('/api/admin/mps-abreviaturas-audit')
+        assert r.status_code == 200, r.data
+        d = r.get_json()
+        hits = [h for h in d['hallazgos'] if h['codigo_mp'] == 'TEST_MP_AB1']
+        assert len(hits) >= 1, f'audit no detectó TEST_MP_AB1 · {d}'
+        h = hits[0]
+        assert h['inci_canonical'] == 'Zztest Compound Alpha'
+        assert h['accion_sugerida'] == 'renombrar_a_canonical'
+        assert h['es_duplicado_de'] is None
+
+        # Fix dry-run no toca DB
+        r2 = cs.post('/api/admin/mps-abreviaturas-fix',
+                     json={'dry_run': True}, headers=csrf_headers())
+        assert r2.status_code == 200, r2.data
+        d2 = r2.get_json()
+        assert d2['dry_run'] is True
+        assert any(x.get('codigo_mp') == 'TEST_MP_AB1'
+                   for x in d2['detalle_renombrados'])
+
+        # Antes del fix · sigue 'ZZTEST_AB1'
+        rows = _query("SELECT nombre_inci, nombre_comercial FROM maestro_mps WHERE codigo_mp='TEST_MP_AB1'")
+        assert rows[0][0] == 'ZZTEST_AB1' and rows[0][1] == 'ZZTEST_AB1'
+
+        # Fix real
+        r3 = cs.post('/api/admin/mps-abreviaturas-fix',
+                     json={}, headers=csrf_headers())
+        assert r3.status_code == 200, r3.data
+        d3 = r3.get_json()
+        assert d3['dry_run'] is False
+        assert any(x.get('codigo_mp') == 'TEST_MP_AB1'
+                   for x in d3['detalle_renombrados'])
+
+        # Después · ya renombrado al canonical
+        rows = _query("SELECT nombre_inci, nombre_comercial, activo FROM maestro_mps WHERE codigo_mp='TEST_MP_AB1'")
+        assert rows[0][0] == 'Zztest Compound Alpha'
+        assert rows[0][1] == 'Zztest Compound Alpha'
+        assert rows[0][2] == 1  # sigue activa
+
+        # Idempotente · llamarlo de nuevo no toca esta MP
+        r4 = cs.post('/api/admin/mps-abreviaturas-fix',
+                     json={}, headers=csrf_headers())
+        assert r4.status_code == 200
+        d4 = r4.get_json()
+        assert not any(x.get('codigo_mp') == 'TEST_MP_AB1'
+                       for x in d4.get('detalle_renombrados', []))
+    finally:
+        _exec("DELETE FROM maestro_mps WHERE codigo_mp='TEST_MP_AB1'")
+        _exec("DELETE FROM mp_aliases WHERE alias='ZZTEST_AB1'")
+
+
+def test_golden_mps_abreviaturas_fix_merge_duplicado(app, db_clean):
+    """Caso de duplicado: existe MP con abreviatura Y otra MP con el INCI
+    canonical ya creado. Fix debe mergear formula_items y archivar la
+    abreviada (no crear más duplicados).
+
+    Usa alias custom 'ZZTEST_AB2' → 'Zztest Compound Beta' para no chocar
+    con seeds reales.
+    """
+    _exec("DELETE FROM maestro_mps WHERE codigo_mp IN ('TEST_MP_AB2','TEST_MP_AB2_CAN')")
+    _exec("DELETE FROM formula_items WHERE material_id IN ('TEST_MP_AB2','TEST_MP_AB2_CAN')")
+    _exec("DELETE FROM formula_items WHERE producto_nombre='TEST_FORM_AB2'")
+    _exec("DELETE FROM formula_headers WHERE producto_nombre='TEST_FORM_AB2'")
+    _exec("DELETE FROM mp_aliases WHERE alias='ZZTEST_AB2'")
+    _exec(
+        """INSERT INTO mp_aliases
+           (alias, nombre_inci_canonical, tipo, fuente, activo)
+           VALUES ('ZZTEST_AB2', 'Zztest Compound Beta',
+                   'abreviatura', 'manual', 1)"""
+    )
+    # MP con abreviatura
+    _exec(
+        """INSERT INTO maestro_mps
+           (codigo_mp, nombre_inci, nombre_comercial, tipo, tipo_material,
+            proveedor, stock_minimo, precio_referencia, activo)
+           VALUES ('TEST_MP_AB2', 'ZZTEST_AB2', 'ZZTEST_AB2', 'Activo', 'MP',
+                   '', 0, 0, 1)"""
+    )
+    # MP con INCI canonical (la "buena")
+    _exec(
+        """INSERT INTO maestro_mps
+           (codigo_mp, nombre_inci, nombre_comercial, tipo, tipo_material,
+            proveedor, stock_minimo, precio_referencia, activo)
+           VALUES ('TEST_MP_AB2_CAN', 'Zztest Compound Beta',
+                   'Zztest Compound Beta', 'Activo', 'MP', '', 0, 0, 1)"""
+    )
+    # Una fórmula que usa la abreviada
+    _exec(
+        """INSERT INTO formula_headers (producto_nombre, unidad_base_g)
+           VALUES ('TEST_FORM_AB2', 1000)"""
+    )
+    _exec(
+        """INSERT INTO formula_items
+           (producto_nombre, material_id, material_nombre, porcentaje)
+           VALUES ('TEST_FORM_AB2', 'TEST_MP_AB2', 'ZZTEST_AB2', 0.5)"""
+    )
+
+    cs = _login(app, 'sebastian')
+    try:
+        # Audit reconoce duplicado
+        r = cs.get('/api/admin/mps-abreviaturas-audit')
+        assert r.status_code == 200
+        d = r.get_json()
+        hits = [h for h in d['hallazgos']
+                if h['codigo_mp'] == 'TEST_MP_AB2']
+        assert any(h['accion_sugerida'] == 'merge_dedupe' for h in hits), \
+            f'audit no detectó duplicado · {hits}'
+
+        # Fix real → mergea
+        r2 = cs.post('/api/admin/mps-abreviaturas-fix',
+                     json={}, headers=csrf_headers())
+        assert r2.status_code == 200, r2.data
+        d2 = r2.get_json()
+        assert any(x.get('desde') == 'TEST_MP_AB2' and x.get('hacia') == 'TEST_MP_AB2_CAN'
+                   for x in d2['detalle_mergeados'])
+
+        # La abreviada quedó archivada
+        rows = _query("SELECT activo FROM maestro_mps WHERE codigo_mp='TEST_MP_AB2'")
+        assert rows[0][0] == 0
+
+        # formula_items reapunta a la canonical
+        rows = _query(
+            """SELECT material_id, material_nombre FROM formula_items
+               WHERE producto_nombre='TEST_FORM_AB2'"""
+        )
+        assert rows[0][0] == 'TEST_MP_AB2_CAN'
+        assert rows[0][1] == 'Zztest Compound Beta'
+    finally:
+        _exec("DELETE FROM formula_items WHERE producto_nombre='TEST_FORM_AB2'")
+        _exec("DELETE FROM formula_headers WHERE producto_nombre='TEST_FORM_AB2'")
+        _exec("DELETE FROM maestro_mps WHERE codigo_mp IN ('TEST_MP_AB2','TEST_MP_AB2_CAN')")
+        _exec("DELETE FROM mp_aliases WHERE alias='ZZTEST_AB2'")

@@ -3744,14 +3744,23 @@ def job_auto_normalizar_formulas(app):
         except Exception:
             return False, {'error': 'mp_aliases tabla no existe · mig 158 no aplicada'}, 0
 
-        # MPs por INCI
-        mp_por_inci = {}
+        # MPs por nombre (INCI + nombre_comercial) · ambos campos pueden contener
+        # la abreviatura histórica (caso MP00169 con nombre_inci='SAP').
+        # FIX · 22-may-2026 noche · antes solo indexaba nombre_inci · si MP existente
+        # tenía la abreviatura en nombre_inci, el cron no la detectaba y CREABA DUPLICADO.
+        mp_por_nombre = {}  # lower(nombre) -> (codigo_mp, nombre_actual)
         try:
-            for cod, inci, activo in c.execute(
-                "SELECT codigo_mp, COALESCE(nombre_inci,''), COALESCE(activo,1) FROM maestro_mps"
+            for cod, inci, com, activo in c.execute(
+                """SELECT codigo_mp, COALESCE(nombre_inci,''),
+                          COALESCE(nombre_comercial,''), COALESCE(activo,1)
+                   FROM maestro_mps"""
             ).fetchall():
-                if inci and activo:
-                    mp_por_inci[inci.lower().strip()] = (cod, inci)
+                if not activo:
+                    continue
+                if inci:
+                    mp_por_nombre.setdefault(inci.lower().strip(), (cod, inci))
+                if com:
+                    mp_por_nombre.setdefault(com.lower().strip(), (cod, com))
         except Exception:
             pass
 
@@ -3762,22 +3771,61 @@ def job_auto_normalizar_formulas(app):
         ).fetchall()
 
         normalizados = 0
-        mps_creados = []  # MPs creados automáticamente
-        sin_alias = []    # casos sin alias conocido · skip
+        mps_creados = []     # MPs creados automáticamente
+        mps_renombrados = [] # MPs existentes renombrados de abreviatura a INCI canonical
+        sin_alias = []       # casos sin alias conocido · skip
         for mat_id, mat_nom in rows_form:
             nom_lower = (mat_nom or '').lower().strip()
             alias_inci = aliases_dict.get(nom_lower)
             if not alias_inci:
                 continue  # no es abreviatura conocida · skip silente
             alias_lower = alias_inci.lower().strip()
-            mp_match = mp_por_inci.get(alias_lower)
+            mp_match = mp_por_nombre.get(alias_lower)
             if not mp_match:
-                # Match parcial INCI
-                for k, v in mp_por_inci.items():
+                # Match parcial INCI canonical (p.ej. alias 'HA' -> 'Hyaluronic Acid'
+                # y existe MP 'Hyaluronic Acid Low Molecular Weight')
+                for k, v in mp_por_nombre.items():
                     if alias_lower in k:
                         mp_match = v
                         break
-            # FIX · 22-may-2026 · CREAR MP automáticamente si no existe
+            # FIX · 22-may-2026 noche · RENOMBRAR antes de CREAR · evita duplicados.
+            # · Caso MP00169 SAP: MP existente activa cuyo nombre_inci='SAP' (abreviatura).
+            # · Antes este cron creaba un MP nuevo con 'Sodium Ascorbyl Phosphate' al lado.
+            # · Ahora: si encontramos un MP existente cuyo nombre coincida con la abreviatura
+            #   literal, lo renombramos al INCI canonical.
+            if not mp_match:
+                mp_match_abrev = mp_por_nombre.get(nom_lower)
+                if mp_match_abrev:
+                    cod_exist, nom_exist = mp_match_abrev
+                    try:
+                        c.execute(
+                            """UPDATE maestro_mps
+                               SET nombre_inci=?, nombre_comercial=?
+                               WHERE codigo_mp=?""",
+                            (alias_inci, alias_inci, cod_exist),
+                        )
+                        try:
+                            from audit_helpers import audit_log as _alog
+                            _alog(c, usuario='cron-normalizar-formulas',
+                                  accion='AUTO_RENOMBRAR_MP_DESDE_ALIAS',
+                                  tabla='maestro_mps', registro_id=cod_exist,
+                                  antes={'nombre_inci_o_comercial': nom_exist},
+                                  despues={'nombre_inci': alias_inci,
+                                           'nombre_comercial': alias_inci,
+                                           'razon': f'renombrar desde abreviatura {mat_nom} a INCI canonical (zero-error · evita duplicar MP)'})
+                        except Exception:
+                            pass
+                        mp_match = (cod_exist, alias_inci)
+                        mp_por_nombre[alias_lower] = mp_match  # actualizar mapa para iteraciones
+                        mps_renombrados.append({
+                            'codigo_mp': cod_exist,
+                            'alias_origen': nom_exist,
+                            'nombre_inci': alias_inci,
+                        })
+                    except Exception as e:
+                        log.warning('[normalizar-formulas] renombrar MP %s fallo: %s',
+                                    cod_exist, e)
+            # CREAR MP automáticamente solo si no existe ni canonical ni abreviado
             # · Sebastián: 'quedamos en que las ibas a crear'
             if not mp_match:
                 try:
@@ -3803,7 +3851,7 @@ def job_auto_normalizar_formulas(app):
                     except Exception:
                         pass
                     # Registrar para próxima iteración + reporte
-                    mp_por_inci[alias_lower] = (cod_new, alias_inci)
+                    mp_por_nombre[alias_lower] = (cod_new, alias_inci)
                     mp_match = (cod_new, alias_inci)
                     mps_creados.append({
                         'codigo_mp': cod_new,
@@ -3842,11 +3890,20 @@ def job_auto_normalizar_formulas(app):
             pass
 
         # Notif a Sebastián con resumen
-        if mps_creados or normalizados:
+        if mps_creados or mps_renombrados or normalizados:
             try:
                 from blueprints.notif import push_notif
                 from config import ADMIN_USERS
                 cuerpo_parts = []
+                if mps_renombrados:
+                    sample = ', '.join(
+                        f"{m['codigo_mp']}:{m['alias_origen']}→{m['nombre_inci']}"
+                        for m in mps_renombrados[:5]
+                    )
+                    cuerpo_parts.append(
+                        f'♻️ {len(mps_renombrados)} MPs renombrados (abreviatura→INCI): {sample}'
+                        + ('...' if len(mps_renombrados) > 5 else '')
+                    )
                 if mps_creados:
                     sample = ', '.join(f"{m['alias_origen']}→{m['nombre_inci']}" for m in mps_creados[:5])
                     cuerpo_parts.append(
@@ -3861,11 +3918,11 @@ def job_auto_normalizar_formulas(app):
                 for u in (ADMIN_USERS or set()):
                     try:
                         push_notif(destinatario=u, tipo='normalizar_formulas_ok',
-                                   titulo='🔧 Fórmulas normalizadas + MPs creados',
+                                   titulo='🔧 Fórmulas normalizadas + MPs creados/renombrados',
                                    cuerpo=cuerpo,
                                    link='/dashboard#inventario',
                                    remitente='cron-normalizar-formulas',
-                                   importante=bool(mps_creados))
+                                   importante=bool(mps_creados or mps_renombrados))
                     except Exception:
                         pass
             except Exception:
@@ -3875,8 +3932,10 @@ def job_auto_normalizar_formulas(app):
             'normalizados': normalizados,
             'mps_creados': len(mps_creados),
             'mps_creados_detalle': mps_creados[:30],
+            'mps_renombrados': len(mps_renombrados),
+            'mps_renombrados_detalle': mps_renombrados[:30],
             'aliases_cargados': len(aliases_dict),
-            'mps_disponibles_por_inci': len(mp_por_inci),
+            'mps_disponibles_por_nombre': len(mp_por_nombre),
         }, 0
 
 
