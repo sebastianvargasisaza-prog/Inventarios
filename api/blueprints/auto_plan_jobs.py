@@ -3701,17 +3701,34 @@ def job_pqr_sla_vencido(app):
         return True, {'pqr_vencidos': len(rows)}, 0
 
 
+def _generar_codigo_mp_siguiente(c):
+    """SHOPIFY-FIX · 22-may-2026 · generar próximo código MP00NNNN.
+
+    Lee MAX(numero) de los códigos MP00xxxxx existentes y devuelve el siguiente.
+    """
+    try:
+        row = c.execute(
+            """SELECT MAX(CAST(SUBSTR(codigo_mp, 3) AS INTEGER))
+               FROM maestro_mps
+               WHERE codigo_mp LIKE 'MP%' AND LENGTH(codigo_mp) >= 6"""
+        ).fetchone()
+        max_n = int(row[0] or 0) if row else 0
+    except Exception:
+        max_n = 0
+    return f'MP{max_n + 1:05d}'
+
+
 def job_auto_normalizar_formulas(app):
     """Sebastián 22-may-2026 · cron diario 4:30 AM (post auto_reparar_huerfanas).
 
     Detecta materiales en formula_items con nombre/código que NO matchea
-    con maestro_mps · usa mp_aliases para auto-normalizar (renombrar +
-    vincular código_mp correcto).
+    con maestro_mps · usa mp_aliases para auto-normalizar.
 
-    Casos: 'SAP' → 'Sodium Ascorbyl Phosphate' · 'HA' → 'Hyaluronic Acid' · etc.
-
-    Solo normaliza casos con alias detectado + MP existente con ese INCI.
-    Casos sin alias o sin MP los reporta via notif a Sebastián para acción manual.
+    FLUJO 22-may-2026 actualizado · Sebastián: 'quedamos en que las ibas a crear':
+      1. Para cada alias detectado en formula_items:
+         a) Si NO existe MP con ese INCI → CREAR MP automáticamente
+         b) UPDATE formula_items para vincular al MP nuevo/existente
+      2. Notif resumen a Sebastián con count creados + normalizados
     """
     with app.app_context():
         from database import get_db as _gdb
@@ -3745,12 +3762,13 @@ def job_auto_normalizar_formulas(app):
         ).fetchall()
 
         normalizados = 0
-        sin_mp = []
+        mps_creados = []  # MPs creados automáticamente
+        sin_alias = []    # casos sin alias conocido · skip
         for mat_id, mat_nom in rows_form:
             nom_lower = (mat_nom or '').lower().strip()
             alias_inci = aliases_dict.get(nom_lower)
             if not alias_inci:
-                continue  # no es abreviatura conocida · skip
+                continue  # no es abreviatura conocida · skip silente
             alias_lower = alias_inci.lower().strip()
             mp_match = mp_por_inci.get(alias_lower)
             if not mp_match:
@@ -3759,11 +3777,43 @@ def job_auto_normalizar_formulas(app):
                     if alias_lower in k:
                         mp_match = v
                         break
+            # FIX · 22-may-2026 · CREAR MP automáticamente si no existe
+            # · Sebastián: 'quedamos en que las ibas a crear'
             if not mp_match:
-                # No existe MP con ese INCI · reportar
-                if len(sin_mp) < 20:
-                    sin_mp.append({'alias': mat_nom, 'inci_canonical': alias_inci})
-                continue
+                try:
+                    cod_new = _generar_codigo_mp_siguiente(c)
+                    c.execute(
+                        """INSERT INTO maestro_mps
+                           (codigo_mp, nombre_inci, nombre_comercial, tipo,
+                            tipo_material, proveedor, stock_minimo,
+                            precio_referencia, activo)
+                           VALUES (?, ?, ?, 'Sin clasificar', 'MP',
+                                   '(por asignar)', 0, 0, 1)""",
+                        (cod_new, alias_inci, alias_inci),
+                    )
+                    try:
+                        from audit_helpers import audit_log as _alog
+                        _alog(c, usuario='cron-normalizar-formulas',
+                              accion='AUTO_CREAR_MP_DESDE_ALIAS',
+                              tabla='maestro_mps', registro_id=cod_new,
+                              despues={'codigo_mp': cod_new,
+                                       'nombre_inci': alias_inci,
+                                       'razon': f'auto-creado por abbreviatura {mat_nom} en fórmula',
+                                       'observacion': 'completar proveedor + precio + stock_minimo'})
+                    except Exception:
+                        pass
+                    # Registrar para próxima iteración + reporte
+                    mp_por_inci[alias_lower] = (cod_new, alias_inci)
+                    mp_match = (cod_new, alias_inci)
+                    mps_creados.append({
+                        'codigo_mp': cod_new,
+                        'alias_origen': mat_nom,
+                        'nombre_inci': alias_inci,
+                    })
+                except Exception as e:
+                    log.warning('[normalizar-formulas] crear MP %s fallo: %s',
+                                alias_inci, e)
+                    continue
             cod_new, nom_new = mp_match
             try:
                 c.execute(
@@ -3791,25 +3841,31 @@ def job_auto_normalizar_formulas(app):
         except Exception:
             pass
 
-        # Notif a Sebastián si hay MPs faltantes para crear
-        if sin_mp:
+        # Notif a Sebastián con resumen
+        if mps_creados or normalizados:
             try:
                 from blueprints.notif import push_notif
                 from config import ADMIN_USERS
-                cuerpo = (
-                    f'⚠ {len(sin_mp)} abreviaturas en fórmulas SIN MP cargado: '
-                    + ', '.join(f"{s['alias']}→{s['inci_canonical']}" for s in sin_mp[:5])
-                    + ('...' if len(sin_mp) > 5 else '')
-                    + ' · cargar MPs en maestro o agregar alias.'
-                )
+                cuerpo_parts = []
+                if mps_creados:
+                    sample = ', '.join(f"{m['alias_origen']}→{m['nombre_inci']}" for m in mps_creados[:5])
+                    cuerpo_parts.append(
+                        f'✅ {len(mps_creados)} MPs creados automáticamente: {sample}'
+                        + ('...' if len(mps_creados) > 5 else '')
+                    )
+                if normalizados:
+                    cuerpo_parts.append(f'🔧 {normalizados} fórmulas normalizadas')
+                if mps_creados:
+                    cuerpo_parts.append('Completá proveedor + precio + stock_minimo en cada MP nuevo.')
+                cuerpo = ' · '.join(cuerpo_parts)
                 for u in (ADMIN_USERS or set()):
                     try:
-                        push_notif(destinatario=u, tipo='normalizar_formulas_alerta',
-                                   titulo='⚠ MPs faltantes en maestro',
+                        push_notif(destinatario=u, tipo='normalizar_formulas_ok',
+                                   titulo='🔧 Fórmulas normalizadas + MPs creados',
                                    cuerpo=cuerpo,
                                    link='/dashboard#inventario',
                                    remitente='cron-normalizar-formulas',
-                                   importante=False)
+                                   importante=bool(mps_creados))
                     except Exception:
                         pass
             except Exception:
@@ -3817,8 +3873,8 @@ def job_auto_normalizar_formulas(app):
 
         return True, {
             'normalizados': normalizados,
-            'sin_mp_cargado': len(sin_mp),
-            'sin_mp_detalle': sin_mp[:20],
+            'mps_creados': len(mps_creados),
+            'mps_creados_detalle': mps_creados[:30],
             'aliases_cargados': len(aliases_dict),
             'mps_disponibles_por_inci': len(mp_por_inci),
         }, 0

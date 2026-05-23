@@ -6761,17 +6761,19 @@ def test_golden_operario_mi_dia_filtra_por_asignacion(app, db_clean):
     assert op_mayerlin, 'precondición: Mayerlin debe estar en operarios_planta'
     mayerlin_id = op_mayerlin[0][0]
 
+    # FIX · 22-may-2026 · usar TZ Bogotá (mismo que el endpoint mi-dia filtra)
+    # · Antes: date('now') UTC · test failing 19:00-23:59 Bogotá (= 00-04 UTC siguiente)
     pp_a = _exec(
         """INSERT INTO produccion_programada
             (producto, fecha_programada, cantidad_kg, origen,
              operario_dispensacion_id)
-           VALUES ('TEST_OP_MAYERLIN', date('now'), 5, 'manual', ?)""",
+           VALUES ('TEST_OP_MAYERLIN', date('now','-5 hours'), 5, 'manual', ?)""",
         (mayerlin_id,),
     )
     pp_b = _exec(
         """INSERT INTO produccion_programada
             (producto, fecha_programada, cantidad_kg, origen)
-           VALUES ('TEST_OP_OTRO', date('now'), 3, 'manual')""",
+           VALUES ('TEST_OP_OTRO', date('now','-5 hours'), 3, 'manual')""",
     )
 
     # Caso 1: Mayerlin ve SOLO la suya
