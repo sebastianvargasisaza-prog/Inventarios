@@ -312,6 +312,34 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (165, "bulk fix · TODOS los productos con lote_size_kg<1 → copiar de producto_canonico_config.kg_por_lote · Sebastián 23-may-2026 PM", [
+        # Sebastián vio EMULSION LIMPIADORA mismo bug que AZH · BD tiene
+        # lote_size_kg=0.1 absurdo. Mig 163 solo arregló AZH puntual.
+        # Esta sincroniza TODOS los productos cuyo lote_size_kg sea
+        # menor a 1 kg (claramente mal) copiando el kg_por_lote de
+        # producto_canonico_config (donde Alejandro/Sebastián definieron
+        # los valores reales del Excel). Solo aplica si el canonico tiene
+        # valor sensato (>= 1 kg). Sintaxis compatible PG + SQLite via
+        # correlated subquery (UPDATE FROM no funciona igual en SQLite).
+        """UPDATE formula_headers
+            SET lote_size_kg = (
+                SELECT pcc.kg_por_lote
+                  FROM producto_canonico_config pcc
+                 WHERE UPPER(TRIM(pcc.producto_nombre)) = UPPER(TRIM(formula_headers.producto_nombre))
+                   AND COALESCE(pcc.kg_por_lote, 0) >= 1
+                 LIMIT 1),
+                unidad_base_g = (
+                SELECT pcc.kg_por_lote * 1000
+                  FROM producto_canonico_config pcc
+                 WHERE UPPER(TRIM(pcc.producto_nombre)) = UPPER(TRIM(formula_headers.producto_nombre))
+                   AND COALESCE(pcc.kg_por_lote, 0) >= 1
+                 LIMIT 1)
+          WHERE COALESCE(lote_size_kg, 0) < 1
+            AND EXISTS (
+                SELECT 1 FROM producto_canonico_config pcc
+                 WHERE UPPER(TRIM(pcc.producto_nombre)) = UPPER(TRIM(formula_headers.producto_nombre))
+                   AND COALESCE(pcc.kg_por_lote, 0) >= 1)""",
+    ]),
     (164, "sync producto_canonico_config.kg_por_lote para AZH (si tabla existe) · Sebastián 23-may-2026 PM", [
         # Agente auditor reportó: producto_canonico_config.kg_por_lote NO
         # se sincroniza con formula_headers.lote_size_kg · si AZH tiene 22

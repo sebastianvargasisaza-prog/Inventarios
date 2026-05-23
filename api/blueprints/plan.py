@@ -4823,7 +4823,7 @@ def alertas_ventas():
 def _auto_programar_sugeridas(conn, dias_horizonte=90, ventana_velocidad=60,
                                   cob_critico=20, cob_alerta=25, cob_vigilar=45,
                                   usuario='cron-auto-sugerir', producto_filtro=None,
-                                  origen_nuevo='eos_canonico'):
+                                  origen_nuevo='eos_canonico', lote_kg_override=None):
     """Sebastián 23-may-2026 · 'el sistema calcula próxima producción pero
     no la coloca · se pierde la sugerencia'.
 
@@ -4872,7 +4872,18 @@ def _auto_programar_sugeridas(conn, dias_horizonte=90, ventana_velocidad=60,
             prod = p.get('producto_nombre') or ''
             if filtro_upper and prod.strip().upper() != filtro_upper:
                 continue
+            # FIX 23-may-2026 PM Sebastián · "debería poder cambiar para
+            # aumentar el lote y que dure más, calcule automático" · si el
+            # caller pasó lote_kg_override (UI input editable), usamos ese
+            # en lugar del lote_bulk_kg del producto.
             lote_kg = float(p.get('lote_bulk_kg') or 0)
+            if lote_kg_override is not None:
+                try:
+                    _lk = float(lote_kg_override)
+                    if 1.0 <= _lk <= 2000.0:
+                        lote_kg = _lk
+                except Exception:
+                    pass
             vel = float(p.get('velocidad_kg_dia') or 0)
             psf = p.get('proxima_sugerida_fecha')
 
@@ -5017,11 +5028,20 @@ def plan_auto_programar_sugeridas():
     origen = 'eos_plan' if producto else 'eos_canonico'
     if d.get('origen_nuevo') in ('eos_plan', 'eos_canonico'):
         origen = d['origen_nuevo']
+    # FIX 23-may PM · usuario puede editar Lote en modal y mandarlo
+    lote_kg_ovr = None
+    try:
+        if d.get('lote_kg_override') is not None:
+            _v = float(d.get('lote_kg_override'))
+            if 1.0 <= _v <= 2000.0:
+                lote_kg_ovr = _v
+    except Exception:
+        lote_kg_ovr = None
     conn = get_db()
     resultado = _auto_programar_sugeridas(
         conn, dias_horizonte=dh, cob_critico=cc, cob_alerta=ca,
         cob_vigilar=cv, usuario=user, producto_filtro=producto,
-        origen_nuevo=origen,
+        origen_nuevo=origen, lote_kg_override=lote_kg_ovr,
     )
     return jsonify({'ok': True, **resultado})
 
@@ -5126,6 +5146,15 @@ def plan_sugerir_preview():
         ca = int(request.args.get('cob_alerta', 25))
     except Exception:
         ca = 25
+    # FIX 23-may PM · permite override del lote para recalcular preview
+    lote_ovr = None
+    try:
+        if request.args.get('lote_kg_override'):
+            _v = float(request.args.get('lote_kg_override'))
+            if 1.0 <= _v <= 2000.0:
+                lote_ovr = _v
+    except Exception:
+        lote_ovr = None
     conn = get_db()
     cur = conn.cursor()
     productos = _calcular_animus_dtc(cur, ventana=60, cob_critico=20,
@@ -5156,6 +5185,9 @@ def plan_sugerir_preview():
             continue
         vel = float(p.get('velocidad_kg_dia') or 0)
         lote_kg = float(p.get('lote_bulk_kg') or 0)
+        # FIX 23-may PM · si caller pasó override (UI editable), usarlo
+        if lote_ovr is not None and producto_filtro and prod.upper() == producto_filtro:
+            lote_kg = lote_ovr
         psf = p.get('proxima_sugerida_fecha')
         if not psf and vel > 0 and lote_kg > 0:
             fp = fijo_prog_por_prod.get(prod.upper())

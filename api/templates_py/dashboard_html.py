@@ -20770,7 +20770,7 @@ async function ckMarcar(itemId, estado){
         '<div id="mp-content" style="display:none">' +
           '<div style="background:#f1f5f9;border-radius:8px;padding:12px;margin-bottom:14px;display:grid;grid-template-columns:repeat(4,1fr);gap:8px;font-size:12px">' +
             '<div><div style="color:#64748b;font-size:10px;text-transform:uppercase">Velocidad</div><div id="mp-vel" style="font-weight:700;color:#1e40af"></div></div>' +
-            '<div><div style="color:#64748b;font-size:10px;text-transform:uppercase">Lote estándar</div><div id="mp-lote" style="font-weight:700;color:#1e40af"></div></div>' +
+            '<div><div style="color:#64748b;font-size:10px;text-transform:uppercase" title="Editá para hacer lotes más grandes (duran más, fabricás menos seguido)">Lote estándar ✏️</div><div style="display:flex;align-items:center;gap:4px;margin-top:2px"><input id="mp-lote-input" type="number" min="1" max="2000" step="0.5" style="width:70px;padding:3px 5px;border:1px solid #7c3aed;border-radius:4px;font-size:13px;font-weight:700;color:#1e40af" onchange="cambiarLoteKg(parseFloat(this.value))"><span style="font-size:11px;color:#64748b">kg</span></div><div id="mp-lote-status" style="font-size:9px;color:#64748b;margin-top:2px"></div></div>' +
             '<div><div style="color:#64748b;font-size:10px;text-transform:uppercase">Dura</div><div id="mp-dur" style="font-weight:700;color:#1e40af"></div></div>' +
             '<div><div style="color:#64748b;font-size:10px;text-transform:uppercase">Re-orden cada</div><div id="mp-paso" style="font-weight:700;color:#1e40af"></div></div>' +
           '</div>' +
@@ -20797,6 +20797,19 @@ async function ckMarcar(itemId, estado){
       '</div>';
     document.body.appendChild(modal);
   }
+  // FIX 23-may-2026 PM Sebastián · "si yo quisiera aumentar la cantidad
+  // de lote para que me dure más días y fabricar menos seguido · debería
+  // poder cambiar que calcule automático". Input editable Lote Estándar
+  // recalcula dur, paso y tabla en frontend · al programar manda override
+  // al endpoint para que el INSERT use el kg custom.
+  window.cambiarLoteKg = function(kg) {
+    if (!kg || kg < 1 || kg > 2000) {
+      alert('Lote inválido (1-2000 kg)');
+      return;
+    }
+    window._previewState.lote_kg_override = kg;
+    recargarPreviewProgramar();
+  };
   window.cambiarHorizonte = function(d) {
     if (!d || d < 7) return;
     window._previewState.horizonte = d;
@@ -20814,13 +20827,21 @@ async function ckMarcar(itemId, estado){
     document.getElementById('mp-loading').style.display = 'block';
     document.getElementById('mp-content').style.display = 'none';
     try {
-      const r = await fetch('/api/plan/sugerir-preview?producto=' + encodeURIComponent(st.producto) + '&dias_horizonte=' + st.horizonte);
+      let url = '/api/plan/sugerir-preview?producto=' + encodeURIComponent(st.producto) + '&dias_horizonte=' + st.horizonte;
+      if (st.lote_kg_override != null) url += '&lote_kg_override=' + st.lote_kg_override;
+      const r = await fetch(url);
       const d = await r.json();
       st.data = d;
       document.getElementById('mp-loading').style.display = 'none';
       document.getElementById('mp-content').style.display = 'block';
+      // Si no hay lote_kg_override aún, usar el del backend; si hay, preservar el del usuario
+      const loteActual = (st.lote_kg_override != null) ? st.lote_kg_override : (d.lote_bulk_kg || 0);
+      st.lote_kg_actual = loteActual;
       document.getElementById('mp-vel').textContent = (d.velocidad_kg_dia || 0).toFixed(2) + ' kg/d';
-      document.getElementById('mp-lote').textContent = (d.lote_bulk_kg || 0) + ' kg';
+      const inpLote = document.getElementById('mp-lote-input');
+      if (inpLote) inpLote.value = loteActual;
+      const stLoteEl = document.getElementById('mp-lote-status');
+      if (stLoteEl) stLoteEl.textContent = (st.lote_kg_override != null) ? '✎ editado' : (d.lote_calculado ? 'calculado' : 'de BD');
       document.getElementById('mp-dur').textContent = (d.dur_lote_dias || 0) + ' d';
       document.getElementById('mp-paso').textContent = (d.paso_dias || 0) + ' d';
       // Marca botón horizonte activo
@@ -20895,10 +20916,12 @@ async function ckMarcar(itemId, estado){
     const btn = document.getElementById('mp-btn-generar');
     btn.disabled = true; btn.textContent = 'Generando…';
     try {
+      const body = {producto: st.producto, dias_horizonte: st.horizonte};
+      if (st.lote_kg_override != null) body.lote_kg_override = st.lote_kg_override;
       const r = await fetch('/api/plan/auto-programar-sugeridas', {
         method: 'POST',
         headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({producto: st.producto, dias_horizonte: st.horizonte}),
+        body: JSON.stringify(body),
       });
       const d = await r.json();
       if (!r.ok || d.error) { alert('Error: ' + (d.error || r.status)); btn.disabled = false; return; }
@@ -20930,10 +20953,12 @@ async function ckMarcar(itemId, estado){
     try {
       // Usa horizonte mínimo (paso+1) para que el helper solo cree el primero
       const minHorizonte = Math.max((st.data.paso_dias || 30) + 1, (proxima.dias_hasta || 1) + 1);
+      const body = {producto: st.producto, dias_horizonte: minHorizonte};
+      if (st.lote_kg_override != null) body.lote_kg_override = st.lote_kg_override;
       const r = await fetch('/api/plan/auto-programar-sugeridas', {
         method: 'POST',
         headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({producto: st.producto, dias_horizonte: minHorizonte}),
+        body: JSON.stringify(body),
       });
       const d = await r.json();
       if (!r.ok || d.error) { alert('Error: ' + (d.error || r.status)); btn.disabled = false; return; }
@@ -21498,7 +21523,7 @@ async function ckMarcar(itemId, estado){
       const tieneCalc = p.lote_calculado;
       avisos += '<div style="background:#fee2e2;color:#991b1b;border-left:3px solid #dc2626;padding:6px 10px;border-radius:5px;font-size:11px;font-weight:600;margin-top:6px">⚠ lote_size_kg en BD = ' + valBd + ' kg ' +
         (tieneCalc ? '(usando ' + p.lote_bulk_kg + ' kg calculado · ~60d cobertura) ' : '') +
-        '· arreglá en /api/admin/lote-size-fix</div>';
+        '· andá a tab Necesidades → ⚙ Herramientas para arreglarlo</div>';
     }
 
     let html = '<div style="display:flex;gap:14px;margin-bottom:16px;align-items:center">';
