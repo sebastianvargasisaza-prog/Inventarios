@@ -2109,19 +2109,45 @@ def _fetch_shopify_available(token, shop, inv_item_ids):
     # Dedupe + filtrar None/0
     unique_ids = sorted({int(x) for x in inv_item_ids if x})
     chunk = 50
+    # FIX 23-may-2026 · auditoría P2 · antes si un chunk fallaba seguía con
+    # continue · resultado: mezcla Available + On Hand para distintos SKUs
+    # en el mismo sync · ahora all-or-nothing + retry con backoff en 429
+    import time as _time
     for i in range(0, len(unique_ids), chunk):
         sub = unique_ids[i:i + chunk]
         ids_csv = ','.join(str(x) for x in sub)
         url = ('https://' + shop +
                '/admin/api/2024-01/inventory_levels.json'
                '?inventory_item_ids=' + ids_csv + '&limit=' + str(chunk * 5))
-        req = urllib.request.Request(url, headers={'X-Shopify-Access-Token': token})
-        try:
-            with urllib.request.urlopen(req, timeout=20) as r:
-                data = json.loads(r.read())
-        except Exception as e:
-            log.warning("inventory_levels chunk %d-%d falló: %s", i, i + chunk, e)
-            continue
+        # Retry con backoff exponencial para 429/5xx · 3 intentos
+        data = None
+        for intento in range(3):
+            req = urllib.request.Request(url, headers={'X-Shopify-Access-Token': token})
+            try:
+                with urllib.request.urlopen(req, timeout=20) as r:
+                    data = json.loads(r.read())
+                break
+            except urllib.error.HTTPError as he:
+                if he.code in (429, 500, 502, 503, 504) and intento < 2:
+                    # Respetar Retry-After si vino · sino backoff exponencial 2/4s
+                    ra = 0
+                    try:
+                        ra = int(he.headers.get('Retry-After', '0') or 0)
+                    except Exception:
+                        ra = 0
+                    _time.sleep(max(ra, 2 ** (intento + 1)))
+                    continue
+                log.warning("inventory_levels chunk %d-%d HTTP %s: %s",
+                            i, i + chunk, he.code, he)
+                return {}   # all-or-nothing · caller fallback a On Hand
+            except Exception as e:
+                if intento < 2:
+                    _time.sleep(2 ** (intento + 1))
+                    continue
+                log.warning("inventory_levels chunk %d-%d falló: %s", i, i + chunk, e)
+                return {}   # all-or-nothing
+        if data is None:
+            return {}
         for lvl in data.get('inventory_levels', []) or []:
             iid = lvl.get('inventory_item_id')
             av = lvl.get('available')
@@ -2198,6 +2224,19 @@ def prog_sync_stock_shopify():
     es_cron, _err = _validar_acceso_cron(request)
     if 'compras_user' not in session and not es_cron:
         return jsonify({'ok': False, 'error': 'No autorizado'}), 401
+    # FIX 23-may-2026 · auditoría P2 · antes UPDATE+INSERT sin transacción/lock
+    # 2 syncs simultáneos (cron + botón manual o 2 admins) abrían ventana donde
+    # todo stock quedaba en estado='Ajustado' · _resolved_stock_por_sku devolvía
+    # 0 · cobertura de Necesidades se rompía momentáneamente · ahora con
+    # cron_locks para serializar
+    from blueprints.auto_plan_jobs import _adquirir_lock_cron, _liberar_lock_cron
+    _lock_conn = get_db()
+    if not _adquirir_lock_cron(_lock_conn, 'sync_stock_shopify', ttl_horas=1):
+        return jsonify({
+            'ok': False,
+            'error': 'Otro sync de stock Shopify está en curso · intenta en unos segundos',
+            'reintentar': True,
+        }), 409
     try:
         conn = get_db()
 
@@ -2319,6 +2358,11 @@ def prog_sync_stock_shopify():
     except Exception as e:
         import traceback
         return jsonify({'ok': False, 'error': 'Error interno: ' + str(e), 'trace': traceback.format_exc()[-500:]})
+    finally:
+        try:
+            _liberar_lock_cron(_lock_conn, 'sync_stock_shopify')
+        except Exception:
+            pass
 
 
 @bp.route('/api/programacion/debug-stock')

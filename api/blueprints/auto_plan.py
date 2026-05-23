@@ -203,13 +203,19 @@ def _ventas_diarias_por_sku(c, sku, dias=60):
       2) animus_shopify_orders.sku_items (JSON parse) — caso real Espagiria
       3) ordenes_shopify_items legacy
     """
+    # FIX 23-may-2026 · auditoría P2 · multi-arg date() rompe en PG silente ·
+    # pg_compat solo traduce mono-arg · ahora cutoff calculado en Python
+    # (TZ Bogotá) y pasado como param string YYYY-MM-DD
+    from datetime import datetime as _dt_local, timedelta as _td_local
+    cutoff_str = (_dt_local.utcnow() - _td_local(hours=5) - _td_local(days=dias)).strftime('%Y-%m-%d')
+
     # Estrategia 1: tabla agregada
     try:
         r = c.execute("""
             SELECT fecha, COALESCE(SUM(cantidad),0)
-            FROM ventas_diarias WHERE sku=? AND fecha >= date('now', '-5 hours', '-' || ? || ' days')
+            FROM ventas_diarias WHERE sku=? AND fecha >= ?
             GROUP BY fecha ORDER BY fecha
-        """, (sku, dias)).fetchall()
+        """, (sku, cutoff_str)).fetchall()
         if r:
             return [(row[0], float(row[1] or 0)) for row in r]
     except Exception:
@@ -220,9 +226,9 @@ def _ventas_diarias_por_sku(c, sku, dias=60):
         rows = c.execute("""
             SELECT date(creado_en), sku_items
             FROM animus_shopify_orders
-            WHERE creado_en >= date('now', '-5 hours', '-' || ? || ' days')
+            WHERE date(creado_en) >= ?
               AND sku_items IS NOT NULL AND sku_items != ''
-        """, (dias,)).fetchall()
+        """, (cutoff_str,)).fetchall()
         if rows:
             por_dia = {}
             for fecha, sku_items_json in rows:
@@ -257,9 +263,9 @@ def _ventas_diarias_por_sku(c, sku, dias=60):
         r = c.execute("""
             SELECT date(fecha), COALESCE(SUM(cantidad),0)
             FROM ordenes_shopify_items
-            WHERE sku=? AND fecha >= date('now', '-5 hours', '-' || ? || ' days')
+            WHERE sku=? AND date(fecha) >= ?
             GROUP BY date(fecha) ORDER BY 1
-        """, (sku, dias)).fetchall()
+        """, (sku, cutoff_str)).fetchall()
         if r:
             return [(row[0], float(row[1] or 0)) for row in r]
     except Exception:
