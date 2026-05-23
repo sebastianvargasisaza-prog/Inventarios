@@ -1762,6 +1762,125 @@ def sugerir_mp(codigo_mp):
     return jsonify(out)
 
 
+@bp.route('/api/compras/mailbox-facturas', methods=['GET'])
+def listar_mailbox_facturas():
+    """Sebastián 23-may-2026 · MBX UI · lista facturas detectadas por el
+    cron job_mailbox_factura_proveedor (medio='PENDIENTE') · admin debe
+    completar monto + medio definitivo o descartar.
+
+    Inserts vienen de auto_plan_jobs.py:3585 (mailbox IMAP cron).
+    """
+    u, err, code = _require_compras_session()
+    if err: return err, code
+    try:
+        dias = max(1, min(int(request.args.get('dias', 30)), 365))
+    except Exception:
+        dias = 30
+    conn = get_db(); c = conn.cursor()
+    from datetime import datetime as _dt, timedelta as _td
+    desde = (_dt.utcnow() - _td(hours=5) - _td(days=dias)).strftime('%Y-%m-%d %H:%M:%S')
+    try:
+        rows = c.execute("""
+            SELECT po.id, po.numero_oc, po.fecha_pago, po.numero_factura_proveedor,
+                   COALESCE(po.monto,0), po.medio,
+                   COALESCE(po.observaciones,''),
+                   COALESCE(oc.proveedor,''),
+                   COALESCE(oc.valor_total,0),
+                   COALESCE(oc.estado,'')
+            FROM pagos_oc po
+            LEFT JOIN ordenes_compra oc ON oc.numero_oc = po.numero_oc
+            WHERE po.registrado_por = 'cron-mailbox'
+              AND po.fecha_pago >= ?
+            ORDER BY po.fecha_pago DESC
+        """, (desde,)).fetchall()
+    except Exception as e:
+        return jsonify({'error': f'query fallo: {e}'}), 500
+    items = []
+    for r in rows:
+        items.append({
+            'pago_id': r[0],
+            'numero_oc': r[1],
+            'fecha': str(r[2])[:10] if r[2] else '',
+            'numero_factura': r[3] or '',
+            'monto': float(r[4] or 0),
+            'medio': r[5] or '',
+            'pendiente': (r[5] or '').upper() == 'PENDIENTE',
+            'observaciones': r[6],
+            'proveedor': r[7],
+            'valor_oc': float(r[8] or 0),
+            'estado_oc': r[9],
+        })
+    n_pendientes = sum(1 for it in items if it['pendiente'])
+    return jsonify({
+        'dias_ventana': dias,
+        'total': len(items),
+        'n_pendientes': n_pendientes,
+        'items': items,
+    })
+
+
+@bp.route('/api/compras/mailbox-facturas/<int:pago_id>/comprobante', methods=['GET'])
+def mailbox_factura_comprobante(pago_id):
+    """Descarga el comprobante adjunto base64 de una factura mailbox."""
+    u, err, code = _require_compras_session()
+    if err: return err, code
+    conn = get_db(); c = conn.cursor()
+    row = c.execute("""
+        SELECT comprobante_imagen, numero_factura_proveedor, numero_oc
+        FROM pagos_oc WHERE id=? AND registrado_por='cron-mailbox'
+    """, (pago_id,)).fetchone()
+    if not row:
+        return jsonify({'error': 'No encontrado'}), 404
+    b64 = row[0] or ''
+    if not b64:
+        return jsonify({'error': 'Sin adjunto'}), 404
+    import base64 as _b64
+    try:
+        raw = _b64.b64decode(b64)
+    except Exception:
+        return jsonify({'error': 'Adjunto corrupto'}), 500
+    fname = (row[1] or 'factura').strip().replace('/', '-')
+    # Detectar tipo por magic bytes
+    if raw[:4] == b'%PDF':
+        mt = 'application/pdf'
+        if not fname.lower().endswith('.pdf'): fname += '.pdf'
+    elif raw[:3] == b'\xff\xd8\xff':
+        mt = 'image/jpeg'
+        if not fname.lower().endswith(('.jpg','.jpeg')): fname += '.jpg'
+    elif raw[:8] == b'\x89PNG\r\n\x1a\n':
+        mt = 'image/png'
+        if not fname.lower().endswith('.png'): fname += '.png'
+    else:
+        mt = 'application/octet-stream'
+    from flask import send_file
+    import io as _io
+    return send_file(_io.BytesIO(raw), as_attachment=False,
+                     download_name=fname, mimetype=mt)
+
+
+@bp.route('/api/compras/mailbox-facturas/<int:pago_id>/descartar', methods=['POST'])
+def mailbox_factura_descartar(pago_id):
+    """Admin descarta una factura mailbox (no aplica) · borra el row."""
+    u, err, code = _require_compras_write()
+    if err: return err, code
+    conn = get_db(); c = conn.cursor()
+    row = c.execute(
+        "SELECT numero_oc, numero_factura_proveedor FROM pagos_oc WHERE id=? AND registrado_por='cron-mailbox'",
+        (pago_id,),
+    ).fetchone()
+    if not row:
+        return jsonify({'error': 'No encontrado'}), 404
+    c.execute("DELETE FROM pagos_oc WHERE id=? AND registrado_por='cron-mailbox'", (pago_id,))
+    try:
+        audit_log(c, usuario=u, accion='DESCARTAR_MAILBOX_FACTURA',
+                  tabla='pagos_oc', registro_id=str(pago_id),
+                  antes={'numero_oc': row[0], 'numero_factura': row[1]})
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({'ok': True})
+
+
 @bp.route('/api/compras/ocs-consolidado-excel', methods=['GET'])
 def ocs_consolidado_excel():
     """Sebastián 23-may-2026 · Excel consolidado de OCs activas para
@@ -4710,7 +4829,30 @@ def recibir_oc(numero_oc):
     # Build lookup por indice posicional (codigo_mp puede estar vacio en solicitudes)
     rec_map_idx = {idx: ir for idx, ir in enumerate(items_r)}
     # Fallback: lookup por codigo_mp para compatibilidad con clientes que lo envien
-    rec_map_cod = {ir.get('codigo_mp', ''): ir for ir in items_r if ir.get('codigo_mp', '')}
+    # AUDITORÍA-FIX 23-may-2026 · C22 · si misma MP aparece en >1 línea
+    # (legítimo · 2 lotes distintos del mismo MP en una OC), el lookup
+    # por codigo colapsaba en 1 sola entrada · la segunda se sobreescribía
+    # · ahora: lookup por (codigo_mp, oci_rowid) cuando el cliente envía
+    # oci_rowid · fallback por código solo si no hay duplicado
+    rec_map_cod = {}
+    rec_map_rowid = {}
+    _cod_count = {}
+    for ir in items_r:
+        cm = (ir.get('codigo_mp') or '').strip()
+        if not cm:
+            continue
+        _cod_count[cm] = _cod_count.get(cm, 0) + 1
+    for ir in items_r:
+        cm = (ir.get('codigo_mp') or '').strip()
+        if cm and _cod_count.get(cm, 0) == 1:
+            rec_map_cod[cm] = ir
+        # Siempre indexar por rowid si el cliente lo manda
+        rid = ir.get('oci_rowid') or ir.get('item_id') or ir.get('id')
+        if rid is not None:
+            try:
+                rec_map_rowid[int(rid)] = ir
+            except (TypeError, ValueError):
+                pass
 
     # ── PRE-CHECK · Sebastian 5-may-2026 (audit zero-error Recepciones) ──
     # Antes de tocar DB validamos sobre-recepcion y vencimiento. Si hay
@@ -4725,7 +4867,10 @@ def recibir_oc(numero_oc):
 
     for _idx, item in enumerate(items_oc):
         _oci_rowid, codigo, nombre, cantidad_pedida = item
-        ir = rec_map_idx.get(_idx) or rec_map_cod.get(codigo, {})
+        # AUDITORÍA C22 · prioridad: rowid > idx posicional > codigo único
+        ir = (rec_map_rowid.get(_oci_rowid)
+              or rec_map_idx.get(_idx)
+              or rec_map_cod.get(codigo, {}))
         cant_raw = ir.get('cantidad_recibida', 0)
         cantidad_explicita = not (cant_raw is None or cant_raw == '')
         if cantidad_explicita:
@@ -4788,7 +4933,10 @@ def recibir_oc(numero_oc):
     lotes_sinteticos_advertencia = []  # Fix #9 · 21-may-2026
     for _idx, item in enumerate(items_oc):
         _oci_rowid, codigo, nombre, cantidad_pedida = item
-        ir = rec_map_idx.get(_idx) or rec_map_cod.get(codigo, {})
+        # AUDITORÍA C22 · prioridad: rowid > idx posicional > codigo único
+        ir = (rec_map_rowid.get(_oci_rowid)
+              or rec_map_idx.get(_idx)
+              or rec_map_cod.get(codigo, {}))
         cant_raw = ir.get('cantidad_recibida', 0)
         if cant_raw is None or cant_raw == '':
             cant_recibida = 0.0
@@ -4970,6 +5118,10 @@ def recibir_oc(numero_oc):
 
     # Si la OC ya estaba Pagada (anticipo · pago antes de la recepción), la
     # recepción registra el kardex pero NO revierte el estado (INV-4).
+    # AUDITORÍA-FIX 23-may-2026 · C17 · flag recepcion_parcial separado del
+    # estado · evita perder visibilidad de que falta mercancía cuando la
+    # OC ya estaba Pagada (anticipo)
+    recepcion_parcial_flag = 1 if es_parcial else 0
     if estado_oc_original == 'Pagada':
         nuevo_estado = 'Pagada'
     else:
@@ -4977,8 +5129,10 @@ def recibir_oc(numero_oc):
     try:
         cur.execute(
             "UPDATE ordenes_compra SET estado=?, fecha_recepcion=?,"
-            " observaciones_recepcion=?, tiene_discrepancias=?, recibido_por=? WHERE numero_oc=?",
-            (nuevo_estado, fecha, obs_r, disc_r, receptor_nombre, numero_oc))
+            " observaciones_recepcion=?, tiene_discrepancias=?, recibido_por=?,"
+            " recepcion_parcial=? WHERE numero_oc=?",
+            (nuevo_estado, fecha, obs_r, disc_r, receptor_nombre,
+             recepcion_parcial_flag, numero_oc))
     except Exception:
         cur.execute("UPDATE ordenes_compra SET estado=?, fecha_recepcion=? WHERE numero_oc=?", (nuevo_estado, fecha, numero_oc))
     # Fix #7 · 21-may-2026 · lead_time real aprende del histórico (EWMA 0.7/0.3)

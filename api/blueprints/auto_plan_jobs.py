@@ -3580,14 +3580,18 @@ def job_mailbox_factura_proveedor(app):
                         ).fetchone()
                         if _row_oc:
                             # INSERT pagos_oc · pago provisional sin monto · admin completa
+                            # AUDITORÍA-FIX 23-may-2026 · MBX · usaba columnas que no
+                            # existen en schema (fecha, referencia, creado_por) · INSERT
+                            # fallaba silente · ahora columnas correctas: fecha_pago +
+                            # registrado_por (mig 28)
                             try:
                                 c.execute(
                                     """INSERT INTO pagos_oc
-                                       (numero_oc, fecha, monto, medio, referencia,
+                                       (numero_oc, fecha_pago, monto, medio,
                                         comprobante_imagen, numero_factura_proveedor,
-                                        creado_por, observaciones)
+                                        registrado_por, observaciones)
                                        VALUES (?, datetime('now','-5 hours'), 0,
-                                               'PENDIENTE', '', ?, ?,
+                                               'PENDIENTE', ?, ?,
                                                'cron-mailbox',
                                                'Adjunto auto-detectado · revisar monto')""",
                                     (numero_oc, b64[:5_000_000], fn),  # limit 5MB

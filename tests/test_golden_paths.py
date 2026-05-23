@@ -10126,6 +10126,45 @@ def test_golden_abastecimiento_consumo_bruto_excel(app, db_clean):
     assert len(r.data) > 1000
 
 
+def test_golden_compras_mailbox_facturas(app, db_clean):
+    """Endpoint /api/compras/mailbox-facturas · Sebastián 23-may-2026
+    · MBX UI · facturas detectadas por cron mailbox IMAP.
+    """
+    _exec("DELETE FROM pagos_oc WHERE registrado_por='cron-mailbox'")
+    # Insertar factura de prueba (schema real: fecha_pago, registrado_por)
+    _exec("""INSERT INTO pagos_oc (numero_oc, fecha_pago, monto, medio,
+              comprobante_imagen, numero_factura_proveedor, registrado_por,
+              observaciones)
+             VALUES ('OC-MBX-TEST', datetime('now'), 0, 'PENDIENTE',
+                     '', 'FAC-001', 'cron-mailbox', 'Adjunto auto')""")
+
+    # 401 sin sesión
+    cs_no = app.test_client()
+    r_no = cs_no.get('/api/compras/mailbox-facturas')
+    assert r_no.status_code == 401
+
+    cs = _login(app, 'sebastian')
+    r = cs.get('/api/compras/mailbox-facturas?dias=30')
+    assert r.status_code == 200, r.data
+    d = r.get_json()
+    items = [x for x in d['items'] if x.get('numero_oc') == 'OC-MBX-TEST']
+    assert items, 'BUG: factura mailbox no aparece'
+    assert items[0]['pendiente'] is True
+    assert items[0]['numero_factura'] == 'FAC-001'
+    pago_id = items[0]['pago_id']
+
+    # Descartar requiere admin/compras_write
+    r2 = cs.post('/api/compras/mailbox-facturas/' + str(pago_id) + '/descartar',
+                 headers=csrf_headers())
+    assert r2.status_code == 200
+    # Ya no aparece
+    r3 = cs.get('/api/compras/mailbox-facturas?dias=30')
+    d3 = r3.get_json()
+    assert not any(x.get('pago_id') == pago_id for x in d3['items'])
+
+    _exec("DELETE FROM pagos_oc WHERE registrado_por='cron-mailbox'")
+
+
 def test_golden_compras_ocs_consolidado_excel(app, db_clean):
     """Excel consolidado de OCs activas · Sebastián 23-may-2026 · útil
     para que Catalina descargue todo lo en curso.

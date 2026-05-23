@@ -312,6 +312,14 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (159, "OC Pagada+parcial flag separado · cierre flujo · Sebastián 23-may-2026", [
+        # AUDITORÍA C17 · 23-may-2026 · OC pagada con anticipo + recepción
+        # parcial quedaba en estado='Pagada' sin distinguir que aún falta
+        # mercancía · ahora flag recepcion_parcial separado del estado
+        # · valor 1 = aún falta mercancía · 0 = recepción completa
+        "ALTER TABLE ordenes_compra ADD COLUMN recepcion_parcial INTEGER NOT NULL DEFAULT 0",
+        "CREATE INDEX IF NOT EXISTS idx_oc_recepcion_parcial ON ordenes_compra(recepcion_parcial)",
+    ]),
     (137, "PLAN DENSO MENSUAL · cada producto = 1 lote/mes × 12 meses · Sebastián 14-may-2026",
      _MIG_137_STMTS),
     (136, "PLAN LIMPIO · cancela TODO activo + genera solo eos_canonico · Sebastián 14-may-2026",

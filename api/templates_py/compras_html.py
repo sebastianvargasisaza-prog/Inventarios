@@ -230,6 +230,7 @@ async function cxIAPreguntar(pregunta){
     <button class="tn"      data-tab="pagos" id="tn-pagos" title="Histórico · pagos ya ejecutados">💸 Pagos</button>
     <button class="tn"      data-tab="atrasadas" id="tn-atrasadas" title="OCs sin recibir tras lead_time + buffer · Sebastián 23-may">🚨 Atrasadas <span id="atrasadas-badge" style="display:none;background:#dc2626;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
     <button class="tn"      data-tab="discrep" id="tn-discrep" title="Recepciones con faltante · ranking calidad proveedor · Sebastián 23-may">📋 Calidad recepción <span id="discrep-badge" style="display:none;background:#dc2626;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
+    <button class="tn"      data-tab="mailbox" id="tn-mailbox" title="Facturas detectadas por el cron mailbox · revisar/completar/descartar · Sebastián 23-may">📧 Mailbox <span id="mailbox-badge" style="display:none;background:#7c3aed;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
     <!-- Sebastián 21-may-2026 · Órdenes de Servicio (serigrafía/tampografía) -->
     <button class="tn"      data-tab="ordserv" id="tn-ordserv" title="Órdenes de Servicio · serigrafía, tampografía, etiquetado">🎨 Órdenes de Servicio</button>
   </span>
@@ -657,6 +658,27 @@ async function cxIAPreguntar(pregunta){
   </div>
 
   <div id="discrep-contenido" style="background:white;border:1px solid #e2e8f0;border-radius:10px;overflow-x:auto">
+    <div style="text-align:center;color:#94a3b8;padding:30px">Click &#x21BA; Actualizar</div>
+  </div>
+</div>
+
+<!-- ════════════ TAB: MAILBOX FACTURAS · Sebastián 23-may-2026 ════════════ -->
+<!-- Facturas detectadas por cron mailbox IMAP · admin las completa o descarta -->
+<div id="pane-mailbox" class="pane">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
+    <div>
+      <h2 style="margin:0;font-size:18px;color:#1e293b;">&#x1F4E7; Mailbox facturas proveedor</h2>
+      <div style="font-size:12px;color:#64748b;margin-top:2px;">
+        Facturas detectadas por el cron IMAP (compras@hhagroup.co) ·
+        ventana
+        <input type="number" id="mailbox-dias" value="30" min="7" max="180" style="width:50px;padding:2px 6px;border:1px solid #cbd5e1;border-radius:4px;font-size:12px" onchange="cargarMailbox()"> d&iacute;as
+      </div>
+    </div>
+    <button class="btn bp" onclick="cargarMailbox()" style="padding:6px 14px;font-size:12px;">&#x21BA; Actualizar</button>
+  </div>
+
+  <div id="mailbox-resumen" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;font-size:12px;color:#475569"></div>
+  <div id="mailbox-contenido" style="background:white;border:1px solid #e2e8f0;border-radius:10px;overflow-x:auto">
     <div style="text-align:center;color:#94a3b8;padding:30px">Click &#x21BA; Actualizar</div>
   </div>
 </div>
@@ -1345,7 +1367,7 @@ window._cxTabToGrp = {
   'influencer':'entradas',  // por compat · aunque oculto
   // OCs y Pagos
   'consol':'ocs', 'por-pagar':'ocs', 'pagos':'ocs', 'ordserv':'ocs',
-  'atrasadas':'ocs', 'discrep':'ocs',
+  'atrasadas':'ocs', 'discrep':'ocs', 'mailbox':'ocs',
   // Maestros
   'prov':'maestros',
   // Dashboard (consolidado · alertas + mis-sol son widgets dentro)
@@ -1387,6 +1409,7 @@ document.querySelectorAll('.tn').forEach(function(btn){
     else if(tab==='por-pagar'){ loadPorPagar(); }
     else if(tab==='atrasadas'){ cargarOcsAtrasadas(); }
     else if(tab==='discrep'){ cargarDiscrepancias(); }
+    else if(tab==='mailbox'){ cargarMailbox(); }
     else if(tab==='alertas'){ loadAlertasCompras(); }
     else if(tab==='solprod'){ loadSolicitudesProduccion(); }
     else if(tab==='mis-sol'){ loadMisSolicitudes(); }
@@ -7402,6 +7425,98 @@ async function cargarDiscrepancias(){
     div.innerHTML = html;
   }catch(e){
     div.innerHTML = '<div style="color:#dc2626;padding:20px">Error red: ' + e.message + '</div>';
+  }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// Tab "Mailbox facturas" · Sebastián 23-may-2026 · MBX UI
+// ═══════════════════════════════════════════════════════════════════
+async function cargarMailbox(){
+  var div = document.getElementById('mailbox-contenido');
+  var resumen = document.getElementById('mailbox-resumen');
+  var diasEl = document.getElementById('mailbox-dias');
+  var dias = diasEl ? parseInt(diasEl.value, 10) : 30;
+  if(isNaN(dias) || dias < 1) dias = 30;
+  div.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:30px">Cargando…</div>';
+  resumen.innerHTML = '';
+  try{
+    var r = await fetch('/api/compras/mailbox-facturas?dias=' + dias);
+    if(r.status === 401){ window.location.href = '/login'; return; }
+    if(!r.ok){
+      div.innerHTML = '<div style="color:#dc2626;padding:20px">Error HTTP ' + r.status + '</div>';
+      return;
+    }
+    var d = await r.json();
+    function _esc(s){
+      if(s == null) return '';
+      return String(s).replace(/[&<>"\']/g, function(c){
+        return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+      });
+    }
+    function _money(n){
+      if(!n) return '—';
+      return '$' + Math.round(n).toLocaleString('es-CO');
+    }
+    var n = d.total || 0;
+    var pend = d.n_pendientes || 0;
+    resumen.innerHTML = '<span style="background:' + (pend>0?'#ede9fe':'#dcfce7') + ';color:' + (pend>0?'#5b21b6':'#15803d') + ';padding:6px 12px;border-radius:8px;font-weight:700;font-size:13px">' +
+      (pend>0 ? ('📧 ' + pend + ' factura(s) pendiente(s) de completar') : ('✓ Sin pendientes (' + n + ' procesadas)')) +
+      '</span><span style="color:#64748b">Ventana ' + dias + 'd</span>';
+    var badge = document.getElementById('mailbox-badge');
+    if(badge){
+      if(pend > 0){ badge.style.display = 'inline-block'; badge.textContent = pend; }
+      else { badge.style.display = 'none'; }
+    }
+    if(n === 0){
+      div.innerHTML = '<div style="text-align:center;color:#15803d;padding:30px;background:#f0fdf4">📭 Mailbox vacío en últimos ' + dias + 'd</div>';
+      return;
+    }
+    var html = '<table style="width:100%;border-collapse:collapse;font-size:13px">';
+    html += '<thead><tr style="background:#f8fafc;color:#475569;border-bottom:1px solid #e2e8f0">';
+    html += '<th style="text-align:left;padding:10px 12px;font-weight:700">Detectado</th>';
+    html += '<th style="text-align:left;padding:10px 12px;font-weight:700">OC asociada</th>';
+    html += '<th style="text-align:left;padding:10px 12px;font-weight:700">Proveedor</th>';
+    html += '<th style="text-align:left;padding:10px 12px;font-weight:700">Factura</th>';
+    html += '<th style="text-align:right;padding:10px 12px;font-weight:700">Valor OC</th>';
+    html += '<th style="text-align:center;padding:10px 12px;font-weight:700">Estado</th>';
+    html += '<th style="text-align:center;padding:10px 12px;font-weight:700">Acciones</th>';
+    html += '</tr></thead><tbody>';
+    (d.items || []).forEach(function(it){
+      var bg = it.pendiente ? '#faf5ff' : '#fff';
+      html += '<tr style="border-bottom:1px solid #f1f5f9;background:' + bg + '">';
+      html += '<td style="padding:8px 12px">' + _esc(it.fecha) + '</td>';
+      html += '<td style="padding:8px 12px;font-family:ui-monospace;font-weight:700">' + _esc(it.numero_oc) + '</td>';
+      html += '<td style="padding:8px 12px">' + _esc(it.proveedor || '—') + '</td>';
+      html += '<td style="padding:8px 12px;font-family:ui-monospace">' + _esc(it.numero_factura || '—') + '</td>';
+      html += '<td style="padding:8px 12px;text-align:right;font-family:ui-monospace">' + _money(it.valor_oc) + '</td>';
+      var estCol = it.pendiente ? '#5b21b6' : '#15803d';
+      var estTxt = it.pendiente ? 'PENDIENTE' : it.medio;
+      html += '<td style="padding:8px 12px;text-align:center;font-weight:700;font-size:11px;color:' + estCol + '">' + _esc(estTxt) + '</td>';
+      html += '<td style="padding:8px 12px;text-align:center">';
+      html += '<a href="/api/compras/mailbox-facturas/' + it.pago_id + '/comprobante" target="_blank" style="padding:4px 10px;background:#1e40af;color:#fff;text-decoration:none;border-radius:5px;font-size:11px;font-weight:700;margin-right:4px">👁 Ver</a>';
+      html += '<button onclick="_mailboxDescartar(' + it.pago_id + ')" style="padding:4px 10px;background:#fff;color:#dc2626;border:1px solid #dc2626;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">✕ Descartar</button>';
+      html += '</td></tr>';
+    });
+    html += '</tbody></table>';
+    html += '<div style="font-size:11px;color:#64748b;padding:10px 12px;background:#f8fafc;border-top:1px solid #e2e8f0">💡 El cron <code>job_mailbox_factura_proveedor</code> revisa el inbox cada día a las 7:15 AM y crea pagos PENDIENTE. Click <strong>Ver</strong> abre la factura adjunta. <strong>Descartar</strong> elimina la entrada (no afecta la OC).</div>';
+    div.innerHTML = html;
+  }catch(e){
+    div.innerHTML = '<div style="color:#dc2626;padding:20px">Error red: ' + e.message + '</div>';
+  }
+}
+
+async function _mailboxDescartar(pagoId){
+  if(!confirm('¿Descartar esta factura del mailbox?\\n\\nNo afecta la OC, solo elimina la entrada del cron.')) return;
+  try{
+    var r = await fetch('/api/compras/mailbox-facturas/' + pagoId + '/descartar', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+    });
+    if(!r.ok){ alert('Error: HTTP ' + r.status); return; }
+    cargarMailbox();
+  }catch(e){
+    alert('Error red: ' + e.message);
   }
 }
 
