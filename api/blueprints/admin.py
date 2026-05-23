@@ -6141,6 +6141,196 @@ def admin_mps_abreviaturas_fix():
     })
 
 
+@bp.route("/api/admin/aplicar-migraciones-pg", methods=["GET", "POST"])
+def admin_aplicar_migraciones_pg():
+    """Aplica migraciones SQLite pendientes a PostgreSQL de producción.
+
+    Sebastián 22-may-2026 noche · contexto:
+    `init_db()` retorna early si EOS_DB_BACKEND=postgres · las migraciones
+    nuevas añadidas a MIGRATIONS[] (155-158 del 22-may) nunca se aplican
+    a prod · resultado: tabla mp_aliases no existe, cron silenciosamente
+    cae · endpoint /api/admin/mps-abreviaturas-audit devuelve error.
+
+    GET (siempre dry-run) o POST sin body → lista migraciones pendientes +
+    statements traducidos vía pg_compat. NO ejecuta.
+
+    POST {aplicar: true} → ejecuta migraciones pendientes en PG. Usa
+    translate_ddl, reescribir_insert_or_ignore. Errores benignos
+    ('already exists', 'duplicate column name') se silencian igual
+    que run_migrations(). Registra cada versión aplicada en
+    schema_migrations PG.
+
+    Body opcional: {solo_version: <int>} para apuntar a una sola migración
+    (recomendado primero la 158 para validar).
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    # Importar lazy
+    try:
+        from database import MIGRATIONS, _usa_postgres
+        from pg_compat import (
+            translate_ddl, es_insert_or, reescribir_insert_or_ignore,
+            es_ddl_a_saltar
+        )
+    except Exception as e:
+        return jsonify({'error': f'imports fallaron: {e}'}), 500
+
+    if not _usa_postgres():
+        return jsonify({
+            'error': 'Este endpoint solo aplica en modo PostgreSQL. '
+                     'EOS_DB_BACKEND no es "postgres" · en SQLite las '
+                     'migraciones corren automáticamente en init_db().'
+        }), 400
+
+    d = (request.get_json(silent=True) if request.method == 'POST' else {}) or {}
+    # Explícito: solo aplica si POST + aplicar=true. Todo lo demás es dry-run.
+    ejecutar = (request.method == 'POST' and bool(d.get('aplicar', False)))
+    dry_run = not ejecutar
+    solo_version = d.get('solo_version')
+    try:
+        solo_version = int(solo_version) if solo_version is not None else None
+    except (TypeError, ValueError):
+        return jsonify({'error': 'solo_version debe ser int'}), 400
+
+    BENIGN_PATTERNS = (
+        'duplicate column name',
+        'already exists',
+        'no such table',
+    )
+
+    conn = db_connect()
+    c = conn.cursor()
+
+    # Asegurar schema_migrations en PG (sintaxis nativa PG)
+    try:
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS schema_migrations (
+                version     INTEGER PRIMARY KEY,
+                applied_at  TEXT    NOT NULL DEFAULT to_char(now() AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS'),
+                description TEXT    NOT NULL DEFAULT ''
+            )
+        """)
+        conn.commit()
+    except Exception as e:
+        conn.close()
+        return jsonify({'error': f'no se pudo crear schema_migrations: {e}'}), 500
+
+    try:
+        applied = {row[0] for row in c.execute(
+            "SELECT version FROM schema_migrations"
+        ).fetchall()}
+    except Exception as e:
+        conn.close()
+        return jsonify({'error': f'no se pudo leer schema_migrations: {e}'}), 500
+
+    pendientes = []
+    for version, description, stmts in sorted(MIGRATIONS, key=lambda m: m[0]):
+        if version in applied:
+            continue
+        if solo_version is not None and version != solo_version:
+            continue
+        # Traducir cada statement
+        stmts_traducidos = []
+        for s in stmts:
+            if es_ddl_a_saltar(s):
+                continue
+            t = s
+            if es_insert_or(t) == 'ignore':
+                t = reescribir_insert_or_ignore(t)
+            else:
+                t = translate_ddl(t)
+            stmts_traducidos.append(t)
+        pendientes.append({
+            'version': version,
+            'description': description,
+            'n_stmts': len(stmts_traducidos),
+            'stmts': stmts_traducidos,
+        })
+
+    if dry_run:
+        conn.close()
+        return jsonify({
+            'dry_run': True,
+            'modo_pg': True,
+            'pendientes': len(pendientes),
+            'aplicadas_previamente': len(applied),
+            'detalle': [
+                {'version': p['version'], 'description': p['description'],
+                 'n_stmts': p['n_stmts'],
+                 'sample_stmt': (p['stmts'][0][:200] + '...') if p['stmts'] else ''}
+                for p in pendientes
+            ],
+        })
+
+    # APLICAR
+    aplicadas = []
+    falladas = []
+    for p in pendientes:
+        version = p['version']
+        ok = True
+        errores_stmt = []
+        for stmt in p['stmts']:
+            try:
+                c.execute(stmt)
+            except Exception as exc:
+                msg = str(exc).lower()
+                if any(pat in msg for pat in BENIGN_PATTERNS):
+                    continue
+                ok = False
+                errores_stmt.append({
+                    'stmt': stmt[:200],
+                    'error': f'{type(exc).__name__}: {exc}'
+                })
+                # No abortamos el resto · marcamos esta migración como fallada
+                break
+        if ok:
+            try:
+                c.execute(
+                    "INSERT INTO schema_migrations (version, description) "
+                    "VALUES (%s, %s) ON CONFLICT DO NOTHING",
+                    (version, p['description'])
+                )
+                conn.commit()
+                aplicadas.append({'version': version,
+                                  'description': p['description'],
+                                  'n_stmts': p['n_stmts']})
+                try:
+                    audit_log(c, usuario=u, accion='APLICAR_MIGRACION_PG',
+                              tabla='schema_migrations', registro_id=str(version),
+                              despues={'version': version,
+                                       'description': p['description'],
+                                       'n_stmts': p['n_stmts']})
+                    conn.commit()
+                except Exception:
+                    pass
+            except Exception as exc:
+                falladas.append({'version': version,
+                                 'error': f'INSERT schema_migrations: {exc}'})
+        else:
+            falladas.append({'version': version,
+                             'description': p['description'],
+                             'errores': errores_stmt})
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+
+    conn.close()
+    _log_sec(u, _client_ip(), "admin_aplicar_migraciones_pg",
+             f"aplicadas={len(aplicadas)} falladas={len(falladas)} "
+             f"solo_version={solo_version}")
+    return jsonify({
+        'dry_run': False,
+        'modo_pg': True,
+        'aplicadas': len(aplicadas),
+        'falladas': len(falladas),
+        'detalle_aplicadas': aplicadas,
+        'detalle_falladas': falladas,
+    })
+
+
 @bp.route("/api/admin/tipos-mp-stats", methods=["GET"])
 def admin_tipos_mp_stats():
     """Cuenta items en maestro_mps agrupados por tipo_material.

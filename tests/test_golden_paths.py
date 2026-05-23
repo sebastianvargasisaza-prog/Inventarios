@@ -11317,3 +11317,26 @@ def test_golden_mps_abreviaturas_fix_merge_duplicado(app, db_clean):
         _exec("DELETE FROM formula_headers WHERE producto_nombre='TEST_FORM_AB2'")
         _exec("DELETE FROM maestro_mps WHERE codigo_mp IN ('TEST_MP_AB2','TEST_MP_AB2_CAN')")
         _exec("DELETE FROM mp_aliases WHERE alias='ZZTEST_AB2'")
+
+
+def test_golden_aplicar_migraciones_pg_endpoint_guards(app, db_clean):
+    """Endpoint /api/admin/aplicar-migraciones-pg · validaciones que se
+    pueden probar en SQLite local (sin un PG real).
+
+    - mayerlin (no admin) → 403
+    - admin en SQLite → 400 con mensaje claro (no debe tocar nada)
+    - POST aplicar=true en SQLite → 400 también (guard absoluto)
+    """
+    cs_op = _login(app, 'mayerlin')
+    r = cs_op.get('/api/admin/aplicar-migraciones-pg')
+    assert r.status_code == 403
+
+    cs = _login(app, 'sebastian')
+    r2 = cs.get('/api/admin/aplicar-migraciones-pg')
+    assert r2.status_code == 400
+    d2 = r2.get_json()
+    assert 'PostgreSQL' in d2['error']
+
+    r3 = cs.post('/api/admin/aplicar-migraciones-pg',
+                 json={'aplicar': True}, headers=csrf_headers())
+    assert r3.status_code == 400
