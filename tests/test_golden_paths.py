@@ -10018,6 +10018,70 @@ def test_golden_abastecimiento_consumo_horizontes(app, db_clean):
         _exec(sql)
 
 
+def test_golden_abastecimiento_solicitar_items(app, db_clean):
+    """Endpoint /api/abastecimiento/solicitar-items · crea SOLs agrupadas
+    por proveedor a partir de items seleccionados en el tab Abastecimiento.
+
+    Sebastián 23-may-2026: 'centro de solicitudes a compras'.
+    """
+    # Cleanup previo
+    for sql in (
+        "DELETE FROM solicitudes_compra_items WHERE codigo_mp IN ('MPTESTSOL01','MPTESTSOL02')",
+        "DELETE FROM maestro_mps WHERE codigo_mp IN ('MPTESTSOL01','MPTESTSOL02')",
+    ):
+        _exec(sql)
+    _exec("""INSERT INTO maestro_mps (codigo_mp, nombre_comercial, proveedor, activo)
+             VALUES ('MPTESTSOL01','MP Sol Test 1','ProvA',1)""")
+    _exec("""INSERT INTO maestro_mps (codigo_mp, nombre_comercial, proveedor, activo)
+             VALUES ('MPTESTSOL02','MP Sol Test 2','ProvA',1)""")
+
+    cs = _login(app, 'sebastian')
+
+    # Caso 1: sin sesión → 401
+    cs_no = app.test_client()
+    r = cs_no.post('/api/abastecimiento/solicitar-items',
+                   json={'items':[{'tipo':'mp','codigo':'MPTESTSOL01','cantidad':1000}]},
+                   headers=csrf_headers())
+    assert r.status_code == 401
+
+    # Caso 2: items[] vacío → 400
+    r2 = cs.post('/api/abastecimiento/solicitar-items',
+                 json={'items':[]}, headers=csrf_headers())
+    assert r2.status_code == 400
+
+    # Caso 3: 2 MPs del MISMO proveedor → 1 SOL agrupada
+    r3 = cs.post('/api/abastecimiento/solicitar-items', json={
+        'items': [
+            {'tipo':'mp','codigo':'MPTESTSOL01','cantidad':1500},
+            {'tipo':'mp','codigo':'MPTESTSOL02','cantidad':2000},
+        ],
+        'agrupar_por_proveedor': True,
+        'urgencia': 'Alta',
+        'cubrir_dias': 60,
+    }, headers=csrf_headers())
+    assert r3.status_code == 200, r3.data
+    d3 = r3.get_json()
+    assert d3['ok'] is True
+    assert d3['n_sols'] == 1, f'BUG: agrupar→ 1 SOL · got {d3["n_sols"]}'
+    sol1 = d3['creadas'][0]
+    assert sol1['proveedor'] == 'ProvA'
+    assert sol1['mps'] == 2 and sol1['mees'] == 0
+    # Verificar SOL en BD con 2 items
+    rows = _query(
+        "SELECT COUNT(*) FROM solicitudes_compra_items WHERE numero=?",
+        (sol1['numero'],),
+    )
+    assert rows[0][0] == 2
+
+    # Cleanup
+    for sql in (
+        "DELETE FROM solicitudes_compra_items WHERE codigo_mp IN ('MPTESTSOL01','MPTESTSOL02')",
+        "DELETE FROM maestro_mps WHERE codigo_mp IN ('MPTESTSOL01','MPTESTSOL02')",
+    ):
+        _exec(sql)
+    _exec("DELETE FROM solicitudes_compra WHERE numero=?", (sol1['numero'],))
+
+
 def test_golden_endpoints_shopify_debug_requieren_auth(app, db_clean):
     """SEC-FIX · 3 endpoints estaban públicos · auditoría 23-may.
 

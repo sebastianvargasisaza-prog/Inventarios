@@ -20235,7 +20235,9 @@ async function ckMarcar(itemId, estado){
   }
 
   // ═══════════════════════════════════════════════════════════════════
-  // Tab "Abastecimiento" · Sebastián 23-may-2026 · MRP por horizontes
+  // Tab "Abastecimiento" · Sebastián 23-may-2026 · Centro de solicitudes
+  // Convertido de read-only a accionable · botón Solicitar, filtros,
+  // lead time visible, badges SOL/OC en curso, cubrir N días
   // ═══════════════════════════════════════════════════════════════════
   const _ABA_URG_COLORS = {
     'CRITICO':     {bg:'#fee2e2', text:'#991b1b', emoji:'🔴'},
@@ -20245,10 +20247,54 @@ async function ckMarcar(itemId, estado){
     'OK':          {bg:'#f0fdf4', text:'#15803d', emoji:'🟢'},
   };
 
+  // Estado local del tab Abastecimiento
+  window._ABA_STATE = {
+    items: [],           // último response de /api/abastecimiento/consumo-horizontes
+    horizontes: [],
+    seleccionados: {},   // codigo → {cantidad_override?: number, marcado: bool}
+    filtros: {           // filtros UI
+      busqueda: '',
+      urgencia: 'TODAS',
+      proveedor: 'TODOS',
+      tipo: 'TODOS',
+    },
+    cubrir_dias: 30,     // horizonte sugerido como cantidad a pedir
+  };
+
   function _fmtAba(n) {
     if (!n || n < 0.01) return '—';
     if (n >= 1000) return Math.round(n).toLocaleString('es-CO');
     return Math.round(n*10)/10;
+  }
+
+  function _cantidadSugerida(it, cubrirDias) {
+    // Cantidad a pedir = déficit del horizonte cubrir_dias (lo que falta
+    // para cubrir hasta ese día) · si está cubierto, sugerir el siguiente
+    // horizonte con déficit
+    if (!it.deficit) return 0;
+    const dh = it.deficit[String(cubrirDias)];
+    if (dh && dh > 0.01) return Math.round(dh);
+    // Buscar el primer horizonte con déficit > 0
+    const hs = (window._ABA_STATE.horizontes || []).slice();
+    for (const h of hs) {
+      const v = it.deficit[String(h)];
+      if (v && v > 0.01) return Math.round(v);
+    }
+    return 0;
+  }
+
+  function _aplicarFiltros(items) {
+    const f = window._ABA_STATE.filtros;
+    const q = (f.busqueda || '').toLowerCase().trim();
+    return items.filter(it => {
+      if (f.urgencia !== 'TODAS' && it.urgencia !== f.urgencia) return false;
+      if (f.proveedor !== 'TODOS' && (it.proveedor_sugerido || '(sin proveedor)') !== f.proveedor) return false;
+      if (f.tipo !== 'TODOS' && it.tipo !== f.tipo) return false;
+      if (q && !(it.codigo.toLowerCase().includes(q) ||
+                 (it.nombre || '').toLowerCase().includes(q) ||
+                 (it.proveedor_sugerido || '').toLowerCase().includes(q))) return false;
+      return true;
+    });
   }
 
   async function cargarAbastecimiento() {
@@ -20273,66 +20319,229 @@ async function ckMarcar(itemId, estado){
         return;
       }
       const d = await r.json();
-      // Resumen chips por horizonte
+      // Guardar estado para acciones (filtros, selección)
+      window._ABA_STATE.items = [].concat(d.mps || [], d.mees || []);
+      window._ABA_STATE.horizontes = d.horizontes || [];
+      window._ABA_STATE.seleccionados = {};
+
+      // Resumen chips por horizonte + modo
       const modoLabel = d.modo === 'run_rate' ? '<span style="background:#ede9fe;color:#5b21b6;padding:2px 6px;border-radius:4px;font-weight:700">Run-rate</span>' : '<span style="background:#dcfce7;color:#15803d;padding:2px 6px;border-radius:4px;font-weight:700">Comprometido</span>';
       let chips = '<div style="font-size:11px;color:#475569;margin-right:8px;align-self:center">Modo ' + modoLabel + ' · ' + d.n_producciones_fijas + ' producciones Fijas · ' + d.n_pedidos_b2b_pendientes + ' B2B pendientes</div>';
       d.horizontes.forEach(h => {
-        const r = d.resumen_por_horizonte[String(h)] || {};
-        const n = r.n_total_con_deficit || 0;
+        const r2 = d.resumen_por_horizonte[String(h)] || {};
+        const n = r2.n_total_con_deficit || 0;
         const bg = n>0 ? (h<=15?'#fee2e2':h<=30?'#fff7ed':h<=90?'#fefce8':'#eff6ff') : '#f0fdf4';
         const tc = n>0 ? (h<=15?'#991b1b':h<=30?'#9a3412':h<=90?'#854d0e':'#1e40af') : '#15803d';
         chips += '<span style="background:'+bg+';color:'+tc+';padding:6px 10px;border-radius:6px;font-size:12px;font-weight:700">' + h + 'd: ' + n + '</span>';
       });
+      if (d.productos_sin_lote_size && d.productos_sin_lote_size.length) {
+        chips += '<span style="background:#fef3c7;color:#92400e;padding:6px 10px;border-radius:6px;font-size:11px;font-weight:700" title="Productos sin lote_size_kg · completar en /admin/formulas">⚠ ' + d.productos_sin_lote_size.length + ' productos sin lote_size</span>';
+      }
       resumenDiv.innerHTML = chips;
 
-      const items = [].concat(d.mps || [], d.mees || []);
-      if (!items.length) {
-        div.innerHTML = '<div style="text-align:center;color:#16a34a;padding:30px;background:#f0fdf4;border-radius:8px">✓ Sin déficits detectados · stock + pendiente cubre las producciones programadas</div>';
-        return;
-      }
-      // Tabla
-      let html = '<div style="overflow-x:auto;background:white;border-radius:10px;border:1px solid #e2e8f0">';
-      html += '<table style="width:100%;border-collapse:collapse;font-size:12px;min-width:900px">';
-      html += '<thead><tr style="background:#f8fafc;color:#475569">';
-      html += '<th style="text-align:left;padding:8px;font-weight:700">Código</th>';
-      html += '<th style="text-align:left;padding:8px;font-weight:700">Nombre</th>';
-      html += '<th style="text-align:center;padding:8px;font-weight:700">Tipo</th>';
-      html += '<th style="text-align:left;padding:8px;font-weight:700">Proveedor</th>';
-      html += '<th style="text-align:right;padding:8px;font-weight:700">Stock</th>';
-      html += '<th style="text-align:right;padding:8px;font-weight:700">En cola</th>';
-      d.horizontes.forEach(h => {
-        html += '<th style="text-align:right;padding:8px;font-weight:700;background:#f1f5f9">' + h + 'd</th>';
-      });
-      html += '<th style="text-align:center;padding:8px;font-weight:700">Urg</th>';
-      html += '</tr></thead><tbody>';
-      items.forEach(it => {
-        const urg = _ABA_URG_COLORS[it.urgencia] || _ABA_URG_COLORS.OK;
-        const rowBg = it.urgencia === 'CRITICO' ? '#fef2f2' : (it.urgencia === 'URGENTE' ? '#fff7ed' : 'white');
-        html += '<tr style="border-top:1px solid #e2e8f0;background:' + rowBg + '">';
-        html += '<td style="padding:6px 8px;font-family:ui-monospace;font-weight:700">' + escapeHtmlNec(it.codigo) + '</td>';
-        html += '<td style="padding:6px 8px">' + escapeHtmlNec(it.nombre) + '</td>';
-        html += '<td style="padding:6px 8px;text-align:center;font-size:10px;font-weight:700;color:' + (it.tipo==='MP'?'#0891b2':'#7c3aed') + '">' + it.tipo + '</td>';
-        html += '<td style="padding:6px 8px;color:#64748b">' + escapeHtmlNec(it.proveedor_sugerido || '—') + '</td>';
-        const stockKey = it.tipo === 'MP' ? 'stock_actual_g' : 'stock_actual_u';
-        const colaKey = it.tipo === 'MP' ? 'pendiente_compras_g' : 'pendiente_compras_u';
-        const unit = it.tipo === 'MP' ? 'g' : 'u';
-        html += '<td style="padding:6px 8px;text-align:right;font-family:ui-monospace">' + _fmtAba(it[stockKey]) + (it[stockKey]?' '+unit:'') + '</td>';
-        html += '<td style="padding:6px 8px;text-align:right;font-family:ui-monospace;color:' + (it[colaKey]>0?'#15803d':'#94a3b8') + '">' + _fmtAba(it[colaKey]) + (it[colaKey]?' '+unit:'') + '</td>';
-        d.horizontes.forEach(h => {
-          const def = it.deficit[String(h)] || 0;
-          const cons = it.consumo[String(h)] || 0;
-          const cellBg = def > 0.01 ? (h<=15?'#fee2e2':h<=30?'#fff7ed':h<=90?'#fefce8':'#eff6ff') : '';
-          const cellTc = def > 0.01 ? '#991b1b' : '#94a3b8';
-          html += '<td style="padding:6px 8px;text-align:right;font-family:ui-monospace;background:' + cellBg + ';color:' + cellTc + ';font-weight:' + (def>0.01?'700':'400') + '" title="Consumo ' + h + 'd: ' + _fmtAba(cons) + ' ' + unit + '">' + _fmtAba(def) + '</td>';
-        });
-        html += '<td style="padding:6px 8px;text-align:center;font-size:16px" title="' + urg.text + '">' + urg.emoji + '</td>';
-        html += '</tr>';
-      });
-      html += '</tbody></table></div>';
-      html += '<div style="font-size:11px;color:#64748b;margin-top:10px">💡 <strong>Cómo leer:</strong> cada columna 15d/30d/.../365d muestra el <em>déficit</em> en ese horizonte (cuánto falta comprar). Si todas las columnas están en —, ese MP/MEE está cubierto. Acumulativo: lo que se consume en día 25 cuenta en 30d, 60d, etc. pero no en 15d.</div>';
-      div.innerHTML = html;
+      renderTablaAbast();
     } catch(e) {
       div.innerHTML = '<div style="text-align:center;color:#dc2626;padding:20px">Error red: ' + escapeHtmlNec(e.message) + '</div>';
+    }
+  }
+
+  function renderTablaAbast() {
+    const div = document.getElementById('abast-contenido');
+    const st = window._ABA_STATE;
+    const allItems = st.items || [];
+    if (!allItems.length) {
+      div.innerHTML = '<div style="text-align:center;color:#16a34a;padding:30px;background:#f0fdf4;border-radius:8px">✓ Sin déficits detectados · stock + pendiente cubre las producciones programadas</div>';
+      return;
+    }
+
+    // Filtros disponibles
+    const proveedores = Array.from(new Set(allItems.map(i => i.proveedor_sugerido || '(sin proveedor)'))).sort();
+    const urgencias = Array.from(new Set(allItems.map(i => i.urgencia))).sort();
+    const items = _aplicarFiltros(allItems);
+
+    // Barra de filtros + acciones
+    let html = '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;background:#f8fafc;padding:10px;border-radius:8px;margin-bottom:10px;font-size:12px">';
+    html += '<input type="text" id="abast-buscar" placeholder="🔍 buscar código/nombre/proveedor…" value="' + escapeHtmlNec(st.filtros.busqueda) + '" oninput="_abastFiltroBusq(this.value)" style="flex:1;min-width:180px;padding:6px 10px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px">';
+    html += '<select data-campo="urgencia" onchange="_abastFiltro(this.dataset.campo,this.value)" style="padding:6px 8px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px"><option value="TODAS">Urg: TODAS</option>';
+    urgencias.forEach(u => {
+      const sel = st.filtros.urgencia === u ? ' selected' : '';
+      const cfg = _ABA_URG_COLORS[u] || {emoji:''};
+      html += '<option value="' + u + '"' + sel + '>' + cfg.emoji + ' ' + u + '</option>';
+    });
+    html += '</select>';
+    html += '<select data-campo="proveedor" onchange="_abastFiltro(this.dataset.campo,this.value)" style="padding:6px 8px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px;max-width:200px"><option value="TODOS">Proveedor: TODOS</option>';
+    proveedores.forEach(p => {
+      const sel = st.filtros.proveedor === p ? ' selected' : '';
+      html += '<option value="' + escapeHtmlNec(p) + '"' + sel + '>' + escapeHtmlNec(p) + '</option>';
+    });
+    html += '</select>';
+    html += '<select data-campo="tipo" onchange="_abastFiltro(this.dataset.campo,this.value)" style="padding:6px 8px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px"><option value="TODOS">MP+MEE</option>';
+    ['MP','MEE'].forEach(t => {
+      const sel = st.filtros.tipo === t ? ' selected' : '';
+      html += '<option value="' + t + '"' + sel + '>' + t + '</option>';
+    });
+    html += '</select>';
+    html += '<label style="display:flex;align-items:center;gap:4px;color:#475569">Cubrir <select id="abast-cubrir" onchange="_abastCubrir(this.value)" style="padding:5px 6px;border:1px solid #cbd5e1;border-radius:4px;font-size:12px">';
+    (st.horizontes || []).forEach(h => {
+      const sel = st.cubrir_dias === h ? ' selected' : '';
+      html += '<option value="' + h + '"' + sel + '>' + h + 'd</option>';
+    });
+    html += '</select></label>';
+    html += '<button onclick="_abastSelectVisibles(true)" style="padding:5px 10px;background:#e2e8f0;color:#475569;border:0;border-radius:4px;font-size:11px;cursor:pointer">☑ todos visibles</button>';
+    html += '<button onclick="_abastSelectVisibles(false)" style="padding:5px 10px;background:#e2e8f0;color:#475569;border:0;border-radius:4px;font-size:11px;cursor:pointer">☐ ninguno</button>';
+    html += '<span id="abast-sel-count" style="color:#7c3aed;font-weight:700"></span>';
+    html += '<button onclick="_abastAbrirSolicitar()" style="padding:6px 14px;background:#16a34a;color:#fff;border:0;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer">📩 Solicitar seleccionados</button>';
+    html += '</div>';
+
+    if (!items.length) {
+      html += '<div style="text-align:center;color:#94a3b8;padding:30px">Sin items que coincidan con los filtros</div>';
+      div.innerHTML = html;
+      _abastActualizarContadorSel();
+      return;
+    }
+
+    // Tabla
+    html += '<div style="overflow-x:auto;background:white;border-radius:10px;border:1px solid #e2e8f0">';
+    html += '<table style="width:100%;border-collapse:collapse;font-size:12px;min-width:1100px">';
+    html += '<thead><tr style="background:#f8fafc;color:#475569">';
+    html += '<th style="text-align:center;padding:8px;font-weight:700;width:32px"><input type="checkbox" onchange="_abastSelectVisibles(this.checked)"></th>';
+    html += '<th style="text-align:left;padding:8px;font-weight:700">Código</th>';
+    html += '<th style="text-align:left;padding:8px;font-weight:700">Nombre</th>';
+    html += '<th style="text-align:center;padding:8px;font-weight:700">Tipo</th>';
+    html += '<th style="text-align:left;padding:8px;font-weight:700">Proveedor</th>';
+    html += '<th style="text-align:right;padding:8px;font-weight:700" title="Lead time del proveedor">LT</th>';
+    html += '<th style="text-align:right;padding:8px;font-weight:700">Stock</th>';
+    html += '<th style="text-align:right;padding:8px;font-weight:700">En cola</th>';
+    (st.horizontes || []).forEach(h => {
+      html += '<th style="text-align:right;padding:8px;font-weight:700;background:#f1f5f9">' + h + 'd</th>';
+    });
+    html += '<th style="text-align:center;padding:8px;font-weight:700">Urg</th>';
+    html += '<th style="text-align:right;padding:8px;font-weight:700;background:#ecfdf5">Pedir</th>';
+    html += '</tr></thead><tbody>';
+    items.forEach((it, idx) => {
+      const urg = _ABA_URG_COLORS[it.urgencia] || _ABA_URG_COLORS.OK;
+      const rowBg = it.urgencia === 'CRITICO' ? '#fef2f2' : (it.urgencia === 'URGENTE' ? '#fff7ed' : 'white');
+      const selData = st.seleccionados[it.codigo] || {};
+      const checked = selData.marcado ? ' checked' : '';
+      const cantidad = (selData.cantidad_override != null) ? selData.cantidad_override : _cantidadSugerida(it, st.cubrir_dias);
+      html += '<tr data-cod="' + escapeHtmlNec(it.codigo) + '" style="border-top:1px solid #e2e8f0;background:' + rowBg + '">';
+      html += '<td style="padding:6px 8px;text-align:center"><input type="checkbox" data-cod="' + escapeHtmlNec(it.codigo) + '"' + checked + ' onchange="_abastTogglePick(this)"></td>';
+      // Código + badges SOL/OC
+      let badgesHtml = '';
+      const enCurso = it.solicitudes_en_curso || [];
+      if (enCurso.length) {
+        const sol = enCurso.filter(s => s.tipo === 'SOL').length;
+        const oc = enCurso.filter(s => s.tipo === 'OC').length;
+        const tip = enCurso.map(s => s.tipo + ' ' + s.numero + ' (' + s.estado + ')').join(' · ');
+        badgesHtml = ' <span style="background:#dbeafe;color:#1e40af;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700" title="' + escapeHtmlNec(tip) + '">' + (sol?sol+' SOL ':'') + (oc?oc+' OC':'') + '</span>';
+      }
+      html += '<td style="padding:6px 8px;font-family:ui-monospace;font-weight:700">' + escapeHtmlNec(it.codigo) + badgesHtml + '</td>';
+      html += '<td style="padding:6px 8px">' + escapeHtmlNec(it.nombre) + '</td>';
+      html += '<td style="padding:6px 8px;text-align:center;font-size:10px;font-weight:700;color:' + (it.tipo==='MP'?'#0891b2':'#7c3aed') + '">' + it.tipo + '</td>';
+      html += '<td style="padding:6px 8px;color:#64748b">' + escapeHtmlNec(it.proveedor_sugerido || '—') + '</td>';
+      // Lead time · si quiebre <= lead_time → advertencia roja (no llegará a tiempo)
+      const lt = it.lead_time_dias || 14;
+      const ltCol = (it.horizonte_quiebre_dias && it.horizonte_quiebre_dias <= lt) ? '#dc2626' : '#64748b';
+      const ltTip = (it.horizonte_quiebre_dias && it.horizonte_quiebre_dias <= lt) ? 'Quiebre en ' + it.horizonte_quiebre_dias + 'd · LT ' + lt + 'd · ¡no llega a tiempo!' : 'Lead time del proveedor';
+      html += '<td style="padding:6px 8px;text-align:right;color:' + ltCol + ';font-weight:' + (ltCol==='#dc2626'?'700':'400') + '" title="' + ltTip + '">' + lt + 'd</td>';
+      const stockKey = it.tipo === 'MP' ? 'stock_actual_g' : 'stock_actual_u';
+      const colaKey = it.tipo === 'MP' ? 'pendiente_compras_g' : 'pendiente_compras_u';
+      const unit = it.tipo === 'MP' ? 'g' : 'u';
+      html += '<td style="padding:6px 8px;text-align:right;font-family:ui-monospace">' + _fmtAba(it[stockKey]) + (it[stockKey]?' '+unit:'') + '</td>';
+      html += '<td style="padding:6px 8px;text-align:right;font-family:ui-monospace;color:' + (it[colaKey]>0?'#15803d':'#94a3b8') + '">' + _fmtAba(it[colaKey]) + (it[colaKey]?' '+unit:'') + '</td>';
+      (st.horizontes || []).forEach(h => {
+        const def = it.deficit[String(h)] || 0;
+        const cons = it.consumo[String(h)] || 0;
+        const cellBg = def > 0.01 ? (h<=15?'#fee2e2':h<=30?'#fff7ed':h<=90?'#fefce8':'#eff6ff') : '';
+        const cellTc = def > 0.01 ? '#991b1b' : '#94a3b8';
+        html += '<td style="padding:6px 8px;text-align:right;font-family:ui-monospace;background:' + cellBg + ';color:' + cellTc + ';font-weight:' + (def>0.01?'700':'400') + '" title="Consumo ' + h + 'd: ' + _fmtAba(cons) + ' ' + unit + '">' + _fmtAba(def) + '</td>';
+      });
+      html += '<td style="padding:6px 8px;text-align:center;font-size:16px" title="' + urg.text + '">' + urg.emoji + '</td>';
+      // Pedir: input editable · sugerencia automática
+      html += '<td style="padding:4px;background:#ecfdf5"><input type="number" min="0" data-cod="' + escapeHtmlNec(it.codigo) + '" value="' + (cantidad || 0) + '" onchange="_abastCantidad(this)" style="width:80px;padding:4px 6px;border:1px solid #86efac;border-radius:4px;font-family:ui-monospace;font-size:12px;text-align:right"></td>';
+      html += '</tr>';
+    });
+    html += '</tbody></table></div>';
+    html += '<div style="font-size:11px;color:#64748b;margin-top:10px">💡 <strong>Cómo usar:</strong> ① Marca check de las filas que quieres solicitar (la columna "Pedir" sugiere cantidad para cubrir los días seleccionados) ② Ajusta cantidad si querés ③ Click "📩 Solicitar seleccionados" → crea SOLs agrupadas por proveedor. Si el LT del proveedor es mayor al horizonte de quiebre, aparece en rojo: pedí YA.</div>';
+    div.innerHTML = html;
+    _abastActualizarContadorSel();
+  }
+
+  function _abastFiltroBusq(v) {
+    window._ABA_STATE.filtros.busqueda = v;
+    renderTablaAbast();
+  }
+  function _abastFiltro(campo, valor) {
+    window._ABA_STATE.filtros[campo] = valor;
+    renderTablaAbast();
+  }
+  function _abastCubrir(v) {
+    window._ABA_STATE.cubrir_dias = parseInt(v, 10);
+    renderTablaAbast();
+  }
+  function _abastTogglePick(checkbox) {
+    const cod = checkbox.dataset.cod;
+    const st = window._ABA_STATE;
+    if (!st.seleccionados[cod]) st.seleccionados[cod] = {marcado: false};
+    st.seleccionados[cod].marcado = checkbox.checked;
+    _abastActualizarContadorSel();
+  }
+  function _abastCantidad(input) {
+    const cod = input.dataset.cod;
+    const st = window._ABA_STATE;
+    if (!st.seleccionados[cod]) st.seleccionados[cod] = {marcado: false};
+    st.seleccionados[cod].cantidad_override = parseFloat(input.value) || 0;
+  }
+  function _abastSelectVisibles(check) {
+    const st = window._ABA_STATE;
+    const visibles = _aplicarFiltros(st.items);
+    visibles.forEach(it => {
+      if (!st.seleccionados[it.codigo]) st.seleccionados[it.codigo] = {};
+      st.seleccionados[it.codigo].marcado = check;
+    });
+    renderTablaAbast();
+  }
+  function _abastActualizarContadorSel() {
+    const st = window._ABA_STATE;
+    const n = Object.values(st.seleccionados).filter(s => s.marcado).length;
+    const el = document.getElementById('abast-sel-count');
+    if (el) el.textContent = n > 0 ? ('· ' + n + ' seleccionado(s)') : '';
+  }
+  async function _abastAbrirSolicitar() {
+    const st = window._ABA_STATE;
+    const items = [];
+    st.items.forEach(it => {
+      const sel = st.seleccionados[it.codigo];
+      if (!sel || !sel.marcado) return;
+      const cant = (sel.cantidad_override != null) ? sel.cantidad_override : _cantidadSugerida(it, st.cubrir_dias);
+      if (cant <= 0) return;
+      items.push({
+        tipo: it.tipo.toLowerCase(),
+        codigo: it.codigo,
+        cantidad: cant,
+        proveedor_sugerido: it.proveedor_sugerido,
+      });
+    });
+    if (!items.length) { alert('Selecciona al menos 1 item con cantidad > 0'); return; }
+    if (!confirm('Crear SOL(s) agrupadas por proveedor con ' + items.length + ' item(s)?\\n\\nCubrir días: ' + st.cubrir_dias + 'd · urgencia: Normal')) return;
+    try {
+      const r = await fetch('/api/abastecimiento/solicitar-items', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          items: items,
+          agrupar_por_proveedor: true,
+          urgencia: 'Normal',
+          cubrir_dias: st.cubrir_dias,
+        }),
+      });
+      const d = await r.json();
+      if (r.status === 401) { window.location.href='/login'; return; }
+      if (!r.ok || d.error) { alert('Error: ' + (d.error || ('HTTP '+r.status))); return; }
+      alert('✓ ' + d.mensaje + '\\n\\n' + (d.creadas || []).map(c => c.numero + ' · ' + c.proveedor + ' (' + c.total_items + ' items)').join('\\n'));
+      cargarAbastecimiento();  // refresh
+    } catch(e) {
+      alert('Error red: ' + e.message);
     }
   }
 

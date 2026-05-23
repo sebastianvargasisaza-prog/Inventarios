@@ -7934,7 +7934,9 @@ def abastecimiento_consumo_horizontes():
         except sqlite3.OperationalError:
             pass
 
-    # 5. Stock canonical + info MP
+    # 5. Stock canonical + info MP (con lead time)
+    # AUDITORÍA-FIX 23-may-2026 · Sebastián · "centro de solicitudes" pidió
+    # mostrar lead time para que se vea cuándo pedir antes de que se acabe
     stock_mp = _get_mp_stock(conn)
     mp_info = {}
     try:
@@ -7942,12 +7944,19 @@ def abastecimiento_consumo_horizontes():
             SELECT mm.codigo_mp,
                    COALESCE(mm.nombre_comercial, mm.nombre_inci, mm.codigo_mp),
                    COALESCE(NULLIF(TRIM(mlt.proveedor_principal),''),
-                            mm.proveedor, '')
+                            mm.proveedor, ''),
+                   COALESCE(mlt.lead_time_dias, 14),
+                   COALESCE(mlt.buffer_dias, 30)
             FROM maestro_mps mm
             LEFT JOIN mp_lead_time_config mlt ON mlt.material_id = mm.codigo_mp
             WHERE COALESCE(mm.activo,1)=1
         """).fetchall():
-            mp_info[r[0]] = {'nombre': r[1] or r[0], 'proveedor': (r[2] or '').strip()}
+            mp_info[r[0]] = {
+                'nombre': r[1] or r[0],
+                'proveedor': (r[2] or '').strip(),
+                'lead_time_dias': int(r[3] or 14),
+                'buffer_dias': int(r[4] or 30),
+            }
     except sqlite3.OperationalError:
         pass
 
@@ -8005,6 +8014,49 @@ def abastecimiento_consumo_horizontes():
             pendientes_mp[k] = pendientes_mp.get(k, 0.0) + float(gp or 0)
     except Exception:
         pass
+    # AUDITORÍA-FIX 23-may-2026 · Sebastián · detalle SOL/OC en curso por
+    # código para mostrar badge "Pendiente SOL-2026-0042" en cada fila
+    solicitudes_en_curso = {}  # codigo_upper → [{tipo, numero, estado, cantidad}]
+    try:
+        for r in c.execute("""
+            SELECT UPPER(TRIM(sci.codigo_mp)), sc.numero, sc.estado,
+                   COALESCE(sci.cantidad_g, 0), COALESCE(sc.categoria,'')
+            FROM solicitudes_compra_items sci
+            JOIN solicitudes_compra sc ON sc.numero = sci.numero
+            WHERE sc.estado IN ('Pendiente','Aprobada')
+              AND COALESCE(sc.numero_oc,'')=''
+              AND sci.codigo_mp IS NOT NULL AND TRIM(sci.codigo_mp) != ''
+        """).fetchall():
+            solicitudes_en_curso.setdefault(r[0], []).append({
+                'tipo': 'SOL',
+                'numero': r[1],
+                'estado': r[2],
+                'cantidad': float(r[3] or 0),
+                'categoria': r[4],
+            })
+    except Exception:
+        pass
+    try:
+        for r in c.execute("""
+            SELECT UPPER(TRIM(oci.codigo_mp)), oc.numero_oc, oc.estado,
+                   COALESCE(oci.cantidad_g - COALESCE(oci.cantidad_recibida_g,0), 0),
+                   COALESCE(sc.categoria,'')
+            FROM ordenes_compra_items oci
+            JOIN ordenes_compra oc ON oc.numero_oc = oci.numero_oc
+            LEFT JOIN solicitudes_compra sc ON sc.numero_oc = oc.numero_oc
+            WHERE oc.estado IN ('Borrador','Revisada','Autorizada','Parcial')
+              AND oci.codigo_mp IS NOT NULL AND TRIM(oci.codigo_mp) != ''
+        """).fetchall():
+            solicitudes_en_curso.setdefault(r[0], []).append({
+                'tipo': 'OC',
+                'numero': r[1],
+                'estado': r[2],
+                'cantidad': float(r[3] or 0),
+                'categoria': r[4],
+            })
+    except Exception:
+        pass
+
     # MEE pendientes · misma query filtrando categoria de Empaque
     if incluir_mee:
         try:
@@ -8311,7 +8363,8 @@ def abastecimiento_consumo_horizontes():
     items_out_mp = []
     if incluir_mp:
         for cod, consumo in consumo_mp.items():
-            info = mp_info.get(cod, {'nombre': cod, 'proveedor': ''})
+            info = mp_info.get(cod, {'nombre': cod, 'proveedor': '',
+                                     'lead_time_dias': 14, 'buffer_dias': 30})
             stock_g = float(stock_mp.get(cod, 0) or 0)
             pend_g = float(pendientes_mp.get(cod.upper(), 0) or 0)
             disponible = stock_g + pend_g
@@ -8330,6 +8383,9 @@ def abastecimiento_consumo_horizontes():
                 'deficit': {str(h): deficits[h] for h in horizontes},
                 'urgencia': urg,
                 'horizonte_quiebre_dias': h_urg,
+                'lead_time_dias': info.get('lead_time_dias', 14),
+                'buffer_dias': info.get('buffer_dias', 30),
+                'solicitudes_en_curso': solicitudes_en_curso.get(cod.upper(), []),
             })
 
     items_out_mee = []
@@ -8337,7 +8393,6 @@ def abastecimiento_consumo_horizontes():
         for cod, consumo in consumo_mee.items():
             info = mee_info.get(cod, {'descripcion': cod, 'proveedor': ''})
             stock_u = float(stock_mee.get(cod, 0) or 0)
-            # AUDITORÍA-FIX 23-may-2026 · P1-3 · pendientes_mee ahora real
             pend_u = float(pendientes_mee.get(cod, 0) or 0)
             disponible = stock_u + pend_u
             deficits = {h: round(max(consumo[h] - disponible, 0), 1) for h in horizontes}
@@ -8355,6 +8410,9 @@ def abastecimiento_consumo_horizontes():
                 'deficit': {str(h): deficits[h] for h in horizontes},
                 'urgencia': urg,
                 'horizonte_quiebre_dias': h_urg,
+                'lead_time_dias': 14,  # MEE default · TODO leer de mee_lead_time_config
+                'buffer_dias': 30,
+                'solicitudes_en_curso': solicitudes_en_curso.get(cod, []),
             })
 
     # Ordenar: urgencia primero (CRITICO > URGENTE > VIGILAR > PLANIFICAR > OK)
@@ -8386,6 +8444,241 @@ def abastecimiento_consumo_horizontes():
         'mees': items_out_mee,
         'resumen_por_horizonte': resumen,
         'productos_sin_lote_size': sorted(productos_sin_lote_size),
+    })
+
+
+@bp.route('/api/abastecimiento/solicitar-items', methods=['POST'])
+def abastecimiento_solicitar_items():
+    """Crea SOLs agrupadas por proveedor a partir de items seleccionados
+    en el tab Abastecimiento.
+
+    Sebastián 23-may-2026: 'centro de solicitudes a compras' · Sebastián
+    elige items y cantidades en la UI · este endpoint crea SOLs.
+
+    Body:
+      items: [{tipo: 'mp'|'mee', codigo, cantidad, proveedor_sugerido?}]
+      agrupar_por_proveedor: bool (default true · 1 SOL por proveedor)
+      urgencia: 'Alta'|'Normal'|'Baja' (default 'Normal')
+      cubrir_dias: int (info en obs · no afecta cantidad)
+
+    Reusa el patrón de solicitar_faltantes_bulk (audit_log + numero_unique
+    con retry) pero recibe items pre-seleccionados con cantidades.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', 'sistema')
+    d = request.get_json(silent=True) or {}
+    items_in = d.get('items') or []
+    if not isinstance(items_in, list) or not items_in:
+        return jsonify({'error': 'items[] requerido'}), 400
+    agrupar = bool(d.get('agrupar_por_proveedor', True))
+    urgencia_norm = (d.get('urgencia') or 'Normal').strip()
+    if urgencia_norm not in ('Alta', 'Normal', 'Baja'):
+        urgencia_norm = 'Normal'
+    cubrir_dias = d.get('cubrir_dias')
+    try:
+        cubrir_dias = int(cubrir_dias) if cubrir_dias is not None else None
+    except Exception:
+        cubrir_dias = None
+
+    # Validar items + agrupar
+    grupos = {}  # proveedor → {'mps': [...], 'mees': [...]}
+    conn = get_db(); c = conn.cursor()
+    # Cargar info MP/MEE para nombres y proveedor sugerido si falta
+    mp_info_map = {}
+    try:
+        for r in c.execute("""
+            SELECT mm.codigo_mp,
+                   COALESCE(mm.nombre_comercial, mm.nombre_inci, mm.codigo_mp),
+                   COALESCE(NULLIF(TRIM(mlt.proveedor_principal),''),
+                            mm.proveedor, '')
+            FROM maestro_mps mm
+            LEFT JOIN mp_lead_time_config mlt ON mlt.material_id = mm.codigo_mp
+        """).fetchall():
+            mp_info_map[str(r[0]).strip().upper()] = {
+                'nombre': r[1] or r[0],
+                'proveedor': (r[2] or '').strip(),
+            }
+    except sqlite3.OperationalError:
+        pass
+    mee_info_map = {}
+    try:
+        for r in c.execute("""
+            SELECT codigo, COALESCE(descripcion,''), COALESCE(proveedor,'')
+            FROM maestro_mee
+        """).fetchall():
+            mee_info_map[str(r[0]).strip().upper()] = {
+                'nombre': r[1] or r[0],
+                'proveedor': (r[2] or '').strip(),
+            }
+    except sqlite3.OperationalError:
+        pass
+
+    for it in items_in:
+        tipo = (it.get('tipo') or '').lower()
+        codigo = str(it.get('codigo') or '').strip().upper()
+        try:
+            cantidad = float(it.get('cantidad') or 0)
+        except Exception:
+            cantidad = 0
+        if not codigo or cantidad <= 0 or tipo not in ('mp', 'mee'):
+            continue
+        prov_override = (it.get('proveedor_sugerido') or '').strip()
+        if tipo == 'mp':
+            info = mp_info_map.get(codigo, {'nombre': codigo, 'proveedor': ''})
+        else:
+            info = mee_info_map.get(codigo, {'nombre': codigo, 'proveedor': ''})
+        proveedor = prov_override or info['proveedor'] or '__SIN_PROVEEDOR__'
+        grupo_key = proveedor if agrupar else f"{proveedor}::{codigo}"
+        g_node = grupos.setdefault(grupo_key, {'proveedor': proveedor,
+                                                'mps': [], 'mees': []})
+        if tipo == 'mp':
+            g_node['mps'].append({
+                'codigo_mp': codigo,
+                'nombre': info['nombre'],
+                'cantidad_g': cantidad,
+            })
+        else:
+            g_node['mees'].append({
+                'codigo': codigo,
+                'descripcion': info['nombre'],
+                'cantidad_u': cantidad,
+            })
+
+    if not grupos:
+        return jsonify({'error': 'No hay items válidos'}), 400
+
+    # Crear SOLs · patrón retry del solicitar_faltantes_bulk
+    from datetime import datetime as _dt
+    fecha_now = _dt.now().isoformat()
+    year = _dt.now().strftime('%Y')
+    obs_base = f"Auto-generada Abastecimiento"
+    if cubrir_dias:
+        obs_base += f" · cubrir {cubrir_dias}d"
+
+    creadas = []
+    try:
+        for grupo_key, gnode in sorted(grupos.items()):
+            mps_lst = gnode['mps']
+            mees_lst = gnode['mees']
+            if not mps_lst and not mees_lst:
+                continue
+            prov = gnode['proveedor']
+            prov_label = prov if prov != '__SIN_PROVEEDOR__' else ''
+            obs = obs_base
+            if prov_label:
+                obs += f" · proveedor: {prov_label}"
+            obs += f" · {len(mps_lst)} MPs · {len(mees_lst)} MEEs"
+            categoria = 'Materia Prima'
+            if not mps_lst and mees_lst:
+                categoria = 'Empaque'
+
+            # Retry numero único
+            numero = None
+            ultimo_err = None
+            for retry in range(6):
+                c.execute(
+                    "SELECT COALESCE(MAX(CAST(SUBSTR(numero,10) AS INTEGER)),0) "
+                    "FROM solicitudes_compra WHERE numero LIKE ?",
+                    (f"SOL-{year}-%",),
+                )
+                num = (c.fetchone()[0] or 0) + 1 + retry
+                candidato = f"SOL-{year}-{num:04d}"
+                try:
+                    c.execute("""
+                        INSERT INTO solicitudes_compra
+                          (numero, fecha, estado, solicitante, urgencia, observaciones,
+                           area, empresa, categoria, tipo)
+                        VALUES (?, ?, 'Pendiente', ?, ?, ?, 'Producción', 'Espagiria', ?, 'Compra')
+                    """, (candidato, fecha_now, user, urgencia_norm, obs, categoria))
+                    numero = candidato
+                    break
+                except sqlite3.IntegrityError as e:
+                    ultimo_err = e
+                    continue
+            if numero is None:
+                raise RuntimeError(f"No se pudo asignar numero SOL · {ultimo_err}")
+
+            items_count = 0
+            total_g_mps = 0.0
+            for mp in mps_lst:
+                try:
+                    c.execute("""
+                        INSERT INTO solicitudes_compra_items
+                          (numero, codigo_mp, nombre_mp, cantidad_g, unidad,
+                           justificacion, valor_estimado, proveedor_sugerido)
+                        VALUES (?, ?, ?, ?, 'g', ?, 0, ?)
+                    """, (numero, mp['codigo_mp'], mp['nombre'],
+                          mp['cantidad_g'],
+                          f"Abastecimiento · {obs_base}",
+                          prov_label))
+                except sqlite3.OperationalError:
+                    c.execute("""
+                        INSERT INTO solicitudes_compra_items
+                          (numero, codigo_mp, nombre_mp, cantidad_g, unidad,
+                           justificacion, valor_estimado)
+                        VALUES (?, ?, ?, ?, 'g', ?, 0)
+                    """, (numero, mp['codigo_mp'], mp['nombre'],
+                          mp['cantidad_g'],
+                          f"Abastecimiento · {obs_base}"))
+                items_count += 1
+                total_g_mps += mp['cantidad_g']
+            for me in mees_lst:
+                try:
+                    c.execute("""
+                        INSERT INTO solicitudes_compra_items
+                          (numero, codigo_mp, nombre_mp, cantidad_g, unidad,
+                           justificacion, valor_estimado, proveedor_sugerido)
+                        VALUES (?, ?, ?, ?, 'unidades', ?, 0, ?)
+                    """, (numero, me['codigo'], me['descripcion'],
+                          me['cantidad_u'],
+                          f"Abastecimiento · {obs_base}",
+                          prov_label))
+                except sqlite3.OperationalError:
+                    c.execute("""
+                        INSERT INTO solicitudes_compra_items
+                          (numero, codigo_mp, nombre_mp, cantidad_g, unidad,
+                           justificacion, valor_estimado)
+                        VALUES (?, ?, ?, ?, 'unidades', ?, 0)
+                    """, (numero, me['codigo'], me['descripcion'],
+                          me['cantidad_u'],
+                          f"Abastecimiento · {obs_base}"))
+                items_count += 1
+
+            try:
+                audit_log(
+                    c, usuario=user, accion='SOLICITAR_ABASTECIMIENTO',
+                    tabla='solicitudes_compra', registro_id=numero,
+                    despues={
+                        'proveedor': prov_label or '(sin proveedor)',
+                        'cubrir_dias': cubrir_dias,
+                        'urgencia': urgencia_norm,
+                        'mps_count': len(mps_lst),
+                        'mees_count': len(mees_lst),
+                        'total_g_mps': round(total_g_mps, 1),
+                        'agrupar_por_proveedor': agrupar,
+                    },
+                )
+            except Exception:
+                pass
+
+            creadas.append({
+                'numero': numero,
+                'proveedor': prov_label or '(sin proveedor)',
+                'mps': len(mps_lst),
+                'mees': len(mees_lst),
+                'total_items': items_count,
+            })
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'error': f'Error creando SOLs: {e}'}), 500
+
+    return jsonify({
+        'ok': True,
+        'creadas': creadas,
+        'n_sols': len(creadas),
+        'mensaje': f'✓ {len(creadas)} SOL(s) creada(s)',
     })
 
 
