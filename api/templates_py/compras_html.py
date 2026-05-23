@@ -565,7 +565,10 @@ async function cxIAPreguntar(pregunta){
         Mercanc&iacute;a recibida + servicios sin recepci&oacute;n (Influencers, Cuentas de Cobro)
       </div>
     </div>
-    <button class="btn bp" onclick="loadPorPagar()" style="padding:6px 14px;font-size:12px;">&#x21BA; Actualizar</button>
+    <div style="display:flex;gap:6px;">
+      <button class="btn" onclick="exportOcsConsolidado()" style="padding:6px 14px;font-size:12px;background:#059669;color:#fff;border:0;border-radius:5px;font-weight:700;cursor:pointer;" title="Excel consolidado de todas las OCs activas (estados, info bancaria, recepción, discrepancia)">&#x1F4CA; Excel consolidado</button>
+      <button class="btn bp" onclick="loadPorPagar()" style="padding:6px 14px;font-size:12px;">&#x21BA; Actualizar</button>
+    </div>
   </div>
 
   <div id="por-pagar-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-bottom:16px;">
@@ -7403,6 +7406,19 @@ async function cargarDiscrepancias(){
 }
 
 
+function exportOcsConsolidado(){
+  // Sebastián 23-may-2026 · descarga Excel con TODAS las OCs activas
+  // y datos bancarios visibles · para que Catalina envíe a Sebas/Alejandro
+  // o tenga un consolidado físico de pagos pendientes
+  var estados = prompt('Estados a incluir (CSV) · Enter para los default:\\n\\nBorrador,Autorizada,Parcial,Recibida,Pagada', 'Borrador,Autorizada,Parcial,Recibida,Pagada');
+  if(!estados) return;
+  var dias = prompt('OCs creadas en últimos N días (default 90):', '90');
+  if(!dias) return;
+  var url = '/api/compras/ocs-consolidado-excel?estados=' + encodeURIComponent(estados) + '&dias=' + parseInt(dias,10);
+  window.open(url, '_blank');
+}
+
+
 async function loadPorPagar(){
   try{
     var r = await fetch('/api/compras/por-pagar');
@@ -7428,6 +7444,14 @@ async function loadPorPagar(){
           '<div style="font-weight:700;font-family:monospace;color:#92400e;font-size:13px;">'+_esc(o.numero_oc)+'</div>'+
           '<div style="font-size:13px;color:'+(esIncompleta?'#dc2626':'#1e293b')+';margin-top:4px;">'+_esc(prov||'(sin proveedor)')+'</div>'+
           '<div style="font-size:11px;color:#78350f;margin-top:2px;">'+_esc(o.categoria||'')+'</div>'+
+          // FIX 23-may · datos bancarios visibles para admin
+          ((o.banco||o.num_cuenta||o.nit)?(
+            '<div style="background:#fff7ed;border:1px dashed #fbbf24;border-radius:6px;padding:6px 8px;margin-top:6px;font-size:11px;font-family:monospace;color:#78350f">'+
+              (o.banco? '<div>🏦 '+_esc(o.banco)+(o.tipo_cuenta?' · '+_esc(o.tipo_cuenta):'')+'</div>':'')+
+              (o.num_cuenta? '<div>💳 '+_esc(o.num_cuenta)+'</div>':'')+
+              (o.nit? '<div>🆔 NIT '+_esc(o.nit)+'</div>':'')+
+            '</div>'
+          ):'')+
           '<div style="font-size:18px;font-weight:800;color:'+(esIncompleta?'#dc2626':'#059669')+';margin-top:8px;">'+_money(o.valor_total)+'</div>'+
           (esIncompleta?'<div style="font-size:11px;color:#dc2626;margin-top:4px;">&#9888;&#65039; Datos incompletos. Pulsa &#x1F527; Reparar para jalar de la solicitud.</div>':'')+
           '<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">'+
@@ -7455,6 +7479,16 @@ async function loadPorPagar(){
           '</div>'+
           '<div style="font-size:13px;color:'+(esIncompleta?'#dc2626':'#1e293b')+';margin-top:4px;">'+_esc(prov||'(sin proveedor)')+'</div>'+
           '<div style="font-size:11px;color:#64748b;margin-top:2px;">'+_esc(o.categoria||'')+'</div>'+
+          // FIX 23-may · datos bancarios visibles para admin · evita
+          // abrir ficha del proveedor antes de pagar (Sebas: "que aparezca
+          // numero de cuenta proveedor")
+          ((o.banco||o.num_cuenta||o.nit)?(
+            '<div style="background:#f1f5f9;border:1px dashed #cbd5e1;border-radius:6px;padding:6px 8px;margin-top:6px;font-size:11px;font-family:monospace;color:#1e293b">'+
+              (o.banco? '<div>🏦 '+_esc(o.banco)+(o.tipo_cuenta?' · '+_esc(o.tipo_cuenta):'')+'</div>':'')+
+              (o.num_cuenta? '<div>💳 '+_esc(o.num_cuenta)+'</div>':'')+
+              (o.nit? '<div>🆔 NIT '+_esc(o.nit)+'</div>':'')+
+            '</div>'
+          ):'')+
           '<div style="font-size:18px;font-weight:800;color:'+(esIncompleta?'#dc2626':'#1e293b')+';margin-top:8px;">'+_money(o.valor_total)+'</div>'+
           (esIncompleta?'<div style="font-size:11px;color:#dc2626;margin-top:4px;">&#9888;&#65039; Datos incompletos. Pulsa &#x1F527; Reparar para jalar de la solicitud.</div>':'')+
           '<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">'+

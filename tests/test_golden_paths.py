@@ -10126,6 +10126,23 @@ def test_golden_abastecimiento_consumo_bruto_excel(app, db_clean):
     assert len(r.data) > 1000
 
 
+def test_golden_compras_ocs_consolidado_excel(app, db_clean):
+    """Excel consolidado de OCs activas · Sebastián 23-may-2026 · útil
+    para que Catalina descargue todo lo en curso.
+    """
+    cs = _login(app, 'sebastian')
+    cs_no = app.test_client()
+    r_no = cs_no.get('/api/compras/ocs-consolidado-excel')
+    assert r_no.status_code == 401
+
+    r = cs.get('/api/compras/ocs-consolidado-excel?dias=30')
+    assert r.status_code == 200, r.data[:200]
+    ct = r.headers.get('Content-Type', '')
+    assert 'spreadsheetml' in ct or 'octet-stream' in ct
+    assert r.data[:2] == b'PK', 'BUG: XLSX inválido'
+    assert len(r.data) > 1000
+
+
 def test_golden_compras_recepciones_discrepancias(app, db_clean):
     """Endpoint /api/compras/recepciones-discrepancias · histórico de OCs
     con discrepancia + ranking calidad proveedor.

@@ -1762,6 +1762,154 @@ def sugerir_mp(codigo_mp):
     return jsonify(out)
 
 
+@bp.route('/api/compras/ocs-consolidado-excel', methods=['GET'])
+def ocs_consolidado_excel():
+    """Sebastián 23-may-2026 · Excel consolidado de OCs activas para
+    Catalina · descarga con info de proveedor + items + estado +
+    pendiente pago + recepción.
+
+    Query params:
+      ?estados=Borrador,Autorizada,Recibida,Parcial,Pagada (default activos)
+      ?dias=N · filtra OCs creadas en últimos N días (default 90)
+    """
+    u, err, code = _require_compras_session()
+    if err: return err, code
+    try:
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+        from openpyxl.utils import get_column_letter
+    except ImportError:
+        return jsonify({'error': 'openpyxl no disponible'}), 500
+    from flask import send_file
+    import io as _io
+    from datetime import datetime as _dt, timedelta as _td
+
+    estados_str = request.args.get('estados') or 'Borrador,Autorizada,Parcial,Recibida,Pagada'
+    estados = [e.strip() for e in estados_str.split(',') if e.strip()]
+    try:
+        dias = max(1, min(int(request.args.get('dias', 90)), 365))
+    except Exception:
+        dias = 90
+    hoy_ = (_dt.utcnow() - _td(hours=5)).date()
+    desde = (hoy_ - _td(days=dias)).isoformat()
+
+    conn = get_db(); c = conn.cursor()
+    placeholders = ','.join('?' for _ in estados)
+    params = list(estados) + [desde]
+    rows = c.execute(f"""
+        SELECT oc.numero_oc, oc.fecha, oc.estado, oc.proveedor,
+               COALESCE(oc.categoria,''),
+               COALESCE(oc.valor_total, 0),
+               COALESCE(oc.fecha_recepcion,''),
+               COALESCE(oc.tiene_discrepancias, 0),
+               COALESCE(oc.creado_por,''),
+               COALESCE(oc.recibido_por,''),
+               COALESCE(p.nit,''), COALESCE(p.banco,''),
+               COALESCE(p.tipo_cuenta,''), COALESCE(p.num_cuenta,''),
+               COALESCE(p.condiciones_pago,'')
+        FROM ordenes_compra oc
+        LEFT JOIN proveedores p ON oc.proveedor = p.nombre
+        WHERE oc.estado IN ({placeholders})
+          AND COALESCE(oc.fecha,'') >= ?
+        ORDER BY oc.fecha DESC
+    """, params).fetchall()
+
+    # Excel
+    wb = openpyxl.Workbook()
+    wb.remove(wb.active)
+    thin = Side(border_style='thin', color='CCCCCC')
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    header_fill = PatternFill('solid', fgColor='1E40AF')
+    title_fill = PatternFill('solid', fgColor='1E3A8A')
+    estado_fills = {
+        'Borrador':   PatternFill('solid', fgColor='F1F5F9'),
+        'Autorizada': PatternFill('solid', fgColor='FEF3C7'),
+        'Parcial':    PatternFill('solid', fgColor='FFF7ED'),
+        'Recibida':   PatternFill('solid', fgColor='DBEAFE'),
+        'Pagada':     PatternFill('solid', fgColor='DCFCE7'),
+    }
+
+    ws = wb.create_sheet('OCs consolidado')
+    fecha_str = _dt.now().strftime('%Y-%m-%d %H:%M')
+    ws.cell(row=1, column=1,
+            value=f'Órdenes de Compra · estados {estados_str} · últimos {dias}d · {fecha_str}')
+    ws.cell(row=1, column=1).font = Font(size=14, bold=True, color='FFFFFF')
+    ws.cell(row=1, column=1).fill = title_fill
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=15)
+    ws.row_dimensions[1].height = 24
+
+    hdr = ['OC', 'Fecha', 'Estado', 'Proveedor', 'Categoría', 'Valor',
+           'Recepción', 'Discrepancia', 'Creador', 'Receptor',
+           'NIT', 'Banco', 'Tipo cta', 'N° cuenta', 'Condiciones pago']
+    for col, val in enumerate(hdr, start=1):
+        cell = ws.cell(row=3, column=col, value=val)
+        cell.font = Font(bold=True, color='FFFFFF')
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+        cell.border = border
+    ws.row_dimensions[3].height = 32
+
+    r = 4
+    total_valor = 0.0
+    for row in rows:
+        valores = [
+            row[0], str(row[1])[:10] if row[1] else '',
+            row[2], row[3] or '', row[4], float(row[5] or 0),
+            str(row[6])[:10] if row[6] else '',
+            'SÍ' if int(row[7] or 0) else '',
+            row[8], row[9],
+            row[10], row[11], row[12], row[13], row[14],
+        ]
+        total_valor += float(row[5] or 0)
+        for col, val in enumerate(valores, start=1):
+            cell = ws.cell(row=r, column=col, value=val)
+            cell.border = border
+            if col == 3:  # Estado
+                cell.fill = estado_fills.get(str(val), estado_fills['Borrador'])
+                cell.font = Font(bold=True)
+                cell.alignment = Alignment(horizontal='center')
+            elif col == 1:
+                cell.font = Font(name='Consolas', bold=True)
+                cell.alignment = Alignment(horizontal='center')
+            elif col == 6:  # Valor
+                cell.alignment = Alignment(horizontal='right')
+                cell.number_format = '#,##0'
+            elif col == 8 and val == 'SÍ':  # Discrepancia
+                cell.fill = PatternFill('solid', fgColor='FEE2E2')
+                cell.font = Font(bold=True, color='991B1B')
+                cell.alignment = Alignment(horizontal='center')
+            elif col in (11, 13, 14):  # NIT, tipo cta, n° cuenta
+                cell.alignment = Alignment(horizontal='center')
+                cell.font = Font(name='Consolas', size=10)
+        r += 1
+
+    # Fila TOTAL
+    ws.cell(row=r, column=1, value='TOTAL').font = Font(bold=True)
+    ws.cell(row=r, column=1).fill = PatternFill('solid', fgColor='E0E7FF')
+    ws.cell(row=r, column=1).alignment = Alignment(horizontal='center')
+    for col in range(2, 6):
+        ws.cell(row=r, column=col, value='').fill = PatternFill('solid', fgColor='E0E7FF')
+    cell = ws.cell(row=r, column=6, value=total_valor)
+    cell.fill = PatternFill('solid', fgColor='E0E7FF')
+    cell.font = Font(bold=True)
+    cell.number_format = '#,##0'
+    cell.alignment = Alignment(horizontal='right')
+    cell.border = border
+
+    # Anchos
+    widths = [14, 11, 11, 26, 14, 14, 11, 12, 14, 14, 14, 18, 9, 18, 22]
+    for col, w in enumerate(widths, start=1):
+        ws.column_dimensions[get_column_letter(col)].width = w
+    ws.freeze_panes = 'C4'
+
+    buf = _io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    nombre = f'ocs_consolidado_{_dt.now().strftime("%Y%m%d_%H%M")}.xlsx'
+    return send_file(buf, as_attachment=True, download_name=nombre,
+                     mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+
 @bp.route('/api/compras/recepciones-discrepancias', methods=['GET'])
 def listar_recepciones_discrepancias():
     """Sebastián 23-may-2026 · histórico de recepciones con discrepancia
@@ -6444,12 +6592,18 @@ def get_por_pagar():
     except Exception:
         pass
 
-    # Mercancía física: estado Recibida o Parcial → ya se puede pagar lo recibido.
-    # condiciones_pago vive en proveedores, no en ordenes_compra — JOIN.
+    # Sebastián 23-may-2026 · admin necesita info bancaria visible para
+    # pagar · INCLUYE num_cuenta/banco/tipo_cuenta/nit del proveedor
+    # (RBAC ya garantiza que solo compras_user accede · contadora SÍ ve
+    # porque es la que registra el pago efectivo · pero NO autoriza OCs)
     cur.execute("""
         SELECT oc.numero_oc, oc.proveedor, oc.categoria, oc.valor_total, oc.fecha,
                oc.estado, oc.observaciones, oc.fecha_recepcion,
-               COALESCE(p.condiciones_pago, '') as condiciones_pago
+               COALESCE(p.condiciones_pago, '') as condiciones_pago,
+               COALESCE(p.num_cuenta,'') as num_cuenta,
+               COALESCE(p.banco,'') as banco,
+               COALESCE(p.tipo_cuenta,'') as tipo_cuenta,
+               COALESCE(p.nit,'') as nit
         FROM ordenes_compra oc
         LEFT JOIN proveedores p ON oc.proveedor = p.nombre
         WHERE oc.estado IN ('Recibida', 'Parcial') AND
@@ -6468,7 +6622,11 @@ def get_por_pagar():
         SELECT oc.numero_oc, oc.proveedor, oc.categoria, oc.valor_total, oc.fecha,
                oc.estado, oc.observaciones,
                COALESCE(oc.fecha_recepcion, oc.fecha) as fecha_recepcion,
-               COALESCE(p.condiciones_pago, '') as condiciones_pago
+               COALESCE(p.condiciones_pago, '') as condiciones_pago,
+               COALESCE(p.num_cuenta,'') as num_cuenta,
+               COALESCE(p.banco,'') as banco,
+               COALESCE(p.tipo_cuenta,'') as tipo_cuenta,
+               COALESCE(p.nit,'') as nit
         FROM ordenes_compra oc
         LEFT JOIN proveedores p ON oc.proveedor = p.nombre
         WHERE oc.estado IN ('Aprobada', 'Autorizada') AND
