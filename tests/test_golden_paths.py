@@ -11312,6 +11312,19 @@ def test_golden_mps_abreviaturas_fix_merge_duplicado(app, db_clean):
         )
         assert rows[0][0] == 'TEST_MP_AB2_CAN'
         assert rows[0][1] == 'Zztest Compound Beta'
+
+        # Audit re-llamado · MP archivada NO debe contar como pendiente
+        # (bug detectado 22-may noche: total_hallazgos no se reseteaba a 0)
+        r3 = cs.get('/api/admin/mps-abreviaturas-audit')
+        assert r3.status_code == 200
+        d3 = r3.get_json()
+        pendientes_test = [h for h in d3['hallazgos']
+                           if h['codigo_mp'] == 'TEST_MP_AB2']
+        # Histórico sigue en la lista (con activo=False)
+        assert pendientes_test and not pendientes_test[0]['activo']
+        # Pero NO debe contar en duplicados_a_merge porque ya está archivada
+        for h in pendientes_test:
+            assert not h['activo'], 'MP archivada aún aparece como activa'
     finally:
         _exec("DELETE FROM formula_items WHERE producto_nombre='TEST_FORM_AB2'")
         _exec("DELETE FROM formula_headers WHERE producto_nombre='TEST_FORM_AB2'")

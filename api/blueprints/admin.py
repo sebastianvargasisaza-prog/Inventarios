@@ -5973,11 +5973,14 @@ def admin_mps_abreviaturas_audit():
                 ),
             })
 
-    # Resumen contable
-    total = len(hallazgos)
-    duplicados = sum(1 for h in hallazgos if h['accion_sugerida'] == 'merge_dedupe')
+    # Resumen contable · MPs archivadas (activo=0) son histórico, no pendiente
+    # Contadores reportan solo hallazgos accionables (activo=1)
+    hallazgos_activos = [h for h in hallazgos if h['activo']]
+    total = len(hallazgos_activos)
+    duplicados = sum(1 for h in hallazgos_activos
+                     if h['accion_sugerida'] == 'merge_dedupe')
     renombrables = total - duplicados
-    inactivos = sum(1 for h in hallazgos if not h['activo'])
+    inactivos = len(hallazgos) - len(hallazgos_activos)
 
     conn.close()
     return jsonify({
