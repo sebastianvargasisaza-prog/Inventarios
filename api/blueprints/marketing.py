@@ -1817,6 +1817,14 @@ def mkt_sync(platform):
                     )
                     subtotal_o = float(o.get("subtotal_price") or 0)
                     total_desc = float(o.get("total_discounts") or 0)
+                    # FIX 23-may-2026 · auditoría · Bug TZ Bogotá del 22-may
+                    # NO se aplicó al sync de marketing/influencer · ventas
+                    # tarde-noche desaparecían del cálculo ROI · ahora TZ-aware
+                    try:
+                        from blueprints.auto_plan_jobs import _shopify_created_at_bogota as _tz_h
+                        _creado = _tz_h(o.get("created_at",""))
+                    except Exception:
+                        _creado = (o.get("created_at") or "")[:10]
                     conn.execute("""INSERT OR REPLACE INTO animus_shopify_orders
                         (shopify_id,nombre,email,total,moneda,estado,estado_pago,
                          sku_items,unidades_total,ciudad,pais,creado_en,synced_at,
@@ -1829,7 +1837,7 @@ def mkt_sync(platform):
                          o.get("financial_status",""),
                          items_sku, total_uds, ciudad,
                          addr.get("country_code","CO"),
-                         (o.get("created_at") or "")[:10],
+                         _creado,
                          dc_codes, subtotal_o, total_desc))
                     synced += 1
                 if not orders:

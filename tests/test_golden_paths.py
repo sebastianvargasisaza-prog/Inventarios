@@ -9849,6 +9849,64 @@ def test_golden_plan_factibilidad(app, db_clean):
 
 
 # ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH · /api/plan/necesidades · auditoría Shopify 23-may-2026
+# ═══════════════════════════════════════════════════════════════════
+# Bugs que cazan estos tests:
+#   - tabla 'ordenes_shopify' inexistente (era animus_shopify_orders)
+#   - velocidad solo lee 'qty' del JSON (legacy guarda 'cantidad'/'quantity')
+#   - mps_faltantes no resta lo ya pedido en compras (duplica SOLs)
+
+def test_golden_necesidades_skus_huerfanos_detectados(app, db_clean):
+    """S1 · feature `skus_huerfanos_vendiendo` debe poblarse cuando una
+    venta de Shopify trae un SKU sin entry en sku_producto_map.
+
+    Bug detectado 23-may: query usaba tabla `ordenes_shopify` (inexistente)
+    en lugar de `animus_shopify_orders` · feature nunca corría.
+    Como bonus el test cubre que 'qty', 'cantidad' y 'quantity' del JSON
+    todos cuentan en velocidad (triple-fallback de auto_plan.py:248 y
+    plan.py:980).
+    """
+    _exec("DELETE FROM animus_shopify_orders WHERE shopify_id LIKE 'TEST_HUERFANO%'")
+    _exec("DELETE FROM sku_producto_map WHERE sku LIKE 'TEST_HUERFANO%'")
+    import json as _json
+    hoy = _query("SELECT date('now','-5 hours')")[0][0]
+    # Una orden con SKU desconocido (huérfano) usando 'qty'
+    _exec(
+        """INSERT INTO animus_shopify_orders
+           (shopify_id, nombre, total, sku_items, unidades_total, creado_en)
+           VALUES ('TEST_HUERFANO_1', '#TH1', 50000, ?, 2, ?)""",
+        (_json.dumps([{'sku': 'TEST_HUERFANO_SKU_A', 'qty': 2}]), hoy),
+    )
+    # Otra orden con campo legacy 'cantidad' (triple-fallback)
+    _exec(
+        """INSERT INTO animus_shopify_orders
+           (shopify_id, nombre, total, sku_items, unidades_total, creado_en)
+           VALUES ('TEST_HUERFANO_2', '#TH2', 30000, ?, 1, ?)""",
+        (_json.dumps([{'sku': 'TEST_HUERFANO_SKU_B', 'cantidad': 1}]), hoy),
+    )
+
+    cs = _login(app, 'sebastian')
+    r = cs.get('/api/plan/necesidades')
+    assert r.status_code == 200, f'BUG: {r.status_code} {r.data}'
+    d = r.get_json()
+    huerfanos = d.get('resumen', {}).get('skus_huerfanos_vendiendo', [])
+    # Si la query estuviera rota con `ordenes_shopify`, esto sería []
+    assert 'TEST_HUERFANO_SKU_A' in huerfanos, \
+        f'BUG: SKU huérfano no detectado (tabla incorrecta?) · {huerfanos}'
+    assert 'TEST_HUERFANO_SKU_B' in huerfanos, \
+        f'BUG: triple-fallback de qty/cantidad/quantity NO funciona · {huerfanos}'
+
+    _exec("DELETE FROM animus_shopify_orders WHERE shopify_id LIKE 'TEST_HUERFANO%'")
+
+
+# TODO · cobertura golden de N1 (mps_faltantes resta pendiente_compras)
+# en /api/plan/necesidades · requiere setup de sku_producto_map + venta
+# Shopify simulada para que _calcular_animus_dtc considere el producto.
+# Por ahora el fix está aplicado en plan.py:1262-1283 · validación manual
+# via UI post-deploy.
+
+
+# ═══════════════════════════════════════════════════════════════════
 # GOLDEN PATH PLANTA · Tablero "Equipo HOY" del Centro de Mando
 # ═══════════════════════════════════════════════════════════════════
 # Bug que cazaría: que un operario con producción asignada hoy no

@@ -645,9 +645,12 @@ def plan_necesidades():
         from datetime import datetime as _dt2, timedelta as _td2
         cutoff = (_dt2.now() - _td2(days=30)).strftime('%Y-%m-%d')
         # Todos los SKUs que aparecen en ventas
+        # FIX 23-may-2026 · auditoría detectó tabla incorrecta · era
+        # `ordenes_shopify` (inexistente) · la real es `animus_shopify_orders`
+        # El try/except tragaba el error · feature SKUs huérfanos nunca corría
         skus_vendidos = c.execute(
             """SELECT DISTINCT TRIM(json_each.value->>'sku') as sku_v
-               FROM ordenes_shopify, json_each(sku_items)
+               FROM animus_shopify_orders, json_each(sku_items)
                WHERE date(creado_en) >= ?
                  AND TRIM(json_each.value->>'sku') != ''""",
             (cutoff,),
@@ -977,7 +980,11 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
             continue
         for it in items:
             sku = str(it.get("sku", "") or "").strip().upper()
-            qty = int(it.get("qty", 0) or 0)
+            # FIX 23-may-2026 · auditoría · Bug #1 del 22-may quedó parchado a
+            # medias · auto_plan.py:248 ya tenía triple-fallback (qty/cantidad/
+            # quantity) pero este sitio leía solo `qty` · órdenes legacy con
+            # campos "cantidad"/"quantity" en sku_items quedaban en velocidad=0
+            qty = int(it.get("qty") or it.get("cantidad") or it.get("quantity") or 0)
             if sku and qty > 0:
                 ventas_por_sku[sku] = ventas_por_sku.get(sku, 0) + qty
 
@@ -1253,6 +1260,14 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
             # tiene en bodega · y AGUA (MPAGUALI01) se hace en planta.
             # Solo bloquear si la MP tiene movimientos previos (probó
             # ser una MP "trackeada") Y su stock actual no cubre lo necesario.
+            # FIX 23-may-2026 · auditoría · `mps_faltantes` NO restaba
+            # `_pendiente_en_compras_g` · Necesidades reportaba FALTAN_MPS
+            # aunque Catalina ya había emitido SOL/OC · bulk re-creaba SOL
+            # duplicada · ahora consistente con producciones-faltantes
+            try:
+                from blueprints.compras import _pendiente_en_compras_g as _pend_cg
+            except Exception:
+                _pend_cg = None
             faltantes = []
             for it in items_form:
                 mid = str(it["material_id"]).strip()
@@ -1263,13 +1278,20 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
                 if mid not in mp_stock_g and mid not in mp_tiene_movimientos:
                     continue
                 disponible_g = mp_stock_g.get(mid, 0.0)
-                falta = it["necesario_g"] - disponible_g
+                pendiente_g = 0.0
+                if _pend_cg is not None:
+                    try:
+                        pendiente_g = float(_pend_cg(c, mid) or 0)
+                    except Exception:
+                        pendiente_g = 0.0
+                falta = it["necesario_g"] - disponible_g - pendiente_g
                 if falta > 0.01:  # tolerancia gramos
                     faltantes.append({
                         "material_id": it["material_id"],
                         "material_nombre": it["material_nombre"],
                         "necesario_g": it["necesario_g"],
                         "disponible_g": round(disponible_g, 2),
+                        "pendiente_compras_g": round(pendiente_g, 2),
                         "faltante_g": round(falta, 2),
                     })
             p["mps_total_items"] = len(items_form)

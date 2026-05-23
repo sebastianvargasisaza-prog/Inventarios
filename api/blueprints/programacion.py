@@ -190,6 +190,14 @@ def _sync_shopify_orders(conn, days=60):
                 "sku_items,unidades_total,ciudad,pais,creado_en,synced_at) "
                 "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,datetime('now', '-5 hours'))"
             )
+            # FIX 23-may-2026 · auditoría · Bug TZ Bogotá del 22-may NO se aplicó
+            # aquí · venta 22:30 Bogotá quedaba como AYER UTC al hacer [:10]
+            # ahora usa helper TZ-aware
+            try:
+                from blueprints.auto_plan_jobs import _shopify_created_at_bogota as _tz_helper
+                _creado_en = _tz_helper(o.get("created_at",""))
+            except Exception:
+                _creado_en = (o.get("created_at") or "")[:10]
             conn.execute(sql, (
                 str(o["id"]), o.get("name",""), o.get("email",""),
                 float(o.get("total_price") or 0), o.get("currency","COP"),
@@ -197,7 +205,7 @@ def _sync_shopify_orders(conn, days=60):
                 o.get("financial_status",""),
                 items_sku, total_uds,
                 addr.get("city",""), addr.get("country_code","CO"),
-                (o.get("created_at") or "")[:10]
+                _creado_en
             ))
             synced += 1
 
