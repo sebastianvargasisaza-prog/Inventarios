@@ -20713,11 +20713,19 @@ async function ckMarcar(itemId, estado){
       const ya = fechas.filter(f => f.ya_programado);
       const kgTotal = fechas.reduce((s,f) => s + (f.kg || 0), 0);
       const diasCob = (d.velocidad_kg_dia > 0) ? Math.round(kgTotal / d.velocidad_kg_dia) : 0;
+      let avisoLote = '';
+      if (d.lote_calculado) {
+        avisoLote = '<div style="background:#fef3c7;color:#92400e;border-left:3px solid #f59e0b;padding:6px 10px;border-radius:5px;font-size:11px;font-weight:600;margin-top:8px">⚠ lote_size_kg en BD = ' + d.lote_bulk_kg_bd + ' kg (absurdo) · usando ' + d.lote_bulk_kg + ' kg calculado (~30d cobertura) · arreglá en formula_headers.lote_size_kg vía /api/admin/lote-size-fix</div>';
+      }
+      if (d.ml_inferido) {
+        avisoLote += '<div style="background:#fef3c7;color:#92400e;border-left:3px solid #f59e0b;padding:6px 10px;border-radius:5px;font-size:11px;font-weight:600;margin-top:6px">⚠ ml inferido por nombre · agregá envase en producto_presentaciones para precisión</div>';
+      }
       document.getElementById('mp-cobertura').innerHTML =
         '📅 <strong>' + fechas.length + '</strong> lote(s) en el horizonte · ' +
         '<strong>' + nuevas.length + '</strong> nuevo(s) por crear · ' +
         '<strong>' + ya.length + '</strong> ya programado(s)<br>' +
-        '🎯 Total <strong>' + kgTotal.toFixed(1) + ' kg</strong> · te alcanzará para <strong>~' + diasCob + ' días</strong> (~' + (diasCob/30).toFixed(1) + ' meses)';
+        '🎯 Total <strong>' + kgTotal.toFixed(1) + ' kg</strong> · te alcanzará para <strong>~' + diasCob + ' días</strong> (~' + (diasCob/30).toFixed(1) + ' meses)' +
+        avisoLote;
       // Tabla
       let html = '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f1f5f9;color:#475569"><th style="padding:8px;text-align:left">#</th><th style="padding:8px;text-align:left">Fecha</th><th style="padding:8px;text-align:right">Kg</th><th style="padding:8px;text-align:right">En</th><th style="padding:8px;text-align:left">Estado</th></tr></thead><tbody>';
       fechas.forEach((f, i) => {

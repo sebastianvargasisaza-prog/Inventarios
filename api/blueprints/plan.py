@@ -557,6 +557,89 @@ def cancelar_pedido_b2b(pid):
 
 # ─── Consolidador de necesidades ───────────────────────────────────────────
 
+@bp.route("/api/admin/lote-size-sospechoso", methods=["GET"])
+def admin_lote_size_sospechoso():
+    """FIX #2-b · 23-may-2026 Sebastián · AZ HIBRID CLEAR tenía lote_size_kg=0.1
+    causando 23 lotes diarios sugeridos. Lista productos con lote_size_kg < 1
+    para que admin los arregle.
+    """
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+    conn = get_db()
+    cur = conn.cursor()
+    rows = cur.execute(
+        """SELECT producto_nombre, COALESCE(lote_size_kg,0), COALESCE(unidad_base_g,0),
+                  COALESCE(activo,1), codigo_pt
+           FROM formula_headers
+           WHERE COALESCE(lote_size_kg,0) < 1
+             AND COALESCE(activo,1) = 1
+           ORDER BY producto_nombre""",
+    ).fetchall()
+    items = [{
+        'producto_nombre': r[0],
+        'lote_size_kg_actual': float(r[1] or 0),
+        'unidad_base_g_actual': float(r[2] or 0),
+        'codigo_pt': r[4] or '',
+        'sugerido_kg': round((r[2] or 0) / 1000.0, 2) if r[2] else None,
+    } for r in rows]
+    return jsonify({'ok': True, 'n': len(items), 'items': items})
+
+
+@bp.route("/api/admin/lote-size-fix", methods=["POST"])
+def admin_lote_size_fix():
+    """Actualiza formula_headers.lote_size_kg + unidad_base_g desde body.
+    Body: {producto_nombre: '...', lote_size_kg: 33}
+    Solo admin · audit log.
+    """
+    from config import ADMIN_USERS as _AU
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+    if user not in _AU:
+        return jsonify({'error': 'solo admin'}), 403
+    d = request.get_json(silent=True) or {}
+    producto = (d.get('producto_nombre') or '').strip()
+    try:
+        lote_kg = float(d.get('lote_size_kg') or 0)
+    except Exception:
+        return jsonify({'error': 'lote_size_kg debe ser número'}), 400
+    if not producto:
+        return jsonify({'error': 'producto_nombre requerido'}), 400
+    if lote_kg < 0.5 or lote_kg > 1000:
+        return jsonify({'error': 'lote_size_kg fuera de rango (0.5 - 1000)'}), 400
+    conn = get_db()
+    cur = conn.cursor()
+    row_old = cur.execute(
+        """SELECT lote_size_kg, unidad_base_g FROM formula_headers
+           WHERE UPPER(TRIM(producto_nombre)) = UPPER(TRIM(?))""",
+        (producto,),
+    ).fetchone()
+    if not row_old:
+        return jsonify({'error': f"producto '{producto}' no existe"}), 404
+    nuevo_g = lote_kg * 1000.0
+    cur.execute(
+        """UPDATE formula_headers
+           SET lote_size_kg = ?, unidad_base_g = ?
+           WHERE UPPER(TRIM(producto_nombre)) = UPPER(TRIM(?))""",
+        (lote_kg, nuevo_g, producto),
+    )
+    try:
+        audit_log(cur, usuario=user, accion='FIX_LOTE_SIZE_KG',
+                  tabla='formula_headers', registro_id=producto,
+                  antes={'lote_size_kg': float(row_old[0] or 0),
+                          'unidad_base_g': float(row_old[1] or 0)},
+                  despues={'lote_size_kg': lote_kg, 'unidad_base_g': nuevo_g})
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({'ok': True, 'producto_nombre': producto,
+                    'lote_size_kg_nuevo': lote_kg,
+                    'unidad_base_g_nuevo': nuevo_g})
+
+
 @bp.route("/api/clientes-b2b", methods=["GET"])
 def clientes_b2b_listar():
     """Lista clientes_b2b_maestro · Sebastián 23-may-2026 FIX #4.
@@ -1207,6 +1290,18 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
         pipeline_kg = pipeline_kg_por_prod.get(prod_nombre, 0.0)
         stock_kg_total = stock_kg_gondola + pipeline_kg
 
+        # FIX #2-b · 23-may-2026 Sebastián · AZ HIBRID CLEAR tenía
+        # lote_size_kg=0.1 en BD → modal planificador sugería 23 lotes
+        # de 0.1kg uno por día. Si lote_kg es absurdo (<1kg de bulk),
+        # calculamos un lote efectivo = velocidad × 30 días, con flag
+        # lote_calculado=true visible al usuario para que arregle BD.
+        lote_calculado = False
+        lote_kg_efectivo = float(lote_kg or 0)
+        if lote_kg_efectivo < 1.0 and velocidad_kg_dia > 0.01:
+            # ~30d de cobertura como lote estándar · mínimo 1kg
+            lote_kg_efectivo = max(round(velocidad_kg_dia * 30, 1), 1.0)
+            lote_calculado = True
+
         # Días de cobertura
         if velocidad_kg_dia > 0:
             dias_cobertura = round(stock_kg_total / velocidad_kg_dia, 1)
@@ -1252,7 +1347,7 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
         # Para VIGILAR mostramos "próximo lote en X días" sin urgir
         if urgencia in ("CRITICO", "URGENTE"):
             n_lotes_recomendados = 1
-            kg_a_producir = float(lote_kg)
+            kg_a_producir = float(lote_kg_efectivo)
         else:
             n_lotes_recomendados = 0
             kg_a_producir = 0.0
@@ -1266,7 +1361,10 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
             "codigo_pt": codigo,
             "producto_nombre": prod_nombre,
             "imagen_url": imagen,
-            "lote_bulk_kg": float(lote_kg or 0),
+            "lote_bulk_kg": lote_kg_efectivo,
+            "lote_bulk_kg_bd": float(lote_kg or 0),  # valor crudo BD para diagnóstico
+            "lote_calculado": lote_calculado,  # True = ignoramos BD por absurdo
+
             "tiene_10ml": int(tiene_10ml or 0),
             "uds_10ml_por_lote": int(uds_10ml or 0),
             "tipo_10ml": tipo_10ml or "",
@@ -1279,7 +1377,7 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
             "velocidad_kg_dia": round(velocidad_kg_dia, 3),
             "ml_unidad": ml_promedio,
             "ml_inferido": ml_inferido,  # FIX #2 · True = heurística por nombre, no SKU real
-            "lote_size_faltante": float(lote_kg or 0) <= 0,  # FIX #2 · lote_size_kg sin definir
+            "lote_size_faltante": float(lote_kg or 0) < 1.0,  # FIX #2-b · BD tiene valor absurdo o falta
             "dias_cobertura": dias_cobertura,
             "urgencia": urgencia,
             "n_lotes_recomendados": n_lotes_recomendados,
@@ -4790,8 +4888,11 @@ def _auto_programar_sugeridas(conn, dias_horizonte=90, ventana_velocidad=60,
 
             if not prod:
                 continue
-            if lote_kg <= 0:
-                saltados.append({'producto': prod, 'razon': 'sin lote_bulk_kg en maestro_animus_dtc'})
+            if lote_kg < 1.0:
+                # FIX #2-b 23-may · lote_size_kg absurdo (< 1 kg de bulk) ·
+                # NO auto-programar · arreglar en /api/admin/lote-size-fix
+                saltados.append({'producto': prod,
+                                  'razon': f'lote_size_kg={lote_kg} absurdo · fix en admin'})
                 continue
             if vel <= 0:
                 saltados.append({'producto': prod, 'razon': 'sin velocidad de venta'})
@@ -5106,6 +5207,9 @@ def plan_sugerir_preview():
             'producto': prod,
             'velocidad_kg_dia': vel,
             'lote_bulk_kg': lote_kg,
+            'lote_bulk_kg_bd': float(p.get('lote_bulk_kg_bd') or 0),
+            'lote_calculado': bool(p.get('lote_calculado')),
+            'ml_inferido': bool(p.get('ml_inferido')),
             'dur_lote_dias': dur_lote,
             'paso_dias': paso,
             'cob_alerta_dias': ca,

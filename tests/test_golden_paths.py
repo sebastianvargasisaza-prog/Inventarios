@@ -10259,6 +10259,59 @@ def test_golden_plan_limpiar_sugeridas_futuras(app, db_clean):
     assert rows_fij and rows_fij[0][0] == 'pendiente'  # NO se tocó
 
 
+def test_golden_admin_lote_size_sospechoso(app, db_clean):
+    """FIX #2-b · 23-may-2026 · AZ HIBRID CLEAR tenía lote_size_kg=0.1
+    causando sugerencias de 23 lotes diarios. Endpoint diagnóstico + fix.
+    """
+    # Setup · producto con lote_size_kg absurdo
+    _exec("DELETE FROM formula_headers WHERE producto_nombre='TEST_LOTE_ABSURDO'")
+    _exec("""INSERT INTO formula_headers (producto_nombre, lote_size_kg,
+              unidad_base_g, activo)
+             VALUES ('TEST_LOTE_ABSURDO', 0.1, 100, 1)""")
+
+    # 401 sin sesión
+    cs_no = app.test_client()
+    r_no = cs_no.get('/api/admin/lote-size-sospechoso')
+    assert r_no.status_code == 401
+
+    cs = _login(app, 'sebastian')
+    r = cs.get('/api/admin/lote-size-sospechoso')
+    assert r.status_code == 200, r.data
+    d = r.get_json()
+    assert d['ok'] is True
+    items = [it for it in d['items'] if it['producto_nombre'] == 'TEST_LOTE_ABSURDO']
+    assert items, 'BUG: producto con lote 0.1 debe aparecer'
+    assert items[0]['lote_size_kg_actual'] == 0.1
+
+    # POST fix · admin puede arreglar
+    r2 = cs.post('/api/admin/lote-size-fix', json={
+        'producto_nombre': 'TEST_LOTE_ABSURDO',
+        'lote_size_kg': 33,
+    }, headers=csrf_headers())
+    assert r2.status_code == 200, r2.data
+    d2 = r2.get_json()
+    assert d2['lote_size_kg_nuevo'] == 33
+    assert d2['unidad_base_g_nuevo'] == 33000
+
+    # Verificar BD actualizada
+    row = _query("""SELECT lote_size_kg, unidad_base_g FROM formula_headers
+                    WHERE producto_nombre='TEST_LOTE_ABSURDO'""")
+    assert row and row[0][0] == 33 and row[0][1] == 33000
+
+    # Validaciones
+    r_bad1 = cs.post('/api/admin/lote-size-fix',
+                     json={'producto_nombre': 'TEST_LOTE_ABSURDO', 'lote_size_kg': 0.1},
+                     headers=csrf_headers())
+    assert r_bad1.status_code == 400
+    r_bad2 = cs.post('/api/admin/lote-size-fix',
+                     json={'producto_nombre': 'NO_EXISTE', 'lote_size_kg': 10},
+                     headers=csrf_headers())
+    assert r_bad2.status_code == 404
+
+    # Cleanup
+    _exec("DELETE FROM formula_headers WHERE producto_nombre='TEST_LOTE_ABSURDO'")
+
+
 def test_golden_clientes_b2b_crud(app, db_clean):
     """FIX #4 · Sebastián 23-may-2026 · tabla maestra clientes_b2b_maestro.
     Antes el cliente era derivado de DISTINCT pedidos_b2b.cliente_id ·
