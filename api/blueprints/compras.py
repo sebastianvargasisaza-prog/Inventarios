@@ -4495,6 +4495,28 @@ def recibir_oc(numero_oc):
                         'codigo_mp': codigo, 'lote_asignado': lote_final,
                         'advertencia': 'Lote sintético · pedir lote real al proveedor para trazabilidad CoA/INVIMA',
                     })
+                # AUDITORÍA-FIX 23-may-2026 · C20 · check duplicado lote_proveedor
+                # mismo (lote_proveedor, proveedor, material_id) en distinta OC
+                # = banderazo · INVIMA exige unicidad trazable
+                if lote_proveedor and codigo:
+                    try:
+                        dup_row = cur.execute(
+                            """SELECT numero_oc FROM movimientos
+                               WHERE lote_proveedor=? AND material_id=?
+                                 AND COALESCE(proveedor,'')=COALESCE(?,'')
+                                 AND numero_oc != ?
+                               LIMIT 1""",
+                            (lote_proveedor, codigo, prov_nombre, numero_oc),
+                        ).fetchone()
+                        if dup_row:
+                            lotes_sinteticos_advertencia.append({
+                                'codigo_mp': codigo,
+                                'lote_proveedor': lote_proveedor,
+                                'advertencia': f'⚠ Lote proveedor {lote_proveedor} ya existe en OC {dup_row[0]} · verificar duplicado físico',
+                            })
+                    except sqlite3.OperationalError:
+                        pass
+
                 # Fase 2 · INVIMA · INSERT con campos COA/lote_proveedor (mig 151)
                 # Si la columna no existe (mig no aplicó), cae a INSERT legacy
                 _coa_ok = False
@@ -8441,14 +8463,30 @@ def _scorecard_proveedor_dict(c, nombre_prov):
         out['monto_12m'] = 0
         out['cumplimiento_pct'] = 0
     # 2. on_time_pct
+    # AUDITORÍA-FIX 23-may-2026 · C19 · antes usaba 30 días hardcoded
+    # · ahora compara contra el lead_time real de cada MP en
+    # mp_lead_time_config (aprendido por EWMA en recibir_oc) · proveedor
+    # con lead_time 7d ya no aparece "100% on-time" llegando a 25d
     try:
+        # Por cada OC, calcular si llegó dentro del lead_time real (max de
+        # sus items) · MAX porque la OC se considera on-time solo si TODOS
+        # sus items hubieran podido llegar a tiempo
         r = c.execute(
-            """SELECT COUNT(*),
-                      SUM(CASE WHEN julianday(fecha_recepcion) - julianday(fecha) <= 30 THEN 1 ELSE 0 END)
-               FROM ordenes_compra
-               WHERE LOWER(TRIM(proveedor))=LOWER(TRIM(?))
-                 AND fecha_recepcion IS NOT NULL AND fecha_recepcion != ''
-                 AND date(fecha) >= date('now','-5 hours','-365 days')""",
+            """SELECT COUNT(*) AS total,
+                      SUM(CASE
+                          WHEN julianday(oc.fecha_recepcion) - julianday(oc.fecha) <=
+                               COALESCE((
+                                  SELECT MAX(COALESCE(mlt.lead_time_dias, 14))
+                                  FROM ordenes_compra_items oci
+                                  LEFT JOIN mp_lead_time_config mlt ON mlt.material_id = oci.codigo_mp
+                                  WHERE oci.numero_oc = oc.numero_oc
+                               ), 30)
+                          THEN 1 ELSE 0
+                      END) AS on_time
+               FROM ordenes_compra oc
+               WHERE LOWER(TRIM(oc.proveedor))=LOWER(TRIM(?))
+                 AND oc.fecha_recepcion IS NOT NULL AND oc.fecha_recepcion != ''
+                 AND date(oc.fecha) >= date('now','-5 hours','-365 days')""",
             (nombre_prov,),
         ).fetchone()
         total_recibidas = int((r or [0,0])[0] or 0)

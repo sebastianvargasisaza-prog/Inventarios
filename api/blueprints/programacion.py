@@ -3939,12 +3939,16 @@ def planta_centro_mando():
                 WHERE id=?
             """, (pid,))
             auto_canceladas_inicial += 1
+            # AUDITORÍA-FIX 23-may-2026 · C16 · liberar SOLs Pre-Prod
+            _sols_lib = _liberar_sols_pre_produccion(
+                _ac, pid, motivo='Producción auto-cancelada Centro Mando')
             try:
                 audit_log(_ac, usuario='sistema_centro_mando_auto_clean',
                           accion='AUTO_CANCELAR_PRODUCCION',
                           tabla='produccion_programada', registro_id=pid,
                           despues={'razon': 'estricto Calendar-first · sin match',
-                                   'producto': prod, 'fecha': fecha})
+                                   'producto': prod, 'fecha': fecha,
+                                   'sols_liberadas': _sols_lib})
             except Exception as _e:
                 logging.getLogger('programacion').warning(
                     f'[centro-mando auto-clean] audit fallo id={pid}: {_e}')
@@ -4565,11 +4569,14 @@ def limpiar_db_sin_calendar():
                 WHERE id=?
             """, (user, pid))
             canceladas += 1
+            # AUDITORÍA-FIX 23-may-2026 · C16
+            _sls = _liberar_sols_pre_produccion(c, pid, motivo='Producción cancelada por limpieza Calendar-first')
             try:
                 audit_log(c, usuario=user, accion='AUTO_CANCELAR_PRODUCCION',
                           tabla='produccion_programada', registro_id=pid,
                           despues={'razon': 'limpieza · sin match Calendar',
-                                   'producto': prod, 'fecha': f})
+                                   'producto': prod, 'fecha': f,
+                                   'sols_liberadas': _sls})
             except Exception:
                 pass
         except Exception:
@@ -13093,6 +13100,44 @@ def auto_asignar_hoy_bulk():
             f'audit AUTO_ASIGNAR_HOY_BULK fallo: {_e}')
     return jsonify({'ok': True, 'asignadas': asignadas, 'total': len(rows),
                     'fallidas': fallidas, 'detalles': detalles[:30]})
+
+
+def _liberar_sols_pre_produccion(c, produccion_id, motivo='Producción cancelada'):
+    """Helper · AUDITORÍA-FIX 23-may-2026 · C16
+    Cuando se cancela una producción, las SOLs Pre-Producción que se crearon
+    para esa producción específica deben cancelarse para evitar que Catalina
+    apruebe compras para producción que ya no existe.
+
+    Returns: lista de números de SOLs liberadas (para audit_log).
+    """
+    sols_liberadas = []
+    try:
+        rows = c.execute(
+            """SELECT DISTINCT solicitud_numero
+               FROM produccion_checklist
+               WHERE produccion_id=? AND COALESCE(solicitud_numero,'') != ''""",
+            (produccion_id,),
+        ).fetchall()
+        for r in rows:
+            num = r[0] if r and r[0] else None
+            if not num:
+                continue
+            try:
+                c.execute(
+                    """UPDATE solicitudes_compra
+                       SET estado='Cancelada',
+                           observaciones = COALESCE(observaciones,'') ||
+                                          ' | ' || ?
+                       WHERE numero=? AND estado IN ('Pendiente','Aprobada')""",
+                    (motivo + f' (id={produccion_id})', num),
+                )
+                if c.rowcount > 0:
+                    sols_liberadas.append(num)
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return sols_liberadas
 
 
 def _auto_asignar_produccion(c, produccion_id, user='auto-ia'):
