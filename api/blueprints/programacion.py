@@ -15,7 +15,7 @@ Dependencias de env:
   ANTHROPIC_API_KEY — para narrativa IA
 """
 
-from flask import Blueprint, jsonify, request, session
+from flask import Blueprint, g, jsonify, request, session
 from database import db_connect
 import os, json, logging, sqlite3, urllib.request, urllib.error, urllib.parse
 from datetime import datetime, timedelta, date, timezone
@@ -691,6 +691,16 @@ def _get_mp_stock(conn):
     Pass 2 – collect all (material_id, material_nombre) pairs; map every name
              to the canonical stock for that material_id.
     """
+    # PERF-FIX 23-may-2026 · auditoría · función pesada (3 full-scans sobre
+    # movimientos) llamada 11+ veces por request en dashboards de planta ·
+    # memoizar en flask.g por request (válido solo durante el request actual)
+    try:
+        cached = getattr(g, '_mp_stock_cache', None)
+        if cached is not None:
+            return cached
+    except RuntimeError:
+        # Sin contexto de request (cron job) · no memoizar
+        pass
     # INVIMA-FIX · 22-may-2026 · ABASTECIMIENTO ZERO-ERROR (#2 + #3 audit 22-may)
     # · ANTES: SUM no excluía CUARENTENA/RECHAZADO/VENCIDO → planificación
     #   creía stock disponible y NO recomendaba compra → paro producción.
@@ -787,6 +797,11 @@ def _get_mp_stock(conn):
     except Exception:
         pass  # bridge table may not exist in older DB snapshots
 
+    # PERF-FIX 23-may-2026 · memoizar para el resto del request
+    try:
+        g._mp_stock_cache = stock
+    except RuntimeError:
+        pass  # sin contexto de request
     return stock
 
 # ─── Formula lookup ──────────────────────────────────────────────────────────
@@ -3856,7 +3871,11 @@ def planta_centro_mando():
                 _calendar_events_cached as _cec,
                 _match_producto_evento as _mpe,
             )
-            cal_events = _cec(force_refresh=True) or []
+            # PERF-FIX 23-may-2026 · auditoría · era force_refresh=True que
+            # bypaseaba cache de 60s · auto-refresh frontend (cada 30s) +
+            # cleanup loop sincrono = 2-5s por request · ahora usa cache
+            # · cleanup completo lo hace el cron diario auto_reparar_huerfanas
+            cal_events = _cec(force_refresh=False) or []
             skus_aliases = {}
             for sku_n, alias_csv in _ac.execute("""
                 SELECT producto_nombre, COALESCE(alias_calendar,'')

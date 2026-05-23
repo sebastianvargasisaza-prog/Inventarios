@@ -975,12 +975,16 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
     # resolved_stock: {sku_upper: {descripcion, uds, fuente}}
 
     # 4. Ventas por SKU últimos N días
+    # PERF-FIX 23-may-2026 · auditoría · `date(creado_en) >= ?` con función
+    # wrapper bloquea uso de idx_aso_creado en PG · ahora comparación directa
+    # contra timestamp · index usable
     ventas_por_sku = {}
+    _vd_iso = ventana_desde + 'T00:00:00' if 'T' not in ventana_desde else ventana_desde
     for r in c.execute(
         """SELECT sku_items FROM animus_shopify_orders
-           WHERE date(creado_en) >= ?
+           WHERE creado_en >= ?
              AND sku_items IS NOT NULL AND sku_items != ''""",
-        (ventana_desde,),
+        (_vd_iso,),
     ).fetchall():
         try:
             items = _json.loads(r[0]) if r[0] else []
@@ -1153,8 +1157,12 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
         })
 
     # Stock MP por material_id · SUM(movimientos)
+    # PERF-FIX 23-may-2026 · auditoría · antes agregaba TODOS los movimientos
+    # (100k+ filas) pero solo se usan ~40-80 MPs de productos activos · ahora
+    # restringe con WHERE material_id IN (subquery de formula_items activos) ·
+    # PG usa idx_mov_material_id + idx_fi_material_id (mig 152)
     mp_stock_g = {}
-    mp_tiene_movimientos = set()  # set de material_id con al menos 1 movimiento
+    mp_tiene_movimientos = set()
     for r in c.execute(
         """SELECT material_id,
                   COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA')
@@ -1162,6 +1170,14 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
                   COUNT(*) AS n_mov
            FROM movimientos
            WHERE material_id IS NOT NULL AND TRIM(material_id) != ''
+             AND material_id IN (
+                 SELECT DISTINCT fi.material_id
+                 FROM formula_items fi
+                 JOIN formula_headers fh ON fh.producto_nombre = fi.producto_nombre
+                 WHERE COALESCE(fh.activo,1) = 1
+                   AND fi.material_id IS NOT NULL
+                   AND TRIM(fi.material_id) != ''
+             )
            GROUP BY material_id""",
     ).fetchall():
         mid = str(r[0]).strip()

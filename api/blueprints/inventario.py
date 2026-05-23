@@ -3914,21 +3914,44 @@ def alertas_reabastecimiento():
     # · Antes: alertas crónicas para MPs ya en cola · ruido en dashboard
     # · Ahora: muestra 'en_cola_g' · deficit considera cola · alerta solo si
     #   stock+cola aún no cubre mínimo
+    # PERF-FIX 23-may-2026 · auditoría · antes _pendiente_en_compras_g se
+    # llamaba por cada alerta (50 alertas × 2 SELECTs = 100 round-trips PG) ·
+    # ahora precomputamos un dict {codigo_mp: pendiente_g} con 2 queries
+    # agregadas (usa indexes idx_sci_codigo_mp + idx_oci_codigo_mp · mig 152)
+    pendientes_dict = {}
     try:
-        from blueprints.compras import _pendiente_en_compras_g
+        for cm, g_pend in c.execute(
+            """SELECT sci.codigo_mp, COALESCE(SUM(sci.cantidad_g), 0)
+               FROM solicitudes_compra_items sci
+               JOIN solicitudes_compra sc ON sc.numero = sci.numero
+               WHERE sc.estado IN ('Pendiente','Aprobada')
+                 AND COALESCE(sc.numero_oc,'') = ''
+                 AND sci.codigo_mp IS NOT NULL AND TRIM(sci.codigo_mp) != ''
+               GROUP BY sci.codigo_mp"""
+        ).fetchall():
+            pendientes_dict[str(cm).strip()] = float(g_pend or 0)
     except Exception:
-        _pendiente_en_compras_g = None
+        pass
+    try:
+        for cm, g_pend in c.execute(
+            """SELECT oci.codigo_mp,
+                      COALESCE(SUM(oci.cantidad_g - COALESCE(oci.cantidad_recibida_g,0)), 0)
+               FROM ordenes_compra_items oci
+               JOIN ordenes_compra oc ON oc.numero_oc = oci.numero_oc
+               WHERE oc.estado IN ('Borrador','Revisada','Autorizada','Parcial')
+                 AND oci.codigo_mp IS NOT NULL AND TRIM(oci.codigo_mp) != ''
+               GROUP BY oci.codigo_mp"""
+        ).fetchall():
+            k = str(cm).strip()
+            pendientes_dict[k] = pendientes_dict.get(k, 0.0) + float(g_pend or 0)
+    except Exception:
+        pass
     alertas = []
     for r in list(rows_mp) + list(rows_mee):
         stock_actual = round(r[4] or 0, 1)
         stock_minimo = round(r[3], 1)
         cod = r[0] or ''
-        en_cola_g = 0
-        if _pendiente_en_compras_g and cod:
-            try:
-                en_cola_g = round(_pendiente_en_compras_g(c, cod), 1)
-            except Exception:
-                en_cola_g = 0
+        en_cola_g = round(pendientes_dict.get(str(cod).strip(), 0.0), 1) if cod else 0
         deficit_neto = round(max(stock_minimo - stock_actual - en_cola_g, 0), 1)
         alertas.append({'codigo_mp': cod, 'nombre': r[1] or '', 'proveedor': r[2] or '',
                         'stock_minimo': stock_minimo, 'stock_actual': max(stock_actual, 0),
