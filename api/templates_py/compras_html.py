@@ -228,6 +228,7 @@ async function cxIAPreguntar(pregunta){
     <button class="tn"      data-tab="consol" id="tn-consol" title="OCs activas (Borrador/Revisada/Autorizada) agrupadas por proveedor">📦 OCs Activas <span style="font-size:9px;background:#cbd5e1;color:#475569;padding:1px 5px;border-radius:6px;margin-left:2px;font-weight:600">activas</span></button>
     <button class="tn"      data-tab="por-pagar" id="tn-por-pagar" title="Pendientes · OCs autorizadas sin pagar">💰 Por Pagar</button>
     <button class="tn"      data-tab="pagos" id="tn-pagos" title="Histórico · pagos ya ejecutados">💸 Pagos</button>
+    <button class="tn"      data-tab="atrasadas" id="tn-atrasadas" title="OCs sin recibir tras lead_time + buffer · Sebastián 23-may">🚨 Atrasadas <span id="atrasadas-badge" style="display:none;background:#dc2626;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
     <!-- Sebastián 21-may-2026 · Órdenes de Servicio (serigrafía/tampografía) -->
     <button class="tn"      data-tab="ordserv" id="tn-ordserv" title="Órdenes de Servicio · serigrafía, tampografía, etiquetado">🎨 Órdenes de Servicio</button>
   </span>
@@ -596,6 +597,26 @@ async function cxIAPreguntar(pregunta){
     <div id="por-pagar-merc-list" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px;">
       <div style="color:#94a3b8;text-align:center;padding:20px;">Cargando...</div>
     </div>
+  </div>
+</div>
+
+<!-- ════════════ TAB: ATRASADAS · Sebastián 23-may-2026 ════════════ -->
+<!-- OCs Autorizada/Parcial sin recibir tras lead_time+buffer · cierre flujo -->
+<div id="pane-atrasadas" class="pane">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
+    <div>
+      <h2 style="margin:0;font-size:18px;color:#1e293b;">&#x1F6A8; OCs atrasadas</h2>
+      <div style="font-size:12px;color:#64748b;margin-top:2px;">
+        OCs Autorizada/Parcial sin recibir tras
+        <input type="number" id="atrasadas-buffer" value="7" min="0" max="90" style="width:50px;padding:2px 6px;border:1px solid #cbd5e1;border-radius:4px;font-size:12px" onchange="cargarOcsAtrasadas()"> d&iacute;as de buffer sobre el lead_time del proveedor
+      </div>
+    </div>
+    <button class="btn bp" onclick="cargarOcsAtrasadas()" style="padding:6px 14px;font-size:12px;">&#x21BA; Actualizar</button>
+  </div>
+
+  <div id="atrasadas-resumen" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;font-size:12px;color:#475569"></div>
+  <div id="atrasadas-contenido" style="background:white;border:1px solid #e2e8f0;border-radius:10px;overflow-x:auto">
+    <div style="text-align:center;color:#94a3b8;padding:30px">Click &#x21BA; Actualizar para cargar</div>
   </div>
 </div>
 
@@ -1322,6 +1343,7 @@ document.querySelectorAll('.tn').forEach(function(btn){
     else if(tab==='consol') loadConsolidado();
     else if(tab==='pagos'){ loadPagos(); }
     else if(tab==='por-pagar'){ loadPorPagar(); }
+    else if(tab==='atrasadas'){ cargarOcsAtrasadas(); }
     else if(tab==='alertas'){ loadAlertasCompras(); }
     else if(tab==='solprod'){ loadSolicitudesProduccion(); }
     else if(tab==='mis-sol'){ loadMisSolicitudes(); }
@@ -7147,6 +7169,87 @@ async function payOC(numero_oc){
 
   openModal('m-pago');
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// Tab "Atrasadas" · Sebastián 23-may-2026 · cierre flujo Compras
+// OCs Autorizada/Parcial sin recibir tras lead_time + buffer
+// ═══════════════════════════════════════════════════════════════════
+async function cargarOcsAtrasadas(){
+  var div = document.getElementById('atrasadas-contenido');
+  var resumen = document.getElementById('atrasadas-resumen');
+  var bufferEl = document.getElementById('atrasadas-buffer');
+  var buffer = bufferEl ? parseInt(bufferEl.value, 10) : 7;
+  if(isNaN(buffer) || buffer < 0) buffer = 7;
+  div.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:30px">Cargando…</div>';
+  resumen.innerHTML = '';
+  try{
+    var r = await fetch('/api/compras/ocs-atrasadas?buffer_dias=' + buffer);
+    if(r.status === 401){ window.location.href = '/login'; return; }
+    if(!r.ok){
+      div.innerHTML = '<div style="color:#dc2626;padding:20px">Error HTTP ' + r.status + '</div>';
+      return;
+    }
+    var d = await r.json();
+    // Resumen
+    var n = d.total || 0;
+    resumen.innerHTML = '<span style="background:' + (n>0?'#fee2e2':'#dcfce7') + ';color:' + (n>0?'#991b1b':'#15803d') + ';padding:6px 12px;border-radius:8px;font-weight:700;font-size:13px">' +
+      (n>0 ? ('🚨 ' + n + ' OC(s) atrasada(s)') : '✓ Sin OCs atrasadas · todo al día') +
+      '</span>' +
+      '<span style="color:#64748b">Buffer ' + d.buffer_dias + 'd sobre lead_time del proveedor · medido hoy ' + d.hoy + '</span>';
+    // Badge en tab
+    var badge = document.getElementById('atrasadas-badge');
+    if(badge){
+      if(n > 0){ badge.style.display = 'inline-block'; badge.textContent = n; }
+      else { badge.style.display = 'none'; }
+    }
+    if(n === 0){
+      div.innerHTML = '<div style="text-align:center;color:#15803d;padding:30px;background:#f0fdf4">✓ Sin OCs atrasadas · todo al día</div>';
+      return;
+    }
+    // Tabla
+    var html = '<table style="width:100%;border-collapse:collapse;font-size:13px">';
+    html += '<thead><tr style="background:#f8fafc;color:#475569;border-bottom:1px solid #e2e8f0">';
+    html += '<th style="text-align:left;padding:10px 12px;font-weight:700">OC</th>';
+    html += '<th style="text-align:left;padding:10px 12px;font-weight:700">Proveedor</th>';
+    html += '<th style="text-align:left;padding:10px 12px;font-weight:700">Creador</th>';
+    html += '<th style="text-align:center;padding:10px 12px;font-weight:700">Estado</th>';
+    html += '<th style="text-align:right;padding:10px 12px;font-weight:700">Días OC</th>';
+    html += '<th style="text-align:right;padding:10px 12px;font-weight:700">Lead time</th>';
+    html += '<th style="text-align:right;padding:10px 12px;font-weight:700">Atraso</th>';
+    html += '<th style="text-align:right;padding:10px 12px;font-weight:700">Valor</th>';
+    html += '</tr></thead><tbody>';
+    function _esc(s){
+      if(s == null) return '';
+      return String(s).replace(/[&<>"\']/g, function(c){
+        return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+      });
+    }
+    function _fmtCop(n){
+      if(!n) return '—';
+      return '$' + Math.round(n).toLocaleString('es-CO');
+    }
+    (d.ocs || []).forEach(function(oc){
+      var sev = oc.dias_atraso > 30 ? '#fef2f2' : (oc.dias_atraso > 14 ? '#fff7ed' : '#fefce8');
+      var sevTc = oc.dias_atraso > 30 ? '#991b1b' : (oc.dias_atraso > 14 ? '#9a3412' : '#854d0e');
+      html += '<tr style="border-bottom:1px solid #f1f5f9;background:' + sev + '">';
+      html += '<td style="padding:8px 12px;font-family:ui-monospace;font-weight:700">' + _esc(oc.numero_oc) + '</td>';
+      html += '<td style="padding:8px 12px">' + _esc(oc.proveedor) + '</td>';
+      html += '<td style="padding:8px 12px;color:#64748b">' + _esc(oc.creador || '—') + '</td>';
+      html += '<td style="padding:8px 12px;text-align:center;font-size:11px;font-weight:700;color:' + (oc.estado==='Parcial'?'#9a3412':'#1e40af') + '">' + _esc(oc.estado) + '</td>';
+      html += '<td style="padding:8px 12px;text-align:right;font-family:ui-monospace">' + oc.dias_desde_oc + 'd</td>';
+      html += '<td style="padding:8px 12px;text-align:right;font-family:ui-monospace;color:#64748b">' + oc.lead_time_dias + 'd</td>';
+      html += '<td style="padding:8px 12px;text-align:right;font-family:ui-monospace;color:' + sevTc + ';font-weight:700">+' + oc.dias_atraso + 'd</td>';
+      html += '<td style="padding:8px 12px;text-align:right;font-family:ui-monospace">' + _fmtCop(oc.valor_total) + '</td>';
+      html += '</tr>';
+    });
+    html += '</tbody></table>';
+    html += '<div style="font-size:11px;color:#64748b;padding:10px 12px;background:#f8fafc;border-top:1px solid #e2e8f0">💡 <strong>Cómo leer:</strong> "Atraso" = días sobre el lead_time del proveedor + buffer. Rojo &gt;30d, naranja &gt;14d, amarillo el resto. El lead_time se aprende automáticamente con cada recepción completa (EWMA 70/30).</div>';
+    div.innerHTML = html;
+  }catch(e){
+    div.innerHTML = '<div style="color:#dc2626;padding:20px">Error red: ' + e.message + '</div>';
+  }
+}
+
 
 async function loadPorPagar(){
   try{

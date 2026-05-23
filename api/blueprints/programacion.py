@@ -8784,6 +8784,9 @@ def abastecimiento_consumo_bruto_excel():
     mp_color = '0891B2'
     mee_color = '7C3AED'
 
+    # AUDIT FIX 23-may · cursor para query de fecha última Fija
+    conn = get_db(); c = conn.cursor()
+
     # SHEET 1 · Consumo bruto
     ws = wb.create_sheet('Consumo bruto')
     fecha_str = _dt.now().strftime('%Y-%m-%d %H:%M')
@@ -8794,10 +8797,36 @@ def abastecimiento_consumo_bruto_excel():
     ws.cell(row=1, column=1).fill = title_fill
     ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=n_cols)
     ws.row_dimensions[1].height = 24
+    # AUDIT FIX 23-may · Sebastián confundido por celdas idénticas en
+    # horizontes lejanos · es comportamiento CORRECTO si todas las Fijas
+    # caen en días tempranos · acumulación temporal · agregar fecha de
+    # última Fija al subtítulo para que el usuario entienda
+    fecha_ultima_fija = None
+    try:
+        from datetime import datetime as _dtmf
+        r_ult = c.execute(
+            "SELECT MAX(fecha_programada) FROM produccion_programada "
+            "WHERE COALESCE(origen,'') IN ('eos_plan','eos_b2b','eos_retroactivo') "
+            "AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado') "
+            "AND COALESCE(inventario_descontado_at,'') = ''"
+        ).fetchone()
+        if r_ult and r_ult[0]:
+            fecha_ultima_fija = str(r_ult[0])[:10]
+    except Exception:
+        pass
+    aviso_modo = ''
+    if modo == 'comprometido':
+        if fecha_ultima_fija:
+            aviso_modo = (f' · ⚠ última Fija: {fecha_ultima_fija} · '
+                          'horizontes posteriores muestran el mismo total (no hay más actividad fija) · '
+                          'usá modo Run-rate para ver proyección por ventas')
+        else:
+            aviso_modo = ' · Sin Fijas en ventana · usá Run-rate'
     ws.cell(row=2, column=1, value=(
         f'{d.get("n_producciones_fijas", 0)} producciones Fijas · '
         f'{d.get("n_pedidos_b2b_pendientes", 0)} pedidos B2B pendientes · '
-        f'consumo total SIN restar inventario · MP en gramos · MEE en unidades'
+        f'consumo acumulativo desde hoy · MP en gramos · MEE en unidades'
+        + aviso_modo
     ))
     ws.cell(row=2, column=1).font = Font(size=10, italic=True, color='6B7280')
     ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=n_cols)
