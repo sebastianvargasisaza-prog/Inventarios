@@ -4486,6 +4486,129 @@ def alertas_ventas():
     })
 
 
+def _auto_programar_sugeridas(conn, dias_horizonte=90, ventana_velocidad=60,
+                                  cob_critico=20, cob_alerta=25, cob_vigilar=45,
+                                  usuario='cron-auto-sugerir'):
+    """Sebastián 23-may-2026 · 'el sistema calcula próxima producción pero
+    no la coloca · se pierde la sugerencia'.
+
+    Para cada producto con velocidad de venta:
+      - Calcula proxima_sugerida_fecha (último_lote + duración - cob_alerta)
+      - Si la fecha cae en próximos `dias_horizonte` días
+      - Y NO hay ya lote programado para ese producto en ventana [sug-7d, sug+7d]
+      - Inserta producción Sugerida (origen='eos_canonico') con cantidad_kg = lote_bulk_kg
+
+    Devuelve lista de creados. Llamado por cron diario y endpoint manual.
+    """
+    from datetime import date as _date2, timedelta as _td2
+    productos = _calcular_animus_dtc(conn.cursor(), ventana=ventana_velocidad,
+                                       cob_critico=cob_critico,
+                                       cob_alerta=cob_alerta,
+                                       cob_vigilar=cob_vigilar)
+    hoy = _hoy_colombia()
+    creados = []
+    saltados = []
+    cur = conn.cursor()
+    for p in (productos or []):
+        if True:
+            psf = p.get('proxima_sugerida_fecha')
+            lote_kg = float(p.get('lote_bulk_kg') or 0)
+            prod = p.get('producto_nombre') or ''
+            if not psf or lote_kg <= 0 or not prod:
+                continue
+            try:
+                f_sug = _date2.fromisoformat(str(psf)[:10])
+            except Exception:
+                continue
+            dias_hasta = (f_sug - hoy).days
+            if dias_hasta < 0 or dias_hasta > dias_horizonte:
+                continue
+            # Buscar ya programado en ventana ±7d
+            try:
+                fdesde = (f_sug - _td2(days=7)).isoformat()
+                fhasta = (f_sug + _td2(days=7)).isoformat()
+                existing = cur.execute(
+                    """SELECT COUNT(*) FROM produccion_programada
+                       WHERE UPPER(TRIM(producto))=UPPER(TRIM(?))
+                         AND substr(fecha_programada,1,10) BETWEEN ? AND ?
+                         AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado')
+                         AND inventario_descontado_at IS NULL""",
+                    (prod, fdesde, fhasta),
+                ).fetchone()
+                if existing and int(existing[0] or 0) > 0:
+                    saltados.append({'producto': prod, 'fecha': psf,
+                                     'razon': 'ya hay lote programado ±7d'})
+                    continue
+            except Exception:
+                continue
+            # INSERT con origen Sugerido · respeta modelo Fijo vs Sugerido
+            try:
+                cur.execute(
+                    """INSERT INTO produccion_programada
+                       (producto, fecha_programada, cantidad_kg, lotes,
+                        estado, origen, observaciones)
+                       VALUES (?, ?, ?, 1, 'pendiente', 'eos_canonico', ?)""",
+                    (prod, f_sug.isoformat(), lote_kg,
+                     f'Auto-sugerido · cobertura {p.get("dias_cobertura","?")}d · '
+                     f'velocidad {p.get("velocidad_kg_dia","?")} kg/día'),
+                )
+                creados.append({
+                    'producto': prod,
+                    'fecha': psf,
+                    'cantidad_kg': lote_kg,
+                    'urgencia': p.get('urgencia'),
+                })
+                try:
+                    audit_log(cur, usuario=usuario, accion='AUTO_PROGRAMAR_SUGERIDA',
+                              tabla='produccion_programada', registro_id='',
+                              despues={
+                                  'producto': prod,
+                                  'fecha': psf,
+                                  'cantidad_kg': lote_kg,
+                                  'urgencia': p.get('urgencia'),
+                                  'razon': 'velocidad + cob_alerta',
+                              })
+                except Exception:
+                    pass
+            except Exception as e:
+                saltados.append({'producto': prod, 'fecha': psf, 'razon': str(e)[:100]})
+    if creados:
+        conn.commit()
+    return {'creados': creados, 'saltados': saltados,
+            'n_creados': len(creados), 'n_saltados': len(saltados)}
+
+
+@bp.route("/api/plan/auto-programar-sugeridas", methods=["POST"])
+def plan_auto_programar_sugeridas():
+    """Endpoint manual para disparar auto-programación de Sugeridas.
+
+    Body opcional: {dias_horizonte: 90, cob_critico: 20, cob_alerta: 25}
+    Sebastián 23-may-2026 · cierra el bucle "el sistema calcula pero
+    no programa".
+    """
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+    d = request.get_json(silent=True) or {}
+    try:
+        dh = max(7, min(int(d.get('dias_horizonte', 90)), 365))
+    except Exception:
+        dh = 90
+    try:
+        cc = int(d.get('cob_critico', 20))
+        ca = int(d.get('cob_alerta', 25))
+        cv = int(d.get('cob_vigilar', 45))
+    except Exception:
+        cc, ca, cv = 20, 25, 45
+    conn = get_db()
+    resultado = _auto_programar_sugeridas(
+        conn, dias_horizonte=dh, cob_critico=cc, cob_alerta=ca,
+        cob_vigilar=cv, usuario=user,
+    )
+    return jsonify({'ok': True, **resultado})
+
+
 @bp.route("/api/plan/regenerar-canonicos", methods=["POST"])
 def regenerar_canonicos():
     """Lee producto_canonico_config y regenera lotes próximos 365d.

@@ -670,6 +670,10 @@ JOBS_SCHEDULE = [
     # ⭐ Compras · diario 8:45 · alerta OCs atrasadas (lead_time excedido)
     # Sebastián 23-may-2026 · cierre flujo · "generar alerta de lo que no llega"
     ('ocs_atrasadas',         8, 45, None, None,                'job_ocs_atrasadas'),
+    # ⭐ Planta · diario 5:00 · auto-programar Sugeridas en calendario
+    # Sebastián 23-may-2026 · "el sistema calcula próxima producción
+    # pero no la coloca · se pierde la sugerencia · que sea eficiente"
+    ('auto_programar_sugeridas', 5, 0, None, None,              'job_auto_programar_sugeridas'),
 ] + [
     (f'watcher_health_{h:02d}', h, 7, None, None, 'job_watcher_health')
     for h in range(24)
@@ -3730,6 +3734,50 @@ def job_pqr_sla_vencido(app):
         except Exception as _e:
             log.warning('pqr_sla notif fallo: %s', _e)
         return True, {'pqr_vencidos': len(rows)}, 0
+
+
+def job_auto_programar_sugeridas(app):
+    """Sebastián 23-may-2026 · cron diario 5:00 AM · auto-programar
+    producciones Sugeridas en el calendario.
+
+    Cierra el bucle: el sistema ya calculaba 'próxima producción sugerida'
+    pero solo lo mostraba como texto · no aparecía en calendario · se
+    perdía la inteligencia.
+
+    Para cada producto Animus DTC con velocidad de venta:
+      - Calcula proxima_sugerida_fecha (último + duración - cob_alerta)
+      - Si cae en próximos 90d y NO hay lote ±7d, crea producción
+        Sugerida (origen='eos_canonico') · usuario puede arrastrar
+        para fijarla
+    """
+    with app.app_context():
+        from database import get_db as _gdb
+        from blueprints.plan import _auto_programar_sugeridas as _aps
+        try:
+            conn = _gdb()
+            resultado = _aps(conn, dias_horizonte=90,
+                             cob_critico=20, cob_alerta=25, cob_vigilar=45,
+                             usuario='cron-auto-sugerir')
+        except Exception as e:
+            return False, {'error': f'auto-programar fallo: {e}'}, 0
+        n_cr = resultado.get('n_creados', 0)
+        if n_cr > 0:
+            try:
+                from blueprints.notif import push_notif_multi
+                from config import ADMIN_USERS as _AU
+                push_notif_multi(
+                    [u.lower() for u in _AU], 'plan_auto',
+                    f'🤖 {n_cr} producción(es) Sugerida(s) creada(s) automáticamente',
+                    body='\n'.join(
+                        f'  · {c["producto"]} · {c["fecha"]} · {c["cantidad_kg"]}kg ({c["urgencia"]})'
+                        for c in resultado.get('creados', [])[:15]
+                    ),
+                    link='/admin/centro-mando',
+                    remitente='cron-auto-sugerir',
+                )
+            except Exception:
+                pass
+        return True, resultado, 0
 
 
 def job_ocs_atrasadas(app):

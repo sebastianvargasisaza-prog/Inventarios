@@ -1824,6 +1824,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
           <input type="number" id="nec-cob-alerta" value="25" min="14" max="60" style="width:42px;padding:2px 4px;border:1px solid #cbd5e1;border-radius:3px;font-size:11px">d
         </label>
         <button onclick="abrirFormB2B()" style="background:#1e40af;color:#fff;border:none;padding:7px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">+ Pedido B2B</button>
+        <button onclick="autoSugerirProducciones()" style="background:#7c3aed;color:#fff;border:none;padding:7px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer" title="Crea producciones Sugeridas en el calendario para los productos que se van a quebrar (cron diario 5 AM también lo hace)">🤖 Auto-sugerir</button>
         <button onclick="cargarNecesidades()" style="background:#0f766e;color:#fff;border:none;padding:7px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">↻ Recargar</button>
       </div>
     </div>
@@ -20567,6 +20568,34 @@ async function ckMarcar(itemId, estado){
       if (!r.ok || d.error) { alert('Error: ' + (d.error || ('HTTP '+r.status))); return; }
       alert('✓ ' + d.mensaje + '\\n\\n' + (d.creadas || []).map(c => c.numero + ' · ' + c.proveedor + ' (' + c.total_items + ' items)').join('\\n'));
       cargarAbastecimiento();  // refresh
+    } catch(e) {
+      alert('Error red: ' + e.message);
+    }
+  }
+
+  // FIX 23-may-2026 · Sebastián · botón Auto-sugerir producciones
+  // · cron diario 5 AM también lo hace · este botón es disparador manual
+  async function autoSugerirProducciones() {
+    if (!confirm('¿Crear producciones Sugeridas en el calendario para los productos que se van a quebrar?\\n\\n' +
+                  'Usa velocidad real de ventas + cobertura · genera lotes con origen=Sugerida (eos_canonico) · ' +
+                  'puedes arrastrarlas para Fijarlas · respeta lo Fijo (NO toca)')) return;
+    try {
+      const r = await fetch('/api/plan/auto-programar-sugeridas', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({dias_horizonte: 90, cob_critico: 20, cob_alerta: 25}),
+      });
+      if (r.status === 401) { window.location.href='/login'; return; }
+      const d = await r.json();
+      if (!r.ok || d.error) {
+        alert('Error: ' + (d.error || ('HTTP '+r.status)));
+        return;
+      }
+      const detalle = (d.creados || []).map(c =>
+        '  · ' + c.producto + ' · ' + c.fecha + ' · ' + c.cantidad_kg + 'kg (' + c.urgencia + ')'
+      ).join('\\n');
+      alert('✓ ' + d.n_creados + ' Sugerida(s) creada(s) · ' + d.n_saltados + ' ya tenían lote ±7d\\n\\n' + (detalle || '(sin nuevas)'));
+      cargarNecesidades();
     } catch(e) {
       alert('Error red: ' + e.message);
     }

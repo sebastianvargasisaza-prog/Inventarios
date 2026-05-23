@@ -10126,6 +10126,35 @@ def test_golden_abastecimiento_consumo_bruto_excel(app, db_clean):
     assert len(r.data) > 1000
 
 
+def test_golden_plan_auto_programar_sugeridas(app, db_clean):
+    """Endpoint /api/plan/auto-programar-sugeridas · Sebastián 23-may-2026
+    · cierra el bucle 'sistema calcula pero no programa' · cron diario
+    5 AM también lo ejecuta.
+
+    Verifica que el endpoint responde OK (no error · no requiere data real
+    porque test DB puede estar vacío). Es básicamente humo + auth + estructura.
+    """
+    # 401 sin sesión
+    cs_no = app.test_client()
+    r_no = cs_no.post('/api/plan/auto-programar-sugeridas',
+                      json={'dias_horizonte': 60},
+                      headers=csrf_headers())
+    assert r_no.status_code == 401
+
+    cs = _login(app, 'sebastian')
+    r = cs.post('/api/plan/auto-programar-sugeridas',
+                json={'dias_horizonte': 60},
+                headers=csrf_headers())
+    assert r.status_code == 200, r.data
+    d = r.get_json()
+    assert d['ok'] is True
+    # Estructura del response
+    assert 'n_creados' in d
+    assert 'n_saltados' in d
+    assert isinstance(d.get('creados'), list)
+    assert isinstance(d.get('saltados'), list)
+
+
 def test_golden_compras_mailbox_facturas(app, db_clean):
     """Endpoint /api/compras/mailbox-facturas · Sebastián 23-may-2026
     · MBX UI · facturas detectadas por cron mailbox IMAP.
