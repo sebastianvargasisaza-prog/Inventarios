@@ -312,6 +312,24 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (164, "sync producto_canonico_config.kg_por_lote para AZH (si tabla existe) · Sebastián 23-may-2026 PM", [
+        # Agente auditor reportó: producto_canonico_config.kg_por_lote NO
+        # se sincroniza con formula_headers.lote_size_kg · si AZH tiene 22
+        # ahí, regenerar_canonicos sigue mal aunque arreglemos formula_headers.
+        # Sync defensivo: si la tabla y la fila existen, actualizar a 33.
+        """UPDATE producto_canonico_config SET kg_por_lote = 33
+          WHERE UPPER(TRIM(producto_nombre)) = 'AZ HIBRID CLEAR'""",
+    ]),
+    (163, "FORZAR AZ HIBRID CLEAR lote_size_kg=33 (mig 161 puede haber quedado registrada sin aplicar UPDATE) · Sebastián 23-may-2026 PM", [
+        # Agente auditor: mig 161 puede haber quedado en schema_migrations
+        # pero su WHERE `lote_size_kg < 1` puede no haber matcheado por
+        # cualquier razón · banner sigue mostrando "BD = 0.1 kg".
+        # Mig 163 fuerza el UPDATE sin guard, idempotente si ya está en 33.
+        """UPDATE formula_headers
+            SET lote_size_kg = 33, unidad_base_g = 33000
+          WHERE UPPER(TRIM(producto_nombre)) = 'AZ HIBRID CLEAR'
+            AND COALESCE(lote_size_kg, 0) <> 33""",
+    ]),
     (162, "limpieza AGRESIVA · cancela TODAS las Sugeridas futuras (incluida primera semana junio) · Sebastián 23-may-2026 PM", [
         # Sebastián 23-may-2026 PM · "me siguen apareciendo, son las azules"
         # · screenshot Junio 2026 muestra Sugeridas del 1-7 jun que tampoco

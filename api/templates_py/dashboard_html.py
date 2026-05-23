@@ -20774,8 +20774,8 @@ async function ckMarcar(itemId, estado){
             '<div><div style="color:#64748b;font-size:10px;text-transform:uppercase">Dura</div><div id="mp-dur" style="font-weight:700;color:#1e40af"></div></div>' +
             '<div><div style="color:#64748b;font-size:10px;text-transform:uppercase">Re-orden cada</div><div id="mp-paso" style="font-weight:700;color:#1e40af"></div></div>' +
           '</div>' +
-          '<div style="margin-bottom:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
-            '<label style="font-weight:700;color:#1e293b;font-size:13px">Horizonte:</label>' +
+          '<div style="margin-bottom:6px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
+            '<label style="font-weight:700;color:#1e293b;font-size:13px" title="Hasta dónde mostrar lotes en la tabla · NO es la frecuencia · re-orden cada N días lo decide automático según duración del lote y buffer (mostrado en RE-ORDEN CADA arriba)">Hasta cuándo proyectar:</label>' +
             '<button onclick="cambiarHorizonte(30)" class="mp-h-btn" data-h="30" style="padding:5px 10px;border:1px solid #cbd5e1;background:#fff;border-radius:5px;cursor:pointer;font-size:12px">30d</button>' +
             '<button onclick="cambiarHorizonte(60)" class="mp-h-btn" data-h="60" style="padding:5px 10px;border:1px solid #cbd5e1;background:#fff;border-radius:5px;cursor:pointer;font-size:12px">60d</button>' +
             '<button onclick="cambiarHorizonte(90)" class="mp-h-btn" data-h="90" style="padding:5px 10px;border:1px solid #cbd5e1;background:#fff;border-radius:5px;cursor:pointer;font-size:12px">90d</button>' +
@@ -20783,12 +20783,14 @@ async function ckMarcar(itemId, estado){
             '<button onclick="cambiarHorizonte(365)" class="mp-h-btn" data-h="365" style="padding:5px 10px;border:1px solid #cbd5e1;background:#fff;border-radius:5px;cursor:pointer;font-size:12px">1 año</button>' +
             '<input id="mp-h-custom" type="number" min="7" max="365" placeholder="custom" style="width:80px;padding:5px 8px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px" onchange="cambiarHorizonte(parseInt(this.value))">' +
           '</div>' +
+          '<div style="font-size:11px;color:#64748b;margin-bottom:12px;padding:6px 10px;background:#f1f5f9;border-radius:5px">💡 El horizonte solo limita hasta cuándo proyectar lotes en la tabla. La frecuencia real (cada cuántos días se programa un nuevo lote) la decide el sistema según <strong>DURA del lote − buffer 25d</strong> · ej. lote 60d → re-orden cada 35d.</div>' +
           '<div id="mp-cobertura" style="background:#dcfce7;border-left:4px solid #16a34a;border-radius:6px;padding:10px 12px;margin-bottom:12px;font-size:13px;color:#166534"></div>' +
           '<div id="mp-blocker" style="display:none;background:#fee2e2;border-left:4px solid #dc2626;border-radius:6px;padding:12px;margin-bottom:12px;font-size:13px;color:#991b1b;font-weight:700"></div>' +
           '<div id="mp-tabla"></div>' +
-          '<div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end">' +
+          '<div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">' +
             '<button onclick="document.getElementById(\\'modal-programar\\').remove()" style="padding:8px 14px;border:1px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;cursor:pointer;font-size:13px">Cancelar</button>' +
-            '<button id="mp-btn-generar" onclick="generarProgramacionesProducto()" style="padding:8px 16px;background:#7c3aed;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:700">Generar en Calendario</button>' +
+            '<button id="mp-btn-uno" onclick="generarSoloProximoLote()" style="padding:8px 16px;background:#0f766e;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:700" title="Crea solo 1 lote (la próxima fecha sugerida) · vos arrastrás más si querés">📅 Solo el próximo (1 lote)</button>' +
+            '<button id="mp-btn-generar" onclick="generarProgramacionesProducto()" style="padding:8px 16px;background:#7c3aed;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:700" title="Genera la cadena completa de lotes en el horizonte">🤖 Generar en cadena</button>' +
           '</div>' +
         '</div>' +
       '</div>' +
@@ -20846,7 +20848,7 @@ async function ckMarcar(itemId, estado){
       const diasCob = (d.velocidad_kg_dia > 0) ? Math.round(kgTotal / d.velocidad_kg_dia) : 0;
       let avisoLote = '';
       if (d.lote_calculado) {
-        avisoLote = '<div style="background:#fef3c7;color:#92400e;border-left:3px solid #f59e0b;padding:6px 10px;border-radius:5px;font-size:11px;font-weight:600;margin-top:8px">⚠ lote_size_kg en BD = ' + d.lote_bulk_kg_bd + ' kg (absurdo) · usando ' + d.lote_bulk_kg + ' kg calculado (~30d cobertura) · arreglá en formula_headers.lote_size_kg vía /api/admin/lote-size-fix</div>';
+        avisoLote = '<div style="background:#fef3c7;color:#92400e;border-left:3px solid #f59e0b;padding:6px 10px;border-radius:5px;font-size:11px;font-weight:600;margin-top:8px">⚠ lote_size_kg en BD = ' + d.lote_bulk_kg_bd + ' kg (absurdo) · usando ' + d.lote_bulk_kg + ' kg calculado (~' + (d.dur_lote_dias || 60) + 'd cobertura) · andá a ⚙ Herramientas para arreglar BD</div>';
       }
       if (d.ml_inferido) {
         avisoLote += '<div style="background:#fef3c7;color:#92400e;border-left:3px solid #f59e0b;padding:6px 10px;border-radius:5px;font-size:11px;font-weight:600;margin-top:6px">⚠ ml inferido por nombre · agregá envase en producto_presentaciones para precisión</div>';
@@ -20902,6 +20904,41 @@ async function ckMarcar(itemId, estado){
       if (!r.ok || d.error) { alert('Error: ' + (d.error || r.status)); btn.disabled = false; return; }
       const mios = (d.creados || []).filter(c => (c.producto || '').toUpperCase() === st.producto.toUpperCase());
       alert('✓ ' + mios.length + ' lote(s) creado(s) en Calendario para ' + st.producto + '\\n\\n' +
+            mios.map(c => '  · ' + c.fecha + ' · ' + c.cantidad_kg + 'kg').join('\\n'));
+      document.getElementById('modal-programar').remove();
+      cargarNecesidades();
+    } catch(e) {
+      alert('Error red: ' + e.message);
+      btn.disabled = false;
+    }
+  };
+  // FIX 23-may-2026 PM Sebastián · "una opción es que me dejes a mí
+  // manual hacerlo · veo que sigue colocando mal y planeando mal".
+  // Crea SOLO 1 lote (la próxima fecha sugerida) · ideal para control
+  // manual · el usuario decide cuándo agregar más.
+  window.generarSoloProximoLote = async function() {
+    const st = window._previewState;
+    if (!st.producto || !st.data) return;
+    const proxima = (st.data.fechas || []).find(f => !f.ya_programado);
+    if (!proxima) {
+      alert('No hay próxima fecha por crear · todas las posiciones del horizonte ya están programadas');
+      return;
+    }
+    if (!confirm('¿Crear UN solo lote?\\n\\n' + st.producto + '\\nFecha: ' + proxima.fecha + '\\nKg: ' + proxima.kg + '\\n\\nPodés agregar más después desde el calendario o repitiendo este flujo.')) return;
+    const btn = document.getElementById('mp-btn-uno');
+    btn.disabled = true; btn.textContent = 'Creando…';
+    try {
+      // Usa horizonte mínimo (paso+1) para que el helper solo cree el primero
+      const minHorizonte = Math.max((st.data.paso_dias || 30) + 1, (proxima.dias_hasta || 1) + 1);
+      const r = await fetch('/api/plan/auto-programar-sugeridas', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({producto: st.producto, dias_horizonte: minHorizonte}),
+      });
+      const d = await r.json();
+      if (!r.ok || d.error) { alert('Error: ' + (d.error || r.status)); btn.disabled = false; return; }
+      const mios = (d.creados || []).filter(c => (c.producto || '').toUpperCase() === st.producto.toUpperCase());
+      alert('✓ ' + mios.length + ' lote(s) creado(s) en Calendario\\n' +
             mios.map(c => '  · ' + c.fecha + ' · ' + c.cantidad_kg + 'kg').join('\\n'));
       document.getElementById('modal-programar').remove();
       cargarNecesidades();
