@@ -21326,7 +21326,11 @@ async function ckMarcar(itemId, estado){
       avisos += '<div style="background:#fef3c7;color:#92400e;border-left:3px solid #f59e0b;padding:6px 10px;border-radius:5px;font-size:11px;font-weight:600;margin-top:6px">⚠ ml inferido por nombre · agregá envase en producto_presentaciones para precisión</div>';
     }
     if (p.lote_size_faltante) {
-      avisos += '<div style="background:#fee2e2;color:#991b1b;border-left:3px solid #dc2626;padding:6px 10px;border-radius:5px;font-size:11px;font-weight:600;margin-top:6px">⚠ lote_size_kg = 0 · definí en formula_headers para que aparezcan kg sugeridos</div>';
+      const valBd = p.lote_bulk_kg_bd != null ? p.lote_bulk_kg_bd : 0;
+      const tieneCalc = p.lote_calculado;
+      avisos += '<div style="background:#fee2e2;color:#991b1b;border-left:3px solid #dc2626;padding:6px 10px;border-radius:5px;font-size:11px;font-weight:600;margin-top:6px">⚠ lote_size_kg en BD = ' + valBd + ' kg ' +
+        (tieneCalc ? '(usando ' + p.lote_bulk_kg + ' kg calculado · ~60d cobertura) ' : '') +
+        '· arreglá en /api/admin/lote-size-fix</div>';
     }
 
     let html = '<div style="display:flex;gap:14px;margin-bottom:16px;align-items:center">';

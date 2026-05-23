@@ -2,7 +2,7 @@
 
 > **Para agentes IA · LEER ANTES de modificar este blueprint.**
 
-Última revisión: 2026-05-07
+Última revisión: 2026-05-23 (Fix #3 · Abastecimiento lee Calendar completo)
 
 ---
 
@@ -89,6 +89,28 @@ con `_caller_puede_operar_produccion()`:
 
 Antes los endpoints solo chequeaban login → operario A descontaba MPs de
 producciones asignadas a operario B. Test: `test_golden_operario_no_puede_iniciar_produccion_ajena`.
+
+### INV-10 · Abastecimiento = Calendar completo (Fix #3 · 23-may-2026)
+
+`abastecimiento_consumo_horizontes` (`/api/abastecimiento/consumo-horizontes`)
+ahora lee TODO el Calendar, no solo Fijo. Sebastián: "el abastecimiento
+debería ser tomado desde el calendario donde tenemos programado todo por
+varios meses".
+
+- **Default** (sin param): `origen IN ('eos_plan','eos_b2b','eos_retroactivo',
+  'eos_canonico','auto_plan','sugerido')` · TODO lo del Calendar.
+- **`?solo_fijo=1`** (legacy): solo `eos_plan/b2b/retroactivo`.
+- Antes (`comprometido` default) → solo Fijo · causaba que Abastecimiento
+  mostrara números distintos al Calendar (3 fuentes paralelas divergentes).
+- Promoción a Fijo: REPROGRAMAR_PRODUCCION_PROGRAMADA y EDITAR_KG_PRODUCCION
+  promueven Sugerida → eos_plan al moverla · sin duplicar consumo MP.
+
+`modo=run_rate` sigue agregando proyección velocidad×días encima del Calendar
+(para análisis what-if), descontando Calendar para evitar doble-conteo.
+
+SELECT incluye `pp.origen` como 7° campo · unpack en ambos loops
+(`for ... in prod_rows` líneas 8158 + 8303). Tests:
+`test_golden_abastecimiento_consumo_horizontes` valida default + solo_fijo.
 
 ### INV-9 · `_auto_asignar_operarios` es atómico (todo-o-nada) (19-may-2026)
 
