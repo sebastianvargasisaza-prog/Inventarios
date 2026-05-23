@@ -681,6 +681,66 @@ def _unhandled_exception(e):
     return jsonify(payload), 500
 
 
+@app.route('/diag/azh-mig-status')
+def diag_azh_mig_status():
+    """Sebastián 23-may-2026 PM · diagnóstico público (sin auth) para saber
+    si auto-mig-pg al boot se aplicó · devuelve schema_migrations recientes
+    + estado de AZ HIBRID CLEAR en formula_headers + producto_canonico_config.
+    NO expone datos sensibles · solo es ID + lote.
+    """
+    try:
+        from database import get_db
+        db = get_db()
+        c = db.cursor()
+        out = {'ok': True}
+        try:
+            rows = c.execute(
+                "SELECT version, description FROM schema_migrations "
+                "ORDER BY version DESC LIMIT 10"
+            ).fetchall()
+            out['migraciones_recientes'] = [
+                {'v': r[0], 'desc': str(r[1] or '')[:80]} for r in rows]
+        except Exception as e:
+            out['migraciones_recientes_error'] = str(e)[:200]
+        try:
+            row = c.execute(
+                "SELECT lote_size_kg, unidad_base_g, activo "
+                "FROM formula_headers "
+                "WHERE UPPER(TRIM(producto_nombre)) = 'AZ HIBRID CLEAR'"
+            ).fetchone()
+            out['azh_formula_headers'] = {
+                'lote_size_kg': float(row[0] or 0) if row else None,
+                'unidad_base_g': float(row[1] or 0) if row else None,
+                'activo': int(row[2] or 0) if row else None,
+            }
+        except Exception as e:
+            out['azh_formula_headers_error'] = str(e)[:200]
+        try:
+            row = c.execute(
+                "SELECT kg_por_lote FROM producto_canonico_config "
+                "WHERE UPPER(TRIM(producto_nombre)) = 'AZ HIBRID CLEAR'"
+            ).fetchone()
+            out['azh_canonico_config_kg'] = (
+                float(row[0] or 0) if row else None)
+        except Exception as e:
+            out['azh_canonico_config_error'] = str(e)[:200]
+        try:
+            # Cuántas Sugeridas activas hay con fecha futura
+            row = c.execute(
+                "SELECT COUNT(*) FROM produccion_programada "
+                "WHERE substr(fecha_programada,1,10) >= '2026-05-23' "
+                "AND COALESCE(origen,'') IN ('eos_canonico','auto_plan','sugerido','manual','calendar') "
+                "AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado') "
+                "AND fin_real_at IS NULL"
+            ).fetchone()
+            out['sugeridas_futuras_activas'] = int(row[0] or 0) if row else 0
+        except Exception as e:
+            out['sugeridas_futuras_error'] = str(e)[:200]
+        return jsonify(out)
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)[:200]}), 500
+
+
 @app.route('/api/health')
 @app.route('/healthz')          # alias estandar para uptime monitors (Pingdom, UptimeRobot, Better Stack)
 def health_check():
