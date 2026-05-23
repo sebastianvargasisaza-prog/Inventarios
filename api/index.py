@@ -268,12 +268,99 @@ app.register_blueprint(plan_bp)
 app.register_blueprint(portal_bp)
 
 # ─── DB init + migraciones de esquema (idempotente) ────────────────────────
-init_db()   # crea tablas + ejecuta run_migrations() internamente
+init_db()   # crea tablas + ejecuta run_migrations() internamente (solo SQLite)
 run_seed_rrhh()
 import logging as _log
 _log.getLogger(__name__).info(
     "schema_migrations: %d versiones registradas", len(MIGRATIONS)
 )
+
+# Sebastián 23-may-2026 PM · CRÍTICO · en modo PostgreSQL init_db() retorna
+# early y NO aplica migraciones · solo las aplica /api/admin/migrations-run
+# manualmente. Resultado: migraciones nuevas añadidas al código que no se
+# aplican en producción jamás. Acá detectamos pendientes al boot y las
+# aplicamos automáticamente (mismo flujo del endpoint admin · errores
+# benignos silenciados, errores reales loggeados).
+try:
+    from database import _usa_postgres
+    if _usa_postgres():
+        from database import db_connect
+        from pg_compat import (
+            translate_ddl, es_insert_or, reescribir_insert_or_ignore,
+            es_ddl_a_saltar,
+        )
+        _BENIGN = (
+            'duplicate column name', 'already exists', 'no such table',
+            'duplicate column', 'duplicate key',
+        )
+        _c = db_connect()
+        try:
+            _cur = _c.cursor()
+            _cur.execute("""
+                CREATE TABLE IF NOT EXISTS schema_migrations (
+                    version     INTEGER PRIMARY KEY,
+                    applied_at  TEXT    NOT NULL DEFAULT to_char(now() AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS'),
+                    description TEXT    NOT NULL DEFAULT ''
+                )
+            """)
+            _c.commit()
+            _applied = {r[0] for r in _cur.execute(
+                "SELECT version FROM schema_migrations").fetchall()}
+            _aplicadas = []
+            _fallidas = []
+            for _v, _desc, _stmts in sorted(MIGRATIONS, key=lambda m: m[0]):
+                if _v in _applied:
+                    continue
+                _v_ok = True
+                for _stmt in _stmts:
+                    if es_ddl_a_saltar(_stmt):
+                        continue
+                    try:
+                        _stmt_pg = translate_ddl(_stmt)
+                        if es_insert_or(_stmt_pg):
+                            _stmt_pg = reescribir_insert_or_ignore(_stmt_pg)
+                        _cur.execute(_stmt_pg)
+                    except Exception as _e:
+                        _msg = str(_e).lower()
+                        if any(p in _msg for p in _BENIGN):
+                            continue
+                        _v_ok = False
+                        _fallidas.append({'version': _v, 'stmt': _stmt[:100],
+                                          'error': str(_e)[:200]})
+                        _log.getLogger(__name__).warning(
+                            "PG-MIG %d falló: %s · stmt: %s",
+                            _v, _e, _stmt[:100])
+                        # Rollback transacción para no contaminar la siguiente
+                        try:
+                            _c.rollback()
+                        except Exception:
+                            pass
+                        break
+                if _v_ok:
+                    try:
+                        _cur.execute(
+                            "INSERT INTO schema_migrations (version, description) "
+                            "VALUES (%s, %s) ON CONFLICT (version) DO NOTHING",
+                            (_v, _desc))
+                        _c.commit()
+                        _aplicadas.append(_v)
+                    except Exception as _e:
+                        _log.getLogger(__name__).warning(
+                            "no se pudo registrar mig %d aplicada: %s", _v, _e)
+            if _aplicadas:
+                _log.getLogger(__name__).info(
+                    "PG-MIG · aplicadas auto al boot: %s", _aplicadas)
+            if _fallidas:
+                _log.getLogger(__name__).warning(
+                    "PG-MIG · fallidas: %s", _fallidas[:5])
+        finally:
+            try:
+                _c.close()
+            except Exception:
+                pass
+except Exception as _e:
+    _log.getLogger(__name__).warning(
+        "auto-mig-pg no arrancó (no aborta boot): %s", _e)
 
 # Arrancar loops de background daemon (no bloqueantes).
 # Solo si NO estamos en modo testing (los tests no necesitan loops corriendo).
