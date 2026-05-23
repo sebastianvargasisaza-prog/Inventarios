@@ -1236,6 +1236,38 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
     # Inyectar lotes pendientes + horizonte en cada producto
     from datetime import date as _date, timedelta as _td
     hoy = _hoy_colombia()
+
+    # FIX 23-may-2026 Sebastián · "fecha sugerida ilógica" · antes la
+    # próxima se anclaba SOLO en la última producción completada en Kanban
+    # (fin_real_at). Si la última fue hace 6 meses, la próxima salía en el
+    # pasado · si había un Fijo futuro ya programado, lo ignoraba.
+    # Ahora la base es max(última completada, último Fijo programado futuro)
+    # y se clampa proxima >= hoy+3d para no proponer fechas pasadas.
+    ult_fijo_prog = {}
+    for r in c.execute(
+        """SELECT producto,
+                  substr(MAX(fecha_programada),1,10) AS f
+           FROM produccion_programada
+           WHERE COALESCE(origen,'') IN ('eos_plan','eos_b2b','eos_retroactivo')
+             AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado')
+             AND fin_real_at IS NULL
+             AND COALESCE(cantidad_kg,0) > 0
+           GROUP BY producto""",
+    ).fetchall():
+        ult_fijo_prog[r[0]] = r[1]
+    # kg del último Fijo programado (para calcular duración correcta)
+    ult_fijo_kg = {}
+    for prod, fecha in ult_fijo_prog.items():
+        row = c.execute(
+            """SELECT cantidad_kg FROM produccion_programada
+               WHERE producto = ? AND substr(fecha_programada,1,10) = ?
+                 AND fin_real_at IS NULL
+                 AND COALESCE(origen,'') IN ('eos_plan','eos_b2b','eos_retroactivo')
+               ORDER BY id DESC LIMIT 1""",
+            (prod, fecha),
+        ).fetchone()
+        ult_fijo_kg[prod] = float(row[0] or 0) if row else 0.0
+
     for p in out:
         info = lotes_pendientes.get(p["producto_nombre"])
         if info:
@@ -1247,40 +1279,82 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
             p["lotes_pendientes_kg"] = 0.0
             p["lotes_pendientes_proximas_fechas"] = []
 
-        # Horizonte: última producción completada + cálculo próxima sugerida
+        # Horizonte: ancla = max(última completada, último Fijo programado)
         up = ultima_prod.get(p["producto_nombre"])
-        if up and up["fecha"]:
+        fpf = ult_fijo_prog.get(p["producto_nombre"])
+        fpk = ult_fijo_kg.get(p["producto_nombre"]) or 0.0
+        # Determinar mejor ancla
+        ancla_fecha = None
+        ancla_kg = 0.0
+        ancla_es_fijo_futuro = False
+        if up and up.get("fecha"):
+            try:
+                f_up = _date.fromisoformat(up["fecha"][:10])
+            except Exception:
+                f_up = None
+            if fpf:
+                try:
+                    f_fp = _date.fromisoformat(fpf)
+                except Exception:
+                    f_fp = None
+                if f_fp and (not f_up or f_fp > f_up):
+                    ancla_fecha = f_fp
+                    ancla_kg = fpk
+                    ancla_es_fijo_futuro = True
+                else:
+                    ancla_fecha = f_up
+                    ancla_kg = float(up.get("kg") or 0)
+            else:
+                ancla_fecha = f_up
+                ancla_kg = float(up.get("kg") or 0)
+        elif fpf:
+            try:
+                ancla_fecha = _date.fromisoformat(fpf)
+                ancla_kg = fpk
+                ancla_es_fijo_futuro = True
+            except Exception:
+                ancla_fecha = None
+
+        if up and up.get("fecha"):
             p["ultima_produccion_fecha"] = up["fecha"]
             p["ultima_produccion_kg"] = up["kg"]
             try:
-                f = _date.fromisoformat(up["fecha"][:10])
-                p["dias_desde_ultima"] = (hoy - f).days
+                f_up2 = _date.fromisoformat(up["fecha"][:10])
+                p["dias_desde_ultima"] = (hoy - f_up2).days
             except Exception:
                 p["dias_desde_ultima"] = None
-            # Duración estimada del lote producido (kg / velocidad_kg_día)
-            if p["velocidad_kg_dia"] > 0 and up["kg"] > 0:
-                dur_dias = int(up["kg"] / p["velocidad_kg_dia"])
-                p["duracion_lote_dias"] = dur_dias
-                try:
-                    f_ini = _date.fromisoformat(up["fecha"][:10])
-                    # Próxima sugerida = última + duración - buffer 25d
-                    proxima = f_ini + _td(days=max(1, dur_dias - cob_alerta))
-                    p["proxima_sugerida_fecha"] = proxima.isoformat()
-                    p["proxima_sugerida_dias"] = (proxima - hoy).days
-                except Exception:
-                    p["proxima_sugerida_fecha"] = None
-                    p["proxima_sugerida_dias"] = None
-            else:
-                p["duracion_lote_dias"] = None
-                p["proxima_sugerida_fecha"] = None
-                p["proxima_sugerida_dias"] = None
         else:
             p["ultima_produccion_fecha"] = None
             p["ultima_produccion_kg"] = 0.0
             p["dias_desde_ultima"] = None
+
+        p["ancla_es_fijo_futuro"] = ancla_es_fijo_futuro
+        if ancla_es_fijo_futuro and ancla_fecha:
+            p["ultimo_fijo_programado_fecha"] = ancla_fecha.isoformat()
+            p["ultimo_fijo_programado_kg"] = ancla_kg
+        else:
+            p["ultimo_fijo_programado_fecha"] = None
+            p["ultimo_fijo_programado_kg"] = 0.0
+
+        if ancla_fecha and p["velocidad_kg_dia"] > 0 and ancla_kg > 0:
+            dur_dias = int(ancla_kg / p["velocidad_kg_dia"])
+            p["duracion_lote_dias"] = dur_dias
+            try:
+                proxima_calc = ancla_fecha + _td(days=max(1, dur_dias - cob_alerta))
+                # Clamp: nunca proponer fecha en el pasado o muy próxima
+                proxima = max(proxima_calc, hoy + _td(days=3))
+                p["proxima_sugerida_fecha"] = proxima.isoformat()
+                p["proxima_sugerida_dias"] = (proxima - hoy).days
+                p["proxima_clamped"] = (proxima != proxima_calc)
+            except Exception:
+                p["proxima_sugerida_fecha"] = None
+                p["proxima_sugerida_dias"] = None
+                p["proxima_clamped"] = False
+        else:
             p["duracion_lote_dias"] = None
             p["proxima_sugerida_fecha"] = None
             p["proxima_sugerida_dias"] = None
+            p["proxima_clamped"] = False
 
         # Diagnostic SKUs · ¿este producto tiene mapeo Shopify?
         # FIX 23-may-2026 · CRÍTICO Sebastián · antes usaba `prod_nombre`
@@ -4488,7 +4562,8 @@ def alertas_ventas():
 
 def _auto_programar_sugeridas(conn, dias_horizonte=90, ventana_velocidad=60,
                                   cob_critico=20, cob_alerta=25, cob_vigilar=45,
-                                  usuario='cron-auto-sugerir'):
+                                  usuario='cron-auto-sugerir', producto_filtro=None,
+                                  origen_nuevo='eos_canonico'):
     """Sebastián 23-may-2026 · 'el sistema calcula próxima producción pero
     no la coloca · se pierde la sugerencia'.
 
@@ -4509,69 +4584,139 @@ def _auto_programar_sugeridas(conn, dias_horizonte=90, ventana_velocidad=60,
     creados = []
     saltados = []
     cur = conn.cursor()
+    # FIX 23-may-2026 Sebastián · si no hay fin_real_at (lote programado pero
+    # no cerrado en Kanban), usar el Fijo programado como base para calcular
+    # proxima_sugerida_fecha. Caso LAH: 70kg programado el 19, no se ha
+    # finalizado · sin este fallback, _calcular_animus_dtc deja
+    # proxima_sugerida_fecha=None y se salta.
+    fijo_prog_por_prod = {}
+    try:
+        for r in cur.execute(
+            """SELECT UPPER(TRIM(producto)) AS prod,
+                      MAX(substr(fecha_programada,1,10)) AS f,
+                      cantidad_kg
+               FROM produccion_programada
+               WHERE COALESCE(origen,'') IN ('eos_plan','eos_b2b','eos_retroactivo')
+                 AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado')
+                 AND fin_real_at IS NULL
+                 AND COALESCE(cantidad_kg,0) > 0
+               GROUP BY UPPER(TRIM(producto))""",
+        ).fetchall():
+            fijo_prog_por_prod[r[0]] = {'fecha': r[1], 'kg': float(r[2] or 0)}
+    except Exception:
+        pass
+
+    filtro_upper = (producto_filtro or '').strip().upper() if producto_filtro else None
     for p in (productos or []):
         if True:
-            psf = p.get('proxima_sugerida_fecha')
-            lote_kg = float(p.get('lote_bulk_kg') or 0)
             prod = p.get('producto_nombre') or ''
-            if not psf or lote_kg <= 0 or not prod:
+            if filtro_upper and prod.strip().upper() != filtro_upper:
+                continue
+            lote_kg = float(p.get('lote_bulk_kg') or 0)
+            vel = float(p.get('velocidad_kg_dia') or 0)
+            psf = p.get('proxima_sugerida_fecha')
+
+            # Fallback Fijo programado · sólo si _calcular_animus_dtc no
+            # encontró producción completada para este producto.
+            if not psf and prod and vel > 0 and lote_kg > 0:
+                fp = fijo_prog_por_prod.get(prod.upper().strip())
+                if fp and fp['kg'] > 0:
+                    try:
+                        f_base = _date2.fromisoformat(fp['fecha'])
+                        dur = max(1, int(fp['kg'] / vel))
+                        psf = (f_base + _td2(days=max(1, dur - cob_alerta))).isoformat()
+                    except Exception:
+                        psf = None
+
+            if not prod:
+                continue
+            if lote_kg <= 0:
+                saltados.append({'producto': prod, 'razon': 'sin lote_bulk_kg en maestro_animus_dtc'})
+                continue
+            if vel <= 0:
+                saltados.append({'producto': prod, 'razon': 'sin velocidad de venta'})
+                continue
+            if not psf:
+                saltados.append({'producto': prod, 'razon': 'sin última producción para calcular base'})
                 continue
             try:
                 f_sug = _date2.fromisoformat(str(psf)[:10])
             except Exception:
+                saltados.append({'producto': prod, 'razon': f'fecha inválida {psf}'})
                 continue
-            dias_hasta = (f_sug - hoy).days
-            if dias_hasta < 0 or dias_hasta > dias_horizonte:
+            # CADENA · Sebastián 23-may-2026 · "cuántas producciones o en cuánto"
+            # Generar TODAS las sugeridas que caen en el horizonte, no solo la próxima.
+            # Cada lote dura (lote_kg / vel) días · próxima = anterior + (dur - cob_alerta).
+            dur_lote = max(1, int(lote_kg / vel)) if vel > 0 else 0
+            paso = max(1, dur_lote - cob_alerta) if dur_lote else 0
+            if paso <= 0:
+                saltados.append({'producto': prod, 'razon': 'paso de cadena = 0 (vel o lote inválidos)'})
                 continue
-            # Buscar ya programado en ventana ±7d
-            try:
-                fdesde = (f_sug - _td2(days=7)).isoformat()
-                fhasta = (f_sug + _td2(days=7)).isoformat()
-                existing = cur.execute(
-                    """SELECT COUNT(*) FROM produccion_programada
-                       WHERE UPPER(TRIM(producto))=UPPER(TRIM(?))
-                         AND substr(fecha_programada,1,10) BETWEEN ? AND ?
-                         AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado')
-                         AND inventario_descontado_at IS NULL""",
-                    (prod, fdesde, fhasta),
-                ).fetchone()
-                if existing and int(existing[0] or 0) > 0:
-                    saltados.append({'producto': prod, 'fecha': psf,
-                                     'razon': 'ya hay lote programado ±7d'})
+            f_cursor = f_sug
+            n_para_producto = 0
+            while True:
+                dias_hasta = (f_cursor - hoy).days
+                if dias_hasta < 0:
+                    f_cursor = f_cursor + _td2(days=paso)
                     continue
-            except Exception:
-                continue
-            # INSERT con origen Sugerido · respeta modelo Fijo vs Sugerido
-            try:
-                cur.execute(
-                    """INSERT INTO produccion_programada
-                       (producto, fecha_programada, cantidad_kg, lotes,
-                        estado, origen, observaciones)
-                       VALUES (?, ?, ?, 1, 'pendiente', 'eos_canonico', ?)""",
-                    (prod, f_sug.isoformat(), lote_kg,
-                     f'Auto-sugerido · cobertura {p.get("dias_cobertura","?")}d · '
-                     f'velocidad {p.get("velocidad_kg_dia","?")} kg/día'),
-                )
-                creados.append({
-                    'producto': prod,
-                    'fecha': psf,
-                    'cantidad_kg': lote_kg,
-                    'urgencia': p.get('urgencia'),
-                })
+                if dias_hasta > dias_horizonte:
+                    break
+                # Buscar ya programado en ventana ±7d
                 try:
-                    audit_log(cur, usuario=usuario, accion='AUTO_PROGRAMAR_SUGERIDA',
-                              tabla='produccion_programada', registro_id='',
-                              despues={
-                                  'producto': prod,
-                                  'fecha': psf,
-                                  'cantidad_kg': lote_kg,
-                                  'urgencia': p.get('urgencia'),
-                                  'razon': 'velocidad + cob_alerta',
-                              })
+                    fdesde = (f_cursor - _td2(days=7)).isoformat()
+                    fhasta = (f_cursor + _td2(days=7)).isoformat()
+                    existing = cur.execute(
+                        """SELECT COUNT(*) FROM produccion_programada
+                           WHERE UPPER(TRIM(producto))=UPPER(TRIM(?))
+                             AND substr(fecha_programada,1,10) BETWEEN ? AND ?
+                             AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado')
+                             AND inventario_descontado_at IS NULL""",
+                        (prod, fdesde, fhasta),
+                    ).fetchone()
+                    if existing and int(existing[0] or 0) > 0:
+                        saltados.append({'producto': prod, 'fecha': f_cursor.isoformat(),
+                                          'razon': 'ya hay lote programado ±7d'})
+                        f_cursor = f_cursor + _td2(days=paso)
+                        continue
                 except Exception:
-                    pass
-            except Exception as e:
-                saltados.append({'producto': prod, 'fecha': psf, 'razon': str(e)[:100]})
+                    break
+                # INSERT con origen Sugerido · respeta Fijo vs Sugerido
+                try:
+                    cur.execute(
+                        """INSERT INTO produccion_programada
+                           (producto, fecha_programada, cantidad_kg, lotes,
+                            estado, origen, observaciones)
+                           VALUES (?, ?, ?, 1, 'pendiente', ?, ?)""",
+                        (prod, f_cursor.isoformat(), lote_kg, origen_nuevo,
+                         f'Auto-sugerido · cobertura {p.get("dias_cobertura","?")}d · '
+                         f'velocidad {p.get("velocidad_kg_dia","?")} kg/día · '
+                         f'lote dura {dur_lote}d'),
+                    )
+                    creados.append({
+                        'producto': prod,
+                        'fecha': f_cursor.isoformat(),
+                        'cantidad_kg': lote_kg,
+                        'urgencia': p.get('urgencia'),
+                        'dur_lote_dias': dur_lote,
+                    })
+                    n_para_producto += 1
+                    try:
+                        audit_log(cur, usuario=usuario, accion='AUTO_PROGRAMAR_SUGERIDA',
+                                  tabla='produccion_programada', registro_id='',
+                                  despues={
+                                      'producto': prod,
+                                      'fecha': f_cursor.isoformat(),
+                                      'cantidad_kg': lote_kg,
+                                      'urgencia': p.get('urgencia'),
+                                      'razon': 'cadena velocidad + cob_alerta',
+                                  })
+                    except Exception:
+                        pass
+                except Exception as e:
+                    saltados.append({'producto': prod, 'fecha': f_cursor.isoformat(),
+                                      'razon': str(e)[:100]})
+                    break
+                f_cursor = f_cursor + _td2(days=paso)
     if creados:
         conn.commit()
     return {'creados': creados, 'saltados': saltados,
@@ -4601,12 +4746,148 @@ def plan_auto_programar_sugeridas():
         cv = int(d.get('cob_vigilar', 45))
     except Exception:
         cc, ca, cv = 20, 25, 45
+    producto = (d.get('producto') or '').strip() or None
+    # Si el usuario está programando manualmente desde el modal por producto,
+    # marca como Fijo (eos_plan) en lugar de Sugerida · entiende que el
+    # usuario eligió hacerlo · queda intocable por regenerar_canonicos.
+    # El cron diario sigue creando como 'eos_canonico' (sin parámetro 'producto').
+    origen = 'eos_plan' if producto else 'eos_canonico'
+    if d.get('origen_nuevo') in ('eos_plan', 'eos_canonico'):
+        origen = d['origen_nuevo']
     conn = get_db()
     resultado = _auto_programar_sugeridas(
         conn, dias_horizonte=dh, cob_critico=cc, cob_alerta=ca,
-        cob_vigilar=cv, usuario=user,
+        cob_vigilar=cv, usuario=user, producto_filtro=producto,
+        origen_nuevo=origen,
     )
     return jsonify({'ok': True, **resultado})
+
+
+@bp.route("/api/plan/sugerir-preview", methods=["GET"])
+def plan_sugerir_preview():
+    """Sebastián 23-may-2026 · al abrir un producto en Necesidades,
+    quiere ver 'cuántas producciones o en cuánto' se sugieren ANTES de
+    programarlas. Acepta ?producto=NOMBRE o ?all=1 (todos).
+
+    Devuelve por producto:
+      - n_sugeridas_horizonte
+      - fechas: [{fecha, kg, dur_lote_dias, dias_hasta}]
+      - velocidad_kg_dia, lote_bulk_kg, dur_lote_dias, paso_dias
+      - blocker: razón si no se puede sugerir nada
+    """
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+    from datetime import date as _date2, timedelta as _td2
+    producto_filtro = (request.args.get('producto') or '').strip().upper()
+    try:
+        dh = max(7, min(int(request.args.get('dias_horizonte', 90)), 365))
+    except Exception:
+        dh = 90
+    try:
+        ca = int(request.args.get('cob_alerta', 25))
+    except Exception:
+        ca = 25
+    conn = get_db()
+    cur = conn.cursor()
+    productos = _calcular_animus_dtc(cur, ventana=60, cob_critico=20,
+                                       cob_alerta=ca, cob_vigilar=45)
+    fijo_prog_por_prod = {}
+    try:
+        for r in cur.execute(
+            """SELECT UPPER(TRIM(producto)) AS prod,
+                      MAX(substr(fecha_programada,1,10)) AS f,
+                      cantidad_kg
+               FROM produccion_programada
+               WHERE COALESCE(origen,'') IN ('eos_plan','eos_b2b','eos_retroactivo')
+                 AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado')
+                 AND fin_real_at IS NULL
+                 AND COALESCE(cantidad_kg,0) > 0
+               GROUP BY UPPER(TRIM(producto))""",
+        ).fetchall():
+            fijo_prog_por_prod[r[0]] = {'fecha': r[1], 'kg': float(r[2] or 0)}
+    except Exception:
+        pass
+    hoy = _hoy_colombia()
+    out = []
+    for p in (productos or []):
+        prod = (p.get('producto_nombre') or '').strip()
+        if not prod:
+            continue
+        if producto_filtro and prod.upper() != producto_filtro:
+            continue
+        vel = float(p.get('velocidad_kg_dia') or 0)
+        lote_kg = float(p.get('lote_bulk_kg') or 0)
+        psf = p.get('proxima_sugerida_fecha')
+        if not psf and vel > 0 and lote_kg > 0:
+            fp = fijo_prog_por_prod.get(prod.upper())
+            if fp and fp['kg'] > 0:
+                try:
+                    f_base = _date2.fromisoformat(fp['fecha'])
+                    dur = max(1, int(fp['kg'] / vel))
+                    psf = (f_base + _td2(days=max(1, dur - ca))).isoformat()
+                except Exception:
+                    psf = None
+        blocker = None
+        if lote_kg <= 0:
+            blocker = 'sin lote_bulk_kg en maestro_animus_dtc'
+        elif vel <= 0:
+            blocker = 'sin velocidad de venta (vender más para alimentar el cálculo)'
+        elif not psf:
+            blocker = 'sin última producción de referencia'
+        fechas = []
+        dur_lote = max(1, int(lote_kg / vel)) if (vel > 0 and lote_kg > 0) else 0
+        paso = max(1, dur_lote - ca) if dur_lote else 0
+        if not blocker and paso > 0:
+            try:
+                f_cursor = _date2.fromisoformat(str(psf)[:10])
+            except Exception:
+                f_cursor = None
+                blocker = f'fecha inválida {psf}'
+            while f_cursor and (f_cursor - hoy).days <= dh:
+                dias_hasta = (f_cursor - hoy).days
+                if dias_hasta < 0:
+                    f_cursor = f_cursor + _td2(days=paso)
+                    continue
+                fdesde = (f_cursor - _td2(days=7)).isoformat()
+                fhasta = (f_cursor + _td2(days=7)).isoformat()
+                row = cur.execute(
+                    """SELECT COUNT(*) FROM produccion_programada
+                       WHERE UPPER(TRIM(producto))=UPPER(TRIM(?))
+                         AND substr(fecha_programada,1,10) BETWEEN ? AND ?
+                         AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado')
+                         AND inventario_descontado_at IS NULL""",
+                    (prod, fdesde, fhasta),
+                ).fetchone()
+                ya_hay = bool(row and int(row[0] or 0) > 0)
+                fechas.append({
+                    'fecha': f_cursor.isoformat(),
+                    'kg': lote_kg,
+                    'dias_hasta': dias_hasta,
+                    'ya_programado': ya_hay,
+                })
+                f_cursor = f_cursor + _td2(days=paso)
+        out.append({
+            'producto': prod,
+            'velocidad_kg_dia': vel,
+            'lote_bulk_kg': lote_kg,
+            'dur_lote_dias': dur_lote,
+            'paso_dias': paso,
+            'cob_alerta_dias': ca,
+            'horizonte_dias': dh,
+            'n_sugeridas': len([f for f in fechas if not f['ya_programado']]),
+            'n_ya_programadas': len([f for f in fechas if f['ya_programado']]),
+            'fechas': fechas,
+            'proxima_fecha_base': psf,
+            'blocker': blocker,
+        })
+    if producto_filtro:
+        if not out:
+            return jsonify({'ok': False, 'error': 'producto no está en _calcular_animus_dtc',
+                            'producto_buscado': producto_filtro}), 404
+        return jsonify({'ok': True, **out[0]})
+    return jsonify({'ok': True, 'productos': out})
 
 
 @bp.route("/api/plan/regenerar-canonicos", methods=["POST"])

@@ -10155,6 +10155,40 @@ def test_golden_plan_auto_programar_sugeridas(app, db_clean):
     assert isinstance(d.get('saltados'), list)
 
 
+def test_golden_plan_sugerir_preview(app, db_clean):
+    """Endpoint /api/plan/sugerir-preview · Sebastián 23-may-2026 · modal
+    Programar usa esto para mostrar cadena de Sugeridas + cobertura antes
+    de generarlas. Validar 401 + 200 + estructura + filtro por producto.
+    """
+    cs_no = app.test_client()
+    r_no = cs_no.get('/api/plan/sugerir-preview?dias_horizonte=90')
+    assert r_no.status_code == 401
+
+    cs = _login(app, 'sebastian')
+    # Sin producto: lista todos
+    r = cs.get('/api/plan/sugerir-preview?dias_horizonte=90')
+    assert r.status_code == 200, r.data
+    d = r.get_json()
+    assert d['ok'] is True
+    assert isinstance(d.get('productos'), list)
+    if d['productos']:
+        p0 = d['productos'][0]
+        assert 'producto' in p0
+        assert 'velocidad_kg_dia' in p0
+        assert 'lote_bulk_kg' in p0
+        assert 'dur_lote_dias' in p0
+        assert 'paso_dias' in p0
+        assert 'n_sugeridas' in p0
+        assert 'n_ya_programadas' in p0
+        assert isinstance(p0.get('fechas'), list)
+    # Con producto inexistente: 404
+    r2 = cs.get('/api/plan/sugerir-preview?producto=PRODUCTO_NO_EXISTE')
+    assert r2.status_code == 404
+    # Horizonte param funciona (no debe ser >365)
+    r3 = cs.get('/api/plan/sugerir-preview?dias_horizonte=500')
+    assert r3.status_code == 200
+
+
 def test_golden_compras_mailbox_facturas(app, db_clean):
     """Endpoint /api/compras/mailbox-facturas · Sebastián 23-may-2026
     · MBX UI · facturas detectadas por cron mailbox IMAP.

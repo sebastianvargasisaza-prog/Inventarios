@@ -20594,12 +20594,183 @@ async function ckMarcar(itemId, estado){
       const detalle = (d.creados || []).map(c =>
         '  · ' + c.producto + ' · ' + c.fecha + ' · ' + c.cantidad_kg + 'kg (' + c.urgencia + ')'
       ).join('\\n');
-      alert('✓ ' + d.n_creados + ' Sugerida(s) creada(s) · ' + d.n_saltados + ' ya tenían lote ±7d\\n\\n' + (detalle || '(sin nuevas)'));
+      // Cuando no se crea nada, mostrar razones de salto para diagnóstico
+      const razones = (d.saltados || []).slice(0, 10).map(s =>
+        '  · ' + (s.producto || '?') + (s.fecha ? ' [' + s.fecha + ']' : '') + ' → ' + (s.razon || '')
+      ).join('\\n');
+      const mas = (d.saltados || []).length > 10 ? '\\n  ... y ' + ((d.saltados || []).length - 10) + ' más' : '';
+      const cuerpo = d.n_creados > 0
+        ? '✓ ' + d.n_creados + ' Sugerida(s) creada(s):\\n\\n' + detalle +
+          (d.n_saltados ? '\\n\\nSaltados: ' + d.n_saltados : '')
+        : '⚠ No se creó ninguna Sugerida\\n\\nSaltados: ' + d.n_saltados +
+          (razones ? '\\n\\nRazones:\\n' + razones + mas : '');
+      alert(cuerpo);
       cargarNecesidades();
     } catch(e) {
       alert('Error red: ' + e.message);
     }
   }
+
+  // FIX 23-may-2026 Sebastián · "moldear necesidades · botón Programar
+  // debe permitir seleccionar horizonte calculando perfecto el consumo y
+  // para cuánto alcanzará · si ya está programado debe decir programado
+  // está bien o lo movemos".
+  // Modal HTML real (no alert) con selector horizonte + tabla por lote +
+  // detección de conflicto ±7d con opción mantener / reubicar.
+  window._previewState = {producto: null, data: null, horizonte: 90};
+  window.previewSugeridasProducto = async function(prodNombre) {
+    window._previewState = {producto: prodNombre, data: null, horizonte: 90};
+    abrirModalProgramar();
+    await recargarPreviewProgramar();
+  };
+  function abrirModalProgramar() {
+    let modal = document.getElementById('modal-programar');
+    if (modal) modal.remove();
+    modal = document.createElement('div');
+    modal.id = 'modal-programar';
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+    modal.innerHTML = '<div style="background:#fff;border-radius:12px;max-width:760px;width:100%;max-height:90vh;overflow:auto;box-shadow:0 12px 40px rgba(0,0,0,0.25)">' +
+      '<div style="padding:18px 22px;border-bottom:1px solid #e5e7eb;display:flex;align-items:center;justify-content:space-between">' +
+        '<div><h3 style="margin:0;font-size:16px;color:#1e293b">🤖 Programar producción</h3><div id="mp-prod" style="font-size:13px;color:#64748b;margin-top:2px"></div></div>' +
+        '<button onclick="document.getElementById(\\'modal-programar\\').remove()" style="background:#e5e7eb;color:#475569;border:none;width:32px;height:32px;border-radius:50%;font-size:18px;cursor:pointer">×</button>' +
+      '</div>' +
+      '<div style="padding:18px 22px">' +
+        '<div id="mp-loading" style="text-align:center;color:#64748b;padding:30px">Calculando…</div>' +
+        '<div id="mp-content" style="display:none">' +
+          '<div style="background:#f1f5f9;border-radius:8px;padding:12px;margin-bottom:14px;display:grid;grid-template-columns:repeat(4,1fr);gap:8px;font-size:12px">' +
+            '<div><div style="color:#64748b;font-size:10px;text-transform:uppercase">Velocidad</div><div id="mp-vel" style="font-weight:700;color:#1e40af"></div></div>' +
+            '<div><div style="color:#64748b;font-size:10px;text-transform:uppercase">Lote estándar</div><div id="mp-lote" style="font-weight:700;color:#1e40af"></div></div>' +
+            '<div><div style="color:#64748b;font-size:10px;text-transform:uppercase">Dura</div><div id="mp-dur" style="font-weight:700;color:#1e40af"></div></div>' +
+            '<div><div style="color:#64748b;font-size:10px;text-transform:uppercase">Re-orden cada</div><div id="mp-paso" style="font-weight:700;color:#1e40af"></div></div>' +
+          '</div>' +
+          '<div style="margin-bottom:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
+            '<label style="font-weight:700;color:#1e293b;font-size:13px">Horizonte:</label>' +
+            '<button onclick="cambiarHorizonte(30)" class="mp-h-btn" data-h="30" style="padding:5px 10px;border:1px solid #cbd5e1;background:#fff;border-radius:5px;cursor:pointer;font-size:12px">30d</button>' +
+            '<button onclick="cambiarHorizonte(60)" class="mp-h-btn" data-h="60" style="padding:5px 10px;border:1px solid #cbd5e1;background:#fff;border-radius:5px;cursor:pointer;font-size:12px">60d</button>' +
+            '<button onclick="cambiarHorizonte(90)" class="mp-h-btn" data-h="90" style="padding:5px 10px;border:1px solid #cbd5e1;background:#fff;border-radius:5px;cursor:pointer;font-size:12px">90d</button>' +
+            '<button onclick="cambiarHorizonte(180)" class="mp-h-btn" data-h="180" style="padding:5px 10px;border:1px solid #cbd5e1;background:#fff;border-radius:5px;cursor:pointer;font-size:12px">180d</button>' +
+            '<button onclick="cambiarHorizonte(365)" class="mp-h-btn" data-h="365" style="padding:5px 10px;border:1px solid #cbd5e1;background:#fff;border-radius:5px;cursor:pointer;font-size:12px">1 año</button>' +
+            '<input id="mp-h-custom" type="number" min="7" max="365" placeholder="custom" style="width:80px;padding:5px 8px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px" onchange="cambiarHorizonte(parseInt(this.value))">' +
+          '</div>' +
+          '<div id="mp-cobertura" style="background:#dcfce7;border-left:4px solid #16a34a;border-radius:6px;padding:10px 12px;margin-bottom:12px;font-size:13px;color:#166534"></div>' +
+          '<div id="mp-blocker" style="display:none;background:#fee2e2;border-left:4px solid #dc2626;border-radius:6px;padding:12px;margin-bottom:12px;font-size:13px;color:#991b1b;font-weight:700"></div>' +
+          '<div id="mp-tabla"></div>' +
+          '<div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end">' +
+            '<button onclick="document.getElementById(\\'modal-programar\\').remove()" style="padding:8px 14px;border:1px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;cursor:pointer;font-size:13px">Cancelar</button>' +
+            '<button id="mp-btn-generar" onclick="generarProgramacionesProducto()" style="padding:8px 16px;background:#7c3aed;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:700">Generar en Calendario</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+      '</div>';
+    document.body.appendChild(modal);
+  }
+  window.cambiarHorizonte = function(d) {
+    if (!d || d < 7) return;
+    window._previewState.horizonte = d;
+    document.querySelectorAll('.mp-h-btn').forEach(b => {
+      const matches = parseInt(b.dataset.h) === d;
+      b.style.background = matches ? '#7c3aed' : '#fff';
+      b.style.color = matches ? '#fff' : '#1e293b';
+    });
+    recargarPreviewProgramar();
+  };
+  async function recargarPreviewProgramar() {
+    const st = window._previewState;
+    if (!st.producto) return;
+    document.getElementById('mp-prod').textContent = st.producto;
+    document.getElementById('mp-loading').style.display = 'block';
+    document.getElementById('mp-content').style.display = 'none';
+    try {
+      const r = await fetch('/api/plan/sugerir-preview?producto=' + encodeURIComponent(st.producto) + '&dias_horizonte=' + st.horizonte);
+      const d = await r.json();
+      st.data = d;
+      document.getElementById('mp-loading').style.display = 'none';
+      document.getElementById('mp-content').style.display = 'block';
+      document.getElementById('mp-vel').textContent = (d.velocidad_kg_dia || 0).toFixed(2) + ' kg/d';
+      document.getElementById('mp-lote').textContent = (d.lote_bulk_kg || 0) + ' kg';
+      document.getElementById('mp-dur').textContent = (d.dur_lote_dias || 0) + ' d';
+      document.getElementById('mp-paso').textContent = (d.paso_dias || 0) + ' d';
+      // Marca botón horizonte activo
+      document.querySelectorAll('.mp-h-btn').forEach(b => {
+        const matches = parseInt(b.dataset.h) === st.horizonte;
+        b.style.background = matches ? '#7c3aed' : '#fff';
+        b.style.color = matches ? '#fff' : '#1e293b';
+      });
+      const blocker = document.getElementById('mp-blocker');
+      if (d.blocker) {
+        blocker.style.display = 'block';
+        blocker.textContent = '⚠ ' + d.blocker;
+        document.getElementById('mp-tabla').innerHTML = '';
+        document.getElementById('mp-cobertura').style.display = 'none';
+        document.getElementById('mp-btn-generar').disabled = true;
+        document.getElementById('mp-btn-generar').style.opacity = '0.4';
+        return;
+      }
+      blocker.style.display = 'none';
+      document.getElementById('mp-cobertura').style.display = 'block';
+      const fechas = d.fechas || [];
+      const nuevas = fechas.filter(f => !f.ya_programado);
+      const ya = fechas.filter(f => f.ya_programado);
+      const kgTotal = fechas.reduce((s,f) => s + (f.kg || 0), 0);
+      const diasCob = (d.velocidad_kg_dia > 0) ? Math.round(kgTotal / d.velocidad_kg_dia) : 0;
+      document.getElementById('mp-cobertura').innerHTML =
+        '📅 <strong>' + fechas.length + '</strong> lote(s) en el horizonte · ' +
+        '<strong>' + nuevas.length + '</strong> nuevo(s) por crear · ' +
+        '<strong>' + ya.length + '</strong> ya programado(s)<br>' +
+        '🎯 Total <strong>' + kgTotal.toFixed(1) + ' kg</strong> · te alcanzará para <strong>~' + diasCob + ' días</strong> (~' + (diasCob/30).toFixed(1) + ' meses)';
+      // Tabla
+      let html = '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f1f5f9;color:#475569"><th style="padding:8px;text-align:left">#</th><th style="padding:8px;text-align:left">Fecha</th><th style="padding:8px;text-align:right">Kg</th><th style="padding:8px;text-align:right">En</th><th style="padding:8px;text-align:left">Estado</th></tr></thead><tbody>';
+      fechas.forEach((f, i) => {
+        const bg = f.ya_programado ? '#fef3c7' : '#fff';
+        const badge = f.ya_programado
+          ? '<span style="background:#f59e0b;color:#fff;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700">YA PROGRAMADO</span>'
+          : '<span style="background:#7c3aed;color:#fff;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700">NUEVA</span>';
+        html += '<tr style="background:' + bg + ';border-bottom:1px solid #e5e7eb"><td style="padding:8px">' + (i+1) + '</td><td style="padding:8px;font-weight:700">' + f.fecha + '</td><td style="padding:8px;text-align:right">' + f.kg + '</td><td style="padding:8px;text-align:right;color:#64748b">' + f.dias_hasta + 'd</td><td style="padding:8px">' + badge + '</td></tr>';
+      });
+      if (!fechas.length) {
+        html += '<tr><td colspan="5" style="padding:18px;text-align:center;color:#64748b">No hay sugerencias en este horizonte</td></tr>';
+      }
+      html += '</tbody></table>';
+      document.getElementById('mp-tabla').innerHTML = html;
+      const btn = document.getElementById('mp-btn-generar');
+      if (nuevas.length === 0) {
+        btn.disabled = true;
+        btn.style.opacity = '0.5';
+        btn.textContent = ya.length ? '✓ Está bien · cerrar' : 'Nada por programar';
+        btn.onclick = () => document.getElementById('modal-programar').remove();
+      } else {
+        btn.disabled = false;
+        btn.style.opacity = '1';
+        btn.textContent = 'Generar ' + nuevas.length + ' lote(s) en Calendario';
+        btn.onclick = generarProgramacionesProducto;
+      }
+    } catch(e) {
+      document.getElementById('mp-loading').textContent = 'Error: ' + e.message;
+    }
+  }
+  window.generarProgramacionesProducto = async function() {
+    const st = window._previewState;
+    if (!st.producto || !st.data) return;
+    const btn = document.getElementById('mp-btn-generar');
+    btn.disabled = true; btn.textContent = 'Generando…';
+    try {
+      const r = await fetch('/api/plan/auto-programar-sugeridas', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({producto: st.producto, dias_horizonte: st.horizonte}),
+      });
+      const d = await r.json();
+      if (!r.ok || d.error) { alert('Error: ' + (d.error || r.status)); btn.disabled = false; return; }
+      const mios = (d.creados || []).filter(c => (c.producto || '').toUpperCase() === st.producto.toUpperCase());
+      alert('✓ ' + mios.length + ' lote(s) creado(s) en Calendario para ' + st.producto + '\\n\\n' +
+            mios.map(c => '  · ' + c.fecha + ' · ' + c.cantidad_kg + 'kg').join('\\n'));
+      document.getElementById('modal-programar').remove();
+      cargarNecesidades();
+    } catch(e) {
+      alert('Error red: ' + e.message);
+      btn.disabled = false;
+    }
+  };
 
   // FIX 23-may-2026 · Sebastián pidió mapear SKU inline desde el alert
   // SIN MAPEO SHOPIFY · antes mensaje sin acción · ahora input + huérfanos
@@ -21192,6 +21363,12 @@ async function ckMarcar(itemId, estado){
         if (en != null) html += ' (' + (en > 0 ? 'en ' + en + 'd' : 'YA · ' + (-en) + 'd atrasado') + ')';
         html += '</div>';
       }
+      // FIX 23-may-2026 Sebastián · "cuando abra el producto, programar según sugiere + cuántas/en cuánto"
+      // Botón Preview Sugeridas que abre modal con cadena de fechas (90d) + permite programar todas
+      const prodEsc = (p.producto_nombre || '').replace(/'/g, "&#39;").replace(/"/g, '&quot;');
+      html += '<div style="margin-top:8px;padding-top:8px;border-top:1px dashed #ca8a04;display:flex;gap:6px;flex-wrap:wrap">';
+      html += '<button onclick="previewSugeridasProducto(&quot;' + prodEsc + '&quot;)" style="background:#7c3aed;color:#fff;border:none;padding:6px 12px;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer">🤖 Programar</button>';
+      html += '</div>';
       html += '</div>';
     } else {
       html += '<div style="background:#f1f5f9;border-radius:8px;padding:10px;margin-bottom:12px;font-size:12px;color:#64748b">📜 Sin producciones previas registradas · usá "Ya producido" abajo para back-fill</div>';
