@@ -7969,6 +7969,9 @@ def abastecimiento_consumo_horizontes():
             pass
 
     # 7. Pendientes en compras (bulk · dict)
+    # AUDITORÍA-FIX 23-may-2026 · P1-3 · antes pendientes_mee hardcoded en 0
+    # · ahora consulta separada filtrando por sc.categoria IN ('Empaque',
+    # 'Material de Empaque') para separar MP de MEE · evita sobre-pedir
     pendientes_mp = {}
     pendientes_mee = {}
     try:
@@ -7980,6 +7983,7 @@ def abastecimiento_consumo_horizontes():
             WHERE sc.estado IN ('Pendiente','Aprobada')
               AND COALESCE(sc.numero_oc,'')=''
               AND sci.codigo_mp IS NOT NULL AND TRIM(sci.codigo_mp) != ''
+              AND COALESCE(sc.categoria,'') NOT IN ('Empaque','Material de Empaque')
             GROUP BY UPPER(TRIM(sci.codigo_mp))
         """).fetchall():
             pendientes_mp[cm] = float(gp or 0)
@@ -7991,14 +7995,49 @@ def abastecimiento_consumo_horizontes():
                    COALESCE(SUM(oci.cantidad_g - COALESCE(oci.cantidad_recibida_g,0)),0)
             FROM ordenes_compra_items oci
             JOIN ordenes_compra oc ON oc.numero_oc = oci.numero_oc
+            LEFT JOIN solicitudes_compra sc ON sc.numero_oc = oc.numero_oc
             WHERE oc.estado IN ('Borrador','Revisada','Autorizada','Parcial')
               AND oci.codigo_mp IS NOT NULL AND TRIM(oci.codigo_mp) != ''
+              AND COALESCE(sc.categoria,'') NOT IN ('Empaque','Material de Empaque')
             GROUP BY UPPER(TRIM(oci.codigo_mp))
         """).fetchall():
             k = cm
             pendientes_mp[k] = pendientes_mp.get(k, 0.0) + float(gp or 0)
     except Exception:
         pass
+    # MEE pendientes · misma query filtrando categoria de Empaque
+    if incluir_mee:
+        try:
+            for cm, up in c.execute("""
+                SELECT UPPER(TRIM(sci.codigo_mp)),
+                       COALESCE(SUM(sci.cantidad_g),0)
+                FROM solicitudes_compra_items sci
+                JOIN solicitudes_compra sc ON sc.numero = sci.numero
+                WHERE sc.estado IN ('Pendiente','Aprobada')
+                  AND COALESCE(sc.numero_oc,'')=''
+                  AND sci.codigo_mp IS NOT NULL AND TRIM(sci.codigo_mp) != ''
+                  AND COALESCE(sc.categoria,'') IN ('Empaque','Material de Empaque')
+                GROUP BY UPPER(TRIM(sci.codigo_mp))
+            """).fetchall():
+                pendientes_mee[cm] = float(up or 0)
+        except Exception:
+            pass
+        try:
+            for cm, up in c.execute("""
+                SELECT UPPER(TRIM(oci.codigo_mp)),
+                       COALESCE(SUM(oci.cantidad_g - COALESCE(oci.cantidad_recibida_g,0)),0)
+                FROM ordenes_compra_items oci
+                JOIN ordenes_compra oc ON oc.numero_oc = oci.numero_oc
+                LEFT JOIN solicitudes_compra sc ON sc.numero_oc = oc.numero_oc
+                WHERE oc.estado IN ('Borrador','Revisada','Autorizada','Parcial')
+                  AND oci.codigo_mp IS NOT NULL AND TRIM(oci.codigo_mp) != ''
+                  AND COALESCE(sc.categoria,'') IN ('Empaque','Material de Empaque')
+                GROUP BY UPPER(TRIM(oci.codigo_mp))
+            """).fetchall():
+                k = cm
+                pendientes_mee[k] = pendientes_mee.get(k, 0.0) + float(up or 0)
+        except Exception:
+            pass
 
     # 8. Acumular consumo por (codigo, horizonte)
     # consumo[codigo_mp][h] = gramos · acumulativo (15d ⊂ 30d ⊂ 60d ...)
@@ -8166,7 +8205,8 @@ def abastecimiento_consumo_horizontes():
             prod_up = prod.upper().strip()
             vel_kg_dia_por_prod[prod_up] = vel_kg_dia_por_prod.get(prod_up, 0) + kg_dia
         # Pre-computar kg_fijo_por_prod_por_horizonte (lo ya programado Fijo)
-        # para descontar del run-rate y evitar doble-conteo
+        # + kg_b2b_por_prod_por_horizonte para descontar del run-rate y
+        # evitar doble-conteo (AUDITORÍA P2 · agente cazó este caso)
         kg_fijo_acum_por_prod = {}  # prod_up → {h: kg_acumulado}
         for pid, producto, fecha, lotes, cant_kg_expl, lote_size in prod_rows:
             producto_norm = (producto or '').strip().upper()
@@ -8183,6 +8223,25 @@ def abastecimiento_consumo_horizontes():
             for h in horizontes:
                 if dias_hasta_f <= h:
                     d_fijo[h] = d_fijo.get(h, 0.0) + cant_kg_f
+        # B2B también debe descontar del run-rate (los pedidos B2B ya
+        # representan demanda que el run-rate proyectaría · doble-cuento si no)
+        for bid, cli_id, cli_nom, prod_nom, cant_uds, ml_u, f_est in b2b_rows:
+            if not f_est:
+                continue
+            producto_norm_b = (prod_nom or '').strip().upper()
+            try:
+                dias_hasta_b = (date.fromisoformat(str(f_est)[:10]) - hoy).days
+            except Exception:
+                continue
+            if dias_hasta_b < 0:
+                dias_hasta_b = 0
+            cant_kg_b = (float(cant_uds or 0) * float(ml_u or 30)) / 1000.0
+            if cant_kg_b <= 0:
+                continue
+            d_b2b = kg_fijo_acum_por_prod.setdefault(producto_norm_b, dict(_zero_mp))
+            for h in horizontes:
+                if dias_hasta_b <= h:
+                    d_b2b[h] = d_b2b.get(h, 0.0) + cant_kg_b
         # Agregar run-rate al consumo (solo el delta sobre Fijas)
         for prod_up, kg_dia in vel_kg_dia_por_prod.items():
             if kg_dia <= 0:
@@ -8222,7 +8281,10 @@ def abastecimiento_consumo_horizontes():
                 if incluir_mee:
                     mee_items = mee_por_producto.get(prod_up, [])
                     if mee_items:
-                        ml = _inf_ml(prod_up.title() if not any(prod_up.startswith(p) for p in ('SUERO','EMULSION','CREMA','GEL')) else prod_up)
+                        # AUDITORÍA-FIX 23-may-2026 · P2 · antes heurística
+                        # convoluta con .title() · ahora usa volumen_por_producto
+                        # canonical primero · fallback _inf_ml
+                        ml = volumen_por_producto.get(prod_up, 0.0) or _inf_ml(prod_up)
                         if ml > 0:
                             uds_envasadas = (kg_delta * 1000.0) / ml
                             for me in mee_items:
@@ -8275,7 +8337,8 @@ def abastecimiento_consumo_horizontes():
         for cod, consumo in consumo_mee.items():
             info = mee_info.get(cod, {'descripcion': cod, 'proveedor': ''})
             stock_u = float(stock_mee.get(cod, 0) or 0)
-            pend_u = 0  # MEE pendiente requeriría join distinto · TODO
+            # AUDITORÍA-FIX 23-may-2026 · P1-3 · pendientes_mee ahora real
+            pend_u = float(pendientes_mee.get(cod, 0) or 0)
             disponible = stock_u + pend_u
             deficits = {h: round(max(consumo[h] - disponible, 0), 1) for h in horizontes}
             urg, h_urg = _urgencia_de(deficits)
