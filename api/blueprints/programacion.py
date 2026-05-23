@@ -7754,6 +7754,394 @@ def limpiar_duplicados_producciones():
     }), 200
 
 
+@bp.route('/api/abastecimiento/consumo-horizontes', methods=['GET'])
+def abastecimiento_consumo_horizontes():
+    """MRP por múltiples horizontes · consumo de MP/MEE según producciones Fijas
+    + pedidos B2B pendientes en N horizontes (default 15/30/60/90/120/180/365 días).
+
+    Sebastián 23-may-2026: 'abastecimiento debería ser consumo · qué se va a
+    consumir según las producciones de 15, 30, 60, 90, 120, 180 y 365 días'.
+
+    Para cada MP/MEE devuelve:
+      - stock_actual + pendiente_compras (lo que ya está en cola)
+      - consumo en cada horizonte (acumulativo · 15d incluido en 30d, etc.)
+      - déficit por horizonte (consumo - stock - pendiente)
+      - urgencia = primer horizonte donde el déficit > 0
+
+    Reglas:
+      - Solo producciones Fijas (origen IN eos_plan/eos_b2b/eos_retroactivo)
+      - Excluye producciones canceladas, terminadas y ya descontadas
+      - Pedidos B2B pendientes (sin producción asociada) cuentan también
+      - Cubre MP (formula_items) y MEE (sku_mee_config) según `tipo` query param
+
+    Query params:
+      horizontes: CSV de int días (default '15,30,60,90,120,180,365')
+      tipo: 'mp', 'mee' o 'mp,mee' (default ambos)
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+
+    # Parse horizontes
+    raw_h = request.args.get('horizontes', '15,30,60,90,120,180,365')
+    try:
+        horizontes = sorted({
+            max(1, min(int(h.strip()), 730))
+            for h in raw_h.split(',') if h.strip().isdigit()
+        })
+    except Exception:
+        horizontes = [15, 30, 60, 90, 120, 180, 365]
+    if not horizontes:
+        horizontes = [15, 30, 60, 90, 120, 180, 365]
+
+    tipo = (request.args.get('tipo', 'mp,mee') or '').lower()
+    incluir_mp = 'mp' in tipo
+    incluir_mee = 'mee' in tipo
+
+    conn = get_db()
+    c = conn.cursor()
+    from datetime import date, timedelta as _td
+    hoy = date.today()
+    cutoff_max = (hoy + _td(days=max(horizontes))).isoformat()
+    hoy_iso = hoy.isoformat()
+
+    # 1. Producciones Fijas en ventana · solo planes confirmados
+    # exclude: cancelado, completado y ya descontadas (su MP ya bajó del stock)
+    prod_rows = c.execute("""
+        SELECT pp.id, pp.producto, pp.fecha_programada,
+               COALESCE(pp.lotes, 1), COALESCE(pp.cantidad_kg, 0),
+               COALESCE(fh.lote_size_kg, 0)
+        FROM produccion_programada pp
+        LEFT JOIN formula_headers fh
+               ON UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(pp.producto))
+        WHERE COALESCE(pp.origen,'') IN ('eos_plan','eos_b2b','eos_retroactivo')
+          AND LOWER(COALESCE(pp.estado,'')) NOT IN ('cancelado','completado')
+          AND COALESCE(pp.inventario_descontado_at,'') = ''
+          AND pp.fecha_programada >= ?
+          AND pp.fecha_programada <= ?
+        ORDER BY pp.fecha_programada ASC
+    """, (hoy_iso, cutoff_max)).fetchall()
+
+    # 2. Pedidos B2B pendientes (sin producción aún asignada al lote)
+    # Estos suman consumo al horizonte de su fecha_estimada
+    b2b_rows = []
+    try:
+        b2b_rows = c.execute("""
+            SELECT id, cliente_id, cliente_nombre, producto_nombre,
+                   COALESCE(cantidad_uds,0), COALESCE(ml_unidad,30),
+                   COALESCE(fecha_estimada,'')
+            FROM pedidos_b2b
+            WHERE LOWER(COALESCE(estado,'pendiente')) IN ('pendiente','programado')
+              AND COALESCE(fecha_estimada,'') >= ?
+              AND COALESCE(fecha_estimada,'') <= ?
+        """, (hoy_iso, cutoff_max)).fetchall()
+    except sqlite3.OperationalError:
+        b2b_rows = []
+
+    # 3. Fórmulas por producto (g por lote_kg)
+    formulas = {}
+    for r in c.execute("""
+        SELECT UPPER(TRIM(producto_nombre)), material_id,
+               COALESCE(material_nombre,''),
+               COALESCE(porcentaje,0), COALESCE(cantidad_g_por_lote,0)
+        FROM formula_items
+        WHERE material_id IS NOT NULL AND TRIM(material_id) != ''
+    """).fetchall():
+        formulas.setdefault(r[0], []).append({
+            'codigo_mp': r[1],
+            'nombre': r[2],
+            'pct': float(r[3] or 0),
+            'g_por_lote': float(r[4] or 0),
+        })
+
+    # 4. MEE por SKU (volumen-aware)
+    mee_por_sku = {}
+    volumen_por_producto = {}
+    if incluir_mee:
+        try:
+            for r in c.execute("""
+                SELECT UPPER(TRIM(s.sku_codigo)), s.mee_codigo,
+                       COALESCE(s.cantidad_por_unidad,1),
+                       COALESCE(s.componente_tipo,'envase')
+                FROM sku_mee_config s
+                WHERE COALESCE(s.aplica,1)=1
+            """).fetchall():
+                mee_por_sku.setdefault(r[0], []).append({
+                    'codigo': r[1],
+                    'cant_x_uds': float(r[2] or 1),
+                    'tipo': r[3] or 'envase',
+                })
+        except sqlite3.OperationalError:
+            pass
+        try:
+            for r in c.execute("""
+                SELECT UPPER(TRIM(producto_nombre)), COALESCE(volumen_ml,0)
+                FROM volumen_unitario_producto WHERE COALESCE(activo,1)=1
+            """).fetchall():
+                volumen_por_producto[r[0]] = float(r[1] or 0)
+        except sqlite3.OperationalError:
+            pass
+
+    # 5. Stock canonical + info MP
+    stock_mp = _get_mp_stock(conn)
+    mp_info = {}
+    try:
+        for r in c.execute("""
+            SELECT mm.codigo_mp,
+                   COALESCE(mm.nombre_comercial, mm.nombre_inci, mm.codigo_mp),
+                   COALESCE(NULLIF(TRIM(mlt.proveedor_principal),''),
+                            mm.proveedor, '')
+            FROM maestro_mps mm
+            LEFT JOIN mp_lead_time_config mlt ON mlt.material_id = mm.codigo_mp
+            WHERE COALESCE(mm.activo,1)=1
+        """).fetchall():
+            mp_info[r[0]] = {'nombre': r[1] or r[0], 'proveedor': (r[2] or '').strip()}
+    except sqlite3.OperationalError:
+        pass
+
+    # 6. Stock + info MEE
+    stock_mee = {}
+    mee_info = {}
+    if incluir_mee:
+        try:
+            for r in c.execute("""
+                SELECT codigo, COALESCE(stock_actual,0),
+                       COALESCE(descripcion,''),
+                       COALESCE(proveedor,'')
+                FROM maestro_mee
+            """).fetchall():
+                k = str(r[0]).strip().upper()
+                stock_mee[k] = float(r[1] or 0)
+                mee_info[k] = {'descripcion': r[2] or r[0], 'proveedor': r[3] or ''}
+        except sqlite3.OperationalError:
+            pass
+
+    # 7. Pendientes en compras (bulk · dict)
+    pendientes_mp = {}
+    pendientes_mee = {}
+    try:
+        for cm, gp in c.execute("""
+            SELECT UPPER(TRIM(sci.codigo_mp)),
+                   COALESCE(SUM(sci.cantidad_g),0)
+            FROM solicitudes_compra_items sci
+            JOIN solicitudes_compra sc ON sc.numero = sci.numero
+            WHERE sc.estado IN ('Pendiente','Aprobada')
+              AND COALESCE(sc.numero_oc,'')=''
+              AND sci.codigo_mp IS NOT NULL AND TRIM(sci.codigo_mp) != ''
+            GROUP BY UPPER(TRIM(sci.codigo_mp))
+        """).fetchall():
+            pendientes_mp[cm] = float(gp or 0)
+    except Exception:
+        pass
+    try:
+        for cm, gp in c.execute("""
+            SELECT UPPER(TRIM(oci.codigo_mp)),
+                   COALESCE(SUM(oci.cantidad_g - COALESCE(oci.cantidad_recibida_g,0)),0)
+            FROM ordenes_compra_items oci
+            JOIN ordenes_compra oc ON oc.numero_oc = oci.numero_oc
+            WHERE oc.estado IN ('Borrador','Revisada','Autorizada','Parcial')
+              AND oci.codigo_mp IS NOT NULL AND TRIM(oci.codigo_mp) != ''
+            GROUP BY UPPER(TRIM(oci.codigo_mp))
+        """).fetchall():
+            k = cm
+            pendientes_mp[k] = pendientes_mp.get(k, 0.0) + float(gp or 0)
+    except Exception:
+        pass
+
+    # 8. Acumular consumo por (codigo, horizonte)
+    # consumo[codigo_mp][h] = gramos · acumulativo (15d ⊂ 30d ⊂ 60d ...)
+    consumo_mp = {}    # codigo_mp -> {h: g}
+    consumo_mee = {}   # codigo_mee -> {h: uds}
+    _zero_mp = {h: 0.0 for h in horizontes}
+
+    def _agregar_consumo_mp(codigo, gramos, dias_hasta):
+        if not codigo or gramos <= 0:
+            return
+        d = consumo_mp.setdefault(codigo, dict(_zero_mp))
+        for h in horizontes:
+            if dias_hasta <= h:
+                d[h] = d.get(h, 0.0) + gramos
+
+    def _agregar_consumo_mee(codigo, uds, dias_hasta):
+        if not codigo or uds <= 0:
+            return
+        d = consumo_mee.setdefault(codigo, dict(_zero_mp))
+        for h in horizontes:
+            if dias_hasta <= h:
+                d[h] = d.get(h, 0.0) + uds
+
+    # 8a. Producciones Fijas
+    for pid, producto, fecha, lotes, cant_kg_expl, lote_size in prod_rows:
+        producto_norm = (producto or '').strip().upper()
+        try:
+            dias_hasta = (date.fromisoformat(str(fecha)[:10]) - hoy).days
+        except Exception:
+            dias_hasta = 0
+        if dias_hasta < 0:
+            dias_hasta = 0
+        cant_kg = float(cant_kg_expl or 0) or (int(lotes or 1) * float(lote_size or 0))
+        if cant_kg <= 0:
+            continue
+        items = formulas.get(producto_norm) or []
+        # MP consumption: necesario_g por kg producido
+        for it in items:
+            if it['g_por_lote'] > 0 and lote_size and float(lote_size) > 0:
+                gramos = it['g_por_lote'] * (cant_kg / float(lote_size))
+            elif it['pct'] > 0:
+                gramos = (it['pct'] / 100.0) * cant_kg * 1000.0
+            else:
+                continue
+            if incluir_mp:
+                _agregar_consumo_mp(it['codigo_mp'], gramos, dias_hasta)
+        # MEE: requiere volumen por unidad
+        if incluir_mee:
+            vol = volumen_por_producto.get(producto_norm, 0.0)
+            if vol > 0:
+                uds_envasadas = (cant_kg * 1000.0) / vol
+                # Buscar MEE registrados por producto/sku · usar producto_norm
+                # como key (sku_mee_config.sku_codigo) o fallback al codigo_pt
+                mee_items = mee_por_sku.get(producto_norm, [])
+                for me in mee_items:
+                    _agregar_consumo_mee(
+                        (me['codigo'] or '').strip().upper(),
+                        uds_envasadas * me['cant_x_uds'],
+                        dias_hasta,
+                    )
+
+    # 8b. Pedidos B2B pendientes (sin producción Fija aún)
+    for bid, cli_id, cli_nom, prod_nom, cant_uds, ml_u, f_est in b2b_rows:
+        producto_norm = (prod_nom or '').strip().upper()
+        try:
+            dias_hasta = (date.fromisoformat(str(f_est)[:10]) - hoy).days
+        except Exception:
+            dias_hasta = 0
+        if dias_hasta < 0:
+            dias_hasta = 0
+        # Convertir uds × ml a kg
+        cant_kg = (float(cant_uds or 0) * float(ml_u or 30)) / 1000.0
+        if cant_kg <= 0:
+            continue
+        items = formulas.get(producto_norm) or []
+        # Buscar lote_size del producto · fallback a cant_kg si no hay
+        lote_size_b2b = 0.0
+        try:
+            r_ls = c.execute(
+                "SELECT COALESCE(lote_size_kg,0) FROM formula_headers "
+                "WHERE UPPER(TRIM(producto_nombre))=?",
+                (producto_norm,)
+            ).fetchone()
+            if r_ls:
+                lote_size_b2b = float(r_ls[0] or 0)
+        except Exception:
+            pass
+        for it in items:
+            if it['g_por_lote'] > 0 and lote_size_b2b > 0:
+                gramos = it['g_por_lote'] * (cant_kg / lote_size_b2b)
+            elif it['pct'] > 0:
+                gramos = (it['pct'] / 100.0) * cant_kg * 1000.0
+            else:
+                continue
+            if incluir_mp:
+                _agregar_consumo_mp(it['codigo_mp'], gramos, dias_hasta)
+        if incluir_mee:
+            uds_envasadas = float(cant_uds or 0)
+            for me in mee_por_sku.get(producto_norm, []):
+                _agregar_consumo_mee(
+                    (me['codigo'] or '').strip().upper(),
+                    uds_envasadas * me['cant_x_uds'],
+                    dias_hasta,
+                )
+
+    # 9. Construir respuesta · MPs
+    def _urgencia_de(deficits_por_h):
+        for h in horizontes:
+            if deficits_por_h.get(h, 0) > 0.01:
+                if h <= 15:
+                    return ('CRITICO', h)
+                if h <= 30:
+                    return ('URGENTE', h)
+                if h <= 90:
+                    return ('VIGILAR', h)
+                return ('PLANIFICAR', h)
+        return ('OK', None)
+
+    items_out_mp = []
+    if incluir_mp:
+        for cod, consumo in consumo_mp.items():
+            info = mp_info.get(cod, {'nombre': cod, 'proveedor': ''})
+            stock_g = float(stock_mp.get(cod, 0) or 0)
+            pend_g = float(pendientes_mp.get(cod.upper(), 0) or 0)
+            disponible = stock_g + pend_g
+            deficits = {h: round(max(consumo[h] - disponible, 0), 1) for h in horizontes}
+            urg, h_urg = _urgencia_de(deficits)
+            if urg == 'OK' and max(consumo.values()) <= 0.01:
+                continue  # sin consumo · no mostrar
+            items_out_mp.append({
+                'codigo': cod,
+                'nombre': info['nombre'],
+                'proveedor_sugerido': info['proveedor'],
+                'tipo': 'MP',
+                'stock_actual_g': round(stock_g, 1),
+                'pendiente_compras_g': round(pend_g, 1),
+                'consumo': {str(h): round(consumo[h], 1) for h in horizontes},
+                'deficit': {str(h): deficits[h] for h in horizontes},
+                'urgencia': urg,
+                'horizonte_quiebre_dias': h_urg,
+            })
+
+    items_out_mee = []
+    if incluir_mee:
+        for cod, consumo in consumo_mee.items():
+            info = mee_info.get(cod, {'descripcion': cod, 'proveedor': ''})
+            stock_u = float(stock_mee.get(cod, 0) or 0)
+            pend_u = 0  # MEE pendiente requeriría join distinto · TODO
+            disponible = stock_u + pend_u
+            deficits = {h: round(max(consumo[h] - disponible, 0), 1) for h in horizontes}
+            urg, h_urg = _urgencia_de(deficits)
+            if urg == 'OK' and max(consumo.values()) <= 0.01:
+                continue
+            items_out_mee.append({
+                'codigo': cod,
+                'nombre': info['descripcion'],
+                'proveedor_sugerido': info['proveedor'],
+                'tipo': 'MEE',
+                'stock_actual_u': round(stock_u, 1),
+                'pendiente_compras_u': round(pend_u, 1),
+                'consumo': {str(h): round(consumo[h], 1) for h in horizontes},
+                'deficit': {str(h): deficits[h] for h in horizontes},
+                'urgencia': urg,
+                'horizonte_quiebre_dias': h_urg,
+            })
+
+    # Ordenar: urgencia primero (CRITICO > URGENTE > VIGILAR > PLANIFICAR > OK)
+    _orden_urg = {'CRITICO': 0, 'URGENTE': 1, 'VIGILAR': 2, 'PLANIFICAR': 3, 'OK': 4}
+    items_out_mp.sort(key=lambda x: (_orden_urg.get(x['urgencia'], 9),
+                                     x['horizonte_quiebre_dias'] or 9999))
+    items_out_mee.sort(key=lambda x: (_orden_urg.get(x['urgencia'], 9),
+                                      x['horizonte_quiebre_dias'] or 9999))
+
+    # Resumen por horizonte
+    resumen = {}
+    for h in horizontes:
+        n_mp_def = sum(1 for it in items_out_mp if it['deficit'][str(h)] > 0.01)
+        n_mee_def = sum(1 for it in items_out_mee if it['deficit'][str(h)] > 0.01)
+        resumen[str(h)] = {
+            'n_mp_con_deficit': n_mp_def,
+            'n_mee_con_deficit': n_mee_def,
+            'n_total_con_deficit': n_mp_def + n_mee_def,
+        }
+
+    return jsonify({
+        'hoy': hoy_iso,
+        'horizontes': horizontes,
+        'n_producciones_fijas': len(prod_rows),
+        'n_pedidos_b2b_pendientes': len(b2b_rows),
+        'tipo': tipo,
+        'mps': items_out_mp,
+        'mees': items_out_mee,
+        'resumen_por_horizonte': resumen,
+    })
+
+
 @bp.route('/api/programacion/solicitar-faltantes-bulk', methods=['POST'])
 def solicitar_faltantes_bulk():
     """Crea solicitudes_compra agrupadas por proveedor desde los faltantes

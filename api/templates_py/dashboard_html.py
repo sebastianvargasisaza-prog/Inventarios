@@ -1834,6 +1834,26 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
          Solicitar para evitar doble producción. -->
     <div id="nec-contenido"><div style="text-align:center;color:#94a3b8;padding:40px">Cargando…</div></div>
   </div>
+  <!-- Tab "Abastecimiento" · MRP por horizontes · Sebastián 23-may-2026 -->
+  <div id="ptab-abastecimiento" style="display:none">
+    <div style="background:linear-gradient(90deg,#faf5ff,#f3e8ff);padding:14px 18px;border-radius:10px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+      <div>
+        <h3 style="margin:0;color:#5b21b6;font-size:15px;font-weight:800">&#128230; Abastecimiento por horizontes</h3>
+        <div style="font-size:11px;color:#475569;margin-top:3px">Consumo MP/MEE según producciones Fijas + B2B pendientes en 15/30/60/90/120/180/365 días</div>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:11px">
+        <label style="color:#475569;display:flex;align-items:center;gap:4px">
+          <input type="checkbox" id="abast-mp" checked> MPs
+        </label>
+        <label style="color:#475569;display:flex;align-items:center;gap:4px">
+          <input type="checkbox" id="abast-mee" checked> MEE
+        </label>
+        <button onclick="cargarAbastecimiento()" style="background:#7c3aed;color:#fff;border:none;padding:7px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">↻ Recargar</button>
+      </div>
+    </div>
+    <div id="abast-resumen" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px"></div>
+    <div id="abast-contenido"><div style="text-align:center;color:#94a3b8;padding:40px">Click ↻ Recargar para calcular</div></div>
+  </div>
   <!-- Modal UNIFICADO "Solicitar producción" · Sebastián 13-may-2026
        todo en un solo lugar: presentación, demanda, histórico, sugerencias,
        custom y ya-producido. Reemplaza el drill panel anterior. -->
@@ -11973,6 +11993,18 @@ async function ckMarcar(itemId, estado){
         'tareas': 'ptab-tareas',
         'plano': 'ptab-plano',
       };
+      // Lazy-load Abastecimiento al activar tab · Sebastián 23-may-2026
+      if (tab === 'abastecimiento') {
+        try {
+          if (typeof cargarAbastecimiento === 'function') {
+            // Solo si no se cargó ya (evita refetch en cada cambio de tab)
+            var ac = document.getElementById('abast-contenido');
+            if (ac && ac.textContent.indexOf('Click') >= 0) {
+              cargarAbastecimiento();
+            }
+          }
+        } catch(e) { console.warn('lazy load abast:', e); }
+      }
       // Lazy-load iframe Mi Día solo al activar tab (evita carga al boot).
       // Sebastián 19-may-2026: si ya estaba cargado, refrescar el contenido
       // sin recargar el iframe entero (mantiene navegación · solo refetch data).
@@ -20192,6 +20224,105 @@ async function ckMarcar(itemId, estado){
       renderClientesNec(d.clientes);
     } catch(e) {
       div.innerHTML = '<div style="text-align:center;color:#dc2626;padding:40px">Error: ' + escapeHtmlNec(e.message) + '</div>';
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // Tab "Abastecimiento" · Sebastián 23-may-2026 · MRP por horizontes
+  // ═══════════════════════════════════════════════════════════════════
+  const _ABA_URG_COLORS = {
+    'CRITICO':     {bg:'#fee2e2', text:'#991b1b', emoji:'🔴'},
+    'URGENTE':     {bg:'#fff7ed', text:'#9a3412', emoji:'🟠'},
+    'VIGILAR':     {bg:'#fefce8', text:'#854d0e', emoji:'🟡'},
+    'PLANIFICAR':  {bg:'#eff6ff', text:'#1e40af', emoji:'🔵'},
+    'OK':          {bg:'#f0fdf4', text:'#15803d', emoji:'🟢'},
+  };
+
+  function _fmtAba(n) {
+    if (!n || n < 0.01) return '—';
+    if (n >= 1000) return Math.round(n).toLocaleString('es-CO');
+    return Math.round(n*10)/10;
+  }
+
+  async function cargarAbastecimiento() {
+    const div = document.getElementById('abast-contenido');
+    const resumenDiv = document.getElementById('abast-resumen');
+    const tipos = [];
+    if (document.getElementById('abast-mp').checked) tipos.push('mp');
+    if (document.getElementById('abast-mee').checked) tipos.push('mee');
+    if (!tipos.length) {
+      div.innerHTML = '<div style="text-align:center;color:#dc2626;padding:20px">Selecciona al menos MP o MEE</div>';
+      return;
+    }
+    div.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:40px">Calculando consumo por horizonte…</div>';
+    resumenDiv.innerHTML = '';
+    try {
+      const r = await fetch('/api/abastecimiento/consumo-horizontes?tipo=' + tipos.join(','));
+      if (r.status === 401) { window.location.href = '/login'; return; }
+      if (!r.ok) {
+        div.innerHTML = '<div style="text-align:center;color:#dc2626;padding:20px">Error: HTTP ' + r.status + '</div>';
+        return;
+      }
+      const d = await r.json();
+      // Resumen chips por horizonte
+      let chips = '<div style="font-size:11px;color:#475569;margin-right:8px;align-self:center">' + d.n_producciones_fijas + ' producciones Fijas · ' + d.n_pedidos_b2b_pendientes + ' B2B pendientes</div>';
+      d.horizontes.forEach(h => {
+        const r = d.resumen_por_horizonte[String(h)] || {};
+        const n = r.n_total_con_deficit || 0;
+        const bg = n>0 ? (h<=15?'#fee2e2':h<=30?'#fff7ed':h<=90?'#fefce8':'#eff6ff') : '#f0fdf4';
+        const tc = n>0 ? (h<=15?'#991b1b':h<=30?'#9a3412':h<=90?'#854d0e':'#1e40af') : '#15803d';
+        chips += '<span style="background:'+bg+';color:'+tc+';padding:6px 10px;border-radius:6px;font-size:12px;font-weight:700">' + h + 'd: ' + n + '</span>';
+      });
+      resumenDiv.innerHTML = chips;
+
+      const items = [].concat(d.mps || [], d.mees || []);
+      if (!items.length) {
+        div.innerHTML = '<div style="text-align:center;color:#16a34a;padding:30px;background:#f0fdf4;border-radius:8px">✓ Sin déficits detectados · stock + pendiente cubre las producciones programadas</div>';
+        return;
+      }
+      // Tabla
+      let html = '<div style="overflow-x:auto;background:white;border-radius:10px;border:1px solid #e2e8f0">';
+      html += '<table style="width:100%;border-collapse:collapse;font-size:12px;min-width:900px">';
+      html += '<thead><tr style="background:#f8fafc;color:#475569">';
+      html += '<th style="text-align:left;padding:8px;font-weight:700">Código</th>';
+      html += '<th style="text-align:left;padding:8px;font-weight:700">Nombre</th>';
+      html += '<th style="text-align:center;padding:8px;font-weight:700">Tipo</th>';
+      html += '<th style="text-align:left;padding:8px;font-weight:700">Proveedor</th>';
+      html += '<th style="text-align:right;padding:8px;font-weight:700">Stock</th>';
+      html += '<th style="text-align:right;padding:8px;font-weight:700">En cola</th>';
+      d.horizontes.forEach(h => {
+        html += '<th style="text-align:right;padding:8px;font-weight:700;background:#f1f5f9">' + h + 'd</th>';
+      });
+      html += '<th style="text-align:center;padding:8px;font-weight:700">Urg</th>';
+      html += '</tr></thead><tbody>';
+      items.forEach(it => {
+        const urg = _ABA_URG_COLORS[it.urgencia] || _ABA_URG_COLORS.OK;
+        const rowBg = it.urgencia === 'CRITICO' ? '#fef2f2' : (it.urgencia === 'URGENTE' ? '#fff7ed' : 'white');
+        html += '<tr style="border-top:1px solid #e2e8f0;background:' + rowBg + '">';
+        html += '<td style="padding:6px 8px;font-family:ui-monospace;font-weight:700">' + escapeHtmlNec(it.codigo) + '</td>';
+        html += '<td style="padding:6px 8px">' + escapeHtmlNec(it.nombre) + '</td>';
+        html += '<td style="padding:6px 8px;text-align:center;font-size:10px;font-weight:700;color:' + (it.tipo==='MP'?'#0891b2':'#7c3aed') + '">' + it.tipo + '</td>';
+        html += '<td style="padding:6px 8px;color:#64748b">' + escapeHtmlNec(it.proveedor_sugerido || '—') + '</td>';
+        const stockKey = it.tipo === 'MP' ? 'stock_actual_g' : 'stock_actual_u';
+        const colaKey = it.tipo === 'MP' ? 'pendiente_compras_g' : 'pendiente_compras_u';
+        const unit = it.tipo === 'MP' ? 'g' : 'u';
+        html += '<td style="padding:6px 8px;text-align:right;font-family:ui-monospace">' + _fmtAba(it[stockKey]) + (it[stockKey]?' '+unit:'') + '</td>';
+        html += '<td style="padding:6px 8px;text-align:right;font-family:ui-monospace;color:' + (it[colaKey]>0?'#15803d':'#94a3b8') + '">' + _fmtAba(it[colaKey]) + (it[colaKey]?' '+unit:'') + '</td>';
+        d.horizontes.forEach(h => {
+          const def = it.deficit[String(h)] || 0;
+          const cons = it.consumo[String(h)] || 0;
+          const cellBg = def > 0.01 ? (h<=15?'#fee2e2':h<=30?'#fff7ed':h<=90?'#fefce8':'#eff6ff') : '';
+          const cellTc = def > 0.01 ? '#991b1b' : '#94a3b8';
+          html += '<td style="padding:6px 8px;text-align:right;font-family:ui-monospace;background:' + cellBg + ';color:' + cellTc + ';font-weight:' + (def>0.01?'700':'400') + '" title="Consumo ' + h + 'd: ' + _fmtAba(cons) + ' ' + unit + '">' + _fmtAba(def) + '</td>';
+        });
+        html += '<td style="padding:6px 8px;text-align:center;font-size:16px" title="' + urg.text + '">' + urg.emoji + '</td>';
+        html += '</tr>';
+      });
+      html += '</tbody></table></div>';
+      html += '<div style="font-size:11px;color:#64748b;margin-top:10px">💡 <strong>Cómo leer:</strong> cada columna 15d/30d/.../365d muestra el <em>déficit</em> en ese horizonte (cuánto falta comprar). Si todas las columnas están en —, ese MP/MEE está cubierto. Acumulativo: lo que se consume en día 25 cuenta en 30d, 60d, etc. pero no en 15d.</div>';
+      div.innerHTML = html;
+    } catch(e) {
+      div.innerHTML = '<div style="text-align:center;color:#dc2626;padding:20px">Error red: ' + escapeHtmlNec(e.message) + '</div>';
     }
   }
 

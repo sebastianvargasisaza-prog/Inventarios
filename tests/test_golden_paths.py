@@ -9908,6 +9908,103 @@ def test_golden_necesidades_skus_huerfanos_detectados(app, db_clean):
 # via UI post-deploy.
 
 
+def test_golden_abastecimiento_consumo_horizontes(app, db_clean):
+    """Endpoint nuevo /api/abastecimiento/consumo-horizontes · MRP por
+    horizontes 15/30/60/90/120/180/365 días.
+
+    Sebastián 23-may-2026: 'abastecimiento debería ser consumo · qué se va
+    a consumir según las producciones de 15, 30, 60, 90, 120, 180, 1 año'.
+
+    Anti-regresión:
+      - solo producciones Fijas (eos_plan/eos_b2b/eos_retroactivo)
+      - excluye canceladas / ya descontadas
+      - acumulativo (consumo en día 25 cuenta en 30/60/.../365 pero no en 15)
+      - resta stock + pendiente compras para calcular déficit
+      - urgencia según primer horizonte donde falta
+    """
+    from datetime import date as _date, timedelta as _tdh
+    # Cleanup
+    for sql in (
+        "DELETE FROM produccion_programada WHERE producto LIKE 'TEST_ABA_%'",
+        "DELETE FROM movimientos WHERE material_id='MPTESTABA01'",
+        "DELETE FROM formula_items WHERE producto_nombre LIKE 'TEST_ABA_%'",
+        "DELETE FROM formula_headers WHERE producto_nombre LIKE 'TEST_ABA_%'",
+        "DELETE FROM maestro_mps WHERE codigo_mp='MPTESTABA01'",
+    ):
+        _exec(sql)
+    _exec("""INSERT INTO maestro_mps (codigo_mp, nombre_comercial, activo)
+             VALUES ('MPTESTABA01','MP Test Abast',1)""")
+    _exec("""INSERT INTO formula_headers (producto_nombre, lote_size_kg, activo)
+             VALUES ('TEST_ABA_PROD', 10, 1)""")
+    _exec("""INSERT INTO formula_items (producto_nombre, material_id,
+              material_nombre, cantidad_g_por_lote)
+             VALUES ('TEST_ABA_PROD','MPTESTABA01','MP Test Abast',5000)""")
+    # Stock 1000 g
+    _exec("""INSERT INTO movimientos (material_id, material_nombre, cantidad,
+              tipo, fecha, lote)
+             VALUES ('MPTESTABA01','MP Test Abast',1000,
+                     'Entrada','2026-05-01','LOTE-TESTABA')""")
+    # Producción FIJA en día +25 (cuenta para 30/60/.../365 pero NO 15)
+    f25 = (_date.today() + _tdh(days=25)).isoformat()
+    _exec(f"""INSERT INTO produccion_programada (producto, fecha_programada,
+              cantidad_kg, lotes, estado, origen)
+             VALUES ('TEST_ABA_PROD','{f25}',10,1,'pendiente','eos_plan')""")
+    # Producción CANCELADA en día +10 (NO cuenta)
+    f10 = (_date.today() + _tdh(days=10)).isoformat()
+    _exec(f"""INSERT INTO produccion_programada (producto, fecha_programada,
+              cantidad_kg, lotes, estado, origen)
+             VALUES ('TEST_ABA_PROD','{f10}',10,1,'cancelado','eos_plan')""")
+    # Producción SUGERIDA en día +5 (NO cuenta · solo Fijas)
+    f5 = (_date.today() + _tdh(days=5)).isoformat()
+    _exec(f"""INSERT INTO produccion_programada (producto, fecha_programada,
+              cantidad_kg, lotes, estado, origen)
+             VALUES ('TEST_ABA_PROD','{f5}',10,1,'pendiente','eos_canonico')""")
+
+    cs = _login(app, 'sebastian')
+    r = cs.get('/api/abastecimiento/consumo-horizontes')
+    assert r.status_code == 200, f'BUG: {r.status_code} {r.data}'
+    d = r.get_json()
+    assert d['horizontes'] == [15, 30, 60, 90, 120, 180, 365]
+    # Nota: no validamos n_producciones_fijas total (la BD puede tener seed) ·
+    # validamos el consumo específico del MP de prueba (único)
+    assert d['n_producciones_fijas'] >= 1, \
+        f'BUG: nuestra Fija debe contar · {d["n_producciones_fijas"]}'
+
+    # MP debe aparecer con consumo 5000g en horizontes >=30 (no en 15)
+    mp = next((x for x in d['mps'] if x['codigo'] == 'MPTESTABA01'), None)
+    assert mp, f'BUG: MP no aparece · {d["mps"]}'
+    assert mp['consumo']['15'] == 0, \
+        f'BUG: producción día 25 NO debe contar en 15d · {mp["consumo"]}'
+    assert mp['consumo']['30'] == 5000, \
+        f'BUG: producción día 25 debe contar en 30d · {mp["consumo"]}'
+    assert mp['consumo']['60'] == 5000
+    assert mp['consumo']['365'] == 5000
+
+    # Déficit en 30d = 5000 - 1000 (stock) = 4000
+    assert abs(mp['deficit']['30'] - 4000) < 1, \
+        f'BUG: deficit 30d esperado 4000 · got {mp["deficit"]["30"]}'
+
+    # Urgencia: primer horizonte con déficit es 30d → URGENTE
+    assert mp['urgencia'] == 'URGENTE', \
+        f'BUG: urgencia esperada URGENTE · got {mp["urgencia"]}'
+    assert mp['horizonte_quiebre_dias'] == 30
+
+    # Anti-auth · sin sesión 401
+    cs_no = app.test_client()
+    r2 = cs_no.get('/api/abastecimiento/consumo-horizontes')
+    assert r2.status_code == 401
+
+    # Cleanup
+    for sql in (
+        "DELETE FROM produccion_programada WHERE producto LIKE 'TEST_ABA_%'",
+        "DELETE FROM movimientos WHERE material_id='MPTESTABA01'",
+        "DELETE FROM formula_items WHERE producto_nombre LIKE 'TEST_ABA_%'",
+        "DELETE FROM formula_headers WHERE producto_nombre LIKE 'TEST_ABA_%'",
+        "DELETE FROM maestro_mps WHERE codigo_mp='MPTESTABA01'",
+    ):
+        _exec(sql)
+
+
 def test_golden_endpoints_shopify_debug_requieren_auth(app, db_clean):
     """SEC-FIX · 3 endpoints estaban públicos · auditoría 23-may.
 
