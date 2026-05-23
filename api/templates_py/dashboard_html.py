@@ -1843,6 +1843,13 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:11px">
         <label style="color:#475569;display:flex;align-items:center;gap:4px">
+          Modo:
+          <select id="abast-modo" onchange="cargarAbastecimiento()" style="padding:3px 6px;border:1px solid #cbd5e1;border-radius:4px;font-size:11px">
+            <option value="comprometido">Comprometido (solo Fijas + B2B)</option>
+            <option value="run_rate">Run-rate (+ velocidad ventas)</option>
+          </select>
+        </label>
+        <label style="color:#475569;display:flex;align-items:center;gap:4px">
           <input type="checkbox" id="abast-mp" checked> MPs
         </label>
         <label style="color:#475569;display:flex;align-items:center;gap:4px">
@@ -20254,10 +20261,12 @@ async function ckMarcar(itemId, estado){
       div.innerHTML = '<div style="text-align:center;color:#dc2626;padding:20px">Selecciona al menos MP o MEE</div>';
       return;
     }
-    div.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:40px">Calculando consumo por horizonte…</div>';
+    const modoSel = document.getElementById('abast-modo');
+    const modo = (modoSel && modoSel.value) || 'comprometido';
+    div.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:40px">Calculando consumo por horizonte (' + modo + ')…</div>';
     resumenDiv.innerHTML = '';
     try {
-      const r = await fetch('/api/abastecimiento/consumo-horizontes?tipo=' + tipos.join(','));
+      const r = await fetch('/api/abastecimiento/consumo-horizontes?tipo=' + tipos.join(',') + '&modo=' + encodeURIComponent(modo));
       if (r.status === 401) { window.location.href = '/login'; return; }
       if (!r.ok) {
         div.innerHTML = '<div style="text-align:center;color:#dc2626;padding:20px">Error: HTTP ' + r.status + '</div>';
@@ -20265,7 +20274,8 @@ async function ckMarcar(itemId, estado){
       }
       const d = await r.json();
       // Resumen chips por horizonte
-      let chips = '<div style="font-size:11px;color:#475569;margin-right:8px;align-self:center">' + d.n_producciones_fijas + ' producciones Fijas · ' + d.n_pedidos_b2b_pendientes + ' B2B pendientes</div>';
+      const modoLabel = d.modo === 'run_rate' ? '<span style="background:#ede9fe;color:#5b21b6;padding:2px 6px;border-radius:4px;font-weight:700">Run-rate</span>' : '<span style="background:#dcfce7;color:#15803d;padding:2px 6px;border-radius:4px;font-weight:700">Comprometido</span>';
+      let chips = '<div style="font-size:11px;color:#475569;margin-right:8px;align-self:center">Modo ' + modoLabel + ' · ' + d.n_producciones_fijas + ' producciones Fijas · ' + d.n_pedidos_b2b_pendientes + ' B2B pendientes</div>';
       d.horizontes.forEach(h => {
         const r = d.resumen_por_horizonte[String(h)] || {};
         const n = r.n_total_con_deficit || 0;

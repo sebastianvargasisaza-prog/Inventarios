@@ -7797,6 +7797,15 @@ def abastecimiento_consumo_horizontes():
     incluir_mp = 'mp' in tipo
     incluir_mee = 'mee' in tipo
 
+    # Modo de demanda · Sebastián 23-may-2026 · dual sin inflar
+    # · 'comprometido' (default): solo Fijas + B2B (lo aprobado)
+    # · 'run_rate': agrega proyección por velocidad de ventas Shopify
+    #   (consumo proyectado = velocidad_kg_dia × h · descuenta lo ya Fijo del
+    #   mismo producto para evitar doble-contar)
+    modo = (request.args.get('modo', 'comprometido') or '').lower()
+    if modo not in ('comprometido', 'run_rate'):
+        modo = 'comprometido'
+
     conn = get_db()
     c = conn.cursor()
     from datetime import date, timedelta as _td
@@ -8051,6 +8060,130 @@ def abastecimiento_consumo_horizontes():
                     dias_hasta,
                 )
 
+    # 8c. RUN-RATE · proyección por velocidad de ventas Shopify
+    # Sebastián 23-may-2026 · modo dual sin inflar · cuando hay pocas Fijas
+    # (típicamente 2 semanas), completar con la demanda proyectada por las
+    # ventas reales · NO usa sugerencias IA · solo datos históricos de ventas
+    if modo == 'run_rate':
+        from datetime import datetime as _dt_rr
+        # Cargar velocidad por SKU últimos 60d desde animus_shopify_orders
+        # (reutiliza misma fuente que /api/plan/necesidades)
+        vel_60d_iso = (_dt_rr.utcnow() - _td(hours=5) - _td(days=60)).strftime('%Y-%m-%d')
+        ventas_60d_sku = {}
+        try:
+            for r in c.execute("""
+                SELECT sku_items FROM animus_shopify_orders
+                WHERE creado_en >= ?
+                  AND sku_items IS NOT NULL AND sku_items != ''
+            """, (vel_60d_iso + 'T00:00:00',)).fetchall():
+                try:
+                    items = json.loads(r[0]) if r[0] else []
+                except Exception:
+                    continue
+                for it in items:
+                    sku = (it.get('sku') or '').strip().upper()
+                    if not sku:
+                        continue
+                    qty = int(it.get('qty') or it.get('cantidad') or it.get('quantity') or 0)
+                    if qty > 0:
+                        ventas_60d_sku[sku] = ventas_60d_sku.get(sku, 0) + qty
+        except Exception:
+            pass
+        # Mapeo SKU → producto + ml_unidad
+        sku_to_prod_rr = {}
+        try:
+            for r in c.execute("""
+                SELECT sku, producto_nombre FROM sku_producto_map
+                WHERE COALESCE(activo,1)=1
+                  AND producto_nombre IS NOT NULL AND TRIM(producto_nombre)!=''
+            """).fetchall():
+                sku_to_prod_rr[(r[0] or '').strip().upper()] = (r[1] or '').strip()
+        except Exception:
+            pass
+        # Inferir ml_unidad por producto · reutiliza helper de plan.py
+        try:
+            from blueprints.plan import _inferir_ml_presentacion as _inf_ml
+        except Exception:
+            _inf_ml = lambda nombre: 30.0
+        # Agregar velocidad por producto
+        vel_kg_dia_por_prod = {}
+        for sku, qty_60d in ventas_60d_sku.items():
+            prod = sku_to_prod_rr.get(sku)
+            if not prod:
+                continue
+            vel_uds_dia = qty_60d / 60.0
+            ml = _inf_ml(prod)
+            kg_dia = (vel_uds_dia * ml) / 1000.0
+            prod_up = prod.upper().strip()
+            vel_kg_dia_por_prod[prod_up] = vel_kg_dia_por_prod.get(prod_up, 0) + kg_dia
+        # Pre-computar kg_fijo_por_prod_por_horizonte (lo ya programado Fijo)
+        # para descontar del run-rate y evitar doble-conteo
+        kg_fijo_acum_por_prod = {}  # prod_up → {h: kg_acumulado}
+        for pid, producto, fecha, lotes, cant_kg_expl, lote_size in prod_rows:
+            producto_norm = (producto or '').strip().upper()
+            try:
+                dias_hasta_f = (date.fromisoformat(str(fecha)[:10]) - hoy).days
+            except Exception:
+                dias_hasta_f = 0
+            if dias_hasta_f < 0:
+                dias_hasta_f = 0
+            cant_kg_f = float(cant_kg_expl or 0) or (int(lotes or 1) * float(lote_size or 0))
+            if cant_kg_f <= 0:
+                continue
+            d_fijo = kg_fijo_acum_por_prod.setdefault(producto_norm, dict(_zero_mp))
+            for h in horizontes:
+                if dias_hasta_f <= h:
+                    d_fijo[h] = d_fijo.get(h, 0.0) + cant_kg_f
+        # Agregar run-rate al consumo (solo el delta sobre Fijas)
+        for prod_up, kg_dia in vel_kg_dia_por_prod.items():
+            if kg_dia <= 0:
+                continue
+            items = formulas.get(prod_up) or []
+            lote_size_rr = 0.0
+            try:
+                r_ls = c.execute(
+                    "SELECT COALESCE(lote_size_kg,0) FROM formula_headers "
+                    "WHERE UPPER(TRIM(producto_nombre))=?",
+                    (prod_up,)
+                ).fetchone()
+                if r_ls:
+                    lote_size_rr = float(r_ls[0] or 0)
+            except Exception:
+                pass
+            fijo_acum = kg_fijo_acum_por_prod.get(prod_up, _zero_mp)
+            for h in horizontes:
+                kg_proyectado = kg_dia * h
+                kg_ya_fijo = fijo_acum.get(h, 0.0)
+                kg_delta = max(kg_proyectado - kg_ya_fijo, 0.0)
+                if kg_delta <= 0.01:
+                    continue
+                # Explotar fórmula sobre el delta
+                for it in items:
+                    if it['g_por_lote'] > 0 and lote_size_rr > 0:
+                        gramos = it['g_por_lote'] * (kg_delta / lote_size_rr)
+                    elif it['pct'] > 0:
+                        gramos = (it['pct'] / 100.0) * kg_delta * 1000.0
+                    else:
+                        continue
+                    if incluir_mp and gramos > 0:
+                        # Agregar directamente al horizonte (no acumulativo
+                        # porque kg_proyectado ya es acumulado hasta h)
+                        d = consumo_mp.setdefault(it['codigo_mp'], dict(_zero_mp))
+                        d[h] = d.get(h, 0.0) + gramos
+                if incluir_mee:
+                    mee_items = mee_por_sku.get(prod_up, [])
+                    if mee_items:
+                        ml = _inf_ml(prod_up.title() if not any(prod_up.startswith(p) for p in ('SUERO','EMULSION','CREMA','GEL')) else prod_up)
+                        if ml > 0:
+                            uds_envasadas = (kg_delta * 1000.0) / ml
+                            for me in mee_items:
+                                cod_mee = (me['codigo'] or '').strip().upper()
+                                if not cod_mee:
+                                    continue
+                                uds = uds_envasadas * me['cant_x_uds']
+                                d = consumo_mee.setdefault(cod_mee, dict(_zero_mp))
+                                d[h] = d.get(h, 0.0) + uds
+
     # 9. Construir respuesta · MPs
     def _urgencia_de(deficits_por_h):
         for h in horizontes:
@@ -8133,6 +8266,7 @@ def abastecimiento_consumo_horizontes():
     return jsonify({
         'hoy': hoy_iso,
         'horizontes': horizontes,
+        'modo': modo,
         'n_producciones_fijas': len(prod_rows),
         'n_pedidos_b2b_pendientes': len(b2b_rows),
         'tipo': tipo,

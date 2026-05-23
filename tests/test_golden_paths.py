@@ -9994,6 +9994,19 @@ def test_golden_abastecimiento_consumo_horizontes(app, db_clean):
     r2 = cs_no.get('/api/abastecimiento/consumo-horizontes')
     assert r2.status_code == 401
 
+    # Modo dual · run_rate debe responder 200 con mismo schema
+    r3 = cs.get('/api/abastecimiento/consumo-horizontes?modo=run_rate')
+    assert r3.status_code == 200
+    d3 = r3.get_json()
+    assert d3.get('modo') == 'run_rate'
+    # En run_rate las MPs siguen apareciendo (al menos las que tienen consumo
+    # por Fijas · agregamos run-rate sin alterar lo Fijo)
+    mp_rr = next((x for x in d3['mps'] if x['codigo'] == 'MPTESTABA01'), None)
+    assert mp_rr, 'BUG: MP debe seguir apareciendo en run_rate'
+    # El consumo en run_rate debe ser >= al de comprometido (nunca menor)
+    assert mp_rr['consumo']['30'] >= 5000, \
+        f'BUG: run_rate no debe perder consumo Fijo · {mp_rr["consumo"]}'
+
     # Cleanup
     for sql in (
         "DELETE FROM produccion_programada WHERE producto LIKE 'TEST_ABA_%'",
