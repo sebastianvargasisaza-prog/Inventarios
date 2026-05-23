@@ -1293,13 +1293,15 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
         # FIX #2-b · 23-may-2026 Sebastián · AZ HIBRID CLEAR tenía
         # lote_size_kg=0.1 en BD → modal planificador sugería 23 lotes
         # de 0.1kg uno por día. Si lote_kg es absurdo (<1kg de bulk),
-        # calculamos un lote efectivo = velocidad × 30 días, con flag
+        # calculamos un lote efectivo = velocidad × 60 días, con flag
         # lote_calculado=true visible al usuario para que arregle BD.
+        # FIX 23-may-2026 PM · 30→60d cobertura · antes paso=5d (denso) ·
+        # ahora paso=35d (60-cob_alerta 25) · más realista para producción.
         lote_calculado = False
         lote_kg_efectivo = float(lote_kg or 0)
         if lote_kg_efectivo < 1.0 and velocidad_kg_dia > 0.01:
-            # ~30d de cobertura como lote estándar · mínimo 1kg
-            lote_kg_efectivo = max(round(velocidad_kg_dia * 30, 1), 1.0)
+            # ~60d de cobertura como lote estándar · paso re-orden ~35d
+            lote_kg_efectivo = max(round(velocidad_kg_dia * 60, 1), 1.0)
             lote_calculado = True
 
         # Días de cobertura
