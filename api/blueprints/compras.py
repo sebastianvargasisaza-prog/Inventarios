@@ -7021,6 +7021,18 @@ def handle_mee():
     cur.execute(sql, params)
     cols=['codigo','descripcion','categoria','proveedor','stock_actual','stock_minimo','estado']
     items=[dict(zip(cols,r)) for r in cur.fetchall()]
+    # AUDITORÍA-FIX 23-may-2026 · C18 · sobrescribir stock_actual cache
+    # con valor CANONICAL de movimientos_mee · evita drift en UI mientras
+    # el cron mee_drift_sync no haya corrido (mismo día)
+    try:
+        from blueprints.programacion import _get_mee_stock
+        stock_canon = _get_mee_stock(conn)
+        for it in items:
+            cod_up = str(it.get('codigo') or '').strip().upper()
+            if cod_up in stock_canon:
+                it['stock_actual'] = round(stock_canon[cod_up], 2)
+    except Exception:
+        pass
     return jsonify({'items':items})
 
 @bp.route('/api/mee/<codigo>', methods=['GET','PUT'])

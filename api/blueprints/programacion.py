@@ -982,10 +982,22 @@ def _get_stock_pt(conn):
 
 def _get_mee_stock(conn):
     """
-    MEE stock from movimientos_mee (Entrada-Salida).
-    Falls back to maestro_mee.stock_actual where no movements exist.
+    MEE stock CANONICAL from movimientos_mee (Entrada-Salida).
+    Falls back to maestro_mee.stock_actual where no movements exist
+    (defensa para MEEs viejos sin kardex completo · drift mitigado por
+    cron mee_drift_sync diario 3 AM).
     Returns dict {codigo_upper: stock_float}
+
+    AUDITORÍA-FIX 23-may-2026 · C18 · memoizado en flask.g por request
+    (mismo patrón que _get_mp_stock) · evita re-scan de movimientos_mee
+    en hot paths con múltiples lookups
     """
+    try:
+        cached = getattr(g, '_mee_stock_cache', None)
+        if cached is not None:
+            return cached
+    except RuntimeError:
+        pass
     # From movements (accurate)
     stock = {}
     try:
@@ -1008,6 +1020,10 @@ def _get_mee_stock(conn):
             if k and k not in stock:
                 stock[k] = max(float(row[1] or 0), 0)
     except Exception:
+        pass
+    try:
+        g._mee_stock_cache = stock
+    except RuntimeError:
         pass
     return stock
 
