@@ -988,7 +988,11 @@ def job_sync_shopify(app):
         import urllib.request as ur
         import json as _json
         # FIX 23-may-2026 · auditoría · paginación Link header (antes 1 fetch)
-        url = f"https://{shop}/admin/api/2024-01/orders.json?status=any&limit=250"
+        # SHOPIFY-AUDIT 23-may-PM · created_at_min limita a últimos 90d ·
+        # antes recorría 6-12 meses cada cron (gasta cuota API · lento).
+        from datetime import datetime as _dt_local, timedelta as _td_local
+        _cutoff = (_dt_local.utcnow() - _td_local(days=90)).strftime('%Y-%m-%dT00:00:00Z')
+        url = f"https://{shop}/admin/api/2024-01/orders.json?status=any&limit=250&created_at_min={_cutoff}"
         synced = 0
         while url:
             req = ur.Request(url, headers={"X-Shopify-Access-Token": token})
@@ -1005,17 +1009,23 @@ def job_sync_shopify(app):
                 ])
                 total_uds = sum(li.get("quantity",0) for li in o.get("line_items",[]))
                 addr = o.get("billing_address") or {}
+                # SHOPIFY-AUDIT 23-may-PM · guardar tags (order y customer)
+                # para futuro filtro B2B vs DTC opt-in
+                _tags = o.get("tags","") or ""
+                _ctags = ((o.get("customer") or {}).get("tags","")) or ""
                 conn.execute("""
                     INSERT OR REPLACE INTO animus_shopify_orders
                       (shopify_id, nombre, email, total, moneda, estado, estado_pago,
-                       sku_items, unidades_total, ciudad, pais, creado_en, synced_at)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,datetime('now', '-5 hours'))
+                       sku_items, unidades_total, ciudad, pais, creado_en, synced_at,
+                       tags, customer_tags)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,datetime('now', '-5 hours'),?,?)
                 """, (str(o["id"]), o.get("name",""), o.get("email",""),
                       float(o.get("total_price",0)), o.get("currency","COP"),
                       o.get("fulfillment_status",""), o.get("financial_status",""),
                       items_sku, total_uds,
                       addr.get("city",""), addr.get("country_code","CO"),
-                      _shopify_created_at_bogota(o.get("created_at",""))))
+                      _shopify_created_at_bogota(o.get("created_at","")),
+                      _tags, _ctags))
                 synced += 1
             next_url = None
             for part in link_hdr.split(","):
@@ -1268,7 +1278,10 @@ def job_lunes_7am_workflow(app):
             if token and shop:
                 import urllib.request as _ur
                 # FIX 23-may-2026 · auditoría · paginación Link header
-                url = f"https://{shop}/admin/api/2024-01/orders.json?status=any&limit=250"
+                # SHOPIFY-AUDIT 23-may-PM · created_at_min 90d
+                from datetime import datetime as _dtl2, timedelta as _tdl2
+                _cutoff2 = (_dtl2.utcnow() - _tdl2(days=90)).strftime('%Y-%m-%dT00:00:00Z')
+                url = f"https://{shop}/admin/api/2024-01/orders.json?status=any&limit=250&created_at_min={_cutoff2}"
                 synced = 0
                 while url:
                     req = _ur.Request(url, headers={"X-Shopify-Access-Token": token})
@@ -1283,17 +1296,21 @@ def job_lunes_7am_workflow(app):
                                                   for li in o.get("line_items",[])])
                         total_uds = sum(li.get("quantity",0) for li in o.get("line_items",[]))
                         addr = o.get("billing_address") or {}
+                        _tg = o.get("tags","") or ""
+                        _cg = ((o.get("customer") or {}).get("tags","")) or ""
                         conn.execute("""
                             INSERT OR REPLACE INTO animus_shopify_orders
                               (shopify_id, nombre, email, total, moneda, estado, estado_pago,
-                               sku_items, unidades_total, ciudad, pais, creado_en, synced_at)
-                            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,datetime('now', '-5 hours'))
+                               sku_items, unidades_total, ciudad, pais, creado_en, synced_at,
+                               tags, customer_tags)
+                            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,datetime('now', '-5 hours'),?,?)
                         """, (str(o["id"]), o.get("name",""), o.get("email",""),
                               float(o.get("total_price",0)), o.get("currency","COP"),
                               o.get("fulfillment_status",""), o.get("financial_status",""),
                               items_sku, total_uds,
                               addr.get("city",""), addr.get("country_code","CO"),
-                              _shopify_created_at_bogota(o.get("created_at",""))))
+                              _shopify_created_at_bogota(o.get("created_at","")),
+                              _tg, _cg))
                         synced += 1
                     next_url = None
                     for part in link_hdr.split(","):

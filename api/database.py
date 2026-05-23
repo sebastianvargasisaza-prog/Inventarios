@@ -312,6 +312,17 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (166, "animus_shopify_orders.tags + customer_tags · base filtro B2B vs DTC · Sebastián 23-may-2026 PM", [
+        # SHOPIFY-AUDIT 23-may PM · agente reportó "no hay separación B2B
+        # vs DTC en animus_shopify_orders · si la tienda Shopify recibe
+        # un pedido mayorista, se cuenta como velocidad DTC". Solución:
+        # guardar order.tags y customer.tags (Shopify ya los devuelve).
+        # Filtro opt-in vía env var SHOPIFY_B2B_TAGS (CSV) · si el tag
+        # del pedido o cliente está ahí, se excluye de velocidad DTC.
+        "ALTER TABLE animus_shopify_orders ADD COLUMN tags TEXT DEFAULT ''",
+        "ALTER TABLE animus_shopify_orders ADD COLUMN customer_tags TEXT DEFAULT ''",
+        "CREATE INDEX IF NOT EXISTS idx_shopify_tags ON animus_shopify_orders(tags)",
+    ]),
     (165, "bulk fix · TODOS los productos con lote_size_kg<1 → copiar de producto_canonico_config.kg_por_lote · Sebastián 23-may-2026 PM", [
         # Sebastián vio EMULSION LIMPIADORA mismo bug que AZH · BD tiene
         # lote_size_kg=0.1 absurdo. Mig 163 solo arregló AZH puntual.

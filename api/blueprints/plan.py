@@ -1197,14 +1197,27 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
     ventas_por_sku = {}
     _vd_iso = ventana_desde + 'T00:00:00' if 'T' not in ventana_desde else ventana_desde
     # SHOPIFY-AUDIT 23-may-PM · filtrar cancelled/refunded para no inflar
-    # velocidad con devoluciones (agente Shopify cazó este bug).
+    # velocidad con devoluciones + filtro opt-in B2B vs DTC vía env var
+    # SHOPIFY_B2B_TAGS (CSV). Si un tag de la orden o cliente coincide,
+    # se excluye de velocidad DTC.
+    import os as _os_local
+    _b2b_tags_raw = (_os_local.environ.get('SHOPIFY_B2B_TAGS') or '').strip()
+    _b2b_clauses = ''
+    _b2b_params = []
+    if _b2b_tags_raw:
+        for _t in _b2b_tags_raw.split(','):
+            _t = _t.strip().lower()
+            if _t:
+                _b2b_clauses += " AND LOWER(COALESCE(tags,'')) NOT LIKE ? AND LOWER(COALESCE(customer_tags,'')) NOT LIKE ?"
+                _b2b_params.extend(['%' + _t + '%', '%' + _t + '%'])
     for r in c.execute(
-        """SELECT sku_items FROM animus_shopify_orders
+        f"""SELECT sku_items FROM animus_shopify_orders
            WHERE creado_en >= ?
              AND sku_items IS NOT NULL AND sku_items != ''
              AND LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided')
-             AND LOWER(COALESCE(estado_pago,'')) NOT IN ('refunded','voided','partially_refunded')""",
-        (_vd_iso,),
+             AND LOWER(COALESCE(estado_pago,'')) NOT IN ('refunded','voided','partially_refunded')
+             {_b2b_clauses}""",
+        tuple([_vd_iso] + _b2b_params),
     ).fetchall():
         try:
             items = _json.loads(r[0]) if r[0] else []

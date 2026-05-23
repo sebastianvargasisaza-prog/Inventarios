@@ -224,15 +224,27 @@ def _ventas_diarias_por_sku(c, sku, dias=60):
     # Estrategia 2: animus_shopify_orders con sku_items JSON
     # SHOPIFY-AUDIT 23-may-2026 PM · agente cazó que refunds/cancelled
     # contaban como ventas → velocidad inflada. Ahora filtramos.
+    # + filtro opt-in B2B vs DTC vía env var SHOPIFY_B2B_TAGS.
+    import os as _os_local
+    _b2b_raw = (_os_local.environ.get('SHOPIFY_B2B_TAGS') or '').strip()
+    _b2b_clauses = ''
+    _b2b_params = []
+    if _b2b_raw:
+        for _t in _b2b_raw.split(','):
+            _t = _t.strip().lower()
+            if _t:
+                _b2b_clauses += " AND LOWER(COALESCE(tags,'')) NOT LIKE ? AND LOWER(COALESCE(customer_tags,'')) NOT LIKE ?"
+                _b2b_params.extend(['%' + _t + '%', '%' + _t + '%'])
     try:
-        rows = c.execute("""
+        rows = c.execute(f"""
             SELECT date(creado_en), sku_items
             FROM animus_shopify_orders
             WHERE date(creado_en) >= ?
               AND sku_items IS NOT NULL AND sku_items != ''
               AND LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided')
               AND LOWER(COALESCE(estado_pago,'')) NOT IN ('refunded','voided','partially_refunded')
-        """, (cutoff_str,)).fetchall()
+              {_b2b_clauses}
+        """, tuple([cutoff_str] + _b2b_params)).fetchall()
         if rows:
             por_dia = {}
             for fecha, sku_items_json in rows:
@@ -7364,7 +7376,10 @@ def sync_shopify_cron():
 
         import urllib.request as ur
         # FIX 23-may-2026 · auditoría · paginación Link header (antes 1 fetch)
-        url = f"https://{shop}/admin/api/2024-01/orders.json?status=any&limit=250"
+        # SHOPIFY-AUDIT 23-may-PM · created_at_min 90d para no recorrer años
+        from datetime import datetime as _dt3, timedelta as _td3
+        _cutoff3 = (_dt3.utcnow() - _td3(days=90)).strftime('%Y-%m-%dT00:00:00Z')
+        url = f"https://{shop}/admin/api/2024-01/orders.json?status=any&limit=250&created_at_min={_cutoff3}"
         synced = 0
         try:
             while url:
@@ -7382,17 +7397,21 @@ def sync_shopify_cron():
                     ])
                     total_uds = sum(li.get("quantity",0) for li in o.get("line_items",[]))
                     addr = o.get("billing_address") or {}
+                    _tg = o.get("tags","") or ""
+                    _cg = ((o.get("customer") or {}).get("tags","")) or ""
                     conn.execute("""
                         INSERT OR REPLACE INTO animus_shopify_orders
                           (shopify_id, nombre, email, total, moneda, estado, estado_pago,
-                           sku_items, unidades_total, ciudad, pais, creado_en, synced_at)
-                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,datetime('now', '-5 hours'))
+                           sku_items, unidades_total, ciudad, pais, creado_en, synced_at,
+                           tags, customer_tags)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,datetime('now', '-5 hours'),?,?)
                     """, (str(o["id"]), o.get("name",""), o.get("email",""),
                           float(o.get("total_price",0)), o.get("currency","COP"),
                           o.get("fulfillment_status",""), o.get("financial_status",""),
                           items_sku, total_uds,
                           addr.get("city",""), addr.get("country_code","CO"),
-                          _shopify_created_at_bogota_local(o.get("created_at",""))))
+                          _shopify_created_at_bogota_local(o.get("created_at","")),
+                          _tg, _cg))
                     synced += 1
                 next_url = None
                 for part in link_hdr.split(","):
