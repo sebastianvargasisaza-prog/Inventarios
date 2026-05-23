@@ -1762,6 +1762,71 @@ def sugerir_mp(codigo_mp):
     return jsonify(out)
 
 
+@bp.route('/api/compras/ocs-atrasadas', methods=['GET'])
+def listar_ocs_atrasadas():
+    """Sebastián 23-may-2026 · cierre flujo Compras · OCs sin recibir
+    completa tras lead_time + buffer (default 7d).
+
+    Útil para el dashboard de Compras y la UI de Abastecimiento.
+    Query param ?buffer_dias=N (default 7).
+    """
+    u, err, code = _require_compras_session()
+    if err: return err, code
+    try:
+        buffer_dias = max(0, min(int(request.args.get('buffer_dias', 7)), 90))
+    except Exception:
+        buffer_dias = 7
+    conn = get_db(); c = conn.cursor()
+    try:
+        rows = c.execute("""
+            SELECT oc.numero_oc, oc.fecha, oc.estado, oc.proveedor,
+                   COALESCE(oc.creado_por,''),
+                   COALESCE(oc.valor_total,0),
+                   COALESCE(oc.observaciones,''),
+                   (SELECT MAX(COALESCE(mlt.lead_time_dias, 14))
+                    FROM ordenes_compra_items oci
+                    LEFT JOIN mp_lead_time_config mlt ON mlt.material_id = oci.codigo_mp
+                    WHERE oci.numero_oc = oc.numero_oc) AS lead_max
+            FROM ordenes_compra oc
+            WHERE oc.estado IN ('Autorizada','Parcial')
+              AND (oc.fecha_recepcion IS NULL OR oc.fecha_recepcion = '')
+              AND oc.fecha IS NOT NULL AND oc.fecha != ''
+            ORDER BY oc.fecha ASC
+        """).fetchall()
+    except Exception as e:
+        return jsonify({'error': f'query fallo: {e}'}), 500
+    from datetime import datetime as _dt, timedelta as _td
+    hoy = (_dt.utcnow() - _td(hours=5)).date()
+    atrasadas = []
+    for r in rows:
+        try:
+            f_oc = _dt.strptime(str(r[1])[:10], '%Y-%m-%d').date()
+            lead = int(r[7] or 14)
+            limite = f_oc + _td(days=lead + buffer_dias)
+            if hoy > limite:
+                atrasadas.append({
+                    'numero_oc': r[0],
+                    'fecha': str(r[1])[:10],
+                    'estado': r[2],
+                    'proveedor': r[3],
+                    'creador': r[4],
+                    'valor_total': float(r[5] or 0),
+                    'observaciones': r[6],
+                    'lead_time_dias': lead,
+                    'dias_atraso': (hoy - limite).days,
+                    'dias_desde_oc': (hoy - f_oc).days,
+                })
+        except Exception:
+            continue
+    atrasadas.sort(key=lambda x: -x['dias_atraso'])
+    return jsonify({
+        'hoy': hoy.isoformat(),
+        'buffer_dias': buffer_dias,
+        'total': len(atrasadas),
+        'ocs': atrasadas,
+    })
+
+
 @bp.route('/api/proveedores-compras', methods=['GET','POST'])
 def handle_proveedores_compras():
     # SEC-FIX 23-may-2026 · auditoría · era endpoint público · expone
@@ -4593,18 +4658,42 @@ def recibir_oc(numero_oc):
     # de esta llamada vs cantidad_pedida, lo que mantenía OC en 'Parcial'
     # aunque la suma acumulada cubriera la pedida (bug en multi-recepción).
     es_parcial = False
+    items_con_faltante = []  # FIX 23-may · detección auto discrepancia
     try:
         oci_rows = cur.execute(
-            "SELECT COALESCE(cantidad_g, 0), COALESCE(cantidad_recibida_g, 0) "
+            "SELECT codigo_mp, COALESCE(nombre_mp,''), COALESCE(cantidad_g, 0), "
+            "       COALESCE(cantidad_recibida_g, 0) "
             "FROM ordenes_compra_items WHERE numero_oc=?",
             (numero_oc,)
         ).fetchall()
-        for cant_ped, cant_recib_acum in oci_rows:
-            if float(cant_recib_acum or 0) < float(cant_ped or 0) * 0.999:
+        for cm, nm, cant_ped, cant_recib_acum in oci_rows:
+            ped = float(cant_ped or 0)
+            recib = float(cant_recib_acum or 0)
+            if recib < ped * 0.999:
                 es_parcial = True
-                break
+                # FIX 23-may-2026 · Sebastián · detección automática de
+                # discrepancia · cualquier item con > 5% faltante levanta
+                # la bandera tiene_discrepancias incluso si receptor no la
+                # marcó manualmente · alerta a creador SOL + admin compras
+                faltante = ped - recib
+                if ped > 0 and (faltante / ped) > 0.05:  # >5% faltante
+                    items_con_faltante.append({
+                        'codigo_mp': cm,
+                        'nombre_mp': nm,
+                        'pedido': ped,
+                        'recibido': recib,
+                        'faltante': round(faltante, 1),
+                        'pct_faltante': round((faltante / ped) * 100, 1),
+                    })
     except Exception as e:
         log.warning('chequeo parcial post-update fallo: %s', e)
+
+    # FIX 23-may-2026 · auto-set tiene_discrepancias si hay faltantes > 5%
+    if items_con_faltante and not disc_r:
+        disc_r = 1
+        if obs_r:
+            obs_r += ' | '
+        obs_r += f'⚠ Auto-detección: {len(items_con_faltante)} item(s) con >5% faltante'
 
     # Si la OC ya estaba Pagada (anticipo · pago antes de la recepción), la
     # recepción registra el kardex pero NO revierte el estado (INV-4).
@@ -4713,12 +4802,57 @@ def recibir_oc(numero_oc):
                   despues={'estado': nuevo_estado, 'fecha_recepcion': fecha,
                             'parcial': es_parcial, 'ingresos': ingresos,
                             'tiene_discrepancias': bool(disc_r),
+                            'items_con_faltante': len(items_con_faltante),
                             'receptor': receptor_nombre[:200],
                             'observaciones_recepcion': (obs_r or '')[:200]},
                   detalle=f"Recibió OC {numero_oc} ({'PARCIAL' if es_parcial else 'COMPLETA'}) "
                           f"· {ingresos} items · receptor {receptor_nombre[:60]}")
     except Exception as e:
         log.warning('audit_log RECIBIR_OC fallo: %s', e)
+
+    # FIX 23-may-2026 · Sebastián · alerta in-app cuando hay discrepancia
+    # · push_notif a creador SOL + admin compras para verificar
+    if items_con_faltante:
+        try:
+            from blueprints.notif import push_notif
+        except Exception:
+            push_notif = None
+        if push_notif:
+            try:
+                msg_items = ', '.join(
+                    f"{x['codigo_mp']}: {x['recibido']}/{x['pedido']}g (-{x['pct_faltante']}%)"
+                    for x in items_con_faltante[:3]
+                )
+                if len(items_con_faltante) > 3:
+                    msg_items += f' (+{len(items_con_faltante)-3} más)'
+                # Buscar creador OC
+                creador_row = cur.execute(
+                    "SELECT creado_por FROM ordenes_compra WHERE numero_oc=?",
+                    (numero_oc,)
+                ).fetchone()
+                creador = (creador_row[0] if creador_row else '') or ''
+                destinatarios = set()
+                if creador:
+                    destinatarios.add(creador.lower())
+                # Admins compras · imports renombrados para evitar shadow
+                # del scope del módulo (UnboundLocalError de variables globales
+                # ya usadas arriba en _require_authorize_oc/recibir_oc)
+                try:
+                    from config import COMPRAS_ACCESS as _CA_NOTIF, ADMIN_USERS as _AU_NOTIF
+                    for _u_notif in (_CA_NOTIF | _AU_NOTIF):
+                        destinatarios.add(_u_notif.lower())
+                except Exception:
+                    pass
+                for dest in destinatarios:
+                    try:
+                        push_notif(dest, 'oc_discrepancia',
+                                   f'⚠ OC {numero_oc} recibida con discrepancia · {msg_items}',
+                                   link=f'/admin/compras?oc={numero_oc}',
+                                   importante=True)
+                    except Exception:
+                        pass
+            except Exception as e:
+                log.warning('notif discrepancia OC %s fallo: %s', numero_oc, e)
     conn.commit()
     return jsonify({
         'ok': True, 'numero_oc': numero_oc, 'ingresos': ingresos,

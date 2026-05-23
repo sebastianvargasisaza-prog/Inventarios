@@ -667,6 +667,9 @@ JOBS_SCHEDULE = [
     # Schedule: cada hora a :07 (offset para no chocar con :00 jobs).
     # Cada hora usa job_name distinto (watcher_health_HH) porque el dedup
     # `_ya_ejecutado_hoy` agrupa por job_name. Todas llaman al mismo callable.
+    # ⭐ Compras · diario 8:45 · alerta OCs atrasadas (lead_time excedido)
+    # Sebastián 23-may-2026 · cierre flujo · "generar alerta de lo que no llega"
+    ('ocs_atrasadas',         8, 45, None, None,                'job_ocs_atrasadas'),
 ] + [
     (f'watcher_health_{h:02d}', h, 7, None, None, 'job_watcher_health')
     for h in range(24)
@@ -3723,6 +3726,92 @@ def job_pqr_sla_vencido(app):
         except Exception as _e:
             log.warning('pqr_sla notif fallo: %s', _e)
         return True, {'pqr_vencidos': len(rows)}, 0
+
+
+def job_ocs_atrasadas(app):
+    """Sebastián 23-may-2026 · cron diario 8:45 AM · alerta de OCs atrasadas.
+
+    Cierre del flujo Compras → Recepción → Verificación:
+    Para cada OC Autorizada/Parcial sin recibir completa, si
+    (hoy - fecha_oc) > MAX(lead_time_dias × items) + buffer (default 7d),
+    se considera ATRASADA · notif a Catalina + creador OC + admins.
+
+    Para OCs Parciales, mide días desde última recepción parcial · si
+    excede buffer, alerta el faltante.
+
+    Reduce el riesgo de "el proveedor se olvidó y nadie se enteró".
+    """
+    with app.app_context():
+        from database import get_db as _gdb
+        conn = _gdb(); c = conn.cursor()
+        import os as _os
+        buffer_dias = int(_os.environ.get('OCS_ATRASADAS_BUFFER_DIAS') or 7)
+        try:
+            rows = c.execute("""
+                SELECT oc.numero_oc, oc.fecha, oc.estado, oc.proveedor,
+                       COALESCE(oc.creado_por,''),
+                       COALESCE(oc.fecha_recepcion,''),
+                       (SELECT MAX(COALESCE(mlt.lead_time_dias, 14))
+                        FROM ordenes_compra_items oci
+                        LEFT JOIN mp_lead_time_config mlt ON mlt.material_id = oci.codigo_mp
+                        WHERE oci.numero_oc = oc.numero_oc) AS lead_max
+                FROM ordenes_compra oc
+                WHERE oc.estado IN ('Autorizada','Parcial')
+                  AND (oc.fecha_recepcion IS NULL OR oc.fecha_recepcion = '')
+                  AND oc.fecha IS NOT NULL AND oc.fecha != ''
+            """).fetchall()
+        except Exception as e:
+            return False, {'error': f'query fallo: {e}'}, 0
+
+        from datetime import datetime as _dt, timedelta as _td
+        hoy = (_dt.utcnow() - _td(hours=5)).date()
+        atrasadas = []
+        for r in rows:
+            try:
+                fecha_oc = _dt.strptime(str(r[1])[:10], '%Y-%m-%d').date()
+                lead = int(r[6] or 14)
+                limite = fecha_oc + _td(days=lead + buffer_dias)
+                if hoy > limite:
+                    dias_atraso = (hoy - limite).days
+                    atrasadas.append({
+                        'numero_oc': r[0],
+                        'fecha': str(r[1])[:10],
+                        'estado': r[2],
+                        'proveedor': r[3],
+                        'creador': r[4],
+                        'lead_time': lead,
+                        'dias_atraso': dias_atraso,
+                    })
+            except Exception:
+                continue
+
+        if not atrasadas:
+            return True, {'mensaje': 'Sin OCs atrasadas'}, 0
+
+        try:
+            from blueprints.notif import push_notif_multi
+            from config import COMPRAS_ACCESS as _CA, ADMIN_USERS as _AU
+            destinatarios = {u.lower() for u in (_CA | _AU)}
+            for a in atrasadas:
+                if a['creador']:
+                    destinatarios.add(a['creador'].lower())
+            partes = [f'🚨 {len(atrasadas)} OC(s) ATRASADA(S) sin recibir:']
+            for a in atrasadas[:10]:
+                partes.append(
+                    f"  · {a['numero_oc']} · {a['proveedor']} · "
+                    f"{a['estado']} · +{a['dias_atraso']}d sobre lead_time {a['lead_time']}d"
+                )
+            push_notif_multi(
+                list(destinatarios), 'oc_atrasada',
+                f'🚨 {len(atrasadas)} OC(s) sin recibir tras lead_time + {buffer_dias}d buffer',
+                body='\n'.join(partes),
+                link='/admin/compras?filtro=atrasadas',
+                remitente='cron-ocs-atrasadas',
+                importante=True,
+            )
+        except Exception as _e:
+            log.warning('ocs_atrasadas notif fallo: %s', _e)
+        return True, {'ocs_atrasadas': len(atrasadas)}, 0
 
 
 def _generar_codigo_mp_siguiente(c):

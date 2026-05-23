@@ -10106,6 +10106,89 @@ def test_golden_abastecimiento_solicitar_items(app, db_clean):
     _exec("DELETE FROM solicitudes_compra WHERE numero=?", (sol1['numero'],))
 
 
+def test_golden_abastecimiento_consumo_bruto_excel(app, db_clean):
+    """Excel /api/abastecimiento/consumo-bruto-excel · gasto bruto en
+    gramos/unidades sin restar inventario (visión Alejandro).
+
+    Sebastián 23-may-2026: 'Alejandro quiere gasto total en gramos según
+    los horizontes · sin contar lo que tiene el inventario'.
+    """
+    cs = _login(app, 'sebastian')
+    cs_no = app.test_client()
+    r_no = cs_no.get('/api/abastecimiento/consumo-bruto-excel')
+    assert r_no.status_code == 401
+
+    r = cs.get('/api/abastecimiento/consumo-bruto-excel?modo=comprometido&tipo=mp')
+    assert r.status_code == 200, r.data[:200]
+    ct = r.headers.get('Content-Type', '')
+    assert 'spreadsheetml' in ct or 'octet-stream' in ct
+    assert r.data[:2] == b'PK', 'BUG: XLSX inválido'
+    assert len(r.data) > 1000
+
+
+def test_golden_compras_ocs_atrasadas_endpoint(app, db_clean):
+    """Endpoint /api/compras/ocs-atrasadas · cierre flujo Compras.
+
+    Sebastián 23-may-2026: 'generar alerta de lo que no llega'.
+    Verifica que:
+    - Requiere auth (401 sin sesión)
+    - Detecta OC Autorizada/Parcial sin recibir tras lead_time + buffer
+    - Excluye OCs ya recibidas
+    """
+    # Cleanup
+    _exec("DELETE FROM ordenes_compra WHERE numero_oc LIKE 'OC-ATRTEST-%'")
+    _exec("DELETE FROM ordenes_compra_items WHERE numero_oc LIKE 'OC-ATRTEST-%'")
+    _exec("DELETE FROM mp_lead_time_config WHERE material_id='MPTESTATR01'")
+    _exec("DELETE FROM maestro_mps WHERE codigo_mp='MPTESTATR01'")
+
+    _exec("""INSERT INTO maestro_mps (codigo_mp, nombre_comercial, activo)
+             VALUES ('MPTESTATR01','MP Test Atrasada',1)""")
+    _exec("""INSERT INTO mp_lead_time_config (material_id, lead_time_dias)
+             VALUES ('MPTESTATR01', 7)""")
+    # OC ya atrasada: fecha hace 30d, lead_time 7d + buffer 7d = 14d → 16d atraso
+    fecha_vieja = '2026-04-23'  # ~30d antes hoy 2026-05-23
+    _exec(f"""INSERT INTO ordenes_compra (numero_oc, fecha, estado, proveedor,
+              creado_por, valor_total)
+             VALUES ('OC-ATRTEST-01','{fecha_vieja}','Autorizada','ProvTest','tester',50000)""")
+    _exec("""INSERT INTO ordenes_compra_items (numero_oc, codigo_mp, nombre_mp,
+             cantidad_g, precio_unitario, subtotal)
+             VALUES ('OC-ATRTEST-01','MPTESTATR01','MP Test Atrasada',1000,50,50000)""")
+
+    # OC reciente: NO debería aparecer
+    from datetime import date as _d
+    fecha_hoy = _d.today().isoformat()
+    _exec(f"""INSERT INTO ordenes_compra (numero_oc, fecha, estado, proveedor,
+              creado_por, valor_total)
+             VALUES ('OC-ATRTEST-02','{fecha_hoy}','Autorizada','ProvTest','tester',30000)""")
+    _exec("""INSERT INTO ordenes_compra_items (numero_oc, codigo_mp, nombre_mp,
+             cantidad_g, precio_unitario, subtotal)
+             VALUES ('OC-ATRTEST-02','MPTESTATR01','MP Test Atrasada',500,60,30000)""")
+
+    # Sin sesión → 401
+    cs_no = app.test_client()
+    r_no = cs_no.get('/api/compras/ocs-atrasadas')
+    assert r_no.status_code == 401
+
+    cs = _login(app, 'sebastian')
+    r = cs.get('/api/compras/ocs-atrasadas?buffer_dias=7')
+    assert r.status_code == 200, r.data
+    d = r.get_json()
+    nums = [oc['numero_oc'] for oc in d['ocs']]
+    assert 'OC-ATRTEST-01' in nums, f'BUG: OC vieja debe aparecer · {nums}'
+    assert 'OC-ATRTEST-02' not in nums, f'BUG: OC reciente NO debe aparecer · {nums}'
+    # Verificar campos esperados
+    atr = next(oc for oc in d['ocs'] if oc['numero_oc'] == 'OC-ATRTEST-01')
+    assert atr['proveedor'] == 'ProvTest'
+    assert atr['lead_time_dias'] == 7
+    assert atr['dias_atraso'] > 0
+
+    # Cleanup
+    _exec("DELETE FROM ordenes_compra_items WHERE numero_oc LIKE 'OC-ATRTEST-%'")
+    _exec("DELETE FROM ordenes_compra WHERE numero_oc LIKE 'OC-ATRTEST-%'")
+    _exec("DELETE FROM mp_lead_time_config WHERE material_id='MPTESTATR01'")
+    _exec("DELETE FROM maestro_mps WHERE codigo_mp='MPTESTATR01'")
+
+
 def test_golden_endpoints_shopify_debug_requieren_auth(app, db_clean):
     """SEC-FIX · 3 endpoints estaban públicos · auditoría 23-may.
 

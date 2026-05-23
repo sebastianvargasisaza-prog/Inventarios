@@ -7953,7 +7953,8 @@ def abastecimiento_consumo_horizontes():
                    COALESCE(NULLIF(TRIM(mlt.proveedor_principal),''),
                             mm.proveedor, ''),
                    COALESCE(mlt.lead_time_dias, 14),
-                   COALESCE(mlt.buffer_dias, 30)
+                   COALESCE(mlt.buffer_dias, 30),
+                   COALESCE(mm.nombre_inci,'')
             FROM maestro_mps mm
             LEFT JOIN mp_lead_time_config mlt ON mlt.material_id = mm.codigo_mp
             WHERE COALESCE(mm.activo,1)=1
@@ -7963,6 +7964,7 @@ def abastecimiento_consumo_horizontes():
                 'proveedor': (r[2] or '').strip(),
                 'lead_time_dias': int(r[3] or 14),
                 'buffer_dias': int(r[4] or 30),
+                'nombre_inci': (r[5] or '').strip(),
             }
     except sqlite3.OperationalError:
         pass
@@ -8382,6 +8384,7 @@ def abastecimiento_consumo_horizontes():
             items_out_mp.append({
                 'codigo': cod,
                 'nombre': info['nombre'],
+                'nombre_inci': info.get('nombre_inci', ''),
                 'proveedor_sugerido': info['proveedor'],
                 'tipo': 'MP',
                 'stock_actual_g': round(stock_g, 1),
@@ -8541,7 +8544,7 @@ def abastecimiento_export_excel():
     ws = wb.create_sheet('Abastecimiento')
     fecha_str = _dt.now().strftime('%Y-%m-%d %H:%M')
     modo_str = d.get('modo', 'comprometido')
-    n_cols = 8 + len(horizontes) + 1
+    n_cols = 9 + len(horizontes) + 1  # FIX 23-may · +1 por columna INCI
     # Título
     ws.cell(row=1, column=1, value=f'Abastecimiento · Modo {modo_str.upper()} · {fecha_str}')
     ws.cell(row=1, column=1).font = Font(size=14, bold=True, color='FFFFFF')
@@ -8554,11 +8557,17 @@ def abastecimiento_export_excel():
     ws.cell(row=2, column=1).font = Font(size=10, italic=True, color='6B7280')
     ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=n_cols)
     # Encabezados (fila 4)
-    hdr = ['Código', 'Nombre', 'Tipo', 'Proveedor', 'LT (días)',
+    # FIX 23-may-2026 · Sebastián pidió columna INCI (nombre químico
+    # estándar · útil para verificar fórmula y para compras a proveedores
+    # internacionales que solo conocen el INCI)
+    hdr = ['Código', 'Nombre', 'INCI', 'Tipo', 'Proveedor', 'LT (días)',
            'Stock actual', 'En cola', 'Urgencia']
+    # AUDIT FIX 23-may · header dinámico · si 60d no está en horizontes
+    # busca el del medio (no mentir al usuario)
+    target_cubrir = 60 if 60 in horizontes else horizontes[len(horizontes) // 2]
     for h in horizontes:
         hdr.append(f'Déficit {h}d')
-    hdr.append('Cant. a pedir (cubrir 60d)')
+    hdr.append(f'Cant. a pedir (cubrir {target_cubrir}d)')
     for col, val in enumerate(hdr, start=1):
         cell = ws.cell(row=4, column=col, value=val)
         cell.font = Font(bold=True, color='FFFFFF')
@@ -8578,40 +8587,49 @@ def abastecimiento_export_excel():
         stock_key = 'stock_actual_g' if it['tipo']=='MP' else 'stock_actual_u'
         cola_key = 'pendiente_compras_g' if it['tipo']=='MP' else 'pendiente_compras_u'
         unit = 'g' if it['tipo']=='MP' else 'u'
-        # Sugerencia de cantidad · déficit del horizonte 60d (o el menor con déficit)
-        cant_sug = it.get('deficit', {}).get('60', 0)
+        # Sugerencia de cantidad · déficit del horizonte target_cubrir
+        # AUDIT FIX 23-may · float() defensivo · evita None<=0 TypeError
+        # y usa target_cubrir (puede no ser 60) en lugar de '60' hardcoded
+        deficit_dict = it.get('deficit', {})
+        cant_sug = float(deficit_dict.get(str(target_cubrir)) or 0)
         if cant_sug <= 0:
             for h in horizontes:
-                v = it['deficit'].get(str(h), 0)
+                v = float(deficit_dict.get(str(h)) or 0)
                 if v > 0:
                     cant_sug = v
                     break
         valores = [
-            it['codigo'], it.get('nombre',''), it['tipo'],
+            it['codigo'], it.get('nombre',''),
+            it.get('nombre_inci','') or '—',
+            it['tipo'],
             it.get('proveedor_sugerido','') or '(sin proveedor)',
             it.get('lead_time_dias', 14),
             it.get(stock_key, 0), it.get(cola_key, 0), urg,
         ]
         for h in horizontes:
-            valores.append(it['deficit'].get(str(h), 0))
+            valores.append(float(deficit_dict.get(str(h)) or 0))
         valores.append(round(cant_sug, 1))
         for col, val in enumerate(valores, start=1):
             cell = ws.cell(row=r, column=col, value=val)
             cell.border = border
-            if col == 8:  # urgencia
+            # Col 9 = Urgencia (antes era 8 · INCI shifted everything +1)
+            if col == 9:  # urgencia
                 cell.fill = fill
                 cell.font = Font(bold=True)
                 cell.alignment = Alignment(horizontal='center')
-            elif col in (1, 3):  # código/tipo
+            elif col in (1, 4):  # código/tipo (tipo ahora col 4 por INCI)
                 cell.alignment = Alignment(horizontal='center')
                 cell.font = Font(name='Consolas')
-            elif col >= 5:  # números
+            elif col == 3:  # INCI
+                cell.alignment = Alignment(horizontal='left')
+                cell.font = Font(italic=True, size=10, color='6B7280')
+            elif col >= 6:  # números (era >=5 · ahora 6 por INCI)
                 cell.alignment = Alignment(horizontal='right')
                 cell.number_format = '#,##0.0'
         r += 1
 
     # Anchos
-    widths = [12, 38, 6, 22, 9, 13, 11, 12]
+    widths = [12, 32, 28, 6, 22, 9, 13, 11, 12]
     for h in horizontes:
         widths.append(12)
     widths.append(15)
@@ -8680,6 +8698,239 @@ def abastecimiento_export_excel():
     wb.save(buf)
     buf.seek(0)
     nombre = f'abastecimiento_{modo_str}_{_dt.now().strftime("%Y%m%d_%H%M")}.xlsx'
+    return send_file(buf, as_attachment=True, download_name=nombre,
+                     mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+
+@bp.route('/api/abastecimiento/consumo-bruto-excel', methods=['GET'])
+def abastecimiento_consumo_bruto_excel():
+    """Excel para Alejandro · CONSUMO BRUTO total de MP/MEE por horizonte.
+
+    Diferente al export-excel normal (que muestra déficit a comprar
+    restando stock + pendiente): aquí se muestra el consumo TOTAL en
+    gramos (MP) o unidades (MEE) que se va a consumir según producciones
+    programadas, SIN restar inventario.
+
+    Sebastián 23-may-2026: 'Alejandro quiere el gasto total en gramos
+    de las materias primas para el saber según los horizontes · sin
+    contar lo que tiene el inventario'.
+
+    Mismo modelo que el export-excel: respeta filtros UI + modo dual
+    (comprometido/run_rate).
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    try:
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+        from openpyxl.utils import get_column_letter
+    except ImportError:
+        return jsonify({'error': 'openpyxl no disponible'}), 500
+    from flask import current_app, send_file
+    import io as _io
+    from datetime import datetime as _dt
+
+    # Llamar internamente al endpoint consumo-horizontes (misma lógica)
+    qs = []
+    for k in ('modo', 'tipo', 'horizontes'):
+        v = request.args.get(k)
+        if v:
+            qs.append(f'{k}={v}')
+    url_interno = '/api/abastecimiento/consumo-horizontes'
+    if qs:
+        url_interno += '?' + '&'.join(qs)
+    with current_app.test_request_context(url_interno):
+        from flask import session as _sess
+        _sess['compras_user'] = session.get('compras_user', 'sistema')
+        resp = abastecimiento_consumo_horizontes()
+    if isinstance(resp, tuple):
+        return resp
+    d = resp.get_json() or {}
+    horizontes = d.get('horizontes') or [15, 30, 60, 90, 120, 180, 365]
+    items_mp = d.get('mps') or []
+    items_mee = d.get('mees') or []
+
+    # Aplicar filtros UI (mismo patrón que export-excel normal)
+    f_busq = (request.args.get('busqueda', '') or '').lower().strip()
+    f_urg = request.args.get('urgencia', 'TODAS') or 'TODAS'
+    f_prov = request.args.get('proveedor', 'TODOS') or 'TODOS'
+    f_tipo = request.args.get('tipo_filtro', 'TODOS') or 'TODOS'
+    def _pasa(it):
+        # AUDIT FIX 23-may · .get() defensivo · KeyError potencial
+        if f_urg != 'TODAS' and it.get('urgencia', 'OK') != f_urg:
+            return False
+        prov = it.get('proveedor_sugerido') or '(sin proveedor)'
+        if f_prov != 'TODOS' and prov != f_prov:
+            return False
+        if f_tipo != 'TODOS' and it.get('tipo', '') != f_tipo:
+            return False
+        if f_busq:
+            blob = (str(it.get('codigo', '')) + ' ' + (it.get('nombre') or '') + ' ' +
+                    (it.get('proveedor_sugerido') or '')).lower()
+            if f_busq not in blob:
+                return False
+        return True
+    items_mp = [it for it in items_mp if _pasa(it)]
+    items_mee = [it for it in items_mee if _pasa(it)]
+
+    # Excel
+    wb = openpyxl.Workbook()
+    wb.remove(wb.active)
+    thin = Side(border_style='thin', color='CCCCCC')
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    header_fill = PatternFill('solid', fgColor='065F46')
+    title_fill = PatternFill('solid', fgColor='047857')
+    total_fill = PatternFill('solid', fgColor='D1FAE5')
+    mp_color = '0891B2'
+    mee_color = '7C3AED'
+
+    # SHEET 1 · Consumo bruto
+    ws = wb.create_sheet('Consumo bruto')
+    fecha_str = _dt.now().strftime('%Y-%m-%d %H:%M')
+    modo = d.get('modo', 'comprometido')
+    n_cols = 5 + len(horizontes)  # AUDIT FIX · +2 por INCI y Proveedor
+    ws.cell(row=1, column=1, value=f'Consumo bruto por horizontes · Modo {modo.upper()} · {fecha_str}')
+    ws.cell(row=1, column=1).font = Font(size=14, bold=True, color='FFFFFF')
+    ws.cell(row=1, column=1).fill = title_fill
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=n_cols)
+    ws.row_dimensions[1].height = 24
+    ws.cell(row=2, column=1, value=(
+        f'{d.get("n_producciones_fijas", 0)} producciones Fijas · '
+        f'{d.get("n_pedidos_b2b_pendientes", 0)} pedidos B2B pendientes · '
+        f'consumo total SIN restar inventario · MP en gramos · MEE en unidades'
+    ))
+    ws.cell(row=2, column=1).font = Font(size=10, italic=True, color='6B7280')
+    ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=n_cols)
+
+    # Encabezados fila 4
+    # FIX 23-may-2026 · Sebastián pidió columna INCI · útil para Alejandro
+    # cuando contacta proveedores internacionales que usan INCI estándar
+    # + Proveedor (sugerencia auditoría · Alejandro contacta proveedores)
+    hdr = ['Código', 'Nombre', 'INCI', 'Proveedor', 'Tipo']
+    for h in horizontes:
+        hdr.append(f'{h}d')
+    for col, val in enumerate(hdr, start=1):
+        cell = ws.cell(row=4, column=col, value=val)
+        cell.font = Font(bold=True, color='FFFFFF')
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+        cell.border = border
+    ws.row_dimensions[4].height = 26
+
+    # Filas
+    todos = []
+    for it in items_mp:
+        todos.append({
+            'codigo': it['codigo'],
+            'nombre': it.get('nombre', ''),
+            'nombre_inci': it.get('nombre_inci', ''),
+            'proveedor': it.get('proveedor_sugerido', '') or '',
+            'tipo': 'MP',
+            'unit': 'g',
+            'consumo': it.get('consumo', {}),
+        })
+    for it in items_mee:
+        todos.append({
+            'codigo': it['codigo'],
+            'nombre': it.get('nombre', ''),
+            'nombre_inci': '',  # MEE no tiene INCI
+            'proveedor': it.get('proveedor_sugerido', '') or '',
+            'tipo': 'MEE',
+            'unit': 'u',
+            'consumo': it.get('consumo', {}),
+        })
+    # Ordenar por consumo del horizonte más largo desc (ver impacto anual)
+    horz_max = max(horizontes)
+    todos.sort(key=lambda x: -float(x['consumo'].get(str(horz_max), 0) or 0))
+
+    # AUDIT FIX 23-may · mensaje cuando no hay items
+    if not todos:
+        ws.cell(row=5, column=1, value='Sin consumo programado en el horizonte').font = Font(italic=True, color='6B7280')
+
+    r = 5
+    totales_h_mp = {h: 0.0 for h in horizontes}
+    totales_h_mee = {h: 0.0 for h in horizontes}
+    for it in todos:
+        valores = [it['codigo'], it['nombre'],
+                   it['nombre_inci'] or '—',
+                   it['proveedor'] or '(sin proveedor)',
+                   it['tipo']]
+        for h in horizontes:
+            v = float(it['consumo'].get(str(h), 0) or 0)
+            valores.append(v)
+            if it['tipo'] == 'MP':
+                totales_h_mp[h] += v
+            else:
+                totales_h_mee[h] += v
+        for col, val in enumerate(valores, start=1):
+            cell = ws.cell(row=r, column=col, value=val)
+            cell.border = border
+            if col == 1:
+                cell.font = Font(name='Consolas')
+                cell.alignment = Alignment(horizontal='center')
+            elif col == 3:  # INCI
+                cell.alignment = Alignment(horizontal='left')
+                cell.font = Font(italic=True, size=10, color='6B7280')
+            elif col == 4:  # Proveedor
+                cell.alignment = Alignment(horizontal='left')
+            elif col == 5:  # Tipo
+                cell.alignment = Alignment(horizontal='center')
+                cell.font = Font(bold=True, color=mp_color if val == 'MP' else mee_color)
+            elif col >= 6:  # números
+                cell.alignment = Alignment(horizontal='right')
+                cell.number_format = '#,##0'
+        r += 1
+
+    # Filas TOTALES · AUDIT FIX · borders en todas las celdas
+    def _tot_celda_vacia(row, col):
+        cell = ws.cell(row=row, column=col, value='')
+        cell.fill = total_fill
+        cell.border = border
+    ws.cell(row=r, column=1, value='TOTAL MP (g)').font = Font(bold=True, color='FFFFFF')
+    ws.cell(row=r, column=1).fill = PatternFill('solid', fgColor=mp_color)
+    ws.cell(row=r, column=1).alignment = Alignment(horizontal='center')
+    ws.cell(row=r, column=1).border = border
+    for col in (2, 3, 4, 5):
+        _tot_celda_vacia(r, col)
+    for i, h in enumerate(horizontes):
+        cell = ws.cell(row=r, column=6 + i, value=totales_h_mp[h])
+        cell.fill = total_fill
+        cell.font = Font(bold=True)
+        cell.number_format = '#,##0'
+        cell.alignment = Alignment(horizontal='right')
+        cell.border = border
+    r += 1
+    ws.cell(row=r, column=1, value='TOTAL MEE (u)').font = Font(bold=True, color='FFFFFF')
+    ws.cell(row=r, column=1).fill = PatternFill('solid', fgColor=mee_color)
+    ws.cell(row=r, column=1).alignment = Alignment(horizontal='center')
+    ws.cell(row=r, column=1).border = border
+    for col in (2, 3, 4, 5):
+        _tot_celda_vacia(r, col)
+    for i, h in enumerate(horizontes):
+        cell = ws.cell(row=r, column=6 + i, value=totales_h_mee[h])
+        cell.fill = total_fill
+        cell.font = Font(bold=True)
+        cell.number_format = '#,##0'
+        cell.alignment = Alignment(horizontal='right')
+        cell.border = border
+
+    # Anchos
+    ws.column_dimensions['A'].width = 12
+    ws.column_dimensions['B'].width = 32
+    ws.column_dimensions['C'].width = 28  # INCI
+    ws.column_dimensions['D'].width = 22  # Proveedor
+    ws.column_dimensions['E'].width = 6   # Tipo
+    for i in range(len(horizontes)):
+        ws.column_dimensions[get_column_letter(6 + i)].width = 14
+    ws.freeze_panes = 'F5'
+
+    # AUDIT FIX · n_cols correcto para merge_cells
+    # (5 cols base + horizontes · ajustar arriba si necesario)
+
+    buf = _io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    nombre = f'consumo_bruto_alejandro_{modo}_{_dt.now().strftime("%Y%m%d_%H%M")}.xlsx'
     return send_file(buf, as_attachment=True, download_name=nombre,
                      mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
