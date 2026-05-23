@@ -1825,6 +1825,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
         </label>
         <button onclick="abrirFormB2B()" style="background:#1e40af;color:#fff;border:none;padding:7px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">+ Pedido B2B</button>
         <button onclick="autoSugerirProducciones()" style="background:#7c3aed;color:#fff;border:none;padding:7px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer" title="Crea producciones Sugeridas en el calendario para los productos que se van a quebrar (cron diario 5 AM también lo hace)">🤖 Auto-sugerir</button>
+        <button onclick="abrirHerramientasLimpieza()" style="background:#475569;color:#fff;border:none;padding:7px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer" title="Limpia Sugeridas viejas del calendario + arregla productos con lote_size_kg absurdo">⚙ Herramientas</button>
         <button onclick="cargarNecesidades()" style="background:#0f766e;color:#fff;border:none;padding:7px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">↻ Recargar</button>
       </div>
     </div>
@@ -20610,6 +20611,136 @@ async function ckMarcar(itemId, estado){
       alert('Error red: ' + e.message);
     }
   }
+
+  // FIX 23-may-2026 PM Sebastián · "no me deja [consola], no hay otra
+  // forma que tú lo hagas". Botones de mantenimiento desde la UI ·
+  // limpiar Sugeridas viejas + listar/arreglar productos con
+  // lote_size_kg absurdo · todo desde el navegador sin tocar consola.
+  window.abrirHerramientasLimpieza = function() {
+    let m = document.getElementById('modal-herramientas');
+    if (m) m.remove();
+    m = document.createElement('div');
+    m.id = 'modal-herramientas';
+    m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+    m.innerHTML = '<div style="background:#fff;border-radius:12px;max-width:820px;width:100%;max-height:90vh;overflow:auto;box-shadow:0 12px 40px rgba(0,0,0,0.25)">' +
+      '<div style="padding:18px 22px;border-bottom:1px solid #e5e7eb;display:flex;align-items:center;justify-content:space-between">' +
+        '<h3 style="margin:0;font-size:16px;color:#1e293b">⚙ Herramientas de mantenimiento</h3>' +
+        '<button onclick="document.getElementById(\\'modal-herramientas\\').remove()" style="background:#e5e7eb;color:#475569;border:none;width:32px;height:32px;border-radius:50%;font-size:18px;cursor:pointer">×</button>' +
+      '</div>' +
+      '<div style="padding:18px 22px">' +
+        '<div style="background:#fef3c7;border-left:4px solid #f59e0b;border-radius:6px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#92400e">⚠ Estas acciones son reversibles (soft-cancel) pero modifican producción · ejecuta solo si entendés lo que hacés.</div>' +
+        // Sección 1 · Limpiar Sugeridas
+        '<div style="background:#f8fafc;border-radius:8px;padding:14px;margin-bottom:14px">' +
+          '<div style="font-weight:700;color:#1e293b;font-size:13px;margin-bottom:4px">1️⃣ Limpiar Sugeridas viejas del calendario</div>' +
+          '<div style="font-size:11px;color:#64748b;margin-bottom:8px">Cancela producciones origen=Sugerida con fecha posterior al corte · NO toca Fijo (lo que vos pusiste manualmente).</div>' +
+          '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">' +
+            '<label style="font-size:11px;color:#475569">Conservar hasta:</label>' +
+            '<input id="herr-desde" type="date" value="2026-06-07" style="padding:5px 8px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px">' +
+          '</div>' +
+          '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+            '<button onclick="herrDryRun()" style="background:#0891b2;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">🔍 Ver qué se cancelaría</button>' +
+            '<button onclick="herrAplicar()" style="background:#dc2626;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">🗑 Aplicar limpieza</button>' +
+          '</div>' +
+          '<div id="herr-resultado-limpieza" style="margin-top:10px;font-size:11px;color:#64748b"></div>' +
+        '</div>' +
+        // Sección 2 · Productos con lote absurdo
+        '<div style="background:#f8fafc;border-radius:8px;padding:14px">' +
+          '<div style="font-weight:700;color:#1e293b;font-size:13px;margin-bottom:4px">2️⃣ Productos con lote_size_kg absurdo (&lt;1 kg)</div>' +
+          '<div style="font-size:11px;color:#64748b;margin-bottom:8px">Caso AZ HIBRID CLEAR: BD tenía 0.1 kg → planificador sugería 23 lotes diarios · arreglar aquí.</div>' +
+          '<button onclick="herrListarSospechosos()" style="background:#0f766e;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">📋 Listar sospechosos</button>' +
+          '<div id="herr-resultado-sospechosos" style="margin-top:10px"></div>' +
+        '</div>' +
+      '</div>' +
+      '</div>';
+    document.body.appendChild(m);
+  };
+  window.herrDryRun = async function() {
+    const desde = document.getElementById('herr-desde').value;
+    if (!desde) { alert('Elegí fecha de corte'); return; }
+    const out = document.getElementById('herr-resultado-limpieza');
+    out.innerHTML = 'Calculando…';
+    try {
+      const r = await fetch('/api/plan/limpiar-sugeridas-futuras', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({desde: desde, dry_run: true}),
+      });
+      const d = await r.json();
+      if (!r.ok || d.error) { out.innerHTML = '<span style="color:#dc2626">Error: '+(d.error||r.status)+'</span>'; return; }
+      let html = '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:6px;padding:8px;margin-top:4px;max-height:240px;overflow:auto">';
+      html += '<div style="font-weight:700;color:#0f766e;margin-bottom:6px">🔍 Cancelaría ' + d.n_dry + ' Sugerida(s) · Fijo intacto</div>';
+      if (d.items && d.items.length) {
+        html += '<table style="width:100%;border-collapse:collapse;font-size:11px"><thead><tr style="background:#f1f5f9"><th style="padding:4px;text-align:left">Producto</th><th style="padding:4px">Fecha</th><th style="padding:4px;text-align:right">Kg</th><th style="padding:4px">Origen</th></tr></thead><tbody>';
+        d.items.slice(0, 50).forEach(it => {
+          html += '<tr style="border-bottom:1px solid #f1f5f9"><td style="padding:4px">' + it.producto + '</td><td style="padding:4px;font-family:ui-monospace">' + it.fecha + '</td><td style="padding:4px;text-align:right">' + it.kg + '</td><td style="padding:4px;font-size:10px;color:#64748b">' + it.origen + '</td></tr>';
+        });
+        html += '</tbody></table>';
+        if (d.items.length > 50) html += '<div style="font-size:10px;color:#64748b;margin-top:4px">... y ' + (d.items.length - 50) + ' más</div>';
+      } else {
+        html += '<div style="color:#64748b">(ninguna)</div>';
+      }
+      html += '</div>';
+      out.innerHTML = html;
+    } catch(e) { out.innerHTML = '<span style="color:#dc2626">Error: '+e.message+'</span>'; }
+  };
+  window.herrAplicar = async function() {
+    const desde = document.getElementById('herr-desde').value;
+    if (!desde) { alert('Elegí fecha de corte'); return; }
+    if (!confirm('¿Cancelar TODAS las Sugeridas con fecha > ' + desde + '?\\n\\nEsto NO toca Fijo (eos_plan/b2b). Es soft-cancel (reversible vía audit_log).')) return;
+    const out = document.getElementById('herr-resultado-limpieza');
+    out.innerHTML = 'Aplicando…';
+    try {
+      const r = await fetch('/api/plan/limpiar-sugeridas-futuras', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({desde: desde, dry_run: false}),
+      });
+      const d = await r.json();
+      if (!r.ok || d.error) { out.innerHTML = '<span style="color:#dc2626">Error: '+(d.error||r.status)+'</span>'; return; }
+      out.innerHTML = '<span style="color:#0f766e;font-weight:700">✓ ' + d.n_borradas + ' Sugerida(s) canceladas</span>';
+      setTimeout(() => { location.reload(); }, 1500);
+    } catch(e) { out.innerHTML = '<span style="color:#dc2626">Error: '+e.message+'</span>'; }
+  };
+  window.herrListarSospechosos = async function() {
+    const out = document.getElementById('herr-resultado-sospechosos');
+    out.innerHTML = 'Buscando…';
+    try {
+      const r = await fetch('/api/admin/lote-size-sospechoso');
+      const d = await r.json();
+      if (!r.ok || d.error) { out.innerHTML = '<span style="color:#dc2626">Error: '+(d.error||r.status)+'</span>'; return; }
+      if (!d.items || !d.items.length) { out.innerHTML = '<span style="color:#0f766e">✓ No hay productos con lote_size_kg absurdo</span>'; return; }
+      let html = '<div style="font-size:11px;color:#64748b;margin-bottom:6px">' + d.n + ' producto(s) a arreglar · poné el valor real y pulsá Guardar:</div>';
+      html += '<table style="width:100%;border-collapse:collapse;font-size:11px"><thead><tr style="background:#f1f5f9"><th style="padding:4px;text-align:left">Producto</th><th style="padding:4px;text-align:right">Actual</th><th style="padding:4px;text-align:right">Sugerido</th><th style="padding:4px;text-align:right">Nuevo kg</th><th style="padding:4px"></th></tr></thead><tbody>';
+      d.items.forEach((it, idx) => {
+        const prodEsc = (it.producto_nombre || '').replace(/"/g, '&quot;').replace(/'/g, "&#39;");
+        const sug = it.sugerido_kg != null ? it.sugerido_kg : '';
+        html += '<tr style="border-bottom:1px solid #f1f5f9"><td style="padding:4px">' + it.producto_nombre + '</td>' +
+          '<td style="padding:4px;text-align:right;color:#dc2626">' + it.lote_size_kg_actual + '</td>' +
+          '<td style="padding:4px;text-align:right;color:#64748b">' + sug + '</td>' +
+          '<td style="padding:4px;text-align:right"><input id="herr-fix-' + idx + '" type="number" min="0.5" max="1000" step="0.1" value="' + (sug || 1) + '" style="width:60px;padding:3px 5px;border:1px solid #cbd5e1;border-radius:4px;font-size:11px;text-align:right"></td>' +
+          '<td style="padding:4px"><button onclick="herrFixProd(&quot;' + prodEsc + '&quot;,' + idx + ')" style="background:#0f766e;color:#fff;border:none;padding:4px 8px;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer">Guardar</button></td></tr>';
+      });
+      html += '</tbody></table>';
+      out.innerHTML = html;
+    } catch(e) { out.innerHTML = '<span style="color:#dc2626">Error: '+e.message+'</span>'; }
+  };
+  window.herrFixProd = async function(prodNombre, idx) {
+    const inp = document.getElementById('herr-fix-' + idx);
+    if (!inp) return;
+    const kg = parseFloat(inp.value);
+    if (!kg || kg < 0.5 || kg > 1000) { alert('Valor inválido (0.5 - 1000 kg)'); return; }
+    if (!confirm('¿Actualizar ' + prodNombre + ' · lote_size_kg = ' + kg + '?')) return;
+    try {
+      const r = await fetch('/api/admin/lote-size-fix', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({producto_nombre: prodNombre, lote_size_kg: kg}),
+      });
+      const d = await r.json();
+      if (!r.ok || d.error) { alert('Error: ' + (d.error || r.status)); return; }
+      // Marcar visualmente como hecho
+      inp.disabled = true;
+      inp.style.background = '#dcfce7';
+      inp.nextElementSibling && (inp.nextElementSibling.innerHTML = '<span style="color:#0f766e;font-weight:700">✓</span>');
+    } catch(e) { alert('Error: ' + e.message); }
+  };
 
   // FIX 23-may-2026 Sebastián · "moldear necesidades · botón Programar
   // debe permitir seleccionar horizonte calculando perfecto el consumo y
