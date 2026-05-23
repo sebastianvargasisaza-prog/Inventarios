@@ -279,11 +279,16 @@ _log.getLogger(__name__).info(
 # early y NO aplica migraciones · solo las aplica /api/admin/migrations-run
 # manualmente. Resultado: migraciones nuevas añadidas al código que no se
 # aplican en producción jamás. Acá detectamos pendientes al boot y las
-# aplicamos automáticamente (mismo flujo del endpoint admin · errores
-# benignos silenciados, errores reales loggeados).
+# aplicamos automáticamente.
+# FIX 23-may-PM v2 · primer intento usó _cur.execute(...).fetchall() que
+# falla en psycopg directo · ahora usa el wrapper _Cursor de pg_adapter
+# (el mismo que usa toda la app) que SÍ permite chain execute().fetchall()
+# + logging explícito en cada paso para diag.
 try:
     from database import _usa_postgres
     if _usa_postgres():
+        _logger_mig = _log.getLogger('inventario.auto-mig-pg')
+        _logger_mig.warning("AUTO-MIG-PG · iniciando · backend=PG")
         from database import db_connect
         from pg_compat import (
             translate_ddl, es_insert_or, reescribir_insert_or_ignore,
@@ -294,23 +299,42 @@ try:
             'duplicate column', 'duplicate key',
         )
         _c = db_connect()
+        _logger_mig.warning("AUTO-MIG-PG · db_connect() OK · type=%s",
+                             type(_c).__name__)
         try:
             _cur = _c.cursor()
-            _cur.execute("""
-                CREATE TABLE IF NOT EXISTS schema_migrations (
-                    version     INTEGER PRIMARY KEY,
-                    applied_at  TEXT    NOT NULL DEFAULT to_char(now() AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS'),
-                    description TEXT    NOT NULL DEFAULT ''
-                )
-            """)
-            _c.commit()
-            _applied = {r[0] for r in _cur.execute(
-                "SELECT version FROM schema_migrations").fetchall()}
+            _logger_mig.warning("AUTO-MIG-PG · cursor() OK · type=%s",
+                                 type(_cur).__name__)
+            # Asegurar schema_migrations existe
+            try:
+                _cur.execute("""
+                    CREATE TABLE IF NOT EXISTS schema_migrations (
+                        version     INTEGER PRIMARY KEY,
+                        applied_at  TEXT    NOT NULL DEFAULT to_char(now() AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS'),
+                        description TEXT    NOT NULL DEFAULT ''
+                    )
+                """)
+                _c.commit()
+                _logger_mig.warning("AUTO-MIG-PG · schema_migrations OK")
+            except Exception as _e:
+                _logger_mig.error("AUTO-MIG-PG · schema_migrations CREATE falló: %s", _e)
+            # Leer versiones aplicadas · separar execute y fetchall (psycopg)
+            _applied = set()
+            try:
+                _cur.execute("SELECT version FROM schema_migrations")
+                _rows = _cur.fetchall()
+                _applied = {r[0] for r in _rows}
+                _logger_mig.warning("AUTO-MIG-PG · ya aplicadas: %s",
+                                     sorted(_applied)[-5:])
+            except Exception as _e:
+                _logger_mig.error("AUTO-MIG-PG · SELECT versiones falló: %s", _e)
             _aplicadas = []
             _fallidas = []
             for _v, _desc, _stmts in sorted(MIGRATIONS, key=lambda m: m[0]):
                 if _v in _applied:
                     continue
+                _logger_mig.warning("AUTO-MIG-PG · ejecutando v%d · %d stmts",
+                                     _v, len(_stmts))
                 _v_ok = True
                 for _stmt in _stmts:
                     if es_ddl_a_saltar(_stmt):
@@ -320,17 +344,21 @@ try:
                         if es_insert_or(_stmt_pg):
                             _stmt_pg = reescribir_insert_or_ignore(_stmt_pg)
                         _cur.execute(_stmt_pg)
+                        _c.commit()
                     except Exception as _e:
                         _msg = str(_e).lower()
                         if any(p in _msg for p in _BENIGN):
+                            try:
+                                _c.rollback()
+                            except Exception:
+                                pass
                             continue
                         _v_ok = False
-                        _fallidas.append({'version': _v, 'stmt': _stmt[:100],
+                        _fallidas.append({'version': _v, 'stmt': _stmt[:80],
                                           'error': str(_e)[:200]})
-                        _log.getLogger(__name__).warning(
-                            "PG-MIG %d falló: %s · stmt: %s",
-                            _v, _e, _stmt[:100])
-                        # Rollback transacción para no contaminar la siguiente
+                        _logger_mig.error(
+                            "AUTO-MIG-PG v%d STMT FALLÓ · %s · stmt: %s",
+                            _v, _e, _stmt[:120])
                         try:
                             _c.rollback()
                         except Exception:
@@ -338,29 +366,37 @@ try:
                         break
                 if _v_ok:
                     try:
+                        # Usar ? que el wrapper traduce a %s
                         _cur.execute(
                             "INSERT INTO schema_migrations (version, description) "
-                            "VALUES (%s, %s) ON CONFLICT (version) DO NOTHING",
+                            "VALUES (?, ?)",
                             (_v, _desc))
                         _c.commit()
                         _aplicadas.append(_v)
+                        _logger_mig.warning("AUTO-MIG-PG · v%d REGISTRADA", _v)
                     except Exception as _e:
-                        _log.getLogger(__name__).warning(
-                            "no se pudo registrar mig %d aplicada: %s", _v, _e)
-            if _aplicadas:
-                _log.getLogger(__name__).info(
-                    "PG-MIG · aplicadas auto al boot: %s", _aplicadas)
+                        _logger_mig.error(
+                            "AUTO-MIG-PG · no se pudo registrar v%d: %s", _v, _e)
+                        try:
+                            _c.rollback()
+                        except Exception:
+                            pass
+            _logger_mig.warning(
+                "AUTO-MIG-PG · RESUMEN · aplicadas=%s · fallidas=%d",
+                _aplicadas, len(_fallidas))
             if _fallidas:
-                _log.getLogger(__name__).warning(
-                    "PG-MIG · fallidas: %s", _fallidas[:5])
+                for _f in _fallidas[:5]:
+                    _logger_mig.error("AUTO-MIG-PG FALLA · %s", _f)
         finally:
             try:
                 _c.close()
             except Exception:
                 pass
 except Exception as _e:
-    _log.getLogger(__name__).warning(
-        "auto-mig-pg no arrancó (no aborta boot): %s", _e)
+    import traceback as _tb
+    _log.getLogger(__name__).error(
+        "auto-mig-pg CRASH (no aborta boot) · %s\n%s",
+        _e, _tb.format_exc()[:1000])
 
 # Arrancar loops de background daemon (no bloqueantes).
 # Solo si NO estamos en modo testing (los tests no necesitan loops corriendo).
