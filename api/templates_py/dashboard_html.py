@@ -20186,12 +20186,53 @@ async function ckMarcar(itemId, estado){
       const r = await fetch('/api/plan/necesidades' + qs);
       if (r.status === 401) { window.location.href = '/login'; return; }
       const d = await r.json();
+      // FIX 23-may-2026 · cachear SKUs huérfanos para mapeo inline desde drill
+      window._NEC_SKUS_HUERFANOS = (d.resumen && d.resumen.skus_huerfanos_vendiendo) || [];
       renderResumenNec(d.resumen);
       renderClientesNec(d.clientes);
     } catch(e) {
       div.innerHTML = '<div style="text-align:center;color:#dc2626;padding:40px">Error: ' + escapeHtmlNec(e.message) + '</div>';
     }
   }
+
+  // FIX 23-may-2026 · Sebastián pidió mapear SKU inline desde el alert
+  // SIN MAPEO SHOPIFY · antes mensaje sin acción · ahora input + huérfanos
+  // sugeridos + POST /api/admin/sku-producto-map
+  window._mapearSkuInline = async function(prodNombre, inputId, statusId) {
+    const inp = document.getElementById(inputId);
+    const status = document.getElementById(statusId);
+    if (!inp || !status) return;
+    const sku = (inp.value || '').trim().toUpperCase();
+    if (!sku) {
+      status.innerHTML = '<span style="color:#dc2626">Ingresá un SKU</span>';
+      return;
+    }
+    status.innerHTML = '<span style="color:#6b7280">Mapeando…</span>';
+    try {
+      const r = await fetch('/api/admin/sku-producto-map', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({sku: sku, producto_nombre: prodNombre, activo: true}),
+      });
+      const d = await r.json();
+      if (r.status === 401) {
+        status.innerHTML = '<span style="color:#dc2626">Sesión expirada · re-loguea</span>';
+        return;
+      }
+      if (r.status === 403) {
+        status.innerHTML = '<span style="color:#dc2626">Solo admin puede mapear SKUs</span>';
+        return;
+      }
+      if (!r.ok || d.error) {
+        status.innerHTML = '<span style="color:#dc2626">Error: ' + escapeHtmlNec(d.error || ('HTTP '+r.status)) + '</span>';
+        return;
+      }
+      status.innerHTML = '<span style="color:#16a34a;font-weight:700">✓ Mapeado · refrescando necesidades…</span>';
+      setTimeout(function() { cargarNecesidades(); }, 600);
+    } catch(e) {
+      status.innerHTML = '<span style="color:#dc2626">Error red: ' + escapeHtmlNec(e.message) + '</span>';
+    }
+  };
 
   function renderProximasNec(items) {
     const div = document.getElementById('nec-proximas');
@@ -20752,10 +20793,34 @@ async function ckMarcar(itemId, estado){
 
     // ── Diagnostic SKUs Shopify · ¿se cuentan las ventas? ──
     if (p.sin_mapeo_shopify) {
+      // FIX 23-may-2026 · Sebastián · mapeo inline desde el alert · antes
+      // solo decía "agregar en otro lado" · ahora input + datalist con
+      // SKUs huérfanos vendiendo · POST directo a /api/admin/sku-producto-map
+      const huerfanos = window._NEC_SKUS_HUERFANOS || [];
+      const inpId = 'nec-map-sku-' + idx;
+      const stId  = 'nec-map-st-' + idx;
+      const dlId  = 'nec-map-dl-' + idx;
       html += '<div style="background:#fee2e2;border-left:4px solid #dc2626;border-radius:8px;padding:10px;margin-bottom:12px">';
       html += '<div style="font-size:11px;color:#991b1b;font-weight:700;margin-bottom:4px">🛒✕ SIN MAPEO SHOPIFY</div>';
-      html += '<div style="font-size:11px;color:#475569">Este producto no tiene SKUs registrados en <code>sku_producto_map</code> · sus ventas Shopify NO se imputan · por eso aparece como "sin ventas" aunque sí venda.</div>';
-      html += '<div style="font-size:11px;color:#7f1d1d;margin-top:4px">Acción: agregar el SKU Shopify al mapeo (mig o admin UI) para que cuente sus ventas.</div>';
+      html += '<div style="font-size:11px;color:#475569;margin-bottom:6px">Este producto no tiene SKUs registrados en <code>sku_producto_map</code> · sus ventas Shopify NO se imputan · por eso aparece como "sin ventas" aunque sí venda.</div>';
+      // Form de mapeo inline
+      html += '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:6px">';
+      html += '<input id="' + inpId + '" list="' + dlId + '" type="text" placeholder="SKU Shopify (ej: SAH-30)" style="flex:1;min-width:160px;padding:6px 8px;border:1px solid #fca5a5;border-radius:6px;font-size:12px;font-family:ui-monospace;text-transform:uppercase">';
+      if (huerfanos.length) {
+        html += '<datalist id="' + dlId + '">';
+        huerfanos.forEach(s => { html += '<option value="' + escapeHtmlNec(s) + '">'; });
+        html += '</datalist>';
+      }
+      // FIX 23-may-2026 · usar data-* + this.dataset para evitar issue de
+      // quoting en Python triple-quote (mi patrón 5 / data-act recomendado)
+      html += '<button class="nec-map-btn" data-prod="' + escapeHtmlNec(p.producto_nombre) + '" data-inp="' + inpId + '" data-st="' + stId + '" onclick="_mapearSkuInline(this.dataset.prod, this.dataset.inp, this.dataset.st)" style="padding:6px 12px;background:#dc2626;color:white;border:0;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">Mapear ahora</button>';
+      html += '</div>';
+      if (huerfanos.length) {
+        html += '<div style="font-size:10px;color:#7f1d1d;margin-top:4px">💡 ' + huerfanos.length + ' SKU(s) huérfano(s) vendiendo · escribí o elegí del dropdown</div>';
+      } else {
+        html += '<div style="font-size:10px;color:#7f1d1d;margin-top:4px">Sin huérfanos detectados · escribí el SKU Shopify manualmente</div>';
+      }
+      html += '<div id="' + stId + '" style="font-size:11px;margin-top:6px"></div>';
       html += '</div>';
     } else {
       html += '<div style="background:#f0fdfa;border-left:4px solid #14b8a6;border-radius:8px;padding:6px 10px;margin-bottom:12px;font-size:11px;color:#475569">';
