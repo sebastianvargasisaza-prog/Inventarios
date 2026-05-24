@@ -21657,12 +21657,16 @@ def limpiar_produccion_zombies():
             # B. UPDATE programadas viejas a cancelado
             if prog_viejas:
                 ids = [r['id'] for r in prog_viejas]
+                # FIX P2 audit 24-may · SUBSTR(-1500) evita acumulación
                 ph = ','.join('?' * len(ids))
                 c.execute(
                     f"""UPDATE produccion_programada
                         SET estado='cancelado',
-                            observaciones=COALESCE(observaciones,'')
-                                || ' [auto-cancelado: programada >7d sin iniciar]'
+                            observaciones=SUBSTR(
+                              COALESCE(observaciones,'')
+                                || ' [auto-cancelado: programada >7d sin iniciar]',
+                              -1500
+                            )
                         WHERE id IN ({ph})""",
                     ids
                 )
@@ -21683,8 +21687,11 @@ def limpiar_produccion_zombies():
                 c.execute(
                     f"""UPDATE produccion_programada
                         SET estado='cancelado',
-                            observaciones=COALESCE(observaciones,'')
-                                || ' [auto-dedup: duplicado gcal_event_id]'
+                            observaciones=SUBSTR(
+                              COALESCE(observaciones,'')
+                                || ' [auto-dedup: duplicado gcal_event_id]',
+                              -1500
+                            )
                         WHERE id IN ({ph})
                           AND COALESCE(inicio_real_at,'') = ''
                           AND COALESCE(inventario_descontado_at,'') = ''

@@ -11620,7 +11620,7 @@ def _proxima_fecha_habil(c, fecha_obj, prefer_mwf=False, max_lookahead=400,
     from datetime import timedelta as _td
 
     es_grande = lote_kg is not None and lote_kg > LOTE_GRANDE_KG
-    es_complejo = _es_producto_complejo(producto_nombre)
+    es_complejo = _es_producto_complejo(producto_nombre, c if hasattr(c, 'execute') else None)
     # Complejos solo Lun/Mié (weekday 0,2) · más restrictivo que prefer_mwf
     DIAS_COMPLEJOS = {0, 2}
 
