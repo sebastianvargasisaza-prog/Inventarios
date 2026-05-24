@@ -6414,13 +6414,102 @@ def _auto_programar_sugeridas(conn, dias_horizonte=365, ventana_velocidad=60,
             'n_creados': len(creados), 'n_saltados': len(saltados)}
 
 
+@bp.route("/api/admin/diag-cobertura-calendario", methods=["GET"])
+def diag_cobertura_calendario():
+    """FIX 24-may noche · Sebastián vio Abastecimiento 365d con cifras
+    absurdamente bajas. Sospecha: el calendario no llega a 365d, solo
+    hay ~90d de Sugeridas pese al endpoint mostrar 7 buckets hasta 365.
+
+    Devuelve la realidad: por origen + por mes futuro, cuántos lotes
+    activos hay desde HOY hasta hoy+365d. Permite confirmar dónde se
+    corta el calendario y disparar el cron manual para llenarlo.
+    """
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+    conn = get_db()
+    cur = conn.cursor()
+    from datetime import date, timedelta as _td
+    hoy = date.today()
+    hasta = (hoy + _td(days=365)).isoformat()
+    hoy_iso = hoy.isoformat()
+
+    por_origen = {}
+    por_mes = {}
+    total = 0
+    kg_total = 0.0
+    fecha_ultimo_lote = None
+    try:
+        for r in cur.execute(
+            """SELECT COALESCE(origen,'(sin_origen)'),
+                      substr(fecha_programada, 1, 7) AS mes,
+                      substr(fecha_programada, 1, 10) AS fecha_d,
+                      COUNT(*),
+                      COALESCE(SUM(COALESCE(cantidad_kg, 0)), 0)
+               FROM produccion_programada
+               WHERE LOWER(COALESCE(estado, '')) NOT IN
+                     ('cancelado', 'completado', 'esperando_recurso')
+                 AND fecha_programada >= ?
+                 AND fecha_programada <= ?
+                 AND COALESCE(inventario_descontado_at, '') = ''
+               GROUP BY COALESCE(origen,'(sin_origen)'),
+                        substr(fecha_programada, 1, 7),
+                        substr(fecha_programada, 1, 10)""",
+            (hoy_iso, hasta),
+        ).fetchall():
+            origen, mes, fecha_d, cnt, kg = r
+            por_origen[origen] = por_origen.get(origen, 0) + int(cnt)
+            por_mes[mes] = por_mes.get(mes, 0) + int(cnt)
+            total += int(cnt)
+            kg_total += float(kg or 0)
+            if not fecha_ultimo_lote or (fecha_d or '') > fecha_ultimo_lote:
+                fecha_ultimo_lote = fecha_d
+    except Exception as e:
+        return jsonify({'error': str(e)[:200]}), 500
+
+    cobertura_dias = 0
+    if fecha_ultimo_lote:
+        try:
+            from datetime import date as _date
+            cobertura_dias = (_date.fromisoformat(fecha_ultimo_lote) - hoy).days
+        except Exception:
+            pass
+
+    # Calcular gap · si cobertura < 365 hay un "boquete"
+    boquete_dias = max(0, 365 - cobertura_dias)
+    return jsonify({
+        'hoy': hoy_iso,
+        'horizonte_pedido_dias': 365,
+        'total_lotes_futuros': total,
+        'kg_total_proyectado': round(kg_total, 1),
+        'por_origen': por_origen,
+        'por_mes': dict(sorted(por_mes.items())),
+        'fecha_ultimo_lote': fecha_ultimo_lote,
+        'cobertura_dias_real': cobertura_dias,
+        'boquete_dias': boquete_dias,
+        'recomendacion': (
+            'Calendario completo hasta 1 año'
+            if cobertura_dias >= 360
+            else f'Calendario corto · faltan {boquete_dias}d. Ejecutá '
+                  'POST /api/plan/auto-programar-sugeridas con '
+                  '{"dias_horizonte": 365} para llenar el resto.'
+        ),
+    })
+
+
 @bp.route("/api/plan/auto-programar-sugeridas", methods=["POST"])
 def plan_auto_programar_sugeridas():
     """Endpoint manual para disparar auto-programación de Sugeridas.
 
-    Body opcional: {dias_horizonte: 90, cob_critico: 20, cob_alerta: 25}
+    Body opcional: {dias_horizonte: 365, cob_critico: 20, cob_alerta: 25}
     Sebastián 23-may-2026 · cierra el bucle "el sistema calcula pero
     no programa".
+
+    FIX 24-may noche · default subido de 90 a 365 alineado con el cron
+    auto-sugerir y con Abastecimiento que muestra horizontes hasta 365d.
+    Antes el default 90 dejaba el calendario corto y Abastecimiento
+    reportaba "déficit casi 0" en buckets >90d.
     """
     user, err = _require_admin_or_compras()
     if err:
@@ -6428,9 +6517,9 @@ def plan_auto_programar_sugeridas():
         return jsonify(body), code
     d = request.get_json(silent=True) or {}
     try:
-        dh = max(7, min(int(d.get('dias_horizonte', 90)), 365))
+        dh = max(7, min(int(d.get('dias_horizonte', 365)), 365))
     except Exception:
-        dh = 90
+        dh = 365
     try:
         cc = int(d.get('cob_critico', 20))
         ca = int(d.get('cob_alerta', 25))

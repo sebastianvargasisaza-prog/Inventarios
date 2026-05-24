@@ -20686,6 +20686,7 @@ async function ckMarcar(itemId, estado){
       {n:6, label:'ml a todos SKUs', emoji:'✏️'},
       {n:7, label:'Envases B2B (whitelist)', emoji:'🤝'},
       {n:8, label:'Variantes fórmula', emoji:'🧪'},
+      {n:9, label:'Llenar calendario 365d', emoji:'📅'},
     ];
     const sidebarHtml = TABS.map(t =>
       '<button id="herr-tab-btn-' + t.n + '" class="herr-tab-btn" onclick="mostrarTabHerr(' + t.n + ')" style="display:block;width:100%;text-align:left;background:transparent;color:#475569;border:none;border-left:3px solid transparent;padding:11px 14px;font-size:12px;font-weight:600;cursor:pointer;border-radius:0">' +
@@ -20778,6 +20779,16 @@ async function ckMarcar(itemId, estado){
           '</div>' +
           '<div id="herr-cli-envases-out" style="margin-top:10px"></div>' +
         '</div>' +
+        // Tab 9 · Diag calendario + llenar Sugeridas a 365d
+        '<div id="herr-tab-9" class="herr-tab" style="display:none">' +
+          '<div style="font-weight:700;color:#1e293b;font-size:14px;margin-bottom:4px">📅 Cobertura del calendario + llenar a 365d</div>' +
+          '<div style="font-size:12px;color:#64748b;margin-bottom:12px">Verificá hasta qué fecha llega el calendario actual. Si está corto, dispará el cron auto-sugerir manualmente para llenarlo a 1 año (el cron diario corre 5 AM).</div>' +
+          '<div style="display:flex;gap:8px;margin-bottom:12px">' +
+            '<button onclick="herrDiagCalendario()" style="background:#0891b2;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">🔍 Diagnosticar cobertura</button>' +
+            '<button onclick="herrLlenarCalendario()" style="background:#7c3aed;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">🚀 Llenar a 365d ahora</button>' +
+          '</div>' +
+          '<div id="herr-cal-out" style="margin-top:10px"></div>' +
+        '</div>' +
         // Tab 8 · Variantes de fórmula (agrupar canónico)
         '<div id="herr-tab-8" class="herr-tab" style="display:none">' +
           '<div style="font-weight:700;color:#1e293b;font-size:14px;margin-bottom:4px">🧪 Variantes de fórmula (producto canónico)</div>' +
@@ -20861,6 +20872,56 @@ async function ckMarcar(itemId, estado){
       out.innerHTML = '<span style="color:#0f766e;font-weight:700">✓ ' + d.n_skus + ' SKU(s) actualizados a ' + d.volumen_ml + 'ml/g para ' + d.producto_nombre + '</span>';
       document.getElementById('herr-mlt-prod').value = '';
       document.getElementById('herr-mlt-ml').value = '';
+    } catch(e) { out.innerHTML = '<span style="color:#dc2626">Error red: ' + e.message + '</span>'; }
+  };
+  // Tab 9 · Diagnóstico cobertura + llenar Sugeridas a 365d
+  window.herrDiagCalendario = async function() {
+    const out = document.getElementById('herr-cal-out');
+    out.innerHTML = 'Calculando…';
+    try {
+      const r = await fetch('/api/admin/diag-cobertura-calendario');
+      const d = await r.json();
+      if (!r.ok || d.error) { out.innerHTML = '<span style="color:#dc2626">Error: ' + (d.error || r.status) + '</span>'; return; }
+      const bg = d.cobertura_dias_real >= 360 ? '#f0fdf4' : '#fef3c7';
+      const bordr = d.cobertura_dias_real >= 360 ? '#16a34a' : '#f59e0b';
+      let html = '<div style="background:' + bg + ';border-left:4px solid ' + bordr + ';padding:10px 14px;border-radius:6px;margin-bottom:12px">' +
+        '<div style="font-size:13px;color:#1e293b"><strong>' + d.total_lotes_futuros + ' lotes</strong> programados desde hoy hasta <strong>' + (d.fecha_ultimo_lote || '—') + '</strong> · ' + d.kg_total_proyectado + ' kg totales</div>' +
+        '<div style="font-size:11px;color:#475569;margin-top:4px">Cobertura real: <strong>' + d.cobertura_dias_real + 'd</strong> de 365d · boquete: <strong>' + d.boquete_dias + 'd</strong></div>' +
+        '<div style="font-size:11px;color:#475569;margin-top:6px;font-style:italic">' + (d.recomendacion || '') + '</div>' +
+        '</div>';
+      const orig = d.por_origen || {};
+      const meses = d.por_mes || {};
+      html += '<div style="display:flex;gap:14px;flex-wrap:wrap">';
+      html += '<div style="flex:1;min-width:220px"><div style="font-weight:700;font-size:12px;color:#475569;margin-bottom:4px">Por origen</div>';
+      html += '<table style="width:100%;border-collapse:collapse;font-size:11px"><tbody>';
+      Object.keys(orig).sort().forEach(k => {
+        html += '<tr><td style="padding:3px 6px">' + k + '</td><td style="padding:3px 6px;text-align:right;font-weight:700">' + orig[k] + '</td></tr>';
+      });
+      html += '</tbody></table></div>';
+      html += '<div style="flex:1;min-width:220px"><div style="font-weight:700;font-size:12px;color:#475569;margin-bottom:4px">Por mes (futuro)</div>';
+      html += '<table style="width:100%;border-collapse:collapse;font-size:11px"><tbody>';
+      Object.keys(meses).sort().forEach(k => {
+        html += '<tr><td style="padding:3px 6px">' + k + '</td><td style="padding:3px 6px;text-align:right;font-weight:700">' + meses[k] + '</td></tr>';
+      });
+      html += '</tbody></table></div>';
+      html += '</div>';
+      out.innerHTML = html;
+    } catch(e) { out.innerHTML = '<span style="color:#dc2626">Error red: ' + e.message + '</span>'; }
+  };
+  window.herrLlenarCalendario = async function() {
+    if (!confirm('¿Disparar el cron de auto-sugeridas con horizonte 365 días?\\n\\nVa a llenar el calendario para todos los productos con velocidad de venta. Lotes Sugeridos quedan editables (no son Fijos).')) return;
+    const out = document.getElementById('herr-cal-out');
+    out.innerHTML = 'Llenando calendario · esto puede tardar 5-15 segundos…';
+    try {
+      const r = await fetch('/api/plan/auto-programar-sugeridas', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({dias_horizonte: 365}),
+      });
+      const d = await r.json();
+      if (!r.ok || d.error) { out.innerHTML = '<span style="color:#dc2626">Error: ' + (d.error || r.status) + '</span>'; return; }
+      out.innerHTML = '<div style="background:#f0fdf4;border-left:4px solid #16a34a;padding:10px 14px;border-radius:6px;font-size:12px;color:#15803d"><strong>✓ ' + (d.n_creados || 0) + ' Sugeridas creadas</strong> · ' + (d.n_saltados || 0) + ' saltadas (ya había lote ±7d). Recargá Abastecimiento para ver el efecto.</div>';
+      setTimeout(herrDiagCalendario, 800);
     } catch(e) { out.innerHTML = '<span style="color:#dc2626">Error red: ' + e.message + '</span>'; }
   };
   // Tab 7 · Envases B2B (whitelist por cliente) · 24-may-2026 noche
