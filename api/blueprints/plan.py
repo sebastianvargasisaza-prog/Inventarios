@@ -6414,6 +6414,193 @@ def _auto_programar_sugeridas(conn, dias_horizonte=365, ventana_velocidad=60,
             'n_creados': len(creados), 'n_saltados': len(saltados)}
 
 
+@bp.route("/admin/fusionar-formulas-nf", methods=["GET", "POST"])
+def admin_fusionar_formulas_nf():
+    """Sebastián 24-may noche: 'NF significa nueva formula · le pertenece
+    al producto que ya está'. Es decir, EMULSION HIDRATANTE ILUMINADORA NF
+    es la nueva fórmula del producto EMULSION HIDRATANTE ILUMINADORA.
+
+    Esta página detecta parejas (X, X NF), muestra valores actuales y
+    permite hacer el merge:
+      - La fórmula vieja (X) se marca activo=0 (preserva histórico)
+      - La fórmula NF se renombra a X (sin sufijo)
+      - lote_size_kg de la NF se completa con el de la vieja si la NF
+        está en 0.1 (absurdo) y la vieja tiene valor realista
+      - formula_items de la vieja se mantienen (por si auditoría histórica)
+    """
+    if 'compras_user' not in session:
+        return "<html><body><h2>No autorizado</h2></body></html>", 401
+    user = session.get('compras_user', '')
+    if user not in (set(ADMIN_USERS) | set(COMPRAS_ACCESS)):
+        return "<html><body><h2>Solo admin/compras</h2></body></html>", 403
+    conn = get_db(); cur = conn.cursor()
+
+    # Detectar parejas NF
+    nf_rows = cur.execute(
+        """SELECT producto_nombre, COALESCE(lote_size_kg, 0), COALESCE(activo, 1)
+           FROM formula_headers
+           WHERE UPPER(producto_nombre) LIKE '% NF'
+              OR UPPER(producto_nombre) LIKE '%NUEVA FORMULA%'
+              OR UPPER(producto_nombre) LIKE '%NUEVA FÓRMULA%'
+           ORDER BY producto_nombre"""
+    ).fetchall()
+
+    parejas = []
+    for nf_nombre, nf_lote, nf_act in nf_rows:
+        # Calcular nombre base (quitar sufijo NF)
+        base = nf_nombre
+        for sfx in [' NF', ' FORMULA NUEVA', ' FÓRMULA NUEVA', ' NUEVA FORMULA', ' NUEVA FÓRMULA']:
+            if base.upper().endswith(sfx):
+                base = base[:-len(sfx)].rstrip()
+                break
+        if base == nf_nombre:
+            continue  # no se pudo extraer base
+        # Buscar la vieja
+        old_row = cur.execute(
+            "SELECT producto_nombre, COALESCE(lote_size_kg, 0), COALESCE(activo, 1) "
+            "FROM formula_headers WHERE UPPER(TRIM(producto_nombre)) = UPPER(TRIM(?))",
+            (base,),
+        ).fetchone()
+        # Contar lotes en calendario con cada nombre
+        cnt_nf = cur.execute(
+            "SELECT COUNT(*) FROM produccion_programada "
+            "WHERE UPPER(TRIM(producto)) = UPPER(TRIM(?)) "
+            "AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado')",
+            (nf_nombre,),
+        ).fetchone()[0] or 0
+        cnt_old = cur.execute(
+            "SELECT COUNT(*) FROM produccion_programada "
+            "WHERE UPPER(TRIM(producto)) = UPPER(TRIM(?)) "
+            "AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado')",
+            (base,),
+        ).fetchone()[0] or 0
+        parejas.append({
+            'nf': nf_nombre, 'nf_lote': nf_lote, 'nf_act': bool(nf_act),
+            'base': base,
+            'old_existe': bool(old_row),
+            'old_lote': float(old_row[1]) if old_row else 0,
+            'old_act': bool(old_row[2]) if old_row else False,
+            'cnt_nf': cnt_nf,
+            'cnt_old': cnt_old,
+        })
+
+    if request.method == 'POST':
+        accion = request.form.get('accion')
+        nf_target = request.form.get('nf_target', '').strip()
+        if accion != 'fusionar' or not nf_target:
+            return "<html><body><h2>Acción inválida</h2></body></html>", 400
+        pareja = next((p for p in parejas if p['nf'] == nf_target), None)
+        if not pareja:
+            return f"<html><body><h2>Pareja no encontrada: {nf_target}</h2></body></html>", 404
+        nf = pareja['nf']
+        base = pareja['base']
+        try:
+            # 1. Si NF tiene lote_size absurdo (< 1) y vieja tiene valor → copiar
+            if pareja['nf_lote'] < 1 and pareja['old_existe'] and pareja['old_lote'] >= 1:
+                cur.execute(
+                    "UPDATE formula_headers SET lote_size_kg = ? "
+                    "WHERE producto_nombre = ?",
+                    (pareja['old_lote'], nf),
+                )
+            # 2. Marcar la vieja como inactiva (preserva histórico)
+            if pareja['old_existe']:
+                cur.execute(
+                    "UPDATE formula_headers SET activo = 0 WHERE producto_nombre = ?",
+                    (base,),
+                )
+                # Renombrar para no chocar con la NF cuando renombremos
+                cur.execute(
+                    "UPDATE formula_headers SET producto_nombre = ? "
+                    "WHERE producto_nombre = ?",
+                    (base + ' [ANTIGUA]', base),
+                )
+                cur.execute(
+                    "UPDATE formula_items SET producto_nombre = ? "
+                    "WHERE producto_nombre = ?",
+                    (base + ' [ANTIGUA]', base),
+                )
+            # 3. Renombrar NF al nombre base (sin sufijo)
+            cur.execute(
+                "UPDATE formula_headers SET producto_nombre = ? "
+                "WHERE producto_nombre = ?",
+                (base, nf),
+            )
+            cur.execute(
+                "UPDATE formula_items SET producto_nombre = ? "
+                "WHERE producto_nombre = ?",
+                (base, nf),
+            )
+            audit_log(cur, usuario=user, accion='FUSIONAR_FORMULA_NF',
+                      tabla='formula_headers', registro_id=base,
+                      despues={'nf_original': nf, 'base': base,
+                                'old_marcada_inactiva': pareja['old_existe'],
+                                'lote_size_aplicado': pareja['nf_lote'] if pareja['nf_lote'] >= 1 else pareja['old_lote']})
+            conn.commit()
+            return f"<html><body style='font-family:system-ui;padding:30px;background:#f8fafc'><h1 style='color:#15803d'>✓ Fusionado: {base}</h1><p>La fórmula NUEVA ahora se llama <code>{base}</code> y se usa cuando una producción matchee. La vieja quedó como <code>{base} [ANTIGUA]</code> con activo=0 (preserva histórico).</p><a href='/admin/fusionar-formulas-nf' style='background:#7c3aed;color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none;font-weight:700'>← Ver más parejas</a></body></html>"
+        except Exception as e:
+            try: conn.rollback()
+            except Exception: pass
+            return f"<html><body style='font-family:system-ui;padding:30px'><h1 style='color:#dc2626'>Error</h1><pre>{str(e)[:500]}</pre></body></html>", 500
+
+    # Render preview
+    rows = ''
+    for p in parejas:
+        nf_warn = '⚠' if p['nf_lote'] < 1 else '✓'
+        old_warn = '⚠' if p['old_existe'] and p['old_lote'] < 1 else ('—' if not p['old_existe'] else '✓')
+        bg = '#fef3c7' if p['nf_lote'] < 1 else '#f8fafc'
+        boton = f'<form method="POST" style="margin:0" onsubmit="return confirm(\'¿Fusionar {p["nf"]} → {p["base"]}?\\n\\nVieja se marca [ANTIGUA] inactiva. NF se renombra al nombre base.\');"><input type="hidden" name="accion" value="fusionar"><input type="hidden" name="nf_target" value="{p["nf"]}"><button type="submit" style="background:#7c3aed;color:#fff;border:none;padding:6px 12px;border-radius:5px;font-weight:700;cursor:pointer">🔄 Fusionar</button></form>'
+        rows += f'<tr style="background:{bg}">'\
+                f'<td style="padding:10px">{p["nf"]}</td>'\
+                f'<td style="padding:10px;text-align:right">{nf_warn} {p["nf_lote"]:.2f} kg</td>'\
+                f'<td style="padding:10px;text-align:right">{p["cnt_nf"]}</td>'\
+                f'<td style="padding:10px"><strong style="color:#0f766e">{p["base"]}</strong></td>'\
+                f'<td style="padding:10px;text-align:right">{old_warn} {("%.2f kg" % p["old_lote"]) if p["old_existe"] else "—"}</td>'\
+                f'<td style="padding:10px;text-align:right">{p["cnt_old"]}</td>'\
+                f'<td style="padding:10px;text-align:center">{boton}</td>'\
+                f'</tr>'
+
+    return f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Fusionar fórmulas NF</title>
+<style>
+  body{{font-family:system-ui,-apple-system,Arial;background:#f8fafc;margin:0;padding:30px}}
+  .card{{max-width:1300px;margin:0 auto;background:#fff;border-radius:14px;padding:24px;box-shadow:0 4px 20px rgba(0,0,0,.08)}}
+  h1{{color:#1e293b;margin:0 0 10px}}
+  table{{width:100%;border-collapse:collapse;font-size:13px;margin-top:10px}}
+  th{{background:#f1f5f9;padding:10px;text-align:left;font-size:11px;text-transform:uppercase;color:#475569}}
+  td{{border-bottom:1px solid #e2e8f0}}
+  .info{{background:#dbeafe;border-left:5px solid #1e40af;padding:14px 18px;border-radius:8px;color:#1e3a8a;font-size:13px;margin:14px 0}}
+</style></head><body>
+
+<div class="card">
+  <h1>🔄 Fusionar fórmulas NF (Nueva Fórmula)</h1>
+  <p style="color:#475569">Sebastián: 'NF significa nueva formula · le pertenece al producto que ya está'. Esta herramienta toma cada pareja (producto, producto NF) y reemplaza la fórmula vieja con la NF.</p>
+
+  <div class="info">
+    <strong>Qué hace el botón Fusionar:</strong><br>
+    1. Si la NF tiene lote_size &lt; 1 (absurdo) y la vieja tiene valor real → copia lote_size de la vieja a la NF.<br>
+    2. Marca la fórmula vieja como inactiva (activo=0) y la renombra a <code>X [ANTIGUA]</code> (preserva histórico).<br>
+    3. Renombra la NF al nombre base (sin sufijo " NF").<br>
+    4. A partir de ahí, las producciones del calendario con el nombre base usan la fórmula nueva.<br>
+    Operación auditada en audit_log.
+  </div>
+
+  <table>
+    <thead><tr>
+      <th>Fórmula NF</th>
+      <th style="text-align:right">lote_size NF</th>
+      <th style="text-align:right">Lotes</th>
+      <th>→ Producto base</th>
+      <th style="text-align:right">lote_size vieja</th>
+      <th style="text-align:right">Lotes</th>
+      <th></th>
+    </tr></thead>
+    <tbody>{rows or '<tr><td colspan=7 style="padding:20px;text-align:center;color:#94a3b8">Ninguna fórmula NF detectada</td></tr>'}</tbody>
+  </table>
+
+  <p style="margin-top:18px"><a href="/admin/diag-formulas-sospechosas" style="color:#7c3aed">← Diag fórmulas</a> · <a href="/" style="color:#475569">Dashboard</a></p>
+</div></body></html>"""
+
+
 @bp.route("/admin/diag-formulas-sospechosas", methods=["GET"])
 def admin_diag_formulas_sospechosas():
     """Sebastián 24-may noche · el match es 100% pero consumo subestima.
