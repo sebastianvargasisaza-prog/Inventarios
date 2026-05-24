@@ -312,6 +312,16 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (169, "producto_perfil_riesgo.requiere_envasado_mismo_dia · reemplaza hard-code PRODUCTOS_COMPLEJOS · Sebastián 24-may-2026 PM", [
+        # AUDITORÍA-FIX 24-may-2026 · agente reportó: lista hard-coded
+        # PRODUCTOS_COMPLEJOS_SUBSTR = ("VITAMINA C", "TRIACTIVE") en plan.py
+        # era inaccesible para edición. Ahora se mueve a producto_perfil_riesgo
+        # como columna `requiere_envasado_mismo_dia`. La lista hard-coded
+        # queda como fallback si la BD no tiene perfil del producto.
+        "ALTER TABLE producto_perfil_riesgo ADD COLUMN requiere_envasado_mismo_dia INTEGER DEFAULT 0",
+        # Seed inicial · marcar Vit C y Triactive como requieren envasado mismo día
+        "UPDATE producto_perfil_riesgo SET requiere_envasado_mismo_dia = 1 WHERE UPPER(producto_nombre) LIKE '%VITAMINA C%' OR UPPER(producto_nombre) LIKE '%TRIACTIVE%'",
+    ]),
     (168, "truncar produccion_programada.observaciones acumuladas >2000 chars · keep last 1500 · Sebastián 24-may-2026 PM", [
         # AUDITORÍA-FIX 24-may-2026 · agente reportó: 30+ updates concatenan
         # ' · OPERACIÓN_<timestamp>' en observaciones sin truncamiento.

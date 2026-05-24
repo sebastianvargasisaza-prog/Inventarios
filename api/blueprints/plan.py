@@ -11557,11 +11557,32 @@ LOTE_GRANDE_KG = 50.0
 PRODUCTOS_COMPLEJOS_SUBSTR = ("VITAMINA C", "TRIACTIVE")
 
 
-def _es_producto_complejo(producto_nombre):
-    """True si el producto requiere envasado el mismo día (Vit C / Triactive)."""
+def _es_producto_complejo(producto_nombre, conn=None):
+    """True si el producto requiere envasado el mismo día.
+
+    FIX P2 audit 24-may-2026 · ahora consulta producto_perfil_riesgo.
+    requiere_envasado_mismo_dia (mig 169) primero. Si no hay perfil ·
+    fallback al hard-coded PRODUCTOS_COMPLEJOS_SUBSTR (Vit C, Triactive).
+    Permite que el equipo agregue nuevos productos complejos desde UI
+    sin tocar código.
+    """
     if not producto_nombre:
         return False
     pu = producto_nombre.upper()
+    # Intentar BD primero (autoritativo si el perfil existe)
+    if conn is not None:
+        try:
+            row = conn.execute(
+                """SELECT COALESCE(requiere_envasado_mismo_dia, 0)
+                   FROM producto_perfil_riesgo
+                   WHERE UPPER(TRIM(producto_nombre)) = UPPER(TRIM(?))""",
+                (producto_nombre,),
+            ).fetchone()
+            if row is not None:
+                return bool(row[0])
+        except Exception:
+            pass
+    # Fallback hard-coded (Vit C / Triactive)
     return any(s in pu for s in PRODUCTOS_COMPLEJOS_SUBSTR)
 
 
