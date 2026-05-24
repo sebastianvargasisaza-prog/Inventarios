@@ -717,6 +717,51 @@ def _unhandled_exception(e):
     return jsonify(payload), 500
 
 
+@app.route('/diag/animus-calc/<path:producto>')
+def diag_animus_calc(producto):
+    """Sebastián 24-may · 'BHA refrescado pero sigue sin mapear en UI'
+    aunque diag dice 740 uds. Endpoint que ejecuta directamente
+    _calcular_animus_dtc para detectar dónde falla el match (case,
+    whitespace, etc).
+    """
+    try:
+        from database import get_db
+        from blueprints.plan import _calcular_animus_dtc
+        db = get_db()
+        productos = _calcular_animus_dtc(db.cursor(), ventana=60,
+                                           cob_critico=20, cob_alerta=25,
+                                           cob_vigilar=45)
+        match = (producto or '').strip().upper()
+        encontrado = [p for p in (productos or [])
+                       if (p.get('producto_nombre') or '').strip().upper() == match
+                       or match in (p.get('producto_nombre') or '').upper()]
+        return jsonify({
+            'ok': True,
+            'producto_buscado': producto,
+            'n_productos_calculados': len(productos or []),
+            'matches': [{
+                'producto_nombre': p.get('producto_nombre'),
+                'velocidad_uds_dia': p.get('velocidad_uds_dia'),
+                'velocidad_kg_dia': p.get('velocidad_kg_dia'),
+                'ventas_periodo_uds': p.get('ventas_periodo_uds'),
+                'stock_uds_total': p.get('stock_uds_total'),
+                'dias_cobertura': p.get('dias_cobertura'),
+                'urgencia': p.get('urgencia'),
+                'ml_unidad': p.get('ml_unidad'),
+                'ml_inferido': p.get('ml_inferido'),
+                'lote_bulk_kg': p.get('lote_bulk_kg'),
+                'lote_bulk_kg_bd': p.get('lote_bulk_kg_bd'),
+                'lote_calculado': p.get('lote_calculado'),
+                'lote_size_faltante': p.get('lote_size_faltante'),
+                'sin_mapeo_shopify': p.get('sin_mapeo_shopify'),
+            } for p in encontrado],
+        })
+    except Exception as e:
+        import traceback as _tb
+        return jsonify({'ok': False, 'error': str(e)[:200],
+                        'trace': _tb.format_exc()[:500]}), 500
+
+
 @app.route('/diag/producto-ventas/<path:producto>')
 def diag_producto_ventas(producto):
     """Sebastián 23-may-2026 PM · 'suero exfoliante bha no hace match
