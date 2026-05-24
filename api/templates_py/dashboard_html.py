@@ -20651,15 +20651,64 @@ async function ckMarcar(itemId, estado){
           '<div id="herr-resultado-sospechosos" style="margin-top:10px"></div>' +
         '</div>' +
         // Sección 3 · SKUs huérfanos vendiendo
-        '<div style="background:#f8fafc;border-radius:8px;padding:14px">' +
+        '<div style="background:#f8fafc;border-radius:8px;padding:14px;margin-bottom:14px">' +
           '<div style="font-weight:700;color:#1e293b;font-size:13px;margin-bottom:4px">3️⃣ SKUs vendiendo sin mapeo (huérfanos)</div>' +
           '<div style="font-size:11px;color:#64748b;margin-bottom:8px">Caso BHA: LBHA + CRB3BHA vendían sin map · reportaba 300/mes cuando real es 1280/mes (4×). Mapealos a su producto.</div>' +
           '<button onclick="herrListarHuerfanos()" style="background:#7c3aed;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">🔍 Listar huérfanos top</button>' +
           '<div id="herr-resultado-huerfanos" style="margin-top:10px"></div>' +
         '</div>' +
+        // Sección 4 · Re-mapear SKU específico (cambio mapeo existente)
+        '<div style="background:#f8fafc;border-radius:8px;padding:14px">' +
+          '<div style="font-weight:700;color:#1e293b;font-size:13px;margin-bottom:4px">4️⃣ Re-mapear SKU a otro producto</div>' +
+          '<div style="font-size:11px;color:#64748b;margin-bottom:8px">Para corregir mapeos mal hechos · ej. SERUM-BT-001 estaba en LIP SERUM (PIB CHINO) cuando es BOOSTER TENSOR.</div>' +
+          '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">' +
+            '<input id="herr-rm-sku" type="text" placeholder="SKU exacto (ej. SERUM-BT-001)" style="flex:1;min-width:180px;padding:6px 10px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px;text-transform:uppercase">' +
+            '<input id="herr-rm-prod" type="text" placeholder="Producto destino (formula_headers)" list="herr-rm-prod-list" style="flex:2;min-width:220px;padding:6px 10px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px">' +
+            '<datalist id="herr-rm-prod-list"></datalist>' +
+            '<button onclick="herrRemapearSku()" style="background:#0891b2;color:#fff;border:none;padding:6px 14px;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer">↻ Re-mapear</button>' +
+          '</div>' +
+          '<div id="herr-resultado-remap" style="font-size:11px;color:#64748b"></div>' +
+        '</div>' +
       '</div>' +
       '</div>';
     document.body.appendChild(m);
+    // Pre-cargar lista de productos para el datalist (re-map)
+    (async function() {
+      try {
+        const r = await fetch('/api/admin/skus-huerfanos-top?limit=1');
+        const d = await r.json();
+        const dl = document.getElementById('herr-rm-prod-list');
+        if (dl && d.productos_disponibles) {
+          dl.innerHTML = d.productos_disponibles.map(p => '<option value="' + p.replace(/"/g,'&quot;') + '">').join('');
+        }
+      } catch(e) {}
+    })();
+  };
+  // FIX 23-may-PM Sebastián · "SERUM-BT-001 ya lo tienes pero no lo
+  // estabamos asociando" · re-mapear SKU existente vía bulk endpoint
+  // (UPSERT) sin tener que pasar por consola del navegador.
+  window.herrRemapearSku = async function() {
+    const sku = (document.getElementById('herr-rm-sku').value || '').trim().toUpperCase();
+    const prod = (document.getElementById('herr-rm-prod').value || '').trim();
+    const out = document.getElementById('herr-resultado-remap');
+    if (!sku || !prod) { out.innerHTML = '<span style="color:#dc2626">SKU y producto requeridos</span>'; return; }
+    if (!confirm('¿Re-mapear SKU ' + sku + ' → ' + prod + '?\\n\\n(Si ya estaba mapeado, sobrescribe.)')) return;
+    out.innerHTML = 'Aplicando…';
+    try {
+      const r = await fetch('/api/admin/sku-producto-map/bulk', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({items:[{sku, producto_nombre: prod}]}),
+      });
+      const d = await r.json();
+      if (!r.ok || d.error) { out.innerHTML = '<span style="color:#dc2626">Error: ' + (d.error || r.status) + '</span>'; return; }
+      if (d.n_errores > 0) {
+        out.innerHTML = '<span style="color:#dc2626">Error: ' + JSON.stringify(d.errores[0]) + '</span>';
+        return;
+      }
+      out.innerHTML = '<span style="color:#0f766e;font-weight:700">✓ SKU ' + sku + ' → ' + prod + ' (' + d.creados[0].sku + ')</span>';
+      document.getElementById('herr-rm-sku').value = '';
+      document.getElementById('herr-rm-prod').value = '';
+    } catch(e) { out.innerHTML = '<span style="color:#dc2626">Error red: ' + e.message + '</span>'; }
   };
   window.herrDryRun = async function() {
     const desde = document.getElementById('herr-desde').value;
