@@ -311,6 +311,49 @@ def _pendiente_en_compras_g(c, codigo_mp):
     return max(total, 0.0)
 
 
+def _pendiente_en_compras_bulk(c):
+    """PERF FIX 24-may PM · auditoría agente · evita N+1 al iterar
+    ~70 productos × ~10-30 MPs c/u = 2000+ queries.
+
+    Misma lógica que _pendiente_en_compras_g pero retorna dict
+    {codigo_mp: gramos_pendientes_total} en UNA pasada (2 queries
+    GROUP BY total).
+    """
+    pendiente = {}
+    try:
+        for r in c.execute(
+            """SELECT sci.codigo_mp, COALESCE(SUM(sci.cantidad_g), 0)
+               FROM solicitudes_compra_items sci
+               JOIN solicitudes_compra sc ON sc.numero = sci.numero
+               WHERE sc.estado IN ('Pendiente','Aprobada')
+                 AND COALESCE(sc.numero_oc,'') = ''
+               GROUP BY sci.codigo_mp""",
+        ).fetchall():
+            mid = str(r[0] or '').strip()
+            if mid:
+                pendiente[mid] = float(r[1] or 0)
+    except Exception:
+        pass
+    try:
+        for r in c.execute(
+            """SELECT oci.codigo_mp,
+                      COALESCE(SUM(oci.cantidad_g - COALESCE(oci.cantidad_recibida_g,0)), 0)
+               FROM ordenes_compra_items oci
+               JOIN ordenes_compra oc ON oc.numero_oc = oci.numero_oc
+               WHERE (
+                       oc.estado IN ('Borrador','Revisada','Autorizada','Parcial')
+                    OR (oc.estado='Pagada' AND COALESCE(oc.fecha_recepcion,'')='')
+                 )
+               GROUP BY oci.codigo_mp""",
+        ).fetchall():
+            mid = str(r[0] or '').strip()
+            if mid:
+                pendiente[mid] = pendiente.get(mid, 0.0) + float(r[1] or 0)
+    except Exception:
+        pass
+    return pendiente
+
+
 def _check_monto_limit(usuario, monto):
     """Valida que el usuario pueda autorizar el monto.
 

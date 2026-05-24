@@ -2092,6 +2092,14 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
         if int(r[2] or 0) > 0:
             mp_tiene_movimientos.add(mid)
 
+    # PERF FIX 24-may PM · auditoría agente · pre-cargar pendiente compras
+    # bulk para evitar N+1 (era ~2000 queries · ahora 2 GROUP BY).
+    try:
+        from blueprints.compras import _pendiente_en_compras_bulk as _pend_bulk
+        pendiente_compras_g = _pend_bulk(c)
+    except Exception:
+        pendiente_compras_g = {}
+
     # 7. Lotes pendientes/en curso por producto (ya agendados)
     # Sebastián 13-may-2026: todo vive en EOS · sin Calendar. Cualquier lote
     # con estado pendiente/en_curso y sin fin_real_at cuenta como "en vuelo".
@@ -2117,28 +2125,29 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
     # 8. Última producción COMPLETADA por producto (para el horizonte)
     # Sebastián 13-may-2026: "ya producido + que diga si se hizo tal día
     # y tanto alcanzará para tantos días + próxima sugerida".
+    # PERF FIX 24-may PM · auditoría agente · era N+1 (~70 productos × 1
+    # query = 70 queries) · ahora 1 sola query con CTE/JOIN para traer
+    # fecha + kg en un solo pass.
     ultima_prod = {}
     for r in c.execute(
-        """SELECT producto, MAX(fecha_programada) AS f
-           FROM produccion_programada
-           WHERE fin_real_at IS NOT NULL
-             AND COALESCE(kg_real, cantidad_kg, 0) > 0
-           GROUP BY producto""",
-    ).fetchall():
-        ultima_prod[r[0]] = {"fecha": r[1]}
-    # Obtener kg de esa última (separadamente para evitar GROUP BY con MAX(fecha)
-    # pero kg de otra fila)
-    for prod, info in ultima_prod.items():
-        row = c.execute(
-            """SELECT COALESCE(kg_real, cantidad_kg, 0)
+        """SELECT pp.producto,
+                  pp.fecha_programada,
+                  COALESCE(pp.kg_real, pp.cantidad_kg, 0) AS kg
+           FROM produccion_programada pp
+           JOIN (
+               SELECT producto, MAX(fecha_programada) AS f
                FROM produccion_programada
-               WHERE producto = ?
-                 AND fin_real_at IS NOT NULL
-                 AND fecha_programada = ?
-               ORDER BY id DESC LIMIT 1""",
-            (prod, info["fecha"]),
-        ).fetchone()
-        info["kg"] = round(float(row[0] or 0), 2) if row else 0.0
+               WHERE fin_real_at IS NOT NULL
+                 AND COALESCE(kg_real, cantidad_kg, 0) > 0
+               GROUP BY producto
+           ) ultimo ON ultimo.producto = pp.producto
+                    AND ultimo.f = pp.fecha_programada
+           WHERE pp.fin_real_at IS NOT NULL
+             AND COALESCE(pp.kg_real, pp.cantidad_kg, 0) > 0""",
+    ).fetchall():
+        # Una fila puede haber varias por mismo (producto, fecha) · tomamos primera
+        if r[0] not in ultima_prod:
+            ultima_prod[r[0]] = {"fecha": r[1], "kg": round(float(r[2] or 0), 2)}
 
     # Inyectar lotes pendientes + horizonte en cada producto
     from datetime import date as _date, timedelta as _td
@@ -2150,30 +2159,33 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
     # pasado · si había un Fijo futuro ya programado, lo ignoraba.
     # Ahora la base es max(última completada, último Fijo programado futuro)
     # y se clampa proxima >= hoy+3d para no proponer fechas pasadas.
+    # PERF FIX 24-may PM · igual que ultima_prod · era N+1 (70 queries) ·
+    # ahora 1 sola query con JOIN trae fecha + kg en un pase.
     ult_fijo_prog = {}
-    for r in c.execute(
-        """SELECT producto,
-                  substr(MAX(fecha_programada),1,10) AS f
-           FROM produccion_programada
-           WHERE COALESCE(origen,'') IN ('eos_plan','eos_b2b','eos_retroactivo')
-             AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado')
-             AND fin_real_at IS NULL
-             AND COALESCE(cantidad_kg,0) > 0
-           GROUP BY producto""",
-    ).fetchall():
-        ult_fijo_prog[r[0]] = r[1]
-    # kg del último Fijo programado (para calcular duración correcta)
     ult_fijo_kg = {}
-    for prod, fecha in ult_fijo_prog.items():
-        row = c.execute(
-            """SELECT cantidad_kg FROM produccion_programada
-               WHERE producto = ? AND substr(fecha_programada,1,10) = ?
+    for r in c.execute(
+        """SELECT pp.producto,
+                  substr(pp.fecha_programada,1,10) AS f,
+                  pp.cantidad_kg
+           FROM produccion_programada pp
+           JOIN (
+               SELECT producto, MAX(fecha_programada) AS fmax
+               FROM produccion_programada
+               WHERE COALESCE(origen,'') IN ('eos_plan','eos_b2b','eos_retroactivo')
+                 AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado')
                  AND fin_real_at IS NULL
-                 AND COALESCE(origen,'') IN ('eos_plan','eos_b2b','eos_retroactivo')
-               ORDER BY id DESC LIMIT 1""",
-            (prod, fecha),
-        ).fetchone()
-        ult_fijo_kg[prod] = float(row[0] or 0) if row else 0.0
+                 AND COALESCE(cantidad_kg,0) > 0
+               GROUP BY producto
+           ) ultimo ON ultimo.producto = pp.producto
+                    AND ultimo.fmax = pp.fecha_programada
+           WHERE COALESCE(pp.origen,'') IN ('eos_plan','eos_b2b','eos_retroactivo')
+             AND LOWER(COALESCE(pp.estado,'')) NOT IN ('cancelado','completado')
+             AND pp.fin_real_at IS NULL
+             AND COALESCE(pp.cantidad_kg,0) > 0""",
+    ).fetchall():
+        if r[0] not in ult_fijo_prog:
+            ult_fijo_prog[r[0]] = r[1]
+            ult_fijo_kg[r[0]] = float(r[2] or 0)
 
     for p in out:
         info = lotes_pendientes.get(p["producto_nombre"])
@@ -2304,10 +2316,8 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
             # `_pendiente_en_compras_g` · Necesidades reportaba FALTAN_MPS
             # aunque Catalina ya había emitido SOL/OC · bulk re-creaba SOL
             # duplicada · ahora consistente con producciones-faltantes
-            try:
-                from blueprints.compras import _pendiente_en_compras_g as _pend_cg
-            except Exception:
-                _pend_cg = None
+            # PERF FIX 24-may PM · era N+1 (2000+ queries por request) ·
+            # ahora bulk pre-cargado UNA vez al inicio del loop principal.
             faltantes = []
             for it in items_form:
                 mid = str(it["material_id"]).strip()
@@ -2318,12 +2328,7 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
                 if mid not in mp_stock_g and mid not in mp_tiene_movimientos:
                     continue
                 disponible_g = mp_stock_g.get(mid, 0.0)
-                pendiente_g = 0.0
-                if _pend_cg is not None:
-                    try:
-                        pendiente_g = float(_pend_cg(c, mid) or 0)
-                    except Exception:
-                        pendiente_g = 0.0
+                pendiente_g = pendiente_compras_g.get(mid, 0.0)
                 falta = it["necesario_g"] - disponible_g - pendiente_g
                 if falta > 0.01:  # tolerancia gramos
                     faltantes.append({
@@ -8729,6 +8734,7 @@ select,input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-si
 let HORIZONTE = 365;  // Sebastián 15-may-2026: default 365 · "elegi 365 pero solo programa mayo"
 let MES_OFFSET = 0;  // 0 = mes actual · -1/+1 navegar
 let PLAN_DATA = null;
+let _MES_NAVEGADO = false;  // FIX 24-may PM · true después de primer cargar() · cargar() preserva MES_OFFSET
 const DIAS = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
 const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 
@@ -8786,7 +8792,15 @@ async function cargar(){
     // Sebastián 15-may-2026: "no veo nada en calendario". Causa: el
     // calendario abría en el mes actual (mayo) que está vacío · el plan
     // arranca meses adelante. Auto-saltar al primer mes con lotes.
-    MES_OFFSET = _primerMesConLotesOffset();
+    // FIX 24-may PM Sebastián · "estoy en junio muevo algo y me devuelve
+    // a mayo" · cargar() corre tras toda mutación · respetar mes visible
+    // si ya navegó. Solo auto-saltar al primer mes con lotes en LOAD
+    // INICIAL · después _MES_NAVEGADO=true y respetamos lo que el
+    // usuario eligió.
+    if (!_MES_NAVEGADO) {
+      MES_OFFSET = _primerMesConLotesOffset();
+      _MES_NAVEGADO = true;
+    }
     render();
     // Sebastián 19-may-2026: cargar alertas IA en paralelo (no bloqueante).
     if (typeof cargarAlertasIA === 'function') { cargarAlertasIA(); }

@@ -21701,7 +21701,7 @@ async function ckMarcar(itemId, estado){
   function renderDrillPanel(p, idx) {
     const cfg = URG_COLORS[p.urgencia] || URG_COLORS.OK;
     const imgHtml = p.imagen_url
-      ? '<img src="' + escapeHtmlNec(p.imagen_url) + '" alt="" style="width:100px;height:100px;object-fit:cover;border-radius:10px;background:#f1f5f9" onerror="this.style.display=&#39;none&#39;">'
+      ? '<img loading="lazy" decoding="async" src="' + escapeHtmlNec(p.imagen_url) + '" alt="" style="width:100px;height:100px;object-fit:cover;border-radius:10px;background:#f1f5f9" onerror="this.style.display=&#39;none&#39;">'
       : '<div style="width:100px;height:100px;background:linear-gradient(135deg,#e2e8f0,#cbd5e1);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:36px;color:#64748b">📦</div>';
     let html = '<div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">';
     html += imgHtml;
@@ -21785,7 +21785,7 @@ async function ckMarcar(itemId, estado){
     const ventaMes = Math.round(p.velocidad_uds_dia * 30);
 
     const imgHtml = p.imagen_url
-      ? '<img src="' + escapeHtmlNec(p.imagen_url) + '" alt="" style="width:80px;height:80px;object-fit:cover;border-radius:8px" onerror="this.style.display=&#39;none&#39;">'
+      ? '<img loading="lazy" decoding="async" src="' + escapeHtmlNec(p.imagen_url) + '" alt="" style="width:80px;height:80px;object-fit:cover;border-radius:8px" onerror="this.style.display=&#39;none&#39;">'
       : '<div style="width:80px;height:80px;background:linear-gradient(135deg,#e2e8f0,#cbd5e1);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:32px">📦</div>';
 
     // Presentación + 10ml info · usa ml_unidad real (Sebastián 13-may-2026:
