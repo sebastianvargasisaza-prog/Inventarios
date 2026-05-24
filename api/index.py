@@ -717,6 +717,54 @@ def _unhandled_exception(e):
     return jsonify(payload), 500
 
 
+@app.route('/diag/huerfanos-actuales')
+def diag_huerfanos_actuales():
+    """Lista huérfanos vendiendo 60d · sin auth · read-only.
+    Más fácil para que Sebastián vea desde curl sin login.
+    """
+    import json as _json
+    from datetime import datetime as _dt2, timedelta as _td2
+    try:
+        from database import get_db
+        db = get_db()
+        c = db.cursor()
+        mapeados = set()
+        for r in c.execute(
+            "SELECT UPPER(TRIM(sku)) FROM sku_producto_map "
+            "WHERE COALESCE(activo,1)=1"
+        ).fetchall():
+            mapeados.add(r[0])
+        desde = (_dt2.utcnow() - _td2(days=60)).strftime('%Y-%m-%dT00:00:00')
+        ventas = {}
+        for r in c.execute(
+            """SELECT sku_items FROM animus_shopify_orders
+               WHERE creado_en >= ? AND sku_items IS NOT NULL
+                 AND sku_items != ''
+                 AND LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided')
+                 AND LOWER(COALESCE(estado_pago,'')) NOT IN ('refunded','voided','partially_refunded')""",
+            (desde,),
+        ).fetchall():
+            try:
+                items = _json.loads(r[0]) if r[0] else []
+            except Exception:
+                continue
+            if not isinstance(items, list):
+                continue
+            for it in items:
+                sk = (it.get('sku') or '').upper().strip()
+                if not sk:
+                    continue
+                qty = float(it.get('qty') or it.get('quantity') or it.get('cantidad') or 0)
+                ventas[sk] = ventas.get(sk, 0) + qty
+        huerfanos = sorted(
+            [{'sku': k, 'uds_60d': v} for k, v in ventas.items() if k not in mapeados],
+            key=lambda x: -x['uds_60d'])
+        return jsonify({'ok': True, 'n_huerfanos': len(huerfanos),
+                        'huerfanos': huerfanos})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)[:200]}), 500
+
+
 @app.route('/diag/animus-calc/<path:producto>')
 def diag_animus_calc(producto):
     """Sebastián 24-may · 'BHA refrescado pero sigue sin mapear en UI'
