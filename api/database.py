@@ -312,6 +312,25 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (174, "formula_headers.producto_canonico + variante_label · fórmulas alternativas · Sebastián 24-may-2026 noche", [
+        # FEATURE FÓRMULAS ALTERNATIVAS 24-may-2026 · Sebastián: "tenemos
+        # PIB de dos orígenes Chino y de otro lado · realmente lo que
+        # cambia es el PIB" (LIP SERUM puede formularse de 2 maneras).
+        # Modelo: cada formula_headers sigue siendo 1 fila por producto_nombre
+        # exacto (UNIQUE preservado para no romper queries existentes), pero
+        # ahora se agrupa por `producto_canonico` (LIP SERUM agrupa "LIP
+        # SERUM PIB CHINO" y "LIP SERUM PIB LOCAL"). El helper de selección
+        # escoge la variante con menos déficit MP en tiempo real.
+        # `variante_label` es etiqueta legible ("PIB CHINO" / "PIB LOCAL").
+        # `prioridad` 0=auto-seleccionar por stock · 1+=preferir manual.
+        "ALTER TABLE formula_headers ADD COLUMN producto_canonico TEXT DEFAULT ''",
+        "ALTER TABLE formula_headers ADD COLUMN variante_label TEXT DEFAULT ''",
+        "ALTER TABLE formula_headers ADD COLUMN prioridad INTEGER DEFAULT 0",
+        # Seed: producto_canonico = producto_nombre para los existentes
+        # (mantiene comportamiento default · 1 producto canónico = 1 fórmula).
+        "UPDATE formula_headers SET producto_canonico = producto_nombre WHERE COALESCE(producto_canonico,'') = ''",
+        "CREATE INDEX IF NOT EXISTS idx_formula_canonico ON formula_headers(producto_canonico)",
+    ]),
     (173, "clientes_b2b_envases · whitelist cliente↔envase · Sebastián 24-may-2026 noche", [
         # FEATURE B2B 24-may-2026 · si NO existe whitelist para un cliente,
         # tiene acceso a TODOS los envases activos (default permisivo, no

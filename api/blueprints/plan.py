@@ -135,6 +135,193 @@ def listar_pedidos_b2b():
     return jsonify({"items": items, "total": len(items)})
 
 
+def _seleccionar_variante_optima(conn, producto_canonico, kg_objetivo=1.0):
+    """FEATURE FÓRMULAS ALTERNATIVAS 24-may-2026 · dado un producto canónico
+    (e.g. 'LIP SERUM'), busca las variantes registradas y devuelve la que
+    actualmente tiene menos déficit MP para producir `kg_objetivo`.
+
+    Algoritmo:
+    1. Buscar variantes activas (formula_headers donde producto_canonico=?).
+    2. Si hay 0 o 1 variantes → devolver esa (o None).
+    3. Para cada variante, calcular sum(faltante_g) usando stock_mp_disponible
+       y formula_items × kg_objetivo / lote_size_kg.
+    4. Si hay prioridad manual >0, usar la de mayor prioridad.
+    5. Si no, ganar la de menor faltante_total_g (o ninguno con faltantes).
+
+    Returns: dict {producto_nombre, variante_label, faltante_total_g,
+                    sin_faltantes: bool, n_variantes_evaluadas, decisión}
+                 o None si producto_canonico no existe.
+    """
+    if not producto_canonico:
+        return None
+    try:
+        variantes = conn.execute(
+            """SELECT producto_nombre, COALESCE(variante_label,''),
+                      COALESCE(prioridad, 0), COALESCE(lote_size_kg, 0)
+               FROM formula_headers
+               WHERE UPPER(TRIM(producto_canonico)) = UPPER(TRIM(?))
+               ORDER BY prioridad DESC, id ASC""",
+            (producto_canonico,),
+        ).fetchall()
+    except Exception:
+        # mig 174 no aplicada · fallback al lookup exacto
+        variantes = conn.execute(
+            """SELECT producto_nombre, '', 0, COALESCE(lote_size_kg, 0)
+               FROM formula_headers
+               WHERE UPPER(TRIM(producto_nombre)) = UPPER(TRIM(?))""",
+            (producto_canonico,),
+        ).fetchall()
+    if not variantes:
+        return None
+    if len(variantes) == 1:
+        v = variantes[0]
+        return {
+            'producto_nombre': v[0],
+            'variante_label': v[1] or '',
+            'faltante_total_g': 0,
+            'sin_faltantes': True,
+            'n_variantes_evaluadas': 1,
+            'decision': 'unica_variante',
+        }
+    # Si hay variante con prioridad manual >0 → usar la más alta.
+    max_prio = max((int(v[2] or 0)) for v in variantes)
+    if max_prio > 0:
+        v = next(v for v in variantes if int(v[2] or 0) == max_prio)
+        return {
+            'producto_nombre': v[0],
+            'variante_label': v[1] or '',
+            'faltante_total_g': 0,
+            'sin_faltantes': True,
+            'n_variantes_evaluadas': len(variantes),
+            'decision': f'prioridad_manual_{max_prio}',
+        }
+    # Calcular faltante por variante
+    evaluadas = []
+    for prod_nom, var_label, _prio, lote_kg in variantes:
+        items = conn.execute(
+            """SELECT material_id, COALESCE(porcentaje, 0),
+                      COALESCE(cantidad_g_por_lote, 0)
+               FROM formula_items
+               WHERE UPPER(TRIM(producto_nombre)) = UPPER(TRIM(?))""",
+            (prod_nom,),
+        ).fetchall()
+        faltante_total = 0.0
+        for mat_id, pct, cant_g_por_lote in items:
+            if cant_g_por_lote and lote_kg:
+                # Escala por kg_objetivo proporcional
+                req_g = float(cant_g_por_lote) * (kg_objetivo / float(lote_kg)) if float(lote_kg) > 0 else float(cant_g_por_lote)
+            else:
+                req_g = (float(pct or 0) / 100.0) * float(kg_objetivo or 0) * 1000.0
+            try:
+                disp_g = stock_mp_disponible(conn, mat_id)
+            except Exception:
+                disp_g = 0
+            if disp_g < req_g:
+                faltante_total += (req_g - disp_g)
+        evaluadas.append({
+            'producto_nombre': prod_nom,
+            'variante_label': var_label or '',
+            'faltante_total_g': round(faltante_total, 1),
+            'n_items': len(items),
+        })
+    # Ganadora = la de menor faltante
+    evaluadas.sort(key=lambda e: e['faltante_total_g'])
+    g = evaluadas[0]
+    return {
+        'producto_nombre': g['producto_nombre'],
+        'variante_label': g['variante_label'],
+        'faltante_total_g': g['faltante_total_g'],
+        'sin_faltantes': g['faltante_total_g'] < 0.01,
+        'n_variantes_evaluadas': len(evaluadas),
+        'decision': 'min_faltante_mp' if g['faltante_total_g'] > 0 else 'tie_o_sin_faltante',
+        'evaluadas': evaluadas,
+    }
+
+
+@bp.route("/api/admin/formulas/variantes/<path:producto_canonico>", methods=["GET"])
+def admin_formulas_variantes(producto_canonico):
+    """Lista variantes activas del producto canónico + selección óptima
+    para kg_objetivo (?kg=10 default). Permite a Sebastián ver el porqué
+    de la selección actual."""
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+    try:
+        kg = float(request.args.get('kg', '10'))
+    except (TypeError, ValueError):
+        kg = 10.0
+    conn = get_db()
+    seleccion = _seleccionar_variante_optima(conn, producto_canonico, kg_objetivo=kg)
+    return jsonify({
+        'producto_canonico': producto_canonico,
+        'kg_objetivo': kg,
+        'seleccion': seleccion,
+    })
+
+
+@bp.route("/api/admin/formulas/agrupar-canonico", methods=["POST"])
+def admin_formulas_agrupar_canonico():
+    """Agrupa N producto_nombre bajo un producto_canonico común. Útil para
+    declarar variantes: "LIP SERUM PIB CHINO + LIP SERUM PIB LOCAL son
+    ambos canónico=LIP SERUM, variante=PIB CHINO/LOCAL respectivamente".
+
+    Body: {producto_canonico: "LIP SERUM", variantes: [
+        {producto_nombre: "LIP SERUM PIB CHINO", variante_label: "PIB CHINO", prioridad: 0},
+        {producto_nombre: "LIP SERUM PIB LOCAL", variante_label: "PIB LOCAL", prioridad: 0},
+    ]}
+    """
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+    body = request.get_json(silent=True) or {}
+    canonico = (body.get('producto_canonico') or '').strip()
+    variantes = body.get('variantes') or []
+    if not canonico:
+        return jsonify({'error': 'producto_canonico requerido'}), 400
+    if not isinstance(variantes, list) or not variantes:
+        return jsonify({'error': 'variantes lista requerida'}), 400
+    conn = get_db()
+    cur = conn.cursor()
+    actualizadas = []
+    errores = []
+    for v in variantes:
+        prod = (v.get('producto_nombre') or '').strip()
+        label = (v.get('variante_label') or '').strip()
+        try:
+            prio = int(v.get('prioridad', 0))
+        except (TypeError, ValueError):
+            prio = 0
+        if not prod:
+            errores.append({'producto': prod, 'error': 'producto_nombre requerido'})
+            continue
+        ex = cur.execute(
+            "SELECT 1 FROM formula_headers WHERE producto_nombre = ?",
+            (prod,),
+        ).fetchone()
+        if not ex:
+            errores.append({'producto': prod, 'error': 'no existe en formula_headers'})
+            continue
+        try:
+            cur.execute(
+                """UPDATE formula_headers
+                     SET producto_canonico = ?, variante_label = ?, prioridad = ?
+                   WHERE producto_nombre = ?""",
+                (canonico, label, prio, prod),
+            )
+            actualizadas.append({'producto_nombre': prod, 'variante_label': label, 'prioridad': prio})
+        except Exception as e:
+            errores.append({'producto': prod, 'error': str(e)[:100]})
+    audit_log(cur, usuario=user, accion='FORMULA_AGRUPAR_CANONICO',
+              tabla='formula_headers', registro_id=canonico,
+              despues={'canonico': canonico, 'n_actualizadas': len(actualizadas)})
+    conn.commit()
+    return jsonify({'ok': True, 'producto_canonico': canonico,
+                    'actualizadas': actualizadas, 'errores': errores,
+                    'n_actualizadas': len(actualizadas)})
+
+
 @bp.route("/api/admin/b2b/cliente/<cliente_id>/envases", methods=["GET"])
 def admin_b2b_envases_cliente(cliente_id):
     """FEATURE B2B 24-may-2026 · whitelist envases por cliente.
