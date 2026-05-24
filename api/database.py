@@ -312,6 +312,27 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (173, "clientes_b2b_envases · whitelist cliente↔envase · Sebastián 24-may-2026 noche", [
+        # FEATURE B2B 24-may-2026 · si NO existe whitelist para un cliente,
+        # tiene acceso a TODOS los envases activos (default permisivo, no
+        # rompe Fase 1). Si hay al menos 1 fila para el cliente, solo
+        # esos envases son válidos para sus pedidos.
+        # Permite que Fernando vea sus envases branded y NO el envase
+        # premium de otro cliente. La regla "todos activos" para clientes
+        # sin whitelist mantiene backward-compat (clientes existentes
+        # siguen pidiendo lo mismo que antes).
+        """CREATE TABLE IF NOT EXISTS clientes_b2b_envases (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cliente_id TEXT NOT NULL,
+            envase_codigo TEXT NOT NULL,
+            envase_descripcion TEXT DEFAULT '',
+            activo INTEGER NOT NULL DEFAULT 1,
+            notas TEXT DEFAULT '',
+            creado_at TEXT DEFAULT (datetime('now', '-5 hours')),
+            UNIQUE(cliente_id, envase_codigo)
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_cbe_cliente ON clientes_b2b_envases(cliente_id, activo)",
+    ]),
     (172, "pedidos_b2b.envase_codigo · multi-envase MVP · Sebastián 24-may-2026 noche", [
         # FEATURE B2B MULTI-ENVASE 24-may-2026 · Sebastián: "lo único que
         # cambiaría es el envase". Mismo bulk LBHA va a 2 envases distintos

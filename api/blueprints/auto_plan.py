@@ -9323,6 +9323,35 @@ def tablero_kanban():
         ).fetchall():
             op_nom[int(r[0])] = (r[1] or '').strip()
 
+    # FEATURE B2B 24-may-2026 · cargar aportes B2B por lote (envase split).
+    # El operario de envasado debe saber "100 uds Animus 250ml +
+    # 50 uds Fernando 500ml". Bulk query para evitar N+1.
+    aportes_b2b_por_lote = {}
+    lote_ids = [r[0] for r in rows]
+    if lote_ids:
+        try:
+            ph_l = ','.join(['?'] * len(lote_ids))
+            for ar in c.execute(
+                f"""SELECT pbl.lote_produccion_id, pbl.cliente_nombre,
+                          pbl.unidades_aporte, pbl.ml_unidad, pbl.envase_codigo,
+                          COALESCE(mee.descripcion, '') AS env_desc
+                   FROM pedidos_b2b_lote pbl
+                   LEFT JOIN maestro_mee mee
+                     ON UPPER(TRIM(mee.codigo)) = UPPER(TRIM(COALESCE(pbl.envase_codigo,'')))
+                   WHERE pbl.lote_produccion_id IN ({ph_l})
+                   ORDER BY pbl.unidades_aporte DESC""",
+                lote_ids,
+            ).fetchall():
+                aportes_b2b_por_lote.setdefault(ar[0], []).append({
+                    'cliente': ar[1] or '',
+                    'unidades': int(ar[2] or 0),
+                    'ml_unidad': float(ar[3] or 0),
+                    'envase_codigo': ar[4] or '',
+                    'envase_descripcion': ar[5] or '',
+                })
+        except Exception:
+            pass  # mig 171 no aplicada
+
     columnas = {
         'dispensacion':      {'rol_label': '🧪 Dispensación', 'tarjetas': []},
         'elaboracion':       {'rol_label': '⚗️ Elaboración', 'tarjetas': []},
@@ -9402,6 +9431,10 @@ def tablero_kanban():
                 'etapa_inicio_at': ini_etapa or None,
                 'etapa_fin_at': fin_etapa or None,
                 'etapa_minutos_corridos': min_etapa,
+                # Pieza 4 (24-may-2026) · aportes B2B con envase split.
+                # Solo relevante operacionalmente en columna envasado · se
+                # incluye en todas para que el frontend pueda decidir mostrar.
+                'aportes_b2b': aportes_b2b_por_lote.get(pid, []),
             }
             columnas[rol]['tarjetas'].append(tarjeta)
 
@@ -9980,10 +10013,27 @@ function renderCard(t, rol){
   } else if(t.estado_etapa === 'en_curso'){
     btn = '<button class="card-btn terminar" data-pid="'+t.produccion_id+'" data-rol="'+esc(rol)+'" onclick="etapaAccion(this,&quot;terminar&quot;)">✓ Terminar etapa</button>';
   }
+  // FEATURE B2B 24-may-2026 · split por cliente en envasado.
+  // Si la tarjeta tiene aportes B2B con envase custom, mostrar el detalle
+  // para que el operario sepa qué envase usar para qué porción.
+  var splitB2B = '';
+  var aportes = (t.aportes_b2b||[]).filter(function(a){ return a.envase_codigo; });
+  if (aportes.length && rol === 'envasado') {
+    splitB2B = '<div style="margin-top:8px;background:#fdf4ff;border-left:3px solid #7e22ce;border-radius:5px;padding:6px 8px;font-size:11px">'
+             + '<div style="font-weight:700;color:#7e22ce;margin-bottom:3px">🤝 Envasado split por cliente</div>';
+    aportes.forEach(function(a){
+      splitB2B += '<div style="display:flex;justify-content:space-between;color:#475569;margin-top:2px">'
+               + '<span><strong>'+esc(a.cliente||'?')+'</strong></span>'
+               + '<span>'+a.unidades+' uds · '+esc(a.envase_codigo)+(a.envase_descripcion?' ('+esc(a.envase_descripcion.slice(0,25))+')':'')+'</span>'
+               + '</div>';
+    });
+    splitB2B += '</div>';
+  }
   return '<div class="card '+estado+'">'
        + '<div class="card-prod">'+esc((t.producto||'').slice(0,30))+'</div>'
        + '<div class="card-meta">'+meta+'</div>'
        + '<div style="margin-top:6px;display:flex;gap:4px;flex-wrap:wrap">'+areaChip+badge+'</div>'
+       + splitB2B
        + (btn?'<div style="margin-top:8px">'+btn+'</div>':'')
        + '</div>';
 }

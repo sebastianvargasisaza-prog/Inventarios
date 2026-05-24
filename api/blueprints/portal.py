@@ -689,6 +689,26 @@ def portal_crear_pedido():
         ).fetchone()
         if not env_row:
             return jsonify({'error': f"envase '{envase_codigo}' no disponible"}), 404
+        # FEATURE B2B 24-may-2026 · whitelist envase↔cliente (mig 173).
+        # Default permisivo si no hay whitelist explícita para el cliente.
+        try:
+            tiene_wl = cur.execute(
+                """SELECT COUNT(*) FROM clientes_b2b_envases
+                   WHERE cliente_id = ? AND activo = 1""",
+                (cid,),
+            ).fetchone()
+            if tiene_wl and int(tiene_wl[0] or 0) > 0:
+                permitido = cur.execute(
+                    """SELECT 1 FROM clientes_b2b_envases
+                       WHERE cliente_id = ? AND UPPER(TRIM(envase_codigo)) = ?
+                         AND activo = 1""",
+                    (cid, envase_codigo),
+                ).fetchone()
+                if not permitido:
+                    return jsonify({'error': f"envase '{envase_codigo}' no autorizado para tu cuenta",
+                                    'codigo': 'ENVASE_NO_PERMITIDO'}), 403
+        except Exception:
+            pass
     try:
         cur.execute(
             """INSERT INTO pedidos_b2b

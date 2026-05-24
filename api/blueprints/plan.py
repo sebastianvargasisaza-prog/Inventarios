@@ -135,6 +135,124 @@ def listar_pedidos_b2b():
     return jsonify({"items": items, "total": len(items)})
 
 
+@bp.route("/api/admin/b2b/cliente/<cliente_id>/envases", methods=["GET"])
+def admin_b2b_envases_cliente(cliente_id):
+    """FEATURE B2B 24-may-2026 · whitelist envases por cliente.
+    Devuelve envases actualmente permitidos para el cliente. Lista vacía
+    significa "todos los activos" (default permisivo)."""
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+    conn = get_db()
+    try:
+        rows = conn.execute(
+            """SELECT cbe.envase_codigo, cbe.envase_descripcion,
+                      cbe.activo, COALESCE(cbe.notas,''),
+                      mee.descripcion AS mee_desc
+               FROM clientes_b2b_envases cbe
+               LEFT JOIN maestro_mee mee
+                 ON UPPER(TRIM(mee.codigo)) = UPPER(TRIM(cbe.envase_codigo))
+               WHERE cbe.cliente_id = ?
+               ORDER BY cbe.envase_codigo""",
+            (cliente_id,),
+        ).fetchall()
+    except Exception:
+        rows = []
+    return jsonify({
+        'cliente_id': cliente_id,
+        'modo': 'whitelist' if rows else 'permisivo',
+        'items': [{
+            'envase_codigo': r[0],
+            'envase_descripcion': r[1] or r[4] or '',
+            'activo': bool(r[2]),
+            'notas': r[3] or '',
+        } for r in rows],
+        'total': len(rows),
+    })
+
+
+@bp.route("/api/admin/b2b/cliente/<cliente_id>/envases", methods=["POST"])
+def admin_b2b_envases_cliente_set(cliente_id):
+    """Asigna envases permitidos para un cliente · operación REPLACE bulk:
+    el set recibido reemplaza al anterior. Body: {items: [{envase_codigo,
+    envase_descripcion?, notas?}], reemplazar: true|false}"""
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+    body = request.get_json(silent=True) or {}
+    items = body.get('items') or []
+    reemplazar = bool(body.get('reemplazar', True))
+    if not isinstance(items, list):
+        return jsonify({'error': 'items debe ser lista'}), 400
+    conn = get_db()
+    cur = conn.cursor()
+    # Validar todos los envases existen y son MEE activos antes de empezar
+    codigos_norm = []
+    for it in items:
+        cod = (it.get('envase_codigo') or '').strip().upper()
+        if not cod:
+            continue
+        existe = cur.execute(
+            "SELECT 1 FROM maestro_mee WHERE UPPER(TRIM(codigo)) = ? AND COALESCE(estado,'Activo')='Activo'",
+            (cod,),
+        ).fetchone()
+        if not existe:
+            return jsonify({'error': f"envase '{cod}' no existe o inactivo en maestro_mee"}), 404
+        codigos_norm.append({
+            'envase_codigo': cod,
+            'envase_descripcion': (it.get('envase_descripcion') or '').strip(),
+            'notas': (it.get('notas') or '').strip(),
+        })
+    creados, actualizados, desactivados = 0, 0, 0
+    if reemplazar:
+        # Desactivar los que NO estén en la nueva lista
+        codigos_nuevos = {x['envase_codigo'] for x in codigos_norm}
+        existing = cur.execute(
+            "SELECT envase_codigo FROM clientes_b2b_envases WHERE cliente_id = ? AND activo = 1",
+            (cliente_id,),
+        ).fetchall()
+        for (ec,) in existing:
+            if (ec or '').upper().strip() not in codigos_nuevos:
+                cur.execute(
+                    "UPDATE clientes_b2b_envases SET activo = 0 WHERE cliente_id = ? AND envase_codigo = ?",
+                    (cliente_id, ec),
+                )
+                desactivados += 1
+    for it in codigos_norm:
+        existing = cur.execute(
+            "SELECT id FROM clientes_b2b_envases WHERE cliente_id = ? AND envase_codigo = ?",
+            (cliente_id, it['envase_codigo']),
+        ).fetchone()
+        if existing:
+            cur.execute(
+                """UPDATE clientes_b2b_envases
+                     SET activo = 1, envase_descripcion = ?, notas = ?
+                   WHERE id = ?""",
+                (it['envase_descripcion'], it['notas'], existing[0]),
+            )
+            actualizados += 1
+        else:
+            cur.execute(
+                """INSERT INTO clientes_b2b_envases
+                     (cliente_id, envase_codigo, envase_descripcion, notas, activo)
+                   VALUES (?, ?, ?, ?, 1)""",
+                (cliente_id, it['envase_codigo'], it['envase_descripcion'], it['notas']),
+            )
+            creados += 1
+    audit_log(cur, usuario=user, accion='B2B_ENVASES_WHITELIST',
+              tabla='clientes_b2b_envases', registro_id=cliente_id,
+              despues={'creados': creados, 'actualizados': actualizados,
+                       'desactivados': desactivados,
+                       'total_final': len(codigos_norm)})
+    conn.commit()
+    return jsonify({'ok': True, 'cliente_id': cliente_id,
+                    'creados': creados, 'actualizados': actualizados,
+                    'desactivados': desactivados,
+                    'total_activos': len(codigos_norm)})
+
+
 @bp.route("/api/b2b/envases-disponibles", methods=["GET"])
 def b2b_envases_disponibles():
     """FEATURE B2B multi-envase 24-may-2026 · catálogo de envases que un
@@ -146,9 +264,44 @@ def b2b_envases_disponibles():
     poder ver el catálogo al armar un pedido).
     """
     # Permitir tanto sesión portal como backoffice
-    if 'portal_cliente_id' not in session and 'compras_user' not in session:
+    portal_cid = session.get('portal_cliente_id')
+    backoffice_user = session.get('compras_user')
+    if not portal_cid and not backoffice_user:
         return jsonify({'error': 'No autorizado'}), 401
     conn = get_db()
+    # Si es sesión portal · filtrar por whitelist del cliente (si existe).
+    # Backoffice ve todo (admin).
+    filtrar_por_cliente = portal_cid if portal_cid and not backoffice_user else None
+    if filtrar_por_cliente:
+        try:
+            tiene_wl = conn.execute(
+                """SELECT COUNT(*) FROM clientes_b2b_envases
+                   WHERE cliente_id = ? AND activo = 1""",
+                (filtrar_por_cliente,),
+            ).fetchone()
+            if tiene_wl and int(tiene_wl[0] or 0) > 0:
+                rows = conn.execute(
+                    """SELECT m.codigo, m.descripcion, m.categoria,
+                              COALESCE(m.unidad,''), COALESCE(m.stock_actual,0)
+                       FROM maestro_mee m
+                       INNER JOIN clientes_b2b_envases cbe
+                         ON UPPER(TRIM(cbe.envase_codigo)) = UPPER(TRIM(m.codigo))
+                       WHERE COALESCE(m.estado,'Activo') = 'Activo'
+                         AND cbe.cliente_id = ? AND cbe.activo = 1
+                       ORDER BY m.descripcion ASC""",
+                    (filtrar_por_cliente,),
+                ).fetchall()
+                return jsonify({
+                    'items': [{
+                        'codigo': r[0], 'descripcion': r[1] or '',
+                        'categoria': r[2] or '', 'unidad': r[3] or '',
+                        'stock_actual': float(r[4] or 0),
+                    } for r in rows],
+                    'total': len(rows),
+                    'filtrado_por_cliente': filtrar_por_cliente,
+                })
+        except Exception:
+            pass  # mig 173 no aplicada · fallback al listado total
     try:
         rows = conn.execute(
             """SELECT codigo, descripcion, categoria,
@@ -392,6 +545,27 @@ def crear_pedido_b2b():
         ).fetchone()
         if not env_row:
             return jsonify({"error": f"envase '{envase_codigo}' no existe en maestro_mee"}), 404
+        # FEATURE B2B 24-may-2026 · whitelist envase↔cliente (mig 173).
+        # Si el cliente tiene ≥1 fila en clientes_b2b_envases → solo esos
+        # son válidos. Sin filas → todos activos permitidos (backward-compat).
+        try:
+            tiene_wl = cur.execute(
+                """SELECT COUNT(*) FROM clientes_b2b_envases
+                   WHERE cliente_id = ? AND activo = 1""",
+                (cliente_id,),
+            ).fetchone()
+            if tiene_wl and int(tiene_wl[0] or 0) > 0:
+                permitido = cur.execute(
+                    """SELECT 1 FROM clientes_b2b_envases
+                       WHERE cliente_id = ? AND UPPER(TRIM(envase_codigo)) = ?
+                         AND activo = 1""",
+                    (cliente_id, envase_codigo),
+                ).fetchone()
+                if not permitido:
+                    return jsonify({"error": f"envase '{envase_codigo}' no permitido para cliente {cliente_id}",
+                                    "codigo": "ENVASE_NO_PERMITIDO"}), 403
+        except Exception:
+            pass  # mig 173 no aplicada · default permisivo
 
     try:
         cur.execute(

@@ -5363,6 +5363,14 @@ def _descontar_mee_envasado(c, produccion_id, lote, unidades_envasadas,
                              unidades_planeadas, user):
     """Descuenta MEE de envase/tapa/etiqueta al terminar envasado.
 
+    FIX B2B multi-envase 24-may-2026: si hay aportes B2B con envase
+    específico (pedidos_b2b_lote.envase_codigo), el descuento se SPLIT:
+    - Tapa/etiqueta del checklist → siempre default (las usa todos clientes).
+    - ENVASE del checklist (item_tipo='envase') → descuento default solo
+      por las uds que NO van a envase B2B custom.
+    - Por cada envase B2B custom → descuento separado en movimientos_mee
+      a razón de 1 envase por unidad B2B (ratio aplicado).
+
     Args:
       c: cursor SQLite
       produccion_id: int — produccion_programada.id (lote padre)
@@ -5382,6 +5390,31 @@ def _descontar_mee_envasado(c, produccion_id, lote, unidades_envasadas,
     else:
         ratio = 1.0
 
+    # FEATURE B2B multi-envase · leer aportes con envase custom para split.
+    # Cada aporte B2B con envase_codigo no vacío resta del envase default.
+    b2b_envases_custom = []  # list of (envase_codigo, uds_real_b2b, cliente)
+    uds_b2b_custom_total = 0
+    try:
+        for ar in c.execute(
+            """SELECT pbl.envase_codigo, pbl.unidades_aporte,
+                      COALESCE(pbl.cliente_nombre, '')
+               FROM pedidos_b2b_lote pbl
+               WHERE pbl.lote_produccion_id = ?
+                 AND COALESCE(pbl.envase_codigo, '') != ''""",
+            (produccion_id,),
+        ).fetchall():
+            env_cod = (ar[0] or '').strip().upper()
+            uds_plan_b2b = int(ar[1] or 0)
+            if not env_cod or uds_plan_b2b <= 0:
+                continue
+            uds_real_b2b = int(round(uds_plan_b2b * ratio))
+            if uds_real_b2b <= 0:
+                continue
+            b2b_envases_custom.append((env_cod, uds_real_b2b, ar[2] or ''))
+            uds_b2b_custom_total += uds_real_b2b
+    except Exception:
+        pass  # mig 171/172 no aplicada · split deshabilitado, descuenta default
+
     # Construir whitelist de tipos en SQL
     placeholders = ','.join(['?'] * len(TIPOS_MEE_AL_ENVASAR))
     sql = f"""
@@ -5399,7 +5432,7 @@ def _descontar_mee_envasado(c, produccion_id, lote, unidades_envasadas,
     except sqlite3.OperationalError:
         return []  # tabla no existe → no descontar
 
-    if not items:
+    if not items and not b2b_envases_custom:
         return []
 
     fecha_iso = datetime.now().isoformat(timespec='seconds')
@@ -5415,6 +5448,11 @@ def _descontar_mee_envasado(c, produccion_id, lote, unidades_envasadas,
     for item_id, mee_cod, desc, cant_plan, tipo_item in items:
         cant_plan_f = float(cant_plan or 0)
         cant_real = round(cant_plan_f * ratio, 0)
+        # Split: si es ENVASE (no tapa/etiqueta) y hay aportes B2B con
+        # envase custom, restar uds B2B del descuento default.
+        es_envase = (tipo_item or '').lower() in ('envase', 'frasco', 'recipiente')
+        if es_envase and uds_b2b_custom_total > 0:
+            cant_real = max(cant_real - uds_b2b_custom_total, 0)
         if cant_real <= 0:
             continue
         try:
@@ -5439,10 +5477,38 @@ def _descontar_mee_envasado(c, produccion_id, lote, unidades_envasadas,
                 'cantidad_planeada': cant_plan_f,
                 'cantidad_real': cant_real,
                 'merma': max(0, cant_plan_f - cant_real),
+                'split_b2b': es_envase and uds_b2b_custom_total > 0,
             })
         except sqlite3.OperationalError as e:
             # Si maestro_mee o movimientos_mee no existe, dejamos pasar
             log.warning(f'Descuento MEE skip {mee_cod}: {e}')
+            continue
+
+    # Descuento separado de envases B2B custom · 1:1 con uds_real_b2b.
+    for env_cod, uds_real_b2b, cliente in b2b_envases_custom:
+        obs_b2b = (f"Envasado B2B custom: produccion #{produccion_id} "
+                    f"lote {lote or 'sin-lote'} — cliente {cliente or '?'} · "
+                    f"{uds_real_b2b} ud envase {env_cod}")
+        try:
+            aplicar_movimiento_mee(
+                c.connection, env_cod, 'Salida', uds_real_b2b,
+                observaciones=obs_b2b, responsable=user,
+                lote_ref=str(produccion_id), batch_ref=lote or '',
+            )
+            descontados.append({
+                'codigo': env_cod,
+                'descripcion': f'Envase B2B custom · {cliente}',
+                'tipo_item': 'envase_b2b',
+                'cantidad_planeada': uds_real_b2b,
+                'cantidad_real': uds_real_b2b,
+                'merma': 0,
+                'cliente_b2b': cliente,
+            })
+        except sqlite3.OperationalError as e:
+            log.warning(f'Descuento MEE B2B custom skip {env_cod}: {e}')
+            continue
+        except Exception as e:
+            log.warning(f'Descuento MEE B2B custom err {env_cod}: {e}')
             continue
 
     return descontados
