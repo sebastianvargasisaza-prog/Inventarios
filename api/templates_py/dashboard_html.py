@@ -20749,6 +20749,25 @@ async function ckMarcar(itemId, estado){
   // Modal HTML real (no alert) con selector horizonte + tabla por lote +
   // detección de conflicto ±7d con opción mantener / reubicar.
   window._previewState = {producto: null, data: null, horizonte: 90};
+  // FIX 23-may-2026 PM Sebastián · "triactive no tiene tamaño envase
+  // y no me deja modificarlo" · prompt rápido + POST /admin/ml-fix
+  window.fixVolumenMl = async function(prodNombre, mlActual) {
+    const ml = prompt('Volumen real en ml del envase principal de ' + prodNombre + ':\\n\\nActualmente inferido por nombre = ' + mlActual + 'ml.\\nEjemplos: 30 (suero), 50 (gel), 150 (limpiador), 100 (mascarilla).', String(mlActual));
+    if (!ml || isNaN(parseFloat(ml))) return;
+    const mlNum = parseFloat(ml);
+    if (mlNum <= 0 || mlNum > 5000) { alert('Inválido (1-5000 ml)'); return; }
+    try {
+      const r = await fetch('/api/admin/ml-fix', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({producto_nombre: prodNombre, volumen_ml: mlNum}),
+      });
+      const d = await r.json();
+      if (!r.ok || d.error) { alert('Error: ' + (d.error || r.status)); return; }
+      alert('✓ Envase fijado en ' + d.volumen_ml_nuevo + 'ml para ' + d.producto_nombre +
+            '\\nSKU: ' + d.sku_shopify + ' · ' + d.accion);
+      if (typeof cargarNecesidades === 'function') cargarNecesidades();
+    } catch(e) { alert('Error red: ' + e.message); }
+  };
   window.previewSugeridasProducto = async function(prodNombre) {
     window._previewState = {producto: prodNombre, data: null, horizonte: 90};
     abrirModalProgramar();
@@ -21516,7 +21535,8 @@ async function ckMarcar(itemId, estado){
     // FIX #2 · 23-may-2026 Sebastián · flags de calidad del dato
     let avisos = '';
     if (p.ml_inferido) {
-      avisos += '<div style="background:#fef3c7;color:#92400e;border-left:3px solid #f59e0b;padding:6px 10px;border-radius:5px;font-size:11px;font-weight:600;margin-top:6px">⚠ ml inferido por nombre · agregá envase en producto_presentaciones para precisión</div>';
+      const prodEscMl = (p.producto_nombre || '').replace(/'/g, "&#39;").replace(/"/g, '&quot;');
+      avisos += '<div style="background:#fef3c7;color:#92400e;border-left:3px solid #f59e0b;padding:6px 10px;border-radius:5px;font-size:11px;font-weight:600;margin-top:6px;display:flex;justify-content:space-between;align-items:center;gap:8px"><span>⚠ ml inferido por nombre = ' + (p.ml_unidad || 0) + 'ml · definí el real</span><button onclick="fixVolumenMl(&quot;' + prodEscMl + '&quot;,' + (p.ml_unidad || 30) + ')" style="background:#f59e0b;color:#fff;border:none;padding:3px 10px;border-radius:5px;font-size:10px;font-weight:700;cursor:pointer;white-space:nowrap">✏️ Fijar ml</button></div>';
     }
     if (p.lote_size_faltante) {
       const valBd = p.lote_bulk_kg_bd != null ? p.lote_bulk_kg_bd : 0;
