@@ -6442,22 +6442,24 @@ def admin_limpiar_sols_ocs():
         try:
             if modo == 'safe':
                 # MODO SEGURO · cancelar SOLs sin OC ni recepción
+                # FK real: solicitudes_compra_items.numero = solicitudes_compra.numero
                 cur.execute(
-                    "SELECT id FROM solicitudes_compra "
+                    "SELECT numero FROM solicitudes_compra "
                     "WHERE estado IN ('Pendiente','Aprobada') "
-                    "AND COALESCE(numero_oc,'')=''"
+                    "AND COALESCE(numero_oc,'')='' "
+                    "AND COALESCE(numero,'') != ''"
                 )
-                sol_ids = [r[0] for r in cur.fetchall()]
-                if sol_ids:
-                    ph = ','.join(['?'] * len(sol_ids))
+                sol_nums = [r[0] for r in cur.fetchall()]
+                if sol_nums:
+                    ph = ','.join(['?'] * len(sol_nums))
                     cur.execute(
-                        f"DELETE FROM solicitudes_compra_items WHERE solicitud_id IN ({ph})",
-                        sol_ids,
+                        f"DELETE FROM solicitudes_compra_items WHERE numero IN ({ph})",
+                        sol_nums,
                     )
                     sols_items_borrados = cur.rowcount or 0
                     cur.execute(
-                        f"UPDATE solicitudes_compra SET estado='Cancelada' WHERE id IN ({ph})",
-                        sol_ids,
+                        f"UPDATE solicitudes_compra SET estado='Cancelada' WHERE numero IN ({ph})",
+                        sol_nums,
                     )
                     sols_canceladas = cur.rowcount or 0
                 # Cancelar OCs en Borrador o Revisada sin recepción
@@ -6482,20 +6484,21 @@ def admin_limpiar_sols_ocs():
                 # MODO BORRAR TODAS · TODAS las SOLs/OCs activas, incluso Autorizadas/Parciales.
                 # Solo respeta las ya Recibidas/Cerradas (histórico).
                 cur.execute(
-                    "SELECT id FROM solicitudes_compra "
-                    "WHERE estado NOT IN ('Cancelada','Recibida','Cerrada')"
+                    "SELECT numero FROM solicitudes_compra "
+                    "WHERE estado NOT IN ('Cancelada','Recibida','Cerrada') "
+                    "AND COALESCE(numero,'') != ''"
                 )
-                sol_ids = [r[0] for r in cur.fetchall()]
-                if sol_ids:
-                    ph = ','.join(['?'] * len(sol_ids))
+                sol_nums = [r[0] for r in cur.fetchall()]
+                if sol_nums:
+                    ph = ','.join(['?'] * len(sol_nums))
                     cur.execute(
-                        f"DELETE FROM solicitudes_compra_items WHERE solicitud_id IN ({ph})",
-                        sol_ids,
+                        f"DELETE FROM solicitudes_compra_items WHERE numero IN ({ph})",
+                        sol_nums,
                     )
                     sols_items_borrados = cur.rowcount or 0
                     cur.execute(
-                        f"UPDATE solicitudes_compra SET estado='Cancelada' WHERE id IN ({ph})",
-                        sol_ids,
+                        f"UPDATE solicitudes_compra SET estado='Cancelada' WHERE numero IN ({ph})",
+                        sol_nums,
                     )
                     sols_canceladas = cur.rowcount or 0
                 cur.execute(
