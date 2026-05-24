@@ -3914,7 +3914,7 @@ def alertas_reabastecimiento():
                    FROM movimientos m
                    LEFT JOIN maestro_mps mp ON m.material_id=mp.codigo_mp
                    WHERE m.estado_lote IS NULL
-                      OR UPPER(COALESCE(m.estado_lote,'')) NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO','VENCIDO')
+                      OR UPPER(COALESCE(m.estado_lote,'')) NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO','VENCIDO','AGOTADO')
                    GROUP BY m.material_id
                  ) sub
                  WHERE stock_actual < stock_minimo AND stock_minimo > 0
@@ -8753,8 +8753,20 @@ def mee_crear():
     categoria   = d.get('categoria','Otro').strip()
     proveedor   = d.get('proveedor','').strip()
     unidad      = d.get('unidad','und').strip()
-    stock_actual = float(d.get('stock_actual', 0))
-    stock_minimo = float(d.get('stock_minimo', 0))
+    # FIX P1 audit 24-may-2026 · antes float() pelado aceptaba NaN/Infinity
+    # /negativos. Ahora validate_money con allow_zero (stock=0 al crear es
+    # legítimo). max_value=10M unidades (cap razonable para inventario).
+    from http_helpers import validate_money
+    stock_actual, err = validate_money(d.get('stock_actual', 0),
+                                        allow_zero=True, max_value=10_000_000,
+                                        field_name='stock_actual')
+    if err:
+        return jsonify(err), 400
+    stock_minimo, err = validate_money(d.get('stock_minimo', 0),
+                                        allow_zero=True, max_value=10_000_000,
+                                        field_name='stock_minimo')
+    if err:
+        return jsonify(err), 400
     if not codigo or not descripcion:
         return jsonify({'error': 'codigo y descripcion requeridos'}), 400
     conn = get_db(); c = conn.cursor()
@@ -8836,15 +8848,25 @@ def mee_registrar_movimiento():
     d = request.json or {}
     codigo      = d.get('codigo','').strip()
     tipo        = d.get('tipo','').strip()
-    cantidad    = float(d.get('cantidad', 0))
+    # FIX P1 audit 24-may-2026 · validar cantidad numérica (no NaN/Inf/abs).
+    # Para Ajuste, allow_zero permite registrar stock_objetivo=0 (vaciar).
+    from http_helpers import validate_money
+    cantidad, err = validate_money(d.get('cantidad', 0),
+                                    allow_zero=(tipo == 'Ajuste'),
+                                    max_value=10_000_000,
+                                    field_name='cantidad')
+    if err:
+        return jsonify(err), 400
     unidad      = d.get('unidad','und').strip()
     lote_ref    = d.get('lote_ref','').strip()
     batch_ref   = d.get('batch_ref','').strip()
     responsable = d.get('responsable', session.get('compras_user','')).strip()
     obs         = d.get('observaciones','').strip()
 
-    if not codigo or tipo not in ('Entrada','Salida','Ajuste') or cantidad <= 0:
-        return jsonify({'error': 'codigo, tipo (Entrada/Salida/Ajuste) y cantidad>0 requeridos'}), 400
+    if not codigo or tipo not in ('Entrada','Salida','Ajuste'):
+        return jsonify({'error': 'codigo, tipo (Entrada/Salida/Ajuste) requeridos'}), 400
+    if tipo != 'Ajuste' and cantidad <= 0:
+        return jsonify({'error': 'cantidad debe ser > 0 para Entrada/Salida'}), 400
 
     conn = get_db(); c = conn.cursor()
     c.execute("SELECT codigo, descripcion, stock_actual, unidad FROM maestro_mee WHERE codigo=?", (codigo,))
@@ -9256,8 +9278,14 @@ def mee_ajustar_stock(codigo):
         return jsonify({'error': 'No autorizado'}), 401
     user = session.get('compras_user','')
     d = request.json or {}
-    try: cantidad_nueva = float(d.get('cantidad_nueva', 0))
-    except: return jsonify({'error':'cantidad_nueva invalida'}), 400
+    # FIX P1 audit 24-may-2026 · validate_money para rechazar NaN/Inf/negativo.
+    # allow_zero=True permite vaciar stock a 0.
+    from http_helpers import validate_money
+    cantidad_nueva, err = validate_money(d.get('cantidad_nueva', 0),
+                                          allow_zero=True, max_value=10_000_000,
+                                          field_name='cantidad_nueva')
+    if err:
+        return jsonify(err), 400
     motivo = (d.get('motivo') or '').strip()
     if not motivo:
         return jsonify({'error': 'motivo requerido para ajuste'}), 400
@@ -9355,10 +9383,18 @@ def mee_import_bulk():
         categoria = (it.get('categoria') or 'Otro').strip()
         unidad = (it.get('unidad') or 'und').strip()
         proveedor = (it.get('proveedor') or '').strip()
-        try: stock = float(it.get('stock') or 0)
-        except: stock = 0
-        try: stock_min = float(it.get('stock_minimo') or 1000)
-        except: stock_min = 1000
+        # FIX P1 audit 24-may-2026 · validar stock numérico, rechazar
+        # NaN/Inf/abs. En bulk no abortamos el batch entero por un row
+        # malo · saltamos al siguiente y reportamos en respuesta.
+        from http_helpers import validate_money
+        stock, err_s = validate_money(it.get('stock', 0),
+                                       allow_zero=True, max_value=10_000_000)
+        if err_s:
+            stock = 0
+        stock_min, err_sm = validate_money(it.get('stock_minimo', 1000),
+                                            allow_zero=True, max_value=10_000_000)
+        if err_sm:
+            stock_min = 1000
         existing = c.execute("SELECT codigo, stock_actual FROM maestro_mee WHERE codigo=?", (codigo,)).fetchone()
         if existing:
             stock_anterior = float(existing[1] or 0)
