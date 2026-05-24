@@ -640,6 +640,80 @@ def admin_lote_size_fix():
                     'unidad_base_g_nuevo': nuevo_g})
 
 
+@bp.route("/api/admin/formula-desactivar", methods=["POST"])
+def admin_formula_desactivar():
+    """Sebastián 24-may · 'EMULSION ANTIOX, SUERO C+B3, SUERO AZ+B3 ya
+    no vendemos' · marca activo=0 en formula_headers para sacar de
+    Necesidades + Calendar (sin borrar para preservar histórico).
+    Body: {producto_nombre} · admin only · audit_log.
+    """
+    from config import ADMIN_USERS as _AU
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+    if user not in _AU:
+        return jsonify({'error': 'solo admin'}), 403
+    d = request.get_json(silent=True) or {}
+    producto = (d.get('producto_nombre') or '').strip()
+    if not producto:
+        return jsonify({'error': 'producto_nombre requerido'}), 400
+    conn = get_db()
+    cur = conn.cursor()
+    row = cur.execute(
+        """SELECT producto_nombre, COALESCE(activo,1) FROM formula_headers
+           WHERE UPPER(TRIM(producto_nombre)) = UPPER(TRIM(?))""",
+        (producto,),
+    ).fetchone()
+    if not row:
+        return jsonify({'error': f"producto '{producto}' no existe"}), 404
+    if int(row[1] or 0) == 0:
+        return jsonify({'ok': True, 'producto_nombre': row[0],
+                        'ya_inactivo': True})
+    cur.execute(
+        """UPDATE formula_headers SET activo = 0
+           WHERE UPPER(TRIM(producto_nombre)) = UPPER(TRIM(?))""",
+        (producto,),
+    )
+    try:
+        audit_log(cur, usuario=user, accion='FORMULA_DESACTIVAR',
+                  tabla='formula_headers', registro_id=row[0])
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({'ok': True, 'producto_nombre': row[0], 'desactivado': True})
+
+
+@bp.route("/api/admin/formula-activar", methods=["POST"])
+def admin_formula_activar():
+    """Reactivar producto · activo=1 · admin only · audit."""
+    from config import ADMIN_USERS as _AU
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+    if user not in _AU:
+        return jsonify({'error': 'solo admin'}), 403
+    d = request.get_json(silent=True) or {}
+    producto = (d.get('producto_nombre') or '').strip()
+    if not producto:
+        return jsonify({'error': 'producto_nombre requerido'}), 400
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        """UPDATE formula_headers SET activo = 1
+           WHERE UPPER(TRIM(producto_nombre)) = UPPER(TRIM(?))""",
+        (producto,),
+    )
+    try:
+        audit_log(cur, usuario=user, accion='FORMULA_ACTIVAR',
+                  tabla='formula_headers', registro_id=producto)
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({'ok': True, 'producto_nombre': producto})
+
+
 @bp.route("/api/admin/skus-huerfanos-top", methods=["GET"])
 def admin_skus_huerfanos_top():
     """Sebastián 23-may-2026 PM · 'Suero Exfoliante BHA dice 300/mes

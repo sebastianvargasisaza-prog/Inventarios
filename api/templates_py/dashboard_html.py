@@ -20658,7 +20658,7 @@ async function ckMarcar(itemId, estado){
           '<div id="herr-resultado-huerfanos" style="margin-top:10px"></div>' +
         '</div>' +
         // Sección 4 · Re-mapear SKU específico (cambio mapeo existente)
-        '<div style="background:#f8fafc;border-radius:8px;padding:14px">' +
+        '<div style="background:#f8fafc;border-radius:8px;padding:14px;margin-bottom:14px">' +
           '<div style="font-weight:700;color:#1e293b;font-size:13px;margin-bottom:4px">4️⃣ Re-mapear SKU a otro producto</div>' +
           '<div style="font-size:11px;color:#64748b;margin-bottom:8px">Para corregir mapeos mal hechos · ej. SERUM-BT-001 estaba en LIP SERUM (PIB CHINO) cuando es BOOSTER TENSOR.</div>' +
           '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">' +
@@ -20668,6 +20668,17 @@ async function ckMarcar(itemId, estado){
             '<button onclick="herrRemapearSku()" style="background:#0891b2;color:#fff;border:none;padding:6px 14px;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer">↻ Re-mapear</button>' +
           '</div>' +
           '<div id="herr-resultado-remap" style="font-size:11px;color:#64748b"></div>' +
+        '</div>' +
+        // Sección 5 · Desactivar producto (ya no se vende)
+        '<div style="background:#f8fafc;border-radius:8px;padding:14px">' +
+          '<div style="font-weight:700;color:#1e293b;font-size:13px;margin-bottom:4px">5️⃣ Desactivar producto (ya no se vende)</div>' +
+          '<div style="font-size:11px;color:#64748b;margin-bottom:8px">Marca activo=0 · sale de Necesidades + Calendar · NO se borra (preserva histórico).</div>' +
+          '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">' +
+            '<input id="herr-dz-prod" type="text" placeholder="Producto a desactivar (autocomplete)" list="herr-rm-prod-list" style="flex:1;min-width:260px;padding:6px 10px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px">' +
+            '<button onclick="herrDesactivarProd()" style="background:#dc2626;color:#fff;border:none;padding:6px 14px;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer">✕ Desactivar</button>' +
+            '<button onclick="herrActivarProd()" style="background:#0f766e;color:#fff;border:none;padding:6px 14px;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer">↻ Reactivar</button>' +
+          '</div>' +
+          '<div id="herr-resultado-dz" style="font-size:11px;color:#64748b"></div>' +
         '</div>' +
       '</div>' +
       '</div>';
@@ -20708,6 +20719,38 @@ async function ckMarcar(itemId, estado){
       out.innerHTML = '<span style="color:#0f766e;font-weight:700">✓ SKU ' + sku + ' → ' + prod + ' (' + d.creados[0].sku + ')</span>';
       document.getElementById('herr-rm-sku').value = '';
       document.getElementById('herr-rm-prod').value = '';
+    } catch(e) { out.innerHTML = '<span style="color:#dc2626">Error red: ' + e.message + '</span>'; }
+  };
+  // Sección 5 · Desactivar/Reactivar producto
+  window.herrDesactivarProd = async function() {
+    const prod = (document.getElementById('herr-dz-prod').value || '').trim();
+    const out = document.getElementById('herr-resultado-dz');
+    if (!prod) { out.innerHTML = '<span style="color:#dc2626">Producto requerido</span>'; return; }
+    if (!confirm('¿Desactivar "' + prod + '"?\\n\\nSale de Necesidades + Calendar · NO se borra · puede reactivarse.')) return;
+    try {
+      const r = await fetch('/api/admin/formula-desactivar', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({producto_nombre: prod}),
+      });
+      const d = await r.json();
+      if (!r.ok || d.error) { out.innerHTML = '<span style="color:#dc2626">Error: ' + (d.error || r.status) + '</span>'; return; }
+      out.innerHTML = '<span style="color:#0f766e;font-weight:700">✓ ' + d.producto_nombre + ' desactivado</span>';
+      document.getElementById('herr-dz-prod').value = '';
+    } catch(e) { out.innerHTML = '<span style="color:#dc2626">Error red: ' + e.message + '</span>'; }
+  };
+  window.herrActivarProd = async function() {
+    const prod = (document.getElementById('herr-dz-prod').value || '').trim();
+    const out = document.getElementById('herr-resultado-dz');
+    if (!prod) { out.innerHTML = '<span style="color:#dc2626">Producto requerido</span>'; return; }
+    try {
+      const r = await fetch('/api/admin/formula-activar', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({producto_nombre: prod}),
+      });
+      const d = await r.json();
+      if (!r.ok || d.error) { out.innerHTML = '<span style="color:#dc2626">Error: ' + (d.error || r.status) + '</span>'; return; }
+      out.innerHTML = '<span style="color:#0f766e;font-weight:700">✓ ' + d.producto_nombre + ' reactivado</span>';
+      document.getElementById('herr-dz-prod').value = '';
     } catch(e) { out.innerHTML = '<span style="color:#dc2626">Error red: ' + e.message + '</span>'; }
   };
   window.herrDryRun = async function() {
