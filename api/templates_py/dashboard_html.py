@@ -1744,17 +1744,21 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       title="Bandeja entrada · Animus DTC + B2B">
       &#128202; Necesidades
     </button>
-    <button data-prog-sub="plan" onclick="switchProgTab('abastecimiento')"
-      style="padding:6px 14px;border:1px solid #7c3aed;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;background:#fff;color:#7c3aed"
-      title="MP/envases que faltan · genera SOLs a Compras">
-      &#128230; Abastecimiento
-    </button>
   </div>
+  <!-- Sebastián 24-may-2026 noche: "abastecimiento debería tomar todo del
+       calendario · estar como pestaña al lado del calendario". Movido del
+       grupo Plan al grupo Calendario IA · queda al lado de Vista calendario
+       + Factibilidad porque las 3 leen del MISMO calendario. -->
   <div id="prog-sub-calendario_grp" class="prog-subbar" style="display:none;gap:8px;margin-bottom:14px;padding:8px 4px;border-bottom:1px dashed #cbd5e1;flex-wrap:wrap">
     <button data-prog-sub="calendario_grp" onclick="switchProgTab('calendario')"
       style="padding:6px 14px;border:1px solid #ca8a04;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;background:#ca8a04;color:#fff"
       title="Vista mes + autoplan IA">
       &#129302; Vista calendario
+    </button>
+    <button data-prog-sub="calendario_grp" onclick="switchProgTab('abastecimiento')"
+      style="padding:6px 14px;border:1px solid #7c3aed;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;background:#fff;color:#7c3aed"
+      title="MP/envases que faltan · suma TODO lo que está en el calendario">
+      &#128230; Abastecimiento
     </button>
     <button data-prog-sub="calendario_grp" onclick="switchProgTab('factibilidad')"
       style="padding:6px 14px;border:1px solid #059669;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;background:#fff;color:#059669"
@@ -1840,8 +1844,8 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
   <div id="ptab-abastecimiento" style="display:none">
     <div style="background:linear-gradient(90deg,#faf5ff,#f3e8ff);padding:14px 18px;border-radius:10px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
       <div>
-        <h3 style="margin:0;color:#5b21b6;font-size:15px;font-weight:800">&#128230; Abastecimiento por horizontes</h3>
-        <div style="font-size:11px;color:#475569;margin-top:3px">Consumo MP/MEE según producciones Fijas + B2B pendientes en 15/30/60/90/120/180/365 días</div>
+        <h3 style="margin:0;color:#5b21b6;font-size:15px;font-weight:800">&#128230; Abastecimiento &middot; suma del Calendario</h3>
+        <div style="font-size:11px;color:#475569;margin-top:3px">Lee TODO el calendario (Fijas + Sugeridas + B2B) y suma el consumo MP/MEE por horizonte. Si las cifras son bajas, es porque el calendario está corto &middot; llenálo desde <a href="/admin/llenar-calendario" target="_blank" style="color:#7c3aed;font-weight:700;text-decoration:underline">aquí</a>.</div>
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:11px">
         <label style="color:#475569;display:flex;align-items:center;gap:4px">
@@ -11933,7 +11937,9 @@ async function ckMarcar(itemId, estado){
   var _PROG_TAB_TO_GROUP = {
     'necesidades': 'plan',
     'planv2': 'plan',  // legacy oculto · si llaman, queda en grupo plan
-    'abastecimiento': 'plan',
+    // Sebastián 24-may-2026 noche: Abastecimiento movido al grupo
+    // Calendario IA · lee el calendario, no es planeación independiente.
+    'abastecimiento': 'calendario_grp',
     'calendario': 'calendario_grp',
     'factibilidad': 'calendario_grp',
     'mando': 'opera_grp',
