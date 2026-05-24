@@ -145,83 +145,14 @@ def _auth():
 # ─── Shopify velocity ────────────────────────────────────────────────────────
 
 def _sync_shopify_orders(conn, days=60):
-    """Sync ordenes Shopify directo desde API, independiente de marketing.
+    """Wrapper · delega a shopify_client.sync_shopify_orders (helper unificado).
 
-    Pagina created_at_min=now-days hasta hoy. Guarda en animus_shopify_orders.
-    Programacion no depende de que marketing haya sincronizado primero.
+    Sebastián 23-may-2026 PM · consolidación 4→1 implementación · este
+    archivo solo expone la firma legacy {ok, synced, days, error} que
+    callers como `prog_sync_ventas` esperan.
     """
-    def _cfg(c):
-        r = conn.execute("SELECT valor FROM animus_config WHERE clave=?", (c,)).fetchone()
-        return r[0] if r else None
-
-    token = _cfg("shopify_token")
-    shop  = _cfg("shopify_shop")
-    if not token or not shop:
-        return {"ok": False, "error": "Shopify no configurado"}
-
-    since_dt = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%dT00:00:00Z")
-    url = ("https://" + shop +
-           "/admin/api/2024-01/orders.json?status=any&limit=250&created_at_min=" + since_dt)
-    synced = 0
-
-    while url:
-        req = urllib.request.Request(url, headers={"X-Shopify-Access-Token": token})
-        try:
-            # SHOPIFY-AUDIT 23-may-PM · fetch_with_retry para 429/5xx
-            from http_helpers import fetch_with_retry as _fwr
-            with _fwr(req, timeout=25, max_intentos=3) as r:
-                data = json.loads(r.read())
-                link_hdr = r.headers.get("Link", "")
-        except urllib.error.HTTPError as e:
-            body = e.read().decode("utf-8", errors="replace")[:300]
-            return {"ok": False, "error": "Shopify HTTP " + str(e.code) + ": " + body}
-        except Exception as e:
-            return {"ok": False, "error": "Red: " + str(e)}
-
-        for o in data.get("orders", []):
-            line_items = o.get("line_items", [])
-            items_sku = json.dumps([
-                {"sku": li.get("sku") or "", "qty": li.get("quantity", 0)}
-                for li in line_items if li.get("sku")
-            ])
-            total_uds = sum(li.get("quantity", 0) for li in line_items)
-            addr = o.get("shipping_address") or o.get("billing_address") or {}
-            sql = (
-                "INSERT OR REPLACE INTO animus_shopify_orders "
-                "(shopify_id,nombre,email,total,moneda,estado,estado_pago,"
-                "sku_items,unidades_total,ciudad,pais,creado_en,synced_at) "
-                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,datetime('now', '-5 hours'))"
-            )
-            # FIX 23-may-2026 · auditoría · Bug TZ Bogotá del 22-may NO se aplicó
-            # aquí · venta 22:30 Bogotá quedaba como AYER UTC al hacer [:10]
-            # ahora usa helper TZ-aware
-            try:
-                from blueprints.auto_plan_jobs import _shopify_created_at_bogota as _tz_helper
-                _creado_en = _tz_helper(o.get("created_at",""))
-            except Exception:
-                _creado_en = (o.get("created_at") or "")[:10]
-            conn.execute(sql, (
-                str(o["id"]), o.get("name",""), o.get("email",""),
-                float(o.get("total_price") or 0), o.get("currency","COP"),
-                o.get("fulfillment_status") or "unfulfilled",
-                o.get("financial_status",""),
-                items_sku, total_uds,
-                addr.get("city",""), addr.get("country_code","CO"),
-                _creado_en
-            ))
-            synced += 1
-
-        next_url = None
-        for part in link_hdr.split(","):
-            if "rel=\"next\"" in part:
-                s = part.find("<") + 1
-                e2 = part.find(">")
-                if s > 0 and e2 > s:
-                    next_url = part[s:e2].strip()
-        url = next_url
-
-    conn.commit()
-    return {"ok": True, "synced": synced, "days": days}
+    from shopify_client import sync_shopify_orders as _sso
+    return _sso(conn, days=days, incluir_movimientos=False)
 
 
 def _shopify_velocity(conn, days=60):

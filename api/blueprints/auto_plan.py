@@ -7361,69 +7361,14 @@ def sync_shopify_cron():
     user = 'cron-shopify' if es_cron else session.get('compras_user', 'manual')
     conn = get_db(); c = conn.cursor()
 
-    # Ejecutar sync Shopify usando el endpoint existente en animus.py
-    # Reutilizamos la lógica directamente.
+    # Sebastián 23-may-2026 PM · consolidación 4→1 · delega al helper
+    # unificado shopify_client.sync_shopify_orders
     try:
-        from blueprints.animus import _cfg
-        token = _cfg(conn, 'shopify_token')
-        shop = _cfg(conn, 'shopify_shop')
-        if not token or not shop:
-            return jsonify({
-                'ok': False,
-                'error': 'Shopify no configurado (shopify_token/shopify_shop en config)',
-                'mensaje': 'Configura las credenciales en /admin antes del cron',
-            }), 400
-
-        import urllib.request as ur
-        # FIX 23-may-2026 · auditoría · paginación Link header (antes 1 fetch)
-        # SHOPIFY-AUDIT 23-may-PM · created_at_min 90d para no recorrer años
-        from datetime import datetime as _dt3, timedelta as _td3
-        _cutoff3 = (_dt3.utcnow() - _td3(days=90)).strftime('%Y-%m-%dT00:00:00Z')
-        url = f"https://{shop}/admin/api/2024-01/orders.json?status=any&limit=250&created_at_min={_cutoff3}"
-        synced = 0
-        try:
-            while url:
-                req = ur.Request(url, headers={"X-Shopify-Access-Token": token})
-                # SHOPIFY-AUDIT 23-may-PM · fetch_with_retry para 429/5xx
-                from http_helpers import fetch_with_retry as _fwr
-                with _fwr(req, timeout=30, max_intentos=3) as r:
-                    body = r.read()
-                    link_hdr = r.headers.get("Link", "") or ""
-                orders = json.loads(body)["orders"]
-                for o in orders:
-                    items_sku = json.dumps([
-                        {"sku": li.get("sku",""), "qty": li.get("quantity",0)}
-                        for li in o.get("line_items", [])
-                    ])
-                    total_uds = sum(li.get("quantity",0) for li in o.get("line_items",[]))
-                    addr = o.get("billing_address") or {}
-                    _tg = o.get("tags","") or ""
-                    _cg = ((o.get("customer") or {}).get("tags","")) or ""
-                    conn.execute("""
-                        INSERT OR REPLACE INTO animus_shopify_orders
-                          (shopify_id, nombre, email, total, moneda, estado, estado_pago,
-                           sku_items, unidades_total, ciudad, pais, creado_en, synced_at,
-                           tags, customer_tags)
-                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,datetime('now', '-5 hours'),?,?)
-                    """, (str(o["id"]), o.get("name",""), o.get("email",""),
-                          float(o.get("total_price",0)), o.get("currency","COP"),
-                          o.get("fulfillment_status",""), o.get("financial_status",""),
-                          items_sku, total_uds,
-                          addr.get("city",""), addr.get("country_code","CO"),
-                          _shopify_created_at_bogota_local(o.get("created_at","")),
-                          _tg, _cg))
-                    synced += 1
-                next_url = None
-                for part in link_hdr.split(","):
-                    if 'rel="next"' in part:
-                        s = part.find("<") + 1
-                        e2 = part.find(">")
-                        if s > 0 and e2 > s:
-                            next_url = part[s:e2].strip()
-                url = next_url
-            conn.commit()
-        except Exception as e:
-            return jsonify({'ok': False, 'error': f'Shopify API: {e}'}), 502
+        from shopify_client import sync_shopify_orders as _sso
+        d = _sso(conn, days=90, incluir_movimientos=False)
+        if not d.get('ok'):
+            return jsonify({'ok': False, 'error': d.get('error', 'sync falló')}), 502
+        synced = d.get('synced', 0)
 
         # Log
         try:

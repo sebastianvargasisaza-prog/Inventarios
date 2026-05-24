@@ -128,62 +128,17 @@ def animus_sync(platform):
     conn = _db()
     try:
         if platform == "shopify":
-            token  = _cfg(conn, "shopify_token")
-            shop   = _cfg(conn, "shopify_shop")
-            if not token or not shop:
-                return jsonify({"error": "Shopify no configurado. Agrega shopify_token y shopify_shop en Configuración."}), 400
-            try:
-                import urllib.request as ur
-                # FIX 23-may-2026 · auditoría · antes hacía un solo fetch
-                # `orders.json?limit=250` · si la tienda tenía >250 órdenes
-                # nuevas perdía las viejas · ahora pagina via Link header
-                # SHOPIFY-AUDIT 23-may-PM · created_at_min 90d (cuota API)
-                from datetime import datetime as _dt4, timedelta as _td4
-                _cutoff4 = (_dt4.utcnow() - _td4(days=90)).strftime('%Y-%m-%dT00:00:00Z')
-                url = f"https://{shop}/admin/api/2024-01/orders.json?status=any&limit=250&created_at_min={_cutoff4}"
-                synced = 0
-                while url:
-                    req = ur.Request(url, headers={"X-Shopify-Access-Token": token})
-                    # SHOPIFY-AUDIT 23-may-PM · fetch_with_retry para 429/5xx
-                    from http_helpers import fetch_with_retry as _fwr
-                    with _fwr(req, timeout=15, max_intentos=3) as r:
-                        body = r.read()
-                        link_hdr = r.headers.get("Link", "") or ""
-                    orders = json.loads(body)["orders"]
-                    for o in orders:
-                        items_sku = json.dumps([{"sku": li.get("sku",""), "qty": li.get("quantity",0)} for li in o.get("line_items",[])])
-                        total_uds = sum(li.get("quantity",0) for li in o.get("line_items",[]))
-                        addr = o.get("billing_address") or {}
-                        _tg = o.get("tags","") or ""
-                        _cg = ((o.get("customer") or {}).get("tags","")) or ""
-                        conn.execute("""INSERT OR REPLACE INTO animus_shopify_orders
-                            (shopify_id,nombre,email,total,moneda,estado,estado_pago,sku_items,unidades_total,ciudad,pais,creado_en,synced_at,tags,customer_tags)
-                            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,datetime('now', '-5 hours'),?,?)""",
-                            (str(o["id"]), o.get("name",""), o.get("email",""),
-                             float(o.get("total_price",0)), o.get("currency","COP"),
-                             o.get("fulfillment_status",""), o.get("financial_status",""),
-                             items_sku, total_uds,
-                             addr.get("city",""), addr.get("country_code","CO"),
-                             _ani_created_at_bogota(o.get("created_at","")),
-                             _tg, _cg))
-                        synced += 1
-                    next_url = None
-                    for part in link_hdr.split(","):
-                        if 'rel="next"' in part:
-                            s = part.find("<") + 1
-                            e2 = part.find(">")
-                            if s > 0 and e2 > s:
-                                next_url = part[s:e2].strip()
-                    url = next_url
-                conn.commit()
-                # Reflejar ventas Shopify como movimientos SHOPIFY_VENTA en
-                # inventario fisico (idempotente · referencia = shopify_id+sku)
-                ventas_creadas = _sync_shopify_a_movimientos(conn)
-                return jsonify({"ok": True, "synced": synced,
-                                "ventas_inventario": ventas_creadas,
-                                "platform": "shopify"})
-            except Exception as e:
-                return jsonify({"error": f"Error Shopify API: {str(e)}"}), 502
+            # Sebastián 23-may-2026 PM · consolidación 4→1 · delega al
+            # helper unificado shopify_client.sync_shopify_orders.
+            # incluir_movimientos=True para que cree movimientos
+            # SHOPIFY_VENTA en kardex (caso exclusivo de este endpoint).
+            from shopify_client import sync_shopify_orders as _sso
+            d = _sso(conn, days=90, incluir_movimientos=True)
+            if not d.get('ok'):
+                return jsonify({"error": d.get('error') or 'Shopify sync falló'}), 502
+            return jsonify({"ok": True, "synced": d.get('synced', 0),
+                            "ventas_inventario": d.get('ventas_inventario', 0),
+                            "platform": "shopify"})
 
         elif platform == "ghl":
             api_key  = _cfg(conn, "ghl_api_key")

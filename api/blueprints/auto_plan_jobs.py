@@ -977,66 +977,16 @@ def job_sync_stock_shopify_diario(app):
 
 def job_sync_shopify(app):
     """Sync Shopify orders (jala últimas 250)."""
+    # Sebastián 23-may-2026 PM · consolidación 4→1 · delega al helper
+    # unificado shopify_client.sync_shopify_orders
     with app.app_context():
         from database import get_db
-        from blueprints.animus import _cfg
+        from shopify_client import sync_shopify_orders as _sso
         conn = get_db()
-        token = _cfg(conn, 'shopify_token')
-        shop = _cfg(conn, 'shopify_shop')
-        if not token or not shop:
-            return False, {'error': 'Shopify no configurado'}, 0
-        import urllib.request as ur
-        import json as _json
-        # FIX 23-may-2026 · auditoría · paginación Link header (antes 1 fetch)
-        # SHOPIFY-AUDIT 23-may-PM · created_at_min limita a últimos 90d ·
-        # antes recorría 6-12 meses cada cron (gasta cuota API · lento).
-        from datetime import datetime as _dt_local, timedelta as _td_local
-        _cutoff = (_dt_local.utcnow() - _td_local(days=90)).strftime('%Y-%m-%dT00:00:00Z')
-        url = f"https://{shop}/admin/api/2024-01/orders.json?status=any&limit=250&created_at_min={_cutoff}"
-        synced = 0
-        while url:
-            req = ur.Request(url, headers={"X-Shopify-Access-Token": token})
-            # SHOPIFY-AUDIT 23-may-PM · fetch_with_retry maneja 429/5xx
-            from http_helpers import fetch_with_retry as _fwr
-            with _fwr(req, timeout=30, max_intentos=3) as r:
-                body = r.read()
-                link_hdr = r.headers.get("Link", "") or ""
-            orders = _json.loads(body)["orders"]
-            for o in orders:
-                items_sku = _json.dumps([
-                    {"sku": li.get("sku",""), "qty": li.get("quantity",0)}
-                    for li in o.get("line_items",[])
-                ])
-                total_uds = sum(li.get("quantity",0) for li in o.get("line_items",[]))
-                addr = o.get("billing_address") or {}
-                # SHOPIFY-AUDIT 23-may-PM · guardar tags (order y customer)
-                # para futuro filtro B2B vs DTC opt-in
-                _tags = o.get("tags","") or ""
-                _ctags = ((o.get("customer") or {}).get("tags","")) or ""
-                conn.execute("""
-                    INSERT OR REPLACE INTO animus_shopify_orders
-                      (shopify_id, nombre, email, total, moneda, estado, estado_pago,
-                       sku_items, unidades_total, ciudad, pais, creado_en, synced_at,
-                       tags, customer_tags)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,datetime('now', '-5 hours'),?,?)
-                """, (str(o["id"]), o.get("name",""), o.get("email",""),
-                      float(o.get("total_price",0)), o.get("currency","COP"),
-                      o.get("fulfillment_status",""), o.get("financial_status",""),
-                      items_sku, total_uds,
-                      addr.get("city",""), addr.get("country_code","CO"),
-                      _shopify_created_at_bogota(o.get("created_at","")),
-                      _tags, _ctags))
-                synced += 1
-            next_url = None
-            for part in link_hdr.split(","):
-                if 'rel="next"' in part:
-                    s = part.find("<") + 1
-                    e2 = part.find(">")
-                    if s > 0 and e2 > s:
-                        next_url = part[s:e2].strip()
-            url = next_url
-        conn.commit()
-        return True, {'orders_synced': synced}, 0
+        d = _sso(conn, days=90, incluir_movimientos=False)
+        if not d.get('ok'):
+            return False, {'error': d.get('error', 'sync falló')}, 0
+        return True, {'orders_synced': d.get('synced', 0)}, 0
 
 
 def job_auto_d20(app):
