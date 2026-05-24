@@ -9158,45 +9158,58 @@ def abastecimiento_consumo_bruto_excel():
     ws = wb.create_sheet('Consumo bruto')
     fecha_str = _dt.now().strftime('%Y-%m-%d %H:%M')
     modo = d.get('modo', 'comprometido')
-    n_cols = 5 + len(horizontes)  # AUDIT FIX · +2 por INCI y Proveedor
-    ws.cell(row=1, column=1, value=f'Consumo bruto por horizontes · Modo {modo.upper()} · {fecha_str}')
+    n_cols = 5 + len(horizontes)
+    # FIX 24-may noche · título explícito: SIN descontar inventario
+    ws.cell(row=1, column=1, value=f'Consumo TOTAL del Calendario · SIN descontar inventario · Modo {modo.upper()} · {fecha_str}')
     ws.cell(row=1, column=1).font = Font(size=14, bold=True, color='FFFFFF')
     ws.cell(row=1, column=1).fill = title_fill
     ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=n_cols)
-    ws.row_dimensions[1].height = 24
-    # AUDIT FIX 23-may · Sebastián confundido por celdas idénticas en
-    # horizontes lejanos · es comportamiento CORRECTO si todas las Fijas
-    # caen en días tempranos · acumulación temporal · agregar fecha de
-    # última Fija al subtítulo para que el usuario entienda
-    fecha_ultima_fija = None
+    ws.row_dimensions[1].height = 26
+
+    # Fecha del último lote programado · para que el usuario sepa hasta
+    # dónde llega el calendario realmente
+    fecha_ultimo_lote = None
     try:
-        from datetime import datetime as _dtmf
         r_ult = c.execute(
             "SELECT MAX(fecha_programada) FROM produccion_programada "
-            "WHERE COALESCE(origen,'') IN ('eos_plan','eos_b2b','eos_retroactivo') "
-            "AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado') "
+            "WHERE LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado','esperando_recurso') "
             "AND COALESCE(inventario_descontado_at,'') = ''"
         ).fetchone()
         if r_ult and r_ult[0]:
-            fecha_ultima_fija = str(r_ult[0])[:10]
+            fecha_ultimo_lote = str(r_ult[0])[:10]
     except Exception:
         pass
-    aviso_modo = ''
-    if modo == 'comprometido':
-        if fecha_ultima_fija:
-            aviso_modo = (f' · ⚠ última Fija: {fecha_ultima_fija} · '
-                          'horizontes posteriores muestran el mismo total (no hay más actividad fija) · '
-                          'usá modo Run-rate para ver proyección por ventas')
-        else:
-            aviso_modo = ' · Sin Fijas en ventana · usá Run-rate'
-    ws.cell(row=2, column=1, value=(
-        f'{d.get("n_producciones_fijas", 0)} producciones Fijas · '
-        f'{d.get("n_pedidos_b2b_pendientes", 0)} pedidos B2B pendientes · '
-        f'consumo acumulativo desde hoy · MP en gramos · MEE en unidades'
-        + aviso_modo
-    ))
+
+    # Desglose lotes por origen (alineado con UI nueva)
+    n_fijas = d.get('n_producciones_fijas', 0)
+    n_sugeridas = d.get('n_producciones_sugeridas', 0)
+    n_b2b = d.get('n_pedidos_b2b_pendientes', 0)
+    n_total = d.get('n_producciones_total', n_fijas + n_sugeridas)
+    lotes_sem = d.get('lotes_por_semana_90d', 0)
+    cobertura = d.get('cobertura_dias', 0)
+
+    subtitulo = (
+        f'{n_total} lotes totales · {n_fijas} Fijas + {n_sugeridas} Sugeridas + {n_b2b} B2B pendientes · '
+        f'{lotes_sem} lotes/sem (90d) · cobertura {cobertura}d · '
+        f'último lote {fecha_ultimo_lote or "—"} · '
+        f'consumo acumulativo desde hoy · MP en gramos · MEE en unidades · '
+        f'NO se resta stock actual ni órdenes en curso'
+    )
+    ws.cell(row=2, column=1, value=subtitulo)
     ws.cell(row=2, column=1).font = Font(size=10, italic=True, color='6B7280')
+    ws.cell(row=2, column=1).alignment = Alignment(wrap_text=True, vertical='top')
     ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=n_cols)
+    ws.row_dimensions[2].height = 32
+
+    # Aviso si modo comprometido sin actividad lejana
+    aviso_modo = ''
+    if modo == 'comprometido' and fecha_ultimo_lote and cobertura < 180:
+        aviso_modo = (f'⚠ Cobertura {cobertura}d · horizontes >cobertura muestran '
+                       'el mismo total porque no hay más lotes programados · '
+                       'usá Run-rate o llená el calendario')
+        ws.cell(row=3, column=1, value=aviso_modo)
+        ws.cell(row=3, column=1).font = Font(size=10, italic=True, color='B45309', bold=True)
+        ws.merge_cells(start_row=3, start_column=1, end_row=3, end_column=n_cols)
 
     # Encabezados fila 4
     # FIX 23-may-2026 · Sebastián pidió columna INCI · útil para Alejandro
