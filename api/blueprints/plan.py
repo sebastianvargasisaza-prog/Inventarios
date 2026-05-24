@@ -6446,28 +6446,114 @@ def admin_llenar_calendario_pagina():
                 origen_nuevo='eos_canonico', lote_kg_override=None,
             )
             conn.commit()
-            n_creados = len(resultado.get('creados', []))
-            n_saltados = len(resultado.get('saltados', []))
-            n_errores = len(resultado.get('errores', []))
+            creados = resultado.get('creados', [])
+            saltados = resultado.get('saltados', [])
+            n_creados = len(creados)
+            n_saltados = len(saltados)
+
+            # Agrupar razones de salteado para diagnóstico claro
+            razones_count = {}
+            for s in saltados:
+                r = s.get('razon', 'sin razón')
+                # Normalizar razones técnicas a categorías humanas
+                if 'sin velocidad' in r.lower():
+                    cat = '⚠ Sin velocidad de venta · producto descontinuado o sin ventas Shopify'
+                elif 'sin última producción' in r.lower():
+                    cat = '⚠ Sin última producción registrada · no se puede calcular base'
+                elif 'ya hay lote' in r.lower():
+                    cat = '✓ Ya tiene lote programado ±7d (correcto · no duplica)'
+                elif 'absurdo' in r.lower():
+                    cat = '⚠ lote_size_kg absurdo (<1kg) · arreglar en admin'
+                elif 'paso' in r.lower():
+                    cat = '⚠ Paso de cadena <7d · vel o lote inválidos'
+                elif 'fecha inválida' in r.lower():
+                    cat = '⚠ Fecha sugerida inválida'
+                else:
+                    cat = f'Otro: {r[:60]}'
+                razones_count[cat] = razones_count.get(cat, 0) + 1
+
+            # Render lista detallada de razones
+            razones_html = ''
+            for razon, cnt in sorted(razones_count.items(), key=lambda x: -x[1]):
+                color = '#15803d' if razon.startswith('✓') else '#ea580c'
+                razones_html += (
+                    f'<div style="display:flex;justify-content:space-between;'
+                    f'padding:8px 12px;border-bottom:1px solid #f1f5f9">'
+                    f'<span style="color:{color};font-size:12px">{razon}</span>'
+                    f'<strong style="color:#1e293b">{cnt}</strong></div>'
+                )
+
+            # Sample de creados (top 10) y saltados con razón principal
+            creados_sample = ''
+            for c in creados[:15]:
+                creados_sample += (
+                    f'<tr><td style="padding:4px 8px">{c.get("producto","")}</td>'
+                    f'<td style="padding:4px 8px;font-family:monospace">{c.get("fecha","")}</td>'
+                    f'<td style="padding:4px 8px;text-align:right">{c.get("cantidad_kg","")}kg</td>'
+                    f'<td style="padding:4px 8px;font-size:11px;color:#64748b">{c.get("urgencia","")}</td></tr>'
+                )
+            if not creados_sample:
+                creados_sample = '<tr><td colspan="4" style="padding:14px;color:#94a3b8;text-align:center">Ninguna Sugerida creada · revisá las razones abajo</td></tr>'
+
+            # Sample de productos sin velocidad (los más problemáticos)
+            sin_vel_sample = []
+            for s in saltados:
+                if 'sin velocidad' in s.get('razon', '').lower():
+                    sin_vel_sample.append(s.get('producto', ''))
+            sin_vel_html = ''
+            if sin_vel_sample:
+                sin_vel_html = (
+                    f'<details style="margin-top:14px"><summary style="cursor:pointer;font-weight:700;color:#ea580c">'
+                    f'⚠ {len(sin_vel_sample)} productos SIN velocidad de venta (click para ver)</summary>'
+                    f'<div style="background:#fef3c7;padding:10px;border-radius:6px;margin-top:6px;font-size:11px;max-height:200px;overflow:auto">'
+                    + ' · '.join(sin_vel_sample[:50])
+                    + ('' if len(sin_vel_sample) <= 50 else f' · y {len(sin_vel_sample)-50} más')
+                    + '</div></details>'
+                )
+
+            diagnostico = ''
+            if n_creados == 0:
+                diagnostico = (
+                    '<div style="background:#fef3c7;border-left:5px solid #f59e0b;padding:14px 18px;'
+                    'border-radius:8px;margin:14px 0">'
+                    '<strong style="color:#92400e">Diagnóstico:</strong> el algoritmo NO creó Sugeridas. '
+                    'Esto ocurre cuando todos los productos ya tienen lotes programados ±7d (correcto · '
+                    'no duplica) O cuando los productos no tienen velocidad de venta en Shopify. '
+                    'Revisá la tabla de razones abajo.</div>'
+                )
+
             return f"""<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>Calendario llenado</title>
+<html><head><meta charset="utf-8"><title>Calendario · resultado</title>
 <style>
   body{{font-family:system-ui,-apple-system,Arial;background:#f8fafc;margin:0;padding:40px}}
-  .card{{max-width:720px;margin:0 auto;background:#fff;border-radius:14px;padding:30px;box-shadow:0 10px 40px rgba(0,0,0,0.1)}}
-  h1{{color:#15803d;margin:0 0 14px}} .ok{{color:#15803d}}
-  .kpi{{display:inline-block;background:#f0fdf4;border:1px solid #16a34a;padding:14px 22px;border-radius:8px;margin:6px;text-align:center}}
+  .card{{max-width:920px;margin:0 auto;background:#fff;border-radius:14px;padding:30px;box-shadow:0 10px 40px rgba(0,0,0,0.1)}}
+  h1{{color:#1e293b;margin:0 0 14px}}
+  .kpi{{display:inline-block;background:#f0fdf4;border:1px solid #16a34a;padding:14px 22px;border-radius:8px;margin:6px;text-align:center;min-width:140px}}
   .kpi-val{{font-size:32px;font-weight:800;color:#15803d}}
   .kpi-lbl{{font-size:11px;color:#64748b;text-transform:uppercase}}
+  table{{width:100%;border-collapse:collapse;font-size:12px;margin-top:8px}}
+  th{{text-align:left;padding:6px 8px;background:#f1f5f9;color:#475569;font-size:11px;text-transform:uppercase}}
+  td{{border-bottom:1px solid #f1f5f9}}
   a{{display:inline-block;background:#0f766e;color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none;margin-top:14px;font-weight:700}}
 </style></head><body>
 <div class="card">
-  <h1>✓ Calendario llenado a {dh} días</h1>
+  <h1>{'✓' if n_creados > 0 else '⚠'} Resultado · horizonte {dh} días</h1>
   <div>
     <div class="kpi"><div class="kpi-val">{n_creados}</div><div class="kpi-lbl">Sugeridas creadas</div></div>
-    <div class="kpi" style="background:#fef3c7;border-color:#f59e0b"><div class="kpi-val" style="color:#92400e">{n_saltados}</div><div class="kpi-lbl">Saltadas (ya había lote ±7d)</div></div>
-    <div class="kpi" style="background:#fee2e2;border-color:#dc2626"><div class="kpi-val" style="color:#991b1b">{n_errores}</div><div class="kpi-lbl">Errores</div></div>
+    <div class="kpi" style="background:#fef3c7;border-color:#f59e0b"><div class="kpi-val" style="color:#92400e">{n_saltados}</div><div class="kpi-lbl">Saltadas</div></div>
   </div>
-  <p>Ahora abrí <strong>Abastecimiento</strong> y deberías ver el consumo real proyectado a 365 días. Recargá la página si la tenías abierta.</p>
+  {diagnostico}
+
+  <h3 style="color:#1e293b;font-size:14px;margin-top:22px">Razones (agrupadas)</h3>
+  <div style="border:1px solid #e2e8f0;border-radius:6px">{razones_html}</div>
+
+  {sin_vel_html}
+
+  <h3 style="color:#1e293b;font-size:14px;margin-top:22px">Primeras 15 Sugeridas creadas</h3>
+  <table><thead><tr><th>Producto</th><th>Fecha</th><th>Cant kg</th><th>Urgencia</th></tr></thead>
+  <tbody>{creados_sample}</tbody></table>
+
+  <p style="margin-top:20px">Recargá <strong>Abastecimiento</strong> para ver el efecto.</p>
   <a href="/admin/llenar-calendario">↻ Volver a llenar</a>
   <a href="/" style="background:#475569;margin-left:8px">← Volver al dashboard</a>
 </div></body></html>"""
