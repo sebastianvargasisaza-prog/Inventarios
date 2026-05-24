@@ -1920,9 +1920,29 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
         # 4) Cap por arriba/abajo con 90d para no sobre-reaccionar
         # Caso BHA: 30d=15.4, 60d=12.3 → +25% aceleración moderada →
         #   0.6 × 15.4 + 0.4 × 12.3 = 14.16 uds/día = 425/mes (realista)
-        vel_30d = ventas_30d_total / 30.0
-        vel_60d = ventas_periodo_total / float(ventana)
-        vel_90d = ventas_90d_total / 90.0
+        # FIX P2 audit 24-may-2026 · ventana efectiva por antigüedad del
+        # producto. Antes un producto creado hace 10d con 30 ventas se
+        # calculaba vel_60d=0.5 (subestimado 6×). Ahora denominador =
+        # min(ventana, dias_desde_creacion) con piso 7d para evitar
+        # sobre-amplificación con productos de <1 semana.
+        def _dias_desde_creacion_local(fc):
+            if not fc:
+                return None
+            try:
+                from datetime import datetime as _dt_v
+                return (hoy - _dt_v.strptime(str(fc)[:10], '%Y-%m-%d').date()).days
+            except Exception:
+                return None
+        _dias_prod_vel = _dias_desde_creacion_local(fecha_creacion)
+        if _dias_prod_vel and _dias_prod_vel > 0:
+            _div_30 = float(min(30, max(_dias_prod_vel, 7)))
+            _div_60 = float(min(int(ventana), max(_dias_prod_vel, 7)))
+            _div_90 = float(min(90, max(_dias_prod_vel, 7)))
+        else:
+            _div_30, _div_60, _div_90 = 30.0, float(ventana), 90.0
+        vel_30d = ventas_30d_total / _div_30
+        vel_60d = ventas_periodo_total / _div_60
+        vel_90d = ventas_90d_total / _div_90
         if vel_60d < 0.001:
             # Sin histórico · usar lo poco que haya
             velocidad_uds_dia = max(vel_30d, vel_90d)
