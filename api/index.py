@@ -888,6 +888,56 @@ def diag_producto_ventas(producto):
         return jsonify({'ok': False, 'error': str(e)[:200]}), 500
 
 
+@app.route('/diag/productos-sin-sku')
+def diag_productos_sin_sku():
+    """Sebastián 23-may-PM · "BOOSTER TENSOR sin SKUs mapeados" ·
+    audita TODOS los productos activos para detectar cuántos tienen
+    0 SKUs en sku_producto_map · indicador de cuántos están reportando
+    velocidad 0 falsa.
+    """
+    try:
+        from database import get_db
+        db = get_db()
+        c = db.cursor()
+        rows = c.execute(
+            """SELECT fh.producto_nombre,
+                      COALESCE(fh.lote_size_kg, 0),
+                      COALESCE(fh.activo, 1),
+                      (SELECT COUNT(*) FROM sku_producto_map sm
+                        WHERE UPPER(TRIM(sm.producto_nombre)) =
+                              UPPER(TRIM(fh.producto_nombre))
+                          AND COALESCE(sm.activo,1)=1) AS n_skus,
+                      (SELECT COUNT(*) FROM producto_presentaciones pp
+                        WHERE UPPER(TRIM(pp.producto_nombre)) =
+                              UPPER(TRIM(fh.producto_nombre))
+                          AND COALESCE(pp.activo,1)=1) AS n_present
+                 FROM formula_headers fh
+                WHERE COALESCE(fh.activo,1) = 1
+             ORDER BY n_skus ASC, fh.producto_nombre"""
+        ).fetchall()
+        sin_sku = []
+        con_sku = 0
+        for r in rows:
+            if int(r[3] or 0) == 0:
+                sin_sku.append({
+                    'producto_nombre': r[0],
+                    'lote_size_kg': float(r[1] or 0),
+                    'n_skus_mapeados': 0,
+                    'n_presentaciones': int(r[4] or 0),
+                })
+            else:
+                con_sku += 1
+        return jsonify({
+            'ok': True,
+            'n_productos_total': len(rows),
+            'n_sin_sku': len(sin_sku),
+            'n_con_sku': con_sku,
+            'productos_sin_sku': sin_sku,
+        })
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)[:200]}), 500
+
+
 @app.route('/diag/azh-mig-status')
 def diag_azh_mig_status():
     """Sebastián 23-may-2026 PM · diagnóstico público (sin auth) para saber
