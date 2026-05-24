@@ -20416,6 +20416,104 @@ async function ckMarcar(itemId, estado){
     }
   }
 
+  // Sebastián 24-may-2026 noche · trail por MP · "tomar producto por
+  // producto enlazar fórmula e ir sumando". Modal full-screen con desglose.
+  window.abastTrailMp = async function(codigo) {
+    let m = document.getElementById('modal-trail-mp');
+    if (m) m.remove();
+    m = document.createElement('div');
+    m.id = 'modal-trail-mp';
+    m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+    m.innerHTML = '<div style="background:#fff;border-radius:12px;max-width:1100px;width:100%;max-height:92vh;overflow:auto;box-shadow:0 12px 40px rgba(0,0,0,0.3);padding:24px"><div style="text-align:center;padding:40px;color:#94a3b8">Cargando trail de ' + codigo + '…</div></div>';
+    document.body.appendChild(m);
+    m.addEventListener('click', function(e){ if (e.target === m) m.remove(); });
+    try {
+      const r = await fetch('/api/abastecimiento/trail-mp/' + encodeURIComponent(codigo));
+      const d = await r.json();
+      if (!r.ok || d.error) {
+        m.querySelector('div').innerHTML = '<div style="color:#dc2626;padding:30px">Error: ' + (d.error || r.status) + '</div>';
+        return;
+      }
+      const stock = d.stock_actual_g || 0;
+      const pend = d.pendiente_compras_g || 0;
+      const consumo = d.total_consumo_365d_g || 0;
+      const deficit = d.deficit_365d_g || 0;
+      let html = '<div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #e2e8f0;padding-bottom:14px;margin-bottom:14px">';
+      html += '<div><h2 style="margin:0;font-size:18px;color:#1e293b">' + (d.codigo_mp) + ' · ' + escapeHtmlNec(d.nombre_comercial || '') + '</h2>';
+      if (d.nombre_inci) html += '<div style="font-size:11px;color:#64748b;margin-top:3px">INCI: ' + escapeHtmlNec(d.nombre_inci) + '</div>';
+      if (d.proveedor) html += '<div style="font-size:11px;color:#64748b">Proveedor: ' + escapeHtmlNec(d.proveedor) + '</div>';
+      html += '</div>';
+      html += '<button onclick="document.getElementById(&quot;modal-trail-mp&quot;).remove()" style="background:#e2e8f0;color:#475569;border:none;width:36px;height:36px;border-radius:50%;font-size:20px;cursor:pointer">×</button>';
+      html += '</div>';
+      // KPIs
+      html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:18px">';
+      html += '<div style="background:#f1f5f9;border-radius:8px;padding:12px;text-align:center"><div style="font-size:22px;font-weight:800;color:#1e293b">' + _fmtAba(stock) + ' g</div><div style="font-size:10px;color:#64748b;text-transform:uppercase">Stock actual</div></div>';
+      html += '<div style="background:' + (pend>0?'#dbeafe':'#f1f5f9') + ';border-radius:8px;padding:12px;text-align:center"><div style="font-size:22px;font-weight:800;color:' + (pend>0?'#1e40af':'#475569') + '">' + _fmtAba(pend) + ' g</div><div style="font-size:10px;color:#64748b;text-transform:uppercase">En cola compras</div></div>';
+      html += '<div style="background:#fefce8;border-radius:8px;padding:12px;text-align:center"><div style="font-size:22px;font-weight:800;color:#854d0e">' + _fmtAba(consumo) + ' g</div><div style="font-size:10px;color:#64748b;text-transform:uppercase">Consumo proyectado 365d</div></div>';
+      html += '<div style="background:' + (deficit>0?'#fee2e2':'#f0fdf4') + ';border-radius:8px;padding:12px;text-align:center"><div style="font-size:22px;font-weight:800;color:' + (deficit>0?'#991b1b':'#15803d') + '">' + _fmtAba(deficit) + ' g</div><div style="font-size:10px;color:#64748b;text-transform:uppercase">Déficit 365d</div></div>';
+      html += '</div>';
+
+      // Productos que la usan
+      const prods = d.productos || [];
+      if (!prods.length) {
+        html += '<div style="background:#fef3c7;border-left:4px solid #f59e0b;padding:14px;border-radius:8px;color:#92400e;font-size:13px"><b>⚠ Ningún producto en BD declara usar esta materia prima.</b><br>Revisá la fórmula maestra en formula_items.</div>';
+      } else {
+        html += '<h3 style="margin:8px 0 10px;color:#1e293b;font-size:14px">📋 Productos que la usan (' + prods.length + ') · ordenados por consumo proyectado</h3>';
+        html += '<table style="width:100%;border-collapse:collapse;font-size:12px">';
+        html += '<thead style="background:#f1f5f9"><tr>';
+        html += '<th style="text-align:left;padding:8px;font-weight:700">Producto</th>';
+        html += '<th style="text-align:right;padding:8px;font-weight:700" title="% de la MP en la fórmula">%</th>';
+        html += '<th style="text-align:right;padding:8px;font-weight:700" title="Gramos de la MP por lote estándar del producto">g/lote</th>';
+        html += '<th style="text-align:right;padding:8px;font-weight:700">Lote estándar (kg)</th>';
+        html += '<th style="text-align:right;padding:8px;font-weight:700">Lotes futuros</th>';
+        html += '<th style="text-align:right;padding:8px;font-weight:700;background:#fefce8">Consumo 365d (g)</th>';
+        html += '</tr></thead><tbody>';
+        prods.forEach(p => {
+          const sin_lotes = p.n_lotes_futuros === 0;
+          const bg = sin_lotes ? '#fafafa' : '#fff';
+          const colorWarn = sin_lotes ? '#94a3b8' : '#1e293b';
+          html += '<tr style="border-top:1px solid #e2e8f0;background:' + bg + '">';
+          html += '<td style="padding:8px;color:' + colorWarn + ';font-weight:600">' + escapeHtmlNec(p.producto_nombre);
+          if (sin_lotes) html += ' <span style="background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:700" title="Producto en BD pero sin lotes programados en próximos 365d">SIN LOTES</span>';
+          html += '</td>';
+          html += '<td style="padding:8px;text-align:right;font-family:ui-monospace">' + (p.porcentaje||0).toFixed(2) + '%</td>';
+          html += '<td style="padding:8px;text-align:right;font-family:ui-monospace">' + _fmtAba(p.cantidad_g_por_lote) + '</td>';
+          html += '<td style="padding:8px;text-align:right;font-family:ui-monospace">' + (p.lote_size_kg||0).toFixed(1) + '</td>';
+          html += '<td style="padding:8px;text-align:right;font-family:ui-monospace;font-weight:700;color:' + (sin_lotes?'#dc2626':'#1e293b') + '">' + p.n_lotes_futuros + '</td>';
+          html += '<td style="padding:8px;text-align:right;font-family:ui-monospace;background:#fefce8;font-weight:700">' + _fmtAba(p.gramos_total_365d) + '</td>';
+          html += '</tr>';
+          // Detalle expandible de lotes si los hay
+          if (p.lotes_detalle && p.lotes_detalle.length) {
+            html += '<tr><td colspan="6" style="padding:0;background:#fafafa">';
+            html += '<details style="padding:8px 14px"><summary style="cursor:pointer;font-size:11px;color:#7c3aed">Ver ' + p.n_lotes_futuros + ' lote(s)…</summary>';
+            html += '<table style="width:100%;font-size:11px;margin-top:6px"><thead><tr style="color:#64748b"><th style="text-align:left;padding:4px">Fecha</th><th style="text-align:left;padding:4px">Origen</th><th style="text-align:right;padding:4px">kg producción</th><th style="text-align:right;padding:4px">g consumidos</th></tr></thead><tbody>';
+            p.lotes_detalle.forEach(l => {
+              html += '<tr><td style="padding:3px 4px;font-family:ui-monospace">' + l.fecha + '</td>';
+              html += '<td style="padding:3px 4px;font-size:10px">' + escapeHtmlNec(l.origen||'') + '</td>';
+              html += '<td style="padding:3px 4px;text-align:right;font-family:ui-monospace">' + l.cantidad_kg.toFixed(1) + ' kg</td>';
+              html += '<td style="padding:3px 4px;text-align:right;font-family:ui-monospace;color:#854d0e">' + _fmtAba(l.gramos) + '</td></tr>';
+            });
+            if (p.mas_lotes > 0) html += '<tr><td colspan="4" style="text-align:center;padding:6px;color:#94a3b8">… y ' + p.mas_lotes + ' lote(s) más</td></tr>';
+            html += '</tbody></table></details></td></tr>';
+          }
+        });
+        html += '</tbody></table>';
+
+        // Diagnóstico
+        const productos_sin_lotes = prods.filter(p => p.n_lotes_futuros === 0);
+        if (productos_sin_lotes.length) {
+          html += '<div style="background:#fef3c7;border-left:4px solid #f59e0b;border-radius:8px;padding:12px;margin-top:14px;font-size:12px;color:#92400e">';
+          html += '<b>⚠ ' + productos_sin_lotes.length + ' producto(s) usa esta MP pero NO tiene lotes programados</b><br>';
+          html += 'Esto explica por qué el consumo proyectado es bajo. Si esos productos van a producirse, programalos manualmente o ejecutá <a href="/admin/llenar-calendario" target="_blank" style="color:#7c3aed;font-weight:700">llenar calendario</a> con velocidad de ventas habilitada.';
+          html += '</div>';
+        }
+      }
+      m.querySelector('div').innerHTML = html;
+    } catch(e) {
+      m.querySelector('div').innerHTML = '<div style="color:#dc2626;padding:30px">Error red: ' + e.message + '</div>';
+    }
+  };
+
   function renderTablaAbast() {
     const div = document.getElementById('abast-contenido');
     const st = window._ABA_STATE;
@@ -20508,8 +20606,14 @@ async function ckMarcar(itemId, estado){
         const tip = enCurso.map(s => s.tipo + ' ' + s.numero + ' (' + s.estado + ')').join(' · ');
         badgesHtml = ' <span style="background:#dbeafe;color:#1e40af;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700" title="' + escapeHtmlNec(tip) + '">' + (sol?sol+' SOL ':'') + (oc?oc+' OC':'') + '</span>';
       }
-      html += '<td style="padding:6px 8px;font-family:ui-monospace;font-weight:700">' + escapeHtmlNec(it.codigo) + badgesHtml + '</td>';
-      html += '<td style="padding:6px 8px">' + escapeHtmlNec(it.nombre) + '</td>';
+      // FIX UX 24-may-2026 noche · click en código abre el trail · "tomar
+      // producto por producto, enlazar formula e ir sumando · ver dónde
+      // viene cada gramo del consumo".
+      const codTrail = escapeHtmlNec(it.codigo);
+      html += '<td style="padding:6px 8px;font-family:ui-monospace;font-weight:700">' +
+        '<a href="#" onclick="abastTrailMp(this.dataset.cod);return false" data-cod="' + codTrail + '" style="color:#7c3aed;text-decoration:underline;cursor:pointer" title="Ver desglose · qué productos la usan y cuántos lotes futuros">' +
+        codTrail + '</a>' + badgesHtml + '</td>';
+      html += '<td style="padding:6px 8px"><a href="#" onclick="abastTrailMp(this.dataset.cod);return false" data-cod="' + codTrail + '" style="color:#1e293b;text-decoration:none;cursor:pointer" title="Ver desglose">' + escapeHtmlNec(it.nombre) + '</a></td>';
       html += '<td style="padding:6px 8px;text-align:center;font-size:10px;font-weight:700;color:' + (it.tipo==='MP'?'#0891b2':'#7c3aed') + '">' + it.tipo + '</td>';
       html += '<td style="padding:6px 8px;color:#64748b">' + escapeHtmlNec(it.proveedor_sugerido || '—') + '</td>';
       // Lead time · si quiebre <= lead_time → advertencia roja (no llegará a tiempo)

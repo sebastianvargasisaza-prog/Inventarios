@@ -8637,6 +8637,153 @@ def abastecimiento_consumo_horizontes():
     })
 
 
+@bp.route('/api/abastecimiento/trail-mp/<codigo_mp>', methods=['GET'])
+def abastecimiento_trail_mp(codigo_mp):
+    """FIX UX 24-may-2026 noche · Sebastián: 'no muestra la realidad ·
+    pensaria yo que debe tomar producto por producto enlazar formula
+    e ir sumando'.
+
+    Trail completo de UNA materia prima: devuelve la lista de productos
+    que la usan + cuántos lotes programados hay de cada uno + gramos
+    calculados de cada lote = total. Así se ve POR QUÉ sale X gramos
+    a 365d (e.g., 'Centella solo tiene 1 lote HYDRAPEPTIDE futuro,
+    AZH y SUERO NIACINAMIDA están en BD pero sin lotes programados').
+
+    Endpoint solo lectura. Acceso compras_user."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db()
+    c = conn.cursor()
+    codigo_up = (codigo_mp or '').strip().upper()
+
+    # 1. Info de la MP
+    mp_info = c.execute(
+        """SELECT codigo_mp,
+                  COALESCE(nombre_comercial, nombre_inci, codigo_mp),
+                  COALESCE(proveedor, ''),
+                  COALESCE(nombre_inci, '')
+           FROM maestro_mps
+           WHERE UPPER(TRIM(codigo_mp)) = ?""",
+        (codigo_up,),
+    ).fetchone()
+    if not mp_info:
+        return jsonify({'error': f'MP {codigo_mp} no existe'}), 404
+
+    # 2. Productos que usan esta MP (de formula_items)
+    productos_que_usan = c.execute(
+        """SELECT producto_nombre,
+                  COALESCE(porcentaje, 0),
+                  COALESCE(cantidad_g_por_lote, 0)
+           FROM formula_items
+           WHERE UPPER(TRIM(material_id)) = ?
+           ORDER BY producto_nombre""",
+        (codigo_up,),
+    ).fetchall()
+
+    # 3. Para cada producto, contar lotes futuros + lote_size
+    from datetime import date as _d, timedelta as _td
+    hoy = _d.today().isoformat()
+    cutoff = (_d.today() + _td(days=365)).isoformat()
+    productos_trail = []
+    total_gramos_365 = 0.0
+    for prod_nom, pct, g_por_lote in productos_que_usan:
+        # lote_size del producto
+        lote_size_row = c.execute(
+            "SELECT COALESCE(lote_size_kg, 0) FROM formula_headers "
+            "WHERE UPPER(TRIM(producto_nombre)) = UPPER(TRIM(?))",
+            (prod_nom,),
+        ).fetchone()
+        lote_size_kg = float(lote_size_row[0]) if lote_size_row else 0
+        # Lotes futuros programados (Fijas + Sugeridas + B2B · sin pasados ni cancelados)
+        lotes_rows = c.execute(
+            """SELECT id, fecha_programada, COALESCE(cantidad_kg, 0),
+                      COALESCE(estado, ''), COALESCE(origen, '')
+               FROM produccion_programada
+               WHERE UPPER(TRIM(producto)) = UPPER(TRIM(?))
+                 AND LOWER(COALESCE(estado,'')) NOT IN
+                     ('cancelado','completado','esperando_recurso')
+                 AND COALESCE(inventario_descontado_at,'') = ''
+                 AND fecha_programada >= ? AND fecha_programada <= ?
+               ORDER BY fecha_programada ASC""",
+            (prod_nom, hoy, cutoff),
+        ).fetchall()
+        lotes_detalle = []
+        gramos_producto_total = 0.0
+        for lid, lfecha, lkg, lest, lorigen in lotes_rows:
+            lkg_f = float(lkg or 0)
+            # Calcular gramos como en el endpoint principal
+            if g_por_lote > 0 and lote_size_kg > 0:
+                gramos = float(g_por_lote) * (lkg_f / lote_size_kg)
+            elif pct > 0:
+                gramos = (float(pct) / 100.0) * lkg_f * 1000.0
+            else:
+                gramos = 0
+            gramos_producto_total += gramos
+            lotes_detalle.append({
+                'lote_id': lid,
+                'fecha': (lfecha or '')[:10],
+                'cantidad_kg': lkg_f,
+                'estado': lest,
+                'origen': lorigen,
+                'gramos': round(gramos, 2),
+            })
+        total_gramos_365 += gramos_producto_total
+        productos_trail.append({
+            'producto_nombre': prod_nom,
+            'porcentaje': pct,
+            'cantidad_g_por_lote': g_por_lote,
+            'lote_size_kg': lote_size_kg,
+            'n_lotes_futuros': len(lotes_rows),
+            'gramos_total_365d': round(gramos_producto_total, 2),
+            'lotes_detalle': lotes_detalle[:30],
+            'mas_lotes': max(0, len(lotes_rows) - 30),
+        })
+
+    # 4. Stock canónico actual + pendientes (igual que endpoint principal)
+    stock_mp = _get_mp_stock(conn)
+    stock_actual = float(stock_mp.get(codigo_up, 0))
+    pendiente = 0.0
+    try:
+        for r in c.execute(
+            """SELECT COALESCE(SUM(sci.cantidad_solicitada_g), 0)
+               FROM solicitudes_compra_items sci
+               JOIN solicitudes_compra sc ON sc.id = sci.solicitud_id
+               WHERE UPPER(TRIM(sci.codigo_mp)) = ?
+                 AND sc.estado IN ('Pendiente', 'Aprobada')
+                 AND COALESCE(sc.numero_oc, '') = ''""",
+            (codigo_up,),
+        ).fetchall():
+            pendiente += float(r[0] or 0)
+    except Exception:
+        pass
+    try:
+        for r in c.execute(
+            """SELECT COALESCE(SUM(oci.cantidad_g - COALESCE(oci.cantidad_recibida_g, 0)), 0)
+               FROM ordenes_compra_items oci
+               JOIN ordenes_compra oc ON oc.numero_oc = oci.numero_oc
+               WHERE UPPER(TRIM(oci.codigo_mp)) = ?
+                 AND oc.estado IN ('Borrador', 'Revisada', 'Autorizada', 'Parcial')""",
+            (codigo_up,),
+        ).fetchall():
+            pendiente += float(r[0] or 0)
+    except Exception:
+        pass
+
+    productos_trail.sort(key=lambda x: -x['gramos_total_365d'])
+    return jsonify({
+        'codigo_mp': codigo_up,
+        'nombre_comercial': mp_info[1],
+        'nombre_inci': mp_info[3],
+        'proveedor': mp_info[2],
+        'stock_actual_g': round(stock_actual, 1),
+        'pendiente_compras_g': round(pendiente, 1),
+        'total_consumo_365d_g': round(total_gramos_365, 2),
+        'deficit_365d_g': round(max(0, total_gramos_365 - stock_actual - pendiente), 2),
+        'n_productos_que_usan': len(productos_trail),
+        'productos': productos_trail,
+    })
+
+
 @bp.route('/api/abastecimiento/export-excel', methods=['GET'])
 def abastecimiento_export_excel():
     """Descarga Excel con el consumo de abastecimiento para enviar a Alejandro.
