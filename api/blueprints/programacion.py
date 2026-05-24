@@ -8285,14 +8285,20 @@ def abastecimiento_consumo_horizontes():
             matched_lotes += 1
         else:
             sin_formula_lotes.append(producto_norm)
-        # MP consumption: necesario_g por kg producido
+        # FIX 24-may-2026 noche · Sebastián cazó bug raíz: en los seeds,
+        # cantidad_g_por_lote se cargó IGUAL al porcentaje (typo masivo, 674
+        # items). Resultado: el cálculo g_por_lote × cant_kg/lote_size daba
+        # 2000× subestimado. Solución: priorizar porcentaje cuando exista
+        # (más confiable matemáticamente · % × cant_kg × 1000). cantidad_g_
+        # por_lote queda como FALLBACK si el % está vacío.
+        # MP consumption: necesario_g por kg producido.
+        # PRIORIZAR PORCENTAJE (más confiable que el seed roto de g_por_lote).
         for it in items:
-            if it['g_por_lote'] > 0 and lote_size and float(lote_size) > 0:
-                gramos = it['g_por_lote'] * (cant_kg / float(lote_size))
-            elif it['pct'] > 0:
+            if it['pct'] > 0:
                 gramos = (it['pct'] / 100.0) * cant_kg * 1000.0
+            elif it['g_por_lote'] > 0 and lote_size and float(lote_size) > 0:
+                gramos = it['g_por_lote'] * (cant_kg / float(lote_size))
             elif it['g_por_lote'] > 0:
-                # AUDITORÍA-FIX P1-5 · lote_size NO definido · skip + flag
                 productos_sin_lote_size.add(producto_norm)
                 continue
             else:
@@ -8355,14 +8361,12 @@ def abastecimiento_consumo_horizontes():
         # AUDITORÍA-FIX P1-2 · usar lote_size pre-cargado (no N+1 query)
         lote_size_b2b = lote_size_por_prod.get(producto_norm, 0.0)
         for it in items:
-            # AUDITORÍA-FIX P1-5 · si lote_size=0 pero hay g_por_lote, reportar
-            # producto para que Sebastián lo complete · NO inflar con default
-            if it['g_por_lote'] > 0 and lote_size_b2b > 0:
-                gramos = it['g_por_lote'] * (cant_kg / lote_size_b2b)
-            elif it['pct'] > 0:
+            # FIX 24-may noche · priorizar porcentaje (seed roto en g_por_lote)
+            if it['pct'] > 0:
                 gramos = (it['pct'] / 100.0) * cant_kg * 1000.0
+            elif it['g_por_lote'] > 0 and lote_size_b2b > 0:
+                gramos = it['g_por_lote'] * (cant_kg / lote_size_b2b)
             elif it['g_por_lote'] > 0:
-                # lote_size NO definido · skip con flag
                 productos_sin_lote_size.add(producto_norm)
                 continue
             else:
@@ -8747,10 +8751,11 @@ def abastecimiento_trail_mp(codigo_mp):
         for lid, lfecha, lkg, lest, lorigen in lotes_rows:
             lkg_f = float(lkg or 0)
             # Calcular gramos como en el endpoint principal
-            if g_por_lote > 0 and lote_size_kg > 0:
-                gramos = float(g_por_lote) * (lkg_f / lote_size_kg)
-            elif pct > 0:
+            # FIX 24-may noche · priorizar porcentaje (g_por_lote seed roto · 674 items)
+            if pct > 0:
                 gramos = (float(pct) / 100.0) * lkg_f * 1000.0
+            elif g_por_lote > 0 and lote_size_kg > 0:
+                gramos = float(g_por_lote) * (lkg_f / lote_size_kg)
             else:
                 gramos = 0
             gramos_producto_total += gramos
