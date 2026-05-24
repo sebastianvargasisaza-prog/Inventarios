@@ -6414,6 +6414,183 @@ def _auto_programar_sugeridas(conn, dias_horizonte=365, ventana_velocidad=60,
             'n_creados': len(creados), 'n_saltados': len(saltados)}
 
 
+@bp.route("/admin/limpiar-sols-ocs", methods=["GET", "POST"])
+def admin_limpiar_sols_ocs():
+    """Página HTML standalone · limpiar SOLs y OCs fantasma.
+
+    Sebastián 24-may-2026 noche: 'no hay nada en cola, elimina todas
+    las solicitudes que aparezcan también de compras porque no son
+    reales'. Las SOLs/OCs viejas/test contaminan el cálculo de la
+    columna 'En cola' de Abastecimiento.
+
+    GET: muestra preview con conteos por estado.
+    POST: ejecuta la limpieza con audit_log.
+    """
+    if 'compras_user' not in session:
+        return "<html><body><h2>No autorizado</h2><p>Logueate en <a href='/'>app.eossuite.com</a></p></body></html>", 401
+    user = session.get('compras_user', '')
+    if user not in (set(ADMIN_USERS) | set(COMPRAS_ACCESS)):
+        return "<html><body><h2>Solo admin / compras</h2></body></html>", 403
+    conn = get_db(); cur = conn.cursor()
+
+    if request.method == 'POST':
+        modo = (request.form.get('modo') or 'safe').strip()
+        sols_canceladas = 0
+        sols_items_borrados = 0
+        ocs_canceladas = 0
+        ocs_items_borrados = 0
+        try:
+            if modo == 'safe':
+                # MODO SEGURO · cancelar SOLs sin OC ni recepción
+                cur.execute(
+                    "SELECT id FROM solicitudes_compra "
+                    "WHERE estado IN ('Pendiente','Aprobada') "
+                    "AND COALESCE(numero_oc,'')=''"
+                )
+                sol_ids = [r[0] for r in cur.fetchall()]
+                if sol_ids:
+                    ph = ','.join(['?'] * len(sol_ids))
+                    cur.execute(
+                        f"DELETE FROM solicitudes_compra_items WHERE solicitud_id IN ({ph})",
+                        sol_ids,
+                    )
+                    sols_items_borrados = cur.rowcount or 0
+                    cur.execute(
+                        f"UPDATE solicitudes_compra SET estado='Cancelada' WHERE id IN ({ph})",
+                        sol_ids,
+                    )
+                    sols_canceladas = cur.rowcount or 0
+                # Cancelar OCs en Borrador o Revisada sin recepción
+                cur.execute(
+                    "SELECT numero_oc FROM ordenes_compra "
+                    "WHERE estado IN ('Borrador','Revisada')"
+                )
+                oc_nums = [r[0] for r in cur.fetchall()]
+                if oc_nums:
+                    ph2 = ','.join(['?'] * len(oc_nums))
+                    cur.execute(
+                        f"DELETE FROM ordenes_compra_items WHERE numero_oc IN ({ph2})",
+                        oc_nums,
+                    )
+                    ocs_items_borrados = cur.rowcount or 0
+                    cur.execute(
+                        f"UPDATE ordenes_compra SET estado='Cancelada' WHERE numero_oc IN ({ph2})",
+                        oc_nums,
+                    )
+                    ocs_canceladas = cur.rowcount or 0
+            elif modo == 'all':
+                # MODO BORRAR TODAS · TODAS las SOLs/OCs activas, incluso Autorizadas/Parciales.
+                # Solo respeta las ya Recibidas/Cerradas (histórico).
+                cur.execute(
+                    "SELECT id FROM solicitudes_compra "
+                    "WHERE estado NOT IN ('Cancelada','Recibida','Cerrada')"
+                )
+                sol_ids = [r[0] for r in cur.fetchall()]
+                if sol_ids:
+                    ph = ','.join(['?'] * len(sol_ids))
+                    cur.execute(
+                        f"DELETE FROM solicitudes_compra_items WHERE solicitud_id IN ({ph})",
+                        sol_ids,
+                    )
+                    sols_items_borrados = cur.rowcount or 0
+                    cur.execute(
+                        f"UPDATE solicitudes_compra SET estado='Cancelada' WHERE id IN ({ph})",
+                        sol_ids,
+                    )
+                    sols_canceladas = cur.rowcount or 0
+                cur.execute(
+                    "SELECT numero_oc FROM ordenes_compra "
+                    "WHERE estado NOT IN ('Cancelada','Recibida','Cerrada')"
+                )
+                oc_nums = [r[0] for r in cur.fetchall()]
+                if oc_nums:
+                    ph2 = ','.join(['?'] * len(oc_nums))
+                    cur.execute(
+                        f"DELETE FROM ordenes_compra_items WHERE numero_oc IN ({ph2})",
+                        oc_nums,
+                    )
+                    ocs_items_borrados = cur.rowcount or 0
+                    cur.execute(
+                        f"UPDATE ordenes_compra SET estado='Cancelada' WHERE numero_oc IN ({ph2})",
+                        oc_nums,
+                    )
+                    ocs_canceladas = cur.rowcount or 0
+            audit_log(cur, usuario=user, accion='LIMPIAR_SOLS_OCS_FANTASMA',
+                      tabla='solicitudes_compra+ordenes_compra', registro_id='bulk',
+                      despues={'modo': modo, 'sols': sols_canceladas,
+                                'ocs': ocs_canceladas,
+                                'sols_items': sols_items_borrados,
+                                'ocs_items': ocs_items_borrados})
+            conn.commit()
+            return f"""<!DOCTYPE html><html><head><meta charset="utf-8"><title>Limpieza completada</title>
+<style>body{{font-family:system-ui;background:#f8fafc;padding:40px}}
+.card{{max-width:720px;margin:0 auto;background:#fff;border-radius:14px;padding:30px;box-shadow:0 10px 40px rgba(0,0,0,0.1)}}
+h1{{color:#15803d}} .kpi{{display:inline-block;background:#f0fdf4;border:1px solid #16a34a;padding:14px 22px;border-radius:8px;margin:6px;text-align:center}}
+.kpi-val{{font-size:32px;font-weight:800;color:#15803d}} .kpi-lbl{{font-size:11px;color:#64748b;text-transform:uppercase}}
+a{{display:inline-block;background:#0f766e;color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none;margin-top:14px;font-weight:700}}</style></head><body>
+<div class="card">
+<h1>✓ Limpieza completada · modo {modo}</h1>
+<div class="kpi"><div class="kpi-val">{sols_canceladas}</div><div class="kpi-lbl">SOLs canceladas</div></div>
+<div class="kpi"><div class="kpi-val">{sols_items_borrados}</div><div class="kpi-lbl">Items SOL borrados</div></div>
+<div class="kpi"><div class="kpi-val">{ocs_canceladas}</div><div class="kpi-lbl">OCs canceladas</div></div>
+<div class="kpi"><div class="kpi-val">{ocs_items_borrados}</div><div class="kpi-lbl">Items OC borrados</div></div>
+<p>La columna 'En cola' de Abastecimiento debería bajar a 0 o reflejar solo lo real ahora.</p>
+<a href="/admin/limpiar-sols-ocs">↻ Volver a limpiar</a>
+<a href="/" style="background:#475569;margin-left:8px">← Dashboard</a>
+</div></body></html>"""
+        except Exception as e:
+            try: conn.rollback()
+            except Exception: pass
+            return f"<html><body style='font-family:system-ui;padding:40px'><h1 style='color:#dc2626'>Error</h1><pre style='background:#fee2e2;padding:14px'>{str(e)[:500]}</pre><a href='/admin/limpiar-sols-ocs'>Reintentar</a></body></html>", 500
+
+    # GET · preview
+    counts = {}
+    try:
+        for r in cur.execute(
+            "SELECT COALESCE(estado,'(vacío)'), COUNT(*) FROM solicitudes_compra GROUP BY estado"
+        ).fetchall():
+            counts[f'SOL · {r[0]}'] = r[1]
+    except Exception:
+        pass
+    try:
+        for r in cur.execute(
+            "SELECT COALESCE(estado,'(vacío)'), COUNT(*) FROM ordenes_compra GROUP BY estado"
+        ).fetchall():
+            counts[f'OC · {r[0]}'] = r[1]
+    except Exception:
+        pass
+    rows_html = ''
+    for k, v in sorted(counts.items()):
+        rows_html += f'<tr><td style="padding:6px 12px">{k}</td><td style="padding:6px 12px;text-align:right;font-weight:700">{v}</td></tr>'
+    return f"""<!DOCTYPE html><html><head><meta charset="utf-8"><title>Limpiar SOLs/OCs</title>
+<style>body{{font-family:system-ui;background:#f8fafc;padding:40px}}
+.card{{max-width:720px;margin:0 auto;background:#fff;border-radius:14px;padding:30px;box-shadow:0 10px 40px rgba(0,0,0,0.1)}}
+h1{{color:#1e293b;margin:0 0 14px}}
+table{{width:100%;border-collapse:collapse;font-size:13px;margin:14px 0}}
+th{{background:#f1f5f9;padding:8px;text-align:left;font-size:11px;text-transform:uppercase;color:#475569}}
+tr{{border-bottom:1px solid #f1f5f9}}
+.btn{{padding:14px 22px;border-radius:8px;border:none;font-size:14px;font-weight:800;cursor:pointer;margin-right:8px;margin-top:14px}}
+.btn-safe{{background:#ea580c;color:#fff}} .btn-all{{background:#dc2626;color:#fff}}
+.meta{{font-size:11px;color:#64748b;margin-top:14px}}</style></head><body>
+<div class="card">
+<h1>🧹 Limpiar SOLs / OCs fantasma</h1>
+<p>Estado actual en BD:</p>
+<table><thead><tr><th>Categoría</th><th style="text-align:right">Cantidad</th></tr></thead><tbody>{rows_html or '<tr><td colspan=2 style="padding:14px;text-align:center;color:#94a3b8">Sin registros</td></tr>'}</tbody></table>
+
+<form method="POST" style="display:inline" onsubmit="return confirm('¿Cancelar SOLs/OCs sin recepción?\\n\\nMODO SEGURO: solo Pendiente/Aprobada/Borrador/Revisada · no toca lo recibido.');">
+  <input type="hidden" name="modo" value="safe">
+  <button type="submit" class="btn btn-safe">🟠 Limpieza SEGURA · solo no-recibidas</button>
+</form>
+<form method="POST" style="display:inline" onsubmit="return confirm('⚠ ATENCIÓN · MODO BORRAR TODAS las SOLs/OCs activas (incluye Autorizadas y Parciales).\\n\\nSolo se conservan las ya Recibidas y Cerradas. ¿Continuar?');">
+  <input type="hidden" name="modo" value="all">
+  <button type="submit" class="btn btn-all">🔴 Borrar TODAS las activas</button>
+</form>
+
+<p class="meta">Modo SEGURO cancela SOLs en estado Pendiente/Aprobada (sin OC) y OCs en Borrador/Revisada. Modo BORRAR TODAS también cancela Autorizadas y Parciales. Las Recibidas y Cerradas (histórico) NUNCA se tocan. Operación auditada en audit_log.</p>
+<p><a href="/" style="color:#475569">← Volver al dashboard</a></p>
+</div></body></html>"""
+
+
 @bp.route("/admin/llenar-calendario", methods=["GET", "POST"])
 def admin_llenar_calendario_pagina():
     """Página HTML standalone · sin dependencia del dashboard JS.
