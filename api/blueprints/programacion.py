@@ -8591,19 +8591,48 @@ def abastecimiento_consumo_horizontes():
             'n_total_con_deficit': n_mp_def + n_mee_def,
         }
 
+    # FIX UX 24-may-2026 noche · Sebastián: "no hay solo 24 hay 140 · en
+    # promedio tenemos 3 producciones a la semana". Necesita desglose claro
+    # por origen + tasa de lotes/semana para no confundir cuántos lotes hay
+    # vs cuántas MPs con déficit (las 2 cifras antes se mezclaban).
+    n_fijas = sum(1 for r in prod_rows if r[6] in ('eos_plan', 'eos_b2b', 'eos_retroactivo'))
+    n_sugeridas = sum(1 for r in prod_rows if r[6] in ('eos_canonico', 'auto_plan', 'sugerido', 'calendar', 'manual'))
+    n_otras = len(prod_rows) - n_fijas - n_sugeridas
+
+    # Tasa lotes/semana (en 90d para tener data estable)
+    from datetime import date as _d2, timedelta as _td2
+    hoy_d = _d2.fromisoformat(hoy_iso) if hoy_iso else _d2.today()
+    cutoff_90 = (hoy_d + _td2(days=90)).isoformat()
+    lotes_en_90d = sum(1 for r in prod_rows if r[2] and str(r[2])[:10] <= cutoff_90)
+    lotes_por_semana_90d = round(lotes_en_90d / (90 / 7), 1) if lotes_en_90d > 0 else 0
+
+    # Fecha del último lote programado para mostrar cobertura real
+    fechas_futuras = [str(r[2])[:10] for r in prod_rows if r[2]]
+    ultimo_lote_fecha = max(fechas_futuras) if fechas_futuras else None
+    cobertura_dias = 0
+    if ultimo_lote_fecha:
+        try:
+            cobertura_dias = (_d2.fromisoformat(ultimo_lote_fecha) - hoy_d).days
+        except Exception:
+            pass
+
     return jsonify({
         'hoy': hoy_iso,
         'horizontes': horizontes,
         'modo': modo,
-        'n_producciones_fijas': len(prod_rows),
+        'n_producciones_fijas': n_fijas,
+        'n_producciones_sugeridas': n_sugeridas,
+        'n_producciones_otras': n_otras,
+        'n_producciones_total': len(prod_rows),
         'n_pedidos_b2b_pendientes': len(b2b_rows),
+        'lotes_por_semana_90d': lotes_por_semana_90d,
+        'ultimo_lote_fecha': ultimo_lote_fecha,
+        'cobertura_dias': cobertura_dias,
         'tipo': tipo,
         'mps': items_out_mp,
         'mees': items_out_mee,
         'resumen_por_horizonte': resumen,
         'productos_sin_lote_size': sorted(productos_sin_lote_size),
-        # FIX AUDIT 24-may-2026 noche · productos con >1 presentación
-        # con volúmenes distintos · el cálculo MEE puede subestimar.
         'productos_multi_volumen': sorted(productos_multi_volumen),
     })
 

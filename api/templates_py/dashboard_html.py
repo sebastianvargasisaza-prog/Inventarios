@@ -20369,20 +20369,46 @@ async function ckMarcar(itemId, estado){
       window._ABA_STATE.horizontes = d.horizontes || [];
       window._ABA_STATE.seleccionados = {};
 
-      // Resumen chips por horizonte + modo
+      // FIX UX 24-may-2026 noche · 2 filas separadas:
+      // FILA A: cuántos LOTES hay en el calendario (con desglose)
+      // FILA B: cuántas MP/MEE tienen DÉFICIT por horizonte (lo que pinta la tabla)
+      // Antes ambas se mezclaban en una sola línea confusa.
       const modoLabel = d.modo === 'run_rate' ? '<span style="background:#ede9fe;color:#5b21b6;padding:2px 6px;border-radius:4px;font-weight:700">Run-rate</span>' : '<span style="background:#dcfce7;color:#15803d;padding:2px 6px;border-radius:4px;font-weight:700">Comprometido</span>';
-      let chips = '<div style="font-size:11px;color:#475569;margin-right:8px;align-self:center">Modo ' + modoLabel + ' · ' + d.n_producciones_fijas + ' producciones Fijas · ' + d.n_pedidos_b2b_pendientes + ' B2B pendientes</div>';
+      const nTotal = d.n_producciones_total || 0;
+      const nFij = d.n_producciones_fijas || 0;
+      const nSug = d.n_producciones_sugeridas || 0;
+      const nB2B = d.n_pedidos_b2b_pendientes || 0;
+      const lotesSem = d.lotes_por_semana_90d || 0;
+      const cobDias = d.cobertura_dias || 0;
+      const ultimoLote = d.ultimo_lote_fecha || '—';
+
+      // Fila A · "qué hay en el calendario"
+      let html = '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:10px 14px;margin-bottom:8px">';
+      html += '<div style="font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;margin-bottom:4px">📅 Lotes en el calendario · futuro hasta 365d</div>';
+      html += '<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;font-size:13px">';
+      html += '<div><strong style="font-size:18px;color:#1e293b">' + nTotal + '</strong> <span style="color:#64748b;font-size:11px">lotes totales</span></div>';
+      html += '<div style="color:#475569"><span style="color:#0f766e;font-weight:700">' + nFij + '</span> <span style="font-size:10px">Fijas</span> + <span style="color:#7c3aed;font-weight:700">' + nSug + '</span> <span style="font-size:10px">Sugeridas</span> + <span style="color:#ea580c;font-weight:700">' + nB2B + '</span> <span style="font-size:10px">B2B pend.</span></div>';
+      html += '<div style="color:#475569">📈 <strong>' + lotesSem + '</strong> lotes/sem (90d)</div>';
+      html += '<div style="color:#475569">Cobertura: <strong>' + cobDias + 'd</strong> · último ' + ultimoLote + '</div>';
+      html += '<div style="margin-left:auto">' + modoLabel + '</div>';
+      html += '</div></div>';
+
+      // Fila B · "MP/MEE con déficit por horizonte"
+      html += '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:10px 14px">';
+      html += '<div style="font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;margin-bottom:4px" title="Cantidad de materias primas o envases distintos cuyo stock + pendientes NO alcanza para cubrir las producciones del horizonte">📦 Materias primas / envases con déficit por horizonte</div>';
+      html += '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">';
       d.horizontes.forEach(h => {
         const r2 = d.resumen_por_horizonte[String(h)] || {};
         const n = r2.n_total_con_deficit || 0;
         const bg = n>0 ? (h<=15?'#fee2e2':h<=30?'#fff7ed':h<=90?'#fefce8':'#eff6ff') : '#f0fdf4';
         const tc = n>0 ? (h<=15?'#991b1b':h<=30?'#9a3412':h<=90?'#854d0e':'#1e40af') : '#15803d';
-        chips += '<span style="background:'+bg+';color:'+tc+';padding:6px 10px;border-radius:6px;font-size:12px;font-weight:700">' + h + 'd: ' + n + '</span>';
+        html += '<span style="background:'+bg+';color:'+tc+';padding:5px 10px;border-radius:6px;font-size:12px;font-weight:700" title="' + n + ' MP/MEE en déficit dentro de ' + h + ' días">' + h + 'd: ' + n + '</span>';
       });
       if (d.productos_sin_lote_size && d.productos_sin_lote_size.length) {
-        chips += '<span style="background:#fef3c7;color:#92400e;padding:6px 10px;border-radius:6px;font-size:11px;font-weight:700" title="Productos sin lote_size_kg · completar en /admin/formulas">⚠ ' + d.productos_sin_lote_size.length + ' productos sin lote_size</span>';
+        html += '<span style="background:#fef3c7;color:#92400e;padding:5px 10px;border-radius:6px;font-size:11px;font-weight:700;margin-left:8px" title="Productos sin lote_size_kg · completar en /admin/formulas">⚠ ' + d.productos_sin_lote_size.length + ' sin lote_size</span>';
       }
-      resumenDiv.innerHTML = chips;
+      html += '</div></div>';
+      resumenDiv.innerHTML = html;
 
       renderTablaAbast();
     } catch(e) {
