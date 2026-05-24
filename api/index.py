@@ -856,12 +856,30 @@ def diag_producto_ventas(producto):
             mapeados_set = set(skus)
             huerfanos = {k: v for k, v in ventas_sin_filtro.items()
                          if k not in mapeados_set}
-            # Heurística · sólo huérfanos que contengan substring del nombre
-            substr = (producto or '').upper().split()[0][:4] if producto else ''
-            huerfanos_relevantes = {k: v for k, v in huerfanos.items()
-                                     if substr and substr in k}
+            # FIX 23-may-PM v2 · heurística substring 4-letras del primer
+            # word fallaba (ej. "EXFOLIANTE BHA" → buscaba "EXFO" pero
+            # SKUs reales son "BHA33"). Ahora prueba: cada palabra del
+            # nombre, primeras 3-4-5 letras Y substrings comunes.
+            substrings = []
+            for w in (producto or '').upper().split():
+                w = w.strip()
+                if len(w) >= 3:
+                    substrings.append(w[:3])
+                    substrings.append(w[:4])
+                if len(w) >= 5:
+                    substrings.append(w[:5])
+                substrings.append(w)  # palabra completa
+            huerfanos_relevantes = {}
+            for k, v in huerfanos.items():
+                if any(s in k for s in substrings if s):
+                    huerfanos_relevantes[k] = v
             out['skus_huerfanos_relevantes'] = huerfanos_relevantes
             out['n_skus_huerfanos_total'] = len(huerfanos)
+            # Top 50 huérfanos por ventas (para detección manual)
+            top50 = sorted(huerfanos.items(), key=lambda x: -x[1])[:50]
+            out['top_50_huerfanos_por_ventas'] = [
+                {'sku': k, 'uds_60d': v} for k, v in top50
+            ]
         except Exception as e:
             out['ventas_err'] = str(e)[:200]
 
