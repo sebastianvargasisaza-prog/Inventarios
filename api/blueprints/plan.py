@@ -6427,7 +6427,7 @@ def admin_llenar_calendario_pagina():
     if 'compras_user' not in session:
         return "<html><body><h2>No autorizado</h2><p>Logueate primero en <a href='/'>app.eossuite.com</a></p></body></html>", 401
     user = session.get('compras_user', '')
-    if user not in (set(ADMIN_USERS) | set(COMPRAS_USERS)):
+    if user not in (set(ADMIN_USERS) | set(COMPRAS_ACCESS)):
         return "<html><body><h2>Solo admin / compras</h2></body></html>", 403
 
     if request.method == 'POST':
