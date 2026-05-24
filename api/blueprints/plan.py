@@ -6414,6 +6414,144 @@ def _auto_programar_sugeridas(conn, dias_horizonte=365, ventana_velocidad=60,
             'n_creados': len(creados), 'n_saltados': len(saltados)}
 
 
+@bp.route("/admin/llenar-calendario", methods=["GET", "POST"])
+def admin_llenar_calendario_pagina():
+    """Página HTML standalone · sin dependencia del dashboard JS.
+
+    Sebastián 24-may-2026 noche: "no veo nada de lo que dices · puedes
+    resolverlo de manera real y sin errores que sea perfecto". El modal
+    del dashboard puede estar cacheado o no aparecer · esta página vive
+    en su propia URL, no necesita JS del dashboard, no necesita Modal
+    Herramientas. Solo logueado, abrir URL, ver botón, click, listo.
+    """
+    if 'compras_user' not in session:
+        return "<html><body><h2>No autorizado</h2><p>Logueate primero en <a href='/'>app.eossuite.com</a></p></body></html>", 401
+    user = session.get('compras_user', '')
+    if user not in (set(ADMIN_USERS) | set(COMPRAS_USERS)):
+        return "<html><body><h2>Solo admin / compras</h2></body></html>", 403
+
+    if request.method == 'POST':
+        # Ejecutar el llenado
+        try:
+            dh = int(request.form.get('dias_horizonte', 365))
+            if dh < 7 or dh > 365:
+                dh = 365
+        except (ValueError, TypeError):
+            dh = 365
+        conn = get_db()
+        try:
+            resultado = _auto_programar_sugeridas(
+                conn, dias_horizonte=dh, cob_critico=20, cob_alerta=25,
+                cob_vigilar=45, usuario=user, producto_filtro=None,
+                origen_nuevo='eos_canonico', lote_kg_override=None,
+            )
+            conn.commit()
+            n_creados = len(resultado.get('creados', []))
+            n_saltados = len(resultado.get('saltados', []))
+            n_errores = len(resultado.get('errores', []))
+            return f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Calendario llenado</title>
+<style>
+  body{{font-family:system-ui,-apple-system,Arial;background:#f8fafc;margin:0;padding:40px}}
+  .card{{max-width:720px;margin:0 auto;background:#fff;border-radius:14px;padding:30px;box-shadow:0 10px 40px rgba(0,0,0,0.1)}}
+  h1{{color:#15803d;margin:0 0 14px}} .ok{{color:#15803d}}
+  .kpi{{display:inline-block;background:#f0fdf4;border:1px solid #16a34a;padding:14px 22px;border-radius:8px;margin:6px;text-align:center}}
+  .kpi-val{{font-size:32px;font-weight:800;color:#15803d}}
+  .kpi-lbl{{font-size:11px;color:#64748b;text-transform:uppercase}}
+  a{{display:inline-block;background:#0f766e;color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none;margin-top:14px;font-weight:700}}
+</style></head><body>
+<div class="card">
+  <h1>✓ Calendario llenado a {dh} días</h1>
+  <div>
+    <div class="kpi"><div class="kpi-val">{n_creados}</div><div class="kpi-lbl">Sugeridas creadas</div></div>
+    <div class="kpi" style="background:#fef3c7;border-color:#f59e0b"><div class="kpi-val" style="color:#92400e">{n_saltados}</div><div class="kpi-lbl">Saltadas (ya había lote ±7d)</div></div>
+    <div class="kpi" style="background:#fee2e2;border-color:#dc2626"><div class="kpi-val" style="color:#991b1b">{n_errores}</div><div class="kpi-lbl">Errores</div></div>
+  </div>
+  <p>Ahora abrí <strong>Abastecimiento</strong> y deberías ver el consumo real proyectado a 365 días. Recargá la página si la tenías abierta.</p>
+  <a href="/admin/llenar-calendario">↻ Volver a llenar</a>
+  <a href="/" style="background:#475569;margin-left:8px">← Volver al dashboard</a>
+</div></body></html>"""
+        except Exception as e:
+            try: conn.rollback()
+            except Exception: pass
+            return f"""<!DOCTYPE html><html><body style="font-family:system-ui;padding:40px">
+<h1 style="color:#dc2626">Error al llenar el calendario</h1>
+<pre style="background:#fee2e2;padding:14px;border-radius:6px">{str(e)[:500]}</pre>
+<a href="/admin/llenar-calendario">↻ Reintentar</a>
+</body></html>""", 500
+
+    # GET · mostrar formulario con resumen previo
+    conn = get_db()
+    cur = conn.cursor()
+    from datetime import date, timedelta as _td
+    hoy = date.today()
+    hasta = (hoy + _td(days=365)).isoformat()
+    try:
+        row = cur.execute(
+            """SELECT COUNT(*),
+                      COALESCE(MAX(fecha_programada),''),
+                      COALESCE(SUM(COALESCE(cantidad_kg,0)),0)
+               FROM produccion_programada
+               WHERE LOWER(COALESCE(estado,'')) NOT IN
+                     ('cancelado','completado','esperando_recurso')
+                 AND fecha_programada >= ? AND fecha_programada <= ?
+                 AND COALESCE(inventario_descontado_at,'') = ''""",
+            (hoy.isoformat(), hasta),
+        ).fetchone()
+        total = int(row[0] or 0)
+        ult = (row[1] or '')[:10] or '—'
+        kg_total = float(row[2] or 0)
+    except Exception:
+        total = 0; ult = '—'; kg_total = 0
+    try:
+        from datetime import date as _d
+        cobertura = (_d.fromisoformat(ult) - hoy).days if ult and ult != '—' else 0
+    except Exception:
+        cobertura = 0
+    boquete = max(0, 365 - cobertura)
+    color_estado = '#15803d' if cobertura >= 360 else ('#ea580c' if cobertura >= 90 else '#dc2626')
+
+    return f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Llenar calendario</title>
+<style>
+  body{{font-family:system-ui,-apple-system,Arial;background:#f8fafc;margin:0;padding:40px}}
+  .card{{max-width:720px;margin:0 auto;background:#fff;border-radius:14px;padding:30px;box-shadow:0 10px 40px rgba(0,0,0,0.1)}}
+  h1{{color:#1e293b;margin:0 0 14px;font-size:22px}}
+  .estado{{background:#f1f5f9;border-left:5px solid {color_estado};padding:16px 22px;border-radius:8px;margin:18px 0}}
+  .kpi{{display:inline-block;padding:8px 14px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;margin:4px}}
+  .kpi b{{color:#1e293b;font-size:18px;display:block}}
+  .btn{{background:#7c3aed;color:#fff;border:none;padding:14px 30px;border-radius:8px;font-size:16px;font-weight:800;cursor:pointer;margin-top:14px}}
+  .btn:hover{{background:#6d28d9}}
+  .meta{{font-size:11px;color:#64748b;margin-top:12px}}
+</style></head><body>
+<div class="card">
+  <h1>📅 Llenar calendario · Sugeridas a 365 días</h1>
+  <p>Esta acción ejecuta el algoritmo <code>_auto_programar_sugeridas</code> con horizonte 365 días. Para cada producto con velocidad de venta, calcula la próxima producción y la programa como Sugerida (azul · editable · NO Fija).</p>
+
+  <div class="estado">
+    <strong style="color:{color_estado}">Cobertura actual: {cobertura} días</strong> de 365 · boquete {boquete} días<br>
+    <div class="kpi"><b>{total}</b>lotes futuros</div>
+    <div class="kpi"><b>{kg_total:.0f} kg</b>proyectados</div>
+    <div class="kpi"><b>{ult}</b>último lote</div>
+  </div>
+
+  <form method="POST" onsubmit="return confirm('¿Llenar calendario? · Esto puede crear muchas Sugeridas si el calendario está corto.');">
+    <label style="font-size:13px;color:#475569">Días horizonte:
+      <select name="dias_horizonte" style="padding:6px 10px;border:1px solid #cbd5e1;border-radius:5px;margin-left:8px">
+        <option value="365" selected>365 (1 año · recomendado)</option>
+        <option value="180">180 (6 meses)</option>
+        <option value="120">120 (4 meses)</option>
+        <option value="90">90 (3 meses)</option>
+      </select>
+    </label>
+    <br>
+    <button type="submit" class="btn">🚀 Llenar calendario ahora</button>
+  </form>
+
+  <p class="meta">Esta página no depende del dashboard JS · funciona aún si el modal de Herramientas no carga. Después de llenar, vé a Abastecimiento y deberías ver el consumo real.</p>
+</div></body></html>"""
+
+
 @bp.route("/api/admin/diag-cobertura-calendario", methods=["GET"])
 def diag_cobertura_calendario():
     """FIX 24-may noche · Sebastián vio Abastecimiento 365d con cifras
