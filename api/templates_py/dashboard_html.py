@@ -20979,6 +20979,7 @@ async function ckMarcar(itemId, estado){
           '</div>' +
           '<div style="font-size:11px;color:#64748b;margin-bottom:12px;padding:6px 10px;background:#f1f5f9;border-radius:5px">💡 El horizonte solo limita hasta cuándo proyectar lotes en la tabla. La frecuencia real (cada cuántos días se programa un nuevo lote) la decide el sistema según <strong>DURA del lote − buffer 25d</strong> · ej. lote 60d → re-orden cada 35d.</div>' +
           '<div id="mp-cobertura" style="background:#dcfce7;border-left:4px solid #16a34a;border-radius:6px;padding:10px 12px;margin-bottom:12px;font-size:13px;color:#166534"></div>' +
+          '<div id="mp-desglose-tonos" style="display:none;background:#fdf4ff;border-left:4px solid #a855f7;border-radius:6px;padding:10px 12px;margin-bottom:12px;font-size:13px;color:#581c87"></div>' +
           '<div id="mp-blocker" style="display:none;background:#fee2e2;border-left:4px solid #dc2626;border-radius:6px;padding:12px;margin-bottom:12px;font-size:13px;color:#991b1b;font-weight:700"></div>' +
           '<div id="mp-tabla"></div>' +
           '<div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">' +
@@ -21074,6 +21075,16 @@ async function ckMarcar(itemId, estado){
         '<strong>' + ya.length + '</strong> ya programado(s)<br>' +
         '🎯 Total <strong>' + kgTotal.toFixed(1) + ' kg</strong> · te alcanzará para <strong>~' + diasCob + ' días</strong> (~' + (diasCob/30).toFixed(1) + ' meses)' +
         avisoLote;
+      // 🎨 Desglose por tono · Sebastián 24-may PM
+      // Si el producto tiene 2+ SKUs (lip serum tonos, blush balm colores)
+      // mostrar cómo dividir el bulk del próximo lote según mix ventas.
+      const proxLote = nuevas[0] || ya[0];
+      if (proxLote && (d.lote_bulk_kg || 0) > 0) {
+        cargarDesgloseTonos(st.producto, d.lote_bulk_kg);
+      } else {
+        const dt = document.getElementById('mp-desglose-tonos');
+        if (dt) dt.style.display = 'none';
+      }
       // Tabla
       let html = '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f1f5f9;color:#475569"><th style="padding:8px;text-align:left">#</th><th style="padding:8px;text-align:left">Fecha</th><th style="padding:8px;text-align:right">Kg</th><th style="padding:8px;text-align:right">En</th><th style="padding:8px;text-align:left">Estado</th></tr></thead><tbody>';
       fechas.forEach((f, i) => {
@@ -21104,6 +21115,34 @@ async function ckMarcar(itemId, estado){
       document.getElementById('mp-loading').textContent = 'Error: ' + e.message;
     }
   }
+  // FIX 24-may PM Sebastián · "lip serum tonos · se suma cantidad
+  // total, se hace base y se divide para cada tono según venta" ·
+  // muestra desglose para que sepas cuánto pigmentar de cada tono.
+  window.cargarDesgloseTonos = async function(producto, kgTotal) {
+    const dt = document.getElementById('mp-desglose-tonos');
+    if (!dt) return;
+    try {
+      const r = await fetch('/api/plan/desglose-tonos?producto=' + encodeURIComponent(producto) + '&cantidad_kg=' + kgTotal + '&ventana_dias=60');
+      const d = await r.json();
+      if (!r.ok || !d.ok) { dt.style.display = 'none'; return; }
+      if ((d.n_tonos || 0) < 2) { dt.style.display = 'none'; return; }  // Solo si multi-SKU
+      let html = '<div style="font-weight:700;margin-bottom:6px">🎨 Desglose por tono · próximo lote de ' + kgTotal + ' kg</div>';
+      html += '<div style="font-size:11px;color:#7c3aed;margin-bottom:6px">Mix calculado de ventas últimos ' + d.ventana_dias + ' días · ' + d.total_uds_ventana + ' uds totales</div>';
+      html += '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f3e8ff;color:#581c87"><th style="padding:5px;text-align:left">SKU</th><th style="padding:5px;text-align:right">Vendió 60d</th><th style="padding:5px;text-align:right">%</th><th style="padding:5px;text-align:right">Kg lote</th></tr></thead><tbody>';
+      d.items.forEach(it => {
+        html += '<tr style="border-bottom:1px solid #f3e8ff"><td style="padding:5px;font-family:ui-monospace;font-weight:700">' + it.sku + '</td>' +
+          '<td style="padding:5px;text-align:right">' + it.uds_ventana + '</td>' +
+          '<td style="padding:5px;text-align:right;font-weight:700">' + it.porcentaje.toFixed(1) + '%</td>' +
+          '<td style="padding:5px;text-align:right;font-weight:800;color:#7c3aed">' + it.kg_sugerido.toFixed(2) + ' kg</td></tr>';
+      });
+      html += '</tbody></table>';
+      html += '<div style="font-size:10px;color:#7c3aed;margin-top:4px">💡 Producís 1 base bulk de ' + kgTotal + ' kg · al pigmentar dividís entre tonos según este mix · si las ventas cambian la próxima vez verás otro %.</div>';
+      dt.innerHTML = html;
+      dt.style.display = 'block';
+    } catch(e) {
+      dt.style.display = 'none';
+    }
+  };
   window.generarProgramacionesProducto = async function() {
     const st = window._previewState;
     if (!st.producto || !st.data) return;

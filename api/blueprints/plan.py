@@ -640,6 +640,124 @@ def admin_lote_size_fix():
                     'unidad_base_g_nuevo': nuevo_g})
 
 
+@bp.route("/api/plan/desglose-tonos", methods=["GET"])
+def plan_desglose_tonos():
+    """Sebastián 24-may PM · LIP SERUM VOLUMINIZADOR tiene 5 tonos
+    (PEACH, MERLOT, MOCCA, MALVA, N). Misma fórmula base · al producir
+    12kg de bulk se divide entre los tonos según mix de ventas reciente.
+
+    Query params:
+      producto: nombre del producto (requerido)
+      cantidad_kg: kg totales del lote (default 0 · solo retorna %)
+      ventana_dias: ventana para calcular mix (default 60)
+
+    Returns:
+      {ok, producto, n_tonos, total_uds_ventana, items: [
+        {sku, ml_unidad, uds_ventana, porcentaje, kg_sugerido}, ...
+      ]}
+    """
+    err = _require_login()
+    if err:
+        return err
+    import json as _json
+    from datetime import datetime as _dt2, timedelta as _td2
+    producto = (request.args.get('producto') or '').strip()
+    try:
+        cantidad_kg = float(request.args.get('cantidad_kg') or 0)
+    except Exception:
+        cantidad_kg = 0
+    try:
+        ventana = max(7, min(int(request.args.get('ventana_dias') or 60), 365))
+    except Exception:
+        ventana = 60
+    if not producto:
+        return jsonify({'error': 'producto requerido'}), 400
+    conn = get_db()
+    cur = conn.cursor()
+    # SKUs mapeados al producto
+    skus_rows = cur.execute(
+        """SELECT sku FROM sku_producto_map
+           WHERE UPPER(TRIM(producto_nombre)) = UPPER(TRIM(?))
+             AND COALESCE(activo,1) = 1""",
+        (producto,),
+    ).fetchall()
+    skus = [r[0].upper().strip() for r in skus_rows]
+    if not skus:
+        return jsonify({'ok': True, 'producto': producto, 'n_tonos': 0,
+                        'items': [], 'mensaje': 'sin SKUs mapeados'})
+    # ml por SKU (volumen_ml en producto_presentaciones)
+    ml_por_sku = {}
+    try:
+        qs = ','.join(['?'] * len(skus))
+        for r in cur.execute(
+            f"""SELECT UPPER(TRIM(sku_shopify)), volumen_ml
+                 FROM producto_presentaciones
+                WHERE UPPER(TRIM(sku_shopify)) IN ({qs})
+                  AND COALESCE(activo,1) = 1""",
+            tuple(skus),
+        ).fetchall():
+            if r[1]:
+                ml_por_sku[r[0]] = float(r[1])
+    except Exception:
+        pass
+    # Ventas por SKU en ventana
+    desde = (_dt2.utcnow() - _td2(days=ventana)).strftime('%Y-%m-%dT00:00:00')
+    ventas = {sk: 0 for sk in skus}
+    try:
+        for r in cur.execute(
+            """SELECT sku_items FROM animus_shopify_orders
+                WHERE creado_en >= ?
+                  AND sku_items IS NOT NULL AND sku_items != ''
+                  AND LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided')
+                  AND LOWER(COALESCE(estado_pago,'')) NOT IN ('refunded','voided','partially_refunded')""",
+            (desde,),
+        ).fetchall():
+            try:
+                items = _json.loads(r[0]) if r[0] else []
+            except Exception:
+                continue
+            if not isinstance(items, list):
+                continue
+            for it in items:
+                sk = (it.get('sku') or '').upper().strip()
+                if sk not in ventas:
+                    continue
+                qty = float(it.get('qty') or it.get('quantity') or it.get('cantidad') or 0)
+                ventas[sk] += qty
+    except Exception as e:
+        return jsonify({'error': f'query ventas: {e}'}), 500
+    total_uds = sum(ventas.values())
+    items = []
+    if total_uds <= 0:
+        # Sin ventas en ventana · distribuir equitativamente
+        for sk in skus:
+            items.append({
+                'sku': sk,
+                'ml_unidad': ml_por_sku.get(sk),
+                'uds_ventana': 0,
+                'porcentaje': round(100.0 / len(skus), 2),
+                'kg_sugerido': round(cantidad_kg / len(skus), 2) if cantidad_kg > 0 else 0,
+            })
+    else:
+        for sk in skus:
+            uds = ventas[sk]
+            pct = (uds / total_uds) * 100
+            items.append({
+                'sku': sk,
+                'ml_unidad': ml_por_sku.get(sk),
+                'uds_ventana': int(uds),
+                'porcentaje': round(pct, 2),
+                'kg_sugerido': round((pct / 100.0) * cantidad_kg, 2) if cantidad_kg > 0 else 0,
+            })
+    # Ordenar por porcentaje desc (mejor venta primero)
+    items.sort(key=lambda x: -x['porcentaje'])
+    return jsonify({
+        'ok': True, 'producto': producto, 'n_tonos': len(skus),
+        'ventana_dias': ventana, 'cantidad_kg': cantidad_kg,
+        'total_uds_ventana': int(total_uds), 'items': items,
+    })
+
+
 @bp.route("/api/admin/formula-desactivar", methods=["POST"])
 def admin_formula_desactivar():
     """Sebastián 24-may · 'EMULSION ANTIOX, SUERO C+B3, SUERO AZ+B3 ya
