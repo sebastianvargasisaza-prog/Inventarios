@@ -21635,7 +21635,15 @@ async function ckMarcar(itemId, estado){
           chipPlan = ' <span title="' + p.planificacion.length + ' lote(s) agendado(s) · click Programar para gestionar" style="background:#dbeafe;color:#1e40af;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:700">📅 ' + proxFecha + '</span>';
         }
 
-        html += '<tr style="border-top:1px solid #e2e8f0">';
+        // FIX UX 24-may PM · jerarquía visual · fila completa con tinte
+        // de fondo + borde izquierdo grueso si crítico/urgente. OK/sin-ventas
+        // se atenúan para que los rojos canten.
+        const _esGrave = (p.urgencia === 'CRITICO' || p.urgencia === 'URGENTE');
+        const _esIgnorable = (p.urgencia === 'OK' || p.urgencia === 'SIN_VENTAS' || p.urgencia === 'SIN_VENTAS_REAL');
+        const _rowBg = _esGrave ? cfg.bg : '#fff';
+        const _rowBorderL = _esGrave ? ('4px solid ' + cfg.border) : '4px solid transparent';
+        const _rowOpacity = _esIgnorable ? '0.55' : '1';
+        html += '<tr style="border-top:1px solid #e2e8f0;background:' + _rowBg + ';border-left:' + _rowBorderL + ';opacity:' + _rowOpacity + '">';
         // Producto + urgencia
         html += '<td style="padding:10px 8px">';
         html += '<div style="display:flex;align-items:center;gap:6px"><span style="background:' + cfg.bg + ';color:' + cfg.text + ';padding:2px 8px;border-radius:6px;font-size:11px;font-weight:800">' + cfg.emoji + '</span>';
@@ -21797,28 +21805,43 @@ async function ckMarcar(itemId, estado){
       presentacion += '<br><span style="background:#fdf4ff;color:#7e22ce;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700">10ml · ' + p.uds_10ml_por_lote + ' uds/lote · ' + tipo10 + '</span>';
     }
     // FIX #2 · 23-may-2026 Sebastián · flags de calidad del dato
-    let avisos = '';
-    if (p.ml_inferido) {
-      const prodEscMl = (p.producto_nombre || '').replace(/'/g, "&#39;").replace(/"/g, '&quot;');
-      avisos += '<div style="background:#fef3c7;color:#92400e;border-left:3px solid #f59e0b;padding:6px 10px;border-radius:5px;font-size:11px;font-weight:600;margin-top:6px;display:flex;justify-content:space-between;align-items:center;gap:8px"><span>⚠ ml inferido por nombre = ' + (p.ml_unidad || 0) + 'ml · definí el real</span><button onclick="fixVolumenMl(&quot;' + prodEscMl + '&quot;,' + (p.ml_unidad || 30) + ')" style="background:#f59e0b;color:#fff;border:none;padding:3px 10px;border-radius:5px;font-size:10px;font-weight:700;cursor:pointer;white-space:nowrap">✏️ Fijar ml</button></div>';
+    // FIX UX 24-may PM · auditoría agente · 3-4 banners apilados era
+    // spam visual. Ahora los acumulo y si son 2+ los colapso en <details>
+    // (solo el más crítico expandido por default).
+    const _avisos = [];
+    if (p.huerfanos_sugeridos && p.huerfanos_sugeridos.length > 0) {
+      const prodEscSug = (p.producto_nombre || '').replace(/'/g, "&#39;").replace(/"/g, '&quot;');
+      let html_h = '<div style="background:#dbeafe;color:#1e40af;border-left:3px solid #2563eb;padding:6px 10px;border-radius:5px;font-size:11px;font-weight:600">';
+      html_h += '💡 SKU(s) vendiendo sin mapeo:';
+      p.huerfanos_sugeridos.forEach(h => {
+        html_h += '<div style="display:flex;align-items:center;justify-content:space-between;margin-top:4px;background:#fff;padding:4px 8px;border-radius:4px"><span><strong>' + h.sku + '</strong> · ' + h.uds_60d + ' uds/60d</span><button onclick="aceptarSugerenciaMapeo(&quot;' + h.sku + '&quot;,&quot;' + prodEscSug + '&quot;,event)" style="background:#2563eb;color:#fff;border:none;padding:3px 10px;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer">✓ Mapear</button></div>';
+      });
+      html_h += '</div>';
+      _avisos.push({prio: 1, label: '💡 SKUs sin mapeo', html: html_h});
     }
     if (p.lote_size_faltante) {
       const valBd = p.lote_bulk_kg_bd != null ? p.lote_bulk_kg_bd : 0;
       const tieneCalc = p.lote_calculado;
-      avisos += '<div style="background:#fee2e2;color:#991b1b;border-left:3px solid #dc2626;padding:6px 10px;border-radius:5px;font-size:11px;font-weight:600;margin-top:6px">⚠ lote_size_kg en BD = ' + valBd + ' kg ' +
-        (tieneCalc ? '(usando ' + p.lote_bulk_kg + ' kg calculado · ~60d cobertura) ' : '') +
-        '· andá a tab Necesidades → ⚙ Herramientas para arreglarlo</div>';
+      const html_l = '<div style="background:#fee2e2;color:#991b1b;border-left:3px solid #dc2626;padding:6px 10px;border-radius:5px;font-size:11px;font-weight:600">⚠ lote_size_kg en BD = ' + valBd + ' kg ' +
+        (tieneCalc ? '(usando ' + p.lote_bulk_kg + ' kg calculado · ~60d cobertura)' : '') +
+        ' · andá a ⚙ Herramientas para arreglarlo</div>';
+      _avisos.push({prio: 2, label: '⚠ lote_size mal', html: html_l});
     }
-    // FIX 24-may PM · auto-sugerencia Nivel 1 · banner con huérfanos
-    // sugeridos para mapeo · botón "Aceptar" 1-click.
-    if (p.huerfanos_sugeridos && p.huerfanos_sugeridos.length > 0) {
-      const prodEscSug = (p.producto_nombre || '').replace(/'/g, "&#39;").replace(/"/g, '&quot;');
-      avisos += '<div style="background:#dbeafe;color:#1e40af;border-left:3px solid #2563eb;padding:6px 10px;border-radius:5px;font-size:11px;font-weight:600;margin-top:6px">';
-      avisos += '💡 SKU(s) vendiendo sin mapeo que parecen ser este producto:';
-      p.huerfanos_sugeridos.forEach(h => {
-        avisos += '<div style="display:flex;align-items:center;justify-content:space-between;margin-top:4px;background:#fff;padding:4px 8px;border-radius:4px"><span><strong>' + h.sku + '</strong> · ' + h.uds_60d + ' uds/60d <span style="opacity:.6">(score ' + h.score + ')</span></span><button onclick="aceptarSugerenciaMapeo(&quot;' + h.sku + '&quot;,&quot;' + prodEscSug + '&quot;,event)" style="background:#2563eb;color:#fff;border:none;padding:3px 10px;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer">✓ Mapear</button></div>';
+    if (p.ml_inferido) {
+      const prodEscMl = (p.producto_nombre || '').replace(/'/g, "&#39;").replace(/"/g, '&quot;');
+      const html_m = '<div style="background:#fef3c7;color:#92400e;border-left:3px solid #f59e0b;padding:6px 10px;border-radius:5px;font-size:11px;font-weight:600;display:flex;justify-content:space-between;align-items:center;gap:8px"><span>⚠ ml inferido = ' + (p.ml_unidad || 0) + 'ml · definí el real</span><button onclick="fixVolumenMl(&quot;' + prodEscMl + '&quot;,' + (p.ml_unidad || 30) + ')" style="background:#f59e0b;color:#fff;border:none;padding:3px 10px;border-radius:5px;font-size:10px;font-weight:700;cursor:pointer;white-space:nowrap">✏️ Fijar ml</button></div>';
+      _avisos.push({prio: 3, label: '⚠ ml inferido', html: html_m});
+    }
+    let avisos = '';
+    if (_avisos.length === 1) {
+      avisos = '<div style="margin-top:6px">' + _avisos[0].html + '</div>';
+    } else if (_avisos.length >= 2) {
+      _avisos.sort((a,b) => a.prio - b.prio);
+      avisos = '<details style="margin-top:6px"><summary style="cursor:pointer;font-size:11px;color:#64748b;padding:4px 8px;background:#f1f5f9;border-radius:4px;font-weight:600">⚠ ' + _avisos.length + ' avisos de calidad de datos · ' + _avisos.map(a => a.label).join(' · ') + '</summary>';
+      _avisos.forEach((a, i) => {
+        avisos += '<div style="margin-top:6px">' + a.html + '</div>';
       });
-      avisos += '</div>';
+      avisos += '</details>';
     }
 
     let html = '<div style="display:flex;gap:14px;margin-bottom:16px;align-items:center">';

@@ -4370,31 +4370,48 @@ def planta_centro_mando():
         # ── DIAGNÓSTICO: filas DB sin match en Calendar (orphans/stale)
         # Sebastián 1-may-2026: 'siento que deja todo como lunes, no sabe
         # discriminar junta todo' → detectar duplicados de auto-sync antiguo
-        productos_calendar_por_fecha = set()  # (fecha, producto_upper)
+        # PERF FIX 24-may PM · auditoría agente · este pass iteraba
+        # cal_events × skus_aliases (~24K ops) duplicando el trabajo
+        # ya hecho en el primer pass (línea 3848). Reusar _productos_cal
+        # si está disponible · solo reconstruir si skip_cleanup.
         try:
-            from blueprints.auto_plan import (
-                _calendar_events_cached as _cec, _match_producto_evento as _mpe
-            )
-            cal_events_check = _cec(force_refresh=False) or []
-            for ev in cal_events_check:
-                try:
-                    f_ev = ev.get('fecha', '')[:10]
-                    if f_ev not in fechas_horizonte_iso: continue
-                except Exception:
-                    continue
-                producto_match_d = None
-                best_d = 0
-                for prod_n, alias_csv in skus_aliases.items():
-                    try:
-                        s = _mpe(prod_n, alias_csv, ev.get('titulo'), ev.get('descripcion',''))
-                        if s >= 50 and s > best_d:
-                            best_d = s; producto_match_d = prod_n
-                    except Exception:
+            productos_calendar_por_fecha = _productos_cal  # reuse
+        except NameError:
+            productos_calendar_por_fecha = set()
+            try:
+                from blueprints.auto_plan import (
+                    _calendar_events_cached as _cec2,
+                    _match_producto_evento as _mpe2,
+                )
+                _ac2 = conn.cursor()
+                skus_aliases2 = {}
+                for sku_n, alias_csv in _ac2.execute("""
+                    SELECT producto_nombre, COALESCE(alias_calendar,'')
+                    FROM sku_planeacion_config
+                    WHERE activo=1 AND COALESCE(estado,'activo') NOT IN ('descontinuado','pausado')
+                """).fetchall():
+                    skus_aliases2[sku_n] = alias_csv
+                cal_events_check = _cec2(force_refresh=False) or []
+                for ev in cal_events_check:
+                    f_ev = (ev.get('fecha') or '')[:10]
+                    if f_ev not in fechas_horizonte_iso:
                         continue
-                if producto_match_d:
-                    productos_calendar_por_fecha.add((f_ev, producto_match_d.upper()))
-        except Exception:
-            pass
+                    producto_match_d = None
+                    best_d = 0
+                    for prod_n, alias_csv in skus_aliases2.items():
+                        try:
+                            s = _mpe2(prod_n, alias_csv, ev.get('titulo'),
+                                       ev.get('descripcion', ''))
+                            if s >= 50 and s > best_d:
+                                best_d = s
+                                producto_match_d = prod_n
+                        except Exception:
+                            continue
+                    if producto_match_d:
+                        productos_calendar_por_fecha.add(
+                            (f_ev, producto_match_d.upper()))
+            except Exception:
+                pass
         db_sin_calendar = []
         for p in producciones_dia:
             if p.get('desde_calendar'): continue  # estos vienen de Calendar
