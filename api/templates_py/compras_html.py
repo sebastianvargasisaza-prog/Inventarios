@@ -231,6 +231,8 @@ async function cxIAPreguntar(pregunta){
     <button class="tn"      data-tab="atrasadas" id="tn-atrasadas" title="OCs sin recibir tras lead_time + buffer · Sebastián 23-may">🚨 Atrasadas <span id="atrasadas-badge" style="display:none;background:#dc2626;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
     <button class="tn"      data-tab="discrep" id="tn-discrep" title="Recepciones con faltante · ranking calidad proveedor · Sebastián 23-may">📋 Calidad recepción <span id="discrep-badge" style="display:none;background:#dc2626;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
     <button class="tn"      data-tab="mailbox" id="tn-mailbox" title="Facturas detectadas por el cron mailbox · revisar/completar/descartar · Sebastián 23-may">📧 Mailbox <span id="mailbox-badge" style="display:none;background:#7c3aed;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
+    <!-- COT comparador · Sebastián 23-may-2026 PM · backend ya estaba listo, UI nueva -->
+    <button class="tn"      data-tab="cotiz" id="tn-cotiz" title="Rondas de cotizaciones · comparar proveedores lado a lado · elegir ganadora">💬 Cotizaciones <span id="cotiz-badge" style="display:none;background:#0891b2;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
     <!-- Sebastián 21-may-2026 · Órdenes de Servicio (serigrafía/tampografía) -->
     <button class="tn"      data-tab="ordserv" id="tn-ordserv" title="Órdenes de Servicio · serigrafía, tampografía, etiquetado">🎨 Órdenes de Servicio</button>
   </span>
@@ -679,6 +681,24 @@ async function cxIAPreguntar(pregunta){
 
   <div id="mailbox-resumen" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;font-size:12px;color:#475569"></div>
   <div id="mailbox-contenido" style="background:white;border:1px solid #e2e8f0;border-radius:10px;overflow-x:auto">
+    <div style="text-align:center;color:#94a3b8;padding:30px">Click &#x21BA; Actualizar</div>
+  </div>
+</div>
+
+<!-- ════════════ TAB: COTIZACIONES · Sebastián 23-may-2026 PM ════════════ -->
+<!-- Comparador lado-a-lado · backend listo desde mig 29 · solo faltaba UI -->
+<div id="pane-cotiz" class="pane">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
+    <div>
+      <h2 style="margin:0;font-size:18px;color:#1e293b;">&#x1F4AC; Rondas de cotizaciones</h2>
+      <div style="font-size:12px;color:#64748b;margin-top:2px;">
+        Compar&aacute; precios de hasta 3 proveedores lado a lado &middot; eleg&iacute; ganadora &middot; gener&aacute; OC autom&aacute;ticamente.
+      </div>
+    </div>
+    <button class="btn bp" onclick="cargarCotizaciones()" style="padding:6px 14px;font-size:12px;">&#x21BA; Actualizar</button>
+  </div>
+  <div id="cotiz-resumen" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;font-size:12px;color:#475569"></div>
+  <div id="cotiz-contenido" style="background:white;border:1px solid #e2e8f0;border-radius:10px;overflow-x:auto">
     <div style="text-align:center;color:#94a3b8;padding:30px">Click &#x21BA; Actualizar</div>
   </div>
 </div>
@@ -1410,6 +1430,7 @@ document.querySelectorAll('.tn').forEach(function(btn){
     else if(tab==='atrasadas'){ cargarOcsAtrasadas(); }
     else if(tab==='discrep'){ cargarDiscrepancias(); }
     else if(tab==='mailbox'){ cargarMailbox(); }
+    else if(tab==='cotiz'){ cargarCotizaciones(); }
     else if(tab==='alertas'){ loadAlertasCompras(); }
     else if(tab==='solprod'){ loadSolicitudesProduccion(); }
     else if(tab==='mis-sol'){ loadMisSolicitudes(); }
@@ -7520,6 +7541,165 @@ async function _mailboxDescartar(pagoId){
   }
 }
 
+
+// ════════ COT COMPARADOR · Sebastián 23-may-2026 PM ════════
+// Backend ya tenía 6 endpoints (mig 29, compras.py:10168+). UI nueva.
+async function cargarCotizaciones(){
+  var div = document.getElementById('cotiz-contenido');
+  var resumen = document.getElementById('cotiz-resumen');
+  div.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:30px">Cargando…</div>';
+  try{
+    var r = await fetch('/api/compras/cotizaciones/rondas');
+    if(!r.ok){ div.innerHTML='<div style="color:#dc2626;padding:20px">Error '+r.status+'</div>'; return; }
+    var d = await r.json();
+    var rondas = d.rondas || d.items || [];
+    var pend = rondas.filter(function(x){ return (x.estado||'').toLowerCase()==='abierta' || (x.estado||'').toLowerCase()==='pendiente'; }).length;
+    var cerr = rondas.filter(function(x){ return (x.estado||'').toLowerCase()==='cerrada'; }).length;
+    resumen.innerHTML =
+      '<span style="background:#fef3c7;color:#92400e;padding:4px 10px;border-radius:6px;font-weight:700">🟡 Abiertas: '+pend+'</span>'+
+      '<span style="background:#dcfce7;color:#166534;padding:4px 10px;border-radius:6px;font-weight:700;margin-left:6px">✓ Cerradas: '+cerr+'</span>'+
+      '<span style="background:#f1f5f9;color:#475569;padding:4px 10px;border-radius:6px;margin-left:6px">Total últimas 50: '+rondas.length+'</span>';
+    if(!rondas.length){
+      div.innerHTML = '<div style="text-align:center;color:#64748b;padding:40px"><div style="font-size:14px;font-weight:700;margin-bottom:6px">No hay rondas de cotizaciones aún</div><div style="font-size:12px">Crea una desde la pestaña Planta → SOL agrupada → 💬 Cotizar</div></div>';
+      return;
+    }
+    var html = '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f1f5f9;color:#475569;font-weight:700">';
+    html += '<th style="padding:8px 12px;text-align:left">Ronda #</th>';
+    html += '<th style="padding:8px 12px;text-align:left">MP / Item</th>';
+    html += '<th style="padding:8px 12px;text-align:left">Creada</th>';
+    html += '<th style="padding:8px 12px;text-align:center">Recibidas / Solic</th>';
+    html += '<th style="padding:8px 12px;text-align:right">Mejor precio</th>';
+    html += '<th style="padding:8px 12px;text-align:center">Estado</th>';
+    html += '<th style="padding:8px 12px;text-align:center">Acción</th>';
+    html += '</tr></thead><tbody>';
+    rondas.forEach(function(r2){
+      var est = (r2.estado||'').toLowerCase();
+      var bgEst = est==='cerrada' ? '#dcfce7' : (est==='cancelada'?'#fee2e2':'#fef3c7');
+      var fgEst = est==='cerrada' ? '#166534' : (est==='cancelada'?'#991b1b':'#92400e');
+      html += '<tr style="border-bottom:1px solid #f1f5f9">';
+      html += '<td style="padding:8px 12px;font-family:ui-monospace;font-weight:700">#'+(r2.ronda_id||r2.id)+'</td>';
+      html += '<td style="padding:8px 12px">'+_esc(r2.material_nombre||r2.descripcion||r2.material_id||'—')+'</td>';
+      html += '<td style="padding:8px 12px;color:#64748b">'+_esc((r2.creada_en||'').slice(0,10))+'</td>';
+      html += '<td style="padding:8px 12px;text-align:center"><span style="background:#f1f5f9;padding:2px 8px;border-radius:6px;font-weight:700">'+(r2.recibidas||r2.respuestas||0)+' / '+(r2.solicitadas||r2.total||0)+'</span></td>';
+      html += '<td style="padding:8px 12px;text-align:right;font-weight:700;color:#15803d">'+(r2.mejor_precio ? _money(r2.mejor_precio) : '—')+'</td>';
+      html += '<td style="padding:8px 12px;text-align:center"><span style="background:'+bgEst+';color:'+fgEst+';padding:3px 10px;border-radius:10px;font-size:11px;font-weight:700;text-transform:uppercase">'+_esc(r2.estado||'?')+'</span></td>';
+      html += '<td style="padding:8px 12px;text-align:center"><button onclick="abrirCotizDrawer('+(r2.ronda_id||r2.id)+')" style="background:#0891b2;color:#fff;border:none;padding:5px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">📊 Comparar</button></td>';
+      html += '</tr>';
+    });
+    html += '</tbody></table>';
+    html += '<div style="font-size:11px;color:#64748b;padding:10px 12px;background:#f8fafc;border-top:1px solid #e2e8f0">💡 Click <strong>📊 Comparar</strong> para ver las 3 cotizaciones lado a lado y elegir ganadora · al elegir, se genera la OC automáticamente vinculada.</div>';
+    div.innerHTML = html;
+    // Update badge
+    var b = document.getElementById('cotiz-badge');
+    if(b){ if(pend>0){ b.textContent = pend; b.style.display='inline-block'; } else b.style.display='none'; }
+  } catch(e){
+    div.innerHTML = '<div style="color:#dc2626;padding:20px">Error red: '+e.message+'</div>';
+  }
+}
+async function abrirCotizDrawer(rondaId){
+  var existing = document.getElementById('cotiz-drawer');
+  if(existing) existing.remove();
+  var modal = document.createElement('div');
+  modal.id = 'cotiz-drawer';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+  modal.innerHTML = '<div style="background:#fff;border-radius:12px;max-width:1000px;width:100%;max-height:92vh;overflow:auto;box-shadow:0 12px 40px rgba(0,0,0,0.25)">'+
+    '<div style="padding:18px 22px;border-bottom:1px solid #e5e7eb;display:flex;align-items:center;justify-content:space-between">'+
+      '<div><h3 style="margin:0;font-size:16px;color:#1e293b">📊 Comparar cotizaciones · Ronda #'+rondaId+'</h3><div id="cot-ronda-meta" style="font-size:12px;color:#64748b;margin-top:2px"></div></div>'+
+      '<button onclick="document.getElementById(\\'cotiz-drawer\\').remove()" style="background:#e5e7eb;color:#475569;border:none;width:32px;height:32px;border-radius:50%;font-size:18px;cursor:pointer">×</button>'+
+    '</div>'+
+    '<div id="cot-drawer-body" style="padding:20px"><div style="text-align:center;color:#94a3b8;padding:40px">Cargando…</div></div>'+
+    '</div>';
+  document.body.appendChild(modal);
+  try{
+    var r = await fetch('/api/compras/cotizaciones/rondas/'+rondaId);
+    var d = await r.json();
+    if(!r.ok){ document.getElementById('cot-drawer-body').innerHTML='<div style="color:#dc2626">Error: '+(d.error||r.status)+'</div>'; return; }
+    var ronda = d.ronda || {};
+    var cots = d.cotizaciones || d.items || [];
+    var meta = document.getElementById('cot-ronda-meta');
+    if(meta) meta.textContent = (ronda.material_nombre||ronda.descripcion||'?') + ' · creada '+(ronda.creada_en||'').slice(0,10);
+    if(!cots.length){
+      document.getElementById('cot-drawer-body').innerHTML = '<div style="text-align:center;color:#64748b;padding:40px">Sin cotizaciones registradas aún. Cuando los proveedores respondan, usá el botón ✏️ Registrar respuesta abajo.</div>';
+      return;
+    }
+    // Ordenar por valor_total ascendente (mejor primero)
+    cots.sort(function(a,b){ return (parseFloat(a.valor_total||0)||9e15) - (parseFloat(b.valor_total||0)||9e15); });
+    var html = '<div style="display:grid;grid-template-columns:repeat('+Math.min(cots.length,3)+',1fr);gap:14px">';
+    cots.slice(0,3).forEach(function(c, i){
+      var esGanadora = !!c.ganadora;
+      var cerrada = (ronda.estado||'').toLowerCase()==='cerrada';
+      var borde = esGanadora ? '#16a34a' : (i===0 ? '#0891b2' : '#cbd5e1');
+      var bg = esGanadora ? '#dcfce7' : (i===0?'#ecfeff':'#fff');
+      html += '<div style="background:'+bg+';border:2px solid '+borde+';border-radius:10px;padding:14px">';
+      if(esGanadora){
+        html += '<div style="background:#16a34a;color:#fff;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:800;display:inline-block;margin-bottom:6px">🏆 GANADORA</div>';
+      } else if(i===0 && !cerrada){
+        html += '<div style="background:#0891b2;color:#fff;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:800;display:inline-block;margin-bottom:6px">💰 MEJOR PRECIO</div>';
+      }
+      html += '<div style="font-weight:800;font-size:14px;color:#1e293b;margin-bottom:8px">'+_esc(c.proveedor||'?')+'</div>';
+      html += '<table style="width:100%;font-size:12px;border-collapse:collapse">';
+      html += '<tr><td style="color:#64748b;padding:3px 0">Precio total:</td><td style="text-align:right;font-weight:800;color:#1e293b">'+(c.valor_total?_money(c.valor_total):'—')+'</td></tr>';
+      html += '<tr><td style="color:#64748b;padding:3px 0">Tiempo entrega:</td><td style="text-align:right;font-weight:700">'+(c.tiempo_entrega_dias!=null?c.tiempo_entrega_dias+' días':'—')+'</td></tr>';
+      html += '<tr><td style="color:#64748b;padding:3px 0">Estado:</td><td style="text-align:right;font-weight:700;color:'+(c.valor_total?'#15803d':'#94a3b8')+'">'+(c.valor_total?'✓ Respondió':'⏳ Pendiente')+'</td></tr>';
+      html += '<tr><td style="color:#64748b;padding:3px 0">Condiciones:</td><td style="text-align:right;font-size:11px">'+_esc(c.condiciones||'—')+'</td></tr>';
+      if(c.numero_oc){
+        html += '<tr><td style="color:#64748b;padding:3px 0">OC generada:</td><td style="text-align:right;font-weight:700;color:#0891b2">'+_esc(c.numero_oc)+'</td></tr>';
+      }
+      html += '</table>';
+      html += '<div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">';
+      if(!cerrada){
+        if(!c.valor_total){
+          html += '<button onclick="cotRegistrarRespuesta('+c.id+',\\''+_esc((c.proveedor||'').replace(/\\x27/g,"\\\\\\x27"))+'\\')" style="background:#0891b2;color:#fff;border:none;padding:5px 10px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">✏️ Registrar respuesta</button>';
+        } else if(!esGanadora){
+          html += '<button onclick="cotElegirGanadora('+c.id+','+rondaId+',\\''+_esc((c.proveedor||'').replace(/\\x27/g,"\\\\\\x27"))+'\\')" style="background:#16a34a;color:#fff;border:none;padding:5px 10px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">🏆 Elegir ganadora</button>';
+        }
+      }
+      html += '</div>';
+      html += '</div>';
+    });
+    html += '</div>';
+    document.getElementById('cot-drawer-body').innerHTML = html;
+  } catch(e){
+    document.getElementById('cot-drawer-body').innerHTML = '<div style="color:#dc2626">Error red: '+e.message+'</div>';
+  }
+}
+async function cotRegistrarRespuesta(cotId, proveedor){
+  var precio = prompt('Precio total cotizado por '+proveedor+':\\n(valor numérico · solo COP)');
+  if(!precio || isNaN(parseFloat(precio))) return;
+  var dias = prompt('Tiempo de entrega en días (default 15):', '15');
+  if(!dias || isNaN(parseInt(dias,10))) dias = '15';
+  var cond = prompt('Condiciones (forma de pago, MOQ, etc.) · puede ser vacío:', '');
+  try{
+    var r = await fetch('/api/compras/cotizaciones/'+cotId, {
+      method:'PATCH',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':window._csrfTok||''},
+      body: JSON.stringify({valor_total:parseFloat(precio), tiempo_entrega_dias:parseInt(dias,10), condiciones:cond}),
+    });
+    var d = await r.json();
+    if(!r.ok || d.error){ alert('Error: '+(d.error||r.status)); return; }
+    var dr = document.getElementById('cotiz-drawer');
+    if(dr) dr.remove();
+    cargarCotizaciones();
+    // Re-abrir drawer mismo · necesita rondaId
+    var rondaIdMatch = (d.ronda_id || d.cotizacion?.ronda_id);
+    if(rondaIdMatch) setTimeout(function(){ abrirCotizDrawer(rondaIdMatch); }, 200);
+  } catch(e){ alert('Error red: '+e.message); }
+}
+async function cotElegirGanadora(cotId, rondaId, proveedor){
+  if(!confirm('¿Elegir a '+proveedor+' como ganadora?\\n\\nEsto:\\n· marca esta cotización como ganadora\\n· cierra las otras\\n· genera OC automática\\n· cierra la ronda')) return;
+  try{
+    var r = await fetch('/api/compras/cotizaciones/'+cotId+'/elegir-ganadora', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':window._csrfTok||''},
+    });
+    var d = await r.json();
+    if(!r.ok || d.error){ alert('Error: '+(d.error||r.status)); return; }
+    alert('✓ Ganadora elegida'+(d.numero_oc?'\\n\\nOC generada: '+d.numero_oc:''));
+    var dr = document.getElementById('cotiz-drawer');
+    if(dr) dr.remove();
+    cargarCotizaciones();
+  } catch(e){ alert('Error red: '+e.message); }
+}
 
 function exportOcsConsolidado(){
   // Sebastián 23-may-2026 · descarga Excel con TODAS las OCs activas
