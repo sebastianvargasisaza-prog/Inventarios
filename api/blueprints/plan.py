@@ -3425,10 +3425,19 @@ def plan_factibilidad():
     # Cada evento es (fecha_iso, tipo, payload). Sort por fecha + prioridad
     # (las OC que llegan el mismo día primero, para que los lotes del día
     # las puedan usar).
+    # FIX 24-may-2026 noche · Sebastián: "factibilidad muestra producciones
+    # que ya pasaron". Los lotes con fecha < hoy y estado activo (no
+    # iniciados aún) son demanda real pendiente · van a producirse, solo
+    # tarde. Los re-ubicamos en el timeline AL DÍA DE HOY (para que
+    # consuman stock actual primero) pero marcamos `atrasada=true` con
+    # `dias_atraso` para que la UI muestre badge en vez de fecha confusa.
     eventos = []
     for fid, prod, fecha, cant_kg, lotes, origen_v in filas:
         f_iso = str(fecha or '')[:10]
-        eventos.append((f_iso, 1, ('PROD', fid, prod, fecha, cant_kg, lotes, origen_v)))
+        # Re-ubicar atrasados a "hoy" en el timeline. Mantenemos fecha
+        # original en el payload para que la UI pueda mostrar la real.
+        f_efectiva = max(f_iso, desde) if f_iso else desde
+        eventos.append((f_efectiva, 1, ('PROD', fid, prod, fecha, cant_kg, lotes, origen_v, f_iso)))
     for f_oc, mids in oc_timeline.items():
         # OC con fecha futura · si ya pasó (f_oc < hoy) la consideramos disponible
         # ya hoy (asumimos que llegó). Sino, mantiene su fecha real.
@@ -3450,8 +3459,20 @@ def plan_factibilidad():
                 stock[mid] = stock.get(mid, 0.0) + float(cant or 0)
             continue
         # ev_tipo == 'PROD'
-        _, fid, prod, fecha, cant_kg, lotes, origen_v = ev
+        _, fid, prod, fecha, cant_kg, lotes, origen_v, f_iso_original = ev
         prod_norm = str(prod or '').strip().upper()
+        # Calcular si es atrasada y cuántos días
+        atrasada = bool(f_iso_original and f_iso_original < desde)
+        dias_atraso = 0
+        if atrasada:
+            try:
+                from datetime import date as _date_a
+                dias_atraso = (
+                    _date_a.fromisoformat(desde) -
+                    _date_a.fromisoformat(f_iso_original)
+                ).days
+            except Exception:
+                dias_atraso = 0
         # F8 · skip descontinuados
         if prod_norm in productos_descontinuados:
             descontinuados_n += 1
@@ -3464,6 +3485,7 @@ def plan_factibilidad():
                 "cantidad_kg": round(float(cant_kg or 0), 1),
                 "factible": None, "sin_formula": True, "mps_faltantes": [],
                 "origen": origen_v,
+                "atrasada": atrasada, "dias_atraso": dias_atraso,
             })
             continue
         lk = lote_size.get(prod_norm, 0)
@@ -3506,6 +3528,7 @@ def plan_factibilidad():
             "factible": factible, "sin_formula": False,
             "mps_faltantes": faltantes,
             "origen": origen_v,
+            "atrasada": atrasada, "dias_atraso": dias_atraso,
         })
 
     # 8. Compra consolidada · F2 descontar pendientes · F10 proveedor + LT
