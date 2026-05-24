@@ -6414,6 +6414,226 @@ def _auto_programar_sugeridas(conn, dias_horizonte=365, ventana_velocidad=60,
             'n_creados': len(creados), 'n_saltados': len(saltados)}
 
 
+@bp.route("/admin/diag-flujo-abast", methods=["GET"])
+def admin_diag_flujo_abast():
+    """Página standalone · auditoría del flujo de Abastecimiento.
+
+    Sebastián 24-may-2026 noche: 'la logica es, si esta tomando las
+    programaciones del calendario seria lo primero, segundo enlaza cada
+    produccion a la formula adecuada, tercero suma adecuadamente cada
+    produccion con sus materias primas, esta tomando todo bien?'
+
+    Muestra los 3 pasos con datos REALES:
+    Paso 1: Producciones del calendario (lista de 137 lotes futuros)
+    Paso 2: Match producto↔fórmula (cuántos sí matchean, cuáles NO)
+    Paso 3: Top 30 MPs con sus lotes contribuyentes
+    """
+    if 'compras_user' not in session:
+        return "<html><body><h2>No autorizado</h2></body></html>", 401
+    user = session.get('compras_user', '')
+    if user not in (set(ADMIN_USERS) | set(COMPRAS_ACCESS)):
+        return "<html><body><h2>Solo admin/compras</h2></body></html>", 403
+
+    conn = get_db(); cur = conn.cursor()
+    from datetime import date as _d, timedelta as _td
+    hoy = _d.today()
+    hoy_iso = hoy.isoformat()
+    cutoff = (hoy + _td(days=365)).isoformat()
+
+    def _norm(s):
+        return ' '.join((s or '').strip().upper().split())
+
+    # PASO 1: Producciones del calendario (futuras, no canceladas)
+    prods = cur.execute(
+        """SELECT id, producto, fecha_programada,
+                  COALESCE(cantidad_kg, 0),
+                  COALESCE(lotes, 1),
+                  COALESCE(estado, ''),
+                  COALESCE(origen, '')
+           FROM produccion_programada
+           WHERE LOWER(COALESCE(estado,'')) NOT IN
+                 ('cancelado','completado','esperando_recurso')
+             AND COALESCE(inventario_descontado_at,'') = ''
+             AND fecha_programada >= ? AND fecha_programada <= ?
+           ORDER BY fecha_programada ASC""",
+        (hoy_iso, cutoff),
+    ).fetchall()
+
+    # PASO 2: Cargar fórmulas + lote_size con normalización
+    formulas_dict = {}  # _norm(producto) -> [items]
+    lote_size_dict = {}  # _norm(producto) -> lote_size_kg
+    productos_en_formula = set()  # nombres canónicos en formula_headers
+    for r in cur.execute(
+        """SELECT fi.producto_nombre, fi.material_id, fi.material_nombre,
+                  COALESCE(fi.porcentaje, 0),
+                  COALESCE(fi.cantidad_g_por_lote, 0),
+                  COALESCE(fh.lote_size_kg, 0)
+           FROM formula_items fi
+           JOIN formula_headers fh ON fh.producto_nombre = fi.producto_nombre
+           WHERE fi.material_id IS NOT NULL AND TRIM(fi.material_id) != ''
+             AND COALESCE(fh.activo, 1) = 1"""
+    ).fetchall():
+        k = _norm(r[0])
+        productos_en_formula.add(r[0])
+        formulas_dict.setdefault(k, []).append({
+            'material_id': str(r[1] or '').strip().upper(),
+            'material_nombre': r[2] or '',
+            'pct': float(r[3] or 0),
+            'g_por_lote': float(r[4] or 0),
+        })
+        if k not in lote_size_dict:
+            lote_size_dict[k] = float(r[5] or 0)
+
+    # PASO 3: Loop producciones · contar match/sin-match + sumar consumo
+    lotes_con_formula = []
+    lotes_sin_formula = []
+    consumo_por_mp = {}  # codigo_mp -> {'nombre': X, 'total_g': Y, 'lotes': [...]}
+    for pid, prod, fecha, ckg, lt, est, ori in prods:
+        prod_norm = _norm(prod)
+        items = formulas_dict.get(prod_norm)
+        lote_size = lote_size_dict.get(prod_norm, 0)
+        cant_kg = float(ckg or 0) or (int(lt or 1) * float(lote_size or 0))
+        if not items:
+            lotes_sin_formula.append({
+                'id': pid, 'producto': prod, 'fecha': (fecha or '')[:10],
+                'cant_kg': cant_kg, 'estado': est, 'origen': ori,
+            })
+            continue
+        lotes_con_formula.append({
+            'id': pid, 'producto': prod, 'fecha': (fecha or '')[:10],
+            'cant_kg': cant_kg, 'estado': est, 'origen': ori,
+            'n_mps': len(items),
+        })
+        if cant_kg <= 0:
+            continue
+        for it in items:
+            if it['g_por_lote'] > 0 and lote_size > 0:
+                g = it['g_por_lote'] * (cant_kg / lote_size)
+            elif it['pct'] > 0:
+                g = (it['pct'] / 100.0) * cant_kg * 1000.0
+            else:
+                continue
+            mid = it['material_id']
+            d = consumo_por_mp.setdefault(mid, {
+                'nombre': it['material_nombre'], 'total_g': 0,
+                'lotes': [], 'n_lotes': 0,
+            })
+            d['total_g'] += g
+            d['n_lotes'] += 1
+            if len(d['lotes']) < 10:
+                d['lotes'].append({
+                    'producto': prod,
+                    'fecha': (fecha or '')[:10],
+                    'cant_kg': cant_kg,
+                    'gramos': round(g, 2),
+                })
+
+    # Ordenar MPs por total descendente
+    mps_sorted = sorted(consumo_por_mp.items(), key=lambda x: -x[1]['total_g'])
+
+    # Render HTML
+    n_prods = len(prods)
+    n_match = len(lotes_con_formula)
+    n_huerf = len(lotes_sin_formula)
+    pct_match = (100 * n_match / n_prods) if n_prods else 0
+    n_mps_total = len(consumo_por_mp)
+
+    paso1_rows = ''
+    for p in prods[:20]:
+        paso1_rows += f'<tr><td style="padding:4px 8px;font-family:monospace">{p[0]}</td><td style="padding:4px 8px">{p[1]}</td><td style="padding:4px 8px">{(p[2] or "")[:10]}</td><td style="padding:4px 8px;text-align:right">{p[3]:.1f} kg</td><td style="padding:4px 8px">{p[6]}</td></tr>'
+    if n_prods > 20:
+        paso1_rows += f'<tr><td colspan="5" style="padding:6px;text-align:center;color:#94a3b8">… y {n_prods - 20} producciones más</td></tr>'
+
+    paso2_huerf_rows = ''
+    huerfanos_unicos = sorted({l['producto'] for l in lotes_sin_formula})
+    for p in huerfanos_unicos[:30]:
+        n_l = sum(1 for l in lotes_sin_formula if l['producto'] == p)
+        paso2_huerf_rows += f'<tr style="background:#fee2e2"><td style="padding:6px 10px;color:#991b1b">⚠ {p}</td><td style="padding:6px 10px;text-align:right;font-weight:700">{n_l}</td></tr>'
+    if len(huerfanos_unicos) > 30:
+        paso2_huerf_rows += f'<tr><td colspan="2" style="padding:6px;text-align:center;color:#94a3b8">… y {len(huerfanos_unicos) - 30} productos más</td></tr>'
+
+    paso3_rows = ''
+    for mid, d in mps_sorted[:30]:
+        lotes_str = ' · '.join(f"{l['producto'][:30]} ({l['fecha'][-5:]}, {l['gramos']:.1f}g)" for l in d['lotes'][:3])
+        if d['n_lotes'] > 3:
+            lotes_str += f' … +{d["n_lotes"]-3} más'
+        paso3_rows += f'<tr><td style="padding:6px 10px;font-family:monospace;font-weight:700">{mid}</td><td style="padding:6px 10px">{d["nombre"][:40]}</td><td style="padding:6px 10px;text-align:right;font-weight:700">{d["total_g"]:.1f} g</td><td style="padding:6px 10px;text-align:right">{d["n_lotes"]}</td><td style="padding:4px 8px;font-size:10px;color:#64748b">{lotes_str}</td></tr>'
+
+    return f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Diag flujo Abastecimiento</title>
+<style>
+  body{{font-family:system-ui,-apple-system,Arial;background:#f8fafc;margin:0;padding:30px}}
+  .card{{max-width:1300px;margin:0 auto;background:#fff;border-radius:14px;padding:24px;box-shadow:0 4px 20px rgba(0,0,0,.08);margin-bottom:14px}}
+  h1{{color:#1e293b;margin:0 0 8px;font-size:22px}}
+  h2{{color:#0f766e;margin:18px 0 12px;font-size:16px;border-bottom:2px solid #0f766e;padding-bottom:6px}}
+  .kpi{{display:inline-block;padding:14px 22px;background:#f0fdf4;border:1px solid #16a34a;border-radius:8px;margin:4px;text-align:center;min-width:160px}}
+  .kpi-val{{font-size:24px;font-weight:800;color:#15803d}}
+  .kpi-lbl{{font-size:10px;color:#64748b;text-transform:uppercase}}
+  .kpi-warn{{background:#fef3c7;border-color:#f59e0b}}
+  .kpi-warn .kpi-val{{color:#92400e}}
+  .kpi-error{{background:#fee2e2;border-color:#dc2626}}
+  .kpi-error .kpi-val{{color:#991b1b}}
+  table{{width:100%;border-collapse:collapse;font-size:12px;margin-top:8px}}
+  th{{background:#f1f5f9;padding:8px;text-align:left;font-size:11px;text-transform:uppercase;color:#475569}}
+  td{{border-bottom:1px solid #f1f5f9}}
+  a{{color:#7c3aed;font-weight:700;text-decoration:none;display:inline-block;padding:8px 14px;background:#fff;border:1px solid #e2e8f0;border-radius:6px;margin:6px 6px 0 0}}
+  .alert{{background:#fef3c7;border-left:5px solid #f59e0b;padding:14px 18px;border-radius:8px;margin:12px 0;color:#92400e}}
+  .alert-bad{{background:#fee2e2;border-left-color:#dc2626;color:#991b1b}}
+</style></head><body>
+
+<div class="card">
+  <h1>🔍 Auditoría del flujo de Abastecimiento</h1>
+  <p style="color:#475569;font-size:13px">Verificación paso a paso desde el calendario hasta la suma final por MP. Si los números no cuadran, acá vas a ver dónde se pierde la información.</p>
+  <div>
+    <a href="/admin/llenar-calendario">📅 Llenar calendario</a>
+    <a href="/admin/limpiar-sols-ocs">🧹 Limpiar SOLs/OCs</a>
+    <a href="/">← Dashboard</a>
+  </div>
+</div>
+
+<div class="card">
+  <h2>1️⃣ Producciones del Calendario · futuro 365d</h2>
+  <p>Selecciona <code>produccion_programada</code> donde estado activo, no descontada, fecha en próximos 365d.</p>
+  <div>
+    <div class="kpi"><div class="kpi-val">{n_prods}</div><div class="kpi-lbl">Lotes futuros</div></div>
+  </div>
+  <table>
+    <thead><tr><th>ID</th><th>Producto</th><th>Fecha</th><th>Cant kg</th><th>Origen</th></tr></thead>
+    <tbody>{paso1_rows or '<tr><td colspan=5 style=padding:14px;text-align:center;color:#94a3b8>Sin lotes futuros</td></tr>'}</tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h2>2️⃣ Match producto ↔ fórmula</h2>
+  <p>Cada lote se busca en <code>formula_items</code> por nombre normalizado (sin diferencias de mayúsculas/espacios). Si NO matchea, el consumo de ese lote no se suma (bug).</p>
+  <div>
+    <div class="kpi"><div class="kpi-val">{n_match}</div><div class="kpi-lbl">Con fórmula ({pct_match:.0f}%)</div></div>
+    <div class="kpi {('kpi-error' if n_huerf > 0 else '')}"><div class="kpi-val">{n_huerf}</div><div class="kpi-lbl">SIN fórmula (huérfanos)</div></div>
+  </div>
+  {'<div class="alert alert-bad">⚠ <strong>' + str(n_huerf) + ' lotes no tienen fórmula que matchee.</strong> El cálculo SUBESTIMA · cada lote huérfano contribuye 0g a Abastecimiento. Revisá los nombres en la tabla y compará contra formula_headers.</div>' if n_huerf > 0 else '<div style="background:#f0fdf4;border-left:5px solid #16a34a;padding:14px 18px;border-radius:8px;color:#15803d;margin-top:12px">✓ Todos los lotes matchean con una fórmula.</div>'}
+
+  <h3 style="margin-top:16px;color:#991b1b;font-size:13px">Productos huérfanos (sin match)</h3>
+  <table>
+    <thead><tr><th>Producto en producción_programada</th><th style="text-align:right">N lotes</th></tr></thead>
+    <tbody>{paso2_huerf_rows or '<tr><td colspan=2 style="padding:14px;text-align:center;color:#15803d">Ninguno · todos matchean</td></tr>'}</tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h2>3️⃣ Suma de consumo por MP</h2>
+  <p>Para cada lote con fórmula, se calcula <code>gramos = g_por_lote × (cant_kg / lote_size_kg)</code> o <code>(% / 100) × cant_kg × 1000</code> · se acumula por MP.</p>
+  <div>
+    <div class="kpi"><div class="kpi-val">{n_mps_total}</div><div class="kpi-lbl">MPs distintas consumidas</div></div>
+  </div>
+  <table>
+    <thead><tr><th>Código MP</th><th>Nombre</th><th style="text-align:right">Total 365d</th><th style="text-align:right">N lotes</th><th>Sample (primeros 3 lotes)</th></tr></thead>
+    <tbody>{paso3_rows or '<tr><td colspan=5 style="padding:14px;text-align:center;color:#94a3b8">Sin MPs consumidas</td></tr>'}</tbody>
+  </table>
+</div>
+
+</body></html>"""
+
+
 @bp.route("/admin/limpiar-sols-ocs", methods=["GET", "POST"])
 def admin_limpiar_sols_ocs():
     """Página HTML standalone · limpiar SOLs y OCs fantasma.
