@@ -20644,11 +20644,18 @@ async function ckMarcar(itemId, estado){
           '<div id="herr-resultado-limpieza" style="margin-top:10px;font-size:11px;color:#64748b"></div>' +
         '</div>' +
         // Sección 2 · Productos con lote absurdo
-        '<div style="background:#f8fafc;border-radius:8px;padding:14px">' +
+        '<div style="background:#f8fafc;border-radius:8px;padding:14px;margin-bottom:14px">' +
           '<div style="font-weight:700;color:#1e293b;font-size:13px;margin-bottom:4px">2️⃣ Productos con lote_size_kg absurdo (&lt;1 kg)</div>' +
           '<div style="font-size:11px;color:#64748b;margin-bottom:8px">Caso AZ HIBRID CLEAR: BD tenía 0.1 kg → planificador sugería 23 lotes diarios · arreglar aquí.</div>' +
           '<button onclick="herrListarSospechosos()" style="background:#0f766e;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">📋 Listar sospechosos</button>' +
           '<div id="herr-resultado-sospechosos" style="margin-top:10px"></div>' +
+        '</div>' +
+        // Sección 3 · SKUs huérfanos vendiendo
+        '<div style="background:#f8fafc;border-radius:8px;padding:14px">' +
+          '<div style="font-weight:700;color:#1e293b;font-size:13px;margin-bottom:4px">3️⃣ SKUs vendiendo sin mapeo (huérfanos)</div>' +
+          '<div style="font-size:11px;color:#64748b;margin-bottom:8px">Caso BHA: LBHA + CRB3BHA vendían sin map · reportaba 300/mes cuando real es 1280/mes (4×). Mapealos a su producto.</div>' +
+          '<button onclick="herrListarHuerfanos()" style="background:#7c3aed;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">🔍 Listar huérfanos top</button>' +
+          '<div id="herr-resultado-huerfanos" style="margin-top:10px"></div>' +
         '</div>' +
       '</div>' +
       '</div>';
@@ -20721,6 +20728,82 @@ async function ckMarcar(itemId, estado){
       html += '</tbody></table>';
       out.innerHTML = html;
     } catch(e) { out.innerHTML = '<span style="color:#dc2626">Error: '+e.message+'</span>'; }
+  };
+  // FIX 23-may-2026 PM Sebastián · "Suero Exfoliante BHA no hace match · 300/mes
+  // no es verdad" · diag reveló SKUs huérfanos vendiendo sin map. UI para
+  // mapearlos en bulk · una llamada actualiza N.
+  window.herrListarHuerfanos = async function() {
+    const out = document.getElementById('herr-resultado-huerfanos');
+    out.innerHTML = 'Buscando…';
+    try {
+      const r = await fetch('/api/admin/skus-huerfanos-top?limit=50');
+      const d = await r.json();
+      if (!r.ok || d.error) { out.innerHTML = '<span style="color:#dc2626">Error: '+(d.error||r.status)+'</span>'; return; }
+      const huerfanos = d.huerfanos_top || [];
+      const productos = d.productos_disponibles || [];
+      if (!huerfanos.length) { out.innerHTML = '<span style="color:#0f766e">✓ No hay huérfanos vendiendo</span>'; return; }
+      window._herr_productos = productos;
+      let html = '<div style="font-size:11px;color:#64748b;margin-bottom:6px">' + huerfanos.length + ' SKU(s) huérfanos · ' + d.n_huerfanos_total + ' total en BD · elegí producto y pulsá Mapear · al final ✅ Mapear todos</div>';
+      html += '<div style="max-height:380px;overflow:auto;border:1px solid #e5e7eb;border-radius:6px">';
+      html += '<table style="width:100%;border-collapse:collapse;font-size:11px"><thead style="position:sticky;top:0;background:#f1f5f9"><tr><th style="padding:5px;text-align:left">SKU</th><th style="padding:5px;text-align:right">uds 60d</th><th style="padding:5px;text-align:left">Mapear a producto</th><th style="padding:5px"></th></tr></thead><tbody>';
+      huerfanos.forEach((h, idx) => {
+        const skuEsc = (h.sku || '').replace(/"/g, '&quot;').replace(/\'/g, '&#39;');
+        html += '<tr style="border-bottom:1px solid #f1f5f9"><td style="padding:5px;font-family:ui-monospace;font-weight:700">' + h.sku + '</td>' +
+          '<td style="padding:5px;text-align:right;color:#0891b2;font-weight:700">' + h.uds_60d + '</td>' +
+          '<td style="padding:5px"><select id="herr-h-prod-' + idx + '" style="width:100%;padding:3px 4px;border:1px solid #cbd5e1;border-radius:4px;font-size:11px"><option value="">— elegir —</option>';
+        // Sugerencia: producto cuyo nombre contenga el SKU como substring
+        const skuU = (h.sku || '').toUpperCase();
+        const sugerencia = productos.find(p => skuU.length >= 3 && p.toUpperCase().split(' ').some(w => w.length >= 3 && skuU.indexOf(w.substring(0,3)) >= 0));
+        productos.forEach(p => {
+          const sel = (p === sugerencia) ? ' selected' : '';
+          html += '<option value="' + p.replace(/"/g, '&quot;') + '"' + sel + '>' + p + '</option>';
+        });
+        html += '</select></td>' +
+          '<td style="padding:5px"><button onclick="herrMapearUno(&quot;' + skuEsc + '&quot;,' + idx + ')" style="background:#0f766e;color:#fff;border:none;padding:3px 8px;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer">Map</button></td></tr>';
+      });
+      html += '</tbody></table></div>';
+      html += '<div style="margin-top:8px"><button onclick="herrMapearTodos()" style="background:#7c3aed;color:#fff;border:none;padding:6px 14px;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer">✅ Mapear todos los seleccionados (bulk)</button></div>';
+      out.innerHTML = html;
+    } catch(e) { out.innerHTML = '<span style="color:#dc2626">Error: '+e.message+'</span>'; }
+  };
+  window.herrMapearUno = async function(sku, idx) {
+    const sel = document.getElementById('herr-h-prod-' + idx);
+    if (!sel || !sel.value) { alert('Elegí un producto del dropdown'); return; }
+    if (!confirm('¿Mapear SKU ' + sku + ' → ' + sel.value + '?')) return;
+    try {
+      const r = await fetch('/api/admin/sku-producto-map/bulk', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({items:[{sku, producto_nombre: sel.value}]}),
+      });
+      const d = await r.json();
+      if (!r.ok || d.error) { alert('Error: ' + (d.error||r.status)); return; }
+      sel.disabled = true;
+      sel.style.background = '#dcfce7';
+      if (sel.nextElementSibling) sel.nextElementSibling.innerHTML = '<span style="color:#0f766e;font-weight:700;font-size:14px">✓</span>';
+    } catch(e) { alert('Error red: ' + e.message); }
+  };
+  window.herrMapearTodos = async function() {
+    const huerfanos = window._herr_productos ? [...document.querySelectorAll('[id^="herr-h-prod-"]')] : [];
+    const items = [];
+    huerfanos.forEach((sel, i) => {
+      if (sel.value && !sel.disabled) {
+        const tr = sel.closest('tr');
+        const sku = tr ? tr.querySelector('td').textContent.trim() : '';
+        if (sku) items.push({sku, producto_nombre: sel.value});
+      }
+    });
+    if (!items.length) { alert('No hay productos seleccionados sin mapear'); return; }
+    if (!confirm('¿Mapear ' + items.length + ' SKU(s) a sus productos?')) return;
+    try {
+      const r = await fetch('/api/admin/sku-producto-map/bulk', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({items}),
+      });
+      const d = await r.json();
+      if (!r.ok || d.error) { alert('Error: ' + (d.error||r.status)); return; }
+      alert('✓ ' + d.n_mapeados + ' mapeados, ' + d.n_errores + ' errores · recargá Necesidades para ver velocidad real');
+      herrListarHuerfanos();
+    } catch(e) { alert('Error red: ' + e.message); }
   };
   window.herrFixProd = async function(prodNombre, idx) {
     const inp = document.getElementById('herr-fix-' + idx);

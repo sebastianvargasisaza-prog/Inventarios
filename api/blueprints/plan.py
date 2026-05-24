@@ -640,6 +640,150 @@ def admin_lote_size_fix():
                     'unidad_base_g_nuevo': nuevo_g})
 
 
+@bp.route("/api/admin/skus-huerfanos-top", methods=["GET"])
+def admin_skus_huerfanos_top():
+    """Sebastián 23-may-2026 PM · 'Suero Exfoliante BHA dice 300/mes
+    no es verdad' · diag reveló LBHA + CRB3BHA huérfanos vendiendo
+    casi 2000 uds/60d sin map. Endpoint que lista top huérfanos para
+    mapeo masivo desde UI Herramientas.
+
+    Devuelve top N huérfanos vendedores en 60d (no en sku_producto_map)
+    + lista de productos activos en formula_headers para dropdown UI.
+    """
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+    import json as _json
+    from datetime import datetime as _dt2, timedelta as _td2
+    try:
+        limit = max(1, min(int(request.args.get('limit', 30)), 100))
+    except Exception:
+        limit = 30
+    conn = get_db()
+    cur = conn.cursor()
+    # SKUs ya mapeados
+    mapeados = set()
+    try:
+        for r in cur.execute(
+            "SELECT UPPER(TRIM(sku)) FROM sku_producto_map "
+            "WHERE COALESCE(activo,1)=1"
+        ).fetchall():
+            mapeados.add(r[0])
+    except Exception:
+        pass
+    # Ventas 60d agregadas por SKU (con filtro cancelled/refunded)
+    desde = (_dt2.utcnow() - _td2(days=60)).strftime('%Y-%m-%dT00:00:00')
+    ventas = {}
+    try:
+        for r in cur.execute(
+            """SELECT sku_items FROM animus_shopify_orders
+               WHERE creado_en >= ? AND sku_items IS NOT NULL
+                 AND sku_items != ''
+                 AND LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided')
+                 AND LOWER(COALESCE(estado_pago,'')) NOT IN ('refunded','voided','partially_refunded')""",
+            (desde,),
+        ).fetchall():
+            try:
+                items = _json.loads(r[0]) if r[0] else []
+            except Exception:
+                continue
+            if not isinstance(items, list):
+                continue
+            for it in items:
+                sk = (it.get('sku') or '').upper().strip()
+                if not sk:
+                    continue
+                qty = float(it.get('qty') or it.get('quantity') or it.get('cantidad') or 0)
+                ventas[sk] = ventas.get(sk, 0) + qty
+    except Exception as e:
+        return jsonify({'error': f'query ventas: {e}'}), 500
+    # Filtrar huérfanos y ordenar
+    huerfanos = {k: v for k, v in ventas.items() if k not in mapeados}
+    top = sorted(huerfanos.items(), key=lambda x: -x[1])[:limit]
+    # Lista de productos disponibles (formula_headers activos)
+    productos = []
+    try:
+        for r in cur.execute(
+            "SELECT producto_nombre FROM formula_headers "
+            "WHERE COALESCE(activo,1)=1 ORDER BY producto_nombre"
+        ).fetchall():
+            productos.append(r[0])
+    except Exception:
+        pass
+    return jsonify({
+        'ok': True,
+        'huerfanos_top': [{'sku': k, 'uds_60d': v} for k, v in top],
+        'productos_disponibles': productos,
+        'n_huerfanos_total': len(huerfanos),
+    })
+
+
+@bp.route("/api/admin/sku-producto-map/bulk", methods=["POST"])
+def admin_sku_producto_map_bulk():
+    """UPSERT múltiples SKU→producto en una llamada.
+    Body: {items: [{sku, producto_nombre}, ...]}
+    """
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+    d = request.get_json(silent=True) or {}
+    items = d.get('items') or []
+    if not isinstance(items, list) or not items:
+        return jsonify({'error': 'items lista requerida'}), 400
+    conn = get_db()
+    cur = conn.cursor()
+    creados = []
+    errores = []
+    for it in items[:200]:
+        sku = (it.get('sku') or '').strip().upper()
+        prod = (it.get('producto_nombre') or '').strip()
+        if not sku or not prod:
+            errores.append({'sku': sku, 'error': 'sku y producto requeridos'})
+            continue
+        # Validar producto existe
+        ex = cur.execute(
+            "SELECT 1 FROM formula_headers WHERE UPPER(TRIM(producto_nombre)) = UPPER(TRIM(?))",
+            (prod,),
+        ).fetchone()
+        if not ex:
+            errores.append({'sku': sku, 'error': f"producto '{prod}' no existe"})
+            continue
+        try:
+            existing = cur.execute(
+                "SELECT 1 FROM sku_producto_map WHERE UPPER(TRIM(sku)) = UPPER(TRIM(?))",
+                (sku,),
+            ).fetchone()
+            if existing:
+                cur.execute(
+                    """UPDATE sku_producto_map
+                        SET producto_nombre=?, activo=1
+                      WHERE UPPER(TRIM(sku)) = UPPER(TRIM(?))""",
+                    (prod, sku),
+                )
+            else:
+                cur.execute(
+                    "INSERT INTO sku_producto_map (sku, producto_nombre, activo) "
+                    "VALUES (?, ?, 1)",
+                    (sku, prod),
+                )
+            creados.append({'sku': sku, 'producto': prod})
+        except Exception as e:
+            errores.append({'sku': sku, 'error': str(e)[:100]})
+    try:
+        audit_log(cur, usuario=user, accion='SKU_MAP_BULK',
+                  tabla='sku_producto_map', registro_id='',
+                  despues={'n_mapeados': len(creados),
+                            'n_errores': len(errores)})
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({'ok': True, 'n_mapeados': len(creados),
+                    'n_errores': len(errores),
+                    'creados': creados, 'errores': errores})
+
+
 @bp.route("/api/admin/ml-fix", methods=["POST"])
 def admin_ml_fix():
     """Sebastián 23-may-2026 PM · "triactive no tiene tamaño envase y
