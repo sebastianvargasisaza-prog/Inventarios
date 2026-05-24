@@ -1781,6 +1781,52 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
         if r[0]:
             pipeline_kg_por_prod[r[0]] = float(r[1] or 0)
 
+    # FIX 24-may PM · auto-sugerencia Nivel 1 (Sebastián) · detectar
+    # huérfanos vendiendo y sugerirlos al producto cuyo nombre contiene
+    # substrings del SKU. Pre-calcular el set de huérfanos para evitar
+    # O(n²) en el loop.
+    sku_to_prod_keys = set(sku_to_prod.keys())
+    huerfanos_dict = {
+        sku: uds for sku, uds in ventas_por_sku.items()
+        if sku not in sku_to_prod_keys and uds > 0
+    }
+
+    def _sugerir_huerfanos(prod_nombre, top_n=3):
+        """Devuelve hasta top_n huérfanos cuyo SKU matchea el nombre
+        del producto. Scoring por substring largo."""
+        if not huerfanos_dict or not prod_nombre:
+            return []
+        # Palabras del nombre del producto, filtradas (>= 3 chars,
+        # no genéricas)
+        palabras = [w.upper().strip() for w in prod_nombre.split()
+                     if len(w) >= 3 and w.upper().strip() not in
+                     ('DE', 'DEL', 'CON', 'PARA', 'EL', 'LA', 'LOS', 'LAS')]
+        if not palabras:
+            return []
+        sugerencias = []
+        for sku, uds in huerfanos_dict.items():
+            sku_up = sku.upper()
+            score = 0
+            for w in palabras:
+                # Substring exacto >=5 chars · 100 pts
+                if len(w) >= 5 and w in sku_up:
+                    score += 100
+                # Primeros 4 chars · 60 pts
+                elif len(w) >= 4 and w[:4] in sku_up:
+                    score += 60
+                # Primeros 3 chars · 30 pts
+                elif w[:3] in sku_up:
+                    score += 30
+                # Iniciales (1 letra de cada palabra) · 10 pts
+                elif w[0] in sku_up:
+                    score += 10
+            if score >= 60:  # umbral mínimo
+                sugerencias.append({
+                    'sku': sku, 'uds_60d': int(uds), 'score': score,
+                })
+        sugerencias.sort(key=lambda x: -x['score'])
+        return sugerencias[:top_n]
+
     # 6. Procesar cada producto
     out = []
     for prod_nombre, codigo, lote_kg, tiene_10ml, uds_10ml, tipo_10ml, imagen, fecha_creacion in productos:
@@ -1980,6 +2026,7 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
             "ml_unidad": ml_promedio,
             "ml_inferido": ml_inferido,  # FIX #2 · True = heurística por nombre, no SKU real
             "lote_size_faltante": float(lote_kg or 0) < 1.0,  # FIX #2-b · BD tiene valor absurdo o falta
+            "huerfanos_sugeridos": _sugerir_huerfanos(prod_nombre),  # FIX 24-may · auto-sugerencia
             "dias_cobertura": dias_cobertura,
             "urgencia": urgencia,
             "n_lotes_recomendados": n_lotes_recomendados,

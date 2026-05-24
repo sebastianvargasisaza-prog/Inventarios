@@ -20957,6 +20957,23 @@ async function ckMarcar(itemId, estado){
   // Modal HTML real (no alert) con selector horizonte + tabla por lote +
   // detección de conflicto ±7d con opción mantener / reubicar.
   window._previewState = {producto: null, data: null, horizonte: 90};
+  // FIX 24-may PM Sebastián · auto-sugerencia Nivel 1 · 1-click
+  // mapeo de SKU huérfano sugerido. Llama endpoint bulk con 1 item.
+  window.aceptarSugerenciaMapeo = async function(sku, prodNombre, ev) {
+    if (ev && ev.stopPropagation) ev.stopPropagation();
+    if (!confirm('¿Mapear SKU ' + sku + ' → ' + prodNombre + '?')) return;
+    try {
+      const r = await fetch('/api/admin/sku-producto-map/bulk', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({items:[{sku, producto_nombre: prodNombre}]}),
+      });
+      const d = await r.json();
+      if (!r.ok || d.error) { alert('Error: ' + (d.error || r.status)); return; }
+      if ((d.n_errores || 0) > 0) { alert('Error: ' + JSON.stringify(d.errores[0])); return; }
+      alert('✓ ' + sku + ' → ' + prodNombre + ' mapeado · refrescando...');
+      if (typeof cargarNecesidades === 'function') cargarNecesidades();
+    } catch(e) { alert('Error red: ' + e.message); }
+  };
   // FIX 23-may-2026 PM Sebastián · "triactive no tiene tamaño envase
   // y no me deja modificarlo" · prompt rápido + POST /admin/ml-fix
   window.fixVolumenMl = async function(prodNombre, mlActual) {
@@ -21791,6 +21808,17 @@ async function ckMarcar(itemId, estado){
       avisos += '<div style="background:#fee2e2;color:#991b1b;border-left:3px solid #dc2626;padding:6px 10px;border-radius:5px;font-size:11px;font-weight:600;margin-top:6px">⚠ lote_size_kg en BD = ' + valBd + ' kg ' +
         (tieneCalc ? '(usando ' + p.lote_bulk_kg + ' kg calculado · ~60d cobertura) ' : '') +
         '· andá a tab Necesidades → ⚙ Herramientas para arreglarlo</div>';
+    }
+    // FIX 24-may PM · auto-sugerencia Nivel 1 · banner con huérfanos
+    // sugeridos para mapeo · botón "Aceptar" 1-click.
+    if (p.huerfanos_sugeridos && p.huerfanos_sugeridos.length > 0) {
+      const prodEscSug = (p.producto_nombre || '').replace(/'/g, "&#39;").replace(/"/g, '&quot;');
+      avisos += '<div style="background:#dbeafe;color:#1e40af;border-left:3px solid #2563eb;padding:6px 10px;border-radius:5px;font-size:11px;font-weight:600;margin-top:6px">';
+      avisos += '💡 SKU(s) vendiendo sin mapeo que parecen ser este producto:';
+      p.huerfanos_sugeridos.forEach(h => {
+        avisos += '<div style="display:flex;align-items:center;justify-content:space-between;margin-top:4px;background:#fff;padding:4px 8px;border-radius:4px"><span><strong>' + h.sku + '</strong> · ' + h.uds_60d + ' uds/60d <span style="opacity:.6">(score ' + h.score + ')</span></span><button onclick="aceptarSugerenciaMapeo(&quot;' + h.sku + '&quot;,&quot;' + prodEscSug + '&quot;,event)" style="background:#2563eb;color:#fff;border:none;padding:3px 10px;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer">✓ Mapear</button></div>';
+      });
+      avisos += '</div>';
     }
 
     let html = '<div style="display:flex;gap:14px;margin-bottom:16px;align-items:center">';
