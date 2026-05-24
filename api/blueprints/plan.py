@@ -6040,9 +6040,15 @@ def regenerar_canonicos():
               AND estado IN ('pendiente','programado','esperando_recurso','propuesto')
               AND fin_real_at IS NULL
               AND inicio_real_at IS NULL
+              AND (bloqueado_at IS NULL OR bloqueado_at = '')
               AND producto IN ({placeholders})""",
         productos_a_regenerar,
     ).fetchall()]
+    # FIX P1 audit 24-may-2026 · respetar bloqueado_at (semana workflow
+    # bloqueada por cron Lunes 7am). Antes este UPDATE cancelaba lotes
+    # bloqueados por el cron de planeación semanal · ahora se preservan
+    # para que el flujo "lunes a sábado lo planeé el lunes y no se mueve"
+    # quede sólido.
     n_cancelados = c.execute(
         f"""UPDATE produccion_programada
             SET estado = 'cancelado',
@@ -6052,6 +6058,7 @@ def regenerar_canonicos():
               AND estado IN ('pendiente','programado','esperando_recurso','propuesto')
               AND fin_real_at IS NULL
               AND inicio_real_at IS NULL
+              AND (bloqueado_at IS NULL OR bloqueado_at = '')
               AND producto IN ({placeholders})""",
         productos_a_regenerar,
     ).rowcount

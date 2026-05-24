@@ -13869,15 +13869,20 @@ def _gate_arrastre_pigmento(produccion, conn):
     """, (produccion['producto'],)).fetchone()
     pigmento_actual = bool(perfil_actual[0]) if perfil_actual else False
 
-    # Última producción en la misma sala antes de ESTA
+    # Última producción en la misma sala antes de (o el mismo día que) ESTA.
+    # FIX P1 audit 24-may-2026 · antes filtraba `< fecha` y solo veía días
+    # previos · si había 2 producciones el mismo día con pigmento → claro
+    # en la misma sala, el gate no detectaba arrastre. Ahora `<= fecha`
+    # captura producciones AM y PM del mismo día. También se incluye
+    # estado 'programado' para detectar conflicto antes de que la 1ª inicie.
     prev = conn.execute("""
         SELECT pp.producto, pp.fecha_programada
         FROM produccion_programada pp
         WHERE pp.area_id = ?
           AND pp.id != ?
-          AND pp.fecha_programada < COALESCE(?, date('now', '-5 hours', '+1 days'))
-          AND pp.estado IN ('completado','en_proceso')
-        ORDER BY pp.fecha_programada DESC LIMIT 1
+          AND pp.fecha_programada <= COALESCE(?, date('now', '-5 hours', '+1 days'))
+          AND pp.estado IN ('programado','completado','en_proceso')
+        ORDER BY pp.fecha_programada DESC, pp.id DESC LIMIT 1
     """, (produccion['area_id'], produccion['id'], produccion.get('fecha_programada'))).fetchone()
     if not prev:
         return None

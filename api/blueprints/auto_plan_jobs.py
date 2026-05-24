@@ -3626,11 +3626,17 @@ def job_mee_drift_sync(app):
         drift_codes = []
         for cod, cache_val in rows:
             try:
+                # FIX P0 audit 24-may-2026 · case-insensitive + signo Ajuste.
+                # Antes la query era case-SENSITIVE → `tipo='entrada'` (legacy
+                # lowercase) caía en ELSE 0 → cache_f != real → drift permanente.
+                # Ahora UPPER(TRIM(tipo)) normaliza y 'Ajuste' usa el SIGNO de
+                # cantidad (cant<0 = bajada, cant>0 = subida) en vez de asumir
+                # siempre suma, que era incorrecto para 'Ajuste -' descontado.
                 sum_row = c.execute(
                     """SELECT COALESCE(SUM(CASE
-                           WHEN tipo='Entrada' THEN cantidad
-                           WHEN tipo='Salida'  THEN -cantidad
-                           WHEN tipo='Ajuste'  THEN cantidad
+                           WHEN UPPER(TRIM(tipo)) IN ('ENTRADA') THEN ABS(cantidad)
+                           WHEN UPPER(TRIM(tipo)) IN ('SALIDA','CONSUMO') THEN -ABS(cantidad)
+                           WHEN UPPER(TRIM(tipo)) LIKE 'AJUSTE%' THEN cantidad
                            ELSE 0 END), 0)
                        FROM movimientos_mee WHERE mee_codigo=? AND COALESCE(anulado,0)=0""",
                     (cod,),

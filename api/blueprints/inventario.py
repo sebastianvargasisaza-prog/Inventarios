@@ -8571,21 +8571,27 @@ def conteo_detalle(cid):
             # Solo auto-ajustar diferencias que NO requieren gerencia · las
             # >5% se escalan (BDG-PRO-002) · sin este filtro esta ruta legacy
             # saltaba el control que conteo_cerrar/conteo_ajustar sí respetan.
-            c.execute("SELECT codigo_mp,nombre_mp,diferencia FROM conteo_items "
+            # FIX P0 audit 24-may-2026 · preservar lote real cuando exista
+            # en conteo_items.lote (la ruta conteo_cerrar:7676 ya lo hace).
+            # Antes esta ruta legacy escribía siempre 'AJUSTE-CICLICO-<id>'
+            # aún si había lote real → pérdida de trazabilidad INVIMA.
+            c.execute("SELECT codigo_mp,nombre_mp,diferencia,COALESCE(lote,'') FROM conteo_items "
                       "WHERE conteo_id=? AND ABS(diferencia)>0.1 AND ajuste_aplicado=0 "
                       "AND COALESCE(requiere_gerencia,0)=0", (cid,))
             _resp = d.get('responsable','') or session.get('compras_user','')
-            for cod, nom, dif in c.fetchall():
+            for cod, nom, dif, lote_real in c.fetchall():
                 tipo = 'Entrada' if dif > 0 else 'Salida'
+                lote_obj = lote_real or f'AJUSTE-CICLICO-{cid}'
                 c.execute("""INSERT INTO movimientos (material_id,material_nombre,cantidad,tipo,fecha,observaciones,lote,estado_lote,operador)
                              VALUES (?,?,?,?,?,?,?,'VIGENTE',?)""",
                           (cod, nom, abs(dif), tipo, datetime.now().isoformat(),
-                           f'Ajuste conteo {cid}', f'AJUSTE-CICLICO-{cid}', _resp))
+                           f'Ajuste conteo {cid}' + (f' · lote {lote_real}' if lote_real else ''),
+                           lote_obj, _resp))
                 c.execute("UPDATE conteo_items SET ajuste_aplicado=1 WHERE conteo_id=? AND codigo_mp=?", (cid, cod))
                 c.execute("""INSERT INTO audit_log (usuario,accion,tabla,registro_id,detalle,ip,fecha)
                              VALUES (?,?,?,?,?,?,datetime('now', '-5 hours'))""",
                           (_resp, 'AJUSTE_INVENTARIO_CONTEO', 'conteo_items', str(cid),
-                           f'MP:{cod} {tipo} {abs(dif)}g · conteo #{cid}',
+                           f'MP:{cod} {tipo} {abs(dif)}g · conteo #{cid}' + (f' · lote {lote_real}' if lote_real else ''),
                            request.remote_addr if request else ''))
         conn.commit()
         c.execute("SELECT id,numero,estado,total_items,items_diferencia FROM conteos_fisicos WHERE id=?", (cid,))
