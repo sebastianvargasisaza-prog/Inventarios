@@ -6049,11 +6049,16 @@ def regenerar_canonicos():
     # bloqueados por el cron de planeación semanal · ahora se preservan
     # para que el flujo "lunes a sábado lo planeé el lunes y no se mueve"
     # quede sólido.
+    # FIX P2 audit 24-may-2026 · cap observaciones a últimos 1500 chars al
+    # concatenar (sin esto, después de meses de crons, la fila acumulaba
+    # kilobytes de basura y la UI mostraba un wall of text ilegible).
     n_cancelados = c.execute(
         f"""UPDATE produccion_programada
             SET estado = 'cancelado',
-                observaciones = COALESCE(observaciones,'') ||
-                  ' · CANCELADO_REGEN_CANON_' || {SQLITE_NOW_COL}
+                observaciones = SUBSTR(
+                  COALESCE(observaciones,'') || ' · CANCELADO_REGEN_CANON_' || {SQLITE_NOW_COL},
+                  -1500
+                )
             WHERE origen IN ('eos_canonico','calendar','manual')
               AND estado IN ('pendiente','programado','esperando_recurso','propuesto')
               AND fin_real_at IS NULL

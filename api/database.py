@@ -312,6 +312,15 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (168, "truncar produccion_programada.observaciones acumuladas >2000 chars · keep last 1500 · Sebastián 24-may-2026 PM", [
+        # AUDITORÍA-FIX 24-may-2026 · agente reportó: 30+ updates concatenan
+        # ' · OPERACIÓN_<timestamp>' en observaciones sin truncamiento.
+        # Después de meses de crons, filas individuales tienen kilobytes
+        # de basura. Esta mig limpia el histórico. Refactor futuro: tabla
+        # produccion_programada_eventos (id, prod_id, evento, ts, usuario)
+        # para audit trail estructurado sin strings infinitos.
+        "UPDATE produccion_programada SET observaciones = '…(truncado por mig 168 · keep last 1500)… ' || SUBSTR(observaciones, -1500) WHERE LENGTH(COALESCE(observaciones,'')) > 2000",
+    ]),
     (167, "mp_lead_time_config.n_recepciones · EWMA warm-up (n<3 usa media simple) · Sebastián 24-may-2026 PM", [
         # AUDITORÍA-FIX 24-may-2026 · agente reportó: el EWMA 0.7/0.3 se
         # aplicaba desde la 1ª muestra, lo que dejaba el lead_time en
