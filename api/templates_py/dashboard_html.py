@@ -1858,6 +1858,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
           <input type="checkbox" id="abast-mee" checked> MEE
         </label>
         <button onclick="cargarAbastecimiento()" style="background:#7c3aed;color:#fff;border:none;padding:7px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">↻ Recargar</button>
+        <a href="/admin/llenar-calendario" target="_blank" style="background:#16a34a;color:#fff;border:none;padding:7px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer;text-decoration:none;display:inline-block" title="Llenar el calendario con Sugeridas a 365 días · si Abastecimiento muestra cifras bajas es porque el calendario está corto">🚀 Llenar calendario 365d</a>
       </div>
     </div>
     <!-- Selector horizonte foco · Sebastián 24-may-2026 noche · "abastecimiento
