@@ -11056,25 +11056,31 @@ def _sync_calendar_a_produccion_programada(conn, days_ahead=90,
                     except Exception:
                         pass
                 else:
-                    # Backfill cantidad_kg si falta.
+                    # P0-9 23-may-PM · auditoría agente · los 3 backfills
+                    # UPDATE NO excluían origen Fijo · si Alejandro ponía
+                    # [CODIGO] en un evento Calendar que matcheaba (producto,
+                    # fecha) con un Fijo, el sync MUTABA el Fijo. Violación
+                    # de INV-6 Fijo intocable por procesos automáticos.
+                    # Filtro agregado a los 3 UPDATEs.
+                    _NO_FIJO = ("AND COALESCE(origen,'') NOT IN "
+                                 "('eos_plan','eos_b2b','eos_retroactivo')")
                     if (exists[1] or 0) <= 0 and cantidad_kg_calc > 0:
                         conn.execute(
-                            "UPDATE produccion_programada SET cantidad_kg=? WHERE id=?",
+                            f"UPDATE produccion_programada SET cantidad_kg=? "
+                            f"WHERE id=? {_NO_FIJO}",
                             (cantidad_kg_calc, exists[0])
                         )
-                    # Backfill area_id: si Alejandro acaba de meter [CODIGO]
-                    # en un evento que ya existe en DB sin area, actualizamos.
                     if area_id_titulo is not None and (exists[2] is None):
                         conn.execute(
-                            "UPDATE produccion_programada SET area_id=? WHERE id=?",
+                            f"UPDATE produccion_programada SET area_id=? "
+                            f"WHERE id=? {_NO_FIJO}",
                             (area_id_titulo, exists[0])
                         )
-                    # Backfill gcal_event_id si falta (eventos viejos pre-fix)
                     if gcal_id:
                         try:
                             conn.execute(
-                                "UPDATE produccion_programada SET gcal_event_id=? "
-                                "WHERE id=? AND COALESCE(gcal_event_id,'') = ''",
+                                f"UPDATE produccion_programada SET gcal_event_id=? "
+                                f"WHERE id=? AND COALESCE(gcal_event_id,'') = '' {_NO_FIJO}",
                                 (gcal_id, exists[0])
                             )
                         except Exception:

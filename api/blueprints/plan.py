@@ -2603,7 +2603,7 @@ def programar_produccion():
                LEFT JOIN formula_headers fh
                  ON UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(pp.producto))
                WHERE date(pp.fecha_programada) = ?
-                 AND pp.estado IN ('pendiente','programado','en_curso')""",
+                 AND pp.estado IN ('pendiente','programado','en_curso','esperando_recurso')""",
             (fecha,),
         ).fetchall()
         kgs_dia = [float(r[1] or 0) for r in rows_dia]
@@ -5172,10 +5172,13 @@ def _auto_programar_sugeridas(conn, dias_horizonte=90, ventana_velocidad=60,
             # CADENA · Sebastián 23-may-2026 · "cuántas producciones o en cuánto"
             # Generar TODAS las sugeridas que caen en el horizonte, no solo la próxima.
             # Cada lote dura (lote_kg / vel) días · próxima = anterior + (dur - cob_alerta).
+            # P0-10 23-may-PM · auditoría · paso mínimo 7d (era 1d) · si el lote
+            # bulk es chico vs velocidad alta, paso podía ser 1d → avalancha
+            # de 90 lotes en 90 días. Mínimo semanal para evitar spam.
             dur_lote = max(1, int(lote_kg / vel)) if vel > 0 else 0
-            paso = max(1, dur_lote - cob_alerta) if dur_lote else 0
-            if paso <= 0:
-                saltados.append({'producto': prod, 'razon': 'paso de cadena = 0 (vel o lote inválidos)'})
+            paso = max(7, dur_lote - cob_alerta) if dur_lote else 0
+            if paso < 7:
+                saltados.append({'producto': prod, 'razon': 'paso de cadena <7d (vel o lote inválidos)'})
                 continue
             f_cursor = f_sug
             n_para_producto = 0
@@ -10218,13 +10221,19 @@ def autoplan_ia():
                  motivo_ia, usuario, modelo_ia, tokens_usados, confianza_ia,
                  payload_completo)
                 VALUES (?,?,{SQLITE_NOW_COL},?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            # P0-8 23-may-PM · auditoría agente · keys mismatch hacían que
+            # lote_size_kg, velocidad_uds_mes, ml_unidad SIEMPRE quedaran
+            # NULL en autoplan_decisiones (toda data IA de los últimos
+            # ~10 días corrupta). prod_ctx tiene 'lote_kg' (no 'lote_size_kg'),
+            # 'vel_uds_dia' (no 'velocidad_uds_mes'), 'ml' (no 'ml_unidad').
             (cliente, prod_nom, horizonte,
              prod_ctx.get("stock_kg") if prod_ctx else None,
-             prod_ctx.get("velocidad_uds_mes") if prod_ctx else None,
-             prod_ctx.get("ml_unidad") if prod_ctx else None,
-             prod_ctx.get("lote_size_kg") if prod_ctx else None,
+             round((prod_ctx.get("vel_uds_dia") or 0) * 30, 2) if prod_ctx else None,
+             prod_ctx.get("ml") if prod_ctx else None,
+             prod_ctx.get("lote_kg") if prod_ctx else None,
              s.get("kg"), s.get("fecha"), s.get("cobertura_post_dias"),
-             s.get("motivo"), user, resultado["modelo"], resultado["tokens"],
+             s.get("motivo") or s.get("razonamiento"), user,
+             resultado["modelo"], resultado["tokens"],
              s.get("confianza"), payload_str),
         )
         ids_creados.append(cur.lastrowid)
