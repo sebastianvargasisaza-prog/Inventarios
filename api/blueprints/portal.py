@@ -652,6 +652,10 @@ def portal_crear_pedido():
         return jsonify({'error': 'ml_unidad inválida'}), 400
     fecha = (body.get('fecha_estimada') or '').strip() or None
     notas = (body.get('notas') or '').strip()[:500]
+    # FEATURE B2B multi-envase 24-may-2026 · cliente puede solicitar
+    # envase específico (e.g. Fernando 500ml propio vs 250ml Animus).
+    envase_codigo = (body.get('envase_codigo') or '').strip().upper()
+    envase_notas = (body.get('envase_notas') or '').strip()[:200]
 
     if not producto:
         return jsonify({'error': 'producto_nombre requerido'}), 400
@@ -677,15 +681,36 @@ def portal_crear_pedido():
     if not prod_row:
         return jsonify({'error': f"producto '{producto}' no disponible"}), 404
 
-    cur.execute(
-        """INSERT INTO pedidos_b2b
-             (cliente_id, cliente_nombre, producto_nombre, cantidad_uds,
-              ml_unidad, fecha_estimada, notas, creado_por)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-        (cid, cnom, producto, cantidad, ml, fecha,
-         notas + (' [via portal]' if notas else 'via portal'),
-         f'portal:{email}'),
-    )
+    # Validar envase si fue solicitado.
+    if envase_codigo:
+        env_row = cur.execute(
+            "SELECT 1 FROM maestro_mee WHERE UPPER(TRIM(codigo)) = ?",
+            (envase_codigo,),
+        ).fetchone()
+        if not env_row:
+            return jsonify({'error': f"envase '{envase_codigo}' no disponible"}), 404
+    try:
+        cur.execute(
+            """INSERT INTO pedidos_b2b
+                 (cliente_id, cliente_nombre, producto_nombre, cantidad_uds,
+                  ml_unidad, fecha_estimada, notas, creado_por,
+                  envase_codigo, envase_notas)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (cid, cnom, producto, cantidad, ml, fecha,
+             notas + (' [via portal]' if notas else 'via portal'),
+             f'portal:{email}', envase_codigo, envase_notas),
+        )
+    except Exception:
+        # Fallback mig 172 no aplicada
+        cur.execute(
+            """INSERT INTO pedidos_b2b
+                 (cliente_id, cliente_nombre, producto_nombre, cantidad_uds,
+                  ml_unidad, fecha_estimada, notas, creado_por)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (cid, cnom, producto, cantidad, ml, fecha,
+             notas + (' [via portal]' if notas else 'via portal'),
+             f'portal:{email}'),
+        )
     pid = cur.lastrowid
     audit_log(cur, usuario=f'portal:{email}', accion='PORTAL_CREAR_PEDIDO',
               tabla='pedidos_b2b', registro_id=pid,
@@ -699,7 +724,7 @@ def portal_crear_pedido():
         from blueprints.plan import _integrar_pedido_b2b_al_plan
         integracion = _integrar_pedido_b2b_al_plan(
             cur, pid, producto, kg_b2b, fecha, cnom, f'portal:{email}',
-            unidades=cantidad, ml_unidad=ml)
+            unidades=cantidad, ml_unidad=ml, envase_codigo=envase_codigo)
         conn.commit()
     except Exception as _e:
         try: conn.rollback()

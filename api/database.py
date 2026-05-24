@@ -312,6 +312,16 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (172, "pedidos_b2b.envase_codigo · multi-envase MVP · Sebastián 24-may-2026 noche", [
+        # FEATURE B2B MULTI-ENVASE 24-may-2026 · Sebastián: "lo único que
+        # cambiaría es el envase". Mismo bulk LBHA va a 2 envases distintos
+        # según cliente: Animus 250ml propio vs Fernando 250ml branded
+        # (mismo formato, distinto sticker) o incluso 500ml personalizado.
+        # MVP: el pedido lleva envase_codigo opcional (FK soft a maestro_mee)
+        # · si null → asume envase default del producto (producto_presentaciones).
+        "ALTER TABLE pedidos_b2b ADD COLUMN envase_codigo TEXT DEFAULT ''",
+        "ALTER TABLE pedidos_b2b ADD COLUMN envase_notas TEXT DEFAULT ''",
+    ]),
     (171, "pedidos_b2b_lote · link estructurado pedido B2B ↔ lote producción · Sebastián 24-may-2026 noche", [
         # FEATURE B2B 24-may-2026 · Sebastián: "Fernando maquila productos
         # que también vende Animus · ejemplo LBHA · si pide tantas unidades

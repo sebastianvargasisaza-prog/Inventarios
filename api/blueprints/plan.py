@@ -135,6 +135,43 @@ def listar_pedidos_b2b():
     return jsonify({"items": items, "total": len(items)})
 
 
+@bp.route("/api/b2b/envases-disponibles", methods=["GET"])
+def b2b_envases_disponibles():
+    """FEATURE B2B multi-envase 24-may-2026 · catálogo de envases que un
+    cliente B2B puede solicitar. Filtros opcionales por producto (futuro,
+    cuando se mappee envase↔producto). Por ahora lista maestro_mee activos
+    de categoría 'Envase' o 'envase'.
+
+    Accesible por sesión Portal o backoffice (cualquier cliente B2B necesita
+    poder ver el catálogo al armar un pedido).
+    """
+    # Permitir tanto sesión portal como backoffice
+    if 'portal_cliente_id' not in session and 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db()
+    try:
+        rows = conn.execute(
+            """SELECT codigo, descripcion, categoria,
+                      COALESCE(unidad,''), COALESCE(stock_actual,0)
+               FROM maestro_mee
+               WHERE COALESCE(estado,'Activo') = 'Activo'
+                 AND LOWER(COALESCE(categoria,'')) LIKE '%envase%'
+               ORDER BY descripcion ASC"""
+        ).fetchall()
+    except Exception:
+        rows = []
+    return jsonify({
+        'items': [{
+            'codigo': r[0],
+            'descripcion': r[1] or '',
+            'categoria': r[2] or '',
+            'unidad': r[3] or '',
+            'stock_actual': float(r[4] or 0),
+        } for r in rows],
+        'total': len(rows),
+    })
+
+
 @bp.route("/api/admin/b2b/lote/<int:lote_id>/desglose", methods=["GET"])
 def admin_b2b_lote_desglose(lote_id):
     """FEATURE B2B 24-may-2026 · dado un lote de produccion_programada,
@@ -164,9 +201,11 @@ def admin_b2b_lote_desglose(lote_id):
             """SELECT pbl.pedido_b2b_id, pbl.kg_aporte, pbl.unidades_aporte,
                       pbl.ml_unidad, pbl.envase_codigo, pbl.modo,
                       pbl.cliente_nombre,
-                      pb.estado, pb.fecha_estimada, pb.notas
+                      pb.estado, pb.fecha_estimada, pb.notas,
+                      mee.descripcion
                FROM pedidos_b2b_lote pbl
                LEFT JOIN pedidos_b2b pb ON pb.id = pbl.pedido_b2b_id
+               LEFT JOIN maestro_mee mee ON UPPER(TRIM(mee.codigo)) = UPPER(TRIM(COALESCE(pbl.envase_codigo,'')))
                WHERE pbl.lote_produccion_id = ?
                ORDER BY pbl.kg_aporte DESC""",
             (lote_id,),
@@ -179,6 +218,7 @@ def admin_b2b_lote_desglose(lote_id):
                 'unidades_aporte': int(r[2] or 0),
                 'ml_unidad': float(r[3] or 0),
                 'envase_codigo': r[4] or '',
+                'envase_descripcion': r[10] or '',
                 'modo': r[5],
                 'cliente_nombre': r[6] or '',
                 'estado_pedido': r[7] or '',
@@ -186,7 +226,7 @@ def admin_b2b_lote_desglose(lote_id):
                 'notas': r[9] or '',
             })
     except Exception:
-        pass  # mig 171 no aplicada todavía
+        pass  # mig 171/172 no aplicada todavía
     kg_dtc = max(kg_total - kg_b2b_total, 0)
     pct_b2b = round(100.0 * kg_b2b_total / kg_total, 1) if kg_total > 0 else 0
     return jsonify({
@@ -321,6 +361,11 @@ def crear_pedido_b2b():
         return jsonify({"error": "ml_unidad inválida"}), 400
     fecha_estimada = (body.get("fecha_estimada") or "").strip()
     notas = (body.get("notas") or "").strip()
+    # FEATURE B2B multi-envase 24-may-2026 · cliente puede solicitar
+    # envase específico (e.g. Fernando 500ml branded). Default = vacío
+    # → usa presentación default del producto.
+    envase_codigo = (body.get("envase_codigo") or "").strip().upper()
+    envase_notas = (body.get("envase_notas") or "").strip()
 
     if not cliente_id or not cliente_nombre or not producto:
         return jsonify({"error": "cliente_id, cliente_nombre y producto_nombre requeridos"}), 400
@@ -339,19 +384,41 @@ def crear_pedido_b2b():
     if not prod_row:
         return jsonify({"error": f"producto '{producto}' no existe en formula_headers"}), 404
 
-    cur.execute(
-        """INSERT INTO pedidos_b2b
-             (cliente_id, cliente_nombre, producto_nombre, cantidad_uds,
-              ml_unidad, fecha_estimada, notas, creado_por)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-        (cliente_id, cliente_nombre, producto, cantidad, ml,
-         fecha_estimada or None, notas, user),
-    )
+    # Validar envase si fue solicitado (debe existir en maestro_mee).
+    if envase_codigo:
+        env_row = cur.execute(
+            "SELECT 1 FROM maestro_mee WHERE UPPER(TRIM(codigo)) = ?",
+            (envase_codigo,),
+        ).fetchone()
+        if not env_row:
+            return jsonify({"error": f"envase '{envase_codigo}' no existe en maestro_mee"}), 404
+
+    try:
+        cur.execute(
+            """INSERT INTO pedidos_b2b
+                 (cliente_id, cliente_nombre, producto_nombre, cantidad_uds,
+                  ml_unidad, fecha_estimada, notas, creado_por,
+                  envase_codigo, envase_notas)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (cliente_id, cliente_nombre, producto, cantidad, ml,
+             fecha_estimada or None, notas, user, envase_codigo, envase_notas),
+        )
+    except Exception:
+        # Mig 172 puede no estar aplicada · fallback al INSERT viejo.
+        cur.execute(
+            """INSERT INTO pedidos_b2b
+                 (cliente_id, cliente_nombre, producto_nombre, cantidad_uds,
+                  ml_unidad, fecha_estimada, notas, creado_por)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (cliente_id, cliente_nombre, producto, cantidad, ml,
+             fecha_estimada or None, notas, user),
+        )
     pid = cur.lastrowid
     audit_log(cur, usuario=user, accion="CREAR_PEDIDO_B2B",
               tabla="pedidos_b2b", registro_id=pid,
               despues={"cliente_id": cliente_id, "producto": producto,
-                       "cantidad_uds": cantidad, "fecha": fecha_estimada})
+                       "cantidad_uds": cantidad, "fecha": fecha_estimada,
+                       "envase_codigo": envase_codigo})
     conn.commit()
 
     # Sebastián 15-may-2026: integrar el pedido B2B al plan AL INSTANTE.
@@ -363,7 +430,7 @@ def crear_pedido_b2b():
     try:
         integracion = _integrar_pedido_b2b_al_plan(
             cur, pid, producto, kg_b2b, fecha_estimada, cliente_nombre, user,
-            unidades=cantidad, ml_unidad=ml)
+            unidades=cantidad, ml_unidad=ml, envase_codigo=envase_codigo)
         conn.commit()
     except Exception as _e:
         # La integración es best-effort · si falla, el pedido igual queda
