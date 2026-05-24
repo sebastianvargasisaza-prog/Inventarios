@@ -1770,12 +1770,15 @@ def clientes_b2b_listar():
         }
         if incluir_pedidos:
             row_pc = cur.execute(
-                """SELECT COUNT(*), SUM(CASE WHEN estado='pendiente' THEN 1 ELSE 0 END)
+                """SELECT COUNT(*),
+                          SUM(CASE WHEN estado IN ('pendiente','confirmado','en_produccion') THEN 1 ELSE 0 END),
+                          MAX(COALESCE(fecha_estimada, creado_at_utc))
                    FROM pedidos_b2b WHERE cliente_id = ?""",
                 (r[0],),
             ).fetchone()
             item['pedidos_total'] = int((row_pc and row_pc[0]) or 0)
             item['pedidos_pendientes'] = int((row_pc and row_pc[1]) or 0)
+            item['ultimo_pedido_fecha'] = (row_pc[2] if row_pc else '') or ''
         items.append(item)
     return jsonify({'ok': True, 'clientes': items})
 
@@ -6412,6 +6415,393 @@ def _auto_programar_sugeridas(conn, dias_horizonte=365, ventana_velocidad=60,
         conn.commit()
     return {'creados': creados, 'saltados': saltados,
             'n_creados': len(creados), 'n_saltados': len(saltados)}
+
+
+@bp.route("/api/admin/clientes-b2b/migrar-desde-maquila", methods=["POST"])
+def admin_clientes_b2b_migrar_maquila():
+    """Migra clientes de la tabla legacy clientes_maquila al maestro
+    clientes_b2b_maestro con tipo='MAQUILA'. Útil cuando Sebastián ve
+    nombres como Kelly Guerra que estaban en la tabla vieja pero deben
+    aparecer en el módulo B2B unificado.
+    """
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+    conn = get_db(); cur = conn.cursor()
+    creados, ya_existen, errores = 0, 0, []
+    try:
+        for r in cur.execute(
+            """SELECT codigo, nombre, COALESCE(email,''), COALESCE(telefono,''),
+                      COALESCE(comparte_formula_con,'')
+               FROM clientes_maquila
+               WHERE COALESCE(activo, 1) = 1"""
+        ).fetchall():
+            cod, nom, email, tel, comparte = r
+            cliente_id = (cod or '').strip().lower().replace(' ', '_')
+            if not cliente_id:
+                continue
+            existe = cur.execute(
+                "SELECT 1 FROM clientes_b2b_maestro WHERE cliente_id = ?",
+                (cliente_id,),
+            ).fetchone()
+            if existe:
+                ya_existen += 1
+                continue
+            try:
+                cur.execute(
+                    """INSERT INTO clientes_b2b_maestro
+                         (cliente_id, cliente_nombre, email, telefono, tipo, notas)
+                       VALUES (?, ?, ?, ?, 'MAQUILA', ?)""",
+                    (cliente_id, nom, email, tel,
+                     f'Migrado desde clientes_maquila · comparte_formula={comparte}'),
+                )
+                creados += 1
+            except Exception as e:
+                errores.append({'cliente_id': cliente_id, 'error': str(e)[:100]})
+        audit_log(cur, usuario=user, accion='B2B_MIGRAR_DESDE_MAQUILA',
+                  tabla='clientes_b2b_maestro', registro_id='bulk',
+                  despues={'creados': creados, 'ya_existen': ya_existen,
+                            'errores': len(errores)})
+        conn.commit()
+    except sqlite3.OperationalError as e:
+        return jsonify({'error': f'tabla clientes_maquila no existe: {e}'}), 500
+    except Exception as e:
+        return jsonify({'error': str(e)[:200]}), 500
+    return jsonify({'ok': True, 'creados': creados,
+                    'ya_existen': ya_existen, 'errores': errores})
+
+
+@bp.route("/admin/clientes-b2b", methods=["GET"])
+def admin_clientes_b2b_pagina():
+    """Página HTML standalone · módulo admin de Clientes B2B.
+
+    Sebastián 24-may noche: 'ya dice kelly guerra que es otro cliente,
+    cómo vamos a incorporar esa producción · no creamos el módulo de
+    clientes · cómo creamos ese módulo allí para que mapee lo que ya
+    está de ese producto y se adicione · y tenga para adicionar otros'.
+
+    Dashboard con:
+    - Tabla de clientes B2B (de clientes_b2b_maestro + counts agregados)
+    - Botón Migrar desde Maquila (mueve Kelly, etc. al maestro)
+    - Botón + Nuevo cliente · form modal
+    - Click cliente → vista detalle pedidos
+    - Botón + Nuevo pedido · form modal con producto + cantidad + ml + fecha
+    """
+    if 'compras_user' not in session:
+        return "<html><body><h2>No autorizado</h2></body></html>", 401
+    user = session.get('compras_user', '')
+    if user not in (set(ADMIN_USERS) | set(COMPRAS_ACCESS)):
+        return "<html><body><h2>Solo admin/compras</h2></body></html>", 403
+
+    return """<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Clientes B2B</title>
+<style>
+  body{font-family:system-ui,-apple-system,Arial;background:#f8fafc;margin:0;padding:24px}
+  .card{max-width:1400px;margin:0 auto 14px;background:#fff;border-radius:14px;padding:24px;box-shadow:0 4px 20px rgba(0,0,0,.08)}
+  h1{color:#1e293b;margin:0 0 8px;font-size:22px}
+  h2{color:#0f766e;margin:18px 0 12px;font-size:15px}
+  table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}
+  th{background:#f1f5f9;padding:10px;text-align:left;font-size:11px;text-transform:uppercase;color:#475569}
+  td{border-bottom:1px solid #f1f5f9;padding:10px}
+  tr.row-cli{cursor:pointer}
+  tr.row-cli:hover{background:#f0fdf4}
+  .btn{padding:8px 16px;border-radius:6px;border:none;font-size:12px;font-weight:700;cursor:pointer;margin-right:6px}
+  .btn-prim{background:#7c3aed;color:#fff}
+  .btn-sec{background:#0891b2;color:#fff}
+  .btn-warn{background:#f59e0b;color:#fff}
+  .btn-link{background:transparent;color:#475569;border:1px solid #e2e8f0}
+  .badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700}
+  .b-MAQUILA{background:#fef3c7;color:#92400e}
+  .b-B2B{background:#dbeafe;color:#1e40af}
+  .b-INFLUENCER{background:#fce7f3;color:#9f1239}
+  .b-OTRO{background:#f1f5f9;color:#475569}
+  .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:1000;display:none;align-items:center;justify-content:center;padding:20px}
+  .modal{background:#fff;border-radius:14px;padding:24px;max-width:720px;width:100%;max-height:90vh;overflow:auto}
+  label{display:block;font-size:11px;color:#475569;margin-bottom:3px;margin-top:8px;font-weight:600}
+  input, select, textarea{width:100%;padding:8px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;font-family:inherit;box-sizing:border-box}
+  .info{background:#dbeafe;border-left:4px solid #1e40af;padding:12px 16px;border-radius:6px;color:#1e3a8a;font-size:12px;margin:12px 0}
+  .actions-row{display:flex;gap:6px;flex-wrap:wrap;margin-top:14px}
+</style></head><body>
+
+<div class="card">
+  <h1>👥 Clientes B2B · módulo admin</h1>
+  <p style="color:#475569;font-size:13px">Gestión unificada de clientes B2B + maquila + influencer. Cada cliente puede tener pedidos que entran al calendario de producción y suman al consumo.</p>
+  <div class="actions-row">
+    <button class="btn btn-prim" onclick="abrirModalCliente()">+ Nuevo cliente</button>
+    <button class="btn btn-sec" onclick="migrarMaquila()" title="Trae clientes que están en clientes_maquila (legacy) al maestro B2B">📦 Migrar desde Maquila</button>
+    <a href="/admin/diag-flujo-abast" class="btn btn-link" style="text-decoration:none;line-height:1.4">📊 Abastecimiento</a>
+    <a href="/" class="btn btn-link" style="text-decoration:none;line-height:1.4">← Dashboard</a>
+  </div>
+  <div id="msg-out" style="margin-top:10px;font-size:12px"></div>
+</div>
+
+<div class="card">
+  <h2>Clientes registrados</h2>
+  <table id="tbl-clientes">
+    <thead><tr>
+      <th>Cliente</th>
+      <th>Tipo</th>
+      <th>Contacto</th>
+      <th style="text-align:right">Pedidos activos</th>
+      <th style="text-align:right">Total pedidos</th>
+      <th>Último pedido</th>
+      <th></th>
+    </tr></thead>
+    <tbody><tr><td colspan="7" style="text-align:center;color:#94a3b8;padding:20px">Cargando…</td></tr></tbody>
+  </table>
+</div>
+
+<div class="card" id="card-detalle" style="display:none">
+  <h2 id="detalle-titulo">Detalle cliente</h2>
+  <div id="detalle-info"></div>
+  <div class="actions-row">
+    <button class="btn btn-prim" onclick="abrirModalPedido()">+ Nuevo pedido</button>
+    <button class="btn btn-link" onclick="cerrarDetalle()">Cerrar</button>
+  </div>
+  <h2 style="margin-top:18px">Pedidos del cliente</h2>
+  <table id="tbl-pedidos">
+    <thead><tr>
+      <th>ID</th>
+      <th>Producto</th>
+      <th style="text-align:right">Cant.</th>
+      <th style="text-align:right">ml/u</th>
+      <th>Fecha entrega</th>
+      <th>Envase</th>
+      <th>Estado</th>
+      <th>Lote calendario</th>
+      <th></th>
+    </tr></thead>
+    <tbody></tbody>
+  </table>
+</div>
+
+<!-- Modal Nuevo Cliente -->
+<div id="modal-cliente" class="modal-bg" onclick="if(event.target===this)cerrarModalCliente()">
+  <div class="modal">
+    <h2>+ Nuevo cliente B2B</h2>
+    <label>ID (slug · sin espacios)</label>
+    <input id="c-id" placeholder="kelly_guerra" style="text-transform:lowercase">
+    <label>Nombre</label>
+    <input id="c-nombre" placeholder="Kelly Guerra">
+    <label>Tipo</label>
+    <select id="c-tipo">
+      <option value="B2B">B2B (cliente regular mayorista)</option>
+      <option value="MAQUILA">Maquila (produce con nuestra fórmula, su marca)</option>
+      <option value="INFLUENCER">Influencer (línea propia)</option>
+      <option value="OTRO">Otro</option>
+    </select>
+    <label>Email contacto</label>
+    <input id="c-email" type="email" placeholder="kelly@empresa.com">
+    <label>Teléfono</label>
+    <input id="c-telefono" placeholder="+57 ...">
+    <label>Notas</label>
+    <textarea id="c-notas" rows="2"></textarea>
+    <div class="actions-row">
+      <button class="btn btn-prim" onclick="guardarCliente()">💾 Guardar</button>
+      <button class="btn btn-link" onclick="cerrarModalCliente()">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Nuevo Pedido -->
+<div id="modal-pedido" class="modal-bg" onclick="if(event.target===this)cerrarModalPedido()">
+  <div class="modal">
+    <h2 id="modal-pedido-titulo">+ Nuevo pedido</h2>
+    <label>Producto</label>
+    <input id="p-producto" list="lista-productos" placeholder="LIMPIADOR FACIAL BHA 2%">
+    <datalist id="lista-productos"></datalist>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
+      <div><label>Unidades</label><input id="p-uds" type="number" min="1" value="100"></div>
+      <div><label>ml por unidad</label><input id="p-ml" type="number" min="1" value="30" step="0.1"></div>
+      <div><label>Fecha entrega</label><input id="p-fecha" type="date"></div>
+    </div>
+    <label>Envase (opcional · vacío usa default del producto)</label>
+    <input id="p-envase" placeholder="ENV-500-FB" style="text-transform:uppercase">
+    <label>Notas</label>
+    <textarea id="p-notas" rows="2"></textarea>
+    <div class="info">El pedido se va a integrar al calendario · si hay un lote del mismo producto ±10d se suman los kg; sino se crea un lote dedicado.</div>
+    <div class="actions-row">
+      <button class="btn btn-prim" onclick="guardarPedido()">💾 Crear pedido</button>
+      <button class="btn btn-link" onclick="cerrarModalPedido()">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let CLIENTE_ACTUAL = null;
+let CLIENTES = [];
+
+async function cargarClientes() {
+  const r = await fetch('/api/clientes-b2b?incluir_pedidos=1');
+  const d = await r.json();
+  CLIENTES = d.clientes || d.items || [];
+  const tbody = document.querySelector('#tbl-clientes tbody');
+  if (!CLIENTES.length) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#94a3b8;padding:20px">Sin clientes · click "+ Nuevo cliente" o "📦 Migrar desde Maquila"</td></tr>';
+    return;
+  }
+  tbody.innerHTML = '';
+  CLIENTES.forEach(c => {
+    const tr = document.createElement('tr');
+    tr.className = 'row-cli';
+    const ult = c.ultimo_pedido_fecha ? String(c.ultimo_pedido_fecha).slice(0, 10) : '—';
+    const badge = '<span class="badge b-' + (c.tipo || 'B2B') + '">' + (c.tipo || 'B2B') + '</span>';
+    const contacto = [c.email, c.telefono].filter(x => x).join(' · ') || '—';
+    const pendientes = c.pedidos_pendientes || 0;
+    const total = c.pedidos_total || 0;
+    tr.innerHTML = '<td><strong>' + esc(c.cliente_nombre) + '</strong><br><span style="font-size:10px;color:#94a3b8;font-family:monospace">' + esc(c.cliente_id) + '</span></td>' +
+      '<td>' + badge + '</td>' +
+      '<td style="font-size:11px;color:#64748b">' + esc(contacto) + '</td>' +
+      '<td style="text-align:right;font-weight:700;color:' + (pendientes > 0 ? '#7c3aed' : '#94a3b8') + '">' + pendientes + '</td>' +
+      '<td style="text-align:right">' + total + '</td>' +
+      '<td>' + ult + '</td>' +
+      '<td><button class="btn btn-link" onclick="verDetalle(\\''+ c.cliente_id +'\\')">Ver</button></td>';
+    tbody.appendChild(tr);
+  });
+  cargarProductos();
+}
+
+async function cargarProductos() {
+  try {
+    const r = await fetch('/api/admin/skus-huerfanos-top?limit=1');
+    const d = await r.json();
+    const dl = document.getElementById('lista-productos');
+    if (dl && d.productos_disponibles) {
+      dl.innerHTML = d.productos_disponibles.map(p => '<option value="' + esc(p) + '">').join('');
+    }
+  } catch (e) {}
+}
+
+async function verDetalle(cliente_id) {
+  CLIENTE_ACTUAL = CLIENTES.find(c => c.cliente_id === cliente_id);
+  if (!CLIENTE_ACTUAL) return;
+  document.getElementById('detalle-titulo').textContent = '👤 ' + CLIENTE_ACTUAL.cliente_nombre;
+  const contacto = [CLIENTE_ACTUAL.email, CLIENTE_ACTUAL.telefono].filter(x => x).join(' · ') || 'Sin contacto';
+  document.getElementById('detalle-info').innerHTML =
+    '<div><span class="badge b-' + (CLIENTE_ACTUAL.tipo || 'B2B') + '">' + (CLIENTE_ACTUAL.tipo || 'B2B') + '</span> · ' +
+    '<code>' + esc(CLIENTE_ACTUAL.cliente_id) + '</code> · ' + esc(contacto) + '</div>';
+  document.getElementById('card-detalle').style.display = 'block';
+  // Cargar pedidos
+  const r = await fetch('/api/pedidos-b2b?cliente_id=' + encodeURIComponent(cliente_id) + '&incluir_terminales=1');
+  const d = await r.json();
+  const tbody = document.querySelector('#tbl-pedidos tbody');
+  const items = d.items || [];
+  if (!items.length) {
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#94a3b8;padding:14px">Sin pedidos · click "+ Nuevo pedido"</td></tr>';
+    return;
+  }
+  tbody.innerHTML = items.map(p => {
+    const lote = p.lote_consolidado;
+    const loteHtml = lote ? ('Lote #' + lote.lote_id + '<br><span style="font-size:10px;color:#64748b">' + lote.fecha_lote + ' · ' + lote.modo + '</span>') : '<span style="color:#94a3b8">no integrado</span>';
+    return '<tr>' +
+      '<td>' + p.id + '</td>' +
+      '<td><strong>' + esc(p.producto_nombre) + '</strong></td>' +
+      '<td style="text-align:right">' + p.cantidad_uds + '</td>' +
+      '<td style="text-align:right">' + (p.ml_unidad || 30) + '</td>' +
+      '<td>' + (p.fecha_estimada || '—') + '</td>' +
+      '<td><code style="font-size:10px">' + (p.envase_codigo || '—') + '</code></td>' +
+      '<td><span class="badge b-' + (p.estado === 'cancelado' ? 'OTRO' : 'B2B') + '">' + p.estado + '</span></td>' +
+      '<td style="font-size:11px">' + loteHtml + '</td>' +
+      '<td>' + (p.estado !== 'cancelado' ? '<button class="btn btn-link" onclick="cancelarPedido(' + p.id + ')">✕</button>' : '') + '</td>' +
+      '</tr>';
+  }).join('');
+  // Pre-llenar fecha por defecto en pedidos
+  const hoy = new Date(); hoy.setDate(hoy.getDate() + 14);
+  document.getElementById('p-fecha').value = hoy.toISOString().slice(0, 10);
+}
+
+function cerrarDetalle() {
+  document.getElementById('card-detalle').style.display = 'none';
+  CLIENTE_ACTUAL = null;
+}
+
+function abrirModalCliente() { document.getElementById('modal-cliente').style.display = 'flex'; }
+function cerrarModalCliente() { document.getElementById('modal-cliente').style.display = 'none'; }
+function abrirModalPedido() {
+  if (!CLIENTE_ACTUAL) { alert('Seleccioná un cliente primero'); return; }
+  document.getElementById('modal-pedido-titulo').textContent = '+ Nuevo pedido para ' + CLIENTE_ACTUAL.cliente_nombre;
+  document.getElementById('modal-pedido').style.display = 'flex';
+}
+function cerrarModalPedido() { document.getElementById('modal-pedido').style.display = 'none'; }
+
+async function guardarCliente() {
+  const body = {
+    cliente_id: (document.getElementById('c-id').value || '').trim().toLowerCase(),
+    cliente_nombre: document.getElementById('c-nombre').value.trim(),
+    email: document.getElementById('c-email').value.trim(),
+    telefono: document.getElementById('c-telefono').value.trim(),
+    tipo: document.getElementById('c-tipo').value,
+    notas: document.getElementById('c-notas').value.trim(),
+  };
+  if (!body.cliente_id || !body.cliente_nombre) { alert('ID y nombre requeridos'); return; }
+  const r = await fetch('/api/clientes-b2b', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+  const d = await r.json();
+  if (!r.ok) { alert('Error: ' + (d.error || r.status)); return; }
+  cerrarModalCliente();
+  ['c-id','c-nombre','c-email','c-telefono','c-notas'].forEach(id => document.getElementById(id).value = '');
+  await cargarClientes();
+  showMsg('✓ Cliente creado · ' + body.cliente_nombre, '#15803d');
+}
+
+async function guardarPedido() {
+  if (!CLIENTE_ACTUAL) return;
+  const body = {
+    cliente_id: CLIENTE_ACTUAL.cliente_id,
+    cliente_nombre: CLIENTE_ACTUAL.cliente_nombre,
+    producto_nombre: document.getElementById('p-producto').value.trim(),
+    cantidad_uds: parseInt(document.getElementById('p-uds').value) || 0,
+    ml_unidad: parseFloat(document.getElementById('p-ml').value) || 30,
+    fecha_estimada: document.getElementById('p-fecha').value,
+    envase_codigo: (document.getElementById('p-envase').value || '').trim().toUpperCase(),
+    notas: document.getElementById('p-notas').value.trim(),
+  };
+  if (!body.producto_nombre || !body.cantidad_uds) { alert('Producto y cantidad requeridos'); return; }
+  const r = await fetch('/api/pedidos-b2b', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+  const d = await r.json();
+  if (!r.ok) { alert('Error: ' + (d.error || r.status)); return; }
+  cerrarModalPedido();
+  document.getElementById('p-producto').value = '';
+  document.getElementById('p-envase').value = '';
+  document.getElementById('p-notas').value = '';
+  const inteMsg = d.integracion_plan ? ' · Integrado al lote #' + d.integracion_plan.lote_id : '';
+  showMsg('✓ Pedido #' + d.id + ' creado · ' + body.cantidad_uds + ' uds · ' + body.producto_nombre + inteMsg, '#15803d');
+  await verDetalle(CLIENTE_ACTUAL.cliente_id);
+  await cargarClientes();
+}
+
+async function cancelarPedido(pid) {
+  if (!confirm('¿Cancelar pedido #' + pid + '?')) return;
+  const r = await fetch('/api/pedidos-b2b/' + pid, { method:'DELETE' });
+  const d = await r.json();
+  if (!r.ok) { alert('Error: ' + (d.error || r.status)); return; }
+  showMsg('✓ Pedido cancelado · revertido del calendario', '#15803d');
+  if (CLIENTE_ACTUAL) await verDetalle(CLIENTE_ACTUAL.cliente_id);
+  await cargarClientes();
+}
+
+async function migrarMaquila() {
+  if (!confirm('¿Traer clientes desde la tabla legacy clientes_maquila al maestro B2B?\\n\\nLos clientes existentes no se sobrescriben.')) return;
+  const r = await fetch('/api/admin/clientes-b2b/migrar-desde-maquila', { method:'POST' });
+  const d = await r.json();
+  if (!r.ok) { alert('Error: ' + (d.error || r.status)); return; }
+  showMsg('✓ Migrados ' + d.creados + ' · ya existían ' + d.ya_existen + ' · errores ' + d.errores.length, '#15803d');
+  await cargarClientes();
+}
+
+function showMsg(text, color) {
+  const el = document.getElementById('msg-out');
+  el.innerHTML = '<span style="color:' + color + ';font-weight:700">' + text + '</span>';
+  setTimeout(() => { el.innerHTML = ''; }, 6000);
+}
+
+function esc(s) {
+  const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML;
+}
+
+cargarClientes();
+</script>
+</body></html>"""
 
 
 @bp.route("/admin/fusionar-formulas-nf", methods=["GET", "POST"])
