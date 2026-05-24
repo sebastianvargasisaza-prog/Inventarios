@@ -5195,14 +5195,28 @@ def recibir_oc(numero_oc):
                 f_rec = _dtle.strptime(str(fecha)[:10], '%Y-%m-%d').date()
                 lead_real_dias = max(1, (f_rec - f_oc).days)
                 for codigo_mp_item in {it[1] for it in items_oc if it[1]}:
+                    # FIX P1 audit 24-may-2026 · EWMA warm-up: con n<3
+                    # muestras una sola recepción anómala movía el promedio
+                    # 30%. Ahora media simple acumulada hasta n=3, después
+                    # EWMA 0.7/0.3 estándar. n_recepciones incrementa
+                    # en cada aprendizaje.
                     cur.execute(
-                        """INSERT INTO mp_lead_time_config (material_id, lead_time_dias)
-                           VALUES (?, ?)
+                        """INSERT INTO mp_lead_time_config (material_id, lead_time_dias, n_recepciones)
+                           VALUES (?, ?, 1)
                            ON CONFLICT(material_id) DO UPDATE SET
                              lead_time_dias = ROUND(
-                               0.7 * COALESCE(lead_time_dias, ?) + 0.3 * ?
-                             )""",
-                        (codigo_mp_item, lead_real_dias, lead_real_dias, lead_real_dias),
+                               CASE
+                                 WHEN COALESCE(n_recepciones, 0) < 3
+                                   THEN (COALESCE(lead_time_dias, ?) * COALESCE(n_recepciones, 0) + ?)
+                                        / (COALESCE(n_recepciones, 0) + 1.0)
+                                 ELSE 0.7 * COALESCE(lead_time_dias, ?) + 0.3 * ?
+                               END
+                             ),
+                             n_recepciones = COALESCE(n_recepciones, 0) + 1,
+                             actualizado_en = datetime('now', '-5 hours')""",
+                        (codigo_mp_item, lead_real_dias,
+                         lead_real_dias, lead_real_dias,
+                         lead_real_dias, lead_real_dias),
                     )
         except Exception as _e:
             log.warning('lead_time learn fallo: %s', _e)

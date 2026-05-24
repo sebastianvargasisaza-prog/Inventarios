@@ -9662,11 +9662,21 @@ def kanban_etapa_accion(pid, rol, accion):
     if fin_actual:
         return jsonify({'ok': True, 'ya_terminada': True,
                         'etapa_fin_at': fin_actual})
-    c.execute(
+    # FIX P1 audit 24-may-2026 · idempotencia · si entre el SELECT inicial y
+    # este UPDATE otro request ya terminó la etapa, rowcount=0 → no audit
+    # duplicado. Antes ETAPA_TERMINAR generaba audit_log aún con rowcount=0
+    # (botón apretado 2×, doble click, retry).
+    _res = c.execute(
         f"UPDATE produccion_programada SET {col_fin} = datetime('now', '-5 hours') "
         f"WHERE id=? AND COALESCE({col_fin},'')=''",
         (pid,),
     )
+    if _res.rowcount == 0:
+        fin_after = c.execute(
+            f"SELECT {col_fin} FROM produccion_programada WHERE id=?", (pid,),
+        ).fetchone()[0]
+        return jsonify({'ok': True, 'ya_terminada': True,
+                        'etapa_fin_at': fin_after})
     fin_after = c.execute(
         f"SELECT {col_fin} FROM produccion_programada WHERE id=?", (pid,),
     ).fetchone()[0]

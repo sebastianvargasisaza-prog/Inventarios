@@ -312,6 +312,15 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (167, "mp_lead_time_config.n_recepciones · EWMA warm-up (n<3 usa media simple) · Sebastián 24-may-2026 PM", [
+        # AUDITORÍA-FIX 24-may-2026 · agente reportó: el EWMA 0.7/0.3 se
+        # aplicaba desde la 1ª muestra, lo que dejaba el lead_time en
+        # 0.3*lead_real (porque el prior era NULL/default 14). 1 muestra
+        # anómala movía el promedio 30%. Ahora n_recepciones cuenta el
+        # número de aprendizajes · si n<3 → media simple acumulada · si
+        # n>=3 → EWMA estándar.
+        "ALTER TABLE mp_lead_time_config ADD COLUMN n_recepciones INTEGER DEFAULT 0",
+    ]),
     (166, "animus_shopify_orders.tags + customer_tags · base filtro B2B vs DTC · Sebastián 23-may-2026 PM", [
         # SHOPIFY-AUDIT 23-may PM · agente reportó "no hay separación B2B
         # vs DTC en animus_shopify_orders · si la tienda Shopify recibe
