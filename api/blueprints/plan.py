@@ -976,6 +976,95 @@ def admin_sku_producto_map_bulk():
                     'creados': creados, 'errores': errores})
 
 
+@bp.route("/api/admin/ml-fix-todos-skus", methods=["POST"])
+def admin_ml_fix_todos_skus():
+    """Sebastián 24-may PM · 'Blush es de 6 gramos' · aplica volumen_ml
+    (o peso_g, en este caso 6g = 6ml equivalente) a TODOS los SKUs
+    activos del producto en una llamada. Útil cuando todas las variantes
+    tienen el mismo formato (5 colores Blush Balm de 6g cada uno).
+
+    Body: {producto_nombre, volumen_ml}
+    Solo admin · audit_log.
+    """
+    from config import ADMIN_USERS as _AU
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+    if user not in _AU:
+        return jsonify({'error': 'solo admin'}), 403
+    d = request.get_json(silent=True) or {}
+    producto = (d.get('producto_nombre') or '').strip()
+    try:
+        ml = float(d.get('volumen_ml') or 0)
+    except Exception:
+        return jsonify({'error': 'volumen_ml debe ser número'}), 400
+    if not producto:
+        return jsonify({'error': 'producto_nombre requerido'}), 400
+    if ml <= 0 or ml > 5000:
+        return jsonify({'error': 'volumen_ml fuera de rango (1-5000)'}), 400
+    conn = get_db()
+    cur = conn.cursor()
+    # Verificar producto existe
+    row = cur.execute(
+        """SELECT producto_nombre FROM formula_headers
+           WHERE UPPER(TRIM(producto_nombre)) = UPPER(TRIM(?))""",
+        (producto,),
+    ).fetchone()
+    if not row:
+        return jsonify({'error': f"producto '{producto}' no existe"}), 404
+    prod_canonico = row[0]
+    # Listar SKUs del producto
+    skus_rows = cur.execute(
+        """SELECT sku FROM sku_producto_map
+           WHERE UPPER(TRIM(producto_nombre)) = UPPER(TRIM(?))
+             AND COALESCE(activo,1) = 1
+           ORDER BY sku""",
+        (prod_canonico,),
+    ).fetchall()
+    if not skus_rows:
+        return jsonify({'error': f"sin SKUs activos para '{prod_canonico}'"}), 400
+    # UPSERT producto_presentaciones por cada SKU
+    aplicados = []
+    for r in skus_rows:
+        sku = r[0].upper().strip()
+        existing = cur.execute(
+            """SELECT id FROM producto_presentaciones
+               WHERE UPPER(TRIM(sku_shopify)) = UPPER(TRIM(?))""",
+            (sku,),
+        ).fetchone()
+        if existing:
+            cur.execute(
+                """UPDATE producto_presentaciones
+                    SET volumen_ml = ?, activo = 1
+                  WHERE id = ?""",
+                (ml, existing[0]),
+            )
+            aplicados.append({'sku': sku, 'accion': 'UPDATE'})
+        else:
+            cur.execute(
+                """INSERT INTO producto_presentaciones
+                    (producto_nombre, categoria, presentacion_codigo, etiqueta,
+                     volumen_ml, sku_shopify, es_default, activo)
+                    VALUES (?, '', ?, ?, ?, ?, 0, 1)""",
+                (prod_canonico, sku, f'{int(ml)}ml', ml, sku),
+            )
+            aplicados.append({'sku': sku, 'accion': 'INSERT'})
+    try:
+        audit_log(cur, usuario=user, accion='FIX_VOLUMEN_ML_BULK',
+                  tabla='producto_presentaciones', registro_id=prod_canonico,
+                  despues={'producto_nombre': prod_canonico,
+                            'volumen_ml': ml,
+                            'n_skus_aplicados': len(aplicados),
+                            'aplicados': aplicados})
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({'ok': True, 'producto_nombre': prod_canonico,
+                    'volumen_ml': ml, 'n_skus': len(aplicados),
+                    'aplicados': aplicados})
+
+
 @bp.route("/api/admin/ml-fix", methods=["POST"])
 def admin_ml_fix():
     """Sebastián 23-may-2026 PM · "triactive no tiene tamaño envase y

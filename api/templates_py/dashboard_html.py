@@ -20670,7 +20670,7 @@ async function ckMarcar(itemId, estado){
           '<div id="herr-resultado-remap" style="font-size:11px;color:#64748b"></div>' +
         '</div>' +
         // Sección 5 · Desactivar producto (ya no se vende)
-        '<div style="background:#f8fafc;border-radius:8px;padding:14px">' +
+        '<div style="background:#f8fafc;border-radius:8px;padding:14px;margin-bottom:14px">' +
           '<div style="font-weight:700;color:#1e293b;font-size:13px;margin-bottom:4px">5️⃣ Desactivar producto (ya no se vende)</div>' +
           '<div style="font-size:11px;color:#64748b;margin-bottom:8px">Marca activo=0 · sale de Necesidades + Calendar · NO se borra (preserva histórico).</div>' +
           '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">' +
@@ -20679,6 +20679,17 @@ async function ckMarcar(itemId, estado){
             '<button onclick="herrActivarProd()" style="background:#0f766e;color:#fff;border:none;padding:6px 14px;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer">↻ Reactivar</button>' +
           '</div>' +
           '<div id="herr-resultado-dz" style="font-size:11px;color:#64748b"></div>' +
+        '</div>' +
+        // Sección 6 · Fijar ml/gramos a TODOS los SKUs del producto
+        '<div style="background:#f8fafc;border-radius:8px;padding:14px">' +
+          '<div style="font-weight:700;color:#1e293b;font-size:13px;margin-bottom:4px">6️⃣ Fijar ml/gramos del envase a TODOS los SKUs</div>' +
+          '<div style="font-size:11px;color:#64748b;margin-bottom:8px">Ej. BLUSH BALM = 6g por unidad · aplica a todos los SKUs del producto (BB101, BB201, BB301, BB401, BBM). Útil cuando ml está inferido por nombre y todos los tonos tienen el mismo formato.</div>' +
+          '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">' +
+            '<input id="herr-mlt-prod" type="text" placeholder="Producto (autocomplete)" list="herr-rm-prod-list" style="flex:1;min-width:240px;padding:6px 10px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px">' +
+            '<input id="herr-mlt-ml" type="number" min="1" max="5000" step="0.1" placeholder="ml o g" style="width:90px;padding:6px 8px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px">' +
+            '<button onclick="herrFijarMlTodos()" style="background:#f59e0b;color:#fff;border:none;padding:6px 14px;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer">✏️ Aplicar a todos</button>' +
+          '</div>' +
+          '<div id="herr-resultado-mlt" style="font-size:11px;color:#64748b"></div>' +
         '</div>' +
       '</div>' +
       '</div>';
@@ -20719,6 +20730,28 @@ async function ckMarcar(itemId, estado){
       out.innerHTML = '<span style="color:#0f766e;font-weight:700">✓ SKU ' + sku + ' → ' + prod + ' (' + d.creados[0].sku + ')</span>';
       document.getElementById('herr-rm-sku').value = '';
       document.getElementById('herr-rm-prod').value = '';
+    } catch(e) { out.innerHTML = '<span style="color:#dc2626">Error red: ' + e.message + '</span>'; }
+  };
+  // Sección 6 · Fijar ml a todos los SKUs del producto
+  window.herrFijarMlTodos = async function() {
+    const prod = (document.getElementById('herr-mlt-prod').value || '').trim();
+    const ml = parseFloat(document.getElementById('herr-mlt-ml').value);
+    const out = document.getElementById('herr-resultado-mlt');
+    if (!prod || !ml || ml <= 0 || ml > 5000) {
+      out.innerHTML = '<span style="color:#dc2626">Producto y ml (1-5000) requeridos</span>';
+      return;
+    }
+    if (!confirm('¿Aplicar ' + ml + ' ml/g a TODOS los SKUs activos de "' + prod + '"?')) return;
+    try {
+      const r = await fetch('/api/admin/ml-fix-todos-skus', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({producto_nombre: prod, volumen_ml: ml}),
+      });
+      const d = await r.json();
+      if (!r.ok || d.error) { out.innerHTML = '<span style="color:#dc2626">Error: ' + (d.error || r.status) + '</span>'; return; }
+      out.innerHTML = '<span style="color:#0f766e;font-weight:700">✓ ' + d.n_skus + ' SKU(s) actualizados a ' + d.volumen_ml + 'ml/g para ' + d.producto_nombre + '</span>';
+      document.getElementById('herr-mlt-prod').value = '';
+      document.getElementById('herr-mlt-ml').value = '';
     } catch(e) { out.innerHTML = '<span style="color:#dc2626">Error red: ' + e.message + '</span>'; }
   };
   // Sección 5 · Desactivar/Reactivar producto
