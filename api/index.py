@@ -888,6 +888,80 @@ def diag_producto_ventas(producto):
         return jsonify({'ok': False, 'error': str(e)[:200]}), 500
 
 
+@app.route('/diag/sku-buscar')
+def diag_sku_buscar():
+    """Sebastián 23-may-PM · "BOOSTER ya sale en Shopy como booster tensor
+    pero no me lo sugieres" · busca TODOS los SKUs (mapeados + huérfanos)
+    que contengan la query · case-insensitive · sin tope por volumen.
+
+    Query: ?q=BOOSTER o ?q=BT etc.
+    """
+    import json as _json
+    from datetime import datetime as _dt2, timedelta as _td2
+    q = (request.args.get('q') or '').strip().upper()
+    if not q or len(q) < 2:
+        return jsonify({'error': 'q requerido (min 2 chars)'}), 400
+    try:
+        from database import get_db
+        db = get_db()
+        c = db.cursor()
+        # SKUs mapeados que matchean
+        mapeados = []
+        for r in c.execute(
+            """SELECT sku, producto_nombre, COALESCE(activo,1)
+                 FROM sku_producto_map
+                WHERE UPPER(TRIM(sku)) LIKE ?
+                ORDER BY sku""",
+            ('%' + q + '%',),
+        ).fetchall():
+            mapeados.append({
+                'sku': r[0], 'producto_nombre': r[1],
+                'activo': int(r[2] or 0),
+            })
+        # SKUs vendidos 60d que matchean (huérfanos + mapeados)
+        desde = (_dt2.utcnow() - _td2(days=60)).strftime('%Y-%m-%dT00:00:00')
+        sku_to_qty = {}
+        for r in c.execute(
+            """SELECT sku_items FROM animus_shopify_orders
+                WHERE creado_en >= ? AND sku_items IS NOT NULL
+                  AND sku_items != ''
+                  AND LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided')""",
+            (desde,),
+        ).fetchall():
+            try:
+                items = _json.loads(r[0]) if r[0] else []
+            except Exception:
+                continue
+            if not isinstance(items, list):
+                continue
+            for it in items:
+                sk = (it.get('sku') or '').upper().strip()
+                if not sk or q not in sk:
+                    continue
+                qty = float(it.get('qty') or it.get('quantity') or it.get('cantidad') or 0)
+                sku_to_qty[sk] = sku_to_qty.get(sk, 0) + qty
+        # Marcar mapeado o huerfano
+        mapeados_set = {m['sku'].upper() for m in mapeados}
+        vendiendo = []
+        for sku, qty in sorted(sku_to_qty.items(), key=lambda x: -x[1]):
+            vendiendo.append({
+                'sku': sku, 'uds_60d': qty,
+                'huerfano': sku not in mapeados_set,
+                'producto_mapeado': next(
+                    (m['producto_nombre'] for m in mapeados
+                     if m['sku'].upper() == sku), None),
+            })
+        return jsonify({
+            'ok': True, 'q': q,
+            'skus_en_mapeo': mapeados,
+            'skus_vendiendo_60d': vendiendo,
+            'n_mapeados': len(mapeados),
+            'n_vendiendo': len(vendiendo),
+        })
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)[:200]}), 500
+
+
 @app.route('/diag/productos-sin-sku')
 def diag_productos_sin_sku():
     """Sebastián 23-may-PM · "BOOSTER TENSOR sin SKUs mapeados" ·
