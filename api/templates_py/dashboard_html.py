@@ -22646,23 +22646,70 @@ async function ckMarcar(itemId, estado){
   }
 
   function renderB2BSection(cli) {
+    const cliEsc = (cli.cliente_id || '').replace(/'/g, '&#39;').replace(/"/g, '&quot;');
+    const cliNomEsc = (cli.cliente_nombre || '').replace(/'/g, '&#39;').replace(/"/g, '&quot;');
     let html = '<div style="background:white;border-radius:14px;padding:18px;margin-bottom:14px;border:1px solid #e2e8f0">';
-    html += '<h3 style="margin:0 0 14px;color:#1e40af;font-size:16px;font-weight:800">📦 ' + escapeHtmlNec(cli.cliente_nombre) + ' <span style="font-size:11px;font-weight:500;color:#94a3b8">· B2B · ' + cli.kg_total.toFixed(1) + ' kg pendiente</span></h3>';
+    html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px">';
+    html += '<h3 style="margin:0;color:#1e40af;font-size:16px;font-weight:800">📦 ' + escapeHtmlNec(cli.cliente_nombre) + ' <span style="font-size:11px;font-weight:500;color:#94a3b8">· B2B · ' + cli.kg_total.toFixed(1) + ' kg pendiente</span></h3>';
+    // FEATURE 24-may noche · botón "+ Producto" pre-llena cliente
+    html += '<button onclick="abrirFormB2BCliente(\\''+cliEsc+'\\',\\''+cliNomEsc+'\\')" style="background:#7c3aed;color:#fff;border:none;padding:7px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">+ Producto</button>';
+    html += '</div>';
     html += '<table style="width:100%;border-collapse:collapse;font-size:12px">';
-    html += '<thead><tr style="background:#f1f5f9"><th style="text-align:left;padding:6px 10px">Producto</th><th style="padding:6px 10px">Uds</th><th style="padding:6px 10px">kg</th><th style="padding:6px 10px">Fecha</th><th style="padding:6px 10px">Estado</th><th style="padding:6px 10px"></th></tr></thead><tbody>';
+    html += '<thead><tr style="background:#f1f5f9"><th style="text-align:left;padding:6px 10px">Producto</th><th style="padding:6px 10px">Uds</th><th style="padding:6px 10px">kg</th><th style="padding:6px 10px">Fecha</th><th style="padding:6px 10px">Estado</th><th style="padding:6px 10px">Lote</th><th style="padding:6px 10px"></th></tr></thead><tbody>';
     cli.pedidos.forEach(p => {
+      const lote = p.lote_consolidado || null;
+      let loteHtml = '<span style="color:#94a3b8;font-size:10px">sin asignar</span>';
+      if (lote) {
+        const modoLbl = lote.modo === 'sumado_a_lote_canonico' ? '✓ Animus' : '🔵 Dedicado';
+        loteHtml = '<span style="font-size:10px;color:#1e40af" title="Lote #'+lote.lote_id+' · '+(lote.fecha_lote||'')+'">'+modoLbl+'<br><span style="color:#64748b">'+(lote.fecha_lote||'')+'</span></span>';
+      }
+      // Botón Asignar a Animus · solo si NO está ya sumado a canónico
+      let btnAsignar = '';
+      if (!lote || lote.modo !== 'sumado_a_lote_canonico') {
+        btnAsignar = '<button onclick="asignarB2BaAnimus('+p.id+')" style="background:#16a34a;color:#fff;border:none;padding:3px 10px;border-radius:4px;font-size:10px;cursor:pointer;font-weight:700;margin-right:4px" title="Buscar lote Animus DTC del mismo producto ±14d y sumar este pedido">🔗 Asignar a Animus</button>';
+      }
+      const estadoBg = p.estado === 'confirmado' ? '#dcfce7' : (p.estado === 'cancelado' ? '#fee2e2' : '#e0e7ff');
+      const estadoColor = p.estado === 'confirmado' ? '#15803d' : (p.estado === 'cancelado' ? '#991b1b' : '#3730a3');
       html += '<tr style="border-bottom:1px solid #e2e8f0">'
         + '<td style="padding:6px 10px"><strong>' + escapeHtmlNec(p.producto_nombre) + '</strong></td>'
         + '<td style="padding:6px 10px;text-align:center">' + p.cantidad_uds + ' × ' + p.ml_unidad + 'ml</td>'
         + '<td style="padding:6px 10px;text-align:center;font-weight:700">' + p.kg_equivalente + '</td>'
         + '<td style="padding:6px 10px;text-align:center">' + (p.fecha_estimada || '—') + '</td>'
-        + '<td style="padding:6px 10px;text-align:center"><span style="background:#e0e7ff;color:#3730a3;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700">' + p.estado + '</span></td>'
-        + '<td style="padding:6px 10px;text-align:right"><button onclick="cancelarB2B(' + p.id + ')" style="background:transparent;border:1px solid #cbd5e1;color:#64748b;padding:3px 8px;border-radius:4px;font-size:10px;cursor:pointer">Cancelar</button></td>'
+        + '<td style="padding:6px 10px;text-align:center"><span style="background:'+estadoBg+';color:'+estadoColor+';padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700">' + p.estado + '</span></td>'
+        + '<td style="padding:6px 10px;text-align:center">' + loteHtml + '</td>'
+        + '<td style="padding:6px 10px;text-align:right">' + btnAsignar + '<button onclick="cancelarB2B(' + p.id + ')" style="background:transparent;border:1px solid #cbd5e1;color:#64748b;padding:3px 8px;border-radius:4px;font-size:10px;cursor:pointer">Cancelar</button></td>'
         + '</tr>';
     });
     html += '</tbody></table></div>';
     return html;
   }
+
+  // Pre-llena cliente_id y abre el form B2B
+  window.abrirFormB2BCliente = function(cli_id, cli_nom) {
+    document.getElementById('b2b-cliente-id').value = cli_id;
+    document.getElementById('b2b-cliente-nombre').value = cli_nom;
+    abrirFormB2B();
+  };
+
+  // Asigna un pedido B2B a un lote Animus DTC existente
+  window.asignarB2BaAnimus = async function(pid) {
+    if (!confirm('¿Buscar un lote Animus DTC del mismo producto ±14d y sumar este pedido?\\n\\nSi hay match, se cancela el lote dedicado y se evita producción duplicada.')) return;
+    try {
+      const r = await fetch('/api/pedidos-b2b/' + pid + '/asignar-a-animus', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfTokenNec()},
+      });
+      const d = await r.json();
+      if (!r.ok) {
+        let msg = 'Error: ' + (d.error || r.status);
+        if (d.sugerencia) msg += '\\n\\n💡 ' + d.sugerencia;
+        alert(msg);
+        return;
+      }
+      alert('✓ ' + d.mensaje + '\\n\\nTotal del lote ahora: ' + d.kg_total_lote.toFixed(1) + ' kg');
+      cargarNecesidades();
+    } catch(e) { alert('Error red: ' + e.message); }
+  };
 
   async function abrirFormB2B() {
     // Cargar productos activos al select si está vacío

@@ -6417,6 +6417,167 @@ def _auto_programar_sugeridas(conn, dias_horizonte=365, ventana_velocidad=60,
             'n_creados': len(creados), 'n_saltados': len(saltados)}
 
 
+@bp.route("/api/pedidos-b2b/<int:pid>/asignar-a-animus", methods=["POST"])
+def pedidos_b2b_asignar_a_animus(pid):
+    """Sebastián 24-may noche: 'le falta la parte asignar produccion y
+    allí hace match con lo que ya está programado de animus'.
+
+    Re-asigna un pedido B2B al lote Animus DTC más cercano del mismo
+    producto (en lugar de tener lote dedicado eos_b2b). Útil cuando se
+    creó un pedido y después aparece un lote Animus cerca · pegarlo
+    ahí evita duplicar producción.
+
+    Lógica:
+    1. Lee pedido_b2b + su integración actual (pedidos_b2b_lote)
+    2. Busca lote Animus DTC (eos_canonico/eos_plan/auto_plan) del mismo
+       producto en ventana ±14d de la fecha del pedido
+    3. Si encuentra match:
+       - Si el lote actual era dedicado (eos_b2b solo de este pedido):
+         lo cancela
+       - Suma kg_b2b al nuevo lote canónico
+       - INSERT/UPDATE pedidos_b2b_lote
+       - Marca el pedido como 'confirmado'
+    4. Si NO encuentra: devuelve error con sugerencia
+    """
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+    conn = get_db(); cur = conn.cursor()
+    pedido = cur.execute(
+        """SELECT id, cliente_id, cliente_nombre, producto_nombre,
+                  COALESCE(cantidad_uds,0), COALESCE(ml_unidad,30),
+                  fecha_estimada, COALESCE(envase_codigo,''),
+                  COALESCE(estado,'pendiente')
+           FROM pedidos_b2b WHERE id = ?""",
+        (pid,),
+    ).fetchone()
+    if not pedido:
+        return jsonify({'error': 'Pedido no existe'}), 404
+    pid_real, cli_id, cli_nom, producto, uds, ml, fecha_est, env_cod, estado = pedido
+    if estado == 'cancelado':
+        return jsonify({'error': 'pedido cancelado · no se puede asignar'}), 400
+    kg_b2b = round(float(uds or 0) * float(ml or 30) / 1000.0, 2)
+    if kg_b2b <= 0:
+        return jsonify({'error': 'pedido con kg=0'}), 400
+
+    # Fecha objetivo · igual que _integrar_pedido_b2b_al_plan
+    from datetime import date as _d, timedelta as _td
+    hoy = _hoy_colombia() if '_hoy_colombia' in globals() else _d.today()
+    if fecha_est:
+        try:
+            f_target = _d.fromisoformat(str(fecha_est)[:10]) - _td(days=10)
+        except Exception:
+            f_target = hoy + _td(days=7)
+    else:
+        f_target = hoy + _td(days=7)
+
+    # Buscar lote canónico Animus (NO eos_b2b · queremos uno que ya tenga
+    # parte DTC) en ventana ±14d del producto exacto
+    lote_animus = cur.execute(
+        """SELECT id, fecha_programada, COALESCE(cantidad_kg, 0), COALESCE(origen,'')
+           FROM produccion_programada
+           WHERE UPPER(TRIM(producto)) = UPPER(TRIM(?))
+             AND COALESCE(origen,'') IN ('eos_plan','eos_canonico','calendar','manual','auto_plan','sugerido')
+             AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado','esperando_recurso')
+             AND inicio_real_at IS NULL AND fin_real_at IS NULL
+             AND ABS(julianday(fecha_programada) - julianday(?)) <= 14
+           ORDER BY ABS(julianday(fecha_programada) - julianday(?)) ASC
+           LIMIT 1""",
+        (producto, f_target.isoformat(), f_target.isoformat()),
+    ).fetchone()
+
+    if not lote_animus:
+        return jsonify({
+            'error': f"No hay lote Animus DTC de '{producto}' en ventana ±14d de {f_target.isoformat()}",
+            'sugerencia': 'Programá primero un lote Animus DTC manualmente, o esperá al cron auto-sugerir',
+        }), 404
+
+    lote_animus_id = lote_animus[0]
+    lote_fecha = (lote_animus[1] or '')[:10]
+
+    # Limpiar integración previa
+    try:
+        # Lotes b2b dedicados del pedido (los cancelamos)
+        for (lid_b2b,) in cur.execute(
+            """SELECT lote_produccion_id FROM pedidos_b2b_lote
+               WHERE pedido_b2b_id = ? AND modo = 'lote_dedicado'""",
+            (pid,),
+        ).fetchall():
+            # Verificar que el lote dedicado es solo de ESTE pedido
+            otros = cur.execute(
+                "SELECT COUNT(*) FROM pedidos_b2b_lote WHERE lote_produccion_id = ? AND pedido_b2b_id != ?",
+                (lid_b2b, pid),
+            ).fetchone()
+            if not otros or int(otros[0] or 0) == 0:
+                cur.execute(
+                    """UPDATE produccion_programada
+                       SET estado = 'cancelado',
+                           observaciones = SUBSTR(COALESCE(observaciones,'') ||
+                             ' · CANCELADO_REASIGNADO_A_LOTE_' || ?, -1500)
+                       WHERE id = ? AND inicio_real_at IS NULL""",
+                    (str(lote_animus_id), lid_b2b),
+                )
+        # Quitar links viejos
+        cur.execute("DELETE FROM pedidos_b2b_lote WHERE pedido_b2b_id = ?", (pid,))
+    except Exception:
+        pass
+
+    # Sumar kg al lote Animus
+    cur.execute(
+        """UPDATE produccion_programada
+           SET cantidad_kg = COALESCE(cantidad_kg, 0) + ?,
+               origen = 'eos_plan',
+               observaciones = SUBSTR(COALESCE(observaciones,'') ||
+                  ' · +' || ? || 'kg B2B ' || ? || ' (pedido #' || ? || ' asignado manual)',
+                  -1500)
+           WHERE id = ?""",
+        (kg_b2b, kg_b2b, cli_nom or '', pid, lote_animus_id),
+    )
+
+    # INSERT link estructurado
+    try:
+        cur.execute(
+            """INSERT OR REPLACE INTO pedidos_b2b_lote
+                 (pedido_b2b_id, lote_produccion_id, kg_aporte,
+                  unidades_aporte, ml_unidad, envase_codigo, modo,
+                  cliente_nombre)
+               VALUES (?, ?, ?, ?, ?, ?, 'sumado_a_lote_canonico', ?)""",
+            (pid, lote_animus_id, kg_b2b, int(uds or 0), float(ml or 30),
+             env_cod, cli_nom or ''),
+        )
+    except Exception:
+        pass
+
+    # Marcar pedido como confirmado
+    cur.execute(
+        "UPDATE pedidos_b2b SET estado = 'confirmado' WHERE id = ? AND estado != 'cancelado'",
+        (pid,),
+    )
+
+    audit_log(cur, usuario=user, accion='B2B_ASIGNAR_A_ANIMUS',
+              tabla='pedidos_b2b', registro_id=pid,
+              despues={'lote_animus_id': lote_animus_id,
+                        'lote_fecha': lote_fecha,
+                        'kg_sumados': kg_b2b})
+    conn.commit()
+
+    # Re-leer total del lote post-suma
+    row_post = cur.execute(
+        "SELECT cantidad_kg FROM produccion_programada WHERE id=?",
+        (lote_animus_id,),
+    ).fetchone()
+    return jsonify({
+        'ok': True,
+        'pedido_id': pid,
+        'lote_animus_id': lote_animus_id,
+        'lote_fecha': lote_fecha,
+        'kg_sumados': kg_b2b,
+        'kg_total_lote': float(row_post[0] or 0) if row_post else 0,
+        'mensaje': f'Pedido asignado al lote Animus DTC #{lote_animus_id} ({lote_fecha}) · +{kg_b2b}kg',
+    })
+
+
 @bp.route("/api/admin/clientes-b2b/migrar-desde-maquila", methods=["POST"])
 def admin_clientes_b2b_migrar_maquila():
     """Migra clientes de la tabla legacy clientes_maquila al maestro
