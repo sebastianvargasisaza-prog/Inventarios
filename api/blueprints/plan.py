@@ -6414,6 +6414,155 @@ def _auto_programar_sugeridas(conn, dias_horizonte=365, ventana_velocidad=60,
             'n_creados': len(creados), 'n_saltados': len(saltados)}
 
 
+@bp.route("/admin/diag-formulas-sospechosas", methods=["GET"])
+def admin_diag_formulas_sospechosas():
+    """Sebastián 24-may noche · el match es 100% pero consumo subestima.
+    Causa probable: fórmulas con valores sospechosos. Esta página detecta:
+
+    - lote_size_kg = 0 o < 1 (absurdo · cálculo falla)
+    - cantidad_g_por_lote = 0 Y porcentaje = 0 (item silenciado)
+    - cantidad_g_por_lote MUY bajo vs porcentaje × lote_size declarado
+      (típico bug: 0.6g cuando debería ser 6g · 10× error)
+
+    Muestra todo de una para arreglar con UPDATEs específicos.
+    """
+    if 'compras_user' not in session:
+        return "<html><body><h2>No autorizado</h2></body></html>", 401
+    user = session.get('compras_user', '')
+    if user not in (set(ADMIN_USERS) | set(COMPRAS_ACCESS)):
+        return "<html><body><h2>Solo admin/compras</h2></body></html>", 403
+
+    conn = get_db(); cur = conn.cursor()
+
+    # 1. Headers con lote_size_kg sospechoso
+    headers_mal = cur.execute(
+        """SELECT producto_nombre, COALESCE(lote_size_kg, 0), COALESCE(activo, 1)
+           FROM formula_headers
+           WHERE COALESCE(activo, 1) = 1
+             AND (lote_size_kg IS NULL OR lote_size_kg < 1)
+           ORDER BY producto_nombre"""
+    ).fetchall()
+
+    # 2. Items con AMBOS valores en 0 (no suma nada)
+    items_zero = cur.execute(
+        """SELECT fi.producto_nombre, fi.material_id, fi.material_nombre,
+                  COALESCE(fi.porcentaje, 0), COALESCE(fi.cantidad_g_por_lote, 0),
+                  COALESCE(fh.lote_size_kg, 0)
+           FROM formula_items fi
+           JOIN formula_headers fh ON fh.producto_nombre = fi.producto_nombre
+           WHERE COALESCE(fh.activo, 1) = 1
+             AND COALESCE(fi.porcentaje, 0) = 0
+             AND COALESCE(fi.cantidad_g_por_lote, 0) = 0
+           ORDER BY fi.producto_nombre, fi.material_id"""
+    ).fetchall()
+
+    # 3. Items donde g_por_lote diverge del cálculo (% × lote_size × 10)
+    # Detecta sub-estimación 10x o 100x típica de bug de seed
+    items_diverge = []
+    for r in cur.execute(
+        """SELECT fi.producto_nombre, fi.material_id, fi.material_nombre,
+                  COALESCE(fi.porcentaje, 0) AS pct,
+                  COALESCE(fi.cantidad_g_por_lote, 0) AS g,
+                  COALESCE(fh.lote_size_kg, 0) AS lk
+           FROM formula_items fi
+           JOIN formula_headers fh ON fh.producto_nombre = fi.producto_nombre
+           WHERE COALESCE(fh.activo, 1) = 1
+             AND COALESCE(fi.porcentaje, 0) > 0
+             AND COALESCE(fi.cantidad_g_por_lote, 0) > 0
+             AND COALESCE(fh.lote_size_kg, 0) > 0"""
+    ).fetchall():
+        pnom, mid, mnom, pct, g, lk = r
+        esperado = (pct / 100.0) * lk * 1000.0  # gramos según % × lote
+        if esperado > 0.01:
+            ratio = g / esperado
+            # Considerar sospechoso si <0.5x o >2x del esperado
+            if ratio < 0.5 or ratio > 2.0:
+                items_diverge.append({
+                    'producto': pnom, 'mid': mid, 'mnom': mnom,
+                    'pct': pct, 'g': g, 'lk': lk,
+                    'esperado': esperado, 'ratio': ratio,
+                })
+    items_diverge.sort(key=lambda x: abs(1 - x['ratio']), reverse=True)
+
+    # Render
+    headers_rows = ''
+    for r in headers_mal[:60]:
+        headers_rows += f'<tr style="background:#fee2e2"><td style="padding:6px 10px">{r[0]}</td><td style="padding:6px 10px;text-align:right;font-family:monospace;color:#991b1b;font-weight:700">{r[1]:.3f} kg</td></tr>'
+
+    items_zero_rows = ''
+    for r in items_zero[:80]:
+        items_zero_rows += f'<tr style="background:#fef3c7"><td style="padding:5px 10px">{r[0]}</td><td style="padding:5px 10px;font-family:monospace">{r[1]}</td><td style="padding:5px 10px">{r[2][:40]}</td><td style="padding:5px 10px;text-align:right;color:#92400e">0%</td><td style="padding:5px 10px;text-align:right;color:#92400e">0 g</td><td style="padding:5px 10px;text-align:right">{r[5]:.1f} kg</td></tr>'
+    if len(items_zero) > 80:
+        items_zero_rows += f'<tr><td colspan="6" style="padding:8px;text-align:center;color:#94a3b8">… y {len(items_zero) - 80} items más</td></tr>'
+
+    diverge_rows = ''
+    for d in items_diverge[:80]:
+        color = '#dc2626' if d['ratio'] < 0.5 else '#ea580c'
+        bg = '#fee2e2' if d['ratio'] < 0.5 else '#fff7ed'
+        diverge_rows += f'<tr style="background:{bg}"><td style="padding:5px 10px">{d["producto"]}</td><td style="padding:5px 10px;font-family:monospace">{d["mid"]}</td><td style="padding:5px 10px">{d["mnom"][:35]}</td><td style="padding:5px 10px;text-align:right">{d["pct"]:.3f}%</td><td style="padding:5px 10px;text-align:right">{d["lk"]:.1f}kg</td><td style="padding:5px 10px;text-align:right;color:#1e293b">{d["g"]:.2f} g</td><td style="padding:5px 10px;text-align:right;color:#0f766e">{d["esperado"]:.2f} g</td><td style="padding:5px 10px;text-align:right;font-weight:700;color:{color}">{d["ratio"]:.2f}×</td></tr>'
+
+    return f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Diag fórmulas sospechosas</title>
+<style>
+  body{{font-family:system-ui,-apple-system,Arial;background:#f8fafc;margin:0;padding:30px}}
+  .card{{max-width:1400px;margin:0 auto 14px;background:#fff;border-radius:14px;padding:24px;box-shadow:0 4px 20px rgba(0,0,0,.08)}}
+  h1{{color:#1e293b;margin:0 0 8px;font-size:22px}}
+  h2{{color:#dc2626;margin:18px 0 12px;font-size:16px;border-bottom:2px solid #fbbf24;padding-bottom:6px}}
+  .kpi{{display:inline-block;padding:14px 22px;background:#fee2e2;border:1px solid #dc2626;border-radius:8px;margin:4px;text-align:center;min-width:160px}}
+  .kpi-val{{font-size:24px;font-weight:800;color:#991b1b}}
+  .kpi-lbl{{font-size:10px;color:#64748b;text-transform:uppercase}}
+  table{{width:100%;border-collapse:collapse;font-size:12px;margin-top:8px}}
+  th{{background:#f1f5f9;padding:8px;text-align:left;font-size:11px;text-transform:uppercase;color:#475569}}
+  td{{border-bottom:1px solid #f1f5f9}}
+  a{{color:#7c3aed;font-weight:700;text-decoration:none;display:inline-block;padding:8px 14px;background:#fff;border:1px solid #e2e8f0;border-radius:6px;margin:6px 6px 0 0}}
+</style></head><body>
+
+<div class="card">
+  <h1>🐛 Diagnóstico de fórmulas sospechosas</h1>
+  <p style="color:#475569;font-size:13px">Sebastián: 'la lógica está bien pero no muestra la realidad'. Esta página detecta dónde están los datos mal cargados que hacen que el consumo proyectado salga subestimado.</p>
+  <div>
+    <a href="/admin/diag-flujo-abast">← Diag flujo</a>
+    <a href="/admin/llenar-calendario">📅 Llenar calendario</a>
+    <a href="/admin/limpiar-sols-ocs">🧹 Limpiar SOLs/OCs</a>
+    <a href="/">← Dashboard</a>
+  </div>
+</div>
+
+<div class="card">
+  <h2>🔴 1. Fórmulas con lote_size_kg ausente o &lt; 1</h2>
+  <p>Si el lote estándar es 0 o muy chico, el cálculo gramos = g_por_lote × (cant_kg/lote_size) se rompe o subestima.</p>
+  <div class="kpi"><div class="kpi-val">{len(headers_mal)}</div><div class="kpi-lbl">Fórmulas con lote_size mal</div></div>
+  <table>
+    <thead><tr><th>Producto</th><th style="text-align:right">lote_size_kg</th></tr></thead>
+    <tbody>{headers_rows or '<tr><td colspan=2 style="padding:14px;text-align:center;color:#15803d">✓ Ningún lote_size sospechoso</td></tr>'}</tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h2>🟡 2. Items con % = 0 Y cantidad_g_por_lote = 0</h2>
+  <p>Estos items aportan 0g al consumo silenciosamente. Hay que llenar al menos uno de los dos campos en formula_items.</p>
+  <div class="kpi"><div class="kpi-val">{len(items_zero)}</div><div class="kpi-lbl">Items en cero</div></div>
+  <table>
+    <thead><tr><th>Producto</th><th>MP</th><th>Nombre MP</th><th style="text-align:right">%</th><th style="text-align:right">g/lote</th><th style="text-align:right">lote_size</th></tr></thead>
+    <tbody>{items_zero_rows or '<tr><td colspan=6 style="padding:14px;text-align:center;color:#15803d">✓ Ningún item en cero</td></tr>'}</tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h2>🟠 3. Items con divergencia % vs g/lote (subestimados o sobreestimados)</h2>
+  <p>Comparamos el valor declarado `cantidad_g_por_lote` contra el calculado (`% × lote_size × 1000`). Si el ratio difiere significativamente, hay typo en el seed (e.g., 0.6 cuando debería ser 6.0 · 10× subestimado).</p>
+  <p style="color:#475569;font-size:11px">⚠ El cálculo usa <strong>cantidad_g_por_lote primero</strong> si > 0. Si ese valor está mal, el consumo proyectado queda mal.</p>
+  <div class="kpi"><div class="kpi-val">{len(items_diverge)}</div><div class="kpi-lbl">Items divergentes &gt;2× o &lt;0.5×</div></div>
+  <table>
+    <thead><tr><th>Producto</th><th>MP</th><th>Nombre</th><th style="text-align:right">%</th><th style="text-align:right">lote_kg</th><th style="text-align:right">g/lote BD</th><th style="text-align:right">g/lote calc</th><th style="text-align:right">Ratio</th></tr></thead>
+    <tbody>{diverge_rows or '<tr><td colspan=8 style="padding:14px;text-align:center;color:#15803d">✓ Todos los items son consistentes</td></tr>'}</tbody>
+  </table>
+  <p style="color:#475569;font-size:11px;margin-top:10px">📌 Si ratio &lt; 0.5× (rojo): cantidad_g_por_lote subestima · el sistema mostrará consumo bajo.<br>📌 Si ratio &gt; 2× (naranja): cantidad_g_por_lote sobreestima · el sistema mostrará consumo alto.</p>
+</div>
+
+</body></html>"""
+
+
 @bp.route("/admin/diag-flujo-abast", methods=["GET"])
 def admin_diag_flujo_abast():
     """Página standalone · auditoría del flujo de Abastecimiento.
