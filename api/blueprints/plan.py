@@ -1781,6 +1781,32 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
         if r[0]:
             pipeline_kg_por_prod[r[0]] = float(r[1] or 0)
 
+    # 5.b · FIX P0 audit 24-may-2026 · doble-cuenta Fijo↔Sugerida.
+    # Antes el cron auto-sugerir veía cobertura insuficiente (porque Fijo
+    # pendiente NO contaba como pipeline) y programaba Sugeridas adicionales
+    # SOBRE Fijo ya garantizado. Ahora sumamos Fijo del horizonte 60d
+    # (estado activo, sin fin_real_at) al pipeline para reflejar que ese
+    # bulk va a entrar al stock futuro.
+    # Por qué solo Fijo: las Sugeridas son recomendaciones reemplazables;
+    # el Fijo es compromiso firme del usuario o B2B. Lo Fijo garantiza
+    # entrada de bulk.
+    pipeline_fijo_kg_por_prod = {}
+    try:
+        for r in c.execute(
+            """SELECT producto, COALESCE(SUM(COALESCE(cantidad_kg, 0)), 0)
+               FROM produccion_programada
+               WHERE fin_real_at IS NULL
+                 AND COALESCE(estado, 'programado') NOT IN ('cancelado', 'completado')
+                 AND COALESCE(origen, '') IN ('eos_plan', 'eos_b2b', 'eos_retroactivo')
+                 AND date(fecha_programada) >= date('now', '-5 hours')
+                 AND date(fecha_programada) <= date('now', '-5 hours', '+60 days')
+               GROUP BY producto"""
+        ).fetchall():
+            if r[0]:
+                pipeline_fijo_kg_por_prod[r[0]] = float(r[1] or 0)
+    except Exception:
+        pass
+
     # FIX 24-may PM · auto-sugerencia Nivel 1 (Sebastián) · detectar
     # huérfanos vendiendo y sugerirlos al producto cuyo nombre contiene
     # substrings del SKU. Pre-calcular el set de huérfanos para evitar
@@ -1924,10 +1950,13 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
             velocidad_uds_dia = max(velocidad_uds_dia, vel_90d * 0.5)
             velocidad_uds_dia = min(velocidad_uds_dia, vel_90d * 2.0)
         velocidad_kg_dia = (velocidad_uds_dia * ml_promedio) / 1000.0
-        # Stock kg = uds × ml / 1000 + pipeline
+        # Stock kg = uds × ml / 1000 + pipeline reciente + Fijo pendiente
+        # FIX P0 audit 24-may-2026 · sumar Fijo futuro (60d) al stock total
+        # para evitar doble-cuenta cuando el cron auto-sugerir corra de nuevo.
         stock_kg_gondola = (stock_uds_total * ml_promedio) / 1000.0
         pipeline_kg = pipeline_kg_por_prod.get(prod_nombre, 0.0)
-        stock_kg_total = stock_kg_gondola + pipeline_kg
+        pipeline_fijo_kg = pipeline_fijo_kg_por_prod.get(prod_nombre, 0.0)
+        stock_kg_total = stock_kg_gondola + pipeline_kg + pipeline_fijo_kg
 
         # FIX #2-b · 23-may-2026 Sebastián · AZ HIBRID CLEAR tenía
         # lote_size_kg=0.1 en BD → modal planificador sugería 23 lotes
@@ -2012,6 +2041,7 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
             "stock_uds_total": stock_uds_total,
             "stock_kg_gondola": round(stock_kg_gondola, 2),
             "pipeline_kg": round(pipeline_kg, 2),
+            "pipeline_fijo_kg": round(pipeline_fijo_kg, 2),
             "stock_kg_total": round(stock_kg_total, 2),
             "ventas_periodo_uds": ventas_periodo_total,
             "ventas_30d_uds": ventas_30d_total,

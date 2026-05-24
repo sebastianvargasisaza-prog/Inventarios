@@ -10896,9 +10896,18 @@ def _sync_calendar_a_produccion_programada(conn, days_ahead=90,
     # · Si la API respondió con 0 eventos legítimos → seguimos al cleanup
     #   pass (con keys_calendar=∅, TODO orfan será detectado correctamente).
     if cal_error or cal.get('error'):
+        # FIX P0 audit Planta 24-may-2026 · antes el early-return NO
+        # llamaba a _record_sync, así que la UI mostraba "OK · hace 2min"
+        # cuando Calendar API estaba caída hace horas. Ahora registramos
+        # el intento fallido para que el badge UI muestre el error real.
+        _err_msg = cal_error or cal.get('error')
+        _record_sync(conn, 'calendar', 0, error=_err_msg)
         return 0
     if not events and not force_mirror:
-        # Sin events + sin espejo: nada que insertar, nada que borrar
+        # Sin events + sin espejo: nada que insertar, nada que borrar.
+        # Aun así registramos el sync para que el admin sepa cuándo fue
+        # la última ejecución exitosa (aunque vacía).
+        _record_sync(conn, 'calendar', 0)
         return 0
 
     # Cargar mapa SKU → producto y formulas (para validar y obtener kg/lote)
@@ -13948,11 +13957,64 @@ def _gate_sala_limpia(produccion, conn):
             'accion': 'confirmar_limpieza'}
 
 
+def _mp_reservada_por_dia_g(conn, fecha, exclude_evento_id=None):
+    """FIX P0 audit Planta 24-may-2026 · MP comprometida por OTRAS
+    producciones del día que aún no iniciaron (NO descontaron kardex todavía).
+
+    Antes el pre-flight veía el stock completo aunque hubiera 2 producciones
+    del mismo día compitiendo por la misma MP. La 1ª pasaba, iniciaba,
+    descontaba kardex · la 2ª moría en /iniciar con "no hay stock" y dejaba
+    la programación en limbo.
+
+    Devuelve dict {material_id_upper: gramos_reservados}.
+    `exclude_evento_id` excluye la producción actual para no doble-contar.
+    """
+    try:
+        params = [fecha]
+        sql_excl = ''
+        if exclude_evento_id is not None:
+            sql_excl = ' AND pp.id != ?'
+            params.append(exclude_evento_id)
+        rows = conn.execute(f"""
+            SELECT UPPER(TRIM(fi.material_id)) AS mat,
+                   SUM(
+                     CASE
+                       WHEN fi.cantidad_g_por_lote IS NOT NULL AND fi.cantidad_g_por_lote > 0
+                            AND fh.lote_size_kg IS NOT NULL AND fh.lote_size_kg > 0
+                       THEN fi.cantidad_g_por_lote * (COALESCE(pp.cantidad_kg, fh.lote_size_kg) / fh.lote_size_kg)
+                       ELSE (COALESCE(fi.porcentaje, 0) / 100.0) * COALESCE(pp.cantidad_kg, fh.lote_size_kg, 0) * 1000
+                     END
+                   ) AS reservado_g
+            FROM produccion_programada pp
+            JOIN formula_headers fh
+              ON UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(pp.producto))
+            JOIN formula_items fi
+              ON UPPER(TRIM(fi.producto_nombre)) = UPPER(TRIM(pp.producto))
+            WHERE pp.fecha_programada = ?
+              AND COALESCE(pp.estado, 'programado') IN ('programado', 'en_proceso')
+              AND pp.inicio_real_at IS NULL
+              AND fi.material_id IS NOT NULL
+              {sql_excl}
+            GROUP BY UPPER(TRIM(fi.material_id))
+        """, params).fetchall()
+        return {(r[0] or ''): float(r[1] or 0) for r in rows}
+    except Exception:
+        return {}
+
+
 def _gate_mp_disponibles(produccion, conn):
     """Gate: hay suficientes MP para el lote.
-    Reusa la lógica de listo-producir."""
+    Reusa la lógica de listo-producir.
+
+    FIX P0 audit 24-may-2026 · descuenta MP reservada por otras producciones
+    del mismo día (estado programado, inicio_real_at IS NULL) — antes el gate
+    no veía esas reservas y la 2ª producción del día pasaba pre-flight pero
+    moría en /iniciar.
+    """
     producto = produccion['producto']
     lotes = produccion['lotes'] or 1
+    fecha_prog = produccion.get('fecha_programada') or produccion.get('fecha')
+    evento_id = produccion.get('id') or produccion.get('evento_id')
     fh = conn.execute(
         "SELECT lote_size_kg FROM formula_headers WHERE UPPER(TRIM(producto_nombre))=UPPER(TRIM(?))",
         (producto,)
@@ -13973,12 +14035,23 @@ def _gate_mp_disponibles(produccion, conn):
                 'titulo': 'Fórmula sin items',
                 'mensaje': 'La fórmula no tiene materiales registrados',
                 'accion': 'completar_formula'}
+    reservas_dia = _mp_reservada_por_dia_g(conn, fecha_prog, evento_id) if fecha_prog else {}
     deficit = []
     justo = []
+    reservadas = []
     for mat_id, mat_nom, pct, cant_lote_g in items:
         req_g = (cant_lote_g or 0) * lotes if cant_lote_g else (pct or 0) / 100.0 * (fh[0] or 0) * 1000 * lotes
         # Audit zero-error 2-may-2026: usar helper canónico · excluye cuarentena
-        disp_g = stock_mp_disponible(conn, mat_id)
+        disp_g_total = stock_mp_disponible(conn, mat_id)
+        reservado_g = reservas_dia.get((mat_id or '').upper().strip(), 0.0)
+        disp_g = disp_g_total - reservado_g
+        if reservado_g > 0 and disp_g_total >= req_g and disp_g < req_g:
+            # Hay stock total, pero está reservado por otra producción del día.
+            reservadas.append({'codigo': mat_id, 'nombre': mat_nom,
+                               'requerido_g': round(req_g),
+                               'disponible_g': round(disp_g_total),
+                               'reservado_otra_g': round(reservado_g),
+                               'libre_g': round(disp_g)})
         if disp_g < req_g:
             if disp_g >= req_g * 0.5:
                 justo.append({'codigo': mat_id, 'nombre': mat_nom,
@@ -13988,17 +14061,26 @@ def _gate_mp_disponibles(produccion, conn):
                                 'requerido_g': round(req_g), 'disponible_g': round(disp_g),
                                 'faltante_g': round(req_g - disp_g)})
     if deficit:
+        # Si TODO el déficit se explica por MP reservada por otra producción
+        # del día → blocker "conflicto de reservas" (accionable: mover una de
+        # las dos producciones a otro día o aumentar compra).
+        if reservadas and not [d for d in deficit if d['codigo'].upper().strip() not in {r['codigo'].upper().strip() for r in reservadas}]:
+            return {'gate': 'mp_disponibles', 'status': 'blocker',
+                    'titulo': f'⚠ MP reservada por otra producción del día',
+                    'mensaje': f'{len(reservadas)} MP ya comprometidas: ' + ', '.join(r['nombre'] for r in reservadas[:3]) + ' · movele la fecha a una de las dos producciones',
+                    'accion': 'resolver_conflicto_reservas',
+                    'meta': {'deficit': deficit, 'justo': justo, 'reservadas': reservadas}}
         return {'gate': 'mp_disponibles', 'status': 'blocker',
                 'titulo': f'Faltan {len(deficit)} MP',
                 'mensaje': f'{len(deficit)} materiales en déficit · ' + ', '.join(d['nombre'] for d in deficit[:3]),
                 'accion': 'crear_tareas_compra',
-                'meta': {'deficit': deficit, 'justo': justo}}
+                'meta': {'deficit': deficit, 'justo': justo, 'reservadas': reservadas}}
     if justo:
         return {'gate': 'mp_disponibles', 'status': 'warn',
                 'titulo': f'{len(justo)} MP justos',
                 'mensaje': f'{len(justo)} materiales con stock <100% del requerido (≥50%)',
                 'accion': None,
-                'meta': {'justo': justo}}
+                'meta': {'justo': justo, 'reservadas': reservadas}}
     return {'gate': 'mp_disponibles', 'status': 'ok',
             'titulo': 'MP suficientes',
             'mensaje': f'{len(items)} materiales disponibles',
