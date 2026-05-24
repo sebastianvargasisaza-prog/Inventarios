@@ -3295,18 +3295,36 @@ def plan_factibilidad():
             pendientes_compras[cm] = float(gp or 0)
     except Exception:
         pass
+    # FIX 24-may-2026 noche · Sebastián clarificó que Factibilidad debe ser
+    # simulación TEMPORAL acumulativa · OC con fecha_entrega_est conocida
+    # debe sumarse al stock SOLO cuando llega (no antes). Antes el algoritmo
+    # sumaba TODO al stock inicial sin timeline → lotes del 5-jun y del
+    # 10-jun competían por stock que llega el 15-jun.
+    #
+    # pendientes_compras = SOL sin OC + OC sin fecha (asume "ya")
+    # oc_timeline[fecha_iso][mid] = suma de OC que llega ese día específico
+    oc_timeline = {}
     try:
-        for cm, gp in c.execute("""
+        for cm, fent, gp in c.execute("""
             SELECT UPPER(TRIM(oci.codigo_mp)),
+                   COALESCE(oc.fecha_entrega_est,'') AS fecha_est,
                    COALESCE(SUM(oci.cantidad_g - COALESCE(oci.cantidad_recibida_g,0)),0)
             FROM ordenes_compra_items oci
             JOIN ordenes_compra oc ON oc.numero_oc = oci.numero_oc
             WHERE oc.estado IN ('Borrador','Revisada','Autorizada','Parcial')
               AND oci.codigo_mp IS NOT NULL AND TRIM(oci.codigo_mp) != ''
-            GROUP BY UPPER(TRIM(oci.codigo_mp))
+            GROUP BY UPPER(TRIM(oci.codigo_mp)), COALESCE(oc.fecha_entrega_est,'')
         """).fetchall():
-            k = cm
-            pendientes_compras[k] = pendientes_compras.get(k, 0.0) + float(gp or 0)
+            cant = float(gp or 0)
+            if cant <= 0:
+                continue
+            fent_str = (fent or '')[:10].strip()
+            if not fent_str:
+                # OC sin fecha conocida → asume disponible "ya"
+                pendientes_compras[cm] = pendientes_compras.get(cm, 0.0) + cant
+            else:
+                oc_timeline.setdefault(fent_str, {})[cm] = \
+                    oc_timeline.get(fent_str, {}).get(cm, 0.0) + cant
     except Exception:
         pass
 
@@ -3369,26 +3387,70 @@ def plan_factibilidad():
             " AND COALESCE(origen,'') IN "
             "     ('eos_plan','eos_b2b','eos_retroactivo')"
         )
+    # FIX audit 24-may-2026 noche · alineado con consumo-horizontes ·
+    # 'esperando_recurso' es lote pausado por falta de MP · si lo cuento
+    # como consumo de MP el cálculo es circular (ese lote NO se va a
+    # producir hasta que tenga la MP que le falta).
     sql_prog = (
         """SELECT id, producto, fecha_programada, COALESCE(cantidad_kg,0),
                   COALESCE(lotes,1), COALESCE(origen,'')
            FROM produccion_programada
            WHERE inventario_descontado_at IS NULL
              AND LOWER(COALESCE(estado,'')) NOT IN
-                 ('cancelada','cancelado','completada','completado')"""
+                 ('cancelada','cancelado','completada','completado','esperando_recurso')"""
         + where_fechas + where_origen +
         " ORDER BY fecha_programada ASC, id ASC"
     )
     filas = c.execute(sql_prog, params_fechas).fetchall()
 
-    # 7. Asignación greedy por fecha · F5 · consumir stock incluso bloqueadas
+    # 7. SIMULACIÓN TEMPORAL ACUMULATIVA · Sebastián 24-may-2026 noche:
+    # "factibilidad debe pararse en el ahora · con el inventario actual ·
+    # mostrar de allí en adelante · acumulativo · si la producción de hoy
+    # usa algo de mañana debe descontar".
+    #
+    # Stock inicial = stock kardex + SOL/OC sin fecha (lump-sum, "ya está").
+    # Luego procesamos eventos en orden cronológico:
+    #   - LLEGA_OC(fecha, mid, cant) → stock[mid] += cant
+    #   - PRODUCCION(fecha, lote)    → evaluar faltantes con stock actual,
+    #                                  descontar (factible o bloqueada).
+    # Así un lote del 10-jun ve el stock ya consumido por los del 5-jun
+    # MÁS las OC que llegaron entre 5-jun y 10-jun.
     stock = dict(mp_stock_g)
+    # Stock inicial incluye pendientes sin fecha (SOL en proceso + OC sin
+    # fecha conocida · asumimos "ya disponibles" sin compromiso temporal).
+    for mid, cant in pendientes_compras.items():
+        stock[mid] = stock.get(mid, 0.0) + float(cant or 0)
+
+    # Construir lista de eventos cronológicos: producciones + arribos OC.
+    # Cada evento es (fecha_iso, tipo, payload). Sort por fecha + prioridad
+    # (las OC que llegan el mismo día primero, para que los lotes del día
+    # las puedan usar).
+    eventos = []
+    for fid, prod, fecha, cant_kg, lotes, origen_v in filas:
+        f_iso = str(fecha or '')[:10]
+        eventos.append((f_iso, 1, ('PROD', fid, prod, fecha, cant_kg, lotes, origen_v)))
+    for f_oc, mids in oc_timeline.items():
+        # OC con fecha futura · si ya pasó (f_oc < hoy) la consideramos disponible
+        # ya hoy (asumimos que llegó). Sino, mantiene su fecha real.
+        f_efectiva = max(f_oc, desde)
+        eventos.append((f_efectiva, 0, ('OC', mids)))
+    eventos.sort(key=lambda e: (e[0], e[1]))
+
     producciones = []
     sin_formula = 0
     descontinuados_n = 0
     necesidad_total = {}          # material_id -> gramos que pide TODO el plan
     nombre_mp = {}
-    for fid, prod, fecha, cant_kg, lotes, origen_v in filas:
+    for _f_iso, _prio, ev in eventos:
+        ev_tipo = ev[0]
+        if ev_tipo == 'OC':
+            # Llegó OC · suma al stock antes de procesar producciones del día
+            mids = ev[1]
+            for mid, cant in mids.items():
+                stock[mid] = stock.get(mid, 0.0) + float(cant or 0)
+            continue
+        # ev_tipo == 'PROD'
+        _, fid, prod, fecha, cant_kg, lotes, origen_v = ev
         prod_norm = str(prod or '').strip().upper()
         # F8 · skip descontinuados
         if prod_norm in productos_descontinuados:
@@ -3408,11 +3470,8 @@ def plan_factibilidad():
         if cant_kg and float(cant_kg) > 0 and lk > 0:
             n_lotes = float(cant_kg) / lk
         elif cant_kg and float(cant_kg) > 0 and lk <= 0:
-            # F9 · si hay kg explícito pero falta lote_size, asumir 1 lote
-            # con kg como tamaño · evita subestimar MP cuando lote_size no
-            # está definido
             n_lotes = 1.0
-            lk = float(cant_kg)  # para escalar g_por_lote correctamente
+            lk = float(cant_kg)
         else:
             n_lotes = float(lotes or 1)
         req = []
@@ -3420,10 +3479,8 @@ def plan_factibilidad():
             mid = it["material_id"]
             if mid == 'MPAGUALI01':       # agua · consumible infinito
                 continue
-            # F4 · MP sin movimientos cuenta como stock=0 (no skip silente)
             need = it["necesario_g_lote"] * n_lotes
             if lk > 0 and lk != lote_size.get(prod_norm, lk):
-                # Re-escalar si usamos cant_kg como lk fallback
                 need = it["necesario_g_lote"] * (float(cant_kg) / lk)
             req.append((mid, it["material_nombre"], need))
             necesidad_total[mid] = necesidad_total.get(mid, 0.0) + need
@@ -3440,7 +3497,7 @@ def plan_factibilidad():
                 })
         factible = len(faltantes) == 0
         # F5 · consumir stock SIEMPRE (factible o bloqueada) · si A bloquea
-        # MP-X, B que la comparte tampoco la tiene · ordenación temporal real
+        # MP-X, B que la comparte tampoco la tiene en su fecha posterior.
         for mid, _mnom, need in req:
             stock[mid] = max(stock.get(mid, 0.0) - need, 0.0)
         producciones.append({
