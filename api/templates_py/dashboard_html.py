@@ -20648,6 +20648,8 @@ async function ckMarcar(itemId, estado){
       {n:4, label:'Re-mapear SKU', emoji:'↻'},
       {n:5, label:'Desactivar producto', emoji:'✕'},
       {n:6, label:'ml a todos SKUs', emoji:'✏️'},
+      {n:7, label:'Envases B2B (whitelist)', emoji:'🤝'},
+      {n:8, label:'Variantes fórmula', emoji:'🧪'},
     ];
     const sidebarHtml = TABS.map(t =>
       '<button id="herr-tab-btn-' + t.n + '" class="herr-tab-btn" onclick="mostrarTabHerr(' + t.n + ')" style="display:block;width:100%;text-align:left;background:transparent;color:#475569;border:none;border-left:3px solid transparent;padding:11px 14px;font-size:12px;font-weight:600;cursor:pointer;border-radius:0">' +
@@ -20730,6 +20732,36 @@ async function ckMarcar(itemId, estado){
           '</div>' +
           '<div id="herr-resultado-mlt" style="font-size:11px;color:#64748b"></div>' +
         '</div>' +
+        // Tab 7 · Envases B2B (whitelist por cliente)
+        '<div id="herr-tab-7" class="herr-tab" style="display:none">' +
+          '<div style="font-weight:700;color:#1e293b;font-size:14px;margin-bottom:4px">🤝 Envases permitidos por cliente B2B</div>' +
+          '<div style="font-size:12px;color:#64748b;margin-bottom:12px">Define qué envases puede pedir cada cliente B2B desde el portal. Default permisivo: sin whitelist → ve todos los envases activos. Con whitelist → solo los que selecciones.</div>' +
+          '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">' +
+            '<input id="herr-cli-id" type="text" placeholder="cliente_id (ej. FERN)" style="flex:1;min-width:180px;padding:6px 10px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px;text-transform:uppercase">' +
+            '<button onclick="herrCliEnvasesLoad()" style="background:#0891b2;color:#fff;border:none;padding:6px 14px;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer">🔍 Cargar</button>' +
+          '</div>' +
+          '<div id="herr-cli-envases-out" style="margin-top:10px"></div>' +
+        '</div>' +
+        // Tab 8 · Variantes de fórmula (agrupar canónico)
+        '<div id="herr-tab-8" class="herr-tab" style="display:none">' +
+          '<div style="font-weight:700;color:#1e293b;font-size:14px;margin-bottom:4px">🧪 Variantes de fórmula (producto canónico)</div>' +
+          '<div style="font-size:12px;color:#64748b;margin-bottom:12px">Agrupa N fórmulas bajo un nombre canónico. Ej: LIP SERUM (canónico) = LIP SERUM PIB CHINO + LIP SERUM PIB LOCAL. El sistema escoge automáticamente la variante con más stock MP cuando se programa.</div>' +
+          '<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:8px 10px;margin-bottom:12px;font-size:11px;color:#92400e">⚠ Requiere que las variantes ya existan en formula_headers como filas separadas. Solo agrupa por canónico, no crea fórmulas nuevas.</div>' +
+          '<div style="margin-bottom:10px"><label style="font-size:11px;color:#475569;display:block;margin-bottom:3px">Nombre canónico</label>' +
+            '<input id="herr-var-canonico" type="text" placeholder="LIP SERUM" style="width:100%;padding:6px 10px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px">' +
+          '</div>' +
+          '<div id="herr-var-rows" style="margin-bottom:10px"></div>' +
+          '<button onclick="herrVarAddRow()" style="background:#f1f5f9;color:#475569;border:1px dashed #cbd5e1;padding:6px 14px;border-radius:5px;font-size:11px;cursor:pointer;margin-right:8px">+ Agregar variante</button>' +
+          '<button onclick="herrVarGuardar()" style="background:#7c3aed;color:#fff;border:none;padding:7px 16px;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer">💾 Guardar agrupación</button>' +
+          '<div style="margin-top:14px"><label style="font-size:11px;color:#475569;display:block;margin-bottom:3px">🔍 Ver selección óptima actual</label>' +
+            '<div style="display:flex;gap:8px;align-items:center">' +
+              '<input id="herr-var-test-canonico" type="text" placeholder="canónico a evaluar" style="flex:1;padding:6px 10px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px">' +
+              '<input id="herr-var-test-kg" type="number" value="10" min="0.1" step="0.1" style="width:80px;padding:6px 8px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px">' +
+              '<button onclick="herrVarEvaluar()" style="background:#0f766e;color:#fff;border:none;padding:6px 12px;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer">🧮 Evaluar</button>' +
+            '</div>' +
+          '</div>' +
+          '<div id="herr-var-out" style="margin-top:10px;font-size:11px"></div>' +
+        '</div>' +
         '</div>' +
       '</div>' +
       '</div>';
@@ -20793,6 +20825,135 @@ async function ckMarcar(itemId, estado){
       out.innerHTML = '<span style="color:#0f766e;font-weight:700">✓ ' + d.n_skus + ' SKU(s) actualizados a ' + d.volumen_ml + 'ml/g para ' + d.producto_nombre + '</span>';
       document.getElementById('herr-mlt-prod').value = '';
       document.getElementById('herr-mlt-ml').value = '';
+    } catch(e) { out.innerHTML = '<span style="color:#dc2626">Error red: ' + e.message + '</span>'; }
+  };
+  // Tab 7 · Envases B2B (whitelist por cliente) · 24-may-2026 noche
+  window._herrCliEnvasesState = {actuales: [], catalogo: []};
+  window.herrCliEnvasesLoad = async function() {
+    const cid = (document.getElementById('herr-cli-id').value || '').trim().toUpperCase();
+    const out = document.getElementById('herr-cli-envases-out');
+    if (!cid) { out.innerHTML = '<span style="color:#dc2626">cliente_id requerido</span>'; return; }
+    out.innerHTML = 'Cargando…';
+    try {
+      const [r1, r2] = await Promise.all([
+        fetch('/api/admin/b2b/cliente/' + encodeURIComponent(cid) + '/envases'),
+        fetch('/api/b2b/envases-disponibles'),
+      ]);
+      const d1 = await r1.json();
+      const d2 = await r2.json();
+      if (!r1.ok || d1.error) { out.innerHTML = '<span style="color:#dc2626">Error: ' + (d1.error || r1.status) + '</span>'; return; }
+      window._herrCliEnvasesState.cid = cid;
+      window._herrCliEnvasesState.actuales = d1.items || [];
+      window._herrCliEnvasesState.catalogo = d2.items || [];
+      const actSet = new Set((d1.items || []).filter(x => x.activo).map(x => x.envase_codigo));
+      let html = '<div style="background:' + (d1.modo === 'whitelist' ? '#fdf4ff' : '#f0fdf4') + ';border-left:3px solid ' + (d1.modo === 'whitelist' ? '#7e22ce' : '#16a34a') + ';padding:8px 10px;border-radius:5px;margin-bottom:12px;font-size:11px"><strong>Modo: ' + d1.modo + '</strong> · ' + (d1.modo === 'whitelist' ? d1.total + ' envases permitidos' : 'permisivo · cliente ve todos los activos') + '</div>';
+      html += '<table style="width:100%;border-collapse:collapse;font-size:11px"><thead style="background:#f1f5f9"><tr><th style="text-align:left;padding:6px">✓</th><th style="text-align:left;padding:6px">Código</th><th style="text-align:left;padding:6px">Descripción</th><th style="text-align:left;padding:6px">Notas</th></tr></thead><tbody>';
+      (d2.items || []).forEach(it => {
+        const checked = actSet.has(it.codigo) ? ' checked' : '';
+        html += '<tr style="border-top:1px solid #e2e8f0">' +
+          '<td style="padding:6px"><input type="checkbox" data-cod="' + it.codigo + '"' + checked + ' class="herr-env-chk"></td>' +
+          '<td style="padding:6px;font-family:ui-monospace;font-weight:600">' + it.codigo + '</td>' +
+          '<td style="padding:6px">' + (it.descripcion || '') + '</td>' +
+          '<td style="padding:6px"><input type="text" data-cod-notas="' + it.codigo + '" placeholder="notas (opcional)" style="width:140px;padding:3px 6px;border:1px solid #cbd5e1;border-radius:4px;font-size:11px"></td>' +
+        '</tr>';
+      });
+      html += '</tbody></table>';
+      html += '<div style="margin-top:12px;display:flex;gap:8px"><button onclick="herrCliEnvasesGuardar()" style="background:#7c3aed;color:#fff;border:none;padding:8px 16px;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer">💾 Guardar whitelist</button><span style="font-size:10px;color:#64748b;align-self:center">Vacío = modo permisivo (cliente ve todos)</span></div>';
+      out.innerHTML = html;
+    } catch(e) { out.innerHTML = '<span style="color:#dc2626">Error red: ' + e.message + '</span>'; }
+  };
+  window.herrCliEnvasesGuardar = async function() {
+    const cid = window._herrCliEnvasesState.cid;
+    if (!cid) return;
+    const items = [];
+    document.querySelectorAll('.herr-env-chk:checked').forEach(chk => {
+      const cod = chk.dataset.cod;
+      const notasInp = document.querySelector('[data-cod-notas="' + cod + '"]');
+      items.push({envase_codigo: cod, notas: notasInp ? notasInp.value : ''});
+    });
+    if (!confirm('¿Guardar whitelist de ' + items.length + ' envase(s) para ' + cid + '?\\n\\n' + (items.length === 0 ? 'Sin items = modo PERMISIVO (cliente ve todos)' : 'Cliente solo podrá pedir los marcados.'))) return;
+    try {
+      const r = await fetch('/api/admin/b2b/cliente/' + encodeURIComponent(cid) + '/envases', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({items, reemplazar: true}),
+      });
+      const d = await r.json();
+      if (!r.ok || d.error) { alert('Error: ' + (d.error || r.status)); return; }
+      alert('✓ Whitelist actualizada · ' + d.total_activos + ' envases activos');
+      herrCliEnvasesLoad();
+    } catch(e) { alert('Error red: ' + e.message); }
+  };
+  // Tab 8 · Variantes fórmula (canónico)
+  window._herrVarRows = 0;
+  window.herrVarAddRow = function() {
+    window._herrVarRows++;
+    const n = window._herrVarRows;
+    const cont = document.getElementById('herr-var-rows');
+    const div = document.createElement('div');
+    div.style.cssText = 'display:flex;gap:6px;margin-bottom:6px;align-items:center';
+    div.innerHTML = '<input id="herr-var-prod-' + n + '" type="text" placeholder="producto_nombre (existente en formula_headers)" list="herr-rm-prod-list" style="flex:2;padding:6px 8px;border:1px solid #cbd5e1;border-radius:4px;font-size:11px">' +
+      '<input id="herr-var-label-' + n + '" type="text" placeholder="label (PIB CHINO)" style="flex:1;padding:6px 8px;border:1px solid #cbd5e1;border-radius:4px;font-size:11px">' +
+      '<input id="herr-var-prio-' + n + '" type="number" placeholder="0" value="0" min="0" max="100" style="width:60px;padding:6px 8px;border:1px solid #cbd5e1;border-radius:4px;font-size:11px" title="0=auto-seleccionar · >0=preferir manual">' +
+      '<button onclick="this.parentElement.remove()" style="background:#fee2e2;color:#991b1b;border:none;padding:4px 8px;border-radius:4px;cursor:pointer">✕</button>';
+    cont.appendChild(div);
+  };
+  window.herrVarGuardar = async function() {
+    const canonico = (document.getElementById('herr-var-canonico').value || '').trim();
+    if (!canonico) { alert('Nombre canónico requerido'); return; }
+    const variantes = [];
+    for (let i = 1; i <= window._herrVarRows; i++) {
+      const prod = document.getElementById('herr-var-prod-' + i);
+      if (!prod) continue;
+      const v = prod.value.trim();
+      if (!v) continue;
+      variantes.push({
+        producto_nombre: v,
+        variante_label: document.getElementById('herr-var-label-' + i).value.trim(),
+        prioridad: parseInt(document.getElementById('herr-var-prio-' + i).value) || 0,
+      });
+    }
+    if (!variantes.length) { alert('Agregá al menos 1 variante'); return; }
+    if (!confirm('¿Agrupar ' + variantes.length + ' variante(s) bajo canónico "' + canonico + '"?')) return;
+    try {
+      const r = await fetch('/api/admin/formulas/agrupar-canonico', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({producto_canonico: canonico, variantes}),
+      });
+      const d = await r.json();
+      if (!r.ok || d.error) { alert('Error: ' + (d.error || r.status)); return; }
+      const out = document.getElementById('herr-var-out');
+      let msg = '<span style="color:#0f766e;font-weight:700">✓ ' + d.n_actualizadas + ' actualizadas</span>';
+      if ((d.errores || []).length) {
+        msg += '<div style="margin-top:6px;color:#dc2626">Errores: ' + d.errores.map(e => e.producto + ': ' + e.error).join(' · ') + '</div>';
+      }
+      out.innerHTML = msg;
+    } catch(e) { alert('Error red: ' + e.message); }
+  };
+  window.herrVarEvaluar = async function() {
+    const canonico = (document.getElementById('herr-var-test-canonico').value || '').trim();
+    const kg = parseFloat(document.getElementById('herr-var-test-kg').value) || 10;
+    const out = document.getElementById('herr-var-out');
+    if (!canonico) { out.innerHTML = '<span style="color:#dc2626">canónico requerido</span>'; return; }
+    out.innerHTML = 'Evaluando…';
+    try {
+      const r = await fetch('/api/admin/formulas/variantes/' + encodeURIComponent(canonico) + '?kg=' + kg);
+      const d = await r.json();
+      if (!r.ok) { out.innerHTML = '<span style="color:#dc2626">Error: ' + (d.error || r.status) + '</span>'; return; }
+      if (!d.seleccion) { out.innerHTML = '<span style="color:#64748b">Sin variantes registradas para "' + canonico + '"</span>'; return; }
+      const s = d.seleccion;
+      let html = '<div style="background:#f0fdf4;border-left:3px solid #16a34a;padding:8px 10px;border-radius:5px">' +
+        '<div style="font-weight:700;color:#15803d">✓ Ganadora: ' + s.producto_nombre + (s.variante_label ? ' (' + s.variante_label + ')' : '') + '</div>' +
+        '<div style="font-size:11px;color:#475569;margin-top:3px">Decisión: ' + s.decision + ' · variantes evaluadas: ' + s.n_variantes_evaluadas + (s.faltante_total_g > 0 ? ' · faltante: ' + s.faltante_total_g + 'g' : ' · sin faltantes') + '</div>' +
+        '</div>';
+      if (s.evaluadas && s.evaluadas.length > 1) {
+        html += '<table style="width:100%;margin-top:8px;border-collapse:collapse;font-size:11px"><thead style="background:#f1f5f9"><tr><th style="text-align:left;padding:5px">Variante</th><th style="text-align:right;padding:5px">Faltante (g)</th><th style="text-align:right;padding:5px">Items</th></tr></thead><tbody>';
+        s.evaluadas.forEach((e, i) => {
+          const bg = i === 0 ? '#dcfce7' : '#fff';
+          html += '<tr style="border-top:1px solid #e2e8f0;background:' + bg + '"><td style="padding:5px">' + e.producto_nombre + (e.variante_label ? ' (' + e.variante_label + ')' : '') + '</td><td style="text-align:right;padding:5px">' + e.faltante_total_g + '</td><td style="text-align:right;padding:5px">' + e.n_items + '</td></tr>';
+        });
+        html += '</tbody></table>';
+      }
+      out.innerHTML = html;
     } catch(e) { out.innerHTML = '<span style="color:#dc2626">Error red: ' + e.message + '</span>'; }
   };
   // Sección 5 · Desactivar/Reactivar producto

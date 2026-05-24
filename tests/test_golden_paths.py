@@ -12094,3 +12094,207 @@ def test_golden_aplicar_migraciones_pg_endpoint_guards(app, db_clean):
     r3 = cs.post('/api/admin/aplicar-migraciones-pg',
                  json={'aplicar': True}, headers=csrf_headers())
     assert r3.status_code == 400
+
+
+def test_golden_b2b_lote_desglose(app, db_clean):
+    """B2B 24-may-2026 · POST pedido → integra a lote → desglose lo refleja.
+
+    Verifica:
+    - Pedido B2B genera fila en pedidos_b2b_lote (mig 171).
+    - GET /api/admin/b2b/lote/<id>/desglose devuelve kg_b2b, kg_dtc, aportes.
+    """
+    for sql in (
+        "DELETE FROM pedidos_b2b_lote WHERE cliente_nombre = 'TEST_B2B_DESGLOSE'",
+        "DELETE FROM pedidos_b2b WHERE cliente_nombre = 'TEST_B2B_DESGLOSE'",
+        "DELETE FROM produccion_programada WHERE producto = 'TEST_PROD_DESG'",
+        "DELETE FROM formula_headers WHERE producto_nombre = 'TEST_PROD_DESG'",
+    ):
+        _exec(sql)
+    _exec("INSERT INTO formula_headers (producto_nombre, lote_size_kg, activo) "
+          "VALUES ('TEST_PROD_DESG', 10, 1)")
+
+    cs = _login(app, 'sebastian')
+    r = cs.post('/api/pedidos-b2b', json={
+        'cliente_id': 'TEST_CLI_DESG',
+        'cliente_nombre': 'TEST_B2B_DESGLOSE',
+        'producto_nombre': 'TEST_PROD_DESG',
+        'cantidad_uds': 100,
+        'ml_unidad': 30,
+        'fecha_estimada': '2026-07-15',
+    }, headers=csrf_headers())
+    assert r.status_code == 201, f'BUG: {r.status_code} {r.data}'
+    d = r.get_json()
+    integ = d.get('integracion_plan') or {}
+    lote_id = integ.get('lote_id')
+    assert lote_id, f'BUG: integracion_plan sin lote_id · {integ}'
+
+    rd = cs.get(f'/api/admin/b2b/lote/{lote_id}/desglose')
+    assert rd.status_code == 200, f'BUG: desglose · {rd.status_code} {rd.data}'
+    dd = rd.get_json()
+    assert dd['lote_id'] == lote_id
+    assert dd['kg_b2b'] > 0, 'BUG: kg_b2b debería ser >0'
+    assert dd['n_pedidos_b2b'] >= 1
+    assert any(a['cliente_nombre'] == 'TEST_B2B_DESGLOSE'
+                for a in dd['aportes_b2b']), 'BUG: aporte cliente no aparece'
+
+    for sql in (
+        "DELETE FROM pedidos_b2b_lote WHERE cliente_nombre = 'TEST_B2B_DESGLOSE'",
+        "DELETE FROM pedidos_b2b WHERE cliente_nombre = 'TEST_B2B_DESGLOSE'",
+        "DELETE FROM produccion_programada WHERE producto = 'TEST_PROD_DESG'",
+        "DELETE FROM formula_headers WHERE producto_nombre = 'TEST_PROD_DESG'",
+    ):
+        _exec(sql)
+
+
+def test_golden_b2b_envases_whitelist(app, db_clean):
+    """B2B 24-may-2026 · whitelist envase↔cliente bloquea uso cruzado.
+
+    Verifica:
+    - Cliente sin whitelist puede pedir cualquier envase activo (permisivo).
+    - Tras setear whitelist, sin coincidencia → 403 ENVASE_NO_PERMITIDO.
+    - GET /api/admin/b2b/cliente/<id>/envases reporta modo correctamente.
+    """
+    for sql in (
+        "DELETE FROM clientes_b2b_envases WHERE cliente_id = 'TEST_WL'",
+        "DELETE FROM pedidos_b2b WHERE cliente_id = 'TEST_WL'",
+        "DELETE FROM movimientos_mee WHERE mee_codigo IN ('TEST-ENV-A','TEST-ENV-B')",
+        "DELETE FROM maestro_mee WHERE codigo IN ('TEST-ENV-A','TEST-ENV-B')",
+        "DELETE FROM formula_headers WHERE producto_nombre = 'TEST_PROD_WL'",
+    ):
+        _exec(sql)
+    _exec("INSERT INTO maestro_mee (codigo, descripcion, categoria, estado, stock_actual) "
+          "VALUES ('TEST-ENV-A','Envase A test','Envase','Activo',100)")
+    _exec("INSERT INTO maestro_mee (codigo, descripcion, categoria, estado, stock_actual) "
+          "VALUES ('TEST-ENV-B','Envase B test','Envase','Activo',100)")
+    _exec("INSERT INTO formula_headers (producto_nombre, lote_size_kg, activo) "
+          "VALUES ('TEST_PROD_WL', 10, 1)")
+
+    cs = _login(app, 'sebastian')
+
+    # 1. Sin whitelist → puede pedir cualquier envase (permisivo).
+    rg = cs.get('/api/admin/b2b/cliente/TEST_WL/envases')
+    assert rg.status_code == 200
+    assert rg.get_json()['modo'] == 'permisivo'
+
+    r1 = cs.post('/api/pedidos-b2b', json={
+        'cliente_id': 'TEST_WL',
+        'cliente_nombre': 'TEST WL',
+        'producto_nombre': 'TEST_PROD_WL',
+        'cantidad_uds': 50,
+        'ml_unidad': 30,
+        'envase_codigo': 'TEST-ENV-B',
+    }, headers=csrf_headers())
+    assert r1.status_code == 201, f'BUG: permisivo bloqueó · {r1.status_code} {r1.data}'
+
+    # 2. Set whitelist solo TEST-ENV-A.
+    rw = cs.post('/api/admin/b2b/cliente/TEST_WL/envases', json={
+        'items': [{'envase_codigo': 'TEST-ENV-A'}],
+        'reemplazar': True,
+    }, headers=csrf_headers())
+    assert rw.status_code == 200, f'BUG: whitelist set · {rw.status_code} {rw.data}'
+    assert rw.get_json()['total_activos'] == 1
+
+    rg2 = cs.get('/api/admin/b2b/cliente/TEST_WL/envases')
+    assert rg2.get_json()['modo'] == 'whitelist'
+
+    # 3. Intento pedido con envase NO permitido → 403.
+    r2 = cs.post('/api/pedidos-b2b', json={
+        'cliente_id': 'TEST_WL',
+        'cliente_nombre': 'TEST WL',
+        'producto_nombre': 'TEST_PROD_WL',
+        'cantidad_uds': 50,
+        'ml_unidad': 30,
+        'envase_codigo': 'TEST-ENV-B',
+    }, headers=csrf_headers())
+    assert r2.status_code == 403, f'BUG: whitelist no bloqueó · {r2.status_code}'
+    d2 = r2.get_json()
+    assert d2.get('codigo') == 'ENVASE_NO_PERMITIDO'
+
+    # 4. Pedido con envase permitido → 201.
+    r3 = cs.post('/api/pedidos-b2b', json={
+        'cliente_id': 'TEST_WL',
+        'cliente_nombre': 'TEST WL',
+        'producto_nombre': 'TEST_PROD_WL',
+        'cantidad_uds': 50,
+        'ml_unidad': 30,
+        'envase_codigo': 'TEST-ENV-A',
+    }, headers=csrf_headers())
+    assert r3.status_code == 201, f'BUG: envase permitido bloqueado · {r3.status_code}'
+
+    for sql in (
+        "DELETE FROM clientes_b2b_envases WHERE cliente_id = 'TEST_WL'",
+        "DELETE FROM pedidos_b2b_lote WHERE cliente_nombre = 'TEST WL'",
+        "DELETE FROM pedidos_b2b WHERE cliente_id = 'TEST_WL'",
+        "DELETE FROM produccion_programada WHERE producto = 'TEST_PROD_WL'",
+        "DELETE FROM movimientos_mee WHERE mee_codigo IN ('TEST-ENV-A','TEST-ENV-B')",
+        "DELETE FROM maestro_mee WHERE codigo IN ('TEST-ENV-A','TEST-ENV-B')",
+        "DELETE FROM formula_headers WHERE producto_nombre = 'TEST_PROD_WL'",
+    ):
+        _exec(sql)
+
+
+def test_golden_formula_variantes_seleccion(app, db_clean):
+    """24-may-2026 · agrupar canónico + seleccionar variante con menos déficit MP.
+
+    Setup: 2 variantes del mismo canónico, distinto material requerido.
+    Variante A tiene stock suficiente · variante B tiene déficit.
+    El helper debe elegir A.
+    """
+    for sql in (
+        "DELETE FROM formula_items WHERE producto_nombre IN ('TEST_VAR_A','TEST_VAR_B')",
+        "DELETE FROM formula_headers WHERE producto_nombre IN ('TEST_VAR_A','TEST_VAR_B')",
+        "DELETE FROM movimientos WHERE material_id IN ('MP_VAR_A1','MP_VAR_B1')",
+        "DELETE FROM maestro_mps WHERE codigo_mp IN ('MP_VAR_A1','MP_VAR_B1')",
+    ):
+        _exec(sql)
+
+    _exec("INSERT INTO maestro_mps (codigo_mp, nombre_comercial, activo) "
+          "VALUES ('MP_VAR_A1','MP variante A',1)")
+    _exec("INSERT INTO maestro_mps (codigo_mp, nombre_comercial, activo) "
+          "VALUES ('MP_VAR_B1','MP variante B',1)")
+    # Stock: A=10kg disponible (suficiente), B=0g (déficit total)
+    _exec("INSERT INTO movimientos (material_id, material_nombre, cantidad, "
+          "tipo, fecha, lote) VALUES ('MP_VAR_A1','MP variante A',"
+          "10000,'Entrada','2026-05-01','LOTE-A')")
+
+    _exec("INSERT INTO formula_headers (producto_nombre, lote_size_kg, activo) "
+          "VALUES ('TEST_VAR_A', 10, 1)")
+    _exec("INSERT INTO formula_headers (producto_nombre, lote_size_kg, activo) "
+          "VALUES ('TEST_VAR_B', 10, 1)")
+    _exec("INSERT INTO formula_items (producto_nombre, material_id, "
+          "material_nombre, cantidad_g_por_lote) VALUES "
+          "('TEST_VAR_A','MP_VAR_A1','MP variante A',5000)")
+    _exec("INSERT INTO formula_items (producto_nombre, material_id, "
+          "material_nombre, cantidad_g_por_lote) VALUES "
+          "('TEST_VAR_B','MP_VAR_B1','MP variante B',5000)")
+
+    cs = _login(app, 'sebastian')
+
+    # Agrupar las dos bajo canónico TEST_VAR
+    rg = cs.post('/api/admin/formulas/agrupar-canonico', json={
+        'producto_canonico': 'TEST_VAR',
+        'variantes': [
+            {'producto_nombre': 'TEST_VAR_A', 'variante_label': 'A'},
+            {'producto_nombre': 'TEST_VAR_B', 'variante_label': 'B'},
+        ],
+    }, headers=csrf_headers())
+    assert rg.status_code == 200, f'BUG agrupar · {rg.status_code} {rg.data}'
+    assert rg.get_json()['n_actualizadas'] == 2
+
+    # Evaluar selección óptima para 10kg
+    re = cs.get('/api/admin/formulas/variantes/TEST_VAR?kg=10')
+    assert re.status_code == 200, f'BUG variantes · {re.status_code} {re.data}'
+    de = re.get_json()
+    sel = de.get('seleccion')
+    assert sel is not None, 'BUG: sin seleccion'
+    assert sel['producto_nombre'] == 'TEST_VAR_A', \
+        f'BUG: debió elegir TEST_VAR_A (con stock) · eligió {sel["producto_nombre"]}'
+    assert sel['n_variantes_evaluadas'] == 2
+
+    for sql in (
+        "DELETE FROM formula_items WHERE producto_nombre IN ('TEST_VAR_A','TEST_VAR_B')",
+        "DELETE FROM formula_headers WHERE producto_nombre IN ('TEST_VAR_A','TEST_VAR_B')",
+        "DELETE FROM movimientos WHERE material_id IN ('MP_VAR_A1','MP_VAR_B1')",
+        "DELETE FROM maestro_mps WHERE codigo_mp IN ('MP_VAR_A1','MP_VAR_B1')",
+    ):
+        _exec(sql)
