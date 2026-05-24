@@ -1860,6 +1860,21 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
         <button onclick="cargarAbastecimiento()" style="background:#7c3aed;color:#fff;border:none;padding:7px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">↻ Recargar</button>
       </div>
     </div>
+    <!-- Selector horizonte foco · Sebastián 24-may-2026 noche · "abastecimiento
+         debe darme la opcion de 15 dias, 30, 60 90, 120, 180, 360 todos esas
+         opciones". El endpoint ya devuelve los 7 horizontes acumulativos · este
+         selector resalta cuál es el "foco" de la tabla. -->
+    <div id="abast-horizonte-tabs" style="display:flex;gap:4px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
+      <span style="font-size:11px;color:#64748b;font-weight:700;margin-right:6px">Foco horizonte:</span>
+      <button data-h="15"  onclick="setAbastFoco(15)"  class="abast-htab" style="padding:5px 12px;border:1px solid #cbd5e1;background:#fff;color:#475569;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">15d</button>
+      <button data-h="30"  onclick="setAbastFoco(30)"  class="abast-htab" style="padding:5px 12px;border:1px solid #cbd5e1;background:#fff;color:#475569;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">30d</button>
+      <button data-h="60"  onclick="setAbastFoco(60)"  class="abast-htab" style="padding:5px 12px;border:1px solid #cbd5e1;background:#fff;color:#475569;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">60d</button>
+      <button data-h="90"  onclick="setAbastFoco(90)"  class="abast-htab" style="padding:5px 12px;border:1px solid #cbd5e1;background:#fff;color:#475569;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">90d</button>
+      <button data-h="120" onclick="setAbastFoco(120)" class="abast-htab" style="padding:5px 12px;border:1px solid #cbd5e1;background:#fff;color:#475569;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">120d</button>
+      <button data-h="180" onclick="setAbastFoco(180)" class="abast-htab" style="padding:5px 12px;border:1px solid #cbd5e1;background:#fff;color:#475569;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">180d</button>
+      <button data-h="365" onclick="setAbastFoco(365)" class="abast-htab" style="padding:5px 12px;border:1px solid #cbd5e1;background:#fff;color:#475569;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">365d (1 año)</button>
+      <span id="abast-foco-hint" style="font-size:10px;color:#94a3b8;margin-left:8px"></span>
+    </div>
     <div id="abast-resumen" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px"></div>
     <div id="abast-contenido"><div style="text-align:center;color:#94a3b8;padding:40px">Click ↻ Recargar para calcular</div></div>
   </div>
@@ -11755,6 +11770,22 @@ async function ckMarcar(itemId, estado){
     }
     cargarAbastecimiento();
   }
+  // Sebastián 24-may-2026 noche · selector 7 opciones · 15/30/60/90/120/180/365
+  window.setAbastFoco = function(dias){
+    window.ABAST_HORIZ = dias;
+    document.querySelectorAll('.abast-htab').forEach(function(b){
+      var active = parseInt(b.dataset.h) === dias;
+      b.style.background = active ? '#7c3aed' : '#fff';
+      b.style.color = active ? '#fff' : '#475569';
+      b.style.borderColor = active ? '#7c3aed' : '#cbd5e1';
+    });
+    var hint = document.getElementById('abast-foco-hint');
+    if (hint) {
+      var lbl = (dias >= 365) ? '1 año completo' : (dias >= 30 ? Math.round(dias/30) + ' meses' : dias + ' días');
+      hint.textContent = '· enfocando ' + lbl + ' · stock + pendientes vs consumo proyectado';
+    }
+    if (typeof cargarAbastecimiento === 'function') cargarAbastecimiento();
+  };
   async function cargarAbastecimiento(){
     var btns = document.querySelectorAll('.abast-h');
     var hayActivo = document.querySelector('.abast-h.active');
@@ -12005,6 +12036,11 @@ async function ckMarcar(itemId, estado){
       // Lazy-load Abastecimiento al activar tab · Sebastián 23-may-2026
       if (tab === 'abastecimiento') {
         try {
+          // Marcar foco visual del horizonte activo (default 90d).
+          if (typeof setAbastFoco === 'function') {
+            setAbastFoco(window.ABAST_HORIZ || 90);
+            return;  // setAbastFoco ya llama cargarAbastecimiento
+          }
           if (typeof cargarAbastecimiento === 'function') {
             // Solo si no se cargó ya (evita refetch en cada cambio de tab)
             var ac = document.getElementById('abast-contenido');
