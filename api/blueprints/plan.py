@@ -1502,8 +1502,19 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
     # PERF-FIX 23-may-2026 · auditoría · `date(creado_en) >= ?` con función
     # wrapper bloquea uso de idx_aso_creado en PG · ahora comparación directa
     # contra timestamp · index usable
-    ventas_por_sku = {}
+    # FIX 24-may · multi-ventana 30d/60d/90d para detectar aceleración
+    # · Sebastián: 'BHA 60d=370/mes pero mayo va a 480/mes'. Antes solo
+    # ventana fija promediaba abril+mayo escondiendo tendencia. Ahora
+    # calculamos las 3 ventanas en una pasada (1 query).
+    ventas_por_sku = {}      # ventana principal (60d default)
+    ventas_30d_por_sku = {}  # último mes
+    ventas_90d_por_sku = {}  # 3 meses
     _vd_iso = ventana_desde + 'T00:00:00' if 'T' not in ventana_desde else ventana_desde
+    # Cutoff ISO para 30d y 90d (independientes de ventana principal)
+    _cut30 = (hoy - _td(days=30)).strftime('%Y-%m-%d') + 'T00:00:00'
+    _cut90 = (hoy - _td(days=90)).strftime('%Y-%m-%d') + 'T00:00:00'
+    # Usar el más amplio de los 3 como WHERE base
+    _vd_base = min(_vd_iso, _cut90)
     # SHOPIFY-AUDIT 23-may-PM · filtrar cancelled/refunded para no inflar
     # velocidad con devoluciones + filtro opt-in B2B vs DTC vía env var
     # SHOPIFY_B2B_TAGS (CSV). Si un tag de la orden o cliente coincide,
@@ -1519,27 +1530,34 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
                 _b2b_clauses += " AND LOWER(COALESCE(tags,'')) NOT LIKE ? AND LOWER(COALESCE(customer_tags,'')) NOT LIKE ?"
                 _b2b_params.extend(['%' + _t + '%', '%' + _t + '%'])
     for r in c.execute(
-        f"""SELECT sku_items FROM animus_shopify_orders
+        f"""SELECT sku_items, creado_en FROM animus_shopify_orders
            WHERE creado_en >= ?
              AND sku_items IS NOT NULL AND sku_items != ''
              AND LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided')
              AND LOWER(COALESCE(estado_pago,'')) NOT IN ('refunded','voided','partially_refunded')
              {_b2b_clauses}""",
-        tuple([_vd_iso] + _b2b_params),
+        tuple([_vd_base] + _b2b_params),
     ).fetchall():
         try:
             items = _json.loads(r[0]) if r[0] else []
         except Exception:
             continue
+        creado = (r[1] or '')
+        # Comparaciones string-wise (ISO 8601 ordena correctamente)
+        en_60 = creado >= _vd_iso
+        en_30 = creado >= _cut30
+        en_90 = creado >= _cut90
         for it in items:
             sku = str(it.get("sku", "") or "").strip().upper()
-            # FIX 23-may-2026 · auditoría · Bug #1 del 22-may quedó parchado a
-            # medias · auto_plan.py:248 ya tenía triple-fallback (qty/cantidad/
-            # quantity) pero este sitio leía solo `qty` · órdenes legacy con
-            # campos "cantidad"/"quantity" en sku_items quedaban en velocidad=0
             qty = int(it.get("qty") or it.get("cantidad") or it.get("quantity") or 0)
-            if sku and qty > 0:
+            if not sku or qty <= 0:
+                continue
+            if en_60:
                 ventas_por_sku[sku] = ventas_por_sku.get(sku, 0) + qty
+            if en_30:
+                ventas_30d_por_sku[sku] = ventas_30d_por_sku.get(sku, 0) + qty
+            if en_90:
+                ventas_90d_por_sku[sku] = ventas_90d_por_sku.get(sku, 0) + qty
 
     # 5. Pipeline 7d (lotes recién fabricados que aún no aparecen en Available)
     # Suma kg de produccion_programada con fin_real_at >= hoy-7d agrupado por producto
@@ -1569,13 +1587,17 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
             if (pname or '').strip().lower() == _prod_key_lc
         ]
 
-        # Stock total uds + venta 30d agregada
+        # Stock total uds + ventas en 3 ventanas (predictiva 24-may PM)
         stock_uds_total = 0
         ventas_periodo_total = 0
+        ventas_30d_total = 0
+        ventas_90d_total = 0
         for sku in skus_de_prod:
             stk = resolved_stock.get(sku, {})
             stock_uds_total += int(stk.get("uds", 0) or 0)
             ventas_periodo_total += int(ventas_por_sku.get(sku, 0) or 0)
+            ventas_30d_total += int(ventas_30d_por_sku.get(sku, 0) or 0)
+            ventas_90d_total += int(ventas_90d_por_sku.get(sku, 0) or 0)
 
         # ml por presentación · Sebastián 13-may-2026: "los sueros son
         # de 30, los limpiadores de 150, geles e hidratantes de 50 ml".
@@ -1607,8 +1629,47 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
             else:
                 ml_promedio = _inferir_ml_presentacion(prod_nombre)
                 ml_inferido = True
-        # Velocidad uds/día y kg/día
-        velocidad_uds_dia = ventas_periodo_total / float(ventana)
+        # VELOCIDAD PREDICTIVA · Sebastián 24-may PM · "que sea predictivo
+        # 100% · una sola velocidad que muestre la realidad". Algoritmo:
+        # 1) Calcular vel_30d, vel_60d, vel_90d
+        # 2) Detectar tendencia comparando vel_30d vs vel_60d
+        # 3) Ponderar dinámicamente:
+        #    · Aceleración fuerte (>30%) → confía en 30d + buffer 10%
+        #    · Aceleración moderada (>15%) → 60% peso 30d + 40% peso 60d
+        #    · Caída fuerte (>15%) → 70% peso 60d (más conservador)
+        #    · Estable → 50/50 entre 30d y 60d
+        # 4) Cap por arriba/abajo con 90d para no sobre-reaccionar
+        # Caso BHA: 30d=15.4, 60d=12.3 → +25% aceleración moderada →
+        #   0.6 × 15.4 + 0.4 × 12.3 = 14.16 uds/día = 425/mes (realista)
+        vel_30d = ventas_30d_total / 30.0
+        vel_60d = ventas_periodo_total / float(ventana)
+        vel_90d = ventas_90d_total / 90.0
+        if vel_60d < 0.001:
+            # Sin histórico · usar lo poco que haya
+            velocidad_uds_dia = max(vel_30d, vel_90d)
+            tendencia = 'sin_historico'
+        else:
+            ratio_30_60 = vel_30d / vel_60d if vel_60d > 0 else 1.0
+            if ratio_30_60 > 1.30:
+                velocidad_uds_dia = vel_30d * 1.10  # aceleración + buffer
+                tendencia = 'aceleracion_fuerte'
+            elif ratio_30_60 > 1.15:
+                velocidad_uds_dia = vel_30d * 0.6 + vel_60d * 0.4
+                tendencia = 'aceleracion_moderada'
+            elif ratio_30_60 < 0.70:
+                velocidad_uds_dia = vel_30d * 0.3 + vel_60d * 0.7  # caída suave
+                tendencia = 'caida_fuerte'
+            elif ratio_30_60 < 0.85:
+                velocidad_uds_dia = vel_30d * 0.5 + vel_60d * 0.5
+                tendencia = 'caida_moderada'
+            else:
+                velocidad_uds_dia = vel_30d * 0.5 + vel_60d * 0.5
+                tendencia = 'estable'
+        # Cap con 90d para evitar locuras: nunca menor a vel_90d × 0.5 ni
+        # mayor a vel_90d × 2 (si hay histórico 90d significativo)
+        if vel_90d > 0.001:
+            velocidad_uds_dia = max(velocidad_uds_dia, vel_90d * 0.5)
+            velocidad_uds_dia = min(velocidad_uds_dia, vel_90d * 2.0)
         velocidad_kg_dia = (velocidad_uds_dia * ml_promedio) / 1000.0
         # Stock kg = uds × ml / 1000 + pipeline
         stock_kg_gondola = (stock_uds_total * ml_promedio) / 1000.0
@@ -1700,8 +1761,15 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
             "pipeline_kg": round(pipeline_kg, 2),
             "stock_kg_total": round(stock_kg_total, 2),
             "ventas_periodo_uds": ventas_periodo_total,
+            "ventas_30d_uds": ventas_30d_total,
+            "ventas_90d_uds": ventas_90d_total,
             "velocidad_uds_dia": round(velocidad_uds_dia, 2),
             "velocidad_kg_dia": round(velocidad_kg_dia, 3),
+            "velocidad_uds_dia_30d": round(vel_30d, 2),
+            "velocidad_uds_dia_60d": round(vel_60d, 2),
+            "velocidad_uds_dia_90d": round(vel_90d, 2),
+            "tendencia": tendencia,
+            "vel_uds_mes_predictiva": round(velocidad_uds_dia * 30, 0),
             "ml_unidad": ml_promedio,
             "ml_inferido": ml_inferido,  # FIX #2 · True = heurística por nombre, no SKU real
             "lote_size_faltante": float(lote_kg or 0) < 1.0,  # FIX #2-b · BD tiene valor absurdo o falta
