@@ -20616,24 +20616,63 @@ async function ckMarcar(itemId, estado){
   // forma que tú lo hagas". Botones de mantenimiento desde la UI ·
   // limpiar Sugeridas viejas + listar/arreglar productos con
   // lote_size_kg absurdo · todo desde el navegador sin tocar consola.
+  // FIX UX 24-may-2026 PM · Modal Herramientas con sidebar · antes 6
+  // secciones apiladas creaban wall-of-options · ahora sidebar izq con
+  // 6 tabs + pane derecho con 1 sección visible.
+  window.mostrarTabHerr = function(idx) {
+    document.querySelectorAll('.herr-tab').forEach(t => t.style.display = 'none');
+    document.querySelectorAll('.herr-tab-btn').forEach(b => {
+      b.style.background = 'transparent';
+      b.style.color = '#475569';
+      b.style.fontWeight = '600';
+    });
+    const tab = document.getElementById('herr-tab-' + idx);
+    if (tab) tab.style.display = 'block';
+    const btn = document.getElementById('herr-tab-btn-' + idx);
+    if (btn) {
+      btn.style.background = '#0f766e';
+      btn.style.color = '#fff';
+      btn.style.fontWeight = '800';
+    }
+  };
   window.abrirHerramientasLimpieza = function() {
     let m = document.getElementById('modal-herramientas');
     if (m) m.remove();
     m = document.createElement('div');
     m.id = 'modal-herramientas';
     m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
-    m.innerHTML = '<div style="background:#fff;border-radius:12px;max-width:820px;width:100%;max-height:90vh;overflow:auto;box-shadow:0 12px 40px rgba(0,0,0,0.25)">' +
-      '<div style="padding:18px 22px;border-bottom:1px solid #e5e7eb;display:flex;align-items:center;justify-content:space-between">' +
+    const TABS = [
+      {n:1, label:'Limpiar Sugeridas', emoji:'🗑'},
+      {n:2, label:'Lote_size absurdo', emoji:'⚖'},
+      {n:3, label:'Huérfanos vendiendo', emoji:'🔍'},
+      {n:4, label:'Re-mapear SKU', emoji:'↻'},
+      {n:5, label:'Desactivar producto', emoji:'✕'},
+      {n:6, label:'ml a todos SKUs', emoji:'✏️'},
+    ];
+    const sidebarHtml = TABS.map(t =>
+      '<button id="herr-tab-btn-' + t.n + '" class="herr-tab-btn" onclick="mostrarTabHerr(' + t.n + ')" style="display:block;width:100%;text-align:left;background:transparent;color:#475569;border:none;border-left:3px solid transparent;padding:11px 14px;font-size:12px;font-weight:600;cursor:pointer;border-radius:0">' +
+        '<span style="font-size:14px;margin-right:8px">' + t.emoji + '</span>' + t.n + '. ' + t.label +
+      '</button>'
+    ).join('');
+
+    m.innerHTML = '<div style="background:#fff;border-radius:12px;max-width:980px;width:100%;max-height:90vh;overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,0.25);display:flex;flex-direction:column">' +
+      '<div style="padding:16px 22px;border-bottom:1px solid #e5e7eb;display:flex;align-items:center;justify-content:space-between;flex-shrink:0">' +
         '<h3 style="margin:0;font-size:16px;color:#1e293b">⚙ Herramientas de mantenimiento</h3>' +
         '<button onclick="document.getElementById(\\'modal-herramientas\\').remove()" style="background:#e5e7eb;color:#475569;border:none;width:32px;height:32px;border-radius:50%;font-size:18px;cursor:pointer">×</button>' +
       '</div>' +
-      '<div style="padding:18px 22px">' +
-        '<div style="background:#fef3c7;border-left:4px solid #f59e0b;border-radius:6px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#92400e">⚠ Estas acciones son reversibles (soft-cancel) pero modifican producción · ejecuta solo si entendés lo que hacés.</div>' +
-        // Sección 1 · Limpiar Sugeridas
-        '<div style="background:#f8fafc;border-radius:8px;padding:14px;margin-bottom:14px">' +
-          '<div style="font-weight:700;color:#1e293b;font-size:13px;margin-bottom:4px">1️⃣ Limpiar Sugeridas viejas del calendario</div>' +
-          '<div style="font-size:11px;color:#64748b;margin-bottom:8px">Cancela producciones origen=Sugerida con fecha posterior al corte · NO toca Fijo (lo que vos pusiste manualmente).</div>' +
-          '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">' +
+      '<div style="display:flex;flex:1;overflow:hidden">' +
+        // SIDEBAR izq
+        '<div style="width:230px;background:#f1f5f9;border-right:1px solid #e2e8f0;padding:10px 0;overflow-y:auto;flex-shrink:0">' +
+          sidebarHtml +
+        '</div>' +
+        // PANE der
+        '<div style="flex:1;padding:18px 22px;overflow-y:auto">' +
+        '<div style="background:#fef3c7;border-left:4px solid #f59e0b;border-radius:6px;padding:10px 14px;margin-bottom:14px;font-size:11px;color:#92400e">⚠ Estas acciones son reversibles (soft-cancel) pero modifican producción · ejecuta solo si entendés lo que hacés.</div>' +
+        // Tab 1 · Limpiar Sugeridas
+        '<div id="herr-tab-1" class="herr-tab" style="display:block">' +
+          '<div style="font-weight:700;color:#1e293b;font-size:14px;margin-bottom:4px">🗑 Limpiar Sugeridas viejas del calendario</div>' +
+          '<div style="font-size:12px;color:#64748b;margin-bottom:12px">Cancela producciones origen=Sugerida con fecha posterior al corte · NO toca Fijo (lo que vos pusiste manualmente).</div>' +
+          '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">' +
             '<label style="font-size:11px;color:#475569">Conservar hasta:</label>' +
             '<input id="herr-desde" type="date" value="2026-06-07" style="padding:5px 8px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px">' +
           '</div>' +
@@ -20641,27 +20680,27 @@ async function ckMarcar(itemId, estado){
             '<button onclick="herrDryRun()" style="background:#0891b2;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">🔍 Ver qué se cancelaría</button>' +
             '<button onclick="herrAplicar()" style="background:#dc2626;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">🗑 Aplicar limpieza</button>' +
           '</div>' +
-          '<div id="herr-resultado-limpieza" style="margin-top:10px;font-size:11px;color:#64748b"></div>' +
+          '<div id="herr-resultado-limpieza" style="margin-top:12px;font-size:11px;color:#64748b"></div>' +
         '</div>' +
-        // Sección 2 · Productos con lote absurdo
-        '<div style="background:#f8fafc;border-radius:8px;padding:14px;margin-bottom:14px">' +
-          '<div style="font-weight:700;color:#1e293b;font-size:13px;margin-bottom:4px">2️⃣ Productos con lote_size_kg absurdo (&lt;1 kg)</div>' +
-          '<div style="font-size:11px;color:#64748b;margin-bottom:8px">Caso AZ HIBRID CLEAR: BD tenía 0.1 kg → planificador sugería 23 lotes diarios · arreglar aquí.</div>' +
+        // Tab 2 · Productos con lote absurdo
+        '<div id="herr-tab-2" class="herr-tab" style="display:none">' +
+          '<div style="font-weight:700;color:#1e293b;font-size:14px;margin-bottom:4px">⚖ Productos con lote_size_kg absurdo (&lt;1 kg)</div>' +
+          '<div style="font-size:12px;color:#64748b;margin-bottom:12px">Caso AZ HIBRID CLEAR: BD tenía 0.1 kg → planificador sugería 23 lotes diarios · arreglar aquí.</div>' +
           '<button onclick="herrListarSospechosos()" style="background:#0f766e;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">📋 Listar sospechosos</button>' +
-          '<div id="herr-resultado-sospechosos" style="margin-top:10px"></div>' +
+          '<div id="herr-resultado-sospechosos" style="margin-top:12px"></div>' +
         '</div>' +
-        // Sección 3 · SKUs huérfanos vendiendo
-        '<div style="background:#f8fafc;border-radius:8px;padding:14px;margin-bottom:14px">' +
-          '<div style="font-weight:700;color:#1e293b;font-size:13px;margin-bottom:4px">3️⃣ SKUs vendiendo sin mapeo (huérfanos)</div>' +
-          '<div style="font-size:11px;color:#64748b;margin-bottom:8px">Caso BHA: LBHA + CRB3BHA vendían sin map · reportaba 300/mes cuando real es 1280/mes (4×). Mapealos a su producto.</div>' +
+        // Tab 3 · SKUs huérfanos
+        '<div id="herr-tab-3" class="herr-tab" style="display:none">' +
+          '<div style="font-weight:700;color:#1e293b;font-size:14px;margin-bottom:4px">🔍 SKUs vendiendo sin mapeo (huérfanos)</div>' +
+          '<div style="font-size:12px;color:#64748b;margin-bottom:12px">Caso BHA: LBHA + CRB3BHA vendían sin map · reportaba 300/mes cuando real es 1280/mes (4×). Mapealos a su producto.</div>' +
           '<button onclick="herrListarHuerfanos()" style="background:#7c3aed;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">🔍 Listar huérfanos top</button>' +
-          '<div id="herr-resultado-huerfanos" style="margin-top:10px"></div>' +
+          '<div id="herr-resultado-huerfanos" style="margin-top:12px"></div>' +
         '</div>' +
-        // Sección 4 · Re-mapear SKU específico (cambio mapeo existente)
-        '<div style="background:#f8fafc;border-radius:8px;padding:14px;margin-bottom:14px">' +
-          '<div style="font-weight:700;color:#1e293b;font-size:13px;margin-bottom:4px">4️⃣ Re-mapear SKU a otro producto</div>' +
-          '<div style="font-size:11px;color:#64748b;margin-bottom:8px">Para corregir mapeos mal hechos · ej. SERUM-BT-001 estaba en LIP SERUM (PIB CHINO) cuando es BOOSTER TENSOR.</div>' +
-          '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">' +
+        // Tab 4 · Re-mapear SKU
+        '<div id="herr-tab-4" class="herr-tab" style="display:none">' +
+          '<div style="font-weight:700;color:#1e293b;font-size:14px;margin-bottom:4px">↻ Re-mapear SKU a otro producto</div>' +
+          '<div style="font-size:12px;color:#64748b;margin-bottom:12px">Para corregir mapeos mal hechos · ej. SERUM-BT-001 estaba en LIP SERUM (PIB CHINO) cuando es BOOSTER TENSOR.</div>' +
+          '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">' +
             '<input id="herr-rm-sku" type="text" placeholder="SKU exacto (ej. SERUM-BT-001)" style="flex:1;min-width:180px;padding:6px 10px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px;text-transform:uppercase">' +
             '<input id="herr-rm-prod" type="text" placeholder="Producto destino (formula_headers)" list="herr-rm-prod-list" style="flex:2;min-width:220px;padding:6px 10px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px">' +
             '<datalist id="herr-rm-prod-list"></datalist>' +
@@ -20669,31 +20708,33 @@ async function ckMarcar(itemId, estado){
           '</div>' +
           '<div id="herr-resultado-remap" style="font-size:11px;color:#64748b"></div>' +
         '</div>' +
-        // Sección 5 · Desactivar producto (ya no se vende)
-        '<div style="background:#f8fafc;border-radius:8px;padding:14px;margin-bottom:14px">' +
-          '<div style="font-weight:700;color:#1e293b;font-size:13px;margin-bottom:4px">5️⃣ Desactivar producto (ya no se vende)</div>' +
-          '<div style="font-size:11px;color:#64748b;margin-bottom:8px">Marca activo=0 · sale de Necesidades + Calendar · NO se borra (preserva histórico).</div>' +
-          '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">' +
+        // Tab 5 · Desactivar producto
+        '<div id="herr-tab-5" class="herr-tab" style="display:none">' +
+          '<div style="font-weight:700;color:#1e293b;font-size:14px;margin-bottom:4px">✕ Desactivar producto (ya no se vende)</div>' +
+          '<div style="font-size:12px;color:#64748b;margin-bottom:12px">Marca activo=0 · sale de Necesidades + Calendar · NO se borra (preserva histórico).</div>' +
+          '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">' +
             '<input id="herr-dz-prod" type="text" placeholder="Producto a desactivar (autocomplete)" list="herr-rm-prod-list" style="flex:1;min-width:260px;padding:6px 10px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px">' +
             '<button onclick="herrDesactivarProd()" style="background:#dc2626;color:#fff;border:none;padding:6px 14px;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer">✕ Desactivar</button>' +
             '<button onclick="herrActivarProd()" style="background:#0f766e;color:#fff;border:none;padding:6px 14px;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer">↻ Reactivar</button>' +
           '</div>' +
           '<div id="herr-resultado-dz" style="font-size:11px;color:#64748b"></div>' +
         '</div>' +
-        // Sección 6 · Fijar ml/gramos a TODOS los SKUs del producto
-        '<div style="background:#f8fafc;border-radius:8px;padding:14px">' +
-          '<div style="font-weight:700;color:#1e293b;font-size:13px;margin-bottom:4px">6️⃣ Fijar ml/gramos del envase a TODOS los SKUs</div>' +
-          '<div style="font-size:11px;color:#64748b;margin-bottom:8px">Ej. BLUSH BALM = 6g por unidad · aplica a todos los SKUs del producto (BB101, BB201, BB301, BB401, BBM). Útil cuando ml está inferido por nombre y todos los tonos tienen el mismo formato.</div>' +
-          '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">' +
+        // Tab 6 · ml a todos
+        '<div id="herr-tab-6" class="herr-tab" style="display:none">' +
+          '<div style="font-weight:700;color:#1e293b;font-size:14px;margin-bottom:4px">✏️ Fijar ml/gramos del envase a TODOS los SKUs</div>' +
+          '<div style="font-size:12px;color:#64748b;margin-bottom:12px">Ej. BLUSH BALM = 6g por unidad · aplica a todos los SKUs del producto (BB101, BB201, BB301, BB401, BBM). Útil cuando ml está inferido por nombre y todos los tonos tienen el mismo formato.</div>' +
+          '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">' +
             '<input id="herr-mlt-prod" type="text" placeholder="Producto (autocomplete)" list="herr-rm-prod-list" style="flex:1;min-width:240px;padding:6px 10px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px">' +
             '<input id="herr-mlt-ml" type="number" min="1" max="5000" step="0.1" placeholder="ml o g" style="width:90px;padding:6px 8px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px">' +
             '<button onclick="herrFijarMlTodos()" style="background:#f59e0b;color:#fff;border:none;padding:6px 14px;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer">✏️ Aplicar a todos</button>' +
           '</div>' +
           '<div id="herr-resultado-mlt" style="font-size:11px;color:#64748b"></div>' +
         '</div>' +
+        '</div>' +
       '</div>' +
       '</div>';
     document.body.appendChild(m);
+    mostrarTabHerr(1);
     // Pre-cargar lista de productos para el datalist (re-map)
     (async function() {
       try {

@@ -312,6 +312,15 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (170, "sku_producto_map.es_regalo · BBM mini es regalo + futuras promociones · Sebastián 24-may-2026 PM", [
+        # FEATURE 24-may-2026 · Sebastián: "BBM mini es regalo no se vende,
+        # el resto de BBM si los vendemos". Sin esta columna, BBM mini contaba
+        # como velocidad de venta cuando en realidad es promo. Ahora:
+        # es_regalo=1 → no cuenta para vel_30/60/90d ni urgencia.
+        "ALTER TABLE sku_producto_map ADD COLUMN es_regalo INTEGER DEFAULT 0",
+        # Seed conocidos · BBM mini (regalo · NO vendido)
+        "UPDATE sku_producto_map SET es_regalo = 1 WHERE UPPER(sku) IN ('BBM', 'BBM-MINI', 'CH-RUBOR-MINI-PLT01')",
+    ]),
     (169, "producto_perfil_riesgo.requiere_envasado_mismo_dia · reemplaza hard-code PRODUCTOS_COMPLEJOS · Sebastián 24-may-2026 PM", [
         # AUDITORÍA-FIX 24-may-2026 · agente reportó: lista hard-coded
         # PRODUCTOS_COMPLEJOS_SUBSTR = ("VITAMINA C", "TRIACTIVE") en plan.py

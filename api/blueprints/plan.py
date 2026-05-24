@@ -931,6 +931,10 @@ def admin_sku_producto_map_bulk():
     for it in items[:200]:
         sku = (it.get('sku') or '').strip().upper()
         prod = (it.get('producto_nombre') or '').strip()
+        # FEATURE 24-may-2026 · es_regalo opcional (default 0). Si el client
+        # NO envía el campo, preservamos el valor actual via COALESCE en UPDATE.
+        es_regalo_raw = it.get('es_regalo', None)
+        es_regalo = None if es_regalo_raw is None else (1 if es_regalo_raw else 0)
         if not sku or not prod:
             errores.append({'sku': sku, 'error': 'sku y producto requeridos'})
             continue
@@ -948,19 +952,21 @@ def admin_sku_producto_map_bulk():
                 (sku,),
             ).fetchone()
             if existing:
+                # COALESCE preserva es_regalo si el client no lo envió
                 cur.execute(
                     """UPDATE sku_producto_map
-                        SET producto_nombre=?, activo=1
+                        SET producto_nombre=?, activo=1,
+                            es_regalo = COALESCE(?, es_regalo)
                       WHERE UPPER(TRIM(sku)) = UPPER(TRIM(?))""",
-                    (prod, sku),
+                    (prod, es_regalo, sku),
                 )
             else:
                 cur.execute(
-                    "INSERT INTO sku_producto_map (sku, producto_nombre, activo) "
-                    "VALUES (?, ?, 1)",
-                    (sku, prod),
+                    "INSERT INTO sku_producto_map (sku, producto_nombre, activo, es_regalo) "
+                    "VALUES (?, ?, 1, ?)",
+                    (sku, prod, es_regalo or 0),
                 )
-            creados.append({'sku': sku, 'producto': prod})
+            creados.append({'sku': sku, 'producto': prod, 'es_regalo': es_regalo})
         except Exception as e:
             errores.append({'sku': sku, 'error': str(e)[:100]})
     try:
@@ -1668,16 +1674,21 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
 
     # 2. Mapeo producto → sku_principal (para Shopify)
     # Estructura sku_producto_map: sku → producto_nombre
+    # FIX 24-may PM · cargamos también es_regalo (mig 170) para excluir
+    # del cálculo de velocidad SKUs que son regalo (BBM mini, promos).
     sku_to_prod = {}
     prod_to_skus = {}  # inverso · diagnóstico: ¿qué SKUs mapean a cada producto?
+    skus_regalo = set()
     for r in c.execute(
-        """SELECT sku, producto_nombre FROM sku_producto_map
+        """SELECT sku, producto_nombre, COALESCE(es_regalo, 0) FROM sku_producto_map
            WHERE COALESCE(activo,1)=1 AND producto_nombre IS NOT NULL
              AND TRIM(producto_nombre) != ''""",
     ).fetchall():
         sku_up = r[0].upper()
         sku_to_prod[sku_up] = r[1]
         prod_to_skus.setdefault(r[1], []).append(sku_up)
+        if r[2]:
+            skus_regalo.add(sku_up)
 
     # FIX #2 · 23-may-2026 Sebastián · "velocidad o cantidad mal" · auditoría:
     # _inferir_ml_presentacion usaba heurística por substring del nombre (default
@@ -1758,6 +1769,12 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
             sku = str(it.get("sku", "") or "").strip().upper()
             qty = int(it.get("qty") or it.get("cantidad") or it.get("quantity") or 0)
             if not sku or qty <= 0:
+                continue
+            # FEATURE 24-may-2026 · Sebastián: SKUs marcados es_regalo=1 no
+            # cuentan para velocidad (BBM mini es regalo, no se vende).
+            # Sin esto, los regalos inflaban la velocidad y planificación
+            # producía bulk para satisfacer demanda ficticia.
+            if sku in skus_regalo:
                 continue
             if en_60:
                 ventas_por_sku[sku] = ventas_por_sku.get(sku, 0) + qty
