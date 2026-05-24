@@ -12034,15 +12034,15 @@ async function ckMarcar(itemId, estado){
         'plano': 'ptab-plano',
       };
       // Lazy-load Abastecimiento al activar tab · Sebastián 23-may-2026
+      // FIX 24-may noche · NO HACER return aquí · corta la función antes
+      // de toggle de visibilidad de divs y el tab no se ve cambiado.
       if (tab === 'abastecimiento') {
         try {
           // Marcar foco visual del horizonte activo (default 90d).
+          // setAbastFoco también dispara cargarAbastecimiento internamente.
           if (typeof setAbastFoco === 'function') {
             setAbastFoco(window.ABAST_HORIZ || 90);
-            return;  // setAbastFoco ya llama cargarAbastecimiento
-          }
-          if (typeof cargarAbastecimiento === 'function') {
-            // Solo si no se cargó ya (evita refetch en cada cambio de tab)
+          } else if (typeof cargarAbastecimiento === 'function') {
             var ac = document.getElementById('abast-contenido');
             if (ac && ac.textContent.indexOf('Click') >= 0) {
               cargarAbastecimiento();
