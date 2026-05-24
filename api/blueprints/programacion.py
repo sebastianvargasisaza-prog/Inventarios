@@ -8205,6 +8205,52 @@ def abastecimiento_consumo_horizontes():
                 d[h] = d.get(h, 0.0) + uds
 
     productos_sin_lote_size = set()  # AUDITORÍA P1-5 · reporte en respuesta
+    productos_multi_volumen = set()  # AUDIT 24-may noche · MEE warning
+
+    # FIX AUDIT 24-may-2026 noche · B2B envase custom y multi-volumen.
+    # Bulk-cargar aportes B2B con envase específico para que el descuento
+    # MEE respete el envase del cliente en lugar del default del producto.
+    b2b_envases_por_lote = {}  # lote_id -> [{envase_codigo, uds, cliente}]
+    if incluir_mee:
+        prod_ids = [r[0] for r in prod_rows]
+        if prod_ids:
+            try:
+                ph_pids = ','.join(['?'] * len(prod_ids))
+                for ar in c.execute(
+                    f"""SELECT lote_produccion_id, envase_codigo,
+                              COALESCE(unidades_aporte, 0),
+                              COALESCE(cliente_nombre, '')
+                       FROM pedidos_b2b_lote
+                       WHERE lote_produccion_id IN ({ph_pids})
+                         AND COALESCE(envase_codigo, '') != ''""",
+                    prod_ids,
+                ).fetchall():
+                    b2b_envases_por_lote.setdefault(ar[0], []).append({
+                        'envase': (ar[1] or '').strip().upper(),
+                        'uds': int(ar[2] or 0),
+                        'cliente': ar[3] or '',
+                    })
+            except Exception:
+                pass  # mig 171/172 no aplicada
+
+    # FIX AUDIT 24-may-2026 noche · multi-volumen warning. Detectar
+    # productos con >1 SKU con volúmenes distintos en producto_presentaciones
+    # (e.g. BLUSH BALM tonos 6g + BBM MINI 15ml regalo). El cálculo actual
+    # usa UN volumen ponderado · si los volúmenes son muy distintos el
+    # cálculo subestima.
+    multi_vol_check = {}  # producto_norm -> set(volúmenes distintos)
+    if incluir_mee:
+        try:
+            for r in c.execute("""
+                SELECT UPPER(TRIM(producto_nombre)), COALESCE(factor_g_por_unidad,0)
+                FROM producto_presentaciones
+                WHERE COALESCE(activo,1) = 1
+                  AND COALESCE(factor_g_por_unidad,0) > 0
+            """).fetchall():
+                multi_vol_check.setdefault(r[0], set()).add(round(float(r[1]), 1))
+        except sqlite3.OperationalError:
+            pass
+
     # 8a. Producciones del Calendario (Fijo + Sugerida desde FIX #3 23-may)
     for pid, producto, fecha, lotes, cant_kg_expl, lote_size, _origen in prod_rows:
         producto_norm = (producto or '').strip().upper()
@@ -8235,15 +8281,35 @@ def abastecimiento_consumo_horizontes():
         # MEE: requiere volumen por unidad
         if incluir_mee:
             vol = volumen_por_producto.get(producto_norm, 0.0)
+            # FIX AUDIT 24-may-2026 noche · warning multi-volumen.
+            vols_set = multi_vol_check.get(producto_norm, set())
+            if len(vols_set) > 1:
+                productos_multi_volumen.add(producto_norm)
             if vol > 0:
-                uds_envasadas = (cant_kg * 1000.0) / vol
+                uds_envasadas_total = (cant_kg * 1000.0) / vol
+                # FIX AUDIT 24-may-2026 noche · B2B envase custom split.
+                # Si este lote tiene aportes B2B con envase_codigo específico,
+                # restar esas uds del descuento default y sumarlas al envase
+                # B2B en pedidos_b2b_lote (e.g. ENV-500-FB para Fernando).
+                aportes_custom = b2b_envases_por_lote.get(pid, [])
+                uds_b2b_custom_total = sum(a['uds'] for a in aportes_custom)
+                for a in aportes_custom:
+                    _agregar_consumo_mee(a['envase'], a['uds'], dias_hasta)
                 # Buscar MEE registrados por producto/sku · usar producto_norm
                 # como key (sku_mee_config.sku_codigo) o fallback al codigo_pt
                 mee_items = mee_por_producto.get(producto_norm, [])
                 for me in mee_items:
+                    # Solo el envase del producto baja por las uds B2B custom.
+                    # Tapa/etiqueta/etc se descuentan completas (todos los
+                    # clientes usan los mismos sub-componentes).
+                    es_envase = (me.get('tipo') or 'envase').lower() in ('envase', 'frasco', 'recipiente')
+                    if es_envase and uds_b2b_custom_total > 0:
+                        uds_efectivas = max(uds_envasadas_total - uds_b2b_custom_total, 0)
+                    else:
+                        uds_efectivas = uds_envasadas_total
                     _agregar_consumo_mee(
                         (me['codigo'] or '').strip().upper(),
-                        uds_envasadas * me['cant_x_uds'],
+                        uds_efectivas * me['cant_x_uds'],
                         dias_hasta,
                     )
 
@@ -8536,6 +8602,9 @@ def abastecimiento_consumo_horizontes():
         'mees': items_out_mee,
         'resumen_por_horizonte': resumen,
         'productos_sin_lote_size': sorted(productos_sin_lote_size),
+        # FIX AUDIT 24-may-2026 noche · productos con >1 presentación
+        # con volúmenes distintos · el cálculo MEE puede subestimar.
+        'productos_multi_volumen': sorted(productos_multi_volumen),
     })
 
 
