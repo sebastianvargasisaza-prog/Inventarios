@@ -7942,11 +7942,19 @@ def abastecimiento_consumo_horizontes():
     #   · codigo_mp se guardaba raw (sin UPPER+TRIM) · luego mismatch con
     #     pendientes_mp (UPPER+TRIM) y stock_mp (en _get_mp_stock guarda raw
     #     pero hay name-variant lookup · mejor normalizar consistente)
+    # FIX 24-may-2026 noche · Sebastián: 'sigue mal · no me cuadra'.
+    # SQL UPPER(TRIM(...)) NO colapsa espacios DOBLES interiores. Los seeds
+    # de mig_127 tienen productos con dobles espacios ('EMULSION HIDRATANTE
+    # _ B3+BHA') que no matchean con la producción ('EMULSION HIDRATANTE
+    # B3+BHA' un solo espacio). Resultado: lote_size=0 → producción saltada
+    # del cálculo. Ahora normalizamos en Python · colapsa espacios múltiples.
+    def _norm_prod(s):
+        return ' '.join((s or '').strip().upper().split())
     formulas = {}
     # Pre-cargar lote_size_kg por producto (también para B2B · evita N+1)
     lote_size_por_prod = {}
     for r in c.execute("""
-        SELECT UPPER(TRIM(fi.producto_nombre)), fi.material_id,
+        SELECT fi.producto_nombre, fi.material_id,
                COALESCE(fi.material_nombre,''),
                COALESCE(fi.porcentaje,0), COALESCE(fi.cantidad_g_por_lote,0),
                COALESCE(fh.lote_size_kg, 0)
@@ -7958,14 +7966,15 @@ def abastecimiento_consumo_horizontes():
         cm_norm = str(r[1] or '').strip().upper()
         if not cm_norm:
             continue
-        formulas.setdefault(r[0], []).append({
+        prod_key = _norm_prod(r[0])
+        formulas.setdefault(prod_key, []).append({
             'codigo_mp': cm_norm,
             'nombre': r[2],
             'pct': float(r[3] or 0),
             'g_por_lote': float(r[4] or 0),
         })
-        if r[0] not in lote_size_por_prod:
-            lote_size_por_prod[r[0]] = float(r[5] or 0)
+        if prod_key not in lote_size_por_prod:
+            lote_size_por_prod[prod_key] = float(r[5] or 0)
 
     # 4. MEE por producto (volumen-aware)
     # AUDITORÍA-FIX 23-may-2026 · agente P0-2 · sku_mee_config.sku_codigo es
@@ -8252,8 +8261,16 @@ def abastecimiento_consumo_horizontes():
             pass
 
     # 8a. Producciones del Calendario (Fijo + Sugerida desde FIX #3 23-may)
+    # FIX 24-may-2026 noche · normalizar espacios para que matchee con
+    # _norm_prod usado en el diccionario formulas (colapsa espacios dobles).
+    matched_lotes = 0
+    sin_formula_lotes = []
     for pid, producto, fecha, lotes, cant_kg_expl, lote_size, _origen in prod_rows:
-        producto_norm = (producto or '').strip().upper()
+        producto_norm = _norm_prod(producto)
+        # Si el LEFT JOIN SQL devolvió lote_size=0 (por mismatch de espacios),
+        # tomar el lote_size del diccionario formulas (que sí está normalizado).
+        if not lote_size or float(lote_size) <= 0:
+            lote_size = lote_size_por_prod.get(producto_norm, 0)
         try:
             dias_hasta = (date.fromisoformat(str(fecha)[:10]) - hoy).days
         except Exception:
@@ -8264,6 +8281,10 @@ def abastecimiento_consumo_horizontes():
         if cant_kg <= 0:
             continue
         items = formulas.get(producto_norm) or []
+        if items:
+            matched_lotes += 1
+        else:
+            sin_formula_lotes.append(producto_norm)
         # MP consumption: necesario_g por kg producido
         for it in items:
             if it['g_por_lote'] > 0 and lote_size and float(lote_size) > 0:
@@ -8315,7 +8336,7 @@ def abastecimiento_consumo_horizontes():
 
     # 8b. Pedidos B2B pendientes (sin producción Fija aún)
     for bid, cli_id, cli_nom, prod_nom, cant_uds, ml_u, f_est in b2b_rows:
-        producto_norm = (prod_nom or '').strip().upper()
+        producto_norm = _norm_prod(prod_nom)
         # AUDITORÍA-FIX 23-may-2026 · P1-4 · f_est vacío caía a dias_hasta=0
         # inflaba horizonte 15d con pedidos sin fecha · ahora skip si no hay
         if not f_est:
@@ -8634,6 +8655,13 @@ def abastecimiento_consumo_horizontes():
         'resumen_por_horizonte': resumen,
         'productos_sin_lote_size': sorted(productos_sin_lote_size),
         'productos_multi_volumen': sorted(productos_multi_volumen),
+        # FIX 24-may-2026 noche · diagnóstico de match producto↔fórmula
+        # · si muchos lotes están en sin_formula, el cálculo subestima
+        # gravemente. Util para que admin vea cuántos lotes el sistema
+        # NO pudo cruzar con formula_items (por nombre que no matchea).
+        'lotes_con_formula': matched_lotes,
+        'lotes_sin_formula': len(sin_formula_lotes),
+        'productos_sin_match_formula': sorted(set(sin_formula_lotes))[:30],
     })
 
 
@@ -8695,18 +8723,25 @@ def abastecimiento_trail_mp(codigo_mp):
         ).fetchone()
         lote_size_kg = float(lote_size_row[0]) if lote_size_row else 0
         # Lotes futuros programados (Fijas + Sugeridas + B2B · sin pasados ni cancelados)
-        lotes_rows = c.execute(
+        # FIX 24-may noche · normalizar espacios en Python (SQL no colapsa
+        # espacios dobles interiores). Bringo todos los lotes del horizonte
+        # y filtro por nombre normalizado.
+        def _np(s):
+            return ' '.join((s or '').strip().upper().split())
+        prod_norm_target = _np(prod_nom)
+        lotes_rows_raw = c.execute(
             """SELECT id, fecha_programada, COALESCE(cantidad_kg, 0),
-                      COALESCE(estado, ''), COALESCE(origen, '')
+                      COALESCE(estado, ''), COALESCE(origen, ''), producto
                FROM produccion_programada
-               WHERE UPPER(TRIM(producto)) = UPPER(TRIM(?))
-                 AND LOWER(COALESCE(estado,'')) NOT IN
+               WHERE LOWER(COALESCE(estado,'')) NOT IN
                      ('cancelado','completado','esperando_recurso')
                  AND COALESCE(inventario_descontado_at,'') = ''
                  AND fecha_programada >= ? AND fecha_programada <= ?
                ORDER BY fecha_programada ASC""",
-            (prod_nom, hoy, cutoff),
+            (hoy, cutoff),
         ).fetchall()
+        lotes_rows = [(r[0], r[1], r[2], r[3], r[4]) for r in lotes_rows_raw
+                       if _np(r[5]) == prod_norm_target]
         lotes_detalle = []
         gramos_producto_total = 0.0
         for lid, lfecha, lkg, lest, lorigen in lotes_rows:
