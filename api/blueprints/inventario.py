@@ -2112,6 +2112,23 @@ def _handle_produccion_inner():
                     'lotes_fefo': lotes_log,
                 })
 
+            # P0-6 23-may-PM · auditoría agente Stock · _handle_produccion_inner
+            # descontaba MP vía INSERT en movimientos pero NO escribía
+            # audit_log · viola CLAUDE.md 'audit_log es mandatorio en cualquier
+            # operación que mutue inventario'. Imposible reconstruir quién
+            # descontó qué lote para reclamo INVIMA.
+            try:
+                from database import audit_log as _al
+                _al(c, usuario=operador or 'sistema',
+                    accion='PRODUCCION_DESCONTAR_MP',
+                    tabla='movimientos', registro_id=str(lote_ref),
+                    despues={'producto': producto,
+                             'cantidad_kg': cantidad_kg,
+                             'descuentos': descuentos,
+                             'fecha': fecha})
+            except Exception:
+                pass
+
             conn.commit()
         except Exception as _e:
             conn.rollback()

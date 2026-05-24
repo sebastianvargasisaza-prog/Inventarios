@@ -33,7 +33,7 @@ logger = log  # alias compatible con call-sites históricos
 bp = Blueprint('programacion', __name__)
 
 
-def _caller_puede_operar_produccion(c, user, evento_id):
+def _caller_puede_operar_produccion(c, user, evento_id, rol_requerido='cualquiera'):
     """Sebastián 19-may-2026 · BUG-1 audit Planta PERFECTA · cierra hueco
     crítico: hasta hoy /iniciar y /completar solo chequeaban login. Un
     operario podía POST con id de producción ajena y descontar MPs en
@@ -42,20 +42,29 @@ def _caller_puede_operar_produccion(c, user, evento_id):
     Retorna (ok: bool, error_response: tuple|None). Si ok=False, retornar
     error_response directamente desde el endpoint.
 
+    Args:
+      rol_requerido: 'cualquiera' (default · operario asignado a alguno
+        de los 4 roles), 'dispensacion' (estricto · solo dispensador o
+        admin/jefe puede), 'finalizar' (dispensación o jefe).
+
     Reglas:
       - user en ADMIN_USERS → siempre ok (Sebastián / Alejandro)
       - user es operarios_planta.es_jefe_produccion=1 → ok (Luis Enrique)
-      - user mapea a un operario_id que figura en alguno de los 4 roles
-        (operario_dispensacion_id / elaboracion / envasado / acondicionamiento)
-        de la producción → ok
+      - user mapea a un operario_id que cumple `rol_requerido`
       - en cualquier otro caso → 403
+
+    P0-2/P0-3 23-may-PM · auditoría agente Kanban cazó:
+      · LIKE 'u%' fallback permitía suplantar operario por prefix match
+        (e.g. user='m' matcheaba Mayerlin/Maria/Manuel). ELIMINADO.
+      · Cualquier operario asignado podía descontar MP. Ahora rol_requerido
+        ='dispensacion' restringe /iniciar (descuento MP) solo al dispensador.
     """
     if not user:
         return False, (jsonify({'error': 'No autorizado'}), 401)
     if user in ADMIN_USERS:
         return True, None
-    # Mapear user → operario_id (mismo patrón que operario.py:_username_to_operario_id)
     u = user.lower().strip()
+    # Match exacto por nombre
     op_row = c.execute(
         "SELECT id, COALESCE(es_jefe_produccion,0) FROM operarios_planta "
         "WHERE LOWER(nombre) = ? AND COALESCE(activo,1) = 1 LIMIT 1",
@@ -70,12 +79,9 @@ def _caller_puede_operar_produccion(c, user, evento_id):
                  AND COALESCE(activo,1) = 1 LIMIT 1""",
             (u[1:], u[0]),
         ).fetchone()
-    if not op_row:
-        op_row = c.execute(
-            """SELECT id, COALESCE(es_jefe_produccion,0) FROM operarios_planta
-               WHERE LOWER(nombre) LIKE ? AND COALESCE(activo,1) = 1 LIMIT 1""",
-            (u + '%',),
-        ).fetchone()
+    # P0-3 23-may-PM · ELIMINADO el fallback `LIKE u%` que permitía
+    # suplantar operarios (user='m' matcheaba al primer operario que
+    # empezara con m alfabéticamente · brecha de seguridad).
     if not op_row:
         return False, (jsonify({
             'error': 'Tu usuario no está mapeado a un operario en planta. '
@@ -84,7 +90,6 @@ def _caller_puede_operar_produccion(c, user, evento_id):
     op_id, es_jefe = int(op_row[0]), bool(op_row[1])
     if es_jefe:
         return True, None
-    # Verificar que el operario_id sea uno de los 4 roles asignados
     rol_row = c.execute(
         """SELECT operario_dispensacion_id, operario_elaboracion_id,
                   operario_envasado_id, operario_acondicionamiento_id
@@ -93,6 +98,16 @@ def _caller_puede_operar_produccion(c, user, evento_id):
     ).fetchone()
     if not rol_row:
         return False, (jsonify({'error': 'produccion no existe'}), 404)
+    # P0-2 · validar rol específico cuando se requiere
+    if rol_requerido == 'dispensacion':
+        if op_id == rol_row[0]:
+            return True, None
+        return False, (jsonify({
+            'error': 'Solo el operario de dispensación (o jefe/admin) puede '
+                     'iniciar la producción y descontar MP. Tu rol asignado '
+                     'es distinto.',
+            'codigo': 'rol_incorrecto',
+        }), 403)
     if op_id in [r for r in rol_row if r is not None]:
         return True, None
     return False, (jsonify({
@@ -932,14 +947,21 @@ def _get_mee_stock(conn):
     except RuntimeError:
         pass
     # From movements (accurate)
+    # P0-3 23-may-PM · auditoría agente Stock · antes solo Entrada/Salida ·
+    # ignoraba 'Ajuste' (signed positive) + variantes case mixto que SÍ
+    # existen en BD · y job_mee_drift_sync los cuenta, causando drift
+    # permanente entre cron y canónico. Ahora unifica con _get_mp_stock.
     stock = {}
     try:
         for row in conn.execute("""
             SELECT mee_codigo,
-                   COALESCE(SUM(CASE WHEN tipo='Entrada' THEN cantidad
-                                     WHEN tipo='Salida'  THEN -cantidad
-                                     ELSE 0 END), 0)
-            FROM movimientos_mee WHERE anulado=0 GROUP BY mee_codigo
+                   COALESCE(SUM(CASE
+                       WHEN LOWER(tipo) IN ('entrada','ingreso','devolucion','devolución','ajuste')
+                           THEN cantidad
+                       WHEN LOWER(tipo) IN ('salida','consumo','rechazo')
+                           THEN -cantidad
+                       ELSE 0 END), 0)
+            FROM movimientos_mee WHERE COALESCE(anulado,0)=0 GROUP BY mee_codigo
         """).fetchall():
             k = str(row[0] or '').strip().upper()
             if k:
@@ -3126,7 +3148,10 @@ def prog_iniciar_produccion(evento_id):
     # BUG-1 fix · 19-may-2026: validar que el caller esté asignado a esta
     # producción (o sea admin/jefe). Antes solo se chequeaba login → un
     # operario podía iniciar/descontar MPs de producción ajena.
-    ok_caller, err_caller = _caller_puede_operar_produccion(c, user, evento_id)
+    # P0-2 · 23-may-PM · auditoría agente · /iniciar descuenta MP ·
+    # solo el operario de dispensación (o jefe/admin) puede.
+    ok_caller, err_caller = _caller_puede_operar_produccion(
+        c, user, evento_id, rol_requerido='dispensacion')
     if not ok_caller:
         return err_caller
     pp = c.execute("""SELECT id, producto, area_id, inicio_real_at, fin_real_at,
@@ -7077,14 +7102,10 @@ def producciones_faltantes():
     stock_mp = _get_mp_stock(conn)
 
     # 6. Cargar stock MEE
-    stock_mee = {}
-    try:
-        for r in c.execute(
-            "SELECT codigo, COALESCE(stock_actual,0) FROM maestro_mee"
-        ).fetchall():
-            stock_mee[str(r[0] or '').strip().upper()] = float(r[1] or 0)
-    except sqlite3.OperationalError:
-        pass
+    # P0-4 23-may-PM · auditoría agente Stock · antes leía maestro_mee
+    # .stock_actual directo (cache que puede drift) · ahora usa el helper
+    # canónico _get_mee_stock que suma movimientos_mee.
+    stock_mee = _get_mee_stock(conn)
 
     # 7. Cargar info MP (nombre canonico + proveedor sugerido)
     mp_info = {}
@@ -7934,19 +7955,21 @@ def abastecimiento_consumo_horizontes():
         pass
 
     # 6. Stock + info MEE
+    # P0-5 23-may-PM · auditoría · antes leía stock_actual directo
+    # (cache puede drift) · ahora usa _get_mee_stock canónico.
+    # Info adicional (descripcion, proveedor) sigue de maestro_mee.
     stock_mee = {}
     mee_info = {}
     if incluir_mee:
         try:
+            stock_mee = _get_mee_stock(conn)
             for r in c.execute("""
-                SELECT codigo, COALESCE(stock_actual,0),
-                       COALESCE(descripcion,''),
+                SELECT codigo, COALESCE(descripcion,''),
                        COALESCE(proveedor,'')
                 FROM maestro_mee
             """).fetchall():
                 k = str(r[0]).strip().upper()
-                stock_mee[k] = float(r[1] or 0)
-                mee_info[k] = {'descripcion': r[2] or r[0], 'proveedor': r[3] or ''}
+                mee_info[k] = {'descripcion': r[1] or r[0], 'proveedor': r[2] or ''}
         except sqlite3.OperationalError:
             pass
 

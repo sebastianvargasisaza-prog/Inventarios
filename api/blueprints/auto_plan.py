@@ -9610,16 +9610,28 @@ def kanban_etapa_accion(pid, rol, accion):
                     except ImportError:
                         from api.blueprints.programacion import prog_iniciar_produccion as _prog_ini
                     inner = _prog_ini(int(pid))
-                    if hasattr(inner, 'get_json'):
-                        descuento_resp = inner.get_json()
-                    # Si descuento falló (status >= 400), rollback de etapa
-                    if hasattr(inner, 'status_code') and inner.status_code >= 400:
+                    # P0-1 23-may-PM · Flask views pueden retornar Response
+                    # o tupla (Response, code). El check anterior solo
+                    # detectaba Response · si _prog_ini retornaba tupla
+                    # (caso error 422/409 SIN_STOCK/SALA_SUCIA) el branch
+                    # NUNCA disparaba → kanban hacía commit con MP NO
+                    # descontada → DRIFT KARDEX SILENCIOSO.
+                    if isinstance(inner, tuple):
+                        resp_inner, code_inner = inner[0], (inner[1] if len(inner) > 1 else 200)
+                    else:
+                        resp_inner, code_inner = inner, getattr(inner, 'status_code', 200)
+                    if hasattr(resp_inner, 'get_json'):
+                        try:
+                            descuento_resp = resp_inner.get_json()
+                        except Exception:
+                            descuento_resp = None
+                    if code_inner >= 400:
                         conn.rollback()
                         return jsonify({
                             'error': 'Descuento MP falló · etapa NO iniciada',
                             'codigo': 'DESCUENTO_FALLO',
                             'flujo_canonico': descuento_resp,
-                            'status': inner.status_code,
+                            'status': code_inner,
                         }), 409
             except Exception as _e:
                 log.warning('Kanban iniciar dispensacion · descuento MP fallo · pid=%s err=%s', pid, _e)

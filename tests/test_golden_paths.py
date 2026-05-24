@@ -7103,12 +7103,19 @@ def test_golden_operario_no_puede_iniciar_produccion_ajena(app, db_clean):
                             json={}, headers=csrf_headers())
         assert r3.status_code == 403, f'BUG completar: {r3.status_code}'
 
-        # smurillo SÍ puede (está en envasado_id) · login 'smurillo'
+        # P0-2 23-may-PM · auditoría agente · /iniciar AHORA requiere
+        # rol_requerido='dispensacion' explícito. smurillo está en
+        # envasado · NO debe poder iniciar (descontar MP). Solo el
+        # operario de dispensación o jefe/admin pueden /iniciar.
         cs_smurillo = _login(app, 'smurillo')
         r4 = cs_smurillo.post(f'/api/programacion/programar/{pid}/iniciar',
                               json={}, headers=csrf_headers())
-        assert r4.status_code != 403, \
-            f'BUG: smurillo asignado bloqueado · {r4.status_code}'
+        assert r4.status_code == 403, \
+            f'BUG P0-2: operario de envasado NO debe iniciar (descuento MP) · {r4.status_code}'
+        # Pero smurillo SÍ puede terminar/completar (no descuenta MP)
+        d4 = r4.get_json() if r4.status_code != 500 else {}
+        assert d4.get('codigo') == 'rol_incorrecto', \
+            f'BUG P0-2: código error esperado rol_incorrecto · got {d4}'
 
         # admin (sebastian) también puede en otra producción limpia
         pid2 = _exec(
