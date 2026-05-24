@@ -312,6 +312,33 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (171, "pedidos_b2b_lote · link estructurado pedido B2B ↔ lote producción · Sebastián 24-may-2026 noche", [
+        # FEATURE B2B 24-may-2026 · Sebastián: "Fernando maquila productos
+        # que también vende Animus · ejemplo LBHA · si pide tantas unidades
+        # la idea es que aumentamos producción para hacer todo junto · lo
+        # único que cambiaría es el envase".
+        # El modo HÍBRIDO actual (plan.py:283) suma kg al lote canónico y
+        # anota en observaciones — pero query/UI no puede leer audit trail
+        # estructurado. Esta tabla normaliza el link: cada pedido_b2b aporta
+        # X kg a un lote específico · permite desglose DTC vs B2B por lote
+        # + ver "qué pedidos cubre este lote" + (futuro) envase distinto.
+        """CREATE TABLE IF NOT EXISTS pedidos_b2b_lote (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            pedido_b2b_id INTEGER NOT NULL,
+            lote_produccion_id INTEGER NOT NULL,
+            kg_aporte REAL NOT NULL DEFAULT 0,
+            unidades_aporte INTEGER NOT NULL DEFAULT 0,
+            ml_unidad REAL DEFAULT 0,
+            envase_codigo TEXT DEFAULT '',
+            modo TEXT NOT NULL DEFAULT 'sumado_a_lote_canonico'
+                CHECK(modo IN ('sumado_a_lote_canonico','lote_dedicado')),
+            cliente_nombre TEXT DEFAULT '',
+            creado_at TEXT DEFAULT (datetime('now', '-5 hours')),
+            UNIQUE(pedido_b2b_id, lote_produccion_id)
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_pbl_lote ON pedidos_b2b_lote(lote_produccion_id)",
+        "CREATE INDEX IF NOT EXISTS idx_pbl_pedido ON pedidos_b2b_lote(pedido_b2b_id)",
+    ]),
     (170, "sku_producto_map.es_regalo · BBM mini es regalo + futuras promociones · Sebastián 24-may-2026 PM", [
         # FEATURE 24-may-2026 · Sebastián: "BBM mini es regalo no se vende,
         # el resto de BBM si los vendemos". Sin esta columna, BBM mini contaba

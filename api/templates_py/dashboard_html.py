@@ -21675,6 +21675,17 @@ async function ckMarcar(itemId, estado){
           const proxFecha = (p.proximo_lote && p.proximo_lote.fecha) ? p.proximo_lote.fecha.slice(5, 10) : '';
           chipPlan = ' <span title="' + p.planificacion.length + ' lote(s) agendado(s) · click Programar para gestionar" style="background:#dbeafe;color:#1e40af;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:700">📅 ' + proxFecha + '</span>';
         }
+        // FEATURE B2B 24-may-2026 · chip B2B si algún lote tiene aportes B2B.
+        // Muestra "+Xkg B2B" + tooltip con clientes (Fernando, etc.).
+        let chipB2B = '';
+        const lotesConB2B = (p.planificacion || []).filter(l => l.tiene_b2b);
+        if (lotesConB2B.length) {
+          const kgB2B = lotesConB2B.reduce((s, l) => s + (l.kg_b2b || 0), 0);
+          const clientes = new Set();
+          lotesConB2B.forEach(l => (l.aportes_b2b || []).forEach(a => clientes.add(a.cliente || '?')));
+          const ttip = lotesConB2B.length + ' lote(s) con B2B · ' + [...clientes].join(', ');
+          chipB2B = ' <span title="' + ttip + '" style="background:#fdf4ff;color:#7e22ce;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:700">🤝 +' + kgB2B.toFixed(1) + 'kg</span>';
+        }
 
         // FIX UX 24-may PM · jerarquía visual · fila completa con tinte
         // de fondo + borde izquierdo grueso si crítico/urgente. OK/sin-ventas
@@ -21689,7 +21700,7 @@ async function ckMarcar(itemId, estado){
         html += '<td style="padding:10px 8px">';
         html += '<div style="display:flex;align-items:center;gap:6px"><span style="background:' + cfg.bg + ';color:' + cfg.text + ';padding:2px 8px;border-radius:6px;font-size:11px;font-weight:800">' + cfg.emoji + '</span>';
         html += '<span style="font-weight:700;color:#1e293b">' + escapeHtmlNec(p.producto_nombre) + '</span>';
-        html += alertSinSku + chipPlan;
+        html += alertSinSku + chipPlan + chipB2B;
         html += '</div>';
         html += '<div style="font-family:ui-monospace,monospace;font-size:10px;color:#94a3b8;margin-top:2px">' + codDisp + ' · ' + mlReal + 'ml</div>';
         html += '</td>';
@@ -21730,6 +21741,11 @@ async function ckMarcar(itemId, estado){
       html += '<span style="background:' + cfg.bg + ';color:' + cfg.text + ';padding:1px 5px;border-radius:3px;font-weight:700">' + cfg.emoji + ' ' + lt.estado + '</span>';
       html += '<span style="font-family:ui-monospace,monospace;color:#1e40af;font-weight:700">' + fechaCorta + '</span>';
       html += '<span style="color:#475569">' + lt.kg + 'kg</span>';
+      // FEATURE B2B 24-may · desglose si hay aportes B2B
+      if (lt.tiene_b2b && lt.kg_b2b > 0) {
+        const tt = (lt.aportes_b2b || []).map(a => a.cliente + ': ' + a.kg + 'kg (' + a.n_pedidos + ' pedido' + (a.n_pedidos === 1 ? '' : 's') + ')').join(' · ');
+        html += '<span title="' + tt + '" style="background:#fdf4ff;color:#7e22ce;padding:1px 5px;border-radius:3px;font-size:10px;font-weight:700">🤝 ' + lt.kg_dtc + ' DTC + ' + lt.kg_b2b + ' B2B</span>';
+      }
       html += '<span title="' + lt.origen + '">' + orig + '</span>';
       if (motivoTxt) html += '<span style="color:#92400e">' + motivoTxt + '</span>';
       // Botones acción inline

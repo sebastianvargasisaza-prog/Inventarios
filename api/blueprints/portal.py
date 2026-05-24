@@ -698,7 +698,8 @@ def portal_crear_pedido():
     try:
         from blueprints.plan import _integrar_pedido_b2b_al_plan
         integracion = _integrar_pedido_b2b_al_plan(
-            cur, pid, producto, kg_b2b, fecha, cnom, f'portal:{email}')
+            cur, pid, producto, kg_b2b, fecha, cnom, f'portal:{email}',
+            unidades=cantidad, ml_unidad=ml)
         conn.commit()
     except Exception as _e:
         try: conn.rollback()

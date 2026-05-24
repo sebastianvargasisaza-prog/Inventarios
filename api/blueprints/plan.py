@@ -78,23 +78,131 @@ def listar_pedidos_b2b():
         sql += " WHERE " + " AND ".join(where)
     sql += " ORDER BY fecha_estimada ASC, id DESC"
 
-    rows = get_db().execute(sql, params).fetchall()
-    items = [{
-        "id": r[0],
-        "cliente_id": r[1],
-        "cliente_nombre": r[2],
-        "producto_nombre": r[3],
-        "cantidad_uds": r[4],
-        "ml_unidad": r[5],
-        "kg_equivalente": round((r[4] * r[5]) / 1000.0, 2),
-        "fecha_estimada": r[6],
-        "estado": r[7],
-        "notas": r[8] or "",
-        "creado_por": r[9],
-        "creado_at_utc": r[10],
-        "actualizado_at_utc": r[11],
-    } for r in rows]
+    conn_l = get_db()
+    rows = conn_l.execute(sql, params).fetchall()
+    # FEATURE B2B 24-may-2026 · enriquecer cada pedido con su lote
+    # consolidado (mig 171) · útil para que admin vea "qué lote cubre
+    # mi pedido + cuándo se produce + cuánto bulk total".
+    items = []
+    pedido_ids = [r[0] for r in rows]
+    lotes_por_pedido = {}
+    if pedido_ids:
+        try:
+            ph = ','.join('?' * len(pedido_ids))
+            for lr in conn_l.execute(
+                f"""SELECT pbl.pedido_b2b_id, pbl.lote_produccion_id,
+                          pbl.kg_aporte, pbl.unidades_aporte, pbl.modo,
+                          pp.fecha_programada, pp.estado,
+                          COALESCE(pp.cantidad_kg, 0),
+                          COALESCE(pp.kg_real, 0),
+                          pp.inicio_real_at, pp.fin_real_at
+                   FROM pedidos_b2b_lote pbl
+                   LEFT JOIN produccion_programada pp ON pp.id = pbl.lote_produccion_id
+                   WHERE pbl.pedido_b2b_id IN ({ph})""",
+                pedido_ids,
+            ).fetchall():
+                lotes_por_pedido[lr[0]] = {
+                    'lote_id': lr[1],
+                    'kg_aporte': float(lr[2] or 0),
+                    'unidades_aporte': int(lr[3] or 0),
+                    'modo': lr[4],
+                    'fecha_lote': (lr[5] or '')[:10],
+                    'estado_lote': lr[6] or '',
+                    'kg_total_lote': float(lr[7] or 0),
+                    'kg_real_lote': float(lr[8] or 0),
+                    'iniciada': bool(lr[9]),
+                    'terminada': bool(lr[10]),
+                }
+        except Exception:
+            pass  # tabla no existe en BD vieja · fallback al payload básico
+    for r in rows:
+        items.append({
+            "id": r[0],
+            "cliente_id": r[1],
+            "cliente_nombre": r[2],
+            "producto_nombre": r[3],
+            "cantidad_uds": r[4],
+            "ml_unidad": r[5],
+            "kg_equivalente": round((r[4] * r[5]) / 1000.0, 2),
+            "fecha_estimada": r[6],
+            "estado": r[7],
+            "notas": r[8] or "",
+            "creado_por": r[9],
+            "creado_at_utc": r[10],
+            "actualizado_at_utc": r[11],
+            "lote_consolidado": lotes_por_pedido.get(r[0]),
+        })
     return jsonify({"items": items, "total": len(items)})
+
+
+@bp.route("/api/admin/b2b/lote/<int:lote_id>/desglose", methods=["GET"])
+def admin_b2b_lote_desglose(lote_id):
+    """FEATURE B2B 24-may-2026 · dado un lote de produccion_programada,
+    devuelve el desglose DTC vs B2B: kg total del lote, qué porción es
+    B2B sumada de qué pedidos, qué porción es DTC (= total - B2B).
+
+    Útil para que en planta sepan: "este lote LBHA de 5kg = 2kg DTC +
+    3kg Fernando (pedido #42, envase 250ml)".
+    """
+    err = _require_login()
+    if err:
+        return err
+    conn = get_db()
+    lote = conn.execute(
+        """SELECT id, producto, fecha_programada, COALESCE(cantidad_kg,0),
+                  COALESCE(kg_real,0), estado, origen
+           FROM produccion_programada WHERE id = ?""",
+        (lote_id,),
+    ).fetchone()
+    if not lote:
+        return jsonify({'error': 'lote no existe'}), 404
+    kg_total = float(lote[3] or 0)
+    aportes_b2b = []
+    kg_b2b_total = 0.0
+    try:
+        for r in conn.execute(
+            """SELECT pbl.pedido_b2b_id, pbl.kg_aporte, pbl.unidades_aporte,
+                      pbl.ml_unidad, pbl.envase_codigo, pbl.modo,
+                      pbl.cliente_nombre,
+                      pb.estado, pb.fecha_estimada, pb.notas
+               FROM pedidos_b2b_lote pbl
+               LEFT JOIN pedidos_b2b pb ON pb.id = pbl.pedido_b2b_id
+               WHERE pbl.lote_produccion_id = ?
+               ORDER BY pbl.kg_aporte DESC""",
+            (lote_id,),
+        ).fetchall():
+            kg = float(r[1] or 0)
+            kg_b2b_total += kg
+            aportes_b2b.append({
+                'pedido_id': r[0],
+                'kg_aporte': kg,
+                'unidades_aporte': int(r[2] or 0),
+                'ml_unidad': float(r[3] or 0),
+                'envase_codigo': r[4] or '',
+                'modo': r[5],
+                'cliente_nombre': r[6] or '',
+                'estado_pedido': r[7] or '',
+                'fecha_estimada': (r[8] or '')[:10],
+                'notas': r[9] or '',
+            })
+    except Exception:
+        pass  # mig 171 no aplicada todavía
+    kg_dtc = max(kg_total - kg_b2b_total, 0)
+    pct_b2b = round(100.0 * kg_b2b_total / kg_total, 1) if kg_total > 0 else 0
+    return jsonify({
+        'lote_id': lote_id,
+        'producto': lote[1],
+        'fecha_programada': (lote[2] or '')[:10],
+        'estado': lote[5] or '',
+        'origen': lote[6] or '',
+        'kg_total': kg_total,
+        'kg_real': float(lote[4] or 0),
+        'kg_b2b': round(kg_b2b_total, 2),
+        'kg_dtc': round(kg_dtc, 2),
+        'pct_b2b': pct_b2b,
+        'aportes_b2b': aportes_b2b,
+        'n_pedidos_b2b': len(aportes_b2b),
+    })
 
 
 def _check_mp_para_pedido_b2b(c, producto, kg_b2b):
@@ -254,7 +362,8 @@ def crear_pedido_b2b():
     integracion = None
     try:
         integracion = _integrar_pedido_b2b_al_plan(
-            cur, pid, producto, kg_b2b, fecha_estimada, cliente_nombre, user)
+            cur, pid, producto, kg_b2b, fecha_estimada, cliente_nombre, user,
+            unidades=cantidad, ml_unidad=ml)
         conn.commit()
     except Exception as _e:
         # La integración es best-effort · si falla, el pedido igual queda
@@ -281,7 +390,8 @@ def crear_pedido_b2b():
 
 
 def _integrar_pedido_b2b_al_plan(cur, pedido_id, producto, kg_b2b,
-                                   fecha_estimada, cliente_nombre, user):
+                                   fecha_estimada, cliente_nombre, user,
+                                   unidades=0, ml_unidad=0, envase_codigo=''):
     """Ubica un pedido B2B en el calendario de producción.
 
     Sebastián 15-may-2026 · modo HÍBRIDO:
@@ -293,6 +403,12 @@ def _integrar_pedido_b2b_al_plan(cur, pedido_id, producto, kg_b2b,
 
     Fecha objetivo = fecha_estimada del cliente − 10 días (margen para
     producir + QC + despacho). Sin fecha → hoy + 7d.
+
+    Sebastián 24-may-2026 · trazabilidad B2B → DTC: además del UPDATE
+    en produccion_programada, registra el aporte en `pedidos_b2b_lote`
+    para que la UI pueda mostrar desglose DTC vs B2B sin parsear el
+    string de observaciones. Args nuevos `unidades`, `ml_unidad`,
+    `envase_codigo` opcionales (default 0/'' → backward compat).
     """
     from datetime import date as _date, timedelta as _td
     hoy = _hoy_colombia()
@@ -342,6 +458,20 @@ def _integrar_pedido_b2b_al_plan(cur, pedido_id, producto, kg_b2b,
             (lid,),
         ).fetchone()
         nuevo_kg = float(row_post[0] or 0) if row_post else 0
+        # Trazabilidad estructurada (mig 171) · INSERT OR REPLACE para
+        # idempotencia si el mismo pedido se re-integra (re-aprobación).
+        try:
+            cur.execute(
+                """INSERT OR REPLACE INTO pedidos_b2b_lote
+                     (pedido_b2b_id, lote_produccion_id, kg_aporte,
+                      unidades_aporte, ml_unidad, envase_codigo, modo,
+                      cliente_nombre)
+                   VALUES (?, ?, ?, ?, ?, ?, 'sumado_a_lote_canonico', ?)""",
+                (pedido_id, lid, kg_b2b, unidades, ml_unidad,
+                 envase_codigo, cliente_nombre),
+            )
+        except Exception:
+            pass  # tabla puede no existir aún en tests viejos
         audit_log(cur, usuario=user, accion="B2B_SUMADO_A_LOTE",
                   tabla="produccion_programada", registro_id=lid,
                   despues={"pedido_b2b": pedido_id, "kg_sumados": kg_b2b,
@@ -365,6 +495,19 @@ def _integrar_pedido_b2b_al_plan(cur, pedido_id, producto, kg_b2b,
          f"entrega estimada {fecha_estimada or 's/f'}"),
     )
     nuevo_lote = cur.lastrowid
+    # Trazabilidad estructurada · 100% del lote es B2B en este caso
+    try:
+        cur.execute(
+            """INSERT OR REPLACE INTO pedidos_b2b_lote
+                 (pedido_b2b_id, lote_produccion_id, kg_aporte,
+                  unidades_aporte, ml_unidad, envase_codigo, modo,
+                  cliente_nombre)
+               VALUES (?, ?, ?, ?, ?, ?, 'lote_dedicado', ?)""",
+            (pedido_id, nuevo_lote, kg_b2b, unidades, ml_unidad,
+             envase_codigo, cliente_nombre),
+        )
+    except Exception:
+        pass
     audit_log(cur, usuario=user, accion="B2B_LOTE_DEDICADO",
               tabla="produccion_programada", registro_id=nuevo_lote,
               despues={"pedido_b2b": pedido_id, "producto": producto,
@@ -465,6 +608,13 @@ def _revertir_pedido_b2b_del_plan(cur, pedido_id, user):
             {"lote_id": lid, "modo": "kg_restados",
              "kg_restados": kg_quita, "kg_nuevo": nuevo_kg,
              "origen_restaurado": (not vivos)})
+    # Trazabilidad estructurada (mig 171) · limpiar links del pedido
+    # cancelado. Si después se re-crea, el INSERT OR REPLACE lo restituye.
+    try:
+        cur.execute("DELETE FROM pedidos_b2b_lote WHERE pedido_b2b_id = ?",
+                    (pedido_id,))
+    except Exception:
+        pass
     return resultado
 
 
@@ -2463,6 +2613,7 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
     # Cada producto gana: planificacion[] con todas las producciones
     # programado / esperando_recurso / pendiente · ordenadas por fecha
     plan_por_producto = {}
+    lote_ids_para_b2b = []
     for r in c.execute(
         """SELECT pp.producto, pp.id, pp.fecha_programada, pp.estado,
                   pp.origen, COALESCE(pp.cantidad_kg, 0),
@@ -2475,8 +2626,10 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
         prod_nombre = (r[0] or "").strip()
         if not prod_nombre:
             continue
+        lid = int(r[1])
+        lote_ids_para_b2b.append(lid)
         plan_por_producto.setdefault(prod_nombre, []).append({
-            "id": int(r[1]),
+            "id": lid,
             "fecha": (r[2] or "")[:10],
             "estado": r[3],
             "origen": r[4],
@@ -2485,6 +2638,37 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
             "pausado_at": r[7],
             "obs_preview": (r[8] or "")[:80],
         })
+
+    # FEATURE B2B 24-may-2026 · enriquecer cada lote con su desglose B2B
+    # vía pedidos_b2b_lote (mig 171). Permite a la UI mostrar el chip
+    # "+ Xkg Fernando" en el card sin un fetch extra por lote.
+    aportes_por_lote = {}
+    if lote_ids_para_b2b:
+        try:
+            ph = ','.join('?' * len(lote_ids_para_b2b))
+            for ar in c.execute(
+                f"""SELECT lote_produccion_id, cliente_nombre,
+                          SUM(kg_aporte) AS kg, COUNT(*) AS n_pedidos
+                   FROM pedidos_b2b_lote
+                   WHERE lote_produccion_id IN ({ph})
+                   GROUP BY lote_produccion_id, cliente_nombre""",
+                lote_ids_para_b2b,
+            ).fetchall():
+                aportes_por_lote.setdefault(ar[0], []).append({
+                    'cliente': ar[1] or '',
+                    'kg': round(float(ar[2] or 0), 2),
+                    'n_pedidos': int(ar[3] or 0),
+                })
+        except Exception:
+            pass
+    for lotes in plan_por_producto.values():
+        for lote in lotes:
+            ap = aportes_por_lote.get(lote['id'], [])
+            lote['aportes_b2b'] = ap
+            kg_b2b = sum(a['kg'] for a in ap)
+            lote['kg_b2b'] = round(kg_b2b, 2)
+            lote['kg_dtc'] = round(max(lote['kg'] - kg_b2b, 0), 2)
+            lote['tiene_b2b'] = bool(ap)
 
     for p in out:
         prod = p["producto_nombre"]
