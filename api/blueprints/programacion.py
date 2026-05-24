@@ -7898,28 +7898,40 @@ def abastecimiento_consumo_horizontes():
         LEFT JOIN formula_headers fh
                ON UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(pp.producto))
         WHERE COALESCE(pp.origen,'') IN ({placeholders})
-          AND LOWER(COALESCE(pp.estado,'')) NOT IN ('cancelado','completado')
+          AND LOWER(COALESCE(pp.estado,'')) NOT IN ('cancelado','completado','esperando_recurso')
           AND COALESCE(pp.inventario_descontado_at,'') = ''
           AND pp.fecha_programada >= ?
           AND pp.fecha_programada <= ?
         ORDER BY pp.fecha_programada ASC
     """, origenes_in + (hoy_iso, cutoff_max)).fetchall()
+    # FIX AUDIT 24-may-2026 noche · agente cazó: 'esperando_recurso' es
+    # un lote pausado por falta de MP. Si lo cuento como consumo, el
+    # déficit que reporta Abastecimiento es CIRCULAR: el lote consume
+    # MP que no tengo → el lote queda pausado → pero sigue contando.
+    # Ahora excluido junto con cancelado/completado.
 
     # 2. Pedidos B2B PENDIENTES (sin producción Fija eos_b2b aún)
     # AUDITORÍA-FIX 23-may-2026 · agente cazó 3 bugs:
     #   · 'programado' no existe en CHECK · era 'pendiente','confirmado','en_produccion'
     #   · 'confirmado'/'en_produccion' suelen ya tener Fija eos_b2b · doble-conteo
     #   · solución conservadora: solo 'pendiente' (lo no convertido a Fija aún)
+    # FIX AUDIT 24-may-2026 noche · LEFT JOIN para excluir pedidos que YA
+    # fueron integrados a un lote en `pedidos_b2b_lote` (mig 171). Antes
+    # si la integración pasó pero el estado_pedido seguía 'pendiente' (race
+    # condition o fallo parcial), el pedido se contaba en (8a) vía
+    # produccion_programada Y en (8b) vía pedidos_b2b → doble cuenta.
     b2b_rows = []
     try:
         b2b_rows = c.execute("""
-            SELECT id, cliente_id, cliente_nombre, producto_nombre,
-                   COALESCE(cantidad_uds,0), COALESCE(ml_unidad,30),
-                   COALESCE(fecha_estimada,'')
-            FROM pedidos_b2b
-            WHERE LOWER(COALESCE(estado,'pendiente')) = 'pendiente'
-              AND COALESCE(fecha_estimada,'') >= ?
-              AND COALESCE(fecha_estimada,'') <= ?
+            SELECT pb.id, pb.cliente_id, pb.cliente_nombre, pb.producto_nombre,
+                   COALESCE(pb.cantidad_uds,0), COALESCE(pb.ml_unidad,30),
+                   COALESCE(pb.fecha_estimada,'')
+            FROM pedidos_b2b pb
+            LEFT JOIN pedidos_b2b_lote pbl ON pbl.pedido_b2b_id = pb.id
+            WHERE LOWER(COALESCE(pb.estado,'pendiente')) = 'pendiente'
+              AND COALESCE(pb.fecha_estimada,'') >= ?
+              AND COALESCE(pb.fecha_estimada,'') <= ?
+              AND pbl.id IS NULL
         """, (hoy_iso, cutoff_max)).fetchall()
     except sqlite3.OperationalError:
         b2b_rows = []

@@ -312,6 +312,13 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (175, "índice formula_items(producto_nombre) · perf Abastecimiento · Sebastián 24-may-2026 noche", [
+        # AUDITORÍA Abastecimiento 24-may-2026 · agente reportó: JOIN
+        # formula_headers↔formula_items por producto_nombre hace full
+        # table scan de formula_items cada request. Gana ~45ms (30%
+        # mejora con 365d de data).
+        "CREATE INDEX IF NOT EXISTS idx_fi_producto ON formula_items(producto_nombre)",
+    ]),
     (174, "formula_headers.producto_canonico + variante_label · fórmulas alternativas · Sebastián 24-may-2026 noche", [
         # FEATURE FÓRMULAS ALTERNATIVAS 24-may-2026 · Sebastián: "tenemos
         # PIB de dos orígenes Chino y de otro lado · realmente lo que

@@ -6151,7 +6151,7 @@ def alertas_ventas():
     })
 
 
-def _auto_programar_sugeridas(conn, dias_horizonte=90, ventana_velocidad=60,
+def _auto_programar_sugeridas(conn, dias_horizonte=365, ventana_velocidad=60,
                                   cob_critico=20, cob_alerta=25, cob_vigilar=45,
                                   usuario='cron-auto-sugerir', producto_filtro=None,
                                   origen_nuevo='eos_canonico', lote_kg_override=None):
@@ -6160,7 +6160,10 @@ def _auto_programar_sugeridas(conn, dias_horizonte=90, ventana_velocidad=60,
 
     Para cada producto con velocidad de venta:
       - Calcula proxima_sugerida_fecha (último_lote + duración - cob_alerta)
-      - Si la fecha cae en próximos `dias_horizonte` días
+      - Si la fecha cae en próximos `dias_horizonte` días (default 365 desde
+        FIX audit Abastecimiento 24-may-2026 · antes era 90 y se perdía 75%
+        de las Sugeridas anuales · Abastecimiento ve 365d en sus horizontes
+        así que el cron debe llenar todo el calendario para que coincida)
       - Y NO hay ya lote programado para ese producto en ventana [sug-7d, sug+7d]
       - Inserta producción Sugerida (origen='eos_canonico') con cantidad_kg = lote_bulk_kg
 
