@@ -717,6 +717,159 @@ def _unhandled_exception(e):
     return jsonify(payload), 500
 
 
+@app.route('/diag/producto-ventas/<path:producto>')
+def diag_producto_ventas(producto):
+    """Sebastián 23-may-2026 PM · 'suero exfoliante bha no hace match
+    adecuado · dice 300/mes pero no es verdad'. Endpoint público
+    diagnóstico (sin auth · solo lectura · sin datos sensibles).
+
+    Devuelve para el producto buscado (LIKE case-insensitive):
+    - nombres canónicos encontrados en formula_headers
+    - SKUs mapeados en sku_producto_map activos
+    - ml configurados en producto_presentaciones
+    - ventas últimos 60d por SKU mapeado (con filtro cancelled/refunded
+      aplicado vs sin filtro · para detectar si se están perdiendo ventas)
+    - SKUs HUÉRFANOS vendiendo con sustring del producto
+      (ej. busca 'SAH', 'BHA' en sku_items de animus_shopify_orders
+       que NO estén en sku_producto_map)
+    """
+    try:
+        from database import get_db
+        import json as _json
+        db = get_db()
+        c = db.cursor()
+        prod_like = '%' + (producto or '').strip().upper() + '%'
+        out = {'ok': True, 'producto_buscado': producto}
+
+        # 1. formula_headers · nombres canónicos
+        try:
+            rows = c.execute(
+                """SELECT producto_nombre, codigo_pt, lote_size_kg, activo
+                   FROM formula_headers
+                   WHERE UPPER(TRIM(producto_nombre)) LIKE ?
+                   ORDER BY producto_nombre""",
+                (prod_like,),
+            ).fetchall()
+            out['formula_headers'] = [{
+                'producto_nombre': r[0], 'codigo_pt': r[1],
+                'lote_size_kg': float(r[2] or 0), 'activo': int(r[3] or 0),
+            } for r in rows]
+        except Exception as e:
+            out['fh_err'] = str(e)[:200]
+
+        # 2. SKUs mapeados
+        canonicos = [x['producto_nombre'] for x in out.get('formula_headers', [])]
+        if canonicos:
+            try:
+                qs = ','.join(['?'] * len(canonicos))
+                rows = c.execute(
+                    f"""SELECT sku, producto_nombre, activo
+                        FROM sku_producto_map
+                        WHERE UPPER(TRIM(producto_nombre)) IN ({qs})
+                        ORDER BY sku""",
+                    tuple(x.upper().strip() for x in canonicos),
+                ).fetchall()
+                out['skus_mapeados'] = [{
+                    'sku': r[0], 'producto_nombre': r[1],
+                    'activo': int(r[2] or 0),
+                } for r in rows]
+            except Exception as e:
+                out['skus_err'] = str(e)[:200]
+        else:
+            out['skus_mapeados'] = []
+
+        # 3. ml por SKU en producto_presentaciones
+        skus = [x['sku'].upper() for x in out.get('skus_mapeados', [])]
+        if skus:
+            try:
+                qs = ','.join(['?'] * len(skus))
+                rows = c.execute(
+                    f"""SELECT sku_shopify, volumen_ml, peso_g, activo
+                        FROM producto_presentaciones
+                        WHERE UPPER(TRIM(sku_shopify)) IN ({qs})""",
+                    tuple(skus),
+                ).fetchall()
+                out['producto_presentaciones'] = [{
+                    'sku_shopify': r[0],
+                    'volumen_ml': float(r[1] or 0),
+                    'peso_g': float(r[2] or 0),
+                    'activo': int(r[3] or 0),
+                } for r in rows]
+            except Exception as e:
+                out['pp_err'] = str(e)[:200]
+
+        # 4. Ventas últimos 60d · con vs sin filtro
+        from datetime import datetime as _dt, timedelta as _td
+        desde = (_dt.utcnow() - _td(days=60)).strftime('%Y-%m-%dT00:00:00')
+        try:
+            rows_all = c.execute(
+                """SELECT sku_items, estado, estado_pago, COUNT(*) OVER ()
+                   FROM animus_shopify_orders
+                   WHERE creado_en >= ?
+                     AND sku_items IS NOT NULL AND sku_items != ''""",
+                (desde,),
+            ).fetchall()
+            ventas_sin_filtro = {}
+            ventas_con_filtro = {}
+            cancelled_count = 0
+            refunded_count = 0
+            for r in rows_all:
+                items_json = r[0] or ''
+                est = (r[1] or '').lower()
+                est_pago = (r[2] or '').lower()
+                try:
+                    items = _json.loads(items_json) if isinstance(items_json, str) else items_json
+                except Exception:
+                    continue
+                if not isinstance(items, list):
+                    continue
+                es_cancelled = est in ('cancelled', 'cancelado', 'voided')
+                es_refunded = est_pago in ('refunded', 'voided', 'partially_refunded')
+                if es_cancelled:
+                    cancelled_count += 1
+                if es_refunded:
+                    refunded_count += 1
+                for it in items:
+                    sk = (it.get('sku') or '').upper().strip()
+                    if not sk:
+                        continue
+                    qty = float(it.get('qty') or it.get('quantity') or it.get('cantidad') or 0)
+                    if sk not in ventas_sin_filtro:
+                        ventas_sin_filtro[sk] = 0
+                    ventas_sin_filtro[sk] += qty
+                    if not es_cancelled and not es_refunded:
+                        if sk not in ventas_con_filtro:
+                            ventas_con_filtro[sk] = 0
+                        ventas_con_filtro[sk] += qty
+            # Filtrar por SKUs del producto
+            ventas_prod_sin = {k: v for k, v in ventas_sin_filtro.items() if k in skus}
+            ventas_prod_con = {k: v for k, v in ventas_con_filtro.items() if k in skus}
+            out['ventas_60d_mapeados'] = {
+                'sin_filtro': ventas_prod_sin,
+                'con_filtro_cancelled_refunded': ventas_prod_con,
+                'total_uds_sin_filtro': sum(ventas_prod_sin.values()),
+                'total_uds_con_filtro': sum(ventas_prod_con.values()),
+                'cancelled_orders_60d': cancelled_count,
+                'refunded_orders_60d': refunded_count,
+            }
+            # 5. SKUs HUÉRFANOS · vendieron en 60d pero NO están en map
+            mapeados_set = set(skus)
+            huerfanos = {k: v for k, v in ventas_sin_filtro.items()
+                         if k not in mapeados_set}
+            # Heurística · sólo huérfanos que contengan substring del nombre
+            substr = (producto or '').upper().split()[0][:4] if producto else ''
+            huerfanos_relevantes = {k: v for k, v in huerfanos.items()
+                                     if substr and substr in k}
+            out['skus_huerfanos_relevantes'] = huerfanos_relevantes
+            out['n_skus_huerfanos_total'] = len(huerfanos)
+        except Exception as e:
+            out['ventas_err'] = str(e)[:200]
+
+        return jsonify(out)
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)[:200]}), 500
+
+
 @app.route('/diag/azh-mig-status')
 def diag_azh_mig_status():
     """Sebastián 23-may-2026 PM · diagnóstico público (sin auth) para saber
