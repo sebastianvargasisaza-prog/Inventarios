@@ -1713,15 +1713,31 @@ _PORTAL_DEMO_HTML = """<!DOCTYPE html>
 </div>
 
 <script>
+// CSRF token · auth.py:365 requiere X-CSRF-Token en POSTs sensibles.
+window._csrfTok = '';
+fetch('/api/csrf-token', {credentials:'same-origin'})
+  .then(r => r.ok ? r.json() : null)
+  .then(d => { if(d && d.csrf_token) window._csrfTok = d.csrf_token; })
+  .catch(() => {});
+
 async function generar(){
   var btn = document.getElementById('btn-gen');
   var msg = document.getElementById('msg');
   msg.innerHTML = '';
+  // Si el token aún no llegó (race · poco probable pero defensive), espero 300ms
+  if(!window._csrfTok){
+    try{
+      var rt = await fetch('/api/csrf-token', {credentials:'same-origin'});
+      var dt = await rt.json();
+      if(dt && dt.csrf_token) window._csrfTok = dt.csrf_token;
+    }catch(_){}
+  }
   btn.disabled = true; btn.textContent = 'Generando...';
   try{
     var r = await fetch('/api/admin/portal-demo/regenerar', {
       method:'POST',
-      headers:{'Content-Type':'application/json'},
+      headers:{'Content-Type':'application/json',
+                'X-CSRF-Token': window._csrfTok || ''},
       credentials:'same-origin',
       body:'{}'
     });
