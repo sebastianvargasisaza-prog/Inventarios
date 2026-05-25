@@ -2181,23 +2181,31 @@ def listar_recepciones_discrepancias():
     # Ranking por proveedor: # OCs con discrepancia / total OCs recibidas en ventana
     ranking = {}
     try:
+        # Sebastián 24-may-2026 · audit Calidad recepción · ranking proveedor
+        # case + espacios insensible. Antes drift histórico ("DistriQuim" vs
+        # "DISTRIQUIM" vs "distriquim ") aparecían como 3 entradas distintas
+        # en el ranking · tasa diluida por proveedor real. Mismo fix que
+        # aplicamos en Bandeja Planta (commit bbcff41).
         for r in c.execute("""
-            SELECT proveedor,
+            SELECT TRIM(proveedor) AS prov_norm_orig,
+                   UPPER(TRIM(proveedor)) AS prov_norm_key,
                    COUNT(*) AS total_recibidas,
                    SUM(CASE WHEN tiene_discrepancias=1 THEN 1 ELSE 0 END) AS con_discrep
             FROM ordenes_compra
             WHERE estado IN ('Recibida','Pagada','Parcial')
               AND COALESCE(fecha_recepcion,'') >= ?
               AND COALESCE(proveedor,'') != ''
-            GROUP BY proveedor
+            GROUP BY UPPER(TRIM(proveedor))
             ORDER BY con_discrep DESC, total_recibidas DESC
         """, (desde,)).fetchall():
-            total_rec = int(r[1] or 0)
-            con_dis = int(r[2] or 0)
+            prov_label = r[0] or ''   # forma original (display)
+            prov_key = r[1] or ''     # normalizada (dedup key)
+            total_rec = int(r[2] or 0)
+            con_dis = int(r[3] or 0)
             if total_rec > 0:
                 tasa = round((con_dis / total_rec) * 100, 1)
-                ranking[r[0]] = {
-                    'proveedor': r[0],
+                ranking[prov_key] = {
+                    'proveedor': prov_label,
                     'total_recibidas': total_rec,
                     'con_discrepancia': con_dis,
                     'tasa_discrepancia_pct': tasa,
