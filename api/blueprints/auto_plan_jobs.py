@@ -553,6 +553,25 @@ def _loop_cron(app):
         if not _cron_habilitado_en_db(app):
             log.info('[auto-plan-cron] Skipped — habilitado=0 en DB')
             continue
+        # Sebastián 25-may-2026 · audit zero-error · lock distribuido para
+        # _loop_cron (anti-race entre workers Gunicorn). Antes los 3 workers
+        # podían pasar _cron_habilitado_en_db=True en paralelo y ejecutar
+        # ejecutar_auto_plan_diario simultáneamente · creaba SOLs/producciones
+        # duplicadas. _loop_multi_cron ya usaba el lock · este path lo había
+        # omitido. Ahora INSERT OR IGNORE en cron_locks UNIQUE(job_name)
+        # garantiza que solo 1 worker ejecute por ciclo.
+        _lock_ok = False
+        try:
+            from database import get_db
+            with app.app_context():
+                _conn_lock = get_db()
+                _lock_ok = _adquirir_lock_cron(_conn_lock, 'auto_plan_diario', ttl_horas=4)
+        except Exception as _e_lock:
+            log.warning('[auto-plan-cron] _adquirir_lock_cron fallo: %s', _e_lock)
+            _lock_ok = False
+        if not _lock_ok:
+            log.info('[auto-plan-cron] Skipped — otro worker ya tiene el lock')
+            continue
         try:
             ejecutar_auto_plan_diario(app)
             try:
@@ -575,6 +594,14 @@ def _loop_cron(app):
                     get_db().commit()
             except Exception as _e:
                 log.warning('update errores_consecutivos fallo: %s', _e)
+        finally:
+            # Liberar lock sin importar éxito/fallo · ttl 4h es safety net
+            try:
+                from database import get_db
+                with app.app_context():
+                    _liberar_lock_cron(get_db(), 'auto_plan_diario')
+            except Exception as _e_rel:
+                log.warning('[auto-plan-cron] _liberar_lock_cron fallo: %s', _e_rel)
 
 
 def iniciar_cron(app):
