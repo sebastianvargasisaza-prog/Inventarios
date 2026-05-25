@@ -4737,6 +4737,11 @@ def actualizar_estado_solicitud(numero):
         cur.execute("SELECT categoria FROM solicitudes_compra WHERE numero=?", (numero.upper(),))
         sol_row = cur.fetchone()
         categoria_oc = d.get('categoria') or (sol_row[0] if sol_row and sol_row[0] else 'MP')
+        # Sebastián 24-may-2026 · audit Solicitudes · preservar categoría ORIGINAL
+        # antes del mapeo abreviado para hacer match contra compras_fast_track_config
+        # (que guarda nombre humano · no abreviación). El mapeo abreviado se aplica
+        # después solo para escribir en ordenes_compra.categoria.
+        categoria_orig = categoria_oc
         # Normalizar categorias largas de solicitudes a claves cortas de OC
         _SOLIC_TO_OC_CAT = {
             'Materia Prima': 'MP', 'Materias Primas': 'MP', 'MPs': 'MP',
@@ -4806,21 +4811,40 @@ def actualizar_estado_solicitud(numero):
                 pass
         fent_oc = d.get('fecha_entrega_est', '')
         obs_oc = d.get('observaciones_oc') or f'Generado desde {numero.upper()}'
-        # Influencer y Cuenta de Cobro saltan directo a Autorizada
-        # (gerencia ya aprobo la solicitud en su tab — no necesita doble autorizacion)
-        _FAST_TRACK = ('Influencer/Marketing Digital', 'Cuenta de Cobro')
-        # SEC-FIX 23-may-2026 · C5 · mig 157 eliminó 'Revisada' del flujo ·
-        # pagar_oc bloquea ese estado · OCs se quedaban inpagables · ahora
-        # default 'Borrador' (requiere autorización explícita posterior)
-        estado_oc = 'Autorizada' if categoria_oc in _FAST_TRACK else 'Borrador'
-        # Fast-track Influencer/CC va directo a Autorizada · pero respetar el
-        # límite de aprobación del usuario · si el monto lo excede, queda
-        # 'Borrador' para que un admin la autorice (autorizar_oc vuelve a
-        # aplicar _check_monto_limit).
+        # Sebastián 24-may-2026 · fast-track configurable · audit Solicitudes ·
+        # Antes hardcoded a (Influencer/Marketing Digital, Cuenta de Cobro). Ahora
+        # se lee de compras_fast_track_config (mig 179) · permite a Sebastián
+        # marcar otras categorías como fast-track (Papelería <$200k, EPP <$500k,
+        # etc.) sin tocar código. monto_max_cop=0 = sin tope (legacy behavior).
+        # SEC-FIX 23-may-2026 · C5 · mig 157 eliminó 'Revisada' · default Borrador.
+        estado_oc = 'Borrador'
+        fast_track_aplicado = False
+        try:
+            ft_row = cur.execute(
+                "SELECT monto_max_cop, COALESCE(notas,'') FROM compras_fast_track_config "
+                "WHERE categoria=? AND activo=1",
+                (categoria_orig,),
+            ).fetchone()
+            if ft_row is not None:
+                _monto_max = float(ft_row[0] or 0)
+                # monto_max=0 = sin tope · cualquier monto pasa
+                # monto_max>0 = aplicar fast-track solo si valor_oc <= monto_max
+                if _monto_max <= 0 or (valor_oc and valor_oc <= _monto_max):
+                    estado_oc = 'Autorizada'
+                    fast_track_aplicado = True
+        except sqlite3.OperationalError:
+            # Tabla aún no migrada · fallback al comportamiento legacy hardcoded
+            _LEGACY_FAST_TRACK = ('Influencer/Marketing Digital', 'Cuenta de Cobro')
+            if categoria_orig in _LEGACY_FAST_TRACK:
+                estado_oc = 'Autorizada'
+                fast_track_aplicado = True
+        # Aún con fast-track, respetar el límite de aprobación del usuario · si
+        # el monto lo excede, fuerza Borrador para que un admin autorice.
         if estado_oc == 'Autorizada' and valor_oc and valor_oc > 0:
             _err_lim, _ = _check_monto_limit(session.get('compras_user', ''), valor_oc)
             if _err_lim:
                 estado_oc = 'Borrador'
+                fast_track_aplicado = False
         # numero único con reintento ante carrera MAX+1 entre workers
         for _intento in range(6):
             cur.execute("SELECT COALESCE(MAX(CAST(SUBSTR(numero_oc,9) AS INTEGER)),0) FROM ordenes_compra WHERE numero_oc LIKE ?", (f"OC-{datetime.now().year}-%",))
@@ -4875,7 +4899,33 @@ def actualizar_estado_solicitud(numero):
                 '</div></body></html>'
             )
             _notificar_solicitante_email(_notif_dest, _asunto_n, _body_n)
-    return jsonify({'ok': True, 'estado': nuevo, 'numero_oc': oc_creada})
+    # Sebastián 24-may-2026 · audit Solicitudes · UX hint del próximo paso.
+    # Antes Catalina aprobaba y no sabía si tenía que hacer algo más · la OC
+    # queda en Borrador (no Autorizada) salvo Influencer/CC fast-track ·
+    # quedaba "olvidada" hasta que recordaba ir a tab OCs Activas. Ahora el
+    # response lleva un hint contextual que el UI puede mostrar como toast.
+    _resp = {'ok': True, 'estado': nuevo, 'numero_oc': oc_creada}
+    if oc_creada:
+        try:
+            _eoc = cur.execute(
+                "SELECT estado FROM ordenes_compra WHERE numero_oc=?",
+                (oc_creada,)
+            ).fetchone()
+            _estado_oc_real = (_eoc[0] if _eoc else '') or ''
+        except Exception:
+            _estado_oc_real = ''
+        _resp['oc_estado'] = _estado_oc_real
+        if _estado_oc_real == 'Borrador':
+            _resp['siguiente_paso'] = (
+                f'OC {oc_creada} creada en Borrador · revisala en tab '
+                f'"📦 OCs Activas" y autorizá para enviar al proveedor.'
+            )
+        elif _estado_oc_real == 'Autorizada':
+            _resp['siguiente_paso'] = (
+                f'OC {oc_creada} fast-track · ya quedó Autorizada · '
+                f'pasa a tab "💰 Por Pagar" cuando esté lista para pago.'
+            )
+    return jsonify(_resp)
 
 @bp.route('/api/ordenes-compra/<numero_oc>/recibir', methods=['POST'])
 def recibir_oc(numero_oc):
@@ -10566,3 +10616,156 @@ def listar_centros_costos():
         for r in c.fetchall()
     ]
     return jsonify({'centros': centros, 'count': len(centros)})
+
+
+# ─── Fast-track config · Sebastián 24-may-2026 · audit Solicitudes ──────────
+# Tabla compras_fast_track_config (mig 179) lista categorías que saltan SOL→OC
+# directo a Autorizada (sin doble paso). Esta sección expone endpoints REST
+# para que Sebastián administre la config (listar / agregar / actualizar /
+# eliminar) sin tener que tocar código ni la BD directamente.
+
+@bp.route('/api/compras/fast-track-config', methods=['GET'])
+def fast_track_config_list():
+    """Lista todas las categorías configuradas para fast-track.
+
+    Devuelve también categorías "candidatas" (las que aparecen en SOLs
+    pero no están en la tabla aún) para que el admin las agregue con 1 click.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    try:
+        rows = c.execute(
+            "SELECT id, categoria, monto_max_cop, activo, configurado_por, "
+            "       configurado_at, COALESCE(notas,'') "
+            "FROM compras_fast_track_config "
+            "ORDER BY activo DESC, categoria"
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return jsonify({'configs': [], 'candidatas': [],
+                        'error': 'Tabla aún no migrada · reinicia el servidor'}), 503
+    configs = [{
+        'id': r[0], 'categoria': r[1], 'monto_max_cop': float(r[2] or 0),
+        'activo': bool(r[3]), 'configurado_por': r[4],
+        'configurado_at': r[5], 'notas': r[6],
+    } for r in rows]
+    config_cats = {x['categoria'] for x in configs}
+    # Categorías reales que aparecen en SOLs pero no están en config
+    cand_rows = c.execute(
+        "SELECT DISTINCT categoria FROM solicitudes_compra "
+        "WHERE COALESCE(categoria,'') != '' ORDER BY categoria"
+    ).fetchall()
+    candidatas = [r[0] for r in cand_rows if r[0] and r[0] not in config_cats]
+    return jsonify({'configs': configs, 'candidatas': candidatas})
+
+
+@bp.route('/api/compras/fast-track-config', methods=['POST'])
+def fast_track_config_upsert():
+    """Agrega o actualiza la config de fast-track de una categoría.
+
+    Body: {categoria, monto_max_cop, activo, notas}
+      • monto_max_cop=0 → fast-track sin tope (cualquier monto pasa)
+      • monto_max_cop>0 → fast-track solo si valor_oc <= monto_max_cop
+      • activo=false   → desactivar sin borrar (preserva audit history)
+
+    Requiere admin (decisión financiera · afecta a doble paso de autorización).
+    """
+    usuario = session.get('compras_user', '')
+    if usuario not in ADMIN_USERS:
+        return jsonify({'error': 'Solo admin puede configurar fast-track'}), 403
+    d = request.get_json(silent=True) or {}
+    categoria = (d.get('categoria') or '').strip()
+    if not categoria:
+        return jsonify({'error': 'categoria requerida'}), 400
+    monto_max = float(d.get('monto_max_cop') or 0)
+    if monto_max < 0:
+        return jsonify({'error': 'monto_max_cop no puede ser negativo'}), 400
+    activo = 1 if d.get('activo', True) else 0
+    notas = (d.get('notas') or '').strip()[:300]
+    conn = get_db(); c = conn.cursor()
+    try:
+        # Upsert idempotente · PG y SQLite
+        existing = c.execute(
+            "SELECT id FROM compras_fast_track_config WHERE categoria=?",
+            (categoria,),
+        ).fetchone()
+        now = datetime.now().isoformat()
+        if existing:
+            antes = c.execute(
+                "SELECT monto_max_cop, activo, COALESCE(notas,'') "
+                "FROM compras_fast_track_config WHERE id=?",
+                (existing[0],),
+            ).fetchone()
+            c.execute(
+                "UPDATE compras_fast_track_config SET monto_max_cop=?, activo=?, "
+                "       configurado_por=?, configurado_at=?, notas=? WHERE id=?",
+                (monto_max, activo, usuario, now, notas, existing[0]),
+            )
+            try:
+                audit_log(c, usuario=usuario, accion='ACTUALIZAR_FAST_TRACK',
+                          tabla='compras_fast_track_config',
+                          registro_id=str(existing[0]),
+                          antes={'monto_max_cop': float(antes[0] or 0),
+                                  'activo': bool(antes[1]), 'notas': antes[2]},
+                          despues={'monto_max_cop': monto_max, 'activo': bool(activo),
+                                    'notas': notas},
+                          detalle=f"Fast-track {categoria} actualizado")
+            except Exception:
+                pass
+            accion = 'actualizado'
+        else:
+            c.execute(
+                "INSERT INTO compras_fast_track_config "
+                "(categoria, monto_max_cop, activo, configurado_por, configurado_at, notas) "
+                "VALUES (?,?,?,?,?,?)",
+                (categoria, monto_max, activo, usuario, now, notas),
+            )
+            try:
+                audit_log(c, usuario=usuario, accion='CREAR_FAST_TRACK',
+                          tabla='compras_fast_track_config', registro_id=categoria,
+                          antes={}, despues={'categoria': categoria,
+                                              'monto_max_cop': monto_max,
+                                              'activo': bool(activo), 'notas': notas},
+                          detalle=f"Fast-track {categoria} creado")
+            except Exception:
+                pass
+            accion = 'creado'
+        conn.commit()
+        return jsonify({
+            'ok': True, 'accion': accion, 'categoria': categoria,
+            'monto_max_cop': monto_max, 'activo': bool(activo),
+            'hint': ('Sin tope · cualquier monto pasa' if monto_max <= 0 else
+                     f'Aplica si valor OC <= ${monto_max:,.0f}'),
+        })
+    except sqlite3.OperationalError as e:
+        return jsonify({'error': f'Tabla no disponible: {e}'}), 503
+
+
+@bp.route('/api/compras/fast-track-config/<int:config_id>', methods=['DELETE'])
+def fast_track_config_delete(config_id):
+    """Elimina una config de fast-track. Audita antes de borrar."""
+    usuario = session.get('compras_user', '')
+    if usuario not in ADMIN_USERS:
+        return jsonify({'error': 'Solo admin'}), 403
+    conn = get_db(); c = conn.cursor()
+    try:
+        row = c.execute(
+            "SELECT categoria, monto_max_cop, activo FROM compras_fast_track_config WHERE id=?",
+            (config_id,),
+        ).fetchone()
+        if not row:
+            return jsonify({'error': 'Config no encontrada'}), 404
+        c.execute("DELETE FROM compras_fast_track_config WHERE id=?", (config_id,))
+        try:
+            audit_log(c, usuario=usuario, accion='ELIMINAR_FAST_TRACK',
+                      tabla='compras_fast_track_config', registro_id=str(config_id),
+                      antes={'categoria': row[0], 'monto_max_cop': float(row[1] or 0),
+                              'activo': bool(row[2])},
+                      despues={},
+                      detalle=f"Fast-track {row[0]} eliminado")
+        except Exception:
+            pass
+        conn.commit()
+        return jsonify({'ok': True, 'eliminado': row[0]})
+    except sqlite3.OperationalError as e:
+        return jsonify({'error': str(e)}), 503

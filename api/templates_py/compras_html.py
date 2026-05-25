@@ -6320,7 +6320,19 @@ async function gestionarSol(decision){
     if(d.error){ alert('Error: '+d.error); return; }
     closeModal('m-sol-det');
     await Promise.all([loadData(),loadSolicitudes(),loadInfluencers(),loadCCSolicitudes()]);
-    alert(decision==='Aprobada'?'Solicitud aprobada. OC generada: '+(d.numero_oc||''):'Solicitud rechazada.');
+    // Sebastián 24-may-2026 · UX hint del próximo paso · backend agrega
+    // d.siguiente_paso si OC quedó en Borrador (requiere autorizar) o
+    // fast-track Autorizada (lista para pagar). Antes Catalina aprobaba y
+    // no sabía si tenía que volver a tab OCs para autorizar.
+    if(decision==='Aprobada'){
+      var msg='✓ Solicitud aprobada.';
+      if(d.numero_oc) msg+='\\nOC generada: '+d.numero_oc;
+      if(d.oc_estado) msg+=' ('+d.oc_estado+')';
+      if(d.siguiente_paso) msg+='\\n\\n→ '+d.siguiente_paso;
+      alert(msg);
+    } else {
+      alert('Solicitud rechazada.');
+    }
   }catch(e){ alert('Error: '+e); }
 }
 

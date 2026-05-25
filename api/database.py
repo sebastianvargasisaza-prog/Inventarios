@@ -312,6 +312,28 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (179, "compras_fast_track_config · categorías que saltan a Autorizada sin doble paso · Sebastián 24-may-2026", [
+        # FEATURE 24-may-2026 · Audit Solicitudes · Sebastián.
+        # Antes: hardcoded en compras.py _FAST_TRACK = ('Influencer/Marketing Digital',
+        # 'Cuenta de Cobro'). Otras categorías SIEMPRE crean OC en Borrador, requiriendo
+        # autorizar 2 veces (aprobar SOL + autorizar OC). Para categorías de bajo monto
+        # y rutina (Papelería, EPP, Aseo), Catalina quiere saltar directo a Autorizada
+        # si el monto está por debajo de un threshold configurable. Tabla persiste la
+        # config para que Sebastián la edite sin tocar código.
+        """CREATE TABLE IF NOT EXISTS compras_fast_track_config (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            categoria TEXT NOT NULL UNIQUE,
+            monto_max_cop REAL DEFAULT 0,
+            activo INTEGER DEFAULT 1,
+            configurado_por TEXT DEFAULT '',
+            configurado_at TEXT DEFAULT (datetime('now', '-5 hours')),
+            notas TEXT DEFAULT ''
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_ftc_cat ON compras_fast_track_config(categoria)",
+        # Seeds defaults · refleja el comportamiento legacy + agrega rutina baja
+        "INSERT INTO compras_fast_track_config (categoria, monto_max_cop, activo, configurado_por, notas) VALUES ('Influencer/Marketing Digital', 0, 1, 'mig179', 'Legacy fast-track · sin tope · monto_max_cop=0 = sin límite') ON CONFLICT(categoria) DO NOTHING",
+        "INSERT INTO compras_fast_track_config (categoria, monto_max_cop, activo, configurado_por, notas) VALUES ('Cuenta de Cobro', 0, 1, 'mig179', 'Legacy fast-track · sin tope') ON CONFLICT(categoria) DO NOTHING",
+    ]),
     (178, "produccion_eventos · timeline estructurada (reemplaza basura concatenada en observaciones) · Sebastián 24-may-2026 noche", [
         # FEATURE 24-may-2026 noche · Refactor pendiente del audit:
         # produccion_programada.observaciones se concatenaba con cada
