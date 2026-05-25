@@ -21796,7 +21796,9 @@ async function ckMarcar(itemId, estado){
   function renderProximasNec(items) {
     const div = document.getElementById('nec-proximas');
     if (!items.length) { div.innerHTML = ''; return; }
-    let html = '<details open style="background:white;border-radius:12px;border:1px solid #e2e8f0;overflow:hidden">';
+    // Sebastián 25-may-2026 PM · arranca cerrado · "que para toda la app
+    // salgan colapsados y ya uno escoja si los abre".
+    let html = '<details style="background:white;border-radius:12px;border:1px solid #e2e8f0;overflow:hidden">';
     html += '<summary style="cursor:pointer;padding:12px 16px;background:linear-gradient(90deg,#eff6ff,#dbeafe);font-weight:700;color:#1e40af;font-size:14px">';
     html += '📅 Próximas producciones agendadas · ' + items.length;
     html += '</summary>';
@@ -22088,7 +22090,9 @@ async function ckMarcar(itemId, estado){
       }
     });
 
-    let html = '<details open style="background:white;border-radius:14px;margin-bottom:14px;border:1px solid #e2e8f0;overflow:hidden">';
+    // Sebastián 25-may-2026 PM · arranca cerrado · "que para toda la app
+    // salgan colapsados y ya uno escoja si los abre".
+    let html = '<details style="background:white;border-radius:14px;margin-bottom:14px;border:1px solid #e2e8f0;overflow:hidden">';
     html += '<summary style="cursor:pointer;padding:14px 18px;background:linear-gradient(90deg,#f0fdfa,#ecfeff);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">';
     html += '<div><span style="color:#0f766e;font-size:16px;font-weight:800">🛍️ ' + escapeHtmlNec(cli.cliente_nombre) + '</span>';
     html += ' <span style="font-size:11px;font-weight:500;color:#94a3b8">· Shopify auto · ' + prods.length + ' SKUs</span></div>';

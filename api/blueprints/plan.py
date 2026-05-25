@@ -11826,7 +11826,7 @@ function render(){
       html += '</table>';
       // Detalle por mes · abierto por defecto
       Object.keys(porMes).sort().forEach(mes => {
-        html += '<details open style="margin:4px 0;border:1px solid #e2e8f0;border-radius:6px;padding:6px 10px"><summary style="cursor:pointer;font-weight:700;color:#0f766e">'+mes+' · '+porMes[mes].length+' lotes</summary>';
+        html += '<details style="margin:4px 0;border:1px solid #e2e8f0;border-radius:6px;padding:6px 10px"><summary style="cursor:pointer;font-weight:700;color:#0f766e">'+mes+' · '+porMes[mes].length+' lotes</summary>';
         html += '<table style="width:100%;font-size:11px;margin-top:6px"><tr style="color:#64748b;text-align:left"><th>Fecha</th><th>Producto</th><th>kg</th><th>Origen</th></tr>';
         porMes[mes].sort((a,b)=>(a.fecha_programada||'').localeCompare(b.fecha_programada||'')).forEach(l => {
           html += '<tr style="border-top:1px solid #f1f5f9"><td>'+escapeHtml((l.fecha_programada||'').slice(0,10))+'</td><td>'+escapeHtml(l.producto||'')+'</td><td style="text-align:right">'+(l.kg||0)+'</td><td>'+escapeHtml(l.origen||'')+'</td></tr>';
