@@ -8009,6 +8009,583 @@ def conteo_historial():
     cols = ['id','numero','estanteria','fecha_inicio','fecha_cierre','estado','responsable','total_items','items_diferencia','items_gerencia']
     return jsonify([dict(zip(cols, r)) for r in rows])
 
+@bp.route('/api/admin/mee/diag', methods=['GET'])
+def admin_mee_diag():
+    """Diagnóstico completo de maestro_mee · detecta inconsistencias.
+    Sebastián 24-may noche: 'Normalizar MEE sesión dedicada'.
+    Devuelve JSON con: kpis + duplicados + descripciones vacías +
+    espacios dobles + categorías mixtas + drift stock + huérfanos.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    # KPIs
+    try:
+        total_act = c.execute("SELECT COUNT(*) FROM maestro_mee WHERE COALESCE(estado,'Activo')='Activo'").fetchone()[0]
+    except Exception:
+        total_act = 0
+    try:
+        total_arch = c.execute("SELECT COUNT(*) FROM maestro_mee WHERE COALESCE(estado,'Activo')!='Activo'").fetchone()[0]
+    except Exception:
+        total_arch = 0
+
+    # Duplicados (case-insensitive + trim)
+    duplicados = []
+    try:
+        for r in c.execute(
+            """SELECT UPPER(TRIM(codigo)) AS k, COUNT(*) AS n,
+                      GROUP_CONCAT(codigo, ' | ') AS lista
+               FROM maestro_mee
+               GROUP BY UPPER(TRIM(codigo))
+               HAVING COUNT(*) > 1
+               ORDER BY n DESC LIMIT 100"""
+        ).fetchall():
+            duplicados.append({'clave': r[0], 'n': r[1], 'codigos': r[2]})
+    except Exception:
+        pass
+
+    # Descripciones vacías o con espacios dobles
+    sin_desc = []
+    desc_dobles = []
+    try:
+        for r in c.execute(
+            "SELECT codigo, COALESCE(descripcion,'') FROM maestro_mee WHERE COALESCE(estado,'Activo')='Activo'"
+        ).fetchall():
+            cod, desc = r[0], r[1] or ''
+            if not desc.strip():
+                sin_desc.append({'codigo': cod})
+            elif '  ' in desc:
+                desc_dobles.append({'codigo': cod, 'descripcion': desc})
+    except Exception:
+        pass
+
+    # Categorías
+    cats = {}
+    try:
+        for r in c.execute(
+            "SELECT COALESCE(categoria,'(vacío)'), COUNT(*) FROM maestro_mee WHERE COALESCE(estado,'Activo')='Activo' GROUP BY categoria"
+        ).fetchall():
+            cats[r[0]] = r[1]
+    except Exception:
+        pass
+
+    # Unidades
+    unids = {}
+    try:
+        for r in c.execute(
+            "SELECT COALESCE(unidad,'(vacío)'), COUNT(*) FROM maestro_mee WHERE COALESCE(estado,'Activo')='Activo' GROUP BY unidad"
+        ).fetchall():
+            unids[r[0]] = r[1]
+    except Exception:
+        pass
+
+    # Stock drift
+    drift_items = []
+    try:
+        # stock canónico = SUM movimientos_mee con UPPER(TRIM(tipo)) (fix mig 167)
+        canon_stock = {}
+        for r in c.execute(
+            """SELECT mee_codigo,
+                      COALESCE(SUM(CASE
+                          WHEN UPPER(TRIM(tipo)) = 'ENTRADA' THEN ABS(cantidad)
+                          WHEN UPPER(TRIM(tipo)) IN ('SALIDA','CONSUMO') THEN -ABS(cantidad)
+                          WHEN UPPER(TRIM(tipo)) LIKE 'AJUSTE%' THEN cantidad
+                          ELSE 0 END), 0)
+               FROM movimientos_mee
+               WHERE COALESCE(anulado,0) = 0
+               GROUP BY mee_codigo"""
+        ).fetchall():
+            canon_stock[r[0]] = float(r[1] or 0)
+        for r in c.execute(
+            "SELECT codigo, descripcion, COALESCE(stock_actual,0) FROM maestro_mee WHERE COALESCE(estado,'Activo')='Activo'"
+        ).fetchall():
+            cod = r[0]
+            cache = float(r[2] or 0)
+            real = canon_stock.get(cod, 0)
+            delta = abs(real - cache)
+            if delta > 1:  # tolerancia 1 unidad
+                drift_items.append({
+                    'codigo': cod, 'descripcion': r[1] or '',
+                    'cache': round(cache, 2), 'real': round(real, 2),
+                    'delta': round(delta, 2),
+                })
+    except Exception:
+        pass
+    drift_items.sort(key=lambda x: -x['delta'])
+
+    # Huérfanos (sin uso en sku_mee_config ni produccion_checklist activo)
+    huerfanos = []
+    try:
+        usados = set()
+        try:
+            for r in c.execute("SELECT DISTINCT UPPER(TRIM(mee_codigo)) FROM sku_mee_config WHERE COALESCE(aplica,1)=1").fetchall():
+                if r[0]: usados.add(r[0])
+        except Exception:
+            pass
+        try:
+            for r in c.execute("SELECT DISTINCT UPPER(TRIM(mee_codigo_asignado)) FROM produccion_checklist WHERE COALESCE(mee_codigo_asignado,'') != ''").fetchall():
+                if r[0]: usados.add(r[0])
+        except Exception:
+            pass
+        for r in c.execute(
+            "SELECT codigo, descripcion, COALESCE(stock_actual,0) FROM maestro_mee WHERE COALESCE(estado,'Activo')='Activo'"
+        ).fetchall():
+            if (r[0] or '').upper().strip() not in usados:
+                huerfanos.append({
+                    'codigo': r[0], 'descripcion': r[1] or '',
+                    'stock': float(r[2] or 0),
+                })
+    except Exception:
+        pass
+
+    return jsonify({
+        'kpis': {
+            'total_activos': total_act,
+            'total_archivados': total_arch,
+            'duplicados': len(duplicados),
+            'sin_descripcion': len(sin_desc),
+            'descripciones_dobles': len(desc_dobles),
+            'categorias_distintas': len(cats),
+            'unidades_distintas': len(unids),
+            'drift_items': len(drift_items),
+            'huerfanos': len(huerfanos),
+        },
+        'duplicados': duplicados[:50],
+        'sin_descripcion': sin_desc[:50],
+        'descripciones_dobles': desc_dobles[:50],
+        'categorias': cats,
+        'unidades': unids,
+        'drift_items': drift_items[:50],
+        'huerfanos': huerfanos[:100],
+    })
+
+
+@bp.route('/api/admin/mee/normalizar-descripciones', methods=['POST'])
+def admin_mee_normalizar_descripciones():
+    """Colapsa espacios dobles + TRIM en descripcion."""
+    if 'compras_user' not in session or session.get('compras_user') not in ADMIN_USERS:
+        return jsonify({'error': 'Solo admin'}), 403
+    conn = get_db(); c = conn.cursor()
+    user = session.get('compras_user','')
+    n_fix = 0
+    try:
+        # Detectar items con dobles espacios o trim necesario
+        for r in c.execute(
+            "SELECT codigo, descripcion FROM maestro_mee WHERE descripcion IS NOT NULL"
+        ).fetchall():
+            cod, desc = r[0], r[1] or ''
+            norm = ' '.join(desc.split())
+            if norm != desc and norm:
+                c.execute(
+                    "UPDATE maestro_mee SET descripcion = ? WHERE codigo = ?",
+                    (norm, cod),
+                )
+                n_fix += 1
+        c.execute(
+            """INSERT INTO audit_log (usuario,accion,tabla,registro_id,detalle,ip,fecha)
+               VALUES (?,?,?,?,?,?,datetime('now','-5 hours'))""",
+            (user, 'MEE_NORMALIZAR_DESC', 'maestro_mee', 'bulk',
+             f'Normalizadas {n_fix} descripciones', ''),
+        )
+        conn.commit()
+    except Exception as e:
+        return jsonify({'error': str(e)[:200]}), 500
+    return jsonify({'ok': True, 'normalizadas': n_fix})
+
+
+@bp.route('/api/admin/mee/unificar-categorias', methods=['POST'])
+def admin_mee_unificar_categorias():
+    """Aplica mapping de categorías para unificar variantes."""
+    if 'compras_user' not in session or session.get('compras_user') not in ADMIN_USERS:
+        return jsonify({'error': 'Solo admin'}), 403
+    body = request.get_json(silent=True) or {}
+    mapping = body.get('mapping') or {}
+    if not mapping:
+        return jsonify({'error': 'mapping requerido'}), 400
+    conn = get_db(); c = conn.cursor()
+    user = session.get('compras_user','')
+    n_fix = 0
+    try:
+        for de, hacia in mapping.items():
+            de_s, h_s = (de or '').strip(), (hacia or '').strip()
+            if not de_s or not h_s or de_s == h_s:
+                continue
+            res = c.execute(
+                "UPDATE maestro_mee SET categoria = ? WHERE COALESCE(categoria,'') = ?",
+                (h_s, de_s),
+            )
+            n_fix += res.rowcount or 0
+        c.execute(
+            """INSERT INTO audit_log (usuario,accion,tabla,registro_id,detalle,ip,fecha)
+               VALUES (?,?,?,?,?,?,datetime('now','-5 hours'))""",
+            (user, 'MEE_UNIFICAR_CATEGORIAS', 'maestro_mee', 'bulk',
+             f'Items recategorizados: {n_fix}', ''),
+        )
+        conn.commit()
+    except Exception as e:
+        return jsonify({'error': str(e)[:200]}), 500
+    return jsonify({'ok': True, 'recategorizados': n_fix})
+
+
+@bp.route('/api/admin/mee/reconciliar-stock-bulk', methods=['POST'])
+def admin_mee_reconciliar_stock_bulk():
+    """Reconcilia stock_actual = SUM(movimientos_mee canónico) para
+    todos los items con drift > tolerancia."""
+    if 'compras_user' not in session or session.get('compras_user') not in ADMIN_USERS:
+        return jsonify({'error': 'Solo admin'}), 403
+    body = request.get_json(silent=True) or {}
+    try:
+        tol = float(body.get('tolerancia', 1.0))
+    except (TypeError, ValueError):
+        tol = 1.0
+    conn = get_db(); c = conn.cursor()
+    user = session.get('compras_user','')
+    n_fix = 0
+    items = []
+    try:
+        canon_stock = {}
+        for r in c.execute(
+            """SELECT mee_codigo,
+                      COALESCE(SUM(CASE
+                          WHEN UPPER(TRIM(tipo)) = 'ENTRADA' THEN ABS(cantidad)
+                          WHEN UPPER(TRIM(tipo)) IN ('SALIDA','CONSUMO') THEN -ABS(cantidad)
+                          WHEN UPPER(TRIM(tipo)) LIKE 'AJUSTE%' THEN cantidad
+                          ELSE 0 END), 0)
+               FROM movimientos_mee
+               WHERE COALESCE(anulado,0) = 0
+               GROUP BY mee_codigo"""
+        ).fetchall():
+            canon_stock[r[0]] = max(float(r[1] or 0), 0)
+        for r in c.execute(
+            "SELECT codigo, COALESCE(stock_actual,0) FROM maestro_mee WHERE COALESCE(estado,'Activo')='Activo'"
+        ).fetchall():
+            cod = r[0]
+            cache = float(r[1] or 0)
+            real = canon_stock.get(cod, 0)
+            if abs(real - cache) > tol:
+                c.execute(
+                    "UPDATE maestro_mee SET stock_actual = ? WHERE codigo = ?",
+                    (real, cod),
+                )
+                items.append({'codigo': cod, 'cache': cache, 'real': real})
+                n_fix += 1
+        c.execute(
+            """INSERT INTO audit_log (usuario,accion,tabla,registro_id,detalle,ip,fecha)
+               VALUES (?,?,?,?,?,?,datetime('now','-5 hours'))""",
+            (user, 'MEE_RECONCILIAR_BULK', 'maestro_mee', 'bulk',
+             f'Items reconciliados: {n_fix} (tol={tol})', ''),
+        )
+        conn.commit()
+    except Exception as e:
+        return jsonify({'error': str(e)[:200]}), 500
+    return jsonify({'ok': True, 'reconciliados': n_fix, 'items': items[:30]})
+
+
+@bp.route('/api/admin/mee/marcar-huerfanos-inactivos', methods=['POST'])
+def admin_mee_marcar_huerfanos_inactivos():
+    """Marca como Inactivo los MEE que NO se usan en sku_mee_config
+    ni produccion_checklist · respeta los que tengan stock > 0 si el
+    body trae preservar_con_stock=1."""
+    if 'compras_user' not in session or session.get('compras_user') not in ADMIN_USERS:
+        return jsonify({'error': 'Solo admin'}), 403
+    body = request.get_json(silent=True) or {}
+    preservar_con_stock = bool(body.get('preservar_con_stock', True))
+    conn = get_db(); c = conn.cursor()
+    user = session.get('compras_user','')
+    n_fix = 0
+    try:
+        usados = set()
+        for r in c.execute("SELECT DISTINCT UPPER(TRIM(mee_codigo)) FROM sku_mee_config WHERE COALESCE(aplica,1)=1").fetchall():
+            if r[0]: usados.add(r[0])
+        for r in c.execute("SELECT DISTINCT UPPER(TRIM(mee_codigo_asignado)) FROM produccion_checklist WHERE COALESCE(mee_codigo_asignado,'') != ''").fetchall():
+            if r[0]: usados.add(r[0])
+        for r in c.execute(
+            "SELECT codigo, COALESCE(stock_actual,0) FROM maestro_mee WHERE COALESCE(estado,'Activo')='Activo'"
+        ).fetchall():
+            cod = r[0]
+            stock = float(r[1] or 0)
+            if (cod or '').upper().strip() in usados:
+                continue
+            if preservar_con_stock and stock > 0:
+                continue
+            c.execute(
+                "UPDATE maestro_mee SET estado = 'Inactivo' WHERE codigo = ?",
+                (cod,),
+            )
+            n_fix += 1
+        c.execute(
+            """INSERT INTO audit_log (usuario,accion,tabla,registro_id,detalle,ip,fecha)
+               VALUES (?,?,?,?,?,?,datetime('now','-5 hours'))""",
+            (user, 'MEE_MARCAR_HUERFANOS', 'maestro_mee', 'bulk',
+             f'Items archivados: {n_fix} (preservar_stock={preservar_con_stock})', ''),
+        )
+        conn.commit()
+    except Exception as e:
+        return jsonify({'error': str(e)[:200]}), 500
+    return jsonify({'ok': True, 'archivados': n_fix})
+
+
+@bp.route('/admin/normalizar-mee', methods=['GET'])
+def admin_normalizar_mee_pagina():
+    """Página HTML standalone para auditar + normalizar maestro_mee.
+    Dashboard + tabs por tipo de problema + botones fix masivo.
+    """
+    if 'compras_user' not in session:
+        return "<html><body><h2>No autorizado</h2></body></html>", 401
+    user = session.get('compras_user','')
+    if user not in ADMIN_USERS:
+        return "<html><body><h2>Solo admin</h2></body></html>", 403
+    return """<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Normalizar MEE</title>
+<style>
+  body{font-family:system-ui,-apple-system,Arial;background:#f8fafc;margin:0;padding:24px}
+  .card{max-width:1400px;margin:0 auto 14px;background:#fff;border-radius:14px;padding:24px;box-shadow:0 4px 20px rgba(0,0,0,.08)}
+  h1{color:#1e293b;margin:0 0 8px;font-size:22px}
+  h2{color:#7c3aed;margin:18px 0 12px;font-size:16px;border-bottom:2px solid #7c3aed;padding-bottom:6px}
+  .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin:14px 0}
+  .kpi{background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px;text-align:center}
+  .kpi-val{font-size:24px;font-weight:800;color:#1e293b}
+  .kpi-lbl{font-size:11px;color:#64748b;text-transform:uppercase;margin-top:2px}
+  .kpi.warn{background:#fef3c7;border-color:#f59e0b}
+  .kpi.warn .kpi-val{color:#92400e}
+  .kpi.bad{background:#fee2e2;border-color:#dc2626}
+  .kpi.bad .kpi-val{color:#991b1b}
+  table{width:100%;border-collapse:collapse;font-size:12px;margin-top:8px}
+  th{background:#f1f5f9;padding:8px;text-align:left;font-size:11px;text-transform:uppercase;color:#475569}
+  td{border-bottom:1px solid #f1f5f9;padding:8px}
+  .btn{padding:8px 14px;border-radius:6px;border:none;font-size:12px;font-weight:700;cursor:pointer;margin-right:6px}
+  .btn-prim{background:#7c3aed;color:#fff}
+  .btn-warn{background:#ea580c;color:#fff}
+  .btn-danger{background:#dc2626;color:#fff}
+  .btn-link{background:transparent;color:#475569;border:1px solid #e2e8f0}
+  .tab{display:none}
+  .tab.active{display:block}
+  .tab-btns{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
+  .tab-btn{padding:8px 14px;background:#f1f5f9;color:#475569;border:1px solid #e2e8f0;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600}
+  .tab-btn.active{background:#7c3aed;color:#fff;border-color:#7c3aed}
+  input,select{padding:6px 10px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px}
+  #msg{margin:10px 0;font-size:12px}
+</style></head><body>
+
+<div class="card">
+  <h1>🧹 Normalizar maestro_mee</h1>
+  <p style="color:#475569;font-size:13px">Limpieza + estandarización de Materiales de Envase. Cada acción es auditada en audit_log.</p>
+  <button class="btn btn-prim" onclick="cargarDiag()">🔍 Diagnosticar</button>
+  <a href="/admin/mee-fugas-check" class="btn btn-link" style="text-decoration:none;line-height:1.4">⚠ Mee fugas</a>
+  <a href="/" class="btn btn-link" style="text-decoration:none;line-height:1.4">← Dashboard</a>
+  <div id="msg"></div>
+</div>
+
+<div class="card" id="card-kpis" style="display:none">
+  <h2>📊 Estado actual</h2>
+  <div class="kpi-grid" id="kpis"></div>
+</div>
+
+<div class="card" id="card-tabs" style="display:none">
+  <div class="tab-btns">
+    <button class="tab-btn active" data-tab="dup" onclick="setTab('dup')">🔁 Duplicados</button>
+    <button class="tab-btn" data-tab="desc" onclick="setTab('desc')">📝 Descripciones</button>
+    <button class="tab-btn" data-tab="cat" onclick="setTab('cat')">🏷 Categorías</button>
+    <button class="tab-btn" data-tab="drift" onclick="setTab('drift')">⚖ Stock drift</button>
+    <button class="tab-btn" data-tab="huer" onclick="setTab('huer')">🍃 Huérfanos</button>
+  </div>
+
+  <div class="tab active" id="t-dup">
+    <h2>🔁 Códigos duplicados (case-insensitive + trim)</h2>
+    <p style="color:#475569;font-size:12px">Items con códigos similares (e.g. 'ENV-100' vs 'env-100'). Fix manual sugerido · revisar uno por uno antes de merge.</p>
+    <div id="tbl-dup"></div>
+  </div>
+
+  <div class="tab" id="t-desc">
+    <h2>📝 Descripciones inconsistentes</h2>
+    <p style="color:#475569;font-size:12px">Espacios dobles + vacías. Fix masivo: colapsa espacios y aplica TRIM.</p>
+    <button class="btn btn-warn" onclick="normalizarDescripciones()">🔧 Normalizar descripciones (TRIM + colapsar espacios)</button>
+    <div id="tbl-desc"></div>
+  </div>
+
+  <div class="tab" id="t-cat">
+    <h2>🏷 Categorías</h2>
+    <p style="color:#475569;font-size:12px">Distribución actual de categorías. Si hay variantes ('Envase' vs 'envase' vs 'ENVASE'), unificá con el mapping.</p>
+    <div id="tbl-cat"></div>
+    <div style="margin-top:18px;border-top:1px solid #e2e8f0;padding-top:14px">
+      <h3 style="margin:0 0 8px;color:#1e293b;font-size:14px">Aplicar mapping de unificación</h3>
+      <div id="mapping-rows"></div>
+      <button class="btn btn-link" onclick="addMappingRow()">+ Agregar regla</button>
+      <button class="btn btn-warn" onclick="aplicarMapping()">🔧 Aplicar mapping</button>
+    </div>
+  </div>
+
+  <div class="tab" id="t-drift">
+    <h2>⚖ Stock drift (cache vs movimientos_mee)</h2>
+    <p style="color:#475569;font-size:12px">stock_actual de maestro_mee desincronizado con SUM canónico de movimientos.</p>
+    <div style="margin-bottom:8px"><label>Tolerancia: <input id="tol" type="number" value="1" step="0.1" min="0" style="width:80px"></label>
+    <button class="btn btn-warn" onclick="reconciliarBulk()">🔧 Reconciliar todos (bulk)</button></div>
+    <div id="tbl-drift"></div>
+  </div>
+
+  <div class="tab" id="t-huer">
+    <h2>🍃 Items huérfanos (sin uso en sku_mee_config ni produccion_checklist)</h2>
+    <p style="color:#475569;font-size:12px">MEEs activos que ningún producto ni checklist usa.</p>
+    <label style="display:block;margin:8px 0"><input type="checkbox" id="preservar" checked> Preservar items con stock_actual &gt; 0</label>
+    <button class="btn btn-danger" onclick="archivarHuerfanos()">🗄 Archivar huérfanos (Inactivo)</button>
+    <div id="tbl-huer"></div>
+  </div>
+</div>
+
+<script>
+let DATA=null;
+let MAPPING_N=0;
+
+function msg(text, ok){
+  const el=document.getElementById('msg');
+  el.innerHTML='<span style="color:'+(ok?'#15803d':'#dc2626')+';font-weight:700">'+text+'</span>';
+  setTimeout(()=>{el.innerHTML=''},5000);
+}
+
+async function cargarDiag(){
+  msg('Calculando…', true);
+  try{
+    const r=await fetch('/api/admin/mee/diag');
+    const d=await r.json();
+    if(!r.ok){msg('Error: '+(d.error||r.status));return}
+    DATA=d;
+    renderKPIs();
+    renderTabs();
+    document.getElementById('card-kpis').style.display='block';
+    document.getElementById('card-tabs').style.display='block';
+    msg('✓ Diagnóstico completo', true);
+  }catch(e){msg('Error red: '+e.message)}
+}
+
+function renderKPIs(){
+  const k=DATA.kpis;
+  const html=[
+    ['Items activos', k.total_activos, ''],
+    ['Archivados', k.total_archivados, ''],
+    ['Duplicados', k.duplicados, k.duplicados>0?'warn':''],
+    ['Sin descripción', k.sin_descripcion, k.sin_descripcion>0?'warn':''],
+    ['Espacios dobles', k.descripciones_dobles, k.descripciones_dobles>0?'warn':''],
+    ['Categorías distintas', k.categorias_distintas, k.categorias_distintas>5?'warn':''],
+    ['Unidades distintas', k.unidades_distintas, k.unidades_distintas>3?'warn':''],
+    ['Stock drift', k.drift_items, k.drift_items>0?'bad':''],
+    ['Huérfanos', k.huerfanos, k.huerfanos>0?'warn':''],
+  ].map(([l,v,c])=>'<div class="kpi '+c+'"><div class="kpi-val">'+v+'</div><div class="kpi-lbl">'+l+'</div></div>').join('');
+  document.getElementById('kpis').innerHTML=html;
+}
+
+function renderTabs(){
+  // Duplicados
+  document.getElementById('tbl-dup').innerHTML = DATA.duplicados.length===0
+    ? '<p style="color:#15803d">✓ Ningún duplicado detectado</p>'
+    : '<table><thead><tr><th>Clave normalizada</th><th>N</th><th>Códigos reales</th></tr></thead><tbody>'
+      + DATA.duplicados.map(x=>'<tr><td><code>'+x.clave+'</code></td><td>'+x.n+'</td><td style="font-size:11px">'+x.codigos+'</td></tr>').join('')
+      + '</tbody></table>';
+  // Descripciones
+  const dDesc = (DATA.sin_descripcion.length+DATA.descripciones_dobles.length);
+  if(!dDesc){
+    document.getElementById('tbl-desc').innerHTML='<p style="color:#15803d">✓ Todas las descripciones limpias</p>';
+  }else{
+    let h='';
+    if(DATA.sin_descripcion.length){
+      h+='<h3 style="margin:14px 0 6px;font-size:13px">Sin descripción ('+DATA.sin_descripcion.length+')</h3>';
+      h+='<table><thead><tr><th>Código</th></tr></thead><tbody>'+DATA.sin_descripcion.map(x=>'<tr><td><code>'+x.codigo+'</code></td></tr>').join('')+'</tbody></table>';
+    }
+    if(DATA.descripciones_dobles.length){
+      h+='<h3 style="margin:14px 0 6px;font-size:13px">Con dobles espacios ('+DATA.descripciones_dobles.length+')</h3>';
+      h+='<table><thead><tr><th>Código</th><th>Descripción actual</th></tr></thead><tbody>'+DATA.descripciones_dobles.map(x=>'<tr><td><code>'+x.codigo+'</code></td><td>'+x.descripcion.replace(/ /g,'·')+'</td></tr>').join('')+'</tbody></table>';
+    }
+    document.getElementById('tbl-desc').innerHTML=h;
+  }
+  // Categorías
+  const cats=DATA.categorias;
+  document.getElementById('tbl-cat').innerHTML='<table><thead><tr><th>Categoría</th><th>Count</th></tr></thead><tbody>'
+    + Object.entries(cats).sort((a,b)=>b[1]-a[1]).map(([k,v])=>'<tr><td><code>'+k+'</code></td><td>'+v+'</td></tr>').join('')
+    + '</tbody></table>';
+  // Drift
+  document.getElementById('tbl-drift').innerHTML = DATA.drift_items.length===0
+    ? '<p style="color:#15803d">✓ Sin drift detectado</p>'
+    : '<table><thead><tr><th>Código</th><th>Descripción</th><th style="text-align:right">Cache</th><th style="text-align:right">Real (SUM)</th><th style="text-align:right">Delta</th></tr></thead><tbody>'
+      + DATA.drift_items.map(x=>'<tr><td><code>'+x.codigo+'</code></td><td>'+x.descripcion+'</td><td style="text-align:right">'+x.cache.toLocaleString()+'</td><td style="text-align:right">'+x.real.toLocaleString()+'</td><td style="text-align:right;font-weight:700;color:#dc2626">'+x.delta.toLocaleString()+'</td></tr>').join('')
+      + '</tbody></table>';
+  // Huérfanos
+  document.getElementById('tbl-huer').innerHTML = DATA.huerfanos.length===0
+    ? '<p style="color:#15803d">✓ Sin huérfanos</p>'
+    : '<table><thead><tr><th>Código</th><th>Descripción</th><th style="text-align:right">Stock</th></tr></thead><tbody>'
+      + DATA.huerfanos.map(x=>'<tr><td><code>'+x.codigo+'</code></td><td>'+x.descripcion+'</td><td style="text-align:right">'+x.stock.toLocaleString()+'</td></tr>').join('')
+      + '</tbody></table>';
+}
+
+function setTab(tab){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+  document.getElementById('t-'+tab).classList.add('active');
+  document.querySelector('[data-tab='+tab+']').classList.add('active');
+}
+
+async function normalizarDescripciones(){
+  if(!confirm('¿Aplicar TRIM + colapsar espacios dobles en todas las descripciones?')) return;
+  const r=await fetch('/api/admin/mee/normalizar-descripciones',{method:'POST',headers:{'Content-Type':'application/json'}});
+  const d=await r.json();
+  if(!r.ok){msg('Error: '+(d.error||r.status));return}
+  msg('✓ '+d.normalizadas+' descripciones normalizadas',true);
+  cargarDiag();
+}
+
+function addMappingRow(){
+  MAPPING_N++;
+  const n=MAPPING_N;
+  document.getElementById('mapping-rows').insertAdjacentHTML('beforeend',
+    '<div style="display:flex;gap:6px;align-items:center;margin-bottom:4px" id="m-'+n+'">'
+    +'<input id="m-de-'+n+'" placeholder="De: envase" style="flex:1">'
+    +'<span>→</span>'
+    +'<input id="m-h-'+n+'" placeholder="Hacia: Envase" style="flex:1">'
+    +'<button class="btn btn-link" onclick="document.getElementById(\\''+'m-'+n+'\\').remove()">✕</button>'
+    +'</div>');
+}
+
+async function aplicarMapping(){
+  const mapping={};
+  for(let i=1;i<=MAPPING_N;i++){
+    const de=document.getElementById('m-de-'+i);
+    const h=document.getElementById('m-h-'+i);
+    if(de && h && de.value.trim() && h.value.trim()){
+      mapping[de.value.trim()]=h.value.trim();
+    }
+  }
+  if(Object.keys(mapping).length===0){msg('Agregá al menos 1 regla');return}
+  if(!confirm('¿Aplicar mapping a categorías?\\n\\n'+JSON.stringify(mapping,null,2))) return;
+  const r=await fetch('/api/admin/mee/unificar-categorias',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mapping})});
+  const d=await r.json();
+  if(!r.ok){msg('Error: '+(d.error||r.status));return}
+  msg('✓ '+d.recategorizados+' items recategorizados',true);
+  cargarDiag();
+}
+
+async function reconciliarBulk(){
+  const tol=parseFloat(document.getElementById('tol').value)||1;
+  if(!confirm('¿Reconciliar stock_actual de TODOS los MEE con drift > '+tol+'?')) return;
+  const r=await fetch('/api/admin/mee/reconciliar-stock-bulk',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tolerancia:tol})});
+  const d=await r.json();
+  if(!r.ok){msg('Error: '+(d.error||r.status));return}
+  msg('✓ '+d.reconciliados+' items reconciliados',true);
+  cargarDiag();
+}
+
+async function archivarHuerfanos(){
+  const preservar=document.getElementById('preservar').checked;
+  if(!confirm('¿Archivar (activo=0) los huérfanos?'+(preservar?' Los con stock>0 se preservan.':' INCLUYE los con stock>0.'))) return;
+  const r=await fetch('/api/admin/mee/marcar-huerfanos-inactivos',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({preservar_con_stock:preservar})});
+  const d=await r.json();
+  if(!r.ok){msg('Error: '+(d.error||r.status));return}
+  msg('✓ '+d.archivados+' archivados',true);
+  cargarDiag();
+}
+
+cargarDiag();
+</script>
+</body></html>"""
+
+
 @bp.route('/planta/conteo-ciclico', methods=['GET'])
 def planta_conteo_ciclico_pagina():
     """Sebastián 24-may noche · UI inventario cíclico responsive (tablet
