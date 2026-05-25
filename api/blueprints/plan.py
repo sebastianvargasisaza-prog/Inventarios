@@ -817,6 +817,62 @@ def crear_pedido_b2b():
                     "mp_check": mp_check}), 201
 
 
+def _registrar_evento_prod(cur, produccion_id, tipo, detalles='', usuario=''):
+    """Inserta evento estructurado en produccion_eventos.
+
+    Reemplaza la práctica de concatenar a observaciones (que acumulaba
+    KB de basura). Para mostrar timeline limpio en UI.
+
+    Args:
+        cur: cursor BD
+        produccion_id: int
+        tipo: str (e.g. 'CANCELADO_REGEN', 'B2B_SUMADO', 'KG_EDITADO',
+              'PAUSADO', 'REPROGRAMADO', 'BLOQUEADO', etc.)
+        detalles: str humano corto (e.g. '+50kg B2B Fernando')
+        usuario: quien lo hizo
+    """
+    if not produccion_id or not tipo:
+        return
+    try:
+        cur.execute(
+            """INSERT INTO produccion_eventos
+                 (produccion_id, tipo, detalles, usuario)
+               VALUES (?, ?, ?, ?)""",
+            (int(produccion_id), tipo[:50], (detalles or '')[:500],
+             (usuario or '')[:80]),
+        )
+    except Exception:
+        pass  # mig 178 no aplicada · skip silencioso
+
+
+@bp.route("/api/produccion/<int:pid>/eventos", methods=["GET"])
+def produccion_eventos_listar(pid):
+    """Timeline estructurado de una producción · todos los eventos
+    del histórico (cancelaciones, ajustes, B2B sumado, etc.) ordenados
+    cronológicamente. Reemplaza el wall-of-text de observaciones.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); cur = conn.cursor()
+    try:
+        rows = cur.execute(
+            """SELECT id, tipo, COALESCE(detalles,''),
+                      COALESCE(usuario,''), fecha_at
+               FROM produccion_eventos
+               WHERE produccion_id = ?
+               ORDER BY fecha_at DESC, id DESC
+               LIMIT 200""",
+            (pid,),
+        ).fetchall()
+    except Exception:
+        rows = []
+    items = [{
+        'id': r[0], 'tipo': r[1], 'detalles': r[2],
+        'usuario': r[3], 'fecha_at': r[4],
+    } for r in rows]
+    return jsonify({'produccion_id': pid, 'eventos': items, 'total': len(items)})
+
+
 def _regenerar_distribucion_lote(cur, lote_id):
     """Regenera la etiqueta distribucion_resumen del lote con desglose
     DTC + cada aporte B2B. Llamar después de cada INSERT/DELETE en
@@ -966,6 +1022,10 @@ def _integrar_pedido_b2b_al_plan(cur, pedido_id, producto, kg_b2b,
                            "kg_total": nuevo_kg})
         # FEATURE 24-may noche · regenerar etiqueta de distribución legible
         _regenerar_distribucion_lote(cur, lid)
+        # Refactor observaciones · evento estructurado
+        _registrar_evento_prod(cur, lid, 'B2B_SUMADO',
+            f'+{kg_b2b}kg · {cliente_nombre or "B2B"} · pedido #{pedido_id}',
+            user)
         return {"modo": "sumado_a_lote_canonico", "lote_id": lid,
                 "fecha": (lfecha or "")[:10], "kg_total": nuevo_kg,
                 "kg_b2b": kg_b2b}
@@ -1003,6 +1063,10 @@ def _integrar_pedido_b2b_al_plan(cur, pedido_id, producto, kg_b2b,
               despues={"pedido_b2b": pedido_id, "producto": producto,
                        "kg": kg_b2b, "fecha": f_real.isoformat()})
     _regenerar_distribucion_lote(cur, nuevo_lote)
+    # Refactor observaciones · evento estructurado
+    _registrar_evento_prod(cur, nuevo_lote, 'CREADO_B2B_DEDICADO',
+        f'Pedido B2B {cliente_nombre or "?"} · pedido #{pedido_id} · {kg_b2b}kg',
+        user)
     return {"modo": "lote_dedicado", "lote_id": nuevo_lote,
             "fecha": f_real.isoformat(), "kg_b2b": kg_b2b}
 
@@ -6652,6 +6716,10 @@ def pedidos_b2b_asignar_a_animus(pid):
                         'kg_sumados': kg_b2b})
     # FEATURE 24-may noche · regenerar etiqueta de distribución
     _regenerar_distribucion_lote(cur, lote_animus_id)
+    # Refactor observaciones · evento estructurado en el lote Animus
+    _registrar_evento_prod(cur, lote_animus_id, 'B2B_ASIGNADO_MANUAL',
+        f'+{kg_b2b}kg · {cli_nom or "B2B"} · pedido #{pid} asignado manual',
+        user)
     conn.commit()
 
     # Re-leer total del lote post-suma
@@ -8855,6 +8923,10 @@ def regenerar_canonicos():
                       despues={'razon': 'regenerar_canonicos · cancelado bulk'})
         except Exception:
             pass
+        # Refactor observaciones · evento estructurado · si volvemos a este
+        # producto vemos historia limpia en timeline.
+        _registrar_evento_prod(c, _pid, 'CANCELADO_REGEN_CANON',
+            'Cancelado por regenerar plan canónico', user)
 
     # 3) Última producción real por producto (para calcular base)
     ultima_real = {}

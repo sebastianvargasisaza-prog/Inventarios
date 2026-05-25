@@ -312,6 +312,24 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (178, "produccion_eventos · timeline estructurada (reemplaza basura concatenada en observaciones) · Sebastián 24-may-2026 noche", [
+        # FEATURE 24-may-2026 noche · Refactor pendiente del audit:
+        # produccion_programada.observaciones se concatenaba con cada
+        # operación (cancelación, ajuste kg, B2B sumado, etc.) acumulando
+        # KB de basura. La mig 168 trunca a 1500 chars pero es paliativo.
+        # Esta tabla almacena cada evento como una fila estructurada para
+        # mostrar timeline limpio + audit trail nativo.
+        """CREATE TABLE IF NOT EXISTS produccion_eventos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            produccion_id INTEGER NOT NULL,
+            tipo TEXT NOT NULL,
+            detalles TEXT DEFAULT '',
+            usuario TEXT DEFAULT '',
+            fecha_at TEXT DEFAULT (datetime('now', '-5 hours'))
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_pev_prod ON produccion_eventos(produccion_id, fecha_at)",
+        "CREATE INDEX IF NOT EXISTS idx_pev_tipo ON produccion_eventos(tipo)",
+    ]),
     (177, "sku_producto_map.tono_label · etiqueta visible para sub-SKUs con tonos (BB101=ROSA, BB201=DURAZNO, etc.) · Sebastián 24-may-2026 noche", [
         # FEATURE 24-may-2026 noche · BLUSH BALM y LIP SERUM tienen multi-SKUs
         # que comparten el mismo bulk pero cambian el tono (color). Antes
