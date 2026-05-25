@@ -654,15 +654,36 @@ def completar_tarea_cron():
         c.execute("SELECT nombre FROM calidad_tareas WHERE id=?", (tarea_id,))
         row = c.fetchone()
         nombre_tarea = row[0] if row else 'Tarea de cronograma'
+        # Sebastián 25-may-2026 · audit zero-error INVIMA Res 2214/2021 ·
+        # NC creada por OOS de cronograma debe tener audit_log + lote si
+        # aplica (el cliente puede mandar lote en el body para vincular
+        # · si no, queda NULL · monitoreos ambientales/calibración no
+        # tienen lote asociado · es válido).
+        _lote_oos = (d.get('lote') or '').strip() or None
+        descripcion_nc = 'OOS detectado en cronograma: ' + nombre_tarea
+        usuario = session.get('compras_user', '')
         c.execute("""INSERT INTO no_conformidades
-                     (fecha,tipo,descripcion,area,responsable,impacto,
+                     (fecha,tipo,descripcion,lote,area,responsable,impacto,
                       accion_correctiva,estado,creado_por)
-                     VALUES (date('now', '-5 hours'),'Proceso',?,
+                     VALUES (date('now', '-5 hours'),'Proceso',?,?,
                      'Calidad','Jefe CC','Alto',
                      ?,'Abierta',?)""",
-                  ('OOS detectado en cronograma: ' + nombre_tarea,
-                   d.get('observaciones',''),
-                   session.get('compras_user','')))
+                  (descripcion_nc, _lote_oos,
+                   d.get('observaciones', ''), usuario))
+        try:
+            from audit_helpers import audit_log
+            nc_id = c.lastrowid
+            audit_log(c, usuario=usuario, accion='CREAR_NC_OOS',
+                      tabla='no_conformidades', registro_id=str(nc_id),
+                      despues={'tipo': 'Proceso', 'descripcion': descripcion_nc[:200],
+                                'lote': _lote_oos, 'tarea_id': tarea_id,
+                                'tarea_nombre': nombre_tarea,
+                                'observaciones': (d.get('observaciones') or '')[:200]},
+                      detalle=f"NC auto creada por OOS en cronograma · tarea {tarea_id} ({nombre_tarea[:60]})")
+        except Exception as _e_audit:
+            import logging as _lg
+            _lg.getLogger('calidad').warning(
+                'audit_log CREAR_NC_OOS fallo: %s', _e_audit)
     conn.commit()
     return jsonify({'ok': True})
 
