@@ -364,6 +364,11 @@ async function cxIAPreguntar(pregunta){
     <input type="text" id="q-prov" placeholder="Buscar proveedor..." oninput="renderProv()">
     <button class="btn bp" onclick="openModal('m-nprov')">+ Nuevo Proveedor</button>
     <button onclick="abrirROIProveedores()" style="padding:6px 14px;background:#0e7490;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;margin-left:8px" title="Ver ROI 12 meses · cumplimiento · top por monto">📊 ROI 12m</button>
+    <!-- Sebastián 25-may-2026 · detector de duplicados case-insensitive ·
+         agrupa "Agenquimicos" vs "AGENQUIMICOS" y permite fusionarlos
+         conservando el más completo (con NIT) y traspasando OCs/SOLs/
+         cotizaciones del huérfano -->
+    <button onclick="abrirProvDuplicados()" style="padding:6px 14px;background:#dc2626;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;margin-left:8px" title="Detectar y fusionar proveedores duplicados (case-insensitive)">🔗 Detectar duplicados</button>
   </div>
   <div id="prov-grid" class="pg"><div class="empty">Cargando...</div></div>
 </div>
@@ -5696,6 +5701,67 @@ async function abrirScorecardProveedor(nombre){
 }
 
 // Gap bonus · 21-may-2026 · ROI proveedores 12m
+// Sebastián 25-may-2026 · detector + fusionador de proveedores duplicados
+async function abrirProvDuplicados(){
+  var ex = document.getElementById('m-prov-dup'); if(ex) ex.remove();
+  var m = document.createElement('div');
+  m.id = 'm-prov-dup';
+  m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9998;display:flex;align-items:center;justify-content:center;padding:20px';
+  m.innerHTML = '<div style="background:#fff;border-radius:12px;padding:20px;max-width:900px;width:100%;max-height:90vh;overflow-y:auto">'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><h3 style="margin:0;color:#dc2626">🔗 Detector de proveedores duplicados</h3><button id="dup-close" style="background:none;border:none;font-size:1.4em;cursor:pointer">×</button></div>'+
+    '<div style="font-size:12px;color:#64748b;margin-bottom:14px">Agrupa proveedores con el mismo nombre normalizado (mayúsculas + espacios). El destino sugerido es el que más datos tiene (NIT, banco, contacto).</div>'+
+    '<div id="dup-body" style="text-align:center;color:#94a3b8;padding:30px">Cargando…</div>'+
+  '</div>';
+  document.body.appendChild(m);
+  document.getElementById('dup-close').onclick = function(){ m.remove(); };
+  try{
+    var r = await fetch('/api/admin/proveedores-duplicados');
+    var d = await r.json();
+    if(!r.ok){ document.getElementById('dup-body').innerHTML = '<span style="color:#dc2626">Error: '+esc(d.error||r.status)+'</span>'; return; }
+    if(!d.grupos || !d.grupos.length){
+      document.getElementById('dup-body').innerHTML = '<div style="padding:30px;color:#15803d;font-weight:700">✓ Sin duplicados · catálogo limpio</div>';
+      return;
+    }
+    var html = '<div style="background:#fef3c7;border:1px solid #f59e0b;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:12px;color:#92400e"><b>'+d.total_grupos+'</b> grupos duplicados · <b>'+d.total_huerfanos+'</b> proveedores huérfanos para fusionar</div>';
+    d.grupos.forEach(function(g, gi){
+      html += '<div style="border:1px solid #e2e8f0;border-radius:8px;margin-bottom:12px;padding:12px 14px;background:#fafafa">';
+      html += '<div style="font-weight:700;color:#dc2626;margin-bottom:8px">'+esc(g.key_normalizada)+' <span style="font-size:11px;color:#64748b;font-weight:400">('+g.count+' registros)</span></div>';
+      html += '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f1f5f9"><th style="text-align:left;padding:5px 8px">Nombre</th><th style="text-align:left;padding:5px 8px">NIT</th><th style="text-align:left;padding:5px 8px">Banco</th><th style="text-align:left;padding:5px 8px">Contacto</th><th style="text-align:center;padding:5px 8px">Score</th><th style="text-align:center;padding:5px 8px">Acción</th></tr></thead><tbody>';
+      g.proveedores.forEach(function(p){
+        var bg = p.es_destino_sugerido ? '#dcfce7' : '#fff';
+        var badge = p.es_destino_sugerido ? '<span style="background:#16a34a;color:#fff;font-size:10px;padding:2px 8px;border-radius:6px;font-weight:700">DESTINO</span>' : '';
+        html += '<tr style="background:'+bg+';border-bottom:1px solid #f1f5f9">';
+        html += '<td style="padding:6px 8px;font-weight:600">'+esc(p.nombre)+' '+badge+'</td>';
+        html += '<td style="padding:6px 8px;font-family:monospace">'+esc(p.nit||'-')+'</td>';
+        html += '<td style="padding:6px 8px;font-size:11px">'+esc(p.banco||'-')+'</td>';
+        html += '<td style="padding:6px 8px;font-size:11px">'+esc(p.contacto||'-')+'</td>';
+        html += '<td style="padding:6px 8px;text-align:center;font-weight:700">'+p.score_completitud+'</td>';
+        html += '<td style="padding:6px 8px;text-align:center">';
+        if(!p.es_destino_sugerido){
+          html += '<button onclick="_provFusionar(&quot;'+esc(g.destino_sugerido).replace(/"/g,'&quot;')+'&quot;,&quot;'+esc(p.nombre).replace(/"/g,'&quot;')+'&quot;)" style="background:#dc2626;color:#fff;border:0;padding:4px 10px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">→ Fusionar a destino</button>';
+        }
+        html += '</td></tr>';
+      });
+      html += '</tbody></table></div>';
+    });
+    document.getElementById('dup-body').innerHTML = html;
+  }catch(e){
+    document.getElementById('dup-body').innerHTML = '<span style="color:#dc2626">Error red: '+e.message+'</span>';
+  }
+}
+
+async function _provFusionar(keeper, mergeFrom){
+  if(!confirm('Fusionar "'+mergeFrom+'" → "'+keeper+'"?\\n\\nEsto:\\n· Traspasa todas las OCs, SOLs, cotizaciones, lead_times de "'+mergeFrom+'" a "'+keeper+'"\\n· Si "'+keeper+'" no tiene NIT, le copia el del huérfano\\n· Da de baja a "'+mergeFrom+'"\\n\\nIrreversible (audit log queda)')) return;
+  try{
+    var r = await fetch('/api/admin/proveedores-fusionar', _fetchOpts('POST', {keeper: keeper, merge_from: mergeFrom}));
+    var d = await r.json();
+    if(!r.ok || d.error){ alert('Error: '+(d.error||r.status)); return; }
+    alert('✅ Fusionado · '+d.total_filas_movidas+' filas movidas\\n\\n'+JSON.stringify(d.contadores_filas_actualizadas, null, 2));
+    abrirProvDuplicados();  // refresh
+    loadData();
+  }catch(e){ alert('Error red: '+e.message); }
+}
+
 async function abrirROIProveedores(){
   var ex = document.getElementById('m-roi-prov'); if(ex) ex.remove();
   var m = document.createElement('div');

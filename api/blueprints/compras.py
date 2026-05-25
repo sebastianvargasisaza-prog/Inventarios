@@ -11461,3 +11461,183 @@ def revertir_pago_oc(numero_oc):
         'detalle': (f'Pago ${monto_pago:,.0f} revertido · CE {ce_eliminado or "(ninguno)"} '
                     f'eliminado · OC ahora en {nuevo_estado}'),
     })
+
+
+# ─── Proveedores duplicados · detector + fusionar · Sebastián 25-may-2026 ────
+# Sebastián reportó: "Agenquimicos" vs "AGENQUIMICOS" aparecen como 2 cards
+# en el tab Proveedores · el primero con NIT vacío (creado por cron auto-plan
+# desde seed con capitalización original) · el segundo completo (Catalina lo
+# creó manual al recibir OC). Drift case-sensitive del nombre como FK textual.
+# Endpoint detector + fusionar consolida el huérfano en el canónico (con NIT)
+# traspasando todas las referencias downstream.
+
+@bp.route('/api/admin/proveedores-duplicados', methods=['GET'])
+def admin_proveedores_duplicados():
+    """Detecta proveedores duplicados case + espacios insensitive.
+
+    Devuelve grupos donde 2+ filas tienen la misma key normalizada:
+        UPPER(TRIM(' '.join(nombre.split())))
+
+    Para cada grupo · ranking del "más completo" (mide tener NIT + banco +
+    num_cuenta + contacto + email · usar como destino sugerido en fusión).
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); c = conn.cursor()
+    # Levantar todos los activos
+    try:
+        rows = c.execute(
+            "SELECT id, nombre, COALESCE(nit,''), COALESCE(banco,''), "
+            "       COALESCE(num_cuenta,''), COALESCE(contacto,''), "
+            "       COALESCE(email,''), COALESCE(telefono,''), "
+            "       COALESCE(activo, 1) "
+            "FROM proveedores WHERE COALESCE(activo,1)=1"
+        ).fetchall()
+    except Exception as e:
+        return jsonify({'error': f'query fallo: {e}'}), 500
+
+    def _norm(s):
+        return ' '.join((s or '').strip().split()).upper()
+
+    def _score_completitud(r):
+        # Cuenta campos no vacíos · más alto = más completo
+        # NIT pesa doble (es el identificador legal)
+        return ((2 if r[2] else 0) + (1 if r[3] else 0) + (1 if r[4] else 0) +
+                (1 if r[5] else 0) + (1 if r[6] else 0) + (1 if r[7] else 0))
+
+    grupos_dict = {}
+    for r in rows:
+        k = _norm(r[1])
+        if not k:
+            continue
+        grupos_dict.setdefault(k, []).append(r)
+
+    duplicados = []
+    for k, lista in grupos_dict.items():
+        if len(lista) < 2:
+            continue
+        # Ordenar por score completitud DESC · primer elemento = destino sugerido
+        lista_sorted = sorted(lista, key=lambda r: -_score_completitud(r))
+        duplicados.append({
+            'key_normalizada': k,
+            'count': len(lista_sorted),
+            'destino_sugerido': lista_sorted[0][1],
+            'destino_sugerido_id': lista_sorted[0][0],
+            'destino_score': _score_completitud(lista_sorted[0]),
+            'proveedores': [{
+                'id': p[0], 'nombre': p[1], 'nit': p[2], 'banco': p[3],
+                'num_cuenta': p[4], 'contacto': p[5], 'email': p[6],
+                'telefono': p[7], 'score_completitud': _score_completitud(p),
+                'es_destino_sugerido': p[0] == lista_sorted[0][0],
+            } for p in lista_sorted],
+        })
+    duplicados.sort(key=lambda g: -g['count'])
+    return jsonify({
+        'total_grupos': len(duplicados),
+        'total_huerfanos': sum(g['count'] - 1 for g in duplicados),
+        'grupos': duplicados,
+    })
+
+
+@bp.route('/api/admin/proveedores-fusionar', methods=['POST'])
+def admin_proveedores_fusionar():
+    """Fusiona un proveedor huérfano en uno canónico.
+
+    Body: {keeper: 'AGENQUIMICOS', merge_from: 'Agenquimicos'}
+
+    Side effects · UPDATE todas las referencias downstream a apuntar al
+    keeper · UPDATE proveedores SET activo=0 para merge_from. Devuelve
+    contadores por tabla afectada para auditar visualmente la operación.
+
+    Solo COMPRAS_ACCESS_WRITE · operación delicada · audit completo.
+    """
+    usuario, err, code = _require_compras_write()
+    if err: return err, code
+    d = request.get_json(silent=True) or {}
+    keeper = (d.get('keeper') or '').strip()
+    merge_from = (d.get('merge_from') or '').strip()
+    if not keeper or not merge_from:
+        return jsonify({'error': 'keeper y merge_from requeridos'}), 400
+    if keeper.lower() == merge_from.lower():
+        return jsonify({'error': 'keeper y merge_from no pueden ser el mismo'}), 400
+    conn = get_db(); c = conn.cursor()
+    # Validar que ambos existen
+    k_row = c.execute(
+        "SELECT id, COALESCE(nit,''), COALESCE(activo,1) FROM proveedores WHERE nombre=?",
+        (keeper,),
+    ).fetchone()
+    m_row = c.execute(
+        "SELECT id, COALESCE(nit,''), COALESCE(activo,1) FROM proveedores WHERE nombre=?",
+        (merge_from,),
+    ).fetchone()
+    if not k_row:
+        return jsonify({'error': f'Keeper "{keeper}" no existe'}), 404
+    if not m_row:
+        return jsonify({'error': f'Merge_from "{merge_from}" no existe'}), 404
+    if not int(k_row[2] or 0):
+        return jsonify({'error': f'Keeper "{keeper}" está dado de baja · activarlo primero'}), 409
+    # UPDATE downstream · contar filas afectadas por tabla
+    contadores = {}
+    propagar = [
+        ('ordenes_compra', 'proveedor'),
+        ('solicitudes_compra', 'proveedor_sugerido'),
+        ('solicitudes_compra_items', 'proveedor_sugerido'),
+        ('precios_mp_historico', 'proveedor'),
+        ('ordenes_servicio', 'proveedor'),
+        ('mp_lead_time_config', 'proveedor_principal'),
+        ('pagos_influencers', 'influencer_nombre'),
+    ]
+    for tabla, col in propagar:
+        try:
+            c.execute(f"UPDATE {tabla} SET {col}=? WHERE {col}=?",
+                       (keeper, merge_from))
+            contadores[tabla] = c.rowcount
+        except Exception:
+            contadores[tabla] = 'NA'
+    # cotizaciones tiene 1 columna proveedor
+    try:
+        c.execute(
+            "UPDATE cotizaciones SET proveedor=? WHERE proveedor=?",
+            (keeper, merge_from),
+        )
+        contadores['cotizaciones'] = c.rowcount
+    except Exception:
+        contadores['cotizaciones'] = 'NA'
+    # Si el keeper no tiene NIT pero el merge_from sí · copiarlo (más completo)
+    if not k_row[1] and m_row[1]:
+        try:
+            c.execute(
+                "UPDATE proveedores SET nit=? WHERE id=?",
+                (m_row[1], k_row[0]),
+            )
+            contadores['nit_copiado_a_keeper'] = m_row[1]
+        except Exception:
+            pass
+    # Dar de baja al merge_from
+    c.execute(
+        "UPDATE proveedores SET activo=0, motivo_baja=?, fecha_baja=? WHERE id=?",
+        (f'Fusionado en "{keeper}" por {usuario}', datetime.now().isoformat(), m_row[0]),
+    )
+    # Audit completo
+    try:
+        audit_log(c, usuario=usuario, accion='FUSIONAR_PROVEEDORES',
+                  tabla='proveedores', registro_id=str(m_row[0]),
+                  antes={'merge_from': merge_from,
+                          'merge_from_nit': m_row[1],
+                          'merge_from_id': m_row[0]},
+                  despues={'keeper': keeper, 'keeper_id': k_row[0],
+                            'contadores_filas_actualizadas': contadores},
+                  detalle=(f"Fusionó '{merge_from}' → '{keeper}' · "
+                            f"total filas movidas: "
+                            f"{sum(v for v in contadores.values() if isinstance(v,int))}"))
+    except Exception as e:
+        log.warning('audit_log FUSIONAR_PROVEEDORES fallo: %s', e)
+    conn.commit()
+    return jsonify({
+        'ok': True,
+        'keeper': keeper,
+        'merge_from': merge_from,
+        'merge_from_dado_de_baja': True,
+        'contadores_filas_actualizadas': contadores,
+        'total_filas_movidas': sum(v for v in contadores.values() if isinstance(v, int)),
+    })

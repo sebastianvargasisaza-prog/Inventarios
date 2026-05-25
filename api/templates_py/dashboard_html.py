@@ -11882,21 +11882,42 @@ async function ckMarcar(itemId, estado){
           });
         });
         html += '<table><tr><th>Envase</th><th>Necesario</th><th>En bodega MEE</th>' +
-          '<th>Falta</th><th>Para cuándo</th><th>Proveedor</th></tr>';
+          '<th>Falta</th><th>Para cuándo</th><th>Proveedor</th><th>Acción</th></tr>';
         for(var b=0;b<mees.length;b++){
           var e = mees[b];
           var cuando = fechaPorMee[(e.codigo || '').toUpperCase()] || '—';
+          // Sebastián 25-may-2026 · Fase C · si la bodega tiene stock pero
+          // hace falta serigrafiar/etiquetar para el lote programado, botón
+          // "🎨 Servicio" abre modal para crear OS con datos pre-llenados.
+          // Aplica cuando stock_actual_u >= necesario_total_u (no comprar)
+          // pero el envase requiere proceso adicional (logo/etiqueta).
+          var stockUds = parseFloat(e.stock_actual_u || 0);
+          var neceUds = parseFloat(e.necesario_total_u || 0);
+          var faltaUds = parseFloat(e.faltante_u || 0);
+          // Botón Servicio · útil tanto si falta (parte serigrafiar) como si
+          // tiene stock total (todo el lote necesita logo). Usa max(necesario,
+          // faltante) como sugerencia de cantidad para la OS.
+          var sugUds = Math.max(neceUds, faltaUds, 0);
+          var btnOS = '<button onclick="abastCrearOS(' +
+            '&quot;' + _abastEsc(e.codigo || '') + '&quot;,' +
+            '&quot;' + _abastEsc(e.descripcion || '').replace(/"/g,'&quot;') + '&quot;,' +
+            Math.round(sugUds) + ',' +
+            '&quot;' + _abastEsc(e.proveedor_sugerido || '').replace(/"/g,'&quot;') + '&quot;)" ' +
+            'style="background:#7c3aed;color:#fff;border:0;padding:4px 9px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer" ' +
+            'title="Crear Orden de Servicio (serigrafía / etiquetado) para este envase">🎨 Servicio</button>';
           html += '<tr><td>' + _abastEsc(e.descripcion) + '</td>' +
             '<td>' + Math.round(e.necesario_total_u) + ' u</td>' +
             '<td>' + Math.round(e.stock_actual_u) + ' u</td>' +
             '<td class="abast-falta">' + Math.round(e.faltante_u) + ' u</td>' +
             '<td style="font-weight:700">' + _abastEsc(cuando) + '</td>' +
-            '<td>' + _abastEsc(e.proveedor_sugerido || '—') + '</td></tr>';
+            '<td>' + _abastEsc(e.proveedor_sugerido || '—') + '</td>' +
+            '<td>' + btnOS + '</td></tr>';
         }
         html += '</table>';
         html += '<div style="font-size:11px;color:#64748b;margin-top:6px">' +
           '&#128161; Planta revisa la Bodega MEE y alista lo que ya tiene &middot; ' +
-          'Catalina compra lo que falte. La misma alerta la ven los dos.</div>';
+          'Catalina compra lo que falte. La misma alerta la ven los dos. &middot; ' +
+          '<b>🎨 Servicio</b> crea una OS de serigrafía/etiquetado (usa stock que ya tenés).</div>';
       }
       cont.innerHTML = html;
       if(mps.length || mees.length){
@@ -11909,6 +11930,47 @@ async function ckMarcar(itemId, estado){
       cont.innerHTML = '<div style="color:#dc2626;padding:20px">Error de red: ' + _abastEsc(e.message) + '</div>';
     }
   }
+  // Sebastián 25-may-2026 · Fase C · crear OS de serigrafía/etiquetado para
+  // envases del Abastecimiento · pre-llena cantidad + proveedor sugerido.
+  async function abastCrearOS(envaseCod, envaseDesc, sugUds, provSug){
+    var tipo = prompt('Tipo de servicio:\\n· Serigrafía\\n· Tampografía\\n· Etiquetado\\n· Sleeve termoencogible\\n· Hot stamping\\n· Acondicionamiento externo', 'Serigrafía');
+    if(!tipo) return;
+    tipo = tipo.trim();
+    var prodFinal = prompt('Producto final (lo que sale del servicio · ej "Frasco BLUSH BALM con logo"):', envaseDesc + ' procesado');
+    if(!prodFinal) return;
+    var cantStr = prompt('Cantidad de unidades a procesar (sugerencia: '+sugUds+'):', String(sugUds));
+    if(!cantStr) return;
+    var cant = parseInt(cantStr, 10);
+    if(isNaN(cant) || cant <= 0){ alert('Cantidad inválida'); return; }
+    var prov = prompt('Proveedor del servicio (ej "Serigrafías ABC"):', provSug || '');
+    if(!prov) return;
+    var costo = prompt('Costo estimado COP (opcional · vacío = 0):', '');
+    var fechaReq = prompt('Fecha requerida de entrega (YYYY-MM-DD · opcional):', '');
+    var arte = prompt('Descripción del arte/especificación (opcional):', '');
+    if(!confirm('Crear OS:\\n· Tipo: '+tipo+'\\n· Producto: '+prodFinal+'\\n· Cantidad: '+cant+' uds\\n· Proveedor: '+prov+'\\n· Envase MEE: '+envaseCod+'\\n\\nEstado inicial: Borrador (después marcar Enviada para descontar stock)')) return;
+    try{
+      var body = {
+        tipo_servicio: tipo,
+        producto_final: prodFinal,
+        proveedor: prov,
+        cantidad_unidades: cant,
+        envase_codigo_mee: envaseCod,
+        envase_descripcion: envaseDesc,
+        arte_descripcion: arte || '',
+      };
+      if(costo && parseFloat(costo) > 0) body.costo_estimado_cop = parseFloat(costo);
+      if(fechaReq && /^\\d{4}-\\d{2}-\\d{2}$/.test(fechaReq.trim())) body.fecha_requerida_entrega = fechaReq.trim();
+      var r = await fetch('/api/compras/ordenes-servicio', {
+        method:'POST',
+        headers:{'Content-Type':'application/json','X-CSRF-Token':(typeof csrfTokenNec==='function'?csrfTokenNec():'')},
+        body: JSON.stringify(body),
+      });
+      var d = await r.json();
+      if(!r.ok){ alert('Error: '+(d.error||r.status)); return; }
+      alert('✅ OS creada: '+d.numero_os+'\\n\\nEstado: Borrador · revisala en /compras → tab Órdenes de Servicio para marcarla Enviada (descuenta stock MEE).');
+    }catch(e){ alert('Error red: '+e.message); }
+  }
+
   async function abastGenerarSols(){
     if(!confirm('¿Generar las solicitudes de compra para el horizonte de ' + ABAST_HORIZ + ' días?\\n\\nSe crean agrupadas por proveedor y aparecen en el módulo Compras.')) return;
     try {
