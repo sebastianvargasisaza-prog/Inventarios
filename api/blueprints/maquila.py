@@ -470,13 +470,43 @@ def animus_update_solicitud(sid):
 
 @bp.route('/api/stock-pt/<sku>/reorden', methods=['POST'])
 def actualizar_reorden_pt(sku):
+    # Sebastián 25-may-2026 · audit zero-error · sanitizar inputs + audit_log.
+    # Gate global ya cubre auth (before_request L39). Falta validar rangos:
+    # un int negativo o astronómico contaminaría abastecimiento downstream
+    # (stock_minimo_ud usado por job_reorden_pt para decidir cuándo lanzar
+    # producción). dias_reposicion = 0 dispararía reorden constante.
     d = request.json or {}
+    try:
+        stock_min = int(d.get('stock_minimo_ud', 0))
+        dias_rep = int(d.get('dias_reposicion', 15))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'stock_minimo_ud y dias_reposicion deben ser enteros'}), 400
+    if stock_min < 0 or stock_min > 1_000_000:
+        return jsonify({'error': 'stock_minimo_ud fuera de rango (0..1M)'}), 400
+    if dias_rep < 1 or dias_rep > 365:
+        return jsonify({'error': 'dias_reposicion fuera de rango (1..365)'}), 400
+    sku = (sku or '').strip()
+    if not sku:
+        return jsonify({'error': 'sku requerido'}), 400
     conn = get_db(); c = conn.cursor()
+    antes_row = c.execute(
+        "SELECT stock_minimo_ud, dias_reposicion FROM stock_pt WHERE sku=?", (sku,)
+    ).fetchone()
+    antes = dict(antes_row) if antes_row else {}
     c.execute("UPDATE stock_pt SET stock_minimo_ud=?, dias_reposicion=? WHERE sku=?",
-              (int(d.get('stock_minimo_ud', 0)),
-               int(d.get('dias_reposicion', 15)), sku))
+              (stock_min, dias_rep, sku))
+    if c.rowcount == 0:
+        return jsonify({'error': f'SKU {sku} no existe en stock_pt'}), 404
+    try:
+        audit_log(c, usuario=session.get('compras_user', 'sistema'),
+                  accion='ACTUALIZAR_REORDEN_PT', tabla='stock_pt', registro_id=sku,
+                  antes=antes,
+                  despues={'stock_minimo_ud': stock_min, 'dias_reposicion': dias_rep})
+    except Exception:
+        pass
     conn.commit()
-    return jsonify({'ok': True})
+    return jsonify({'ok': True, 'sku': sku, 'stock_minimo_ud': stock_min,
+                     'dias_reposicion': dias_rep})
 
 # ── Recall Engine COC-PRO-016 ──────────────────────────────────────────
 @bp.route('/api/recall/simular/<path:lote_pt>', methods=['GET'])
