@@ -2919,17 +2919,33 @@ def solicitudes_agrupadas_por_proveedor():
     # Si hay mezcla, marcar como 'Mixto' para que Catalina los revise individualmente.
     URG_RANK = {'Critico': 4, 'Urgente': 3, 'Alta': 2, 'Media': 1, 'Normal': 0}
 
+    # Sebastián 24-may-2026 · audit Bandeja Planta · agrupamiento case + espacios
+    # insensible. Antes 'Colquimicos', 'COLQUIMICOS', 'colquímicos  ' quedaban
+    # como 3 grupos distintos · Catalina veía el mismo proveedor 3× y no podía
+    # consolidar en 1 OC. Ahora normalizamos para la KEY pero mantenemos la
+    # forma original (la primera vista) como display al UI.
+    def _norm_prov(p):
+        return ' '.join((p or '').strip().split()).upper()
+
     def _prov_dominante(items_lista):
-        provs = {(it.get('proveedor_sugerido') or '').strip() for it in items_lista}
-        provs.discard('')
-        if not provs:
-            return ''  # sin proveedor sugerido
-        if len(provs) == 1:
-            return provs.pop()
+        # Key normalizada para dedup · valor = forma original conservada
+        provs_norm = {}
+        for it in items_lista:
+            raw = (it.get('proveedor_sugerido') or '').strip()
+            if not raw:
+                continue
+            k = _norm_prov(raw)
+            provs_norm.setdefault(k, raw)
+        if not provs_norm:
+            return ''
+        if len(provs_norm) == 1:
+            # Devolvemos la key normalizada para agrupar consistente
+            return next(iter(provs_norm.keys()))
         return '__MIXTO__'
 
-    # Agrupar
-    grupos_dict = {}
+    # Agrupar (key = proveedor normalizado · display = forma original)
+    grupos_dict = {}        # key normalizada → lista SOLs
+    grupos_label = {}       # key normalizada → primera forma original vista
     sin_proveedor = []
     for s in solicitudes:
         items = items_por_sol.get(s['numero'], [])
@@ -2945,6 +2961,13 @@ def solicitudes_agrupadas_por_proveedor():
             target.append(s)
         else:
             grupos_dict.setdefault(prov, []).append(s)
+            # Primera forma original que vimos · preserva capitalización humana
+            if prov not in grupos_label:
+                for it in items:
+                    raw = (it.get('proveedor_sugerido') or '').strip()
+                    if raw and _norm_prov(raw) == prov:
+                        grupos_label[prov] = raw
+                        break
 
     # Construir output
     grupos = []
@@ -2972,7 +2995,8 @@ def solicitudes_agrupadas_por_proveedor():
             if URG_RANK.get(s.get('urgencia') or 'Normal', 0) > URG_RANK.get(urg_max, 0):
                 urg_max = s.get('urgencia') or 'Normal'
         grupos.append({
-            'proveedor': prov,
+            'proveedor': prov,                                    # key normalizada
+            'proveedor_label': grupos_label.get(prov, prov),      # display original
             'solicitudes_count': len(sols),
             'items_count': len(consolidados),
             'valor_total': round(sum(float(s.get('valor_calc') or 0) for s in sols), 2),
