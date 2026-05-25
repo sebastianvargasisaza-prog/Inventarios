@@ -500,6 +500,53 @@ async function enviarCotizacion(){
   }
 }
 
+// Sebastián 25-may-2026 · Fase 3 paso 2 · cliente convierte cotización → pedido
+async function aceptarCotizacion(solId){
+  if(!confirm('¿Aceptar este precio y generar un pedido en borrador?\n\nEl pedido queda en borrador hasta que lo confirmés en "Mis pedidos".')) return;
+  try{
+    var r = await fetch('/api/portal/solicitudes/' + solId + '/convertir-a-pedido', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      credentials:'same-origin',
+      body:'{}',
+    });
+    var d = await r.json();
+    if(r.ok && d.ok){
+      alert('✓ ' + (d.mensaje || 'Pedido creado'));
+      cargarMisCotizaciones();
+      if(typeof actualizarBadge === 'function') actualizarBadge();
+    }else{
+      alert('Error: ' + (d.error || r.status));
+    }
+  }catch(e){
+    alert('Error de red: ' + e.message);
+  }
+}
+
+// Sebastián 25-may-2026 · Fase 3 paso 3 · badge in-app para "tenés respuesta"
+async function actualizarBadge(){
+  try{
+    var r = await fetch('/api/portal/badge', {credentials:'same-origin'});
+    if(!r.ok) return;
+    var d = await r.json();
+    var tabCot = document.querySelector('.tab[data-tab="cotizar"]');
+    var tabPqr = document.querySelector('.tab[data-tab="mis-pqr"]');
+    if(tabCot){
+      var t = tabCot.textContent.replace(/\\s*\\(\\d+\\)\\s*$/, '');
+      tabCot.textContent = t + (d.cotizaciones_respondidas > 0 ? ' (' + d.cotizaciones_respondidas + ')' : '');
+      tabCot.style.fontWeight = d.cotizaciones_respondidas > 0 ? '800' : '';
+    }
+    if(tabPqr){
+      var t2 = tabPqr.textContent.replace(/\\s*\\(\\d+\\)\\s*$/, '');
+      tabPqr.textContent = t2 + (d.pqr_respondidos > 0 ? ' (' + d.pqr_respondidos + ')' : '');
+      tabPqr.style.fontWeight = d.pqr_respondidos > 0 ? '800' : '';
+    }
+  }catch(_){}
+}
+// Refrescar badge al cargar + cada 90s
+setTimeout(actualizarBadge, 800);
+setInterval(actualizarBadge, 90000);
+
 async function cargarMisCotizaciones(){
   var lista = document.getElementById('mis-cot-lista');
   if(!lista) return;
@@ -541,8 +588,21 @@ async function cargarMisCotizaciones(){
           + '· Lead time: ' + esc((s.respuesta_lead_time_dias||0) + ' días') + '<br>'
           + '· MOQ: ' + esc((s.respuesta_moq||0) + ' uds') + '<br>'
           + '· Validez: ' + esc((s.respuesta_validez_dias||15) + ' días') + '<br>'
-          + (s.respuesta_notas ? '<br>📝 ' + esc(s.respuesta_notas) : '')
-          + '</div>';
+          + (s.respuesta_notas ? '<br>📝 ' + esc(s.respuesta_notas) : '');
+        // Botón aceptar · solo cotización respondida con precio > 0 y no convertida
+        if(s.tipo === 'cotizacion' && s.estado === 'respondida'
+           && (Number(s.respuesta_precio_cop)||0) > 0
+           && (!s.convertida_pedido_id || s.convertida_pedido_id == 0)){
+          resp += '<div style="margin-top:10px;display:flex;gap:8px;align-items:center">'
+            + '<button class="primary" style="padding:8px 14px;font-size:12px" '
+            + 'onclick="aceptarCotizacion(' + s.id + ')">✓ Acepto · generar pedido</button>'
+            + '<span style="font-size:11px;color:#64748b">queda en borrador hasta tu confirmación</span>'
+            + '</div>';
+        }
+        if(s.convertida_pedido_id && s.convertida_pedido_id > 0){
+          resp += '<div style="margin-top:8px;font-size:12px;color:#0891b2"><b>✓ Convertida al pedido #' + s.convertida_pedido_id + '</b> · revisalo en "Mis pedidos"</div>';
+        }
+        resp += '</div>';
       }
       return '<div class="pedido" style="border-left-color:'+color+'">'
         + '<div class="pedido-prod">'+ico+' '+esc(s.producto_nombre)+'</div>'
@@ -1827,4 +1887,547 @@ def admin_portal_solicitud_responder(sol_id):
         pass
     conn.commit()
     return jsonify({'ok': True, 'id': sol_id})
+
+
+@bp.route('/api/portal/solicitudes/<int:sol_id>/convertir-a-pedido', methods=['POST'])
+def portal_convertir_solicitud_a_pedido(sol_id):
+    """Cliente acepta cotización · marca convertida + crea pedido inicial.
+
+    Sebastián 25-may-2026 · Fase 3 paso 2 · cierre del loop RFQ → pedido.
+    Solo solicitudes en estado='respondida' y tipo='cotizacion' se pueden
+    convertir. Crea un pedido en estado 'borrador' con cantidad y precio
+    cotizado · cliente lo confirma en /portal Mis pedidos.
+    """
+    auth = _require_portal_login()
+    if not auth:
+        return jsonify({'error': 'No autorizado'}), 401
+    cid, cnom, email = auth
+    conn = get_db(); cur = conn.cursor()
+    row = cur.execute(
+        "SELECT id, cliente_id, tipo, estado, producto_nombre, cantidad_estimada, "
+        "       unidad, envase_preferencia, "
+        "       COALESCE(respuesta_precio_cop, 0), "
+        "       COALESCE(respuesta_lead_time_dias, 0), "
+        "       COALESCE(respuesta_moq, 0), "
+        "       COALESCE(convertida_pedido_id, 0) "
+        "FROM portal_solicitudes WHERE id = ? AND cliente_id = ?",
+        (sol_id, cid)).fetchone()
+    if not row:
+        return jsonify({'error': 'Solicitud no encontrada o no es tuya'}), 404
+    (_id, _cid, tipo, estado, producto, cant_est, unidad, envase_pref,
+     precio, lead, moq, ya_convertida) = row
+    if ya_convertida:
+        return jsonify({'error': f'Ya convertida al pedido #{ya_convertida}'}), 409
+    if tipo != 'cotizacion':
+        return jsonify({'error': 'Solo cotizaciones se pueden convertir · muestras/ficha técnica no'}), 400
+    if estado != 'respondida':
+        return jsonify({'error': f'Estado actual {estado} · debe estar respondida'}), 400
+    if precio <= 0:
+        return jsonify({'error': 'Cotización sin precio · pedile al equipo que complete'}), 400
+    # MOQ check
+    if moq > 0 and cant_est < moq:
+        return jsonify({'error': f'Cantidad solicitada ({cant_est}) menor al MOQ ({moq})'}), 400
+    # Convertir a pedidos_b2b · misma tabla que el flujo normal del portal.
+    # Parsear ml del envase_preferencia ("500ml gotero" → 500.0) · default 50ml.
+    import re as _re
+    ml_unidad = 50.0
+    if envase_pref:
+        m = _re.search(r'(\d+(?:\.\d+)?)\s*ml', envase_pref.lower())
+        if m:
+            try:
+                ml_unidad = float(m.group(1))
+                if ml_unidad <= 0 or ml_unidad > 5000:
+                    ml_unidad = 50.0
+            except Exception:
+                ml_unidad = 50.0
+    notas_pedido = (f'Convertido desde cotización #{sol_id} · precio cotizado '
+                    f'${int(precio):,} COP/ud · MOQ {moq} · lead {lead}d')[:500]
+    try:
+        cur.execute(
+            """INSERT INTO pedidos_b2b
+               (cliente_id, cliente_nombre, producto_nombre, cantidad_uds,
+                ml_unidad, fecha_estimada, notas, creado_por,
+                envase_codigo, envase_notas)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (cid, cnom, producto, cant_est, ml_unidad, None,
+             notas_pedido, f'portal:rfq:{email}', '', envase_pref[:200]))
+        pedido_id = cur.lastrowid
+    except Exception as e:
+        emsg = str(e).lower()
+        if 'no such column' in emsg or 'has no column' in emsg:
+            # Schema sin envase_codigo/envase_notas · fallback (mig 172 vieja)
+            try: conn.rollback()
+            except Exception: pass
+            cur.execute(
+                """INSERT INTO pedidos_b2b
+                   (cliente_id, cliente_nombre, producto_nombre, cantidad_uds,
+                    ml_unidad, fecha_estimada, notas, creado_por)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (cid, cnom, producto, cant_est, ml_unidad, None,
+                 notas_pedido, f'portal:rfq:{email}'))
+            pedido_id = cur.lastrowid
+        else:
+            raise
+    # Marcar solicitud como convertida
+    cur.execute(
+        "UPDATE portal_solicitudes SET convertida_pedido_id = ?, "
+        "       estado = 'convertida', "
+        "       actualizada_at = datetime('now', '-5 hours') "
+        "WHERE id = ?",
+        (pedido_id, sol_id))
+    try:
+        from audit_helpers import audit_log
+        audit_log(cur, usuario=f'portal:{cnom}'[:80],
+                  accion='CONVERTIR_SOLICITUD_A_PEDIDO',
+                  tabla='portal_solicitudes', registro_id=str(sol_id),
+                  despues={'pedido_id': pedido_id, 'precio_cop': precio,
+                            'cantidad': cant_est, 'producto': producto[:120]})
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({
+        'ok': True, 'pedido_id': pedido_id, 'solicitud_id': sol_id,
+        'mensaje': f'Pedido #{pedido_id} creado en borrador · confirmalo en Mis pedidos',
+    }), 201
+
+
+@bp.route('/api/portal/badge', methods=['GET'])
+def portal_badge_cliente():
+    """Contador para badge in-app del cliente · cotizaciones respondidas no vistas.
+
+    Sebastián 25-may-2026 · Fase 3 paso 3 · cliente sabe sin refrescar
+    cuando hay respuesta del equipo. Cuenta solicitudes en estado
+    'respondida' que aún no fueron convertidas o cerradas.
+    """
+    auth = _require_portal_login()
+    if not auth:
+        return jsonify({'error': 'No autorizado'}), 401
+    cid, _cnom, _email = auth
+    conn = get_db(); cur = conn.cursor()
+    try:
+        n_cot = cur.execute(
+            "SELECT COUNT(*) FROM portal_solicitudes "
+            "WHERE cliente_id = ? AND estado = 'respondida'",
+            (cid,)).fetchone()[0] or 0
+    except Exception:
+        n_cot = 0
+    try:
+        n_pqr = cur.execute(
+            "SELECT COUNT(*) FROM portal_pqr "
+            "WHERE cliente_id = ? AND estado = 'respondido'",
+            (cid,)).fetchone()[0] or 0
+    except Exception:
+        n_pqr = 0
+    return jsonify({'cotizaciones_respondidas': int(n_cot),
+                     'pqr_respondidos': int(n_pqr),
+                     'total': int(n_cot) + int(n_pqr)})
+
+
+@bp.route('/admin/portal-rfq', methods=['GET'])
+def admin_portal_rfq_pagina():
+    """Página HTML admin para gestionar cotizaciones/muestras/ficha técnica.
+
+    Sebastián 25-may-2026 · Fase 3 paso 1 · bloqueador del flujo RFQ.
+    Hoy los endpoints existen pero Catalina no tiene UI · esta página
+    lista cotizaciones por estado, permite responder con precio + lead +
+    MOQ + validez + notas, y marcar cerradas/rechazadas.
+    """
+    if 'compras_user' not in session:
+        return ("<html><body style='font-family:system-ui;padding:48px'>"
+                 "<h2>No autorizado</h2>"
+                 "<a href='/login'>Ir a login</a></body></html>"), 401
+    user = session.get('compras_user', '')
+    if user not in (set(ADMIN_USERS) | set(COMPRAS_USERS)):
+        return ("<html><body style='font-family:system-ui;padding:48px'>"
+                 "<h2>Solo Compras/Admin</h2></body></html>"), 403
+    return _RFQ_ADMIN_HTML
+
+
+# ── HTML página admin RFQ ────────────────────────────────────────────────────
+# String constante (no f-string) · escapado JS con \\n y \\d donde aplica.
+_RFQ_ADMIN_HTML = """<!DOCTYPE html>
+<html lang="es"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cotizaciones B2B · Admin</title>
+<style>
+  *{box-sizing:border-box}
+  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+       background:#f1f5f9;margin:0;padding:0;color:#0f172a}
+  header{background:linear-gradient(135deg,#0f766e,#0891b2);color:#fff;
+         padding:18px 24px;box-shadow:0 2px 8px rgba(0,0,0,.1)}
+  header h1{margin:0;font-size:20px}
+  header .sub{font-size:13px;opacity:.85;margin-top:2px}
+  .top-bar{max-width:1400px;margin:0 auto;display:flex;justify-content:space-between;align-items:center}
+  .container{max-width:1400px;margin:18px auto;padding:0 18px}
+  .filtros{background:#fff;padding:14px 18px;border-radius:10px;
+           box-shadow:0 2px 8px rgba(0,0,0,.04);display:flex;
+           gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+  .filtros label{font-size:12px;color:#475569;font-weight:600}
+  .filtros select{padding:6px 10px;border:1px solid #cbd5e1;
+                  border-radius:6px;font-size:13px;background:#fff}
+  .filtros .stats{margin-left:auto;font-size:12px;color:#64748b}
+  .stats b{color:#0f766e}
+  .lista{background:#fff;border-radius:10px;
+         box-shadow:0 2px 8px rgba(0,0,0,.04);overflow:hidden}
+  .item{padding:14px 18px;border-bottom:1px solid #e2e8f0;
+        display:grid;grid-template-columns:80px 1fr 140px 130px 110px 130px;
+        gap:12px;align-items:center;cursor:pointer;transition:background .15s}
+  .item:hover{background:#f0fdf4}
+  .item:last-child{border-bottom:none}
+  .item .id{font-family:monospace;color:#64748b;font-size:13px;font-weight:700}
+  .item .producto{font-weight:600;color:#0f172a}
+  .item .producto .meta{font-size:11px;color:#64748b;font-weight:400;margin-top:2px}
+  .item .cliente{font-size:13px;color:#334155}
+  .item .cliente .email{font-size:11px;color:#94a3b8}
+  .item .tipo{font-size:11px;text-transform:uppercase;font-weight:700;letter-spacing:.5px}
+  .item .tipo.cotizacion{color:#0891b2}
+  .item .tipo.muestras{color:#9333ea}
+  .item .tipo.ficha_tecnica{color:#ea580c}
+  .badge{display:inline-block;padding:3px 10px;border-radius:12px;
+         font-size:11px;font-weight:700;text-transform:uppercase}
+  .b-nueva{background:#fef3c7;color:#92400e}
+  .b-en_revision{background:#dbeafe;color:#1e40af}
+  .b-respondida{background:#d1fae5;color:#065f46}
+  .b-convertida{background:#a7f3d0;color:#064e3b}
+  .b-cerrada{background:#e2e8f0;color:#475569}
+  .b-rechazada{background:#fee2e2;color:#991b1b}
+  .fecha{font-size:11px;color:#64748b}
+  .empty{padding:48px;text-align:center;color:#94a3b8}
+  .empty-ic{font-size:48px;margin-bottom:8px}
+  /* Modal */
+  .modal-bg{position:fixed;inset:0;background:rgba(15,23,42,.55);
+            display:none;align-items:flex-start;justify-content:center;
+            z-index:1000;overflow-y:auto;padding:24px 14px}
+  .modal-bg.open{display:flex}
+  .modal{background:#fff;border-radius:14px;max-width:680px;width:100%;
+         padding:24px 28px;box-shadow:0 20px 50px rgba(0,0,0,.3);margin:auto}
+  .modal h2{margin:0 0 4px;color:#0f172a;font-size:18px}
+  .modal .sub{font-size:12px;color:#64748b;margin-bottom:18px}
+  .modal .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:18px}
+  .modal .field{display:flex;flex-direction:column;gap:4px}
+  .modal label{font-size:11px;color:#475569;font-weight:700;text-transform:uppercase;letter-spacing:.5px}
+  .modal input,.modal textarea,.modal select{
+    padding:9px 11px;border:1px solid #cbd5e1;border-radius:7px;
+    font-size:13px;font-family:inherit;color:#0f172a}
+  .modal input:focus,.modal textarea:focus{outline:none;border-color:#0891b2;box-shadow:0 0 0 3px rgba(8,145,178,.15)}
+  .modal textarea{resize:vertical;min-height:70px}
+  .modal .full{grid-column:1/-1}
+  .modal .info-box{background:#f8fafc;border-left:3px solid #0891b2;
+                    padding:10px 14px;border-radius:6px;margin-bottom:14px;font-size:13px}
+  .modal .info-box b{color:#0f172a}
+  .modal .actions{display:flex;gap:10px;justify-content:flex-end;margin-top:18px}
+  .btn{padding:10px 18px;border:none;border-radius:7px;font-weight:700;font-size:13px;cursor:pointer;transition:all .15s}
+  .btn:disabled{opacity:.5;cursor:not-allowed}
+  .btn-primary{background:#0891b2;color:#fff}
+  .btn-primary:hover:not(:disabled){background:#0e7490}
+  .btn-secondary{background:#e2e8f0;color:#475569}
+  .btn-secondary:hover{background:#cbd5e1}
+  .btn-danger{background:#fee2e2;color:#991b1b}
+  .btn-danger:hover{background:#fecaca}
+  .msg{padding:10px 14px;border-radius:7px;margin-top:14px;font-size:13px;display:none}
+  .msg.ok{background:#d1fae5;color:#065f46;display:block}
+  .msg.err{background:#fee2e2;color:#991b1b;display:block}
+  .nav-back{color:#fff;text-decoration:none;font-size:13px;opacity:.85}
+  .nav-back:hover{opacity:1}
+  @media(max-width:900px){
+    .item{grid-template-columns:60px 1fr 100px;gap:8px;font-size:12px}
+    .item .tipo,.item .fecha,.item .cliente{display:none}
+    .modal .grid{grid-template-columns:1fr}
+  }
+</style></head><body>
+
+<header><div class="top-bar">
+  <div>
+    <h1>📨 Cotizaciones B2B (RFQ)</h1>
+    <div class="sub">Cotización · Muestras · Ficha técnica · clientes del portal</div>
+  </div>
+  <a href="/modulos" class="nav-back">← Módulos</a>
+</div></header>
+
+<div class="container">
+
+  <div class="filtros">
+    <label>Estado:</label>
+    <select id="f-estado">
+      <option value="">Todas</option>
+      <option value="nueva" selected>Nuevas</option>
+      <option value="en_revision">En revisión</option>
+      <option value="respondida">Respondidas</option>
+      <option value="convertida">Convertidas</option>
+      <option value="cerrada">Cerradas</option>
+      <option value="rechazada">Rechazadas</option>
+    </select>
+    <label>Tipo:</label>
+    <select id="f-tipo">
+      <option value="">Todos</option>
+      <option value="cotizacion">Cotización</option>
+      <option value="muestras">Muestras</option>
+      <option value="ficha_tecnica">Ficha técnica</option>
+    </select>
+    <button class="btn btn-secondary" onclick="cargar()">↻ Refrescar</button>
+    <div class="stats" id="stats">— solicitudes</div>
+  </div>
+
+  <div class="lista" id="lista">
+    <div class="empty">Cargando…</div>
+  </div>
+
+</div>
+
+<!-- Modal responder -->
+<div class="modal-bg" id="modal-bg">
+  <div class="modal" onclick="event.stopPropagation()">
+    <h2 id="m-titulo">Cotización #—</h2>
+    <div class="sub" id="m-sub">Cliente · producto</div>
+
+    <div class="info-box" id="m-info"></div>
+
+    <div class="grid">
+      <div class="field">
+        <label>Precio unitario (COP)</label>
+        <input type="number" id="m-precio" min="0" step="100">
+      </div>
+      <div class="field">
+        <label>Lead time (días)</label>
+        <input type="number" id="m-lead" min="0" max="365" step="1">
+      </div>
+      <div class="field">
+        <label>MOQ (mínimo)</label>
+        <input type="number" id="m-moq" min="0" step="1">
+      </div>
+      <div class="field">
+        <label>Validez oferta (días)</label>
+        <input type="number" id="m-validez" min="1" max="365" step="1" value="15">
+      </div>
+      <div class="field full">
+        <label>Notas (opcional · términos, condiciones, descuentos)</label>
+        <textarea id="m-notas" maxlength="1000" placeholder="Ej: precio incluye empaque básico · descuento 5% > 1000 unidades · pago contado"></textarea>
+      </div>
+    </div>
+
+    <div class="msg" id="m-msg"></div>
+
+    <div class="actions">
+      <button class="btn btn-danger" id="b-rechazar" onclick="cambiarEstado('rechazada')">Rechazar</button>
+      <button class="btn btn-secondary" id="b-cerrar" onclick="cambiarEstado('cerrada')">Cerrar sin respuesta</button>
+      <button class="btn btn-secondary" onclick="cerrarModal()">Cancelar</button>
+      <button class="btn btn-primary" id="b-responder" onclick="responder()">Enviar respuesta</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let _items = [];
+let _solActual = null;
+
+function fmtCop(n){
+  return new Intl.NumberFormat('es-CO',{style:'currency',currency:'COP',maximumFractionDigits:0}).format(n||0);
+}
+function escapeHtml(s){
+  if(s===null||s===undefined) return '';
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function fmtFecha(s){
+  if(!s) return '—';
+  try{ return s.substring(0,16).replace('T',' '); }catch(_){ return s; }
+}
+function csrfToken(){
+  // Token vive en /api/csrf-token (servidor) o en window._csrfTok
+  return window._csrfTok || '';
+}
+
+async function cargar(){
+  const est = document.getElementById('f-estado').value;
+  const tip = document.getElementById('f-tipo').value;
+  const params = new URLSearchParams();
+  if(est) params.set('estado', est);
+  if(tip) params.set('tipo', tip);
+  try{
+    const r = await fetch('/api/admin/portal/solicitudes?' + params.toString());
+    if(r.status === 401){ window.location.href = '/login'; return; }
+    const d = await r.json();
+    _items = d.items || [];
+    render();
+  }catch(e){
+    document.getElementById('lista').innerHTML =
+      '<div class="empty"><div class="empty-ic">⚠</div>Error: ' + escapeHtml(e.message) + '</div>';
+  }
+}
+
+function render(){
+  const lista = document.getElementById('lista');
+  const stats = document.getElementById('stats');
+  if(_items.length === 0){
+    lista.innerHTML = '<div class="empty"><div class="empty-ic">📭</div>Sin solicitudes con esos filtros</div>';
+    stats.innerHTML = '0 solicitudes';
+    return;
+  }
+  const nuevas = _items.filter(x => x.estado === 'nueva').length;
+  const resp = _items.filter(x => x.estado === 'respondida').length;
+  stats.innerHTML = '<b>' + _items.length + '</b> solicitudes · ' +
+                     '<b>' + nuevas + '</b> nuevas · <b>' + resp + '</b> respondidas';
+  lista.innerHTML = _items.map(it => {
+    const tipoTxt = {'cotizacion':'COTIZAR','muestras':'MUESTRAS','ficha_tecnica':'FICHA TÉC.'}[it.tipo] || it.tipo;
+    return '<div class="item" onclick="abrirModal('+ it.id +')">'
+      + '<div class="id">#' + it.id + '</div>'
+      + '<div class="producto">' + escapeHtml(it.producto_nombre)
+        + '<div class="meta">' + (it.cantidad_estimada||0) + ' ' + escapeHtml(it.unidad||'unidades')
+        + (it.envase_preferencia ? ' · ' + escapeHtml(it.envase_preferencia) : '')
+        + (it.fecha_requerida ? ' · necesita ' + escapeHtml(it.fecha_requerida) : '')
+        + '</div></div>'
+      + '<div class="cliente">' + escapeHtml(it.cliente_nombre||'')
+        + '<div class="email">' + escapeHtml(it.cliente_email||'') + '</div></div>'
+      + '<div class="tipo ' + it.tipo + '">' + tipoTxt + '</div>'
+      + '<div class="fecha">' + fmtFecha(it.creada_at) + '</div>'
+      + '<div><span class="badge b-' + it.estado + '">' + it.estado + '</span></div>'
+      + '</div>';
+  }).join('');
+}
+
+function abrirModal(id){
+  const it = _items.find(x => x.id === id);
+  if(!it) return;
+  _solActual = it;
+  document.getElementById('m-titulo').textContent =
+    (it.tipo === 'cotizacion' ? 'Cotización' : it.tipo === 'muestras' ? 'Muestras' : 'Ficha técnica')
+    + ' #' + it.id;
+  document.getElementById('m-sub').textContent =
+    (it.cliente_nombre||'') + ' · ' + (it.cliente_email||'');
+  const info = document.getElementById('m-info');
+  let html = '<b>Producto:</b> ' + escapeHtml(it.producto_nombre) + '<br>';
+  html += '<b>Cantidad:</b> ' + (it.cantidad_estimada||0) + ' ' + escapeHtml(it.unidad||'unidades') + '<br>';
+  if(it.envase_preferencia) html += '<b>Envase preferido:</b> ' + escapeHtml(it.envase_preferencia) + '<br>';
+  if(it.fecha_requerida) html += '<b>Necesita para:</b> ' + escapeHtml(it.fecha_requerida) + '<br>';
+  if(it.mensaje) html += '<b>Mensaje cliente:</b> ' + escapeHtml(it.mensaje);
+  info.innerHTML = html;
+
+  // Pre-cargar valores si ya tenía respuesta
+  document.getElementById('m-precio').value = it.respuesta_precio_cop || '';
+  document.getElementById('m-lead').value = it.respuesta_lead_time_dias || '';
+  document.getElementById('m-moq').value = it.respuesta_moq || '';
+  document.getElementById('m-validez').value = it.respuesta_validez_dias || 15;
+  document.getElementById('m-notas').value = it.respuesta_notas || '';
+  document.getElementById('m-msg').className = 'msg';
+  document.getElementById('m-msg').textContent = '';
+
+  // Si es muestras/ficha técnica, ocultar campos no aplicables
+  const isCot = it.tipo === 'cotizacion';
+  document.getElementById('m-precio').parentElement.style.display = isCot ? '' : 'none';
+  document.getElementById('m-moq').parentElement.style.display = isCot ? '' : 'none';
+  document.getElementById('m-validez').parentElement.style.display = isCot ? '' : 'none';
+
+  // Estados terminales · solo lectura
+  const terminal = ['convertida','cerrada','rechazada'].includes(it.estado);
+  document.getElementById('b-responder').disabled = terminal;
+  document.getElementById('b-rechazar').disabled = terminal;
+  document.getElementById('b-cerrar').disabled = terminal;
+
+  document.getElementById('modal-bg').classList.add('open');
+}
+
+function cerrarModal(){
+  document.getElementById('modal-bg').classList.remove('open');
+  _solActual = null;
+}
+
+async function responder(){
+  if(!_solActual) return;
+  const body = {};
+  const precio = parseFloat(document.getElementById('m-precio').value);
+  const lead = parseInt(document.getElementById('m-lead').value);
+  const moq = parseInt(document.getElementById('m-moq').value);
+  const validez = parseInt(document.getElementById('m-validez').value);
+  const notas = document.getElementById('m-notas').value.trim();
+  if(isFinite(precio) && precio >= 0) body.respuesta_precio_cop = precio;
+  if(isFinite(lead) && lead >= 0) body.respuesta_lead_time_dias = lead;
+  if(isFinite(moq) && moq >= 0) body.respuesta_moq = moq;
+  if(isFinite(validez) && validez > 0) body.respuesta_validez_dias = validez;
+  body.respuesta_notas = notas;
+
+  // Si es cotización, exigir precio (las muestras/ficha técnica no)
+  if(_solActual.tipo === 'cotizacion' && !(precio > 0)){
+    mostrarMsg('Precio unitario es obligatorio para cotizaciones', false);
+    return;
+  }
+
+  document.getElementById('b-responder').disabled = true;
+  try{
+    const r = await fetch('/api/admin/portal/solicitudes/' + _solActual.id, {
+      method: 'PATCH',
+      headers: {'Content-Type':'application/json','X-CSRF-Token': csrfToken()},
+      body: JSON.stringify(body),
+    });
+    const d = await r.json();
+    if(r.ok && d.ok){
+      mostrarMsg('✓ Respuesta enviada · cliente la verá al refrescar /portal', true);
+      setTimeout(() => { cerrarModal(); cargar(); }, 900);
+    }else{
+      mostrarMsg('Error: ' + (d.error || r.status), false);
+    }
+  }catch(e){
+    mostrarMsg('Error de red: ' + e.message, false);
+  }finally{
+    document.getElementById('b-responder').disabled = false;
+  }
+}
+
+async function cambiarEstado(nuevoEstado){
+  if(!_solActual) return;
+  const msg = nuevoEstado === 'rechazada'
+    ? '¿Rechazar esta solicitud? El cliente verá el estado pero no recibe respuesta detallada.'
+    : '¿Cerrar sin respuesta? Útil cuando ya se manejó por otro canal.';
+  if(!confirm(msg)) return;
+  document.getElementById('b-rechazar').disabled = true;
+  document.getElementById('b-cerrar').disabled = true;
+  try{
+    const r = await fetch('/api/admin/portal/solicitudes/' + _solActual.id, {
+      method: 'PATCH',
+      headers: {'Content-Type':'application/json','X-CSRF-Token': csrfToken()},
+      body: JSON.stringify({estado: nuevoEstado}),
+    });
+    const d = await r.json();
+    if(r.ok && d.ok){
+      mostrarMsg('✓ Estado actualizado a ' + nuevoEstado, true);
+      setTimeout(() => { cerrarModal(); cargar(); }, 700);
+    }else{
+      mostrarMsg('Error: ' + (d.error || r.status), false);
+    }
+  }catch(e){
+    mostrarMsg('Error de red: ' + e.message, false);
+  }finally{
+    document.getElementById('b-rechazar').disabled = false;
+    document.getElementById('b-cerrar').disabled = false;
+  }
+}
+
+function mostrarMsg(texto, ok){
+  const m = document.getElementById('m-msg');
+  m.textContent = texto;
+  m.className = 'msg ' + (ok ? 'ok' : 'err');
+}
+
+// Cerrar modal al click background
+document.getElementById('modal-bg').addEventListener('click', function(e){
+  if(e.target.id === 'modal-bg') cerrarModal();
+});
+
+// Cargar token CSRF
+fetch('/api/csrf-token', {credentials:'same-origin'})
+  .then(r => r.ok ? r.json() : null)
+  .then(d => { if(d && d.csrf_token) window._csrfTok = d.csrf_token; })
+  .catch(() => {});
+
+// Listeners filtros
+document.getElementById('f-estado').addEventListener('change', cargar);
+document.getElementById('f-tipo').addEventListener('change', cargar);
+
+// Carga inicial + auto-refresh cada 60s (silencioso)
+cargar();
+setInterval(function(){
+  if(!document.getElementById('modal-bg').classList.contains('open')) cargar();
+}, 60000);
+</script>
+</body></html>
+"""
 

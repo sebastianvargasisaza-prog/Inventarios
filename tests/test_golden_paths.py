@@ -7326,6 +7326,231 @@ def test_golden_portal_b2b_flujo_completo(app, db_clean):
     _exec("DELETE FROM portal_clientes_credenciales WHERE email LIKE 'test_portal_%'")
 
 
+def test_golden_portal_rfq_cotizacion_flujo(app, db_clean):
+    """Portal Fase 3 RFQ · Sebastián 25-may-2026 · cotización completa.
+
+    Cubre:
+      - Cliente crea cotización (POST /api/portal/solicitudes)
+      - Admin la ve en lista (GET /api/admin/portal/solicitudes)
+      - Admin responde con precio + lead + MOQ + validez
+      - Cliente ve respuesta (GET /api/portal/mis-solicitudes)
+      - Cliente acepta · convierte a pedido (POST /convertir-a-pedido)
+      - Cotización queda en estado='convertida' con convertida_pedido_id
+      - Badge cuenta respondidas no convertidas
+      - Aislamiento: otro cliente NO ve la cotización
+    """
+    _exec("DELETE FROM portal_solicitudes WHERE producto_nombre LIKE 'TEST_RFQ_%'")
+    _exec("DELETE FROM portal_clientes_credenciales WHERE email LIKE 'test_rfq_%'")
+    _exec("DELETE FROM pedidos_b2b WHERE creado_por LIKE 'portal:rfq:test_rfq%'")
+
+    cs_admin = _login(app, 'sebastian')
+
+    # 1) Admin crea credencial cliente RFQ
+    r = cs_admin.post('/api/admin/portal/credenciales', json={
+        'cliente_id': 'TEST_RFQ_CLI1',
+        'cliente_nombre': 'TEST_RFQ_Cli1',
+        'email': 'test_rfq_cli1@example.com',
+        'password': 'demoPassword123',
+    }, headers=csrf_headers())
+    assert r.status_code == 201
+    cred_id = r.get_json()['id']
+
+    # 2) Login cliente
+    with app.test_client() as cs_cli:
+        r2 = cs_cli.post('/api/portal/login', json={
+            'email': 'test_rfq_cli1@example.com',
+            'password': 'demoPassword123',
+        }, headers=csrf_headers())
+        assert r2.status_code == 200
+
+        # 3) Crear cotización
+        r3 = cs_cli.post('/api/portal/solicitudes', json={
+            'tipo': 'cotizacion',
+            'producto_nombre': 'TEST_RFQ_Serum_VitaminaC_500ml',
+            'cantidad_estimada': 500,
+            'unidad': 'unidades',
+            'envase_preferencia': '500ml gotero',
+            'fecha_requerida': '2026-07-15',
+            'mensaje': 'test rfq · marca privada',
+        }, headers=csrf_headers())
+        assert r3.status_code == 201, f'BUG crear RFQ: {r3.status_code} {r3.data}'
+        sol_id = r3.get_json()['id']
+        assert r3.get_json()['estado'] == 'nueva'
+
+        # 4) Tipo inválido rechaza
+        r4 = cs_cli.post('/api/portal/solicitudes', json={
+            'tipo': 'invalid_type', 'producto_nombre': 'TEST_RFQ_X',
+        }, headers=csrf_headers())
+        assert r4.status_code == 400
+
+        # 5) Producto vacío rechaza
+        r5 = cs_cli.post('/api/portal/solicitudes', json={
+            'tipo': 'cotizacion', 'producto_nombre': '',
+        }, headers=csrf_headers())
+        assert r5.status_code == 400
+
+        # 6) Cliente ve su cotización
+        r6 = cs_cli.get('/api/portal/mis-solicitudes')
+        assert r6.status_code == 200
+        ids6 = {s['id'] for s in r6.get_json()['items']}
+        assert sol_id in ids6
+
+    # 7) Admin la ve en lista (filtro nueva)
+    r7 = cs_admin.get('/api/admin/portal/solicitudes?estado=nueva')
+    assert r7.status_code == 200
+    ids7 = {s['id'] for s in r7.get_json()['items']}
+    assert sol_id in ids7
+
+    # 8) Admin responde con precio + lead + MOQ + validez + notas
+    r8 = cs_admin.patch(f'/api/admin/portal/solicitudes/{sol_id}', json={
+        'respuesta_precio_cop': 25000,
+        'respuesta_lead_time_dias': 21,
+        'respuesta_moq': 100,
+        'respuesta_validez_dias': 30,
+        'respuesta_notas': 'precio incluye empaque · pago contado',
+    }, headers=csrf_headers())
+    assert r8.status_code == 200, f'BUG responder: {r8.status_code} {r8.data}'
+
+    # 9) Cliente ve respuesta + badge cuenta 1
+    with app.test_client() as cs_cli2:
+        cs_cli2.post('/api/portal/login', json={
+            'email': 'test_rfq_cli1@example.com',
+            'password': 'demoPassword123',
+        }, headers=csrf_headers())
+        r9 = cs_cli2.get('/api/portal/mis-solicitudes')
+        items9 = r9.get_json()['items']
+        sol_resp = [s for s in items9 if s['id'] == sol_id][0]
+        assert sol_resp['estado'] == 'respondida'
+        assert float(sol_resp['respuesta_precio_cop']) == 25000.0
+        assert sol_resp['respuesta_lead_time_dias'] == 21
+        assert sol_resp['respuesta_moq'] == 100
+
+        r9b = cs_cli2.get('/api/portal/badge')
+        assert r9b.status_code == 200
+        assert r9b.get_json()['cotizaciones_respondidas'] >= 1
+
+        # 10) Cliente acepta · convierte a pedido
+        r10 = cs_cli2.post(f'/api/portal/solicitudes/{sol_id}/convertir-a-pedido',
+                            headers=csrf_headers())
+        assert r10.status_code == 201, f'BUG convertir: {r10.status_code} {r10.data}'
+        pedido_id = r10.get_json()['pedido_id']
+        assert pedido_id > 0
+
+        # 11) Reintentar convertir devuelve 409 (ya convertida)
+        r11 = cs_cli2.post(f'/api/portal/solicitudes/{sol_id}/convertir-a-pedido',
+                            headers=csrf_headers())
+        assert r11.status_code == 409
+
+        # 12) Estado ahora es 'convertida' con convertida_pedido_id
+        r12 = cs_cli2.get('/api/portal/mis-solicitudes')
+        sol_final = [s for s in r12.get_json()['items'] if s['id'] == sol_id][0]
+        assert sol_final['estado'] == 'convertida'
+        assert sol_final['convertida_pedido_id'] == pedido_id
+
+    # 13) Aislamiento: otro cliente NO ve cotización del primero
+    cs_admin.post('/api/admin/portal/credenciales', json={
+        'cliente_id': 'TEST_RFQ_CLI2',
+        'cliente_nombre': 'TEST_RFQ_Cli2',
+        'email': 'test_rfq_cli2@example.com',
+        'password': 'demoPassword123',
+    }, headers=csrf_headers())
+    with app.test_client() as cs_otro:
+        cs_otro.post('/api/portal/login', json={
+            'email': 'test_rfq_cli2@example.com',
+            'password': 'demoPassword123',
+        }, headers=csrf_headers())
+        r13 = cs_otro.get('/api/portal/mis-solicitudes')
+        ids_otro = {s['id'] for s in r13.get_json()['items']}
+        assert sol_id not in ids_otro
+
+        # 14) Otro cliente NO puede convertir cotización ajena
+        r14 = cs_otro.post(f'/api/portal/solicitudes/{sol_id}/convertir-a-pedido',
+                            headers=csrf_headers())
+        assert r14.status_code == 404
+
+    # 15) Acceso admin RFQ HTML page
+    r15 = cs_admin.get('/admin/portal-rfq')
+    assert r15.status_code == 200
+    assert b'Cotizaciones B2B' in r15.data
+
+    # Cleanup
+    _exec("DELETE FROM portal_solicitudes WHERE producto_nombre LIKE 'TEST_RFQ_%'")
+    _exec("DELETE FROM pedidos_b2b WHERE creado_por LIKE 'portal:rfq:test_rfq%'")
+    _exec("DELETE FROM portal_clientes_credenciales WHERE email LIKE 'test_rfq_%'")
+
+
+def test_golden_portal_rfq_muestras_no_convertir(app, db_clean):
+    """Portal Fase 3 · solicitud tipo='muestras' NO se puede convertir a pedido.
+
+    Solo cotizaciones convierten · muestras y ficha técnica son informativas.
+    """
+    _exec("DELETE FROM portal_solicitudes WHERE producto_nombre LIKE 'TEST_RFQ_MU_%'")
+    _exec("DELETE FROM portal_clientes_credenciales WHERE email LIKE 'test_rfq_mu_%'")
+
+    cs_admin = _login(app, 'sebastian')
+    cs_admin.post('/api/admin/portal/credenciales', json={
+        'cliente_id': 'TEST_RFQ_MU',
+        'cliente_nombre': 'TEST_RFQ_Mu',
+        'email': 'test_rfq_mu@example.com',
+        'password': 'demoPassword123',
+    }, headers=csrf_headers())
+
+    with app.test_client() as cs_cli:
+        cs_cli.post('/api/portal/login', json={
+            'email': 'test_rfq_mu@example.com',
+            'password': 'demoPassword123',
+        }, headers=csrf_headers())
+        r1 = cs_cli.post('/api/portal/solicitudes', json={
+            'tipo': 'muestras',
+            'producto_nombre': 'TEST_RFQ_MU_Crema',
+        }, headers=csrf_headers())
+        assert r1.status_code == 201
+        sol_id = r1.get_json()['id']
+
+        # Admin responde
+        cs_admin.patch(f'/api/admin/portal/solicitudes/{sol_id}', json={
+            'estado': 'respondida',
+            'respuesta_notas': 'enviadas 3 muestras por correo el 15-jul',
+        }, headers=csrf_headers())
+
+        # Convertir DEBE fallar · tipo != cotizacion
+        r2 = cs_cli.post(f'/api/portal/solicitudes/{sol_id}/convertir-a-pedido',
+                          headers=csrf_headers())
+        assert r2.status_code == 400
+        assert 'cotizacion' in r2.get_json()['error'].lower() or 'muestras' in r2.get_json()['error'].lower()
+
+    _exec("DELETE FROM portal_solicitudes WHERE producto_nombre LIKE 'TEST_RFQ_MU_%'")
+    _exec("DELETE FROM portal_clientes_credenciales WHERE email LIKE 'test_rfq_mu_%'")
+
+
+def test_golden_portal_rfq_sin_login_401(app, db_clean):
+    """Portal Fase 3 · endpoints RFQ requieren login portal."""
+    with app.test_client() as cs_anon:
+        # Sin login portal
+        r1 = cs_anon.post('/api/portal/solicitudes', json={
+            'tipo': 'cotizacion', 'producto_nombre': 'X',
+        }, headers=csrf_headers())
+        assert r1.status_code == 401
+
+        r2 = cs_anon.get('/api/portal/mis-solicitudes')
+        assert r2.status_code == 401
+
+        r3 = cs_anon.post('/api/portal/solicitudes/1/convertir-a-pedido',
+                          headers=csrf_headers())
+        assert r3.status_code == 401
+
+        r4 = cs_anon.get('/api/portal/badge')
+        assert r4.status_code == 401
+
+    # Endpoint admin sin login admin
+    with app.test_client() as cs_anon:
+        r5 = cs_anon.get('/api/admin/portal/solicitudes')
+        assert r5.status_code in (401, 403)
+
+        r6 = cs_anon.get('/admin/portal-rfq')
+        assert r6.status_code in (401, 302)
+
+
 def test_golden_pendientes_final_mybatch_cde(app, db_clean):
     """Pendientes finales · 21-may-2026 · MyBatch Sprints C+D+E."""
     cs = _login(app, 'sebastian')
