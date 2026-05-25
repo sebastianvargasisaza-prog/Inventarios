@@ -312,6 +312,16 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (176, "produccion_programada.distribucion_resumen · etiqueta DTC+B2B legible · Sebastián 24-may-2026 noche", [
+        # FEATURE 24-may-2026 noche · Sebastián: 'que salga aquí la
+        # observación 1000 unidades para fernando mesa/kelly guerra · que
+        # sea automático diciendo como queda distribuido el lote'.
+        # Antes el lote tenía la info dispersa en observaciones (string
+        # concatenado por cada operación). Ahora una columna dedicada que
+        # se regenera al cambiar aportes B2B con el desglose limpio:
+        # "DTC: 150 kg + Fernando Mesa: 350 kg + Kelly Guerra: 150 kg"
+        "ALTER TABLE produccion_programada ADD COLUMN distribucion_resumen TEXT DEFAULT ''",
+    ]),
     (175, "índice formula_items(producto_nombre) · perf Abastecimiento · Sebastián 24-may-2026 noche", [
         # AUDITORÍA Abastecimiento 24-may-2026 · agente reportó: JOIN
         # formula_headers↔formula_items por producto_nombre hace full

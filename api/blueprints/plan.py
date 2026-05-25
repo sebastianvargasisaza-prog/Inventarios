@@ -817,6 +817,66 @@ def crear_pedido_b2b():
                     "mp_check": mp_check}), 201
 
 
+def _regenerar_distribucion_lote(cur, lote_id):
+    """Regenera la etiqueta distribucion_resumen del lote con desglose
+    DTC + cada aporte B2B. Llamar después de cada INSERT/DELETE en
+    pedidos_b2b_lote para mantener la observación al día.
+
+    Formato salida:
+      'DTC: 150 kg + Fernando Mesa: 350 kg + Kelly Guerra: 150 kg
+       · TOTAL 650 kg · 3 partes'
+    """
+    if not lote_id:
+        return
+    try:
+        # Total del lote
+        row = cur.execute(
+            "SELECT COALESCE(cantidad_kg, 0) FROM produccion_programada WHERE id = ?",
+            (lote_id,),
+        ).fetchone()
+        if not row:
+            return
+        kg_total = float(row[0] or 0)
+        # Aportes B2B agrupados por cliente
+        aportes = cur.execute(
+            """SELECT COALESCE(cliente_nombre, '') AS cli,
+                      SUM(kg_aporte) AS kg,
+                      COUNT(*) AS n_pedidos
+               FROM pedidos_b2b_lote
+               WHERE lote_produccion_id = ?
+               GROUP BY COALESCE(cliente_nombre, '')
+               ORDER BY SUM(kg_aporte) DESC""",
+            (lote_id,),
+        ).fetchall()
+        partes = []
+        kg_b2b_total = 0.0
+        for cli, kg, n in aportes:
+            kg_f = float(kg or 0)
+            if kg_f <= 0:
+                continue
+            label = (cli or 'B2B sin nombre')
+            n_pedidos = int(n or 0)
+            sufijo = f' ({n_pedidos} pedidos)' if n_pedidos > 1 else ''
+            partes.append(f'{label}: {kg_f:.1f} kg{sufijo}')
+            kg_b2b_total += kg_f
+        kg_dtc = max(kg_total - kg_b2b_total, 0)
+        # Si no hay aportes B2B, el lote es 100% DTC
+        if not partes:
+            resumen = f'DTC: {kg_total:.1f} kg · 1 parte'
+        else:
+            if kg_dtc > 0.01:
+                resumen = f'DTC: {kg_dtc:.1f} kg + ' + ' + '.join(partes)
+            else:
+                resumen = ' + '.join(partes)
+            resumen += f' · TOTAL {kg_total:.1f} kg · {len(partes) + (1 if kg_dtc > 0.01 else 0)} partes'
+        cur.execute(
+            "UPDATE produccion_programada SET distribucion_resumen = ? WHERE id = ?",
+            (resumen[:500], lote_id),
+        )
+    except Exception:
+        pass  # mig 176 no aplicada · skip
+
+
 def _integrar_pedido_b2b_al_plan(cur, pedido_id, producto, kg_b2b,
                                    fecha_estimada, cliente_nombre, user,
                                    unidades=0, ml_unidad=0, envase_codigo=''):
@@ -904,6 +964,8 @@ def _integrar_pedido_b2b_al_plan(cur, pedido_id, producto, kg_b2b,
                   tabla="produccion_programada", registro_id=lid,
                   despues={"pedido_b2b": pedido_id, "kg_sumados": kg_b2b,
                            "kg_total": nuevo_kg})
+        # FEATURE 24-may noche · regenerar etiqueta de distribución legible
+        _regenerar_distribucion_lote(cur, lid)
         return {"modo": "sumado_a_lote_canonico", "lote_id": lid,
                 "fecha": (lfecha or "")[:10], "kg_total": nuevo_kg,
                 "kg_b2b": kg_b2b}
@@ -940,6 +1002,7 @@ def _integrar_pedido_b2b_al_plan(cur, pedido_id, producto, kg_b2b,
               tabla="produccion_programada", registro_id=nuevo_lote,
               despues={"pedido_b2b": pedido_id, "producto": producto,
                        "kg": kg_b2b, "fecha": f_real.isoformat()})
+    _regenerar_distribucion_lote(cur, nuevo_lote)
     return {"modo": "lote_dedicado", "lote_id": nuevo_lote,
             "fecha": f_real.isoformat(), "kg_b2b": kg_b2b}
 
@@ -1038,11 +1101,21 @@ def _revertir_pedido_b2b_del_plan(cur, pedido_id, user):
              "origen_restaurado": (not vivos)})
     # Trazabilidad estructurada (mig 171) · limpiar links del pedido
     # cancelado. Si después se re-crea, el INSERT OR REPLACE lo restituye.
+    lotes_a_regenerar = []
     try:
+        # Antes de borrar, capturar qué lotes quedan afectados
+        for (lid,) in cur.execute(
+            "SELECT DISTINCT lote_produccion_id FROM pedidos_b2b_lote WHERE pedido_b2b_id = ?",
+            (pedido_id,),
+        ).fetchall():
+            lotes_a_regenerar.append(lid)
         cur.execute("DELETE FROM pedidos_b2b_lote WHERE pedido_b2b_id = ?",
                     (pedido_id,))
     except Exception:
         pass
+    # Regenerar etiqueta de los lotes que perdieron aportes
+    for lid in lotes_a_regenerar:
+        _regenerar_distribucion_lote(cur, lid)
     return resultado
 
 
@@ -3045,15 +3118,31 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
     # programado / esperando_recurso / pendiente · ordenadas por fecha
     plan_por_producto = {}
     lote_ids_para_b2b = []
-    for r in c.execute(
-        """SELECT pp.producto, pp.id, pp.fecha_programada, pp.estado,
-                  pp.origen, COALESCE(pp.cantidad_kg, 0),
-                  pp.motivo_pausa, pp.pausado_at, pp.observaciones
-           FROM produccion_programada pp
-           WHERE pp.estado IN ('pendiente','programado','en_curso','esperando_recurso')
-             AND pp.fin_real_at IS NULL
-           ORDER BY pp.fecha_programada ASC""",
-    ).fetchall():
+    # FEATURE 24-may noche · agregar distribucion_resumen al SELECT con
+    # COALESCE para soportar BDs antes de mig 176.
+    try:
+        prod_rows_plan = c.execute(
+            """SELECT pp.producto, pp.id, pp.fecha_programada, pp.estado,
+                      pp.origen, COALESCE(pp.cantidad_kg, 0),
+                      pp.motivo_pausa, pp.pausado_at, pp.observaciones,
+                      COALESCE(pp.distribucion_resumen, '')
+               FROM produccion_programada pp
+               WHERE pp.estado IN ('pendiente','programado','en_curso','esperando_recurso')
+                 AND pp.fin_real_at IS NULL
+               ORDER BY pp.fecha_programada ASC""",
+        ).fetchall()
+    except Exception:
+        # Fallback si mig 176 aún no aplicada
+        prod_rows_plan = [tuple(list(r) + ['']) for r in c.execute(
+            """SELECT pp.producto, pp.id, pp.fecha_programada, pp.estado,
+                      pp.origen, COALESCE(pp.cantidad_kg, 0),
+                      pp.motivo_pausa, pp.pausado_at, pp.observaciones
+               FROM produccion_programada pp
+               WHERE pp.estado IN ('pendiente','programado','en_curso','esperando_recurso')
+                 AND pp.fin_real_at IS NULL
+               ORDER BY pp.fecha_programada ASC""",
+        ).fetchall()]
+    for r in prod_rows_plan:
         prod_nombre = (r[0] or "").strip()
         if not prod_nombre:
             continue
@@ -3068,6 +3157,7 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
             "motivo_pausa": r[6],
             "pausado_at": r[7],
             "obs_preview": (r[8] or "")[:80],
+            "distribucion_resumen": (r[9] or "")[:300],
         })
 
     # FEATURE B2B 24-may-2026 · enriquecer cada lote con su desglose B2B
@@ -6560,6 +6650,8 @@ def pedidos_b2b_asignar_a_animus(pid):
               despues={'lote_animus_id': lote_animus_id,
                         'lote_fecha': lote_fecha,
                         'kg_sumados': kg_b2b})
+    # FEATURE 24-may noche · regenerar etiqueta de distribución
+    _regenerar_distribucion_lote(cur, lote_animus_id)
     conn.commit()
 
     # Re-leer total del lote post-suma
@@ -6576,6 +6668,48 @@ def pedidos_b2b_asignar_a_animus(pid):
         'kg_total_lote': float(row_post[0] or 0) if row_post else 0,
         'mensaje': f'Pedido asignado al lote Animus DTC #{lote_animus_id} ({lote_fecha}) · +{kg_b2b}kg',
     })
+
+
+@bp.route("/api/admin/lotes/regenerar-distribucion", methods=["POST"])
+def admin_lotes_regenerar_distribucion():
+    """Sebastián 24-may noche · regenera distribucion_resumen para
+    TODOS los lotes activos con aportes B2B. Útil para back-fill de
+    lotes que existían antes de que el helper se llamara automáticamente.
+    """
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+    conn = get_db(); cur = conn.cursor()
+    regenerados = 0
+    try:
+        # Todos los lotes con al menos 1 aporte B2B + lotes activos sin aporte
+        lote_ids = set()
+        try:
+            for (lid,) in cur.execute(
+                "SELECT DISTINCT lote_produccion_id FROM pedidos_b2b_lote"
+            ).fetchall():
+                lote_ids.add(lid)
+        except Exception:
+            pass
+        # Agregar también lotes activos sin aportes para que muestren 100% DTC
+        for (lid,) in cur.execute(
+            """SELECT id FROM produccion_programada
+               WHERE LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado')
+                 AND fin_real_at IS NULL
+                 AND COALESCE(distribucion_resumen,'') = ''"""
+        ).fetchall():
+            lote_ids.add(lid)
+        for lid in lote_ids:
+            _regenerar_distribucion_lote(cur, lid)
+            regenerados += 1
+        audit_log(cur, usuario=user, accion='B2B_REGEN_DISTRIBUCION',
+                  tabla='produccion_programada', registro_id='bulk',
+                  despues={'regenerados': regenerados})
+        conn.commit()
+    except Exception as e:
+        return jsonify({'error': str(e)[:200]}), 500
+    return jsonify({'ok': True, 'regenerados': regenerados})
 
 
 @bp.route("/api/admin/clientes-b2b/migrar-desde-maquila", methods=["POST"])

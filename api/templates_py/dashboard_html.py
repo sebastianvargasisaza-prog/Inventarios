@@ -22123,7 +22123,22 @@ async function ckMarcar(itemId, estado){
       'eos_plan': '🆕', 'eos_canonico': '🔁', 'eos_retroactivo': '📜',
       'calendar': '📆', 'manual': '✋',
     };
-    let html = '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:11px">';
+    // FEATURE 24-may noche · primer bloque: distribución textual completa
+    // de cada lote (DTC + B2B desglosado). El chip morado tiene tooltip
+    // pero el usuario quería verlo a primera vista · ahora una línea
+    // dedicada por lote con la etiqueta automática.
+    let header = '<div style="margin-bottom:6px">';
+    lotes.forEach(lt => {
+      if (lt.distribucion_resumen) {
+        const fechaCorta = (lt.fecha || '').slice(5, 10);
+        header += '<div style="background:#fdf4ff;border-left:3px solid #7e22ce;border-radius:5px;padding:6px 10px;margin-bottom:4px;font-size:11px;color:#475569">'
+                + '<strong style="color:#7e22ce">📦 ' + fechaCorta + '</strong> · '
+                + escapeHtmlNec(lt.distribucion_resumen) + '</div>';
+      }
+    });
+    header += '</div>';
+    let html = (header.indexOf('📦') >= 0 ? header : '');
+    html += '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:11px">';
     html += '<span style="color:#64748b;font-weight:700">📋 Lotes:</span>';
     lotes.forEach(lt => {
       const cfg = PEC_ESTADO_COLORS[lt.estado] || {bg:'#e2e8f0', text:'#475569', emoji:''};
