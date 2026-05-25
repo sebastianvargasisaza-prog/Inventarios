@@ -7717,25 +7717,66 @@ def conteo_cerrar(conteo_id):
             lote_obj = lote_real or f'AJUSTE-CICLICO-{conteo_id}'
             obs = (f"Ajuste automático conteo cíclico #{conteo_id} | "
                    f"Causa: {causa or 'no indicada'} | Cerrado por: {user}")
-            c.execute("""INSERT INTO movimientos
-                         (material_id, material_nombre, cantidad, tipo, fecha,
-                          observaciones, lote, estanteria, estado_lote, operador)
-                         VALUES (?,?,?,?,datetime('now', '-5 hours'),?,?,?,'VIGENTE',?)""",
-                      (codigo, nombre, abs(diff), tipo_mov, obs,
-                       lote_obj, estant or '', user))
+            # FIX 24-may noche · Sebastián: 'si modifican aquí se refleje
+            # en bodega de MP y MEE'. Antes solo INSERT a movimientos (MP).
+            # Si el código es MEE, el INSERT en MP era invisible y MEE
+            # quedaba sin ajustar. Ahora detectar tipo material:
+            #  - existe en maestro_mee → INSERT movimientos_mee + helper
+            #    canónico que actualiza stock_actual atómicamente.
+            #  - sino → INSERT movimientos (kardex MP).
+            es_mee = False
+            try:
+                mee_row = c.execute(
+                    "SELECT 1 FROM maestro_mee WHERE UPPER(TRIM(codigo)) = UPPER(TRIM(?))",
+                    (codigo,),
+                ).fetchone()
+                es_mee = bool(mee_row)
+            except Exception:
+                es_mee = False
+            if es_mee:
+                # Aplicar al kardex MEE (movimientos_mee + stock_actual cache).
+                try:
+                    from inventario_helpers import aplicar_movimiento_mee
+                    aplicar_movimiento_mee(
+                        conn, codigo, tipo_mov, abs(diff),
+                        observaciones=obs, responsable=user,
+                        lote_ref=str(conteo_id), batch_ref=lote_obj or '',
+                    )
+                except Exception as _e_mee:
+                    # Fallback: INSERT directo en movimientos_mee si helper falla
+                    try:
+                        c.execute(
+                            """INSERT INTO movimientos_mee
+                                 (mee_codigo, descripcion, tipo, cantidad,
+                                  fecha, observaciones, lote_ref, batch_ref, responsable, anulado)
+                               VALUES (?,?,?,?,datetime('now', '-5 hours'),?,?,?,?,0)""",
+                            (codigo, nombre, tipo_mov, abs(diff),
+                             obs, str(conteo_id), lote_obj or '', user),
+                        )
+                    except Exception:
+                        pass
+            else:
+                # Kardex MP (movimientos) · comportamiento original
+                c.execute("""INSERT INTO movimientos
+                             (material_id, material_nombre, cantidad, tipo, fecha,
+                              observaciones, lote, estanteria, estado_lote, operador)
+                             VALUES (?,?,?,?,datetime('now', '-5 hours'),?,?,?,'VIGENTE',?)""",
+                          (codigo, nombre, abs(diff), tipo_mov, obs,
+                           lote_obj, estant or '', user))
             c.execute("UPDATE conteo_items SET ajuste_aplicado=1 WHERE id=?", (it_id,))
             try:
                 c.execute("""INSERT INTO audit_log
                              (usuario, accion, tabla, registro_id, detalle, ip, fecha)
                              VALUES (?,?,?,?,?,?,datetime('now', '-5 hours'))""",
                           (user, 'AJUSTE_INVENTARIO_AUTO', 'conteo_items', str(it_id),
-                           f'MP:{codigo} Diff:{diff}g Auto:<5% Causa:{causa or "n/a"}',
+                           f'{"MEE" if es_mee else "MP"}:{codigo} Diff:{diff}g Auto:<5% Causa:{causa or "n/a"}',
                            request.remote_addr if request else ''))
             except sqlite3.OperationalError:
                 pass  # audit_log puede no existir en versiones viejas
             auto_ajustados.append({
                 'item_id': it_id, 'codigo_mp': codigo, 'nombre': nombre,
                 'diferencia_g': diff, 'tipo': tipo_mov,
+                'kardex': 'MEE' if es_mee else 'MP',
             })
 
         c.execute("""UPDATE conteos_fisicos
@@ -7895,10 +7936,41 @@ def conteo_ajustar(conteo_id):
     lote_objetivo = (it.get('lote') or '').strip() or f'AJUSTE-{conteo_id}'
     obs = (f'Ajuste inventario ciclico #{conteo_id} - '
            f'{it.get("causa_diferencia","Sin causa")} - Aprobado: {user}')
-    c.execute("""INSERT INTO movimientos (material_id,material_nombre,cantidad,tipo,fecha,observaciones,lote,estanteria,estado_lote,operador)
-                 VALUES (?,?,?,?,datetime('now', '-5 hours'),?,?,?,'VIGENTE',?)""",
-              (it['codigo_mp'], it['nombre_mp'], abs(diff), tipo_mov, obs,
-               lote_objetivo, it.get('estanteria',''), user))
+    # FIX 24-may noche · si el item es MEE, ajustar en movimientos_mee.
+    es_mee_a = False
+    try:
+        mee_row_a = c.execute(
+            "SELECT 1 FROM maestro_mee WHERE UPPER(TRIM(codigo)) = UPPER(TRIM(?))",
+            (it['codigo_mp'],),
+        ).fetchone()
+        es_mee_a = bool(mee_row_a)
+    except Exception:
+        es_mee_a = False
+    if es_mee_a:
+        try:
+            from inventario_helpers import aplicar_movimiento_mee
+            aplicar_movimiento_mee(
+                conn, it['codigo_mp'], tipo_mov, abs(diff),
+                observaciones=obs, responsable=user,
+                lote_ref=str(conteo_id), batch_ref=lote_objetivo or '',
+            )
+        except Exception:
+            try:
+                c.execute(
+                    """INSERT INTO movimientos_mee
+                         (mee_codigo, descripcion, tipo, cantidad,
+                          fecha, observaciones, lote_ref, batch_ref, responsable, anulado)
+                       VALUES (?,?,?,?,datetime('now', '-5 hours'),?,?,?,?,0)""",
+                    (it['codigo_mp'], it['nombre_mp'], tipo_mov, abs(diff),
+                     obs, str(conteo_id), lote_objetivo or '', user),
+                )
+            except Exception:
+                pass
+    else:
+        c.execute("""INSERT INTO movimientos (material_id,material_nombre,cantidad,tipo,fecha,observaciones,lote,estanteria,estado_lote,operador)
+                     VALUES (?,?,?,?,datetime('now', '-5 hours'),?,?,?,'VIGENTE',?)""",
+                  (it['codigo_mp'], it['nombre_mp'], abs(diff), tipo_mov, obs,
+                   lote_objetivo, it.get('estanteria',''), user))
     # ajuste_aplicado=1 ya seteado en el atomic claim arriba (FIX-B2)
     c.execute("INSERT INTO audit_log (usuario,accion,tabla,registro_id,detalle,ip,fecha) VALUES (?,?,?,?,?,?,datetime('now', '-5 hours'))",
               (user, 'AJUSTE_INVENTARIO', 'conteo_items', str(item_id),
@@ -7936,6 +8008,250 @@ def conteo_historial():
     rows = c.fetchall()
     cols = ['id','numero','estanteria','fecha_inicio','fecha_cierre','estado','responsable','total_items','items_diferencia','items_gerencia']
     return jsonify([dict(zip(cols, r)) for r in rows])
+
+@bp.route('/planta/conteo-ciclico', methods=['GET'])
+def planta_conteo_ciclico_pagina():
+    """Sebastián 24-may noche · UI inventario cíclico responsive (tablet
+    + móvil). El operario entra en la bodega con dispositivo móvil,
+    elige estantería, ve la lista de MPs con stock_sistema, ingresa
+    el stock_físico, guarda. Cierre opcional aplica ajustes <5% auto.
+
+    Mobile-first · inputs grandes · sticky header · auto-save por blur.
+    Reusa endpoints existentes /api/conteo/*.
+    """
+    if 'compras_user' not in session:
+        return "<html><body><h2>Logueate primero en <a href='/'>app.eossuite.com</a></h2></body></html>", 401
+    return """<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Conteo Cíclico · Bodega</title>
+<style>
+  *{box-sizing:border-box}
+  body{font-family:system-ui,-apple-system,Arial;background:#f1f5f9;margin:0;padding:0;font-size:15px}
+  .top{position:sticky;top:0;background:#0f766e;color:#fff;padding:12px 16px;z-index:100;box-shadow:0 2px 8px rgba(0,0,0,.15)}
+  .top h1{margin:0;font-size:17px;font-weight:700}
+  .top .sub{font-size:11px;opacity:.9;margin-top:2px}
+  .container{padding:14px;max-width:900px;margin:0 auto}
+  .card{background:#fff;border-radius:10px;padding:14px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+  .btn{display:inline-block;padding:14px 24px;border-radius:10px;border:none;font-size:15px;font-weight:700;cursor:pointer;text-align:center;text-decoration:none;width:100%}
+  .btn-prim{background:#0f766e;color:#fff}
+  .btn-warn{background:#ea580c;color:#fff}
+  .btn-danger{background:#dc2626;color:#fff}
+  .btn-sec{background:#e2e8f0;color:#475569}
+  label{display:block;font-size:11px;color:#64748b;margin-bottom:4px;font-weight:700;text-transform:uppercase}
+  select,input{width:100%;padding:14px 12px;font-size:16px;border:2px solid #cbd5e1;border-radius:8px;font-family:inherit}
+  input[type=number]{font-family:ui-monospace,monospace;text-align:right;font-size:18px;font-weight:700}
+  .mp-row{padding:12px;border:1px solid #e2e8f0;border-radius:10px;margin-bottom:10px;background:#fff;transition:background .2s}
+  .mp-row.dirty{background:#fef9c3;border-color:#ca8a04}
+  .mp-row.saved{background:#dcfce7;border-color:#16a34a}
+  .mp-row.diff-big{background:#fee2e2;border-color:#dc2626}
+  .mp-info{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;flex-wrap:wrap;gap:6px}
+  .mp-cod{font-family:ui-monospace,monospace;font-weight:800;color:#1e293b;font-size:13px}
+  .mp-nom{font-size:14px;color:#1e293b;font-weight:600;margin-top:2px}
+  .mp-meta{font-size:11px;color:#64748b;font-family:ui-monospace,monospace}
+  .mp-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .stock-box{background:#f8fafc;padding:10px;border-radius:8px;text-align:center}
+  .stock-box .val{font-size:22px;font-weight:800;color:#1e293b;font-family:ui-monospace,monospace}
+  .stock-box .lbl{font-size:10px;color:#64748b;text-transform:uppercase;margin-top:2px}
+  .diff{font-weight:800;font-family:ui-monospace,monospace}
+  .diff.pos{color:#15803d} .diff.neg{color:#991b1b}
+  .progress{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:2px solid #e2e8f0;padding:12px 16px;z-index:90;display:flex;gap:8px}
+  .progress .info{flex:1;font-size:12px;color:#475569}
+  .progress strong{color:#0f766e;font-size:16px}
+  .toast{position:fixed;top:60px;left:50%;transform:translateX(-50%);background:#15803d;color:#fff;padding:10px 20px;border-radius:8px;font-weight:700;z-index:200;display:none}
+  .toast.err{background:#dc2626}
+  @media(max-width:480px){.mp-grid{grid-template-columns:1fr}}
+</style></head>
+<body>
+<div class="top">
+  <h1>📦 Conteo Cíclico de Bodega</h1>
+  <div class="sub" id="top-sub">Selecciona estantería para empezar</div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<div class="container" id="vista-inicio">
+  <div class="card">
+    <label>Estantería a contar</label>
+    <select id="sel-est"><option value="">— elegir —</option></select>
+  </div>
+  <div class="card">
+    <label>Tu nombre (responsable)</label>
+    <input id="responsable" type="text" placeholder="Tu nombre">
+  </div>
+  <button class="btn btn-prim" onclick="iniciarConteo()">▶ Iniciar conteo</button>
+  <div style="margin-top:14px"><a href="/" class="btn btn-sec">← Volver al dashboard</a></div>
+</div>
+
+<div class="container" id="vista-conteo" style="display:none;padding-bottom:80px">
+  <div class="card" style="background:#fef3c7;border-left:5px solid #ca8a04">
+    <strong>Conteo #<span id="cnt-num"></span></strong> · Estantería <strong id="cnt-est"></strong><br>
+    <span style="font-size:11px;color:#64748b">Stock sistema = lo que dice el kardex · Stock físico = lo que CONTAS en bodega · diferencia automática</span>
+  </div>
+  <input type="text" id="filtro" placeholder="🔍 Filtrar por código o nombre…" oninput="filtrar()" style="margin-bottom:10px">
+  <div id="lista-mps"></div>
+</div>
+
+<div class="progress" id="progress" style="display:none">
+  <div class="info"><strong id="prog-cont">0</strong> de <strong id="prog-total">0</strong> contados · <strong id="prog-diff" style="color:#dc2626">0</strong> con diferencia</div>
+  <button class="btn btn-prim" style="padding:10px 16px;width:auto" onclick="guardarTodo()">💾 Guardar</button>
+  <button class="btn btn-danger" style="padding:10px 16px;width:auto" onclick="cerrarConteo()">✓ Cerrar</button>
+</div>
+
+<script>
+let CONTEO_ID=null, CONTEO_NUM='', EST='';
+let ITEMS=[]; // {codigo_mp, nombre, stock_sistema, lote, ...}
+let STOCK_FISICO={}; // codigo_lote -> valor
+
+function toast(msg, err){
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.className='toast'+(err?' err':'');
+  t.style.display='block'; setTimeout(()=>{t.style.display='none'},3000);
+}
+
+async function cargarEstanterias(){
+  try{
+    const r=await fetch('/api/conteo/estanterias');
+    const d=await r.json();
+    const sel=document.getElementById('sel-est');
+    (d.items||d||[]).forEach(e=>{
+      const o=document.createElement('option');
+      o.value=typeof e==='string'?e:e.estanteria;
+      o.textContent=(typeof e==='string'?e:e.estanteria)+(e.n_mps?' ('+e.n_mps+' MPs)':'');
+      sel.appendChild(o);
+    });
+  }catch(e){toast('Error cargando estanterías',true)}
+}
+
+async function iniciarConteo(){
+  EST=document.getElementById('sel-est').value;
+  const resp=document.getElementById('responsable').value.trim();
+  if(!EST){toast('Elegí estantería',true);return}
+  if(!resp){toast('Poné tu nombre',true);return}
+  try{
+    const r=await fetch('/api/conteo/iniciar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({estanteria:EST,responsable:resp})});
+    const d=await r.json();
+    if(!r.ok){toast('Error: '+(d.error||r.status),true);return}
+    CONTEO_ID=d.conteo_id; CONTEO_NUM=d.numero;
+    document.getElementById('cnt-num').textContent=d.numero;
+    document.getElementById('cnt-est').textContent=EST;
+    document.getElementById('top-sub').textContent=d.numero+' · '+EST+(d.resuming?' (retomado)':' (nuevo)');
+    await cargarMPs();
+    document.getElementById('vista-inicio').style.display='none';
+    document.getElementById('vista-conteo').style.display='block';
+    document.getElementById('progress').style.display='flex';
+  }catch(e){toast('Error red: '+e.message,true)}
+}
+
+async function cargarMPs(){
+  const r=await fetch('/api/conteo/materiales?estanteria='+encodeURIComponent(EST));
+  const d=await r.json();
+  ITEMS=d.items||[];
+  // Si el conteo se está retomando, recuperar valores guardados previamente
+  try{
+    const r2=await fetch('/api/conteo/'+CONTEO_ID+'/items');
+    const d2=await r2.json();
+    (d2.items||[]).forEach(it=>{
+      if(it.stock_fisico!=null && it.stock_fisico!==''){
+        const k=it.codigo_mp+'|'+(it.lote||'');
+        STOCK_FISICO[k]=it.stock_fisico;
+      }
+    });
+  }catch(e){}
+  renderItems();
+}
+
+function renderItems(){
+  const filtro=(document.getElementById('filtro').value||'').toLowerCase().trim();
+  const cont=document.getElementById('lista-mps');
+  cont.innerHTML='';
+  let contados=0, diffs=0;
+  ITEMS.forEach((it,idx)=>{
+    const k=it.codigo_mp+'|'+(it.lote||'');
+    const fis=STOCK_FISICO[k];
+    if(filtro){
+      const blob=(it.codigo_mp+' '+(it.nombre||'')+' '+(it.lote||'')).toLowerCase();
+      if(blob.indexOf(filtro)<0)return;
+    }
+    const diff=(fis!=null && fis!=='')?(fis - it.stock_sistema):null;
+    const pctDiff=(diff!=null && it.stock_sistema>0)?Math.abs(diff/it.stock_sistema)*100:0;
+    const cls = (fis==null||fis==='')?'':((pctDiff>5)?'mp-row diff-big':'mp-row saved');
+    if(fis!=null && fis!=='') contados++;
+    if(diff!=null && Math.abs(diff)>0.1) diffs++;
+    const diffHtml = diff===null?'<span style="color:#94a3b8">—</span>':
+      ('<span class="diff '+(diff>=0?'pos':'neg')+'">'+(diff>=0?'+':'')+diff.toFixed(1)+(pctDiff>5?' ⚠ '+pctDiff.toFixed(1)+'%':'')+'</span>');
+    cont.insertAdjacentHTML('beforeend',
+      '<div class="'+(cls||'mp-row')+'" data-idx="'+idx+'">'
+      +'<div class="mp-info"><div><div class="mp-cod">'+esc(it.codigo_mp)+'</div><div class="mp-nom">'+esc(it.nombre||'')+'</div>'
+      +'<div class="mp-meta">Lote: '+esc(it.lote||'—')+(it.fecha_vencimiento?' · vence '+it.fecha_vencimiento.slice(0,10):'')+'</div></div></div>'
+      +'<div class="mp-grid">'
+      +'<div class="stock-box"><div class="val">'+formatNum(it.stock_sistema)+'</div><div class="lbl">Sistema (g)</div></div>'
+      +'<div><label>Stock físico (g)</label><input type="number" inputmode="decimal" min="0" step="0.01" value="'+(fis!=null?fis:'')+'" placeholder="contá y escribí" onchange="setFisico('+idx+',this.value)" onfocus="this.select()"></div>'
+      +'</div>'
+      +'<div style="margin-top:8px;text-align:center;font-size:13px">Diferencia: '+diffHtml+'</div>'
+      +'</div>');
+  });
+  document.getElementById('prog-cont').textContent=contados;
+  document.getElementById('prog-total').textContent=ITEMS.length;
+  document.getElementById('prog-diff').textContent=diffs;
+}
+
+function setFisico(idx,val){
+  const it=ITEMS[idx];
+  const k=it.codigo_mp+'|'+(it.lote||'');
+  if(val===''||val==null){delete STOCK_FISICO[k]; renderItems(); return}
+  const n=parseFloat(val);
+  if(isNaN(n)||n<0){toast('Valor inválido',true);return}
+  STOCK_FISICO[k]=n;
+  renderItems();
+}
+
+function filtrar(){renderItems()}
+
+async function guardarTodo(){
+  if(!CONTEO_ID)return;
+  const payload={items:ITEMS.map(it=>{
+    const k=it.codigo_mp+'|'+(it.lote||'');
+    const fis=STOCK_FISICO[k];
+    return {
+      codigo_mp:it.codigo_mp, nombre:it.nombre, lote:it.lote||'',
+      stock_sistema:it.stock_sistema, stock_fisico:(fis!=null?fis:''),
+      estanteria:EST, precio_ref:it.precio_ref||0,
+    };
+  })};
+  try{
+    const r=await fetch('/api/conteo/'+CONTEO_ID+'/guardar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    const d=await r.json();
+    if(!r.ok){toast('Error: '+(d.error||r.status),true);return}
+    if((d.items_invalidos||[]).length){
+      toast('⚠ '+d.items_invalidos.length+' items inválidos',true);
+    }else{
+      toast('✓ Guardado · '+d.items_con_diferencia+' con diferencia');
+    }
+  }catch(e){toast('Error red: '+e.message,true)}
+}
+
+async function cerrarConteo(){
+  if(!CONTEO_ID)return;
+  await guardarTodo();
+  if(!confirm('¿Cerrar el conteo?\\n\\nLas diferencias <5% se ajustan automáticamente en kardex. Las >5% van a gerencia.')) return;
+  try{
+    const r=await fetch('/api/conteo/'+CONTEO_ID+'/cerrar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})});
+    const d=await r.json();
+    if(!r.ok){toast('Error: '+(d.error||r.status),true);return}
+    const msg='Cerrado · '+d.ajustes_aplicados+' ajustes auto · '+d.items_gerencia+' a gerencia';
+    alert(msg+'\\n\\nVolvé al dashboard.');
+    location.href='/';
+  }catch(e){toast('Error red: '+e.message,true)}
+}
+
+function esc(s){const d=document.createElement('div');d.textContent=s||'';return d.innerHTML}
+function formatNum(n){return (parseFloat(n)||0).toLocaleString('es-CO',{maximumFractionDigits:1})}
+
+cargarEstanterias();
+</script>
+</body></html>"""
+
 
 @bp.route('/api/conteo/<int:conteo_id>/items', methods=['GET'])
 def conteo_get_items(conteo_id):
