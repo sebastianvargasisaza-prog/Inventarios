@@ -13317,6 +13317,40 @@ function _parsearComposicionLote(loteData, kgTotal){
   return { kg_total: kgT, entradas, kg_residual_dtc: kgDTC };
 }
 
+// Sebastián 25-may-2026 PM · guardar plan envasado editable de un
+// cliente B2B en un lote. Envía PATCH con plan_envasado_uds + notas.
+async function guardarPlanEnvasado(loteId, pblId){
+  const inputUds = document.getElementById('env-uds-' + pblId);
+  const inputNota = document.getElementById('env-nota-' + pblId);
+  const btn = document.getElementById('env-save-' + pblId);
+  const ok = document.getElementById('env-ok-' + pblId);
+  if(!inputUds || !inputNota) return;
+  const uds = parseInt(inputUds.value) || 0;
+  const nota = inputNota.value.trim();
+  if(btn){ btn.disabled = true; btn.textContent = 'Guardando...'; }
+  try{
+    const r = await fetch('/api/programacion/lote/' + loteId + '/plan-envasado/' + pblId, {
+      method: 'PATCH',
+      headers: {'Content-Type':'application/json', 'X-CSRF-Token': (window._csrfTokPlan || '')},
+      body: JSON.stringify({plan_envasado_uds: uds, plan_envasado_notas: nota}),
+    });
+    const d = await r.json();
+    if(!r.ok){
+      alert('Error: ' + (d.error || r.status));
+      if(btn){ btn.disabled = false; btn.textContent = '💾 Guardar'; }
+      return;
+    }
+    if(ok){
+      ok.style.display = 'inline';
+      setTimeout(() => { ok.style.display = 'none'; }, 2000);
+    }
+    if(btn){ btn.disabled = false; btn.textContent = '💾 Guardar'; }
+  }catch(e){
+    alert('Error red: ' + e.message);
+    if(btn){ btn.disabled = false; btn.textContent = '💾 Guardar'; }
+  }
+}
+
 async function abrirLoteModal(id, producto, fecha, kg){
   document.getElementById('lote-titulo').textContent = '📅 ' + producto;
   document.getElementById('lote-body').innerHTML = '<div class="muted" style="padding:30px;text-align:center">Cargando datos del producto…</div>';
@@ -13417,10 +13451,12 @@ async function abrirLoteModal(id, producto, fecha, kg){
 
   let html = '';
 
-  // Sebastián 25-may-2026 PM · Desglose B2B vs DTC del lote.
-  // Busca el lote en PLAN_DATA.agendadas por id · si tiene desglose_b2b,
-  // muestra tarjeta con clientes y kg atribuidos · útil para saber
-  // cuánto del lote es Fernando, Kelly, etc. y cuánto queda DTC.
+  // Sebastián 25-may-2026 PM · Desglose B2B vs DTC del lote + plan
+  // envasado editable. "como ya estas primeras producciones estan
+  // deberias colocar que yo mismo lo escriba, y tenga algo como
+  // observaciones". Cada cliente del lote (DTC + B2B) tiene su fila
+  // con kg asignados, envase, unidades calculadas, plan editable y
+  // observaciones libres.
   try {
     const _loteFull = (PLAN_DATA.agendadas || []).find(a => a.id === id);
     const _desg = (_loteFull && _loteFull.desglose_b2b) || [];
@@ -13428,21 +13464,58 @@ async function abrirLoteModal(id, producto, fecha, kg){
       const kgB2B = (_loteFull && _loteFull.kg_b2b_total) || 0;
       const kgDTC = (_loteFull && _loteFull.kg_dtc) || 0;
       const inconsist = !!(_loteFull && _loteFull.split_inconsistente);
-      let dHtml = '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;margin-bottom:12px">';
-      dHtml += '<div style="font-size:11px;font-weight:800;color:#475569;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">📦 Desglose del lote · ' + kg + 'kg</div>';
+      let dHtml = '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:12px 14px;margin-bottom:12px">';
+      dHtml += '<div style="font-size:12px;font-weight:800;color:#0f766e;margin-bottom:8px">📦 Plan de envasado · ' + kg + 'kg total</div>';
       if (inconsist){
-        dHtml += '<div style="background:#fee2e2;color:#991b1b;padding:6px 10px;border-radius:5px;font-size:11px;margin-bottom:6px">⚠ <strong>Datos inconsistentes</strong> · la suma B2B (' + kgB2B + 'kg) supera el total del lote (' + kg + 'kg). Revisar atribuciones.</div>';
+        dHtml += '<div style="background:#fee2e2;color:#991b1b;padding:6px 10px;border-radius:5px;font-size:11px;margin-bottom:8px">⚠ <strong>Datos inconsistentes</strong> · suma B2B (' + kgB2B + 'kg) > total lote (' + kg + 'kg).</div>';
       }
-      dHtml += '<div style="display:flex;flex-wrap:wrap;gap:6px">';
+      dHtml += '<table style="width:100%;border-collapse:collapse;font-size:12px">';
+      dHtml += '<thead><tr style="background:#fff;color:#475569;font-size:10px;text-transform:uppercase">'
+        + '<th style="text-align:left;padding:6px 8px">Cliente</th>'
+        + '<th style="padding:6px 8px">kg</th>'
+        + '<th style="padding:6px 8px">Envase</th>'
+        + '<th style="padding:6px 8px">Uds calc</th>'
+        + '<th style="padding:6px 8px;background:#fef3c7">Uds a envasar ✏</th>'
+        + '<th style="padding:6px 8px;background:#fef3c7">Observaciones ✏</th>'
+        + '</tr></thead><tbody>';
+      // Fila DTC (no editable, no tiene pbl_id)
       if (kgDTC > 0.05){
-        dHtml += '<span style="background:#dbeafe;color:#1e40af;padding:4px 10px;border-radius:5px;font-size:12px;font-weight:600">DTC · ' + kgDTC + 'kg</span>';
+        const udsDtcCalc = '—';
+        dHtml += '<tr style="border-top:1px solid #e2e8f0;background:#eff6ff">'
+          + '<td style="padding:6px 8px;font-weight:700;color:#1e40af">🛍️ Animus DTC</td>'
+          + '<td style="padding:6px 8px;text-align:center;font-weight:700">' + kgDTC + ' kg</td>'
+          + '<td style="padding:6px 8px;text-align:center;color:#64748b">default</td>'
+          + '<td style="padding:6px 8px;text-align:center;color:#64748b">—</td>'
+          + '<td style="padding:6px 8px;text-align:center;color:#94a3b8" colspan="2"><em>DTC se calcula automático · no editable</em></td>'
+          + '</tr>';
       }
-      _desg.forEach(d => {
-        dHtml += '<span style="background:#fce7f3;color:#9d174d;padding:4px 10px;border-radius:5px;font-size:12px;font-weight:600" title="pedido B2B #' + (d.pedido_id || '') + ' · modo ' + escapeHtml(d.modo || '') + '">' +
-          escapeHtml(d.cliente || 'B2B') + ' · ' + d.kg + 'kg' +
-          (d.unidades > 0 ? ' (' + d.unidades + ' uds)' : '') + '</span>';
+      // Filas B2B (editables)
+      _desg.forEach((d, idx) => {
+        const cli = (d.cliente || 'B2B');
+        const cliEsc = cli.replace(/'/g, "&#39;");
+        const envase = d.envase || '—';
+        const udsCalc = d.unidades_calculadas || 0;
+        const planUds = d.plan_envasado_uds || 0;
+        const planNotas = (d.plan_envasado_notas || '').replace(/"/g, '&quot;');
+        const pblId = d.pbl_id;
+        const inputId = 'env-uds-' + pblId;
+        const notaId = 'env-nota-' + pblId;
+        const guardId = 'env-save-' + pblId;
+        const okId = 'env-ok-' + pblId;
+        dHtml += '<tr style="border-top:1px solid #e2e8f0;background:#fce7f3">'
+          + '<td style="padding:6px 8px;font-weight:700;color:#9d174d" title="pedido B2B #' + (d.pedido_id||'') + '">📦 ' + escapeHtml(cli) + '</td>'
+          + '<td style="padding:6px 8px;text-align:center;font-weight:700">' + d.kg + ' kg</td>'
+          + '<td style="padding:6px 8px;text-align:center;font-size:10px">' + escapeHtml(envase) + '</td>'
+          + '<td style="padding:6px 8px;text-align:center;color:#64748b" title="' + d.kg + 'kg × 1000 ÷ ' + (d.ml||0) + 'ml">' + udsCalc + ' uds</td>'
+          + '<td style="padding:6px 8px;text-align:center"><input id="' + inputId + '" type="number" min="0" max="10000000" value="' + planUds + '" placeholder="' + udsCalc + '" style="width:90px;padding:4px 6px;border:1px solid #cbd5e1;border-radius:4px;font-size:12px;text-align:center"></td>'
+          + '<td style="padding:6px 8px"><input id="' + notaId + '" type="text" maxlength="500" value="' + planNotas + '" placeholder="etiqueta, color, arte..." style="width:100%;padding:4px 8px;border:1px solid #cbd5e1;border-radius:4px;font-size:11px"></td>'
+          + '</tr>';
+        dHtml += '<tr style="background:#fce7f3"><td colspan="6" style="padding:0 8px 8px;text-align:right">'
+          + '<span id="' + okId + '" style="color:#15803d;font-size:11px;margin-right:8px;display:none">✓ guardado</span>'
+          + '<button id="' + guardId + '" onclick="guardarPlanEnvasado(' + id + ',' + pblId + ')" style="padding:4px 12px;font-size:11px;background:#0f766e;color:#fff;border:none;border-radius:5px;cursor:pointer;font-weight:700">💾 Guardar</button>'
+          + '</td></tr>';
       });
-      dHtml += '</div></div>';
+      dHtml += '</tbody></table></div>';
       html += dHtml;
     } else {
       // Lote sin atribución B2B explícita · asumido todo DTC

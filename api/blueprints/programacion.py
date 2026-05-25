@@ -4605,6 +4605,65 @@ def limpiar_db_sin_calendar():
     })
 
 
+@bp.route('/api/programacion/lote/<int:lote_id>/plan-envasado/<int:pbl_id>', methods=['PATCH'])
+def patch_plan_envasado_b2b(lote_id, pbl_id):
+    """Edita plan_envasado_uds y plan_envasado_notas de un cliente B2B
+    específico en un lote.
+
+    Sebastián 25-may-2026 PM · "deberías colocar que yo mismo lo escriba,
+    y tenga algo como observaciones". Por cada cliente del lote, admin
+    puede sobreescribir las unidades a envasar (en vez del cálculo auto
+    kg*1000/ml) y agregar observaciones libres para el operario.
+
+    Body: {plan_envasado_uds?: int, plan_envasado_notas?: str}
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    d = request.get_json(silent=True) or {}
+    conn = get_db(); cur = conn.cursor()
+    # Validar que el link existe y corresponde al lote
+    row = cur.execute(
+        """SELECT id, pedido_b2b_id, lote_produccion_id, cliente_nombre,
+                  COALESCE(plan_envasado_uds, 0), COALESCE(plan_envasado_notas, '')
+           FROM pedidos_b2b_lote WHERE id = ? AND lote_produccion_id = ?""",
+        (pbl_id, lote_id)).fetchone()
+    if not row:
+        return jsonify({'error': 'Link pedido-lote no existe o no corresponde'}), 404
+    sets, params = [], []
+    cambios = {}
+    if 'plan_envasado_uds' in d:
+        try:
+            uds = int(d.get('plan_envasado_uds') or 0)
+        except (TypeError, ValueError):
+            return jsonify({'error': 'plan_envasado_uds debe ser entero'}), 400
+        if uds < 0 or uds > 10_000_000:
+            return jsonify({'error': 'plan_envasado_uds fuera de rango'}), 400
+        sets.append('plan_envasado_uds = ?')
+        params.append(uds)
+        cambios['plan_envasado_uds'] = uds
+    if 'plan_envasado_notas' in d:
+        notas = (d.get('plan_envasado_notas') or '').strip()[:500]
+        sets.append('plan_envasado_notas = ?')
+        params.append(notas)
+        cambios['plan_envasado_notas'] = notas
+    if not sets:
+        return jsonify({'error': 'nada que actualizar'}), 400
+    params.append(pbl_id)
+    cur.execute(
+        f"UPDATE pedidos_b2b_lote SET {', '.join(sets)} WHERE id = ?", params)
+    try:
+        from audit_helpers import audit_log as _al
+        _al(cur, usuario=user, accion='PATCH_PLAN_ENVASADO_B2B',
+            tabla='pedidos_b2b_lote', registro_id=pbl_id,
+            antes={'plan_envasado_uds': row[4], 'plan_envasado_notas': row[5]},
+            despues=cambios)
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({'ok': True, 'pbl_id': pbl_id, 'cambios': cambios})
+
+
 @bp.route('/api/programacion/produccion-programada/listado', methods=['GET'])
 def listado_produccion_programada():
     """Lista todas las producciones programadas activas con su origen,
@@ -4648,27 +4707,70 @@ def listado_produccion_programada():
     if lote_ids:
         try:
             placeholders = ','.join('?' * len(lote_ids))
-            b2b_rows = conn.execute(
-                f"""SELECT pbl.lote_produccion_id,
-                          COALESCE(NULLIF(TRIM(pbl.cliente_nombre),''),
-                                   NULLIF(TRIM(pb.cliente_nombre),''),
-                                   pb.cliente_id, 'B2B') as cliente,
-                          COALESCE(pbl.kg_aporte, 0) as kg_aporte,
-                          COALESCE(pbl.unidades_aporte, 0) as uds_aporte,
-                          COALESCE(pbl.modo, 'sumado_a_lote_canonico') as modo,
-                          pbl.pedido_b2b_id
-                    FROM pedidos_b2b_lote pbl
-                    LEFT JOIN pedidos_b2b pb ON pb.id = pbl.pedido_b2b_id
-                    WHERE pbl.lote_produccion_id IN ({placeholders})
-                    ORDER BY pbl.lote_produccion_id, kg_aporte DESC""",
-                lote_ids).fetchall()
+            # Sebastián 25-may-2026 PM · agregar plan_envasado_uds + notas
+            # (mig 183) · si no aplicada, fallback al SELECT sin esos campos
+            try:
+                b2b_rows = conn.execute(
+                    f"""SELECT pbl.lote_produccion_id,
+                              COALESCE(NULLIF(TRIM(pbl.cliente_nombre),''),
+                                       NULLIF(TRIM(pb.cliente_nombre),''),
+                                       pb.cliente_id, 'B2B') as cliente,
+                              COALESCE(pbl.kg_aporte, 0) as kg_aporte,
+                              COALESCE(pbl.unidades_aporte, 0) as uds_aporte,
+                              COALESCE(pbl.modo, 'sumado_a_lote_canonico') as modo,
+                              pbl.pedido_b2b_id,
+                              COALESCE(pbl.envase_codigo, '') as envase,
+                              COALESCE(pbl.ml_unidad, 0) as ml,
+                              COALESCE(pbl.plan_envasado_uds, 0) as plan_uds,
+                              COALESCE(pbl.plan_envasado_notas, '') as plan_notas,
+                              pbl.id as pbl_id
+                        FROM pedidos_b2b_lote pbl
+                        LEFT JOIN pedidos_b2b pb ON pb.id = pbl.pedido_b2b_id
+                        WHERE pbl.lote_produccion_id IN ({placeholders})
+                        ORDER BY pbl.lote_produccion_id, kg_aporte DESC""",
+                    lote_ids).fetchall()
+                _has_plan = True
+            except Exception:
+                b2b_rows = conn.execute(
+                    f"""SELECT pbl.lote_produccion_id,
+                              COALESCE(NULLIF(TRIM(pbl.cliente_nombre),''),
+                                       NULLIF(TRIM(pb.cliente_nombre),''),
+                                       pb.cliente_id, 'B2B') as cliente,
+                              COALESCE(pbl.kg_aporte, 0) as kg_aporte,
+                              COALESCE(pbl.unidades_aporte, 0) as uds_aporte,
+                              COALESCE(pbl.modo, 'sumado_a_lote_canonico') as modo,
+                              pbl.pedido_b2b_id,
+                              COALESCE(pbl.envase_codigo, '') as envase,
+                              COALESCE(pbl.ml_unidad, 0) as ml,
+                              pbl.id as pbl_id
+                        FROM pedidos_b2b_lote pbl
+                        LEFT JOIN pedidos_b2b pb ON pb.id = pbl.pedido_b2b_id
+                        WHERE pbl.lote_produccion_id IN ({placeholders})
+                        ORDER BY pbl.lote_produccion_id, kg_aporte DESC""",
+                    lote_ids).fetchall()
+                _has_plan = False
             for br in b2b_rows:
+                kg_aporte = float(br[2] or 0)
+                ml_u = float(br[7] or 0)
+                # Unidades calculadas si no hay plan editado: kg*1000/ml
+                uds_calc = 0
+                if ml_u > 0:
+                    uds_calc = int(round(kg_aporte * 1000 / ml_u))
+                plan_uds = int(br[8] or 0) if _has_plan else 0
+                plan_notas = (br[9] if _has_plan else '') or ''
+                pbl_id = br[10] if _has_plan else br[8]
                 desglose_por_lote.setdefault(br[0], []).append({
                     'cliente': br[1] or 'B2B',
-                    'kg': float(br[2] or 0),
+                    'kg': kg_aporte,
                     'unidades': int(br[3] or 0),
                     'modo': br[4] or 'sumado_a_lote_canonico',
                     'pedido_id': br[5],
+                    'envase': br[6] or '',
+                    'ml': ml_u,
+                    'unidades_calculadas': uds_calc,
+                    'plan_envasado_uds': plan_uds,
+                    'plan_envasado_notas': plan_notas,
+                    'pbl_id': pbl_id,
                 })
         except Exception as _e_b2b:
             # Tabla pedidos_b2b_lote no existe en bootstrap (mig 169 viejo)

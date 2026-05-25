@@ -312,6 +312,18 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (183, "pedidos_b2b_lote · plan_envasado_uds + plan_envasado_notas · Sebastián 25-may-2026 PM", [
+        # FEATURE 25-may-2026 PM · Sebastián: "como ya estas primeras
+        # producciones estan deberias colocar que yo mismo lo escriba,
+        # y tenga algo como observaciones".
+        # Hoy unidades_aporte se calcula automático (kg*1000/ml). Pero
+        # admin quiere PODER SOBREESCRIBIR la cantidad real a envasar
+        # por cliente (rendimiento real puede dar más o menos) +
+        # observaciones libres por cliente para el operario envasador
+        # (ej. "Fernando quiere etiqueta azul · revisar arte adjunto").
+        "ALTER TABLE pedidos_b2b_lote ADD COLUMN plan_envasado_uds INTEGER DEFAULT 0",
+        "ALTER TABLE pedidos_b2b_lote ADD COLUMN plan_envasado_notas TEXT DEFAULT ''",
+    ]),
     (182, "pedidos_b2b.urgencia · campo de prioridad del cliente portal · Sebastián 25-may-2026 PM", [
         # FEATURE 25-may-2026 PM · Sebastián: "le pone la urgencia". Cliente
         # B2B logueado al portal tiene select alta/media/baja al solicitar.
