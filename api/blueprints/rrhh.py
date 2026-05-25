@@ -199,6 +199,13 @@ def rrhh_nomina(periodo):
     SMMLV=1423500; AUX=202000
     # Quincenal: periodo formato YYYY-MM-Q1 o YYYY-MM-Q2
     es_q2 = periodo.endswith("-Q2")
+    # Sebastián 25-may-2026 · Habeas Data Ley 1581 CO · datos bancarios solo
+    # visibles a quien ejecuta pagos (ADMIN + CONTADORA · mayra/catalina/
+    # sebastian/alejandro). RRHH puros (gloria/daniela/luz) ven la nómina
+    # pero NO banco/cuenta/tipo · evita exposición innecesaria de datos
+    # personales sensibles. _rrhh_gate ya validó acceso al endpoint.
+    _u_lower = (u or '').lower()
+    _puede_ver_banco = _u_lower in {x.lower() for x in (set(ADMIN_USERS) | set(CONTADORA_USERS))}
     conn = get_db(); c = conn.cursor()
     c.execute("SELECT id,nombre,apellido,cargo,salario_base,empresa,area,nivel_riesgo,banco,numero_cuenta,tipo_cuenta FROM empleados WHERE estado='Activo' ORDER BY empresa,nombre")
     emps=c.fetchall()
@@ -232,7 +239,9 @@ def rrhh_nomina(periodo):
             "aux_transporte":aux_prop,"horas_extras":he,"valor_horas_extras":vhe,
             "bonificaciones":bonos,"desc_salud":desc_salud,"desc_pension":desc_pension,
             "otros_descuentos":otros,"neto":neto,
-            "banco":banco or "","numero_cuenta":num_cta or "","tipo_cuenta":tipo_cta or "",
+            "banco":(banco or "") if _puede_ver_banco else "***",
+            "numero_cuenta":(num_cta or "") if _puede_ver_banco else "***",
+            "tipo_cuenta":(tipo_cta or "") if _puede_ver_banco else "***",
             "aportes_empleador":{"salud":ap_s,"pension":ap_p,"arl":ap_arl,"sena":ap_sena,"icbf":ap_icbf,"caja":ap_caja,"total":ap_tot}})
     return jsonify(result)
 

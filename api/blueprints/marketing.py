@@ -1014,10 +1014,18 @@ def mkt_influencers():
 @bp.route("/api/marketing/influencers/duplicados", methods=["GET"])
 def mkt_influencers_duplicados():
     """Detecta influencers que parecen duplicados (mismo nombre normalizado o
-    misma cuenta/cedula). Sebastian (30-abr-2026): jefferson reporta dobles."""
+    misma cuenta/cedula). Sebastian (30-abr-2026): jefferson reporta dobles.
+
+    PRIVACY-FIX 25-may-2026 · Habeas Data Ley 1581 CO · cuenta_bancaria +
+    cedula_nit visibles SOLO a ADMIN. Para MARKETING_USERS no-admin, las
+    columnas sensibles se sustituyen por '***'. La detección de duplicados
+    por cuenta/cédula funciona igual (se compara internamente) pero los
+    valores no se exponen al cliente no-autorizado.
+    """
     u, err, code = _auth()
     if err:
         return err, code
+    _is_admin = (u or '').lower() in {x.lower() for x in ADMIN_USERS}
     conn = _db(); c = conn.cursor()
     rows = c.execute("""
         SELECT id, nombre, red_social, usuario_red, estado, cuenta_bancaria,
@@ -1027,6 +1035,16 @@ def mkt_influencers_duplicados():
         ORDER BY nombre
     """).fetchall()
     items = [dict(zip([d[0] for d in c.description], r)) for r in rows]
+    # Backup de valores reales para detección · luego enmascaramos en el
+    # dict expuesto al cliente si no es admin.
+    real_cuenta = {it['id']: it.get('cuenta_bancaria') for it in items}
+    real_cedula = {it['id']: it.get('cedula_nit') for it in items}
+    if not _is_admin:
+        for it in items:
+            if it.get('cuenta_bancaria'):
+                it['cuenta_bancaria'] = '***'
+            if it.get('cedula_nit'):
+                it['cedula_nit'] = '***'
 
     def _norm(s):
         if not s: return ''
@@ -1051,11 +1069,14 @@ def mkt_influencers_duplicados():
                 'rows': grp_sorted,
             })
 
-    # Detectar también por cuenta_bancaria + cedula
+    # Detectar también por cuenta_bancaria + cedula · usar VALORES REALES
+    # del backup (los items expuestos pueden estar enmascarados '***' para
+    # no-admin · la detección sigue funcionando porque comparamos antes de
+    # serializar).
     grupos_cuenta = {}
     for it in items:
-        cta = _norm(it.get('cuenta_bancaria'))
-        ced = _norm(it.get('cedula_nit'))
+        cta = _norm(real_cuenta.get(it['id']))
+        ced = _norm(real_cedula.get(it['id']))
         if cta and len(cta) >= 6:
             grupos_cuenta.setdefault('cta:'+cta, []).append(it)
         if ced and len(ced) >= 6:
@@ -1064,8 +1085,12 @@ def mkt_influencers_duplicados():
     for key, grp in grupos_cuenta.items():
         if len(grp) > 1:
             tipo = 'cuenta bancaria' if key.startswith('cta:') else 'cedula/NIT'
+            # PRIVACY · valor enmascarado para no-admin (solo muestra que hay
+            # match · admin puede ver el dato completo para resolver duplicado)
+            valor_raw = key.split(':',1)[1]
+            valor_display = valor_raw if _is_admin else ('***' + valor_raw[-3:] if len(valor_raw) >= 4 else '***')
             duplicados_datos.append({
-                'tipo': tipo, 'valor': key.split(':',1)[1],
+                'tipo': tipo, 'valor': valor_display,
                 'count': len(grp), 'rows': grp,
             })
 
