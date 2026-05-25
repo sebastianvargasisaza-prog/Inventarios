@@ -1922,7 +1922,16 @@ def clientes_b2b_listar():
 
 @bp.route("/api/clientes-b2b", methods=["POST"])
 def clientes_b2b_crear():
-    """Crea cliente en clientes_b2b_maestro · upsert por cliente_id."""
+    """Crea cliente en clientes_b2b_maestro · upsert por cliente_id.
+
+    Sebastián 25-may-2026 PM · si body.generar_credencial_portal=true,
+    crea TAMBIÉN credencial en portal_clientes_credenciales con password
+    random · devuelve email + password en plain (solo se muestra una vez)
+    + mensaje pre-armado para mandar al cliente.
+
+    Requiere email válido para generar credencial portal · si no viene,
+    devuelve 400 con hint.
+    """
     user, err = _require_admin_or_compras()
     if err:
         body, code = err
@@ -1935,6 +1944,11 @@ def clientes_b2b_crear():
     tipo = (d.get('tipo') or 'B2B').upper()
     if tipo not in ('B2B', 'MAQUILA', 'INFLUENCER', 'OTRO'):
         tipo = 'B2B'
+    email = (d.get('email') or '').strip()
+    generar_portal = bool(d.get('generar_credencial_portal'))
+    if generar_portal and (not email or '@' not in email):
+        return jsonify({'error': 'Email válido requerido para generar credencial portal',
+                         'codigo': 'PORTAL_EMAIL_REQUERIDO'}), 400
     conn = get_db()
     cur = conn.cursor()
     cur.execute(
@@ -1953,7 +1967,7 @@ def clientes_b2b_crear():
         (cliente_id, cliente_nombre,
          (d.get('contacto') or '').strip(),
          (d.get('telefono') or '').strip(),
-         (d.get('email') or '').strip(),
+         email,
          tipo,
          (d.get('notas') or '').strip()),
     )
@@ -1963,8 +1977,73 @@ def clientes_b2b_crear():
                   despues=d)
     except Exception:
         pass
+
+    portal_info = None
+    if generar_portal:
+        import secrets as _secrets
+        from werkzeug.security import generate_password_hash as _gph
+        # Password random 12 chars · sin caracteres ambiguos
+        pw_plain = _secrets.token_urlsafe(9)[:12].replace('-', 'A').replace('_', 'B')
+        pw_hash = _gph(pw_plain)
+        email_lower = email.lower()
+        # Si ya existe credencial con ese email, hacer reset; sino insertar nueva
+        try:
+            existe = cur.execute(
+                "SELECT id FROM portal_clientes_credenciales WHERE LOWER(email) = ?",
+                (email_lower,)).fetchone()
+            if existe:
+                cur.execute(
+                    """UPDATE portal_clientes_credenciales
+                          SET password_hash = ?, activo = 1,
+                              cliente_id = ?, cliente_nombre = ?
+                        WHERE id = ?""",
+                    (pw_hash, cliente_id, cliente_nombre, existe[0]))
+                accion_audit = 'PORTAL_RESET_CRED_VIA_CLIENTE_NUEVO'
+                cred_id_audit = existe[0]
+            else:
+                cur.execute(
+                    """INSERT INTO portal_clientes_credenciales
+                         (cliente_id, cliente_nombre, email, password_hash,
+                          activo, creado_por)
+                       VALUES (?, ?, ?, ?, 1, ?)""",
+                    (cliente_id, cliente_nombre, email_lower, pw_hash, user))
+                cred_id_audit = cur.lastrowid
+                accion_audit = 'PORTAL_CREAR_CRED_VIA_CLIENTE_NUEVO'
+            try:
+                audit_log(cur, usuario=user, accion=accion_audit,
+                          tabla='portal_clientes_credenciales',
+                          registro_id=cred_id_audit,
+                          despues={'cliente_id': cliente_id, 'email': email_lower})
+            except Exception:
+                pass
+            # Mensaje pre-armado para WhatsApp / Email
+            portal_url = 'https://app.eossuite.com/portal/login'
+            primer_nombre = cliente_nombre.split()[0] if cliente_nombre else ''
+            mensaje = (
+                f"Hola {primer_nombre}! 👋\n\n"
+                f"Te creé tu acceso al portal B2B de Espagiria. Desde acá "
+                f"podés solicitar productos directamente y hacer "
+                f"peticiones/quejas/reclamos cuando lo necesites.\n\n"
+                f"🔗 {portal_url}\n\n"
+                f"Email: {email_lower}\n"
+                f"Contraseña: {pw_plain}\n\n"
+                f"Te recomiendo cambiarla al primer ingreso.\n"
+                f"Cualquier duda me avisás.\n\n"
+                f"— Sebastián"
+            )
+            portal_info = {
+                'email': email_lower,
+                'password': pw_plain,
+                'portal_url': portal_url,
+                'mensaje': mensaje,
+            }
+        except Exception as _e:
+            log.warning('crear cred portal fallo al crear cliente %s: %s',
+                          cliente_id, _e)
+            portal_info = {'error': f'No pude crear credencial portal: {_e}'}
     conn.commit()
-    return jsonify({'ok': True, 'cliente_id': cliente_id}), 201
+    return jsonify({'ok': True, 'cliente_id': cliente_id,
+                     'portal_credencial': portal_info}), 201
 
 
 @bp.route("/api/clientes-b2b/<cliente_id>", methods=["DELETE"])
@@ -7300,9 +7379,42 @@ def admin_clientes_b2b_pagina():
     <input id="c-telefono" placeholder="+57 ...">
     <label>Notas</label>
     <textarea id="c-notas" rows="2"></textarea>
+    <!-- Sebastián 25-may-2026 PM · checkbox flujo unificado -->
+    <div style="margin-top:14px;padding:12px 14px;background:#f0fdfa;border:1px solid #99f6e4;border-radius:8px">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:#0f766e;font-weight:600;margin:0">
+        <input type="checkbox" id="c-portal" style="width:auto;margin:0;cursor:pointer">
+        🤝 Generar acceso al portal del cliente
+      </label>
+      <div style="font-size:11px;color:#475569;margin-top:6px;margin-left:24px">
+        Crea credencial con password random · te muestro mensaje listo para mandar al cliente por WhatsApp/email.
+      </div>
+    </div>
     <div class="actions-row">
       <button class="btn btn-prim" onclick="guardarCliente()">💾 Guardar</button>
       <button class="btn btn-link" onclick="cerrarModalCliente()">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Credencial generada · Sebastián 25-may-2026 PM -->
+<div id="modal-cred" class="modal-bg" onclick="if(event.target===this)cerrarModalCred()">
+  <div class="modal" style="max-width:540px">
+    <h2 style="color:#0f766e">✓ Cliente creado · acceso portal generado</h2>
+    <div style="background:#ecfeff;border:2px solid #0891b2;border-radius:10px;padding:14px;margin:14px 0">
+      <div style="font-size:11px;color:#475569;text-transform:uppercase;font-weight:700;letter-spacing:.5px">Email</div>
+      <div id="cred-email-v" style="font-family:monospace;font-size:15px;font-weight:700;color:#0f172a;background:#fff;padding:6px 10px;border-radius:5px;border:1px solid #cbd5e1;margin-top:4px;cursor:pointer;user-select:all" onclick="copiarTxt(this)"></div>
+      <div style="font-size:11px;color:#475569;text-transform:uppercase;font-weight:700;letter-spacing:.5px;margin-top:10px">Contraseña (mostrada UNA vez)</div>
+      <div id="cred-pass-v" style="font-family:monospace;font-size:15px;font-weight:700;color:#0f172a;background:#fff;padding:6px 10px;border-radius:5px;border:1px solid #cbd5e1;margin-top:4px;cursor:pointer;user-select:all" onclick="copiarTxt(this)"></div>
+    </div>
+    <div style="background:#fef3c7;border-left:3px solid #f59e0b;padding:10px 12px;border-radius:5px;font-size:11px;color:#92400e;margin-bottom:10px">
+      ⚠ Copiá la contraseña ahora · al cerrar este modal no se vuelve a mostrar.
+    </div>
+    <label style="margin-top:8px">📝 Mensaje listo para enviar</label>
+    <textarea id="cred-mensaje-v" rows="8" readonly style="font-family:monospace;font-size:12px;cursor:pointer;background:#f8fafc" onclick="this.select();copiarTxt(this)"></textarea>
+    <div class="actions-row" style="flex-wrap:wrap;gap:8px">
+      <button class="btn btn-prim" onclick="abrirWhatsApp()" style="background:#25d366">📱 Abrir WhatsApp</button>
+      <button class="btn" onclick="abrirGmail()" style="background:#ea4335;color:#fff">📧 Abrir Gmail</button>
+      <button class="btn btn-link" onclick="cerrarModalCred()">Cerrar</button>
     </div>
   </div>
 </div>
@@ -7429,6 +7541,8 @@ function abrirModalPedido() {
 function cerrarModalPedido() { document.getElementById('modal-pedido').style.display = 'none'; }
 
 async function guardarCliente() {
+  const portalCheck = document.getElementById('c-portal');
+  const generarPortal = portalCheck ? portalCheck.checked : false;
   const body = {
     cliente_id: (document.getElementById('c-id').value || '').trim().toLowerCase(),
     cliente_nombre: document.getElementById('c-nombre').value.trim(),
@@ -7436,15 +7550,75 @@ async function guardarCliente() {
     telefono: document.getElementById('c-telefono').value.trim(),
     tipo: document.getElementById('c-tipo').value,
     notas: document.getElementById('c-notas').value.trim(),
+    generar_credencial_portal: generarPortal,
   };
   if (!body.cliente_id || !body.cliente_nombre) { alert('ID y nombre requeridos'); return; }
-  const r = await fetch('/api/clientes-b2b', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+  if (generarPortal && (!body.email || body.email.indexOf('@') < 0)) {
+    alert('Email válido es requerido si querés generar acceso al portal');
+    return;
+  }
+  const r = await fetch('/api/clientes-b2b', {
+    method:'POST',
+    headers:{'Content-Type':'application/json', 'X-CSRF-Token': (window._csrfTokPlan || '')},
+    body: JSON.stringify(body)
+  });
   const d = await r.json();
   if (!r.ok) { alert('Error: ' + (d.error || r.status)); return; }
   cerrarModalCliente();
   ['c-id','c-nombre','c-email','c-telefono','c-notas'].forEach(id => document.getElementById(id).value = '');
+  if (portalCheck) portalCheck.checked = false;
   await cargarClientes();
   showMsg('✓ Cliente creado · ' + body.cliente_nombre, '#15803d');
+  // Si se generó credencial portal, mostrar modal con email + password + mensaje
+  if (d.portal_credencial && d.portal_credencial.password) {
+    window._credMensajeActual = d.portal_credencial.mensaje || '';
+    window._credEmailActual = d.portal_credencial.email || '';
+    window._credTelActual = body.telefono || '';
+    document.getElementById('cred-email-v').textContent = d.portal_credencial.email || '';
+    document.getElementById('cred-pass-v').textContent = d.portal_credencial.password || '';
+    document.getElementById('cred-mensaje-v').value = d.portal_credencial.mensaje || '';
+    document.getElementById('modal-cred').classList.add('show');
+  } else if (d.portal_credencial && d.portal_credencial.error) {
+    alert('Cliente OK pero falló credencial portal: ' + d.portal_credencial.error);
+  }
+}
+
+// CSRF · token para los POSTs a /api/clientes-b2b
+window._csrfTokPlan = '';
+fetch('/api/csrf-token', {credentials:'same-origin'})
+  .then(r => r.ok ? r.json() : null)
+  .then(d => { if(d && d.csrf_token) window._csrfTokPlan = d.csrf_token; })
+  .catch(() => {});
+
+function cerrarModalCred(){
+  document.getElementById('modal-cred').classList.remove('show');
+}
+function copiarTxt(el){
+  const t = el.value !== undefined ? el.value : el.textContent;
+  if(navigator.clipboard){
+    navigator.clipboard.writeText(t).then(function(){
+      const orig = el.style.background;
+      el.style.background = '#dcfce7';
+      setTimeout(function(){ el.style.background = orig; }, 600);
+    });
+  } else {
+    if(el.select) el.select();
+    try{ document.execCommand('copy'); }catch(_){}
+  }
+}
+function abrirWhatsApp(){
+  const msg = encodeURIComponent(window._credMensajeActual || '');
+  const tel = (window._credTelActual || '').replace(/\\D/g, '');
+  // Si tiene teléfono, abrir chat directo · sino, abrir wa.me sin destinatario
+  const url = tel ? ('https://wa.me/' + tel + '?text=' + msg) : ('https://wa.me/?text=' + msg);
+  window.open(url, '_blank');
+}
+function abrirGmail(){
+  const subject = encodeURIComponent('Acceso Portal Espagiria');
+  const body = encodeURIComponent(window._credMensajeActual || '');
+  const to = encodeURIComponent(window._credEmailActual || '');
+  const url = 'https://mail.google.com/mail/?view=cm&fs=1&to=' + to + '&su=' + subject + '&body=' + body;
+  window.open(url, '_blank');
 }
 
 async function guardarPedido() {
