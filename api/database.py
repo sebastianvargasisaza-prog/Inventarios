@@ -312,6 +312,22 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (181, "mfa_tokens_usados · replay protection compartido cross-worker · Sebastián 25-may-2026", [
+        # SEC-FIX 25-may-2026 · audit zero-error · Sebastián.
+        # mfa.py _verify_totp tenía replay protection in-memory por worker
+        # (dict _MFA_USED_TOKENS). Con 3 workers gunicorn, un MITM podía
+        # gastar un token en worker 1 y replay en worker 2 dentro de la
+        # ventana de ±90s. Ahora INSERT con UNIQUE(username, token_hash)
+        # gana atomicidad cross-worker · cleanup oportunista al verify.
+        """CREATE TABLE IF NOT EXISTS mfa_tokens_usados (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL,
+            token_hash TEXT NOT NULL,
+            usado_at TEXT DEFAULT (datetime('now', 'utc')),
+            UNIQUE(username, token_hash)
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_mfa_tokens_cleanup ON mfa_tokens_usados(usado_at)",
+    ]),
     (180, "portal_solicitudes · RFQ + muestras + ficha técnica del portal cliente B2B · Sebastián 25-may-2026", [
         # FEATURE 25-may-2026 · Tarea pendiente #4 "Módulo portal solicitud B2B".
         # Hoy el portal /portal/login tiene Pedidos (cliente existente) + PQR

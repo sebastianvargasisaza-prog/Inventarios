@@ -77,26 +77,64 @@ def _verify_totp(secret, token):
         return False
     try:
         ok = pyotp.TOTP(secret).verify(token, valid_window=1)
-        # SEC-FIX · 21-may-2026 · replay protection
-        # Antes: mismo token aceptado durante ~90s (window=1) → MITM podía reusar
-        # Ahora: track tokens usados via cache in-memory por (secret_hash, token)
-        # TTL 90s (cubre window completa) · multi-worker: cache local OK porque
-        # próximo token será otro · solo bloquea reuse INMEDIATO.
-        if ok:
-            import hashlib, time as _t
-            global _MFA_USED_TOKENS  # noqa
+        if not ok:
+            return False
+        # SEC-FIX · 25-may-2026 · replay protection cross-worker
+        # Antes (21-may): cache in-memory `_MFA_USED_TOKENS` por worker. Con
+        # 3 workers gunicorn un MITM podía gastar token en w1 y replay en w2
+        # dentro de ±90s. Ahora INSERT atómico en mfa_tokens_usados con
+        # UNIQUE(username, token_hash) gana cross-worker. Si IntegrityError
+        # → otro worker (o el mismo) ya gastó este token · REPLAY detectado.
+        # Cleanup oportunista de filas >2min antes del insert (TTL = ventana
+        # TOTP de ±30s × 2 + margen). El secret no se pasa acá · usamos
+        # hash del secret para no leakear y para que un username con secret
+        # rotado siga colidiendo solo consigo mismo.
+        import hashlib
+        tok_hash = hashlib.sha256(f'{secret}:{token}'.encode()).hexdigest()[:24]
+        try:
+            uname = (session.get('compras_user') or '').strip().lower()
+        except Exception:
+            uname = ''
+        if not uname:
+            # Sin contexto Flask (test directo de pyotp) · permitir.
+            return True
+        _c = None
+        try:
+            _c = db_connect()
+            _c.execute("PRAGMA busy_timeout=2000")
+            cur = _c.cursor()
             try:
-                _MFA_USED_TOKENS  # type: ignore
-            except NameError:
-                _MFA_USED_TOKENS = {}  # noqa
-            now = _t.time()
-            # Cleanup TTL
-            _MFA_USED_TOKENS = {k: v for k, v in _MFA_USED_TOKENS.items() if v > now - 90}
-            key = hashlib.sha256(f'{secret}:{token}'.encode()).hexdigest()[:16]
-            if key in _MFA_USED_TOKENS:
-                return False  # REPLAY detectado
-            _MFA_USED_TOKENS[key] = now
-        return ok
+                cur.execute("DELETE FROM mfa_tokens_usados WHERE usado_at < datetime('now','utc','-2 minutes')")
+            except Exception:
+                pass  # tabla puede no existir aún · INSERT abajo lo detecta
+            try:
+                cur.execute(
+                    "INSERT INTO mfa_tokens_usados (username, token_hash) VALUES (?, ?)",
+                    (uname, tok_hash))
+                _c.commit()
+                return True
+            except sqlite3.IntegrityError:
+                _log_sec("mfa_replay_blocked", uname, _client_ip())
+                return False
+            except Exception as _e_ins:
+                # PG: psycopg2.errors.UniqueViolation deja la conexión en
+                # estado "in error" hasta rollback · si fallamos a rollback,
+                # cualquier consulta posterior en este request rompe.
+                try: _c.rollback()
+                except Exception: pass
+                emsg = str(_e_ins).lower()
+                if 'unique' in emsg or 'duplicate' in emsg:
+                    _log_sec("mfa_replay_blocked", uname, _client_ip())
+                    return False
+                if 'no such table' in emsg or 'does not exist' in emsg:
+                    # Bootstrap · mig 181 aún no aplicada · fail-open único caso
+                    return True
+                _log_sec("mfa_replay_check_failed", uname, _client_ip())
+                return False
+        finally:
+            if _c is not None:
+                try: _c.close()
+                except Exception: pass
     except Exception:
         return False
 

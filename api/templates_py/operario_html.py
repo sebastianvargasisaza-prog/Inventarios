@@ -13,7 +13,7 @@ def render_operario():
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#0f172a">
 <title>Mi Día · Planta</title>
 <style>
@@ -126,6 +126,32 @@ function escapeHtml(s) {
   }[c]));
 }
 
+// Sebastián 25-may-2026 · audit zero-error · fetch con timeout 8s
+// Sin esto, si el backend cuelga (red intermitente en planta, deploy en
+// curso) la tablet operario se congela indefinidamente · no hay manera de
+// recuperar sin reload. AbortController cancela tras 8s y rethrow AbortError
+// para que el catch del caller muestre mensaje claro al operario.
+async function fetchT(url, opts) {
+  opts = opts || {};
+  const ms = opts.timeout || 8000;
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), ms);
+  try {
+    const fetchOpts = Object.assign({}, opts, {signal: ctrl.signal});
+    delete fetchOpts.timeout;
+    return await fetch(url, fetchOpts);
+  } catch (e) {
+    if (e && e.name === 'AbortError') {
+      const err = new Error('Timeout · backend no respondió en ' + ms + 'ms');
+      err.timeout = true;
+      throw err;
+    }
+    throw e;
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 function fmt(n, d=0) {
   if (n === null || n === undefined) return '—';
   return Number(n).toLocaleString('es-CO', {maximumFractionDigits: d});
@@ -148,7 +174,7 @@ async function loadMiDia() {
     const apiUrl = asOp
       ? '/api/operario/mi-dia?as_operario_id=' + encodeURIComponent(asOp)
       : '/api/operario/mi-dia';
-    const r = await fetch(apiUrl);
+    const r = await fetchT(apiUrl, {timeout: 8000});
     if (r.status === 401) { window.location.href = '/login'; return; }
     const d = await r.json();
     // BUG-4 fix · cachear producciones para que completarProd compare
@@ -303,10 +329,11 @@ async function iniciarProd(id, areaEstado, areaNombre) {
   }
   if (!confirm('¿Iniciar producción ' + id + '?\\nEsto descuenta MPs del inventario y crea el lote.')) return;
   try {
-    const r = await fetch('/api/programacion/programar/' + id + '/iniciar', {
+    const r = await fetchT('/api/programacion/programar/' + id + '/iniciar', {
       method: 'POST',
       headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken()},
       body: '{}',
+      timeout: 12000,
     });
     const d = await r.json();
     if (!r.ok) {
@@ -320,7 +347,7 @@ async function iniciarProd(id, areaEstado, areaNombre) {
     }
     loadMiDia();
   } catch(e) {
-    alert('Error: ' + e.message);
+    alert(e.timeout ? '⚠ Servidor lento · revisá conexión y reintentá' : ('Error: ' + e.message));
   }
 }
 
@@ -350,10 +377,11 @@ async function completarProd(id) {
   const body = {kg_real: kgNum};
   if (unidades) body.unidades_real = parseInt(unidades);
   try {
-    const r = await fetch('/api/programacion/programar/' + id + '/completar', {
+    const r = await fetchT('/api/programacion/programar/' + id + '/completar', {
       method: 'POST',
       headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken()},
       body: JSON.stringify(body),
+      timeout: 12000,
     });
     const d = await r.json();
     if (!r.ok) {
@@ -363,17 +391,18 @@ async function completarProd(id) {
     alert('✓ Completado · merma ' + (d.merma_pct != null ? d.merma_pct.toFixed(1) + '%' : '—'));
     loadMiDia();
   } catch(e) {
-    alert('Error: ' + e.message);
+    alert(e.timeout ? '⚠ Servidor lento · revisá conexión y reintentá' : ('Error: ' + e.message));
   }
 }
 
 async function marcarLimpia(areaId, nombre) {
   if (!confirm('¿Confirmás que la sala ' + nombre + ' ya quedó LIMPIA?\\n\\nLa siguiente producción podrá iniciar acá.')) return;
   try {
-    const r = await fetch('/api/planta/areas/' + areaId + '/estado', {
+    const r = await fetchT('/api/planta/areas/' + areaId + '/estado', {
       method: 'PATCH',
       headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken()},
       body: JSON.stringify({estado: 'libre'}),
+      timeout: 8000,
     });
     const d = await r.json();
     if (!r.ok) {
@@ -383,7 +412,7 @@ async function marcarLimpia(areaId, nombre) {
     alert('✓ Sala ' + nombre + ' marcada limpia');
     loadMiDia();
   } catch(e) {
-    alert('Error: ' + e.message);
+    alert(e.timeout ? '⚠ Servidor lento · revisá conexión y reintentá' : ('Error: ' + e.message));
   }
 }
 
@@ -463,13 +492,14 @@ function _miDiaVozProcesar(txt) {
   for (var k in ETAPAS) { if (txt.indexOf(k) !== -1) { etapa = ETAPAS[k]; break; } }
   if (verbo === 'andon') {
     if (!confirm('Voz reconocio: ' + txt + ' · Abrir alerta ANDON?')) return;
-    fetch('/api/planta/andon', {
+    fetchT('/api/planta/andon', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken() },
       body: JSON.stringify({ tipo: 'otro', descripcion: txt }),
+      timeout: 8000,
     }).then(r => r.json()).then(d => {
       alert(d.ok ? '✓ Alerta ANDON abierta · jefe notificado' : ('Error: ' + (d.error||'?')));
-    });
+    }).catch(e => alert(e.timeout ? '⚠ Servidor lento · reintentá' : ('Error: ' + e.message)));
     return;
   }
   if (!verbo || !etapa) {
@@ -480,7 +510,7 @@ function _miDiaVozProcesar(txt) {
   // PLANTA-FIX · 21-may-2026 · ejecutar verbos reales (no solo ANDON)
   // Antes: solo alert · ahora hace fetch real al endpoint kanban-etapa
   // Necesita una producción activa del operario (la primera en estado pendiente/iniciada)
-  fetch('/api/operario/mi-dia').then(function(r){return r.json();}).then(function(d){
+  fetchT('/api/operario/mi-dia', {timeout: 8000}).then(function(r){return r.json();}).then(function(d){
     var prods = (d && d.producciones) || [];
     // Filtrar producciones donde el operario es el rol que está nombrando
     // PLANTA-FIX · 22-may-2026 · backend devuelve mi_rol_aqui (no mi_rol)
@@ -490,7 +520,7 @@ function _miDiaVozProcesar(txt) {
       return;
     }
     var url = '/api/planta/tablero-kanban/' + match.id + '/etapa/' + etapa + '/' + verbo;
-    fetch(url, { method: 'POST', headers: { 'X-CSRF-Token': csrfToken() } })
+    fetchT(url, { method: 'POST', headers: { 'X-CSRF-Token': csrfToken() }, timeout: 10000 })
       .then(function(r){return r.json();})
       .then(function(rr){
         if (rr.ok || rr.ya_iniciada || rr.ya_terminada) {
