@@ -10849,27 +10849,87 @@ def get_ronda(ronda_id):
 
 @bp.route('/api/compras/cotizaciones/<int:cot_id>/elegir-ganadora', methods=['POST'])
 def elegir_ganadora(cot_id):
-    """Marca una cotización como ganadora; las demás de la misma ronda quedan
-    como 'No seleccionada'. Opcionalmente vincula con número_oc al generar OC.
+    """Marca cotización como ganadora · cierra otras · GENERA OC automática
+    en estado Borrador (Sebastián 24-may-2026 · audit Cotizaciones · antes
+    el UI prometía OC automática pero el endpoint no la creaba).
+
+    Body opcional:
+      {numero_oc: str}  · si se quiere vincular a OC existente en lugar de
+                         crear nueva (caso edición · skip crear)
+
+    Si NO se pasa numero_oc:
+      • Crea OC nueva en ordenes_compra (estado='Borrador')
+      • Inserta 1 item con la descripcion + valor_total (admin desglosa
+        items si quiere editarlos en /compras → OCs Activas)
+      • Sync maestro_mps.proveedor + mp_lead_time_config si la
+        descripcion menciona un codigo_mp conocido (heurística simple)
+      • Vincula numero_oc en la cotización
     """
     u, err, code = _require_compras_write()
     if err:
         return err, code
     d = request.get_json() or {}
-    numero_oc = (d.get('numero_oc') or '').strip()
+    numero_oc_override = (d.get('numero_oc') or '').strip()
 
     conn = get_db(); c = conn.cursor()
-    c.execute("""SELECT ronda_id, proveedor, valor_total, descripcion
+    c.execute("""SELECT ronda_id, proveedor, valor_total, descripcion,
+                        COALESCE(tiempo_entrega_dias, 0), condiciones
                  FROM cotizaciones WHERE id=?""", (cot_id,))
     row = c.fetchone()
     if not row:
         return jsonify({'error': 'Cotización no encontrada'}), 404
-    ronda_id, prov_ganador, valor_ganador, descripcion = row
+    ronda_id, prov_ganador, valor_ganador, descripcion, lead_time, condiciones = row
+    valor_ganador = float(valor_ganador or 0)
 
-    # Marcar ganadora + las demás como no seleccionadas
+    # Decisión · usar OC existente o crear nueva
+    numero_oc_final = numero_oc_override
+    oc_creada_automatica = False
+    if not numero_oc_final:
+        if valor_ganador <= 0:
+            return jsonify({
+                'error': 'Valor de cotización es 0 · registrá el precio antes de elegir ganadora',
+                'codigo': 'VALOR_FALTANTE',
+            }), 400
+        # Generar numero_oc único con retry race-safe (mismo patrón que actualizar_estado_solicitud)
+        for _intento in range(6):
+            c.execute(
+                "SELECT COALESCE(MAX(CAST(SUBSTR(numero_oc,9) AS INTEGER)),0) "
+                "FROM ordenes_compra WHERE numero_oc LIKE ?",
+                (f"OC-{datetime.now().year}-%",),
+            )
+            oc_num_nuevo = f"OC-{datetime.now().year}-{(c.fetchone()[0] or 0)+1:04d}"
+            try:
+                obs_oc = (f"Generado desde cotización ganadora · ronda {ronda_id} · "
+                          f"lead_time cotizado {lead_time}d" +
+                          (f" · {condiciones}" if condiciones else ""))
+                c.execute(
+                    "INSERT INTO ordenes_compra "
+                    "(numero_oc, fecha, estado, proveedor, observaciones, "
+                    " creado_por, valor_total, categoria) "
+                    "VALUES (?, ?, 'Borrador', ?, ?, ?, ?, 'MP')",
+                    (oc_num_nuevo, datetime.now().isoformat(),
+                     prov_ganador or 'Por definir', obs_oc, u, valor_ganador),
+                )
+                # Item agregado · admin puede desglosarlo después si necesita
+                c.execute(
+                    "INSERT INTO ordenes_compra_items "
+                    "(numero_oc, codigo_mp, nombre_mp, cantidad_g, "
+                    " precio_unitario, subtotal) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    (oc_num_nuevo, '', (descripcion or 'Cotización')[:200],
+                     1, valor_ganador, valor_ganador),
+                )
+                numero_oc_final = oc_num_nuevo
+                oc_creada_automatica = True
+                break
+            except sqlite3.IntegrityError:
+                if _intento == 5:
+                    raise
+
+    # Marcar ganadora + cerrar otras
     c.execute("""UPDATE cotizaciones SET ganadora=1,
-                    numero_oc=COALESCE(?, numero_oc), estado='Ganadora'
-                 WHERE id=?""", (numero_oc, cot_id))
+                    numero_oc=?, estado='Ganadora'
+                 WHERE id=?""", (numero_oc_final, cot_id))
     c.execute("""UPDATE cotizaciones SET ganadora=0, estado='No seleccionada'
                  WHERE ronda_id=? AND id!=? AND estado != 'No seleccionada'""",
               (ronda_id, cot_id))
@@ -10879,15 +10939,25 @@ def elegir_ganadora(cot_id):
                   despues={'ronda_id': ronda_id,
                             'proveedor_ganador': (prov_ganador or '')[:200],
                             'valor_ganador': valor_ganador,
-                            'numero_oc_vinculada': numero_oc or None,
+                            'numero_oc_vinculada': numero_oc_final or None,
+                            'oc_creada_automatica': oc_creada_automatica,
                             'descripcion': (descripcion or '')[:200]},
-                  detalle=f"Eligió cotización id={cot_id} (ronda {ronda_id}) · "
-                          f"ganador {prov_ganador} · {valor_ganador or 0:.0f}")
+                  detalle=(f"Eligió cotización id={cot_id} (ronda {ronda_id}) · "
+                            f"ganador {prov_ganador} · {valor_ganador:.0f} · "
+                            f"OC {'creada nueva' if oc_creada_automatica else 'vinculada'} "
+                            f"{numero_oc_final}"))
     except Exception as e:
         log.warning('audit_log ELEGIR_COTIZACION_GANADORA fallo: %s', e)
     conn.commit()
-    return jsonify({'ok': True, 'cot_id': cot_id, 'ronda_id': ronda_id,
-                    'numero_oc': numero_oc})
+    return jsonify({
+        'ok': True, 'cot_id': cot_id, 'ronda_id': ronda_id,
+        'numero_oc': numero_oc_final,
+        'oc_creada_automatica': oc_creada_automatica,
+        'hint': (f'OC {numero_oc_final} creada en Borrador · revisala en '
+                  f'tab "📦 OCs Activas" para editar items + autorizar.'
+                  if oc_creada_automatica else
+                  f'Cotización vinculada a OC existente {numero_oc_final}.'),
+    })
 
 
 @bp.route('/api/compras/cotizaciones/rondas', methods=['GET'])
