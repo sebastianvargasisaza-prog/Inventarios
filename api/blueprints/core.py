@@ -1760,10 +1760,29 @@ def cambiar_password():
         # SEC-FIX · 21-may-2026 · invalidar todas las sesiones tras password change
         # Agregamos columna session_version · cada request valida que la session
         # tenga la última version · si no, fuerza re-login.
+        # Sebastián 25-may-2026 · audit zero-error · usar IF NOT EXISTS + fallback
+        # para evitar try/except: pass silencioso · si el ALTER falla por razón
+        # distinta a "ya existe", queda en log de seguridad.
         try:
-            conn.execute("ALTER TABLE users_passwords ADD COLUMN session_version INTEGER DEFAULT 1")
-        except Exception:
-            pass  # ya existe
+            conn.execute(
+                "ALTER TABLE users_passwords ADD COLUMN IF NOT EXISTS "
+                "session_version INTEGER DEFAULT 1"
+            )
+        except Exception as _e_alter:
+            _msg = str(_e_alter).lower()
+            if 'duplicate column' in _msg or 'already exists' in _msg:
+                pass  # esperado · ya migrada
+            else:
+                # Fallback sin IF NOT EXISTS (SQLite viejo)
+                try:
+                    conn.execute(
+                        "ALTER TABLE users_passwords ADD COLUMN session_version INTEGER DEFAULT 1"
+                    )
+                except Exception as _e_fb:
+                    _msg2 = str(_e_fb).lower()
+                    if 'duplicate column' not in _msg2 and 'already exists' not in _msg2:
+                        _log_sec("alter_session_version_failed", username, ip,
+                                  str(_e_fb)[:200])
         conn.execute(
             "UPDATE users_passwords SET session_version = COALESCE(session_version, 1) + 1 WHERE username=?",
             (username,),
