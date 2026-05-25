@@ -9152,6 +9152,98 @@ def ordenes_servicio_cambiar_estado(numero_os):
            VALUES (?,?,?,?,?,?)""",
         (numero_os, estado_anterior, estado_nuevo, user, now, obs),
     )
+    # Sebastián 24-may-2026 · audit OS · movimientos kardex MEE.
+    # Antes el módulo OS era data-only · no afectaba stock · si los 500
+    # frascos salían a serigrafía durante 15d, la bodega MEE no sabía
+    # que estaban "en tránsito" y Planta los seguía contando como
+    # disponibles para producción. Ahora:
+    #   • Enviada → SALIDA del envase_codigo_mee (sale a proveedor)
+    #   • Confirmada → ENTRADA del envase (vuelve procesado)
+    #   • Cancelada desde Recogida/En proceso → ENTRADA (vuelve sin
+    #     procesar · se reintegra a bodega)
+    # Lote sintético "OS-<num>" para trazabilidad y evitar romper la
+    # regla "nunca synthetic lote silencioso" (queda con prefix audit).
+    _mee_movimientos_aplicados = False
+    try:
+        os_row = c.execute(
+            "SELECT envase_codigo_mee, envase_descripcion, cantidad_unidades, "
+            "       proveedor, tipo_servicio "
+            "FROM ordenes_servicio WHERE numero_os=?",
+            (numero_os,),
+        ).fetchone()
+        if os_row and os_row[0]:
+            envase_cod = os_row[0]
+            envase_desc = os_row[1] or ''
+            cant_u = float(os_row[2] or 0)
+            prov_os = os_row[3] or ''
+            tipo_serv = os_row[4] or 'Servicio'
+            if cant_u > 0:
+                lote_os = f'OS-{numero_os}'
+                # SALIDA · cuando OS arranca (Enviada)
+                if estado_nuevo == 'Enviada' and estado_anterior == 'Borrador':
+                    try:
+                        c.execute(
+                            "INSERT INTO movimientos_mee "
+                            "(mee_codigo, tipo, cantidad, lote_ref, "
+                            " observaciones, responsable, fecha) "
+                            "VALUES (?, 'Salida', ?, ?, ?, ?, ?)",
+                            (envase_cod, cant_u, lote_os,
+                             f'Enviado a {prov_os} · {tipo_serv} · OS {numero_os}',
+                             user, now),
+                        )
+                        # UPDATE stock maestro_mee (kardex MEE no auto-suma)
+                        c.execute(
+                            "UPDATE maestro_mee SET stock_actual = "
+                            "  COALESCE(stock_actual,0) - ? WHERE codigo=?",
+                            (cant_u, envase_cod),
+                        )
+                        _mee_movimientos_aplicados = True
+                    except sqlite3.OperationalError as _e_mov:
+                        log.warning('OS movimiento_mee Salida fallo OS %s: %s', numero_os, _e_mov)
+                # ENTRADA · cuando OS confirma (Confirmada)
+                elif estado_nuevo == 'Confirmada':
+                    try:
+                        c.execute(
+                            "INSERT INTO movimientos_mee "
+                            "(mee_codigo, tipo, cantidad, lote_ref, "
+                            " observaciones, responsable, fecha) "
+                            "VALUES (?, 'Entrada', ?, ?, ?, ?, ?)",
+                            (envase_cod, cant_u, lote_os,
+                             f'Vuelta de {prov_os} · {tipo_serv} procesado · OS {numero_os}',
+                             user, now),
+                        )
+                        c.execute(
+                            "UPDATE maestro_mee SET stock_actual = "
+                            "  COALESCE(stock_actual,0) + ? WHERE codigo=?",
+                            (cant_u, envase_cod),
+                        )
+                        _mee_movimientos_aplicados = True
+                    except sqlite3.OperationalError as _e_mov:
+                        log.warning('OS movimiento_mee Entrada fallo OS %s: %s', numero_os, _e_mov)
+                # ENTRADA · cancelada desde un estado donde el material
+                # ya estaba con el proveedor (vuelve sin procesar)
+                elif (estado_nuevo == 'Cancelada' and
+                        estado_anterior in ('Recogida', 'En proceso', 'Entregada')):
+                    try:
+                        c.execute(
+                            "INSERT INTO movimientos_mee "
+                            "(mee_codigo, tipo, cantidad, lote_ref, "
+                            " observaciones, responsable, fecha) "
+                            "VALUES (?, 'Entrada', ?, ?, ?, ?, ?)",
+                            (envase_cod, cant_u, lote_os,
+                             f'Devolución sin procesar · {prov_os} · OS {numero_os} cancelada · {(obs or "")[:100]}',
+                             user, now),
+                        )
+                        c.execute(
+                            "UPDATE maestro_mee SET stock_actual = "
+                            "  COALESCE(stock_actual,0) + ? WHERE codigo=?",
+                            (cant_u, envase_cod),
+                        )
+                        _mee_movimientos_aplicados = True
+                    except sqlite3.OperationalError as _e_mov:
+                        log.warning('OS movimiento_mee devolución fallo OS %s: %s', numero_os, _e_mov)
+    except Exception as _e_os_mov:
+        log.warning('OS movimientos_mee sync fallo OS %s: %s', numero_os, _e_os_mov)
     try:
         audit_log(c, usuario=user, accion=f'OS_{estado_nuevo.upper()}',
                   tabla='ordenes_servicio', registro_id=numero_os,
