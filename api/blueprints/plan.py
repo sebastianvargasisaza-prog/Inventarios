@@ -7524,6 +7524,422 @@ def admin_clientes_b2b_migrar_maquila():
                     'ya_existen': ya_existen, 'errores': errores})
 
 
+# ════════════════════════════════════════════════════════════════════════
+# /admin/auditar-inflaciones · Sebastián 25-may-2026 PM
+# "yo habia inflado la produccion en animus porque sabia que fernando
+# necesitaria revisa a fondo eso y veras que si"
+#
+# Detecta lotes Animus DTC donde cantidad_kg > lote_size_kg canónico
+# del Excel · sin desglose B2B atribuido · sospechoso de inflación a ojo
+# del pasado. Permite atribuir el delta retroactivo a un cliente B2B
+# para que el calendario muestre el split correcto.
+# ════════════════════════════════════════════════════════════════════════
+
+@bp.route("/api/admin/auditar-inflaciones", methods=["GET"])
+def auditar_inflaciones_listar():
+    """Lista lotes con sospecha de inflación oculta.
+
+    Algoritmo:
+    - kg_real    = pp.cantidad_kg (lo programado)
+    - kg_dtc_esp = formula_headers.lote_size_kg (canónico del Excel)
+    - kg_b2b_atrib = SUM(pedidos_b2b_lote.kg_aporte) del lote
+    - delta = kg_real - kg_dtc_esp - kg_b2b_atrib
+    - Si delta > umbral (default 0.5kg) Y kg_b2b_atrib es 0 o muy chico
+      → SOSPECHA de inflación a ojo · admin atribuye al cliente correcto.
+
+    Query: ?umbral_kg=0.5 (mínimo delta para flagear)
+            ?incluir_atribuidos=0 (si 1, incluye lotes ya con B2B atribuido)
+    """
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+    try:
+        umbral = float(request.args.get('umbral_kg', '0.5') or '0.5')
+    except ValueError:
+        umbral = 0.5
+    if umbral < 0.1: umbral = 0.1
+    if umbral > 100: umbral = 100
+    incluir_atrib = request.args.get('incluir_atribuidos', '0') == '1'
+    conn = get_db(); cur = conn.cursor()
+    # Lotes Animus DTC futuros sin completar/cancelar/iniciar
+    rows = cur.execute(
+        """SELECT pp.id, pp.producto, pp.fecha_programada,
+                  COALESCE(pp.cantidad_kg, 0) as kg_real,
+                  COALESCE(fh.lote_size_kg, 0) as lote_size_kg,
+                  COALESCE(pp.origen,''),
+                  COALESCE(pp.observaciones,'')
+           FROM produccion_programada pp
+           LEFT JOIN formula_headers fh
+             ON UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(pp.producto))
+           WHERE COALESCE(pp.origen,'') IN ('eos_plan','eos_canonico','calendar','manual','auto_plan','sugerido')
+             AND LOWER(COALESCE(pp.estado,'')) NOT IN ('cancelado','completado','esperando_recurso')
+             AND pp.inicio_real_at IS NULL AND pp.fin_real_at IS NULL
+             AND pp.fecha_programada >= date('now','-5 hours','-7 day')
+           ORDER BY pp.fecha_programada ASC""").fetchall()
+    lote_ids = [r[0] for r in rows]
+    b2b_por_lote = {}
+    if lote_ids:
+        try:
+            ph = ','.join('?' * len(lote_ids))
+            for br in cur.execute(
+                f"""SELECT pbl.lote_produccion_id,
+                          COALESCE(NULLIF(TRIM(pbl.cliente_nombre),''),
+                                   NULLIF(TRIM(pb.cliente_nombre),''),
+                                   'B2B') as cliente,
+                          COALESCE(pbl.kg_aporte, 0)
+                   FROM pedidos_b2b_lote pbl
+                   LEFT JOIN pedidos_b2b pb ON pb.id = pbl.pedido_b2b_id
+                   WHERE pbl.lote_produccion_id IN ({ph})""",
+                lote_ids).fetchall():
+                b2b_por_lote.setdefault(br[0], []).append({
+                    'cliente': br[1], 'kg': float(br[2] or 0)})
+        except Exception:
+            pass
+    inflados = []
+    for r in rows:
+        lote_id, producto, fecha, kg_real, lote_size_kg, origen, obs = r
+        kg_real = float(kg_real or 0)
+        lote_size_kg = float(lote_size_kg or 0)
+        b2b_list = b2b_por_lote.get(lote_id, [])
+        kg_b2b_atrib = round(sum(x['kg'] for x in b2b_list), 2)
+        # Si no hay lote_size_kg canónico, asumir kg_real (no podemos detectar inflación)
+        if lote_size_kg <= 0:
+            continue
+        delta = round(kg_real - lote_size_kg - kg_b2b_atrib, 2)
+        if delta < umbral:
+            continue
+        if kg_b2b_atrib > 0 and not incluir_atrib:
+            # Si ya tiene B2B atribuido pero igual el delta supera el umbral,
+            # mostrar solo si --incluir_atribuidos=1 · típicamente es ajuste fino
+            continue
+        inflados.append({
+            'lote_id': lote_id,
+            'producto': producto,
+            'fecha': fecha,
+            'kg_real': kg_real,
+            'lote_size_kg': lote_size_kg,
+            'kg_b2b_atribuido': kg_b2b_atrib,
+            'b2b_clientes': b2b_list,
+            'delta_sospechoso': delta,
+            'origen': origen,
+            'observaciones': obs[:200] if obs else '',
+        })
+    return jsonify({
+        'inflados': inflados,
+        'total': len(inflados),
+        'kg_total_sospechosos': round(sum(x['delta_sospechoso'] for x in inflados), 2),
+        'umbral_kg': umbral,
+        'incluir_atribuidos': incluir_atrib,
+    })
+
+
+@bp.route("/api/admin/auditar-inflaciones/atribuir", methods=["POST"])
+def auditar_inflaciones_atribuir():
+    """Atribuye el delta de un lote inflado a un cliente B2B retroactivo.
+
+    Crea un pedido_b2b retroactivo + el link pedidos_b2b_lote · NO suma
+    a cantidad_kg (ya está en el total) · solo etiqueta el desglose.
+
+    Body: {lote_id, cliente_id, kg_atribuir, nota?}
+    """
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+    d = request.get_json(silent=True) or {}
+    try:
+        lote_id = int(d.get('lote_id') or 0)
+        cliente_id = (d.get('cliente_id') or '').strip()
+        kg_atribuir = float(d.get('kg_atribuir') or 0)
+    except (TypeError, ValueError):
+        return jsonify({'error': 'inputs inválidos'}), 400
+    nota = (d.get('nota') or 'atribución retroactiva inflación')[:200]
+    if lote_id <= 0 or not cliente_id or kg_atribuir <= 0:
+        return jsonify({'error': 'lote_id, cliente_id y kg_atribuir > 0 requeridos'}), 400
+    if kg_atribuir > 10000:
+        return jsonify({'error': 'kg_atribuir fuera de rango (max 10000)'}), 400
+    conn = get_db(); cur = conn.cursor()
+    # Validar lote
+    lote = cur.execute(
+        "SELECT id, producto, fecha_programada, COALESCE(cantidad_kg,0), COALESCE(estado,''), inicio_real_at, fin_real_at "
+        "FROM produccion_programada WHERE id = ?", (lote_id,)).fetchone()
+    if not lote:
+        return jsonify({'error': f'lote #{lote_id} no existe'}), 404
+    if (lote[4] or '').lower() in ('cancelado','completado'):
+        return jsonify({'error': f'lote #{lote_id} está {lote[4]}'}), 400
+    if lote[5] or lote[6]:
+        return jsonify({'error': f'lote #{lote_id} ya inició/terminó · no atribuir retroactivo'}), 400
+    # Validar cliente
+    cli = cur.execute(
+        "SELECT cliente_id, cliente_nombre FROM clientes_b2b_maestro WHERE cliente_id = ?",
+        (cliente_id,)).fetchone()
+    if not cli:
+        return jsonify({'error': f'cliente_id {cliente_id} no existe en clientes_b2b_maestro'}), 404
+    cli_nom = cli[1]
+    producto = lote[1] or ''
+    fecha_lote = lote[2] or ''
+    # Crear pedido_b2b retroactivo · ml=50 default · uds = kg_atribuir*1000/ml
+    uds_aprox = max(1, int(round(kg_atribuir * 1000 / 50)))
+    try:
+        cur.execute(
+            """INSERT INTO pedidos_b2b
+                 (cliente_id, cliente_nombre, producto_nombre, cantidad_uds,
+                  ml_unidad, fecha_estimada, notas, creado_por, estado)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'confirmado')""",
+            (cliente_id, cli_nom, producto, uds_aprox, 50.0, fecha_lote,
+             f'RETROACTIVO inflación · {nota}', f'audit:{user}'))
+        pedido_id = cur.lastrowid
+    except Exception as e:
+        return jsonify({'error': f'no pude crear pedido retroactivo: {e}'}), 500
+    # Link pedido↔lote
+    try:
+        cur.execute(
+            """INSERT INTO pedidos_b2b_lote
+                 (pedido_b2b_id, lote_produccion_id, kg_aporte,
+                  unidades_aporte, ml_unidad, modo, cliente_nombre)
+               VALUES (?, ?, ?, ?, 50.0, 'sumado_a_lote_canonico', ?)""",
+            (pedido_id, lote_id, kg_atribuir, uds_aprox, cli_nom))
+    except Exception as e:
+        return jsonify({'error': f'pedido creado pero link falló: {e}'}), 500
+    # NO sumamos cantidad_kg · solo etiquetamos el desglose existente
+    try:
+        cur.execute(
+            """UPDATE produccion_programada
+               SET observaciones = SUBSTR(COALESCE(observaciones,'') ||
+                  ' · ATRIBUIDO_RETROACTIVO +' || ? || 'kg ' || ? || ' (audit '|| ? ||')',
+                  -1500)
+               WHERE id = ?""",
+            (kg_atribuir, cli_nom, user, lote_id))
+    except Exception: pass
+    audit_log(cur, usuario=user, accion='B2B_ATRIBUIR_RETROACTIVO',
+              tabla='pedidos_b2b_lote', registro_id=pedido_id,
+              despues={'lote_id': lote_id, 'cliente_id': cliente_id,
+                        'kg_atribuir': kg_atribuir, 'nota': nota})
+    try: _regenerar_distribucion_lote(cur, lote_id)
+    except Exception: pass
+    conn.commit()
+    return jsonify({
+        'ok': True, 'pedido_id_retroactivo': pedido_id, 'lote_id': lote_id,
+        'cliente': cli_nom, 'kg_atribuido': kg_atribuir,
+        'mensaje': f'✓ {kg_atribuir}kg del lote #{lote_id} atribuidos a {cli_nom} (retroactivo)',
+    }), 201
+
+
+@bp.route("/admin/auditar-inflaciones", methods=["GET"])
+def auditar_inflaciones_pagina():
+    """Página HTML standalone para limpiar inflaciones del pasado."""
+    if 'compras_user' not in session:
+        return redirect('/login?next=/admin/auditar-inflaciones')
+    user = session.get('compras_user', '')
+    try:
+        admin_set = set(ADMIN_USERS)
+        compras_set = set(COMPRAS_ACCESS)
+    except Exception:
+        admin_set, compras_set = set(), set()
+    if user not in (admin_set | compras_set):
+        return ("<html><body style='font-family:system-ui;padding:48px'>"
+                 "<h2>Solo admin/compras</h2></body></html>"), 403
+    return _AUDITAR_INFLACIONES_HTML
+
+
+_AUDITAR_INFLACIONES_HTML = """<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>EOS · Auditar inflaciones</title>
+<style>
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;margin:0;padding:24px;color:#0f172a}
+  .wrap{max-width:1280px;margin:0 auto}
+  h1{color:#0f766e;margin:0 0 4px;font-size:22px}
+  .sub{color:#64748b;font-size:13px;margin-bottom:18px}
+  .card{background:#fff;border-radius:12px;padding:18px;margin-bottom:14px;box-shadow:0 2px 8px rgba(0,0,0,.06)}
+  .stats{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+  .stat{background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:12px 18px;flex:1;min-width:160px}
+  .stat-lbl{font-size:11px;color:#64748b;text-transform:uppercase;font-weight:700;letter-spacing:.5px}
+  .stat-val{font-size:22px;font-weight:800;color:#0f172a;margin-top:4px}
+  .stat-val.warn{color:#ca8a04}
+  .stat-val.danger{color:#dc2626}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{background:#f1f5f9;padding:10px;text-align:left;font-size:11px;text-transform:uppercase;color:#475569;font-weight:700;letter-spacing:.5px}
+  td{border-bottom:1px solid #f1f5f9;padding:10px;vertical-align:top}
+  tr:hover{background:#f8fafc}
+  .lote-id{font-family:monospace;color:#64748b;font-weight:700}
+  .delta{font-weight:800;color:#dc2626}
+  .delta-info{font-size:11px;color:#64748b;margin-top:2px}
+  .btn{padding:6px 12px;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer}
+  .btn-prim{background:#0f766e;color:#fff}
+  .btn-prim:hover{background:#0d635c}
+  .btn-sec{background:#e2e8f0;color:#475569}
+  .filtros{display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap}
+  .filtros label{font-size:12px;color:#475569;font-weight:600}
+  .filtros input,.filtros select{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px}
+  .empty{text-align:center;color:#94a3b8;padding:30px}
+  .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;justify-content:center;align-items:center;z-index:1000;padding:20px}
+  .modal-bg.show{display:flex}
+  .modal{background:#fff;border-radius:14px;max-width:480px;width:100%;padding:24px}
+  .modal h2{margin:0 0 6px;font-size:18px;color:#0f172a}
+  .modal .sub{margin-bottom:14px}
+  .modal label{display:block;font-size:12px;color:#475569;font-weight:700;margin:10px 0 4px;text-transform:uppercase;letter-spacing:.5px}
+  .modal select,.modal input{width:100%;padding:10px 12px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px;font-family:inherit}
+  .actions{display:flex;gap:10px;justify-content:flex-end;margin-top:18px}
+</style></head><body>
+<div class="wrap">
+  <h1>🔍 Auditar inflaciones de producción</h1>
+  <div class="sub">Sebastián: "yo había inflado la producción en Animus porque sabía que Fernando necesitaría" · atribuí el delta al cliente correcto para que el calendario muestre el split real.</div>
+
+  <div class="filtros card">
+    <label>Umbral kg sospechoso ≥</label>
+    <input type="number" id="umbral" value="0.5" min="0.1" max="100" step="0.1" style="width:70px">
+    <label><input type="checkbox" id="incluir-atrib" style="width:auto"> Incluir lotes ya con B2B atribuido</label>
+    <button class="btn btn-prim" onclick="cargar()">🔍 Buscar</button>
+    <a href="/admin/clientes-b2b" class="btn btn-sec" style="text-decoration:none">← Clientes B2B</a>
+  </div>
+
+  <div class="stats" id="stats"></div>
+
+  <div class="card">
+    <table>
+      <thead><tr>
+        <th>Lote</th>
+        <th>Producto</th>
+        <th>Fecha</th>
+        <th>kg real / canónico</th>
+        <th>B2B atribuido</th>
+        <th class="delta">Δ sospechoso</th>
+        <th></th>
+      </tr></thead>
+      <tbody id="lista"><tr><td colspan="7" class="empty">Click "Buscar" para listar inflaciones</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Modal atribuir -->
+<div class="modal-bg" id="modal" onclick="if(event.target===this)cerrar()">
+  <div class="modal">
+    <h2>Atribuir delta retroactivo</h2>
+    <div class="sub" id="m-info"></div>
+    <label>Cliente</label>
+    <select id="m-cliente"><option value="">— Cargando —</option></select>
+    <label>kg a atribuir</label>
+    <input id="m-kg" type="number" min="0.1" max="10000" step="0.1">
+    <label>Nota (opcional)</label>
+    <input id="m-nota" placeholder="ej. inflado a ojo para Fernando">
+    <div class="actions">
+      <button class="btn btn-sec" onclick="cerrar()">Cancelar</button>
+      <button class="btn btn-prim" onclick="guardar()">💾 Atribuir</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let _csrfTok = '';
+let _loteSel = null;
+let _clientes = [];
+
+fetch('/api/csrf-token', {credentials:'same-origin'})
+  .then(r => r.ok ? r.json() : null)
+  .then(d => { if(d && d.csrf_token) _csrfTok = d.csrf_token; });
+
+async function cargarClientes(){
+  try{
+    const r = await fetch('/api/clientes-b2b');
+    const d = await r.json();
+    _clientes = d.items || d.clientes || [];
+  }catch(_){}
+}
+
+function escapeHtml(s){
+  return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+async function cargar(){
+  const umbral = document.getElementById('umbral').value || '0.5';
+  const incl = document.getElementById('incluir-atrib').checked ? '1' : '0';
+  const lista = document.getElementById('lista');
+  const stats = document.getElementById('stats');
+  lista.innerHTML = '<tr><td colspan="7" class="empty">Cargando...</td></tr>';
+  try{
+    const r = await fetch('/api/admin/auditar-inflaciones?umbral_kg=' + umbral + '&incluir_atribuidos=' + incl);
+    const d = await r.json();
+    if(!r.ok){
+      lista.innerHTML = '<tr><td colspan="7" class="empty">Error: ' + (d.error || r.status) + '</td></tr>';
+      return;
+    }
+    stats.innerHTML =
+      '<div class="stat"><div class="stat-lbl">Lotes sospechosos</div><div class="stat-val warn">' + d.total + '</div></div>' +
+      '<div class="stat"><div class="stat-lbl">kg totales sin atribuir</div><div class="stat-val danger">' + d.kg_total_sospechosos.toFixed(1) + ' kg</div></div>' +
+      '<div class="stat"><div class="stat-lbl">Umbral aplicado</div><div class="stat-val">≥ ' + d.umbral_kg + ' kg</div></div>';
+    if(!d.inflados.length){
+      lista.innerHTML = '<tr><td colspan="7" class="empty">🎉 Sin lotes sospechosos · todo está atribuido correctamente</td></tr>';
+      return;
+    }
+    lista.innerHTML = d.inflados.map(l => {
+      const b2bTxt = l.b2b_clientes.length > 0
+        ? l.b2b_clientes.map(c => escapeHtml(c.cliente) + ' (' + c.kg + 'kg)').join(', ')
+        : '<span style="color:#94a3b8">ninguno</span>';
+      return '<tr>'
+        + '<td class="lote-id">#' + l.lote_id + '</td>'
+        + '<td><strong>' + escapeHtml(l.producto) + '</strong><div class="delta-info">origen: ' + escapeHtml(l.origen) + '</div></td>'
+        + '<td>' + escapeHtml(l.fecha) + '</td>'
+        + '<td>' + l.kg_real + ' / ' + l.lote_size_kg + ' kg</td>'
+        + '<td>' + b2bTxt + '</td>'
+        + '<td class="delta">+' + l.delta_sospechoso + ' kg</td>'
+        + '<td><button class="btn btn-prim" onclick="abrirAtribuir(' + l.lote_id + ',' + l.delta_sospechoso + ',&quot;' + escapeHtml(l.producto) + '&quot;,&quot;' + escapeHtml(l.fecha) + '&quot;)">⚓ Atribuir</button></td>'
+        + '</tr>';
+    }).join('');
+  }catch(e){
+    lista.innerHTML = '<tr><td colspan="7" class="empty">Error red: ' + e.message + '</td></tr>';
+  }
+}
+
+async function abrirAtribuir(loteId, deltaKg, producto, fecha){
+  _loteSel = loteId;
+  if(_clientes.length === 0) await cargarClientes();
+  const sel = document.getElementById('m-cliente');
+  sel.innerHTML = '<option value="">— Elegí cliente —</option>' +
+    _clientes.filter(c => c.activo !== false).map(c =>
+      '<option value="' + escapeHtml(c.cliente_id) + '">' + escapeHtml(c.cliente_nombre) + ' · ' + escapeHtml(c.tipo || 'B2B') + '</option>'
+    ).join('');
+  document.getElementById('m-info').textContent =
+    'Lote #' + loteId + ' · ' + producto + ' · ' + fecha + ' · delta sospechoso: ' + deltaKg + 'kg';
+  document.getElementById('m-kg').value = deltaKg;
+  document.getElementById('m-nota').value = '';
+  document.getElementById('modal').classList.add('show');
+}
+
+function cerrar(){
+  document.getElementById('modal').classList.remove('show');
+  _loteSel = null;
+}
+
+async function guardar(){
+  if(!_loteSel) return;
+  const cliente = document.getElementById('m-cliente').value;
+  const kg = parseFloat(document.getElementById('m-kg').value);
+  const nota = document.getElementById('m-nota').value.trim();
+  if(!cliente){ alert('Elegí un cliente'); return; }
+  if(!(kg > 0)){ alert('kg debe ser > 0'); return; }
+  try{
+    const r = await fetch('/api/admin/auditar-inflaciones/atribuir', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-CSRF-Token': _csrfTok},
+      body: JSON.stringify({lote_id: _loteSel, cliente_id: cliente, kg_atribuir: kg, nota: nota}),
+    });
+    const d = await r.json();
+    if(!r.ok){ alert('Error: ' + (d.error || r.status)); return; }
+    alert(d.mensaje || '✓ Atribuido');
+    cerrar();
+    cargar();
+  }catch(e){ alert('Error red: ' + e.message); }
+}
+
+// Carga clientes al boot · sin esperar primer atribuir
+cargarClientes();
+</script>
+</body></html>
+"""
+
+
 @bp.route("/admin/clientes-b2b", methods=["GET"])
 def admin_clientes_b2b_pagina():
     """Página HTML standalone · módulo admin de Clientes B2B.
