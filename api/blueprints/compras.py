@@ -1069,11 +1069,32 @@ def handle_oc_detalle(numero_oc):
             if not _row:
                 return jsonify({'error': 'OC no encontrada'}), 404
             estado_actual = _row[0]
-            # INV-4 · una OC Pagada no puede revertir de estado. Si hubo un
-            # error, se cancela con motivo o se crea una OC nueva.
-            if estado_actual == 'Pagada' and nuevo_estado != 'Pagada':
-                return jsonify({'error': 'Una OC Pagada no puede cambiar de estado. '
-                                         'Cancelá la OC con motivo o creá una nueva.'}), 409
+            # State machine OC · Sebastián 24-may-2026 · audit Compras P0 #2.
+            # Antes solo Pagada estaba protegida (INV-4) · Cancelada / Rechazada
+            # / Recibida podían revertir a Borrador silenciosamente. Ahora
+            # whitelist explícita de transiciones válidas · respeta legacy
+            # Revisada / Parcial como pasthru y permite idempotente A→A.
+            _OC_TRANSICIONES = {
+                'Borrador':   {'Borrador','Autorizada','Cancelada','Rechazada','Revisada'},
+                'Revisada':   {'Borrador','Autorizada','Cancelada','Rechazada','Revisada'},
+                'Autorizada': {'Autorizada','Recibida','Pagada','Parcial','Cancelada','Rechazada'},
+                'Parcial':    {'Parcial','Recibida','Pagada','Cancelada'},
+                'Recibida':   {'Recibida','Pagada','Cancelada'},
+                'Pagada':     {'Pagada'},        # terminal · INV-4
+                'Cancelada':  {'Cancelada'},     # terminal
+                'Rechazada':  {'Rechazada'},     # terminal
+            }
+            transiciones_ok = _OC_TRANSICIONES.get(estado_actual)
+            # Admins pueden forzar overrides legítimos (motivo en body)
+            es_admin = (u in ADMIN_USERS)
+            if transiciones_ok is not None and nuevo_estado not in transiciones_ok and not es_admin:
+                return jsonify({
+                    'error': f"Transición no permitida: {estado_actual} → {nuevo_estado}",
+                    'codigo': 'OC_TRANSICION_INVALIDA',
+                    'estado_actual': estado_actual,
+                    'transiciones_validas': sorted(transiciones_ok),
+                    'hint': 'Solo admin puede forzar override (con motivo en observaciones).',
+                }), 409
             c.execute("UPDATE ordenes_compra SET estado=? WHERE numero_oc=?",
                       (nuevo_estado, numero_oc))
             # AUDITORÍA-FIX 23-may-2026 · C3 · si la OC se cancela, liberar
