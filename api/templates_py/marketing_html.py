@@ -1522,7 +1522,7 @@ async function hoyRefreshMetricas() {
     const r = await fetch('/api/marketing/refresh-all-metrics', _fetchOpts('POST'));
     const d = await r.json();
     if(!r.ok) {
-      result.innerHTML = '<span style="color:#dc2626">❌ Error: ' + (d.error || r.status) + '</span>';
+      result.innerHTML = '<span style="color:#dc2626">❌ Error: ' + _escHtml(d.error || r.status) + '</span>';
       return;
     }
     result.innerHTML = `<span style="color:#34d399">✓ ${d.mensaje}</span>`;
@@ -2044,7 +2044,7 @@ async function loadAtribucion() {
     const r = await fetch('/api/marketing/atribucion-influencers');
     const d = await r.json();
     if (!d.ok) {
-      body.innerHTML = '<tr class="empty-row"><td colspan="8" style="color:#dc2626;">Error: ' + (d.error||'desconocido') + '</td></tr>';
+      body.innerHTML = '<tr class="empty-row"><td colspan="8" style="color:#dc2626;">Error: ' + _escHtml(d.error||'desconocido') + '</td></tr>';
       return;
     }
     const k = d.kpis || {};
@@ -2941,7 +2941,7 @@ async function runAgent(agente) {
     const resp = await fetch(`/api/marketing/agentes/${agente}`, _fetchOpts('POST', body));
     const data = await resp.json();
     if(data.error) {
-      resultDiv.innerHTML = `<pre style="color:#f87171;">Error: ${data.error}</pre>`;
+      resultDiv.innerHTML = `<pre style="color:#f87171;">Error: ${_escHtml(data.error)}</pre>`;
     } else {
       resultDiv.innerHTML = formatAgentResult(agente, data) + renderFeedbackBar(data.log_id);
 

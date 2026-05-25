@@ -120,11 +120,17 @@ def financiero_kpis():
     # Auto-sync Shopify → flujo_ingresos antes de calcular KPIs.
     # Asi cuando Sebastian abre el dashboard, los pedidos Shopify recientes
     # ya cuentan como ingresos del mes (antes el card decia $0 mientras
-    # Shopify mostraba $284.9M). Falla silenciosa.
+    # Shopify mostraba $284.9M). Falla "best-effort" pero ahora con log
+    # (Sebastián 25-may-2026 audit zero-error · antes fallaba silencioso
+    # · si token Shopify vencía o rate limit, KPIs quedaban viejos sin
+    # ninguna pista en logs).
     try:
         _sync_shopify_a_flujo_ingresos(conn, solo_pagados=True)
-    except Exception:
-        pass
+    except Exception as _e_sync:
+        import logging as _lg_sync
+        _lg_sync.getLogger('financiero').warning(
+            'auto-sync shopify→flujo_ingresos fallo (KPIs pueden estar viejos): %s',
+            _e_sync)
     # Auto-backfill de egresos mal categorizados como Espagiria que en
     # realidad son pagos a influencers (deben quedar como Animus). Idempotente.
     # Sebastian 2026-04-29: "todo esto creo son influencers deberia quedar
