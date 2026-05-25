@@ -83,7 +83,13 @@ def gerencia_kpis():
     try:
         c.execute("SELECT COUNT(*) FROM solicitudes_compra WHERE estado='Pendiente'")
         sol_pendientes = c.fetchone()[0] or 0
-    except: sol_pendientes = 0
+    except Exception as _e_sol:
+        # Sebastián 25-may-2026 · audit zero-error · antes except: pass
+        # silencioso → CEO veía sol_pendientes=0 falso si la query fallaba.
+        import logging as _lg
+        _lg.getLogger('gerencia').warning(
+            'kpi sol_pendientes fallo (mostrando 0): %s', _e_sol)
+        sol_pendientes = 0
     c.execute("SELECT COALESCE(SUM(unidades_disponible),0) FROM stock_pt WHERE estado='Disponible'")
     uds_pt = c.fetchone()[0] or 0
     c.execute("SELECT COUNT(*) FROM pedidos WHERE estado IN ('Confirmado','En preparacion')")
@@ -94,8 +100,14 @@ def gerencia_kpis():
     ult_fm = c.fetchone()[0]; dias_fm = None
     if ult_fm:
         from datetime import date as _d
-        try: dt = datetime.fromisoformat(ult_fm[:10]); dias_fm = (_d.today() - dt.date()).days
-        except: pass
+        try:
+            dt = datetime.fromisoformat(ult_fm[:10])
+            dias_fm = (_d.today() - dt.date()).days
+        except (ValueError, TypeError) as _e_fm:
+            # Sebastián 25-may-2026 · log si fecha viene mal · antes silencioso
+            import logging as _lg
+            _lg.getLogger('gerencia').warning(
+                'kpi dias_fm parse fallo (%r): %s', ult_fm, _e_fm)
     c.execute("SELECT periodo,saldo_caja,ingresos_animus,ingresos_maquila,notas,fecha FROM gerencia_inputs ORDER BY periodo DESC LIMIT 1")
     row = c.fetchone()
     cols_inp = ['periodo','saldo_caja','ingresos_animus','ingresos_maquila','notas','fecha']

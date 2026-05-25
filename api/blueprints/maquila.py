@@ -115,8 +115,22 @@ def api_maquila_prospectos():
 
 @bp.route('/api/maquila/prospectos/<int:pid>', methods=['PATCH'])
 def api_maquila_prospecto_patch(pid):
+    # Sebastián 25-may-2026 · audit zero-error · capturar antes + audit_log.
+    # Antes 6 UPDATEs secuenciales sin rastro · si dispute "¿quién subió
+    # valor_estimado del prospecto X?", no había trazabilidad.
     d = request.json or {}
     conn = get_db(); c = conn.cursor()
+    # Snapshot antes para audit (sólo campos a modificar)
+    _antes_row = c.execute(
+        "SELECT etapa, valor_estimado_lote, observaciones, nivel_servicio, "
+        "       kam_asignado, es_incubacion FROM maquila_prospectos WHERE id=?",
+        (pid,),
+    ).fetchone()
+    antes = {}
+    if _antes_row:
+        antes = {'etapa': _antes_row[0], 'valor_estimado': _antes_row[1],
+                  'notas': _antes_row[2], 'nivel_servicio': _antes_row[3],
+                  'kam_asignado': _antes_row[4], 'es_incubacion': _antes_row[5]}
     if 'etapa' in d:
         c.execute('UPDATE maquila_prospectos SET etapa=? WHERE id=?', (d['etapa'], pid))
     if 'valor_estimado' in d:
@@ -130,6 +144,18 @@ def api_maquila_prospecto_patch(pid):
         c.execute('UPDATE maquila_prospectos SET kam_asignado=? WHERE id=?', (d['kam_asignado'], pid))
     if 'es_incubacion' in d:
         c.execute('UPDATE maquila_prospectos SET es_incubacion=? WHERE id=?', (1 if d['es_incubacion'] else 0, pid))
+    try:
+        from audit_helpers import audit_log
+        audit_log(c, usuario=session.get('compras_user', ''),
+                  accion='PATCH_MAQUILA_PROSPECTO',
+                  tabla='maquila_prospectos', registro_id=str(pid),
+                  antes=antes,
+                  despues={k: d[k] for k in d if k in (
+                      'etapa', 'valor_estimado', 'notas', 'nivel_servicio',
+                      'kam_asignado', 'es_incubacion')},
+                  detalle=f'Prospecto {pid} editado · {len(d)} campos')
+    except Exception:
+        pass
     conn.commit()
     return jsonify({'ok': True})
 
@@ -192,10 +218,43 @@ def api_maquila_ordenes():
 
 @bp.route('/api/maquila/ordenes/<int:oid>', methods=['PATCH'])
 def api_maquila_orden_patch(oid):
+    """Sebastián 25-may-2026 · audit zero-error · audit_log + state guard.
+    Antes UPDATE sin trazabilidad · OC podía pasar Cancelada → Completada
+    sin rastro.
+    """
     d = request.json or {}
     conn = get_db(); c = conn.cursor()
     if 'estado' in d:
-        c.execute('UPDATE maquila_ordenes SET estado=? WHERE id=?', (d['estado'], oid))
+        # Snapshot estado anterior
+        _prev = c.execute(
+            "SELECT estado FROM maquila_ordenes WHERE id=?", (oid,)
+        ).fetchone()
+        estado_ant = _prev[0] if _prev else None
+        nuevo_estado = (d['estado'] or '').strip()
+        # Validar estado destino · whitelist + bloquear reanimación desde
+        # estados terminales (Cancelada/Completada) sin admin override.
+        _VALIDOS = {'Borrador', 'En proceso', 'Completada', 'Cancelada'}
+        if nuevo_estado not in _VALIDOS:
+            return jsonify({
+                'error': f'Estado inválido · usar {sorted(_VALIDOS)}'
+            }), 400
+        if estado_ant in ('Cancelada', 'Completada') and not d.get('force'):
+            return jsonify({
+                'error': f'OC en estado terminal {estado_ant} · no se puede '
+                          f'cambiar sin force=true (admin)',
+                'codigo': 'OC_MAQUILA_TERMINAL',
+            }), 409
+        c.execute('UPDATE maquila_ordenes SET estado=? WHERE id=?', (nuevo_estado, oid))
+        try:
+            from audit_helpers import audit_log
+            audit_log(c, usuario=session.get('compras_user', ''),
+                      accion='PATCH_MAQUILA_ORDEN',
+                      tabla='maquila_ordenes', registro_id=str(oid),
+                      antes={'estado': estado_ant},
+                      despues={'estado': nuevo_estado, 'force': bool(d.get('force'))},
+                      detalle=f'Orden maquila {oid} · {estado_ant}→{nuevo_estado}')
+        except Exception:
+            pass
     conn.commit()
     return jsonify({'ok': True})
 
