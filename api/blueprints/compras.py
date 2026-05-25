@@ -5830,6 +5830,70 @@ def pagar_oc(numero_oc):
         __import__('logging').getLogger('compras').warning(
             "sync pagos_influencers falló para OC %s: %s", numero_oc, _e
         )
+    # Sebastián 24-may-2026 · audit Influencers · notif por email al influencer
+    # cuando se le paga. Memory regla "no email rutinario" no aplica acá porque
+    # el influencer no usa la app · email es el único canal. Opt-in · solo si
+    # marketing_influencers.email no está vacío (mig 180). Best-effort en thread
+    # daemon · falla silencioso si no hay infra de mail configurada.
+    try:
+        _is_inf_cat = ('influencer' in (categoria or '').lower() or
+                       'marketing' in (categoria or '').lower() or
+                       'cuenta de cobro' in (categoria or '').lower())
+        if _is_inf_cat:
+            _inf_email = ''
+            _inf_nombre_real = inf_name
+            try:
+                if inf_id:
+                    _r_email = cur.execute(
+                        "SELECT COALESCE(email,''), nombre FROM marketing_influencers WHERE id=?",
+                        (inf_id,),
+                    ).fetchone()
+                    if _r_email:
+                        _inf_email = (_r_email[0] or '').strip()
+                        _inf_nombre_real = _r_email[1] or inf_name
+            except sqlite3.OperationalError:
+                # Mig 180 aún no aplicada · columna email no existe
+                _inf_email = ''
+            if _inf_email and '@' in _inf_email:
+                _asunto_inf = f'Pago recibido · OC {numero_oc} · HHA Group'
+                _body_inf = (
+                    '<html><body style="font-family:Arial,sans-serif;max-width:600px;">'
+                    '<div style="background:#dcfce7;padding:24px;border-radius:8px;'
+                    'border-left:4px solid #16a34a;">'
+                    '<h2 style="color:#15803d;margin:0 0 12px;">💸 Pago procesado</h2>'
+                    f'<p style="margin:6px 0;">Hola <strong>{_inf_nombre_real}</strong>,</p>'
+                    '<p style="margin:6px 0;">Confirmamos que tu pago fue procesado:</p>'
+                    '<table style="margin:14px 0;font-size:14px;border-collapse:collapse;">'
+                    f'<tr><td style="padding:4px 12px 4px 0;color:#64748b;">Orden:</td>'
+                    f'<td style="padding:4px 0;font-weight:600;">{numero_oc}</td></tr>'
+                    f'<tr><td style="padding:4px 12px 4px 0;color:#64748b;">Monto:</td>'
+                    f'<td style="padding:4px 0;font-weight:600;">${monto:,.0f} COP</td></tr>'
+                    f'<tr><td style="padding:4px 12px 4px 0;color:#64748b;">Medio:</td>'
+                    f'<td style="padding:4px 0;">{medio or "Transferencia"}</td></tr>'
+                    '</table>'
+                    '<p style="margin:12px 0 0;color:#64748b;font-size:12px;">'
+                    'Si tenés alguna duda, escribinos respondiendo este correo.<br>'
+                    'HHA Group · ÁNIMUS Lab + Espagiria'
+                    '</p>'
+                    '</div></body></html>'
+                )
+                _notificar_solicitante_email(_inf_email, _asunto_inf, _body_inf)
+                # Audit del envío · queda rastro de a quién y cuándo
+                try:
+                    audit_log(cur, usuario=usuario_actual,
+                              accion='NOTIF_PAGO_INFLUENCER',
+                              tabla='marketing_influencers',
+                              registro_id=str(inf_id) if inf_id else '?',
+                              antes={}, despues={'email': _inf_email,
+                                                  'numero_oc': numero_oc,
+                                                  'monto': monto},
+                              detalle=f"Email pago OC {numero_oc} a {_inf_nombre_real} ${monto:,.0f}")
+                except Exception:
+                    pass
+    except Exception as _e:
+        __import__('logging').getLogger('compras').warning(
+            "notif pago influencer fallo OC %s: %s", numero_oc, _e
+        )
     try:
         # Detectar empresa pagadora con la misma logica multi-señal que usan los
         # comprobantes de egreso. Influencers / marketing / cuenta de cobro →
