@@ -6944,8 +6944,7 @@ def get_por_pagar():
                COALESCE(p.nit,'') as nit
         FROM ordenes_compra oc
         LEFT JOIN proveedores p ON oc.proveedor = p.nombre
-        WHERE oc.estado IN ('Recibida', 'Parcial') AND
-              oc.estado != 'Pagada'
+        WHERE oc.estado IN ('Recibida', 'Parcial')
         ORDER BY oc.fecha_recepcion DESC, oc.numero_oc DESC
     """)
     cols = [d[0] for d in cur.description]
@@ -9078,10 +9077,13 @@ def compras_cash_flow():
         v = {'dias': d}
         cutoff = (_dtcash.now() + _tdcash(days=d)).date().isoformat()
         try:
+            # Sebastián 24-may-2026 · audit Por Pagar · KPI debe coincidir con el
+            # endpoint /api/compras/por-pagar · excluir Borrador/Revisada (no están
+            # listas para pagar todavía) e incluir Parcial (saldo pendiente).
             r = c.execute(
                 """SELECT COUNT(*), COALESCE(SUM(valor_total),0)
                    FROM ordenes_compra
-                   WHERE estado IN ('Borrador','Revisada','Autorizada','Recibida')
+                   WHERE estado IN ('Autorizada','Aprobada','Recibida','Parcial')
                      AND date(fecha) <= ?""",
                 (cutoff,),
             ).fetchone()
@@ -9986,8 +9988,13 @@ def compras_dashboard_home():
         """SELECT COUNT(*) FROM solicitudes_compra
            WHERE estado IN ('Pendiente','Aprobada')
              AND categoria IN ('Influencer/Marketing Digital','Cuenta de Cobro')""")
+    # Sebastián 24-may-2026 · audit Por Pagar · alinear badge con el endpoint
+    # /api/compras/por-pagar que muestra Recibida + Parcial (mercancía) +
+    # Aprobada/Autorizada (pago directo servicios). Antes solo contaba
+    # Autorizada · el badge subestimaba al usuario el trabajo pendiente.
     _count('por_pagar',
-        "SELECT COUNT(*) FROM ordenes_compra WHERE estado='Autorizada'")
+        "SELECT COUNT(*) FROM ordenes_compra "
+        "WHERE estado IN ('Autorizada','Aprobada','Recibida','Parcial')")
     _count('consol',
         "SELECT COUNT(*) FROM ordenes_compra WHERE estado IN ('Borrador','Revisada','Autorizada')")
     out['counts'] = counts
