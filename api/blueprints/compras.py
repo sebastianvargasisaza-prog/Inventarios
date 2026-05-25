@@ -5497,16 +5497,48 @@ def autorizar_oc(numero_oc):
     if err:
         return err, code
     conn = get_db(); cur = conn.cursor()
-    cur.execute("SELECT estado, valor_total FROM ordenes_compra WHERE numero_oc=?", (numero_oc,))
+    cur.execute("SELECT estado, valor_total, categoria FROM ordenes_compra WHERE numero_oc=?", (numero_oc,))
     row = cur.fetchone()
     if not row:
         return jsonify({'error': 'OC no encontrada'}), 404
     estado_ant = row[0]
+    categoria_oc = row[2] or ''
     # No re-autorizar una OC ya avanzada/terminal · evita revertir el ciclo
     # Autorizada→Pagada→Recibida o resucitar una OC cancelada.
     if (estado_ant or '') in ('Pagada', 'Recibida', 'Cancelada', 'Anulada'):
         return jsonify({'error': f'No se puede autorizar una OC en estado {estado_ant}'}), 409
     valor = float(row[1] or 0)
+    # Sebastián 24-may-2026 · audit OCs Activas · validar items > 0 antes de
+    # autorizar. Antes una OC sin items podía pasar a Autorizada con valor_total=0
+    # · email al proveedor con tabla vacía · confusión. Ahora exigimos al menos
+    # 1 item con cantidad > 0 (excepción: categorías de pago directo · SVC/CC
+    # /Influencer · que pueden tener items genéricos sin cantidad real).
+    _CATEGORIAS_SIN_ITEMS = ('Influencer/Marketing Digital', 'Cuenta de Cobro',
+                              'CC', 'SVC', 'Servicios', 'Servicios Profesionales')
+    if categoria_oc not in _CATEGORIAS_SIN_ITEMS:
+        try:
+            _n_items_row = cur.execute(
+                "SELECT COUNT(*), COALESCE(SUM(cantidad_g),0) "
+                "FROM ordenes_compra_items WHERE numero_oc=?",
+                (numero_oc,),
+            ).fetchone()
+            _n_items = int(_n_items_row[0] or 0)
+            _sum_cant = float(_n_items_row[1] or 0)
+        except sqlite3.OperationalError:
+            _n_items, _sum_cant = 0, 0
+        if _n_items == 0 or _sum_cant <= 0:
+            return jsonify({
+                'error': 'OC sin items · agregá líneas con cantidad > 0 antes de autorizar',
+                'codigo': 'OC_SIN_ITEMS',
+                'n_items': _n_items, 'suma_cantidad_g': _sum_cant,
+                'hint': 'Editá la OC y agregá al menos un material con cantidad y precio.',
+            }), 409
+        if valor <= 0:
+            return jsonify({
+                'error': 'OC con valor_total=0 · agregá precios a los items antes de autorizar',
+                'codigo': 'OC_SIN_VALOR',
+                'hint': 'Editá la OC e ingresá precio_unitario > 0 en cada item.',
+            }), 409
     # Sprint 4: límite de aprobación por usuario
     err_lim, code_lim = _check_monto_limit(usuario_actual, valor)
     if err_lim:
