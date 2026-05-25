@@ -94,36 +94,77 @@ def _require_portal_login():
 # ────────────────────────────────────────────────────────────────────
 
 _LOGIN_HTML = r"""<!DOCTYPE html>
-<html lang="es"><head><meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Portal Clientes · Espagiria</title>
+<html lang="es" translate="no">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>EOS · Portal Clientes</title>
+<meta name="application-name" content="EOS · Portal">
+<meta name="apple-mobile-web-app-title" content="EOS Portal">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#6d28d9">
+<meta name="description" content="EOS · Portal Clientes B2B · Espagiria & ÁNIMUS Lab">
+<meta name="author" content="HHA Group">
+<link rel="icon" type="image/x-icon" href="/static/favicon.ico?v=eos11">
+<link rel="icon" type="image/png" sizes="32x32" href="/static/icons/favicon-32.png?v=eos11">
+<link rel="apple-touch-icon" sizes="180x180" href="/static/icons/apple-touch-icon-180.png?v=eos11">
 <style>
-*{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:linear-gradient(135deg,#0f766e,#0891b2);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;color:#1e293b}
-.card{background:#fff;border-radius:16px;padding:32px;max-width:380px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.3)}
-h1{color:#0f766e;font-size:22px;margin-bottom:6px}
-.sub{color:#64748b;font-size:13px;margin-bottom:22px}
-label{display:block;font-size:12px;color:#475569;font-weight:600;margin:14px 0 6px}
-input{width:100%;padding:11px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px;outline:none}
-input:focus{border-color:#0f766e}
-button{width:100%;background:#0f766e;color:#fff;border:none;padding:13px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;margin-top:18px}
-button:hover{background:#0d635c}
-.err{background:#fee2e2;color:#991b1b;padding:10px 12px;border-radius:8px;font-size:12px;margin-top:12px;display:none}
-.foot{text-align:center;color:#94a3b8;font-size:11px;margin-top:18px}
-</style></head><body>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;background:radial-gradient(ellipse at top,#1e1b4b 0%,#0f172a 50%,#0a0a0f 100%);min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;color:#e2e8f0;}
+.card{background:rgba(30,41,59,0.7);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border:1px solid rgba(167,139,250,0.2);border-radius:20px;padding:48px 40px;width:100%;max-width:440px;box-shadow:0 20px 60px rgba(109,40,217,0.15);}
+.logo{text-align:center;margin-bottom:36px;}
+.brand-mark{display:inline-flex;align-items:center;justify-content:center;width:80px;height:80px;border-radius:18px;margin-bottom:18px;box-shadow:0 12px 36px rgba(109,40,217,0.45);}
+.brand-name{font-size:30px;font-weight:800;letter-spacing:-0.8px;background:linear-gradient(135deg,#c4b5fd,#a78bfa);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:4px;}
+.brand-tag{color:#a78bfa;font-size:12px;font-style:italic;margin-bottom:8px;}
+.brand-sub{color:#cbd5e1;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:14px;}
+.brand-by{color:#64748b;font-size:10px;text-transform:uppercase;letter-spacing:1.5px;}
+.brand-by strong{color:#cbd5e1;}
+label{display:block;color:#94a3b8;font-size:0.8em;font-weight:700;margin-bottom:8px;text-transform:uppercase;letter-spacing:0.5px;}
+.fg{margin-bottom:20px;}
+input[type=email],input[type=password]{width:100%;background:rgba(15,23,42,0.6);border:1px solid #334155;border-radius:10px;padding:14px 16px;color:white;font-size:1em;outline:none;transition:.2s;}
+input[type=email]:focus,input[type=password]:focus{border-color:#a78bfa;background:rgba(15,23,42,0.9);box-shadow:0 0 0 3px rgba(167,139,250,0.15);}
+.btn{width:100%;background:linear-gradient(135deg,#a78bfa,#6d28d9);color:white;border:none;border-radius:10px;padding:14px;font-size:1em;font-weight:700;cursor:pointer;margin-top:8px;transition:.2s;letter-spacing:0.3px;}
+.btn:hover{transform:translateY(-1px);box-shadow:0 8px 20px rgba(109,40,217,0.4);}
+.err{background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);color:#f87171;padding:12px 16px;border-radius:8px;font-size:0.88em;margin-bottom:20px;text-align:center;display:none;}
+.help{text-align:center;color:#475569;font-size:0.78em;margin-top:14px;}
+.help a{color:#a78bfa;text-decoration:none;}
+.app-footer{margin-top:32px;text-align:center;font-size:10px;color:#475569;letter-spacing:0.5px;line-height:1.6;}
+.app-footer strong{color:#94a3b8;}
+@media(max-width:480px){
+  .card{padding:36px 24px;}
+  .brand-name{font-size:26px;}
+}
+</style>
+</head>
+<body>
 <div class="card">
-  <h1>🌿 Portal Clientes</h1>
-  <div class="sub">Espagiria & ÁNIMUS Lab · acceso B2B</div>
+  <div class="logo">
+    <span class="brand-mark" style="color:#6d28d9;" aria-label="EOS">
+      <svg viewBox="0 0 32 32" width="64" height="64" fill="none" stroke="#a78bfa" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="16" cy="12" r="3" fill="#a78bfa"/>
+        <path d="M 5 19 Q 16 17, 27 19" stroke-width="1.5" stroke-linecap="round" opacity=".55"/>
+        <path d="M 5 23 Q 16 21, 27 23" stroke-width="1.5" stroke-linecap="round" opacity=".25"/>
+      </svg>
+    </span>
+    <div class="brand-name">EOS</div>
+    <div class="brand-tag">Todo el holding, al frente</div>
+    <div class="brand-sub">Portal Clientes B2B</div>
+    <div class="brand-by">by <strong>HHA Group</strong></div>
+  </div>
+  <div class="err" id="err"></div>
   <form id="form-login">
-    <label>Email</label>
-    <input type="email" id="email" required autocomplete="username">
-    <label>Contraseña</label>
-    <input type="password" id="password" required autocomplete="current-password">
-    <button type="submit">Entrar</button>
-    <div class="err" id="err"></div>
+    <div class="fg"><label>Email</label><input type="email" id="email" placeholder="cliente@empresa.com" required autocomplete="username" autofocus></div>
+    <div class="fg"><label>Contraseña</label><input type="password" id="password" placeholder="••••••••" required autocomplete="current-password"></div>
+    <button type="submit" class="btn">Ingresar →</button>
   </form>
-  <div class="foot">¿No tienes credenciales? Contacta a Sebastián.</div>
+  <div class="help">¿No tenés credenciales? Contactá a tu ejecutivo.</div>
 </div>
+<footer class="app-footer">
+  <div><strong>EOS v1.0</strong> &middot; Edición Espagiria</div>
+  <div style="margin-top:4px;">Desarrollado por <strong>HHA Group</strong></div>
+  <div style="margin-top:6px;color:#334155;">&copy; 2026 HHA Group S.A.S. &middot; Todos los derechos reservados</div>
+</footer>
 <script>
 document.getElementById('form-login').addEventListener('submit', async function(e){
   e.preventDefault();
@@ -256,71 +297,131 @@ def portal_logout():
 # ────────────────────────────────────────────────────────────────────
 
 _PORTAL_HTML = r"""<!DOCTYPE html>
-<html lang="es"><head><meta charset="UTF-8">
+<html lang="es" translate="no"><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Portal Clientes · Espagiria</title>
+<title>EOS · Portal Clientes</title>
+<meta name="theme-color" content="#6d28d9">
+<meta name="application-name" content="EOS · Portal">
+<meta name="apple-mobile-web-app-title" content="EOS Portal">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="author" content="HHA Group">
+<link rel="icon" type="image/x-icon" href="/static/favicon.ico?v=eos11">
+<link rel="icon" type="image/png" sizes="32x32" href="/static/icons/favicon-32.png?v=eos11">
+<link rel="apple-touch-icon" sizes="180x180" href="/static/icons/apple-touch-icon-180.png?v=eos11">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;color:#1e293b;min-height:100vh;font-size:14px}
-header{background:linear-gradient(135deg,#0f766e,#0891b2);color:#fff;padding:16px 18px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px}
-header h1{font-size:18px;font-weight:800}
-header .meta{font-size:11px;opacity:.9}
-header a{color:#fff;text-decoration:none;font-size:12px;background:rgba(255,255,255,.15);padding:6px 10px;border-radius:6px}
-.wrap{max-width:780px;margin:0 auto;padding:20px}
-.tabs{display:flex;gap:8px;margin-bottom:16px}
-.tab{flex:1;padding:11px;background:#fff;border:1px solid #cbd5e1;border-radius:10px 10px 0 0;font-size:14px;font-weight:700;cursor:pointer;color:#475569}
-.tab.active{background:#0f766e;color:#fff;border-color:#0f766e}
-.card{background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:18px;margin-bottom:14px}
-.card h2{font-size:15px;color:#0f766e;margin-bottom:10px}
-label{display:block;font-size:12px;color:#475569;font-weight:600;margin:10px 0 4px}
-input,select,textarea{width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:6px;font-size:14px;outline:none;font-family:inherit}
-input:focus,select:focus,textarea:focus{border-color:#0f766e}
-button.primary{background:#0f766e;color:#fff;border:none;padding:12px 24px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;margin-top:14px}
-button.primary:hover{background:#0d635c}
-button.primary:disabled{opacity:.6;cursor:not-allowed}
-.lista{display:flex;flex-direction:column;gap:8px}
-.pedido{background:#f8fafc;border:1px solid #e2e8f0;border-left:4px solid #0891b2;border-radius:6px;padding:10px 14px}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
+     background:radial-gradient(ellipse at top,#1e1b4b 0%,#0f172a 50%,#0a0a0f 100%);
+     color:#e2e8f0;min-height:100vh;font-size:14px}
+header{background:rgba(30,41,59,0.7);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+       border-bottom:1px solid rgba(167,139,250,0.2);
+       color:#fff;padding:14px 22px;display:flex;justify-content:space-between;align-items:center;
+       flex-wrap:wrap;gap:10px;position:sticky;top:0;z-index:10}
+header .brand{display:flex;align-items:center;gap:12px}
+header .brand-mark{display:inline-flex;align-items:center;justify-content:center;width:40px;height:40px;
+                   border-radius:10px;background:rgba(109,40,217,.18);box-shadow:0 4px 12px rgba(109,40,217,0.25)}
+header h1{font-size:18px;font-weight:800;letter-spacing:-0.4px;
+          background:linear-gradient(135deg,#c4b5fd,#a78bfa);
+          -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+header .sub{font-size:10px;color:#a78bfa;font-style:italic;font-weight:500}
+header .meta{font-size:11px;color:#cbd5e1;margin-top:2px}
+header a.logout{color:#cbd5e1;text-decoration:none;font-size:12px;font-weight:600;
+                background:rgba(167,139,250,.12);padding:7px 14px;border-radius:8px;
+                border:1px solid rgba(167,139,250,.25);transition:.15s}
+header a.logout:hover{background:rgba(167,139,250,.22);color:#fff}
+.wrap{max-width:820px;margin:0 auto;padding:24px 18px 60px}
+.tabs{display:flex;gap:6px;margin-bottom:18px;flex-wrap:wrap}
+.tab{flex:1;min-width:120px;padding:11px 12px;background:rgba(30,41,59,0.5);
+     border:1px solid rgba(167,139,250,.15);border-radius:10px;font-size:13px;
+     font-weight:700;cursor:pointer;color:#94a3b8;transition:.15s;font-family:inherit}
+.tab:hover{background:rgba(30,41,59,0.7);color:#e2e8f0;border-color:rgba(167,139,250,.3)}
+.tab.active{background:linear-gradient(135deg,#a78bfa,#6d28d9);color:#fff;
+            border-color:transparent;box-shadow:0 6px 18px rgba(109,40,217,.35)}
+.card{background:rgba(30,41,59,0.6);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+      border:1px solid rgba(167,139,250,.15);border-radius:14px;padding:22px;margin-bottom:14px;
+      box-shadow:0 8px 24px rgba(0,0,0,.18)}
+.card h2{font-size:16px;font-weight:800;margin-bottom:6px;
+         background:linear-gradient(135deg,#c4b5fd,#a78bfa);
+         -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.card > p{color:#94a3b8;font-size:12px;margin-bottom:12px}
+label{display:block;font-size:11px;color:#94a3b8;font-weight:700;
+      margin:14px 0 6px;text-transform:uppercase;letter-spacing:.5px}
+input,select,textarea{width:100%;padding:12px 14px;
+                       background:rgba(15,23,42,0.7);border:1px solid #334155;
+                       border-radius:10px;font-size:14px;outline:none;font-family:inherit;
+                       color:#e2e8f0;transition:.2s}
+input::placeholder,textarea::placeholder{color:#64748b}
+input:focus,select:focus,textarea:focus{border-color:#a78bfa;background:rgba(15,23,42,0.9);
+                                          box-shadow:0 0 0 3px rgba(167,139,250,.12)}
+select option{background:#1e1b4b;color:#e2e8f0}
+button.primary{background:linear-gradient(135deg,#a78bfa,#6d28d9);color:#fff;border:none;
+                padding:13px 24px;border-radius:10px;font-size:14px;font-weight:700;
+                cursor:pointer;margin-top:16px;letter-spacing:.3px;transition:.15s;font-family:inherit}
+button.primary:hover{transform:translateY(-1px);box-shadow:0 10px 24px rgba(109,40,217,.45)}
+button.primary:disabled{opacity:.5;cursor:not-allowed;transform:none;box-shadow:none}
+.lista{display:flex;flex-direction:column;gap:10px}
+.pedido{background:rgba(15,23,42,0.6);border:1px solid rgba(167,139,250,.12);
+        border-left:4px solid #a78bfa;border-radius:10px;padding:14px 18px}
 .pedido.pendiente{border-left-color:#94a3b8}
-.pedido.confirmado{border-left-color:#0891b2}
-.pedido.en_produccion{border-left-color:#ca8a04}
+.pedido.confirmado{border-left-color:#a78bfa}
+.pedido.en_produccion{border-left-color:#f59e0b}
 .pedido.despachado{border-left-color:#16a34a}
-.pedido.cancelado{border-left-color:#dc2626;opacity:.7}
-.pedido-prod{font-weight:700;font-size:14px}
-.pedido-meta{font-size:11px;color:#64748b;margin-top:3px}
-.pedido-estado{display:inline-block;background:#e2e8f0;color:#475569;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700;text-transform:uppercase;margin-top:4px}
-.empty{text-align:center;color:#94a3b8;font-style:italic;padding:30px;font-size:13px}
-.chip{display:inline-block;background:#e2e8f0;color:#475569;padding:3px 10px;border-radius:10px;font-size:11px;font-weight:700}
-.chip.libre{background:#d1fae5;color:#065f46}
-.chip.ocupada{background:#fef3c7;color:#854d0e}
-.chip.sucia{background:#fee2e2;color:#991b1b}
-.chip.area{background:#dbeafe;color:#1e40af}
-/* Timeline visual del pedido · Sprint D Portal */
-.tl{margin-top:14px;padding-top:12px;border-top:1px dashed #cbd5e1;display:flex;flex-direction:column;gap:8px}
-.tl-step{display:flex;gap:10px;align-items:flex-start;padding:6px 8px;border-radius:6px;background:#fafafa;border-left:3px solid #cbd5e1;opacity:.55}
-.tl-step.completado{opacity:1;background:#ecfdf5;border-left-color:#16a34a}
-.tl-step.en_curso{opacity:1;background:#fef3c7;border-left-color:#ca8a04}
-.tl-step.rechazado{opacity:1;background:#fee2e2;border-left-color:#dc2626}
-.tl-step.pendiente{opacity:.5}
+.pedido.cancelado{border-left-color:#dc2626;opacity:.6}
+.pedido-prod{font-weight:700;font-size:14px;color:#e2e8f0}
+.pedido-meta{font-size:11px;color:#94a3b8;margin-top:3px}
+.pedido-estado{display:inline-block;background:rgba(167,139,250,.15);color:#c4b5fd;
+                padding:3px 10px;border-radius:8px;font-size:10px;font-weight:700;
+                text-transform:uppercase;letter-spacing:.5px;margin-top:6px}
+.empty{text-align:center;color:#64748b;font-style:italic;padding:30px;font-size:13px}
+.chip{display:inline-block;background:rgba(148,163,184,.15);color:#cbd5e1;
+      padding:3px 10px;border-radius:10px;font-size:11px;font-weight:700}
+.chip.libre{background:rgba(22,163,74,.18);color:#86efac}
+.chip.ocupada{background:rgba(202,138,4,.2);color:#fcd34d}
+.chip.sucia{background:rgba(220,38,38,.2);color:#fca5a5}
+.chip.area{background:rgba(167,139,250,.18);color:#c4b5fd}
+.tl{margin-top:14px;padding-top:12px;border-top:1px dashed rgba(167,139,250,.2);
+    display:flex;flex-direction:column;gap:8px}
+.tl-step{display:flex;gap:10px;align-items:flex-start;padding:8px 10px;border-radius:8px;
+         background:rgba(15,23,42,0.5);border-left:3px solid rgba(148,163,184,.3);opacity:.55}
+.tl-step.completado{opacity:1;background:rgba(22,163,74,.12);border-left-color:#16a34a}
+.tl-step.en_curso{opacity:1;background:rgba(202,138,4,.12);border-left-color:#f59e0b}
+.tl-step.rechazado{opacity:1;background:rgba(220,38,38,.12);border-left-color:#dc2626}
+.tl-step.pendiente{opacity:.45}
 .tl-ico{font-size:18px;line-height:1.2;flex-shrink:0;width:24px;text-align:center}
 .tl-body{flex:1;min-width:0}
-.tl-lbl{font-size:13px;font-weight:700;color:#1e293b}
-.tl-step.pendiente .tl-lbl{color:#94a3b8}
-.tl-fecha{font-size:10px;color:#64748b;margin-top:1px}
-.tl-det{font-size:11px;color:#475569;margin-top:2px}
-.msg{padding:10px 12px;border-radius:8px;font-size:12px;margin-top:10px;display:none}
-.msg.ok{background:#d1fae5;color:#065f46}
-.msg.err{background:#fee2e2;color:#991b1b}
+.tl-lbl{font-size:13px;font-weight:700;color:#e2e8f0}
+.tl-step.pendiente .tl-lbl{color:#64748b}
+.tl-fecha{font-size:10px;color:#94a3b8;margin-top:1px}
+.tl-det{font-size:11px;color:#cbd5e1;margin-top:2px}
+.msg{padding:11px 14px;border-radius:10px;font-size:13px;margin-top:12px;display:none;
+     border-left:3px solid}
+.msg.ok{background:rgba(22,163,74,.12);color:#86efac;border-left-color:#16a34a;display:block}
+.msg.err{background:rgba(220,38,38,.12);color:#fca5a5;border-left-color:#dc2626;display:block}
+.app-footer{text-align:center;font-size:10px;color:#475569;letter-spacing:.5px;
+            line-height:1.6;padding:24px 16px 32px;margin-top:20px}
+.app-footer strong{color:#94a3b8}
 @media (min-width:680px){
   .row{display:flex;gap:10px}
   .row > div{flex:1}
 }
 </style></head><body>
 <header>
-  <div>
-    <h1>🌿 Portal Clientes</h1>
-    <div class="meta" id="hdr-cliente">Cargando...</div>
+  <div class="brand">
+    <span class="brand-mark" aria-label="EOS">
+      <svg viewBox="0 0 32 32" width="32" height="32" fill="none" stroke="#a78bfa" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="16" cy="12" r="3" fill="#a78bfa"/>
+        <path d="M 5 19 Q 16 17, 27 19" stroke-width="1.5" stroke-linecap="round" opacity=".55"/>
+        <path d="M 5 23 Q 16 21, 27 23" stroke-width="1.5" stroke-linecap="round" opacity=".25"/>
+      </svg>
+    </span>
+    <div>
+      <h1>EOS · Portal Clientes</h1>
+      <div class="sub">Todo el holding, al frente</div>
+      <div class="meta" id="hdr-cliente">Cargando...</div>
+    </div>
   </div>
-  <a href="/portal/logout">Cerrar sesión</a>
+  <a href="/portal/logout" class="logout">Cerrar sesión</a>
 </header>
 <div class="wrap">
   <div class="tabs">
@@ -663,7 +764,13 @@ async function cargarMisPedidos(){
 }
 
 cargarSesionYProductos();
-</script></body></html>
+</script>
+<footer class="app-footer">
+  <div><strong>EOS v1.0</strong> &middot; Edición Espagiria</div>
+  <div style="margin-top:4px;">Desarrollado por <strong>HHA Group</strong></div>
+  <div style="margin-top:6px;color:#334155;">&copy; 2026 HHA Group S.A.S. &middot; Todos los derechos reservados</div>
+</footer>
+</body></html>
 """
 
 
@@ -1631,46 +1738,81 @@ def admin_portal_demo_regenerar():
 
 
 _PORTAL_DEMO_HTML = """<!DOCTYPE html>
-<html lang="es"><head><meta charset="utf-8">
-<title>Credencial demo · Portal B2B</title>
+<html lang="es" translate="no"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>EOS · Demo Portal Clientes</title>
+<meta name="theme-color" content="#6d28d9">
 <style>
-  body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;
-       background:#f1f5f9;margin:0;padding:48px 16px;color:#0f172a}
-  .card{max-width:580px;margin:0 auto;background:#fff;border-radius:14px;
-        box-shadow:0 4px 20px rgba(0,0,0,.08);padding:30px}
-  h1{margin:0 0 8px;color:#0f766e;font-size:22px}
-  .sub{color:#64748b;font-size:13px;margin-bottom:22px}
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
+       background:radial-gradient(ellipse at top,#1e1b4b 0%,#0f172a 50%,#0a0a0f 100%);
+       min-height:100vh;padding:48px 16px;color:#e2e8f0}
+  .card{max-width:580px;margin:0 auto;background:rgba(30,41,59,0.7);
+        backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+        border:1px solid rgba(167,139,250,0.2);border-radius:18px;
+        box-shadow:0 20px 60px rgba(109,40,217,0.15);padding:32px}
+  .brand{display:flex;align-items:center;gap:14px;margin-bottom:18px}
+  .brand-mark{display:inline-flex;align-items:center;justify-content:center;
+              width:48px;height:48px;border-radius:12px;background:rgba(109,40,217,.2);
+              box-shadow:0 6px 18px rgba(109,40,217,.3)}
+  h1{margin:0;font-size:22px;font-weight:800;letter-spacing:-0.4px;
+     background:linear-gradient(135deg,#c4b5fd,#a78bfa);
+     -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+  .sub{color:#94a3b8;font-size:13px;margin-bottom:22px;margin-top:4px}
   .step{margin-bottom:18px}
-  .step-num{display:inline-block;background:#0891b2;color:#fff;width:24px;height:24px;
-            border-radius:12px;text-align:center;font-weight:800;font-size:13px;
-            line-height:24px;margin-right:8px}
-  .step-titulo{font-weight:700;font-size:14px;display:inline-block}
-  .step-body{margin-top:6px;margin-left:32px;font-size:13px;color:#475569}
-  .btn{background:#0891b2;color:#fff;border:none;padding:12px 22px;
-       border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;
-       margin:8px 0}
-  .btn:hover{background:#0e7490}
-  .btn-link{display:inline-block;background:#16a34a;color:#fff;padding:10px 18px;
-            border-radius:7px;text-decoration:none;font-weight:700;font-size:13px;margin-top:6px}
-  .btn-link:hover{background:#15803d}
-  .cred-box{background:#ecfeff;border:2px solid #0891b2;border-radius:10px;
-            padding:18px;margin:14px 0}
-  .cred-label{font-size:11px;color:#475569;text-transform:uppercase;font-weight:700;
-              letter-spacing:.5px;margin-bottom:2px}
-  .cred-value{font-family:'SF Mono',Consolas,monospace;font-size:16px;
-              font-weight:700;color:#0f172a;background:#fff;padding:6px 10px;
-              border-radius:5px;border:1px solid #cbd5e1;display:inline-block;
-              user-select:all;cursor:pointer}
-  .cred-value:hover{background:#f0fdfa}
+  .step-num{display:inline-block;background:linear-gradient(135deg,#a78bfa,#6d28d9);
+            color:#fff;width:26px;height:26px;border-radius:13px;text-align:center;
+            font-weight:800;font-size:13px;line-height:26px;margin-right:8px;
+            box-shadow:0 4px 12px rgba(109,40,217,.35)}
+  .step-titulo{font-weight:700;font-size:14px;display:inline-block;color:#e2e8f0}
+  .step-body{margin-top:6px;margin-left:34px;font-size:13px;color:#94a3b8}
+  .btn{background:linear-gradient(135deg,#a78bfa,#6d28d9);color:#fff;border:none;
+       padding:13px 22px;border-radius:10px;font-size:14px;font-weight:700;
+       cursor:pointer;margin:8px 0;letter-spacing:.3px;transition:.15s;font-family:inherit}
+  .btn:hover{transform:translateY(-1px);box-shadow:0 10px 24px rgba(109,40,217,.45)}
+  .btn:disabled{opacity:.5;cursor:not-allowed}
+  .btn-link{display:inline-block;background:rgba(167,139,250,.18);color:#c4b5fd;
+            padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:700;
+            font-size:13px;margin-top:6px;border:1px solid rgba(167,139,250,.3);
+            transition:.15s}
+  .btn-link:hover{background:rgba(167,139,250,.28);color:#fff}
+  .cred-box{background:rgba(15,23,42,0.7);border:2px solid rgba(167,139,250,.35);
+            border-radius:12px;padding:18px;margin:14px 0;
+            box-shadow:inset 0 2px 8px rgba(0,0,0,.2)}
+  .cred-label{font-size:10px;color:#a78bfa;text-transform:uppercase;font-weight:700;
+              letter-spacing:1px;margin-bottom:4px}
+  .cred-value{font-family:'SF Mono',Consolas,monospace;font-size:16px;font-weight:700;
+              color:#c4b5fd;background:rgba(167,139,250,.08);padding:8px 12px;
+              border-radius:7px;border:1px solid rgba(167,139,250,.2);display:inline-block;
+              user-select:all;cursor:pointer;transition:.15s}
+  .cred-value:hover{background:rgba(167,139,250,.16);color:#e2e8f0}
   .copy-hint{font-size:11px;color:#64748b;margin-left:8px}
-  .nota{font-size:12px;color:#64748b;background:#fef3c7;
-        border-left:3px solid #f59e0b;padding:8px 12px;border-radius:5px;margin-top:14px}
-  .ok-msg{color:#16a34a;font-weight:700;margin-top:8px}
-  .err-msg{color:#dc2626;font-weight:700;margin-top:8px}
+  .nota{font-size:12px;color:#fcd34d;background:rgba(202,138,4,.12);
+        border-left:3px solid #f59e0b;padding:10px 14px;border-radius:7px;margin-top:14px}
+  .ok-msg{color:#86efac;font-weight:700;margin-top:8px;
+          background:rgba(22,163,74,.12);padding:8px 12px;border-radius:7px;
+          border-left:3px solid #16a34a}
+  .err-msg{color:#fca5a5;font-weight:700;margin-top:8px;
+           background:rgba(220,38,38,.12);padding:8px 12px;border-radius:7px;
+           border-left:3px solid #dc2626}
+  .app-footer{text-align:center;font-size:10px;color:#475569;letter-spacing:.5px;
+              margin-top:24px;line-height:1.6}
+  .app-footer strong{color:#94a3b8}
 </style></head><body>
 <div class="card">
-  <h1>🤝 Probar el portal cliente</h1>
-  <div class="sub">Generá una credencial demo y entrá como si fueras un cliente B2B.</div>
+  <div class="brand">
+    <span class="brand-mark" aria-label="EOS">
+      <svg viewBox="0 0 32 32" width="36" height="36" fill="none" stroke="#a78bfa" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="16" cy="12" r="3" fill="#a78bfa"/>
+        <path d="M 5 19 Q 16 17, 27 19" stroke-width="1.5" stroke-linecap="round" opacity=".55"/>
+        <path d="M 5 23 Q 16 21, 27 23" stroke-width="1.5" stroke-linecap="round" opacity=".25"/>
+      </svg>
+    </span>
+    <div>
+      <h1>Demo Portal Clientes</h1>
+      <div class="sub">Generá una credencial y entrá como cliente B2B.</div>
+    </div>
+  </div>
 
   <div class="step">
     <span class="step-num">1</span><span class="step-titulo">Generar credencial</span>
@@ -1766,8 +1908,8 @@ function copiar(el){
   var t = el.textContent;
   if(navigator.clipboard){
     navigator.clipboard.writeText(t).then(function(){
-      el.style.background = '#dcfce7';
-      setTimeout(function(){ el.style.background = '#fff'; }, 500);
+      el.style.background = 'rgba(134,239,172,0.25)';
+      setTimeout(function(){ el.style.background = 'rgba(167,139,250,.08)'; }, 600);
     });
   } else {
     // Fallback antiguo
@@ -1778,6 +1920,10 @@ function copiar(el){
   }
 }
 </script>
+<footer class="app-footer">
+  <div><strong>EOS v1.0</strong> &middot; Edición Espagiria</div>
+  <div style="margin-top:4px;">Desarrollado por <strong>HHA Group</strong></div>
+</footer>
 </body></html>
 """
 
