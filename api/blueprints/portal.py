@@ -21,6 +21,7 @@ Endpoints:
     GET  /api/portal/mis-pedidos            · pedidos del cliente logueado
 """
 import logging
+import secrets
 import time
 from flask import Blueprint, jsonify, request, session, redirect, Response
 
@@ -1543,6 +1544,221 @@ def admin_portal_pqr_responder(pqr_id):
 
     conn.commit()
     return jsonify({'ok': True, 'cambios': cambios})
+
+
+# ════════════════════════════════════════════════════════════════════════
+# Atajo demo · Sebastián 25-may-2026 PM · "dame credenciales a mi de prueba
+# quiero ver que si funciona" · pagina admin one-click que crea (o
+# resetea) la credencial demo y muestra password en plain · solo accesible
+# desde sesión admin.
+# ════════════════════════════════════════════════════════════════════════
+
+_PORTAL_DEMO_EMAIL = 'demo-cliente@hha.com'
+_PORTAL_DEMO_CLIENTE_ID = 'DEMO_CLI_SEBASTIAN'
+_PORTAL_DEMO_NOMBRE = 'Demo Sebastián'
+
+
+@bp.route('/admin/portal-demo', methods=['GET'])
+def admin_portal_demo_pagina():
+    """Página one-click que crea (o resetea) la credencial demo y muestra
+    el password para que Sebastián entre al portal cliente y vea el flujo
+    con sus ojos. Genera password random cada vez que apretás el botón.
+    """
+    if 'compras_user' not in session:
+        return redirect('/login?next=/admin/portal-demo')
+    user = session.get('compras_user', '')
+    if user not in (set(ADMIN_USERS) | set(COMPRAS_USERS)):
+        return ("<html><body style='font-family:system-ui;padding:48px'>"
+                 "<h2>Solo admin/compras</h2></body></html>"), 403
+    return Response(_PORTAL_DEMO_HTML, mimetype='text/html')
+
+
+@bp.route('/api/admin/portal-demo/regenerar', methods=['POST'])
+def admin_portal_demo_regenerar():
+    """Crea la credencial demo si no existe · si existe, resetea password
+    a uno random nuevo. Devuelve email + password en plain (solo este
+    endpoint los muestra · luego solo queda hash en BD).
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autenticado'}), 401
+    user = session.get('compras_user', '')
+    if user not in (set(ADMIN_USERS) | set(COMPRAS_USERS)):
+        return jsonify({'error': 'Solo admin/compras'}), 403
+    # Password random fácil de copiar · 12 chars alfanuméricos
+    pw_plain = secrets.token_urlsafe(9)[:12].replace('-', 'A').replace('_', 'B')
+    pw_hash = generate_password_hash(pw_plain)
+    conn = get_db(); c = conn.cursor()
+    existe = c.execute(
+        "SELECT id FROM portal_clientes_credenciales WHERE LOWER(email) = ?",
+        (_PORTAL_DEMO_EMAIL,)).fetchone()
+    if existe:
+        c.execute(
+            """UPDATE portal_clientes_credenciales
+                  SET password_hash = ?, activo = 1,
+                      cliente_nombre = ?
+                WHERE id = ?""",
+            (pw_hash, _PORTAL_DEMO_NOMBRE, existe[0]))
+        accion = 'PORTAL_DEMO_RESET_PASSWORD'
+        cred_id = existe[0]
+        creada = False
+    else:
+        c.execute(
+            """INSERT INTO portal_clientes_credenciales
+                 (cliente_id, cliente_nombre, email, password_hash, activo, creado_por)
+               VALUES (?, ?, ?, ?, 1, ?)""",
+            (_PORTAL_DEMO_CLIENTE_ID, _PORTAL_DEMO_NOMBRE,
+             _PORTAL_DEMO_EMAIL, pw_hash, user))
+        cred_id = c.lastrowid
+        accion = 'PORTAL_DEMO_CREAR_CRED'
+        creada = True
+    try:
+        audit_log(c, usuario=user, accion=accion,
+                  tabla='portal_clientes_credenciales', registro_id=cred_id,
+                  despues={'email': _PORTAL_DEMO_EMAIL, 'creada': creada})
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({
+        'ok': True, 'creada': creada, 'cred_id': cred_id,
+        'email': _PORTAL_DEMO_EMAIL, 'password': pw_plain,
+        'portal_url': '/portal/login',
+    })
+
+
+_PORTAL_DEMO_HTML = """<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8">
+<title>Credencial demo · Portal B2B</title>
+<style>
+  body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;
+       background:#f1f5f9;margin:0;padding:48px 16px;color:#0f172a}
+  .card{max-width:580px;margin:0 auto;background:#fff;border-radius:14px;
+        box-shadow:0 4px 20px rgba(0,0,0,.08);padding:30px}
+  h1{margin:0 0 8px;color:#0f766e;font-size:22px}
+  .sub{color:#64748b;font-size:13px;margin-bottom:22px}
+  .step{margin-bottom:18px}
+  .step-num{display:inline-block;background:#0891b2;color:#fff;width:24px;height:24px;
+            border-radius:12px;text-align:center;font-weight:800;font-size:13px;
+            line-height:24px;margin-right:8px}
+  .step-titulo{font-weight:700;font-size:14px;display:inline-block}
+  .step-body{margin-top:6px;margin-left:32px;font-size:13px;color:#475569}
+  .btn{background:#0891b2;color:#fff;border:none;padding:12px 22px;
+       border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;
+       margin:8px 0}
+  .btn:hover{background:#0e7490}
+  .btn-link{display:inline-block;background:#16a34a;color:#fff;padding:10px 18px;
+            border-radius:7px;text-decoration:none;font-weight:700;font-size:13px;margin-top:6px}
+  .btn-link:hover{background:#15803d}
+  .cred-box{background:#ecfeff;border:2px solid #0891b2;border-radius:10px;
+            padding:18px;margin:14px 0}
+  .cred-label{font-size:11px;color:#475569;text-transform:uppercase;font-weight:700;
+              letter-spacing:.5px;margin-bottom:2px}
+  .cred-value{font-family:'SF Mono',Consolas,monospace;font-size:16px;
+              font-weight:700;color:#0f172a;background:#fff;padding:6px 10px;
+              border-radius:5px;border:1px solid #cbd5e1;display:inline-block;
+              user-select:all;cursor:pointer}
+  .cred-value:hover{background:#f0fdfa}
+  .copy-hint{font-size:11px;color:#64748b;margin-left:8px}
+  .nota{font-size:12px;color:#64748b;background:#fef3c7;
+        border-left:3px solid #f59e0b;padding:8px 12px;border-radius:5px;margin-top:14px}
+  .ok-msg{color:#16a34a;font-weight:700;margin-top:8px}
+  .err-msg{color:#dc2626;font-weight:700;margin-top:8px}
+</style></head><body>
+<div class="card">
+  <h1>🤝 Probar el portal cliente</h1>
+  <div class="sub">Generá una credencial demo y entrá como si fueras un cliente B2B.</div>
+
+  <div class="step">
+    <span class="step-num">1</span><span class="step-titulo">Generar credencial</span>
+    <div class="step-body">
+      Click acá · te genera o resetea la credencial demo.
+      <br><button class="btn" id="btn-gen" onclick="generar()">🔑 Generar credencial demo</button>
+    </div>
+  </div>
+
+  <div id="cred-display" style="display:none">
+    <div class="cred-box">
+      <div class="cred-label">Email</div>
+      <div class="cred-value" id="cred-email" onclick="copiar(this)"></div>
+      <div style="margin-top:14px"></div>
+      <div class="cred-label">Contraseña (mostrada UNA vez · copiala)</div>
+      <div class="cred-value" id="cred-pass" onclick="copiar(this)"></div>
+      <span class="copy-hint">↑ click para copiar</span>
+    </div>
+
+    <div class="step">
+      <span class="step-num">2</span><span class="step-titulo">Abrir el portal en ventana incógnita</span>
+      <div class="step-body">
+        Para no mezclar tu sesión admin con la del cliente, abrí incógnita
+        (Ctrl+Shift+N) y pegá la URL.
+        <br><a href="/portal/login" target="_blank" class="btn-link">🔗 Abrir /portal/login en pestaña nueva</a>
+      </div>
+    </div>
+
+    <div class="step">
+      <span class="step-num">3</span><span class="step-titulo">Pegá email + contraseña</span>
+      <div class="step-body">
+        Usá los datos de arriba · entrás como cliente B2B y ves:
+        Solicitar · Mis pedidos · PQR · Mis PQR.
+      </div>
+    </div>
+
+    <div class="nota">
+      ⚠ Esta credencial es de prueba · el cliente real "Demo Sebastián"
+      aparecerá en /admin/clientes-b2b. Si volvés a apretar el botón se
+      RESETEA el password (la anterior deja de funcionar).
+    </div>
+  </div>
+
+  <div id="msg"></div>
+</div>
+
+<script>
+async function generar(){
+  var btn = document.getElementById('btn-gen');
+  var msg = document.getElementById('msg');
+  msg.innerHTML = '';
+  btn.disabled = true; btn.textContent = 'Generando...';
+  try{
+    var r = await fetch('/api/admin/portal-demo/regenerar', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      credentials:'same-origin',
+      body:'{}'
+    });
+    var d = await r.json();
+    if(!r.ok){
+      msg.innerHTML = '<div class="err-msg">Error: ' + (d.error || r.status) + '</div>';
+      btn.disabled = false; btn.textContent = '🔑 Reintentar';
+      return;
+    }
+    document.getElementById('cred-email').textContent = d.email;
+    document.getElementById('cred-pass').textContent = d.password;
+    document.getElementById('cred-display').style.display = 'block';
+    msg.innerHTML = '<div class="ok-msg">✓ ' + (d.creada ? 'Credencial creada' : 'Password reseteado') + '</div>';
+    btn.disabled = false; btn.textContent = '🔄 Regenerar password';
+  }catch(e){
+    msg.innerHTML = '<div class="err-msg">Error de red: ' + e.message + '</div>';
+    btn.disabled = false; btn.textContent = '🔑 Reintentar';
+  }
+}
+function copiar(el){
+  var t = el.textContent;
+  if(navigator.clipboard){
+    navigator.clipboard.writeText(t).then(function(){
+      el.style.background = '#dcfce7';
+      setTimeout(function(){ el.style.background = '#fff'; }, 500);
+    });
+  } else {
+    // Fallback antiguo
+    var range = document.createRange(); range.selectNode(el);
+    window.getSelection().removeAllRanges();
+    window.getSelection().addRange(range);
+    try { document.execCommand('copy'); } catch(_){}
+  }
+}
+</script>
+</body></html>
+"""
 
 
 # ════════════════════════════════════════════════════════════════════════
