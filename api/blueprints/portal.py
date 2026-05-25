@@ -1573,11 +1573,16 @@ def admin_portal_demo_pagina():
     return Response(_PORTAL_DEMO_HTML, mimetype='text/html')
 
 
-@bp.route('/api/admin/portal-demo/regenerar', methods=['POST'])
+@bp.route('/api/portal-demo/regenerar', methods=['POST'])
 def admin_portal_demo_regenerar():
     """Crea la credencial demo si no existe · si existe, resetea password
     a uno random nuevo. Devuelve email + password en plain (solo este
     endpoint los muestra · luego solo queda hash en BD).
+
+    Sebastián 25-may-2026 PM · path SIN prefix /api/admin/ para evitar
+    auth.py:427 que exige X-CSRF-Token obligatorio en /api/admin/. Acá
+    el endpoint sigue siendo admin-only via gate manual abajo + la capa
+    Origin/Referer check (auth.py:383) sigue protegiendo igual.
     """
     if 'compras_user' not in session:
         return jsonify({'error': 'No autenticado'}), 401
@@ -1734,7 +1739,7 @@ async function generar(){
   }
   btn.disabled = true; btn.textContent = 'Generando...';
   try{
-    var r = await fetch('/api/admin/portal-demo/regenerar', {
+    var r = await fetch('/api/portal-demo/regenerar', {
       method:'POST',
       headers:{'Content-Type':'application/json',
                 'X-CSRF-Token': window._csrfTok || ''},
