@@ -349,8 +349,15 @@ button.primary:disabled{opacity:.6;cursor:not-allowed}
       </div>
       <label>Fecha estimada de entrega</label>
       <input id="sol-fecha" type="date">
+      <div id="sol-fecha-aviso" style="display:none;margin-top:6px;padding:8px 10px;background:#fef3c7;border-left:3px solid #f59e0b;border-radius:4px;font-size:12px;color:#92400e"></div>
+      <label>Urgencia</label>
+      <select id="sol-urgencia">
+        <option value="media" selected>🟡 Media · planificación normal</option>
+        <option value="baja">🟢 Baja · sin apuro</option>
+        <option value="alta">🔴 Alta · necesitamos prioridad</option>
+      </select>
       <label>Notas (opcional)</label>
-      <textarea id="sol-notas" rows="3" placeholder="Detalles, urgencia, etc."></textarea>
+      <textarea id="sol-notas" rows="3" placeholder="Detalles, color, arte, etc."></textarea>
       <button class="primary" id="btn-enviar" onclick="enviarPedido()">📨 Enviar solicitud</button>
       <div class="msg" id="sol-msg"></div>
     </div>
@@ -492,6 +499,41 @@ async function cargarSesionYProductos(){
   }
 }
 
+// Sebastián 25-may-2026 PM · alerta visual cuando cliente elige fecha
+// < 30 días · "le sale pop up de que debe solicitar con un mes". El
+// aviso se muestra inline al cambiar el input + valida al enviar.
+function _diasHastaFecha(fechaIso){
+  if(!fechaIso) return null;
+  var hoy = new Date(); hoy.setHours(0,0,0,0);
+  var f = new Date(fechaIso + 'T12:00:00');
+  return Math.round((f - hoy) / 86400000);
+}
+function _actualizarAvisoFecha(){
+  var box = document.getElementById('sol-fecha-aviso');
+  if(!box) return;
+  var fecha = document.getElementById('sol-fecha').value;
+  var dias = _diasHastaFecha(fecha);
+  if(dias === null || dias >= 30){ box.style.display = 'none'; return; }
+  if(dias < 0){
+    box.style.background = '#fee2e2';
+    box.style.borderLeftColor = '#dc2626';
+    box.style.color = '#991b1b';
+    box.innerHTML = '⛔ La fecha está en el pasado · elegí una futura';
+  } else {
+    box.style.background = '#fef3c7';
+    box.style.borderLeftColor = '#f59e0b';
+    box.style.color = '#92400e';
+    box.innerHTML = '⚠ Tu fecha es en ' + dias + ' día' + (dias===1?'':'s')
+      + ' · pedimos solicitar con <b>mínimo 1 mes</b> de anticipación · '
+      + 'al enviar te confirmaremos si podemos cumplir o sugerimos otra fecha.';
+  }
+  box.style.display = 'block';
+}
+document.addEventListener('DOMContentLoaded', function(){
+  var f = document.getElementById('sol-fecha');
+  if(f) f.addEventListener('change', _actualizarAvisoFecha);
+});
+
 async function enviarPedido(){
   var btn = document.getElementById('btn-enviar');
   var msg = document.getElementById('sol-msg');
@@ -500,12 +542,33 @@ async function enviarPedido(){
   var cant = parseInt(document.getElementById('sol-cant').value);
   var ml = parseFloat(document.getElementById('sol-ml').value || '30');
   var fecha = document.getElementById('sol-fecha').value;
+  var urgEl = document.getElementById('sol-urgencia');
+  var urgencia = urgEl ? urgEl.value : 'media';
   var notas = document.getElementById('sol-notas').value.trim();
   if(!producto || !cant || cant<=0){
     msg.className = 'msg err';
     msg.textContent = 'Falta producto o cantidad';
     msg.style.display = 'block';
     return;
+  }
+  // Validación blanda · fecha < 30 días pide confirmación · alta urgencia
+  // pasa directo (cliente sabe que es apurado). Sin fecha también pasa
+  // (queda como "sin fecha estimada" · admin la define).
+  var dias = _diasHastaFecha(fecha);
+  if(dias !== null && dias < 0){
+    msg.className = 'msg err';
+    msg.textContent = 'La fecha está en el pasado · elegí una futura';
+    msg.style.display = 'block';
+    return;
+  }
+  if(dias !== null && dias < 30 && urgencia !== 'alta'){
+    if(!confirm('⚠ Pediste para dentro de ' + dias + ' días.\n\n'
+                + 'Lo ideal es solicitar con mínimo 1 mes de anticipación '
+                + 'porque la producción tiene lead time.\n\n'
+                + '¿Continuar de todos modos? Si es URGENTE, mejor cerrá '
+                + 'esto, cambiá urgencia a "🔴 Alta" y reenviá.')){
+      return;
+    }
   }
   btn.disabled = true; btn.textContent = 'Enviando...';
   try{
@@ -518,6 +581,7 @@ async function enviarPedido(){
         cantidad_uds: cant,
         ml_unidad: ml,
         fecha_estimada: fecha,
+        urgencia: urgencia,
         notas: notas,
       }),
     });
@@ -536,6 +600,8 @@ async function enviarPedido(){
     document.getElementById('sol-cant').value = '';
     document.getElementById('sol-fecha').value = '';
     document.getElementById('sol-notas').value = '';
+    document.getElementById('sol-fecha-aviso').style.display = 'none';
+    if(urgEl) urgEl.value = 'media';
     btn.disabled = false; btn.textContent = '📨 Enviar solicitud';
   } catch(e){
     msg.className = 'msg err';
@@ -577,10 +643,15 @@ async function cargarMisPedidos(){
         completado: 'libre', en_curso: 'ocupada',
         rechazado: 'sucia', pendiente: 'area',
       }[estKind] || 'area';
+      // Sebastián 25-may-2026 PM · chip urgencia (alta/media/baja).
+      var urgIco = {alta:'🔴', media:'🟡', baja:'🟢'}[p.urgencia || 'media'] || '🟡';
+      var urgTxt = {alta:'Alta', media:'Media', baja:'Baja'}[p.urgencia || 'media'] || 'Media';
+      var urgChip = '<span style="display:inline-block;margin-left:6px;padding:2px 7px;border-radius:10px;background:#f1f5f9;font-size:10px;color:#475569">' + urgIco + ' ' + urgTxt + '</span>';
       return '<div class="pedido '+esc(p.estado)+'">'
         + '<div class="pedido-prod">'+esc(p.producto_nombre)+'</div>'
         + '<div class="pedido-meta">'+p.cantidad_uds+' uds × '+p.ml_unidad+' ml · '+(p.kg_equivalente||0)+' kg' + (p.fecha_estimada?(' · entrega ~'+esc(p.fecha_estimada)):'')+'</div>'
         + '<span class="chip '+estChipCls+'" style="margin-top:4px;display:inline-block">'+esc(estLbl)+'</span>'
+        + urgChip
         + (p.notas?'<div style="font-size:11px;color:#64748b;margin-top:6px">📝 '+esc(p.notas)+'</div>':'')
         + tlHtml
         + '</div>';
@@ -665,6 +736,12 @@ def portal_crear_pedido():
     # envase específico (e.g. Fernando 500ml propio vs 250ml Animus).
     envase_codigo = (body.get('envase_codigo') or '').strip().upper()
     envase_notas = (body.get('envase_notas') or '').strip()[:200]
+    # Sebastián 25-may-2026 PM · urgencia del cliente (alta/media/baja).
+    # Mig 182 agrega columna · default 'media' si no viene. Validamos
+    # whitelist para evitar valores arbitrarios.
+    urgencia = (body.get('urgencia') or 'media').strip().lower()
+    if urgencia not in ('alta', 'media', 'baja'):
+        urgencia = 'media'
 
     if not producto:
         return jsonify({'error': 'producto_nombre requerido'}), 400
@@ -723,28 +800,41 @@ def portal_crear_pedido():
             """INSERT INTO pedidos_b2b
                  (cliente_id, cliente_nombre, producto_nombre, cantidad_uds,
                   ml_unidad, fecha_estimada, notas, creado_por,
-                  envase_codigo, envase_notas)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                  envase_codigo, envase_notas, urgencia)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (cid, cnom, producto, cantidad, ml, fecha,
              notas + (' [via portal]' if notas else 'via portal'),
-             f'portal:{email}', envase_codigo, envase_notas),
+             f'portal:{email}', envase_codigo, envase_notas, urgencia),
         )
     except Exception:
-        # Fallback mig 172 no aplicada
-        cur.execute(
-            """INSERT INTO pedidos_b2b
-                 (cliente_id, cliente_nombre, producto_nombre, cantidad_uds,
-                  ml_unidad, fecha_estimada, notas, creado_por)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-            (cid, cnom, producto, cantidad, ml, fecha,
-             notas + (' [via portal]' if notas else 'via portal'),
-             f'portal:{email}'),
-        )
+        # Fallback · mig 172 (envase_codigo) o mig 182 (urgencia) no aplicada
+        try:
+            cur.execute(
+                """INSERT INTO pedidos_b2b
+                     (cliente_id, cliente_nombre, producto_nombre, cantidad_uds,
+                      ml_unidad, fecha_estimada, notas, creado_por,
+                      envase_codigo, envase_notas)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (cid, cnom, producto, cantidad, ml, fecha,
+                 notas + (' [via portal]' if notas else 'via portal'),
+                 f'portal:{email}', envase_codigo, envase_notas),
+            )
+        except Exception:
+            cur.execute(
+                """INSERT INTO pedidos_b2b
+                     (cliente_id, cliente_nombre, producto_nombre, cantidad_uds,
+                      ml_unidad, fecha_estimada, notas, creado_por)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (cid, cnom, producto, cantidad, ml, fecha,
+                 notas + (' [via portal]' if notas else 'via portal'),
+                 f'portal:{email}'),
+            )
     pid = cur.lastrowid
     audit_log(cur, usuario=f'portal:{email}', accion='PORTAL_CREAR_PEDIDO',
               tabla='pedidos_b2b', registro_id=pid,
               despues={'cliente_id': cid, 'producto': producto,
-                       'cantidad_uds': cantidad, 'ml': ml, 'fecha': fecha})
+                       'cantidad_uds': cantidad, 'ml': ml, 'fecha': fecha,
+                       'urgencia': urgencia})
     conn.commit()
 
     kg_b2b = round(cantidad * ml / 1000.0, 2)
@@ -1132,15 +1222,31 @@ def portal_mis_pedidos():
         return jsonify({'error': 'No autorizado'}), 401
     cid, cnom, _ = auth
     conn = get_db()
-    rows = conn.execute(
-        """SELECT id, producto_nombre, cantidad_uds, ml_unidad, fecha_estimada,
-                  estado, notas, creado_at_utc
-           FROM pedidos_b2b
-           WHERE cliente_id = ?
-           ORDER BY creado_at_utc DESC, id DESC
-           LIMIT 100""",
-        (cid,),
-    ).fetchall()
+    # Sebastián 25-may-2026 PM · agregar urgencia al SELECT. Fallback si
+    # mig 182 no aplicada (column not exists) · COALESCE no funciona porque
+    # SQLite parsea el SELECT antes · usar try/except con SELECT alternativo.
+    try:
+        rows = conn.execute(
+            """SELECT id, producto_nombre, cantidad_uds, ml_unidad, fecha_estimada,
+                      estado, notas, creado_at_utc, COALESCE(urgencia,'media')
+               FROM pedidos_b2b
+               WHERE cliente_id = ?
+               ORDER BY creado_at_utc DESC, id DESC
+               LIMIT 100""",
+            (cid,),
+        ).fetchall()
+        _has_urgencia = True
+    except Exception:
+        rows = conn.execute(
+            """SELECT id, producto_nombre, cantidad_uds, ml_unidad, fecha_estimada,
+                      estado, notas, creado_at_utc
+               FROM pedidos_b2b
+               WHERE cliente_id = ?
+               ORDER BY creado_at_utc DESC, id DESC
+               LIMIT 100""",
+            (cid,),
+        ).fetchall()
+        _has_urgencia = False
     # PERF-FIX · pre-cargar lotes vinculados via bulk OR LIKE
     pedido_ids = [r[0] for r in rows]
     lotes_pre = {}
@@ -1194,6 +1300,7 @@ def portal_mis_pedidos():
             if step['estado'] in ('completado', 'en_curso', 'rechazado'):
                 estado_visible_lbl = step['label']
                 estado_visible_est = step['estado']
+        urg = (r[8] if _has_urgencia and len(r) > 8 else 'media') or 'media'
         out.append({
             'id': pid,
             'producto_nombre': r[1] or '',
@@ -1204,6 +1311,7 @@ def portal_mis_pedidos():
             'estado': estado,
             'notas': r[6] or '',
             'creado_at': creado,
+            'urgencia': urg,
             'timeline': tl,
             'estado_visible': estado_visible_lbl,
             'estado_visible_kind': estado_visible_est,

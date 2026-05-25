@@ -7551,6 +7551,78 @@ def test_golden_portal_rfq_sin_login_401(app, db_clean):
         assert r6.status_code in (401, 302)
 
 
+def test_golden_portal_pedido_urgencia(app, db_clean):
+    """Portal · Sebastián 25-may-2026 PM · campo urgencia + validación.
+
+    Cubre:
+      - Pedido con urgencia='alta' se guarda y devuelve en mis-pedidos
+      - urgencia inválida (string raro) cae a 'media' default
+      - urgencia ausente del body → default 'media'
+      - mis-pedidos siempre incluye campo urgencia (mínimo 'media')
+    """
+    _exec("DELETE FROM pedidos_b2b WHERE cliente_id LIKE 'TEST_URG_%'")
+    _exec("DELETE FROM portal_clientes_credenciales WHERE email LIKE 'test_urg_%'")
+
+    cs_admin = _login(app, 'sebastian')
+    cs_admin.post('/api/admin/portal/credenciales', json={
+        'cliente_id': 'TEST_URG_CLI',
+        'cliente_nombre': 'TEST_URG_Cli',
+        'email': 'test_urg@example.com',
+        'password': 'demoPassword123',
+    }, headers=csrf_headers())
+
+    # Producto existente con fórmula (de db_clean)
+    producto = _query("SELECT producto_nombre FROM formula_headers LIMIT 1")
+    if not producto:
+        return  # sin fórmulas en test DB · skip silencioso
+    prod_nombre = producto[0][0]
+
+    with app.test_client() as cs_cli:
+        cs_cli.post('/api/portal/login', json={
+            'email': 'test_urg@example.com',
+            'password': 'demoPassword123',
+        }, headers=csrf_headers())
+
+        # 1) Pedido urgencia='alta'
+        r1 = cs_cli.post('/api/portal/pedidos', json={
+            'producto_nombre': prod_nombre,
+            'cantidad_uds': 10, 'ml_unidad': 30,
+            'urgencia': 'alta',
+        }, headers=csrf_headers())
+        assert r1.status_code == 201, f'BUG urg alta: {r1.status_code} {r1.data}'
+        pid1 = r1.get_json()['id']
+
+        # 2) Pedido sin urgencia → default 'media'
+        r2 = cs_cli.post('/api/portal/pedidos', json={
+            'producto_nombre': prod_nombre,
+            'cantidad_uds': 5, 'ml_unidad': 30,
+        }, headers=csrf_headers())
+        assert r2.status_code == 201
+        pid2 = r2.get_json()['id']
+
+        # 3) Pedido urgencia inválida ('xxx') → cae a 'media'
+        r3 = cs_cli.post('/api/portal/pedidos', json={
+            'producto_nombre': prod_nombre,
+            'cantidad_uds': 3, 'ml_unidad': 30,
+            'urgencia': 'pancake',
+        }, headers=csrf_headers())
+        assert r3.status_code == 201
+        pid3 = r3.get_json()['id']
+
+        # 4) Mis pedidos incluye urgencia
+        r4 = cs_cli.get('/api/portal/mis-pedidos')
+        assert r4.status_code == 200
+        pedidos = r4.get_json()['pedidos']
+        por_id = {p['id']: p for p in pedidos}
+        assert por_id[pid1]['urgencia'] == 'alta', f'BUG alta no persistió: {por_id[pid1]}'
+        assert por_id[pid2]['urgencia'] == 'media'
+        assert por_id[pid3]['urgencia'] == 'media'  # 'pancake' → media
+
+    # Cleanup
+    _exec("DELETE FROM pedidos_b2b WHERE cliente_id LIKE 'TEST_URG_%'")
+    _exec("DELETE FROM portal_clientes_credenciales WHERE email LIKE 'test_urg_%'")
+
+
 def test_golden_pendientes_final_mybatch_cde(app, db_clean):
     """Pendientes finales · 21-may-2026 · MyBatch Sprints C+D+E."""
     cs = _login(app, 'sebastian')

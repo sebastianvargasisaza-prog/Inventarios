@@ -312,6 +312,13 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (182, "pedidos_b2b.urgencia · campo de prioridad del cliente portal · Sebastián 25-may-2026 PM", [
+        # FEATURE 25-may-2026 PM · Sebastián: "le pone la urgencia". Cliente
+        # B2B logueado al portal tiene select alta/media/baja al solicitar.
+        # Aparece en Necesidades planta para que se priorice. Default 'media'
+        # permite seguir aceptando pedidos viejos sin migrar data.
+        "ALTER TABLE pedidos_b2b ADD COLUMN urgencia TEXT DEFAULT 'media'",
+    ]),
     (181, "mfa_tokens_usados · replay protection compartido cross-worker · Sebastián 25-may-2026", [
         # SEC-FIX 25-may-2026 · audit zero-error · Sebastián.
         # mfa.py _verify_totp tenía replay protection in-memory por worker
