@@ -26,7 +26,7 @@ from flask import Blueprint, jsonify, request, session, redirect, Response
 
 from database import get_db
 from audit_helpers import audit_log
-from config import ADMIN_USERS
+from config import ADMIN_USERS, COMPRAS_USERS
 
 try:
     from werkzeug.security import generate_password_hash, check_password_hash
@@ -325,6 +325,7 @@ button.primary:disabled{opacity:.6;cursor:not-allowed}
   <div class="tabs">
     <button class="tab active" data-tab="solicitar" onclick="setTab('solicitar')">📦 Solicitar</button>
     <button class="tab" data-tab="mis" onclick="setTab('mis')">📋 Mis pedidos</button>
+    <button class="tab" data-tab="cotizar" onclick="setTab('cotizar')">💼 Cotizar</button>
     <button class="tab" data-tab="pqr" onclick="setTab('pqr')">💬 PQR</button>
     <button class="tab" data-tab="mis-pqr" onclick="setTab('mis-pqr')">📜 Mis PQR</button>
   </div>
@@ -389,6 +390,49 @@ button.primary:disabled{opacity:.6;cursor:not-allowed}
       <div id="mis-pqr-lista" class="lista"><div class="empty">Cargando...</div></div>
     </div>
   </div>
+
+  <!-- Sebastián 25-may-2026 · Tab Cotizar (RFQ + muestras + ficha técnica) -->
+  <div id="panel-cotizar" style="display:none">
+    <div class="card">
+      <h2>💼 Solicitar cotización · muestras · ficha técnica</h2>
+      <p style="font-size:12px;color:#64748b;margin-bottom:8px">Ideal cuando aún no estás listo para pedir · te respondemos en 24-48h con precio + tiempo entrega + MOQ.</p>
+      <label>Tipo de solicitud</label>
+      <select id="cot-tipo">
+        <option value="cotizacion">💰 Cotización (precio + lead time)</option>
+        <option value="muestras">🎁 Muestras (probar producto)</option>
+        <option value="ficha_tecnica">📄 Ficha técnica / INCI</option>
+      </select>
+      <label>Producto</label>
+      <input type="text" id="cot-producto" placeholder="ej. Sérum Vitamina C · Crema hidratante" maxlength="200">
+      <div class="row">
+        <div>
+          <label>Cantidad estimada</label>
+          <input type="number" id="cot-cantidad" min="0" max="1000000000" placeholder="500" value="0">
+        </div>
+        <div>
+          <label>Unidad</label>
+          <select id="cot-unidad">
+            <option value="unidades">unidades</option>
+            <option value="kg">kg</option>
+            <option value="litros">litros</option>
+          </select>
+        </div>
+      </div>
+      <label>Envase preferencia (opcional)</label>
+      <input type="text" id="cot-envase" placeholder="ej. 500ml gotero · 250ml dosificador" maxlength="120">
+      <label>Fecha en que lo necesitarías (opcional)</label>
+      <input type="date" id="cot-fecha">
+      <label>Mensaje · detalles · arte (opcional)</label>
+      <textarea id="cot-mensaje" rows="3" placeholder="Activos especiales · color · marca privada · etc." maxlength="1000"></textarea>
+      <button class="primary" id="btn-cotizar" onclick="enviarCotizacion()">Enviar solicitud</button>
+      <div class="msg" id="msg-cotizar"></div>
+    </div>
+
+    <div class="card">
+      <h2>📑 Mis solicitudes previas</h2>
+      <div id="mis-cot-lista" class="lista"><div class="empty">Cargando…</div></div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -399,8 +443,123 @@ function setTab(t){
   document.getElementById('panel-mis').style.display = (t==='mis')?'block':'none';
   document.getElementById('panel-pqr').style.display = (t==='pqr')?'block':'none';
   document.getElementById('panel-mis-pqr').style.display = (t==='mis-pqr')?'block':'none';
+  var pc = document.getElementById('panel-cotizar');
+  if(pc) pc.style.display = (t==='cotizar')?'block':'none';
   if(t==='mis') cargarMisPedidos();
   if(t==='mis-pqr') cargarMisPqr();
+  if(t==='cotizar') cargarMisCotizaciones();
+}
+
+// Sebastián 25-may-2026 · Cotización (RFQ) · usa /api/portal/solicitudes
+async function enviarCotizacion(){
+  var btn = document.getElementById('btn-cotizar');
+  var msg = document.getElementById('msg-cotizar');
+  msg.className = 'msg'; msg.style.display = 'none';
+  var tipo = document.getElementById('cot-tipo').value;
+  var producto = document.getElementById('cot-producto').value.trim();
+  var cantidad = parseInt(document.getElementById('cot-cantidad').value || '0', 10) || 0;
+  var unidad = document.getElementById('cot-unidad').value;
+  var envase = document.getElementById('cot-envase').value.trim();
+  var fecha = document.getElementById('cot-fecha').value;
+  var mensaje = document.getElementById('cot-mensaje').value.trim();
+  if(!producto){
+    msg.textContent = 'Producto requerido'; msg.className = 'msg err';
+    msg.style.display = 'block'; return;
+  }
+  btn.disabled = true; btn.textContent = 'Enviando…';
+  try{
+    var r = await fetch('/api/portal/solicitudes', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      credentials:'same-origin',
+      body: JSON.stringify({
+        tipo: tipo, producto_nombre: producto, cantidad_estimada: cantidad,
+        unidad: unidad, envase_preferencia: envase,
+        fecha_requerida: fecha, mensaje: mensaje,
+      }),
+    });
+    var d = await r.json();
+    if(!r.ok){
+      msg.textContent = 'Error: ' + esc(d.error || r.status);
+      msg.className = 'msg err'; msg.style.display = 'block';
+      btn.disabled = false; btn.textContent = 'Enviar solicitud'; return;
+    }
+    msg.textContent = '✓ ' + esc(d.mensaje || 'Recibida');
+    msg.className = 'msg ok'; msg.style.display = 'block';
+    document.getElementById('cot-producto').value = '';
+    document.getElementById('cot-cantidad').value = '0';
+    document.getElementById('cot-envase').value = '';
+    document.getElementById('cot-fecha').value = '';
+    document.getElementById('cot-mensaje').value = '';
+    cargarMisCotizaciones();
+  }catch(e){
+    msg.textContent = 'Error de red: ' + esc(e.message);
+    msg.className = 'msg err'; msg.style.display = 'block';
+  }finally{
+    btn.disabled = false; btn.textContent = 'Enviar solicitud';
+  }
+}
+
+async function cargarMisCotizaciones(){
+  var lista = document.getElementById('mis-cot-lista');
+  if(!lista) return;
+  lista.innerHTML = '<div class="empty">Cargando…</div>';
+  try{
+    var r = await fetch('/api/portal/mis-solicitudes', {credentials:'same-origin'});
+    var d = await r.json();
+    var items = d.items || [];
+    if(!items.length){
+      lista.innerHTML = '<div class="empty">Aún no has hecho solicitudes</div>';
+      return;
+    }
+    var TIPO_ICO = {cotizacion:'💰', muestras:'🎁', ficha_tecnica:'📄'};
+    var EST_LABEL = {
+      nueva: 'En espera de respuesta',
+      en_revision: 'En revisión',
+      respondida: '✓ Respondida · revisá detalle',
+      convertida: 'Convertida a pedido',
+      cerrada: 'Cerrada',
+      rechazada: 'Rechazada',
+    };
+    var EST_COLOR = {
+      nueva: '#94a3b8', en_revision: '#ca8a04', respondida: '#16a34a',
+      convertida: '#0891b2', cerrada: '#64748b', rechazada: '#dc2626',
+    };
+    lista.innerHTML = items.map(function(s){
+      var ico = TIPO_ICO[s.tipo] || '📦';
+      var color = EST_COLOR[s.estado] || '#64748b';
+      var estLbl = EST_LABEL[s.estado] || s.estado;
+      var fmtCOP = function(n){
+        var v = Number(n || 0);
+        return v > 0 ? ('$' + v.toLocaleString('es-CO')) : '—';
+      };
+      var resp = '';
+      if(s.estado === 'respondida' || s.estado === 'convertida' || s.respondido_at){
+        resp = '<div style="margin-top:8px;padding:8px 10px;background:#ecfdf5;border-left:3px solid #16a34a;border-radius:4px;font-size:12px">'
+          + '<b>📨 Respuesta:</b><br>'
+          + '· Precio unitario: ' + esc(fmtCOP(s.respuesta_precio_cop)) + '<br>'
+          + '· Lead time: ' + esc((s.respuesta_lead_time_dias||0) + ' días') + '<br>'
+          + '· MOQ: ' + esc((s.respuesta_moq||0) + ' uds') + '<br>'
+          + '· Validez: ' + esc((s.respuesta_validez_dias||15) + ' días') + '<br>'
+          + (s.respuesta_notas ? '<br>📝 ' + esc(s.respuesta_notas) : '')
+          + '</div>';
+      }
+      return '<div class="pedido" style="border-left-color:'+color+'">'
+        + '<div class="pedido-prod">'+ico+' '+esc(s.producto_nombre)+'</div>'
+        + '<div class="pedido-meta">'
+          + esc(s.tipo) + ' · '
+          + (s.cantidad_estimada > 0 ? (esc(s.cantidad_estimada+' '+s.unidad)+' · ') : '')
+          + (s.envase_preferencia ? (esc(s.envase_preferencia)+' · ') : '')
+          + esc((s.creada_at||'').substring(0,16).replace('T',' '))
+        + '</div>'
+        + '<span class="pedido-estado" style="background:'+color+'22;color:'+color+'">'+esc(estLbl)+'</span>'
+        + (s.mensaje ? '<div class="pedido-meta" style="margin-top:5px"><i>"'+esc(s.mensaje)+'"</i></div>' : '')
+        + resp
+      + '</div>';
+    }).join('');
+  }catch(e){
+    lista.innerHTML = '<div class="empty">Error: '+esc(e.message)+'</div>';
+  }
 }
 
 async function enviarPqr(){
@@ -1426,4 +1585,246 @@ def admin_portal_pqr_responder(pqr_id):
 
     conn.commit()
     return jsonify({'ok': True, 'cambios': cambios})
+
+
+# ════════════════════════════════════════════════════════════════════════
+# Portal · Solicitudes de cotización / muestras / ficha técnica (RFQ)
+# Sebastián 25-may-2026 · tarea pendiente #4 "Módulo portal solicitud B2B"
+# Complementa el flujo de pedidos · cliente nuevo o existente pide
+# cotización ANTES de comprometer · admin responde con precio + lead + MOQ
+# · cliente convierte a pedido o lo deja en histórico.
+# ════════════════════════════════════════════════════════════════════════
+
+_PORTAL_SOL_TIPOS = ('cotizacion', 'muestras', 'ficha_tecnica')
+_PORTAL_SOL_ESTADOS = ('nueva', 'en_revision', 'respondida',
+                        'convertida', 'cerrada', 'rechazada')
+
+
+@bp.route('/api/portal/solicitudes', methods=['POST'])
+def portal_crear_solicitud():
+    """Cliente externo crea una solicitud de cotización/muestras/ficha.
+
+    Body: {
+      tipo: 'cotizacion'|'muestras'|'ficha_tecnica' (default cotizacion),
+      producto_nombre: str (requerido),
+      cantidad_estimada: int (opcional · 0 si solo info),
+      unidad: 'unidades'|'kg'|'litros' (default unidades),
+      envase_preferencia: str (opcional · e.g. '500ml gotero'),
+      fecha_requerida: 'YYYY-MM-DD' (opcional),
+      mensaje: str (opcional · notas)
+    }
+
+    Sale en estado 'nueva' · Catalina la ve en /compras y responde.
+    """
+    auth = _require_portal_login()
+    if not auth:
+        return jsonify({'error': 'No autorizado'}), 401
+    cid, cnom, email = auth
+    body = request.get_json(silent=True) or {}
+    tipo = (body.get('tipo') or 'cotizacion').strip().lower()
+    if tipo not in _PORTAL_SOL_TIPOS:
+        return jsonify({'error': f'tipo inválido · usar {_PORTAL_SOL_TIPOS}'}), 400
+    producto = (body.get('producto_nombre') or '').strip()
+    if not producto:
+        return jsonify({'error': 'producto_nombre requerido'}), 400
+    try:
+        cantidad = int(body.get('cantidad_estimada') or 0)
+    except (TypeError, ValueError):
+        cantidad = 0
+    if cantidad < 0 or cantidad > 1_000_000_000:
+        return jsonify({'error': 'cantidad_estimada fuera de rango'}), 400
+    unidad = (body.get('unidad') or 'unidades').strip().lower()[:30]
+    envase_pref = (body.get('envase_preferencia') or '').strip()[:120]
+    fecha_req = (body.get('fecha_requerida') or '').strip() or None
+    mensaje = (body.get('mensaje') or '').strip()[:1000]
+    conn = get_db(); cur = conn.cursor()
+    cur.execute(
+        """INSERT INTO portal_solicitudes
+           (cliente_id, cliente_nombre, cliente_email, tipo, producto_nombre,
+            cantidad_estimada, unidad, envase_preferencia, fecha_requerida,
+            mensaje, estado, creada_at, actualizada_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'nueva',
+                   datetime('now', '-5 hours'), datetime('now', '-5 hours'))""",
+        (cid, cnom, email, tipo, producto, cantidad, unidad, envase_pref,
+         fecha_req, mensaje),
+    )
+    sol_id = cur.lastrowid
+    try:
+        from audit_helpers import audit_log
+        audit_log(cur, usuario=f'portal:{cnom}'[:80],
+                  accion='CREAR_PORTAL_SOLICITUD',
+                  tabla='portal_solicitudes', registro_id=str(sol_id),
+                  despues={'tipo': tipo, 'producto': producto[:120],
+                            'cantidad': cantidad, 'cliente_id': cid})
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({
+        'ok': True, 'id': sol_id, 'tipo': tipo, 'estado': 'nueva',
+        'mensaje': f"Solicitud #{sol_id} recibida · te respondemos en 24-48h hábiles",
+    }), 201
+
+
+@bp.route('/api/portal/mis-solicitudes', methods=['GET'])
+def portal_mis_solicitudes():
+    """Cliente externo ve sus solicitudes (todos los tipos).
+
+    Query: ?estado=nueva|respondida|... (opcional · default todas)
+    """
+    auth = _require_portal_login()
+    if not auth:
+        return jsonify({'error': 'No autorizado'}), 401
+    cid, _cnom, _email = auth
+    estado_f = (request.args.get('estado') or '').strip().lower()
+    conn = get_db(); cur = conn.cursor()
+    sql = ("SELECT id, tipo, producto_nombre, cantidad_estimada, unidad, "
+           "       envase_preferencia, fecha_requerida, mensaje, estado, "
+           "       COALESCE(respuesta_precio_cop, 0), "
+           "       COALESCE(respuesta_lead_time_dias, 0), "
+           "       COALESCE(respuesta_moq, 0), "
+           "       COALESCE(respuesta_validez_dias, 15), "
+           "       COALESCE(respuesta_notas, ''), "
+           "       COALESCE(respondido_por, ''), respondido_at, "
+           "       creada_at, actualizada_at, "
+           "       COALESCE(convertida_pedido_id, 0) "
+           "FROM portal_solicitudes WHERE cliente_id = ?")
+    params = [cid]
+    if estado_f and estado_f in _PORTAL_SOL_ESTADOS:
+        sql += " AND estado = ?"
+        params.append(estado_f)
+    sql += " ORDER BY creada_at DESC LIMIT 100"
+    try:
+        rows = cur.execute(sql, params).fetchall()
+    except Exception:
+        rows = []
+    cols = ['id', 'tipo', 'producto_nombre', 'cantidad_estimada', 'unidad',
+            'envase_preferencia', 'fecha_requerida', 'mensaje', 'estado',
+            'respuesta_precio_cop', 'respuesta_lead_time_dias',
+            'respuesta_moq', 'respuesta_validez_dias', 'respuesta_notas',
+            'respondido_por', 'respondido_at', 'creada_at', 'actualizada_at',
+            'convertida_pedido_id']
+    items = [dict(zip(cols, r)) for r in rows]
+    return jsonify({'items': items, 'total': len(items)})
+
+
+@bp.route('/api/admin/portal/solicitudes', methods=['GET'])
+def admin_portal_solicitudes_list():
+    """Catalina/admin ve TODAS las solicitudes del portal (cross-cliente).
+
+    Query: ?estado=nueva|... ?tipo=cotizacion|...
+    """
+    usuario = session.get('compras_user', '')
+    if usuario not in COMPRAS_USERS and usuario not in ADMIN_USERS:
+        return jsonify({'error': 'Solo Compras/Admin'}), 403
+    estado_f = (request.args.get('estado') or '').strip().lower()
+    tipo_f = (request.args.get('tipo') or '').strip().lower()
+    conn = get_db(); cur = conn.cursor()
+    sql = ("SELECT id, cliente_id, cliente_nombre, cliente_email, tipo, "
+           "       producto_nombre, cantidad_estimada, unidad, "
+           "       envase_preferencia, fecha_requerida, mensaje, estado, "
+           "       COALESCE(respuesta_precio_cop, 0), "
+           "       COALESCE(respuesta_lead_time_dias, 0), "
+           "       COALESCE(respuesta_moq, 0), "
+           "       COALESCE(respuesta_validez_dias, 15), "
+           "       COALESCE(respuesta_notas, ''), "
+           "       COALESCE(respondido_por, ''), respondido_at, "
+           "       creada_at, actualizada_at, "
+           "       COALESCE(convertida_pedido_id, 0) "
+           "FROM portal_solicitudes WHERE 1=1")
+    params = []
+    if estado_f and estado_f in _PORTAL_SOL_ESTADOS:
+        sql += " AND estado = ?"
+        params.append(estado_f)
+    if tipo_f and tipo_f in _PORTAL_SOL_TIPOS:
+        sql += " AND tipo = ?"
+        params.append(tipo_f)
+    sql += " ORDER BY (estado='nueva') DESC, creada_at DESC LIMIT 300"
+    try:
+        rows = cur.execute(sql, params).fetchall()
+    except Exception:
+        rows = []
+    cols = ['id', 'cliente_id', 'cliente_nombre', 'cliente_email', 'tipo',
+            'producto_nombre', 'cantidad_estimada', 'unidad',
+            'envase_preferencia', 'fecha_requerida', 'mensaje', 'estado',
+            'respuesta_precio_cop', 'respuesta_lead_time_dias',
+            'respuesta_moq', 'respuesta_validez_dias', 'respuesta_notas',
+            'respondido_por', 'respondido_at', 'creada_at', 'actualizada_at',
+            'convertida_pedido_id']
+    items = [dict(zip(cols, r)) for r in rows]
+    return jsonify({'items': items, 'total': len(items)})
+
+
+@bp.route('/api/admin/portal/solicitudes/<int:sol_id>', methods=['PATCH'])
+def admin_portal_solicitud_responder(sol_id):
+    """Admin responde una solicitud · setea estado='respondida' + datos
+    cotización (precio + lead + MOQ + validez + notas). Cliente la ve
+    en /portal → Mis solicitudes.
+
+    Body: {estado?, respuesta_precio_cop?, respuesta_lead_time_dias?,
+           respuesta_moq?, respuesta_validez_dias?, respuesta_notas?}
+    """
+    usuario = session.get('compras_user', '')
+    if usuario not in COMPRAS_USERS and usuario not in ADMIN_USERS:
+        return jsonify({'error': 'Solo Compras/Admin'}), 403
+    body = request.get_json(silent=True) or {}
+    conn = get_db(); cur = conn.cursor()
+    row = cur.execute(
+        "SELECT estado, cliente_nombre FROM portal_solicitudes WHERE id = ?",
+        (sol_id,),
+    ).fetchone()
+    if not row:
+        return jsonify({'error': 'Solicitud no encontrada'}), 404
+    estado_prev, _cli_nom = row
+    sets = []
+    params = []
+    nuevo_estado = (body.get('estado') or '').strip().lower()
+    if nuevo_estado:
+        if nuevo_estado not in _PORTAL_SOL_ESTADOS:
+            return jsonify({'error': f'estado inválido · {_PORTAL_SOL_ESTADOS}'}), 400
+        sets.append('estado = ?'); params.append(nuevo_estado)
+    # Campos respuesta · si vienen explícitos los acepta
+    for campo, key, parser in [
+        ('respuesta_precio_cop', 'respuesta_precio_cop', float),
+        ('respuesta_lead_time_dias', 'respuesta_lead_time_dias', int),
+        ('respuesta_moq', 'respuesta_moq', int),
+        ('respuesta_validez_dias', 'respuesta_validez_dias', int),
+    ]:
+        if key in body and body[key] is not None:
+            try:
+                v = parser(body[key])
+                if v < 0:
+                    continue
+                sets.append(f'{campo} = ?')
+                params.append(v)
+            except (TypeError, ValueError):
+                pass
+    if 'respuesta_notas' in body:
+        notas = (body.get('respuesta_notas') or '').strip()[:1000]
+        sets.append('respuesta_notas = ?'); params.append(notas)
+    # Si admin responde por primera vez · sello respondido_por/at
+    if (nuevo_estado == 'respondida' or
+            any(k.startswith('respuesta_') for k in body if body.get(k) is not None)):
+        sets.append('respondido_por = ?'); params.append(usuario)
+        sets.append("respondido_at = datetime('now', '-5 hours')")
+        # Auto-mover a 'respondida' si admin completó datos sin pasar estado
+        if not nuevo_estado:
+            sets.append("estado = 'respondida'")
+    sets.append("actualizada_at = datetime('now', '-5 hours')")
+    if not sets:
+        return jsonify({'error': 'nada que actualizar'}), 400
+    params.append(sol_id)
+    cur.execute(
+        f"UPDATE portal_solicitudes SET {', '.join(sets)} WHERE id = ?",
+        params,
+    )
+    try:
+        from audit_helpers import audit_log
+        audit_log(cur, usuario=usuario, accion='RESPONDER_PORTAL_SOLICITUD',
+                  tabla='portal_solicitudes', registro_id=str(sol_id),
+                  antes={'estado_prev': estado_prev},
+                  despues={'cambios': {k: v for k, v in body.items() if v is not None}})
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({'ok': True, 'id': sol_id})
 

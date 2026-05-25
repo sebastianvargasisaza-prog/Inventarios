@@ -312,6 +312,42 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (180, "portal_solicitudes · RFQ + muestras + ficha técnica del portal cliente B2B · Sebastián 25-may-2026", [
+        # FEATURE 25-may-2026 · Tarea pendiente #4 "Módulo portal solicitud B2B".
+        # Hoy el portal /portal/login tiene Pedidos (cliente existente) + PQR
+        # (post-venta). Falta el flujo PRE-VENTA · cliente nuevo o existente
+        # pide cotización antes de comprometer · admin responde con precio +
+        # lead time + MOQ · cliente convierte a pedido o lo deja en histórico.
+        # Cubre 3 tipos: cotización, muestras, ficha técnica.
+        """CREATE TABLE IF NOT EXISTS portal_solicitudes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cliente_id INTEGER,
+            cliente_nombre TEXT NOT NULL,
+            cliente_email TEXT,
+            tipo TEXT NOT NULL DEFAULT 'cotizacion',
+            producto_nombre TEXT NOT NULL,
+            cantidad_estimada INTEGER DEFAULT 0,
+            unidad TEXT DEFAULT 'unidades',
+            envase_preferencia TEXT DEFAULT '',
+            fecha_requerida TEXT,
+            mensaje TEXT DEFAULT '',
+            adjunto_filename TEXT DEFAULT '',
+            estado TEXT NOT NULL DEFAULT 'nueva',
+            respuesta_precio_cop REAL DEFAULT 0,
+            respuesta_lead_time_dias INTEGER DEFAULT 0,
+            respuesta_moq INTEGER DEFAULT 0,
+            respuesta_validez_dias INTEGER DEFAULT 15,
+            respuesta_notas TEXT DEFAULT '',
+            respondido_por TEXT DEFAULT '',
+            respondido_at TEXT,
+            convertida_pedido_id INTEGER,
+            creada_at TEXT DEFAULT (datetime('now', '-5 hours')),
+            actualizada_at TEXT DEFAULT (datetime('now', '-5 hours'))
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_portal_sol_cliente ON portal_solicitudes(cliente_id, creada_at DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_portal_sol_estado ON portal_solicitudes(estado, creada_at DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_portal_sol_tipo ON portal_solicitudes(tipo)",
+    ]),
     (179, "compras_fast_track_config · categorías que saltan a Autorizada sin doble paso · Sebastián 24-may-2026", [
         # FEATURE 24-may-2026 · Audit Solicitudes · Sebastián.
         # Antes: hardcoded en compras.py _FAST_TRACK = ('Influencer/Marketing Digital',
