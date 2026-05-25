@@ -547,12 +547,16 @@ async function cxIAPreguntar(pregunta){
       <span style="font-weight:700;color:#1e293b;font-size:15px;">&#x1F4E6; Órdenes de compra activas · agrupadas por proveedor</span>
       <div style="font-size:11px;color:#64748b;margin-top:2px">OCs ya creadas (Borrador / Revisada / Autorizada) · NO la cola de SOLs pendientes (esa va en tab "🏭 Planta")</div>
     </div>
-    <div style="display:flex;gap:8px;margin-left:auto;align-items:center;">
+    <div style="display:flex;gap:8px;margin-left:auto;align-items:center;flex-wrap:wrap;">
       <label style="font-size:12px;color:#64748b;">Estados:</label>
       <label style="font-size:12px;"><input type="checkbox" class="consol-est" value="Borrador" checked> Borrador</label>
       <label style="font-size:12px;"><input type="checkbox" class="consol-est" value="Revisada" checked> Revisada</label>
       <label style="font-size:12px;"><input type="checkbox" class="consol-est" value="Autorizada" checked> Autorizada</label>
       <button class="btn bp" onclick="loadConsolidado()" style="padding:6px 14px;font-size:12px;">&#x21BA; Actualizar</button>
+      <!-- Sebastián 24-may-2026 · link directo al módulo /recepcion · bodega
+           necesita acceso rápido para registrar mercancía que llega · evita
+           que tengan que volver a /modulos para encontrarlo. -->
+      <a href="/recepcion" target="_blank" rel="noopener" class="btn" style="background:#7c3aed;color:#fff;padding:6px 14px;font-size:12px;font-weight:700;text-decoration:none;border-radius:5px;display:inline-flex;align-items:center;gap:4px" title="Abrir página dedicada de recepción · escaneo lotes · cuarentena · trazabilidad">📦 Ir a Recepción</a>
     </div>
   </div>
   <div id="consol-body" style="padding:16px 0;">
