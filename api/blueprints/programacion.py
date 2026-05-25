@@ -4609,7 +4609,14 @@ def limpiar_db_sin_calendar():
 def listado_produccion_programada():
     """Lista todas las producciones programadas activas con su origen,
     para diagnostico de producciones fantasma. Sebastian lo necesita
-    cuando ve algo en el horizonte que no recuerda haber programado."""
+    cuando ve algo en el horizonte que no recuerda haber programado.
+
+    Sebastián 25-may-2026 PM · cada lote ahora incluye `desglose_b2b`:
+    array de {cliente_nombre, kg_aporte, unidades_aporte, modo} leído
+    de pedidos_b2b_lote. El frontend calcula `kg_dtc = kg_total - sum(b2b)`.
+    Si el resultado es negativo o cero, significa que el lote fue
+    "inflado a ojo" en el pasado y la diferencia no está atribuida.
+    """
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
     conn = get_db()
@@ -4636,15 +4643,61 @@ def listado_produccion_programada():
           AND pp.fecha_programada >= date('now', '-5 hours', '-7 day')
         ORDER BY pp.fecha_programada ASC, pp.id ASC
     """).fetchall()
-    out = [{
-        'id': r[0], 'producto': r[1], 'fecha_programada': r[2], 'lotes': r[3],
-        'estado': r[4], 'origen': r[5], 'observaciones': r[6], 'kg': r[7],
-        'area_id': r[8], 'area_nombre': r[9],
-        'operario_dispensacion_id': r[10], 'operario_dispensacion': (r[11] or '').strip() or None,
-        'operario_elaboracion_id':  r[12], 'operario_elaboracion':  (r[13] or '').strip() or None,
-        'operario_envasado_id':     r[14], 'operario_envasado':     (r[15] or '').strip() or None,
-        'operario_acondicionamiento_id': r[16], 'operario_acondicionamiento': (r[17] or '').strip() or None,
-    } for r in rows]
+    lote_ids = [r[0] for r in rows]
+    desglose_por_lote = {}
+    if lote_ids:
+        try:
+            placeholders = ','.join('?' * len(lote_ids))
+            b2b_rows = conn.execute(
+                f"""SELECT pbl.lote_produccion_id,
+                          COALESCE(NULLIF(TRIM(pbl.cliente_nombre),''),
+                                   NULLIF(TRIM(pb.cliente_nombre),''),
+                                   pb.cliente_id, 'B2B') as cliente,
+                          COALESCE(pbl.kg_aporte, 0) as kg_aporte,
+                          COALESCE(pbl.unidades_aporte, 0) as uds_aporte,
+                          COALESCE(pbl.modo, 'sumado_a_lote_canonico') as modo,
+                          pbl.pedido_b2b_id
+                    FROM pedidos_b2b_lote pbl
+                    LEFT JOIN pedidos_b2b pb ON pb.id = pbl.pedido_b2b_id
+                    WHERE pbl.lote_produccion_id IN ({placeholders})
+                    ORDER BY pbl.lote_produccion_id, kg_aporte DESC""",
+                lote_ids).fetchall()
+            for br in b2b_rows:
+                desglose_por_lote.setdefault(br[0], []).append({
+                    'cliente': br[1] or 'B2B',
+                    'kg': float(br[2] or 0),
+                    'unidades': int(br[3] or 0),
+                    'modo': br[4] or 'sumado_a_lote_canonico',
+                    'pedido_id': br[5],
+                })
+        except Exception as _e_b2b:
+            # Tabla pedidos_b2b_lote no existe en bootstrap (mig 169 viejo)
+            # · log + seguir sin desglose · no romper /admin/plan-calendario.
+            log = logging.getLogger('inventario.programacion')
+            log.warning('desglose B2B fallo: %s', _e_b2b)
+    out = []
+    for r in rows:
+        kg_total = float(r[7] or 0)
+        desglose = desglose_por_lote.get(r[0], [])
+        kg_b2b_sum = sum(d['kg'] for d in desglose)
+        kg_dtc = round(kg_total - kg_b2b_sum, 2)
+        # "Lote inflado": tiene B2B y el DTC queda > 0 (caso normal). Si
+        # kg_dtc < 0 → más B2B atribuido que el lote total · data
+        # inconsistente · frontend muestra warning. Si kg_b2b_sum == 0
+        # → todo DTC, sin desglose explícito (caso default).
+        out.append({
+            'id': r[0], 'producto': r[1], 'fecha_programada': r[2], 'lotes': r[3],
+            'estado': r[4], 'origen': r[5], 'observaciones': r[6], 'kg': kg_total,
+            'area_id': r[8], 'area_nombre': r[9],
+            'operario_dispensacion_id': r[10], 'operario_dispensacion': (r[11] or '').strip() or None,
+            'operario_elaboracion_id':  r[12], 'operario_elaboracion':  (r[13] or '').strip() or None,
+            'operario_envasado_id':     r[14], 'operario_envasado':     (r[15] or '').strip() or None,
+            'operario_acondicionamiento_id': r[16], 'operario_acondicionamiento': (r[17] or '').strip() or None,
+            'desglose_b2b': desglose,
+            'kg_b2b_total': round(kg_b2b_sum, 2),
+            'kg_dtc': max(0.0, kg_dtc),
+            'split_inconsistente': kg_dtc < -0.01,
+        })
     return jsonify({'producciones': out, 'total': len(out)})
 
 

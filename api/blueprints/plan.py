@@ -11946,8 +11946,31 @@ function render(){
           const esFijo = ['eos_plan','eos_b2b','eos_retroactivo'].indexOf(lt.origen) >= 0;
           const candado = esFijo ? '🔒 ' : '';
           const fijoTip = esFijo ? ' · 🔒 FIJO (los automáticos no lo tocan)' : '';
-          grid += '<div class="' + ltCls + esGrande + '" draggable="true" data-key="' + dragKey + '" data-prod="' + escapeHtml(lt.producto) + '" data-kg="' + lt.kg + '" data-from="' + fStr + '" ondragstart="onDragStart(event)" ondragend="onDragEnd(event)" onclick="abrirLoteModal(' + lt.id + ',&quot;' + escapeHtml(lt.producto) + '&quot;,&quot;' + fStr + '&quot;,' + lt.kg + ')" title="' + escapeHtml(lt.producto + ' · ' + lt.kg + 'kg · click detalle · arrastrá para mover' + fijoTip) + '">';
-          grid += '<span>' + candado + escapeHtml(prodCorto) + '<br><span style="opacity:.7">' + lt.kg + 'kg</span></span>';
+          // Sebastián 25-may-2026 PM · desglose DTC vs B2B en celda.
+          // lt.desglose_b2b viene del backend · array de {cliente, kg, ...}.
+          // Si hay B2B atribuido: muestra "12kg · 8 DTC + 4 Fer" (cliente corto).
+          // Si no hay desglose: muestra solo "12kg" (asumido DTC).
+          // split_inconsistente: más B2B atribuido que el total · marca ⚠.
+          let lineaKg = lt.kg + 'kg';
+          let tipSplit = '';
+          const desg = lt.desglose_b2b || [];
+          if (desg.length > 0){
+            const kgB2B = lt.kg_b2b_total || 0;
+            const kgDTC = lt.kg_dtc || 0;
+            const partes = [];
+            if (kgDTC > 0.05) partes.push(kgDTC + ' DTC');
+            desg.forEach(d => {
+              const clCorto = (d.cliente || 'B2B').split(/\s+/)[0].slice(0, 8);
+              partes.push(d.kg + ' ' + clCorto);
+            });
+            lineaKg = lt.kg + 'kg · ' + partes.join('+');
+            tipSplit = ' · desglose: ' +
+              (kgDTC > 0.05 ? kgDTC + 'kg DTC + ' : '') +
+              desg.map(d => d.kg + 'kg ' + d.cliente).join(' + ');
+            if (lt.split_inconsistente) lineaKg = '⚠ ' + lineaKg;
+          }
+          grid += '<div class="' + ltCls + esGrande + '" draggable="true" data-key="' + dragKey + '" data-prod="' + escapeHtml(lt.producto) + '" data-kg="' + lt.kg + '" data-from="' + fStr + '" ondragstart="onDragStart(event)" ondragend="onDragEnd(event)" onclick="abrirLoteModal(' + lt.id + ',&quot;' + escapeHtml(lt.producto) + '&quot;,&quot;' + fStr + '&quot;,' + lt.kg + ')" title="' + escapeHtml(lt.producto + ' · ' + lt.kg + 'kg · click detalle · arrastrá para mover' + fijoTip + tipSplit) + '">';
+          grid += '<span>' + candado + escapeHtml(prodCorto) + '<br><span style="opacity:.7;font-size:9.5px">' + escapeHtml(lineaKg) + '</span></span>';
           grid += '</div>';
         }
       });
@@ -12496,6 +12519,39 @@ async function abrirLoteModal(id, producto, fecha, kg){
   }
 
   let html = '';
+
+  // Sebastián 25-may-2026 PM · Desglose B2B vs DTC del lote.
+  // Busca el lote en PLAN_DATA.agendadas por id · si tiene desglose_b2b,
+  // muestra tarjeta con clientes y kg atribuidos · útil para saber
+  // cuánto del lote es Fernando, Kelly, etc. y cuánto queda DTC.
+  try {
+    const _loteFull = (PLAN_DATA.agendadas || []).find(a => a.id === id);
+    const _desg = (_loteFull && _loteFull.desglose_b2b) || [];
+    if (_desg.length > 0 || (_loteFull && _loteFull.kg_b2b_total > 0)){
+      const kgB2B = (_loteFull && _loteFull.kg_b2b_total) || 0;
+      const kgDTC = (_loteFull && _loteFull.kg_dtc) || 0;
+      const inconsist = !!(_loteFull && _loteFull.split_inconsistente);
+      let dHtml = '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;margin-bottom:12px">';
+      dHtml += '<div style="font-size:11px;font-weight:800;color:#475569;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">📦 Desglose del lote · ' + kg + 'kg</div>';
+      if (inconsist){
+        dHtml += '<div style="background:#fee2e2;color:#991b1b;padding:6px 10px;border-radius:5px;font-size:11px;margin-bottom:6px">⚠ <strong>Datos inconsistentes</strong> · la suma B2B (' + kgB2B + 'kg) supera el total del lote (' + kg + 'kg). Revisar atribuciones.</div>';
+      }
+      dHtml += '<div style="display:flex;flex-wrap:wrap;gap:6px">';
+      if (kgDTC > 0.05){
+        dHtml += '<span style="background:#dbeafe;color:#1e40af;padding:4px 10px;border-radius:5px;font-size:12px;font-weight:600">DTC · ' + kgDTC + 'kg</span>';
+      }
+      _desg.forEach(d => {
+        dHtml += '<span style="background:#fce7f3;color:#9d174d;padding:4px 10px;border-radius:5px;font-size:12px;font-weight:600" title="pedido B2B #' + (d.pedido_id || '') + ' · modo ' + escapeHtml(d.modo || '') + '">' +
+          escapeHtml(d.cliente || 'B2B') + ' · ' + d.kg + 'kg' +
+          (d.unidades > 0 ? ' (' + d.unidades + ' uds)' : '') + '</span>';
+      });
+      dHtml += '</div></div>';
+      html += dHtml;
+    } else {
+      // Lote sin atribución B2B explícita · asumido todo DTC
+      html += '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:8px 12px;margin-bottom:12px;font-size:11px;color:#64748b">📦 Lote sin desglose B2B · asumido <strong>' + kg + 'kg DTC</strong></div>';
+    }
+  } catch(_e_desg){ /* sin lote en PLAN_DATA · no mostrar */ }
 
   // Sección 1: Datos de venta y stock
   html += '<div class="metric-grid">';
