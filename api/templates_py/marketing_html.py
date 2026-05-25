@@ -3968,15 +3968,6 @@ async function loadAdsLogDetail(id) {
 loadDashboard();
 </script>
 
-<!-- Widget Mi contraseña · Sebastián 7-may-2026 -->
-<a href="/cambiar-password" title="Cambiar mi contraseña"
-   style="position:fixed;bottom:24px;left:24px;z-index:9998;
-          background:#1e293b;color:#a78bfa;border:1px solid #4c1d95;
-          border-radius:24px;padding:8px 16px;font-size:12px;font-weight:700;
-          text-decoration:none;box-shadow:0 4px 12px rgba(0,0,0,.2);
-          font-family:-apple-system,Segoe UI,sans-serif;
-          display:flex;align-items:center;gap:6px">
-  🔐 Mi contraseña
-</a>
+<!-- Widget "Mi contraseña" removido 24-may-2026 · vive en /modulos y /hub -->
 </body>
 </html>"""

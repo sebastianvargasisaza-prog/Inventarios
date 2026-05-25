@@ -131,8 +131,11 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
      Programación 8→4). Catalina ya tenía muscular memory · IDs originales
      (data-tab) se mantienen para que las funciones loadX no se rompan. -->
 <!-- Compras MAX · 21-may-2026 · Botón flotante IA Agente + acciones rápidas -->
-<button id="cx-ia-btn" onclick="cxAbrirIA()" style="position:fixed;bottom:24px;right:24px;width:60px;height:60px;border-radius:50%;background:linear-gradient(135deg,#0f766e,#0891b2);color:#fff;border:none;cursor:pointer;font-size:24px;box-shadow:0 6px 20px rgba(15,118,110,.4);z-index:9999" title="Pregúntale a Compras (IA)">💬</button>
-<div id="cx-ia-modal" style="display:none;position:fixed;bottom:96px;right:24px;width:400px;max-height:600px;background:#fff;border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,.25);z-index:9999;flex-direction:column;border:1px solid #cbd5e1">
+<!-- Sebastián 24-may-2026 · botón IA chat movido a bottom-LEFT · antes
+     tapaba el FAB "+ Nueva OC" (ambos en bottom-right). Modal sigue
+     anclado a la izquierda matching el botón. -->
+<button id="cx-ia-btn" onclick="cxAbrirIA()" style="position:fixed;bottom:24px;left:24px;width:54px;height:54px;border-radius:50%;background:linear-gradient(135deg,#0f766e,#0891b2);color:#fff;border:none;cursor:pointer;font-size:22px;box-shadow:0 6px 20px rgba(15,118,110,.4);z-index:9999" title="Pregúntale a Compras (IA)">💬</button>
+<div id="cx-ia-modal" style="display:none;position:fixed;bottom:90px;left:24px;width:400px;max-height:600px;background:#fff;border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,.25);z-index:9999;flex-direction:column;border:1px solid #cbd5e1">
   <div style="background:linear-gradient(135deg,#0f766e,#0891b2);color:#fff;padding:12px 16px;border-radius:14px 14px 0 0;display:flex;justify-content:space-between;align-items:center">
     <b style="font-size:14px">💬 Pregúntale a Compras</b>
     <button onclick="cxCerrarIA()" style="background:none;border:none;color:#fff;font-size:1.3em;cursor:pointer;padding:0 4px">×</button>
@@ -8063,15 +8066,9 @@ loadData();
 })();
 </script>
 
-<!-- Widget Mi contraseña · Sebastián 7-may-2026 -->
-<a href="/cambiar-password" title="Cambiar mi contraseña"
-   style="position:fixed;bottom:24px;left:24px;z-index:9998;
-          background:#1e293b;color:#a78bfa;border:1px solid #4c1d95;
-          border-radius:24px;padding:8px 16px;font-size:12px;font-weight:700;
-          text-decoration:none;box-shadow:0 4px 12px rgba(0,0,0,.2);
-          font-family:-apple-system,Segoe UI,sans-serif;
-          display:flex;align-items:center;gap:6px">
-  🔐 Mi contraseña
-</a>
+<!-- Widget "Mi contraseña" removido 24-may-2026 · Sebastián · estaba en
+     8 templates distintos · cluttereaba el bottom-left de cada vista ·
+     ahora vive solo en /modulos y /hub (puntos de entrada del sistema) -->
+
 </body>
 </html>"""
