@@ -22801,21 +22801,70 @@ async function ckMarcar(itemId, estado){
 
   // Asigna un pedido B2B a un lote Animus DTC existente
   window.asignarB2BaAnimus = async function(pid) {
-    if (!confirm('¿Buscar un lote Animus DTC del mismo producto ±14d y sumar este pedido?\\n\\nSi hay match, se cancela el lote dedicado y se evita producción duplicada.')) return;
+    if (!confirm('¿Buscar un lote Animus DTC del mismo producto ±30d y sumar este pedido?\\n\\nSi hay match, se cancela el lote dedicado y se evita producción duplicada.')) return;
     try {
       const r = await fetch('/api/pedidos-b2b/' + pid + '/asignar-a-animus', {
         method: 'POST',
         headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfTokenNec()},
       });
       const d = await r.json();
-      if (!r.ok) {
-        let msg = 'Error: ' + (d.error || r.status);
-        if (d.sugerencia) msg += '\\n\\n💡 ' + d.sugerencia;
-        alert(msg);
+      if (r.ok) {
+        alert('✓ ' + d.mensaje + '\\n\\nTotal del lote ahora: ' + d.kg_total_lote.toFixed(1) + ' kg');
+        cargarNecesidades();
         return;
       }
-      alert('✓ ' + d.mensaje + '\\n\\nTotal del lote ahora: ' + d.kg_total_lote.toFixed(1) + ' kg');
-      cargarNecesidades();
+      // No matcheó · si hay candidatos fuera de ventana, ofrecer forzar
+      if (d.candidatos_fuera_ventana && d.candidatos_fuera_ventana.length > 0) {
+        let lista = 'No hay lote en ventana ±30d, pero existen estos del mismo producto:\\n\\n';
+        d.candidatos_fuera_ventana.forEach((c, i) => {
+          lista += (i+1) + '. Lote #' + c.id + ' · ' + c.producto + ' · ' +
+                   c.fecha + ' · ' + c.kg + 'kg · ' + c.estado + '\\n';
+        });
+        lista += '\\n¿Querés FORZAR asignación a uno? Escribí el número (1-' +
+                 d.candidatos_fuera_ventana.length + ') o cancelá:';
+        const sel = prompt(lista);
+        const idx = parseInt(sel, 10) - 1;
+        if (idx >= 0 && idx < d.candidatos_fuera_ventana.length) {
+          const loteSel = d.candidatos_fuera_ventana[idx];
+          const r2 = await fetch('/api/pedidos-b2b/' + pid + '/asignar-a-lote/' + loteSel.id, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json', 'X-CSRF-Token': csrfTokenNec()},
+          });
+          const d2 = await r2.json();
+          if (r2.ok) {
+            alert('✓ ' + d2.mensaje + '\\n\\nTotal lote: ' + d2.kg_total_lote.toFixed(1) + ' kg');
+            cargarNecesidades();
+          } else {
+            alert('Error forzando: ' + (d2.error || r2.status));
+          }
+        }
+        return;
+      }
+      // Sin candidatos · ofrecer diagnóstico
+      if (confirm('No hay lote del mismo producto. Ver diagnóstico (qué lotes existen y por qué se descartaron)?')) {
+        const rd = await fetch('/api/pedidos-b2b/' + pid + '/diagnostico-match');
+        const dd = await rd.json();
+        let txt = 'DIAGNÓSTICO MATCH B2B↔ANIMUS\\n';
+        txt += '────────────────────────\\n';
+        txt += 'Pedido #' + dd.pedido_id + ' · ' + (dd.cliente || '') + '\\n';
+        txt += 'Producto: ' + dd.producto_pedido + '\\n';
+        txt += 'Canónico: ' + dd.producto_canonico + '\\n';
+        txt += 'Fecha target: ' + dd.fecha_target + ' (±' + dd.ventana_dias + 'd)\\n';
+        txt += 'Lotes existentes: ' + dd.total_lotes_existentes_mismo_producto + '\\n';
+        txt += '────────────────────────\\n';
+        if (dd.candidatos && dd.candidatos.length) {
+          dd.candidatos.forEach(c => {
+            txt += '#' + c.id + ' · ' + (c.fecha||'') + ' · ' + c.kg + 'kg · ' +
+                   c.estado + ' · origen=' + c.origen + '\\n';
+            if (!c.match_directo && c.razones_descarte.length) {
+              txt += '    ⚠ ' + c.razones_descarte.join(' · ') + '\\n';
+            }
+          });
+        } else {
+          txt += 'Sin lotes existentes · necesitás programar uno nuevo.';
+        }
+        alert(txt);
+      }
     } catch(e) { alert('Error red: ' + e.message); }
   };
 

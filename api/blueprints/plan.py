@@ -6732,25 +6732,90 @@ def pedidos_b2b_asignar_a_animus(pid):
     else:
         f_target = hoy + _td(days=7)
 
-    # Buscar lote canónico Animus (NO eos_b2b · queremos uno que ya tenga
-    # parte DTC) en ventana ±14d del producto exacto
+    # Sebastián 25-may-2026 PM · caso "Centella": el pedido decía no
+    # encontrar lote programado pero SÍ existía. Causa: match restrictivo:
+    #  - UPPER(TRIM()) no normaliza tildes ni espacios múltiples
+    #  - No usa producto_canonico (mig 174) · variantes "Centella Esencia"
+    #    vs "Esencia de Centella" no matcheaban aunque comparten canónico
+    #  - Ventana ±14d muy chica para B2B (clientes piden con mes+)
+    #  - "No encontrado" sin candidatos · admin no sabe qué hacer
+    # Ahora:
+    #  - LEFT JOIN formula_headers para usar producto_canonico
+    #  - Match si nombre exacto OR canónico igual
+    #  - Ventana ampliada a ±30d
+    #  - Si no hay match en ±30d, devuelve TOP 5 candidatos del canónico
+    #    en CUALQUIER fecha futura · frontend puede listar y elegir
+    canonico = ''
+    try:
+        row_can = cur.execute(
+            "SELECT COALESCE(producto_canonico,'') FROM formula_headers "
+            "WHERE UPPER(TRIM(producto_nombre)) = UPPER(TRIM(?)) LIMIT 1",
+            (producto,)).fetchone()
+        if row_can:
+            canonico = (row_can[0] or '').strip()
+    except Exception:
+        canonico = ''
+    # Si no tiene canónico explícito, usar el nombre como canónico
+    if not canonico:
+        canonico = producto
+
     lote_animus = cur.execute(
-        """SELECT id, fecha_programada, COALESCE(cantidad_kg, 0), COALESCE(origen,'')
-           FROM produccion_programada
-           WHERE UPPER(TRIM(producto)) = UPPER(TRIM(?))
-             AND COALESCE(origen,'') IN ('eos_plan','eos_canonico','calendar','manual','auto_plan','sugerido')
-             AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado','esperando_recurso')
-             AND inicio_real_at IS NULL AND fin_real_at IS NULL
-             AND ABS(julianday(fecha_programada) - julianday(?)) <= 14
-           ORDER BY ABS(julianday(fecha_programada) - julianday(?)) ASC
+        """SELECT pp.id, pp.fecha_programada, COALESCE(pp.cantidad_kg, 0),
+                  COALESCE(pp.origen,''), pp.producto
+           FROM produccion_programada pp
+           LEFT JOIN formula_headers fh
+             ON UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(pp.producto))
+           WHERE (UPPER(TRIM(pp.producto)) = UPPER(TRIM(?))
+                  OR UPPER(TRIM(COALESCE(fh.producto_canonico,''))) = UPPER(TRIM(?)))
+             AND COALESCE(pp.origen,'') IN ('eos_plan','eos_canonico','calendar','manual','auto_plan','sugerido')
+             AND LOWER(COALESCE(pp.estado,'')) NOT IN ('cancelado','completado','esperando_recurso')
+             AND pp.inicio_real_at IS NULL AND pp.fin_real_at IS NULL
+             AND ABS(julianday(pp.fecha_programada) - julianday(?)) <= 30
+           ORDER BY ABS(julianday(pp.fecha_programada) - julianday(?)) ASC
            LIMIT 1""",
-        (producto, f_target.isoformat(), f_target.isoformat()),
+        (producto, canonico, f_target.isoformat(), f_target.isoformat()),
     ).fetchone()
 
     if not lote_animus:
+        # Buscar candidatos del mismo canónico en CUALQUIER fecha futura
+        # para que admin pueda elegir manualmente
+        candidatos = []
+        try:
+            for r in cur.execute(
+                """SELECT pp.id, pp.producto, pp.fecha_programada,
+                          COALESCE(pp.cantidad_kg,0), COALESCE(pp.origen,''),
+                          COALESCE(pp.estado,'')
+                   FROM produccion_programada pp
+                   LEFT JOIN formula_headers fh
+                     ON UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(pp.producto))
+                   WHERE (UPPER(TRIM(pp.producto)) = UPPER(TRIM(?))
+                          OR UPPER(TRIM(COALESCE(fh.producto_canonico,''))) = UPPER(TRIM(?)))
+                     AND COALESCE(pp.origen,'') IN ('eos_plan','eos_canonico','calendar','manual','auto_plan','sugerido')
+                     AND LOWER(COALESCE(pp.estado,'')) NOT IN ('cancelado','completado')
+                     AND pp.inicio_real_at IS NULL AND pp.fin_real_at IS NULL
+                     AND pp.fecha_programada >= date('now','-5 hours','-7 day')
+                   ORDER BY pp.fecha_programada ASC
+                   LIMIT 5""",
+                (producto, canonico)).fetchall():
+                candidatos.append({
+                    'id': r[0], 'producto': r[1], 'fecha': r[2],
+                    'kg': float(r[3] or 0), 'origen': r[4], 'estado': r[5],
+                })
+        except Exception:
+            pass
         return jsonify({
-            'error': f"No hay lote Animus DTC de '{producto}' en ventana ±14d de {f_target.isoformat()}",
-            'sugerencia': 'Programá primero un lote Animus DTC manualmente, o esperá al cron auto-sugerir',
+            'error': (f"No hay lote Animus DTC de '{producto}' en ventana ±30d "
+                       f"de {f_target.isoformat()}"),
+            'producto_buscado': producto,
+            'producto_canonico': canonico,
+            'fecha_objetivo': f_target.isoformat(),
+            'candidatos_fuera_ventana': candidatos,
+            'sugerencia': ('Hay {} lote(s) del mismo producto fuera de la ventana ±30d · '
+                           'usá /api/pedidos-b2b/{}/asignar-a-lote/<lote_id> para forzar '
+                           'asignación específica, o programá un lote nuevo'
+                          ).format(len(candidatos), pid)
+                          if candidatos else
+                          'Programá primero un lote Animus DTC manualmente, o esperá al cron auto-sugerir',
         }), 404
 
     lote_animus_id = lote_animus[0]
@@ -6841,6 +6906,211 @@ def pedidos_b2b_asignar_a_animus(pid):
         'kg_sumados': kg_b2b,
         'kg_total_lote': float(row_post[0] or 0) if row_post else 0,
         'mensaje': f'Pedido asignado al lote Animus DTC #{lote_animus_id} ({lote_fecha}) · +{kg_b2b}kg',
+    })
+
+
+@bp.route("/api/pedidos-b2b/<int:pid>/diagnostico-match", methods=["GET"])
+def pedidos_b2b_diagnostico_match(pid):
+    """Sebastián 25-may-2026 PM · "intente con centella y decia que no
+    estaba programada pero si estaba revisa a fondo que si funcione".
+    Endpoint diagnóstico que explica por qué el match B2B↔Animus falla:
+    - Qué producto/canónico buscó
+    - Qué lotes existen (cualquier estado, cualquier fecha)
+    - Por qué se descartó cada uno (fuera de ventana / estado / origen / ya inició)
+    Para que admin vea CON SUS OJOS qué pasó.
+    """
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+    conn = get_db(); cur = conn.cursor()
+    pedido = cur.execute(
+        """SELECT id, cliente_id, cliente_nombre, producto_nombre,
+                  COALESCE(cantidad_uds,0), COALESCE(ml_unidad,30),
+                  fecha_estimada, COALESCE(estado,'pendiente')
+           FROM pedidos_b2b WHERE id = ?""", (pid,)).fetchone()
+    if not pedido:
+        return jsonify({'error': 'Pedido no existe'}), 404
+    _id, cli_id, cli_nom, producto, uds, ml, fecha_est, estado = pedido
+    kg_b2b = round(float(uds or 0) * float(ml or 30) / 1000.0, 2)
+    from datetime import date as _d, timedelta as _td
+    hoy = _hoy_colombia() if '_hoy_colombia' in globals() else _d.today()
+    if fecha_est:
+        try:
+            f_target = _d.fromisoformat(str(fecha_est)[:10]) - _td(days=10)
+        except Exception:
+            f_target = hoy + _td(days=7)
+    else:
+        f_target = hoy + _td(days=7)
+    # Canonico
+    canonico = ''
+    try:
+        row_can = cur.execute(
+            "SELECT COALESCE(producto_canonico,'') FROM formula_headers "
+            "WHERE UPPER(TRIM(producto_nombre)) = UPPER(TRIM(?)) LIMIT 1",
+            (producto,)).fetchone()
+        if row_can:
+            canonico = (row_can[0] or '').strip()
+    except Exception:
+        pass
+    if not canonico:
+        canonico = producto
+    # Lotes candidatos · TODOS los que comparten producto o canonico
+    candidatos = []
+    try:
+        for r in cur.execute(
+            """SELECT pp.id, pp.producto, pp.fecha_programada,
+                      COALESCE(pp.cantidad_kg,0), COALESCE(pp.origen,''),
+                      COALESCE(pp.estado,''),
+                      pp.inicio_real_at, pp.fin_real_at,
+                      COALESCE(fh.producto_canonico,'') as canonico
+               FROM produccion_programada pp
+               LEFT JOIN formula_headers fh
+                 ON UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(pp.producto))
+               WHERE UPPER(TRIM(pp.producto)) = UPPER(TRIM(?))
+                  OR UPPER(TRIM(COALESCE(fh.producto_canonico,''))) = UPPER(TRIM(?))
+               ORDER BY pp.fecha_programada ASC""",
+            (producto, canonico)).fetchall():
+            # Determinar por qué se descartaría
+            descartado = []
+            origen = r[4] or ''
+            estado_lote = (r[5] or '').lower()
+            if origen not in ('eos_plan','eos_canonico','calendar','manual','auto_plan','sugerido'):
+                descartado.append(f'origen={origen} (necesita eos_plan/canónico/etc)')
+            if estado_lote in ('cancelado','completado','esperando_recurso'):
+                descartado.append(f'estado={estado_lote}')
+            if r[6]:
+                descartado.append('ya inició producción')
+            if r[7]:
+                descartado.append('ya terminó')
+            # Distancia a target
+            dias_dif = None
+            try:
+                if r[2]:
+                    fl = _d.fromisoformat(str(r[2])[:10])
+                    dias_dif = (fl - f_target).days
+                    if abs(dias_dif) > 30:
+                        descartado.append(f'fuera de ±30d ({dias_dif:+d}d)')
+            except Exception:
+                pass
+            candidatos.append({
+                'id': r[0], 'producto': r[1], 'fecha': r[2],
+                'kg': float(r[3] or 0), 'origen': origen,
+                'estado': estado_lote, 'canonico': r[8] or '',
+                'dias_de_target': dias_dif,
+                'match_directo': len(descartado) == 0,
+                'razones_descarte': descartado,
+            })
+    except Exception as e:
+        return jsonify({'error': f'diagnóstico fallo: {e}'}), 500
+    return jsonify({
+        'pedido_id': pid,
+        'cliente': cli_nom,
+        'producto_pedido': producto,
+        'producto_canonico': canonico,
+        'kg_b2b': kg_b2b,
+        'fecha_estimada': fecha_est,
+        'fecha_target': f_target.isoformat(),
+        'ventana_dias': 30,
+        'total_lotes_existentes_mismo_producto': len(candidatos),
+        'matchearían_directo': sum(1 for c in candidatos if c['match_directo']),
+        'candidatos': candidatos,
+    })
+
+
+@bp.route("/api/pedidos-b2b/<int:pid>/asignar-a-lote/<int:lote_id>", methods=["POST"])
+def pedidos_b2b_asignar_a_lote(pid, lote_id):
+    """Forzar asignación a un lote específico · útil cuando el match
+    automático (asignar-a-animus) no encontró por ventana o canónico.
+
+    Sebastián 25-may-2026 PM · "tenga la opción de juntar producción"
+    incluso si está fuera de ventana ±30d, vos eligís.
+    """
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+    conn = get_db(); cur = conn.cursor()
+    pedido = cur.execute(
+        """SELECT id, cliente_id, cliente_nombre, producto_nombre,
+                  COALESCE(cantidad_uds,0), COALESCE(ml_unidad,30),
+                  fecha_estimada, COALESCE(envase_codigo,''),
+                  COALESCE(estado,'pendiente')
+           FROM pedidos_b2b WHERE id = ?""", (pid,)).fetchone()
+    if not pedido:
+        return jsonify({'error': 'Pedido no existe'}), 404
+    _id, cli_id, cli_nom, producto, uds, ml, _fe, env_cod, estado = pedido
+    if estado == 'cancelado':
+        return jsonify({'error': 'pedido cancelado'}), 400
+    kg_b2b = round(float(uds or 0) * float(ml or 30) / 1000.0, 2)
+    if kg_b2b <= 0:
+        return jsonify({'error': 'pedido con kg=0'}), 400
+    lote = cur.execute(
+        """SELECT id, producto, fecha_programada, COALESCE(cantidad_kg,0),
+                  COALESCE(origen,''), COALESCE(estado,''),
+                  inicio_real_at, fin_real_at
+           FROM produccion_programada WHERE id = ?""", (lote_id,)).fetchone()
+    if not lote:
+        return jsonify({'error': f'Lote #{lote_id} no existe'}), 404
+    _lid, _lprod, lfecha, _lkg, lorigen, lestado, linicio, lfin = lote
+    if (lestado or '').lower() in ('cancelado','completado'):
+        return jsonify({'error': f'Lote #{lote_id} está {lestado}'}), 400
+    if linicio or lfin:
+        return jsonify({'error': f'Lote #{lote_id} ya inició/terminó · no se puede modificar'}), 400
+    # Limpiar integración previa del pedido
+    for (lid_b2b,) in cur.execute(
+        """SELECT lote_produccion_id FROM pedidos_b2b_lote
+           WHERE pedido_b2b_id = ? AND modo = 'lote_dedicado'""", (pid,)).fetchall():
+        otros = cur.execute(
+            "SELECT COUNT(*) FROM pedidos_b2b_lote WHERE lote_produccion_id = ? AND pedido_b2b_id != ?",
+            (lid_b2b, pid)).fetchone()
+        if not otros or int(otros[0] or 0) == 0:
+            cur.execute(
+                """UPDATE produccion_programada SET estado='cancelado',
+                       observaciones = SUBSTR(COALESCE(observaciones,'') ||
+                       ' · CANCELADO_REASIGNADO_MANUAL_LOTE_' || ?, -1500)
+                   WHERE id = ? AND inicio_real_at IS NULL""",
+                (str(lote_id), lid_b2b))
+    cur.execute("DELETE FROM pedidos_b2b_lote WHERE pedido_b2b_id = ?", (pid,))
+    # Sumar kg al lote elegido
+    cur.execute(
+        """UPDATE produccion_programada
+           SET cantidad_kg = COALESCE(cantidad_kg,0) + ?,
+               origen = 'eos_plan',
+               observaciones = SUBSTR(COALESCE(observaciones,'') ||
+                  ' · +' || ? || 'kg B2B ' || ? || ' (pedido #' || ? || ' forzado)',
+                  -1500)
+           WHERE id = ?""",
+        (kg_b2b, kg_b2b, cli_nom or '', pid, lote_id))
+    try:
+        cur.execute(
+            """INSERT OR REPLACE INTO pedidos_b2b_lote
+                 (pedido_b2b_id, lote_produccion_id, kg_aporte,
+                  unidades_aporte, ml_unidad, envase_codigo, modo, cliente_nombre)
+               VALUES (?, ?, ?, ?, ?, ?, 'sumado_a_lote_canonico', ?)""",
+            (pid, lote_id, kg_b2b, int(uds or 0), float(ml or 30),
+             env_cod, cli_nom or ''))
+    except Exception:
+        pass
+    cur.execute("UPDATE pedidos_b2b SET estado='confirmado' WHERE id=? AND estado!='cancelado'", (pid,))
+    audit_log(cur, usuario=user, accion='B2B_ASIGNAR_A_LOTE_FORZADO',
+              tabla='pedidos_b2b', registro_id=pid,
+              despues={'lote_id': lote_id, 'kg_sumados': kg_b2b})
+    try:
+        _regenerar_distribucion_lote(cur, lote_id)
+    except Exception: pass
+    try:
+        _registrar_evento_prod(cur, lote_id, 'B2B_ASIGNADO_FORZADO',
+            f'+{kg_b2b}kg · {cli_nom or "B2B"} · pedido #{pid} (forzado manual)', user)
+    except Exception: pass
+    conn.commit()
+    row_post = cur.execute(
+        "SELECT cantidad_kg FROM produccion_programada WHERE id=?", (lote_id,)).fetchone()
+    return jsonify({
+        'ok': True, 'pedido_id': pid, 'lote_id': lote_id,
+        'kg_sumados': kg_b2b,
+        'kg_total_lote': float(row_post[0] or 0) if row_post else 0,
+        'mensaje': f'Pedido asignado FORZADO al lote #{lote_id} ({(lfecha or "")[:10]}) · +{kg_b2b}kg',
     })
 
 
