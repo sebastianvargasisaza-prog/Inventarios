@@ -291,6 +291,7 @@ async function cxIAPreguntar(pregunta){
     <button onclick="abrirOCRFactura()" style="padding:7px 14px;background:#7c3aed;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer" title="Subí foto de factura · la IA extrae items, totales · auto-match con OC pendiente">📤 Subir factura</button>
   </div>
   <div id="pagos-kpis" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;"></div>
+  <div id="pagos-bar-extra"></div>
   <div id="pagos-wrap">
     <div class="empty">Cargando pagos...</div>
   </div>
@@ -2341,6 +2342,11 @@ async function loadPagos(){
     var d=await r.json();
     PAGOS=d.pagos||[];
   }catch(e){ PAGOS=[]; console.error('loadPagos:',e); }
+  // Sebastián 24-may-2026 · paralelo · KPIs mes/año/medio (no bloquea render)
+  try{
+    var rk=await fetch('/api/compras/pagos-kpis');
+    if(rk.ok) window.PAGOS_KPIS=await rk.json();
+  }catch(_){ window.PAGOS_KPIS={}; }
   renderPagos();
 }
 function renderPagos(){
@@ -2354,9 +2360,29 @@ function renderPagos(){
   });
   // Bug #2 fix · 21-may-2026 · sin fallback a valor_total (race condition daba doble cuenta)
   var vTotal=list.reduce(function(s,p){ return s+parseFloat(p.monto||0); },0);
-  var kpiHTML='<div class="kpi"><div class="kpi-l">Pagos filtrados</div><div class="kpi-v">'+list.length+'</div></div>';
-  kpiHTML+='<div class="kpi"><div class="kpi-l">Monto total</div><div class="kpi-v g">'+fmt(vTotal)+'</div></div>';
+  // Sebastián 24-may-2026 · audit Pagos · KPIs ampliados (mes/año/medio)
+  // + botón Excel.
+  var K=window.PAGOS_KPIS||{};
+  var kMes=K.mes_actual||{}, kAnio=K.anio_actual||{};
+  var medios=K.breakdown_medios||[];
+  var topMedio=medios.length?(medios[0].medio+' '+fmt(medios[0].total)):'-';
+  var kpiHTML=''
+    +'<div class="kpi" style="background:#0c4a6e;color:#fff"><div class="kpi-l" style="color:#7dd3fc">Pagos filtrados</div><div class="kpi-v">'+list.length+'</div><div style="font-size:11px;color:#bae6fd">'+fmt(vTotal)+'</div></div>'
+    +'<div class="kpi" style="background:#14532d;color:#fff"><div class="kpi-l" style="color:#86efac">Mes actual ('+(kMes.mes||'')+')</div><div class="kpi-v">'+fmt(kMes.total||0)+'</div><div style="font-size:11px;color:#bbf7d0">'+(kMes.n_ocs||0)+' OCs</div></div>'
+    +'<div class="kpi" style="background:#1e1b4b;color:#fff"><div class="kpi-l" style="color:#a78bfa">Año actual ('+(kAnio.anio||'')+')</div><div class="kpi-v">'+fmt(kAnio.total||0)+'</div><div style="font-size:11px;color:#c4b5fd">'+(kAnio.n_ocs||0)+' OCs</div></div>'
+    +'<div class="kpi" style="background:#7c2d12;color:#fff"><div class="kpi-l" style="color:#fdba74">Top medio (año)</div><div class="kpi-v" style="font-size:14px">'+esc(topMedio)+'</div><div style="font-size:11px;color:#fed7aa">'+medios.length+' medios</div></div>';
   document.getElementById('pagos-kpis').innerHTML=kpiHTML;
+  // Botón Excel + breakdown medios (colapsable)
+  var medBd=medios.map(function(m){
+    return '<span style="background:#f1f5f9;padding:3px 8px;border-radius:6px;margin-right:4px;font-size:11px;color:#475569">'+esc(m.medio)+' · <b>'+m.n_pagos+'</b> · '+fmt(m.total)+'</span>';
+  }).join('');
+  var bar=document.getElementById('pagos-bar-extra');
+  if(bar){
+    bar.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">'
+      +'<div style="font-size:11px;color:#64748b">'+medBd+'</div>'
+      +'<button onclick="descargarPagosExcel()" class="btn" style="background:#059669;color:#fff;font-size:12px;padding:6px 14px;border:0;border-radius:5px;font-weight:700;cursor:pointer">📊 Descargar Excel</button>'
+      +'</div>';
+  }
   if(!list.length){
     document.getElementById('pagos-wrap').innerHTML='<div class="empty">No hay pagos registrados</div>';
     return;
@@ -2364,6 +2390,12 @@ function renderPagos(){
   var rows=list.map(function(p){
     var tieneImg=p.tiene_comprobante;
     var imgBtn=tieneImg?'<button class="btn bo bs" data-oc="'+esc(p.numero_oc)+'" onclick="verComprobante(this.dataset.oc)">&#x1F4F8; Ver</button>':'<span style="color:#a8a29e;font-size:11px;">Sin imagen</span>';
+    // Sebastián 24-may-2026 · botón Regenerar CE inline · invoca endpoint
+    // existente /api/comprobantes-pago/<id>/regenerar (datos bancarios
+    // refrescados desde maestro). Solo si hay comprobante_id.
+    var regenBtn=p.comprobante_id?'<button class="btn bs" style="background:#7c3aed;color:#fff;font-size:10px;padding:3px 8px;margin-left:3px" data-cid="'+p.comprobante_id+'" data-oc="'+esc(p.numero_oc)+'" onclick="regenerarCEInline(this.dataset.cid, this.dataset.oc)" title="Regenerar PDF con datos bancarios actuales">🔄</button>':'';
+    // Botón revertir pago · solo si ES_ADMIN (cargado en boot template)
+    var revBtn=(typeof ES_ADMIN!=='undefined' && ES_ADMIN)?'<button class="btn bs" style="background:#dc2626;color:#fff;font-size:10px;padding:3px 8px;margin-left:3px" data-oc="'+esc(p.numero_oc)+'" onclick="revertirPagoOC(this.dataset.oc)" title="Revertir pago (admin · ventana 24h)">↩️</button>':'';
     return '<tr>'
       +'<td><strong>'+esc(p.numero_oc)+'</strong></td>'
       +'<td>'+esc(p.proveedor||'-')+'</td>'
@@ -2372,10 +2404,54 @@ function renderPagos(){
       +'<td>'+esc(p.medio_pago||'-')+'</td>'
       +'<td>'+fdate(p.fecha_pago)+'</td>'
       +'<td>'+esc(p.pagado_por||'-')+'</td>'
-      +'<td>'+imgBtn+'</td>'
+      +'<td>'+imgBtn+regenBtn+revBtn+'</td>'
       +'</tr>';
   }).join('');
-  document.getElementById('pagos-wrap').innerHTML='<div style="overflow-x:auto;"><table class="ptbl"><thead><tr><th>OC</th><th>Proveedor</th><th>Categoría</th><th>Monto</th><th>Medio</th><th>Fecha</th><th>Por</th><th>Comprobante</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+  document.getElementById('pagos-wrap').innerHTML='<div style="overflow-x:auto;"><table class="ptbl"><thead><tr><th>OC</th><th>Proveedor</th><th>Categoría</th><th>Monto</th><th>Medio</th><th>Fecha</th><th>Por</th><th>Acciones</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+}
+
+// Sebastián 24-may-2026 · descarga Excel hist. pagos · soporta ?mes=YYYY-MM
+function descargarPagosExcel(){
+  var mes=prompt('Mes a exportar (YYYY-MM) · vacío = todo:','');
+  var url='/api/compras/pagos-excel';
+  if(mes && /^\\d{4}-\\d{2}$/.test(mes.trim())) url+='?mes='+encodeURIComponent(mes.trim());
+  window.location.href=url;
+}
+
+// Regenerar CE PDF inline · usa endpoint existente
+async function regenerarCEInline(comprobante_id, numero_oc){
+  if(!confirm('¿Regenerar PDF del CE de '+numero_oc+'? Esto refresca datos bancarios + empresa pagadora desde el maestro.')) return;
+  try{
+    var r=await fetch('/api/comprobantes-pago/'+comprobante_id+'/regenerar',
+      _fetchOpts('POST', {}));
+    var d=await r.json();
+    if(r.ok && d.ok){
+      alert('✅ CE '+d.numero_ce+' regenerado · '+d.pdf_size_kb+' KB');
+    } else {
+      alert('Error: '+(d.error||'desconocido'));
+    }
+  }catch(e){ alert('Error red: '+e.message); }
+}
+
+// Revertir pago de OC · admin only · backend valida ventana
+async function revertirPagoOC(numero_oc){
+  var motivo=prompt('REVERTIR pago de '+numero_oc+'\\n\\nMotivo (≥15 chars · queda en audit):','');
+  if(!motivo) return;
+  motivo=motivo.trim();
+  if(motivo.length<15){ alert('Motivo debe tener ≥15 chars'); return; }
+  if(!confirm('⚠️ REVERTIR pago de '+numero_oc+'\\n\\nEsto deshace:\\n• pagos_oc (último pago)\\n• comprobantes_pago (CE)\\n• flujo_egresos\\n• Estado OC volverá a Recibida/Parcial\\n\\n¿Confirmar?')) return;
+  try{
+    var r=await fetch('/api/ordenes-compra/'+encodeURIComponent(numero_oc)+'/revertir-pago',
+      _fetchOpts('POST', {motivo: motivo}));
+    var d=await r.json();
+    if(r.ok && d.ok){
+      alert('✅ Pago revertido · OC '+numero_oc+' → estado '+d.nuevo_estado+'\\n'+d.detalle);
+      loadPagos();
+      loadData();
+    } else {
+      alert('Error: '+(d.error||'desconocido'));
+    }
+  }catch(e){ alert('Error red: '+e.message); }
 }
 async function verComprobante(num){
   try{

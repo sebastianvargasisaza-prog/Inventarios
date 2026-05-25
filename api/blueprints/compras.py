@@ -6734,6 +6734,9 @@ def get_pagos():
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
     conn = get_db(); cur = conn.cursor()
+    # Sebastián 24-may-2026 · audit Pagos · agregar comprobante_id del último
+    # CE (para botón "Regenerar CE" inline en tabla) + numero_factura_proveedor
+    # del último pago (3-way matching visible).
     cur.execute("""
         SELECT oc.numero_oc, oc.proveedor, oc.categoria, oc.valor_total,
                oc.medio_pago, oc.fecha_pago, oc.pagado_por, oc.estado,
@@ -6748,7 +6751,13 @@ def get_pagos():
                     OR EXISTS(SELECT 1 FROM pagos_influencers pi WHERE pi.numero_oc=oc.numero_oc)
                     OR EXISTS(SELECT 1 FROM solicitudes_compra sc
                               WHERE sc.numero_oc=oc.numero_oc AND sc.influencer_id IS NOT NULL)
-                    THEN 1 ELSE 0 END as es_influencer
+                    THEN 1 ELSE 0 END as es_influencer,
+               (SELECT id FROM comprobantes_pago
+                WHERE numero_oc=oc.numero_oc
+                ORDER BY id DESC LIMIT 1) as comprobante_id,
+               (SELECT numero_factura_proveedor FROM pagos_oc
+                WHERE numero_oc=oc.numero_oc AND COALESCE(numero_factura_proveedor,'') != ''
+                ORDER BY id DESC LIMIT 1) as numero_factura_proveedor
         FROM ordenes_compra oc
         WHERE oc.estado IN ('Pagada','Parcial')
         ORDER BY oc.fecha_pago DESC
@@ -6760,6 +6769,120 @@ def get_pagos():
     for p in pagos:
         p['es_influencer'] = bool(p.get('es_influencer'))
     return jsonify({'pagos': pagos})
+
+
+# ─── Excel histórico pagos · Sebastián 24-may-2026 ──────────────
+@bp.route('/api/compras/pagos-excel', methods=['GET'])
+def pagos_excel():
+    """Excel descargable con histórico completo de pagos (Pagada + Parcial).
+
+    Querystring opcional · ?mes=2026-05 filtra por mes específico.
+    Columnas: OC · Proveedor · Categoría · Monto · Medio · Factura · Fecha
+              · Pagado por · Estado · Es influencer · Saldo pendiente
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    mes = (request.args.get('mes') or '').strip()
+    conn = get_db(); cur = conn.cursor()
+    sql = """
+        SELECT oc.numero_oc, oc.proveedor, oc.categoria,
+               COALESCE((SELECT SUM(monto) FROM pagos_oc WHERE numero_oc=oc.numero_oc), 0) as monto,
+               oc.medio_pago,
+               (SELECT numero_factura_proveedor FROM pagos_oc
+                WHERE numero_oc=oc.numero_oc AND COALESCE(numero_factura_proveedor,'') != ''
+                ORDER BY id DESC LIMIT 1) as factura,
+               oc.fecha_pago, oc.pagado_por, oc.estado,
+               oc.valor_total -
+                 COALESCE((SELECT SUM(monto) FROM pagos_oc WHERE numero_oc=oc.numero_oc), 0)
+                 as saldo_pendiente
+        FROM ordenes_compra oc
+        WHERE oc.estado IN ('Pagada','Parcial')
+    """
+    params = []
+    if mes and len(mes) == 7:  # formato YYYY-MM
+        sql += " AND substr(oc.fecha_pago, 1, 7) = ?"
+        params.append(mes)
+    sql += " ORDER BY oc.fecha_pago DESC"
+    cur.execute(sql, params)
+    rows = cur.fetchall()
+    try:
+        from openpyxl import Workbook
+        from io import BytesIO
+    except ImportError:
+        return jsonify({'error': 'openpyxl no disponible'}), 503
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'Pagos'
+    ws.append(['OC', 'Proveedor', 'Categoría', 'Monto', 'Medio',
+               'Factura', 'Fecha pago', 'Pagado por', 'Estado',
+               'Saldo pendiente'])
+    for r in rows:
+        ws.append([r[0], r[1], r[2], float(r[3] or 0), r[4] or '',
+                   r[5] or '', (r[6] or '')[:10], r[7] or '', r[8],
+                   float(r[9] or 0)])
+    # Auto-anchear columnas
+    for col_idx, col in enumerate(ws.columns, 1):
+        max_len = max((len(str(c.value or '')) for c in col), default=10)
+        ws.column_dimensions[chr(64 + col_idx)].width = min(max_len + 2, 30)
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    nombre = f'pagos_{mes}.xlsx' if mes else 'pagos_historico.xlsx'
+    return Response(
+        buf.read(),
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        headers={'Content-Disposition': f'attachment; filename={nombre}'},
+    )
+
+
+# ─── KPIs Pagos breakdown · mes/año/medio · Sebastián 24-may-2026 ──
+@bp.route('/api/compras/pagos-kpis', methods=['GET'])
+def pagos_kpis():
+    """KPIs agregados de pagos: total mes actual + año actual + breakdown por medio.
+
+    Útil para dashboard del tab Pagos · evita que UI tenga que iterar
+    PAGOS[] y filtrar por fecha.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db(); cur = conn.cursor()
+    hoy = datetime.now()
+    mes_actual = hoy.strftime('%Y-%m')
+    anio_actual = hoy.strftime('%Y')
+    # Total mes actual
+    cur.execute(
+        "SELECT COUNT(DISTINCT oc.numero_oc), COALESCE(SUM(po.monto),0) "
+        "FROM pagos_oc po JOIN ordenes_compra oc ON po.numero_oc=oc.numero_oc "
+        "WHERE substr(po.fecha_pago, 1, 7) = ?",
+        (mes_actual,),
+    )
+    r_mes = cur.fetchone()
+    # Total año actual
+    cur.execute(
+        "SELECT COUNT(DISTINCT oc.numero_oc), COALESCE(SUM(po.monto),0) "
+        "FROM pagos_oc po JOIN ordenes_compra oc ON po.numero_oc=oc.numero_oc "
+        "WHERE substr(po.fecha_pago, 1, 4) = ?",
+        (anio_actual,),
+    )
+    r_anio = cur.fetchone()
+    # Breakdown por medio (año actual)
+    cur.execute(
+        "SELECT COALESCE(po.medio,'(sin medio)'), COUNT(*), COALESCE(SUM(po.monto),0) "
+        "FROM pagos_oc po "
+        "WHERE substr(po.fecha_pago, 1, 4) = ? "
+        "GROUP BY COALESCE(po.medio,'(sin medio)') "
+        "ORDER BY SUM(po.monto) DESC",
+        (anio_actual,),
+    )
+    medios = [{'medio': r[0], 'n_pagos': int(r[1] or 0),
+                'total': float(r[2] or 0)} for r in cur.fetchall()]
+    return jsonify({
+        'mes_actual': {'mes': mes_actual, 'n_ocs': int(r_mes[0] or 0),
+                        'total': float(r_mes[1] or 0)},
+        'anio_actual': {'anio': anio_actual, 'n_ocs': int(r_anio[0] or 0),
+                         'total': float(r_anio[1] or 0)},
+        'breakdown_medios': medios,
+    })
 
 
 # ── Categorías que NO requieren recepción física: van directo a "por pagar" ──
@@ -10808,3 +10931,165 @@ def fast_track_config_delete(config_id):
         return jsonify({'ok': True, 'eliminado': row[0]})
     except sqlite3.OperationalError as e:
         return jsonify({'error': str(e)}), 503
+
+
+# ─── Revertir pago de OC · Sebastián 24-may-2026 · audit Pagos ────────
+@bp.route('/api/ordenes-compra/<numero_oc>/revertir-pago', methods=['POST'])
+def revertir_pago_oc(numero_oc):
+    """Revierte el ÚLTIMO pago de una OC · admin only · ventana 24h.
+
+    Deshace en orden inverso a pagar_oc:
+      1. Anula último pagos_oc (DELETE)
+      2. Anula último comprobantes_pago (DELETE + audit)
+      3. Anula entrada flujo_egresos asociada (DELETE)
+      4. Recalcula estado OC:
+         - Sin pagos restantes → estado='Recibida'
+         - Con pagos parciales → estado='Parcial'
+         - SUM == valor_total → mantiene 'Pagada' (no debería pasar)
+      5. Si OC influencer/CC y sync pagos_influencers → revertir a 'Pendiente'
+
+    Body: {motivo: str (≥15 chars · obligatorio para audit)}
+    Solo admin · audit completo REVERTIR_PAGO_OC.
+    Ventana 24h desde último pago (por seguridad · si quieren revertir
+    algo más viejo, requiere contactar a IT directamente).
+    """
+    usuario = session.get('compras_user', '')
+    if usuario not in ADMIN_USERS:
+        return jsonify({'error': 'Solo admin puede revertir pagos'}), 403
+    d = request.get_json(silent=True) or {}
+    motivo = (d.get('motivo') or '').strip()
+    if len(motivo) < 15:
+        return jsonify({'error': 'motivo requerido (≥15 chars)',
+                        'codigo': 'MOTIVO_FALTANTE'}), 400
+    conn = get_db(); cur = conn.cursor()
+    # Buscar OC
+    cur.execute(
+        "SELECT estado, valor_total, categoria, proveedor FROM ordenes_compra WHERE numero_oc=?",
+        (numero_oc,),
+    )
+    oc = cur.fetchone()
+    if not oc:
+        return jsonify({'error': 'OC no encontrada'}), 404
+    estado_act, valor_total_oc, categoria_oc, proveedor_oc = oc
+    if estado_act not in ('Pagada', 'Parcial'):
+        return jsonify({
+            'error': f'OC en estado {estado_act} · solo se puede revertir Pagada/Parcial',
+            'codigo': 'ESTADO_NO_REVERSIBLE',
+        }), 409
+    # Buscar último pago
+    cur.execute(
+        "SELECT id, monto, fecha_pago FROM pagos_oc WHERE numero_oc=? "
+        "ORDER BY id DESC LIMIT 1",
+        (numero_oc,),
+    )
+    pago = cur.fetchone()
+    if not pago:
+        return jsonify({'error': 'No hay pagos registrados en pagos_oc para esta OC',
+                        'codigo': 'SIN_PAGOS'}), 404
+    pago_id, monto_pago, fecha_pago = pago
+    # Validar ventana 24h
+    try:
+        from datetime import datetime as _dt
+        fpago_dt = _dt.fromisoformat((fecha_pago or '').replace('Z', ''))
+        delta_h = (_dt.now() - fpago_dt).total_seconds() / 3600
+        if delta_h > 24:
+            return jsonify({
+                'error': (f'Pago tiene {delta_h:.1f}h · ventana de reversión es 24h. '
+                          f'Para revertir un pago más viejo, abrí ticket con IT.'),
+                'codigo': 'FUERA_DE_VENTANA',
+                'horas_desde_pago': round(delta_h, 1),
+            }), 409
+    except (ValueError, TypeError):
+        # Si no se puede parsear fecha, no bloqueamos (mejor permitir admin override)
+        delta_h = None
+    # 1. DELETE pago de pagos_oc
+    cur.execute("DELETE FROM pagos_oc WHERE id=?", (pago_id,))
+    # 2. DELETE último comprobante asociado a esta OC (si existe)
+    cur.execute(
+        "SELECT id, COALESCE(numero_ce,'') FROM comprobantes_pago "
+        "WHERE numero_oc=? ORDER BY id DESC LIMIT 1",
+        (numero_oc,),
+    )
+    ce_row = cur.fetchone()
+    ce_eliminado = None
+    if ce_row:
+        ce_eliminado = ce_row[1]
+        cur.execute("DELETE FROM comprobantes_pago WHERE id=?", (ce_row[0],))
+    # 3. DELETE flujo_egresos asociado · best-effort (puede no tener FK directa)
+    flujo_eliminado = 0
+    try:
+        cur.execute(
+            "DELETE FROM flujo_egresos WHERE numero_oc=? AND ABS(monto - ?) < 0.01",
+            (numero_oc, float(monto_pago)),
+        )
+        flujo_eliminado = cur.rowcount
+    except sqlite3.OperationalError:
+        pass
+    # 4. Recalcular estado OC según pagos restantes
+    cur.execute("SELECT COALESCE(SUM(monto), 0) FROM pagos_oc WHERE numero_oc=?", (numero_oc,))
+    total_restante = float(cur.fetchone()[0] or 0)
+    if total_restante <= 0.01:
+        nuevo_estado = 'Recibida'
+    elif total_restante >= float(valor_total_oc or 0) - 0.01:
+        nuevo_estado = 'Pagada'  # raro · permitiría delete dejándola pagada
+    else:
+        nuevo_estado = 'Parcial'
+    cur.execute(
+        "UPDATE ordenes_compra SET estado=?, "
+        "fecha_pago=CASE WHEN ? = 'Recibida' THEN NULL ELSE fecha_pago END, "
+        "pagado_por=CASE WHEN ? = 'Recibida' THEN NULL ELSE pagado_por END "
+        "WHERE numero_oc=?",
+        (nuevo_estado, nuevo_estado, nuevo_estado, numero_oc),
+    )
+    # 5. Revertir pagos_influencers si aplica
+    pi_revertido = False
+    cat_low = (categoria_oc or '').lower()
+    if 'influencer' in cat_low or 'marketing' in cat_low or 'cuenta de cobro' in cat_low:
+        try:
+            cur.execute(
+                "UPDATE pagos_influencers SET estado='Pendiente' WHERE numero_oc=?",
+                (numero_oc,),
+            )
+            pi_revertido = cur.rowcount > 0
+        except sqlite3.OperationalError:
+            pass
+    # 6. Sync solicitudes_compra · si OC vinculada estaba Pagada, volver a Aprobada
+    try:
+        cur.execute(
+            "UPDATE solicitudes_compra SET estado='Aprobada' "
+            "WHERE numero_oc=? AND estado='Pagada'",
+            (numero_oc,),
+        )
+    except sqlite3.OperationalError:
+        pass
+    # 7. Audit completo
+    try:
+        audit_log(cur, usuario=usuario, accion='REVERTIR_PAGO_OC',
+                  tabla='ordenes_compra', registro_id=numero_oc,
+                  antes={'estado': estado_act, 'pagado_id': pago_id,
+                          'monto_revertido': float(monto_pago),
+                          'fecha_pago': fecha_pago},
+                  despues={'estado': nuevo_estado,
+                            'total_restante': total_restante,
+                            'ce_eliminado': ce_eliminado,
+                            'flujo_egresos_eliminados': flujo_eliminado,
+                            'pagos_influencers_revertido': pi_revertido,
+                            'motivo': motivo},
+                  detalle=(f"Revertido pago OC {numero_oc} · ${monto_pago:,.0f} · "
+                            f"{estado_act} → {nuevo_estado} · motivo: {motivo[:120]}"))
+    except Exception as e:
+        log.warning('audit_log REVERTIR_PAGO_OC fallo: %s', e)
+    conn.commit()
+    return jsonify({
+        'ok': True,
+        'numero_oc': numero_oc,
+        'estado_anterior': estado_act,
+        'nuevo_estado': nuevo_estado,
+        'monto_revertido': float(monto_pago),
+        'total_restante': total_restante,
+        'ce_eliminado': ce_eliminado,
+        'flujo_egresos_eliminados': flujo_eliminado,
+        'pagos_influencers_revertido': pi_revertido,
+        'detalle': (f'Pago ${monto_pago:,.0f} revertido · CE {ce_eliminado or "(ninguno)"} '
+                    f'eliminado · OC ahora en {nuevo_estado}'),
+    })
