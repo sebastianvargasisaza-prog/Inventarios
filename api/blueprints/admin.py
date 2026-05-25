@@ -10429,6 +10429,11 @@ def admin_influencers_limpieza():
 
 @bp.route("/admin/influencers-limpieza", methods=["POST"])
 def admin_influencers_limpieza_post():
+    """Admin elimina entries de pagos_influencers por IDs · bulk delete.
+    Sebastián 25-may-2026 · audit zero-error · agregado audit_log antes
+    de DELETE para INVIMA + trazabilidad (antes era DELETE bulk sin
+    rastro · imposible disputar borrado posterior).
+    """
     u = session.get("compras_user", "")
     if u not in ADMIN_USERS:
         return jsonify({"error": "Solo admin"}), 403
@@ -10438,6 +10443,28 @@ def admin_influencers_limpieza_post():
         return jsonify({"error": "ids vacio"}), 400
     conn = db_connect(); c = conn.cursor()
     placeholders = ",".join("?" * len(ids))
+    # Audit ANTES del DELETE · captura snapshot de IDs y montos para
+    # disputa posterior · INVIMA mandatory para operaciones destructivas.
+    try:
+        snapshot = c.execute(
+            f"SELECT id, COALESCE(influencer_nombre,''), COALESCE(numero_oc,''), "
+            f"       COALESCE(valor,0), COALESCE(estado,'') "
+            f"FROM pagos_influencers WHERE id IN ({placeholders})",
+            ids,
+        ).fetchall()
+        from audit_helpers import audit_log
+        audit_log(c, usuario=u, accion='ADMIN_LIMPIEZA_PAGOS_INFLUENCERS',
+                  tabla='pagos_influencers',
+                  registro_id=','.join(str(x) for x in ids[:20]),
+                  antes={'ids_a_eliminar': ids[:50],
+                          'rows_snapshot': [{'id': r[0], 'influencer': r[1],
+                                              'numero_oc': r[2], 'valor': float(r[3] or 0),
+                                              'estado': r[4]} for r in snapshot[:20]]},
+                  detalle=f"Admin elimina {len(ids)} pagos_influencers vía limpieza UI")
+    except Exception as _e_audit:
+        import logging as _lg
+        _lg.getLogger('admin').warning(
+            'audit_log ADMIN_LIMPIEZA_PAGOS_INFLUENCERS fallo: %s', _e_audit)
     c.execute(f"DELETE FROM pagos_influencers WHERE id IN ({placeholders})", ids)
     conn.commit()
     n = c.rowcount
