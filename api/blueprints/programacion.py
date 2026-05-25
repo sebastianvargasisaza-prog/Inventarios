@@ -3037,6 +3037,29 @@ def prog_asignar_sala_operarios(evento_id):
         f"UPDATE produccion_programada SET {', '.join(updates)} WHERE id=?",
         params
     )
+    # Sebastián 25-may-2026 · audit zero-error · operación mutante en
+    # produccion_programada (asignar sala/operarios) requiere audit_log
+    # según CLAUDE.md MEMORY (mandatory en cualquier UPDATE de la tabla).
+    # Antes esta función UPDATEaba sin dejar rastro · pérdida de trazabilidad
+    # ante disputas de asignación operario.
+    try:
+        from audit_helpers import audit_log
+        _data_snap = {k: data[k] for k in (
+            'area_id', 'operario_dispensacion_id', 'operario_elaboracion_id',
+            'operario_envasado_id', 'operario_acondicionamiento_id'
+        ) if k in data}
+        audit_log(c, usuario=session.get('compras_user', ''),
+                  accion='ASIGNAR_SALA_OPERARIOS',
+                  tabla='produccion_programada', registro_id=str(evento_id),
+                  antes={'area_id_anterior': pp[3] if len(pp) > 3 else None,
+                          'producto': pp[1], 'fecha': pp[2]},
+                  despues=_data_snap,
+                  detalle=f"Asignación pp {evento_id} ({pp[1]}) · {len(updates)} campos")
+    except Exception as _e_audit:
+        # Falla silenciosa solo en audit · no romper el flujo principal
+        import logging as _lg
+        _lg.getLogger('programacion').warning(
+            'audit_log ASIGNAR_SALA_OPERARIOS fallo: %s', _e_audit)
     conn.commit()
     return jsonify({'ok': True, 'id': evento_id, 'warnings': warnings})
 

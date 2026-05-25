@@ -6614,6 +6614,33 @@ def pedidos_b2b_asignar_a_animus(pid):
     kg_b2b = round(float(uds or 0) * float(ml or 30) / 1000.0, 2)
     if kg_b2b <= 0:
         return jsonify({'error': 'pedido con kg=0'}), 400
+    # Sebastián 25-may-2026 · audit zero-error · validar whitelist envases
+    # B2B (clientes_b2b_envases · mig 173) en asignación manual. Antes el
+    # POST original validaba pero la re-asignación admin omitía el check ·
+    # admin podía aprobar pedido con envase no permitido sin error claro.
+    if env_cod and cli_id:
+        try:
+            _permitido = cur.execute(
+                """SELECT 1 FROM clientes_b2b_envases
+                   WHERE cliente_id = ?
+                     AND UPPER(TRIM(envase_codigo)) = UPPER(TRIM(?))
+                     AND COALESCE(activo, 1) = 1
+                   LIMIT 1""",
+                (cli_id, env_cod),
+            ).fetchone()
+            if not _permitido:
+                return jsonify({
+                    'error': (f"Envase '{env_cod}' no está en whitelist del "
+                              f"cliente {cli_nom or cli_id} · agregarlo en "
+                              f"/admin/clientes-b2b o cambiar el envase del pedido"),
+                    'codigo': 'ENVASE_NO_PERMITIDO',
+                    'cliente_id': cli_id,
+                    'envase_codigo': env_cod,
+                }), 403
+        except sqlite3.OperationalError:
+            # Tabla mig 173 podría no existir en instancias muy viejas ·
+            # fallback permisivo (no bloquear si la infra está incompleta)
+            pass
 
     # Fecha objetivo · igual que _integrar_pedido_b2b_al_plan
     from datetime import date as _d, timedelta as _td
