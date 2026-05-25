@@ -325,7 +325,6 @@ button.primary:disabled{opacity:.6;cursor:not-allowed}
   <div class="tabs">
     <button class="tab active" data-tab="solicitar" onclick="setTab('solicitar')">📦 Solicitar</button>
     <button class="tab" data-tab="mis" onclick="setTab('mis')">📋 Mis pedidos</button>
-    <button class="tab" data-tab="cotizar" onclick="setTab('cotizar')">💼 Cotizar</button>
     <button class="tab" data-tab="pqr" onclick="setTab('pqr')">💬 PQR</button>
     <button class="tab" data-tab="mis-pqr" onclick="setTab('mis-pqr')">📜 Mis PQR</button>
   </div>
@@ -391,48 +390,9 @@ button.primary:disabled{opacity:.6;cursor:not-allowed}
     </div>
   </div>
 
-  <!-- Sebastián 25-may-2026 · Tab Cotizar (RFQ + muestras + ficha técnica) -->
-  <div id="panel-cotizar" style="display:none">
-    <div class="card">
-      <h2>💼 Solicitar cotización · muestras · ficha técnica</h2>
-      <p style="font-size:12px;color:#64748b;margin-bottom:8px">Ideal cuando aún no estás listo para pedir · te respondemos en 24-48h con precio + tiempo entrega + MOQ.</p>
-      <label>Tipo de solicitud</label>
-      <select id="cot-tipo">
-        <option value="cotizacion">💰 Cotización (precio + lead time)</option>
-        <option value="muestras">🎁 Muestras (probar producto)</option>
-        <option value="ficha_tecnica">📄 Ficha técnica / INCI</option>
-      </select>
-      <label>Producto</label>
-      <input type="text" id="cot-producto" placeholder="ej. Sérum Vitamina C · Crema hidratante" maxlength="200">
-      <div class="row">
-        <div>
-          <label>Cantidad estimada</label>
-          <input type="number" id="cot-cantidad" min="0" max="1000000000" placeholder="500" value="0">
-        </div>
-        <div>
-          <label>Unidad</label>
-          <select id="cot-unidad">
-            <option value="unidades">unidades</option>
-            <option value="kg">kg</option>
-            <option value="litros">litros</option>
-          </select>
-        </div>
-      </div>
-      <label>Envase preferencia (opcional)</label>
-      <input type="text" id="cot-envase" placeholder="ej. 500ml gotero · 250ml dosificador" maxlength="120">
-      <label>Fecha en que lo necesitarías (opcional)</label>
-      <input type="date" id="cot-fecha">
-      <label>Mensaje · detalles · arte (opcional)</label>
-      <textarea id="cot-mensaje" rows="3" placeholder="Activos especiales · color · marca privada · etc." maxlength="1000"></textarea>
-      <button class="primary" id="btn-cotizar" onclick="enviarCotizacion()">Enviar solicitud</button>
-      <div class="msg" id="msg-cotizar"></div>
-    </div>
-
-    <div class="card">
-      <h2>📑 Mis solicitudes previas</h2>
-      <div id="mis-cot-lista" class="lista"><div class="empty">Cargando…</div></div>
-    </div>
-  </div>
+  <!-- panel cotizar removido 25-may-2026 PM · Sebastián: "no me sirve, el
+       cliente debe pedir productos del catálogo sin valores" · backend RFQ
+       queda inactivo sin UI · si en el futuro se reactiva, restaurar tab -->
 </div>
 
 <script>
@@ -443,184 +403,14 @@ function setTab(t){
   document.getElementById('panel-mis').style.display = (t==='mis')?'block':'none';
   document.getElementById('panel-pqr').style.display = (t==='pqr')?'block':'none';
   document.getElementById('panel-mis-pqr').style.display = (t==='mis-pqr')?'block':'none';
-  var pc = document.getElementById('panel-cotizar');
-  if(pc) pc.style.display = (t==='cotizar')?'block':'none';
   if(t==='mis') cargarMisPedidos();
   if(t==='mis-pqr') cargarMisPqr();
-  if(t==='cotizar') cargarMisCotizaciones();
 }
 
-// Sebastián 25-may-2026 · Cotización (RFQ) · usa /api/portal/solicitudes
-async function enviarCotizacion(){
-  var btn = document.getElementById('btn-cotizar');
-  var msg = document.getElementById('msg-cotizar');
-  msg.className = 'msg'; msg.style.display = 'none';
-  var tipo = document.getElementById('cot-tipo').value;
-  var producto = document.getElementById('cot-producto').value.trim();
-  var cantidad = parseInt(document.getElementById('cot-cantidad').value || '0', 10) || 0;
-  var unidad = document.getElementById('cot-unidad').value;
-  var envase = document.getElementById('cot-envase').value.trim();
-  var fecha = document.getElementById('cot-fecha').value;
-  var mensaje = document.getElementById('cot-mensaje').value.trim();
-  if(!producto){
-    msg.textContent = 'Producto requerido'; msg.className = 'msg err';
-    msg.style.display = 'block'; return;
-  }
-  btn.disabled = true; btn.textContent = 'Enviando…';
-  try{
-    var r = await fetch('/api/portal/solicitudes', {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      credentials:'same-origin',
-      body: JSON.stringify({
-        tipo: tipo, producto_nombre: producto, cantidad_estimada: cantidad,
-        unidad: unidad, envase_preferencia: envase,
-        fecha_requerida: fecha, mensaje: mensaje,
-      }),
-    });
-    var d = await r.json();
-    if(!r.ok){
-      msg.textContent = 'Error: ' + esc(d.error || r.status);
-      msg.className = 'msg err'; msg.style.display = 'block';
-      btn.disabled = false; btn.textContent = 'Enviar solicitud'; return;
-    }
-    msg.textContent = '✓ ' + esc(d.mensaje || 'Recibida');
-    msg.className = 'msg ok'; msg.style.display = 'block';
-    document.getElementById('cot-producto').value = '';
-    document.getElementById('cot-cantidad').value = '0';
-    document.getElementById('cot-envase').value = '';
-    document.getElementById('cot-fecha').value = '';
-    document.getElementById('cot-mensaje').value = '';
-    cargarMisCotizaciones();
-  }catch(e){
-    msg.textContent = 'Error de red: ' + esc(e.message);
-    msg.className = 'msg err'; msg.style.display = 'block';
-  }finally{
-    btn.disabled = false; btn.textContent = 'Enviar solicitud';
-  }
-}
-
-// Sebastián 25-may-2026 · Fase 3 paso 2 · cliente convierte cotización → pedido
-async function aceptarCotizacion(solId){
-  if(!confirm('¿Aceptar este precio y generar un pedido en borrador?\n\nEl pedido queda en borrador hasta que lo confirmés en "Mis pedidos".')) return;
-  try{
-    var r = await fetch('/api/portal/solicitudes/' + solId + '/convertir-a-pedido', {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      credentials:'same-origin',
-      body:'{}',
-    });
-    var d = await r.json();
-    if(r.ok && d.ok){
-      alert('✓ ' + (d.mensaje || 'Pedido creado'));
-      cargarMisCotizaciones();
-      if(typeof actualizarBadge === 'function') actualizarBadge();
-    }else{
-      alert('Error: ' + (d.error || r.status));
-    }
-  }catch(e){
-    alert('Error de red: ' + e.message);
-  }
-}
-
-// Sebastián 25-may-2026 · Fase 3 paso 3 · badge in-app para "tenés respuesta"
-async function actualizarBadge(){
-  try{
-    var r = await fetch('/api/portal/badge', {credentials:'same-origin'});
-    if(!r.ok) return;
-    var d = await r.json();
-    var tabCot = document.querySelector('.tab[data-tab="cotizar"]');
-    var tabPqr = document.querySelector('.tab[data-tab="mis-pqr"]');
-    if(tabCot){
-      var t = tabCot.textContent.replace(/\\s*\\(\\d+\\)\\s*$/, '');
-      tabCot.textContent = t + (d.cotizaciones_respondidas > 0 ? ' (' + d.cotizaciones_respondidas + ')' : '');
-      tabCot.style.fontWeight = d.cotizaciones_respondidas > 0 ? '800' : '';
-    }
-    if(tabPqr){
-      var t2 = tabPqr.textContent.replace(/\\s*\\(\\d+\\)\\s*$/, '');
-      tabPqr.textContent = t2 + (d.pqr_respondidos > 0 ? ' (' + d.pqr_respondidos + ')' : '');
-      tabPqr.style.fontWeight = d.pqr_respondidos > 0 ? '800' : '';
-    }
-  }catch(_){}
-}
-// Refrescar badge al cargar + cada 90s
-setTimeout(actualizarBadge, 800);
-setInterval(actualizarBadge, 90000);
-
-async function cargarMisCotizaciones(){
-  var lista = document.getElementById('mis-cot-lista');
-  if(!lista) return;
-  lista.innerHTML = '<div class="empty">Cargando…</div>';
-  try{
-    var r = await fetch('/api/portal/mis-solicitudes', {credentials:'same-origin'});
-    var d = await r.json();
-    var items = d.items || [];
-    if(!items.length){
-      lista.innerHTML = '<div class="empty">Aún no has hecho solicitudes</div>';
-      return;
-    }
-    var TIPO_ICO = {cotizacion:'💰', muestras:'🎁', ficha_tecnica:'📄'};
-    var EST_LABEL = {
-      nueva: 'En espera de respuesta',
-      en_revision: 'En revisión',
-      respondida: '✓ Respondida · revisá detalle',
-      convertida: 'Convertida a pedido',
-      cerrada: 'Cerrada',
-      rechazada: 'Rechazada',
-    };
-    var EST_COLOR = {
-      nueva: '#94a3b8', en_revision: '#ca8a04', respondida: '#16a34a',
-      convertida: '#0891b2', cerrada: '#64748b', rechazada: '#dc2626',
-    };
-    lista.innerHTML = items.map(function(s){
-      var ico = TIPO_ICO[s.tipo] || '📦';
-      var color = EST_COLOR[s.estado] || '#64748b';
-      var estLbl = EST_LABEL[s.estado] || s.estado;
-      var fmtCOP = function(n){
-        var v = Number(n || 0);
-        return v > 0 ? ('$' + v.toLocaleString('es-CO')) : '—';
-      };
-      var resp = '';
-      if(s.estado === 'respondida' || s.estado === 'convertida' || s.respondido_at){
-        resp = '<div style="margin-top:8px;padding:8px 10px;background:#ecfdf5;border-left:3px solid #16a34a;border-radius:4px;font-size:12px">'
-          + '<b>📨 Respuesta:</b><br>'
-          + '· Precio unitario: ' + esc(fmtCOP(s.respuesta_precio_cop)) + '<br>'
-          + '· Lead time: ' + esc((s.respuesta_lead_time_dias||0) + ' días') + '<br>'
-          + '· MOQ: ' + esc((s.respuesta_moq||0) + ' uds') + '<br>'
-          + '· Validez: ' + esc((s.respuesta_validez_dias||15) + ' días') + '<br>'
-          + (s.respuesta_notas ? '<br>📝 ' + esc(s.respuesta_notas) : '');
-        // Botón aceptar · solo cotización respondida con precio > 0 y no convertida
-        if(s.tipo === 'cotizacion' && s.estado === 'respondida'
-           && (Number(s.respuesta_precio_cop)||0) > 0
-           && (!s.convertida_pedido_id || s.convertida_pedido_id == 0)){
-          resp += '<div style="margin-top:10px;display:flex;gap:8px;align-items:center">'
-            + '<button class="primary" style="padding:8px 14px;font-size:12px" '
-            + 'onclick="aceptarCotizacion(' + s.id + ')">✓ Acepto · generar pedido</button>'
-            + '<span style="font-size:11px;color:#64748b">queda en borrador hasta tu confirmación</span>'
-            + '</div>';
-        }
-        if(s.convertida_pedido_id && s.convertida_pedido_id > 0){
-          resp += '<div style="margin-top:8px;font-size:12px;color:#0891b2"><b>✓ Convertida al pedido #' + s.convertida_pedido_id + '</b> · revisalo en "Mis pedidos"</div>';
-        }
-        resp += '</div>';
-      }
-      return '<div class="pedido" style="border-left-color:'+color+'">'
-        + '<div class="pedido-prod">'+ico+' '+esc(s.producto_nombre)+'</div>'
-        + '<div class="pedido-meta">'
-          + esc(s.tipo) + ' · '
-          + (s.cantidad_estimada > 0 ? (esc(s.cantidad_estimada+' '+s.unidad)+' · ') : '')
-          + (s.envase_preferencia ? (esc(s.envase_preferencia)+' · ') : '')
-          + esc((s.creada_at||'').substring(0,16).replace('T',' '))
-        + '</div>'
-        + '<span class="pedido-estado" style="background:'+color+'22;color:'+color+'">'+esc(estLbl)+'</span>'
-        + (s.mensaje ? '<div class="pedido-meta" style="margin-top:5px"><i>"'+esc(s.mensaje)+'"</i></div>' : '')
-        + resp
-      + '</div>';
-    }).join('');
-  }catch(e){
-    lista.innerHTML = '<div class="empty">Error: '+esc(e.message)+'</div>';
-  }
-}
+// Funciones enviarCotizacion / aceptarCotizacion / actualizarBadge /
+// cargarMisCotizaciones removidas 25-may-2026 PM · tab Cotizar eliminado.
+// Backend RFQ (/api/portal/solicitudes y siblings) queda inactivo · si
+// alguna vez se reactiva, restaurar este bloque desde git history.
 
 async function enviarPqr(){
   var btn = document.getElementById('btn-pqr');
