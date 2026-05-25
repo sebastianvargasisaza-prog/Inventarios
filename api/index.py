@@ -423,6 +423,54 @@ if not app.config.get("TESTING"):
     except Exception as _e:
         _log.getLogger(__name__).warning("multi-cron NO arrancó: %s", _e)
 
+    # Sebastián 25-may-2026 · audit zero-error · DAEMON SUPERVISOR.
+    # Antes los 3 daemons (marketing-metrics, auto-plan-cron, multi-cron)
+    # se arrancaban una sola vez al boot · si alguno crasheaba dentro del
+    # loop, moría silencioso y nadie se enteraba · producción quedaba sin
+    # crons hasta el siguiente deploy. Ahora un 4to thread supervisor
+    # cada 5 min re-llama iniciar_*() · que internamente detecta thread
+    # muerto via .is_alive() y re-arranca. Idempotente · si todos vivos,
+    # no-op. Log warning cuando relanza.
+    def _daemon_supervisor():
+        import time as _ts
+        sup_log = _log.getLogger('daemon-supervisor')
+        sup_log.info('daemon supervisor arrancado · check cada 300s')
+        while True:
+            try:
+                _ts.sleep(300)  # 5 min
+                # 1. marketing-metrics-loop · idempotente interno
+                try:
+                    from blueprints.marketing import _start_marketing_metrics_loop
+                    _start_marketing_metrics_loop()
+                except Exception as _ex:
+                    sup_log.warning('marketing relaunch fallo: %s', _ex)
+                # 2. auto-plan-cron · detección is_alive
+                try:
+                    from blueprints.auto_plan_jobs import iniciar_cron as _ic
+                    _ic(app)
+                except Exception as _ex:
+                    sup_log.warning('auto-plan-cron relaunch fallo: %s', _ex)
+                # 3. multi-cron · detección is_alive
+                try:
+                    from blueprints.auto_plan_jobs import iniciar_multi_cron as _imc
+                    _imc(app)
+                except Exception as _ex:
+                    sup_log.warning('multi-cron relaunch fallo: %s', _ex)
+            except Exception as _ex_loop:
+                sup_log.exception('supervisor crash: %s · backoff 60s', _ex_loop)
+                try:
+                    _ts.sleep(60)
+                except Exception:
+                    pass
+    try:
+        import threading as _thr
+        _sup_t = _thr.Thread(target=_daemon_supervisor, daemon=True,
+                              name='daemon-supervisor')
+        _sup_t.start()
+        _log.getLogger(__name__).info('daemon-supervisor arrancado')
+    except Exception as _e_sup:
+        _log.getLogger(__name__).warning('daemon-supervisor NO arrancó: %s', _e_sup)
+
     # Sebastián 22-may-2026 · One-shot al deploy · normalizar fórmulas con
     # abreviaturas. Corre en background después del startup para no bloquear.
     # Idempotente · si no hay nada que normalizar, no hace nada.

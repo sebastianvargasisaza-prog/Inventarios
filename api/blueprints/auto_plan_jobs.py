@@ -606,15 +606,24 @@ def _loop_cron(app):
 
 def iniciar_cron(app):
     """Lanza el thread del cron al arranque de la app.
-    Idempotente: si ya está corriendo no hace nada.
+    Idempotente · si está corriendo no hace nada. Si murió (crash en el
+    loop), lo re-arranca · Sebastián 25-may-2026 audit zero-error.
     El thread siempre arranca, pero verifica auto_plan_cron_state.habilitado
     antes de ejecutar (toggle desde UI)."""
-    if getattr(app, '_auto_plan_cron_started', False):
-        return
-    t = threading.Thread(target=_loop_cron, args=(app,), daemon=True)
+    # Idempotencia real · verifica is_alive() del thread previo en lugar de
+    # confiar en flag bool que no se resetea si el thread crashea.
+    prev = getattr(app, '_auto_plan_cron_thread', None)
+    if prev is not None and prev.is_alive():
+        return  # vivo · no hacer nada
+    t = threading.Thread(target=_loop_cron, args=(app,), daemon=True,
+                          name='auto-plan-cron')
     t.start()
-    app._auto_plan_cron_started = True
-    log.info('[auto-plan-cron] Cron thread arrancado (ejecución gobernada por auto_plan_cron_state.habilitado)')
+    app._auto_plan_cron_thread = t
+    app._auto_plan_cron_started = True  # legacy compat
+    if prev is None:
+        log.info('[auto-plan-cron] Cron thread arrancado (gobernado por auto_plan_cron_state.habilitado)')
+    else:
+        log.warning('[auto-plan-cron] Cron thread anterior estaba muerto · RELANZADO por supervisor')
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -4488,11 +4497,19 @@ def job_reconciliar_influencer_60d(app):
 
 def iniciar_multi_cron(app):
     """Lanza el thread del scheduler multi-job al arranque.
+    Idempotente con detección de thread muerto · si el loop crashea,
+    el supervisor lo re-arranca · Sebastián 25-may-2026 audit zero-error.
     Sebastián 1-may-2026: sin dependencia de Render Cron Jobs externos."""
-    if getattr(app, '_multi_cron_started', False):
-        return
-    t = threading.Thread(target=_loop_multi_cron, args=(app,), daemon=True)
+    prev = getattr(app, '_multi_cron_thread', None)
+    if prev is not None and prev.is_alive():
+        return  # vivo
+    t = threading.Thread(target=_loop_multi_cron, args=(app,), daemon=True,
+                          name='multi-cron')
     t.start()
-    app._multi_cron_started = True
-    log.info('[multi-cron] Multi-cron thread arrancado · jobs: ' +
-             ', '.join(j[0] for j in JOBS_SCHEDULE))
+    app._multi_cron_thread = t
+    app._multi_cron_started = True  # legacy compat
+    if prev is None:
+        log.info('[multi-cron] Multi-cron thread arrancado · jobs: ' +
+                 ', '.join(j[0] for j in JOBS_SCHEDULE))
+    else:
+        log.warning('[multi-cron] Multi-cron thread anterior estaba muerto · RELANZADO por supervisor')
