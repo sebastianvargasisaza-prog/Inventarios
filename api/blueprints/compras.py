@@ -2233,8 +2233,15 @@ def listar_ocs_atrasadas():
     except Exception:
         buffer_dias = 7
     conn = get_db(); c = conn.cursor()
+    # Sebastián 24-may-2026 · audit Atrasadas · excluir categorías de pago
+    # directo (Cuenta de Cobro / Servicio / SVC / Influencer/Marketing Digital).
+    # Esas OCs NUNCA reciben material físico · contarlas como "atrasadas por
+    # no recibir" genera falsos positivos en el badge y en la lista. Catalina
+    # veía 30+ OCs CC/influencer marcadas atrasadas que jamás iban a llegar.
+    _CATS_EXCLUIDAS = list(CATEGORIAS_PAGO_DIRECTO) + ['Influencer/Marketing Digital']
+    _ph_cats = ','.join(['?'] * len(_CATS_EXCLUIDAS))
     try:
-        rows = c.execute("""
+        rows = c.execute(f"""
             SELECT oc.numero_oc, oc.fecha, oc.estado, oc.proveedor,
                    COALESCE(oc.creado_por,''),
                    COALESCE(oc.valor_total,0),
@@ -2242,13 +2249,15 @@ def listar_ocs_atrasadas():
                    (SELECT MAX(COALESCE(mlt.lead_time_dias, 14))
                     FROM ordenes_compra_items oci
                     LEFT JOIN mp_lead_time_config mlt ON mlt.material_id = oci.codigo_mp
-                    WHERE oci.numero_oc = oc.numero_oc) AS lead_max
+                    WHERE oci.numero_oc = oc.numero_oc) AS lead_max,
+                   COALESCE(oc.categoria, '') AS categoria
             FROM ordenes_compra oc
             WHERE oc.estado IN ('Autorizada','Parcial')
               AND (oc.fecha_recepcion IS NULL OR oc.fecha_recepcion = '')
               AND oc.fecha IS NOT NULL AND oc.fecha != ''
+              AND COALESCE(oc.categoria, '') NOT IN ({_ph_cats})
             ORDER BY oc.fecha ASC
-        """).fetchall()
+        """, _CATS_EXCLUIDAS).fetchall()
     except Exception as e:
         return jsonify({'error': f'query fallo: {e}'}), 500
     from datetime import datetime as _dt, timedelta as _td

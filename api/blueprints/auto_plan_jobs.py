@@ -3780,8 +3780,14 @@ def job_ocs_atrasadas(app):
         conn = _gdb(); c = conn.cursor()
         import os as _os
         buffer_dias = int(_os.environ.get('OCS_ATRASADAS_BUFFER_DIAS') or 7)
+        # Sebastián 24-may-2026 · audit Atrasadas · alinear con endpoint /api/
+        # compras/ocs-atrasadas · excluir categorías de pago directo (no
+        # reciben material físico · contarlas era falso positivo).
+        _CATS_EXCLUIDAS = ['Cuenta de Cobro', 'Servicio', 'SVC',
+                            'Influencer/Marketing Digital']
+        _ph = ','.join(['?'] * len(_CATS_EXCLUIDAS))
         try:
-            rows = c.execute("""
+            rows = c.execute(f"""
                 SELECT oc.numero_oc, oc.fecha, oc.estado, oc.proveedor,
                        COALESCE(oc.creado_por,''),
                        COALESCE(oc.fecha_recepcion,''),
@@ -3793,7 +3799,8 @@ def job_ocs_atrasadas(app):
                 WHERE oc.estado IN ('Autorizada','Parcial')
                   AND (oc.fecha_recepcion IS NULL OR oc.fecha_recepcion = '')
                   AND oc.fecha IS NOT NULL AND oc.fecha != ''
-            """).fetchall()
+                  AND COALESCE(oc.categoria, '') NOT IN ({_ph})
+            """, _CATS_EXCLUIDAS).fetchall()
         except Exception as e:
             return False, {'error': f'query fallo: {e}'}, 0
 
