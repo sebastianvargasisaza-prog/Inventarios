@@ -7273,6 +7273,16 @@ def conteo_materiales_estanteria():
         else ""
     )
     type_args = (tipo,) if type_filter else ()
+    # FIX 24-may-2026 noche · agente auditó: conteo cíclico contaba TODOS
+    # los movimientos sin excluir CUARENTENA/VENCIDO/RECHAZADO/AGOTADO.
+    # Resultado: el operario contaba físicamente solo el stock VIGENTE
+    # en la estantería pero el sistema le mostraba stock_sistema con
+    # lotes bloqueados incluidos → diferencia artificial siempre.
+    # Ahora exclusión alineada con _get_mp_stock canónico.
+    estado_lote_filter = (
+        " AND (m.estado_lote IS NULL OR UPPER(COALESCE(m.estado_lote,'')) "
+        "      NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO','VENCIDO','AGOTADO'))"
+    )
     if est and est != 'Sin estanteria':
         c.execute(f"""SELECT m.material_id, MAX(m.material_nombre) as material_nombre,
                             COALESCE(mp.nombre_inci,'') as inci,
@@ -7286,7 +7296,7 @@ def conteo_materiales_estanteria():
                             COALESCE(MAX(m.fecha_vencimiento),'') as fecha_vencimiento
                      FROM movimientos m
                      LEFT JOIN maestro_mps mp ON m.material_id=mp.codigo_mp
-                     WHERE m.estanteria=?{type_filter}
+                     WHERE m.estanteria=?{type_filter}{estado_lote_filter}
                      GROUP BY m.material_id, m.lote, mp.codigo_mp HAVING stock_sistema > 0
                      ORDER BY material_nombre, m.lote""", (est,) + type_args)
     else:
@@ -7302,7 +7312,7 @@ def conteo_materiales_estanteria():
                             COALESCE(MAX(m.fecha_vencimiento),'') as fecha_vencimiento
                      FROM movimientos m
                      LEFT JOIN maestro_mps mp ON m.material_id=mp.codigo_mp
-                     WHERE (m.estanteria IS NULL OR m.estanteria=''){type_filter}
+                     WHERE (m.estanteria IS NULL OR m.estanteria=''){type_filter}{estado_lote_filter}
                      GROUP BY m.material_id, m.lote, mp.codigo_mp HAVING stock_sistema > 0
                      ORDER BY material_nombre, m.lote""", type_args)
     rows = c.fetchall()
@@ -7547,13 +7557,34 @@ def conteo_guardar(conteo_id):
     if not row or row[0] != 'Abierto':
         return jsonify({'error': 'Conteo no encontrado o ya cerrado'}), 400
 
+    # FIX 24-may-2026 noche · validar NaN/Infinity/negativo en stock_fisico.
+    # El trigger BD bloquea negativo pero NO NaN · UI puede mandar valores
+    # malos por error del operario.
+    import math as _math
     items_con_diff = 0
+    items_invalidos = []
     for item in items:
         codigo = item.get('codigo_mp','')
-        stock_sis = float(item.get('stock_sistema', 0))
+        try:
+            stock_sis = float(item.get('stock_sistema', 0))
+        except (TypeError, ValueError):
+            stock_sis = 0
         stock_fis = item.get('stock_fisico')
         if stock_fis is None or stock_fis == '': continue
-        stock_fis = float(stock_fis)
+        try:
+            stock_fis = float(stock_fis)
+        except (TypeError, ValueError):
+            items_invalidos.append({'codigo': codigo, 'razon': 'stock_fisico no numérico'})
+            continue
+        if _math.isnan(stock_fis) or _math.isinf(stock_fis):
+            items_invalidos.append({'codigo': codigo, 'razon': 'stock_fisico NaN/Infinity'})
+            continue
+        if stock_fis < 0:
+            items_invalidos.append({'codigo': codigo, 'razon': 'stock_fisico negativo'})
+            continue
+        if stock_fis > 1_000_000_000:
+            items_invalidos.append({'codigo': codigo, 'razon': 'stock_fisico absurdamente grande'})
+            continue
         diff = stock_fis - stock_sis
         precio_ref = float(item.get('precio_ref', 0))
         valor_diff = abs(diff / 1000) * precio_ref  # diff en g, precio en /kg
@@ -7609,6 +7640,7 @@ def conteo_guardar(conteo_id):
     return jsonify({
         'message': 'Conteo guardado',
         'items_con_diferencia': items_con_diff,
+        'items_invalidos': items_invalidos,
         'items': saved_items,
     })
 
