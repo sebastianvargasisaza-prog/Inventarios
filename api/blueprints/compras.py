@@ -1945,6 +1945,148 @@ def mailbox_factura_descartar(pago_id):
     return jsonify({'ok': True})
 
 
+# ─── Mailbox · completar factura · Sebastián 24-may-2026 ──────────────
+# Audit Mailbox · el cron IMAP inserta pagos_oc con monto=0 + medio='PENDIENTE'
+# para que admin complete los datos reales. Antes solo se podía Ver/Descartar
+# desde la UI · faltaba la acción "Completar" que es la primaria. Endpoint
+# nuevo · UPDATE in-place + recalcula estado OC según SUM(pagos_oc).
+@bp.route('/api/compras/mailbox-facturas/<int:pago_id>/completar', methods=['POST'])
+def mailbox_factura_completar(pago_id):
+    """Completa una factura PENDIENTE detectada por cron-mailbox.
+
+    Body: {monto: float, medio_pago: str, numero_factura_proveedor?: str,
+           observaciones?: str}
+
+    Side effects:
+      1. UPDATE pagos_oc · monto + medio + numero_factura + observaciones
+         + registrado_por=usuario_actual (deja de ser cron-mailbox · ya
+         es un pago "real" auditado · pero conserva la fecha_pago original
+         del email para trazabilidad cronológica).
+      2. Recalcula estado OC según SUM(pagos_oc.monto) restante:
+         - >= valor_total → 'Pagada' + fecha_pago, pagado_por
+         - 0 < pagado < total → 'Parcial'
+         - == 0 → no cambia estado (raro · solo si admin completa con 0)
+      3. Audit COMPLETAR_MAILBOX_FACTURA con antes/después.
+      4. Email + CE generación se delega al endpoint /pagar normal · si el
+         admin quiere generar CE + email beneficiario, debe ir a tab
+         Pagos y usar "Regenerar CE" o crear pago manual desde Por Pagar.
+
+    Solo COMPRAS_ACCESS_WRITE · admin/compras.
+    """
+    usuario, err, code = _require_compras_write()
+    if err: return err, code
+    d = request.get_json(silent=True) or {}
+    monto, e_monto = validate_money(d.get('monto'), allow_zero=False,
+                                     max_value=10_000_000_000,
+                                     field_name='monto')
+    if e_monto:
+        return jsonify(e_monto), 400
+    medio = (d.get('medio_pago') or '').strip()
+    if not medio or medio.upper() == 'PENDIENTE':
+        return jsonify({'error': 'medio_pago requerido (Transferencia/Nequi/Daviplata/etc · no PENDIENTE)'}), 400
+    n_factura = (d.get('numero_factura_proveedor') or '').strip()
+    obs = (d.get('observaciones') or '').strip()
+    conn = get_db(); c = conn.cursor()
+    row = c.execute(
+        "SELECT numero_oc, monto, medio, numero_factura_proveedor, "
+        "       COALESCE(observaciones,''), fecha_pago "
+        "FROM pagos_oc WHERE id=? AND registrado_por='cron-mailbox'",
+        (pago_id,),
+    ).fetchone()
+    if not row:
+        return jsonify({'error': 'Mailbox factura no encontrada (puede ya estar completada o descartada)'}), 404
+    numero_oc, monto_ant, medio_ant, fact_ant, obs_ant, fecha_pago_orig = row
+    # Validar OC todavía existe + estado coherente
+    oc = c.execute(
+        "SELECT estado, valor_total FROM ordenes_compra WHERE numero_oc=?",
+        (numero_oc,),
+    ).fetchone()
+    if not oc:
+        return jsonify({'error': f'OC {numero_oc} no existe · descartá esta entrada del mailbox'}), 404
+    estado_oc_ant, valor_total_oc = oc
+    if estado_oc_ant in ('Cancelada', 'Rechazada'):
+        return jsonify({
+            'error': f'OC {numero_oc} está {estado_oc_ant} · no se pueden completar pagos',
+            'codigo': 'OC_TERMINAL',
+        }), 409
+    # Validar duplicado de numero_factura_proveedor en otra fila
+    if n_factura:
+        dup = c.execute(
+            "SELECT id FROM pagos_oc WHERE numero_factura_proveedor=? AND id != ?",
+            (n_factura, pago_id),
+        ).fetchone()
+        if dup:
+            return jsonify({
+                'error': f'Factura {n_factura} ya registrada en otro pago (id={dup[0]})',
+                'codigo': 'FACTURA_DUPLICADA',
+            }), 409
+    # Verificar over-payment
+    total_otros = c.execute(
+        "SELECT COALESCE(SUM(monto), 0) FROM pagos_oc WHERE numero_oc=? AND id != ?",
+        (numero_oc, pago_id),
+    ).fetchone()[0] or 0
+    if (float(total_otros) + monto) > (float(valor_total_oc or 0) + 0.01):
+        return jsonify({
+            'error': (f'Pagaría ${total_otros + monto:,.0f} pero OC vale ${valor_total_oc:,.0f}. '
+                      f'Reducí el monto o cancelá pagos previos.'),
+            'codigo': 'OVERPAYMENT',
+            'total_si_completas': float(total_otros) + monto,
+            'valor_oc': float(valor_total_oc or 0),
+        }), 409
+    # UPDATE el row · ya NO es cron-mailbox sino pago real auditado
+    c.execute(
+        "UPDATE pagos_oc SET monto=?, medio=?, numero_factura_proveedor=?, "
+        "       observaciones=?, registrado_por=? WHERE id=?",
+        (monto, medio, n_factura or None,
+         obs or 'Completado desde mailbox · ' + (obs_ant or ''),
+         usuario, pago_id),
+    )
+    # Recalcular estado OC según SUM real
+    total_pagado = float(total_otros) + monto
+    if total_pagado >= float(valor_total_oc or 0) - 0.01:
+        nuevo_estado = 'Pagada'
+    elif total_pagado > 0:
+        nuevo_estado = 'Parcial'
+    else:
+        nuevo_estado = estado_oc_ant
+    c.execute(
+        "UPDATE ordenes_compra SET estado=?, "
+        "       fecha_pago=CASE WHEN ? = 'Pagada' THEN ? ELSE fecha_pago END, "
+        "       pagado_por=CASE WHEN ? = 'Pagada' THEN ? ELSE pagado_por END, "
+        "       medio_pago=CASE WHEN ? = 'Pagada' THEN ? ELSE medio_pago END "
+        "WHERE numero_oc=?",
+        (nuevo_estado, nuevo_estado, fecha_pago_orig or datetime.now().isoformat(),
+         nuevo_estado, usuario, nuevo_estado, medio, numero_oc),
+    )
+    try:
+        audit_log(c, usuario=usuario, accion='COMPLETAR_MAILBOX_FACTURA',
+                  tabla='pagos_oc', registro_id=str(pago_id),
+                  antes={'numero_oc': numero_oc, 'monto': float(monto_ant or 0),
+                          'medio': medio_ant, 'numero_factura': fact_ant,
+                          'estado_oc': estado_oc_ant},
+                  despues={'monto': monto, 'medio': medio,
+                            'numero_factura': n_factura,
+                            'estado_oc': nuevo_estado,
+                            'total_pagado': total_pagado},
+                  detalle=(f"Completó mailbox factura OC {numero_oc} · "
+                            f"${monto:,.0f} · {medio} · estado {estado_oc_ant}→{nuevo_estado}"))
+    except Exception as e:
+        log.warning('audit_log COMPLETAR_MAILBOX_FACTURA fallo: %s', e)
+    conn.commit()
+    return jsonify({
+        'ok': True,
+        'numero_oc': numero_oc,
+        'monto': monto,
+        'medio': medio,
+        'estado_oc_anterior': estado_oc_ant,
+        'estado_oc_nuevo': nuevo_estado,
+        'total_pagado': total_pagado,
+        'hint': (f'OC pasó a {nuevo_estado}. Si querés CE/PDF, ' +
+                  ('regenerá desde tab Pagos.' if nuevo_estado == 'Pagada' else
+                    'completá el saldo restante.')),
+    })
+
+
 @bp.route('/api/compras/ocs-consolidado-excel', methods=['GET'])
 def ocs_consolidado_excel():
     """Sebastián 23-may-2026 · Excel consolidado de OCs activas para

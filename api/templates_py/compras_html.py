@@ -7608,6 +7608,12 @@ async function cargarMailbox(){
       html += '<td style="padding:8px 12px;text-align:center;font-weight:700;font-size:11px;color:' + estCol + '">' + _esc(estTxt) + '</td>';
       html += '<td style="padding:8px 12px;text-align:center">';
       html += '<a href="/api/compras/mailbox-facturas/' + it.pago_id + '/comprobante" target="_blank" style="padding:4px 10px;background:#1e40af;color:#fff;text-decoration:none;border-radius:5px;font-size:11px;font-weight:700;margin-right:4px">👁 Ver</a>';
+      // Sebastián 24-may-2026 · botón Completar · solo si pendiente · llena
+      // monto + medio + factura · cambia row a pago real auditado y recalcula
+      // estado OC (Pagada/Parcial según SUM)
+      if(it.pendiente){
+        html += '<button onclick="_mailboxCompletar(' + it.pago_id + ',' + (it.valor_oc||0) + ',&quot;' + _esc(it.numero_oc) + '&quot;)" style="padding:4px 10px;background:#16a34a;color:#fff;border:0;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer;margin-right:4px">✅ Completar</button>';
+      }
       html += '<button onclick="_mailboxDescartar(' + it.pago_id + ')" style="padding:4px 10px;background:#fff;color:#dc2626;border:1px solid #dc2626;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">✕ Descartar</button>';
       html += '</td></tr>';
     });
@@ -7631,6 +7637,38 @@ async function _mailboxDescartar(pagoId){
   }catch(e){
     alert('Error red: ' + e.message);
   }
+}
+
+// Sebastián 24-may-2026 · completar factura PENDIENTE del mailbox · pide
+// monto + medio + factura · backend UPDATE row + recalcula estado OC.
+async function _mailboxCompletar(pagoId, valorOC, numeroOC){
+  var sugMonto = valorOC > 0 ? valorOC : '';
+  var monto = prompt('Monto del pago para OC ' + numeroOC + ' (sugerido: $' + Number(sugMonto).toLocaleString('es-CO') + '):', sugMonto);
+  if(monto === null) return;
+  monto = parseFloat(String(monto).replace(/[,.\\s$]/g,''));
+  if(!monto || monto <= 0){ alert('Monto inválido'); return; }
+  var medio = prompt('Medio de pago (Transferencia/Nequi/Daviplata/Efectivo/Bancolombia/...):', 'Transferencia');
+  if(!medio) return;
+  var fact = prompt('Número de factura del proveedor (opcional · vacío = mantener actual):', '');
+  if(fact === null) return;
+  var obs = prompt('Observaciones (opcional):', '');
+  if(obs === null) obs = '';
+  if(!confirm('Completar factura OC ' + numeroOC + '\\n\\nMonto: $' + monto.toLocaleString('es-CO') + '\\nMedio: ' + medio + '\\nFactura: ' + (fact||'(sin)') + '\\n\\nEsto recalcula el estado de la OC.')) return;
+  try{
+    var r = await fetch('/api/compras/mailbox-facturas/' + pagoId + '/completar', _fetchOpts('POST', {
+      monto: monto, medio_pago: medio.trim(),
+      numero_factura_proveedor: fact.trim(),
+      observaciones: obs.trim()
+    }));
+    var d = await r.json();
+    if(r.ok && d.ok){
+      alert('✅ ' + numeroOC + ' · estado ' + d.estado_oc_anterior + ' → ' + d.estado_oc_nuevo + '\\n\\n' + (d.hint||''));
+      cargarMailbox();
+      loadData();
+    } else {
+      alert('Error: ' + (d.error || 'desconocido'));
+    }
+  }catch(e){ alert('Error red: ' + e.message); }
 }
 
 
