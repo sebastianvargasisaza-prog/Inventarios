@@ -312,6 +312,13 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (177, "sku_producto_map.tono_label · etiqueta visible para sub-SKUs con tonos (BB101=ROSA, BB201=DURAZNO, etc.) · Sebastián 24-may-2026 noche", [
+        # FEATURE 24-may-2026 noche · BLUSH BALM y LIP SERUM tienen multi-SKUs
+        # que comparten el mismo bulk pero cambian el tono (color). Antes
+        # solo se diferenciaban por el código SKU (BB101 vs BB201). Ahora
+        # tono_label tiene etiqueta humana para mostrar en UI.
+        "ALTER TABLE sku_producto_map ADD COLUMN tono_label TEXT DEFAULT ''",
+    ]),
     (176, "produccion_programada.distribucion_resumen · etiqueta DTC+B2B legible · Sebastián 24-may-2026 noche", [
         # FEATURE 24-may-2026 noche · Sebastián: 'que salga aquí la
         # observación 1000 unidades para fernando mesa/kelly guerra · que

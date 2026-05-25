@@ -6670,6 +6670,319 @@ def pedidos_b2b_asignar_a_animus(pid):
     })
 
 
+@bp.route("/api/admin/sub-skus", methods=["GET"])
+def admin_sub_skus_listar():
+    """Lista todos los SKUs agrupados por producto canónico con tonos.
+
+    Devuelve estructura:
+    {
+        productos: [
+            {producto_nombre, n_skus, n_regalos, ml_promedio,
+             skus: [{sku, tono_label, es_regalo, ml_unidad, ventas_60d, ...}]}
+        ]
+    }
+    """
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+    conn = get_db(); cur = conn.cursor()
+    productos_map = {}
+    try:
+        # SKUs con producto + ventas 60d para contexto
+        rows = cur.execute(
+            """SELECT spm.sku, spm.producto_nombre,
+                      COALESCE(spm.activo, 1),
+                      COALESCE(spm.es_regalo, 0),
+                      COALESCE(spm.tono_label, ''),
+                      COALESCE(pp.volumen_ml, 0) AS ml_unidad
+               FROM sku_producto_map spm
+               LEFT JOIN producto_presentaciones pp
+                 ON UPPER(TRIM(pp.sku_codigo)) = UPPER(TRIM(spm.sku))
+                 AND COALESCE(pp.activo, 1) = 1
+               WHERE spm.producto_nombre IS NOT NULL
+                 AND TRIM(spm.producto_nombre) != ''
+               ORDER BY spm.producto_nombre, spm.sku"""
+        ).fetchall()
+    except Exception:
+        # fallback si producto_presentaciones no existe
+        rows = cur.execute(
+            """SELECT sku, producto_nombre, COALESCE(activo,1),
+                      COALESCE(es_regalo,0), COALESCE(tono_label,''), 0
+               FROM sku_producto_map
+               WHERE producto_nombre IS NOT NULL AND TRIM(producto_nombre) != ''
+               ORDER BY producto_nombre, sku"""
+        ).fetchall()
+
+    for r in rows:
+        prod = r[1].strip() if r[1] else ''
+        if not prod:
+            continue
+        info = productos_map.setdefault(prod, {
+            'producto_nombre': prod,
+            'skus': [],
+            'n_skus': 0, 'n_regalos': 0, 'ml_promedio': 0,
+        })
+        info['skus'].append({
+            'sku': r[0], 'activo': bool(r[2]),
+            'es_regalo': bool(r[3]),
+            'tono_label': r[4] or '',
+            'ml_unidad': float(r[5] or 0),
+        })
+    for info in productos_map.values():
+        skus_act = [s for s in info['skus'] if s['activo'] and not s['es_regalo']]
+        info['n_skus'] = len(info['skus'])
+        info['n_regalos'] = sum(1 for s in info['skus'] if s['es_regalo'])
+        info['n_activos_no_regalo'] = len(skus_act)
+        info['n_tonos'] = sum(1 for s in info['skus'] if s['tono_label'])
+        mls = [s['ml_unidad'] for s in info['skus'] if s['ml_unidad'] > 0]
+        info['ml_promedio'] = round(sum(mls) / len(mls), 1) if mls else 0
+    productos = sorted(productos_map.values(),
+                       key=lambda p: (-p['n_skus'], p['producto_nombre']))
+    return jsonify({'productos': productos, 'total': len(productos)})
+
+
+@bp.route("/api/admin/sub-skus/<path:sku>", methods=["PATCH"])
+def admin_sub_skus_editar(sku):
+    """Edita un SKU específico · es_regalo, tono_label, activo, ml_unidad."""
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+    body = request.get_json(silent=True) or {}
+    sku_norm = (sku or '').strip().upper()
+    if not sku_norm:
+        return jsonify({'error': 'SKU requerido'}), 400
+    conn = get_db(); cur = conn.cursor()
+    sets = []
+    params = []
+    if 'es_regalo' in body:
+        sets.append("es_regalo = ?")
+        params.append(1 if body['es_regalo'] else 0)
+    if 'tono_label' in body:
+        sets.append("tono_label = ?")
+        params.append((body.get('tono_label') or '').strip()[:50])
+    if 'activo' in body:
+        sets.append("activo = ?")
+        params.append(1 if body['activo'] else 0)
+    if not sets:
+        return jsonify({'error': 'nada que actualizar'}), 400
+    params.append(sku_norm)
+    try:
+        res = cur.execute(
+            f"UPDATE sku_producto_map SET {', '.join(sets)} WHERE UPPER(TRIM(sku)) = ?",
+            params,
+        )
+        if res.rowcount == 0:
+            return jsonify({'error': f'SKU {sku_norm} no existe en sku_producto_map'}), 404
+        # ml_unidad va en producto_presentaciones (no en sku_producto_map)
+        if 'ml_unidad' in body:
+            try:
+                ml = float(body['ml_unidad'])
+                if 0 < ml < 5000:
+                    # UPSERT en producto_presentaciones
+                    pp_existe = cur.execute(
+                        "SELECT 1 FROM producto_presentaciones WHERE UPPER(TRIM(sku_codigo)) = ?",
+                        (sku_norm,),
+                    ).fetchone()
+                    if pp_existe:
+                        cur.execute(
+                            "UPDATE producto_presentaciones SET volumen_ml = ? WHERE UPPER(TRIM(sku_codigo)) = ?",
+                            (ml, sku_norm),
+                        )
+                    else:
+                        # producto_nombre desde sku_producto_map
+                        pn = cur.execute(
+                            "SELECT producto_nombre FROM sku_producto_map WHERE UPPER(TRIM(sku)) = ?",
+                            (sku_norm,),
+                        ).fetchone()
+                        cur.execute(
+                            """INSERT INTO producto_presentaciones
+                                 (sku_codigo, producto_nombre, volumen_ml, activo)
+                               VALUES (?, ?, ?, 1)""",
+                            (sku_norm, (pn[0] if pn else ''), ml),
+                        )
+            except Exception:
+                pass
+        audit_log(cur, usuario=user, accion='SUB_SKU_PATCH',
+                  tabla='sku_producto_map', registro_id=sku_norm,
+                  despues=body)
+        conn.commit()
+    except Exception as e:
+        return jsonify({'error': str(e)[:200]}), 500
+    return jsonify({'ok': True, 'sku': sku_norm})
+
+
+@bp.route("/admin/sub-skus", methods=["GET"])
+def admin_sub_skus_pagina():
+    """Página HTML standalone · gestión visual de sub-SKUs (tonos + regalos).
+
+    Sebastián 24-may noche · 'Sub-SKUs regalos + tonos variables'.
+    Cada producto con multi-SKUs (BLUSH BALM x5 tonos, LIP SERUM x6
+    tonos, BBM mini regalo) se ve agrupado · editable inline.
+    """
+    if 'compras_user' not in session:
+        return "<html><body><h2>No autorizado</h2></body></html>", 401
+    user = session.get('compras_user', '')
+    if user not in (set(ADMIN_USERS) | set(COMPRAS_ACCESS)):
+        return "<html><body><h2>Solo admin/compras</h2></body></html>", 403
+    return """<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Sub-SKUs</title>
+<style>
+  body{font-family:system-ui,-apple-system,Arial;background:#f8fafc;margin:0;padding:24px}
+  .card{max-width:1400px;margin:0 auto 14px;background:#fff;border-radius:14px;padding:24px;box-shadow:0 4px 20px rgba(0,0,0,.08)}
+  h1{color:#1e293b;margin:0 0 8px;font-size:22px}
+  .filtros{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+  .filtros input,.filtros select{padding:8px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px}
+  .producto-grp{border:1px solid #e2e8f0;border-radius:10px;margin-bottom:10px;background:#fff}
+  .prod-head{padding:12px 16px;background:#f8fafc;border-bottom:1px solid #e2e8f0;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;cursor:pointer}
+  .prod-head:hover{background:#f1f5f9}
+  .prod-titulo{font-weight:700;color:#1e293b;font-size:14px}
+  .prod-meta{font-size:11px;color:#64748b}
+  .badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700;margin-left:6px}
+  .b-regalo{background:#fce7f3;color:#9f1239}
+  .b-tonos{background:#dbeafe;color:#1e40af}
+  .b-multi{background:#fef3c7;color:#92400e}
+  .skus-tbl{padding:8px 16px;display:none}
+  .skus-tbl.open{display:block}
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  th{background:#f1f5f9;padding:6px 8px;text-align:left;font-size:10px;text-transform:uppercase;color:#475569}
+  td{border-bottom:1px solid #f1f5f9;padding:6px 8px}
+  input.inp-sku{width:100%;padding:4px 6px;border:1px solid #cbd5e1;border-radius:4px;font-size:11px;background:transparent}
+  input.inp-sku:hover{background:#fffbeb}
+  input.inp-sku:focus{background:#fff;border-color:#7c3aed;outline:none}
+  .chk{transform:scale(1.3);cursor:pointer}
+  #msg{margin:8px 0;font-size:12px;font-weight:700}
+  .btn{padding:6px 12px;border-radius:5px;border:none;font-size:11px;font-weight:700;cursor:pointer}
+  .btn-prim{background:#7c3aed;color:#fff}
+  .btn-link{background:transparent;color:#475569;border:1px solid #e2e8f0}
+</style></head><body>
+
+<div class="card">
+  <h1>🎨 Sub-SKUs · gestión visual de tonos y regalos</h1>
+  <p style="color:#475569;font-size:13px">Editá inline cada sub-SKU. <strong>Regalo</strong>: no cuenta para velocidad de ventas. <strong>Tono</strong>: etiqueta visible (ROSA, DURAZNO, etc.). <strong>ml</strong>: volumen real por unidad (afecta el cálculo de envases en Abastecimiento).</p>
+  <div class="filtros">
+    <input id="q" placeholder="🔍 Filtrar por producto o SKU…" oninput="render()">
+    <select id="filtro-tipo" onchange="render()">
+      <option value="">Todos los productos</option>
+      <option value="multi">Solo multi-SKU (3+)</option>
+      <option value="con_regalos">Con regalos</option>
+      <option value="con_tonos">Con tonos asignados</option>
+      <option value="sin_tonos">Multi-SKU SIN tonos</option>
+    </select>
+    <button class="btn btn-prim" onclick="cargar()">↻ Recargar</button>
+    <a href="/admin/clientes-b2b" class="btn btn-link" style="text-decoration:none;line-height:1.4">👥 Clientes B2B</a>
+    <a href="/" class="btn btn-link" style="text-decoration:none;line-height:1.4">← Dashboard</a>
+  </div>
+  <div id="msg"></div>
+</div>
+
+<div class="card">
+  <div id="lista"><p style="color:#94a3b8;text-align:center;padding:20px">Cargando…</p></div>
+</div>
+
+<script>
+let DATA=null;
+
+function msg(text, ok){
+  const el=document.getElementById('msg');
+  el.innerHTML='<span style="color:'+(ok?'#15803d':'#dc2626')+'">'+text+'</span>';
+  setTimeout(()=>{el.innerHTML=''},4000);
+}
+
+async function cargar(){
+  try{
+    const r=await fetch('/api/admin/sub-skus');
+    const d=await r.json();
+    DATA=d;
+    render();
+  }catch(e){msg('Error red: '+e.message)}
+}
+
+function render(){
+  const q=(document.getElementById('q').value||'').toLowerCase().trim();
+  const f=document.getElementById('filtro-tipo').value;
+  let prods=DATA.productos||[];
+  if(f==='multi') prods=prods.filter(p=>p.n_skus>=3);
+  if(f==='con_regalos') prods=prods.filter(p=>p.n_regalos>0);
+  if(f==='con_tonos') prods=prods.filter(p=>p.n_tonos>0);
+  if(f==='sin_tonos') prods=prods.filter(p=>p.n_skus>=2 && p.n_tonos===0);
+  if(q){
+    prods=prods.filter(p=>{
+      if(p.producto_nombre.toLowerCase().indexOf(q)>=0) return true;
+      return p.skus.some(s=>s.sku.toLowerCase().indexOf(q)>=0 || (s.tono_label||'').toLowerCase().indexOf(q)>=0);
+    });
+  }
+  const cont=document.getElementById('lista');
+  if(!prods.length){cont.innerHTML='<p style="color:#94a3b8;text-align:center;padding:20px">Sin resultados</p>';return}
+  cont.innerHTML=prods.map((p,idx)=>renderProducto(p,idx)).join('');
+}
+
+function renderProducto(p, idx){
+  const badges=[];
+  if(p.n_skus>=3) badges.push('<span class="badge b-multi">Multi · '+p.n_skus+' SKUs</span>');
+  if(p.n_tonos>0) badges.push('<span class="badge b-tonos">'+p.n_tonos+' tonos</span>');
+  if(p.n_regalos>0) badges.push('<span class="badge b-regalo">'+p.n_regalos+' regalo</span>');
+  let html='<div class="producto-grp">';
+  html+='<div class="prod-head" onclick="toggle('+idx+')">';
+  html+='<div><div class="prod-titulo">'+esc(p.producto_nombre)+badges.join('')+'</div>';
+  html+='<div class="prod-meta">'+p.n_skus+' SKUs · '+(p.ml_promedio?p.ml_promedio.toFixed(1)+'ml prom · ':'')+p.n_activos_no_regalo+' activos no-regalo</div></div>';
+  html+='<span style="color:#7c3aed;font-size:12px;font-weight:700" id="toggle-'+idx+'">▶ Expandir</span>';
+  html+='</div>';
+  html+='<div class="skus-tbl" id="skus-'+idx+'">';
+  html+='<table><thead><tr><th>SKU</th><th style="text-align:center">Activo</th><th style="text-align:center">Regalo</th><th>Tono / etiqueta</th><th style="text-align:right">ml/u</th></tr></thead><tbody>';
+  p.skus.forEach(s=>{
+    html+='<tr>'
+      +'<td style="font-family:ui-monospace;font-weight:600">'+esc(s.sku)+'</td>'
+      +'<td style="text-align:center"><input type="checkbox" class="chk" '+(s.activo?'checked':'')+' onchange="patchSku(\\''+esc(s.sku)+'\\',{activo:this.checked})"></td>'
+      +'<td style="text-align:center"><input type="checkbox" class="chk" '+(s.es_regalo?'checked':'')+' onchange="patchSku(\\''+esc(s.sku)+'\\',{es_regalo:this.checked})"></td>'
+      +'<td><input class="inp-sku" value="'+esc(s.tono_label||'')+'" placeholder="ROSA, DURAZNO, BORGOÑA…" onblur="if(this.value!=this.defaultValue) patchSku(\\''+esc(s.sku)+'\\',{tono_label:this.value})"></td>'
+      +'<td style="text-align:right"><input class="inp-sku" type="number" min="0" max="5000" step="0.1" value="'+(s.ml_unidad||0)+'" style="text-align:right;font-family:ui-monospace" onblur="if(parseFloat(this.value)!=parseFloat(this.defaultValue)) patchSku(\\''+esc(s.sku)+'\\',{ml_unidad:parseFloat(this.value)})"></td>'
+      +'</tr>';
+  });
+  html+='</tbody></table>';
+  html+='</div></div>';
+  return html;
+}
+
+function toggle(idx){
+  const tbl=document.getElementById('skus-'+idx);
+  const lbl=document.getElementById('toggle-'+idx);
+  if(tbl.classList.contains('open')){
+    tbl.classList.remove('open'); lbl.textContent='▶ Expandir';
+  }else{
+    tbl.classList.add('open'); lbl.textContent='▼ Contraer';
+  }
+}
+
+async function patchSku(sku, patch){
+  try{
+    const r=await fetch('/api/admin/sub-skus/'+encodeURIComponent(sku),{
+      method:'PATCH', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(patch),
+    });
+    const d=await r.json();
+    if(!r.ok){msg('Error: '+(d.error||r.status));return}
+    msg('✓ '+sku+' actualizado',true);
+    // Refrescar la data en memoria sin recargar todo
+    const k=Object.keys(patch)[0];
+    DATA.productos.forEach(p=>{
+      p.skus.forEach(s=>{
+        if(s.sku===sku){
+          s[k]=patch[k];
+        }
+      });
+    });
+  }catch(e){msg('Error red: '+e.message)}
+}
+
+function esc(s){const d=document.createElement('div');d.textContent=s||'';return d.innerHTML}
+
+cargar();
+</script>
+</body></html>"""
+
+
 @bp.route("/api/admin/lotes/regenerar-distribucion", methods=["POST"])
 def admin_lotes_regenerar_distribucion():
     """Sebastián 24-may noche · regenera distribucion_resumen para
