@@ -213,8 +213,8 @@ async function cxIAPreguntar(pregunta){
        lo paga Sebastián · Catalina no tiene visibilidad. Botón sigue
        en DOM (display:none) para deep links · página standalone vive
        en /admin/influencers. -->
-  <span data-cx-sub="entradas" style="display:flex;gap:6px;flex-wrap:wrap">
-    <button class="tn on"   data-tab="planta" id="tn-planta" title="MP+Empaque · Centro Programación + Pre-Producción fusionado">🏭 Planta</button>
+  <span data-cx-sub="entradas" style="display:none;gap:6px;flex-wrap:wrap">
+    <button class="tn"      data-tab="planta" id="tn-planta" title="MP+Empaque · Centro Programación + Pre-Producción fusionado">🏭 Planta</button>
     <button class="tn"      data-tab="solic" id="tn-solic" title="Solicitudes generales (papelería, servicios, EPP, mantenimiento)">📋 Solicitudes</button>
     <!-- Producción · OCULTO 21-may-2026 · fusionado en Planta con badge Pre-Prod -->
     <button class="tn" data-tab="solprod" id="tn-solprod" style="display:none">🛠️ Producción <span id="solprod-badge" style="display:none;background:#dc2626;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
@@ -7916,6 +7916,21 @@ async function loadCCSolicitudes(){ /* no-op: tab absorbido en Solicitudes */ }
 
 // ─── Init ─────────────────────────────────────────────────────────────
 loadData();
+// Sebastián 24-may-2026 · landing directo en Dashboard al cargar /compras.
+// Antes: pestañas se veían pero el contenido del dashboard estaba vacío
+// porque renderKpisGrandes/renderDashHome2/etc solo corren al hacer click.
+// Ahora disparamos el click programáticamente para que el panel arranque
+// poblado y el usuario aterrice en la vista consolidada de una.
+(function(){
+  try{
+    var dashBtn = document.getElementById('tn-dash');
+    if(dashBtn){
+      // El handler .tn click hace removeClass('on') a todos y addClass al
+      // clicked · idempotente · seguro aunque ya tenga .on en el HTML.
+      dashBtn.click();
+    }
+  }catch(e){ console.warn('init dash click:', e); }
+})();
 </script>
 
 <!-- Widget Mi contraseña · Sebastián 7-may-2026 -->
