@@ -22754,16 +22754,27 @@ async function ckMarcar(itemId, estado){
       }
     });
 
+    // Sebastián 25-may-2026 PM · chip max_urgencia en el header del cliente
+    // así planta ve de un vistazo qué cliente apura.
+    const URG_HEADER = {
+      alta:  {bg:'#fee2e2', text:'#991b1b', emoji:'🔴', lbl:'Alta'},
+      media: {bg:'#fef3c7', text:'#854d0e', emoji:'🟡', lbl:'Media'},
+      baja:  {bg:'#d1fae5', text:'#065f46', emoji:'🟢', lbl:'Baja'},
+    };
+    const maxUrg = cli.max_urgencia || 'media';
+    const urgCfg = URG_HEADER[maxUrg] || URG_HEADER.media;
+    let chipUrgHeader = '<span title="urgencia máxima entre sus pedidos" style="background:'+urgCfg.bg+';color:'+urgCfg.text+';padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700;margin-left:4px">' + urgCfg.emoji + ' ' + urgCfg.lbl + '</span>';
+
     let html = '<details style="background:white;border-radius:14px;margin-bottom:14px;border:1px solid #e2e8f0;overflow:hidden">';
     html += '<summary style="cursor:pointer;padding:14px 18px;background:linear-gradient(90deg,#eef2ff,#e0e7ff);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">';
     html += '<div><span style="color:#3730a3;font-size:16px;font-weight:800">📦 ' + escapeHtmlNec(cli.cliente_nombre) + '</span>';
     html += ' <span style="font-size:11px;font-weight:500;color:#94a3b8">· B2B · ' + (cli.pedidos||[]).length + ' pedidos · ' + cli.kg_total.toFixed(1) + ' kg</span></div>';
-    html += '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">' + chips;
+    html += '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">' + chipUrgHeader + chips;
     html += '<button onclick="event.preventDefault();event.stopPropagation();abrirFormB2BCliente(\\''+cliEsc+'\\',\\''+cliNomEsc+'\\')" style="background:#7c3aed;color:#fff;border:none;padding:6px 12px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;margin-left:8px">+ Producto</button>';
     html += '</div></summary>';
     html += '<div style="padding:14px 18px;overflow-x:auto">';
     html += '<table style="width:100%;border-collapse:collapse;font-size:12px">';
-    html += '<thead><tr style="background:#f1f5f9"><th style="text-align:left;padding:6px 10px">Producto</th><th style="padding:6px 10px">Uds</th><th style="padding:6px 10px">kg</th><th style="padding:6px 10px">Fecha</th><th style="padding:6px 10px">Estado</th><th style="padding:6px 10px">Lote</th><th style="padding:6px 10px"></th></tr></thead><tbody>';
+    html += '<thead><tr style="background:#f1f5f9"><th style="padding:6px 10px">Urg.</th><th style="text-align:left;padding:6px 10px">Producto</th><th style="padding:6px 10px">Uds</th><th style="padding:6px 10px">kg</th><th style="padding:6px 10px">Fecha</th><th style="padding:6px 10px">Estado</th><th style="padding:6px 10px">Lote</th><th style="padding:6px 10px"></th></tr></thead><tbody>';
     cli.pedidos.forEach(p => {
       const lote = p.lote_consolidado || null;
       let loteHtml = '<span style="color:#94a3b8;font-size:10px">sin asignar</span>';
@@ -22774,11 +22785,17 @@ async function ckMarcar(itemId, estado){
       // Botón Asignar a Animus · solo si NO está ya sumado a canónico
       let btnAsignar = '';
       if (!lote || lote.modo !== 'sumado_a_lote_canonico') {
-        btnAsignar = '<button onclick="asignarB2BaAnimus('+p.id+')" style="background:#16a34a;color:#fff;border:none;padding:3px 10px;border-radius:4px;font-size:10px;cursor:pointer;font-weight:700;margin-right:4px" title="Buscar lote Animus DTC del mismo producto ±14d y sumar este pedido">🔗 Asignar a Animus</button>';
+        btnAsignar = '<button onclick="asignarB2BaAnimus('+p.id+')" style="background:#16a34a;color:#fff;border:none;padding:3px 10px;border-radius:4px;font-size:10px;cursor:pointer;font-weight:700;margin-right:4px" title="Buscar lote Animus DTC del mismo producto ±30d y sumar este pedido">🔗 Asignar a Animus</button>';
       }
       const estadoBg = p.estado === 'confirmado' ? '#dcfce7' : (p.estado === 'cancelado' ? '#fee2e2' : '#e0e7ff');
       const estadoColor = p.estado === 'confirmado' ? '#15803d' : (p.estado === 'cancelado' ? '#991b1b' : '#3730a3');
-      html += '<tr style="border-bottom:1px solid #e2e8f0">'
+      // Sebastián 25-may-2026 PM · columna urgencia visible
+      const urgP = (p.urgencia || 'media').toLowerCase();
+      const urgIco = {alta:'🔴', media:'🟡', baja:'🟢'}[urgP] || '🟡';
+      const urgTitle = {alta:'Alta · prioridad', media:'Media · normal', baja:'Baja · sin apuro'}[urgP] || 'Media';
+      const rowHi = urgP === 'alta' ? 'background:#fef2f2;' : '';
+      html += '<tr style="border-bottom:1px solid #e2e8f0;' + rowHi + '">'
+        + '<td style="padding:6px 10px;text-align:center;font-size:14px" title="' + urgTitle + '">' + urgIco + '</td>'
         + '<td style="padding:6px 10px"><strong>' + escapeHtmlNec(p.producto_nombre) + '</strong></td>'
         + '<td style="padding:6px 10px;text-align:center">' + p.cantidad_uds + ' × ' + p.ml_unidad + 'ml</td>'
         + '<td style="padding:6px 10px;text-align:center;font-weight:700">' + p.kg_equivalente + '</td>'

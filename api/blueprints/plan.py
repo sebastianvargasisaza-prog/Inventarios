@@ -2110,15 +2110,36 @@ def plan_necesidades():
     productos_animus = _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar)
 
     # ─── Cliente 2+: B2B (Fernando + futuros) ─────────────────────────────
-    pedidos_b2b = c.execute(
-        """SELECT id, cliente_id, cliente_nombre, producto_nombre,
-                  cantidad_uds, ml_unidad, fecha_estimada, estado, notas
-           FROM pedidos_b2b
-           WHERE estado NOT IN ('despachado','cancelado')
-           ORDER BY cliente_nombre ASC, fecha_estimada ASC""",
-    ).fetchall()
+    # Sebastián 25-may-2026 PM · incluir `urgencia` (mig 182) y ordenar
+    # alta primero · planta debe ver de un vistazo qué cliente apura.
+    # Fallback si mig 182 no aplicada · query alternativo sin urgencia.
+    try:
+        pedidos_b2b = c.execute(
+            """SELECT id, cliente_id, cliente_nombre, producto_nombre,
+                      cantidad_uds, ml_unidad, fecha_estimada, estado, notas,
+                      COALESCE(urgencia,'media')
+               FROM pedidos_b2b
+               WHERE estado NOT IN ('despachado','cancelado')
+               ORDER BY
+                  CASE LOWER(COALESCE(urgencia,'media'))
+                       WHEN 'alta' THEN 0
+                       WHEN 'media' THEN 1
+                       WHEN 'baja' THEN 2 ELSE 1 END,
+                  cliente_nombre ASC, fecha_estimada ASC""",
+        ).fetchall()
+        _has_urg = True
+    except Exception:
+        pedidos_b2b = c.execute(
+            """SELECT id, cliente_id, cliente_nombre, producto_nombre,
+                      cantidad_uds, ml_unidad, fecha_estimada, estado, notas
+               FROM pedidos_b2b
+               WHERE estado NOT IN ('despachado','cancelado')
+               ORDER BY cliente_nombre ASC, fecha_estimada ASC""",
+        ).fetchall()
+        _has_urg = False
 
-    # Agrupar por cliente
+    # Agrupar por cliente · ya vienen ordenados alta primero del SQL
+    _URG_RANK = {'alta': 0, 'media': 1, 'baja': 2}
     b2b_por_cliente = {}
     for r in pedidos_b2b:
         cid = r[1]
@@ -2129,8 +2150,14 @@ def plan_necesidades():
                 "tipo": "b2b_manual",
                 "pedidos": [],
                 "kg_total": 0,
+                "max_urgencia": 'baja',
+                "max_urgencia_rank": 2,
             }
         kg = round((r[4] * r[5]) / 1000.0, 2)
+        urg = (r[9] if _has_urg and len(r) > 9 else 'media') or 'media'
+        urg = str(urg).lower()
+        if urg not in _URG_RANK:
+            urg = 'media'
         b2b_por_cliente[cid]["pedidos"].append({
             "id": r[0],
             "producto_nombre": r[3],
@@ -2140,15 +2167,25 @@ def plan_necesidades():
             "fecha_estimada": r[6],
             "estado": r[7],
             "notas": r[8] or "",
+            "urgencia": urg,
         })
         b2b_por_cliente[cid]["kg_total"] += kg
+        # max_urgencia del cliente = la más alta de sus pedidos
+        rank = _URG_RANK[urg]
+        if rank < b2b_por_cliente[cid]["max_urgencia_rank"]:
+            b2b_por_cliente[cid]["max_urgencia"] = urg
+            b2b_por_cliente[cid]["max_urgencia_rank"] = rank
+
+    # Ordenar clientes B2B por max_urgencia (alta primero), luego alfabético
+    b2b_lista = sorted(b2b_por_cliente.values(),
+                        key=lambda x: (x["max_urgencia_rank"], x["cliente_nombre"]))
 
     clientes = [{
         "cliente_id": "ANIMUS_DTC",
         "cliente_nombre": "Animus Lab DTC",
         "tipo": "shopify_auto",
         "productos": productos_animus,
-    }] + list(b2b_por_cliente.values())
+    }] + b2b_lista
 
     # SHOPIFY-FIX · 22-may-2026 · Bug #5 audit · SKUs huérfanos vendiendo
     # · Detecta SKUs vendiendo en Shopify SIN mapping a producto
