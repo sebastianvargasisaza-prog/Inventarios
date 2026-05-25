@@ -2515,9 +2515,46 @@ def handle_proveedor(nombre):
         motivo = (d.get('motivo') or '').strip()
         if not motivo:
             return jsonify({'error': 'El motivo de baja es requerido'}), 400
+        force = bool(d.get('force', False))
         c.execute("SELECT id FROM proveedores WHERE nombre=? AND activo=1", (nombre,))
         if not c.fetchone():
             return jsonify({'error': 'Proveedor no encontrado'}), 404
+        # Sebastián 24-may-2026 · audit Proveedores · validar OCs activas antes
+        # de dar de baja. Antes el soft delete (activo=0) permitía bajar al
+        # proveedor pero las OCs vigentes (Borrador/Autorizada/Recibida/Parcial)
+        # seguían vinculadas a él · quedaban huérfanas en UI (proveedor ya no
+        # aparece en lista pero OC sigue activa). Ahora bloqueamos con 409 y
+        # listamos las OCs · admin puede forzar con {force:true} para casos
+        # legítimos (proveedor cerró operaciones · cancelar OCs aparte).
+        _ESTADOS_OC_ACTIVOS = ('Borrador', 'Revisada', 'Aprobada', 'Autorizada',
+                                'Recibida', 'Parcial', 'Pagada')
+        try:
+            ocs_activas = c.execute(
+                "SELECT numero_oc, estado, valor_total FROM ordenes_compra "
+                "WHERE LOWER(TRIM(proveedor)) = LOWER(TRIM(?)) "
+                "  AND estado IN ('Borrador','Revisada','Aprobada','Autorizada',"
+                "                 'Recibida','Parcial','Pagada') "
+                "ORDER BY fecha DESC LIMIT 20",
+                (nombre,),
+            ).fetchall()
+        except Exception:
+            ocs_activas = []
+        if ocs_activas and not force:
+            es_admin = (usuario or '').lower() in {x.lower() for x in ADMIN_USERS}
+            return jsonify({
+                'error': (f'Proveedor "{nombre}" tiene {len(ocs_activas)} OCs '
+                          f'activas · no se puede dar de baja sin antes '
+                          f'cerrarlas (Cancelada/Rechazada) o forzar el override.'),
+                'codigo': 'PROVEEDOR_CON_OCS_ACTIVAS',
+                'ocs_activas': [{'numero_oc': r[0], 'estado': r[1],
+                                  'valor_total': float(r[2] or 0)}
+                                 for r in ocs_activas],
+                'override_disponible': es_admin,
+                'hint': ('Cancelá/rechazá las OCs primero, o ' +
+                         ('reenviá con {"force":true,"motivo":"..."} para admin override.'
+                           if es_admin else
+                           'pedile a admin que haga el override.')),
+            }), 409
         c.execute(
             "UPDATE proveedores SET activo=0, motivo_baja=?, fecha_baja=? WHERE nombre=?",
             (motivo, datetime.now().isoformat(), nombre)
@@ -2525,12 +2562,22 @@ def handle_proveedor(nombre):
         try:
             audit_log(c, usuario=usuario, accion='BAJA_PROVEEDOR',
                       tabla='proveedores', registro_id=nombre,
-                      despues={'activo': 0, 'motivo_baja': motivo[:300]},
-                      detalle=f"Dio de baja al proveedor '{nombre}'")
+                      despues={'activo': 0, 'motivo_baja': motivo[:300],
+                                'force_override': force,
+                                'ocs_activas_al_baja': len(ocs_activas),
+                                'ocs_numeros': [r[0] for r in ocs_activas[:20]]},
+                      detalle=(f"Baja proveedor '{nombre}' · motivo: {motivo[:120]} · "
+                                f"OCs activas al momento: {len(ocs_activas)}"
+                                f"{' [FORCE]' if force else ''}"))
         except Exception as e:
             log.warning('audit_log BAJA_PROVEEDOR fallo: %s', e)
         conn.commit()
-        return jsonify({'ok': True, 'message': f"Proveedor '{nombre}' dado de baja"})
+        return jsonify({
+            'ok': True,
+            'message': f"Proveedor '{nombre}' dado de baja",
+            'ocs_activas_al_baja': len(ocs_activas),
+            'force_override': force,
+        })
     # PATCH — edit
     d = request.json or {}
     fields = ['contacto','email','telefono','nit','direccion',
