@@ -22729,12 +22729,39 @@ async function ckMarcar(itemId, estado){
   function renderB2BSection(cli) {
     const cliEsc = (cli.cliente_id || '').replace(/'/g, '&#39;').replace(/"/g, '&quot;');
     const cliNomEsc = (cli.cliente_nombre || '').replace(/'/g, '&#39;').replace(/"/g, '&quot;');
-    let html = '<div style="background:white;border-radius:14px;padding:18px;margin-bottom:14px;border:1px solid #e2e8f0">';
-    html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px">';
-    html += '<h3 style="margin:0;color:#1e40af;font-size:16px;font-weight:800">📦 ' + escapeHtmlNec(cli.cliente_nombre) + ' <span style="font-size:11px;font-weight:500;color:#94a3b8">· B2B · ' + cli.kg_total.toFixed(1) + ' kg pendiente</span></h3>';
-    // FEATURE 24-may noche · botón "+ Producto" pre-llena cliente
-    html += '<button onclick="abrirFormB2BCliente(\\''+cliEsc+'\\',\\''+cliNomEsc+'\\')" style="background:#7c3aed;color:#fff;border:none;padding:7px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">+ Producto</button>';
-    html += '</div>';
+    // Sebastián 25-may-2026 PM · "que todos los clientes se vean como
+    // animus" · mismo wrapper <details> cerrado por default + summary
+    // glassy con chips de conteo por estado del pedido (pendiente,
+    // confirmado, cancelado). Botón + Producto stopPropagation para no
+    // togglear el details al click.
+    const conteos = {pendiente:0, confirmado:0, en_produccion:0, despachado:0, cancelado:0};
+    (cli.pedidos || []).forEach(p => {
+      const e = (p.estado || 'pendiente').toLowerCase();
+      if (conteos[e] !== undefined) conteos[e]++;
+    });
+    const CHIP_CFG = {
+      pendiente:    {bg:'#e0e7ff', text:'#3730a3', emoji:'⏳'},
+      confirmado:   {bg:'#dcfce7', text:'#15803d', emoji:'✓'},
+      en_produccion:{bg:'#fef3c7', text:'#854d0e', emoji:'⚙'},
+      despachado:   {bg:'#d1fae5', text:'#065f46', emoji:'📦'},
+      cancelado:    {bg:'#fee2e2', text:'#991b1b', emoji:'✕'},
+    };
+    let chips = '';
+    Object.keys(CHIP_CFG).forEach(k => {
+      if (conteos[k] > 0) {
+        const cfg = CHIP_CFG[k];
+        chips += '<span style="background:'+cfg.bg+';color:'+cfg.text+';padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700;margin-left:4px">' + cfg.emoji + ' ' + conteos[k] + '</span>';
+      }
+    });
+
+    let html = '<details style="background:white;border-radius:14px;margin-bottom:14px;border:1px solid #e2e8f0;overflow:hidden">';
+    html += '<summary style="cursor:pointer;padding:14px 18px;background:linear-gradient(90deg,#eef2ff,#e0e7ff);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">';
+    html += '<div><span style="color:#3730a3;font-size:16px;font-weight:800">📦 ' + escapeHtmlNec(cli.cliente_nombre) + '</span>';
+    html += ' <span style="font-size:11px;font-weight:500;color:#94a3b8">· B2B · ' + (cli.pedidos||[]).length + ' pedidos · ' + cli.kg_total.toFixed(1) + ' kg</span></div>';
+    html += '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">' + chips;
+    html += '<button onclick="event.preventDefault();event.stopPropagation();abrirFormB2BCliente(\\''+cliEsc+'\\',\\''+cliNomEsc+'\\')" style="background:#7c3aed;color:#fff;border:none;padding:6px 12px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;margin-left:8px">+ Producto</button>';
+    html += '</div></summary>';
+    html += '<div style="padding:14px 18px;overflow-x:auto">';
     html += '<table style="width:100%;border-collapse:collapse;font-size:12px">';
     html += '<thead><tr style="background:#f1f5f9"><th style="text-align:left;padding:6px 10px">Producto</th><th style="padding:6px 10px">Uds</th><th style="padding:6px 10px">kg</th><th style="padding:6px 10px">Fecha</th><th style="padding:6px 10px">Estado</th><th style="padding:6px 10px">Lote</th><th style="padding:6px 10px"></th></tr></thead><tbody>';
     cli.pedidos.forEach(p => {
@@ -22761,7 +22788,7 @@ async function ckMarcar(itemId, estado){
         + '<td style="padding:6px 10px;text-align:right">' + btnAsignar + '<button onclick="cancelarB2B(' + p.id + ')" style="background:transparent;border:1px solid #cbd5e1;color:#64748b;padding:3px 8px;border-radius:4px;font-size:10px;cursor:pointer">Cancelar</button></td>'
         + '</tr>';
     });
-    html += '</tbody></table></div>';
+    html += '</tbody></table></div></details>';
     return html;
   }
 
