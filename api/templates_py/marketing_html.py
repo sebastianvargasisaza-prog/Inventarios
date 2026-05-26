@@ -577,6 +577,7 @@ window.addEventListener('unhandledrejection', function(ev) {
     </div>
     <div style="display:flex;gap:10px;align-items:center;">
       <button class="btn btn-outline btn-sm" onclick="loadContenido()" title="Refrescar">&#x21BB;</button>
+      <button class="btn btn-outline btn-sm" onclick="openABTestsModal()" title="A/B testing de creatividades" style="border-color:#a78bfa;color:#a78bfa">&#x1F52C; A/B Tests</button>
       <button class="btn btn-primary btn-sm" onclick="openContenidoModal()">+ Nueva pieza</button>
     </div>
   </div>
@@ -3228,6 +3229,155 @@ function _fmtPctBar(pct, color){
     </div>
     <span style="color:${col};font-weight:700;font-size:11px;min-width:46px;text-align:right">${pct}%</span>
   </div>`;
+}
+
+// AUDIT 27-may · A/B testing UI
+async function openABTestsModal(){
+  let modalEl = document.getElementById('modal-ab-tests');
+  if(!modalEl){
+    modalEl = document.createElement('div');
+    modalEl.id = 'modal-ab-tests';
+    modalEl.className = 'modal';
+    document.body.appendChild(modalEl);
+  }
+  modalEl.innerHTML = `<div class="modal-content" style="max-width:880px;max-height:88vh;overflow-y:auto">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+      <div class="modal-title">🔬 A/B Tests · creatividades</div>
+      <button class="btn btn-outline btn-sm" onclick="closeModal('modal-ab-tests')">✕</button>
+    </div>
+    <p style="color:#94a3b8;font-size:12px;margin-bottom:14px">
+      Compará 2 piezas del Kanban para descubrir cuál convierte mejor. Score con métricas IG live (likes + comentarios×3 + alcance÷10).
+    </p>
+    <button class="btn btn-primary btn-sm" onclick="openABTestCrear()" style="margin-bottom:12px">+ Nuevo A/B test</button>
+    <div id="ab-tests-list" style="margin-top:8px">Cargando…</div>
+  </div>`;
+  modalEl.classList.add('open');
+  await loadABTests();
+}
+
+async function loadABTests(){
+  const list = document.getElementById('ab-tests-list');
+  if(!list) return;
+  try {
+    const r = await fetch('/api/marketing/ab-tests', {credentials:'same-origin'});
+    if(!r.ok){ list.innerHTML = '<div style="color:#ef4444">Error '+r.status+'</div>'; return; }
+    const d = await r.json();
+    const tests = d.tests || [];
+    if(!tests.length){
+      list.innerHTML = '<div style="color:#64748b;padding:14px;text-align:center;background:#0f172a;border-radius:8px">Sin tests · creá el primero arriba</div>';
+      return;
+    }
+    list.innerHTML = tests.map(t => {
+      const gan = t.ganadora;
+      const ganChip = gan === 'a'
+        ? `<span style="background:#064e3b;color:#34d399;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700">🏆 A gana · ${t.ganadora_diff_pct}%</span>`
+        : gan === 'b'
+        ? `<span style="background:#064e3b;color:#34d399;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700">🏆 B gana · ${t.ganadora_diff_pct}%</span>`
+        : gan === 'tie'
+        ? `<span style="background:#3f3f46;color:#a8a29e;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700">⚖ Empate técnico</span>`
+        : gan === 'indeterminado'
+        ? `<span style="background:#7c2d12;color:#fdba74;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700">❓ Sin data</span>`
+        : `<span style="background:#1e3a8a;color:#93c5fd;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700">🟡 Activo</span>`;
+      const aScore = (parseInt(t.a_likes)||0)+(parseInt(t.a_com)||0)*3+(parseInt(t.a_alc)||0)/10;
+      const bScore = (parseInt(t.b_likes)||0)+(parseInt(t.b_com)||0)*3+(parseInt(t.b_alc)||0)/10;
+      return `<div style="background:#0f172a;border:1px solid #1e293b;border-radius:10px;padding:14px;margin-bottom:10px">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:8px">
+          <div>
+            <div style="font-size:14px;font-weight:700;color:#f1f5f9">${esc(t.nombre||'')}</div>
+            ${t.hipotesis?'<div style="font-size:11px;color:#94a3b8;margin-top:2px">'+esc(t.hipotesis)+'</div>':''}
+            <div style="font-size:10px;color:#64748b;margin-top:4px">Métrica: <b>${esc(t.metrica_objetivo||'engagement')}</b> · creado ${esc((t.fecha_creacion||'').slice(0,10))}</div>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
+            ${ganChip}
+            <button class="btn btn-outline btn-sm" onclick="calcularGanadorAB(${t.id})" style="font-size:10px;padding:2px 8px">🔄 Recalcular</button>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">
+          <div style="background:${gan==='a'?'#064e3b':'#1e293b'};padding:10px;border-radius:8px;border:${gan==='a'?'2px solid #10b981':'1px solid #334155'}">
+            <div style="font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px">Pieza A · #${t.contenido_a_id}</div>
+            <div style="display:flex;gap:8px;font-size:11px;margin-top:4px"><span>❤️ ${parseInt(t.a_likes)||0}</span><span>💬 ${parseInt(t.a_com)||0}</span><span>👁 ${parseInt(t.a_alc)||0}</span></div>
+            <div style="font-size:11px;color:${gan==='a'?'#34d399':'#94a3b8'};margin-top:4px;font-weight:700">Score: ${Math.round(aScore)}</div>
+          </div>
+          <div style="background:${gan==='b'?'#064e3b':'#1e293b'};padding:10px;border-radius:8px;border:${gan==='b'?'2px solid #10b981':'1px solid #334155'}">
+            <div style="font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px">Pieza B · #${t.contenido_b_id}</div>
+            <div style="display:flex;gap:8px;font-size:11px;margin-top:4px"><span>❤️ ${parseInt(t.b_likes)||0}</span><span>💬 ${parseInt(t.b_com)||0}</span><span>👁 ${parseInt(t.b_alc)||0}</span></div>
+            <div style="font-size:11px;color:${gan==='b'?'#34d399':'#94a3b8'};margin-top:4px;font-weight:700">Score: ${Math.round(bScore)}</div>
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+  } catch(e){ list.innerHTML = '<div style="color:#ef4444">Error: '+esc(e.message)+'</div>'; }
+}
+
+function openABTestCrear(){
+  // Modal compacto que pide los IDs y campos
+  const html = `
+    <div style="background:#1e293b;padding:14px;border-radius:8px;margin-top:12px">
+      <h4 style="font-size:13px;color:#f1f5f9;margin:0 0 10px">Crear nuevo A/B test</h4>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <input id="ab-nombre" placeholder="Nombre del test (ej. Reel rutina vs antes/después)" style="width:100%;padding:8px;background:#0f172a;border:1px solid #334155;color:#f1f5f9;border-radius:6px;font-size:12px">
+        <input id="ab-hipotesis" placeholder="Hipótesis · qué esperás (opcional)" style="width:100%;padding:8px;background:#0f172a;border:1px solid #334155;color:#f1f5f9;border-radius:6px;font-size:12px">
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+          <input id="ab-a-id" type="number" placeholder="ID pieza A" style="padding:8px;background:#0f172a;border:1px solid #334155;color:#f1f5f9;border-radius:6px;font-size:12px">
+          <input id="ab-b-id" type="number" placeholder="ID pieza B" style="padding:8px;background:#0f172a;border:1px solid #334155;color:#f1f5f9;border-radius:6px;font-size:12px">
+          <select id="ab-metrica" style="padding:8px;background:#0f172a;border:1px solid #334155;color:#f1f5f9;border-radius:6px;font-size:12px">
+            <option value="engagement">Engagement</option>
+            <option value="alcance">Alcance</option>
+            <option value="conversiones">Conversiones</option>
+          </select>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center;margin-top:6px">
+          <button class="btn btn-primary btn-sm" onclick="saveABTest()">✓ Crear</button>
+          <span id="ab-crear-status" style="font-size:11px;color:#10b981"></span>
+        </div>
+        <div style="font-size:10px;color:#64748b;margin-top:6px">
+          💡 Los IDs de las piezas los ves en la URL al hacer click en una card del Kanban, o en el botón "✏️ Editar"
+        </div>
+      </div>
+    </div>`;
+  const list = document.getElementById('ab-tests-list');
+  if(list) list.insertAdjacentHTML('afterbegin', html);
+}
+
+async function saveABTest(){
+  const body = {
+    nombre: document.getElementById('ab-nombre').value.trim(),
+    hipotesis: document.getElementById('ab-hipotesis').value.trim(),
+    contenido_a_id: parseInt(document.getElementById('ab-a-id').value)||0,
+    contenido_b_id: parseInt(document.getElementById('ab-b-id').value)||0,
+    metrica_objetivo: document.getElementById('ab-metrica').value,
+  };
+  const status = document.getElementById('ab-crear-status');
+  if(!body.nombre || !body.contenido_a_id || !body.contenido_b_id){
+    status.style.color = '#ef4444';
+    status.textContent = 'Nombre + ambos IDs obligatorios';
+    return;
+  }
+  try {
+    const r = await fetch('/api/marketing/ab-tests', _fetchOpts('POST', body));
+    const d = await r.json();
+    if(!r.ok){
+      status.style.color = '#ef4444';
+      status.textContent = 'Error: '+esc(d.error||r.status);
+      return;
+    }
+    status.style.color = '#10b981';
+    status.textContent = '✓ Test creado · refrescando…';
+    setTimeout(()=>{ openABTestsModal(); }, 800);
+  } catch(e){
+    status.style.color = '#ef4444';
+    status.textContent = 'Error red: '+e.message;
+  }
+}
+
+async function calcularGanadorAB(tid){
+  try {
+    const r = await fetch('/api/marketing/ab-tests/'+tid+'/calcular-ganador', _fetchOpts('POST', {}));
+    const d = await r.json();
+    if(!r.ok){ alert('Error: '+(d.error||r.status)); return; }
+    alert(d.mensaje + '\n\nConfianza: ' + d.confianza + '\nMétrica: ' + d.metrica_usada);
+    loadABTests();
+  } catch(e){ alert('Error red: '+e.message); }
 }
 
 // AUDIT 27-may · Widget Sentiment IG
