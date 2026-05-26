@@ -336,6 +336,14 @@ window.addEventListener('unhandledrejection', function(ev) {
     <div class="kpi-card blue"><div class="kpi-label">Contactos GHL</div><div class="kpi-val" id="ghl-total">—</div><div class="kpi-sub" id="ghl-nuevos">Nuevos 30d: —</div></div>
   </div>
 
+  <!-- AUDIT 26-may · Widget Meta del mes (#4 sprint marketing-superior) -->
+  <div style="font-size:11px;font-weight:700;color:#10b981;text-transform:uppercase;letter-spacing:.8px;margin:16px 0 8px;display:flex;align-items:center;gap:8px">
+    <span>🎯 Meta del mes</span>
+    <button class="btn btn-outline btn-sm" onclick="openMetaModal()" style="font-size:10px;padding:2px 8px">⚙ Editar meta</button>
+    <button class="btn btn-outline btn-sm" onclick="openCalendarioCosmeticoModal()" style="font-size:10px;padding:2px 8px">📅 Calendario cosmético</button>
+  </div>
+  <div id="dash-meta-progreso" style="background:#0f172a;border:1px solid #1e293b;border-radius:10px;padding:14px 16px;margin-bottom:16px;color:#94a3b8;font-size:12px">Cargando meta del mes…</div>
+
   <!-- Instagram KPIs -->
   <div style="font-size:11px;font-weight:700;color:#e1306c;text-transform:uppercase;letter-spacing:.8px;margin:16px 0 8px;">📸 Instagram — Engagement real</div>
   <div class="kpi-grid" id="dash-ig-kpis">
@@ -1641,6 +1649,7 @@ async function refreshIgToken() {
 
 async function loadDashboard() {
   loadConnections();
+  loadMetaProgreso();  // AUDIT 26-may · widget meta del mes
   let _dashResp;
   try { _dashResp = await fetch('/api/marketing/dashboard'); }
   catch(e) { showToast('Error red dashboard: '+e.message,'error'); return; }
@@ -3090,6 +3099,248 @@ async function loadConnections() {
       el.className = 'platform-pill ' + (conn[k] ? 'pill-'+pid : 'pill-off');
     });
   } catch(e) {}
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// AUDIT 26-may · Meta del mes + Calendario cosmético (sprint #4)
+// ═══════════════════════════════════════════════════════════════════════
+
+function _mesActual(){ return new Date().toISOString().substr(0,7); }
+
+function _fmtPctBar(pct, color){
+  if(pct == null) return '<span style="color:#64748b">sin meta</span>';
+  const cap = Math.min(pct, 100);
+  const col = pct >= 100 ? '#10b981' : pct >= 70 ? '#22c55e' : pct >= 40 ? '#f59e0b' : '#ef4444';
+  return `<div style="display:flex;align-items:center;gap:8px">
+    <div style="flex:1;background:#1e293b;border-radius:4px;height:8px;overflow:hidden;min-width:60px">
+      <div style="background:${col};height:100%;width:${cap}%;transition:width .3s"></div>
+    </div>
+    <span style="color:${col};font-weight:700;font-size:11px;min-width:46px;text-align:right">${pct}%</span>
+  </div>`;
+}
+
+async function loadMetaProgreso(){
+  const el = document.getElementById('dash-meta-progreso');
+  if(!el) return;
+  try {
+    const r = await fetch('/api/marketing/meta-progreso?mes='+_mesActual(), {credentials:'same-origin'});
+    if(!r.ok){
+      el.innerHTML = '<span style="color:#ef4444">Error HTTP '+r.status+'</span>';
+      return;
+    }
+    const d = await r.json();
+    if(!d.meta){
+      el.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;gap:12px">
+        <span style="color:#94a3b8">No hay meta configurada para ${esc(d.mes)} · click "⚙ Editar meta" para crearla.</span>
+        <button class="btn btn-primary btn-sm" onclick="openMetaModal()">⚙ Configurar meta</button>
+      </div>`;
+      return;
+    }
+    const fmtCOP = v => '$'+Number(v||0).toLocaleString('es-CO');
+    const av = d.avance || {};
+    const py = d.proyeccion_fin_de_mes || {};
+    el.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div style="font-size:12px;color:#94a3b8">${esc(d.mes)} · ${d.dias_transcurridos}/${d.dias_mes} días</div>
+        <div style="font-size:10px;color:#64748b">Proyección fin de mes: <b style="color:#a78bfa">${fmtCOP(py.revenue||0)}</b> (${py.revenue_pct_meta||0}% meta)</div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px">
+        <div>
+          <div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">💰 Revenue · ${fmtCOP(av.revenue)} / ${fmtCOP(d.meta.revenue)}</div>
+          ${_fmtPctBar(av.revenue_pct)}
+        </div>
+        <div>
+          <div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">📦 Pedidos · ${av.pedidos||0} / ${d.meta.pedidos||0}</div>
+          ${_fmtPctBar(av.pedidos_pct)}
+        </div>
+        <div>
+          <div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">🆕 Clientes nuevos · ${av.clientes_nuevos||0} / ${d.meta.clientes_nuevos||0}</div>
+          ${_fmtPctBar(av.clientes_nuevos_pct)}
+        </div>
+      </div>`;
+  } catch(e){
+    el.innerHTML = '<span style="color:#ef4444">Error: '+esc(e.message)+'</span>';
+  }
+}
+
+async function openMetaModal(){
+  const mes = _mesActual();
+  let actual = null;
+  try {
+    const r = await fetch('/api/marketing/metas?mes='+mes, {credentials:'same-origin'});
+    if(r.ok){ const d = await r.json(); actual = d.meta; }
+  } catch(_){}
+  const cur = actual || {revenue_meta:0, pedidos_meta:0, clientes_nuevos_meta:0, notas:''};
+  let modalEl = document.getElementById('modal-meta-mensual');
+  if(!modalEl){
+    modalEl = document.createElement('div');
+    modalEl.id = 'modal-meta-mensual';
+    modalEl.className = 'modal';
+    document.body.appendChild(modalEl);
+  }
+  modalEl.innerHTML = `<div class="modal-content" style="max-width:520px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+      <div class="modal-title">🎯 Meta del mes · ${esc(mes)}</div>
+      <button class="btn btn-outline btn-sm" onclick="closeModal('modal-meta-mensual')">✕</button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div>
+        <label style="display:block;font-size:11px;color:#94a3b8;margin-bottom:4px">💰 Revenue meta (COP)</label>
+        <input id="meta-rev" type="number" min="0" step="100000" value="${cur.revenue_meta||0}" style="width:100%;padding:10px;background:#1e293b;border:1px solid #334155;color:#f1f5f9;border-radius:6px">
+      </div>
+      <div>
+        <label style="display:block;font-size:11px;color:#94a3b8;margin-bottom:4px">📦 Pedidos meta</label>
+        <input id="meta-ped" type="number" min="0" step="10" value="${cur.pedidos_meta||0}" style="width:100%;padding:10px;background:#1e293b;border:1px solid #334155;color:#f1f5f9;border-radius:6px">
+      </div>
+      <div>
+        <label style="display:block;font-size:11px;color:#94a3b8;margin-bottom:4px">🆕 Clientes nuevos meta</label>
+        <input id="meta-cln" type="number" min="0" step="5" value="${cur.clientes_nuevos_meta||0}" style="width:100%;padding:10px;background:#1e293b;border:1px solid #334155;color:#f1f5f9;border-radius:6px">
+      </div>
+      <div>
+        <label style="display:block;font-size:11px;color:#94a3b8;margin-bottom:4px">📝 Notas (opcional)</label>
+        <textarea id="meta-notas" rows="2" style="width:100%;padding:10px;background:#1e293b;border:1px solid #334155;color:#f1f5f9;border-radius:6px;resize:vertical">${esc(cur.notas||'')}</textarea>
+      </div>
+      <div id="meta-alert" style="display:none"></div>
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:8px">
+        <button class="btn btn-outline" onclick="closeModal('modal-meta-mensual')">Cancelar</button>
+        <button class="btn btn-primary" onclick="saveMetaMensual()">${actual?'Actualizar':'Crear'}</button>
+      </div>
+    </div>
+  </div>`;
+  modalEl.classList.add('open');
+}
+
+async function saveMetaMensual(){
+  const mes = _mesActual();
+  const body = {
+    mes: mes,
+    revenue_meta: parseFloat(document.getElementById('meta-rev').value)||0,
+    pedidos_meta: parseInt(document.getElementById('meta-ped').value)||0,
+    clientes_nuevos_meta: parseInt(document.getElementById('meta-cln').value)||0,
+    notas: document.getElementById('meta-notas').value||'',
+  };
+  if(body.revenue_meta < 0 || body.pedidos_meta < 0 || body.clientes_nuevos_meta < 0){
+    document.getElementById('meta-alert').innerHTML = '<div style="color:#ef4444;font-size:12px">Valores no pueden ser negativos</div>';
+    document.getElementById('meta-alert').style.display = 'block';
+    return;
+  }
+  try {
+    const r = await fetch('/api/marketing/metas', _fetchOpts('POST', body));
+    const d = await r.json().catch(()=>({}));
+    if(r.ok && d.ok){
+      closeModal('modal-meta-mensual');
+      showToast('Meta de '+mes+' guardada','success');
+      loadMetaProgreso();
+    } else {
+      document.getElementById('meta-alert').innerHTML = '<div style="color:#ef4444;font-size:12px">Error: '+esc(d.error||('HTTP '+r.status))+'</div>';
+      document.getElementById('meta-alert').style.display = 'block';
+    }
+  } catch(e){
+    document.getElementById('meta-alert').innerHTML = '<div style="color:#ef4444;font-size:12px">Error red: '+esc(e.message)+'</div>';
+    document.getElementById('meta-alert').style.display = 'block';
+  }
+}
+
+async function openCalendarioCosmeticoModal(){
+  let modalEl = document.getElementById('modal-cal-cosm');
+  if(!modalEl){
+    modalEl = document.createElement('div');
+    modalEl.id = 'modal-cal-cosm';
+    modalEl.className = 'modal';
+    document.body.appendChild(modalEl);
+  }
+  modalEl.innerHTML = `<div class="modal-content" style="max-width:760px;max-height:85vh;overflow-y:auto">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+      <div class="modal-title">📅 Calendario cosmético editable</div>
+      <button class="btn btn-outline btn-sm" onclick="closeModal('modal-cal-cosm')">✕</button>
+    </div>
+    <div style="font-size:11px;color:#94a3b8;margin-bottom:10px">
+      Eventos cosméticos que los agentes IA usan para calcular demanda proyectada · multiplicador = factor vs día normal (Black Friday típico 3.5).
+    </div>
+    <div id="cal-cosm-list" style="margin-bottom:14px">Cargando…</div>
+    <div style="border-top:1px solid #334155;padding-top:12px">
+      <div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">➕ Agregar evento</div>
+      <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr auto;gap:8px;align-items:end">
+        <div><label style="font-size:10px;color:#64748b">Evento</label><input id="cal-nuevo-evento" placeholder="Ej. Black Friday Animus" style="width:100%;padding:6px 8px;background:#1e293b;border:1px solid #334155;color:#f1f5f9;border-radius:6px;font-size:12px"></div>
+        <div><label style="font-size:10px;color:#64748b">Fecha</label><input id="cal-nuevo-fecha" type="date" style="width:100%;padding:6px 8px;background:#1e293b;border:1px solid #334155;color:#f1f5f9;border-radius:6px;font-size:12px"></div>
+        <div><label style="font-size:10px;color:#64748b">Multiplicador</label><input id="cal-nuevo-mult" type="number" step="0.1" min="0.1" max="10" value="2.0" style="width:100%;padding:6px 8px;background:#1e293b;border:1px solid #334155;color:#f1f5f9;border-radius:6px;font-size:12px"></div>
+        <div><label style="font-size:10px;color:#64748b">Color</label><input id="cal-nuevo-color" type="color" value="#a78bfa" style="width:100%;height:32px;padding:0;border:1px solid #334155;border-radius:6px;background:#1e293b"></div>
+        <button class="btn btn-primary btn-sm" onclick="addEventoCalendario()">+ Agregar</button>
+      </div>
+      <div id="cal-cosm-alert" style="margin-top:8px"></div>
+    </div>
+  </div>`;
+  modalEl.classList.add('open');
+  await loadEventosCalendario();
+}
+
+async function loadEventosCalendario(){
+  const list = document.getElementById('cal-cosm-list');
+  if(!list) return;
+  try {
+    const r = await fetch('/api/marketing/eventos-calendario?incluir_inactivos=1', {credentials:'same-origin'});
+    if(!r.ok){ list.innerHTML = '<span style="color:#ef4444">Error '+r.status+'</span>'; return; }
+    const d = await r.json();
+    const evs = d.eventos || [];
+    if(!evs.length){ list.innerHTML = '<div style="color:#64748b;padding:14px;text-align:center">Sin eventos · agrega el primero abajo</div>'; return; }
+    list.innerHTML = '<table style="width:100%;font-size:12px;border-collapse:collapse"><thead><tr style="color:#94a3b8;font-weight:700;text-align:left"><th style="padding:6px;border-bottom:1px solid #334155">Evento</th><th style="padding:6px;border-bottom:1px solid #334155">Fecha</th><th style="padding:6px;border-bottom:1px solid #334155">×Mult.</th><th style="padding:6px;border-bottom:1px solid #334155">Color</th><th style="padding:6px;border-bottom:1px solid #334155;text-align:center">Activo</th><th style="padding:6px;border-bottom:1px solid #334155;text-align:right">Acción</th></tr></thead><tbody>'
+      + evs.map(e => `<tr style="border-bottom:1px solid #1e293b;${e.activo?'':'opacity:.45'}">
+        <td style="padding:6px">${esc(e.evento)}</td>
+        <td style="padding:6px;font-family:monospace;color:#94a3b8">${esc(e.fecha)}</td>
+        <td style="padding:6px"><span style="background:#1e1b4b;color:#a78bfa;padding:1px 6px;border-radius:6px;font-weight:700">${e.multiplicador}×</span></td>
+        <td style="padding:6px"><div style="width:24px;height:18px;background:${esc(e.color||'#94a3b8')};border-radius:3px;border:1px solid #334155"></div></td>
+        <td style="padding:6px;text-align:center">${e.activo?'✓':'—'}</td>
+        <td style="padding:6px;text-align:right">
+          ${e.activo
+            ? `<button class="btn btn-danger btn-sm" onclick="toggleEventoCal(${parseInt(e.id)||0}, 0)" style="font-size:10px;padding:2px 8px" title="Desactivar">🗑</button>`
+            : `<button class="btn btn-outline btn-sm" onclick="toggleEventoCal(${parseInt(e.id)||0}, 1)" style="font-size:10px;padding:2px 8px" title="Reactivar">↻</button>`}
+        </td>
+      </tr>`).join('')
+      + '</tbody></table>';
+  } catch(e){ list.innerHTML = '<span style="color:#ef4444">Error: '+esc(e.message)+'</span>'; }
+}
+
+async function toggleEventoCal(id, activo){
+  if(activo === 0 && !confirm('¿Desactivar este evento? Los agentes ya no lo considerarán.')) return;
+  try {
+    const r = activo === 0
+      ? await fetch('/api/marketing/eventos-calendario/'+id, _fetchOpts('DELETE'))
+      : await fetch('/api/marketing/eventos-calendario/'+id, _fetchOpts('PUT', {activo: true}));
+    const d = await r.json().catch(()=>({}));
+    if(!r.ok){
+      document.getElementById('cal-cosm-alert').innerHTML = '<div style="color:#ef4444;font-size:12px">Error: '+esc(d.error||r.status)+'</div>';
+      return;
+    }
+    loadEventosCalendario();
+  } catch(e){
+    document.getElementById('cal-cosm-alert').innerHTML = '<div style="color:#ef4444;font-size:12px">Error red: '+esc(e.message)+'</div>';
+  }
+}
+
+async function addEventoCalendario(){
+  const ev = document.getElementById('cal-nuevo-evento').value.trim();
+  const fc = document.getElementById('cal-nuevo-fecha').value;
+  const mult = parseFloat(document.getElementById('cal-nuevo-mult').value)||1;
+  const col = document.getElementById('cal-nuevo-color').value;
+  const alert = document.getElementById('cal-cosm-alert');
+  if(!ev || !fc){ alert.innerHTML = '<div style="color:#ef4444;font-size:12px">Evento y fecha obligatorios</div>'; return; }
+  try {
+    const r = await fetch('/api/marketing/eventos-calendario', _fetchOpts('POST', {
+      evento: ev, fecha: fc, multiplicador: mult, color: col
+    }));
+    const d = await r.json().catch(()=>({}));
+    if(!r.ok){
+      alert.innerHTML = '<div style="color:#ef4444;font-size:12px">Error: '+esc(d.error||r.status)+'</div>';
+      return;
+    }
+    alert.innerHTML = '<div style="color:#10b981;font-size:12px">✓ Evento agregado</div>';
+    document.getElementById('cal-nuevo-evento').value = '';
+    document.getElementById('cal-nuevo-fecha').value = '';
+    loadEventosCalendario();
+    setTimeout(()=>{ alert.innerHTML = ''; }, 2000);
+  } catch(e){
+    alert.innerHTML = '<div style="color:#ef4444;font-size:12px">Error red: '+esc(e.message)+'</div>';
+  }
 }
 
 // ─── Feedback loop sobre agentes IA ────────────────────────────────────
