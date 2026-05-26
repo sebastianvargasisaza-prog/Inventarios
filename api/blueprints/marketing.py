@@ -656,6 +656,251 @@ def mkt_influencer_generar_cupon(iid):
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Influencer outreach automation · mensajes pre-armados WhatsApp/Email/IG DM
+# ──────────────────────────────────────────────────────────────────────────────
+def _outreach_mensajes_template(inf, sku_info, campana, ultima_colab_dias):
+    """Fallback sin Claude · plantillas decentes (no las del audit bug)."""
+    nombre = (inf.get('nombre') or '').split()[0] if inf.get('nombre') else 'amig@'
+    sku = sku_info.get('sku', '') if sku_info else ''
+    sku_nombre = sku_info.get('nombre', sku) if sku_info else sku
+    cupon = inf.get('discount_code') or ''
+    tarifa = inf.get('tarifa') or 0
+    fmt_cop = lambda v: f"${int(v):,}".replace(',', '.')
+    cupon_line = f" Te dejamos tu cupón {cupon} para tu audiencia." if cupon else ""
+    tarifa_line = f" Tarifa pactada: {fmt_cop(tarifa)}." if tarifa > 0 else ""
+    re_engage = (
+        f" Hace {ultima_colab_dias}d no colaboramos · nos encantaría retomar."
+        if ultima_colab_dias and ultima_colab_dias > 60 else ""
+    )
+    fecha_camp = ''
+    if campana and campana.get('fecha_inicio'):
+        fecha_camp = f" La campaña arranca el {campana['fecha_inicio']}."
+    # WhatsApp · casual + 1 emoji + bajo 180 chars
+    whatsapp = (
+        f"Hola {nombre}! 👋 Te tenemos una colab con ÁNIMUS Lab para {sku_nombre}."
+        f"{re_engage} ¿Charlamos?"
+    )[:180]
+    # Email · 3-4 oraciones formales
+    email_subject = f"Colaboración ÁNIMUS Lab · {sku_nombre}"
+    email_body = (
+        f"Hola {nombre},\n\n"
+        f"Soy Sebastián de ÁNIMUS Lab. Te escribo porque queremos invitarte a colaborar "
+        f"con nuestro producto {sku_nombre}.{fecha_camp}{tarifa_line}{cupon_line}{re_engage}\n\n"
+        f"¿Te parece si coordinamos? Quedo atento a tu respuesta.\n\n"
+        f"Saludos,\nSebastián Vargas\nÁNIMUS Lab · HHA Group"
+    )
+    # Instagram DM · corto + directo
+    ig_dm = (
+        f"Hola {nombre}! ¿Te interesa una colab con ÁNIMUS Lab para {sku_nombre}? "
+        f"Tengo todos los detalles para enviarte."
+    )[:200]
+    return {
+        'whatsapp': whatsapp,
+        'email_subject': email_subject,
+        'email_body': email_body,
+        'instagram_dm': ig_dm,
+    }
+
+
+def _outreach_mensajes_claude(conn, inf, sku_info, campana, ultima_colab_dias):
+    """Genera mensajes outreach via Claude · personalizado por contexto."""
+    api_key = _cfg(conn, "anthropic_api_key")
+    if not api_key:
+        return None
+    contexto = {
+        'influencer': {
+            'nombre': inf.get('nombre'),
+            'red_social': inf.get('red_social'),
+            'usuario_red': inf.get('usuario_red'),
+            'nicho': inf.get('nicho'),
+            'seguidores': inf.get('seguidores'),
+            'tarifa': inf.get('tarifa'),
+            'cupon': inf.get('discount_code'),
+            'ultima_colaboracion_dias_atras': ultima_colab_dias,
+        },
+        'sku': sku_info or {},
+        'campana': campana or {},
+    }
+    prompt = (
+        "Eres Sebastián Vargas, fundador de ÁNIMUS Lab (skincare científico premium "
+        "colombiano). Vas a escribir 3 mensajes para invitar a este influencer a una "
+        "colaboración. Devuelve EXACTAMENTE este JSON sin texto ni fence ```:\n"
+        '{"whatsapp":"...","email_subject":"...","email_body":"...","instagram_dm":"..."}\n\n'
+        "Reglas:\n"
+        "- WhatsApp: ≤180 chars · arranque con primer nombre del influencer · 1 emoji · tono casual experto · NO usar 'piel latina' ni 'tu aliado para brillar' · CTA suave 'charlamos?'\n"
+        "- Email subject: ≤60 chars · curiosidad/beneficio concreto · sin clickbait\n"
+        "- Email body: 4-5 oraciones · segunda persona · menciona producto + activo científico si aplica · cierra con CTA + firma 'Sebastián Vargas · ÁNIMUS Lab'\n"
+        "- Instagram DM: ≤200 chars · directo · termina ofreciendo detalles\n"
+        "- Si hay ultima_colaboracion_dias_atras > 60: incluí reconocimiento ('hace tiempo no colaboramos')\n"
+        "- Si hay cupon: mencionarlo como beneficio para su audiencia\n"
+        "- Si campana.fecha_inicio: mencionar fecha\n"
+        "- TODO en español de Colombia · tuteá · sin formalidades excesivas\n\n"
+        f"Datos:\n{json.dumps(contexto, ensure_ascii=False, default=str)}"
+    )
+    try:
+        payload = json.dumps({
+            "model": "claude-haiku-4-5-20251001",
+            "max_tokens": 1200,
+            "messages": [{"role": "user", "content": prompt}]
+        }).encode("utf-8")
+        req = urllib.request.Request(
+            "https://api.anthropic.com/v1/messages",
+            data=payload,
+            headers={"x-api-key": api_key, "anthropic-version": "2023-06-01",
+                      "content-type": "application/json"},
+            method="POST"
+        )
+        with urllib.request.urlopen(req, timeout=25) as resp:
+            rj = json.loads(resp.read().decode("utf-8"))
+            text = rj["content"][0]["text"].strip()
+            if text.startswith('```'):
+                text = _re_atrib.sub(r'^```(?:json)?\s*|\s*```$', '', text, flags=_re_atrib.MULTILINE).strip()
+            return json.loads(text)
+    except Exception as e:
+        log.warning("outreach Claude fallo: %s", e)
+        return None
+
+
+@bp.route('/api/marketing/outreach-mensaje')
+def mkt_outreach_mensaje():
+    """Genera mensajes pre-armados para contactar a un influencer.
+
+    Params:
+      - influencer_id: obligatorio
+      - sku: opcional, SKU específico del producto a promocionar
+      - campana_id: opcional, contextualiza con la campaña
+      - use_ia: 1 (default) o 0 · si 0 usa plantilla determinista
+    """
+    u, err, code = _auth()
+    if err: return err, code
+    try:
+        iid = int(request.args.get('influencer_id') or 0)
+    except (TypeError, ValueError):
+        return jsonify({"error": "influencer_id inválido"}), 400
+    if not iid:
+        return jsonify({"error": "influencer_id requerido"}), 400
+    sku_param = (request.args.get('sku') or '').strip().upper()
+    try:
+        cid = int(request.args.get('campana_id') or 0) or None
+    except (TypeError, ValueError):
+        cid = None
+    use_ia = (request.args.get('use_ia') or '1').lower() not in ('0','false','no')
+    conn = _db(); c = conn.cursor()
+    # Influencer
+    inf_row = c.execute("SELECT * FROM marketing_influencers WHERE id=?", (iid,)).fetchone()
+    if not inf_row:
+        return jsonify({"error": f"Influencer {iid} no encontrado"}), 404
+    inf = dict(inf_row)
+    # SKU info (opcional)
+    sku_info = None
+    if sku_param:
+        try:
+            sk_row = c.execute("""
+                SELECT sm.sku, sm.tono_label, sm.ml_unidad,
+                       sm.producto_nombre AS nombre,
+                       (SELECT MAX(precio_base) FROM stock_pt WHERE sku=sm.sku) AS precio,
+                       (SELECT COALESCE(SUM(unidades_disponible),0) FROM stock_pt
+                        WHERE sku=sm.sku AND estado='Disponible') AS stock
+                FROM sku_producto_map sm WHERE sm.sku=?
+            """, (sku_param,)).fetchone()
+            if sk_row:
+                sku_info = dict(sk_row)
+        except Exception:
+            pass
+    # Campaña (opcional)
+    campana = None
+    if cid:
+        try:
+            cm = c.execute("SELECT id, nombre, canal, fecha_inicio, fecha_fin, sku_objetivo "
+                            "FROM marketing_campanas WHERE id=?", (cid,)).fetchone()
+            if cm:
+                campana = dict(cm)
+        except Exception:
+            pass
+    # Última colaboración (días atrás) · cruza con pagos_influencers
+    ultima_colab_dias = None
+    try:
+        from datetime import datetime as _dt2
+        last = c.execute(
+            "SELECT MAX(fecha) AS f FROM pagos_influencers "
+            "WHERE LOWER(TRIM(influencer_nombre))=? AND estado='Pagada'",
+            ((inf.get('nombre') or '').strip().lower(),)
+        ).fetchone()
+        if last and last['f']:
+            ultima_colab_dias = (_dt2.now() - _dt2.strptime(last['f'][:10], '%Y-%m-%d')).days
+    except Exception:
+        pass
+    # Anti-spam · mensaje a este influencer en últimos 14 días?
+    anti_spam_warn = None
+    try:
+        from datetime import datetime as _dt3, timedelta as _td3
+        h14 = (_dt3.now() - _td3(days=14)).strftime('%Y-%m-%d')
+        prev = c.execute("""
+            SELECT COUNT(*) AS n, MAX(fecha_creacion) AS ult
+            FROM marketing_outreach_log
+            WHERE influencer_id=? AND fecha_creacion >= ?
+        """, (iid, h14)).fetchone()
+        if prev and prev['n'] > 0:
+            anti_spam_warn = (
+                f"⚠ Ya generaste {prev['n']} mensaje(s) para este influencer "
+                f"en los últimos 14 días · último: {prev['ult']}"
+            )
+    except Exception:
+        pass
+    # Generar mensajes
+    mensajes = None
+    if use_ia:
+        mensajes = _outreach_mensajes_claude(conn, inf, sku_info, campana, ultima_colab_dias)
+    if not mensajes:
+        mensajes = _outreach_mensajes_template(inf, sku_info, campana, ultima_colab_dias)
+    # Registrar en log (preview del whatsapp = identificador rápido)
+    try:
+        c.execute("""
+            INSERT INTO marketing_outreach_log
+            (influencer_id, sku_objetivo, campana_id, canal, mensaje_preview, generado_por)
+            VALUES (?,?,?,?,?,?)
+        """, (iid, sku_param or None, cid, 'manual',
+              (mensajes.get('whatsapp') or '')[:200], u))
+        conn.commit()
+    except Exception as _le:
+        log.warning("outreach log insert fallo: %s", _le)
+    # Build deeplinks (mailto + wa.me) usando datos del influencer
+    import urllib.parse as _up
+    deeplinks = {}
+    if inf.get('email'):
+        body_enc = _up.quote(mensajes['email_body'])
+        subj_enc = _up.quote(mensajes['email_subject'])
+        deeplinks['mailto'] = f"mailto:{inf['email']}?subject={subj_enc}&body={body_enc}"
+    if inf.get('telefono'):
+        # Sanitizar teléfono: solo dígitos
+        tel = ''.join(d for d in str(inf['telefono']) if d.isdigit())
+        if tel:
+            if not tel.startswith('57'):  # Colombia
+                tel = '57' + tel.lstrip('0')
+            wa_enc = _up.quote(mensajes['whatsapp'])
+            deeplinks['whatsapp_web'] = f"https://wa.me/{tel}?text={wa_enc}"
+    return jsonify({
+        'influencer': {
+            'id': inf['id'],
+            'nombre': inf.get('nombre'),
+            'red_social': inf.get('red_social'),
+            'usuario_red': inf.get('usuario_red'),
+            'email': inf.get('email'),
+            'telefono': inf.get('telefono'),
+            'discount_code': inf.get('discount_code'),
+            'tarifa': inf.get('tarifa'),
+            'ultima_colab_dias': ultima_colab_dias,
+        },
+        'sku': sku_info,
+        'campana': campana,
+        'mensajes': mensajes,
+        'deeplinks': deeplinks,
+        'generado_con': 'claude-haiku-4-5' if (use_ia and 'whatsapp' in (mensajes or {}) and len(mensajes.get('whatsapp','')) > 20) else 'plantilla',
+        'anti_spam_warning': anti_spam_warn,
+    })
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Reportes ejecutivos semanales · email lunes 8am Bogotá
 # ──────────────────────────────────────────────────────────────────────────────
 def _build_reporte_ejecutivo_data(conn):

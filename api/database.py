@@ -312,6 +312,28 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (191, "marketing_outreach_log · audit de mensajes pre-armados a influencers · Sebastián 26-may-2026 PM", [
+        # FEATURE 26-may · cada vez que Sebastián genera/usa un mensaje
+        # pre-armado de outreach a un influencer, queda registrado aquí ·
+        # sirve para:
+        #   1. Audit trail (quién contactó a quién, cuándo, por qué SKU)
+        #   2. Anti-spam: warning si ya enviaste mensaje en últimos 14d
+        #   3. Métricas: cuántos outreach al mes, conversión a colaboración
+        """CREATE TABLE IF NOT EXISTS marketing_outreach_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            influencer_id INTEGER NOT NULL,
+            sku_objetivo TEXT,
+            campana_id INTEGER,
+            canal TEXT CHECK(canal IN ('whatsapp','email','instagram','manual')),
+            mensaje_preview TEXT,            -- primeros 200 chars del texto generado
+            generado_por TEXT,
+            usado_en TEXT,                   -- timestamp si user marcó "ya envié"
+            fecha_creacion TEXT DEFAULT (datetime('now','-5 hours')),
+            FOREIGN KEY (influencer_id) REFERENCES marketing_influencers(id) ON DELETE CASCADE
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_outreach_influencer ON marketing_outreach_log(influencer_id, fecha_creacion)",
+        "CREATE INDEX IF NOT EXISTS idx_outreach_fecha ON marketing_outreach_log(fecha_creacion)",
+    ]),
     (190, "users_mfa.secret_enc · TOTP secrets encriptados at rest · Sebastián 26-may-2026 PM", [
         # P1 audit MFA · TOTP secrets se guardaban PLAINTEXT en users_mfa.secret
         # · si DB dump leak, atacante puede generar códigos MFA válidos.

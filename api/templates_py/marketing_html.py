@@ -2451,6 +2451,7 @@ function renderInfluencersTable() {
       +`<td style="white-space:nowrap;" onclick="event.stopPropagation()">`
         +`<button class="btn btn-outline btn-sm" onclick="editInfluencer(${r.id})" title="Editar datos bancarios y de contacto">&#x270F;&#xFE0F;</button> `
         +`<button class="btn btn-outline btn-sm" onclick="generarCuponInf(${r.id})" title="${r.discount_code?'Regenerar':'Generar'} cup\u00f3n Shopify para atribuci\u00f3n de ventas" style="border-color:#a78bfa;color:#a78bfa">&#x1F39F;&#xFE0F;</button> `
+        +`<button class="btn btn-outline btn-sm" onclick="abrirOutreachModal(${r.id})" title="Generar mensajes WhatsApp/Email/IG para contactar al influencer" style="border-color:#34d399;color:#34d399">&#x1F4E8;</button> `
         +`<button class="btn btn-primary btn-sm" onclick="solicitarPagoInfById(${r.id})" title="Crear cuenta de cobro y enviar a Sebasti\u00e1n para que la pague" style="font-weight:700;padding:5px 11px;">&#x1F4B8; Solicitar pago</button> `
         +`<button class="btn btn-danger btn-sm" onclick="abrirDarDeBajaById(${r.id})" title="Dar de baja">&#x26D4;</button> `
         +`<button class="btn btn-danger btn-sm" onclick="eliminarInfluencerById(${r.id})" title="Eliminar duplicado (solo sin pagos efectuados)">&#x1F5D1;&#xFE0F;</button>`
@@ -2580,6 +2581,107 @@ async function confirmarDarDeBaja() {
 
 // Sebastian (29-abr-2026): "jeferson dice que hay creadores dobles, pero no
 // le deja eliminarlos entonces pon una opcion de eliminar".
+// AUDIT 26-may PM · outreach automation · mensajes pre-armados WhatsApp/Email/IG
+async function abrirOutreachModal(id){
+  const p = _INF_ROW_PAYLOAD[id];
+  const nombre = p ? p.nombre : 'influencer #'+id;
+  // Prompt para SKU (opcional · el más rápido)
+  const sku = (prompt('SKU para promocionar (opcional · dejá vacío para mensaje genérico)\n\nEj: GLOSSMOCCA, ECEN, SAH', '')||'').trim().toUpperCase();
+  // Modal placeholder
+  let modalEl = document.getElementById('modal-outreach');
+  if(!modalEl){
+    modalEl = document.createElement('div');
+    modalEl.id = 'modal-outreach';
+    modalEl.className = 'modal';
+    document.body.appendChild(modalEl);
+  }
+  modalEl.innerHTML = `<div class="modal-content" style="max-width:680px;max-height:85vh;overflow-y:auto">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+      <div class="modal-title">📨 Outreach a ${esc(nombre)}${sku?(' · '+esc(sku)):''}</div>
+      <button class="btn btn-outline btn-sm" onclick="closeModal('modal-outreach')">✕</button>
+    </div>
+    <div style="color:#94a3b8;padding:30px;text-align:center">Generando mensajes con IA…</div>
+  </div>`;
+  modalEl.classList.add('open');
+  const params = new URLSearchParams({influencer_id: id});
+  if(sku) params.set('sku', sku);
+  try {
+    const r = await fetch('/api/marketing/outreach-mensaje?'+params.toString(), {credentials:'same-origin'});
+    const d = await r.json();
+    if(!r.ok){
+      modalEl.querySelector('.modal-content').innerHTML += '<div style="color:#ef4444;padding:14px">Error: '+esc(d.error||r.status)+'</div>';
+      return;
+    }
+    _renderOutreachModal(modalEl, d);
+  } catch(e){
+    modalEl.querySelector('.modal-content').innerHTML += '<div style="color:#ef4444;padding:14px">Error red: '+esc(e.message)+'</div>';
+  }
+}
+
+function _renderOutreachModal(modalEl, d){
+  const inf = d.influencer || {};
+  const msj = d.mensajes || {};
+  const dl = d.deeplinks || {};
+  const warning = d.anti_spam_warning;
+  const fuente = d.generado_con || 'plantilla';
+  const fuenteBadge = fuente.includes('claude')
+    ? '<span style="background:#1e1b4b;color:#a78bfa;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700">🤖 IA Claude</span>'
+    : '<span style="background:#3f3f46;color:#a8a29e;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700">📋 Plantilla</span>';
+  modalEl.innerHTML = `<div class="modal-content" style="max-width:680px;max-height:85vh;overflow-y:auto">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <div class="modal-title">📨 Outreach a ${esc(inf.nombre||'')}${d.sku?(' · '+esc(d.sku.sku||'')):''}</div>
+      <button class="btn btn-outline btn-sm" onclick="closeModal('modal-outreach')">✕</button>
+    </div>
+    <div style="display:flex;gap:8px;font-size:11px;color:#94a3b8;margin-bottom:14px">
+      ${fuenteBadge}
+      ${inf.discount_code?'<span style="background:#1e1b4b;color:#a78bfa;padding:2px 8px;border-radius:6px;font-family:monospace;font-weight:700">'+esc(inf.discount_code)+'</span>':''}
+      ${inf.ultima_colab_dias!=null?'<span title="Días desde última colab pagada">⏱ '+inf.ultima_colab_dias+'d sin colab</span>':''}
+    </div>
+    ${warning?'<div style="background:#7c2d12;color:#fdba74;padding:10px;border-radius:8px;font-size:11px;margin-bottom:14px">'+esc(warning)+'</div>':''}
+
+    <h3 style="font-size:13px;color:#10b981;margin:14px 0 6px">💬 WhatsApp</h3>
+    <textarea id="om-whatsapp" rows="3" style="width:100%;padding:10px;background:#1e293b;border:1px solid #334155;color:#f1f5f9;border-radius:6px;font-family:inherit;font-size:13px;resize:vertical">${esc(msj.whatsapp||'')}</textarea>
+    <div style="display:flex;gap:6px;margin-top:6px">
+      <button class="btn btn-outline btn-sm" onclick="_copyToClipboard('om-whatsapp','wa')">📋 Copiar</button>
+      ${dl.whatsapp_web?'<a class="btn btn-primary btn-sm" href="'+escUrl(dl.whatsapp_web)+'" target="_blank" rel="noopener noreferrer">📱 Abrir WhatsApp Web</a>':'<span style="color:#64748b;font-size:11px;padding:6px">Sin teléfono cargado</span>'}
+      <span id="om-wa-status" style="font-size:11px;color:#10b981;padding:6px"></span>
+    </div>
+
+    <h3 style="font-size:13px;color:#60a5fa;margin:18px 0 6px">📧 Email</h3>
+    <input id="om-email-subject" value="${esc(msj.email_subject||'')}" style="width:100%;padding:8px 10px;background:#1e293b;border:1px solid #334155;color:#f1f5f9;border-radius:6px;font-size:12px;margin-bottom:6px" placeholder="Asunto">
+    <textarea id="om-email-body" rows="6" style="width:100%;padding:10px;background:#1e293b;border:1px solid #334155;color:#f1f5f9;border-radius:6px;font-family:inherit;font-size:13px;resize:vertical">${esc(msj.email_body||'')}</textarea>
+    <div style="display:flex;gap:6px;margin-top:6px">
+      <button class="btn btn-outline btn-sm" onclick="_copyToClipboard('om-email-body','em')">📋 Copiar cuerpo</button>
+      ${dl.mailto?'<a class="btn btn-primary btn-sm" href="'+escUrl(dl.mailto)+'">✉ Abrir email</a>':'<span style="color:#64748b;font-size:11px;padding:6px">Sin email cargado</span>'}
+      <span id="om-em-status" style="font-size:11px;color:#10b981;padding:6px"></span>
+    </div>
+
+    <h3 style="font-size:13px;color:#e1306c;margin:18px 0 6px">📸 Instagram DM</h3>
+    <textarea id="om-igdm" rows="3" style="width:100%;padding:10px;background:#1e293b;border:1px solid #334155;color:#f1f5f9;border-radius:6px;font-family:inherit;font-size:13px;resize:vertical">${esc(msj.instagram_dm||'')}</textarea>
+    <div style="display:flex;gap:6px;margin-top:6px">
+      <button class="btn btn-outline btn-sm" onclick="_copyToClipboard('om-igdm','ig')">📋 Copiar</button>
+      ${inf.usuario_red?'<a class="btn btn-primary btn-sm" href="'+escUrl('https://instagram.com/'+inf.usuario_red.replace(/^@/,''))+'" target="_blank" rel="noopener noreferrer">📸 Abrir perfil IG</a>':'<span style="color:#64748b;font-size:11px;padding:6px">Sin usuario_red</span>'}
+      <span id="om-ig-status" style="font-size:11px;color:#10b981;padding:6px"></span>
+    </div>
+
+    <div style="margin-top:20px;padding-top:14px;border-top:1px solid #334155;font-size:11px;color:#64748b">
+      Cuando envíes, los mensajes quedan registrados en marketing_outreach_log para audit + anti-spam (warn si re-contactás en 14d).
+    </div>
+  </div>`;
+}
+
+function _copyToClipboard(elementId, statusKey){
+  const el = document.getElementById(elementId);
+  if(!el) return;
+  el.select();
+  navigator.clipboard.writeText(el.value).then(()=>{
+    const st = document.getElementById('om-'+statusKey+'-status');
+    if(st){ st.textContent = '✓ Copiado'; setTimeout(()=>{ st.textContent=''; }, 1500); }
+  }).catch(()=>{
+    document.execCommand('copy');
+  });
+}
+
 // AUDIT 26-may · generar/regenerar cupón Shopify para atribución
 async function generarCuponInf(id) {
   const p = _INF_ROW_PAYLOAD[id];

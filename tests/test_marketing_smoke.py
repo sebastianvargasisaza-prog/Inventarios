@@ -66,6 +66,20 @@ def test_marketing_generar_cupon_influencer_inexistente(app, db_clean):
     assert r.status_code == 404
 
 
+def test_outreach_influencer_id_obligatorio(app, db_clean):
+    """outreach-mensaje sin influencer_id → 400."""
+    c = _login(app)
+    r = c.get("/api/marketing/outreach-mensaje")
+    assert r.status_code == 400
+
+
+def test_outreach_influencer_inexistente(app, db_clean):
+    """influencer_id que no existe → 404."""
+    c = _login(app)
+    r = c.get("/api/marketing/outreach-mensaje?influencer_id=999999")
+    assert r.status_code == 404
+
+
 def test_reporte_ejecutivo_preview_html(app, db_clean):
     """GET reporte-ejecutivo-semanal devuelve HTML válido sin enviar email."""
     c = _login(app)
