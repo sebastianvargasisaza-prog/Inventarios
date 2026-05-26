@@ -6757,9 +6757,16 @@ def admin_mees_diagnostico_page():
 <script>
 function esc(s){return (s==null?'':String(s)).replace(/[<>&"']/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c]));}
 let MEES_LIST = [];
-function _csrf(){
-  const m = document.cookie.match(/csrf_token=([^;]+)/);
-  return m ? decodeURIComponent(m[1]) : '';
+let CSRF_TOKEN = '';
+// FIX 27-may · token CSRF está en server-side session · GET /api/csrf-token
+// devuelve el actual. Patrón canónico EOS · NO leer de cookie (no existe ahí).
+async function _ensureCsrf(){
+  if (CSRF_TOKEN) return CSRF_TOKEN;
+  try {
+    const r = await fetch('/api/csrf-token', {credentials:'same-origin'});
+    if (r.ok) { const d = await r.json(); CSRF_TOKEN = d.csrf_token || ''; }
+  } catch(_) {}
+  return CSRF_TOKEN;
 }
 async function cargarMEEs(){
   if(MEES_LIST.length) return MEES_LIST;
@@ -6791,9 +6798,10 @@ async function asignarMEE(btn){
   if(!mee){ alert('Elegí un MEE primero'); return; }
   btn.disabled=true; btn.textContent='⏳';
   try {
+    const csrf = await _ensureCsrf();
     const r = await fetch('/api/admin/mees-mapping-upsert', {
       method:'POST', credentials:'same-origin',
-      headers:{'Content-Type':'application/json','X-CSRF-Token':_csrf()},
+      headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},
       body: JSON.stringify({sku_codigo: producto, mee_codigo: mee, componente_tipo: tipo, cantidad_por_unidad: cant})
     });
     let d = {};
@@ -6818,9 +6826,10 @@ async function definirVolumen(btn){
   if(vol <= 0){ alert('Volumen ml debe ser > 0'); return; }
   btn.disabled=true; btn.textContent='⏳';
   try {
+    const csrf = await _ensureCsrf();
     const r = await fetch('/api/admin/producto-volumen-upsert', {
       method:'POST', credentials:'same-origin',
-      headers:{'Content-Type':'application/json','X-CSRF-Token':_csrf()},
+      headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},
       body: JSON.stringify({producto_nombre: producto, volumen_ml: vol})
     });
     let d = {};
@@ -6838,6 +6847,7 @@ async function definirVolumen(btn){
   }
 }
 async function cargar(){
+  await _ensureCsrf();   // precarga token CSRF para los POSTs subsecuentes
   await cargarMEEs();
   const dias = document.getElementById('dias').value;
   const out = document.getElementById('resultado');
