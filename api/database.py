@@ -312,6 +312,16 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (195, "pagos_influencers.fecha_contenido + vence_pago_at · flujo urgencia pago 30d · Sebastián 27-may-2026 PM", [
+        # FEATURE 27-may PM · "promesa de pago a 30 días desde creación del
+        # contenido". Jefferson registra fecha_contenido al solicitar pago ·
+        # vence_pago_at = fecha_contenido + 30d (calculado en backend al insert).
+        # Dashboard puede mostrar atrasados/próximos a vencer en rojo/amarillo.
+        # Cron diario alerta a Sebastián si hay pagos atrasados.
+        "ALTER TABLE pagos_influencers ADD COLUMN fecha_contenido TEXT DEFAULT ''",
+        "ALTER TABLE pagos_influencers ADD COLUMN vence_pago_at TEXT DEFAULT ''",
+        "CREATE INDEX IF NOT EXISTS idx_pi_vence ON pagos_influencers(vence_pago_at, estado)",
+    ]),
     (194, "marketing_ads_campaigns · sync Meta/Google Ads · Sebastián 27-may-2026 AM", [
         # FEATURE 27-may · sync campañas pagadas Meta/Google · cierra ROI
         # real cross-channel (orgánico + paid).

@@ -477,6 +477,9 @@ window.addEventListener('unhandledrejection', function(ev) {
   <!-- KPIs unificados (catálogo + pagos) -->
   <div id="inf-kpi-bar" style="display:none;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px;"></div>
 
+  <!-- Banner flujo urgencia pagos (promesa 30d desde fecha_contenido) -->
+  <div id="inf-urgencias-banner" style="display:none;border-radius:10px;margin-bottom:10px;padding:12px 16px;font-size:13px;line-height:1.5;"></div>
+
   <!-- Banner de solicitudes pendientes (visible si hay alguna) -->
   <div id="inf-pendientes-banner" style="display:none;background:linear-gradient(90deg,#78350f,#7c2d12);color:#fed7aa;padding:14px 18px;border-radius:10px;margin-bottom:14px;font-size:13px;line-height:1.5;border:1px solid #b45309;"></div>
   <div id="inf-alert" style="display:none;"></div>
@@ -1052,7 +1055,17 @@ window.addEventListener('unhandledrejection', function(ev) {
     </div>
     <div class="form-row">
       <div class="form-group"><label>Fecha de publicación</label><input type="date" id="pago-fecha-pub"></div>
-      <div class="form-group"><label>Entregable</label><input id="pago-entregable" placeholder="1 Reel + 2 Stories..."></div>
+      <div class="form-group">
+        <label>Fecha del contenido <span style="color:#a78bfa;">★</span></label>
+        <input type="date" id="pago-fecha-contenido" onchange="recalcularVencePagoInf()" title="Día en que el influencer publicó el contenido. La promesa de pago es a 30 días desde esta fecha.">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group" style="flex:2;"><label>Entregable</label><input id="pago-entregable" placeholder="1 Reel + 2 Stories..."></div>
+      <div class="form-group" style="flex:1;">
+        <label>Vence pago (auto)</label>
+        <input id="pago-vence" disabled style="background:#1e1b4b;color:#c7d2fe;font-weight:700;" placeholder="—">
+      </div>
     </div>
     <div style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:12px;margin:8px 0;font-size:12px;color:#94a3b8;">
       <div style="font-weight:700;color:#a78bfa;margin-bottom:6px;">&#x1F3E6; Datos bancarios</div>
@@ -2368,9 +2381,61 @@ async function loadInfluencers() {
       banner.style.display = 'none';
     }
   }
-  // Cargar pagos en paralelo y luego render
-  await loadPagosInfluencers();
+  // Cargar pagos y urgencias en paralelo, luego render (los chips dependen del mapa)
+  await Promise.all([
+    loadPagosInfluencers(),
+    loadUrgenciasInfluencers(),  // popula INF_URGENCIA_MAP antes del render
+  ]);
   renderInfluencersTable();
+}
+
+// Mapa influencer_id → urgencia más severa de sus pagos pendientes
+window.INF_URGENCIA_MAP = window.INF_URGENCIA_MAP || {};
+
+async function loadUrgenciasInfluencers() {
+  const banner = document.getElementById('inf-urgencias-banner');
+  window.INF_URGENCIA_MAP = {};
+  try {
+    const r = await fetch('/api/marketing/pagos-influencer/urgencias', {credentials:'same-origin'});
+    if (!r.ok) { if(banner) banner.style.display='none'; return; }
+    const d = await r.json();
+    // Severidad: vencido > urgente > proximo > normal · guardar la más severa por influencer
+    const sev = {vencido:3, urgente:2, proximo:1, normal:0};
+    for (const p of (d.pagos||[])) {
+      const iid = p.influencer_id;
+      const cur = window.INF_URGENCIA_MAP[iid];
+      if (!cur || sev[p.urgencia] > sev[cur.urgencia]) {
+        window.INF_URGENCIA_MAP[iid] = {urgencia: p.urgencia, dias: p.dias_para_vencer, vence: p.vence_pago_at};
+      }
+    }
+    if (!banner) return;
+    const k = d.kpis || {};
+    const vencidos = k.vencidos||0, urgentes = k.urgentes||0, proximos = k.proximos||0;
+    if (vencidos === 0 && urgentes === 0) { banner.style.display='none'; return; }
+    let bg, border, color, icon;
+    if (vencidos > 0) {
+      bg = 'linear-gradient(90deg,#7f1d1d,#991b1b)'; border = '#dc2626'; color = '#fecaca'; icon = '🚨';
+    } else {
+      bg = 'linear-gradient(90deg,#78350f,#92400e)'; border = '#f59e0b'; color = '#fde68a'; icon = '⚠️';
+    }
+    banner.style.background = bg;
+    banner.style.border = '1px solid '+border;
+    banner.style.color = color;
+    banner.style.display = 'block';
+    const total = (k.valor_vencido_total||0).toLocaleString('es-CO');
+    banner.innerHTML =
+      '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">'
+      + '<div><b style="font-size:14px;">'+icon+' Flujo urgencia pagos</b><br>'
+      + '<span style="font-size:12px;opacity:.9;">'+esc(d.mensaje_estado||'')+'</span></div>'
+      + '<div style="display:flex;gap:8px;font-size:11px;">'
+      + (vencidos > 0 ? '<span style="background:#dc2626;padding:4px 10px;border-radius:20px;font-weight:700;">🔴 '+vencidos+' atrasado'+(vencidos>1?'s':'')+'</span>' : '')
+      + (urgentes > 0 ? '<span style="background:#d97706;padding:4px 10px;border-radius:20px;font-weight:700;">🟡 '+urgentes+' esta semana</span>' : '')
+      + (proximos > 0 ? '<span style="background:#475569;padding:4px 10px;border-radius:20px;">🟢 '+proximos+' próx 15d</span>' : '')
+      + '</div></div>'
+      + (vencidos > 0 ? '<div style="font-size:11px;margin-top:8px;opacity:.85;">Promesa de pago: 30 días desde fecha del contenido. Total atrasado: <b>$'+total+'</b></div>' : '');
+  } catch (_) {
+    banner.style.display = 'none';
+  }
 }
 
 // Render de la tabla principal — separado para poder llamar al cambiar filtros
@@ -2392,7 +2457,15 @@ function renderInfluencersTable() {
     // antes el texto "Al d\u00eda" se romp\u00eda en 2 l\u00edneas en columnas estrechas.
     // El color comunica el estado, hover muestra el detalle.
     if(r.tiene_pendiente) {
-      estadoBadge = '<span style="background:#78350f;color:#fcd34d;padding:3px 8px;border-radius:50%;font-size:13px;font-weight:700;display:inline-block;width:24px;height:24px;line-height:18px;text-align:center;white-space:nowrap;" title="Esperando pago \u2014 solicitud creada, Sebasti\u00e1n por autorizar">\u23f3</span>';
+      // Chip urgencia \u00b7 prioriza color de vencimiento sobre amarillo gen\u00e9rico
+      const u = (window.INF_URGENCIA_MAP||{})[r.id];
+      if (u && u.urgencia === 'vencido') {
+        estadoBadge = '<span style="background:#7f1d1d;color:#fca5a5;padding:3px 8px;border-radius:50%;font-size:13px;font-weight:700;display:inline-block;width:24px;height:24px;line-height:18px;text-align:center;white-space:nowrap;border:1.5px solid #dc2626;" title="ATRASADO \u00b7 pago vencido hace '+Math.abs(u.dias||0)+' d. Venc\u00eda '+esc(u.vence||'')+'">\ud83d\udd34</span>';
+      } else if (u && u.urgencia === 'urgente') {
+        estadoBadge = '<span style="background:#854d0e;color:#fde047;padding:3px 8px;border-radius:50%;font-size:13px;font-weight:700;display:inline-block;width:24px;height:24px;line-height:18px;text-align:center;white-space:nowrap;border:1.5px solid #f59e0b;" title="Urgente \u00b7 vence en '+(u.dias||0)+' d ('+esc(u.vence||'')+')">\ud83d\udfe1</span>';
+      } else {
+        estadoBadge = '<span style="background:#78350f;color:#fcd34d;padding:3px 8px;border-radius:50%;font-size:13px;font-weight:700;display:inline-block;width:24px;height:24px;line-height:18px;text-align:center;white-space:nowrap;" title="Esperando pago \u2014 solicitud creada, Sebasti\u00e1n por autorizar">\u23f3</span>';
+      }
     } else if(r.toca_pagar) {
       const dias = r.dias_desde_ultimo_pago || 0;
       estadoBadge = '<span style="background:#854d0e;color:#fde047;padding:3px 8px;border-radius:50%;font-size:13px;font-weight:700;display:inline-block;width:24px;height:24px;line-height:18px;text-align:center;white-space:nowrap;" title="Toca solicitar \u2014 hace '+dias+' d\u00edas del \u00faltimo pago (ciclo '+r.ciclo_pago+'). Click \ud83d\udcb8 Solicitar pago para crear cuenta de cobro">\ud83d\udccc</span>';
@@ -2862,11 +2935,37 @@ async function eliminarInfluencerDup(id, nombre) {
   setTimeout(abrirDuplicados, 400);
 }
 
+function recalcularVencePagoInf() {
+  // Promesa 30d desde fecha_contenido \u2192 muestra fecha de vencimiento + dias restantes
+  const fc = document.getElementById('pago-fecha-contenido').value;
+  const out = document.getElementById('pago-vence');
+  if (!fc) { out.value=''; out.style.color='#c7d2fe'; return; }
+  const base = new Date(fc + 'T00:00:00');
+  if (isNaN(base.getTime())) { out.value='\u2014'; return; }
+  const vence = new Date(base.getTime() + 30*24*3600*1000);
+  const hoy = new Date(); hoy.setHours(0,0,0,0);
+  const diff = Math.round((vence - hoy)/(24*3600*1000));
+  const yyyy = vence.getFullYear();
+  const mm = String(vence.getMonth()+1).padStart(2,'0');
+  const dd = String(vence.getDate()).padStart(2,'0');
+  let etiqueta;
+  if (diff < 0)       { etiqueta = `${yyyy}-${mm}-${dd} \u00b7 \ud83d\udd34 +${Math.abs(diff)}d`; out.style.color='#fca5a5'; }
+  else if (diff <= 7) { etiqueta = `${yyyy}-${mm}-${dd} \u00b7 \ud83d\udfe1 ${diff}d`;            out.style.color='#fcd34d'; }
+  else                { etiqueta = `${yyyy}-${mm}-${dd} \u00b7 \ud83d\udfe2 ${diff}d`;            out.style.color='#86efac'; }
+  out.value = etiqueta;
+}
+
 function solicitarPagoInf(id, nombre, tarifa, banco, cuenta, cedula, tipoCta) {
   document.getElementById('pago-inf-id').value = id;
   document.getElementById('pago-inf-nombre').textContent = nombre;
   document.getElementById('pago-valor').value = tarifa||'';
   document.getElementById('pago-concepto').value = '';
+  // Default fecha_contenido = hoy \u00b7 usuario puede ajustar al d\u00eda real de publicaci\u00f3n
+  const hoy = new Date();
+  const todayStr = hoy.getFullYear()+'-'+String(hoy.getMonth()+1).padStart(2,'0')+'-'+String(hoy.getDate()).padStart(2,'0');
+  const fc = document.getElementById('pago-fecha-contenido');
+  if (fc && !fc.value) fc.value = todayStr;
+  recalcularVencePagoInf();
   const prev = document.getElementById('pago-banco-preview');
   if(banco) {
     prev.innerHTML = '<b>Beneficiario:</b> '+nombre+'<br>'
@@ -2888,7 +2987,8 @@ async function confirmarPagoInf() {
   if(!valor) { showAlert('pago-inf-alert','Ingresa el valor a pagar','error'); return; }
   const fechaPub   = document.getElementById('pago-fecha-pub').value;
   const entregable = document.getElementById('pago-entregable').value;
-  const resp = await fetch(`/api/marketing/influencers/${id}/solicitar-pago`,_fetchOpts('POST', {valor, concepto, fecha_publicacion:fechaPub, entregable}));
+  const fechaCont  = document.getElementById('pago-fecha-contenido').value;
+  const resp = await fetch(`/api/marketing/influencers/${id}/solicitar-pago`,_fetchOpts('POST', {valor, concepto, fecha_publicacion:fechaPub, entregable, fecha_contenido:fechaCont}));
   const data = await resp.json();
   if(data.ok) {
     closeModal('modal-inf-pago');

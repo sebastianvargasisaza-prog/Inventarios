@@ -656,6 +656,72 @@ def mkt_influencer_generar_cupon(iid):
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Flujo urgencia pagos influencers · "promesa 30 días desde contenido"
+# ──────────────────────────────────────────────────────────────────────────────
+@bp.route('/api/marketing/pagos-influencer/urgencias')
+def mkt_pagos_influencer_urgencias():
+    """Lista pagos Pendientes con flag de urgencia según vence_pago_at.
+
+    Categorías:
+      - vencido: vence_pago_at < hoy (incumplimiento promesa)
+      - urgente: vence en próximos 7 días
+      - proximo: vence en 8-15 días
+      - normal: vence en >15 días o no tiene fecha_contenido
+    """
+    u, err, code = _auth()
+    if err: return err, code
+    conn = _db(); c = conn.cursor()
+    try:
+        rows = c.execute("""
+            SELECT id, influencer_id, influencer_nombre, valor, fecha,
+                   estado, concepto, numero_oc, fecha_contenido, vence_pago_at
+            FROM pagos_influencers
+            WHERE estado='Pendiente'
+            ORDER BY COALESCE(vence_pago_at, fecha) ASC
+            LIMIT 200
+        """).fetchall()
+    except Exception:
+        return jsonify({'pagos': [], 'kpis': {'vencidos': 0, 'urgentes': 0, 'proximos': 0, 'normal': 0},
+                         'nota': 'Mig 195 pendiente · ejecutar en /admin/migraciones-pg'}), 200
+    from datetime import datetime as _dt, timedelta as _td
+    hoy = _dt.now()
+    pagos = []
+    kpis = {'vencidos': 0, 'urgentes': 0, 'proximos': 0, 'normal': 0}
+    for r in rows:
+        d = dict(r)
+        vence = (d.get('vence_pago_at') or '').strip()
+        urgencia = 'normal'
+        dias_para_vencer = None
+        if vence and _re_atrib.match(r'^\d{4}-\d{2}-\d{2}$', vence):
+            try:
+                v = _dt.strptime(vence, '%Y-%m-%d')
+                dias_para_vencer = (v - hoy).days
+                if dias_para_vencer < 0:
+                    urgencia = 'vencido'
+                elif dias_para_vencer <= 7:
+                    urgencia = 'urgente'
+                elif dias_para_vencer <= 15:
+                    urgencia = 'proximo'
+            except ValueError:
+                pass
+        d['urgencia'] = urgencia
+        d['dias_para_vencer'] = dias_para_vencer
+        kpis[urgencia + 's' if urgencia in ('vencido','urgente','proximo') else 'normal'] = \
+            kpis.get(urgencia + 's' if urgencia in ('vencido','urgente','proximo') else 'normal', 0) + 1
+        pagos.append(d)
+    # KPI totales
+    kpis['total_pendientes'] = len(rows)
+    kpis['valor_vencido_total'] = sum(int(p.get('valor') or 0) for p in pagos if p['urgencia'] == 'vencido')
+    return jsonify({'pagos': pagos, 'kpis': kpis,
+                     'mensaje_estado': (
+                         f"🚨 {kpis['vencidos']} pago(s) ATRASADO(s) · "
+                         f"${kpis['valor_vencido_total']:,} en mora"
+                         if kpis['vencidos'] > 0
+                         else f"✓ Sin pagos atrasados · {kpis['urgentes']} vencen esta semana"
+                     )})
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Sync Meta Ads · Marketing API · campañas pagadas Facebook/Instagram
 # ──────────────────────────────────────────────────────────────────────────────
 @bp.route('/api/marketing/ads/sync-meta', methods=['POST'])
@@ -6298,6 +6364,21 @@ def mkt_solicitar_pago_influencer(iid):
         cuenta   = str(d.get("cuenta")   or inf.get("cuenta_bancaria", "")).strip()
         cedula   = str(d.get("cedula")   or inf.get("cedula_nit", "")).strip()
         tipo_cta = str(d.get("tipo_cuenta") or inf.get("tipo_cuenta", "Ahorros")).strip()
+        # FEATURE 27-may PM · fecha_contenido del influencer + vence en 30d
+        # Si el frontend no la manda, asumimos creación = hoy (peor caso seguro)
+        fecha_contenido = (d.get("fecha_contenido") or "").strip()
+        if fecha_contenido and not _re_atrib.match(r'^\d{4}-\d{2}-\d{2}$', fecha_contenido):
+            return jsonify({"error": "fecha_contenido debe ser YYYY-MM-DD"}), 400
+        from datetime import datetime as _dt_fc, timedelta as _td_fc
+        if fecha_contenido:
+            try:
+                base = _dt_fc.strptime(fecha_contenido, '%Y-%m-%d')
+            except ValueError:
+                return jsonify({"error": "fecha_contenido inválida"}), 400
+        else:
+            base = _dt_fc.now()
+            fecha_contenido = base.strftime('%Y-%m-%d')
+        vence_pago_at = (base + _td_fc(days=30)).strftime('%Y-%m-%d')
 
         # Generate SOL number
         from datetime import datetime as dt
@@ -6323,6 +6404,8 @@ def mkt_solicitar_pago_influencer(iid):
         if cedula:  obs_parts.append(f"CED/NIT: {cedula}")
         obs_parts.append(f"CONCEPTO: {concepto}")
         obs_parts.append(f"VALOR: ${monto:,.0f}")
+        obs_parts.append(f"FECHA CONTENIDO: {fecha_contenido}")
+        obs_parts.append(f"VENCE PAGO: {vence_pago_at}")
         observaciones = " | ".join(obs_parts)
 
         # Solicitante = usuario que invoca (jefferson, etc.) — NO el nombre del influencer
@@ -6369,14 +6452,25 @@ def mkt_solicitar_pago_influencer(iid):
         )
 
         # Also register in pagos_influencers for the marketing panel
+        # FEATURE 27-may PM · fecha_contenido + vence_pago_at (30d desde contenido)
         try:
             c.execute("""
                 INSERT INTO pagos_influencers
-                (influencer_id, influencer_nombre, valor, fecha, estado, concepto, numero_oc)
-                VALUES (?,?,?,date('now', '-5 hours'),'Pendiente',?,?)
-            """, (iid, inf["nombre"], int(monto), concepto, oc_num))
-        except Exception:
-            pass  # tabla puede no existir aún en instancias viejas
+                (influencer_id, influencer_nombre, valor, fecha, estado, concepto,
+                 numero_oc, fecha_contenido, vence_pago_at)
+                VALUES (?,?,?,date('now', '-5 hours'),'Pendiente',?,?,?,?)
+            """, (iid, inf["nombre"], int(monto), concepto, oc_num,
+                   fecha_contenido, vence_pago_at))
+        except Exception as e:
+            # Fallback para instancias viejas sin las columnas nuevas (mig 195 no aplicada)
+            try:
+                c.execute("""
+                    INSERT INTO pagos_influencers
+                    (influencer_id, influencer_nombre, valor, fecha, estado, concepto, numero_oc)
+                    VALUES (?,?,?,date('now', '-5 hours'),'Pendiente',?,?)
+                """, (iid, inf["nombre"], int(monto), concepto, oc_num))
+            except Exception:
+                pass
 
         # Sebastián 25-may-2026 PM · audit P0 · mutación financiera SIN
         # audit_log antes era el bug más sensible (dinero real · SOL+OC+pago

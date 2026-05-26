@@ -642,6 +642,9 @@ JOBS_SCHEDULE = [
     ('resumen_ejecutivo_noche', 19, 0, None, None,                'job_resumen_ejecutivo_noche'),
     # ⭐ Compras N3 · reconciliar SOLs influencer >60d sin pago · diario 9:00
     ('reconciliar_influencer_60d', 9, 0, None, None,              'job_reconciliar_influencer_60d'),
+    # ⭐ Marketing · diario 9:05 · alerta campana si hay pagos influencer atrasados
+    # (vence_pago_at < hoy · promesa 30d desde fecha_contenido · Sebastián 27-may-2026)
+    ('pagos_influencer_urgencia', 9, 5, None, None,               'job_pagos_influencer_urgencia'),
     # Diarios
     ('sync_stock_shopify',    5, 30, None, None,                'job_sync_stock_shopify_diario'),
     ('sync_shopify',          6,  0, None, None,                'job_sync_shopify'),
@@ -4408,6 +4411,7 @@ def _loop_multi_cron(app):
                     'auto_sc_mensual', 'auto_sc_mee_mensual', 'auto_sc_urgente_lun',
                     'auto_d20',                     # crea SCs decoración
                     'reconciliar_influencer_60d',   # UPDATE masivo
+                    'pagos_influencer_urgencia',    # campana — no duplicar si falla
                     'marcar_vencidos',              # notif + UPDATE estado_lote
                     'auto_reparar_huerfanas',       # UPDATE formula_items
                     'auto_normalizar_formulas',     # UPDATE formula_items
@@ -4650,6 +4654,58 @@ def job_reconciliar_influencer_60d(app):
         conn.commit()
         return True, {'cerradas': len(cerradas),
                       'detalle': cerradas[:20]}, f'{len(cerradas)} reconciliadas'
+
+
+def job_pagos_influencer_urgencia(app):
+    """Marketing · diario 9:05 · alerta campana si hay pagos influencer atrasados.
+
+    Promesa de pago: 30 días desde `fecha_contenido`. Si `vence_pago_at < hoy`
+    y estado='Pendiente', dispara campana a Sebastián + Alejandro para acelerar
+    autorización. Sin email (preferencia Sebastián: no spam por eventos rutinarios).
+    """
+    with app.app_context():
+        from database import get_db
+        conn = get_db(); c = conn.cursor()
+        from datetime import datetime as _dt
+        hoy = _dt.now().strftime('%Y-%m-%d')
+        try:
+            rows = c.execute(
+                """SELECT id, influencer_nombre, valor, vence_pago_at, fecha_contenido
+                   FROM pagos_influencers
+                   WHERE estado='Pendiente'
+                     AND COALESCE(vence_pago_at,'') <> ''
+                     AND vence_pago_at < ?
+                   ORDER BY vence_pago_at ASC""",
+                (hoy,),
+            ).fetchall()
+        except Exception as e:
+            return True, {'skip': True, 'razon': f'mig 195 pendiente: {e}'}, 'no-op'
+        if not rows:
+            return True, {'vencidos': 0}, 'al día'
+        total_valor = sum(int((r[2] or 0)) for r in rows)
+        # Campana in-app · sin email (preferencia usuario)
+        try:
+            from blueprints.notif import push_notif
+            cuerpo = (
+                f'🚨 {len(rows)} pago(s) influencer ATRASADO(s) · '
+                f'${total_valor:,} en mora · revisar /compras → Influencers.'
+            )
+            for u in ('sebastian', 'alejandro'):
+                try:
+                    push_notif(
+                        destinatario=u,
+                        tipo='pago_influencer_vencido',
+                        titulo='🚨 Pagos influencer atrasados',
+                        body=cuerpo,
+                        link='/compras',
+                        remitente='sistema',
+                    )
+                except Exception:
+                    pass
+        except Exception as e:
+            log.warning(f'push_notif fallo: {e}')
+        return True, {'vencidos': len(rows), 'valor_total': total_valor}, \
+               f'{len(rows)} vencidos · ${total_valor:,}'
 
 
 def iniciar_multi_cron(app):
