@@ -656,6 +656,223 @@ def mkt_influencer_generar_cupon(iid):
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# LTV por cliente · agrupa Shopify orders por email · tier automático
+# ──────────────────────────────────────────────────────────────────────────────
+@bp.route('/api/marketing/ltv-clientes')
+def mkt_ltv_clientes():
+    """Ranking de clientes por LTV (Lifetime Value) desde Shopify orders.
+
+    Params:
+      - tier: VIP | Recurrente | One-shot | Dormido (filtro)
+      - min_orders: solo clientes con ≥ N pedidos (default 1)
+      - limit: max filas (default 50, max 500)
+      - sort: ltv | frecuencia | ultimo_pedido (default ltv desc)
+
+    Devuelve por cliente: email, pedidos_count, ltv (revenue total),
+    ticket_promedio, primer_pedido, ultimo_pedido, dias_desde_ultimo,
+    intervalo_promedio_dias, tier, riesgo_perdida (bool).
+    """
+    u, err, code = _auth()
+    if err: return err, code
+    tier_filtro = (request.args.get('tier') or '').strip()
+    min_orders = max(1, int(request.args.get('min_orders') or 1))
+    limit = min(500, max(1, int(request.args.get('limit') or 50)))
+    sort = (request.args.get('sort') or 'ltv').lower()
+    conn = _db(); c = conn.cursor()
+    # Agrupado por email · stats agregadas
+    rows = c.execute("""
+        SELECT LOWER(email) AS email,
+               COUNT(*) AS pedidos_count,
+               COALESCE(SUM(total),0) AS ltv,
+               COALESCE(AVG(total),0) AS ticket_promedio,
+               MIN(creado_en) AS primer_pedido,
+               MAX(creado_en) AS ultimo_pedido,
+               COUNT(DISTINCT substr(creado_en,1,7)) AS meses_activos
+        FROM animus_shopify_orders
+        WHERE COALESCE(email,'') != ''
+        GROUP BY LOWER(email)
+        HAVING pedidos_count >= ?
+    """, (min_orders,)).fetchall()
+    clientes = []
+    from datetime import datetime as _dt
+    hoy = _dt.now()
+    for r in rows:
+        ltv = float(r['ltv'] or 0)
+        cnt = int(r['pedidos_count'] or 0)
+        primer = r['primer_pedido'] or ''
+        ultimo = r['ultimo_pedido'] or ''
+        # Intervalo promedio entre pedidos
+        try:
+            if primer and ultimo and cnt > 1:
+                d1 = _dt.strptime(primer[:10], '%Y-%m-%d')
+                d2 = _dt.strptime(ultimo[:10], '%Y-%m-%d')
+                intervalo = (d2 - d1).days / max(cnt - 1, 1)
+            else:
+                intervalo = 0
+        except (ValueError, TypeError):
+            intervalo = 0
+        # Días desde último pedido
+        try:
+            dias_desde = (hoy - _dt.strptime(ultimo[:10], '%Y-%m-%d')).days if ultimo else 999
+        except (ValueError, TypeError):
+            dias_desde = 999
+        # Tier automático por LTV + frecuencia
+        if ltv >= 2_000_000:
+            tier = 'VIP'
+        elif ltv >= 500_000 or cnt >= 3:
+            tier = 'Recurrente'
+        elif cnt == 1:
+            tier = 'One-shot'
+        else:
+            tier = 'Recurrente'
+        # Detectar dormido: >90 días sin comprar + tenía recurrencia previa
+        if dias_desde > 90 and cnt >= 2:
+            tier = 'Dormido'
+        # Riesgo perdida: cliente recurrente o VIP con días_desde > 2× intervalo
+        riesgo = (tier in ('VIP', 'Recurrente') and intervalo > 0
+                   and dias_desde > intervalo * 2)
+        clientes.append({
+            'email': r['email'],
+            'pedidos_count': cnt,
+            'ltv': round(ltv, 0),
+            'ticket_promedio': round(float(r['ticket_promedio'] or 0), 0),
+            'primer_pedido': primer[:10] if primer else None,
+            'ultimo_pedido': ultimo[:10] if ultimo else None,
+            'dias_desde_ultimo': dias_desde,
+            'intervalo_promedio_dias': round(intervalo, 1),
+            'meses_activos': int(r['meses_activos'] or 0),
+            'tier': tier,
+            'riesgo_perdida': riesgo,
+        })
+    # Filtro tier
+    if tier_filtro:
+        clientes = [c2 for c2 in clientes if c2['tier'] == tier_filtro]
+    # Sort
+    if sort == 'frecuencia':
+        clientes.sort(key=lambda x: -x['pedidos_count'])
+    elif sort == 'ultimo_pedido':
+        clientes.sort(key=lambda x: x['dias_desde_ultimo'])
+    else:  # ltv
+        clientes.sort(key=lambda x: -x['ltv'])
+    # KPIs agregados
+    total = len(clientes)
+    revenue_total = sum(c2['ltv'] for c2 in clientes)
+    kpis = {
+        'total_clientes': total,
+        'revenue_total': round(revenue_total, 0),
+        'ticket_promedio_global': round(revenue_total / total, 0) if total > 0 else 0,
+        'distribucion_tier': {
+            t: len([c2 for c2 in clientes if c2['tier'] == t])
+            for t in ('VIP', 'Recurrente', 'One-shot', 'Dormido')
+        },
+        'en_riesgo_perdida': len([c2 for c2 in clientes if c2['riesgo_perdida']]),
+    }
+    return jsonify({
+        'kpis': kpis,
+        'clientes': clientes[:limit],
+        'mostrando': min(limit, total),
+        'filtros': {'tier': tier_filtro or None, 'min_orders': min_orders, 'sort': sort},
+    })
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Time-of-day optimization · mejor día/hora para publicar IG
+# ──────────────────────────────────────────────────────────────────────────────
+@bp.route('/api/marketing/optimo-publicacion')
+def mkt_optimo_publicacion():
+    """Analiza animus_instagram_posts y devuelve mejor día/hora por engagement.
+
+    Engagement = likes + comentarios*3 (peso convencional · comments > likes).
+    Devuelve heatmap data + top 5 horarios + tipo de post recomendado por slot.
+
+    Query: ?dias=180 (default · ventana de análisis)
+    """
+    u, err, code = _auth()
+    if err: return err, code
+    dias = min(720, max(30, int(request.args.get('dias') or 180)))
+    from datetime import datetime as _dt, timedelta as _td
+    hace = (_dt.now() - _td(days=dias)).strftime('%Y-%m-%d')
+    conn = _db(); c = conn.cursor()
+    posts = c.execute("""
+        SELECT tipo, descripcion, likes, comentarios, alcance,
+               publicado_en
+        FROM animus_instagram_posts
+        WHERE COALESCE(publicado_en,'') != '' AND publicado_en >= ?
+    """, (hace,)).fetchall()
+    if not posts:
+        return jsonify({
+            'mensaje': 'Sin posts en ventana · sincroniza IG primero',
+            'ventana_dias': dias,
+            'posts_count': 0,
+        })
+    # Buckets: dia_semana (0=Lun, 6=Dom) × hora (0-23)
+    DIAS_ES = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom']
+    buckets = {}  # key (dia, hora) → [list of engagements]
+    by_tipo = {}  # key tipo → [engagements]
+    for p in posts:
+        try:
+            dt = _dt.strptime((p['publicado_en'] or '')[:19], '%Y-%m-%dT%H:%M:%S')
+        except ValueError:
+            try:
+                dt = _dt.strptime((p['publicado_en'] or '')[:10], '%Y-%m-%d')
+            except (ValueError, TypeError):
+                continue
+        eng = int(p['likes'] or 0) + int(p['comentarios'] or 0) * 3
+        key = (dt.weekday(), dt.hour)
+        buckets.setdefault(key, []).append(eng)
+        tipo = p['tipo'] or 'IMAGE'
+        by_tipo.setdefault(tipo, []).append(eng)
+    # Heatmap: lista de {dia, dia_nombre, hora, engagement_avg, posts_count}
+    heatmap = []
+    for (d, h), engs in buckets.items():
+        heatmap.append({
+            'dia': d,
+            'dia_nombre': DIAS_ES[d],
+            'hora': h,
+            'engagement_avg': round(sum(engs) / len(engs), 1),
+            'engagement_max': max(engs),
+            'posts_count': len(engs),
+        })
+    # Top 5 horarios (min 2 posts para ser señal · evitar 1 outlier)
+    top_horarios = sorted(
+        [b for b in heatmap if b['posts_count'] >= 2],
+        key=lambda x: -x['engagement_avg']
+    )[:5]
+    # Si no hay slots con ≥2 posts, tomar top 5 cualquier
+    if not top_horarios:
+        top_horarios = sorted(heatmap, key=lambda x: -x['engagement_avg'])[:5]
+    # Mejor tipo de post
+    tipo_stats = []
+    for tipo, engs in by_tipo.items():
+        if len(engs) >= 2:
+            tipo_stats.append({
+                'tipo': tipo,
+                'engagement_avg': round(sum(engs) / len(engs), 1),
+                'posts_count': len(engs),
+            })
+    tipo_stats.sort(key=lambda x: -x['engagement_avg'])
+    # Recomendación texto
+    if top_horarios:
+        mejor = top_horarios[0]
+        recomendacion = (
+            f"Mejor publicar **{mejor['dia_nombre']} a las {mejor['hora']:02d}:00**: "
+            f"engagement promedio {mejor['engagement_avg']:.0f} ({mejor['posts_count']} posts analizados). "
+        )
+        if tipo_stats:
+            recomendacion += f"Formato con mejor desempeño: {tipo_stats[0]['tipo']} ({tipo_stats[0]['engagement_avg']:.0f} eng prom)."
+    else:
+        recomendacion = "Datos insuficientes para recomendación · publicá más para tener señal."
+    return jsonify({
+        'ventana_dias': dias,
+        'posts_count': len(posts),
+        'heatmap': heatmap,
+        'top_horarios': top_horarios,
+        'top_tipos': tipo_stats,
+        'recomendacion': recomendacion,
+    })
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # CONTACTO 360º · vista unificada GHL + Shopify + Pedidos B2B + Influencer
 # ──────────────────────────────────────────────────────────────────────────────
 @bp.route('/api/marketing/contacto-360')

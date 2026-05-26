@@ -66,6 +66,44 @@ def test_marketing_generar_cupon_influencer_inexistente(app, db_clean):
     assert r.status_code == 404
 
 
+def test_ltv_clientes_devuelve_kpis_y_lista(app, db_clean):
+    """LTV endpoint devuelve estructura kpis + clientes con distribución tier."""
+    c = _login(app)
+    r = c.get("/api/marketing/ltv-clientes")
+    assert r.status_code == 200
+    j = r.get_json()
+    assert "kpis" in j
+    assert "clientes" in j
+    assert "distribucion_tier" in j["kpis"]
+    for tier in ("VIP", "Recurrente", "One-shot", "Dormido"):
+        assert tier in j["kpis"]["distribucion_tier"]
+
+
+def test_ltv_clientes_filtro_tier(app, db_clean):
+    """Filtro por tier devuelve solo ese tier."""
+    c = _login(app)
+    r = c.get("/api/marketing/ltv-clientes?tier=VIP&limit=10")
+    assert r.status_code == 200
+    j = r.get_json()
+    for cli in j.get("clientes", []):
+        assert cli["tier"] == "VIP"
+
+
+def test_optimo_publicacion_sin_posts(app, db_clean):
+    """Sin posts IG sincronizados → mensaje 'sincroniza primero'."""
+    c = _login(app)
+    r = c.get("/api/marketing/optimo-publicacion")
+    assert r.status_code == 200
+    j = r.get_json()
+    # Si no hay posts, devuelve mensaje + posts_count=0
+    if j.get("posts_count") == 0:
+        assert "Sin posts" in j.get("mensaje", "")
+    else:
+        # Si hay posts (CI con seed), debe tener heatmap + top_horarios
+        assert "heatmap" in j
+        assert "recomendacion" in j
+
+
 def test_contacto_360_email_obligatorio(app, db_clean):
     """GET /api/marketing/contacto-360 sin email → 400."""
     c = _login(app)
