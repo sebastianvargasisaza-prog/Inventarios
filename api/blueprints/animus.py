@@ -96,6 +96,19 @@ def _call_claude(conn, agente, datos):
 
 # ── CONFIG ──────────────────────────────────────────────────────────────────
 
+_ANIMUS_CONFIG_KEYS = {
+    # Keys permitidas en /api/animus/config POST · whitelist explícita
+    # P0 audit 26-may · antes aceptaba cualquier key arbitraria, attacker
+    # con sesión podía sustituir shopify_token y exfiltrar pedidos.
+    "shopify_token", "shopify_shop", "shopify_api_version",
+    "ghl_api_key", "ghl_location_id",
+    "instagram_token", "instagram_user_id", "instagram_app_id", "instagram_app_secret",
+    "anthropic_api_key",
+    # Configuración no-secreta
+    "umbral_mp_critico", "ventana_metricas_dias", "auto_sync_enabled",
+}
+
+
 @bp.route("/api/animus/config", methods=["GET", "POST"])
 def animus_config():
     u, err, code = _auth()
@@ -103,12 +116,40 @@ def animus_config():
     conn = _db()
     try:
         if request.method == "POST":
+            # P0 26-may · gate ADMIN_USERS · cualquier user con ANIMUS_ACCESS
+            # (Daniela, etc) podía sustituir tokens y exfiltrar.
+            try:
+                from config import ADMIN_USERS as _AU
+            except Exception:
+                _AU = {'sebastian', 'alejandro'}
+            if (u or '').lower() not in {x.lower() for x in _AU}:
+                return jsonify({"error": "Solo admin"}), 403
             data = request.json or {}
+            invalid_keys = [k for k in data.keys() if k not in _ANIMUS_CONFIG_KEYS]
+            if invalid_keys:
+                return jsonify({"error": f"keys no permitidas: {invalid_keys[:5]}",
+                                 "permitidas": sorted(_ANIMUS_CONFIG_KEYS)}), 400
+            c = conn.cursor()
+            audit_despues = {}
             for k, v in data.items():
-                conn.execute("INSERT OR REPLACE INTO animus_config(clave,valor,actualizado) VALUES(?,?,datetime('now', '-5 hours'))", (k, v))
+                c.execute("INSERT OR REPLACE INTO animus_config(clave,valor,actualizado) VALUES(?,?,datetime('now', '-5 hours'))", (k, v))
+                # Enmascarar secrets en audit_log
+                if any(s in k.lower() for s in ('token','key','secret','password')):
+                    masked = (str(v)[:3] + '***' + str(v)[-3:]) if v and len(str(v)) > 6 else '***'
+                else:
+                    masked = str(v)[:80]
+                audit_despues[k] = masked
+            try:
+                from audit_helpers import audit_log as _al
+                _al(c, usuario=u, accion='ANIMUS_CONFIG_UPDATE', tabla='animus_config',
+                    despues=audit_despues,
+                    detalle=f'Animus config · {len(data)} keys actualizadas')
+            except Exception as _ae:
+                import logging as _lg
+                _lg.getLogger('animus').warning('audit animus_config fallo: %s', _ae)
             conn.commit()
             return jsonify({"ok": True})
-        rows = conn.execute("SELECT clave, CASE WHEN clave LIKE '%token%' OR clave LIKE '%key%' OR clave LIKE '%secret%' THEN '***' ELSE valor END as valor, actualizado FROM animus_config").fetchall()
+        rows = conn.execute("SELECT clave, CASE WHEN clave LIKE '%token%' OR clave LIKE '%key%' OR clave LIKE '%secret%' OR clave LIKE '%password%' OR clave LIKE '%api%' THEN '***' ELSE valor END as valor, actualizado FROM animus_config").fetchall()
         cfg = {r["clave"]: {"valor": r["valor"], "actualizado": r["actualizado"]} for r in rows}
         connected = {
             "shopify": bool(_cfg(conn, "shopify_token") and _cfg(conn, "shopify_shop")),
@@ -1284,6 +1325,22 @@ def aplicar_ajuste_conteo(conteo_id):
              f'Ajuste conteo ciclico Animus #{conteo_id}: {explicacion}',
              u or 'sistema_animus'))
         mov_id = c.lastrowid
+
+        # P0 audit 26-may · CLAUDE.md exige audit_log en cada INSERT movimientos
+        # (kardex regulado · trazabilidad INVIMA).
+        try:
+            from audit_helpers import audit_log as _al
+            _al(c, usuario=u or 'sistema_animus',
+                accion='ANIMUS_AJUSTE_CICLICO', tabla='movimientos',
+                registro_id=mov_id,
+                despues={'sku': sku, 'producto': producto[:80],
+                         'tipo_mov': tipo_mov, 'cantidad': cantidad_abs,
+                         'conteo_id': conteo_id,
+                         'explicacion': (explicacion or '')[:200]},
+                detalle=f'Ajuste cíclico Animus #{conteo_id} · {tipo_mov} {cantidad_abs} de {sku}')
+        except Exception as _ae:
+            import logging as _lg
+            _lg.getLogger('animus').warning('audit ANIMUS_AJUSTE_CICLICO fallo: %s', _ae)
 
         c.execute("""UPDATE animus_conteos_ciclicos
                      SET aplicado=1, movimiento_id_ajuste=?

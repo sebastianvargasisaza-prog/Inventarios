@@ -154,6 +154,9 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
   </div>
 </div>
 <script>
+// P0 audit 26-may · helper esc local (este script tag es independiente
+// del que define _esc en línea ~1927 · ámbito JS distinto).
+function _esc(s){var d=document.createElement('div');d.textContent=s==null?'':String(s);return d.innerHTML;}
 function cxAbrirIA(){var m=document.getElementById('cx-ia-modal');if(m){m.style.display='flex';document.getElementById('cx-ia-input').focus();}}
 function cxCerrarIA(){var m=document.getElementById('cx-ia-modal');if(m)m.style.display='none';}
 async function cxIAPreguntar(pregunta){
@@ -163,11 +166,14 @@ async function cxIAPreguntar(pregunta){
   if(typeof pregunta!=='string') pregunta=(inp.value||'').trim();
   if(pregunta.length<3) return;
   if(!document.getElementById('cx-ia-modal').style.display||document.getElementById('cx-ia-modal').style.display==='none') cxAbrirIA();
-  hist.innerHTML+='<div style="text-align:right;margin-bottom:6px"><span style="background:#0891b2;color:#fff;padding:6px 10px;border-radius:10px;display:inline-block;max-width:85%">'+pregunta+'</span></div>';
+  // P0 audit 26-may · escape user input (auto-XSS si pregunta tiene HTML)
+  hist.innerHTML+='<div style="text-align:right;margin-bottom:6px"><span style="background:#0891b2;color:#fff;padding:6px 10px;border-radius:10px;display:inline-block;max-width:85%">'+_esc(pregunta)+'</span></div>';
   hist.innerHTML+='<div id="cx-ia-pend" style="margin-bottom:6px"><span style="background:#f1f5f9;color:#475569;padding:6px 10px;border-radius:10px;font-style:italic">pensando…</span></div>';
   hist.scrollTop=hist.scrollHeight;
   if(inp) inp.value='';
   btn.disabled=true;
+  // Cap log a 200 turns para evitar memory leak en sesiones largas (anti-patrón documentado feedback_audit_marketing_25may)
+  while(hist.children.length > 200) hist.removeChild(hist.firstChild);
   try{
     var r=await fetch('/api/compras/asistente-ia',_fetchOpts('POST',{pregunta:pregunta}));
     var d=await r.json();
@@ -177,14 +183,15 @@ async function cxIAPreguntar(pregunta){
       var msgErr = (d.codigo === 'NO_API_KEY')
         ? '⚠ Asistente IA temporalmente no disponible · configurar en Render'
         : ('⚠ '+(d.error||r.status));
-      hist.innerHTML+='<div style="margin-bottom:6px"><span style="background:#fee2e2;color:#991b1b;padding:6px 10px;border-radius:10px">'+msgErr+'</span></div>';
+      hist.innerHTML+='<div style="margin-bottom:6px"><span style="background:#fee2e2;color:#991b1b;padding:6px 10px;border-radius:10px">'+_esc(msgErr)+'</span></div>';
     } else {
-      hist.innerHTML+='<div style="margin-bottom:6px"><span style="background:#f0fdfa;color:#134e4a;padding:6px 10px;border-radius:10px;display:inline-block;max-width:90%;white-space:pre-wrap">'+(d.respuesta||'(sin respuesta)')+'</span></div>';
+      // P0 26-may · output del LLM (Claude) ya puede contener HTML/scripts
+      hist.innerHTML+='<div style="margin-bottom:6px"><span style="background:#f0fdfa;color:#134e4a;padding:6px 10px;border-radius:10px;display:inline-block;max-width:90%;white-space:pre-wrap">'+_esc(d.respuesta||'(sin respuesta)')+'</span></div>';
     }
     hist.scrollTop=hist.scrollHeight;
   }catch(e){
     var p=document.getElementById('cx-ia-pend');if(p) p.remove();
-    hist.innerHTML+='<div style="margin-bottom:6px"><span style="background:#fee2e2;color:#991b1b;padding:6px 10px;border-radius:10px">⚠ red: '+e.message+'</span></div>';
+    hist.innerHTML+='<div style="margin-bottom:6px"><span style="background:#fee2e2;color:#991b1b;padding:6px 10px;border-radius:10px">⚠ red: '+_esc(e.message)+'</span></div>';
   }
   btn.disabled=false;
 }

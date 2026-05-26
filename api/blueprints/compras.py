@@ -4900,6 +4900,12 @@ def actualizar_estado_solicitud(numero):
         return err, code
     d = request.get_json() or {}
     nuevo = d.get('estado', 'Aprobada')
+    # P0 audit 26-may · whitelist de estado · sin esto un user puede meter
+    # cualquier string (incluyendo HTML/scripts) y romper queries downstream
+    # que filtran por estado IN (...).
+    _ESTADOS_SOL = {'Pendiente','Aprobada','Rechazada','Pagada','Cancelada','Reemplazada'}
+    if nuevo not in _ESTADOS_SOL:
+        return jsonify({'error': f'estado inválido: {nuevo!r} · válidos: {sorted(_ESTADOS_SOL)}'}), 400
     numero_oc_param = d.get('numero_oc', '')
     obs = d.get('observaciones', '')
     conn = get_db(); cur = conn.cursor()

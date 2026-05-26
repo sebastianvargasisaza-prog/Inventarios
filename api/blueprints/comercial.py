@@ -99,8 +99,18 @@ def maquila_handler():
             return jsonify(err), 400
         try:
             volumen = int(d.get('volumen_estimado_unds') or 0)
+            if volumen < 0:
+                return jsonify({'error': 'volumen_estimado_unds no puede ser negativo'}), 400
         except (TypeError, ValueError):
             return jsonify({'error': 'volumen_estimado_unds inválido'}), 400
+        # P0 audit 26-may · stage POST debe usar misma whitelist que PATCH
+        # (línea 189) · sin esto un cliente malicioso puede romper kanban con
+        # estados inválidos o inyectar HTML/scripts.
+        stage_raw = (d.get('stage') or 'consulta').strip()
+        _STAGES_OK = {'consulta','nda','brief','cotizacion','contrato',
+                      'produccion','ganado','perdido'}
+        if stage_raw not in _STAGES_OK:
+            return jsonify({'error': f'stage inválido · válidos: {sorted(_STAGES_OK)}'}), 400
         c.execute("""INSERT INTO maquila_pipeline
             (empresa, contacto_nombre, contacto_email, contacto_telefono,
              origen, stage, valor_estimado_cop, volumen_estimado_unds,
@@ -111,7 +121,7 @@ def maquila_handler():
              (d.get('contacto_email') or '').strip() or None,
              (d.get('contacto_telefono') or '').strip() or None,
              (d.get('origen') or '').strip() or None,
-             (d.get('stage') or 'consulta'),
+             stage_raw,
              valor_est, volumen,
              (d.get('producto_descripcion') or '').strip() or None,
              (d.get('owner') or user),
