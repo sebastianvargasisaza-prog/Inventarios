@@ -1342,6 +1342,13 @@ function _hoyLog(msg) {
   const line = `<div>[${ts}] ${_escHtml(msg)}</div>`;
   if(el.textContent.trim() === 'Sin actividad reciente.') el.innerHTML = '';
   el.innerHTML = line + el.innerHTML;
+  // Cap a 50 líneas para evitar memory leak en sesiones largas
+  const children = el.children;
+  if(children.length > 50) {
+    for(let i = children.length - 1; i >= 50; i--) {
+      el.removeChild(children[i]);
+    }
+  }
 }
 
 function _escHtml(s) {
@@ -1349,16 +1356,36 @@ function _escHtml(s) {
 }
 
 async function hoyCargarResumen() {
-  // KPIs rápidos
+  // KPIs rápidos · endpoint dedicado /api/marketing/kpis-hoy (fix P0 25-may)
+  const setErr = () => {
+    ['hoy-kpi-pend','hoy-kpi-eventos','hoy-kpi-riesgo','hoy-kpi-campanas'].forEach(id => {
+      const el = document.getElementById(id);
+      if(el) { el.textContent='?'; el.title='Error cargando KPI'; el.style.opacity='0.5'; }
+    });
+  };
   try {
-    const r = await fetch('/api/marketing/dashboard');
+    const r = await fetch('/api/marketing/kpis-hoy', {credentials:'same-origin'});
+    if(!r.ok) {
+      _hoyLog('❌ KPIs HTTP ' + r.status);
+      setErr();
+      return;
+    }
     const d = await r.json();
-    document.getElementById('hoy-kpi-pend').textContent = d.kpis?.influencers_pendientes_pago ?? '0';
-    document.getElementById('hoy-kpi-eventos').textContent = d.kpis?.eventos_proximos ?? '0';
-    document.getElementById('hoy-kpi-riesgo').textContent = d.kpis?.skus_en_riesgo ?? '0';
-    document.getElementById('hoy-kpi-campanas').textContent = d.kpis?.campanas_activas ?? '0';
+    const k = d.kpis || {};
+    const set = (id, val) => {
+      const el = document.getElementById(id);
+      if(!el) return;
+      el.textContent = (val ?? 0);
+      el.title = '';
+      el.style.opacity = '1';
+    };
+    set('hoy-kpi-pend',     k.influencers_pendientes_pago);
+    set('hoy-kpi-eventos',  k.eventos_proximos);
+    set('hoy-kpi-riesgo',   k.skus_en_riesgo);
+    set('hoy-kpi-campanas', k.campanas_activas);
   } catch(e) {
     _hoyLog('Error cargando KPIs: ' + e.message);
+    setErr();
   }
 }
 
@@ -1465,11 +1492,18 @@ async function hoyEjecutarTodos() {
 }
 
 async function hoyVerDetalleAgente(key) {
-  // Reusar tab Inteligencia → Agentes
+  // Reusar tab Inteligencia → Agentes (typo fix 25-may: era runAgente)
   switchTab('inteligencia');
   if(typeof showSub === 'function') showSub('agentes');
-  if(typeof runAgente === 'function') {
-    setTimeout(() => runAgente(key), 300);
+  if(typeof runAgent === 'function') {
+    // Espera que el DOM monte btn-${key} antes de ejecutar
+    setTimeout(() => {
+      const btn = document.getElementById('btn-' + key);
+      if(btn) runAgent(key);
+      else _hoyLog('⚠ No se encontró botón btn-' + key + ' en Inteligencia');
+    }, 400);
+  } else {
+    _hoyLog('⚠ runAgent no disponible');
   }
 }
 

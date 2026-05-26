@@ -418,6 +418,99 @@ def _ig_check_refresh(conn):
     }
 
 # ──────────────────────────────────────────────────────────────────────────────
+# KPIs HOY — endpoint rápido para la pestaña Hoy (4 KPIs reales, sin Claude)
+# ──────────────────────────────────────────────────────────────────────────────
+@bp.route("/api/marketing/kpis-hoy")
+def mkt_kpis_hoy():
+    """KPIs del día para la pestaña 🎯 Hoy.
+
+    Devuelve 4 contadores reales que el frontend muestra como tarjetas:
+      - influencers_pendientes_pago: pagos en estado Pendiente sin OC pagada
+      - eventos_proximos: eventos cosméticos en los próximos 60 días
+      - skus_en_riesgo: SKUs con días_cobertura ≤ 21 y demanda > 0
+      - campanas_activas: marketing_campanas en estado 'Activa'
+
+    Audit 25-may-2026 PM · P0 fix · el frontend leía estas 4 keys de
+    /api/marketing/dashboard que NUNCA las devolvía → siempre 0.
+    """
+    u, err, code = _auth()
+    if err:
+        return err, code
+    conn = _db()
+    c = conn.cursor()
+    from datetime import datetime as _dt, timedelta as _td
+    hoy = _dt.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    hace30 = (hoy - _td(days=30)).strftime("%Y-%m-%d")
+
+    # 1) Influencers pendientes de pago — DISTINCT por influencer_id
+    try:
+        pend = c.execute("""
+            SELECT COUNT(DISTINCT influencer_id) AS n
+            FROM pagos_influencers
+            WHERE estado='Pendiente'
+              AND (numero_oc IS NULL OR numero_oc='' OR numero_oc NOT IN (
+                    SELECT numero_oc FROM ordenes_compra WHERE estado='Pagada'
+                  ))
+        """).fetchone()["n"]
+    except Exception:
+        pend = 0
+
+    # 2) Eventos cosméticos próximos (≤ 60 días)
+    eventos = 0
+    for ev in CALENDARIO_COSMETICO:
+        try:
+            d = (_dt.strptime(ev["fecha"], "%Y-%m-%d") - hoy).days
+            if 0 <= d <= 60:
+                eventos += 1
+        except Exception:
+            continue
+
+    # 3) SKUs en riesgo — reusa lógica del agente estrategia (días cob ≤ 21)
+    try:
+        riesgo = 0
+        for r in c.execute("""
+            SELECT sku, SUM(unidades_disponible) AS stock
+            FROM stock_pt WHERE estado='Disponible' GROUP BY sku
+        """).fetchall():
+            sku, stock = r["sku"], r["stock"]
+            if not sku:
+                continue
+            lib = c.execute(
+                "SELECT COALESCE(SUM(unidades),0) AS t FROM liberaciones WHERE sku=? AND creado_en>=?",
+                (sku, hace30)
+            ).fetchone()["t"]
+            shop = c.execute(
+                "SELECT COALESCE(SUM(unidades_total),0) AS t FROM animus_shopify_orders WHERE sku_items LIKE ? AND creado_en>=?",
+                (f"%{sku}%", hace30)
+            ).fetchone()["t"]
+            demanda = (lib + shop) / 30.0
+            if demanda > 0:
+                dias_cob = (stock or 0) / demanda
+                if dias_cob <= 21:
+                    riesgo += 1
+    except Exception:
+        riesgo = 0
+
+    # 4) Campañas activas (no incluye Planificadas — son "futuras")
+    try:
+        camp = c.execute(
+            "SELECT COUNT(*) AS n FROM marketing_campanas WHERE estado='Activa'"
+        ).fetchone()["n"]
+    except Exception:
+        camp = 0
+
+    return jsonify({
+        "ok": True,
+        "kpis": {
+            "influencers_pendientes_pago": int(pend or 0),
+            "eventos_proximos":            int(eventos),
+            "skus_en_riesgo":              int(riesgo),
+            "campanas_activas":            int(camp or 0),
+        },
+    })
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # DASHBOARD
 # ──────────────────────────────────────────────────────────────────────────────
 @bp.route("/api/marketing/dashboard")
@@ -4493,16 +4586,28 @@ def mkt_refresh_all_metrics():
     if not rows:
         return jsonify({"ok": True, "procesados": 0, "mensaje": "Sin influencers con usuario_red"})
 
-    import threading, time as _time
+    import threading, time as _time, logging as _lg
+    _log = _lg.getLogger("marketing")
     def _worker(infs):
-        from index import app as _app
+        try:
+            from index import app as _app
+        except Exception:
+            from flask import current_app as _app
         with _app.app_context():
             cn = _db()
+            errores = 0
             for r in infs:
-                datos = _fetch_socialblade_data(r['usuario_red'])
-                if datos:
-                    _save_metrics_snapshot(cn, r['id'], datos, 'socialblade')
+                try:
+                    datos = _fetch_socialblade_data(r['usuario_red'])
+                    if datos:
+                        _save_metrics_snapshot(cn, r['id'], datos, 'socialblade')
+                except Exception as e:
+                    errores += 1
+                    _log.warning("refresh-all-metrics: falla en influencer id=%s nombre=%s: %s",
+                                 r.get('id') if hasattr(r,'get') else r['id'],
+                                 r['nombre'] if 'nombre' in r.keys() else '?', e)
                 _time.sleep(5)  # rate limit ético
+            _log.info("refresh-all-metrics completo: %d procesados · %d errores", len(infs), errores)
     threading.Thread(target=_worker, args=(list(rows),), daemon=True).start()
     return jsonify({
         "ok": True,
