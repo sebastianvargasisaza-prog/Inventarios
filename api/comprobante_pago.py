@@ -120,9 +120,23 @@ def _safe(text):
         return ""
     if not isinstance(text, str):
         text = str(text)
+    # Fix 26-may-2026 · ampliar mapa de reemplazos para chars frecuentes
+    # en correspondencia/conceptos · evita que aparezcan "?" en PDF.
+    # Las tildes españolas (á/é/í/ó/ú/ñ/¿/¡) SÍ están en latin-1 y se
+    # preservan correctamente. El "?" solo aparece para chars FUERA de
+    # latin-1 (emoji, símbolos asiáticos, etc).
     repl = {
-        "—": "-", "–": "-", "…": "...", "“": '"', "”": '"',
-        "‘": "'", "’": "'", "•": "·", "→": "->",
+        "—": "-", "–": "-", "…": "...", """: '"', """: '"',
+        "'": "'", "'": "'", "•": "·", "→": "->",
+        "€": "EUR", "₡": "CRC", "₱": "PHP",       # monedas no-latin1
+        "✓": "OK", "✔": "OK", "✗": "X", "✘": "X", # checks
+        "★": "*", "☆": "*", "♥": "*", "♦": "*",   # decorativos
+        "←": "<-", "↑": "^", "↓": "v",            # flechas
+        "≈": "~", "≠": "!=", "≤": "<=", "≥": ">=",
+        "🎉": "[!]", "✨": "*", "📄": "[DOC]",      # emoji frecuentes
+        "💰": "$", "💸": "$$$", "📊": "[graph]",
+        "®": "(R)", "™": "(TM)", "©": "(C)",
+        "º": "o", "ª": "a",                       # ordinales
     }
     for k, v in repl.items():
         text = text.replace(k, v)
@@ -547,8 +561,13 @@ def generar_comprobante_egreso_pdf(
     iva_total = round(subtotal * iva_pct_global / 100, 2) if aplicar_iva else 0
     rete_fuente_pct = 10 if aplicar_retefuente else 0
     rete_fuente = round(subtotal * rete_fuente_pct / 100, 2) if aplicar_retefuente else 0
-    rete_ica_pct = 0.66 if aplicar_retica else 0
-    rete_ica = round(subtotal * rete_ica_pct / 1000, 2) if aplicar_retica else 0
+    # P0 fiscal · Sebastián 26-may-2026 confirmó: "nosotros NO retenemos ICA si
+    # lo pagamos". ÁNIMUS Lab y Espagiria están en Régimen Simple → NO son
+    # agentes retenedores de ICA. Forzamos a 0 ignorando el flag aplicar_retica
+    # que envíe el frontend. Si en futuro cambian a Régimen Ordinario y deben
+    # retener, descomentar la lógica original y validar con contadora (Mayra).
+    rete_ica_pct = 0  # ANTES: 0.66 if aplicar_retica else 0
+    rete_ica = 0      # ANTES: round(subtotal * rete_ica_pct / 1000, 2) if aplicar_retica else 0
     retenciones = rete_fuente + rete_ica
     total = subtotal + iva_total - retenciones
 
