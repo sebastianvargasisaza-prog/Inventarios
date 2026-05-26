@@ -2513,16 +2513,31 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
     sku_to_prod = {}
     prod_to_skus = {}  # inverso · diagnóstico: ¿qué SKUs mapean a cada producto?
     skus_regalo = set()
-    for r in c.execute(
-        """SELECT sku, producto_nombre, COALESCE(es_regalo, 0) FROM sku_producto_map
-           WHERE COALESCE(activo,1)=1 AND producto_nombre IS NOT NULL
-             AND TRIM(producto_nombre) != ''""",
-    ).fetchall():
+    tono_por_sku = {}  # Sebastián 25-may-2026 PM · desglose por tono multi-SKU
+    try:
+        rows_sku = c.execute(
+            """SELECT sku, producto_nombre, COALESCE(es_regalo, 0),
+                      COALESCE(tono_label, '') FROM sku_producto_map
+               WHERE COALESCE(activo,1)=1 AND producto_nombre IS NOT NULL
+                 AND TRIM(producto_nombre) != ''""",
+        ).fetchall()
+        _has_tono = True
+    except Exception:
+        # mig 177 (tono_label) puede no estar aplicada en instancias viejas
+        rows_sku = c.execute(
+            """SELECT sku, producto_nombre, COALESCE(es_regalo, 0), '' FROM sku_producto_map
+               WHERE COALESCE(activo,1)=1 AND producto_nombre IS NOT NULL
+                 AND TRIM(producto_nombre) != ''""",
+        ).fetchall()
+        _has_tono = False
+    for r in rows_sku:
         sku_up = r[0].upper()
         sku_to_prod[sku_up] = r[1]
         prod_to_skus.setdefault(r[1], []).append(sku_up)
         if r[2]:
             skus_regalo.add(sku_up)
+        if r[3]:
+            tono_por_sku[sku_up] = r[3]
 
     # FIX #2 · 23-may-2026 Sebastián · "velocidad o cantidad mal" · auditoría:
     # _inferir_ml_presentacion usaba heurística por substring del nombre (default
@@ -2898,6 +2913,47 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
         if tiene_10ml == 1 and tipo_10ml == "regalo" and n_lotes_recomendados > 0:
             regalos_extra_uds = int(uds_10ml or 0) * n_lotes_recomendados
 
+        # Sebastián 25-may-2026 PM · desglose por tono multi-SKU.
+        # Caso LIP SERUM (PEACH/MERLOT/MOCCA/MALVA/N) · mismo bulk pero
+        # envases distintos. Trae array `tonos[]` cuando hay ≥2 SKUs con
+        # tono_label · cada tono con sus ventas + porcentaje del mix +
+        # uds estimadas del próximo lote. Si solo hay 1 tono o ninguno,
+        # `tonos: []` (frontend no muestra desglose).
+        tonos_arr = []
+        try:
+            skus_del_prod = [s for s in prod_to_skus.get(prod_nombre, [])
+                              if s not in skus_regalo]
+            # Tonos únicos no vacíos
+            _con_tono = [(s, tono_por_sku.get(s, '')) for s in skus_del_prod]
+            _con_tono = [(s, t) for s, t in _con_tono if t]
+            if len(_con_tono) >= 2:
+                # Calcular ventas por tono en la ventana principal
+                ventas_por_tono = {}
+                for sku_u, tono in _con_tono:
+                    ventas_por_tono[tono] = ventas_por_tono.get(tono, 0) + int(
+                        ventas_por_sku.get(sku_u, 0))
+                _total_uds_tonos = sum(ventas_por_tono.values()) or 1
+                # uds estimadas del próximo lote por tono · proporcional al mix
+                uds_lote_total = 0
+                if ml_promedio > 0 and lote_kg_efectivo > 0:
+                    uds_lote_total = int(round(lote_kg_efectivo * 1000.0 / ml_promedio))
+                for sku_u, tono in _con_tono:
+                    v_t = int(ventas_por_sku.get(sku_u, 0))
+                    pct = round(100.0 * v_t / _total_uds_tonos, 1) if _total_uds_tonos > 0 else 0
+                    uds_estim_lote = int(round(uds_lote_total * pct / 100.0))
+                    tonos_arr.append({
+                        'sku': sku_u,
+                        'tono_label': tono,
+                        'ml_unidad': ml_por_sku.get(sku_u, ml_promedio),
+                        'ventas_ventana_uds': v_t,
+                        'porcentaje_mix': pct,
+                        'uds_estim_lote': uds_estim_lote,
+                    })
+                # Ordenar por % mix descendente · más vendido primero
+                tonos_arr.sort(key=lambda t: -t['porcentaje_mix'])
+        except Exception:
+            tonos_arr = []
+
         out.append({
             "codigo_pt": codigo,
             "producto_nombre": prod_nombre,
@@ -2933,6 +2989,8 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
             "n_lotes_recomendados": n_lotes_recomendados,
             "kg_a_producir": kg_a_producir,
             "regalos_extra_uds": regalos_extra_uds,
+            "tonos": tonos_arr,
+            "n_tonos": len(tonos_arr),
         })
 
     # 6b. Match MPs por producto · Sebastián 13-may-2026:

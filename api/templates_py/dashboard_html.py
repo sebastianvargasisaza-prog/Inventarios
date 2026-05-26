@@ -22202,12 +22202,19 @@ async function ckMarcar(itemId, estado){
         const _rowBg = _esGrave ? cfg.bg : '#fff';
         const _rowBorderL = _esGrave ? ('4px solid ' + cfg.border) : '4px solid transparent';
         const _rowOpacity = _esIgnorable ? '0.55' : '1';
+        // Sebastián 25-may-2026 PM · chip 🎨 si producto tiene ≥2 tonos
+        // (caso LIP SERUM 5 tonos · cada tono envase distinto).
+        let chipTonos = '';
+        const _tonos = p.tonos || [];
+        if (_tonos.length >= 2) {
+          chipTonos = ' <span title="' + _tonos.length + ' tonos · click fila para desglose" style="background:#fdf2f8;color:#be185d;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer">🎨 ' + _tonos.length + ' tonos</span>';
+        }
         html += '<tr style="border-top:1px solid #e2e8f0;background:' + _rowBg + ';border-left:' + _rowBorderL + ';opacity:' + _rowOpacity + '">';
         // Producto + urgencia
         html += '<td style="padding:10px 8px">';
         html += '<div style="display:flex;align-items:center;gap:6px"><span style="background:' + cfg.bg + ';color:' + cfg.text + ';padding:2px 8px;border-radius:6px;font-size:11px;font-weight:800">' + cfg.emoji + '</span>';
         html += '<span style="font-weight:700;color:#1e293b">' + escapeHtmlNec(p.producto_nombre) + '</span>';
-        html += alertSinSku + chipPlan + chipB2B;
+        html += alertSinSku + chipPlan + chipB2B + chipTonos;
         html += '</div>';
         html += '<div style="font-family:ui-monospace,monospace;font-size:10px;color:#94a3b8;margin-top:2px">' + codDisp + ' · ' + mlReal + 'ml</div>';
         html += '</td>';
@@ -22219,6 +22226,26 @@ async function ckMarcar(itemId, estado){
         // Programar
         html += '<td style="padding:10px 8px;text-align:right"><button onclick="abrirPlanProduccion(' + idx + ')" style="background:#0f766e;color:#fff;border:none;padding:7px 16px;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer">📅 Programar</button></td>';
         html += '</tr>';
+        // Sub-fila colapsable con desglose por tono (solo si hay ≥2 tonos)
+        if (_tonos.length >= 2) {
+          html += '<tr style="background:#fdf2f8"><td colspan="6" style="padding:8px 14px">';
+          html += '<details><summary style="cursor:pointer;font-size:11px;color:#be185d;font-weight:700">🎨 Desglose por tono · click para expandir</summary>';
+          html += '<table style="width:100%;margin-top:8px;border-collapse:collapse;font-size:11px">';
+          html += '<thead><tr style="color:#9d174d"><th style="text-align:left;padding:4px 6px">Tono</th><th style="padding:4px 6px">SKU</th><th style="padding:4px 6px">ml</th><th style="padding:4px 6px">Vende ventana</th><th style="padding:4px 6px">% mix</th><th style="padding:4px 6px">Uds est. lote</th></tr></thead><tbody>';
+          _tonos.forEach(t => {
+            html += '<tr style="border-top:1px solid #fbcfe8">'
+              + '<td style="padding:4px 6px;font-weight:700;color:#9d174d">' + escapeHtmlNec(t.tono_label) + '</td>'
+              + '<td style="padding:4px 6px;font-family:monospace;color:#64748b">' + escapeHtmlNec(t.sku) + '</td>'
+              + '<td style="padding:4px 6px;text-align:center">' + t.ml_unidad + '</td>'
+              + '<td style="padding:4px 6px;text-align:center">' + t.ventas_ventana_uds + ' uds</td>'
+              + '<td style="padding:4px 6px;text-align:center;font-weight:700">' + t.porcentaje_mix + '%</td>'
+              + '<td style="padding:4px 6px;text-align:center;color:#9d174d;font-weight:700">' + t.uds_estim_lote + '</td>'
+              + '</tr>';
+          });
+          html += '</tbody></table>';
+          html += '<div style="font-size:10px;color:#64748b;margin-top:6px">Mix calculado con ventas de la ventana actual · uds estimadas asumen lote bulk completo (' + (p.lote_bulk_kg||0) + 'kg)</div>';
+          html += '</details></td></tr>';
+        }
       });
       html += '</tbody></table>';
     }
