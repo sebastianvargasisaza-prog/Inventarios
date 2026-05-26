@@ -312,6 +312,30 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (188, "users_mfa_backup_codes · 10 códigos one-time por user · Sebastián 26-may-2026 PM", [
+        # P1 audit MFA · "si pierdo el teléfono pierdo acceso 60 días" era
+        # el riesgo · ahora cada user enroll genera 10 backup codes one-time
+        # (estándar industria · GitHub/Google/Microsoft hacen igual).
+        #
+        # Diseño:
+        #   - 1 fila por código (max 10 activos por user)
+        #   - code_hash con pbkdf2:sha256:600000 (igual que passwords)
+        #   - used_at TIMESTAMP cuando se consume · NO se borra (audit trail)
+        #   - regenerar invalida TODOS los anteriores (set used_at=now)
+        #
+        # users_mfa.backup_code_hash queda como legacy fallback (1 code old)
+        # para no romper users existentes hasta que regeneren.
+        """CREATE TABLE IF NOT EXISTS users_mfa_backup_codes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username   TEXT NOT NULL,
+            code_hash  TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now','utc')),
+            used_at    TEXT,
+            used_from_ip TEXT,
+            FOREIGN KEY (username) REFERENCES users_passwords(username) ON DELETE CASCADE
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_mfa_backup_user ON users_mfa_backup_codes(username, used_at)",
+    ]),
     (187, "marketing_metas · objetivos mensuales Dashboard · Sebastián 26-may-2026 AM", [
         # FEATURE 26-may · "Marketing decisional" #4
         # Metas mensuales de revenue/pedidos/clientes para mostrar

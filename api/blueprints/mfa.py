@@ -156,6 +156,93 @@ def _gen_backup_code():
     return f"{''.join(chars[0:4])}-{''.join(chars[4:8])}-{''.join(chars[8:12])}"
 
 
+def _gen_backup_codes_batch(n=10):
+    """Genera N backup codes únicos (default 10 · estándar GitHub/Google)."""
+    return [_gen_backup_code() for _ in range(n)]
+
+
+def _consume_backup_code(username, code_input, ip=''):
+    """Intenta consumir un backup code de los 10 nuevos.
+
+    Returns:
+      (True, restantes_count)  · si matcheó y se marcó used_at
+      (False, None)            · si no matcheó ningún code sin usar
+    """
+    if not username or not code_input:
+        return False, None
+    code = (code_input or '').strip().upper()
+    conn = db_connect()
+    conn.execute("PRAGMA busy_timeout=2000")
+    try:
+        rows = conn.execute("""
+            SELECT id, code_hash FROM users_mfa_backup_codes
+            WHERE username=? AND used_at IS NULL
+        """, (username,)).fetchall()
+        for r in rows:
+            try:
+                if check_password_hash(r['code_hash'], code):
+                    # Marca used_at · single-use efectivo
+                    conn.execute("""
+                        UPDATE users_mfa_backup_codes
+                        SET used_at = datetime('now','utc'),
+                            used_from_ip = ?
+                        WHERE id=? AND used_at IS NULL
+                    """, ((ip or '')[:64], r['id']))
+                    conn.commit()
+                    # Cuenta restantes después del consumo
+                    rest = conn.execute(
+                        "SELECT COUNT(*) FROM users_mfa_backup_codes "
+                        "WHERE username=? AND used_at IS NULL", (username,)
+                    ).fetchone()[0]
+                    return True, int(rest)
+            except Exception:
+                continue
+        return False, None
+    finally:
+        conn.close()
+
+
+def _replace_backup_codes(username, n=10):
+    """Genera N backup codes nuevos, invalida los anteriores, retorna texto plano.
+
+    Los anteriores quedan con used_at=now+marker para auditoría · no se borran.
+    """
+    codes = _gen_backup_codes_batch(n)
+    conn = db_connect()
+    conn.execute("PRAGMA busy_timeout=2000")
+    try:
+        # Invalidar todos los activos previos
+        conn.execute("""
+            UPDATE users_mfa_backup_codes
+            SET used_at = datetime('now','utc'),
+                used_from_ip = 'invalidated_by_regenerate'
+            WHERE username=? AND used_at IS NULL
+        """, (username,))
+        for code in codes:
+            h = generate_password_hash(code, method='pbkdf2:sha256:600000')
+            conn.execute(
+                "INSERT INTO users_mfa_backup_codes (username, code_hash) VALUES (?, ?)",
+                (username, h)
+            )
+        conn.commit()
+    finally:
+        conn.close()
+    return codes
+
+
+def _count_backup_codes_remaining(username):
+    """Cuenta cuántos backup codes sin usar le quedan al user."""
+    conn = db_connect()
+    try:
+        row = conn.execute(
+            "SELECT COUNT(*) FROM users_mfa_backup_codes "
+            "WHERE username=? AND used_at IS NULL", (username,)
+        ).fetchone()
+        return int(row[0]) if row else 0
+    finally:
+        conn.close()
+
+
 def _provisioning_uri(username, secret):
     """Devuelve URI otpauth:// para escanear con la app authenticator.
 
@@ -357,6 +444,131 @@ def mfa_status():
         'has_secret_pending': bool(rec and not rec.get('enabled')),
         'enabled_at': rec.get('enabled_at') if rec else None,
         'last_used_at': rec.get('last_used_at') if rec else None,
+        'backup_codes_remaining': _count_backup_codes_remaining(username),
+        'has_legacy_single_code': bool(rec and rec.get('backup_code_hash')),
+    })
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Backup codes múltiples (10 single-use) · audit 26-may-2026 PM
+# ──────────────────────────────────────────────────────────────────────────────
+@bp.route('/api/mfa/backup-codes/regenerate', methods=['POST'])
+def mfa_backup_codes_regenerate():
+    """Regenera 10 backup codes nuevos · invalida TODOS los anteriores.
+
+    Requiere MFA habilitado · devuelve los 10 codes UNA SOLA VEZ en texto plano.
+    Usuario debe guardarlos en gestor de password / imprimir / foto segura.
+    """
+    username = session.get('compras_user', '')
+    if not username:
+        return jsonify({'error': 'No autorizado'}), 401
+    rec = _get_mfa_record(username)
+    if not rec or not rec.get('enabled'):
+        return jsonify({'error': 'MFA no habilitado · no podés generar backup codes sin TOTP activo'}), 400
+    # Verificar password para sensibilidad
+    body = request.get_json(silent=True) or {}
+    password = body.get('password') or ''
+    if not password:
+        return jsonify({'error': 'Confirmá tu password para regenerar backup codes'}), 400
+    try:
+        from config import COMPRAS_USERS
+        ph = COMPRAS_USERS.get(username, '') or ''
+        if not ph or not check_password_hash(ph, password):
+            ip = _client_ip()
+            _log_sec("mfa_backup_regen_bad_pw", username, ip)
+            return jsonify({'error': 'Password incorrecta'}), 403
+    except Exception:
+        # Si la verificación falla por config no disponible, mejor rechazar
+        return jsonify({'error': 'No se pudo verificar password · contactá admin'}), 503
+    codes = _replace_backup_codes(username, n=10)
+    _log_sec("mfa_backup_regen", username, _client_ip(), details=f"count=10")
+    return jsonify({
+        'ok': True,
+        'codes': codes,
+        'cantidad': len(codes),
+        'mensaje': 'Guarda estos 10 códigos en lugar seguro · NO se mostrarán de nuevo · cada uno sirve una sola vez',
+    })
+
+
+@bp.route('/api/mfa/backup-codes/status', methods=['GET'])
+def mfa_backup_codes_status():
+    """Cuántos backup codes sin usar quedan · NO devuelve los códigos plaintext."""
+    username = session.get('compras_user', '')
+    if not username:
+        return jsonify({'error': 'No autorizado'}), 401
+    rest = _count_backup_codes_remaining(username)
+    conn = db_connect()
+    try:
+        used_count = conn.execute(
+            "SELECT COUNT(*) FROM users_mfa_backup_codes WHERE username=? AND used_at IS NOT NULL",
+            (username,)
+        ).fetchone()[0]
+    finally:
+        conn.close()
+    return jsonify({
+        'username': username,
+        'backup_codes_remaining': rest,
+        'backup_codes_used': int(used_count or 0),
+        'sugerencia': ('Regenerar pronto' if rest <= 3 else None),
+    })
+
+
+@bp.route('/api/admin/mfa-reset/<username>', methods=['POST'])
+def admin_mfa_reset(username):
+    """ADMIN ONLY · resetea MFA de otro user (perdió teléfono + no tiene backup codes).
+
+    Deja `users_mfa.enabled=0, secret=''` para que en próximo login NO pida
+    código TOTP. El user puede re-enrollar normalmente desde /seguridad.
+
+    Audit log SIEMPRE · acción muy sensible. Doble confirmación con
+    `?confirm=RESET_MFA_<TARGET_USERNAME>` para evitar accidentes.
+    """
+    caller = session.get('compras_user', '')
+    if not caller:
+        return jsonify({'error': 'No autorizado'}), 401
+    from config import ADMIN_USERS
+    if caller.lower() not in {x.lower() for x in ADMIN_USERS}:
+        return jsonify({'error': 'Solo admin'}), 403
+    if caller.lower() == (username or '').lower():
+        return jsonify({'error': 'No te podés resetear a vos mismo · usa /api/mfa/disable'}), 400
+    # Doble confirmación obligatoria
+    expected = f"RESET_MFA_{username}"
+    if (request.args.get('confirm') or '') != expected:
+        return jsonify({
+            'error': f'Confirmación requerida · reenviar con ?confirm={expected}',
+            'razon': 'Esta acción permite que cualquier persona con la password de este user entre SIN MFA',
+        }), 400
+    conn = db_connect()
+    conn.execute("PRAGMA busy_timeout=2000")
+    try:
+        rec = conn.execute(
+            "SELECT enabled, secret FROM users_mfa WHERE username=?",
+            (username,)
+        ).fetchone()
+        if not rec:
+            return jsonify({'error': f'User "{username}" sin MFA registrado'}), 404
+        had_enabled = bool(rec[0])
+        conn.execute("""
+            UPDATE users_mfa
+            SET enabled=0, secret='', backup_code_hash=NULL,
+                disabled_at=datetime('now','utc')
+            WHERE username=?
+        """, (username,))
+        conn.execute("""
+            UPDATE users_mfa_backup_codes
+            SET used_at=datetime('now','utc'), used_from_ip='admin_reset'
+            WHERE username=? AND used_at IS NULL
+        """, (username,))
+        conn.commit()
+    finally:
+        conn.close()
+    ip = _client_ip()
+    _log_sec("mfa_admin_reset", caller, ip,
+              details=f"target={username} prev_enabled={had_enabled}")
+    return jsonify({
+        'ok': True,
+        'target_username': username,
+        'mensaje': f'MFA de "{username}" desactivado. En próximo login podrá re-enrollar desde /seguridad',
     })
 
 
@@ -735,25 +947,40 @@ def login_mfa_backup():
             session['mfa_error'] = 'Demasiados intentos. Espera 15 min.'
             return redirect('/login/mfa-backup')
 
-        if not rec or not rec.get('backup_code_hash') or not check_password_hash(rec['backup_code_hash'], code):
+        # P1 audit 26-may · soportar BOTH (a) backup codes nuevos múltiples
+        # (10 · tabla users_mfa_backup_codes) Y (b) legacy single backup_code_hash
+        # para users que no han regenerado todavía.
+        consumed_new, restantes = _consume_backup_code(pending, code, ip)
+        legacy_ok = False
+        if not consumed_new and rec and rec.get('backup_code_hash'):
+            legacy_ok = check_password_hash(rec['backup_code_hash'], code)
+
+        if not consumed_new and not legacy_ok:
             _record_failure(ip, pending)
             _log_sec("mfa_backup_failed", pending, ip)
             session['mfa_error'] = 'Código de respaldo incorrecto.'
             return redirect('/login/mfa-backup')
 
-        # Backup code válido — desactivar MFA (de un solo uso) y completar login
+        # Backup code válido · marcamos used (los nuevos ya tienen used_at automático)
         conn = db_connect()
         conn.execute("PRAGMA busy_timeout=2000")
         try:
-            conn.execute("""
-                UPDATE users_mfa
-                   SET enabled          = 0,
-                       disabled_at      = datetime('now', 'utc'),
-                       secret           = '',
-                       backup_code_hash = NULL
-                 WHERE username = ?
-            """, (pending,))
-            conn.commit()
+            if legacy_ok:
+                # Legacy single-code: desactivar MFA forzando re-enroll (comportamiento previo)
+                conn.execute("""
+                    UPDATE users_mfa
+                       SET enabled          = 0,
+                           disabled_at      = datetime('now', 'utc'),
+                           secret           = '',
+                           backup_code_hash = NULL
+                     WHERE username = ?
+                """, (pending,))
+                conn.commit()
+                must_reenroll = True
+            else:
+                # Backup code múltiple: MFA queda activo · user sigue usando TOTP normal
+                # Solo si quedan 0 backup codes, sugerir regenerar (no forzamos)
+                must_reenroll = (restantes == 0)
         finally:
             conn.close()
 
@@ -762,10 +989,15 @@ def login_mfa_backup():
         session.permanent = True
         session['compras_user'] = pending
         session['login_time'] = time.time()
-        session['must_reenroll_mfa'] = True   # bandera para mostrar nag en /perfil
+        if legacy_ok:
+            session['must_reenroll_mfa'] = True
+        elif restantes is not None and restantes <= 3:
+            # Aviso suave si quedan ≤3 backup codes (no obliga, solo notifica)
+            session['mfa_backup_codes_low'] = restantes
 
         _clear_attempts(ip, pending)
-        _log_sec("mfa_backup_used", pending, ip)
+        _log_sec("mfa_backup_used", pending, ip,
+                  details=f"restantes={restantes}" if restantes is not None else "legacy")
 
         from auth import _ensure_csrf_token
         _ensure_csrf_token()
