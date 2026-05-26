@@ -66,6 +66,26 @@ def test_marketing_generar_cupon_influencer_inexistente(app, db_clean):
     assert r.status_code == 404
 
 
+def test_contacto_360_email_obligatorio(app, db_clean):
+    """GET /api/marketing/contacto-360 sin email → 400."""
+    c = _login(app)
+    r = c.get("/api/marketing/contacto-360")
+    assert r.status_code == 400
+
+
+def test_contacto_360_email_no_existe(app, db_clean):
+    """Email que no aparece en ninguna fuente → 200 con tier=Lead y LTV=0."""
+    c = _login(app)
+    r = c.get("/api/marketing/contacto-360?email=ghost@example.com")
+    assert r.status_code == 200
+    j = r.get_json()
+    assert j["email"] == "ghost@example.com"
+    assert j["ghl_contact"] is None
+    assert j["es_influencer"] is False
+    assert j["ltv_aproximado"] == 0
+    assert j["tier_sugerido"] == "Lead"
+
+
 def test_eventos_calendario_listado(app, db_clean):
     """Lista de eventos · mig 186 siembra 10 eventos · al menos uno presente."""
     c = _login(app)

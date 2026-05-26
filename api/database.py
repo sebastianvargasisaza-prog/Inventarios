@@ -312,6 +312,32 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (189, "animus_ghl_opportunities · pipelines GHL · Sebastián 26-may-2026 PM", [
+        # FEATURE 26-may · GHL sync actual SOLO trae contactos básicos
+        # (nombre/email/telefono/tags). Falta lo más valioso de GHL:
+        # opportunities (deals con monetary_value, status, pipeline_stage).
+        # Esta tabla espeja la API /opportunities/ de GHL v2.
+        """CREATE TABLE IF NOT EXISTS animus_ghl_opportunities (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ghl_id TEXT UNIQUE,
+            ghl_contact_id TEXT,
+            ghl_pipeline_id TEXT,
+            ghl_stage_id TEXT,
+            nombre TEXT,
+            pipeline_nombre TEXT,
+            stage_nombre TEXT,
+            status TEXT,                    -- open/won/lost/abandoned
+            monetary_value REAL DEFAULT 0,
+            source TEXT,
+            assigned_to TEXT,
+            ghl_created_at TEXT,
+            ghl_updated_at TEXT,
+            synced_at TEXT DEFAULT (datetime('now'))
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_ghl_opp_contact ON animus_ghl_opportunities(ghl_contact_id)",
+        "CREATE INDEX IF NOT EXISTS idx_ghl_opp_status ON animus_ghl_opportunities(status, ghl_updated_at)",
+        "CREATE INDEX IF NOT EXISTS idx_ghl_opp_pipeline ON animus_ghl_opportunities(ghl_pipeline_id, ghl_stage_id)",
+    ]),
     (188, "users_mfa_backup_codes · 10 códigos one-time por user · Sebastián 26-may-2026 PM", [
         # P1 audit MFA · "si pierdo el teléfono pierdo acceso 60 días" era
         # el riesgo · ahora cada user enroll genera 10 backup codes one-time

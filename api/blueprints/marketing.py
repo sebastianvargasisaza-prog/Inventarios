@@ -656,6 +656,133 @@ def mkt_influencer_generar_cupon(iid):
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# CONTACTO 360º · vista unificada GHL + Shopify + Pedidos B2B + Influencer
+# ──────────────────────────────────────────────────────────────────────────────
+@bp.route('/api/marketing/contacto-360')
+def mkt_contacto_360():
+    """Vista unificada de un contacto cruzando 4 fuentes:
+       - GHL contact + opportunities + tags
+       - Shopify orders (revenue, frecuencia, primer/último pedido)
+       - Pedidos B2B (si es cliente mayorista)
+       - Influencer record (si está en marketing_influencers)
+
+    Query: ?email=cliente@example.com (obligatorio)
+    """
+    u, err, code = _auth()
+    if err: return err, code
+    email = (request.args.get('email') or '').strip().lower()
+    if not email:
+        return jsonify({"error": "email requerido (?email=)"}), 400
+    conn = _db(); c = conn.cursor()
+    # 1) GHL contact
+    ghl_contact = None
+    try:
+        row = c.execute(
+            "SELECT * FROM animus_ghl_contacts WHERE LOWER(email)=? LIMIT 1",
+            (email,)).fetchone()
+        if row:
+            ghl_contact = dict(row)
+    except Exception:
+        pass
+    # 2) GHL opportunities (asociadas al contact_id si existe)
+    ghl_opps = []
+    if ghl_contact and ghl_contact.get('ghl_id'):
+        try:
+            ghl_opps = [dict(r) for r in c.execute("""
+                SELECT ghl_id, nombre, pipeline_nombre, stage_nombre, status,
+                       monetary_value, ghl_updated_at
+                FROM animus_ghl_opportunities WHERE ghl_contact_id=?
+                ORDER BY ghl_updated_at DESC LIMIT 20
+            """, (ghl_contact['ghl_id'],)).fetchall()]
+        except Exception:
+            pass
+    # 3) Shopify · orders del email
+    shopify = {"orders": [], "stats": {}}
+    try:
+        sh_orders = [dict(r) for r in c.execute("""
+            SELECT shopify_id, creado_en, total, subtotal, total_descuentos,
+                   discount_codes, sku_items, unidades_total
+            FROM animus_shopify_orders WHERE LOWER(email)=?
+            ORDER BY creado_en DESC LIMIT 50
+        """, (email,)).fetchall()]
+        shopify["orders"] = sh_orders
+        if sh_orders:
+            tot = sum(float(o.get("total") or 0) for o in sh_orders)
+            shopify["stats"] = {
+                "orders_count": len(sh_orders),
+                "revenue_total": round(tot, 0),
+                "ticket_promedio": round(tot / len(sh_orders), 0),
+                "primer_pedido": min((o.get("creado_en") or "") for o in sh_orders),
+                "ultimo_pedido": max((o.get("creado_en") or "") for o in sh_orders),
+            }
+    except Exception:
+        pass
+    # 4) Pedidos B2B · si email está vinculado a cliente_b2b (notas/cliente_nombre LIKE)
+    b2b = {"pedidos": [], "stats": {}}
+    try:
+        nombre_match = ghl_contact.get("nombre") if ghl_contact else None
+        if nombre_match:
+            ped_rows = c.execute("""
+                SELECT id, cliente_id, cliente_nombre, producto_nombre,
+                       cantidad_uds, ml_unidad, estado, fecha_estimada, creado_at_utc
+                FROM pedidos_b2b WHERE LOWER(cliente_nombre) LIKE ?
+                ORDER BY creado_at_utc DESC LIMIT 30
+            """, (f"%{nombre_match.lower()}%",)).fetchall()
+            b2b["pedidos"] = [dict(r) for r in ped_rows]
+            if ped_rows:
+                b2b["stats"] = {
+                    "pedidos_count": len(ped_rows),
+                    "uds_total": sum(int(r["cantidad_uds"] or 0) for r in ped_rows),
+                    "ultimo_pedido": max((r["creado_at_utc"] or "") for r in ped_rows),
+                }
+    except Exception:
+        pass
+    # 5) ¿Es influencer?
+    influencer = None
+    try:
+        ir = c.execute(
+            "SELECT id, nombre, red_social, usuario_red, estado, discount_code, seguidores "
+            "FROM marketing_influencers WHERE LOWER(email)=? LIMIT 1",
+            (email,)).fetchone()
+        if ir:
+            influencer = dict(ir)
+            # Revenue atribuible si tiene cupón
+            dcode = (influencer.get("discount_code") or "").strip()
+            if dcode:
+                atr = c.execute("""
+                    SELECT COUNT(*) AS n, COALESCE(SUM(total),0) AS rev
+                    FROM animus_shopify_orders
+                    WHERE UPPER(COALESCE(discount_codes,'')) LIKE ?
+                """, (f"%{dcode.upper()}%",)).fetchone()
+                influencer["revenue_atribuible"] = float(atr["rev"] or 0)
+                influencer["pedidos_atribuibles"] = int(atr["n"] or 0)
+    except Exception:
+        pass
+    # 6) Score relacional · simple LTV agregado
+    revenue_dtc = float((shopify.get("stats") or {}).get("revenue_total") or 0)
+    revenue_b2b_uds = int((b2b.get("stats") or {}).get("uds_total") or 0)
+    # LTV crude · suma revenue DTC + estimación B2B (uds * 5000 ml * 0.5 USD avg)
+    ltv_aprox = revenue_dtc + (revenue_b2b_uds * 25000)  # heurística colombiana
+    return jsonify({
+        "email": email,
+        "ghl_contact": ghl_contact,
+        "ghl_opportunities": ghl_opps,
+        "shopify": shopify,
+        "b2b": b2b,
+        "es_influencer": bool(influencer),
+        "influencer": influencer,
+        "ltv_aproximado": round(ltv_aprox, 0),
+        "tier_sugerido": (
+            "VIP" if ltv_aprox >= 2_000_000 else
+            "Recurrente" if ltv_aprox >= 500_000 else
+            "One-shot" if ltv_aprox > 0 else
+            "Lead"
+        ),
+        "nota": "LTV es heurística simple (DTC real + B2B uds × $25k) · refinar con costo real de producto",
+    })
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # CALENDARIO COSMÉTICO · CRUD editable (mig 186)
 # ──────────────────────────────────────────────────────────────────────────────
 @bp.route('/api/marketing/eventos-calendario', methods=['GET', 'POST'])
@@ -1184,6 +1311,44 @@ def mkt_dashboard():
         # Auto-refresh token si vence en < 10 dias (silencioso)
         ig_token_status = _ig_check_refresh(conn) if ig_configured else {"expiry_date": None, "days_left": 0, "near_expiry": False, "refreshed": False, "expired": False}
 
+        # AUDIT 26-may · KPIs pipeline GHL (mig 189 · si tabla vacía → 0)
+        ghl_block = {
+            "contactos_total": ghl_total,
+            "contactos_nuevos_30d": ghl_nuevos,
+            "opps_abiertas": 0,
+            "opps_ganadas_30d": 0,
+            "valor_pipeline_abierto": 0.0,
+            "valor_ganado_30d": 0.0,
+            "top_pipelines": [],
+        }
+        try:
+            ghl_block["opps_abiertas"] = int(c.execute(
+                "SELECT COUNT(*) AS n FROM animus_ghl_opportunities WHERE status='open'"
+            ).fetchone()["n"] or 0)
+            ghl_block["opps_ganadas_30d"] = int(c.execute(
+                "SELECT COUNT(*) AS n FROM animus_ghl_opportunities "
+                "WHERE status='won' AND date(ghl_updated_at)>=?",
+                (hace30,)).fetchone()["n"] or 0)
+            ghl_block["valor_pipeline_abierto"] = float(c.execute(
+                "SELECT COALESCE(SUM(monetary_value),0) AS v "
+                "FROM animus_ghl_opportunities WHERE status='open'"
+            ).fetchone()["v"] or 0)
+            ghl_block["valor_ganado_30d"] = float(c.execute(
+                "SELECT COALESCE(SUM(monetary_value),0) AS v "
+                "FROM animus_ghl_opportunities "
+                "WHERE status='won' AND date(ghl_updated_at)>=?",
+                (hace30,)).fetchone()["v"] or 0)
+            ghl_block["top_pipelines"] = [dict(r) for r in c.execute("""
+                SELECT pipeline_nombre, COUNT(*) AS opps,
+                       COALESCE(SUM(monetary_value),0) AS valor
+                FROM animus_ghl_opportunities
+                WHERE status='open' AND COALESCE(pipeline_nombre,'') != ''
+                GROUP BY pipeline_nombre ORDER BY valor DESC LIMIT 5
+            """).fetchall()]
+        except Exception as _ghl_e:
+            # Si la mig 189 aún no aplicó (tabla no existe), KPIs quedan en 0
+            log.warning("ghl KPIs dashboard fallback (mig 189 pending?): %s", _ghl_e)
+
         return jsonify({
             "kpis": {
                 "total_campanas": total_campanas,
@@ -1214,10 +1379,7 @@ def mkt_dashboard():
                 "top_skus": sh_top_skus,
                 "ciudades": sh_ciudades,
             },
-            "ghl": {
-                "contactos_total": ghl_total,
-                "contactos_nuevos_30d": ghl_nuevos,
-            },
+            "ghl": ghl_block,
             "instagram": {
                 "configurado": ig_configured,
                 "total_posts": ig_total_posts,
@@ -2677,8 +2839,80 @@ def mkt_sync(platform):
                 start_after_id = meta.get("startAfterId")
                 if not start_after or len(contacts) < 100:
                     break
+            # AUDIT 26-may · ADEMÁS sync opportunities (pipelines) GHL
+            synced_opps = 0
+            try:
+                # Listar pipelines primero (necesitamos sus nombres)
+                pl_url = f"https://services.leadconnectorhq.com/opportunities/pipelines?locationId={loc_id}"
+                pl_req = urllib.request.Request(pl_url, headers=ghl_headers)
+                pipelines_by_id = {}
+                stages_by_id = {}
+                try:
+                    with urllib.request.urlopen(pl_req, timeout=20) as r:
+                        pl_payload = json.loads(r.read())
+                        for p in pl_payload.get("pipelines", []):
+                            pipelines_by_id[p.get("id","")] = p.get("name","")
+                            for st in p.get("stages", []):
+                                stages_by_id[st.get("id","")] = st.get("name","")
+                except Exception as _pl_e:
+                    log.warning("ghl pipelines fetch fallo: %s", _pl_e)
+                # Listar opportunities (paginado)
+                opp_start_after = None
+                opp_start_after_id = None
+                while True:
+                    op_params = f"location_id={loc_id}&limit=100"
+                    if opp_start_after:
+                        op_params += f"&startAfter={opp_start_after}&startAfterId={opp_start_after_id}"
+                    op_url = f"https://services.leadconnectorhq.com/opportunities/search?{op_params}"
+                    op_req = urllib.request.Request(op_url, headers=ghl_headers)
+                    try:
+                        with urllib.request.urlopen(op_req, timeout=20) as r:
+                            op_payload = json.loads(r.read())
+                    except urllib.error.HTTPError as _he:
+                        # Si /opportunities/search no está habilitado en el plan GHL,
+                        # log y seguir sin opportunities
+                        log.warning("ghl opportunities HTTP %s: %s", _he.code,
+                                     _he.read().decode('utf-8', errors='replace')[:200])
+                        break
+                    except Exception as _oe:
+                        log.warning("ghl opportunities fetch fallo: %s", _oe)
+                        break
+                    opps = op_payload.get("opportunities", []) or []
+                    if not opps:
+                        break
+                    for o in opps:
+                        try:
+                            conn.execute("""INSERT OR REPLACE INTO animus_ghl_opportunities
+                                (ghl_id, ghl_contact_id, ghl_pipeline_id, ghl_stage_id,
+                                 nombre, pipeline_nombre, stage_nombre, status,
+                                 monetary_value, source, assigned_to,
+                                 ghl_created_at, ghl_updated_at, synced_at)
+                                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now','-5 hours'))""",
+                                (o.get("id",""),
+                                 (o.get("contact", {}) or {}).get("id") or o.get("contactId",""),
+                                 o.get("pipelineId",""),
+                                 o.get("pipelineStageId",""),
+                                 o.get("name",""),
+                                 pipelines_by_id.get(o.get("pipelineId",""), ""),
+                                 stages_by_id.get(o.get("pipelineStageId",""), ""),
+                                 (o.get("status","") or "").lower(),
+                                 float(o.get("monetaryValue") or 0),
+                                 o.get("source","") or "",
+                                 o.get("assignedTo","") or "",
+                                 o.get("createdAt","") or "",
+                                 o.get("updatedAt","") or ""))
+                            synced_opps += 1
+                        except Exception as _ie:
+                            log.warning("ghl opp insert fallo id=%s: %s", o.get("id"), _ie)
+                    op_meta = op_payload.get("meta", {}) or {}
+                    opp_start_after = op_meta.get("startAfter")
+                    opp_start_after_id = op_meta.get("startAfterId")
+                    if not opp_start_after or len(opps) < 100:
+                        break
+            except Exception as _oe:
+                log.warning("ghl opportunities sync skipped: %s", _oe)
             conn.commit()
-            return jsonify({"ok": True, "synced": synced, "platform": "ghl"})
+            return jsonify({"ok": True, "synced": synced, "synced_opportunities": synced_opps, "platform": "ghl"})
 
         elif platform == "instagram":
             # _ig_resolve_token autodescubre el Page Access Token correcto
