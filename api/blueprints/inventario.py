@@ -7548,6 +7548,10 @@ def _conteo_programacion_items(tipo_material):
 
 @bp.route('/api/conteo/<int:conteo_id>/guardar', methods=['POST'])
 def conteo_guardar(conteo_id):
+    # P0 audit 26-may-2026 · sin gate · operario podía guardar conteos sin sesión.
+    _u, _err, _code = _require_planta_write()
+    if _err:
+        return _err, _code
     d = request.json or {}
     items = d.get('items', [])
     UMBRAL_ESCALA = 0.05  # 5% -> escala a gerencia (BDG-PRO-002 num 8)
@@ -9458,6 +9462,14 @@ def consumo_historico_mp(codigo):
 
 @bp.route('/api/conteos', methods=['GET','POST'])
 def conteos():
+    # P0 audit 26-may-2026 · sin gate · creación/listado de conteos abierto.
+    _u_sess, _err_s, _code_s = _require_session()
+    if _err_s:
+        return _err_s, _code_s
+    if request.method == 'POST':
+        _u_w, _err_w, _code_w = _require_planta_write()
+        if _err_w:
+            return _err_w, _code_w
     conn = get_db(); c = conn.cursor()
     if request.method == 'POST':
         d = request.json or {}
@@ -9485,11 +9497,26 @@ def conteos():
 
 @bp.route('/api/conteos/<int:cid>', methods=['GET','PATCH'])
 def conteo_detalle(cid):
+    # P0 audit 26-may-2026 · sin gate · PATCH aplicar_ajustes hacía INSERT a movimientos.
+    _u_sess, _err_s, _code_s = _require_session()
+    if _err_s:
+        return _err_s, _code_s
+    if request.method == 'PATCH':
+        _u_w, _err_w, _code_w = _require_planta_write()
+        if _err_w:
+            return _err_w, _code_w
     conn = get_db(); c = conn.cursor()
     if request.method == 'PATCH':
         d = request.json or {}; accion = d.get('accion')
         if accion == 'registrar_fisico':
-            sf = float(d.get('stock_fisico', 0))
+            # Validar stock_fisico finito (NaN/Inf rompe kardex)
+            try:
+                sf = float(d.get('stock_fisico', 0))
+                import math as _m
+                if not _m.isfinite(sf) or sf < 0:
+                    return jsonify({'error': 'stock_fisico inválido'}), 400
+            except (TypeError, ValueError):
+                return jsonify({'error': 'stock_fisico no numérico'}), 400
             c.execute("""UPDATE conteo_items SET stock_fisico=?,diferencia=?-stock_sistema,observaciones=?
                          WHERE conteo_id=? AND codigo_mp=?""",
                       (sf, sf, d.get('observaciones',''), cid, d.get('codigo_mp')))
@@ -9697,6 +9724,10 @@ _init_mee_movimientos()
 @bp.route('/api/mee', methods=['POST'])
 def mee_crear():
     """Crea un nuevo material en maestro_mee."""
+    # P0 audit 26-may-2026 · sin gate, cualquier anónimo podía crear MEE.
+    _u, _err, _code = _require_planta_write()
+    if _err:
+        return _err, _code
     d = request.json or {}
     codigo      = d.get('codigo','').strip().upper()
     descripcion = d.get('descripcion','').strip()
@@ -9725,6 +9756,17 @@ def mee_crear():
                                               stock_actual, stock_minimo, estado)
                      VALUES (?,?,?,?,?,?,?,'Activo')""",
                   (codigo, descripcion, categoria, unidad, proveedor, stock_actual, stock_minimo))
+        # Audit log creación MEE
+        try:
+            from audit_helpers import audit_log as _al
+            _al(c, usuario=_u, accion='CREAR_MEE', tabla='maestro_mee', registro_id=codigo,
+                despues={'codigo': codigo, 'descripcion': descripcion[:80],
+                         'categoria': categoria, 'proveedor': proveedor[:80],
+                         'stock_actual': stock_actual, 'stock_minimo': stock_minimo},
+                detalle=f'Material MEE {codigo} creado')
+        except Exception as _ae:
+            import logging as _lg
+            _lg.getLogger('inventario').warning('audit crear_mee fallo: %s', _ae)
         conn.commit()
     except Exception as e:
         return jsonify({'error': str(e)}), 400
@@ -9795,6 +9837,10 @@ def mee_stock_list():
 @bp.route('/api/mee/movimiento', methods=['POST'])
 def mee_registrar_movimiento():
     """Registra una entrada, salida o ajuste de empaque MEE."""
+    # P0 audit 26-may-2026 · sin gate · cualquier anónimo movía stock MEE.
+    _u, _err, _code = _require_planta_write()
+    if _err:
+        return _err, _code
     d = request.json or {}
     codigo      = d.get('codigo','').strip()
     tipo        = d.get('tipo','').strip()
@@ -10502,6 +10548,14 @@ def producciones_sin_envasar():
 
 @bp.route('/api/envasado', methods=['GET', 'POST'])
 def envasado_list():
+    # P0 audit 26-may-2026 · sin gate · POST creaba envasado + UPDATE MEE stock.
+    _u_sess, _err_s, _code_s = _require_session()
+    if _err_s:
+        return _err_s, _code_s
+    if request.method == 'POST':
+        _u_w, _err_w, _code_w = _require_planta_write()
+        if _err_w:
+            return _err_w, _code_w
     conn = get_db(); c = conn.cursor()
     if request.method == 'POST':
         d = request.get_json(silent=True) or {}
@@ -10801,6 +10855,14 @@ def acond_pendientes_lib():
 
 @bp.route('/api/acondicionamiento', methods=['GET', 'POST'])
 def acondicionamiento_list():
+    # P0 audit 26-may-2026 · sin gate · POST creaba acondicionamiento + UPDATE MEE.
+    _u_sess, _err_s, _code_s = _require_session()
+    if _err_s:
+        return _err_s, _code_s
+    if request.method == 'POST':
+        _u_w, _err_w, _code_w = _require_planta_write()
+        if _err_w:
+            return _err_w, _code_w
     conn = get_db(); c = conn.cursor()
     if request.method == 'POST':
         d = request.get_json(silent=True) or {}

@@ -733,6 +733,17 @@ def sgd_importar():
             errores.append(f'conflicto {cf.get("codigo","?")}: {str(e)[:80]}')
 
     conn.commit()
+    # Audit log INVIMA · importación masiva de SGD (procedimientos regulados)
+    try:
+        _audit_log(c, usuario=user, accion='SGD_IMPORTAR_MASIVO', tabla='sgd_documentos',
+                   despues={'insertados': insertados, 'saltados_ya_existian': saltados,
+                            'conflictos_insertados': conflictos_insertados,
+                            'conflictos_actualizados': conflictos_saltados,
+                            'errores_count': len(errores)},
+                   detalle=f'SGD import batch · {insertados} ins · {saltados} saltados · {len(errores)} errores')
+        conn.commit()
+    except Exception as _ae:
+        log.warning('audit sgd_importar fallo: %s', _ae)
     return jsonify({
         'ok': True,
         'insertados': insertados,
@@ -935,6 +946,14 @@ def desviaciones_endpoint():
                   (desviacion_id, evento_tipo, estado_nuevo, usuario, comentario)
                 VALUES (?, 'detectada', 'detectada', ?, ?)
             """, (desv_id, user, 'Desviación reportada'))
+            # P0 audit 26-may · INVIMA · registro primario · audit_log obligatorio
+            _audit_log(c, usuario=user, accion='CREAR_DESVIACION',
+                       tabla='desviaciones', registro_id=codigo,
+                       despues={'codigo': codigo, 'tipo': tipo,
+                                'area_origen': (d.get('area_origen') or '')[:80],
+                                'impacto_producto': bool(d.get('impacto_producto')),
+                                'lotes_afectados': (d.get('lotes_afectados') or '')[:200]},
+                       detalle=f"Desviación {codigo} · {tipo} · {descripcion[:120]}")
             conn.commit()
         except Exception as e:
             try: conn.rollback()
@@ -1075,6 +1094,12 @@ def desviacion_clasificar(desv_id):
           (desviacion_id, evento_tipo, estado_anterior, estado_nuevo, usuario, comentario)
         VALUES (?, 'clasificada', ?, 'clasificada', ?, ?)
     """, (desv_id, estado_ant, user, f'Clasificada como {clasif}: {just[:200]}'))
+    # Audit log INVIMA · clasificación crítica/mayor/menor afecta priorización regulatoria
+    _audit_log(c, usuario=user, accion='CLASIFICAR_DESVIACION', tabla='desviaciones',
+               registro_id=desv_id,
+               antes={'estado': estado_ant},
+               despues={'clasificacion': clasif, 'justificacion': just[:300],
+                        'estado': 'clasificada'})
     conn.commit()
     return jsonify({'ok': True})
 
@@ -1111,6 +1136,11 @@ def desviacion_investigar(desv_id):
           (desviacion_id, evento_tipo, estado_anterior, estado_nuevo, usuario, comentario)
         VALUES (?, 'investigada', ?, 'en_investigacion', ?, ?)
     """, (desv_id, estado_ant, user, f'Causa raíz ({metodo}): {causa[:200]}'))
+    _audit_log(c, usuario=user, accion='INVESTIGAR_DESVIACION', tabla='desviaciones',
+               registro_id=desv_id,
+               antes={'estado': estado_ant},
+               despues={'metodo_investigacion': metodo, 'causa_raiz': causa[:400],
+                        'estado': 'en_investigacion'})
     conn.commit()
     return jsonify({'ok': True})
 
@@ -1148,6 +1178,11 @@ def desviacion_capa(desv_id):
         VALUES (?, 'capa_propuesto', ?, 'capa_propuesto', ?, ?)
     """, (desv_id, estado_ant, user,
           f'CAPA: {capa[:150]} · resp: {responsable} · límite: {fecha_limite or "sin definir"}'))
+    _audit_log(c, usuario=user, accion='DEFINIR_CAPA_DESVIACION', tabla='desviaciones',
+               registro_id=desv_id,
+               antes={'estado': estado_ant},
+               despues={'capa_descripcion': capa[:400], 'capa_responsable': responsable,
+                        'capa_fecha_limite': fecha_limite, 'estado': 'capa_propuesto'})
     conn.commit()
     return jsonify({'ok': True})
 
@@ -1411,9 +1446,13 @@ def cambio_evaluar(cid):
         return jsonify({'error': 'evaluacion_descripcion requerida (≥20 chars)'}), 400
     requiere_invima = bool(d.get('requiere_invima'))
     conn = get_db(); c = conn.cursor()
-    row = c.execute("SELECT estado FROM control_cambios WHERE id=?", (cid,)).fetchone()
+    # Snapshot antes para audit (incluye requiere_invima previo · cambiar
+    # ese flag de True→False desactiva la guard de cambio_implementar)
+    row = c.execute(
+        "SELECT estado, severidad, requiere_invima, codigo FROM control_cambios WHERE id=?",
+        (cid,)).fetchone()
     if not row: return jsonify({'error': 'no encontrado'}), 404
-    estado_ant = row[0]
+    estado_ant, sev_ant, req_inv_ant, codigo_cc = row[0], row[1], row[2], row[3]
     if estado_ant not in ('solicitado', 'en_evaluacion'):
         return jsonify({'error': f'no se puede evaluar en estado {estado_ant}'}), 409
     c.execute("""
@@ -1429,6 +1468,14 @@ def cambio_evaluar(cid):
         VALUES (?, 'evaluado', ?, 'en_evaluacion', ?, ?)
     """, (cid, estado_ant, user,
           f'Severidad {severidad}'+(' · Requiere INVIMA' if requiere_invima else '')+f': {eval_desc[:200]}'))
+    # Audit log INVIMA · cambiar requiere_invima desactiva guard regulatoria
+    _audit_log(c, usuario=user, accion='EVALUAR_CAMBIO_CONTROL', tabla='control_cambios',
+               registro_id=codigo_cc or cid,
+               antes={'estado': estado_ant, 'severidad': sev_ant,
+                      'requiere_invima': bool(req_inv_ant)},
+               despues={'severidad': severidad, 'requiere_invima': requiere_invima,
+                        'evaluacion_descripcion': eval_desc[:300],
+                        'estado': 'en_evaluacion'})
     conn.commit()
     return jsonify({'ok': True})
 
@@ -1928,6 +1975,23 @@ def queja_triaje(qid):
           (' · requiere desviación' if requiere_desv else '')+
           (' · requiere recall' if requiere_recall else '')+
           f': {triaje_desc[:200]}'+extra))
+    # Audit log triaje queja · INVIMA (decisión escalar a desviación/recall regulatorio)
+    _audit_log(c, usuario=user, accion='TRIAJE_QUEJA', tabla='quejas_clientes',
+               registro_id=codigo_q or qid,
+               antes={'estado': estado_ant, 'severidad': None},
+               despues={'severidad': severidad,
+                        'requiere_desviacion': requiere_desv,
+                        'requiere_recall': requiere_recall,
+                        'desviacion_id': desviacion_id,
+                        'desviacion_creada': desviacion_codigo,
+                        'estado': 'en_triaje'})
+    if desviacion_codigo:
+        _audit_log(c, usuario=user, accion='CREAR_DESVIACION_DESDE_QUEJA',
+                   tabla='desviaciones', registro_id=desviacion_codigo,
+                   despues={'codigo': desviacion_codigo,
+                            'queja_origen': codigo_q,
+                            'impacto_salud': bool(impacto_salud)},
+                   detalle=f'Desv. {desviacion_codigo} auto-creada desde queja {codigo_q}')
     conn.commit()
     # Notificar si crítica + impacto salud + requiere recall
     if severidad == 'critica' or requiere_recall:
@@ -2635,11 +2699,19 @@ def recall_recoleccion(rid):
         return jsonify({'error': 'cantidad_recolectada debe ser entero ≥ 0'}), 400
     completa = bool(d.get('completa'))
     conn = get_db(); c = conn.cursor()
-    row = c.execute("SELECT estado FROM recalls WHERE id=?", (rid,)).fetchone()
+    row = c.execute(
+        "SELECT estado, codigo, cantidad_distribuida, cantidad_recolectada "
+        "FROM recalls WHERE id=?", (rid,)).fetchone()
     if not row: return jsonify({'error': 'no encontrado'}), 404
     estado_ant = row[0]
     if estado_ant not in ('distribuidores_notificados','en_recoleccion'):
         return jsonify({'error': f'no se puede registrar recolección en estado {estado_ant}'}), 409
+    # Validar cantidad recolectada <= distribuida (cuando distribuida está
+    # definida) · evita marcar recall completado con números inflados
+    if row[2] is not None and cantidad > row[2]:
+        return jsonify({
+            'error': f'cantidad_recolectada ({cantidad}) excede cantidad_distribuida ({row[2]})'
+        }), 400
     nuevo_estado = 'completado' if completa else 'en_recoleccion'
     c.execute("""
         UPDATE recalls
@@ -2656,6 +2728,12 @@ def recall_recoleccion(rid):
     """, (rid, 'recoleccion_completada' if completa else 'recoleccion_actualizada',
           estado_ant, nuevo_estado, user,
           f'Recolectadas {cantidad} unidades' + (' · COMPLETA' if completa else '')))
+    # Audit log INVIMA · efectividad recall regulatorio
+    _audit_log(c, usuario=user, accion='RECALL_RECOLECCION', tabla='recalls',
+               registro_id=row[1] or rid,
+               antes={'estado': estado_ant, 'cantidad_recolectada': row[3]},
+               despues={'cantidad_recolectada': cantidad, 'completa': completa,
+                        'estado': nuevo_estado})
     conn.commit()
     return jsonify({'ok': True})
 
