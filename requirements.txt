@@ -13,3 +13,7 @@ qrcode[pil]==7.4.2
 # psycopg: driver PostgreSQL · migración Fase 3+ · solo se usa cuando
 # EOS_DB_BACKEND=postgres (import perezoso) · sin esa env var, no se carga.
 psycopg[binary]==3.3.4
+# cryptography: encriptar at-rest TOTP secrets MFA (Fernet AES-128-CBC + HMAC).
+# Sebastian 26-may-2026: si MFA_MASTER_KEY env var configurada en Render,
+# users_mfa.secret_enc se llena al setup · sino fallback plaintext.
+cryptography>=42.0.0

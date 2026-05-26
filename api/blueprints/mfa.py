@@ -16,6 +16,7 @@ Diseño:
 Tabla: users_mfa(username, secret, enabled, backup_code_hash, ...).
 Migration 57 en database.py.
 """
+import os
 import sqlite3
 import time
 import secrets
@@ -41,13 +42,93 @@ def _get_mfa_record(username):
     conn.row_factory = sqlite3.Row
     try:
         row = conn.execute(
-            "SELECT username, secret, enabled, backup_code_hash, "
+            "SELECT username, secret, secret_enc, enabled, backup_code_hash, "
             "created_at, enabled_at, last_used_at, disabled_at "
             "FROM users_mfa WHERE username=?", (username,)
         ).fetchone()
-        return dict(row) if row else None
+        if not row:
+            return None
+        d = dict(row)
+        # Resolver secret: si secret_enc presente, desencriptar al vuelo.
+        # Si no, usar el secret plaintext legacy.
+        try:
+            if d.get('secret_enc'):
+                plain = _decrypt_mfa_secret(d['secret_enc'])
+                if plain:
+                    d['secret'] = plain
+        except Exception as _de:
+            import logging as _lg
+            _lg.getLogger('mfa').error('decrypt secret fallo username=%s: %s', username, _de)
+        return d
     finally:
         conn.close()
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Encrypt at rest · TOTP secrets · audit 26-may-2026 PM
+# ──────────────────────────────────────────────────────────────────────────────
+_MFA_FERNET = None
+_MFA_FERNET_INIT_LOGGED = False
+
+
+def _get_mfa_fernet():
+    """Inicializa Fernet lazy desde MFA_MASTER_KEY env var (base64 32 bytes)."""
+    global _MFA_FERNET, _MFA_FERNET_INIT_LOGGED
+    if _MFA_FERNET is not None:
+        return _MFA_FERNET
+    key = os.environ.get('MFA_MASTER_KEY', '').strip()
+    if not key:
+        if not _MFA_FERNET_INIT_LOGGED:
+            import logging as _lg
+            _lg.getLogger('mfa').warning(
+                'MFA_MASTER_KEY env var no configurada · TOTP secrets quedan '
+                'PLAINTEXT (modo degradado) · genera con: python -c '
+                '"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"'
+            )
+            _MFA_FERNET_INIT_LOGGED = True
+        return None
+    try:
+        from cryptography.fernet import Fernet
+        _MFA_FERNET = Fernet(key.encode() if isinstance(key, str) else key)
+        return _MFA_FERNET
+    except Exception as e:
+        if not _MFA_FERNET_INIT_LOGGED:
+            import logging as _lg
+            _lg.getLogger('mfa').error('MFA_MASTER_KEY inválida (debe ser Fernet base64 32 bytes): %s', e)
+            _MFA_FERNET_INIT_LOGGED = True
+        return None
+
+
+def _encrypt_mfa_secret(plaintext):
+    """Encripta un TOTP secret (str base32) → bytes para guardar en BLOB.
+
+    Si MFA_MASTER_KEY no está, devuelve None y el caller debe guardar plaintext."""
+    if not plaintext:
+        return None
+    f = _get_mfa_fernet()
+    if f is None:
+        return None
+    try:
+        return f.encrypt(plaintext.encode('utf-8'))
+    except Exception as e:
+        import logging as _lg
+        _lg.getLogger('mfa').error('encrypt MFA secret fallo: %s', e)
+        return None
+
+
+def _decrypt_mfa_secret(blob):
+    """Desencripta blob → str. Devuelve None si falla."""
+    if not blob:
+        return None
+    f = _get_mfa_fernet()
+    if f is None:
+        return None
+    try:
+        return f.decrypt(bytes(blob)).decode('utf-8')
+    except Exception as e:
+        import logging as _lg
+        _lg.getLogger('mfa').warning('decrypt MFA secret fallo (master key incorrecta?): %s', e)
+        return None
 
 
 def _is_mfa_enabled(username):
@@ -592,23 +673,42 @@ def mfa_setup():
     except ImportError:
         return jsonify({'error': 'pyotp no instalado en el servidor.'}), 503
 
+    # AUDIT 26-may · si MFA_MASTER_KEY está, encriptar y guardar en secret_enc
+    # · si NO, fallback a plaintext en secret (modo degradado con warn).
+    secret_enc = _encrypt_mfa_secret(secret)
     conn = db_connect()
     conn.execute("PRAGMA busy_timeout=2000")
     try:
-        conn.execute("""
-            INSERT INTO users_mfa (username, secret, enabled, created_at)
-            VALUES (?, ?, 0, datetime('now', 'utc'))
-            ON CONFLICT(username) DO UPDATE SET
-                secret      = excluded.secret,
-                enabled     = 0,
-                created_at  = datetime('now', 'utc'),
-                enabled_at  = NULL
-        """, (username, secret))
+        if secret_enc is not None:
+            # Modo encriptado · secret plaintext queda como '' marker
+            conn.execute("""
+                INSERT INTO users_mfa (username, secret, secret_enc, enabled, created_at)
+                VALUES (?, '', ?, 0, datetime('now', 'utc'))
+                ON CONFLICT(username) DO UPDATE SET
+                    secret      = '',
+                    secret_enc  = excluded.secret_enc,
+                    enabled     = 0,
+                    created_at  = datetime('now', 'utc'),
+                    enabled_at  = NULL
+            """, (username, secret_enc))
+        else:
+            # Modo legacy plaintext (no master key configurada)
+            conn.execute("""
+                INSERT INTO users_mfa (username, secret, secret_enc, enabled, created_at)
+                VALUES (?, ?, NULL, 0, datetime('now', 'utc'))
+                ON CONFLICT(username) DO UPDATE SET
+                    secret      = excluded.secret,
+                    secret_enc  = NULL,
+                    enabled     = 0,
+                    created_at  = datetime('now', 'utc'),
+                    enabled_at  = NULL
+            """, (username, secret))
         conn.commit()
     finally:
         conn.close()
 
-    _log_sec("mfa_setup_started", username, _client_ip())
+    _log_sec("mfa_setup_started", username, _client_ip(),
+              details=("encrypted_at_rest" if secret_enc else "plaintext_legacy"))
     return jsonify({
         'secret': secret,                         # ← mostrar al usuario UNA vez
         'provisioning_uri': _provisioning_uri(username, secret),

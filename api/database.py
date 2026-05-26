@@ -312,6 +312,19 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (190, "users_mfa.secret_enc · TOTP secrets encriptados at rest · Sebastián 26-may-2026 PM", [
+        # P1 audit MFA · TOTP secrets se guardaban PLAINTEXT en users_mfa.secret
+        # · si DB dump leak, atacante puede generar códigos MFA válidos.
+        # AHORA encriptamos con Fernet (AES-128-CBC + HMAC-SHA256) usando
+        # MFA_MASTER_KEY env var como llave.
+        #
+        # Modo dual durante transición:
+        #   - secret (plaintext legacy) · si secret_enc IS NULL
+        #   - secret_enc (BLOB encriptado) · al re-verificar TOTP, lazy upgrade
+        # Si MFA_MASTER_KEY no está configurada en Render, secret queda plaintext
+        # con warn en startup (modo degradado · igual que como estaba antes).
+        "ALTER TABLE users_mfa ADD COLUMN secret_enc BLOB DEFAULT NULL",
+    ]),
     (189, "animus_ghl_opportunities · pipelines GHL · Sebastián 26-may-2026 PM", [
         # FEATURE 26-may · GHL sync actual SOLO trae contactos básicos
         # (nombre/email/telefono/tags). Falta lo más valioso de GHL:
