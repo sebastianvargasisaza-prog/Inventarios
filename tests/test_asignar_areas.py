@@ -2,8 +2,16 @@
 import json
 import os
 import sqlite3
+from datetime import date, timedelta
 
 from .conftest import TEST_PASSWORD, csrf_headers
+
+
+# Sebastián 25-may-2026 PM · audit zero-error · fechas hardcoded (mayo 2026)
+# fallaban en HEAD porque el endpoint filtra fecha >= hoy. Ahora relativas
+# (hoy + N días) · tests sobreviven al paso del tiempo.
+def _fecha_futura(dias=7):
+    return (date.today() + timedelta(days=dias)).isoformat()
 
 
 def _login(app, user="sebastian"):
@@ -72,12 +80,13 @@ def test_get_listado_horizonte_clamp(app, db_clean):
 def test_get_solo_sin_area(app, db_clean):
     """solo_sin_area filtra producciones que ya tienen área"""
     c = _login(app, "sebastian")
-    # Sembrar 2 producciones: una sin area, otra con area
-    pid_sin = _seed_produccion("PROD-TEST-SIN-AREA", "2026-05-15", area_id=None)
+    # Sembrar 2 producciones: una sin area, otra con area · fechas futuras
+    # para que el endpoint las incluya (filtra fecha >= hoy).
+    pid_sin = _seed_produccion("PROD-TEST-SIN-AREA", _fecha_futura(5), area_id=None)
     conn = sqlite3.connect(os.environ["DB_PATH"])
     pr1 = conn.execute("SELECT id FROM areas_planta WHERE codigo='PROD1'").fetchone()
     conn.close()
-    pid_con = _seed_produccion("PROD-TEST-CON-AREA", "2026-05-16", area_id=pr1[0])
+    pid_con = _seed_produccion("PROD-TEST-CON-AREA", _fecha_futura(6), area_id=pr1[0])
     try:
         r = c.get("/api/planta/asignar-areas?dias=180&solo_sin_area=1")
         d = r.get_json()
@@ -91,7 +100,7 @@ def test_get_solo_sin_area(app, db_clean):
 def test_get_incluye_sugerencia(app, db_clean):
     """Cada producción tiene area_sugerida_id (puede ser null si no se pudo)."""
     c = _login(app, "sebastian")
-    pid = _seed_produccion("PROD-TEST-SUGERENCIA", "2026-05-20")
+    pid = _seed_produccion("PROD-TEST-SUGERENCIA", _fecha_futura(10))
     try:
         r = c.get("/api/planta/asignar-areas?dias=180")
         d = r.get_json()
@@ -107,7 +116,7 @@ def test_get_incluye_sugerencia(app, db_clean):
 
 def test_post_asigna_y_audita(app, db_clean):
     c = _login(app, "sebastian")
-    pid = _seed_produccion("PROD-TEST-ASIGNAR", "2026-05-22")
+    pid = _seed_produccion("PROD-TEST-ASIGNAR", _fecha_futura(12))
     conn = sqlite3.connect(os.environ["DB_PATH"])
     pr3 = conn.execute("SELECT id FROM areas_planta WHERE codigo='PROD3'").fetchone()
     pr3_id = pr3[0]
@@ -137,7 +146,7 @@ def test_post_desasigna_con_null(app, db_clean):
     pr1 = conn.execute("SELECT id FROM areas_planta WHERE codigo='PROD1'").fetchone()
     pr1_id = pr1[0]
     conn.close()
-    pid = _seed_produccion("PROD-TEST-DESASIG", "2026-05-23", area_id=pr1_id)
+    pid = _seed_produccion("PROD-TEST-DESASIG", _fecha_futura(13), area_id=pr1_id)
     try:
         r = c.post("/api/planta/asignar-areas",
                    json={"asignaciones": [{"id": pid, "area_id": None}]},
@@ -155,7 +164,7 @@ def test_post_desasigna_con_null(app, db_clean):
 
 def test_post_no_reasigna_completado(app, db_clean):
     c = _login(app, "sebastian")
-    pid = _seed_produccion("PROD-TEST-COMPLETADO", "2026-05-25",
+    pid = _seed_produccion("PROD-TEST-COMPLETADO", _fecha_futura(15),
                            estado="completado")
     conn = sqlite3.connect(os.environ["DB_PATH"])
     pr1 = conn.execute("SELECT id FROM areas_planta WHERE codigo='PROD1'").fetchone()
@@ -180,9 +189,10 @@ def test_post_reporta_conflicto_sala_misma_fecha(app, db_clean):
     pr2_id = pr2[0]
     conn.close()
     # Producción A en PROD2 mañana
-    pid_a = _seed_produccion("PROD-TEST-CONFLIC-A", "2026-05-28", area_id=pr2_id)
+    _f_conflic = _fecha_futura(18)
+    pid_a = _seed_produccion("PROD-TEST-CONFLIC-A", _f_conflic, area_id=pr2_id)
     # Producción B sin área (la queremos meter en PROD2 mismo día → choca con A)
-    pid_b = _seed_produccion("PROD-TEST-CONFLIC-B", "2026-05-28", area_id=None)
+    pid_b = _seed_produccion("PROD-TEST-CONFLIC-B", _f_conflic, area_id=None)
     try:
         r = c.post("/api/planta/asignar-areas",
                    json={"asignaciones": [{"id": pid_b, "area_id": pr2_id}]},
@@ -224,7 +234,7 @@ def test_post_id_inexistente_reporta_error(app, db_clean):
 
 def test_post_area_inexistente_reporta_error(app, db_clean):
     c = _login(app, "sebastian")
-    pid = _seed_produccion("PROD-TEST-AREA-INV", "2026-05-30")
+    pid = _seed_produccion("PROD-TEST-AREA-INV", _fecha_futura(20))
     try:
         r = c.post("/api/planta/asignar-areas",
                    json={"asignaciones": [{"id": pid, "area_id": 99999}]},
