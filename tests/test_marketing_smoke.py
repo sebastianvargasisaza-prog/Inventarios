@@ -66,6 +66,29 @@ def test_marketing_generar_cupon_influencer_inexistente(app, db_clean):
     assert r.status_code == 404
 
 
+def test_reporte_ejecutivo_preview_html(app, db_clean):
+    """GET reporte-ejecutivo-semanal devuelve HTML válido sin enviar email."""
+    c = _login(app)
+    r = c.get("/api/marketing/reporte-ejecutivo-semanal")
+    assert r.status_code == 200
+    assert "text/html" in r.headers.get("Content-Type", "")
+    html = r.get_data(as_text=True)
+    # Debe contener encabezado ANIMUS + alguna sección clave
+    assert "ÁNIMUS LAB" in html
+    assert "Reporte ejecutivo semanal" in html
+    assert "Top 3 SKUs" in html
+
+
+def test_reporte_ejecutivo_send_sin_destinatarios_falla(app, db_clean):
+    """POST sin destinatarios y sin env var → 400."""
+    c = _login(app)
+    r = c.post("/api/marketing/reporte-ejecutivo-semanal",
+                headers=csrf_headers(), json={})
+    # Si no hay REPORTE_EJECUTIVO_EMAIL env var, debe ser 400 · si está
+    # configurada en el entorno de test puede ser 503 (sin SMTP)
+    assert r.status_code in (400, 503)
+
+
 def test_ltv_clientes_devuelve_kpis_y_lista(app, db_clean):
     """LTV endpoint devuelve estructura kpis + clientes con distribución tier."""
     c = _login(app)

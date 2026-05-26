@@ -8,7 +8,7 @@ import sqlite3, urllib.request
 import traceback
 import json
 from datetime import datetime, date, timedelta
-from flask import Blueprint, request, jsonify, session
+from flask import Blueprint, request, jsonify, session, Response
 
 # Sebastián 25-may-2026 PM · audit P1 · log a nivel módulo · antes
 # referenciado en daemon como `log.error(...)` sin definir → NameError
@@ -653,6 +653,289 @@ def mkt_influencer_generar_cupon(iid):
     conn.commit()
     return jsonify({"ok": True, "discount_code": codigo,
                      "nota": "Crear este código manualmente en Shopify Admin → Descuentos · o vía Shopify API · este endpoint solo lo registra en EOS para atribución."})
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Reportes ejecutivos semanales · email lunes 8am Bogotá
+# ──────────────────────────────────────────────────────────────────────────────
+def _build_reporte_ejecutivo_data(conn):
+    """Recolecta los datos del reporte ejecutivo semanal. Reusable para
+    cron + endpoint manual. Retorna dict con todas las secciones."""
+    from datetime import datetime as _dt, timedelta as _td
+    hoy = _dt.now()
+    h7 = (hoy - _td(days=7)).strftime('%Y-%m-%d')
+    h14 = (hoy - _td(days=14)).strftime('%Y-%m-%d')
+    c = conn.cursor()
+    # 1) Revenue Shopify semana actual vs anterior
+    rev_7 = c.execute(
+        "SELECT COALESCE(SUM(total),0) AS r, COUNT(*) AS n FROM animus_shopify_orders WHERE creado_en >= ?",
+        (h7,)).fetchone()
+    rev_7_ant = c.execute(
+        "SELECT COALESCE(SUM(total),0) AS r, COUNT(*) AS n FROM animus_shopify_orders "
+        "WHERE creado_en >= ? AND creado_en < ?", (h14, h7)).fetchone()
+    delta_rev = float(rev_7['r'] or 0) - float(rev_7_ant['r'] or 0)
+    delta_pct = round((delta_rev / float(rev_7_ant['r'])) * 100, 1) if rev_7_ant['r'] else None
+    # 2) Top 3 SKUs por revenue 7d
+    top_skus = [dict(r) for r in c.execute("""
+        SELECT sku_items AS sku, SUM(total) AS rev, SUM(unidades_total) AS uds
+        FROM animus_shopify_orders WHERE creado_en >= ?
+        GROUP BY sku_items ORDER BY rev DESC LIMIT 3
+    """, (h7,)).fetchall()]
+    # 3) Top 3 influencers con cupón · revenue atribuible 7d
+    influencers_top = []
+    try:
+        inf_rows = c.execute("""
+            SELECT i.id, i.nombre, i.discount_code,
+                   (SELECT COUNT(*) FROM animus_shopify_orders o
+                    WHERE UPPER(COALESCE(o.discount_codes,'')) LIKE '%'||UPPER(i.discount_code)||'%'
+                      AND o.creado_en >= ?) AS pedidos,
+                   (SELECT COALESCE(SUM(o.total),0) FROM animus_shopify_orders o
+                    WHERE UPPER(COALESCE(o.discount_codes,'')) LIKE '%'||UPPER(i.discount_code)||'%'
+                      AND o.creado_en >= ?) AS revenue
+            FROM marketing_influencers i
+            WHERE COALESCE(i.discount_code,'') != ''
+            ORDER BY revenue DESC LIMIT 3
+        """, (h7, h7)).fetchall()
+        influencers_top = [dict(r) for r in inf_rows if r['revenue'] and float(r['revenue']) > 0]
+    except Exception:
+        pass
+    # 4) Alertas stock críticas (≤7d cobertura)
+    alertas_stock = []
+    try:
+        h30 = (hoy - _td(days=30)).strftime('%Y-%m-%d')
+        for r in c.execute("""
+            SELECT sku, SUM(unidades_disponible) AS stock
+            FROM stock_pt WHERE estado='Disponible' GROUP BY sku
+        """).fetchall():
+            sku, stock = r['sku'], r['stock'] or 0
+            if not sku:
+                continue
+            dem = c.execute(
+                "SELECT COALESCE(SUM(unidades),0) AS t FROM liberaciones WHERE sku=? AND creado_en>=?",
+                (sku, h30)).fetchone()['t']
+            shop = c.execute(
+                "SELECT COALESCE(SUM(unidades_total),0) AS t FROM animus_shopify_orders "
+                "WHERE sku_items LIKE ? AND creado_en>=?",
+                (f'%{sku}%', h30)).fetchone()['t']
+            demanda = (dem + shop) / 30.0
+            if demanda > 0:
+                dias_cob = stock / demanda
+                if dias_cob <= 7:
+                    alertas_stock.append({'sku': sku, 'stock': stock,
+                                            'dias_cobertura': round(dias_cob, 1)})
+        alertas_stock.sort(key=lambda x: x['dias_cobertura'])
+        alertas_stock = alertas_stock[:5]
+    except Exception:
+        pass
+    # 5) Eventos cosméticos próximos ≤30d
+    eventos_prox = []
+    for ev in _get_calendario_cosmetico(conn):
+        try:
+            d = (_dt.strptime(ev['fecha'], '%Y-%m-%d') - hoy).days
+            if 0 <= d <= 30:
+                eventos_prox.append({**ev, 'dias_restantes': d})
+        except Exception:
+            continue
+    eventos_prox.sort(key=lambda x: x['dias_restantes'])
+    # 6) Meta progreso mes actual
+    mes = hoy.strftime('%Y-%m')
+    meta_row = c.execute("SELECT * FROM marketing_metas WHERE mes=?", (mes,)).fetchone()
+    meta_block = None
+    if meta_row:
+        sh_mes = c.execute(
+            "SELECT COALESCE(SUM(total),0) AS rev, COUNT(*) AS ped "
+            "FROM animus_shopify_orders WHERE substr(creado_en,1,7)=?",
+            (mes,)).fetchone()
+        rev_meta = float(meta_row['revenue_meta'] or 0)
+        meta_block = {
+            'mes': mes,
+            'revenue_meta': rev_meta,
+            'revenue_real': float(sh_mes['rev'] or 0),
+            'revenue_pct': round(float(sh_mes['rev']) / rev_meta * 100, 1) if rev_meta > 0 else None,
+            'pedidos_meta': meta_row['pedidos_meta'],
+            'pedidos_real': int(sh_mes['ped'] or 0),
+        }
+    # 7) Pedidos B2B próximos a despachar
+    b2b_proximos = [dict(r) for r in c.execute("""
+        SELECT cliente_nombre, producto_nombre, cantidad_uds, fecha_estimada, estado
+        FROM pedidos_b2b
+        WHERE COALESCE(estado,'') IN ('confirmado','en_produccion')
+        ORDER BY fecha_estimada LIMIT 5
+    """).fetchall()]
+    return {
+        'generado_en': hoy.strftime('%Y-%m-%d %H:%M'),
+        'semana_actual': {
+            'revenue': round(float(rev_7['r'] or 0), 0),
+            'pedidos': int(rev_7['n'] or 0),
+        },
+        'semana_anterior': {
+            'revenue': round(float(rev_7_ant['r'] or 0), 0),
+            'pedidos': int(rev_7_ant['n'] or 0),
+        },
+        'delta_revenue': round(delta_rev, 0),
+        'delta_pct': delta_pct,
+        'top_skus': top_skus,
+        'top_influencers': influencers_top,
+        'alertas_stock': alertas_stock,
+        'eventos_proximos': eventos_prox,
+        'meta_mes': meta_block,
+        'b2b_proximos': b2b_proximos,
+    }
+
+
+def _build_reporte_ejecutivo_html(data):
+    """Construye el HTML del reporte ejecutivo desde el dict de datos."""
+    fmt_cop = lambda v: f"${int(v):,}".replace(',', '.')
+    sa = data['semana_actual']
+    sant = data['semana_anterior']
+    delta = data['delta_revenue']
+    delta_pct = data['delta_pct']
+    delta_col = '#10b981' if delta >= 0 else '#ef4444'
+    delta_str = (f"<span style='color:{delta_col};font-weight:700'>"
+                  f"{'+' if delta >= 0 else ''}{fmt_cop(delta)}"
+                  f"{f' ({delta_pct:+}%)' if delta_pct is not None else ''}</span>")
+    # SKUs
+    skus_html = '<p style="color:#94a3b8">Sin ventas esta semana</p>' if not data['top_skus'] else (
+        '<ol style="padding-left:18px">' +
+        ''.join(f"<li><b>{s['sku']}</b> · {fmt_cop(s['rev'])} ({int(s['uds'] or 0)} uds)</li>"
+                for s in data['top_skus']) +
+        '</ol>'
+    )
+    # Influencers
+    inf_html = '<p style="color:#94a3b8">Ningún influencer con cupón generó ventas esta semana</p>' if not data['top_influencers'] else (
+        '<ol style="padding-left:18px">' +
+        ''.join(f"<li><b>{i['nombre']}</b> ({i['discount_code']}) · {fmt_cop(i['revenue'])} en {int(i['pedidos'])} pedidos</li>"
+                for i in data['top_influencers']) +
+        '</ol>'
+    )
+    # Alertas stock
+    if not data['alertas_stock']:
+        stock_html = '<p style="color:#10b981">✅ Sin alertas críticas de stock</p>'
+    else:
+        stock_html = ('<ul style="padding-left:18px">' +
+            ''.join(f"<li>⚠ <b>{a['sku']}</b>: {int(a['stock'])} uds · {a['dias_cobertura']}d cobertura</li>"
+                    for a in data['alertas_stock']) + '</ul>')
+    # Eventos
+    if not data['eventos_proximos']:
+        ev_html = '<p style="color:#94a3b8">Sin eventos cosméticos en próximos 30 días</p>'
+    else:
+        ev_html = '<ul style="padding-left:18px">' + ''.join(
+            f"<li>📅 <b>{e['evento']}</b> · {e['fecha']} ({e['dias_restantes']}d) · ×{e['multiplicador']}</li>"
+            for e in data['eventos_proximos']) + '</ul>'
+    # Meta
+    meta_html = ''
+    if data.get('meta_mes'):
+        m = data['meta_mes']
+        meta_html = (
+            f"<h3 style='color:#10b981;margin-top:20px'>🎯 Meta del mes ({m['mes']})</h3>"
+            f"<p>Revenue: <b>{fmt_cop(m['revenue_real'])}</b> / "
+            f"<span style='color:#94a3b8'>{fmt_cop(m['revenue_meta'])}</span>"
+            f" ({m['revenue_pct'] or '—'}%) · Pedidos: <b>{m['pedidos_real']}</b> / {m['pedidos_meta']}</p>"
+        )
+    # B2B
+    b2b_html = ''
+    if data['b2b_proximos']:
+        b2b_html = ("<h3 style='color:#a78bfa;margin-top:20px'>📦 Pedidos B2B próximos</h3>"
+            "<ul style='padding-left:18px'>" +
+            ''.join(f"<li><b>{p['cliente_nombre']}</b>: {int(p['cantidad_uds'])} uds {p['producto_nombre']} "
+                    f"({p['fecha_estimada'] or 'sin fecha'} · {p['estado']})</li>"
+                    for p in data['b2b_proximos']) + '</ul>')
+    return f"""<html><body style="font-family:Arial,sans-serif;max-width:680px;margin:auto;background:#0f172a;color:#f1f5f9;padding:30px;border-radius:12px">
+<div style="border-bottom:2px solid #d4af37;padding-bottom:16px;margin-bottom:24px">
+  <div style="font-size:11px;color:#d4af37;font-weight:700;letter-spacing:.15em;text-transform:uppercase">ÁNIMUS LAB · HHA Group</div>
+  <h1 style="color:#fff;margin:4px 0 0;font-size:24px">Reporte ejecutivo semanal</h1>
+  <p style="color:#94a3b8;margin:4px 0 0;font-size:13px">Generado {data['generado_en']}</p>
+</div>
+
+<h2 style="color:#fff;font-size:18px">💰 Ventas Shopify (últimos 7 días)</h2>
+<table style="width:100%;border-collapse:collapse;margin:12px 0">
+  <tr>
+    <td style="padding:10px;background:#1e293b;border-radius:8px 0 0 8px">
+      <div style="font-size:10px;color:#94a3b8;text-transform:uppercase">Revenue</div>
+      <div style="font-size:22px;font-weight:800">{fmt_cop(sa['revenue'])}</div>
+      <div style="font-size:11px;color:#94a3b8">vs sem. anterior: {delta_str}</div>
+    </td>
+    <td style="padding:10px;background:#1e293b;border-left:1px solid #334155;border-radius:0 8px 8px 0">
+      <div style="font-size:10px;color:#94a3b8;text-transform:uppercase">Pedidos</div>
+      <div style="font-size:22px;font-weight:800">{sa['pedidos']}</div>
+      <div style="font-size:11px;color:#94a3b8">anterior: {sant['pedidos']}</div>
+    </td>
+  </tr>
+</table>
+
+<h3 style="color:#d4af37;margin-top:24px">🏆 Top 3 SKUs por revenue</h3>
+{skus_html}
+
+<h3 style="color:#a78bfa;margin-top:20px">👥 Top 3 influencers · revenue atribuible</h3>
+{inf_html}
+
+<h3 style="color:#f59e0b;margin-top:20px">⚠ Alertas de stock crítico (≤7d cobertura)</h3>
+{stock_html}
+
+<h3 style="color:#34d399;margin-top:20px">📅 Eventos cosméticos próximos (≤30d)</h3>
+{ev_html}
+
+{meta_html}
+
+{b2b_html}
+
+<div style="margin-top:32px;padding-top:16px;border-top:1px solid #334155;font-size:11px;color:#64748b">
+  Generado automáticamente por el módulo Marketing de EOS · HHA Group<br>
+  Configurá metas mensuales y cupones en <a href="https://app.eossuite.com/marketing" style="color:#a78bfa">/marketing</a>
+</div>
+</body></html>"""
+
+
+@bp.route('/api/marketing/reporte-ejecutivo-semanal', methods=['GET', 'POST'])
+def mkt_reporte_ejecutivo_semanal():
+    """GET: devuelve HTML del reporte para preview.
+    POST: además lo envía por email (body: {destinatarios: ['x@y.com']}).
+    Si no se pasan destinatarios, usa REPORTE_EJECUTIVO_EMAIL env var.
+    """
+    u, err, code = _auth()
+    if err: return err, code
+    conn = _db()
+    data = _build_reporte_ejecutivo_data(conn)
+    html = _build_reporte_ejecutivo_html(data)
+    if request.method == 'GET':
+        # Preview · devolver HTML directo
+        return Response(html, mimetype='text/html')
+    # POST · enviar por email
+    body = request.get_json(silent=True) or {}
+    dests = body.get('destinatarios') or []
+    if not dests:
+        env_d = (os.environ.get('REPORTE_EJECUTIVO_EMAIL') or '').strip()
+        if env_d:
+            dests = [d.strip() for d in env_d.split(',') if d.strip()]
+    if not dests:
+        return jsonify({'error': 'Sin destinatarios · pasalos en body o configurá REPORTE_EJECUTIVO_EMAIL env var'}), 400
+    try:
+        from notificaciones import SistemaNotificaciones
+        sn = SistemaNotificaciones()
+        if not sn.email_remitente or not sn.contraseña:
+            return jsonify({'error': 'SMTP no configurado en notificaciones'}), 503
+        import smtplib, ssl
+        from email.mime.multipart import MIMEMultipart
+        from email.mime.text import MIMEText
+        enviados = 0
+        for dest in dests:
+            try:
+                msg = MIMEMultipart('alternative')
+                msg['Subject'] = f"[ÁNIMUS] Reporte ejecutivo semanal · {data['generado_en'][:10]}"
+                msg['From'] = sn.email_remitente
+                msg['To'] = dest
+                msg.attach(MIMEText(html, 'html', 'utf-8'))
+                ctx = ssl.create_default_context()
+                with smtplib.SMTP_SSL(sn.smtp_server, sn.smtp_port, context=ctx) as s:
+                    s.login(sn.email_remitente, sn.contraseña)
+                    s.sendmail(sn.email_remitente, [dest], msg.as_string())
+                enviados += 1
+            except Exception as e:
+                log.warning('reporte ejecutivo email a %s fallo: %s', dest, e)
+        return jsonify({'ok': True, 'enviados': enviados, 'destinatarios': dests,
+                         'preview_data': data})
+    except Exception as e:
+        return jsonify({'error': f'Send email fallo: {e}'}), 500
 
 
 # ──────────────────────────────────────────────────────────────────────────────
