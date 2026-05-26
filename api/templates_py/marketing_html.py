@@ -1908,12 +1908,17 @@ async function loadCampanas() {
     return;
   }
   if(!rows.length) { body.innerHTML='<tr class="empty-row"><td colspan="11">Sin campañas. Crea la primera.</td></tr>'; return; }
+  // AUDIT 26-may · cache campañas para que generarCuponCampana lea discount_code actual
+  CAMPANAS_LIST = rows;
   body.innerHTML = rows.map(r=>{
     const roi = r.presupuesto_gastado>0 ? ((r.resultado_ventas-r.presupuesto_gastado)/r.presupuesto_gastado*100).toFixed(1) : null;
     // Sebastián 25-may-2026 PM · audit P0 · XSS · escape de campos del backend
+    const cuponChip = r.discount_code
+      ? `<div style="margin-top:3px;font-size:10px"><span style="background:#1e1b4b;color:#a78bfa;padding:1px 6px;border-radius:6px;font-family:monospace;font-weight:700" title="Atribución activa">${esc(r.discount_code)}</span></div>`
+      : '';
     return `<tr>
       <td style="color:#64748b;">${esc(r.id)}</td>
-      <td style="font-weight:700;">${esc(r.nombre)}</td>
+      <td style="font-weight:700;">${esc(r.nombre)}${cuponChip}</td>
       <td><span class="badge badge-gray">${esc(r.tipo)}</span></td>
       <td>${esc(r.canal||'—')}</td>
       <td>${badgeEstadoCamp(r.estado)}</td>
@@ -1923,12 +1928,15 @@ async function loadCampanas() {
       <td>${roiBadge(roi)}</td>
       <td><span class="badge badge-purple">${esc(r.num_influencers)}</span></td>
       <td>
-        <button class="btn btn-outline btn-sm" onclick="editCampana(${r.id})">✏️</button>
-        <button class="btn btn-danger btn-sm" onclick="deleteCampana(${r.id},'${String(r.nombre||'').replace(/[\\\\']/g,'\\\\$&')}')">🗑</button>
+        <button class="btn btn-outline btn-sm" onclick="editCampana(${r.id})" title="Editar">✏️</button>
+        <button class="btn btn-outline btn-sm" onclick="generarCuponCampana(${r.id})" title="${r.discount_code?'Regenerar':'Generar'} cupón Shopify" style="border-color:#a78bfa;color:#a78bfa">🎟️</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteCampana(${r.id},'${String(r.nombre||'').replace(/[\\\\']/g,'\\\\$&')}')" title="Eliminar">🗑</button>
       </td>
     </tr>`;
   }).join('');
 }
+// AUDIT 26-may · cache global de campañas
+var CAMPANAS_LIST = [];
 
 function openCampanaModal(data) {
   document.getElementById('camp-edit-id').value = '';
@@ -2398,6 +2406,22 @@ function renderInfluencersTable() {
       if(paidCount>0) pagosBadge += `<span style="background:#064e3b;color:#34d399;padding:1px 7px;border-radius:8px;font-weight:700" title="${paidCount} pago(s) - total ${fmtM(totalPaidVal)}">\u2713 ${paidCount}</span>`;
       pagosBadge += '</span>';
     }
+    // AUDIT 26-may \u00b7 cup\u00f3n + atribuci\u00f3n real Shopify
+    let cuponBadge = '';
+    if(r.discount_code){
+      const revAtr = r.revenue_atribuible||0;
+      const roi = r.roi_implicito_pct;
+      const roiCol = roi==null?'#94a3b8':(roi>=200?'#10b981':roi>=50?'#22c55e':roi>=0?'#f59e0b':'#ef4444');
+      const roiTxt = roi==null?'sin pago a\u00fan':roi+'% ROI';
+      cuponBadge = `<div style="font-size:10px;margin-top:3px"><span style="background:#1e1b4b;color:#a78bfa;padding:1px 6px;border-radius:6px;font-family:monospace;font-weight:700" title="C\u00f3digo activo: ${esc(r.discount_code)}">${esc(r.discount_code)}</span>`;
+      if(revAtr>0){
+        cuponBadge += ` <span style="color:${roiCol};font-weight:700" title="${r.pedidos_atribuibles||0} pedidos \u00b7 ${r.unidades_atribuibles||0} uds">${fmtM(revAtr)}</span>`;
+        cuponBadge += ` <span style="color:${roiCol};font-size:9px">(${esc(roiTxt)})</span>`;
+      } else {
+        cuponBadge += ` <span style="color:#64748b">sin ventas a\u00fan</span>`;
+      }
+      cuponBadge += `</div>`;
+    }
     const isExpanded = EXPANDED_INF.has(r.id);
     const expandIcon = isExpanded ? '\u25bc' : '\u25b6';
     const expandColor = pagosInf.length>0 ? '#818cf8' : '#475569';
@@ -2414,9 +2438,10 @@ function renderInfluencersTable() {
       +`<td style="font-size:12px;color:#94a3b8;">${esc(r.email||'\u2014')}</td>`
       +`<td style="font-size:12px;">${banco}</td>`
       +`<td>${estadoBadge}</td>`
-      +`<td>${pagosBadge}</td>`
+      +`<td>${pagosBadge}${cuponBadge}</td>`
       +`<td style="white-space:nowrap;" onclick="event.stopPropagation()">`
         +`<button class="btn btn-outline btn-sm" onclick="editInfluencer(${r.id})" title="Editar datos bancarios y de contacto">&#x270F;&#xFE0F;</button> `
+        +`<button class="btn btn-outline btn-sm" onclick="generarCuponInf(${r.id})" title="${r.discount_code?'Regenerar':'Generar'} cup\u00f3n Shopify para atribuci\u00f3n de ventas" style="border-color:#a78bfa;color:#a78bfa">&#x1F39F;&#xFE0F;</button> `
         +`<button class="btn btn-primary btn-sm" onclick="solicitarPagoInfById(${r.id})" title="Crear cuenta de cobro y enviar a Sebasti\u00e1n para que la pague" style="font-weight:700;padding:5px 11px;">&#x1F4B8; Solicitar pago</button> `
         +`<button class="btn btn-danger btn-sm" onclick="abrirDarDeBajaById(${r.id})" title="Dar de baja">&#x26D4;</button> `
         +`<button class="btn btn-danger btn-sm" onclick="eliminarInfluencerById(${r.id})" title="Eliminar duplicado (solo sin pagos efectuados)">&#x1F5D1;&#xFE0F;</button>`
@@ -2546,6 +2571,65 @@ async function confirmarDarDeBaja() {
 
 // Sebastian (29-abr-2026): "jeferson dice que hay creadores dobles, pero no
 // le deja eliminarlos entonces pon una opcion de eliminar".
+// AUDIT 26-may · generar/regenerar cupón Shopify para atribución
+async function generarCuponInf(id) {
+  const p = _INF_ROW_PAYLOAD[id];
+  const nombre = p ? p.nombre : 'influencer #'+id;
+  const inf = (INFLUENCERS_LIST || []).find(x => x.id === id) || {};
+  const yaTiene = !!inf.discount_code;
+  let pct = prompt('% de descuento del cupón (1-99) para "'+nombre+'":\n\n'
+                    +(yaTiene?'⚠ Ya tiene: '+inf.discount_code+'\nIngresá nuevo % para regenerar.\n\n':'')
+                    +'Convención: ANIMUS_<NOMBRE>15 · 15% es el estándar.', yaTiene?'':'15');
+  if(pct === null) return;
+  pct = parseInt(pct);
+  if(isNaN(pct) || pct < 1 || pct > 99){ alert('% inválido (1-99)'); return; }
+  const body = {pct: pct};
+  if(yaTiene) body.force = true;
+  try {
+    const r = await fetch('/api/marketing/influencers/'+id+'/generar-cupon', _fetchOpts('POST', body));
+    const d = await r.json().catch(()=>({}));
+    if(!r.ok){
+      if(r.status === 409 && d.conflicto){
+        alert('Código ya en uso por '+d.conflicto.tipo+' "'+d.conflicto.nombre+'" · usá otro %');
+      } else {
+        alert('Error: '+(d.error||r.status));
+      }
+      return;
+    }
+    showAlert('inf-alert', '🎟 Cupón ' + d.discount_code + ' asignado · ahora crealo manualmente en Shopify Admin → Descuentos', 'success');
+    loadInfluencers();
+  } catch(e){ alert('Error red: '+e.message); }
+}
+
+// Equivalente para campañas
+async function generarCuponCampana(id) {
+  const camps = (typeof CAMPANAS_LIST !== 'undefined' && CAMPANAS_LIST) ? CAMPANAS_LIST : [];
+  const cmp = camps.find(x => x.id === id) || {};
+  const yaTiene = !!cmp.discount_code;
+  let pct = prompt('% de descuento del cupón para la campaña "'+(cmp.nombre||'#'+id)+'":\n\n'
+                    +(yaTiene?'⚠ Ya tiene: '+cmp.discount_code+'\nIngresá nuevo % para regenerar.\n\n':'')
+                    +'Convención: ANIMUS_<NOMBRECAMP>15', yaTiene?'':'10');
+  if(pct === null) return;
+  pct = parseInt(pct);
+  if(isNaN(pct) || pct < 1 || pct > 99){ alert('% inválido (1-99)'); return; }
+  const body = {pct: pct};
+  if(yaTiene) body.force = true;
+  try {
+    const r = await fetch('/api/marketing/campanas/'+id+'/generar-cupon', _fetchOpts('POST', body));
+    const d = await r.json().catch(()=>({}));
+    if(!r.ok){
+      if(r.status === 409 && d.conflicto){
+        alert('Código ya en uso por '+d.conflicto.tipo+' "'+d.conflicto.nombre+'" · usá otro %');
+      } else {
+        alert('Error: '+(d.error||r.status));
+      }
+      return;
+    }
+    showAlert('camp-alert', '🎟 Cupón ' + d.discount_code + ' asignado · ahora crealo manualmente en Shopify Admin → Descuentos', 'success');
+    if(typeof loadCampanas === 'function') loadCampanas();
+  } catch(e){ alert('Error red: '+e.message); }
+}
+
 async function eliminarInfluencer(id, nombre) {
   const ok = confirm('¿ELIMINAR DEFINITIVAMENTE a "'+nombre+'"?\n\n'
     +'Esto borra el influencer y sus pagos NO pagados/registros vinculados.\n'

@@ -418,6 +418,221 @@ def _ig_check_refresh(conn):
     }
 
 # ──────────────────────────────────────────────────────────────────────────────
+# ATRIBUCIÓN POR CUPONES — feature 26-may-2026 · "marketing decisional"
+# ──────────────────────────────────────────────────────────────────────────────
+# Cada campaña/influencer puede tener un código único (ej. ANIMUS_LAURA15) que
+# el cliente usa al hacer checkout en Shopify. El webhook ya almacena
+# discount_codes en animus_shopify_orders.discount_codes (JSON string).
+# Estos endpoints calculan ventas atribuibles en SQL LIKE en tiempo real.
+
+import re as _re_atrib
+
+def _slug_cupon(nombre: str, max_len: int = 12) -> str:
+    """Genera un slug SAFE para código de cupón a partir de un nombre.
+
+    Mantiene solo alfanumérico ASCII (Shopify rechaza acentos/espacios en
+    discount codes), uppercase, máximo 12 chars · suficiente para distinguir.
+    'María Cámila Soto' → 'MARIACAMILA'
+    'Día de la Madre 2026' → 'DIADELAMADR'
+    """
+    s = (nombre or '').strip()
+    # Normalizar acentos comunes (sin importar locale)
+    _acc = {'á':'a','é':'e','í':'i','ó':'o','ú':'u','ñ':'n','ü':'u',
+            'Á':'A','É':'E','Í':'I','Ó':'O','Ú':'U','Ñ':'N','Ü':'U'}
+    for k, v in _acc.items():
+        s = s.replace(k, v)
+    # Solo alfanumérico ASCII
+    s = _re_atrib.sub(r'[^A-Za-z0-9]', '', s).upper()
+    return (s[:max_len] or 'CUPON')
+
+
+@bp.route('/api/marketing/atribucion')
+def mkt_atribucion():
+    """Calcula ventas atribuibles a un cupón (influencer/campaña/código libre).
+
+    Query params (uno):
+      - codigo:        código exacto a buscar en discount_codes
+      - influencer_id: usa el discount_code del influencer
+      - campana_id:    usa el discount_code de la campaña
+      - desde/hasta:   YYYY-MM-DD (opcional) · filtro de creado_en
+
+    Devuelve:
+      - codigo (resuelto), ventas_count, revenue_total, descuento_total,
+      - subtotal_pre_descuento, ordenes (sample top 20 con fecha/email/total),
+      - roi_implicito si se pasa presupuesto_gastado por query.
+    """
+    u, err, code = _auth()
+    if err: return err, code
+    codigo = (request.args.get('codigo') or '').strip()
+    inf_id = request.args.get('influencer_id')
+    cmp_id = request.args.get('campana_id')
+    desde = (request.args.get('desde') or '').strip()
+    hasta = (request.args.get('hasta') or '').strip()
+    conn = _db(); c = conn.cursor()
+    # Resolver código si vino por id
+    fuente = None
+    if inf_id and not codigo:
+        row = c.execute(
+            "SELECT discount_code, nombre FROM marketing_influencers WHERE id=?",
+            (int(inf_id),)
+        ).fetchone()
+        if not row or not row['discount_code']:
+            return jsonify({"error": "Influencer sin discount_code asignado",
+                             "influencer_id": int(inf_id),
+                             "nombre": row['nombre'] if row else None}), 404
+        codigo = row['discount_code']; fuente = {'tipo':'influencer','id':int(inf_id),'nombre':row['nombre']}
+    if cmp_id and not codigo:
+        row = c.execute(
+            "SELECT discount_code, nombre FROM marketing_campanas WHERE id=?",
+            (int(cmp_id),)
+        ).fetchone()
+        if not row or not row['discount_code']:
+            return jsonify({"error": "Campaña sin discount_code asignado",
+                             "campana_id": int(cmp_id),
+                             "nombre": row['nombre'] if row else None}), 404
+        codigo = row['discount_code']; fuente = {'tipo':'campana','id':int(cmp_id),'nombre':row['nombre']}
+    if not codigo:
+        return jsonify({"error": "Pasa codigo, influencer_id o campana_id"}), 400
+
+    # Búsqueda · LIKE %codigo% sobre discount_codes (JSON string)
+    where_parts = ["UPPER(COALESCE(discount_codes,'')) LIKE ?"]
+    params = [f"%{codigo.upper()}%"]
+    if desde:
+        where_parts.append("date(creado_en) >= ?"); params.append(desde)
+    if hasta:
+        where_parts.append("date(creado_en) <= ?"); params.append(hasta)
+    where_sql = " AND ".join(where_parts)
+    stats = c.execute(f"""
+        SELECT COUNT(*) AS n,
+               COALESCE(SUM(total),0) AS rev,
+               COALESCE(SUM(subtotal),0) AS sub,
+               COALESCE(SUM(total_descuentos),0) AS dto
+        FROM animus_shopify_orders WHERE {where_sql}
+    """, params).fetchone()
+    ordenes_top = _fmt_many(c.execute(f"""
+        SELECT shopify_id, creado_en, email, total, subtotal, total_descuentos, discount_codes
+        FROM animus_shopify_orders
+        WHERE {where_sql}
+        ORDER BY total DESC LIMIT 20
+    """, params).fetchall())
+    presupuesto = request.args.get('presupuesto_gastado', type=float) or 0
+    revenue = float(stats['rev'] or 0)
+    roi_pct = round(((revenue - presupuesto) / presupuesto) * 100, 1) if presupuesto > 0 else None
+    return jsonify({
+        "codigo": codigo,
+        "fuente": fuente,
+        "filtros": {"desde": desde or None, "hasta": hasta or None},
+        "ventas_count": int(stats['n'] or 0),
+        "revenue_total": revenue,
+        "subtotal_pre_descuento": float(stats['sub'] or 0),
+        "descuento_total": float(stats['dto'] or 0),
+        "ordenes_top20": ordenes_top,
+        "roi_implicito_pct": roi_pct,
+        "presupuesto_gastado": presupuesto if presupuesto > 0 else None,
+    })
+
+
+@bp.route('/api/marketing/campanas/<int:cid>/generar-cupon', methods=['POST'])
+def mkt_campana_generar_cupon(cid):
+    """Genera o regenera el discount_code de una campaña.
+
+    Body JSON (opcional): {pct: 15, prefijo: 'ANIMUS_', suffix: ''}
+      - pct: número que se concatena al final (ej. 15 → ANIMUS_DIAMADRE15)
+      - prefijo: default 'ANIMUS_'
+      - suffix: si no querés pct, podés pasar suffix custom
+      - force: si ya tiene un código, regenera (default false → 409)
+    """
+    u, err, code = _auth()
+    if err: return err, code
+    conn = _db(); c = conn.cursor()
+    row = c.execute("SELECT nombre, discount_code FROM marketing_campanas WHERE id=?", (cid,)).fetchone()
+    if not row:
+        return jsonify({"error": "Campaña no encontrada"}), 404
+    d = request.get_json(silent=True) or {}
+    if row['discount_code'] and not d.get('force'):
+        return jsonify({"error": "Campaña ya tiene cupón · reenviar con force=true para regenerar",
+                         "discount_code_actual": row['discount_code']}), 409
+    prefijo = (d.get('prefijo') or 'ANIMUS_').upper()
+    suffix = (d.get('suffix') or '').upper()
+    pct = d.get('pct')
+    slug = _slug_cupon(row['nombre'], max_len=12)
+    if pct is not None:
+        try:
+            pct_n = int(pct)
+            if not (1 <= pct_n <= 99):
+                return jsonify({"error": "pct debe estar entre 1 y 99"}), 400
+            suffix = str(pct_n)
+        except (TypeError, ValueError):
+            return jsonify({"error": "pct inválido"}), 400
+    codigo = f"{prefijo}{slug}{suffix}"[:32]  # Shopify limit ~255 pero corto es mejor
+    # Verificar unicidad cross-campaña/influencer
+    existe_c = c.execute("SELECT id, nombre FROM marketing_campanas WHERE discount_code=? AND id!=?", (codigo, cid)).fetchone()
+    existe_i = c.execute("SELECT id, nombre FROM marketing_influencers WHERE discount_code=?", (codigo,)).fetchone()
+    if existe_c or existe_i:
+        return jsonify({"error": "Código ya en uso · usa un suffix distinto",
+                         "codigo_propuesto": codigo,
+                         "conflicto": {'tipo':'campana','id':existe_c['id'],'nombre':existe_c['nombre']} if existe_c
+                                       else {'tipo':'influencer','id':existe_i['id'],'nombre':existe_i['nombre']}}), 409
+    antes = {'discount_code': row['discount_code'] or ''}
+    c.execute("UPDATE marketing_campanas SET discount_code=? WHERE id=?", (codigo, cid))
+    try:
+        audit_log(c, usuario=u, accion='CAMPANA_GENERAR_CUPON', tabla='marketing_campanas',
+                  registro_id=cid, antes=antes, despues={'discount_code': codigo},
+                  detalle=f"Cupón {codigo} asignado a campaña '{row['nombre']}'")
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({"ok": True, "discount_code": codigo,
+                     "nota": "Crear este código manualmente en Shopify Admin → Descuentos · o vía Shopify API · este endpoint solo lo registra en EOS para atribución."})
+
+
+@bp.route('/api/marketing/influencers/<int:iid>/generar-cupon', methods=['POST'])
+def mkt_influencer_generar_cupon(iid):
+    """Genera o regenera el discount_code de un influencer."""
+    u, err, code = _auth()
+    if err: return err, code
+    conn = _db(); c = conn.cursor()
+    row = c.execute("SELECT nombre, discount_code FROM marketing_influencers WHERE id=?", (iid,)).fetchone()
+    if not row:
+        return jsonify({"error": "Influencer no encontrado"}), 404
+    d = request.get_json(silent=True) or {}
+    if row['discount_code'] and not d.get('force'):
+        return jsonify({"error": "Influencer ya tiene cupón · reenviar con force=true para regenerar",
+                         "discount_code_actual": row['discount_code']}), 409
+    prefijo = (d.get('prefijo') or 'ANIMUS_').upper()
+    suffix = (d.get('suffix') or '').upper()
+    pct = d.get('pct')
+    slug = _slug_cupon(row['nombre'], max_len=12)
+    if pct is not None:
+        try:
+            pct_n = int(pct)
+            if not (1 <= pct_n <= 99):
+                return jsonify({"error": "pct debe estar entre 1 y 99"}), 400
+            suffix = str(pct_n)
+        except (TypeError, ValueError):
+            return jsonify({"error": "pct inválido"}), 400
+    codigo = f"{prefijo}{slug}{suffix}"[:32]
+    existe_c = c.execute("SELECT id, nombre FROM marketing_campanas WHERE discount_code=?", (codigo,)).fetchone()
+    existe_i = c.execute("SELECT id, nombre FROM marketing_influencers WHERE discount_code=? AND id!=?", (codigo, iid)).fetchone()
+    if existe_c or existe_i:
+        return jsonify({"error": "Código ya en uso · usa un suffix distinto",
+                         "codigo_propuesto": codigo,
+                         "conflicto": {'tipo':'campana','id':existe_c['id'],'nombre':existe_c['nombre']} if existe_c
+                                       else {'tipo':'influencer','id':existe_i['id'],'nombre':existe_i['nombre']}}), 409
+    antes = {'discount_code': row['discount_code'] or ''}
+    c.execute("UPDATE marketing_influencers SET discount_code=? WHERE id=?", (codigo, iid))
+    try:
+        audit_log(c, usuario=u, accion='INFLUENCER_GENERAR_CUPON', tabla='marketing_influencers',
+                  registro_id=iid, antes=antes, despues={'discount_code': codigo},
+                  detalle=f"Cupón {codigo} asignado a influencer '{row['nombre']}'")
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({"ok": True, "discount_code": codigo,
+                     "nota": "Crear este código manualmente en Shopify Admin → Descuentos · o vía Shopify API · este endpoint solo lo registra en EOS para atribución."})
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # KPIs HOY — endpoint rápido para la pestaña Hoy (4 KPIs reales, sin Claude)
 # ──────────────────────────────────────────────────────────────────────────────
 @bp.route("/api/marketing/kpis-hoy")
@@ -2573,21 +2788,47 @@ def mkt_ejecutar_agente(agente):
 
         # ── Agente 3: ROI ──────────────────────────────────────────────────────
         elif agente == "roi":
+            # AUDIT 26-may-2026 · ahora usa atribución REAL (discount_code)
+            # cuando existe · cae a resultado_ventas manual si no hay código.
             campanas = c.execute("""
                 SELECT id, nombre, canal, tipo, presupuesto, presupuesto_gastado,
-                       resultado_ventas, resultado_unidades, fecha_inicio, fecha_fin
+                       resultado_ventas, resultado_unidades, fecha_inicio, fecha_fin,
+                       COALESCE(discount_code,'') AS discount_code
                 FROM marketing_campanas WHERE presupuesto_gastado > 0
             """).fetchall()
             analisis = []
             for cp in campanas:
                 gastado = cp["presupuesto_gastado"] or 0
-                ventas  = cp["resultado_ventas"] or 0
+                dcode = (cp["discount_code"] or '').strip()
+                # Si tiene cupón: ventas atribuibles desde Shopify (real)
+                ventas_atrib = 0; uds_atrib = 0
+                if dcode:
+                    where_parts = ["UPPER(COALESCE(discount_codes,'')) LIKE ?"]
+                    params = [f"%{dcode.upper()}%"]
+                    if cp["fecha_inicio"]:
+                        where_parts.append("date(creado_en) >= ?"); params.append(cp["fecha_inicio"])
+                    if cp["fecha_fin"]:
+                        where_parts.append("date(creado_en) <= ?"); params.append(cp["fecha_fin"])
+                    sql = f"SELECT COALESCE(SUM(total),0) AS rev, COALESCE(SUM(unidades_total),0) AS u FROM animus_shopify_orders WHERE {' AND '.join(where_parts)}"
+                    r_atr = c.execute(sql, params).fetchone()
+                    ventas_atrib = float(r_atr["rev"] or 0)
+                    uds_atrib = int(r_atr["u"] or 0)
+                # Fuente final: prioriza atribución real, fallback manual
+                ventas = ventas_atrib if dcode else (cp["resultado_ventas"] or 0)
+                fuente_ventas = 'atribucion_cupon' if dcode else 'manual'
                 roi = round((ventas - gastado) / gastado * 100, 1) if gastado > 0 else 0
                 analisis.append({**dict(cp), "roi_pct": roi,
+                    "ventas_atribuibles_cupon": ventas_atrib,
+                    "unidades_atribuibles": uds_atrib,
+                    "ventas_efectivas": ventas,
+                    "fuente_ventas": fuente_ventas,
                     "estado_roi": "excelente" if roi >= 200 else ("bueno" if roi >= 50 else ("neutro" if roi >= 0 else "negativo"))})
             analisis.sort(key=lambda x: -x["roi_pct"])
             shopify_rev = c.execute("SELECT COALESCE(SUM(total),0) as t FROM animus_shopify_orders WHERE creado_en>=?", (hace30,)).fetchone()["t"]
-            resultado = {"titulo": "Análisis de ROI por Campaña", "campanas": analisis, "shopify_revenue_30d": shopify_rev}
+            resultado = {"titulo": "Análisis de ROI por Campaña",
+                          "campanas": analisis,
+                          "shopify_revenue_30d": shopify_rev,
+                          "nota": "Las campañas con discount_code tienen ROI calculado desde ventas reales atribuibles · las que no, dependen del resultado_ventas manual"}
 
         # ── Agente 4: Tendencias ───────────────────────────────────────────────
         elif agente == "tendencias":
@@ -3401,6 +3642,35 @@ def mkt_influencers_panel():
             inf["toca_pagar"]            = toca_pagar
             inf["dias_desde_ultimo_pago"] = dias_desde
             inf["proximo_pago_estimado"] = proximo_pago
+
+            # AUDIT 26-may · revenue atribuible desde Shopify si tiene cupón
+            dcode = (inf.get("discount_code") or '').strip()
+            if dcode:
+                try:
+                    atrib = c.execute("""
+                        SELECT COUNT(*) AS n,
+                               COALESCE(SUM(total),0) AS rev,
+                               COALESCE(SUM(unidades_total),0) AS uds
+                        FROM animus_shopify_orders
+                        WHERE UPPER(COALESCE(discount_codes,'')) LIKE ?
+                    """, (f"%{dcode.upper()}%",)).fetchone()
+                    inf["revenue_atribuible"] = float(atrib["rev"] or 0)
+                    inf["pedidos_atribuibles"] = int(atrib["n"] or 0)
+                    inf["unidades_atribuibles"] = int(atrib["uds"] or 0)
+                    pagado = float(inf.get("total_pagado") or 0)
+                    inf["roi_implicito_pct"] = round(
+                        ((inf["revenue_atribuible"] - pagado) / pagado) * 100, 1
+                    ) if pagado > 0 else None
+                except Exception:
+                    inf["revenue_atribuible"] = 0
+                    inf["pedidos_atribuibles"] = 0
+                    inf["unidades_atribuibles"] = 0
+                    inf["roi_implicito_pct"] = None
+            else:
+                inf["revenue_atribuible"] = 0
+                inf["pedidos_atribuibles"] = 0
+                inf["unidades_atribuibles"] = 0
+                inf["roi_implicito_pct"] = None
 
             result.append(inf)
 

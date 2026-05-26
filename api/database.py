@@ -312,6 +312,24 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (185, "marketing_campanas.discount_code · atribución automática Shopify · Sebastián 26-may-2026 AM", [
+        # FEATURE 26-may-2026 · Sebastián: "atribución con cupones único · resuelve
+        # ROI y Score creadores · marketing decisional vs decorativo".
+        #
+        # Migración 32 ya creó `discount_code` en marketing_influencers y
+        # `discount_codes` en animus_shopify_orders (JSON array de códigos usados
+        # por orden). Faltaba el mismo campo en marketing_campanas para atribución
+        # de campañas (no solo influencers). Convención del código:
+        #   - Influencer: ANIMUS_<SLUG_NOMBRE><PCT>  (ej. ANIMUS_LAURA15)
+        #   - Campaña:    ANIMUS_<SLUG_CAMP><PCT>    (ej. ANIMUS_DIAMADRE20)
+        #
+        # Atribución se calcula en SQL · LIKE '%<CODIGO>%' contra discount_codes
+        # de cada orden Shopify. Si una orden usó 2 códigos (ej. cupón
+        # influencer + cupón campaña), la venta se atribuye a AMBOS (multi-touch
+        # default linear) · puedes desambiguar con el frontend si querés.
+        "ALTER TABLE marketing_campanas ADD COLUMN discount_code TEXT DEFAULT ''",
+        "CREATE INDEX IF NOT EXISTS idx_campana_discount_code ON marketing_campanas(discount_code)",
+    ]),
     (184, "produccion_programada.envase_codigo_override · admin elige envase distinto al default por lote · Sebastián 25-may-2026 PM", [
         # FEATURE 25-may-2026 PM · Sebastián: "en calendario faltaría poder
         # agregarle el envase para empezar a calcular esas necesidades".

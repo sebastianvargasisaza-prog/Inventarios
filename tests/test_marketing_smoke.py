@@ -32,6 +32,40 @@ def test_marketing_pagos_influencers(app, db_clean):
     assert "_error" not in j, f"endpoint error: {j.get('_error')} | {j.get('_trace','')}"
 
 
+def test_marketing_atribucion_sin_codigo(app, db_clean):
+    """Atribución requiere codigo/influencer_id/campana_id · sin nada da 400."""
+    c = _login(app)
+    r = c.get("/api/marketing/atribucion")
+    assert r.status_code == 400
+
+
+def test_marketing_atribucion_codigo_inexistente(app, db_clean):
+    """Código que no existe → ventas_count=0, revenue_total=0."""
+    c = _login(app)
+    r = c.get("/api/marketing/atribucion?codigo=NOEXISTE_CUPON_TEST")
+    assert r.status_code == 200
+    j = r.get_json()
+    assert j["codigo"] == "NOEXISTE_CUPON_TEST"
+    assert j["ventas_count"] == 0
+    assert j["revenue_total"] == 0.0
+
+
+def test_marketing_generar_cupon_campana_inexistente(app, db_clean):
+    """Generar cupón en campaña que no existe → 404."""
+    c = _login(app)
+    r = c.post("/api/marketing/campanas/999999/generar-cupon",
+                headers=csrf_headers(), json={"pct": 15})
+    assert r.status_code == 404
+
+
+def test_marketing_generar_cupon_influencer_inexistente(app, db_clean):
+    """Generar cupón en influencer que no existe → 404."""
+    c = _login(app)
+    r = c.post("/api/marketing/influencers/999999/generar-cupon",
+                headers=csrf_headers(), json={"pct": 15})
+    assert r.status_code == 404
+
+
 def test_marketing_kpis_hoy(app, db_clean):
     """Audit 25-may-2026 PM · pestaña Hoy mostraba KPIs siempre 0 porque el
     frontend leía keys que no existían en /api/marketing/dashboard. Este
