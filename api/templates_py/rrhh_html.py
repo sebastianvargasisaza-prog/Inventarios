@@ -527,6 +527,11 @@ td input[type=number]{width:90px;padding:5px 8px;border:1px solid #d6d3d1;border
 </div>
 
 <script>
+// P0 audit 26-may-2026 · helper esc · este archivo NO tenía función de
+// escape · 35 innerHTML inyectaban motivos/diagnósticos/nombres directos
+// (XSS persistente · feedback_audit_marketing_25may P0).
+function esc(s){var d=document.createElement('div');d.textContent=s==null?'':String(s);return d.innerHTML;}
+
 // ── CSRF defense-in-depth · Sebastian 3-may-2026 ──────────────────
 function _csrf() {
   var m = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/);
@@ -871,16 +876,16 @@ async function cargarLlamadosAtencion(){
       items.map(function(l){
         var sevColor = l.severidad==='suspension'?'#7f1d1d':l.severidad==='escrito'?'#dc2626':'#d97706';
         return '<tr>'+
-          '<td><b>#'+l.empleado_id+'</b></td>'+
-          '<td><span style="background:'+sevColor+'22;color:'+sevColor+';padding:2px 8px;border-radius:8px;font-size:11px;font-weight:700">'+(l.severidad||'').toUpperCase()+'</span></td>'+
-          '<td>'+(l.motivo||'')+'</td>'+
-          '<td style="font-size:12px">'+(l.jefe_nombre||'')+'</td>'+
-          '<td style="font-size:12px">'+(l.area||'')+'</td>'+
-          '<td style="font-size:12px">'+(l.fecha_inicio||'')+'</td>'+
-          '<td><span class="badge badge-indef">'+l.estado+'</span></td>'+
+          '<td><b>#'+(parseInt(l.empleado_id)||0)+'</b></td>'+
+          '<td><span style="background:'+sevColor+'22;color:'+sevColor+';padding:2px 8px;border-radius:8px;font-size:11px;font-weight:700">'+esc((l.severidad||'').toUpperCase())+'</span></td>'+
+          '<td>'+esc(l.motivo||'')+'</td>'+
+          '<td style="font-size:12px">'+esc(l.jefe_nombre||'')+'</td>'+
+          '<td style="font-size:12px">'+esc(l.area||'')+'</td>'+
+          '<td style="font-size:12px">'+esc(l.fecha_inicio||'')+'</td>'+
+          '<td><span class="badge badge-indef">'+esc(l.estado||'')+'</span></td>'+
           '</tr>';
       }).join('')+'</tbody></table>';
-  } catch(e){ lista.innerHTML = '<div style="color:#dc2626;padding:14px">Error: '+e.message+'</div>'; }
+  } catch(e){ lista.innerHTML = '<div style="color:#dc2626;padding:14px">Error: '+esc(e.message)+'</div>'; }
 }
 
 function abrirModalLlamado(){
@@ -943,16 +948,16 @@ async function cargarCompromisos(){
       var estCol = c.estado==='completado'?'#16a34a':c.estado==='vencido'?'#dc2626':c.estado==='en_progreso'?'#d97706':'#64748b';
       return '<div style="background:#fff;border:1px solid #e8e5e0;border-left:4px solid '+estCol+';border-radius:10px;padding:14px 18px;margin-bottom:10px">'+
         '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">'+
-          '<div><b style="font-size:14px">'+(c.titulo||'')+'</b> <span style="background:#f3f4f6;color:#475569;font-size:10px;font-weight:700;padding:2px 8px;border-radius:8px;margin-left:8px">'+c.tipo+'</span></div>'+
-          '<span style="background:'+estCol+'22;color:'+estCol+';padding:2px 10px;border-radius:8px;font-size:11px;font-weight:700;text-transform:uppercase">'+c.estado+'</span>'+
+          '<div><b style="font-size:14px">'+esc(c.titulo||'')+'</b> <span style="background:#f3f4f6;color:#475569;font-size:10px;font-weight:700;padding:2px 8px;border-radius:8px;margin-left:8px">'+esc(c.tipo||'')+'</span></div>'+
+          '<span style="background:'+estCol+'22;color:'+estCol+';padding:2px 10px;border-radius:8px;font-size:11px;font-weight:700;text-transform:uppercase">'+esc(c.estado||'')+'</span>'+
         '</div>'+
-        '<div style="font-size:12px;color:#475569;margin-top:4px">Empleado #'+c.empleado_id+' · Jefe: '+(c.jefe_responsable||'-')+' · Objetivo: '+(c.fecha_objetivo||'-')+'</div>'+
-        (c.descripcion?'<div style="font-size:13px;color:#1c1917;margin-top:6px">'+c.descripcion+'</div>':'')+
-        (c.plan_accion?'<div style="font-size:12px;color:#475569;margin-top:6px;font-style:italic">📋 Plan: '+c.plan_accion+'</div>':'')+
-        (c.estado==='pendiente'||c.estado==='en_progreso' ? '<button class="btn btn-success btn-sm" style="margin-top:8px" onclick="completarCompromiso('+c.id+')">✓ Marcar completado</button>' : '')+
+        '<div style="font-size:12px;color:#475569;margin-top:4px">Empleado #'+(parseInt(c.empleado_id)||0)+' · Jefe: '+esc(c.jefe_responsable||'-')+' · Objetivo: '+esc(c.fecha_objetivo||'-')+'</div>'+
+        (c.descripcion?'<div style="font-size:13px;color:#1c1917;margin-top:6px">'+esc(c.descripcion)+'</div>':'')+
+        (c.plan_accion?'<div style="font-size:12px;color:#475569;margin-top:6px;font-style:italic">📋 Plan: '+esc(c.plan_accion)+'</div>':'')+
+        (c.estado==='pendiente'||c.estado==='en_progreso' ? '<button class="btn btn-success btn-sm" style="margin-top:8px" onclick="completarCompromiso('+(parseInt(c.id)||0)+')">✓ Marcar completado</button>' : '')+
       '</div>';
     }).join('');
-  } catch(e){ lista.innerHTML = '<div style="color:#dc2626;padding:14px">Error: '+e.message+'</div>'; }
+  } catch(e){ lista.innerHTML = '<div style="color:#dc2626;padding:14px">Error: '+esc(e.message)+'</div>'; }
 }
 
 async function completarCompromiso(cid){

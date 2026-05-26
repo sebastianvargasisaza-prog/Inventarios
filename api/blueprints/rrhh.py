@@ -415,11 +415,28 @@ def rrhh_nomina_export(periodo):
 def rrhh_comprobante(periodo, eid):
     """Print-ready HTML pay stub for one employee."""
     SMMLV = 1423500; AUX = 202000
+    # P0 audit 26-may · banco/cuenta solo admin+contadora (Habeas Data L1581)
+    # Antes el comprobante imprimía banco+número+salario para CUALQUIER user
+    # con rol RRHH (gloria/daniela/luz) — inconsistente con /api/rrhh/nomina/<p>
+    # que sí filtraba.
+    _u_sess = session.get('compras_user', '').lower()
+    try:
+        from config import ADMIN_USERS as _AU, CONTADORA_USERS as _CU
+    except Exception:
+        _AU = {'sebastian','alejandro'}; _CU = set()
+    _puede_ver_banco = _u_sess in {x.lower() for x in _AU} or _u_sess in {x.lower() for x in _CU}
     conn = get_db(); c = conn.cursor()
     c.execute("SELECT id,nombre,apellido,cedula,cargo,empresa,salario_base,nivel_riesgo,banco,numero_cuenta,tipo_cuenta FROM empleados WHERE id=?", (eid,))
     emp = c.fetchone()
     if not emp: return "<p>No encontrado</p>", 404
     eid2, nom, ape, ced, cargo, empresa, sal, riesgo, banco, num_cta, tipo_cta = emp
+    if not _puede_ver_banco:
+        # Enmascarar banco/cuenta (deja salario porque comprobante lo
+        # necesita para el cálculo · pero rol mínimo gloria/admin debe
+        # estar autorizado para imprimir comprobantes).
+        banco = '***'
+        num_cta = '***' + (str(num_cta)[-3:] if num_cta else '')
+        tipo_cta = '***'
     c.execute("SELECT dias_trabajados,valor_horas_extras,bonificaciones,otros_descuentos,estado,aprobado_por,aprobado_en,pagado_por,pagado_en FROM nomina_registros WHERE periodo=? AND empleado_id=?", (periodo, eid))
     nr = c.fetchone()
     dias = nr[0] if nr else 30; vhe = nr[1] if nr else 0
@@ -955,6 +972,22 @@ def rrhh_empleado_timeline(emp_id):
         return jsonify({'error': 'Empleado no encontrado'}), 404
     cols = [x[0] for x in c.description]
     empleado = dict(zip(cols, emp))
+    # P0 audit 26-may · Habeas Data L1581 · banco/salario/cédula solo senior
+    # Antes este endpoint exponía TODA columna de empleados a cualquier user
+    # RRHH operativo (gloria/daniela/luz/etc) · pero salario/banco/cuenta
+    # solo deben verlos senior (gloria/admin) o contadora.
+    try:
+        from config import CONTADORA_USERS as _CU
+    except Exception:
+        _CU = set()
+    _puede_ver_banco = _es_rrhh_senior or u in {x.lower() for x in _CU}
+    if not _puede_ver_banco:
+        for _campo_sensible in ('salario_base','banco','numero_cuenta','tipo_cuenta'):
+            if _campo_sensible in empleado:
+                empleado[_campo_sensible] = '[restringido · Habeas Data]'
+        if 'cedula' in empleado and empleado['cedula']:
+            ced = str(empleado['cedula'])
+            empleado['cedula'] = (ced[:2] + '*'*(max(0, len(ced)-5)) + ced[-3:]) if len(ced) > 5 else '***'
 
     eventos = c.execute(
         "SELECT * FROM rh_eventos WHERE empleado_id=? ORDER BY fecha_inicio DESC LIMIT 100",
@@ -1020,9 +1053,27 @@ def rrhh_documentos(emp_id):
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
     user = session.get('compras_user', '')
+    # P0 audit 26-may · documentos sensibles (contrato, EPS, médicos) solo
+    # rol senior · todo RRHH no debería ver/cargar sin gate.
+    _u = user.lower()
+    _es_senior = _u in {'gloria','sebastian','alejandro'}
     conn = get_db(); c = conn.cursor()
     if request.method == 'POST':
         d = request.json or {}
+        tipo_doc = (d.get('tipo') or 'otro').strip().lower()
+        # Whitelist mime_type (rechaza HTML/script/exe)
+        mime_raw = (d.get('mime_type') or '').strip()
+        _MIME_OK = {'application/pdf','image/jpeg','image/jpg','image/png','image/webp'}
+        if mime_raw and mime_raw not in _MIME_OK:
+            return jsonify({'error': f'mime_type no permitido: {mime_raw} · válidos: {sorted(_MIME_OK)}'}), 400
+        # Documentos sensibles: solo senior puede cargar
+        _SENSIBLES = {'contrato','incapacidad_eps','certificado_medico','liquidacion'}
+        if tipo_doc in _SENSIBLES and not _es_senior:
+            return jsonify({'error': 'Solo RRHH senior (Gloria/Admin) puede cargar documentos sensibles'}), 403
+        # Validar archivo_data <= 5MB (anti-DoS)
+        archivo_data = (d.get('archivo_data') or '').strip()
+        if archivo_data and len(archivo_data) > 5 * 1024 * 1024 * 4 // 3:  # ~5MB base64
+            return jsonify({'error': 'archivo > 5MB · sube por URL externa'}), 400
         cur = c.execute("""
             INSERT INTO empleados_documentos (
                 empleado_id, tipo, nombre, archivo_url, archivo_data, mime_type,
@@ -1030,23 +1081,43 @@ def rrhh_documentos(emp_id):
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             emp_id,
-            (d.get('tipo') or 'otro').strip(),
+            tipo_doc,
             (d.get('nombre') or '').strip(),
             (d.get('archivo_url') or '').strip(),
-            (d.get('archivo_data') or '').strip(),
-            (d.get('mime_type') or '').strip(),
+            archivo_data,
+            mime_raw,
             (d.get('fecha_emision') or '').strip() or None,
             (d.get('fecha_vencimiento') or '').strip() or None,
             (d.get('observaciones') or '').strip(),
             user
         ))
+        # Audit log creación documento (PII regulatorio)
+        try:
+            audit_log(c, usuario=user, accion='CARGAR_DOC_EMPLEADO',
+                      tabla='empleados_documentos', registro_id=cur.lastrowid,
+                      despues={'empleado_id': emp_id, 'tipo': tipo_doc,
+                               'nombre': (d.get('nombre') or '')[:80],
+                               'mime': mime_raw,
+                               'has_url': bool(d.get('archivo_url')),
+                               'has_data': bool(archivo_data)},
+                      detalle=f"Doc empleado {emp_id} tipo={tipo_doc}")
+        except Exception:
+            pass
         conn.commit()
         return jsonify({'ok': True, 'documento_id': cur.lastrowid})
-    # GET
-    rows = c.execute(
-        "SELECT id, tipo, nombre, archivo_url, mime_type, fecha_emision, fecha_vencimiento, observaciones, cargado_por, fecha_carga FROM empleados_documentos WHERE empleado_id=? ORDER BY fecha_carga DESC",
-        (emp_id,)
-    ).fetchall()
+    # GET · documentos sensibles solo senior
+    if not _es_senior:
+        rows = c.execute(
+            "SELECT id, tipo, nombre, archivo_url, mime_type, fecha_emision, fecha_vencimiento, observaciones, cargado_por, fecha_carga FROM empleados_documentos "
+            "WHERE empleado_id=? AND LOWER(COALESCE(tipo,'')) NOT IN ('contrato','incapacidad_eps','certificado_medico','liquidacion') "
+            "ORDER BY fecha_carga DESC",
+            (emp_id,)
+        ).fetchall()
+    else:
+        rows = c.execute(
+            "SELECT id, tipo, nombre, archivo_url, mime_type, fecha_emision, fecha_vencimiento, observaciones, cargado_por, fecha_carga FROM empleados_documentos WHERE empleado_id=? ORDER BY fecha_carga DESC",
+            (emp_id,)
+        ).fetchall()
     cols = [x[0] for x in c.description]
     return jsonify({'documentos': [dict(zip(cols, r)) for r in rows]})
 
