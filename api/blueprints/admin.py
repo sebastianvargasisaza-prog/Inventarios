@@ -6415,6 +6415,286 @@ def admin_mees_abreviaturas_fix():
     })
 
 
+@bp.route("/api/admin/mees-diagnostico", methods=["GET"])
+def admin_mees_diagnostico():
+    """Diagnóstico del cálculo de necesidades MEE.
+
+    Sebastián 27-may-2026 PM · "abastecimiento dice ✓ Sin déficits pero
+    los envases no duran ni un año". Causa probable: producciones del
+    calendario no encuentran mapping en sku_mee_config → consumo=0.
+
+    Reporta:
+      - productos_sin_mapping: producciones próximas SIN entry en sku_mee_config
+      - productos_sin_volumen: productos con mapping pero sin volumen_ml
+      - sku_mee_config_huerfanos: mee_codigo apunta a maestro_mee inexistente
+      - resumen contable
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    dias = int(request.args.get('dias', 60))
+    conn = db_connect()
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+
+    from datetime import date as _d, timedelta as _td
+    hoy = _d.today().isoformat()
+    hasta = (_d.today() + _td(days=dias)).isoformat()
+
+    # 1. Productos del calendario en ventana
+    try:
+        prods = c.execute(
+            """SELECT DISTINCT producto, COUNT(*) AS apariciones,
+                      SUM(CASE WHEN COALESCE(inicio_real_at,'')='' AND
+                                    COALESCE(fin_real_at,'')='' THEN 1 ELSE 0 END) AS pendientes
+               FROM produccion_programada
+               WHERE date(fecha_programada) BETWEEN ? AND ?
+                 AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado')
+               GROUP BY producto
+               ORDER BY pendientes DESC, producto ASC""",
+            (hoy, hasta),
+        ).fetchall()
+    except Exception as e:
+        conn.close()
+        return jsonify({'error': f'query produccion_programada: {e}'}), 500
+
+    # 2. Cargar mee_por_producto (mismo criterio que producciones_faltantes)
+    mee_por_producto = {}
+    try:
+        for r in c.execute(
+            """SELECT s.sku_codigo, s.mee_codigo, s.componente_tipo
+               FROM sku_mee_config s
+               WHERE COALESCE(s.aplica,1) = 1"""
+        ).fetchall():
+            sku = (r['sku_codigo'] or '').strip().upper()
+            mee_por_producto.setdefault(sku, []).append({
+                'mee_codigo': r['mee_codigo'],
+                'componente_tipo': r['componente_tipo'],
+            })
+    except Exception:
+        pass
+
+    # 3. Cargar volumen por producto
+    volumen_por_producto = {}
+    try:
+        for r in c.execute(
+            "SELECT producto_nombre, COALESCE(volumen_ml,0) FROM volumen_unitario_producto WHERE COALESCE(activo,1)=1"
+        ).fetchall():
+            volumen_por_producto[(r[0] or '').strip().upper()] = float(r[1] or 0)
+    except Exception:
+        pass
+
+    # 4. Códigos MEE válidos en maestro
+    mees_validos = set()
+    try:
+        for r in c.execute("SELECT codigo FROM maestro_mee").fetchall():
+            mees_validos.add((r[0] or '').strip())
+    except Exception:
+        pass
+
+    # 5. Clasificar productos
+    productos_sin_mapping = []   # producto no está en sku_mee_config
+    productos_sin_volumen = []   # tiene mapping pero sin volumen_ml
+    productos_ok = []            # bien configurado
+    for r in prods:
+        producto = r['producto']
+        producto_norm = (producto or '').strip().upper()
+        mapping = mee_por_producto.get(producto_norm, [])
+        vol = volumen_por_producto.get(producto_norm, 0)
+        info = {
+            'producto': producto,
+            'apariciones': r['apariciones'],
+            'pendientes': r['pendientes'],
+            'volumen_ml': vol,
+            'mees_mapeados': len(mapping),
+            'mees': [m['mee_codigo'] for m in mapping],
+        }
+        if not mapping:
+            productos_sin_mapping.append(info)
+        elif vol <= 0:
+            productos_sin_volumen.append(info)
+        else:
+            productos_ok.append(info)
+
+    # 6. sku_mee_config huérfanos (mee_codigo no existe en maestro_mee)
+    huerfanos = []
+    try:
+        for r in c.execute(
+            """SELECT s.sku_codigo, s.mee_codigo
+               FROM sku_mee_config s
+               WHERE COALESCE(s.aplica,1)=1"""
+        ).fetchall():
+            if r['mee_codigo'] not in mees_validos:
+                huerfanos.append({
+                    'sku_codigo': r['sku_codigo'],
+                    'mee_codigo_huerfano': r['mee_codigo'],
+                })
+    except Exception:
+        pass
+
+    conn.close()
+    total_prods = len(prods)
+    return jsonify({
+        'ventana_dias': dias,
+        'fecha_hoy': hoy,
+        'fecha_hasta': hasta,
+        'total_productos_calendario': total_prods,
+        'productos_ok': len(productos_ok),
+        'productos_sin_mapping': len(productos_sin_mapping),
+        'productos_sin_volumen': len(productos_sin_volumen),
+        'sku_mee_config_huerfanos': len(huerfanos),
+        'diagnostico_principal': (
+            f"🚨 {len(productos_sin_mapping)} producto(s) del calendario sin mapping en sku_mee_config · "
+            f"{len(productos_sin_volumen)} producto(s) con mapping pero sin volumen_ml · "
+            f"{len(huerfanos)} entry(s) huérfanas (mee_codigo no existe en maestro_mee)"
+            if (productos_sin_mapping or productos_sin_volumen or huerfanos)
+            else "✓ Configuración MEE OK · todos los productos del calendario tienen mapping completo"
+        ),
+        'detalle_sin_mapping': productos_sin_mapping[:50],
+        'detalle_sin_volumen': productos_sin_volumen[:50],
+        'detalle_huerfanos': huerfanos[:50],
+        'detalle_ok_top': productos_ok[:10],
+    })
+
+
+@bp.route("/admin/mees-diagnostico", methods=["GET"])
+def admin_mees_diagnostico_page():
+    """UI · página HTML para diagnosticar y mapear MEEs faltantes.
+
+    Sebastián 27-may-2026 PM · "abastecimiento dice ✓ Sin déficits pero
+    los envases no duran ni un año". Esta página llama al endpoint
+    /api/admin/mees-diagnostico y muestra el resultado con tabla legible.
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    html = """<!DOCTYPE html>
+<html lang="es"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Diagnóstico MEE · EOS</title>
+<link rel="stylesheet" href="/static/cortex.css">
+<style>
+  body{background:#0f172a;color:#e2e8f0;font-family:Inter,system-ui,sans-serif;padding:20px;max-width:1200px;margin:0 auto;}
+  .card{background:#1e293b;border:1px solid #334155;border-radius:10px;padding:18px;margin-bottom:16px;}
+  h1{font-size:24px;color:#a78bfa;margin:0 0 8px;} h2{font-size:17px;color:#a78bfa;margin:0 0 10px;}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:14px 0;}
+  .kpi{background:#0f172a;border:1px solid #334155;border-radius:8px;padding:12px;}
+  .kpi-val{font-size:24px;font-weight:800;}
+  .kpi-lab{font-size:11px;color:#64748b;text-transform:uppercase;margin-top:2px;}
+  table{width:100%;border-collapse:collapse;font-size:13px;}
+  th{background:#0f172a;padding:8px;text-align:left;color:#94a3b8;font-weight:600;border-bottom:1px solid #334155;}
+  td{padding:6px 8px;border-bottom:1px solid #1e293b;}
+  .red{color:#fca5a5;} .yel{color:#fde047;} .grn{color:#86efac;}
+  .badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;}
+  .b-red{background:#7f1d1d;color:#fecaca;} .b-yel{background:#854d0e;color:#fde047;} .b-grn{background:#064e3b;color:#86efac;}
+  button{background:#7c3aed;color:#fff;border:0;padding:8px 16px;border-radius:6px;cursor:pointer;font-weight:700;}
+  button:hover{background:#6d28d9;}
+  .diag-msg{background:#1e1b4b;border:1px solid #4338ca;border-radius:8px;padding:12px;color:#c7d2fe;font-size:14px;margin:10px 0;}
+  pre{background:#0f172a;padding:10px;border-radius:6px;overflow-x:auto;font-size:11px;}
+</style></head><body>
+<h1>🔬 Diagnóstico Necesidades MEE</h1>
+<div style="color:#94a3b8;font-size:13px;">¿Por qué abastecimiento de envases dice "sin déficits" cuando claramente faltan?</div>
+<div class="card">
+  <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+    <label style="color:#94a3b8;">Ventana:</label>
+    <select id="dias" style="background:#0f172a;color:#e2e8f0;border:1px solid #334155;padding:6px;border-radius:5px;">
+      <option value="30">30 días</option>
+      <option value="60" selected>60 días</option>
+      <option value="90">90 días</option>
+      <option value="180">180 días</option>
+      <option value="365">365 días</option>
+    </select>
+    <button onclick="cargar()">Ejecutar diagnóstico</button>
+    <a href="/inventarios" style="color:#94a3b8;font-size:13px;margin-left:auto;">← Volver al sistema</a>
+  </div>
+</div>
+<div id="resultado"></div>
+<script>
+function esc(s){return (s==null?'':String(s)).replace(/[<>&"']/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c]));}
+async function cargar(){
+  const dias = document.getElementById('dias').value;
+  const out = document.getElementById('resultado');
+  out.innerHTML = '<div class="card">⏳ Cargando...</div>';
+  let d;
+  try{
+    const r = await fetch('/api/admin/mees-diagnostico?dias='+dias, {credentials:'same-origin'});
+    if(!r.ok){ out.innerHTML='<div class="card red">HTTP '+r.status+'</div>'; return; }
+    d = await r.json();
+  }catch(e){ out.innerHTML='<div class="card red">Error: '+esc(e.message)+'</div>'; return; }
+  if(d.error){ out.innerHTML='<div class="card red">'+esc(d.error)+'</div>'; return; }
+  const tip = (d.productos_sin_mapping > 0 ? 'red' : (d.productos_sin_volumen > 0 ? 'yel' : 'grn'));
+  let html = '<div class="card">';
+  html += '<div class="diag-msg"><b>📊 Diagnóstico principal:</b><br>'+esc(d.diagnostico_principal)+'</div>';
+  html += '<div class="kpis">';
+  html += '<div class="kpi"><div class="kpi-val">'+d.total_productos_calendario+'</div><div class="kpi-lab">productos en calendario</div></div>';
+  html += '<div class="kpi"><div class="kpi-val grn">'+d.productos_ok+'</div><div class="kpi-lab">OK (mapping + volumen)</div></div>';
+  html += '<div class="kpi"><div class="kpi-val red">'+d.productos_sin_mapping+'</div><div class="kpi-lab">SIN mapping</div></div>';
+  html += '<div class="kpi"><div class="kpi-val yel">'+d.productos_sin_volumen+'</div><div class="kpi-lab">sin volumen_ml</div></div>';
+  html += '<div class="kpi"><div class="kpi-val red">'+d.sku_mee_config_huerfanos+'</div><div class="kpi-lab">entries huérfanas</div></div>';
+  html += '</div></div>';
+  // Productos sin mapping
+  if((d.detalle_sin_mapping||[]).length){
+    html += '<div class="card"><h2>🚨 Productos del calendario SIN mapping en sku_mee_config</h2>';
+    html += '<div style="color:#94a3b8;font-size:12px;margin-bottom:10px;">Estos productos NO contribuyen al cálculo de faltantes MEE · agregar entry en sku_mee_config para cada uno.</div>';
+    html += '<table><thead><tr><th>Producto</th><th>Apariciones (60d)</th><th>Pendientes</th><th>Vol ml</th></tr></thead><tbody>';
+    for(const p of d.detalle_sin_mapping){
+      html += '<tr><td><b>'+esc(p.producto||'')+'</b></td><td>'+(p.apariciones||0)+'</td><td>'+(p.pendientes||0)+'</td><td>'+(p.volumen_ml||0)+'</td></tr>';
+    }
+    html += '</tbody></table></div>';
+  }
+  // Productos sin volumen
+  if((d.detalle_sin_volumen||[]).length){
+    html += '<div class="card"><h2>⚠ Productos con mapping pero SIN volumen_unitario_producto</h2>';
+    html += '<div style="color:#94a3b8;font-size:12px;margin-bottom:10px;">El sistema sabe qué envases necesitan, pero sin volumen_ml no puede calcular cuántas unidades.</div>';
+    html += '<table><thead><tr><th>Producto</th><th>MEEs mapeados</th><th>Apariciones</th></tr></thead><tbody>';
+    for(const p of d.detalle_sin_volumen){
+      html += '<tr><td><b>'+esc(p.producto||'')+'</b></td><td>'+esc((p.mees||[]).join(', '))+'</td><td>'+(p.apariciones||0)+'</td></tr>';
+    }
+    html += '</tbody></table></div>';
+  }
+  // Huérfanos
+  if((d.detalle_huerfanos||[]).length){
+    html += '<div class="card"><h2>👻 sku_mee_config con mee_codigo huérfano</h2>';
+    html += '<div style="color:#94a3b8;font-size:12px;margin-bottom:10px;">El sku_codigo apunta a un mee_codigo que ya no existe en maestro_mee.</div>';
+    html += '<table><thead><tr><th>SKU</th><th>MEE huérfano</th></tr></thead><tbody>';
+    for(const h of d.detalle_huerfanos){
+      html += '<tr><td>'+esc(h.sku_codigo)+'</td><td class="red">'+esc(h.mee_codigo_huerfano)+'</td></tr>';
+    }
+    html += '</tbody></table></div>';
+  }
+  // OK preview
+  if((d.detalle_ok_top||[]).length){
+    html += '<div class="card"><h2 class="grn">✅ Productos OK (primeros 10)</h2>';
+    html += '<table><thead><tr><th>Producto</th><th>MEEs</th><th>Vol ml</th></tr></thead><tbody>';
+    for(const p of d.detalle_ok_top){
+      html += '<tr><td>'+esc(p.producto||'')+'</td><td>'+esc((p.mees||[]).join(', '))+'</td><td class="grn">'+(p.volumen_ml||0)+'</td></tr>';
+    }
+    html += '</tbody></table></div>';
+  }
+  html += '<div class="card"><h2>🔧 Próximos pasos</h2>';
+  html += '<ol style="line-height:1.8;">';
+  if(d.productos_sin_mapping > 0){
+    html += '<li><b>Asignar MEE a los '+d.productos_sin_mapping+' productos sin mapping</b> · cada producto necesita al menos un envase configurado en sku_mee_config.</li>';
+  }
+  if(d.productos_sin_volumen > 0){
+    html += '<li><b>Definir volumen_ml para los '+d.productos_sin_volumen+' productos</b> · sin volumen el cálculo de unidades = 0.</li>';
+  }
+  if(d.sku_mee_config_huerfanos > 0){
+    html += '<li><b>Reparar los '+d.sku_mee_config_huerfanos+' apuntadores huérfanos</b> · cambiar mee_codigo a uno válido o eliminar la entry.</li>';
+  }
+  if(d.productos_sin_mapping === 0 && d.productos_sin_volumen === 0 && d.sku_mee_config_huerfanos === 0){
+    html += '<li class="grn">Configuración MEE OK · si las necesidades siguen saliendo en 0, el problema es otro (revisar producciones programadas activas o estado de las mismas).</li>';
+  }
+  html += '</ol></div>';
+  out.innerHTML = html;
+}
+cargar();
+</script></body></html>"""
+    return Response(html, mimetype='text/html')
+
+
 @bp.route("/admin/migraciones-pg", methods=["GET"])
 def admin_migraciones_pg_page():
     """UI · pagina HTML para aplicar migraciones pendientes en PG con 1 click.
