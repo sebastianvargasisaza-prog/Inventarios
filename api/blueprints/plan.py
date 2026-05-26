@@ -5999,6 +5999,19 @@ def limpiar_duplicados():
                         # Conflicto · cancelar el de menor prioridad
                         pa = PRIORIDAD.get(la["origen"], 9)
                         pb = PRIORIDAD.get(lb["origen"], 9)
+                        # Sebastián 25-may-2026 PM · audit P0 · si AMBOS son
+                        # Fijo (eos_plan/eos_b2b/eos_retroactivo · prio 0),
+                        # NO tocar nada · el usuario debe resolver el
+                        # duplicado manualmente. Violar Fijo era el bug raíz
+                        # del 19-may-2026 que perdió producción.
+                        if pa == 0 and pb == 0:
+                            duplicados_detectados.append({
+                                'producto': la.get('producto_real') or prod,
+                                'aviso': 'AMBOS Fijos · no cancelado automáticamente',
+                                'lote_a': {'id': la['id'], 'fecha': la['fecha'], 'origen': la['origen']},
+                                'lote_b': {'id': lb['id'], 'fecha': lb['fecha'], 'origen': lb['origen']},
+                            })
+                            continue
                         if pa <= pb:
                             cancelar_ids.append(lb["id"])
                             marcados_cancelados.add(lb["id"])
@@ -6020,6 +6033,8 @@ def limpiar_duplicados():
                     pass
 
     # 3) Aplicar cancelaciones
+    # Sebastián 25-may-2026 PM · audit P0 · defense in depth · UPDATE excluye
+    # Fijo aunque el algoritmo del loop ya filtra · doble salvaguarda.
     n_canceladas = 0
     if cancelar_ids:
         placeholders = ",".join(["?"] * len(cancelar_ids))
@@ -6028,7 +6043,8 @@ def limpiar_duplicados():
                 SET estado = 'cancelado',
                     observaciones = COALESCE(observaciones,'') ||
                       ' · CANCELADO_LIMPIAR_DUPLICADOS_' || {SQLITE_NOW_COL}
-                WHERE id IN ({placeholders})""",
+                WHERE id IN ({placeholders})
+                  AND COALESCE(origen,'') NOT IN ('eos_plan','eos_b2b','eos_retroactivo')""",
             cancelar_ids,
         ).rowcount
     conn.commit()
