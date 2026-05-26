@@ -342,10 +342,14 @@ MIGRATIONS: list[tuple[int, str, list[str]]] = [
         #
         # Modo dual durante transición:
         #   - secret (plaintext legacy) · si secret_enc IS NULL
-        #   - secret_enc (BLOB encriptado) · al re-verificar TOTP, lazy upgrade
+        #   - secret_enc TEXT (Fernet output es base64 ASCII · cross-DB safe).
         # Si MFA_MASTER_KEY no está configurada en Render, secret queda plaintext
         # con warn en startup (modo degradado · igual que como estaba antes).
-        "ALTER TABLE users_mfa ADD COLUMN secret_enc BLOB DEFAULT NULL",
+        #
+        # HOTFIX 27-may · usar TEXT en lugar de BLOB · PostgreSQL no soporta
+        # BLOB y pg_compat NO lo traduce · esto rompía mig 190 en deploy
+        # Render (app caía con 500 "Error interno del servidor" en startup).
+        "ALTER TABLE users_mfa ADD COLUMN secret_enc TEXT DEFAULT NULL",
     ]),
     (189, "animus_ghl_opportunities · pipelines GHL · Sebastián 26-may-2026 PM", [
         # FEATURE 26-may · GHL sync actual SOLO trae contactos básicos

@@ -100,7 +100,11 @@ def _get_mfa_fernet():
 
 
 def _encrypt_mfa_secret(plaintext):
-    """Encripta un TOTP secret (str base32) → bytes para guardar en BLOB.
+    """Encripta un TOTP secret (str base32) → str (ASCII safe · token Fernet
+    es base64url) para guardar en TEXT cross-DB (SQLite/PostgreSQL).
+
+    HOTFIX 27-may · antes devolvíamos bytes para BLOB · PG no acepta BLOB.
+    Ahora devolvemos str (Fernet token base64) que cabe en TEXT.
 
     Si MFA_MASTER_KEY no está, devuelve None y el caller debe guardar plaintext."""
     if not plaintext:
@@ -109,22 +113,29 @@ def _encrypt_mfa_secret(plaintext):
     if f is None:
         return None
     try:
-        return f.encrypt(plaintext.encode('utf-8'))
+        token_bytes = f.encrypt(plaintext.encode('utf-8'))
+        # Fernet token ya es base64url ASCII · decode safe a str
+        return token_bytes.decode('ascii')
     except Exception as e:
         import logging as _lg
         _lg.getLogger('mfa').error('encrypt MFA secret fallo: %s', e)
         return None
 
 
-def _decrypt_mfa_secret(blob):
-    """Desencripta blob → str. Devuelve None si falla."""
-    if not blob:
+def _decrypt_mfa_secret(token):
+    """Desencripta token (str o bytes) → str. Devuelve None si falla."""
+    if not token:
         return None
     f = _get_mfa_fernet()
     if f is None:
         return None
     try:
-        return f.decrypt(bytes(blob)).decode('utf-8')
+        # Aceptar tanto str (modo TEXT nuevo) como bytes (modo BLOB legacy)
+        if isinstance(token, str):
+            token = token.encode('ascii')
+        else:
+            token = bytes(token)
+        return f.decrypt(token).decode('utf-8')
     except Exception as e:
         import logging as _lg
         _lg.getLogger('mfa').warning('decrypt MFA secret fallo (master key incorrecta?): %s', e)
