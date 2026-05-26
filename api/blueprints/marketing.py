@@ -654,18 +654,38 @@ def mkt_dashboard():
 # ──────────────────────────────────────────────────────────────────────────────
 @bp.route("/api/marketing/influencers/<int:iid>/dar-baja", methods=["POST"])
 def mkt_dar_de_baja(iid):
-    """Marca un influencer como Baja con motivo — no lo elimina."""
+    """Marca un influencer como Baja con motivo — no lo elimina.
+
+    Sebastián 25-may-2026 PM · audit P2 · audit_log + snapshot.
+    """
     u, err, code = _auth()
     if err: return err, code
     conn = _db(); d = request.get_json() or {}
     motivo = str(d.get("motivo") or "Sin especificar").strip()
     obs    = str(d.get("observacion") or "").strip()
     nota   = f"{motivo}" + (f" — {obs}" if obs else "")
-    conn.execute("""
+    cur = conn.cursor()
+    antes = {}
+    try:
+        snap = cur.execute(
+            "SELECT estado, motivo_baja, nombre FROM marketing_influencers WHERE id=?",
+            (iid,)).fetchone()
+        if snap:
+            antes = {'estado': snap[0], 'motivo_baja': snap[1] or '',
+                      'nombre': snap[2] or ''}
+    except Exception:
+        pass
+    cur.execute("""
         UPDATE marketing_influencers
         SET estado='Baja', motivo_baja=?, fecha_baja=date('now', '-5 hours'), notas=?
         WHERE id=?
     """, (nota, obs, iid))
+    try:
+        from audit_helpers import audit_log as _al
+        _al(cur, usuario=u, accion='DAR_BAJA_INFLUENCER',
+            tabla='marketing_influencers', registro_id=iid,
+            antes=antes, despues={'estado': 'Baja', 'motivo': nota})
+    except Exception: pass
     conn.commit()
     return jsonify({"ok": True})
 
@@ -1253,12 +1273,24 @@ def mkt_influencer_detail(iid):
 # ──────────────────────────────────────────────────────────────────────────────
 @bp.route("/api/marketing/campana-influencer", methods=["POST"])
 def mkt_asignar_influencer():
+    """Asigna influencer a campaña.
+
+    Sebastián 25-may-2026 PM · audit P2 · validate_money + audit_log.
+    """
     u, err, code = _auth()
     if err:
         return err, code
     d = request.get_json() or {}
     if not d.get("campana_id") or not d.get("influencer_id"):
         return jsonify({"error": "campana_id e influencer_id requeridos"}), 400
+    # Validar monto_pactado (puede venir 0 si aún no se pactó)
+    monto_pact = d.get("monto_pactado", 0)
+    try:
+        monto_pact = float(monto_pact or 0)
+    except (TypeError, ValueError):
+        return jsonify({"error": "monto_pactado inválido"}), 400
+    if monto_pact < 0 or monto_pact > 500_000_000:
+        return jsonify({"error": "monto_pactado fuera de rango (0..500M)"}), 400
     conn = _db()
     c = conn.cursor()
     try:
@@ -1274,14 +1306,29 @@ def mkt_asignar_influencer():
             (campana_id, influencer_id, monto_pactado, estado, notas)
             VALUES (?,?,?,?,?)
         """, (d["campana_id"], d["influencer_id"],
-              d.get("monto_pactado", 0), d.get("estado", "Pendiente"), d.get("notas", "")))
+              monto_pact, d.get("estado", "Pendiente"), d.get("notas", "")))
+        new_id = c.lastrowid
+        try:
+            from audit_helpers import audit_log as _al
+            _al(c, usuario=u, accion='ASIGNAR_INFLUENCER_A_CAMPANA',
+                tabla='marketing_campana_influencer', registro_id=new_id,
+                despues={'campana_id': d["campana_id"],
+                          'influencer_id': d["influencer_id"],
+                          'monto_pactado': monto_pact,
+                          'estado': d.get("estado", "Pendiente")})
+        except Exception: pass
         conn.commit()
-        return jsonify({"ok": True, "id": c.lastrowid}), 201
+        return jsonify({"ok": True, "id": new_id}), 201
     finally:
         pass  # conexión cerrada automáticamente por teardown_appcontext
 
 @bp.route("/api/marketing/campana-influencer/<int:rid>", methods=["PUT"])
 def mkt_update_asignacion(rid):
+    """Actualiza asignación influencer-campaña.
+
+    Sebastián 25-may-2026 PM · audit P2 · validate_money en monto_* +
+    snapshot antes + audit_log.
+    """
     u, err, code = _auth()
     if err:
         return err, code
@@ -1291,12 +1338,39 @@ def mkt_update_asignacion(rid):
     updates = {k: d[k] for k in campos if k in d}
     if not updates:
         return jsonify({"error": "Nada que actualizar"}), 400
+    # Validar montos (si vienen)
+    for _campo_money in ('monto_pactado', 'monto_pagado'):
+        if _campo_money in updates:
+            try:
+                _v = float(updates[_campo_money] or 0)
+            except (TypeError, ValueError):
+                return jsonify({"error": f"{_campo_money} inválido"}), 400
+            if _v < 0 or _v > 500_000_000:
+                return jsonify({"error": f"{_campo_money} fuera de rango"}), 400
+            updates[_campo_money] = _v
     conn = _db()
     c = conn.cursor()
     try:
+        # Snapshot antes
+        antes = {}
+        try:
+            cols_sel = ", ".join(sorted(updates.keys()))
+            row = c.execute(
+                f"SELECT {cols_sel} FROM marketing_campana_influencer WHERE id=?",
+                (rid,)).fetchone()
+            if row:
+                antes = dict(zip(sorted(updates.keys()), row))
+        except Exception:
+            pass
         set_clause = ", ".join(f"{k}=?" for k in updates)
         c.execute(f"UPDATE marketing_campana_influencer SET {set_clause} WHERE id=?",
                   list(updates.values()) + [rid])
+        try:
+            from audit_helpers import audit_log as _al
+            _al(c, usuario=u, accion='ACTUALIZAR_ASIGNACION_INFLUENCER',
+                tabla='marketing_campana_influencer', registro_id=rid,
+                antes=antes, despues=updates)
+        except Exception: pass
         conn.commit()
         return jsonify({"ok": True})
     finally:
@@ -3390,6 +3464,16 @@ def mkt_pagos_historico_cleanup():
         if ids:
             placeholders = ','.join('?'*len(ids))
             c.execute(f"UPDATE pagos_influencers SET estado='Pagada' WHERE id IN ({placeholders})", ids)
+            # Sebastián 25-may-2026 PM · audit P2 · UPDATE masivo Pagada sin
+            # audit antes. Acción admin · dinero · CRÍTICO trazabilidad.
+            try:
+                from audit_helpers import audit_log as _al
+                _al(c, usuario=u, accion='PAGOS_HISTORICO_CLEANUP',
+                    tabla='pagos_influencers', registro_id='_BULK_',
+                    despues={'ids_marcados_pagada': ids,
+                              'total': len(ids),
+                              'snapshot_first_20': cands[:20]})
+            except Exception: pass
             conn.commit()
         return jsonify({'ok': True, 'actualizados': len(ids)})
     except Exception as e:
@@ -3865,6 +3949,18 @@ def mkt_fix_pago_link():
         if sets:
             params.append(numero_oc)
             c.execute(f"UPDATE pagos_influencers SET {', '.join(sets)} WHERE numero_oc=?", params)
+            # Sebastián 25-may-2026 PM · audit P2 · UPDATE de pago (dinero)
+            # sin audit antes · ADMIN ONLY pero igual debe quedar rastro.
+            try:
+                from audit_helpers import audit_log as _al
+                _al(c, usuario=u, accion='FIX_PAGO_LINK_UPDATE',
+                    tabla='pagos_influencers', registro_id=row[0],
+                    antes={'influencer_id': row[1], 'influencer_nombre': row[2],
+                            'estado': row[3]},
+                    despues={'influencer_id': influencer_id, 'nombre': nombre,
+                              'estado': estado, 'valor': valor,
+                              'numero_oc': numero_oc})
+            except Exception: pass
             conn.commit()
         return jsonify({"ok": True, "action": "updated", "id": row[0]})
     else:
@@ -3876,6 +3972,14 @@ def mkt_fix_pago_link():
             (influencer_id, influencer_nombre, valor, fecha, estado, concepto, numero_oc)
             VALUES (?,?,?,date('now', '-5 hours'),?,?,?)
         """, (influencer_id, nombre, int(valor), estado, f"Pago OC {numero_oc}", numero_oc))
+        try:
+            from audit_helpers import audit_log as _al
+            _al(c, usuario=u, accion='FIX_PAGO_LINK_INSERT',
+                tabla='pagos_influencers', registro_id=c.lastrowid,
+                despues={'influencer_id': influencer_id, 'nombre': nombre,
+                          'valor': int(valor), 'estado': estado,
+                          'numero_oc': numero_oc})
+        except Exception: pass
         conn.commit()
         return jsonify({"ok": True, "action": "inserted"})
 
