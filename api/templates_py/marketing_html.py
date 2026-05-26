@@ -1643,10 +1643,19 @@ async function loadDashboard() {
   loadConnections();
   let _dashResp;
   try { _dashResp = await fetch('/api/marketing/dashboard'); }
-  catch(e) { console.error('dashboard fetch:', e); return; }
-  if(!_dashResp.ok && _dashResp.status===401){ location.reload(); return; }
+  catch(e) { showToast('Error red dashboard: '+e.message,'error'); return; }
+  if(!_dashResp.ok){
+    if(_dashResp.status===401){ location.reload(); return; }
+    showToast('Dashboard HTTP '+_dashResp.status,'error');
+    // Mostrar guardas en KPIs para no engañar al user
+    ['sh-rev30','sh-ped30','sh-ticket','sh-nuevos','sh-rev-total','ghl-total',
+     'ig-posts30','ig-likes30','ig-comments30'].forEach(id=>{
+      const el=document.getElementById(id); if(el){ el.textContent='?'; el.title='Error '+_dashResp.status; }
+    });
+    return;
+  }
   const data = await _dashResp.json().catch(()=>null);
-  if(!data){ console.error('dashboard: respuesta no es JSON'); return; }
+  if(!data){ showToast('Dashboard: respuesta inválida','error'); return; }
   const k = data.kpis || {};
   const sh = data.shopify || {};
   const ghl = data.ghl || {};
@@ -1725,7 +1734,7 @@ ${bars}
     skuEl.innerHTML = topSkus.map((s,i)=>`
       <div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid #1e293b;">
         <span style="color:#d4af37;font-weight:700;min-width:18px;">#${i+1}</span>
-        <span style="flex:1;font-weight:600;font-size:12px;">${s.sku||'—'}</span>
+        <span style="flex:1;font-weight:600;font-size:12px;">${esc(s.sku||'—')}</span>
         <div style="flex:2;">
           <div style="background:#1e293b;border-radius:3px;height:6px;">
             <div style="background:#d4af37;height:6px;border-radius:3px;width:${Math.round((s.total/maxSku)*100)}%;"></div>
@@ -1746,7 +1755,7 @@ ${bars}
     ciudEl.innerHTML = ciudades.map((c,i)=>`
       <div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid #1e293b;">
         <span style="color:#94a3b8;min-width:18px;font-size:11px;">${i+1}</span>
-        <span style="flex:1;font-size:12px;">${c.ciudad||'—'}</span>
+        <span style="flex:1;font-size:12px;">${esc(c.ciudad||'—')}</span>
         <div style="flex:2;">
           <div style="background:#1e293b;border-radius:3px;height:6px;">
             <div style="background:#6366f1;height:6px;border-radius:3px;width:${Math.round((c.pedidos/maxCiud)*100)}%;"></div>
@@ -1763,8 +1772,8 @@ ${bars}
   } else {
     cBody.innerHTML = data.campanas_activas.map(c=>`
       <tr>
-        <td style="font-weight:700;">${c.nombre}</td>
-        <td><span class="badge badge-gray">${c.canal||'—'}</span></td>
+        <td style="font-weight:700;">${esc(c.nombre)}</td>
+        <td><span class="badge badge-gray">${esc(c.canal||'—')}</span></td>
         <td>${badgeEstadoCamp(c.estado)}</td>
         <td>${fmtM(c.presupuesto)}</td>
         <td style="color:#34d399;">${fmtM(c.resultado_ventas)}</td>
@@ -1777,7 +1786,7 @@ ${bars}
     coBody.innerHTML = '<tr class="empty-row"><td colspan="4">Sin contenido</td></tr>';
   } else {
     coBody.innerHTML = data.contenido_reciente.map(c=>`
-      <tr><td>${c.tipo}</td><td>${c.plataforma}</td><td>${badgeEstadoCont(c.estado)}</td><td>${fmt(c.alcance)}</td></tr>`).join('');
+      <tr><td>${esc(c.tipo)}</td><td>${esc(c.plataforma)}</td><td>${badgeEstadoCont(c.estado)}</td><td>${fmt(c.alcance)}</td></tr>`).join('');
   }
 
   // ── Instagram KPIs ───────────────────────────────────────────────────────
@@ -1845,7 +1854,7 @@ ${bars}
             <span style="font-size:11px;color:#94a3b8;">${icon} ${tipo}</span>
             <span style="font-size:10px;color:#64748b;">${date}</span>
           </div>
-          <div style="font-size:11px;color:#cbd5e1;margin-bottom:8px;line-height:1.4;">${desc||'(sin caption)'}</div>
+          <div style="font-size:11px;color:#cbd5e1;margin-bottom:8px;line-height:1.4;">${esc(desc||'(sin caption)')}</div>
           <div style="display:flex;gap:12px;font-size:11px;">
             <span style="color:#e1306c;">♥ ${p.likes||0}</span>
             <span style="color:#64748b;">💬 ${p.comentarios||0}</span>
@@ -1865,7 +1874,7 @@ ${bars}
     chEl.innerHTML = data.por_canal.map(ch=>`
       <div style="padding:10px 0;border-bottom:1px solid #1e293b;">
         <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
-          <span style="font-weight:700;">${ch.canal}</span>
+          <span style="font-weight:700;">${esc(ch.canal)}</span>
           <span style="color:#34d399;">${fmtM(ch.ventas_total)} ventas</span>
         </div>
         <div style="display:flex;justify-content:space-between;font-size:11px;color:#64748b;">
