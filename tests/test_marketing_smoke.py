@@ -66,6 +66,40 @@ def test_marketing_generar_cupon_influencer_inexistente(app, db_clean):
     assert r.status_code == 404
 
 
+def test_ab_tests_listar(app, db_clean):
+    """GET /api/marketing/ab-tests devuelve lista (vacía es OK)."""
+    c = _login(app)
+    r = c.get("/api/marketing/ab-tests")
+    assert r.status_code == 200
+    j = r.get_json()
+    assert "tests" in j
+    assert isinstance(j["tests"], list)
+
+
+def test_ab_tests_crear_validaciones(app, db_clean):
+    """POST sin nombre/IDs → 400."""
+    c = _login(app)
+    r = c.post("/api/marketing/ab-tests", headers=csrf_headers(),
+                json={"contenido_a_id": 1, "contenido_b_id": 2})
+    assert r.status_code == 400
+
+
+def test_ab_tests_crear_mismas_piezas_rechaza(app, db_clean):
+    """POST con a_id == b_id → 400."""
+    c = _login(app)
+    r = c.post("/api/marketing/ab-tests", headers=csrf_headers(),
+                json={"nombre": "Test", "contenido_a_id": 1, "contenido_b_id": 1})
+    assert r.status_code == 400
+
+
+def test_ab_test_calcular_ganador_inexistente(app, db_clean):
+    """Calcular ganador en test que no existe → 404."""
+    c = _login(app)
+    r = c.post("/api/marketing/ab-tests/999999/calcular-ganador",
+                headers=csrf_headers(), json={})
+    assert r.status_code == 404
+
+
 def test_sentiment_resumen_sin_data(app, db_clean):
     """Resumen sentiment sin comentarios analizados devuelve total=0 + alerta=None."""
     c = _login(app)

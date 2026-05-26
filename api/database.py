@@ -312,6 +312,33 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (193, "marketing_ab_tests · A/B testing piezas IG · Sebastián 27-may-2026 AM", [
+        # FEATURE 27-may · A/B testing nativo · "publicás 1 versión, no
+        # sabés si la otra hubiera vendido más". Esta tabla relaciona 2
+        # piezas marketing_contenido como variantes A/B y calcula ganador
+        # cuando hay suficiente data.
+        """CREATE TABLE IF NOT EXISTS marketing_ab_tests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            nombre TEXT NOT NULL,
+            hipotesis TEXT,
+            contenido_a_id INTEGER NOT NULL,
+            contenido_b_id INTEGER NOT NULL,
+            metrica_objetivo TEXT DEFAULT 'engagement'
+                CHECK(metrica_objetivo IN ('engagement','clicks','conversiones','alcance')),
+            ganadora TEXT
+                CHECK(ganadora IN ('a','b','tie','indeterminado') OR ganadora IS NULL),
+            ganadora_diff_pct REAL,
+            ganadora_calculado_en TEXT,
+            estado TEXT DEFAULT 'activo'
+                CHECK(estado IN ('activo','cerrado','cancelado')),
+            notas TEXT,
+            creado_por TEXT,
+            fecha_creacion TEXT DEFAULT (datetime('now','-5 hours')),
+            FOREIGN KEY (contenido_a_id) REFERENCES marketing_contenido(id) ON DELETE CASCADE,
+            FOREIGN KEY (contenido_b_id) REFERENCES marketing_contenido(id) ON DELETE CASCADE
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_ab_estado ON marketing_ab_tests(estado, fecha_creacion)",
+    ]),
     (192, "animus_instagram_comments · sentiment analysis comentarios IG · Sebastián 27-may-2026 AM", [
         # FEATURE 27-may · "detección de crisis temprana" del audit Marketing.
         # 5 quejas seguidas sobre un SKU debería disparar alerta antes de

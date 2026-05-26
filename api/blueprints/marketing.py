@@ -656,6 +656,206 @@ def mkt_influencer_generar_cupon(iid):
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# A/B testing creatividades · compara 2 piezas IG con métricas reales
+# ──────────────────────────────────────────────────────────────────────────────
+def _engagement_score(c_row):
+    """Calcula engagement de una pieza marketing_contenido cruzado con IG real.
+
+    Si tiene url_publicacion que matchea con animus_instagram_posts (mig kanban
+    auto-sync), usa likes/comentarios/alcance live. Si no, usa los manuales.
+    Score = likes + comentarios*3 + alcance/10 (peso típico).
+    """
+    likes = int(c_row.get('likes') or c_row.get('likes_manual') or 0)
+    com = int(c_row.get('comentarios') or c_row.get('comentarios_manual') or 0)
+    alc = int(c_row.get('alcance') or c_row.get('alcance_manual') or 0)
+    conv = int(c_row.get('conversiones') or 0)
+    return {
+        'likes': likes, 'comentarios': com, 'alcance': alc, 'conversiones': conv,
+        'engagement': likes + com * 3 + alc // 10,
+    }
+
+
+@bp.route('/api/marketing/ab-tests', methods=['GET', 'POST'])
+def mkt_ab_tests():
+    """GET: lista tests · POST: crear nuevo (2 piezas Kanban).
+
+    Body POST: {nombre, hipotesis, contenido_a_id, contenido_b_id, metrica_objetivo, notas}
+    """
+    u, err, code = _auth()
+    if err: return err, code
+    conn = _db(); c = conn.cursor()
+    if request.method == 'GET':
+        estado = (request.args.get('estado') or '').strip()
+        sql = """
+            SELECT t.*,
+                   ca.estado as a_estado, ca.url_publicacion as a_url,
+                   ca.likes as a_likes, ca.comentarios as a_com, ca.alcance as a_alc,
+                   ca.conversiones as a_conv,
+                   cb.estado as b_estado, cb.url_publicacion as b_url,
+                   cb.likes as b_likes, cb.comentarios as b_com, cb.alcance as b_alc,
+                   cb.conversiones as b_conv
+            FROM marketing_ab_tests t
+            LEFT JOIN marketing_contenido ca ON ca.id = t.contenido_a_id
+            LEFT JOIN marketing_contenido cb ON cb.id = t.contenido_b_id
+        """
+        params = []
+        if estado:
+            sql += " WHERE t.estado=?"
+            params.append(estado)
+        sql += " ORDER BY t.fecha_creacion DESC LIMIT 100"
+        return jsonify({'tests': [dict(r) for r in c.execute(sql, params).fetchall()]})
+    # POST
+    d = request.get_json(silent=True) or {}
+    nombre = (d.get('nombre') or '').strip()
+    a_id = d.get('contenido_a_id')
+    b_id = d.get('contenido_b_id')
+    if not nombre or not a_id or not b_id:
+        return jsonify({'error': 'nombre, contenido_a_id, contenido_b_id requeridos'}), 400
+    if a_id == b_id:
+        return jsonify({'error': 'a y b deben ser piezas distintas'}), 400
+    # Validar que existan
+    for cid in (a_id, b_id):
+        if not c.execute("SELECT id FROM marketing_contenido WHERE id=?", (int(cid),)).fetchone():
+            return jsonify({'error': f'contenido {cid} no existe'}), 404
+    metrica = (d.get('metrica_objetivo') or 'engagement').strip()
+    if metrica not in ('engagement','clicks','conversiones','alcance'):
+        return jsonify({'error': f'metrica_objetivo inválida · debe ser engagement|clicks|conversiones|alcance'}), 400
+    try:
+        c.execute("""
+            INSERT INTO marketing_ab_tests
+            (nombre, hipotesis, contenido_a_id, contenido_b_id,
+             metrica_objetivo, notas, creado_por)
+            VALUES (?,?,?,?,?,?,?)
+        """, (nombre[:120], (d.get('hipotesis') or '')[:500],
+              int(a_id), int(b_id), metrica,
+              (d.get('notas') or '')[:500], u))
+        tid = c.lastrowid
+        try:
+            audit_log(c, usuario=u, accion='CREAR_AB_TEST',
+                      tabla='marketing_ab_tests', registro_id=tid,
+                      despues={'nombre': nombre[:80], 'a_id': a_id, 'b_id': b_id,
+                                'metrica': metrica})
+        except Exception:
+            pass
+        conn.commit()
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
+    return jsonify({'ok': True, 'id': tid}), 201
+
+
+@bp.route('/api/marketing/ab-tests/<int:tid>/calcular-ganador', methods=['POST'])
+def mkt_ab_test_calcular_ganador(tid):
+    """Calcula ganador del test A/B basado en métricas reales (Kanban + IG live).
+
+    Lógica:
+      - Trae métricas de las 2 piezas (engagement por defecto)
+      - Diferencia % vs base mínima
+      - Si diff >20% → ganador claro
+      - Si diff 5-20% → ganador con confianza menor
+      - Si diff <5% → 'tie'
+      - Si una pieza no tiene métricas → 'indeterminado'
+    """
+    u, err, code = _auth()
+    if err: return err, code
+    conn = _db(); c = conn.cursor()
+    test = c.execute(
+        "SELECT * FROM marketing_ab_tests WHERE id=?", (tid,)).fetchone()
+    if not test:
+        return jsonify({'error': 'Test no encontrado'}), 404
+    t = dict(test)
+    # Métricas de cada pieza · usar fusión IG live + manual (igual que kanban)
+    def _stats(cid):
+        row = c.execute("""
+            SELECT mc.id, mc.likes AS likes_manual, mc.comentarios AS comentarios_manual,
+                   mc.alcance AS alcance_manual, mc.conversiones, mc.estado,
+                   ig.likes AS ig_likes, ig.comentarios AS ig_comentarios, ig.alcance AS ig_alcance
+            FROM marketing_contenido mc
+            LEFT JOIN animus_instagram_posts ig
+              ON COALESCE(mc.url_publicacion,'') != ''
+             AND mc.url_publicacion = ig.url_permalink
+            WHERE mc.id=?
+        """, (cid,)).fetchone()
+        if not row:
+            return None
+        r = dict(row)
+        # IG live tiene prioridad sobre manual
+        return {
+            'likes': int(r.get('ig_likes') or r.get('likes_manual') or 0),
+            'comentarios': int(r.get('ig_comentarios') or r.get('comentarios_manual') or 0),
+            'alcance': int(r.get('ig_alcance') or r.get('alcance_manual') or 0),
+            'conversiones': int(r.get('conversiones') or 0),
+            'estado': r.get('estado'),
+            'fuente_ig_live': bool(r.get('ig_likes') is not None),
+        }
+    a = _stats(t['contenido_a_id'])
+    b = _stats(t['contenido_b_id'])
+    if not a or not b:
+        return jsonify({'error': 'Una de las piezas no existe'}), 404
+    # Score según métrica objetivo
+    metrica = t['metrica_objetivo'] or 'engagement'
+    def _score(s):
+        if metrica == 'clicks':
+            return s['alcance']  # proxy clicks (IG no expone clicks reales)
+        if metrica == 'conversiones':
+            return s['conversiones']
+        if metrica == 'alcance':
+            return s['alcance']
+        # engagement default
+        return s['likes'] + s['comentarios'] * 3 + s['alcance'] // 10
+    a_score = _score(a)
+    b_score = _score(b)
+    # Determinar ganador
+    base = max(a_score, b_score, 1)
+    diff_pct = round((abs(a_score - b_score) / base) * 100, 1)
+    if a_score == 0 and b_score == 0:
+        ganadora = 'indeterminado'
+    elif diff_pct < 5:
+        ganadora = 'tie'
+    elif a_score > b_score:
+        ganadora = 'a'
+    else:
+        ganadora = 'b'
+    # Update DB
+    c.execute("""
+        UPDATE marketing_ab_tests
+        SET ganadora=?, ganadora_diff_pct=?,
+            ganadora_calculado_en=datetime('now','-5 hours'),
+            estado=CASE WHEN ? IN ('a','b','tie') THEN 'cerrado' ELSE estado END
+        WHERE id=?
+    """, (ganadora, diff_pct, ganadora, tid))
+    try:
+        audit_log(c, usuario=u, accion='CALCULAR_GANADOR_AB_TEST',
+                  tabla='marketing_ab_tests', registro_id=tid,
+                  despues={'ganadora': ganadora, 'diff_pct': diff_pct,
+                            'a_score': a_score, 'b_score': b_score})
+    except Exception:
+        pass
+    conn.commit()
+    # Interpretación human-friendly
+    if ganadora == 'a':
+        msg = f"🏆 Pieza A gana por {diff_pct}% (score {a_score} vs {b_score})"
+    elif ganadora == 'b':
+        msg = f"🏆 Pieza B gana por {diff_pct}% (score {b_score} vs {a_score})"
+    elif ganadora == 'tie':
+        msg = f"⚖ Empate técnico (diff {diff_pct}% < 5%) · ambas funcionan similar"
+    else:
+        msg = "❓ Indeterminado · ninguna pieza tiene métricas suficientes"
+    confianza = 'alta' if diff_pct >= 20 else 'media' if diff_pct >= 5 else 'baja'
+    return jsonify({
+        'ok': True,
+        'ganadora': ganadora,
+        'diff_pct': diff_pct,
+        'a_score': a_score,
+        'b_score': b_score,
+        'a_stats': a,
+        'b_stats': b,
+        'metrica_usada': metrica,
+        'confianza': confianza,
+        'mensaje': msg,
+    })
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Sentiment analysis · comentarios IG · detección crisis temprana
 # ──────────────────────────────────────────────────────────────────────────────
 _SENTIMENT_CATS = ('positivo', 'neutro', 'negativo', 'queja', 'pregunta', 'spam')
