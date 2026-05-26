@@ -4744,13 +4744,16 @@ def aplicar_envase_como_default_producto(lote_id):
                                   'envase_nuevo': envase, 'accion': 'INSERT'})
             except Exception:
                 pass
-    # audit_log
+    # audit_log · uno por SKU para trazabilidad completa (audit fix
+    # del audit 25-may-2026 PM · antes solo guardaba detalle[:5])
     try:
         from audit_helpers import audit_log as _al
+        # Audit resumen primero
         _al(cur, usuario=user, accion='ENVASE_DEFAULT_GLOBAL_PRODUCTO',
             tabla='sku_mee_config', registro_id=lote_id,
             despues={'producto': producto, 'envase_nuevo': envase,
-                      'skus_afectados': len(afectados), 'detalle': afectados[:5]})
+                      'skus_afectados': len(afectados),
+                      'detalle_completo': afectados})
     except Exception:
         pass
     conn.commit()
@@ -4797,6 +4800,11 @@ def propagar_envase_a_futuros(lote_id):
         pass
     # Update lotes futuros · mismo producto · fecha > este · no iniciados
     # · estado no terminal · excluye el propio lote
+    # Sebastián 25-may-2026 PM · audit bug fix · NO sobreescribir lotes
+    # B2B dedicados (origen='eos_b2b') · esos tienen envase pactado con el
+    # cliente en pedidos_b2b_lote.envase_codigo · propagar Animus DTC encima
+    # rompería la promesa al cliente. eos_retroactivo también excluido por
+    # seguridad (datos del pasado · no se tocan).
     try:
         cur.execute(
             """UPDATE produccion_programada
@@ -4806,9 +4814,21 @@ def propagar_envase_a_futuros(lote_id):
                  AND id != ?
                  AND inicio_real_at IS NULL
                  AND fin_real_at IS NULL
-                 AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado')""",
+                 AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado')
+                 AND COALESCE(origen,'') NOT IN ('eos_b2b','eos_retroactivo')""",
             (envase, producto, fecha, lote_id))
         afectados = cur.rowcount or 0
+        # Contar cuántos B2B dedicados quedaron sin propagar (para info al admin)
+        b2b_no_propagados = cur.execute(
+            """SELECT COUNT(*) FROM produccion_programada
+               WHERE UPPER(TRIM(producto)) = UPPER(TRIM(?))
+                 AND fecha_programada > ?
+                 AND id != ?
+                 AND inicio_real_at IS NULL AND fin_real_at IS NULL
+                 AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado')
+                 AND COALESCE(origen,'') IN ('eos_b2b','eos_retroactivo')""",
+            (producto, fecha, lote_id)).fetchone()
+        b2b_skip = int(b2b_no_propagados[0] or 0) if b2b_no_propagados else 0
     except Exception as e:
         return jsonify({'error': f'UPDATE fallo: {e}'}), 500
     try:
@@ -4816,13 +4836,18 @@ def propagar_envase_a_futuros(lote_id):
         _al(cur, usuario=user, accion='ENVASE_PROPAGAR_FUTUROS',
             tabla='produccion_programada', registro_id=lote_id,
             despues={'producto': producto, 'envase': envase,
-                      'desde_fecha': fecha, 'lotes_actualizados': afectados})
+                      'desde_fecha': fecha, 'lotes_actualizados': afectados,
+                      'lotes_b2b_excluidos': b2b_skip})
     except Exception: pass
     conn.commit()
+    msg = f'✓ {afectados} lote(s) futuros de {producto} actualizados con envase {envase}'
+    if b2b_skip > 0:
+        msg += f' · ⚠ {b2b_skip} lote(s) B2B/retroactivo NO modificados (mantienen envase pactado)'
     return jsonify({
         'ok': True, 'producto': producto, 'envase': envase,
         'desde_fecha': fecha, 'lotes_actualizados': afectados,
-        'mensaje': f'✓ {afectados} lote(s) futuros de {producto} actualizados con envase {envase}',
+        'lotes_b2b_excluidos': b2b_skip,
+        'mensaje': msg,
     })
 
 
