@@ -1890,8 +1890,23 @@ ${bars}
 async function loadCampanas() {
   const estado = document.getElementById('camp-filtro-estado').value;
   const url = '/api/marketing/campanas'+(estado?'?estado='+estado:'');
-  const rows = await fetch(url).then(r=>r.json());
   const body = document.getElementById('camp-body');
+  let rows;
+  try {
+    const r = await fetch(url, {credentials:'same-origin'});
+    if(!r.ok){
+      body.innerHTML='<tr class="empty-row"><td colspan="11" style="color:#dc2626">Error '+r.status+' cargando campañas</td></tr>';
+      return;
+    }
+    rows = await r.json();
+  } catch(e){
+    body.innerHTML='<tr class="empty-row"><td colspan="11" style="color:#dc2626">Error red: '+esc(e.message)+'</td></tr>';
+    return;
+  }
+  if(!Array.isArray(rows)){
+    body.innerHTML='<tr class="empty-row"><td colspan="11" style="color:#dc2626">Respuesta inválida: '+esc(JSON.stringify(rows).slice(0,200))+'</td></tr>';
+    return;
+  }
   if(!rows.length) { body.innerHTML='<tr class="empty-row"><td colspan="11">Sin campañas. Crea la primera.</td></tr>'; return; }
   body.innerHTML = rows.map(r=>{
     const roi = r.presupuesto_gastado>0 ? ((r.resultado_ventas-r.presupuesto_gastado)/r.presupuesto_gastado*100).toFixed(1) : null;
@@ -1963,23 +1978,43 @@ async function saveCampana() {
     notas: document.getElementById('camp-notas').value.trim()
   };
   if(!body.nombre) { showAlert('camp-alert','El nombre es obligatorio','error'); return; }
+  // Validaciones cliente · audit 25-may PM
+  if(body.fecha_inicio && body.fecha_fin && body.fecha_inicio > body.fecha_fin){
+    if(!confirm('La fecha de inicio ('+body.fecha_inicio+') es posterior a la fecha fin ('+body.fecha_fin+'). ¿Continuar?')) return;
+  }
+  if(body.presupuesto < 0 || body.objetivo_unidades < 0 || body.resultado_unidades < 0 || body.resultado_ventas < 0){
+    showAlert('camp-alert','Los valores no pueden ser negativos','error'); return;
+  }
   const url = id ? `/api/marketing/campanas/${id}` : '/api/marketing/campanas';
   const method = id ? 'PUT' : 'POST';
-  const resp = await fetch(url,{method, headers:_csrfHdr(), credentials:'same-origin', body:JSON.stringify(body)});
-  const data = await resp.json();
-  if(data.ok||data.id) {
+  let resp, data;
+  try {
+    resp = await fetch(url,{method, headers:_csrfHdr(), credentials:'same-origin', body:JSON.stringify(body)});
+    data = await resp.json().catch(()=>({error:'Respuesta no es JSON ('+resp.status+')'}));
+  } catch(e){
+    showAlert('camp-alert','Error red: '+e.message,'error'); return;
+  }
+  if(resp.ok && (data.ok || data.id)) {
     closeModal('modal-campana');
-    showAlert('camp-alert', id?'Campaña actualizada':'Campaña creada exitosamente');
+    const msg = id?'Campaña actualizada':'Campaña creada exitosamente';
+    showAlert('camp-alert', data.warning ? msg+' ⚠ '+data.warning : msg);
     loadCampanas();
-  } else { showAlert('camp-alert', data.error||'Error','error'); }
+  } else { showAlert('camp-alert', data.error||('Error HTTP '+resp.status),'error'); }
 }
 
 async function deleteCampana(id, nombre) {
   if(!confirm(`¿Eliminar campaña "${nombre}"? Se borrarán todas las asignaciones y contenido relacionado.`)) return;
-  const resp = await fetch(`/api/marketing/campanas/${id}`,_fetchOpts('DELETE'));
-  const data = await resp.json();
-  if(data.ok) { showAlert('camp-alert','Campaña eliminada'); loadCampanas(); }
-  else showAlert('camp-alert',data.error||'Error','error');
+  let resp = await fetch(`/api/marketing/campanas/${id}`,_fetchOpts('DELETE'));
+  let data = await resp.json().catch(()=>({error:'Respuesta no es JSON'}));
+  // 409 · backend pide confirmación porque hay gasto/ventas registradas
+  if(resp.status === 409 && (data.presupuesto_gastado>0 || data.resultado_ventas>0)){
+    const fmtN = v => '$'+Number(v||0).toLocaleString('es-CO');
+    if(!confirm(`⚠ Esta campaña tiene:\n  • Gastado: ${fmtN(data.presupuesto_gastado)}\n  • Ventas: ${fmtN(data.resultado_ventas)}\n\nBorrarla destruirá ese histórico financiero. ¿Confirmar?`)) return;
+    resp = await fetch(`/api/marketing/campanas/${id}?force=1`,_fetchOpts('DELETE'));
+    data = await resp.json().catch(()=>({error:'Respuesta no es JSON'}));
+  }
+  if(resp.ok && data.ok) { showAlert('camp-alert','Campaña eliminada'); loadCampanas(); }
+  else showAlert('camp-alert',data.error||('Error HTTP '+resp.status),'error');
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -2234,13 +2269,45 @@ var INFLUENCERS_LIST = [];
 var PAGOS_BY_INF_ID = {};      // influencer_id → array de pagos
 var PAGOS_BY_INF_NAME = {};    // nombre lowercase → array de pagos (fallback)
 var EXPANDED_INF = new Set();  // ids de influencers con historial expandido
+// Audit 25-may PM · cache de payload por id para evitar XSS en onclick handlers
+// (string interpolation con nombre/banco escapaba solo comillas — backslash o
+// unicode podía romper el JS y permitir injection)
+var _INF_ROW_PAYLOAD = {};
+
+// Wrappers seguros · leen del cache en vez de interpolar strings en el onclick
+function solicitarPagoInfById(id){
+  const p = _INF_ROW_PAYLOAD[id];
+  if(!p){ showToast('Influencer no encontrado en cache','error'); return; }
+  solicitarPagoInf(id, p.nombre, p.tarifa, p.banco, p.cuenta_bancaria, p.cedula_nit, p.tipo_cuenta);
+}
+function abrirDarDeBajaById(id){
+  const p = _INF_ROW_PAYLOAD[id];
+  if(!p){ showToast('Influencer no encontrado en cache','error'); return; }
+  abrirDarDeBaja(id, p.nombre);
+}
+function eliminarInfluencerById(id){
+  const p = _INF_ROW_PAYLOAD[id];
+  if(!p){ showToast('Influencer no encontrado en cache','error'); return; }
+  eliminarInfluencer(id, p.nombre);
+}
 
 async function loadInfluencers() {
   const q = document.getElementById('inf-search').value;
   const url = '/api/marketing/influencers-panel'+(q?'?q='+encodeURIComponent(q):'');
   let data;
-  try { data = await fetch(url).then(r=>r.json()); } catch(e) { data = {influencers:[], kpis:{}}; }
-  if(data._error) { console.warn('[panel error]', data._error, data._trace); }
+  try {
+    const r = await fetch(url, {credentials:'same-origin'});
+    if(!r.ok){
+      showToast('Influencers HTTP '+r.status, 'error');
+      data = {influencers:[], kpis:{}};
+    } else {
+      data = await r.json();
+    }
+  } catch(e) {
+    showToast('Error red influencers: '+e.message, 'error');
+    data = {influencers:[], kpis:{}};
+  }
+  if(data._error) { showToast('Backend influencers: '+(data._error||'').slice(0,160),'error'); }
   INFLUENCERS_LIST = data.influencers || [];
   _INFLUENCERS_CACHE = {};
   for (const inf of INFLUENCERS_LIST) _INFLUENCERS_CACHE[inf.id] = inf;
@@ -2291,7 +2358,7 @@ function renderInfluencersTable() {
   body.innerHTML = infs.map((r, idx)=>{
     const seg = r.seguidores>=1000?(r.seguidores/1000).toFixed(1)+'K':r.seguidores;
     const banco = r.banco
-      ? `<span style="color:#94a3b8;">${r.banco}</span><br><span style="font-size:11px;color:#64748b;">${r.cuenta_bancaria||'\u2014'}</span>`
+      ? `<span style="color:#94a3b8;">${esc(r.banco)}</span><br><span style="font-size:11px;color:#64748b;">${esc(r.cuenta_bancaria||'\u2014')}</span>`
       : '<span style="color:#475569;">Sin datos</span>';
     let estadoBadge;
     // Sebastian (30-abr-2026): badges compactos solo-\u00edcono con tooltip,
@@ -2307,11 +2374,16 @@ function renderInfluencersTable() {
     } else {
       estadoBadge = '<span style="color:#475569;font-size:11px;" title="Sin actividad de pago a\u00fan">\u2014</span>';
     }
-    const ne = (r.nombre||'').replace(/'/g,"\\'");
-    const be = (r.banco||'').replace(/'/g,"\\'");
-    const ce = (r.cuenta_bancaria||'').replace(/'/g,"\\'");
-    const de = (r.cedula_nit||'').replace(/'/g,"\\'");
-    const te = (r.tipo_cuenta||'Ahorros').replace(/'/g,"\\'");
+    // Audit 25-may PM · cache de payload por id para evitar string interpolation
+    // en onclick (XSS si nombre tiene comillas/backslashes). Handler lee por id.
+    _INF_ROW_PAYLOAD[r.id] = {
+      nombre: r.nombre||'',
+      banco: r.banco||'',
+      cuenta_bancaria: r.cuenta_bancaria||'',
+      cedula_nit: r.cedula_nit||'',
+      tipo_cuenta: r.tipo_cuenta||'Ahorros',
+      tarifa: r.tarifa||0,
+    };
     // Resumen pagos del influencer (cache desde loadPagosInfluencers)
     const pagosInf = (PAGOS_BY_INF_ID[r.id] || PAGOS_BY_INF_NAME[(r.nombre||'').toLowerCase()] || []);
     const pendCount = pagosInf.filter(p => (p.estado||'').toLowerCase()==='pendiente').length;
@@ -2345,9 +2417,9 @@ function renderInfluencersTable() {
       +`<td>${pagosBadge}</td>`
       +`<td style="white-space:nowrap;" onclick="event.stopPropagation()">`
         +`<button class="btn btn-outline btn-sm" onclick="editInfluencer(${r.id})" title="Editar datos bancarios y de contacto">&#x270F;&#xFE0F;</button> `
-        +`<button class="btn btn-primary btn-sm" onclick="solicitarPagoInf(${r.id},'${ne}',${r.tarifa||0},'${be}','${ce}','${de}','${te}')" title="Crear cuenta de cobro y enviar a Sebasti\u00e1n para que la pague" style="font-weight:700;padding:5px 11px;">&#x1F4B8; Solicitar pago</button> `
-        +`<button class="btn btn-danger btn-sm" onclick="abrirDarDeBaja(${r.id},'${ne}')" title="Dar de baja">&#x26D4;</button> `
-        +`<button class="btn btn-danger btn-sm" onclick="eliminarInfluencer(${r.id},'${ne}')" title="Eliminar duplicado (solo sin pagos efectuados)">&#x1F5D1;&#xFE0F;</button>`
+        +`<button class="btn btn-primary btn-sm" onclick="solicitarPagoInfById(${r.id})" title="Crear cuenta de cobro y enviar a Sebasti\u00e1n para que la pague" style="font-weight:700;padding:5px 11px;">&#x1F4B8; Solicitar pago</button> `
+        +`<button class="btn btn-danger btn-sm" onclick="abrirDarDeBajaById(${r.id})" title="Dar de baja">&#x26D4;</button> `
+        +`<button class="btn btn-danger btn-sm" onclick="eliminarInfluencerById(${r.id})" title="Eliminar duplicado (solo sin pagos efectuados)">&#x1F5D1;&#xFE0F;</button>`
       +'</td>'
       +'</tr>';
     let expandedRows = '';
@@ -2363,12 +2435,12 @@ function renderInfluencersTable() {
           const estColor = est.toLowerCase()==='pagada' ? '#34d399' : (est.toLowerCase()==='pendiente'?'#fcd34d':'#94a3b8');
           const pdfBtn = p.has_pdf ? `<a href="/api/marketing/pagos-influencers/${p.id}/pdf" target="_blank" style="color:#34d399;text-decoration:none;font-size:11px;">\u{1F4C4} PDF</a>` : '<span style="color:#475569;font-size:11px;">\u2014</span>';
           return `<tr style="background:#0a0f1a">`
-            +`<td colspan="2" style="color:#64748b;font-size:11px;padding-left:42px;">${p.fecha||'\u2014'}</td>`
-            +`<td colspan="3" style="font-size:12px;color:#94a3b8">${(p.concepto||'(sin concepto)').substring(0,80)}</td>`
+            +`<td colspan="2" style="color:#64748b;font-size:11px;padding-left:42px;">${esc(p.fecha||'\u2014')}</td>`
+            +`<td colspan="3" style="font-size:12px;color:#94a3b8">${esc((p.concepto||'(sin concepto)').substring(0,80))}</td>`
             +`<td colspan="3" style="text-align:right;font-weight:700;">${fmtM(p.valor||0)}</td>`
-            +`<td colspan="2" style="font-size:11px;color:#818cf8;font-family:monospace">${p.numero_oc||'\u2014'}</td>`
+            +`<td colspan="2" style="font-size:11px;color:#818cf8;font-family:monospace">${esc(p.numero_oc||'\u2014')}</td>`
             +`<td colspan="2">${pdfBtn}</td>`
-            +`<td colspan="2"><span style="color:${estColor};font-size:11px;font-weight:700;">${est}</span></td>`
+            +`<td colspan="2"><span style="color:${estColor};font-size:11px;font-weight:700;">${esc(est)}</span></td>`
             +`</tr>`;
         }).join('');
       } else {

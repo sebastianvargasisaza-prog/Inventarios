@@ -1007,6 +1007,25 @@ def mkt_campana_detail(cid):
             updates = {k: d[k] for k in campos if k in d}
             if not updates:
                 return jsonify({"error": "Nada que actualizar"}), 400
+            # Audit 25-may PM · validar campos sensibles igual que en POST
+            from http_helpers import validate_money
+            for money_field in ("presupuesto", "presupuesto_gastado", "resultado_ventas"):
+                if money_field in updates:
+                    v, errm = validate_money(updates[money_field], allow_zero=True, field_name=money_field)
+                    if errm:
+                        return jsonify(errm), 400
+                    updates[money_field] = v
+            # Whitelist de estado (frontend solo manda los 4 esperados, pero validar evita data fantasma)
+            if "estado" in updates:
+                _estados_ok = {"Planificada", "Activa", "Pausada", "Finalizada"}
+                if updates["estado"] not in _estados_ok:
+                    return jsonify({"error": f"estado inválido: {updates['estado']!r} (válidos: {sorted(_estados_ok)})"}), 400
+            # Soft-validate fechas (warning en respuesta pero no rechazar)
+            _warn = None
+            if "fecha_inicio" in updates and "fecha_fin" in updates:
+                fi, ff = updates.get("fecha_inicio"), updates.get("fecha_fin")
+                if fi and ff and str(fi) > str(ff):
+                    _warn = f"fecha_inicio ({fi}) es posterior a fecha_fin ({ff})"
             antes_row = c.execute(
                 "SELECT nombre, estado, presupuesto, presupuesto_gastado FROM marketing_campanas WHERE id=?",
                 (cid,)).fetchone()
@@ -1020,11 +1039,26 @@ def mkt_campana_detail(cid):
                       antes=antes, despues=updates,
                       detalle=f"Campana id={cid} · {len(updates)} campos modificados")
             conn.commit()
-            return jsonify({"ok": True})
+            resp = {"ok": True}
+            if _warn:
+                resp["warning"] = _warn
+            return jsonify(resp)
 
         if request.method == "DELETE":
             if u not in ADMIN_USERS:
                 return jsonify({"error": "Sin permiso"}), 403
+            # Audit 25-may · avisar si la campaña tiene gasto registrado (riesgo financiero)
+            spent_row = c.execute(
+                "SELECT nombre, COALESCE(presupuesto_gastado,0), COALESCE(resultado_ventas,0) FROM marketing_campanas WHERE id=?",
+                (cid,)).fetchone()
+            if spent_row and (spent_row[1] > 0 or spent_row[2] > 0):
+                if not str(request.args.get("force") or "").lower() in ("1","true","yes"):
+                    return jsonify({
+                        "error": "Campaña tiene gasto/ventas registradas. Reenviar con ?force=1 para confirmar.",
+                        "presupuesto_gastado": spent_row[1],
+                        "resultado_ventas": spent_row[2],
+                        "nombre": spent_row[0],
+                    }), 409
             antes_row = c.execute(
                 "SELECT nombre FROM marketing_campanas WHERE id=?", (cid,)).fetchone()
             antes = {'nombre': antes_row[0]} if antes_row else None
