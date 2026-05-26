@@ -344,6 +344,14 @@ window.addEventListener('unhandledrejection', function(ev) {
   </div>
   <div id="dash-meta-progreso" style="background:#0f172a;border:1px solid #1e293b;border-radius:10px;padding:14px 16px;margin-bottom:16px;color:#94a3b8;font-size:12px">Cargando meta del mes…</div>
 
+  <!-- AUDIT 27-may · Widget Sentiment IG (detección crisis) -->
+  <div style="font-size:11px;font-weight:700;color:#f59e0b;text-transform:uppercase;letter-spacing:.8px;margin:16px 0 8px;display:flex;align-items:center;gap:8px">
+    <span>💬 Sentiment de la comunidad (IG)</span>
+    <button class="btn btn-outline btn-sm" onclick="sentimentSyncManual()" style="font-size:10px;padding:2px 8px" title="Sincronizar comentarios IG ahora">↻ Sync</button>
+    <button class="btn btn-outline btn-sm" onclick="sentimentAnalyzeManual()" style="font-size:10px;padding:2px 8px" title="Analizar pendientes con Claude">🤖 Analizar</button>
+  </div>
+  <div id="dash-sentiment" style="background:#0f172a;border:1px solid #1e293b;border-radius:10px;padding:14px 16px;margin-bottom:16px;color:#94a3b8;font-size:12px">Cargando sentiment…</div>
+
   <!-- Instagram KPIs -->
   <div style="font-size:11px;font-weight:700;color:#e1306c;text-transform:uppercase;letter-spacing:.8px;margin:16px 0 8px;">📸 Instagram — Engagement real</div>
   <div class="kpi-grid" id="dash-ig-kpis">
@@ -1650,6 +1658,7 @@ async function refreshIgToken() {
 async function loadDashboard() {
   loadConnections();
   loadMetaProgreso();  // AUDIT 26-may · widget meta del mes
+  loadSentimentDashboard();  // AUDIT 27-may · widget sentiment IG
   let _dashResp;
   try { _dashResp = await fetch('/api/marketing/dashboard'); }
   catch(e) { showToast('Error red dashboard: '+e.message,'error'); return; }
@@ -3219,6 +3228,87 @@ function _fmtPctBar(pct, color){
     </div>
     <span style="color:${col};font-weight:700;font-size:11px;min-width:46px;text-align:right">${pct}%</span>
   </div>`;
+}
+
+// AUDIT 27-may · Widget Sentiment IG
+async function loadSentimentDashboard(){
+  const el = document.getElementById('dash-sentiment');
+  if(!el) return;
+  try {
+    const r = await fetch('/api/marketing/sentiment/resumen?dias=30', {credentials:'same-origin'});
+    if(!r.ok){
+      el.innerHTML = '<span style="color:#ef4444">Error HTTP '+r.status+'</span>';
+      return;
+    }
+    const d = await r.json();
+    const tot = d.total_analizados || 0;
+    const pend = d.pendientes_analisis || 0;
+    if(tot === 0){
+      el.innerHTML = `<div style="color:#94a3b8">Sin comentarios analizados aún${pend>0?' ('+pend+' pendientes · click 🤖 Analizar)':' · click ↻ Sync + 🤖 Analizar para empezar'}</div>`;
+      return;
+    }
+    const dist = d.distribucion || {};
+    const alerta = d.alerta_crisis;
+    const fmtPct = v => Math.round((v/tot)*100);
+    const alertaHtml = alerta
+      ? `<div style="background:#7f1d1d;color:#fca5a5;padding:10px 14px;border-radius:8px;font-size:13px;font-weight:700;margin-bottom:10px">${esc(alerta)}</div>`
+      : '';
+    el.innerHTML = `
+      ${alertaHtml}
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div style="font-size:12px;color:#94a3b8">${tot} comentarios analizados · 30 días${pend>0?' · '+pend+' pendientes':''}</div>
+        <div style="font-size:11px;color:#94a3b8">Quejas: <b style="color:${d.pct_quejas>10?'#ef4444':d.pct_quejas>5?'#f59e0b':'#10b981'}">${d.pct_quejas}%</b></div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:6px;margin-bottom:10px">
+        <div style="background:#064e3b;padding:8px;border-radius:6px;text-align:center"><div style="font-size:9px;color:#86efac;text-transform:uppercase">😊 Positivo</div><div style="font-size:16px;font-weight:700;color:#34d399">${dist.positivo||0}</div><div style="font-size:9px;color:#86efac">${fmtPct(dist.positivo||0)}%</div></div>
+        <div style="background:#1e293b;padding:8px;border-radius:6px;text-align:center"><div style="font-size:9px;color:#94a3b8;text-transform:uppercase">😐 Neutro</div><div style="font-size:16px;font-weight:700;color:#cbd5e1">${dist.neutro||0}</div><div style="font-size:9px;color:#94a3b8">${fmtPct(dist.neutro||0)}%</div></div>
+        <div style="background:#78350f;padding:8px;border-radius:6px;text-align:center"><div style="font-size:9px;color:#fdba74;text-transform:uppercase">😕 Negativo</div><div style="font-size:16px;font-weight:700;color:#fb923c">${dist.negativo||0}</div><div style="font-size:9px;color:#fdba74">${fmtPct(dist.negativo||0)}%</div></div>
+        <div style="background:#7f1d1d;padding:8px;border-radius:6px;text-align:center"><div style="font-size:9px;color:#fca5a5;text-transform:uppercase">🚨 Queja</div><div style="font-size:16px;font-weight:700;color:#ef4444">${dist.queja||0}</div><div style="font-size:9px;color:#fca5a5">${fmtPct(dist.queja||0)}%</div></div>
+        <div style="background:#1e3a8a;padding:8px;border-radius:6px;text-align:center"><div style="font-size:9px;color:#93c5fd;text-transform:uppercase">❓ Pregunta</div><div style="font-size:16px;font-weight:700;color:#60a5fa">${dist.pregunta||0}</div><div style="font-size:9px;color:#93c5fd">${fmtPct(dist.pregunta||0)}%</div></div>
+        <div style="background:#3f3f46;padding:8px;border-radius:6px;text-align:center"><div style="font-size:9px;color:#a8a29e;text-transform:uppercase">🗑 Spam</div><div style="font-size:16px;font-weight:700;color:#a1a1aa">${dist.spam||0}</div><div style="font-size:9px;color:#a8a29e">${fmtPct(dist.spam||0)}%</div></div>
+      </div>
+      ${(d.quejas_por_sku||[]).length ? `
+        <div style="font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Top SKUs con quejas</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">
+          ${d.quejas_por_sku.map(q => `<span style="background:#7f1d1d;color:#fca5a5;padding:3px 8px;border-radius:6px;font-size:11px;font-weight:700">${esc(q.sku_detectado)} · ${q.n}</span>`).join('')}
+        </div>` : ''}
+      ${(d.ultimas_quejas_top10||[]).length ? `
+        <details style="margin-top:8px">
+          <summary style="cursor:pointer;font-size:11px;color:#94a3b8">Ver últimas ${d.ultimas_quejas_top10.length} quejas</summary>
+          <div style="margin-top:8px;display:flex;flex-direction:column;gap:6px;max-height:300px;overflow-y:auto">
+            ${d.ultimas_quejas_top10.map(q => `<div style="background:#1e293b;padding:8px;border-radius:6px;font-size:11px"><div style="color:#fca5a5">"${esc((q.texto||'').slice(0,200))}"</div><div style="color:#64748b;margin-top:3px">@${esc(q.autor_username||'')} · ${esc((q.publicado_en||'').slice(0,10))}${q.sku_detectado?' · '+esc(q.sku_detectado):''}</div></div>`).join('')}
+          </div>
+        </details>` : ''}
+    `;
+  } catch(e){
+    el.innerHTML = '<span style="color:#ef4444">Error: '+esc(e.message)+'</span>';
+  }
+}
+
+async function sentimentSyncManual(){
+  if(!confirm('¿Sincronizar comentarios IG nuevos? Toma ~30s.')) return;
+  const el = document.getElementById('dash-sentiment');
+  if(el) el.innerHTML = '<div style="color:#94a3b8">Sincronizando comentarios IG…</div>';
+  try {
+    const r = await fetch('/api/marketing/sentiment/sync', _fetchOpts('POST', {dias:30, limit_por_post:50}));
+    const d = await r.json();
+    if(!r.ok){ showToast('Error: '+(d.error||r.status),'error'); loadSentimentDashboard(); return; }
+    showToast(`✓ ${d.comentarios_nuevos||0} comentarios nuevos · ${d.posts_procesados||0} posts`,'success');
+    loadSentimentDashboard();
+  } catch(e){ showToast('Error red: '+e.message,'error'); loadSentimentDashboard(); }
+}
+
+async function sentimentAnalyzeManual(){
+  if(!confirm('¿Analizar comentarios pendientes con Claude? Toma ~30s por lote de 50.')) return;
+  const el = document.getElementById('dash-sentiment');
+  if(el) el.innerHTML = '<div style="color:#94a3b8">Analizando con Claude…</div>';
+  try {
+    const r = await fetch('/api/marketing/sentiment/analyze', _fetchOpts('POST', {batch:50}));
+    const d = await r.json();
+    if(!r.ok){ showToast('Error: '+(d.error||r.status),'error'); loadSentimentDashboard(); return; }
+    showToast(`✓ ${d.procesados||0} clasificados${d.pendientes_restantes>0?' · '+d.pendientes_restantes+' aún pendientes':''}`,'success');
+    loadSentimentDashboard();
+  } catch(e){ showToast('Error red: '+e.message,'error'); loadSentimentDashboard(); }
 }
 
 async function loadMetaProgreso(){
