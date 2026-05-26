@@ -6558,6 +6558,137 @@ def admin_mees_diagnostico():
     })
 
 
+@bp.route("/api/admin/maestro-mees-list", methods=["GET"])
+def admin_maestro_mees_list():
+    """Lista MEEs activos para dropdown de mapping en /admin/mees-diagnostico."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    conn = db_connect()
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    rows = c.execute(
+        """SELECT codigo, COALESCE(descripcion,'') AS descripcion,
+                  COALESCE(categoria,'') AS categoria,
+                  COALESCE(estado,'Activo') AS estado
+           FROM maestro_mee
+           WHERE COALESCE(estado,'Activo')='Activo'
+           ORDER BY categoria, codigo"""
+    ).fetchall()
+    conn.close()
+    return jsonify({
+        'total': len(rows),
+        'mees': [dict(r) for r in rows]
+    })
+
+
+@bp.route("/api/admin/mees-mapping-upsert", methods=["POST"])
+def admin_mees_mapping_upsert():
+    """Crea o actualiza una entry en sku_mee_config.
+
+    Body: {sku_codigo, mee_codigo, componente_tipo='envase', cantidad_por_unidad=1.0}
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    d = request.get_json(silent=True) or {}
+    sku = (d.get('sku_codigo') or '').strip()
+    mee = (d.get('mee_codigo') or '').strip()
+    tipo = (d.get('componente_tipo') or 'envase').strip()
+    cant = float(d.get('cantidad_por_unidad') or 1)
+    if not sku or not mee:
+        return jsonify({'error': 'sku_codigo y mee_codigo son requeridos'}), 400
+    _TIPOS_VALIDOS = {'envase','tapa','etiqueta','caja','serigrafia','tampografia','plegadiza','otro'}
+    if tipo not in _TIPOS_VALIDOS:
+        return jsonify({'error': f'componente_tipo inválido · permitidos: {sorted(_TIPOS_VALIDOS)}'}), 400
+    conn = db_connect()
+    c = conn.cursor()
+    mee_check = c.execute("SELECT codigo FROM maestro_mee WHERE codigo=?", (mee,)).fetchone()
+    if not mee_check:
+        conn.close()
+        return jsonify({'error': f'MEE {mee} no existe en maestro_mee'}), 400
+    try:
+        c.execute(
+            """INSERT INTO sku_mee_config
+               (sku_codigo, mee_codigo, componente_tipo, cantidad_por_unidad, aplica, notas)
+               VALUES (?,?,?,?,1,?)
+               ON CONFLICT(sku_codigo, mee_codigo) DO UPDATE SET
+                   componente_tipo=excluded.componente_tipo,
+                   cantidad_por_unidad=excluded.cantidad_por_unidad,
+                   aplica=1""",
+            (sku, mee, tipo, cant, f'manual via /admin/mees-diagnostico por {u}'),
+        )
+        try:
+            audit_log(c, usuario=u, accion='UPSERT_SKU_MEE_CONFIG',
+                      tabla='sku_mee_config', registro_id=f'{sku}|{mee}',
+                      antes=None,
+                      despues={'sku_codigo': sku, 'mee_codigo': mee,
+                               'componente_tipo': tipo, 'cantidad_por_unidad': cant})
+        except Exception:
+            pass
+        conn.commit()
+    except Exception as e:
+        conn.close()
+        return jsonify({'error': str(e)[:300]}), 500
+    conn.close()
+    _log_sec(u, _client_ip(), "mees_mapping_upsert", f"sku={sku} mee={mee} tipo={tipo}")
+    return jsonify({'ok': True, 'sku_codigo': sku, 'mee_codigo': mee,
+                    'componente_tipo': tipo, 'cantidad_por_unidad': cant})
+
+
+@bp.route("/api/admin/producto-volumen-upsert", methods=["POST"])
+def admin_producto_volumen_upsert():
+    """Crea o actualiza volumen_unitario_producto · ml por unidad envasada.
+
+    Body: {producto_nombre, volumen_ml}
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    d = request.get_json(silent=True) or {}
+    prod = (d.get('producto_nombre') or '').strip()
+    try:
+        vol = float(d.get('volumen_ml') or 0)
+    except (TypeError, ValueError):
+        return jsonify({'error': 'volumen_ml debe ser numero'}), 400
+    if not prod:
+        return jsonify({'error': 'producto_nombre requerido'}), 400
+    if vol <= 0:
+        return jsonify({'error': 'volumen_ml debe ser > 0'}), 400
+    conn = db_connect()
+    c = conn.cursor()
+    # Tabla puede no existir si mig 197 no aplicó · crear idempotente
+    try:
+        c.execute("""CREATE TABLE IF NOT EXISTS volumen_unitario_producto (
+            producto_nombre TEXT PRIMARY KEY,
+            volumen_ml REAL DEFAULT 0,
+            activo INTEGER DEFAULT 1
+        )""")
+    except Exception:
+        pass
+    try:
+        c.execute(
+            """INSERT INTO volumen_unitario_producto (producto_nombre, volumen_ml, activo)
+               VALUES (?,?,1)
+               ON CONFLICT(producto_nombre) DO UPDATE SET
+                   volumen_ml=excluded.volumen_ml, activo=1""",
+            (prod, vol),
+        )
+        try:
+            audit_log(c, usuario=u, accion='UPSERT_VOLUMEN_UNITARIO',
+                      tabla='volumen_unitario_producto', registro_id=prod,
+                      antes=None, despues={'producto_nombre': prod, 'volumen_ml': vol})
+        except Exception:
+            pass
+        conn.commit()
+    except Exception as e:
+        conn.close()
+        return jsonify({'error': str(e)[:300]}), 500
+    conn.close()
+    _log_sec(u, _client_ip(), "producto_volumen_upsert", f"prod={prod} vol={vol}")
+    return jsonify({'ok': True, 'producto_nombre': prod, 'volumen_ml': vol})
+
+
 @bp.route("/admin/mees-diagnostico", methods=["GET"])
 def admin_mees_diagnostico_page():
     """UI · página HTML para diagnosticar y mapear MEEs faltantes.
@@ -6613,7 +6744,60 @@ def admin_mees_diagnostico_page():
 <div id="resultado"></div>
 <script>
 function esc(s){return (s==null?'':String(s)).replace(/[<>&"']/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c]));}
+let MEES_LIST = [];
+function _csrf(){
+  const m = document.cookie.match(/csrf_token=([^;]+)/);
+  return m ? decodeURIComponent(m[1]) : '';
+}
+async function cargarMEEs(){
+  if(MEES_LIST.length) return MEES_LIST;
+  const r = await fetch('/api/admin/maestro-mees-list', {credentials:'same-origin'});
+  const d = await r.json();
+  MEES_LIST = d.mees || [];
+  return MEES_LIST;
+}
+function meeDropdown(id){
+  let opts = '<option value="">— elegir MEE —</option>';
+  let cat = '';
+  for(const m of MEES_LIST){
+    if(m.categoria !== cat){ if(cat) opts+='</optgroup>'; opts+='<optgroup label="'+esc(m.categoria||'(sin categoría)')+'">'; cat = m.categoria; }
+    opts += '<option value="'+esc(m.codigo)+'">'+esc(m.codigo)+' · '+esc(m.descripcion)+'</option>';
+  }
+  if(cat) opts += '</optgroup>';
+  return '<select id="'+id+'" class="mee-sel" style="background:#0f172a;color:#e2e8f0;border:1px solid #334155;padding:5px;border-radius:4px;min-width:240px;font-size:12px;">'+opts+'</select>';
+}
+async function asignarMEE(btn, producto){
+  const row = btn.closest('tr');
+  const mee = row.querySelector('select.mee-sel').value;
+  const tipo = row.querySelector('select.tipo-sel').value;
+  const cant = parseFloat(row.querySelector('input.cant').value)||1;
+  if(!mee){ alert('Elegí un MEE primero'); return; }
+  btn.disabled=true; btn.textContent='⏳';
+  const r = await fetch('/api/admin/mees-mapping-upsert', {
+    method:'POST', credentials:'same-origin',
+    headers:{'Content-Type':'application/json','X-CSRF-Token':_csrf()},
+    body: JSON.stringify({sku_codigo: producto, mee_codigo: mee, componente_tipo: tipo, cantidad_por_unidad: cant})
+  });
+  const d = await r.json();
+  if(d.ok){ row.style.background='#064e3b'; btn.textContent='✓ Guardado'; setTimeout(cargar, 1200); }
+  else { btn.disabled=false; btn.textContent='Asignar'; alert('Error: '+(d.error||'desconocido')); }
+}
+async function definirVolumen(btn, producto){
+  const row = btn.closest('tr');
+  const vol = parseFloat(row.querySelector('input.vol').value)||0;
+  if(vol <= 0){ alert('Volumen ml debe ser > 0'); return; }
+  btn.disabled=true; btn.textContent='⏳';
+  const r = await fetch('/api/admin/producto-volumen-upsert', {
+    method:'POST', credentials:'same-origin',
+    headers:{'Content-Type':'application/json','X-CSRF-Token':_csrf()},
+    body: JSON.stringify({producto_nombre: producto, volumen_ml: vol})
+  });
+  const d = await r.json();
+  if(d.ok){ row.style.background='#064e3b'; btn.textContent='✓ Guardado'; setTimeout(cargar, 1200); }
+  else { btn.disabled=false; btn.textContent='Guardar'; alert('Error: '+(d.error||'desconocido')); }
+}
 async function cargar(){
+  await cargarMEEs();
   const dias = document.getElementById('dias').value;
   const out = document.getElementById('resultado');
   out.innerHTML = '<div class="card">⏳ Cargando...</div>';
@@ -6634,23 +6818,39 @@ async function cargar(){
   html += '<div class="kpi"><div class="kpi-val yel">'+d.productos_sin_volumen+'</div><div class="kpi-lab">sin volumen_ml</div></div>';
   html += '<div class="kpi"><div class="kpi-val red">'+d.sku_mee_config_huerfanos+'</div><div class="kpi-lab">entries huérfanas</div></div>';
   html += '</div></div>';
-  // Productos sin mapping
+  // Productos sin mapping · UI inline para asignar MEE
   if((d.detalle_sin_mapping||[]).length){
     html += '<div class="card"><h2>🚨 Productos del calendario SIN mapping en sku_mee_config</h2>';
-    html += '<div style="color:#94a3b8;font-size:12px;margin-bottom:10px;">Estos productos NO contribuyen al cálculo de faltantes MEE · agregar entry en sku_mee_config para cada uno.</div>';
-    html += '<table><thead><tr><th>Producto</th><th>Apariciones (60d)</th><th>Pendientes</th><th>Vol ml</th></tr></thead><tbody>';
+    html += '<div style="color:#94a3b8;font-size:12px;margin-bottom:10px;">Estos productos NO contribuyen al cálculo de faltantes MEE · elegí el envase principal de cada uno y dale Asignar. (Si un producto usa varios envases, podés repetir el form después de guardar el primero.)</div>';
+    html += '<table><thead><tr><th>Producto</th><th>Pend.</th><th>Asignar MEE</th><th>Tipo</th><th>Cant/u</th><th></th></tr></thead><tbody>';
     for(const p of d.detalle_sin_mapping){
-      html += '<tr><td><b>'+esc(p.producto||'')+'</b></td><td>'+(p.apariciones||0)+'</td><td>'+(p.pendientes||0)+'</td><td>'+(p.volumen_ml||0)+'</td></tr>';
+      const prodEsc = esc(p.producto||'');
+      html += '<tr><td style="max-width:280px;"><b>'+prodEsc+'</b></td>';
+      html += '<td>'+(p.pendientes||0)+'</td>';
+      html += '<td>'+meeDropdown('mee-'+Math.random().toString(36).slice(2))+'</td>';
+      html += '<td><select class="tipo-sel" style="background:#0f172a;color:#e2e8f0;border:1px solid #334155;padding:5px;border-radius:4px;font-size:12px;">'
+        +'<option value="envase">envase</option><option value="tapa">tapa</option>'
+        +'<option value="etiqueta">etiqueta</option><option value="caja">caja</option>'
+        +'<option value="serigrafia">serigrafia</option><option value="tampografia">tampografia</option>'
+        +'<option value="plegadiza">plegadiza</option><option value="otro">otro</option></select></td>';
+      html += '<td><input class="cant" type="number" step="0.01" value="1" style="width:70px;background:#0f172a;color:#e2e8f0;border:1px solid #334155;padding:5px;border-radius:4px;"></td>';
+      html += '<td><button onclick="asignarMEE(this, '+JSON.stringify(p.producto||'')+')">Asignar</button></td>';
+      html += '</tr>';
     }
     html += '</tbody></table></div>';
   }
-  // Productos sin volumen
+  // Productos sin volumen · UI inline para definir volumen_ml
   if((d.detalle_sin_volumen||[]).length){
     html += '<div class="card"><h2>⚠ Productos con mapping pero SIN volumen_unitario_producto</h2>';
-    html += '<div style="color:#94a3b8;font-size:12px;margin-bottom:10px;">El sistema sabe qué envases necesitan, pero sin volumen_ml no puede calcular cuántas unidades.</div>';
-    html += '<table><thead><tr><th>Producto</th><th>MEEs mapeados</th><th>Apariciones</th></tr></thead><tbody>';
+    html += '<div style="color:#94a3b8;font-size:12px;margin-bottom:10px;">El sistema sabe qué envases necesitan, pero sin volumen_ml no puede calcular cuántas unidades. Ingresá ml por unidad (típico: 30, 50, 100, 250…).</div>';
+    html += '<table><thead><tr><th>Producto</th><th>MEEs mapeados</th><th>Pend.</th><th>Volumen ml</th><th></th></tr></thead><tbody>';
     for(const p of d.detalle_sin_volumen){
-      html += '<tr><td><b>'+esc(p.producto||'')+'</b></td><td>'+esc((p.mees||[]).join(', '))+'</td><td>'+(p.apariciones||0)+'</td></tr>';
+      html += '<tr><td style="max-width:280px;"><b>'+esc(p.producto||'')+'</b></td>';
+      html += '<td>'+esc((p.mees||[]).join(', '))+'</td>';
+      html += '<td>'+(p.pendientes||0)+'</td>';
+      html += '<td><input class="vol" type="number" step="1" placeholder="30" style="width:90px;background:#0f172a;color:#e2e8f0;border:1px solid #334155;padding:5px;border-radius:4px;"></td>';
+      html += '<td><button onclick="definirVolumen(this, '+JSON.stringify(p.producto||'')+')">Guardar</button></td>';
+      html += '</tr>';
     }
     html += '</tbody></table></div>';
   }

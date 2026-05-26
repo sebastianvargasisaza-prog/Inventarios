@@ -312,6 +312,17 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (197, "volumen_unitario_producto · idempotente · Sebastián 27-may-2026 PM", [
+        # La tabla se referenciaba en programacion.py:7689 con except OperationalError
+        # silencioso · si nunca se creó (PG legacy), volumen_ml=0 para todos y
+        # MEE necesidades=0. Garantía idempotente con safe create.
+        """CREATE TABLE IF NOT EXISTS volumen_unitario_producto (
+            producto_nombre TEXT PRIMARY KEY,
+            volumen_ml REAL DEFAULT 0,
+            activo INTEGER DEFAULT 1
+        )""",
+    ]),
+
     (196, "mee_aliases · normalización abreviaturas envases · réplica patrón mp_aliases · Sebastián 27-may-2026 PM", [
         # Sebastián 27-may-2026 PM · "necesidades MEE sigue sin calcular".
         # Causa: si descripcion en sku_mee_config o nombre tipeado por
