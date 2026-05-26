@@ -2846,7 +2846,14 @@ def handle_solicitudes_compra():
     # bancarios. Las columnas ciudad/instagram las garantiza la migración 31.
     # Si por alguna razón no existen (esquema pre-migración 31), caemos al
     # SELECT sin esas columnas en el except más abajo.
-    sql_with_extras = """
+    # vence_pago_at + fecha_contenido vía subquery escalar (mig 195) ·
+    # no requiere JOIN extra · vacío si la SOL no tiene pago influencer
+    # asociado. Fallback try/except cubre el caso de mig 195 sin aplicar.
+    _pi_vence_subq = ("(SELECT pi.vence_pago_at FROM pagos_influencers pi "
+                      "WHERE pi.numero_oc = sc.numero_oc LIMIT 1)")
+    _pi_fcont_subq = ("(SELECT pi.fecha_contenido FROM pagos_influencers pi "
+                      "WHERE pi.numero_oc = sc.numero_oc LIMIT 1)")
+    sql_with_extras = f"""
         SELECT sc.numero, sc.fecha, sc.estado, sc.solicitante, sc.urgencia,
                sc.observaciones, sc.empresa, sc.categoria, sc.tipo, sc.area,
                sc.email_solicitante, sc.fecha_requerida, sc.numero_oc,
@@ -2858,7 +2865,9 @@ def handle_solicitudes_compra():
                COALESCE(mi.cedula_nit, '')       as inf_cedula,
                COALESCE(mi.email, '')            as inf_email,
                COALESCE(mi.ciudad, '')           as inf_ciudad,
-               COALESCE(mi.instagram, '')        as inf_instagram
+               COALESCE(mi.instagram, '')        as inf_instagram,
+               COALESCE({_pi_vence_subq},'') as vence_pago_at,
+               COALESCE({_pi_fcont_subq},'') as fecha_contenido
         FROM solicitudes_compra sc
         LEFT JOIN ordenes_compra oc ON oc.numero_oc = sc.numero_oc
         LEFT JOIN marketing_influencers mi ON mi.id = sc.influencer_id
@@ -2875,7 +2884,9 @@ def handle_solicitudes_compra():
                COALESCE(mi.cedula_nit, '')       as inf_cedula,
                COALESCE(mi.email, '')            as inf_email,
                '' as inf_ciudad,
-               '' as inf_instagram
+               '' as inf_instagram,
+               '' as vence_pago_at,
+               '' as fecha_contenido
         FROM solicitudes_compra sc
         LEFT JOIN ordenes_compra oc ON oc.numero_oc = sc.numero_oc
         LEFT JOIN marketing_influencers mi ON mi.id = sc.influencer_id
@@ -2932,21 +2943,18 @@ def handle_solicitudes_compra():
     else:
         sql += " AND sc.categoria NOT IN ('Influencer/Marketing Digital','Cuenta de Cobro')"
     if filtro_categoria in ('Influencer/Marketing Digital', 'Cuenta de Cobro'):
-        # Cadena de prioridad para ordenar:
-        #  1. pi.fecha_publicacion (fecha del contenido cuando se agendó en marketing)
-        #  2. sc.fecha_requerida   (fecha tope cuando el pago debe hacerse)
-        #  3. sc.fecha             (fecha en que se creó la solicitud)
+        # Cadena de prioridad para ordenar (Sebastián 27-may-2026 PM):
+        #  1. vence_pago_at  (promesa 30d desde fecha_contenido · mig 195)
+        #     · los más cerca a vencer o ya vencidos van ARRIBA
+        #  2. sc.fecha_requerida (fecha tope cuando el pago debe hacerse)
+        #  3. sc.fecha           (fecha en que se creó la solicitud)
         # Estado: Aprobadas (por pagar) primero, luego el resto.
-        # Más antiguas arriba (urgentes primero).
-        sql = sql.replace(
-            "FROM solicitudes_compra sc",
-            "FROM solicitudes_compra sc LEFT JOIN pagos_influencers pi ON pi.numero_oc = sc.numero_oc"
-        )
+        # vence_pago_at viene del SELECT como subquery escalar → sin JOIN extra.
         sql += (
             " ORDER BY "
             " CASE sc.estado WHEN 'Aprobada' THEN 0 WHEN 'Pendiente' THEN 1 "
             "                WHEN 'Pagada' THEN 2 ELSE 3 END, "
-            " COALESCE(NULLIF(pi.fecha_publicacion,''), "
+            " COALESCE(NULLIF(vence_pago_at,''), "
             "          NULLIF(sc.fecha_requerida,''), "
             "          sc.fecha) ASC, "
             " sc.numero ASC LIMIT 300"
@@ -2955,10 +2963,13 @@ def handle_solicitudes_compra():
         sql += " ORDER BY sc.fecha DESC LIMIT 200"
     try:
         c.execute(sql, params)
-    except sqlite3.OperationalError as _e:
-        # Fallback: si las columnas ciudad/instagram no existen aún (DB sin
-        # migración 31 aplicada), usar versión minimal del SELECT.
-        if 'no such column' in str(_e).lower() and sql.startswith(sql_with_extras.split('WHERE')[0][:50]):
+    except Exception as _e:
+        # Fallback: si las columnas ciudad/instagram/vence_pago_at no existen
+        # aún (DB sin migración 31 o 195 aplicada), usar versión minimal.
+        # SQLite dice "no such column"; PostgreSQL dice "does not exist".
+        _err_lower = str(_e).lower()
+        _es_col_falta = ('no such column' in _err_lower or 'does not exist' in _err_lower)
+        if _es_col_falta and sql.startswith(sql_with_extras.split('WHERE')[0][:50]):
             # Reaplicar reemplazos de la rama Influencer si correspondía
             sql_fb = sql_minimal
             if filtro_categoria == 'Influencer/Marketing Digital':
@@ -3000,7 +3011,8 @@ def handle_solicitudes_compra():
         else:
             raise
     cols_sol = ['numero','fecha','estado','solicitante','urgencia','observaciones','empresa','categoria','tipo','area','email_solicitante','fecha_requerida','numero_oc','valor',
-                'inf_nombre','inf_banco','inf_cuenta','inf_tipo_cuenta','inf_cedula','inf_email','inf_ciudad','inf_instagram']
+                'inf_nombre','inf_banco','inf_cuenta','inf_tipo_cuenta','inf_cedula','inf_email','inf_ciudad','inf_instagram',
+                'vence_pago_at','fecha_contenido']
     rows_sol = []
     for r in c.fetchall():
         row = dict(zip(cols_sol, r))

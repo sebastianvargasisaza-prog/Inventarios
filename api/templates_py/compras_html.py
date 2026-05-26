@@ -320,8 +320,8 @@ async function cxIAPreguntar(pregunta){
       <option value="Rechazada">❌ Rechazadas</option>
     </select>
     <select id="order-influencer" onchange="renderInfluencers()" title="Ordenar por" style="background:#faf5ff;border:1px solid #c4b5fd;color:#5b21b6;font-weight:600;">
-      <option value="estado_fecha">📌 Por pagar primero (default)</option>
-      <option value="urgente">⏰ Más urgente arriba (fecha pago)</option>
+      <option value="urgente">⏰ Más urgente arriba (default · vence antes)</option>
+      <option value="estado_fecha">📌 Por pagar primero (estado + fecha)</option>
       <option value="valor_desc">💰 Mayor valor primero</option>
       <option value="valor_asc">💵 Menor valor primero</option>
       <option value="reciente">🆕 Más reciente arriba</option>
@@ -4988,10 +4988,28 @@ async function loadInfluencers(){
 }
 
 // Helpers para ordenar — usados por renderInfluencers()
+// Sebastián 27-may-2026 PM · prioriza vence_pago_at (promesa 30d desde
+// fecha_contenido · mig 195). Lo más cerca a vencer arriba.
 function _infFechaOrden(s){
-  return (s.fecha_requerida && String(s.fecha_requerida).trim())
+  return (s.vence_pago_at && String(s.vence_pago_at).trim())
+      || (s.fecha_requerida && String(s.fecha_requerida).trim())
       || (s.fecha && String(s.fecha).trim())
       || '9999-12-31';
+}
+// Devuelve {nivel, dias, vence} para badge visual de urgencia.
+// nivel: 'vencido' | 'urgente' | 'proximo' | 'normal' | ''
+function _infUrgencia(s){
+  if(s.estado === 'Pagada') return {nivel:'', dias:null, vence:''};
+  var v = s.vence_pago_at && String(s.vence_pago_at).trim();
+  if(!v) return {nivel:'', dias:null, vence:''};
+  var d = new Date(v + 'T00:00:00');
+  if(isNaN(d.getTime())) return {nivel:'', dias:null, vence:v};
+  var hoy = new Date(); hoy.setHours(0,0,0,0);
+  var dias = Math.round((d - hoy)/(24*3600*1000));
+  if(dias < 0) return {nivel:'vencido', dias:dias, vence:v};
+  if(dias <= 7) return {nivel:'urgente', dias:dias, vence:v};
+  if(dias <= 15) return {nivel:'proximo', dias:dias, vence:v};
+  return {nivel:'normal', dias:dias, vence:v};
 }
 function _infEstadoRank(e){
   if(e==='Aprobada')  return 0;
@@ -5044,7 +5062,7 @@ function renderInfluencers(){
   // lo que requiere su atencion. Antes era solo 'Aprobada' y se perdian las
   // SOL Pendientes que Jefferson creo desde /solicitudes con valor=0.
   var st=(document.getElementById('s-influencer')||{value:'ACCION'}).value;
-  var ordCriterio=(document.getElementById('order-influencer')||{value:'estado_fecha'}).value;
+  var ordCriterio=(document.getElementById('order-influencer')||{value:'urgente'}).value;
   // Sort defensivo: aplicamos el criterio elegido SIEMPRE antes de filtrar/render
   if(Array.isArray(INFLUENCERS) && INFLUENCERS.length){
     INFLUENCERS.sort(_infSortFn(ordCriterio));
@@ -5153,6 +5171,19 @@ function renderInfluencers(){
                   'Pendiente':{bg:'#fef3c7',fg:'#92400e',txt:'⏳ Pendiente'}};
     var cfg=badgeMap[s.estado]||{bg:'#f3f4f6',fg:'#374151',txt:s.estado};
 
+    // Badge urgencia · promesa 30d desde fecha_contenido (mig 195)
+    var urg=_infUrgencia(s);
+    var urgBadge='';
+    if(urg.nivel==='vencido'){
+      urgBadge='<span style="background:#dc2626;color:#fff;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;border:1.5px solid #991b1b;" title="ATRASADO · pago vencido hace '+Math.abs(urg.dias)+' días. Promesa: 30d desde el contenido. Vencía '+esc(urg.vence)+'">🔴 ATRASADO '+Math.abs(urg.dias)+'d</span>';
+    } else if(urg.nivel==='urgente'){
+      urgBadge='<span style="background:#f59e0b;color:#fff;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;" title="Vence en '+urg.dias+' días ('+esc(urg.vence)+')">🟡 Vence en '+urg.dias+'d</span>';
+    } else if(urg.nivel==='proximo'){
+      urgBadge='<span style="background:#bfdbfe;color:#1e40af;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;" title="Vence '+esc(urg.vence)+'">🔵 '+urg.dias+'d</span>';
+    } else if(urg.nivel==='normal'){
+      urgBadge='<span style="background:#dcfce7;color:#166534;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;" title="Al día · vence '+esc(urg.vence)+'">🟢 '+urg.dias+'d</span>';
+    }
+
     // Bank info row — only show if parsed
     var bankRow='';
     if(b.nombre||b.banco||b.cuenta){
@@ -5192,8 +5223,9 @@ function renderInfluencers(){
           +'<div style="font-family:monospace;font-size:13px;font-weight:700;color:#374151;">'+esc(s.numero)+'</div>'
           +(s.numero_oc?'<div style="font-family:monospace;font-size:11px;color:#7c3aed;background:#ede9fe;padding:2px 8px;border-radius:4px;">'+esc(s.numero_oc)+'</div>':'')
         +'</div>'
-        +'<div style="display:flex;align-items:center;gap:10px;">'
+        +'<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">'
           +'<div style="font-size:18px;font-weight:700;color:'+borderColor+';">'+fmoney(s.valor)+'</div>'
+          +urgBadge
           +'<span style="background:'+cfg.bg+';color:'+cfg.fg+';padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;">'+cfg.txt+'</span>'
         +'</div>'
       +'</div>'
