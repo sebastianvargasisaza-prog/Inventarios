@@ -4605,6 +4605,69 @@ def limpiar_db_sin_calendar():
     })
 
 
+@bp.route('/api/programacion/lote/<int:lote_id>/envase-override', methods=['PATCH'])
+def patch_envase_override_lote(lote_id):
+    """Edita envase_codigo_override de un lote · admin elige envase
+    distinto al default del producto (sku_mee_config).
+
+    Sebastián 25-may-2026 PM · "en calendario faltaría poder agregarle
+    el envase para empezar a calcular esas necesidades".
+
+    Body: {envase_codigo_override: str}  ("" para limpiar y volver al default)
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    d = request.get_json(silent=True) or {}
+    envase = (d.get('envase_codigo_override') or '').strip().upper()
+    conn = get_db(); cur = conn.cursor()
+    lote = cur.execute(
+        "SELECT id, producto, COALESCE(envase_codigo_override,''), "
+        "COALESCE(estado,''), inicio_real_at, fin_real_at "
+        "FROM produccion_programada WHERE id = ?", (lote_id,)).fetchone()
+    if not lote:
+        return jsonify({'error': 'Lote no existe'}), 404
+    if (lote[3] or '').lower() in ('cancelado','completado'):
+        return jsonify({'error': f'Lote {lote[3]} · no se puede editar'}), 400
+    if lote[4] or lote[5]:
+        return jsonify({'error': 'Lote ya inició/terminó · no se puede editar'}), 400
+    if envase:
+        # Validar que el envase exista en maestro_mee
+        try:
+            ok = cur.execute(
+                "SELECT 1 FROM maestro_mee WHERE UPPER(TRIM(codigo)) = ?",
+                (envase,)).fetchone()
+            if not ok:
+                return jsonify({'error': f'Envase {envase} no existe en maestro_mee',
+                                 'codigo': 'ENVASE_NO_EXISTE'}), 400
+        except Exception:
+            pass
+    antes_env = lote[2] or ''
+    try:
+        cur.execute(
+            "UPDATE produccion_programada SET envase_codigo_override = ? WHERE id = ?",
+            (envase, lote_id))
+    except Exception as e:
+        emsg = str(e).lower()
+        if 'no such column' in emsg or 'does not exist' in emsg:
+            return jsonify({'error': 'Migración 184 no aplicada · contactar admin'}), 500
+        return jsonify({'error': str(e)[:200]}), 500
+    try:
+        from audit_helpers import audit_log as _al
+        _al(cur, usuario=user, accion='PATCH_ENVASE_OVERRIDE_LOTE',
+            tabla='produccion_programada', registro_id=lote_id,
+            antes={'envase_codigo_override': antes_env},
+            despues={'envase_codigo_override': envase})
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({'ok': True, 'lote_id': lote_id,
+                     'envase_codigo_override': envase,
+                     'mensaje': ('✓ Envase ' + envase + ' asignado al lote · MEE recalculará')
+                                 if envase else
+                                 '✓ Envase override limpiado · vuelve al default del producto'})
+
+
 @bp.route('/api/programacion/lote/<int:lote_id>/plan-envasado/<int:pbl_id>', methods=['PATCH'])
 def patch_plan_envasado_b2b(lote_id, pbl_id):
     """Edita plan_envasado_uds y plan_envasado_notas de un cliente B2B
@@ -4679,29 +4742,59 @@ def listado_produccion_programada():
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
     conn = get_db()
-    rows = conn.execute("""
-        SELECT pp.id, pp.producto, pp.fecha_programada, pp.lotes,
-               pp.estado, COALESCE(pp.origen,'manual') as origen,
-               pp.observaciones,
-               COALESCE(pp.cantidad_kg,
-                        pp.lotes * COALESCE(fh.lote_size_kg, 0),
-                        0) as kg,
-               pp.area_id, ap.nombre as area_nombre,
-               pp.operario_dispensacion_id, od.nombre || ' ' || COALESCE(od.apellido,'') as op_disp,
-               pp.operario_elaboracion_id,  oe.nombre || ' ' || COALESCE(oe.apellido,'') as op_elab,
-               pp.operario_envasado_id,     oen.nombre || ' ' || COALESCE(oen.apellido,'') as op_env,
-               pp.operario_acondicionamiento_id, oa.nombre || ' ' || COALESCE(oa.apellido,'') as op_acon
-        FROM produccion_programada pp
-        LEFT JOIN formula_headers fh ON UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(pp.producto))
-        LEFT JOIN areas_planta ap ON ap.id = pp.area_id
-        LEFT JOIN operarios_planta od  ON od.id  = pp.operario_dispensacion_id
-        LEFT JOIN operarios_planta oe  ON oe.id  = pp.operario_elaboracion_id
-        LEFT JOIN operarios_planta oen ON oen.id = pp.operario_envasado_id
-        LEFT JOIN operarios_planta oa  ON oa.id  = pp.operario_acondicionamiento_id
-        WHERE LOWER(COALESCE(pp.estado,'')) NOT IN ('cancelado','completado')
-          AND pp.fecha_programada >= date('now', '-5 hours', '-7 day')
-        ORDER BY pp.fecha_programada ASC, pp.id ASC
-    """).fetchall()
+    # Sebastián 25-may-2026 PM · agregar envase_codigo_override (mig 184)
+    # Fallback al SELECT sin la columna si la mig no aplicó aún
+    try:
+        rows = conn.execute("""
+            SELECT pp.id, pp.producto, pp.fecha_programada, pp.lotes,
+                   pp.estado, COALESCE(pp.origen,'manual') as origen,
+                   pp.observaciones,
+                   COALESCE(pp.cantidad_kg,
+                            pp.lotes * COALESCE(fh.lote_size_kg, 0),
+                            0) as kg,
+                   pp.area_id, ap.nombre as area_nombre,
+                   pp.operario_dispensacion_id, od.nombre || ' ' || COALESCE(od.apellido,'') as op_disp,
+                   pp.operario_elaboracion_id,  oe.nombre || ' ' || COALESCE(oe.apellido,'') as op_elab,
+                   pp.operario_envasado_id,     oen.nombre || ' ' || COALESCE(oen.apellido,'') as op_env,
+                   pp.operario_acondicionamiento_id, oa.nombre || ' ' || COALESCE(oa.apellido,'') as op_acon,
+                   COALESCE(pp.envase_codigo_override, '') as envase_override
+            FROM produccion_programada pp
+            LEFT JOIN formula_headers fh ON UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(pp.producto))
+            LEFT JOIN areas_planta ap ON ap.id = pp.area_id
+            LEFT JOIN operarios_planta od  ON od.id  = pp.operario_dispensacion_id
+            LEFT JOIN operarios_planta oe  ON oe.id  = pp.operario_elaboracion_id
+            LEFT JOIN operarios_planta oen ON oen.id = pp.operario_envasado_id
+            LEFT JOIN operarios_planta oa  ON oa.id  = pp.operario_acondicionamiento_id
+            WHERE LOWER(COALESCE(pp.estado,'')) NOT IN ('cancelado','completado')
+              AND pp.fecha_programada >= date('now', '-5 hours', '-7 day')
+            ORDER BY pp.fecha_programada ASC, pp.id ASC
+        """).fetchall()
+        _has_env_ovr = True
+    except Exception:
+        rows = conn.execute("""
+            SELECT pp.id, pp.producto, pp.fecha_programada, pp.lotes,
+                   pp.estado, COALESCE(pp.origen,'manual') as origen,
+                   pp.observaciones,
+                   COALESCE(pp.cantidad_kg,
+                            pp.lotes * COALESCE(fh.lote_size_kg, 0),
+                            0) as kg,
+                   pp.area_id, ap.nombre as area_nombre,
+                   pp.operario_dispensacion_id, od.nombre || ' ' || COALESCE(od.apellido,'') as op_disp,
+                   pp.operario_elaboracion_id,  oe.nombre || ' ' || COALESCE(oe.apellido,'') as op_elab,
+                   pp.operario_envasado_id,     oen.nombre || ' ' || COALESCE(oen.apellido,'') as op_env,
+                   pp.operario_acondicionamiento_id, oa.nombre || ' ' || COALESCE(oa.apellido,'') as op_acon
+            FROM produccion_programada pp
+            LEFT JOIN formula_headers fh ON UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(pp.producto))
+            LEFT JOIN areas_planta ap ON ap.id = pp.area_id
+            LEFT JOIN operarios_planta od  ON od.id  = pp.operario_dispensacion_id
+            LEFT JOIN operarios_planta oe  ON oe.id  = pp.operario_elaboracion_id
+            LEFT JOIN operarios_planta oen ON oen.id = pp.operario_envasado_id
+            LEFT JOIN operarios_planta oa  ON oa.id  = pp.operario_acondicionamiento_id
+            WHERE LOWER(COALESCE(pp.estado,'')) NOT IN ('cancelado','completado')
+              AND pp.fecha_programada >= date('now', '-5 hours', '-7 day')
+            ORDER BY pp.fecha_programada ASC, pp.id ASC
+        """).fetchall()
+        _has_env_ovr = False
     lote_ids = [r[0] for r in rows]
     desglose_por_lote = {}
     if lote_ids:
@@ -4787,6 +4880,7 @@ def listado_produccion_programada():
         # kg_dtc < 0 → más B2B atribuido que el lote total · data
         # inconsistente · frontend muestra warning. Si kg_b2b_sum == 0
         # → todo DTC, sin desglose explícito (caso default).
+        envase_override = (r[18] if _has_env_ovr and len(r) > 18 else '') or ''
         out.append({
             'id': r[0], 'producto': r[1], 'fecha_programada': r[2], 'lotes': r[3],
             'estado': r[4], 'origen': r[5], 'observaciones': r[6], 'kg': kg_total,
@@ -4795,6 +4889,7 @@ def listado_produccion_programada():
             'operario_elaboracion_id':  r[12], 'operario_elaboracion':  (r[13] or '').strip() or None,
             'operario_envasado_id':     r[14], 'operario_envasado':     (r[15] or '').strip() or None,
             'operario_acondicionamiento_id': r[16], 'operario_acondicionamiento': (r[17] or '').strip() or None,
+            'envase_codigo_override': envase_override,
             'desglose_b2b': desglose,
             'kg_b2b_total': round(kg_b2b_sum, 2),
             'kg_dtc': max(0.0, kg_dtc),
@@ -8067,21 +8162,44 @@ def abastecimiento_consumo_horizontes():
         origenes_in = ('eos_plan', 'eos_b2b', 'eos_retroactivo',
                         'eos_canonico', 'auto_plan', 'sugerido')
     placeholders = ','.join(['?'] * len(origenes_in))
-    prod_rows = c.execute(f"""
-        SELECT pp.id, pp.producto, pp.fecha_programada,
-               COALESCE(pp.lotes, 1), COALESCE(pp.cantidad_kg, 0),
-               COALESCE(fh.lote_size_kg, 0),
-               COALESCE(pp.origen, '')
-        FROM produccion_programada pp
-        LEFT JOIN formula_headers fh
-               ON UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(pp.producto))
-        WHERE COALESCE(pp.origen,'') IN ({placeholders})
-          AND LOWER(COALESCE(pp.estado,'')) NOT IN ('cancelado','completado','esperando_recurso')
-          AND COALESCE(pp.inventario_descontado_at,'') = ''
-          AND pp.fecha_programada >= ?
-          AND pp.fecha_programada <= ?
-        ORDER BY pp.fecha_programada ASC
-    """, origenes_in + (hoy_iso, cutoff_max)).fetchall()
+    # Sebastián 25-may-2026 PM · incluir envase_codigo_override (mig 184).
+    # Si el lote tiene override no vacío, el cálculo MEE prioriza ese envase
+    # sobre el default del sku_mee_config. Fallback si mig 184 no aplicada.
+    try:
+        prod_rows = c.execute(f"""
+            SELECT pp.id, pp.producto, pp.fecha_programada,
+                   COALESCE(pp.lotes, 1), COALESCE(pp.cantidad_kg, 0),
+                   COALESCE(fh.lote_size_kg, 0),
+                   COALESCE(pp.origen, ''),
+                   COALESCE(pp.envase_codigo_override, '')
+            FROM produccion_programada pp
+            LEFT JOIN formula_headers fh
+                   ON UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(pp.producto))
+            WHERE COALESCE(pp.origen,'') IN ({placeholders})
+              AND LOWER(COALESCE(pp.estado,'')) NOT IN ('cancelado','completado','esperando_recurso')
+              AND COALESCE(pp.inventario_descontado_at,'') = ''
+              AND pp.fecha_programada >= ?
+              AND pp.fecha_programada <= ?
+            ORDER BY pp.fecha_programada ASC
+        """, origenes_in + (hoy_iso, cutoff_max)).fetchall()
+        _has_env_ovr_calc = True
+    except Exception:
+        prod_rows = c.execute(f"""
+            SELECT pp.id, pp.producto, pp.fecha_programada,
+                   COALESCE(pp.lotes, 1), COALESCE(pp.cantidad_kg, 0),
+                   COALESCE(fh.lote_size_kg, 0),
+                   COALESCE(pp.origen, '')
+            FROM produccion_programada pp
+            LEFT JOIN formula_headers fh
+                   ON UPPER(TRIM(fh.producto_nombre)) = UPPER(TRIM(pp.producto))
+            WHERE COALESCE(pp.origen,'') IN ({placeholders})
+              AND LOWER(COALESCE(pp.estado,'')) NOT IN ('cancelado','completado','esperando_recurso')
+              AND COALESCE(pp.inventario_descontado_at,'') = ''
+              AND pp.fecha_programada >= ?
+              AND pp.fecha_programada <= ?
+            ORDER BY pp.fecha_programada ASC
+        """, origenes_in + (hoy_iso, cutoff_max)).fetchall()
+        _has_env_ovr_calc = False
     # FIX AUDIT 24-may-2026 noche · agente cazó: 'esperando_recurso' es
     # un lote pausado por falta de MP. Si lo cuento como consumo, el
     # déficit que reporta Abastecimiento es CIRCULAR: el lote consume
@@ -8443,7 +8561,15 @@ def abastecimiento_consumo_horizontes():
     # _norm_prod usado en el diccionario formulas (colapsa espacios dobles).
     matched_lotes = 0
     sin_formula_lotes = []
-    for pid, producto, fecha, lotes, cant_kg_expl, lote_size, _origen in prod_rows:
+    for _pr in prod_rows:
+        # Unpacking flexible · si trae override (mig 184 OK) son 8 cols,
+        # si no (fallback) son 7.
+        if len(_pr) >= 8:
+            pid, producto, fecha, lotes, cant_kg_expl, lote_size, _origen, _env_ovr = _pr
+        else:
+            pid, producto, fecha, lotes, cant_kg_expl, lote_size, _origen = _pr
+            _env_ovr = ''
+        _env_ovr = (_env_ovr or '').strip().upper()
         producto_norm = _norm_prod(producto)
         # Si el LEFT JOIN SQL devolvió lote_size=0 (por mismatch de espacios),
         # tomar el lote_size del diccionario formulas (que sí está normalizado).
@@ -8503,20 +8629,33 @@ def abastecimiento_consumo_horizontes():
                 # Buscar MEE registrados por producto/sku · usar producto_norm
                 # como key (sku_mee_config.sku_codigo) o fallback al codigo_pt
                 mee_items = mee_por_producto.get(producto_norm, [])
+                # Sebastián 25-may-2026 PM · si el lote tiene envase_codigo_override,
+                # ese envase REEMPLAZA al envase default del producto (sku_mee_config).
+                # Las tapas/etiquetas/sub-componentes siguen iguales · solo cambia
+                # el item de tipo 'envase/frasco/recipiente'.
                 for me in mee_items:
-                    # Solo el envase del producto baja por las uds B2B custom.
-                    # Tapa/etiqueta/etc se descuentan completas (todos los
-                    # clientes usan los mismos sub-componentes).
                     es_envase = (me.get('tipo') or 'envase').lower() in ('envase', 'frasco', 'recipiente')
+                    cod_mee_efectivo = (me['codigo'] or '').strip().upper()
+                    if es_envase and _env_ovr:
+                        # Override · usa el envase elegido manualmente en lugar del default
+                        cod_mee_efectivo = _env_ovr
                     if es_envase and uds_b2b_custom_total > 0:
                         uds_efectivas = max(uds_envasadas_total - uds_b2b_custom_total, 0)
                     else:
                         uds_efectivas = uds_envasadas_total
                     _agregar_consumo_mee(
-                        (me['codigo'] or '').strip().upper(),
+                        cod_mee_efectivo,
                         uds_efectivas * me['cant_x_uds'],
                         dias_hasta,
                     )
+                # Caso edge: lote tiene override pero NO hay sku_mee_config
+                # (producto sin envase default) · agregar el override directo
+                # con uds_envasadas_total (descontando B2B custom si lo hay)
+                if _env_ovr and not any(
+                    (m.get('tipo') or 'envase').lower() in ('envase','frasco','recipiente')
+                    for m in mee_items):
+                    uds_eff = max(uds_envasadas_total - uds_b2b_custom_total, 0)
+                    _agregar_consumo_mee(_env_ovr, uds_eff, dias_hasta)
 
     # 8b. Pedidos B2B pendientes (sin producción Fija aún)
     for bid, cli_id, cli_nom, prod_nom, cant_uds, ml_u, f_est in b2b_rows:
@@ -8620,7 +8759,12 @@ def abastecimiento_consumo_horizontes():
         # + kg_b2b_por_prod_por_horizonte para descontar del run-rate y
         # evitar doble-conteo (AUDITORÍA P2 · agente cazó este caso)
         kg_fijo_acum_por_prod = {}  # prod_up → {h: kg_acumulado}
-        for pid, producto, fecha, lotes, cant_kg_expl, lote_size, _origen2 in prod_rows:
+        for _pr2 in prod_rows:
+            # Unpacking flexible · soporta filas con o sin envase_codigo_override
+            if len(_pr2) >= 8:
+                pid, producto, fecha, lotes, cant_kg_expl, lote_size, _origen2, _ = _pr2
+            else:
+                pid, producto, fecha, lotes, cant_kg_expl, lote_size, _origen2 = _pr2
             producto_norm = (producto or '').strip().upper()
             try:
                 dias_hasta_f = (date.fromisoformat(str(fecha)[:10]) - hoy).days

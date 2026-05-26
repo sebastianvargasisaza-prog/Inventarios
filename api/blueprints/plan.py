@@ -13317,6 +13317,31 @@ function _parsearComposicionLote(loteData, kgTotal){
   return { kg_total: kgT, entradas, kg_residual_dtc: kgDTC };
 }
 
+// Sebastián 25-may-2026 PM · guardar envase override del lote.
+// Sobreescribe el envase default del producto · MEE Abastecimiento usa
+// este código para calcular el consumo. Vacío = limpiar, volver al default.
+async function guardarEnvaseOverride(loteId){
+  const input = document.getElementById('env-ovr-' + loteId);
+  const ok = document.getElementById('env-ovr-ok-' + loteId);
+  if(!input) return;
+  const env = (input.value || '').trim().toUpperCase();
+  try{
+    const r = await fetch('/api/programacion/lote/' + loteId + '/envase-override', {
+      method: 'PATCH',
+      headers: {'Content-Type':'application/json', 'X-CSRF-Token': (window._csrfTokPlan || '')},
+      body: JSON.stringify({envase_codigo_override: env}),
+    });
+    const d = await r.json();
+    if(!r.ok){ alert('Error: ' + (d.error || r.status)); return; }
+    if(ok){
+      ok.style.display = 'inline';
+      setTimeout(() => { ok.style.display = 'none'; }, 1500);
+    }
+    // Refrescar lista para que el cache muestre el cambio
+    if(typeof cargar === 'function') setTimeout(cargar, 200);
+  }catch(e){ alert('Error red: ' + e.message); }
+}
+
 // Sebastián 25-may-2026 PM · guardar plan envasado editable de un
 // cliente B2B en un lote. Envía PATCH con plan_envasado_uds + notas.
 async function guardarPlanEnvasado(loteId, pblId){
@@ -13450,6 +13475,25 @@ async function abrirLoteModal(id, producto, fecha, kg){
   }
 
   let html = '';
+
+  // Sebastián 25-may-2026 PM · selector envase override del lote.
+  // Si el lote tiene envase distinto al default del producto, vos lo
+  // setteás acá y el cálculo MEE (Abastecimiento) usa ese envase.
+  try {
+    const _loteFull0 = (PLAN_DATA.agendadas || []).find(a => a.id === id);
+    const envActual = (_loteFull0 && _loteFull0.envase_codigo_override) || '';
+    html += '<div style="background:#ecfeff;border:1px solid #67e8f9;border-radius:8px;padding:10px 14px;margin-bottom:12px">';
+    html += '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">';
+    html += '<span style="font-size:11px;font-weight:800;color:#0e7490;text-transform:uppercase;letter-spacing:.5px">📦 Envase del lote</span>';
+    html += '<input id="env-ovr-' + id + '" type="text" maxlength="50" placeholder="auto (default del producto)" value="' + escapeHtml(envActual) + '" style="flex:1;min-width:160px;padding:6px 10px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px;font-family:monospace;text-transform:uppercase" oninput="this.value=this.value.toUpperCase()">';
+    html += '<button onclick="guardarEnvaseOverride(' + id + ')" style="padding:6px 14px;font-size:11px;background:#0891b2;color:#fff;border:none;border-radius:5px;cursor:pointer;font-weight:700">💾 Guardar</button>';
+    html += '<span id="env-ovr-ok-' + id + '" style="color:#15803d;font-size:11px;display:none">✓</span>';
+    html += '</div>';
+    html += '<div style="font-size:11px;color:#0e7490;margin-top:6px">' +
+       (envActual ? '✓ Override <strong>' + escapeHtml(envActual) + '</strong> · MEE calcula con este envase' :
+                     '⚙ Sin override · MEE usa el envase default del producto · escribí un código (ej. FRASCO-30ML-GOTERO) para forzar otro') + '</div>';
+    html += '</div>';
+  } catch(_e_env){ /* sin lote en PLAN_DATA · no mostrar */ }
 
   // Sebastián 25-may-2026 PM · Desglose B2B vs DTC del lote + plan
   // envasado editable. "como ya estas primeras producciones estan

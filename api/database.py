@@ -312,6 +312,16 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (184, "produccion_programada.envase_codigo_override · admin elige envase distinto al default por lote · Sebastián 25-may-2026 PM", [
+        # FEATURE 25-may-2026 PM · Sebastián: "en calendario faltaría poder
+        # agregarle el envase para empezar a calcular esas necesidades".
+        # Hoy el cálculo MEE usa sku_mee_config (mapping global producto→envase).
+        # Cuando un lote particular usa envase diferente al default (ej.
+        # promo edición especial, faltan envases del default, etc.) no hay
+        # forma de override. Este campo permite anular el default para
+        # ESE lote sin tocar la config global · si está vacío, sigue el default.
+        "ALTER TABLE produccion_programada ADD COLUMN envase_codigo_override TEXT DEFAULT ''",
+    ]),
     (183, "pedidos_b2b_lote · plan_envasado_uds + plan_envasado_notas · Sebastián 25-may-2026 PM", [
         # FEATURE 25-may-2026 PM · Sebastián: "como ya estas primeras
         # producciones estan deberias colocar que yo mismo lo escriba,
