@@ -10206,9 +10206,25 @@ def mee_item_detalle(codigo):
     user = session.get('compras_user','')
     conn = get_db(); c = conn.cursor()
     if request.method == 'DELETE':
+        # P1 audit 26-may · audit_log archivado (soft delete) · MEE master
+        # snapshot antes del UPDATE
+        _snap_row = c.execute(
+            "SELECT codigo, descripcion, categoria, proveedor, estado FROM maestro_mee WHERE codigo=?",
+            (codigo,)).fetchone()
         c.execute("UPDATE maestro_mee SET estado='Archivado' WHERE codigo=?", (codigo,))
         if c.rowcount == 0:
             return jsonify({'error':'No encontrado'}), 404
+        if _snap_row:
+            try:
+                audit_log(c, usuario=user, accion='ARCHIVAR_MEE', tabla='maestro_mee',
+                          registro_id=codigo,
+                          antes={'estado': _snap_row[4], 'descripcion': _snap_row[1] or '',
+                                 'categoria': _snap_row[2] or '', 'proveedor': _snap_row[3] or ''},
+                          despues={'estado': 'Archivado'},
+                          detalle=f'MEE {codigo} archivado')
+            except Exception as _ae:
+                import logging as _lg
+                _lg.getLogger('inventario').warning('audit ARCHIVAR_MEE fallo: %s', _ae)
         conn.commit()
         return jsonify({'ok': True, 'archivado': codigo})
     if request.method == 'PUT':
@@ -10242,12 +10258,25 @@ def mee_set_proveedor(codigo):
     """Cambiar proveedor de un MEE (igual que MP)."""
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
     d = request.json or {}
     proveedor = (d.get('proveedor') or '').strip()
     conn = get_db(); c = conn.cursor()
+    # P1 audit 26-may · snapshot proveedor anterior para audit_log
+    prov_ant_row = c.execute("SELECT proveedor FROM maestro_mee WHERE codigo=?", (codigo,)).fetchone()
+    prov_ant = prov_ant_row[0] if prov_ant_row else None
     c.execute("UPDATE maestro_mee SET proveedor=? WHERE codigo=?", (proveedor, codigo))
     if c.rowcount == 0:
         return jsonify({'error':'No encontrado'}), 404
+    try:
+        audit_log(c, usuario=user, accion='UPDATE_MEE_PROVEEDOR', tabla='maestro_mee',
+                  registro_id=codigo,
+                  antes={'proveedor': prov_ant or ''},
+                  despues={'proveedor': proveedor},
+                  detalle=f'MEE {codigo} proveedor: {prov_ant!r} → {proveedor!r}')
+    except Exception as _ae:
+        import logging as _lg
+        _lg.getLogger('inventario').warning('audit UPDATE_MEE_PROVEEDOR fallo: %s', _ae)
     conn.commit()
     return jsonify({'ok': True, 'codigo': codigo, 'proveedor': proveedor})
 
@@ -10256,13 +10285,30 @@ def mee_set_proveedor(codigo):
 def mee_set_stock_minimo(codigo):
     if 'compras_user' not in session:
         return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
     d = request.json or {}
-    try: nuevo = float(d.get('stock_minimo', 0))
-    except: return jsonify({'error':'stock_minimo invalido'}), 400
+    # P1 audit 26-may · validate_money + audit_log · antes float() pelado
+    # aceptaba NaN/Inf/negativos · stock_minimo es threshold de alerta.
+    from http_helpers import validate_money as _vm_sm
+    nuevo, _err = _vm_sm(d.get('stock_minimo', 0), allow_zero=True,
+                          max_value=10_000_000, field_name='stock_minimo')
+    if _err:
+        return jsonify(_err), 400
     conn = get_db(); c = conn.cursor()
+    ant_row = c.execute("SELECT stock_minimo FROM maestro_mee WHERE codigo=?", (codigo,)).fetchone()
+    ant = ant_row[0] if ant_row else None
     c.execute("UPDATE maestro_mee SET stock_minimo=? WHERE codigo=?", (nuevo, codigo))
     if c.rowcount == 0:
         return jsonify({'error':'No encontrado'}), 404
+    try:
+        audit_log(c, usuario=user, accion='UPDATE_MEE_STOCK_MIN', tabla='maestro_mee',
+                  registro_id=codigo,
+                  antes={'stock_minimo': ant},
+                  despues={'stock_minimo': nuevo},
+                  detalle=f'MEE {codigo} stock_minimo: {ant} → {nuevo}')
+    except Exception as _ae:
+        import logging as _lg
+        _lg.getLogger('inventario').warning('audit UPDATE_MEE_STOCK_MIN fallo: %s', _ae)
     conn.commit()
     return jsonify({'ok': True, 'codigo': codigo, 'stock_minimo': nuevo})
 

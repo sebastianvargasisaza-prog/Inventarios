@@ -944,9 +944,22 @@ def handle_ordenes_compra():
         # ── FIX Catalina: persistir precios en precios_mp_historico
         # para que la proxima vez que cree OC con el mismo MP, el precio
         # aparezca como sugerencia en autocomplete.
+        # P1 audit 26-may · validate_money en items del POST (mismo patrón
+        # que editar_oc PUT · evita NaN/Inf/negativos contaminando historico)
+        from http_helpers import validate_money as _vm_h
         for it in (d.get('items') or []):
-            cantidad_g = float(it.get('cantidad_g', 0))
-            precio_u = float(it.get('precio_unitario', 0))
+            _cg_v, _err_cg = _vm_h(it.get('cantidad_g', 0), allow_zero=False,
+                                    max_value=1e9, field_name='cantidad_g')
+            if _err_cg:
+                conn.rollback()
+                return jsonify(_err_cg), 400
+            _pu_v, _err_pu = _vm_h(it.get('precio_unitario', 0), allow_zero=True,
+                                    max_value=1e9, field_name='precio_unitario')
+            if _err_pu:
+                conn.rollback()
+                return jsonify(_err_pu), 400
+            cantidad_g = _cg_v
+            precio_u = _pu_v
             subtotal = round(cantidad_g * precio_u, 2)
             codigo = it.get('codigo_mp', '')
             nombre = it.get('nombre_mp', '')
@@ -1612,16 +1625,27 @@ def actualizar_precios_items_oc(numero_oc):
 
     # Actualizar cada item por codigo_mp (y opcionalmente cantidad_g)
     actualizados = 0
+    # P1 audit 26-may · validate_money en actualizar_precios_items_oc PUT
+    from http_helpers import validate_money as _vm_pr
     for it in items_in:
         cod = (it.get('codigo_mp') or '').strip()
         if not cod:
             continue
-        precio = float(it.get('precio_unitario', 0) or 0)
+        _pr_v, _err_pr = _vm_pr(it.get('precio_unitario', 0) or 0,
+                                 allow_zero=True, max_value=1e9,
+                                 field_name='precio_unitario')
+        if _err_pr:
+            return jsonify(_err_pr), 400
+        precio = _pr_v
         # Cantidad: si la pasan, la actualizamos; si no, la dejamos como está
         cant = it.get('cantidad_g')
         if cant is not None:
+            _ct_v, _err_ct = _vm_pr(cant, allow_zero=False, max_value=1e9,
+                                     field_name='cantidad_g')
+            if _err_ct:
+                return jsonify(_err_ct), 400
             try:
-                cant = float(cant)
+                cant = _ct_v
                 # subtotal = cantidad * precio
                 subtotal = round(cant * precio, 2)
                 c.execute(
@@ -8448,8 +8472,22 @@ def update_sol_items(numero):
          precio_actual, valor_actual, prov_actual) = row
 
         # Valores nuevos (si vienen, sino mantenemos los actuales)
-        cant_nueva = float(it.get('cantidad_g', cant_actual) or 0)
-        precio_nuevo = float(it.get('precio_unit_g', precio_actual) or 0)
+        # P1 audit 26-may · validate_money · update_sol_items propaga a
+        # maestro_mps.precio_referencia (INV-2 · sync GLOBAL) · NaN/Inf en
+        # precio_referencia rompe `validar_precios_bulk` downstream.
+        from http_helpers import validate_money as _vm_si
+        _cn_v, _err_cn = _vm_si(it.get('cantidad_g', cant_actual) or 0,
+                                  allow_zero=False, max_value=1e9,
+                                  field_name='cantidad_g')
+        if _err_cn:
+            return jsonify(_err_cn), 400
+        _pn_v, _err_pn = _vm_si(it.get('precio_unit_g', precio_actual) or 0,
+                                  allow_zero=True, max_value=1e9,
+                                  field_name='precio_unit_g')
+        if _err_pn:
+            return jsonify(_err_pn), 400
+        cant_nueva = _cn_v
+        precio_nuevo = _pn_v
         prov_nuevo = (it.get('proveedor', prov_actual) or '').strip()
         valor_nuevo = round(cant_nueva * precio_nuevo, 2) if precio_nuevo > 0 else valor_actual
 
