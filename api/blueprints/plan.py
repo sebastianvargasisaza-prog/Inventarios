@@ -13317,6 +13317,41 @@ function _parsearComposicionLote(loteData, kgTotal){
   return { kg_total: kgT, entradas, kg_residual_dtc: kgDTC };
 }
 
+// Sebastián 25-may-2026 PM · opción B · cambia el envase default del
+// producto en sku_mee_config · futuros lotes nuevos lo usan automático.
+async function envaseAplicarDefault(loteId){
+  if(!confirm('¿Cambiar el envase DEFAULT del producto?\n\nEsto modifica sku_mee_config global · TODOS los lotes futuros NUEVOS de este producto usarán este envase a menos que les setees otro override individual.\n\n¿Continuar?')) return;
+  try{
+    const r = await fetch('/api/programacion/lote/' + loteId + '/envase-aplicar-default', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json', 'X-CSRF-Token': (window._csrfTokPlan || '')},
+      body: '{}',
+    });
+    const d = await r.json();
+    if(!r.ok){ alert('Error: ' + (d.error || r.status)); return; }
+    alert(d.mensaje || '✓ Default actualizado');
+    if(typeof cargar === 'function') cargar();
+  }catch(e){ alert('Error red: ' + e.message); }
+}
+
+// Sebastián 25-may-2026 PM · opción C · propaga el envase override
+// a todos los lotes futuros del producto que aún no iniciaron · no
+// toca el default global.
+async function envasePropagarFuturos(loteId){
+  if(!confirm('¿Propagar este envase a lotes futuros del producto?\n\nVa a setear el envase_codigo_override en TODOS los lotes futuros del mismo producto que aún no iniciaron · NO toca el default global del sku_mee_config.\n\n¿Continuar?')) return;
+  try{
+    const r = await fetch('/api/programacion/lote/' + loteId + '/envase-propagar-futuros', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json', 'X-CSRF-Token': (window._csrfTokPlan || '')},
+      body: '{}',
+    });
+    const d = await r.json();
+    if(!r.ok){ alert('Error: ' + (d.error || r.status)); return; }
+    alert(d.mensaje || '✓ Propagado');
+    if(typeof cargar === 'function') cargar();
+  }catch(e){ alert('Error red: ' + e.message); }
+}
+
 // Sebastián 25-may-2026 PM · guardar envase override del lote.
 // Sobreescribe el envase default del producto · MEE Abastecimiento usa
 // este código para calcular el consumo. Vacío = limpiar, volver al default.
@@ -13492,6 +13527,20 @@ async function abrirLoteModal(id, producto, fecha, kg){
     html += '<div style="font-size:11px;color:#0e7490;margin-top:6px">' +
        (envActual ? '✓ Override <strong>' + escapeHtml(envActual) + '</strong> · MEE calcula con este envase' :
                      '⚙ Sin override · MEE usa el envase default del producto · escribí un código (ej. FRASCO-30ML-GOTERO) para forzar otro') + '</div>';
+    // Sebastián 25-may-2026 PM · botones B (default global) y C (propagar futuros)
+    // Solo se muestran si hay override seteado (sino no tiene sentido propagar nada)
+    if (envActual){
+      html += '<details style="margin-top:10px;border-top:1px dashed #67e8f9;padding-top:8px">';
+      html += '<summary style="cursor:pointer;font-size:11px;color:#0e7490;font-weight:700">▸ Propagación opcional (avanzado)</summary>';
+      html += '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">';
+      html += '<button onclick="envaseAplicarDefault(' + id + ')" style="padding:6px 12px;font-size:11px;background:#f59e0b;color:#fff;border:none;border-radius:5px;cursor:pointer;font-weight:700" title="Cambia el envase default del producto en sku_mee_config · futuros lotes nuevos lo usan automático">⚓ Aplicar como default del producto</button>';
+      html += '<button onclick="envasePropagarFuturos(' + id + ')" style="padding:6px 12px;font-size:11px;background:#6366f1;color:#fff;border:none;border-radius:5px;cursor:pointer;font-weight:700" title="Setea este envase como override en TODOS los lotes futuros del producto que aún no iniciaron · no toca el default global">↪ Propagar a lotes futuros</button>';
+      html += '</div>';
+      html += '<div style="font-size:10px;color:#64748b;margin-top:6px;line-height:1.4">';
+      html += '<strong>⚓ Default</strong>: cambia sku_mee_config global · permanente hasta que lo cambies de nuevo<br>';
+      html += '<strong>↪ Propagar</strong>: sobreescribe override en cada lote futuro · no toca config global · útil cuando es cambio temporal';
+      html += '</div></details>';
+    }
     html += '</div>';
   } catch(_e_env){ /* sin lote en PLAN_DATA · no mostrar */ }
 

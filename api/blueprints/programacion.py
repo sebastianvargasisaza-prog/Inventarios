@@ -4668,6 +4668,164 @@ def patch_envase_override_lote(lote_id):
                                  '✓ Envase override limpiado · vuelve al default del producto'})
 
 
+@bp.route('/api/programacion/lote/<int:lote_id>/envase-aplicar-default', methods=['POST'])
+def aplicar_envase_como_default_producto(lote_id):
+    """Opción B · cambia el envase DEFAULT del producto (sku_mee_config)
+    al envase override del lote · TODOS los lotes futuros del producto
+    usarán este envase por default a menos que se setee otro override.
+
+    Sebastián 25-may-2026 PM · "necesito a b y c". Toma el
+    envase_codigo_override del lote · busca los SKUs del producto vía
+    sku_producto_map · actualiza el item componente_tipo='envase' de
+    cada SKU en sku_mee_config para apuntar al nuevo envase.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    conn = get_db(); cur = conn.cursor()
+    lote = cur.execute(
+        "SELECT id, producto, COALESCE(envase_codigo_override,''), "
+        "COALESCE(estado,''), inicio_real_at, fin_real_at "
+        "FROM produccion_programada WHERE id = ?", (lote_id,)).fetchone()
+    if not lote:
+        return jsonify({'error': 'Lote no existe'}), 404
+    envase = (lote[2] or '').strip().upper()
+    if not envase:
+        return jsonify({'error': 'Lote no tiene envase override · setealo primero con el botón Guardar arriba'}), 400
+    producto = (lote[1] or '').strip()
+    if not producto:
+        return jsonify({'error': 'Lote sin producto'}), 400
+    # Validar envase en maestro_mee
+    try:
+        ok = cur.execute(
+            "SELECT 1 FROM maestro_mee WHERE UPPER(TRIM(codigo)) = ?",
+            (envase,)).fetchone()
+        if not ok:
+            return jsonify({'error': f'Envase {envase} no existe en maestro_mee'}), 400
+    except Exception:
+        pass
+    # Buscar SKUs del producto vía sku_producto_map
+    skus = []
+    try:
+        for r in cur.execute(
+            """SELECT UPPER(TRIM(sku)) FROM sku_producto_map
+               WHERE UPPER(TRIM(producto_nombre)) = UPPER(TRIM(?))
+                 AND COALESCE(activo,1) = 1""", (producto,)).fetchall():
+            if r[0]:
+                skus.append(r[0])
+    except Exception:
+        pass
+    if not skus:
+        return jsonify({'error': f'Producto {producto} no tiene SKUs mapeados en sku_producto_map · imposible cambiar default'}), 404
+    # Para cada SKU, actualizar el item de tipo envase (o insertar si no existe)
+    afectados = []
+    for sku in skus:
+        # Ver si ya hay un componente_tipo='envase' para este sku
+        env_actual_row = cur.execute(
+            """SELECT id, mee_codigo FROM sku_mee_config
+               WHERE UPPER(TRIM(sku_codigo)) = ?
+                 AND componente_tipo = 'envase'
+                 AND COALESCE(aplica,1) = 1 LIMIT 1""",
+            (sku,)).fetchone()
+        if env_actual_row:
+            cur.execute(
+                "UPDATE sku_mee_config SET mee_codigo = ? WHERE id = ?",
+                (envase, env_actual_row[0]))
+            afectados.append({'sku': sku, 'envase_antes': env_actual_row[1],
+                              'envase_nuevo': envase, 'accion': 'UPDATE'})
+        else:
+            try:
+                cur.execute(
+                    """INSERT INTO sku_mee_config
+                         (sku_codigo, mee_codigo, componente_tipo, cantidad_por_unidad, aplica)
+                       VALUES (?, ?, 'envase', 1, 1)""",
+                    (sku, envase))
+                afectados.append({'sku': sku, 'envase_antes': '',
+                                  'envase_nuevo': envase, 'accion': 'INSERT'})
+            except Exception:
+                pass
+    # audit_log
+    try:
+        from audit_helpers import audit_log as _al
+        _al(cur, usuario=user, accion='ENVASE_DEFAULT_GLOBAL_PRODUCTO',
+            tabla='sku_mee_config', registro_id=lote_id,
+            despues={'producto': producto, 'envase_nuevo': envase,
+                      'skus_afectados': len(afectados), 'detalle': afectados[:5]})
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({
+        'ok': True, 'producto': producto, 'envase_default_nuevo': envase,
+        'skus_afectados': len(afectados), 'detalle': afectados,
+        'mensaje': f'✓ Envase default de {producto} cambiado a {envase} en {len(afectados)} SKU(s) · futuros lotes lo usan automático',
+    })
+
+
+@bp.route('/api/programacion/lote/<int:lote_id>/envase-propagar-futuros', methods=['POST'])
+def propagar_envase_a_futuros(lote_id):
+    """Opción C · aplica el envase override del lote a TODOS los lotes
+    FUTUROS del mismo producto que aún no iniciaron · sin tocar el
+    default global (sku_mee_config queda igual).
+
+    Útil cuando: el cambio aplica solo a los próximos N lotes pendientes
+    pero el default permanente del producto sigue siendo otro.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    user = session.get('compras_user', '')
+    conn = get_db(); cur = conn.cursor()
+    lote = cur.execute(
+        "SELECT id, producto, fecha_programada, COALESCE(envase_codigo_override,'') "
+        "FROM produccion_programada WHERE id = ?", (lote_id,)).fetchone()
+    if not lote:
+        return jsonify({'error': 'Lote no existe'}), 404
+    envase = (lote[3] or '').strip().upper()
+    if not envase:
+        return jsonify({'error': 'Lote no tiene envase override · setealo primero'}), 400
+    producto = (lote[1] or '').strip()
+    fecha = (lote[2] or '')[:10]
+    if not producto or not fecha:
+        return jsonify({'error': 'Lote sin producto o fecha'}), 400
+    # Validar envase
+    try:
+        ok = cur.execute(
+            "SELECT 1 FROM maestro_mee WHERE UPPER(TRIM(codigo)) = ?",
+            (envase,)).fetchone()
+        if not ok:
+            return jsonify({'error': f'Envase {envase} no existe'}), 400
+    except Exception:
+        pass
+    # Update lotes futuros · mismo producto · fecha > este · no iniciados
+    # · estado no terminal · excluye el propio lote
+    try:
+        cur.execute(
+            """UPDATE produccion_programada
+               SET envase_codigo_override = ?
+               WHERE UPPER(TRIM(producto)) = UPPER(TRIM(?))
+                 AND fecha_programada > ?
+                 AND id != ?
+                 AND inicio_real_at IS NULL
+                 AND fin_real_at IS NULL
+                 AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado')""",
+            (envase, producto, fecha, lote_id))
+        afectados = cur.rowcount or 0
+    except Exception as e:
+        return jsonify({'error': f'UPDATE fallo: {e}'}), 500
+    try:
+        from audit_helpers import audit_log as _al
+        _al(cur, usuario=user, accion='ENVASE_PROPAGAR_FUTUROS',
+            tabla='produccion_programada', registro_id=lote_id,
+            despues={'producto': producto, 'envase': envase,
+                      'desde_fecha': fecha, 'lotes_actualizados': afectados})
+    except Exception: pass
+    conn.commit()
+    return jsonify({
+        'ok': True, 'producto': producto, 'envase': envase,
+        'desde_fecha': fecha, 'lotes_actualizados': afectados,
+        'mensaje': f'✓ {afectados} lote(s) futuros de {producto} actualizados con envase {envase}',
+    })
+
+
 @bp.route('/api/programacion/lote/<int:lote_id>/plan-envasado/<int:pbl_id>', methods=['PATCH'])
 def patch_plan_envasado_b2b(lote_id, pbl_id):
     """Edita plan_envasado_uds y plan_envasado_notas de un cliente B2B
