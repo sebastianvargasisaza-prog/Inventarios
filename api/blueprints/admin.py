@@ -6176,6 +6176,109 @@ def admin_mps_abreviaturas_fix():
     })
 
 
+@bp.route("/admin/migraciones-pg", methods=["GET"])
+def admin_migraciones_pg_page():
+    """UI · pagina HTML para aplicar migraciones pendientes en PG con 1 click.
+
+    Hotfix 27-may-2026 AM · varios endpoints marketing (mig 185-191) fallaban
+    porque la mig nunca se aplicó en PG. Esta página facilita el deploy de
+    migraciones pendientes sin tener que armar curl con CSRF token + cookie.
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    return Response(_MIGRACIONES_PG_HTML, mimetype="text/html")
+
+
+_MIGRACIONES_PG_HTML = r"""<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8">
+<title>Aplicar Migraciones PG · EOS</title>
+<style>
+body{font-family:system-ui,-apple-system,sans-serif;background:#0f172a;color:#f1f5f9;margin:0;padding:30px;max-width:980px;margin:auto}
+h1{color:#fff;font-size:22px;margin:0 0 6px}
+.sub{color:#94a3b8;font-size:13px;margin-bottom:20px}
+.card{background:#1e293b;border:1px solid #334155;border-radius:10px;padding:18px;margin-bottom:14px}
+.btn{padding:10px 16px;border-radius:8px;border:none;font-weight:700;font-size:13px;cursor:pointer}
+.btn-primary{background:#7c3aed;color:#fff}
+.btn-danger{background:#dc2626;color:#fff}
+.btn-outline{background:transparent;color:#94a3b8;border:1px solid #475569}
+.warn{background:#78350f;color:#fcd34d;padding:10px 14px;border-radius:8px;font-size:13px;margin:12px 0}
+.ok{background:#064e3b;color:#34d399;padding:10px 14px;border-radius:8px;font-size:13px;margin:12px 0}
+.err{background:#7f1d1d;color:#fca5a5;padding:10px 14px;border-radius:8px;font-size:13px;margin:12px 0}
+pre{background:#020617;color:#94a3b8;padding:14px;border-radius:8px;font-size:11px;overflow-x:auto;max-height:400px}
+table{width:100%;border-collapse:collapse;margin-top:10px;font-size:12px}
+th,td{padding:6px 10px;text-align:left;border-bottom:1px solid #334155}
+th{color:#94a3b8;font-weight:700;font-size:11px;text-transform:uppercase}
+code{background:#020617;color:#fbbf24;padding:1px 5px;border-radius:3px;font-size:11px}
+</style></head><body>
+<h1>🗄 Aplicar Migraciones PostgreSQL</h1>
+<p class="sub">init_db() salta migraciones en modo PG · este endpoint las aplica manualmente al deploy. Idempotente (errores benignos se silencian) · seguro re-ejecutar.</p>
+
+<div class="card">
+  <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
+    <button class="btn btn-outline" onclick="cargarPendientes()">↻ Cargar pendientes (dry-run)</button>
+    <button id="btn-aplicar" class="btn btn-primary" onclick="aplicarTodas()" disabled>✓ Aplicar todas pendientes</button>
+  </div>
+  <div id="resultado"></div>
+</div>
+
+<script>
+function _csrf(){var m=document.cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/);return m?decodeURIComponent(m[1]):''}
+function esc(s){var d=document.createElement('div');d.textContent=s==null?'':String(s);return d.innerHTML}
+
+async function cargarPendientes(){
+  var box=document.getElementById('resultado');
+  box.innerHTML='<p style="color:#94a3b8">Cargando…</p>';
+  try{
+    var r=await fetch('/api/admin/aplicar-migraciones-pg',{credentials:'same-origin'});
+    var d=await r.json();
+    if(!r.ok){box.innerHTML='<div class="err">Error '+r.status+': '+esc(d.error||'')+'</div>';return}
+    var pend=d.pendientes||[];
+    if(!pend.length){
+      box.innerHTML='<div class="ok">✓ Todas las migraciones están aplicadas · nada pendiente</div>';
+      document.getElementById('btn-aplicar').disabled=true;
+      return
+    }
+    var html='<div class="warn">⚠ <b>'+pend.length+'</b> migración(es) pendiente(s) en PG</div>';
+    html+='<table><thead><tr><th>v</th><th>Descripción</th><th>Stmts</th></tr></thead><tbody>';
+    pend.forEach(function(p){
+      html+='<tr><td><code>'+p.version+'</code></td><td>'+esc(p.description)+'</td><td>'+(p.stmts_traducidos?p.stmts_traducidos.length:0)+'</td></tr>'
+    });
+    html+='</tbody></table>';
+    box.innerHTML=html;
+    document.getElementById('btn-aplicar').disabled=false;
+  }catch(e){box.innerHTML='<div class="err">Error red: '+esc(e.message)+'</div>'}
+}
+
+async function aplicarTodas(){
+  if(!confirm('¿Aplicar TODAS las migraciones pendientes en PostgreSQL?\n\nIdempotente · seguro re-ejecutar · pero puede tomar varios segundos.')) return;
+  var box=document.getElementById('resultado');
+  box.innerHTML='<p style="color:#94a3b8">Aplicando… (puede tomar 10-30s)</p>';
+  try{
+    var r=await fetch('/api/admin/aplicar-migraciones-pg',{
+      method:'POST',credentials:'same-origin',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':_csrf()},
+      body:JSON.stringify({aplicar:true})
+    });
+    var d=await r.json();
+    var html='';
+    if(r.ok){
+      html+='<div class="ok">✓ '+esc(d.mensaje||'aplicado')+' · aplicadas='+(d.aplicadas||0)+' · errores='+(d.errores?d.errores.length:0)+'</div>';
+    }else{
+      html+='<div class="err">Error '+r.status+': '+esc(d.error||'')+'</div>';
+    }
+    html+='<h3 style="color:#94a3b8;font-size:13px;margin-top:18px">Respuesta completa:</h3>';
+    html+='<pre>'+esc(JSON.stringify(d,null,2))+'</pre>';
+    box.innerHTML=html;
+  }catch(e){box.innerHTML='<div class="err">Error red: '+esc(e.message)+'</div>'}
+}
+
+// Auto-cargar al abrir
+cargarPendientes();
+</script>
+</body></html>"""
+
+
 @bp.route("/api/admin/aplicar-migraciones-pg", methods=["GET", "POST"])
 def admin_aplicar_migraciones_pg():
     """Aplica migraciones SQLite pendientes a PostgreSQL de producción.
