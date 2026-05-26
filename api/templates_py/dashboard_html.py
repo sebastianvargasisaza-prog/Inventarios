@@ -1855,15 +1855,22 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
             <option value="run_rate">Run-rate (+ velocidad ventas)</option>
           </select>
         </label>
-        <label style="color:#475569;display:flex;align-items:center;gap:4px">
-          <input type="checkbox" id="abast-mp" checked> MPs
-        </label>
-        <label style="color:#475569;display:flex;align-items:center;gap:4px">
-          <input type="checkbox" id="abast-mee" checked> MEE
-        </label>
+        <!-- Sebastián 25-may-2026 PM · checkboxes MP/MEE removidos · ahora
+             dos sub-pestañas separadas abajo. Inputs hidden para preservar
+             la lógica JS que lee `.checked` sin tener que cambiar la API. -->
+        <input type="hidden" id="abast-mp" checked>
+        <input type="hidden" id="abast-mee" checked>
         <button onclick="cargarAbastecimiento()" style="background:#7c3aed;color:#fff;border:none;padding:7px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">↻ Recargar</button>
         <a href="/admin/llenar-calendario" target="_blank" style="background:#16a34a;color:#fff;border:none;padding:7px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer;text-decoration:none;display:inline-block" title="Llenar el calendario con Sugeridas a 365 días · si Abastecimiento muestra cifras bajas es porque el calendario está corto">🚀 Llenar calendario 365d</a>
       </div>
+    </div>
+
+    <!-- Sub-pestañas MP / MEE · Sebastián 25-may-2026 PM "sacalo aparte como
+         dos sub pestañas". Default MP (más usado · más SKUs). -->
+    <div id="abast-tipo-tabs" style="display:flex;gap:0;margin-bottom:14px;border-bottom:2px solid #e2e8f0">
+      <button id="abast-stab-mp" onclick="setAbastTipo('mp')" style="padding:10px 22px;border:none;background:linear-gradient(135deg,#7c3aed,#5b21b6);color:#fff;font-size:13px;font-weight:800;cursor:pointer;border-radius:8px 8px 0 0;letter-spacing:.3px;box-shadow:0 -2px 6px rgba(124,58,237,.2);position:relative;top:2px">🧪 Materia Prima (MP)</button>
+      <button id="abast-stab-mee" onclick="setAbastTipo('mee')" style="padding:10px 22px;border:none;background:#fff;color:#64748b;font-size:13px;font-weight:700;cursor:pointer;border:1px solid #e2e8f0;border-bottom:none;border-radius:8px 8px 0 0;margin-left:4px">📦 Material de Envase (MEE)</button>
+      <span id="abast-tipo-info" style="margin-left:auto;font-size:11px;color:#64748b;align-self:center"></span>
     </div>
     <!-- Selector horizonte foco · Sebastián 24-may-2026 noche · "abastecimiento
          debe darme la opcion de 15 dias, 30, 60 90, 120, 180, 360 todos esas
@@ -20366,6 +20373,31 @@ async function ckMarcar(itemId, estado){
       tipo: 'TODOS',
     },
     cubrir_dias: 30,     // horizonte sugerido como cantidad a pedir
+    tipoActivo: 'mp',    // Sebastián 25-may-2026 PM · sub-pestaña activa
+  };
+
+  // Sebastián 25-may-2026 PM · cambia entre sub-pestañas MP/MEE.
+  // Filtra los items renderizados sin reconsultar el backend.
+  window.setAbastTipo = function(tipo) {
+    if (tipo !== 'mp' && tipo !== 'mee') return;
+    window._ABA_STATE.tipoActivo = tipo;
+    // Toggle visual de los tabs
+    const tabMp = document.getElementById('abast-stab-mp');
+    const tabMee = document.getElementById('abast-stab-mee');
+    if (tabMp && tabMee) {
+      const activo = 'padding:10px 22px;border:none;background:linear-gradient(135deg,#7c3aed,#5b21b6);color:#fff;font-size:13px;font-weight:800;cursor:pointer;border-radius:8px 8px 0 0;letter-spacing:.3px;box-shadow:0 -2px 6px rgba(124,58,237,.2);position:relative;top:2px';
+      const inactivo = 'padding:10px 22px;border:none;background:#fff;color:#64748b;font-size:13px;font-weight:700;cursor:pointer;border:1px solid #e2e8f0;border-bottom:none;border-radius:8px 8px 0 0;margin-left:4px';
+      if (tipo === 'mp') {
+        tabMp.style.cssText = activo;
+        tabMee.style.cssText = inactivo;
+      } else {
+        tabMp.style.cssText = inactivo;
+        tabMee.style.cssText = activo;
+      }
+    }
+    // Reset filtros para no arrastrar selección del otro tipo
+    window._ABA_STATE.seleccionados = {};
+    renderTablaAbast();
   };
 
   function _fmtAba(n) {
@@ -20579,13 +20611,27 @@ async function ckMarcar(itemId, estado){
   function renderTablaAbast() {
     const div = document.getElementById('abast-contenido');
     const st = window._ABA_STATE;
-    const allItems = st.items || [];
+    // Sebastián 25-may-2026 PM · filtrar por sub-pestaña activa (mp/mee)
+    const tipoAct = st.tipoActivo || 'mp';
+    const allItemsRaw = st.items || [];
+    const allItems = allItemsRaw.filter(i => (i.tipo || '').toLowerCase() === tipoAct);
+    // Contadores para info en el header
+    const nMp = allItemsRaw.filter(i => (i.tipo||'').toLowerCase() === 'mp').length;
+    const nMee = allItemsRaw.filter(i => (i.tipo||'').toLowerCase() === 'mee').length;
+    const infoEl = document.getElementById('abast-tipo-info');
+    if (infoEl) {
+      infoEl.innerHTML = '🧪 <strong>' + nMp + '</strong> MP &middot; 📦 <strong>' + nMee + '</strong> MEE con déficit';
+    }
     if (!allItems.length) {
-      div.innerHTML = '<div style="text-align:center;color:#16a34a;padding:30px;background:#f0fdf4;border-radius:8px">✓ Sin déficits detectados · stock + pendiente cubre las producciones programadas</div>';
+      const otroTipoLbl = tipoAct === 'mp' ? 'MEE' : 'MP';
+      const otroN = tipoAct === 'mp' ? nMee : nMp;
+      let msg = '✓ Sin déficits de ' + (tipoAct === 'mp' ? 'Materia Prima' : 'Material de Envase') + ' · stock + pendiente cubre las producciones';
+      if (otroN > 0) msg += '<br><span style="font-size:11px;margin-top:8px;display:inline-block">💡 Hay <strong>' + otroN + '</strong> ' + otroTipoLbl + ' con déficit · clickeá la otra pestaña arriba</span>';
+      div.innerHTML = '<div style="text-align:center;color:#15803d;padding:30px;background:#f0fdf4;border-radius:8px;border:1px solid #bbf7d0">' + msg + '</div>';
       return;
     }
 
-    // Filtros disponibles
+    // Filtros disponibles (solo del tipo activo)
     const proveedores = Array.from(new Set(allItems.map(i => i.proveedor_sugerido || '(sin proveedor)'))).sort();
     const urgencias = Array.from(new Set(allItems.map(i => i.urgencia))).sort();
     const items = _aplicarFiltros(allItems);
