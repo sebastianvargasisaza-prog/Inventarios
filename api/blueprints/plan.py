@@ -7466,6 +7466,10 @@ def admin_sub_skus_pagina():
 <div class="card">
   <h1>🎨 Sub-SKUs · gestión visual de tonos y regalos</h1>
   <p style="color:#475569;font-size:13px">Editá inline cada sub-SKU. <strong>Regalo</strong>: no cuenta para velocidad de ventas. <strong>Tono</strong>: etiqueta visible (ROSA, DURAZNO, etc.). <strong>ml</strong>: volumen real por unidad (afecta el cálculo de envases en Abastecimiento).</p>
+  <div style="background:#ecfdf5;border:1px solid #86efac;color:#065f46;padding:8px 12px;border-radius:6px;font-size:12px;margin-top:8px">
+    💾 <strong>Guardado automático</strong>: cada cambio se persiste al hacer click fuera del campo (no hay botón "Guardar"). El input se pone <span style="background:#bbf7d0;padding:1px 6px;border-radius:3px">verde ✓</span> 1 seg cuando se confirma.
+  </div>
+  <div id="stats" style="margin-top:10px;font-size:12px"></div>
   <div class="filtros">
     <input id="q" placeholder="🔍 Filtrar por producto o SKU…" oninput="render()">
     <select id="filtro-tipo" onchange="render()">
@@ -7518,6 +7522,23 @@ function render(){
       return p.skus.some(s=>s.sku.toLowerCase().indexOf(q)>=0 || (s.tono_label||'').toLowerCase().indexOf(q)>=0);
     });
   }
+  // Stats globales sobre TODOS los productos (no filtrados)
+  let totalSku=0, conMl=0, conTono=0;
+  (DATA.productos||[]).forEach(p=>{
+    p.skus.forEach(s=>{
+      totalSku++;
+      if(s.ml_unidad && s.ml_unidad>0) conMl++;
+      if(s.tono_label && s.tono_label.trim()) conTono++;
+    });
+  });
+  const pctMl=totalSku?Math.round(conMl*100/totalSku):0;
+  const pctTono=totalSku?Math.round(conTono*100/totalSku):0;
+  const statsEl=document.getElementById('stats');
+  if(statsEl){
+    statsEl.innerHTML=
+      '<span style="background:'+(pctMl>=95?'#dcfce7':pctMl>=50?'#fef3c7':'#fee2e2')+';color:#0f172a;padding:4px 10px;border-radius:6px;font-weight:700">📏 '+conMl+' / '+totalSku+' con tamaño ('+pctMl+'%)</span> '+
+      '<span style="background:'+(pctTono>=95?'#dcfce7':pctTono>=50?'#fef3c7':'#fee2e2')+';color:#0f172a;padding:4px 10px;border-radius:6px;font-weight:700;margin-left:8px">🎨 '+conTono+' / '+totalSku+' con tono ('+pctTono+'%)</span>';
+  }
   const cont=document.getElementById('lista');
   if(!prods.length){cont.innerHTML='<p style="color:#94a3b8;text-align:center;padding:20px">Sin resultados</p>';return}
   cont.innerHTML=prods.map((p,idx)=>renderProducto(p,idx)).join('');
@@ -7539,10 +7560,10 @@ function renderProducto(p, idx){
   p.skus.forEach(s=>{
     html+='<tr>'
       +'<td style="font-family:ui-monospace;font-weight:600">'+esc(s.sku)+'</td>'
-      +'<td style="text-align:center"><input type="checkbox" class="chk" '+(s.activo?'checked':'')+' onchange="patchSku(\\''+esc(s.sku)+'\\',{activo:this.checked})"></td>'
-      +'<td style="text-align:center"><input type="checkbox" class="chk" '+(s.es_regalo?'checked':'')+' onchange="patchSku(\\''+esc(s.sku)+'\\',{es_regalo:this.checked})"></td>'
-      +'<td><input class="inp-sku" value="'+esc(s.tono_label||'')+'" placeholder="ROSA, DURAZNO, BORGOÑA…" onblur="if(this.value!=this.defaultValue) patchSku(\\''+esc(s.sku)+'\\',{tono_label:this.value})"></td>'
-      +'<td style="text-align:right"><input class="inp-sku" type="number" min="0" max="5000" step="0.1" value="'+(s.ml_unidad||0)+'" style="text-align:right;font-family:ui-monospace" onblur="if(parseFloat(this.value)!=parseFloat(this.defaultValue)) patchSku(\\''+esc(s.sku)+'\\',{ml_unidad:parseFloat(this.value)})"></td>'
+      +'<td style="text-align:center"><input type="checkbox" class="chk" '+(s.activo?'checked':'')+' onchange="patchSku(\\''+esc(s.sku)+'\\',{activo:this.checked}, this)"></td>'
+      +'<td style="text-align:center"><input type="checkbox" class="chk" '+(s.es_regalo?'checked':'')+' onchange="patchSku(\\''+esc(s.sku)+'\\',{es_regalo:this.checked}, this)"></td>'
+      +'<td><input class="inp-sku" value="'+esc(s.tono_label||'')+'" placeholder="ROSA, DURAZNO, BORGOÑA…" onblur="if(this.value!=this.defaultValue) patchSku(\\''+esc(s.sku)+'\\',{tono_label:this.value}, this)"></td>'
+      +'<td style="text-align:right"><input class="inp-sku" type="number" min="0" max="5000" step="0.1" value="'+(s.ml_unidad||0)+'" style="text-align:right;font-family:ui-monospace" onblur="if(parseFloat(this.value)!=parseFloat(this.defaultValue)) patchSku(\\''+esc(s.sku)+'\\',{ml_unidad:parseFloat(this.value)}, this)"></td>'
       +'</tr>';
   });
   html+='</tbody></table>';
@@ -7560,15 +7581,35 @@ function toggle(idx){
   }
 }
 
-async function patchSku(sku, patch){
+async function patchSku(sku, patch, inputEl){
+  // Mientras guarda · borde amarillo
+  if(inputEl){
+    inputEl.style.transition='background 0.3s,border-color 0.3s';
+    inputEl.style.borderColor='#f59e0b';
+    inputEl.style.background='#fffbeb';
+  }
   try{
     const r=await fetch('/api/admin/sub-skus/'+encodeURIComponent(sku),{
       method:'PATCH', headers:{'Content-Type':'application/json'},
       body:JSON.stringify(patch),
     });
     const d=await r.json();
-    if(!r.ok){msg('Error: '+(d.error||r.status));return}
-    msg('✓ '+sku+' actualizado',true);
+    if(!r.ok){
+      msg('✗ Error '+sku+': '+(d.error||r.status));
+      if(inputEl){ inputEl.style.borderColor='#dc2626'; inputEl.style.background='#fef2f2'; }
+      return;
+    }
+    msg('✓ '+sku+' guardado',true);
+    if(inputEl){
+      inputEl.style.borderColor='#16a34a';
+      inputEl.style.background='#dcfce7';
+      // Reset el defaultValue para que onblur no dispare otra vez si el user vuelve a hacer focus
+      if('value' in inputEl) inputEl.defaultValue=inputEl.value;
+      setTimeout(()=>{
+        inputEl.style.borderColor='';
+        inputEl.style.background='';
+      },1200);
+    }
     // Refrescar la data en memoria sin recargar todo
     const k=Object.keys(patch)[0];
     DATA.productos.forEach(p=>{
@@ -7578,7 +7619,29 @@ async function patchSku(sku, patch){
         }
       });
     });
-  }catch(e){msg('Error red: '+e.message)}
+    // Recalcular stats sin re-renderizar toda la lista
+    try{
+      let totalSku=0, conMl=0, conTono=0;
+      (DATA.productos||[]).forEach(p=>{
+        p.skus.forEach(s=>{
+          totalSku++;
+          if(s.ml_unidad && s.ml_unidad>0) conMl++;
+          if(s.tono_label && s.tono_label.trim()) conTono++;
+        });
+      });
+      const pctMl=totalSku?Math.round(conMl*100/totalSku):0;
+      const pctTono=totalSku?Math.round(conTono*100/totalSku):0;
+      const statsEl=document.getElementById('stats');
+      if(statsEl){
+        statsEl.innerHTML=
+          '<span style="background:'+(pctMl>=95?'#dcfce7':pctMl>=50?'#fef3c7':'#fee2e2')+';color:#0f172a;padding:4px 10px;border-radius:6px;font-weight:700">📏 '+conMl+' / '+totalSku+' con tamaño ('+pctMl+'%)</span> '+
+          '<span style="background:'+(pctTono>=95?'#dcfce7':pctTono>=50?'#fef3c7':'#fee2e2')+';color:#0f172a;padding:4px 10px;border-radius:6px;font-weight:700;margin-left:8px">🎨 '+conTono+' / '+totalSku+' con tono ('+pctTono+'%)</span>';
+      }
+    }catch(_){}
+  }catch(e){
+    msg('✗ Error red: '+e.message);
+    if(inputEl){ inputEl.style.borderColor='#dc2626'; inputEl.style.background='#fef2f2'; }
+  }
 }
 
 function esc(s){const d=document.createElement('div');d.textContent=s||'';return d.innerHTML}
