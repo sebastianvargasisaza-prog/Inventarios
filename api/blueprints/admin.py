@@ -2680,10 +2680,22 @@ def admin_reset_password():
                 changed_at    = excluded.changed_at,
                 changed_by    = excluded.changed_by
         """, (target, new_hash, admin_user))
+        # FIX 27-may (P2) · bumpear session_version invalida sesiones activas +
+        # cookies mfa_trusted del usuario · sin esto, password resetada NO
+        # echaba al user de su sesión actual (riesgo si la admin lo hace para
+        # un compromiso de cuenta · atacante seguía logueado hasta el TTL).
+        try:
+            cur.execute(
+                "UPDATE users_passwords SET session_version = COALESCE(session_version,1)+1 "
+                "WHERE username=?",
+                (target,)
+            )
+        except Exception:
+            pass  # columna session_version puede no existir en instancias muy viejas
         try:
             audit_log(cur, usuario=admin_user, accion='RESET_PASSWORD',
                       tabla='users_passwords', registro_id=target,
-                      detalle=f"Admin {admin_user} reseteó password de {target}")
+                      detalle=f"Admin {admin_user} reseteó password de {target} · session_version bumpeado")
         except Exception:
             pass  # security event ya queda · audit es defense-in-depth
         conn.commit()

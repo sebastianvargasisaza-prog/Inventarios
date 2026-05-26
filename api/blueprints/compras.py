@@ -207,13 +207,18 @@ def _evaluar_auto_aprobacion(c, proveedor, monto_total, items):
     # Canceladas/Rechazadas/Borrador · un proveedor con 3 OCs todas canceladas
     # quedaba como "recurrente" y auto-aprobado · ahora solo cuenta OCs que
     # realmente avanzaron (Autorizada/Parcial/Recibida/Pagada)
+    # PG-FIX 27-may · `date('now','-5h','-90d')` multi-arg rompe en PostgreSQL
+    # · pg_compat.translate_ddl solo soporta date() mono-arg. Calcular cutoff
+    # en Python (Bogotá UTC-5) y pasarlo como param `?`.
+    from datetime import datetime as _dt90, timedelta as _td90
+    _cutoff_90d = (_dt90.utcnow() - _td90(hours=5) - _td90(days=90)).date().isoformat()
     try:
         r = c.execute(
             """SELECT COUNT(*) FROM ordenes_compra
                WHERE LOWER(TRIM(proveedor))=LOWER(TRIM(?))
                  AND estado IN ('Autorizada','Parcial','Recibida','Pagada')
-                 AND date(fecha) >= date('now','-5 hours','-90 days')""",
-            (proveedor,),
+                 AND date(fecha) >= ?""",
+            (proveedor, _cutoff_90d),
         ).fetchone()
         ocs_90d = int((r or [0])[0] or 0)
     except Exception:
@@ -245,8 +250,8 @@ def _evaluar_auto_aprobacion(c, proveedor, monto_total, items):
                 """SELECT AVG(precio_unitario)
                    FROM precios_mp_historico
                    WHERE codigo_mp=?
-                     AND date(fecha) >= date('now','-5 hours','-90 days')""",
-                (cod,),
+                     AND date(fecha) >= ?""",
+                (cod, _cutoff_90d),
             ).fetchone()
             prom = float((r or [0])[0] or 0)
         except Exception:
@@ -559,6 +564,12 @@ def dashboard_stats():
     #   PROXIMO: 31-90 dias
     estados = {'VENCIDO': 0, 'CRITICO': 0, 'PROXIMO': 0}
     try:
+        # PG-FIX 27-may · date('now','-5h','+Nd') multi-arg falla en PG.
+        # Calcular cutoffs Bogotá UTC-5 en Python y pasar como params.
+        from datetime import datetime as _dtL, timedelta as _tdL
+        _hoy = (_dtL.utcnow() - _tdL(hours=5)).date().isoformat()
+        _d30 = (_dtL.utcnow() - _tdL(hours=5) + _tdL(days=30)).date().isoformat()
+        _d90 = (_dtL.utcnow() - _tdL(hours=5) + _tdL(days=90)).date().isoformat()
         c.execute(f"""
             WITH lote_stock AS (
               SELECT material_id, lote, MIN(fecha_vencimiento) as venc,
@@ -569,11 +580,11 @@ def dashboard_stats():
               HAVING stock_g > 0
             )
             SELECT
-              SUM(CASE WHEN venc < date('now', '-5 hours') THEN 1 ELSE 0 END) as vencidos,
-              SUM(CASE WHEN venc >= date('now', '-5 hours') AND venc <= date('now', '-5 hours', '+30 days') THEN 1 ELSE 0 END) as criticos,
-              SUM(CASE WHEN venc > date('now', '-5 hours', '+30 days') AND venc <= date('now', '-5 hours', '+90 days') THEN 1 ELSE 0 END) as proximos
+              SUM(CASE WHEN venc < ? THEN 1 ELSE 0 END) as vencidos,
+              SUM(CASE WHEN venc >= ? AND venc <= ? THEN 1 ELSE 0 END) as criticos,
+              SUM(CASE WHEN venc > ? AND venc <= ? THEN 1 ELSE 0 END) as proximos
             FROM lote_stock
-        """)
+        """, (_hoy, _hoy, _d30, _d30, _d90))
         r = c.fetchone()
         if r:
             estados = {'VENCIDO': r[0] or 0, 'CRITICO': r[1] or 0, 'PROXIMO': r[2] or 0}
@@ -4583,13 +4594,33 @@ def aprobar_solicitud_influencer(numero):
             "SELECT 1 FROM pagos_influencers WHERE numero_oc=?", (oc_num,)
         ).fetchone()
         if not existing_pi:
-            cur.execute("""
-                INSERT INTO pagos_influencers
-                (influencer_id, influencer_nombre, valor, fecha, estado,
-                 concepto, numero_oc)
-                VALUES (?, ?, ?, date('now', '-5 hours'), 'Pendiente', ?, ?)
-            """, (infl_id, benef_nombre, int(monto),
-                  obs_orig[:200] if obs_orig else 'Cuenta de cobro', oc_num))
+            # FIX 27-may · agregar fecha_contenido + vence_pago_at (mig 195) ·
+            # default fecha_contenido=hoy si la SC viene del aprobar-flow donde
+            # no se preguntó. vence = +30d (promesa de pago Sebastián 27-may).
+            from datetime import datetime as _dtIF, timedelta as _tdIF
+            _base_fc = (_dtIF.utcnow() - _tdIF(hours=5)).date()
+            _fc = _base_fc.isoformat()
+            _vence = (_base_fc + _tdIF(days=30)).isoformat()
+            # FIX 27-may · int(monto) trunca decimales (P1) · round preserva centavos
+            _monto_int = round(float(monto or 0))
+            try:
+                cur.execute("""
+                    INSERT INTO pagos_influencers
+                    (influencer_id, influencer_nombre, valor, fecha, estado,
+                     concepto, numero_oc, fecha_contenido, vence_pago_at)
+                    VALUES (?, ?, ?, date('now', '-5 hours'), 'Pendiente', ?, ?, ?, ?)
+                """, (infl_id, benef_nombre, _monto_int,
+                      obs_orig[:200] if obs_orig else 'Cuenta de cobro',
+                      oc_num, _fc, _vence))
+            except Exception:
+                # Fallback si mig 195 aún no aplicada en esta instancia PG
+                cur.execute("""
+                    INSERT INTO pagos_influencers
+                    (influencer_id, influencer_nombre, valor, fecha, estado,
+                     concepto, numero_oc)
+                    VALUES (?, ?, ?, date('now', '-5 hours'), 'Pendiente', ?, ?)
+                """, (infl_id, benef_nombre, _monto_int,
+                      obs_orig[:200] if obs_orig else 'Cuenta de cobro', oc_num))
     except sqlite3.OperationalError:
         pass  # tabla puede no existir en instancias muy viejas
     try:
@@ -6007,19 +6038,27 @@ def pagar_oc(numero_oc):
             'codigo': 'FACTURA_DUPLICADA'
         }), 409
 
-    # Calcular estado actualizado de la OC según la suma de pagos
-    cur.execute("SELECT COALESCE(SUM(monto), 0) FROM pagos_oc WHERE numero_oc=?", (numero_oc,))
+    # FIX 27-may (P2 race) · SELECT + UPDATE no eran atómicos. Si 2 pagos
+    # concurrentes llegaban en ventana corta, total_pagado leído quedaba stale
+    # y la OC podía marcarse 'Parcial' cuando ya estaba 'Pagada' o viceversa.
+    # CAS: el UPDATE re-calcula SUM(monto) inline dentro del CASE · una sola
+    # transacción · sin lectura externa stale.
+    cur.execute("""
+        UPDATE ordenes_compra SET
+            estado = CASE WHEN (
+                SELECT COALESCE(SUM(monto),0) FROM pagos_oc WHERE numero_oc=?
+            ) >= ? - 0.01 THEN 'Pagada' ELSE 'Parcial' END,
+            pagado_por=?, fecha_pago=?, medio_pago=?, comprobante_imagen=?
+        WHERE numero_oc=?
+    """, (numero_oc, valor_total_oc,
+          usuario_actual, fecha_pago, medio,
+          comprobante_imagen, numero_oc))
+    # Releer el estado para el audit + return
+    cur.execute("SELECT estado FROM ordenes_compra WHERE numero_oc=?", (numero_oc,))
+    _row_est = cur.fetchone()
+    nuevo_estado = (_row_est[0] if _row_est else 'Parcial') or 'Parcial'
+    cur.execute("SELECT COALESCE(SUM(monto),0) FROM pagos_oc WHERE numero_oc=?", (numero_oc,))
     total_pagado = float(cur.fetchone()[0] or 0)
-    if total_pagado >= valor_total_oc - 0.01:  # tolerance redondeo
-        nuevo_estado = 'Pagada'
-    else:
-        nuevo_estado = 'Parcial'
-
-    cur.execute("""UPDATE ordenes_compra SET estado=?, pagado_por=?, fecha_pago=?,
-                       medio_pago=?, comprobante_imagen=?
-                   WHERE numero_oc=?""",
-                (nuevo_estado, usuario_actual, fecha_pago, medio,
-                 comprobante_imagen, numero_oc))
     # Audit log INVIMA · Resolución 2214/2021 · pago de OC es operación financiera regulada
     try:
         audit_log(cur, usuario=usuario_actual, accion='PAGAR_OC',
@@ -6126,12 +6165,27 @@ def pagar_oc(numero_oc):
                 (inf_id, inf_name, numero_oc)
             )
         elif is_influencer_cat:
-            # No hay fila pero la categoría dice influencer → crear Pagada
-            cur.execute("""
-                INSERT INTO pagos_influencers
-                (influencer_id, influencer_nombre, valor, fecha, estado, concepto, numero_oc)
-                VALUES (?,?,?,date('now', '-5 hours'),'Pagada',?,?)
-            """, (inf_id, inf_name, monto, f'Pago OC {numero_oc}', numero_oc))
+            # No hay fila pero la categoría dice influencer → crear Pagada.
+            # FIX 27-may · setear fecha_contenido + vence_pago_at (mig 195)
+            # incluso para Pagada · permite reportes históricos correctos.
+            from datetime import datetime as _dtPI, timedelta as _tdPI
+            _base_pi = (_dtPI.utcnow() - _tdPI(hours=5)).date()
+            _fc_pi = _base_pi.isoformat()
+            _vence_pi = (_base_pi + _tdPI(days=30)).isoformat()
+            try:
+                cur.execute("""
+                    INSERT INTO pagos_influencers
+                    (influencer_id, influencer_nombre, valor, fecha, estado,
+                     concepto, numero_oc, fecha_contenido, vence_pago_at)
+                    VALUES (?,?,?,date('now', '-5 hours'),'Pagada',?,?,?,?)
+                """, (inf_id, inf_name, monto, f'Pago OC {numero_oc}',
+                       numero_oc, _fc_pi, _vence_pi))
+            except Exception:
+                cur.execute("""
+                    INSERT INTO pagos_influencers
+                    (influencer_id, influencer_nombre, valor, fecha, estado, concepto, numero_oc)
+                    VALUES (?,?,?,date('now', '-5 hours'),'Pagada',?,?)
+                """, (inf_id, inf_name, monto, f'Pago OC {numero_oc}', numero_oc))
     except Exception as _e:
         __import__('logging').getLogger('compras').warning(
             "sync pagos_influencers falló para OC %s: %s", numero_oc, _e

@@ -8311,15 +8311,34 @@ def admin_mee_marcar_huerfanos_inactivos():
             if r[0]: usados.add(r[0])
         for r in c.execute("SELECT DISTINCT UPPER(TRIM(mee_codigo_asignado)) FROM produccion_checklist WHERE COALESCE(mee_codigo_asignado,'') != ''").fetchall():
             if r[0]: usados.add(r[0])
+        # FIX 27-may (P1) · stock CANÓNICO = SUM(movimientos_mee) · NO cache.
+        # Antes: usaba maestro_mee.stock_actual (cache) → si drift estaba en 0
+        # marcaba Inactivo MEEs que SÍ tenían stock real → invisibilidad de stock.
         for r in c.execute(
-            "SELECT codigo, COALESCE(stock_actual,0) FROM maestro_mee WHERE COALESCE(estado,'Activo')='Activo'"
+            "SELECT codigo FROM maestro_mee WHERE COALESCE(estado,'Activo')='Activo'"
         ).fetchall():
             cod = r[0]
-            stock = float(r[1] or 0)
             if (cod or '').upper().strip() in usados:
                 continue
-            if preservar_con_stock and stock > 0:
-                continue
+            stock_real = 0.0
+            if preservar_con_stock:
+                # Stock real desde kardex MEE · Entrada=+, Salida=-, anulado excluído
+                try:
+                    s_row = c.execute(
+                        """SELECT COALESCE(SUM(CASE
+                              WHEN tipo='Entrada' THEN cantidad
+                              WHEN tipo='Salida'  THEN -cantidad
+                              WHEN tipo='Ajuste'  THEN cantidad
+                              ELSE 0 END),0)
+                           FROM movimientos_mee
+                           WHERE mee_codigo=? AND COALESCE(anulado,0)=0""",
+                        (cod,)
+                    ).fetchone()
+                    stock_real = float((s_row or [0])[0] or 0)
+                except Exception:
+                    stock_real = 0.0
+                if stock_real > 0:
+                    continue
             c.execute(
                 "UPDATE maestro_mee SET estado = 'Inactivo' WHERE codigo = ?",
                 (cod,),
