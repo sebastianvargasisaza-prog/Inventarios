@@ -2,12 +2,18 @@
 marketing.py — Blueprint módulo Marketing
 Campañas, Influencers, Contenido, Analytics, 5 Agentes IA internos
 """
+import logging
 import os
 import sqlite3, urllib.request
 import traceback
 import json
 from datetime import datetime, date, timedelta
 from flask import Blueprint, request, jsonify, session
+
+# Sebastián 25-may-2026 PM · audit P1 · log a nivel módulo · antes
+# referenciado en daemon como `log.error(...)` sin definir → NameError
+# silencioso en el except, daemon moría sin rastro.
+log = logging.getLogger('marketing')
 
 from config import DB_PATH, ADMIN_USERS, MARKETING_USERS, USER_EMAILS
 try:
@@ -1220,7 +1226,23 @@ def mkt_influencer_detail(iid):
                 c.execute("DELETE FROM marketing_influencers_metrics WHERE influencer_id=?", (iid,))
             except Exception:
                 pass
+            # Sebastián 25-may-2026 PM · audit P1 · snapshot antes del DELETE
+            # para audit_log (regulatorio · trazabilidad de pagos asociados)
+            try:
+                _snap = c.execute(
+                    "SELECT nombre, usuario_red, red_social, email FROM marketing_influencers WHERE id=?",
+                    (iid,)).fetchone()
+                _snap_dict = dict(_snap) if _snap else {}
+            except Exception:
+                _snap_dict = {}
             c.execute("DELETE FROM marketing_influencers WHERE id=?", (iid,))
+            try:
+                from audit_helpers import audit_log as _al
+                _al(c, usuario=u, accion='ELIMINAR_INFLUENCER',
+                    tabla='marketing_influencers', registro_id=iid,
+                    antes=_snap_dict,
+                    despues={'n_pagados_pagados': n_pagados, 'n_sols_pagadas': n_sols})
+            except Exception: pass
             conn.commit()
             return jsonify({"ok": True, "mensaje": "Influencer eliminado"})
     finally:
@@ -4192,7 +4214,9 @@ def _notificar_alertas_criticas(conn, agente, alertas):
 
 
 # ─── Background daemon: refresh diario de metrics + alertas ────────
-_marketing_metrics_thread_started = False
+# Sebastián 25-may-2026 PM · audit P1 fix · referencia al thread (no flag bool)
+# así el supervisor puede chequear is_alive() y relanzar si crashea.
+_marketing_metrics_thread = None
 
 
 def _start_marketing_metrics_loop():
@@ -4200,25 +4224,30 @@ def _start_marketing_metrics_loop():
       1. Refresca metrics de TODOS los influencers (Socialblade)
       2. Ejecuta los agentes críticos y dispara emails si detecta alertas
 
-    Sebastian (29-abr-2026): "agregar a un scheduler". Implementación lazy
+    Sebastián (29-abr-2026): "agregar a un scheduler". Implementación lazy
     sin necesidad de un cron externo (Render free tier no tiene cron).
+
+    Sebastián 25-may-2026 PM · audit P1:
+    - Antes: flag bool · si el thread crashea, flag sigue True → supervisor
+      cree que está corriendo · daemon zombie permanente
+    - Ahora: thread reference + is_alive() check · supervisor relanza
+    - + _adquirir_lock_cron('marketing_metrics', ttl_horas=24) para evitar
+      que 3 workers gunicorn corran el refresh simultáneo (3x scraping
+      socialblade del mismo influencer = ban + race UNIQUE pedidos_b2b_lote)
     """
-    global _marketing_metrics_thread_started
-    if _marketing_metrics_thread_started:
+    global _marketing_metrics_thread
+    # Idempotente · si ya corre (vivo), no relanzar
+    prev = _marketing_metrics_thread
+    if prev is not None and prev.is_alive():
         return
 
     import threading
     import time as _time
 
     def _loop():
-        # FIX · 22-may-2026 · Bug #6 audit Crons · catch errores import inicial
-        # · Antes: from index falla → loop zombie · flag True for life of process
-        # · Ahora: wrap completo + flag se resetea en except final
         try:
             from index import app as _app
         except Exception as _e:
-            global _marketing_metrics_thread_started
-            _marketing_metrics_thread_started = False
             log.error('[marketing-metrics] import inicial fallo · loop NO arrancó: %s', _e)
             return
         # Esperar 5 min al arranque para no chocar con migrations
@@ -4227,48 +4256,50 @@ def _start_marketing_metrics_loop():
             try:
                 with _app.app_context():
                     cn = _db()
-                    rows = cn.execute(
-                        "SELECT id, nombre, usuario_red FROM marketing_influencers "
-                        "WHERE COALESCE(usuario_red,'')!='' AND COALESCE(estado,'')!='Inactivo'"
-                    ).fetchall()
-                    for r in rows:
+                    # Sebastián 25-may-2026 PM · audit P1 · lock distribuido
+                    # para que solo 1 de los 3 workers ejecute el refresh
+                    # (evita 3x scraping + race en INSERT OR REPLACE de
+                    # marketing_influencers_metrics).
+                    lock_ok = False
+                    try:
+                        from blueprints.auto_plan_jobs import (
+                            _adquirir_lock_cron, _liberar_lock_cron)
+                        lock_ok = _adquirir_lock_cron(
+                            cn, 'marketing_metrics_refresh', ttl_horas=23)
+                    except Exception as _ex_lock:
+                        log.warning('marketing lock cron no disponible · sigo sin lock: %s', _ex_lock)
+                        lock_ok = True  # fallback · single-worker mode
+                    if not lock_ok:
+                        log.info('[marketing-metrics] otro worker tiene el lock · skip ciclo')
+                    else:
                         try:
-                            datos = _fetch_socialblade_data(r['usuario_red'])
-                            if datos:
-                                _save_metrics_snapshot(cn, r['id'], datos, 'socialblade')
-                        except Exception:
-                            pass
-                        _time.sleep(5)  # rate limit ético
-
-                    # Ejecutar agentes críticos y notificar
-                    for agente_key in ('alerta_stock', 'estacionalidad', 'roi'):
-                        try:
-                            # Llamar el endpoint internamente — más simple usar test_client
-                            with _app.test_client() as tc:
-                                # Skipeamos auth porque corremos en contexto interno
-                                pass
-                            # En su lugar, replicar la lógica mínima:
-                            # como no podemos llamar el endpoint sin sesión, calculamos
-                            # las alertas directo aquí — pero por simplicidad, dejamos
-                            # que sea Sebastián quien dispare manualmente.
-                            # NOTA: el endpoint /agentes/<key> requiere auth por seguridad.
-                            # El loop solo refresca metrics. Las alertas se disparan al
-                            # ejecutar manualmente desde tab Hoy (donde sí hay auth).
-                            pass
-                        except Exception:
-                            pass
+                            rows = cn.execute(
+                                "SELECT id, nombre, usuario_red FROM marketing_influencers "
+                                "WHERE COALESCE(usuario_red,'')!='' AND COALESCE(estado,'')!='Inactivo'"
+                            ).fetchall()
+                            for r in rows:
+                                try:
+                                    datos = _fetch_socialblade_data(r['usuario_red'])
+                                    if datos:
+                                        _save_metrics_snapshot(cn, r['id'], datos, 'socialblade')
+                                except Exception as _ex_inf:
+                                    log.warning('[marketing-metrics] socialblade %s fallo: %s',
+                                                  r['usuario_red'], _ex_inf)
+                                _time.sleep(5)  # rate limit ético
+                        finally:
+                            try:
+                                _liberar_lock_cron(cn, 'marketing_metrics_refresh')
+                            except Exception: pass
             except Exception as e:
-                import logging
-                logging.getLogger('marketing').warning("metrics loop error: %s", e)
+                log.warning("metrics loop error: %s", e)
             # Dormir 24h
             _time.sleep(24 * 3600)
 
     t = threading.Thread(target=_loop, daemon=True, name='marketing-metrics-loop')
     try:
         t.start()
-        _marketing_metrics_thread_started = True
+        _marketing_metrics_thread = t
     except Exception as _e:
-        _marketing_metrics_thread_started = False
         log.error('[marketing-metrics] thread.start fallo: %s', _e)
 
 

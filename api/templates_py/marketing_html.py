@@ -1922,7 +1922,7 @@ async function saveCampana() {
   if(!body.nombre) { showAlert('camp-alert','El nombre es obligatorio','error'); return; }
   const url = id ? `/api/marketing/campanas/${id}` : '/api/marketing/campanas';
   const method = id ? 'PUT' : 'POST';
-  const resp = await fetch(url,{method,headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const resp = await fetch(url,{method, headers:_csrfHdr(), credentials:'same-origin', body:JSON.stringify(body)});
   const data = await resp.json();
   if(data.ok||data.id) {
     closeModal('modal-campana');
@@ -2403,7 +2403,7 @@ async function saveInfluencer() {
   if(!body.nombre) { showAlert('inf-alert','El nombre es obligatorio','error'); return; }
   const url = id ? `/api/marketing/influencers/${id}` : '/api/marketing/influencers';
   const method = id?'PUT':'POST';
-  const resp = await fetch(url,{method,headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const resp = await fetch(url,{method, headers:_csrfHdr(), credentials:'same-origin', body:JSON.stringify(body)});
   const data = await resp.json();
   if(data.ok||data.id) { closeModal('modal-influencer'); showAlert('inf-alert',id?'Influencer actualizado':'Influencer creado'); loadInfluencers(); }
   else showAlert('inf-alert',data.error||'Error','error');
@@ -3220,6 +3220,19 @@ function esc(s) {
                        .replace(/>/g,'&gt;')
                        .replace(/"/g,'&quot;')
                        .replace(/'/g,'&#39;');
+}
+
+// Sebastián 25-may-2026 PM · audit P1 · CSRF token cache.
+// Antes saveInfluencer/saveCampana hacían POST/PUT sin X-CSRF-Token.
+// auth.py:365 global check de Origin/Referer ya protege · este header
+// es defense in depth.
+window._csrfTokMkt = '';
+fetch('/api/csrf-token', {credentials:'same-origin'})
+  .then(r => r.ok ? r.json() : null)
+  .then(d => { if(d && d.csrf_token) window._csrfTokMkt = d.csrf_token; })
+  .catch(() => {});
+function _csrfHdr() {
+  return {'Content-Type':'application/json', 'X-CSRF-Token': (window._csrfTokMkt||'')};
 }
 // Sanitiza URL · rechaza javascript:, data:, vbscript: scripts maliciosos
 function escUrl(u) {
