@@ -312,6 +312,36 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (194, "marketing_ads_campaigns · sync Meta/Google Ads · Sebastián 27-may-2026 AM", [
+        # FEATURE 27-may · sync campañas pagadas Meta/Google · cierra ROI
+        # real cross-channel (orgánico + paid).
+        # Diseño unificado · una sola tabla con `platform` discriminator ·
+        # facilita queries comparativas (sumar spend Meta + Google · etc).
+        """CREATE TABLE IF NOT EXISTS marketing_ads_campaigns (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            platform TEXT NOT NULL CHECK(platform IN ('meta','google','tiktok')),
+            external_id TEXT NOT NULL,
+            nombre TEXT,
+            estado TEXT,
+            objetivo TEXT,
+            spend_total REAL DEFAULT 0,
+            impressions INTEGER DEFAULT 0,
+            clicks INTEGER DEFAULT 0,
+            conversiones INTEGER DEFAULT 0,
+            ctr REAL DEFAULT 0,
+            cpc REAL DEFAULT 0,
+            cpm REAL DEFAULT 0,
+            roas REAL DEFAULT 0,
+            fecha_inicio TEXT,
+            fecha_fin TEXT,
+            marketing_campana_id INTEGER,
+            synced_at TEXT DEFAULT (datetime('now','-5 hours')),
+            UNIQUE(platform, external_id),
+            FOREIGN KEY (marketing_campana_id) REFERENCES marketing_campanas(id) ON DELETE SET NULL
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_ads_platform ON marketing_ads_campaigns(platform, estado)",
+        "CREATE INDEX IF NOT EXISTS idx_ads_campana_link ON marketing_ads_campaigns(marketing_campana_id)",
+    ]),
     (193, "marketing_ab_tests · A/B testing piezas IG · Sebastián 27-may-2026 AM", [
         # FEATURE 27-may · A/B testing nativo · "publicás 1 versión, no
         # sabés si la otra hubiera vendido más". Esta tabla relaciona 2

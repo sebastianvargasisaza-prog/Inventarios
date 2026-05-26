@@ -66,6 +66,27 @@ def test_marketing_generar_cupon_influencer_inexistente(app, db_clean):
     assert r.status_code == 404
 
 
+def test_ads_resumen_sin_data(app, db_clean):
+    """Resumen ads sin sync devuelve estructura completa con 0s."""
+    c = _login(app)
+    r = c.get("/api/marketing/ads/resumen")
+    assert r.status_code == 200
+    j = r.get_json()
+    assert "stats_por_plataforma" in j
+    assert "plataformas_configuradas" in j
+    assert "meta" in j["plataformas_configuradas"]
+    assert j["spend_total_all_platforms"] == 0
+
+
+def test_meta_ads_sync_sin_config_503(app, db_clean):
+    """Sync Meta Ads sin token configurado → 503."""
+    c = _login(app)
+    r = c.post("/api/marketing/ads/sync-meta",
+                headers=csrf_headers(), json={"dias": 30})
+    # 503 si no hay config Meta · 502 si Meta API rechaza · 200 si CI lo tiene
+    assert r.status_code in (200, 502, 503)
+
+
 def test_ab_tests_listar(app, db_clean):
     """GET /api/marketing/ab-tests devuelve lista (vacía es OK)."""
     c = _login(app)

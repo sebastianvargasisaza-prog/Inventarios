@@ -656,6 +656,187 @@ def mkt_influencer_generar_cupon(iid):
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Sync Meta Ads · Marketing API · campañas pagadas Facebook/Instagram
+# ──────────────────────────────────────────────────────────────────────────────
+@bp.route('/api/marketing/ads/sync-meta', methods=['POST'])
+def mkt_sync_meta_ads():
+    """Sincroniza campañas Meta Ads (Facebook/Instagram) desde Marketing API.
+
+    Requiere config en animus_config:
+      - meta_ads_access_token: token con permiso ads_read
+      - meta_ads_account_id: act_<id> (incluye 'act_' prefix)
+
+    Body opcional: {dias: 30}
+    """
+    u, err, code = _auth()
+    if err: return err, code
+    conn = _db(); c = conn.cursor()
+    token = _cfg(conn, "meta_ads_access_token")
+    account = _cfg(conn, "meta_ads_account_id")
+    if not token or not account:
+        return jsonify({
+            'error': 'Config Meta Ads incompleta · setear meta_ads_access_token + meta_ads_account_id en animus_config',
+            'docs': 'https://developers.facebook.com/docs/marketing-api/insights'
+        }), 503
+    body = request.get_json(silent=True) or {}
+    dias = min(180, max(1, int(body.get('dias') or 30)))
+    # Marketing API v19.0 · /campaigns + insights
+    sincronizadas = 0
+    errores = []
+    try:
+        # 1) Listar campañas
+        url_camp = (f"https://graph.facebook.com/v19.0/{account}/campaigns"
+                     f"?fields=id,name,status,objective,start_time,stop_time&limit=200")
+        req = urllib.request.Request(url_camp,
+            headers={"Authorization": f"Bearer {token}"})
+        with urllib.request.urlopen(req, timeout=20) as r:
+            camp_data = json.loads(r.read().decode("utf-8"))
+        campaigns = camp_data.get('data', []) or []
+        # 2) Por cada campaña, traer insights
+        from datetime import datetime as _dt2, timedelta as _td2
+        date_preset = 'last_30d'
+        if dias <= 7: date_preset = 'last_7d'
+        elif dias <= 14: date_preset = 'last_14d'
+        elif dias <= 90: date_preset = 'last_90d'
+        for cm in campaigns:
+            cid = cm.get('id')
+            if not cid: continue
+            try:
+                url_ins = (f"https://graph.facebook.com/v19.0/{cid}/insights"
+                            f"?fields=spend,impressions,clicks,ctr,cpc,cpm,actions"
+                            f"&date_preset={date_preset}")
+                reqi = urllib.request.Request(url_ins,
+                    headers={"Authorization": f"Bearer {token}"})
+                with urllib.request.urlopen(reqi, timeout=15) as r2:
+                    ins_data = json.loads(r2.read().decode("utf-8"))
+                ins_list = ins_data.get('data', []) or []
+                ins = ins_list[0] if ins_list else {}
+                spend = float(ins.get('spend') or 0)
+                impressions = int(ins.get('impressions') or 0)
+                clicks = int(ins.get('clicks') or 0)
+                ctr = float(ins.get('ctr') or 0)
+                cpc = float(ins.get('cpc') or 0)
+                cpm = float(ins.get('cpm') or 0)
+                # Conversiones: extraer del array 'actions'
+                conv = 0
+                for act in (ins.get('actions') or []):
+                    at = act.get('action_type') or ''
+                    if at in ('purchase', 'omni_purchase', 'offsite_conversion.fb_pixel_purchase'):
+                        try:
+                            conv += int(act.get('value') or 0)
+                        except (TypeError, ValueError):
+                            pass
+                # Upsert
+                c.execute("""
+                    INSERT INTO marketing_ads_campaigns
+                    (platform, external_id, nombre, estado, objetivo,
+                     spend_total, impressions, clicks, conversiones,
+                     ctr, cpc, cpm, fecha_inicio, fecha_fin, synced_at)
+                    VALUES ('meta',?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now','-5 hours'))
+                    ON CONFLICT(platform, external_id) DO UPDATE SET
+                        nombre=excluded.nombre,
+                        estado=excluded.estado,
+                        objetivo=excluded.objetivo,
+                        spend_total=excluded.spend_total,
+                        impressions=excluded.impressions,
+                        clicks=excluded.clicks,
+                        conversiones=excluded.conversiones,
+                        ctr=excluded.ctr, cpc=excluded.cpc, cpm=excluded.cpm,
+                        fecha_inicio=excluded.fecha_inicio,
+                        fecha_fin=excluded.fecha_fin,
+                        synced_at=datetime('now','-5 hours')
+                """, (cid, cm.get('name','')[:120], cm.get('status',''),
+                       cm.get('objective',''), spend, impressions, clicks, conv,
+                       ctr, cpc, cpm,
+                       (cm.get('start_time') or '')[:10],
+                       (cm.get('stop_time') or '')[:10]))
+                sincronizadas += 1
+            except urllib.error.HTTPError as he:
+                detail = he.read().decode('utf-8', errors='replace')[:200]
+                errores.append({'campaign_id': cid, 'http': he.code, 'detail': detail})
+                log.warning('meta_ads insights cid=%s HTTP %s: %s', cid, he.code, detail)
+            except Exception as ce:
+                errores.append({'campaign_id': cid, 'error': str(ce)[:200]})
+                log.warning('meta_ads insights cid=%s fallo: %s', cid, ce)
+        conn.commit()
+    except urllib.error.HTTPError as he:
+        body_e = he.read().decode('utf-8', errors='replace')[:400]
+        return jsonify({'error': f'Meta API HTTP {he.code}', 'detail': body_e}), 502
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    return jsonify({
+        'ok': True,
+        'platform': 'meta',
+        'sincronizadas': sincronizadas,
+        'errores': errores[:5],
+        'errores_total': len(errores),
+        'ventana_dias': dias,
+    })
+
+
+@bp.route('/api/marketing/ads/resumen')
+def mkt_ads_resumen():
+    """KPIs agregados de Meta/Google/TikTok Ads sincronizados.
+
+    Útil para Dashboard cross-paid: spend total · ROAS implícito si tenemos
+    revenue Shopify por fecha · top 5 campañas por spend.
+    """
+    u, err, code = _auth()
+    if err: return err, code
+    conn = _db(); c = conn.cursor()
+    # Stats por plataforma
+    stats = {}
+    try:
+        for r in c.execute("""
+            SELECT platform,
+                   COUNT(*) AS n,
+                   COALESCE(SUM(spend_total),0) AS spend,
+                   COALESCE(SUM(impressions),0) AS imp,
+                   COALESCE(SUM(clicks),0) AS clicks,
+                   COALESCE(SUM(conversiones),0) AS conv,
+                   AVG(NULLIF(ctr,0)) AS ctr_avg,
+                   AVG(NULLIF(cpc,0)) AS cpc_avg
+            FROM marketing_ads_campaigns
+            GROUP BY platform
+        """).fetchall():
+            stats[r['platform']] = {
+                'campaigns_count': int(r['n'] or 0),
+                'spend_total': float(r['spend'] or 0),
+                'impressions': int(r['imp'] or 0),
+                'clicks': int(r['clicks'] or 0),
+                'conversiones': int(r['conv'] or 0),
+                'ctr_avg': round(float(r['ctr_avg'] or 0), 2),
+                'cpc_avg': round(float(r['cpc_avg'] or 0), 2),
+            }
+    except Exception:
+        pass
+    # Top 5 campañas por spend
+    top_camp = []
+    try:
+        top_camp = [dict(r) for r in c.execute("""
+            SELECT platform, nombre, spend_total, impressions, clicks,
+                   conversiones, ctr, cpc, estado
+            FROM marketing_ads_campaigns
+            WHERE spend_total > 0
+            ORDER BY spend_total DESC LIMIT 5
+        """).fetchall()]
+    except Exception:
+        pass
+    # Spend total agregado
+    spend_total_all = sum(s['spend_total'] for s in stats.values())
+    return jsonify({
+        'spend_total_all_platforms': spend_total_all,
+        'stats_por_plataforma': stats,
+        'top_campanas': top_camp,
+        'plataformas_configuradas': {
+            'meta': bool(_cfg(conn, 'meta_ads_access_token') and _cfg(conn, 'meta_ads_account_id')),
+            'google': bool(_cfg(conn, 'google_ads_developer_token') and _cfg(conn, 'google_ads_customer_id')),
+            'tiktok': bool(_cfg(conn, 'tiktok_ads_access_token')),
+        },
+    })
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # A/B testing creatividades · compara 2 piezas IG con métricas reales
 # ──────────────────────────────────────────────────────────────────────────────
 def _engagement_score(c_row):
