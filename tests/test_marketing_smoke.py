@@ -32,6 +32,24 @@ def test_marketing_pagos_influencers(app, db_clean):
     assert "_error" not in j, f"endpoint error: {j.get('_error')} | {j.get('_trace','')}"
 
 
+def test_marketing_kpis_hoy(app, db_clean):
+    """Audit 25-may-2026 PM · pestaña Hoy mostraba KPIs siempre 0 porque el
+    frontend leía keys que no existían en /api/marketing/dashboard. Este
+    endpoint nuevo devuelve las 4 keys reales · contrato fijo."""
+    c = _login(app)
+    r = c.get("/api/marketing/kpis-hoy")
+    assert r.status_code == 200, f"unexpected status: {r.status_code}"
+    j = r.get_json()
+    assert j.get("ok") is True
+    kpis = j.get("kpis") or {}
+    # Las 4 keys que el frontend espera · deben existir SIEMPRE (no opcionales)
+    for k in ("influencers_pendientes_pago", "eventos_proximos",
+              "skus_en_riesgo", "campanas_activas"):
+        assert k in kpis, f"falta key {k!r} en kpis-hoy"
+        assert isinstance(kpis[k], int), f"{k} debe ser int, no {type(kpis[k]).__name__}"
+        assert kpis[k] >= 0, f"{k} no puede ser negativo"
+
+
 def test_marketing_page(app, db_clean):
     c = _login(app)
     r = c.get("/marketing")
