@@ -66,6 +66,58 @@ def test_marketing_generar_cupon_influencer_inexistente(app, db_clean):
     assert r.status_code == 404
 
 
+def test_eventos_calendario_listado(app, db_clean):
+    """Lista de eventos · mig 186 siembra 10 eventos · al menos uno presente."""
+    c = _login(app)
+    r = c.get("/api/marketing/eventos-calendario")
+    assert r.status_code == 200
+    j = r.get_json()
+    assert "eventos" in j
+    assert j["total"] >= 1
+
+
+def test_eventos_calendario_crear_validaciones(app, db_clean):
+    """POST con fecha inválida → 400."""
+    c = _login(app)
+    r = c.post("/api/marketing/eventos-calendario",
+                headers=csrf_headers(),
+                json={"evento": "Test", "fecha": "no-es-fecha", "multiplicador": 1.5})
+    assert r.status_code == 400
+
+
+def test_metas_inexistente_devuelve_null(app, db_clean):
+    """GET meta de mes sin configurar devuelve meta=null."""
+    c = _login(app)
+    r = c.get("/api/marketing/metas?mes=2030-01")
+    assert r.status_code == 200
+    j = r.get_json()
+    assert j["meta"] is None
+
+
+def test_metas_upsert_y_progreso(app, db_clean):
+    """POST upsert meta + GET meta-progreso devuelve avance/proyección."""
+    c = _login(app)
+    r1 = c.post("/api/marketing/metas",
+                 headers=csrf_headers(),
+                 json={"mes": "2030-06", "revenue_meta": 50_000_000,
+                        "pedidos_meta": 200, "clientes_nuevos_meta": 80})
+    assert r1.status_code == 200
+    assert r1.get_json().get("ok") is True
+    r2 = c.get("/api/marketing/meta-progreso?mes=2030-06")
+    assert r2.status_code == 200
+    j = r2.get_json()
+    assert j["meta"]["revenue"] == 50_000_000
+    assert j["avance"]["pedidos"] == 0  # mes futuro, sin órdenes
+    assert "proyeccion_fin_de_mes" in j
+
+
+def test_meta_progreso_mes_invalido(app, db_clean):
+    """Mes con formato inválido → 400."""
+    c = _login(app)
+    r = c.get("/api/marketing/meta-progreso?mes=mayo")
+    assert r.status_code == 400
+
+
 def test_kanban_devuelve_fuente_metricas(app, db_clean):
     """AUDIT 26-may · cada item del kanban tiene flag ig_match + fuente_metricas.
     Sin posts sincronizados todavía, todos deben tener fuente_metricas='manual'."""

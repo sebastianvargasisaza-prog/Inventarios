@@ -455,7 +455,9 @@ def test_marketing_metrics_loop_es_callable():
     """_start_marketing_metrics_loop existe y es invocable sin crashear."""
     import sys, os
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "api"))
-    from blueprints.marketing import _start_marketing_metrics_loop, _marketing_metrics_thread_started
+    # `_marketing_metrics_thread_started` se renombró a `_marketing_metrics_thread`
+    # en audit Marketing 25-may (ahora es referencia al objeto thread, no flag bool)
+    from blueprints.marketing import _start_marketing_metrics_loop, _marketing_metrics_thread
     # Llamar 2 veces — segunda debe ser idempotente (ya started)
     _start_marketing_metrics_loop()
     _start_marketing_metrics_loop()

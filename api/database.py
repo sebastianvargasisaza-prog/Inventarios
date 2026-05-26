@@ -312,6 +312,54 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (187, "marketing_metas · objetivos mensuales Dashboard · Sebastián 26-may-2026 AM", [
+        # FEATURE 26-may · "Marketing decisional" #4
+        # Metas mensuales de revenue/pedidos/clientes para mostrar
+        # % cumplimiento vs realidad Shopify en Dashboard.
+        # Una fila por mes (YYYY-MM) · upsert · audit_log al cambiar.
+        """CREATE TABLE IF NOT EXISTS marketing_metas (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            mes TEXT NOT NULL UNIQUE,                -- 'YYYY-MM'
+            revenue_meta REAL DEFAULT 0,
+            pedidos_meta INTEGER DEFAULT 0,
+            clientes_nuevos_meta INTEGER DEFAULT 0,
+            notas TEXT DEFAULT '',
+            creada_por TEXT,
+            fecha_creacion TEXT DEFAULT (datetime('now','-5 hours')),
+            fecha_actualizacion TEXT DEFAULT (datetime('now','-5 hours'))
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_meta_mes ON marketing_metas(mes)",
+    ]),
+    (186, "marketing_eventos_calendario · calendario cosmético editable · Sebastián 26-may-2026 AM", [
+        # FEATURE 26-may · "Marketing decisional" #4
+        # CALENDARIO_COSMETICO estaba hardcoded en marketing.py (10 eventos fijos).
+        # Ahora editable desde UI · agentes leen de aquí con fallback al hardcoded.
+        # multiplicador: factor de demanda vs día normal (Black Friday 3.5, etc).
+        """CREATE TABLE IF NOT EXISTS marketing_eventos_calendario (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            evento TEXT NOT NULL,
+            fecha TEXT NOT NULL,                       -- 'YYYY-MM-DD'
+            color TEXT DEFAULT '#94a3b8',
+            multiplicador REAL DEFAULT 1.0 CHECK(multiplicador > 0),
+            activo INTEGER DEFAULT 1,
+            notas TEXT DEFAULT '',
+            creado_por TEXT,
+            fecha_creacion TEXT DEFAULT (datetime('now','-5 hours'))
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_evento_cal_fecha ON marketing_eventos_calendario(fecha, activo)",
+        # Sembrar con los 10 hardcoded del módulo · idempotente (UNIQUE evento+fecha)
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_evento_cal_evento_fecha ON marketing_eventos_calendario(evento, fecha)",
+        "INSERT OR IGNORE INTO marketing_eventos_calendario (evento, fecha, color, multiplicador, creado_por) VALUES ('Día de la Mujer','2026-03-08','#e91e8c',1.8,'seed_185')",
+        "INSERT OR IGNORE INTO marketing_eventos_calendario (evento, fecha, color, multiplicador, creado_por) VALUES ('Día de la Madre','2026-05-10','#d4af37',3.0,'seed_185')",
+        "INSERT OR IGNORE INTO marketing_eventos_calendario (evento, fecha, color, multiplicador, creado_por) VALUES ('Día del Padre','2026-06-21','#81c784',1.4,'seed_185')",
+        "INSERT OR IGNORE INTO marketing_eventos_calendario (evento, fecha, color, multiplicador, creado_por) VALUES ('Mitad de Año','2026-06-30','#4fc3f7',1.5,'seed_185')",
+        "INSERT OR IGNORE INTO marketing_eventos_calendario (evento, fecha, color, multiplicador, creado_por) VALUES ('Amor y Amistad','2026-09-19','#ff8a65',2.2,'seed_185')",
+        "INSERT OR IGNORE INTO marketing_eventos_calendario (evento, fecha, color, multiplicador, creado_por) VALUES ('Halloween','2026-10-31','#ff6f00',1.3,'seed_185')",
+        "INSERT OR IGNORE INTO marketing_eventos_calendario (evento, fecha, color, multiplicador, creado_por) VALUES ('Black Friday','2026-11-27','#212121',3.5,'seed_185')",
+        "INSERT OR IGNORE INTO marketing_eventos_calendario (evento, fecha, color, multiplicador, creado_por) VALUES ('Cyber Monday','2026-11-30','#1565c0',2.5,'seed_185')",
+        "INSERT OR IGNORE INTO marketing_eventos_calendario (evento, fecha, color, multiplicador, creado_por) VALUES ('Navidad','2026-12-25','#c62828',2.8,'seed_185')",
+        "INSERT OR IGNORE INTO marketing_eventos_calendario (evento, fecha, color, multiplicador, creado_por) VALUES ('Fin de Año / Rituales','2026-12-31','#6a1b9a',2.0,'seed_185')",
+    ]),
     (185, "marketing_campanas.discount_code · atribución automática Shopify · Sebastián 26-may-2026 AM", [
         # FEATURE 26-may-2026 · Sebastián: "atribución con cupones único · resuelve
         # ROI y Score creadores · marketing decisional vs decorativo".

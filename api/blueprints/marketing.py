@@ -24,6 +24,9 @@ from database import get_db
 from audit_helpers import audit_log
 
 bp = Blueprint("marketing", __name__)
+# Fallback hardcoded · sembrado en mig 186 hacia marketing_eventos_calendario.
+# Agentes leen via _get_calendario_cosmetico(conn) que prioriza DB · este array
+# queda como safety net si la mig 186 no aplicó o la tabla está vacía.
 CALENDARIO_COSMETICO = [
     {"evento": "Día de la Mujer",       "fecha": "2026-03-08", "color": "#e91e8c", "multiplicador": 1.8},
     {"evento": "Día de la Madre",        "fecha": "2026-05-10", "color": "#d4af37", "multiplicador": 3.0},
@@ -36,6 +39,26 @@ CALENDARIO_COSMETICO = [
     {"evento": "Navidad",                "fecha": "2026-12-25", "color": "#c62828", "multiplicador": 2.8},
     {"evento": "Fin de Año / Rituales",  "fecha": "2026-12-31", "color": "#6a1b9a", "multiplicador": 2.0},
 ]
+
+
+def _get_calendario_cosmetico(conn):
+    """Devuelve eventos del calendario · prioriza DB editable, fallback hardcoded.
+
+    Agentes (estacionalidad, estrategia) usan esto. Si la tabla no existe
+    o está vacía, devuelve CALENDARIO_COSMETICO sin romper.
+    """
+    try:
+        rows = conn.execute(
+            "SELECT evento, fecha, color, multiplicador FROM marketing_eventos_calendario "
+            "WHERE COALESCE(activo,1)=1 ORDER BY fecha"
+        ).fetchall()
+        if rows:
+            return [{"evento": r["evento"], "fecha": r["fecha"],
+                      "color": r["color"] or "#94a3b8",
+                      "multiplicador": float(r["multiplicador"] or 1.0)} for r in rows]
+    except Exception:
+        pass
+    return CALENDARIO_COSMETICO
 
 # MARKETING_USERS importado desde config (fuente única de verdad para accesos)
 
@@ -633,6 +656,267 @@ def mkt_influencer_generar_cupon(iid):
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# CALENDARIO COSMÉTICO · CRUD editable (mig 186)
+# ──────────────────────────────────────────────────────────────────────────────
+@bp.route('/api/marketing/eventos-calendario', methods=['GET', 'POST'])
+def mkt_eventos_calendario():
+    """GET: lista eventos activos. POST: crea evento nuevo."""
+    u, err, code = _auth()
+    if err: return err, code
+    conn = _db(); c = conn.cursor()
+    if request.method == 'GET':
+        incl_inactivos = (request.args.get('incluir_inactivos') or '').lower() in ('1','true','yes')
+        sql = "SELECT id, evento, fecha, color, multiplicador, activo, notas FROM marketing_eventos_calendario"
+        if not incl_inactivos:
+            sql += " WHERE COALESCE(activo,1)=1"
+        sql += " ORDER BY fecha"
+        rows = [dict(r) for r in c.execute(sql).fetchall()]
+        return jsonify({"eventos": rows, "total": len(rows)})
+    # POST
+    d = request.get_json(silent=True) or {}
+    evento = (d.get('evento') or '').strip()
+    fecha = (d.get('fecha') or '').strip()
+    color = (d.get('color') or '#94a3b8').strip()
+    notas = (d.get('notas') or '').strip()[:300]
+    if not evento or not fecha:
+        return jsonify({"error": "evento y fecha (YYYY-MM-DD) requeridos"}), 400
+    if not _re_atrib.match(r'^\d{4}-\d{2}-\d{2}$', fecha):
+        return jsonify({"error": "fecha debe ser YYYY-MM-DD"}), 400
+    try:
+        mult = float(d.get('multiplicador', 1.0))
+        if not (0 < mult <= 10):
+            return jsonify({"error": "multiplicador debe estar en (0, 10]"}), 400
+    except (TypeError, ValueError):
+        return jsonify({"error": "multiplicador inválido"}), 400
+    try:
+        c.execute("""INSERT INTO marketing_eventos_calendario
+                     (evento, fecha, color, multiplicador, notas, creado_por)
+                     VALUES (?,?,?,?,?,?)""",
+                  (evento[:120], fecha, color[:20], mult, notas, u))
+        eid = c.lastrowid
+        try:
+            audit_log(c, usuario=u, accion='CREAR_EVENTO_CALENDARIO',
+                      tabla='marketing_eventos_calendario', registro_id=eid,
+                      despues={'evento': evento[:80], 'fecha': fecha, 'multiplicador': mult})
+        except Exception:
+            pass
+        conn.commit()
+    except Exception as e:
+        msg = str(e)
+        if 'UNIQUE' in msg.upper():
+            return jsonify({"error": f"Ya existe '{evento}' en {fecha}"}), 409
+        return jsonify({"error": msg}), 400
+    return jsonify({"ok": True, "id": eid}), 201
+
+
+@bp.route('/api/marketing/eventos-calendario/<int:eid>', methods=['PUT', 'DELETE'])
+def mkt_evento_calendario_detail(eid):
+    """PUT: actualiza. DELETE: soft delete (activo=0)."""
+    u, err, code = _auth()
+    if err: return err, code
+    conn = _db(); c = conn.cursor()
+    ant_row = c.execute(
+        "SELECT evento, fecha, color, multiplicador, activo FROM marketing_eventos_calendario WHERE id=?",
+        (eid,)).fetchone()
+    if not ant_row:
+        return jsonify({"error": "Evento no encontrado"}), 404
+    antes = dict(ant_row)
+    if request.method == 'DELETE':
+        c.execute("UPDATE marketing_eventos_calendario SET activo=0 WHERE id=?", (eid,))
+        try:
+            audit_log(c, usuario=u, accion='DESACTIVAR_EVENTO_CALENDARIO',
+                      tabla='marketing_eventos_calendario', registro_id=eid,
+                      antes=antes, despues={'activo': 0})
+        except Exception:
+            pass
+        conn.commit()
+        return jsonify({"ok": True, "id": eid, "activo": False})
+    # PUT
+    d = request.get_json(silent=True) or {}
+    sets = []; params = []
+    if 'evento' in d:
+        ev = (d['evento'] or '').strip()
+        if not ev:
+            return jsonify({"error": "evento no puede ser vacío"}), 400
+        sets.append("evento=?"); params.append(ev[:120])
+    if 'fecha' in d:
+        fc = (d['fecha'] or '').strip()
+        if not _re_atrib.match(r'^\d{4}-\d{2}-\d{2}$', fc):
+            return jsonify({"error": "fecha debe ser YYYY-MM-DD"}), 400
+        sets.append("fecha=?"); params.append(fc)
+    if 'color' in d:
+        sets.append("color=?"); params.append((d['color'] or '#94a3b8')[:20])
+    if 'multiplicador' in d:
+        try:
+            mult = float(d['multiplicador'])
+            if not (0 < mult <= 10):
+                return jsonify({"error": "multiplicador debe estar en (0, 10]"}), 400
+        except (TypeError, ValueError):
+            return jsonify({"error": "multiplicador inválido"}), 400
+        sets.append("multiplicador=?"); params.append(mult)
+    if 'activo' in d:
+        sets.append("activo=?"); params.append(1 if d['activo'] else 0)
+    if 'notas' in d:
+        sets.append("notas=?"); params.append((d['notas'] or '')[:300])
+    if not sets:
+        return jsonify({"error": "Nada que actualizar"}), 400
+    params.append(eid)
+    c.execute(f"UPDATE marketing_eventos_calendario SET {', '.join(sets)} WHERE id=?", params)
+    try:
+        audit_log(c, usuario=u, accion='ACTUALIZAR_EVENTO_CALENDARIO',
+                  tabla='marketing_eventos_calendario', registro_id=eid,
+                  antes=antes, despues={k: d[k] for k in d if k in
+                                          ('evento','fecha','color','multiplicador','activo','notas')})
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({"ok": True, "id": eid})
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# METAS MENSUALES · CRUD + progreso vs Shopify (mig 187)
+# ──────────────────────────────────────────────────────────────────────────────
+@bp.route('/api/marketing/metas', methods=['GET', 'POST'])
+def mkt_metas():
+    """GET: lista metas (todas o mes específico ?mes=YYYY-MM).
+    POST: upsert meta del mes."""
+    u, err, code = _auth()
+    if err: return err, code
+    conn = _db(); c = conn.cursor()
+    if request.method == 'GET':
+        mes = (request.args.get('mes') or '').strip()
+        if mes:
+            row = c.execute("SELECT * FROM marketing_metas WHERE mes=?", (mes,)).fetchone()
+            return jsonify({"meta": dict(row) if row else None})
+        rows = [dict(r) for r in c.execute(
+            "SELECT * FROM marketing_metas ORDER BY mes DESC LIMIT 24"
+        ).fetchall()]
+        return jsonify({"metas": rows, "total": len(rows)})
+    # POST upsert
+    d = request.get_json(silent=True) or {}
+    mes = (d.get('mes') or '').strip()
+    if not _re_atrib.match(r'^\d{4}-\d{2}$', mes):
+        return jsonify({"error": "mes debe ser YYYY-MM"}), 400
+    from http_helpers import validate_money as _vm_meta
+    rev, e1 = _vm_meta(d.get('revenue_meta', 0), allow_zero=True,
+                       max_value=1e12, field_name='revenue_meta')
+    if e1: return jsonify(e1), 400
+    try:
+        ped = int(d.get('pedidos_meta', 0) or 0)
+        cln = int(d.get('clientes_nuevos_meta', 0) or 0)
+        if ped < 0 or cln < 0:
+            return jsonify({"error": "valores no pueden ser negativos"}), 400
+    except (TypeError, ValueError):
+        return jsonify({"error": "pedidos_meta/clientes_nuevos_meta inválidos"}), 400
+    notas = (d.get('notas') or '')[:500]
+    ant = c.execute("SELECT * FROM marketing_metas WHERE mes=?", (mes,)).fetchone()
+    if ant:
+        c.execute("""UPDATE marketing_metas
+                     SET revenue_meta=?, pedidos_meta=?, clientes_nuevos_meta=?,
+                         notas=?, fecha_actualizacion=datetime('now','-5 hours')
+                     WHERE mes=?""",
+                  (rev, ped, cln, notas, mes))
+        accion = 'ACTUALIZAR_META_MENSUAL'
+    else:
+        c.execute("""INSERT INTO marketing_metas
+                     (mes, revenue_meta, pedidos_meta, clientes_nuevos_meta, notas, creada_por)
+                     VALUES (?,?,?,?,?,?)""",
+                  (mes, rev, ped, cln, notas, u))
+        accion = 'CREAR_META_MENSUAL'
+    try:
+        audit_log(c, usuario=u, accion=accion, tabla='marketing_metas',
+                  registro_id=mes,
+                  antes=dict(ant) if ant else None,
+                  despues={'revenue_meta': rev, 'pedidos_meta': ped,
+                           'clientes_nuevos_meta': cln, 'notas': notas[:120]})
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({"ok": True, "mes": mes})
+
+
+@bp.route('/api/marketing/meta-progreso')
+def mkt_meta_progreso():
+    """Devuelve meta del mes actual + progreso desde Shopify orders.
+
+    Útil para mostrar "% vs meta" en Dashboard. Si no hay meta, retorna
+    meta=null y advance=null para que la UI lo oculte.
+
+    Query: ?mes=YYYY-MM (default: mes actual)
+    """
+    u, err, code = _auth()
+    if err: return err, code
+    from datetime import datetime as _dt
+    mes = (request.args.get('mes') or _dt.now().strftime('%Y-%m')).strip()
+    if not _re_atrib.match(r'^\d{4}-\d{2}$', mes):
+        return jsonify({"error": "mes inválido (YYYY-MM)"}), 400
+    conn = _db(); c = conn.cursor()
+    meta_row = c.execute("SELECT * FROM marketing_metas WHERE mes=?", (mes,)).fetchone()
+    if not meta_row:
+        return jsonify({"mes": mes, "meta": None, "avance": None,
+                         "hint": "Configurá la meta del mes vía POST /api/marketing/metas"})
+    meta = dict(meta_row)
+    # Avance real desde Shopify (mes calendario)
+    sh = c.execute("""
+        SELECT COALESCE(SUM(total),0) AS rev,
+               COUNT(*) AS pedidos,
+               COUNT(DISTINCT email) AS clientes
+        FROM animus_shopify_orders WHERE substr(creado_en,1,7)=?
+    """, (mes,)).fetchone()
+    nuevos = c.execute("""
+        SELECT COUNT(DISTINCT o.email) AS n FROM animus_shopify_orders o
+        WHERE substr(o.creado_en,1,7)=?
+          AND (SELECT COUNT(*) FROM animus_shopify_orders o2
+                WHERE o2.email=o.email AND o2.creado_en < ?) = 0
+    """, (mes, mes + '-01')).fetchone()
+    revenue_real = float(sh['rev'] or 0)
+    pedidos_real = int(sh['pedidos'] or 0)
+    nuevos_real = int(nuevos['n'] or 0)
+    def _pct(real, meta_val):
+        if not meta_val or meta_val <= 0: return None
+        return round(real / meta_val * 100, 1)
+    # Días transcurridos del mes vs días totales · para proyección
+    from datetime import date as _date
+    hoy = _date.today()
+    mes_year, mes_month = int(mes[:4]), int(mes[5:7])
+    if hoy.year == mes_year and hoy.month == mes_month:
+        dias_t = hoy.day
+        # Días del mes actual
+        import calendar as _cal
+        dias_mes = _cal.monthrange(mes_year, mes_month)[1]
+    else:
+        # Mes pasado/futuro → cobertura completa o ninguna
+        import calendar as _cal
+        dias_mes = _cal.monthrange(mes_year, mes_month)[1]
+        dias_t = dias_mes  # solo válido si ya pasó · si futuro lo dejamos así pero proyeccion es la real
+    proy_revenue = revenue_real / max(dias_t,1) * dias_mes if dias_t > 0 else 0
+    proy_pedidos = round(pedidos_real / max(dias_t,1) * dias_mes) if dias_t > 0 else 0
+    return jsonify({
+        "mes": mes,
+        "meta": {
+            "revenue": meta['revenue_meta'],
+            "pedidos": meta['pedidos_meta'],
+            "clientes_nuevos": meta['clientes_nuevos_meta'],
+        },
+        "avance": {
+            "revenue": revenue_real,
+            "revenue_pct": _pct(revenue_real, meta['revenue_meta']),
+            "pedidos": pedidos_real,
+            "pedidos_pct": _pct(pedidos_real, meta['pedidos_meta']),
+            "clientes_nuevos": nuevos_real,
+            "clientes_nuevos_pct": _pct(nuevos_real, meta['clientes_nuevos_meta']),
+        },
+        "proyeccion_fin_de_mes": {
+            "revenue": round(proy_revenue, 0),
+            "revenue_pct_meta": _pct(proy_revenue, meta['revenue_meta']),
+            "pedidos": proy_pedidos,
+        },
+        "dias_transcurridos": dias_t,
+        "dias_mes": dias_mes,
+    })
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # KPIs HOY — endpoint rápido para la pestaña Hoy (4 KPIs reales, sin Claude)
 # ──────────────────────────────────────────────────────────────────────────────
 @bp.route("/api/marketing/kpis-hoy")
@@ -670,9 +954,9 @@ def mkt_kpis_hoy():
     except Exception:
         pend = 0
 
-    # 2) Eventos cosméticos próximos (≤ 60 días)
+    # 2) Eventos cosméticos próximos (≤ 60 días) · usa tabla editable (mig 186)
     eventos = 0
-    for ev in CALENDARIO_COSMETICO:
+    for ev in _get_calendario_cosmetico(conn):
         try:
             d = (_dt.strptime(ev["fecha"], "%Y-%m-%d") - hoy).days
             if 0 <= d <= 60:
@@ -2726,7 +3010,7 @@ def mkt_ejecutar_agente(agente):
         # ── Agente 1: Estacionalidad ──────────────────────────────────────────
         if agente == "estacionalidad":
             alertas = []
-            for ev in CALENDARIO_COSMETICO:
+            for ev in _get_calendario_cosmetico(conn):
                 dias = (datetime.strptime(ev["fecha"], "%Y-%m-%d") - hoy).days
                 if dias < 0 or dias > 120: continue
                 campanas = c.execute("""
@@ -2890,6 +3174,10 @@ def mkt_ejecutar_agente(agente):
             resultado = {"titulo": "Tendencias de Producto y Ventas", "tendencias_erp": tendencias[:10], "shopify_mensual": shopify_trend}
 
         # ── Agente 5: Brief ────────────────────────────────────────────────────
+        # AUDIT 26-may · ANTES el campo `brief` era una plantilla hardcoded
+        # ("Claim: activos para piel latina. Formato: video 30s.") · ahora
+        # cada SKU pasa POR CLAUDE con contexto enriquecido (precio, ventas,
+        # IG mentions, ml/u, tono si aplica) y devuelve brief específico.
         elif agente == "brief":
             params = request.get_json() or {}
             campana_id = params.get("campana_id")
@@ -2906,62 +3194,250 @@ def mkt_ejecutar_agente(agente):
                 sku = t["sku"]
                 precio = c.execute("SELECT MAX(precio_base) as p FROM stock_pt WHERE sku=?", (sku,)).fetchone()["p"] or 0
                 ig_mentions = c.execute("SELECT COUNT(*) as n FROM animus_instagram_posts WHERE descripcion LIKE ?", (f'%{sku}%',)).fetchone()["n"]
-                briefs.append({"sku": sku, "uds_90d": t["total"], "precio": precio, "ig_menciones": ig_mentions,
-                    "brief": f"SKU {sku}: {t['total']} uds liberadas en 90d. Canal recomendado: {'Instagram Reels' if ig_mentions==0 else 'Instagram + stories'}. Claim: activos para piel latina. Formato: video 30s."})
-            resultado = {"titulo": "Brief de Contenido por SKU Top", "briefs": briefs, "campana": campana}
+                # Tono si tiene (Lip Serum, Blush Balm, etc tienen sub-SKUs con tono)
+                tono = ''
+                try:
+                    tr = c.execute("SELECT tono_label, ml_unidad FROM sku_producto_map WHERE sku=?", (sku,)).fetchone()
+                    if tr:
+                        tono = tr["tono_label"] or ''
+                except Exception:
+                    pass
+                # Ventas Shopify últimos 30d (señal de momentum DTC)
+                shop_30 = c.execute(
+                    "SELECT COUNT(*) as n FROM animus_shopify_orders WHERE sku_items LIKE ? AND creado_en>=?",
+                    (f'%{sku}%', hace30)).fetchone()["n"]
+                briefs.append({
+                    "sku": sku,
+                    "uds_90d_liberadas": int(t["total"] or 0),
+                    "ventas_shopify_30d": int(shop_30 or 0),
+                    "precio_pvp": float(precio or 0),
+                    "ig_menciones_historico": int(ig_mentions or 0),
+                    "tono": tono,
+                })
+            # Pasar TODOS los briefs en UNA llamada a Claude que devuelve brief
+            # estructurado por SKU. Mucho más barato que N llamadas separadas.
+            briefs_enriquecidos = briefs  # default si Claude no responde
+            try:
+                api_key = _cfg(conn, "anthropic_api_key")
+                if api_key and briefs:
+                    prompt_brief = (
+                        "Eres el director creativo de ÁNIMUS Lab (skincare científico premium colombiano).\n"
+                        f"Te paso {len(briefs)} SKUs top con datos reales del último trimestre.\n\n"
+                        "Para cada SKU genera un brief de contenido CONCRETO. Devuelve EXACTAMENTE este JSON:\n"
+                        '[{"sku":"...","canal_principal":"...","formato":"...","duracion_seg":N,'
+                        '"claim_principal":"...","gancho_3seg":"...","cta":"...","tono":"...",'
+                        '"angulo_diferenciador":"..."}, ...]\n\n'
+                        "Reglas:\n"
+                        "- canal_principal: 'Instagram Reels' | 'Instagram Stories' | 'TikTok' | 'YouTube Shorts' (decidí según ml_menciones_historico, ventas_shopify_30d).\n"
+                        "- formato: 'Antes/después' | 'POV rutina' | 'Tutorial 60s' | 'Trend audio' | 'Educativo experto' | otro.\n"
+                        "- duracion_seg: 15, 30 o 60.\n"
+                        "- claim_principal: máx 8 palabras, debe contener el activo científico clave del SKU si aplica (Niacinamida, Retinol, Vitamina C, Centella, etc.).\n"
+                        "- gancho_3seg: la primera frase del video (lo que retiene al usuario).\n"
+                        "- cta: máx 6 palabras (link bio, código descuento, 'ver más').\n"
+                        "- tono: 'Experto cercano' | 'Influencer aspiracional' | 'Educativo amigable'.\n"
+                        "- angulo_diferenciador: 1 oración con la propuesta única vs marcas grandes.\n"
+                        "- SOLO devolvé el JSON, sin texto antes ni después, sin markdown fence.\n\n"
+                        "Datos:\n" + json.dumps(briefs, ensure_ascii=False)
+                    )
+                    payload = json.dumps({
+                        "model": "claude-haiku-4-5-20251001",
+                        "max_tokens": 2000,
+                        "messages": [{"role": "user", "content": prompt_brief}]
+                    }).encode("utf-8")
+                    req = urllib.request.Request(
+                        "https://api.anthropic.com/v1/messages",
+                        data=payload,
+                        headers={"x-api-key": api_key, "anthropic-version": "2023-06-01",
+                                  "content-type": "application/json"},
+                        method="POST"
+                    )
+                    with urllib.request.urlopen(req, timeout=30) as resp:
+                        rj = json.loads(resp.read().decode("utf-8"))
+                        text = rj["content"][0]["text"].strip()
+                        # Defensive: si Claude envuelve en ```json ... ```, quitar fence
+                        if text.startswith('```'):
+                            text = _re_atrib.sub(r'^```(?:json)?\s*|\s*```$', '', text, flags=_re_atrib.MULTILINE).strip()
+                        parsed = json.loads(text)
+                        # Match SKU por SKU · fallback a brief base si Claude omitió
+                        by_sku = {p["sku"]: p for p in parsed if isinstance(p, dict) and p.get("sku")}
+                        briefs_enriquecidos = []
+                        for b in briefs:
+                            enriched = {**b}
+                            cl = by_sku.get(b["sku"])
+                            if cl:
+                                enriched["brief_ia"] = cl
+                                enriched["brief"] = (
+                                    f"{cl.get('canal_principal','Instagram')} · {cl.get('formato','')}, "
+                                    f"{cl.get('duracion_seg',30)}s · Claim: \"{cl.get('claim_principal','')}\" · "
+                                    f"Gancho: \"{cl.get('gancho_3seg','')}\" · CTA: {cl.get('cta','')} · "
+                                    f"Tono: {cl.get('tono','')}"
+                                )
+                            else:
+                                enriched["brief"] = "Sin brief IA (Claude no devolvió este SKU)"
+                            briefs_enriquecidos.append(enriched)
+            except Exception as _e:
+                # Si Claude falla, briefs queda con los datos base · agregamos nota
+                for b in briefs_enriquecidos:
+                    b.setdefault("brief", f"SKU {b['sku']}: {b['uds_90d_liberadas']} uds 90d · Sin IA (configurar anthropic_api_key)")
+            resultado = {"titulo": "Brief de Contenido por SKU Top",
+                          "briefs": briefs_enriquecidos,
+                          "campana": campana,
+                          "generado_con": "claude-haiku-4-5"}
 
         # ── Agente 6: Pricing ──────────────────────────────────────────────────
+        # AUDIT 26-may · ANTES asumía costo = precio × 0.35 (heurística fija
+        # 65% margen para TODOS los SKUs). AHORA calcula costo REAL desde
+        # formula_items × maestro_mps.precio_referencia (precio_kg × cantidad_g).
+        # Si el SKU no tiene fórmula registrada o algunos MPs sin precio,
+        # cae al heurístico documentando el fuente.
         elif agente == "pricing":
             stock_rows = c.execute("""
                 SELECT sku, SUM(unidades_disponible) as stock, MAX(precio_base) as precio
                 FROM stock_pt WHERE estado='Disponible' AND precio_base > 0 GROUP BY sku
             """).fetchall()
+            # SKU → producto_nombre (fórmulas se llaman por producto)
+            sku_to_prod_rows = c.execute("""
+                SELECT sku, producto_nombre FROM sku_producto_map WHERE COALESCE(activo,1)=1
+            """).fetchall()
+            sku_to_prod = {r["sku"]: r["producto_nombre"] for r in sku_to_prod_rows}
             propuestas = []
             for row in stock_rows:
                 sku, stock, precio = row["sku"], row["stock"], row["precio"]
-                lib_90 = c.execute("SELECT COALESCE(SUM(unidades),0) as t FROM liberaciones WHERE sku=? AND creado_en>=?", (sku, hace90)).fetchone()["t"]
+                if not precio or precio <= 0:
+                    continue
+                lib_90 = c.execute(
+                    "SELECT COALESCE(SUM(unidades),0) as t FROM liberaciones WHERE sku=? AND creado_en>=?",
+                    (sku, hace90)).fetchone()["t"]
                 rotacion = lib_90 / 3.0
                 meses_cob = round(stock / rotacion, 1) if rotacion > 0 else 99
-                precio_costo_aprox = precio * 0.35
-                margen_actual = ((precio - precio_costo_aprox) / precio) * 100
+                # Costo REAL desde fórmula: SUM(cantidad_g × precio_kg / 1000)
+                # × lote_size_kg para 1 lote · luego / unidades_por_lote (~1000)
+                costo_real_unit = None
+                costo_fuente = "heuristico_35pct"
+                prod_nombre = sku_to_prod.get(sku)
+                if prod_nombre:
+                    costo_row = c.execute("""
+                        SELECT
+                          SUM(COALESCE(fi.cantidad_g_por_lote, 0) * COALESCE(mp.precio_referencia, 0) / 1000.0) as costo_total_lote,
+                          fh.lote_size_kg,
+                          COUNT(*) as items_count,
+                          SUM(CASE WHEN COALESCE(mp.precio_referencia, 0) > 0 THEN 1 ELSE 0 END) as items_con_precio
+                        FROM formula_headers fh
+                        LEFT JOIN formula_items fi ON fi.formula_header_id = fh.id
+                        LEFT JOIN maestro_mps mp ON mp.codigo_mp = fi.codigo_mp
+                        WHERE fh.producto_nombre = ?
+                          AND COALESCE(fh.activo, 1) = 1
+                        GROUP BY fh.id, fh.lote_size_kg
+                        ORDER BY fh.id DESC LIMIT 1
+                    """, (prod_nombre,)).fetchone()
+                    if costo_row and costo_row["costo_total_lote"] and costo_row["lote_size_kg"]:
+                        items_total = costo_row["items_count"] or 0
+                        items_con_precio = costo_row["items_con_precio"] or 0
+                        cobertura_precios = items_con_precio / items_total if items_total > 0 else 0
+                        if cobertura_precios >= 0.7:  # ≥70% MPs con precio · confiable
+                            # Asumir ~1000 uds por lote para SKU de skincare (30ml típico).
+                            # Si querés precisión mayor, agregá unidades_por_lote a formula_headers.
+                            uds_por_lote = 1000
+                            costo_real_unit = costo_row["costo_total_lote"] / max(uds_por_lote, 1)
+                            costo_fuente = f"formula_real ({int(cobertura_precios*100)}% MPs con precio)"
+                # Decidir costo final
+                if costo_real_unit and costo_real_unit > 0:
+                    precio_costo = costo_real_unit
+                else:
+                    precio_costo = precio * 0.35  # fallback heurístico
+                margen_actual = ((precio - precio_costo) / precio) * 100
                 max_dto_seguro = int(max(0, margen_actual - 40))
                 if meses_cob > 4 and max_dto_seguro >= 5:
-                    propuestas.append({"sku": sku, "stock": stock, "precio_normal": precio,
+                    propuestas.append({
+                        "sku": sku,
+                        "stock": stock,
+                        "precio_normal": precio,
+                        "precio_costo_estimado": round(precio_costo, 0),
+                        "costo_fuente": costo_fuente,
+                        "margen_actual_pct": round(margen_actual, 1),
                         "max_descuento_pct": max_dto_seguro,
                         "precio_promo": round(precio * (1 - max_dto_seguro/100), 0),
                         "meses_cobertura": meses_cob,
-                        "razon": f"{meses_cob} meses de inventario → descuento del {max_dto_seguro}% mantiene margen ≥40%"})
+                        "razon": f"{meses_cob}m inventario · margen actual {round(margen_actual)}% ({costo_fuente}) → -{max_dto_seguro}% mantiene margen ≥40%"
+                    })
             propuestas.sort(key=lambda x: -x["meses_cobertura"])
-            resultado = {"titulo": "Propuestas de Pricing y Promociones", "propuestas": propuestas[:8]}
+            resultado = {
+                "titulo": "Propuestas de Pricing y Promociones",
+                "propuestas": propuestas[:10],
+                "nota_metodologia": "Costo calculado desde formula_items × maestro_mps.precio_referencia cuando ≥70% de MPs tienen precio · fallback heurístico 35% del PVP",
+            }
 
         # ── Agente 7: Reorden B2B ──────────────────────────────────────────────
+        # AUDIT 26-may · ANTES leía animus_shopify_orders (canal DTC) y lo
+        # llamaba "B2B" — incoherente. AHORA usa pedidos_b2b real (mig 171/182
+        # con cliente_id, producto_nombre, cantidad_uds, ml_unidad, estado,
+        # fecha_estimada). Predicción del próximo pedido = última fecha + intervalo
+        # promedio entre pedidos consecutivos del MISMO cliente.
         elif agente == "reorden":
+            # Clientes con ≥2 pedidos confirmados/en_produccion/despachados (no
+            # contar pendientes ni cancelados para que el intervalo sea real)
             clientes_b2b = c.execute("""
-                SELECT email, COUNT(*) as pedidos, SUM(total) as revenue,
-                       MIN(creado_en) as primer_pedido, MAX(creado_en) as ultimo_pedido,
-                       AVG(total) as ticket_promedio
-                FROM animus_shopify_orders GROUP BY email HAVING pedidos >= 2
-                ORDER BY revenue DESC LIMIT 10
+                SELECT cliente_id, cliente_nombre,
+                       COUNT(*) as pedidos,
+                       SUM(cantidad_uds * COALESCE(ml_unidad, 30)) as ml_total,
+                       SUM(cantidad_uds) as uds_total,
+                       MIN(creado_at_utc) as primer_pedido,
+                       MAX(creado_at_utc) as ultimo_pedido,
+                       AVG(cantidad_uds) as uds_promedio
+                FROM pedidos_b2b
+                WHERE COALESCE(estado,'') NOT IN ('pendiente','cancelado')
+                GROUP BY cliente_id
+                HAVING pedidos >= 2
+                ORDER BY pedidos DESC, uds_total DESC LIMIT 15
             """).fetchall()
             predicciones = []
             for cl in clientes_b2b:
                 primer = cl["primer_pedido"]; ultimo = cl["ultimo_pedido"]; pedidos = cl["pedidos"]
-                if primer and ultimo and primer != ultimo:
+                if not primer or not ultimo or primer == ultimo:
+                    continue
+                try:
                     d1 = datetime.strptime(primer[:10], "%Y-%m-%d")
                     d2 = datetime.strptime(ultimo[:10], "%Y-%m-%d")
-                    intervalo_dias = (d2 - d1).days / max(pedidos - 1, 1)
-                    proximo = (d2 + timedelta(days=intervalo_dias)).strftime("%Y-%m-%d")
-                    dias_para_reorden = (datetime.strptime(proximo, "%Y-%m-%d") - hoy).days
-                    predicciones.append({"email": cl["email"], "pedidos": pedidos,
-                        "revenue_total": round(cl["revenue"], 0),
-                        "ticket_promedio": round(cl["ticket_promedio"], 0),
-                        "intervalo_dias": round(intervalo_dias),
-                        "ultimo_pedido": ultimo[:10],
-                        "proximo_reorden_estimado": proximo,
-                        "dias_para_reorden": dias_para_reorden,
-                        "urgencia": "hoy" if dias_para_reorden <= 0 else ("esta semana" if dias_para_reorden <= 7 else ("este mes" if dias_para_reorden <= 30 else "próximos meses"))})
+                except (ValueError, TypeError):
+                    continue
+                intervalo_dias = (d2 - d1).days / max(pedidos - 1, 1)
+                if intervalo_dias <= 0:
+                    continue
+                proximo = (d2 + timedelta(days=intervalo_dias)).strftime("%Y-%m-%d")
+                dias_para_reorden = (datetime.strptime(proximo, "%Y-%m-%d") - hoy).days
+                # Top productos que típicamente pide este cliente
+                top_prods = [dict(r) for r in c.execute("""
+                    SELECT producto_nombre, SUM(cantidad_uds) as uds_total, COUNT(*) as veces
+                    FROM pedidos_b2b
+                    WHERE cliente_id=?
+                      AND COALESCE(estado,'') NOT IN ('pendiente','cancelado')
+                    GROUP BY producto_nombre
+                    ORDER BY uds_total DESC LIMIT 3
+                """, (cl["cliente_id"],)).fetchall()]
+                predicciones.append({
+                    "cliente_id": cl["cliente_id"],
+                    "cliente_nombre": cl["cliente_nombre"],
+                    "pedidos": pedidos,
+                    "uds_total": int(cl["uds_total"] or 0),
+                    "uds_promedio": int(cl["uds_promedio"] or 0),
+                    "ml_total": float(cl["ml_total"] or 0),
+                    "intervalo_dias": round(intervalo_dias),
+                    "ultimo_pedido": ultimo[:10],
+                    "proximo_reorden_estimado": proximo,
+                    "dias_para_reorden": dias_para_reorden,
+                    "productos_top": top_prods,
+                    "urgencia": "hoy" if dias_para_reorden <= 0
+                                else ("esta semana" if dias_para_reorden <= 7
+                                       else ("este mes" if dias_para_reorden <= 30
+                                              else "próximos meses"))
+                })
             predicciones.sort(key=lambda x: x["dias_para_reorden"])
-            resultado = {"titulo": "Predicción de Reórdenes B2B", "predicciones": predicciones, "total": len(predicciones)}
+            resultado = {
+                "titulo": "Predicción de Reórdenes B2B (Animus + Espagiria)",
+                "predicciones": predicciones,
+                "total": len(predicciones),
+                "fuente_datos": "pedidos_b2b (mig 171/182) · NO animus_shopify_orders",
+            }
 
         # ── Agente 8: Canibalización ───────────────────────────────────────────
         elif agente == "canibal":
@@ -2989,20 +3465,94 @@ def mkt_ejecutar_agente(agente):
 
         # ── Agente 9: Contenido Auto ───────────────────────────────────────────
         elif agente == "contenido_auto":
+            # AUDIT 26-may · ANTES caption hardcoded `f"✨ {sku} — tu aliado..."`
+            # · solo cambiaba el SKU. AHORA Claude genera caption IG + email +
+            # WhatsApp REALES por SKU en UNA llamada batch.
             top_skus = c.execute("""
                 SELECT sku, SUM(unidades) as total FROM liberaciones WHERE creado_en>=?
                 GROUP BY sku ORDER BY total DESC LIMIT 3
             """, (hace30,)).fetchall()
-            generados = []
+            ctx_skus = []
             for s in top_skus:
                 sku = s["sku"]
                 precio = c.execute("SELECT MAX(precio_base) as p FROM stock_pt WHERE sku=?", (sku,)).fetchone()["p"] or 0
-                caption = f"✨ {sku} — tu aliado para una piel que brilla.\n\n🧬 Activos de última generación para piel latina.\n💛 ÁNIMUS Lab | Ciencia para tu piel\n.\n#AnimusLab #SkincareLatino #PielLatina"
-                generados.append({"sku": sku, "uds_30d": s["total"], "precio": precio,
-                    "caption_instagram": caption,
-                    "asunto_email": f"{sku} — Tu piel lo estaba esperando",
-                    "texto_whatsapp": f"¡Hola! Te cuento sobre {sku} de ÁNIMUS Lab. ¿Te interesa? 🧴✨"})
-            resultado = {"titulo": "Contenido Auto-Generado para Top SKUs", "piezas": generados}
+                tono = ''
+                try:
+                    tr = c.execute("SELECT tono_label FROM sku_producto_map WHERE sku=?", (sku,)).fetchone()
+                    if tr:
+                        tono = tr["tono_label"] or ''
+                except Exception:
+                    pass
+                ctx_skus.append({
+                    "sku": sku, "uds_30d_liberadas": int(s["total"] or 0),
+                    "precio_pvp": float(precio or 0), "tono": tono,
+                })
+            piezas = []
+            try:
+                api_key = _cfg(conn, "anthropic_api_key")
+                if api_key and ctx_skus:
+                    prompt_ca = (
+                        "Eres el community manager de ÁNIMUS Lab (skincare científico premium "
+                        "colombiano · público mujeres 22-45 piel latina · tono experto cercano sin floritura).\n\n"
+                        f"Para cada uno de estos {len(ctx_skus)} SKUs top, generá contenido nativo PARA PUBLICAR HOY.\n"
+                        "Devolvé EXACTAMENTE este JSON, sin texto antes ni después, sin fence ```:\n"
+                        '[{"sku":"...","caption_instagram":"...","hashtags":["...","..."],'
+                        '"asunto_email":"...","cuerpo_email":"...","texto_whatsapp":"...",'
+                        '"texto_story_ig":"..."}, ...]\n\n'
+                        "Reglas:\n"
+                        "- caption_instagram: máx 220 chars · gancho fuerte primer línea · 2-3 emojis estratégicos · NO genérico · NO frase \"para una piel que brilla\". Mencioná el activo o beneficio científico real del SKU.\n"
+                        "- hashtags: 5-7 hashtags relevantes (mezcla nicho cosmético + lifestyle latino).\n"
+                        "- asunto_email: máx 50 chars · curiosidad o beneficio concreto · no clickbait.\n"
+                        "- cuerpo_email: 3-4 oraciones, segunda persona, cierra con CTA suave.\n"
+                        "- texto_whatsapp: máx 180 chars · arranque casual · invitación clara · 1 emoji.\n"
+                        "- texto_story_ig: máx 80 chars · gancho + CTA swipe up.\n"
+                        "- TODO en español de Colombia · evitar \"latina/latino\" como muletilla.\n\n"
+                        "Datos:\n" + json.dumps(ctx_skus, ensure_ascii=False)
+                    )
+                    payload = json.dumps({
+                        "model": "claude-haiku-4-5-20251001",
+                        "max_tokens": 2200,
+                        "messages": [{"role": "user", "content": prompt_ca}]
+                    }).encode("utf-8")
+                    req = urllib.request.Request(
+                        "https://api.anthropic.com/v1/messages",
+                        data=payload,
+                        headers={"x-api-key": api_key, "anthropic-version": "2023-06-01",
+                                  "content-type": "application/json"},
+                        method="POST"
+                    )
+                    with urllib.request.urlopen(req, timeout=30) as resp:
+                        rj = json.loads(resp.read().decode("utf-8"))
+                        text = rj["content"][0]["text"].strip()
+                        if text.startswith('```'):
+                            text = _re_atrib.sub(r'^```(?:json)?\s*|\s*```$', '', text, flags=_re_atrib.MULTILINE).strip()
+                        parsed = json.loads(text)
+                        by_sku = {p["sku"]: p for p in parsed if isinstance(p, dict) and p.get("sku")}
+                        for s in ctx_skus:
+                            base = {**s}
+                            cl = by_sku.get(s["sku"])
+                            if cl:
+                                base.update({
+                                    "caption_instagram": cl.get("caption_instagram", ""),
+                                    "hashtags": cl.get("hashtags", []),
+                                    "asunto_email": cl.get("asunto_email", ""),
+                                    "cuerpo_email": cl.get("cuerpo_email", ""),
+                                    "texto_whatsapp": cl.get("texto_whatsapp", ""),
+                                    "texto_story_ig": cl.get("texto_story_ig", ""),
+                                })
+                            piezas.append(base)
+            except Exception:
+                piezas = []
+            if not piezas:
+                # Fallback si Claude no disponible · al menos devolvemos datos base
+                for s in ctx_skus:
+                    piezas.append({**s,
+                                    "caption_instagram": f"[Sin IA] Configurar anthropic_api_key para generar contenido auto para {s['sku']}",
+                                    "asunto_email": "", "cuerpo_email": "",
+                                    "texto_whatsapp": "", "texto_story_ig": ""})
+            resultado = {"titulo": "Contenido Auto-Generado para Top SKUs",
+                          "piezas": piezas,
+                          "generado_con": "claude-haiku-4-5"}
 
         # ── Agente 10: Alerta Stock ────────────────────────────────────────────
         elif agente == "alerta_stock":
@@ -3164,10 +3714,10 @@ def mkt_ejecutar_agente(agente):
             except Exception:
                 pass
 
-            # 7) Eventos cosméticos próximos 60 días
+            # 7) Eventos cosméticos próximos 60 días · tabla editable (mig 186)
             from datetime import datetime as _dt2
             eventos_proximos = []
-            for ev in CALENDARIO_COSMETICO:
+            for ev in _get_calendario_cosmetico(conn):
                 try:
                     dias = (_dt2.strptime(ev["fecha"], "%Y-%m-%d") - hoy).days
                 except Exception:
