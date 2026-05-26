@@ -1212,7 +1212,18 @@ def editar_oc(numero_oc):
         observaciones = d.get('observaciones', cur_obs) if 'observaciones' in d else cur_obs
         fecha_entrega_est = d.get('fecha_entrega_est', cur_fent) if 'fecha_entrega_est' in d else cur_fent
         con_iva = (1 if d.get('con_iva') else 0) if 'con_iva' in d else int(cur_iva or 0)
-        valor_sin_iva = float(d.get('valor_sin_iva', cur_vsi)) if 'valor_sin_iva' in d else float(cur_vsi or 0)
+        # P1 audit 26-may · simetría POST/PUT · validate_money en editar_oc
+        # Antes: float() pelado aceptaba NaN/Inf/negativos · contaminaba
+        # valor_total downstream.
+        from http_helpers import validate_money as _vm_oc
+        if 'valor_sin_iva' in d:
+            valor_sin_iva, _err_vsi = _vm_oc(d.get('valor_sin_iva'),
+                                              allow_zero=True, max_value=1e10,
+                                              field_name='valor_sin_iva')
+            if _err_vsi:
+                return jsonify(_err_vsi), 400
+        else:
+            valor_sin_iva = float(cur_vsi or 0)
         c.execute("""
             UPDATE ordenes_compra SET
                 proveedor=?, categoria=?, observaciones=?,
@@ -1225,10 +1236,19 @@ def editar_oc(numero_oc):
             c.execute('DELETE FROM ordenes_compra_items WHERE numero_oc=?', (numero_oc,))
             valor_total = 0.0
             for it in (d.get('items') or []):
-                subtotal = round(float(it.get('cantidad_g', 0)) * float(it.get('precio_unitario', 0)), 2)
+                # validate_money en items PUT (asimetría con POST)
+                _cg, _err_cg = _vm_oc(it.get('cantidad_g', 0), allow_zero=False,
+                                       max_value=1e9, field_name='cantidad_g')
+                if _err_cg:
+                    return jsonify(_err_cg), 400
+                _pu, _err_pu = _vm_oc(it.get('precio_unitario', 0), allow_zero=True,
+                                       max_value=1e9, field_name='precio_unitario')
+                if _err_pu:
+                    return jsonify(_err_pu), 400
+                subtotal = round(_cg * _pu, 2)
                 c.execute('INSERT INTO ordenes_compra_items (numero_oc,codigo_mp,nombre_mp,cantidad_g,precio_unitario,subtotal) VALUES (?,?,?,?,?,?)',
                           (numero_oc, it.get('codigo_mp', ''), it.get('nombre_mp', ''),
-                           float(it.get('cantidad_g', 0)), float(it.get('precio_unitario', 0)), subtotal))
+                           _cg, _pu, subtotal))
                 valor_total += subtotal
             if con_iva:
                 valor_total = round(valor_total * 1.19, 2)

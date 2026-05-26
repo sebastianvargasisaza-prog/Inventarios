@@ -3918,16 +3918,20 @@ def planta_centro_mando():
             LIMIT 200
         """, (_f_inicio, _f_fin)).fetchall()
         auto_clean_diag['db_rows_check'] = len(_db_rows)
+        # P0 audit 26-may · DEFENSIVO · si Calendar set viene VACÍO,
+        # NUNCA limpiamos · era el bug que un blip 60s del Google
+        # Calendar API wipea el plan semanal entero · re-incidente
+        # del 19-may era exactamente este patrón.
+        if not _productos_cal:
+            auto_clean_diag['skipped_calendar_empty'] = True
+            _db_rows = []  # bypass del loop · no cancela nada
         for pid, prod, fecha in _db_rows:
             key = (fecha, (prod or '').upper())
-            if _productos_cal and key in _productos_cal:
+            if key in _productos_cal:
                 # Tiene match Calendar exacto → mantener (Calendar la pre-asigna)
                 auto_clean_diag['matched'] += 1
                 continue
-            # No tiene match O Calendar set vacío → cancelar
-            # (si Calendar set está vacío puede ser que feed esté caído,
-            # PERO también puede ser que Calendar simplemente no tenga
-            # esa producción · eligir limpieza estricta)
+            # No tiene match · cancelar (Calendar set NO está vacío · feed OK)
             _ac.execute("""
                 UPDATE produccion_programada
                   SET estado='cancelado',
@@ -12307,6 +12311,18 @@ def checklist_sync_calendar_endpoint():
     days = int(request.args.get('dias', 90))
     force_mirror = (request.args.get('force_mirror', '').lower()
                     in ('true', '1', 'yes'))
+    # P0 audit 26-may · INV-3 dice "force_mirror solo desde el botón
+    # Re-sync Calendar (admin)" pero el endpoint solo checaba sesión ·
+    # cualquier user con sesión podía pasar ?force_mirror=true y disparar
+    # HARD DELETE bulk del horizonte.
+    if force_mirror:
+        _u = session.get('compras_user', '')
+        try:
+            from config import ADMIN_USERS as _AU
+        except Exception:
+            _AU = {'sebastian', 'alejandro'}
+        if (_u or '').lower() not in {x.lower() for x in _AU}:
+            return jsonify({'error': 'force_mirror requiere admin (HARD DELETE bulk)'}), 403
     conn = get_db()
     result = _sync_calendar_a_produccion_programada(
         conn, days_ahead=days, force_mirror=force_mirror,
