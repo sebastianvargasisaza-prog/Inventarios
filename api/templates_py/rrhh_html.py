@@ -675,50 +675,62 @@ async function cargarNotif() {
     var c = document.getElementById('notif-content');
     var lista = d.notificaciones || [];
     if (!lista.length) {
-      c.innerHTML = '<div class="empty">Sin reportes ' + (estado ? 'con estado "' + estado + '"' : '') + '</div>';
+      c.innerHTML = '<div class="empty">Sin reportes ' + (estado ? 'con estado "' + esc(estado) + '"' : '') + '</div>';
       cargarNotifBadge();
       return;
+    }
+    // Helper local · valida URL para evitar XSS reflejado en adjunto_url
+    // (vector ya identificado en audit 26-may · puede venir de endpoint
+    // público /api/publico/empleado-reporte sin auth).
+    function _safeUrl(u){
+      var s = String(u||'').trim();
+      if(!s) return '';
+      var lo = s.toLowerCase();
+      if(lo.startsWith('javascript:')||lo.startsWith('data:')||lo.startsWith('vbscript:')) return '';
+      if(!(lo.startsWith('http://')||lo.startsWith('https://')||lo.startsWith('/'))) return '';
+      return esc(s);
     }
     c.innerHTML = lista.map(function(n){
       var col = tipoColor(n.tipo);
       var fechas = '';
       if (n.fecha_inicio || n.fecha_fin) {
         fechas = '<div style="font-size:11px;color:#64748b;margin-top:4px;">' +
-          (n.fecha_inicio ? '<b>Desde:</b> ' + n.fecha_inicio + ' ' : '') +
-          (n.fecha_fin ? '<b>Hasta:</b> ' + n.fecha_fin : '') + '</div>';
+          (n.fecha_inicio ? '<b>Desde:</b> ' + esc(n.fecha_inicio) + ' ' : '') +
+          (n.fecha_fin ? '<b>Hasta:</b> ' + esc(n.fecha_fin) : '') + '</div>';
       }
-      var adj = n.adjunto_url ? '<a href="' + n.adjunto_url + '" target="_blank" style="display:inline-block;margin-top:6px;color:#0e7490;font-size:12px;">📎 Ver evidencia</a>' : '';
+      var safeAdj = _safeUrl(n.adjunto_url);
+      var adj = safeAdj ? '<a href="' + safeAdj + '" target="_blank" rel="noopener noreferrer" style="display:inline-block;margin-top:6px;color:#0e7490;font-size:12px;">📎 Ver evidencia</a>' : '';
       var btns = '';
       if (n.estado === 'pendiente') {
         btns = '<div style="margin-top:10px;display:flex;gap:6px;">' +
-          '<button onclick="resolverNotif(' + n.id + ',\'aprobada\')" style="background:#10b981;color:#fff;border:none;padding:6px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;">✓ Aprobar</button>' +
-          '<button onclick="resolverNotif(' + n.id + ',\'rechazada\')" style="background:#dc2626;color:#fff;border:none;padding:6px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;">✗ Rechazar</button>' +
-          '<button onclick="resolverNotif(' + n.id + ',\'vista\')" style="background:#64748b;color:#fff;border:none;padding:6px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;">👁 Marcar vista</button>' +
+          '<button onclick="resolverNotif(' + (parseInt(n.id)||0) + ',\'aprobada\')" style="background:#10b981;color:#fff;border:none;padding:6px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;">✓ Aprobar</button>' +
+          '<button onclick="resolverNotif(' + (parseInt(n.id)||0) + ',\'rechazada\')" style="background:#dc2626;color:#fff;border:none;padding:6px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;">✗ Rechazar</button>' +
+          '<button onclick="resolverNotif(' + (parseInt(n.id)||0) + ',\'vista\')" style="background:#64748b;color:#fff;border:none;padding:6px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;">👁 Marcar vista</button>' +
           '</div>';
       }
       var estadoCol = ({pendiente:'#f59e0b', aprobada:'#10b981', rechazada:'#dc2626', vista:'#64748b'})[n.estado] || '#64748b';
       return '<div style="background:#fff;border:1.5px solid #e2e8f0;border-left:5px solid ' + col + ';border-radius:10px;padding:16px 18px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,.04);">' +
         '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;">' +
           '<div>' +
-            '<div style="font-weight:700;font-size:15px;color:#0f172a;">' + tipoIcon(n.tipo) + ' ' + (n.asunto||'') + '</div>' +
-            '<div style="font-size:12px;color:#475569;margin-top:3px;"><b>' + (n.empleado_nombre||n.empleado_username) + '</b> · ' +
-              '<span style="background:' + col + '22;color:' + col + ';padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;">' + n.tipo + '</span></div>' +
+            '<div style="font-weight:700;font-size:15px;color:#0f172a;">' + tipoIcon(n.tipo) + ' ' + esc(n.asunto||'') + '</div>' +
+            '<div style="font-size:12px;color:#475569;margin-top:3px;"><b>' + esc(n.empleado_nombre||n.empleado_username||'') + '</b> · ' +
+              '<span style="background:' + col + '22;color:' + col + ';padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;">' + esc(n.tipo||'') + '</span></div>' +
             fechas +
-            (n.descripcion ? '<div style="font-size:13px;color:#334155;margin-top:8px;background:#f8fafc;padding:10px 12px;border-radius:6px;">' + n.descripcion + '</div>' : '') +
+            (n.descripcion ? '<div style="font-size:13px;color:#334155;margin-top:8px;background:#f8fafc;padding:10px 12px;border-radius:6px;">' + esc(n.descripcion) + '</div>' : '') +
             adj +
           '</div>' +
           '<div style="text-align:right;">' +
-            '<span style="background:' + estadoCol + ';color:#fff;padding:4px 10px;border-radius:6px;font-size:11px;font-weight:700;text-transform:uppercase;">' + n.estado + '</span>' +
-            '<div style="font-size:10px;color:#94a3b8;margin-top:6px;">' + (n.creado_en||'').substring(0,16) + '</div>' +
+            '<span style="background:' + estadoCol + ';color:#fff;padding:4px 10px;border-radius:6px;font-size:11px;font-weight:700;text-transform:uppercase;">' + esc(n.estado||'') + '</span>' +
+            '<div style="font-size:10px;color:#94a3b8;margin-top:6px;">' + esc((n.creado_en||'').substring(0,16)) + '</div>' +
           '</div>' +
         '</div>' +
         btns +
-        (n.comentario_jefe ? '<div style="margin-top:8px;padding:8px 12px;background:#fef9c3;border-radius:6px;font-size:12px;color:#713f12;"><b>Resp. RH:</b> ' + n.comentario_jefe + '</div>' : '') +
+        (n.comentario_jefe ? '<div style="margin-top:8px;padding:8px 12px;background:#fef9c3;border-radius:6px;font-size:12px;color:#713f12;"><b>Resp. RH:</b> ' + esc(n.comentario_jefe) + '</div>' : '') +
         '</div>';
     }).join('');
     cargarNotifBadge();
   } catch(e) {
-    document.getElementById('notif-content').innerHTML = '<div class="empty">Error: ' + e.message + '</div>';
+    document.getElementById('notif-content').innerHTML = '<div class="empty">Error: ' + esc(e.message) + '</div>';
   }
 }
 async function resolverNotif(id, estado) {
@@ -763,20 +775,20 @@ async function cargarEventosRH(){
       '</tr></thead><tbody>'+
       items.map(function(e){
         var col = tipoColors[e.tipo]||'#64748b';
-        var fechas = (e.fecha_inicio||'') + (e.fecha_fin?' → '+e.fecha_fin:'');
+        var fechas = esc((e.fecha_inicio||'') + (e.fecha_fin?' → '+e.fecha_fin:''));
         return '<tr>'+
-          '<td><b>#'+e.empleado_id+'</b></td>'+
-          '<td><span style="background:'+col+'22;color:'+col+';padding:2px 8px;border-radius:8px;font-size:11px;font-weight:700">'+e.tipo+'</span></td>'+
+          '<td><b>#'+(parseInt(e.empleado_id)||0)+'</b></td>'+
+          '<td><span style="background:'+col+'22;color:'+col+';padding:2px 8px;border-radius:8px;font-size:11px;font-weight:700">'+esc(e.tipo||'')+'</span></td>'+
           '<td style="font-size:12px">'+fechas+'</td>'+
-          '<td style="text-align:center;font-weight:700">'+(e.dias||0)+'</td>'+
+          '<td style="text-align:center;font-weight:700">'+(parseInt(e.dias)||0)+'</td>'+
           '<td style="text-align:right;font-family:monospace">'+(e.pago_empleador?'$'+Math.round(e.pago_empleador).toLocaleString('es-CO'):'—')+'</td>'+
           '<td style="text-align:right;font-family:monospace;color:#16a34a">'+(e.pago_eps?'$'+Math.round(e.pago_eps).toLocaleString('es-CO'):'—')+'</td>'+
           '<td style="text-align:right;font-family:monospace;color:#7c3aed">'+(e.pago_arl?'$'+Math.round(e.pago_arl).toLocaleString('es-CO'):'—')+'</td>'+
-          '<td><span class="badge badge-'+(e.estado==='aprobada'?'activo':e.estado==='cerrada'?'indef':'inactivo')+'">'+e.estado+'</span></td>'+
-          '<td>'+(e.estado==='registrada'?'<button class="btn btn-success btn-sm" onclick="aprobarEvento('+e.id+')">Aprobar</button>':'')+'</td>'+
+          '<td><span class="badge badge-'+(e.estado==='aprobada'?'activo':e.estado==='cerrada'?'indef':'inactivo')+'">'+esc(e.estado||'')+'</span></td>'+
+          '<td>'+(e.estado==='registrada'?'<button class="btn btn-success btn-sm" onclick="aprobarEvento('+(parseInt(e.id)||0)+')">Aprobar</button>':'')+'</td>'+
           '</tr>';
       }).join('')+'</tbody></table>';
-  } catch(e){ lista.innerHTML = '<div style="color:#dc2626;padding:14px">Error: '+e.message+'</div>'; }
+  } catch(e){ lista.innerHTML = '<div style="color:#dc2626;padding:14px">Error: '+esc(e.message)+'</div>'; }
 }
 
 function abrirModalEventoRH(){
@@ -1043,16 +1055,16 @@ function renderEmpleados(list) {
   }
   if(pgEl) pgEl.innerHTML = _renderPag('emp', info);
   g.innerHTML = info.items.map(function(e){
-    var initials = (e.nombre||'?').charAt(0)+(e.apellido||'').charAt(0);
-    var color = avatarColor(e.nombre+e.apellido);
+    var initials = esc((e.nombre||'?').charAt(0)+(e.apellido||'').charAt(0));
+    var color = avatarColor((e.nombre||'')+(e.apellido||''));
     return '<div class="emp-card">' +
       '<div class="emp-avatar" style="background:'+color+';">'+initials+'</div>' +
-      '<div class="emp-name">'+e.nombre+' '+e.apellido+'</div>' +
-      '<div class="emp-cargo">'+e.cargo+'</div>' +
+      '<div class="emp-name">'+esc(e.nombre||'')+' '+esc(e.apellido||'')+'</div>' +
+      '<div class="emp-cargo">'+esc(e.cargo||'')+'</div>' +
       '<div class="emp-meta">'+badgeEmpresa(e.empresa)+' '+badgeContrato(e.tipo_contrato)+
-      ' <span class="badge '+(e.estado==='Activo'?'badge-activo':'badge-inactivo')+'">'+e.estado+'</span></div>' +
+      ' <span class="badge '+(e.estado==='Activo'?'badge-activo':'badge-inactivo')+'">'+esc(e.estado||'')+'</span></div>' +
       '<div style="margin-top:10px;font-size:13px;font-weight:700;color:#6d28d9;">'+fmt(e.salario_base)+'</div>' +
-      '<button onclick="openEmpModal('+e.id+')" style="margin-top:10px;width:100%;padding:7px;background:#f3f0ff;border:1px solid #c4b5fd;border-radius:7px;color:#6d28d9;font-weight:600;cursor:pointer;font-size:13px;">&#9998; Editar colaborador</button>' +
+      '<button onclick="openEmpModal('+(parseInt(e.id)||0)+')" style="margin-top:10px;width:100%;padding:7px;background:#f3f0ff;border:1px solid #c4b5fd;border-radius:7px;color:#6d28d9;font-weight:600;cursor:pointer;font-size:13px;">&#9998; Editar colaborador</button>' +
       '</div>';
   }).join('');
 }
@@ -1162,19 +1174,22 @@ async function loadAusencias(){
     var estadoColors = {'Aprobada':'badge-activo','Pendiente':'badge-fijo','Rechazada':'badge-inactivo'};
     tbody.innerHTML = filtered.map(function(a){
       return '<tr>' +
-        '<td><strong>'+a.empleado+'</strong></td>' +
-        '<td>'+a.tipo+'</td><td>'+fmtDate(a.fecha_inicio)+'</td><td>'+fmtDate(a.fecha_fin)+'</td>' +
-        '<td style="text-align:center;font-weight:700;">'+a.dias+'</td>' +
-        '<td><span class="badge '+(estadoColors[a.estado]||'badge-indef')+'">'+a.estado+'</span></td>' +
-        '<td style="color:#78716c;max-width:150px;">'+(a.observaciones||'—')+'</td>' +
+        '<td><strong>'+esc(a.empleado||'')+'</strong></td>' +
+        '<td>'+esc(a.tipo||'')+'</td><td>'+esc(fmtDate(a.fecha_inicio))+'</td><td>'+esc(fmtDate(a.fecha_fin))+'</td>' +
+        '<td style="text-align:center;font-weight:700;">'+(parseInt(a.dias)||0)+'</td>' +
+        '<td><span class="badge '+(estadoColors[a.estado]||'badge-indef')+'">'+esc(a.estado||'')+'</span></td>' +
+        '<td style="color:#78716c;max-width:150px;">'+esc(a.observaciones||'—')+'</td>' +
         '<td>' +
           (a.estado==='Pendiente'?
-            '<button class="btn btn-success btn-sm" onclick="aprobarAus('+a.id+',\'Aprobada\')">Aprobar</button> '+
-            '<button class="btn btn-danger btn-sm" style="margin-left:4px;" onclick="aprobarAus('+a.id+',\'Rechazada\')">Rechazar</button>':
-            '<span style="color:#a8a29e;font-size:12px;">'+a.aprobado_por+'</span>') +
+            '<button class="btn btn-success btn-sm" onclick="aprobarAus('+(parseInt(a.id)||0)+',\'Aprobada\')">Aprobar</button> '+
+            '<button class="btn btn-danger btn-sm" style="margin-left:4px;" onclick="aprobarAus('+(parseInt(a.id)||0)+',\'Rechazada\')">Rechazar</button>':
+            '<span style="color:#a8a29e;font-size:12px;">'+esc(a.aprobado_por||'')+'</span>') +
         '</td></tr>';
     }).join('');
-  } catch(e){console.error(e);}
+  } catch(e){ /* audit 26-may · log silencioso reemplazado por mensaje visible */
+    var tbody=document.getElementById('aus-body');
+    if(tbody) tbody.innerHTML='<tr><td colspan="8" style="color:#dc2626;padding:14px">Error: '+esc(e.message)+'</td></tr>';
+  }
 }
 
 async function aprobarAus(id, estado){

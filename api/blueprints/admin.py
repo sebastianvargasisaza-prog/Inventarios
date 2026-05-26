@@ -8024,7 +8024,7 @@ async function auditarInvVsExcel() {
   const fd = new FormData();
   fd.append('file', fileEl.files[0]);
   try {
-    const r = await fetch('/api/admin/audit-inventario-vs-excel', {method: 'POST', body: fd});
+    const r = await fetch('/api/admin/audit-inventario-vs-excel', {method: 'POST', body: fd, headers:{'X-CSRF-Token':(document.cookie.match(/(?:^|;\\s*)csrf_token=([^;]+)/)||['',''])[1]}});
     const d = await r.json();
     if (!r.ok) { out.innerHTML = '<div style="color:#fca5a5;">Error: ' + _esc(d.error||r.status) + (d.detail?' — '+_esc(d.detail):'') + '</div>'; return; }
     const s = d.resumen;
@@ -8110,7 +8110,7 @@ async function sembrarMaestroDesdeExcel() {
   try {
     const fd = new FormData();
     fd.append('file', fileEl.files[0]);
-    const r = await fetch('/api/admin/sembrar-maestro-desde-excel', {method: 'POST', body: fd});
+    const r = await fetch('/api/admin/sembrar-maestro-desde-excel', {method: 'POST', body: fd, headers:{'X-CSRF-Token':(document.cookie.match(/(?:^|;\\s*)csrf_token=([^;]+)/)||['',''])[1]}});
     const d = await r.json();
     if (!r.ok) {
       out.innerHTML = '<div style="color:#fca5a5;">Error: ' + _esc(d.error||r.status) + '</div>';
@@ -8173,7 +8173,7 @@ async function previewReset() {
   const fd = new FormData();
   fd.append('file', fileEl.files[0]);
   try {
-    const r = await fetch('/api/admin/inventario-reset-preview', {method:'POST', body:fd});
+    const r = await fetch('/api/admin/inventario-reset-preview', {method:'POST', body:fd, headers:{'X-CSRF-Token':(document.cookie.match(/(?:^|;\\s*)csrf_token=([^;]+)/)||['',''])[1]}});
     const d = await r.json();
     if (!r.ok) { out.innerHTML = '<div style="color:#fca5a5;">Error: ' + _esc(d.error||r.status) + '</div>'; return; }
     const p = d.plan;
@@ -8277,7 +8277,7 @@ async function aplicarReset() {
   fd.append('file', fileEl.files[0]);
   fd.append('confirmacion', TOKEN);
   try {
-    const r = await fetch('/api/admin/inventario-reset-aplicar', {method:'POST', body:fd});
+    const r = await fetch('/api/admin/inventario-reset-aplicar', {method:'POST', body:fd, headers:{'X-CSRF-Token':(document.cookie.match(/(?:^|;\\s*)csrf_token=([^;]+)/)||['',''])[1]}});
     const d = await r.json();
     if (!r.ok) { out.innerHTML = '<div style="color:#fca5a5;">Error: ' + _esc(d.error||r.status) + (d.detail?'<br><small>' + _esc(d.detail) + '</small>':'') + '</div>'; return; }
     let h = '<div style="background:rgba(16,185,129,.15);border:1px solid #34d399;border-radius:10px;padding:14px;">';
@@ -8629,7 +8629,7 @@ async function triggerBackup() {
   btn.disabled = true;
   lbl.textContent = '⏳ Haciendo backup...';
   try {
-    const r = await fetch('/api/admin/backup-now', {method:'POST', headers:{'Content-Type':'application/json'}});
+    const r = await fetch('/api/admin/backup-now', {method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':(document.cookie.match(/(?:^|;\\s*)csrf_token=([^;]+)/)||['',''])[1]}});
     const data = await r.json();
     if (r.ok && data.ok) { toast('Backup creado: ' + data.filename, 'ok'); loadBackups(); }
     else toast('Error: ' + (data.error || 'desconocido'), 'err');
@@ -9360,7 +9360,7 @@ async function syncExcel(dryRun) {
   const fd = new FormData();
   fd.append('file', fi.files[0]);
   const url = '/api/admin/sync-influencers-excel' + (dryRun ? '?dry_run=1' : '');
-  const r = await fetch(url, {method:'POST', body: fd});
+  const r = await fetch(url, {method:'POST', body: fd, headers:{'X-CSRF-Token':(document.cookie.match(/(?:^|;\\s*)csrf_token=([^;]+)/)||['',''])[1]}});
   let data;
   try { data = await r.json(); } catch(e) { data = {error: 'Respuesta inválida'}; }
   if (!r.ok) {
@@ -9406,7 +9406,7 @@ async function syncPagos(dryRun) {
   const fd = new FormData();
   fd.append('file', fi.files[0]);
   const url = '/api/admin/import-pagos-influencers-excel' + (dryRun ? '?dry_run=1' : '');
-  const r = await fetch(url, {method:'POST', body: fd});
+  const r = await fetch(url, {method:'POST', body: fd, headers:{'X-CSRF-Token':(document.cookie.match(/(?:^|;\\s*)csrf_token=([^;]+)/)||['',''])[1]}});
   let data;
   try { data = await r.json(); } catch(e) { data = {error: 'Respuesta inválida'}; }
   if (!r.ok) {
@@ -9569,7 +9569,7 @@ async function syncMpsNombres(dryRun){
   fd.append('file', fi.files[0]);
   const url = '/api/admin/import-mps-nombres-excel' + (dryRun ? '?dry_run=1' : '');
   try{
-    const r = await fetch(url, {method:'POST', body: fd});
+    const r = await fetch(url, {method:'POST', body: fd, headers:{'X-CSRF-Token':(document.cookie.match(/(?:^|;\\s*)csrf_token=([^;]+)/)||['',''])[1]}});
     const d = await r.json();
     if(!r.ok){
       out.innerHTML = '<div style="color:#f87171;padding:14px;background:#1e293b;border-radius:8px;">'
@@ -9980,7 +9980,7 @@ def admin_backfill_debug_page():
       var box = document.getElementById('resultado');
       box.innerHTML = '<div class="warn">⏳ Ejecutando... puede tardar varios segundos</div>';
       try {
-        var r = await fetch('/api/programacion/checklist/backfill', {method:'POST'});
+        var r = await fetch('/api/programacion/checklist/backfill', {method:'POST', headers:{'X-CSRF-Token':(document.cookie.match(/(?:^|;\\s*)csrf_token=([^;]+)/)||['',''])[1]}});
         var d = await r.json();
         var html = '';
         if(!r.ok){
@@ -10275,7 +10275,7 @@ def admin_audit_inventario():
 async function limpiarDriftMee(){{
   if(!confirm("Insertar movimientos seed para alinear los {len(mees_drift)} MEEs con drift?\\n\\nEsto SOLO alinea el log con la realidad actual — NO cambia el stock_actual. Operación segura."))return;
   try {{
-    var r = await fetch("/admin/audit-inventario/limpiar-drift-mee",{{method:"POST",headers:{{"Content-Type":"application/json"}}}});
+    var r = await fetch("/admin/audit-inventario/limpiar-drift-mee",{{method:"POST",headers:{{"Content-Type":"application/json","X-CSRF-Token":(document.cookie.match(/(?:^|;\\s*)csrf_token=([^;]+)/)||['',''])[1]}}}});
     var d = await r.json();
     if(!r.ok){{ alert("Error: "+(d.error||r.status)); return; }}
     alert("✅ Alineados "+d.alineados+" MEEs. La página se va a recargar.");
@@ -10414,7 +10414,7 @@ def admin_influencers_limpieza():
       var ids = Array.from(document.querySelectorAll('input[name=ids]:checked')).map(function(cb){return parseInt(cb.value);});
       if(!ids.length){ alert('Marca al menos una fila para eliminar.'); return; }
       if(!confirm('Eliminar '+ids.length+' filas de pagos_influencers? Esto NO toca ordenes_compra ni solicitudes_compra.')) return;
-      var r = await fetch('/admin/influencers-limpieza', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ids:ids})});
+      var r = await fetch('/admin/influencers-limpieza', {method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':(document.cookie.match(/(?:^|;\\s*)csrf_token=([^;]+)/)||['',''])[1]}, body: JSON.stringify({ids:ids})});
       var d = await r.json();
       if(!r.ok){ alert('Error: '+(d.error||r.status)); return; }
       alert('Eliminadas '+d.eliminadas+' filas. Recargando.');
@@ -10756,13 +10756,13 @@ def admin_influencers_cargar_29abr():
         <script>
         async function limpiar(){{
           if(!confirm('Borrar TODOS los pagos pendientes/aprobados de influencers actuales? (No toca los ya pagados)')) return;
-          var r = await fetch('/admin/influencers-reset-pendientes',{{method:'POST'}});
+          var r = await fetch('/admin/influencers-reset-pendientes',{{method:'POST',headers:{{'X-CSRF-Token':(document.cookie.match(/(?:^|;\\s*)csrf_token=([^;]+)/)||['',''])[1]}}}});
           var d = await r.json();
           document.getElementById('result').innerHTML = '<pre>'+JSON.stringify(d,null,2)+'</pre>';
         }}
         async function cargar(){{
           if(!confirm('Cargar los 16 influencers como pagos Aprobados pendientes de pago?')) return;
-          var r = await fetch('/admin/influencers-cargar-29abr',{{method:'POST'}});
+          var r = await fetch('/admin/influencers-cargar-29abr',{{method:'POST',headers:{{'X-CSRF-Token':(document.cookie.match(/(?:^|;\\s*)csrf_token=([^;]+)/)||['',''])[1]}}}});
           var d = await r.json();
           document.getElementById('result').innerHTML = '<pre>'+JSON.stringify(d,null,2)+'</pre>';
         }}
@@ -11405,7 +11405,7 @@ def admin_inventario_envase_import_page():
       var fd = new FormData();
       fd.append('file', f);
       var qs = (dryRun?'dry_run=1&':'')+'modo='+encodeURIComponent(modo);
-      var r = await fetch('/api/admin/import-inventario-envase-xlsx?'+qs, {method:'POST', body: fd});
+      var r = await fetch('/api/admin/import-inventario-envase-xlsx?'+qs, {method:'POST', body: fd, headers:{'X-CSRF-Token':(document.cookie.match(/(?:^|;\\s*)csrf_token=([^;]+)/)||['',''])[1]}});
       var d = await r.json();
       var col = d.ok ? '#16a34a' : '#dc2626';
       document.getElementById('resultado').innerHTML =
@@ -11485,14 +11485,14 @@ def admin_producciones_debug_page():
     function esc(s){ return String(s||'').replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
     async function borrar(id, prod, fecha){
       if(!confirm('¿Borrar definitivamente la producción '+id+' ('+prod+' · '+fecha+')? También borra items del checklist asociados.')) return;
-      var r = await fetch('/api/programacion/produccion-programada/'+id+'/borrar', {method:'DELETE'});
+      var r = await fetch('/api/programacion/produccion-programada/'+id+'/borrar', {method:'DELETE', headers:{'X-CSRF-Token':(document.cookie.match(/(?:^|;\\s*)csrf_token=([^;]+)/)||['',''])[1]}});
       var d = await r.json();
       if(!r.ok){ alert('Error: '+(d.error||r.status)); return; }
       alert(d.mensaje||'Borrada');
       cargar();
     }
     async function forzarSync(){
-      var r = await fetch('/api/programacion/checklist/sync-calendar?dias=120', {method:'POST'});
+      var r = await fetch('/api/programacion/checklist/sync-calendar?dias=120', {method:'POST', headers:{'X-CSRF-Token':(document.cookie.match(/(?:^|;\\s*)csrf_token=([^;]+)/)||['',''])[1]}});
       var d = await r.json();
       alert(d.mensaje || JSON.stringify(d));
       cargar();
@@ -16474,7 +16474,7 @@ async function apply(n){
       url='/api/admin/anular-movimiento';
       body={mov_id: mid, motivo: 'Ajuste-4 cíclico sin Entrada respaldatoria · saldo -1.430.000g irreal · limpieza cero-error'};
     }
-    res = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'},
+    res = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json','X-CSRF-Token':(document.cookie.match(/(?:^|;\\s*)csrf_token=([^;]+)/)||['',''])[1]},
                             body: JSON.stringify(body)});
     var d = await res.json();
     if(res.ok){
@@ -17354,7 +17354,7 @@ async function archivar(){
 async function triggerVencidos(){
   if(!confirm('¿Marcar como VENCIDO todos los lotes con fecha_venc pasada que aún figuran VIGENTE?')) return;
   try{
-    const r = await fetch('/api/admin/marcar-vencidos-bulk-todos', {method:'POST'});
+    const r = await fetch('/api/admin/marcar-vencidos-bulk-todos', {method:'POST', headers:{'X-CSRF-Token':(document.cookie.match(/(?:^|;\\s*)csrf_token=([^;]+)/)||['',''])[1]}});
     const d = await r.json();
     if(!r.ok){
       alert('Error: '+(d.error || 'falla'));
