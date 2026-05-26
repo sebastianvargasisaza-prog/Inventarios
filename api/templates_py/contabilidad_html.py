@@ -370,11 +370,26 @@ tr:hover td{background:#202020}
 
 <script>
 
+// Helper esc · XSS-safe (P0 fix 27-may · cliente_nombre con comillas rompía onclick)
+function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+
 // CSRF defense-in-depth - Sebastian 3-may-2026
+// FIX 27-may · token vive en server-side session · NO en cookie. Esta función
+// queda como fallback para compat; los nuevos handlers usan _ensureCsrf() async.
 function _csrf() {
-  var m = document.cookie.match(/(?:^|;[ \t]*)csrf_token=([^;]+)/);
-  return m ? decodeURIComponent(m[1]) : '';
+  return window._csrfTok || '';
 }
+let _CSRF_PROMISE = null;
+async function _ensureCsrf(){
+  if (window._csrfTok) return window._csrfTok;
+  if (_CSRF_PROMISE) return _CSRF_PROMISE;
+  _CSRF_PROMISE = fetch('/api/csrf-token', {credentials:'same-origin'})
+    .then(r => r.ok ? r.json() : {})
+    .then(d => { window._csrfTok = d.csrf_token || ''; return window._csrfTok; })
+    .catch(() => '');
+  return _CSRF_PROMISE;
+}
+_ensureCsrf();  // precarga al cargar la página
 function _fetchOpts(method, body) {
   var headers = {};
   var tok = _csrf();
@@ -484,20 +499,23 @@ async function loadFacturas(){
   const rows = await fetch(url).then(r=>r.json());
   const tb = document.getElementById('tbody-facturas');
   if(!rows.length){tb.innerHTML='<tr><td colspan="9" style="text-align:center;color:#555;padding:24px">Sin facturas</td></tr>';return;}
+  // FIX 27-may (P0/P1 XSS) · esc en todos los strings de DB + data-attributes
+  // en lugar de onclick con interpolación (cliente_nombre con comillas rompía
+  // el HTML y permitía inyección JS).
   tb.innerHTML = rows.map(f=>`
     <tr>
-      <td><strong>${f.numero}</strong></td>
-      <td>${fmt(f.fecha_emision)}</td>
-      <td>${f.cliente_nombre||'—'}</td>
-      <td>${f.empresa}</td>
+      <td><strong>${esc(f.numero)}</strong></td>
+      <td>${esc(fmt(f.fecha_emision))}</td>
+      <td>${esc(f.cliente_nombre||'—')}</td>
+      <td>${esc(f.empresa)}</td>
       <td>${COP(f.total)}</td>
       <td>${COP(f.monto_pagado)}</td>
       <td>${COP(f.saldo)}</td>
       <td>${badgeEstado(f.estado)}</td>
       <td style="white-space:nowrap">
-        <a href="/api/contabilidad/facturas/${f.numero}/pdf" target="_blank"><button class="btn btn-secondary btn-sm">PDF</button></a>
-        ${f.estado==='Emitida'?`<button class="btn btn-success btn-sm" onclick="openPago('${f.numero}','${f.cliente_nombre}',${f.saldo})">Pago</button>`:''}
-        ${f.estado==='Emitida'?`<button class="btn btn-danger btn-sm" onclick="anularFactura('${f.numero}')">Anular</button>`:''}
+        <a href="/api/contabilidad/facturas/${encodeURIComponent(f.numero)}/pdf" target="_blank"><button class="btn btn-secondary btn-sm">PDF</button></a>
+        ${f.estado==='Emitida'?`<button class="btn btn-success btn-sm" data-num="${esc(f.numero)}" data-cli="${esc(f.cliente_nombre||'')}" data-saldo="${Number(f.saldo)||0}" onclick="openPago(this.dataset.num,this.dataset.cli,Number(this.dataset.saldo))">Pago</button>`:''}
+        ${f.estado==='Emitida'?`<button class="btn btn-danger btn-sm" data-num="${esc(f.numero)}" onclick="anularFactura(this.dataset.num)">Anular</button>`:''}
       </td>
     </tr>`).join('');
 }
@@ -658,20 +676,28 @@ function openPago(numero, cliente, saldo){
 }
 
 async function registrarPago(){
-  const numero = document.getElementById('pago-numero').value;
-  const body = {
-    monto: parseFloat(document.getElementById('pago-monto').value)||0,
-    medio: document.getElementById('pago-medio').value,
-    referencia: document.getElementById('pago-ref').value,
-  };
-  const r = await fetch(`/api/contabilidad/facturas/${numero}/pago`,_fetchOpts('POST', body));
-  const d = await r.json();
-  if(d.ok){
-    closeModal('modal-pago');
-    toast(`Pago registrado. Total pagado: ${COP(d.total_pagado)}`);
-    loadFacturas(); loadKpis(); loadCartera();
-  } else {
-    toast(d.error||'Error', false);
+  // FIX 27-may (P1) · disable botón para evitar doble click → doble pago.
+  const btn = (event && event.target) ? event.target : null;
+  if (btn && btn.disabled) return;
+  if (btn) { btn.disabled = true; btn.dataset.txt = btn.textContent; btn.textContent = '⏳'; }
+  try {
+    const numero = document.getElementById('pago-numero').value;
+    const body = {
+      monto: parseFloat(document.getElementById('pago-monto').value)||0,
+      medio: document.getElementById('pago-medio').value,
+      referencia: document.getElementById('pago-ref').value,
+    };
+    const r = await fetch(`/api/contabilidad/facturas/${encodeURIComponent(numero)}/pago`,_fetchOpts('POST', body));
+    const d = await r.json();
+    if(d.ok){
+      closeModal('modal-pago');
+      toast(`Pago registrado. Total pagado: ${COP(d.total_pagado)}`);
+      loadFacturas(); loadKpis(); loadCartera();
+    } else {
+      toast(d.error||'Error', false);
+    }
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = btn.dataset.txt || 'Registrar'; }
   }
 }
 

@@ -9585,8 +9585,16 @@ document.addEventListener('click',async function(ev){
   if(!confirm('Confirmás recepción de '+num+'? (Catalina quedará notificada)')) return;
   b.disabled=true; b.textContent='Confirmando...';
   try{
-    var token=document.cookie.match(/csrf_token=([^;]*)/);
-    token=token?decodeURIComponent(token[1]):'';
+    // FIX 27-may (P2) · token vive en server-side session · NO en cookie.
+    // Antes: document.cookie.match siempre devolvía vacío → header sin token
+    // → server rechazaba con 403 silente. Fetch /api/csrf-token con cache.
+    var token = window._csrfTok;
+    if (!token) {
+      try {
+        var tr = await fetch('/api/csrf-token',{credentials:'same-origin'});
+        if (tr.ok) { var td = await tr.json(); token = td.csrf_token || ''; window._csrfTok = token; }
+      } catch(_e) { token = ''; }
+    }
     var r=await fetch('/api/compras/ordenes-servicio/'+encodeURIComponent(num)+'/estado',{
       method:'PATCH',
       headers:{'Content-Type':'application/json','X-CSRF-Token':token},

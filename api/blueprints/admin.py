@@ -6943,7 +6943,13 @@ async function cargar(){
 }
 cargar();
 </script></body></html>"""
-    return Response(html, mimetype='text/html')
+    resp = Response(html, mimetype='text/html')
+    # Evitar cache del browser · esta página admin se itera durante el desarrollo
+    # y el JS cacheado vuelve a generar bugs CSRF/handlers viejos.
+    resp.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate, max-age=0'
+    resp.headers['Pragma'] = 'no-cache'
+    resp.headers['Expires'] = '0'
+    return resp
 
 
 @bp.route("/admin/migraciones-pg", methods=["GET"])

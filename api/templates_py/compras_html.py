@@ -1478,7 +1478,8 @@ async function loadOrdenesServicio(){
     var r = await fetch(url, {credentials:'same-origin'});
     var d = await r.json();
     if(!r.ok){
-      tb.innerHTML = '<tr><td colspan="10" style="color:#dc2626;text-align:center;padding:14px">Error: '+(d.error||r.status)+'</td></tr>';
+      // FIX 27-may (P0 XSS) · esc del error · server podría devolver HTML en d.error
+      tb.innerHTML = '<tr><td colspan="10" style="color:#dc2626;text-align:center;padding:14px">Error: '+esc(d.error||r.status)+'</td></tr>';
       return;
     }
     var items = d.items || [];
