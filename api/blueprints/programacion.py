@@ -5447,23 +5447,55 @@ def borrar_produccion_programada(evento_id):
     if user not in _ADMIN:
         return jsonify({'error': 'Solo admin puede borrar'}), 403
     conn = get_db(); c = conn.cursor()
+    # P0 audit 26-may-2026 · zero-error · CLAUDE.md: "audit_log mandatory en
+    # cualquier UPDATE/DELETE de produccion_programada · Una cancelación/borrado
+    # de produccion_programada que no auditó es la que hizo desaparecer la
+    # programación del 19-may sin dejar rastro". Y guard contra borrar lotes
+    # en curso o que ya descontaron inventario (drift silencioso).
     row = c.execute(
-        "SELECT producto, fecha_programada, COALESCE(origen,'manual') "
+        "SELECT producto, fecha_programada, COALESCE(origen,'manual'), "
+        "       cantidad_kg, inicio_real_at, inventario_descontado_at, estado "
         "FROM produccion_programada WHERE id=?",
         (evento_id,)
     ).fetchone()
     if not row:
         return jsonify({'error': 'Produccion no encontrada'}), 404
+    force = (request.args.get('force') or '').lower() in ('1','true','yes')
+    if (row[4] or row[5]) and not force:
+        return jsonify({
+            'error': 'Produccion en curso o con inventario ya descontado · no borrable sin ?force=1',
+            'inicio_real_at': row[4],
+            'inventario_descontado_at': row[5],
+            'estado': row[6],
+            'hint': 'Si insistes, reenvía con ?force=1 (queda auditado · drift de inventario posible)',
+        }), 409
+    # Snapshot antes para audit
+    snap = {
+        'producto': row[0], 'fecha_programada': row[1], 'origen': row[2],
+        'cantidad_kg': row[3], 'inicio_real_at': row[4],
+        'inventario_descontado_at': row[5], 'estado': row[6],
+    }
     # Tambien borrar items de checklist huerfanos asociados
     try:
         c.execute("DELETE FROM produccion_checklist WHERE produccion_id=?", (evento_id,))
     except sqlite3.OperationalError:
         pass
     c.execute("DELETE FROM produccion_programada WHERE id=?", (evento_id,))
+    # Audit log obligatorio (CLAUDE.md INV-6 · trail incident 19-may)
+    try:
+        from audit_helpers import audit_log as _al
+        _al(c, usuario=user, accion='HARD_DELETE_PRODUCCION_PROGRAMADA',
+            tabla='produccion_programada', registro_id=evento_id,
+            antes=snap,
+            detalle=f"HARD DELETE id={evento_id} producto={row[0]} origen={row[2]} force={force}")
+    except Exception as _ae:
+        import logging as _lg
+        _lg.getLogger('programacion').warning('audit borrar PP fallo: %s', _ae)
     conn.commit()
     return jsonify({
         'ok': True, 'id': evento_id,
         'producto': row[0], 'fecha': row[1], 'origen': row[2],
+        'force': force,
         'mensaje': f'Produccion {row[0]} ({row[1]}) borrada definitivamente',
     })
 

@@ -6679,6 +6679,14 @@ def regenerar_comprobante_pdf(comp_id):
       empresa: "Animus" | "Espagiria"
       forzar_obs: true  — fuerza re-parseo OBS aunque ya haya banco en DB
     """
+    # P0 audit 26-may-2026 · zero-error · regenerar comprobante = mutación
+    # de documento financiero (INVIMA / contable). Endpoint hermano
+    # /regenerar-legacy ya exige admin · alinear este al mismo gate.
+    usuario, err, code = _require_compras_write()
+    if err:
+        return err, code
+    if (usuario or '').lower() not in {x.lower() for x in ADMIN_USERS}:
+        return jsonify({'error': 'Solo admin puede regenerar comprobantes'}), 403
     d = request.get_json(silent=True) or {}
     forzar_obs = bool(d.get('forzar_obs', False))
     empresa_override = d.get('empresa') if 'empresa' in d else None
@@ -6691,6 +6699,18 @@ def regenerar_comprobante_pdf(comp_id):
     )
     if not result.get('ok'):
         return jsonify(result), 404
+    # Audit log · trail regulatorio
+    try:
+        from audit_helpers import audit_log
+        audit_log(c, usuario=usuario, accion='REGENERAR_COMPROBANTE_PAGO',
+                  tabla='comprobantes_pago', registro_id=comp_id,
+                  despues={'forzar_obs': forzar_obs,
+                           'empresa_override': empresa_override or '',
+                           'pdf_size_kb': result.get('pdf_size_kb')},
+                  detalle=f'CE id={comp_id} regenerado · empresa={empresa_override or "auto"}')
+    except Exception as _ae:
+        import logging
+        logging.getLogger('compras').warning('audit regenerar CE fallo: %s', _ae)
     return jsonify(result)
 
 

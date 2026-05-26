@@ -7886,7 +7886,15 @@ def conteo_alertas_gerencia():
 
 @bp.route('/api/conteo/<int:conteo_id>/ajustar', methods=['POST'])
 def conteo_ajustar(conteo_id):
+    # P0 audit 26-may-2026 · sin gate sesión, el check ADMIN_USERS más abajo
+    # se bypasea con user='' (no está en ADMIN_USERS, pero igual cae al
+    # else que mete movimientos sin auditoría real).
+    _u_sess, _err_s, _code_s = _require_session()
+    if _err_s:
+        return _err_s, _code_s
     user = session.get('compras_user','')
+    if not user:
+        return jsonify({'error': 'sesión inválida'}), 401
     d = request.json or {}
     item_id = d.get('item_id')
     conn = get_db(); c = conn.cursor()
@@ -9605,6 +9613,13 @@ def actualizar_precio_mp(codigo):
 def backfill_precios_mp():
     """Pobla precio_referencia en maestro_mps desde movimientos.precio_kg y precios_mp_historico.
     Solo actualiza MPs que tienen precio_referencia=0 o nulo."""
+    # P0 audit 26-may-2026 · admin gate · este endpoint hacía UPDATE masivo
+    # sobre maestro_mps.precio_referencia (data financiera para sugerencias
+    # de OC) sin ningún chequeo de sesión ni rol.
+    from config import ADMIN_USERS as _AU
+    _user = session.get('compras_user', '')
+    if (_user or '').lower() not in {x.lower() for x in _AU}:
+        return jsonify({'error': 'Solo admin'}), 403
     conn = get_db(); c = conn.cursor()
     actualizados = 0
     # Fuente 1: promedio ponderado de movimientos de entrada con precio registrado
@@ -9637,6 +9652,16 @@ def backfill_precios_mp():
     con_precio = c.fetchone()[0]
     c.execute("SELECT COUNT(*) FROM maestro_mps WHERE activo=1")
     total_activos = c.fetchone()[0]
+    # Audit log · mutación masiva de precios financieros
+    try:
+        from audit_helpers import audit_log as _al
+        _al(c, usuario=_user, accion='BACKFILL_PRECIOS_MP', tabla='maestro_mps',
+            despues={'actualizados': actualizados, 'hist_count': hist_count,
+                     'con_precio_ahora': con_precio, 'total_activos': total_activos},
+            detalle=f'Backfill precio_referencia · {actualizados} MPs actualizados')
+    except Exception as _ae:
+        import logging as _lg
+        _lg.getLogger('inventario').warning('audit backfill_precios_mp fallo: %s', _ae)
     conn.commit()
     return jsonify({
         'ok': True,
@@ -10892,18 +10917,58 @@ def acondicionamiento_update(aid):
 
 @bp.route('/api/liberacion', methods=['GET', 'POST'])
 def liberacion_list():
+    # P0 audit 26-may-2026 · liberación PT es decisión INVIMA art. 10 ·
+    # historicamente este endpoint NO tenía gate · cualquier anónimo
+    # podía INSERT en `liberaciones` (registro regulatorio).
+    if request.method == 'POST':
+        u_qc, err_qc, code_qc = _require_qc()
+        if err_qc:
+            return err_qc, code_qc
+        u = u_qc
+    else:
+        u_sess, err_s, code_s = _require_session()
+        if err_s:
+            return err_s, code_s
     conn = get_db(); c = conn.cursor()
     if request.method == 'POST':
         d = request.get_json(silent=True) or {}
+        # Validate_money en precio_base · NaN/Inf permitiría contaminar histórico
+        try:
+            _pb_raw = d.get('precio_base', 0) or 0
+            precio_base = float(_pb_raw)
+            import math as _m
+            if not _m.isfinite(precio_base) or precio_base < 0 or precio_base > 1e10:
+                return jsonify({'error': 'precio_base inválido'}), 400
+        except (TypeError, ValueError):
+            return jsonify({'error': 'precio_base no numérico'}), 400
+        try:
+            unidades = int(d.get('unidades', 0))
+        except (TypeError, ValueError):
+            return jsonify({'error': 'unidades inválido'}), 400
+        if unidades <= 0:
+            return jsonify({'error': 'unidades debe ser > 0'}), 400
         c.execute("""INSERT INTO liberaciones
             (acondicionamiento_id, lote, producto, unidades, presentacion,
              fecha_produccion, cliente, destino, observaciones, sku, precio_base)
             VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
             (int(d.get('acondicionamiento_id', 0)), d.get('lote', ''), d.get('producto', ''),
-             int(d.get('unidades', 0)), d.get('presentacion', ''), d.get('fecha_produccion', ''),
+             unidades, d.get('presentacion', ''), d.get('fecha_produccion', ''),
              d.get('cliente', ''), d.get('destino', 'ANIMUS'), d.get('observaciones', ''),
-             d.get('sku', '').strip(), float(d.get('precio_base', 0) or 0)))
-        conn.commit(); new_id = c.lastrowid
+             (d.get('sku', '') or '').strip(), precio_base))
+        new_id = c.lastrowid
+        # Audit log regulatorio INVIMA art. 10
+        try:
+            from audit_helpers import audit_log as _al
+            _al(c, usuario=u, accion='CREAR_LIBERACION', tabla='liberaciones',
+                registro_id=new_id,
+                despues={'lote': d.get('lote',''), 'sku': (d.get('sku','') or '').strip(),
+                         'unidades': unidades, 'cliente': d.get('cliente',''),
+                         'destino': d.get('destino','ANIMUS')},
+                detalle=f"Liberación lote={d.get('lote','')} sku={(d.get('sku','') or '').strip()} u={unidades}")
+        except Exception as _ae:
+            import logging as _lg
+            _lg.getLogger('inventario').warning('audit liberacion fallo: %s', _ae)
+        conn.commit()
         return jsonify({'ok': True, 'id': new_id}), 201
     estado = request.args.get('estado', '')
     if estado: c.execute("SELECT * FROM liberaciones WHERE estado=? ORDER BY creado_en DESC LIMIT 100", (estado,))

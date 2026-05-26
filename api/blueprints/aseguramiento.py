@@ -1510,16 +1510,41 @@ def cambio_notificar_invima(cid):
     if not ref:
         return jsonify({'error': 'referencia (radicado/oficio) requerido'}), 400
     conn = get_db(); c = conn.cursor()
-    row = c.execute("SELECT estado, requiere_invima, codigo FROM control_cambios WHERE id=?", (cid,)).fetchone()
+    row = c.execute(
+        "SELECT estado, requiere_invima, codigo, notificacion_invima_at, notificacion_invima_ref "
+        "FROM control_cambios WHERE id=?", (cid,)
+    ).fetchone()
     if not row: return jsonify({'error': 'no encontrado'}), 404
     if not row[1]:
         return jsonify({'error': 'este cambio no requiere INVIMA'}), 400
+    # P0 audit 26-may-2026 · zero-error · cronología INVIMA es regulatoria
+    # (Resolución 2214/2021). Sobrescribir el timestamp original oculta cuándo
+    # se notificó realmente. Rechazar si ya estaba notificado · si Calidad
+    # necesita actualizar SOLO la referencia, debe usar endpoint dedicado.
+    if row[3]:
+        return jsonify({
+            'error': 'Ya fue notificado a INVIMA · timestamp inmutable',
+            'notificacion_invima_at': row[3],
+            'notificacion_invima_ref': row[4] or '',
+            'hint': 'Para actualizar la referencia/radicado, usa /api/aseguramiento/cambios/<id>/notificar-invima-ref',
+        }), 409
+    # CAS: solo actualiza si sigue NULL — defensa contra race entre 2 workers
     c.execute("""
         UPDATE control_cambios
         SET notificacion_invima_at=datetime('now', '-5 hours'),
             notificacion_invima_ref=?, actualizado_en=datetime('now', '-5 hours')
-        WHERE id=?
+        WHERE id=? AND notificacion_invima_at IS NULL
     """, (ref[:200], cid))
+    if c.rowcount == 0:
+        # Otro worker se adelantó · re-leer y devolver 409
+        existing = c.execute(
+            "SELECT notificacion_invima_at, notificacion_invima_ref FROM control_cambios WHERE id=?",
+            (cid,)).fetchone()
+        return jsonify({
+            'error': 'Race · ya fue notificado por otro proceso',
+            'notificacion_invima_at': existing[0] if existing else None,
+            'notificacion_invima_ref': existing[1] if existing else '',
+        }), 409
     c.execute("""
         INSERT INTO control_cambios_eventos
           (cambio_id, evento_tipo, usuario, comentario)
@@ -2509,18 +2534,40 @@ def recall_notificar_invima(rid):
     if not ref:
         return jsonify({'error': 'referencia (radicado/oficio) requerido'}), 400
     conn = get_db(); c = conn.cursor()
-    row = c.execute("SELECT estado, codigo FROM recalls WHERE id=?", (rid,)).fetchone()
+    row = c.execute(
+        "SELECT estado, codigo, notificacion_invima_at, notificacion_invima_ref "
+        "FROM recalls WHERE id=?", (rid,)).fetchone()
     if not row: return jsonify({'error': 'no encontrado'}), 404
     estado_ant = row[0]
     if estado_ant not in ('clasificado','invima_notificado'):
         return jsonify({'error': f'no se puede notificar INVIMA en estado {estado_ant} · clasificar primero'}), 409
+    # P0 audit 26-may · cronología INVIMA inmutable (Resolución 2214/2021 +
+    # 24h para recall Clase I). Sobrescribir el timestamp original oculta
+    # demora regulatoria — auditoría podría no detectar notificación tardía.
+    if row[2]:
+        return jsonify({
+            'error': 'Ya fue notificado a INVIMA · timestamp inmutable',
+            'notificacion_invima_at': row[2],
+            'notificacion_invima_ref': row[3] or '',
+            'hint': 'Para actualizar SOLO la referencia/radicado usa endpoint dedicado',
+        }), 409
+    # CAS: defensa cross-worker
     c.execute("""
         UPDATE recalls
         SET notificacion_invima_at=datetime('now', '-5 hours'),
             notificacion_invima_ref=?, notificacion_invima_por=?,
             estado='invima_notificado', actualizado_en=datetime('now', '-5 hours')
-        WHERE id=?
+        WHERE id=? AND notificacion_invima_at IS NULL
     """, (ref[:200], user, rid))
+    if c.rowcount == 0:
+        existing = c.execute(
+            "SELECT notificacion_invima_at, notificacion_invima_ref FROM recalls WHERE id=?",
+            (rid,)).fetchone()
+        return jsonify({
+            'error': 'Race · ya fue notificado por otro proceso',
+            'notificacion_invima_at': existing[0] if existing else None,
+            'notificacion_invima_ref': existing[1] if existing else '',
+        }), 409
     c.execute("""
         INSERT INTO recalls_eventos
           (recall_id, evento_tipo, estado_anterior, estado_nuevo, usuario, comentario)

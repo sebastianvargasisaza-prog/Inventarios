@@ -211,13 +211,22 @@ def portal_login_api():
     email = (body.get('email') or '').strip().lower()
     pw = body.get('password') or ''
     ip_req = request.headers.get('X-Forwarded-For', request.remote_addr or '0.0.0.0').split(',')[0].strip()
-    try:
-        from auth import _is_locked, _record_failure, _reset_failures
-        if _is_locked(ip_req, email):
-            return jsonify({'error': 'Demasiados intentos · esperá 15 min',
-                            'codigo': 'RATE_LIMITED'}), 429
-    except Exception:
-        _is_locked = None
+    # P0 audit 26-may-2026 · NEVER fail-open en endpoint público externo.
+    # Bug histórico: `from auth import ..., _reset_failures` levantaba
+    # ImportError (símbolo no existía) · except silenciaba todo · rate-limit
+    # quedaba inactivo y brute-force ilimitado. Importamos arriba sin try;
+    # si falla, queremos 500 para que el deploy lo detecte de inmediato.
+    from auth import _is_locked, _record_failure, _clear_attempts
+    if _is_locked(ip_req, email):
+        # Logging anti-enumeración: NO mostrar email en log público
+        try:
+            import hashlib as _h
+            _eh = _h.sha256((email or '').encode()).hexdigest()[:10]
+            log.info('portal login rate-limited · ip=%s email_hash=%s', ip_req, _eh)
+        except Exception:
+            pass
+        return jsonify({'error': 'Demasiados intentos · esperá 15 min',
+                        'codigo': 'RATE_LIMITED'}), 429
     if not email or not pw:
         return jsonify({'error': 'email y password requeridos'}), 400
     conn = get_db()
@@ -228,13 +237,16 @@ def portal_login_api():
         (email,),
     ).fetchone()
     if not row:
-        # Mensaje genérico anti-enumeración + record failure
-        log.info('portal login fallo · email no existe · %s', email)
+        # Logging hashed · no plaintext email (Habeas Data L1581 + anti-enum)
         try:
-            if _is_locked:
-                from auth import _record_failure as _rf
-                _rf(ip_req, email)
+            import hashlib as _h
+            _eh = _h.sha256((email or '').encode()).hexdigest()[:10]
+            log.info('portal login fallo · email_hash=%s · email_unknown', _eh)
         except Exception: pass
+        try:
+            _record_failure(ip_req, email)
+        except Exception as _rf_e:
+            log.warning('record_failure fallo: %s', _rf_e)
         return jsonify({'error': 'Credenciales incorrectas'}), 401
     cred_id, cid, cnom, _email, pw_hash, activo = row
     if not activo:
@@ -244,22 +256,22 @@ def portal_login_api():
     except Exception:
         ok = False
     if not ok:
-        log.info('portal login fallo · password incorrecto · %s', email)
-        # SEC-FIX · 22-may-2026 · Bug #4 audit Despachos · record también fail password
-        # Antes: solo registraba si email no existía · brute-force ilimitado en email enumerado
         try:
-            if _is_locked:
-                from auth import _record_failure as _rf2
-                _rf2(ip_req, email)
+            import hashlib as _h
+            _eh = _h.sha256((email or '').encode()).hexdigest()[:10]
+            log.info('portal login fallo · email_hash=%s · bad_password', _eh)
         except Exception: pass
+        try:
+            _record_failure(ip_req, email)
+        except Exception as _rf_e:
+            log.warning('record_failure fallo: %s', _rf_e)
         return jsonify({'error': 'Credenciales incorrectas'}), 401
     # Sesión nueva para evitar fixation
-    # SEC-FIX · 22-may-2026 · reset failures tras login exitoso
+    # Reset failures tras login exitoso · usa _clear_attempts (alias _reset_failures)
     try:
-        if _is_locked:
-            from auth import _reset_failures as _rstf
-            _rstf(ip_req, email)
-    except Exception: pass
+        _clear_attempts(ip_req, email)
+    except Exception as _cl_e:
+        log.warning('clear_attempts fallo: %s', _cl_e)
     session.clear()
     session.permanent = True
     session['portal_cliente_id'] = cid

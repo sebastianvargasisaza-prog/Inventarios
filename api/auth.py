@@ -188,6 +188,16 @@ def _record_failure(ip, username=None):
         pass
 
 
+# Alias defensivo · audit 26-may-2026 P0 · portal.py:215 hacía
+# `from auth import _reset_failures` (nombre que NO existía) · el ImportError
+# se silenciaba en un except y desactivaba el rate-limit del login portal
+# (endpoint EXTERNO · brute-force ilimitado). Exportamos ambos nombres ahora
+# para que ningún otro importador caiga en el mismo bug silencioso.
+def _reset_failures(*args, **kwargs):
+    """Alias hacia _clear_attempts (compat para importadores externos)."""
+    return _clear_attempts(*args, **kwargs)
+
+
 def _clear_attempts(ip_or_key, username=None):
     """Borra el registro de intentos para una IP/key (login exitoso).
 
