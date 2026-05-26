@@ -2863,39 +2863,69 @@ async function saveContenido() {
     alcance: parseInt(document.getElementById('cont-alcance').value)||0,
     conversiones: parseInt(document.getElementById('cont-conversiones').value)||0,
   };
+  // Validación cliente · URL no puede ser javascript:/data:
+  if(body.url_publicacion){
+    const lo = body.url_publicacion.toLowerCase();
+    if(lo.startsWith('javascript:') || lo.startsWith('data:') || lo.startsWith('vbscript:')){
+      showAlert('cont-alert','URL inválida','error'); return;
+    }
+  }
   const url = id ? `/api/marketing/contenido/${id}` : '/api/marketing/contenido';
   const method = id?'PUT':'POST';
-  const resp = await fetch(url,{method,headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-  const data = await resp.json();
-  if(data.ok||data.id) { closeModal('modal-contenido'); showAlert('cont-alert',id?'Contenido actualizado':'Contenido registrado'); loadContenido(); }
-  else showAlert('cont-alert',data.error||'Error','error');
+  // Fix audit 25-may: usar _csrfHdr() consistente con campañas e influencers
+  let resp, data;
+  try {
+    resp = await fetch(url,{method, headers:_csrfHdr(), credentials:'same-origin', body:JSON.stringify(body)});
+    data = await resp.json().catch(()=>({error:'Respuesta no es JSON ('+resp.status+')'}));
+  } catch(e){
+    showAlert('cont-alert','Error red: '+e.message,'error'); return;
+  }
+  if(resp.ok && (data.ok||data.id)) { closeModal('modal-contenido'); showAlert('cont-alert',id?'Contenido actualizado':'Contenido registrado'); loadContenido(); }
+  else showAlert('cont-alert',data.error||('Error HTTP '+resp.status),'error');
 }
 
 async function deleteContenido(id) {
   if(!confirm('¿Eliminar esta pieza de contenido?')) return;
-  const data = await fetch(`/api/marketing/contenido/${id}`,_fetchOpts('DELETE')).then(r=>r.json());
-  if(data.ok) { showAlert('cont-alert','Contenido eliminado'); loadContenido(); }
+  let resp, data;
+  try {
+    resp = await fetch(`/api/marketing/contenido/${id}`,_fetchOpts('DELETE'));
+    data = await resp.json().catch(()=>({error:'Respuesta no es JSON ('+resp.status+')'}));
+  } catch(e){
+    showAlert('cont-alert','Error red: '+e.message,'error'); return;
+  }
+  if(resp.ok && data.ok) { showAlert('cont-alert','Contenido eliminado'); loadContenido(); }
+  else showAlert('cont-alert', data.error||('Error HTTP '+resp.status), 'error');
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
 // HELPERS — SELECT POPULATES
 // ──────────────────────────────────────────────────────────────────────────────
 async function loadCampanasForSelect(selId='brief-campana-sel') {
-  const camps = await fetch('/api/marketing/campanas').then(r=>r.json());
+  let camps = [];
+  try {
+    const r = await fetch('/api/marketing/campanas', {credentials:'same-origin'});
+    if(r.ok) camps = await r.json();
+  } catch(_){}
+  if(!Array.isArray(camps)) camps = [];
   const sel = document.getElementById(selId);
   if(!sel) return;
   const current = sel.value;
   sel.innerHTML = '<option value="">Sin campaña</option>' +
-    camps.map(c=>`<option value="${c.id}">${c.nombre}</option>`).join('');
+    camps.map(c=>`<option value="${parseInt(c.id)||0}">${esc(c.nombre||'')}</option>`).join('');
   if(current) sel.value=current;
 }
 async function loadInfluencersForSelect(selId) {
-  const infs = await fetch('/api/marketing/influencers').then(r=>r.json());
+  let infs = [];
+  try {
+    const r = await fetch('/api/marketing/influencers', {credentials:'same-origin'});
+    if(r.ok) infs = await r.json();
+  } catch(_){}
+  if(!Array.isArray(infs)) infs = [];
   const sel = document.getElementById(selId);
   if(!sel) return;
   const current = sel.value;
   sel.innerHTML = '<option value="">Sin influencer (interno)</option>' +
-    infs.map(i=>`<option value="${i.id}">${i.nombre} (${i.red_social})</option>`).join('');
+    infs.map(i=>`<option value="${parseInt(i.id)||0}">${esc(i.nombre||'')} (${esc(i.red_social||'')})</option>`).join('');
   if(current) sel.value=current;
 }
 
@@ -3055,6 +3085,15 @@ async function runAgent(agente) {
 
   try {
     const resp = await fetch(`/api/marketing/agentes/${agente}`, _fetchOpts('POST', body));
+    // Audit 25-may PM · validar HTTP antes de parsear · evita JSON parse error si backend 500
+    if(!resp.ok){
+      const txt = await resp.text().catch(()=>'');
+      resultDiv.innerHTML = `<pre style="color:#f87171;">Error HTTP ${resp.status}: ${_escHtml(txt.slice(0,400))}</pre>`;
+      resultDiv.classList.add('show');
+      btn.classList.remove('running');
+      btn.innerHTML = `<span>&#x25B6; ${AGENT_LABELS[agente]||agente}</span>`;
+      return;
+    }
     const data = await resp.json();
     if(data.error) {
       resultDiv.innerHTML = `<pre style="color:#f87171;">Error: ${_escHtml(data.error)}</pre>`;
@@ -3091,12 +3130,14 @@ async function runAgent(agente) {
 
 function fmtIA(data) {
   if(!data.analisis_ia) return '';
+  // Audit 25-may PM · P0 · escapar output de Claude (texto libre, puede tener
+  // <script> u otro HTML). white-space:pre-line mantiene los saltos de línea.
   return `<div style="margin-top:14px;padding:14px;background:linear-gradient(135deg,rgba(212,175,55,.08),rgba(212,175,55,.03));border:1px solid rgba(212,175,55,.25);border-radius:10px">
     <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px">
       <span style="font-size:15px">🤖</span>
       <span style="font-size:11px;font-weight:700;color:#d4af37;letter-spacing:.5px;text-transform:uppercase">Análisis IA — Claude</span>
     </div>
-    <div style="font-size:13px;color:#e2e8f0;line-height:1.7;white-space:pre-line">${data.analisis_ia}</div>
+    <div style="font-size:13px;color:#e2e8f0;line-height:1.7;white-space:pre-line">${esc(data.analisis_ia)}</div>
   </div>`;
 }
 
@@ -3116,7 +3157,7 @@ function formatAgentResult(agente, data) {
         out += '\n';
       });
     }
-    return `<pre>${out}</pre>${fmtIA(data)}`;
+    return `<pre>${esc(out)}</pre>${fmtIA(data)}`;
   }
 
   if(agente==='oportunidad') {
@@ -3130,7 +3171,7 @@ function formatAgentResult(agente, data) {
         out += `   ➜ ${r.accion}\n\n`;
       });
     }
-    return `<pre>${out}</pre>${fmtIA(data)}`;
+    return `<pre>${esc(out)}</pre>${fmtIA(data)}`;
   }
 
   if(agente==='roi') {
@@ -3143,7 +3184,7 @@ function formatAgentResult(agente, data) {
         out += `  ${icon} ${c.nombre}: ROI ${c.roi_pct}% | ${fmtM(c.presupuesto_gastado)} → ${fmtM(c.resultado_ventas)}\n`;
       });
     } else out += 'Sin campañas con inversión registrada.\n';
-    return `<pre>${out}</pre>${fmtIA(data)}`;
+    return `<pre>${esc(out)}</pre>${fmtIA(data)}`;
   }
 
   if(agente==='tendencias') {
@@ -3159,7 +3200,7 @@ function formatAgentResult(agente, data) {
       out += '\nSHOPIFY MENSUAL:\n';
       data.shopify_mensual.forEach(m=>out+=`  ${m.mes}: ${fmtM(m.ventas)} (${m.pedidos} pedidos)\n`);
     }
-    return `<pre>${out}</pre>${fmtIA(data)}`;
+    return `<pre>${esc(out)}</pre>${fmtIA(data)}`;
   }
 
   if(agente==='brief') {
@@ -3172,7 +3213,7 @@ function formatAgentResult(agente, data) {
         out += `Brief: ${b.brief}\n`;
       });
     }
-    return `<pre>${out}</pre>${fmtIA(data)}`;
+    return `<pre>${esc(out)}</pre>${fmtIA(data)}`;
   }
 
   if(agente==='pricing') {
@@ -3185,7 +3226,7 @@ function formatAgentResult(agente, data) {
         out += `  ${p.razon}\n`;
       });
     }
-    return `<pre>${out}</pre>${fmtIA(data)}`;
+    return `<pre>${esc(out)}</pre>${fmtIA(data)}`;
   }
 
   if(agente==='reorden') {
@@ -3199,7 +3240,7 @@ function formatAgentResult(agente, data) {
         out += `  Intervalo: ${p.intervalo_dias}d | Próximo: ${p.proximo_reorden_estimado} (${p.dias_para_reorden}d) — ${p.urgencia}\n`;
       });
     }
-    return `<pre>${out}</pre>${fmtIA(data)}`;
+    return `<pre>${esc(out)}</pre>${fmtIA(data)}`;
   }
 
   if(agente==='canibal') {
@@ -3214,7 +3255,7 @@ function formatAgentResult(agente, data) {
         out += `   ➜ ${c.recomendacion}\n\n`;
       });
     }
-    return `<pre>${out}</pre>${fmtIA(data)}`;
+    return `<pre>${esc(out)}</pre>${fmtIA(data)}`;
   }
 
   if(agente==='contenido_auto') {
@@ -3229,7 +3270,7 @@ function formatAgentResult(agente, data) {
         out += '\n'+'─'.repeat(30)+'\n';
       });
     }
-    return `<pre>${out}</pre>${fmtIA(data)}`;
+    return `<pre>${esc(out)}</pre>${fmtIA(data)}`;
   }
 
   if(agente==='alerta_stock') {
@@ -3243,7 +3284,7 @@ function formatAgentResult(agente, data) {
         out += `   ➜ ${a.accion}\n\n`;
       });
     }
-    return `<pre>${out}</pre>${fmtIA(data)}`;
+    return `<pre>${esc(out)}</pre>${fmtIA(data)}`;
   }
 
   if(agente==='estrategia') {
