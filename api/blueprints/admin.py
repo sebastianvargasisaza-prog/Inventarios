@@ -6766,35 +6766,64 @@ function meeDropdown(id){
   if(cat) opts += '</optgroup>';
   return '<select id="'+id+'" class="mee-sel" style="background:#0f172a;color:#e2e8f0;border:1px solid #334155;padding:5px;border-radius:4px;min-width:240px;font-size:12px;">'+opts+'</select>';
 }
-async function asignarMEE(btn, producto){
+async function asignarMEE(btn){
+  const producto = btn.dataset.producto || '';
   const row = btn.closest('tr');
-  const mee = row.querySelector('select.mee-sel').value;
-  const tipo = row.querySelector('select.tipo-sel').value;
-  const cant = parseFloat(row.querySelector('input.cant').value)||1;
+  const meeSel = row.querySelector('select.mee-sel');
+  const tipoSel = row.querySelector('select.tipo-sel');
+  const cantInp = row.querySelector('input.cant');
+  if(!meeSel){ alert('No encuentro el dropdown · contactar dev'); return; }
+  const mee = meeSel.value;
+  const tipo = tipoSel ? tipoSel.value : 'envase';
+  const cant = parseFloat(cantInp ? cantInp.value : '1') || 1;
   if(!mee){ alert('Elegí un MEE primero'); return; }
   btn.disabled=true; btn.textContent='⏳';
-  const r = await fetch('/api/admin/mees-mapping-upsert', {
-    method:'POST', credentials:'same-origin',
-    headers:{'Content-Type':'application/json','X-CSRF-Token':_csrf()},
-    body: JSON.stringify({sku_codigo: producto, mee_codigo: mee, componente_tipo: tipo, cantidad_por_unidad: cant})
-  });
-  const d = await r.json();
-  if(d.ok){ row.style.background='#064e3b'; btn.textContent='✓ Guardado'; setTimeout(cargar, 1200); }
-  else { btn.disabled=false; btn.textContent='Asignar'; alert('Error: '+(d.error||'desconocido')); }
+  try {
+    const r = await fetch('/api/admin/mees-mapping-upsert', {
+      method:'POST', credentials:'same-origin',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':_csrf()},
+      body: JSON.stringify({sku_codigo: producto, mee_codigo: mee, componente_tipo: tipo, cantidad_por_unidad: cant})
+    });
+    let d = {};
+    try { d = await r.json(); } catch(_){ d = {error: 'HTTP '+r.status}; }
+    if(r.ok && d.ok){
+      row.style.background='#064e3b'; btn.textContent='✓ Guardado';
+      setTimeout(cargar, 1200);
+    } else {
+      btn.disabled=false; btn.textContent='Asignar';
+      alert('Error ['+r.status+']: '+(d.error||'desconocido'));
+    }
+  } catch(e){
+    btn.disabled=false; btn.textContent='Asignar';
+    alert('Error red: '+e.message);
+  }
 }
-async function definirVolumen(btn, producto){
+async function definirVolumen(btn){
+  const producto = btn.dataset.producto || '';
   const row = btn.closest('tr');
-  const vol = parseFloat(row.querySelector('input.vol').value)||0;
+  const volInp = row.querySelector('input.vol');
+  const vol = parseFloat(volInp ? volInp.value : '0') || 0;
   if(vol <= 0){ alert('Volumen ml debe ser > 0'); return; }
   btn.disabled=true; btn.textContent='⏳';
-  const r = await fetch('/api/admin/producto-volumen-upsert', {
-    method:'POST', credentials:'same-origin',
-    headers:{'Content-Type':'application/json','X-CSRF-Token':_csrf()},
-    body: JSON.stringify({producto_nombre: producto, volumen_ml: vol})
-  });
-  const d = await r.json();
-  if(d.ok){ row.style.background='#064e3b'; btn.textContent='✓ Guardado'; setTimeout(cargar, 1200); }
-  else { btn.disabled=false; btn.textContent='Guardar'; alert('Error: '+(d.error||'desconocido')); }
+  try {
+    const r = await fetch('/api/admin/producto-volumen-upsert', {
+      method:'POST', credentials:'same-origin',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':_csrf()},
+      body: JSON.stringify({producto_nombre: producto, volumen_ml: vol})
+    });
+    let d = {};
+    try { d = await r.json(); } catch(_){ d = {error: 'HTTP '+r.status}; }
+    if(r.ok && d.ok){
+      row.style.background='#064e3b'; btn.textContent='✓ Guardado';
+      setTimeout(cargar, 1200);
+    } else {
+      btn.disabled=false; btn.textContent='Guardar';
+      alert('Error ['+r.status+']: '+(d.error||'desconocido'));
+    }
+  } catch(e){
+    btn.disabled=false; btn.textContent='Guardar';
+    alert('Error red: '+e.message);
+  }
 }
 async function cargar(){
   await cargarMEEs();
@@ -6834,7 +6863,7 @@ async function cargar(){
         +'<option value="serigrafia">serigrafia</option><option value="tampografia">tampografia</option>'
         +'<option value="plegadiza">plegadiza</option><option value="otro">otro</option></select></td>';
       html += '<td><input class="cant" type="number" step="0.01" value="1" style="width:70px;background:#0f172a;color:#e2e8f0;border:1px solid #334155;padding:5px;border-radius:4px;"></td>';
-      html += '<td><button onclick="asignarMEE(this, '+JSON.stringify(p.producto||'')+')">Asignar</button></td>';
+      html += '<td><button data-producto="'+esc(p.producto||'')+'" onclick="asignarMEE(this)">Asignar</button></td>';
       html += '</tr>';
     }
     html += '</tbody></table></div>';
@@ -6849,7 +6878,7 @@ async function cargar(){
       html += '<td>'+esc((p.mees||[]).join(', '))+'</td>';
       html += '<td>'+(p.pendientes||0)+'</td>';
       html += '<td><input class="vol" type="number" step="1" placeholder="30" style="width:90px;background:#0f172a;color:#e2e8f0;border:1px solid #334155;padding:5px;border-radius:4px;"></td>';
-      html += '<td><button onclick="definirVolumen(this, '+JSON.stringify(p.producto||'')+')">Guardar</button></td>';
+      html += '<td><button data-producto="'+esc(p.producto||'')+'" onclick="definirVolumen(this)">Guardar</button></td>';
       html += '</tr>';
     }
     html += '</tbody></table></div>';
