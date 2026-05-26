@@ -7492,6 +7492,14 @@ def admin_sub_skus_pagina():
 
 <script>
 let DATA=null;
+let CSRF_TOK='';
+
+async function _loadCsrf(){
+  try{
+    const r=await fetch('/api/csrf-token',{credentials:'same-origin'});
+    if(r.ok){ const d=await r.json(); CSRF_TOK=d.csrf_token||d.token||''; }
+  }catch(_){}
+}
 
 function msg(text, ok){
   const el=document.getElementById('msg');
@@ -7501,6 +7509,7 @@ function msg(text, ok){
 
 async function cargar(){
   try{
+    if(!CSRF_TOK) await _loadCsrf();
     const r=await fetch('/api/admin/sub-skus');
     const d=await r.json();
     DATA=d;
@@ -7589,8 +7598,11 @@ async function patchSku(sku, patch, inputEl){
     inputEl.style.background='#fffbeb';
   }
   try{
+    if(!CSRF_TOK) await _loadCsrf();
+    const hdrs={'Content-Type':'application/json'};
+    if(CSRF_TOK) hdrs['X-CSRF-Token']=CSRF_TOK;
     const r=await fetch('/api/admin/sub-skus/'+encodeURIComponent(sku),{
-      method:'PATCH', headers:{'Content-Type':'application/json'},
+      method:'PATCH', headers:hdrs, credentials:'same-origin',
       body:JSON.stringify(patch),
     });
     const d=await r.json();
