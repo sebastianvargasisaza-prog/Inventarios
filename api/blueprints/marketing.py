@@ -656,6 +656,254 @@ def mkt_influencer_generar_cupon(iid):
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Sentiment analysis · comentarios IG · detección crisis temprana
+# ──────────────────────────────────────────────────────────────────────────────
+_SENTIMENT_CATS = ('positivo', 'neutro', 'negativo', 'queja', 'pregunta', 'spam')
+
+
+def _ig_fetch_comments(post_id, token, ig_user_id, limit=50):
+    """Trae comentarios de un post IG via Graph API.
+
+    Endpoint: /<post-id>/comments?fields=text,username,timestamp
+    Retorna lista de dicts o None si falla.
+    """
+    try:
+        url = (f"https://graph.facebook.com/v18.0/{post_id}/comments"
+                f"?fields=id,text,username,timestamp&limit={limit}")
+        req = urllib.request.Request(url,
+            headers={"Authorization": f"Bearer {token}"})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            return data.get("data", []) or []
+    except Exception as e:
+        log.warning("ig_fetch_comments post=%s fallo: %s", post_id, e)
+        return None
+
+
+@bp.route('/api/marketing/sentiment/sync', methods=['POST'])
+def mkt_sentiment_sync():
+    """Sincroniza comentarios IG de posts recientes (últimos N días).
+
+    Body: {dias: 30, limit_por_post: 50}
+    """
+    u, err, code = _auth()
+    if err: return err, code
+    body = request.get_json(silent=True) or {}
+    dias = min(180, max(7, int(body.get('dias') or 30)))
+    limit = min(100, max(10, int(body.get('limit_por_post') or 50)))
+    from datetime import datetime as _dt, timedelta as _td
+    hace = (_dt.now() - _td(days=dias)).strftime('%Y-%m-%d')
+    conn = _db(); c = conn.cursor()
+    # Resolver token IG
+    token, ig_uid = _ig_resolve_token(conn)
+    if not token:
+        return jsonify({'error': 'IG token no configurado · setear instagram_token en animus_config'}), 503
+    # Posts a procesar
+    posts = c.execute("""
+        SELECT instagram_id FROM animus_instagram_posts
+        WHERE publicado_en >= ? AND COALESCE(instagram_id,'') != ''
+        ORDER BY publicado_en DESC LIMIT 50
+    """, (hace,)).fetchall()
+    if not posts:
+        return jsonify({'mensaje': 'Sin posts en ventana · sincronizá IG primero (↻ IG en Dashboard)',
+                         'sincronizados': 0})
+    sincronizados = 0
+    nuevos = 0
+    errores = []
+    for p in posts:
+        pid = p['instagram_id']
+        comments = _ig_fetch_comments(pid, token, ig_uid, limit=limit)
+        if comments is None:
+            errores.append(pid)
+            continue
+        for cm in comments:
+            try:
+                c.execute("""
+                    INSERT OR IGNORE INTO animus_instagram_comments
+                    (comment_id, post_id, autor_username, texto, publicado_en)
+                    VALUES (?,?,?,?,?)
+                """, (cm.get('id',''), pid, cm.get('username','') or '',
+                       cm.get('text','') or '', cm.get('timestamp','') or ''))
+                if c.rowcount > 0:
+                    nuevos += 1
+                sincronizados += 1
+            except Exception as e:
+                log.warning('insert comment fallo: %s', e)
+        # Rate limit ético · 1s entre posts
+        import time as _t
+        _t.sleep(1)
+    conn.commit()
+    return jsonify({
+        'ok': True,
+        'posts_procesados': len(posts) - len(errores),
+        'comentarios_sincronizados': sincronizados,
+        'comentarios_nuevos': nuevos,
+        'errores_posts': errores[:5],
+        'nota': 'Después corré POST /api/marketing/sentiment/analyze para clasificar los nuevos',
+    })
+
+
+@bp.route('/api/marketing/sentiment/analyze', methods=['POST'])
+def mkt_sentiment_analyze():
+    """Clasifica comentarios pendientes (analizado_en IS NULL) con Claude.
+
+    Body: {batch: 50}  · cuántos comentarios analizar en esta corrida
+    Procesa en lotes para no agotar Claude API · seguro re-ejecutar.
+    """
+    u, err, code = _auth()
+    if err: return err, code
+    body = request.get_json(silent=True) or {}
+    batch = min(100, max(5, int(body.get('batch') or 50)))
+    conn = _db(); c = conn.cursor()
+    api_key = _cfg(conn, "anthropic_api_key")
+    if not api_key:
+        return jsonify({'error': 'anthropic_api_key no configurada · setear en animus_config'}), 503
+    # Pendientes
+    pending = c.execute("""
+        SELECT id, comment_id, texto, autor_username
+        FROM animus_instagram_comments
+        WHERE COALESCE(analizado_en,'') = ''
+        ORDER BY publicado_en DESC LIMIT ?
+    """, (batch,)).fetchall()
+    if not pending:
+        return jsonify({'ok': True, 'mensaje': 'Sin comentarios pendientes de análisis',
+                         'procesados': 0})
+    # Pasar TODOS en una sola call (Claude batch)
+    inputs = [{'id': r['id'], 'texto': (r['texto'] or '')[:300]} for r in pending]
+    prompt = (
+        "Eres analista de comunidad de ÁNIMUS Lab (skincare colombiano).\n"
+        f"Clasifica {len(inputs)} comentarios de Instagram en una de 6 categorías:\n"
+        "  - positivo · felicitación/elogio/admiración\n"
+        "  - neutro   · comentario sin opinión clara\n"
+        "  - negativo · crítica suave/desacuerdo\n"
+        "  - queja    · problema concreto con producto/marca (URGENTE detectar)\n"
+        "  - pregunta · usuario pide info (precio, dónde compro, ingredientes)\n"
+        "  - spam     · publicidad ajena/bot/emoji-only sin contexto\n\n"
+        "Devuelve EXACTAMENTE este JSON sin texto antes/después · sin fence ```:\n"
+        '[{"id":N,"sentiment":"...","score":0.85,"sku_mencionado":"..."}, ...]\n\n'
+        "Reglas:\n"
+        "- score: -1.0 (muy negativo) a 1.0 (muy positivo) · 0 neutro\n"
+        "- sku_mencionado: SOLO si el texto incluye un SKU/producto reconocible "
+        "(ej. 'el limpiador BHA', 'mi crema de cafeína') · sino string vacío\n"
+        "- Si el comentario es ambiguo, preferir 'neutro'\n"
+        "- 'queja' SOLO si hay problema accionable (irrita la piel, llegó dañado, "
+        "no funciona, mal servicio) · NO si solo dice 'no me gustó'\n\n"
+        f"Comentarios:\n{json.dumps(inputs, ensure_ascii=False)}"
+    )
+    try:
+        payload = json.dumps({
+            "model": "claude-haiku-4-5-20251001",
+            "max_tokens": 3000,
+            "messages": [{"role": "user", "content": prompt}]
+        }).encode("utf-8")
+        req = urllib.request.Request(
+            "https://api.anthropic.com/v1/messages",
+            data=payload,
+            headers={"x-api-key": api_key, "anthropic-version": "2023-06-01",
+                      "content-type": "application/json"},
+            method="POST"
+        )
+        with urllib.request.urlopen(req, timeout=45) as resp:
+            rj = json.loads(resp.read().decode("utf-8"))
+            text = rj["content"][0]["text"].strip()
+            if text.startswith('```'):
+                text = _re_atrib.sub(r'^```(?:json)?\s*|\s*```$', '', text, flags=_re_atrib.MULTILINE).strip()
+            results = json.loads(text)
+    except Exception as e:
+        return jsonify({'error': f'Claude analyze fallo: {e}'}), 500
+    # Update each comment
+    by_id = {int(r['id']): r for r in results if isinstance(r, dict) and r.get('id') is not None}
+    procesados = 0
+    for p in pending:
+        r = by_id.get(int(p['id']))
+        if not r:
+            continue
+        sentiment = r.get('sentiment', 'neutro')
+        if sentiment not in _SENTIMENT_CATS:
+            sentiment = 'neutro'
+        try:
+            score = float(r.get('score') or 0)
+            score = max(-1.0, min(1.0, score))
+        except (TypeError, ValueError):
+            score = 0
+        sku = (r.get('sku_mencionado') or '')[:50]
+        c.execute("""
+            UPDATE animus_instagram_comments
+            SET sentiment=?, sentiment_score=?, sku_detectado=?,
+                analizado_en=datetime('now','-5 hours')
+            WHERE id=?
+        """, (sentiment, score, sku, p['id']))
+        procesados += 1
+    conn.commit()
+    return jsonify({'ok': True, 'procesados': procesados,
+                     'pendientes_restantes': max(0, len(pending) - procesados)})
+
+
+@bp.route('/api/marketing/sentiment/resumen')
+def mkt_sentiment_resumen():
+    """KPIs sentiment + alerta crisis si %quejas > threshold.
+
+    Query: ?dias=30
+    """
+    u, err, code = _auth()
+    if err: return err, code
+    dias = min(180, max(7, int(request.args.get('dias') or 30)))
+    from datetime import datetime as _dt, timedelta as _td
+    hace = (_dt.now() - _td(days=dias)).strftime('%Y-%m-%d')
+    conn = _db(); c = conn.cursor()
+    # Conteos por categoría
+    rows = c.execute("""
+        SELECT sentiment, COUNT(*) AS n
+        FROM animus_instagram_comments
+        WHERE publicado_en >= ? AND COALESCE(sentiment,'') != ''
+        GROUP BY sentiment
+    """, (hace,)).fetchall()
+    counts = {cat: 0 for cat in _SENTIMENT_CATS}
+    for r in rows:
+        if r['sentiment'] in counts:
+            counts[r['sentiment']] = int(r['n'] or 0)
+    total = sum(counts.values())
+    # % crisis = quejas / total
+    pct_quejas = round(counts['queja'] / total * 100, 1) if total > 0 else 0
+    pct_neg = round((counts['negativo'] + counts['queja']) / total * 100, 1) if total > 0 else 0
+    # Quejas por SKU (top 5)
+    quejas_por_sku = [dict(r) for r in c.execute("""
+        SELECT sku_detectado, COUNT(*) AS n
+        FROM animus_instagram_comments
+        WHERE publicado_en >= ? AND sentiment='queja' AND COALESCE(sku_detectado,'') != ''
+        GROUP BY sku_detectado ORDER BY n DESC LIMIT 5
+    """, (hace,)).fetchall()]
+    # Últimas 10 quejas (textos cortos)
+    ultimas_quejas = [dict(r) for r in c.execute("""
+        SELECT texto, autor_username, publicado_en, sku_detectado, sentiment_score
+        FROM animus_instagram_comments
+        WHERE sentiment='queja'
+        ORDER BY publicado_en DESC LIMIT 10
+    """).fetchall()]
+    # Alerta crisis · si >20% son quejas o >5 quejas concentradas en 1 SKU
+    alerta = None
+    if total >= 10 and pct_quejas >= 20:
+        alerta = f"🚨 CRISIS · {pct_quejas}% de los {total} comentarios analizados son QUEJAS"
+    elif quejas_por_sku and quejas_por_sku[0]['n'] >= 5:
+        alerta = f"⚠ {quejas_por_sku[0]['n']} quejas sobre {quejas_por_sku[0]['sku_detectado']} · revisar"
+    # Pendientes de análisis
+    pend = c.execute(
+        "SELECT COUNT(*) AS n FROM animus_instagram_comments WHERE COALESCE(analizado_en,'')=''"
+    ).fetchone()['n']
+    return jsonify({
+        'ventana_dias': dias,
+        'total_analizados': total,
+        'pendientes_analisis': int(pend or 0),
+        'distribucion': counts,
+        'pct_quejas': pct_quejas,
+        'pct_negativo_total': pct_neg,
+        'quejas_por_sku': quejas_por_sku,
+        'ultimas_quejas_top10': ultimas_quejas,
+        'alerta_crisis': alerta,
+    })
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Influencer outreach automation · mensajes pre-armados WhatsApp/Email/IG DM
 # ──────────────────────────────────────────────────────────────────────────────
 def _outreach_mensajes_template(inf, sku_info, campana, ultima_colab_dias):

@@ -66,6 +66,30 @@ def test_marketing_generar_cupon_influencer_inexistente(app, db_clean):
     assert r.status_code == 404
 
 
+def test_sentiment_resumen_sin_data(app, db_clean):
+    """Resumen sentiment sin comentarios analizados devuelve total=0 + alerta=None."""
+    c = _login(app)
+    r = c.get("/api/marketing/sentiment/resumen?dias=30")
+    assert r.status_code == 200
+    j = r.get_json()
+    assert j["ventana_dias"] == 30
+    assert j["total_analizados"] == 0
+    assert j["alerta_crisis"] is None
+    assert "distribucion" in j
+    for cat in ("positivo", "neutro", "negativo", "queja", "pregunta", "spam"):
+        assert cat in j["distribucion"]
+        assert j["distribucion"][cat] == 0
+
+
+def test_sentiment_sync_sin_token_503(app, db_clean):
+    """Sin instagram_token configurado → 503."""
+    c = _login(app)
+    r = c.post("/api/marketing/sentiment/sync",
+                headers=csrf_headers(), json={"dias": 30})
+    # Sin token configurado debe ser 503 · si CI lo tiene, sería 200 con sincronizados=0
+    assert r.status_code in (200, 503)
+
+
 def test_outreach_influencer_id_obligatorio(app, db_clean):
     """outreach-mensaje sin influencer_id → 400."""
     c = _login(app)

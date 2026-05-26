@@ -312,6 +312,29 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (192, "animus_instagram_comments · sentiment analysis comentarios IG · Sebastián 27-may-2026 AM", [
+        # FEATURE 27-may · "detección de crisis temprana" del audit Marketing.
+        # 5 quejas seguidas sobre un SKU debería disparar alerta antes de
+        # que se viralice. Almacenamos comentarios reales del Graph API +
+        # clasificación sentiment vía Claude (batch barato).
+        #
+        # Todos los tipos son cross-DB (TEXT/REAL/INTEGER · sin BLOB).
+        """CREATE TABLE IF NOT EXISTS animus_instagram_comments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            comment_id TEXT UNIQUE,
+            post_id TEXT,
+            autor_username TEXT,
+            texto TEXT,
+            publicado_en TEXT,
+            sentiment TEXT,
+            sentiment_score REAL,
+            sku_detectado TEXT,
+            analizado_en TEXT,
+            synced_at TEXT DEFAULT (datetime('now'))
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_ig_comm_post ON animus_instagram_comments(post_id)",
+        "CREATE INDEX IF NOT EXISTS idx_ig_comm_sentiment ON animus_instagram_comments(sentiment, publicado_en)",
+    ]),
     (191, "marketing_outreach_log · audit de mensajes pre-armados a influencers · Sebastián 26-may-2026 PM", [
         # FEATURE 26-may · cada vez que Sebastián genera/usa un mensaje
         # pre-armado de outreach a un influencer, queda registrado aquí ·
