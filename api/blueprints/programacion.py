@@ -4605,6 +4605,37 @@ def limpiar_db_sin_calendar():
     })
 
 
+@bp.route('/api/programacion/mees-disponibles', methods=['GET'])
+def mees_disponibles_lista():
+    """Lista MEEs activos para alimentar dropdown del modal del lote.
+
+    Sebastián 25-may-2026 PM · "que me salga desplegable solo en eso" ·
+    el input texto libre causaba errores ('150ML' no existe). Ahora el
+    frontend lee de aquí y muestra opciones reales del maestro.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    conn = get_db()
+    items = []
+    try:
+        for r in conn.execute(
+            """SELECT codigo, COALESCE(descripcion,''),
+                      COALESCE(categoria,''), COALESCE(stock_actual,0)
+               FROM maestro_mee
+               WHERE COALESCE(estado,'Activo') = 'Activo'
+               ORDER BY categoria, descripcion, codigo""").fetchall():
+            items.append({
+                'codigo': r[0],
+                'descripcion': r[1] or '',
+                'categoria': r[2] or '',
+                'stock_actual': float(r[3] or 0),
+                'label': f'{r[0]} · {(r[1] or "")[:80]}' + (f' ({r[2]})' if r[2] else ''),
+            })
+    except Exception as e:
+        return jsonify({'error': str(e)[:200], 'items': []}), 500
+    return jsonify({'items': items, 'total': len(items)})
+
+
 @bp.route('/api/programacion/lote/<int:lote_id>/envase-override', methods=['PATCH'])
 def patch_envase_override_lote(lote_id):
     """Edita envase_codigo_override de un lote · admin elige envase

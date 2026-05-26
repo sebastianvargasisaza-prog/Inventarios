@@ -13317,6 +13317,48 @@ function _parsearComposicionLote(loteData, kgTotal){
   return { kg_total: kgT, entradas, kg_residual_dtc: kgDTC };
 }
 
+// Sebastián 25-may-2026 PM · cache de envases para el dropdown.
+// Se llena en primera carga · subsecuentes lotes usan el mismo cache.
+window._MEES_CACHE = null;
+async function _cargarOpcionesEnvases(loteId, envActual){
+  const sel = document.getElementById('env-ovr-' + loteId);
+  if(!sel) return;
+  // Cache hit · usar directo
+  if(window._MEES_CACHE){
+    _pintarOpcionesEnvase(sel, window._MEES_CACHE, envActual);
+    return;
+  }
+  try{
+    const r = await fetch('/api/programacion/mees-disponibles');
+    if(!r.ok) throw new Error('HTTP ' + r.status);
+    const d = await r.json();
+    window._MEES_CACHE = d.items || [];
+    _pintarOpcionesEnvase(sel, window._MEES_CACHE, envActual);
+  }catch(e){
+    sel.innerHTML = '<option value="">Error cargando: ' + e.message + '</option>';
+  }
+}
+function _pintarOpcionesEnvase(sel, mees, envActual){
+  let html = '<option value="">— Sin override (usa default del producto) —</option>';
+  // Agrupar por categoría para optgroups
+  const porCat = {};
+  mees.forEach(m => {
+    const cat = m.categoria || 'Sin categoría';
+    porCat[cat] = porCat[cat] || [];
+    porCat[cat].push(m);
+  });
+  Object.keys(porCat).sort().forEach(cat => {
+    html += '<optgroup label="' + cat.replace(/"/g,'&quot;') + '">';
+    porCat[cat].forEach(m => {
+      const selAttr = m.codigo === envActual ? ' selected' : '';
+      const label = (m.codigo + ' · ' + (m.descripcion || '')).slice(0, 90);
+      html += '<option value="' + m.codigo.replace(/"/g,'&quot;') + '"' + selAttr + '>' + label + '</option>';
+    });
+    html += '</optgroup>';
+  });
+  sel.innerHTML = html;
+}
+
 // Sebastián 25-may-2026 PM · opción B · cambia el envase default del
 // producto en sku_mee_config · futuros lotes nuevos lo usan automático.
 async function envaseAplicarDefault(loteId){
@@ -13359,6 +13401,7 @@ async function guardarEnvaseOverride(loteId){
   const input = document.getElementById('env-ovr-' + loteId);
   const ok = document.getElementById('env-ovr-ok-' + loteId);
   if(!input) return;
+  // Sebastián 25-may-2026 PM · ahora es SELECT · value ya es el código exacto
   const env = (input.value || '').trim().toUpperCase();
   try{
     const r = await fetch('/api/programacion/lote/' + loteId + '/envase-override', {
@@ -13512,21 +13555,25 @@ async function abrirLoteModal(id, producto, fecha, kg){
   let html = '';
 
   // Sebastián 25-may-2026 PM · selector envase override del lote.
-  // Si el lote tiene envase distinto al default del producto, vos lo
-  // setteás acá y el cálculo MEE (Abastecimiento) usa ese envase.
+  // Dropdown que carga de /api/programacion/mees-disponibles (maestro_mee)
+  // · evita typos · match perfecto con la BD.
   try {
     const _loteFull0 = (PLAN_DATA.agendadas || []).find(a => a.id === id);
     const envActual = (_loteFull0 && _loteFull0.envase_codigo_override) || '';
     html += '<div style="background:#ecfeff;border:1px solid #67e8f9;border-radius:8px;padding:10px 14px;margin-bottom:12px">';
     html += '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">';
     html += '<span style="font-size:11px;font-weight:800;color:#0e7490;text-transform:uppercase;letter-spacing:.5px">📦 Envase del lote</span>';
-    html += '<input id="env-ovr-' + id + '" type="text" maxlength="50" placeholder="auto (default del producto)" value="' + escapeHtml(envActual) + '" style="flex:1;min-width:160px;padding:6px 10px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px;font-family:monospace;text-transform:uppercase" oninput="this.value=this.value.toUpperCase()">';
+    html += '<select id="env-ovr-' + id + '" data-actual="' + escapeHtml(envActual) + '" style="flex:1;min-width:240px;padding:6px 10px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px;font-family:inherit;background:#fff">';
+    html += '<option value="">— Cargando envases —</option>';
+    html += '</select>';
     html += '<button onclick="guardarEnvaseOverride(' + id + ')" style="padding:6px 14px;font-size:11px;background:#0891b2;color:#fff;border:none;border-radius:5px;cursor:pointer;font-weight:700">💾 Guardar</button>';
     html += '<span id="env-ovr-ok-' + id + '" style="color:#15803d;font-size:11px;display:none">✓</span>';
     html += '</div>';
     html += '<div style="font-size:11px;color:#0e7490;margin-top:6px">' +
        (envActual ? '✓ Override <strong>' + escapeHtml(envActual) + '</strong> · MEE calcula con este envase' :
-                     '⚙ Sin override · MEE usa el envase default del producto · escribí un código (ej. FRASCO-30ML-GOTERO) para forzar otro') + '</div>';
+                     '⚙ Sin override · MEE usa el envase default del producto · elegí uno de la lista para forzar otro') + '</div>';
+    // Cargar opciones (cache global · una sola llamada)
+    setTimeout(() => { _cargarOpcionesEnvases(id, envActual); }, 50);
     // Sebastián 25-may-2026 PM · botones B (default global) y C (propagar futuros)
     // Solo se muestran si hay override seteado (sino no tiene sentido propagar nada)
     if (envActual){
