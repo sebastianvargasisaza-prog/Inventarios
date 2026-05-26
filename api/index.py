@@ -407,6 +407,13 @@ if not app.config.get("TESTING"):
         _log.getLogger(__name__).info("marketing-metrics-loop arrancado")
     except Exception as _e:
         _log.getLogger(__name__).warning("metrics-loop NO arrancó: %s", _e)
+    # Sebastián 26-may-2026 PM · cron semanal reporte ejecutivo (lunes 8am Bogotá)
+    try:
+        from blueprints.marketing import _start_reporte_ejecutivo_loop
+        _start_reporte_ejecutivo_loop()
+        _log.getLogger(__name__).info("reporte-ejecutivo-loop arrancado")
+    except Exception as _e:
+        _log.getLogger(__name__).warning("reporte-ejecutivo-loop NO arrancó: %s", _e)
     # Sebastian (30-abr-2026): cron auto-plan diario 07:00 L-V.
     # Solo arranca si AUTO_PLAN_CRON_ENABLED=1 en env (Render).
     try:
@@ -444,6 +451,12 @@ if not app.config.get("TESTING"):
                     _start_marketing_metrics_loop()
                 except Exception as _ex:
                     sup_log.warning('marketing relaunch fallo: %s', _ex)
+                # 1b. reporte-ejecutivo-loop · idempotente interno
+                try:
+                    from blueprints.marketing import _start_reporte_ejecutivo_loop
+                    _start_reporte_ejecutivo_loop()
+                except Exception as _ex:
+                    sup_log.warning('reporte-ejecutivo relaunch fallo: %s', _ex)
                 # 2. auto-plan-cron · detección is_alive
                 try:
                     from blueprints.auto_plan_jobs import iniciar_cron as _ic

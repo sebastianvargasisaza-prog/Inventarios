@@ -6118,6 +6118,106 @@ def _start_marketing_metrics_loop():
         log.error('[marketing-metrics] thread.start fallo: %s', _e)
 
 
+# ──────────────────────────────────────────────────────────────────────────────
+# Cron semanal · Reporte ejecutivo lunes 8am Bogotá
+# ──────────────────────────────────────────────────────────────────────────────
+_reporte_semanal_thread = None
+
+
+def _start_reporte_ejecutivo_loop():
+    """Thread daemon que cada hora verifica si toca enviar el reporte semanal.
+
+    Dispara solo cuando:
+      - Día semana == Lunes (weekday=0)
+      - Hora local Bogotá == 8 (UTC-5)
+      - Lock cron disponible (1 worker de 3 envía)
+      - REPORTE_EJECUTIVO_EMAIL env var configurada
+    """
+    global _reporte_semanal_thread
+    prev = _reporte_semanal_thread
+    if prev is not None and prev.is_alive():
+        return
+    import threading
+    import time as _time
+    from datetime import datetime as _dt, timedelta as _td
+
+    def _loop():
+        try:
+            from index import app as _app
+        except Exception as _e:
+            log.error('[reporte-ejecutivo] import fallo: %s', _e)
+            return
+        # Delay inicial 60s · permite que migrations corran
+        _time.sleep(60)
+        while True:
+            try:
+                # Bogotá = UTC-5 · convertimos sin pytz para no añadir dep
+                ahora_utc = _dt.utcnow()
+                ahora_bog = ahora_utc - _td(hours=5)
+                es_lunes = ahora_bog.weekday() == 0
+                es_8am = ahora_bog.hour == 8
+                if es_lunes and es_8am:
+                    dests_raw = (os.environ.get('REPORTE_EJECUTIVO_EMAIL') or '').strip()
+                    dests = [d.strip() for d in dests_raw.split(',') if d.strip()]
+                    if not dests:
+                        log.info('[reporte-ejecutivo] lunes 8am pero REPORTE_EJECUTIVO_EMAIL no configurada · skip')
+                    else:
+                        with _app.app_context():
+                            cn = _db()
+                            # Lock distribuido · clave incluye fecha para
+                            # garantizar 1 envío/semana
+                            week_key = f'reporte_ejecutivo_{ahora_bog.strftime("%Y_W%V")}'
+                            lock_ok = False
+                            try:
+                                from blueprints.auto_plan_jobs import (
+                                    _adquirir_lock_cron, _liberar_lock_cron)
+                                lock_ok = _adquirir_lock_cron(cn, week_key, ttl_horas=168)
+                            except Exception as _ex_lock:
+                                log.warning('[reporte-ejecutivo] lock no disponible: %s', _ex_lock)
+                                lock_ok = True  # single-worker fallback
+                            if not lock_ok:
+                                log.info('[reporte-ejecutivo] otro worker ya envió esta semana · skip')
+                            else:
+                                try:
+                                    data = _build_reporte_ejecutivo_data(cn)
+                                    html = _build_reporte_ejecutivo_html(data)
+                                    from notificaciones import SistemaNotificaciones
+                                    sn = SistemaNotificaciones()
+                                    if not sn.email_remitente or not sn.contraseña:
+                                        log.warning('[reporte-ejecutivo] SMTP no configurado · skip')
+                                    else:
+                                        import smtplib, ssl as _ssl
+                                        from email.mime.multipart import MIMEMultipart
+                                        from email.mime.text import MIMEText
+                                        for dest in dests:
+                                            try:
+                                                msg = MIMEMultipart('alternative')
+                                                msg['Subject'] = f"[ÁNIMUS] Reporte ejecutivo semanal · {data['generado_en'][:10]}"
+                                                msg['From'] = sn.email_remitente
+                                                msg['To'] = dest
+                                                msg.attach(MIMEText(html, 'html', 'utf-8'))
+                                                ctx = _ssl.create_default_context()
+                                                with smtplib.SMTP_SSL(sn.smtp_server, sn.smtp_port, context=ctx) as s:
+                                                    s.login(sn.email_remitente, sn.contraseña)
+                                                    s.sendmail(sn.email_remitente, [dest], msg.as_string())
+                                                log.info('[reporte-ejecutivo] enviado a %s', dest)
+                                            except Exception as _se:
+                                                log.warning('[reporte-ejecutivo] envío a %s fallo: %s', dest, _se)
+                                except Exception as _de:
+                                    log.exception('[reporte-ejecutivo] generación fallo: %s', _de)
+            except Exception as _le:
+                log.warning('[reporte-ejecutivo] loop error: %s', _le)
+            # Dormir 1 hora · re-verifica
+            _time.sleep(3600)
+
+    t = threading.Thread(target=_loop, daemon=True, name='reporte-ejecutivo-loop')
+    try:
+        t.start()
+        _reporte_semanal_thread = t
+    except Exception as _e:
+        log.error('[reporte-ejecutivo] thread.start fallo: %s', _e)
+
+
 def _save_metrics_snapshot(conn, influencer_id, datos, fuente):
     """Inserta o actualiza un snapshot de métricas en marketing_influencers_metrics.
     UNIQUE(influencer_id, fecha, fuente) garantiza 1 snapshot por día por fuente."""
