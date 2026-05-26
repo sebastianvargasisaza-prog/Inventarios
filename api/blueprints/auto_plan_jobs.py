@@ -673,6 +673,9 @@ JOBS_SCHEDULE = [
     # ⭐ Auto-normalizar abbreviaturas en fórmulas · 4:30 AM (después huérfanas)
     # SAP → Sodium Ascorbyl Phosphate · HA → Hyaluronic Acid · etc.
     ('auto_normalizar_formulas', 4, 30, None, None,             'job_auto_normalizar_formulas'),
+    # ⭐ Auto-normalizar MEE descriptions · 4:35 AM (5min después de MPs)
+    # TAPA / ENVASE / ETIQUETA abreviadas → canonical · sku_mee_config dedup
+    ('auto_normalizar_envases',  4, 35, None, None,             'job_auto_normalizar_envases'),
     # PQR SLA · Ley 1755/2015 CO · diario 8:15 AM
     ('pqr_sla_vencido',       8, 15, None, None,                'job_pqr_sla_vencido'),
     # MEE drift sync · cache vs SUM(movimientos_mee) · diario 3:00 AM
@@ -4289,6 +4292,132 @@ def job_auto_normalizar_formulas(app):
         }, 0
 
 
+def job_auto_normalizar_envases(app):
+    """Sebastián 27-may-2026 PM · cron diario 4:35 AM (5min después de MPs).
+
+    Detecta MEEs en maestro_mee + sku_mee_config con descripcion/código que
+    coincide con un alias en mee_aliases. Auto-normaliza:
+      1. MEE existente con descripción = abreviatura → renombra a canonical
+      2. sku_mee_config.mee_codigo apuntando a MEE archivada/inactiva con
+         canonical existente → mueve a la canónica
+    Réplica del patrón job_auto_normalizar_formulas (mig 158/MP).
+    """
+    with app.app_context():
+        from database import get_db as _gdb
+        conn = _gdb(); c = conn.cursor()
+
+        # Cargar aliases activos
+        aliases_dict = {}
+        try:
+            for al, canonical in c.execute(
+                "SELECT alias, descripcion_canonical FROM mee_aliases WHERE COALESCE(activo,1)=1"
+            ).fetchall():
+                if al and canonical:
+                    aliases_dict[al.lower().strip()] = canonical
+        except Exception:
+            return True, {'skip': True, 'razon': 'mee_aliases no existe · mig 196 no aplicada'}, 0
+
+        if not aliases_dict:
+            return True, {'aliases_cargados': 0}, 'no aliases'
+
+        # Maestro MEE por descripcion canónica para detectar dupes
+        mee_por_desc = {}  # lower(descripcion) -> (codigo, descripcion_actual, activo)
+        try:
+            for cod, desc, estado in c.execute(
+                "SELECT codigo, COALESCE(descripcion,''), COALESCE(estado,'Activo') FROM maestro_mee"
+            ).fetchall():
+                if not desc:
+                    continue
+                mee_por_desc.setdefault(desc.lower().strip(), (cod, desc, estado == 'Activo'))
+        except Exception:
+            pass
+
+        renombrados = []
+        sku_movidos = 0
+
+        # 1) Renombrar MEEs cuya descripcion sea una abreviatura conocida
+        # Match exacto solo (igual que MP en mig 158) · evita falsos positivos
+        # tipo "TAPA SPRAY" matcheando con alias "TA".
+        for kdesc, (cod, desc_actual, activa) in list(mee_por_desc.items()):
+            canonical = aliases_dict.get(kdesc)
+            if canonical:
+                # Existe otra MEE con la descripcion canonical?
+                otra = mee_por_desc.get(canonical.lower().strip())
+                if otra and otra[0] != cod and otra[2]:
+                    # Dedup: mover sku_mee_config hacia la canónica + archivar
+                    try:
+                        c.execute(
+                            "UPDATE sku_mee_config SET mee_codigo=? WHERE mee_codigo=?",
+                            (otra[0], cod),
+                        )
+                        n = c.rowcount or 0
+                        c.execute("UPDATE maestro_mee SET estado='Inactivo' WHERE codigo=?", (cod,))
+                        try:
+                            from audit_helpers import audit_log as _alog
+                            _alog(c, usuario='cron-normalizar-envases',
+                                  accion='AUTO_MERGE_MEE_DESDE_ALIAS',
+                                  tabla='maestro_mee', registro_id=cod,
+                                  antes={'descripcion': desc_actual, 'estado': 'Activo'},
+                                  despues={'estado': 'Inactivo', 'mergeada_hacia': otra[0],
+                                           'sku_mee_config_movidos': n,
+                                           'canonical': canonical})
+                        except Exception:
+                            pass
+                        sku_movidos += n
+                        renombrados.append({'codigo': cod, 'accion': 'merge',
+                                            'hacia': otra[0], 'canonical': canonical})
+                    except Exception as e:
+                        log.warning('[normalizar-envases] merge MEE %s fallo: %s', cod, e)
+                elif activa:
+                    # Renombrar in-place
+                    try:
+                        c.execute("UPDATE maestro_mee SET descripcion=? WHERE codigo=?",
+                                  (canonical, cod))
+                        try:
+                            from audit_helpers import audit_log as _alog
+                            _alog(c, usuario='cron-normalizar-envases',
+                                  accion='AUTO_RENOMBRAR_MEE_DESDE_ALIAS',
+                                  tabla='maestro_mee', registro_id=cod,
+                                  antes={'descripcion': desc_actual},
+                                  despues={'descripcion': canonical,
+                                           'razon': f'abreviatura {desc_actual} → canonical'})
+                        except Exception:
+                            pass
+                        renombrados.append({'codigo': cod, 'accion': 'renombrar',
+                                            'antes': desc_actual, 'despues': canonical})
+                        mee_por_desc[canonical.lower().strip()] = (cod, canonical, True)
+                    except Exception as e:
+                        log.warning('[normalizar-envases] renombrar MEE %s fallo: %s', cod, e)
+
+        conn.commit()
+
+        # Notif resumen si hubo trabajo
+        if renombrados:
+            try:
+                from blueprints.notif import push_notif
+                cuerpo = (f'🔧 {len(renombrados)} MEE(s) normalizado(s) · '
+                          f'{sku_movidos} sku_mee_config reapuntado(s).')
+                for u in ('sebastian', 'alejandro'):
+                    try:
+                        push_notif(destinatario=u,
+                                   tipo='normalizar_envases',
+                                   titulo='🔧 Normalización MEE diaria',
+                                   body=cuerpo,
+                                   link='/admin/migraciones-pg',
+                                   remitente='sistema')
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
+        return True, {
+            'renombrados': len(renombrados),
+            'sku_mee_config_movidos': sku_movidos,
+            'aliases_cargados': len(aliases_dict),
+            'detalle': renombrados[:30],
+        }, f'{len(renombrados)} normalizados · {sku_movidos} reapuntados'
+
+
 def job_auto_reparar_huerfanas(app):
     """Sebastián 21-may-2026 · cron diario 4:00 AM.
 
@@ -4415,6 +4544,7 @@ def _loop_multi_cron(app):
                     'marcar_vencidos',              # notif + UPDATE estado_lote
                     'auto_reparar_huerfanas',       # UPDATE formula_items
                     'auto_normalizar_formulas',     # UPDATE formula_items
+                    'auto_normalizar_envases',      # UPDATE maestro_mee + sku_mee_config
                     'mee_drift_sync',               # UPDATE stock_actual
                 }
                 for job_name, hora, minuto, dias_sem, dias_mes, callable_name in JOBS_SCHEDULE:

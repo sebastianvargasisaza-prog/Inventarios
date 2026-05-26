@@ -6176,6 +6176,245 @@ def admin_mps_abreviaturas_fix():
     })
 
 
+@bp.route("/api/admin/mees-abreviaturas-audit", methods=["GET"])
+def admin_mees_abreviaturas_audit():
+    """Lista MEEs cuya descripcion coincida con un alias en mee_aliases ·
+    indica si deberían renombrarse al descripcion canonical o si hay duplicado
+    (existe otra MEE con la descripcion canonical en paralelo).
+
+    Sebastián 27-may-2026 PM · "abastecimiento MEE sigue sin calcular
+    necesidades" · causa: descripciones con abreviaturas no normalizadas en
+    sku_mee_config → match falla → consumo_mee_agregado=0 silencioso.
+    Endpoint dry-run, sin cambios. POST hermano /mees-abreviaturas-fix aplica.
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    conn = db_connect()
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+
+    try:
+        aliases_rows = c.execute(
+            """SELECT alias, descripcion_canonical
+               FROM mee_aliases WHERE COALESCE(activo,1)=1"""
+        ).fetchall()
+    except Exception:
+        conn.close()
+        return jsonify({'error': 'tabla mee_aliases no existe · mig 196 no aplicada'}), 500
+
+    aliases_dict = {r['alias'].lower().strip(): r['descripcion_canonical']
+                    for r in aliases_rows if r['alias']}
+
+    mees_rows = c.execute(
+        """SELECT codigo, COALESCE(descripcion,'') AS descripcion,
+                  COALESCE(estado,'Activo') AS estado,
+                  COALESCE(categoria,'') AS categoria,
+                  COALESCE(proveedor,'') AS proveedor
+           FROM maestro_mee"""
+    ).fetchall()
+
+    # Mapa lower(canonical) -> codigo MEE existente que YA usa esa descripcion
+    canonical_actual = {}
+    for r in mees_rows:
+        if r['estado'] != 'Activo':
+            continue
+        d = r['descripcion']
+        if d:
+            k = d.lower().strip()
+            if k not in canonical_actual:
+                canonical_actual[k] = r['codigo']
+
+    hallazgos = []
+    for r in mees_rows:
+        valor = r['descripcion']
+        if not valor:
+            continue
+        kv = valor.lower().strip()
+        # Solo match exacto de descripcion completa (mismo criterio que MP).
+        # Evita falsos positivos tipo "TAPA SPRAY" matcheando con alias "TA"
+        # por token parcial. Si Sebastián quiere normalizar combos, debe
+        # agregar el alias explícito (e.g. "tapa spray" → "TAPA").
+        alias_canonical = aliases_dict.get(kv)
+        if not alias_canonical:
+            continue
+        canonical_key = alias_canonical.lower().strip()
+        otra_mee = canonical_actual.get(canonical_key)
+        es_duplicado = (otra_mee is not None and otra_mee != r['codigo'])
+        hallazgos.append({
+            'codigo': r['codigo'],
+            'descripcion_actual': valor,
+            'alias_detectado': valor.strip(),
+            'descripcion_canonical': alias_canonical,
+            'activo': r['estado'] == 'Activo',
+            'categoria': r['categoria'],
+            'proveedor': r['proveedor'],
+            'es_duplicado_de': otra_mee if es_duplicado else None,
+            'accion_sugerida': (
+                'merge_dedupe' if es_duplicado
+                else 'renombrar_a_canonical'
+            ),
+        })
+
+    hallazgos_activos = [h for h in hallazgos if h['activo']]
+    total = len(hallazgos_activos)
+    duplicados = sum(1 for h in hallazgos_activos
+                     if h['accion_sugerida'] == 'merge_dedupe')
+    renombrables = total - duplicados
+    inactivos = len(hallazgos) - len(hallazgos_activos)
+
+    conn.close()
+    return jsonify({
+        'total_hallazgos': total,
+        'a_renombrar': renombrables,
+        'duplicados_a_merge': duplicados,
+        'inactivos_incluidos': inactivos,
+        'aliases_cargados': len(aliases_dict),
+        'hallazgos': hallazgos,
+    })
+
+
+@bp.route("/api/admin/mees-abreviaturas-fix", methods=["POST"])
+def admin_mees_abreviaturas_fix():
+    """Aplica el fix a las MEEs detectadas por mees-abreviaturas-audit.
+
+    Body opcional: {dry_run: true} para simular sin commit.
+
+    Para cada hallazgo:
+    - 'renombrar_a_canonical' → UPDATE descripcion=canonical
+    - 'merge_dedupe' → mover referencias en sku_mee_config y archivar la huérfana
+
+    Audit log por cada acción. Idempotente.
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+
+    d = request.get_json(silent=True) or {}
+    dry_run = bool(d.get('dry_run'))
+
+    conn = db_connect()
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+
+    try:
+        aliases_rows = c.execute(
+            """SELECT alias, descripcion_canonical
+               FROM mee_aliases WHERE COALESCE(activo,1)=1"""
+        ).fetchall()
+    except Exception:
+        conn.close()
+        return jsonify({'error': 'tabla mee_aliases no existe · mig 196 no aplicada'}), 500
+
+    aliases_dict = {r['alias'].lower().strip(): r['descripcion_canonical']
+                    for r in aliases_rows if r['alias']}
+
+    mees_rows = c.execute(
+        """SELECT codigo, COALESCE(descripcion,'') AS descripcion,
+                  COALESCE(estado,'Activo') AS estado
+           FROM maestro_mee"""
+    ).fetchall()
+
+    canonical_owner = {}
+    for r in mees_rows:
+        if r['estado'] != 'Activo':
+            continue
+        d2 = r['descripcion']
+        if not d2:
+            continue
+        k = d2.lower().strip()
+        if k in aliases_dict:
+            continue  # es abreviatura · no es owner del canonical
+        canonical_owner.setdefault(k, r['codigo'])
+
+    renombrados = []
+    mergeados = []
+    saltados = []
+
+    for r in mees_rows:
+        valor = r['descripcion']
+        if not valor:
+            continue
+        kv = valor.lower().strip()
+        # Solo match exacto · evita falsos positivos por token parcial.
+        alias_canonical = aliases_dict.get(kv)
+        if not alias_canonical:
+            continue
+        canonical_key = alias_canonical.lower().strip()
+        otra_mee = canonical_owner.get(canonical_key)
+
+        if otra_mee and otra_mee != r['codigo']:
+            if dry_run:
+                mergeados.append({'desde': r['codigo'], 'hacia': otra_mee,
+                                  'canonical': alias_canonical, 'dry_run': True})
+                continue
+            try:
+                c.execute(
+                    "UPDATE sku_mee_config SET mee_codigo=? WHERE mee_codigo=?",
+                    (otra_mee, r['codigo'])
+                )
+                n_moved = c.rowcount or 0
+                c.execute("UPDATE maestro_mee SET estado='Inactivo' WHERE codigo=?",
+                          (r['codigo'],))
+                try:
+                    audit_log(c, usuario=u, accion='MERGE_MEE_ABREVIATURA',
+                              tabla='maestro_mee', registro_id=r['codigo'],
+                              antes={'descripcion': r['descripcion'],
+                                     'estado': r['estado']},
+                              despues={'estado': 'Inactivo',
+                                       'mergeada_hacia': otra_mee,
+                                       'sku_mee_config_movidos': n_moved,
+                                       'canonical': alias_canonical})
+                except Exception:
+                    pass
+                mergeados.append({'desde': r['codigo'], 'hacia': otra_mee,
+                                  'canonical': alias_canonical,
+                                  'sku_mee_config_movidos': n_moved})
+            except Exception as e:
+                saltados.append({'codigo': r['codigo'], 'razon': str(e)})
+        else:
+            if dry_run:
+                renombrados.append({'codigo': r['codigo'],
+                                    'antes': valor, 'despues': alias_canonical,
+                                    'dry_run': True})
+                continue
+            try:
+                c.execute(
+                    "UPDATE maestro_mee SET descripcion=? WHERE codigo=?",
+                    (alias_canonical, r['codigo'])
+                )
+                try:
+                    audit_log(c, usuario=u, accion='RENOMBRAR_MEE_DESDE_ABREVIATURA',
+                              tabla='maestro_mee', registro_id=r['codigo'],
+                              antes={'descripcion': r['descripcion']},
+                              despues={'descripcion': alias_canonical,
+                                       'razon': f'abreviatura {valor} renombrada a canonical'})
+                except Exception:
+                    pass
+                canonical_owner[canonical_key] = r['codigo']
+                renombrados.append({'codigo': r['codigo'],
+                                    'antes': valor, 'despues': alias_canonical})
+            except Exception as e:
+                saltados.append({'codigo': r['codigo'], 'razon': str(e)})
+
+    if not dry_run:
+        conn.commit()
+    conn.close()
+
+    _log_sec(u, _client_ip(), "admin_mees_abreviaturas_fix",
+             f"dry_run={dry_run} renombrados={len(renombrados)} mergeados={len(mergeados)}")
+    return jsonify({
+        'dry_run': dry_run,
+        'renombrados': len(renombrados),
+        'mergeados': len(mergeados),
+        'saltados': len(saltados),
+        'detalle_renombrados': renombrados,
+        'detalle_mergeados': mergeados,
+        'detalle_saltados': saltados,
+    })
+
+
 @bp.route("/admin/migraciones-pg", methods=["GET"])
 def admin_migraciones_pg_page():
     """UI · pagina HTML para aplicar migraciones pendientes en PG con 1 click.

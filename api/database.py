@@ -312,6 +312,46 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (196, "mee_aliases · normalización abreviaturas envases · réplica patrón mp_aliases · Sebastián 27-may-2026 PM", [
+        # Sebastián 27-may-2026 PM · "necesidades MEE sigue sin calcular".
+        # Causa: si descripcion en sku_mee_config o nombre tipeado por
+        # Catalina/Jefferson NO matchea exacto con maestro_mee.codigo o
+        # maestro_mee.descripcion → consumo_mee_agregado = 0 silencioso.
+        # Solución: réplica de mp_aliases (mig 158) para MEE.
+        #  · alias → codigo_mee / descripcion_canonical
+        #  · cron 4:35 AM normaliza sku_mee_config.mee_codigo
+        #  · endpoint audit/fix para revisión manual
+        """CREATE TABLE IF NOT EXISTS mee_aliases (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            alias TEXT NOT NULL,
+            codigo_mee TEXT,
+            descripcion_canonical TEXT,
+            tipo TEXT DEFAULT 'abreviatura'
+                CHECK(tipo IN ('abreviatura','sinonimo','typo_comun','translation')),
+            fuente TEXT DEFAULT 'manual'
+                CHECK(fuente IN ('manual','seed','auto-detectado','catalina','sebastian','jefferson')),
+            creado_en TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            creado_por TEXT,
+            activo INTEGER NOT NULL DEFAULT 1
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_mee_aliases_alias ON mee_aliases(LOWER(alias))",
+        "CREATE INDEX IF NOT EXISTS idx_mee_aliases_codigo ON mee_aliases(codigo_mee)",
+        # Seeds conservadores · solo abreviaturas estructurales obvias.
+        # Sebastián agregará más vía endpoint CRUD según patrones que detecte.
+        "INSERT OR IGNORE INTO mee_aliases (alias, descripcion_canonical, tipo, fuente) VALUES ('TA', 'TAPA', 'abreviatura', 'seed')",
+        "INSERT OR IGNORE INTO mee_aliases (alias, descripcion_canonical, tipo, fuente) VALUES ('ENV', 'ENVASE', 'abreviatura', 'seed')",
+        "INSERT OR IGNORE INTO mee_aliases (alias, descripcion_canonical, tipo, fuente) VALUES ('ETIQ', 'ETIQUETA', 'abreviatura', 'seed')",
+        "INSERT OR IGNORE INTO mee_aliases (alias, descripcion_canonical, tipo, fuente) VALUES ('FCO', 'FRASCO', 'abreviatura', 'seed')",
+        "INSERT OR IGNORE INTO mee_aliases (alias, descripcion_canonical, tipo, fuente) VALUES ('PLEG', 'PLEGADIZA', 'abreviatura', 'seed')",
+        "INSERT OR IGNORE INTO mee_aliases (alias, descripcion_canonical, tipo, fuente) VALUES ('SERIG', 'SERIGRAFIA', 'abreviatura', 'seed')",
+        "INSERT OR IGNORE INTO mee_aliases (alias, descripcion_canonical, tipo, fuente) VALUES ('TAMPOG', 'TAMPOGRAFIA', 'abreviatura', 'seed')",
+        # Typos comunes ES
+        "INSERT OR IGNORE INTO mee_aliases (alias, descripcion_canonical, tipo, fuente) VALUES ('plateada', 'PLATEADA', 'typo_comun', 'seed')",
+        "INSERT OR IGNORE INTO mee_aliases (alias, descripcion_canonical, tipo, fuente) VALUES ('cuentagotas', 'CUENTAGOTAS', 'translation', 'seed')",
+        "INSERT OR IGNORE INTO mee_aliases (alias, descripcion_canonical, tipo, fuente) VALUES ('airless', 'AIRLESS', 'abreviatura', 'seed')",
+        "INSERT OR IGNORE INTO mee_aliases (alias, descripcion_canonical, tipo, fuente) VALUES ('spray', 'SPRAY', 'abreviatura', 'seed')",
+    ]),
+
     (195, "pagos_influencers.fecha_contenido + vence_pago_at · flujo urgencia pago 30d · Sebastián 27-may-2026 PM", [
         # FEATURE 27-may PM · "promesa de pago a 30 días desde creación del
         # contenido". Jefferson registra fecha_contenido al solicitar pago ·
