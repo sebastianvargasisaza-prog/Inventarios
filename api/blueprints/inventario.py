@@ -8609,10 +8609,26 @@ def planta_conteo_ciclico_pagina():
     Reusa endpoints existentes /api/conteo/*.
     """
     if 'compras_user' not in session:
-        return "<html><body><h2>Logueate primero en <a href='/'>app.eossuite.com</a></h2></body></html>", 401
+        # Branding fix 27-may · página de no-auth ahora consistente con EOS
+        return ("""<!DOCTYPE html><html lang="es"><head>
+<meta charset="utf-8"><title>Sesión requerida · EOS</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=5.0,user-scalable=yes">
+<link rel="stylesheet" href="/static/cortex.css">
+<style>body{display:flex;align-items:center;justify-content:center;min-height:100vh;background:var(--cx-bg,#0f172a);color:var(--cx-text,#f1f5f9);font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
+.box{background:var(--cx-card,#1e293b);border:1px solid var(--cx-border,#334155);border-radius:14px;padding:30px 36px;max-width:440px;text-align:center}
+.brand{color:#a78bfa;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.15em;margin-bottom:12px}
+h1{margin:0 0 12px;font-size:20px;color:#fff}
+.btn{display:inline-block;margin-top:18px;padding:10px 22px;background:#7c3aed;color:#fff;border-radius:8px;text-decoration:none;font-weight:700}</style>
+</head><body>
+<div class="box">
+  <div class="brand">EOS · HHA Group</div>
+  <h1>Sesión requerida</h1>
+  <p style="color:#94a3b8">Iniciá sesión para acceder al conteo cíclico.</p>
+  <a class="btn" href="/">Ir al login</a>
+</div></body></html>""", 401)
     return """<!DOCTYPE html>
 <html><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=5.0,user-scalable=yes">
 <title>Conteo Cíclico · Bodega</title>
 <style>
   *{box-sizing:border-box}

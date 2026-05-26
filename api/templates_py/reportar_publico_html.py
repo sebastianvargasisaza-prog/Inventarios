@@ -9,7 +9,7 @@ HTML = r"""<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=5.0,user-scalable=yes">
 <title>Reportar a RH · HHA Group</title>
 <style>
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
