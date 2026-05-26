@@ -5014,7 +5014,13 @@ def actualizar_estado_solicitud(numero):
         }
         categoria_oc = _SOLIC_TO_OC_CAT.get(categoria_oc, categoria_oc)
         proveedor_oc = (d.get('proveedor') or '').strip()
-        valor_oc = float(d.get('valor_total') or 0)
+        # P1 audit 26-may · validate_money en valor_total · ValueError raw
+        # no manejado iba a 500 sin mensaje útil.
+        from http_helpers import validate_money as _vm_sol
+        valor_oc, _err_vo = _vm_sol(d.get('valor_total') or 0, allow_zero=True,
+                                      max_value=1e10, field_name='valor_total')
+        if _err_vo:
+            return jsonify(_err_vo), 400
         # Sebastian (29-abr-2026): "OC sale Por definir y $0 aunque la
         # solicitud trae 150.000". Si el frontend no manda proveedor/valor,
         # los inferimos desde la solicitud para que la OC no quede vacia.
@@ -11026,11 +11032,20 @@ def actualizar_cotizacion(cot_id):
     if err:
         return err, code
     d = request.get_json() or {}
-    valor = float(d.get('valor_total') or 0)
-    if valor <= 0:
-        return jsonify({'error': 'valor_total > 0 requerido'}), 400
-
+    # P1 audit 26-may · validate_money · respuesta de proveedor → elegir_ganadora
+    # creará OC con este valor · NaN/Inf contamina decisiones financieras.
+    from http_helpers import validate_money as _vm_cot
+    valor, _err_v = _vm_cot(d.get('valor_total') or 0, allow_zero=False,
+                              max_value=1e10, field_name='valor_total')
+    if _err_v:
+        return jsonify(_err_v), 400
+    # Snapshot antes para audit
     conn = get_db(); c = conn.cursor()
+    ant_row = c.execute(
+        "SELECT proveedor, valor_total, estado, ronda_id FROM cotizaciones WHERE id=?",
+        (cot_id,)).fetchone()
+    if not ant_row:
+        return jsonify({'error': 'Cotización no encontrada'}), 404
     c.execute("""UPDATE cotizaciones SET
                     valor_total=?, fecha_recibida=datetime('now', '-5 hours', 'utc'),
                     condiciones=COALESCE(?, condiciones),
@@ -11042,6 +11057,17 @@ def actualizar_cotizacion(cot_id):
                d.get('archivo'), cot_id))
     if c.rowcount == 0:
         return jsonify({'error': 'Cotización no encontrada'}), 404
+    # Audit log decisión financiera
+    try:
+        audit_log(c, usuario=u, accion='ACTUALIZAR_COTIZACION', tabla='cotizaciones',
+                  registro_id=cot_id,
+                  antes={'valor_total': ant_row[1], 'estado': ant_row[2]},
+                  despues={'valor_total': valor, 'estado': 'Recibida',
+                           'tiempo_entrega_dias': d.get('tiempo_entrega_dias')},
+                  detalle=f"Cot id={cot_id} prov={ant_row[0]} ronda={ant_row[3]} · ${valor:,.0f}")
+    except Exception as _ae:
+        import logging as _lg
+        _lg.getLogger('compras').warning('audit actualizar_cotizacion fallo: %s', _ae)
     conn.commit()
     return jsonify({'ok': True, 'id': cot_id, 'estado': 'Recibida'})
 
@@ -11291,9 +11317,13 @@ def fast_track_config_upsert():
     categoria = (d.get('categoria') or '').strip()
     if not categoria:
         return jsonify({'error': 'categoria requerida'}), 400
-    monto_max = float(d.get('monto_max_cop') or 0)
-    if monto_max < 0:
-        return jsonify({'error': 'monto_max_cop no puede ser negativo'}), 400
+    # P1 audit 26-may · validate_money · NaN/Inf en monto_max_cop rompía
+    # _evaluar_auto_aprobacion y dejaba pasar OCs sin revisión gerencial.
+    from http_helpers import validate_money as _vm_ft
+    monto_max, _err_mm = _vm_ft(d.get('monto_max_cop') or 0, allow_zero=True,
+                                 max_value=1e10, field_name='monto_max_cop')
+    if _err_mm:
+        return jsonify(_err_mm), 400
     activo = 1 if d.get('activo', True) else 0
     notas = (d.get('notas') or '').strip()[:300]
     conn = get_db(); c = conn.cursor()

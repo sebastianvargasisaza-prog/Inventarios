@@ -1200,7 +1200,7 @@ async function aprobarAus(id, estado){
 function openAusModal(){
   var sel = document.getElementById('a-emp');
   sel.innerHTML = allEmps.filter(function(e){return e.estado==='Activo';}).map(function(e){
-    return '<option value="'+e.id+'">'+e.nombre+' '+e.apellido+'</option>';
+    return '<option value="'+(parseInt(e.id)||0)+'">'+esc((e.nombre||'')+' '+(e.apellido||''))+'</option>';
   }).join('');
   openModal('m-aus');
 }
@@ -1235,13 +1235,13 @@ async function loadCapacitaciones(){
       return '<div class="card" style="margin-bottom:12px;">' +
         '<div class="card-hd">' +
           '<div>' +
-            '<span style="font-size:11px;font-weight:700;text-transform:uppercase;color:'+(tipoColors[c.tipo]||'#888')+';letter-spacing:.5px;">'+c.tipo+'</span>' +
-            '<div style="font-size:15px;font-weight:700;margin-top:2px;">'+c.nombre+'</div>' +
-            '<div style="font-size:12px;color:#78716c;margin-top:2px;">'+fmtDate(c.fecha)+' &bull; '+c.horas+'h &bull; '+c.instructor+'</div>' +
+            '<span style="font-size:11px;font-weight:700;text-transform:uppercase;color:'+(tipoColors[c.tipo]||'#888')+';letter-spacing:.5px;">'+esc(c.tipo||'')+'</span>' +
+            '<div style="font-size:15px;font-weight:700;margin-top:2px;">'+esc(c.nombre||'')+'</div>' +
+            '<div style="font-size:12px;color:#78716c;margin-top:2px;">'+esc(fmtDate(c.fecha))+' &bull; '+(parseFloat(c.horas)||0)+'h &bull; '+esc(c.instructor||'')+'</div>' +
           '</div>' +
           '<div style="text-align:right;">' +
             '<div style="font-size:24px;font-weight:800;color:'+(color==='green'?'#16a34a':color==='red'?'#dc2626':'#d97706')+'">'+pct+'%</div>' +
-            '<div style="font-size:11px;color:#78716c;">'+(c.completados||0)+'/'+c.total+' completados</div>' +
+            '<div style="font-size:11px;color:#78716c;">'+(parseInt(c.completados)||0)+'/'+(parseInt(c.total)||0)+' completados</div>' +
           '</div>' +
         '</div>' +
         '<div class="prog-bar"><div class="prog-fill '+color+'" style="width:'+pct+'%"></div></div>' +
@@ -1302,7 +1302,7 @@ async function loadEvaluaciones(){
 function openEvaModal(){
   var sel = document.getElementById('e-emp');
   sel.innerHTML = allEmps.filter(function(e){return e.estado==='Activo';}).map(function(e){
-    return '<option value="'+e.id+'">'+e.nombre+' '+e.apellido+'</option>';
+    return '<option value="'+(parseInt(e.id)||0)+'">'+esc((e.nombre||'')+' '+(e.apellido||''))+'</option>';
   }).join('');
   document.getElementById('ev-criteria').innerHTML = CRITERIA.map(function(c){
     return '<div class="rating-group" style="margin-bottom:10px;">' +
