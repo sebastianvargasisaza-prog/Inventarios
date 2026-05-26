@@ -1812,19 +1812,39 @@ def mkt_contenido_kanban():
     conn = _db()
     c = conn.cursor()
     try:
+        # AUDIT 26-may · LEFT JOIN con animus_instagram_posts por url_publicacion
+        # ↔ url_permalink · trae métricas REALES de IG en lugar de las manuales.
+        # ig.likes/comentarios/alcance/impresiones/guardados son los del Graph
+        # API en el último sync · si no hay match (pieza no publicada o URL
+        # distinta), caemos a las columnas manuales de marketing_contenido.
         rows = [dict(r) for r in c.execute("""
             SELECT mc.id, mc.campana_id, mc.influencer_id, mc.tipo, mc.plataforma,
                    mc.fecha_publicacion, mc.fecha_programada, mc.estado,
                    mc.caption, mc.url_publicacion, mc.sku_objetivo,
-                   mc.mensaje_principal, mc.likes, mc.comentarios, mc.shares,
-                   mc.alcance, mc.fecha_creacion,
+                   mc.mensaje_principal,
+                   mc.likes AS likes_manual,
+                   mc.comentarios AS comentarios_manual,
+                   mc.shares,
+                   mc.alcance AS alcance_manual,
+                   mc.conversiones,
+                   mc.fecha_creacion,
                    c.nombre as campana_nombre,
                    i.nombre as influencer_nombre,
                    i.usuario_red as influencer_usuario,
-                   i.discount_code as influencer_code
+                   i.discount_code as influencer_code,
+                   ig.instagram_id AS ig_id,
+                   ig.likes AS ig_likes,
+                   ig.comentarios AS ig_comentarios,
+                   ig.alcance AS ig_alcance,
+                   ig.impresiones AS ig_impresiones,
+                   ig.guardados AS ig_guardados,
+                   ig.synced_at AS ig_synced_at
             FROM marketing_contenido mc
             LEFT JOIN marketing_campanas c ON c.id = mc.campana_id
             LEFT JOIN marketing_influencers i ON i.id = mc.influencer_id
+            LEFT JOIN animus_instagram_posts ig
+              ON COALESCE(mc.url_publicacion,'') != ''
+             AND mc.url_publicacion = ig.url_permalink
             ORDER BY COALESCE(mc.fecha_programada, mc.fecha_publicacion, mc.fecha_creacion) DESC
             LIMIT 500
         """).fetchall()]
@@ -1838,6 +1858,16 @@ def mkt_contenido_kanban():
                 # Estado raro → tirar a Brief para no perderlo
                 est_k = "Brief"
             r["estado_kanban"] = est_k
+            # Mezclar IG live > manual · `likes`/`comentarios`/`alcance` finales
+            # son siempre los más altos disponibles entre ambas fuentes.
+            ig_id = r.get('ig_id')
+            r['fuente_metricas'] = 'instagram_live' if ig_id else 'manual'
+            r['likes']        = r.get('ig_likes')        if ig_id else (r.get('likes_manual') or 0)
+            r['comentarios']  = r.get('ig_comentarios')  if ig_id else (r.get('comentarios_manual') or 0)
+            r['alcance']      = r.get('ig_alcance')      if ig_id else (r.get('alcance_manual') or 0)
+            r['impresiones']  = r.get('ig_impresiones')  if ig_id else None
+            r['guardados']    = r.get('ig_guardados')    if ig_id else None
+            r['ig_match']     = bool(ig_id)
             buckets[est_k].append(r)
 
         columnas = []

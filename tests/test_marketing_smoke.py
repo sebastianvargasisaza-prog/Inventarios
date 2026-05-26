@@ -66,6 +66,22 @@ def test_marketing_generar_cupon_influencer_inexistente(app, db_clean):
     assert r.status_code == 404
 
 
+def test_kanban_devuelve_fuente_metricas(app, db_clean):
+    """AUDIT 26-may · cada item del kanban tiene flag ig_match + fuente_metricas.
+    Sin posts sincronizados todavía, todos deben tener fuente_metricas='manual'."""
+    c = _login(app)
+    r = c.get("/api/marketing/contenido/kanban")
+    assert r.status_code == 200
+    j = r.get_json()
+    assert j.get("ok") is True
+    for col in j.get("columnas", []):
+        for it in col.get("items", []):
+            assert "fuente_metricas" in it, "campo fuente_metricas obligatorio"
+            assert it["fuente_metricas"] in ("instagram_live", "manual")
+            assert "ig_match" in it, "campo ig_match obligatorio"
+            assert isinstance(it["ig_match"], bool)
+
+
 def test_marketing_kpis_hoy(app, db_clean):
     """Audit 25-may-2026 PM · pestaña Hoy mostraba KPIs siempre 0 porque el
     frontend leía keys que no existían en /api/marketing/dashboard. Este

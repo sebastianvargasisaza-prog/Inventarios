@@ -2838,7 +2838,15 @@ function renderKanbanCard(it) {
     if (it.likes) stats.push(`❤️ <b>${fmt(it.likes)}</b>`);
     if (it.comentarios) stats.push(`💬 <b>${fmt(it.comentarios)}</b>`);
     if (it.alcance) stats.push(`👁 <b>${fmt(it.alcance)}</b>`);
-    if (stats.length) perf = `<div class="perf">${stats.join(' · ')}</div>`;
+    if (it.impresiones) stats.push(`📊 <b>${fmt(it.impresiones)}</b>`);
+    if (it.guardados) stats.push(`🔖 <b>${fmt(it.guardados)}</b>`);
+    // AUDIT 26-may · marca de origen métricas · IG live = automático del Graph API
+    const fuenteBadge = it.ig_match
+      ? `<span style="background:#1e3a8a;color:#93c5fd;padding:1px 6px;border-radius:6px;font-size:9px;font-weight:700;margin-right:6px" title="Métricas auto-sincronizadas desde Instagram Graph API${it.ig_synced_at?' · sync '+esc(it.ig_synced_at):''}">📡 IG LIVE</span>`
+      : (it.url_publicacion && it.estado === 'Publicado'
+          ? `<span style="background:#7c2d12;color:#fdba74;padding:1px 6px;border-radius:6px;font-size:9px;font-weight:700;margin-right:6px" title="Esta pieza tiene URL pero no hay match en posts IG sincronizados · refresca IG en Dashboard ↻">⚠ sin sync IG</span>`
+          : '');
+    if (stats.length || fuenteBadge) perf = `<div class="perf">${fuenteBadge}${stats.join(' · ')}</div>`;
   }
 
   let urlBtn = '';
