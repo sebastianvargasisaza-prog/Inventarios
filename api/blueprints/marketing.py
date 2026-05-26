@@ -10,6 +10,10 @@ from datetime import datetime, date, timedelta
 from flask import Blueprint, request, jsonify, session
 
 from config import DB_PATH, ADMIN_USERS, MARKETING_USERS, USER_EMAILS
+try:
+    from config import CONTADORA_USERS
+except ImportError:
+    CONTADORA_USERS = ()
 from database import get_db
 from audit_helpers import audit_log
 
@@ -2982,6 +2986,24 @@ def mkt_influencers_panel():
         sql = base_sql + (" WHERE " + " AND ".join(conds) if conds else "") + " ORDER BY nombre"
         influencers = [dict(r) for r in c.execute(sql, params).fetchall()]
 
+        # Sebastián 25-may-2026 PM · audit P0 · Habeas Data Ley 1581 CO
+        # `/influencers-panel` fugaba banco/cuenta_bancaria/cedula_nit/
+        # tipo_cuenta a usuarios marketing no-admin. El fix 7b8345e
+        # solo cubrio /mkt_influencers GET (line 940) pero no este endpoint.
+        # Ahora enmascara con '***' si el caller no es ADMIN+CONTADORA.
+        try:
+            _u_lower = (u or '').lower()
+            _puede_ver_banco = _u_lower in {
+                x.lower() for x in (set(ADMIN_USERS) | set(CONTADORA_USERS))}
+        except Exception:
+            _puede_ver_banco = False
+        if not _puede_ver_banco:
+            for _inf in influencers:
+                for _campo_sensible in ('banco', 'cuenta_bancaria',
+                                          'tipo_cuenta', 'cedula_nit'):
+                    if _inf.get(_campo_sensible):
+                        _inf[_campo_sensible] = '***'
+
         # AUTO-BACKFILL: corregir filas mal-marcadas como 'Pendiente'.
         # Reglas:
         #   1. OC asociada en estado 'Pagada'/'Recibida'/'Parcial' (>=80% pagado)
@@ -3562,15 +3584,29 @@ def mkt_solicitar_pago_influencer(iid):
         inf = dict(inf)
 
         d = request.get_json() or {}
-        monto    = float(d.get("valor") or d.get("monto") or inf.get("tarifa") or 0)
+        # Sebastián 25-may-2026 PM · audit P0 · validate_money en mutación
+        # financiera. Antes float() permitía negativos, NaN, valores absurdos.
+        raw_monto = d.get("valor") or d.get("monto") or inf.get("tarifa") or 0
+        try:
+            from inventario_utils import validate_money as _vm
+            monto, _err_m = _vm(raw_monto, allow_zero=False,
+                                  max_value=500_000_000, field_name='monto pago')
+            if _err_m:
+                return jsonify(_err_m), 400
+        except ImportError:
+            try:
+                monto = float(raw_monto or 0)
+            except (TypeError, ValueError):
+                return jsonify({"error": "monto inválido"}), 400
+            if monto <= 0:
+                return jsonify({"error": "El monto debe ser mayor a 0"}), 400
+            if monto > 500_000_000:
+                return jsonify({"error": "monto fuera de rango (max 500M)"}), 400
         concepto = str(d.get("concepto") or "Pago de contenido/colaboración").strip()
         banco    = str(d.get("banco")    or inf.get("banco", "")).strip()
         cuenta   = str(d.get("cuenta")   or inf.get("cuenta_bancaria", "")).strip()
         cedula   = str(d.get("cedula")   or inf.get("cedula_nit", "")).strip()
         tipo_cta = str(d.get("tipo_cuenta") or inf.get("tipo_cuenta", "Ahorros")).strip()
-
-        if monto <= 0:
-            return jsonify({"error": "El monto debe ser mayor a 0"}), 400
 
         # Generate SOL number
         from datetime import datetime as dt
@@ -3651,6 +3687,24 @@ def mkt_solicitar_pago_influencer(iid):
         except Exception:
             pass  # tabla puede no existir aún en instancias viejas
 
+        # Sebastián 25-may-2026 PM · audit P0 · mutación financiera SIN
+        # audit_log antes era el bug más sensible (dinero real · SOL+OC+pago
+        # creados sin rastro). Enmascarar banco/cuenta/cedula en el audit.
+        try:
+            from audit_helpers import audit_log as _al
+            _al(c, usuario=u, accion='SOLICITAR_PAGO_INFLUENCER',
+                tabla='solicitudes_compra', registro_id=numero,
+                despues={
+                    'influencer_id': iid,
+                    'influencer_nombre': inf.get('nombre',''),
+                    'monto': monto, 'concepto': concepto,
+                    'numero_sol': numero, 'numero_oc': oc_num,
+                    'banco_masked': ('***' + banco[-3:]) if banco else '',
+                    'cuenta_masked': ('***' + cuenta[-3:]) if cuenta else '',
+                })
+        except Exception:
+            pass
+
         conn.commit()
 
         # Sebastian (30-abr-2026): "verifica que en marketing si pueda solicitar
@@ -3685,25 +3739,69 @@ def mkt_solicitar_pago_influencer(iid):
 
 @bp.route("/api/marketing/influencers/<int:iid>/banco", methods=["PUT"])
 def mkt_influencer_banco(iid):
-    """Actualiza datos bancarios de un influencer."""
+    """Actualiza datos bancarios de un influencer.
+
+    Sebastián 25-may-2026 PM · audit P0:
+    - Antes: solo requería _auth() · CUALQUIER marketing user podía
+      editar banco/cuenta/cédula de cualquier influencer (Habeas Data fail).
+    - Sin audit_log · mutaciones financieras sin rastro regulatorio.
+    Fix: separar campos sensibles (banco/cuenta/cedula/tipo_cuenta) que
+    REQUIEREN ADMIN+CONTADORA · resto sigue permitido a marketing.
+    """
     u, err, code = _auth()
     if err:
         return err, code
     conn = _db()
     d = request.get_json() or {}
-    campos = ["banco", "cuenta_bancaria", "cedula_nit", "tipo_cuenta",
-              "nombre", "red_social", "usuario_red", "seguidores",
-              "engagement_rate", "nicho", "tarifa", "estado", "email", "telefono", "notas",
-              "discount_code"]
+    CAMPOS_BANCARIOS = {"banco", "cuenta_bancaria", "cedula_nit", "tipo_cuenta"}
+    CAMPOS_GENERALES = {"nombre", "red_social", "usuario_red", "seguidores",
+                         "engagement_rate", "nicho", "tarifa", "estado",
+                         "email", "telefono", "notas", "discount_code"}
+    # Gate · si toca campos bancarios, debe ser admin+contadora
+    _u_lower = (u or '').lower()
+    _puede_banco = _u_lower in {
+        x.lower() for x in (set(ADMIN_USERS) | set(CONTADORA_USERS))}
+    edita_banco = any(k in d for k in CAMPOS_BANCARIOS)
+    if edita_banco and not _puede_banco:
+        return jsonify({
+            "error": "Solo Admin/Contadora pueden editar datos bancarios",
+            "codigo": "PRIVACIDAD_BANCO"}), 403
     # Normalizar discount_code (UPPERCASE, sin espacios)
     if "discount_code" in d:
         d["discount_code"] = (d["discount_code"] or "").strip().upper().replace(" ", "")
-    updates = {k: d[k] for k in campos if k in d}
+    campos_validos = CAMPOS_BANCARIOS | CAMPOS_GENERALES
+    updates = {k: d[k] for k in campos_validos if k in d}
     if not updates:
         return jsonify({"error": "Nada que actualizar"}), 400
+    # Snapshot ANTES (audit_log con valores previos)
+    cur = conn.cursor()
+    cols_sel = ", ".join(sorted(updates.keys()))
+    try:
+        antes_row = cur.execute(
+            f"SELECT {cols_sel} FROM marketing_influencers WHERE id=?",
+            (iid,)).fetchone()
+        antes = dict(zip(sorted(updates.keys()), antes_row)) if antes_row else {}
+    except Exception:
+        antes = {}
+    # Enmascarar valores bancarios en audit para no logear plain
+    despues = dict(updates)
+    if any(k in CAMPOS_BANCARIOS for k in updates):
+        for k in CAMPOS_BANCARIOS:
+            if k in antes and antes[k]:
+                antes[k] = '***' + str(antes[k])[-3:]
+            if k in despues and despues[k]:
+                despues[k] = '***' + str(despues[k])[-3:]
     set_clause = ", ".join(f"{k}=?" for k in updates)
-    conn.execute(f"UPDATE marketing_influencers SET {set_clause} WHERE id=?",
+    cur.execute(f"UPDATE marketing_influencers SET {set_clause} WHERE id=?",
                  list(updates.values()) + [iid])
+    try:
+        from audit_helpers import audit_log as _al
+        _al(cur, usuario=u, accion=('MODIFICAR_BANCO_INFLUENCER' if edita_banco
+                                       else 'MODIFICAR_INFLUENCER'),
+            tabla='marketing_influencers', registro_id=iid,
+            antes=antes, despues=despues)
+    except Exception:
+        pass
     conn.commit()
     return jsonify({"ok": True})
 
@@ -4477,6 +4575,20 @@ def mkt_agencia_audit():
         influencers = [dict(r) for r in c.execute(
             "SELECT * FROM marketing_influencers ORDER BY nombre"
         ).fetchall()]
+
+        # Sebastián 25-may-2026 PM · audit P0 · Habeas Data · `agencia/audit`
+        # devolvía dicts completos en `scored` (banco/cuenta/cédula visibles
+        # a marketing users). Ahora enmascara si no es admin+contadora.
+        try:
+            _puede_ver_banco_a = (u or '').lower() in {
+                x.lower() for x in (set(ADMIN_USERS) | set(CONTADORA_USERS))}
+        except Exception:
+            _puede_ver_banco_a = False
+        if not _puede_ver_banco_a:
+            for _inf_a in influencers:
+                for _cs in ('banco','cuenta_bancaria','tipo_cuenta','cedula_nit'):
+                    if _inf_a.get(_cs):
+                        _inf_a[_cs] = '***'
 
         # ── 2. Load pagos ──────────────────────────────────────────────────────
         try:

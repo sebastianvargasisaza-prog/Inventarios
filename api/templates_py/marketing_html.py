@@ -1817,7 +1817,7 @@ ${bars}
             <span style="color:#64748b;">💬 ${p.comentarios||0}</span>
             <span style="color:#d4af37;margin-left:auto;">eng ${eng}</span>
           </div>
-          ${p.url_permalink?`<a href="${p.url_permalink}" target="_blank" style="display:block;margin-top:6px;font-size:10px;color:#6366f1;">Ver en IG →</a>`:''}
+          ${p.url_permalink?`<a href="${escUrl(p.url_permalink)}" target="_blank" rel="noopener noreferrer" style="display:block;margin-top:6px;font-size:10px;color:#6366f1;">Ver en IG →</a>`:''}
         </div>`;
       }).join('') +
     '</div>';
@@ -1852,20 +1852,21 @@ async function loadCampanas() {
   if(!rows.length) { body.innerHTML='<tr class="empty-row"><td colspan="11">Sin campañas. Crea la primera.</td></tr>'; return; }
   body.innerHTML = rows.map(r=>{
     const roi = r.presupuesto_gastado>0 ? ((r.resultado_ventas-r.presupuesto_gastado)/r.presupuesto_gastado*100).toFixed(1) : null;
+    // Sebastián 25-may-2026 PM · audit P0 · XSS · escape de campos del backend
     return `<tr>
-      <td style="color:#64748b;">${r.id}</td>
-      <td style="font-weight:700;">${r.nombre}</td>
-      <td><span class="badge badge-gray">${r.tipo}</span></td>
-      <td>${r.canal||'—'}</td>
+      <td style="color:#64748b;">${esc(r.id)}</td>
+      <td style="font-weight:700;">${esc(r.nombre)}</td>
+      <td><span class="badge badge-gray">${esc(r.tipo)}</span></td>
+      <td>${esc(r.canal||'—')}</td>
       <td>${badgeEstadoCamp(r.estado)}</td>
       <td>${fmtM(r.presupuesto)}</td>
       <td>${fmtM(r.presupuesto_gastado)}</td>
       <td style="color:#34d399;">${fmtM(r.resultado_ventas)}</td>
       <td>${roiBadge(roi)}</td>
-      <td><span class="badge badge-purple">${r.num_influencers}</span></td>
+      <td><span class="badge badge-purple">${esc(r.num_influencers)}</span></td>
       <td>
         <button class="btn btn-outline btn-sm" onclick="editCampana(${r.id})">✏️</button>
-        <button class="btn btn-danger btn-sm" onclick="deleteCampana(${r.id},'${r.nombre.replace(/'/g,"\\'")}')">🗑</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteCampana(${r.id},'${String(r.nombre||'').replace(/[\\\\']/g,'\\\\$&')}')">🗑</button>
       </td>
     </tr>`;
   }).join('');
@@ -2288,14 +2289,14 @@ function renderInfluencersTable() {
     const mainRow = `<tr style="cursor:pointer" onclick="toggleExpandInf(${r.id})" title="Click para ver historial pagos">`
       +`<td style="color:${expandColor};font-weight:700;font-size:14px;text-align:center;width:24px;">${pagosInf.length>0?expandIcon:''}</td>`
       +`<td style="color:#64748b;">${idx+1}</td>`
-      +`<td style="font-weight:700;">${r.nombre}</td>`
-      +`<td><span class="badge badge-gray">${r.red_social}</span></td>`
-      +`<td style="color:#818cf8;">${r.usuario_red||'\u2014'}</td>`
+      +`<td style="font-weight:700;">${esc(r.nombre)}</td>`
+      +`<td><span class="badge badge-gray">${esc(r.red_social)}</span></td>`
+      +`<td style="color:#818cf8;">${esc(r.usuario_red||'\u2014')}</td>`
       +`<td>${seg}</td>`
-      +`<td>${r.engagement_rate?r.engagement_rate+'%':'\u2014'}</td>`
-      +`<td>${r.nicho||'\u2014'}</td>`
+      +`<td>${r.engagement_rate?esc(r.engagement_rate)+'%':'\u2014'}</td>`
+      +`<td>${esc(r.nicho||'\u2014')}</td>`
       +`<td>${r.tarifa?fmtM(r.tarifa):'\u2014'}</td>`
-      +`<td style="font-size:12px;color:#94a3b8;">${r.email||'\u2014'}</td>`
+      +`<td style="font-size:12px;color:#94a3b8;">${esc(r.email||'\u2014')}</td>`
       +`<td style="font-size:12px;">${banco}</td>`
       +`<td>${estadoBadge}</td>`
       +`<td>${pagosBadge}</td>`
@@ -2643,7 +2644,7 @@ function renderKanbanCard(it) {
 
   let urlBtn = '';
   if (it.url_publicacion) {
-    urlBtn = `<a href="${esc(it.url_publicacion)}" target="_blank" style="color:#60a5fa;font-size:11px;text-decoration:none;margin-right:8px;" onclick="event.stopPropagation();">🔗 Ver post</a>`;
+    urlBtn = `<a href="${escUrl(it.url_publicacion)}" target="_blank" rel="noopener noreferrer" style="color:#60a5fa;font-size:11px;text-decoration:none;margin-right:8px;" onclick="event.stopPropagation();">🔗 Ver post</a>`;
   }
 
   return `<div class="kanban-card" onclick="editContenido(${it.id})">
@@ -3209,8 +3210,25 @@ function renderMarkdownBasic(md) {
   return `<div style="font-size:13px;color:#e2e8f0;line-height:1.7;">${h}</div>`;
 }
 
+// Sebastián 25-may-2026 PM · audit P0 · esc reforzado para XSS.
+// Antes solo escapaba &<> · permitía romper atributos HTML con " y '
+// (ej. nombre="<img src=x onerror=...>" en innerHTML de campañas).
+// Ahora cubre los 5 caracteres peligrosos · usar en TODO innerHTML.
 function esc(s) {
-  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  return String(s||'').replace(/&/g,'&amp;')
+                       .replace(/</g,'&lt;')
+                       .replace(/>/g,'&gt;')
+                       .replace(/"/g,'&quot;')
+                       .replace(/'/g,'&#39;');
+}
+// Sanitiza URL · rechaza javascript:, data:, vbscript: scripts maliciosos
+function escUrl(u) {
+  const s = String(u||'').trim();
+  if(!s) return '';
+  const lc = s.toLowerCase();
+  if(lc.startsWith('javascript:') || lc.startsWith('data:') ||
+     lc.startsWith('vbscript:')) return '#';
+  return esc(s);
 }
 
 async function loadAgentLog() {
