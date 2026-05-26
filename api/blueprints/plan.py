@@ -6605,6 +6605,41 @@ def _auto_programar_sugeridas(conn, dias_horizonte=365, ventana_velocidad=60,
             except Exception:
                 saltados.append({'producto': prod, 'razon': f'fecha inválida {psf}'})
                 continue
+
+            # Sebastián 25-may-2026 PM · FÓRMULAS ALTERNATIVAS · integración
+            # del switching automático al auto-programar.
+            # Si el producto pertenece a un canónico con >1 variantes
+            # (ej. "LIP SERUM Animus" vs "LIP SERUM Espagiria", o PIB CHINO
+            # vs Voluminizador), elegir la variante con menos faltante MP
+            # ANTES de programar el lote. Así el cron evita lotes que van a
+            # caer en esperando_recurso por MP agotada cuando hay variante
+            # con stock disponible.
+            prod_efectivo = prod
+            switch_info = None
+            try:
+                # 1. Buscar canónico del producto actual
+                row_can = cur.execute(
+                    """SELECT COALESCE(producto_canonico,'') FROM formula_headers
+                       WHERE UPPER(TRIM(producto_nombre)) = UPPER(TRIM(?))
+                       LIMIT 1""", (prod,)).fetchone()
+                canonico = (row_can[0] or '').strip() if row_can else ''
+                if canonico:
+                    seleccion = _seleccionar_variante_optima(conn, canonico, kg_objetivo=lote_kg)
+                    if seleccion and seleccion.get('n_variantes_evaluadas', 0) > 1:
+                        # Hay >1 variante · si la ganadora es distinta al original, switch
+                        ganadora = seleccion.get('producto_nombre') or ''
+                        if ganadora and ganadora.upper().strip() != prod.upper().strip():
+                            switch_info = {
+                                'original': prod,
+                                'nuevo': ganadora,
+                                'canonico': canonico,
+                                'faltante_g': seleccion.get('faltante_total_g', 0),
+                                'decision': seleccion.get('decision', ''),
+                            }
+                            prod_efectivo = ganadora
+            except Exception as _e_sw:
+                pass  # si _seleccionar_variante_optima falla, seguir con producto original
+
             # CADENA · Sebastián 23-may-2026 · "cuántas producciones o en cuánto"
             # Generar TODAS las sugeridas que caen en el horizonte, no solo la próxima.
             # Cada lote dura (lote_kg / vel) días · próxima = anterior + (dur - cob_alerta).
@@ -6645,19 +6680,28 @@ def _auto_programar_sugeridas(conn, dias_horizonte=365, ventana_velocidad=60,
                 except Exception:
                     break
                 # INSERT con origen Sugerido · respeta Fijo vs Sugerido
+                # Sebastián 25-may-2026 PM · usa prod_efectivo (variante elegida
+                # por _seleccionar_variante_optima) en vez de prod original
                 try:
+                    obs_extra = ''
+                    if switch_info:
+                        obs_extra = (f' · 🔀 SWITCH variante: {switch_info["original"]} → '
+                                      f'{switch_info["nuevo"]} (canónico {switch_info["canonico"]}, '
+                                      f'faltante {switch_info["faltante_g"]:.0f}g)')
                     cur.execute(
                         """INSERT INTO produccion_programada
                            (producto, fecha_programada, cantidad_kg, lotes,
                             estado, origen, observaciones)
                            VALUES (?, ?, ?, 1, 'pendiente', ?, ?)""",
-                        (prod, f_cursor.isoformat(), lote_kg, origen_nuevo,
+                        (prod_efectivo, f_cursor.isoformat(), lote_kg, origen_nuevo,
                          f'Auto-sugerido · cobertura {p.get("dias_cobertura","?")}d · '
                          f'velocidad {p.get("velocidad_kg_dia","?")} kg/día · '
-                         f'lote dura {dur_lote}d'),
+                         f'lote dura {dur_lote}d' + obs_extra),
                     )
                     creados.append({
-                        'producto': prod,
+                        'producto': prod_efectivo,
+                        'producto_original': prod if switch_info else None,
+                        'switch_variante': switch_info,
                         'fecha': f_cursor.isoformat(),
                         'cantidad_kg': lote_kg,
                         'urgencia': p.get('urgencia'),
@@ -6665,14 +6709,20 @@ def _auto_programar_sugeridas(conn, dias_horizonte=365, ventana_velocidad=60,
                     })
                     n_para_producto += 1
                     try:
-                        audit_log(cur, usuario=usuario, accion='AUTO_PROGRAMAR_SUGERIDA',
+                        audit_log(cur, usuario=usuario,
+                                  accion=('AUTO_PROGRAMAR_SUGERIDA_VARIANTE_SWITCH'
+                                            if switch_info else 'AUTO_PROGRAMAR_SUGERIDA'),
                                   tabla='produccion_programada', registro_id='',
                                   despues={
-                                      'producto': prod,
+                                      'producto': prod_efectivo,
+                                      'producto_original': prod if switch_info else None,
+                                      'switch_variante': switch_info,
                                       'fecha': f_cursor.isoformat(),
                                       'cantidad_kg': lote_kg,
                                       'urgencia': p.get('urgencia'),
-                                      'razon': 'cadena velocidad + cob_alerta',
+                                      'razon': ('switch por menos faltante MP'
+                                                  if switch_info else
+                                                  'cadena velocidad + cob_alerta'),
                                   })
                     except Exception:
                         pass
