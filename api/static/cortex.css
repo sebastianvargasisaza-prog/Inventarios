@@ -399,3 +399,150 @@ html.translated-ltr,
 html.translated-rtl {
   margin-top: 0 !important;
 }
+
+/* =========================================================================
+   📱 MOBILE RESPONSIVE · defaults globales (Sebastián 27-may-2026 PM)
+   "toda la app deberia quedar diseñada para verse en el celular"
+   Estas reglas afectan TODOS los blueprints que linkean cortex.css.
+   ========================================================================= */
+
+/* Box-sizing global · evita overflow inesperado por padding/border */
+*, *::before, *::after { box-sizing: border-box; }
+
+/* Body sin overflow horizontal · clave para que no scrollee lateralmente */
+html, body { max-width: 100vw; overflow-x: hidden; }
+
+/* Imágenes y media · responsive por default */
+img, svg, video, canvas { max-width: 100%; height: auto; }
+
+/* Tablas en wrapper scroll horizontal · evita romper layout */
+.cx-table-wrap, .table-wrapper, .tabla-wrap {
+  width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch;
+}
+
+/* ───── Breakpoint MÓVIL · ≤768px ───── */
+@media (max-width: 768px) {
+  /* Tipografía más legible en móvil · base 15px */
+  body { font-size: 15px; line-height: 1.5; }
+  h1, .h1, .page-title { font-size: 1.4rem; line-height: 1.3; }
+  h2, .h2 { font-size: 1.2rem; line-height: 1.3; }
+  h3, .h3 { font-size: 1.05rem; line-height: 1.4; }
+
+  /* Container padding reducido en móvil · más área útil */
+  body, main, .container, .content, .page, .tab-panel {
+    padding-left: 12px; padding-right: 12px;
+  }
+
+  /* Botones · altura mínima 40px (Apple HIG) para tap accesible */
+  button, .btn, input[type="button"], input[type="submit"], .cx-btn {
+    min-height: 40px; padding: 8px 14px; font-size: 14px;
+  }
+  /* Botones de iconos pequeños · al menos 36px target */
+  button.icon, button[title]:not(.btn):not(.cx-btn):not(.btn-prim) {
+    min-width: 36px; min-height: 36px;
+  }
+
+  /* Form controls · más altos para touch */
+  input, select, textarea {
+    min-height: 40px; font-size: 16px; /* 16px previene zoom iOS */
+  }
+
+  /* Modales · siempre full width en móvil */
+  .modal, .modal-content, .mdl, [class*="modal"]:not(.modal-bg) {
+    max-width: 95vw !important;
+    width: 95vw !important;
+    margin: 8px auto;
+  }
+  .modal-bg, .ov { padding: 12px; }
+
+  /* Tablas · scroll horizontal forzado · evita romper layout */
+  table:not(.no-mobile-scroll) {
+    display: block; max-width: 100%;
+    overflow-x: auto; -webkit-overflow-scrolling: touch;
+    white-space: nowrap;
+  }
+  /* Tabla con clase .cx-stack-mobile · cada fila se apila como card */
+  table.cx-stack-mobile { display: block; }
+  table.cx-stack-mobile thead { display: none; }
+  table.cx-stack-mobile tbody, table.cx-stack-mobile tr { display: block; width: 100%; }
+  table.cx-stack-mobile tr {
+    margin-bottom: 10px; padding: 10px 12px;
+    background: var(--cx-card, #fff);
+    border: 1px solid var(--cx-border, #e7e5e4);
+    border-radius: var(--cx-r-md, 10px);
+  }
+  table.cx-stack-mobile td {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 4px 0; border: none; white-space: normal;
+  }
+  table.cx-stack-mobile td::before {
+    content: attr(data-label); font-weight: 600;
+    color: var(--cx-text-mute, #78716c); font-size: 12px;
+    margin-right: 8px;
+  }
+
+  /* Sidebars · ocultar por default · usa toggle */
+  .sidebar, .side-nav, aside.menu { display: none; }
+  .sidebar.open { display: block; position: fixed; inset: 0; z-index: 1000; }
+
+  /* Form rows · de 2-3 columnas a 1 columna */
+  .form-row, .form-grid, .grid-2, .grid-3 {
+    grid-template-columns: 1fr !important;
+    display: flex !important; flex-direction: column;
+    gap: 10px !important;
+  }
+
+  /* Tabs bar · permitir scroll horizontal con scrollbar oculta */
+  .tabs-bar, .tab-buttons, [role="tablist"] {
+    overflow-x: auto; -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;  /* Firefox */
+    display: flex; flex-wrap: nowrap;
+  }
+  .tabs-bar::-webkit-scrollbar { display: none; }  /* Webkit */
+  .tab-btn, .tab-button { flex-shrink: 0; }
+
+  /* Padding cards reducido en móvil */
+  .card, .cx-card, .modal { padding: 14px; }
+
+  /* KPI grids: a 2 columnas máximo en móvil */
+  .kpi-grid, .stats-grid, [class*="kpi-bar"], [class*="kpis"] {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+
+  /* Toolbar / actions-bar · stack vertical */
+  .actions-bar, .toolbar, .toolbar-flex {
+    flex-direction: column; align-items: stretch; gap: 8px;
+  }
+  .actions-bar > *, .toolbar > * { width: 100%; }
+
+  /* Iconos en encabezados un poco más grandes para legibilidad */
+  .header-icon, .tab-btn { font-size: 13px; }
+}
+
+/* ───── Breakpoint MÓVIL CHICO · ≤480px ───── */
+@media (max-width: 480px) {
+  body { font-size: 14.5px; }
+  body, .container, .page, .tab-panel { padding-left: 8px; padding-right: 8px; }
+  .modal, .modal-content, .mdl { padding: 12px; }
+  /* KPIs a 1 columna en pantalla chiquita */
+  .kpi-grid, .stats-grid, [class*="kpis"] {
+    grid-template-columns: 1fr !important;
+  }
+  /* Page title · más compacto */
+  h1, .h1, .page-title { font-size: 1.25rem; }
+}
+
+/* ───── Mejora touch: hover invisible en touch devices ───── */
+@media (hover: none) {
+  button:hover, .btn:hover, .cx-btn:hover {
+    /* Mantener estado normal · no resaltar como en desktop */
+    filter: none;
+  }
+}
+
+/* ───── Accesibilidad: focus visible · WCAG 2.4.7 ───── */
+button:focus-visible, a:focus-visible, input:focus-visible,
+select:focus-visible, textarea:focus-visible, .btn:focus-visible {
+  outline: 2px solid var(--cx-primary-light, #a78bfa);
+  outline-offset: 2px;
+}

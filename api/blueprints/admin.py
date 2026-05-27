@@ -472,6 +472,7 @@ def admin_animus_prioridad_page():
 _ANIMUS_PRIORIDAD_HTML = """<!DOCTYPE html>
 <html lang="es"><head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Ánimus · Prioridad de agotamiento</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -1217,6 +1218,7 @@ def admin_skus_pendientes_page():
 _SKUS_PENDIENTES_HTML = """<!DOCTYPE html>
 <html lang="es"><head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>SKUs · EOS</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -1899,6 +1901,7 @@ def admin_zero_error_page():
 _ZERO_ERROR_DASHBOARD_HTML = """<!DOCTYPE html>
 <html lang="es"><head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Zero-Error · EOS</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
