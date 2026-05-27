@@ -229,6 +229,7 @@ window.addEventListener('unhandledrejection', function(ev) {
 
 <div class="tabs-bar">
   <button class="tab-btn active" data-tab="hoy" onclick="switchTab('hoy')">&#x1F3AF; Hoy</button>
+  <button class="tab-btn" data-tab="cmo" onclick="switchTab('cmo')" style="background:linear-gradient(135deg,#0e7490,#a78bfa);color:#fff;border-radius:8px 8px 0 0;font-weight:800;">🤖 CMO IA</button>
   <button class="tab-btn" data-tab="dashboard" onclick="switchTab('dashboard')">&#x1F4CA; Dashboard</button>
   <button class="tab-btn" data-tab="campanas" onclick="switchTab('campanas')">&#x1F4E2; Campañas</button>
   <button class="tab-btn" data-tab="influencers" onclick="switchTab('influencers')">&#x1F465; Influencers &amp; Pagos</button>
@@ -302,6 +303,38 @@ window.addEventListener('unhandledrejection', function(ev) {
     <div style="font-size:13px;font-weight:700;color:#94a3b8;margin-bottom:8px">Log de ejecución</div>
     <div id="hoy-log" style="font-family:monospace;font-size:11px;color:#64748b;max-height:200px;overflow-y:auto;background:#0a0a0b;border:1px solid #1e293b;border-radius:6px;padding:8px">Sin actividad reciente.</div>
   </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<!-- TAB: 🤖 CMO IA · Plan del día generado por Claude director  -->
+<!-- ═══════════════════════════════════════════════════════════════ -->
+<div id="tab-cmo" class="tab-panel">
+  <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-bottom:18px;">
+    <div>
+      <div class="page-title" style="margin-bottom:2px;">🤖 CMO IA · Agencia de Marketing Autónoma</div>
+      <div class="page-sub" id="cmo-fecha">El director IA de marketing analiza tus datos cada mañana 7 AM y propone acciones priorizadas.</div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <button class="btn btn-outline" onclick="cmoCargarPlan()" title="Cargar plan del día">🔄 Recargar</button>
+      <button class="btn btn-primary" onclick="cmoGenerarPlanForzar()" title="Regenerar el plan ahora con datos frescos">⚡ Generar plan ahora</button>
+    </div>
+  </div>
+
+  <!-- KPIs · resumen del plan -->
+  <div id="cmo-kpi-bar" style="display:none;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:18px;"></div>
+
+  <!-- Mensaje sin plan -->
+  <div id="cmo-empty" style="display:none;background:linear-gradient(135deg,rgba(167,139,250,.08),rgba(14,116,144,.06));border:1px solid rgba(167,139,250,.3);border-radius:12px;padding:24px;text-align:center;">
+    <div style="font-size:40px;margin-bottom:10px">🤖</div>
+    <div style="font-size:16px;font-weight:700;color:#e2e8f0;margin-bottom:8px;">Sin plan generado para hoy</div>
+    <div style="font-size:13px;color:#94a3b8;margin-bottom:16px;line-height:1.5;">El cron CMO IA corre todos los días a las <b>7:00 AM</b> automático. También podés generar uno ahora con datos frescos.</div>
+    <button class="btn btn-primary" onclick="cmoGenerarPlanForzar()" style="padding:10px 22px;font-size:14px;">⚡ Generar plan del día</button>
+  </div>
+
+  <!-- Lista de acciones -->
+  <div id="cmo-acciones-list" style="display:flex;flex-direction:column;gap:12px;"></div>
+
+  <div id="cmo-alert" style="display:none;margin-top:12px;"></div>
 </div>
 
 <div id="tab-dashboard" class="tab-panel">
@@ -1381,6 +1414,7 @@ function showSub(sub) {
 
 function loadTab(name) {
   if(name==='hoy') hoyCargarResumen();
+  else if(name==='cmo') cmoCargarPlan();
   else if(name==='dashboard') loadDashboard();
   else if(name==='campanas') loadCampanas();
   else if(name==='influencers') loadInfluencers();
@@ -1390,6 +1424,158 @@ function loadTab(name) {
   else if(name==='agentes') { loadAgentLog(); loadCampanasForSelect(); loadConnections(); loadFeedbackStats(); }
   else if(name==='analytics') loadAnalytics();
   else if(name==='agencia') loadAgencia();
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// 🤖 TAB CMO IA · Plan del día generado por Claude director
+// Sebastián 27-may-2026 PM · "marketing debe ser superior · agencia IA"
+// ═══════════════════════════════════════════════════════════════════
+async function cmoCargarPlan(){
+  const empty = document.getElementById('cmo-empty');
+  const list = document.getElementById('cmo-acciones-list');
+  const kpiBar = document.getElementById('cmo-kpi-bar');
+  list.innerHTML = '<div style="color:#94a3b8;text-align:center;padding:18px;">⏳ Cargando plan...</div>';
+  empty.style.display = 'none';
+  kpiBar.style.display = 'none';
+  try {
+    const r = await fetch('/api/marketing/cmo/plan-diario', {credentials:'same-origin'});
+    const d = await r.json();
+    if(d.sin_plan){
+      list.innerHTML = '';
+      empty.style.display = 'block';
+      return;
+    }
+    if(!d.ok || !d.acciones){
+      list.innerHTML = '<div style="color:#fca5a5;text-align:center;padding:18px;">Error: '+_escHtml(d.error||'desconocido')+'</div>';
+      return;
+    }
+    // KPIs
+    const acc = d.acciones || [];
+    const criticas = acc.filter(a=>a.prioridad==='critica').length;
+    const altas = acc.filter(a=>a.prioridad==='alta').length;
+    const pendientes = acc.filter(a=>a.estado==='pendiente').length;
+    const ejecutadas = acc.filter(a=>a.estado==='ejecutada').length;
+    const descartadas = acc.filter(a=>a.estado==='descartada').length;
+    kpiBar.style.display='grid';
+    kpiBar.innerHTML = [
+      {l:'Acciones del día', v:acc.length, c:'#a78bfa'},
+      {l:'🔴 Críticas', v:criticas, c:'#fca5a5'},
+      {l:'🟡 Altas', v:altas, c:'#fcd34d'},
+      {l:'⏳ Pendientes', v:pendientes, c:'#67e8f9'},
+      {l:'✅ Ejecutadas', v:ejecutadas, c:'#86efac'},
+      {l:'✕ Descartadas', v:descartadas, c:'#64748b'},
+    ].map(k=>`<div style="background:#0f172a;border:1px solid #334155;border-radius:10px;padding:12px;">`
+      +`<div style="font-size:22px;font-weight:800;color:${k.c}">${k.v}</div>`
+      +`<div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.4px;margin-top:2px">${k.l}</div></div>`).join('');
+    // Lista de acciones
+    if(!acc.length){
+      list.innerHTML = '<div style="color:#94a3b8;text-align:center;padding:18px;">El CMO IA no propuso acciones para hoy · datos insuficientes.</div>';
+      return;
+    }
+    list.innerHTML = acc.map(a => cmoRenderAccion(a)).join('');
+  } catch(e){
+    list.innerHTML = '<div style="color:#fca5a5;text-align:center;padding:18px;">Error red: '+_escHtml(e.message)+'</div>';
+  }
+}
+function cmoRenderAccion(a){
+  const priCfg = {
+    critica:{bg:'#7f1d1d',fg:'#fecaca',label:'🔴 CRÍTICA'},
+    alta:{bg:'#854d0e',fg:'#fde047',label:'🟡 ALTA'},
+    media:{bg:'#1e3a8a',fg:'#bfdbfe',label:'🔵 MEDIA'},
+    baja:{bg:'#334155',fg:'#cbd5e1',label:'⚪ BAJA'},
+  };
+  const pri = priCfg[a.prioridad] || priCfg.media;
+  const estadoCfg = {
+    pendiente:{bg:'#1e293b',fg:'#94a3b8',label:'⏳ Pendiente'},
+    aprobada:{bg:'#064e3b',fg:'#86efac',label:'✓ Aprobada'},
+    ejecutada:{bg:'#064e3b',fg:'#86efac',label:'✅ Ejecutada'},
+    pospuesta:{bg:'#854d0e',fg:'#fcd34d',label:'⏸ Pospuesta'},
+    descartada:{bg:'#374151',fg:'#9ca3af',label:'✕ Descartada'},
+    fallida:{bg:'#7f1d1d',fg:'#fca5a5',label:'⚠ Fallida'},
+  };
+  const est = estadoCfg[a.estado] || estadoCfg.pendiente;
+  let payload = {};
+  try { payload = JSON.parse(a.payload_json || '{}'); } catch(_){}
+  let resultado = null;
+  try { resultado = JSON.parse(a.resultado_ejecucion || 'null'); } catch(_){}
+  const ejecutable = a.agente_workflow && a.estado === 'pendiente';
+  const decidible = a.estado === 'pendiente';
+
+  let html = '<div style="background:#1e293b;border:1px solid #334155;border-left:4px solid '+pri.bg+';border-radius:10px;padding:14px 16px;">';
+  // Header
+  html += '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:8px;flex-wrap:wrap;">';
+  html += '<div style="flex:1;min-width:240px;">';
+  html += '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:4px;">';
+  html += '<span style="background:'+pri.bg+';color:'+pri.fg+';padding:2px 8px;border-radius:10px;font-size:10px;font-weight:800;">'+pri.label+'</span>';
+  html += '<span style="background:'+est.bg+';color:'+est.fg+';padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;">'+est.label+'</span>';
+  if (a.agente_workflow) {
+    html += '<span style="background:#1e1b4b;color:#a78bfa;padding:2px 8px;border-radius:10px;font-size:10px;font-family:monospace;">→ '+_escHtml(a.agente_workflow)+'</span>';
+  }
+  html += '</div>';
+  html += '<div style="font-size:15px;font-weight:700;color:#e2e8f0;margin-bottom:4px;">'+_escHtml(a.titulo||'')+'</div>';
+  if (a.descripcion) html += '<div style="font-size:12px;color:#94a3b8;line-height:1.5;">'+_escHtml(a.descripcion)+'</div>';
+  html += '</div></div>';
+  // Acciones
+  if (decidible){
+    html += '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">';
+    if (ejecutable){
+      html += '<button onclick="cmoDecidir('+a.id+',\'aprobar\')" style="background:#15803d;color:#fff;border:0;padding:8px 14px;border-radius:6px;cursor:pointer;font-weight:700;font-size:12px;">✓ Aprobar y ejecutar</button>';
+    } else {
+      html += '<button onclick="cmoDecidir('+a.id+',\'aprobar\')" style="background:#15803d;color:#fff;border:0;padding:8px 14px;border-radius:6px;cursor:pointer;font-weight:700;font-size:12px;" title="Marcar como aprobada (sin workflow auto)">✓ Aprobar</button>';
+    }
+    html += '<button onclick="cmoDecidir('+a.id+',\'posponer\')" style="background:#854d0e;color:#fcd34d;border:0;padding:8px 14px;border-radius:6px;cursor:pointer;font-weight:700;font-size:12px;">⏸ Posponer</button>';
+    html += '<button onclick="cmoDecidir('+a.id+',\'descartar\')" style="background:#7f1d1d;color:#fecaca;border:0;padding:8px 14px;border-radius:6px;cursor:pointer;font-weight:700;font-size:12px;">✕ Descartar</button>';
+    html += '</div>';
+  }
+  // Resultado ejecutado
+  if (resultado && (resultado.ok === true || resultado.campanas !== undefined)){
+    html += '<details style="margin-top:10px;background:#0f172a;border-radius:6px;padding:8px 12px;"><summary style="cursor:pointer;color:#86efac;font-size:11px;font-weight:700;">Ver resultado de ejecución</summary>';
+    html += '<pre style="font-size:10px;color:#94a3b8;margin-top:6px;max-height:200px;overflow:auto;">'+_escHtml(JSON.stringify(resultado, null, 2))+'</pre></details>';
+  }
+  if (resultado && resultado.ok === false){
+    html += '<div style="margin-top:8px;background:#7f1d1d;color:#fecaca;padding:6px 10px;border-radius:6px;font-size:11px;">⚠ Error: '+_escHtml(resultado.error||'desconocido')+'</div>';
+  }
+  html += '</div>';
+  return html;
+}
+async function cmoGenerarPlanForzar(){
+  const list = document.getElementById('cmo-acciones-list');
+  const empty = document.getElementById('cmo-empty');
+  list.innerHTML = '<div style="color:#94a3b8;text-align:center;padding:18px;">🤖 Claude generando plan... (esto tarda 15-30s)</div>';
+  empty.style.display = 'none';
+  try {
+    const r = await fetch('/api/marketing/cmo/plan-diario', {
+      method:'POST', credentials:'same-origin',
+      headers:{'Content-Type':'application/json','X-CSRF-Token': window._csrfTok || ''},
+      body: JSON.stringify({forzar: true})
+    });
+    const d = await r.json();
+    if (r.ok){ setTimeout(cmoCargarPlan, 400); }
+    else { list.innerHTML = '<div style="color:#fca5a5;text-align:center;padding:18px;">Error '+r.status+': '+_escHtml(d.error||'')+'</div>'; }
+  } catch(e){
+    list.innerHTML = '<div style="color:#fca5a5;text-align:center;padding:18px;">Error red: '+_escHtml(e.message)+'</div>';
+  }
+}
+async function cmoDecidir(aid, decision){
+  if (decision === 'descartar' && !confirm('¿Descartar esta acción? · queda registrada en audit.')) return;
+  const motivo = (decision === 'descartar' || decision === 'posponer')
+    ? (prompt('Motivo (opcional · ayuda a la IA a aprender):') || '')
+    : '';
+  try {
+    if (!window._csrfTok){
+      try { const tr = await fetch('/api/csrf-token',{credentials:'same-origin'}); if(tr.ok){const td=await tr.json(); window._csrfTok=td.csrf_token||'';} } catch(_){}
+    }
+    const r = await fetch('/api/marketing/cmo/accion/'+aid+'/decidir', {
+      method:'POST', credentials:'same-origin',
+      headers:{'Content-Type':'application/json','X-CSRF-Token': window._csrfTok || ''},
+      body: JSON.stringify({decision: decision, motivo: motivo})
+    });
+    const d = await r.json();
+    if (d.ok){ cmoCargarPlan(); }
+    else { alert('Error '+r.status+': '+(d.error||'desconocido')); }
+  } catch(e){
+    alert('Error red: '+e.message);
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════

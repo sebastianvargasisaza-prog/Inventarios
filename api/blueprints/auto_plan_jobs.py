@@ -698,6 +698,9 @@ JOBS_SCHEDULE = [
     ('quejas_plazos',         9,  0, None, None,                'job_quejas_plazos'),
     # ⭐ Aseguramiento · diario 9:30 · alerta recalls sin clasificar/notificar (ASG-PRO-004)
     ('recalls_plazos',        9, 30, None, None,                'job_recalls_plazos'),
+    # ⭐ CMO IA · diario 7:00 · genera plan del día (Claude director · 11 agentes)
+    # Sebastián 27-may-2026 PM · "marketing debe ser superior · agencia IA".
+    ('cmo_ia_plan_diario', 7, 0, None, None,                    'job_cmo_ia_plan_diario'),
     # ⭐ Marketing · 4 veces al día · sync comentarios IG nuevos (Graph API)
     # Hours = 6/12/18/0 · ventana 30d · sólo si instagram_token configurado
     ('sentiment_sync_6',      6,  0, None, None,                'job_sentiment_sync_comentarios'),
@@ -4426,6 +4429,87 @@ def job_auto_normalizar_formulas(app):
         }, 0
 
 
+def job_cmo_ia_plan_diario(app):
+    """CMO IA · diario 7:00 AM · genera plan del día con Claude como director.
+
+    Sebastián 27-may-2026 PM · "marketing debe ser superior · agencia IA
+    impulsada que alli hagan campañas". El cron simula al CMO mirando los
+    datos y decidiendo qué hacer hoy · 5-8 acciones priorizadas con
+    botón [Aprobar] en UI tab CMO.
+    """
+    with app.app_context():
+        try:
+            from blueprints.marketing import (
+                _cmo_construir_snapshot,
+                _cmo_decidir_acciones_claude,
+            )
+            from database import get_db as _gdb
+            import json as _jsCMO
+            from datetime import datetime as _dtCM, timedelta as _tdCM
+            conn = _gdb(); c = conn.cursor()
+            hoy_iso = (_dtCM.utcnow() - _tdCM(hours=5)).date().isoformat()
+            # Skip si ya existe plan hoy (cron idempotente · evita duplicación)
+            existente = c.execute(
+                "SELECT id FROM marketing_cmo_plan WHERE fecha=?", (hoy_iso,)
+            ).fetchone()
+            if existente:
+                return True, {'skip': True, 'plan_id': existente[0],
+                              'razon': 'plan ya existe hoy'}, 'ya generado'
+            snapshot = _cmo_construir_snapshot(c)
+            acciones = _cmo_decidir_acciones_claude(conn, snapshot)
+            if not acciones:
+                return True, {'sin_acciones': True}, 'no actions'
+            c.execute("""
+                INSERT INTO marketing_cmo_plan (fecha, acciones_json, estado, generado_por, snapshot_json)
+                VALUES (?, ?, 'pendiente', 'cron-cmo-7am', ?)
+            """, (hoy_iso, _jsCMO.dumps(acciones, ensure_ascii=False),
+                  _jsCMO.dumps(snapshot, ensure_ascii=False)[:50000]))
+            plan_id = c.lastrowid
+            for a in acciones:
+                try:
+                    c.execute("""
+                        INSERT INTO marketing_cmo_acciones
+                        (plan_id, tipo, prioridad, titulo, descripcion,
+                         agente_workflow, payload_json, estado)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, 'pendiente')
+                    """, (plan_id,
+                          (a.get('tipo') or 'general')[:60],
+                          (a.get('prioridad') or 'media'),
+                          (a.get('titulo') or 'Acción IA')[:140],
+                          (a.get('descripcion') or '')[:1000],
+                          a.get('agente_workflow') or None,
+                          _jsCMO.dumps(a.get('payload') or {}, ensure_ascii=False)[:5000]))
+                except Exception:
+                    continue
+            conn.commit()
+            # Notif campana a Sebastián + Alejandro
+            try:
+                from blueprints.notif import push_notif
+                criticas = sum(1 for a in acciones if a.get('prioridad') == 'critica')
+                cuerpo = (
+                    f'🤖 CMO IA · {len(acciones)} acciones para hoy '
+                    f'({criticas} crítica(s)) · revisar en /marketing → tab CMO.'
+                )
+                for u in ('sebastian', 'alejandro', 'jeferson'):
+                    try:
+                        push_notif(destinatario=u,
+                                   tipo='cmo_ia_plan',
+                                   titulo='🤖 Plan CMO IA del día listo',
+                                   body=cuerpo,
+                                   link='/marketing#cmo',
+                                   remitente='cron-cmo-ia')
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+            return True, {'plan_id': plan_id, 'acciones': len(acciones),
+                          'criticas': sum(1 for a in acciones if a.get('prioridad')=='critica')}, \
+                   f'{len(acciones)} acciones'
+        except Exception as e:
+            log.exception('cmo_ia_plan_diario fallo')
+            return False, {'error': str(e)[:200]}, ''
+
+
 def job_auto_normalizar_envases(app):
     """Sebastián 27-may-2026 PM · cron diario 4:35 AM (5min después de MPs).
 
@@ -4680,6 +4764,7 @@ def _loop_multi_cron(app):
                     'auto_normalizar_formulas',     # UPDATE formula_items
                     'auto_normalizar_envases',      # UPDATE maestro_mee + sku_mee_config
                     'mee_drift_sync',               # UPDATE stock_actual
+                    'cmo_ia_plan_diario',           # INSERT marketing_cmo_plan · no idempotente
                 }
                 for job_name, hora, minuto, dias_sem, dias_mes, callable_name in JOBS_SCHEDULE:
                     if not _es_hora_de(ahora, hora, minuto, dias_sem, dias_mes):

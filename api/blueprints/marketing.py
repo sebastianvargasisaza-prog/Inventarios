@@ -7566,6 +7566,331 @@ def mkt_metrics_history(iid):
     })
 
 
+@bp.route("/api/marketing/cmo/plan-diario", methods=["POST", "GET"])
+def mkt_cmo_plan_diario():
+    """CMO IA · genera o devuelve plan del día con Claude como director.
+
+    Sebastián 27-may-2026 PM · "marketing debe ser superior, debe ser una
+    agencia de marketing impulsada por IA · que alli hagan campañas".
+
+    GET ?fecha=YYYY-MM-DD: devuelve plan del día (o hoy si vacío).
+    POST {forzar: bool}: genera plan nuevo (descarta existente si forzar).
+        Si ya hay plan hoy y NO forzar, devuelve el existente.
+
+    Snapshot incluye: top SKUs Shopify, alertas stock, influencers
+    a contactar, eventos cosméticos próximos, campañas activas, sentiment IG.
+    Claude devuelve lista de acciones priorizadas con justificación.
+    """
+    u, err, code = _auth()
+    if err: return err, code
+    conn = _db(); c = conn.cursor()
+    from datetime import datetime as _dtC, timedelta as _tdC
+    hoy_iso = (_dtC.utcnow() - _tdC(hours=5)).date().isoformat()
+    fecha = (request.args.get('fecha') or hoy_iso).strip()
+
+    if request.method == 'GET':
+        try:
+            plan_row = c.execute(
+                "SELECT * FROM marketing_cmo_plan WHERE fecha=? ORDER BY id DESC LIMIT 1",
+                (fecha,)
+            ).fetchone()
+        except Exception as e:
+            return jsonify({'ok': False, 'error': f'tabla marketing_cmo_plan no existe (mig 200): {e}'}), 500
+        if not plan_row:
+            return jsonify({'ok': True, 'sin_plan': True, 'fecha': fecha,
+                            'mensaje': 'No hay plan para esta fecha · POST para generar'}), 200
+        plan = dict(plan_row)
+        # Cargar acciones
+        try:
+            acciones = [dict(r) for r in c.execute(
+                "SELECT * FROM marketing_cmo_acciones WHERE plan_id=? ORDER BY "
+                " CASE prioridad WHEN 'critica' THEN 1 WHEN 'alta' THEN 2 "
+                " WHEN 'media' THEN 3 WHEN 'baja' THEN 4 END, id ASC",
+                (plan['id'],)
+            ).fetchall()]
+        except Exception:
+            acciones = []
+        return jsonify({'ok': True, 'plan': plan, 'acciones': acciones})
+
+    # POST · generar plan nuevo
+    body = request.get_json(silent=True) or {}
+    forzar = bool(body.get('forzar'))
+    existente = c.execute(
+        "SELECT id, estado FROM marketing_cmo_plan WHERE fecha=? ORDER BY id DESC LIMIT 1",
+        (fecha,)
+    ).fetchone()
+    if existente and not forzar:
+        return jsonify({
+            'ok': True, 'plan_id': existente[0],
+            'estado': existente[1],
+            'mensaje': 'Ya hay plan hoy · GET para verlo o POST forzar:true para regenerar',
+        }), 200
+
+    # Construir snapshot
+    snapshot = _cmo_construir_snapshot(c)
+    # Llamar a Claude para director
+    acciones_propuestas = _cmo_decidir_acciones_claude(conn, snapshot)
+    if not acciones_propuestas:
+        return jsonify({'ok': False, 'error': 'Claude no devolvió acciones · verificá ANTHROPIC_API_KEY y prompt'}), 502
+
+    # Persistir plan + acciones
+    try:
+        c.execute("""
+            INSERT INTO marketing_cmo_plan (fecha, acciones_json, estado, generado_por, snapshot_json)
+            VALUES (?, ?, 'pendiente', ?, ?)
+        """, (fecha, json.dumps(acciones_propuestas, ensure_ascii=False),
+              u or 'cron-cmo-7am',
+              json.dumps(snapshot, ensure_ascii=False)[:50000]))
+        plan_id = c.lastrowid
+        for a in acciones_propuestas:
+            try:
+                c.execute("""
+                    INSERT INTO marketing_cmo_acciones
+                    (plan_id, tipo, prioridad, titulo, descripcion,
+                     agente_workflow, payload_json, estado)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, 'pendiente')
+                """, (plan_id,
+                       (a.get('tipo') or 'general')[:60],
+                       (a.get('prioridad') or 'media'),
+                       (a.get('titulo') or 'Acción IA')[:140],
+                       (a.get('descripcion') or '')[:1000],
+                       a.get('agente_workflow') or None,
+                       json.dumps(a.get('payload') or {}, ensure_ascii=False)[:5000]))
+            except Exception:
+                continue
+        conn.commit()
+    except Exception as e:
+        return jsonify({'ok': False, 'error': f'persistir: {e}'}), 500
+
+    return jsonify({'ok': True, 'plan_id': plan_id, 'fecha': fecha,
+                    'acciones_count': len(acciones_propuestas),
+                    'mensaje': 'Plan CMO generado · GET para verlo'}), 201
+
+
+def _cmo_construir_snapshot(c):
+    """Snapshot rico para que Claude tome decisiones · Sebastián 27-may PM."""
+    from datetime import datetime as _dtS, timedelta as _tdS
+    hoy = _dtS.utcnow() - _tdS(hours=5)
+    hace30 = (hoy - _tdS(days=30)).date().isoformat()
+    hace90 = (hoy - _tdS(days=90)).date().isoformat()
+    snap = {'fecha_snapshot': hoy.isoformat()}
+    # 1) Top SKUs Shopify 30d
+    try:
+        rows = c.execute(
+            "SELECT sku_items, total, unidades_total FROM animus_shopify_orders "
+            "WHERE creado_en >= ? AND sku_items != '' LIMIT 1000",
+            (hace30,)
+        ).fetchall()
+        sku_rev = {}
+        for r in rows:
+            it = r['sku_items'] if isinstance(r, dict) or hasattr(r, 'keys') else r[0]
+            try:
+                items = json.loads(it) if (it and str(it).startswith('[')) else []
+            except Exception:
+                items = []
+            tot = float((r['total'] if hasattr(r, 'keys') else r[1]) or 0)
+            uds = int((r['unidades_total'] if hasattr(r, 'keys') else r[2]) or 0)
+            if items and uds > 0:
+                rev_per_unit = tot / max(uds, 1)
+                for li in items:
+                    sk = (li.get('sku') or '').strip()
+                    qty = int(li.get('qty') or 0)
+                    if sk and qty > 0:
+                        if sk not in sku_rev:
+                            sku_rev[sk] = {'sku': sk, 'uds': 0, 'rev': 0}
+                        sku_rev[sk]['uds'] += qty
+                        sku_rev[sk]['rev'] += rev_per_unit * qty
+        snap['top_skus_30d'] = sorted(sku_rev.values(), key=lambda x: -x['rev'])[:10]
+    except Exception:
+        snap['top_skus_30d'] = []
+    # 2) Influencers activos sin pago reciente · candidatos a contactar
+    try:
+        snap['influencers_activos'] = [dict(r) for r in c.execute(
+            "SELECT id, nombre, usuario_red, nicho, seguidores, tarifa, "
+            " ciclo_pago FROM marketing_influencers "
+            "WHERE COALESCE(estado,'Activo')='Activo' "
+            "ORDER BY seguidores DESC LIMIT 8"
+        ).fetchall()]
+    except Exception:
+        snap['influencers_activos'] = []
+    # 3) Eventos cosméticos próximos 60d
+    try:
+        snap['eventos_proximos'] = [dict(r) for r in c.execute(
+            "SELECT evento, fecha, multiplicador FROM marketing_eventos_calendario "
+            "WHERE date(fecha) BETWEEN date(?) AND date(?, '+60 days') "
+            "ORDER BY fecha LIMIT 10",
+            (hoy.date().isoformat(), hoy.date().isoformat())
+        ).fetchall()]
+    except Exception:
+        snap['eventos_proximos'] = []
+    # 4) Campañas activas
+    try:
+        snap['campanas_activas'] = [dict(r) for r in c.execute(
+            "SELECT id, nombre, canal, tipo, estado, fecha_inicio, fecha_fin, "
+            " sku_objetivo, presupuesto FROM marketing_campanas "
+            "WHERE estado IN ('Activa','Planificada') ORDER BY fecha_inicio LIMIT 10"
+        ).fetchall()]
+    except Exception:
+        snap['campanas_activas'] = []
+    # 5) Sentiment IG 30d agregado
+    try:
+        rows_s = c.execute(
+            "SELECT sentiment, COUNT(*) as n FROM animus_instagram_comments "
+            "WHERE creado_en >= ? AND sentiment != 'pending' GROUP BY sentiment",
+            (hace30,)
+        ).fetchall()
+        snap['sentiment_30d'] = {r['sentiment']: r['n'] for r in rows_s}
+    except Exception:
+        snap['sentiment_30d'] = {}
+    return snap
+
+
+def _cmo_decidir_acciones_claude(conn, snapshot):
+    """Llama a Claude como CMO y devuelve lista de acciones priorizadas."""
+    api_key = _cfg(conn, "anthropic_api_key")
+    if not api_key:
+        # Fallback heurístico simple si no hay Claude
+        return _cmo_acciones_heuristicas(snapshot)
+    prompt = (
+        "Eres el CMO (Chief Marketing Officer) de ÁNIMUS Lab · skincare científico premium colombiano.\n"
+        "Hoy tomás decisiones de marketing basadas en este snapshot de datos reales.\n\n"
+        "TU OBJETIVO: devolver una lista de 5-8 ACCIONES CONCRETAS que el equipo debe ejecutar HOY.\n\n"
+        "Acciones disponibles (agente_workflow + payload):\n"
+        "  - 'oportunidad' → crear campaña para SKU específico (payload: {recomendaciones:[{sku, razones}]})\n"
+        "  - 'contenido_auto' → agregar piezas al kanban contenido (payload: {piezas:[{sku, caption_instagram}]})\n"
+        "  - 'alerta_stock' → flag reposición producto (payload: {alertas:[{sku, nivel, accion}]})\n"
+        "  - 'estrategia' → empuje SKU con stock alto (payload: {snapshot:{skus_para_empujar:[{sku}]}})\n"
+        "  - 'outreach_influencer' → contactar influencer X (payload: {influencer_id, mensaje_sugerido})\n"
+        "  - 'revisar_metrica' → solo notificación (payload: {metrica, detalle})\n\n"
+        "Devolvé EXACTAMENTE este JSON, sin markdown, sin texto antes/después:\n"
+        '[{"tipo":"oportunidad|contenido|stock|estrategia|outreach|metrica","prioridad":"critica|alta|media|baja",'
+        '"titulo":"...","descripcion":"...","justificacion_datos":"...",'
+        '"agente_workflow":"oportunidad|contenido_auto|alerta_stock|estrategia|null",'
+        '"payload":{...}}, ...]\n\n'
+        "Reglas:\n"
+        "- prioridad 'critica' SOLO si stock_critico < 7 días o evento cosmético <14 días.\n"
+        "- titulo: máximo 80 chars · accionable (ej. 'Lanzar campaña SAH para Black Friday').\n"
+        "- justificacion_datos: 1 frase con NÚMEROS del snapshot.\n"
+        "- balance: mezcla acciones ofensivas (campañas, contenido) y defensivas (stock, riesgo).\n"
+        "- Si snapshot está vacío en alguna sección, NO inventes data; mejor menos acciones que falsas.\n\n"
+        "Snapshot del día:\n" + json.dumps(snapshot, ensure_ascii=False)[:8000]
+    )
+    try:
+        payload = json.dumps({
+            "model": "claude-haiku-4-5-20251001",
+            "max_tokens": 2500,
+            "messages": [{"role": "user", "content": prompt}]
+        }).encode("utf-8")
+        req = urllib.request.Request(
+            "https://api.anthropic.com/v1/messages",
+            data=payload,
+            headers={"x-api-key": api_key, "anthropic-version": "2023-06-01",
+                     "content-type": "application/json"},
+            method="POST"
+        )
+        with urllib.request.urlopen(req, timeout=40) as resp:
+            rj = json.loads(resp.read().decode("utf-8"))
+        text = rj["content"][0]["text"].strip()
+        if text.startswith('```'):
+            text = _re_atrib.sub(r'^```(?:json)?\s*|\s*```$', '', text,
+                                 flags=_re_atrib.MULTILINE).strip()
+        parsed = json.loads(text)
+        if not isinstance(parsed, list):
+            return _cmo_acciones_heuristicas(snapshot)
+        return parsed[:10]
+    except Exception:
+        return _cmo_acciones_heuristicas(snapshot)
+
+
+def _cmo_acciones_heuristicas(snapshot):
+    """Fallback sin Claude · genera acciones básicas desde el snapshot."""
+    acciones = []
+    top = snapshot.get('top_skus_30d') or []
+    for s in top[:3]:
+        acciones.append({
+            'tipo': 'contenido', 'prioridad': 'alta',
+            'titulo': f"Generar contenido para {s.get('sku')} (top vendedor)",
+            'descripcion': f"SKU lideró ventas con {s.get('uds')} unidades en 30d",
+            'justificacion_datos': f"Top Shopify · {s.get('uds')} uds / ${int(s.get('rev') or 0):,} COP",
+            'agente_workflow': 'contenido_auto',
+            'payload': {'piezas': [{'sku': s.get('sku'), 'caption_instagram': ''}]},
+        })
+    for ev in (snapshot.get('eventos_proximos') or [])[:2]:
+        acciones.append({
+            'tipo': 'estrategia', 'prioridad': 'alta',
+            'titulo': f"Preparar campañas para {ev.get('evento')}",
+            'descripcion': f"Evento {ev.get('evento')} el {ev.get('fecha')} (multiplicador {ev.get('multiplicador')}x)",
+            'justificacion_datos': f"Evento cosmético en calendario · {ev.get('multiplicador')}x demanda esperada",
+            'agente_workflow': 'estrategia',
+            'payload': {'evento': ev.get('evento')},
+        })
+    for inf in (snapshot.get('influencers_activos') or [])[:2]:
+        acciones.append({
+            'tipo': 'outreach', 'prioridad': 'media',
+            'titulo': f"Contactar a {inf.get('nombre')} ({inf.get('usuario_red')})",
+            'descripcion': f"Influencer activo · {inf.get('seguidores')} seguidores · nicho {inf.get('nicho')}",
+            'justificacion_datos': f"Engagement potencial · {inf.get('seguidores')} followers",
+            'agente_workflow': None,
+            'payload': {'influencer_id': inf.get('id')},
+        })
+    return acciones[:8]
+
+
+@bp.route("/api/marketing/cmo/accion/<int:aid>/decidir", methods=["POST"])
+def mkt_cmo_accion_decidir(aid):
+    """Aprobar / posponer / descartar una acción del plan CMO.
+
+    Body: {decision: 'aprobar'|'posponer'|'descartar', motivo?: str}
+    Si aprobar y la acción tiene agente_workflow, dispara workflow/aplicar-agente.
+    """
+    u, err, code = _auth()
+    if err: return err, code
+    d = request.get_json() or {}
+    decision = (d.get('decision') or '').strip().lower()
+    if decision not in ('aprobar', 'posponer', 'descartar'):
+        return jsonify({'error': 'decision debe ser aprobar|posponer|descartar'}), 400
+    conn = _db(); c = conn.cursor()
+    accion = c.execute("SELECT * FROM marketing_cmo_acciones WHERE id=?", (aid,)).fetchone()
+    if not accion:
+        return jsonify({'error': 'acción no encontrada'}), 404
+    accion_d = dict(accion)
+    if accion_d.get('estado') not in ('pendiente',):
+        return jsonify({'error': f"acción ya está en estado {accion_d.get('estado')}"}), 409
+    nuevo_estado = {
+        'aprobar': 'aprobada', 'posponer': 'pospuesta', 'descartar': 'descartada'
+    }[decision]
+    motivo = (d.get('motivo') or '').strip()[:300]
+    resultado_ejec = None
+
+    # Si aprobar y tiene workflow, ejecutarlo
+    if decision == 'aprobar' and accion_d.get('agente_workflow'):
+        agente_w = accion_d['agente_workflow']
+        try:
+            payload_w = json.loads(accion_d.get('payload_json') or '{}')
+        except Exception:
+            payload_w = {}
+        try:
+            resp = _mkt_workflow_aplicar_agente_impl(conn, c, agente_w, payload_w, u)
+            try:
+                resultado_ejec = resp.get_json() if hasattr(resp, 'get_json') else None
+            except Exception:
+                resultado_ejec = {'ok': True}
+            nuevo_estado = 'ejecutada'
+        except Exception as e:
+            resultado_ejec = {'ok': False, 'error': str(e)[:200]}
+            nuevo_estado = 'fallida'
+
+    c.execute("""
+        UPDATE marketing_cmo_acciones
+        SET estado=?, decidido_por=?, decidido_at=datetime('now','-5 hours'),
+            resultado_ejecucion=?
+        WHERE id=?
+    """, (nuevo_estado, u, json.dumps(resultado_ejec or {'motivo': motivo})[:2000], aid))
+    conn.commit()
+    return jsonify({'ok': True, 'id': aid, 'estado': nuevo_estado,
+                    'resultado': resultado_ejec})
+
+
 @bp.route("/api/marketing/workflow/aplicar-agente", methods=["POST"])
 def mkt_workflow_aplicar_agente():
     """Convierte el output de un agente en entidades reales — Fase 3 Marketing.

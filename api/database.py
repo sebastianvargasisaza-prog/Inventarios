@@ -312,6 +312,49 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (200, "marketing_cmo_plan · CMO IA agencia autónoma · plan diario decisiones · Sebastián 27-may-2026 PM", [
+        # Sebastián 27-may-2026 · "marketing debe ser superior, debe ser una
+        # agencia de marketing impulsada por IA". CMO IA cron diario 7 AM
+        # toma snapshot completo (Shopify+IG+stock+influencers+eventos) y
+        # Claude devuelve plan estructurado: qué hacer hoy + prioridad +
+        # justificación. UI tab nueva con botones [Aprobar/Posponer/Descartar].
+        # Aprobar → dispara workflow/aplicar-agente correspondiente.
+        """CREATE TABLE IF NOT EXISTS marketing_cmo_plan (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            fecha TEXT NOT NULL,
+            acciones_json TEXT NOT NULL,
+            estado TEXT NOT NULL DEFAULT 'pendiente'
+                CHECK(estado IN ('pendiente','parcial','completado','descartado')),
+            generado_por TEXT NOT NULL DEFAULT 'cron-cmo-7am',
+            snapshot_json TEXT,
+            aprobado_por TEXT,
+            aprobado_at TEXT,
+            notas TEXT,
+            creado_at TEXT NOT NULL DEFAULT (datetime('now','-5 hours'))
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_mcmo_fecha ON marketing_cmo_plan(fecha DESC)",
+        # Acciones individuales tracking (cada item del plan)
+        """CREATE TABLE IF NOT EXISTS marketing_cmo_acciones (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            plan_id INTEGER NOT NULL,
+            tipo TEXT NOT NULL,
+            prioridad TEXT NOT NULL DEFAULT 'media'
+                CHECK(prioridad IN ('critica','alta','media','baja')),
+            titulo TEXT NOT NULL,
+            descripcion TEXT,
+            agente_workflow TEXT,
+            payload_json TEXT,
+            estado TEXT NOT NULL DEFAULT 'pendiente'
+                CHECK(estado IN ('pendiente','aprobada','descartada','ejecutada','fallida','pospuesta')),
+            resultado_ejecucion TEXT,
+            decidido_por TEXT,
+            decidido_at TEXT,
+            FOREIGN KEY (plan_id) REFERENCES marketing_cmo_plan(id)
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_mca_plan ON marketing_cmo_acciones(plan_id, estado)",
+        "CREATE INDEX IF NOT EXISTS idx_mca_estado ON marketing_cmo_acciones(estado, prioridad)",
+    ]),
+
     (199, "producto_presentaciones.ventas_mes_referencia · override manual ratio Shopify · Sebastián 27-may-2026 PM", [
         # Sebastián 27-may-2026 PM · "AZ lo vendemos de 30 y 15, de 15 200
         # unidades al mes". Cuando Shopify sync no captura bien el ratio
