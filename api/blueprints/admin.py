@@ -6701,6 +6701,145 @@ def admin_producto_volumen_upsert():
     return jsonify({'ok': True, 'producto_nombre': prod, 'volumen_ml': vol})
 
 
+@bp.route("/api/admin/producto-presentaciones", methods=["GET"])
+def admin_producto_presentaciones_list():
+    """Lista presentaciones (30ml/15ml/etc) configuradas para un producto.
+
+    Query: ?producto=NOMBRE_PRODUCTO · devuelve filas activas de
+    producto_presentaciones · campos: id, codigo, etiqueta, volumen_ml,
+    envase_codigo, factor_g_por_unidad, sku_shopify, es_default.
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    producto = (request.args.get('producto') or '').strip()
+    if not producto:
+        return jsonify({'error': 'producto requerido'}), 400
+    conn = db_connect()
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    try:
+        rows = c.execute(
+            """SELECT id, producto_nombre, presentacion_codigo, etiqueta,
+                      COALESCE(volumen_ml,0) AS volumen_ml,
+                      COALESCE(envase_codigo,'') AS envase_codigo,
+                      COALESCE(factor_g_por_unidad,0) AS factor_g_por_unidad,
+                      COALESCE(sku_shopify,'') AS sku_shopify,
+                      COALESCE(es_default,0) AS es_default
+               FROM producto_presentaciones
+               WHERE LOWER(TRIM(producto_nombre))=LOWER(TRIM(?))
+                 AND COALESCE(activo,1)=1
+               ORDER BY volumen_ml DESC""",
+            (producto,)
+        ).fetchall()
+    except Exception as e:
+        conn.close()
+        return jsonify({'error': f'query fallo: {e}'}), 500
+    conn.close()
+    return jsonify({'producto': producto, 'total': len(rows),
+                    'presentaciones': [dict(r) for r in rows]})
+
+
+@bp.route("/api/admin/producto-presentaciones-upsert", methods=["POST"])
+def admin_producto_presentaciones_upsert():
+    """Crea o actualiza una presentación de producto.
+
+    Body: {producto_nombre, presentacion_codigo, etiqueta, volumen_ml,
+           envase_codigo, factor_g_por_unidad?, sku_shopify?, es_default?}
+    UNIQUE(producto_nombre, presentacion_codigo) → ON CONFLICT UPDATE.
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    d = request.get_json(silent=True) or {}
+    prod = (d.get('producto_nombre') or '').strip()
+    pcod = (d.get('presentacion_codigo') or '').strip().upper()
+    etiq = (d.get('etiqueta') or '').strip()
+    try:
+        vol = float(d.get('volumen_ml') or 0)
+    except (TypeError, ValueError):
+        return jsonify({'error': 'volumen_ml debe ser numero'}), 400
+    env = (d.get('envase_codigo') or '').strip()
+    sku_shopify = (d.get('sku_shopify') or '').strip()
+    es_default = 1 if d.get('es_default') else 0
+    try:
+        factor = float(d.get('factor_g_por_unidad') or vol)
+    except (TypeError, ValueError):
+        factor = vol
+    if not prod or not pcod or not etiq:
+        return jsonify({'error': 'producto_nombre + presentacion_codigo + etiqueta requeridos'}), 400
+    if vol <= 0:
+        return jsonify({'error': 'volumen_ml debe ser > 0'}), 400
+    conn = db_connect()
+    c = conn.cursor()
+    # Validar envase existe (si fue provisto)
+    if env:
+        e_chk = c.execute("SELECT codigo FROM maestro_mee WHERE codigo=?", (env,)).fetchone()
+        if not e_chk:
+            conn.close()
+            return jsonify({'error': f'envase_codigo {env} no existe en maestro_mee'}), 400
+    try:
+        c.execute(
+            """INSERT INTO producto_presentaciones
+               (producto_nombre, presentacion_codigo, etiqueta, volumen_ml,
+                envase_codigo, factor_g_por_unidad, sku_shopify, es_default,
+                activo, actualizado_en)
+               VALUES (?,?,?,?,?,?,?,?,1,datetime('now','-5 hours'))
+               ON CONFLICT(producto_nombre, presentacion_codigo) DO UPDATE SET
+                 etiqueta=excluded.etiqueta,
+                 volumen_ml=excluded.volumen_ml,
+                 envase_codigo=excluded.envase_codigo,
+                 factor_g_por_unidad=excluded.factor_g_por_unidad,
+                 sku_shopify=excluded.sku_shopify,
+                 es_default=excluded.es_default,
+                 activo=1,
+                 actualizado_en=datetime('now','-5 hours')""",
+            (prod, pcod, etiq, vol, env, factor, sku_shopify, es_default)
+        )
+        try:
+            audit_log(c, usuario=u, accion='UPSERT_PRODUCTO_PRESENTACION',
+                      tabla='producto_presentaciones',
+                      registro_id=f'{prod}|{pcod}',
+                      despues={'producto': prod, 'codigo': pcod, 'etiqueta': etiq,
+                               'volumen_ml': vol, 'envase': env})
+        except Exception:
+            pass
+        conn.commit()
+    except Exception as e:
+        conn.close()
+        return jsonify({'error': str(e)[:300]}), 500
+    conn.close()
+    _log_sec(u, _client_ip(), "producto_presentaciones_upsert", f"prod={prod} cod={pcod}")
+    return jsonify({'ok': True, 'producto_nombre': prod, 'presentacion_codigo': pcod,
+                    'etiqueta': etiq, 'volumen_ml': vol, 'envase_codigo': env})
+
+
+@bp.route("/api/admin/producto-presentaciones/<int:pid>", methods=["DELETE"])
+def admin_producto_presentaciones_delete(pid):
+    """Soft-delete (activo=0) de una presentación · preserva histórico."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    conn = db_connect()
+    c = conn.cursor()
+    try:
+        c.execute("UPDATE producto_presentaciones SET activo=0, actualizado_en=datetime('now','-5 hours') WHERE id=?", (pid,))
+        if c.rowcount == 0:
+            conn.close()
+            return jsonify({'error': 'presentacion no encontrada'}), 404
+        try:
+            audit_log(c, usuario=u, accion='DESACTIVAR_PRODUCTO_PRESENTACION',
+                      tabla='producto_presentaciones', registro_id=str(pid))
+        except Exception:
+            pass
+        conn.commit()
+    except Exception as e:
+        conn.close()
+        return jsonify({'error': str(e)[:300]}), 500
+    conn.close()
+    return jsonify({'ok': True, 'id': pid})
+
+
 @bp.route("/admin/mees-diagnostico", methods=["GET"])
 def admin_mees_diagnostico_page():
     """UI · página HTML para diagnosticar y mapear MEEs faltantes.
@@ -6754,6 +6893,30 @@ def admin_mees_diagnostico_page():
   </div>
 </div>
 <div id="resultado"></div>
+
+<!-- Modal variantes de presentación (30ml / 15ml / 10ml) -->
+<div id="modal-vars" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:9999;align-items:center;justify-content:center;">
+  <div style="background:#1e293b;border:1px solid #0e7490;border-radius:12px;padding:20px;max-width:780px;width:94%;max-height:88vh;overflow-y:auto;">
+    <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #334155;padding-bottom:10px;margin-bottom:14px;">
+      <h2 style="font-size:16px;color:#67e8f9;margin:0;">📐 Variantes de presentación · <span id="mv-producto" style="color:#e2e8f0;"></span></h2>
+      <button onclick="cerrarModalVariantes()" style="background:transparent;border:0;color:#94a3b8;font-size:22px;cursor:pointer;">✕</button>
+    </div>
+    <div style="color:#94a3b8;font-size:12px;line-height:1.5;margin-bottom:10px;">
+      Si el producto se vende en <b>varios volúmenes</b> (30ml, 15ml, 10ml), agregá una fila por cada uno con su envase específico.<br>
+      <span style="color:#67e8f9;">Ejemplo:</span> SUERO X viene en 30ml (envase A) y 15ml (envase B) → 2 filas. El cálculo MEE multiplica por unidades = cantidad_kg × 1000 / volumen_ml de cada presentación, usando ratio histórico de ventas Shopify (próxima fase).
+    </div>
+    <div style="display:grid;grid-template-columns:80px 110px 80px 1fr 32px;gap:8px;margin-bottom:6px;font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.4px;font-weight:700;">
+      <div>Código</div><div>Etiqueta</div><div>Volumen ml</div><div>Envase MEE</div><div></div>
+    </div>
+    <div id="mv-filas" style="margin-bottom:8px;"></div>
+    <button onclick="addFilaVariante({})" style="background:#164e63;color:#67e8f9;border:1px solid #0e7490;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:700;margin-bottom:10px;">+ Otra variante</button>
+    <div id="mv-alert" style="display:none;padding:10px;border-radius:6px;font-size:12px;margin-bottom:10px;"></div>
+    <div style="display:flex;justify-content:flex-end;gap:10px;border-top:1px solid #334155;padding-top:12px;">
+      <button onclick="cerrarModalVariantes()" style="background:#334155;color:#cbd5e1;border:0;padding:8px 16px;border-radius:6px;cursor:pointer;">Cancelar</button>
+      <button id="mv-guardar" onclick="guardarVariantesModal()" style="background:#0e7490;">💾 Guardar variantes</button>
+    </div>
+  </div>
+</div>
 
 <!-- Modal multi-envase para productos con tonos -->
 <div id="modal-mees" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:9999;align-items:center;justify-content:center;">
@@ -6901,6 +7064,114 @@ async function guardarMEEsModal(){
   }
 }
 
+// ─── Modal multi-variante (presentaciones 30ml/15ml/10ml) ───────────────
+async function abrirModalVariantes(producto){
+  await cargarMEEs();
+  const m = document.getElementById('modal-vars');
+  if(!m){ alert('Modal no inicializado · Ctrl+Shift+R'); return; }
+  document.getElementById('mv-producto').textContent = producto;
+  document.getElementById('mv-producto').dataset.producto = producto;
+  document.getElementById('mv-filas').innerHTML = '';
+  document.getElementById('mv-alert').style.display = 'none';
+  // Cargar presentaciones existentes
+  try {
+    const r = await fetch('/api/admin/producto-presentaciones?producto='+encodeURIComponent(producto), {credentials:'same-origin'});
+    if(r.ok){
+      const d = await r.json();
+      for(const p of (d.presentaciones||[])){
+        addFilaVariante(p);
+      }
+    }
+  } catch(_){}
+  if(!document.querySelectorAll('#mv-filas .mv-fila').length){
+    // Default: 1 fila vacía para que el user empiece
+    addFilaVariante({});
+  }
+  m.style.display = 'flex';
+}
+function cerrarModalVariantes(){ document.getElementById('modal-vars').style.display='none'; }
+let _MV_ROW_SEQ = 0;
+function addFilaVariante(p){
+  _MV_ROW_SEQ++;
+  const cont = document.getElementById('mv-filas');
+  const row = document.createElement('div');
+  row.className = 'mv-fila';
+  row.style.cssText = 'display:grid;grid-template-columns:80px 110px 80px 1fr 32px;gap:8px;margin-bottom:6px;align-items:center;';
+  const codVal = p && p.presentacion_codigo ? esc(p.presentacion_codigo) : '';
+  const etiqVal = p && p.etiqueta ? esc(p.etiqueta) : '';
+  const volVal = p && p.volumen_ml ? p.volumen_ml : '';
+  const envSel = p && p.envase_codigo ? p.envase_codigo : '';
+  row.innerHTML =
+    '<input class="mv-cod" type="text" placeholder="30ML" value="'+codVal+'" style="background:#0f172a;color:#e2e8f0;border:1px solid #334155;padding:5px;border-radius:4px;font-size:12px;text-transform:uppercase;">'
+    + '<input class="mv-etiq" type="text" placeholder="30 ml" value="'+etiqVal+'" style="background:#0f172a;color:#e2e8f0;border:1px solid #334155;padding:5px;border-radius:4px;font-size:12px;">'
+    + '<input class="mv-vol" type="number" step="0.1" placeholder="30" value="'+volVal+'" style="background:#0f172a;color:#e2e8f0;border:1px solid #334155;padding:5px;border-radius:4px;font-size:12px;">'
+    + _meeDropdownPick('mv-env-'+_MV_ROW_SEQ, envSel)
+    + '<button onclick="this.parentNode.remove()" style="background:#7f1d1d;color:#fecaca;border:0;padding:5px 8px;border-radius:4px;cursor:pointer;" title="Quitar">✕</button>';
+  cont.appendChild(row);
+}
+function _meeDropdownPick(id, selectedCode){
+  // Variante de meeDropdown que pre-selecciona un código
+  let opts = '<option value="">— envase —</option>';
+  let cat = '';
+  for(const m of MEES_LIST){
+    if(m.categoria !== cat){ if(cat) opts+='</optgroup>'; opts+='<optgroup label="'+esc(m.categoria||'(sin categoría)')+'">'; cat = m.categoria; }
+    const sel = (m.codigo === selectedCode) ? ' selected' : '';
+    opts += '<option value="'+esc(m.codigo)+'"'+sel+'>'+esc(m.codigo)+' · '+esc(m.descripcion)+'</option>';
+  }
+  if(cat) opts += '</optgroup>';
+  return '<select id="'+id+'" class="mv-env" style="background:#0f172a;color:#e2e8f0;border:1px solid #334155;padding:5px;border-radius:4px;font-size:12px;">'+opts+'</select>';
+}
+async function guardarVariantesModal(){
+  const producto = document.getElementById('mv-producto').dataset.producto;
+  const filas = document.querySelectorAll('#mv-filas .mv-fila');
+  if(!filas.length){ alert('Agregá al menos una variante'); return; }
+  const errs = [];
+  const payloads = [];
+  filas.forEach((r, idx) => {
+    const cod = r.querySelector('input.mv-cod').value.trim().toUpperCase();
+    const etiq = r.querySelector('input.mv-etiq').value.trim();
+    const vol = parseFloat(r.querySelector('input.mv-vol').value)||0;
+    const env = r.querySelector('select.mv-env').value;
+    if(!cod) errs.push('Fila '+(idx+1)+': código (ej. 30ML) requerido');
+    else if(!etiq) errs.push('Fila '+(idx+1)+': etiqueta (ej. "30 ml") requerida');
+    else if(vol <= 0) errs.push('Fila '+(idx+1)+': volumen_ml debe ser > 0');
+    else if(!env) errs.push('Fila '+(idx+1)+': elegí un envase');
+    else payloads.push({producto_nombre: producto, presentacion_codigo: cod, etiqueta: etiq, volumen_ml: vol, envase_codigo: env});
+  });
+  const alertBox = document.getElementById('mv-alert');
+  if(errs.length){
+    alertBox.style.display='block';
+    alertBox.style.background='#7f1d1d';alertBox.style.color='#fecaca';
+    alertBox.innerHTML = errs.map(e=>'<div>'+esc(e)+'</div>').join('');
+    return;
+  }
+  const csrf = await _ensureCsrf();
+  const btn = document.getElementById('mv-guardar');
+  btn.disabled = true; btn.textContent = '⏳ Guardando...';
+  let okCount = 0, failMsgs = [];
+  for(const p of payloads){
+    try{
+      const r = await fetch('/api/admin/producto-presentaciones-upsert', {
+        method:'POST', credentials:'same-origin',
+        headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},
+        body: JSON.stringify(p)
+      });
+      const d = await r.json();
+      if(r.ok && d.ok) okCount++;
+      else failMsgs.push((d.error||'HTTP '+r.status)+' · '+p.presentacion_codigo);
+    } catch(e){ failMsgs.push('Red: '+e.message+' · '+p.presentacion_codigo); }
+  }
+  btn.disabled = false; btn.textContent = '💾 Guardar variantes';
+  if(okCount === payloads.length){
+    cerrarModalVariantes();
+    setTimeout(cargar, 800);
+  } else {
+    alertBox.style.display='block';
+    alertBox.style.background='#78350f';alertBox.style.color='#fde047';
+    alertBox.innerHTML = '✓ '+okCount+' guardados · ✗ '+failMsgs.length+' errores:<br>' + failMsgs.map(m=>'<div>'+esc(m)+'</div>').join('');
+  }
+}
+
 async function asignarMEE(btn){
   const producto = btn.dataset.producto || '';
   const row = btn.closest('tr');
@@ -6997,22 +7268,29 @@ async function cargar(){
       const prodEsc = esc(p.producto||'');
       html += '<tr><td style="max-width:340px;"><b>'+prodEsc+'</b></td>';
       html += '<td>'+(p.pendientes||0)+'</td>';
-      html += '<td><button data-producto="'+esc(p.producto||'')+'" onclick="abrirModalEnvases(this.dataset.producto)">📦 Asignar envases</button></td>';
+      html += '<td style="white-space:nowrap;">'
+        + '<button data-producto="'+prodEsc+'" onclick="abrirModalEnvases(this.dataset.producto)" style="margin-right:6px;">📦 Envases</button>'
+        + '<button data-producto="'+prodEsc+'" onclick="abrirModalVariantes(this.dataset.producto)" style="background:#0e7490;">📐 Variantes ml</button>'
+        + '</td>';
       html += '</tr>';
     }
     html += '</tbody></table></div>';
   }
-  // Productos sin volumen · UI inline para definir volumen_ml
+  // Productos sin volumen · UI inline para definir volumen_ml O variantes ml
   if((d.detalle_sin_volumen||[]).length){
     html += '<div class="card"><h2>⚠ Productos con mapping pero SIN volumen_unitario_producto</h2>';
-    html += '<div style="color:#94a3b8;font-size:12px;margin-bottom:10px;">El sistema sabe qué envases necesitan, pero sin volumen_ml no puede calcular cuántas unidades. Ingresá ml por unidad (típico: 30, 50, 100, 250…).</div>';
+    html += '<div style="color:#94a3b8;font-size:12px;margin-bottom:10px;">El sistema sabe qué envases necesitan, pero sin volumen_ml no puede calcular cuántas unidades. Si el producto tiene <b>1 sola presentación</b>, llená "Volumen ml" y Guardar. Si tiene <b>variantes (30ml + 15ml + 10ml)</b>, usá "📐 Variantes ml".</div>';
     html += '<table><thead><tr><th>Producto</th><th>MEEs mapeados</th><th>Pend.</th><th>Volumen ml</th><th></th></tr></thead><tbody>';
     for(const p of d.detalle_sin_volumen){
-      html += '<tr><td style="max-width:280px;"><b>'+esc(p.producto||'')+'</b></td>';
+      const prodEsc = esc(p.producto||'');
+      html += '<tr><td style="max-width:280px;"><b>'+prodEsc+'</b></td>';
       html += '<td>'+esc((p.mees||[]).join(', '))+'</td>';
       html += '<td>'+(p.pendientes||0)+'</td>';
       html += '<td><input class="vol" type="number" step="1" placeholder="30" style="width:90px;background:#0f172a;color:#e2e8f0;border:1px solid #334155;padding:5px;border-radius:4px;"></td>';
-      html += '<td><button data-producto="'+esc(p.producto||'')+'" onclick="definirVolumen(this)">Guardar</button></td>';
+      html += '<td style="white-space:nowrap;">'
+        + '<button data-producto="'+prodEsc+'" onclick="definirVolumen(this)" style="margin-right:6px;">Guardar</button>'
+        + '<button data-producto="'+prodEsc+'" onclick="abrirModalVariantes(this.dataset.producto)" style="background:#0e7490;">📐 Variantes ml</button>'
+        + '</td>';
       html += '</tr>';
     }
     html += '</tbody></table></div>';
