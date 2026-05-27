@@ -4886,6 +4886,156 @@ def propagar_envase_a_futuros(lote_id):
     })
 
 
+@bp.route('/api/programacion/programar/<int:evento_id>/composicion-mee', methods=['GET'])
+def prog_composicion_mee(evento_id):
+    """Devuelve la composición de envases que una producción específica va a
+    consumir, derivada de producto_presentaciones + ratio Shopify 90d.
+
+    Sebastián 27-may-2026 PM · "el calendario debe colocar la realidad del
+    envase, que lo tenga cada producción". Auto-derive desde Shopify · no
+    manual. Visible en /calendario y /planta cuando se inicia producción.
+
+    Response:
+    {
+      ok, producto, cantidad_kg,
+      variantes: [
+        {presentacion_codigo, etiqueta, volumen_ml, envase_codigo,
+         envase_descripcion, ratio_pct, unidades_estimadas}, ...
+      ],
+      fuente_ratio: 'shopify_90d' | 'uniforme' | 'unica',
+      sin_variantes: bool   // True si producto no tiene producto_presentaciones
+    }
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autenticado'}), 401
+    conn = db_connect(); c = conn.cursor()
+    row = c.execute(
+        """SELECT id, producto, cantidad_kg, lotes
+           FROM produccion_programada WHERE id=?""",
+        (evento_id,)
+    ).fetchone()
+    if not row:
+        return jsonify({'error': f'Producción {evento_id} no encontrada'}), 404
+    pid, producto, cant_kg, lotes = row
+    producto_norm = (producto or '').strip().upper()
+    cant_kg_f = float(cant_kg or 0)
+
+    # Cargar presentaciones activas del producto
+    presentaciones = []
+    try:
+        for r in c.execute(
+            """SELECT presentacion_codigo, COALESCE(etiqueta,''),
+                      COALESCE(volumen_ml,0), COALESCE(envase_codigo,''),
+                      COALESCE(sku_shopify,'')
+               FROM producto_presentaciones
+               WHERE LOWER(TRIM(producto_nombre))=LOWER(TRIM(?))
+                 AND COALESCE(activo,1)=1 AND COALESCE(volumen_ml,0) > 0
+               ORDER BY volumen_ml DESC""",
+            (producto,)
+        ).fetchall():
+            presentaciones.append({
+                'codigo': r[0], 'etiqueta': r[1],
+                'volumen_ml': float(r[2]), 'envase_codigo': r[3],
+                'sku_shopify': r[4],
+            })
+    except sqlite3.OperationalError:
+        pass
+
+    if not presentaciones:
+        # Fallback · solo 1 volumen sin presentaciones definidas
+        vol = 0
+        try:
+            vr = c.execute(
+                "SELECT COALESCE(volumen_ml,0) FROM volumen_unitario_producto WHERE LOWER(TRIM(producto_nombre))=LOWER(TRIM(?)) AND COALESCE(activo,1)=1",
+                (producto,)
+            ).fetchone()
+            vol = float((vr or [0])[0] or 0)
+        except Exception:
+            pass
+        units = int(round((cant_kg_f * 1000.0) / vol)) if vol > 0 else 0
+        return jsonify({
+            'ok': True, 'producto': producto, 'cantidad_kg': cant_kg_f,
+            'variantes': [{
+                'presentacion_codigo': '-', 'etiqueta': f'{int(vol)} ml' if vol > 0 else '(sin volumen)',
+                'volumen_ml': vol, 'envase_codigo': '',
+                'envase_descripcion': '',
+                'ratio_pct': 100.0, 'unidades_estimadas': units,
+            }] if vol > 0 else [],
+            'fuente_ratio': 'unica', 'sin_variantes': True,
+        })
+
+    # Ratio Shopify 90d
+    from datetime import datetime as _dtCC, timedelta as _tdCC
+    cutoff = (_dtCC.utcnow() - _tdCC(hours=5) - _tdCC(days=90)).date().isoformat()
+    ventas_sku = {}
+    try:
+        import json as _jsonCC
+        for (it,) in c.execute(
+            """SELECT sku_items FROM animus_shopify_orders
+               WHERE COALESCE(creado_en,'') >= ? AND sku_items IS NOT NULL AND sku_items != ''""",
+            (cutoff,)
+        ).fetchall():
+            try:
+                items = _jsonCC.loads(it) if it else []
+                if not isinstance(items, list): continue
+                for li in items:
+                    sk = (li.get('sku') or '').strip()
+                    qty = int(li.get('qty') or 0)
+                    if sk and qty > 0:
+                        ventas_sku[sk] = ventas_sku.get(sk, 0) + qty
+            except Exception:
+                continue
+    except sqlite3.OperationalError:
+        pass
+
+    # Derivar ratio por presentación
+    total = 0
+    for p in presentaciones:
+        sk = (p['sku_shopify'] or '').strip()
+        v = ventas_sku.get(sk, 0) if sk else 0
+        p['_ventas_90d'] = v
+        total += v
+    if total > 0:
+        for p in presentaciones:
+            p['_ratio'] = (p['_ventas_90d'] / total)
+        fuente = 'shopify_90d'
+    else:
+        ratio_uni = 1.0 / len(presentaciones)
+        for p in presentaciones:
+            p['_ratio'] = ratio_uni
+        fuente = 'uniforme'
+
+    # Calcular unidades estimadas + descripción envase
+    mee_descs = {}
+    try:
+        for r in c.execute("SELECT codigo, COALESCE(descripcion,'') FROM maestro_mee").fetchall():
+            mee_descs[r[0]] = r[1]
+    except Exception:
+        pass
+
+    variantes_out = []
+    for p in presentaciones:
+        kg_p = cant_kg_f * p['_ratio']
+        un_p = int(round((kg_p * 1000.0) / p['volumen_ml'])) if p['volumen_ml'] > 0 else 0
+        variantes_out.append({
+            'presentacion_codigo': p['codigo'],
+            'etiqueta': p['etiqueta'],
+            'volumen_ml': p['volumen_ml'],
+            'envase_codigo': p['envase_codigo'],
+            'envase_descripcion': mee_descs.get(p['envase_codigo'], p['envase_codigo']),
+            'sku_shopify': p['sku_shopify'],
+            'ratio_pct': round(p['_ratio'] * 100, 1),
+            'ventas_90d_uds': p['_ventas_90d'],
+            'unidades_estimadas': un_p,
+        })
+
+    return jsonify({
+        'ok': True, 'producto': producto, 'cantidad_kg': cant_kg_f,
+        'variantes': variantes_out, 'fuente_ratio': fuente,
+        'sin_variantes': False,
+    })
+
+
 @bp.route('/api/programacion/lote/<int:lote_id>/plan-envasado/<int:pbl_id>', methods=['PATCH'])
 def patch_plan_envasado_b2b(lote_id, pbl_id):
     """Edita plan_envasado_uds y plan_envasado_notas de un cliente B2B
