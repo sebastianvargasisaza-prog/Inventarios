@@ -112,6 +112,7 @@ def health():
     malformed = False
     error = None
     conn = None
+    migrations_info = None
     try:
         conn = db_connect()
         if not es_pg:
@@ -138,6 +139,29 @@ def health():
             ).fetchone()[0]
         except Exception:
             pass
+        # Migraciones · versiones aplicadas vs pendientes (Sebastián 27-may PM)
+        # Útil para verificar deploys sin admin login · sin exponer DDL/SQL.
+        try:
+            from database import MIGRATIONS as _MIGS
+            _defined = sorted({m[0] for m in _MIGS})
+            _applied = []
+            try:
+                _rows = conn.execute(
+                    'SELECT version FROM schema_migrations ORDER BY version'
+                ).fetchall()
+                _applied = sorted({r[0] for r in _rows})
+            except Exception:
+                _applied = []
+            _pendientes = [v for v in _defined if v not in set(_applied)]
+            migrations_info = {
+                'defined_total': len(_defined),
+                'applied_total': len(_applied),
+                'pending_total': len(_pendientes),
+                'last_applied': _applied[-1] if _applied else None,
+                'pending_versions': _pendientes[:10],
+            }
+        except Exception:
+            migrations_info = None
     except Exception as e:
         error = str(e)
         if 'malformed' in str(e).lower() or 'corrupt' in str(e).lower():
@@ -156,6 +180,8 @@ def health():
             'tables': tables,
         },
     }
+    if migrations_info is not None:
+        payload['migrations'] = migrations_info
     if error:
         payload['db']['error'] = error
     if malformed:
