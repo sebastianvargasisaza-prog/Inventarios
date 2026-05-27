@@ -106,6 +106,36 @@ body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1C1917;font-siz
 .ptbl td{padding:8px 10px;border-bottom:1px solid #f0edec;vertical-align:middle;}
 .ptbl tr:hover td{background:#fafafa;}
 .pgrp-card{background:#fff;border:1px solid #e7e5e4;border-radius:8px;margin-bottom:14px;overflow:hidden;}
+/* Mobile responsive · Catalina/Mayra tablet · 27-may-2026 */
+@media (max-width: 768px) {
+  .pane { padding: 12px 10px; }
+  .topbar { padding: 10px 12px; gap: 8px; flex-wrap: wrap; }
+  .topbar h1 { font-size: 15px; }
+  .tab-nav { font-size: 12px; }
+  .tn { padding: 9px 10px; font-size: 12px; }
+  .grid { grid-template-columns: 1fr; gap: 10px; }
+  .pg { grid-template-columns: 1fr; }
+  .kpis { grid-template-columns: 1fr 1fr; gap: 8px; }
+  .kpi { padding: 10px; }
+  .kpi-v { font-size: 18px; }
+  .g2 { grid-template-columns: 1fr !important; }
+  .mdl { max-width: 96vw !important; }
+  .mf { flex-direction: column-reverse; gap: 8px; }
+  .mf .btn { width: 100%; }
+  .ptbl .mob-hide, .itbl .mob-hide { display: none !important; }
+  .ptbl th, .ptbl td { padding: 6px 7px; font-size: 12px; }
+  .ptbl { font-size: 12px; }
+  .bar { gap: 6px; padding: 8px 10px; }
+  .bar input { min-width: 0; width: 100%; }
+  .acts { gap: 5px; }
+  .acts .btn { padding: 7px 11px; font-size: 11px; }
+  /* Cards items consolidados grupo · scroll horizontal explicito */
+  .pgrp-card table { display: block; overflow-x: auto; white-space: nowrap; }
+}
+@media (max-width: 480px) {
+  .kpis { grid-template-columns: 1fr; }
+  .pane { padding: 10px 8px; }
+}
 </style>
 </head>
 <body>
@@ -2419,15 +2449,15 @@ function renderPagos(){
     return '<tr>'
       +'<td><strong>'+esc(p.numero_oc)+'</strong></td>'
       +'<td>'+esc(p.proveedor||'-')+'</td>'
-      +'<td><span style="font-size:10px;background:#e7e5e4;border-radius:3px;padding:2px 6px;">'+esc(p.categoria||'-')+'</span></td>'
+      +'<td class="mob-hide"><span style="font-size:10px;background:#e7e5e4;border-radius:3px;padding:2px 6px;">'+esc(p.categoria||'-')+'</span></td>'
       +'<td style="font-weight:600;color:#16a34a;">'+fmt(p.monto||p.valor_total)+'</td>'
-      +'<td>'+esc(p.medio_pago||'-')+'</td>'
+      +'<td class="mob-hide">'+esc(p.medio_pago||'-')+'</td>'
       +'<td>'+fdate(p.fecha_pago)+'</td>'
-      +'<td>'+esc(p.pagado_por||'-')+'</td>'
+      +'<td class="mob-hide">'+esc(p.pagado_por||'-')+'</td>'
       +'<td>'+imgBtn+regenBtn+revBtn+'</td>'
       +'</tr>';
   }).join('');
-  document.getElementById('pagos-wrap').innerHTML='<div style="overflow-x:auto;"><table class="ptbl"><thead><tr><th>OC</th><th>Proveedor</th><th>Categoría</th><th>Monto</th><th>Medio</th><th>Fecha</th><th>Por</th><th>Acciones</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+  document.getElementById('pagos-wrap').innerHTML='<div style="overflow-x:auto;"><table class="ptbl"><thead><tr><th>OC</th><th>Proveedor</th><th class="mob-hide">Categoría</th><th>Monto</th><th class="mob-hide">Medio</th><th>Fecha</th><th class="mob-hide">Por</th><th>Acciones</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
 }
 
 // Sebastián 24-may-2026 · descarga Excel hist. pagos · soporta ?mes=YYYY-MM

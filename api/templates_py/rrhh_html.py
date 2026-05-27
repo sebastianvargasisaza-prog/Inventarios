@@ -72,6 +72,7 @@ td input[type=number]{width:90px;padding:5px 8px;border:1px solid #d6d3d1;border
 .btn-sm{padding:5px 10px;font-size:12px;}
 /* Forms */
 .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+@media(max-width:600px){.form-grid{grid-template-columns:1fr;}.kpi-grid{grid-template-columns:1fr;}.emp-grid{grid-template-columns:1fr;}}
 .form-group{display:flex;flex-direction:column;gap:4px;}
 .form-group label{font-size:12px;font-weight:600;color:#555;}
 .form-group input,.form-group select,.form-group textarea{padding:8px 10px;border:1.5px solid #e0ddd8;border-radius:7px;font-size:13px;font-family:inherit;}

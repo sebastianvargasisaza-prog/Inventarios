@@ -4182,6 +4182,7 @@ def verificar_codigos_mp_page():
 
 _VERIFICAR_CODIGOS_HTML = """<!DOCTYPE html>
 <html lang="es"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Verificar códigos MP del Excel · EOS</title>
 <style>
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;color:#1e293b;margin:0;padding:20px}
@@ -4655,6 +4656,7 @@ def comparar_calendar_necesidades():
 
 _COMPARAR_CALENDAR_HTML = """<!DOCTYPE html>
 <html lang="es"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Comparar Calendar vs Necesidades · EOS</title>
 <style>
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;color:#1e293b;margin:0;padding:20px}
@@ -4930,6 +4932,7 @@ def mps_buscar():
 
 _BUSCADOR_MPS_HTML = """<!DOCTYPE html>
 <html lang="es"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Buscar MPs · EOS</title>
 <style>
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;color:#1e293b;margin:0;padding:20px}
@@ -5165,6 +5168,7 @@ def detector_mps_renombre():
 
 _DETECTOR_RENOMBRE_HTML = """<!DOCTYPE html>
 <html lang="es"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Detector MPs renombre · EOS</title>
 <style>
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;color:#1e293b;margin:0;padding:20px}
