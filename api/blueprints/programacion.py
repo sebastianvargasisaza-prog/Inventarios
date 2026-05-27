@@ -4926,7 +4926,8 @@ def prog_composicion_mee(evento_id):
         for r in c.execute(
             """SELECT presentacion_codigo, COALESCE(etiqueta,''),
                       COALESCE(volumen_ml,0), COALESCE(envase_codigo,''),
-                      COALESCE(sku_shopify,'')
+                      COALESCE(sku_shopify,''),
+                      COALESCE(ventas_mes_referencia,0)
                FROM producto_presentaciones
                WHERE LOWER(TRIM(producto_nombre))=LOWER(TRIM(?))
                  AND COALESCE(activo,1)=1 AND COALESCE(volumen_ml,0) > 0
@@ -4937,6 +4938,7 @@ def prog_composicion_mee(evento_id):
                 'codigo': r[0], 'etiqueta': r[1],
                 'volumen_ml': float(r[2]), 'envase_codigo': r[3],
                 'sku_shopify': r[4],
+                'ventas_mes_referencia': float(r[5] or 0),
             })
     except sqlite3.OperationalError:
         pass
@@ -4991,22 +4993,30 @@ def prog_composicion_mee(evento_id):
     except sqlite3.OperationalError:
         pass
 
-    # Derivar ratio por presentación
-    total = 0
-    for p in presentaciones:
-        sk = (p['sku_shopify'] or '').strip()
-        v = ventas_sku.get(sk, 0) if sk else 0
-        p['_ventas_90d'] = v
-        total += v
-    if total > 0:
+    # Derivar ratio por presentación · prioridad: 1) override manual,
+    # 2) Shopify histórico 180d, 3) uniforme
+    suma_override = sum(float(p.get('ventas_mes_referencia') or 0) for p in presentaciones)
+    if suma_override > 0:
         for p in presentaciones:
-            p['_ratio'] = (p['_ventas_90d'] / total)
-        fuente = 'shopify_90d'
+            p['_ventas_90d'] = float(p.get('ventas_mes_referencia') or 0)
+            p['_ratio'] = (p['_ventas_90d'] / suma_override)
+        fuente = 'manual_override'
     else:
-        ratio_uni = 1.0 / len(presentaciones)
+        total = 0
         for p in presentaciones:
-            p['_ratio'] = ratio_uni
-        fuente = 'uniforme'
+            sk = (p['sku_shopify'] or '').strip()
+            v = ventas_sku.get(sk, 0) if sk else 0
+            p['_ventas_90d'] = v
+            total += v
+        if total > 0:
+            for p in presentaciones:
+                p['_ratio'] = (p['_ventas_90d'] / total)
+            fuente = 'shopify_180d'
+        else:
+            ratio_uni = 1.0 / len(presentaciones)
+            for p in presentaciones:
+                p['_ratio'] = ratio_uni
+            fuente = 'uniforme'
 
     # Calcular unidades estimadas + descripción envase
     mee_descs = {}
@@ -7869,7 +7879,8 @@ def producciones_faltantes():
             SELECT producto_nombre, presentacion_codigo,
                    COALESCE(volumen_ml,0), COALESCE(envase_codigo,''),
                    COALESCE(sku_shopify,''),
-                   COALESCE(factor_g_por_unidad, volumen_ml, 0)
+                   COALESCE(factor_g_por_unidad, volumen_ml, 0),
+                   COALESCE(ventas_mes_referencia, 0)
             FROM producto_presentaciones
             WHERE COALESCE(activo,1)=1 AND COALESCE(volumen_ml,0) > 0
         """).fetchall():
@@ -7882,6 +7893,7 @@ def producciones_faltantes():
                 'envase_codigo': (r[3] or '').strip(),
                 'sku_shopify': (r[4] or '').strip(),
                 'factor_g_por_unidad': float(r[5] or r[2] or 0),
+                'ventas_mes_referencia': float(r[6] or 0),
             })
     except sqlite3.OperationalError:
         pass
@@ -7917,14 +7929,23 @@ def producciones_faltantes():
         pass
 
     def _ratio_presentaciones(producto_norm):
-        """Devuelve dict {codigo_presentacion: ratio_0_a_1} usando Shopify 90d.
-        Si no hay data → ratio uniforme 1/N entre presentaciones activas."""
+        """Devuelve dict {codigo_presentacion: ratio_0_a_1} con esta prioridad:
+        1) Override manual: si AT LEAST 1 presentación tiene ventas_mes_referencia > 0,
+           usa ESOS números (0 = no se vende).
+        2) Shopify histórico: ratio = qty_sku / total_qty últimos 180d.
+        3) Uniforme: 1/N si no hay data.
+        Sebastián 27-may-2026 PM · "AZ lo vendemos de 30 y 15, de 15 200 uds/mes"."""
         pres = presentaciones_por_producto.get(producto_norm, [])
         if not pres:
             return {}
         if len(pres) == 1:
             return {pres[0]['codigo']: 1.0}
-        # Sumar ventas por presentación via sku_shopify
+        # Prioridad 1 · override manual ventas_mes_referencia
+        suma_override = sum(float(p.get('ventas_mes_referencia') or 0) for p in pres)
+        if suma_override > 0:
+            return {p['codigo']: (float(p.get('ventas_mes_referencia') or 0) / suma_override)
+                    for p in pres}
+        # Prioridad 2 · Shopify
         ventas = {}
         total = 0
         for p in pres:
@@ -7932,10 +7953,10 @@ def producciones_faltantes():
             v = ventas_por_sku_90d.get(sk, 0) if sk else 0
             ventas[p['codigo']] = v
             total += v
-        if total <= 0:
-            # No hay ventas históricas · ratio uniforme
-            return {p['codigo']: 1.0 / len(pres) for p in pres}
-        return {cod: (v / total) for cod, v in ventas.items()}
+        if total > 0:
+            return {cod: (v / total) for cod, v in ventas.items()}
+        # Prioridad 3 · uniforme
+        return {p['codigo']: 1.0 / len(pres) for p in pres}
 
     # 5. Cargar stock MP (canonical helper)
     stock_mp = _get_mp_stock(conn)

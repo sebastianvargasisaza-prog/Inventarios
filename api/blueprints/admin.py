@@ -6850,7 +6850,8 @@ def admin_producto_presentaciones_list():
                       COALESCE(envase_codigo,'') AS envase_codigo,
                       COALESCE(factor_g_por_unidad,0) AS factor_g_por_unidad,
                       COALESCE(sku_shopify,'') AS sku_shopify,
-                      COALESCE(es_default,0) AS es_default
+                      COALESCE(es_default,0) AS es_default,
+                      COALESCE(ventas_mes_referencia,0) AS ventas_mes_referencia
                FROM producto_presentaciones
                WHERE LOWER(TRIM(producto_nombre))=LOWER(TRIM(?))
                  AND COALESCE(activo,1)=1
@@ -6891,6 +6892,13 @@ def admin_producto_presentaciones_upsert():
         factor = float(d.get('factor_g_por_unidad') or vol)
     except (TypeError, ValueError):
         factor = vol
+    # Sebastián 27-may-2026 PM · override manual de ventas si Shopify no captura
+    try:
+        ventas_mes_ref = float(d.get('ventas_mes_referencia') or 0)
+    except (TypeError, ValueError):
+        ventas_mes_ref = 0.0
+    if ventas_mes_ref < 0:
+        ventas_mes_ref = 0.0
     if not prod or not pcod or not etiq:
         return jsonify({'error': 'producto_nombre + presentacion_codigo + etiqueta requeridos'}), 400
     if vol <= 0:
@@ -6908,8 +6916,9 @@ def admin_producto_presentaciones_upsert():
             """INSERT INTO producto_presentaciones
                (producto_nombre, presentacion_codigo, etiqueta, volumen_ml,
                 envase_codigo, factor_g_por_unidad, sku_shopify, es_default,
+                ventas_mes_referencia,
                 activo, actualizado_en)
-               VALUES (?,?,?,?,?,?,?,?,1,datetime('now','-5 hours'))
+               VALUES (?,?,?,?,?,?,?,?,?,1,datetime('now','-5 hours'))
                ON CONFLICT(producto_nombre, presentacion_codigo) DO UPDATE SET
                  etiqueta=excluded.etiqueta,
                  volumen_ml=excluded.volumen_ml,
@@ -6917,9 +6926,11 @@ def admin_producto_presentaciones_upsert():
                  factor_g_por_unidad=excluded.factor_g_por_unidad,
                  sku_shopify=excluded.sku_shopify,
                  es_default=excluded.es_default,
+                 ventas_mes_referencia=excluded.ventas_mes_referencia,
                  activo=1,
                  actualizado_en=datetime('now','-5 hours')""",
-            (prod, pcod, etiq, vol, env, factor, sku_shopify, es_default)
+            (prod, pcod, etiq, vol, env, factor, sku_shopify, es_default,
+             ventas_mes_ref)
         )
         try:
             audit_log(c, usuario=u, accion='UPSERT_PRODUCTO_PRESENTACION',
@@ -7030,8 +7041,11 @@ def admin_mees_diagnostico_page():
       Si el producto se vende en <b>varios volúmenes</b> (30ml, 15ml, 10ml), agregá una fila por cada uno con su envase específico.<br>
       <span style="color:#67e8f9;">Ejemplo:</span> SUERO X viene en 30ml (envase A) y 15ml (envase B) → 2 filas. El cálculo MEE multiplica por unidades = cantidad_kg × 1000 / volumen_ml de cada presentación, usando ratio histórico de ventas Shopify (próxima fase).
     </div>
-    <div style="display:grid;grid-template-columns:80px 110px 80px 1fr 32px;gap:8px;margin-bottom:6px;font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.4px;font-weight:700;">
-      <div>Código</div><div>Etiqueta</div><div>Volumen ml</div><div>Envase MEE</div><div></div>
+    <div style="display:grid;grid-template-columns:70px 100px 70px 1fr 90px 32px;gap:6px;margin-bottom:6px;font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.4px;font-weight:700;">
+      <div>Código</div><div>Etiqueta</div><div>Vol ml</div><div>Envase MEE</div><div style="color:#a5b4fc">Uds/mes</div><div></div>
+    </div>
+    <div style="font-size:10px;color:#a5b4fc;margin-bottom:6px;line-height:1.4;">
+      💡 <b>Uds/mes</b> (opcional · override): si Shopify no captura bien el ratio, fijá las ventas mensuales reales por presentación. <b>0 = no se vende ese tamaño</b>. Si dejás todas vacías, usa Shopify (180d).
     </div>
     <div id="mv-filas" style="margin-bottom:8px;"></div>
     <button onclick="addFilaVariante({})" style="background:#164e63;color:#67e8f9;border:1px solid #0e7490;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:700;margin-bottom:10px;">+ Otra variante</button>
@@ -7221,16 +7235,18 @@ function addFilaVariante(p){
   const cont = document.getElementById('mv-filas');
   const row = document.createElement('div');
   row.className = 'mv-fila';
-  row.style.cssText = 'display:grid;grid-template-columns:80px 110px 80px 1fr 32px;gap:8px;margin-bottom:6px;align-items:center;';
+  row.style.cssText = 'display:grid;grid-template-columns:70px 100px 70px 1fr 90px 32px;gap:6px;margin-bottom:6px;align-items:center;';
   const codVal = p && p.presentacion_codigo ? esc(p.presentacion_codigo) : '';
   const etiqVal = p && p.etiqueta ? esc(p.etiqueta) : '';
   const volVal = p && p.volumen_ml ? p.volumen_ml : '';
   const envSel = p && p.envase_codigo ? p.envase_codigo : '';
+  const ventasVal = p && p.ventas_mes_referencia ? p.ventas_mes_referencia : '';
   row.innerHTML =
     '<input class="mv-cod" type="text" placeholder="30ML" value="'+codVal+'" style="background:#0f172a;color:#e2e8f0;border:1px solid #334155;padding:5px;border-radius:4px;font-size:12px;text-transform:uppercase;">'
     + '<input class="mv-etiq" type="text" placeholder="30 ml" value="'+etiqVal+'" style="background:#0f172a;color:#e2e8f0;border:1px solid #334155;padding:5px;border-radius:4px;font-size:12px;">'
     + '<input class="mv-vol" type="number" step="0.1" placeholder="30" value="'+volVal+'" style="background:#0f172a;color:#e2e8f0;border:1px solid #334155;padding:5px;border-radius:4px;font-size:12px;">'
     + _meeDropdownPick('mv-env-'+_MV_ROW_SEQ, envSel)
+    + '<input class="mv-ventas" type="number" step="1" min="0" placeholder="uds/mes" value="'+ventasVal+'" title="Override manual de ventas mensuales · si lo llenás, ignora Shopify · 0 = no se vende ese tamaño" style="background:#1e1b4b;color:#c7d2fe;border:1px solid #4338ca;padding:5px;border-radius:4px;font-size:12px;">'
     + '<button onclick="this.parentNode.remove()" style="background:#7f1d1d;color:#fecaca;border:0;padding:5px 8px;border-radius:4px;cursor:pointer;" title="Quitar">✕</button>';
   cont.appendChild(row);
 }
@@ -7257,11 +7273,18 @@ async function guardarVariantesModal(){
     const etiq = r.querySelector('input.mv-etiq').value.trim();
     const vol = parseFloat(r.querySelector('input.mv-vol').value)||0;
     const env = r.querySelector('select.mv-env').value;
+    const ventasInp = r.querySelector('input.mv-ventas');
+    const ventasStr = ventasInp ? ventasInp.value.trim() : '';
+    const ventasMes = ventasStr === '' ? null : (parseFloat(ventasStr)||0);
     if(!cod) errs.push('Fila '+(idx+1)+': código (ej. 30ML) requerido');
     else if(!etiq) errs.push('Fila '+(idx+1)+': etiqueta (ej. "30 ml") requerida');
     else if(vol <= 0) errs.push('Fila '+(idx+1)+': volumen_ml debe ser > 0');
     else if(!env) errs.push('Fila '+(idx+1)+': elegí un envase');
-    else payloads.push({producto_nombre: producto, presentacion_codigo: cod, etiqueta: etiq, volumen_ml: vol, envase_codigo: env});
+    else {
+      const payload = {producto_nombre: producto, presentacion_codigo: cod, etiqueta: etiq, volumen_ml: vol, envase_codigo: env};
+      if (ventasMes !== null) payload.ventas_mes_referencia = ventasMes;
+      payloads.push(payload);
+    }
   });
   const alertBox = document.getElementById('mv-alert');
   if(errs.length){

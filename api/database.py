@@ -312,6 +312,16 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (199, "producto_presentaciones.ventas_mes_referencia · override manual ratio Shopify · Sebastián 27-may-2026 PM", [
+        # Sebastián 27-may-2026 PM · "AZ lo vendemos de 30 y 15, de 15 200
+        # unidades al mes". Cuando Shopify sync no captura bien el ratio
+        # (SKU mismatch o cadencia >180d), el user puede fijar el ratio real
+        # poniendo uds/mes referencia por presentación. Si AL MENOS una
+        # presentación del producto tiene este campo > 0, el cálculo usa
+        # ESTOS números (treating 0 como "no se vende") en vez de Shopify.
+        "ALTER TABLE producto_presentaciones ADD COLUMN ventas_mes_referencia REAL DEFAULT 0",
+    ]),
+
     (198, "cron_alerts_sent · anti-spam notificaciones cron · Sebastián 27-may-2026 PM", [
         # Sebastián 27-may-2026 PM · audit round 3 · OCs atrasadas y otros
         # crons notificaban DIARIO mientras la alerta seguía activa → spam.
