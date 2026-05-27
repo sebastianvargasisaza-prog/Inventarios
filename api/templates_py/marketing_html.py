@@ -2767,16 +2767,38 @@ function bulkActualizarBarra(){
 async function bulkSolicitarPagosInf(){
   const ids = [...window._BULK_INF_SEL];
   if(!ids.length){ alert('Sin influencers seleccionados'); return; }
-  if(!confirm(`¿Solicitar pago para ${ids.length} influencer(s)? · Usará la tarifa configurada de cada uno · podés revisar/editar después en /compras`)) return;
+  // Pre-calcular total $$ para que Jefferson sepa qué está autorizando
+  let totalPrev = 0, sinTarifa = 0;
+  for(const id of ids){
+    const inf = (INFLUENCERS_LIST||[]).find(x => x.id===id);
+    if(!inf) continue;
+    const t = parseFloat(inf.tarifa)||0;
+    if(t > 0) totalPrev += t; else sinTarifa++;
+  }
+  const msgConf = `¿Solicitar pago para ${ids.length} influencer(s)?\n\n`
+    + `💰 Total estimado: $${totalPrev.toLocaleString('es-CO')} COP\n`
+    + (sinTarifa > 0 ? `⚠ ${sinTarifa} sin tarifa configurada (se omitirán)\n` : '')
+    + `\nUsará la tarifa de cada uno · podés revisar/editar después en /compras`;
+  if(!confirm(msgConf)) return;
   // Cargar tokens CSRF
   if(!window._csrfTok){
     try { const tr = await fetch('/api/csrf-token',{credentials:'same-origin'}); if(tr.ok){const td=await tr.json(); window._csrfTok=td.csrf_token||'';} } catch(_){}
   }
+  // Progress UI · sobreescribe la barra bulk con texto live
+  const bar = document.getElementById('inf-bulk-bar');
+  const barOrig = bar ? bar.innerHTML : '';
   let ok = 0, errs = [];
   // En serie para no spamear backend ni explotar CSRF
-  for(const id of ids){
+  for(let i = 0; i < ids.length; i++){
+    const id = ids[i];
+    const inf = (INFLUENCERS_LIST||[]).find(x => x.id===id);
+    const nombre = inf ? (inf.nombre || '#'+id) : '#'+id;
+    if(bar){
+      bar.innerHTML = `<div style="flex:1">⏳ Procesando ${i+1}/${ids.length} · <b>${nombre}</b></div>`
+        + `<div style="background:rgba(255,255,255,.2);border-radius:10px;width:100%;max-width:200px;height:8px;overflow:hidden">`
+        + `<div style="background:#34d399;height:100%;width:${Math.round((i/ids.length)*100)}%;transition:width .2s"></div></div>`;
+    }
     try {
-      const inf = (INFLUENCERS_LIST||[]).find(x => x.id===id);
       if(!inf){ errs.push(`#${id}: no encontrado`); continue; }
       const tarifa = parseFloat(inf.tarifa)||0;
       if(tarifa <= 0){ errs.push(`${inf.nombre}: sin tarifa configurada · editá perfil primero`); continue; }
@@ -2791,8 +2813,10 @@ async function bulkSolicitarPagosInf(){
       else errs.push(`${inf.nombre}: ${d.error||r.status}`);
     } catch(e){ errs.push(`#${id}: red ${e.message}`); }
   }
+  // Restaurar bar antes del alert
+  if(bar) bar.innerHTML = barOrig;
   // Mostrar resumen prominent
-  let msg = `✅ ${ok} solicitudes creadas`;
+  let msg = `✅ ${ok} solicitudes creadas · $${totalPrev.toLocaleString('es-CO')} COP estimado`;
   if(errs.length){ msg += `\n\n⚠ ${errs.length} fallaron:\n` + errs.slice(0,5).join('\n'); }
   alert(msg);
   bulkLimpiarSeleccionInf();
