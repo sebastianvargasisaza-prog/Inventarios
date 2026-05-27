@@ -6754,6 +6754,31 @@ def admin_mees_diagnostico_page():
   </div>
 </div>
 <div id="resultado"></div>
+
+<!-- Modal multi-envase para productos con tonos -->
+<div id="modal-mees" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:9999;align-items:center;justify-content:center;">
+  <div style="background:#1e293b;border:1px solid #334155;border-radius:12px;padding:20px;max-width:680px;width:92%;max-height:88vh;overflow-y:auto;">
+    <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #334155;padding-bottom:10px;margin-bottom:14px;">
+      <h2 style="font-size:16px;color:#a78bfa;margin:0;">📦 Asignar envases · <span id="mm-producto" style="color:#e2e8f0;"></span></h2>
+      <button onclick="cerrarModalEnvases()" style="background:transparent;border:0;color:#94a3b8;font-size:22px;cursor:pointer;">✕</button>
+    </div>
+    <div style="color:#94a3b8;font-size:12px;line-height:1.5;margin-bottom:10px;">
+      Si el producto tiene <b>tonos</b> (LIP SERUM, BB, etc) agregá un envase por tono · cantidad/u = % del bulk que usa ese envase.<br>
+      <span style="color:#a78bfa;">Ejemplos:</span> 5 tonos equitativos → 0.20 c/u (total = 1.00) · 3 tonos 40/30/30 → 0.40 + 0.30 + 0.30. Si son envase + tapa + etiqueta, total puede sumar más de 1.00 (son aditivos).
+    </div>
+    <div id="mm-filas" style="margin-bottom:8px;"></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+      <button onclick="addFilaMEE()" style="background:#1e1b4b;color:#a5b4fc;border:1px solid #4338ca;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:700;">+ Otro envase</button>
+      <div id="mm-total" style="font-size:12px;color:#86efac;font-weight:700;">Total cantidad/u: 0.00</div>
+    </div>
+    <div id="mm-alert" style="display:none;padding:10px;border-radius:6px;font-size:12px;margin-bottom:10px;"></div>
+    <div style="display:flex;justify-content:flex-end;gap:10px;border-top:1px solid #334155;padding-top:12px;">
+      <button onclick="cerrarModalEnvases()" style="background:#334155;color:#cbd5e1;border:0;padding:8px 16px;border-radius:6px;cursor:pointer;">Cancelar</button>
+      <button id="mm-guardar" onclick="guardarMEEsModal()">💾 Guardar todos</button>
+    </div>
+  </div>
+</div>
+
 <script>
 function esc(s){return (s==null?'':String(s)).replace(/[<>&"']/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'}[c]));}
 let MEES_LIST = [];
@@ -6785,6 +6810,97 @@ function meeDropdown(id){
   if(cat) opts += '</optgroup>';
   return '<select id="'+id+'" class="mee-sel" style="background:#0f172a;color:#e2e8f0;border:1px solid #334155;padding:5px;border-radius:4px;min-width:240px;font-size:12px;">'+opts+'</select>';
 }
+// ─── Modal multi-envase (productos con tonos) ───────────────────────────
+function abrirModalEnvases(producto){
+  const m = document.getElementById('modal-mees');
+  if(!m){ alert('Modal no inicializado · recargá Ctrl+Shift+R'); return; }
+  document.getElementById('mm-producto').textContent = producto;
+  document.getElementById('mm-producto').dataset.producto = producto;
+  document.getElementById('mm-filas').innerHTML = '';
+  document.getElementById('mm-alert').style.display = 'none';
+  addFilaMEE();  // empieza con 1 fila por default
+  m.style.display = 'flex';
+}
+function cerrarModalEnvases(){ document.getElementById('modal-mees').style.display='none'; }
+let _MM_ROW_SEQ = 0;
+function addFilaMEE(){
+  _MM_ROW_SEQ++;
+  const cont = document.getElementById('mm-filas');
+  const row = document.createElement('div');
+  row.className = 'mm-fila';
+  row.style.cssText = 'display:grid;grid-template-columns:1fr 130px 90px 32px;gap:8px;margin-bottom:6px;align-items:center;';
+  row.innerHTML =
+    meeDropdown('mee-'+_MM_ROW_SEQ)
+    + '<select class="tipo-sel" style="background:#0f172a;color:#e2e8f0;border:1px solid #334155;padding:5px;border-radius:4px;font-size:12px;">'
+    + '<option value="envase">envase</option><option value="tapa">tapa</option>'
+    + '<option value="etiqueta">etiqueta</option><option value="caja">caja</option>'
+    + '<option value="serigrafia">serigrafia</option><option value="tampografia">tampografia</option>'
+    + '<option value="plegadiza">plegadiza</option><option value="otro">otro</option></select>'
+    + '<input class="cant" type="number" step="0.01" value="1" placeholder="cant/u" style="width:90px;background:#0f172a;color:#e2e8f0;border:1px solid #334155;padding:5px;border-radius:4px;">'
+    + '<button onclick="this.parentNode.remove();actualizarSumaMEE()" style="background:#7f1d1d;color:#fecaca;border:0;padding:5px 8px;border-radius:4px;cursor:pointer;" title="Quitar">✕</button>';
+  cont.appendChild(row);
+  // recalcular suma cuando cambie la cantidad
+  row.querySelector('input.cant').addEventListener('input', actualizarSumaMEE);
+  actualizarSumaMEE();
+}
+function actualizarSumaMEE(){
+  const filas = document.querySelectorAll('#mm-filas .mm-fila');
+  let total = 0;
+  filas.forEach(r => { total += parseFloat(r.querySelector('input.cant').value) || 0; });
+  const out = document.getElementById('mm-total');
+  out.textContent = 'Total cantidad/u: ' + total.toFixed(2);
+  // Si todos los envases son del MISMO tipo (típicamente envase con tonos),
+  // total debería ≈ 1.0 (cubrir 100% del bulk). Si tipos mixtos, no aplica.
+  out.style.color = (total >= 0.95 && total <= 1.05) ? '#86efac' : (total > 1.05 ? '#fde047' : '#fca5a5');
+}
+async function guardarMEEsModal(){
+  const producto = document.getElementById('mm-producto').dataset.producto;
+  const filas = document.querySelectorAll('#mm-filas .mm-fila');
+  if(!filas.length){ alert('Agregá al menos un envase'); return; }
+  const errs = [];
+  const payloads = [];
+  filas.forEach((r, idx) => {
+    const mee = r.querySelector('select.mee-sel').value;
+    const tipo = r.querySelector('select.tipo-sel').value;
+    const cant = parseFloat(r.querySelector('input.cant').value)||0;
+    if(!mee) errs.push('Fila '+(idx+1)+': elegí un MEE');
+    else if(cant <= 0) errs.push('Fila '+(idx+1)+': cantidad debe ser > 0');
+    else payloads.push({sku_codigo: producto, mee_codigo: mee, componente_tipo: tipo, cantidad_por_unidad: cant});
+  });
+  const alertBox = document.getElementById('mm-alert');
+  if(errs.length){
+    alertBox.style.display='block';
+    alertBox.style.background='#7f1d1d';alertBox.style.color='#fecaca';
+    alertBox.innerHTML = errs.map(e=>'<div>'+esc(e)+'</div>').join('');
+    return;
+  }
+  const csrf = await _ensureCsrf();
+  const btn = document.getElementById('mm-guardar');
+  btn.disabled = true; btn.textContent = '⏳ Guardando...';
+  let okCount = 0, failMsgs = [];
+  for(const p of payloads){
+    try{
+      const r = await fetch('/api/admin/mees-mapping-upsert', {
+        method:'POST', credentials:'same-origin',
+        headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},
+        body: JSON.stringify(p)
+      });
+      const d = await r.json();
+      if(r.ok && d.ok) okCount++;
+      else failMsgs.push((d.error||'HTTP '+r.status)+' · MEE '+p.mee_codigo);
+    } catch(e){ failMsgs.push('Red: '+e.message+' · MEE '+p.mee_codigo); }
+  }
+  btn.disabled = false; btn.textContent = '💾 Guardar todos';
+  if(okCount === payloads.length){
+    cerrarModalEnvases();
+    setTimeout(cargar, 800);
+  } else {
+    alertBox.style.display='block';
+    alertBox.style.background='#78350f';alertBox.style.color='#fde047';
+    alertBox.innerHTML = '✓ '+okCount+' guardados · ✗ '+failMsgs.length+' errores:<br>' + failMsgs.map(m=>'<div>'+esc(m)+'</div>').join('');
+  }
+}
+
 async function asignarMEE(btn){
   const producto = btn.dataset.producto || '';
   const row = btn.closest('tr');
@@ -6869,23 +6985,19 @@ async function cargar(){
   html += '<div class="kpi"><div class="kpi-val yel">'+d.productos_sin_volumen+'</div><div class="kpi-lab">sin volumen_ml</div></div>';
   html += '<div class="kpi"><div class="kpi-val red">'+d.sku_mee_config_huerfanos+'</div><div class="kpi-lab">entries huérfanas</div></div>';
   html += '</div></div>';
-  // Productos sin mapping · UI inline para asignar MEE
+  // Productos sin mapping · botón abre modal multi-envase
+  // Sebastián 27-may PM · productos con TONOS (LIP SERUM, BB, etc) usan N
+  // envases · uno por tono · cada uno con su % del bulk. Form inline simple
+  // solo permitía 1 envase · ahora modal con lista expandible.
   if((d.detalle_sin_mapping||[]).length){
     html += '<div class="card"><h2>🚨 Productos del calendario SIN mapping en sku_mee_config</h2>';
-    html += '<div style="color:#94a3b8;font-size:12px;margin-bottom:10px;">Estos productos NO contribuyen al cálculo de faltantes MEE · elegí el envase principal de cada uno y dale Asignar. (Si un producto usa varios envases, podés repetir el form después de guardar el primero.)</div>';
-    html += '<table><thead><tr><th>Producto</th><th>Pend.</th><th>Asignar MEE</th><th>Tipo</th><th>Cant/u</th><th></th></tr></thead><tbody>';
+    html += '<div style="color:#94a3b8;font-size:12px;margin-bottom:10px;">Click <b>Asignar envases</b> · podés mapear varios envases si el producto tiene tonos. Para tonos, cantidad/u = % del bulk que usa ese envase (ej. 5 tonos equitativos → 0.2 cada uno · 3 tonos 40/30/30 → 0.4 / 0.3 / 0.3).</div>';
+    html += '<table><thead><tr><th>Producto</th><th>Pend.</th><th></th></tr></thead><tbody>';
     for(const p of d.detalle_sin_mapping){
       const prodEsc = esc(p.producto||'');
-      html += '<tr><td style="max-width:280px;"><b>'+prodEsc+'</b></td>';
+      html += '<tr><td style="max-width:340px;"><b>'+prodEsc+'</b></td>';
       html += '<td>'+(p.pendientes||0)+'</td>';
-      html += '<td>'+meeDropdown('mee-'+Math.random().toString(36).slice(2))+'</td>';
-      html += '<td><select class="tipo-sel" style="background:#0f172a;color:#e2e8f0;border:1px solid #334155;padding:5px;border-radius:4px;font-size:12px;">'
-        +'<option value="envase">envase</option><option value="tapa">tapa</option>'
-        +'<option value="etiqueta">etiqueta</option><option value="caja">caja</option>'
-        +'<option value="serigrafia">serigrafia</option><option value="tampografia">tampografia</option>'
-        +'<option value="plegadiza">plegadiza</option><option value="otro">otro</option></select></td>';
-      html += '<td><input class="cant" type="number" step="0.01" value="1" style="width:70px;background:#0f172a;color:#e2e8f0;border:1px solid #334155;padding:5px;border-radius:4px;"></td>';
-      html += '<td><button data-producto="'+esc(p.producto||'')+'" onclick="asignarMEE(this)">Asignar</button></td>';
+      html += '<td><button data-producto="'+esc(p.producto||'')+'" onclick="abrirModalEnvases(this.dataset.producto)">📦 Asignar envases</button></td>';
       html += '</tr>';
     }
     html += '</tbody></table></div>';
