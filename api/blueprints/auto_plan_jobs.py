@@ -3841,6 +3841,15 @@ def job_mailbox_factura_proveedor(app):
                 imap.logout()
             except Exception:
                 pass
+            # Reset contador de fallos consecutivos · cron volvió a OK.
+            try:
+                c.execute(
+                    "DELETE FROM cron_alerts_sent WHERE tipo_alerta=? AND registro_id=?",
+                    ('mailbox_fail', 'imap_error')
+                )
+                conn.commit()
+            except Exception:
+                pass
             return True, {
                 'mails_procesados': len(ids),
                 'adjuntos_procesados': procesadas,
@@ -3849,6 +3858,41 @@ def job_mailbox_factura_proveedor(app):
             }, 0
         except Exception as e:
             log.warning('[mailbox-factura] fallo: %s', e)
+            # SEC-FIX 27-may-2026 PM · audit round 5 · si mailbox falla N veces
+            # consecutivas, alerta a admin · sin esto las facturas no se
+            # procesan durante días y nadie nota (P0 observabilidad).
+            try:
+                from datetime import datetime as _dtMb
+                hoy_iso = _dtMb.utcnow().date().isoformat()
+                row = c.execute(
+                    "SELECT count_notifs, ultima_notif FROM cron_alerts_sent "
+                    "WHERE tipo_alerta=? AND registro_id=?",
+                    ('mailbox_fail', 'imap_error')
+                ).fetchone()
+                count = (row[0] if row else 0) + 1
+                c.execute(
+                    """INSERT INTO cron_alerts_sent (tipo_alerta, registro_id, ultima_notif, count_notifs)
+                       VALUES (?, ?, ?, ?)
+                       ON CONFLICT(tipo_alerta, registro_id) DO UPDATE SET
+                         ultima_notif=excluded.ultima_notif,
+                         count_notifs=count_notifs+1""",
+                    ('mailbox_fail', 'imap_error', hoy_iso, count)
+                )
+                conn.commit()
+                # Alerta al 3er fallo consecutivo (evita spam por 1 intermitencia)
+                if count == 3:
+                    try:
+                        from blueprints.notif import push_notif
+                        push_notif(destinatario='sebastian',
+                                   tipo='cron_fail',
+                                   titulo='🚨 Mailbox IMAP fallando 3x consecutivas',
+                                   body=f'Facturas proveedor NO se están procesando · revisar IMAP_HOST/IMAP_PASSWORD. Último error: {str(e)[:140]}',
+                                   link='/admin/migraciones-pg',
+                                   remitente='sistema')
+                    except Exception:
+                        pass
+            except Exception:
+                pass
             return False, {'error': str(e)[:200]}, 0
 
 

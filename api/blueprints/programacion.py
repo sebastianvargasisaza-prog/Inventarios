@@ -4964,9 +4964,12 @@ def prog_composicion_mee(evento_id):
             'fuente_ratio': 'unica', 'sin_variantes': True,
         })
 
-    # Ratio Shopify 90d
+    # Ratio Shopify · ventana ampliada a 180d (6 meses) Sebastián 27-may-2026 PM
+    # · "si lanzas la busqueda de ventas en 6 meses sabras que se vendio no
+    # puede se 50 50". Capturar ciclo de venta más realista para SKUs B2B
+    # cosmético con cadencia mensual.
     from datetime import datetime as _dtCC, timedelta as _tdCC
-    cutoff = (_dtCC.utcnow() - _tdCC(hours=5) - _tdCC(days=90)).date().isoformat()
+    cutoff = (_dtCC.utcnow() - _tdCC(hours=5) - _tdCC(days=180)).date().isoformat()
     ventas_sku = {}
     try:
         import json as _jsonCC
@@ -7883,13 +7886,15 @@ def producciones_faltantes():
     except sqlite3.OperationalError:
         pass
 
-    # Ratio histórico Shopify por presentación (últimos 90d) ·
-    # ventas_por_sku global que después mapeamos a presentación específica.
+    # Ratio histórico Shopify por presentación (últimos 180d · 6m) Sebastián
+    # 27-may-2026 PM · "si lanzas la busqueda de ventas en 6 meses sabras que
+    # se vendio no puede se 50 50". Ampliado de 90d para capturar SKUs B2B
+    # con cadencia mensual o trimestral.
     # Si Shopify sync no está activo o no hay data → ratio uniforme (1/N).
     ventas_por_sku_90d = {}
     try:
         from datetime import datetime as _dt90, timedelta as _td90
-        _cutoff_90d = (_dt90.utcnow() - _td90(hours=5) - _td90(days=90)).date().isoformat()
+        _cutoff_90d = (_dt90.utcnow() - _td90(hours=5) - _td90(days=180)).date().isoformat()
         import json as _json_sk
         rows_sho = c.execute(
             """SELECT sku_items FROM animus_shopify_orders
@@ -14592,6 +14597,19 @@ def auto_asignar_hoy_bulk():
 
     conn = get_db()
     c = conn.cursor()
+    # SEC-FIX 27-may-2026 PM · audit round 5 · race condition · 2 admins + cron
+    # podrían correr esto en paralelo asignando el mismo operario a 2 producciones.
+    # Lock distribuido vía cron_locks · TTL corto porque la operación dura segundos.
+    try:
+        from blueprints.auto_plan_jobs import _adquirir_lock_cron, _liberar_lock_cron
+        if not _adquirir_lock_cron(c, 'auto_asignar_hoy_bulk', ttl_horas=1):
+            return jsonify({
+                'error': 'Otro proceso (cron o admin) ya está asignando · reintentá en 30s',
+                'codigo': 'LOCK_OCUPADO',
+            }), 409
+        _lock_owned = True
+    except Exception:
+        _lock_owned = False  # si lock helper no disponible, continúa sin lock
     rows = c.execute("""
         SELECT id, producto FROM produccion_programada
         WHERE date(fecha_programada) = date('now', '-5 hours')
@@ -14637,6 +14655,13 @@ def auto_asignar_hoy_bulk():
     except Exception as _e:
         logging.getLogger('programacion').warning(
             f'audit AUTO_ASIGNAR_HOY_BULK fallo: {_e}')
+    # Liberar lock distribuido · siempre · incluso en error path
+    if _lock_owned:
+        try:
+            _liberar_lock_cron(c, 'auto_asignar_hoy_bulk')
+            conn.commit()
+        except Exception:
+            pass
     return jsonify({'ok': True, 'asignadas': asignadas, 'total': len(rows),
                     'fallidas': fallidas, 'detalles': detalles[:30]})
 

@@ -6701,6 +6701,131 @@ def admin_producto_volumen_upsert():
     return jsonify({'ok': True, 'producto_nombre': prod, 'volumen_ml': vol})
 
 
+@bp.route("/api/admin/presentaciones-sku-diagnostico", methods=["GET"])
+def admin_presentaciones_sku_diagnostico():
+    """Diagnóstico para producto: muestra qué sku_shopify están configurados en
+    producto_presentaciones vs qué SKUs aparecen REALMENTE en
+    animus_shopify_orders.sku_items últimos 180d.
+
+    Sebastián 27-may-2026 PM · "es mentira que sea 50 50, hay históricos".
+    Si la presentación dice 50/50 con etiqueta "uniforme (sin ventas históricas)"
+    pero el producto sí se vende, probablemente el sku_shopify configurado no
+    matchea con los SKUs reales de Shopify. Este endpoint lo expone.
+
+    Query: ?producto=NOMBRE_PRODUCTO
+    Response:
+    {
+      producto, dias_ventana,
+      presentaciones: [{codigo, etiqueta, sku_shopify, ventas_uds_180d}],
+      skus_shopify_observados_en_orders: [{sku, ventas_uds}],  // top 50 con coincidencia parcial al nombre
+      sku_no_matcheados: [{sku_shopify_configurado, motivo}],
+      total_ventas_uds_producto: N (suma de presentaciones matched)
+    }
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    producto = (request.args.get('producto') or '').strip()
+    if not producto:
+        return jsonify({'error': 'producto requerido (query param)'}), 400
+    conn = db_connect()
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
+    from datetime import datetime as _dtDX, timedelta as _tdDX
+    cutoff = (_dtDX.utcnow() - _tdDX(hours=5) - _tdDX(days=180)).date().isoformat()
+    # Presentaciones del producto
+    pres = c.execute(
+        """SELECT presentacion_codigo, COALESCE(etiqueta,''),
+                  COALESCE(volumen_ml,0), COALESCE(envase_codigo,''),
+                  COALESCE(sku_shopify,'')
+           FROM producto_presentaciones
+           WHERE LOWER(TRIM(producto_nombre))=LOWER(TRIM(?))
+             AND COALESCE(activo,1)=1
+           ORDER BY volumen_ml DESC""",
+        (producto,)
+    ).fetchall()
+    skus_configurados = {(p['sku_shopify'] or '').strip().upper(): p['presentacion_codigo']
+                          for p in pres if p['sku_shopify']}
+    # Acumular ventas SKU en últimos 180d
+    ventas_global = {}
+    try:
+        import json as _jsonDX
+        for (it,) in c.execute(
+            """SELECT sku_items FROM animus_shopify_orders
+               WHERE COALESCE(creado_en,'') >= ? AND sku_items IS NOT NULL AND sku_items != ''""",
+            (cutoff,)
+        ).fetchall():
+            try:
+                items = _jsonDX.loads(it) if it else []
+                if not isinstance(items, list): continue
+                for li in items:
+                    sk = (li.get('sku') or '').strip().upper()
+                    qty = int(li.get('qty') or 0)
+                    if sk and qty > 0:
+                        ventas_global[sk] = ventas_global.get(sk, 0) + qty
+            except Exception:
+                continue
+    except Exception as e:
+        conn.close()
+        return jsonify({'error': f'query shopify_orders: {e}'}), 500
+
+    # SKUs en orders con coincidencia parcial del nombre del producto (heurística)
+    palabras_clave = [w for w in producto.upper().split() if len(w) >= 3 and w not in {'DE','EL','LA','LOS','PARA','CON'}]
+    skus_relacionados = []
+    for sk, qty in sorted(ventas_global.items(), key=lambda x: -x[1])[:200]:
+        # Heurística: si el SKU contiene cualquier palabra clave del producto
+        coincide = any(w in sk for w in palabras_clave)
+        if coincide:
+            skus_relacionados.append({'sku': sk, 'ventas_uds_180d': qty,
+                                       'esta_configurado': sk in skus_configurados})
+    # Detectar sku_shopify configurados que NO existen en orders
+    sku_no_matcheados = []
+    for sk, codigo in skus_configurados.items():
+        if sk not in ventas_global:
+            sku_no_matcheados.append({
+                'sku_shopify_configurado': sk,
+                'presentacion_codigo': codigo,
+                'motivo': 'No aparece en ningún Shopify order los últimos 180d',
+            })
+    # Presentaciones con sus ventas
+    pres_out = []
+    total_matched = 0
+    for p in pres:
+        sk = (p['sku_shopify'] or '').strip().upper()
+        v = ventas_global.get(sk, 0)
+        total_matched += v
+        pres_out.append({
+            'codigo': p['presentacion_codigo'], 'etiqueta': p['etiqueta'],
+            'volumen_ml': p['volumen_ml'], 'envase_codigo': p['envase_codigo'],
+            'sku_shopify': p['sku_shopify'],
+            'ventas_uds_180d': v,
+            'ratio_actual_pct': round((v * 100.0 / total_matched), 1) if total_matched else 0,
+        })
+    conn.close()
+
+    diagnostico = ''
+    if not pres_out:
+        diagnostico = '⚠ Producto sin presentaciones configuradas en producto_presentaciones'
+    elif total_matched == 0:
+        if sku_no_matcheados:
+            diagnostico = f"🚨 {len(sku_no_matcheados)} sku_shopify configurado(s) NO aparecen en ventas Shopify · revisar mapping"
+        else:
+            diagnostico = "⚠ Sin sku_shopify configurados en las presentaciones · ratio uniforme aplicado"
+    else:
+        diagnostico = f"✓ Total ventas detectadas: {total_matched} uds · usando ratio real"
+
+    return jsonify({
+        'producto': producto,
+        'dias_ventana': 180,
+        'presentaciones': pres_out,
+        'total_ventas_uds_producto': total_matched,
+        'skus_no_matcheados': sku_no_matcheados,
+        'skus_shopify_observados_relacionados': skus_relacionados,
+        'palabras_clave_heuristica': palabras_clave,
+        'diagnostico': diagnostico,
+    })
+
+
 @bp.route("/api/admin/producto-presentaciones", methods=["GET"])
 def admin_producto_presentaciones_list():
     """Lista presentaciones (30ml/15ml/etc) configuradas para un producto.

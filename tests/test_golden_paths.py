@@ -11017,7 +11017,14 @@ def test_golden_plan_fijo_sobrevive_regenerar(app, db_clean):
 def test_golden_plan_programar_produccion_origen_eos(app, db_clean):
     """POST agenda lote en produccion_programada con origen='eos_plan' ·
     sin tocar Calendar · queda visible en Plan en curso · audit_log captura."""
+    # FIX 27-may-2026 PM · flake en suite paralela · test_golden_plan_necesidades
+    # crea pedido B2B con producción auto en SUERO HIDRATANTE AH 1.5%/2026-06-01
+    # (observaciones='Pedido B2B...') · DELETE original solo limpiaba TEST_PLAN_%
+    # · al intentar 90kg en fecha ocupada el endpoint retornaba 422 lote_grande_conflicto.
     _exec("DELETE FROM produccion_programada WHERE observaciones LIKE 'TEST_PLAN_%'")
+    _exec("""DELETE FROM produccion_programada
+             WHERE UPPER(TRIM(producto)) = 'SUERO HIDRATANTE AH 1.5%'
+               AND fecha_programada = '2026-06-01'""")
 
     cs = _login(app, 'sebastian')
 
