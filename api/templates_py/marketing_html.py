@@ -510,6 +510,50 @@ window.addEventListener('unhandledrejection', function(ev) {
   <!-- KPIs unificados (catálogo + pagos) -->
   <div id="inf-kpi-bar" style="display:none;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px;"></div>
 
+  <!-- 🎯 Mi Semana · KPIs community manager (Jefferson) -->
+  <!-- Sebastián 27-may-2026 PM · "que tenga KPIs" + audit reportó Top engagement + sin actividad + ROI -->
+  <div id="inf-mi-semana" style="display:none;margin-bottom:16px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:8px;">
+      <div style="font-size:13px;font-weight:800;color:#a78bfa;">🎯 Mi semana · vista community manager</div>
+      <div style="font-size:11px;color:#64748b;">Top performance · alertas · ROI</div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;">
+      <!-- Top engagement 7d -->
+      <div style="background:#0f172a;border:1px solid #334155;border-left:3px solid #34d399;border-radius:10px;padding:12px 14px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+          <div style="font-size:11px;color:#34d399;text-transform:uppercase;letter-spacing:.4px;font-weight:800;">🚀 Top engagement 7d</div>
+          <div id="mis-top-count" style="font-size:10px;color:#64748b;">—</div>
+        </div>
+        <div id="mis-top-list" style="font-size:12px;color:#cbd5e1;line-height:1.6;">Cargando...</div>
+      </div>
+      <!-- Sin actividad IG > 45d -->
+      <div style="background:#0f172a;border:1px solid #334155;border-left:3px solid #f59e0b;border-radius:10px;padding:12px 14px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+          <div style="font-size:11px;color:#f59e0b;text-transform:uppercase;letter-spacing:.4px;font-weight:800;">⚠ Dormidos &gt;45d</div>
+          <div id="mis-dormi-count" style="font-size:10px;color:#64748b;">—</div>
+        </div>
+        <div id="mis-dormi-list" style="font-size:12px;color:#cbd5e1;line-height:1.6;">Cargando...</div>
+      </div>
+      <!-- ROI implícito -->
+      <div style="background:#0f172a;border:1px solid #334155;border-left:3px solid #a78bfa;border-radius:10px;padding:12px 14px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+          <div style="font-size:11px;color:#a78bfa;text-transform:uppercase;letter-spacing:.4px;font-weight:800;">💰 Top ROI</div>
+          <div id="mis-roi-count" style="font-size:10px;color:#64748b;">—</div>
+        </div>
+        <div id="mis-roi-list" style="font-size:12px;color:#cbd5e1;line-height:1.6;">Cargando...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bulk pagos · barra de acciones flotante (aparece si hay selección) -->
+  <div id="inf-bulk-bar" style="display:none;background:linear-gradient(90deg,#1e3a8a,#7c3aed);color:#fff;padding:10px 16px;border-radius:10px;margin-bottom:10px;font-size:13px;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+    <div><b id="inf-bulk-count">0</b> influencer(s) seleccionado(s)</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <button onclick="bulkSolicitarPagosInf()" style="background:#15803d;color:#fff;border:0;padding:8px 14px;border-radius:6px;cursor:pointer;font-weight:700;font-size:13px;">💸 Solicitar pago de seleccionados</button>
+      <button onclick="bulkLimpiarSeleccionInf()" style="background:rgba(255,255,255,.1);color:#fff;border:1px solid rgba(255,255,255,.3);padding:8px 14px;border-radius:6px;cursor:pointer;font-size:13px;">✕ Limpiar</button>
+    </div>
+  </div>
+
   <!-- Banner flujo urgencia pagos (promesa 30d desde fecha_contenido) -->
   <div id="inf-urgencias-banner" style="display:none;border-radius:10px;margin-bottom:10px;padding:12px 16px;font-size:13px;line-height:1.5;"></div>
 
@@ -561,11 +605,37 @@ window.addEventListener('unhandledrejection', function(ev) {
   </div>
 
   <!-- Tabla principal: catálogo influencers (rows expandibles) -->
+  <!-- Sebastián 27-may PM · clases mob-* ocultan cols no críticas en móvil -->
+  <!-- En móvil quedan: ☐ Nombre · Estado Pago · Pagos · Acciones -->
   <div class="card">
-    <div class="tbl-wrap">
+    <style>
+      @media (max-width: 768px) {
+        .inf-tbl .mob-hide { display: none !important; }
+        .inf-tbl table { font-size: 12px; }
+        .inf-tbl th, .inf-tbl td { padding: 6px 4px !important; }
+        .inf-tbl input[type=checkbox] { width: 18px; height: 18px; }
+      }
+    </style>
+    <div class="tbl-wrap inf-tbl">
       <table>
-        <thead><tr><th style="width:24px"></th><th>#</th><th>Nombre</th><th>Red</th><th>@Usuario</th><th>Seguidores</th><th>ER%</th><th>Nicho</th><th>Tarifa/post</th><th>Email</th><th>Banco / Cuenta</th><th>Estado Pago</th><th>Pagos</th><th>Acciones</th></tr></thead>
-        <tbody id="inf-body"><tr class="empty-row"><td colspan="14"><span class="spin"></span></td></tr></tbody>
+        <thead><tr>
+          <th style="width:32px;text-align:center;"><input type="checkbox" id="inf-sel-all" onchange="bulkToggleAllInf(this.checked)" title="Seleccionar todos" style="cursor:pointer;width:16px;height:16px;"></th>
+          <th style="width:24px"></th>
+          <th class="mob-hide">#</th>
+          <th>Nombre</th>
+          <th class="mob-hide">Red</th>
+          <th class="mob-hide">@Usuario</th>
+          <th class="mob-hide">Seguidores</th>
+          <th class="mob-hide">ER%</th>
+          <th class="mob-hide">Nicho</th>
+          <th class="mob-hide">Tarifa/post</th>
+          <th class="mob-hide">Email</th>
+          <th class="mob-hide">Banco / Cuenta</th>
+          <th>Estado Pago</th>
+          <th>Pagos</th>
+          <th>Acciones</th>
+        </tr></thead>
+        <tbody id="inf-body"><tr class="empty-row"><td colspan="15"><span class="spin"></span></td></tr></tbody>
       </table>
     </div>
   </div>
@@ -2606,6 +2676,8 @@ async function loadInfluencers() {
     loadUrgenciasInfluencers(),  // popula INF_URGENCIA_MAP antes del render
   ]);
   renderInfluencersTable();
+  bulkLimpiarSeleccionInf();  // limpiar selección al recargar
+  cargarMiSemanaKPIs();        // 🎯 Mi semana KPIs community manager
 }
 
 // Mapa influencer_id → urgencia más severa de sus pagos pendientes
@@ -2658,12 +2730,155 @@ async function loadUrgenciasInfluencers() {
 }
 
 // Render de la tabla principal — separado para poder llamar al cambiar filtros
+// ═══════════════════════════════════════════════════════════════════
+// 🎯 BULK PAGOS + KPIs Community Manager · Sebastián 27-may-2026 PM
+// ═══════════════════════════════════════════════════════════════════
+window._BULK_INF_SEL = window._BULK_INF_SEL || new Set();
+function bulkToggleInf(id, checked){
+  if(checked) window._BULK_INF_SEL.add(id);
+  else window._BULK_INF_SEL.delete(id);
+  bulkActualizarBarra();
+}
+function bulkToggleAllInf(checked){
+  document.querySelectorAll('input.inf-sel').forEach(cb => {
+    cb.checked = checked;
+    const id = parseInt(cb.dataset.id || '0');
+    if(id){ if(checked) window._BULK_INF_SEL.add(id); else window._BULK_INF_SEL.delete(id); }
+  });
+  bulkActualizarBarra();
+}
+function bulkLimpiarSeleccionInf(){
+  window._BULK_INF_SEL.clear();
+  document.querySelectorAll('input.inf-sel').forEach(cb => { cb.checked = false; });
+  const selAll = document.getElementById('inf-sel-all'); if(selAll) selAll.checked = false;
+  bulkActualizarBarra();
+}
+function bulkActualizarBarra(){
+  const bar = document.getElementById('inf-bulk-bar');
+  const count = window._BULK_INF_SEL.size;
+  if(!bar) return;
+  if(count > 0){
+    bar.style.display = 'flex';
+    document.getElementById('inf-bulk-count').textContent = count;
+  } else {
+    bar.style.display = 'none';
+  }
+}
+async function bulkSolicitarPagosInf(){
+  const ids = [...window._BULK_INF_SEL];
+  if(!ids.length){ alert('Sin influencers seleccionados'); return; }
+  if(!confirm(`¿Solicitar pago para ${ids.length} influencer(s)? · Usará la tarifa configurada de cada uno · podés revisar/editar después en /compras`)) return;
+  // Cargar tokens CSRF
+  if(!window._csrfTok){
+    try { const tr = await fetch('/api/csrf-token',{credentials:'same-origin'}); if(tr.ok){const td=await tr.json(); window._csrfTok=td.csrf_token||'';} } catch(_){}
+  }
+  let ok = 0, errs = [];
+  // En serie para no spamear backend ni explotar CSRF
+  for(const id of ids){
+    try {
+      const inf = (INFLUENCERS_LIST||[]).find(x => x.id===id);
+      if(!inf){ errs.push(`#${id}: no encontrado`); continue; }
+      const tarifa = parseFloat(inf.tarifa)||0;
+      if(tarifa <= 0){ errs.push(`${inf.nombre}: sin tarifa configurada · editá perfil primero`); continue; }
+      const concepto = 'Pago periódico ' + new Date().toLocaleDateString('es-CO',{month:'short',year:'numeric'});
+      const r = await fetch(`/api/marketing/influencers/${id}/solicitar-pago`, {
+        method:'POST', credentials:'same-origin',
+        headers:{'Content-Type':'application/json','X-CSRF-Token': window._csrfTok || ''},
+        body: JSON.stringify({valor: tarifa, concepto: concepto})
+      });
+      const d = await r.json();
+      if(r.ok && d.ok) ok++;
+      else errs.push(`${inf.nombre}: ${d.error||r.status}`);
+    } catch(e){ errs.push(`#${id}: red ${e.message}`); }
+  }
+  // Mostrar resumen prominent
+  let msg = `✅ ${ok} solicitudes creadas`;
+  if(errs.length){ msg += `\n\n⚠ ${errs.length} fallaron:\n` + errs.slice(0,5).join('\n'); }
+  alert(msg);
+  bulkLimpiarSeleccionInf();
+  loadInfluencers();
+}
+
+// ─── KPIs Community Manager (Mi Semana) ─────────────────────────────
+async function cargarMiSemanaKPIs(){
+  const box = document.getElementById('inf-mi-semana');
+  if(!box) return;
+  const infs = INFLUENCERS_LIST || [];
+  if(!infs.length) { box.style.display='none'; return; }
+  box.style.display = 'block';
+
+  // 1) Top engagement 7d · usar engagement_rate como proxy si no hay data IG 7d real
+  // Ordena desc por ER% (todos activos con ER>0)
+  const topEng = infs
+    .filter(i => (i.estado||'Activo')==='Activo' && parseFloat(i.engagement_rate||0) > 0)
+    .sort((a,b) => parseFloat(b.engagement_rate||0) - parseFloat(a.engagement_rate||0))
+    .slice(0, 3);
+  const topEl = document.getElementById('mis-top-list');
+  const topCt = document.getElementById('mis-top-count');
+  if(topEng.length){
+    topEl.innerHTML = topEng.map((i, idx) => {
+      const er = parseFloat(i.engagement_rate||0).toFixed(2);
+      return `<div style="display:flex;justify-content:space-between;gap:6px;padding:3px 0;border-bottom:1px solid rgba(52,211,153,.15);">
+        <span><span style="color:#34d399;font-weight:700;">${idx+1}.</span> ${esc(i.nombre||'(s/n)')}</span>
+        <span style="color:#34d399;font-weight:800;">${er}%</span></div>`;
+    }).join('');
+    topCt.textContent = `${topEng.length} de ${infs.length}`;
+  } else {
+    topEl.innerHTML = '<span style="color:#64748b;">Sin engagement registrado · editá influencers para agregar ER%.</span>';
+    topCt.textContent = '0';
+  }
+
+  // 2) Sin actividad >45d · proxy: dias_desde_ultimo_pago > 45 (heurística)
+  // (en futuro: usar última publicación IG real cuando esté el sync)
+  const dormidos = infs
+    .filter(i => (i.estado||'Activo')==='Activo'
+                  && (i.dias_desde_ultimo_pago||0) > 45
+                  && !i.tiene_pendiente)
+    .sort((a,b) => (b.dias_desde_ultimo_pago||0) - (a.dias_desde_ultimo_pago||0))
+    .slice(0, 5);
+  const dormEl = document.getElementById('mis-dormi-list');
+  const dormCt = document.getElementById('mis-dormi-count');
+  if(dormidos.length){
+    dormEl.innerHTML = dormidos.map(i =>
+      `<div style="display:flex;justify-content:space-between;gap:6px;padding:3px 0;border-bottom:1px solid rgba(245,158,11,.15);">
+        <span>${esc(i.nombre||'(s/n)')}</span>
+        <span style="color:#f59e0b;font-weight:800;">${i.dias_desde_ultimo_pago||0}d</span></div>`
+    ).join('');
+    dormCt.textContent = `${dormidos.length} activos`;
+  } else {
+    dormEl.innerHTML = '<span style="color:#64748b;">✓ Sin influencers dormidos &gt;45d.</span>';
+    dormCt.textContent = '0';
+  }
+
+  // 3) Top ROI · revenue_atribuible vs total_pagado (data del backend)
+  const topRoi = infs
+    .filter(i => (i.roi_implicito_pct != null) && parseFloat(i.total_pagado||0) > 0)
+    .sort((a,b) => (b.roi_implicito_pct||-999) - (a.roi_implicito_pct||-999))
+    .slice(0, 3);
+  const roiEl = document.getElementById('mis-roi-list');
+  const roiCt = document.getElementById('mis-roi-count');
+  if(topRoi.length){
+    roiEl.innerHTML = topRoi.map(i => {
+      const roi = i.roi_implicito_pct;
+      const col = roi >= 200 ? '#10b981' : (roi >= 50 ? '#22c55e' : (roi >= 0 ? '#f59e0b' : '#ef4444'));
+      const rev = fmtM(i.revenue_atribuible||0);
+      return `<div style="display:flex;justify-content:space-between;gap:6px;padding:3px 0;border-bottom:1px solid rgba(167,139,250,.15);">
+        <span>${esc(i.nombre||'(s/n)')}<br><span style="font-size:10px;color:#64748b;">${rev} rev</span></span>
+        <span style="color:${col};font-weight:800;">${roi}%</span></div>`;
+    }).join('');
+    roiCt.textContent = `${topRoi.length} con datos`;
+  } else {
+    roiEl.innerHTML = '<span style="color:#64748b;">Sin ROI calculado · asigná códigos de descuento a influencers para medir.</span>';
+    roiCt.textContent = '0';
+  }
+}
+
 function renderInfluencersTable() {
   const infs = INFLUENCERS_LIST || [];
   const body = document.getElementById('inf-body');
   if(!body) return;
   if(!infs.length) {
-    body.innerHTML = `<tr class="empty-row"><td colspan="14">Sin influencers registrados.</td></tr>`;
+    body.innerHTML = `<tr class="empty-row"><td colspan="15">Sin influencers registrados.</td></tr>`;
     return;
   }
   body.innerHTML = infs.map((r, idx)=>{
@@ -2740,18 +2955,21 @@ function renderInfluencersTable() {
     const isExpanded = EXPANDED_INF.has(r.id);
     const expandIcon = isExpanded ? '\u25bc' : '\u25b6';
     const expandColor = pagosInf.length>0 ? '#818cf8' : '#475569';
+    const checked = window._BULK_INF_SEL && window._BULK_INF_SEL.has(r.id) ? 'checked' : '';
     const mainRow = `<tr style="cursor:pointer" onclick="toggleExpandInf(${r.id})" title="Click para ver historial pagos">`
+      +`<td style="text-align:center;width:32px;" onclick="event.stopPropagation()">`
+        +`<input type="checkbox" class="inf-sel" data-id="${r.id}" ${checked} onchange="bulkToggleInf(${r.id}, this.checked)" style="width:16px;height:16px;cursor:pointer;"></td>`
       +`<td style="color:${expandColor};font-weight:700;font-size:14px;text-align:center;width:24px;">${pagosInf.length>0?expandIcon:''}</td>`
-      +`<td style="color:#64748b;">${idx+1}</td>`
+      +`<td class="mob-hide" style="color:#64748b;">${idx+1}</td>`
       +`<td style="font-weight:700;">${esc(r.nombre)}</td>`
-      +`<td><span class="badge badge-gray">${esc(r.red_social)}</span></td>`
-      +`<td style="color:#818cf8;">${esc(r.usuario_red||'\u2014')}</td>`
-      +`<td>${seg}</td>`
-      +`<td>${r.engagement_rate?esc(r.engagement_rate)+'%':'\u2014'}</td>`
-      +`<td>${esc(r.nicho||'\u2014')}</td>`
-      +`<td>${r.tarifa?fmtM(r.tarifa):'\u2014'}</td>`
-      +`<td style="font-size:12px;color:#94a3b8;">${esc(r.email||'\u2014')}</td>`
-      +`<td style="font-size:12px;">${banco}</td>`
+      +`<td class="mob-hide"><span class="badge badge-gray">${esc(r.red_social)}</span></td>`
+      +`<td class="mob-hide" style="color:#818cf8;">${esc(r.usuario_red||'\u2014')}</td>`
+      +`<td class="mob-hide">${seg}</td>`
+      +`<td class="mob-hide">${r.engagement_rate?esc(r.engagement_rate)+'%':'\u2014'}</td>`
+      +`<td class="mob-hide">${esc(r.nicho||'\u2014')}</td>`
+      +`<td class="mob-hide">${r.tarifa?fmtM(r.tarifa):'\u2014'}</td>`
+      +`<td class="mob-hide" style="font-size:12px;color:#94a3b8;">${esc(r.email||'\u2014')}</td>`
+      +`<td class="mob-hide" style="font-size:12px;">${banco}</td>`
       +`<td>${estadoBadge}</td>`
       +`<td>${pagosBadge}${cuponBadge}</td>`
       +`<td style="white-space:nowrap;" onclick="event.stopPropagation()">`
