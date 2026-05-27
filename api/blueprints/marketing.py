@@ -4872,16 +4872,64 @@ def mkt_ejecutar_agente(agente):
             if campana_id:
                 row = c.execute("SELECT * FROM marketing_campanas WHERE id=?", (campana_id,)).fetchone()
                 if row: campana = dict(row)
-            top = c.execute("""
-                SELECT sku, SUM(unidades) as total FROM liberaciones WHERE creado_en>=?
-                GROUP BY sku ORDER BY total DESC LIMIT 5
-            """, (hace90,)).fetchall()
+            # FIX 27-may-2026 PM · Sebastián · agente Brief HTTP 500 ·
+            # tabla `liberaciones` puede no existir en PG (lazy-create en
+            # inventario.py:10579 · solo se crea si alguien usa /liberacion).
+            # Fallback: usar animus_shopify_orders top SKUs si liberaciones falla.
+            top = []
+            try:
+                top = c.execute("""
+                    SELECT sku, SUM(unidades) as total FROM liberaciones WHERE creado_en>=?
+                    GROUP BY sku ORDER BY total DESC LIMIT 5
+                """, (hace90,)).fetchall()
+            except Exception:
+                # Fallback · top SKUs vendidos en Shopify últimos 90d
+                try:
+                    # animus_shopify_orders.sku_items es JSON o CSV · contamos ocurrencias
+                    rows_sh = c.execute(
+                        "SELECT sku_items FROM animus_shopify_orders WHERE creado_en>=?",
+                        (hace90,)
+                    ).fetchall()
+                    sku_counts = {}
+                    for r_sh in rows_sh:
+                        it = r_sh["sku_items"] if isinstance(r_sh, dict) else (r_sh[0] if r_sh else '')
+                        if not it: continue
+                        try:
+                            import json as _jsBR
+                            items = _jsBR.loads(it) if it.startswith('[') else []
+                        except Exception:
+                            items = []
+                        for li in items if isinstance(items, list) else []:
+                            sk = (li.get('sku') or '').strip()
+                            qty = int(li.get('qty') or 0)
+                            if sk:
+                                sku_counts[sk] = sku_counts.get(sk, 0) + qty
+                    # Convertir a formato compatible con la query original
+                    top = [{'sku': sk, 'total': cnt}
+                           for sk, cnt in sorted(sku_counts.items(), key=lambda x: -x[1])[:5]]
+                except Exception:
+                    top = []
             briefs = []
             for t in top:
-                sku = t["sku"]
-                precio = c.execute("SELECT MAX(precio_base) as p FROM stock_pt WHERE sku=?", (sku,)).fetchone()["p"] or 0
-                ig_mentions = c.execute("SELECT COUNT(*) as n FROM animus_instagram_posts WHERE descripcion LIKE ?", (f'%{sku}%',)).fetchone()["n"]
-                # Tono si tiene (Lip Serum, Blush Balm, etc tienen sub-SKUs con tono)
+                # Acceso robusto (dict de Row o dict literal del fallback)
+                sku = t["sku"] if "sku" in (t if isinstance(t, dict) else t.keys()) else None
+                if not sku:
+                    continue
+                # Precio (stock_pt puede no tener filas)
+                precio = 0
+                try:
+                    pr = c.execute("SELECT MAX(precio_base) as p FROM stock_pt WHERE sku=?", (sku,)).fetchone()
+                    precio = (pr["p"] if pr else 0) or 0
+                except Exception:
+                    precio = 0
+                # IG mentions
+                ig_mentions = 0
+                try:
+                    igm = c.execute("SELECT COUNT(*) as n FROM animus_instagram_posts WHERE descripcion LIKE ?", (f'%{sku}%',)).fetchone()
+                    ig_mentions = (igm["n"] if igm else 0) or 0
+                except Exception:
+                    ig_mentions = 0
+                # Tono
                 tono = ''
                 try:
                     tr = c.execute("SELECT tono_label, ml_unidad FROM sku_producto_map WHERE sku=?", (sku,)).fetchone()
@@ -4889,13 +4937,18 @@ def mkt_ejecutar_agente(agente):
                         tono = tr["tono_label"] or ''
                 except Exception:
                     pass
-                # Ventas Shopify últimos 30d (señal de momentum DTC)
-                shop_30 = c.execute(
-                    "SELECT COUNT(*) as n FROM animus_shopify_orders WHERE sku_items LIKE ? AND creado_en>=?",
-                    (f'%{sku}%', hace30)).fetchone()["n"]
+                # Ventas Shopify últimos 30d
+                shop_30 = 0
+                try:
+                    shr = c.execute(
+                        "SELECT COUNT(*) as n FROM animus_shopify_orders WHERE sku_items LIKE ? AND creado_en>=?",
+                        (f'%{sku}%', hace30)).fetchone()
+                    shop_30 = (shr["n"] if shr else 0) or 0
+                except Exception:
+                    shop_30 = 0
                 briefs.append({
                     "sku": sku,
-                    "uds_90d_liberadas": int(t["total"] or 0),
+                    "uds_90d_liberadas": int(t.get("total", 0) if isinstance(t, dict) else (t["total"] or 0)),
                     "ventas_shopify_30d": int(shop_30 or 0),
                     "precio_pvp": float(precio or 0),
                     "ig_menciones_historico": int(ig_mentions or 0),
@@ -7528,17 +7581,34 @@ def mkt_workflow_aplicar_agente():
     }
 
     Retorna detalle de qué se creó (campañas, briefs, solicitudes, etc.).
-    """
-    u, err, code = _auth()
-    if err: return err, code
-    d = request.get_json() or {}
-    agente = (d.get('agente') or '').strip()
-    payload = d.get('payload') or {}
-    if not agente:
-        return jsonify({'error': 'agente requerido'}), 400
 
-    conn = _db()
-    c = conn.cursor()
+    FIX 27-may-2026 PM · Sebastián · "Unexpected token '<', '<!DOCTYPE...'" ·
+    cuando una excepción no atrapada explota, Flask devuelve página HTML 500
+    y el frontend JS no puede parsearla. Wrapping global garantiza JSON.
+    """
+    try:
+        u, err, code = _auth()
+        if err: return err, code
+        d = request.get_json() or {}
+        agente = (d.get('agente') or '').strip()
+        payload = d.get('payload') or {}
+        if not agente:
+            return jsonify({'error': 'agente requerido'}), 400
+
+        conn = _db()
+        c = conn.cursor()
+        return _mkt_workflow_aplicar_agente_impl(conn, c, agente, payload, u)
+    except Exception as _e_wf:
+        import traceback as _tb_wf
+        return jsonify({
+            'ok': False,
+            'error': f'Excepción interna · agente {(d.get("agente") if "d" in dir() else "?")}: {str(_e_wf)[:200]}',
+            'trace': _tb_wf.format_exc()[-600:],
+        }), 500
+
+
+def _mkt_workflow_aplicar_agente_impl(conn, c, agente, payload, u):
+    """Implementación del workflow extraída para wrapping con try/except global."""
     creado = {'campanas': 0, 'briefs': 0, 'solicitudes_produccion': 0, 'detalle': []}
     fecha_iso = datetime.now().isoformat(timespec='seconds')
 
