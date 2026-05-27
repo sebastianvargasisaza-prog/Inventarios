@@ -7704,6 +7704,84 @@ def producciones_faltantes():
         except sqlite3.OperationalError:
             pass
 
+    # FASE 2 · 27-may-2026 PM · cargar TODAS las presentaciones por producto
+    # cuando hay >1 (caso variantes 30ml/15ml/10ml) · cálculo correcto sumando
+    # envases por presentación con ratio histórico Shopify 90d.
+    # Estructura: presentaciones_por_producto[producto_norm] = [
+    #   {'codigo','volumen_ml','envase_codigo','sku_shopify','factor_g_por_unidad'}, ...
+    # ]
+    presentaciones_por_producto = {}
+    try:
+        for r in c.execute("""
+            SELECT producto_nombre, presentacion_codigo,
+                   COALESCE(volumen_ml,0), COALESCE(envase_codigo,''),
+                   COALESCE(sku_shopify,''),
+                   COALESCE(factor_g_por_unidad, volumen_ml, 0)
+            FROM producto_presentaciones
+            WHERE COALESCE(activo,1)=1 AND COALESCE(volumen_ml,0) > 0
+        """).fetchall():
+            pn = (r[0] or '').strip().upper()
+            if not pn:
+                continue
+            presentaciones_por_producto.setdefault(pn, []).append({
+                'codigo': r[1],
+                'volumen_ml': float(r[2] or 0),
+                'envase_codigo': (r[3] or '').strip(),
+                'sku_shopify': (r[4] or '').strip(),
+                'factor_g_por_unidad': float(r[5] or r[2] or 0),
+            })
+    except sqlite3.OperationalError:
+        pass
+
+    # Ratio histórico Shopify por presentación (últimos 90d) ·
+    # ventas_por_sku global que después mapeamos a presentación específica.
+    # Si Shopify sync no está activo o no hay data → ratio uniforme (1/N).
+    ventas_por_sku_90d = {}
+    try:
+        from datetime import datetime as _dt90, timedelta as _td90
+        _cutoff_90d = (_dt90.utcnow() - _td90(hours=5) - _td90(days=90)).date().isoformat()
+        import json as _json_sk
+        rows_sho = c.execute(
+            """SELECT sku_items FROM animus_shopify_orders
+               WHERE COALESCE(creado_en,'') >= ? AND sku_items IS NOT NULL AND sku_items != ''""",
+            (_cutoff_90d,)
+        ).fetchall()
+        for (it,) in rows_sho:
+            try:
+                items = _json_sk.loads(it) if it else []
+                if not isinstance(items, list):
+                    continue
+                for li in items:
+                    sk = (li.get('sku') or '').strip()
+                    qty = int(li.get('qty') or 0)
+                    if sk and qty > 0:
+                        ventas_por_sku_90d[sk] = ventas_por_sku_90d.get(sk, 0) + qty
+            except Exception:
+                continue
+    except sqlite3.OperationalError:
+        pass
+
+    def _ratio_presentaciones(producto_norm):
+        """Devuelve dict {codigo_presentacion: ratio_0_a_1} usando Shopify 90d.
+        Si no hay data → ratio uniforme 1/N entre presentaciones activas."""
+        pres = presentaciones_por_producto.get(producto_norm, [])
+        if not pres:
+            return {}
+        if len(pres) == 1:
+            return {pres[0]['codigo']: 1.0}
+        # Sumar ventas por presentación via sku_shopify
+        ventas = {}
+        total = 0
+        for p in pres:
+            sk = (p['sku_shopify'] or '').strip()
+            v = ventas_por_sku_90d.get(sk, 0) if sk else 0
+            ventas[p['codigo']] = v
+            total += v
+        if total <= 0:
+            # No hay ventas históricas · ratio uniforme
+            return {p['codigo']: 1.0 / len(pres) for p in pres}
+        return {cod: (v / total) for cod, v in ventas.items()}
+
     # 5. Cargar stock MP (canonical helper)
     stock_mp = _get_mp_stock(conn)
 
@@ -7825,33 +7903,85 @@ def producciones_faltantes():
             if cod and cuenta_para_faltantes:
                 consumo_mp_agregado[cod] = consumo_mp_agregado.get(cod, 0) + g_total
 
-        # MEE necesarios · cantidad de unidades a envasar = cant_kg_total*1000 / volumen_ml
+        # MEE necesarios · 2 caminos:
+        #  A) Producto con VARIANTES (>1 presentación en producto_presentaciones):
+        #     calcular envases por presentación usando ratio Shopify 90d.
+        #     Cada presentación tiene su volumen_ml y su envase_codigo propios.
+        #  B) Producto SIN variantes: comportamiento clásico (sku_mee_config +
+        #     volumen_unitario_producto único).
+        # FASE 2 · Sebastián 27-may-2026 PM · fix para LIP SERUM tipo 30ml+15ml.
         unidades_envasadas = 0
-        vol_ml = volumen_por_producto.get(producto_norm, 0)
-        if vol_ml > 0 and cant_kg_total > 0:
-            # Aproximación: 1g ≈ 1ml para productos cosméticos (densidad ~1)
-            unidades_envasadas = int(round((cant_kg_total * 1000.0) / vol_ml))
-        elif cant_kg_total > 0 and cuenta_para_faltantes and mee_por_producto.get(producto_norm):
-            # Producto con envases configurados pero SIN volumen_ml registrado:
-            # no se puede calcular cuántos envases necesita → su faltante de
-            # MEE quedaría en CERO (sub-conteo silencioso). Lo reportamos para
-            # que el usuario complete el volumen.
-            productos_sin_volumen.add(producto or producto_norm)
-
         mees_nec = []
-        for me in mee_por_producto.get(producto_norm, []):
-            if unidades_envasadas <= 0:
-                continue
-            cant_total = unidades_envasadas * float(me['cantidad_por_unidad'] or 1)
-            mees_nec.append({
-                'codigo': me['mee_codigo'],
-                'descripcion': me['descripcion'],
-                'tipo': me['tipo'],
-                'necesario_unidades': round(cant_total, 0),
-            })
-            cod_mee = (me['mee_codigo'] or '').strip().upper()
-            if cod_mee and cuenta_para_faltantes:
-                consumo_mee_agregado[cod_mee] = consumo_mee_agregado.get(cod_mee, 0) + cant_total
+        presentaciones_prod = presentaciones_por_producto.get(producto_norm, [])
+        usar_variantes = (len(presentaciones_prod) > 1 and cant_kg_total > 0)
+
+        if usar_variantes:
+            ratios = _ratio_presentaciones(producto_norm)
+            unidades_total_calc = 0
+            for p in presentaciones_prod:
+                ratio = ratios.get(p['codigo'], 0)
+                vol_p = p['volumen_ml']
+                if vol_p <= 0 or ratio <= 0:
+                    continue
+                # kg que va a esta presentación · luego ml · luego unidades
+                kg_p = cant_kg_total * ratio
+                un_p = int(round((kg_p * 1000.0) / vol_p))
+                unidades_total_calc += un_p
+                env_cod = p['envase_codigo']
+                if env_cod and un_p > 0:
+                    _desc_env = (mee_info.get(env_cod, {}) or {}).get('descripcion', env_cod) if mee_info else env_cod
+                    mees_nec.append({
+                        'codigo': env_cod,
+                        'descripcion': _desc_env,
+                        'tipo': 'envase',
+                        'necesario_unidades': un_p,
+                        'presentacion': p['codigo'],
+                        'ratio_pct': round(ratio * 100, 1),
+                    })
+                    if cuenta_para_faltantes:
+                        cod_norm = env_cod.strip().upper()
+                        consumo_mee_agregado[cod_norm] = consumo_mee_agregado.get(cod_norm, 0) + un_p
+            unidades_envasadas = unidades_total_calc
+            # Además, agregar OTROS mees configurados en sku_mee_config para este
+            # producto (típicamente tapas/etiquetas que comparten todas las
+            # presentaciones · cant_por_unidad * unidades_envasadas total)
+            for me in mee_por_producto.get(producto_norm, []):
+                cant_total = unidades_envasadas * float(me['cantidad_por_unidad'] or 1)
+                mees_nec.append({
+                    'codigo': me['mee_codigo'],
+                    'descripcion': me['descripcion'],
+                    'tipo': me['tipo'],
+                    'necesario_unidades': round(cant_total, 0),
+                })
+                cod_mee = (me['mee_codigo'] or '').strip().upper()
+                if cod_mee and cuenta_para_faltantes:
+                    consumo_mee_agregado[cod_mee] = consumo_mee_agregado.get(cod_mee, 0) + cant_total
+        else:
+            # Camino B · clásico (1 presentación o sin presentaciones definidas)
+            vol_ml = volumen_por_producto.get(producto_norm, 0)
+            if vol_ml > 0 and cant_kg_total > 0:
+                # Aproximación: 1g ≈ 1ml para productos cosméticos (densidad ~1)
+                unidades_envasadas = int(round((cant_kg_total * 1000.0) / vol_ml))
+            elif cant_kg_total > 0 and cuenta_para_faltantes and mee_por_producto.get(producto_norm):
+                # Producto con envases configurados pero SIN volumen_ml registrado:
+                # no se puede calcular cuántos envases necesita → su faltante de
+                # MEE quedaría en CERO (sub-conteo silencioso). Lo reportamos para
+                # que el usuario complete el volumen.
+                productos_sin_volumen.add(producto or producto_norm)
+
+            for me in mee_por_producto.get(producto_norm, []):
+                if unidades_envasadas <= 0:
+                    continue
+                cant_total = unidades_envasadas * float(me['cantidad_por_unidad'] or 1)
+                mees_nec.append({
+                    'codigo': me['mee_codigo'],
+                    'descripcion': me['descripcion'],
+                    'tipo': me['tipo'],
+                    'necesario_unidades': round(cant_total, 0),
+                })
+                cod_mee = (me['mee_codigo'] or '').strip().upper()
+                if cod_mee and cuenta_para_faltantes:
+                    consumo_mee_agregado[cod_mee] = consumo_mee_agregado.get(cod_mee, 0) + cant_total
 
         producciones_out.append({
             'id': pid,
