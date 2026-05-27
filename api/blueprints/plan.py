@@ -13564,6 +13564,60 @@ window._MEES_CACHE = null;
 // del envase, que lo tenga cada producción". Cache por lote_id de la
 // composición ya calculada (evita re-fetch al re-abrir el mismo modal).
 window._COMP_MEE_CACHE = window._COMP_MEE_CACHE || {};
+
+// FIX 27-may-2026 PM · Sebastián · "deberias dejarme poder editar la cantidad
+// de envases por si esta mal lo hago manual · pero para todos los producto, y
+// que cuando se cambie calcule perfecto". Editar uds/mes de referencia de una
+// presentación · afecta todos los lotes futuros (es ratio del producto).
+async function _editarUdsMesPresentacion(loteId, productoEnc, codigo, etiqueta, volMl, envaseCodigo, udsActuales){
+  const producto = decodeURIComponent(productoEnc);
+  const nueva = prompt(
+    'Editar uds/mes de referencia · ' + producto + ' · ' + etiqueta + '\\n\\n' +
+    'Este número se usa como referencia para el ratio de envases en TODOS los lotes futuros (planificación).\\n' +
+    'El descuento real ocurre cuando fabricación termina envasado.\\n\\n' +
+    'Uds/mes actual estimadas para este lote: ' + udsActuales + '\\n' +
+    'Ingresá las uds/mes REALES (0 = no se vende esa presentación):',
+    ''
+  );
+  if (nueva === null) return;  // cancel
+  const valor = parseFloat(nueva);
+  if (isNaN(valor) || valor < 0){ alert('Número inválido · debe ser ≥ 0'); return; }
+  // Obtener CSRF
+  let csrf = '';
+  try {
+    if (window._csrfTok) { csrf = window._csrfTok; }
+    else {
+      const tr = await fetch('/api/csrf-token', {credentials:'same-origin'});
+      if (tr.ok){ const td = await tr.json(); csrf = td.csrf_token || ''; window._csrfTok = csrf; }
+    }
+  } catch(_){}
+  try {
+    const r = await fetch('/api/admin/producto-presentaciones-upsert', {
+      method:'POST', credentials:'same-origin',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},
+      body: JSON.stringify({
+        producto_nombre: producto,
+        presentacion_codigo: codigo,
+        etiqueta: etiqueta,
+        volumen_ml: volMl,
+        envase_codigo: envaseCodigo,
+        ventas_mes_referencia: valor,
+      })
+    });
+    const d = await r.json();
+    if(r.ok && d.ok){
+      // Invalida cache · recarga composición
+      delete window._COMP_MEE_CACHE[loteId];
+      const box = document.getElementById('comp-mee-' + loteId);
+      if (box) box.innerHTML = '<span style="opacity:.7">⏳ Recalculando...</span>';
+      _cargarComposicionMee(loteId);
+    } else {
+      alert('Error ' + r.status + ': ' + (d.error || 'desconocido'));
+    }
+  } catch(e){
+    alert('Error red: ' + e.message);
+  }
+}
 async function _cargarComposicionMee(loteId){
   const box = document.getElementById('comp-mee-' + loteId);
   if(!box) return;
@@ -13589,17 +13643,20 @@ async function _cargarComposicionMee(loteId){
     h += '<div style="display:grid;grid-template-columns:1fr;gap:6px">';
     for(const v of d.variantes){
       const ratioBg = v.ratio_pct >= 50 ? '#0d9488' : (v.ratio_pct >= 25 ? '#0891b2' : '#64748b');
-      h += '<div style="display:grid;grid-template-columns:90px 60px 1fr 110px;gap:8px;align-items:center;background:#fff;border:1px solid #ccfbf1;border-radius:6px;padding:6px 10px;font-size:12px">';
+      h += '<div style="display:grid;grid-template-columns:90px 60px 1fr 100px 32px;gap:6px;align-items:center;background:#fff;border:1px solid #ccfbf1;border-radius:6px;padding:6px 10px;font-size:12px">';
       h += '<div><span style="background:' + ratioBg + ';color:#fff;padding:2px 8px;border-radius:10px;font-weight:700;font-size:11px">' + v.ratio_pct + '%</span></div>';
       h += '<div style="font-weight:700;color:#0f766e">' + escapeHtml(v.etiqueta || '') + '</div>';
       h += '<div style="font-family:monospace;font-size:11px;color:#334155">' + escapeHtml(v.envase_codigo || '(sin envase)') + (v.envase_descripcion && v.envase_descripcion !== v.envase_codigo ? ' · <span style="color:#64748b">' + escapeHtml(v.envase_descripcion) + '</span>' : '') + '</div>';
       h += '<div style="text-align:right;font-weight:800;color:#0e7490">' + (v.unidades_estimadas || 0).toLocaleString('es-CO') + ' uds</div>';
+      // FIX 27-may-2026 PM · botón editar uds/mes (afecta TODOS los lotes futuros del producto)
+      const _produ = encodeURIComponent(d.producto || '');
+      h += '<button onclick="_editarUdsMesPresentacion(' + loteId + ',&quot;' + _produ + '&quot;,&quot;' + escapeHtml(v.presentacion_codigo || '') + '&quot;,&quot;' + escapeHtml(v.etiqueta || '') + '&quot;,' + (v.volumen_ml || 0) + ',&quot;' + escapeHtml(v.envase_codigo || '') + '&quot;,' + (v.unidades_estimadas || 0) + ')" title="Editar uds/mes de referencia (afecta TODOS los lotes futuros · planificación, no fabricación)" style="background:#7c3aed;color:#fff;border:0;padding:4px 6px;border-radius:4px;cursor:pointer;font-size:11px">✏</button>';
       h += '</div>';
     }
     h += '</div>';
     // Total
     const totalUds = d.variantes.reduce((acc, v) => acc + (v.unidades_estimadas || 0), 0);
-    h += '<div style="text-align:right;margin-top:6px;font-size:11px;color:#0f766e;font-weight:700">Total unidades estimadas: ' + totalUds.toLocaleString('es-CO') + '</div>';
+    h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px"><span style="font-size:10px;color:#64748b">💡 Este cálculo es <b>estimado para planificación</b> · el descuento real ocurre en Fabricación al envasar.</span><span style="font-size:11px;color:#0f766e;font-weight:700">Total: ' + totalUds.toLocaleString('es-CO') + ' uds</span></div>';
     window._COMP_MEE_CACHE[loteId] = h;
     box.innerHTML = h;
   } catch(e){

@@ -1038,6 +1038,39 @@ window.addEventListener('unhandledrejection', function(ev) {
 </div>
 
 <!-- Modal: Solicitar Pago Influencer -->
+<!-- Modal · Gestionar pagos influencer (Jefferson · 27-may-2026 PM) -->
+<div class="modal-bg" id="modal-gestionar-pagos">
+  <div class="modal" style="max-width:780px;max-height:88vh;overflow-y:auto;">
+    <div class="modal-hdr">
+      <div class="modal-title">⚙ Gestionar pagos · <span id="gp-inf-nombre" style="color:#a78bfa;"></span></div>
+      <button class="modal-close" onclick="closeModal('modal-gestionar-pagos')">&times;</button>
+    </div>
+    <input type="hidden" id="gp-inf-id">
+    <div style="color:#94a3b8;font-size:12px;line-height:1.5;margin-bottom:12px;background:#1e1b4b;border:1px solid #4338ca;border-radius:8px;padding:10px 12px;">
+      💡 <b>Si un pago está mal</b> (ya se pagó pero aparece pendiente, o aparece pendiente uno que no aplica) podés corregirlo acá. Todo cambio queda registrado en audit_log con motivo (INVIMA · Habeas Data).
+    </div>
+    <div id="gp-tabla-container" style="overflow-x:auto;">
+      <table style="width:100%;border-collapse:collapse;font-size:12px;">
+        <thead>
+          <tr style="background:#0f172a;color:#94a3b8;font-size:10px;text-transform:uppercase;letter-spacing:.4px;">
+            <th style="text-align:left;padding:8px;">Fecha</th>
+            <th style="text-align:left;padding:8px;">Estado</th>
+            <th style="text-align:right;padding:8px;">Valor</th>
+            <th style="text-align:left;padding:8px;">Concepto</th>
+            <th style="text-align:left;padding:8px;">OC</th>
+            <th style="text-align:center;padding:8px;">Acciones</th>
+          </tr>
+        </thead>
+        <tbody id="gp-tbody"></tbody>
+      </table>
+    </div>
+    <div id="gp-alert" style="display:none;margin-top:10px;padding:10px;border-radius:6px;font-size:12px;"></div>
+    <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:14px;border-top:1px solid #334155;padding-top:12px;">
+      <button class="btn btn-outline" onclick="closeModal('modal-gestionar-pagos')">Cerrar</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-bg" id="modal-inf-pago">
   <div class="modal" style="max-width:460px;">
     <div class="modal-hdr">
@@ -2491,12 +2524,16 @@ function renderInfluencersTable() {
     const totalPaidVal = pagosInf
       .filter(p => (p.estado||'').toLowerCase()==='pagada')
       .reduce((s,p) => s + (p.valor||0), 0);
-    let pagosBadge = '<span style="color:#475569;font-size:11px">\u2014</span>';
+    // FIX 27-may-2026 PM \u00b7 Sebasti\u00e1n/Jefferson \u00b7 "que el lo modifique en caso
+    // tal de que este mal \u00b7 alli donde dice pagos es confuso, debemos darle
+    // mejor version". Badge clickable \u2192 abre modal Gestionar Pagos con lista
+    // editable (Marcar Pagada/Pendiente, Editar valor, Eliminar err\u00f3neos).
+    let pagosBadge = '<button onclick="abrirGestionarPagos('+r.id+', '+JSON.stringify(r.nombre||'')+')" style="background:#1e293b;border:1px dashed #475569;color:#94a3b8;font-size:10px;padding:3px 8px;border-radius:6px;cursor:pointer" title="Sin pagos \u00b7 click para registrar/gestionar">+ Gestionar</button>';
     if(pagosInf.length > 0){
-      pagosBadge = '<span style="display:inline-flex;gap:4px;align-items:center;font-size:11px">';
-      if(pendCount>0) pagosBadge += `<span style="background:#78350f;color:#fcd34d;padding:1px 7px;border-radius:8px;font-weight:700" title="${pendCount} solicitud(es) pendientes">\u23f3 ${pendCount}</span>`;
-      if(paidCount>0) pagosBadge += `<span style="background:#064e3b;color:#34d399;padding:1px 7px;border-radius:8px;font-weight:700" title="${paidCount} pago(s) - total ${fmtM(totalPaidVal)}">\u2713 ${paidCount}</span>`;
-      pagosBadge += '</span>';
+      pagosBadge = '<button onclick="abrirGestionarPagos('+r.id+', '+JSON.stringify(r.nombre||'')+')" style="background:transparent;border:0;padding:0;cursor:pointer;display:inline-flex;gap:4px;align-items:center;font-size:11px" title="Click para gestionar \u00b7 marcar pagado/pendiente, editar o eliminar">';
+      if(pendCount>0) pagosBadge += `<span style="background:#78350f;color:#fcd34d;padding:2px 8px;border-radius:8px;font-weight:700">\u23f3 ${pendCount}</span>`;
+      if(paidCount>0) pagosBadge += `<span style="background:#064e3b;color:#34d399;padding:2px 8px;border-radius:8px;font-weight:700">\u2713 ${paidCount}</span>`;
+      pagosBadge += '<span style="color:#a78bfa;font-size:13px;margin-left:2px">\u2699</span></button>';
     }
     // AUDIT 26-may \u00b7 cup\u00f3n + atribuci\u00f3n real Shopify
     let cuponBadge = '';
@@ -2955,6 +2992,143 @@ function recalcularVencePagoInf() {
   out.value = etiqueta;
 }
 
+// ─── Gestionar pagos influencer (Jefferson · 27-may-2026 PM) ──────────────
+async function abrirGestionarPagos(infId, infNombre){
+  document.getElementById('gp-inf-id').value = infId;
+  document.getElementById('gp-inf-nombre').textContent = infNombre || '(sin nombre)';
+  document.getElementById('gp-alert').style.display = 'none';
+  document.getElementById('modal-gestionar-pagos').classList.add('open');
+  await _cargarGestionarPagos(infId, infNombre);
+}
+async function _cargarGestionarPagos(infId, infNombre){
+  const tbody = document.getElementById('gp-tbody');
+  tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:20px;color:#94a3b8;">⏳ Cargando...</td></tr>';
+  // Re-usa cache de pagos (PAGOS_BY_INF_ID + PAGOS_BY_INF_NAME)
+  let pagos = (PAGOS_BY_INF_ID[infId] || PAGOS_BY_INF_NAME[(infNombre||'').toLowerCase()] || []).slice();
+  // Si cache vacío, intentar fetch fresco al endpoint /pagos-influencers
+  if (!pagos.length){
+    try {
+      const r = await fetch('/api/marketing/pagos-influencers?q='+encodeURIComponent(infNombre||''), {credentials:'same-origin'});
+      const d = await r.json();
+      pagos = (d.pagos || []).filter(p => (p.influencer_id===infId) || ((p.influencer_nombre||'').toLowerCase()===(infNombre||'').toLowerCase()));
+    } catch(_){}
+  }
+  if (!pagos.length){
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:20px;color:#94a3b8;">Sin pagos registrados para este influencer.</td></tr>';
+    return;
+  }
+  // Ordenar por fecha desc
+  pagos.sort((a,b)=> (b.fecha||'').localeCompare(a.fecha||''));
+  let html = '';
+  for (const p of pagos){
+    const estado = p.estado || 'Pendiente';
+    const estadoBg = estado==='Pagada' ? '#064e3b' : (estado==='Anulada' ? '#374151' : '#78350f');
+    const estadoCol = estado==='Pagada' ? '#34d399' : (estado==='Anulada' ? '#9ca3af' : '#fcd34d');
+    const valor = (p.valor||0).toLocaleString('es-CO');
+    html += '<tr style="border-bottom:1px solid #1e293b;">';
+    html += '<td style="padding:8px;color:#cbd5e1;">'+esc((p.fecha||'').substring(0,10))+'</td>';
+    html += '<td style="padding:8px;"><span style="background:'+estadoBg+';color:'+estadoCol+';padding:3px 9px;border-radius:10px;font-weight:700;font-size:11px;">'+esc(estado)+'</span></td>';
+    html += '<td style="padding:8px;text-align:right;font-weight:700;color:#a78bfa;">$'+valor+'</td>';
+    html += '<td style="padding:8px;font-size:11px;color:#94a3b8;">'+esc((p.concepto||'').substring(0,60))+'</td>';
+    html += '<td style="padding:8px;font-family:monospace;font-size:11px;color:#67e8f9;">'+esc(p.numero_oc||'—')+'</td>';
+    html += '<td style="padding:8px;text-align:center;white-space:nowrap;">';
+    // Botón Pagada (si está Pendiente)
+    if (estado === 'Pendiente'){
+      html += '<button onclick="_gpCambiarEstado('+p.id+',&quot;Pagada&quot;)" title="Marcar como Pagada" style="background:#15803d;color:#fff;border:0;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:11px;margin-right:3px">✓</button>';
+    }
+    // Botón Pendiente (si está Pagada)
+    if (estado === 'Pagada'){
+      html += '<button onclick="_gpCambiarEstado('+p.id+',&quot;Pendiente&quot;)" title="Revertir a Pendiente" style="background:#78350f;color:#fcd34d;border:0;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:11px;margin-right:3px">↩</button>';
+    }
+    html += '<button onclick="_gpEditarValor('+p.id+','+(p.valor||0)+')" title="Editar valor/concepto" style="background:#1e40af;color:#fff;border:0;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:11px;margin-right:3px">✏</button>';
+    html += '<button onclick="_gpEliminar('+p.id+')" title="Eliminar este registro" style="background:#7f1d1d;color:#fecaca;border:0;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:11px">🗑</button>';
+    html += '</td></tr>';
+  }
+  tbody.innerHTML = html;
+}
+async function _gpCambiarEstado(pagoId, nuevoEstado){
+  const motivo = prompt('Motivo del cambio a "'+nuevoEstado+'" (mínimo 10 caracteres · queda en audit INVIMA):');
+  if (!motivo || motivo.trim().length < 10){ alert('Motivo requerido (≥10 caracteres)'); return; }
+  await _gpEnviarPatch(pagoId, {estado: nuevoEstado, motivo: motivo.trim()});
+}
+async function _gpEditarValor(pagoId, valorActual){
+  const nuevoStr = prompt('Nuevo valor (COP) · actual: '+valorActual+':', valorActual);
+  if (nuevoStr === null) return;
+  const nuevoVal = parseFloat(nuevoStr);
+  if (isNaN(nuevoVal) || nuevoVal < 0){ alert('Valor inválido'); return; }
+  const motivo = prompt('Motivo del ajuste (≥10 caracteres · INVIMA):');
+  if (!motivo || motivo.trim().length < 10){ alert('Motivo requerido (≥10 caracteres)'); return; }
+  await _gpEnviarPatch(pagoId, {valor: nuevoVal, motivo: motivo.trim()});
+}
+async function _gpEliminar(pagoId){
+  if (!confirm('¿Eliminar este registro de pago? · NO se puede deshacer.')) return;
+  const motivo = prompt('Motivo de la eliminación (≥10 caracteres · INVIMA):');
+  if (!motivo || motivo.trim().length < 10){ alert('Motivo requerido (≥10 caracteres)'); return; }
+  const csrf = await _ensureCsrfMkt();
+  try {
+    const r = await fetch('/api/marketing/pagos-influencer/'+pagoId, {
+      method:'DELETE', credentials:'same-origin',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},
+      body: JSON.stringify({motivo: motivo.trim()})
+    });
+    const d = await r.json();
+    if (r.ok && d.ok){
+      const alert = document.getElementById('gp-alert');
+      alert.style.display='block'; alert.style.background='#064e3b'; alert.style.color='#86efac';
+      alert.textContent = '✓ Pago eliminado · audit registrado';
+      // Recargar lista del modal
+      const infId = parseInt(document.getElementById('gp-inf-id').value);
+      const infNombre = document.getElementById('gp-inf-nombre').textContent;
+      // Invalidar cache y recargar
+      if (typeof loadPagosInfluencers === 'function') await loadPagosInfluencers();
+      await _cargarGestionarPagos(infId, infNombre);
+      // Refrescar tabla influencers en background
+      if (typeof loadInfluencers === 'function') setTimeout(loadInfluencers, 500);
+    } else {
+      const alert = document.getElementById('gp-alert');
+      alert.style.display='block'; alert.style.background='#7f1d1d'; alert.style.color='#fecaca';
+      alert.textContent = 'Error '+r.status+': '+(d.error||'desconocido');
+    }
+  } catch(e){
+    alert('Error red: '+e.message);
+  }
+}
+async function _gpEnviarPatch(pagoId, body){
+  const csrf = await _ensureCsrfMkt();
+  try {
+    const r = await fetch('/api/marketing/pagos-influencer/'+pagoId, {
+      method:'PATCH', credentials:'same-origin',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},
+      body: JSON.stringify(body)
+    });
+    const d = await r.json();
+    if (r.ok && d.ok){
+      const alert = document.getElementById('gp-alert');
+      alert.style.display='block'; alert.style.background='#064e3b'; alert.style.color='#86efac';
+      alert.textContent = '✓ Actualizado · audit registrado';
+      const infId = parseInt(document.getElementById('gp-inf-id').value);
+      const infNombre = document.getElementById('gp-inf-nombre').textContent;
+      if (typeof loadPagosInfluencers === 'function') await loadPagosInfluencers();
+      await _cargarGestionarPagos(infId, infNombre);
+      if (typeof loadInfluencers === 'function') setTimeout(loadInfluencers, 500);
+    } else {
+      const alert = document.getElementById('gp-alert');
+      alert.style.display='block'; alert.style.background='#7f1d1d'; alert.style.color='#fecaca';
+      alert.textContent = 'Error '+r.status+': '+(d.error||'desconocido');
+    }
+  } catch(e){
+    alert('Error red: '+e.message);
+  }
+}
+async function _ensureCsrfMkt(){
+  if (window._csrfTok) return window._csrfTok;
+  try {
+    const r = await fetch('/api/csrf-token', {credentials:'same-origin'});
+    if (r.ok){ const d = await r.json(); window._csrfTok = d.csrf_token || ''; }
+  } catch(_){}
+  return window._csrfTok || '';
+}
+
 function solicitarPagoInf(id, nombre, tarifa, banco, cuenta, cedula, tipoCta) {
   document.getElementById('pago-inf-id').value = id;
   document.getElementById('pago-inf-nombre').textContent = nombre;
@@ -2984,28 +3158,77 @@ async function confirmarPagoInf() {
   const id = document.getElementById('pago-inf-id').value;
   const valor = parseFloat(document.getElementById('pago-valor').value)||0;
   const concepto = document.getElementById('pago-concepto').value.trim()||'Cuenta de cobro influencer';
+  const nombreInf = document.getElementById('pago-inf-nombre').textContent || '';
   if(!valor) { showAlert('pago-inf-alert','Ingresa el valor a pagar','error'); return; }
   const fechaPub   = document.getElementById('pago-fecha-pub').value;
   const entregable = document.getElementById('pago-entregable').value;
   const fechaCont  = document.getElementById('pago-fecha-contenido').value;
-  const resp = await fetch(`/api/marketing/influencers/${id}/solicitar-pago`,_fetchOpts('POST', {valor, concepto, fecha_publicacion:fechaPub, entregable, fecha_contenido:fechaCont}));
-  const data = await resp.json();
-  if(data.ok) {
-    closeModal('modal-inf-pago');
-    // Sebastian (29-abr-2026): Jefferson necesita feedback claro de que
-    // la solicitud SI se envio, donde queda y que pasa despues. Antes solo
-    // decia "creada correctamente" sin contexto.
-    const monto = (data.monto || valor).toLocaleString('es-CO');
-    showAlert('inf-alert',
-      `✅ Solicitud ${data.numero} creada — $${monto} COP. ` +
-      `Visible para Sebastián en /compras → tab Influencers. ` +
-      `Cuando se pague recibirás email automático.`);
-    loadInfluencers();
-    // Refrescar también la pestaña de Pagos si está cargada
-    try { if(typeof cargarPagosInfluencers === 'function') cargarPagosInfluencers(); } catch(_){}
-  } else {
-    showAlert('pago-inf-alert', data.error||'Error al crear solicitud','error');
+  // FIX 27-may-2026 PM · Sebastián/Jefferson · "cuando solicita un pago desde
+  // marketing no sabe si estan quedando guardados". Antes el showAlert
+  // transitorio + cerrar modal hacía que pareciera que no quedó · ahora:
+  //  1) botón con spinner "Procesando..." mientras espera
+  //  2) success modal prominente con número GRANDE visible
+  //  3) auto-refresh tabla influencers · el ⏳ aparece inmediato
+  const btn = document.querySelector('#modal-inf-pago .btn-primary');
+  let btnTxt = '';
+  if (btn) { btnTxt = btn.textContent; btn.disabled = true; btn.textContent = '⏳ Procesando...'; }
+  try {
+    const resp = await fetch(`/api/marketing/influencers/${id}/solicitar-pago`,_fetchOpts('POST', {valor, concepto, fecha_publicacion:fechaPub, entregable, fecha_contenido:fechaCont}));
+    const data = await resp.json();
+    if(data.ok) {
+      closeModal('modal-inf-pago');
+      // Mostrar modal de confirmación prominente
+      _mostrarPagoSolicitadoOk({
+        numero: data.numero,
+        monto: (data.monto || valor),
+        nombre: nombreInf,
+        concepto: concepto,
+      });
+      // Refrescar tabla + cache de pagos inmediatamente · badge ⏳ aparece
+      try { if(typeof loadPagosInfluencers === 'function') await loadPagosInfluencers(); } catch(_){}
+      try { if(typeof cargarPagosInfluencers === 'function') cargarPagosInfluencers(); } catch(_){}
+      loadInfluencers();
+    } else {
+      showAlert('pago-inf-alert', data.error||'Error al crear solicitud','error');
+    }
+  } catch(e){
+    showAlert('pago-inf-alert', 'Error de red: '+e.message,'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = btnTxt || '💸 Solicitar pago'; }
   }
+}
+// Modal de confirmación prominente · Jefferson sabe que QUEDÓ GUARDADO
+function _mostrarPagoSolicitadoOk(d){
+  // Crear el modal dinámicamente (solo cuando hace falta)
+  let m = document.getElementById('modal-pago-ok');
+  if (!m){
+    m = document.createElement('div');
+    m.id = 'modal-pago-ok';
+    m.className = 'modal-bg';
+    m.innerHTML =
+      '<div class="modal" style="max-width:540px;">'
+      + '<div style="text-align:center;padding:18px 6px 8px;">'
+      + '<div style="font-size:54px;line-height:1">✅</div>'
+      + '<div style="font-size:18px;font-weight:800;color:#34d399;margin-top:6px">Solicitud creada y guardada</div>'
+      + '<div id="mpo-numero" style="font-family:monospace;font-size:22px;font-weight:800;color:#a78bfa;background:#1e1b4b;border:1.5px solid #4338ca;border-radius:10px;padding:10px 16px;margin:12px auto;display:inline-block"></div>'
+      + '<div style="font-size:13px;color:#cbd5e1;line-height:1.6;text-align:left;background:#0f172a;border-radius:8px;padding:12px 14px;margin:10px 14px">'
+      + '<div><b style="color:#94a3b8">Influencer:</b> <span id="mpo-nombre"></span></div>'
+      + '<div><b style="color:#94a3b8">Monto:</b> <span id="mpo-monto" style="color:#fbbf24;font-weight:700"></span></div>'
+      + '<div><b style="color:#94a3b8">Concepto:</b> <span id="mpo-concepto"></span></div>'
+      + '<div style="margin-top:8px;border-top:1px solid #334155;padding-top:8px;color:#a78bfa">'
+      + '📌 Ya quedó visible para Sebastián en <b>/compras → tab Influencers</b>. '
+      + 'Cuando pague vas a recibir notificación in-app. También aparece ahora en tu tabla con el badge ⏳.'
+      + '</div></div>'
+      + '<div style="display:flex;gap:10px;justify-content:center;margin:8px 14px 14px">'
+      + '<button class="btn btn-primary" onclick="closeModal(\'modal-pago-ok\')" style="min-width:140px">OK, entendido</button>'
+      + '</div></div></div>';
+    document.body.appendChild(m);
+  }
+  document.getElementById('mpo-numero').textContent = d.numero || '(sin número)';
+  document.getElementById('mpo-nombre').textContent = d.nombre || '—';
+  document.getElementById('mpo-monto').textContent = '$' + (d.monto||0).toLocaleString('es-CO') + ' COP';
+  document.getElementById('mpo-concepto').textContent = d.concepto || '—';
+  m.classList.add('open');
 }
 
 

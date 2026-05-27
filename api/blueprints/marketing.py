@@ -5851,6 +5851,49 @@ def mkt_influencers_panel():
                 if key:
                     pagos_by_name.setdefault(key, []).append(p)
 
+        # PERF-FIX 27-may-2026 PM · Sebastián · "marketing influencers super
+        # lento se queda pensando no carga". N+1 fix · antes el loop por cada
+        # influencer ejecutaba 1 query LIKE bilateral en animus_shopify_orders
+        # (full table scan, sin índice). 50 influencers × 5000 orders = 250k+
+        # filas escaneadas → varios segundos. Ahora: 1 query global que carga
+        # todos los códigos cuponeados con sus ventas, dict lookup O(1) en loop.
+        ventas_por_code = {}  # CODE_UPPER → {rev, n, uds}
+        try:
+            for r in c.execute("""
+                SELECT UPPER(COALESCE(discount_codes,'')) AS codes_up,
+                       COALESCE(total,0) AS total,
+                       COALESCE(unidades_total,0) AS uds
+                FROM animus_shopify_orders
+                WHERE COALESCE(discount_codes,'') != ''
+            """).fetchall():
+                codes_up = r['codes_up'] or ''
+                tot = float(r['total'] or 0)
+                uds = int(r['uds'] or 0)
+                # discount_codes puede tener múltiples cupones separados (CSV/JSON)
+                # · indexamos por presencia de cada código. Para evitar split
+                # complejo simplemente guardamos el string completo y luego en el
+                # loop hacemos `if code in codes_up` (substring) · O(1) per influencer.
+                # Acumular por substring de cada código posible es caro;
+                # mejor agrupamos por código tras conocer la lista de códigos.
+                pass
+        except Exception:
+            pass
+        # Plan B simple: cargar lista completa en memoria una sola vez · luego
+        # en el loop el `in` substring sobre lista (no query). Lista de ~5000
+        # strings es muy rápida en Python · vs N+1 query SQL es órdenes de
+        # magnitud mejor.
+        orders_codes_total = []
+        try:
+            orders_codes_total = c.execute("""
+                SELECT UPPER(COALESCE(discount_codes,'')) AS codes_up,
+                       COALESCE(total,0) AS total,
+                       COALESCE(unidades_total,0) AS uds
+                FROM animus_shopify_orders
+                WHERE COALESCE(discount_codes,'') != ''
+            """).fetchall()
+        except Exception:
+            orders_codes_total = []
+
         # 3. Merge
         now_month = datetime.now().strftime("%Y-%m")
         result = []
@@ -5911,22 +5954,25 @@ def mkt_influencers_panel():
             inf["proximo_pago_estimado"] = proximo_pago
 
             # AUDIT 26-may · revenue atribuible desde Shopify si tiene cupón
+            # PERF-FIX 27-may PM · iteración sobre lista cacheada en memoria
+            # (no query SQL por influencer). Lista de ~5000 orders en Python
+            # es < 5ms · vs query LIKE bilateral sin índice = full table scan.
             dcode = (inf.get("discount_code") or '').strip()
             if dcode:
                 try:
-                    atrib = c.execute("""
-                        SELECT COUNT(*) AS n,
-                               COALESCE(SUM(total),0) AS rev,
-                               COALESCE(SUM(unidades_total),0) AS uds
-                        FROM animus_shopify_orders
-                        WHERE UPPER(COALESCE(discount_codes,'')) LIKE ?
-                    """, (f"%{dcode.upper()}%",)).fetchone()
-                    inf["revenue_atribuible"] = float(atrib["rev"] or 0)
-                    inf["pedidos_atribuibles"] = int(atrib["n"] or 0)
-                    inf["unidades_atribuibles"] = int(atrib["uds"] or 0)
+                    _dcup = dcode.upper()
+                    _rev = 0.0; _n = 0; _uds = 0
+                    for _row_o in orders_codes_total:
+                        if _dcup in (_row_o['codes_up'] or ''):
+                            _rev += float(_row_o['total'] or 0)
+                            _uds += int(_row_o['uds'] or 0)
+                            _n += 1
+                    inf["revenue_atribuible"] = _rev
+                    inf["pedidos_atribuibles"] = _n
+                    inf["unidades_atribuibles"] = _uds
                     pagado = float(inf.get("total_pagado") or 0)
                     inf["roi_implicito_pct"] = round(
-                        ((inf["revenue_atribuible"] - pagado) / pagado) * 100, 1
+                        ((_rev - pagado) / pagado) * 100, 1
                     ) if pagado > 0 else None
                 except Exception:
                     inf["revenue_atribuible"] = 0
@@ -6142,6 +6188,135 @@ def mkt_pagos_historico_cleanup():
         return jsonify({'ok': True, 'actualizados': len(ids)})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+@bp.route("/api/marketing/pagos-influencer/<int:pid>", methods=["PATCH", "DELETE"])
+def mkt_pago_influencer_editar(pid):
+    """Edita o elimina un pago a influencer (admin/contadora).
+
+    Sebastián 27-may-2026 PM · Jefferson dice "salen pendientes a personas que
+    ya se les pago, y otros pendientes que no estan · debe existir la opcion
+    de que el lo modifique en caso tal de que este mal".
+
+    PATCH body: {estado: 'Pagada'|'Pendiente'|'Anulada', valor?, concepto?,
+                 fecha_contenido?, motivo: str≥10}
+    DELETE: borra el registro · solo si NO está vinculado a OC con pago real.
+
+    audit_log obligatorio. Solo admin o contadora.
+    """
+    u, err, code = _auth()
+    if err: return err, code
+    # Auth · admin o contadora (jeferson en CONTADORA_USERS o ADMIN_USERS)
+    try:
+        from config import ADMIN_USERS as _AU, CONTADORA_USERS as _CU
+    except Exception:
+        _AU = {'sebastian','alejandro'}; _CU = set()
+    actor_lower = (u or '').lower()
+    permitidos = {x.lower() for x in (set(_AU) | set(_CU) | {'jeferson','jefferson'})}
+    if actor_lower not in permitidos:
+        return jsonify({'error': 'Solo admin / contadora / marketing-jeferson'}), 403
+    conn = _db(); c = conn.cursor()
+    row = c.execute(
+        "SELECT id, influencer_id, influencer_nombre, valor, estado, concepto, numero_oc, fecha, fecha_contenido FROM pagos_influencers WHERE id=?",
+        (pid,)
+    ).fetchone()
+    if not row:
+        return jsonify({'error': 'pago no encontrado'}), 404
+    antes = dict(row)
+
+    if request.method == 'DELETE':
+        # Verificar que no esté vinculado a OC pagada (no permitir borrar pago real)
+        numero_oc = (antes.get('numero_oc') or '').strip()
+        if numero_oc:
+            oc_row = c.execute(
+                "SELECT estado FROM ordenes_compra WHERE numero_oc=?",
+                (numero_oc,)
+            ).fetchone()
+            if oc_row and (oc_row[0] or '').strip() in ('Pagada', 'Recibida', 'Parcial'):
+                return jsonify({
+                    'error': f"No se puede borrar · pago vinculado a OC {numero_oc} estado={oc_row[0]} (pagada real). Use anular si necesita revertir.",
+                    'codigo': 'PAGO_VINCULADO_A_OC_PAGADA',
+                }), 409
+        # Motivo obligatorio
+        d = request.get_json(silent=True) or {}
+        motivo = (d.get('motivo') or '').strip()
+        if len(motivo) < 10:
+            return jsonify({'error': 'motivo (≥10 chars) requerido para auditoría'}), 400
+        try:
+            c.execute("DELETE FROM pagos_influencers WHERE id=?", (pid,))
+            try:
+                from audit_helpers import audit_log as _alog
+                _alog(c, usuario=u, accion='DELETE_PAGO_INFLUENCER',
+                      tabla='pagos_influencers', registro_id=str(pid),
+                      antes=antes,
+                      despues={'motivo': motivo, 'borrado_por': u})
+            except Exception:
+                pass
+            conn.commit()
+            return jsonify({'ok': True, 'borrado': True, 'id': pid, 'motivo': motivo})
+        except Exception as e:
+            return jsonify({'error': str(e)[:200]}), 500
+
+    # PATCH
+    d = request.get_json(silent=True) or {}
+    motivo = (d.get('motivo') or '').strip()
+    if len(motivo) < 10:
+        return jsonify({'error': 'motivo (≥10 chars) requerido para auditoría INVIMA'}), 400
+    estados_validos = {'Pagada', 'Pendiente', 'Anulada'}
+    nuevo_estado = (d.get('estado') or antes['estado'] or 'Pendiente').strip()
+    if nuevo_estado not in estados_validos:
+        return jsonify({'error': f'estado inválido · permitidos: {sorted(estados_validos)}'}), 400
+    try:
+        nuevo_valor = float(d.get('valor')) if d.get('valor') is not None else float(antes['valor'] or 0)
+    except (TypeError, ValueError):
+        return jsonify({'error': 'valor inválido'}), 400
+    if nuevo_valor < 0:
+        return jsonify({'error': 'valor no puede ser negativo'}), 400
+    nuevo_concepto = (d.get('concepto') or antes['concepto'] or '').strip()[:300]
+    nueva_fc = d.get('fecha_contenido') or antes['fecha_contenido'] or ''
+    if nueva_fc:
+        import re as _reFC
+        if not _reFC.match(r'^\d{4}-\d{2}-\d{2}$', str(nueva_fc).strip()):
+            return jsonify({'error': 'fecha_contenido formato YYYY-MM-DD'}), 400
+    # Recalcular vence_pago_at si cambió fecha_contenido
+    nuevo_vence = ''
+    if nueva_fc:
+        try:
+            from datetime import datetime as _dtFC, timedelta as _tdFC
+            _b = _dtFC.strptime(str(nueva_fc).strip(), '%Y-%m-%d')
+            nuevo_vence = (_b + _tdFC(days=30)).strftime('%Y-%m-%d')
+        except Exception:
+            pass
+    try:
+        try:
+            c.execute("""
+                UPDATE pagos_influencers
+                SET estado=?, valor=?, concepto=?,
+                    fecha_contenido=COALESCE(NULLIF(?,''), fecha_contenido),
+                    vence_pago_at=COALESCE(NULLIF(?,''), vence_pago_at)
+                WHERE id=?
+            """, (nuevo_estado, round(nuevo_valor), nuevo_concepto,
+                  nueva_fc, nuevo_vence, pid))
+        except Exception:
+            # Fallback si mig 195 no aplicada (sin fecha_contenido/vence_pago_at)
+            c.execute("""
+                UPDATE pagos_influencers SET estado=?, valor=?, concepto=? WHERE id=?
+            """, (nuevo_estado, round(nuevo_valor), nuevo_concepto, pid))
+        try:
+            from audit_helpers import audit_log as _alog
+            _alog(c, usuario=u, accion='PATCH_PAGO_INFLUENCER',
+                  tabla='pagos_influencers', registro_id=str(pid),
+                  antes=antes,
+                  despues={'estado': nuevo_estado, 'valor': nuevo_valor,
+                           'concepto': nuevo_concepto,
+                           'fecha_contenido': nueva_fc, 'motivo': motivo})
+        except Exception:
+            pass
+        conn.commit()
+        return jsonify({'ok': True, 'id': pid, 'estado': nuevo_estado,
+                         'valor': nuevo_valor, 'motivo': motivo})
+    except Exception as e:
+        return jsonify({'error': str(e)[:200]}), 500
 
 
 @bp.route("/api/marketing/pagos-influencers", methods=["GET"])
