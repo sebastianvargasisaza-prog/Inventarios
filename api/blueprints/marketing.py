@@ -517,9 +517,13 @@ def mkt_atribucion():
     if not codigo:
         return jsonify({"error": "Pasa codigo, influencer_id o campana_id"}), 400
 
-    # Búsqueda · LIKE %codigo% sobre discount_codes (JSON string)
-    where_parts = ["UPPER(COALESCE(discount_codes,'')) LIKE ?"]
-    params = [f"%{codigo.upper()}%"]
+    # Búsqueda · LIKE %codigo% sobre discount_codes (JSON string).
+    # FIX 27-may (P1) · escapar wildcards LIKE para evitar over-attribution.
+    # Antes: si user pasaba codigo='%', matcheaba TODOS los cupones · inflaba
+    # atribución arbitrariamente. Escape % y _ con char ESCAPE explícito.
+    _codigo_safe = codigo.upper().replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+    where_parts = ["UPPER(COALESCE(discount_codes,'')) LIKE ? ESCAPE '\\'"]
+    params = [f"%{_codigo_safe}%"]
     if desde:
         where_parts.append("date(creado_en) >= ?"); params.append(desde)
     if hasta:
@@ -767,6 +771,12 @@ def mkt_sync_meta_ads():
         for cm in campaigns:
             cid = cm.get('id')
             if not cid: continue
+            # FIX 27-may (P2) · skip ARCHIVED y DELETED · sus métricas viejas
+            # contaminan el ROI agregado. PAUSED puede tener gasto reciente
+            # legítimo de cuando estaba ACTIVE en la ventana · sí cuenta.
+            _st = (cm.get('status') or '').upper()
+            if _st in ('ARCHIVED', 'DELETED'):
+                continue
             try:
                 url_ins = (f"https://graph.facebook.com/v19.0/{cid}/insights"
                             f"?fields=spend,impressions,clicks,ctr,cpc,cpm,actions"
@@ -4248,9 +4258,12 @@ def mkt_sync(platform):
                 "User-Agent": "GHL-Integration/1.0",
             }
             while True:
-                params = f"locationId={loc_id}&limit=100"
+                # FIX 27-may (P2) · urlencode params · si loc_id/startAfter
+                # tienen `&` o `=`, rompen el query string.
+                from urllib.parse import quote as _q
+                params = f"locationId={_q(str(loc_id), safe='')}&limit=100"
                 if start_after:
-                    params += f"&startAfter={start_after}&startAfterId={start_after_id}"
+                    params += f"&startAfter={_q(str(start_after), safe='')}&startAfterId={_q(str(start_after_id), safe='')}"
                 url = f"https://services.leadconnectorhq.com/contacts/?{params}"
                 req = urllib.request.Request(url, headers=ghl_headers)
                 try:

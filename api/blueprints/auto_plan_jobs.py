@@ -3742,6 +3742,17 @@ def job_mailbox_factura_proveedor(app):
                     fn = part.get_filename()
                     if not fn:
                         continue
+                    # FIX 27-may (P1) · sanitizar filename del adjunto IMAP.
+                    # Antes: filename del proveedor se persistía crudo en
+                    # pagos_oc.numero_factura_proveedor · path traversal/XSS
+                    # potencial al renderizar en UI compras.
+                    import os as _os_mbx
+                    fn = _os_mbx.path.basename(fn)[:120]
+                    # Char whitelist defensivo · solo ASCII printable seguro
+                    import re as _re_mbx
+                    fn = _re_mbx.sub(r'[^\w\s.\-]', '_', fn)
+                    if not fn or fn in ('.', '..'):
+                        continue
                     ct = part.get_content_type()
                     if ct not in ('application/pdf', 'image/jpeg', 'image/png', 'image/jpg'):
                         continue
@@ -4028,22 +4039,63 @@ def job_ocs_atrasadas(app):
         if not atrasadas:
             return True, {'mensaje': 'Sin OCs atrasadas'}, 0
 
+        # FIX 27-may (P1 anti-spam) · dedup con tabla cron_alerts_sent · solo
+        # notificar OCs nuevas (no notificadas en últimos 7d) · evita spam
+        # diario mientras la OC siga atrasada. Sebastián 27-may-2026 PM.
+        hoy_iso = hoy.isoformat()
+        atrasadas_a_notificar = []
+        try:
+            for a in atrasadas:
+                row = c.execute(
+                    "SELECT ultima_notif FROM cron_alerts_sent WHERE tipo_alerta=? AND registro_id=?",
+                    ('oc_atrasada', a['numero_oc'])
+                ).fetchone()
+                if row and row[0]:
+                    try:
+                        last = _dt.strptime(str(row[0])[:10], '%Y-%m-%d').date()
+                        if (hoy - last).days < 7:
+                            continue  # ya notificado hace <7d · skip
+                    except Exception:
+                        pass
+                atrasadas_a_notificar.append(a)
+                # Upsert tracking
+                try:
+                    c.execute(
+                        """INSERT INTO cron_alerts_sent (tipo_alerta, registro_id, ultima_notif, count_notifs)
+                           VALUES (?, ?, ?, 1)
+                           ON CONFLICT(tipo_alerta, registro_id) DO UPDATE SET
+                             ultima_notif=excluded.ultima_notif,
+                             count_notifs=count_notifs+1""",
+                        ('oc_atrasada', a['numero_oc'], hoy_iso)
+                    )
+                except Exception:
+                    pass
+            conn.commit()
+        except Exception as _e:
+            log.warning('ocs_atrasadas dedup tracking fallo: %s', _e)
+            atrasadas_a_notificar = atrasadas  # fallback · notificar todo
+
+        if not atrasadas_a_notificar:
+            return True, {'ocs_atrasadas_total': len(atrasadas),
+                          'ocs_notificadas_hoy': 0,
+                          'mensaje': 'Todas las atrasadas ya notificadas en últimos 7d'}, 0
+
         try:
             from blueprints.notif import push_notif_multi
             from config import COMPRAS_ACCESS as _CA, ADMIN_USERS as _AU
             destinatarios = {u.lower() for u in (_CA | _AU)}
-            for a in atrasadas:
+            for a in atrasadas_a_notificar:
                 if a['creador']:
                     destinatarios.add(a['creador'].lower())
-            partes = [f'🚨 {len(atrasadas)} OC(s) ATRASADA(S) sin recibir:']
-            for a in atrasadas[:10]:
+            partes = [f'🚨 {len(atrasadas_a_notificar)} OC(s) ATRASADA(S) NUEVA(S) sin recibir:']
+            for a in atrasadas_a_notificar[:10]:
                 partes.append(
                     f"  · {a['numero_oc']} · {a['proveedor']} · "
                     f"{a['estado']} · +{a['dias_atraso']}d sobre lead_time {a['lead_time']}d"
                 )
             push_notif_multi(
                 list(destinatarios), 'oc_atrasada',
-                f'🚨 {len(atrasadas)} OC(s) sin recibir tras lead_time + {buffer_dias}d buffer',
+                f'🚨 {len(atrasadas_a_notificar)} OC(s) sin recibir tras lead_time + {buffer_dias}d buffer',
                 body='\n'.join(partes),
                 link='/admin/compras?filtro=atrasadas',
                 remitente='cron-ocs-atrasadas',
@@ -4051,7 +4103,8 @@ def job_ocs_atrasadas(app):
             )
         except Exception as _e:
             log.warning('ocs_atrasadas notif fallo: %s', _e)
-        return True, {'ocs_atrasadas': len(atrasadas)}, 0
+        return True, {'ocs_atrasadas_total': len(atrasadas),
+                      'ocs_notificadas_hoy': len(atrasadas_a_notificar)}, 0
 
 
 def _generar_codigo_mp_siguiente(c):

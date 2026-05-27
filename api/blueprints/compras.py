@@ -173,13 +173,22 @@ def _evaluar_auto_aprobacion(c, proveedor, monto_total, items):
     3. cada item con precio_unitario en rango ±15% del promedio 90d
        (si no hay histórico del MP, permite por default)
 
-    Variable de entorno opcional: COMPRAS_AUTO_APROB_OFF=1 para apagar.
+    SEC-FIX 27-may-2026 (audit r3) · default OFF · activar explícito con env
+    `COMPRAS_AUTO_APROB_ON=1`. Antes era ON por default y si la env
+    `COMPRAS_AUTO_APROB_OFF` se perdía en redeploy, todas las OCs <$500k
+    auto-aprobaban sin revisión humana. Ahora el riesgo está cerrado por
+    diseño. La env legacy `COMPRAS_AUTO_APROB_OFF` sigue funcionando como
+    override redundante.
 
     Retorna (auto_aprobar: bool, razon: str)
     """
     import os
+    # SEC-FIX 27-may · activación EXPLÍCITA · default OFF
+    if (os.environ.get('COMPRAS_AUTO_APROB_ON') or '0').strip() != '1':
+        return False, 'auto-aprob OFF por default · setear COMPRAS_AUTO_APROB_ON=1 para activar'
+    # Legacy compat · si admin ya tiene OFF=1 explícito, respetar
     if (os.environ.get('COMPRAS_AUTO_APROB_OFF') or '0').strip() == '1':
-        return False, 'auto-aprob deshabilitada (env)'
+        return False, 'auto-aprob deshabilitada (env legacy)'
     LIMITE = float(os.environ.get('COMPRAS_AUTO_APROB_LIMITE_COP') or 500_000)
     if not proveedor:
         return False, 'sin proveedor'
@@ -5305,8 +5314,17 @@ def recibir_oc(numero_oc):
     sobrerecepciones = []
     vencimientos_pasados = []
     sin_cantidad = []
+    sin_lote_proveedor = []  # FIX 27-may (P1 INVIMA) · obligatorio para MPs
     from datetime import date as _date
     hoy_iso = _date.today().isoformat()
+
+    # Detectar si la OC es de Materia Prima · solo MPs exigen lote_proveedor
+    # INVIMA (Resolución 2674/2013). Empaque/Servicios/Cuenta-Cobro NO.
+    try:
+        _cat_row = cur.execute("SELECT categoria FROM solicitudes_compra WHERE numero_oc=? LIMIT 1", (numero_oc,)).fetchone()
+        _es_oc_mp = (_cat_row and (_cat_row[0] or '').strip() == 'Materia Prima')
+    except Exception:
+        _es_oc_mp = False
 
     for _idx, item in enumerate(items_oc):
         _oci_rowid, codigo, nombre, cantidad_pedida = item
@@ -5315,6 +5333,16 @@ def recibir_oc(numero_oc):
               or rec_map_idx.get(_idx)
               or rec_map_cod.get(codigo, {}))
         cant_raw = ir.get('cantidad_recibida', 0)
+        # FIX 27-may (P1 INVIMA) · lote_proveedor obligatorio para MPs · si
+        # falta, bloqueamos con 422 · admin puede pasar forzar:true para
+        # excepción legítima (lote pendiente de proveedor, etc.).
+        if _es_oc_mp:
+            _lote_prov_check = (ir.get('lote_proveedor') or '').strip()
+            _cant_check = 0
+            try: _cant_check = float(cant_raw or 0)
+            except Exception: pass
+            if _cant_check > 0 and not _lote_prov_check:
+                sin_lote_proveedor.append({'codigo_mp': codigo, 'nombre': nombre})
         cantidad_explicita = not (cant_raw is None or cant_raw == '')
         if cantidad_explicita:
             cant_validada, err = validate_money(cant_raw, allow_zero=True,
@@ -5360,15 +5388,16 @@ def recibir_oc(numero_oc):
                 pass
 
     # Si hay violaciones bloqueantes y no se fuerza, abortar limpio
-    if not forzar_excepciones and (sobrerecepciones or vencimientos_pasados):
+    if not forzar_excepciones and (sobrerecepciones or vencimientos_pasados or sin_lote_proveedor):
         return jsonify({
             'error': 'Recepción bloqueada por validaciones',
             'codigo': 'RECEPCION_VIOLA_REGLAS',
             'sobrerecepciones': sobrerecepciones,
             'vencimientos_pasados': vencimientos_pasados,
+            'sin_lote_proveedor': sin_lote_proveedor,
             'sin_cantidad': sin_cantidad,
-            'hint': ('Verifica cantidades y vencimientos. Si la excepción es '
-                      'legítima (admin), envía body con forzar:true.'),
+            'hint': ('Verifica cantidades, vencimientos y lote_proveedor (INVIMA). '
+                     'Si la excepción es legítima (admin), envía body con forzar:true.'),
         }), 422
 
     # ── INSERT real (post-validación) ──────────────────────────────────

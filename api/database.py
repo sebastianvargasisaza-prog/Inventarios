@@ -312,6 +312,21 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (198, "cron_alerts_sent · anti-spam notificaciones cron · Sebastián 27-may-2026 PM", [
+        # Sebastián 27-may-2026 PM · audit round 3 · OCs atrasadas y otros
+        # crons notificaban DIARIO mientras la alerta seguía activa → spam.
+        # Tabla guarda última notif por (tipo_alerta, registro_id) · cron
+        # consulta antes de notificar y solo dispara si pasaron N días.
+        """CREATE TABLE IF NOT EXISTS cron_alerts_sent (
+            tipo_alerta TEXT NOT NULL,
+            registro_id TEXT NOT NULL,
+            ultima_notif TEXT NOT NULL,
+            count_notifs INTEGER NOT NULL DEFAULT 1,
+            PRIMARY KEY (tipo_alerta, registro_id)
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_cron_alerts_ultima ON cron_alerts_sent(ultima_notif)",
+    ]),
+
     (197, "volumen_unitario_producto · idempotente · Sebastián 27-may-2026 PM", [
         # La tabla se referenciaba en programacion.py:7689 con except OperationalError
         # silencioso · si nunca se creó (PG legacy), volumen_ml=0 para todos y

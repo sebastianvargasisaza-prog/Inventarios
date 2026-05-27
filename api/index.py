@@ -44,6 +44,19 @@ if _sentry_dsn and not os.environ.get("PYTEST_CURRENT_TEST"):
             url = (req.get('url') or '')
             if 'password=' in url or 'token=' in url:
                 event['request']['url'] = url.split('?')[0] + '?<redacted>'
+            # FIX 27-may · scrubbear también request.data (POST body) · sino
+            # un POST con {"password":"xxx"} se manda crudo a Sentry SaaS.
+            if 'request' in event:
+                if 'data' in event['request']:
+                    event['request']['data'] = _scrub_pii(event['request']['data'])
+                if 'cookies' in event['request']:
+                    event['request']['cookies'] = '<redacted>'
+                if 'headers' in event['request']:
+                    hdrs = event['request']['headers']
+                    if isinstance(hdrs, dict):
+                        for k in list(hdrs.keys()):
+                            if k.lower() in ('authorization','cookie','x-csrf-token','x-api-key'):
+                                hdrs[k] = '<redacted>'
         except Exception:
             pass  # nunca romper el envío por nuestro propio filtro
         return event
