@@ -13519,6 +13519,54 @@ function _parsearComposicionLote(loteData, kgTotal){
 // Sebastián 25-may-2026 PM · cache de envases para el dropdown.
 // Se llena en primera carga · subsecuentes lotes usan el mismo cache.
 window._MEES_CACHE = null;
+
+// FIX 27-may-2026 PM · Sebastián · "el calendario debe colocar la realidad
+// del envase, que lo tenga cada producción". Cache por lote_id de la
+// composición ya calculada (evita re-fetch al re-abrir el mismo modal).
+window._COMP_MEE_CACHE = window._COMP_MEE_CACHE || {};
+async function _cargarComposicionMee(loteId){
+  const box = document.getElementById('comp-mee-' + loteId);
+  if(!box) return;
+  // Cache hit
+  if(window._COMP_MEE_CACHE[loteId]){
+    box.innerHTML = window._COMP_MEE_CACHE[loteId];
+    return;
+  }
+  try{
+    const r = await fetch('/api/programacion/programar/' + loteId + '/composicion-mee', {credentials:'same-origin'});
+    if(!r.ok){ box.style.display='none'; return; }
+    const d = await r.json();
+    if(!d.ok || !d.variantes || d.variantes.length === 0){
+      box.innerHTML = '<span style="font-weight:700">📐 Composición:</span> <span style="opacity:.7">producto sin variantes configuradas · usa envase default</span>';
+      return;
+    }
+    const fuenteTxt = {
+      'shopify_90d': '<span style="color:#15803d;font-weight:700">📊 ratio Shopify 90d</span>',
+      'uniforme': '<span style="color:#a16207;font-weight:700">⚖ ratio uniforme (sin ventas históricas)</span>',
+      'unica': '<span style="color:#6b7280;font-weight:700">1 sola variante</span>',
+    }[d.fuente_ratio] || d.fuente_ratio;
+    let h = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><span style="font-weight:800;font-size:13px">📐 Composición de envases · ' + d.cantidad_kg + 'kg bulk</span><span style="font-size:10px">' + fuenteTxt + '</span></div>';
+    h += '<div style="display:grid;grid-template-columns:1fr;gap:6px">';
+    for(const v of d.variantes){
+      const ratioBg = v.ratio_pct >= 50 ? '#0d9488' : (v.ratio_pct >= 25 ? '#0891b2' : '#64748b');
+      h += '<div style="display:grid;grid-template-columns:90px 60px 1fr 110px;gap:8px;align-items:center;background:#fff;border:1px solid #ccfbf1;border-radius:6px;padding:6px 10px;font-size:12px">';
+      h += '<div><span style="background:' + ratioBg + ';color:#fff;padding:2px 8px;border-radius:10px;font-weight:700;font-size:11px">' + v.ratio_pct + '%</span></div>';
+      h += '<div style="font-weight:700;color:#0f766e">' + escapeHtml(v.etiqueta || '') + '</div>';
+      h += '<div style="font-family:monospace;font-size:11px;color:#334155">' + escapeHtml(v.envase_codigo || '(sin envase)') + (v.envase_descripcion && v.envase_descripcion !== v.envase_codigo ? ' · <span style="color:#64748b">' + escapeHtml(v.envase_descripcion) + '</span>' : '') + '</div>';
+      h += '<div style="text-align:right;font-weight:800;color:#0e7490">' + (v.unidades_estimadas || 0).toLocaleString('es-CO') + ' uds</div>';
+      h += '</div>';
+    }
+    h += '</div>';
+    // Total
+    const totalUds = d.variantes.reduce((acc, v) => acc + (v.unidades_estimadas || 0), 0);
+    h += '<div style="text-align:right;margin-top:6px;font-size:11px;color:#0f766e;font-weight:700">Total unidades estimadas: ' + totalUds.toLocaleString('es-CO') + '</div>';
+    window._COMP_MEE_CACHE[loteId] = h;
+    box.innerHTML = h;
+  } catch(e){
+    box.innerHTML = '<span style="color:#dc2626">⚠ Error cargando composición: ' + escapeHtml(e.message || '') + '</span>';
+  }
+}
+
 async function _cargarOpcionesEnvases(loteId, envActual){
   const sel = document.getElementById('env-ovr-' + loteId);
   if(!sel) return;
@@ -13789,6 +13837,15 @@ async function abrirLoteModal(id, producto, fecha, kg){
     }
     html += '</div>';
   } catch(_e_env){ /* sin lote en PLAN_DATA · no mostrar */ }
+
+  // Sebastián 27-may-2026 PM · "el calendario debe colocar la realidad
+  // del envase, que lo tenga cada producción". Bloque composición de
+  // variantes auto-derivado desde Shopify · async post-render para no
+  // bloquear modal · placeholder + fetch + replace.
+  html += '<div id="comp-mee-' + id + '" style="background:#f0fdfa;border:1px solid #5eead4;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:12px;color:#0f766e">'
+    + '<span style="font-weight:700">📐 Composición de envases:</span> <span style="opacity:.7">cargando...</span>'
+    + '</div>';
+  setTimeout(function(){ _cargarComposicionMee(id); }, 50);
 
   // Sebastián 25-may-2026 PM · Desglose B2B vs DTC del lote + plan
   // envasado editable. "como ya estas primeras producciones estan
