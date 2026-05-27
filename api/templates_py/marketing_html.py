@@ -316,6 +316,7 @@ window.addEventListener('unhandledrejection', function(ev) {
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;">
       <button class="btn btn-outline" onclick="cmoCargarPlan()" title="Cargar plan del día">🔄 Recargar</button>
+      <button class="btn btn-outline" onclick="cmoAbrirHistorial()" title="Ver planes anteriores y desempeño del agente">📚 Historial</button>
       <button class="btn btn-primary" onclick="cmoGenerarPlanForzar()" title="Regenerar el plan ahora con datos frescos">⚡ Generar plan ahora</button>
     </div>
   </div>
@@ -335,6 +336,16 @@ window.addEventListener('unhandledrejection', function(ev) {
   <div id="cmo-acciones-list" style="display:flex;flex-direction:column;gap:12px;"></div>
 
   <div id="cmo-alert" style="display:none;margin-top:12px;"></div>
+</div>
+
+<!-- Modal: Historial planes CMO IA · 27-may-2026 PM -->
+<div class="modal-bg" id="modal-cmo-historial">
+  <div class="modal" style="max-width:920px;max-height:88vh;overflow-y:auto;">
+    <div class="modal-title">📚 Historial de planes CMO IA</div>
+    <button class="modal-close" onclick="closeModal('modal-cmo-historial')">&times;</button>
+    <div style="font-size:11px;color:#94a3b8;margin:6px 0 12px;">Click en una fila para ver el plan completo de ese día.</div>
+    <div id="cmo-hist-body" style="font-size:12px;color:#cbd5e1;">Cargando...</div>
+  </div>
 </div>
 
 <div id="tab-dashboard" class="tab-panel">
@@ -1500,6 +1511,81 @@ function loadTab(name) {
 // 🤖 TAB CMO IA · Plan del día generado por Claude director
 // Sebastián 27-may-2026 PM · "marketing debe ser superior · agencia IA"
 // ═══════════════════════════════════════════════════════════════════
+// ─── Historial planes CMO IA · 27-may-2026 PM ─────────────────────────
+async function cmoAbrirHistorial(){
+  const m = document.getElementById('modal-cmo-historial');
+  if(!m) return;
+  m.classList.add('open');
+  const body = document.getElementById('cmo-hist-body');
+  body.innerHTML = '<div style="color:#94a3b8;text-align:center;padding:24px">Cargando…</div>';
+  try{
+    const r = await fetch('/api/marketing/cmo/historial-planes?limit=60', {credentials:'same-origin'});
+    if(!r.ok){ body.innerHTML = '<div style="color:#f87171">HTTP '+r.status+'</div>'; return; }
+    const d = await r.json();
+    if(!d.ok){ body.innerHTML = '<div style="color:#f87171">'+esc(d.error||'error')+'</div>'; return; }
+    const planes = d.planes || [];
+    if(!planes.length){ body.innerHTML = '<div style="color:#94a3b8;text-align:center;padding:24px">Sin planes registrados aún · esperá al cron 7 AM o generá uno con ⚡ Generar plan ahora.</div>'; return; }
+    let html = '<table class="cmo-hist-tbl" style="width:100%;border-collapse:collapse;font-size:12px;">'
+      + '<thead><tr style="background:#0f172a;color:#94a3b8;text-transform:uppercase;font-size:10px;letter-spacing:.4px;">'
+      + '<th style="text-align:left;padding:8px 10px;">Fecha</th>'
+      + '<th style="text-align:left;padding:8px 10px;">Estado</th>'
+      + '<th class="mob-hide" style="text-align:left;padding:8px 10px;">Generado por</th>'
+      + '<th style="text-align:right;padding:8px 10px;">Acciones</th>'
+      + '<th style="text-align:right;padding:8px 10px;color:#34d399;">✓ Aprob</th>'
+      + '<th class="mob-hide" style="text-align:right;padding:8px 10px;color:#f59e0b;">⏸ Posp</th>'
+      + '<th class="mob-hide" style="text-align:right;padding:8px 10px;color:#ef4444;">✕ Desc</th>'
+      + '<th style="text-align:right;padding:8px 10px;color:#a78bfa;">⏳ Pend</th>'
+      + '</tr></thead><tbody>';
+    for(const p of planes){
+      const s = p.stats || {};
+      const ratioOk = s.total > 0 ? Math.round((s.aprobadas/s.total)*100) : 0;
+      const bg = (p.fecha === (new Date().toISOString().slice(0,10))) ? 'background:rgba(167,139,250,.08);' : '';
+      html += '<tr style="border-top:1px solid #1e293b;cursor:pointer;'+bg+'" '
+        + 'onclick="cmoCargarPlanPorFecha(\''+esc(p.fecha)+'\')" '
+        + 'onmouseover="this.style.background=\'rgba(52,211,153,.05)\'" '
+        + 'onmouseout="this.style.background=\''+ (bg ? 'rgba(167,139,250,.08)' : 'transparent') +'\'">';
+      html += '<td style="padding:8px 10px;font-weight:600;">'+esc(p.fecha)+'</td>';
+      html += '<td style="padding:8px 10px;"><span class="badge" style="font-size:10px;">'+esc(p.estado||'-')+'</span></td>';
+      html += '<td class="mob-hide" style="padding:8px 10px;color:#94a3b8;font-size:11px;">'+esc(p.generado_por||'-')+'</td>';
+      html += '<td style="padding:8px 10px;text-align:right;font-weight:700;color:#e2e8f0;">'+(s.total||0)+'</td>';
+      html += '<td style="padding:8px 10px;text-align:right;color:#34d399;font-weight:700;">'+(s.aprobadas||0)
+        +'<span style="font-size:10px;opacity:.7;"> ('+ratioOk+'%)</span></td>';
+      html += '<td class="mob-hide" style="padding:8px 10px;text-align:right;color:#f59e0b;">'+(s.pospuestas||0)+'</td>';
+      html += '<td class="mob-hide" style="padding:8px 10px;text-align:right;color:#ef4444;">'+(s.descartadas||0)+'</td>';
+      html += '<td style="padding:8px 10px;text-align:right;color:#a78bfa;">'+(s.pendientes||0)+'</td>';
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+    // Resumen agregado al final
+    const agg = planes.reduce((a,p) => {
+      const s = p.stats || {};
+      a.total += s.total||0; a.aprob += s.aprobadas||0;
+      a.posp += s.pospuestas||0; a.desc += s.descartadas||0;
+      a.pend += s.pendientes||0;
+      return a;
+    }, {total:0,aprob:0,posp:0,desc:0,pend:0});
+    const taFinal = agg.total > 0 ? Math.round((agg.aprob/agg.total)*100) : 0;
+    html += '<div style="margin-top:14px;padding:10px 14px;background:#0f172a;border-radius:8px;font-size:12px;color:#cbd5e1;">'
+      + '<b style="color:#a78bfa">Total ' + planes.length + ' planes</b> · '
+      + agg.total + ' acciones totales · '
+      + '<span style="color:#34d399;font-weight:700">'+agg.aprob+' aprobadas ('+taFinal+'% tasa)</span> · '
+      + '<span style="color:#f59e0b">'+agg.posp+' pospuestas</span> · '
+      + '<span style="color:#ef4444">'+agg.desc+' descartadas</span> · '
+      + '<span style="color:#a78bfa">'+agg.pend+' pendientes</span>'
+      + '</div>';
+    body.innerHTML = html;
+  } catch(e){
+    body.innerHTML = '<div style="color:#f87171">Error red: '+esc(e.message)+'</div>';
+  }
+}
+async function cmoCargarPlanPorFecha(fecha){
+  closeModal('modal-cmo-historial');
+  // Setear fecha y disparar carga
+  window._CMO_FECHA_FORZADA = fecha;
+  await cmoCargarPlan();
+  window._CMO_FECHA_FORZADA = null;  // reset al siguiente reload
+}
+
 async function cmoCargarPlan(){
   const empty = document.getElementById('cmo-empty');
   const list = document.getElementById('cmo-acciones-list');
@@ -1508,12 +1594,22 @@ async function cmoCargarPlan(){
   empty.style.display = 'none';
   kpiBar.style.display = 'none';
   try {
-    const r = await fetch('/api/marketing/cmo/plan-diario', {credentials:'same-origin'});
+    const fechaQs = window._CMO_FECHA_FORZADA
+      ? ('?fecha='+encodeURIComponent(window._CMO_FECHA_FORZADA))
+      : '';
+    const r = await fetch('/api/marketing/cmo/plan-diario'+fechaQs, {credentials:'same-origin'});
     const d = await r.json();
     if(d.sin_plan){
       list.innerHTML = '';
       empty.style.display = 'block';
       return;
+    }
+    // Si estamos viendo plan histórico (no de hoy), banner
+    if(window._CMO_FECHA_FORZADA){
+      const banner = document.createElement('div');
+      banner.style.cssText = 'background:rgba(167,139,250,.15);border:1px solid rgba(167,139,250,.4);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:#cbd5e1;';
+      banner.innerHTML = '📜 Plan histórico del <b>'+window._CMO_FECHA_FORZADA+'</b> · <a href="#" onclick="window._CMO_FECHA_FORZADA=null;cmoCargarPlan();return false;" style="color:#a78bfa">↩ volver a hoy</a>';
+      list.parentNode.insertBefore(banner, list);
     }
     if(!d.ok || !d.acciones){
       list.innerHTML = '<div style="color:#fca5a5;text-align:center;padding:18px;">Error: '+_escHtml(d.error||'desconocido')+'</div>';
@@ -2272,7 +2368,13 @@ function openCampanaModal(data) {
 }
 
 async function editCampana(id) {
-  const r = await fetch(`/api/marketing/campanas/${id}`).then(r=>r.json());
+  let r;
+  try {
+    const resp = await fetch(`/api/marketing/campanas/${id}`, {credentials:'same-origin'});
+    if(!resp.ok){ showToast('Campaña HTTP '+resp.status,'error'); return; }
+    r = await resp.json();
+  } catch(e){ showToast('Error red editar campaña: '+e.message,'error'); return; }
+  if(!r || r.error){ showToast('Error: '+(r&&r.error||'sin respuesta'),'error'); return; }
   document.getElementById('camp-edit-id').value = id;
   document.getElementById('modal-campana-title').textContent = 'Editar Campaña';
   document.getElementById('camp-nombre').value = r.nombre||'';
@@ -3052,7 +3154,13 @@ function openInfluencerModal() {
 }
 
 async function editInfluencer(id) {
-  const r = await fetch(`/api/marketing/influencers/${id}`).then(r=>r.json());
+  let r;
+  try {
+    const resp = await fetch(`/api/marketing/influencers/${id}`, {credentials:'same-origin'});
+    if(!resp.ok){ showToast('Influencer HTTP '+resp.status,'error'); return; }
+    r = await resp.json();
+  } catch(e){ showToast('Error red editar influencer: '+e.message,'error'); return; }
+  if(!r || r.error){ showToast('Error: '+(r&&r.error||'sin respuesta'),'error'); return; }
   document.getElementById('inf-edit-id').value=id;
   document.getElementById('modal-inf-title').textContent='Editar Influencer';
   document.getElementById('inf-nombre').value=r.nombre||'';

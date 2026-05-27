@@ -6430,6 +6430,88 @@ def admin_mees_abreviaturas_fix():
     })
 
 
+@bp.route("/api/admin/mees-huerfanos-audit", methods=["GET"])
+def admin_mees_huerfanos_audit():
+    """Sebastián 27-may-2026 PM · dry-run del cron auto_reparar_huerfanas_mee.
+
+    Lista filas de `sku_mee_config` con `mee_codigo` que NO existe en
+    `maestro_mee`. Reporta cuáles se reparan vía mee_aliases y cuáles
+    quedan pendientes manual.
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    conn = get_db(); c = conn.cursor()
+    try:
+        rows = c.execute("""
+            SELECT smc.mee_codigo, COUNT(*) AS uso_en_config
+            FROM sku_mee_config smc
+            LEFT JOIN maestro_mee m
+              ON UPPER(m.codigo) = UPPER(smc.mee_codigo)
+            WHERE COALESCE(smc.aplica, 1) = 1
+              AND COALESCE(smc.mee_codigo, '') != ''
+              AND m.codigo IS NULL
+            GROUP BY smc.mee_codigo
+            ORDER BY uso_en_config DESC
+        """).fetchall()
+    except Exception as e:
+        return jsonify({'error': str(e)[:200]}), 500
+
+    auto_reparables = []
+    pendientes_manual = []
+    for r in rows:
+        cod_huerfano = r[0]; uso = r[1] or 0
+        # Intentar match via mee_aliases
+        m = c.execute("""
+            SELECT codigo_mee FROM mee_aliases
+            WHERE LOWER(alias) = LOWER(?) AND COALESCE(activo,1) = 1
+            LIMIT 1
+        """, (cod_huerfano,)).fetchone()
+        if m and m[0]:
+            # Verificar que el canonical existe
+            exists = c.execute(
+                "SELECT 1 FROM maestro_mee WHERE UPPER(codigo) = UPPER(?) LIMIT 1",
+                (m[0],)
+            ).fetchone()
+            if exists:
+                auto_reparables.append({
+                    'mee_codigo_huerfano': cod_huerfano,
+                    'reparar_a': m[0],
+                    'uso_en_sku_mee_config': uso,
+                })
+                continue
+        pendientes_manual.append({
+            'mee_codigo_huerfano': cod_huerfano,
+            'uso_en_sku_mee_config': uso,
+        })
+    return jsonify({
+        'huerfanos_total': len(rows),
+        'auto_reparables': auto_reparables,
+        'pendientes_manual': pendientes_manual,
+        'mensaje': (f'{len(auto_reparables)} se reparan automático en próximo '
+                    f'cron 4:45 AM · {len(pendientes_manual)} requieren agregar '
+                    f'alias en /api/admin/mees-abreviaturas-fix primero'),
+    })
+
+
+@bp.route("/api/admin/mees-huerfanos-fix", methods=["POST"])
+def admin_mees_huerfanos_fix():
+    """Fuerza la corrida del job auto_reparar_huerfanas_mee fuera de horario.
+
+    Útil después de borrar/renombrar MEEs sin esperar al cron 4:45 AM.
+    """
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    try:
+        from blueprints.auto_plan_jobs import job_auto_reparar_huerfanas_mee
+        from flask import current_app as _app
+        ok, resultado, _ = job_auto_reparar_huerfanas_mee(_app)
+        return jsonify({'ok': bool(ok), 'forzado_por': u, **(resultado or {})})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)[:300]}), 500
+
+
 @bp.route("/api/admin/mees-diagnostico", methods=["GET"])
 def admin_mees_diagnostico():
     """Diagnóstico del cálculo de necesidades MEE.

@@ -676,6 +676,11 @@ JOBS_SCHEDULE = [
     # ⭐ Auto-normalizar MEE descriptions · 4:35 AM (5min después de MPs)
     # TAPA / ENVASE / ETIQUETA abreviadas → canonical · sku_mee_config dedup
     ('auto_normalizar_envases',  4, 35, None, None,             'job_auto_normalizar_envases'),
+    # ⭐ Auto-reparar sku_mee_config huérfanos · 4:45 AM (10min después de envases)
+    # Detecta sku_mee_config.mee_codigo que apuntan a códigos no existentes en
+    # maestro_mee y los repara via mee_aliases. Equivalente MEE de
+    # auto_reparar_huerfanas (MP). Pendientes manuales se loguean.
+    ('auto_reparar_huerfanas_mee', 4, 45, None, None,           'job_auto_reparar_huerfanas_mee'),
     # PQR SLA · Ley 1755/2015 CO · diario 8:15 AM
     ('pqr_sla_vencido',       8, 15, None, None,                'job_pqr_sla_vencido'),
     # MEE drift sync · cache vs SUM(movimientos_mee) · diario 3:00 AM
@@ -4727,6 +4732,98 @@ def job_auto_reparar_huerfanas(app):
         }, 0
 
 
+def job_auto_reparar_huerfanas_mee(app):
+    """Sebastián 27-may-2026 PM · cron diario 4:45 AM.
+
+    Equivalente MEE de `job_auto_reparar_huerfanas` (MP).
+    Detecta `sku_mee_config.mee_codigo` apuntando a códigos NO existentes en
+    `maestro_mee` y los repara via `mee_aliases.alias→codigo_mee` cuando hay
+    match. Casos sin alias quedan pendientes manual (loggeados).
+
+    Causa raíz: cuando se borra/renombra un MEE en `maestro_mee` (típico al
+    consolidar duplicados), las filas de `sku_mee_config` que apuntaban al
+    código viejo quedan huérfanas. El JOIN en `producciones_faltantes` falla
+    silencioso → necesidad MEE = 0 → exagera/oculta déficit real.
+    """
+    with app.app_context():
+        from database import get_db as _gdb
+        conn = _gdb(); c = conn.cursor()
+        try:
+            rows = c.execute("""
+                SELECT DISTINCT smc.mee_codigo
+                FROM sku_mee_config smc
+                LEFT JOIN maestro_mee m
+                  ON UPPER(m.codigo) = UPPER(smc.mee_codigo)
+                WHERE COALESCE(smc.aplica, 1) = 1
+                  AND COALESCE(smc.mee_codigo, '') != ''
+                  AND m.codigo IS NULL
+            """).fetchall()
+            huerfanos = [r[0] for r in rows if r[0]]
+        except Exception as e:
+            log.exception('auto_reparar_huerfanas_mee detectar fallo')
+            return False, {'error': str(e)[:200]}, 0
+        if not huerfanos:
+            return True, {'huerfanos': 0, 'reparados': 0}, 0
+        reparados = 0
+        pendientes = []
+        log.info('[auto_reparar_huerfanas_mee] detectados %d MEE huérfanos',
+                 len(huerfanos))
+        for cod_huerfano in huerfanos:
+            try:
+                # Intentar via mee_aliases (mig 196)
+                row = c.execute("""
+                    SELECT codigo_mee FROM mee_aliases
+                    WHERE LOWER(alias) = LOWER(?)
+                      AND COALESCE(activo, 1) = 1
+                    LIMIT 1
+                """, (cod_huerfano,)).fetchone()
+                if not row or not row[0]:
+                    pendientes.append(cod_huerfano)
+                    continue
+                nuevo = row[0]
+                # Verificar que el canonical EXISTE en maestro_mee
+                exists = c.execute(
+                    "SELECT 1 FROM maestro_mee WHERE UPPER(codigo) = UPPER(?) LIMIT 1",
+                    (nuevo,)
+                ).fetchone()
+                if not exists:
+                    pendientes.append(cod_huerfano)
+                    continue
+                # Reparar · UPDATE sku_mee_config con código canonical
+                c.execute("""
+                    UPDATE sku_mee_config SET mee_codigo = ?
+                    WHERE mee_codigo = ?
+                """, (nuevo, cod_huerfano))
+                reparados += 1
+                log.info('[auto_reparar_huerfanas_mee] %s -> %s (via aliases)',
+                         cod_huerfano, nuevo)
+                try:
+                    from audit_helpers import audit_log as _audit
+                    _audit(c, usuario='cron-auto-repair-mee',
+                          accion='REPARAR_HUERFANO_MEE',
+                          tabla='sku_mee_config',
+                          registro_id=cod_huerfano,
+                          antes={'mee_codigo': cod_huerfano},
+                          despues={'mee_codigo': nuevo, 'via': 'mee_aliases'})
+                except Exception as _ae:
+                    log.warning('[auto_reparar_huerfanas_mee] audit fallo: %s', _ae)
+            except Exception as e:
+                log.warning('[auto_reparar_huerfanas_mee] %s fallo: %s',
+                            cod_huerfano, e)
+                continue
+        try:
+            conn.commit()
+        except Exception:
+            try: conn.rollback()
+            except Exception: pass
+        return True, {
+            'huerfanos_detectados': len(huerfanos),
+            'reparados_auto': reparados,
+            'pendientes_manual': len(pendientes),
+            'pendientes_lista': pendientes[:20],
+        }, 0
+
+
 def _loop_multi_cron(app):
     """Loop cada 5 min revisa schedule de jobs y ejecuta los que apliquen.
 
@@ -4763,6 +4860,7 @@ def _loop_multi_cron(app):
                     'auto_reparar_huerfanas',       # UPDATE formula_items
                     'auto_normalizar_formulas',     # UPDATE formula_items
                     'auto_normalizar_envases',      # UPDATE maestro_mee + sku_mee_config
+                    'auto_reparar_huerfanas_mee',   # UPDATE sku_mee_config (vía aliases)
                     'mee_drift_sync',               # UPDATE stock_actual
                     'cmo_ia_plan_diario',           # INSERT marketing_cmo_plan · no idempotente
                 }

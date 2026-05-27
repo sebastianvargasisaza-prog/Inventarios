@@ -7836,6 +7836,59 @@ def _cmo_acciones_heuristicas(snapshot):
     return acciones[:8]
 
 
+@bp.route("/api/marketing/cmo/historial-planes", methods=["GET"])
+def mkt_cmo_historial_planes():
+    """Sebastián 27-may-2026 PM · historial de planes CMO IA.
+
+    Devuelve los últimos N planes con stats agregados de acciones:
+    aprobadas, pospuestas, descartadas, pendientes.
+    Útil para que Jefferson/Sebas vean el desempeño del agente director.
+
+    Query: ?limit=30 (max 90).
+    """
+    u, err, code = _auth()
+    if err: return err, code
+    try:
+        limit = max(1, min(int(request.args.get('limit', 30)), 90))
+    except (TypeError, ValueError):
+        limit = 30
+    conn = _db(); c = conn.cursor()
+    try:
+        planes = c.execute(
+            "SELECT id, fecha, estado, generado_por, creado_at "
+            "FROM marketing_cmo_plan ORDER BY fecha DESC, id DESC LIMIT ?",
+            (limit,)
+        ).fetchall()
+    except Exception as e:
+        return jsonify({'ok': False,
+                        'error': f'tabla marketing_cmo_plan no existe (mig 200): {e}'}), 500
+    out = []
+    for p in planes:
+        d = dict(p)
+        try:
+            stats = c.execute("""
+                SELECT
+                    SUM(CASE WHEN COALESCE(estado,'pendiente')='aprobado'   THEN 1 ELSE 0 END) AS aprobadas,
+                    SUM(CASE WHEN COALESCE(estado,'pendiente')='pospuesto'  THEN 1 ELSE 0 END) AS pospuestas,
+                    SUM(CASE WHEN COALESCE(estado,'pendiente')='descartado' THEN 1 ELSE 0 END) AS descartadas,
+                    SUM(CASE WHEN COALESCE(estado,'pendiente')='pendiente'  THEN 1 ELSE 0 END) AS pendientes,
+                    COUNT(*) AS total
+                FROM marketing_cmo_acciones WHERE plan_id=?
+            """, (d['id'],)).fetchone()
+            d['stats'] = {
+                'total':       int(stats['total'] or 0)       if stats else 0,
+                'aprobadas':   int(stats['aprobadas'] or 0)   if stats else 0,
+                'pospuestas':  int(stats['pospuestas'] or 0)  if stats else 0,
+                'descartadas': int(stats['descartadas'] or 0) if stats else 0,
+                'pendientes':  int(stats['pendientes'] or 0)  if stats else 0,
+            }
+        except Exception:
+            d['stats'] = {'total': 0, 'aprobadas': 0, 'pospuestas': 0,
+                          'descartadas': 0, 'pendientes': 0}
+        out.append(d)
+    return jsonify({'ok': True, 'planes': out, 'total': len(out)})
+
+
 @bp.route("/api/marketing/cmo/accion/<int:aid>/decidir", methods=["POST"])
 def mkt_cmo_accion_decidir(aid):
     """Aprobar / posponer / descartar una acción del plan CMO.
