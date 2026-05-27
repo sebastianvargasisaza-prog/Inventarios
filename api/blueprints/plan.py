@@ -195,27 +195,67 @@ def _seleccionar_variante_optima(conn, producto_canonico, kg_objetivo=1.0):
             'n_variantes_evaluadas': len(variantes),
             'decision': f'prioridad_manual_{max_prio}',
         }
-    # Calcular faltante por variante
-    evaluadas = []
+    # PERF-FIX 27-may-2026 PM · audit round 4 · N+1 stock_mp_disponible.
+    # Antes: por cada variante × item llamaba stock_mp_disponible(conn, mat_id)
+    # que escanea movimientos · 5 variantes × 20 items = 100 SUM full table.
+    # Ahora: una sola query agregada para TODOS los material_ids relevantes ·
+    # dict lookup O(1) en el loop.
+    #
+    # 1) Levantar la lista de material_ids candidatos UPA vez.
+    _todos_mat_ids = set()
+    items_por_variante = {}
     for prod_nom, var_label, _prio, lote_kg in variantes:
-        items = conn.execute(
+        _items = conn.execute(
             """SELECT material_id, COALESCE(porcentaje, 0),
                       COALESCE(cantidad_g_por_lote, 0)
                FROM formula_items
                WHERE UPPER(TRIM(producto_nombre)) = UPPER(TRIM(?))""",
             (prod_nom,),
         ).fetchall()
+        items_por_variante[prod_nom] = _items
+        for _row in _items:
+            if _row[0]:
+                _todos_mat_ids.add(_row[0])
+
+    # 2) Una sola query agregada para stock disponible por material_id.
+    stock_por_mat = {}
+    if _todos_mat_ids:
+        try:
+            _ph = ','.join(['?'] * len(_todos_mat_ids))
+            _mat_list = list(_todos_mat_ids)
+            for _r in conn.execute(
+                f"""SELECT material_id,
+                          COALESCE(SUM(CASE WHEN tipo='Entrada' THEN cantidad
+                                            WHEN tipo='Salida'  THEN -cantidad
+                                            WHEN tipo='Ajuste'  THEN cantidad
+                                            ELSE 0 END), 0)
+                     FROM movimientos
+                     WHERE material_id IN ({_ph})
+                       AND (estado_lote IS NULL OR UPPER(estado_lote) NOT IN
+                            ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO','VENCIDO','AGOTADO','BLOQUEADO'))
+                     GROUP BY material_id""",
+                _mat_list
+            ).fetchall():
+                stock_por_mat[_r[0]] = float(_r[1] or 0)
+        except Exception:
+            # Fallback a query individual si la batch falla (PG/SQLite divergence)
+            for _mid in _todos_mat_ids:
+                try:
+                    stock_por_mat[_mid] = float(stock_mp_disponible(conn, _mid) or 0)
+                except Exception:
+                    stock_por_mat[_mid] = 0.0
+
+    # Calcular faltante por variante (sin más SELECTs en el loop)
+    evaluadas = []
+    for prod_nom, var_label, _prio, lote_kg in variantes:
+        items = items_por_variante.get(prod_nom, [])
         faltante_total = 0.0
         for mat_id, pct, cant_g_por_lote in items:
             if cant_g_por_lote and lote_kg:
-                # Escala por kg_objetivo proporcional
                 req_g = float(cant_g_por_lote) * (kg_objetivo / float(lote_kg)) if float(lote_kg) > 0 else float(cant_g_por_lote)
             else:
                 req_g = (float(pct or 0) / 100.0) * float(kg_objetivo or 0) * 1000.0
-            try:
-                disp_g = stock_mp_disponible(conn, mat_id)
-            except Exception:
-                disp_g = 0
+            disp_g = stock_por_mat.get(mat_id, 0.0)
             if disp_g < req_g:
                 faltante_total += (req_g - disp_g)
         evaluadas.append({

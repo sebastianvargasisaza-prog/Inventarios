@@ -371,7 +371,10 @@ def rrhh_nomina_export(periodo):
     ws.merge_cells("A1:N1")
     ws["A1"] = "NOMINA PERIODO " + periodo + " - HHA GROUP"
     ws["A1"].font = Font(bold=True, size=13); ws["A1"].alignment = Alignment(horizontal="center")
-    hdrs = ["#","Cedula","Empleado","Cargo","Empresa","Dias","Sal.Base","Aux.Trans","H.Extras","Bonos","-Salud 4%","-Pension 4%","-Otros","NETO"]
+    # SEC-FIX 27-may-2026 PM · audit round 4 · header decía "Cedula" pero el
+    # SELECT trae empleados.id (PK INTEGER), no la cédula real. Renombrado a
+    # "ID Empleado" para evitar confusión / falsa expectativa de PII.
+    hdrs = ["#","ID Empleado","Empleado","Cargo","Empresa","Dias","Sal.Base","Aux.Trans","H.Extras","Bonos","-Salud 4%","-Pension 4%","-Otros","NETO"]
     for col, h in enumerate(hdrs, 1):
         cell = ws.cell(row=3, column=col, value=h)
         cell.fill = hf; cell.font = hfont; cell.alignment = Alignment(horizontal="center"); cell.border = brd
@@ -407,6 +410,18 @@ def rrhh_nomina_export(periodo):
     ws.cell(tr+2, 14, total_neto + total_ap).font = Font(bold=True)
     ws.cell(tr+2, 14).number_format = "#,##0"
     buf = io.BytesIO(); wb.save(buf); buf.seek(0)
+    # SEC-FIX 27-may-2026 PM · audit round 4 · audit_log obligatorio en
+    # export masivo de nómina · Habeas Data L1581 art. 17 trazabilidad.
+    try:
+        from audit_helpers import audit_log as _alog
+        _alog(c, usuario=session.get('compras_user',''),
+              accion='EXPORT_NOMINA_EXCEL',
+              tabla='empleados', registro_id=f'periodo:{periodo}',
+              despues={'periodo': periodo, 'empleados_exportados': len(emps),
+                       'total_neto': total_neto, 'total_aportes': total_ap})
+        conn.commit()
+    except Exception:
+        pass
     return Response(buf.getvalue(),
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": "attachment; filename=Nomina_"+periodo+".xlsx"})
@@ -857,12 +872,22 @@ def rrhh_eventos():
         f_ini = (d.get('fecha_inicio') or '').strip()
         f_fin = (d.get('fecha_fin') or '').strip()
         dias = int(d.get('dias') or 0)
-        if not dias and f_ini and f_fin:
+        # SEC-FIX 27-may-2026 PM · audit round 4 · validar fecha_inicio ≤ fecha_fin
+        # Antes: dias podía quedar NEGATIVO si user invirtió fechas → cálculo
+        # de pago erróneo. Bloquear 400 explícito.
+        if f_ini and f_fin:
             try:
-                from datetime import date
-                d1 = date.fromisoformat(f_ini); d2 = date.fromisoformat(f_fin)
-                dias = (d2 - d1).days + 1
-            except Exception: pass
+                from datetime import date as _dRH
+                d1 = _dRH.fromisoformat(f_ini); d2 = _dRH.fromisoformat(f_fin)
+                if d2 < d1:
+                    return jsonify({'error': 'fecha_fin debe ser >= fecha_inicio',
+                                     'fecha_inicio': f_ini, 'fecha_fin': f_fin}), 400
+                if not dias:
+                    dias = (d2 - d1).days + 1
+            except ValueError:
+                return jsonify({'error': 'fecha_inicio o fecha_fin con formato inválido (use YYYY-MM-DD)'}), 400
+        if dias < 0:
+            return jsonify({'error': 'dias no puede ser negativo'}), 400
 
         # Calcular pago si aplica (necesita salario_base del empleado)
         emp = c.execute("SELECT salario_base FROM empleados WHERE id=?", (emp_id,)).fetchone()

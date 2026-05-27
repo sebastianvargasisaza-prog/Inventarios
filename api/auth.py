@@ -432,7 +432,11 @@ def register_hooks(app):
         # SEC-FIX · 21-may-2026 · OBLIGATORIO para /api/admin/* + paths sensibles.
         # Antes: si no enviaba, pasaba · ahora admin/sensibles requieren token.
         provided_token = request.headers.get('X-CSRF-Token', '').strip()
-        _admin_paths = ('/api/admin/', '/api/maestro-mps/', '/api/maestros-mps/')
+        # SEC-FIX 27-may-2026 PM · audit round 4 · /api/mfa/ es admin-sensible
+        # (admin-disable, backup-codes/regenerate, verify-setup) y NO estaba
+        # protegido por CSRF · path fuera de /api/admin/. Agregado a la lista.
+        _admin_paths = ('/api/admin/', '/api/maestro-mps/', '/api/maestros-mps/',
+                         '/api/mfa/')
         _csrf_obligatorio = any(request.path.startswith(p) for p in _admin_paths)
         if _csrf_obligatorio and not provided_token and not app.testing:
             _log_sec(

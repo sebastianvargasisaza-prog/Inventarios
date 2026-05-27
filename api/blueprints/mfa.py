@@ -835,6 +835,17 @@ def mfa_disable():
                    backup_code_hash = NULL
              WHERE username = ?
         """, (username,))
+        # SEC-FIX 27-may-2026 PM · audit round 4 · bumpear session_version
+        # invalida cookies mfa_trusted del usuario · sin esto, una sesión
+        # con cookie mfa_trusted vigente seguía válida 60d incluso después
+        # de desactivar MFA · riesgo si cookie comprometida pre-disable.
+        try:
+            conn.execute(
+                "UPDATE users_passwords SET session_version = COALESCE(session_version,1)+1 WHERE username=?",
+                (username,)
+            )
+        except Exception:
+            pass  # columna puede faltar en instancias muy viejas
         conn.commit()
     finally:
         conn.close()

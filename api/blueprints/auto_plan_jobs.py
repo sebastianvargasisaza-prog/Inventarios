@@ -2071,6 +2071,43 @@ def job_desv_plazos(app):
         if not sin_clasif and not sin_invest and not capa_vencido and not capa_acc_vencido:
             return True, {'mensaje': 'Sin desviaciones en plazo vencido'}, 0
 
+        # SEC-FIX 27-may-2026 PM · audit round 4 · anti-spam · usar
+        # cron_alerts_sent (mig 198) para no notificar el mismo conjunto >1
+        # vez por semana mientras siga vencido. Si delta hay items NUEVOS,
+        # notifica · si no, skip.
+        from datetime import datetime as _dtDP
+        hoy_iso = (_dtDP.utcnow().date()).isoformat()
+        # Hash del conjunto de códigos · si cambia (item nuevo), re-notifica.
+        codigos_actuales = sorted(
+            [r[0] for r in sin_clasif if r[0]] +
+            [r[0] for r in sin_invest if r[0]] +
+            [r[0] for r in capa_vencido if r[0]] +
+            [f'CAPA-{r[0]}' for r in capa_acc_vencido if r[0]]
+        )
+        firma_actual = '|'.join(codigos_actuales)[:200]
+        try:
+            row_prev = c.execute(
+                "SELECT ultima_notif FROM cron_alerts_sent WHERE tipo_alerta=? AND registro_id=?",
+                ('desv_plazos', firma_actual)
+            ).fetchone()
+            if row_prev and row_prev[0]:
+                last = row_prev[0][:10]
+                if (_dtDP.strptime(hoy_iso, '%Y-%m-%d').date() -
+                    _dtDP.strptime(last, '%Y-%m-%d').date()).days < 7:
+                    return True, {'mensaje': 'misma firma notificada <7d · skip',
+                                  'firma': firma_actual[:80]}, 0
+            c.execute(
+                """INSERT INTO cron_alerts_sent (tipo_alerta, registro_id, ultima_notif, count_notifs)
+                   VALUES (?, ?, ?, 1)
+                   ON CONFLICT(tipo_alerta, registro_id) DO UPDATE SET
+                     ultima_notif=excluded.ultima_notif,
+                     count_notifs=count_notifs+1""",
+                ('desv_plazos', firma_actual, hoy_iso)
+            )
+            conn.commit()
+        except Exception as _e:
+            log.warning('desv_plazos dedup fallo · notifico igual: %s', _e)
+
         try:
             from blueprints.notif import push_notif_multi
             destinatarios = ['controlcalidad.espagiria','aseguramiento.espagiria',
