@@ -6566,7 +6566,7 @@ def admin_mees_diagnostico():
         'detalle_sin_mapping': productos_sin_mapping[:50],
         'detalle_sin_volumen': productos_sin_volumen[:50],
         'detalle_huerfanos': huerfanos[:50],
-        'detalle_ok_top': productos_ok[:10],
+        'detalle_ok_top': productos_ok,  # TODOS · UI muestra con botones gestión
     })
 
 
@@ -7305,12 +7305,20 @@ async function cargar(){
     }
     html += '</tbody></table></div>';
   }
-  // OK preview
+  // OK · todos los productos OK · permite gestionar tonos/variantes igual
+  // (Sebastián 27-may-2026 PM · "ya les habia puesto envase, pero ya no me
+  // salen para variante" · sección antes era preview top-10 sin botones).
   if((d.detalle_ok_top||[]).length){
-    html += '<div class="card"><h2 class="grn">✅ Productos OK (primeros 10)</h2>';
-    html += '<table><thead><tr><th>Producto</th><th>MEEs</th><th>Vol ml</th></tr></thead><tbody>';
+    html += '<div class="card"><h2 class="grn">✅ Productos OK · gestión avanzada</h2>';
+    html += '<div style="color:#94a3b8;font-size:12px;margin-bottom:10px;">Estos productos ya tienen mapping completo. Si tienen <b>tonos</b> usá 📦 para agregar otros envases. Si tienen <b>variantes ml</b> (30ml/15ml) usá 📐 para configurar presentaciones.</div>';
+    html += '<table><thead><tr><th>Producto</th><th>MEEs</th><th>Vol ml</th><th>Acciones</th></tr></thead><tbody>';
     for(const p of d.detalle_ok_top){
-      html += '<tr><td>'+esc(p.producto||'')+'</td><td>'+esc((p.mees||[]).join(', '))+'</td><td class="grn">'+(p.volumen_ml||0)+'</td></tr>';
+      const prodEsc = esc(p.producto||'');
+      html += '<tr><td>'+prodEsc+'</td><td>'+esc((p.mees||[]).join(', '))+'</td><td class="grn">'+(p.volumen_ml||0)+'</td>';
+      html += '<td style="white-space:nowrap;">'
+        + '<button data-producto="'+prodEsc+'" onclick="abrirModalEnvases(this.dataset.producto)" style="margin-right:6px;font-size:11px;padding:5px 10px;">📦 Envases</button>'
+        + '<button data-producto="'+prodEsc+'" onclick="abrirModalVariantes(this.dataset.producto)" style="background:#0e7490;font-size:11px;padding:5px 10px;">📐 Variantes ml</button>'
+        + '</td></tr>';
     }
     html += '</tbody></table></div>';
   }
