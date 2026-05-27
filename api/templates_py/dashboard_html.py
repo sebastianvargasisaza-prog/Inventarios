@@ -3449,7 +3449,7 @@ async function cargarHistProd(){
         '<td style="text-align:center;"><span style="background:'+estadoBg+';color:'+estadoCol+';padding:2px 8px;border-radius:10px;font-size:0.8em;font-weight:600;">'+_escHTML(p.estado||'')+'</span></td>'+
         '<td style="text-align:center;white-space:nowrap">'+
           '<button data-prod-act="detalle" data-pid="'+p.id+'" style="background:#0891b2;color:#fff;border:none;padding:3px 8px;border-radius:4px;font-size:10px;cursor:pointer;margin-right:3px" title="Ver MPs descontadas + lotes FEFO + costo">📋</button>'+
-          '<button data-prod-act="rotulo" data-pid="'+p.id+'" style="background:#c0392b;color:#fff;border:none;padding:3px 8px;border-radius:4px;font-size:10px;cursor:pointer" title="Re-imprimir rótulos">🏷</button>'+
+          '<button data-prod-act="rotulo" data-pid="'+p.id+'" data-prod="'+_escHTML(p.producto||'')+'" data-kg="'+(p.cantidad||0)+'" style="background:#c0392b;color:#fff;border:none;padding:3px 8px;border-radius:4px;font-size:10px;cursor:pointer" title="Re-imprimir rótulos completos de dispensación (MPs + lotes FEFO + INCI)">🏷</button>'+
         '</td>'+
       '</tr>';
     }).join('');
@@ -3483,7 +3483,19 @@ if(typeof document !== 'undefined' && !window._PROD_HIST_DELEG){
     var pid = btn.getAttribute('data-pid');
     if(!pid) return;
     if(act === 'rotulo'){
-      window.open('/api/produccion/'+pid+'/rotulo-reimprimir', '_blank');
+      // FIX 27-may-2026 PM · Sebastián · "los rotulos que salian era para
+      // dispensar materias primas ahora salen unos raros". El botón antes
+      // abría /api/produccion/<pid>/rotulo-reimprimir (rótulo simplificado
+      // de 6 etiquetas identificación lote) · ahora abre el rótulo COMPLETO
+      // de dispensación /rotulos/<producto>/<kg> con MPs + lotes FEFO + INCI.
+      var prod = btn.getAttribute('data-prod');
+      var kg = btn.getAttribute('data-kg');
+      if (prod && kg){
+        window.open('/rotulos/'+encodeURIComponent(prod)+'/'+(parseFloat(kg)||0).toFixed(1), '_blank');
+      } else {
+        // Fallback al endpoint legacy si data-* no está disponible (cache JS viejo)
+        window.open('/api/produccion/'+pid+'/rotulo-reimprimir', '_blank');
+      }
     } else if(act === 'detalle'){
       verDetalleProduccion(pid);
     }
@@ -3532,7 +3544,7 @@ async function verDetalleProduccion(pid){
       (d.observaciones ? '<div style="margin-top:12px;padding:8px;background:#fef3c7;border-left:3px solid #ca8a04;font-size:12px"><b>Observaciones:</b><br>'+_escHTML(d.observaciones)+'</div>' : '')+
       '<div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">'+
         '<button id="prod-det-ajustar" data-pid="'+pid+'" data-actual="'+d.cantidad_kg+'" style="background:#ca8a04;color:#fff;padding:8px 16px;border:none;border-radius:6px;font-weight:700;cursor:pointer" title="Corregir cantidad registrada (admin)">✏ Corregir cantidad</button>'+
-        '<button id="prod-det-reimp" data-pid="'+pid+'" style="background:#c0392b;color:#fff;padding:8px 16px;border:none;border-radius:6px;font-weight:700;cursor:pointer">🏷 Re-imprimir rótulos</button>'+
+        '<button id="prod-det-reimp" data-pid="'+pid+'" data-prod="'+_escHTML(d.producto||'')+'" data-kg="'+(d.cantidad_kg||0)+'" style="background:#c0392b;color:#fff;padding:8px 16px;border:none;border-radius:6px;font-weight:700;cursor:pointer" title="Rótulos completos de dispensación (MPs + lotes FEFO + INCI)">🏷 Re-imprimir rótulos</button>'+
       '</div>'+
       '</div>';
     document.body.appendChild(div);
@@ -3541,7 +3553,15 @@ async function verDetalleProduccion(pid){
     };
     var reimpBtn = document.getElementById('prod-det-reimp');
     if(reimpBtn) reimpBtn.onclick = function(){
-      window.open('/api/produccion/' + reimpBtn.getAttribute('data-pid') + '/rotulo-reimprimir', '_blank');
+      // FIX 27-may-2026 PM · usar rótulo completo de dispensación, no el
+      // simplificado de identificación lote (que es 'totalmente diferente').
+      var prod = reimpBtn.getAttribute('data-prod');
+      var kg = reimpBtn.getAttribute('data-kg');
+      if (prod && kg){
+        window.open('/rotulos/'+encodeURIComponent(prod)+'/'+(parseFloat(kg)||0).toFixed(1), '_blank');
+      } else {
+        window.open('/api/produccion/' + reimpBtn.getAttribute('data-pid') + '/rotulo-reimprimir', '_blank');
+      }
     };
     var ajustBtn = document.getElementById('prod-det-ajustar');
     if(ajustBtn) ajustBtn.onclick = async function(){
