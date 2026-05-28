@@ -4683,7 +4683,7 @@ def job_auto_reparar_huerfanas(app):
                 # entre corridas · audit_log permite reconstruir cambios.
                 cand = c.execute("""
                     SELECT m.codigo_mp, m.nombre_comercial,
-                           (SELECT COALESCE(SUM(CASE WHEN mv.tipo='Entrada' THEN mv.cantidad ELSE -mv.cantidad END), 0)
+                           (SELECT COALESCE(SUM(CASE WHEN mv.tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN mv.cantidad WHEN mv.tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -mv.cantidad ELSE 0 END), 0)
                             FROM movimientos mv WHERE mv.material_id = m.codigo_mp) AS stock_g
                     FROM maestro_mps m
                     WHERE COALESCE(m.activo,1)=1

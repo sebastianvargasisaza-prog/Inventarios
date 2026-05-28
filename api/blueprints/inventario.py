@@ -492,6 +492,15 @@ def handle_formulas():
                 pct = 0
             if not mid or not nm or pct <= 0:
                 continue
+            # 27-may-2026 audit · un ingrediente no puede ser >100% de la fórmula
+            # · cap lógico evita cantidad_g_por_lote absurda (riesgo INVIMA dosis).
+            if pct > 100:
+                return jsonify({
+                    'error': f'Porcentaje inválido: {pct}% para {nm}',
+                    'detalle': ('Un ingrediente no puede superar 100% de la '
+                                'fórmula. Revisá el valor capturado.'),
+                    'material_id_invalido': mid,
+                }), 400
             # Validar que material_id existe en maestro_mps activo (FK preview)
             row = c.execute(
                 "SELECT 1 FROM maestro_mps WHERE codigo_mp=? AND activo=1",
@@ -2005,7 +2014,7 @@ def _handle_produccion_inner():
                 try:
                     cand = c.execute(
                         """SELECT mp.codigo_mp, mp.nombre_comercial,
-                                  COALESCE(SUM(CASE WHEN m.tipo='Entrada' THEN m.cantidad ELSE -m.cantidad END), 0) as stock_act
+                                  COALESCE(SUM(CASE WHEN m.tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN m.cantidad WHEN m.tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -m.cantidad ELSE 0 END), 0) as stock_act
                            FROM maestro_mps mp
                            LEFT JOIN movimientos m ON m.material_id = mp.codigo_mp
                              AND (m.estado_lote IS NULL OR m.estado_lote NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO'))
@@ -2412,10 +2421,10 @@ def produccion_auditar_formulas_huerfanas():
         try:
             cand = c.execute(
                 """SELECT mp.codigo_mp, mp.nombre_comercial,
-                          COALESCE(SUM(CASE WHEN m.tipo='Entrada' THEN m.cantidad ELSE -m.cantidad END), 0) as stock_act
+                          COALESCE(SUM(CASE WHEN m.tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN m.cantidad WHEN m.tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -m.cantidad ELSE 0 END), 0) as stock_act
                    FROM maestro_mps mp
                    LEFT JOIN movimientos m ON m.material_id = mp.codigo_mp
-                     AND (m.estado_lote IS NULL OR m.estado_lote NOT IN ('CUARENTENA','RECHAZADO'))
+                     AND (m.estado_lote IS NULL OR m.estado_lote NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','VENCIDO','RECHAZADO','AGOTADO'))
                    WHERE COALESCE(mp.activo,1)=1
                      AND mp.codigo_mp != ?
                      AND (LOWER(COALESCE(mp.nombre_comercial,'')) LIKE ?
@@ -2559,10 +2568,10 @@ def produccion_auto_reparar_formula(producto):
             continue
         candidatos = c.execute(
             """SELECT mp.codigo_mp, mp.nombre_comercial,
-                      COALESCE(SUM(CASE WHEN m.tipo='Entrada' THEN m.cantidad ELSE -m.cantidad END), 0) as stock_act
+                      COALESCE(SUM(CASE WHEN m.tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN m.cantidad WHEN m.tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -m.cantidad ELSE 0 END), 0) as stock_act
                FROM maestro_mps mp
                LEFT JOIN movimientos m ON m.material_id = mp.codigo_mp
-                 AND (m.estado_lote IS NULL OR m.estado_lote NOT IN ('CUARENTENA','RECHAZADO'))
+                 AND (m.estado_lote IS NULL OR m.estado_lote NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','VENCIDO','RECHAZADO','AGOTADO'))
                WHERE COALESCE(mp.activo,1)=1
                  AND mp.codigo_mp != ?
                  AND (LOWER(COALESCE(mp.nombre_comercial,'')) LIKE ?
@@ -4049,7 +4058,7 @@ def get_lotes():
 
     # Construir query con filtros opcionales
     sql = """SELECT m.material_id, MAX(m.material_nombre) as material_nombre, m.lote,
-                        SUM(CASE WHEN m.tipo='Entrada' THEN m.cantidad ELSE -m.cantidad END) as stock_neto,
+                        SUM(CASE WHEN m.tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN m.cantidad WHEN m.tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -m.cantidad ELSE 0 END) as stock_neto,
                         MAX(m.fecha_vencimiento) as fecha_vencimiento,
                         MAX(m.estanteria) as estanteria, MAX(m.posicion) as posicion,
                         MAX(m.proveedor) as proveedor, MAX(m.estado_lote) as estado_lote,
@@ -4132,7 +4141,7 @@ def get_lotes():
             count_sql = """
                 SELECT COUNT(*) FROM (
                   SELECT m.material_id, m.lote,
-                         SUM(CASE WHEN m.tipo='Entrada' THEN m.cantidad ELSE -m.cantidad END) as sn
+                         SUM(CASE WHEN m.tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN m.cantidad WHEN m.tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -m.cantidad ELSE 0 END) as sn
                   FROM movimientos m LEFT JOIN maestro_mps mp ON m.material_id=mp.codigo_mp
                   WHERE UPPER(COALESCE(mp.tipo_material,'MP'))='MP'
                   GROUP BY m.material_id, m.lote
@@ -7230,7 +7239,7 @@ def conteo_estanterias():
     if tipo in ('MP', 'Envase Primario', 'Envase Secundario', 'Empaque'):
         c.execute("""SELECT COALESCE(NULLIF(m.estanteria,''),'Sin estanteria') as est,
                             COUNT(DISTINCT m.material_id) as total_mps,
-                            SUM(CASE WHEN m.tipo='Entrada' THEN m.cantidad ELSE -m.cantidad END) as stock_total
+                            SUM(CASE WHEN m.tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN m.cantidad WHEN m.tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -m.cantidad ELSE 0 END) as stock_total
                      FROM movimientos m
                      LEFT JOIN maestro_mps mp ON m.material_id = mp.codigo_mp
                      WHERE COALESCE(mp.tipo_material,'MP') = ?
@@ -7287,7 +7296,7 @@ def conteo_materiales_estanteria():
         c.execute(f"""SELECT m.material_id, MAX(m.material_nombre) as material_nombre,
                             COALESCE(mp.nombre_inci,'') as inci,
                             COALESCE(mp.precio_referencia,0) as precio_ref,
-                            SUM(CASE WHEN m.tipo='Entrada' THEN m.cantidad ELSE -m.cantidad END) as stock_sistema,
+                            SUM(CASE WHEN m.tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN m.cantidad WHEN m.tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -m.cantidad ELSE 0 END) as stock_sistema,
                             MAX(m.estanteria) as estanteria,
                             COALESCE(mp.tipo_material,'MP') as tipo_material,
                             COALESCE(m.lote,'') as lote,
@@ -7303,7 +7312,7 @@ def conteo_materiales_estanteria():
         c.execute(f"""SELECT m.material_id, MAX(m.material_nombre) as material_nombre,
                             COALESCE(mp.nombre_inci,'') as inci,
                             COALESCE(mp.precio_referencia,0) as precio_ref,
-                            SUM(CASE WHEN m.tipo='Entrada' THEN m.cantidad ELSE -m.cantidad END) as stock_sistema,
+                            SUM(CASE WHEN m.tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN m.cantidad WHEN m.tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -m.cantidad ELSE 0 END) as stock_sistema,
                             '' as estanteria,
                             COALESCE(mp.tipo_material,'MP') as tipo_material,
                             COALESCE(m.lote,'') as lote,
@@ -11222,7 +11231,7 @@ def alertas_vivas_planta():
     c.execute("""
         SELECT m.material_id, m.material_nombre, m.lote, m.fecha_vencimiento,
                COALESCE(mp.tipo_material,'MP') as tipo,
-               SUM(CASE WHEN m.tipo='Entrada' THEN m.cantidad ELSE -m.cantidad END) as stock
+               SUM(CASE WHEN m.tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN m.cantidad WHEN m.tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -m.cantidad ELSE 0 END) as stock
         FROM movimientos m
         LEFT JOIN maestro_mps mp ON m.material_id = mp.codigo_mp
         WHERE m.fecha_vencimiento != ''
@@ -11254,7 +11263,7 @@ def alertas_vivas_planta():
         SELECT mp.codigo_mp, mp.nombre_comercial, mp.stock_minimo,
                COALESCE(mp.tipo_material,'MP') as tipo,
                COALESCE((
-                   SELECT SUM(CASE WHEN m.tipo='Entrada' THEN m.cantidad ELSE -m.cantidad END)
+                   SELECT SUM(CASE WHEN m.tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN m.cantidad WHEN m.tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -m.cantidad ELSE 0 END)
                    FROM movimientos m
                    WHERE m.material_id = mp.codigo_mp AND m.estado_lote='VIGENTE'
                ), 0) as stock_actual

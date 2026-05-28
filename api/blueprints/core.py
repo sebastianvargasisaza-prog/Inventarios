@@ -368,7 +368,7 @@ def health_debug():
             placeholders = ','.join(['?']*len(mids_recent)) if mids_recent else "''"
             rows = conn.execute(f"""
                 SELECT m.material_id, COALESCE(m.lote,'') as lote,
-                       SUM(CASE WHEN m.tipo='Entrada' THEN m.cantidad ELSE -m.cantidad END) as stock_neto,
+                       SUM(CASE WHEN m.tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN m.cantidad WHEN m.tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -m.cantidad ELSE 0 END) as stock_neto,
                        UPPER(COALESCE(mp.tipo_material,'MP')) as tipo_mat_norm,
                        (mp.codigo_mp IS NOT NULL) as en_catalogo,
                        COUNT(*) as n_movs

@@ -11601,7 +11601,7 @@ def admin_audit_inventario():
     try:
         rows = c.execute("""
             SELECT m.material_id, MAX(m.material_nombre) as material_nombre,
-                   ROUND(SUM(CASE WHEN m.tipo='Entrada' THEN m.cantidad ELSE -m.cantidad END), 0) as stock_calc,
+                   ROUND(SUM(CASE WHEN m.tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN m.cantidad WHEN m.tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -m.cantidad ELSE 0 END), 0) as stock_calc,
                    COUNT(*) as n_movs
             FROM movimientos m
             GROUP BY m.material_id
