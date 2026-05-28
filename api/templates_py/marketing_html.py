@@ -495,7 +495,7 @@ window.addEventListener('unhandledrejection', function(ev) {
   <div class="card">
     <div class="tbl-wrap">
       <table>
-        <thead><tr><th>#</th><th>Nombre</th><th>Tipo</th><th>Canal</th><th>Estado</th><th>Presupuesto</th><th>Gastado</th><th>Ventas</th><th>ROI</th><th>Infls</th><th>Acciones</th></tr></thead>
+        <thead><tr><th class="mob-hide">#</th><th>Nombre</th><th class="mob-hide">Tipo</th><th class="mob-hide">Canal</th><th>Estado</th><th class="mob-hide">Presupuesto</th><th class="mob-hide">Gastado</th><th>Ventas</th><th>ROI</th><th class="mob-hide">Infls</th><th>Acciones</th></tr></thead>
         <tbody id="camp-body"><tr class="empty-row"><td colspan="11"><span class="spin"></span></td></tr></tbody>
       </table>
     </div>
@@ -972,7 +972,7 @@ window.addEventListener('unhandledrejection', function(ev) {
     <div class="card-hdr"><span class="card-title">&#x1F3C6; Ranking — Inversión por creador (histórico)</span></div>
     <div class="card-body">
       <table>
-        <thead><tr><th>#</th><th>Creador</th><th>Colabs</th><th>Total pagado</th><th>Pendiente</th><th>Promedio/colab</th><th>Primer pago</th><th>Último pago</th><th>Estado</th></tr></thead>
+        <thead><tr><th class="mob-hide">#</th><th>Creador</th><th class="mob-hide">Colabs</th><th>Total pagado</th><th>Pendiente</th><th class="mob-hide">Promedio/colab</th><th class="mob-hide">Primer pago</th><th class="mob-hide">Último pago</th><th>Estado</th></tr></thead>
         <tbody id="an-ranking-body"><tr class="empty-row"><td colspan="9">Cargando...</td></tr></tbody>
       </table>
     </div>
@@ -983,7 +983,7 @@ window.addEventListener('unhandledrejection', function(ev) {
     <div class="card-hdr"><span class="card-title">&#x1F4C5; Detalle por mes</span></div>
     <div class="card-body">
       <table>
-        <thead><tr><th>Mes</th><th>Colaboraciones</th><th>Creadores únicos</th><th>Total pagado</th><th>Pendiente</th><th>Nuevos creadores</th></tr></thead>
+        <thead><tr><th>Mes</th><th class="mob-hide">Colaboraciones</th><th class="mob-hide">Creadores únicos</th><th>Total pagado</th><th>Pendiente</th><th class="mob-hide">Nuevos creadores</th></tr></thead>
         <tbody id="an-meses-body"><tr class="empty-row"><td colspan="6">Cargando...</td></tr></tbody>
       </table>
     </div>
@@ -1525,7 +1525,25 @@ async function cmoAbrirHistorial(){
     if(!d.ok){ body.innerHTML = '<div style="color:#f87171">'+esc(d.error||'error')+'</div>'; return; }
     const planes = d.planes || [];
     if(!planes.length){ body.innerHTML = '<div style="color:#94a3b8;text-align:center;padding:24px">Sin planes registrados aún · esperá al cron 7 AM o generá uno con ⚡ Generar plan ahora.</div>'; return; }
-    let html = '<table class="cmo-hist-tbl" style="width:100%;border-collapse:collapse;font-size:12px;">'
+    // ── Sparkline tendencia tasa aprobación · últimos 30 planes ──
+    const ordenados = [...planes].slice().reverse();  // más viejo a izquierda
+    const last30 = ordenados.slice(-30);
+    let sparkHtml = '';
+    if(last30.length >= 2){
+      const bars = last30.map(p => {
+        const s = p.stats || {};
+        const ratio = s.total > 0 ? (s.aprobadas/s.total) : 0;
+        const h = Math.max(4, Math.round(ratio * 36));
+        const col = ratio >= 0.5 ? '#34d399' : (ratio >= 0.25 ? '#f59e0b' : '#ef4444');
+        return `<div title="${esc(p.fecha)} · ${Math.round(ratio*100)}% aprobadas" style="display:inline-block;width:8px;height:${h}px;background:${col};margin-right:2px;border-radius:2px 2px 0 0;vertical-align:bottom;"></div>`;
+      }).join('');
+      sparkHtml = '<div style="margin-bottom:14px;padding:10px 14px;background:#0f172a;border-radius:8px;">'
+        + '<div style="font-size:11px;color:#94a3b8;margin-bottom:6px;">📈 Tendencia tasa aprobación · últimos '+last30.length+' planes</div>'
+        + '<div style="height:40px;display:flex;align-items:flex-end;">'+bars+'</div>'
+        + '<div style="font-size:10px;color:#64748b;margin-top:4px;display:flex;justify-content:space-between;">'
+        + '<span>'+esc(last30[0].fecha)+'</span><span>'+esc(last30[last30.length-1].fecha)+'</span></div></div>';
+    }
+    let html = sparkHtml + '<table class="cmo-hist-tbl" style="width:100%;border-collapse:collapse;font-size:12px;">'
       + '<thead><tr style="background:#0f172a;color:#94a3b8;text-transform:uppercase;font-size:10px;letter-spacing:.4px;">'
       + '<th style="text-align:left;padding:8px 10px;">Fecha</th>'
       + '<th style="text-align:left;padding:8px 10px;">Estado</th>'
@@ -2092,7 +2110,7 @@ async function loadDashboard() {
     if(document.getElementById('sh-ped30-label')) document.getElementById('sh-ped30-label').textContent = lPed;
     if(sh.cobertura_parcial && shBanner){
       shBanner.style.display='block';
-      shBanner.innerHTML = '⚠️ Datos Shopify disponibles desde <strong>'+sh.datos_desde+'</strong> ('+dias+' días). '+'Usa <strong>Sync histórico</strong> para traer el historial completo.';
+      shBanner.innerHTML = '⚠️ Datos Shopify disponibles desde <strong>'+esc(sh.datos_desde||'')+'</strong> ('+esc(String(dias))+' días). '+'Usa <strong>Sync histórico</strong> para traer el historial completo.';
     } else if(shBanner){ shBanner.style.display='none'; }
   }
   document.getElementById('sh-rev30').textContent    = fmtCOP(sh.revenue_30d);
@@ -2334,16 +2352,16 @@ async function loadCampanas() {
       ? `<div style="margin-top:3px;font-size:10px"><span style="background:#1e1b4b;color:#a78bfa;padding:1px 6px;border-radius:6px;font-family:monospace;font-weight:700" title="Atribución activa">${esc(r.discount_code)}</span></div>`
       : '';
     return `<tr>
-      <td style="color:#64748b;">${esc(r.id)}</td>
+      <td class="mob-hide" style="color:#64748b;">${esc(r.id)}</td>
       <td style="font-weight:700;">${esc(r.nombre)}${cuponChip}</td>
-      <td><span class="badge badge-gray">${esc(r.tipo)}</span></td>
-      <td>${esc(r.canal||'—')}</td>
+      <td class="mob-hide"><span class="badge badge-gray">${esc(r.tipo)}</span></td>
+      <td class="mob-hide">${esc(r.canal||'—')}</td>
       <td>${badgeEstadoCamp(r.estado)}</td>
-      <td>${fmtM(r.presupuesto)}</td>
-      <td>${fmtM(r.presupuesto_gastado)}</td>
+      <td class="mob-hide">${fmtM(r.presupuesto)}</td>
+      <td class="mob-hide">${fmtM(r.presupuesto_gastado)}</td>
       <td style="color:#34d399;">${fmtM(r.resultado_ventas)}</td>
       <td>${roiBadge(roi)}</td>
-      <td><span class="badge badge-purple">${esc(r.num_influencers)}</span></td>
+      <td class="mob-hide"><span class="badge badge-purple">${esc(r.num_influencers)}</span></td>
       <td>
         <button class="btn btn-outline btn-sm" onclick="editCampana(${r.id})" title="Editar">✏️</button>
         <button class="btn btn-outline btn-sm" onclick="generarCuponCampana(${r.id})" title="${r.discount_code?'Regenerar':'Generar'} cupón Shopify" style="border-color:#a78bfa;color:#a78bfa">🎟️</button>
@@ -2435,14 +2453,19 @@ async function saveCampana() {
 
 async function deleteCampana(id, nombre) {
   if(!confirm(`¿Eliminar campaña "${nombre}"? Se borrarán todas las asignaciones y contenido relacionado.`)) return;
-  let resp = await fetch(`/api/marketing/campanas/${id}`,_fetchOpts('DELETE'));
-  let data = await resp.json().catch(()=>({error:'Respuesta no es JSON'}));
+  let resp, data;
+  try {
+    resp = await fetch(`/api/marketing/campanas/${id}`,_fetchOpts('DELETE'));
+    data = await resp.json().catch(()=>({error:'Respuesta no es JSON'}));
+  } catch(e){ showAlert('camp-alert','Error red: '+e.message,'error'); return; }
   // 409 · backend pide confirmación porque hay gasto/ventas registradas
   if(resp.status === 409 && (data.presupuesto_gastado>0 || data.resultado_ventas>0)){
     const fmtN = v => '$'+Number(v||0).toLocaleString('es-CO');
     if(!confirm(`⚠ Esta campaña tiene:\n  • Gastado: ${fmtN(data.presupuesto_gastado)}\n  • Ventas: ${fmtN(data.resultado_ventas)}\n\nBorrarla destruirá ese histórico financiero. ¿Confirmar?`)) return;
-    resp = await fetch(`/api/marketing/campanas/${id}?force=1`,_fetchOpts('DELETE'));
-    data = await resp.json().catch(()=>({error:'Respuesta no es JSON'}));
+    try {
+      resp = await fetch(`/api/marketing/campanas/${id}?force=1`,_fetchOpts('DELETE'));
+      data = await resp.json().catch(()=>({error:'Respuesta no es JSON'}));
+    } catch(e){ showAlert('camp-alert','Error red (force): '+e.message,'error'); return; }
   }
   if(resp.ok && data.ok) { showAlert('camp-alert','Campaña eliminada'); loadCampanas(); }
   else showAlert('camp-alert',data.error||('Error HTTP '+resp.status),'error');
@@ -5048,14 +5071,14 @@ async function loadAnalytics() {
       ? `<span style="color:#f59e0b;font-weight:700;">${fmtM(r.pendiente)}</span>`
       : '<span style="color:#475569;">—</span>';
     return `<tr>
-      <td style="color:#64748b;font-weight:700;">${i+1}</td>
-      <td style="font-weight:700;">${r.nombre||'—'}</td>
-      <td style="color:#94a3b8;">${r.colabs||0}</td>
+      <td class="mob-hide" style="color:#64748b;font-weight:700;">${i+1}</td>
+      <td style="font-weight:700;">${esc(r.nombre||'—')}</td>
+      <td class="mob-hide" style="color:#94a3b8;">${r.colabs||0}</td>
       <td style="color:#818cf8;font-weight:800;">${fmtM(r.total)}</td>
       <td>${pendBadge}</td>
-      <td style="color:#94a3b8;">${fmtM(r.promedio)}</td>
-      <td style="color:#64748b;font-size:12px;">${r.primer_pago||'—'}</td>
-      <td style="color:#64748b;font-size:12px;">${r.ultimo_pago||'—'}</td>
+      <td class="mob-hide" style="color:#94a3b8;">${fmtM(r.promedio)}</td>
+      <td class="mob-hide" style="color:#64748b;font-size:12px;">${esc(r.primer_pago||'—')}</td>
+      <td class="mob-hide" style="color:#64748b;font-size:12px;">${esc(r.ultimo_pago||'—')}</td>
       <td>${estadoBadge}</td>
     </tr>`;
   }).join('') : '<tr class="empty-row"><td colspan="9">Sin datos de pagos registrados.</td></tr>';
@@ -5064,12 +5087,12 @@ async function loadAnalytics() {
   const mb = document.getElementById('an-meses-body');
   mb.innerHTML = meses.length ? [...meses].reverse().map(m=>
     `<tr>
-      <td style="font-weight:700;color:#e2e8f0;">${m.mes}</td>
-      <td>${m.colabs}</td>
-      <td>${m.creadores_unicos_mes}</td>
+      <td style="font-weight:700;color:#e2e8f0;">${esc(m.mes)}</td>
+      <td class="mob-hide">${m.colabs}</td>
+      <td class="mob-hide">${m.creadores_unicos_mes}</td>
       <td style="color:#818cf8;font-weight:700;">${fmtM(m.total_pagado)}</td>
       <td style="color:#f59e0b;">${m.total_pendiente>0?fmtM(m.total_pendiente):'—'}</td>
-      <td style="color:#34d399;">${m.nuevos_creadores||0}</td>
+      <td class="mob-hide" style="color:#34d399;">${m.nuevos_creadores||0}</td>
     </tr>`
   ).join('') : '<tr class="empty-row"><td colspan="6">Sin datos</td></tr>';
 }

@@ -395,11 +395,23 @@ def animus_alertas_stock():
                  ORDER BY (disponible*1.0/NULLIF(stock_minimo_ud,0)) ASC""")
     cols=['sku','descripcion','empresa','disponible','stock_minimo_ud','dias_reposicion','precio_base']
     alertas=[dict(zip(cols,r)) for r in c.fetchall()]
-    # Check pending solicitudes
+    # PERF-FIX 27-may-2026 PM · antes N+1 (1 COUNT por alerta · 50+ alertas =
+    # 50+ queries). Ahora 1 SELECT DISTINCT pre-cargado.
+    _skus_pend = set()
+    if alertas:
+        try:
+            _sks = [a['sku'] for a in alertas if a.get('sku')]
+            _ph = ','.join(['?'] * len(_sks))
+            _rows_pend = c.execute(
+                f"SELECT DISTINCT sku FROM solicitudes_produccion "
+                f"WHERE estado='Pendiente' AND sku IN ({_ph})",
+                _sks
+            ).fetchall()
+            _skus_pend = {r[0] for r in _rows_pend}
+        except Exception:
+            _skus_pend = set()
     for a in alertas:
-        c.execute("""SELECT COUNT(*) FROM solicitudes_produccion
-                     WHERE sku=? AND estado='Pendiente'""", (a['sku'],))
-        a['solicitud_pendiente'] = c.fetchone()[0] > 0
+        a['solicitud_pendiente'] = a['sku'] in _skus_pend
         a['deficit'] = max(0, a['stock_minimo_ud'] - a['disponible'])
         a['cobertura_dias'] = round(a['disponible'] / max(a['stock_minimo_ud']/30, 1), 0)
     return jsonify({'alertas': alertas, 'total': len(alertas)})

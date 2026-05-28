@@ -534,6 +534,22 @@ img, svg, video, canvas { max-width: 100%; height: auto; }
     gap: 10px !important;
   }
 
+  /* Inline-style grids · cubre los 15 templates que usan style="grid-template-columns:..."
+   * sin clases helper. Match conservador: solo 1fr 1fr / 1fr 1fr 1fr / repeat(2-4)
+   * para no romper layouts intencionales de 1 col o auto-fit/auto-fill. */
+  [style*="grid-template-columns:1fr 1fr"],
+  [style*="grid-template-columns: 1fr 1fr"],
+  [style*="grid-template-columns:1fr 1fr 1fr"],
+  [style*="grid-template-columns: 1fr 1fr 1fr"],
+  [style*="grid-template-columns:repeat(2"],
+  [style*="grid-template-columns: repeat(2"],
+  [style*="grid-template-columns:repeat(3"],
+  [style*="grid-template-columns: repeat(3"],
+  [style*="grid-template-columns:repeat(4"],
+  [style*="grid-template-columns: repeat(4"] {
+    grid-template-columns: 1fr !important;
+  }
+
   /* Tabs bar · permitir scroll horizontal con scrollbar oculta */
   .tabs-bar, .tab-buttons, [role="tablist"] {
     overflow-x: auto; -webkit-overflow-scrolling: touch;

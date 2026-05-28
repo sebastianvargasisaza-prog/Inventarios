@@ -249,22 +249,31 @@ def _evaluar_auto_aprobacion(c, proveedor, monto_total, items):
         except Exception:
             pass
     # Precio en rango · cada item ±15% promedio 90d
+    # PERF-FIX 27-may-2026 PM · antes era N+1 (1 SELECT por item · OCs grandes
+    # con 20+ items hacían 20+ queries). Ahora 1 sola query GROUP BY.
+    _codigos_validos = [(it.get('codigo_mp') or '') for it in (items or [])
+                        if (it.get('codigo_mp') or '') and float(it.get('precio_unitario') or 0) > 0]
+    _prom_por_cod = {}
+    if _codigos_validos:
+        try:
+            _ph = ','.join(['?'] * len(_codigos_validos))
+            _rows_prom = c.execute(
+                f"""SELECT codigo_mp, AVG(precio_unitario)
+                    FROM precios_mp_historico
+                    WHERE codigo_mp IN ({_ph})
+                      AND date(fecha) >= ?
+                    GROUP BY codigo_mp""",
+                (*_codigos_validos, _cutoff_90d),
+            ).fetchall()
+            _prom_por_cod = {r[0]: float(r[1] or 0) for r in _rows_prom}
+        except Exception:
+            _prom_por_cod = {}
     for it in (items or []):
         cod = it.get('codigo_mp') or ''
         pu = float(it.get('precio_unitario') or 0)
         if not cod or pu <= 0:
             continue
-        try:
-            r = c.execute(
-                """SELECT AVG(precio_unitario)
-                   FROM precios_mp_historico
-                   WHERE codigo_mp=?
-                     AND date(fecha) >= ?""",
-                (cod, _cutoff_90d),
-            ).fetchone()
-            prom = float((r or [0])[0] or 0)
-        except Exception:
-            prom = 0
+        prom = _prom_por_cod.get(cod, 0)
         if prom > 0:
             delta_pct = abs(pu - prom) / prom * 100
             if delta_pct > 15:
