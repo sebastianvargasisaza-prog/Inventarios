@@ -144,7 +144,7 @@ td input[type=number]{width:90px;padding:5px 8px;border:1px solid #d6d3d1;border
       <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="#6d28d9" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:6px"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.9M16 3.1a4 4 0 010 7.8"/></svg>
       Recursos Humanos
     </div>
-    <div class="cx-mod-header__sub"><strong>EOS</strong> &middot; empleados &middot; nómina &middot; SGSST &middot; <span style="color:#a8a29e">{usuario}</span></div>
+    <div class="cx-mod-header__sub"><strong>EOS</strong> &middot; empleados &middot; SGSST &middot; <span style="color:#a8a29e">la nómina se gestiona en Tesorería &middot; {usuario}</span></div>
   </div>
   <div class="cx-mod-header__nav">
     <a href="/modulos" class="cx-btn cx-btn-ghost cx-btn-sm" title="Volver">&larr; Módulos</a>

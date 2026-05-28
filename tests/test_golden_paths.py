@@ -12868,3 +12868,50 @@ def test_golden_hard_delete_fijo_requiere_force(app, db_clean):
 
     # Cleanup
     _exec("DELETE FROM produccion_programada WHERE producto='TEST_FIJO_DELETE'")
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH · liberación bloqueada por micro fuera de spec · 28-may
+# ═══════════════════════════════════════════════════════════════════
+# INVIMA Res 2674/2013: no liberar producto con resultado micro fuera de
+# especificación industria. El sistema debe BLOQUEAR (Sebastián 28-may).
+
+def test_golden_liberacion_bloqueada_por_micro_oos(app, db_clean):
+    """Liberar (aprobado) un lote con micro fuera_industria → 409."""
+    for sql in (
+        "DELETE FROM cola_liberacion WHERE lote='LOTE-TEST-OOS'",
+        "DELETE FROM calidad_micro_resultados WHERE lote='LOTE-TEST-OOS'",
+    ):
+        try: _exec(sql)
+        except Exception: pass
+    # Item en cola listo para revisar
+    cid = _exec("INSERT INTO cola_liberacion "
+                "(producto_nombre, lote, unidades, fecha_envasado, "
+                " fecha_min_liberacion, estado) VALUES "
+                "('TEST PROD OOS','LOTE-TEST-OOS',100,'2026-05-01','2026-05-01','listo_revisar')")
+    # Resultado micro FUERA DE SPEC industria
+    _exec("INSERT INTO calidad_micro_resultados "
+          "(lote, producto_nombre, microorganismo, valor, estado) VALUES "
+          "('LOTE-TEST-OOS','TEST PROD OOS','Recuento aerobios',5000,'fuera_industria')")
+
+    cs = _login(app, 'sebastian')
+    # Intentar liberar (aprobado) → debe BLOQUEAR 409
+    r = cs.post(f'/api/planta/cola-liberacion/{cid}/disposicion',
+                json={'disposicion': 'aprobado'}, headers=csrf_headers())
+    assert r.status_code == 409, \
+        f'BUG: liberar con micro OOS debió bloquear 409 · got {r.status_code} {r.data[:200]}'
+    d = r.get_json()
+    assert d.get('bloqueo') == 'micro_fuera_industria', f'BUG: {d}'
+    # El item NO debe estar liberado
+    rows = _query("SELECT estado FROM cola_liberacion WHERE id=?", (cid,))
+    assert rows and rows[0][0] != 'liberado', 'BUG: se liberó pese al OOS'
+
+    # Rechazar SÍ debe funcionar (con notas)
+    r2 = cs.post(f'/api/planta/cola-liberacion/{cid}/disposicion',
+                 json={'disposicion': 'rechazado', 'notas': 'Micro fuera de spec INVIMA'},
+                 headers=csrf_headers())
+    assert r2.status_code == 200, f'rechazar debió funcionar · {r2.status_code} {r2.data[:200]}'
+
+    # Cleanup
+    _exec("DELETE FROM cola_liberacion WHERE lote='LOTE-TEST-OOS'")
+    _exec("DELETE FROM calidad_micro_resultados WHERE lote='LOTE-TEST-OOS'")

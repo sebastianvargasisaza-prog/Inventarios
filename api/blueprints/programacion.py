@@ -15776,6 +15776,31 @@ def planta_cola_liberacion_disposicion(item_id):
     if not antes_row:
         return jsonify({'error': 'Item no encontrado'}), 404
     antes = dict(antes_row)
+    # Sebastián 28-may-2026 · INVIMA Res 2674/2013 · BLOQUEAR liberación si el
+    # lote tiene resultado micro FUERA DE SPEC industria (no apto). QC debe
+    # rechazar o reanalizar primero · no se puede liberar producto no conforme.
+    if disposicion == 'aprobado':
+        _lote_lib = (antes.get('lote') or '').strip()
+        if _lote_lib:
+            try:
+                _oos = c.execute(
+                    "SELECT COUNT(*), GROUP_CONCAT(DISTINCT microorganismo) "
+                    "FROM calidad_micro_resultados "
+                    "WHERE lote=? AND estado='fuera_industria'",
+                    (_lote_lib,)
+                ).fetchone()
+            except Exception:
+                _oos = None
+            if _oos and (_oos[0] or 0) > 0:
+                return jsonify({
+                    'error': (f'NO SE PUEDE LIBERAR · lote {_lote_lib} tiene '
+                              f'{_oos[0]} resultado(s) microbiológico(s) FUERA DE '
+                              f'ESPECIFICACIÓN INVIMA'),
+                    'microorganismos': _oos[1] or '',
+                    'hint': ('El producto no es apto. Debe RECHAZAR el lote o '
+                             'REANALIZAR antes de liberar. INVIMA Res 2674/2013.'),
+                    'bloqueo': 'micro_fuera_industria',
+                }), 409
     c.execute("""
         UPDATE cola_liberacion SET
           disposicion=?, estado=?, aprobado_por=?, aprobado_at=datetime('now', '-5 hours'),
