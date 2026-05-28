@@ -589,7 +589,7 @@ def _inject_chat_widget(response):
             return response
         # cortex.js para TODOS (incluso /login /logout) · sin async para que
         # cx-ready se aplique antes que el browser pinte loader 8s permanente
-        snippet = '<script src="/static/cortex.js?v=eos1"></script>'
+        snippet = '<script src="/static/cortex.js?v=eos2"></script>'
         # chat-widget + notif solo si autenticado y NO en /chat /login /logout
         if (session.get('compras_user')
                 and not (path.startswith('/chat')

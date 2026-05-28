@@ -4,7 +4,7 @@ MODULOS_HTML = (
     "<head>\n"
     "<meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1.0\">\n"
     "<title>EOS · Módulos</title>\n"
-    "<link rel=\"stylesheet\" href=\"/static/cortex.css?v=eos12\">\n"
+    "<link rel=\"stylesheet\" href=\"/static/cortex.css?v=eos13\">\n"
     "<script>(function(){try{var t=localStorage.getItem(\"cx-theme\");if(t===\"dark\")document.documentElement.setAttribute(\"data-theme\",\"dark\");}catch(e){}})();</script>\n"
     "<link rel=\"manifest\" href=\"/manifest.json\">\n"
     "<meta name=\"theme-color\" content=\"#6d28d9\">\n"

@@ -417,30 +417,12 @@ html, body { max-width: 100vw; overflow-x: hidden; }
  * la pantalla 100% blanca · permite ver el body bg + cualquier overlay de error */
 html, body { min-height: 100vh; background-color: #f5f4f2; }
 
-/* Loader CSS-only · se muestra siempre por default y desaparece cuando
- * window.cxReady() corre al final del DOMContentLoaded. Si el JS falla
- * o tarda, el user ve un spinner en lugar de pantalla blanca total. */
-body::before {
-  content: 'Cargando…';
-  position: fixed; inset: 0;
-  background: #f5f4f2; color: #6d28d9;
-  display: flex; align-items: center; justify-content: center;
-  font: 14px/1.4 system-ui, -apple-system, sans-serif;
-  font-weight: 600;
-  z-index: 99999;
-  transition: opacity .3s ease-out, visibility .3s;
-  opacity: 1; visibility: visible;
-}
-body.cx-ready::before, body.cx-loaded::before {
-  opacity: 0; visibility: hidden;
-}
-/* Failsafe: oculta el loader después de 8s aunque cx-ready no se llame.
- * Evita loader permanente si hay un bug grave de init JS. */
-@keyframes cxLoaderFailsafe {
-  0%, 95% { opacity: 1; visibility: visible; }
-  100% { opacity: 0; visibility: hidden; }
-}
-body::before { animation: cxLoaderFailsafe 8s forwards; }
+/* 28-may-2026 · BUGFIX · el loader CSS-only anterior (body::before + animation
+ * cxLoaderFailsafe) tapaba la pantalla 7.6s en CADA carga y bloqueaba los
+ * clicks: la animación CSS tiene mayor prioridad que la clase .cx-ready, así
+ * que forzaba visible aunque el JS la ocultara → "no deja interactuar".
+ * ELIMINADO. El min-height+bg arriba ya cubre el caso pantalla-blanca sin
+ * tapar nada, y el error overlay de abajo reporta fallos JS sin bloquear. */
 
 /* Error overlay · activado por body.cx-error · contiene el último error JS
  * capturado por window.onerror. Útil para diagnosticar "pantalla blanca". */

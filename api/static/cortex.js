@@ -1,23 +1,17 @@
-/* EOS Cortex JS · helpers globales · 27-may-2026 PM
- * Aplica cx-ready (oculta loader) cuando DOM listo + captura JS errors
- * y los muestra en overlay (cx-error + data-cx-error). Soluciona el
- * "pantalla queda en blanco" cuando algún script inline falla.
+/* EOS Cortex JS · helpers globales · 28-may-2026
+ * Captura JS errors globales y los muestra en overlay (cx-error +
+ * data-cx-error) sin bloquear la pantalla. El loader CSS-only fue
+ * ELIMINADO (tapaba la pantalla 7.6s y bloqueaba clicks).
  *
- * Templates que cargan cortex.css también deben cargar este script.
+ * Templates que cargan cortex.css también cargan este script (via after_request).
  */
 (function () {
-  function cxReady() {
+  // cxReady se mantiene como no-op compatible por si algún código lo invoca.
+  window.cxReady = function () {
     try { document.body.classList.add('cx-ready'); } catch (_) {}
-  }
-  if (document.readyState === 'complete' || document.readyState === 'interactive') {
-    setTimeout(cxReady, 0);
-  } else {
-    document.addEventListener('DOMContentLoaded', cxReady);
-  }
-  // Failsafe extra: si DOMContentLoaded tarda, ocultar loader en 6s
-  setTimeout(cxReady, 6000);
+  };
 
-  // Capture global errors y mostrar overlay
+  // Capture global errors y mostrar overlay (NO bloquea interacción)
   window.addEventListener('error', function (e) {
     try {
       var msg = (e && e.message ? e.message : 'error desconocido');
@@ -42,5 +36,4 @@
   window.cxClearError = function () {
     try { document.body.classList.remove('cx-error'); document.body.removeAttribute('data-cx-error'); } catch (_) {}
   };
-  window.cxReady = cxReady;
 })();

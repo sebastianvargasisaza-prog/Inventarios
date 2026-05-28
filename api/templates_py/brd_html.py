@@ -19,7 +19,7 @@ BRD_HTML = r'''<!DOCTYPE html>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Batch Record Digital · EOS</title>
-<link rel="stylesheet" href="/static/cortex.css?v=eos12">
+<link rel="stylesheet" href="/static/cortex.css?v=eos13">
 <style>
 body{font-family:system-ui,-apple-system,sans-serif;background:#f8fafc;margin:0;color:#0f172a}
 header{background:#0f172a;color:#f1f5f9;padding:14px 24px;display:flex;justify-content:space-between;align-items:center}

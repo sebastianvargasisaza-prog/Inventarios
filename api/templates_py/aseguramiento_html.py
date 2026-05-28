@@ -21,7 +21,7 @@ ASEGURAMIENTO_HTML = r'''<!DOCTYPE html>
 <meta http-equiv="Content-Language" content="es">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes, viewport-fit=cover">
 <title>Aseguramiento de Calidad · EOS</title>
-<link rel="stylesheet" href="/static/cortex.css?v=eos12">
+<link rel="stylesheet" href="/static/cortex.css?v=eos13">
 <script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
 <style>
 :root{--bg:#0f172a;--card:#1e293b;--text:#e2e8f0;--muted:#94a3b8;--accent:#7ACFCC;--good:#15803d;--warn:#fbbf24;--crit:#ef4444}
