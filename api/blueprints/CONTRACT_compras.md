@@ -195,3 +195,10 @@ Cuando Catalina edita un item:
 - Flag `formula_items.incluye_merma=1` evita doble merma
 
 **Tests goldens nuevos:** test_golden_abastecimiento_zero_error · test_golden_pendientes_audit_total.
+
+### 2026-05-27 PM · Sesión mobile + performance audit
+- **PERF FIX `_evaluar_auto_aprobacion`** (compras.py:252): antes N+1 (1
+  SELECT precios_mp_historico por item · OCs grandes con 20+ items hacían
+  20+ queries). Ahora 1 sola query `GROUP BY codigo_mp` pre-cargada en
+  dict + lookup O(1) en loop. Verificable con OC de 30+ items.
+- **No invariantes nuevas · solo performance**. INV-1..INV-5 intactas.

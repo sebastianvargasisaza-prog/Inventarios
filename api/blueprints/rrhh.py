@@ -100,16 +100,36 @@ def rrhh_dashboard():
     por_area = [{"area":r[0],"count":r[1]} for r in c.fetchall()]
     alertas = []
     from datetime import date as ddate
-    c.execute("SELECT id, nombre||' '||apellido, fecha_ingreso FROM empleados WHERE estado='Activo'")
-    for emp in c.fetchall():
+    # PERF-FIX 27-may-2026 PM · antes N+1 (1 SELECT vacaciones por empleado ·
+    # 100+ empleados = 100+ queries). Ahora 1 query GROUP BY pre-cargada.
+    emps = c.execute(
+        "SELECT id, nombre||' '||apellido, fecha_ingreso FROM empleados WHERE estado='Activo'"
+    ).fetchall()
+    _vac_por_emp = {}
+    if emps:
+        _ids_vac = [e[0] for e in emps if e[0]]
+        if _ids_vac:
+            _ph = ','.join(['?'] * len(_ids_vac))
+            try:
+                _rows_vac = c.execute(
+                    f"""SELECT empleado_id, COALESCE(SUM(dias),0) AS dias_total
+                        FROM ausencias
+                        WHERE tipo='Vacaciones' AND estado='Aprobada'
+                          AND empleado_id IN ({_ph})
+                        GROUP BY empleado_id""",
+                    _ids_vac
+                ).fetchall()
+                _vac_por_emp = {r[0]: float(r[1] or 0) for r in _rows_vac}
+            except Exception:
+                _vac_por_emp = {}
+    for emp in emps:
         if emp[2]:
             try:
                 fi = ddate.fromisoformat(emp[2])
                 if (ddate.today()-fi).days > 365:
-                    c.execute("SELECT COALESCE(SUM(dias),0) FROM ausencias WHERE tipo='Vacaciones' AND estado='Aprobada' AND empleado_id=?", (emp[0],))
-                    vac = c.fetchone()[0]
+                    vac = _vac_por_emp.get(emp[0], 0)
                     if vac < 15:
-                        alertas.append({"tipo":"warn","msg":emp[1]+" tiene "+str(15-vac)+" dias de vacaciones pendientes"})
+                        alertas.append({"tipo":"warn","msg":emp[1]+" tiene "+str(15-int(vac))+" dias de vacaciones pendientes"})
             except: pass
     c.execute("SELECT nombre||' '||apellido, fecha_fin_contrato FROM empleados WHERE tipo_contrato='Fijo' AND fecha_fin_contrato!='' AND estado='Activo'")
     for r in c.fetchall():

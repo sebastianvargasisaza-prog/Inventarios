@@ -251,6 +251,11 @@ def _evaluar_auto_aprobacion(c, proveedor, monto_total, items):
     # Precio en rango · cada item ±15% promedio 90d
     # PERF-FIX 27-may-2026 PM · antes era N+1 (1 SELECT por item · OCs grandes
     # con 20+ items hacían 20+ queries). Ahora 1 sola query GROUP BY.
+    # BUG-FIX 27-may-2026 PM · tabla era `precios_mp_historico.precio_unitario`
+    # · columna inexistente (precios_mp_historico tiene precio_kg, y la tabla
+    # que SÍ se usa para histórico es `precio_historico_mp.precio_unit_g`).
+    # Antes el SELECT siempre tiraba excepción silenciada por try/except ·
+    # el check de rango NUNCA filtró nada. Ahora consulta la tabla correcta.
     _codigos_validos = [(it.get('codigo_mp') or '') for it in (items or [])
                         if (it.get('codigo_mp') or '') and float(it.get('precio_unitario') or 0) > 0]
     _prom_por_cod = {}
@@ -258,8 +263,8 @@ def _evaluar_auto_aprobacion(c, proveedor, monto_total, items):
         try:
             _ph = ','.join(['?'] * len(_codigos_validos))
             _rows_prom = c.execute(
-                f"""SELECT codigo_mp, AVG(precio_unitario)
-                    FROM precios_mp_historico
+                f"""SELECT codigo_mp, AVG(precio_unit_g)
+                    FROM precio_historico_mp
                     WHERE codigo_mp IN ({_ph})
                       AND date(fecha) >= ?
                     GROUP BY codigo_mp""",

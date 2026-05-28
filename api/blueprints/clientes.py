@@ -751,11 +751,14 @@ def aliados_analytics():
                     'categoria_profesional','canal_captacion','redes_sociales',
                     'ciudad','notas_seguimiento','total_facturado','mes_actual',
                     'ultimo_pedido','total_pedidos']
+        # PERF-FIX 27-may-2026 PM · antes loop hacía `next((f for f in frecuencia ...))`
+        # O(N) por cliente · 200+ clientes = 200×N linear search. Ahora dict O(1).
+        _freq_por_id = {f['id']: f for f in (frecuencia or []) if 'id' in f}
         resumen = []
         for row in c.fetchall():
             r = dict(zip(cols_res, row))
             r['top_skus'] = top_skus.get(r['id'], [])
-            freq = next((f for f in frecuencia if f['id'] == r['id']), None)
+            freq = _freq_por_id.get(r['id'])
             r['frecuencia_dias'] = freq['frecuencia_dias'] if freq else None
             try:
                 r['redes_sociales'] = json.loads(r['redes_sociales'] or '{}')
