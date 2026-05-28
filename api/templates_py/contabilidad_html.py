@@ -84,6 +84,15 @@ tr:hover td{background:#202020}
 .summary-card .big{font-size:20px;font-weight:700}
 .toast{position:fixed;bottom:24px;right:24px;background:#1a1a1a;border:1px solid #333;border-radius:8px;padding:14px 20px;font-size:13px;z-index:9999;transition:opacity .3s;opacity:0;pointer-events:none}
 .toast.show{opacity:1}
+/* Mobile responsive · 27-may-2026 */
+@media (max-width: 768px) {
+  .modal { width: min(95vw, 520px) !important; padding: 18px !important; }
+  .form-row { grid-template-columns: 1fr !important; }
+  .summary-grid { grid-template-columns: 1fr !important; }
+  .modal-footer { flex-direction: column-reverse; gap: 8px; }
+  .modal-footer .btn { width: 100%; }
+  .items-table th, .items-table td { padding: 4px 6px; font-size: 11px; }
+}
 </style>
 </head>
 <body>

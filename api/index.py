@@ -568,29 +568,35 @@ def _maybe_trigger_backup():
 @app.after_request
 def _inject_chat_widget(response):
     """Inyectar el widget flotante 💬 EOS Chat en TODAS las paginas HTML
-    autenticadas — excepto /chat /login /logout (donde seria redundante).
+    autenticadas + cortex.js (loader + error overlay) en TODAS las HTML.
 
     Sebastian (29-abr-2026): "vista lateral persistente tipo WhatsApp Web
     — boton flotante en cualquier pagina". Se hace via after_request para
     no tener que editar cada template.
+
+    27-may-2026 PM · agregado cortex.js (oculta loader, captura errors JS,
+    evita "pantalla en blanco" en mobile) · se inyecta para anonimos también.
     """
     try:
-        if not session.get('compras_user'):
-            return response  # Anonimos no ven el widget
         path = request.path or ''
-        if path.startswith('/chat') or path.startswith('/login') or path.startswith('/logout'):
-            return response
         if path.startswith('/api/') or path.startswith('/static/'):
             return response
         ct = (response.headers.get('Content-Type') or '').lower()
         if not ct.startswith('text/html'):
             return response
-        # Solo inyectar si la respuesta tiene </body>
         body = response.get_data(as_text=True)
         if '</body>' not in body:
             return response
-        snippet = ('<script src="/api/chat/widget.js" async></script>'
-                   '<script src="/api/notif/widget.js" async></script>')
+        # cortex.js para TODOS (incluso /login /logout) · sin async para que
+        # cx-ready se aplique antes que el browser pinte loader 8s permanente
+        snippet = '<script src="/static/cortex.js?v=eos1"></script>'
+        # chat-widget + notif solo si autenticado y NO en /chat /login /logout
+        if (session.get('compras_user')
+                and not (path.startswith('/chat')
+                         or path.startswith('/login')
+                         or path.startswith('/logout'))):
+            snippet += ('<script src="/api/chat/widget.js" async></script>'
+                        '<script src="/api/notif/widget.js" async></script>')
         # Usar rsplit (último </body>) para evitar inyectar dentro de strings JS
         # como w.document.write('<html><body>...</body></html>') que aparece
         # en compras_html.py / recepcion_html.py / salida_html.py.

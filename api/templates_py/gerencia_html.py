@@ -70,6 +70,14 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#1C2B30;min-height:1
 .churn-item:last-child{border-bottom:none;}
 .badge-crit{background:rgba(239,68,68,0.2);color:#fca5a5;padding:2px 8px;border-radius:10px;font-size:0.75em;font-weight:700;}
 .badge-atenc{background:rgba(245,158,11,0.2);color:#fcd34d;padding:2px 8px;border-radius:10px;font-size:0.75em;font-weight:700;}
+/* Mobile responsive · 27-may-2026 */
+@media (max-width: 768px) {
+  .two-cols { grid-template-columns: 1fr !important; }
+  .finanzas-grid { grid-template-columns: 1fr !important; }
+}
+@media (max-width: 480px) {
+  .finanzas-grid { grid-template-columns: 1fr !important; }
+}
 </style>
 </head>
 <body>

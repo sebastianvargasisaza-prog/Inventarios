@@ -139,6 +139,39 @@ def health():
             ).fetchone()[0]
         except Exception:
             pass
+        # Diagnóstico MEE · conteo público sin exponer detalles (Sebastián 27-may PM)
+        # Para verificar desde curl si hay productos sin envase/volumen sin login.
+        try:
+            from datetime import date as _d, timedelta as _td
+            _hoy = _d.today().isoformat()
+            _hasta = (_d.today() + _td(days=60)).isoformat()
+            _prods = conn.execute(
+                """SELECT DISTINCT producto FROM produccion_programada
+                   WHERE date(fecha_programada) BETWEEN ? AND ?
+                     AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado')""",
+                (_hoy, _hasta),
+            ).fetchall()
+            _mapeados = set()
+            for _r in conn.execute(
+                """SELECT DISTINCT UPPER(sku_codigo) FROM sku_mee_config
+                   WHERE COALESCE(aplica,1)=1"""
+            ).fetchall():
+                _mapeados.add(_r[0])
+            _con_vol = set()
+            for _r in conn.execute(
+                """SELECT UPPER(producto_nombre) FROM volumen_unitario_producto
+                   WHERE COALESCE(activo,1)=1 AND COALESCE(volumen_ml,0) > 0"""
+            ).fetchall():
+                _con_vol.add(_r[0])
+            _sin_map = 0; _sin_vol = 0
+            for _r in _prods:
+                _norm = (_r[0] or '').strip().upper()
+                if _norm not in _mapeados: _sin_map += 1
+                elif _norm not in _con_vol: _sin_vol += 1
+            tables['mee_diag_sin_mapping'] = _sin_map
+            tables['mee_diag_sin_volumen'] = _sin_vol
+        except Exception:
+            pass
         # Migraciones · versiones aplicadas vs pendientes (Sebastián 27-may PM)
         # Útil para verificar deploys sin admin login · sin exponer DDL/SQL.
         try:

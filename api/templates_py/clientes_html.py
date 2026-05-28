@@ -108,6 +108,16 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
 /* PROGRESS */
 .meta-bar{height:22px;background:#e5e7eb;border-radius:11px;overflow:hidden;margin-top:6px;}
 .meta-fill{height:100%;border-radius:11px;background:linear-gradient(90deg,#5C4B99,#9B89C4);transition:width 1s;}
+/* Mobile responsive · 27-may-2026 */
+@media (max-width: 768px) {
+  .switcher { grid-template-columns: 1fr; }
+  .form-row { grid-template-columns: 1fr !important; }
+  .form-row.triple { grid-template-columns: 1fr !important; }
+  .module-tabs { overflow-x: auto; padding: 0 12px; }
+  .content { padding: 14px 12px; }
+  .mdl-footer { flex-direction: column-reverse; gap: 8px; }
+  .mdl-footer button { width: 100%; }
+}
 </style>
 </head>
 <body>

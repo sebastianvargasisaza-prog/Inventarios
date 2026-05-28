@@ -48,6 +48,14 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
 .flujo-neg{color:#c0392b;font-weight:700;}
 .bar-container{width:100%;background:#f0eeea;border-radius:4px;height:8px;margin-top:6px;}
 .bar-fill{height:8px;border-radius:4px;background:var(--bc,#B5924A);transition:width 0.5s;}
+/* Mobile responsive · 27-may-2026 */
+@media (max-width: 768px) {
+  body > div[style*="grid-template-columns:1fr 1fr"],
+  body div[style*="grid-template-columns:1fr 1fr"] {
+    grid-template-columns: 1fr !important;
+  }
+  .chart-wrap { padding: 14px; }
+}
 </style>
 </head>
 <body>
