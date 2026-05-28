@@ -6441,7 +6441,7 @@ def admin_mees_huerfanos_audit():
     u, err, code = _require_admin()
     if err:
         return err, code
-    conn = get_db(); c = conn.cursor()
+    conn = db_connect(); c = conn.cursor()
     try:
         rows = c.execute("""
             SELECT smc.mee_codigo, COUNT(*) AS uso_en_config

@@ -7866,12 +7866,16 @@ def mkt_cmo_historial_planes():
     for p in planes:
         d = dict(p)
         try:
+            # CHECK constraint del DDL: 'pendiente','aprobada','descartada',
+            # 'ejecutada','fallida','pospuesta' (femenino). Ejecutada cuenta
+            # como aprobada (la acción se aprobó y corrió el workflow).
             stats = c.execute("""
                 SELECT
-                    SUM(CASE WHEN COALESCE(estado,'pendiente')='aprobado'   THEN 1 ELSE 0 END) AS aprobadas,
-                    SUM(CASE WHEN COALESCE(estado,'pendiente')='pospuesto'  THEN 1 ELSE 0 END) AS pospuestas,
-                    SUM(CASE WHEN COALESCE(estado,'pendiente')='descartado' THEN 1 ELSE 0 END) AS descartadas,
+                    SUM(CASE WHEN COALESCE(estado,'pendiente') IN ('aprobada','ejecutada') THEN 1 ELSE 0 END) AS aprobadas,
+                    SUM(CASE WHEN COALESCE(estado,'pendiente')='pospuesta'  THEN 1 ELSE 0 END) AS pospuestas,
+                    SUM(CASE WHEN COALESCE(estado,'pendiente')='descartada' THEN 1 ELSE 0 END) AS descartadas,
                     SUM(CASE WHEN COALESCE(estado,'pendiente')='pendiente'  THEN 1 ELSE 0 END) AS pendientes,
+                    SUM(CASE WHEN COALESCE(estado,'pendiente')='fallida'    THEN 1 ELSE 0 END) AS fallidas,
                     COUNT(*) AS total
                 FROM marketing_cmo_acciones WHERE plan_id=?
             """, (d['id'],)).fetchone()
@@ -7881,10 +7885,11 @@ def mkt_cmo_historial_planes():
                 'pospuestas':  int(stats['pospuestas'] or 0)  if stats else 0,
                 'descartadas': int(stats['descartadas'] or 0) if stats else 0,
                 'pendientes':  int(stats['pendientes'] or 0)  if stats else 0,
+                'fallidas':    int(stats['fallidas'] or 0)    if stats else 0,
             }
         except Exception:
             d['stats'] = {'total': 0, 'aprobadas': 0, 'pospuestas': 0,
-                          'descartadas': 0, 'pendientes': 0}
+                          'descartadas': 0, 'pendientes': 0, 'fallidas': 0}
         out.append(d)
     return jsonify({'ok': True, 'planes': out, 'total': len(out)})
 

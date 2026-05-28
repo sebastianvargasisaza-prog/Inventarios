@@ -12602,3 +12602,120 @@ def test_golden_formula_variantes_seleccion(app, db_clean):
         "DELETE FROM maestro_mps WHERE codigo_mp IN ('MP_VAR_A1','MP_VAR_B1')",
     ):
         _exec(sql)
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH · MEE huérfanos audit + fix · 27-may-2026 PM
+# ═══════════════════════════════════════════════════════════════════
+# Bug que cazaría: si `sku_mee_config` apunta a un `mee_codigo` que NO
+# existe en `maestro_mee`, el JOIN en producciones_faltantes devuelve 0
+# silenciosamente · necesidad MEE = 0 · exagera u oculta déficit real.
+# El cron auto_reparar_huerfanas_mee + endpoints admin deben:
+#   1. detectar el huérfano via LEFT JOIN
+#   2. reparar via mee_aliases si hay match canonical
+#   3. dejar pendiente_manual si no hay alias
+
+def test_golden_mees_huerfanos_audit_y_fix(app, db_clean):
+    """auto_reparar_huerfanas_mee · cron 4:45 AM + endpoints admin."""
+    # Cleanup previo
+    for sql in (
+        "DELETE FROM sku_mee_config WHERE sku_codigo='TEST_SKU_HUERF'",
+        "DELETE FROM maestro_mee WHERE codigo IN ('MEE_TEST_OK','MEE_TEST_HUERF')",
+        "DELETE FROM mee_aliases WHERE alias='MEE_TEST_HUERF'",
+    ):
+        try: _exec(sql)
+        except Exception: pass
+
+    # Setup · MEE canonical existe, MEE huérfano NO, alias mapea huérfano→canonical
+    _exec("INSERT INTO maestro_mee (codigo, descripcion) "
+          "VALUES ('MEE_TEST_OK', 'TEST envase canonical')")
+    _exec("INSERT INTO sku_mee_config (sku_codigo, mee_codigo, componente_tipo, "
+          "cantidad_por_unidad, aplica) VALUES "
+          "('TEST_SKU_HUERF', 'MEE_TEST_HUERF', 'envase', 1, 1)")
+    _exec("INSERT INTO mee_aliases (alias, codigo_mee, descripcion_canonical, "
+          "tipo, fuente, activo) VALUES "
+          "('MEE_TEST_HUERF', 'MEE_TEST_OK', 'TEST envase canonical', "
+          "'sinonimo', 'manual', 1)")
+
+    cs = _login(app, 'sebastian')
+    # 1) Audit detecta el huérfano como auto-reparable
+    r_audit = cs.get('/api/admin/mees-huerfanos-audit')
+    assert r_audit.status_code == 200, r_audit.data
+    d = r_audit.get_json()
+    autos = [x for x in (d.get('auto_reparables') or [])
+             if x.get('mee_codigo_huerfano') == 'MEE_TEST_HUERF']
+    assert autos, f'BUG audit: huérfano MEE_TEST_HUERF no detectado · {d}'
+    assert autos[0]['reparar_a'] == 'MEE_TEST_OK'
+
+    # 2) Fix repara via alias
+    r_fix = cs.post('/api/admin/mees-huerfanos-fix', json={},
+                    headers=csrf_headers())
+    assert r_fix.status_code == 200, r_fix.data
+    df = r_fix.get_json()
+    assert df.get('ok') is True
+    assert df.get('reparados_auto', 0) >= 1, \
+        f'BUG fix: no reparó · {df}'
+
+    # 3) Verificar que sku_mee_config ahora apunta al canonical
+    rows = _query("SELECT mee_codigo FROM sku_mee_config "
+                  "WHERE sku_codigo='TEST_SKU_HUERF'")
+    assert rows and rows[0][0] == 'MEE_TEST_OK', \
+        f'BUG: sku_mee_config no se actualizó · {rows}'
+
+    # 4) 401 sin sesión
+    cs_no = app.test_client()
+    assert cs_no.get('/api/admin/mees-huerfanos-audit').status_code == 401
+
+    # Cleanup
+    for sql in (
+        "DELETE FROM sku_mee_config WHERE sku_codigo='TEST_SKU_HUERF'",
+        "DELETE FROM maestro_mee WHERE codigo IN ('MEE_TEST_OK','MEE_TEST_HUERF')",
+        "DELETE FROM mee_aliases WHERE alias='MEE_TEST_HUERF'",
+    ):
+        try: _exec(sql)
+        except Exception: pass
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH · CMO IA historial planes · 27-may-2026 PM
+# ═══════════════════════════════════════════════════════════════════
+# Bug que cazaría: el endpoint historial debe agregar stats de acciones
+# (aprobadas/pospuestas/descartadas/pendientes) por plan. Si el GROUP
+# BY o COALESCE están mal, las stats vienen en 0 · el desempeño del
+# agente director queda invisible.
+
+def test_golden_cmo_historial_planes(app, db_clean):
+    """Historial CMO IA · stats correctos por plan."""
+    _exec("DELETE FROM marketing_cmo_acciones WHERE plan_id IN "
+          "(SELECT id FROM marketing_cmo_plan WHERE fecha='2026-05-26')")
+    _exec("DELETE FROM marketing_cmo_plan WHERE fecha='2026-05-26'")
+
+    # Setup · 1 plan con 4 acciones, una de cada estado
+    # DDL marketing_cmo_plan.estado CHECK: pendiente|parcial|completado|descartado
+    # DDL marketing_cmo_acciones.estado CHECK: pendiente|aprobada|descartada|ejecutada|fallida|pospuesta
+    pid = _exec("INSERT INTO marketing_cmo_plan (fecha, acciones_json, "
+                "estado, generado_por) VALUES "
+                "('2026-05-26', '[]', 'completado', 'test_golden')")
+    for est in ('aprobada', 'pospuesta', 'descartada', 'pendiente'):
+        _exec("INSERT INTO marketing_cmo_acciones (plan_id, tipo, prioridad, "
+              "titulo, descripcion, estado) VALUES (?,?,?,?,?,?)",
+              (pid, 'test', 'media', f'Acción {est}', 'd', est))
+
+    cs = _login(app, 'sebastian')
+    r = cs.get('/api/marketing/cmo/historial-planes?limit=10')
+    assert r.status_code == 200, r.data
+    d = r.get_json()
+    assert d.get('ok') is True
+    planes = d.get('planes') or []
+    p26 = [p for p in planes if p.get('fecha') == '2026-05-26']
+    assert p26, f'BUG: plan 2026-05-26 no aparece · {planes[:3]}'
+    s = p26[0].get('stats') or {}
+    assert s.get('total') == 4, f'BUG stats.total · {s}'
+    assert s.get('aprobadas') == 1, f'BUG stats.aprobadas · {s}'
+    assert s.get('pospuestas') == 1, f'BUG stats.pospuestas · {s}'
+    assert s.get('descartadas') == 1, f'BUG stats.descartadas · {s}'
+    assert s.get('pendientes') == 1, f'BUG stats.pendientes · {s}'
+
+    # Cleanup
+    _exec("DELETE FROM marketing_cmo_acciones WHERE plan_id=?", (pid,))
+    _exec("DELETE FROM marketing_cmo_plan WHERE id=?", (pid,))
