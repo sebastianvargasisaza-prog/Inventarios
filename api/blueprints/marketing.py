@@ -5904,13 +5904,16 @@ def mkt_influencers_panel():
                 if key:
                     pagos_by_name.setdefault(key, []).append(p)
 
-        # PERF-FIX 27-may-2026 PM · Sebastián · "marketing influencers super
-        # lento se queda pensando no carga". N+1 fix · antes el loop por cada
-        # influencer ejecutaba 1 query LIKE bilateral en animus_shopify_orders
-        # (full table scan, sin índice). 50 influencers × 5000 orders = 250k+
-        # filas escaneadas → varios segundos. Ahora: 1 query global que carga
-        # todos los códigos cuponeados con sus ventas, dict lookup O(1) en loop.
-        ventas_por_code = {}  # CODE_UPPER → {rev, n, uds}
+        # PERF-FIX 27-may-2026 PM v2 · Sebastián · "se demora mucho en cargar
+        # los influencers". Antes (v1) iteraba TODA la lista de ~5000 orders por
+        # CADA influencer con substring search · 50 inf × 5000 orders = 250K
+        # operaciones por endpoint call · varios segundos en Python.
+        # AHORA (v2): índice invertido CODE_UP → [(total, uds), ...] · pre-
+        # parseamos discount_codes (split por coma/pipe/punto-coma) en 1 sola
+        # pasada · luego lookup O(1) en el loop por influencer.
+        import re as _re_pf
+        _SEP_CUPON = _re_pf.compile(r'[,;|]')
+        code_to_orders = {}  # CODE_UP → list[(total, uds)]
         try:
             for r in c.execute("""
                 SELECT UPPER(COALESCE(discount_codes,'')) AS codes_up,
@@ -5919,33 +5922,17 @@ def mkt_influencers_panel():
                 FROM animus_shopify_orders
                 WHERE COALESCE(discount_codes,'') != ''
             """).fetchall():
-                codes_up = r['codes_up'] or ''
+                codes_up = (r['codes_up'] or '').strip()
+                if not codes_up: continue
                 tot = float(r['total'] or 0)
                 uds = int(r['uds'] or 0)
-                # discount_codes puede tener múltiples cupones separados (CSV/JSON)
-                # · indexamos por presencia de cada código. Para evitar split
-                # complejo simplemente guardamos el string completo y luego en el
-                # loop hacemos `if code in codes_up` (substring) · O(1) per influencer.
-                # Acumular por substring de cada código posible es caro;
-                # mejor agrupamos por código tras conocer la lista de códigos.
-                pass
+                # Split por separadores comunes + quitar comillas/brackets de JSON
+                _cleaned = codes_up.replace('[','').replace(']','').replace('"','').replace("'",'')
+                codes_set = {c.strip() for c in _SEP_CUPON.split(_cleaned) if c.strip()}
+                for code in codes_set:
+                    code_to_orders.setdefault(code, []).append((tot, uds))
         except Exception:
-            pass
-        # Plan B simple: cargar lista completa en memoria una sola vez · luego
-        # en el loop el `in` substring sobre lista (no query). Lista de ~5000
-        # strings es muy rápida en Python · vs N+1 query SQL es órdenes de
-        # magnitud mejor.
-        orders_codes_total = []
-        try:
-            orders_codes_total = c.execute("""
-                SELECT UPPER(COALESCE(discount_codes,'')) AS codes_up,
-                       COALESCE(total,0) AS total,
-                       COALESCE(unidades_total,0) AS uds
-                FROM animus_shopify_orders
-                WHERE COALESCE(discount_codes,'') != ''
-            """).fetchall()
-        except Exception:
-            orders_codes_total = []
+            code_to_orders = {}
 
         # 3. Merge
         now_month = datetime.now().strftime("%Y-%m")
@@ -6007,19 +5994,15 @@ def mkt_influencers_panel():
             inf["proximo_pago_estimado"] = proximo_pago
 
             # AUDIT 26-may · revenue atribuible desde Shopify si tiene cupón
-            # PERF-FIX 27-may PM · iteración sobre lista cacheada en memoria
-            # (no query SQL por influencer). Lista de ~5000 orders en Python
-            # es < 5ms · vs query LIKE bilateral sin índice = full table scan.
+            # PERF-FIX 27-may PM v2 · lookup O(1) en dict invertido code_to_orders
+            # · antes era O(N orders) por cada influencer · ahora O(1).
             dcode = (inf.get("discount_code") or '').strip()
             if dcode:
                 try:
-                    _dcup = dcode.upper()
-                    _rev = 0.0; _n = 0; _uds = 0
-                    for _row_o in orders_codes_total:
-                        if _dcup in (_row_o['codes_up'] or ''):
-                            _rev += float(_row_o['total'] or 0)
-                            _uds += int(_row_o['uds'] or 0)
-                            _n += 1
+                    _matches = code_to_orders.get(dcode.upper(), [])
+                    _rev = sum(m[0] for m in _matches)
+                    _uds = sum(m[1] for m in _matches)
+                    _n = len(_matches)
                     inf["revenue_atribuible"] = _rev
                     inf["pedidos_atribuibles"] = _n
                     inf["unidades_atribuibles"] = _uds
