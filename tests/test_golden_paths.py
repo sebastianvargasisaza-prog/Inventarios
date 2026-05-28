@@ -12794,3 +12794,77 @@ def test_golden_compras_auto_aprob_precio_rango(app, db_clean):
 
     # Cleanup
     _exec("DELETE FROM precio_historico_mp WHERE codigo_mp IN ('MP_TEST_PRC1','MP_TEST_PRC2')")
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH · stock cuenta Ajuste+/Ajuste como entrada · audit 27-may PM
+# ═══════════════════════════════════════════════════════════════════
+# Bug que cazaría: 39 queries del dashboard usaban CASE WHEN tipo='Entrada'
+# THEN cantidad ELSE -cantidad END → trataban 'Ajuste +' y 'Ajuste' como
+# RESTA. KPIs de gerencia subestimaban el stock. Fix usa patrón canónico.
+
+def test_golden_stock_dashboard_cuenta_ajuste_positivo(app, db_clean):
+    """El stock del dashboard debe SUMAR Ajuste+ / Ajuste, no restarlos."""
+    _exec("DELETE FROM movimientos WHERE material_id='MP_TEST_AJUSTE'")
+    _exec("DELETE FROM maestro_mps WHERE codigo_mp='MP_TEST_AJUSTE'")
+    _exec("INSERT INTO maestro_mps (codigo_mp, nombre_comercial, activo, stock_minimo) "
+          "VALUES ('MP_TEST_AJUSTE','TEST Ajuste MP',1,50)")
+    # 100 Entrada + 30 Ajuste (debe dar 130, no 70). El CHECK de movimientos
+    # solo permite Entrada/Salida/Ajuste · el bug trataba 'Ajuste' como RESTA.
+    _exec("INSERT INTO movimientos (material_id, material_nombre, tipo, cantidad, lote) "
+          "VALUES ('MP_TEST_AJUSTE','TEST Ajuste MP','Entrada',100,'L-TEST-1')")
+    _exec("INSERT INTO movimientos (material_id, material_nombre, tipo, cantidad, lote) "
+          "VALUES ('MP_TEST_AJUSTE','TEST Ajuste MP','Ajuste',30,'L-TEST-1')")
+
+    cs = _login(app, 'sebastian')
+    # Verificar via el dashboard de inventario (usa el CASE patcheado)
+    r = cs.get('/api/inventario')
+    assert r.status_code == 200, r.data
+    # Verificación directa del cálculo: stock total del MP debe ser 130
+    rows = _query("""
+        SELECT SUM(CASE
+            WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad
+            WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad
+            ELSE 0 END)
+        FROM movimientos WHERE material_id='MP_TEST_AJUSTE'
+    """)
+    assert rows and rows[0][0] == 130, \
+        f'BUG: Ajuste+ debe sumar · esperado 130, got {rows[0][0] if rows else None}'
+
+    # Cleanup
+    _exec("DELETE FROM movimientos WHERE material_id='MP_TEST_AJUSTE'")
+    _exec("DELETE FROM maestro_mps WHERE codigo_mp='MP_TEST_AJUSTE'")
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH · hard_delete produccion FIJA requiere force · audit 27-may PM
+# ═══════════════════════════════════════════════════════════════════
+# Bug que cazaría: borrar un origen Fijo (eos_plan/eos_b2b/eos_retroactivo)
+# sin force debe rechazarse con 409 · protege planificación deliberada.
+
+def test_golden_hard_delete_fijo_requiere_force(app, db_clean):
+    """DELETE de produccion_programada FIJA sin force → 409."""
+    _exec("DELETE FROM produccion_programada WHERE producto='TEST_FIJO_DELETE'")
+    pid = _exec("INSERT INTO produccion_programada "
+                "(producto, fecha_programada, estado, origen, cantidad_kg) "
+                "VALUES ('TEST_FIJO_DELETE','2026-07-01','programado','eos_plan',10)")
+
+    cs = _login(app, 'sebastian')
+    # Sin force → debe rechazar 409 (es un Fijo)
+    r = cs.delete(f'/api/programacion/produccion-programada/{pid}/borrar',
+                  headers=csrf_headers())
+    assert r.status_code == 409, \
+        f'BUG: borrar Fijo sin force debió ser 409 · got {r.status_code} {r.data[:200]}'
+    # El row debe seguir existiendo
+    rows = _query("SELECT estado FROM produccion_programada WHERE id=?", (pid,))
+    assert rows, 'BUG: el Fijo fue borrado sin force'
+
+    # Con force=1 → sí borra (admin consciente)
+    r2 = cs.delete(f'/api/programacion/produccion-programada/{pid}/borrar?force=1',
+                   headers=csrf_headers())
+    assert r2.status_code == 200, f'force=1 debió borrar · {r2.status_code} {r2.data[:200]}'
+    rows2 = _query("SELECT id FROM produccion_programada WHERE id=?", (pid,))
+    assert not rows2, 'BUG: force=1 no borró el Fijo'
+
+    # Cleanup
+    _exec("DELETE FROM produccion_programada WHERE producto='TEST_FIJO_DELETE'")
