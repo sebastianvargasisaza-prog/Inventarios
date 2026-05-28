@@ -3302,8 +3302,8 @@ def _identify_movimientos_a_preservar(c):
     cols = ('id, material_id, material_nombre, cantidad, tipo, fecha, '
             'observaciones, lote, fecha_vencimiento, estanteria, posicion, '
             'proveedor, estado_lote, operador, '
-            'COALESCE(numero_oc,"") as numero_oc, '
-            'COALESCE(numero_factura,"") as numero_factura, '
+            "COALESCE(numero_oc,'') as numero_oc, "
+            "COALESCE(numero_factura,'') as numero_factura, "
             'COALESCE(precio_kg,0) as precio_kg')
     try:
         entradas_oc = c.execute(f"""SELECT {cols} FROM movimientos
@@ -3722,7 +3722,7 @@ def admin_inventario_reset_preview():
     # Conteos actuales
     movs_actuales = c.execute("SELECT COUNT(*) FROM movimientos").fetchone()[0]
     stock_total_actual_g = float(c.execute(
-        "SELECT COALESCE(SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END),0) "
+        "SELECT COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END),0) "
         "FROM movimientos"
     ).fetchone()[0] or 0)
 
@@ -4116,7 +4116,7 @@ def admin_inventario_reset_aplicar():
     # Validacion post: contar lo que quedo
     movs_post = c.execute("SELECT COUNT(*) FROM movimientos").fetchone()[0]
     stock_post_g = float(c.execute(
-        "SELECT COALESCE(SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END),0) "
+        "SELECT COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END),0) "
         "FROM movimientos"
     ).fetchone()[0] or 0)
 
@@ -5367,7 +5367,7 @@ def admin_inventario_health_monitor():
     # 4. Stock total razonable (heuristica — alarma si > 50 toneladas)
     try:
         stock_g = float(c.execute(
-            "SELECT COALESCE(SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END),0) "
+            "SELECT COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END),0) "
             "FROM movimientos"
         ).fetchone()[0] or 0)
         if stock_g > 50_000_000:  # 50 toneladas
@@ -5433,7 +5433,7 @@ def admin_health_check_post_reset():
     try:
         movs_total = c.execute("SELECT COUNT(*) FROM movimientos").fetchone()[0]
         stock_total_g = float(c.execute(
-            "SELECT COALESCE(SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END),0) "
+            "SELECT COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END),0) "
             "FROM movimientos"
         ).fetchone()[0] or 0)
         n_entradas = c.execute("SELECT COUNT(*) FROM movimientos WHERE tipo='Entrada'").fetchone()[0]
@@ -5457,7 +5457,7 @@ def admin_health_check_post_reset():
     try:
         rows = c.execute("""
             SELECT material_id, COALESCE(lote,''),
-                   SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) as neto
+                   SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END) as neto
             FROM movimientos
             GROUP BY material_id, lote
             HAVING neto < -0.5
@@ -5777,7 +5777,7 @@ def admin_stock_mp_diagnostico():
             info['en_maestro_mps'] = False
         # ¿movimientos por código?
         r2 = c.execute("""SELECT COUNT(*) as n,
-                          COALESCE(SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END),0) as stock,
+                          COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END),0) as stock,
                           MAX(fecha) as ultimo
                           FROM movimientos WHERE material_id=?""", (cod,)).fetchone()
         info['movimientos_count'] = r2['n'] if r2 else 0
@@ -5790,7 +5790,7 @@ def admin_stock_mp_diagnostico():
             nm = info.get('nombre_comercial')
             if nm:
                 r3 = c.execute("""SELECT COUNT(*) as n,
-                                  COALESCE(SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END),0) as stock
+                                  COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END),0) as stock
                                   FROM movimientos WHERE UPPER(TRIM(material_nombre))=UPPER(TRIM(?))""", (nm,)).fetchone()
                 if r3 and r3['n'] > 0:
                     info['movimientos_count'] = r3['n']
@@ -5818,7 +5818,7 @@ def admin_stock_mp_diagnostico():
                       (f'%{nom}%',)).fetchall()
         info['matches_catalogo'] = [dict(x) for x in r]
         r2 = c.execute("""SELECT COUNT(*) as n,
-                          COALESCE(SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END),0) as stock,
+                          COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END),0) as stock,
                           MAX(fecha) as ultimo
                           FROM movimientos
                           WHERE UPPER(material_nombre) LIKE UPPER(?)""", (f'%{nom}%',)).fetchone()
@@ -8642,7 +8642,7 @@ def _compute_audit_minimos(horizonte_proyeccion_dias: int = 90,
             FROM maestro_mps m
             LEFT JOIN (
                 SELECT material_id,
-                       SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) as stock_actual
+                       SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END) as stock_actual
                 FROM movimientos GROUP BY material_id
             ) s ON m.codigo_mp = s.material_id
             WHERE m.activo = 1
@@ -8656,7 +8656,7 @@ def _compute_audit_minimos(horizonte_proyeccion_dias: int = 90,
             FROM maestro_mps m
             LEFT JOIN (
                 SELECT material_id,
-                       SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) as stock_actual
+                       SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END) as stock_actual
                 FROM movimientos GROUP BY material_id
             ) s ON m.codigo_mp = s.material_id
             WHERE m.activo = 1
@@ -15021,7 +15021,7 @@ def investigar_mp(codigo):
     # Lotes con saldo
     lotes_rows = c.execute("""
         SELECT COALESCE(lote,'') as lote, COUNT(*) as n,
-               ROUND(SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END), 2) as neto,
+               ROUND(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END), 2) as neto,
                MIN(fecha) as primero, MAX(fecha) as ultimo,
                MAX(estado_lote) as estado, MAX(fecha_vencimiento) as fv
         FROM movimientos WHERE material_id=?
@@ -15050,7 +15050,7 @@ def investigar_mp(codigo):
 
     # Stock total neto
     total_row = c.execute(
-        "SELECT ROUND(SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END), 2) "
+        "SELECT ROUND(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END), 2) "
         "FROM movimientos WHERE material_id=?", (codigo,)
     ).fetchone()
     stock_total = (total_row[0] or 0) if total_row else 0
@@ -16411,7 +16411,7 @@ def explicar_stock_min(codigo):
 
     # 2. Stock actual (suma de movimientos)
     stock_row = c.execute("""
-        SELECT ROUND(SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END), 2)
+        SELECT ROUND(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END), 2)
         FROM movimientos WHERE material_id=?
     """, (codigo,)).fetchone()
     mp_info['stock_actual_g'] = (stock_row[0] or 0) if stock_row else 0
@@ -23118,11 +23118,15 @@ def limpiar_produccion_zombies():
     c = conn.cursor()
     try:
         # A. Canceladas viejas >30d
+        # Sebastián 27-may-2026 · audit · NO purgar Fijos aunque estén
+        # cancelados · preserva auditoría/recuperación de lo que el usuario
+        # fijó (eos_plan/eos_b2b/eos_retroactivo). Solo purga sugeridas.
         cancel_viejas = c.execute("""
             SELECT id, producto, fecha_programada, estado
             FROM produccion_programada
             WHERE COALESCE(estado,'') = 'cancelado'
               AND date(fecha_programada) < date('now', '-5 hours', '-30 days')
+              AND COALESCE(origen,'') NOT IN ('eos_plan','eos_b2b','eos_retroactivo')
             ORDER BY fecha_programada
         """).fetchall()
 
@@ -23184,11 +23188,15 @@ def limpiar_produccion_zombies():
         canceladas = 0
         dedup = 0
         try:
-            # A. DELETE canceladas viejas
+            # A. DELETE canceladas viejas · cinturón+tirantes: el WHERE
+            # también excluye Fijos por si el SELECT cambiara en el futuro.
             if cancel_viejas:
                 ids = [r['id'] for r in cancel_viejas]
                 ph = ','.join('?' * len(ids))
-                c.execute(f"DELETE FROM produccion_programada WHERE id IN ({ph})", ids)
+                c.execute(
+                    f"""DELETE FROM produccion_programada WHERE id IN ({ph})
+                        AND COALESCE(origen,'') NOT IN ('eos_plan','eos_b2b','eos_retroactivo')""",
+                    ids)
                 purgadas = c.rowcount or 0
 
             # B. UPDATE programadas viejas a cancelado

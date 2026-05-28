@@ -55,7 +55,7 @@ def gerencia_kpis():
     if 'compras_user' not in session or session.get('compras_user','') not in FINANZAS_ACCESS:
         return jsonify({'error': 'No autorizado'}), 401
     conn = get_db(); c = conn.cursor()
-    c.execute("SELECT COUNT(*) FROM maestro_mps m LEFT JOIN (SELECT material_id,SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) as s FROM movimientos GROUP BY material_id) st ON m.codigo_mp=st.material_id WHERE m.activo=1 AND m.stock_minimo>0 AND COALESCE(st.s,0)<m.stock_minimo")
+    c.execute("SELECT COUNT(*) FROM maestro_mps m LEFT JOIN (SELECT material_id,SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END) as s FROM movimientos GROUP BY material_id) st ON m.codigo_mp=st.material_id WHERE m.activo=1 AND m.stock_minimo>0 AND COALESCE(st.s,0)<m.stock_minimo")
     mps_bajo_minimo = c.fetchone()[0] or 0
     # AUDITORÍA-FIX 23-may-2026 · C18 · canonical SUM(movimientos_mee)
     # · evita falso bajo_minimo por drift del cache stock_actual

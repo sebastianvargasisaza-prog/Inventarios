@@ -198,21 +198,21 @@ def get_inventario():
     # ── CONTEXTO (totales / composición) ──────────────────────────────
     mov = _safe('SELECT COUNT(*) FROM movimientos')
     prod_historico = _safe('SELECT COUNT(*) FROM producciones')
-    stock_total = _safe("SELECT COALESCE(SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END),0) FROM movimientos")
+    stock_total = _safe("SELECT COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END),0) FROM movimientos")
     alrt = _safe('SELECT COUNT(*) FROM alertas')
 
     # ── AHORA (crítico — acción hoy) ──────────────────────────────────
     # MPs sin stock (en cero)
     mps_sin_stock = _safe("""
         SELECT COUNT(*) FROM maestro_mps m
-        LEFT JOIN (SELECT material_id, SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) as stock
+        LEFT JOIN (SELECT material_id, SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END) as stock
                    FROM movimientos GROUP BY material_id) s ON m.codigo_mp=s.material_id
         WHERE m.activo=1 AND m.stock_minimo>0 AND COALESCE(s.stock,0) <= 0
     """)
     # MPs bajo mínimo (incluye sin stock)
     mps_bajo_min = _safe("""
         SELECT COUNT(*) FROM maestro_mps m
-        LEFT JOIN (SELECT material_id, SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) as stock
+        LEFT JOIN (SELECT material_id, SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END) as stock
                    FROM movimientos GROUP BY material_id) s ON m.codigo_mp=s.material_id
         WHERE m.activo=1 AND m.stock_minimo>0 AND COALESCE(s.stock,0)<m.stock_minimo
     """)
@@ -227,7 +227,7 @@ def get_inventario():
         SELECT COUNT(*) FROM (
           SELECT material_id, lote,
                  MIN(fecha_vencimiento) as venc,
-                 SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) as stock_g
+                 SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END) as stock_g
           FROM movimientos
           WHERE COALESCE(lote,'') != ''
             AND fecha_vencimiento IS NOT NULL
@@ -262,7 +262,7 @@ def get_inventario():
         SELECT COUNT(*) FROM (
           SELECT material_id, lote,
                  MIN(fecha_vencimiento) as venc,
-                 SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) as stock_g
+                 SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END) as stock_g
           FROM movimientos
           WHERE COALESCE(lote,'') != ''
             AND fecha_vencimiento IS NOT NULL
@@ -1955,7 +1955,7 @@ def _handle_produccion_inner():
             # ambos. Antes "no me dejo registrar producción" 500 silencioso.
             c.execute("""SELECT lote,
                                 MAX(CASE WHEN tipo='Entrada' THEN fecha_vencimiento END) AS fv_real,
-                                SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) as stock
+                                SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END) as stock
                          FROM movimientos
                          WHERE material_id=? AND lote IS NOT NULL AND lote!='' AND lote!='S/L'
                            AND (estado_lote IS NULL OR estado_lote NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO'))
@@ -2393,7 +2393,7 @@ def produccion_auditar_formulas_huerfanas():
         try:
             r = c.execute(
                 """SELECT COALESCE(SUM(stock_t),0) FROM (
-                     SELECT lote, SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) as stock_t
+                     SELECT lote, SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END) as stock_t
                      FROM movimientos
                      WHERE material_id=? AND lote IS NOT NULL AND lote!='' AND lote!='S/L'
                        AND (estado_lote IS NULL OR estado_lote NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO'))
@@ -2541,7 +2541,7 @@ def produccion_auto_reparar_formula(producto):
         try:
             row = c.execute(
                 """SELECT COALESCE(SUM(stock_t),0) FROM (
-                     SELECT lote, SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) as stock_t
+                     SELECT lote, SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END) as stock_t
                      FROM movimientos
                      WHERE material_id=? AND lote IS NOT NULL AND lote!='' AND lote!='S/L'
                        AND (estado_lote IS NULL OR estado_lote NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO'))
@@ -2663,7 +2663,7 @@ def produccion_diagnose(producto):
         try:
             todos = c.execute(
                 """SELECT lote,
-                          SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) as stock,
+                          SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END) as stock,
                           MAX(COALESCE(estado_lote,''))
                    FROM movimientos
                    WHERE material_id=?
@@ -2685,7 +2685,7 @@ def produccion_diagnose(producto):
                 """SELECT COUNT(*),
                           COALESCE(SUM(stock_t),0)
                    FROM (SELECT lote,
-                                SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) as stock_t
+                                SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END) as stock_t
                          FROM movimientos
                          WHERE material_id=? AND lote IS NOT NULL AND lote!='' AND lote!='S/L'
                            AND (estado_lote IS NULL OR estado_lote NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO'))
@@ -2814,7 +2814,7 @@ def produccion_ajustar_cantidad(pid):
                     continue
                 # FEFO
                 fefo = c.execute("""SELECT lote,
-                    SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) as stock
+                    SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END) as stock
                     FROM movimientos
                     WHERE material_id=? AND lote IS NOT NULL AND lote!='' AND lote!='S/L'
                       AND (estado_lote IS NULL OR estado_lote NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO'))
@@ -2981,7 +2981,7 @@ def simular_produccion():
     sin_precio = 0
     for mat_id, mat_nombre, pct, precio_kg in items:
         g_req = round((pct / 100) * cantidad_g, 2)
-        c.execute("""SELECT COALESCE(SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END),0)
+        c.execute("""SELECT COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END),0)
                      FROM movimientos WHERE material_id=?
                      AND (estado_lote IS NULL OR estado_lote NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO'))""",
                   (mat_id,))
@@ -6555,7 +6555,7 @@ def consumo_manual():
 
     # Calcular stock disponible ANTES del descuento (para audit + warning)
     stock_antes_row = c.execute(
-        "SELECT COALESCE(SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END), 0) "
+        "SELECT COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END), 0) "
         "FROM movimientos WHERE material_id=?",
         (codigo,),
     ).fetchone()
@@ -7142,7 +7142,7 @@ def diagnostico_post_incidente():
     # 3) Lotes con stock negativo (tolerancia float -0.01)
     neg_rows = c.execute(
         """SELECT material_id, lote,
-                  SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) AS stock
+                  SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END) AS stock
            FROM movimientos
            GROUP BY material_id, lote
            HAVING stock < -0.01
@@ -7238,7 +7238,7 @@ def conteo_estanterias():
     else:
         c.execute("""SELECT COALESCE(NULLIF(estanteria,''),'Sin estanteria') as est,
                             COUNT(DISTINCT material_id) as total_mps,
-                            SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) as stock_total
+                            SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END) as stock_total
                      FROM movimientos GROUP BY est ORDER BY est""")
     rows = c.fetchall()
     return jsonify([
@@ -7376,7 +7376,7 @@ def conteo_programacion():
     c.execute("""SELECT COALESCE(NULLIF(estanteria,''),'Sin estanteria') as est
                  FROM movimientos
                  GROUP BY est
-                 HAVING SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) > 0
+                 HAVING SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END) > 0
                  ORDER BY est""")
     estanterias = [r[0] for r in c.fetchall()]
     if not estanterias:
@@ -11526,7 +11526,7 @@ def planta_stock_por_lote(codigo_mp):
         SELECT lote,
                MAX(CASE WHEN tipo='Entrada' THEN fecha_vencimiento END) as fecha_vencimiento,
                MAX(CASE WHEN tipo='Entrada' THEN estado_lote END) as estado_lote,
-               SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) as stock_g,
+               SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END) as stock_g,
                MIN(fecha) as primera_entrada
         FROM movimientos
         WHERE material_id = ?
@@ -11560,7 +11560,7 @@ def planta_stock_por_lote(codigo_mp):
 
     # Stock sin lote (entradas legacy / sin trazabilidad)
     sin_lote_row = c.execute("""
-        SELECT COALESCE(SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END), 0)
+        SELECT COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END), 0)
         FROM movimientos
         WHERE material_id = ?
           AND COALESCE(lote,'') = ''

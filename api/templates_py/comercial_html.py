@@ -290,8 +290,10 @@ async function cargarEosLeads(){
 async function cambiarEstadoLead(id, nuevo){
   try{
     var r = await fetch('/api/eos/leads/'+id, _fetchOpts('PATCH', {estado: nuevo}));
-    if((await r.json()).ok){ cargarEosLeads(); }
-  }catch(e){}
+    var d = await r.json();
+    if(r.ok && d.ok){ cargarEosLeads(); }
+    else { alert('No se pudo cambiar el estado: '+((d&&d.error)||('HTTP '+r.status))); }
+  }catch(e){ alert('Error de red: '+e.message); }
 }
 
 // init

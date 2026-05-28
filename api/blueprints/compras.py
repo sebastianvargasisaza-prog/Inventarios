@@ -796,6 +796,22 @@ def limpiar_influencer_no_pagadas():
         c.execute("DELETE FROM solicitudes_compra WHERE numero=?", (numero,))
         eliminados.append(numero)
 
+    # Sebastián 27-may-2026 · audit · borrado masivo regulado DEBE auditar
+    # (INVIMA trazabilidad · incidente 19-may = borrado sin rastro). Antes
+    # este DELETE multiplex de SOLs/OCs/pagos no dejaba huella.
+    try:
+        from audit_helpers import audit_log as _al
+        _al(c, usuario=session.get('compras_user', 'desconocido'),
+            accion='LIMPIAR_INFLUENCER_NO_PAGADAS_MASIVO',
+            tabla='solicitudes_compra', registro_id='bulk',
+            antes={'candidatos': [x['numero'] for x in elegibles]},
+            despues={'eliminados': eliminados, 'total': len(eliminados)},
+            detalle=(f"Borrado masivo {len(eliminados)} SOLs influencer no-pagadas "
+                     f"(+ OCs/items/pagos pendientes vinculados) · "
+                     f"{len(omitidos)} omitidos por tener pagos"))
+    except Exception as _ae:
+        import logging as _lg
+        _lg.getLogger('compras').warning('audit limpiar influencer masivo falló: %s', _ae)
     conn.commit()
     return jsonify({
         'ok': True,
@@ -4808,7 +4824,7 @@ def get_solicitud_estado(numero):
         try:
             if cod:
                 r = c.execute("""SELECT
-                    COALESCE(SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END), 0),
+                    COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END), 0),
                     COUNT(*)
                     FROM movimientos WHERE material_id=?""", (cod,)).fetchone()
                 if r and r[1] > 0:  # hubo movimientos con ese código
@@ -4816,14 +4832,14 @@ def get_solicitud_estado(numero):
                 elif nombre:
                     # Fallback: buscar por nombre exacto upper
                     r2 = c.execute("""SELECT
-                        COALESCE(SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END), 0)
+                        COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END), 0)
                         FROM movimientos
                         WHERE UPPER(TRIM(material_nombre)) = UPPER(TRIM(?))""",
                         (nombre,)).fetchone()
                     stock_total = float(r2[0] or 0) if r2 else 0
             elif nombre:
                 r = c.execute("""SELECT
-                    COALESCE(SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END), 0)
+                    COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END), 0)
                     FROM movimientos
                     WHERE UPPER(TRIM(material_nombre)) = UPPER(TRIM(?))""",
                     (nombre,)).fetchone()
@@ -9254,7 +9270,7 @@ def ordenes_servicio_list():
     if estado:
         where.append('estado = ?'); params.append(estado)
     if proveedor:
-        where.append('LOWER(COALESCE(proveedor,"")) LIKE LOWER(?)')
+        where.append("LOWER(COALESCE(proveedor,'')) LIKE LOWER(?)")
         params.append(f'%{proveedor}%')
     rows = c.execute(
         f"""SELECT numero_os, proveedor, tipo_servicio, producto_final,

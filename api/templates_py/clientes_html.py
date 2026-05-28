@@ -859,6 +859,9 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
 
 <script>
 
+// XSS-safe escape · Sebastián 27-may-2026 audit · innerHTML con data backend
+function esc(s){var d=document.createElement('div');d.textContent=s==null?'':String(s);return d.innerHTML;}
+
 // CSRF defense-in-depth - Sebastian 3-may-2026
 function _csrf() {
   var m = document.cookie.match(/(?:^|;\\s*)csrf_token=([^;]+)/);
@@ -1029,7 +1032,7 @@ async function crearAliado(){
   try{
     var r=await fetch('/api/clientes',_fetchOpts('POST', data));
     var res=await r.json();
-    document.getElementById('cli-msg').innerHTML=r.ok?'<div class="msg-ok">'+res.message+'</div>':'<div class="msg-err">'+(res.error||'Error')+'</div>';
+    document.getElementById('cli-msg').innerHTML=r.ok?'<div class="msg-ok">'+esc(res.message)+'</div>':'<div class="msg-err">'+esc(res.error||'Error')+'</div>';
     if(r.ok){loadAliados();document.getElementById('cli-nombre').value='';}
   }catch(e){document.getElementById('cli-msg').innerHTML='<div class="msg-err">Error</div>';}
 }
@@ -1119,7 +1122,7 @@ async function crearPedido(){
     observaciones:document.getElementById('ped-obs').value,items:items};
   var r=await fetch('/api/pedidos',_fetchOpts('POST', data));
   var res=await r.json();
-  document.getElementById('ped-msg').innerHTML=r.ok?'<div class="msg-ok">'+res.message+'</div>':'<div class="msg-err">'+(res.error||'Error')+'</div>';
+  document.getElementById('ped-msg').innerHTML=r.ok?'<div class="msg-ok">'+esc(res.message)+'</div>':'<div class="msg-err">'+esc(res.error||'Error')+'</div>';
   if(r.ok){loadPedidos('');toggleForm('f-pedido');}
 }
 var _pedidoEstadoActivo=null;
@@ -1239,7 +1242,7 @@ async function abrirCliente360(cid){
   openMdl('m-cliente360');
   el.innerHTML='<p style="text-align:center;color:#aaa;padding:32px;">Cargando...</p>';
   var d=await fetch('/api/clientes/'+cid+'/ficha360').then(function(r){return r.json();});
-  if(d.error){el.innerHTML='<p style="color:#dc2626;">'+d.error+'</p>';return;}
+  if(d.error){el.innerHTML='<p style="color:#dc2626;">'+esc(d.error)+'</p>';return;}
   var cl=d.cliente,s=d.stats;
   var diasColor='#16a34a';
   if(s.dias_sin_pedido!==null&&s.dias_sin_pedido!==undefined)

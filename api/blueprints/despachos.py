@@ -55,7 +55,7 @@ def recepcion_detalle_oc(numero_oc):
     c.execute(
         'SELECT codigo_mp, nombre_mp, COALESCE(cantidad_g,0), '
         'COALESCE(precio_unitario,0), COALESCE(cantidad_recibida_g,0), '
-        'COALESCE(lote_asignado,"") '
+        "COALESCE(lote_asignado,'') "
         'FROM ordenes_compra_items WHERE numero_oc=?', (numero_oc,))
     items = c.fetchall()
     return jsonify({
@@ -85,15 +85,15 @@ def recepcion_seguimiento():
     # 28-abr-2026: las OCs en transito deben mostrar de qué SOL vienen.
     c.execute(
         'SELECT oc.numero_oc, oc.fecha, oc.estado, oc.proveedor, oc.categoria, '
-        'COALESCE(oc.valor_total,0), COALESCE(oc.fecha_recepcion,""), '
-        'COALESCE(oc.observaciones,"") || '
-        '  CASE WHEN COALESCE(oc.observaciones_recepcion,"") != "" '
-        '       THEN " | RECEP: " || oc.observaciones_recepcion ELSE "" END, '
-        'COALESCE(oc.tiene_discrepancias,0), '
-        'COALESCE(oc.fecha_pago,""), COALESCE(oc.fecha_autorizacion,""), '
-        'COALESCE(oc.recibido_por,""), '
-        'COALESCE(sc.numero,""), '            # sol_numero (origen)
-        'COALESCE(oc.fecha_entrega_est,"") '  # ETA estimada
+        "COALESCE(oc.valor_total,0), COALESCE(oc.fecha_recepcion,''), "
+        "COALESCE(oc.observaciones,'') || "
+        "  CASE WHEN COALESCE(oc.observaciones_recepcion,'') != '' "
+        "       THEN ' | RECEP: ' || oc.observaciones_recepcion ELSE '' END, "
+        "COALESCE(oc.tiene_discrepancias,0), "
+        "COALESCE(oc.fecha_pago,''), COALESCE(oc.fecha_autorizacion,''), "
+        "COALESCE(oc.recibido_por,''), "
+        "COALESCE(sc.numero,''), "            # sol_numero (origen)
+        "COALESCE(oc.fecha_entrega_est,'') "  # ETA estimada
         'FROM ordenes_compra oc '
         'LEFT JOIN solicitudes_compra sc ON sc.numero_oc = oc.numero_oc '
         "WHERE oc.estado IN "

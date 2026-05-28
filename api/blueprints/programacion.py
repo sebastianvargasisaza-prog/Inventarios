@@ -1876,7 +1876,7 @@ def prog_que_puedo_producir():
     try:
         rows = c.execute("""
             SELECT material_id, COALESCE(lote,''),
-                   SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) as neto,
+                   SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END) as neto,
                    MAX(fecha_vencimiento), MAX(proveedor)
             FROM movimientos
             WHERE material_id IS NOT NULL AND material_id != ''
@@ -2410,7 +2410,11 @@ def prog_debug_stock():
 def prog_velocidad():
     if not _auth():
         return jsonify({'error': 'No autenticado'}), 401
-    days = int(request.args.get('days', 60))
+    # 27-may-2026 · antes int() sin try → ?days=abc tiraba 500 con HTML
+    try:
+        days = max(1, min(int(request.args.get('days', 60) or 60), 365))
+    except (ValueError, TypeError):
+        days = 60
     conn = get_db()
     return jsonify(_shopify_velocity(conn, days=days))
 
@@ -5628,6 +5632,7 @@ def borrar_produccion_programada(evento_id):
     if not row:
         return jsonify({'error': 'Produccion no encontrada'}), 404
     force = (request.args.get('force') or '').lower() in ('1','true','yes')
+    _es_fijo = (row[2] or '') in ('eos_plan', 'eos_b2b', 'eos_retroactivo')
     if (row[4] or row[5]) and not force:
         return jsonify({
             'error': 'Produccion en curso o con inventario ya descontado · no borrable sin ?force=1',
@@ -5635,6 +5640,16 @@ def borrar_produccion_programada(evento_id):
             'inventario_descontado_at': row[5],
             'estado': row[6],
             'hint': 'Si insistes, reenvía con ?force=1 (queda auditado · drift de inventario posible)',
+        }), 409
+    # Sebastián 27-may-2026 · audit · borrar un FIJO (lo que el usuario fijó:
+    # eos_plan/eos_b2b/eos_retroactivo) requiere force explícito · evita perder
+    # planificación deliberada por un click accidental.
+    if _es_fijo and not force:
+        return jsonify({
+            'error': f'Producción FIJA (origen={row[2]}) · es planificación deliberada · no borrable sin ?force=1',
+            'origen': row[2],
+            'estado': row[6],
+            'hint': 'Si realmente querés borrar lo que se fijó manualmente, reenvía con ?force=1 (queda auditado)',
         }), 409
     # Snapshot antes para audit
     snap = {
@@ -5750,7 +5765,7 @@ def _validar_stock_para_produccion(c, mps_a_consumir):
     """
     placeholders = ','.join(['?'] * len(_ESTADOS_LOTE_NO_PRODUCIBLES))
     sql = f"""
-        SELECT COALESCE(SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END), 0)
+        SELECT COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END), 0)
         FROM movimientos
         WHERE material_id=?
           AND UPPER(COALESCE(estado_lote,'')) NOT IN ({placeholders})
@@ -5951,7 +5966,7 @@ def _distribuir_fefo(c, codigo_mp, cantidad_a_descontar):
         SELECT lote, fv_real, stock_lote FROM (
             SELECT lote,
                    MAX(CASE WHEN tipo='Entrada' THEN fecha_vencimiento END) AS fv_real,
-                   SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END) AS stock_lote
+                   SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END) AS stock_lote
             FROM movimientos
             WHERE material_id = ?
               AND COALESCE(lote, '') != ''
@@ -5990,7 +6005,7 @@ def _distribuir_fefo(c, codigo_mp, cantidad_a_descontar):
     # raise _DescuentoError para que la operación haga ROLLBACK limpio.
     if restante > 0.01:
         legacy_row = c.execute("""
-            SELECT COALESCE(SUM(CASE WHEN tipo='Entrada' THEN cantidad ELSE -cantidad END), 0)
+            SELECT COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END), 0)
             FROM movimientos
             WHERE material_id = ? AND COALESCE(lote,'') = ''
         """, (codigo_mp,)).fetchone()

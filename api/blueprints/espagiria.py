@@ -690,16 +690,22 @@ def cartera_maquila():
     if err: return err, code
     conn = get_db(); c = conn.cursor()
     # Pedidos entregados con valor
+    # PERF-FIX 27-may-2026 PM · antes 2 subqueries correlacionadas por row
+    # (200 pedidos = 400 subqueries · flujo_ingresos sin índice = full scan).
+    # #1 buscaba MAX de la propia fila por PK (absurda) → columna directa.
+    # #2 → LEFT JOIN GROUP BY pre-agregado.
     rows = c.execute("""
         SELECT mp.id, mp.numero, mp.cliente_id, mp.cliente_nombre,
                mp.producto_nombre, mp.unidades, mp.valor_total,
                mp.fecha_pedido, mp.fecha_entrega_objetivo,
-               (SELECT MAX(actualizado_en) FROM maquila_pedidos
-                 WHERE id = mp.id) as fecha_estado_actual,
-               (SELECT COALESCE(SUM(monto),0) FROM flujo_ingresos
-                 WHERE referencia = mp.numero) as pagado,
+               mp.actualizado_en as fecha_estado_actual,
+               COALESCE(fi.pagado_sum, 0) as pagado,
                julianday('now') - julianday(mp.fecha_pedido) as dias_desde_pedido
           FROM maquila_pedidos mp
+          LEFT JOIN (
+              SELECT referencia, COALESCE(SUM(monto),0) as pagado_sum
+              FROM flujo_ingresos GROUP BY referencia
+          ) fi ON fi.referencia = mp.numero
          WHERE mp.estado = 'entregado'
            AND COALESCE(mp.valor_total,0) > 0
          ORDER BY mp.fecha_pedido DESC
