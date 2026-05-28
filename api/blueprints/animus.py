@@ -367,14 +367,41 @@ def animus_productos():
             FROM stock_pt WHERE estado='Disponible' GROUP BY sku
         """).fetchall())
 
+        # PERF-FIX 27-may-2026 PM · antes N+1 (3 SELECT por SKU · 50 SKUs =
+        # 150+ queries al abrir ANIMUS Lab). Ahora 3 queries globales GROUP BY
+        # + dict lookup O(1) en el loop.
+        _lib90_por_sku = {}
+        for _r in c.execute(
+            "SELECT sku, COALESCE(SUM(unidades),0) FROM liberaciones "
+            "WHERE creado_en>=? GROUP BY sku", (hace90,)).fetchall():
+            _lib90_por_sku[_r[0]] = _r[1] or 0
+        _lib30_por_sku = {}
+        for _r in c.execute(
+            "SELECT sku, COALESCE(SUM(unidades),0) FROM liberaciones "
+            "WHERE creado_en>=? GROUP BY sku", (hace30,)).fetchall():
+            _lib30_por_sku[_r[0]] = _r[1] or 0
+        # Shopify · parsear sku_items 1 sola vez · acumular uds por sku presente
+        import re as _re_an
+        _shopify_por_sku = {}
+        try:
+            for _r in c.execute(
+                "SELECT sku_items, COALESCE(unidades_total,0) FROM animus_shopify_orders "
+                "WHERE creado_en >= ? AND COALESCE(sku_items,'') != ''", (hace30,)).fetchall():
+                _items_str = _r[0] or ''
+                _uds = _r[1] or 0
+                for _sk in set(_re_an.findall(r'"([^"]+)"', _items_str)):
+                    _shopify_por_sku[_sk] = _shopify_por_sku.get(_sk, 0) + _uds
+        except Exception:
+            _shopify_por_sku = {}
+
         resultado = []
         for s in skus_stock:
             sku = s["sku"]
             stock = s["stock"] or 0
             precio = s["precio"] or 0
 
-            lib_90 = c.execute("SELECT COALESCE(SUM(unidades),0) as t FROM liberaciones WHERE sku=? AND creado_en>=?", (sku, hace90)).fetchone()["t"]
-            lib_30 = c.execute("SELECT COALESCE(SUM(unidades),0) as t FROM liberaciones WHERE sku=? AND creado_en>=?", (sku, hace30)).fetchone()["t"]
+            lib_90 = _lib90_por_sku.get(sku, 0)
+            lib_30 = _lib30_por_sku.get(sku, 0)
             rotacion_mes = (lib_90 / 3.0) if lib_90 > 0 else 0
             meses_cob = round(stock / rotacion_mes, 1) if rotacion_mes > 0 else 99
             revenue_30 = round(lib_30 * precio, 0)
@@ -387,11 +414,8 @@ def animus_productos():
             else:
                 clase = "C"
 
-            # Shopify: ventas del SKU
-            shopify_uds = c.execute("""
-                SELECT COALESCE(SUM(unidades_total),0) as t FROM animus_shopify_orders
-                WHERE sku_items LIKE ? AND creado_en >= ?
-            """, (f'%"{sku}"%', hace30)).fetchone()["t"]
+            # Shopify: ventas del SKU · lookup O(1)
+            shopify_uds = _shopify_por_sku.get(sku, 0)
 
             resultado.append({
                 "sku": sku, "stock": stock, "precio": precio,

@@ -485,17 +485,24 @@ def centro_notificaciones():
             GROUP BY mi.id
             HAVING ultimo_pago_fecha IS NOT NULL
         """).fetchall()
+        # PERF-FIX 27-may-2026 PM · antes N+1 (1 SELECT pendiente por influencer
+        # en loop). Ahora pre-cargo el set de IDs con pago pendiente en 1 query.
+        _ids_con_pend = set()
+        try:
+            for _rp in c.execute(
+                "SELECT DISTINCT influencer_id FROM pagos_influencers "
+                "WHERE estado='Pendiente' AND influencer_id IS NOT NULL").fetchall():
+                _ids_con_pend.add(_rp[0])
+        except Exception:
+            _ids_con_pend = set()
         for r in rows:
             ciclo_dias = {'Mensual': 30, 'Bimensual': 60, 'Trimestral': 90}.get(r['ciclo_pago'], 30)
             try:
                 fecha_ult = datetime.strptime((r['ultimo_pago_fecha'] or '')[:10], "%Y-%m-%d")
                 dias_desde = (datetime.now() - fecha_ult).days
                 if dias_desde >= ciclo_dias:
-                    # Verificar que no tenga solicitud activa
-                    pend = c.execute("""SELECT 1 FROM pagos_influencers
-                                        WHERE influencer_id=? AND estado='Pendiente' LIMIT 1""",
-                                     (r['id'],)).fetchone()
-                    if not pend:
+                    # Verificar que no tenga solicitud activa · lookup O(1)
+                    if r['id'] not in _ids_con_pend:
                         alertas.append({
                             'severidad': 'media',
                             'modulo': 'marketing',
@@ -864,15 +871,22 @@ def centro_operaciones_data():
                 WHERE mi.estado='Activo' AND mi.ciclo_pago IN ('Mensual','Bimensual','Trimestral')
                 GROUP BY mi.id HAVING ultimo IS NOT NULL
             """).fetchall()
+            # PERF-FIX 27-may-2026 PM · pre-cargar IDs con pendiente · evita
+            # N+1 (SELECT pendiente por influencer en loop).
+            _ids_pend2 = set()
+            try:
+                for _rp in c.execute(
+                    "SELECT DISTINCT influencer_id FROM pagos_influencers "
+                    "WHERE estado='Pendiente' AND influencer_id IS NOT NULL").fetchall():
+                    _ids_pend2.add(_rp[0])
+            except Exception:
+                _ids_pend2 = set()
             for r in rows:
                 ciclo = {'Mensual':30,'Bimensual':60,'Trimestral':90}.get(r['ciclo_pago'],30)
                 try:
                     fult = datetime.strptime((r['ultimo'] or '')[:10], '%Y-%m-%d')
                     if (datetime.now() - fult).days >= ciclo:
-                        pend = c.execute("""SELECT 1 FROM pagos_influencers
-                                            WHERE influencer_id=? AND estado='Pendiente'
-                                            LIMIT 1""", (r['id'],)).fetchone()
-                        if not pend: toca_pagar += 1
+                        if r['id'] not in _ids_pend2: toca_pagar += 1
                 except Exception:
                     pass
         except Exception:
