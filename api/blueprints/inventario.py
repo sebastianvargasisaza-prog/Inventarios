@@ -1716,8 +1716,8 @@ def handle_movimientos():
         # Sin este check antes podía dejar stock negativo silenciosamente.
         if tipo == 'Salida':
             saldo = c.execute("""
-                SELECT COALESCE(SUM(CASE WHEN tipo='Entrada' THEN cantidad
-                                          WHEN tipo='Salida' THEN -cantidad
+                SELECT COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad
+                                          WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad
                                           ELSE 0 END), 0)
                 FROM movimientos WHERE material_id = ?
             """, (material_id,)).fetchone()[0]
@@ -3430,8 +3430,9 @@ def get_analisis_abc():
         # Stock agregado por material_id excluyendo cuarentena si aplica
         rows_stock = c.execute(
             f"""SELECT material_id,
-                       COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA')
-                                          THEN cantidad ELSE -cantidad END), 0) as stock
+                       COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad
+                                          WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad
+                                          ELSE 0 END), 0) as stock
                 FROM movimientos
                 WHERE material_id IS NOT NULL AND material_id != ''
                   {cuarentena_filter}
@@ -3642,8 +3643,9 @@ def alertas_all():
            FROM maestro_mps mp
            LEFT JOIN (
                SELECT material_id,
-                      SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA')
-                               THEN cantidad ELSE -cantidad END) as stock
+                      SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad
+                               WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad
+                               ELSE 0 END) as stock
                FROM movimientos
                WHERE UPPER(COALESCE(estado_lote,'')) NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO','ANULADO')
                GROUP BY material_id
@@ -3677,8 +3679,9 @@ def alertas_all():
     rows_v = c.execute(
         """SELECT material_id, lote, MAX(material_nombre) as nombre,
                   MAX(fecha_vencimiento) as venc, MAX(proveedor) as prov,
-                  SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA')
-                          THEN cantidad ELSE -cantidad END) as stock
+                  SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad
+                          WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad
+                          ELSE 0 END) as stock
            FROM movimientos
            WHERE COALESCE(lote,'') != ''
              AND fecha_vencimiento IS NOT NULL AND fecha_vencimiento != ''
@@ -3752,8 +3755,9 @@ def alertas_all():
         rows_cuar = c.execute(
             """SELECT material_id, lote, MAX(material_nombre), MAX(proveedor),
                       MAX(fecha) as ult_fecha, MAX(numero_oc),
-                      SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA')
-                              THEN cantidad ELSE -cantidad END) as stock
+                      SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad
+                              WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad
+                              ELSE 0 END) as stock
                FROM movimientos
                WHERE UPPER(COALESCE(estado_lote,'')) IN ('CUARENTENA','CUARENTENA_EXTENDIDA')
                GROUP BY material_id, lote
@@ -5498,11 +5502,18 @@ def eliminar_lote(material_id, lote):
             'detail': f'No existen movimientos para {material_id} / {lote}'
         }), 404
 
-    # Calcular saldo neto + nombre comercial para el log
-    saldo_neto = sum(
-        (mv[2] or 0) if mv[1] == 'Entrada' else -(mv[2] or 0)
-        for mv in movs
-    )
+    # Calcular saldo neto + nombre comercial para el log.
+    # Ajuste=resta fix 28-may · antes todo lo no-'Entrada' se restaba, así un
+    # 'Ajuste'/'Ajuste +' positivo se contaba negativo y el contra-movimiento
+    # quedaba mal (dejaba stock residual/duplicado). Patrón canónico de signo.
+    def _signo_mov(tipo):
+        t = tipo or ''
+        if t in ('Entrada', 'entrada', 'ENTRADA', 'Ajuste +', 'Ajuste'):
+            return 1
+        if t in ('Salida', 'salida', 'SALIDA', 'Ajuste -'):
+            return -1
+        return 0
+    saldo_neto = sum(_signo_mov(mv[1]) * (mv[2] or 0) for mv in movs)
     nombre_row = c.execute(
         "SELECT nombre_comercial FROM maestro_mps WHERE codigo_mp=?",
         (material_id,)
@@ -8002,8 +8013,9 @@ def conteo_ajustar(conteo_id):
     stock_post = 0.0
     try:
         row = c.execute("""
-            SELECT COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA')
-                                     THEN cantidad ELSE -cantidad END), 0)
+            SELECT COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad
+                                     WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad
+                                     ELSE 0 END), 0)
             FROM movimientos WHERE material_id=? AND lote=?
         """, (it['codigo_mp'], lote_objetivo)).fetchone()
         stock_post = float(row[0] or 0)
@@ -9523,8 +9535,8 @@ def conteos():
                   (num, datetime.now().isoformat(), d.get('responsable',''), d.get('observaciones','')))
         cid = c.lastrowid
         c.execute("""SELECT mp.codigo_mp, mp.nombre_comercial,
-                            COALESCE(SUM(CASE WHEN m.tipo='Entrada' THEN m.cantidad
-                                         WHEN m.tipo='Salida' THEN -m.cantidad ELSE 0 END),0)
+                            COALESCE(SUM(CASE WHEN m.tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN m.cantidad
+                                         WHEN m.tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -m.cantidad ELSE 0 END),0)
                      FROM maestro_mps mp
                      LEFT JOIN movimientos m ON mp.codigo_mp=m.material_id
                      WHERE mp.activo=1 GROUP BY mp.codigo_mp""")

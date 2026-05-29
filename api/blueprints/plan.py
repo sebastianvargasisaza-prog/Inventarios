@@ -690,8 +690,9 @@ def _check_mp_para_pedido_b2b(c, producto, kg_b2b):
     stock_g = {}
     for r in c.execute(
         f"""SELECT material_id,
-                   COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA')
-                                     THEN cantidad ELSE -cantidad END),0)
+                   COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad
+                                     WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad
+                                     ELSE 0 END),0)
             FROM movimientos
             WHERE material_id IN ({placeholders})
             GROUP BY material_id""",
@@ -3071,8 +3072,9 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
     mp_tiene_movimientos = set()
     for r in c.execute(
         """SELECT material_id,
-                  COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA')
-                                    THEN cantidad ELSE -cantidad END), 0),
+                  COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad
+                                    WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad
+                                    ELSE 0 END), 0),
                   COUNT(*) AS n_mov
            FROM movimientos
            WHERE material_id IS NOT NULL AND TRIM(material_id) != ''
@@ -4863,8 +4865,9 @@ def mps_buscar():
     mp_stock = {}
     for r in c.execute(
         """SELECT material_id,
-                  COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA')
-                                    THEN cantidad ELSE -cantidad END), 0)
+                  COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad
+                                    WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad
+                                    ELSE 0 END), 0)
            FROM movimientos
            WHERE material_id IS NOT NULL AND TRIM(material_id) != ''
            GROUP BY material_id""",
@@ -5062,8 +5065,9 @@ def detector_mps_renombre():
     mp_stock = {}
     for r in c.execute(
         """SELECT material_id,
-                  COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA')
-                                    THEN cantidad ELSE -cantidad END), 0)
+                  COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad
+                                    WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad
+                                    ELSE 0 END), 0)
            FROM movimientos
            WHERE material_id IS NOT NULL AND TRIM(material_id) != ''
            GROUP BY material_id""",

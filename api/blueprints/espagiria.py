@@ -73,8 +73,8 @@ def dashboard():
     try:
         out["mps_bajo_minimo"] = c.execute("""
             SELECT m.codigo_mp, m.nombre_inci as nombre, m.stock_minimo,
-                   COALESCE(SUM(CASE WHEN mov.tipo IN ('Entrada','Ajuste +') THEN mov.cantidad
-                                     WHEN mov.tipo IN ('Salida','Ajuste -') THEN -mov.cantidad
+                   COALESCE(SUM(CASE WHEN mov.tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN mov.cantidad
+                                     WHEN mov.tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -mov.cantidad
                                      ELSE 0 END), 0) as stock_actual
             FROM maestro_mps m
             LEFT JOIN movimientos mov ON mov.material_id = m.codigo_mp
@@ -227,8 +227,8 @@ def alertas():
     try:
         for r in c.execute("""
             SELECT m.codigo_mp, m.nombre_inci as nombre,
-                   COALESCE(SUM(CASE WHEN mov.tipo IN ('Entrada','Ajuste +') THEN mov.cantidad
-                                     WHEN mov.tipo IN ('Salida','Ajuste -') THEN -mov.cantidad
+                   COALESCE(SUM(CASE WHEN mov.tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN mov.cantidad
+                                     WHEN mov.tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -mov.cantidad
                                      ELSE 0 END), 0) as stock_actual
             FROM maestro_mps m
             LEFT JOIN movimientos mov ON mov.material_id = m.codigo_mp

@@ -13340,8 +13340,9 @@ def auditoria_catalogo():
     try:
         rows = c.execute("""
             SELECT material_id, COALESCE(lote,'') as lote,
-                   ROUND(SUM(CASE WHEN tipo='Entrada' THEN cantidad
-                                  ELSE -cantidad END), 2) as stock_neto,
+                   ROUND(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad
+                                  WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad
+                                  ELSE 0 END), 2) as stock_neto,
                    COUNT(*) as n_movs
             FROM movimientos
             GROUP BY material_id, lote
@@ -13361,8 +13362,9 @@ def auditoria_catalogo():
         rows = c.execute("""
             SELECT material_id, COALESCE(lote,'') as lote,
                    MAX(fecha_vencimiento) as fv,
-                   ROUND(SUM(CASE WHEN tipo='Entrada' THEN cantidad
-                                  ELSE -cantidad END), 2) as stock,
+                   ROUND(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad
+                                  WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad
+                                  ELSE 0 END), 2) as stock,
                    MAX(estado_lote) as estado
             FROM movimientos
             WHERE COALESCE(fecha_vencimiento,'') != ''
@@ -13424,8 +13426,9 @@ def auditoria_catalogo():
     try:
         rows = c.execute("""
             SELECT m.material_id, COUNT(*) as movs,
-                   ROUND(SUM(CASE WHEN m.tipo='Entrada' THEN m.cantidad
-                                  ELSE -m.cantidad END), 2) as stock
+                   ROUND(SUM(CASE WHEN m.tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN m.cantidad
+                                  WHEN m.tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -m.cantidad
+                                  ELSE 0 END), 2) as stock
             FROM movimientos m
             LEFT JOIN maestro_mps mp ON m.material_id = mp.codigo_mp AND mp.activo=1
             WHERE mp.codigo_mp IS NULL
@@ -14106,8 +14109,9 @@ def material_ids_huerfanos():
             SELECT m.material_id,
                    SUBSTR(MAX(m.material_nombre),1,40) as nombre,
                    COUNT(*) as movs,
-                   ROUND(SUM(CASE WHEN m.tipo='Entrada' THEN m.cantidad
-                                  ELSE -m.cantidad END), 2) as stock_neto
+                   ROUND(SUM(CASE WHEN m.tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN m.cantidad
+                                  WHEN m.tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -m.cantidad
+                                  ELSE 0 END), 2) as stock_neto
             FROM movimientos m
             LEFT JOIN maestro_mps mp ON m.material_id=mp.codigo_mp AND mp.activo=1
             WHERE mp.codigo_mp IS NULL
@@ -17067,8 +17071,9 @@ def validar_planta_invariantes():
     try:
         rows = c.execute("""
             SELECT mp.codigo_mp,
-                   ROUND(SUM(CASE WHEN m.tipo='Entrada' THEN m.cantidad
-                                  ELSE -m.cantidad END), 2) as stock
+                   ROUND(SUM(CASE WHEN m.tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN m.cantidad
+                                  WHEN m.tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -m.cantidad
+                                  ELSE 0 END), 2) as stock
             FROM maestro_mps mp
             JOIN movimientos m ON m.material_id=mp.codigo_mp
             WHERE mp.activo=0
@@ -17088,8 +17093,9 @@ def validar_planta_invariantes():
     try:
         rows = c.execute("""
             SELECT material_id, COALESCE(lote,'') as lote,
-                   ROUND(SUM(CASE WHEN tipo='Entrada' THEN cantidad
-                                  ELSE -cantidad END), 2) as stock
+                   ROUND(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad
+                                  WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad
+                                  ELSE 0 END), 2) as stock
             FROM movimientos
             GROUP BY material_id, lote
             HAVING stock < -0.5

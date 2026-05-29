@@ -53,7 +53,7 @@ def hub_resumen():
     # Stock crítico
     c.execute("""SELECT COUNT(*) FROM (
         SELECT m.material_id,
-               COALESCE(SUM(CASE WHEN m.tipo='Entrada' THEN m.cantidad WHEN m.tipo='Salida' THEN -m.cantidad ELSE 0 END),0) as stock,
+               COALESCE(SUM(CASE WHEN m.tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN m.cantidad WHEN m.tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -m.cantidad ELSE 0 END),0) as stock,
                MAX(mp.stock_minimo) as stock_minimo
         FROM movimientos m
         LEFT JOIN maestro_mps mp ON m.material_id=mp.codigo_mp
