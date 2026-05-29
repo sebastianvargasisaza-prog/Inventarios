@@ -234,8 +234,14 @@ def aplicar_movimiento_mee(conn, codigo_mee, tipo, cantidad, *,
     delta = cantidad if tipo == 'Entrada' else -cantidad
     stock_nuevo = stock_anterior + delta
 
-    # Salida no puede dejar stock negativo (clamp en MAX(0, ...))
+    # Salida no puede dejar stock negativo (clamp).
+    # Fix 28-may · cuando se clampa, registrar en movimientos_mee SOLO lo
+    # realmente descontado (= stock disponible), no la cantidad completa ·
+    # antes registraba la cantidad completa con stock clampado a 0 → drift
+    # permanente (SUM(movimientos_mee) != stock_actual).
+    cantidad_registrada = cantidad
     if stock_nuevo < 0:
+        cantidad_registrada = stock_anterior  # lo que de verdad salió
         stock_nuevo = 0.0
 
     # INSERT movimiento + UPDATE stock atómicamente (caller controla commit)
@@ -244,7 +250,7 @@ def aplicar_movimiento_mee(conn, codigo_mee, tipo, cantidad, *,
           (mee_codigo, tipo, cantidad, observaciones, responsable, fecha,
            lote_ref, batch_ref)
         VALUES (?, ?, ?, ?, ?, datetime('now'), ?, ?)
-    """, (codigo_mee, tipo, cantidad, observaciones, responsable,
+    """, (codigo_mee, tipo, cantidad_registrada, observaciones, responsable,
           lote_ref or '', batch_ref or ''))
     mov_id = cur.lastrowid
     cur.execute(
@@ -255,7 +261,7 @@ def aplicar_movimiento_mee(conn, codigo_mee, tipo, cantidad, *,
         'mov_id': mov_id,
         'stock_anterior': stock_anterior,
         'stock_nuevo': stock_nuevo,
-        'delta': delta,
+        'delta': stock_nuevo - stock_anterior,  # delta REAL aplicado (post-clamp)
     }
 
 

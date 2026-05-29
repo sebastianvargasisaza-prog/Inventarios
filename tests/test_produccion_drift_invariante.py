@@ -132,6 +132,10 @@ def test_descontar_mee_envasado_clamp_no_negativo(app, db_clean):
         stock = stock_mee_persisted(conn, 'MEE-CLAMP-T1')
         assert stock == 0  # clamped
         assert stock >= 0  # nunca negativo
+        # Fix 28-may · al clampar, movimientos_mee debe registrar SOLO lo
+        # descontado (50) · drift=0 (antes registraba 100 → drift permanente).
+        assert stock_mee_drift(conn, 'MEE-CLAMP-T1') == 0, \
+               "Clamp con drift: movimientos_mee registró más de lo descontado"
     finally:
         conn.execute("DELETE FROM produccion_checklist WHERE produccion_id=?", (pid,))
         conn.execute("DELETE FROM produccion_programada WHERE id=?", (pid,))
