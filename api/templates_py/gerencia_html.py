@@ -8,26 +8,26 @@ GERENCIA_HTML = """<!DOCTYPE html>
 <script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;}
-body{font-family:'Segoe UI',system-ui,sans-serif;background:#1C2B30;min-height:100vh;color:white;}
-.topbar{background:rgba(0,0,0,0.3);padding:14px 28px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid rgba(255,255,255,0.1);}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--cx-bg);min-height:100vh;color:var(--cx-text);}
+.topbar{background:var(--cx-hero-grad);padding:14px 28px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--cx-hairline);}
 .topbar-left{display:flex;align-items:center;gap:16px;}
-.logo{font-size:0.95em;font-weight:900;letter-spacing:3px;color:white;}
-.badge-ceo{background:rgba(43,122,120,0.5);color:#7ACFCC;padding:3px 12px;border-radius:20px;font-size:0.72em;font-weight:700;letter-spacing:1px;}
-.topbar a{color:rgba(255,255,255,0.5);text-decoration:none;font-size:0.8em;padding:6px 14px;border:1px solid rgba(255,255,255,0.15);border-radius:6px;}
-.topbar a:hover{color:white;border-color:rgba(255,255,255,0.4);}
-.periodo-badge{background:rgba(43,122,120,0.3);padding:4px 14px;border-radius:20px;font-size:0.78em;color:#7ACFCC;}
+.logo{font-size:0.95em;font-weight:900;letter-spacing:3px;color:var(--cx-primary-dark);}
+.badge-ceo{background:rgba(109,40,217,0.5);color:#6d28d9;padding:3px 12px;border-radius:20px;font-size:0.72em;font-weight:700;letter-spacing:1px;}
+.topbar a{color:var(--cx-text-mute);text-decoration:none;font-size:0.8em;padding:6px 14px;border:1px solid var(--cx-hairline);border-radius:6px;}
+.topbar a:hover{color:var(--cx-text);border-color:var(--cx-text-mute);}
+.periodo-badge{background:rgba(109,40,217,0.3);padding:4px 14px;border-radius:20px;font-size:0.78em;color:#6d28d9;}
 .main{padding:28px;max-width:1300px;margin:0 auto;}
-.section-title{font-size:0.72em;text-transform:uppercase;letter-spacing:2px;color:rgba(255,255,255,0.4);margin-bottom:14px;margin-top:28px;}
+.section-title{font-size:0.72em;text-transform:uppercase;letter-spacing:2px;color:var(--cx-text-mute);margin-bottom:14px;margin-top:28px;}
 .section-title:first-child{margin-top:0;}
 .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-bottom:8px;}
-.kpi{background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:20px 22px;position:relative;overflow:hidden;transition:all 0.2s;}
-.kpi:hover{background:rgba(255,255,255,0.08);transform:translateY(-2px);}
-.kpi::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:var(--ac,#2B7A78);}
+.kpi{background:var(--cx-card);border:1px solid var(--cx-hairline);box-shadow:var(--cx-sh-card);border-radius:14px;padding:20px 22px;position:relative;overflow:hidden;transition:box-shadow .2s ease,transform .2s ease;}
+.kpi:hover{box-shadow:var(--cx-sh-card-hover);transform:translateY(-2px);}
+.kpi::before{content:'';position:absolute;top:0;left:0;right:0;height:3px;background:var(--ac,#6d28d9);}
 .kpi.rojo::before{background:#ef4444;}.kpi.amarillo::before{background:#f59e0b;}.kpi.verde::before{background:#10b981;}
-.kpi-val{font-size:2.2em;font-weight:900;line-height:1;color:white;}
-.kpi-val.rojo{color:#fca5a5;}.kpi-val.amarillo{color:#fcd34d;}.kpi-val.verde{color:#6ee7b7;}
-.kpi-lbl{font-size:0.72em;color:rgba(255,255,255,0.45);text-transform:uppercase;letter-spacing:1px;margin-top:8px;}
-.kpi-sub{font-size:0.8em;color:rgba(255,255,255,0.3);margin-top:4px;}
+.kpi-val{font-size:2.2em;font-weight:900;line-height:1;color:var(--cx-text);}
+.kpi-val.rojo{color:#dc2626;}.kpi-val.amarillo{color:#b45309;}.kpi-val.verde{color:#16a34a;}
+.kpi-lbl{font-size:0.72em;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:1px;margin-top:8px;}
+.kpi-sub{font-size:0.8em;color:var(--cx-text-faint);margin-top:4px;}
 .sem{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:middle;}
 .sem.verde{background:#10b981;box-shadow:0 0 8px #10b981;}.sem.amarillo{background:#f59e0b;box-shadow:0 0 8px #f59e0b;}.sem.rojo{background:#ef4444;box-shadow:0 0 8px #ef4444;}
 .alertas-panel{background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);border-radius:12px;padding:20px;margin-bottom:28px;display:none;}
@@ -35,41 +35,41 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#1C2B30;min-height:1
 .alerta-item{display:flex;align-items:flex-start;gap:10px;padding:8px 0;border-bottom:1px solid rgba(239,68,68,0.15);}
 .alerta-item:last-child{border-bottom:none;}
 .alerta-icon{font-size:1.2em;margin-top:1px;}
-.alerta-texto{font-size:0.88em;color:rgba(255,255,255,0.8);line-height:1.5;}
+.alerta-texto{font-size:0.88em;color:var(--cx-text-soft);line-height:1.5;}
 .two-cols{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:20px;}
-.panel{background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:12px;padding:22px;}
-.panel-title{font-size:0.82em;font-weight:700;color:rgba(255,255,255,0.6);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:16px;display:flex;align-items:center;gap:8px;}
-.data-row{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid rgba(255,255,255,0.06);}
+.panel{background:var(--cx-card);border:1px solid var(--cx-hairline);border-radius:12px;padding:22px;}
+.panel-title{font-size:0.82em;font-weight:700;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:16px;display:flex;align-items:center;gap:8px;}
+.data-row{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--cx-hairline);}
 .data-row:last-child{border-bottom:none;}
-.data-lbl{font-size:0.85em;color:rgba(255,255,255,0.5);}
-.data-val{font-size:0.92em;font-weight:700;color:white;}
-.data-val.rojo{color:#fca5a5;}.data-val.amarillo{color:#fcd34d;}.data-val.verde{color:#6ee7b7;}
-.input-panel{background:rgba(43,122,120,0.1);border:1px solid rgba(43,122,120,0.3);border-radius:12px;padding:22px;margin-top:20px;}
-.input-panel-title{font-size:0.85em;font-weight:700;color:#7ACFCC;margin-bottom:16px;display:flex;align-items:center;gap:8px;}
+.data-lbl{font-size:0.85em;color:var(--cx-text-mute);}
+.data-val{font-size:0.92em;font-weight:700;color:var(--cx-text);}
+.data-val.rojo{color:#dc2626;}.data-val.amarillo{color:#b45309;}.data-val.verde{color:#16a34a;}
+.input-panel{background:rgba(109,40,217,0.1);border:1px solid rgba(109,40,217,0.3);border-radius:12px;padding:22px;margin-top:20px;}
+.input-panel-title{font-size:0.85em;font-weight:700;color:#6d28d9;margin-bottom:16px;display:flex;align-items:center;gap:8px;}
 .inp-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:14px;}
-.inp-group label{display:block;font-size:0.72em;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;}
-.inp-group input{width:100%;padding:9px 12px;background:rgba(255,255,255,0.08);border:1.5px solid rgba(255,255,255,0.15);border-radius:7px;color:white;font-size:0.9em;transition:border 0.2s;}
-.inp-group input:focus{outline:none;border-color:#2B7A78;background:rgba(255,255,255,0.12);}
-.inp-group input::placeholder{color:rgba(255,255,255,0.25);}
-.btn-save{background:#2B7A78;color:white;border:none;padding:10px 24px;border-radius:8px;font-size:0.88em;font-weight:700;cursor:pointer;transition:all 0.2s;}
+.inp-group label{display:block;font-size:0.72em;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;}
+.inp-group input{width:100%;padding:9px 12px;background:var(--cx-bg-alt);border:1.5px solid var(--cx-hairline);border-radius:7px;color:var(--cx-text);font-size:0.9em;transition:border 0.2s;}
+.inp-group input:focus{outline:none;border-color:#6d28d9;background:var(--cx-bg-alt);}
+.inp-group input::placeholder{color:var(--cx-text-faint);}
+.btn-save{background:#6d28d9;color:var(--cx-text);border:none;padding:10px 24px;border-radius:8px;font-size:0.88em;font-weight:700;cursor:pointer;transition:all 0.2s;}
 .btn-save:hover{background:#1d5c5a;transform:translateY(-1px);}
-.msg-ok-dark{background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.3);color:#6ee7b7;padding:9px 14px;border-radius:8px;font-size:0.85em;margin-top:10px;}
-.msg-err-dark{background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.3);color:#fca5a5;padding:9px 14px;border-radius:8px;font-size:0.85em;margin-top:10px;}
+.msg-ok-dark{background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.3);color:#16a34a;padding:9px 14px;border-radius:8px;font-size:0.85em;margin-top:10px;}
+.msg-err-dark{background:rgba(239,68,68,0.15);border:1px solid rgba(239,68,68,0.3);color:#dc2626;padding:9px 14px;border-radius:8px;font-size:0.85em;margin-top:10px;}
 .finanzas-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:8px;}
-.fin-card{background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:10px;padding:16px 18px;text-align:center;}
-.fin-val{font-size:1.6em;font-weight:900;color:#7ACFCC;}
-.fin-lbl{font-size:0.72em;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:1px;margin-top:5px;}
-.refresh-btn{background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);color:rgba(255,255,255,0.6);padding:6px 14px;border-radius:6px;font-size:0.8em;cursor:pointer;transition:all 0.2s;}
-.refresh-btn:hover{background:rgba(255,255,255,0.15);color:white;}
-.ultima-act{font-size:0.72em;color:rgba(255,255,255,0.25);margin-left:10px;}
-.prog-bar-wrap{background:rgba(255,255,255,0.08);border-radius:20px;height:10px;overflow:hidden;margin:6px 0 3px;}
-.prog-bar{height:100%;border-radius:20px;transition:width 0.8s ease;background:linear-gradient(90deg,#2B7A78,#7ACFCC);}
+.fin-card{background:var(--cx-card);border:1px solid var(--cx-hairline);border-radius:10px;padding:16px 18px;text-align:center;}
+.fin-val{font-size:1.6em;font-weight:900;color:#6d28d9;}
+.fin-lbl{font-size:0.72em;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:1px;margin-top:5px;}
+.refresh-btn{background:var(--cx-bg-alt);border:1px solid var(--cx-hairline);color:var(--cx-text-mute);padding:6px 14px;border-radius:6px;font-size:0.8em;cursor:pointer;transition:all 0.2s;}
+.refresh-btn:hover{background:var(--cx-hairline);color:var(--cx-text);}
+.ultima-act{font-size:0.72em;color:var(--cx-text-faint);margin-left:10px;}
+.prog-bar-wrap{background:var(--cx-bg-alt);border-radius:20px;height:10px;overflow:hidden;margin:6px 0 3px;}
+.prog-bar{height:100%;border-radius:20px;transition:width 0.8s ease;background:linear-gradient(90deg,#6d28d9,#6d28d9);}
 .prog-bar.danger{background:linear-gradient(90deg,#ef4444,#f87171);}
-.prog-bar.warn{background:linear-gradient(90deg,#f59e0b,#fcd34d);}
-.churn-item{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.06);}
+.prog-bar.warn{background:linear-gradient(90deg,#f59e0b,#b45309);}
+.churn-item{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--cx-hairline);}
 .churn-item:last-child{border-bottom:none;}
-.badge-crit{background:rgba(239,68,68,0.2);color:#fca5a5;padding:2px 8px;border-radius:10px;font-size:0.75em;font-weight:700;}
-.badge-atenc{background:rgba(245,158,11,0.2);color:#fcd34d;padding:2px 8px;border-radius:10px;font-size:0.75em;font-weight:700;}
+.badge-crit{background:rgba(239,68,68,0.2);color:#dc2626;padding:2px 8px;border-radius:10px;font-size:0.75em;font-weight:700;}
+.badge-atenc{background:rgba(245,158,11,0.2);color:#b45309;padding:2px 8px;border-radius:10px;font-size:0.75em;font-weight:700;}
 /* Mobile responsive · 27-may-2026 */
 @media (max-width: 768px) {
   .two-cols { grid-template-columns: 1fr !important; }
@@ -105,7 +105,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#1C2B30;min-height:1
 
   <!-- ALERTAS CRÍTICAS -->
   <div class="alertas-panel" id="alertas-panel">
-    <div style="font-size:0.82em;font-weight:700;color:#fca5a5;text-transform:uppercase;letter-spacing:1px;margin-bottom:12px;">⚠ Alertas que requieren acción</div>
+    <div style="font-size:0.82em;font-weight:700;color:#dc2626;text-transform:uppercase;letter-spacing:1px;margin-bottom:12px;">⚠ Alertas que requieren acción</div>
     <div id="alertas-list"></div>
   </div>
 
@@ -115,7 +115,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#1C2B30;min-height:1
     <div class="fin-card"><div class="fin-val" id="fin-caja">—</div><div class="fin-lbl">Saldo de caja</div></div>
     <div class="fin-card"><div class="fin-val" id="fin-animus">—</div><div class="fin-lbl">Ingresos ÁNIMUS</div></div>
     <div class="fin-card"><div class="fin-val" id="fin-maquila">—</div><div class="fin-lbl">Ingresos Maquila</div></div>
-    <div class="fin-card"><div class="fin-val" id="fin-nomina" style="color:#fcd34d;">—</div><div class="fin-lbl">Nomina mes</div><div style="font-size:0.65em;color:rgba(255,255,255,0.3);margin-top:3px;" id="fin-nomina-emp"></div></div>
+    <div class="fin-card"><div class="fin-val" id="fin-nomina" style="color:#b45309;">—</div><div class="fin-lbl">Nomina mes</div><div style="font-size:0.65em;color:var(--cx-text-faint);margin-top:3px;" id="fin-nomina-emp"></div></div>
   </div>
 
   <!-- ESPAGIRIA -->
@@ -177,17 +177,17 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#1C2B30;min-height:1
   <div class="two-cols">
     <div class="panel">
       <div class="panel-title"><span class="sem verde" id="sem-inv"></span>Planta Espagiria</div>
-      <div id="detalle-inventario"><div style="color:rgba(255,255,255,0.3);font-size:0.85em;">Cargando...</div></div>
+      <div id="detalle-inventario"><div style="color:var(--cx-text-faint);font-size:0.85em;">Cargando...</div></div>
     </div>
     <div class="panel">
       <div class="panel-title"><span class="sem verde" id="sem-animus"></span>ÁNIMUS Lab</div>
-      <div id="detalle-animus"><div style="color:rgba(255,255,255,0.3);font-size:0.85em;">Cargando...</div></div>
+      <div id="detalle-animus"><div style="color:var(--cx-text-faint);font-size:0.85em;">Cargando...</div></div>
     </div>
   </div>
 
   <!-- INPUT MANUAL MENSUAL -->
   <div class="input-panel">
-    <div class="input-panel-title">📝 Input manual mensual <span style="font-weight:400;color:rgba(255,255,255,0.3);font-size:0.85em;">— actualizar en 5 minutos al inicio de cada mes</span></div>
+    <div class="input-panel-title">📝 Input manual mensual <span style="font-weight:400;color:var(--cx-text-faint);font-size:0.85em;">— actualizar en 5 minutos al inicio de cada mes</span></div>
     <div class="inp-grid">
       <div class="inp-group"><label>Saldo de caja ($COP)</label><input type="number" id="inp-caja" placeholder="354800000"></div>
       <div class="inp-group"><label>Ingresos ÁNIMUS mes ($COP)</label><input type="number" id="inp-animus" placeholder="189000000"></div>
@@ -204,79 +204,79 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#1C2B30;min-height:1
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-bottom:20px;">
     <div class="panel">
       <div class="panel-title">📦 Compras pendientes de recibir
-        <a href="/recepcion" style="margin-left:auto;font-size:0.75em;color:#7ACFCC;text-decoration:none;font-weight:600;">→ Recepción</a>
+        <a href="/recepcion" style="margin-left:auto;font-size:0.75em;color:#6d28d9;text-decoration:none;font-weight:600;">→ Recepción</a>
       </div>
-      <div id="g-ocs-transito"><div style="color:rgba(255,255,255,0.3);font-size:0.85em;">Cargando...</div></div>
+      <div id="g-ocs-transito"><div style="color:var(--cx-text-faint);font-size:0.85em;">Cargando...</div></div>
     </div>
     <div class="panel">
       <div class="panel-title">⚠ Recepciones con discrepancias</div>
-      <div id="g-disc"><div style="color:rgba(255,255,255,0.3);font-size:0.85em;">Cargando...</div></div>
+      <div id="g-disc"><div style="color:var(--cx-text-faint);font-size:0.85em;">Cargando...</div></div>
     </div>
     <div class="panel">
       <div class="panel-title">🚚 Pedidos listos para despachar
-        <a href="/hub-salida" style="margin-left:auto;font-size:0.75em;color:#7ACFCC;text-decoration:none;font-weight:600;">→ Hub Salida</a>
+        <a href="/hub-salida" style="margin-left:auto;font-size:0.75em;color:#6d28d9;text-decoration:none;font-weight:600;">→ Hub Salida</a>
       </div>
-      <div id="g-pedidos-listos"><div style="color:rgba(255,255,255,0.3);font-size:0.85em;">Cargando...</div></div>
+      <div id="g-pedidos-listos"><div style="color:var(--cx-text-faint);font-size:0.85em;">Cargando...</div></div>
     </div>
     <div class="panel">
       <div class="panel-title">✅ Despachos recientes</div>
-      <div id="g-despachos"><div style="color:rgba(255,255,255,0.3);font-size:0.85em;">Cargando...</div></div>
+      <div id="g-despachos"><div style="color:var(--cx-text-faint);font-size:0.85em;">Cargando...</div></div>
     </div>
   </div>
 
   <!-- QUICK NAV -->
   <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:28px;">
-    <a href="/hub" style="background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.35);color:#fff;padding:9px 18px;border-radius:8px;text-decoration:none;font-size:0.85em;font-weight:700;">🏠 Panel Central</a>
-    <a href="/recepcion" style="background:rgba(43,122,120,0.2);border:1px solid rgba(43,122,120,0.4);color:#7ACFCC;padding:9px 18px;border-radius:8px;text-decoration:none;font-size:0.85em;font-weight:600;">📥 Recepción de Mercancía</a>
+    <a href="/hub" style="background:var(--cx-bg-alt);border:1px solid var(--cx-text-faint);color:#fff;padding:9px 18px;border-radius:8px;text-decoration:none;font-size:0.85em;font-weight:700;">🏠 Panel Central</a>
+    <a href="/recepcion" style="background:rgba(109,40,217,0.2);border:1px solid rgba(109,40,217,0.4);color:#6d28d9;padding:9px 18px;border-radius:8px;text-decoration:none;font-size:0.85em;font-weight:600;">📥 Recepción de Mercancía</a>
     <a href="/hub-salida" style="background:rgba(74,103,65,0.2);border:1px solid rgba(74,103,65,0.4);color:#8BC98A;padding:9px 18px;border-radius:8px;text-decoration:none;font-size:0.85em;font-weight:600;">📤 Hub de Salida</a>
-    <a href="/compras" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.15);color:rgba(255,255,255,0.6);padding:9px 18px;border-radius:8px;text-decoration:none;font-size:0.85em;font-weight:600;">🛒 Módulo Compras</a>
-    <a href="/clientes" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.15);color:rgba(255,255,255,0.6);padding:9px 18px;border-radius:8px;text-decoration:none;font-size:0.85em;font-weight:600;">👤 Módulo Clientes</a>
-    <a href="/financiero" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.15);color:rgba(255,255,255,0.6);padding:9px 18px;border-radius:8px;text-decoration:none;font-size:0.85em;font-weight:600;">💰 Financiero</a>
-    <a href="/calidad" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.15);color:rgba(255,255,255,0.6);padding:9px 18px;border-radius:8px;text-decoration:none;font-size:0.85em;font-weight:600;">🔬 Calidad</a>
-    <a href="/rrhh" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.15);color:rgba(255,255,255,0.6);padding:9px 18px;border-radius:8px;text-decoration:none;font-size:0.85em;font-weight:600;">👥 RRHH</a>
-    <a href="/tecnica" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.15);color:rgba(255,255,255,0.6);padding:9px 18px;border-radius:8px;text-decoration:none;font-size:0.85em;font-weight:600;">🔧 Técnica</a>
+    <a href="/compras" style="background:var(--cx-card);border:1px solid var(--cx-hairline);color:var(--cx-text-mute);padding:9px 18px;border-radius:8px;text-decoration:none;font-size:0.85em;font-weight:600;">🛒 Módulo Compras</a>
+    <a href="/clientes" style="background:var(--cx-card);border:1px solid var(--cx-hairline);color:var(--cx-text-mute);padding:9px 18px;border-radius:8px;text-decoration:none;font-size:0.85em;font-weight:600;">👤 Módulo Clientes</a>
+    <a href="/financiero" style="background:var(--cx-card);border:1px solid var(--cx-hairline);color:var(--cx-text-mute);padding:9px 18px;border-radius:8px;text-decoration:none;font-size:0.85em;font-weight:600;">💰 Financiero</a>
+    <a href="/calidad" style="background:var(--cx-card);border:1px solid var(--cx-hairline);color:var(--cx-text-mute);padding:9px 18px;border-radius:8px;text-decoration:none;font-size:0.85em;font-weight:600;">🔬 Calidad</a>
+    <a href="/rrhh" style="background:var(--cx-card);border:1px solid var(--cx-hairline);color:var(--cx-text-mute);padding:9px 18px;border-radius:8px;text-decoration:none;font-size:0.85em;font-weight:600;">👥 RRHH</a>
+    <a href="/tecnica" style="background:var(--cx-card);border:1px solid var(--cx-hairline);color:var(--cx-text-mute);padding:9px 18px;border-radius:8px;text-decoration:none;font-size:0.85em;font-weight:600;">🔧 Técnica</a>
   </div>
 
 
 
   <!-- INDICADORES EJECUTIVOS — solo metas/estrategicos. Caja, AR/AP, P&L viven en /financiero -->
-  <div class="section-title" style="margin-top:32px;">📊 Metas estratégicas <a href="/financiero" style="font-size:0.65em;font-weight:600;color:#7ACFCC;text-decoration:none;margin-left:12px;">→ Para caja, AR/AP, P&L: ir a Financiero</a> · <a href="/hoy" style="font-size:0.65em;font-weight:600;color:#fbbf24;text-decoration:none;">→ Para hoy: ir a HOY</a></div>
+  <div class="section-title" style="margin-top:32px;">📊 Metas estratégicas <a href="/financiero" style="font-size:0.65em;font-weight:600;color:#6d28d9;text-decoration:none;margin-left:12px;">→ Para caja, AR/AP, P&L: ir a Financiero</a> · <a href="/hoy" style="font-size:0.65em;font-weight:600;color:#fbbf24;text-decoration:none;">→ Para hoy: ir a HOY</a></div>
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-bottom:20px;">
     <div class="panel">
       <div class="panel-title">🏭 Pipeline Maquila activo</div>
-      <div id="gx-maquila"><div style="color:rgba(255,255,255,0.3);font-size:0.85em;">Cargando...</div></div>
+      <div id="gx-maquila"><div style="color:var(--cx-text-faint);font-size:0.85em;">Cargando...</div></div>
     </div>
     <div class="panel">
       <div class="panel-title">📊 Meta Maquila 2026</div>
-      <div id="gx-maquila-target"><div style="color:rgba(255,255,255,0.3);font-size:0.85em;">Cargando...</div></div>
+      <div id="gx-maquila-target"><div style="color:var(--cx-text-faint);font-size:0.85em;">Cargando...</div></div>
     </div>
   </div>
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin-bottom:12px;">
     <div class="panel">
       <div class="panel-title">💄 Inversion Influencers YTD</div>
-      <div id="gx-influencer"><div style="color:rgba(255,255,255,0.3);font-size:0.85em;">Cargando...</div></div>
+      <div id="gx-influencer"><div style="color:var(--cx-text-faint);font-size:0.85em;">Cargando...</div></div>
     </div>
     <div class="panel">
       <div class="panel-title">📦 Valor Inventario MP (COP)</div>
-      <div id="gx-inv-cop"><div style="color:rgba(255,255,255,0.3);font-size:0.85em;">Cargando...</div></div>
+      <div id="gx-inv-cop"><div style="color:var(--cx-text-faint);font-size:0.85em;">Cargando...</div></div>
     </div>
     <div class="panel">
       <div class="panel-title">&#128276; Alertas recompra clientes</div>
-      <div id="gx-churn"><div style="color:rgba(255,255,255,0.3);font-size:0.85em;">Cargando...</div></div>
+      <div id="gx-churn"><div style="color:var(--cx-text-faint);font-size:0.85em;">Cargando...</div></div>
     </div>
   </div>
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px;margin-bottom:28px;">
     <div class="panel">
       <div class="panel-title">⚠ Stock Critico — MPs bajo minimo</div>
-      <div id="gx-stock"><div style="color:rgba(255,255,255,0.3);font-size:0.85em;">Cargando...</div></div>
+      <div id="gx-stock"><div style="color:var(--cx-text-faint);font-size:0.85em;">Cargando...</div></div>
     </div>
     <div class="panel">
       <div class="panel-title">✅ SGSST — Proximos vencimientos</div>
-      <div id="gx-sgsst"><div style="color:rgba(255,255,255,0.3);font-size:0.85em;">Cargando...</div></div>
+      <div id="gx-sgsst"><div style="color:var(--cx-text-faint);font-size:0.85em;">Cargando...</div></div>
     </div>
     <div class="panel">
       <div class="panel-title">🔒 Accesos recientes</div>
-      <div id="gx-sec"><div style="color:rgba(255,255,255,0.3);font-size:0.85em;">Cargando...</div></div>
+      <div id="gx-sec"><div style="color:var(--cx-text-faint);font-size:0.85em;">Cargando...</div></div>
     </div>
   </div>
 
@@ -289,7 +289,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#1C2B30;min-height:1
     <div class="panel">
       <div class="panel-title">📊 Mix canales · este mes</div>
       <div id="g4-mix">
-        <div style="color:rgba(255,255,255,0.3);font-size:0.85em;">Cargando...</div>
+        <div style="color:var(--cx-text-faint);font-size:0.85em;">Cargando...</div>
       </div>
     </div>
 
@@ -297,7 +297,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#1C2B30;min-height:1
     <div class="panel">
       <div class="panel-title">⚠️ Concentración de riesgo</div>
       <div id="g4-riesgo">
-        <div style="color:rgba(255,255,255,0.3);font-size:0.85em;">Cargando...</div>
+        <div style="color:var(--cx-text-faint);font-size:0.85em;">Cargando...</div>
       </div>
     </div>
 
@@ -305,7 +305,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#1C2B30;min-height:1
     <div class="panel">
       <div class="panel-title">🔋 Estado del canal</div>
       <div id="g4-estado">
-        <div style="color:rgba(255,255,255,0.3);font-size:0.85em;">Cargando...</div>
+        <div style="color:var(--cx-text-faint);font-size:0.85em;">Cargando...</div>
       </div>
     </div>
   </div>
@@ -314,7 +314,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#1C2B30;min-height:1
   <div class="panel" style="margin-bottom:28px;">
     <div class="panel-title">📈 Tendencia ticket promedio — canal aliados (6 meses)</div>
     <div id="g4-trend" style="display:flex;gap:8px;align-items:flex-end;padding:8px 0;min-height:80px;">
-      <div style="color:rgba(255,255,255,0.3);font-size:0.85em;">Cargando...</div>
+      <div style="color:var(--cx-text-faint);font-size:0.85em;">Cargando...</div>
     </div>
   </div>
 
@@ -351,7 +351,7 @@ function setKPIColor(kpiId,valId,color){
 async function loadKPIs(){
   try{
     var d=await fetch('/api/gerencia/kpis').then(function(r){return r.json();});
-    if(d.error){document.querySelector('.main').innerHTML='<div style="color:#fca5a5;padding:40px;text-align:center;">'+d.error+'</div>';return;}
+    if(d.error){document.querySelector('.main').innerHTML='<div style="color:#dc2626;padding:40px;text-align:center;">'+d.error+'</div>';return;}
 
     var e=d.espagiria||{}; var a=d.animus||{}; var f=d.inputs_manuales||{}; var sem=d.semaforos||{};
 
@@ -419,7 +419,7 @@ async function loadKPIs(){
     di+='<div class="data-row"><span class="data-lbl">Lotes vencen 60d</span><span class="data-val '+(e.lotes_vence_60>0?'amarillo':'verde')+'">'+(e.lotes_vence_60||0)+'</span></div>';
     di+='<div class="data-row"><span class="data-lbl">Producción este mes</span><span class="data-val">'+( e.prod_mes||0)+' lotes / '+parseFloat(e.kg_mes||0).toFixed(1)+' kg</span></div>';
     di+='<div class="data-row"><span class="data-lbl">OCs pendientes</span><span class="data-val '+(ocs>0?'amarillo':'verde')+'">'+ocs+' ('+fmt(e.valor_ocs_pendientes||0)+')</span></div>';
-    di+='<div class="data-row"><span class="data-lbl">Solicitudes a Compras</span><span class="data-val '+(solPend>0?'amarillo':'verde')+'">'+solPend+' <a href="/compras" style="color:rgba(255,255,255,0.5);font-size:0.82em;">→ ver</a></span></div>';
+    di+='<div class="data-row"><span class="data-lbl">Solicitudes a Compras</span><span class="data-val '+(solPend>0?'amarillo':'verde')+'">'+solPend+' <a href="/compras" style="color:var(--cx-text-mute);font-size:0.82em;">→ ver</a></span></div>';
     document.getElementById('detalle-inventario').innerHTML=di;
 
     // Detalle ÁNIMUS
@@ -480,18 +480,18 @@ async function guardarInputs(){
 async function loadFlujoOperacional() {
   try {
     var d = await fetch('/api/gerencia/flujo-operacional').then(function(r){ return r.json(); });
-    var nil = '<div style="color:rgba(255,255,255,0.3);font-size:0.85em;">Sin datos</div>';
+    var nil = '<div style="color:var(--cx-text-faint);font-size:0.85em;">Sin datos</div>';
 
     // OCs en tránsito
     var elt = document.getElementById('g-ocs-transito');
     if (elt) {
       var ocs = d.ocs_transito || [];
-      if (!ocs.length) { elt.innerHTML = '<div style="color:rgba(255,255,255,0.3);font-size:0.85em;">Sin OCs pendientes ✓</div>'; }
+      if (!ocs.length) { elt.innerHTML = '<div style="color:var(--cx-text-faint);font-size:0.85em;">Sin OCs pendientes ✓</div>'; }
       else {
         elt.innerHTML = ocs.slice(0,4).map(function(o) {
           return '<div class="data-row"><span class="data-lbl">' + o.numero_oc + ' — ' + (o.proveedor||'') + '</span>'
             + '<span class="data-val amarillo">' + (o.dias_transito||0) + 'd</span></div>';
-        }).join('') + (ocs.length > 4 ? '<div style="color:rgba(255,255,255,0.3);font-size:0.8em;padding:6px 0;">+' + (ocs.length-4) + ' más</div>' : '');
+        }).join('') + (ocs.length > 4 ? '<div style="color:var(--cx-text-faint);font-size:0.8em;padding:6px 0;">+' + (ocs.length-4) + ' más</div>' : '');
       }
     }
 
@@ -499,7 +499,7 @@ async function loadFlujoOperacional() {
     var eld = document.getElementById('g-disc');
     if (eld) {
       var discs = d.recepciones_disc || [];
-      if (!discs.length) { eld.innerHTML = '<div style="color:#6ee7b7;font-size:0.85em;">Sin discrepancias ✓</div>'; }
+      if (!discs.length) { eld.innerHTML = '<div style="color:#16a34a;font-size:0.85em;">Sin discrepancias ✓</div>'; }
       else {
         eld.innerHTML = discs.slice(0,4).map(function(r) {
           return '<div class="data-row"><span class="data-lbl">' + r.numero_oc + '</span>'
@@ -512,12 +512,12 @@ async function loadFlujoOperacional() {
     var elp = document.getElementById('g-pedidos-listos');
     if (elp) {
       var peds = d.pedidos_listos || [];
-      if (!peds.length) { elp.innerHTML = '<div style="color:rgba(255,255,255,0.3);font-size:0.85em;">Sin pedidos pendientes</div>'; }
+      if (!peds.length) { elp.innerHTML = '<div style="color:var(--cx-text-faint);font-size:0.85em;">Sin pedidos pendientes</div>'; }
       else {
         elp.innerHTML = peds.slice(0,4).map(function(p) {
           return '<div class="data-row"><span class="data-lbl">' + p.numero + ' — ' + (p.cliente||'') + '</span>'
             + '<span class="data-val amarillo">$' + Number(p.valor_total||0).toLocaleString() + '</span></div>';
-        }).join('') + (peds.length > 4 ? '<div style="color:rgba(255,255,255,0.3);font-size:0.8em;padding:6px 0;">+' + (peds.length-4) + ' más</div>' : '');
+        }).join('') + (peds.length > 4 ? '<div style="color:var(--cx-text-faint);font-size:0.8em;padding:6px 0;">+' + (peds.length-4) + ' más</div>' : '');
       }
     }
 
@@ -525,7 +525,7 @@ async function loadFlujoOperacional() {
     var elsp = document.getElementById('g-despachos');
     if (elsp) {
       var desps = d.despachos_recientes || [];
-      if (!desps.length) { elsp.innerHTML = '<div style="color:rgba(255,255,255,0.3);font-size:0.85em;">Sin despachos recientes</div>'; }
+      if (!desps.length) { elsp.innerHTML = '<div style="color:var(--cx-text-faint);font-size:0.85em;">Sin despachos recientes</div>'; }
       else {
         elsp.innerHTML = desps.slice(0,4).map(function(ds) {
           return '<div class="data-row"><span class="data-lbl">' + ds.numero + ' — ' + (ds.cliente||'') + '</span>'
@@ -546,7 +546,7 @@ setInterval(loadFlujoOperacional, 300000);
 async function loadGerenciaExtra() {
   try {
     var d = await fetch('/api/gerencia/dashboard-extra').then(function(r){ return r.json(); });
-    var nil = '<div style="color:rgba(255,255,255,0.3);font-size:0.85em;">Sin datos</div>';
+    var nil = '<div style="color:var(--cx-text-faint);font-size:0.85em;">Sin datos</div>';
     var fmtV = function(n){ return n==null?'—':'$'+Number(n).toLocaleString('es-CO',{maximumFractionDigits:0}); };
     var clr = function(v,warn,danger){ return v>=danger?'rojo':(v>=warn?'amarillo':'verde'); };
 
@@ -560,7 +560,7 @@ async function loadGerenciaExtra() {
         +'<div class="data-row"><span class="data-lbl">Shopify DTC'+shpMom+'</span><span class="data-val verde">'+fmtV(ig.shopify)+'</span></div>'
         +'<div class="data-row" style="border-top:1px solid rgba(255,255,255,0.08);margin-top:3px;padding-top:3px;"><span class="data-lbl">ÁNIMUS total</span><span class="data-val verde">'+fmtV(ig.animus_total)+'</span></div>'
         +'<div class="data-row"><span class="data-lbl">Maquila</span><span class="data-val verde">'+fmtV(ig.maquila)+'</span></div>'
-        +'<div class="data-row" style="border-top:1px solid rgba(255,255,255,0.1);margin-top:4px;padding-top:4px;"><span class="data-lbl"><strong>Grand Total</strong></span><span class="data-val verde"><strong>'+fmtV(ig.total)+'</strong></span></div>';
+        +'<div class="data-row" style="border-top:1px solid var(--cx-hairline);margin-top:4px;padding-top:4px;"><span class="data-lbl"><strong>Grand Total</strong></span><span class="data-val verde"><strong>'+fmtV(ig.total)+'</strong></span></div>';
     }
 
     // AR
@@ -587,12 +587,12 @@ async function loadGerenciaExtra() {
     var mqs = d.maquila_pipeline||[];
     var elM = document.getElementById('gx-maquila');
     if(elM){
-      if(!mqs.length){ elM.innerHTML='<div style="color:rgba(255,255,255,0.3);font-size:0.85em;">Sin ordenes activas</div>'; }
+      if(!mqs.length){ elM.innerHTML='<div style="color:var(--cx-text-faint);font-size:0.85em;">Sin ordenes activas</div>'; }
       else{
         elM.innerHTML = mqs.slice(0,4).map(function(m){
           return '<div class="data-row"><span class="data-lbl">'+m.numero+' — '+(m.cliente_nombre||'')+'</span><span class="data-val amarillo">'+fmtV(m.precio_lote)+'</span></div>';
         }).join('');
-        if(mqs.length>4) elM.innerHTML += '<div style="color:rgba(255,255,255,0.3);font-size:0.8em;padding:4px 0;">+'+(mqs.length-4)+' mas</div>';
+        if(mqs.length>4) elM.innerHTML += '<div style="color:var(--cx-text-faint);font-size:0.8em;padding:4px 0;">+'+(mqs.length-4)+' mas</div>';
       }
     }
 
@@ -600,14 +600,14 @@ async function loadGerenciaExtra() {
     var sc = d.stock_critico||[];
     var elSC = document.getElementById('gx-stock');
     if(elSC){
-      if(!sc.length){ elSC.innerHTML='<div style="color:#6ee7b7;font-size:0.85em;">Stock OK en todos los MPs</div>'; }
+      if(!sc.length){ elSC.innerHTML='<div style="color:#16a34a;font-size:0.85em;">Stock OK en todos los MPs</div>'; }
       else{
         elSC.innerHTML = sc.slice(0,6).map(function(mp){
           var pct = mp.stock_minimo>0?Math.round(mp.stock_actual/mp.stock_minimo*100):0;
           return '<div class="data-row"><span class="data-lbl">'+mp.codigo_mp+' '+mp.nombre+'</span>'
             +'<span class="data-val rojo">'+mp.stock_actual.toFixed(0)+'/'+mp.stock_minimo.toFixed(0)+' g ('+pct+'%)</span></div>';
         }).join('');
-        if(sc.length>6) elSC.innerHTML += '<div style="color:rgba(255,255,255,0.3);font-size:0.8em;">+'+(sc.length-6)+' MPs mas</div>';
+        if(sc.length>6) elSC.innerHTML += '<div style="color:var(--cx-text-faint);font-size:0.8em;">+'+(sc.length-6)+' MPs mas</div>';
       }
     }
 
@@ -615,7 +615,7 @@ async function loadGerenciaExtra() {
     var ss = d.sgsst_proximos||[];
     var elSS = document.getElementById('gx-sgsst');
     if(elSS){
-      if(!ss.length){ elSS.innerHTML='<div style="color:#6ee7b7;font-size:0.85em;">Sin vencimientos proximos</div>'; }
+      if(!ss.length){ elSS.innerHTML='<div style="color:#16a34a;font-size:0.85em;">Sin vencimientos proximos</div>'; }
       else{
         elSS.innerHTML = ss.slice(0,5).map(function(s){
           var c=s.dias_restantes<=15?'rojo':(s.dias_restantes<=30?'amarillo':'verde');
@@ -643,7 +643,7 @@ async function loadGerenciaExtra() {
         +'<div class="prog-bar-wrap"><div class="prog-bar '+(pctE<40?'danger':(pctE<80?'warn':''))+'" style="width:'+pctE+'%"></div></div>'
         +'<div class="data-row" style="margin-top:8px;"><span class="data-lbl">Meta HHA $76M</span><span class="data-val '+(pctH>=80?'verde':(pctH>=40?'amarillo':'rojo'))+'">'+pctH+'%</span></div>'
         +'<div class="prog-bar-wrap"><div class="prog-bar '+(pctH<40?'danger':(pctH<80?'warn':''))+'" style="width:'+pctH+'%"></div></div>'
-        +'<div style="font-size:0.75em;color:rgba(255,255,255,0.35);margin-top:6px;">YTD: '+fmtV(mt.ytd||0)+'</div>';
+        +'<div style="font-size:0.75em;color:var(--cx-text-faint);margin-top:6px;">YTD: '+fmtV(mt.ytd||0)+'</div>';
     }
     // Influencer spend
     var inf=d.influencer_spend||{}; var elInf=document.getElementById('gx-influencer');
@@ -651,25 +651,25 @@ async function loadGerenciaExtra() {
       var infV=inf.ytd||0;
       elInf.innerHTML='<div class="data-row"><span class="data-lbl">Total YTD</span><span class="data-val '+(infV>5000000?'amarillo':'verde')+'">'+fmtV(infV)+'</span></div>'
         +'<div class="data-row"><span class="data-lbl">OCs generadas</span><span class="data-val">'+(inf.ocs||0)+'</span></div>'
-        +'<div style="font-size:0.75em;color:rgba(255,255,255,0.3);margin-top:6px;">Categorias: Influencer + Marketing</div>';
+        +'<div style="font-size:0.75em;color:var(--cx-text-faint);margin-top:6px;">Categorias: Influencer + Marketing</div>';
     }
     // Inventory COP
     var invC=d.inventory_cop||0; var elIC=document.getElementById('gx-inv-cop');
     if(elIC){
-      elIC.innerHTML='<div style="font-size:1.8em;font-weight:900;color:#7ACFCC;padding:8px 0 4px;">'+fmtV(invC)+'</div>'
-        +'<div style="font-size:0.75em;color:rgba(255,255,255,0.35);">Precio promedio OC x lotes activos</div>';
+      elIC.innerHTML='<div style="font-size:1.8em;font-weight:900;color:#6d28d9;padding:8px 0 4px;">'+fmtV(invC)+'</div>'
+        +'<div style="font-size:0.75em;color:var(--cx-text-faint);">Precio promedio OC x lotes activos</div>';
     }
     // Churn alerts
     var churns=d.churn_alerts||[]; var elCh=document.getElementById('gx-churn');
     if(elCh){
-      if(!churns.length){ elCh.innerHTML='<div style="color:#6ee7b7;font-size:0.85em;">Todos los clientes activos &#10003;</div>'; }
+      if(!churns.length){ elCh.innerHTML='<div style="color:#16a34a;font-size:0.85em;">Todos los clientes activos &#10003;</div>'; }
       else{
         elCh.innerHTML=churns.slice(0,5).map(function(ch){
-          return '<div class="churn-item"><div><div style="font-size:0.85em;color:rgba(255,255,255,0.8);">'+(ch.nombre||'')+'</div>'
-            +'<div style="font-size:0.72em;color:rgba(255,255,255,0.35);">Ultimo: '+(ch.ultimo_pedido||'—')+'</div></div>'
+          return '<div class="churn-item"><div><div style="font-size:0.85em;color:var(--cx-text-soft);">'+(ch.nombre||'')+'</div>'
+            +'<div style="font-size:0.72em;color:var(--cx-text-faint);">Ultimo: '+(ch.ultimo_pedido||'—')+'</div></div>'
             +'<span class="'+(ch.nivel==='critico'?'badge-crit':'badge-atenc')+'">'+(ch.dias||0)+'d</span></div>';
         }).join('');
-        if(churns.length>5) elCh.innerHTML+='<div style="font-size:0.75em;color:rgba(255,255,255,0.3);padding:4px 0;">+'+(churns.length-5)+' mas</div>';
+        if(churns.length>5) elCh.innerHTML+='<div style="font-size:0.75em;color:var(--cx-text-faint);padding:4px 0;">+'+(churns.length-5)+' mas</div>';
       }
     }
   } catch(e){ console.error('loadGerenciaExtra:', e); }
@@ -709,7 +709,7 @@ async function loadAliados4() {
         +'<div class="data-row"><span class="data-lbl">Aliados</span><span class="data-val verde">'+fv(canal.aliados_mes)+'</span></div>'
         +'<div class="data-row"><span class="data-lbl">Shopify</span><span class="data-val verde">'+fv(canal.shopify_mes)+'</span></div>'
         +'<div class="data-row"><span class="data-lbl">MoM canal</span><span class="data-val '+momClr+'">'+momTxt+'</span></div>'
-        +'<div class="data-row" style="border-top:1px solid rgba(255,255,255,0.1);margin-top:4px;padding-top:4px;"><span class="data-lbl">Total mes</span><span class="data-val verde"><strong>'+fv(canal.total_mes)+'</strong></span></div>';
+        +'<div class="data-row" style="border-top:1px solid var(--cx-hairline);margin-top:4px;padding-top:4px;"><span class="data-lbl">Total mes</span><span class="data-val verde"><strong>'+fv(canal.total_mes)+'</strong></span></div>';
     }
 
     // Concentración de riesgo
@@ -725,7 +725,7 @@ async function loadAliados4() {
       g4riesgo.innerHTML =
         '<div class="data-row"><span class="data-lbl">Top 1 aliado</span><span class="data-val '+riesgoClr+'">'+c1+'%</span></div>'
         +'<div class="data-row"><span class="data-lbl">Top 3 aliados</span><span class="data-val '+(c3>=70?'amarillo':'verde')+'">'+c3+'%</span></div>'
-        +'<div style="margin:8px 0 4px;font-size:10px;color:rgba(255,255,255,0.4);text-transform:uppercase;letter-spacing:.05em;">Top 3 detalle</div>'
+        +'<div style="margin:8px 0 4px;font-size:10px;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.05em;">Top 3 detalle</div>'
         + top3html;
     }
 
@@ -754,14 +754,14 @@ async function loadAliados4() {
         var mesN = parseInt(mes,10);
         var mesNm = meses[mesN] || mes;
         return '<div style="display:flex;flex-direction:column;align-items:center;gap:4px;flex:1;">'
-          +'<div style="font-size:9px;color:rgba(255,255,255,0.5);">'+fv(t.ticket)+'</div>'
+          +'<div style="font-size:9px;color:var(--cx-text-mute);">'+fv(t.ticket)+'</div>'
           +'<div style="width:100%;max-width:40px;height:'+h+'px;background:linear-gradient(180deg,#a78bfa,#7c3aed);border-radius:4px 4px 0 0;align-self:flex-end;"></div>'
-          +'<div style="font-size:10px;color:rgba(255,255,255,0.6);">'+mesNm+'</div>'
-          +'<div style="font-size:9px;color:rgba(255,255,255,0.3);">'+t.pedidos+'p</div>'
+          +'<div style="font-size:10px;color:var(--cx-text-mute);">'+mesNm+'</div>'
+          +'<div style="font-size:9px;color:var(--cx-text-faint);">'+t.pedidos+'p</div>'
           +'</div>';
       }).join('');
     } else if(g4trend){
-      g4trend.innerHTML = '<div style="color:rgba(255,255,255,0.3);font-size:0.85em;">Sin historial suficiente</div>';
+      g4trend.innerHTML = '<div style="color:var(--cx-text-faint);font-size:0.85em;">Sin historial suficiente</div>';
     }
 
   } catch(e){ console.error('loadAliados4:', e); }

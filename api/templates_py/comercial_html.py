@@ -265,7 +265,7 @@ async function cargarEosLeads(){
     var box = document.getElementById('eos-list');
     if(!d.leads.length){ box.innerHTML = '<div class="empty">Sin leads aún. Cuando lleguen via webhook /api/eos/leads/webhook aparecerán aquí.</div>'; return; }
     box.innerHTML = d.leads.map(function(l){
-      var color = {nuevo:'#dc2626',contactado:'#d97706',demo_agendada:'#7c3aed',propuesta:'#0f766e',cerrado:'#16a34a',descartado:'#94a3b8'}[l.estado] || '#64748b';
+      var color = {nuevo:'#dc2626',contactado:'#d97706',demo_agendada:'#7c3aed',propuesta:'#6d28d9',cerrado:'#16a34a',descartado:'#94a3b8'}[l.estado] || '#64748b';
       return '<div class="card" style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px;margin-bottom:10px;border-left:4px solid '+color+'">' +
         '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">' +
           '<div><b>'+_esc(l.nombre || l.email || '(sin nombre)')+'</b>' +
@@ -274,7 +274,7 @@ async function cargarEosLeads(){
           '<span style="font-size:11px;color:#94a3b8">'+_esc((l.creado_en||'').slice(0,16))+'</span>' +
         '</div>' +
         '<div style="font-size:12px;color:#475569;margin-top:4px">' +
-          (l.email?'📧 <a href="mailto:'+_esc(l.email)+'" style="color:#0f766e">'+_esc(l.email)+'</a>':'') +
+          (l.email?'📧 <a href="mailto:'+_esc(l.email)+'" style="color:#6d28d9">'+_esc(l.email)+'</a>':'') +
           (l.telefono?' · 📞 '+_esc(l.telefono):'') +
         '</div>' +
         (l.mensaje?'<div style="font-size:13px;color:#475569;margin-top:6px;background:#f8fafc;padding:8px 10px;border-radius:6px">'+_esc(l.mensaje)+'</div>':'') +

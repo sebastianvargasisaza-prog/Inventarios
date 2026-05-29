@@ -16,27 +16,27 @@ HTML = r"""<!DOCTYPE html>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1c1917;font-size:14px}
-.topbar{background:linear-gradient(90deg,#1a4a7a,#0f766e);color:#fff;padding:14px 20px;display:flex;align-items:center;gap:14px}
+.topbar{background:linear-gradient(90deg,#1a4a7a,#6d28d9);color:#fff;padding:14px 20px;display:flex;align-items:center;gap:14px}
 .topbar h1{font-size:18px;font-weight:700;flex:1}
 .topbar a{color:#cbd5e1;text-decoration:none;font-size:13px;padding:6px 12px;border-radius:6px;background:rgba(255,255,255,0.1)}
 .topbar a:hover{background:rgba(255,255,255,0.2);color:#fff}
 .tabs{background:#fff;border-bottom:2px solid #e2e8f0;display:flex;gap:0}
 .tabbtn{padding:12px 22px;font-size:13px;font-weight:600;color:#64748b;background:none;border:none;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px}
 .tabbtn:hover{background:#f8fafc;color:#1a4a7a}
-.tabbtn.on{color:#1a4a7a;border-bottom-color:#0f766e;font-weight:700}
+.tabbtn.on{color:#1a4a7a;border-bottom-color:#6d28d9;font-weight:700}
 .pane{display:none;padding:22px 24px;max-width:1200px;margin:0 auto}
 .pane.on{display:block}
 .card{background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:16px;margin-bottom:14px}
 .card h3{font-size:15px;color:#1a4a7a;margin-bottom:10px}
 .btn{padding:8px 16px;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer}
-.btn-primary{background:#0f766e;color:#fff}.btn-primary:hover{background:#115e59}
+.btn-primary{background:#6d28d9;color:#fff}.btn-primary:hover{background:#115e59}
 .btn-secondary{background:#e2e8f0;color:#475569}.btn-secondary:hover{background:#cbd5e1}
 .btn-danger{background:#dc2626;color:#fff}
 .btn-warn{background:#d97706;color:#fff}
 .btn-success{background:#16a34a;color:#fff}
 .btn-sm{padding:5px 10px;font-size:12px}
 input,select,textarea{padding:8px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;font-family:inherit;width:100%}
-input:focus,select:focus,textarea:focus{border-color:#0f766e;outline:none}
+input:focus,select:focus,textarea:focus{border-color:#6d28d9;outline:none}
 .row{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px}
 .row > * {flex:1;min-width:180px}
 label{font-size:12px;font-weight:600;color:#475569;display:block;margin-bottom:4px}
@@ -52,11 +52,11 @@ label{font-size:12px;font-weight:600;color:#475569;display:block;margin-bottom:4
 .empty{text-align:center;color:#94a3b8;padding:30px;font-style:italic}
 .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 @media (max-width:768px){.grid-2{grid-template-columns:1fr}}
-.q-block{background:#f8fafc;border-left:3px solid #0f766e;padding:10px 14px;margin-bottom:10px;border-radius:0 6px 6px 0}
+.q-block{background:#f8fafc;border-left:3px solid #6d28d9;padding:10px 14px;margin-bottom:10px;border-radius:0 6px 6px 0}
 .q-block .q{font-weight:600;color:#1a4a7a;margin-bottom:6px}
 .q-block .ctx{font-size:11px;color:#64748b;font-style:italic;margin-bottom:6px}
 .q-block textarea{min-height:60px;font-size:13px}
-.score-card{background:linear-gradient(135deg,#0f766e,#16a34a);color:#fff;padding:18px;border-radius:10px;text-align:center;margin-bottom:14px}
+.score-card{background:linear-gradient(135deg,#6d28d9,#16a34a);color:#fff;padding:18px;border-radius:10px;text-align:center;margin-bottom:14px}
 .score-card.fail{background:linear-gradient(135deg,#dc2626,#92400e)}
 .score-card .num{font-size:48px;font-weight:800}
 </style>
@@ -302,14 +302,14 @@ async function cargarTrimestral(){
     rk.forEach(function(p,i){
       var rowBg = i===0 ? '#fef3c7' : i===1 ? '#f1f5f9' : i===2 ? '#fed7aa' : '#fff';
       html += '<tr style="background:'+rowBg+';border-bottom:1px solid #e2e8f0">' +
-        '<td style="padding:8px;font-weight:700;color:#0f766e">'+(i+1)+(i===0?' 🥇':i===1?' 🥈':i===2?' 🥉':'')+'</td>' +
+        '<td style="padding:8px;font-weight:700;color:#6d28d9">'+(i+1)+(i===0?' 🥇':i===1?' 🥈':i===2?' 🥉':'')+'</td>' +
         '<td style="padding:8px;font-weight:600">'+_esc(p.nombre_completo)+'</td>' +
         '<td style="padding:8px;text-align:center">'+p.capacitaciones_aprobadas+'</td>' +
-        '<td style="padding:8px;text-align:center;color:#0f766e">'+p.nota_promedio+'</td>' +
+        '<td style="padding:8px;text-align:center;color:#6d28d9">'+p.nota_promedio+'</td>' +
         '<td style="padding:8px;text-align:center">'+p.tareas_completadas+'</td>' +
         '<td style="padding:8px;text-align:center">'+p.producciones+'</td>' +
         '<td style="padding:8px;text-align:center;color:'+(p.desviaciones_pendientes>0?'#dc2626':'#94a3b8')+'">'+p.desviaciones_pendientes+'</td>' +
-        '<td style="padding:8px;text-align:right;font-weight:800;color:'+(p.score>50?'#16a34a':p.score>0?'#0f766e':'#94a3b8')+'">'+p.score+'</td>' +
+        '<td style="padding:8px;text-align:right;font-weight:800;color:'+(p.score>50?'#16a34a':p.score>0?'#6d28d9':'#94a3b8')+'">'+p.score+'</td>' +
       '</tr>';
     });
     html += '</tbody></table>';
@@ -498,7 +498,7 @@ async function cargarBandeja(){
           '</div>' +
           '<div style="margin-top:6px;font-weight:600">'+_esc(n.asunto)+'</div>' +
           (n.descripcion?'<div style="font-size:13px;color:#475569;margin-top:4px">'+_esc(n.descripcion)+'</div>':'') +
-          (n.adjunto_url?'<a href="'+_esc(n.adjunto_url)+'" target="_blank" style="font-size:12px;color:#0f766e">📎 Ver adjunto</a>':'') +
+          (n.adjunto_url?'<a href="'+_esc(n.adjunto_url)+'" target="_blank" style="font-size:12px;color:#6d28d9">📎 Ver adjunto</a>':'') +
           btns +
           '</div>';
       }).join('');

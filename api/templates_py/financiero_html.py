@@ -25,7 +25,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
 .kpi-lbl{font-size:0.78em;color:#9C8B7A;text-transform:uppercase;letter-spacing:1px;margin-top:6px;}
 .kpi-sub{font-size:0.82em;color:#9C8B7A;margin-top:4px;}
 .kpi-delta{font-size:0.82em;margin-top:6px;font-weight:700;}
-.kpi-delta.up{color:#2B7A78;}.kpi-delta.down{color:#c0392b;}
+.kpi-delta.up{color:#6d28d9;}.kpi-delta.down{color:#c0392b;}
 .tbl{width:100%;border-collapse:collapse;background:white;border-radius:10px;overflow:hidden;box-shadow:0 1px 6px rgba(0,0,0,0.06);}
 .tbl thead th{background:#fdf9f4;color:#9C8B7A;font-size:0.78em;text-transform:uppercase;letter-spacing:0.8px;padding:10px 14px;text-align:left;border-bottom:1px solid #E8E4DE;}
 .tbl tbody td{padding:11px 14px;border-bottom:1px solid #F5F0EA;font-size:0.88em;vertical-align:middle;}
@@ -34,17 +34,17 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
 .btn{display:inline-flex;align-items:center;gap:6px;padding:9px 18px;border:none;border-radius:8px;cursor:pointer;font-size:0.88em;font-weight:600;transition:all 0.2s;background:#B5924A;color:white;}
 .btn:hover{background:#9a7a3e;}
 .btn-ghost{background:white;color:#B5924A;border:1.5px solid #B5924A;}
-.btn-red{background:#c0392b;}.btn-green{background:#2B7A78;}
+.btn-red{background:#c0392b;}.btn-green{background:#6d28d9;}
 .card{background:white;border:1px solid #E8E4DE;border-radius:12px;padding:22px;margin-bottom:20px;}
 .section-title{font-size:1em;font-weight:800;color:#1C2B30;margin-bottom:16px;display:flex;align-items:center;gap:8px;}
 .form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:16px;}
 .fg label{display:block;font-size:0.78em;color:#9C8B7A;text-transform:uppercase;letter-spacing:0.5px;font-weight:700;margin-bottom:5px;}
 .fg input,.fg select,.fg textarea{width:100%;padding:9px 12px;border:1.5px solid #E8E4DE;border-radius:8px;font-size:0.9em;background:white;outline:none;transition:border-color 0.2s;}
 .fg input:focus,.fg select:focus{border-color:#B5924A;}
-.badge-ing{background:rgba(43,122,120,.1);color:#2B7A78;padding:3px 10px;border-radius:12px;font-size:0.75em;font-weight:700;}
+.badge-ing{background:rgba(109,40,217,.1);color:#6d28d9;padding:3px 10px;border-radius:12px;font-size:0.75em;font-weight:700;}
 .badge-egr{background:rgba(192,57,43,.1);color:#c0392b;padding:3px 10px;border-radius:12px;font-size:0.75em;font-weight:700;}
 .chart-wrap{background:white;border:1px solid #E8E4DE;border-radius:12px;padding:22px;margin-bottom:20px;}
-.flujo-pos{color:#2B7A78;font-weight:700;}
+.flujo-pos{color:#6d28d9;font-weight:700;}
 .flujo-neg{color:#c0392b;font-weight:700;}
 .bar-container{width:100%;background:#f0eeea;border-radius:4px;height:8px;margin-top:6px;}
 .bar-fill{height:8px;border-radius:4px;background:var(--bc,#B5924A);transition:width 0.5s;}
@@ -93,7 +93,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
 <!-- ─── DASHBOARD ─── -->
 <div id="page-dashboard" class="page active">
   <div class="kpi-grid" id="kpi-financiero">
-    <div class="kpi" style="--c:#2B7A78"><div class="kpi-val" id="kpi-ing-mes">—</div><div class="kpi-lbl">Ingresos del mes</div><div class="kpi-sub" id="kpi-ing-sub"></div></div>
+    <div class="kpi" style="--c:#6d28d9"><div class="kpi-val" id="kpi-ing-mes">—</div><div class="kpi-lbl">Ingresos del mes</div><div class="kpi-sub" id="kpi-ing-sub"></div></div>
     <div class="kpi" style="--c:#c0392b"><div class="kpi-val" id="kpi-egr-mes">—</div><div class="kpi-lbl">Egresos del mes</div><div class="kpi-sub" id="kpi-egr-sub"></div></div>
     <div class="kpi" style="--c:#B5924A"><div class="kpi-val" id="kpi-flujo-mes">—</div><div class="kpi-lbl">Flujo neto mes</div><div class="kpi-sub" id="kpi-flujo-sub"></div></div>
     <div class="kpi" style="--c:#7A4A8B"><div class="kpi-val" id="kpi-caja">—</div><div class="kpi-lbl">Saldo de caja</div><div class="kpi-sub" id="kpi-caja-sub"></div></div>
@@ -182,7 +182,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
       <thead><tr><th>Fecha</th><th>Empresa</th><th>Categoría</th><th>Concepto</th><th>Referencia</th><th style="text-align:right;">Monto</th></tr></thead>
       <tbody id="ing-tbody"><tr><td colspan="6" style="text-align:center;padding:20px;color:#999;">Cargando...</td></tr></tbody>
     </table>
-    <div id="ing-total" style="text-align:right;font-weight:700;padding:12px 14px;font-size:1.05em;color:#2B7A78;"></div>
+    <div id="ing-total" style="text-align:right;font-weight:700;padding:12px 14px;font-size:1.05em;color:#6d28d9;"></div>
     <div id="pg-ing"></div>
   </div>
 </div>
@@ -247,7 +247,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
     <table class="tbl" id="flujo-tbl">
       <thead><tr>
         <th>Período</th>
-        <th style="text-align:right;color:#2B7A78;">Ingresos</th>
+        <th style="text-align:right;color:#6d28d9;">Ingresos</th>
         <th style="text-align:right;color:#c0392b;">Egresos</th>
         <th style="text-align:right;">Flujo Neto</th>
         <th style="text-align:right;">Acumulado</th>
@@ -480,7 +480,7 @@ async function loadDashboard(){
     var flujo=(d.ing_mes||0)-(d.egr_mes||0);
     var kflujo=document.getElementById('kpi-flujo-mes');
     kflujo.textContent=fmt(flujo);
-    kflujo.style.color=flujo>=0?'#2B7A78':'#c0392b';
+    kflujo.style.color=flujo>=0?'#6d28d9':'#c0392b';
     document.getElementById('kpi-flujo-sub').textContent=flujo>=0?'Superávit':'Déficit';
     document.getElementById('kpi-caja').textContent=fmt(d.saldo_caja||0);
     var meta=parseFloat(_config.meta_caja_min||50000000);
@@ -488,7 +488,7 @@ async function loadDashboard(){
     // Desglose
     var des='<table style="width:100%;font-size:0.88em;">';
     if(d.desglose_ing&&d.desglose_ing.length){
-      des+='<tr><td colspan="2" style="font-weight:700;color:#2B7A78;padding:6px 0;">INGRESOS</td></tr>';
+      des+='<tr><td colspan="2" style="font-weight:700;color:#6d28d9;padding:6px 0;">INGRESOS</td></tr>';
       d.desglose_ing.forEach(function(r){des+='<tr><td style="color:#666;">'+r.categoria+'</td><td style="text-align:right;font-weight:600;">'+fmt(r.total)+'</td></tr>';});
     }
     if(d.desglose_egr&&d.desglose_egr.length){
@@ -502,7 +502,7 @@ async function loadDashboard(){
     var metaCaja=parseFloat(_config.meta_caja_min||50000000);
     if((d.saldo_caja||0)<metaCaja) alertas+='<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:12px 16px;margin-bottom:8px;">🟡 Saldo de caja ($'+fmt(d.saldo_caja||0)+') está por debajo del mínimo ($'+fmt(metaCaja)+')</div>';
     if(flujo<0) alertas+='<div style="background:#fde8e8;border:1px solid #f5c6cb;border-radius:8px;padding:12px 16px;margin-bottom:8px;">🔴 Flujo neto negativo este mes: '+fmt(flujo)+'</div>';
-    if(!alertas) alertas='<div style="color:#2B7A78;font-size:0.92em;padding:8px;">✅ Sin alertas críticas este mes.</div>';
+    if(!alertas) alertas='<div style="color:#6d28d9;font-size:0.92em;padding:8px;">✅ Sin alertas críticas este mes.</div>';
     document.getElementById('alertas-fin').innerHTML=alertas;
     // Chart
     if(d.historico&&d.historico.length){
@@ -513,7 +513,7 @@ async function loadDashboard(){
       _chartIngEgr=new Chart(document.getElementById('chart-ing-egr'),{
         type:'bar',
         data:{labels:labels,datasets:[
-          {label:'Ingresos',data:ings,backgroundColor:'rgba(43,122,120,0.7)',borderRadius:4},
+          {label:'Ingresos',data:ings,backgroundColor:'rgba(109,40,217,0.7)',borderRadius:4},
           {label:'Egresos',data:egrs,backgroundColor:'rgba(192,57,43,0.7)',borderRadius:4}
         ]},
         options:{responsive:true,plugins:{legend:{position:'top'}},scales:{y:{ticks:{callback:function(v){return fmt(v);}}}}}
@@ -557,7 +557,7 @@ async function loadMoM12(){
         labels: labels,
         datasets: [
           {type:'bar', label:'Ingresos', data:ings,
-            backgroundColor:'rgba(43,122,120,0.65)', borderRadius:3, order:2},
+            backgroundColor:'rgba(109,40,217,0.65)', borderRadius:3, order:2},
           {type:'bar', label:'Egresos', data:egrs,
             backgroundColor:'rgba(192,57,43,0.65)', borderRadius:3, order:2},
           {type:'line', label:'Margen', data:margenes,
@@ -576,10 +576,10 @@ async function loadMoM12(){
     var tbody = document.getElementById('mom-12-tbody');
     if(tbody){
       tbody.innerHTML = meses.map(function(m){
-        var marColor = m.margen >= 0 ? '#2B7A78' : '#c0392b';
+        var marColor = m.margen >= 0 ? '#6d28d9' : '#c0392b';
         var momHtml = '—';
         if(m.mom_pct !== null && m.mom_pct !== undefined){
-          var momColor = m.mom_pct >= 0 ? '#2B7A78' : '#c0392b';
+          var momColor = m.mom_pct >= 0 ? '#6d28d9' : '#c0392b';
           var arrow = m.mom_pct >= 0 ? '▲' : '▼';
           momHtml = '<span style="color:'+momColor+';font-weight:600">'+arrow+' '+m.mom_pct.toFixed(1)+'%</span>';
         }
@@ -625,7 +625,7 @@ async function loadIngresos(){
       h+='<td>'+r.categoria+'</td>';
       h+='<td>'+r.concepto+'</td>';
       h+='<td style="color:#888;font-size:0.85em;">'+(r.referencia||'')+'</td>';
-      h+='<td style="text-align:right;font-weight:700;color:#2B7A78;">'+fmtFull(r.monto)+'</td></tr>';
+      h+='<td style="text-align:right;font-weight:700;color:#6d28d9;">'+fmtFull(r.monto)+'</td></tr>';
     });
     document.getElementById('ing-tbody').innerHTML=h;
     document.getElementById('ing-total').textContent='Total: '+fmtFull(total);
@@ -679,18 +679,18 @@ async function loadFlujo(){
       var cls=flujo>=0?'flujo-pos':'flujo-neg';
       var acls=acum>=0?'flujo-pos':'flujo-neg';
       h+='<tr><td style="font-weight:600;">'+m.periodo+'</td>';
-      h+='<td style="text-align:right;color:#2B7A78;font-weight:700;">'+fmtFull(m.ingresos||0)+'</td>';
+      h+='<td style="text-align:right;color:#6d28d9;font-weight:700;">'+fmtFull(m.ingresos||0)+'</td>';
       h+='<td style="text-align:right;color:#c0392b;font-weight:700;">'+fmtFull(m.egresos||0)+'</td>';
       h+='<td style="text-align:right;" class="'+cls+'">'+fmtFull(flujo)+'</td>';
       h+='<td style="text-align:right;" class="'+acls+'">'+fmtFull(acum)+'</td>';
-      h+='<td><span style="background:'+(flujo>=0?'rgba(43,122,120,.1)':'rgba(192,57,43,.1)')+';color:'+(flujo>=0?'#2B7A78':'#c0392b')+';padding:3px 10px;border-radius:12px;font-size:0.75em;font-weight:700;">'+(flujo>=0?'Superávit':'Déficit')+'</span></td></tr>';
+      h+='<td><span style="background:'+(flujo>=0?'rgba(109,40,217,.1)':'rgba(192,57,43,.1)')+';color:'+(flujo>=0?'#6d28d9':'#c0392b')+';padding:3px 10px;border-radius:12px;font-size:0.75em;font-weight:700;">'+(flujo>=0?'Superávit':'Déficit')+'</span></td></tr>';
     });
     document.getElementById('flujo-tbody').innerHTML=h;
     // Chart
     if(meses.length){
       var labels=meses.map(function(m){return m.periodo;});
       var flujos=meses.map(function(m){return(m.ingresos||0)-(m.egresos||0);});
-      var colors=flujos.map(function(f){return f>=0?'rgba(43,122,120,0.7)':'rgba(192,57,43,0.7)';});
+      var colors=flujos.map(function(f){return f>=0?'rgba(109,40,217,0.7)':'rgba(192,57,43,0.7)';});
       if(_chartFlujo)_chartFlujo.destroy();
       _chartFlujo=new Chart(document.getElementById('chart-flujo'),{
         type:'bar',data:{labels:labels,datasets:[{label:'Flujo Neto',data:flujos,backgroundColor:colors,borderRadius:4}]},
@@ -722,7 +722,7 @@ async function guardarConfig(){
   });
   var r=await fetch('/api/financiero/config',_fetchOpts('POST', updates));
   var d=await r.json();
-  document.getElementById('config-msg').innerHTML=r.ok?'<span style="color:#2B7A78;">✓ '+d.message+'</span>':'<span style="color:red;">'+d.error+'</span>';
+  document.getElementById('config-msg').innerHTML=r.ok?'<span style="color:#6d28d9;">✓ '+d.message+'</span>':'<span style="color:red;">'+d.error+'</span>';
 }
 
 async function guardarIngreso(){
@@ -736,7 +736,7 @@ async function guardarIngreso(){
   if(!fecha){fecha=new Date().toISOString().substring(0,10);}
   var r=await fetch('/api/financiero/ingresos',_fetchOpts('POST', {fecha:fecha,empresa:empresa,categoria:cat,concepto:concepto,monto:monto,referencia:ref}));
   var d=await r.json();
-  document.getElementById('ing-msg').innerHTML=r.ok?'<span style="color:#2B7A78;">✓ '+d.message+'</span>':'<span style="color:red;">'+d.error+'</span>';
+  document.getElementById('ing-msg').innerHTML=r.ok?'<span style="color:#6d28d9;">✓ '+d.message+'</span>':'<span style="color:red;">'+d.error+'</span>';
   if(r.ok){document.getElementById('ing-concepto').value='';document.getElementById('ing-monto').value='';document.getElementById('ing-ref').value='';loadIngresos();}
 }
 
@@ -777,7 +777,7 @@ async function limpiarFlujo(){
 async function importarOCs(){
   var r=await fetch('/api/financiero/importar-ocs',_fetchOpts('POST'));
   var d=await r.json();
-  document.getElementById('import-msg').innerHTML=r.ok?'<span style="color:#2B7A78;">✓ '+d.message+'</span>':'<span style="color:red;">'+(d.error||'Error')+'</span>';
+  document.getElementById('import-msg').innerHTML=r.ok?'<span style="color:#6d28d9;">✓ '+d.message+'</span>':'<span style="color:red;">'+(d.error||'Error')+'</span>';
   if(r.ok)loadEgresos();
 }
 
@@ -850,11 +850,11 @@ async function loadPreciosMayorista(){
     h+='</tr></thead><tbody>';
     data.forEach(function(s){
       h+='<tr style="border-bottom:1px solid #f0f0f0;">';
-      h+='<td style="padding:8px 6px;font-family:monospace;color:#2B7A78;font-weight:700;">'+s.sku+'</td>';
+      h+='<td style="padding:8px 6px;font-family:monospace;color:#6d28d9;font-weight:700;">'+s.sku+'</td>';
       h+='<td style="padding:8px 6px;">'+s.descripcion+'</td>';
       h+='<td style="padding:8px 6px;text-align:right;"><input type="number" id="pm-'+s.sku+'" value="'+(s.precio_mayorista||0)+'" min="0" step="100" style="width:120px;padding:5px 8px;border:1px solid #dde;border-radius:6px;text-align:right;font-size:0.95em;"></td>';
       h+='<td style="padding:8px 6px;text-align:center;color:#888;">'+s.unidad+'</td>';
-      h+='<td style="padding:8px 6px;"><button onclick="guardarPrecio(&apos;'+s.sku+'&apos;)" style="padding:5px 12px;background:#2B7A78;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:0.82em;font-weight:600;">Guardar</button></td>';
+      h+='<td style="padding:8px 6px;"><button onclick="guardarPrecio(&apos;'+s.sku+'&apos;)" style="padding:5px 12px;background:#6d28d9;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:0.82em;font-weight:600;">Guardar</button></td>';
       h+='</tr>';
     });
     h+='</tbody></table>';
@@ -869,7 +869,7 @@ async function guardarPrecio(sku){
   var r=await fetch('/api/financiero/precios-mayorista/'+encodeURIComponent(sku),_fetchOpts('POST', {precio_mayorista:precio}));
   var d=await r.json();
   var msg=document.getElementById('precios-msg');
-  msg.innerHTML=r.ok?'<span style="color:#2B7A78;">✓ '+d.message+'</span>':'<span style="color:red;">'+(d.error||'Error')+'</span>';
+  msg.innerHTML=r.ok?'<span style="color:#6d28d9;">✓ '+d.message+'</span>':'<span style="color:red;">'+(d.error||'Error')+'</span>';
   setTimeout(function(){msg.innerHTML='';},2500);
 }
 
@@ -899,7 +899,7 @@ async function cargarCuarentena(){
       h+='<td><span style="background:'+estadoColor+'20;color:'+estadoColor+';padding:2px 8px;border-radius:10px;font-size:0.8em;font-weight:700;">'+l.estado_lote.replace('_',' ')+'</span></td>';
       h+='<td>';
       if(esAdmin){
-        h+='<button onclick="abrirCCModal('+JSON.stringify(l)+')" style="padding:5px 12px;background:#2B7A78;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:0.82em;font-weight:600;">Revisar CC</button>';
+        h+='<button onclick="abrirCCModal('+JSON.stringify(l)+')" style="padding:5px 12px;background:#6d28d9;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:0.82em;font-weight:600;">Revisar CC</button>';
       }else{
         h+='<span style="color:#999;font-size:0.82em;">Solo CC/Admin</span>';
       }
@@ -1052,7 +1052,7 @@ async function buscarTrazabilidadPT(){
       html+='</div>';
     }
     var mps=d.mps_consumidas||[];
-    html+='<h5 style="margin:0 0 8px;color:#2B7A78;">Materias Primas Consumidas ('+mps.length+')</h5>';
+    html+='<h5 style="margin:0 0 8px;color:#6d28d9;">Materias Primas Consumidas ('+mps.length+')</h5>';
     if(mps.length){
       html+='<table style="width:100%;font-size:0.82em;border-collapse:collapse;">';
       html+='<thead><tr style="background:#f0f0f0;"><th style="padding:4px 8px;text-align:left;">Lote MP</th><th style="padding:4px 8px;text-align:left;">Material</th><th style="padding:4px 8px;text-align:right;">Cant (g)</th><th style="padding:4px 8px;text-align:left;">Proveedor</th><th style="padding:4px 8px;text-align:left;">Vence</th></tr></thead><tbody>';
@@ -1302,8 +1302,8 @@ async function loadPNL(){
     var crecMes=mvp.crecimiento_pct;
     // KPI cards
     var kh='';
-    kh+='<div style="background:rgba(43,122,120,0.12);border:1px solid rgba(43,122,120,0.3);border-radius:10px;padding:16px;text-align:center;">';
-    kh+='<div style="font-size:1.8em;font-weight:900;color:#7ACFCC;">'+fmt2(tot.ingresos)+'</div>';
+    kh+='<div style="background:rgba(109,40,217,0.12);border:1px solid rgba(109,40,217,0.3);border-radius:10px;padding:16px;text-align:center;">';
+    kh+='<div style="font-size:1.8em;font-weight:900;color:#6d28d9;">'+fmt2(tot.ingresos)+'</div>';
     kh+='<div style="font-size:0.72em;color:rgba(0,0,0,0.5);text-transform:uppercase;margin-top:4px;">Ingresos este mes</div>';
     if(crecMes!=null) kh+='<div style="font-size:0.75em;color:'+(crecMes>=0?'#27ae60':'#e74c3c');
     if(crecMes!=null) kh+=';margin-top:3px;">'+(crecMes>=0?'&#8593;':'&#8595;')+Math.abs(crecMes)+'% vs mismo mes año ant.</div>';
@@ -1331,7 +1331,7 @@ async function loadPNL(){
     ['ANIMUS','ESPAGIRIA'].forEach(function(k){
       var b=d.empresas&&d.empresas[k]||{};
       bh+='<div style="background:#f8f9fa;border:1px solid #e9ecef;border-radius:10px;padding:16px;">';
-      bh+='<div style="font-weight:700;font-size:0.9em;color:#2B7A78;margin-bottom:12px;">'+k+'</div>';
+      bh+='<div style="font-weight:700;font-size:0.9em;color:#6d28d9;margin-bottom:12px;">'+k+'</div>';
       bh+='<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #e9ecef;"><span style="color:#666;">Ingresos mes</span><span style="font-weight:700;">'+fmt2(b.ingresos)+'</span></div>';
       bh+='<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #e9ecef;"><span style="color:#666;">YTD</span><span style="font-weight:700;color:#3498db;">'+fmt2(b.ingresos_ytd)+'</span></div>';
       bh+='<div style="display:flex;justify-content:space-between;padding:6px 0;"><span style="color:#666;">Margen</span><span style="font-weight:700;color:#27ae60;">'+fmt2(b.margen)+'</span></div>';
@@ -1348,7 +1348,7 @@ async function loadPNL(){
       _chartPNL=new Chart(document.getElementById('pnl-chart'),{
         type:'bar',
         data:{labels:labels,datasets:[
-          {label:'Ingresos',data:ings,backgroundColor:'rgba(43,122,120,0.7)',borderRadius:4},
+          {label:'Ingresos',data:ings,backgroundColor:'rgba(109,40,217,0.7)',borderRadius:4},
           {label:'Egresos',data:egrs,backgroundColor:'rgba(192,57,43,0.5)',borderRadius:4},
           {label:'Margen',data:mars,type:'line',borderColor:'#27ae60',backgroundColor:'rgba(39,174,96,0.1)',tension:0.3,fill:true}
         ]},
@@ -1414,7 +1414,7 @@ async function loadWorkingCapital(){
     var h='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:20px;">';
     var cards=[
       ['Working Capital',fmt2(wc),wc>=0?'#27ae60':'#e74c3c'],
-      ['AR Total',fmt2(d.ar_total),'#2B7A78'],
+      ['AR Total',fmt2(d.ar_total),'#6d28d9'],
       ['AP Total',fmt2(d.ap_total),'#e67e22'],
       ['Inventario MP',fmt2(d.inventory_value),'#3498db'],
       ['Caja',fmt2(d.cash),'#9b59b6'],
@@ -1464,7 +1464,7 @@ async function abrirMesDetalle(periodo, tipo){
       html += '<div style="padding:30px;text-align:center;color:#999;font-style:italic">Sin movimientos en '+periodo+'</div>';
     }else{
       d.categorias.forEach(function(cat, idx){
-        var color = tipo==='ingresos' ? '#2B7A78' : '#c0392b';
+        var color = tipo==='ingresos' ? '#6d28d9' : '#c0392b';
         // Header clickeable que toggea el trend inline
         var trendId = 'trend-'+idx+'-'+Math.random().toString(36).slice(2,7);
         var toggle = 'toggleCategoriaTrend("'+trendId+'","'+_esc(cat.categoria)+'","'+tipo+'")';
@@ -1482,7 +1482,7 @@ async function abrirMesDetalle(periodo, tipo){
             var refLink = it.referencia || '';
             // Si es OC, link al tab de OCs
             if(refLink && /^OC-/.test(refLink)){
-              refLink = '<a href="/compras#oc-'+_esc(refLink)+'" style="color:#2B7A78;text-decoration:none">'+_esc(refLink)+'</a>';
+              refLink = '<a href="/compras#oc-'+_esc(refLink)+'" style="color:#6d28d9;text-decoration:none">'+_esc(refLink)+'</a>';
             }else if(refLink){
               refLink = '<span style="color:#7A6A55;font-size:0.82em">'+_esc(refLink)+'</span>';
             }else{
@@ -1533,7 +1533,7 @@ async function toggleCategoriaTrend(slotId, categoria, tipo){
     }
     var d = await r.json();
     var s = d.stats || {};
-    var color = tipo === 'ingresos' ? '#2B7A78' : '#c0392b';
+    var color = tipo === 'ingresos' ? '#6d28d9' : '#c0392b';
     // Stats summary
     var statsLine = [];
     if(s.promedio !== undefined) statsLine.push('📊 Promedio: <b>'+fmt(s.promedio)+'</b>');
@@ -1541,7 +1541,7 @@ async function toggleCategoriaTrend(slotId, categoria, tipo){
     if(s.min_mes && s.min_monto > 0) statsLine.push('🟦 Mínimo: <b>'+s.min_mes+'</b> ('+fmt(s.min_monto)+')');
     if(s.ultimo_vs_promedio_pct !== null && s.ultimo_vs_promedio_pct !== undefined){
       var arrow = s.ultimo_vs_promedio_pct >= 0 ? '▲' : '▼';
-      var c2 = s.ultimo_vs_promedio_pct >= 0 ? (tipo==='egresos'?'#c0392b':'#2B7A78') : (tipo==='egresos'?'#2B7A78':'#c0392b');
+      var c2 = s.ultimo_vs_promedio_pct >= 0 ? (tipo==='egresos'?'#c0392b':'#6d28d9') : (tipo==='egresos'?'#6d28d9':'#c0392b');
       statsLine.push('Último vs prom: <b style="color:'+c2+'">'+arrow+' '+s.ultimo_vs_promedio_pct.toFixed(1)+'%</b>');
     }
     var canvasId = slotId+'-canvas';
@@ -1587,7 +1587,7 @@ function _esc(s){
 <!-- Mes-detalle modal · drill-down de ingresos/egresos por categoría -->
 <div id="mes-detalle-modal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,0.65);z-index:9999;align-items:flex-start;justify-content:center;padding:50px 20px;overflow-y:auto">
   <div style="background:#fff;max-width:780px;width:100%;border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,.35);overflow:hidden">
-    <div style="padding:18px 24px;background:linear-gradient(135deg,#2B7A78,#205C5A);color:#fff;display:flex;justify-content:space-between;align-items:center">
+    <div style="padding:18px 24px;background:linear-gradient(135deg,#6d28d9,#205C5A);color:#fff;display:flex;justify-content:space-between;align-items:center">
       <div>
         <div style="font-size:11px;color:#a7f3d0;text-transform:uppercase;letter-spacing:.5px">Detalle del mes</div>
         <h2 id="md-titulo" style="margin:4px 0 0 0;font-size:18px">—</h2>

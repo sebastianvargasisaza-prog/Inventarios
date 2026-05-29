@@ -19,7 +19,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
 .switcher{display:grid;grid-template-columns:1fr 1fr;gap:0;border-bottom:3px solid #E8E4DE;}
 .sw-card{padding:18px 28px;cursor:pointer;display:flex;align-items:center;gap:14px;background:white;transition:all 0.2s;border-bottom:4px solid transparent;margin-bottom:-3px;}
 .sw-card:hover{background:#f8fafa;}
-.sw-card.active-a{border-bottom-color:#2B7A78;background:#f0fafa;}
+.sw-card.active-a{border-bottom-color:#6d28d9;background:#f0fafa;}
 .sw-card.active-m{border-bottom-color:#5C4B99;background:#f5f0ff;}
 .sw-icon{font-size:1.8em;}
 .sw-title{font-size:1em;font-weight:800;color:#1C2B30;}
@@ -28,7 +28,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
 /* TABS */
 .module-tabs{background:white;border-bottom:1px solid #E8E4DE;padding:0 28px;display:flex;gap:4px;}
 .tab{padding:12px 20px;cursor:pointer;font-size:0.86em;font-weight:600;color:#7A9E9C;border-bottom:3px solid transparent;transition:all 0.2s;white-space:nowrap;}
-.tab.active-a{color:#2B7A78;border-bottom-color:#2B7A78;}
+.tab.active-a{color:#6d28d9;border-bottom-color:#6d28d9;}
 .tab.active-m{color:#5C4B99;border-bottom-color:#5C4B99;}
 .tab:hover:not(.active-a):not(.active-m){background:#f5fafa;}
 /* CONTENT */
@@ -37,8 +37,8 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
 .section-block{display:none;}.section-block.active{display:block;}
 /* KPIs */
 .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;margin-bottom:24px;}
-.kpi{background:white;border:1px solid #E8E4DE;border-radius:12px;padding:18px 20px;border-left:4px solid var(--c,#2B7A78);}
-.kpi-val{font-size:1.9em;font-weight:900;color:var(--c,#2B7A78);line-height:1;}
+.kpi{background:white;border:1px solid #E8E4DE;border-radius:12px;padding:18px 20px;border-left:4px solid var(--c,#6d28d9);}
+.kpi-val{font-size:1.9em;font-weight:900;color:var(--c,#6d28d9);line-height:1;}
 .kpi-lbl{font-size:0.75em;color:#7A9E9C;text-transform:uppercase;letter-spacing:1px;margin-top:5px;}
 .kpi-sub{font-size:0.8em;color:#9C8B7A;margin-top:3px;}
 /* TABLE */
@@ -47,10 +47,10 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
 .tbl tbody td{padding:10px 13px;border-bottom:1px solid #F0EEEA;font-size:0.86em;vertical-align:middle;}
 .tbl tbody tr:hover{background:#fafcfc;}.tbl tbody tr:last-child td{border-bottom:none;}
 /* BUTTONS */
-.btn{display:inline-flex;align-items:center;gap:5px;padding:8px 16px;border:none;border-radius:7px;cursor:pointer;font-size:0.85em;font-weight:600;transition:all 0.2s;background:#2B7A78;color:white;}
+.btn{display:inline-flex;align-items:center;gap:5px;padding:8px 16px;border:none;border-radius:7px;cursor:pointer;font-size:0.85em;font-weight:600;transition:all 0.2s;background:#6d28d9;color:white;}
 .btn:hover{background:#1d5c5a;transform:translateY(-1px);}
 .btn-m{background:#5C4B99;}.btn-m:hover{background:#4a3a7a;}
-.btn-ghost{background:white;color:#2B7A78;border:1.5px solid #2B7A78;}
+.btn-ghost{background:white;color:#6d28d9;border:1.5px solid #6d28d9;}
 .btn-ghost:hover{background:#f0f9f9;}
 .btn-ghost-m{background:white;color:#5C4B99;border:1.5px solid #5C4B99;}
 .btn-ghost-m:hover{background:#f5f0ff;}
@@ -75,7 +75,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
 .form-row.single{grid-template-columns:1fr;}
 .fg label{display:block;font-size:0.77em;font-weight:600;color:#5C7A7A;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.5px;}
 .fg input,.fg select,.fg textarea{width:100%;padding:8px 11px;border:1.5px solid #D8E4E4;border-radius:6px;font-size:0.86em;background:#fafcfc;}
-.fg input:focus,.fg select:focus,.fg textarea:focus{outline:none;border-color:#2B7A78;}
+.fg input:focus,.fg select:focus,.fg textarea:focus{outline:none;border-color:#6d28d9;}
 /* MESSAGES */
 .msg-ok{background:#d1fae5;color:#065f46;padding:9px 13px;border-radius:7px;margin:7px 0;font-size:0.85em;}
 .msg-err{background:#fee2e2;color:#991b1b;padding:9px 13px;border-radius:7px;margin:7px 0;font-size:0.85em;}
@@ -100,7 +100,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
 .mdl.show{display:flex;}
 .mdl-box{background:white;border-radius:14px;width:92%;max-width:480px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,0.3);}
 .mdl-hdr{padding:14px 18px;display:flex;justify-content:space-between;align-items:center;color:white;}
-.mdl-hdr-a{background:#2B7A78;}.mdl-hdr-m{background:#5C4B99;}
+.mdl-hdr-a{background:#6d28d9;}.mdl-hdr-m{background:#5C4B99;}
 .mdl-hdr strong{font-size:0.95em;}
 .mdl-hdr button{background:rgba(255,255,255,0.2);border:none;color:white;font-size:1.2em;cursor:pointer;border-radius:5px;padding:2px 8px;}
 .mdl-body{padding:20px;}
@@ -174,7 +174,7 @@ body{font-family:'Segoe UI',system-ui,sans-serif;background:#F5F4F0;min-height:1
 <!-- DASHBOARD ÁNIMUS -->
 <div id="ta-dash" class="page active">
   <div class="kpi-grid" id="kpi-animus">
-    <div class="kpi" style="--c:#2B7A78"><div class="kpi-val" id="ka-aliados">&#x2014;</div><div class="kpi-lbl">Aliados activos</div></div>
+    <div class="kpi" style="--c:#6d28d9"><div class="kpi-val" id="ka-aliados">&#x2014;</div><div class="kpi-lbl">Aliados activos</div></div>
     <div class="kpi" style="--c:#4A8B6A"><div class="kpi-val" id="ka-facturado">&#x2014;</div><div class="kpi-lbl">Facturado total</div></div>
     <div class="kpi" style="--c:#dc2626"><div class="kpi-val" id="ka-cartera">&#x2014;</div><div class="kpi-lbl">Cartera pendiente</div><div class="kpi-sub">Saldo sin pagar</div></div>
     <div class="kpi" style="--c:#dc2626"><div class="kpi-val" id="ka-churn">&#x2014;</div><div class="kpi-lbl">Aliados en riesgo</div><div class="kpi-sub">&gt;75 d&#xed;as sin pedido</div></div>
@@ -1002,7 +1002,7 @@ async function loadAliados(){
         +'<td>'+nivelBadge(cl.nivel_aliado||'Ingreso')+'</td>'
         +'<td>'+semHtml(cl.semaforo||'verde')+'</td>'
         +'<td style="text-align:center;">'+(cl.total_pedidos||0)+'</td>'
-        +'<td style="text-align:right;font-weight:600;color:#2B7A78;">'+fmt(cl.facturado_total)+'</td>'
+        +'<td style="text-align:right;font-weight:600;color:#6d28d9;">'+fmt(cl.facturado_total)+'</td>'
         +'<td style="text-align:right;">'+saldoCell+'</td>'
         +'<td style="color:#999;font-size:0.83em;">'+(cl.ultimo_pedido||'').substring(0,10)+'</td>'
         +'<td style="white-space:nowrap;">'
@@ -1085,7 +1085,7 @@ async function loadPedidos(estado){
         +'<td style="font-weight:600;">'+(p.cliente||'&#x2014;')+'</td>'
         +'<td style="color:#999;font-size:0.83em;">'+(p.fecha||'').substring(0,10)+'</td>'
         +'<td>'+badgePed(p.estado)+'</td>'
-        +'<td style="text-align:right;font-weight:700;color:#2B7A78;">'+fmt(valor)+'</td>'
+        +'<td style="text-align:right;font-weight:700;color:#6d28d9;">'+fmt(valor)+'</td>'
         +'<td style="text-align:right;color:#16a34a;">'+fmt(pagado)+'</td>'
         +'<td style="text-align:right;font-weight:700;color:'+saldoColor+';">'+fmt(saldo)+'</td>'
         +'<td><span class="badge '+epBadge+'">'+epago+'</span></td>'
@@ -1203,7 +1203,7 @@ async function loadCartera(){
         +'<td style="color:#888;font-size:0.85em;">'+(a.ciudad||'&#x2014;')+'</td>'
         +'<td>'+semHtml(a.semaforo||'verde')+'</td>'
         +'<td style="text-align:right;">'+(a.total_pedidos||0)+'</td>'
-        +'<td style="text-align:right;font-weight:600;color:#2B7A78;">'+fmt(a.facturado)+'</td>'
+        +'<td style="text-align:right;font-weight:600;color:#6d28d9;">'+fmt(a.facturado)+'</td>'
         +'<td style="text-align:right;color:#16a34a;">'+fmt(a.pagado)+'</td>'
         +'<td style="text-align:right;">'+saldoCell+'</td>'
         +'<td style="color:#999;font-size:0.83em;">'+(a.ultimo_pedido||'&#x2014;').substring(0,10)+'</td>'
@@ -1229,7 +1229,7 @@ async function loadChurn(){
       +'<td><strong style="color:'+nivelColor+';">'+c.dias_sin_pedido+'</strong> d</td>'
       +'<td style="text-align:center;">'+c.total_pedidos+'</td>'
       +'<td style="text-align:right;">'+fmt(c.valor_total)+'</td>'
-      +'<td style="font-size:0.8em;">'+(c.email?'<a href="mailto:'+c.email+'" style="color:#2B7A78;">'+c.email+'</a>':'—')+'</td>'
+      +'<td style="font-size:0.8em;">'+(c.email?'<a href="mailto:'+c.email+'" style="color:#6d28d9;">'+c.email+'</a>':'—')+'</td>'
       +'<td><button class="btn btn-xs" onclick="abrirCliente360('+c.id+')">360</button></td></tr>';
   });
   h+='</tbody></table>';
@@ -1763,7 +1763,7 @@ function renderSegChart(ventas_mes) {
   const aliados = [...new Map(ventas_mes.map(v=>[v.id,v.nombre])).entries()];
   const maxV = Math.max(...ventas_mes.map(v=>v.ventas), 1);
 
-  const COLORS = ['#2B7A78','#5C4B99','#e85d04','#4cc9f0','#7b2d8b','#2a9d8f'];
+  const COLORS = ['#6d28d9','#5C4B99','#e85d04','#4cc9f0','#7b2d8b','#2a9d8f'];
   const barW = 32, gap = 8, grpGap = 24;
   const grpW = aliados.length*(barW+gap) + grpGap;
   const W = meses.length*grpW + 60;
