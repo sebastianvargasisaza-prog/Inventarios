@@ -17,8 +17,9 @@
 | `solicitudes_compra_items` | INSERT | Faltantes detectados |
 | `mp_lead_time_config` | INSERT/UPDATE | Configuración manual o sync desde compras |
 | `produccion_checklist` | INSERT/UPDATE/DELETE | Pre-producción items |
+| `movimientos` | INSERT | Salida MP al iniciar/completar (con `produccion_id`); Entrada compensatoria al revertir |
 | `_sync_log` | INSERT | Cada corrida del sync Calendar |
-| `audit_log` | INSERT | Operaciones destructivas |
+| `audit_log` | INSERT | Operaciones destructivas + crear producción (`CREAR_PRODUCCION_PROGRAMADA`) |
 
 ## Tablas que LEE
 
@@ -212,3 +213,17 @@ Tests goldens que protegen:
   `ebr_ejecuciones`, `ebr_pasos_ejecutados`.
 - **Test que cazaría regresión**:
   `test_golden_brd_hook_auto_ebr_al_iniciar_produccion`.
+
+### 2026-05-28 · Reversión precisa de MP por `produccion_id` (mig 201)
+- `revertir-completado` revertía las Salidas de MP filtrando por
+  `observaciones LIKE 'Producción ... {producto} — {fecha}%'`. Dos
+  producciones del MISMO producto+fecha colisionaban → revertir una
+  devolvía el MP de ambas (inventario fantasma · drift +).
+- **Mig 201**: `movimientos.produccion_id` (+ índice). Las Salidas de
+  `_descontar_mp_produccion` (iniciar) y `prog_completar_evento` (completar)
+  guardan `produccion_id = evento_id`.
+- La reversión filtra por `produccion_id` EXACTO; el LIKE por texto queda
+  solo como fallback para movimientos legacy (`produccion_id IS NULL`).
+- Mismo patrón que ya usaba la reversión MEE vía `lote_ref`.
+- **Test que cazaría regresión**:
+  `test_revertir_completado_no_cross_reversal_mp`.
