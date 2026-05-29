@@ -83,6 +83,19 @@
   --cx-tr-fast: 0.12s ease;
   --cx-tr-base: 0.2s ease;
   --cx-tr-slow: 0.4s ease;
+
+  /* --- v2 · premium-claro · 28-may-2026 ---
+     Objetivo: se ve superior como el login pero LIGERO (no fatiga). El salto
+     de "plano" a "premium" viene de cambiar bordes duros por sombras suaves
+     + superficies tintadas violeta sutiles + focus ring accesible. */
+  --cx-primary-soft:    #ede9fe;   /* superficie tintada violeta muy suave */
+  --cx-hairline:        rgba(28,25,23,0.07);   /* borde casi invisible */
+  --cx-sh-card:         0 1px 3px rgba(28,25,23,0.06), 0 1px 2px rgba(28,25,23,0.04);
+  --cx-sh-card-hover:   0 10px 28px rgba(28,25,23,0.09), 0 3px 8px rgba(28,25,23,0.05);
+  --cx-sh-violet-sm:    0 4px 14px rgba(109,40,217,0.16);
+  --cx-ring:            0 0 0 3px rgba(167,139,250,0.32);   /* focus visible */
+  --cx-glass-grad:      linear-gradient(135deg, rgba(167,139,250,0.10), rgba(109,40,217,0.04));
+  --cx-hero-grad:       linear-gradient(120deg, #f5f3ff 0%, #faf5ff 40%, #ffffff 100%);
 }
 
 /* ===================== Dark mode tokens ===================== */
@@ -102,6 +115,13 @@
   --cx-warn-pale:    #451a03;
   --cx-danger-pale:  #450a0a;
   --cx-info-pale:    #1e3a8a;
+  /* v2 dark overrides */
+  --cx-primary-soft:  #2e1065;
+  --cx-hairline:      rgba(255,255,255,0.08);
+  --cx-sh-card:       0 1px 3px rgba(0,0,0,0.45);
+  --cx-sh-card-hover: 0 10px 28px rgba(0,0,0,0.55);
+  --cx-glass-grad:    linear-gradient(135deg, rgba(167,139,250,0.14), rgba(109,40,217,0.06));
+  --cx-hero-grad:     linear-gradient(120deg, #1e1b4b 0%, #1e293b 60%, #0f172a 100%);
 }
 
 /* ===================== Reset / Base ===================== */
@@ -168,8 +188,17 @@ code, pre, kbd, samp, .mono, [class*="font-mono"] {
 .cx-btn:hover {
   background: var(--cx-primary-dark);
   transform: translateY(-1px);
-  box-shadow: var(--cx-sh-violet);
+  box-shadow: var(--cx-sh-violet-sm);
 }
+.cx-btn:active { transform: translateY(0); }
+.cx-btn:focus-visible { outline: none; box-shadow: var(--cx-ring); }
+/* CTA hero · gradiente violeta (como el login) */
+.cx-btn-grad { background: var(--cx-primary-grad); }
+.cx-btn-grad:hover { background: var(--cx-primary-grad); filter: brightness(1.05); }
+.cx-btn-danger  { background: var(--cx-danger); }
+.cx-btn-danger:hover  { background: #b91c1c; box-shadow: 0 4px 14px rgba(220,38,38,0.22); }
+.cx-btn-success { background: var(--cx-success); }
+.cx-btn-success:hover { background: #166534; box-shadow: 0 4px 14px rgba(21,128,61,0.22); }
 .cx-btn-ghost {
   background: transparent;
   color: var(--cx-primary);
@@ -187,15 +216,19 @@ code, pre, kbd, samp, .mono, [class*="font-mono"] {
 
 .cx-card {
   background: var(--cx-card);
-  border: 1px solid var(--cx-border);
+  border: 1px solid var(--cx-hairline);
   border-radius: var(--cx-r-lg);
   padding: var(--cx-s5);
-  transition: var(--cx-tr-base);
+  box-shadow: var(--cx-sh-card);
+  transition: box-shadow var(--cx-tr-base), transform var(--cx-tr-base);
 }
 .cx-card:hover {
-  box-shadow: var(--cx-sh-md);
-  border-color: var(--cx-text-faint);
+  box-shadow: var(--cx-sh-card-hover);
+  transform: translateY(-1px);
 }
+/* Tarjeta interactiva (link/click) · feedback más marcado */
+.cx-card-link { cursor: pointer; }
+.cx-card-link:hover { border-color: var(--cx-primary-light); }
 
 .cx-chip {
   display: inline-flex;
@@ -345,6 +378,105 @@ table.cx-table tr:hover td {
 [data-theme="dark"] .cx-skeleton {
   background: linear-gradient(90deg, #1e293b 0%, #334155 50%, #1e293b 100%);
 }
+
+/* ===================== v2 · Kit premium-claro (opt-in) =====================
+   Componentes unificados para reemplazar los 5 lenguajes visuales sueltos
+   (teal/verde/navy/multicolor). Identidad: violeta + neutrales cálidos,
+   sombras suaves, aireado. Las pantallas migran a estas clases una por una. */
+
+/* --- Page header / hero --- */
+.cx-page-header {
+  background: var(--cx-hero-grad);
+  border-bottom: 1px solid var(--cx-hairline);
+  padding: var(--cx-s5) var(--cx-s6);
+  display: flex;
+  align-items: center;
+  gap: var(--cx-s4);
+}
+.cx-page-header__icon {
+  width: 44px; height: 44px; border-radius: var(--cx-r-md);
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--cx-primary-grad); color: #fff;
+  box-shadow: var(--cx-sh-violet-sm); flex-shrink: 0; font-size: 20px;
+}
+.cx-page-header__title { font-size: 20px; font-weight: 800; letter-spacing: -0.4px; color: var(--cx-text); line-height: 1.15; }
+.cx-page-header__sub   { font-size: 12px; color: var(--cx-text-mute); margin-top: 3px; }
+.cx-page-header__actions { margin-left: auto; display: flex; align-items: center; gap: var(--cx-s2); }
+
+/* --- KPI cards (el componente más repetido · 5 estilos hoy → 1) --- */
+.cx-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--cx-s4);
+}
+.cx-kpi {
+  position: relative;
+  background: var(--cx-card);
+  border: 1px solid var(--cx-hairline);
+  border-radius: var(--cx-r-lg);
+  padding: var(--cx-s4) var(--cx-s5);
+  box-shadow: var(--cx-sh-card);
+  transition: box-shadow var(--cx-tr-base), transform var(--cx-tr-base);
+  overflow: hidden;
+}
+.cx-kpi:hover { box-shadow: var(--cx-sh-card-hover); transform: translateY(-1px); }
+/* acento de color a la izquierda según estado · sutil, no relleno pesado */
+.cx-kpi::before {
+  content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+  background: var(--cx-primary); border-radius: var(--cx-r-lg) 0 0 var(--cx-r-lg);
+}
+.cx-kpi--ok::before     { background: var(--cx-success); }
+.cx-kpi--warn::before   { background: var(--cx-warn); }
+.cx-kpi--danger::before { background: var(--cx-danger); }
+.cx-kpi--muted::before  { background: var(--cx-border); }
+.cx-kpi__label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: var(--cx-text-mute); }
+.cx-kpi__value { font-size: 28px; font-weight: 800; letter-spacing: -0.5px; color: var(--cx-text); margin-top: 6px; line-height: 1; }
+.cx-kpi__value--ok     { color: var(--cx-success); }
+.cx-kpi__value--danger { color: var(--cx-danger); }
+.cx-kpi__hint  { font-size: 11px; color: var(--cx-text-faint); margin-top: 6px; }
+
+/* --- Tabs unificadas (compras/calidad/inventarios c/u tiene la suya) --- */
+.cx-tabs {
+  display: flex; gap: var(--cx-s1); align-items: center;
+  border-bottom: 1px solid var(--cx-hairline);
+  padding: 0 var(--cx-s4); overflow-x: auto;
+}
+.cx-tab {
+  appearance: none; background: none; border: none; cursor: pointer;
+  font-family: var(--cx-font); font-size: 13px; font-weight: 600;
+  color: var(--cx-text-mute); padding: 12px 14px; white-space: nowrap;
+  border-bottom: 2px solid transparent; transition: var(--cx-tr-fast);
+}
+.cx-tab:hover { color: var(--cx-text); }
+.cx-tab[aria-selected="true"], .cx-tab.is-active {
+  color: var(--cx-primary); border-bottom-color: var(--cx-primary);
+}
+
+/* --- Badge con punto de estado --- */
+.cx-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; font-weight: 600; color: var(--cx-text-soft);
+}
+.cx-badge::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--cx-text-faint); }
+.cx-badge--ok::before     { background: var(--cx-success); }
+.cx-badge--warn::before   { background: var(--cx-warn); }
+.cx-badge--danger::before { background: var(--cx-danger); box-shadow: 0 0 0 3px var(--cx-danger-pale); }
+.cx-badge--info::before   { background: var(--cx-info); }
+
+/* --- Section label (el small-caps con tono) --- */
+.cx-section { margin: var(--cx-s6) 0 var(--cx-s3); display: flex; align-items: center; gap: var(--cx-s2); }
+.cx-section__label { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: var(--cx-text-mute); }
+.cx-section__line { flex: 1; height: 1px; background: var(--cx-hairline); }
+
+/* --- Empty state premium --- */
+.cx-empty { text-align: center; padding: var(--cx-s7) var(--cx-s5); color: var(--cx-text-faint); }
+.cx-empty__icon { font-size: 34px; opacity: 0.5; margin-bottom: var(--cx-s3); }
+.cx-empty__title { font-size: 14px; font-weight: 600; color: var(--cx-text-mute); }
+.cx-empty__hint  { font-size: 12px; margin-top: 4px; }
+
+/* --- Skeleton helpers (líneas de carga) --- */
+.cx-skel-line { height: 12px; border-radius: var(--cx-r-sm); margin-bottom: 8px; }
+.cx-skel-line.w-60 { width: 60%; } .cx-skel-line.w-40 { width: 40%; } .cx-skel-line.w-80 { width: 80%; }
 
 /* ===================== Utilidades ===================== */
 

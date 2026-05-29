@@ -8,14 +8,14 @@ HTML = r"""
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Centro de Operaciones — HHA Group</title>
-<link rel="stylesheet" href="/static/cortex.css?v=eos13">
+<link rel="stylesheet" href="/static/cortex.css?v=eos14">
 <script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
 <style>
   * { box-sizing: border-box; }
   body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:#f5f4f0; color:#1c1917; }
-  .header { background:linear-gradient(135deg,#0f3a1f 0%,#15803d 100%); padding:18px 28px; display:flex;align-items:center;justify-content:space-between; color:#fff; }
+  .header { background:linear-gradient(135deg,#4c1d95 0%,#6d28d9 100%); padding:18px 28px; display:flex;align-items:center;justify-content:space-between; color:#fff; }
   .header h1 { margin:0; font-size:1.4em; font-weight:700; color:#fff; }
-  .header a { color:#bbf7d0; font-size:0.85em; text-decoration:none; }
+  .header a { color:#ddd6fe; font-size:0.85em; text-decoration:none; }
   .header a:hover { color:#fff; }
   .live-dot { display:inline-block; width:8px; height:8px; background:#fbbf24; border-radius:50%; margin-right:6px; animation:pulse 2s infinite; vertical-align:middle; }
   @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.4;} }
@@ -23,19 +23,19 @@ HTML = r"""
   .grid { display:grid; gap:14px; }
   .grid-6 { grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); }
   .grid-2 { grid-template-columns:1fr 1fr; }
-  .card { background:#fff; border:1px solid #e7e5e4; border-radius:12px; padding:16px; transition:.15s; }
-  .card:hover { border-color:#a8a29e; transform:translateY(-1px); box-shadow:0 4px 12px rgba(0,0,0,0.05); }
+  .card { background:var(--cx-card); border:1px solid var(--cx-hairline); border-radius:14px; padding:16px; box-shadow:var(--cx-sh-card); transition:box-shadow .2s ease,transform .2s ease; }
+  .card:hover { transform:translateY(-2px); box-shadow:var(--cx-sh-card-hover); }
   .card .label { font-size:0.7em; color:#78716c; text-transform:uppercase; letter-spacing:0.06em; font-weight:700; margin-bottom:8px; }
   .card .val { font-size:1.8em; font-weight:800; color:#1c1917; line-height:1; }
   .card .sub { font-size:0.78em; color:#a8a29e; margin-top:6px; }
   .card .delta { font-size:0.7em; padding:2px 8px; border-radius:8px; font-weight:700; display:inline-block; }
-  .delta-pos { background:#064e3b; color:#34d399; }
-  .delta-neg { background:#7f1d1d; color:#fca5a5; }
-  .delta-warn { background:#78350f; color:#fcd34d; }
-  .delta-neutral { background:#1e3a5f; color:#93c5fd; }
-  .area-title { font-size:0.78em; font-weight:700; color:#15803d; text-transform:uppercase; letter-spacing:0.1em; margin:24px 0 8px; padding-bottom:6px; border-bottom:1px solid #e7e5e4; display:flex; align-items:center; }
+  .delta-pos { background:var(--cx-success-pale); color:var(--cx-success); }
+  .delta-neg { background:var(--cx-danger-pale); color:var(--cx-danger); }
+  .delta-warn { background:var(--cx-warn-pale); color:var(--cx-warn-dark,#b45309); }
+  .delta-neutral { background:var(--cx-info-pale); color:var(--cx-info); }
+  .area-title { font-size:0.78em; font-weight:700; color:var(--cx-text-mute); text-transform:uppercase; letter-spacing:0.1em; margin:24px 0 8px; padding-bottom:6px; border-bottom:1px solid var(--cx-hairline); display:flex; align-items:center; }
   .area-title-icon { margin-right:8px; }
-  .panel { background:#fff; border:1px solid #e7e5e4; border-radius:12px; padding:18px; }
+  .panel { background:var(--cx-card); border:1px solid var(--cx-hairline); border-radius:14px; padding:18px; box-shadow:var(--cx-sh-card); }
   .panel h3 { margin:0 0 12px; font-size:0.95em; color:#1c1917; display:flex; align-items:center; gap:8px; }
   .activity { font-size:0.82em; max-height:280px; overflow-y:auto; }
   .activity-row { padding:8px 0; border-bottom:1px solid #f5f5f4; display:flex; gap:10px; align-items:start; }
@@ -45,11 +45,11 @@ HTML = r"""
   .activity-title { font-weight:600; color:#1c1917; font-size:12px; }
   .activity-detail { font-size:11px; color:#78716c; margin-top:2px; }
   .activity-time { font-size:10px; color:#a8a29e; white-space:nowrap; }
-  .quick-link { display:inline-flex; align-items:center; gap:6px; padding:5px 10px; background:#dcfce7; color:#15803d; border-radius:6px; text-decoration:none; font-size:11px; font-weight:600; margin-left:8px; }
-  .quick-link:hover { background:#bbf7d0; }
+  .quick-link { display:inline-flex; align-items:center; gap:6px; padding:5px 10px; background:var(--cx-primary-soft); color:var(--cx-primary); border-radius:6px; text-decoration:none; font-size:11px; font-weight:600; margin-left:8px; }
+  .quick-link:hover { background:#ddd6fe; }
   .empty { color:#a8a29e; font-style:italic; padding:20px; text-align:center; font-size:13px; }
   .refresh-btn { background:transparent; border:1px solid #d6d3d1; color:#57534e; border-radius:6px; padding:6px 12px; cursor:pointer; font-size:12px; }
-  .refresh-btn:hover { border-color:#15803d; color:#15803d; }
+  .refresh-btn:hover { border-color:var(--cx-primary); color:var(--cx-primary); }
   /* Mobile responsive */
   @media (max-width:768px) {
     .header { padding:12px 14px; flex-wrap:wrap; gap:8px; }
@@ -77,7 +77,7 @@ HTML = r"""
         <span class="live-dot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#dc2626;margin-right:8px;animation:pulse 1.5s infinite;"></span>
         HOY · qué pasa ahora
       </div>
-      <div class="cx-mod-header__sub"><strong>EOS</strong> &middot; tiempo real operativo · refresh cada 60s · ver <a href="/gerencia" style="color:#6d28d9">Gerencia</a> para mes/YTD · <a href="/financiero" style="color:#15803d">Financiero</a> para P&amp;L</div>
+      <div class="cx-mod-header__sub"><strong>EOS</strong> &middot; tiempo real operativo · refresh cada 60s · ver <a href="/gerencia" style="color:#6d28d9">Gerencia</a> para mes/YTD · <a href="/financiero" style="color:#6d28d9">Financiero</a> para P&amp;L</div>
     </div>
     <div class="cx-mod-header__nav">
       <button class="cx-btn cx-btn-ghost cx-btn-sm" onclick="cargar(true)" title="Refresh">&#x21bb; Refresh</button>
@@ -160,7 +160,7 @@ HTML = r"""
         <h3>🎯 Acceso rápido</h3>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px">
           <a href="/gerencia" class="card" style="text-decoration:none;text-align:center;color:#fbbf24"><div style="font-size:24px;margin-bottom:4px">🏛️</div><div style="font-size:12px;font-weight:600">Gerencia</div></a>
-          <a href="/financiero" class="card" style="text-decoration:none;text-align:center;color:#34d399"><div style="font-size:24px;margin-bottom:4px">💵</div><div style="font-size:12px;font-weight:600">Financiero</div></a>
+          <a href="/financiero" class="card" style="text-decoration:none;text-align:center;color:#15803d"><div style="font-size:24px;margin-bottom:4px">💵</div><div style="font-size:12px;font-weight:600">Financiero</div></a>
           <a href="/programacion" class="card" style="text-decoration:none;text-align:center;color:#22d3ee"><div style="font-size:24px;margin-bottom:4px">📅</div><div style="font-size:12px;font-weight:600">Programación</div></a>
           <a href="/marketing" class="card" style="text-decoration:none;text-align:center;color:#a78bfa"><div style="font-size:24px;margin-bottom:4px">📣</div><div style="font-size:12px;font-weight:600">Marketing</div></a>
           <a href="/calidad" class="card" style="text-decoration:none;text-align:center;color:#f87171"><div style="font-size:24px;margin-bottom:4px">🔬</div><div style="font-size:12px;font-weight:600">Calidad</div></a>
@@ -187,7 +187,7 @@ async function cargar(forzado) {
     const neto = c.neto_hoy || 0;
     const eN = document.getElementById('caja-neto-hoy');
     eN.textContent = (neto>=0?'+':'')+fmtM(Math.abs(neto));
-    eN.style.color = neto>=0 ? '#34d399' : '#fca5a5';
+    eN.style.color = neto>=0 ? '#15803d' : '#fca5a5';
 
     // PRODUCCION
     const p = d.produccion || {};

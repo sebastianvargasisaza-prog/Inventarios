@@ -58,3 +58,6 @@ logs/
 # PDFs descargados de MYBATCH — compliance INVIMA, viven aparte (S3/Drive)
 # Metadata JSON sí se commitea; los binarios PDF NO inflan el repo.
 archive/mybatch-pdfs/
+
+# Screenshots de auditoría visual (local, no deploy)
+_uiview/
