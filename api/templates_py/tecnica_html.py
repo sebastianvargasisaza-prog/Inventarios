@@ -7,50 +7,50 @@ TECNICA_HTML = r"""<!DOCTYPE html>
 <script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
-body{font-family:'Segoe UI',system-ui,sans-serif;background:#0f172a;color:#e2e8f0;font-size:14px;min-height:100vh;}
-.topbar{background:#1e293b;border-bottom:1px solid #334155;padding:12px 24px;display:flex;align-items:center;gap:16px;}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--cx-bg-alt);color:var(--cx-text);font-size:14px;min-height:100vh;}
+.topbar{background:var(--cx-card);border-bottom:1px solid #e7e5e4;padding:12px 24px;display:flex;align-items:center;gap:16px;}
 .logo{font-size:0.85em;font-weight:900;letter-spacing:3px;color:#fff;}
 .badge{background:rgba(99,102,241,0.3);color:#a5b4fc;padding:3px 12px;border-radius:20px;font-size:0.7em;font-weight:700;letter-spacing:1px;}
 .topbar a{color:rgba(255,255,255,0.45);text-decoration:none;font-size:0.78em;padding:5px 12px;border:1px solid rgba(255,255,255,0.12);border-radius:6px;margin-left:auto;}
 .topbar a:hover{color:#fff;border-color:rgba(255,255,255,0.35);}
-.tabs{display:flex;gap:0;background:#1e293b;border-bottom:1px solid #334155;padding:0 24px;overflow-x:auto;}
-.tab{padding:11px 18px;font-size:0.75em;font-weight:700;letter-spacing:.5px;color:#64748b;cursor:pointer;border-bottom:2px solid transparent;text-transform:uppercase;white-space:nowrap;}
+.tabs{display:flex;gap:0;background:var(--cx-card);border-bottom:1px solid #e7e5e4;padding:0 24px;overflow-x:auto;}
+.tab{padding:11px 18px;font-size:0.75em;font-weight:700;letter-spacing:.5px;color:var(--cx-text-mute);cursor:pointer;border-bottom:2px solid transparent;text-transform:uppercase;white-space:nowrap;}
 .tab.active{color:#a5b4fc;border-bottom-color:#a5b4fc;}
-.tab:hover{color:#cbd5e1;}
+.tab:hover{color:var(--cx-text-soft);}
 .main{padding:24px;max-width:1300px;margin:0 auto;}
 .kpi-row{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:24px;}
-.kpi{background:#1e293b;border:1px solid #334155;border-radius:10px;padding:16px 20px;flex:1;min-width:130px;}
-.kpi-label{font-size:0.67em;text-transform:uppercase;letter-spacing:1.5px;color:#64748b;margin-bottom:6px;}
-.kpi-val{font-size:2em;font-weight:800;color:#f1f5f9;}
-.kpi-val.warn{color:#fb923c;} .kpi-val.crit{color:#f87171;} .kpi-val.good{color:#4ade80;}
-.kpi-sub{font-size:0.68em;color:#475569;margin-top:3px;}
-.card{background:#1e293b;border:1px solid #334155;border-radius:10px;padding:18px;margin-bottom:16px;}
-.card-title{font-size:0.7em;text-transform:uppercase;letter-spacing:1.5px;color:#64748b;margin-bottom:14px;font-weight:700;}
+.kpi{background:var(--cx-card);border:1px solid #e7e5e4;border-radius:10px;padding:16px 20px;flex:1;min-width:130px;}
+.kpi-label{font-size:0.67em;text-transform:uppercase;letter-spacing:1.5px;color:var(--cx-text-mute);margin-bottom:6px;}
+.kpi-val{font-size:2em;font-weight:800;color:var(--cx-text);}
+.kpi-val.warn{color:#fb923c;} .kpi-val.crit{color:#dc2626;} .kpi-val.good{color:#16a34a;}
+.kpi-sub{font-size:0.68em;color:var(--cx-text-faint);margin-top:3px;}
+.card{background:var(--cx-card);border:1px solid #e7e5e4;border-radius:10px;padding:18px;margin-bottom:16px;}
+.card-title{font-size:0.7em;text-transform:uppercase;letter-spacing:1.5px;color:var(--cx-text-mute);margin-bottom:14px;font-weight:700;}
 .card-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;}
 table{width:100%;border-collapse:collapse;}
-th{font-size:0.67em;text-transform:uppercase;letter-spacing:.8px;color:#475569;padding:8px 10px;text-align:left;border-bottom:1px solid #334155;}
-td{padding:8px 10px;font-size:0.8em;border-bottom:1px solid #1e293b;color:#cbd5e1;vertical-align:middle;}
-tr:hover td{background:#0f172a;}
-.badge-verde{background:#052e16;color:#4ade80;padding:2px 9px;border-radius:20px;font-size:0.7em;font-weight:700;}
-.badge-amarillo{background:#451a03;color:#fcd34d;padding:2px 9px;border-radius:20px;font-size:0.7em;font-weight:700;}
-.badge-rojo{background:#450a0a;color:#fca5a5;padding:2px 9px;border-radius:20px;font-size:0.7em;font-weight:700;}
-.badge-azul{background:#1e1b4b;color:#a5b4fc;padding:2px 9px;border-radius:20px;font-size:0.7em;font-weight:700;}
-.badge-gris{background:#1e293b;color:#94a3b8;padding:2px 9px;border-radius:20px;font-size:0.7em;font-weight:700;border:1px solid #334155;}
+th{font-size:0.67em;text-transform:uppercase;letter-spacing:.8px;color:var(--cx-text-faint);padding:8px 10px;text-align:left;border-bottom:1px solid #e7e5e4;}
+td{padding:8px 10px;font-size:0.8em;border-bottom:1px solid var(--cx-hairline);color:var(--cx-text-soft);vertical-align:middle;}
+tr:hover td{background:var(--cx-bg-alt);}
+.badge-verde{background:var(--cx-success-pale);color:#16a34a;padding:2px 9px;border-radius:20px;font-size:0.7em;font-weight:700;}
+.badge-amarillo{background:var(--cx-warn-pale);color:#b45309;padding:2px 9px;border-radius:20px;font-size:0.7em;font-weight:700;}
+.badge-rojo{background:var(--cx-danger-pale);color:#dc2626;padding:2px 9px;border-radius:20px;font-size:0.7em;font-weight:700;}
+.badge-azul{background:var(--cx-primary-soft);color:#a5b4fc;padding:2px 9px;border-radius:20px;font-size:0.7em;font-weight:700;}
+.badge-gris{background:var(--cx-card);color:var(--cx-text-mute);padding:2px 9px;border-radius:20px;font-size:0.7em;font-weight:700;border:1px solid #e7e5e4;}
 .badge-morado{background:#2e1065;color:#d8b4fe;padding:2px 9px;border-radius:20px;font-size:0.7em;font-weight:700;}
 .btn{padding:7px 16px;border-radius:7px;border:none;font-size:0.78em;font-weight:700;cursor:pointer;letter-spacing:.3px;}
 .btn-primary{background:#4f46e5;color:#fff;} .btn-primary:hover{background:#4338ca;}
-.btn-danger{background:#7f1d1d;color:#fca5a5;} .btn-danger:hover{background:#991b1b;}
+.btn-danger{background:var(--cx-danger-pale);color:#dc2626;} .btn-danger:hover{background:var(--cx-danger-pale);}
 .btn-sm{padding:4px 10px;font-size:0.7em;}
 .btn-link{background:none;border:none;color:#a5b4fc;cursor:pointer;font-size:0.75em;text-decoration:underline;padding:0;}
 .form-row{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;align-items:flex-end;}
 .form-group{display:flex;flex-direction:column;gap:4px;flex:1;min-width:150px;}
-label{font-size:0.68em;text-transform:uppercase;letter-spacing:.8px;color:#64748b;font-weight:700;}
-input,select,textarea{background:#0f172a;border:1px solid #334155;color:#e2e8f0;padding:7px 10px;border-radius:7px;font-size:0.82em;width:100%;}
+label{font-size:0.68em;text-transform:uppercase;letter-spacing:.8px;color:var(--cx-text-mute);font-weight:700;}
+input,select,textarea{background:var(--cx-bg-alt);border:1px solid #e7e5e4;color:var(--cx-text);padding:7px 10px;border-radius:7px;font-size:0.82em;width:100%;}
 input:focus,select:focus,textarea:focus{outline:none;border-color:#a5b4fc;}
 textarea{resize:vertical;min-height:60px;}
 .pane{display:none;} .pane.active{display:block;}
-.empty{color:#475569;text-align:center;padding:32px;font-size:0.85em;}
-.sep{height:1px;background:#334155;margin:16px 0;}
+.empty{color:var(--cx-text-faint);text-align:center;padding:32px;font-size:0.85em;}
+.sep{height:1px;background:#e7e5e4;margin:16px 0;}
 .row-alert{background:rgba(251,146,60,0.08) !important;}
 .row-crit{background:rgba(248,113,113,0.1) !important;}
 </style>
@@ -285,21 +285,21 @@ function _paginar(data, page, size) {
 function _renderPaginacionHTML(tabla, info) {
   var s = TBL_STATE[tabla];
   if (info.total <= s.size) {
-    return '<div style="font-size:11px;color:#64748b;padding:8px 0;">Mostrando ' +
+    return '<div style="font-size:11px;color:var(--cx-text-mute);padding:8px 0;">Mostrando ' +
            info.total + ' filas</div>';
   }
   var html = '<div style="display:flex;align-items:center;gap:8px;padding:8px 0;font-size:12px;">';
-  html += '<span style="color:#64748b;">Página ' + info.page + ' / ' + info.totalPages +
+  html += '<span style="color:var(--cx-text-mute);">Página ' + info.page + ' / ' + info.totalPages +
           ' · ' + info.total + ' filas</span>';
   html += '<span style="flex:1"></span>';
-  html += '<button class="btn btn-sm" style="background:#334155;color:#cbd5e1;" ' +
+  html += '<button class="btn btn-sm" style="background:#e7e5e4;color:var(--cx-text-soft);" ' +
           'onclick="cambiarPagina(\'' + tabla + '\',-1)"' +
           (info.page <= 1 ? ' disabled' : '') + '>&larr;</button>';
-  html += '<button class="btn btn-sm" style="background:#334155;color:#cbd5e1;" ' +
+  html += '<button class="btn btn-sm" style="background:#e7e5e4;color:var(--cx-text-soft);" ' +
           'onclick="cambiarPagina(\'' + tabla + '\',1)"' +
           (info.page >= info.totalPages ? ' disabled' : '') + '>&rarr;</button>';
   html += '<select onchange="cambiarTamano(\'' + tabla + '\', this.value)" ' +
-          'style="background:#0f172a;border:1px solid #334155;color:#cbd5e1;padding:4px 6px;border-radius:5px;font-size:12px;">';
+          'style="background:var(--cx-bg-alt);border:1px solid #e7e5e4;color:var(--cx-text-soft);padding:4px 6px;border-radius:5px;font-size:12px;">';
   ['25','50','100','999'].forEach(function(o){
     var label = o === '999' ? 'Todas' : o;
     html += '<option value="' + o + '"' + (String(s.size)===o?' selected':'') + '>' + label + '</option>';
@@ -409,32 +409,32 @@ function verHistorialFormula(fid, codigo) {
       modal = document.createElement('div');
       modal.id = 'modal-historial';
       modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:9999;';
-      modal.innerHTML = '<div style="background:#1e293b;border:1px solid #334155;border-radius:12px;padding:24px;width:780px;max-width:95vw;max-height:90vh;overflow-y:auto;color:#e2e8f0;"><div id="modal-historial-body"></div></div>';
+      modal.innerHTML = '<div style="background:var(--cx-card);border:1px solid #e7e5e4;border-radius:12px;padding:24px;width:780px;max-width:95vw;max-height:90vh;overflow-y:auto;color:var(--cx-text);"><div id="modal-historial-body"></div></div>';
       document.body.appendChild(modal);
       modal.addEventListener('click', function(e){ if(e.target===modal) modal.remove(); });
     }
     var body = document.getElementById('modal-historial-body');
     if (!versiones || !versiones.length) {
       body.innerHTML = '<h2 style="margin-top:0">&#128214; Historial — ' + codigo + '</h2>' +
-        '<div style="color:#64748b;font-style:italic;padding:24px;text-align:center;">Sin cambios registrados todavia. El primer snapshot se crea al editar la formula.</div>' +
+        '<div style="color:var(--cx-text-mute);font-style:italic;padding:24px;text-align:center;">Sin cambios registrados todavia. El primer snapshot se crea al editar la formula.</div>' +
         '<div style="text-align:right;margin-top:16px"><button class="btn btn-secondary" onclick="document.getElementById(\'modal-historial\').remove()">Cerrar</button></div>';
       return;
     }
     var rows = versiones.map(function(v) {
-      return '<tr style="border-bottom:1px solid #334155;">' +
-        '<td style="padding:10px;font-weight:700;color:#fbbf24;">v' + v.version_num + '</td>' +
+      return '<tr style="border-bottom:1px solid #e7e5e4;">' +
+        '<td style="padding:10px;font-weight:700;color:#b45309;">v' + v.version_num + '</td>' +
         '<td style="padding:10px;font-size:12px;">' + (v.fecha_creacion||'-').substring(0,16) + '</td>' +
         '<td style="padding:10px;font-size:12px;color:#a5f3fc;">' + (v.creado_por||'-') + '</td>' +
-        '<td style="padding:10px;font-size:12px;">' + (v.motivo_cambio||'<em style="color:#64748b">sin motivo</em>') + '</td>' +
+        '<td style="padding:10px;font-size:12px;">' + (v.motivo_cambio||'<em style="color:var(--cx-text-mute)">sin motivo</em>') + '</td>' +
         '<td style="padding:10px;text-align:right;white-space:nowrap;">' +
           '<button class="btn btn-secondary btn-sm" onclick="verSnapshot(' + fid + ',' + v.id + ')" title="Ver detalle">&#128065; Ver</button> ' +
-          '<button class="btn btn-warning btn-sm" style="background:#a16207;color:#fff;" onclick="restaurarFormula(' + fid + ',' + v.id + ',' + v.version_num + ')" title="Restaurar a esta version">&#8617; Restaurar</button>' +
+          '<button class="btn btn-warning btn-sm" style="background:var(--cx-warn-pale);color:#fff;" onclick="restaurarFormula(' + fid + ',' + v.id + ',' + v.version_num + ')" title="Restaurar a esta version">&#8617; Restaurar</button>' +
         '</td>' +
       '</tr>';
     }).join('');
     body.innerHTML = '<h2 style="margin-top:0">&#128214; Historial — ' + codigo + '</h2>' +
-      '<div style="font-size:12px;color:#64748b;margin-bottom:14px;">Snapshots tomados automaticamente antes de cada cambio. Click "Restaurar" para revertir (admins only). El restore tambien se snapshot, asi puedes deshacer el deshacer.</div>' +
-      '<table style="width:100%;border-collapse:collapse;font-size:13px;"><thead><tr style="background:#0f172a;color:#94a3b8;text-transform:uppercase;font-size:11px;">' +
+      '<div style="font-size:12px;color:var(--cx-text-mute);margin-bottom:14px;">Snapshots tomados automaticamente antes de cada cambio. Click "Restaurar" para revertir (admins only). El restore tambien se snapshot, asi puedes deshacer el deshacer.</div>' +
+      '<table style="width:100%;border-collapse:collapse;font-size:13px;"><thead><tr style="background:var(--cx-bg-alt);color:var(--cx-text-mute);text-transform:uppercase;font-size:11px;">' +
       '<th style="padding:10px;text-align:left;">Version</th><th style="padding:10px;text-align:left;">Fecha</th><th style="padding:10px;text-align:left;">Por</th><th style="padding:10px;text-align:left;">Motivo</th><th style="padding:10px;text-align:right;">Acciones</th>' +
       '</tr></thead><tbody>' + rows + '</tbody></table>' +
       '<div style="text-align:right;margin-top:16px"><button class="btn btn-secondary" onclick="document.getElementById(\'modal-historial\').remove()">Cerrar</button></div>';
@@ -446,16 +446,16 @@ function verSnapshot(fid, vid) {
     if (d.error) { alert('Error: ' + d.error); return; }
     var snap = d.snapshot || {};
     var lineas = Object.keys(snap).filter(function(k){return k!=='_componentes';}).map(function(k){
-      return '<tr><td style="padding:6px 12px;color:#94a3b8;font-size:12px;">' + k + '</td>' +
-             '<td style="padding:6px 12px;font-size:12px;color:#e2e8f0;">' + (snap[k]==null?'<em style="color:#64748b">null</em>':String(snap[k]).substring(0,200)) + '</td></tr>';
+      return '<tr><td style="padding:6px 12px;color:var(--cx-text-mute);font-size:12px;">' + k + '</td>' +
+             '<td style="padding:6px 12px;font-size:12px;color:var(--cx-text);">' + (snap[k]==null?'<em style="color:var(--cx-text-mute)">null</em>':String(snap[k]).substring(0,200)) + '</td></tr>';
     }).join('');
     var html = '<h2 style="margin-top:0">&#128203; Snapshot v' + d.version_num + '</h2>' +
-      '<div style="font-size:11px;color:#64748b;margin-bottom:10px;">Tomado el ' + (d.fecha_creacion||'-') + ' por ' + (d.creado_por||'-') + ' — motivo: ' + (d.motivo_cambio||'(no especificado)') + '</div>' +
-      '<table style="width:100%;border-collapse:collapse;background:#0f172a;border-radius:8px;overflow:hidden;">' + lineas + '</table>' +
+      '<div style="font-size:11px;color:var(--cx-text-mute);margin-bottom:10px;">Tomado el ' + (d.fecha_creacion||'-') + ' por ' + (d.creado_por||'-') + ' — motivo: ' + (d.motivo_cambio||'(no especificado)') + '</div>' +
+      '<table style="width:100%;border-collapse:collapse;background:var(--cx-bg-alt);border-radius:8px;overflow:hidden;">' + lineas + '</table>' +
       '<div style="text-align:right;margin-top:16px;"><button class="btn btn-secondary" onclick="this.parentNode.parentNode.parentNode.parentNode.remove()">Cerrar</button></div>';
     var m = document.createElement('div');
     m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;z-index:10000;';
-    m.innerHTML = '<div style="background:#1e293b;border:1px solid #334155;border-radius:12px;padding:22px;width:680px;max-width:95vw;max-height:85vh;overflow-y:auto;color:#e2e8f0;">' + html + '</div>';
+    m.innerHTML = '<div style="background:var(--cx-card);border:1px solid #e7e5e4;border-radius:12px;padding:22px;width:680px;max-width:95vw;max-height:85vh;overflow-y:auto;color:var(--cx-text);">' + html + '</div>';
     m.addEventListener('click', function(e){ if(e.target===m) m.remove(); });
     document.body.appendChild(m);
   });
@@ -559,34 +559,34 @@ function abrirEditor(entidad, id, dataActual) {
   var modal = document.createElement('div');
   modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:9999;';
   var inner = '<h2 style="margin:0 0 14px 0;color:#fff;">&#9998; ' + cfg.titulo + '</h2>';
-  inner += '<div style="font-size:11px;color:#64748b;margin-bottom:14px;">id #' + id + ' · cambios crean entrada en audit_log</div>';
+  inner += '<div style="font-size:11px;color:var(--cx-text-mute);margin-bottom:14px;">id #' + id + ' · cambios crean entrada en audit_log</div>';
   cfg.campos.forEach(function(f){
     var val = (dataActual && dataActual[f.key] != null) ? String(dataActual[f.key]) : '';
-    inner += '<div style="margin-bottom:10px"><label style="display:block;font-size:0.7em;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">' + f.label + '</label>';
+    inner += '<div style="margin-bottom:10px"><label style="display:block;font-size:0.7em;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px;">' + f.label + '</label>';
     if (f.type === 'select') {
-      inner += '<select id="ed-' + f.key + '" style="background:#0f172a;border:1px solid #334155;color:#e2e8f0;padding:7px 10px;border-radius:7px;font-size:0.85em;width:100%;">';
+      inner += '<select id="ed-' + f.key + '" style="background:var(--cx-bg-alt);border:1px solid #e7e5e4;color:var(--cx-text);padding:7px 10px;border-radius:7px;font-size:0.85em;width:100%;">';
       f.options.forEach(function(o){ inner += '<option value="' + o + '"' + (o===val?' selected':'') + '>' + o + '</option>'; });
       inner += '</select>';
     } else if (f.type === 'select-formula') {
-      inner += '<select id="ed-' + f.key + '" style="background:#0f172a;border:1px solid #334155;color:#e2e8f0;padding:7px 10px;border-radius:7px;font-size:0.85em;width:100%;">';
+      inner += '<select id="ed-' + f.key + '" style="background:var(--cx-bg-alt);border:1px solid #e7e5e4;color:var(--cx-text);padding:7px 10px;border-radius:7px;font-size:0.85em;width:100%;">';
       inner += '<option value="">— ninguna —</option>';
       FORMULAS_CACHE.forEach(function(fm){
         inner += '<option value="' + fm.id + '"' + (String(fm.id)===val?' selected':'') + '>' + fm.codigo + ' · ' + (fm.nombre||'').slice(0,40) + '</option>';
       });
       inner += '</select>';
     } else if (f.type === 'textarea') {
-      inner += '<textarea id="ed-' + f.key + '" rows="3" style="background:#0f172a;border:1px solid #334155;color:#e2e8f0;padding:7px 10px;border-radius:7px;font-size:0.85em;width:100%;resize:vertical;">' + val + '</textarea>';
+      inner += '<textarea id="ed-' + f.key + '" rows="3" style="background:var(--cx-bg-alt);border:1px solid #e7e5e4;color:var(--cx-text);padding:7px 10px;border-radius:7px;font-size:0.85em;width:100%;resize:vertical;">' + val + '</textarea>';
     } else {
-      inner += '<input id="ed-' + f.key + '" type="' + (f.type||'text') + '" value="' + val.replace(/"/g,'&quot;') + '" style="background:#0f172a;border:1px solid #334155;color:#e2e8f0;padding:7px 10px;border-radius:7px;font-size:0.85em;width:100%;">';
+      inner += '<input id="ed-' + f.key + '" type="' + (f.type||'text') + '" value="' + val.replace(/"/g,'&quot;') + '" style="background:var(--cx-bg-alt);border:1px solid #e7e5e4;color:var(--cx-text);padding:7px 10px;border-radius:7px;font-size:0.85em;width:100%;">';
     }
-    if (f.hint) inner += '<div style="font-size:10px;color:#64748b;margin-top:3px;">' + f.hint + '</div>';
+    if (f.hint) inner += '<div style="font-size:10px;color:var(--cx-text-mute);margin-top:3px;">' + f.hint + '</div>';
     inner += '</div>';
   });
   inner += '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;">';
   inner += '<button class="btn btn-secondary" id="ed-cancel">Cancelar</button>';
   inner += '<button class="btn btn-primary" id="ed-save">Guardar</button>';
   inner += '</div>';
-  modal.innerHTML = '<div style="background:#1e293b;border:1px solid #334155;border-radius:12px;padding:24px;width:560px;max-width:95vw;max-height:90vh;overflow-y:auto;color:#e2e8f0;">' + inner + '</div>';
+  modal.innerHTML = '<div style="background:var(--cx-card);border:1px solid #e7e5e4;border-radius:12px;padding:24px;width:560px;max-width:95vw;max-height:90vh;overflow-y:auto;color:var(--cx-text);">' + inner + '</div>';
   document.body.appendChild(modal);
   modal.addEventListener('click', function(e){ if(e.target===modal) modal.remove(); });
   document.getElementById('ed-cancel').onclick = function(){ modal.remove(); };
@@ -674,7 +674,7 @@ function loadFichas() {
       FORMULAS_CACHE.forEach(function(f){ fmap[f.id] = f.codigo; });
       tb.innerHTML = info.items.map(function(r) {
         var link = r.url_documento ? '<a href="' + r.url_documento + '" target="_blank" style="color:#a5b4fc">Ver doc</a>' : '-';
-        var fcod = r.formula_id ? (fmap[r.formula_id] || ('id ' + r.formula_id)) : '<span style="color:#475569">—</span>';
+        var fcod = r.formula_id ? (fmap[r.formula_id] || ('id ' + r.formula_id)) : '<span style="color:var(--cx-text-faint)">—</span>';
         return '<tr><td>' + r.codigo + '</td><td>' + r.nombre + '</td><td><span class="badge-azul">' + fcod + '</span></td><td>' + r.version + '</td><td>' + estadoBadge(r.estado) + '</td><td>' + (r.fecha_actualizacion||'-') + '</td><td>' + link + '</td><td><button class="btn btn-secondary btn-sm" onclick="editarFicha(' + r.id + ')" title="Editar">&#9998;</button> <button class="btn btn-danger btn-sm" onclick="eliminarFicha(' + r.id + ')">Eliminar</button></td></tr>';
       }).join('');
       document.getElementById('pg-fichas').innerHTML = _renderPaginacionHTML('fichas', info);

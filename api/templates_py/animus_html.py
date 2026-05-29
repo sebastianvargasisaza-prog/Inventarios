@@ -23,82 +23,82 @@ ANIMUS_HTML = r"""<!DOCTYPE html>
 <script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
-body{font-family:'Segoe UI',sans-serif;background:#0f172a;color:#e2e8f0;min-height:100vh;font-size:14px;}
+body{font-family:'Segoe UI',sans-serif;background:var(--cx-bg-alt);color:var(--cx-text);min-height:100vh;font-size:14px;}
 ::-webkit-scrollbar{width:6px;height:6px;}
-::-webkit-scrollbar-track{background:#1e293b;}
+::-webkit-scrollbar-track{background:var(--cx-card);}
 ::-webkit-scrollbar-thumb{background:#475569;border-radius:3px;}
 
-.hdr{background:#1e293b;border-bottom:1px solid #334155;padding:14px 20px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;}
+.hdr{background:var(--cx-card);border-bottom:1px solid #e7e5e4;padding:14px 20px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;}
 .hdr-brand{display:flex;align-items:center;gap:10px;}
 .hdr-brand h1{font-size:16px;font-weight:800;color:#fff;}
-.hdr-brand span{font-size:11px;color:#94a3b8;background:#0f172a;padding:2px 8px;border-radius:20px;border:1px solid #334155;}
-.hdr-user{font-size:12px;color:#64748b;}
-.hdr-user strong{color:#e2e8f0;}
+.hdr-brand span{font-size:11px;color:var(--cx-text-mute);background:var(--cx-bg-alt);padding:2px 8px;border-radius:20px;border:1px solid #e7e5e4;}
+.hdr-user{font-size:12px;color:var(--cx-text-mute);}
+.hdr-user strong{color:var(--cx-text);}
 .back-link{font-size:12px;color:#667eea;text-decoration:none;display:flex;align-items:center;gap:4px;}
 .back-link:hover{color:#818cf8;}
 
-.tabs-bar{background:#1e293b;border-bottom:1px solid #334155;display:flex;overflow-x:auto;padding:0 20px;}
-.tab-btn{padding:12px 20px;font-size:13px;font-weight:600;color:#64748b;border:none;background:none;cursor:pointer;white-space:nowrap;border-bottom:3px solid transparent;transition:.15s;}
-.tab-btn:hover{color:#e2e8f0;}
-.tab-btn.active{color:#34d399;border-bottom-color:#34d399;}
+.tabs-bar{background:var(--cx-card);border-bottom:1px solid #e7e5e4;display:flex;overflow-x:auto;padding:0 20px;}
+.tab-btn{padding:12px 20px;font-size:13px;font-weight:600;color:var(--cx-text-mute);border:none;background:none;cursor:pointer;white-space:nowrap;border-bottom:3px solid transparent;transition:.15s;}
+.tab-btn:hover{color:var(--cx-text);}
+.tab-btn.active{color:#16a34a;border-bottom-color:#16a34a;}
 .tab-panel{display:none;padding:24px 20px;}
 .tab-panel.active{display:block;}
 
-.page-title{font-size:18px;font-weight:700;color:#f1f5f9;margin-bottom:4px;}
-.page-sub{font-size:13px;color:#94a3b8;margin-bottom:18px;}
+.page-title{font-size:18px;font-weight:700;color:var(--cx-text);margin-bottom:4px;}
+.page-sub{font-size:13px;color:var(--cx-text-mute);margin-bottom:18px;}
 
 .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:20px;}
-.kpi-card{background:#1e293b;border:1px solid #334155;border-radius:12px;padding:16px;}
-.kpi-card .label{font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.08em;font-weight:700;}
+.kpi-card{background:var(--cx-card);border:1px solid #e7e5e4;border-radius:12px;padding:16px;}
+.kpi-card .label{font-size:10px;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.08em;font-weight:700;}
 .kpi-card .val{font-size:24px;font-weight:800;margin-top:6px;}
-.kpi-card .sub{font-size:11px;color:#94a3b8;margin-top:4px;}
-.kpi-green .val{color:#34d399;}
+.kpi-card .sub{font-size:11px;color:var(--cx-text-mute);margin-top:4px;}
+.kpi-green .val{color:#16a34a;}
 .kpi-red .val{color:#ef4444;}
-.kpi-blue .val{color:#60a5fa;}
-.kpi-yellow .val{color:#fbbf24;}
-.kpi-purple .val{color:#a78bfa;}
+.kpi-blue .val{color:#2563eb;}
+.kpi-yellow .val{color:#b45309;}
+.kpi-purple .val{color:#6d28d9;}
 
-.card{background:#1e293b;border:1px solid #334155;border-radius:12px;padding:18px;margin-bottom:16px;}
+.card{background:var(--cx-card);border:1px solid #e7e5e4;border-radius:12px;padding:18px;margin-bottom:16px;}
 .card-hdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;}
-.card-title{font-size:14px;font-weight:700;color:#e2e8f0;}
+.card-title{font-size:14px;font-weight:700;color:var(--cx-text);}
 
 .btn{padding:8px 14px;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;transition:.15s;}
 .btn-primary{background:linear-gradient(135deg,#10b981,#059669);color:#fff;}
 .btn-primary:hover{filter:brightness(1.1);}
-.btn-outline{background:transparent;border:1px solid #475569;color:#cbd5e1;}
-.btn-outline:hover{background:#334155;}
-.btn-danger{background:#7f1d1d;color:#fef2f2;border:1px solid #991b1b;}
+.btn-outline{background:transparent;border:1px solid #475569;color:var(--cx-text-soft);}
+.btn-outline:hover{background:#e7e5e4;}
+.btn-danger{background:var(--cx-danger-pale);color:#fef2f2;border:1px solid #991b1b;}
 .btn-sm{padding:5px 10px;font-size:11px;}
 
-.input,.select,.textarea{background:#0f172a;border:1px solid #334155;color:#e2e8f0;padding:8px 12px;border-radius:8px;font-size:13px;font-family:inherit;width:100%;}
+.input,.select,.textarea{background:var(--cx-bg-alt);border:1px solid #e7e5e4;color:var(--cx-text);padding:8px 12px;border-radius:8px;font-size:13px;font-family:inherit;width:100%;}
 .input:focus,.select:focus,.textarea:focus{outline:none;border-color:#10b981;}
 .textarea{min-height:60px;resize:vertical;}
-.label{display:block;font-size:11px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;}
+.label{display:block;font-size:11px;color:var(--cx-text-mute);font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;}
 
 .form-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;}
 .form-row.full{grid-template-columns:1fr;}
 
 table{width:100%;border-collapse:collapse;font-size:13px;}
-table thead th{text-align:left;padding:8px 10px;color:#94a3b8;font-size:11px;text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid #334155;background:#0f172a;}
-table tbody td{padding:8px 10px;color:#e2e8f0;border-bottom:1px solid #1e293b;}
-table tbody tr:hover{background:#0f172a55;}
+table thead th{text-align:left;padding:8px 10px;color:var(--cx-text-mute);font-size:11px;text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid #e7e5e4;background:var(--cx-bg-alt);}
+table tbody td{padding:8px 10px;color:var(--cx-text);border-bottom:1px solid var(--cx-hairline);}
+table tbody tr:hover{background:var(--cx-bg-alt)55;}
 
 .badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;letter-spacing:.05em;}
-.badge-green{background:#064e3b;color:#34d399;}
-.badge-red{background:#7f1d1d;color:#fca5a5;}
-.badge-yellow{background:#78350f;color:#fcd34d;}
-.badge-blue{background:#1e3a8a;color:#93c5fd;}
+.badge-green{background:var(--cx-success-pale);color:#16a34a;}
+.badge-red{background:var(--cx-danger-pale);color:#dc2626;}
+.badge-yellow{background:var(--cx-warn-pale);color:#b45309;}
+.badge-blue{background:var(--cx-info-pale);color:#2563eb;}
 .badge-gray{background:#1f2937;color:#9ca3af;}
 
-.diff-pos{color:#34d399;font-weight:700;}
+.diff-pos{color:#16a34a;font-weight:700;}
 .diff-neg{color:#ef4444;font-weight:700;}
-.diff-zero{color:#64748b;}
+.diff-zero{color:var(--cx-text-mute);}
 
-#js-error-banner{display:none;position:fixed;top:0;left:0;right:0;z-index:10000;background:#7f1d1d;color:#fef2f2;padding:10px 16px;font-size:12px;font-family:monospace;border-bottom:2px solid #ef4444;}
+#js-error-banner{display:none;position:fixed;top:0;left:0;right:0;z-index:10000;background:var(--cx-danger-pale);color:#fef2f2;padding:10px 16px;font-size:12px;font-family:monospace;border-bottom:2px solid #ef4444;}
 #toast-container{position:fixed;bottom:24px;right:24px;z-index:9999;display:flex;flex-direction:column;gap:8px;pointer-events:none;}
-.toast{background:#1e293b;border:1px solid #475569;color:#f1f5f9;padding:12px 18px;border-radius:8px;font-size:13px;font-weight:600;min-width:220px;max-width:360px;box-shadow:0 4px 20px rgba(0,0,0,.4);pointer-events:auto;}
-.toast.success{background:#064e3b;border-color:#10b981;}
-.toast.error{background:#7f1d1d;border-color:#ef4444;}
+.toast{background:var(--cx-card);border:1px solid #475569;color:var(--cx-text);padding:12px 18px;border-radius:8px;font-size:13px;font-weight:600;min-width:220px;max-width:360px;box-shadow:0 4px 20px rgba(0,0,0,.4);pointer-events:auto;}
+.toast.success{background:var(--cx-success-pale);border-color:#10b981;}
+.toast.error{background:var(--cx-danger-pale);border-color:#ef4444;}
 </style>
 </head>
 
@@ -205,7 +205,7 @@ window.addEventListener('error', function(ev){
           <th>Por</th>
           <th></th>
         </tr></thead>
-        <tbody id="caja-body"><tr><td colspan="8" style="color:#64748b;text-align:center;padding:24px;">Cargando...</td></tr></tbody>
+        <tbody id="caja-body"><tr><td colspan="8" style="color:var(--cx-text-mute);text-align:center;padding:24px;">Cargando...</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -235,7 +235,7 @@ window.addEventListener('error', function(ev){
           <th>Ultimo conteo</th>
           <th></th>
         </tr></thead>
-        <tbody id="inv-skus-body"><tr><td colspan="6" style="color:#64748b;text-align:center;padding:24px;">Cargando...</td></tr></tbody>
+        <tbody id="inv-skus-body"><tr><td colspan="6" style="color:var(--cx-text-mute);text-align:center;padding:24px;">Cargando...</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -254,7 +254,7 @@ window.addEventListener('error', function(ev){
           <th>Explicacion</th>
           <th>Por</th>
         </tr></thead>
-        <tbody id="inv-conteos-body"><tr><td colspan="8" style="color:#64748b;text-align:center;padding:24px;">Cargando...</td></tr></tbody>
+        <tbody id="inv-conteos-body"><tr><td colspan="8" style="color:var(--cx-text-mute);text-align:center;padding:24px;">Cargando...</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -268,7 +268,7 @@ window.addEventListener('error', function(ev){
       <div class="page-sub">Esperado = baseline + entradas - ventas Shopify - salidas. Si no cuadra, se ve el desglose y donde esta el error.</div>
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap">
-      <button class="btn btn-success" onclick="sembrarShopify()" title="Crea baseline=0 para todos los SKUs vendidos en Shopify · solo editas cantidad despues" style="background:#10b981;color:#fff;">&#127793; Sembrar SKUs Shopify</button>
+      <button class="btn btn-success" onclick="sembrarShopify()" title="Crea baseline=0 para todos los SKUs vendidos en Shopify · solo editas cantidad despues" style="background:var(--cx-success-pale);color:#fff;">&#127793; Sembrar SKUs Shopify</button>
       <button class="btn btn-outline" onclick="abrirBaseline()">+ Baseline manual</button>
       <button class="btn btn-primary" onclick="abrirEntrada()">+ Entrada</button>
       <button class="btn btn-outline" onclick="abrirSalida()">+ Salida</button>
@@ -292,10 +292,10 @@ window.addEventListener('error', function(ev){
   <div class="card" id="invfis-conteos-card" style="border-left:4px solid #6366f1;">
     <div class="card-hdr">
       <span class="card-title">&#9888; Conteos pendientes hoy</span>
-      <span id="invfis-conteos-count" style="font-size:11px;color:#94a3b8;"></span>
+      <span id="invfis-conteos-count" style="font-size:11px;color:var(--cx-text-mute);"></span>
     </div>
     <div id="invfis-pendientes" style="padding:8px 0;">
-      <div style="color:#64748b;text-align:center;padding:14px;font-size:13px;">Sin conteos pendientes</div>
+      <div style="color:var(--cx-text-mute);text-align:center;padding:14px;font-size:13px;">Sin conteos pendientes</div>
     </div>
   </div>
 
@@ -317,7 +317,7 @@ window.addEventListener('error', function(ev){
           <th style="text-align:right;">Esperado</th>
           <th></th>
         </tr></thead>
-        <tbody id="invfis-tbody"><tr><td colspan="9" style="color:#64748b;text-align:center;padding:24px;">Cargando...</td></tr></tbody>
+        <tbody id="invfis-tbody"><tr><td colspan="9" style="color:var(--cx-text-mute);text-align:center;padding:24px;">Cargando...</td></tr></tbody>
       </table>
     </div>
     <div id="pg-invfis"></div>
@@ -336,7 +336,7 @@ window.addEventListener('error', function(ev){
           <th>Motivo</th>
           <th>Por</th>
         </tr></thead>
-        <tbody id="invfis-mov-body"><tr><td colspan="7" style="color:#64748b;text-align:center;padding:24px;">Cargando...</td></tr></tbody>
+        <tbody id="invfis-mov-body"><tr><td colspan="7" style="color:var(--cx-text-mute);text-align:center;padding:24px;">Cargando...</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -344,12 +344,12 @@ window.addEventListener('error', function(ev){
 
 <!-- MODAL: Baseline -->
 <div id="modal-baseline" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center;">
-  <div style="background:#1e293b;border:1px solid #475569;border-radius:14px;padding:22px;width:480px;max-width:92vw;">
+  <div style="background:var(--cx-card);border:1px solid #475569;border-radius:14px;padding:22px;width:480px;max-width:92vw;">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
       <h3 style="font-size:16px;color:#fff;">&#128202; Registrar baseline</h3>
-      <button onclick="cerrarModal('modal-baseline')" style="background:none;border:none;color:#94a3b8;font-size:22px;cursor:pointer;">&times;</button>
+      <button onclick="cerrarModal('modal-baseline')" style="background:none;border:none;color:var(--cx-text-mute);font-size:22px;cursor:pointer;">&times;</button>
     </div>
-    <div style="background:#0f172a;border-left:3px solid #6366f1;padding:10px 14px;border-radius:6px;margin-bottom:14px;font-size:12px;color:#cbd5e1;">
+    <div style="background:var(--cx-bg-alt);border-left:3px solid #6366f1;padding:10px 14px;border-radius:6px;margin-bottom:14px;font-size:12px;color:var(--cx-text-soft);">
       El baseline es la cantidad fisica que tienes HOY de un SKU. A partir de aqui el sistema rastrea entradas y salidas. Si ya hay baseline para este SKU, se actualiza.
     </div>
     <div class="form-row">
@@ -368,10 +368,10 @@ window.addEventListener('error', function(ev){
 
 <!-- MODAL: Entrada -->
 <div id="modal-entrada" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center;">
-  <div style="background:#1e293b;border:1px solid #475569;border-radius:14px;padding:22px;width:480px;max-width:92vw;">
+  <div style="background:var(--cx-card);border:1px solid #475569;border-radius:14px;padding:22px;width:480px;max-width:92vw;">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
       <h3 style="font-size:16px;color:#fff;">+ Entrada de inventario</h3>
-      <button onclick="cerrarModal('modal-entrada')" style="background:none;border:none;color:#94a3b8;font-size:22px;cursor:pointer;">&times;</button>
+      <button onclick="cerrarModal('modal-entrada')" style="background:none;border:none;color:var(--cx-text-mute);font-size:22px;cursor:pointer;">&times;</button>
     </div>
     <div class="form-row">
       <div><div class="label">SKU *</div><input id="en-sku" class="input" placeholder="Ej: LBHA-30" style="text-transform:uppercase"></div>
@@ -399,12 +399,12 @@ window.addEventListener('error', function(ev){
 
 <!-- MODAL: Salida -->
 <div id="modal-salida" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center;">
-  <div style="background:#1e293b;border:1px solid #475569;border-radius:14px;padding:22px;width:480px;max-width:92vw;">
+  <div style="background:var(--cx-card);border:1px solid #475569;border-radius:14px;padding:22px;width:480px;max-width:92vw;">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
       <h3 style="font-size:16px;color:#fff;">- Salida de inventario (NO Shopify)</h3>
-      <button onclick="cerrarModal('modal-salida')" style="background:none;border:none;color:#94a3b8;font-size:22px;cursor:pointer;">&times;</button>
+      <button onclick="cerrarModal('modal-salida')" style="background:none;border:none;color:var(--cx-text-mute);font-size:22px;cursor:pointer;">&times;</button>
     </div>
-    <div style="background:#0f172a;border-left:3px solid #f59e0b;padding:10px 14px;border-radius:6px;margin-bottom:14px;font-size:12px;color:#cbd5e1;">
+    <div style="background:var(--cx-bg-alt);border-left:3px solid #f59e0b;padding:10px 14px;border-radius:6px;margin-bottom:14px;font-size:12px;color:var(--cx-text-soft);">
       Las ventas de Shopify se descuentan automaticamente. Esto es para SALIDAS QUE NO SON SHOPIFY: regalos, daños, vencidos, ventas presenciales, devoluciones a planta.
     </div>
     <div class="form-row">
@@ -435,20 +435,20 @@ window.addEventListener('error', function(ev){
 
 <!-- MODAL: Registrar conteo de SKU asignado -->
 <div id="modal-conteo-fisico" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center;">
-  <div style="background:#1e293b;border:1px solid #475569;border-radius:14px;padding:22px;width:560px;max-width:92vw;">
+  <div style="background:var(--cx-card);border:1px solid #475569;border-radius:14px;padding:22px;width:560px;max-width:92vw;">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
       <h3 style="font-size:16px;color:#fff;">&#128202; Registrar conteo fisico</h3>
-      <button onclick="cerrarModal('modal-conteo-fisico')" style="background:none;border:none;color:#94a3b8;font-size:22px;cursor:pointer;">&times;</button>
+      <button onclick="cerrarModal('modal-conteo-fisico')" style="background:none;border:none;color:var(--cx-text-mute);font-size:22px;cursor:pointer;">&times;</button>
     </div>
     <input type="hidden" id="cf-asig-id">
-    <div id="cf-sku-info" style="background:#0f172a;border-left:3px solid #22d3ee;padding:14px;border-radius:6px;margin-bottom:14px;font-size:13px;color:#cbd5e1;">
+    <div id="cf-sku-info" style="background:var(--cx-bg-alt);border-left:3px solid #22d3ee;padding:14px;border-radius:6px;margin-bottom:14px;font-size:13px;color:var(--cx-text-soft);">
       <div id="cf-sku-titulo" style="font-size:16px;font-weight:700;color:#fff;margin-bottom:8px;">SKU</div>
       <div id="cf-desglose"></div>
     </div>
     <div class="form-row full"><div><div class="label">Cantidad fisica contada *</div><input id="cf-cantidad" type="number" min="0" class="input" placeholder="0"></div></div>
     <div id="cf-diff-preview" style="display:none;padding:14px;border-radius:8px;font-size:14px;font-weight:700;margin-bottom:14px;text-align:center;"></div>
     <div class="form-row full" id="cf-motivo-row" style="display:none;"><div><div class="label">Motivo de la diferencia *</div><textarea id="cf-motivo" class="textarea" placeholder="Robo, daño, devolucion no registrada, regalo no anotado, error mapeo Shopify..."></textarea></div></div>
-    <div class="form-row full"><label style="display:flex;align-items:center;gap:8px;color:#cbd5e1;font-size:13px;"><input type="checkbox" id="cf-aplicar"> Aplicar ajuste para que el sistema cuadre con tu conteo</label></div>
+    <div class="form-row full"><label style="display:flex;align-items:center;gap:8px;color:var(--cx-text-soft);font-size:13px;"><input type="checkbox" id="cf-aplicar"> Aplicar ajuste para que el sistema cuadre con tu conteo</label></div>
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">
       <button class="btn btn-outline" onclick="cerrarModal('modal-conteo-fisico')">Cancelar</button>
       <button class="btn btn-primary" onclick="guardarConteoFisico()">Guardar conteo</button>
@@ -458,10 +458,10 @@ window.addEventListener('error', function(ev){
 
 <!-- MODAL: Registro caja menor -->
 <div id="modal-caja" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center;">
-  <div style="background:#1e293b;border:1px solid #475569;border-radius:14px;padding:22px;width:480px;max-width:92vw;">
+  <div style="background:var(--cx-card);border:1px solid #475569;border-radius:14px;padding:22px;width:480px;max-width:92vw;">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
       <h3 id="modal-caja-title" style="font-size:16px;color:#fff;">Registrar movimiento</h3>
-      <button onclick="cerrarModal('modal-caja')" style="background:none;border:none;color:#94a3b8;font-size:22px;cursor:pointer;">&times;</button>
+      <button onclick="cerrarModal('modal-caja')" style="background:none;border:none;color:var(--cx-text-mute);font-size:22px;cursor:pointer;">&times;</button>
     </div>
     <input type="hidden" id="caja-tipo">
     <div class="form-row">
@@ -485,10 +485,10 @@ window.addEventListener('error', function(ev){
 
 <!-- MODAL: Conteo ciclico -->
 <div id="modal-conteo" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center;">
-  <div style="background:#1e293b;border:1px solid #475569;border-radius:14px;padding:22px;width:520px;max-width:92vw;">
+  <div style="background:var(--cx-card);border:1px solid #475569;border-radius:14px;padding:22px;width:520px;max-width:92vw;">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
       <h3 style="font-size:16px;color:#fff;">&#128230; Nuevo conteo ciclico</h3>
-      <button onclick="cerrarModal('modal-conteo')" style="background:none;border:none;color:#94a3b8;font-size:22px;cursor:pointer;">&times;</button>
+      <button onclick="cerrarModal('modal-conteo')" style="background:none;border:none;color:var(--cx-text-mute);font-size:22px;cursor:pointer;">&times;</button>
     </div>
     <div class="form-row">
       <div><div class="label">SKU *</div><input id="conteo-sku" class="input" placeholder="Ej: LBHA-30" style="text-transform:uppercase;"></div>
@@ -581,7 +581,7 @@ function renderCajaKPIs(k){
 function renderCajaMovs(rows){
   const body = document.getElementById('caja-body');
   if (!rows.length) {
-    body.innerHTML = '<tr><td colspan="8" style="color:#64748b;text-align:center;padding:24px;">Sin movimientos registrados.</td></tr>';
+    body.innerHTML = '<tr><td colspan="8" style="color:var(--cx-text-mute);text-align:center;padding:24px;">Sin movimientos registrados.</td></tr>';
     return;
   }
   body.innerHTML = rows.map(function(m){
@@ -597,8 +597,8 @@ function renderCajaMovs(rows){
       '<td>'+esc(m.concepto||'')+'</td>' +
       '<td style="text-align:right;font-weight:700;">'+monto+'</td>' +
       '<td><span class="badge badge-gray">'+esc(m.metodo||'efectivo')+'</span></td>' +
-      '<td style="font-size:11px;color:#94a3b8;">'+esc(m.referencia||'-')+'</td>' +
-      '<td style="font-size:11px;color:#64748b;">'+esc(m.registrado_por||'-')+'</td>' +
+      '<td style="font-size:11px;color:var(--cx-text-mute);">'+esc(m.referencia||'-')+'</td>' +
+      '<td style="font-size:11px;color:var(--cx-text-mute);">'+esc(m.registrado_por||'-')+'</td>' +
       '<td><button class="btn btn-outline btn-sm" onclick="eliminarCaja('+m.id+')" title="Eliminar">x</button></td>' +
     '</tr>';
   }).join('');
@@ -665,24 +665,24 @@ async function loadInvSkus(){
     _SKUS_CACHE = d.skus || [];
     const body = document.getElementById('inv-skus-body');
     if (!_SKUS_CACHE.length) {
-      body.innerHTML = '<tr><td colspan="6" style="color:#64748b;text-align:center;padding:24px;">Sin SKUs vendidos en Shopify aun. Sincroniza Shopify desde marketing primero.</td></tr>';
+      body.innerHTML = '<tr><td colspan="6" style="color:var(--cx-text-mute);text-align:center;padding:24px;">Sin SKUs vendidos en Shopify aun. Sincroniza Shopify desde marketing primero.</td></tr>';
       return;
     }
     body.innerHTML = _SKUS_CACHE.map(function(s){
       const ult = s.ultimo_conteo;
-      let ultStr = '<span style="color:#64748b;">Nunca contado</span>';
+      let ultStr = '<span style="color:var(--cx-text-mute);">Nunca contado</span>';
       if (ult) {
         const diffStr = ult.diferencia === 0 ? '<span class="diff-zero">0</span>'
           : (ult.diferencia > 0 ? '<span class="diff-pos">+'+ult.diferencia+'</span>'
                                 : '<span class="diff-neg">'+ult.diferencia+'</span>');
-        ultStr = '<span style="font-size:11px;color:#94a3b8;">'+fmtFecha(ult.fecha)+': fisico '+ult.cantidad_fisica+' &middot; dif '+diffStr+'</span>';
+        ultStr = '<span style="font-size:11px;color:var(--cx-text-mute);">'+fmtFecha(ult.fecha)+': fisico '+ult.cantidad_fisica+' &middot; dif '+diffStr+'</span>';
       }
       const skuEsc = esc(s.sku).replace(/'/g,'’');
       return '<tr>' +
         '<td style="font-family:monospace;font-weight:700;">'+esc(s.sku)+'</td>' +
         '<td style="text-align:right;">'+s.n_orders+'</td>' +
-        '<td style="text-align:right;font-weight:700;color:#60a5fa;">'+s.uds_vendidas+'</td>' +
-        '<td style="font-size:11px;color:#94a3b8;">'+fmtFecha(s.ultima_venta)+'</td>' +
+        '<td style="text-align:right;font-weight:700;color:#2563eb;">'+s.uds_vendidas+'</td>' +
+        '<td style="font-size:11px;color:var(--cx-text-mute);">'+fmtFecha(s.ultima_venta)+'</td>' +
         '<td>'+ultStr+'</td>' +
         '<td><button class="btn btn-primary btn-sm" data-sku="'+esc(s.sku)+'" data-uds="'+s.uds_vendidas+'" onclick="abrirConteoSkuFromBtn(this)">Contar</button></td>' +
       '</tr>';
@@ -700,7 +700,7 @@ async function loadInvConteos(){
     renderInvKpis(d.kpis||{});
     const body = document.getElementById('inv-conteos-body');
     if (!d.conteos.length) {
-      body.innerHTML = '<tr><td colspan="8" style="color:#64748b;text-align:center;padding:24px;">Sin conteos registrados aun.</td></tr>';
+      body.innerHTML = '<tr><td colspan="8" style="color:var(--cx-text-mute);text-align:center;padding:24px;">Sin conteos registrados aun.</td></tr>';
       return;
     }
     body.innerHTML = d.conteos.map(function(co){
@@ -711,11 +711,11 @@ async function loadInvConteos(){
         '<td>'+fmtFecha(co.fecha_conteo)+'</td>' +
         '<td style="font-family:monospace;font-weight:700;">'+esc(co.sku)+'</td>' +
         '<td>'+esc(co.producto_nombre||'-')+'</td>' +
-        '<td style="text-align:right;color:#60a5fa;">'+co.cantidad_shopify+'</td>' +
+        '<td style="text-align:right;color:#2563eb;">'+co.cantidad_shopify+'</td>' +
         '<td style="text-align:right;font-weight:700;">'+co.cantidad_fisica+'</td>' +
         '<td style="text-align:right;font-weight:700;">'+difStr+'</td>' +
-        '<td style="font-size:11px;color:#cbd5e1;max-width:240px;">'+esc(co.explicacion||'')+'</td>' +
-        '<td style="font-size:11px;color:#64748b;">'+esc(co.registrado_por||'')+'</td>' +
+        '<td style="font-size:11px;color:var(--cx-text-soft);max-width:240px;">'+esc(co.explicacion||'')+'</td>' +
+        '<td style="font-size:11px;color:var(--cx-text-mute);">'+esc(co.registrado_por||'')+'</td>' +
       '</tr>';
     }).join('');
   } catch(e) {
@@ -851,7 +851,7 @@ function renderInvFis() {
   }
 
   if (!data.length) {
-    tb.innerHTML = '<tr><td colspan="9" style="color:#64748b;text-align:center;padding:24px;">' +
+    tb.innerHTML = '<tr><td colspan="9" style="color:var(--cx-text-mute);text-align:center;padding:24px;">' +
       (q ? 'Sin coincidencias' : 'Aun no hay SKUs con baseline. Click "+ Baseline" para empezar.') +
       '</td></tr>';
     return;
@@ -860,11 +860,11 @@ function renderInvFis() {
     return '<tr>' +
       '<td><b>' + (x.sku||'') + '</b></td>' +
       '<td>' + x.baseline + '</td>' +
-      '<td style="font-size:11px;color:#94a3b8;">' + (x.fecha_baseline||'') + '</td>' +
-      '<td style="text-align:right;color:#4ade80;font-weight:600;">+' + x.entradas + '</td>' +
-      '<td style="text-align:right;color:#fbbf24;font-weight:600;">-' + x.shopify + '</td>' +
-      '<td style="text-align:right;color:#f87171;font-weight:600;">-' + x.salidas + '</td>' +
-      '<td style="text-align:right;color:#a78bfa;font-weight:600;">' + (x.ajustes>0?'+':'') + x.ajustes + '</td>' +
+      '<td style="font-size:11px;color:var(--cx-text-mute);">' + (x.fecha_baseline||'') + '</td>' +
+      '<td style="text-align:right;color:#16a34a;font-weight:600;">+' + x.entradas + '</td>' +
+      '<td style="text-align:right;color:#b45309;font-weight:600;">-' + x.shopify + '</td>' +
+      '<td style="text-align:right;color:#dc2626;font-weight:600;">-' + x.salidas + '</td>' +
+      '<td style="text-align:right;color:#6d28d9;font-weight:600;">' + (x.ajustes>0?'+':'') + x.ajustes + '</td>' +
       '<td style="text-align:right;font-weight:800;font-size:14px;color:#22d3ee;">' + x.esperado + '</td>' +
       '<td><button class="btn btn-outline btn-sm" onclick="verMovsSku(\'' + (x.sku||'').replace(/[\'\\\\]/g, '') + '\')">Ver mov</button></td>' +
       '</tr>';
@@ -877,7 +877,7 @@ async function cargarMovimientosInvFis() {
     var d = await r.json();
     var tb = document.getElementById('invfis-mov-body');
     var movs = d.movimientos || [];
-    if (!movs.length) { tb.innerHTML = '<tr><td colspan="7" style="color:#64748b;text-align:center;padding:24px;">Sin movimientos</td></tr>'; return; }
+    if (!movs.length) { tb.innerHTML = '<tr><td colspan="7" style="color:var(--cx-text-mute);text-align:center;padding:24px;">Sin movimientos</td></tr>'; return; }
     tb.innerHTML = movs.slice(0, 100).map(function(m) {
       var col = m.tipo === 'ENTRADA' ? '#4ade80' :
                 m.tipo === 'SHOPIFY_VENTA' ? '#fbbf24' :
@@ -890,9 +890,9 @@ async function cargarMovimientosInvFis() {
         '<td><b>' + (m.sku||'') + '</b></td>' +
         '<td><span style="background:' + col + '22;color:' + col + ';padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;">' + (m.tipo||'') + '</span></td>' +
         '<td style="text-align:right;color:' + col + ';font-weight:700;">' + sign + (m.cantidad||0) + '</td>' +
-        '<td style="font-size:12px;color:#cbd5e1;">' + (m.origen||'') + '</td>' +
-        '<td style="font-size:12px;color:#94a3b8;">' + (m.motivo||'') + '</td>' +
-        '<td style="font-size:11px;color:#94a3b8;">' + (m.usuario||'') + '</td>' +
+        '<td style="font-size:12px;color:var(--cx-text-soft);">' + (m.origen||'') + '</td>' +
+        '<td style="font-size:12px;color:var(--cx-text-mute);">' + (m.motivo||'') + '</td>' +
+        '<td style="font-size:11px;color:var(--cx-text-mute);">' + (m.usuario||'') + '</td>' +
         '</tr>';
     }).join('');
   } catch(e) { console.error(e); }
@@ -905,7 +905,7 @@ function verMovsSku(sku) {
     .then(function(d){
       var tb = document.getElementById('invfis-mov-body');
       var movs = d.movimientos || [];
-      if (!movs.length) { tb.innerHTML = '<tr><td colspan="7" style="color:#64748b;text-align:center;padding:24px;">Sin movimientos para ' + sku + '</td></tr>'; return; }
+      if (!movs.length) { tb.innerHTML = '<tr><td colspan="7" style="color:var(--cx-text-mute);text-align:center;padding:24px;">Sin movimientos para ' + sku + '</td></tr>'; return; }
       tb.innerHTML = movs.map(function(m) {
         var col = m.tipo === 'ENTRADA' ? '#4ade80' :
                   m.tipo === 'SHOPIFY_VENTA' ? '#fbbf24' :
@@ -1021,14 +1021,14 @@ async function cargarPendientesConteo() {
     var cnt = document.getElementById('invfis-conteos-count');
     if (cnt) cnt.textContent = pend.length ? (pend.length + ' SKUs por contar') : '';
     if (!pend.length) {
-      el.innerHTML = '<div style="color:#64748b;text-align:center;padding:14px;font-size:13px;">Sin conteos pendientes &middot; Click "Asignar conteo hoy" para empezar</div>';
+      el.innerHTML = '<div style="color:var(--cx-text-mute);text-align:center;padding:14px;font-size:13px;">Sin conteos pendientes &middot; Click "Asignar conteo hoy" para empezar</div>';
       return;
     }
     el.innerHTML = pend.map(function(p) {
-      return '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px solid #334155;">' +
+      return '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px solid #e7e5e4;">' +
         '<div><b style="color:#fff;">' + (p.sku||'') + '</b> ' +
-        '<span style="color:#94a3b8;font-size:12px;margin-left:8px;">esperado: ' + (p.esperado!=null?p.esperado:'?') + '</span>' +
-        '<span style="color:#64748b;font-size:11px;margin-left:8px;">' + (p.fecha_asignado||'') + '</span></div>' +
+        '<span style="color:var(--cx-text-mute);font-size:12px;margin-left:8px;">esperado: ' + (p.esperado!=null?p.esperado:'?') + '</span>' +
+        '<span style="color:var(--cx-text-mute);font-size:11px;margin-left:8px;">' + (p.fecha_asignado||'') + '</span></div>' +
         '<button class="btn btn-primary btn-sm" onclick="abrirConteoFisico(' + p.id + ', \'' + (p.sku||'').replace(/[\'\\\\]/g,'') + '\', ' + (p.esperado||0) + ')">Contar</button>' +
         '</div>';
     }).join('');
@@ -1100,12 +1100,12 @@ function abrirConteoFisico(asigId, sku, esperado) {
       var d = document.getElementById('cf-desglose');
       d.innerHTML =
         '<div style="display:grid;grid-template-columns:auto auto;gap:6px 16px;font-size:12px;">' +
-        '<span style="color:#94a3b8;">Baseline (' + (info.fecha_baseline||'') + ')</span><span style="text-align:right;color:#fff;font-weight:600;">' + info.baseline + '</span>' +
-        '<span style="color:#94a3b8;">+ Entradas</span><span style="text-align:right;color:#4ade80;font-weight:600;">+' + info.entradas + '</span>' +
-        '<span style="color:#94a3b8;">- Ventas Shopify</span><span style="text-align:right;color:#fbbf24;font-weight:600;">-' + info.shopify + '</span>' +
-        '<span style="color:#94a3b8;">- Salidas otras</span><span style="text-align:right;color:#f87171;font-weight:600;">-' + info.salidas + '</span>' +
-        '<span style="color:#94a3b8;">+/- Ajustes</span><span style="text-align:right;color:#a78bfa;font-weight:600;">' + (info.ajustes>=0?'+':'') + info.ajustes + '</span>' +
-        '<hr style="grid-column:1/-1;border:none;border-top:1px solid #334155;margin:4px 0;">' +
+        '<span style="color:var(--cx-text-mute);">Baseline (' + (info.fecha_baseline||'') + ')</span><span style="text-align:right;color:#fff;font-weight:600;">' + info.baseline + '</span>' +
+        '<span style="color:var(--cx-text-mute);">+ Entradas</span><span style="text-align:right;color:#16a34a;font-weight:600;">+' + info.entradas + '</span>' +
+        '<span style="color:var(--cx-text-mute);">- Ventas Shopify</span><span style="text-align:right;color:#b45309;font-weight:600;">-' + info.shopify + '</span>' +
+        '<span style="color:var(--cx-text-mute);">- Salidas otras</span><span style="text-align:right;color:#dc2626;font-weight:600;">-' + info.salidas + '</span>' +
+        '<span style="color:var(--cx-text-mute);">+/- Ajustes</span><span style="text-align:right;color:#6d28d9;font-weight:600;">' + (info.ajustes>=0?'+':'') + info.ajustes + '</span>' +
+        '<hr style="grid-column:1/-1;border:none;border-top:1px solid #e7e5e4;margin:4px 0;">' +
         '<span style="color:#fff;font-weight:700;">= ESPERADO</span><span style="text-align:right;color:#22d3ee;font-weight:800;font-size:18px;">' + info.esperado + '</span>' +
         '</div>';
     });
@@ -1176,14 +1176,14 @@ async function cargarDiagnostico() {
     var html = '';
     // KPIs en línea
     html += '<div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:12px;font-size:13px;">';
-    html += '<div style="background:#0f172a;padding:8px 14px;border-radius:6px;"><span style="color:#94a3b8;">Conteos 30d</span> <b style="color:#fff;margin-left:8px;">' + (k.total_conteos||0) + '</b></div>';
-    html += '<div style="background:#0f172a;padding:8px 14px;border-radius:6px;"><span style="color:#94a3b8;">Con diferencia</span> <b style="color:#fbbf24;margin-left:8px;">' + (k.con_dif||0) + '</b></div>';
-    html += '<div style="background:#0f172a;padding:8px 14px;border-radius:6px;"><span style="color:#94a3b8;">Faltantes</span> <b style="color:#f87171;margin-left:8px;">-' + (k.faltantes||0) + '</b></div>';
-    html += '<div style="background:#0f172a;padding:8px 14px;border-radius:6px;"><span style="color:#94a3b8;">Sobrantes</span> <b style="color:#4ade80;margin-left:8px;">+' + (k.sobrantes||0) + '</b></div>';
+    html += '<div style="background:var(--cx-bg-alt);padding:8px 14px;border-radius:6px;"><span style="color:var(--cx-text-mute);">Conteos 30d</span> <b style="color:#fff;margin-left:8px;">' + (k.total_conteos||0) + '</b></div>';
+    html += '<div style="background:var(--cx-bg-alt);padding:8px 14px;border-radius:6px;"><span style="color:var(--cx-text-mute);">Con diferencia</span> <b style="color:#b45309;margin-left:8px;">' + (k.con_dif||0) + '</b></div>';
+    html += '<div style="background:var(--cx-bg-alt);padding:8px 14px;border-radius:6px;"><span style="color:var(--cx-text-mute);">Faltantes</span> <b style="color:#dc2626;margin-left:8px;">-' + (k.faltantes||0) + '</b></div>';
+    html += '<div style="background:var(--cx-bg-alt);padding:8px 14px;border-radius:6px;"><span style="color:var(--cx-text-mute);">Sobrantes</span> <b style="color:#16a34a;margin-left:8px;">+' + (k.sobrantes||0) + '</b></div>';
     html += '</div>';
     // Patrones detectados
     if ((d.patrones_detectados||[]).length) {
-      html += '<div style="font-size:12px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">Patrones detectados</div>';
+      html += '<div style="font-size:12px;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px;">Patrones detectados</div>';
       d.patrones_detectados.forEach(function(p) {
         var col = p.severidad === 'alta' ? '#7f1d1d' : '#78350f';
         var fc  = p.severidad === 'alta' ? '#fca5a5' : '#fbbf24';
@@ -1192,19 +1192,19 @@ async function cargarDiagnostico() {
                 icon + ' ' + p.mensaje + '</div>';
       });
     } else {
-      html += '<div style="background:#064e3b;color:#4ade80;padding:10px 14px;border-radius:6px;margin-bottom:12px;font-size:13px;">&#10003; Sin patrones de discrepancia detectados</div>';
+      html += '<div style="background:var(--cx-success-pale);color:#16a34a;padding:10px 14px;border-radius:6px;margin-bottom:12px;font-size:13px;">&#10003; Sin patrones de discrepancia detectados</div>';
     }
     // SKUs vendidos sin baseline
     if ((d.sin_baseline||[]).length) {
-      html += '<div style="background:#1e1b4b;color:#a5b4fc;padding:10px 14px;border-radius:6px;margin-bottom:6px;font-size:13px;">';
+      html += '<div style="background:var(--cx-primary-soft);color:#a5b4fc;padding:10px 14px;border-radius:6px;margin-bottom:6px;font-size:13px;">';
       html += '&#9432; ' + d.sin_baseline.length + ' SKUs vendidos en Shopify (30d) SIN baseline registrado: ';
       html += '<b>' + d.sin_baseline.slice(0, 8).join(', ') + (d.sin_baseline.length > 8 ? ' y ' + (d.sin_baseline.length - 8) + ' mas' : '') + '</b>';
       html += '</div>';
     }
     // Top problemáticos
     if ((d.top_problematicos||[]).length) {
-      html += '<div style="font-size:12px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.5px;margin:14px 0 6px 0;">Top SKUs problematicos (90d)</div>';
-      html += '<table style="width:100%;font-size:13px;"><thead><tr style="color:#94a3b8;">';
+      html += '<div style="font-size:12px;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:0.5px;margin:14px 0 6px 0;">Top SKUs problematicos (90d)</div>';
+      html += '<table style="width:100%;font-size:13px;"><thead><tr style="color:var(--cx-text-mute);">';
       html += '<th style="text-align:left;padding:6px;">SKU</th>';
       html += '<th style="text-align:right;padding:6px;">Veces contado</th>';
       html += '<th style="text-align:right;padding:6px;">Con diferencia</th>';
@@ -1213,10 +1213,10 @@ async function cargarDiagnostico() {
       html += '</tr></thead><tbody>';
       d.top_problematicos.forEach(function(t) {
         var col = t.suma_dif < 0 ? '#f87171' : '#4ade80';
-        html += '<tr style="border-top:1px solid #334155;">';
+        html += '<tr style="border-top:1px solid #e7e5e4;">';
         html += '<td style="padding:6px;"><b>' + t.sku + '</b></td>';
         html += '<td style="text-align:right;padding:6px;">' + t.veces_contado + '</td>';
-        html += '<td style="text-align:right;padding:6px;color:#fbbf24;">' + t.veces_con_dif + '/' + t.veces_contado + '</td>';
+        html += '<td style="text-align:right;padding:6px;color:#b45309;">' + t.veces_con_dif + '/' + t.veces_contado + '</td>';
         html += '<td style="text-align:right;padding:6px;color:' + col + ';font-weight:700;">' + (t.suma_dif > 0 ? '+' : '') + t.suma_dif + '</td>';
         html += '<td style="text-align:right;padding:6px;">' + t.abs_dif + '</td>';
         html += '</tr>';

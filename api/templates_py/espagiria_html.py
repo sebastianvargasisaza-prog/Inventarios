@@ -11,35 +11,35 @@ HTML = r"""
 <script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
 <style>
   * { box-sizing: border-box; }
-  body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:#0f172a; color:#e2e8f0; }
-  .header { background:linear-gradient(135deg,#0c4a6e,#0e7490); padding:18px 28px; display:flex;align-items:center;justify-content:space-between; }
+  body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; background:var(--cx-bg-alt); color:var(--cx-text); }
+  .header { background:linear-gradient(135deg,#0c4a6e,#7c3aed); padding:18px 28px; display:flex;align-items:center;justify-content:space-between; }
   .header h1 { margin:0; font-size:1.4em; font-weight:700; }
   .header a { color:#a5f3fc; font-size:0.85em; text-decoration:none; }
   .container { max-width:1400px; margin:0 auto; padding:24px; }
   .grid { display:grid; gap:16px; }
   .grid-4 { grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); }
-  .card { background:#1e293b; border:1px solid #334155; border-radius:10px; padding:18px; }
-  .card h3 { margin:0 0 8px; font-size:0.78em; color:#94a3b8; text-transform:uppercase; letter-spacing:0.06em; font-weight:600; }
+  .card { background:var(--cx-card); border:1px solid #e7e5e4; border-radius:10px; padding:18px; }
+  .card h3 { margin:0 0 8px; font-size:0.78em; color:var(--cx-text-mute); text-transform:uppercase; letter-spacing:0.06em; font-weight:600; }
   .card .val { font-size:1.9em; font-weight:700; color:#fff; }
-  .card .sub { font-size:0.8em; color:#64748b; margin-top:4px; }
-  .section-title { font-size:1.05em; font-weight:700; color:#fff; margin:28px 0 12px; padding-bottom:6px; border-bottom:2px solid #334155; }
+  .card .sub { font-size:0.8em; color:var(--cx-text-mute); margin-top:4px; }
+  .section-title { font-size:1.05em; font-weight:700; color:#fff; margin:28px 0 12px; padding-bottom:6px; border-bottom:2px solid #e7e5e4; }
   .alert { background:#3f0f0f; border-left:4px solid #dc2626; padding:10px 14px; margin-bottom:8px; border-radius:6px; font-size:13px; }
   .alert.media { background:#1e1b3b; border-left-color:#f59e0b; }
-  .alert .title { font-weight:600; color:#fca5a5; margin-bottom:3px; }
-  .alert.media .title { color:#fbbf24; }
-  .alert .accion { font-size:11px; color:#94a3b8; margin-top:4px; font-style:italic; }
+  .alert .title { font-weight:600; color:#dc2626; margin-bottom:3px; }
+  .alert.media .title { color:#b45309; }
+  .alert .accion { font-size:11px; color:var(--cx-text-mute); margin-top:4px; font-style:italic; }
   table { width:100%; border-collapse:collapse; font-size:13px; }
-  th { background:#0f172a; color:#94a3b8; font-weight:600; text-align:left; padding:8px 10px; font-size:11px; text-transform:uppercase; }
-  td { padding:8px 10px; border-bottom:1px solid #334155; }
+  th { background:var(--cx-bg-alt); color:var(--cx-text-mute); font-weight:600; text-align:left; padding:8px 10px; font-size:11px; text-transform:uppercase; }
+  td { padding:8px 10px; border-bottom:1px solid #e7e5e4; }
   .badge { padding:2px 8px; border-radius:10px; font-size:10px; font-weight:700; }
-  .badge.alta { background:#7f1d1d; color:#fca5a5; }
-  .badge.media { background:#78350f; color:#fcd34d; }
-  .badge.baja { background:#064e3b; color:#34d399; }
-  .badge.estado-asig { background:#1e293b; color:#94a3b8; }
-  .badge.estado-prog { background:#1e3a8a; color:#93c5fd; }
-  .badge.estado-bloq { background:#7f1d1d; color:#fca5a5; }
-  .badge.estado-hecha { background:#064e3b; color:#34d399; }
-  .empty { color:#64748b; font-style:italic; padding:20px; text-align:center; }
+  .badge.alta { background:var(--cx-danger-pale); color:#dc2626; }
+  .badge.media { background:var(--cx-warn-pale); color:#b45309; }
+  .badge.baja { background:var(--cx-success-pale); color:#16a34a; }
+  .badge.estado-asig { background:var(--cx-card); color:var(--cx-text-mute); }
+  .badge.estado-prog { background:var(--cx-info-pale); color:#2563eb; }
+  .badge.estado-bloq { background:var(--cx-danger-pale); color:#dc2626; }
+  .badge.estado-hecha { background:var(--cx-success-pale); color:#16a34a; }
+  .empty { color:var(--cx-text-mute); font-style:italic; padding:20px; text-align:center; }
   .grid-2 { grid-template-columns:1fr 1fr; }
 
   /* ─── MOBILE RESPONSIVE ─── */
@@ -56,7 +56,7 @@ HTML = r"""
     /* Tablas → cards apilados */
     table thead { display:none; }
     table, table tbody, table tr, table td { display:block; width:100%; }
-    table tr { background:#0f172a; border-radius:8px; padding:10px; margin-bottom:8px; border:1px solid #334155; }
+    table tr { background:var(--cx-bg-alt); border-radius:8px; padding:10px; margin-bottom:8px; border:1px solid #e7e5e4; }
     table td { border-bottom:none; padding:4px 0; font-size:12px; }
     table td:first-child { font-weight:700; color:#fff; font-size:13px; padding-bottom:6px; }
     .alert { padding:10px 12px; font-size:12px; }
@@ -88,12 +88,12 @@ HTML = r"""
   <script>function cxToggleTheme(){var h=document.documentElement;var c=h.getAttribute('data-theme');var n=c==='dark'?'light':'dark';if(n==='dark')h.setAttribute('data-theme','dark');else h.removeAttribute('data-theme');try{localStorage.setItem('cx-theme',n);}catch(e){}}</script>
 
   <!-- TABS -->
-  <div style="background:#1e293b;border-bottom:1px solid #334155;padding:0 28px;display:flex;gap:0;overflow-x:auto;">
+  <div style="background:var(--cx-card);border-bottom:1px solid #e7e5e4;padding:0 28px;display:flex;gap:0;overflow-x:auto;">
     <button class="esp-tab active" data-tab="inicio" onclick="esw('inicio')" style="background:none;border:none;color:#a5f3fc;padding:14px 20px;font-size:13px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;cursor:pointer;border-bottom:3px solid #06b6d4;white-space:nowrap;">⚡ Inicio</button>
-    <button class="esp-tab" data-tab="dash" onclick="esw('dash')" style="background:none;border:none;color:#64748b;padding:14px 20px;font-size:13px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;cursor:pointer;border-bottom:3px solid transparent;white-space:nowrap;">📊 Dashboard</button>
-    <button class="esp-tab" data-tab="lab" onclick="esw('lab')" style="background:none;border:none;color:#64748b;padding:14px 20px;font-size:13px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;cursor:pointer;border-bottom:3px solid transparent;white-space:nowrap;">🔬 Lab en Vivo</button>
-    <button class="esp-tab" data-tab="clientes" onclick="esw('clientes')" style="background:none;border:none;color:#64748b;padding:14px 20px;font-size:13px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;cursor:pointer;border-bottom:3px solid transparent;white-space:nowrap;">👥 Clientes 360</button>
-    <button class="esp-tab" data-tab="cartera" onclick="esw('cartera')" style="background:none;border:none;color:#64748b;padding:14px 20px;font-size:13px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;cursor:pointer;border-bottom:3px solid transparent;white-space:nowrap;">💰 Cartera</button>
+    <button class="esp-tab" data-tab="dash" onclick="esw('dash')" style="background:none;border:none;color:var(--cx-text-mute);padding:14px 20px;font-size:13px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;cursor:pointer;border-bottom:3px solid transparent;white-space:nowrap;">📊 Dashboard</button>
+    <button class="esp-tab" data-tab="lab" onclick="esw('lab')" style="background:none;border:none;color:var(--cx-text-mute);padding:14px 20px;font-size:13px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;cursor:pointer;border-bottom:3px solid transparent;white-space:nowrap;">🔬 Lab en Vivo</button>
+    <button class="esp-tab" data-tab="clientes" onclick="esw('clientes')" style="background:none;border:none;color:var(--cx-text-mute);padding:14px 20px;font-size:13px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;cursor:pointer;border-bottom:3px solid transparent;white-space:nowrap;">👥 Clientes 360</button>
+    <button class="esp-tab" data-tab="cartera" onclick="esw('cartera')" style="background:none;border:none;color:var(--cx-text-mute);padding:14px 20px;font-size:13px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;cursor:pointer;border-bottom:3px solid transparent;white-space:nowrap;">💰 Cartera</button>
   </div>
 
   <div class="container">
@@ -102,11 +102,11 @@ HTML = r"""
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;flex-wrap:wrap;gap:12px;">
         <div>
           <div style="font-size:1.4em;font-weight:700;color:#fff;">⚡ Lo urgente del día</div>
-          <div style="font-size:13px;color:#64748b;">Resumen de lo que necesita tu acción ahora</div>
+          <div style="font-size:13px;color:var(--cx-text-mute);">Resumen de lo que necesita tu acción ahora</div>
         </div>
         <div style="display:flex;gap:8px;">
-          <button onclick="abrirPedidoRapido()" style="background:#10b981;border:none;color:#fff;padding:10px 16px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;">+ Pedido rápido</button>
-          <button onclick="cargarQA()" style="background:#0e7490;border:none;color:#fff;padding:10px 14px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;">↻</button>
+          <button onclick="abrirPedidoRapido()" style="background:var(--cx-success-pale);border:none;color:#fff;padding:10px 16px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;">+ Pedido rápido</button>
+          <button onclick="cargarQA()" style="background:var(--cx-primary-soft);border:none;color:#fff;padding:10px 14px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;">↻</button>
         </div>
       </div>
       <div id="qa-content"><div class="empty">Cargando...</div></div>
@@ -117,14 +117,14 @@ HTML = r"""
     <!-- KPIs principales -->
     <div class="grid grid-4">
       <div class="card"><h3>📦 Producciones del mes</h3><div class="val" id="kpi-prod">—</div><div class="sub" id="kpi-prod-sub"></div></div>
-      <div class="card"><h3>⚠️ MPs bajo mínimo</h3><div class="val" id="kpi-mps" style="color:#fca5a5;">—</div><div class="sub">Necesitan reposición</div></div>
-      <div class="card"><h3>📅 Lotes vencen 30 días</h3><div class="val" id="kpi-venc" style="color:#fcd34d;">—</div><div class="sub" id="kpi-venc-sub"></div></div>
+      <div class="card"><h3>⚠️ MPs bajo mínimo</h3><div class="val" id="kpi-mps" style="color:#dc2626;">—</div><div class="sub">Necesitan reposición</div></div>
+      <div class="card"><h3>📅 Lotes vencen 30 días</h3><div class="val" id="kpi-venc" style="color:#b45309;">—</div><div class="sub" id="kpi-venc-sub"></div></div>
       <div class="card"><h3>🛒 OCs activas</h3><div class="val" id="kpi-ocs">—</div><div class="sub" id="kpi-ocs-sub"></div></div>
     </div>
 
     <div class="grid grid-4" style="margin-top:14px;">
       <div class="card"><h3>📋 Solicitudes pendientes</h3><div class="val" id="kpi-sol">—</div><div class="sub">Esperan aprobación</div></div>
-      <div class="card"><h3>🔬 NCs abiertas</h3><div class="val" id="kpi-ncs" style="color:#fbbf24;">—</div><div class="sub">Calidad sin cerrar</div></div>
+      <div class="card"><h3>🔬 NCs abiertas</h3><div class="val" id="kpi-ncs" style="color:#b45309;">—</div><div class="sub">Calidad sin cerrar</div></div>
       <div class="card"><h3>🟡 Lotes en cuarentena</h3><div class="val" id="kpi-cuar">—</div><div class="sub">Por liberar</div></div>
       <div class="card"><h3>🚚 Pedidos activos</h3><div class="val" id="kpi-ped">—</div><div class="sub">En proceso o despacho</div></div>
     </div>
@@ -141,7 +141,7 @@ HTML = r"""
       </div>
       <div>
         <div class="section-title">📑 Compromisos último comité</div>
-        <div id="comite-info" style="font-size:12px;color:#64748b;margin-bottom:8px;"></div>
+        <div id="comite-info" style="font-size:12px;color:var(--cx-text-mute);margin-bottom:8px;"></div>
         <div id="comite-list"><div class="empty">Cargando...</div></div>
       </div>
     </div>
@@ -165,11 +165,11 @@ HTML = r"""
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
         <div>
           <div style="font-size:1.2em;font-weight:700;color:#fff;">🔬 Lab en Vivo</div>
-          <div style="font-size:12px;color:#64748b;">Snapshot de la planta espagiría AHORA · auto-refresh cada 60s</div>
+          <div style="font-size:12px;color:var(--cx-text-mute);">Snapshot de la planta espagiría AHORA · auto-refresh cada 60s</div>
         </div>
         <div style="display:flex;gap:8px;align-items:center;">
-          <span id="lab-ts" style="font-size:11px;color:#64748b;"></span>
-          <button onclick="cargarLab()" style="background:#0e7490;border:none;color:#fff;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;">↻ Refrescar</button>
+          <span id="lab-ts" style="font-size:11px;color:var(--cx-text-mute);"></span>
+          <button onclick="cargarLab()" style="background:var(--cx-primary-soft);border:none;color:#fff;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;">↻ Refrescar</button>
         </div>
       </div>
 
@@ -177,8 +177,8 @@ HTML = r"""
       <div class="grid grid-4">
         <div class="card"><h3>⚙️ En curso</h3><div class="val" id="lab-kpi-curso">—</div><div class="sub">Producciones activas</div></div>
         <div class="card"><h3>📅 Hoy</h3><div class="val" id="lab-kpi-hoy">—</div><div class="sub">Programadas hoy</div></div>
-        <div class="card"><h3>🟡 Cuarentena</h3><div class="val" id="lab-kpi-cuar" style="color:#fcd34d;">—</div><div class="sub">Lotes</div></div>
-        <div class="card"><h3>⚠️ OOS abiertos</h3><div class="val" id="lab-kpi-oos" style="color:#fca5a5;">—</div><div class="sub">En investigación</div></div>
+        <div class="card"><h3>🟡 Cuarentena</h3><div class="val" id="lab-kpi-cuar" style="color:#b45309;">—</div><div class="sub">Lotes</div></div>
+        <div class="card"><h3>⚠️ OOS abiertos</h3><div class="val" id="lab-kpi-oos" style="color:#dc2626;">—</div><div class="sub">En investigación</div></div>
       </div>
 
       <div class="grid grid-2" style="margin-top:18px;">
@@ -222,7 +222,7 @@ HTML = r"""
         </div>
         <div class="card">
           <h3>🎓 Capacitaciones pendientes</h3>
-          <div class="val" id="lab-cap" style="color:#fbbf24;">—</div>
+          <div class="val" id="lab-cap" style="color:#b45309;">—</div>
           <div class="sub">Empleados sin firmar SOPs</div>
         </div>
       </div>
@@ -233,19 +233,19 @@ HTML = r"""
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
         <div>
           <div style="font-size:1.2em;font-weight:700;color:#fff;">👥 Clientes Maquila 360</div>
-          <div style="font-size:12px;color:#64748b;">Vista completa de cada cliente · click en uno para ver ficha 360</div>
+          <div style="font-size:12px;color:var(--cx-text-mute);">Vista completa de cada cliente · click en uno para ver ficha 360</div>
         </div>
-        <input id="cli-search" type="text" placeholder="Buscar cliente..." oninput="filtrarClientes()" style="background:#0f172a;border:1px solid #334155;color:#e2e8f0;padding:8px 12px;border-radius:6px;font-size:13px;max-width:240px;">
+        <input id="cli-search" type="text" placeholder="Buscar cliente..." oninput="filtrarClientes()" style="background:var(--cx-bg-alt);border:1px solid #e7e5e4;color:var(--cx-text);padding:8px 12px;border-radius:6px;font-size:13px;max-width:240px;">
       </div>
 
       <div id="cli-grid" class="grid grid-4"><div class="empty">Cargando clientes...</div></div>
 
       <!-- Modal ficha 360 -->
       <div id="cli-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:1000;align-items:center;justify-content:center;padding:20px;">
-        <div style="background:#1e293b;border:1px solid #475569;border-radius:14px;padding:24px;width:900px;max-width:95vw;max-height:90vh;overflow-y:auto;">
+        <div style="background:var(--cx-card);border:1px solid #475569;border-radius:14px;padding:24px;width:900px;max-width:95vw;max-height:90vh;overflow-y:auto;">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
             <h2 id="cli-modal-title" style="margin:0;font-size:1.3em;color:#fff;">Cliente</h2>
-            <button onclick="cerrarCliModal()" style="background:none;border:none;color:#94a3b8;font-size:24px;cursor:pointer;">&times;</button>
+            <button onclick="cerrarCliModal()" style="background:none;border:none;color:var(--cx-text-mute);font-size:24px;cursor:pointer;">&times;</button>
           </div>
           <div id="cli-modal-body"><div class="empty">Cargando...</div></div>
         </div>
@@ -257,9 +257,9 @@ HTML = r"""
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:12px;">
         <div>
           <div style="font-size:1.4em;font-weight:700;color:#fff;">💰 Cartera Maquila</div>
-          <div style="font-size:12px;color:#64748b;">Pedidos entregados con estado de pago · cruza con flujo_ingresos por número</div>
+          <div style="font-size:12px;color:var(--cx-text-mute);">Pedidos entregados con estado de pago · cruza con flujo_ingresos por número</div>
         </div>
-        <button onclick="cargarCartera()" style="background:#0e7490;border:none;color:#fff;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;">↻ Refrescar</button>
+        <button onclick="cargarCartera()" style="background:var(--cx-primary-soft);border:none;color:#fff;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;">↻ Refrescar</button>
       </div>
       <div class="grid grid-4" id="cart-kpis"></div>
       <div class="section-title" style="margin-top:18px;">📊 Por cliente</div>
@@ -270,42 +270,42 @@ HTML = r"""
 
     <!-- MODAL PEDIDO RAPIDO -->
     <div id="pr-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:1000;align-items:center;justify-content:center;padding:20px;">
-      <div style="background:#1e293b;border:1px solid #475569;border-radius:14px;padding:24px;width:560px;max-width:95vw;max-height:90vh;overflow-y:auto;">
+      <div style="background:var(--cx-card);border:1px solid #475569;border-radius:14px;padding:24px;width:560px;max-width:95vw;max-height:90vh;overflow-y:auto;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
           <h2 style="margin:0;font-size:1.2em;color:#fff;">📦 Nuevo pedido maquila</h2>
-          <button onclick="cerrarPedidoRapido()" style="background:none;border:none;color:#94a3b8;font-size:24px;cursor:pointer;">&times;</button>
+          <button onclick="cerrarPedidoRapido()" style="background:none;border:none;color:var(--cx-text-mute);font-size:24px;cursor:pointer;">&times;</button>
         </div>
         <div style="margin-bottom:14px;">
-          <label style="display:block;font-size:11px;color:#94a3b8;text-transform:uppercase;margin-bottom:6px;">Cliente *</label>
-          <select id="pr-cliente" style="width:100%;background:#0f172a;border:1px solid #334155;color:#e2e8f0;padding:10px;border-radius:6px;font-size:14px;">
+          <label style="display:block;font-size:11px;color:var(--cx-text-mute);text-transform:uppercase;margin-bottom:6px;">Cliente *</label>
+          <select id="pr-cliente" style="width:100%;background:var(--cx-bg-alt);border:1px solid #e7e5e4;color:var(--cx-text);padding:10px;border-radius:6px;font-size:14px;">
             <option value="">— Seleccionar cliente —</option>
           </select>
         </div>
         <div style="margin-bottom:14px;">
-          <label style="display:block;font-size:11px;color:#94a3b8;text-transform:uppercase;margin-bottom:6px;">Producto *</label>
-          <input id="pr-producto" type="text" placeholder="Ej: Hydra Balance 30ml" style="width:100%;background:#0f172a;border:1px solid #334155;color:#e2e8f0;padding:10px;border-radius:6px;font-size:14px;">
+          <label style="display:block;font-size:11px;color:var(--cx-text-mute);text-transform:uppercase;margin-bottom:6px;">Producto *</label>
+          <input id="pr-producto" type="text" placeholder="Ej: Hydra Balance 30ml" style="width:100%;background:var(--cx-bg-alt);border:1px solid #e7e5e4;color:var(--cx-text);padding:10px;border-radius:6px;font-size:14px;">
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;">
           <div>
-            <label style="display:block;font-size:11px;color:#94a3b8;text-transform:uppercase;margin-bottom:6px;">Unidades *</label>
-            <input id="pr-uds" type="number" min="1" placeholder="0" style="width:100%;background:#0f172a;border:1px solid #334155;color:#e2e8f0;padding:10px;border-radius:6px;font-size:14px;">
+            <label style="display:block;font-size:11px;color:var(--cx-text-mute);text-transform:uppercase;margin-bottom:6px;">Unidades *</label>
+            <input id="pr-uds" type="number" min="1" placeholder="0" style="width:100%;background:var(--cx-bg-alt);border:1px solid #e7e5e4;color:var(--cx-text);padding:10px;border-radius:6px;font-size:14px;">
           </div>
           <div>
-            <label style="display:block;font-size:11px;color:#94a3b8;text-transform:uppercase;margin-bottom:6px;">Precio unidad (COP)</label>
-            <input id="pr-precio" type="number" min="0" placeholder="0" style="width:100%;background:#0f172a;border:1px solid #334155;color:#e2e8f0;padding:10px;border-radius:6px;font-size:14px;">
+            <label style="display:block;font-size:11px;color:var(--cx-text-mute);text-transform:uppercase;margin-bottom:6px;">Precio unidad (COP)</label>
+            <input id="pr-precio" type="number" min="0" placeholder="0" style="width:100%;background:var(--cx-bg-alt);border:1px solid #e7e5e4;color:var(--cx-text);padding:10px;border-radius:6px;font-size:14px;">
           </div>
         </div>
         <div style="margin-bottom:14px;">
-          <label style="display:block;font-size:11px;color:#94a3b8;text-transform:uppercase;margin-bottom:6px;">Fecha entrega objetivo</label>
-          <input id="pr-fecha" type="date" style="width:100%;background:#0f172a;border:1px solid #334155;color:#e2e8f0;padding:10px;border-radius:6px;font-size:14px;">
+          <label style="display:block;font-size:11px;color:var(--cx-text-mute);text-transform:uppercase;margin-bottom:6px;">Fecha entrega objetivo</label>
+          <input id="pr-fecha" type="date" style="width:100%;background:var(--cx-bg-alt);border:1px solid #e7e5e4;color:var(--cx-text);padding:10px;border-radius:6px;font-size:14px;">
         </div>
         <div style="margin-bottom:14px;">
-          <label style="display:block;font-size:11px;color:#94a3b8;text-transform:uppercase;margin-bottom:6px;">Observaciones</label>
-          <textarea id="pr-obs" placeholder="Detalles adicionales..." style="width:100%;background:#0f172a;border:1px solid #334155;color:#e2e8f0;padding:10px;border-radius:6px;font-size:14px;min-height:60px;"></textarea>
+          <label style="display:block;font-size:11px;color:var(--cx-text-mute);text-transform:uppercase;margin-bottom:6px;">Observaciones</label>
+          <textarea id="pr-obs" placeholder="Detalles adicionales..." style="width:100%;background:var(--cx-bg-alt);border:1px solid #e7e5e4;color:var(--cx-text);padding:10px;border-radius:6px;font-size:14px;min-height:60px;"></textarea>
         </div>
         <div style="display:flex;gap:8px;justify-content:flex-end;">
-          <button onclick="cerrarPedidoRapido()" style="background:none;border:1px solid #334155;color:#94a3b8;padding:10px 16px;border-radius:6px;font-size:13px;cursor:pointer;">Cancelar</button>
-          <button onclick="guardarPedidoRapido()" style="background:#10b981;border:none;color:#fff;padding:10px 18px;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer;">Crear pedido</button>
+          <button onclick="cerrarPedidoRapido()" style="background:none;border:1px solid #e7e5e4;color:var(--cx-text-mute);padding:10px 16px;border-radius:6px;font-size:13px;cursor:pointer;">Cancelar</button>
+          <button onclick="guardarPedidoRapido()" style="background:var(--cx-success-pale);border:none;color:#fff;padding:10px 18px;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer;">Crear pedido</button>
         </div>
       </div>
     </div>
@@ -356,8 +356,8 @@ async function cargar() {
     } else {
       tList.innerHTML = '<table><thead><tr><th>Tarea</th><th>Comprom.</th><th>Prio</th><th>Estado</th></tr></thead><tbody>' +
         d.mis_tareas_pendientes.map(t =>
-          '<tr><td>' + _esc(t.titulo) + '<div style="font-size:10px;color:#64748b;">'+(t.area||'')+'</div></td>' +
-          '<td style="color:#fbbf24;font-size:11px;">'+(t.fecha_compromiso||'sin fecha')+'</td>' +
+          '<tr><td>' + _esc(t.titulo) + '<div style="font-size:10px;color:var(--cx-text-mute);">'+(t.area||'')+'</div></td>' +
+          '<td style="color:#b45309;font-size:11px;">'+(t.fecha_compromiso||'sin fecha')+'</td>' +
           '<td><span class="badge '+(t.prioridad||'baja').toLowerCase()+'">'+(t.prioridad||'-')+'</span></td>' +
           '<td><span class="badge estado-'+(t.estado||'').toLowerCase().substring(0,4)+'">'+_esc(t.estado||'-')+'</span></td></tr>'
         ).join('') + '</tbody></table>';
@@ -396,7 +396,7 @@ async function cargar() {
       aList.innerHTML = a.alertas.map(al =>
         '<div class="alert '+(al.severidad||'media')+'">' +
         '<div class="title">'+_esc(al.titulo)+'</div>' +
-        '<div style="font-size:12px;color:#cbd5e1;">'+_esc(al.detalle||'')+'</div>' +
+        '<div style="font-size:12px;color:var(--cx-text-soft);">'+_esc(al.detalle||'')+'</div>' +
         (al.accion_sugerida ? '<div class="accion">→ '+_esc(al.accion_sugerida)+'</div>' : '') +
         '</div>'
       ).join('');
@@ -414,7 +414,7 @@ async function cargar() {
         p.reincidentes.map(t =>
           '<tr><td style="font-size:12px;">'+_esc(t.titulo)+'</td>' +
           '<td style="font-size:11px;color:#a5f3fc;">'+_esc(t.responsables||'-')+'</td>' +
-          '<td style="color:#fca5a5;font-weight:700;">'+Math.round(t.dias_abierta)+'</td></tr>'
+          '<td style="color:#dc2626;font-weight:700;">'+Math.round(t.dias_abierta)+'</td></tr>'
         ).join('') + '</tbody></table>';
     }
 
@@ -425,8 +425,8 @@ async function cargar() {
       cList.innerHTML = '<table><thead><tr><th>Tarea</th><th>Área</th><th>Fecha</th></tr></thead><tbody>' +
         p.completadas_semana.slice(0,15).map(t =>
           '<tr><td style="font-size:12px;">'+_esc(t.titulo)+'</td>' +
-          '<td style="font-size:11px;color:#94a3b8;">'+_esc(t.area||'-')+'</td>' +
-          '<td style="font-size:11px;color:#34d399;">'+_esc((t.fecha_completada||'').substring(0,10))+'</td></tr>'
+          '<td style="font-size:11px;color:var(--cx-text-mute);">'+_esc(t.area||'-')+'</td>' +
+          '<td style="font-size:11px;color:#16a34a;">'+_esc((t.fecha_completada||'').substring(0,10))+'</td></tr>'
         ).join('') + '</tbody></table>';
     }
   } catch(e) { console.error('Pre-comite error:', e); }
@@ -471,10 +471,10 @@ async function cargarLab() {
     } else {
       curso.innerHTML = '<table><thead><tr><th>Producto</th><th>Sala</th><th>Operario</th><th>Inicio</th></tr></thead><tbody>' +
         d.producciones_en_curso.map(function(p){
-          return '<tr><td>' + _esc(p.producto||'') + '<div style="font-size:10px;color:#64748b;">' + (p.lotes||1) + ' lote' + ((p.lotes||1)===1?'':'s') + ' · ' + (p.cantidad_kg||0) + 'kg</div></td>' +
+          return '<tr><td>' + _esc(p.producto||'') + '<div style="font-size:10px;color:var(--cx-text-mute);">' + (p.lotes||1) + ' lote' + ((p.lotes||1)===1?'':'s') + ' · ' + (p.cantidad_kg||0) + 'kg</div></td>' +
             '<td><span class="badge estado-prog">' + (p.area_codigo||'—') + '</span></td>' +
             '<td style="font-size:11px;color:#a5f3fc;">' + _esc(p.operario_elaboracion || p.operario_dispensacion || '—') + '</td>' +
-            '<td style="font-size:10px;color:#94a3b8;">' + _esc((p.inicio_real_at||'').substring(11,16)) + '</td></tr>';
+            '<td style="font-size:10px;color:var(--cx-text-mute);">' + _esc((p.inicio_real_at||'').substring(11,16)) + '</td></tr>';
         }).join('') + '</tbody></table>';
     }
 
@@ -513,7 +513,7 @@ async function cargarLab() {
       oos.innerHTML = '<table><thead><tr><th>Código</th><th>Lote/Producto</th><th>Estado</th></tr></thead><tbody>' +
         d.oos_abiertos.map(function(o){
           return '<tr><td><b>' + _esc(o.codigo||'') + '</b></td>' +
-            '<td>' + _esc(o.lote||'') + '<div style="font-size:10px;color:#64748b;">' + _esc(o.parametro||'') + '</div></td>' +
+            '<td>' + _esc(o.lote||'') + '<div style="font-size:10px;color:var(--cx-text-mute);">' + _esc(o.parametro||'') + '</div></td>' +
             '<td><span class="badge alta">' + _esc(o.estado||'') + '</span></td></tr>';
         }).join('') + '</tbody></table>';
     }
@@ -527,7 +527,7 @@ async function cargarLab() {
           var dias = Math.round(e.dias||0);
           var col = dias < 0 ? '#f87171' : dias < 7 ? '#fbbf24' : '#94a3b8';
           return '<tr><td><b>' + _esc(e.codigo||'') + '</b></td>' +
-            '<td>' + _esc(e.nombre||'') + '<div style="font-size:10px;color:#64748b;">' + _esc(e.area_codigo||'') + '</div></td>' +
+            '<td>' + _esc(e.nombre||'') + '<div style="font-size:10px;color:var(--cx-text-mute);">' + _esc(e.area_codigo||'') + '</div></td>' +
             '<td style="color:' + col + ';font-weight:700;">' + (dias < 0 ? 'VENCIDO ' + Math.abs(dias) : dias) + 'd</td></tr>';
         }).join('') + '</tbody></table>';
     }
@@ -592,12 +592,12 @@ function renderClientes() {
     var ult = c.ultimo_ped ? ('Último: ' + (c.ultimo_ped||'').substring(0,10)) : 'Sin pedidos';
     return '<div class="card" style="cursor:pointer;border-left:4px solid #06b6d4;" onclick="verCli360(' + c.id + ')">' +
       '<h3 style="text-transform:none;letter-spacing:0;color:#fff;font-size:0.95em;margin-bottom:6px;">' + _esc(c.nombre||'') + marca + act + '</h3>' +
-      '<div style="font-size:11px;color:#94a3b8;">' + _esc(c.empresa_grupo||'—') + '</div>' +
+      '<div style="font-size:11px;color:var(--cx-text-mute);">' + _esc(c.empresa_grupo||'—') + '</div>' +
       '<div style="margin-top:10px;display:flex;gap:14px;flex-wrap:wrap;">' +
-        '<div><div style="font-size:10px;color:#64748b;">PEDIDOS</div><div style="font-size:1.1em;font-weight:700;color:#fff;">' + (c.total_pedidos||0) + '</div></div>' +
-        '<div><div style="font-size:10px;color:#64748b;">VALOR TOTAL</div><div style="font-size:1.1em;font-weight:700;color:#34d399;">$' + fmtNum(Math.round(c.valor_total||0)) + '</div></div>' +
+        '<div><div style="font-size:10px;color:var(--cx-text-mute);">PEDIDOS</div><div style="font-size:1.1em;font-weight:700;color:#fff;">' + (c.total_pedidos||0) + '</div></div>' +
+        '<div><div style="font-size:10px;color:var(--cx-text-mute);">VALOR TOTAL</div><div style="font-size:1.1em;font-weight:700;color:#16a34a;">$' + fmtNum(Math.round(c.valor_total||0)) + '</div></div>' +
       '</div>' +
-      '<div style="font-size:11px;color:#64748b;margin-top:8px;">' + ult + '</div>' +
+      '<div style="font-size:11px;color:var(--cx-text-mute);margin-top:8px;">' + ult + '</div>' +
       '</div>';
   }).join('');
 }
@@ -612,20 +612,20 @@ async function verCli360(id) {
     var html = '';
     // Datos
     html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:18px;">';
-    html += '<div><div style="font-size:10px;color:#64748b;">NIT</div><div>' + _esc(d.cliente.nit_cedula||'—') + '</div></div>';
-    html += '<div><div style="font-size:10px;color:#64748b;">EMAIL</div><div>' + _esc(d.cliente.email||'—') + '</div></div>';
-    html += '<div><div style="font-size:10px;color:#64748b;">TELÉFONO</div><div>' + _esc(d.cliente.telefono||'—') + '</div></div>';
-    html += '<div><div style="font-size:10px;color:#64748b;">EMPRESA GRUPO</div><div>' + _esc(d.cliente.empresa_grupo||'—') + '</div></div>';
+    html += '<div><div style="font-size:10px;color:var(--cx-text-mute);">NIT</div><div>' + _esc(d.cliente.nit_cedula||'—') + '</div></div>';
+    html += '<div><div style="font-size:10px;color:var(--cx-text-mute);">EMAIL</div><div>' + _esc(d.cliente.email||'—') + '</div></div>';
+    html += '<div><div style="font-size:10px;color:var(--cx-text-mute);">TELÉFONO</div><div>' + _esc(d.cliente.telefono||'—') + '</div></div>';
+    html += '<div><div style="font-size:10px;color:var(--cx-text-mute);">EMPRESA GRUPO</div><div>' + _esc(d.cliente.empresa_grupo||'—') + '</div></div>';
     if (d.cliente.es_marca_propia) html += '<div style="grid-column:1/-1;"><span class="badge baja">MARCA PROPIA HHA</span></div>';
     if (d.cliente.comparte_formula_con) html += '<div style="grid-column:1/-1;font-size:11px;color:#a5f3fc;">📋 Comparte fórmula con: ' + _esc(d.cliente.comparte_formula_con) + '</div>';
-    if (d.cliente.notas) html += '<div style="grid-column:1/-1;font-size:11px;color:#94a3b8;font-style:italic;">' + _esc(d.cliente.notas) + '</div>';
+    if (d.cliente.notas) html += '<div style="grid-column:1/-1;font-size:11px;color:var(--cx-text-mute);font-style:italic;">' + _esc(d.cliente.notas) + '</div>';
     html += '</div>';
     // KPIs
     html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:18px;">';
     html += '<div class="card"><h3>📦 Pedidos</h3><div class="val">' + s.total_pedidos + '</div></div>';
-    html += '<div class="card"><h3>💵 Valor total</h3><div class="val" style="color:#34d399;">$' + fmtNum(Math.round(s.valor_total||0)) + '</div></div>';
+    html += '<div class="card"><h3>💵 Valor total</h3><div class="val" style="color:#16a34a;">$' + fmtNum(Math.round(s.valor_total||0)) + '</div></div>';
     html += '<div class="card"><h3>🎯 Ticket prom</h3><div class="val">$' + fmtNum(Math.round(s.ticket_promedio||0)) + '</div></div>';
-    html += '<div class="card"><h3>🔥 Pipeline</h3><div class="val" style="color:#fbbf24;">' + (s.pipeline_activos||0) + '</div></div>';
+    html += '<div class="card"><h3>🔥 Pipeline</h3><div class="val" style="color:#b45309;">' + (s.pipeline_activos||0) + '</div></div>';
     html += '<div class="card"><h3>⏱️ Días sin pedido</h3><div class="val" style="color:' + (s.dias_sin_pedido > 60 ? '#f87171' : '#fff') + ';">' + (s.dias_sin_pedido!=null ? s.dias_sin_pedido : '—') + '</div></div>';
     html += '</div>';
     // Pipeline activo
@@ -653,7 +653,7 @@ async function verCli360(id) {
             '<td>' + t.veces_pedido + '</td>' +
             '<td>' + fmtNum(t.total_uds||0) + '</td>' +
             '<td>' + (t.total_kg||0).toFixed(1) + '</td>' +
-            '<td style="font-size:11px;color:#94a3b8;">' + _esc((t.ultimo||'').substring(0,10)) + '</td></tr>';
+            '<td style="font-size:11px;color:var(--cx-text-mute);">' + _esc((t.ultimo||'').substring(0,10)) + '</td></tr>';
         }).join('') + '</tbody></table>';
     }
     // Pedidos recientes
@@ -695,10 +695,10 @@ async function cargarQA() {
     var d = await fetch('/api/espagiria/quick-actions').then(function(r){return r.json();});
     var c = document.getElementById('qa-content');
     if (!d.secciones || !d.secciones.length) {
-      c.innerHTML = '<div class="card" style="text-align:center;padding:40px;border-left:4px solid #10b981;"><div style="font-size:3em;">✅</div><div style="font-size:1.2em;color:#34d399;font-weight:700;margin-top:12px;">Todo bajo control</div><div style="color:#94a3b8;margin-top:6px;">Sin acciones urgentes pendientes hoy</div></div>';
+      c.innerHTML = '<div class="card" style="text-align:center;padding:40px;border-left:4px solid #10b981;"><div style="font-size:3em;">✅</div><div style="font-size:1.2em;color:#16a34a;font-weight:700;margin-top:12px;">Todo bajo control</div><div style="color:var(--cx-text-mute);margin-top:6px;">Sin acciones urgentes pendientes hoy</div></div>';
       return;
     }
-    var html = '<div style="background:#7f1d1d;color:#fca5a5;padding:14px 18px;border-radius:8px;margin-bottom:16px;font-weight:700;">' +
+    var html = '<div style="background:var(--cx-danger-pale);color:#dc2626;padding:14px 18px;border-radius:8px;margin-bottom:16px;font-weight:700;">' +
                '⚠ ' + d.total_urgentes + ' acciones requieren tu atención</div>';
     d.secciones.forEach(function(s){
       var col = s.severidad === 'alta' ? '#dc2626' : '#f59e0b';
@@ -706,21 +706,21 @@ async function cargarQA() {
       html += '<div class="card" style="border-left:4px solid ' + col + ';background:' + bgc + 'aa;margin-bottom:14px;">' +
               '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;margin-bottom:10px;">' +
                 '<div><div style="font-size:1.05em;font-weight:700;color:#fff;">' + _esc(s.titulo) + '</div>' +
-                '<div style="font-size:11px;color:#94a3b8;margin-top:3px;">→ ' + _esc(s.accion) + '</div></div>' +
+                '<div style="font-size:11px;color:var(--cx-text-mute);margin-top:3px;">→ ' + _esc(s.accion) + '</div></div>' +
                 '<a href="' + _esc(s.link) + '" style="background:rgba(255,255,255,0.1);color:#fff;padding:6px 12px;border-radius:6px;text-decoration:none;font-size:11px;font-weight:700;">Ir &rarr;</a>' +
               '</div>';
       // Mini lista
       if (s.items && s.items.length) {
-        html += '<div style="font-size:12px;color:#cbd5e1;border-top:1px solid #334155;padding-top:8px;">';
+        html += '<div style="font-size:12px;color:var(--cx-text-soft);border-top:1px solid #e7e5e4;padding-top:8px;">';
         s.items.slice(0, 5).forEach(function(it){
           var label = it.numero || it.codigo || it.titulo || it.lote || it.material_nombre || it.cliente_nombre || '?';
           var sub = it.cliente_nombre || it.producto_nombre || it.area || it.parametro || it.dias_vencido || it.dias || '';
-          html += '<div style="padding:4px 0;border-bottom:1px solid #334155;">' +
+          html += '<div style="padding:4px 0;border-bottom:1px solid #e7e5e4;">' +
                   '<b>' + _esc(label) + '</b>' +
-                  (sub ? ' <span style="color:#94a3b8;">· ' + _esc(String(sub).substring(0,80)) + '</span>' : '') +
+                  (sub ? ' <span style="color:var(--cx-text-mute);">· ' + _esc(String(sub).substring(0,80)) + '</span>' : '') +
                   '</div>';
         });
-        if (s.items.length > 5) html += '<div style="padding:4px 0;color:#94a3b8;font-style:italic;">y ' + (s.items.length - 5) + ' más...</div>';
+        if (s.items.length > 5) html += '<div style="padding:4px 0;color:var(--cx-text-mute);font-style:italic;">y ' + (s.items.length - 5) + ' más...</div>';
         html += '</div>';
       }
       html += '</div>';
@@ -797,8 +797,8 @@ async function cargarCartera() {
     document.getElementById('cart-kpis').innerHTML =
       '<div class="card"><h3>📋 Pedidos entregados</h3><div class="val">' + (k.total_pedidos||0) + '</div></div>' +
       '<div class="card"><h3>💵 Total facturado</h3><div class="val" style="color:#fff;">$' + fmtNum(Math.round(k.total_facturado||0)) + '</div></div>' +
-      '<div class="card"><h3>✅ Pagado</h3><div class="val" style="color:#34d399;">$' + fmtNum(Math.round(k.total_pagado||0)) + '</div></div>' +
-      '<div class="card"><h3>🚨 Vencido +30d</h3><div class="val" style="color:#fca5a5;">$' + fmtNum(Math.round(k.total_vencido_30d||0)) + '</div></div>';
+      '<div class="card"><h3>✅ Pagado</h3><div class="val" style="color:#16a34a;">$' + fmtNum(Math.round(k.total_pagado||0)) + '</div></div>' +
+      '<div class="card"><h3>🚨 Vencido +30d</h3><div class="val" style="color:#dc2626;">$' + fmtNum(Math.round(k.total_vencido_30d||0)) + '</div></div>';
     // Por cliente
     var pcDiv = document.getElementById('cart-por-cliente');
     if (!d.por_cliente || !d.por_cliente.length) {
@@ -810,9 +810,9 @@ async function cargarCartera() {
           return '<tr><td><b>' + _esc(c.cliente) + '</b></td>' +
             '<td style="text-align:right;">' + c.pedidos + '</td>' +
             '<td style="text-align:right;">$' + fmtNum(Math.round(c.facturado||0)) + '</td>' +
-            '<td style="text-align:right;color:#34d399;">$' + fmtNum(Math.round(c.pagado||0)) + '</td>' +
+            '<td style="text-align:right;color:#16a34a;">$' + fmtNum(Math.round(c.pagado||0)) + '</td>' +
             '<td style="text-align:right;color:' + col + ';font-weight:700;">$' + fmtNum(Math.round(c.saldo||0)) + '</td>' +
-            '<td style="text-align:right;color:#fca5a5;font-weight:700;">$' + fmtNum(Math.round(c.vencido_30d||0)) + '</td></tr>';
+            '<td style="text-align:right;color:#dc2626;font-weight:700;">$' + fmtNum(Math.round(c.vencido_30d||0)) + '</td></tr>';
         }).join('') + '</tbody></table>';
     }
     // Detalle
@@ -830,7 +830,7 @@ async function cargarCartera() {
             '<td>' + _esc(p.cliente_nombre||'') + '</td>' +
             '<td style="font-size:11px;">' + _esc((p.producto_nombre||'').substring(0,40)) + '</td>' +
             '<td style="text-align:right;">$' + fmtNum(Math.round(p.valor_total||0)) + '</td>' +
-            '<td style="text-align:right;color:#34d399;">$' + fmtNum(Math.round(p.pagado||0)) + '</td>' +
+            '<td style="text-align:right;color:#16a34a;">$' + fmtNum(Math.round(p.pagado||0)) + '</td>' +
             '<td style="text-align:right;font-weight:700;">$' + fmtNum(Math.round(p.saldo||0)) + '</td>' +
             '<td><span class="badge ' + ec + '">' + _esc(p.estado_pago||'') + '</span></td>' +
             '<td>' + (p.dias_desde_pedido||0) + 'd</td></tr>';

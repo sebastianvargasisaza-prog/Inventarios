@@ -24,13 +24,13 @@ ASEGURAMIENTO_HTML = r'''<!DOCTYPE html>
 <link rel="stylesheet" href="/static/cortex.css?v=eos15">
 <script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
 <style>
-:root{--bg:#0f172a;--card:#1e293b;--text:#e2e8f0;--muted:#94a3b8;--accent:#7ACFCC;--good:#15803d;--warn:#fbbf24;--crit:#ef4444}
+:root{--bg:#0f172a;--card:#1e293b;--text:#e2e8f0;--muted:#94a3b8;--accent:#6d28d9;--good:#15803d;--warn:#fbbf24;--crit:#ef4444}
 body{font-family:system-ui,-apple-system,sans-serif;background:#f8fafc;margin:0;color:#0f172a}
-header{background:#0f172a;color:#f1f5f9;padding:14px 24px;display:flex;justify-content:space-between;align-items:center}
-.logo{font-weight:800;letter-spacing:.5px;font-size:1.05em;color:#7ACFCC}
-.tabs{display:flex;gap:0;background:#1e293b;border-bottom:1px solid #334155;padding:0 24px;flex-wrap:wrap;overflow-x:auto}
+header{background:var(--cx-bg-alt);color:#f1f5f9;padding:14px 24px;display:flex;justify-content:space-between;align-items:center}
+.logo{font-weight:800;letter-spacing:.5px;font-size:1.05em;color:#6d28d9}
+.tabs{display:flex;gap:0;background:var(--cx-card);border-bottom:1px solid #334155;padding:0 24px;flex-wrap:wrap;overflow-x:auto}
 .tab{padding:11px 20px;font-size:0.78em;font-weight:700;letter-spacing:.5px;color:#64748b;cursor:pointer;border-bottom:2px solid transparent;text-transform:uppercase;white-space:nowrap}
-.tab.active{color:#7ACFCC;border-bottom-color:#7ACFCC}
+.tab.active{color:#6d28d9;border-bottom-color:#6d28d9}
 .tab:hover{color:#cbd5e1}
 .main{padding:18px 24px;max-width:1400px;margin:0 auto}
 .pane{display:none}.pane.active{display:block}
@@ -48,7 +48,7 @@ th{background:#f8fafc;font-weight:700;color:#475569;font-size:0.76em;text-transf
 tr:hover{background:#fafafa}
 .empty{text-align:center;color:#94a3b8;padding:14px;font-style:italic}
 .btn{padding:6px 14px;border:none;border-radius:6px;cursor:pointer;font-size:0.85em;font-weight:600}
-.btn-primary{background:#7ACFCC;color:#0f172a}.btn-primary:hover{background:#5fb8b5}
+.btn-primary{background:#6d28d9;color:#0f172a}.btn-primary:hover{background:#5fb8b5}
 .btn-ghost{background:#f1f5f9;color:#475569;border:1px solid #cbd5e1}
 .btn-ghost:hover{background:#e2e8f0}
 .btn-sm{padding:4px 10px;font-size:0.78em}
@@ -72,7 +72,7 @@ tr:hover{background:#fafafa}
 code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Regular,Consolas,monospace;font-size:0.85em}
 /* Toast notifications · audit zero-error 2-may-2026 · reemplazo de alert() */
 #_toast-container{position:fixed;top:20px;right:20px;z-index:10000;display:flex;flex-direction:column;gap:8px;pointer-events:none}
-.toast{background:#fff;border-left:4px solid #7ACFCC;padding:12px 18px;border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,.15);min-width:260px;max-width:400px;font-size:0.9em;animation:slideIn .25s ease-out;pointer-events:auto;cursor:pointer}
+.toast{background:#fff;border-left:4px solid #6d28d9;padding:12px 18px;border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,.15);min-width:260px;max-width:400px;font-size:0.9em;animation:slideIn .25s ease-out;pointer-events:auto;cursor:pointer}
 .toast.success{border-left-color:#15803d}.toast.error{border-left-color:#ef4444}
 .toast.warn{border-left-color:#fbbf24}.toast.fade-out{animation:fadeOut .25s ease-in forwards}
 @keyframes slideIn{from{transform:translateX(120%);opacity:0}to{transform:none;opacity:1}}
@@ -166,7 +166,7 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
   <div id="mt-content" style="display:none">
     <div style="margin-bottom:14px">
       <span style="font-size:1.1em;font-weight:700">Tareas para </span>
-      <span id="mt-user" style="font-size:1.1em;font-weight:700;color:#7ACFCC"></span>
+      <span id="mt-user" style="font-size:1.1em;font-weight:700;color:#6d28d9"></span>
       <span id="mt-rol" style="font-size:0.78em;color:#94a3b8;margin-left:6px"></span>
     </div>
 
@@ -710,7 +710,7 @@ code{background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:SFMono-Reg
 
   <!-- Sub-pestañas dentro de Reportes -->
   <div style="display:flex;gap:0;border-bottom:1px solid #cbd5e1;margin-bottom:14px">
-    <div class="rep-tab active" onclick="repGoTab('rep-audit')" style="padding:8px 16px;cursor:pointer;font-weight:600;border-bottom:2px solid #7ACFCC;color:#7ACFCC">Audit Trail</div>
+    <div class="rep-tab active" onclick="repGoTab('rep-audit')" style="padding:8px 16px;cursor:pointer;font-weight:600;border-bottom:2px solid #6d28d9;color:#6d28d9">Audit Trail</div>
     <div class="rep-tab" onclick="repGoTab('rep-lote')" style="padding:8px 16px;cursor:pointer;font-weight:600;color:#94a3b8">Trazabilidad Lote</div>
     <div class="rep-tab" onclick="repGoTab('rep-cliente')" style="padding:8px 16px;cursor:pointer;font-weight:600;color:#94a3b8">Trazabilidad Cliente</div>
   </div>
@@ -1007,7 +1007,7 @@ function _renderPag(tabla, info, refreshFn) {
   html += '<button class="btn btn-ghost btn-sm" onclick="cambiarPag(\'' + tabla + '\',1)"' +
           (info.page >= info.totalPages ? ' disabled' : '') + '>&rarr;</button>';
   html += '<select onchange="cambiarPagSize(\'' + tabla + '\', this.value)" ' +
-          'style="background:#0f172a;border:1px solid #334155;color:#cbd5e1;padding:4px 6px;border-radius:5px;font-size:12px;">';
+          'style="background:var(--cx-bg-alt);border:1px solid #334155;color:#cbd5e1;padding:4px 6px;border-radius:5px;font-size:12px;">';
   ['25','50','100','999'].forEach(function(o){
     var label = o === '999' ? 'Todas' : o;
     html += '<option value="' + o + '"' + (String(s.size)===o?' selected':'') + '>' + label + '</option>';
@@ -2652,8 +2652,8 @@ function repGoTab(subId){
   });
   document.querySelectorAll('.rep-tab').forEach(function(t){
     var active = t.getAttribute('onclick') && t.getAttribute('onclick').indexOf("'"+subId+"'") !== -1;
-    t.style.borderBottom = active ? '2px solid #7ACFCC' : 'none';
-    t.style.color = active ? '#7ACFCC' : '#94a3b8';
+    t.style.borderBottom = active ? '2px solid #6d28d9' : 'none';
+    t.style.color = active ? '#6d28d9' : '#94a3b8';
   });
 }
 
@@ -2743,12 +2743,12 @@ async function repLoteCargar(){
     var d = await r.json();
     var c = d.cadena || {};
     var rsm = d.resumen || {};
-    var html = '<div class="card" style="background:#f8fafc;border-left:4px solid #7ACFCC">'
+    var html = '<div class="card" style="background:#f8fafc;border-left:4px solid #6d28d9">'
       +'<div style="font-weight:700;font-size:1.05em;margin-bottom:6px">Lote: <code>'+_esc(d.lote||lote)+'</code></div>'
       +'<div style="font-size:0.82em;color:#64748b;margin-bottom:8px">Consultado por <b>'+_esc(d.consultado_por||'')+'</b> · '+_esc((d.consulta_at||'').slice(0,19))+'</div>'
       +'<div>'
       +_repBadge(rsm.recepciones, 'Recepciones', '#0ea5e9')
-      +_repBadge(rsm.producciones, 'Producciones', '#7ACFCC')
+      +_repBadge(rsm.producciones, 'Producciones', '#6d28d9')
       +_repBadge(rsm.coas, 'COAs', '#15803d')
       +_repBadge(rsm.ncs, 'NCs', '#ef4444')
       +_repBadge(rsm.oos, 'OOS', '#f59e0b')
@@ -2806,7 +2806,7 @@ async function repClienteCargar(){
       +' · Consultado por <b>'+_esc(d.consultado_por||'')+'</b></div>'
       +'<div>'
       +_repBadge(rsm.despachos, 'Despachos', '#0ea5e9')
-      +_repBadge(rsm.pedidos, 'Pedidos', '#7ACFCC')
+      +_repBadge(rsm.pedidos, 'Pedidos', '#6d28d9')
       +_repBadge(rsm.lotes_distintos, 'Lotes únicos', '#15803d')
       +'</div></div>';
 
