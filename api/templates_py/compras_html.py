@@ -4,7 +4,7 @@ COMPRAS_HTML = """<!DOCTYPE html>
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Compras HHA</title>
-<link rel="stylesheet" href="/static/cortex.css?v=eos13">
+<link rel="stylesheet" href="/static/cortex.css?v=eos14">
 <script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
@@ -1708,26 +1708,29 @@ async function renderKpisGrandes(){
     var solsSinTocar = kpis.sols_sin_tocar_3d || 0;
     var salud = kpis.salud_score || 0;
     var saludCol = salud >= 80 ? '#16a34a' : (salud >= 60 ? '#ca8a04' : '#dc2626');
+    // UI v2 · cards CLARAS con el color semántico como acento de borde (no
+    // relleno pesado) · preserva la lógica ok/riesgo (verde/rojo/ámbar).
+    var _kc='background:var(--cx-card);color:var(--cx-text);padding:14px;border-radius:12px;border:1px solid var(--cx-hairline);box-shadow:var(--cx-sh-card)';
     cont.innerHTML = ''+
-      '<div style="background:linear-gradient(135deg,'+cashCol+',rgba(0,0,0,.1));color:#fff;padding:14px;border-radius:10px;box-shadow:0 3px 8px rgba(0,0,0,.1)">'+
-        '<div style="font-size:10px;text-transform:uppercase;opacity:.85;font-weight:700">💰 Cash 30 días</div>'+
+      '<div style="'+_kc+';border-left:4px solid '+cashCol+'">'+
+        '<div style="font-size:10px;text-transform:uppercase;color:var(--cx-text-mute);font-weight:700">💰 Cash 30 días</div>'+
         '<div style="font-size:1.9em;font-weight:800;line-height:1;margin-top:2px">'+fmt(p30.total_salida||0)+'</div>'+
-        '<div style="font-size:10px;opacity:.85;margin-top:2px">'+((p30.ocs_por_pagar||{}).count||0)+' OCs + '+((p30.influencers||{}).count||0)+' infl.</div>'+
+        '<div style="font-size:10px;color:var(--cx-text-faint);margin-top:2px">'+((p30.ocs_por_pagar||{}).count||0)+' OCs + '+((p30.influencers||{}).count||0)+' infl.</div>'+
       '</div>'+
-      '<div style="background:linear-gradient(135deg,'+(ocsRiesgo>0?'#dc2626':'#16a34a')+',rgba(0,0,0,.1));color:#fff;padding:14px;border-radius:10px;box-shadow:0 3px 8px rgba(0,0,0,.1)">'+
-        '<div style="font-size:10px;text-transform:uppercase;opacity:.85;font-weight:700">🚨 OCs en riesgo</div>'+
-        '<div style="font-size:1.9em;font-weight:800;line-height:1;margin-top:2px">'+ocsRiesgo+'</div>'+
-        '<div style="font-size:10px;opacity:.85;margin-top:2px">>10d sin recibir</div>'+
+      '<div style="'+_kc+';border-left:4px solid '+(ocsRiesgo>0?'#dc2626':'#16a34a')+'">'+
+        '<div style="font-size:10px;text-transform:uppercase;color:var(--cx-text-mute);font-weight:700">🚨 OCs en riesgo</div>'+
+        '<div style="font-size:1.9em;font-weight:800;line-height:1;margin-top:2px;color:'+(ocsRiesgo>0?'#dc2626':'var(--cx-text)')+'">'+ocsRiesgo+'</div>'+
+        '<div style="font-size:10px;color:var(--cx-text-faint);margin-top:2px">>10d sin recibir</div>'+
       '</div>'+
-      '<div style="background:linear-gradient(135deg,'+(solsSinTocar>0?'#ca8a04':'#16a34a')+',rgba(0,0,0,.1));color:#fff;padding:14px;border-radius:10px;box-shadow:0 3px 8px rgba(0,0,0,.1)">'+
-        '<div style="font-size:10px;text-transform:uppercase;opacity:.85;font-weight:700">⏰ SOLs sin tocar</div>'+
+      '<div style="'+_kc+';border-left:4px solid '+(solsSinTocar>0?'#ca8a04':'#16a34a')+'">'+
+        '<div style="font-size:10px;text-transform:uppercase;color:var(--cx-text-mute);font-weight:700">⏰ SOLs sin tocar</div>'+
         '<div style="font-size:1.9em;font-weight:800;line-height:1;margin-top:2px">'+solsSinTocar+'</div>'+
-        '<div style="font-size:10px;opacity:.85;margin-top:2px">>3 días pendientes</div>'+
+        '<div style="font-size:10px;color:var(--cx-text-faint);margin-top:2px">>3 días pendientes</div>'+
       '</div>'+
-      '<div style="background:linear-gradient(135deg,'+saludCol+',rgba(0,0,0,.1));color:#fff;padding:14px;border-radius:10px;box-shadow:0 3px 8px rgba(0,0,0,.1)">'+
-        '<div style="font-size:10px;text-transform:uppercase;opacity:.85;font-weight:700">📊 Salud Compras</div>'+
+      '<div style="'+_kc+';border-left:4px solid '+saludCol+'">'+
+        '<div style="font-size:10px;text-transform:uppercase;color:var(--cx-text-mute);font-weight:700">📊 Salud Compras</div>'+
         '<div style="font-size:1.9em;font-weight:800;line-height:1;margin-top:2px">'+salud+'/100</div>'+
-        '<div style="font-size:10px;opacity:.85;margin-top:2px">'+(counts.por_pagar||0)+' por pagar · '+((counts.planta||0)+(counts.solic||0))+' SOLs</div>'+
+        '<div style="font-size:10px;color:var(--cx-text-faint);margin-top:2px">'+(counts.por_pagar||0)+' por pagar · '+((counts.planta||0)+(counts.solic||0))+' SOLs</div>'+
       '</div>';
   }catch(e){
     cont.innerHTML = '<div style="color:#64748b;padding:10px;text-align:center;font-size:12px">⚠ KPIs no disponibles</div>';
@@ -1835,7 +1838,7 @@ async function renderDashHome2(){
       // Card der · Influencers prominente
       var inflTot = (d.influencers_monto_total || 0);
       var inflList = d.influencers_pendientes || [];
-      html += '<div style="background:linear-gradient(135deg,#fdf2f8,#fce7f3);border:2px solid #db2777;border-radius:10px;padding:16px">'+
+      html += '<div style="background:linear-gradient(135deg,#fdf2f8,#f5f3ff);border:2px solid #6d28d9;border-radius:10px;padding:16px">'+
         '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><div style="font-weight:800;font-size:14px;color:#9f1239">💸 Influencers (privado · solo tú)</div>'+
         '<a href="/admin/influencers" style="font-size:11px;color:#9f1239;font-weight:700">Ver todos →</a></div>'+
         '<div style="background:#fff;padding:10px 12px;border-radius:8px;margin-bottom:10px"><div style="font-size:10px;color:#9f1239">Por pagar</div><div style="font-size:1.8em;font-weight:800;color:#be185d">'+fmt(inflTot.toFixed(0))+'</div><div style="font-size:11px;color:#9f1239">'+inflList.length+' pendiente(s)</div></div>';
@@ -2224,7 +2227,7 @@ async function renderDash(){
 
   // Spending chart by category
   var _catLabels=['MP','MEE','SVC','ADM','INF','CC'];
-  var _catColors=['#f59e0b','#3b82f6','#8b5cf6','#10b981','#ef4444','#ec4899'];
+  var _catColors=['#f59e0b','#3b82f6','#8b5cf6','#10b981','#ef4444','#7c3aed'];
   var _catTotals=_catLabels.map(function(g){ return OCS.filter(function(o){ return inGroup(o.categoria,g.toLowerCase())&&o.estado==='Pagada'; }).reduce(function(s,o){ return s+parseFloat(o.valor_total||0); },0); });
   var _maxV=Math.max.apply(null,_catTotals)||1;
   var _chartHTML='<div style="background:#fff;border:1px solid #e7e5e4;border-radius:10px;padding:14px 16px;margin-top:14px;">';
