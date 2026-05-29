@@ -134,8 +134,13 @@ def api_maquila_prospecto_patch(pid):
     if 'etapa' in d:
         c.execute('UPDATE maquila_prospectos SET etapa=? WHERE id=?', (d['etapa'], pid))
     if 'valor_estimado' in d:
+        # Fix 28-may · validar monto (NaN/Infinity/negativos) antes de persistir.
+        _ve, _err = validate_money(d.get('valor_estimado', 0), allow_zero=True,
+                                   field_name='valor_estimado')
+        if _err:
+            return jsonify(_err), 400
         c.execute('UPDATE maquila_prospectos SET valor_estimado_lote=? WHERE id=?',
-                  (float(d['valor_estimado']), pid))
+                  (_ve, pid))
     if 'notas' in d:
         c.execute('UPDATE maquila_prospectos SET observaciones=? WHERE id=?', (d['notas'], pid))
     if 'nivel_servicio' in d:
@@ -364,15 +369,29 @@ def api_maquila_facturar(oid):
 
 @bp.route('/api/maquila/cotizar', methods=['POST'])
 def api_maquila_cotizar():
-    d = request.json or {}
+    d = request.get_json(silent=True) or {}
+    # Fix 28-may · validar montos (NaN/Infinity/negativos) y cantidades · antes
+    # float() crudo tumbaba el endpoint (500) o persistía valores absurdos.
+    valor_total, _e1 = validate_money(d.get('valor_total', 0), allow_zero=True, field_name='valor_total')
+    if _e1: return jsonify(_e1), 400
+    costo_mp, _e2 = validate_money(d.get('costo_mp', 0), allow_zero=True, field_name='costo_mp')
+    if _e2: return jsonify(_e2), 400
+    costo_proceso, _e3 = validate_money(d.get('costo_proceso', 0), allow_zero=True, field_name='costo_proceso')
+    if _e3: return jsonify(_e3), 400
+    def _sf(v):
+        try:
+            f = float(v)
+            return f if (f == f and f not in (float('inf'), float('-inf'))) else 0.0
+        except (TypeError, ValueError):
+            return 0.0
+    batch_kg = max(0.0, _sf(d.get('batch_size_kg', 0)))
+    margen_pct = max(0.0, _sf(d.get('margen_pct', 0)))
     conn = get_db(); c = conn.cursor()
     c.execute('''INSERT INTO maquila_cotizaciones
                  (empresa,producto_tipo,batch_size_kg,costo_mp,costo_proceso,margen_pct,valor_total,usuario)
                  VALUES (?,?,?,?,?,?,?,?)''',
               (d.get('empresa',''), d.get('producto_tipo',''),
-               float(d.get('batch_size_kg',0)), float(d.get('costo_mp',0)),
-               float(d.get('costo_proceso',0)), float(d.get('margen_pct',0)),
-               float(d.get('valor_total',0)),
+               batch_kg, costo_mp, costo_proceso, margen_pct, valor_total,
                session.get('compras_user') or d.get('operador','sistema')))
     conn.commit(); cid=c.lastrowid
     return jsonify({'id': cid}), 201

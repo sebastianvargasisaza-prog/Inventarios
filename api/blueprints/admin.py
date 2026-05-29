@@ -5933,8 +5933,9 @@ def admin_mps_asignar_proveedor():
     conn.close()
     if n == 0:
         return jsonify({'error': f"No se encontró MP '{codigo}'"}), 404
-    _log_sec(u, _client_ip(),
-             "admin_mp_asignar_proveedor",
+    # Fix 28-may · orden de args correcto · firma _log_sec(event, username, ip,
+    # details) · antes pasaba (u, ip, event, ...) y corrompía el registro.
+    _log_sec("admin_mp_asignar_proveedor", u, _client_ip(),
              f"codigo={codigo} proveedor={proveedor}")
     return jsonify({'ok': True, 'codigo_mp': codigo, 'proveedor': proveedor})
 

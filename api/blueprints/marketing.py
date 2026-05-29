@@ -699,7 +699,9 @@ def mkt_pagos_influencer_urgencias():
         if vence and _re_atrib.match(r'^\d{4}-\d{2}-\d{2}$', vence):
             try:
                 v = _dt.strptime(vence, '%Y-%m-%d')
-                dias_para_vencer = (v - hoy).days
+                # Fix 28-may · comparar FECHAS (no datetime) · antes hoy=now()
+                # con hora hacía que un pago que vence HOY diera days=-1→'vencido'.
+                dias_para_vencer = (v.date() - hoy.date()).days
                 if dias_para_vencer < 0:
                     urgencia = 'vencido'
                 elif dias_para_vencer <= 7:
@@ -3777,7 +3779,8 @@ def mkt_contenido_kanban():
         total = sum(col["count"] for col in columnas)
         return jsonify({"ok": True, "total": total, "columnas": columnas})
     except Exception as e:
-        return jsonify({"error": str(e), "trace": traceback.format_exc()[-500:]}), 500
+        log.error("marketing columnas fallo: %s", traceback.format_exc())
+        return jsonify({"error": "Error interno"}), 500
     finally:
         pass
 
@@ -5599,7 +5602,8 @@ def mkt_ejecutar_agente(agente):
         return jsonify(resultado)
 
     except Exception as e:
-        return jsonify({"error": str(e), "trace": traceback.format_exc()}), 500
+        log.error("marketing endpoint fallo: %s", traceback.format_exc())
+        return jsonify({"error": "Error interno"}), 500
     finally:
         pass  # conexión cerrada automáticamente por teardown_appcontext
 
@@ -6171,7 +6175,9 @@ def mkt_atribucion_influencers():
             "influencers": resultado,
         })
     except Exception as e:
-        return jsonify({"error": str(e), "trace": traceback.format_exc()[-500:]}), 500
+        # Fix 28-may · no filtrar traceback del servidor al cliente.
+        log.error("mkt_atribucion_influencers fallo: %s", traceback.format_exc())
+        return jsonify({"error": "Error procesando atribución de influencers"}), 500
     finally:
         pass
 

@@ -62,10 +62,12 @@ def calidad_dashboard():
     # Lotes en cuarentena · Sebastian 5-may-2026 (audit zero-error):
     # UPPER() para matchear ambos 'Cuarentena' y 'CUARENTENA' que coexisten
     # en DB · antes este KPI mostraba menos lotes de los reales.
+    # Fix 28-may · alinear con la bandeja (calidad_bandeja) que cuenta SOLO
+    # estado explícito CUARENTENA/_EXTENDIDA · antes el dashboard sumaba además
+    # todo lote con estado_lote NULL → inflaba el KPI vs la bandeja.
     c.execute("""SELECT COUNT(*) FROM movimientos
                  WHERE tipo='Entrada'
-                   AND (UPPER(COALESCE(estado_lote,'')) IN ('CUARENTENA','CUARENTENA_EXTENDIDA')
-                        OR (estado_lote IS NULL AND lote IS NOT NULL AND lote != ''))""")
+                   AND UPPER(COALESCE(estado_lote,'')) IN ('CUARENTENA','CUARENTENA_EXTENDIDA')""")
     cuarentena = c.fetchone()[0]
     # Aprobados y rechazados últimos 30d · UPPER tambien
     c.execute("""SELECT COUNT(*) FROM movimientos
@@ -905,23 +907,34 @@ def coa_list():
             log.warning('audit_log CREAR_COA fallo: %s', e)
         conn.commit()
 
-        # Si NO conforme y no hay NC abierta para este lote+parametro, crear auto
+        # Si NO conforme y no hay NC abierta para este lote+parametro, crear auto.
+        # Fix 28-may · antes insertaba SIEMPRE (sin el check que el comentario
+        # prometía) → cada CoA no conforme duplicaba la NC.
         if not conforme:
             try:
-                c.execute("""INSERT INTO no_conformidades
-                             (fecha,tipo,descripcion,area,responsable,lote,
-                              codigo_mp,impacto,accion_correctiva,estado,creado_por)
-                             VALUES (date('now', '-5 hours'),'Insumo',?,?,?,?,?,?,?,'Abierta',?)""",
-                          (f'CoA fuera de spec: {d["parametro"]}={d["valor_obtenido"]} '
-                           f'(spec {valor_min_spec}-{valor_max_spec})',
-                           'Calidad', 'Jefe CC', d['lote'], d['codigo_mp'],
-                           'Alto', 'Cuarentena lote, evaluar disposicion',
-                           session.get('compras_user','sistema')))
-                conn.commit()
+                ya_nc = c.execute(
+                    """SELECT 1 FROM no_conformidades
+                       WHERE lote=? AND codigo_mp=? AND estado='Abierta'
+                         AND descripcion LIKE ?""",
+                    (d['lote'], d['codigo_mp'], f'%{d["parametro"]}%')
+                ).fetchone()
+                if not ya_nc:
+                    c.execute("""INSERT INTO no_conformidades
+                                 (fecha,tipo,descripcion,area,responsable,lote,
+                                  codigo_mp,impacto,accion_correctiva,estado,creado_por)
+                                 VALUES (date('now', '-5 hours'),'Insumo',?,?,?,?,?,?,?,'Abierta',?)""",
+                              (f'CoA fuera de spec: {d["parametro"]}={d["valor_obtenido"]} '
+                               f'(spec {valor_min_spec}-{valor_max_spec})',
+                               'Calidad', 'Jefe CC', d['lote'], d['codigo_mp'],
+                               'Alto', 'Cuarentena lote, evaluar disposicion',
+                               session.get('compras_user','sistema')))
+                    conn.commit()
             except Exception:
                 pass
 
-        return jsonify({'ok':True, 'id':c.lastrowid, 'conforme':conforme,
+        # Fix 28-may · devolver el id del CoA, no c.lastrowid (que tras crear
+        # la NC apuntaba a la NC).
+        return jsonify({'ok':True, 'id':coa_id, 'conforme':conforme,
                         'decision':decision}), 201
 
     # GET — filtros
