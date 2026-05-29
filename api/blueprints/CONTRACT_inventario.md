@@ -274,3 +274,24 @@ Invariante nueva:
 - **`cc-review`**: el `firmante` ahora se toma de la sesión autenticada (`user`),
   no de `d.get('firmante')` del payload (era falsificable y se grababa así en
   audit_log).
+
+### 2026-05-29 (b) · Firma electrónica Part 11 en disposición de lote MP
+- **INV · liberación de lote de MP en cuarentena REQUIERE e-signature.** Los 3
+  endpoints que disponen un lote (`POST /api/lotes/liberar`,
+  `POST /api/lotes/cc-review`, `POST /api/lotes/cuarentena/<id>/liberar`) ahora
+  exigen `signature_id` válido en `e_signatures` (helper `_validar_e_sign`),
+  bound al `record_table='movimientos'`, `record_id=<mov_id>`, `signer_username`
+  = sesión, y `meaning`:
+  - APROBAR/Aprobado/estado APROBADO → `meaning='libera'`
+  - RECHAZAR/Rechazado/estado RECHAZADO → `meaning='rechaza'`
+  - CUARENTENA_EXTENDIDA → `meaning='aprueba'`
+- Sin firma válida → **400** con `{requiere_firma:true, sign_meaning, record_id}`
+  (no 401: el user está autenticado, falta firmar). RBAC (`_require_qc`) se
+  evalúa ANTES, así que un no-QC sigue recibiendo 403.
+- Flujo UI (dashboard_html / financiero_html): al recibir `requiere_firma`,
+  `_firmarLoteEsign` pide password (+TOTP si MFA) → `/api/sign/challenge` →
+  `/api/sign` → reintenta cc-review con `signature_id`.
+- Cubierto por golden **GP-61** `test_golden_liberar_lote_mp_requiere_efirma`
+  (sin firma→400, firma de otro lote→400 binding, firma correcta→200).
+- Los 3 endpoints son el equivalente para MP del gate que `brd.py` ya tenía en
+  EBR (producto terminado). Parte del reemplazo progresivo de MyBatch.

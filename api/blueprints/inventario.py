@@ -95,6 +95,27 @@ def _require_admin():
     return u, None, None
 
 
+def _validar_e_sign(c, signature_id, *, record_table, record_id, meaning, signer_username):
+    """Valida una firma electrónica Part 11 (§11.200) sobre un registro.
+
+    La firma debe existir en e_signatures, ser del usuario actual, sobre este
+    registro exacto y con el meaning correcto. Mismo patrón que brd.py
+    (_validar_signature). Devuelve True si la firma es válida.
+    """
+    if not signature_id:
+        return False
+    try:
+        sig = c.execute(
+            """SELECT id FROM e_signatures
+               WHERE id=? AND record_table=? AND record_id=?
+                 AND meaning=? AND signer_username=?""",
+            (int(signature_id), record_table, str(record_id), meaning, signer_username),
+        ).fetchone()
+        return sig is not None
+    except Exception:
+        return False
+
+
 def _mee_stock_real(c, codigo_mee):
     """MEE-FIX · 22-may-2026 · stock CANONICAL desde SUM(movimientos_mee).
 
@@ -7234,6 +7255,22 @@ def liberar_lote():
         return jsonify({'error': 'Accion debe ser APROBAR o RECHAZAR'}), 400
     nuevo_estado = 'VIGENTE' if accion == 'APROBAR' else 'RECHAZADO'
     conn = get_db(); c = conn.cursor()
+    # Firma electrónica Part 11 §11.200 · liberar/rechazar un lote en cuarentena
+    # es una decisión regulada INVIMA · exige re-autenticación (password+MFA)
+    # vía /api/sign. APROBAR→meaning 'libera', RECHAZAR→meaning 'rechaza'.
+    meaning = 'libera' if accion == 'APROBAR' else 'rechaza'
+    sig_id = d.get('signature_id')
+    if not _validar_e_sign(c, sig_id, record_table='movimientos', record_id=mov_id,
+                           meaning=meaning, signer_username=u):
+        return jsonify({
+            'error': 'Firma electrónica requerida',
+            'requiere_firma': True,
+            'sign_meaning': meaning,
+            'record_table': 'movimientos',
+            'record_id': str(mov_id),
+            'detail': f"Firmá vía POST /api/sign con meaning='{meaning}', "
+                      f"record_table='movimientos', record_id='{mov_id}' y reenviá signature_id.",
+        }), 400
     # INVIMA-FIX · 21-may-2026 · aceptar CUARENTENA_EXTENDIDA también
     # Antes: lotes en cuarentena extendida quedaban zombies (rowcount=0)
     c.execute(
@@ -7245,10 +7282,11 @@ def liberar_lote():
         return jsonify({'error': 'Lote no encontrado o ya procesado'}), 404
     c.execute("""INSERT INTO audit_log (usuario,accion,tabla,registro_id,detalle,ip,fecha)
                  VALUES (?,?,?,?,?,?,datetime('now', '-5 hours'))""",
-              (session.get('compras_user','?'), f'LOTE_{accion}', 'movimientos',
-               str(mov_id), f'Lote liberado: {accion}', request.remote_addr))
+              (u, f'LOTE_{accion}', 'movimientos',
+               str(mov_id), f'Lote {accion} · firma e-sign #{sig_id}', request.remote_addr))
     conn.commit()
-    return jsonify({'message': f'Lote {accion.lower()}ado correctamente', 'estado': nuevo_estado})
+    return jsonify({'message': f'Lote {accion.lower()}ado correctamente', 'estado': nuevo_estado,
+                     'signature_id': sig_id})
 
 # /api/trazabilidad/<lote> eliminado — duplicado de /api/trazabilidad/lote/<path:lote>
 # que es más completo (también busca despachos). Mantener el de path por
@@ -8947,6 +8985,25 @@ def cc_review():
         return jsonify({'error': 'Lote no encontrado'}), 404
     if mov[3] not in ('CUARENTENA', 'CUARENTENA_EXTENDIDA'):
         return jsonify({'error': 'Lote no esta en cuarentena'}), 400
+    # Firma electrónica Part 11 §11.200 · CC review dispone un lote regulado
+    # (aprobar/rechazar/cuarentena extendida) · exige re-autenticación vía
+    # /api/sign. El meaning depende de la disposición resultante.
+    meaning = ('rechaza' if estado_final == 'RECHAZADO'
+               else 'libera' if estado_final == 'APROBADO'
+               else 'aprueba')  # CUARENTENA_EXTENDIDA
+    sig_id = d.get('signature_id')
+    if not _validar_e_sign(c, sig_id, record_table='movimientos', record_id=mov_id,
+                           meaning=meaning, signer_username=user):
+        return jsonify({
+            'error': 'Firma electrónica requerida',
+            'requiere_firma': True,
+            'sign_meaning': meaning,
+            'record_table': 'movimientos',
+            'record_id': str(mov_id),
+            'estado_propuesto': estado_final,
+            'detail': f"Firmá vía POST /api/sign con meaning='{meaning}', "
+                      f"record_table='movimientos', record_id='{mov_id}' y reenviá signature_id.",
+        }), 400
     c.execute(
         "INSERT INTO cc_reviews (mov_id,lote,codigo_mp,coa_ok,lote_coincide,coa_vigente,ficha_ok,"
         "solubilidad,resultado_aql,observaciones_aql,muestra_retencion,observaciones,firmante,estado_final,fecha,ip) "
@@ -8961,7 +9018,7 @@ def cc_review():
     c.execute(
         "INSERT INTO audit_log (usuario,accion,tabla,registro_id,detalle,ip,fecha) VALUES (?,?,?,?,?,?,datetime('now', '-5 hours'))",
         (user, 'CC_REVIEW_'+estado_final, 'movimientos', str(mov_id),
-         'Lote '+d.get('lote','')+' AQL:'+resultado_aql+' Solub:'+solubilidad+' Firma:'+user,
+         'Lote '+d.get('lote','')+' AQL:'+resultado_aql+' Solub:'+solubilidad+' Firma:'+user+' e-sign #'+str(sig_id),
          request.remote_addr))
     if estado_final == 'RECHAZADO':
         # Fix #2 · 21-may-2026 · schema actualizado de solicitudes_compra.
@@ -9659,14 +9716,29 @@ def liberar_cuarentena(mov_id):
             'error': f'No se puede liberar lote en estado {estado_actual}',
             'codigo': 'ESTADO_NO_LIBERABLE',
         }), 409
+    # Firma electrónica Part 11 §11.200 · misma exigencia que liberar_lote /
+    # cc-review · si no se gateara aquí, el control sería eludible por esta ruta.
+    meaning = 'libera' if decision == 'Aprobado' else 'rechaza'
+    sig_id = d.get('signature_id')
+    if not _validar_e_sign(c, sig_id, record_table='movimientos', record_id=mov_id,
+                           meaning=meaning, signer_username=u):
+        return jsonify({
+            'error': 'Firma electrónica requerida',
+            'requiere_firma': True,
+            'sign_meaning': meaning,
+            'record_table': 'movimientos',
+            'record_id': str(mov_id),
+            'detail': f"Firmá vía POST /api/sign con meaning='{meaning}', "
+                      f"record_table='movimientos', record_id='{mov_id}' y reenviá signature_id.",
+        }), 400
     nuevo_estado = 'VIGENTE' if decision == 'Aprobado' else 'RECHAZADO'
     c.execute("UPDATE movimientos SET estado_lote=? WHERE id=?", (nuevo_estado, mov_id))
     c.execute("""INSERT INTO audit_log (usuario,accion,tabla,registro_id,detalle,ip,fecha)
                  VALUES (?,?,?,?,?,?,datetime('now', '-5 hours'))""",
-              (session['compras_user'], f'{decision.upper()}_CUARENTENA', 'movimientos',
-               str(mov_id), d.get('observaciones',''), request.remote_addr))
+              (u, f'{decision.upper()}_CUARENTENA', 'movimientos',
+               str(mov_id), (d.get('observaciones','') + f' · e-sign #{sig_id}'), request.remote_addr))
     conn.commit()
-    return jsonify({'ok':True, 'decision':decision, 'estado':nuevo_estado})
+    return jsonify({'ok':True, 'decision':decision, 'estado':nuevo_estado, 'signature_id': sig_id})
 
 @bp.route('/api/maestro-mp/<codigo>/precio', methods=['POST'])
 def actualizar_precio_mp(codigo):

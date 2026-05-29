@@ -4938,6 +4938,70 @@ def test_golden_e_signature_workflow_completo(app, db_clean):
     assert err and ('append-only' in err.lower() or '11.50' in err), \
         f'BUG Part 11 §11.50: e_signatures debe ser append-only · err={err}'
 
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 61 · Liberación de lote MP exige firma electrónica Part 11
+# ═══════════════════════════════════════════════════════════════════
+# Audit ronda2 29-may-2026: liberar_lote / cc-review disponían lotes de MP en
+# cuarentena (decisión regulada INVIMA) SIN firma electrónica. Ahora exigen
+# signature_id (meaning 'libera'/'rechaza') validado contra e_signatures, con
+# binding al movimiento exacto y al firmante.
+def test_golden_liberar_lote_mp_requiere_efirma(app, db_clean):
+    """Liberar lote MP: sin firma → 400 · con firma válida → 200 · binding estricto."""
+    import sqlite3 as _sq
+    cs = _login(app, 'sebastian')  # admin + Calidad
+
+    def _crear_lote_cuarentena(lote):
+        conn = _sq.connect(os.environ['DB_PATH'], timeout=5.0)
+        cur = conn.execute(
+            "INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, fecha, lote, estado_lote) "
+            "VALUES ('MP-EFIRMA-T','MP Test e-firma',1000,'Entrada',date('now'),?,'CUARENTENA')",
+            (lote,),
+        )
+        mid = cur.lastrowid
+        conn.commit(); conn.close()
+        return mid
+
+    def _firmar(record_id, meaning):
+        rc = cs.post('/api/sign/challenge', json={'password': TEST_PASSWORD},
+                     headers=csrf_headers())
+        assert rc.status_code == 200, f'challenge {rc.status_code} {rc.data}'
+        token = rc.get_json()['token']
+        rs = cs.post('/api/sign', json={
+            'record_table': 'movimientos', 'record_id': str(record_id),
+            'meaning': meaning, 'challenge_token': token,
+        }, headers=csrf_headers())
+        assert rs.status_code == 201, f'sign {rs.status_code} {rs.data}'
+        return rs.get_json()['signature_id']
+
+    mov1 = _crear_lote_cuarentena('LOTE-EF-T1')
+    mov2 = _crear_lote_cuarentena('LOTE-EF-T2')
+    try:
+        # 1. Liberar SIN firma → 400 requiere_firma (no muta estado)
+        r0 = cs.post('/api/lotes/liberar', json={'id': mov1, 'accion': 'APROBAR'},
+                     headers=csrf_headers())
+        assert r0.status_code == 400, f'debe exigir firma · {r0.status_code} {r0.data}'
+        assert r0.get_json().get('requiere_firma') is True
+
+        # 2. Firma de OTRO movimiento (mov2) NO autoriza mov1 (binding al registro)
+        sig_otro = _firmar(mov2, 'libera')
+        r_bind = cs.post('/api/lotes/liberar',
+                         json={'id': mov1, 'accion': 'APROBAR', 'signature_id': sig_otro},
+                         headers=csrf_headers())
+        assert r_bind.status_code == 400, 'firma de otro lote no debe autorizar'
+
+        # 3. Firma correcta sobre mov1 → libera (VIGENTE)
+        sig1 = _firmar(mov1, 'libera')
+        r1 = cs.post('/api/lotes/liberar',
+                     json={'id': mov1, 'accion': 'APROBAR', 'signature_id': sig1},
+                     headers=csrf_headers())
+        assert r1.status_code == 200, f'con firma debe liberar · {r1.status_code} {r1.data}'
+        assert r1.get_json()['estado'] == 'VIGENTE'
+    finally:
+        conn = _sq.connect(os.environ['DB_PATH'], timeout=5.0)
+        conn.execute("DELETE FROM movimientos WHERE material_id='MP-EFIRMA-T'")
+        conn.commit(); conn.close()
+
     # Cleanup
     cs.patch('/api/identidad/sebastian',
              json={'cedula': '', 'nombre_completo': ''},
