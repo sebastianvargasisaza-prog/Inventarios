@@ -39,6 +39,50 @@ bp = Blueprint('rrhh', __name__)
 
 _RRHH_AUTHORIZED = lambda: set(RRHH_USERS) | set(ADMIN_USERS) | set(CONTADORA_USERS)
 
+# ── Nómina · constantes 2026 ──
+_SMMLV_2026 = 1423500
+_AUX_TRANSPORTE_2026 = 202000
+_ARL_RATES = {1: 0.00522, 2: 0.01044, 3: 0.02436, 4: 0.04350, 5: 0.06960}
+
+
+def _calc_nomina_quincenal(sal, dias, vhe, bonos, otros, riesgo,
+                           smmlv=_SMMLV_2026, aux_mensual=_AUX_TRANSPORTE_2026):
+    """Fórmula ÚNICA de nómina quincenal · P0 fix 28-may-2026.
+
+    Antes: la pantalla (/api/rrhh/nomina/<p>) calculaba quincenal prorrateado
+    por días/15, pero el comprobante y el export Excel calculaban el MENSUAL
+    completo ignorando dias_trabajados → el neto que veía el empleado, el que
+    se imprimía y el que se exportaba NO coincidían (riesgo de pago laboral).
+    nomina_registros.salario_neto (lo que suman aprobar/pagar) guarda el
+    quincenal, así que la quincenal es la verdad. Esta función es ahora la
+    única fuente: pantalla, comprobante y export la usan.
+
+    El período es quincenal (YYYY-MM-Q1/Q2): base = salario mensual / 2,
+    prorrateado sobre 15 días. Devuelve dict con devengados, deducciones,
+    neto y aportes del empleador (calculados sobre el quincenal).
+    """
+    sal = sal or 0
+    sal_q = round(sal / 2)
+    sal_prop = round(sal_q * dias / 15)
+    aux_q = round(aux_mensual / 2) if sal <= 2 * smmlv else 0
+    aux_prop = round(aux_q * dias / 15)
+    desc_salud = round(sal_prop * 0.04)
+    desc_pension = round(sal_prop * 0.04)
+    neto = sal_prop + aux_prop + vhe + bonos - desc_salud - desc_pension - otros
+    rate = _ARL_RATES.get(riesgo, 0.00522)
+    ap = {
+        'salud': round(sal_q * 0.085), 'pension': round(sal_q * 0.12),
+        'arl': round(sal_q * rate), 'sena': round(sal_q * 0.02),
+        'icbf': round(sal_q * 0.03), 'caja': round(sal_q * 0.04),
+    }
+    ap['total'] = sum(ap.values())
+    return {
+        'salario_quincenal': sal_q, 'sal_prop': sal_prop,
+        'aux_transporte': aux_prop, 'desc_salud': desc_salud,
+        'desc_pension': desc_pension, 'total_devengado': sal_prop + aux_prop + vhe + bonos,
+        'neto': neto, 'aportes': ap,
+    }
+
 
 @bp.before_request
 def _rrhh_gate():
@@ -236,33 +280,19 @@ def rrhh_nomina(periodo):
     for e in emps:
         eid,nom,ape,cargo,sal,emp,area,riesgo,banco,num_cta,tipo_cta=e
         xr=ex.get(eid)
-        # Quincenal: base de pago es la mitad del salario mensual
-        sal_q = round(sal / 2)
         dias=xr[1] if xr else 15; he=xr[2] if xr else 0; vhe=xr[3] if xr else 0
         bonos=xr[4] if xr else 0; otros=xr[5] if xr else 0
-        # Pro-rateo por días trabajados sobre 15
-        sal_prop = round(sal_q * dias / 15)
-        # Aux transporte quincenal (solo si salario <= 2 SMMLV)
-        aux = round(AUX / 2) if sal <= 2*SMMLV else 0
-        aux_prop = round(aux * dias / 15)
-        # Deducciones sobre el devengado quincenal proporcional
-        desc_salud = round(sal_prop * 0.04)
-        desc_pension = round(sal_prop * 0.04)
-        neto = sal_prop + aux_prop + vhe + bonos - desc_salud - desc_pension - otros
-        # Aportes empleador (calculados sobre salario mensual / 2)
-        ap_s=round(sal_q*0.085); ap_p=round(sal_q*0.12)
-        ap_arl=round(sal_q*arl_rates.get(riesgo,0.00522))
-        ap_sena=round(sal_q*0.02); ap_icbf=round(sal_q*0.03); ap_caja=round(sal_q*0.04)
-        ap_tot=ap_s+ap_p+ap_arl+ap_sena+ap_icbf+ap_caja
+        # Fórmula quincenal ÚNICA (compartida con comprobante y export · P0 28-may)
+        n = _calc_nomina_quincenal(sal, dias, vhe, bonos, otros, riesgo)
         result.append({"id":eid,"nombre":nom+" "+ape,"cargo":cargo,"empresa":emp,"area":area,
-            "salario_base":sal,"salario_quincenal":sal_q,"dias_trabajados":dias,
-            "aux_transporte":aux_prop,"horas_extras":he,"valor_horas_extras":vhe,
-            "bonificaciones":bonos,"desc_salud":desc_salud,"desc_pension":desc_pension,
-            "otros_descuentos":otros,"neto":neto,
+            "salario_base":sal,"salario_quincenal":n['salario_quincenal'],"dias_trabajados":dias,
+            "aux_transporte":n['aux_transporte'],"horas_extras":he,"valor_horas_extras":vhe,
+            "bonificaciones":bonos,"desc_salud":n['desc_salud'],"desc_pension":n['desc_pension'],
+            "otros_descuentos":otros,"neto":n['neto'],
             "banco":(banco or "") if _puede_ver_banco else "***",
             "numero_cuenta":(num_cta or "") if _puede_ver_banco else "***",
             "tipo_cuenta":(tipo_cta or "") if _puede_ver_banco else "***",
-            "aportes_empleador":{"salud":ap_s,"pension":ap_p,"arl":ap_arl,"sena":ap_sena,"icbf":ap_icbf,"caja":ap_caja,"total":ap_tot}})
+            "aportes_empleador":n['aportes']})
     return jsonify(result)
 
 @bp.route("/api/rrhh/nomina/guardar", methods=["POST"])
@@ -394,7 +424,7 @@ def rrhh_nomina_export(periodo):
     # SEC-FIX 27-may-2026 PM · audit round 4 · header decía "Cedula" pero el
     # SELECT trae empleados.id (PK INTEGER), no la cédula real. Renombrado a
     # "ID Empleado" para evitar confusión / falsa expectativa de PII.
-    hdrs = ["#","ID Empleado","Empleado","Cargo","Empresa","Dias","Sal.Base","Aux.Trans","H.Extras","Bonos","-Salud 4%","-Pension 4%","-Otros","NETO"]
+    hdrs = ["#","ID Empleado","Empleado","Cargo","Empresa","Dias","Sal.Quinc.","Aux.Trans","H.Extras","Bonos","-Salud 4%","-Pension 4%","-Otros","NETO"]
     for col, h in enumerate(hdrs, 1):
         cell = ws.cell(row=3, column=col, value=h)
         cell.fill = hf; cell.font = hfont; cell.alignment = Alignment(horizontal="center"); cell.border = brd
@@ -405,15 +435,17 @@ def rrhh_nomina_export(periodo):
     for idx2, e in enumerate(emps, 1):
         eid, nom, ape, cargo, sal, emp, riesgo = e
         xr = ex.get(eid)
-        dias = xr[1] if xr else 30; vhe = xr[2] if xr else 0
+        dias = xr[1] if xr else 15; vhe = xr[2] if xr else 0
         bonos = xr[3] if xr else 0; otros = xr[4] if xr else 0
-        aux = AUX if sal <= 2*SMMLV else 0
-        ds = round(sal*0.04); dp = round(sal*0.04)
-        neto = sal + aux + vhe + bonos - ds - dp - otros
-        ap = round(sal*(0.085+0.12+arl_rates.get(riesgo,0.00522)+0.02+0.03+0.04))
+        # P0 fix 28-may · fórmula quincenal única (igual que pantalla y
+        # comprobante) · antes calculaba MENSUAL completo ignorando dias.
+        n = _calc_nomina_quincenal(sal, dias, vhe, bonos, otros, riesgo)
+        sal_dev = n['sal_prop']; aux = n['aux_transporte']
+        ds = n['desc_salud']; dp = n['desc_pension']
+        neto = n['neto']; ap = n['aportes']['total']
         total_neto += neto; total_ap += ap
         row = idx2 + 3
-        vals = [idx2, eid, nom+" "+ape, cargo, emp, dias, sal, aux, vhe, bonos, -ds, -dp, -otros if otros else 0, neto]
+        vals = [idx2, eid, nom+" "+ape, cargo, emp, dias, sal_dev, aux, vhe, bonos, -ds, -dp, -otros if otros else 0, neto]
         for col, val in enumerate(vals, 1):
             cell = ws.cell(row=row, column=col, value=val)
             if idx2 % 2 == 0: cell.fill = alt
@@ -474,18 +506,19 @@ def rrhh_comprobante(periodo, eid):
         tipo_cta = '***'
     c.execute("SELECT dias_trabajados,valor_horas_extras,bonificaciones,otros_descuentos,estado,aprobado_por,aprobado_en,pagado_por,pagado_en FROM nomina_registros WHERE periodo=? AND empleado_id=?", (periodo, eid))
     nr = c.fetchone()
-    dias = nr[0] if nr else 30; vhe = nr[1] if nr else 0
+    dias = nr[0] if nr else 15; vhe = nr[1] if nr else 0
     bonos = nr[2] if nr else 0; otros = nr[3] if nr else 0
     estado = nr[4] if nr else "No guardada"
     ap_por = nr[5] if nr else ""; ap_en = nr[6] if nr else ""
     pag_por = nr[7] if nr else ""; pag_en = nr[8] if nr else ""
-    arl_rates = {1:0.00522, 2:0.01044, 3:0.02436, 4:0.04350, 5:0.06960}
-    aux = AUX if sal <= 2*SMMLV else 0
-    ds = round(sal*0.04); dp = round(sal*0.04)
-    neto = sal + aux + vhe + bonos - ds - dp - otros
-    ap_s=round(sal*0.085); ap_p=round(sal*0.12); ap_arl=round(sal*arl_rates.get(riesgo,0.00522))
-    ap_sena=round(sal*0.02); ap_icbf=round(sal*0.03); ap_caja=round(sal*0.04)
-    ap_tot = ap_s+ap_p+ap_arl+ap_sena+ap_icbf+ap_caja
+    # P0 fix 28-may · fórmula quincenal única (igual que pantalla y export) ·
+    # antes el comprobante calculaba MENSUAL completo ignorando dias_trabajados.
+    n = _calc_nomina_quincenal(sal, dias, vhe, bonos, otros, riesgo)
+    sal_dev = n['sal_prop']; aux = n['aux_transporte']
+    ds = n['desc_salud']; dp = n['desc_pension']; neto = n['neto']
+    ap_s = n['aportes']['salud']; ap_p = n['aportes']['pension']; ap_arl = n['aportes']['arl']
+    ap_sena = n['aportes']['sena']; ap_icbf = n['aportes']['icbf']; ap_caja = n['aportes']['caja']
+    ap_tot = n['aportes']['total']
     def cop(v): return "${:,.0f}".format(v).replace(",",".")
     if estado == "Pagada":
         badge = "background:#166534;color:#fff"
@@ -532,11 +565,11 @@ def rrhh_comprobante(periodo, eid):
         "<td class='lbl'>Riesgo ARL:</td><td>Nivel "+str(riesgo)+"</td></tr>"
         "</table>"
         "<div class='sec'>DEVENGADO</div><table>"
-        "<tr><td class='lbl'>Salario base</td><td class='val'>"+cop(sal)+"</td></tr>"
+        "<tr><td class='lbl'>Salario quincenal</td><td class='val'>"+cop(sal_dev)+"</td></tr>"
         "<tr><td class='lbl'>Auxilio de transporte</td><td class='val'>"+cop(aux)+"</td></tr>"
         "<tr><td class='lbl'>Valor horas extras</td><td class='val'>"+cop(vhe)+"</td></tr>"
         "<tr><td class='lbl'>Bonificaciones</td><td class='val'>"+cop(bonos)+"</td></tr>"
-        "<tr style='font-weight:700'><td>Total devengado</td><td class='val'>"+cop(sal+aux+vhe+bonos)+"</td></tr>"
+        "<tr style='font-weight:700'><td>Total devengado</td><td class='val'>"+cop(sal_dev+aux+vhe+bonos)+"</td></tr>"
         "</table>"
         "<div class='sec'>DEDUCCIONES</div><table>"
         "<tr><td class='lbl'>Salud (4%)</td><td class='val'>&minus;"+cop(ds)+"</td></tr>"
