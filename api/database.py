@@ -312,6 +312,16 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (202, "rate_limit_hits · rate limit cross-worker para webhooks públicos (el limiter en memoria se anulaba con 3 workers gunicorn) · audit ronda2 29-may-2026", [
+        # Audit ronda2 29-may-2026: comercial._rate_limit_check usaba un dict en
+        # memoria por proceso · con 3 workers el límite efectivo era 3×. Esta
+        # tabla permite un limiter por ventana deslizante compartido entre
+        # workers. El código es deploy-safe: si la tabla no existe (mig sin
+        # aplicar en PG) cae al limiter en memoria, sin regresión.
+        "CREATE TABLE IF NOT EXISTS rate_limit_hits (clave TEXT NOT NULL, ts REAL NOT NULL)",
+        "CREATE INDEX IF NOT EXISTS idx_rlh_clave_ts ON rate_limit_hits(clave, ts)",
+    ]),
+
     (201, "movimientos.produccion_id · reversión precisa del descuento MP (evita cross-reversal entre producciones mismo producto+fecha) · audit profundo 28-may-2026", [
         # Sebastián 28-may-2026 (audit profundo): /revertir-completado filtraba
         # las Salidas de MP por LIKE 'Producción ... {producto} — {fecha}%'. Dos

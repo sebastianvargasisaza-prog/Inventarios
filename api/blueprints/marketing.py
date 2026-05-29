@@ -2544,8 +2544,22 @@ def mkt_kpis_hoy():
             continue
 
     # 3) SKUs en riesgo — reusa lógica del agente estrategia (días cob ≤ 21)
+    # PERF ronda2 29-may: precargar liberaciones (GROUP BY) y pedidos Shopify del
+    # periodo en bloque · antes 2 queries por SKU (N+1). sku_items es compuesto,
+    # así que el match LIKE %sku% se hace en Python sobre las filas precargadas.
     try:
         riesgo = 0
+        _lib_map = {}
+        for lr in c.execute(
+            "SELECT sku, COALESCE(SUM(unidades),0) AS t FROM liberaciones WHERE creado_en>=? GROUP BY sku",
+            (hace30,)
+        ).fetchall():
+            if lr["sku"]:
+                _lib_map[lr["sku"]] = lr["t"]
+        _shop_rows = c.execute(
+            "SELECT sku_items, COALESCE(unidades_total,0) AS t FROM animus_shopify_orders WHERE creado_en>=?",
+            (hace30,)
+        ).fetchall()
         for r in c.execute("""
             SELECT sku, SUM(unidades_disponible) AS stock
             FROM stock_pt WHERE estado='Disponible' GROUP BY sku
@@ -2553,14 +2567,8 @@ def mkt_kpis_hoy():
             sku, stock = r["sku"], r["stock"]
             if not sku:
                 continue
-            lib = c.execute(
-                "SELECT COALESCE(SUM(unidades),0) AS t FROM liberaciones WHERE sku=? AND creado_en>=?",
-                (sku, hace30)
-            ).fetchone()["t"]
-            shop = c.execute(
-                "SELECT COALESCE(SUM(unidades_total),0) AS t FROM animus_shopify_orders WHERE sku_items LIKE ? AND creado_en>=?",
-                (f"%{sku}%", hace30)
-            ).fetchone()["t"]
+            lib = _lib_map.get(sku, 0)
+            shop = sum(x["t"] for x in _shop_rows if x["sku_items"] and sku in x["sku_items"])
             demanda = (lib + shop) / 30.0
             if demanda > 0:
                 dias_cob = (stock or 0) / demanda
@@ -3029,18 +3037,19 @@ def mkt_campanas():
                 rows = c.execute("""
                     SELECT * FROM marketing_campanas ORDER BY fecha_creacion DESC
                 """).fetchall()
+            # PERF ronda2 29-may: contar influencers/contenido en bloque (2
+            # GROUP BY) en vez de 2 queries por campaña (N+1).
+            _inf_cnt = {x[0]: x[1] for x in c.execute(
+                "SELECT campana_id, COUNT(*) FROM marketing_campana_influencer GROUP BY campana_id"
+            ).fetchall()}
+            _cont_cnt = {x[0]: x[1] for x in c.execute(
+                "SELECT campana_id, COUNT(*) FROM marketing_contenido GROUP BY campana_id"
+            ).fetchall()}
             result = []
             for row in rows:
                 r = dict(row)
-                # Contar influencers asignados
-                r["num_influencers"] = c.execute(
-                    "SELECT COUNT(*) FROM marketing_campana_influencer WHERE campana_id=?",
-                    (r["id"],)
-                ).fetchone()[0]
-                r["num_contenido"] = c.execute(
-                    "SELECT COUNT(*) FROM marketing_contenido WHERE campana_id=?",
-                    (r["id"],)
-                ).fetchone()[0]
+                r["num_influencers"] = _inf_cnt.get(r["id"], 0)
+                r["num_contenido"] = _cont_cnt.get(r["id"], 0)
                 result.append(r)
             return jsonify(result)
 
@@ -3221,18 +3230,24 @@ def mkt_influencers():
                 params.append(estado)
             sql = base + (" WHERE " + " AND ".join(conds) if conds else "") + " ORDER BY nombre"
             rows = c.execute(sql, params).fetchall()
+            # PERF ronda2 29-may: estadísticas agregadas en bloque (1 GROUP BY)
+            # en vez de 1 query por influencer (N+1).
+            _stats_map = {}
+            for srow in c.execute("""
+                SELECT influencer_id,
+                       COUNT(DISTINCT campana_id) as campanas,
+                       COALESCE(SUM(conversiones),0) as conversiones,
+                       COALESCE(SUM(alcance_real),0) as alcance_total,
+                       COALESCE(SUM(monto_pagado),0) as total_pagado
+                FROM marketing_campana_influencer GROUP BY influencer_id
+            """).fetchall():
+                sd = dict(srow)
+                _stats_map[sd.pop("influencer_id")] = sd
             result = []
             for row in rows:
                 r = dict(row)
-                # Estadísticas agregadas
-                stats = c.execute("""
-                    SELECT COUNT(DISTINCT campana_id) as campanas,
-                           COALESCE(SUM(conversiones),0) as conversiones,
-                           COALESCE(SUM(alcance_real),0) as alcance_total,
-                           COALESCE(SUM(monto_pagado),0) as total_pagado
-                    FROM marketing_campana_influencer WHERE influencer_id=?
-                """, (r["id"],)).fetchone()
-                r["stats"] = _fmt(stats)
+                r["stats"] = _stats_map.get(r["id"], {"campanas": 0, "conversiones": 0,
+                                                       "alcance_total": 0, "total_pagado": 0})
                 result.append(r)
             return jsonify(result)
 
@@ -7604,10 +7619,15 @@ def mkt_cmo_plan_diario():
     # POST · generar plan nuevo
     body = request.get_json(silent=True) or {}
     forzar = bool(body.get('forzar'))
-    existente = c.execute(
-        "SELECT id, estado FROM marketing_cmo_plan WHERE fecha=? ORDER BY id DESC LIMIT 1",
-        (fecha,)
-    ).fetchone()
+    # Deploy-safe: en PG init_db() no auto-aplica migraciones; si la mig 200 no
+    # está aplicada la tabla no existe · degradar limpio igual que el GET.
+    try:
+        existente = c.execute(
+            "SELECT id, estado FROM marketing_cmo_plan WHERE fecha=? ORDER BY id DESC LIMIT 1",
+            (fecha,)
+        ).fetchone()
+    except Exception as e:
+        return jsonify({'ok': False, 'error': f'tabla marketing_cmo_plan no existe (mig 200): {e}'}), 500
     if existente and not forzar:
         return jsonify({
             'ok': True, 'plan_id': existente[0],

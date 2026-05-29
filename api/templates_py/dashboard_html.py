@@ -6915,7 +6915,7 @@ async function cargarProgramacionCiclica(){
       var semLabel = s.es_actual ? 'Sem. '+s.semana+' (Esta semana)' : 'Sem. '+s.semana;
       var accion = '';
       if(s.es_actual && s.conteo_estado !== 'Cerrado'){
-        accion = '<button onclick="iniciarConteoProgramado(\\''+s.estanteria+'\\')" style="padding:4px 12px;background:#6d28d9;color:#fff;border:none;border-radius:6px;font-size:0.82em;cursor:pointer;">'+(s.conteo_estado==='Abierto'?'Retomar':'Iniciar')+'</button>';
+        accion = '<button onclick="iniciarConteoProgramado(\\''+_escHTML(String(s.estanteria||'').replace(/\\x27/g,"\\\\\\x27"))+'\\')" style="padding:4px 12px;background:#6d28d9;color:#fff;border:none;border-radius:6px;font-size:0.82em;cursor:pointer;">'+(s.conteo_estado==='Abierto'?'Retomar':'Iniciar')+'</button>';
       }
       // En modo items, mostrar los códigos+nombres de los 3 ítems en lugar
       // del label sintético "E&E-Empaque-S05"
@@ -6923,10 +6923,10 @@ async function cargarProgramacionCiclica(){
       if(modoItems && s.items_programados){
         asignacionTxt = '<div style="font-size:0.78em;color:#555;font-weight:600;margin-bottom:3px;">3 items a contar:</div>';
         s.items_programados.forEach(function(it){
-          asignacionTxt += '<div style="font-size:0.8em;font-family:monospace;color:#1e293b;">• '+it.codigo_mp+' — '+it.nombre+'</div>';
+          asignacionTxt += '<div style="font-size:0.8em;font-family:monospace;color:#1e293b;">• '+_escHTML(it.codigo_mp||'')+' — '+_escHTML(it.nombre||'')+'</div>';
         });
       } else {
-        asignacionTxt = s.estanteria;
+        asignacionTxt = _escHTML(s.estanteria||'');
       }
       html += '<tr style="border-bottom:1px solid #e0ece9;'+bg+'">'
             + '<td style="padding:7px 12px;vertical-align:top;">'+semLabel+'</td>'
@@ -14239,7 +14239,7 @@ async function ckMarcar(itemId, estado){
             +'<td style="padding:7px 10px;text-align:center"><span style="background:'+estCol+'22;color:'+estCol+';padding:2px 8px;border-radius:8px;font-size:10px;font-weight:700;text-transform:uppercase">'+_escHTML(it.estado||'')+'</span></td>'
             +'<td style="padding:7px 10px;text-align:right;font-family:monospace;color:'+(it.estado==='con_diferencia'?'#dc2626':'#0f172a')+';font-weight:700">'+_escHTML(dif)+'</td>'
             +'<td style="padding:7px 10px;text-align:center">'
-            +(it.estado==='programado' ? '<button onclick="ccAbrirRegistro('+it.id+',\\''+_escAttr(it.material_nombre||it.material_id)+'\\')" style="background:#6d28d9;color:#fff;border:none;padding:4px 12px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">📝 Registrar</button>' : '<span style="color:#94a3b8;font-size:11px">'+(it.terminado_por||'—')+'</span>')
+            +(it.estado==='programado' ? '<button onclick="ccAbrirRegistro('+it.id+',\\''+_escHTML(String(it.material_nombre||it.material_id||'').replace(/\\x27/g,"\\\\\\x27"))+'\\')" style="background:#6d28d9;color:#fff;border:none;padding:4px 12px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">📝 Registrar</button>' : '<span style="color:#94a3b8;font-size:11px">'+_escHTML(it.terminado_por||'—')+'</span>')
             +'</td></tr>';
         });
         html += '</tbody></table></div></div>';

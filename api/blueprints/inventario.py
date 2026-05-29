@@ -1145,10 +1145,25 @@ def formulas_uso(producto_nombre):
 
 @bp.route('/api/formulas/<producto_nombre>', methods=['DELETE'])
 def del_formula(producto_nombre):
+    # RBAC · borrar una fórmula es destructivo sobre datos regulados (INVIMA).
+    # Solo ADMIN o CALIDAD, igual que patch_codigo_pt (mismo dato).
+    user = session.get('compras_user', '')
+    if user not in ADMIN_USERS and user not in CALIDAD_USERS:
+        return jsonify({'error': 'requiere admin o calidad'}), 403
     conn = get_db()
     c = conn.cursor()
+    # Snapshot antes del borrado para trazabilidad (audit_log obligatorio).
+    n_items = c.execute('SELECT COUNT(*) FROM formula_items WHERE producto_nombre=?',
+                        (producto_nombre,)).fetchone()[0]
+    hdr = c.execute('SELECT COUNT(*) FROM formula_headers WHERE producto_nombre=?',
+                    (producto_nombre,)).fetchone()[0]
+    if not hdr and not n_items:
+        return jsonify({'error': 'fórmula no encontrada'}), 404
     c.execute('DELETE FROM formula_items WHERE producto_nombre=?', (producto_nombre,))
     c.execute('DELETE FROM formula_headers WHERE producto_nombre=?', (producto_nombre,))
+    audit_log(c, usuario=user, accion='ELIMINAR_FORMULA',
+              tabla='formula_headers', registro_id=producto_nombre,
+              antes={'producto_nombre': producto_nombre, 'items': n_items})
     conn.commit()
     return jsonify({'message': f'Formula {producto_nombre} eliminada'})
 
@@ -1967,7 +1982,7 @@ def _handle_produccion_inner():
                                 SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END) as stock
                          FROM movimientos
                          WHERE material_id=? AND lote IS NOT NULL AND lote!='' AND lote!='S/L'
-                           AND (estado_lote IS NULL OR estado_lote NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO'))
+                           AND (estado_lote IS NULL OR estado_lote NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO','VENCIDO','AGOTADO'))
                          GROUP BY lote HAVING stock > 0
                          ORDER BY COALESCE(NULLIF(CAST(MAX(CASE WHEN tipo='Entrada' THEN fecha_vencimiento END) AS TEXT), ''), '9999-12-31') ASC""", (mat_id,))
             lotes_fefo = c.fetchall()
@@ -2826,7 +2841,7 @@ def produccion_ajustar_cantidad(pid):
                     SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END) as stock
                     FROM movimientos
                     WHERE material_id=? AND lote IS NOT NULL AND lote!='' AND lote!='S/L'
-                      AND (estado_lote IS NULL OR estado_lote NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO'))
+                      AND (estado_lote IS NULL OR estado_lote NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO','VENCIDO','AGOTADO'))
                     GROUP BY lote HAVING stock > 0
                     ORDER BY COALESCE(NULLIF(CAST(MAX(CASE WHEN tipo='Entrada' THEN fecha_vencimiento END) AS TEXT),''),'9999-12-31') ASC""",
                     (mid,)).fetchall()
@@ -8941,12 +8956,12 @@ def cc_review():
          1 if d.get('coa_vigente') else 0, 1 if d.get('ficha_ok') else 0,
          solubilidad, resultado_aql, d.get('observaciones_aql',''),
          1 if d.get('muestra_retencion') else 0, d.get('observaciones',''),
-         d.get('firmante', user), estado_final, request.remote_addr))
+         user, estado_final, request.remote_addr))  # firmante = sesión autenticada (no spoofable por payload)
     c.execute("UPDATE movimientos SET estado_lote=? WHERE id=?", (estado_final, mov_id))
     c.execute(
         "INSERT INTO audit_log (usuario,accion,tabla,registro_id,detalle,ip,fecha) VALUES (?,?,?,?,?,?,datetime('now', '-5 hours'))",
         (user, 'CC_REVIEW_'+estado_final, 'movimientos', str(mov_id),
-         'Lote '+d.get('lote','')+' AQL:'+resultado_aql+' Solub:'+solubilidad+' Firma:'+d.get('firmante',user),
+         'Lote '+d.get('lote','')+' AQL:'+resultado_aql+' Solub:'+solubilidad+' Firma:'+user,
          request.remote_addr))
     if estado_final == 'RECHAZADO':
         # Fix #2 · 21-may-2026 · schema actualizado de solicitudes_compra.

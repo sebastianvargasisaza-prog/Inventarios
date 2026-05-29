@@ -30,8 +30,8 @@ bp = Blueprint('comercial', __name__)
 _RATE_BUCKETS = {}  # ip → [timestamps]
 
 
-def _rate_limit_check(ip: str, max_req: int = 5, window: int = 60) -> bool:
-    """Retorna True si la IP excedió el límite (debe rechazarse)."""
+def _rate_limit_check_mem(ip: str, max_req: int = 5, window: int = 60) -> bool:
+    """Limiter en memoria (fallback). True si la IP excedió el límite."""
     now = time.time()
     bucket = _RATE_BUCKETS.setdefault(ip, [])
     # Limpiar entradas viejas
@@ -40,6 +40,29 @@ def _rate_limit_check(ip: str, max_req: int = 5, window: int = 60) -> bool:
         return True
     bucket.append(now)
     return False
+
+
+def _rate_limit_check(ip: str, max_req: int = 5, window: int = 60) -> bool:
+    """Retorna True si la IP excedió el límite (debe rechazarse).
+
+    Audit ronda2 29-may-2026: con 3 workers gunicorn el dict en memoria daba
+    3× el límite real. Usa la tabla rate_limit_hits (mig 202) para contar por
+    ventana deslizante compartida entre workers. Deploy-safe: si la tabla aún
+    no existe en PG (mig sin aplicar) o falla, cae al limiter en memoria.
+    """
+    try:
+        now = time.time()
+        conn = get_db(); c = conn.cursor()
+        c.execute("DELETE FROM rate_limit_hits WHERE ts < ?", (now - window,))
+        n = c.execute("SELECT COUNT(*) FROM rate_limit_hits WHERE clave=?", (ip,)).fetchone()[0]
+        if n >= max_req:
+            conn.commit()
+            return True
+        c.execute("INSERT INTO rate_limit_hits (clave, ts) VALUES (?, ?)", (ip, now))
+        conn.commit()
+        return False
+    except Exception:
+        return _rate_limit_check_mem(ip, max_req, window)
 
 
 def _scrub_webhook_payload(d: dict) -> dict:

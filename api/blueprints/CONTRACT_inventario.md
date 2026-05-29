@@ -260,3 +260,17 @@ Invariante nueva:
 
 **Migración 154:** `formula_items.incluye_merma INTEGER DEFAULT 0`
 - Si =1, auto_plan NO re-aplica merma (cantidad_g_por_lote ya la incluye)
+
+### 2026-05-29 · Auditoría ronda 2 · fixes inventario/calidad
+- **FEFO de registro real** (`del_formula` líneas ~1970 y ~2829): el WHERE de
+  selección de lotes ahora excluye también `VENCIDO` y `AGOTADO` (antes solo
+  CUARENTENA/CUARENTENA_EXTENDIDA/RECHAZADO). Alinea con
+  `inventario_helpers.ESTADOS_LOTE_NO_DISPONIBLES` y `_get_mp_stock`. Evita
+  consumir MP vencida/agotada en producción (trazabilidad INVIMA).
+- **DELETE `/api/formulas/<nombre>`**: ahora exige RBAC (ADMIN o CALIDAD, igual
+  que `patch_codigo_pt`) y escribe `audit_log(accion='ELIMINAR_FORMULA')` con
+  snapshot del nº de items. Antes cualquier logueado borraba fórmulas reguladas
+  sin rastro. Devuelve 404 si la fórmula no existe.
+- **`cc-review`**: el `firmante` ahora se toma de la sesión autenticada (`user`),
+  no de `d.get('firmante')` del payload (era falsificable y se grababa así en
+  audit_log).

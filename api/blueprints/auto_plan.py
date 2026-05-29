@@ -791,6 +791,13 @@ def generar_plan(horizonte_dias=60, tipo='auto', usuario='cron'):
             consumo_acumulado[mat_id] = consumo_acumulado.get(mat_id, 0) + req_g
 
     compras_propuestas = []
+    # PERF · audit ronda2 29-may: pendiente-en-compras en bloque (2 queries
+    # GROUP BY) en vez de N llamadas a _pendiente_en_compras_g dentro del loop.
+    try:
+        from blueprints.compras import _pendiente_en_compras_bulk
+        _pend_cola = _pendiente_en_compras_bulk(c)
+    except Exception:
+        _pend_cola = {}
     for mat_id, req_g in consumo_acumulado.items():
         # Stock disponible · audit zero-error 2-may-2026: usar helper canónico.
         # Antes usaba 'Ingreso'/'Consumo' (no existen) y devolvía 0/negativo
@@ -824,14 +831,10 @@ def generar_plan(horizonte_dias=60, tipo='auto', usuario='cron'):
             prov = (mm_row[0] if mm_row else '') or ''
             nombre = (mm_row[1] if mm_row else mat_id) or mat_id
             lead, buffer, cob_min, cob_ideal, origen, es_envase = 14, 30, 30, 60, 'local', 0
-        # Compras PRO · 21-may-2026 · usa helper compartido para dedup
-        # cross-canales. Cualquier motor automático que cree SOLs debe usar
-        # _pendiente_en_compras_g · evita duplicación silenciosa.
-        try:
-            from blueprints.compras import _pendiente_en_compras_g
-            en_cola_g = _pendiente_en_compras_g(c, mat_id)
-        except Exception:
-            en_cola_g = 0
+        # Compras PRO · 21-may-2026 · dedup cross-canales (pendiente en SOL/OC).
+        # PERF ronda2 29-may: lookup O(1) en el bulk precalculado · misma lógica
+        # que _pendiente_en_compras_g, sin N+1.
+        en_cola_g = _pend_cola.get(str(mat_id), 0)
         deficit_g = req_g - stock_g - en_cola_g
         if deficit_g <= 0:
             continue
@@ -5172,12 +5175,16 @@ def auto_sc_generar():
               'Alta' if modo == 'urgente' else 'Normal',
               observ, fecha_hoy_iso))
 
-        # Compras PRO · 21-may-2026 · dedup motor SC IA · descontar pendientes
+        # Compras PRO · 21-may-2026 · dedup motor SC IA · descontar pendientes.
+        # PERF ronda2 29-may: pendiente en bloque (2 queries) por proveedor en
+        # vez de 2 queries por item. Se re-lee por proveedor para ver las SOL
+        # recién insertadas por proveedores anteriores (misma semántica que antes).
         items_dedup = []
         try:
-            from blueprints.compras import _pendiente_en_compras_g
+            from blueprints.compras import _pendiente_en_compras_bulk
+            _pend_cola = _pendiente_en_compras_bulk(c)
             for it in items:
-                en_cola = _pendiente_en_compras_g(c, it['material_id'])
+                en_cola = _pend_cola.get(str(it['material_id']), 0)
                 cant_neta = max(0, float(it['cantidad_g']) - en_cola)
                 if cant_neta > 0:
                     it_copy = dict(it); it_copy['cantidad_g'] = cant_neta

@@ -227,3 +227,9 @@ Tests goldens que protegen:
 - Mismo patrón que ya usaba la reversión MEE vía `lote_ref`.
 - **Test que cazaría regresión**:
   `test_revertir_completado_no_cross_reversal_mp`.
+
+### 2026-05-29 · Auditoría ronda 2 · audit_log en mutaciones de produccion_programada
+- **`prog_revertir_completado`**: agregado `audit_log(accion='REVERTIR_COMPLETADO')`
+  antes del commit (operación inversa de COMPLETAR_PRODUCCION, regulada INVIMA).
+- **`planta_aceptar_produccion`**: agregado `audit_log(accion='ACEPTAR_PRODUCCION')`
+  tras asignar área + crear tareas (registra quién aceptó/cuándo).

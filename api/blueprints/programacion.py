@@ -6725,6 +6725,18 @@ def prog_revertir_completado(evento_id):
                                    ' | REVERTIDO ' || ? || ' por ' || ?
              WHERE id=?
         """, (fecha_iso, user, evento_id))
+        # Audit log INVIMA · revertir descuento de inventario es operación
+        # regulada (inversa de COMPLETAR_PRODUCCION). Trazabilidad obligatoria.
+        try:
+            audit_log(c, usuario=user, accion='REVERTIR_COMPLETADO',
+                      tabla='produccion_programada', registro_id=evento_id,
+                      antes={'estado': 'completado', 'inventario_descontado_at': 'set'},
+                      despues={'estado': 'programado', 'inventario_descontado_at': None,
+                               'mps_revertidos': len(revertidos_mps),
+                               'mees_revertidos': len(revertidos_mees),
+                               'fecha': fecha_iso})
+        except Exception as e:
+            log.warning('audit_log REVERTIR_COMPLETADO fallo: %s', e)
         conn.commit()
     except Exception as e:
         try: conn.rollback()
@@ -17004,6 +17016,15 @@ def planta_aceptar_produccion(produccion_id):
         "UPDATE produccion_programada SET observaciones=COALESCE(observaciones,'')||'\n[ACEPTADA por '||?||' '||datetime('now', '-5 hours')||']' WHERE id=?",
         (user, produccion_id)
     )
+    # Audit log · aceptar producción asigna área y crea tareas operativas
+    # sobre produccion_programada. Trazabilidad obligatoria (quién aceptó/cuándo).
+    try:
+        audit_log(c, usuario=user, accion='ACEPTAR_PRODUCCION',
+                  tabla='produccion_programada', registro_id=produccion_id,
+                  despues={'producto': producto, 'area_id': area_id,
+                           'tareas_creadas': len(tareas_creadas)})
+    except Exception as _ae:
+        logging.getLogger('programacion').warning('audit_log ACEPTAR_PRODUCCION fallo: %s', _ae)
     conn.commit()
 
     return jsonify({

@@ -303,7 +303,7 @@ def rrhh_nomina_guardar():
     conn = get_db(); c = conn.cursor()
     for r in registros:
         c.execute("INSERT OR REPLACE INTO nomina_registros (periodo,empleado_id,salario_base,dias_trabajados,horas_extras,valor_horas_extras,subsidio_transporte,bonificaciones,descuento_salud,descuento_pension,otros_descuentos,salario_neto,estado) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                 (periodo,r["id"],r["salario_base"],r.get("dias_trabajados",30),r.get("horas_extras",0),r.get("valor_horas_extras",0),r.get("aux_transporte",0),r.get("bonificaciones",0),r["desc_salud"],r["desc_pension"],r.get("otros_descuentos",0),r["neto"],"Generada"))
+                 (periodo,r["id"],r["salario_base"],r.get("dias_trabajados",15),r.get("horas_extras",0),r.get("valor_horas_extras",0),r.get("aux_transporte",0),r.get("bonificaciones",0),r["desc_salud"],r["desc_pension"],r.get("otros_descuentos",0),r["neto"],"Generada"))
     audit_log(c, usuario=u, accion='GUARDAR_NOMINA', tabla='nomina_registros',
               registro_id=periodo, despues={'registros': len(registros)})
     conn.commit()

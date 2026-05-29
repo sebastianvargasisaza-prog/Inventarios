@@ -887,12 +887,12 @@ async function cargarMovimientosInvFis() {
                  (m.tipo === 'AJUSTE' ? '' : '-');
       return '<tr>' +
         '<td style="font-size:12px;">' + (m.fecha||'') + '</td>' +
-        '<td><b>' + (m.sku||'') + '</b></td>' +
-        '<td><span style="background:' + col + '22;color:' + col + ';padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;">' + (m.tipo||'') + '</span></td>' +
+        '<td><b>' + esc(m.sku||'') + '</b></td>' +
+        '<td><span style="background:' + col + '22;color:' + col + ';padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700;">' + esc(m.tipo||'') + '</span></td>' +
         '<td style="text-align:right;color:' + col + ';font-weight:700;">' + sign + (m.cantidad||0) + '</td>' +
-        '<td style="font-size:12px;color:var(--cx-text-soft);">' + (m.origen||'') + '</td>' +
-        '<td style="font-size:12px;color:var(--cx-text-mute);">' + (m.motivo||'') + '</td>' +
-        '<td style="font-size:11px;color:var(--cx-text-mute);">' + (m.usuario||'') + '</td>' +
+        '<td style="font-size:12px;color:var(--cx-text-soft);">' + esc(m.origen||'') + '</td>' +
+        '<td style="font-size:12px;color:var(--cx-text-mute);">' + esc(m.motivo||'') + '</td>' +
+        '<td style="font-size:11px;color:var(--cx-text-mute);">' + esc(m.usuario||'') + '</td>' +
         '</tr>';
     }).join('');
   } catch(e) { console.error(e); }
@@ -905,14 +905,14 @@ function verMovsSku(sku) {
     .then(function(d){
       var tb = document.getElementById('invfis-mov-body');
       var movs = d.movimientos || [];
-      if (!movs.length) { tb.innerHTML = '<tr><td colspan="7" style="color:var(--cx-text-mute);text-align:center;padding:24px;">Sin movimientos para ' + sku + '</td></tr>'; return; }
+      if (!movs.length) { tb.innerHTML = '<tr><td colspan="7" style="color:var(--cx-text-mute);text-align:center;padding:24px;">Sin movimientos para ' + esc(sku) + '</td></tr>'; return; }
       tb.innerHTML = movs.map(function(m) {
         var col = m.tipo === 'ENTRADA' ? '#4ade80' :
                   m.tipo === 'SHOPIFY_VENTA' ? '#fbbf24' :
                   m.tipo === 'SALIDA' ? '#f87171' :
                   m.tipo === 'AJUSTE' ? '#a78bfa' : '#94a3b8';
         var sign = (m.tipo === 'ENTRADA' || m.tipo === 'BASELINE') ? '+' : (m.tipo === 'AJUSTE' ? '' : '-');
-        return '<tr><td>' + (m.fecha||'') + '</td><td><b>' + (m.sku||'') + '</b></td><td>' + (m.tipo||'') + '</td><td style="text-align:right;color:' + col + ';font-weight:700;">' + sign + (m.cantidad||0) + '</td><td>' + (m.origen||'') + '</td><td>' + (m.motivo||'') + '</td><td>' + (m.usuario||'') + '</td></tr>';
+        return '<tr><td>' + (m.fecha||'') + '</td><td><b>' + esc(m.sku||'') + '</b></td><td>' + esc(m.tipo||'') + '</td><td style="text-align:right;color:' + col + ';font-weight:700;">' + sign + (m.cantidad||0) + '</td><td>' + esc(m.origen||'') + '</td><td>' + esc(m.motivo||'') + '</td><td>' + esc(m.usuario||'') + '</td></tr>';
       }).join('');
     });
   renderInvFis();
@@ -1026,9 +1026,9 @@ async function cargarPendientesConteo() {
     }
     el.innerHTML = pend.map(function(p) {
       return '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px solid #e7e5e4;">' +
-        '<div><b style="color:#fff;">' + (p.sku||'') + '</b> ' +
+        '<div><b style="color:var(--cx-text);">' + esc(p.sku||'') + '</b> ' +
         '<span style="color:var(--cx-text-mute);font-size:12px;margin-left:8px;">esperado: ' + (p.esperado!=null?p.esperado:'?') + '</span>' +
-        '<span style="color:var(--cx-text-mute);font-size:11px;margin-left:8px;">' + (p.fecha_asignado||'') + '</span></div>' +
+        '<span style="color:var(--cx-text-mute);font-size:11px;margin-left:8px;">' + esc(p.fecha_asignado||'') + '</span></div>' +
         '<button class="btn btn-primary btn-sm" onclick="abrirConteoFisico(' + p.id + ', \'' + (p.sku||'').replace(/[\'\\\\]/g,'') + '\', ' + (p.esperado||0) + ')">Contar</button>' +
         '</div>';
     }).join('');
