@@ -5918,10 +5918,10 @@ def _descontar_mp_produccion(c, evento_id, user, forzar=False):
             c.execute("""
                 INSERT INTO movimientos
                   (material_id, material_nombre, cantidad, tipo, fecha,
-                   observaciones, operador, lote)
-                VALUES (?, ?, ?, 'Salida', ?, ?, ?, ?)
+                   observaciones, operador, lote, produccion_id)
+                VALUES (?, ?, ?, 'Salida', ?, ?, ?, ?, ?)
             """, (mp['codigo_mp'], mp['nombre'], d['cantidad'],
-                  fecha_iso, obs_mp, user, d['lote']))
+                  fecha_iso, obs_mp, user, d['lote'], evento_id))
             mp['distribucion_fefo'].append({
                 'lote': d['lote'],
                 'cantidad_g': d['cantidad'],
@@ -6418,10 +6418,10 @@ def prog_completar_evento(evento_id):
                     c.execute("""
                         INSERT INTO movimientos
                           (material_id, material_nombre, cantidad, tipo, fecha,
-                           observaciones, operador, lote)
-                        VALUES (?, ?, ?, 'Salida', ?, ?, ?, ?)
+                           observaciones, operador, lote, produccion_id)
+                        VALUES (?, ?, ?, 'Salida', ?, ?, ?, ?, ?)
                     """, (mp['codigo_mp'], mp['nombre'], d['cantidad'],
-                          fecha_iso, obs_mp, user, d['lote']))
+                          fecha_iso, obs_mp, user, d['lote'], evento_id))
                     mp['distribucion_fefo'].append({
                         'lote': d['lote'],
                         'cantidad_g': d['cantidad'],
@@ -6588,13 +6588,19 @@ def prog_revertir_completado(evento_id):
         # Reversión de MPs: insertar movimientos de Entrada compensatorios
         # PRESERVANDO el lote (FEFO reverso — cada lote consumido vuelve
         # a su lote de origen para que el stock por-lote quede coherente).
+        # Fix 28-may (mig 201) · filtrar por produccion_id EXACTO para no
+        # revertir el MP de OTRA producción del mismo producto+fecha
+        # (cross-reversal → inventario fantasma). Fallback al LIKE por texto
+        # solo para movimientos legacy SIN produccion_id (pre-migración).
         rows = c.execute("""
             SELECT id, material_id, material_nombre, cantidad, lote, fecha_vencimiento
             FROM movimientos
             WHERE tipo='Salida'
-              AND (observaciones LIKE ? ESCAPE '\\'
-                   OR observaciones LIKE ? ESCAPE '\\')
-        """, (f"{obs_filtro_esc}%", f"{obs_filtro_ini_esc}%")).fetchall()
+              AND (produccion_id = ?
+                   OR (produccion_id IS NULL
+                       AND (observaciones LIKE ? ESCAPE '\\'
+                            OR observaciones LIKE ? ESCAPE '\\')))
+        """, (evento_id, f"{obs_filtro_esc}%", f"{obs_filtro_ini_esc}%")).fetchall()
         for mid, cod, nom, cant, lote, fv in rows:
             c.execute("""
                 INSERT INTO movimientos

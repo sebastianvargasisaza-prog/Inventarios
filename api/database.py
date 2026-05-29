@@ -312,6 +312,18 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (201, "movimientos.produccion_id · reversión precisa del descuento MP (evita cross-reversal entre producciones mismo producto+fecha) · audit profundo 28-may-2026", [
+        # Sebastián 28-may-2026 (audit profundo): /revertir-completado filtraba
+        # las Salidas de MP por LIKE 'Producción ... {producto} — {fecha}%'. Dos
+        # producciones del MISMO producto+fecha (split B2B/DTC) colisionaban y
+        # revertir UNA devolvía el MP de AMBAS → inventario fantasma (drift +).
+        # Ahora cada Salida de producción guarda produccion_id y la reversión
+        # filtra por id exacto (con fallback LIKE solo para movimientos legacy
+        # sin produccion_id). Mismo patrón que ya usaba MEE vía lote_ref.
+        "ALTER TABLE movimientos ADD COLUMN produccion_id INTEGER",
+        "CREATE INDEX IF NOT EXISTS idx_mov_produccion_id ON movimientos(produccion_id)",
+    ]),
+
     (200, "marketing_cmo_plan · CMO IA agencia autónoma · plan diario decisiones · Sebastián 27-may-2026 PM", [
         # Sebastián 27-may-2026 · "marketing debe ser superior, debe ser una
         # agencia de marketing impulsada por IA". CMO IA cron diario 7 AM

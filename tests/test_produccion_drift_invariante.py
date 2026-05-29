@@ -237,3 +237,61 @@ def test_invariante_ciclo_completo_envasar_revertir(app, db_clean):
         conn.execute("DELETE FROM produccion_programada WHERE id=?", (pid,))
         _cleanup(conn, ['MEE-CICLO-T1'])
         conn.close()
+
+
+def test_revertir_completado_no_cross_reversal_mp(app, db_clean):
+    """Mig 201 · revertir UNA producción NO debe devolver el MP de OTRA
+    producción del mismo producto+fecha (cross-reversal → inventario fantasma).
+
+    Antes la reversión filtraba las Salidas por LIKE 'Producción ... producto —
+    fecha%', así dos producciones del mismo producto+fecha colisionaban y
+    revertir una devolvía el MP de ambas. Ahora filtra por produccion_id exacto.
+    """
+    from .conftest import TEST_PASSWORD, csrf_headers
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(movimientos)").fetchall()]
+    if 'produccion_id' not in cols:
+        conn.close()
+        pytest.skip("Schema sin movimientos.produccion_id (mig 201 no aplicada)")
+    MP = 'MP-XREV-T'
+    conn.execute("DELETE FROM movimientos WHERE material_id=?", (MP,))
+    # Dos producciones MISMO producto + fecha, ambas completadas+descontadas
+    pid1 = conn.execute("""INSERT INTO produccion_programada
+        (producto, fecha_programada, lotes, estado, inventario_descontado_at)
+        VALUES ('PROD-XREV', date('now'), 1, 'completado', datetime('now'))""").lastrowid
+    pid2 = conn.execute("""INSERT INTO produccion_programada
+        (producto, fecha_programada, lotes, estado, inventario_descontado_at)
+        VALUES ('PROD-XREV', date('now'), 1, 'completado', datetime('now'))""").lastrowid
+    fecha = conn.execute("SELECT fecha_programada FROM produccion_programada WHERE id=?",
+                         (pid1,)).fetchone()[0]
+    # Mismo obs producto+fecha en ambas Salidas (lo que ANTES colisionaba), pero
+    # cada una con su produccion_id.
+    obs = f"Producción INICIADA: PROD-XREV — {fecha} — 1 lote(s) × 5kg"
+    conn.execute("""INSERT INTO movimientos
+        (material_id, material_nombre, cantidad, tipo, fecha, observaciones, operador, lote, produccion_id)
+        VALUES (?, 'X', 100, 'Salida', datetime('now'), ?, 'test', 'L1', ?)""", (MP, obs, pid1))
+    conn.execute("""INSERT INTO movimientos
+        (material_id, material_nombre, cantidad, tipo, fecha, observaciones, operador, lote, produccion_id)
+        VALUES (?, 'X', 200, 'Salida', datetime('now'), ?, 'test', 'L1', ?)""", (MP, obs, pid2))
+    conn.commit(); conn.close()
+    try:
+        c = app.test_client()
+        c.post("/login", data={"username": "sebastian", "password": TEST_PASSWORD},
+               headers=csrf_headers(), follow_redirects=False)
+        r = c.post(f"/api/programacion/programar/{pid1}/revertir-completado",
+                   json={'motivo': 'Test cross-reversal'}, headers=csrf_headers())
+        assert r.status_code == 200, r.data
+        conn = sqlite3.connect(os.environ["DB_PATH"])
+        revs = conn.execute(
+            "SELECT cantidad FROM movimientos WHERE material_id=? AND tipo='Entrada' "
+            "AND observaciones LIKE 'REVERSI%'", (MP,)).fetchall()
+        cantidades = sorted(x[0] for x in revs)
+        conn.close()
+        # Solo la Salida de pid1 (100g) debe revertirse · NO la de pid2 (200g).
+        assert cantidades == [100], \
+            f"cross-reversal: esperaba [100] (solo pid1), got {cantidades}"
+    finally:
+        conn = sqlite3.connect(os.environ["DB_PATH"])
+        conn.execute("DELETE FROM movimientos WHERE material_id=?", (MP,))
+        conn.execute("DELETE FROM produccion_programada WHERE id IN (?,?)", (pid1, pid2))
+        conn.commit(); conn.close()
