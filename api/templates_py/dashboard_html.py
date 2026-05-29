@@ -18,7 +18,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 <link rel="manifest" href="/static/manifest.json">
 <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
 <title>Planta - Espagiria Laboratorios</title>
-<link rel="stylesheet" href="/static/cortex.css?v=eos13">
+<link rel="stylesheet" href="/static/cortex.css?v=eos14">
 <script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
 <script>
 // PWA: registrar service worker (Sebastian 30-abr-2026: "y si haz lo del mobil")
@@ -99,30 +99,31 @@ body { font-family:'Segoe UI',sans-serif; background:#F5F4F0; min-height:100vh; 
 @supports (padding: max(0px)) {
   body { padding-top:max(20px, env(safe-area-inset-top)); padding-bottom:max(20px, env(safe-area-inset-bottom)); }
 }
-.header { background:#2B7A78; color:white; padding:25px; text-align:center; }
+.header { background:#6d28d9; color:white; padding:25px; text-align:center; }
 .header h1 { font-size:1.8em; margin-bottom:6px; }
 .tabs { display:flex; background:#f5f5f5; border-bottom:2px solid #ddd; overflow-x:auto; }
 .tab-button { flex:1; padding:13px 12px; background:none; border:none; cursor:pointer; font-size:0.9em; font-weight:500; color:#666; white-space:nowrap; min-width:90px; transition:all 0.2s; }
-.tab-button:hover { background:white; color:#2B7A78; }
-.tab-button.active { background:white; color:#2B7A78; border-bottom:3px solid #2B7A78; }
+.tab-button:hover { background:white; color:#6d28d9; }
+.tab-button.active { background:white; color:#6d28d9; border-bottom:3px solid #6d28d9; }
 .tab-content { display:none; padding:25px; }
 .tab-content.active { display:block; }
-.sub-tab-bar { display:none; background:#e8f4f3; border-bottom:2px solid #2B7A78; padding:5px 10px; gap:5px; flex-wrap:wrap; }
+.sub-tab-bar { display:none; background:#f5f3ff; border-bottom:2px solid #6d28d9; padding:5px 10px; gap:5px; flex-wrap:wrap; }
 .sub-tab-bar.visible { display:flex; }
-.sub-btn { padding:7px 18px; border:none; border-radius:6px; font-size:0.82em; font-weight:600; cursor:pointer; background:transparent; color:#2B7A78; }
-.sub-btn.active { background:#2B7A78; color:white; }
-.sub-btn:hover { background:rgba(43,122,120,0.18); }
+.sub-btn { padding:7px 18px; border:none; border-radius:6px; font-size:0.82em; font-weight:600; cursor:pointer; background:transparent; color:#6d28d9; }
+.sub-btn.active { background:#6d28d9; color:white; }
+.sub-btn:hover { background:rgba(109,40,217,0.18); }
 .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:15px; margin:15px 0; }
-.card { background:#2B7A78; color:white; padding:18px; border-radius:10px; text-align:center; }
-.card h3 { font-size:0.85em; opacity:0.9; margin-bottom:6px; }
-.card p { font-size:1.8em; font-weight:700; }
-button { background:#2B7A78; color:white; border:none; padding:10px 18px; border-radius:6px; cursor:pointer; font-size:0.9em; font-weight:500; }
+.card { background:var(--cx-card); color:var(--cx-text); padding:18px; border-radius:14px; text-align:center; border:1px solid var(--cx-hairline); box-shadow:var(--cx-sh-card); transition:box-shadow .2s ease,transform .2s ease; }
+  .card:hover { box-shadow:var(--cx-sh-card-hover); transform:translateY(-2px); }
+.card h3 { font-size:0.85em; color:var(--cx-text-mute); margin-bottom:6px; }
+.card p { font-size:1.8em; font-weight:800; color:var(--cx-text); }
+button { background:#6d28d9; color:white; border:none; padding:10px 18px; border-radius:6px; cursor:pointer; font-size:0.9em; font-weight:500; }
 button:hover { opacity:0.9; }
 input,select,textarea { width:100%; padding:9px; border:1px solid #ddd; border-radius:6px; font-size:0.95em; margin-top:3px; }
 .form-group { margin-bottom:14px; }
 label { font-weight:600; font-size:0.88em; color:#444; }
 .table { width:100%; border-collapse:collapse; margin-top:12px; font-size:0.88em; }
-.table th { background:#2B7A78; color:white; padding:9px 10px; text-align:left; }
+.table th { background:#6d28d9; color:white; padding:9px 10px; text-align:left; }
 .table td { padding:8px 10px; border-bottom:1px solid #eee; }
 .table tr:hover { background:#f8f9ff; }
 .alert-success { background:#d4edda; color:#155724; padding:10px; border-radius:6px; margin-top:8px; }
@@ -139,26 +140,26 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
 <div id="modal-operador" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.82);z-index:9999;display:none;align-items:center;justify-content:center;">
   <div style="background:white;border-radius:18px;padding:36px 32px;max-width:380px;width:94%;box-shadow:0 20px 60px rgba(0,0,0,0.5);text-align:center;">
     <div style="font-size:2.2em;margin-bottom:10px;">&#128100;</div>
-    <h2 style="color:#2B7A78;margin-bottom:6px;font-size:1.25em;">&#191;Qui&#233;n est&#225; operando?</h2>
+    <h2 style="color:#6d28d9;margin-bottom:6px;font-size:1.25em;">&#191;Qui&#233;n est&#225; operando?</h2>
     <p style="color:#666;font-size:0.88em;margin-bottom:20px;">Escribe tu nombre para registrar movimientos correctamente.</p>
     <input type="text" id="oper-input" placeholder="Ej: Alejandro, Valentina..." autocomplete="off"
       style="width:100%;padding:12px 14px;border:2px solid #e2e8f0;border-radius:10px;font-size:1em;outline:none;box-sizing:border-box;margin-bottom:8px;"
       onkeydown="if(event.key==='Enter')confirmarOper()">
     <div id="oper-error" style="display:none;color:#dc3545;font-size:0.82em;margin-bottom:8px;">&#9888; Escribe tu nombre para continuar.</div>
-    <button onclick="confirmarOper()" style="width:100%;background:linear-gradient(135deg,#2B7A78,#1a5c5a);color:white;border:none;border-radius:10px;padding:13px;font-size:1em;font-weight:700;cursor:pointer;margin-top:4px;">Entrar al sistema &#8594;</button>
+    <button onclick="confirmarOper()" style="width:100%;background:linear-gradient(135deg,#6d28d9,#4c1d95);color:white;border:none;border-radius:10px;padding:13px;font-size:1em;font-weight:700;cursor:pointer;margin-top:4px;">Entrar al sistema &#8594;</button>
   </div>
 </div>
 <div id="modal-solicitud-compra" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.78);z-index:9996;display:none;align-items:center;justify-content:center;">
   <div style="background:white;border-radius:16px;padding:32px;max-width:480px;width:95%;box-shadow:0 20px 60px rgba(0,0,0,0.5);">
-    <h2 style="color:#2B7A78;margin-bottom:4px;">&#128722; Solicitar Compra</h2>
+    <h2 style="color:#6d28d9;margin-bottom:4px;">&#128722; Solicitar Compra</h2>
     <p id="sol-mp-info" style="color:#666;font-size:0.9em;margin-bottom:18px;"></p>
     <div class="form-group"><label>Tu nombre *</label><input type="text" id="sol-nombre" placeholder="Ej: Alejandro, Catalina..."></div>
-    <div class="form-group"><label>Cantidad a pedir (g) *</label><input type="number" id="sol-cantidad" placeholder="0" step="0.01" min="1" style="border:2px solid #2B7A78;"></div>
+    <div class="form-group"><label>Cantidad a pedir (g) *</label><input type="number" id="sol-cantidad" placeholder="0" step="0.01" min="1" style="border:2px solid #6d28d9;"></div>
     <div class="form-group"><label>Urgencia</label><select id="sol-urgencia"><option value="Normal">Normal</option><option value="Urgente">Urgente</option><option value="Critica">Critica</option></select></div>
     <div class="form-group"><label>Observacion</label><input type="text" id="sol-obs" placeholder="Opcional"></div>
     <div id="sol-msg" style="margin-bottom:10px;"></div>
     <div style="display:flex;gap:10px;">
-      <button onclick="enviarSolicitudCompra()" style="flex:1;background:#2B7A78;">&#10003; Enviar Solicitud</button>
+      <button onclick="enviarSolicitudCompra()" style="flex:1;background:#6d28d9;">&#10003; Enviar Solicitud</button>
       <button onclick="cerrarSolicitudCompra()" style="flex:1;background:#6c757d;">Cancelar</button>
     </div>
   </div>
@@ -166,7 +167,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
 <div id="modal-historial" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.78);z-index:9997;display:none;align-items:center;justify-content:center;">
   <div style="background:white;border-radius:16px;padding:32px;max-width:680px;width:95%;max-height:80vh;overflow-y:auto;">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
-      <h2 style="color:#2B7A78;margin:0;">&#128203; Historial del Lote</h2>
+      <h2 style="color:#6d28d9;margin:0;">&#128203; Historial del Lote</h2>
       <button onclick="cerrarHistorial()" style="background:#6c757d;padding:6px 14px;">&#10005; Cerrar</button>
     </div>
     <p id="hist-lote-info" style="color:#666;font-size:0.9em;margin-bottom:16px;"></p>
@@ -177,17 +178,17 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
 <div id="modal-ajuste" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.78);z-index:9998;display:none;align-items:center;justify-content:center;"><div id="modal-ajuste-body" style="background:white;border-radius:16px;padding:0;max-width:700px;width:96%;max-height:90vh;overflow-y:auto;">
   <div style="background:white;border-radius:16px;padding:28px;max-width:500px;width:96%;box-shadow:0 20px 60px rgba(0,0,0,0.5);">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
-      <h2 style="color:#2B7A78;margin:0;">&#9878; Gestionar Material</h2>
+      <h2 style="color:#6d28d9;margin:0;">&#9878; Gestionar Material</h2>
       <button onclick="cerrarAjuste()" style="background:none;border:none;font-size:1.6em;cursor:pointer;color:#aaa;padding:0 4px;line-height:1;" title="Cerrar">&#10005;</button>
     </div>
     <p id="ajuste-info" style="color:#666;font-size:0.88em;margin-bottom:14px;"></p>
     <div style="border:1px solid #d0ece7;border-radius:8px;padding:14px;margin-bottom:10px;background:#f9fffe;">
-      <div style="font-size:0.78em;font-weight:700;color:#2B7A78;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">&#128203; Conteo F&#237;sico</div>
+      <div style="font-size:0.78em;font-weight:700;color:#6d28d9;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">&#128203; Conteo F&#237;sico</div>
       <div class="form-group"><label>Stock en sistema (g)</label><input type="number" id="ajuste-sistema" readonly style="background:#f5f5f5;color:#888;"></div>
-      <div class="form-group"><label style="color:#2B7A78;font-weight:700;">Cantidad f&#237;sica real (g) *</label><input type="number" id="ajuste-fisico" placeholder="Lo que tienes f&#237;sicamente" step="0.01" min="0" style="border:2px solid #2B7A78;"></div>
+      <div class="form-group"><label style="color:#6d28d9;font-weight:700;">Cantidad f&#237;sica real (g) *</label><input type="number" id="ajuste-fisico" placeholder="Lo que tienes f&#237;sicamente" step="0.01" min="0" style="border:2px solid #6d28d9;"></div>
       <div class="form-group"><label>Observaci&#243;n</label><input type="text" id="ajuste-obs" placeholder="Ej: Conteo del 15/04"></div>
       <div style="display:flex;gap:8px;margin-top:10px;">
-        <button onclick="confirmarAjuste()" style="flex:1;background:#2B7A78;padding:8px;">&#10003; Confirmar Ajuste</button>
+        <button onclick="confirmarAjuste()" style="flex:1;background:#6d28d9;padding:8px;">&#10003; Confirmar Ajuste</button>
         <button onclick="cerrarAjuste()" style="flex:1;background:#6c757d;padding:8px;">Cancelar</button>
       </div>
       <div id="ajuste-msg" style="margin-top:8px;font-size:0.85em;"></div>
@@ -227,11 +228,11 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     <!-- Sebastián 9-may-2026: corregir número de lote (algunos están
          mal escritos · ej. '20250703' debe ser 'YT20250703'). -->
     <div style="border:1px solid #99f6e4;border-radius:8px;padding:14px;margin-bottom:10px;background:#f0fdfa;">
-      <div style="font-size:0.78em;font-weight:700;color:#0d9488;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">&#127991; N&#250;mero de Lote</div>
-      <div style="font-size:0.78em;color:#555;margin-bottom:8px;">Actual: <span id="ajuste-lt-actual" style="font-weight:700;color:#0d9488;font-family:monospace;">&mdash;</span></div>
+      <div style="font-size:0.78em;font-weight:700;color:#6d28d9;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">&#127991; N&#250;mero de Lote</div>
+      <div style="font-size:0.78em;color:#555;margin-bottom:8px;">Actual: <span id="ajuste-lt-actual" style="font-weight:700;color:#6d28d9;font-family:monospace;">&mdash;</span></div>
       <div style="display:flex;gap:8px;align-items:flex-end;">
         <div class="form-group" style="flex:1;margin-bottom:0;"><label>Nuevo n&#250;mero de lote</label><input type="text" id="ajuste-lt-nuevo" placeholder="Ej: YT20250703" maxlength="120" style="font-family:monospace;"></div>
-        <button onclick="actualizarCodigoLote()" style="background:#0d9488;color:white;padding:8px 14px;white-space:nowrap;border-radius:6px;">Renombrar</button>
+        <button onclick="actualizarCodigoLote()" style="background:#6d28d9;color:white;padding:8px 14px;white-space:nowrap;border-radius:6px;">Renombrar</button>
       </div>
       <div class="form-group" style="margin-top:8px;margin-bottom:0;"><label>Motivo (queda en audit log)</label><input type="text" id="ajuste-lt-motivo" placeholder="Ej: formato proveedor incorrecto al ingresar" maxlength="200"></div>
       <small style="color:#666;font-size:0.75em;display:block;margin-top:6px;font-style:italic;">Aplica el cambio a TODOS los movimientos de este lote. Si el lote nuevo ya existe se confirma fusi&oacute;n.</small>
@@ -296,7 +297,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
 <!-- Modal EDITAR PROVEEDOR (a nivel lote + catalogo) -->
 <div id="modal-editar-prov" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.78);z-index:9998;display:none;align-items:center;justify-content:center;">
   <div style="background:white;border-radius:16px;padding:0;max-width:520px;width:96%;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.5);">
-    <div style="background:#2B7A78;color:white;padding:18px 22px;border-radius:16px 16px 0 0;display:flex;justify-content:space-between;align-items:center;">
+    <div style="background:#6d28d9;color:white;padding:18px 22px;border-radius:16px 16px 0 0;display:flex;justify-content:space-between;align-items:center;">
       <h2 style="color:white;margin:0;font-size:1.2em;">&#9999;&#65039; Editar Proveedor</h2>
       <button onclick="cerrarEditarProveedor()" style="background:none;border:none;font-size:1.5em;cursor:pointer;color:white;padding:0 4px;line-height:1;" title="Cerrar">&#10005;</button>
     </div>
@@ -314,7 +315,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
         <small id="ep-hint" style="color:#888;font-size:0.78em;display:block;margin-top:4px;"></small>
       </div>
       <div style="display:flex;gap:8px;margin-top:6px;">
-        <button onclick="guardarProveedor()" style="flex:1;background:#2B7A78;padding:9px;font-weight:700;color:white;">&#10003; Guardar</button>
+        <button onclick="guardarProveedor()" style="flex:1;background:#6d28d9;padding:9px;font-weight:700;color:white;">&#10003; Guardar</button>
         <button onclick="cerrarEditarProveedor()" style="flex:1;background:#6c757d;padding:9px;">Cancelar</button>
       </div>
       <div id="ep-msg" style="margin-top:10px;font-size:0.85em;"></div>
@@ -354,7 +355,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
 <!-- Modal REVISAR MINIMOS (Sebastian 5-may-2026) — audit + apply de stock_minimo -->
 <div id="modal-revisar-minimos" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.78);z-index:9998;display:none;align-items:center;justify-content:center;">
   <div style="background:white;border-radius:16px;padding:0;max-width:1100px;width:96%;max-height:92vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.5);">
-    <div style="background:#0e7490;color:white;padding:18px 22px;border-radius:16px 16px 0 0;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+    <div style="background:#7c3aed;color:white;padding:18px 22px;border-radius:16px 16px 0 0;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
       <div>
         <h2 style="color:white;margin:0;font-size:1.2em;">&#x1F4CA; Revisar M&iacute;nimos de MP</h2>
         <div style="font-size:0.8em;opacity:0.9;margin-top:4px;">Compara stock_minimo configurado vs lo recomendado por consumo proyectado del calendario &times; f&oacute;rmulas. Evita alertas falsas.</div>
@@ -380,7 +381,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
           <option value="120">120 d&iacute;as</option>
           <option value="180">180 d&iacute;as</option>
         </select>
-        <button onclick="cargarRevisarMinimos()" id="btn-rmin-load" style="background:#0e7490;color:#fff;padding:6px 14px;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;">&#x1F50D; Calcular</button>
+        <button onclick="cargarRevisarMinimos()" id="btn-rmin-load" style="background:#7c3aed;color:#fff;padding:6px 14px;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;">&#x1F50D; Calcular</button>
       </div>
       <div id="rmin-stats" style="display:none;margin-bottom:14px;display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;">
         <div style="background:#f8fafc;border-left:3px solid #94a3b8;padding:10px;border-radius:4px;"><div style="font-size:11px;color:#64748b;">Total MPs</div><div style="font-size:1.4em;font-weight:700;color:#1e293b;" id="rmin-total">-</div></div>
@@ -391,14 +392,14 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
         <div style="background:#f8fafc;border-left:3px solid #94a3b8;padding:10px;border-radius:4px;"><div style="font-size:11px;color:#64748b;">Sin uso</div><div style="font-size:1.4em;font-weight:700;color:#94a3b8;" id="rmin-uso">-</div></div>
       </div>
       <!-- Sebastián 20-may-2026: resumen del impacto · cuantifica cambio antes de aplicar -->
-      <div id="rmin-impacto" style="display:none;margin-bottom:10px;padding:10px 14px;background:#ecfeff;border:1px solid #0891b2;border-radius:8px;font-size:12px;color:#0e7490"></div>
+      <div id="rmin-impacto" style="display:none;margin-bottom:10px;padding:10px 14px;background:#ecfeff;border:1px solid #7c3aed;border-radius:8px;font-size:12px;color:#7c3aed"></div>
       <div id="rmin-aplicar-box" style="display:none;margin-bottom:14px;padding:12px;background:#fef3c7;border:1px solid #f59e0b;border-radius:8px;">
         <div style="font-weight:700;color:#92400e;font-size:13px;margin-bottom:6px;">&#x26A0; Aplicar recálculo (solo admins)</div>
         <div style="font-size:11px;color:#7c2d12;margin-bottom:8px;">Actualiza stock_minimo en maestro_mps para los SUB/SOBRE/SIN_MINIMO. Crea backup automático previo + audit_log. NO toca SIN_USO.</div>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
           <input id="rmin-token" placeholder="Token: APLICAR_MINIMOS_RECALCULADOS_2026" style="padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:11px;flex:1;min-width:280px;">
           <button onclick="aplicarRevisarMinimos()" id="btn-rmin-aplicar" style="background:#dc2626;color:#fff;padding:6px 14px;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer;">&#x1F4A5; Aplicar recálculo</button>
-          <button onclick="autollenarTokenMinimos()" style="background:#0e7490;color:#fff;padding:6px 12px;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;" title="Pre-llena el token correcto · admin">&#x1F4DD; Token</button>
+          <button onclick="autollenarTokenMinimos()" style="background:#7c3aed;color:#fff;padding:6px 12px;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;" title="Pre-llena el token correcto · admin">&#x1F4DD; Token</button>
         </div>
       </div>
       <div id="rmin-result" style="font-size:0.85em;"></div>
@@ -409,7 +410,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
 <!-- Sebastian 5-may-2026: modal click celda calendario · MP+MEE faltantes -->
 <div id="modal-prod-detalle" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.78);z-index:9998;display:none;align-items:center;justify-content:center;">
   <div style="background:#fff;border-radius:14px;max-width:760px;width:96%;max-height:92vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.5);">
-    <div style="background:linear-gradient(135deg,#0f766e,#0891b2);color:#fff;padding:16px 22px;border-radius:14px 14px 0 0;display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">
+    <div style="background:linear-gradient(135deg,#6d28d9,#7c3aed);color:#fff;padding:16px 22px;border-radius:14px 14px 0 0;display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">
       <div>
         <h2 id="mpd-titulo" style="color:#fff;margin:0;font-size:1.15em">Producción</h2>
         <div id="mpd-subtitulo" style="font-size:0.78em;opacity:0.92;margin-top:4px"></div>
@@ -598,12 +599,12 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     </div>
 
     <!-- Dashboard PRO #2 · Bloque "Planta AHORA" · 20-may-2026 -->
-    <div style="display:flex;align-items:center;gap:8px;margin:18px 0 10px 0;font-size:11px;font-weight:700;color:#0891b2;text-transform:uppercase;letter-spacing:1px;">
-      <span style="width:8px;height:8px;background:#0891b2;border-radius:50%;display:inline-block;"></span>
+    <div style="display:flex;align-items:center;gap:8px;margin:18px 0 10px 0;font-size:11px;font-weight:700;color:#7c3aed;text-transform:uppercase;letter-spacing:1px;">
+      <span style="width:8px;height:8px;background:#7c3aed;border-radius:50%;display:inline-block;"></span>
       🏭 Planta AHORA &middot; estado operacional en vivo
       <span style="flex:1;height:1px;background:#bae6fd;"></span>
     </div>
-    <div id="dash-planta-ahora" style="background:linear-gradient(135deg,#0f766e,#0891b2);color:#fff;border-radius:10px;padding:14px 16px;margin-bottom:20px;display:none;">
+    <div id="dash-planta-ahora" style="background:linear-gradient(135deg,#6d28d9,#7c3aed);color:#fff;border-radius:10px;padding:14px 16px;margin-bottom:20px;display:none;">
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px">
         <div style="background:rgba(255,255,255,.1);border-radius:8px;padding:10px 14px;text-align:center">
           <div style="font-size:10px;opacity:.85;text-transform:uppercase;letter-spacing:.5px">⏱ Produciendo</div>
@@ -688,7 +689,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px;">
       <input type="text" id="stock-search" placeholder="MP, INCI, proveedor..." oninput="filterStock()" style="width:200px;margin-top:0;">
       <input type="text" id="stock-search-lote" placeholder="&#127991; Solo por lote" oninput="filterStock()" style="width:170px;margin-top:0;border:2px solid #1e63a8;background:#f0f8ff;">
-      <div style="display:flex;gap:10px;flex-wrap:wrap;"><button onclick="loadStock()">&#8635; Actualizar</button><button onclick="exportarExcelStock()" style="background:#217346;">&#128196; Descargar Excel</button><button onclick="abrirLimpiezaProveedores()" style="background:#7c3aed;" title="Detecta proveedores duplicados por typo y los unifica">&#129529; Limpiar proveedores</button><button onclick="abrirUnificarMPs()" style="background:#be185d;" title="Detecta MPs con dos códigos (purisil, etc) y unifica en uno · admin">&#129529; Unificar MPs</button><button onclick="abrirRevisarMinimos()" style="background:#0e7490;" title="Audita stock minimo de cada MP vs consumo proyectado · evita alertas falsas">&#128202; Revisar m&iacute;nimos</button></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;"><button onclick="loadStock()">&#8635; Actualizar</button><button onclick="exportarExcelStock()" style="background:#217346;">&#128196; Descargar Excel</button><button onclick="abrirLimpiezaProveedores()" style="background:#7c3aed;" title="Detecta proveedores duplicados por typo y los unifica">&#129529; Limpiar proveedores</button><button onclick="abrirUnificarMPs()" style="background:#be185d;" title="Detecta MPs con dos códigos (purisil, etc) y unifica en uno · admin">&#129529; Unificar MPs</button><button onclick="abrirRevisarMinimos()" style="background:#7c3aed;" title="Audita stock minimo de cada MP vs consumo proyectado · evita alertas falsas">&#128202; Revisar m&iacute;nimos</button></div>
       <span id="stock-count" style="color:#888;font-size:0.88em;"></span>
     </div>
     <!-- Sprint Bodega MP PRO · 20-may-2026 fix #6: headers clickeables ordenan -->
@@ -721,7 +722,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     <div id="ing-panel-mp">
     <h2>&#128666; Ingreso de Materia Prima</h2>
     <!-- Sprint Recepciones PRO fix #6: banner último ingreso persistido -->
-    <div id="ing-ultimo-persistido" style="display:none;background:#ecfeff;border:1px solid #0891b2;color:#0e7490;padding:8px 12px;border-radius:8px;font-size:13px;margin-bottom:10px"></div>
+    <div id="ing-ultimo-persistido" style="display:none;background:#ecfeff;border:1px solid #7c3aed;color:#7c3aed;padding:8px 12px;border-radius:8px;font-size:13px;margin-bottom:10px"></div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;">
       <p style="color:#666;">Escribe el codigo MP y el sistema completa automaticamente desde el catalogo.</p>
       <button onclick="mostrarFormNuevaMP()" style="background:#27ae60;white-space:nowrap;margin-left:15px;">&#43; Nueva MP en Catalogo</button>
@@ -776,7 +777,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     </div>
     <div style="background:#f8f9ff;border:1px solid #dde;border-radius:10px;padding:20px;margin-bottom:20px;">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;">
-        <div class="form-group"><label>Codigo MP *</label><div style="position:relative;"><input type="text" id="ing-cod" placeholder="Código (MP00001) o nombre..." autocomplete="off" style="text-transform:uppercase;" oninput="buscarMPIngreso(this.value)" onblur="setTimeout(ocultarDropMP,250)"><div id="mp-dropdown" style="position:absolute;top:100%;left:0;right:0;background:white;border:1px solid #2B7A78;border-radius:0 0 8px 8px;max-height:220px;overflow-y:auto;z-index:1000;display:none;box-shadow:0 4px 12px rgba(0,0,0,0.15);"></div></div><datalist id="mp-sugerencias"></datalist><small id="ing-status" style="color:#667eea;font-size:0.85em;margin-top:4px;display:block;"></small></div>
+        <div class="form-group"><label>Codigo MP *</label><div style="position:relative;"><input type="text" id="ing-cod" placeholder="Código (MP00001) o nombre..." autocomplete="off" style="text-transform:uppercase;" oninput="buscarMPIngreso(this.value)" onblur="setTimeout(ocultarDropMP,250)"><div id="mp-dropdown" style="position:absolute;top:100%;left:0;right:0;background:white;border:1px solid #6d28d9;border-radius:0 0 8px 8px;max-height:220px;overflow-y:auto;z-index:1000;display:none;box-shadow:0 4px 12px rgba(0,0,0,0.15);"></div></div><datalist id="mp-sugerencias"></datalist><small id="ing-status" style="color:#667eea;font-size:0.85em;margin-top:4px;display:block;"></small></div>
         <div class="form-group"><label>Nombre INCI</label><input type="text" id="ing-inci" placeholder="Auto" readonly style="background:#f5f5f5;"></div>
         <div class="form-group"><label>Nombre Comercial</label><input type="text" id="ing-nombre" placeholder="Auto" readonly style="background:#f5f5f5;"></div>
         <div class="form-group"><label>Tipo</label><input type="text" id="ing-tipo" placeholder="Auto" readonly style="background:#f5f5f5;"></div>
@@ -848,11 +849,11 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       <h2 style="margin:0">&#129514; Fórmulas Maestras de Producción</h2>
       <div style="display:flex;gap:6px;flex-wrap:wrap">
         <button onclick="auditarFormulasHuerfanas()" style="background:#9a3412;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer" title="Detecta y repara material_id huérfanos en TODAS las fórmulas (post-unificación)">🔧 Huérfanos</button>
-        <button onclick="abrirBasesFormulas()" style="background:#0e7490;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer" title="Ver distribución de bases · normalizar a un valor común (admin)">📊 Bases</button>
+        <button onclick="abrirBasesFormulas()" style="background:#7c3aed;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer" title="Ver distribución de bases · normalizar a un valor común (admin)">📊 Bases</button>
         <button onclick="abrirImportExcelFormulas()" style="background:#7c3aed;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer" title="Subir XLSX/CSV de Alejandro · la app crea fórmulas automáticamente">📤 Import Excel</button>
         <button onclick="window.open('/api/formulas/export-excel','_blank')" style="background:#217346;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">📄 Export</button>
         <button id="formulas-pin-btn" onclick="cambiarFormulaPin()" style="background:#ca8a04;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer" title="Cambiar / setear PIN de fórmulas (admin)">🔑 PIN</button>
-        <button onclick="abrirNuevoProducto()" style="background:linear-gradient(135deg,#0f766e,#0891b2);color:#fff;border:none;padding:9px 18px;border-radius:6px;font-size:13px;font-weight:800;cursor:pointer;box-shadow:0 2px 6px rgba(8,145,178,.3)">🚀 Lanzar producto nuevo</button>
+        <button onclick="abrirNuevoProducto()" style="background:linear-gradient(135deg,#6d28d9,#7c3aed);color:#fff;border:none;padding:9px 18px;border-radius:6px;font-size:13px;font-weight:800;cursor:pointer;box-shadow:0 2px 6px rgba(8,145,178,.3)">🚀 Lanzar producto nuevo</button>
       </div>
     </div>
     <p style="color:#666;margin-bottom:14px;">Define la receta de cada producto. Al registrar una producción, las MPs se descuentan automático.</p>
@@ -923,7 +924,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       <button onclick="simularProduccion()" style="background:#6c5ce7;">&#128269; Verificar Stock</button>
       <button onclick="iniciarRegistroProd()">&#9989; Registrar Producción</button>
       <button onclick="abrirRotulos()" style="background:#c0392b;">&#128209; Generar Rótulos</button>
-      <button onclick="diagnosticarFormulaActual()" style="background:#0e7490;" title="Mostrar por qué la fórmula no encuentra stock (debug INVIMA)">&#128270; Diagnosticar fórmula</button>
+      <button onclick="diagnosticarFormulaActual()" style="background:#7c3aed;" title="Mostrar por qué la fórmula no encuentra stock (debug INVIMA)">&#128270; Diagnosticar fórmula</button>
       <!-- Sebastián 21-may-2026 · acceso directo a "🔧 Huérfanos" desde
            Producción · antes solo vivía en tab Fórmulas. Catalina ve el error
            "Stock insuficiente" y desde ACÁ puede reparar TODAS las fórmulas
@@ -933,7 +934,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     <div id="prod-simul-result" style="margin-top:12px;"></div>
     <div id="prod-msg"></div>
     <div style="margin-top:28px;border-top:2px solid #eee;padding-top:20px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px"><h3 style="color:#2B7A78;margin:0;">&#128202; Historial de Producciones</h3>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px"><h3 style="color:#6d28d9;margin:0;">&#128202; Historial de Producciones</h3>
         <button onclick="exportarExcelProducciones()" style="background:#217346;padding:7px 14px;font-size:0.85em;">&#128196; Descargar Excel</button>
       </div>
       <!-- Sprint Fabricación PRO 20-may-2026: buscador + filtros + paginación -->
@@ -1029,7 +1030,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
           <input type="checkbox" id="alertas-autorefresh" checked> auto 60s
         </label>
         <button onclick="exportarExcelAlertas()" style="padding:6px 14px;font-size:13px;background:#217346;color:#fff;border-radius:6px">📄 Excel</button>
-        <button onclick="loadAlertasAll()" style="padding:6px 14px;font-size:13px;background:#0e7490;color:#fff;border-radius:6px">🔄 Actualizar</button>
+        <button onclick="loadAlertasAll()" style="padding:6px 14px;font-size:13px;background:#7c3aed;color:#fff;border-radius:6px">🔄 Actualizar</button>
       </div>
     </div>
     <!-- Stats cards -->
@@ -1049,7 +1050,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
           <input type="checkbox" id="mov-autorefresh"> auto 60s
         </label>
         <button onclick="exportarExcelMovimientosNuevo()" style="padding:6px 14px;font-size:13px;background:#217346;color:#fff;border-radius:6px">📄 Excel</button>
-        <button onclick="loadMovimientosNuevo(true)" style="padding:6px 14px;font-size:13px;background:#0e7490;color:#fff;border-radius:6px">🔄 Actualizar</button>
+        <button onclick="loadMovimientosNuevo(true)" style="padding:6px 14px;font-size:13px;background:#7c3aed;color:#fff;border-radius:6px">🔄 Actualizar</button>
       </div>
     </div>
     <!-- Sprint Movimientos PRO · 20-may-2026 · form mejorado -->
@@ -1198,7 +1199,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
           <p style="font-size:0.88em;color:#555;margin-bottom:10px;"><strong>Decision final:</strong> Se determina automaticamente por el resultado AQL y solubilidad. Firmante: <strong id="cc-firmante"></strong></p>
           <div style="display:flex;gap:10px;justify-content:flex-end;">
             <button onclick="cerrarCCModal()" style="padding:10px 20px;background:#f0f0f0;color:#555;border:none;border-radius:8px;font-weight:600;cursor:pointer;">Cancelar</button>
-            <button onclick="enviarRevisionCC()" id="cc-submit-btn" style="padding:10px 28px;background:#2B7A78;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer;font-size:0.95em;">Firmar y Registrar</button>
+            <button onclick="enviarRevisionCC()" id="cc-submit-btn" style="padding:10px 28px;background:#6d28d9;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer;font-size:0.95em;">Firmar y Registrar</button>
           </div>
         </div>
         <div id="cc-modal-msg"></div>
@@ -1241,14 +1242,14 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     </div>
 
     <!-- Programacion automatica semanal -->
-    <div id="cnt-prog-card" style="background:linear-gradient(135deg,#f0faf9 0%,#e8f8f5 100%);border:2px solid #2B7A78;border-radius:12px;padding:18px 20px;margin-bottom:20px;">
+    <div id="cnt-prog-card" style="background:linear-gradient(135deg,#f0faf9 0%,#e8f8f5 100%);border:2px solid #6d28d9;border-radius:12px;padding:18px 20px;margin-bottom:20px;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-        <h3 style="margin:0;color:#2B7A78;font-size:1em;">&#128197; Programacion Ciclica Automatica</h3>
+        <h3 style="margin:0;color:#6d28d9;font-size:1em;">&#128197; Programacion Ciclica Automatica</h3>
         <span style="font-size:0.8em;color:#666;">Rota por todas las estanterias — cada lunes una nueva</span>
       </div>
       <div id="cnt-prog-tabla" style="overflow-x:auto;">
         <table style="width:100%;border-collapse:collapse;font-size:0.88em;">
-          <thead><tr style="background:#2B7A78;color:#fff;"><th style="padding:7px 12px;text-align:left;">Semana</th><th style="padding:7px 12px;text-align:left;">Lunes</th><th style="padding:7px 12px;text-align:left;">Estanteria asignada</th><th style="padding:7px 12px;text-align:center;">Estado</th><th style="padding:7px 12px;text-align:center;">Accion</th></tr></thead>
+          <thead><tr style="background:#6d28d9;color:#fff;"><th style="padding:7px 12px;text-align:left;">Semana</th><th style="padding:7px 12px;text-align:left;">Lunes</th><th style="padding:7px 12px;text-align:left;">Estanteria asignada</th><th style="padding:7px 12px;text-align:center;">Estado</th><th style="padding:7px 12px;text-align:center;">Accion</th></tr></thead>
           <tbody id="cnt-prog-rows"><tr><td colspan="5" style="text-align:center;padding:14px;color:#999;">Cargando...</td></tr></tbody>
         </table>
       </div>
@@ -1261,7 +1262,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;" id="cnt-tipo-tabs">
         <button onclick="setConteoTipo('')" data-tipo="" class="cnt-tipo-tab active"
-                style="padding:8px 16px;border:2px solid #2B7A78;background:#2B7A78;color:#fff;border-radius:8px;cursor:pointer;font-size:0.85em;font-weight:600;">
+                style="padding:8px 16px;border:2px solid #6d28d9;background:#6d28d9;color:#fff;border-radius:8px;cursor:pointer;font-size:0.85em;font-weight:600;">
           &#128203; Todos
         </button>
         <button onclick="setConteoTipo('MP')" data-tipo="MP" class="cnt-tipo-tab"
@@ -1291,7 +1292,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       <div>
         <label style="display:block;font-weight:600;margin-bottom:4px;font-size:0.88em;color:#555;">
           Estanteria / Seccion a contar
-          <span id="cnt-tipo-label" style="display:none;color:#2B7A78;font-weight:700;margin-left:6px;"></span>
+          <span id="cnt-tipo-label" style="display:none;color:#6d28d9;font-weight:700;margin-left:6px;"></span>
         </label>
         <select id="cnt-est-sel" style="width:100%;padding:10px;border:1px solid #dde;border-radius:8px;">
           <option value="">-- Selecciona estanteria --</option>
@@ -1301,14 +1302,14 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
         <label style="display:block;font-weight:600;margin-bottom:4px;font-size:0.88em;color:#555;">Responsable</label>
         <input type="text" id="cnt-responsable" placeholder="Nombre operario" style="padding:10px;border:1px solid #dde;border-radius:8px;">
       </div>
-      <button onclick="iniciarConteo()" style="padding:10px 22px;background:#2B7A78;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer;">Iniciar Conteo</button>
+      <button onclick="iniciarConteo()" style="padding:10px 22px;background:#6d28d9;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer;">Iniciar Conteo</button>
     </div>
 
     <!-- Panel de conteo activo -->
     <div id="cnt-panel" style="display:none;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
         <div>
-          <span id="cnt-numero" style="font-family:monospace;font-weight:700;font-size:1.1em;color:#2B7A78;"></span>
+          <span id="cnt-numero" style="font-family:monospace;font-weight:700;font-size:1.1em;color:#6d28d9;"></span>
           <span style="margin-left:12px;font-size:0.85em;color:#888;">Estanteria: <strong id="cnt-est-label"></strong></span>
         </div>
         <div style="display:flex;gap:10px;">
@@ -1361,14 +1362,14 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
         <label style="font-size:11px;color:#64748b;display:flex;align-items:center;gap:4px;cursor:pointer">
           <input type="checkbox" id="mee-autorefresh"> auto 60s
         </label>
-        <button onclick="meeVerificarStock()" style="padding:6px 12px;font-size:12px;background:#0e7490;color:#fff;border-radius:6px" title="Recalcula stock_actual desde SUM(movimientos_mee) · anti-drift cache">⚙️ Verificar stock</button>
+        <button onclick="meeVerificarStock()" style="padding:6px 12px;font-size:12px;background:#7c3aed;color:#fff;border-radius:6px" title="Recalcula stock_actual desde SUM(movimientos_mee) · anti-drift cache">⚙️ Verificar stock</button>
         <button onclick="meeExportarExcel()" style="padding:6px 12px;font-size:12px;background:#217346;color:#fff;border-radius:6px">📄 Excel</button>
       </div>
     </div>
     <p style="color:#666;font-size:0.9em;margin-bottom:14px;">Control de stock, recepciones, consumos y trazabilidad de material de empaque por batch de producción.</p>
     <!-- 5 cards (agregada Valor COP) · grid responsive -->
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px">
-      <div style="background:#2B7A78;color:white;padding:14px;border-radius:10px;text-align:center;"><div style="font-size:1.3em;">&#128230;</div><div style="font-size:1.7em;font-weight:700;" id="mee-c-total">0</div><div style="font-size:0.78em;opacity:0.9;">MEE Activos</div></div>
+      <div style="background:#6d28d9;color:white;padding:14px;border-radius:10px;text-align:center;"><div style="font-size:1.3em;">&#128230;</div><div style="font-size:1.7em;font-weight:700;" id="mee-c-total">0</div><div style="font-size:0.78em;opacity:0.9;">MEE Activos</div></div>
       <div id="mee-card-bajo" style="background:#e74c3c;color:white;padding:14px;border-radius:10px;text-align:center;cursor:pointer" onclick="meeScrollToObsoletos('mee-bajo-anchor')"><div style="font-size:1.3em;">&#9888;</div><div style="font-size:1.7em;font-weight:700;" id="mee-c-bajo">0</div><div style="font-size:0.78em;opacity:0.9;">Bajo Mínimo</div></div>
       <div style="background:#3498db;color:white;padding:14px;border-radius:10px;text-align:center;"><div style="font-size:1.3em;">&#128202;</div><div style="font-size:1.7em;font-weight:700;" id="mee-c-semana">0</div><div style="font-size:0.78em;opacity:0.9;">Movs / sem</div></div>
       <div style="background:#9b59b6;color:white;padding:14px;border-radius:10px;text-align:center;"><div style="font-size:1.3em;">&#128229;</div><div style="font-size:1.7em;font-weight:700;" id="mee-c-mes">0</div><div style="font-size:0.78em;opacity:0.9;">Entradas / mes</div></div>
@@ -1385,7 +1386,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
           <input id="mee-search-input" type="text" placeholder="Buscar..." oninput="cargarMeeStock()" style="padding:7px 10px;border:1px solid #d6d3d1;border-radius:6px;font-size:13px">
           <button onclick="cargarMeeStock()" style="white-space:nowrap;background:#15803d;color:#fff;">&#8635; Actualizar</button>
           <button onclick="meeImportarExcel()" style="white-space:nowrap;background:#7c3aed;color:#fff;" title="Importar inventario desde scripts/mee_excel_import.json (admin)">&#128194; Importar Excel</button>
-          <button onclick="meeAgrupadoToggle()" id="mee-agrupado-btn" style="white-space:nowrap;background:#0891b2;color:#fff;">&#128221; Agrupado</button>
+          <button onclick="meeAgrupadoToggle()" id="mee-agrupado-btn" style="white-space:nowrap;background:#7c3aed;color:#fff;">&#128221; Agrupado</button>
         </div>
         <div style="overflow-x:auto;">
           <table class="table" id="mee-tabla-estandar"><thead><tr><th>Codigo</th><th>Descripcion</th><th>Categoria</th><th>Stock</th><th>Minimo</th><th>Estado</th><th>Proveedor</th><th>Acciones</th></tr></thead>
@@ -1394,7 +1395,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
         <div id="mee-agrupado-wrap" style="display:none"></div>
       </div>
       <div style="background:#f8f9ff;border:1px solid #dde;border-radius:10px;padding:18px;">
-        <h3 style="margin-bottom:14px;color:#2B7A78;font-size:1em;">&#9998; Registrar Movimiento</h3>
+        <h3 style="margin-bottom:14px;color:#6d28d9;font-size:1em;">&#9998; Registrar Movimiento</h3>
         <div class="form-group"><label>Tipo</label>
           <select id="mee-tipo" onchange="meeActualizarTipo(this.value)">
             <option value="Entrada">&#128229; Entrada - recepcion</option>
@@ -1536,7 +1537,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
   </div>
 
   <div id="env-historial">
-    <h3 style="margin:0 0 10px;color:#2B7A78;font-size:14px">&#128202; Historial Envasado</h3>
+    <h3 style="margin:0 0 10px;color:#6d28d9;font-size:14px">&#128202; Historial Envasado</h3>
     <!-- Sprint Envasado PRO 20-may-2026 · paginación + búsqueda -->
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px;font-size:12px">
       <input id="env-q" type="text" placeholder="🔍 Buscar lote / producto / operador…" oninput="_envHistDebounced()" style="flex:1;min-width:200px;padding:7px 10px;border:1px solid #cbd5e1;border-radius:5px">
@@ -1672,7 +1673,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
   </div>
 
   <div id="ac-table-wrap">
-    <h3 style="margin:0 0 10px;color:#2B7A78;font-size:14px">&#128202; Historial Acondicionamiento</h3>
+    <h3 style="margin:0 0 10px;color:#6d28d9;font-size:14px">&#128202; Historial Acondicionamiento</h3>
     <!-- Sprint Acondicionamiento PRO UI · 21-may-2026 -->
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px;font-size:12px">
       <input id="ac-q" type="text" placeholder="🔍 Buscar lote / producto / operador…" oninput="_acHistDebounced()" style="flex:1;min-width:200px;padding:7px 10px;border:1px solid #cbd5e1;border-radius:5px">
@@ -1714,7 +1715,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
   -->
   <div style="display:flex;gap:10px;margin-bottom:8px;border-bottom:2px solid #e2e8f0;padding-bottom:10px;align-items:center;flex-wrap:wrap">
     <button data-prog-grp="plan" onclick="switchProgGroup('plan')"
-      style="padding:9px 24px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:800;cursor:pointer;background:linear-gradient(135deg,#0f766e,#0891b2);color:#fff;box-shadow:0 3px 10px rgba(8,145,178,.35)"
+      style="padding:9px 24px;border:none;border-radius:8px 8px 0 0;font-size:14px;font-weight:800;cursor:pointer;background:linear-gradient(135deg,#6d28d9,#7c3aed);color:#fff;box-shadow:0 3px 10px rgba(8,145,178,.35)"
       title="Demanda + oferta del plan · Necesidades · Abastecimiento">
       &#128202; Plan
     </button>
@@ -1740,7 +1741,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
   <!-- Sub-bars · solo una visible a la vez según el grupo activo -->
   <div id="prog-sub-plan" class="prog-subbar" style="display:flex;gap:8px;margin-bottom:14px;padding:8px 4px;border-bottom:1px dashed #cbd5e1;flex-wrap:wrap">
     <button data-prog-sub="plan" onclick="switchProgTab('necesidades')"
-      style="padding:6px 14px;border:1px solid #0f766e;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;background:#0f766e;color:#fff"
+      style="padding:6px 14px;border:1px solid #6d28d9;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;background:#6d28d9;color:#fff"
       title="Bandeja entrada · Animus DTC + B2B">
       &#128202; Necesidades
     </button>
@@ -1771,7 +1772,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
          · sigue accesible vía switchProgTab('mando') desde deeplinks ·
          botón visible se reactiva cuando esté rediseñado. -->
     <button data-prog-sub="opera_grp" onclick="switchProgTab('kanban')"
-      style="padding:6px 14px;border:1px solid #0891b2;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;background:#0891b2;color:#fff"
+      style="padding:6px 14px;border:1px solid #7c3aed;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;background:#7c3aed;color:#fff"
       title="Kanban 4 estaciones · Dispensación → Elaboración → Envasado → Acondicionamiento">
       &#127981; Kanban
     </button>
@@ -1830,7 +1831,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
         <button onclick="abrirFormB2B()" style="background:#1e40af;color:#fff;border:none;padding:7px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">+ Pedido B2B</button>
         <button onclick="autoSugerirProducciones()" style="background:#7c3aed;color:#fff;border:none;padding:7px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer" title="Crea producciones Sugeridas en el calendario para los productos que se van a quebrar (cron diario 5 AM también lo hace)">🤖 Auto-sugerir</button>
         <button onclick="abrirHerramientasLimpieza()" style="background:#475569;color:#fff;border:none;padding:7px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer" title="Limpia Sugeridas viejas del calendario + arregla productos con lote_size_kg absurdo">⚙ Herramientas</button>
-        <button onclick="cargarNecesidades()" style="background:#0f766e;color:#fff;border:none;padding:7px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">↻ Recargar</button>
+        <button onclick="cargarNecesidades()" style="background:#6d28d9;color:#fff;border:none;padding:7px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">↻ Recargar</button>
       </div>
     </div>
     <div id="nec-resumen" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px"></div>
@@ -1895,7 +1896,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
        custom y ya-producido. Reemplaza el drill panel anterior. -->
   <div id="solicitarModal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.55);z-index:1000;justify-content:center;align-items:center;padding:20px;overflow-y:auto">
     <div style="background:white;border-radius:14px;padding:0;max-width:600px;width:100%;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.4)">
-      <div style="background:linear-gradient(90deg,#0f766e,#0891b2);padding:16px 24px;border-radius:14px 14px 0 0;color:white;display:flex;justify-content:space-between;align-items:center">
+      <div style="background:linear-gradient(90deg,#6d28d9,#7c3aed);padding:16px 24px;border-radius:14px 14px 0 0;color:white;display:flex;justify-content:space-between;align-items:center">
         <h3 id="sol-titulo" style="margin:0;font-size:16px;font-weight:800">📅 Plan de producción</h3>
         <button onclick="cerrarSolicitar()" style="background:transparent;color:white;border:none;font-size:20px;cursor:pointer;line-height:1">✕</button>
       </div>
@@ -1939,7 +1940,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
   <!-- Modal Generar producción · todo vive en EOS (sin Calendar) -->
   <div id="gpModal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.55);z-index:1000;justify-content:center;align-items:center;padding:20px">
     <div style="background:white;border-radius:14px;padding:24px;max-width:480px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.4)">
-      <h3 id="gp-titulo" style="margin:0 0 8px;color:#0f766e">⚡ Generar producción</h3>
+      <h3 id="gp-titulo" style="margin:0 0 8px;color:#6d28d9">⚡ Generar producción</h3>
       <div style="font-size:12px;color:#64748b;margin-bottom:16px">Agenda el lote en EOS · queda pendiente en "Plan en curso"</div>
       <div style="display:grid;gap:10px">
         <input id="gp-codigo" type="hidden">
@@ -1962,7 +1963,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       </div>
       <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end">
         <button onclick="cerrarGenerarProduccion()" style="background:#e2e8f0;color:#1e293b;border:none;padding:8px 16px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer">Cancelar</button>
-        <button onclick="confirmarGenerarProduccion()" style="background:#0f766e;color:white;border:none;padding:8px 16px;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer">Agendar lote</button>
+        <button onclick="confirmarGenerarProduccion()" style="background:#6d28d9;color:white;border:none;padding:8px 16px;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer">Agendar lote</button>
       </div>
     </div>
   </div>
@@ -2155,7 +2156,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       <div style="border-top:1px solid #e0e0e0;padding:14px">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
           <b style="font-size:13px">Mapeos activos</b>
-          <button onclick="cargarBridgeMappings()" style="background:#2B7A78;color:#fff;border:none;border-radius:5px;padding:5px 12px;cursor:pointer;font-size:12px">&#128260; Actualizar</button>
+          <button onclick="cargarBridgeMappings()" style="background:#6d28d9;color:#fff;border:none;border-radius:5px;padding:5px 12px;cursor:pointer;font-size:12px">&#128260; Actualizar</button>
         </div>
         <div id="bridge-mappings-list"><div style="color:#aaa;font-style:italic;font-size:12px">— carga para ver —</div></div>
       </div>
@@ -2379,7 +2380,7 @@ function _toastSolicitudCreada(numero, codigo, nombre, cant, und){
         ' · queda como <b>Solicitada</b> en este lote</div>'+
       '<div style="margin-top:8px;font-size:11px;color:#64748b">'+
         '&#x2192; Catalina la procesará en <a href="/compras" target="_blank" '+
-        'style="color:#0e7490;text-decoration:underline">Compras</a></div>'+
+        'style="color:#7c3aed;text-decoration:underline">Compras</a></div>'+
     '</div>';
   document.body.appendChild(t);
   // Auto-dismiss en 8s (suficiente para que Luis lo vea)
@@ -2703,7 +2704,7 @@ async function cargarDuplicadosMP(){
       });
       html += '</tbody></table>';
       html += '<div style="display:flex;gap:6px;margin-top:6px;justify-content:flex-end">';
-      html += '<button onclick="dryRunUnificarMP('+gIdx+')" style="background:#0e7490;color:#fff;padding:5px 12px;font-size:12px">Dry-run (preview)</button>';
+      html += '<button onclick="dryRunUnificarMP('+gIdx+')" style="background:#7c3aed;color:#fff;padding:5px 12px;font-size:12px">Dry-run (preview)</button>';
       html += '<button onclick="aplicarUnificarMP('+gIdx+')" style="background:#be185d;color:#fff;padding:5px 12px;font-size:12px">&#x1F4A5; Unificar grupo</button>';
       html += '<span id="ump-msg-'+gIdx+'" style="font-size:11px;align-self:center;color:#475569"></span>';
       html += '</div></div>';
@@ -2738,7 +2739,7 @@ async function dryRunUnificarMP(gIdx){
     if(!r.ok){ msg.innerHTML = '<span style="color:#dc2626">Error: '+_escHTML(d.error||r.status)+'</span>'; return; }
     var plan = d.plan_updates_por_tabla || {};
     var lineas = Object.keys(plan).map(function(t){return t+': '+plan[t];}).join(' · ');
-    msg.innerHTML = '<span style="color:#0e7490;font-weight:700">'+(d.total_filas_a_actualizar||0)+' filas (' + lineas + ')</span>';
+    msg.innerHTML = '<span style="color:#7c3aed;font-weight:700">'+(d.total_filas_a_actualizar||0)+' filas (' + lineas + ')</span>';
   }catch(e){ msg.innerHTML = '<span style="color:#dc2626">Error red: '+_escHTML(e.message)+'</span>'; }
 }
 async function aplicarUnificarMP(gIdx){
@@ -3303,7 +3304,7 @@ function _htmlEsc(v){
 // (array de arrays). Cada fila se renderiza como <tr><td>...</td></tr>.
 function dlExcelHTML(nombre, cols, rows){
   var head = '<tr>' + cols.map(function(c){
-    return '<th style="background:#2B7A78;color:white;font-weight:bold;border:1px solid #888;padding:4px">'+_htmlEsc(c)+'</th>';
+    return '<th style="background:#6d28d9;color:white;font-weight:bold;border:1px solid #888;padding:4px">'+_htmlEsc(c)+'</th>';
   }).join('') + '</tr>';
   var body = rows.map(function(r){
     return '<tr>' + r.map(function(v){
@@ -3436,19 +3437,19 @@ async function cargarHistProd(){
       var f=p.fecha?p.fecha.substring(0,16).replace('T',' '):'';
       var op=p.operador||'<span style="color:#bbb;font-style:italic;">-</span>';
       var costo = p.costo_estimado_cop ? '$'+Number(p.costo_estimado_cop).toLocaleString('es-CO') : '<span style="color:#94a3b8">—</span>';
-      var lote = '<span style="font-family:monospace;font-weight:700;color:#0f766e">'+_escHTML(p.lote||'')+'</span>';
+      var lote = '<span style="font-family:monospace;font-weight:700;color:#6d28d9">'+_escHTML(p.lote||'')+'</span>';
       var estadoBg = (p.estado||'').toLowerCase()==='completado'?'#d4edda':'#fde68a';
       var estadoCol = (p.estado||'').toLowerCase()==='completado'?'#155724':'#92400e';
       return '<tr>'+
         '<td style="font-weight:600;">'+_escHTML(p.producto)+'</td>'+
         '<td>'+lote+'</td>'+
-        '<td style="text-align:right;font-weight:700;color:#2B7A78;">'+Number(p.cantidad).toLocaleString()+' kg</td>'+
+        '<td style="text-align:right;font-weight:700;color:#6d28d9;">'+Number(p.cantidad).toLocaleString()+' kg</td>'+
         '<td style="text-align:right;font-size:0.85em">'+costo+'</td>'+
         '<td style="font-size:0.85em;color:#666;">'+_escHTML(f)+'</td>'+
         '<td>'+op+'</td>'+
         '<td style="text-align:center;"><span style="background:'+estadoBg+';color:'+estadoCol+';padding:2px 8px;border-radius:10px;font-size:0.8em;font-weight:600;">'+_escHTML(p.estado||'')+'</span></td>'+
         '<td style="text-align:center;white-space:nowrap">'+
-          '<button data-prod-act="detalle" data-pid="'+p.id+'" style="background:#0891b2;color:#fff;border:none;padding:3px 8px;border-radius:4px;font-size:10px;cursor:pointer;margin-right:3px" title="Ver MPs descontadas + lotes FEFO + costo">📋</button>'+
+          '<button data-prod-act="detalle" data-pid="'+p.id+'" style="background:#7c3aed;color:#fff;border:none;padding:3px 8px;border-radius:4px;font-size:10px;cursor:pointer;margin-right:3px" title="Ver MPs descontadas + lotes FEFO + costo">📋</button>'+
           '<button data-prod-act="rotulo" data-pid="'+p.id+'" data-prod="'+_escHTML(p.producto||'')+'" data-kg="'+(p.cantidad||0)+'" style="background:#c0392b;color:#fff;border:none;padding:3px 8px;border-radius:4px;font-size:10px;cursor:pointer" title="Re-imprimir rótulos completos de dispensación (MPs + lotes FEFO + INCI)">🏷</button>'+
         '</td>'+
       '</tr>';
@@ -3463,7 +3464,7 @@ async function cargarHistProd(){
         pagBtns += '<button onclick="window._histProdOffset=Math.max(0,window._histProdOffset-'+limit+');cargarHistProd()" style="padding:4px 10px;background:#475569;color:#fff;border:none;border-radius:4px;font-size:11px;cursor:pointer;margin-right:4px">← Anterior</button>';
       }
       if(offset + limit < total){
-        pagBtns += '<button onclick="window._histProdOffset+='+limit+';cargarHistProd()" style="padding:4px 10px;background:#0891b2;color:#fff;border:none;border-radius:4px;font-size:11px;cursor:pointer">Siguiente →</button>';
+        pagBtns += '<button onclick="window._histProdOffset+='+limit+';cargarHistProd()" style="padding:4px 10px;background:#7c3aed;color:#fff;border:none;border-radius:4px;font-size:11px;cursor:pointer">Siguiente →</button>';
       }
       ft.innerHTML = '<span>Mostrando '+desde_n+'–'+hasta_n+' de '+total.toLocaleString()+'</span><span>'+pagBtns+'</span>';
     }
@@ -3523,7 +3524,7 @@ async function verDetalleProduccion(pid){
     }).join('');
     div.innerHTML =
       '<div style="background:#fff;border-radius:14px;padding:24px;max-width:840px;width:100%;max-height:90vh;overflow-y:auto">'+
-      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><h3 style="margin:0;color:#0f766e">📋 Detalle producción · '+_escHTML(d.lote)+'</h3>'+
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><h3 style="margin:0;color:#6d28d9">📋 Detalle producción · '+_escHTML(d.lote)+'</h3>'+
       '<button id="prod-det-close" style="background:none;border:none;font-size:1.4em;cursor:pointer">×</button></div>'+
       '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;background:#f8fafc;padding:12px;border-radius:8px;margin-bottom:14px;font-size:13px">'+
         '<div><b>Producto</b><br>'+_escHTML(d.producto)+'</div>'+
@@ -3532,7 +3533,7 @@ async function verDetalleProduccion(pid){
         '<div><b>Fecha</b><br>'+_escHTML((d.fecha||'').substring(0,16).replace('T',' '))+'</div>'+
         '<div><b>Operador</b><br>'+_escHTML(d.operador)+'</div>'+
         '<div><b>Presentación</b><br>'+_escHTML(d.presentacion||'—')+'</div>'+
-        '<div><b>Costo estimado</b><br><span style="color:#0f766e;font-weight:700">'+costoStr+'</span></div>'+
+        '<div><b>Costo estimado</b><br><span style="color:#6d28d9;font-weight:700">'+costoStr+'</span></div>'+
         '<div><b>Estado</b><br>'+_escHTML(d.estado)+'</div>'+
       '</div>'+
       '<h4 style="margin:14px 0 6px;color:#475569;font-size:13px">📉 MPs descontadas (con lotes FEFO usados)</h4>'+
@@ -3982,7 +3983,7 @@ function renderStock(items){
     h+='<td style="color:#444;font-size:0.82em;">'+_escHTML(i.nombre_inci||'')+'</td>';
     h+='<td style="font-weight:600;">'+_escHTML(i.material_nombre||'')+'</td>';
     h+='<td style="color:#888;">'+_escHTML(i.tipo||'')+'</td>';
-    h+='<td style="color:#555;">'+(i.proveedor?_escHTML(i.proveedor):'<span style="color:#bbb;">— sin proveedor —</span>')+' <button onclick="abrirEditarProveedor('+gi+')" title="Editar proveedor" style="margin-left:4px;padding:1px 6px;font-size:0.75em;background:#e8f5f5;color:#2B7A78;border:1px solid #b8dada;border-radius:4px;cursor:pointer;">&#9999;&#65039;</button></td>';
+    h+='<td style="color:#555;">'+(i.proveedor?_escHTML(i.proveedor):'<span style="color:#bbb;">— sin proveedor —</span>')+' <button onclick="abrirEditarProveedor('+gi+')" title="Editar proveedor" style="margin-left:4px;padding:1px 6px;font-size:0.75em;background:#e8f5f5;color:#6d28d9;border:1px solid #b8dada;border-radius:4px;cursor:pointer;">&#9999;&#65039;</button></td>';
     // Mostrar Min solo en primera fila de cada MP · "↑" en las demás (gris)
     var celdaMin = esPrimerLoteDeMP
       ? (i.stock_min_g||0).toLocaleString()
@@ -4043,7 +4044,7 @@ function _refreshStockSortIcons(){
     if(!ico) return;
     if(th.getAttribute('data-sort') === _STOCK_SORT.col){
       ico.textContent = (_STOCK_SORT.dir === 'asc') ? '▲' : '▼';
-      ico.style.color = '#0891b2';
+      ico.style.color = '#7c3aed';
     } else { ico.textContent = ''; }
   });
 }
@@ -4335,7 +4336,7 @@ function mostrarUltimoIngresoPersistido(){
     box.style.display='block';
     box.innerHTML = '📋 Último ingreso: <b>'+_escHTML(u.nombre||u.codigo)+'</b> · lote <code>'+_escHTML(u.lote||'')+'</code> · ' +
       (u.cantidad||0).toLocaleString()+'g · hace '+(hace<1?'<1':hace)+'min · ' +
-      '<a href="#" onclick="generarRotuloIngreso();return false" style="color:#0e7490;text-decoration:underline;font-weight:600">🏷 Generar rótulo</a>';
+      '<a href="#" onclick="generarRotuloIngreso();return false" style="color:#7c3aed;text-decoration:underline;font-weight:600">🏷 Generar rótulo</a>';
   }catch(e){ box.style.display='none'; }
 }
 
@@ -4414,7 +4415,7 @@ async function cargarHistIngreso(reset){
     tb.innerHTML = items.map(function(m){
       var fec = (m.fecha||'').substring(0,16).replace('T',' ');
       var venc = m.fecha_vencimiento ? m.fecha_vencimiento.substring(0,10) : '';
-      var ocLink = m.numero_oc ? '<a href="/oc/'+encodeURIComponent(m.numero_oc)+'" target="_blank" style="color:#0e7490;font-family:monospace">'+_escHTML(m.numero_oc)+'</a>' : '<span style="color:#cbd5e1">—</span>';
+      var ocLink = m.numero_oc ? '<a href="/oc/'+encodeURIComponent(m.numero_oc)+'" target="_blank" style="color:#7c3aed;font-family:monospace">'+_escHTML(m.numero_oc)+'</a>' : '<span style="color:#cbd5e1">—</span>';
       var cuarTag = (m.estado_lote==='CUARENTENA') ? '<span style="background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:8px;font-size:9px;font-weight:700;margin-left:4px">🔒 CUAR</span>' : '';
       var anulado = (m.estado_lote==='ANULADO') ? 'opacity:.5;text-decoration:line-through;' : '';
       var anularBtn = (esAdmin && m.estado_lote!=='ANULADO') ?
@@ -4588,10 +4589,10 @@ async function abrirBasesFormulas(){
     if(existe) existe.remove();
     var html = '<div id="modal-bases-form" style="position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9998;display:flex;align-items:center;justify-content:center;padding:20px">';
     html += '<div style="background:#fff;border-radius:14px;padding:24px;max-width:780px;width:100%;max-height:90vh;overflow-y:auto">';
-    html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><h3 style="margin:0;color:#0e7490">📊 Distribución de bases de fórmulas</h3>';
+    html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><h3 style="margin:0;color:#7c3aed">📊 Distribución de bases de fórmulas</h3>';
     html += '<button id="bases-close-btn" style="background:none;border:none;font-size:1.4em;cursor:pointer">×</button></div>';
     var color = d.es_uniforme ? '#16a34a' : '#ca8a04';
-    html += '<div style="background:#f0f9ff;border:1px solid '+color+';border-radius:8px;padding:10px 14px;margin-bottom:14px;color:#0e7490;font-size:13px"><b>'+_escHTML(d.mensaje||'')+'</b><br>Total fórmulas: '+(d.total_formulas||0)+'</div>';
+    html += '<div style="background:#f0f9ff;border:1px solid '+color+';border-radius:8px;padding:10px 14px;margin-bottom:14px;color:#7c3aed;font-size:13px"><b>'+_escHTML(d.mensaje||'')+'</b><br>Total fórmulas: '+(d.total_formulas||0)+'</div>';
     if(grupos.length){
       html += '<table class="table" style="font-size:12px"><thead><tr><th>Base (g)</th><th>Cantidad</th><th>Productos (primeros 5)</th></tr></thead><tbody>';
       grupos.forEach(function(g){
@@ -4605,7 +4606,7 @@ async function abrirBasesFormulas(){
       html += '</tbody></table>';
     }
     html += '<div style="margin-top:14px;border-top:1px solid #e2e8f0;padding-top:14px">';
-    html += '<h4 style="margin:0 0 8px;color:#0e7490">🔧 Normalizar todas a una base común (admin)</h4>';
+    html += '<h4 style="margin:0 0 8px;color:#7c3aed">🔧 Normalizar todas a una base común (admin)</h4>';
     html += '<div style="background:#fef3c7;border:1px solid #ca8a04;border-radius:6px;padding:10px 12px;margin-bottom:10px;font-size:11px;color:#78350f">';
     html += '<b>Por qué 100g es el estándar cosmético:</b><br>';
     html += '• Los % de la fórmula suman 100% · base 100g = "% es exactamente igual a g"<br>';
@@ -4616,7 +4617,7 @@ async function abrirBasesFormulas(){
     html += '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">';
     html += '<label style="font-size:12px;color:#475569">Base nueva (g):</label>';
     html += '<input id="bases-nuevo-input" type="number" value="100" min="50" max="100000" step="50" style="width:120px;padding:6px 10px;border:1px solid #cbd5e1;border-radius:5px">';
-    html += '<button id="bases-aplicar-btn" style="background:#0e7490;color:#fff;border:none;padding:8px 16px;border-radius:6px;font-weight:700;cursor:pointer">⚙ Normalizar TODAS a esta base</button>';
+    html += '<button id="bases-aplicar-btn" style="background:#7c3aed;color:#fff;border:none;padding:8px 16px;border-radius:6px;font-weight:700;cursor:pointer">⚙ Normalizar TODAS a esta base</button>';
     html += '</div></div>';
     html += '</div></div>';
     var div = document.createElement('div');
@@ -4658,15 +4659,15 @@ function abrirImportExcelFormulas(){
       '<div style="background:#fff;border-radius:14px;padding:24px;max-width:720px;width:100%;max-height:90vh;overflow-y:auto">'+
       '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><h3 style="margin:0;color:#7c3aed">📤 Importar fórmulas desde Excel</h3>'+
       '<button id="imp-form-close-btn" style="background:none;border:none;font-size:1.3em;cursor:pointer">×</button></div>'+
-      '<div style="background:#f0f9ff;border:1px solid #0891b2;border-radius:8px;padding:12px;margin-bottom:14px;font-size:12px;color:#0e7490">'+
+      '<div style="background:#f0f9ff;border:1px solid #7c3aed;border-radius:8px;padding:12px;margin-bottom:14px;font-size:12px;color:#7c3aed">'+
       '<b>Formato requerido</b> · 1 fila por ingrediente:<br>'+
       'Columnas obligatorias: <code>producto</code>, <code>codigo_mp</code>, <code>porcentaje</code><br>'+
       'Columnas opcionales: <code>nombre_mp</code>, <code>unidad_base_g</code>, <code>descripcion</code><br>'+
-      '<a href="/api/formulas/export-excel" target="_blank" style="color:#0891b2;font-weight:700">📥 Descargar plantilla (export actual)</a>'+
+      '<a href="/api/formulas/export-excel" target="_blank" style="color:#7c3aed;font-weight:700">📥 Descargar plantilla (export actual)</a>'+
       '</div>'+
       '<input type="file" id="imp-form-file" accept=".xlsx,.csv" style="margin-bottom:14px">'+
       '<div style="display:flex;gap:8px;margin-bottom:14px">'+
-      '<button onclick="impFormulasPreview()" style="background:#0e7490;color:#fff;padding:8px 16px;border:none;border-radius:6px;cursor:pointer;font-weight:700">🔍 Preview (dry-run)</button>'+
+      '<button onclick="impFormulasPreview()" style="background:#7c3aed;color:#fff;padding:8px 16px;border:none;border-radius:6px;cursor:pointer;font-weight:700">🔍 Preview (dry-run)</button>'+
       '<button onclick="impFormulasApply()" id="imp-form-apply" style="background:#7c3aed;color:#fff;padding:8px 16px;border:none;border-radius:6px;cursor:pointer;font-weight:700" disabled>💾 Aplicar import</button>'+
       '</div>'+
       '<div id="imp-form-msg" style="font-size:12px"></div>'+
@@ -5040,7 +5041,7 @@ async function loadABC(){
              backgroundColor: top.map(function(i){return i.clasificacion==='A'?'rgba(34,197,94,0.7)':i.clasificacion==='B'?'rgba(253,126,20,0.7)':'rgba(148,163,184,0.7)';}),
              borderRadius:3, yAxisID:'y'},
             {type:'line', label:'% acumulado', data:top.map(function(i){return i.pct_acumulado;}),
-             borderColor:'#0891b2', backgroundColor:'rgba(8,145,178,0.1)', tension:0.2, yAxisID:'y1', borderWidth:2, pointRadius:2},
+             borderColor:'#7c3aed', backgroundColor:'rgba(8,145,178,0.1)', tension:0.2, yAxisID:'y1', borderWidth:2, pointRadius:2},
           ],
         },
         options:{responsive:true, interaction:{intersect:false},
@@ -5074,7 +5075,7 @@ async function loadABC(){
         '<td style="text-align:right;color:#475569">'+(i.precio_kg?'$'+Math.round(i.precio_kg).toLocaleString('es-CO'):'—')+'</td>'+
         '<td style="text-align:right;font-weight:600">'+(i.valor_cop?'$'+Math.round(i.valor_cop).toLocaleString('es-CO'):'—')+'</td>'+
         '<td style="text-align:right;color:#475569">'+(i.consumo_90d_g?Math.round(i.consumo_90d_g).toLocaleString():'—')+'</td>'+
-        '<td style="text-align:right;color:#0891b2;font-weight:600">'+i.pct_acumulado.toFixed(1)+'%</td>'+
+        '<td style="text-align:right;color:#7c3aed;font-weight:600">'+i.pct_acumulado.toFixed(1)+'%</td>'+
       '</tr>';
     });
     html += '</tbody></table></div>';
@@ -5146,7 +5147,7 @@ async function loadMovimientosNuevo(reset){
       if(m.tipo==='Entrada') tipoBadge = '<span style="background:#dcfce7;color:#166534;padding:1px 7px;border-radius:8px;font-size:10px;font-weight:700">📥 IN</span>';
       else if(m.tipo==='Salida') tipoBadge = '<span style="background:#fee2e2;color:#991b1b;padding:1px 7px;border-radius:8px;font-size:10px;font-weight:700">📤 OUT</span>';
       else tipoBadge = '<span style="background:#fef3c7;color:#92400e;padding:1px 7px;border-radius:8px;font-size:10px;font-weight:700">⚖ AJU</span>';
-      var ocLink = m.numero_oc ? '<a href="/oc/'+encodeURIComponent(m.numero_oc)+'" target="_blank" style="color:#0e7490;font-family:monospace">'+_escHTML(m.numero_oc)+'</a>' : '<span style="color:#cbd5e1">—</span>';
+      var ocLink = m.numero_oc ? '<a href="/oc/'+encodeURIComponent(m.numero_oc)+'" target="_blank" style="color:#7c3aed;font-family:monospace">'+_escHTML(m.numero_oc)+'</a>' : '<span style="color:#cbd5e1">—</span>';
       var anulBtn = m.anulado
         ? '<span style="color:#aaa;font-size:10px">Anulado</span>'
         : (esAdmin ? '<button data-act="mov-anul" data-id="'+m.id+'" data-mat="'+_escHTML(m.material_nombre)+'" data-cant="'+m.cantidad+'" data-tipo="'+_escHTML(m.tipo)+'" style="padding:2px 7px;font-size:11px;background:#c0392b;color:#fff;border-radius:3px" title="Anular movimiento">✕</button>' : '<span style="color:#cbd5e1;font-size:10px">—</span>');
@@ -5381,7 +5382,7 @@ async function loadAlertasAll(silent){
       statsBox.style.display = 'grid';
       function statCard(label, val, color, icon, anchor){
         var bg = color==='red'?'#fef2f2':color==='orange'?'#fff7ed':color==='yellow'?'#fefce8':color==='purple'?'#faf5ff':color==='teal'?'#f0fdfa':'#f8fafc';
-        var fg = color==='red'?'#dc2626':color==='orange'?'#ea580c':color==='yellow'?'#ca8a04':color==='purple'?'#7c3aed':color==='teal'?'#0e7490':'#475569';
+        var fg = color==='red'?'#dc2626':color==='orange'?'#ea580c':color==='yellow'?'#ca8a04':color==='purple'?'#7c3aed':color==='teal'?'#7c3aed':'#475569';
         return '<a href="#" onclick="scrollAlertaSec(\\''+anchor+'\\');return false" style="text-decoration:none;background:'+bg+';border-left:4px solid '+fg+';padding:10px;border-radius:6px;display:block">'+
           '<div style="font-size:10px;color:'+fg+';text-transform:uppercase;font-weight:700;letter-spacing:.5px">'+icon+' '+label+'</div>'+
           '<div style="font-size:1.4em;font-weight:800;color:'+fg+';margin-top:2px">'+val+'</div>'+
@@ -5413,14 +5414,14 @@ async function loadAlertasAll(silent){
     html += _renderSeccionMP('⚠️ MPs bajo stock mínimo', d.mps_bajo_minimo||[], '#ea580c', 'mps_bajo_minimo');
     // 2.5 Agrupado por proveedor
     if((d.agrupado_por_proveedor||[]).length){
-      html += '<div style="background:#ecfeff;border:1px solid #0891b2;border-radius:8px;padding:14px;margin:14px 0">';
-      html += '<h3 style="color:#0e7490;margin:0 0 10px;font-size:14px">📨 Agrupado por proveedor · Crear SOL combinada</h3>';
+      html += '<div style="background:#ecfeff;border:1px solid #7c3aed;border-radius:8px;padding:14px;margin:14px 0">';
+      html += '<h3 style="color:#7c3aed;margin:0 0 10px;font-size:14px">📨 Agrupado por proveedor · Crear SOL combinada</h3>';
       html += '<div style="display:flex;flex-wrap:wrap;gap:8px">';
       d.agrupado_por_proveedor.forEach(function(g, gi){
         html += '<div style="background:#fff;border:1px solid #bae6fd;border-radius:6px;padding:8px 12px;flex:1;min-width:240px">';
-        html += '<div style="font-weight:700;font-size:13px;color:#0e7490">'+_escHTML(g.proveedor)+'</div>';
+        html += '<div style="font-weight:700;font-size:13px;color:#7c3aed">'+_escHTML(g.proveedor)+'</div>';
         html += '<div style="font-size:11px;color:#475569;margin:3px 0">'+g.items.length+' MP(s) · déficit total '+Math.round(g.deficit_total_g).toLocaleString()+' g</div>';
-        html += '<button onclick="crearSolCombinada('+gi+')" style="padding:4px 10px;font-size:11px;background:#0e7490;color:#fff;border-radius:4px">📨 Crear SOL combinada</button>';
+        html += '<button onclick="crearSolCombinada('+gi+')" style="padding:4px 10px;font-size:11px;background:#7c3aed;color:#fff;border-radius:4px">📨 Crear SOL combinada</button>';
         html += '</div>';
       });
       html += '</div></div>';
@@ -5701,7 +5702,7 @@ async function loadAlertasReabas(){
                 urgente?'<span style="background:#e65100;color:white;padding:2px 8px;border-radius:10px;font-size:0.82em;font-weight:700;">URGENTE</span>':
                 '<span style="background:#f57f17;color:white;padding:2px 8px;border-radius:10px;font-size:0.82em;font-weight:700;">BAJO</span>';
       var esMEE=a.tipo==='MEE';
-      var tipoBadge=esMEE?'<span style="background:#2B7A78;color:white;padding:1px 7px;border-radius:8px;font-size:0.78em;font-weight:700;">MEE</span>':
+      var tipoBadge=esMEE?'<span style="background:#6d28d9;color:white;padding:1px 7px;border-radius:8px;font-size:0.78em;font-weight:700;">MEE</span>':
                          '<span style="background:#555;color:white;padding:1px 7px;border-radius:8px;font-size:0.78em;font-weight:700;">MP</span>';
       var unidad=esMEE?'und':'g';
       h+='<tr style="background:'+color+';">';
@@ -5721,8 +5722,8 @@ async function loadAlertasReabas(){
       h+='<td style="text-align:right;color:#cc0000;font-weight:700;">'+a.stock_actual.toLocaleString()+' '+unidad+'</td>';
       h+='<td style="text-align:right;color:#cc0000;font-weight:700;">'+a.deficit.toLocaleString()+' '+unidad+'</td>';
       h+='<td style="text-align:center;">'+badge+' '+pct+'%</td>';
-      var accion=esMEE?'<button onclick="switchTab(&apos;mee&apos;,null)" style="padding:4px 10px;font-size:0.78em;background:#2B7A78;color:white;border-radius:4px;">Ver MEE</button>':
-                       '<button onclick="abrirSolIdx('+ri+')" style="padding:4px 10px;font-size:0.78em;background:#2B7A78;color:white;border-radius:4px;">Solicitar</button>';
+      var accion=esMEE?'<button onclick="switchTab(&apos;mee&apos;,null)" style="padding:4px 10px;font-size:0.78em;background:#6d28d9;color:white;border-radius:4px;">Ver MEE</button>':
+                       '<button onclick="abrirSolIdx('+ri+')" style="padding:4px 10px;font-size:0.78em;background:#6d28d9;color:white;border-radius:4px;">Solicitar</button>';
       h+='<td style="text-align:center;">'+accion+'</td>';
       h+='</tr>';
     });
@@ -6025,7 +6026,7 @@ function _showStockInsuficientePopup(producto, cantidad_kg, faltantes){
       '<div style="background:#f8fafc;padding:14px 24px;display:flex;'+
         'gap:10px;justify-content:flex-end;border-top:1px solid #e2e8f0">'+
         '<button onclick="window.location.href=\\'/compras\\'" '+
-          'style="background:#fff;color:#0f766e;border:1px solid #0f766e;border-radius:6px;'+
+          'style="background:#fff;color:#6d28d9;border:1px solid #6d28d9;border-radius:6px;'+
           'padding:8px 16px;font-size:13px;font-weight:600;cursor:pointer">'+
           '&#x1F6D2; Ir a Compras</button>'+
         '<button onclick="document.getElementById(\\'popup-stock-insuf\\').remove()" '+
@@ -6153,7 +6154,7 @@ async function diagnosticarFormula(producto){
     div.id = 'modal-diag-form';
     div.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9998;display:flex;align-items:center;justify-content:center;padding:20px';
     var html = '<div style="background:#fff;border-radius:14px;padding:24px;max-width:920px;width:100%;max-height:90vh;overflow-y:auto">';
-    html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><h3 style="margin:0;color:#0e7490">🔍 Diagnóstico fórmula · '+_escHTML(producto)+'</h3>';
+    html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><h3 style="margin:0;color:#7c3aed">🔍 Diagnóstico fórmula · '+_escHTML(producto)+'</h3>';
     html += '<button id="diag-close" style="background:none;border:none;font-size:1.4em;cursor:pointer">×</button></div>';
     var probTotal = 0;
     (d.diagnostico||[]).forEach(function(it){ probTotal += (it.problemas||[]).length; });
@@ -6349,7 +6350,7 @@ async function iniciarRegistroProd(){
           html+='<button data-act-autorep-retry data-prod="'+_escHTML(prod)+'" data-kg="'+kg+'" style="margin-top:10px;background:#9a3412;color:#fff;border:none;padding:8px 18px;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer">🔧 Auto-reparar Y reintentar registro</button>';
           html+='</div>';
         }
-        html+='<div style="margin-top:8px"><button data-act-diag-form data-prod="'+_escHTML(prod)+'" style="background:#0e7490;color:#fff;border:none;padding:6px 14px;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer">🔍 Diagnosticar fórmula</button> <span style="font-size:11px;color:#7f1d1d">← ver detalle completo</span></div>';
+        html+='<div style="margin-top:8px"><button data-act-diag-form data-prod="'+_escHTML(prod)+'" style="background:#7c3aed;color:#fff;border:none;padding:6px 14px;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer">🔍 Diagnosticar fórmula</button> <span style="font-size:11px;color:#7f1d1d">← ver detalle completo</span></div>';
       }
       if(d.faltantes && d.faltantes.length){
         html+='<div style="margin-top:8px;font-size:13px;">No se descontó nada (transacción atómica abortó).</div>';
@@ -6546,7 +6547,7 @@ async function cargarCuarentena(){
       h+='<td><span style="background:'+estadoColor+'20;color:'+estadoColor+';padding:2px 8px;border-radius:10px;font-size:0.8em;font-weight:700;">'+l.estado_lote.replace('_',' ')+'</span></td>';
       h+='<td>';
       if(esAdmin){
-        h+='<button onclick="abrirCCModal(JSON.parse(this.dataset.lote))" data-lote="'+JSON.stringify(l).replace(/"/g,'&quot;')+'" style="padding:5px 12px;background:#2B7A78;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:0.82em;font-weight:600;">Revisar CC</button>';
+        h+='<button onclick="abrirCCModal(JSON.parse(this.dataset.lote))" data-lote="'+JSON.stringify(l).replace(/"/g,'&quot;')+'" style="padding:5px 12px;background:#6d28d9;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:0.82em;font-weight:600;">Revisar CC</button>';
       }else{
         h+='<span style="color:#999;font-size:0.82em;">Solo CC/Admin</span>';
       }
@@ -6702,7 +6703,7 @@ async function buscarTrazabilidadPT(){
       html+='</div>';
     }
     var mps=d.mps_consumidas||[];
-    html+='<h5 style="margin:0 0 8px;color:#2B7A78;">Materias Primas Consumidas ('+mps.length+')</h5>';
+    html+='<h5 style="margin:0 0 8px;color:#6d28d9;">Materias Primas Consumidas ('+mps.length+')</h5>';
     if(mps.length){
       html+='<table style="width:100%;font-size:0.82em;border-collapse:collapse;">';
       html+='<thead><tr style="background:#f0f0f0;"><th style="padding:4px 8px;text-align:left;">Lote MP</th><th style="padding:4px 8px;text-align:left;">Material</th><th style="padding:4px 8px;text-align:right;">Cant (g)</th><th style="padding:4px 8px;text-align:left;">Proveedor</th><th style="padding:4px 8px;text-align:left;">Vence</th></tr></thead><tbody>';
@@ -6786,9 +6787,9 @@ function setConteoTipo(tipo){
   document.querySelectorAll('#cnt-tipo-tabs .cnt-tipo-tab').forEach(function(b){
     var isActive = (b.getAttribute('data-tipo') || '') === _conteoTipoFiltro;
     if(isActive){
-      b.style.background = '#2B7A78';
+      b.style.background = '#6d28d9';
       b.style.color = '#fff';
-      b.style.borderColor = '#2B7A78';
+      b.style.borderColor = '#6d28d9';
       b.classList.add('active');
     } else {
       b.style.background = '#fff';
@@ -6891,10 +6892,10 @@ async function cargarProgramacionCiclica(){
           });
           html += '</ul>';
         }
-        html += '<div style="margin-top:10px;padding:10px 12px;background:#fff;border-left:3px solid #2B7A78;color:#1f5f5b;">'
+        html += '<div style="margin-top:10px;padding:10px 12px;background:#fff;border-left:3px solid #6d28d9;color:#1f5f5b;">'
               + '<strong>Acción sugerida:</strong> '+dx.accion_sugerida+'</div>';
         html += '<div style="margin-top:10px;"><a href="/admin" target="_blank" '
-              + 'style="display:inline-block;background:#2B7A78;color:#fff;padding:6px 14px;border-radius:6px;font-size:12px;text-decoration:none;font-weight:600;">'
+              + 'style="display:inline-block;background:#6d28d9;color:#fff;padding:6px 14px;border-radius:6px;font-size:12px;text-decoration:none;font-weight:600;">'
               + 'Abrir /admin &raquo; tab Banco / diagnóstico</a> '
               + '<span style="margin-left:8px;font-size:11px;color:#888;">(o ir directo al Catálogo MPs en Planta)</span></div>';
         html += '</div>';
@@ -6914,7 +6915,7 @@ async function cargarProgramacionCiclica(){
       var semLabel = s.es_actual ? 'Sem. '+s.semana+' (Esta semana)' : 'Sem. '+s.semana;
       var accion = '';
       if(s.es_actual && s.conteo_estado !== 'Cerrado'){
-        accion = '<button onclick="iniciarConteoProgramado(\\''+s.estanteria+'\\')" style="padding:4px 12px;background:#2B7A78;color:#fff;border:none;border-radius:6px;font-size:0.82em;cursor:pointer;">'+(s.conteo_estado==='Abierto'?'Retomar':'Iniciar')+'</button>';
+        accion = '<button onclick="iniciarConteoProgramado(\\''+s.estanteria+'\\')" style="padding:4px 12px;background:#6d28d9;color:#fff;border:none;border-radius:6px;font-size:0.82em;cursor:pointer;">'+(s.conteo_estado==='Abierto'?'Retomar':'Iniciar')+'</button>';
       }
       // En modo items, mostrar los códigos+nombres de los 3 ítems en lugar
       // del label sintético "E&E-Empaque-S05"
@@ -7534,7 +7535,7 @@ async function cargarMeeStock(){
       h+='<td><span style="color:'+c+';font-weight:600;font-size:0.82em;">'+lbl+'</span></td>';
       h+='<td style="font-size:0.78em;color:#666;max-width:120px;overflow:hidden;text-overflow:ellipsis">'+_escHTML(m.proveedor||'-')+'</td>';
       h+='<td style="white-space:nowrap">';
-      h+='<button onclick="meeAjustar(&quot;'+_escHTML(m.codigo).replace(/"/g,'&quot;')+'&quot;)" title="Ajustar stock" style="padding:4px 7px;border:none;background:#0891b2;color:#fff;border-radius:4px;cursor:pointer;font-size:11px;margin-right:2px">&#9878;</button>';
+      h+='<button onclick="meeAjustar(&quot;'+_escHTML(m.codigo).replace(/"/g,'&quot;')+'&quot;)" title="Ajustar stock" style="padding:4px 7px;border:none;background:#7c3aed;color:#fff;border-radius:4px;cursor:pointer;font-size:11px;margin-right:2px">&#9878;</button>';
       h+='<button onclick="meeProveedor(&quot;'+_escHTML(m.codigo).replace(/"/g,'&quot;')+'&quot;)" title="Cambiar proveedor" style="padding:4px 7px;border:none;background:#6d28d9;color:#fff;border-radius:4px;cursor:pointer;font-size:11px;margin-right:2px">&#127981;</button>';
       h+='<button onclick="meeMin(&quot;'+_escHTML(m.codigo).replace(/"/g,'&quot;')+'&quot;,'+(m.stock_minimo||0)+')" title="Stock mínimo" style="padding:4px 7px;border:none;background:#d97706;color:#fff;border-radius:4px;cursor:pointer;font-size:11px;margin-right:2px">&#128208;</button>';
       h+='<button onclick="meeHistorico(&quot;'+_escHTML(m.codigo).replace(/"/g,'&quot;')+'&quot;)" title="Histórico de movimientos" style="padding:4px 7px;border:none;background:#15803d;color:#fff;border-radius:4px;cursor:pointer;font-size:11px;margin-right:2px">&#128202;</button>';
@@ -7735,7 +7736,7 @@ async function cargarMeeHistorial(){ try{ var r=await fetch('/api/mee/movimiento
   if(!d.movimientos||!d.movimientos.length){tb.innerHTML='<tr><td colspan="9" style="text-align:center;color:#999;">Sin movimientos registrados</td></tr>';return;}
   var tC={Entrada:'#27ae60',Salida:'#e74c3c',Ajuste:'#9b59b6'}; var h='';
   d.movimientos.forEach(function(m){var c=tC[m.tipo]||'#555'; var ref=m.batch_ref||m.lote_ref||'';
-    var btnRotulo=m.tipo==='Entrada'?'<button data-codigo="'+encodeURIComponent(m.mee_codigo)+'" data-cantidad="'+m.cantidad+'" data-lote="'+encodeURIComponent(ref||'')+'" onclick="abrirRotuloMEE(this)" style="background:#2B7A78;color:white;border:none;padding:4px 8px;font-size:0.75em;margin-right:4px;border-radius:3px;cursor:pointer;">&#128203; R&#243;tulo</button>':'';
+    var btnRotulo=m.tipo==='Entrada'?'<button data-codigo="'+encodeURIComponent(m.mee_codigo)+'" data-cantidad="'+m.cantidad+'" data-lote="'+encodeURIComponent(ref||'')+'" onclick="abrirRotuloMEE(this)" style="background:#6d28d9;color:white;border:none;padding:4px 8px;font-size:0.75em;margin-right:4px;border-radius:3px;cursor:pointer;">&#128203; R&#243;tulo</button>':'';
     h+='<tr><td style="color:#bbb;font-size:0.8em;">#'+m.id+'</td><td style="font-family:monospace;font-size:0.82em;">'+m.mee_codigo+'</td><td style="font-size:0.85em;">'+m.descripcion+'</td><td><span style="color:'+c+';font-weight:700;font-size:0.88em;">'+m.tipo+'</span></td><td style="font-weight:700;">'+m.cantidad+' <span style="color:#999;font-size:0.8em;">'+m.unidad+'</span></td><td style="font-size:0.8em;color:#777;font-family:monospace;">'+(ref||'--')+'</td><td style="font-size:0.82em;">'+m.responsable+'</td><td style="font-size:0.8em;color:#888;">'+(m.fecha?m.fecha.substring(0,16):'')+'</td><td>'+btnRotulo+'<button onclick="meeAnular('+m.id+')" style="background:#c0392b;padding:4px 8px;font-size:0.75em;">Anular</button></td></tr>';
   }); tb.innerHTML=h;
   }catch(e){}}
@@ -7918,7 +7919,7 @@ async function cargarEnvHistorial(){
     tb.innerHTML=rows.map(function(e){
       var fec = (e.fecha||'').substring(0,16).replace('T',' ');
       return '<tr style="border-bottom:1px solid #eee;">'+
-        '<td style="padding:6px;font-family:monospace;font-size:12px;color:#0f766e;font-weight:700">'+_escHTML(e.lote||'')+'</td>'+
+        '<td style="padding:6px;font-family:monospace;font-size:12px;color:#6d28d9;font-weight:700">'+_escHTML(e.lote||'')+'</td>'+
         '<td style="padding:6px;">'+_escHTML(e.producto||'')+'</td>'+
         '<td style="padding:6px;">'+_escHTML(e.presentacion||'')+'</td>'+
         '<td style="padding:6px;text-align:center;font-weight:700">'+(e.unidades||0)+'</td>'+
@@ -7926,7 +7927,7 @@ async function cargarEnvHistorial(){
         '<td style="padding:6px;font-size:11px;color:#666;">'+_escHTML(e.tapa_codigo||'—')+'</td>'+
         '<td style="padding:6px;font-size:12px;">'+_escHTML(fec)+'</td>'+
         '<td style="padding:6px;font-size:12px;">'+_escHTML(e.operador||'')+'</td>'+
-        '<td style="padding:6px;text-align:center"><button data-env-act="detalle" data-eid="'+e.id+'" style="background:#0891b2;color:#fff;border:none;padding:3px 8px;border-radius:4px;font-size:10px;cursor:pointer" title="Ver MEE descontado + costo">📋</button></td>'+
+        '<td style="padding:6px;text-align:center"><button data-env-act="detalle" data-eid="'+e.id+'" style="background:#7c3aed;color:#fff;border:none;padding:3px 8px;border-radius:4px;font-size:10px;cursor:pointer" title="Ver MEE descontado + costo">📋</button></td>'+
       '</tr>';
     }).join('');
     if(ft){
@@ -7975,7 +7976,7 @@ async function verDetalleEnvasado(eid){
         '<div><b>Lote</b><br><span style="font-family:monospace;color:#dc2626;font-weight:700">'+_escHTML(d.lote||'')+'</span></div>'+
         '<div><b>Envase</b><br>'+_escHTML(d.envase_codigo||'—')+'</div>'+
         '<div><b>Tapa</b><br>'+_escHTML(d.tapa_codigo||'—')+'</div>'+
-        '<div><b>Costo MEE</b><br><span style="color:#0f766e;font-weight:700">'+costoStr+'</span></div>'+
+        '<div><b>Costo MEE</b><br><span style="color:#6d28d9;font-weight:700">'+costoStr+'</span></div>'+
         '<div><b>Operador</b><br>'+_escHTML(d.operador||'')+'</div>'+
       '</div>'+
       '<h4 style="margin:14px 0 6px;color:#475569;font-size:13px">📉 MEE descontados</h4>'+
@@ -8669,7 +8670,7 @@ async function cargarAcondHistorial(){
         '<td style="padding:7px;text-align:center;font-family:monospace;font-size:11px">'+_escHTML(r.sku||'—')+'</td>'+
         '<td style="padding:7px;font-size:12px">'+_escHTML(fec)+'</td>'+
         '<td style="padding:7px;font-size:12px">'+_escHTML(r.operador||'—')+'</td>'+
-        '<td style="padding:7px;text-align:center"><button data-acond-act="detalle" data-aid="'+r.id+'" style="background:#0891b2;color:#fff;border:none;padding:3px 8px;border-radius:4px;font-size:10px;cursor:pointer">📋</button></td>'+
+        '<td style="padding:7px;text-align:center"><button data-acond-act="detalle" data-aid="'+r.id+'" style="background:#7c3aed;color:#fff;border:none;padding:3px 8px;border-radius:4px;font-size:10px;cursor:pointer">📋</button></td>'+
       '</tr>';
     }).join('');
     if(ft){
@@ -8996,7 +8997,7 @@ function _renderProgramacion(d){
          ESTA SEMANA · vista principal jefe de producción · Sebastián 1-may-2026
          La IA asigna TODO. El operario solo da click para avanzar.
          ══════════════════════════════════════════════════════════════ -->
-    <div id="plan-esta-semana" style="background:linear-gradient(135deg,#0f766e 0%,#0891b2 100%);border-radius:12px;padding:16px 18px;margin-bottom:16px;color:#fff;box-shadow:0 4px 14px rgba(8,145,178,.25)">
+    <div id="plan-esta-semana" style="background:linear-gradient(135deg,#6d28d9 0%,#7c3aed 100%);border-radius:12px;padding:16px 18px;margin-bottom:16px;color:#fff;box-shadow:0 4px 14px rgba(8,145,178,.25)">
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:12px">
         <div>
           <div style="font-size:16px;font-weight:800;letter-spacing:.3px">&#128197; Esta semana en planta · qué producir y quién</div>
@@ -9031,15 +9032,15 @@ function _renderProgramacion(d){
     </div>
 
     <!-- ── Estado Salas en Vivo · Sebastián 1-may-2026 ─────────────── -->
-    <div id="plan-salas-vivo" style="background:#fff;border:2px solid #0891b2;border-radius:10px;padding:14px 16px;margin-bottom:16px">
+    <div id="plan-salas-vivo" style="background:#fff;border:2px solid #7c3aed;border-radius:10px;padding:14px 16px;margin-bottom:16px">
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:10px">
         <div>
-          <div style="font-size:14px;font-weight:700;color:#0891b2">&#127981;&#65039; Estado salas en vivo · IA asigna y rota automáticamente</div>
+          <div style="font-size:14px;font-weight:700;color:#7c3aed">&#127981;&#65039; Estado salas en vivo · IA asigna y rota automáticamente</div>
           <div id="salas-subtitle" style="font-size:11px;color:#64748b;margin-top:2px">Cargando…</div>
         </div>
         <div style="display:flex;gap:6px">
-          <button onclick="autoAsignarPendientes()" title="Auto-asigna área + operarios para producciones próximos 7d sin asignar" style="padding:5px 10px;background:#0891b2;color:#fff;border:none;border-radius:5px;font-size:11px;cursor:pointer">&#129302; Auto-asignar pendientes</button>
-          <button onclick="salasVivoRecargar()" style="padding:5px 10px;background:#f1f5f9;color:#0891b2;border:1px solid #cbd5e1;border-radius:5px;font-size:11px;cursor:pointer">&#8635;</button>
+          <button onclick="autoAsignarPendientes()" title="Auto-asigna área + operarios para producciones próximos 7d sin asignar" style="padding:5px 10px;background:#7c3aed;color:#fff;border:none;border-radius:5px;font-size:11px;cursor:pointer">&#129302; Auto-asignar pendientes</button>
+          <button onclick="salasVivoRecargar()" style="padding:5px 10px;background:#f1f5f9;color:#7c3aed;border:1px solid #cbd5e1;border-radius:5px;font-size:11px;cursor:pointer">&#8635;</button>
         </div>
       </div>
       <div id="salas-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px"></div>
@@ -9121,7 +9122,7 @@ function _renderProgramacion(d){
          ESTADO SOLICITUDES · qué se solicitó vs qué falta · Sebastián 1-may
          ⭐ Lunes 7am: workflow automático bloquea la semana
          ══════════════════════════════════════════════════════════════ -->
-    <div id="plan-estado-solicitudes" style="background:linear-gradient(135deg,#1e293b 0%,#0f766e 100%);border-radius:12px;padding:14px 16px;margin-bottom:16px;color:#fff;box-shadow:0 4px 14px rgba(15,118,110,.25)">
+    <div id="plan-estado-solicitudes" style="background:linear-gradient(135deg,#1e293b 0%,#6d28d9 100%);border-radius:12px;padding:14px 16px;margin-bottom:16px;color:#fff;box-shadow:0 4px 14px rgba(15,118,110,.25)">
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:10px">
         <div>
           <div style="font-size:15px;font-weight:800">&#11088; Plan automático · Lunes 7am</div>
@@ -9167,7 +9168,7 @@ function _renderProgramacion(d){
          Sebastián (1-may-2026): envases China 9m, etiquetas se piden al
          envasar (no acá), serigrafía 20d antes (cron diario aparte),
          plegadiza no aplica. Espejo del Auto-SC MP pero por SKU vendido. -->
-    <div id="plan-autosc-mee" style="background:linear-gradient(135deg,#0f766e 0%,#115e59 100%);border-radius:10px;padding:14px 16px;margin-bottom:16px;color:#fff;box-shadow:0 2px 8px rgba(0,0,0,.08)">
+    <div id="plan-autosc-mee" style="background:linear-gradient(135deg,#6d28d9 0%,#4c1d95 100%);border-radius:10px;padding:14px 16px;margin-bottom:16px;color:#fff;box-shadow:0 2px 8px rgba(0,0,0,.08)">
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
         <div>
           <div style="font-size:14px;font-weight:700;letter-spacing:.3px">&#128230; Auto-SC IA &middot; MEE (Material de Empaque)</div>
@@ -9180,7 +9181,7 @@ function _renderProgramacion(d){
             <option value="Local">&#127464;&#127476; Local (90d)</option>
           </select>
           <button onclick="autoscMeePreview('mensual')" style="padding:6px 12px;border:1px solid #fff;background:rgba(255,255,255,.1);color:#fff;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">&#128270; Preview</button>
-          <button onclick="autoscMeeGenerar('mensual')" style="padding:6px 12px;background:#fff;color:#115e59;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">&#128640; Generar mensual</button>
+          <button onclick="autoscMeeGenerar('mensual')" style="padding:6px 12px;background:#fff;color:#4c1d95;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">&#128640; Generar mensual</button>
           <button onclick="autoscMeeGenerar('urgente')" style="padding:6px 12px;background:#fbbf24;color:#78350f;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">&#128680; Urgente 30d</button>
           <button onclick="autoscMeeGenerar('mensual', true)" title="Genera SCs para SKUs SIN mapping. Catalina asigna código MEE en Compras y el sistema aprende para futuras SCs (Sebastián 1-may-2026)." style="padding:6px 12px;background:#7c3aed;color:#fff;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">&#127919; Genérica (Catalina asigna)</button>
           <button onclick="autoscMeeRecargar()" title="Refrescar" style="padding:6px 10px;background:rgba(255,255,255,.1);color:#fff;border:1px solid #fff;border-radius:6px;font-size:11px;cursor:pointer">&#8635;</button>
@@ -9232,9 +9233,9 @@ function _renderProgramacion(d){
     </div>
 
     <!-- Tabla configuración MEE (collapsable) -->
-    <div id="mee-config-panel" style="display:none;background:#fff;border:2px solid #0f766e;border-radius:10px;padding:14px;margin-bottom:16px">
+    <div id="mee-config-panel" style="display:none;background:#fff;border:2px solid #6d28d9;border-radius:10px;padding:14px;margin-bottom:16px">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px">
-        <h4 style="margin:0;color:#0f766e;font-size:14px">&#9881; Configuración MEE · proveedor + MOQ + origen + flags</h4>
+        <h4 style="margin:0;color:#6d28d9;font-size:14px">&#9881; Configuración MEE · proveedor + MOQ + origen + flags</h4>
         <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
           <input id="mee-config-filter" oninput="meeConfigRender()" placeholder="Filtrar código/descripción/proveedor..." style="padding:4px 8px;border:1px solid #d1d5db;border-radius:5px;font-size:11px;width:220px">
           <select id="mee-config-categoria" onchange="meeConfigRender()" style="padding:4px 6px;border:1px solid #d1d5db;border-radius:5px;font-size:11px">
@@ -9248,12 +9249,12 @@ function _renderProgramacion(d){
             <option value="Frasco">Frasco</option>
             <option value="Contorno">Contorno</option>
           </select>
-          <button onclick="meeConfigRecargar()" style="padding:4px 8px;background:#0f766e;color:#fff;border:none;border-radius:5px;font-size:11px;cursor:pointer">&#8635; Refrescar</button>
+          <button onclick="meeConfigRecargar()" style="padding:4px 8px;background:#6d28d9;color:#fff;border:none;border-radius:5px;font-size:11px;cursor:pointer">&#8635; Refrescar</button>
         </div>
       </div>
       <div style="overflow-x:auto;max-height:480px;overflow-y:auto">
         <table id="mee-config-table" style="width:100%;border-collapse:collapse;font-size:11px">
-          <thead style="position:sticky;top:0;background:#0f766e;color:#fff;z-index:1">
+          <thead style="position:sticky;top:0;background:#6d28d9;color:#fff;z-index:1">
             <tr>
               <th style="padding:6px;text-align:left">Código</th>
               <th style="padding:6px;text-align:left">Descripción</th>
@@ -9279,7 +9280,7 @@ function _renderProgramacion(d){
          primeros 5 dias del mes genere ordenes 60-90d, lunes urgentes,
          buffer IA por tendencia de ventas, email a Alejandro, SCs van
          directo a Pendiente para Catalina/Alejandro revisar en /solicitudes". -->
-    <div id="plan-autosc" style="background:linear-gradient(135deg,#0891b2 0%,#0e7490 100%);border-radius:10px;padding:14px 16px;margin-bottom:16px;color:#fff;box-shadow:0 2px 8px rgba(0,0,0,.08)">
+    <div id="plan-autosc" style="background:linear-gradient(135deg,#7c3aed 0%,#7c3aed 100%);border-radius:10px;padding:14px 16px;margin-bottom:16px;color:#fff;box-shadow:0 2px 8px rgba(0,0,0,.08)">
       <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
         <div>
           <div style="font-size:14px;font-weight:700;letter-spacing:.3px">&#129302; Auto-SC IA &middot; Solicitudes automáticas</div>
@@ -9287,7 +9288,7 @@ function _renderProgramacion(d){
         </div>
         <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
           <button onclick="autoscPreview('mensual')" style="padding:6px 12px;border:1px solid #fff;background:rgba(255,255,255,.1);color:#fff;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">&#128270; Preview 60-90d</button>
-          <button onclick="autoscGenerar('mensual')" style="padding:6px 12px;background:#fff;color:#0e7490;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">&#128640; Generar mensual</button>
+          <button onclick="autoscGenerar('mensual')" style="padding:6px 12px;background:#fff;color:#7c3aed;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">&#128640; Generar mensual</button>
           <button onclick="autoscGenerar('urgente')" style="padding:6px 12px;background:#fbbf24;color:#78350f;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">&#128680; Urgente lunes</button>
           <button onclick="autoscRecargar()" title="Refrescar" style="padding:6px 10px;background:rgba(255,255,255,.1);color:#fff;border:1px solid #fff;border-radius:6px;font-size:11px;cursor:pointer">&#8635;</button>
         </div>
@@ -9492,10 +9493,10 @@ function _renderProgramacion(d){
   <div id="ptab-tareas" style="display:none">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">
       <div>
-        <h2 style="margin:0 0 4px;color:#0891b2">&#127919; Tareas Operativas</h2>
+        <h2 style="margin:0 0 4px;color:#7c3aed">&#127919; Tareas Operativas</h2>
         <p style="color:#666;font-size:13px;margin:0">Tareas asignadas desde Compras (Catalina) o jefes · Operarios marcan completada</p>
       </div>
-      <button onclick="cargarTareasOperativas()" style="padding:6px 12px;background:#0891b2;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">&#x21BA; Actualizar</button>
+      <button onclick="cargarTareasOperativas()" style="padding:6px 12px;background:#7c3aed;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">&#x21BA; Actualizar</button>
     </div>
     <div id="tareas-op-lista"></div>
   </div><!-- /ptab-tareas -->
@@ -9538,7 +9539,7 @@ function _renderProgramacion(d){
           <span id="cm-equipo-sub" style="font-size:11px;color:#64748b;margin-left:8px">Cargando&hellip;</span>
         </div>
         <div style="display:flex;gap:6px;align-items:center">
-          <button onclick="cmReasignarHoy()" style="padding:4px 10px;background:#0891b2;color:#fff;border:none;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer" title="Re-corre auto-asignación (área + operarios) para HOY · respeta lo Fijo">🤖 Re-asignar hoy</button>
+          <button onclick="cmReasignarHoy()" style="padding:4px 10px;background:#7c3aed;color:#fff;border:none;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer" title="Re-corre auto-asignación (área + operarios) para HOY · respeta lo Fijo">🤖 Re-asignar hoy</button>
           <button onclick="cmCargarEquipo()" style="padding:4px 10px;background:#1a4a7a;color:#fff;border:none;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">&#8635; Refrescar</button>
         </div>
       </div>
@@ -9549,9 +9550,9 @@ function _renderProgramacion(d){
 
     <!-- ── Limpieza de salas · paso 4 · qué salas necesitan limpieza y quién
          las hace (Sebastián 19-may-2026). El panel se oculta si no hay nada. -->
-    <div id="cm-limpieza-panel" style="display:none;background:#fff;border:2px solid #0891b2;border-radius:10px;padding:12px 14px;margin-bottom:14px">
+    <div id="cm-limpieza-panel" style="display:none;background:#fff;border:2px solid #7c3aed;border-radius:10px;padding:12px 14px;margin-bottom:14px">
       <div style="margin-bottom:8px">
-        <b style="font-size:14px;color:#0e7490">🧽 Limpieza de salas</b>
+        <b style="font-size:14px;color:#7c3aed">🧽 Limpieza de salas</b>
         <span id="cm-limpieza-sub" style="font-size:11px;color:#64748b;margin-left:8px"></span>
       </div>
       <div id="cm-limpieza-cards" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px"></div>
@@ -9560,10 +9561,10 @@ function _renderProgramacion(d){
     <!-- ── Producciones HOY · Calendar-first cards (Sebastián 1-may-2026)
          "unifiquemos todo en el mapa, que cargue automatico ocupada/libre,
          cuando digan termine quede sucia hasta que digan que la limpiaron" -->
-    <div id="cm-dia-panel" style="background:#fff;border:2px solid #0f766e;border-radius:10px;padding:12px 14px;margin-bottom:14px">
+    <div id="cm-dia-panel" style="background:#fff;border:2px solid #6d28d9;border-radius:10px;padding:12px 14px;margin-bottom:14px">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">
         <div>
-          <b style="font-size:14px;color:#0f766e">📅 Producciones HOY</b>
+          <b style="font-size:14px;color:#6d28d9">📅 Producciones HOY</b>
           <span id="cm-dia-sub" style="font-size:11px;color:#64748b;margin-left:8px">Cargando...</span>
         </div>
         <div style="font-size:10px;color:#64748b">Click ▶ para iniciar · cuando termines la sala queda 🔴 hasta marcar limpia</div>
@@ -9592,14 +9593,14 @@ function _renderProgramacion(d){
       style="display:none"
       title="Asistente IA · Pregúntale a la planta">💬</button>
     <div id="cm-asistente-modal" style="display:none;position:fixed;bottom:90px;right:24px;width:380px;max-height:600px;background:#fff;border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,.25);z-index:9999;flex-direction:column;border:1px solid #cbd5e1">
-      <div style="background:linear-gradient(135deg,#0f766e,#0891b2);color:#fff;padding:12px 16px;border-radius:14px 14px 0 0;display:flex;justify-content:space-between;align-items:center">
+      <div style="background:linear-gradient(135deg,#6d28d9,#7c3aed);color:#fff;padding:12px 16px;border-radius:14px 14px 0 0;display:flex;justify-content:space-between;align-items:center">
         <b style="font-size:14px">💬 Pregúntale a la planta</b>
         <button onclick="cmCerrarAsistente()" style="background:none;border:none;color:#fff;font-size:1.3em;cursor:pointer;padding:0 4px;line-height:1">×</button>
       </div>
       <div id="cm-asistente-historial" style="flex:1;overflow-y:auto;padding:12px;font-size:12px;min-height:200px;max-height:400px"></div>
       <div style="border-top:1px solid #e2e8f0;padding:8px 10px;display:flex;gap:6px">
         <input id="cm-asistente-input" type="text" placeholder="¿Qué bloquea Envasado 1?" onkeydown="if(event.key==='Enter')cmAsistentePreguntar()" style="flex:1;padding:7px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:12px">
-        <button onclick="cmAsistentePreguntar()" id="cm-asistente-send" style="padding:7px 12px;background:#0891b2;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700">Enviar</button>
+        <button onclick="cmAsistentePreguntar()" id="cm-asistente-send" style="padding:7px 12px;background:#7c3aed;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:700">Enviar</button>
       </div>
     </div>
 
@@ -9877,7 +9878,7 @@ function _renderProgramacion(d){
         </div>
         <div style="display:flex;justify-content:flex-end;gap:8px">
           <button onclick="cerrarModalOperario()" style="background:#f1f5f9;color:#475569;border:none;padding:8px 16px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer">Cancelar</button>
-          <button onclick="guardarOperario()" style="background:#0f766e;color:#fff;border:none;padding:8px 16px;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer">Guardar</button>
+          <button onclick="guardarOperario()" style="background:#6d28d9;color:#fff;border:none;padding:8px 16px;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer">Guardar</button>
         </div>
       </div>
     </div>
@@ -9891,7 +9892,7 @@ function _renderProgramacion(d){
         <p style="color:#666;font-size:13px;margin:0">Sueros 30/15/10 mL · contornos 15/10 mL · maxlash 4.5 mL · blush 6 g · etc. — necesario para planear "produzcamos para 2 meses"</p>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button onclick="abrirNuevaPresentacion()" style="background:#0f766e;color:#fff;border:none;padding:8px 16px;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer">+ Nueva presentación</button>
+        <button onclick="abrirNuevaPresentacion()" style="background:#6d28d9;color:#fff;border:none;padding:8px 16px;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer">+ Nueva presentación</button>
         <button onclick="abrirAplicarPlantilla()" style="background:#1a4a7a;color:#fff;border:none;padding:8px 16px;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer">&#127979; Aplicar plantilla por categoría</button>
         <button onclick="cargarPresentaciones()" style="background:#fff;border:1px solid #cbd5e1;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">&#x21bb; Actualizar</button>
       </div>
@@ -9956,7 +9957,7 @@ function _renderProgramacion(d){
         </div>
         <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
           <button onclick="cerrarPresModal()" style="background:#fff;border:1px solid #cbd5e1;padding:8px 16px;border-radius:6px;cursor:pointer">Cancelar</button>
-          <button onclick="guardarPresentacion()" style="background:#0f766e;color:#fff;border:none;padding:8px 16px;border-radius:6px;font-weight:700;cursor:pointer">Guardar</button>
+          <button onclick="guardarPresentacion()" style="background:#6d28d9;color:#fff;border:none;padding:8px 16px;border-radius:6px;font-weight:700;cursor:pointer">Guardar</button>
         </div>
       </div>
     </div>
@@ -10071,7 +10072,7 @@ function _renderProgramacion(d){
 
   <!-- ── ptab-plansem: Plan Semanal con consumo agregado + cascade aceptar (Fase 4) ── -->
   <div id="ptab-plansem" style="display:none">
-    <div style="background:linear-gradient(135deg,#0f766e,#0891b2);color:#fff;padding:18px 22px;border-radius:12px;margin-bottom:18px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+    <div style="background:linear-gradient(135deg,#6d28d9,#7c3aed);color:#fff;padding:18px 22px;border-radius:12px;margin-bottom:18px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
       <div>
         <h2 style="margin:0 0 4px;color:#fff">&#128197; Plan Semanal Inteligente</h2>
         <p style="color:#cffafe;font-size:13px;margin:0">Producciones próximas con días de inventario, consumo agregado y MP. Acepta y el sistema dispara todo automático.</p>
@@ -10103,7 +10104,7 @@ function _renderProgramacion(d){
     <!-- Modal nuevo producto rápido -->
     <div id="modal-nuevo-producto" class="modal-bk" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;align-items:center;justify-content:center">
       <div style="background:#fff;border-radius:12px;padding:24px;width:520px;max-width:92vw;max-height:90vh;overflow:auto">
-        <h3 style="margin:0 0 8px;color:#0f766e;font-size:18px">🆕 Nuevo producto / lanzamiento</h3>
+        <h3 style="margin:0 0 8px;color:#6d28d9;font-size:18px">🆕 Nuevo producto / lanzamiento</h3>
         <p style="color:#64748b;font-size:12px;margin:0 0 14px">Crea fórmula + config de planeación + (opcional) primera producción prioritaria.</p>
         <div style="display:grid;gap:10px">
           <div>
@@ -10157,7 +10158,7 @@ function _renderProgramacion(d){
         </div>
         <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
           <button onclick="document.getElementById('modal-nuevo-producto').style.display='none'" style="background:#fff;border:1px solid #cbd5e1;padding:9px 18px;border-radius:6px;cursor:pointer">Cancelar</button>
-          <button onclick="guardarNuevoProducto()" style="background:#0f766e;color:#fff;border:none;padding:9px 18px;border-radius:6px;font-weight:800;cursor:pointer">✓ Crear producto</button>
+          <button onclick="guardarNuevoProducto()" style="background:#6d28d9;color:#fff;border:none;padding:9px 18px;border-radius:6px;font-weight:800;cursor:pointer">✓ Crear producto</button>
         </div>
       </div>
     </div>
@@ -10214,7 +10215,7 @@ function _renderProgramacion(d){
     <div id="ap-sub-mp" style="display:none">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
         <p style="color:#64748b;font-size:13px;margin:0">Lead time + buffer por material. Envases de China = 180d lead. Local = 14d.</p>
-        <button onclick="apMpNuevo()" style="background:#0f766e;color:#fff;border:none;padding:6px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">+ Nuevo material</button>
+        <button onclick="apMpNuevo()" style="background:#6d28d9;color:#fff;border:none;padding:6px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">+ Nuevo material</button>
       </div>
       <div id="ap-mp-tabla"></div>
     </div>
@@ -10245,7 +10246,7 @@ function _renderProgramacion(d){
     <!-- Modal MP -->
     <div id="modal-mp-cfg" class="modal-bk" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;align-items:center;justify-content:center">
       <div style="background:#fff;border-radius:10px;padding:22px;width:480px;max-width:92vw">
-        <h3 style="margin:0 0 12px;color:#0f766e">📦 Material — lead time + buffer</h3>
+        <h3 style="margin:0 0 12px;color:#6d28d9">📦 Material — lead time + buffer</h3>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:8px">
           <div style="grid-column:1/-1">
             <label style="font-size:11px;color:#64748b;font-weight:600">ID material *</label>
@@ -10295,7 +10296,7 @@ function _renderProgramacion(d){
         </div>
         <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
           <button onclick="document.getElementById('modal-mp-cfg').style.display='none'" style="background:#fff;border:1px solid #cbd5e1;padding:8px 16px;border-radius:6px;cursor:pointer">Cancelar</button>
-          <button onclick="apMpGuardar()" style="background:#0f766e;color:#fff;border:none;padding:8px 16px;border-radius:6px;font-weight:700;cursor:pointer">Guardar</button>
+          <button onclick="apMpGuardar()" style="background:#6d28d9;color:#fff;border:none;padding:8px 16px;border-radius:6px;font-weight:700;cursor:pointer">Guardar</button>
         </div>
       </div>
     </div>
@@ -10331,7 +10332,7 @@ function _renderProgramacion(d){
         </div>
         <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
           <button onclick="document.getElementById('modal-cc-reg').style.display='none'" style="background:#fff;border:1px solid #cbd5e1;padding:8px 16px;border-radius:6px;cursor:pointer">Cancelar</button>
-          <button onclick="ccRegistrar()" style="background:#0f766e;color:#fff;border:none;padding:8px 16px;border-radius:6px;font-weight:700;cursor:pointer">Registrar</button>
+          <button onclick="ccRegistrar()" style="background:#6d28d9;color:#fff;border:none;padding:8px 16px;border-radius:6px;font-weight:700;cursor:pointer">Registrar</button>
         </div>
       </div>
     </div>
@@ -10363,7 +10364,7 @@ function _renderProgramacion(d){
         Desde <input type="date" id="pec-desde" style="padding:3px 5px;border:1px solid #cbd5e1;border-radius:4px;font-size:11px">
         Hasta <input type="date" id="pec-hasta" style="padding:3px 5px;border:1px solid #cbd5e1;border-radius:4px;font-size:11px">
       </div>
-      <button onclick="cargarPlanEnCurso()" style="margin-left:auto;background:#0f766e;color:#fff;border:none;padding:7px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">↻ Aplicar filtros</button>
+      <button onclick="cargarPlanEnCurso()" style="margin-left:auto;background:#6d28d9;color:#fff;border:none;padding:7px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">↻ Aplicar filtros</button>
     </div>
     <!-- Contenido · tabla lotes -->
     <div id="pec-contenido" style="background:white;border-radius:12px;border:1px solid #e2e8f0;overflow:hidden">
@@ -10425,7 +10426,7 @@ function _renderProgramacion(d){
   <!-- ptab-maquila: Pedidos de clientes que se suman al plan automáticamente -->
   <!-- ════════════════════════════════════════════════════════════════════ -->
   <div id="ptab-maquila" style="display:none">
-    <div style="background:linear-gradient(135deg,#1a4a7a,#0891b2);color:#fff;padding:18px 22px;border-radius:12px;margin-bottom:16px">
+    <div style="background:linear-gradient(135deg,#1a4a7a,#7c3aed);color:#fff;padding:18px 22px;border-radius:12px;margin-bottom:16px">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
         <div>
           <h2 style="margin:0;color:#fff;font-size:22px">🤝 Maquila Inteligente</h2>
@@ -10795,7 +10796,7 @@ function rowProduccion(p){
   if(!yaCompletada && !noChecklist && pct >= 80){
     btnCompletar = '<button onclick="event.stopPropagation();ckCompletarProduccion('+p.id+', '+JSON.stringify(p.producto_nombre).replace(/"/g,'&quot;')+')" title="Marca completada y descuenta MPs + envases del inventario" style="background:#15803d;color:#fff;border:none;border-radius:6px;padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer;margin-top:6px;display:block;width:100%">✅ Completar y descontar</button>';
   } else if(yaCompletada){
-    btnCompletar = '<button onclick="event.stopPropagation();ckRevertirCompletado('+p.id+', '+JSON.stringify(p.producto_nombre).replace(/"/g,'&quot;')+')" title="Revertir el descuento (solo admin)" style="background:transparent;color:#0891b2;border:1px solid #67e8f9;border-radius:6px;padding:4px 10px;font-size:10px;font-weight:600;cursor:pointer;margin-top:6px">↩ Revertir</button>';
+    btnCompletar = '<button onclick="event.stopPropagation();ckRevertirCompletado('+p.id+', '+JSON.stringify(p.producto_nombre).replace(/"/g,'&quot;')+')" title="Revertir el descuento (solo admin)" style="background:transparent;color:#7c3aed;border:1px solid #67e8f9;border-radius:6px;padding:4px 10px;font-size:10px;font-weight:600;cursor:pointer;margin-top:6px">↩ Revertir</button>';
   }
   return '<div style="background:#fff;border:1px solid #e7e5e4;border-left:4px solid '+color+';border-radius:8px;padding:14px;display:grid;grid-template-columns:1fr auto auto auto;gap:14px;align-items:center;cursor:pointer" onclick="abrirChecklistDetalle('+p.id+', '+JSON.stringify(p.producto_nombre).replace(/"/g,'&quot;')+')">' +
     '<div>' +
@@ -11004,7 +11005,7 @@ async function cargarCatalogoProductos(){
       } else {
         fotoHtml = '<div style="height:120px;background:#fef2f2;border:1px dashed #fca5a5;border-radius:6px;display:flex;align-items:center;justify-content:center;color:#dc2626;font-size:11px;font-weight:600">Sin foto</div>';
       }
-      var skuLine = p.sku ? '<div style="font-size:10px;color:#0f766e;font-weight:600">'+_escHTML(p.sku)+'</div>' : '';
+      var skuLine = p.sku ? '<div style="font-size:10px;color:#6d28d9;font-weight:600">'+_escHTML(p.sku)+'</div>' : '';
       return '<div style="background:#fff;border:1px solid #e7e5e4;border-radius:8px;padding:8px;cursor:pointer" '+
              'onclick="catProductoClick(&quot;'+_escHTML(p.nombre).replace(/"/g,'&quot;')+'&quot;)" '+
              'title="Click para gestionar imagen">' +
@@ -11134,7 +11135,7 @@ async function abrirChecklistDetalle(produccionId, producto){
     }
     // Línea de SKU + precio + peso si vino de Shopify
     var bits = [];
-    if(meta.sku) bits.push('<b style="color:#0f766e">SKU:</b> '+_escHTML(meta.sku));
+    if(meta.sku) bits.push('<b style="color:#6d28d9">SKU:</b> '+_escHTML(meta.sku));
     if(meta.precio>0) bits.push('$'+Math.round(meta.precio).toLocaleString('es-CO'));
     if(meta.peso_g>0) bits.push(Math.round(meta.peso_g)+' g');
     var metaLine = bits.length ? '<div style="font-size:11px;color:#475569;margin-top:6px">'+bits.join(' &middot; ')+'</div>' : '';
@@ -11206,7 +11207,7 @@ async function abrirChecklistDetalle(produccionId, producto){
       if(canMarcar) acciones += '<button onclick="ckMarcar('+it.id+',&quot;recibido&quot;)" style="background:#15803d;color:#fff;border:none;border-radius:5px;padding:4px 10px;font-size:10px;font-weight:700;cursor:pointer;margin-right:4px">Recibido</button>';
       acciones += '<button onclick="ckMarcar('+it.id+',&quot;no_aplica&quot;)" style="background:#78716c;color:#fff;border:none;border-radius:5px;padding:4px 10px;font-size:10px;font-weight:700;cursor:pointer">N/A</button>';
       var obs = it.observaciones ? '<div style="font-size:10px;color:#78716c;margin-top:3px;font-family:monospace">'+_escHTML(it.observaciones)+'</div>' : '';
-      var meeLine = yaTieneMee ? '<div style="font-size:10px;color:#0f766e;margin-top:2px"><b>MEE:</b> '+_escHTML(it.mee_codigo_asignado)+'</div>' : '';
+      var meeLine = yaTieneMee ? '<div style="font-size:10px;color:#6d28d9;margin-top:2px"><b>MEE:</b> '+_escHTML(it.mee_codigo_asignado)+'</div>' : '';
       var decoLine = it.decoracion_tipo ? '<div style="font-size:10px;color:#7c3aed;margin-top:2px"><b>Decoración:</b> '+_escHTML(it.decoracion_tipo)+'</div>' : '';
       // Hint cuando ya hay MEE elegido pero todavía no se envió a Catalina (caso "solo guardar")
       var hintNoEnviado = (yaTieneMee && it.estado==='pendiente' && !it.solicitud_produccion_id) ?
@@ -12058,9 +12059,9 @@ async function ckMarcar(itemId, estado){
     var group = _PROG_TAB_TO_GROUP[tab];
     if(!group) return;
     var COLORS = {
-      'necesidades': '#0f766e', 'abastecimiento': '#7c3aed',
+      'necesidades': '#6d28d9', 'abastecimiento': '#7c3aed',
       'calendario': '#ca8a04', 'factibilidad': '#059669',
-      'mando': '#1a4a7a', 'kanban': '#0891b2', 'midia': '#1e40af',
+      'mando': '#1a4a7a', 'kanban': '#7c3aed', 'midia': '#1e40af',
     };
     var SUB_TAB_FROM = {
       'necesidades': "switchProgTab('necesidades')",
@@ -12275,14 +12276,14 @@ async function ckMarcar(itemId, estado){
         if(activeClass){ b.style.background = activeStyle; b.style.color='#fff'; b.style.boxShadow='0 3px 10px rgba(0,0,0,.2)'; }
         else { b.style.background='#e2e8f0'; b.style.color='#1a4a7a'; b.style.boxShadow=''; }
       }
-      _bg('prog-tab-planv2',     'linear-gradient(135deg,#0f766e,#0891b2)', tab==='planv2');
-      _bg('prog-tab-necesidades','linear-gradient(135deg,#0f766e,#0891b2)', tab==='necesidades');
+      _bg('prog-tab-planv2',     'linear-gradient(135deg,#6d28d9,#7c3aed)', tab==='planv2');
+      _bg('prog-tab-necesidades','linear-gradient(135deg,#6d28d9,#7c3aed)', tab==='necesidades');
       _bg('prog-tab-calendario', 'linear-gradient(135deg,#ca8a04,#f59e0b)', tab==='calendario');
       _bg('prog-tab-midia',      '#1e40af',                                  tab==='midia');
       _bg('prog-tab-abastecimiento', '#7c3aed',                              tab==='abastecimiento');
       _bg('prog-tab-mando',      '#1a4a7a',                                  tab==='mando');
       _bg('prog-tab-autoplan',   'linear-gradient(135deg,#7c3aed,#dc2626)',  tab==='autoplan');
-      _bg('prog-tab-maquila',    'linear-gradient(135deg,#1a4a7a,#0891b2)', tab==='maquila');
+      _bg('prog-tab-maquila',    'linear-gradient(135deg,#1a4a7a,#7c3aed)', tab==='maquila');
       _bg('prog-tab-config',     '#1f2937',                                  tab==='config');
       // === Hooks de inicialización ===
       if(tab==='planv2' && typeof planV2Init==='function') planV2Init();
@@ -12361,7 +12362,7 @@ async function ckMarcar(itemId, estado){
       kpiBox.innerHTML = [
         _kpiCard('🟡 Producciones AHORA', k.producciones_activas_ahora||0, k.producciones_activas_ahora>0?'#ca8a04':'#94a3b8'),
         _kpiCard('✅ Terminadas hoy',     k.terminadas_hoy||0,             '#16a34a'),
-        _kpiCard('⏱ Cycle time prom',     k.cycle_time_promedio_min!=null?_fmtMin(k.cycle_time_promedio_min):'—', '#0f766e'),
+        _kpiCard('⏱ Cycle time prom',     k.cycle_time_promedio_min!=null?_fmtMin(k.cycle_time_promedio_min):'—', '#6d28d9'),
         _kpiCard('🟢 Salas libres',       k.salas_libres||0,               '#16a34a'),
         _kpiCard('🔴 Salas sucias',       k.salas_sucias||0,               k.salas_sucias>0?'#b91c1c':'#94a3b8'),
         _kpiCard('🟡 Salas ocupadas',     k.salas_ocupadas||0,             '#ca8a04'),
@@ -12622,7 +12623,7 @@ async function ckMarcar(itemId, estado){
     var btn = document.getElementById('cm-asistente-send');
     var pregunta = (inp.value||'').trim();
     if(pregunta.length < 3) return;
-    hist.innerHTML += '<div style="text-align:right;margin-bottom:6px"><span style="background:#0891b2;color:#fff;padding:6px 10px;border-radius:10px;display:inline-block;max-width:80%">'+_escHTML(pregunta)+'</span></div>';
+    hist.innerHTML += '<div style="text-align:right;margin-bottom:6px"><span style="background:#7c3aed;color:#fff;padding:6px 10px;border-radius:10px;display:inline-block;max-width:80%">'+_escHTML(pregunta)+'</span></div>';
     hist.innerHTML += '<div id="cm-asist-pending" style="margin-bottom:6px"><span style="background:#f1f5f9;color:#475569;padding:6px 10px;border-radius:10px;display:inline-block;font-style:italic">pensando…</span></div>';
     hist.scrollTop = hist.scrollHeight;
     inp.value = ''; btn.disabled = true;
@@ -12695,8 +12696,8 @@ async function ckMarcar(itemId, estado){
         var limp = '';
         if(o.limpiezas && o.limpiezas.length){
           limp = o.limpiezas.map(function(l){
-            return '<div data-area="'+_escHTML(l.area_codigo)+'" style="margin-top:6px;padding:6px 8px;background:#ecfeff;border-radius:6px;border-left:3px solid #0891b2">'
-              + '<div style="font-size:11px;font-weight:700;color:#0e7490">🧽 Limpiar '+_escHTML(l.area_nombre||l.area_codigo)+'</div>'
+            return '<div data-area="'+_escHTML(l.area_codigo)+'" style="margin-top:6px;padding:6px 8px;background:#ecfeff;border-radius:6px;border-left:3px solid #7c3aed">'
+              + '<div style="font-size:11px;font-weight:700;color:#7c3aed">🧽 Limpiar '+_escHTML(l.area_nombre||l.area_codigo)+'</div>'
               + '<div style="font-size:10px;color:#64748b;margin-top:1px">'+_escHTML(l.limpieza_estado||'pendiente')+' · 📍 ver en plano</div>'
               + '</div>';
           }).join('');
@@ -12797,7 +12798,7 @@ async function ckMarcar(itemId, estado){
       } else if(p.desde_calendar){
         borderCol = '#7c3aed'; bgCol = '#faf5ff'; icon = '📅';
       } else {
-        borderCol = '#0f766e'; bgCol = '#f0fdfa'; icon = '⏳';
+        borderCol = '#6d28d9'; bgCol = '#f0fdfa'; icon = '⏳';
       }
       // Wave label si hay scheduling secuencial
       var waveBadge = '';
@@ -12840,7 +12841,7 @@ async function ckMarcar(itemId, estado){
     grid.style.gap = '8px';
     grid.innerHTML = diasSemana.map(function(dia){
       var prodsDia = porFecha[dia.iso] || [];
-      var bgHeader = dia.es_hoy ? '#f59e0b' : (dia.tipo === 'PRODUCCIÓN' ? '#0f766e' : '#64748b');
+      var bgHeader = dia.es_hoy ? '#f59e0b' : (dia.tipo === 'PRODUCCIÓN' ? '#6d28d9' : '#64748b');
       var bgBody = dia.es_hoy ? '#fef3c7' : '#fff';
       var html = '<div style="background:'+bgBody+';border:'+(dia.es_hoy?'2px solid #f59e0b':'1px solid #e2e8f0')+';border-radius:8px;overflow:hidden;min-height:200px">';
       // Header
@@ -13460,7 +13461,7 @@ async function ckMarcar(itemId, estado){
           html += '<tr style="border-bottom:1px solid #f1f5f9">' +
             '<td style="padding:4px 0;font-weight:600">'+_escHTML(o.operario)+'</td>' +
             '<td style="padding:4px 0;color:#64748b;text-align:right">'+o.turnos+' turno'+(o.turnos===1?'':'s')+'</td>' +
-            '<td style="padding:4px 0;text-align:right;font-weight:700;color:#0f766e">'+hrs+'h</td>' +
+            '<td style="padding:4px 0;text-align:right;font-weight:700;color:#6d28d9">'+hrs+'h</td>' +
             '</tr>';
         });
         html += '</table></div><div>';
@@ -13471,7 +13472,7 @@ async function ckMarcar(itemId, estado){
           html += '<tr style="border-bottom:1px solid #f1f5f9">' +
             '<td style="padding:4px 0">'+(iconos[t.tipo]||'📋')+' '+t.tipo+'</td>' +
             '<td style="padding:4px 0;color:#64748b;text-align:right">'+t.turnos+' turno'+(t.turnos===1?'':'s')+'</td>' +
-            '<td style="padding:4px 0;text-align:right;font-weight:700;color:#0f766e">'+t.horas+'h</td>' +
+            '<td style="padding:4px 0;text-align:right;font-weight:700;color:#6d28d9">'+t.horas+'h</td>' +
             '</tr>';
         });
         html += '</table></div></div>';
@@ -13546,7 +13547,7 @@ async function ckMarcar(itemId, estado){
         return;
       }
       lista.innerHTML = tareas.map(function(t){
-        var tipoColors = {sacar_envases_serigrafia:'#7c3aed',sacar_envases_tampografia:'#7c3aed',sacar_inventario:'#16a34a',envasado:'#0891b2',etiquetado:'#d97706',general:'#64748b'};
+        var tipoColors = {sacar_envases_serigrafia:'#7c3aed',sacar_envases_tampografia:'#7c3aed',sacar_inventario:'#16a34a',envasado:'#7c3aed',etiquetado:'#d97706',general:'#64748b'};
         var col = tipoColors[t.tipo]||'#64748b';
         var estCol = t.estado==='pendiente'?'#dc2626':t.estado==='en_progreso'?'#d97706':t.estado==='completada'?'#15803d':'#94a3b8';
         var fechaObj = t.fecha_objetivo?'<span style="color:#dc2626;font-size:11px;font-weight:700">📅 '+_escHTML(t.fecha_objetivo)+'</span>':'';
@@ -13657,7 +13658,7 @@ async function ckMarcar(itemId, estado){
           html += '</div>';
         } else {
           html += '<div style="margin-top:8px;display:flex;gap:6px"><button onclick="abrirAplicarPlantilla(\\''+_escAttr(prod.producto_nombre)+'\\')" style="background:#1a4a7a;color:#fff;border:none;padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">🏭 Plantilla</button>'
-            +'<button onclick="abrirNuevaPresentacion(\\''+_escAttr(prod.producto_nombre)+'\\')" style="background:#0f766e;color:#fff;border:none;padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">+ Manual</button></div>';
+            +'<button onclick="abrirNuevaPresentacion(\\''+_escAttr(prod.producto_nombre)+'\\')" style="background:#6d28d9;color:#fff;border:none;padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">+ Manual</button></div>';
         }
         html += '</div>';
       });
@@ -13778,7 +13779,7 @@ async function ckMarcar(itemId, estado){
       kpis.innerHTML = ''
         +'<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">Total</div><div style="font-size:24px;font-weight:800;color:#0f172a">'+_eqTodos.length+'</div></div>'
         +'<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">Tanques/marmitas</div><div style="font-size:24px;font-weight:800;color:#1a4a7a">'+nTanques+'</div></div>'
-        +'<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">Envasado</div><div style="font-size:24px;font-weight:800;color:#0891b2">'+nEnvas+'</div></div>'
+        +'<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">Envasado</div><div style="font-size:24px;font-weight:800;color:#7c3aed">'+nEnvas+'</div></div>'
         +'<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">Mezcla</div><div style="font-size:24px;font-weight:800;color:#7c3aed">'+nMezcla+'</div></div>'
         +'<div style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">Medición/CC</div><div style="font-size:24px;font-weight:800;color:#16a34a">'+nMedida+'</div></div>';
 
@@ -13875,7 +13876,7 @@ async function ckMarcar(itemId, estado){
           +'<div style="font-size:13px;font-weight:700;color:'+color+'">Score '+s.score+'</div>'
           +'</div>'
           +'<div style="margin-top:6px;font-size:12px;color:#475569">🛢 '+_escHTML(s.tanque.tanque_nombre)+' <span style="color:#64748b">('+_escHTML(s.tanque.tanque_codigo)+')</span> · '+s.tanque.capacidad_litros+'L · uso '+s.utilizacion_pct+'%</div>'
-          +(s.envasado_sugerido?'<div style="margin-top:4px;font-size:11px;color:#0891b2">📦 Envasado sugerido: '+s.envasado_sugerido+'</div>':'')
+          +(s.envasado_sugerido?'<div style="margin-top:4px;font-size:11px;color:#7c3aed">📦 Envasado sugerido: '+s.envasado_sugerido+'</div>':'')
           +'<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px">'
           +(s.razones||[]).map(function(r){ return '<span style="background:#f1f5f9;color:#475569;font-size:11px;padding:2px 8px;border-radius:8px">'+_escHTML(r)+'</span>'; }).join('')
           +'</div></div>';
@@ -14046,7 +14047,7 @@ async function ckMarcar(itemId, estado){
       // KPIs
       var k = d.kpis || {};
       kpis.innerHTML = ''
-        +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid #0891b2;border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">Producciones</div><div style="font-size:26px;font-weight:800;color:#0f172a">'+(k.total||0)+'</div></div>'
+        +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid #7c3aed;border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">Producciones</div><div style="font-size:26px;font-weight:800;color:#0f172a">'+(k.total||0)+'</div></div>'
         +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid '+(k.alerta_roja_dias?'#dc2626':'#15803d')+';border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">Alerta días &lt;10</div><div style="font-size:26px;font-weight:800;color:'+(k.alerta_roja_dias?'#dc2626':'#15803d')+'">'+(k.alerta_roja_dias||0)+'</div></div>'
         +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid '+(k.alerta_amarilla_dias?'#d97706':'#15803d')+';border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">Alerta días &lt;20</div><div style="font-size:26px;font-weight:800;color:'+(k.alerta_amarilla_dias?'#d97706':'#15803d')+'">'+(k.alerta_amarilla_dias||0)+'</div></div>'
         +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid '+(k.sin_mp_suficiente?'#dc2626':'#15803d')+';border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">Sin MP suficiente</div><div style="font-size:26px;font-weight:800;color:'+(k.sin_mp_suficiente?'#dc2626':'#15803d')+'">'+(k.sin_mp_suficiente||0)+'</div></div>';
@@ -14077,7 +14078,7 @@ async function ckMarcar(itemId, estado){
         var mpTxt = it.alcanza_mp ? '✓ MP listas' : '✗ Faltan '+(it.mp_deficit||[]).length+' MP';
         var img = it.imagen_url
           ? '<img src="'+_escAttr(it.imagen_url)+'" style="width:100%;height:120px;object-fit:cover;border-radius:8px 8px 0 0" alt="">'
-          : '<div style="width:100%;height:120px;background:linear-gradient(135deg,#1a4a7a,#0891b2);border-radius:8px 8px 0 0;display:flex;align-items:center;justify-content:center;color:#fff;font-size:36px">📦</div>';
+          : '<div style="width:100%;height:120px;background:linear-gradient(135deg,#1a4a7a,#7c3aed);border-radius:8px 8px 0 0;display:flex;align-items:center;justify-content:center;color:#fff;font-size:36px">📦</div>';
         var pres = (it.presentaciones||[]).slice(0,2).map(function(p){
           return '<span style="background:#f0f9ff;color:#0369a1;padding:2px 8px;border-radius:8px;font-size:11px;font-weight:600">'+_escHTML(p.etiqueta)+'</span>';
         }).join(' ');
@@ -14108,7 +14109,7 @@ async function ckMarcar(itemId, estado){
     var diasCol = item.alerta_dias==='rojo' ? '#dc2626' : (item.alerta_dias==='amarillo'?'#d97706':(item.alerta_dias==='verde'?'#15803d':'#94a3b8'));
     var img = item.imagen_url
       ? '<img src="'+_escAttr(item.imagen_url)+'" style="width:100%;height:200px;object-fit:cover" alt="">'
-      : '<div style="width:100%;height:200px;background:linear-gradient(135deg,#1a4a7a,#0891b2);display:flex;align-items:center;justify-content:center;color:#fff;font-size:80px">📦</div>';
+      : '<div style="width:100%;height:200px;background:linear-gradient(135deg,#1a4a7a,#7c3aed);display:flex;align-items:center;justify-content:center;color:#fff;font-size:80px">📦</div>';
 
     var mpHtml = '';
     if(item.mp_status && item.mp_status.length){
@@ -14180,7 +14181,7 @@ async function ckMarcar(itemId, estado){
         + (d.log||[]).map(function(l){ return '<li>'+_escHTML(l)+'</li>'; }).join('')
         + '</ul>'
         +'<div style="margin-top:8px;font-size:12px;color:#64748b">Envasado tentativo: <b>'+_escHTML(d.fecha_envasado_estimada)+'</b> · '+(d.tareas_creadas||[]).length+' tarea(s) creada(s)</div>'
-        +'<div style="margin-top:10px"><a href="#" onclick="cerrarPlanSemModal();switchProgTab(\\'preflight\\');return false" style="color:#0891b2;font-weight:700;text-decoration:none">→ Ver Pre-flight</a> · <a href="#" onclick="cerrarPlanSemModal();switchProgTab(\\'tareas\\');return false" style="color:#0891b2;font-weight:700;text-decoration:none">→ Ver Tareas operativas</a></div>'
+        +'<div style="margin-top:10px"><a href="#" onclick="cerrarPlanSemModal();switchProgTab(\\'preflight\\');return false" style="color:#7c3aed;font-weight:700;text-decoration:none">→ Ver Pre-flight</a> · <a href="#" onclick="cerrarPlanSemModal();switchProgTab(\\'tareas\\');return false" style="color:#7c3aed;font-weight:700;text-decoration:none">→ Ver Tareas operativas</a></div>'
         +'</div>';
       // Refrescar plan después de unos segundos
       setTimeout(cargarPlanSemanal, 2000);
@@ -14203,7 +14204,7 @@ async function ckMarcar(itemId, estado){
       var contados = items.filter(function(x){return x.estado==='cerrado'}).length;
       var conDif = items.filter(function(x){return x.estado==='con_diferencia'}).length;
       kpis.innerHTML = ''
-        +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid #0f766e;border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">Total programados</div><div style="font-size:26px;font-weight:800;color:#0f172a">'+items.length+'</div></div>'
+        +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid #6d28d9;border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">Total programados</div><div style="font-size:26px;font-weight:800;color:#0f172a">'+items.length+'</div></div>'
         +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid #d97706;border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">Pendientes</div><div style="font-size:26px;font-weight:800;color:#d97706">'+pend+'</div></div>'
         +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid #15803d;border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">Contados OK</div><div style="font-size:26px;font-weight:800;color:#15803d">'+contados+'</div></div>'
         +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid '+(conDif?'#dc2626':'#15803d')+';border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">Con diferencia</div><div style="font-size:26px;font-weight:800;color:'+(conDif?'#dc2626':'#15803d')+'">'+conDif+'</div></div>';
@@ -14218,7 +14219,7 @@ async function ckMarcar(itemId, estado){
       var html = '';
       Object.keys(porFecha).sort().forEach(function(fecha){
         var dia = new Date(fecha+'T00:00:00').toLocaleDateString('es-CO', {weekday:'long', day:'numeric', month:'short'});
-        html += '<div style="margin-bottom:14px"><h3 style="margin:0 0 8px;color:#0f766e;font-size:14px;text-transform:capitalize">📅 '+_escHTML(dia)+'</h3>';
+        html += '<div style="margin-bottom:14px"><h3 style="margin:0 0 8px;color:#6d28d9;font-size:14px;text-transform:capitalize">📅 '+_escHTML(dia)+'</h3>';
         html += '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden"><table style="width:100%;border-collapse:collapse;font-size:12px"><thead style="background:#f9fafb"><tr>'
           +'<th style="padding:8px 10px;text-align:left;font-size:10px;color:#475569;text-transform:uppercase">Material</th>'
           +'<th style="padding:8px 10px;text-align:center;font-size:10px;color:#475569;text-transform:uppercase">ABC</th>'
@@ -14238,7 +14239,7 @@ async function ckMarcar(itemId, estado){
             +'<td style="padding:7px 10px;text-align:center"><span style="background:'+estCol+'22;color:'+estCol+';padding:2px 8px;border-radius:8px;font-size:10px;font-weight:700;text-transform:uppercase">'+_escHTML(it.estado||'')+'</span></td>'
             +'<td style="padding:7px 10px;text-align:right;font-family:monospace;color:'+(it.estado==='con_diferencia'?'#dc2626':'#0f172a')+';font-weight:700">'+_escHTML(dif)+'</td>'
             +'<td style="padding:7px 10px;text-align:center">'
-            +(it.estado==='programado' ? '<button onclick="ccAbrirRegistro('+it.id+',\\''+_escAttr(it.material_nombre||it.material_id)+'\\')" style="background:#0f766e;color:#fff;border:none;padding:4px 12px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">📝 Registrar</button>' : '<span style="color:#94a3b8;font-size:11px">'+(it.terminado_por||'—')+'</span>')
+            +(it.estado==='programado' ? '<button onclick="ccAbrirRegistro('+it.id+',\\''+_escAttr(it.material_nombre||it.material_id)+'\\')" style="background:#6d28d9;color:#fff;border:none;padding:4px 12px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">📝 Registrar</button>' : '<span style="color:#94a3b8;font-size:11px">'+(it.terminado_por||'—')+'</span>')
             +'</td></tr>';
         });
         html += '</tbody></table></div></div>';
@@ -14360,7 +14361,7 @@ async function ckMarcar(itemId, estado){
       var d = await r.json();
       var k = d.kpis || {};
       var html = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:14px">'
-        +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid #0891b2;border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">Productos con histórico</div><div style="font-size:26px;font-weight:800;color:#0f172a">'+(k.productos_con_historico||0)+'</div></div>'
+        +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid #7c3aed;border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">Productos con histórico</div><div style="font-size:26px;font-weight:800;color:#0f172a">'+(k.productos_con_historico||0)+'</div></div>'
         +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid #d97706;border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">Productos NUEVOS</div><div style="font-size:26px;font-weight:800;color:#d97706">'+(k.productos_nuevos_sin_historico||0)+'</div></div>'
         +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid #dc2626;border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">Recomendaciones</div><div style="font-size:26px;font-weight:800;color:#dc2626">'+(k.recomendaciones_actualizar||0)+'</div></div>'
         +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid #15803d;border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">Lotes analizados</div><div style="font-size:26px;font-weight:800;color:#15803d">'+(k.total_lotes_analizados||0)+'</div></div>'
@@ -14541,7 +14542,7 @@ async function ckMarcar(itemId, estado){
       html += '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;margin-bottom:14px"><table style="width:100%;border-collapse:collapse;font-size:12px">'
         +'<thead style="background:#f9fafb"><tr><th style="padding:8px 10px;text-align:left;font-size:10px;color:#475569;text-transform:uppercase">Material</th><th style="padding:8px 10px;text-align:right;font-size:10px;color:#475569;text-transform:uppercase">Cantidad</th><th style="padding:8px 10px;text-align:left;font-size:10px;color:#475569;text-transform:uppercase">Origen</th><th style="padding:8px 10px;text-align:center;font-size:10px;color:#475569;text-transform:uppercase">Urgencia</th></tr></thead><tbody>';
       compras.forEach(function(c){
-        var urgCol = c.urgencia==='critica'?'#dc2626':(c.urgencia==='alta'?'#d97706':'#0891b2');
+        var urgCol = c.urgencia==='critica'?'#dc2626':(c.urgencia==='alta'?'#d97706':'#7c3aed');
         html += '<tr style="border-top:1px solid #f1f5f9"><td style="padding:7px 10px"><b>'+_escHTML(c.material_nombre)+'</b></td><td style="padding:7px 10px;text-align:right;font-family:monospace">'+(c.cantidad_a_pedir_g/1000).toFixed(2)+'kg</td><td style="padding:7px 10px;font-size:11px">'+_escHTML(c.origen)+' · '+c.lead_time_dias+'d</td><td style="padding:7px 10px;text-align:center"><span style="background:'+urgCol+';color:#fff;padding:2px 8px;border-radius:8px;font-size:10px;font-weight:700">'+c.urgencia.toUpperCase()+'</span></td></tr>';
       });
       html += '</tbody></table></div>';
@@ -14644,7 +14645,7 @@ async function ckMarcar(itemId, estado){
         +'<th style="padding:8px 10px;text-align:left;font-size:10px;color:#475569;text-transform:uppercase">Proveedor</th>'
         +'</tr></thead><tbody>'
         + rows.map(function(c){
-          var origenColor = c.origen==='china'?'#dc2626':(c.origen==='local'?'#15803d':'#0891b2');
+          var origenColor = c.origen==='china'?'#dc2626':(c.origen==='local'?'#15803d':'#7c3aed');
           return '<tr style="border-top:1px solid #f1f5f9">'
             +'<td style="padding:6px 10px;font-family:monospace;font-size:11px">'+_escHTML(c.material_id)+(c.es_envase?' 📦':'')+'</td>'
             +'<td style="padding:6px 10px"><b>'+_escHTML(c.material_nombre||'')+'</b></td>'
@@ -14726,7 +14727,7 @@ async function ckMarcar(itemId, estado){
             +'<td style="padding:6px 10px;text-align:center">'+ck(c.recibe_compras_aprob,'recibe_compras_aprob')+'</td>'
             +'<td style="padding:6px 10px;text-align:center">'+ck(c.recibe_calidad,'recibe_calidad')+'</td>'
             +'<td style="padding:6px 10px;text-align:center">'+ck(c.recibe_agenda_personal,'recibe_agenda_personal')+'</td>'
-            +'<td style="padding:6px 10px;text-align:center"><button onclick="apEmailTest(\\''+_escAttr(c.email||'')+'\\')" '+(c.email?'':'disabled')+' style="background:#0891b2;color:#fff;border:none;padding:4px 10px;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer;'+(c.email?'':'opacity:.4')+'">📧 Test</button></td>'
+            +'<td style="padding:6px 10px;text-align:center"><button onclick="apEmailTest(\\''+_escAttr(c.email||'')+'\\')" '+(c.email?'':'disabled')+' style="background:#7c3aed;color:#fff;border:none;padding:4px 10px;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer;'+(c.email?'':'opacity:.4')+'">📧 Test</button></td>'
             +'</tr>';
         }).join('')
         +'</tbody></table></div>';
@@ -14787,7 +14788,7 @@ async function ckMarcar(itemId, estado){
         +'<th style="padding:8px 10px;text-align:right;font-size:10px;color:#475569;text-transform:uppercase">Tiempo</th>'
         +'</tr></thead><tbody>'
         + rows.map(function(c){
-          var tipoColor = c.tipo==='auto'?'#7c3aed':(c.tipo==='manual'?'#0891b2':'#64748b');
+          var tipoColor = c.tipo==='auto'?'#7c3aed':(c.tipo==='manual'?'#7c3aed':'#64748b');
           return '<tr style="border-top:1px solid #f1f5f9">'
             +'<td style="padding:6px 10px;font-family:monospace;font-size:11px">'+_escHTML((c.ejecutado_at||'').substring(0,19))+'</td>'
             +'<td style="padding:6px 10px;font-size:11px;color:#64748b">'+_escHTML(c.ejecutado_por)+'</td>'
@@ -14974,8 +14975,8 @@ async function ckMarcar(itemId, estado){
       var medias = stockouts.filter(function(m){return m.urgencia==='media';});
       var ok = mats.filter(function(m){return !m.fecha_stockout;});
 
-      var bgHeader = stockouts.length ? 'linear-gradient(135deg,#7c3aed,#dc2626)' : 'linear-gradient(135deg,#0891b2,#059669)';
-      var html = '<div style="background:#fff;border:2px solid '+(stockouts.length?'#7c3aed':'#0891b2')+';border-radius:10px;overflow:hidden">';
+      var bgHeader = stockouts.length ? 'linear-gradient(135deg,#7c3aed,#dc2626)' : 'linear-gradient(135deg,#7c3aed,#059669)';
+      var html = '<div style="background:#fff;border:2px solid '+(stockouts.length?'#7c3aed':'#7c3aed')+';border-radius:10px;overflow:hidden">';
       html += '<div style="background:'+bgHeader+';color:#fff;padding:12px 16px">';
       html += '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;margin-bottom:10px">';
       html += '<div><b style="font-size:15px">📦 Plan MP rolling · '+dias+' días</b><div style="font-size:11px;color:#fce7f3;margin-top:2px">Consumo MP acumulado de TODAS las producciones planeadas (sumando lunes + martes + ...)</div></div>';
@@ -15042,7 +15043,7 @@ async function ckMarcar(itemId, estado){
           html += '<td style="padding:5px 6px"><span style="background:'+col+'22;color:'+col+';padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700">'+_escHTML(m.fecha_stockout)+' (en '+m.dias_hasta_stockout+'d)</span></td>';
           html += '<td style="padding:5px 6px;font-size:10px;color:'+col+';font-weight:700">'+_escHTML(m.comprar_antes_de||'—')+'</td>';
           html += '<td style="padding:5px 6px;text-align:right;font-family:monospace;font-weight:700;color:'+col+'">'+_fmtMiles(Math.round(m.comprar_g_recomendado||0))+' g</td>';
-          html += '<td style="padding:5px 6px;text-align:center"><button onclick="planV2SolicitarMP(\\''+safeId+'\\')" style="background:#0891b2;color:#fff;border:none;padding:3px 8px;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer">📋</button></td>';
+          html += '<td style="padding:5px 6px;text-align:center"><button onclick="planV2SolicitarMP(\\''+safeId+'\\')" style="background:#7c3aed;color:#fff;border:none;padding:3px 8px;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer">📋</button></td>';
         } else {
           html += '<td style="padding:5px 6px;color:#10b981">✓ alcanza</td>';
           html += '<td style="padding:5px 6px;color:#94a3b8">—</td>';
@@ -15510,7 +15511,7 @@ async function ckMarcar(itemId, estado){
           +'<div style="text-align:right;display:flex;flex-direction:column;gap:4px;align-items:flex-end">'
           +'<span style="background:'+col+';color:#fff;padding:4px 10px;border-radius:6px;font-size:10px;font-weight:800;white-space:nowrap">'+labelEstado(a.estado)+'</span>'
           +(a.diff_dias?('<div style="font-size:10px;color:'+col+';font-weight:700">'+(a.diff_dias>0?'-':'+')+Math.abs(a.diff_dias)+'d</div>'):'')
-          +'<button onclick="planV2VerificarListo(\\''+safeProducto+'\\','+kgSugerido+')" style="background:#0891b2;color:#fff;border:none;padding:4px 10px;border-radius:6px;font-size:10px;font-weight:700;cursor:pointer" title="Verificar MP, envases y capacidad antes de producir">🔍 Verificar listo</button>'
+          +'<button onclick="planV2VerificarListo(\\''+safeProducto+'\\','+kgSugerido+')" style="background:#7c3aed;color:#fff;border:none;padding:4px 10px;border-radius:6px;font-size:10px;font-weight:700;cursor:pointer" title="Verificar MP, envases y capacidad antes de producir">🔍 Verificar listo</button>'
           +'</div></div></div>';
       }
       criticos.forEach(function(a){html+=fila(a);});
@@ -15626,7 +15627,7 @@ async function ckMarcar(itemId, estado){
       var modal = document.createElement('div');
       modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
       modal.onclick = function(e){if(e.target===modal)modal.remove();};
-      var byClase = {ok:'#15803d',temprana:'#0891b2',ajustada:'#d97706',tarde:'#dc2626',stockout:'#7f1d1d'};
+      var byClase = {ok:'#15803d',temprana:'#7c3aed',ajustada:'#d97706',tarde:'#dc2626',stockout:'#7f1d1d'};
       var html = '<div style="background:#fff;border-radius:12px;width:900px;max-width:96vw;max-height:90vh;overflow:auto;padding:20px">'
         +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><h3 style="margin:0;color:#0f172a">📊 Auditoría Calendar · margen 20d</h3><button onclick="this.closest(\\'div[style*=fixed]\\').remove()" style="background:#fff;border:1px solid #cbd5e1;padding:6px 12px;border-radius:6px;cursor:pointer">Cerrar ✕</button></div>'
         +'<p style="color:#64748b;font-size:12px;margin:0 0 14px">Para cada producción del Calendar, calculamos cuánto cubría el lote anterior vs cuándo se hizo la siguiente. Si el margen real ≥ 20 días → se cumplió la regla.</p>';
@@ -15813,7 +15814,7 @@ async function ckMarcar(itemId, estado){
       html += '<div><div style="font-size:11px;color:#64748b">Factor g/u (motor)</div><div style="font-size:20px;font-weight:800">'+(d.factor_g_por_unidad||0)+' g</div></div>';
       html += '<div><div style="font-size:11px;color:#64748b">Lote default fórmula</div><div style="font-size:20px;font-weight:800">'+(l.lote_default_formula||0)+' kg</div></div>';
       html += '<div><div style="font-size:11px;color:#64748b">Lote típico (mediana)</div><div style="font-size:20px;font-weight:800">'+(l.lote_tipico_historico||0)+' kg</div></div>';
-      html += '<div><div style="font-size:11px;color:#64748b">Unidades por lote</div><div style="font-size:20px;font-weight:800;color:#0891b2">'+_fmtMiles(d.unidades_por_lote||0)+' u</div></div>';
+      html += '<div><div style="font-size:11px;color:#64748b">Unidades por lote</div><div style="font-size:20px;font-weight:800;color:#7c3aed">'+_fmtMiles(d.unidades_por_lote||0)+' u</div></div>';
       html += '<div><div style="font-size:11px;color:#64748b">Lote durará</div><div style="font-size:20px;font-weight:800">'+(d.dias_que_durara_lote==null?'—':d.dias_que_durara_lote+' d')+'</div></div>';
       html += '</div>';
       if((l.historico_kg_lista||[]).length){
@@ -15905,8 +15906,8 @@ async function ckMarcar(itemId, estado){
       } else {
         html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;margin-bottom:16px">';
         dias.forEach(function(dia){
-          var bgHeader = dia.producciones_count > 0 ? 'linear-gradient(135deg,#0f766e,#0891b2)' : '#94a3b8';
-          html += '<div style="background:#fff;border:2px solid '+(dia.producciones_count>0?'#0f766e':'#e2e8f0')+';border-radius:10px;overflow:hidden">';
+          var bgHeader = dia.producciones_count > 0 ? 'linear-gradient(135deg,#6d28d9,#7c3aed)' : '#94a3b8';
+          html += '<div style="background:#fff;border:2px solid '+(dia.producciones_count>0?'#6d28d9':'#e2e8f0')+';border-radius:10px;overflow:hidden">';
           html += '<div style="background:'+bgHeader+';color:#fff;padding:10px 14px"><div style="font-size:11px;opacity:.85;text-transform:uppercase">'+_escHTML(dia.nombre_dia)+'</div><div style="font-size:16px;font-weight:800">'+_escHTML(dia.fecha)+'</div><div style="font-size:11px;margin-top:2px">'+dia.producciones_count+' producci'+(dia.producciones_count===1?'ón':'ones')+'</div></div>';
           if(dia.producciones_count === 0){
             html += '<div style="padding:18px;text-align:center;color:#94a3b8;font-size:12px;font-style:italic">— día libre —</div>';
@@ -15971,7 +15972,7 @@ async function ckMarcar(itemId, estado){
       var sinVentas = d.sin_ventas || [];
       var producciones = d.producciones || [];
       var titulo = meses === 12 ? '🗓️ Plan 1 año' : '📆 Plan '+meses+' meses';
-      var bgGrad = meses === 12 ? 'linear-gradient(135deg,#06b6d4,#0891b2)' : 'linear-gradient(135deg,#10b981,#059669)';
+      var bgGrad = meses === 12 ? 'linear-gradient(135deg,#06b6d4,#7c3aed)' : 'linear-gradient(135deg,#10b981,#059669)';
 
       var html = '<div style="background:#fff;border-radius:12px;width:1300px;max-width:96vw;max-height:92vh;overflow:auto;padding:24px">';
       // Header
@@ -16006,7 +16007,7 @@ async function ckMarcar(itemId, estado){
 
       // Tabs internas
       html += '<div style="display:flex;gap:6px;margin-bottom:14px;border-bottom:2px solid #e2e8f0">';
-      html += '<button class="plLargo-tab" data-tab="mes" onclick="planLargoTab(\\'mes\\')" style="padding:8px 16px;border:none;background:#0891b2;color:#fff;font-weight:800;cursor:pointer;border-radius:6px 6px 0 0">📅 Por mes</button>';
+      html += '<button class="plLargo-tab" data-tab="mes" onclick="planLargoTab(\\'mes\\')" style="padding:8px 16px;border:none;background:#7c3aed;color:#fff;font-weight:800;cursor:pointer;border-radius:6px 6px 0 0">📅 Por mes</button>';
       html += '<button class="plLargo-tab" data-tab="sku" onclick="planLargoTab(\\'sku\\')" style="padding:8px 16px;border:none;background:#f1f5f9;color:#475569;font-weight:700;cursor:pointer;border-radius:6px 6px 0 0">📦 Por SKU</button>';
       html += '<button class="plLargo-tab" data-tab="lista" onclick="planLargoTab(\\'lista\\')" style="padding:8px 16px;border:none;background:#f1f5f9;color:#475569;font-weight:700;cursor:pointer;border-radius:6px 6px 0 0">📋 Lista cronológica</button>';
       if(sinVentas.length){
@@ -16024,11 +16025,11 @@ async function ckMarcar(itemId, estado){
         meses_keys.forEach(function(mk){
           var lotes = porMes[mk] || [];
           var totalKg = lotes.reduce(function(s,l){return s+(l.lote_kg||0);},0);
-          html += '<div style="background:#fff;border:2px solid #0891b2;border-radius:10px;overflow:hidden">';
-          html += '<div style="background:linear-gradient(135deg,#0891b2,#0e7490);color:#fff;padding:10px 14px"><div style="font-size:11px;opacity:.85;text-transform:uppercase">Mes</div><div style="font-size:18px;font-weight:800">'+_escHTML(mk)+'</div><div style="font-size:11px;margin-top:2px">'+lotes.length+' lotes · '+_fmtMiles(Math.round(totalKg))+' kg</div></div>';
+          html += '<div style="background:#fff;border:2px solid #7c3aed;border-radius:10px;overflow:hidden">';
+          html += '<div style="background:linear-gradient(135deg,#7c3aed,#7c3aed);color:#fff;padding:10px 14px"><div style="font-size:11px;opacity:.85;text-transform:uppercase">Mes</div><div style="font-size:18px;font-weight:800">'+_escHTML(mk)+'</div><div style="font-size:11px;margin-top:2px">'+lotes.length+' lotes · '+_fmtMiles(Math.round(totalKg))+' kg</div></div>';
           html += '<div style="padding:8px;max-height:300px;overflow:auto">';
           lotes.forEach(function(l){
-            html += '<div style="background:#f8fafc;padding:6px 10px;margin-bottom:4px;border-radius:6px;border-left:3px solid #0891b2;font-size:11px">';
+            html += '<div style="background:#f8fafc;padding:6px 10px;margin-bottom:4px;border-radius:6px;border-left:3px solid #7c3aed;font-size:11px">';
             html += '<b style="color:#0f172a">'+_escHTML(l.producto)+'</b>';
             html += '<div style="color:#64748b">'+_escHTML(l.fecha)+' ('+_escHTML(l.dia_semana)+') · '+l.lote_kg+' kg</div>';
             html += '</div>';
@@ -16124,7 +16125,7 @@ async function ckMarcar(itemId, estado){
     var btns = document.querySelectorAll('.plLargo-tab');
     btns.forEach(function(b){
       var a = b.getAttribute('data-tab');
-      if(a===t){ b.style.background='#0891b2'; b.style.color='#fff'; }
+      if(a===t){ b.style.background='#7c3aed'; b.style.color='#fff'; }
       else { b.style.background='#f1f5f9'; b.style.color='#475569'; }
     });
   }
@@ -16191,7 +16192,7 @@ async function ckMarcar(itemId, estado){
       var resumen = '';
       if(k.criticas) resumen += '<span style="background:#dc2626;color:#fff;padding:3px 10px;border-radius:8px;font-size:11px;font-weight:800;margin-right:6px">🚨 '+k.criticas+' CRÍTICAS</span>';
       if(k.altas) resumen += '<span style="background:#d97706;color:#fff;padding:3px 10px;border-radius:8px;font-size:11px;font-weight:800;margin-right:6px">⚠ '+k.altas+' altas</span>';
-      if(k.medias) resumen += '<span style="background:#0891b2;color:#fff;padding:3px 10px;border-radius:8px;font-size:11px;font-weight:700;margin-right:6px">'+k.medias+' medias</span>';
+      if(k.medias) resumen += '<span style="background:#7c3aed;color:#fff;padding:3px 10px;border-radius:8px;font-size:11px;font-weight:700;margin-right:6px">'+k.medias+' medias</span>';
       if(k.bajas) resumen += '<span style="background:#7c3aed;color:#fff;padding:3px 10px;border-radius:8px;font-size:11px;font-weight:600;margin-right:6px">'+k.bajas+' bajas</span>';
       if(k.innecesarias) resumen += '<span style="background:#15803d;color:#fff;padding:3px 10px;border-radius:8px;font-size:11px;font-weight:600;margin-right:6px">✓ '+k.innecesarias+' OK</span>';
       var inact = (k.sin_ventas||0)+(k.baja_rotacion||0)+(k.inactivos||0);
@@ -16221,7 +16222,7 @@ async function ckMarcar(itemId, estado){
           +'<th style="padding:10px 12px;text-align:left;font-size:10px;color:#475569;text-transform:uppercase">Recomendación</th>'
           +'</tr></thead><tbody>';
         accionables.forEach(function(r){
-          var urgCol = {critica:'#dc2626',alta:'#d97706',media:'#0891b2',baja:'#7c3aed'}[r.urgencia] || '#64748b';
+          var urgCol = {critica:'#dc2626',alta:'#d97706',media:'#7c3aed',baja:'#7c3aed'}[r.urgencia] || '#64748b';
           var fechaTxt = '—';
           if(r.fecha_proxima){
             try {
@@ -16232,7 +16233,7 @@ async function ckMarcar(itemId, estado){
           html += '<tr style="border-top:1px solid #f1f5f9;background:'+(r.urgencia==='critica'?'#fef2f2':r.urgencia==='alta'?'#fffbeb':'#fff')+'">'
             +'<td style="padding:8px 12px"><b style="color:#0f172a">'+_escHTML(r.producto)+'</b><br><span style="font-size:10px;color:#64748b">'+r.velocidad_dia+' u/día</span></td>'
             +'<td style="padding:8px;text-align:right;font-family:monospace">'+r.stock_shopify+'</td>'
-            +'<td style="padding:8px;text-align:right;font-family:monospace;color:#0891b2;font-weight:600">'+(r.pipeline_unidades>0?'+'+r.pipeline_unidades:'—')+'<br><span style="font-size:9px;color:#64748b">'+r.pipeline_kg+'kg</span></td>'
+            +'<td style="padding:8px;text-align:right;font-family:monospace;color:#7c3aed;font-weight:600">'+(r.pipeline_unidades>0?'+'+r.pipeline_unidades:'—')+'<br><span style="font-size:9px;color:#64748b">'+r.pipeline_kg+'kg</span></td>'
             +'<td style="padding:8px;text-align:right;font-family:monospace;font-weight:700">'+r.stock_total_unidades+'</td>'
             +'<td style="padding:8px;text-align:right;font-family:monospace;font-weight:800;color:'+urgCol+'">'+r.dias_alcance+'d</td>'
             +'<td style="padding:8px;text-align:right;font-size:11px;color:#64748b">'+(r.cadencia_historica_dias?r.cadencia_historica_dias+'d hist':r.cadencia_configurada?r.cadencia_configurada+'d cfg':'—')+'</td>'
@@ -16369,11 +16370,11 @@ async function ckMarcar(itemId, estado){
         + '<div style="font-size:12px;color:#78350f;margin-bottom:8px">El sistema detectó que las ventas cambiaron significativamente. Revisa si ajustar el plan:</div>'
         + cambios.map(function(c, i){
           var icono = c.tipo === 'aumento' ? '📈' : '📉';
-          var color = c.tipo === 'aumento' ? '#dc2626' : '#0891b2';
+          var color = c.tipo === 'aumento' ? '#dc2626' : '#7c3aed';
           return '<div style="background:#fff;border:1px solid #fbbf24;border-radius:8px;padding:10px 12px;margin-top:6px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">'
             + '<div style="font-size:12px"><b>'+icono+' '+_escHTML(c.producto)+'</b> · <span style="color:'+color+';font-weight:700">'+(c.cambio_pct>0?'+':'')+c.cambio_pct+'%</span> ('+c.velocidad_base.toFixed(1)+'→'+c.velocidad_reciente.toFixed(1)+' u/d)<br><span style="color:#64748b;font-size:11px">'+_escHTML(c.recomendacion||'Sin recomendación específica')+'</span></div>'
             + (c.fecha_sugerida && c.proxima_produccion_id
-              ? '<button onclick="aceptarRecomendacion('+c.proxima_produccion_id+',\\''+c.fecha_sugerida+'\\')" style="background:#0f766e;color:#fff;border:none;padding:6px 12px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">✓ Aceptar</button>'
+              ? '<button onclick="aceptarRecomendacion('+c.proxima_produccion_id+',\\''+c.fecha_sugerida+'\\')" style="background:#6d28d9;color:#fff;border:none;padding:6px 12px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">✓ Aceptar</button>'
               : '<span style="color:#94a3b8;font-size:11px">Sin acción</span>')
             + '</div>';
         }).join('');
@@ -16400,7 +16401,7 @@ async function ckMarcar(itemId, estado){
     document.querySelectorAll('.phz-btn').forEach(function(b){
       var act = b.dataset.meses === meses;
       b.style.background = act ? '#fff' : 'rgba(255,255,255,.18)';
-      b.style.color = act ? '#0f766e' : '#fff';
+      b.style.color = act ? '#6d28d9' : '#fff';
     });
     // Sebastian 7-may-2026: solo refrescar la vista simple · planV2Cargar
     // y planV2CargarCobertura escriben en panels ocultos.
@@ -16429,7 +16430,7 @@ async function ckMarcar(itemId, estado){
   // Sebastian 12-may-2026: regla Alejandro · MPs SIEMPRE en gramos con separador miles · NUNCA convertir a kg
   function _apaFmtG(g){if(g===null||g===undefined)return '—';return Math.round(g).toLocaleString('es-CO')+' g';}
   function _apaUrgenciaColor(u){
-    return {CRITICO:'#dc2626',ALTA:'#ea580c',MEDIA:'#d97706',BAJA:'#0e7490',OK:'#15803d',SIN_USO:'#64748b'}[u]||'#64748b';
+    return {CRITICO:'#dc2626',ALTA:'#ea580c',MEDIA:'#d97706',BAJA:'#7c3aed',OK:'#15803d',SIN_USO:'#64748b'}[u]||'#64748b';
   }
   function _apaUrgenciaBg(u){
     return {CRITICO:'#fee2e2',ALTA:'#ffedd5',MEDIA:'#fef3c7',BAJA:'#cffafe',OK:'#dcfce7',SIN_USO:'#f1f5f9'}[u]||'#f1f5f9';
@@ -16496,7 +16497,7 @@ async function ckMarcar(itemId, estado){
         } else {
           syncTxt = '⚠️ Stock desactualizado · hace '+dAtras+' días';
         }
-        resumen.innerHTML = partes.map(_apaEscHTML).join(' · ') + '<br><span style="color:'+(dAtras>2||dAtras===null?'#dc2626':'#0f766e')+';font-weight:700">'+_apaEscHTML(syncTxt)+'</span>';
+        resumen.innerHTML = partes.map(_apaEscHTML).join(' · ') + '<br><span style="color:'+(dAtras>2||dAtras===null?'#dc2626':'#6d28d9')+';font-weight:700">'+_apaEscHTML(syncTxt)+'</span>';
       }
       var skus = d.skus || [];
       var mps = d.mps_necesarias || [];
@@ -16703,7 +16704,7 @@ async function ckMarcar(itemId, estado){
         else if(esPasado) lbl += ' · ya pasó';
         return {
           label: lbl,
-          bg: esHoy ? '#0e7490' : (esPasado ? '#cbd5e1' : '#0f766e'),
+          bg: esHoy ? '#7c3aed' : (esPasado ? '#cbd5e1' : '#6d28d9'),
           color: '#fff',
         };
       }
@@ -16809,7 +16810,7 @@ async function ckMarcar(itemId, estado){
             return s + (parseFloat(row.fecha.cantidad_kg)||0);
           }, 0);
           var bgSem = esEstaSem ? '#dcfce7' : (esPasada ? '#f3f4f6' : '#e0f2fe');
-          var fgSem = esEstaSem ? '#15803d' : (esPasada ? '#6b7280' : '#0e7490');
+          var fgSem = esEstaSem ? '#15803d' : (esPasada ? '#6b7280' : '#7c3aed');
           html += '<tr style="background:'+bgSem+';border-top:2px solid #e2e8f0">'+
                   '<td colspan="6" style="padding:8px 12px;color:'+fgSem+
                   ';font-weight:700;font-size:11.5px;letter-spacing:0.3px">'+
@@ -16834,9 +16835,9 @@ async function ckMarcar(itemId, estado){
           fechaLbl = dowName+' '+dt.getDate();
           var esHoy = iso === hoyISO;
           var esPasado = iso < hoyISO;
-          if(esHoy){ fechaLbl += ' · HOY'; fechaCol = '#0e7490'; }
+          if(esHoy){ fechaLbl += ' · HOY'; fechaCol = '#7c3aed'; }
           else if(esPasado){ fechaLbl += ' · ya pasó'; fechaCol = '#94a3b8'; }
-          else { fechaCol = '#0f766e'; }
+          else { fechaCol = '#6d28d9'; }
         }
         // Sebastián 8-may-2026 · estado_display: realizada / en_proceso /
         // atrasada / pendiente. Cada uno con tag visual distinto. Las
@@ -17345,7 +17346,7 @@ async function ckMarcar(itemId, estado){
     var k = d.kpis || {};
     var status = d.auto_plan_status || {};
     kpis.innerHTML = ''
-      +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid #0891b2;border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">Próximas 14d</div><div style="font-size:26px;font-weight:800;color:#0f172a">'+(k.total||0)+'</div></div>'
+      +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid #7c3aed;border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">Próximas 14d</div><div style="font-size:26px;font-weight:800;color:#0f172a">'+(k.total||0)+'</div></div>'
       +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid #15803d;border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">Confirmadas</div><div style="font-size:26px;font-weight:800;color:#15803d">'+(k.desde_bd||0)+'</div></div>'
       +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid #7c3aed;border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">🔮 Proyectadas</div><div style="font-size:26px;font-weight:800;color:#7c3aed">'+(k.proyectadas||0)+'</div></div>'
       +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid '+(status.horas_desde_run<24?'#15803d':'#d97706')+';border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">Auto-Plan</div><div style="font-size:14px;font-weight:700;color:'+(status.horas_desde_run<24?'#15803d':'#d97706')+';margin-top:4px">'+(status.horas_desde_run!=null ? 'hace '+status.horas_desde_run+'h' : 'nunca corrió')+'</div></div>';
@@ -17379,7 +17380,7 @@ async function ckMarcar(itemId, estado){
         var borderCol = esProy ? '#7c3aed' : '#e2e8f0';
         var img = it.imagen_url
           ? '<img src="'+_escAttr(it.imagen_url)+'" style="width:100%;height:110px;object-fit:cover" alt="">'
-          : '<div style="width:100%;height:110px;background:linear-gradient(135deg,'+(esProy?'#7c3aed,#dc2626':'#0f766e,#0891b2')+');display:flex;align-items:center;justify-content:center;color:#fff;font-size:32px">📦</div>';
+          : '<div style="width:100%;height:110px;background:linear-gradient(135deg,'+(esProy?'#7c3aed,#dc2626':'#6d28d9,#7c3aed')+');display:flex;align-items:center;justify-content:center;color:#fff;font-size:32px">📦</div>';
         var fechaTxt = '';
         try { fechaTxt = new Date(it.fecha_programada+'T00:00:00').toLocaleDateString('es-CO',{weekday:'short',day:'numeric',month:'short'}); } catch(e){ fechaTxt = it.fecha_programada; }
         var idAttr = it.produccion_id || 0;
@@ -17393,7 +17394,7 @@ async function ckMarcar(itemId, estado){
               ? '<div style="font-size:11px;color:#7c3aed;margin-top:6px;font-weight:600">👆 Click para confirmar</div>'
               : (it.area_nombre ? '<div style="font-size:11px;color:#64748b;margin-top:4px">🏭 '+_escHTML(it.area_nombre)+'</div>' : '<div style="font-size:11px;color:#dc2626;margin-top:4px">⚠ Sin área asignada</div>'))
           + (!esProy && idAttr ? '<div style="display:flex;gap:4px;margin-top:8px;border-top:1px solid #e5e7eb;padding-top:8px">'
-              +'<button onclick="event.stopPropagation();editarLoteModal('+idAttr+',\\''+_escAttr(it.producto)+'\\','+(it.kg||0)+')" style="flex:1;background:#fff;color:#0891b2;border:1px solid #0891b2;padding:5px 8px;border-radius:5px;font-size:10px;font-weight:700;cursor:pointer">✏️ Editar lote</button>'
+              +'<button onclick="event.stopPropagation();editarLoteModal('+idAttr+',\\''+_escAttr(it.producto)+'\\','+(it.kg||0)+')" style="flex:1;background:#fff;color:#7c3aed;border:1px solid #7c3aed;padding:5px 8px;border-radius:5px;font-size:10px;font-weight:700;cursor:pointer">✏️ Editar lote</button>'
               +'<button onclick="event.stopPropagation();eliminarYReplanificar('+idAttr+',\\''+_escAttr(it.producto)+'\\')" style="flex:1;background:#fff;color:#dc2626;border:1px solid #dc2626;padding:5px 8px;border-radius:5px;font-size:10px;font-weight:700;cursor:pointer">🗑 Eliminar</button>'
               +'</div>' : '')
           +'</div></div>';
@@ -17474,7 +17475,7 @@ async function ckMarcar(itemId, estado){
       kpis.innerHTML = ''
         +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid #d97706;border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">Recibidos</div><div style="font-size:26px;font-weight:800;color:#d97706">'+pend+'</div></div>'
         +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid #7c3aed;border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">Planificados</div><div style="font-size:26px;font-weight:800;color:#7c3aed">'+plan+'</div></div>'
-        +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid #0891b2;border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">En producción</div><div style="font-size:26px;font-weight:800;color:#0891b2">'+enProd+'</div></div>'
+        +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid #7c3aed;border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">En producción</div><div style="font-size:26px;font-weight:800;color:#7c3aed">'+enProd+'</div></div>'
         +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid #15803d;border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">Entregados</div><div style="font-size:26px;font-weight:800;color:#15803d">'+entreg+'</div></div>'
         +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid #1a4a7a;border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">Clientes</div><div style="font-size:26px;font-weight:800;color:#1a4a7a">'+_MQ_CLIENTES.length+'</div></div>';
 
@@ -17495,7 +17496,7 @@ async function ckMarcar(itemId, estado){
         +'<th style="padding:8px 10px"></th>'
         +'</tr></thead><tbody>';
       items.forEach(function(p){
-        var estCol = {recibido:'#d97706',planificado:'#7c3aed',en_produccion:'#0891b2',listo_entrega:'#1a4a7a',entregado:'#15803d',cancelado:'#94a3b8'}[p.estado] || '#475569';
+        var estCol = {recibido:'#d97706',planificado:'#7c3aed',en_produccion:'#7c3aed',listo_entrega:'#1a4a7a',entregado:'#15803d',cancelado:'#94a3b8'}[p.estado] || '#475569';
         html += '<tr style="border-top:1px solid #f1f5f9">'
           +'<td style="padding:7px 10px;font-family:monospace;font-size:11px"><b>'+_escHTML(p.numero)+'</b></td>'
           +'<td style="padding:7px 10px"><b>'+_escHTML(p.cliente_nombre||'')+'</b></td>'
@@ -17617,7 +17618,7 @@ async function ckMarcar(itemId, estado){
     var kpis = document.getElementById('pv2-kpis');
     var k = d.kpis || {};
     kpis.innerHTML = ''
-      +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid #0891b2;border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">Producciones 14d</div><div style="font-size:26px;font-weight:800;color:#0f172a">'+(k.total||0)+'</div></div>'
+      +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid #7c3aed;border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">Producciones 14d</div><div style="font-size:26px;font-weight:800;color:#0f172a">'+(k.total||0)+'</div></div>'
       +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid '+(k.alerta_roja_dias?'#dc2626':'#15803d')+';border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">Alerta días &lt;10</div><div style="font-size:26px;font-weight:800;color:'+(k.alerta_roja_dias?'#dc2626':'#15803d')+'">'+(k.alerta_roja_dias||0)+'</div></div>'
       +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid '+(k.sin_mp_suficiente?'#dc2626':'#15803d')+';border-radius:10px;padding:14px"><div style="font-size:11px;color:#64748b;text-transform:uppercase">Sin MP</div><div style="font-size:26px;font-weight:800;color:'+(k.sin_mp_suficiente?'#dc2626':'#15803d')+'">'+(k.sin_mp_suficiente||0)+'</div></div>';
 
@@ -17636,7 +17637,7 @@ async function ckMarcar(itemId, estado){
         var mpCol = it.alcanza_mp?'#15803d':'#dc2626';
         var img = it.imagen_url
           ? '<img src="'+_escAttr(it.imagen_url)+'" style="width:100%;height:110px;object-fit:cover" alt="">'
-          : '<div style="width:100%;height:110px;background:linear-gradient(135deg,#0f766e,#0891b2);display:flex;align-items:center;justify-content:center;color:#fff;font-size:32px">📦</div>';
+          : '<div style="width:100%;height:110px;background:linear-gradient(135deg,#6d28d9,#7c3aed);display:flex;align-items:center;justify-content:center;color:#fff;font-size:32px">📦</div>';
         return '<div onclick="abrirPlanSemModal('+it.produccion_id+')" style="background:#fff;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;cursor:pointer;transition:transform .12s">'
           + img
           +'<div style="padding:10px 12px"><b style="color:#0f172a;font-size:13px">'+_escHTML(it.producto)+'</b>'
@@ -17657,7 +17658,7 @@ async function ckMarcar(itemId, estado){
     var dBd = desglose.bd_interna || {lotes:0,kg:0,skus:0};
     var dCal = desglose.google_calendar || {lotes:0,kg:0,skus:0};
     kpis.innerHTML = ''
-      +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid #0891b2;border-radius:10px;padding:14px">'
+      +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid #7c3aed;border-radius:10px;padding:14px">'
         +'<div style="font-size:11px;color:#64748b;text-transform:uppercase">Total lotes planeados</div>'
         +'<div style="font-size:26px;font-weight:800;color:#0f172a">'+(k.total_lotes_proyectados||0)+'</div>'
         +'<div style="font-size:10px;color:#64748b;margin-top:4px">📆 '+dCal.lotes+' Calendar · 🤖 '+dMotor.lotes+' Motor · ✓ '+dBd.lotes+' BD</div>'
@@ -17728,7 +17729,7 @@ async function ckMarcar(itemId, estado){
     var hoy = new Date(d.fecha_inicio);
     var html = '<h3 style="margin:0 0 8px;color:#0f172a;font-size:15px">📅 Calendario próximos 30 días</h3>';
     html += '<div style="display:flex;gap:14px;font-size:11px;color:#64748b;margin-bottom:8px;flex-wrap:wrap">'
-      +'<span><span style="display:inline-block;width:10px;height:10px;background:#0891b2;border-radius:2px;vertical-align:middle"></span> Google Calendar (real)</span>'
+      +'<span><span style="display:inline-block;width:10px;height:10px;background:#7c3aed;border-radius:2px;vertical-align:middle"></span> Google Calendar (real)</span>'
       +'<span><span style="display:inline-block;width:10px;height:10px;background:#7c3aed;border-radius:2px;vertical-align:middle"></span> Motor MRP (proyectado)</span>'
       +'<span><span style="display:inline-block;width:10px;height:10px;background:#15803d;border-radius:2px;vertical-align:middle"></span> Confirmado en BD</span>'
       +'</div>';
@@ -17745,11 +17746,11 @@ async function ckMarcar(itemId, estado){
       var esLMV = [0,2,4].indexOf(weekday) >= 0;
       var prodsDia = porFecha[fStr] || [];
       var bg = esLMV ? '#fff' : '#f9fafb';
-      var border = prodsDia.length ? '#0f766e' : '#e5e7eb';
+      var border = prodsDia.length ? '#6d28d9' : '#e5e7eb';
       html += '<div style="background:'+bg+';border:1px solid '+border+';border-radius:6px;padding:6px;min-height:70px;font-size:10px">'
         +'<div style="color:#94a3b8;font-weight:700;font-size:10px">'+fecha.getDate()+'</div>'
         + prodsDia.slice(0,4).map(function(p){
-          var col = p.origen==='calendar' ? '#0891b2' : '#7c3aed';
+          var col = p.origen==='calendar' ? '#7c3aed' : '#7c3aed';
           var bgCol = p.origen==='calendar' ? '#cffafe' : '#ede9fe';
           var txtCol = p.origen==='calendar' ? '#155e75' : '#5b21b6';
           var label = p.titulo_real || p.producto;
@@ -17778,7 +17779,7 @@ async function ckMarcar(itemId, estado){
         +'<div style="font-size:32px;margin-bottom:8px">📊</div>'
         +'<div style="font-size:14px;font-weight:700;color:#0f172a;margin-bottom:6px">Sin producciones proyectadas en '+meses+' meses</div>'
         +'<div style="font-size:12px;color:#64748b;margin-bottom:12px">El motor MRP no encontró eventos del Calendar ni necesidades por velocidad de venta.</div>'
-        +'<button onclick="diagnosticarCalendar()" style="padding:7px 14px;background:#0891b2;color:#fff;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">🔧 Diagnosticar Calendar</button>'
+        +'<button onclick="diagnosticarCalendar()" style="padding:7px 14px;background:#7c3aed;color:#fff;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">🔧 Diagnosticar Calendar</button>'
         +'</div>';
       return;
     }
@@ -17807,7 +17808,7 @@ async function ckMarcar(itemId, estado){
           var pf = new Date(p.fecha);
           var offset = (pf - hoy) / (fin - hoy) * 100;
           if(offset < 0 || offset > 100) return;
-          html += '<div title="'+_escAttr(p.fecha+' · '+p.kg_con_merma+'kg')+'" style="position:absolute;left:'+offset+'%;top:2px;width:8px;height:16px;background:#0f766e;border-radius:2px"></div>';
+          html += '<div title="'+_escAttr(p.fecha+' · '+p.kg_con_merma+'kg')+'" style="position:absolute;left:'+offset+'%;top:2px;width:8px;height:16px;background:#6d28d9;border-radius:2px"></div>';
         });
         html += '</div></div>';
       });
@@ -17957,7 +17958,7 @@ async function ckMarcar(itemId, estado){
       c.innerHTML = '<p style="color:#64748b;font-size:13px">Cadencia, cobertura y merma por SKU. Edita inline.</p><div id="ap-skus-tabla"></div>';
       if(typeof apCargarSkus==='function') setTimeout(apCargarSkus, 50);
     } else if(s==='mp'){
-      c.innerHTML = '<div style="display:flex;justify-content:flex-end;margin-bottom:10px"><button onclick="apMpNuevo()" style="background:#0f766e;color:#fff;border:none;padding:6px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">+ Nuevo material</button></div><div id="ap-mp-tabla"></div>';
+      c.innerHTML = '<div style="display:flex;justify-content:flex-end;margin-bottom:10px"><button onclick="apMpNuevo()" style="background:#6d28d9;color:#fff;border:none;padding:6px 12px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">+ Nuevo material</button></div><div id="ap-mp-tabla"></div>';
       if(typeof apCargarMp==='function') setTimeout(apCargarMp, 50);
     } else if(s==='emails'){
       c.innerHTML = '<div id="ap-emails-tabla"></div>';
@@ -17987,7 +17988,7 @@ async function ckMarcar(itemId, estado){
       var d = await r.json();
       if(!r.ok){ box.innerHTML = '<div style="color:#dc2626">Error: '+(d.error||'')+'</div>'; return; }
       kpis.innerHTML = ''
-        +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid #0891b2;border-radius:10px;padding:12px"><div style="font-size:10px;color:#64748b;text-transform:uppercase">Eventos</div><div style="font-size:24px;font-weight:800;color:#0f172a">'+d.total_eventos+'</div></div>'
+        +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid #7c3aed;border-radius:10px;padding:12px"><div style="font-size:10px;color:#64748b;text-transform:uppercase">Eventos</div><div style="font-size:24px;font-weight:800;color:#0f172a">'+d.total_eventos+'</div></div>'
         +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid #15803d;border-radius:10px;padding:12px"><div style="font-size:10px;color:#64748b;text-transform:uppercase">✓ Matcheados</div><div style="font-size:24px;font-weight:800;color:#15803d">'+d.matcheados+'</div></div>'
         +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid '+(d.en_conflicto?'#dc2626':'#15803d')+';border-radius:10px;padding:12px"><div style="font-size:10px;color:#64748b;text-transform:uppercase">⚠ Conflicto</div><div style="font-size:24px;font-weight:800;color:'+(d.en_conflicto?'#dc2626':'#15803d')+'">'+d.en_conflicto+'</div></div>'
         +'<div style="background:#fff;border:1px solid #e2e8f0;border-left:4px solid '+(d.sin_match_aceptable?'#d97706':'#15803d')+';border-radius:10px;padding:12px"><div style="font-size:10px;color:#64748b;text-transform:uppercase">? Sin match</div><div style="font-size:24px;font-weight:800;color:'+(d.sin_match_aceptable?'#d97706':'#15803d')+'">'+d.sin_match_aceptable+'</div></div>'
@@ -20200,7 +20201,7 @@ async function ckMarcar(itemId, estado){
       var d = await r.json();
       if(cnt) cnt.textContent = '(' + d.total_unmatched + ' sin enlazar)';
       if(!d.unmatched || d.unmatched.length === 0){
-        list.innerHTML = '<div style="color:#2B7A78;font-size:12px;padding:8px">✅ Todos los MPs de fórmulas tienen enlace o ya coinciden automáticamente.</div>';
+        list.innerHTML = '<div style="color:#6d28d9;font-size:12px;padding:8px">✅ Todos los MPs de fórmulas tienen enlace o ya coinciden automáticamente.</div>';
       } else {
         list.innerHTML = d.unmatched.map(function(u){
           var cands = (u.candidates||[]).slice(0,5);
@@ -20311,7 +20312,7 @@ async function ckMarcar(itemId, estado){
         return '<tr style="border-bottom:1px solid #f0f0f0">' +
           '<td style="padding:5px 8px;font-family:monospace;color:#5c3317">' + m.formula_material_id + '</td>' +
           '<td style="padding:5px 8px">' + (m.formula_material_nombre||'—') + '</td>' +
-          '<td style="padding:5px 8px;font-family:monospace;color:#2B7A78">' + m.bodega_material_id + '</td>' +
+          '<td style="padding:5px 8px;font-family:monospace;color:#6d28d9">' + m.bodega_material_id + '</td>' +
           '<td style="padding:5px 8px">' + (m.bodega_material_nombre||'—') + '</td>' +
           '<td style="padding:5px 8px">' +
             '<button onclick="eliminarBridge(' + m.id + ')" ' +
@@ -20501,7 +20502,7 @@ async function ckMarcar(itemId, estado){
       html += '<div style="font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;margin-bottom:4px">📅 Lotes en el calendario · futuro hasta 365d</div>';
       html += '<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;font-size:13px">';
       html += '<div><strong style="font-size:18px;color:#1e293b">' + nTotal + '</strong> <span style="color:#64748b;font-size:11px">lotes totales</span></div>';
-      html += '<div style="color:#475569"><span style="color:#0f766e;font-weight:700">' + nFij + '</span> <span style="font-size:10px">Fijas</span> + <span style="color:#7c3aed;font-weight:700">' + nSug + '</span> <span style="font-size:10px">Sugeridas</span> + <span style="color:#ea580c;font-weight:700">' + nB2B + '</span> <span style="font-size:10px">B2B pend.</span></div>';
+      html += '<div style="color:#475569"><span style="color:#6d28d9;font-weight:700">' + nFij + '</span> <span style="font-size:10px">Fijas</span> + <span style="color:#7c3aed;font-weight:700">' + nSug + '</span> <span style="font-size:10px">Sugeridas</span> + <span style="color:#ea580c;font-weight:700">' + nB2B + '</span> <span style="font-size:10px">B2B pend.</span></div>';
       html += '<div style="color:#475569">📈 <strong>' + lotesSem + '</strong> lotes/sem (90d)</div>';
       html += '<div style="color:#475569">Cobertura: <strong>' + cobDias + 'd</strong> · último ' + ultimoLote + '</div>';
       html += '<div style="margin-left:auto">' + modoLabel + '</div>';
@@ -20742,7 +20743,7 @@ async function ckMarcar(itemId, estado){
         '<a href="#" onclick="abastTrailMp(this.dataset.cod);return false" data-cod="' + codTrail + '" style="color:#7c3aed;text-decoration:underline;cursor:pointer" title="Ver desglose · qué productos la usan y cuántos lotes futuros">' +
         codTrail + '</a>' + badgesHtml + '</td>';
       html += '<td style="padding:6px 8px"><a href="#" onclick="abastTrailMp(this.dataset.cod);return false" data-cod="' + codTrail + '" style="color:#1e293b;text-decoration:none;cursor:pointer" title="Ver desglose">' + escapeHtmlNec(it.nombre) + '</a></td>';
-      html += '<td style="padding:6px 8px;text-align:center;font-size:10px;font-weight:700;color:' + (it.tipo==='MP'?'#0891b2':'#7c3aed') + '">' + it.tipo + '</td>';
+      html += '<td style="padding:6px 8px;text-align:center;font-size:10px;font-weight:700;color:' + (it.tipo==='MP'?'#7c3aed':'#7c3aed') + '">' + it.tipo + '</td>';
       html += '<td style="padding:6px 8px;color:#64748b">' + escapeHtmlNec(it.proveedor_sugerido || '—') + '</td>';
       // Lead time · si quiebre <= lead_time → advertencia roja (no llegará a tiempo)
       const lt = it.lead_time_dias || 14;
@@ -20931,7 +20932,7 @@ async function ckMarcar(itemId, estado){
     if (tab) tab.style.display = 'block';
     const btn = document.getElementById('herr-tab-btn-' + idx);
     if (btn) {
-      btn.style.background = '#0f766e';
+      btn.style.background = '#6d28d9';
       btn.style.color = '#fff';
       btn.style.fontWeight = '800';
     }
@@ -20981,7 +20982,7 @@ async function ckMarcar(itemId, estado){
             '<input id="herr-desde" type="date" value="2026-06-07" style="padding:5px 8px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px">' +
           '</div>' +
           '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
-            '<button onclick="herrDryRun()" style="background:#0891b2;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">🔍 Ver qué se cancelaría</button>' +
+            '<button onclick="herrDryRun()" style="background:#7c3aed;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">🔍 Ver qué se cancelaría</button>' +
             '<button onclick="herrAplicar()" style="background:#dc2626;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">🗑 Aplicar limpieza</button>' +
           '</div>' +
           '<div id="herr-resultado-limpieza" style="margin-top:12px;font-size:11px;color:#64748b"></div>' +
@@ -20990,7 +20991,7 @@ async function ckMarcar(itemId, estado){
         '<div id="herr-tab-2" class="herr-tab" style="display:none">' +
           '<div style="font-weight:700;color:#1e293b;font-size:14px;margin-bottom:4px">⚖ Productos con lote_size_kg absurdo (&lt;1 kg)</div>' +
           '<div style="font-size:12px;color:#64748b;margin-bottom:12px">Caso AZ HIBRID CLEAR: BD tenía 0.1 kg → planificador sugería 23 lotes diarios · arreglar aquí.</div>' +
-          '<button onclick="herrListarSospechosos()" style="background:#0f766e;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">📋 Listar sospechosos</button>' +
+          '<button onclick="herrListarSospechosos()" style="background:#6d28d9;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">📋 Listar sospechosos</button>' +
           '<div id="herr-resultado-sospechosos" style="margin-top:12px"></div>' +
         '</div>' +
         // Tab 3 · SKUs huérfanos
@@ -21008,7 +21009,7 @@ async function ckMarcar(itemId, estado){
             '<input id="herr-rm-sku" type="text" placeholder="SKU exacto (ej. SERUM-BT-001)" style="flex:1;min-width:180px;padding:6px 10px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px;text-transform:uppercase">' +
             '<input id="herr-rm-prod" type="text" placeholder="Producto destino (formula_headers)" list="herr-rm-prod-list" style="flex:2;min-width:220px;padding:6px 10px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px">' +
             '<datalist id="herr-rm-prod-list"></datalist>' +
-            '<button onclick="herrRemapearSku()" style="background:#0891b2;color:#fff;border:none;padding:6px 14px;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer">↻ Re-mapear</button>' +
+            '<button onclick="herrRemapearSku()" style="background:#7c3aed;color:#fff;border:none;padding:6px 14px;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer">↻ Re-mapear</button>' +
           '</div>' +
           '<div id="herr-resultado-remap" style="font-size:11px;color:#64748b"></div>' +
         '</div>' +
@@ -21019,7 +21020,7 @@ async function ckMarcar(itemId, estado){
           '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">' +
             '<input id="herr-dz-prod" type="text" placeholder="Producto a desactivar (autocomplete)" list="herr-rm-prod-list" style="flex:1;min-width:260px;padding:6px 10px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px">' +
             '<button onclick="herrDesactivarProd()" style="background:#dc2626;color:#fff;border:none;padding:6px 14px;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer">✕ Desactivar</button>' +
-            '<button onclick="herrActivarProd()" style="background:#0f766e;color:#fff;border:none;padding:6px 14px;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer">↻ Reactivar</button>' +
+            '<button onclick="herrActivarProd()" style="background:#6d28d9;color:#fff;border:none;padding:6px 14px;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer">↻ Reactivar</button>' +
           '</div>' +
           '<div id="herr-resultado-dz" style="font-size:11px;color:#64748b"></div>' +
         '</div>' +
@@ -21040,7 +21041,7 @@ async function ckMarcar(itemId, estado){
           '<div style="font-size:12px;color:#64748b;margin-bottom:12px">Define qué envases puede pedir cada cliente B2B desde el portal. Default permisivo: sin whitelist → ve todos los envases activos. Con whitelist → solo los que selecciones.</div>' +
           '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">' +
             '<input id="herr-cli-id" type="text" placeholder="cliente_id (ej. FERN)" style="flex:1;min-width:180px;padding:6px 10px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px;text-transform:uppercase">' +
-            '<button onclick="herrCliEnvasesLoad()" style="background:#0891b2;color:#fff;border:none;padding:6px 14px;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer">🔍 Cargar</button>' +
+            '<button onclick="herrCliEnvasesLoad()" style="background:#7c3aed;color:#fff;border:none;padding:6px 14px;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer">🔍 Cargar</button>' +
           '</div>' +
           '<div id="herr-cli-envases-out" style="margin-top:10px"></div>' +
         '</div>' +
@@ -21049,7 +21050,7 @@ async function ckMarcar(itemId, estado){
           '<div style="font-weight:700;color:#1e293b;font-size:14px;margin-bottom:4px">📅 Cobertura del calendario + llenar a 365d</div>' +
           '<div style="font-size:12px;color:#64748b;margin-bottom:12px">Verificá hasta qué fecha llega el calendario actual. Si está corto, dispará el cron auto-sugerir manualmente para llenarlo a 1 año (el cron diario corre 5 AM).</div>' +
           '<div style="display:flex;gap:8px;margin-bottom:12px">' +
-            '<button onclick="herrDiagCalendario()" style="background:#0891b2;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">🔍 Diagnosticar cobertura</button>' +
+            '<button onclick="herrDiagCalendario()" style="background:#7c3aed;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">🔍 Diagnosticar cobertura</button>' +
             '<button onclick="herrLlenarCalendario()" style="background:#7c3aed;color:#fff;border:none;padding:8px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">🚀 Llenar a 365d ahora</button>' +
           '</div>' +
           '<div id="herr-cal-out" style="margin-top:10px"></div>' +
@@ -21069,7 +21070,7 @@ async function ckMarcar(itemId, estado){
             '<div style="display:flex;gap:8px;align-items:center">' +
               '<input id="herr-var-test-canonico" type="text" placeholder="canónico a evaluar" style="flex:1;padding:6px 10px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px">' +
               '<input id="herr-var-test-kg" type="number" value="10" min="0.1" step="0.1" style="width:80px;padding:6px 8px;border:1px solid #cbd5e1;border-radius:5px;font-size:12px">' +
-              '<button onclick="herrVarEvaluar()" style="background:#0f766e;color:#fff;border:none;padding:6px 12px;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer">🧮 Evaluar</button>' +
+              '<button onclick="herrVarEvaluar()" style="background:#6d28d9;color:#fff;border:none;padding:6px 12px;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer">🧮 Evaluar</button>' +
             '</div>' +
           '</div>' +
           '<div id="herr-var-out" style="margin-top:10px;font-size:11px"></div>' +
@@ -21112,7 +21113,7 @@ async function ckMarcar(itemId, estado){
         out.innerHTML = '<span style="color:#dc2626">Error: ' + JSON.stringify(d.errores[0]) + '</span>';
         return;
       }
-      out.innerHTML = '<span style="color:#0f766e;font-weight:700">✓ SKU ' + sku + ' → ' + prod + ' (' + d.creados[0].sku + ')</span>';
+      out.innerHTML = '<span style="color:#6d28d9;font-weight:700">✓ SKU ' + sku + ' → ' + prod + ' (' + d.creados[0].sku + ')</span>';
       document.getElementById('herr-rm-sku').value = '';
       document.getElementById('herr-rm-prod').value = '';
     } catch(e) { out.innerHTML = '<span style="color:#dc2626">Error red: ' + e.message + '</span>'; }
@@ -21134,7 +21135,7 @@ async function ckMarcar(itemId, estado){
       });
       const d = await r.json();
       if (!r.ok || d.error) { out.innerHTML = '<span style="color:#dc2626">Error: ' + (d.error || r.status) + '</span>'; return; }
-      out.innerHTML = '<span style="color:#0f766e;font-weight:700">✓ ' + d.n_skus + ' SKU(s) actualizados a ' + d.volumen_ml + 'ml/g para ' + d.producto_nombre + '</span>';
+      out.innerHTML = '<span style="color:#6d28d9;font-weight:700">✓ ' + d.n_skus + ' SKU(s) actualizados a ' + d.volumen_ml + 'ml/g para ' + d.producto_nombre + '</span>';
       document.getElementById('herr-mlt-prod').value = '';
       document.getElementById('herr-mlt-ml').value = '';
     } catch(e) { out.innerHTML = '<span style="color:#dc2626">Error red: ' + e.message + '</span>'; }
@@ -21284,7 +21285,7 @@ async function ckMarcar(itemId, estado){
       const d = await r.json();
       if (!r.ok || d.error) { alert('Error: ' + (d.error || r.status)); return; }
       const out = document.getElementById('herr-var-out');
-      let msg = '<span style="color:#0f766e;font-weight:700">✓ ' + d.n_actualizadas + ' actualizadas</span>';
+      let msg = '<span style="color:#6d28d9;font-weight:700">✓ ' + d.n_actualizadas + ' actualizadas</span>';
       if ((d.errores || []).length) {
         msg += '<div style="margin-top:6px;color:#dc2626">Errores: ' + d.errores.map(e => e.producto + ': ' + e.error).join(' · ') + '</div>';
       }
@@ -21331,7 +21332,7 @@ async function ckMarcar(itemId, estado){
       });
       const d = await r.json();
       if (!r.ok || d.error) { out.innerHTML = '<span style="color:#dc2626">Error: ' + (d.error || r.status) + '</span>'; return; }
-      out.innerHTML = '<span style="color:#0f766e;font-weight:700">✓ ' + d.producto_nombre + ' desactivado</span>';
+      out.innerHTML = '<span style="color:#6d28d9;font-weight:700">✓ ' + d.producto_nombre + ' desactivado</span>';
       document.getElementById('herr-dz-prod').value = '';
     } catch(e) { out.innerHTML = '<span style="color:#dc2626">Error red: ' + e.message + '</span>'; }
   };
@@ -21346,7 +21347,7 @@ async function ckMarcar(itemId, estado){
       });
       const d = await r.json();
       if (!r.ok || d.error) { out.innerHTML = '<span style="color:#dc2626">Error: ' + (d.error || r.status) + '</span>'; return; }
-      out.innerHTML = '<span style="color:#0f766e;font-weight:700">✓ ' + d.producto_nombre + ' reactivado</span>';
+      out.innerHTML = '<span style="color:#6d28d9;font-weight:700">✓ ' + d.producto_nombre + ' reactivado</span>';
       document.getElementById('herr-dz-prod').value = '';
     } catch(e) { out.innerHTML = '<span style="color:#dc2626">Error red: ' + e.message + '</span>'; }
   };
@@ -21363,7 +21364,7 @@ async function ckMarcar(itemId, estado){
       const d = await r.json();
       if (!r.ok || d.error) { out.innerHTML = '<span style="color:#dc2626">Error: '+(d.error||r.status)+'</span>'; return; }
       let html = '<div style="background:#fff;border:1px solid #e5e7eb;border-radius:6px;padding:8px;margin-top:4px;max-height:240px;overflow:auto">';
-      html += '<div style="font-weight:700;color:#0f766e;margin-bottom:6px">🔍 Cancelaría ' + d.n_dry + ' Sugerida(s) · Fijo intacto</div>';
+      html += '<div style="font-weight:700;color:#6d28d9;margin-bottom:6px">🔍 Cancelaría ' + d.n_dry + ' Sugerida(s) · Fijo intacto</div>';
       if (d.items && d.items.length) {
         html += '<table style="width:100%;border-collapse:collapse;font-size:11px"><thead><tr style="background:#f1f5f9"><th style="padding:4px;text-align:left">Producto</th><th style="padding:4px">Fecha</th><th style="padding:4px;text-align:right">Kg</th><th style="padding:4px">Origen</th></tr></thead><tbody>';
         d.items.slice(0, 50).forEach(it => {
@@ -21391,7 +21392,7 @@ async function ckMarcar(itemId, estado){
       });
       const d = await r.json();
       if (!r.ok || d.error) { out.innerHTML = '<span style="color:#dc2626">Error: '+(d.error||r.status)+'</span>'; return; }
-      out.innerHTML = '<span style="color:#0f766e;font-weight:700">✓ ' + d.n_borradas + ' Sugerida(s) canceladas</span>';
+      out.innerHTML = '<span style="color:#6d28d9;font-weight:700">✓ ' + d.n_borradas + ' Sugerida(s) canceladas</span>';
       setTimeout(() => { location.reload(); }, 1500);
     } catch(e) { out.innerHTML = '<span style="color:#dc2626">Error: '+e.message+'</span>'; }
   };
@@ -21402,7 +21403,7 @@ async function ckMarcar(itemId, estado){
       const r = await fetch('/api/admin/lote-size-sospechoso');
       const d = await r.json();
       if (!r.ok || d.error) { out.innerHTML = '<span style="color:#dc2626">Error: '+(d.error||r.status)+'</span>'; return; }
-      if (!d.items || !d.items.length) { out.innerHTML = '<span style="color:#0f766e">✓ No hay productos con lote_size_kg absurdo</span>'; return; }
+      if (!d.items || !d.items.length) { out.innerHTML = '<span style="color:#6d28d9">✓ No hay productos con lote_size_kg absurdo</span>'; return; }
       let html = '<div style="font-size:11px;color:#64748b;margin-bottom:6px">' + d.n + ' producto(s) a arreglar · poné el valor real y pulsá Guardar:</div>';
       html += '<table style="width:100%;border-collapse:collapse;font-size:11px"><thead><tr style="background:#f1f5f9"><th style="padding:4px;text-align:left">Producto</th><th style="padding:4px;text-align:right">Actual</th><th style="padding:4px;text-align:right">Sugerido</th><th style="padding:4px;text-align:right">Nuevo kg</th><th style="padding:4px"></th></tr></thead><tbody>';
       d.items.forEach((it, idx) => {
@@ -21412,7 +21413,7 @@ async function ckMarcar(itemId, estado){
           '<td style="padding:4px;text-align:right;color:#dc2626">' + it.lote_size_kg_actual + '</td>' +
           '<td style="padding:4px;text-align:right;color:#64748b">' + sug + '</td>' +
           '<td style="padding:4px;text-align:right"><input id="herr-fix-' + idx + '" type="number" min="0.5" max="1000" step="0.1" value="' + (sug || 1) + '" style="width:60px;padding:3px 5px;border:1px solid #cbd5e1;border-radius:4px;font-size:11px;text-align:right"></td>' +
-          '<td style="padding:4px"><button onclick="herrFixProd(&quot;' + prodEsc + '&quot;,' + idx + ')" style="background:#0f766e;color:#fff;border:none;padding:4px 8px;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer">Guardar</button></td></tr>';
+          '<td style="padding:4px"><button onclick="herrFixProd(&quot;' + prodEsc + '&quot;,' + idx + ')" style="background:#6d28d9;color:#fff;border:none;padding:4px 8px;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer">Guardar</button></td></tr>';
       });
       html += '</tbody></table>';
       out.innerHTML = html;
@@ -21430,7 +21431,7 @@ async function ckMarcar(itemId, estado){
       if (!r.ok || d.error) { out.innerHTML = '<span style="color:#dc2626">Error: '+(d.error||r.status)+'</span>'; return; }
       const huerfanos = d.huerfanos_top || [];
       const productos = d.productos_disponibles || [];
-      if (!huerfanos.length) { out.innerHTML = '<span style="color:#0f766e">✓ No hay huérfanos vendiendo</span>'; return; }
+      if (!huerfanos.length) { out.innerHTML = '<span style="color:#6d28d9">✓ No hay huérfanos vendiendo</span>'; return; }
       window._herr_productos = productos;
       let html = '<div style="font-size:11px;color:#64748b;margin-bottom:6px">' + huerfanos.length + ' SKU(s) huérfanos · ' + d.n_huerfanos_total + ' total en BD · elegí producto y pulsá Mapear · al final ✅ Mapear todos</div>';
       html += '<div style="max-height:380px;overflow:auto;border:1px solid #e5e7eb;border-radius:6px">';
@@ -21438,7 +21439,7 @@ async function ckMarcar(itemId, estado){
       huerfanos.forEach((h, idx) => {
         const skuEsc = (h.sku || '').replace(/"/g, '&quot;').replace(/\'/g, '&#39;');
         html += '<tr style="border-bottom:1px solid #f1f5f9"><td style="padding:5px;font-family:ui-monospace;font-weight:700">' + h.sku + '</td>' +
-          '<td style="padding:5px;text-align:right;color:#0891b2;font-weight:700">' + h.uds_60d + '</td>' +
+          '<td style="padding:5px;text-align:right;color:#7c3aed;font-weight:700">' + h.uds_60d + '</td>' +
           '<td style="padding:5px"><select id="herr-h-prod-' + idx + '" style="width:100%;padding:3px 4px;border:1px solid #cbd5e1;border-radius:4px;font-size:11px"><option value="">— elegir —</option>';
         // Sugerencia: producto cuyo nombre contenga el SKU como substring
         const skuU = (h.sku || '').toUpperCase();
@@ -21448,7 +21449,7 @@ async function ckMarcar(itemId, estado){
           html += '<option value="' + p.replace(/"/g, '&quot;') + '"' + sel + '>' + p + '</option>';
         });
         html += '</select></td>' +
-          '<td style="padding:5px"><button onclick="herrMapearUno(&quot;' + skuEsc + '&quot;,' + idx + ')" style="background:#0f766e;color:#fff;border:none;padding:3px 8px;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer">Map</button></td></tr>';
+          '<td style="padding:5px"><button onclick="herrMapearUno(&quot;' + skuEsc + '&quot;,' + idx + ')" style="background:#6d28d9;color:#fff;border:none;padding:3px 8px;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer">Map</button></td></tr>';
       });
       html += '</tbody></table></div>';
       html += '<div style="margin-top:8px"><button onclick="herrMapearTodos()" style="background:#7c3aed;color:#fff;border:none;padding:6px 14px;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer">✅ Mapear todos los seleccionados (bulk)</button></div>';
@@ -21468,7 +21469,7 @@ async function ckMarcar(itemId, estado){
       if (!r.ok || d.error) { alert('Error: ' + (d.error||r.status)); return; }
       sel.disabled = true;
       sel.style.background = '#dcfce7';
-      if (sel.nextElementSibling) sel.nextElementSibling.innerHTML = '<span style="color:#0f766e;font-weight:700;font-size:14px">✓</span>';
+      if (sel.nextElementSibling) sel.nextElementSibling.innerHTML = '<span style="color:#6d28d9;font-weight:700;font-size:14px">✓</span>';
     } catch(e) { alert('Error red: ' + e.message); }
   };
   window.herrMapearTodos = async function() {
@@ -21510,7 +21511,7 @@ async function ckMarcar(itemId, estado){
       // Marcar visualmente como hecho
       inp.disabled = true;
       inp.style.background = '#dcfce7';
-      inp.nextElementSibling && (inp.nextElementSibling.innerHTML = '<span style="color:#0f766e;font-weight:700">✓</span>');
+      inp.nextElementSibling && (inp.nextElementSibling.innerHTML = '<span style="color:#6d28d9;font-weight:700">✓</span>');
     } catch(e) { alert('Error: ' + e.message); }
   };
 
@@ -21598,7 +21599,7 @@ async function ckMarcar(itemId, estado){
           '<div id="mp-tabla"></div>' +
           '<div style="margin-top:14px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">' +
             '<button onclick="document.getElementById(\\'modal-programar\\').remove()" style="padding:8px 14px;border:1px solid #cbd5e1;background:#fff;color:#475569;border-radius:6px;cursor:pointer;font-size:13px">Cancelar</button>' +
-            '<button id="mp-btn-uno" onclick="generarSoloProximoLote()" style="padding:8px 16px;background:#0f766e;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:700" title="Crea solo 1 lote (la próxima fecha sugerida) · vos arrastrás más si querés">📅 Solo el próximo (1 lote)</button>' +
+            '<button id="mp-btn-uno" onclick="generarSoloProximoLote()" style="padding:8px 16px;background:#6d28d9;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:700" title="Crea solo 1 lote (la próxima fecha sugerida) · vos arrastrás más si querés">📅 Solo el próximo (1 lote)</button>' +
             '<button id="mp-btn-generar" onclick="generarProgramacionesProducto()" style="padding:8px 16px;background:#7c3aed;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:700" title="Genera la cadena completa de lotes en el horizonte">🤖 Generar en cadena</button>' +
           '</div>' +
         '</div>' +
@@ -21985,7 +21986,7 @@ async function ckMarcar(itemId, estado){
       html += '<td style="padding:9px 6px;color:#64748b;font-size:11px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + escapeHtmlNec(it.observaciones || '') + '">' + escapeHtmlNec((it.observaciones || '').slice(0, 40)) + '</td>';
       html += '<td style="padding:9px 6px;text-align:right;white-space:nowrap">';
       if (it.estado === 'pendiente' || it.estado === 'programado') {
-        html += '<button onclick="moverPEC(' + it.id + ',&#39;' + escapeHtmlNec(it.producto) + '&#39;,&#39;' + escapeHtmlNec(it.fecha_programada) + '&#39;)" style="background:transparent;border:1px solid #0f766e;color:#0f766e;padding:4px 8px;border-radius:4px;font-size:11px;cursor:pointer;margin-right:4px" title="Cambiar fecha">📅 Mover</button>';
+        html += '<button onclick="moverPEC(' + it.id + ',&#39;' + escapeHtmlNec(it.producto) + '&#39;,&#39;' + escapeHtmlNec(it.fecha_programada) + '&#39;)" style="background:transparent;border:1px solid #6d28d9;color:#6d28d9;padding:4px 8px;border-radius:4px;font-size:11px;cursor:pointer;margin-right:4px" title="Cambiar fecha">📅 Mover</button>';
         html += '<button onclick="pausarPEC(' + it.id + ',&#39;' + escapeHtmlNec(it.producto) + '&#39;)" style="background:transparent;border:1px solid #ca8a04;color:#ca8a04;padding:4px 8px;border-radius:4px;font-size:11px;cursor:pointer;margin-right:4px" title="Pausar · esperando MP u otro recurso">⏸ Pausar</button>';
         html += '<button onclick="cancelarPEC(' + it.id + ')" style="background:transparent;border:1px solid #cbd5e1;color:#64748b;padding:4px 10px;border-radius:4px;font-size:11px;cursor:pointer">Cancelar</button>';
       } else if (it.estado === 'esperando_recurso') {
@@ -22160,7 +22161,7 @@ async function ckMarcar(itemId, estado){
     // salgan colapsados y ya uno escoja si los abre".
     let html = '<details style="background:white;border-radius:14px;margin-bottom:14px;border:1px solid #e2e8f0;overflow:hidden">';
     html += '<summary style="cursor:pointer;padding:14px 18px;background:linear-gradient(90deg,#f0fdfa,#ecfeff);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">';
-    html += '<div><span style="color:#0f766e;font-size:16px;font-weight:800">🛍️ ' + escapeHtmlNec(cli.cliente_nombre) + '</span>';
+    html += '<div><span style="color:#6d28d9;font-size:16px;font-weight:800">🛍️ ' + escapeHtmlNec(cli.cliente_nombre) + '</span>';
     html += ' <span style="font-size:11px;font-weight:500;color:#94a3b8">· Shopify auto · ' + prods.length + ' SKUs</span></div>';
     html += '<div>' + chips + '</div></summary>';
     html += '<div style="padding:14px 18px;overflow-x:auto">';
@@ -22244,7 +22245,7 @@ async function ckMarcar(itemId, estado){
         html += '<td style="padding:10px 8px;text-align:center">' + p.stock_uds_total + '</td>';
         html += '<td style="padding:10px 8px;text-align:center;font-weight:700;color:' + cfg.text + '">' + dias + '</td>';
         // Programar
-        html += '<td style="padding:10px 8px;text-align:right"><button onclick="abrirPlanProduccion(' + idx + ')" style="background:#0f766e;color:#fff;border:none;padding:7px 16px;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer">📅 Programar</button></td>';
+        html += '<td style="padding:10px 8px;text-align:right"><button onclick="abrirPlanProduccion(' + idx + ')" style="background:#6d28d9;color:#fff;border:none;padding:7px 16px;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer">📅 Programar</button></td>';
         html += '</tr>';
         // Sub-fila colapsable con desglose por tono (solo si hay ≥2 tonos)
         if (_tonos.length >= 2) {
@@ -22319,7 +22320,7 @@ async function ckMarcar(itemId, estado){
       if (motivoTxt) html += '<span style="color:#92400e">' + motivoTxt + '</span>';
       // Botones acción inline
       if (lt.estado === 'pendiente' || lt.estado === 'programado') {
-        html += '<button onclick="moverPEC(' + lt.id + ',&#39;' + prodEsc + '&#39;,&#39;' + (lt.fecha || '') + '&#39;)" style="background:transparent;border:1px solid #0f766e;color:#0f766e;padding:1px 6px;border-radius:3px;font-size:10px;cursor:pointer" title="Mover fecha">📅</button>';
+        html += '<button onclick="moverPEC(' + lt.id + ',&#39;' + prodEsc + '&#39;,&#39;' + (lt.fecha || '') + '&#39;)" style="background:transparent;border:1px solid #6d28d9;color:#6d28d9;padding:1px 6px;border-radius:3px;font-size:10px;cursor:pointer" title="Mover fecha">📅</button>';
         html += '<button onclick="pausarPEC(' + lt.id + ',&#39;' + prodEsc + '&#39;)" style="background:transparent;border:1px solid #ca8a04;color:#ca8a04;padding:1px 6px;border-radius:3px;font-size:10px;cursor:pointer" title="Pausar">⏸</button>';
         html += '<button onclick="cancelarPEC(' + lt.id + ')" style="background:transparent;border:1px solid #cbd5e1;color:#64748b;padding:1px 6px;border-radius:3px;font-size:10px;cursor:pointer" title="Cancelar">✕</button>';
       } else if (lt.estado === 'esperando_recurso') {
@@ -22370,7 +22371,7 @@ async function ckMarcar(itemId, estado){
       }
       if (p.proxima_sugerida_fecha) {
         const en = p.proxima_sugerida_dias;
-        const colorSug = en <= 0 ? '#dc2626' : (en <= 7 ? '#ea580c' : '#0f766e');
+        const colorSug = en <= 0 ? '#dc2626' : (en <= 7 ? '#ea580c' : '#6d28d9');
         lineas += '<div style="font-size:11px;color:' + colorSug + ';font-weight:700">Próxima sugerida: ' + p.proxima_sugerida_fecha;
         if (en != null) lineas += ' (' + (en > 0 ? 'en ' + en + 'd' : 'YA · ' + (-en) + 'd atrasado') + ')';
         lineas += '</div>';
@@ -22479,7 +22480,7 @@ async function ckMarcar(itemId, estado){
     // Sebastián 14-may-2026: "bien ordenado" · separo en 3 secciones claras:
     // 1) Diagnóstico (qué pasa hoy) · 2) Programar (acción rápida) · 3) Mover/Pausar (acciones sobre lo agendado)
 
-    html += '<div style="font-size:11px;color:#0f766e;font-weight:800;text-transform:uppercase;letter-spacing:.5px;margin:14px 0 6px;padding-bottom:4px;border-bottom:2px solid #0f766e">① Diagnóstico</div>';
+    html += '<div style="font-size:11px;color:#6d28d9;font-weight:800;text-transform:uppercase;letter-spacing:.5px;margin:14px 0 6px;padding-bottom:4px;border-bottom:2px solid #6d28d9">① Diagnóstico</div>';
 
     // ── Demanda actual ──
     html += '<div style="background:#f8fafc;border-radius:8px;padding:12px;margin-bottom:8px;border-left:4px solid ' + cfg.border + '">';
@@ -22494,7 +22495,7 @@ async function ckMarcar(itemId, estado){
     // ── Última producción + horizonte ──
     if (p.ultima_produccion_fecha) {
       const en = p.proxima_sugerida_dias;
-      const colorSug = en != null && en <= 0 ? '#dc2626' : (en != null && en <= 7 ? '#ea580c' : '#0f766e');
+      const colorSug = en != null && en <= 0 ? '#dc2626' : (en != null && en <= 7 ? '#ea580c' : '#6d28d9');
       html += '<div style="background:#fef9c3;border-left:4px solid #ca8a04;border-radius:8px;padding:12px;margin-bottom:12px">';
       html += '<div style="font-size:11px;color:#854d0e;font-weight:700;margin-bottom:6px">📜 Última producción · horizonte</div>';
       html += '<div style="font-size:12px;color:#475569">Producido: <strong>' + p.ultima_produccion_fecha + '</strong> · ' + p.ultima_produccion_kg + ' kg (hace ' + p.dias_desde_ultima + 'd)</div>';
@@ -22549,7 +22550,7 @@ async function ckMarcar(itemId, estado){
       html += '<div id="' + stId + '" style="font-size:11px;margin-top:6px"></div>';
       html += '</div>';
     } else {
-      html += '<div style="background:#f0fdfa;border-left:4px solid #14b8a6;border-radius:8px;padding:6px 10px;margin-bottom:12px;font-size:11px;color:#475569">';
+      html += '<div style="background:#f0fdfa;border-left:4px solid #a78bfa;border-radius:8px;padding:6px 10px;margin-bottom:12px;font-size:11px;color:#475569">';
       html += '🛒 ' + p.n_skus_mapeados + ' SKU(s) Shopify mapeados: <code style="font-family:ui-monospace">' + (p.skus_mapeados || []).join(', ') + '</code>';
       html += '</div>';
     }
@@ -22577,7 +22578,7 @@ async function ckMarcar(itemId, estado){
     }
 
     // ═══════ SECCIÓN 2 · PROGRAMAR PRODUCCIÓN ═══════
-    html += '<div style="font-size:11px;color:#0f766e;font-weight:800;text-transform:uppercase;letter-spacing:.5px;margin:18px 0 6px;padding-bottom:4px;border-bottom:2px solid #0f766e">② Programar producción</div>';
+    html += '<div style="font-size:11px;color:#6d28d9;font-weight:800;text-transform:uppercase;letter-spacing:.5px;margin:18px 0 6px;padding-bottom:4px;border-bottom:2px solid #6d28d9">② Programar producción</div>';
 
     // FIX 23-may-2026 Sebastián · "la cantidad debe ir con el horizonte" ·
     // unifica los 3 bloques anteriores (Cubrir 30/60/90, Lote único,
@@ -22603,7 +22604,7 @@ async function ckMarcar(itemId, estado){
 
     // ═══════ SECCIÓN 3 · LOTES AGENDADOS · ACCIONES ═══════
     if ((p.planificacion || []).length > 0) {
-      html += '<div style="font-size:11px;color:#0f766e;font-weight:800;text-transform:uppercase;letter-spacing:.5px;margin:18px 0 6px;padding-bottom:4px;border-bottom:2px solid #0f766e">③ Lotes ya agendados · ' + p.planificacion.length + '</div>';
+      html += '<div style="font-size:11px;color:#6d28d9;font-weight:800;text-transform:uppercase;letter-spacing:.5px;margin:18px 0 6px;padding-bottom:4px;border-bottom:2px solid #6d28d9">③ Lotes ya agendados · ' + p.planificacion.length + '</div>';
       html += '<div style="background:#f8fafc;border-radius:8px;padding:10px">';
       html += renderLotesInline(p.planificacion, p.producto_nombre);
       html += '</div>';
