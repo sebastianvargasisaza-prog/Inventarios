@@ -1220,7 +1220,19 @@ def auto_plan_aplicar():
     except Exception:
         horizonte = 60
     plan = generar_plan(horizonte_dias=horizonte, tipo='manual', usuario=u)
-    resultado = aplicar_plan(plan, usuario=u)
+    # Lock distribuido · no duplicar SOLs/producciones si coincide con el cron
+    # u otro disparo entre los 3 workers Gunicorn (fix 28-may).
+    from blueprints.auto_plan_jobs import _adquirir_lock_cron, _liberar_lock_cron
+    from database import get_db as _get_db
+    if not _adquirir_lock_cron(_get_db(), 'auto_plan_diario', ttl_horas=4):
+        return jsonify({'ok': False, 'error': 'Auto-plan ya en curso · intenta en unos segundos'}), 409
+    try:
+        resultado = aplicar_plan(plan, usuario=u)
+    finally:
+        try:
+            _liberar_lock_cron(_get_db(), 'auto_plan_diario')
+        except Exception:
+            pass
     return jsonify({
         'ok': True,
         'resultado': resultado,
@@ -1244,12 +1256,13 @@ def auto_plan_ejecutar_ahora():
     if u not in ADMIN_USERS:
         return jsonify({'error': 'Solo admin'}), 403
     try:
-        from blueprints.auto_plan_jobs import ejecutar_auto_plan_diario
+        from blueprints.auto_plan_jobs import ejecutar_auto_plan_diario_con_lock
         from flask import current_app
-        # Ejecutar en background para no bloquear el response
+        # Ejecutar en background para no bloquear el response · con lock para
+        # no duplicar SOLs/producciones si coincide con el cron u otro trigger.
         import threading
         threading.Thread(
-            target=ejecutar_auto_plan_diario,
+            target=ejecutar_auto_plan_diario_con_lock,
             args=(current_app._get_current_object(),),
             daemon=True
         ).start()
@@ -1295,11 +1308,11 @@ def auto_plan_asegurar_actualizado():
 
     # Disparar en background
     try:
-        from blueprints.auto_plan_jobs import ejecutar_auto_plan_diario
+        from blueprints.auto_plan_jobs import ejecutar_auto_plan_diario_con_lock
         from flask import current_app
         import threading
         threading.Thread(
-            target=ejecutar_auto_plan_diario,
+            target=ejecutar_auto_plan_diario_con_lock,
             args=(current_app._get_current_object(),),
             daemon=True
         ).start()

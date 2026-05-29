@@ -512,6 +512,37 @@ def ejecutar_auto_plan_diario(app):
             log.exception(f'[auto-plan-cron] error: {e}')
 
 
+def ejecutar_auto_plan_diario_con_lock(app):
+    """Wrapper con lock distribuido para triggers MANUALES / page-load.
+
+    Fix 28-may · _loop_cron ya toma 'auto_plan_diario', pero los triggers
+    manuales (/api/auto-plan/ejecutar-ahora, /asegurar-actualizado) y el
+    page-load de /planta llamaban a ejecutar_auto_plan_diario directo, SIN
+    lock → con 3 workers Gunicorn dos disparos simultáneos creaban SOLs y
+    producciones DUPLICADAS. Este wrapper contiende sobre el MISMO job_name,
+    así solo una corrida ocurre a la vez (sea cron o manual).
+    """
+    from database import get_db
+    _lock_ok = False
+    try:
+        with app.app_context():
+            _lock_ok = _adquirir_lock_cron(get_db(), 'auto_plan_diario', ttl_horas=4)
+    except Exception as e:
+        log.warning('[auto-plan-manual] _adquirir_lock_cron fallo: %s', e)
+        _lock_ok = False
+    if not _lock_ok:
+        log.info('[auto-plan-manual] Skipped — auto-plan ya en curso (lock tomado)')
+        return
+    try:
+        ejecutar_auto_plan_diario(app)
+    finally:
+        try:
+            with app.app_context():
+                _liberar_lock_cron(get_db(), 'auto_plan_diario')
+        except Exception as e:
+            log.warning('[auto-plan-manual] _liberar_lock_cron fallo: %s', e)
+
+
 def _segundos_hasta_proximo_cron():
     """Cuántos segundos faltan hasta la próxima ejecución (próximo L-V 7am)."""
     ahora = datetime.now()

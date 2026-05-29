@@ -13172,10 +13172,13 @@ def admin_import_inventario_envase_xlsx():
                   it['stock'], it['codigo']))
             if abs(it['stock'] - stock_anterior) > 0.01:
                 try:
+                    # Fix 28-may: 'Ajuste' MEE registra el DELTA CON SIGNO (no
+                    # abs) · antes una disminución se guardaba positiva → drift
+                    # entre maestro_mee.stock_actual y SUM(movimientos_mee).
                     c.execute("""
                         INSERT INTO movimientos_mee (mee_codigo, tipo, cantidad, responsable, observaciones)
                         VALUES (?, 'Ajuste', ?, ?, ?)
-                    """, (it['codigo'], abs(it['stock']-stock_anterior), u,
+                    """, (it['codigo'], round(it['stock']-stock_anterior, 2), u,
                           f'[Import INVENTARIO ENVASE.xlsx · {it["sheet"]}#{it["row"]}] '
                           f'{stock_anterior:.0f} → {it["stock"]:.0f}'))
                 except sqlite3.OperationalError:
@@ -14306,8 +14309,14 @@ def anular_movimiento():
         'proveedor': row[9], 'estado_lote': row[10],
     }
 
-    # Tipo inverso
-    tipo_contra = 'Entrada' if (orig['tipo'] == 'Salida') else 'Salida'
+    # Tipo inverso · el original suma (Entrada/Ajuste +/Ajuste) o resta
+    # (Salida/Ajuste -); el contra-movimiento debe NEGAR esa contribución.
+    # Fix 28-may: antes solo 'Salida'→'Entrada', así un 'Ajuste -' generaba
+    # 'Salida' y DUPLICABA el negativo en vez de neutralizarlo.
+    if orig['tipo'] in ('Salida', 'salida', 'SALIDA', 'Ajuste -'):
+        tipo_contra = 'Entrada'
+    else:
+        tipo_contra = 'Salida'
     obs_contra = (f'ANULACION mov #{orig["id"]} ({orig["tipo"]} {orig["cantidad"]}g) · '
                   f'Motivo: {motivo} · Por: {u}')
 

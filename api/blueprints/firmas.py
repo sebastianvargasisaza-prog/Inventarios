@@ -65,18 +65,29 @@ def _client_ip():
 
 
 def _verify_password(username, password):
-    """Verifica password contra hash PBKDF2 de COMPRAS_USERS (config.py).
+    """Verifica password contra el hash del usuario (BD users_passwords → env
+    COMPRAS_USERS), igual que el login principal.
 
-    Retorna True/False. Defensivo: si el username no existe o el hash es
-    inválido, retorna False sin filtrar la razón.
+    Fix 28-may: antes solo miraba COMPRAS_USERS (env) e ignoraba
+    users_passwords → un usuario que cambió su contraseña vía UI no podía
+    e-firmar (Part 11). Ahora resuelve BD→env como /login.
+
+    Retorna True/False. Defensivo: no filtra la razón del fallo.
     """
     if not username or not password:
         return False
-    stored = COMPRAS_USERS.get(username, "")
+    try:
+        from blueprints.core import _resolve_password_hash
+        stored = _resolve_password_hash(username)
+    except Exception:
+        stored = COMPRAS_USERS.get(username, "")
     if not stored:
         return False
     try:
-        return check_password_hash(stored, password)
+        if stored.startswith('pbkdf2:') or stored.startswith('scrypt:'):
+            return check_password_hash(stored, password)
+        import hmac as _hmac
+        return _hmac.compare_digest(stored, password)
     except Exception:
         return False
 

@@ -763,14 +763,27 @@ def cont_kpis():
         (mes_inicio,)
     ).fetchone()[0]
 
-    # Cartera pendiente (emitidas no pagadas)
-    cartera = conn.execute(
-        "SELECT COALESCE(SUM(total),0) FROM facturas WHERE estado='Emitida'"
-    ).fetchone()[0]
-    cartera_vencida = conn.execute(
-        "SELECT COALESCE(SUM(total),0) FROM facturas WHERE estado='Emitida' AND fecha_vencimiento!='' AND fecha_vencimiento<?",
-        (hoy,)
-    ).fetchone()[0]
+    # Cartera pendiente = saldo (total − pagos) de facturas no saldadas.
+    # Fix 28-may · antes solo contaba estado='Emitida' por su TOTAL e ignoraba
+    # 'Parcial' → subreportaba la cartera. Ahora incluye 'Parcial' por su saldo
+    # neto (total − abonos) y 'Emitida' (sin abonos = total).
+    cartera = conn.execute("""
+        SELECT COALESCE(SUM(f.total - COALESCE(p.pagado,0)),0)
+        FROM facturas f
+        LEFT JOIN (SELECT numero_factura, SUM(monto) AS pagado
+                   FROM facturas_pagos GROUP BY numero_factura) p
+          ON p.numero_factura = f.numero
+        WHERE f.estado IN ('Emitida','Parcial')
+    """).fetchone()[0]
+    cartera_vencida = conn.execute("""
+        SELECT COALESCE(SUM(f.total - COALESCE(p.pagado,0)),0)
+        FROM facturas f
+        LEFT JOIN (SELECT numero_factura, SUM(monto) AS pagado
+                   FROM facturas_pagos GROUP BY numero_factura) p
+          ON p.numero_factura = f.numero
+        WHERE f.estado IN ('Emitida','Parcial')
+          AND f.fecha_vencimiento!='' AND f.fecha_vencimiento<?
+    """, (hoy,)).fetchone()[0]
 
     # Facturas emitidas este mes
     n_fact_mes = conn.execute(

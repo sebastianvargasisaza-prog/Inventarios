@@ -4,7 +4,7 @@ import json
 import sqlite3
 import hmac
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, date, timedelta
 from flask import Blueprint, jsonify, request, Response, session, redirect, url_for
 from werkzeug.security import generate_password_hash, check_password_hash
 from config import DB_PATH, COMPRAS_USERS, ADMIN_USERS, CONTADORA_USERS

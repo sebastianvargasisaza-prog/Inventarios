@@ -794,7 +794,8 @@ def chat_messages(thread_id):
                     importante=es_mencion
                 )
         except Exception as _e:
-            logger.warning('push_notif chat fallo: %s', _e)
+            import logging as _lg
+            _lg.getLogger('chat').warning('push_notif chat fallo: %s', _e)
 
         # Email solo a los mencionados (no a todos los miembros).
         # Sebastian (29-abr-2026): asi en grupos grandes no se spamea
