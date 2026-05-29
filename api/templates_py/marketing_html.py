@@ -7,150 +7,150 @@ MARKETING_HTML = r"""<!DOCTYPE html>
 <script>(function(){try{var t=localStorage.getItem("cx-theme");if(t==="dark")document.documentElement.setAttribute("data-theme","dark");}catch(e){}})();</script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
-body{font-family:'Segoe UI',sans-serif;background:#0f172a;color:#e2e8f0;min-height:100vh;font-size:14px;}
-::-webkit-scrollbar{width:6px;height:6px;}::-webkit-scrollbar-track{background:#1e293b;}::-webkit-scrollbar-thumb{background:#475569;border-radius:3px;}
+body{font-family:'Segoe UI',sans-serif;background:var(--cx-bg);color:var(--cx-text);min-height:100vh;font-size:14px;}
+::-webkit-scrollbar{width:6px;height:6px;}::-webkit-scrollbar-track{background:var(--cx-card);}::-webkit-scrollbar-thumb{background:#475569;border-radius:3px;}
 
 /* ─── Header ─── */
-.hdr{background:#1e293b;border-bottom:1px solid #334155;padding:14px 20px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;}
+.hdr{background:var(--cx-card);border-bottom:1px solid #e7e5e4;padding:14px 20px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;}
 .hdr-brand{display:flex;align-items:center;gap:10px;}
 .hdr-brand h1{font-size:16px;font-weight:800;color:#fff;}
-.hdr-brand span{font-size:11px;color:#94a3b8;background:#0f172a;padding:2px 8px;border-radius:20px;border:1px solid #334155;}
-.hdr-user{font-size:12px;color:#64748b;}
-.hdr-user strong{color:#e2e8f0;}
+.hdr-brand span{font-size:11px;color:var(--cx-text-mute);background:var(--cx-bg-alt);padding:2px 8px;border-radius:20px;border:1px solid #e7e5e4;}
+.hdr-user{font-size:12px;color:var(--cx-text-mute);}
+.hdr-user strong{color:var(--cx-text);}
 .back-link{font-size:12px;color:#667eea;text-decoration:none;display:flex;align-items:center;gap:4px;}
 .back-link:hover{color:#818cf8;}
 
 /* ─── Tabs ─── */
-.tabs-bar{background:#1e293b;border-bottom:1px solid #334155;display:flex;overflow-x:auto;padding:0 20px;}
-.tab-btn{padding:12px 20px;font-size:13px;font-weight:600;color:#64748b;border:none;background:none;cursor:pointer;white-space:nowrap;border-bottom:3px solid transparent;transition:.15s;}
-.tab-btn:hover{color:#e2e8f0;}
+.tabs-bar{background:var(--cx-card);border-bottom:1px solid #e7e5e4;display:flex;overflow-x:auto;padding:0 20px;}
+.tab-btn{padding:12px 20px;font-size:13px;font-weight:600;color:var(--cx-text-mute);border:none;background:none;cursor:pointer;white-space:nowrap;border-bottom:3px solid transparent;transition:.15s;}
+.tab-btn:hover{color:var(--cx-text);}
 .tab-btn.active{color:#667eea;border-bottom-color:#667eea;}
 .tab-panel{display:none;padding:24px 20px;}
 .tab-panel.active{display:block;}
 
 /* ─── Cards & Layout ─── */
-.page-title{font-size:18px;font-weight:700;color:#f1f5f9;margin-bottom:4px;}
-.page-sub{font-size:12px;color:#64748b;margin-bottom:24px;}
+.page-title{font-size:18px;font-weight:700;color:var(--cx-text);margin-bottom:4px;}
+.page-sub{font-size:12px;color:var(--cx-text-mute);margin-bottom:24px;}
 .kpi-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:14px;margin-bottom:24px;}
-.kpi-card{background:#1e293b;border:1px solid #334155;border-radius:12px;padding:16px;}
-.kpi-label{font-size:11px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;}
-.kpi-val{font-size:24px;font-weight:800;color:#f1f5f9;line-height:1;}
-.kpi-sub{font-size:11px;color:#64748b;margin-top:4px;}
-.kpi-card.green .kpi-val{color:#34d399;}
-.kpi-card.red .kpi-val{color:#f87171;}
-.kpi-card.blue .kpi-val{color:#60a5fa;}
-.kpi-card.yellow .kpi-val{color:#fbbf24;}
-.kpi-card.purple .kpi-val{color:#a78bfa;}
+.kpi-card{background:var(--cx-card);border:1px solid #e7e5e4;border-radius:12px;padding:16px;}
+.kpi-label{font-size:11px;color:var(--cx-text-mute);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;}
+.kpi-val{font-size:24px;font-weight:800;color:var(--cx-text);line-height:1;}
+.kpi-sub{font-size:11px;color:var(--cx-text-mute);margin-top:4px;}
+.kpi-card.green .kpi-val{color:#16a34a;}
+.kpi-card.red .kpi-val{color:#dc2626;}
+.kpi-card.blue .kpi-val{color:#2563eb;}
+.kpi-card.yellow .kpi-val{color:#b45309;}
+.kpi-card.purple .kpi-val{color:#6d28d9;}
 
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
 .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;}
 @media(max-width:800px){.grid2,.grid3{grid-template-columns:1fr;}}
 
-.card{background:#1e293b;border:1px solid #334155;border-radius:12px;overflow:hidden;}
-.card-hdr{padding:14px 16px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #334155;}
-.card-title{font-size:13px;font-weight:700;color:#f1f5f9;}
+.card{background:var(--cx-card);border:1px solid #e7e5e4;border-radius:12px;overflow:hidden;}
+.card-hdr{padding:14px 16px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #e7e5e4;}
+.card-title{font-size:13px;font-weight:700;color:var(--cx-text);}
 .card-body{padding:16px;}
 
 /* ─── Table ─── */
 .tbl-wrap{overflow-x:auto;}
 table{width:100%;border-collapse:collapse;}
-th{font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.5px;padding:10px 12px;text-align:left;background:#0f172a;border-bottom:1px solid #334155;}
-td{padding:10px 12px;border-bottom:1px solid #1e293b;font-size:13px;}
-tr:hover td{background:#263348;}
-.empty-row td{text-align:center;color:#64748b;padding:32px;}
+th{font-size:11px;font-weight:700;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.5px;padding:10px 12px;text-align:left;background:var(--cx-bg-alt);border-bottom:1px solid #e7e5e4;}
+td{padding:10px 12px;border-bottom:1px solid var(--cx-hairline);font-size:13px;}
+tr:hover td{background:var(--cx-bg-alt);}
+.empty-row td{text-align:center;color:var(--cx-text-mute);padding:32px;}
 
 /* ─── Badges ─── */
 .badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;}
-.badge-green{background:#052e16;color:#34d399;border:1px solid #065f46;}
-.badge-blue{background:#0c1a4d;color:#60a5fa;border:1px solid #1e3a8a;}
-.badge-yellow{background:#2d1a00;color:#fbbf24;border:1px solid #78350f;}
-.badge-red{background:#2d0000;color:#f87171;border:1px solid #7f1d1d;}
-.badge-gray{background:#1e293b;color:#94a3b8;border:1px solid #334155;}
-.badge-purple{background:#1e0a3c;color:#a78bfa;border:1px solid #4c1d95;}
+.badge-green{background:var(--cx-success-pale);color:#16a34a;border:1px solid var(--cx-hairline);}
+.badge-blue{background:var(--cx-info-pale);color:#2563eb;border:1px solid var(--cx-hairline);}
+.badge-yellow{background:var(--cx-warn-pale);color:#b45309;border:1px solid var(--cx-hairline);}
+.badge-red{background:#2d0000;color:#dc2626;border:1px solid #7f1d1d;}
+.badge-gray{background:var(--cx-card);color:var(--cx-text-mute);border:1px solid #e7e5e4;}
+.badge-purple{background:var(--cx-primary-soft);color:#6d28d9;border:1px solid #4c1d95;}
 
 /* ─── Buttons ─── */
 .btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:8px;border:none;cursor:pointer;font-size:13px;font-weight:600;transition:.15s;}
 .btn-primary{background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;}
 .btn-primary:hover{opacity:.9;}
 .btn-sm{padding:5px 12px;font-size:12px;}
-.btn-outline{background:transparent;border:1px solid #334155;color:#94a3b8;}
-.btn-outline:hover{border-color:#475569;color:#e2e8f0;}
-.btn-danger{background:#7f1d1d;color:#fca5a5;}
+.btn-outline{background:transparent;border:1px solid #e7e5e4;color:var(--cx-text-mute);}
+.btn-outline:hover{border-color:var(--cx-text-faint);color:var(--cx-text);}
+.btn-danger{background:#7f1d1d;color:#dc2626;}
 .btn-danger:hover{background:#991b1b;}
-.btn-agent{background:linear-gradient(135deg,#1e293b,#0f172a);border:1px solid #4c1d95;color:#a78bfa;width:100%;padding:14px;font-size:14px;font-weight:700;border-radius:10px;cursor:pointer;transition:.2s;display:flex;align-items:center;justify-content:center;gap:8px;}
-.btn-agent:hover{background:linear-gradient(135deg,#4c1d95,#1e293b);border-color:#7c3aed;}
+.btn-agent{background:var(--cx-primary-grad);border:none;color:#fff;width:100%;padding:14px;font-size:14px;font-weight:700;border-radius:10px;cursor:pointer;transition:.2s;display:flex;align-items:center;justify-content:center;gap:8px;}
+.btn-agent:hover{filter:brightness(1.06);}
 .btn-agent.running{opacity:.6;cursor:not-allowed;}
 
 /* ─── Forms ─── */
 .form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;}
 .form-row.full{grid-template-columns:1fr;}
 .form-group{display:flex;flex-direction:column;gap:4px;}
-label{font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.4px;}
-input,select,textarea{background:#0f172a;border:1px solid #334155;border-radius:8px;padding:8px 12px;color:#e2e8f0;font-size:13px;width:100%;}
+label{font-size:11px;font-weight:700;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.4px;}
+input,select,textarea{background:var(--cx-bg-alt);border:1px solid #e7e5e4;border-radius:8px;padding:8px 12px;color:var(--cx-text);font-size:13px;width:100%;}
 input:focus,select:focus,textarea:focus{outline:none;border-color:#667eea;}
 textarea{resize:vertical;min-height:80px;}
 
 /* ─── Modal ─── */
 .modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center;}
 .modal-bg.open{display:flex;}
-.modal{background:#1e293b;border:1px solid #334155;border-radius:16px;width:min(600px,95vw);max-height:90vh;overflow-y:auto;padding:24px;}
+.modal{background:var(--cx-card);border:1px solid #e7e5e4;border-radius:16px;width:min(600px,95vw);max-height:90vh;overflow-y:auto;padding:24px;}
 .modal-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;}
-.modal-title{font-size:16px;font-weight:700;color:#f1f5f9;}
-.modal-close{background:none;border:none;color:#64748b;cursor:pointer;font-size:20px;padding:4px;}
-.modal-close:hover{color:#f87171;}
+.modal-title{font-size:16px;font-weight:700;color:var(--cx-text);}
+.modal-close{background:none;border:none;color:var(--cx-text-mute);cursor:pointer;font-size:20px;padding:4px;}
+.modal-close:hover{color:#dc2626;}
 
 /* ─── Agent cards ─── */
 .agents-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px;}
-.agent-card{background:#1e293b;border:1px solid #334155;border-radius:14px;padding:20px;}
+.agent-card{background:var(--cx-card);border:1px solid #e7e5e4;border-radius:14px;padding:20px;}
 .agent-icon{font-size:32px;margin-bottom:12px;}
-.agent-name{font-size:15px;font-weight:700;color:#f1f5f9;margin-bottom:4px;}
-.agent-desc{font-size:12px;color:#64748b;margin-bottom:16px;line-height:1.5;}
-.agent-result{margin-top:16px;background:#0f172a;border-radius:8px;padding:14px;font-size:12px;color:#94a3b8;max-height:240px;overflow-y:auto;display:none;}
+.agent-name{font-size:15px;font-weight:700;color:var(--cx-text);margin-bottom:4px;}
+.agent-desc{font-size:12px;color:var(--cx-text-mute);margin-bottom:16px;line-height:1.5;}
+.agent-result{margin-top:16px;background:var(--cx-bg-alt);border-radius:8px;padding:14px;font-size:12px;color:var(--cx-text-mute);max-height:240px;overflow-y:auto;display:none;}
 .agent-result.show{display:block;}
 .agent-result pre{white-space:pre-wrap;word-break:break-word;font-family:'Segoe UI',sans-serif;font-size:12px;}
 
 /* ─── Progress bar ─── */
-.progress-bar{background:#0f172a;border-radius:4px;height:8px;overflow:hidden;}
+.progress-bar{background:var(--cx-bg-alt);border-radius:4px;height:8px;overflow:hidden;}
 .progress-fill{height:100%;border-radius:4px;background:linear-gradient(90deg,#667eea,#764ba2);transition:width .5s;}
 
 /* ─── Alert ─── */
 .alert{padding:12px 16px;border-radius:8px;font-size:13px;margin-bottom:16px;}
-.alert-success{background:#052e16;color:#34d399;border:1px solid #065f46;}
-.alert-error{background:#2d0000;color:#f87171;border:1px solid #7f1d1d;}
-.alert-info{background:#0c1a4d;color:#60a5fa;border:1px solid #1e3a8a;}
+.alert-success{background:var(--cx-success-pale);color:#16a34a;border:1px solid var(--cx-hairline);}
+.alert-error{background:#2d0000;color:#dc2626;border:1px solid #7f1d1d;}
+.alert-info{background:var(--cx-info-pale);color:#2563eb;border:1px solid var(--cx-hairline);}
 
 /* ─── Spinner ─── */
-.spin{display:inline-block;width:16px;height:16px;border:2px solid #334155;border-top-color:#667eea;border-radius:50%;animation:spin .7s linear infinite;}
+.spin{display:inline-block;width:16px;height:16px;border:2px solid #e7e5e4;border-top-color:#667eea;border-radius:50%;animation:spin .7s linear infinite;}
 @keyframes spin{to{transform:rotate(360deg);}}
 
 /* ─── Trend item ─── */
-.trend-item{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid #1e293b;}
+.trend-item{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--cx-hairline);}
 .trend-item:last-child{border-bottom:none;}
-.trend-sku{font-weight:700;color:#e2e8f0;font-size:13px;}
+.trend-sku{font-weight:700;color:var(--cx-text);font-size:13px;}
 .trend-bar{flex:1;margin:0 12px;}
 .trend-pct{font-size:12px;font-weight:700;min-width:60px;text-align:right;}
-.trend-up{color:#34d399;}
-.trend-dn{color:#f87171;}
-.trend-flat{color:#94a3b8;}
+.trend-up{color:#16a34a;}
+.trend-dn{color:#dc2626;}
+.trend-flat{color:var(--cx-text-mute);}
 
 /* ─── Topbar actions ─── */
 .actions-bar{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px;}
-.search-box{background:#0f172a;border:1px solid #334155;border-radius:8px;padding:7px 12px;color:#e2e8f0;font-size:13px;width:240px;}
+.search-box{background:var(--cx-bg-alt);border:1px solid #e7e5e4;border-radius:8px;padding:7px 12px;color:var(--cx-text);font-size:13px;width:240px;}
 .search-box:focus{outline:none;border-color:#667eea;}
 
 /* ─── Content calendar ─── */
 .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-top:12px;}
-.cal-day-hdr{text-align:center;font-size:10px;font-weight:700;color:#64748b;padding:6px 0;}
-.cal-day{background:#0f172a;border-radius:6px;min-height:70px;padding:6px;position:relative;}
-.cal-day-num{font-size:10px;color:#64748b;margin-bottom:4px;}
+.cal-day-hdr{text-align:center;font-size:10px;font-weight:700;color:var(--cx-text-mute);padding:6px 0;}
+.cal-day{background:var(--cx-bg-alt);border-radius:6px;min-height:70px;padding:6px;position:relative;}
+.cal-day-num{font-size:10px;color:var(--cx-text-mute);margin-bottom:4px;}
 .cal-item{background:#4c1d95;border-radius:3px;padding:2px 4px;font-size:9px;color:#ddd6fe;margin-bottom:2px;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .cal-item.published{background:#065f46;color:#6ee7b7;}
-.cal-item.draft{background:#334155;color:#94a3b8;}
-.cal-item.scheduled{background:#1e3a8a;color:#93c5fd;}
+.cal-item.draft{background:#e7e5e4;color:var(--cx-text-mute);}
+.cal-item.scheduled{background:var(--cx-info-pale);color:#2563eb;}
 .platform-pill{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:20px;font-size:12px;font-weight:600;cursor:default;transition:all .2s;}
-.pill-off{background:#1e293b;color:#475569;border:1px solid #334155;}
-.pill-shopify{background:#0d2e1a;color:#34d399;border:1px solid #065f46;}
-.pill-ghl{background:#1a1033;color:#a78bfa;border:1px solid #4c1d95;}
+.pill-off{background:var(--cx-card);color:var(--cx-text-faint);border:1px solid #e7e5e4;}
+.pill-shopify{background:#0d2e1a;color:#16a34a;border:1px solid var(--cx-hairline);}
+.pill-ghl{background:#1a1033;color:#6d28d9;border:1px solid #4c1d95;}
 .pill-ig{background:#2d1520;color:#f9a8d4;border:1px solid #831843;}
 </style>
 </head>
@@ -181,9 +181,9 @@ fetch('/api/csrf-token', {credentials: 'same-origin'}).catch(function(){});
 function showToast(msg, type) {
   const c = document.getElementById('toast-container');
   const t = document.createElement('div');
-  const bg = type==='error'?'#7f1d1d':type==='success'?'#064e3b':type==='warning'?'#78350f':'#1e293b';
+  const bg = type==='error'?'#7f1d1d':type==='success'?'#064e3b':type==='warning'?'#78350f':'#f1f5f9';
   const border = type==='error'?'#ef4444':type==='success'?'#10b981':type==='warning'?'#f59e0b':'#475569';
-  t.style.cssText = `background:${bg};border:1px solid ${border};color:#f1f5f9;padding:12px 18px;border-radius:8px;font-size:13px;font-weight:600;min-width:220px;max-width:360px;box-shadow:0 4px 20px rgba(0,0,0,.4);pointer-events:auto;`;
+  t.style.cssText = `background:${bg};border:1px solid ${border};color:var(--cx-text);padding:12px 18px;border-radius:8px;font-size:13px;font-weight:600;min-width:220px;max-width:360px;box-shadow:0 4px 20px rgba(0,0,0,.4);pointer-events:auto;`;
   t.textContent = msg;
   c.appendChild(t);
   setTimeout(()=>{ t.style.opacity='0'; t.style.transition='opacity .4s'; setTimeout(()=>t.remove(), 400); }, 3200);
@@ -247,7 +247,7 @@ window.addEventListener('unhandledrejection', function(ev) {
   <div class="actions-bar">
     <div>
       <div class="page-title">&#x1F3AF; Hoy — Centro de ejecución</div>
-      <div style="color:#94a3b8;font-size:13px;margin-top:2px;">Lo que la IA detecta + lo que requiere tu acción HOY · ejecuta agentes y aprueba con un click</div>
+      <div style="color:var(--cx-text-mute);font-size:13px;margin-top:2px;">Lo que la IA detecta + lo que requiere tu acción HOY · ejecuta agentes y aprueba con un click</div>
     </div>
     <div style="display:flex;gap:8px;">
       <button class="btn btn-primary" onclick="hoyEjecutarTodos()">&#x26A1; Ejecutar todos los agentes</button>
@@ -257,32 +257,32 @@ window.addEventListener('unhandledrejection', function(ev) {
 
   <!-- KPIs principales del día -->
   <div id="hoy-kpis" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:16px;">
-    <div style="background:#0f172a;border:1px solid #334155;border-radius:10px;padding:12px 16px">
-      <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.5px">Influencers pendientes pago</div>
+    <div style="background:var(--cx-bg-alt);border:1px solid #e7e5e4;border-radius:10px;padding:12px 16px">
+      <div style="font-size:11px;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.5px">Influencers pendientes pago</div>
       <div id="hoy-kpi-pend" style="font-size:24px;font-weight:800;color:#f59e0b;margin-top:4px">—</div>
     </div>
-    <div style="background:#0f172a;border:1px solid #334155;border-radius:10px;padding:12px 16px">
-      <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.5px">Eventos cosméticos próximos</div>
-      <div id="hoy-kpi-eventos" style="font-size:24px;font-weight:800;color:#a78bfa;margin-top:4px">—</div>
+    <div style="background:var(--cx-bg-alt);border:1px solid #e7e5e4;border-radius:10px;padding:12px 16px">
+      <div style="font-size:11px;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.5px">Eventos cosméticos próximos</div>
+      <div id="hoy-kpi-eventos" style="font-size:24px;font-weight:800;color:#6d28d9;margin-top:4px">—</div>
     </div>
-    <div style="background:#0f172a;border:1px solid #334155;border-radius:10px;padding:12px 16px">
-      <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.5px">SKUs en riesgo (stock)</div>
+    <div style="background:var(--cx-bg-alt);border:1px solid #e7e5e4;border-radius:10px;padding:12px 16px">
+      <div style="font-size:11px;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.5px">SKUs en riesgo (stock)</div>
       <div id="hoy-kpi-riesgo" style="font-size:24px;font-weight:800;color:#dc2626;margin-top:4px">—</div>
     </div>
-    <div style="background:#0f172a;border:1px solid #334155;border-radius:10px;padding:12px 16px">
-      <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.5px">Campañas activas</div>
-      <div id="hoy-kpi-campanas" style="font-size:24px;font-weight:800;color:#34d399;margin-top:4px">—</div>
+    <div style="background:var(--cx-bg-alt);border:1px solid #e7e5e4;border-radius:10px;padding:12px 16px">
+      <div style="font-size:11px;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.5px">Campañas activas</div>
+      <div id="hoy-kpi-campanas" style="font-size:24px;font-weight:800;color:#16a34a;margin-top:4px">—</div>
     </div>
   </div>
 
   <!-- Acciones recomendadas (cards con botón "Aprobar y ejecutar") -->
   <div class="card" style="margin-bottom:16px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-      <div style="font-size:14px;font-weight:700;color:#a78bfa">&#x1F916; Acciones recomendadas por la IA</div>
+      <div style="font-size:14px;font-weight:700;color:#6d28d9">&#x1F916; Acciones recomendadas por la IA</div>
       <button class="btn btn-outline btn-sm" onclick="hoyEjecutarTodos()" title="Ejecutar todos los agentes y refrescar">&#x21BB; Refrescar análisis</button>
     </div>
     <div id="hoy-acciones" style="display:flex;flex-direction:column;gap:10px">
-      <div style="color:#64748b;text-align:center;padding:20px;font-size:12px">Click "⚡ Ejecutar todos los agentes" arriba para iniciar.</div>
+      <div style="color:var(--cx-text-mute);text-align:center;padding:20px;font-size:12px">Click "⚡ Ejecutar todos los agentes" arriba para iniciar.</div>
     </div>
   </div>
 
@@ -290,18 +290,18 @@ window.addEventListener('unhandledrejection', function(ev) {
   <div class="card" style="margin-bottom:16px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
       <div>
-        <div style="font-size:14px;font-weight:700;color:#34d399">&#x1F4E1; Auto-refresh datos de influencers (Socialblade)</div>
-        <div style="color:#94a3b8;font-size:12px;margin-top:2px">Trae seguidores, engagement rate, rank y grade de TODOS los influencers con usuario_red. ~5s por influencer.</div>
+        <div style="font-size:14px;font-weight:700;color:#16a34a">&#x1F4E1; Auto-refresh datos de influencers (Socialblade)</div>
+        <div style="color:var(--cx-text-mute);font-size:12px;margin-top:2px">Trae seguidores, engagement rate, rank y grade de TODOS los influencers con usuario_red. ~5s por influencer.</div>
       </div>
       <button class="btn btn-primary btn-sm" onclick="hoyRefreshMetricas()">&#x1F504; Refresh todos</button>
     </div>
-    <div id="hoy-metrics-result" style="margin-top:6px;font-size:12px;color:#94a3b8"></div>
+    <div id="hoy-metrics-result" style="margin-top:6px;font-size:12px;color:var(--cx-text-mute)"></div>
   </div>
 
   <!-- Log de ejecución -->
   <div class="card">
-    <div style="font-size:13px;font-weight:700;color:#94a3b8;margin-bottom:8px">Log de ejecución</div>
-    <div id="hoy-log" style="font-family:monospace;font-size:11px;color:#64748b;max-height:200px;overflow-y:auto;background:#0a0a0b;border:1px solid #1e293b;border-radius:6px;padding:8px">Sin actividad reciente.</div>
+    <div style="font-size:13px;font-weight:700;color:var(--cx-text-mute);margin-bottom:8px">Log de ejecución</div>
+    <div id="hoy-log" style="font-family:monospace;font-size:11px;color:var(--cx-text-mute);max-height:200px;overflow-y:auto;background:#0a0a0b;border:1px solid var(--cx-hairline);border-radius:6px;padding:8px">Sin actividad reciente.</div>
   </div>
 </div>
 
@@ -327,8 +327,8 @@ window.addEventListener('unhandledrejection', function(ev) {
   <!-- Mensaje sin plan -->
   <div id="cmo-empty" style="display:none;background:linear-gradient(135deg,rgba(167,139,250,.08),rgba(14,116,144,.06));border:1px solid rgba(167,139,250,.3);border-radius:12px;padding:24px;text-align:center;">
     <div style="font-size:40px;margin-bottom:10px">🤖</div>
-    <div style="font-size:16px;font-weight:700;color:#e2e8f0;margin-bottom:8px;">Sin plan generado para hoy</div>
-    <div style="font-size:13px;color:#94a3b8;margin-bottom:16px;line-height:1.5;">El cron CMO IA corre todos los días a las <b>7:00 AM</b> automático. También podés generar uno ahora con datos frescos.</div>
+    <div style="font-size:16px;font-weight:700;color:var(--cx-text);margin-bottom:8px;">Sin plan generado para hoy</div>
+    <div style="font-size:13px;color:var(--cx-text-mute);margin-bottom:16px;line-height:1.5;">El cron CMO IA corre todos los días a las <b>7:00 AM</b> automático. También podés generar uno ahora con datos frescos.</div>
     <button class="btn btn-primary" onclick="cmoGenerarPlanForzar()" style="padding:10px 22px;font-size:14px;">⚡ Generar plan del día</button>
   </div>
 
@@ -343,8 +343,8 @@ window.addEventListener('unhandledrejection', function(ev) {
   <div class="modal" style="max-width:920px;max-height:88vh;overflow-y:auto;">
     <div class="modal-title">📚 Historial de planes CMO IA</div>
     <button class="modal-close" onclick="closeModal('modal-cmo-historial')">&times;</button>
-    <div style="font-size:11px;color:#94a3b8;margin:6px 0 12px;">Click en una fila para ver el plan completo de ese día.</div>
-    <div id="cmo-hist-body" style="font-size:12px;color:#cbd5e1;">Cargando...</div>
+    <div style="font-size:11px;color:var(--cx-text-mute);margin:6px 0 12px;">Click en una fila para ver el plan completo de ese día.</div>
+    <div id="cmo-hist-body" style="font-size:12px;color:var(--cx-text-soft);">Cargando...</div>
   </div>
 </div>
 
@@ -364,7 +364,7 @@ window.addEventListener('unhandledrejection', function(ev) {
       <button id="btn-sync-instagram" class="btn btn-outline btn-sm" onclick="syncPlatform('instagram')">↻ IG</button>
       <button class="btn btn-outline btn-sm" style="border-color:#e1306c;color:#e1306c;" onclick="refreshIgToken()">🔑 Renovar token IG</button>
       <span id="ig-token-status" style="font-size:10px;padding:2px 8px;border-radius:10px;display:none;"></span>
-      <span id="sync-status" style="font-size:11px;color:#64748b;"></span>
+      <span id="sync-status" style="font-size:11px;color:var(--cx-text-mute);"></span>
     </div>
   </div>
 
@@ -386,7 +386,7 @@ window.addEventListener('unhandledrejection', function(ev) {
     <button class="btn btn-outline btn-sm" onclick="openMetaModal()" style="font-size:10px;padding:2px 8px">⚙ Editar meta</button>
     <button class="btn btn-outline btn-sm" onclick="openCalendarioCosmeticoModal()" style="font-size:10px;padding:2px 8px">📅 Calendario cosmético</button>
   </div>
-  <div id="dash-meta-progreso" style="background:#0f172a;border:1px solid #1e293b;border-radius:10px;padding:14px 16px;margin-bottom:16px;color:#94a3b8;font-size:12px">Cargando meta del mes…</div>
+  <div id="dash-meta-progreso" style="background:var(--cx-bg-alt);border:1px solid var(--cx-hairline);border-radius:10px;padding:14px 16px;margin-bottom:16px;color:var(--cx-text-mute);font-size:12px">Cargando meta del mes…</div>
 
   <!-- AUDIT 27-may · Widget Sentiment IG (detección crisis) -->
   <div style="font-size:11px;font-weight:700;color:#f59e0b;text-transform:uppercase;letter-spacing:.8px;margin:16px 0 8px;display:flex;align-items:center;gap:8px">
@@ -394,7 +394,7 @@ window.addEventListener('unhandledrejection', function(ev) {
     <button class="btn btn-outline btn-sm" onclick="sentimentSyncManual()" style="font-size:10px;padding:2px 8px" title="Sincronizar comentarios IG ahora">↻ Sync</button>
     <button class="btn btn-outline btn-sm" onclick="sentimentAnalyzeManual()" style="font-size:10px;padding:2px 8px" title="Analizar pendientes con Claude">🤖 Analizar</button>
   </div>
-  <div id="dash-sentiment" style="background:#0f172a;border:1px solid #1e293b;border-radius:10px;padding:14px 16px;margin-bottom:16px;color:#94a3b8;font-size:12px">Cargando sentiment…</div>
+  <div id="dash-sentiment" style="background:var(--cx-bg-alt);border:1px solid var(--cx-hairline);border-radius:10px;padding:14px 16px;margin-bottom:16px;color:var(--cx-text-mute);font-size:12px">Cargando sentiment…</div>
 
   <!-- Instagram KPIs -->
   <div style="font-size:11px;font-weight:700;color:#e1306c;text-transform:uppercase;letter-spacing:.8px;margin:16px 0 8px;">📸 Instagram — Engagement real</div>
@@ -435,15 +435,15 @@ window.addEventListener('unhandledrejection', function(ev) {
   </div>
 
   <!-- Instagram token update form -->
-  <div id="ig-token-form" style="background:#0f172a;border:1px solid #e1306c44;border-radius:8px;padding:12px 16px;margin-bottom:12px;display:none;">
+  <div id="ig-token-form" style="background:var(--cx-bg-alt);border:1px solid #e1306c44;border-radius:8px;padding:12px 16px;margin-bottom:12px;display:none;">
     <div style="font-size:11px;color:#e1306c;font-weight:700;margin-bottom:8px;">🔑 Token expirado — pega un nuevo token de Graph API Explorer</div>
     <div style="display:flex;gap:8px;align-items:center;">
       <input id="ig-token-input" type="text" placeholder="EAANXh..." 
-        style="flex:1;background:#1e293b;border:1px solid #334155;color:#f1f5f9;padding:7px 10px;border-radius:6px;font-size:11px;font-family:monospace;">
+        style="flex:1;background:var(--cx-card);border:1px solid #e7e5e4;color:var(--cx-text);padding:7px 10px;border-radius:6px;font-size:11px;font-family:monospace;">
       <button onclick="saveIgToken()" class="btn btn-sm" style="background:#e1306c;color:#fff;border:none;white-space:nowrap;">Guardar y activar</button>
       <button onclick="document.getElementById('ig-token-form').style.display='none'" class="btn btn-outline btn-sm">✕</button>
     </div>
-    <div style="font-size:10px;color:#64748b;margin-top:6px;">
+    <div style="font-size:10px;color:var(--cx-text-mute);margin-top:6px;">
       Ve a <a href="https://developers.facebook.com/tools/explorer" target="_blank" style="color:#6366f1;">Graph API Explorer</a> → selecciona "Inventario ÁNIMUS" → Generate Access Token → pega aquí
     </div>
   </div>
@@ -452,7 +452,7 @@ window.addEventListener('unhandledrejection', function(ev) {
   <div class="card" style="margin-bottom:20px;" id="dash-ig-posts-section">
     <div class="card-hdr"><span class="card-title">📸 Top posts Instagram (por engagement)</span></div>
     <div class="card-body" id="dash-ig-posts">
-      <div style="color:#64748b;text-align:center;padding:20px;">Conecta Instagram y sincroniza para ver tus mejores posts</div>
+      <div style="color:var(--cx-text-mute);text-align:center;padding:20px;">Conecta Instagram y sincroniza para ver tus mejores posts</div>
     </div>
   </div>
 
@@ -481,7 +481,7 @@ window.addEventListener('unhandledrejection', function(ev) {
       <div class="page-title">&#x1F4E2; Campañas</div>
     </div>
     <div style="display:flex;gap:10px;">
-      <select id="camp-filtro-estado" onchange="loadCampanas()" style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:7px 12px;color:#e2e8f0;font-size:13px;">
+      <select id="camp-filtro-estado" onchange="loadCampanas()" style="background:var(--cx-bg-alt);border:1px solid #e7e5e4;border-radius:8px;padding:7px 12px;color:var(--cx-text);font-size:13px;">
         <option value="">Todos los estados</option>
         <option value="Planificada">Planificada</option>
         <option value="Activa">Activa</option>
@@ -509,7 +509,7 @@ window.addEventListener('unhandledrejection', function(ev) {
   <div class="actions-bar">
     <div>
       <div class="page-title">&#x1F465; Influencers &amp; Pagos</div>
-      <div style="color:#94a3b8;font-size:13px;margin-top:2px;">Catálogo + historial de pagos por influencer · click en una fila para expandir su historial.</div>
+      <div style="color:var(--cx-text-mute);font-size:13px;margin-top:2px;">Catálogo + historial de pagos por influencer · click en una fila para expandir su historial.</div>
     </div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;">
       <input class="search-box" id="inf-search" placeholder="Buscar nombre, @usuario, nicho..." oninput="loadInfluencers()">
@@ -525,43 +525,43 @@ window.addEventListener('unhandledrejection', function(ev) {
   <!-- Sebastián 27-may-2026 PM · "que tenga KPIs" + audit reportó Top engagement + sin actividad + ROI -->
   <div id="inf-mi-semana" style="display:none;margin-bottom:16px;">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:8px;">
-      <div style="font-size:13px;font-weight:800;color:#a78bfa;">🎯 Mi semana · vista community manager</div>
-      <div style="font-size:11px;color:#64748b;">Top performance · alertas · ROI</div>
+      <div style="font-size:13px;font-weight:800;color:#6d28d9;">🎯 Mi semana · vista community manager</div>
+      <div style="font-size:11px;color:var(--cx-text-mute);">Top performance · alertas · ROI</div>
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;">
       <!-- Top engagement 7d -->
-      <div style="background:#0f172a;border:1px solid #334155;border-left:3px solid #34d399;border-radius:10px;padding:12px 14px;">
+      <div style="background:var(--cx-bg-alt);border:1px solid #e7e5e4;border-left:3px solid #34d399;border-radius:10px;padding:12px 14px;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-          <div style="font-size:11px;color:#34d399;text-transform:uppercase;letter-spacing:.4px;font-weight:800;">🚀 Top engagement 7d</div>
-          <div id="mis-top-count" style="font-size:10px;color:#64748b;">—</div>
+          <div style="font-size:11px;color:#16a34a;text-transform:uppercase;letter-spacing:.4px;font-weight:800;">🚀 Top engagement 7d</div>
+          <div id="mis-top-count" style="font-size:10px;color:var(--cx-text-mute);">—</div>
         </div>
-        <div id="mis-top-list" style="font-size:12px;color:#cbd5e1;line-height:1.6;">Cargando...</div>
+        <div id="mis-top-list" style="font-size:12px;color:var(--cx-text-soft);line-height:1.6;">Cargando...</div>
       </div>
       <!-- Sin actividad IG > 45d -->
-      <div style="background:#0f172a;border:1px solid #334155;border-left:3px solid #f59e0b;border-radius:10px;padding:12px 14px;">
+      <div style="background:var(--cx-bg-alt);border:1px solid #e7e5e4;border-left:3px solid #f59e0b;border-radius:10px;padding:12px 14px;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
           <div style="font-size:11px;color:#f59e0b;text-transform:uppercase;letter-spacing:.4px;font-weight:800;">⚠ Dormidos &gt;45d</div>
-          <div id="mis-dormi-count" style="font-size:10px;color:#64748b;">—</div>
+          <div id="mis-dormi-count" style="font-size:10px;color:var(--cx-text-mute);">—</div>
         </div>
-        <div id="mis-dormi-list" style="font-size:12px;color:#cbd5e1;line-height:1.6;">Cargando...</div>
+        <div id="mis-dormi-list" style="font-size:12px;color:var(--cx-text-soft);line-height:1.6;">Cargando...</div>
       </div>
       <!-- ROI implícito -->
-      <div style="background:#0f172a;border:1px solid #334155;border-left:3px solid #a78bfa;border-radius:10px;padding:12px 14px;">
+      <div style="background:var(--cx-bg-alt);border:1px solid #e7e5e4;border-left:3px solid #a78bfa;border-radius:10px;padding:12px 14px;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-          <div style="font-size:11px;color:#a78bfa;text-transform:uppercase;letter-spacing:.4px;font-weight:800;">💰 Top ROI</div>
-          <div id="mis-roi-count" style="font-size:10px;color:#64748b;">—</div>
+          <div style="font-size:11px;color:#6d28d9;text-transform:uppercase;letter-spacing:.4px;font-weight:800;">💰 Top ROI</div>
+          <div id="mis-roi-count" style="font-size:10px;color:var(--cx-text-mute);">—</div>
         </div>
-        <div id="mis-roi-list" style="font-size:12px;color:#cbd5e1;line-height:1.6;">Cargando...</div>
+        <div id="mis-roi-list" style="font-size:12px;color:var(--cx-text-soft);line-height:1.6;">Cargando...</div>
       </div>
     </div>
   </div>
 
   <!-- Bulk pagos · barra de acciones flotante (aparece si hay selección) -->
-  <div id="inf-bulk-bar" style="display:none;background:linear-gradient(90deg,#1e3a8a,#7c3aed);color:#fff;padding:10px 16px;border-radius:10px;margin-bottom:10px;font-size:13px;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+  <div id="inf-bulk-bar" style="display:none;background:linear-gradient(90deg,#a78bfa,#6d28d9);color:#fff;padding:10px 16px;border-radius:10px;margin-bottom:10px;font-size:13px;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
     <div><b id="inf-bulk-count">0</b> influencer(s) seleccionado(s)</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;">
-      <button onclick="bulkSolicitarPagosInf()" style="background:#15803d;color:#fff;border:0;padding:8px 14px;border-radius:6px;cursor:pointer;font-weight:700;font-size:13px;">💸 Solicitar pago de seleccionados</button>
-      <button onclick="bulkLimpiarSeleccionInf()" style="background:rgba(255,255,255,.1);color:#fff;border:1px solid rgba(255,255,255,.3);padding:8px 14px;border-radius:6px;cursor:pointer;font-size:13px;">✕ Limpiar</button>
+      <button onclick="bulkSolicitarPagosInf()" style="background:var(--cx-success-pale);color:#fff;border:0;padding:8px 14px;border-radius:6px;cursor:pointer;font-weight:700;font-size:13px;">💸 Solicitar pago de seleccionados</button>
+      <button onclick="bulkLimpiarSeleccionInf()" style="background:rgba(109,40,217,.06);color:#fff;border:1px solid rgba(255,255,255,.3);padding:8px 14px;border-radius:6px;cursor:pointer;font-size:13px;">✕ Limpiar</button>
     </div>
   </div>
 
@@ -576,8 +576,8 @@ window.addEventListener('unhandledrejection', function(ev) {
   <div class="card" style="margin-bottom:16px;background:linear-gradient(135deg,rgba(52,211,153,.06),rgba(52,211,153,.02));border:1px solid rgba(52,211,153,.25);">
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:12px;">
       <div>
-        <div style="font-size:14px;font-weight:700;color:#34d399;">&#x1F3AF; Atribución de ventas — últimos 90 días</div>
-        <div style="font-size:11px;color:#64748b;margin-top:2px;">Revenue Shopify atribuido vía discount code de cada influencer.</div>
+        <div style="font-size:14px;font-weight:700;color:#16a34a;">&#x1F3AF; Atribución de ventas — últimos 90 días</div>
+        <div style="font-size:11px;color:var(--cx-text-mute);margin-top:2px;">Revenue Shopify atribuido vía discount code de cada influencer.</div>
       </div>
       <button class="btn btn-outline btn-sm" onclick="loadAtribucion()" title="Refrescar atribución">&#x21BB;</button>
     </div>
@@ -594,18 +594,18 @@ window.addEventListener('unhandledrejection', function(ev) {
           <th style="text-align:right;">ROI</th>
           <th>Último</th>
         </tr></thead>
-        <tbody id="atrib-body"><tr class="empty-row"><td colspan="8" style="color:#64748b;text-align:center;padding:14px;">Cargando atribución...</td></tr></tbody>
+        <tbody id="atrib-body"><tr class="empty-row"><td colspan="8" style="color:var(--cx-text-mute);text-align:center;padding:14px;">Cargando atribución...</td></tr></tbody>
       </table>
     </div>
   </div>
 
   <!-- Filtros para historial de pagos (que sale al expandir cada fila) -->
-  <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px;font-size:12px;color:#64748b">
+  <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px;font-size:12px;color:var(--cx-text-mute)">
     <span style="font-weight:600">📊 Filtros para historial expandido:</span>
-    <select id="pag-mes" onchange="renderInfluencersTable()" style="background:#0f172a;border:1px solid #334155;border-radius:6px;padding:5px 9px;color:#e2e8f0;font-size:12px;">
+    <select id="pag-mes" onchange="renderInfluencersTable()" style="background:var(--cx-bg-alt);border:1px solid #e7e5e4;border-radius:6px;padding:5px 9px;color:var(--cx-text);font-size:12px;">
       <option value="">Todos los meses</option>
     </select>
-    <select id="pag-estado" onchange="renderInfluencersTable()" style="background:#0f172a;border:1px solid #334155;border-radius:6px;padding:5px 9px;color:#e2e8f0;font-size:12px;">
+    <select id="pag-estado" onchange="renderInfluencersTable()" style="background:var(--cx-bg-alt);border:1px solid #e7e5e4;border-radius:6px;padding:5px 9px;color:var(--cx-text);font-size:12px;">
       <option value="">Todos los pagos</option>
       <option value="Pendiente">⏳ Solo pendientes</option>
       <option value="Pagada">✅ Solo pagados</option>
@@ -664,37 +664,37 @@ window.addEventListener('unhandledrejection', function(ev) {
 <!-- ═══════════════════════════════════════════════════════════════ -->
 <style>
 .kanban-wrap{display:grid;grid-template-columns:repeat(5,minmax(220px,1fr));gap:12px;overflow-x:auto;padding-bottom:10px;}
-.kanban-col{background:#0f172a;border:1px solid #334155;border-radius:10px;padding:10px;min-height:300px;display:flex;flex-direction:column;}
-.kanban-col-hdr{display:flex;justify-content:space-between;align-items:center;padding:4px 6px 10px;border-bottom:1px solid #1e293b;margin-bottom:8px;}
-.kanban-col-hdr .name{font-weight:700;font-size:13px;color:#f1f5f9;}
-.kanban-col-hdr .count{background:#1e293b;color:#94a3b8;padding:1px 9px;border-radius:10px;font-size:11px;font-weight:700;}
-.kanban-col[data-estado="Brief"]       .name{color:#60a5fa;}
-.kanban-col[data-estado="Produccion"]  .name{color:#fbbf24;}
-.kanban-col[data-estado="Pendiente"]   .name{color:#a78bfa;}
-.kanban-col[data-estado="Publicado"]   .name{color:#34d399;}
+.kanban-col{background:var(--cx-bg-alt);border:1px solid #e7e5e4;border-radius:10px;padding:10px;min-height:300px;display:flex;flex-direction:column;}
+.kanban-col-hdr{display:flex;justify-content:space-between;align-items:center;padding:4px 6px 10px;border-bottom:1px solid var(--cx-hairline);margin-bottom:8px;}
+.kanban-col-hdr .name{font-weight:700;font-size:13px;color:var(--cx-text);}
+.kanban-col-hdr .count{background:var(--cx-card);color:var(--cx-text-mute);padding:1px 9px;border-radius:10px;font-size:11px;font-weight:700;}
+.kanban-col[data-estado="Brief"]       .name{color:#2563eb;}
+.kanban-col[data-estado="Produccion"]  .name{color:#b45309;}
+.kanban-col[data-estado="Pendiente"]   .name{color:#6d28d9;}
+.kanban-col[data-estado="Publicado"]   .name{color:#16a34a;}
 .kanban-col[data-estado="Performance"] .name{color:#f472b6;}
-.kanban-card{background:#1e293b;border:1px solid #334155;border-radius:8px;padding:10px;margin-bottom:8px;cursor:pointer;transition:.15s;font-size:12px;}
+.kanban-card{background:var(--cx-card);border:1px solid #e7e5e4;border-radius:8px;padding:10px;margin-bottom:8px;cursor:pointer;transition:.15s;font-size:12px;}
 .kanban-card:hover{border-color:#7c3aed;transform:translateY(-1px);}
-.kanban-card .sku{font-family:monospace;color:#34d399;font-size:11px;font-weight:700;}
-.kanban-card .titulo{font-weight:700;color:#e2e8f0;margin:4px 0;line-height:1.3;}
-.kanban-card .meta{display:flex;flex-wrap:wrap;gap:6px;font-size:10px;color:#64748b;margin-top:6px;}
-.kanban-card .meta span{background:#0f172a;padding:1px 7px;border-radius:6px;}
-.kanban-card .perf{display:flex;gap:8px;font-size:10px;margin-top:6px;color:#94a3b8;}
-.kanban-card .perf b{color:#f1f5f9;}
-.kanban-empty{color:#475569;font-size:11px;text-align:center;padding:20px 0;font-style:italic;}
-.kanban-add-btn{background:#0f172a;color:#64748b;border:1px dashed #334155;border-radius:6px;padding:6px;font-size:11px;cursor:pointer;width:100%;margin-top:auto;transition:.15s;}
-.kanban-add-btn:hover{color:#a78bfa;border-color:#7c3aed;}
+.kanban-card .sku{font-family:monospace;color:#16a34a;font-size:11px;font-weight:700;}
+.kanban-card .titulo{font-weight:700;color:var(--cx-text);margin:4px 0;line-height:1.3;}
+.kanban-card .meta{display:flex;flex-wrap:wrap;gap:6px;font-size:10px;color:var(--cx-text-mute);margin-top:6px;}
+.kanban-card .meta span{background:var(--cx-bg-alt);padding:1px 7px;border-radius:6px;}
+.kanban-card .perf{display:flex;gap:8px;font-size:10px;margin-top:6px;color:var(--cx-text-mute);}
+.kanban-card .perf b{color:var(--cx-text);}
+.kanban-empty{color:var(--cx-text-faint);font-size:11px;text-align:center;padding:20px 0;font-style:italic;}
+.kanban-add-btn{background:var(--cx-bg-alt);color:var(--cx-text-mute);border:1px dashed #e7e5e4;border-radius:6px;padding:6px;font-size:11px;cursor:pointer;width:100%;margin-top:auto;transition:.15s;}
+.kanban-add-btn:hover{color:#6d28d9;border-color:#7c3aed;}
 </style>
 
 <div id="tab-contenido" class="tab-panel">
   <div class="actions-bar">
     <div>
       <div class="page-title">&#x1F4C5; Calendario de Contenido</div>
-      <div style="color:#94a3b8;font-size:12px;margin-top:2px;">Pipeline visual del contenido — desde el brief hasta el performance medido.</div>
+      <div style="color:var(--cx-text-mute);font-size:12px;margin-top:2px;">Pipeline visual del contenido — desde el brief hasta el performance medido.</div>
     </div>
     <div style="display:flex;gap:10px;align-items:center;">
       <button class="btn btn-outline btn-sm" onclick="loadContenido()" title="Refrescar">&#x21BB;</button>
-      <button class="btn btn-outline btn-sm" onclick="openABTestsModal()" title="A/B testing de creatividades" style="border-color:#a78bfa;color:#a78bfa">&#x1F52C; A/B Tests</button>
+      <button class="btn btn-outline btn-sm" onclick="openABTestsModal()" title="A/B testing de creatividades" style="border-color:#6d28d9;color:#6d28d9">&#x1F52C; A/B Tests</button>
       <button class="btn btn-primary btn-sm" onclick="openContenidoModal()">+ Nueva pieza</button>
     </div>
   </div>
@@ -735,9 +735,9 @@ window.addEventListener('unhandledrejection', function(ev) {
      tab-agencia) viven debajo y se alternan con showSub() / sub-nav.        -->
 <!-- ═══════════════════════════════════════════════════════════════ -->
 <style>
-.intel-subnav{display:flex;gap:4px;background:#0f172a;border:1px solid #334155;border-radius:10px;padding:4px;margin-bottom:18px;flex-wrap:wrap;}
-.intel-subnav button{flex:1;min-width:130px;padding:9px 16px;background:transparent;color:#94a3b8;border:none;border-radius:7px;cursor:pointer;font-size:13px;font-weight:600;transition:.15s;}
-.intel-subnav button:hover{color:#e2e8f0;background:#1e293b;}
+.intel-subnav{display:flex;gap:4px;background:var(--cx-bg-alt);border:1px solid #e7e5e4;border-radius:10px;padding:4px;margin-bottom:18px;flex-wrap:wrap;}
+.intel-subnav button{flex:1;min-width:130px;padding:9px 16px;background:transparent;color:var(--cx-text-mute);border:none;border-radius:7px;cursor:pointer;font-size:13px;font-weight:600;transition:.15s;}
+.intel-subnav button:hover{color:var(--cx-text);background:var(--cx-card);}
 .intel-subnav button.intel-active{background:linear-gradient(135deg,#7c3aed,#4c1d95);color:#fff;}
 </style>
 
@@ -752,10 +752,10 @@ window.addEventListener('unhandledrejection', function(ev) {
     <button onclick="showSub('analytics')">&#x1F4CA; Histórico de inversión</button>
   </div>
   <div id="estrategia-vista" style="margin-top:12px;">
-    <div style="background:linear-gradient(135deg,#1e1b4b 0%,#0f172a 60%,#312e81 100%);border:1px solid #7c3aed;border-radius:14px;padding:36px 24px;text-align:center;">
+    <div style="background:var(--cx-hero-grad);border:1px solid #7c3aed;border-radius:14px;padding:36px 24px;text-align:center;">
       <div style="font-size:48px;margin-bottom:12px;">&#x1F9E0;</div>
       <div style="font-size:22px;font-weight:800;color:#fff;margin-bottom:8px;">Estrategia del mes</div>
-      <div style="font-size:13px;color:#cbd5e1;max-width:560px;margin:0 auto 18px;line-height:1.6;">
+      <div style="font-size:13px;color:var(--cx-text-soft);max-width:560px;margin:0 auto 18px;line-height:1.6;">
         Aún no generaste la estrategia este mes. El agente cruza ventas Shopify, engagement IG, stock, producción programada, influencers activos y eventos cosméticos para devolver el plan accionable.
       </div>
       <button onclick="runAgent('estrategia')"
@@ -777,14 +777,14 @@ window.addEventListener('unhandledrejection', function(ev) {
   <div class="page-sub">11 agentes inteligentes con Claude AI — análisis real de datos ERP + Shopify + GHL + Instagram.</div>
 
   <!-- ═══ Agente destacado: Estrategia (master) ════════════════════════════ -->
-  <div style="background:linear-gradient(135deg,#1e1b4b 0%,#0f172a 60%,#312e81 100%);border:1px solid #7c3aed;border-radius:14px;padding:22px;margin-bottom:22px;position:relative;overflow:hidden;">
+  <div style="background:var(--cx-hero-grad);border:1px solid #7c3aed;border-radius:14px;padding:22px;margin-bottom:22px;position:relative;overflow:hidden;">
     <div style="position:absolute;top:-40%;right:-10%;width:300px;height:300px;background:radial-gradient(circle,#7c3aed33 0%,transparent 70%);pointer-events:none;"></div>
     <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;position:relative;z-index:1;">
       <div style="font-size:36px;line-height:1;">&#x1F9E0;</div>
       <div style="flex:1;min-width:240px;">
-        <div style="font-size:11px;color:#a78bfa;font-weight:700;text-transform:uppercase;letter-spacing:.1em;margin-bottom:2px;">Master agent · cruza todo</div>
+        <div style="font-size:11px;color:#6d28d9;font-weight:700;text-transform:uppercase;letter-spacing:.1em;margin-bottom:2px;">Master agent · cruza todo</div>
         <div style="font-size:18px;font-weight:800;color:#fff;margin-bottom:4px;">Estrategia del mes</div>
-        <div style="font-size:12px;color:#cbd5e1;line-height:1.5;">Analiza ventas Shopify, engagement IG, stock, producción programada, influencers activos y eventos cosméticos. Devuelve: foco del mes · calendario de publicaciones (4 semanas) · 3 oportunidades de venta · 3 riesgos · recomendación al fundador.</div>
+        <div style="font-size:12px;color:var(--cx-text-soft);line-height:1.5;">Analiza ventas Shopify, engagement IG, stock, producción programada, influencers activos y eventos cosméticos. Devuelve: foco del mes · calendario de publicaciones (4 semanas) · 3 oportunidades de venta · 3 riesgos · recomendación al fundador.</div>
       </div>
       <button class="btn-agent" id="btn-estrategia" onclick="runAgent('estrategia')" style="background:linear-gradient(135deg,#7c3aed,#4c1d95);color:#fff;border:none;padding:14px 22px;font-size:14px;font-weight:800;border-radius:10px;white-space:nowrap;">
         <span>&#x25B6; Generar estrategia</span>
@@ -840,8 +840,8 @@ window.addEventListener('unhandledrejection', function(ev) {
       <div class="agent-name">Brief de Contenido</div>
       <div class="agent-desc">Genera briefs por SKU top: canal recomendado, claim científico, formato, menciones en Instagram. Listo para enviar a influencers.</div>
       <div style="margin-bottom:10px;">
-        <label style="font-size:11px;color:#64748b;">Campaña (opcional)</label>
-        <select id="brief-campana-sel" style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:7px 12px;color:#e2e8f0;font-size:13px;width:100%;margin-top:4px;">
+        <label style="font-size:11px;color:var(--cx-text-mute);">Campaña (opcional)</label>
+        <select id="brief-campana-sel" style="background:var(--cx-bg-alt);border:1px solid #e7e5e4;border-radius:8px;padding:7px 12px;color:var(--cx-text);font-size:13px;width:100%;margin-top:4px;">
           <option value="">Sin campaña específica</option>
         </select>
       </div>
@@ -932,7 +932,7 @@ window.addEventListener('unhandledrejection', function(ev) {
   <div class="page-sub">Inversión histórica, rendimiento por creador y Shopify revenue.</div>
 
   <!-- KPI fila 1: histórico -->
-  <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px;">Histórico total</div>
+  <div style="font-size:11px;font-weight:700;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px;">Histórico total</div>
   <div class="kpi-grid" style="grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-bottom:20px;">
     <div class="kpi-card blue"><div class="kpi-label">Invertido total</div><div class="kpi-val" id="an-total-hist">—</div></div>
     <div class="kpi-card green"><div class="kpi-label">Colaboraciones</div><div class="kpi-val" id="an-colabs-hist">—</div></div>
@@ -943,11 +943,11 @@ window.addEventListener('unhandledrejection', function(ev) {
   </div>
 
   <!-- KPI fila 2: Shopify -->
-  <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px;">Shopify — Revenue actual</div>
+  <div style="font-size:11px;font-weight:700;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px;">Shopify — Revenue actual</div>
   <div class="kpi-grid" style="grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-bottom:24px;">
     <div class="kpi-card blue"><div class="kpi-label">Revenue últimos 30d</div><div class="kpi-val" id="an-sh-30d">—</div></div>
     <div class="kpi-card green"><div class="kpi-label">Revenue este mes</div><div class="kpi-val" id="an-sh-mes">—</div></div>
-    <div class="kpi-card" id="an-sh-crec-card" style="border-color:#34d399;"><div class="kpi-label">Crecimiento vs mes ant.</div><div class="kpi-val" id="an-sh-crec">—</div></div>
+    <div class="kpi-card" id="an-sh-crec-card" style="border-color:#16a34a;"><div class="kpi-label">Crecimiento vs mes ant.</div><div class="kpi-val" id="an-sh-crec">—</div></div>
     <div class="kpi-card yellow"><div class="kpi-label">Pedidos últimos 30d</div><div class="kpi-val" id="an-sh-orders">—</div></div>
   </div>
 
@@ -956,7 +956,7 @@ window.addEventListener('unhandledrejection', function(ev) {
     <div class="card">
       <div class="card-hdr">
         <span class="card-title">&#x1F4B0; Gasto mensual histórico (COP)</span>
-        <span id="an-total-label" style="font-size:12px;color:#64748b;"></span>
+        <span id="an-total-label" style="font-size:12px;color:var(--cx-text-mute);"></span>
       </div>
       <div class="card-body" id="an-gasto-chart" style="min-height:200px;padding:8px 0;"></div>
     </div>
@@ -1098,8 +1098,8 @@ window.addEventListener('unhandledrejection', function(ev) {
     <div class="form-row full">
       <div class="form-group"><label>Notas</label><textarea id="inf-notas" placeholder="Observaciones..."></textarea></div>
     </div>
-    <div style="border-top:1px solid #334155;margin:10px 0 6px;padding-top:10px;">
-      <div style="font-size:11px;font-weight:700;color:#a78bfa;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">🏦 Datos Bancarios</div>
+    <div style="border-top:1px solid #e7e5e4;margin:10px 0 6px;padding-top:10px;">
+      <div style="font-size:11px;font-weight:700;color:#6d28d9;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">🏦 Datos Bancarios</div>
       <div class="form-row">
         <div class="form-group"><label>Banco</label><input id="inf-banco" placeholder="Bancolombia, Nequi, Daviplata..."></div>
         <div class="form-group"><label>Tipo de cuenta</label>
@@ -1113,33 +1113,33 @@ window.addEventListener('unhandledrejection', function(ev) {
         <div class="form-group"><label>Cédula / NIT</label><input id="inf-cedula" placeholder="1234567890"></div>
       </div>
     </div>
-    <div style="border-top:1px solid #334155;margin:10px 0 6px;padding-top:10px;">
-      <div style="font-size:11px;font-weight:700;color:#fbbf24;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">⏰ Ciclo de pago</div>
+    <div style="border-top:1px solid #e7e5e4;margin:10px 0 6px;padding-top:10px;">
+      <div style="font-size:11px;font-weight:700;color:#b45309;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">⏰ Ciclo de pago</div>
       <div class="form-row">
         <div class="form-group">
           <label>Frecuencia con la que se le paga</label>
-          <select id="inf-ciclo-pago" style="background:#0f172a;color:#e2e8f0;border:1px solid #334155;border-radius:6px;padding:8px;width:100%;">
+          <select id="inf-ciclo-pago" style="background:var(--cx-bg-alt);color:var(--cx-text);border:1px solid #e7e5e4;border-radius:6px;padding:8px;width:100%;">
             <option value="Mensual">Mensual (cada 30 días)</option>
             <option value="Bimensual">Bimensual (cada 60 días)</option>
             <option value="Trimestral">Trimestral (cada 90 días)</option>
             <option value="Único">Único (no recurrente)</option>
             <option value="Sin ciclo">Sin ciclo definido</option>
           </select>
-          <div style="font-size:10px;color:#64748b;margin-top:4px;">
+          <div style="font-size:10px;color:var(--cx-text-mute);margin-top:4px;">
             Cuando se cumple el ciclo y no hay solicitud activa, el panel muestra <span style="color:#fde047;">⏰ Toca pagar</span>.
           </div>
         </div>
       </div>
     </div>
-    <div style="border-top:1px solid #334155;margin:10px 0 6px;padding-top:10px;">
-      <div style="font-size:11px;font-weight:700;color:#34d399;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">🎟️ Atribución de ventas</div>
+    <div style="border-top:1px solid #e7e5e4;margin:10px 0 6px;padding-top:10px;">
+      <div style="font-size:11px;font-weight:700;color:#16a34a;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">🎟️ Atribución de ventas</div>
       <div class="form-row full">
         <div class="form-group">
           <label>Discount code de Shopify</label>
           <input id="inf-discount-code" placeholder="ANIMUS_LAURA10" style="text-transform:uppercase;font-family:monospace;">
-          <div style="font-size:10px;color:#64748b;margin-top:4px;line-height:1.4;">
+          <div style="font-size:10px;color:var(--cx-text-mute);margin-top:4px;line-height:1.4;">
             Cuando un cliente use este código en Shopify, la venta se atribuye automáticamente a este influencer.
-            Convención: <code style="background:#0f172a;padding:1px 6px;border-radius:4px;color:#34d399;">ANIMUS_NOMBRE_PCT</code> (ej: ANIMUS_LAURA10).
+            Convención: <code style="background:var(--cx-bg-alt);padding:1px 6px;border-radius:4px;color:#16a34a;">ANIMUS_NOMBRE_PCT</code> (ej: ANIMUS_LAURA10).
           </div>
         </div>
       </div>
@@ -1156,17 +1156,17 @@ window.addEventListener('unhandledrejection', function(ev) {
 <div class="modal-bg" id="modal-gestionar-pagos">
   <div class="modal" style="max-width:780px;max-height:88vh;overflow-y:auto;">
     <div class="modal-hdr">
-      <div class="modal-title">⚙ Gestionar pagos · <span id="gp-inf-nombre" style="color:#a78bfa;"></span></div>
+      <div class="modal-title">⚙ Gestionar pagos · <span id="gp-inf-nombre" style="color:#6d28d9;"></span></div>
       <button class="modal-close" onclick="closeModal('modal-gestionar-pagos')">&times;</button>
     </div>
     <input type="hidden" id="gp-inf-id">
-    <div style="color:#94a3b8;font-size:12px;line-height:1.5;margin-bottom:12px;background:#1e1b4b;border:1px solid #4338ca;border-radius:8px;padding:10px 12px;">
+    <div style="color:var(--cx-text-mute);font-size:12px;line-height:1.5;margin-bottom:12px;background:var(--cx-primary-soft);border:1px solid #4338ca;border-radius:8px;padding:10px 12px;">
       💡 <b>Si un pago está mal</b> (ya se pagó pero aparece pendiente, o aparece pendiente uno que no aplica) podés corregirlo acá. Todo cambio queda registrado en audit_log con motivo (INVIMA · Habeas Data).
     </div>
     <div id="gp-tabla-container" style="overflow-x:auto;">
       <table style="width:100%;border-collapse:collapse;font-size:12px;">
         <thead>
-          <tr style="background:#0f172a;color:#94a3b8;font-size:10px;text-transform:uppercase;letter-spacing:.4px;">
+          <tr style="background:var(--cx-bg-alt);color:var(--cx-text-mute);font-size:10px;text-transform:uppercase;letter-spacing:.4px;">
             <th style="text-align:left;padding:8px;">Fecha</th>
             <th style="text-align:left;padding:8px;">Estado</th>
             <th style="text-align:right;padding:8px;">Valor</th>
@@ -1179,7 +1179,7 @@ window.addEventListener('unhandledrejection', function(ev) {
       </table>
     </div>
     <div id="gp-alert" style="display:none;margin-top:10px;padding:10px;border-radius:6px;font-size:12px;"></div>
-    <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:14px;border-top:1px solid #334155;padding-top:12px;">
+    <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:14px;border-top:1px solid #e7e5e4;padding-top:12px;">
       <button class="btn btn-outline" onclick="closeModal('modal-gestionar-pagos')">Cerrar</button>
     </div>
   </div>
@@ -1193,8 +1193,8 @@ window.addEventListener('unhandledrejection', function(ev) {
     </div>
     <input type="hidden" id="pago-inf-id">
     <div style="margin-bottom:14px;">
-      <div style="font-size:13px;color:#94a3b8;margin-bottom:4px;">Influencer</div>
-      <div id="pago-inf-nombre" style="font-weight:700;font-size:15px;color:#e2e8f0;"></div>
+      <div style="font-size:13px;color:var(--cx-text-mute);margin-bottom:4px;">Influencer</div>
+      <div id="pago-inf-nombre" style="font-weight:700;font-size:15px;color:var(--cx-text);"></div>
     </div>
     <div class="form-row">
       <div class="form-group"><label>Valor a pagar (COP) *</label><input type="number" id="pago-valor" placeholder="0"></div>
@@ -1203,7 +1203,7 @@ window.addEventListener('unhandledrejection', function(ev) {
     <div class="form-row">
       <div class="form-group"><label>Fecha de publicación</label><input type="date" id="pago-fecha-pub"></div>
       <div class="form-group">
-        <label>Fecha del contenido <span style="color:#a78bfa;">★</span></label>
+        <label>Fecha del contenido <span style="color:#6d28d9;">★</span></label>
         <input type="date" id="pago-fecha-contenido" onchange="recalcularVencePagoInf()" title="Día en que el influencer publicó el contenido. La promesa de pago es a 30 días desde esta fecha.">
       </div>
     </div>
@@ -1211,15 +1211,15 @@ window.addEventListener('unhandledrejection', function(ev) {
       <div class="form-group" style="flex:2;"><label>Entregable</label><input id="pago-entregable" placeholder="1 Reel + 2 Stories..."></div>
       <div class="form-group" style="flex:1;">
         <label>Vence pago (auto)</label>
-        <input id="pago-vence" disabled style="background:#1e1b4b;color:#c7d2fe;font-weight:700;" placeholder="—">
+        <input id="pago-vence" disabled style="background:var(--cx-primary-soft);color:#c7d2fe;font-weight:700;" placeholder="—">
       </div>
     </div>
-    <div style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:12px;margin:8px 0;font-size:12px;color:#94a3b8;">
-      <div style="font-weight:700;color:#a78bfa;margin-bottom:6px;">&#x1F3E6; Datos bancarios</div>
+    <div style="background:var(--cx-bg-alt);border:1px solid #e7e5e4;border-radius:8px;padding:12px;margin:8px 0;font-size:12px;color:var(--cx-text-mute);">
+      <div style="font-weight:700;color:#6d28d9;margin-bottom:6px;">&#x1F3E6; Datos bancarios</div>
       <div id="pago-banco-preview" style="line-height:1.8;"></div>
     </div>
     <!-- Linea explicativa: que pasa despues de crear la solicitud -->
-    <div style="background:#1e1b4b;border:1px solid #4338ca;border-radius:8px;padding:10px 12px;margin:8px 0;font-size:11px;color:#c7d2fe;line-height:1.5;">
+    <div style="background:var(--cx-primary-soft);border:1px solid #4338ca;border-radius:8px;padding:10px 12px;margin:8px 0;font-size:11px;color:#c7d2fe;line-height:1.5;">
       <b style="color:#a5b4fc;">📌 Qué pasa después:</b><br>
       Esta solicitud va a <b>Sebastián</b> en /compras → tab Influencers para autorizar y pagar.
       Recibirás <b>email automático</b> cuando se haga el pago. Catalina no participa en este flujo.
@@ -1242,12 +1242,12 @@ window.addEventListener('unhandledrejection', function(ev) {
     </div>
     <input type="hidden" id="baja-inf-id">
     <div style="margin-bottom:14px;">
-      <div style="font-size:13px;color:#94a3b8;margin-bottom:4px;">Influencer</div>
-      <div id="baja-inf-nombre" style="font-weight:700;font-size:15px;color:#e2e8f0;"></div>
+      <div style="font-size:13px;color:var(--cx-text-mute);margin-bottom:4px;">Influencer</div>
+      <div id="baja-inf-nombre" style="font-weight:700;font-size:15px;color:var(--cx-text);"></div>
     </div>
     <div class="form-group" style="margin-bottom:12px;">
       <label>Motivo de baja *</label>
-      <select id="baja-motivo-tipo" style="width:100%;background:#0f172a;border:1px solid #334155;border-radius:6px;padding:8px;color:#e2e8f0;">
+      <select id="baja-motivo-tipo" style="width:100%;background:var(--cx-bg-alt);border:1px solid #e7e5e4;border-radius:6px;padding:8px;color:var(--cx-text);">
         <option value="Pausa temporal">Pausa temporal</option>
         <option value="No cumplió métricas">No cumplió métricas</option>
         <option value="Conflicto de marca">Conflicto de marca</option>
@@ -1258,9 +1258,9 @@ window.addEventListener('unhandledrejection', function(ev) {
     </div>
     <div class="form-group" style="margin-bottom:12px;">
       <label>Observación (opcional)</label>
-      <textarea id="baja-observacion" rows="3" placeholder="Detalles adicionales..." style="width:100%;background:#0f172a;border:1px solid #334155;border-radius:6px;padding:8px;color:#e2e8f0;resize:vertical;"></textarea>
+      <textarea id="baja-observacion" rows="3" placeholder="Detalles adicionales..." style="width:100%;background:var(--cx-bg-alt);border:1px solid #e7e5e4;border-radius:6px;padding:8px;color:var(--cx-text);resize:vertical;"></textarea>
     </div>
-    <div style="background:#1c1a14;border:1px solid #78350f;border-radius:8px;padding:10px;font-size:12px;color:#fcd34d;margin-bottom:12px;">
+    <div style="background:var(--cx-warn-pale);border:1px solid var(--cx-hairline);border-radius:8px;padding:10px;font-size:12px;color:#b45309;margin-bottom:12px;">
       &#x26A0;&#xFE0F; El influencer quedará en estado <b>Baja</b> y visible en el historial. Podrá reactivarse en cualquier momento.
     </div>
     <div style="display:flex;gap:10px;justify-content:flex-end;">
@@ -1341,7 +1341,7 @@ window.addEventListener('unhandledrejection', function(ev) {
       <div class="modal-title" id="modal-agent-title">Resultado</div>
       <button class="modal-close" onclick="closeModal('modal-agente-result')">&times;</button>
     </div>
-    <div id="modal-agent-content" style="font-size:13px;color:#e2e8f0;white-space:pre-wrap;max-height:500px;overflow-y:auto;background:#0f172a;border-radius:8px;padding:16px;font-family:'Segoe UI',sans-serif;"></div>
+    <div id="modal-agent-content" style="font-size:13px;color:var(--cx-text);white-space:pre-wrap;max-height:500px;overflow-y:auto;background:var(--cx-bg-alt);border-radius:8px;padding:16px;font-family:'Segoe UI',sans-serif;"></div>
   </div>
 </div>
 <!-- /MODALS -->
@@ -1372,20 +1372,20 @@ window.addEventListener('unhandledrejection', function(ev) {
   </div>
   <div class="card" style="margin-bottom:20px;">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
-      <div style="font-weight:700;color:#e2e8f0;font-size:15px;">Score de Influencers</div>
-      <div style="font-size:11px;color:#64748b;">engagement 30pct &middot; inversion 25pct &middot; seguidores 20pct &middot; recencia 15pct &middot; contenido 10pct</div>
+      <div style="font-weight:700;color:var(--cx-text);font-size:15px;">Score de Influencers</div>
+      <div style="font-size:11px;color:var(--cx-text-mute);">engagement 30pct &middot; inversion 25pct &middot; seguidores 20pct &middot; recencia 15pct &middot; contenido 10pct</div>
     </div>
     <div style="overflow-x:auto;">
     <table style="width:100%;border-collapse:collapse;font-size:13px;">
-      <thead><tr style="border-bottom:1px solid #334155;">
-        <th style="padding:8px;text-align:left;color:#64748b;font-weight:600;">Influencer</th>
-        <th style="padding:8px;text-align:left;color:#64748b;font-weight:600;">Nicho</th>
-        <th style="padding:8px;text-align:center;color:#64748b;font-weight:600;">Score</th>
-        <th style="padding:8px;text-align:right;color:#64748b;font-weight:600;">Engagement</th>
-        <th style="padding:8px;text-align:right;color:#64748b;font-weight:600;">Seguidores</th>
-        <th style="padding:8px;text-align:right;color:#64748b;font-weight:600;">Campanas</th>
-        <th style="padding:8px;text-align:right;color:#64748b;font-weight:600;">Invertido</th>
-        <th style="padding:8px;text-align:center;color:#64748b;font-weight:600;">Estado</th>
+      <thead><tr style="border-bottom:1px solid #e7e5e4;">
+        <th style="padding:8px;text-align:left;color:var(--cx-text-mute);font-weight:600;">Influencer</th>
+        <th style="padding:8px;text-align:left;color:var(--cx-text-mute);font-weight:600;">Nicho</th>
+        <th style="padding:8px;text-align:center;color:var(--cx-text-mute);font-weight:600;">Score</th>
+        <th style="padding:8px;text-align:right;color:var(--cx-text-mute);font-weight:600;">Engagement</th>
+        <th style="padding:8px;text-align:right;color:var(--cx-text-mute);font-weight:600;">Seguidores</th>
+        <th style="padding:8px;text-align:right;color:var(--cx-text-mute);font-weight:600;">Campanas</th>
+        <th style="padding:8px;text-align:right;color:var(--cx-text-mute);font-weight:600;">Invertido</th>
+        <th style="padding:8px;text-align:center;color:var(--cx-text-mute);font-weight:600;">Estado</th>
       </tr></thead>
       <tbody id="ag-scoring-tbody"><tr class="empty-row"><td colspan="8">Cargando...</td></tr></tbody>
     </table>
@@ -1393,17 +1393,17 @@ window.addEventListener('unhandledrejection', function(ev) {
   </div>
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px;">
     <div class="card">
-      <div style="font-weight:700;color:#e2e8f0;font-size:15px;margin-bottom:14px;">Auditoria de Portafolio</div>
-      <div id="ag-audit-list"><div style="color:#64748b;font-size:13px;">Cargando...</div></div>
+      <div style="font-weight:700;color:var(--cx-text);font-size:15px;margin-bottom:14px;">Auditoria de Portafolio</div>
+      <div id="ag-audit-list"><div style="color:var(--cx-text-mute);font-size:13px;">Cargando...</div></div>
     </div>
     <div class="card">
-      <div style="font-weight:700;color:#e2e8f0;font-size:15px;margin-bottom:14px;">Analisis Competitivo</div>
-      <div id="ag-competition"><div style="color:#64748b;font-size:13px;">Cargando...</div></div>
+      <div style="font-weight:700;color:var(--cx-text);font-size:15px;margin-bottom:14px;">Analisis Competitivo</div>
+      <div id="ag-competition"><div style="color:var(--cx-text-mute);font-size:13px;">Cargando...</div></div>
     </div>
   </div>
   <div class="card">
-    <div style="font-weight:700;color:#e2e8f0;font-size:15px;margin-bottom:14px;">Propuestas de Campana</div>
-    <div id="ag-proposals"><div style="color:#64748b;font-size:13px;">Cargando...</div></div>
+    <div style="font-weight:700;color:var(--cx-text);font-size:15px;margin-bottom:14px;">Propuestas de Campana</div>
+    <div id="ag-proposals"><div style="color:var(--cx-text-mute);font-size:13px;">Cargando...</div></div>
   </div>
 </div>
 
@@ -1517,14 +1517,14 @@ async function cmoAbrirHistorial(){
   if(!m) return;
   m.classList.add('open');
   const body = document.getElementById('cmo-hist-body');
-  body.innerHTML = '<div style="color:#94a3b8;text-align:center;padding:24px">Cargando…</div>';
+  body.innerHTML = '<div style="color:var(--cx-text-mute);text-align:center;padding:24px">Cargando…</div>';
   try{
     const r = await fetch('/api/marketing/cmo/historial-planes?limit=60', {credentials:'same-origin'});
-    if(!r.ok){ body.innerHTML = '<div style="color:#f87171">HTTP '+r.status+'</div>'; return; }
+    if(!r.ok){ body.innerHTML = '<div style="color:#dc2626">HTTP '+r.status+'</div>'; return; }
     const d = await r.json();
-    if(!d.ok){ body.innerHTML = '<div style="color:#f87171">'+esc(d.error||'error')+'</div>'; return; }
+    if(!d.ok){ body.innerHTML = '<div style="color:#dc2626">'+esc(d.error||'error')+'</div>'; return; }
     const planes = d.planes || [];
-    if(!planes.length){ body.innerHTML = '<div style="color:#94a3b8;text-align:center;padding:24px">Sin planes registrados aún · esperá al cron 7 AM o generá uno con ⚡ Generar plan ahora.</div>'; return; }
+    if(!planes.length){ body.innerHTML = '<div style="color:var(--cx-text-mute);text-align:center;padding:24px">Sin planes registrados aún · esperá al cron 7 AM o generá uno con ⚡ Generar plan ahora.</div>'; return; }
     // ── Sparkline tendencia tasa aprobación · últimos 30 planes ──
     const ordenados = [...planes].slice().reverse();  // más viejo a izquierda
     const last30 = ordenados.slice(-30);
@@ -1537,40 +1537,40 @@ async function cmoAbrirHistorial(){
         const col = ratio >= 0.5 ? '#34d399' : (ratio >= 0.25 ? '#f59e0b' : '#ef4444');
         return `<div title="${esc(p.fecha)} · ${Math.round(ratio*100)}% aprobadas" style="display:inline-block;width:8px;height:${h}px;background:${col};margin-right:2px;border-radius:2px 2px 0 0;vertical-align:bottom;"></div>`;
       }).join('');
-      sparkHtml = '<div style="margin-bottom:14px;padding:10px 14px;background:#0f172a;border-radius:8px;">'
-        + '<div style="font-size:11px;color:#94a3b8;margin-bottom:6px;">📈 Tendencia tasa aprobación · últimos '+last30.length+' planes</div>'
+      sparkHtml = '<div style="margin-bottom:14px;padding:10px 14px;background:var(--cx-bg-alt);border-radius:8px;">'
+        + '<div style="font-size:11px;color:var(--cx-text-mute);margin-bottom:6px;">📈 Tendencia tasa aprobación · últimos '+last30.length+' planes</div>'
         + '<div style="height:40px;display:flex;align-items:flex-end;">'+bars+'</div>'
-        + '<div style="font-size:10px;color:#64748b;margin-top:4px;display:flex;justify-content:space-between;">'
+        + '<div style="font-size:10px;color:var(--cx-text-mute);margin-top:4px;display:flex;justify-content:space-between;">'
         + '<span>'+esc(last30[0].fecha)+'</span><span>'+esc(last30[last30.length-1].fecha)+'</span></div></div>';
     }
     let html = sparkHtml + '<table class="cmo-hist-tbl" style="width:100%;border-collapse:collapse;font-size:12px;">'
-      + '<thead><tr style="background:#0f172a;color:#94a3b8;text-transform:uppercase;font-size:10px;letter-spacing:.4px;">'
+      + '<thead><tr style="background:var(--cx-bg-alt);color:var(--cx-text-mute);text-transform:uppercase;font-size:10px;letter-spacing:.4px;">'
       + '<th style="text-align:left;padding:8px 10px;">Fecha</th>'
       + '<th style="text-align:left;padding:8px 10px;">Estado</th>'
       + '<th class="mob-hide" style="text-align:left;padding:8px 10px;">Generado por</th>'
       + '<th style="text-align:right;padding:8px 10px;">Acciones</th>'
-      + '<th style="text-align:right;padding:8px 10px;color:#34d399;">✓ Aprob</th>'
+      + '<th style="text-align:right;padding:8px 10px;color:#16a34a;">✓ Aprob</th>'
       + '<th class="mob-hide" style="text-align:right;padding:8px 10px;color:#f59e0b;">⏸ Posp</th>'
       + '<th class="mob-hide" style="text-align:right;padding:8px 10px;color:#ef4444;">✕ Desc</th>'
-      + '<th style="text-align:right;padding:8px 10px;color:#a78bfa;">⏳ Pend</th>'
+      + '<th style="text-align:right;padding:8px 10px;color:#6d28d9;">⏳ Pend</th>'
       + '</tr></thead><tbody>';
     for(const p of planes){
       const s = p.stats || {};
       const ratioOk = s.total > 0 ? Math.round((s.aprobadas/s.total)*100) : 0;
       const bg = (p.fecha === (new Date().toISOString().slice(0,10))) ? 'background:rgba(167,139,250,.08);' : '';
-      html += '<tr style="border-top:1px solid #1e293b;cursor:pointer;'+bg+'" '
+      html += '<tr style="border-top:1px solid var(--cx-hairline);cursor:pointer;'+bg+'" '
         + 'onclick="cmoCargarPlanPorFecha(\''+esc(p.fecha)+'\')" '
         + 'onmouseover="this.style.background=\'rgba(52,211,153,.05)\'" '
         + 'onmouseout="this.style.background=\''+ (bg ? 'rgba(167,139,250,.08)' : 'transparent') +'\'">';
       html += '<td style="padding:8px 10px;font-weight:600;">'+esc(p.fecha)+'</td>';
       html += '<td style="padding:8px 10px;"><span class="badge" style="font-size:10px;">'+esc(p.estado||'-')+'</span></td>';
-      html += '<td class="mob-hide" style="padding:8px 10px;color:#94a3b8;font-size:11px;">'+esc(p.generado_por||'-')+'</td>';
-      html += '<td style="padding:8px 10px;text-align:right;font-weight:700;color:#e2e8f0;">'+(s.total||0)+'</td>';
-      html += '<td style="padding:8px 10px;text-align:right;color:#34d399;font-weight:700;">'+(s.aprobadas||0)
+      html += '<td class="mob-hide" style="padding:8px 10px;color:var(--cx-text-mute);font-size:11px;">'+esc(p.generado_por||'-')+'</td>';
+      html += '<td style="padding:8px 10px;text-align:right;font-weight:700;color:var(--cx-text);">'+(s.total||0)+'</td>';
+      html += '<td style="padding:8px 10px;text-align:right;color:#16a34a;font-weight:700;">'+(s.aprobadas||0)
         +'<span style="font-size:10px;opacity:.7;"> ('+ratioOk+'%)</span></td>';
       html += '<td class="mob-hide" style="padding:8px 10px;text-align:right;color:#f59e0b;">'+(s.pospuestas||0)+'</td>';
       html += '<td class="mob-hide" style="padding:8px 10px;text-align:right;color:#ef4444;">'+(s.descartadas||0)+'</td>';
-      html += '<td style="padding:8px 10px;text-align:right;color:#a78bfa;">'+(s.pendientes||0)+'</td>';
+      html += '<td style="padding:8px 10px;text-align:right;color:#6d28d9;">'+(s.pendientes||0)+'</td>';
       html += '</tr>';
     }
     html += '</tbody></table>';
@@ -1583,17 +1583,17 @@ async function cmoAbrirHistorial(){
       return a;
     }, {total:0,aprob:0,posp:0,desc:0,pend:0});
     const taFinal = agg.total > 0 ? Math.round((agg.aprob/agg.total)*100) : 0;
-    html += '<div style="margin-top:14px;padding:10px 14px;background:#0f172a;border-radius:8px;font-size:12px;color:#cbd5e1;">'
-      + '<b style="color:#a78bfa">Total ' + planes.length + ' planes</b> · '
+    html += '<div style="margin-top:14px;padding:10px 14px;background:var(--cx-bg-alt);border-radius:8px;font-size:12px;color:var(--cx-text-soft);">'
+      + '<b style="color:#6d28d9">Total ' + planes.length + ' planes</b> · '
       + agg.total + ' acciones totales · '
-      + '<span style="color:#34d399;font-weight:700">'+agg.aprob+' aprobadas ('+taFinal+'% tasa)</span> · '
+      + '<span style="color:#16a34a;font-weight:700">'+agg.aprob+' aprobadas ('+taFinal+'% tasa)</span> · '
       + '<span style="color:#f59e0b">'+agg.posp+' pospuestas</span> · '
       + '<span style="color:#ef4444">'+agg.desc+' descartadas</span> · '
-      + '<span style="color:#a78bfa">'+agg.pend+' pendientes</span>'
+      + '<span style="color:#6d28d9">'+agg.pend+' pendientes</span>'
       + '</div>';
     body.innerHTML = html;
   } catch(e){
-    body.innerHTML = '<div style="color:#f87171">Error red: '+esc(e.message)+'</div>';
+    body.innerHTML = '<div style="color:#dc2626">Error red: '+esc(e.message)+'</div>';
   }
 }
 async function cmoCargarPlanPorFecha(fecha){
@@ -1608,7 +1608,7 @@ async function cmoCargarPlan(){
   const empty = document.getElementById('cmo-empty');
   const list = document.getElementById('cmo-acciones-list');
   const kpiBar = document.getElementById('cmo-kpi-bar');
-  list.innerHTML = '<div style="color:#94a3b8;text-align:center;padding:18px;">⏳ Cargando plan...</div>';
+  list.innerHTML = '<div style="color:var(--cx-text-mute);text-align:center;padding:18px;">⏳ Cargando plan...</div>';
   empty.style.display = 'none';
   kpiBar.style.display = 'none';
   try {
@@ -1625,12 +1625,12 @@ async function cmoCargarPlan(){
     // Si estamos viendo plan histórico (no de hoy), banner
     if(window._CMO_FECHA_FORZADA){
       const banner = document.createElement('div');
-      banner.style.cssText = 'background:rgba(167,139,250,.15);border:1px solid rgba(167,139,250,.4);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:#cbd5e1;';
-      banner.innerHTML = '📜 Plan histórico del <b>'+window._CMO_FECHA_FORZADA+'</b> · <a href="#" onclick="window._CMO_FECHA_FORZADA=null;cmoCargarPlan();return false;" style="color:#a78bfa">↩ volver a hoy</a>';
+      banner.style.cssText = 'background:rgba(167,139,250,.15);border:1px solid rgba(167,139,250,.4);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:var(--cx-text-soft);';
+      banner.innerHTML = '📜 Plan histórico del <b>'+window._CMO_FECHA_FORZADA+'</b> · <a href="#" onclick="window._CMO_FECHA_FORZADA=null;cmoCargarPlan();return false;" style="color:#6d28d9">↩ volver a hoy</a>';
       list.parentNode.insertBefore(banner, list);
     }
     if(!d.ok || !d.acciones){
-      list.innerHTML = '<div style="color:#fca5a5;text-align:center;padding:18px;">Error: '+_escHtml(d.error||'desconocido')+'</div>';
+      list.innerHTML = '<div style="color:#dc2626;text-align:center;padding:18px;">Error: '+_escHtml(d.error||'desconocido')+'</div>';
       return;
     }
     // KPIs
@@ -1648,17 +1648,17 @@ async function cmoCargarPlan(){
       {l:'⏳ Pendientes', v:pendientes, c:'#67e8f9'},
       {l:'✅ Ejecutadas', v:ejecutadas, c:'#86efac'},
       {l:'✕ Descartadas', v:descartadas, c:'#64748b'},
-    ].map(k=>`<div style="background:#0f172a;border:1px solid #334155;border-radius:10px;padding:12px;">`
+    ].map(k=>`<div style="background:var(--cx-bg-alt);border:1px solid #e7e5e4;border-radius:10px;padding:12px;">`
       +`<div style="font-size:22px;font-weight:800;color:${k.c}">${k.v}</div>`
-      +`<div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.4px;margin-top:2px">${k.l}</div></div>`).join('');
+      +`<div style="font-size:10px;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.4px;margin-top:2px">${k.l}</div></div>`).join('');
     // Lista de acciones
     if(!acc.length){
-      list.innerHTML = '<div style="color:#94a3b8;text-align:center;padding:18px;">El CMO IA no propuso acciones para hoy · datos insuficientes.</div>';
+      list.innerHTML = '<div style="color:var(--cx-text-mute);text-align:center;padding:18px;">El CMO IA no propuso acciones para hoy · datos insuficientes.</div>';
       return;
     }
     list.innerHTML = acc.map(a => cmoRenderAccion(a)).join('');
   } catch(e){
-    list.innerHTML = '<div style="color:#fca5a5;text-align:center;padding:18px;">Error red: '+_escHtml(e.message)+'</div>';
+    list.innerHTML = '<div style="color:#dc2626;text-align:center;padding:18px;">Error red: '+_escHtml(e.message)+'</div>';
   }
 }
 function cmoRenderAccion(a){
@@ -1666,11 +1666,11 @@ function cmoRenderAccion(a){
     critica:{bg:'#7f1d1d',fg:'#fecaca',label:'🔴 CRÍTICA'},
     alta:{bg:'#854d0e',fg:'#fde047',label:'🟡 ALTA'},
     media:{bg:'#1e3a8a',fg:'#bfdbfe',label:'🔵 MEDIA'},
-    baja:{bg:'#334155',fg:'#cbd5e1',label:'⚪ BAJA'},
+    baja:{bg:'#e7e5e4',fg:'#cbd5e1',label:'⚪ BAJA'},
   };
   const pri = priCfg[a.prioridad] || priCfg.media;
   const estadoCfg = {
-    pendiente:{bg:'#1e293b',fg:'#94a3b8',label:'⏳ Pendiente'},
+    pendiente:{bg:'#f1f5f9',fg:'#94a3b8',label:'⏳ Pendiente'},
     aprobada:{bg:'#064e3b',fg:'#86efac',label:'✓ Aprobada'},
     ejecutada:{bg:'#064e3b',fg:'#86efac',label:'✅ Ejecutada'},
     pospuesta:{bg:'#854d0e',fg:'#fcd34d',label:'⏸ Pospuesta'},
@@ -1685,7 +1685,7 @@ function cmoRenderAccion(a){
   const ejecutable = a.agente_workflow && a.estado === 'pendiente';
   const decidible = a.estado === 'pendiente';
 
-  let html = '<div style="background:#1e293b;border:1px solid #334155;border-left:4px solid '+pri.bg+';border-radius:10px;padding:14px 16px;">';
+  let html = '<div style="background:var(--cx-card);border:1px solid #e7e5e4;border-left:4px solid '+pri.bg+';border-radius:10px;padding:14px 16px;">';
   // Header
   html += '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:8px;flex-wrap:wrap;">';
   html += '<div style="flex:1;min-width:240px;">';
@@ -1693,28 +1693,28 @@ function cmoRenderAccion(a){
   html += '<span style="background:'+pri.bg+';color:'+pri.fg+';padding:2px 8px;border-radius:10px;font-size:10px;font-weight:800;">'+pri.label+'</span>';
   html += '<span style="background:'+est.bg+';color:'+est.fg+';padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;">'+est.label+'</span>';
   if (a.agente_workflow) {
-    html += '<span style="background:#1e1b4b;color:#a78bfa;padding:2px 8px;border-radius:10px;font-size:10px;font-family:monospace;">→ '+_escHtml(a.agente_workflow)+'</span>';
+    html += '<span style="background:var(--cx-primary-soft);color:#6d28d9;padding:2px 8px;border-radius:10px;font-size:10px;font-family:monospace;">→ '+_escHtml(a.agente_workflow)+'</span>';
   }
   html += '</div>';
-  html += '<div style="font-size:15px;font-weight:700;color:#e2e8f0;margin-bottom:4px;">'+_escHtml(a.titulo||'')+'</div>';
-  if (a.descripcion) html += '<div style="font-size:12px;color:#94a3b8;line-height:1.5;">'+_escHtml(a.descripcion)+'</div>';
+  html += '<div style="font-size:15px;font-weight:700;color:var(--cx-text);margin-bottom:4px;">'+_escHtml(a.titulo||'')+'</div>';
+  if (a.descripcion) html += '<div style="font-size:12px;color:var(--cx-text-mute);line-height:1.5;">'+_escHtml(a.descripcion)+'</div>';
   html += '</div></div>';
   // Acciones
   if (decidible){
     html += '<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">';
     if (ejecutable){
-      html += '<button onclick="cmoDecidir('+a.id+',\'aprobar\')" style="background:#15803d;color:#fff;border:0;padding:8px 14px;border-radius:6px;cursor:pointer;font-weight:700;font-size:12px;">✓ Aprobar y ejecutar</button>';
+      html += '<button onclick="cmoDecidir('+a.id+',\'aprobar\')" style="background:var(--cx-success-pale);color:#fff;border:0;padding:8px 14px;border-radius:6px;cursor:pointer;font-weight:700;font-size:12px;">✓ Aprobar y ejecutar</button>';
     } else {
-      html += '<button onclick="cmoDecidir('+a.id+',\'aprobar\')" style="background:#15803d;color:#fff;border:0;padding:8px 14px;border-radius:6px;cursor:pointer;font-weight:700;font-size:12px;" title="Marcar como aprobada (sin workflow auto)">✓ Aprobar</button>';
+      html += '<button onclick="cmoDecidir('+a.id+',\'aprobar\')" style="background:var(--cx-success-pale);color:#fff;border:0;padding:8px 14px;border-radius:6px;cursor:pointer;font-weight:700;font-size:12px;" title="Marcar como aprobada (sin workflow auto)">✓ Aprobar</button>';
     }
-    html += '<button onclick="cmoDecidir('+a.id+',\'posponer\')" style="background:#854d0e;color:#fcd34d;border:0;padding:8px 14px;border-radius:6px;cursor:pointer;font-weight:700;font-size:12px;">⏸ Posponer</button>';
+    html += '<button onclick="cmoDecidir('+a.id+',\'posponer\')" style="background:#854d0e;color:#b45309;border:0;padding:8px 14px;border-radius:6px;cursor:pointer;font-weight:700;font-size:12px;">⏸ Posponer</button>';
     html += '<button onclick="cmoDecidir('+a.id+',\'descartar\')" style="background:#7f1d1d;color:#fecaca;border:0;padding:8px 14px;border-radius:6px;cursor:pointer;font-weight:700;font-size:12px;">✕ Descartar</button>';
     html += '</div>';
   }
   // Resultado ejecutado
   if (resultado && (resultado.ok === true || resultado.campanas !== undefined)){
-    html += '<details style="margin-top:10px;background:#0f172a;border-radius:6px;padding:8px 12px;"><summary style="cursor:pointer;color:#86efac;font-size:11px;font-weight:700;">Ver resultado de ejecución</summary>';
-    html += '<pre style="font-size:10px;color:#94a3b8;margin-top:6px;max-height:200px;overflow:auto;">'+_escHtml(JSON.stringify(resultado, null, 2))+'</pre></details>';
+    html += '<details style="margin-top:10px;background:var(--cx-bg-alt);border-radius:6px;padding:8px 12px;"><summary style="cursor:pointer;color:#86efac;font-size:11px;font-weight:700;">Ver resultado de ejecución</summary>';
+    html += '<pre style="font-size:10px;color:var(--cx-text-mute);margin-top:6px;max-height:200px;overflow:auto;">'+_escHtml(JSON.stringify(resultado, null, 2))+'</pre></details>';
   }
   if (resultado && resultado.ok === false){
     html += '<div style="margin-top:8px;background:#7f1d1d;color:#fecaca;padding:6px 10px;border-radius:6px;font-size:11px;">⚠ Error: '+_escHtml(resultado.error||'desconocido')+'</div>';
@@ -1725,7 +1725,7 @@ function cmoRenderAccion(a){
 async function cmoGenerarPlanForzar(){
   const list = document.getElementById('cmo-acciones-list');
   const empty = document.getElementById('cmo-empty');
-  list.innerHTML = '<div style="color:#94a3b8;text-align:center;padding:18px;">🤖 Claude generando plan... (esto tarda 15-30s)</div>';
+  list.innerHTML = '<div style="color:var(--cx-text-mute);text-align:center;padding:18px;">🤖 Claude generando plan... (esto tarda 15-30s)</div>';
   empty.style.display = 'none';
   try {
     const r = await fetch('/api/marketing/cmo/plan-diario', {
@@ -1735,9 +1735,9 @@ async function cmoGenerarPlanForzar(){
     });
     const d = await r.json();
     if (r.ok){ setTimeout(cmoCargarPlan, 400); }
-    else { list.innerHTML = '<div style="color:#fca5a5;text-align:center;padding:18px;">Error '+r.status+': '+_escHtml(d.error||'')+'</div>'; }
+    else { list.innerHTML = '<div style="color:#dc2626;text-align:center;padding:18px;">Error '+r.status+': '+_escHtml(d.error||'')+'</div>'; }
   } catch(e){
-    list.innerHTML = '<div style="color:#fca5a5;text-align:center;padding:18px;">Error red: '+_escHtml(e.message)+'</div>';
+    list.innerHTML = '<div style="color:#dc2626;text-align:center;padding:18px;">Error red: '+_escHtml(e.message)+'</div>';
   }
 }
 async function cmoDecidir(aid, decision){
@@ -1825,7 +1825,7 @@ async function hoyCargarResumen() {
 async function hoyEjecutarTodos() {
   _hoyLog('⚡ Ejecutando los 11 agentes en paralelo...');
   const acc = document.getElementById('hoy-acciones');
-  acc.innerHTML = '<div style="color:#94a3b8;text-align:center;padding:20px"><span class="spin"></span> Ejecutando agentes...</div>';
+  acc.innerHTML = '<div style="color:var(--cx-text-mute);text-align:center;padding:20px"><span class="spin"></span> Ejecutando agentes...</div>';
 
   // Lista de agentes a ejecutar (orden de prioridad para mostrar)
   const agentes = [
@@ -1902,10 +1902,10 @@ async function hoyEjecutarTodos() {
 
     if(resumenAccion) {
       accionesCount++;
-      html += `<div style="background:#0f172a;border:1px solid #334155;border-left:4px solid ${ag.color};border-radius:10px;padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:14px">
+      html += `<div style="background:var(--cx-bg-alt);border:1px solid #e7e5e4;border-left:4px solid ${ag.color};border-radius:10px;padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:14px">
         <div>
-          <div style="font-size:13px;font-weight:700;color:#f1f5f9">${ag.icon} ${_escHtml(ag.label)}</div>
-          <div style="font-size:12px;color:#94a3b8;margin-top:2px">${_escHtml(resumenAccion)}</div>
+          <div style="font-size:13px;font-weight:700;color:var(--cx-text)">${ag.icon} ${_escHtml(ag.label)}</div>
+          <div style="font-size:12px;color:var(--cx-text-mute);margin-top:2px">${_escHtml(resumenAccion)}</div>
         </div>
         <div style="display:flex;gap:6px;flex-shrink:0">
           <button class="btn btn-outline btn-sm" onclick="hoyVerDetalleAgente('${ag.key}')" title="Ver detalle del análisis">👁 Ver</button>
@@ -1916,9 +1916,9 @@ async function hoyEjecutarTodos() {
   }
 
   if(accionesCount === 0) {
-    acc.innerHTML = '<div style="background:#064e3b;color:#34d399;padding:14px;border-radius:8px;text-align:center;font-size:13px">✅ Sin acciones críticas detectadas. Todo bajo control.</div>';
+    acc.innerHTML = '<div style="background:var(--cx-success-pale);color:#16a34a;padding:14px;border-radius:8px;text-align:center;font-size:13px">✅ Sin acciones críticas detectadas. Todo bajo control.</div>';
   } else {
-    acc.innerHTML = `<div style="font-size:11px;color:#94a3b8;margin-bottom:6px">${accionesCount} acción(es) detectada(s) por la IA · click ✓ Aplicar para ejecutar la propuesta</div>` + html;
+    acc.innerHTML = `<div style="font-size:11px;color:var(--cx-text-mute);margin-bottom:6px">${accionesCount} acción(es) detectada(s) por la IA · click ✓ Aplicar para ejecutar la propuesta</div>` + html;
   }
   _hoyLog(`✓ Análisis completo: ${accionesCount} accion(es) detectadas`);
   hoyCargarResumen(); // refresh KPIs
@@ -1992,7 +1992,7 @@ async function hoyRefreshMetricas() {
       result.innerHTML = '<span style="color:#dc2626">❌ Error: ' + _escHtml(d.error || r.status) + '</span>';
       return;
     }
-    result.innerHTML = `<span style="color:#34d399">✓ ${d.mensaje}</span>`;
+    result.innerHTML = `<span style="color:#16a34a">✓ ${d.mensaje}</span>`;
     _hoyLog(`📡 Refresh metrics iniciado: ${d.procesados_en_background} influencers`);
   } catch(e) {
     result.innerHTML = '<span style="color:#dc2626">❌ ' + e.message + '</span>';
@@ -2015,10 +2015,10 @@ async function loadUltimaEstrategia() {
     }
     // Header con timestamp + botón regenerar
     const fecha = (det.fecha || latest.fecha || '').slice(0, 16).replace('T',' ');
-    let html = `<div style="display:flex;justify-content:space-between;align-items:center;background:#0f172a;border:1px solid #334155;border-radius:10px;padding:12px 18px;margin-bottom:14px;">
+    let html = `<div style="display:flex;justify-content:space-between;align-items:center;background:var(--cx-bg-alt);border:1px solid #e7e5e4;border-radius:10px;padding:12px 18px;margin-bottom:14px;">
       <div>
-        <div style="font-size:14px;font-weight:700;color:#a78bfa;">&#x1F9E0; Última estrategia generada</div>
-        <div style="font-size:11px;color:#64748b;margin-top:2px;">${fecha} · por ${det.ejecutado_por||'sistema'}</div>
+        <div style="font-size:14px;font-weight:700;color:#6d28d9;">&#x1F9E0; Última estrategia generada</div>
+        <div style="font-size:11px;color:var(--cx-text-mute);margin-top:2px;">${fecha} · por ${det.ejecutado_por||'sistema'}</div>
       </div>
       <button onclick="runAgent('estrategia')" style="background:linear-gradient(135deg,#7c3aed,#4c1d95);color:#fff;border:none;padding:8px 16px;font-size:12px;font-weight:700;border-radius:8px;cursor:pointer;">&#x21BB; Regenerar</button>
     </div>`;
@@ -2026,7 +2026,7 @@ async function loadUltimaEstrategia() {
       html += formatAgentResult('estrategia', resultado);
       if (latest.id) html += renderFeedbackBar(latest.id);
     } else {
-      html += '<div style="color:#94a3b8;padding:14px;">Sin contenido detallado.</div>';
+      html += '<div style="color:var(--cx-text-mute);padding:14px;">Sin contenido detallado.</div>';
     }
     view.innerHTML = html;
   } catch(e) {
@@ -2129,7 +2129,7 @@ async function loadDashboard() {
   const mensual = sh.mensual || [];
   const chartEl = document.getElementById('dash-chart');
   if (!mensual.length) {
-    chartEl.innerHTML = '<div style="color:#64748b;text-align:center;padding:32px;">Sin datos de ventas</div>';
+    chartEl.innerHTML = '<div style="color:var(--cx-text-mute);text-align:center;padding:32px;">Sin datos de ventas</div>';
   } else {
     const W=560, H=140, PAD_L=52, PAD_B=32, PAD_T=10, PAD_R=10;
     const plotW = W-PAD_L-PAD_R;
@@ -2163,20 +2163,20 @@ ${bars}
   const skuEl = document.getElementById('dash-top-skus');
   const topSkus = sh.top_skus || [];
   if (!topSkus.length) {
-    skuEl.innerHTML = '<div style="color:#64748b;text-align:center;padding:32px;">Sin datos de SKUs</div>';
+    skuEl.innerHTML = '<div style="color:var(--cx-text-mute);text-align:center;padding:32px;">Sin datos de SKUs</div>';
   } else {
     const maxSku = topSkus[0].total || 1;
     skuEl.innerHTML = topSkus.map((s,i)=>`
-      <div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid #1e293b;">
+      <div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--cx-hairline);">
         <span style="color:#d4af37;font-weight:700;min-width:18px;">#${i+1}</span>
         <span style="flex:1;font-weight:600;font-size:12px;">${esc(s.sku||'—')}</span>
         <div style="flex:2;">
-          <div style="background:#1e293b;border-radius:3px;height:6px;">
+          <div style="background:var(--cx-card);border-radius:3px;height:6px;">
             <div style="background:#d4af37;height:6px;border-radius:3px;width:${Math.round((s.total/maxSku)*100)}%;"></div>
           </div>
         </div>
-        <span style="color:#34d399;font-size:11px;min-width:72px;text-align:right;">${fmtCOP(s.total)}</span>
-        <span style="color:#64748b;font-size:11px;min-width:36px;text-align:right;">${fmt2(s.uds)} uds</span>
+        <span style="color:#16a34a;font-size:11px;min-width:72px;text-align:right;">${fmtCOP(s.total)}</span>
+        <span style="color:var(--cx-text-mute);font-size:11px;min-width:36px;text-align:right;">${fmt2(s.uds)} uds</span>
       </div>`).join('');
   }
 
@@ -2184,19 +2184,19 @@ ${bars}
   const ciudEl = document.getElementById('dash-ciudades');
   const ciudades = sh.ciudades || [];
   if (!ciudades.length) {
-    ciudEl.innerHTML = '<div style="color:#64748b;text-align:center;padding:32px;">Sin datos de ciudades</div>';
+    ciudEl.innerHTML = '<div style="color:var(--cx-text-mute);text-align:center;padding:32px;">Sin datos de ciudades</div>';
   } else {
     const maxCiud = ciudades[0].pedidos || 1;
     ciudEl.innerHTML = ciudades.map((c,i)=>`
-      <div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid #1e293b;">
-        <span style="color:#94a3b8;min-width:18px;font-size:11px;">${i+1}</span>
+      <div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--cx-hairline);">
+        <span style="color:var(--cx-text-mute);min-width:18px;font-size:11px;">${i+1}</span>
         <span style="flex:1;font-size:12px;">${esc(c.ciudad||'—')}</span>
         <div style="flex:2;">
-          <div style="background:#1e293b;border-radius:3px;height:6px;">
+          <div style="background:var(--cx-card);border-radius:3px;height:6px;">
             <div style="background:#6366f1;height:6px;border-radius:3px;width:${Math.round((c.pedidos/maxCiud)*100)}%;"></div>
           </div>
         </div>
-        <span style="color:#94a3b8;font-size:11px;min-width:54px;text-align:right;">${fmt2(c.pedidos)} pedidos</span>
+        <span style="color:var(--cx-text-mute);font-size:11px;min-width:54px;text-align:right;">${fmt2(c.pedidos)} pedidos</span>
       </div>`).join('');
   }
 
@@ -2211,7 +2211,7 @@ ${bars}
         <td><span class="badge badge-gray">${esc(c.canal||'—')}</span></td>
         <td>${badgeEstadoCamp(c.estado)}</td>
         <td>${fmtM(c.presupuesto)}</td>
-        <td style="color:#34d399;">${fmtM(c.resultado_ventas)}</td>
+        <td style="color:#16a34a;">${fmtM(c.resultado_ventas)}</td>
       </tr>`).join('');
   }
 
@@ -2273,9 +2273,9 @@ ${bars}
   }
 
   if (!ig.configurado) {
-    igEl.innerHTML = '<div style="color:#64748b;text-align:center;padding:20px;">⚠️ Instagram no configurado — agrega INSTAGRAM_TOKEN en Render</div>';
+    igEl.innerHTML = '<div style="color:var(--cx-text-mute);text-align:center;padding:20px;">⚠️ Instagram no configurado — agrega INSTAGRAM_TOKEN en Render</div>';
   } else if (!topPosts.length) {
-    igEl.innerHTML = '<div style="color:#64748b;text-align:center;padding:20px;">Sin posts — haz clic en ↻ IG para sincronizar</div>';
+    igEl.innerHTML = '<div style="color:var(--cx-text-mute);text-align:center;padding:20px;">Sin posts — haz clic en ↻ IG para sincronizar</div>';
   } else {
     igEl.innerHTML = '<div style="display:flex;flex-wrap:wrap;gap:12px;">' +
       topPosts.map(p => {
@@ -2284,15 +2284,15 @@ ${bars}
         const date = (p.publicado_en||'').slice(0,10);
         const tipo = p.tipo||'IMAGE';
         const icon = tipo==='VIDEO'?'🎬':tipo==='CAROUSEL_ALBUM'?'🗂️':'📸';
-        return `<div style="flex:1;min-width:200px;max-width:260px;background:#0f172a;border:1px solid #1e293b;border-radius:8px;padding:12px;">
+        return `<div style="flex:1;min-width:200px;max-width:260px;background:var(--cx-bg-alt);border:1px solid var(--cx-hairline);border-radius:8px;padding:12px;">
           <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
-            <span style="font-size:11px;color:#94a3b8;">${icon} ${tipo}</span>
-            <span style="font-size:10px;color:#64748b;">${date}</span>
+            <span style="font-size:11px;color:var(--cx-text-mute);">${icon} ${tipo}</span>
+            <span style="font-size:10px;color:var(--cx-text-mute);">${date}</span>
           </div>
-          <div style="font-size:11px;color:#cbd5e1;margin-bottom:8px;line-height:1.4;">${esc(desc||'(sin caption)')}</div>
+          <div style="font-size:11px;color:var(--cx-text-soft);margin-bottom:8px;line-height:1.4;">${esc(desc||'(sin caption)')}</div>
           <div style="display:flex;gap:12px;font-size:11px;">
             <span style="color:#e1306c;">♥ ${p.likes||0}</span>
-            <span style="color:#64748b;">💬 ${p.comentarios||0}</span>
+            <span style="color:var(--cx-text-mute);">💬 ${p.comentarios||0}</span>
             <span style="color:#d4af37;margin-left:auto;">eng ${eng}</span>
           </div>
           ${p.url_permalink?`<a href="${escUrl(p.url_permalink)}" target="_blank" rel="noopener noreferrer" style="display:block;margin-top:6px;font-size:10px;color:#6366f1;">Ver en IG →</a>`:''}
@@ -2304,15 +2304,15 @@ ${bars}
   // ── Por canal ─────────────────────────────────────────────────────────────
   const chEl = document.getElementById('dash-canales');
   if (!data.por_canal || !data.por_canal.length) {
-    chEl.innerHTML = '<div style="color:#64748b;text-align:center;padding:20px;">Sin datos de campañas por canal</div>';
+    chEl.innerHTML = '<div style="color:var(--cx-text-mute);text-align:center;padding:20px;">Sin datos de campañas por canal</div>';
   } else {
     chEl.innerHTML = data.por_canal.map(ch=>`
-      <div style="padding:10px 0;border-bottom:1px solid #1e293b;">
+      <div style="padding:10px 0;border-bottom:1px solid var(--cx-hairline);">
         <div style="display:flex;justify-content:space-between;margin-bottom:6px;">
           <span style="font-weight:700;">${esc(ch.canal)}</span>
-          <span style="color:#34d399;">${fmtM(ch.ventas_total)} ventas</span>
+          <span style="color:#16a34a;">${fmtM(ch.ventas_total)} ventas</span>
         </div>
-        <div style="display:flex;justify-content:space-between;font-size:11px;color:#64748b;">
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--cx-text-mute);">
           <span>${ch.campanas} campaña${ch.campanas!=1?'s':''} · ${fmtM(ch.presupuesto_total)} invertido</span>
         </div>
       </div>`).join('');
@@ -2349,22 +2349,22 @@ async function loadCampanas() {
     const roi = r.presupuesto_gastado>0 ? ((r.resultado_ventas-r.presupuesto_gastado)/r.presupuesto_gastado*100).toFixed(1) : null;
     // Sebastián 25-may-2026 PM · audit P0 · XSS · escape de campos del backend
     const cuponChip = r.discount_code
-      ? `<div style="margin-top:3px;font-size:10px"><span style="background:#1e1b4b;color:#a78bfa;padding:1px 6px;border-radius:6px;font-family:monospace;font-weight:700" title="Atribución activa">${esc(r.discount_code)}</span></div>`
+      ? `<div style="margin-top:3px;font-size:10px"><span style="background:var(--cx-primary-soft);color:#6d28d9;padding:1px 6px;border-radius:6px;font-family:monospace;font-weight:700" title="Atribución activa">${esc(r.discount_code)}</span></div>`
       : '';
     return `<tr>
-      <td class="mob-hide" style="color:#64748b;">${esc(r.id)}</td>
+      <td class="mob-hide" style="color:var(--cx-text-mute);">${esc(r.id)}</td>
       <td style="font-weight:700;">${esc(r.nombre)}${cuponChip}</td>
       <td class="mob-hide"><span class="badge badge-gray">${esc(r.tipo)}</span></td>
       <td class="mob-hide">${esc(r.canal||'—')}</td>
       <td>${badgeEstadoCamp(r.estado)}</td>
       <td class="mob-hide">${fmtM(r.presupuesto)}</td>
       <td class="mob-hide">${fmtM(r.presupuesto_gastado)}</td>
-      <td style="color:#34d399;">${fmtM(r.resultado_ventas)}</td>
+      <td style="color:#16a34a;">${fmtM(r.resultado_ventas)}</td>
       <td>${roiBadge(roi)}</td>
       <td class="mob-hide"><span class="badge badge-purple">${esc(r.num_influencers)}</span></td>
       <td>
         <button class="btn btn-outline btn-sm" onclick="editCampana(${r.id})" title="Editar">✏️</button>
-        <button class="btn btn-outline btn-sm" onclick="generarCuponCampana(${r.id})" title="${r.discount_code?'Regenerar':'Generar'} cupón Shopify" style="border-color:#a78bfa;color:#a78bfa">🎟️</button>
+        <button class="btn btn-outline btn-sm" onclick="generarCuponCampana(${r.id})" title="${r.discount_code?'Regenerar':'Generar'} cupón Shopify" style="border-color:#6d28d9;color:#6d28d9">🎟️</button>
         <button class="btn btn-danger btn-sm" onclick="deleteCampana(${r.id},'${String(r.nombre||'').replace(/[\\\\']/g,'\\\\$&')}')" title="Eliminar">🗑</button>
       </td>
     </tr>`;
@@ -2591,13 +2591,13 @@ async function loadAtribucion() {
       {label:'Inversión total',        val: fmtM(k.inversion_total||0),  color:'#a78bfa'},
       {label:'ROI global',             val: (k.roi_global_pct==null?'—':k.roi_global_pct+'%'),
         color: k.roi_global_pct==null ? '#64748b' : (k.roi_global_pct >= 100 ? '#34d399' : (k.roi_global_pct >= 0 ? '#fbbf24' : '#ef4444'))},
-    ].map(c=>`<div style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:10px 12px;">
+    ].map(c=>`<div style="background:var(--cx-bg-alt);border:1px solid #e7e5e4;border-radius:8px;padding:10px 12px;">
       <div style="font-size:18px;font-weight:800;color:${c.color};line-height:1;">${c.val}</div>
-      <div style="font-size:10px;color:#64748b;margin-top:4px;">${c.label}</div>
+      <div style="font-size:10px;color:var(--cx-text-mute);margin-top:4px;">${c.label}</div>
     </div>`).join('');
 
     if (!list.length) {
-      body.innerHTML = '<tr class="empty-row"><td colspan="8" style="color:#64748b;text-align:center;padding:18px;">Ningún influencer tiene discount code asignado todavía. Editá un influencer y agregá el código (ej: ANIMUS_LAURA10).</td></tr>';
+      body.innerHTML = '<tr class="empty-row"><td colspan="8" style="color:var(--cx-text-mute);text-align:center;padding:18px;">Ningún influencer tiene discount code asignado todavía. Editá un influencer y agregá el código (ej: ANIMUS_LAURA10).</td></tr>';
       return;
     }
     body.innerHTML = list.map(x => {
@@ -2605,14 +2605,14 @@ async function loadAtribucion() {
       const roiCol = (roi==null) ? '#64748b' : (roi >= 100 ? '#34d399' : (roi >= 0 ? '#fbbf24' : '#ef4444'));
       const roiTxt = (roi==null) ? '—' : roi + '%';
       return `<tr>
-        <td style="font-weight:600;">${x.nombre||'—'}${x.usuario_red?'<div style="font-size:10px;color:#64748b;font-weight:400;">@'+x.usuario_red+'</div>':''}</td>
-        <td><code style="background:#0f172a;color:#34d399;padding:2px 8px;border-radius:4px;font-size:11px;">${x.discount_code}</code></td>
+        <td style="font-weight:600;">${x.nombre||'—'}${x.usuario_red?'<div style="font-size:10px;color:var(--cx-text-mute);font-weight:400;">@'+x.usuario_red+'</div>':''}</td>
+        <td><code style="background:var(--cx-bg-alt);color:#16a34a;padding:2px 8px;border-radius:4px;font-size:11px;">${x.discount_code}</code></td>
         <td style="text-align:right;">${x.n_pedidos||0}</td>
-        <td style="text-align:right;color:#94a3b8;">${x.unidades||0}</td>
-        <td style="text-align:right;font-weight:700;color:#34d399;">${fmtM(x.revenue_total||0)}</td>
-        <td style="text-align:right;color:#94a3b8;">${fmtM(x.invertido||0)}</td>
+        <td style="text-align:right;color:var(--cx-text-mute);">${x.unidades||0}</td>
+        <td style="text-align:right;font-weight:700;color:#16a34a;">${fmtM(x.revenue_total||0)}</td>
+        <td style="text-align:right;color:var(--cx-text-mute);">${fmtM(x.invertido||0)}</td>
         <td style="text-align:right;font-weight:700;color:${roiCol};">${roiTxt}</td>
-        <td style="font-size:11px;color:#64748b;">${(x.ultimo_pedido||'').slice(0,10)||'—'}</td>
+        <td style="font-size:11px;color:var(--cx-text-mute);">${(x.ultimo_pedido||'').slice(0,10)||'—'}</td>
       </tr>`;
     }).join('');
   } catch (e) {
@@ -2671,15 +2671,15 @@ function renderPagos() {
     return true;
   });
   if (!list.length) {
-    body.innerHTML = '<tr class="empty-row"><td colspan="7" style="color:#64748b;text-align:center;padding:24px;">Sin pagos para los filtros seleccionados.</td></tr>';
+    body.innerHTML = '<tr class="empty-row"><td colspan="7" style="color:var(--cx-text-mute);text-align:center;padding:24px;">Sin pagos para los filtros seleccionados.</td></tr>';
     return;
   }
   body.innerHTML = list.map(p => {
     const fecha = (p.fecha || '').slice(0,10);
     const estadoBadge = p.estado === 'Pagada'
-      ? '<span style="background:#064e3b;color:#34d399;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:700;">&#x2713; Pagada</span>'
-      : '<span style="background:#78350f;color:#fcd34d;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:700;">&#x23F3; Pendiente</span>';
-    let comprobante = '<span style="color:#475569;font-size:11px;">—</span>';
+      ? '<span style="background:var(--cx-success-pale);color:#16a34a;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:700;">&#x2713; Pagada</span>'
+      : '<span style="background:#78350f;color:#b45309;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:700;">&#x23F3; Pendiente</span>';
+    let comprobante = '<span style="color:var(--cx-text-faint);font-size:11px;">—</span>';
     if (p.comprobante_id && p.numero_ce) {
       comprobante = '<a href="/api/comprobantes-pago/'+p.comprobante_id+'/pdf" target="_blank" '
         + 'style="color:#1F5F5B;font-weight:700;text-decoration:none;display:inline-flex;align-items:center;gap:4px;background:#f0fdfa;padding:3px 10px;border-radius:6px;font-size:12px;">'
@@ -2695,14 +2695,14 @@ function renderPagos() {
         + '>&#x1F504;</button>';
     }
     const ocStr = p.numero_oc
-      ? '<span style="font-family:monospace;font-size:11px;color:#94a3b8;">'+p.numero_oc+'</span>'
+      ? '<span style="font-family:monospace;font-size:11px;color:var(--cx-text-mute);">'+p.numero_oc+'</span>'
       : '—';
     return '<tr>'
-      + '<td style="font-size:12px;color:#cbd5e1;">'+fecha+'</td>'
+      + '<td style="font-size:12px;color:var(--cx-text-soft);">'+fecha+'</td>'
       + '<td style="font-weight:700;">'+(p.influencer_nombre||'—')
-        + (p.inf_email ? '<div style="font-size:11px;color:#64748b;font-weight:400;">'+p.inf_email+'</div>' : '')
+        + (p.inf_email ? '<div style="font-size:11px;color:var(--cx-text-mute);font-weight:400;">'+p.inf_email+'</div>' : '')
       + '</td>'
-      + '<td style="font-size:12px;color:#94a3b8;">'+(p.concepto||'—')+'</td>'
+      + '<td style="font-size:12px;color:var(--cx-text-mute);">'+(p.concepto||'—')+'</td>'
       + '<td style="text-align:right;font-weight:700;color:#1F5F5B;">'+fmtM(p.valor||0)+'</td>'
       + '<td>'+ocStr+'</td>'
       + '<td>'+comprobante+'</td>'
@@ -2774,9 +2774,9 @@ async function loadInfluencers() {
       {label:'Pagado 2025', val: fmtM(kpis.pagado_anio||0), color:'#818cf8'},
       {label:'Pagado este mes', val: fmtM(kpis.pagado_mes||0), color:'#60a5fa'},
       {label:'Pendiente pago', val: fmtM(kpis.total_pendiente||0), color:'#f59e0b'},
-    ].map(k=>`<div style="background:#0f172a;border:1px solid #334155;border-radius:10px;padding:12px 16px;">`
+    ].map(k=>`<div style="background:var(--cx-bg-alt);border:1px solid #e7e5e4;border-radius:10px;padding:12px 16px;">`
       +`<div style="font-size:20px;font-weight:800;color:${k.color};">${k.val}</div>`
-      +`<div style="font-size:11px;color:#64748b;margin-top:2px;">${k.label}</div>`
+      +`<div style="font-size:11px;color:var(--cx-text-mute);margin-top:2px;">${k.label}</div>`
       +'</div>').join('');
   }
   const banner = document.getElementById('inf-pendientes-banner');
@@ -2788,7 +2788,7 @@ async function loadInfluencers() {
       banner.innerHTML = '<b>⏳ Tienes ' + conPendiente.length + ' solicitud'
         + (conPendiente.length>1?'es':'') + ' esperando pago</b> · '
         + 'Total: <b>' + fmtM(totalPend) + '</b>'
-        + '<br><span style="font-size:11px;color:#fcd34d;opacity:.85;">'
+        + '<br><span style="font-size:11px;color:#b45309;opacity:.85;">'
         + 'Sebastián las autoriza y paga desde /compras → tab Influencers. '
         + 'Cuando se paguen recibirás email automático.</span>';
     } else {
@@ -2920,7 +2920,7 @@ async function bulkSolicitarPagosInf(){
     const nombre = inf ? (inf.nombre || '#'+id) : '#'+id;
     if(bar){
       bar.innerHTML = `<div style="flex:1">⏳ Procesando ${i+1}/${ids.length} · <b>${nombre}</b></div>`
-        + `<div style="background:rgba(255,255,255,.2);border-radius:10px;width:100%;max-width:200px;height:8px;overflow:hidden">`
+        + `<div style="background:rgba(109,40,217,.10);border-radius:10px;width:100%;max-width:200px;height:8px;overflow:hidden">`
         + `<div style="background:#34d399;height:100%;width:${Math.round((i/ids.length)*100)}%;transition:width .2s"></div></div>`;
     }
     try {
@@ -2968,12 +2968,12 @@ async function cargarMiSemanaKPIs(){
     topEl.innerHTML = topEng.map((i, idx) => {
       const er = parseFloat(i.engagement_rate||0).toFixed(2);
       return `<div style="display:flex;justify-content:space-between;gap:6px;padding:3px 0;border-bottom:1px solid rgba(52,211,153,.15);">
-        <span><span style="color:#34d399;font-weight:700;">${idx+1}.</span> ${esc(i.nombre||'(s/n)')}</span>
-        <span style="color:#34d399;font-weight:800;">${er}%</span></div>`;
+        <span><span style="color:#16a34a;font-weight:700;">${idx+1}.</span> ${esc(i.nombre||'(s/n)')}</span>
+        <span style="color:#16a34a;font-weight:800;">${er}%</span></div>`;
     }).join('');
     topCt.textContent = `${topEng.length} de ${infs.length}`;
   } else {
-    topEl.innerHTML = '<span style="color:#64748b;">Sin engagement registrado · editá influencers para agregar ER%.</span>';
+    topEl.innerHTML = '<span style="color:var(--cx-text-mute);">Sin engagement registrado · editá influencers para agregar ER%.</span>';
     topCt.textContent = '0';
   }
 
@@ -2995,7 +2995,7 @@ async function cargarMiSemanaKPIs(){
     ).join('');
     dormCt.textContent = `${dormidos.length} activos`;
   } else {
-    dormEl.innerHTML = '<span style="color:#64748b;">✓ Sin influencers dormidos &gt;45d.</span>';
+    dormEl.innerHTML = '<span style="color:var(--cx-text-mute);">✓ Sin influencers dormidos &gt;45d.</span>';
     dormCt.textContent = '0';
   }
 
@@ -3012,12 +3012,12 @@ async function cargarMiSemanaKPIs(){
       const col = roi >= 200 ? '#10b981' : (roi >= 50 ? '#22c55e' : (roi >= 0 ? '#f59e0b' : '#ef4444'));
       const rev = fmtM(i.revenue_atribuible||0);
       return `<div style="display:flex;justify-content:space-between;gap:6px;padding:3px 0;border-bottom:1px solid rgba(167,139,250,.15);">
-        <span>${esc(i.nombre||'(s/n)')}<br><span style="font-size:10px;color:#64748b;">${rev} rev</span></span>
+        <span>${esc(i.nombre||'(s/n)')}<br><span style="font-size:10px;color:var(--cx-text-mute);">${rev} rev</span></span>
         <span style="color:${col};font-weight:800;">${roi}%</span></div>`;
     }).join('');
     roiCt.textContent = `${topRoi.length} con datos`;
   } else {
-    roiEl.innerHTML = '<span style="color:#64748b;">Sin ROI calculado · asigná códigos de descuento a influencers para medir.</span>';
+    roiEl.innerHTML = '<span style="color:var(--cx-text-mute);">Sin ROI calculado · asigná códigos de descuento a influencers para medir.</span>';
     roiCt.textContent = '0';
   }
 }
@@ -3033,8 +3033,8 @@ function renderInfluencersTable() {
   body.innerHTML = infs.map((r, idx)=>{
     const seg = r.seguidores>=1000?(r.seguidores/1000).toFixed(1)+'K':r.seguidores;
     const banco = r.banco
-      ? `<span style="color:#94a3b8;">${esc(r.banco)}</span><br><span style="font-size:11px;color:#64748b;">${esc(r.cuenta_bancaria||'\u2014')}</span>`
-      : '<span style="color:#475569;">Sin datos</span>';
+      ? `<span style="color:var(--cx-text-mute);">${esc(r.banco)}</span><br><span style="font-size:11px;color:var(--cx-text-mute);">${esc(r.cuenta_bancaria||'\u2014')}</span>`
+      : '<span style="color:var(--cx-text-faint);">Sin datos</span>';
     let estadoBadge;
     // Sebastian (30-abr-2026): badges compactos solo-\u00edcono con tooltip,
     // antes el texto "Al d\u00eda" se romp\u00eda en 2 l\u00edneas en columnas estrechas.
@@ -3043,19 +3043,19 @@ function renderInfluencersTable() {
       // Chip urgencia \u00b7 prioriza color de vencimiento sobre amarillo gen\u00e9rico
       const u = (window.INF_URGENCIA_MAP||{})[r.id];
       if (u && u.urgencia === 'vencido') {
-        estadoBadge = '<span style="background:#7f1d1d;color:#fca5a5;padding:3px 8px;border-radius:50%;font-size:13px;font-weight:700;display:inline-block;width:24px;height:24px;line-height:18px;text-align:center;white-space:nowrap;border:1.5px solid #dc2626;" title="ATRASADO \u00b7 pago vencido hace '+Math.abs(u.dias||0)+' d. Venc\u00eda '+esc(u.vence||'')+'">\ud83d\udd34</span>';
+        estadoBadge = '<span style="background:#7f1d1d;color:#dc2626;padding:3px 8px;border-radius:50%;font-size:13px;font-weight:700;display:inline-block;width:24px;height:24px;line-height:18px;text-align:center;white-space:nowrap;border:1.5px solid #dc2626;" title="ATRASADO \u00b7 pago vencido hace '+Math.abs(u.dias||0)+' d. Venc\u00eda '+esc(u.vence||'')+'">\ud83d\udd34</span>';
       } else if (u && u.urgencia === 'urgente') {
         estadoBadge = '<span style="background:#854d0e;color:#fde047;padding:3px 8px;border-radius:50%;font-size:13px;font-weight:700;display:inline-block;width:24px;height:24px;line-height:18px;text-align:center;white-space:nowrap;border:1.5px solid #f59e0b;" title="Urgente \u00b7 vence en '+(u.dias||0)+' d ('+esc(u.vence||'')+')">\ud83d\udfe1</span>';
       } else {
-        estadoBadge = '<span style="background:#78350f;color:#fcd34d;padding:3px 8px;border-radius:50%;font-size:13px;font-weight:700;display:inline-block;width:24px;height:24px;line-height:18px;text-align:center;white-space:nowrap;" title="Esperando pago \u2014 solicitud creada, Sebasti\u00e1n por autorizar">\u23f3</span>';
+        estadoBadge = '<span style="background:#78350f;color:#b45309;padding:3px 8px;border-radius:50%;font-size:13px;font-weight:700;display:inline-block;width:24px;height:24px;line-height:18px;text-align:center;white-space:nowrap;" title="Esperando pago \u2014 solicitud creada, Sebasti\u00e1n por autorizar">\u23f3</span>';
       }
     } else if(r.toca_pagar) {
       const dias = r.dias_desde_ultimo_pago || 0;
       estadoBadge = '<span style="background:#854d0e;color:#fde047;padding:3px 8px;border-radius:50%;font-size:13px;font-weight:700;display:inline-block;width:24px;height:24px;line-height:18px;text-align:center;white-space:nowrap;" title="Toca solicitar \u2014 hace '+dias+' d\u00edas del \u00faltimo pago (ciclo '+r.ciclo_pago+'). Click \ud83d\udcb8 Solicitar pago para crear cuenta de cobro">\ud83d\udccc</span>';
     } else if(r.pagos_count>0) {
-      estadoBadge = '<span style="background:#064e3b;color:#34d399;padding:3px 8px;border-radius:50%;font-size:13px;font-weight:700;display:inline-block;width:24px;height:24px;line-height:18px;text-align:center;white-space:nowrap;" title="Al d\u00eda \u2014 '+(r.pagos_count||0)+' pago(s) confirmado(s)">\u2713</span>';
+      estadoBadge = '<span style="background:var(--cx-success-pale);color:#16a34a;padding:3px 8px;border-radius:50%;font-size:13px;font-weight:700;display:inline-block;width:24px;height:24px;line-height:18px;text-align:center;white-space:nowrap;" title="Al d\u00eda \u2014 '+(r.pagos_count||0)+' pago(s) confirmado(s)">\u2713</span>';
     } else {
-      estadoBadge = '<span style="color:#475569;font-size:11px;" title="Sin actividad de pago a\u00fan">\u2014</span>';
+      estadoBadge = '<span style="color:var(--cx-text-faint);font-size:11px;" title="Sin actividad de pago a\u00fan">\u2014</span>';
     }
     // Audit 25-may PM · cache de payload por id para evitar string interpolation
     // en onclick (XSS si nombre tiene comillas/backslashes). Handler lee por id.
@@ -3078,12 +3078,12 @@ function renderInfluencersTable() {
     // tal de que este mal \u00b7 alli donde dice pagos es confuso, debemos darle
     // mejor version". Badge clickable \u2192 abre modal Gestionar Pagos con lista
     // editable (Marcar Pagada/Pendiente, Editar valor, Eliminar err\u00f3neos).
-    let pagosBadge = '<button onclick="abrirGestionarPagos('+r.id+', '+JSON.stringify(r.nombre||'')+')" style="background:#1e293b;border:1px dashed #475569;color:#94a3b8;font-size:10px;padding:3px 8px;border-radius:6px;cursor:pointer" title="Sin pagos \u00b7 click para registrar/gestionar">+ Gestionar</button>';
+    let pagosBadge = '<button onclick="abrirGestionarPagos('+r.id+', '+JSON.stringify(r.nombre||'')+')" style="background:var(--cx-card);border:1px dashed #475569;color:var(--cx-text-mute);font-size:10px;padding:3px 8px;border-radius:6px;cursor:pointer" title="Sin pagos \u00b7 click para registrar/gestionar">+ Gestionar</button>';
     if(pagosInf.length > 0){
       pagosBadge = '<button onclick="abrirGestionarPagos('+r.id+', '+JSON.stringify(r.nombre||'')+')" style="background:transparent;border:0;padding:0;cursor:pointer;display:inline-flex;gap:4px;align-items:center;font-size:11px" title="Click para gestionar \u00b7 marcar pagado/pendiente, editar o eliminar">';
-      if(pendCount>0) pagosBadge += `<span style="background:#78350f;color:#fcd34d;padding:2px 8px;border-radius:8px;font-weight:700">\u23f3 ${pendCount}</span>`;
-      if(paidCount>0) pagosBadge += `<span style="background:#064e3b;color:#34d399;padding:2px 8px;border-radius:8px;font-weight:700">\u2713 ${paidCount}</span>`;
-      pagosBadge += '<span style="color:#a78bfa;font-size:13px;margin-left:2px">\u2699</span></button>';
+      if(pendCount>0) pagosBadge += `<span style="background:#78350f;color:#b45309;padding:2px 8px;border-radius:8px;font-weight:700">\u23f3 ${pendCount}</span>`;
+      if(paidCount>0) pagosBadge += `<span style="background:var(--cx-success-pale);color:#16a34a;padding:2px 8px;border-radius:8px;font-weight:700">\u2713 ${paidCount}</span>`;
+      pagosBadge += '<span style="color:#6d28d9;font-size:13px;margin-left:2px">\u2699</span></button>';
     }
     // AUDIT 26-may \u00b7 cup\u00f3n + atribuci\u00f3n real Shopify
     let cuponBadge = '';
@@ -3092,12 +3092,12 @@ function renderInfluencersTable() {
       const roi = r.roi_implicito_pct;
       const roiCol = roi==null?'#94a3b8':(roi>=200?'#10b981':roi>=50?'#22c55e':roi>=0?'#f59e0b':'#ef4444');
       const roiTxt = roi==null?'sin pago a\u00fan':roi+'% ROI';
-      cuponBadge = `<div style="font-size:10px;margin-top:3px"><span style="background:#1e1b4b;color:#a78bfa;padding:1px 6px;border-radius:6px;font-family:monospace;font-weight:700" title="C\u00f3digo activo: ${esc(r.discount_code)}">${esc(r.discount_code)}</span>`;
+      cuponBadge = `<div style="font-size:10px;margin-top:3px"><span style="background:var(--cx-primary-soft);color:#6d28d9;padding:1px 6px;border-radius:6px;font-family:monospace;font-weight:700" title="C\u00f3digo activo: ${esc(r.discount_code)}">${esc(r.discount_code)}</span>`;
       if(revAtr>0){
         cuponBadge += ` <span style="color:${roiCol};font-weight:700" title="${r.pedidos_atribuibles||0} pedidos \u00b7 ${r.unidades_atribuibles||0} uds">${fmtM(revAtr)}</span>`;
         cuponBadge += ` <span style="color:${roiCol};font-size:9px">(${esc(roiTxt)})</span>`;
       } else {
-        cuponBadge += ` <span style="color:#64748b">sin ventas a\u00fan</span>`;
+        cuponBadge += ` <span style="color:var(--cx-text-mute)">sin ventas a\u00fan</span>`;
       }
       cuponBadge += `</div>`;
     }
@@ -3109,7 +3109,7 @@ function renderInfluencersTable() {
       +`<td style="text-align:center;width:32px;" onclick="event.stopPropagation()">`
         +`<input type="checkbox" class="inf-sel" data-id="${r.id}" ${checked} onchange="bulkToggleInf(${r.id}, this.checked)" style="width:16px;height:16px;cursor:pointer;"></td>`
       +`<td style="color:${expandColor};font-weight:700;font-size:14px;text-align:center;width:24px;">${pagosInf.length>0?expandIcon:''}</td>`
-      +`<td class="mob-hide" style="color:#64748b;">${idx+1}</td>`
+      +`<td class="mob-hide" style="color:var(--cx-text-mute);">${idx+1}</td>`
       +`<td style="font-weight:700;">${esc(r.nombre)}</td>`
       +`<td class="mob-hide"><span class="badge badge-gray">${esc(r.red_social)}</span></td>`
       +`<td class="mob-hide" style="color:#818cf8;">${esc(r.usuario_red||'\u2014')}</td>`
@@ -3117,14 +3117,14 @@ function renderInfluencersTable() {
       +`<td class="mob-hide">${r.engagement_rate?esc(r.engagement_rate)+'%':'\u2014'}</td>`
       +`<td class="mob-hide">${esc(r.nicho||'\u2014')}</td>`
       +`<td class="mob-hide">${r.tarifa?fmtM(r.tarifa):'\u2014'}</td>`
-      +`<td class="mob-hide" style="font-size:12px;color:#94a3b8;">${esc(r.email||'\u2014')}</td>`
+      +`<td class="mob-hide" style="font-size:12px;color:var(--cx-text-mute);">${esc(r.email||'\u2014')}</td>`
       +`<td class="mob-hide" style="font-size:12px;">${banco}</td>`
       +`<td>${estadoBadge}</td>`
       +`<td>${pagosBadge}${cuponBadge}</td>`
       +`<td style="white-space:nowrap;" onclick="event.stopPropagation()">`
         +`<button class="btn btn-outline btn-sm" onclick="editInfluencer(${r.id})" title="Editar datos bancarios y de contacto">&#x270F;&#xFE0F;</button> `
-        +`<button class="btn btn-outline btn-sm" onclick="generarCuponInf(${r.id})" title="${r.discount_code?'Regenerar':'Generar'} cup\u00f3n Shopify para atribuci\u00f3n de ventas" style="border-color:#a78bfa;color:#a78bfa">&#x1F39F;&#xFE0F;</button> `
-        +`<button class="btn btn-outline btn-sm" onclick="abrirOutreachModal(${r.id})" title="Generar mensajes WhatsApp/Email/IG para contactar al influencer" style="border-color:#34d399;color:#34d399">&#x1F4E8;</button> `
+        +`<button class="btn btn-outline btn-sm" onclick="generarCuponInf(${r.id})" title="${r.discount_code?'Regenerar':'Generar'} cup\u00f3n Shopify para atribuci\u00f3n de ventas" style="border-color:#6d28d9;color:#6d28d9">&#x1F39F;&#xFE0F;</button> `
+        +`<button class="btn btn-outline btn-sm" onclick="abrirOutreachModal(${r.id})" title="Generar mensajes WhatsApp/Email/IG para contactar al influencer" style="border-color:#16a34a;color:#16a34a">&#x1F4E8;</button> `
         +`<button class="btn btn-primary btn-sm" onclick="solicitarPagoInfById(${r.id})" title="Crear cuenta de cobro y enviar a Sebasti\u00e1n para que la pague" style="font-weight:700;padding:5px 11px;">&#x1F4B8; Solicitar pago</button> `
         +`<button class="btn btn-danger btn-sm" onclick="abrirDarDeBajaById(${r.id})" title="Dar de baja">&#x26D4;</button> `
         +`<button class="btn btn-danger btn-sm" onclick="eliminarInfluencerById(${r.id})" title="Eliminar duplicado (solo sin pagos efectuados)">&#x1F5D1;&#xFE0F;</button>`
@@ -3141,10 +3141,10 @@ function renderInfluencersTable() {
         expandedRows = filtered.map(p => {
           const est = p.estado||'Pendiente';
           const estColor = est.toLowerCase()==='pagada' ? '#34d399' : (est.toLowerCase()==='pendiente'?'#fcd34d':'#94a3b8');
-          const pdfBtn = p.has_pdf ? `<a href="/api/marketing/pagos-influencers/${p.id}/pdf" target="_blank" style="color:#34d399;text-decoration:none;font-size:11px;">\u{1F4C4} PDF</a>` : '<span style="color:#475569;font-size:11px;">\u2014</span>';
-          return `<tr style="background:#0a0f1a">`
-            +`<td colspan="2" style="color:#64748b;font-size:11px;padding-left:42px;">${esc(p.fecha||'\u2014')}</td>`
-            +`<td colspan="3" style="font-size:12px;color:#94a3b8">${esc((p.concepto||'(sin concepto)').substring(0,80))}</td>`
+          const pdfBtn = p.has_pdf ? `<a href="/api/marketing/pagos-influencers/${p.id}/pdf" target="_blank" style="color:#16a34a;text-decoration:none;font-size:11px;">\u{1F4C4} PDF</a>` : '<span style="color:var(--cx-text-faint);font-size:11px;">\u2014</span>';
+          return `<tr style="background:var(--cx-bg)">`
+            +`<td colspan="2" style="color:var(--cx-text-mute);font-size:11px;padding-left:42px;">${esc(p.fecha||'\u2014')}</td>`
+            +`<td colspan="3" style="font-size:12px;color:var(--cx-text-mute)">${esc((p.concepto||'(sin concepto)').substring(0,80))}</td>`
             +`<td colspan="3" style="text-align:right;font-weight:700;">${fmtM(p.valor||0)}</td>`
             +`<td colspan="2" style="font-size:11px;color:#818cf8;font-family:monospace">${esc(p.numero_oc||'\u2014')}</td>`
             +`<td colspan="2">${pdfBtn}</td>`
@@ -3152,7 +3152,7 @@ function renderInfluencersTable() {
             +`</tr>`;
         }).join('');
       } else {
-        expandedRows = `<tr style="background:#0a0f1a"><td colspan="14" style="color:#64748b;text-align:center;padding:14px;font-size:11px;font-style:italic;padding-left:42px">Sin pagos para los filtros seleccionados.</td></tr>`;
+        expandedRows = `<tr style="background:var(--cx-bg)"><td colspan="14" style="color:var(--cx-text-mute);text-align:center;padding:14px;font-size:11px;font-style:italic;padding-left:42px">Sin pagos para los filtros seleccionados.</td></tr>`;
       }
     }
     return mainRow + expandedRows;
@@ -3279,7 +3279,7 @@ async function abrirOutreachModal(id){
       <div class="modal-title">📨 Outreach a ${esc(nombre)}${sku?(' · '+esc(sku)):''}</div>
       <button class="btn btn-outline btn-sm" onclick="closeModal('modal-outreach')">✕</button>
     </div>
-    <div style="color:#94a3b8;padding:30px;text-align:center">Generando mensajes con IA…</div>
+    <div style="color:var(--cx-text-mute);padding:30px;text-align:center">Generando mensajes con IA…</div>
   </div>`;
   modalEl.classList.add('open');
   const params = new URLSearchParams({influencer_id: id});
@@ -3304,46 +3304,46 @@ function _renderOutreachModal(modalEl, d){
   const warning = d.anti_spam_warning;
   const fuente = d.generado_con || 'plantilla';
   const fuenteBadge = fuente.includes('claude')
-    ? '<span style="background:#1e1b4b;color:#a78bfa;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700">🤖 IA Claude</span>'
+    ? '<span style="background:var(--cx-primary-soft);color:#6d28d9;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700">🤖 IA Claude</span>'
     : '<span style="background:#3f3f46;color:#a8a29e;padding:2px 8px;border-radius:6px;font-size:10px;font-weight:700">📋 Plantilla</span>';
   modalEl.innerHTML = `<div class="modal-content" style="max-width:680px;max-height:85vh;overflow-y:auto">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
       <div class="modal-title">📨 Outreach a ${esc(inf.nombre||'')}${d.sku?(' · '+esc(d.sku.sku||'')):''}</div>
       <button class="btn btn-outline btn-sm" onclick="closeModal('modal-outreach')">✕</button>
     </div>
-    <div style="display:flex;gap:8px;font-size:11px;color:#94a3b8;margin-bottom:14px">
+    <div style="display:flex;gap:8px;font-size:11px;color:var(--cx-text-mute);margin-bottom:14px">
       ${fuenteBadge}
-      ${inf.discount_code?'<span style="background:#1e1b4b;color:#a78bfa;padding:2px 8px;border-radius:6px;font-family:monospace;font-weight:700">'+esc(inf.discount_code)+'</span>':''}
+      ${inf.discount_code?'<span style="background:var(--cx-primary-soft);color:#6d28d9;padding:2px 8px;border-radius:6px;font-family:monospace;font-weight:700">'+esc(inf.discount_code)+'</span>':''}
       ${inf.ultima_colab_dias!=null?'<span title="Días desde última colab pagada">⏱ '+inf.ultima_colab_dias+'d sin colab</span>':''}
     </div>
     ${warning?'<div style="background:#7c2d12;color:#fdba74;padding:10px;border-radius:8px;font-size:11px;margin-bottom:14px">'+esc(warning)+'</div>':''}
 
     <h3 style="font-size:13px;color:#10b981;margin:14px 0 6px">💬 WhatsApp</h3>
-    <textarea id="om-whatsapp" rows="3" style="width:100%;padding:10px;background:#1e293b;border:1px solid #334155;color:#f1f5f9;border-radius:6px;font-family:inherit;font-size:13px;resize:vertical">${esc(msj.whatsapp||'')}</textarea>
+    <textarea id="om-whatsapp" rows="3" style="width:100%;padding:10px;background:var(--cx-card);border:1px solid #e7e5e4;color:var(--cx-text);border-radius:6px;font-family:inherit;font-size:13px;resize:vertical">${esc(msj.whatsapp||'')}</textarea>
     <div style="display:flex;gap:6px;margin-top:6px">
       <button class="btn btn-outline btn-sm" onclick="_copyToClipboard('om-whatsapp','wa')">📋 Copiar</button>
-      ${dl.whatsapp_web?'<a class="btn btn-primary btn-sm" href="'+escUrl(dl.whatsapp_web)+'" target="_blank" rel="noopener noreferrer">📱 Abrir WhatsApp Web</a>':'<span style="color:#64748b;font-size:11px;padding:6px">Sin teléfono cargado</span>'}
+      ${dl.whatsapp_web?'<a class="btn btn-primary btn-sm" href="'+escUrl(dl.whatsapp_web)+'" target="_blank" rel="noopener noreferrer">📱 Abrir WhatsApp Web</a>':'<span style="color:var(--cx-text-mute);font-size:11px;padding:6px">Sin teléfono cargado</span>'}
       <span id="om-wa-status" style="font-size:11px;color:#10b981;padding:6px"></span>
     </div>
 
-    <h3 style="font-size:13px;color:#60a5fa;margin:18px 0 6px">📧 Email</h3>
-    <input id="om-email-subject" value="${esc(msj.email_subject||'')}" style="width:100%;padding:8px 10px;background:#1e293b;border:1px solid #334155;color:#f1f5f9;border-radius:6px;font-size:12px;margin-bottom:6px" placeholder="Asunto">
-    <textarea id="om-email-body" rows="6" style="width:100%;padding:10px;background:#1e293b;border:1px solid #334155;color:#f1f5f9;border-radius:6px;font-family:inherit;font-size:13px;resize:vertical">${esc(msj.email_body||'')}</textarea>
+    <h3 style="font-size:13px;color:#2563eb;margin:18px 0 6px">📧 Email</h3>
+    <input id="om-email-subject" value="${esc(msj.email_subject||'')}" style="width:100%;padding:8px 10px;background:var(--cx-card);border:1px solid #e7e5e4;color:var(--cx-text);border-radius:6px;font-size:12px;margin-bottom:6px" placeholder="Asunto">
+    <textarea id="om-email-body" rows="6" style="width:100%;padding:10px;background:var(--cx-card);border:1px solid #e7e5e4;color:var(--cx-text);border-radius:6px;font-family:inherit;font-size:13px;resize:vertical">${esc(msj.email_body||'')}</textarea>
     <div style="display:flex;gap:6px;margin-top:6px">
       <button class="btn btn-outline btn-sm" onclick="_copyToClipboard('om-email-body','em')">📋 Copiar cuerpo</button>
-      ${dl.mailto?'<a class="btn btn-primary btn-sm" href="'+escUrl(dl.mailto)+'">✉ Abrir email</a>':'<span style="color:#64748b;font-size:11px;padding:6px">Sin email cargado</span>'}
+      ${dl.mailto?'<a class="btn btn-primary btn-sm" href="'+escUrl(dl.mailto)+'">✉ Abrir email</a>':'<span style="color:var(--cx-text-mute);font-size:11px;padding:6px">Sin email cargado</span>'}
       <span id="om-em-status" style="font-size:11px;color:#10b981;padding:6px"></span>
     </div>
 
     <h3 style="font-size:13px;color:#e1306c;margin:18px 0 6px">📸 Instagram DM</h3>
-    <textarea id="om-igdm" rows="3" style="width:100%;padding:10px;background:#1e293b;border:1px solid #334155;color:#f1f5f9;border-radius:6px;font-family:inherit;font-size:13px;resize:vertical">${esc(msj.instagram_dm||'')}</textarea>
+    <textarea id="om-igdm" rows="3" style="width:100%;padding:10px;background:var(--cx-card);border:1px solid #e7e5e4;color:var(--cx-text);border-radius:6px;font-family:inherit;font-size:13px;resize:vertical">${esc(msj.instagram_dm||'')}</textarea>
     <div style="display:flex;gap:6px;margin-top:6px">
       <button class="btn btn-outline btn-sm" onclick="_copyToClipboard('om-igdm','ig')">📋 Copiar</button>
-      ${inf.usuario_red?'<a class="btn btn-primary btn-sm" href="'+escUrl('https://instagram.com/'+inf.usuario_red.replace(/^@/,''))+'" target="_blank" rel="noopener noreferrer">📸 Abrir perfil IG</a>':'<span style="color:#64748b;font-size:11px;padding:6px">Sin usuario_red</span>'}
+      ${inf.usuario_red?'<a class="btn btn-primary btn-sm" href="'+escUrl('https://instagram.com/'+inf.usuario_red.replace(/^@/,''))+'" target="_blank" rel="noopener noreferrer">📸 Abrir perfil IG</a>':'<span style="color:var(--cx-text-mute);font-size:11px;padding:6px">Sin usuario_red</span>'}
       <span id="om-ig-status" style="font-size:11px;color:#10b981;padding:6px"></span>
     </div>
 
-    <div style="margin-top:20px;padding-top:14px;border-top:1px solid #334155;font-size:11px;color:#64748b">
+    <div style="margin-top:20px;padding-top:14px;border-top:1px solid #e7e5e4;font-size:11px;color:var(--cx-text-mute)">
       Cuando envíes, los mensajes quedan registrados en marketing_outreach_log para audit + anti-spam (warn si re-contactás en 14d).
     </div>
   </div>`;
@@ -3460,7 +3460,7 @@ async function abrirDuplicados() {
     document.body.appendChild(modal);
   }
   const body = document.getElementById('dup-body');
-  body.innerHTML = '<div style="padding:20px;color:#94a3b8;">Buscando duplicados…</div>';
+  body.innerHTML = '<div style="padding:20px;color:var(--cx-text-mute);">Buscando duplicados…</div>';
   modal.classList.add('open');
   try {
     const r = await fetch('/api/marketing/influencers/duplicados');
@@ -3468,7 +3468,7 @@ async function abrirDuplicados() {
     const gN = d.duplicados_por_nombre || [];
     const gD = d.duplicados_por_datos || [];
     if(!gN.length && !gD.length) {
-      body.innerHTML = '<div style="padding:24px;text-align:center;color:#34d399;">✅ No se detectaron duplicados.</div>';
+      body.innerHTML = '<div style="padding:24px;text-align:center;color:#16a34a;">✅ No se detectaron duplicados.</div>';
       return;
     }
     let html = '';
@@ -3481,26 +3481,26 @@ async function abrirDuplicados() {
         sug = sorted[0].id;
       }
       const titulo = kind==='nombre'
-        ? ('Nombre similar: <span style="color:#fcd34d">'+_escDup(grupo.nombre_normalizado||'?')+'</span>')
-        : ('Mismos '+_escDup(grupo.tipo||'datos')+': <span style="color:#fcd34d">'+_escDup(grupo.valor||'?')+'</span>');
+        ? ('Nombre similar: <span style="color:#b45309">'+_escDup(grupo.nombre_normalizado||'?')+'</span>')
+        : ('Mismos '+_escDup(grupo.tipo||'datos')+': <span style="color:#b45309">'+_escDup(grupo.valor||'?')+'</span>');
       let rows = items.map(it => {
         const conservar = (it.id === sug);
         const pagos = it.n_pagos || 0;
-        return '<tr style="'+(conservar?'background:#064e3b':'')+'">'
-          +'<td style="padding:6px 8px;">'+(conservar?'⭐ ':'')+_escDup(it.nombre||'')+(it.usuario_red?' <span style="color:#94a3b8">@'+_escDup(it.usuario_red)+'</span>':'')+'</td>'
-          +'<td style="padding:6px 8px;font-size:11px;color:#94a3b8;">'+_escDup(it.cedula_nit||'—')+' / '+_escDup(it.cuenta_bancaria||'—')+'</td>'
+        return '<tr style="'+(conservar?'background:var(--cx-success-pale)':'')+'">'
+          +'<td style="padding:6px 8px;">'+(conservar?'⭐ ':'')+_escDup(it.nombre||'')+(it.usuario_red?' <span style="color:var(--cx-text-mute)">@'+_escDup(it.usuario_red)+'</span>':'')+'</td>'
+          +'<td style="padding:6px 8px;font-size:11px;color:var(--cx-text-mute);">'+_escDup(it.cedula_nit||'—')+' / '+_escDup(it.cuenta_bancaria||'—')+'</td>'
           +'<td style="padding:6px 8px;text-align:center;">'+pagos+'</td>'
           +'<td style="padding:6px 8px;text-align:right;white-space:nowrap;">'
             +(conservar
-              ? '<span style="color:#34d399;font-size:11px;">conservar</span>'
+              ? '<span style="color:#16a34a;font-size:11px;">conservar</span>'
               : '<button class="btn btn-danger btn-sm" onclick="eliminarInfluencerDup('+it.id+',\''+_escDup((it.nombre||'').replace(/\x27/g,'’'))+'\')">\u{1F5D1}️ Eliminar</button>')
           +'</td>'
         +'</tr>';
       }).join('');
-      return '<div style="margin-bottom:18px;border:1px solid #334155;border-radius:8px;overflow:hidden;">'
-        +'<div style="padding:8px 12px;background:#1e293b;font-weight:600;">'+titulo+'</div>'
+      return '<div style="margin-bottom:18px;border:1px solid #e7e5e4;border-radius:8px;overflow:hidden;">'
+        +'<div style="padding:8px 12px;background:var(--cx-card);font-weight:600;">'+titulo+'</div>'
         +'<table style="width:100%;border-collapse:collapse;">'
-        +'<thead><tr style="background:#0f172a;color:#94a3b8;font-size:11px;">'
+        +'<thead><tr style="background:var(--cx-bg-alt);color:var(--cx-text-mute);font-size:11px;">'
         +'<th style="padding:6px 8px;text-align:left;">Influencer</th>'
         +'<th style="padding:6px 8px;text-align:left;">CC/NIT / Cuenta</th>'
         +'<th style="padding:6px 8px;text-align:center;">Pagos</th>'
@@ -3508,16 +3508,16 @@ async function abrirDuplicados() {
         +'</tr></thead><tbody>'+rows+'</tbody></table></div>';
     };
     if(gN.length) {
-      html += '<div style="font-weight:600;color:#cbd5e1;margin-bottom:8px;">Por nombre similar ('+gN.length+')</div>';
+      html += '<div style="font-weight:600;color:var(--cx-text-soft);margin-bottom:8px;">Por nombre similar ('+gN.length+')</div>';
       html += gN.map(g => renderGrupo(g,'nombre')).join('');
     }
     if(gD.length) {
-      html += '<div style="font-weight:600;color:#cbd5e1;margin:14px 0 8px 0;">Por datos bancarios o cédula iguales ('+gD.length+')</div>';
+      html += '<div style="font-weight:600;color:var(--cx-text-soft);margin:14px 0 8px 0;">Por datos bancarios o cédula iguales ('+gD.length+')</div>';
       html += gD.map(g => renderGrupo(g,'datos')).join('');
     }
     body.innerHTML = html;
   } catch(e) {
-    body.innerHTML = '<div style="padding:20px;color:#f87171;">Error: '+e.message+'</div>';
+    body.innerHTML = '<div style="padding:20px;color:#dc2626;">Error: '+e.message+'</div>';
   }
 }
 
@@ -3561,7 +3561,7 @@ async function abrirGestionarPagos(infId, infNombre){
 }
 async function _cargarGestionarPagos(infId, infNombre){
   const tbody = document.getElementById('gp-tbody');
-  tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:20px;color:#94a3b8;">⏳ Cargando...</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:20px;color:var(--cx-text-mute);">⏳ Cargando...</td></tr>';
   // Re-usa cache de pagos (PAGOS_BY_INF_ID + PAGOS_BY_INF_NAME)
   let pagos = (PAGOS_BY_INF_ID[infId] || PAGOS_BY_INF_NAME[(infNombre||'').toLowerCase()] || []).slice();
   // Si cache vacío, intentar fetch fresco al endpoint /pagos-influencers
@@ -3573,7 +3573,7 @@ async function _cargarGestionarPagos(infId, infNombre){
     } catch(_){}
   }
   if (!pagos.length){
-    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:20px;color:#94a3b8;">Sin pagos registrados para este influencer.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:20px;color:var(--cx-text-mute);">Sin pagos registrados para este influencer.</td></tr>';
     return;
   }
   // Ordenar por fecha desc
@@ -3584,22 +3584,22 @@ async function _cargarGestionarPagos(infId, infNombre){
     const estadoBg = estado==='Pagada' ? '#064e3b' : (estado==='Anulada' ? '#374151' : '#78350f');
     const estadoCol = estado==='Pagada' ? '#34d399' : (estado==='Anulada' ? '#9ca3af' : '#fcd34d');
     const valor = (p.valor||0).toLocaleString('es-CO');
-    html += '<tr style="border-bottom:1px solid #1e293b;">';
-    html += '<td style="padding:8px;color:#cbd5e1;">'+esc((p.fecha||'').substring(0,10))+'</td>';
+    html += '<tr style="border-bottom:1px solid var(--cx-hairline);">';
+    html += '<td style="padding:8px;color:var(--cx-text-soft);">'+esc((p.fecha||'').substring(0,10))+'</td>';
     html += '<td style="padding:8px;"><span style="background:'+estadoBg+';color:'+estadoCol+';padding:3px 9px;border-radius:10px;font-weight:700;font-size:11px;">'+esc(estado)+'</span></td>';
-    html += '<td style="padding:8px;text-align:right;font-weight:700;color:#a78bfa;">$'+valor+'</td>';
-    html += '<td style="padding:8px;font-size:11px;color:#94a3b8;">'+esc((p.concepto||'').substring(0,60))+'</td>';
+    html += '<td style="padding:8px;text-align:right;font-weight:700;color:#6d28d9;">$'+valor+'</td>';
+    html += '<td style="padding:8px;font-size:11px;color:var(--cx-text-mute);">'+esc((p.concepto||'').substring(0,60))+'</td>';
     html += '<td style="padding:8px;font-family:monospace;font-size:11px;color:#67e8f9;">'+esc(p.numero_oc||'—')+'</td>';
     html += '<td style="padding:8px;text-align:center;white-space:nowrap;">';
     // Botón Pagada (si está Pendiente)
     if (estado === 'Pendiente'){
-      html += '<button onclick="_gpCambiarEstado('+p.id+',&quot;Pagada&quot;)" title="Marcar como Pagada" style="background:#15803d;color:#fff;border:0;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:11px;margin-right:3px">✓</button>';
+      html += '<button onclick="_gpCambiarEstado('+p.id+',&quot;Pagada&quot;)" title="Marcar como Pagada" style="background:var(--cx-success-pale);color:#fff;border:0;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:11px;margin-right:3px">✓</button>';
     }
     // Botón Pendiente (si está Pagada)
     if (estado === 'Pagada'){
-      html += '<button onclick="_gpCambiarEstado('+p.id+',&quot;Pendiente&quot;)" title="Revertir a Pendiente" style="background:#78350f;color:#fcd34d;border:0;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:11px;margin-right:3px">↩</button>';
+      html += '<button onclick="_gpCambiarEstado('+p.id+',&quot;Pendiente&quot;)" title="Revertir a Pendiente" style="background:#78350f;color:#b45309;border:0;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:11px;margin-right:3px">↩</button>';
     }
-    html += '<button onclick="_gpEditarValor('+p.id+','+(p.valor||0)+')" title="Editar valor/concepto" style="background:#1e40af;color:#fff;border:0;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:11px;margin-right:3px">✏</button>';
+    html += '<button onclick="_gpEditarValor('+p.id+','+(p.valor||0)+')" title="Editar valor/concepto" style="background:var(--cx-info-pale);color:#fff;border:0;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:11px;margin-right:3px">✏</button>';
     html += '<button onclick="_gpEliminar('+p.id+')" title="Eliminar este registro" style="background:#7f1d1d;color:#fecaca;border:0;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:11px">🗑</button>';
     html += '</td></tr>';
   }
@@ -3768,13 +3768,13 @@ function _mostrarPagoSolicitadoOk(d){
       '<div class="modal" style="max-width:540px;">'
       + '<div style="text-align:center;padding:18px 6px 8px;">'
       + '<div style="font-size:54px;line-height:1">✅</div>'
-      + '<div style="font-size:18px;font-weight:800;color:#34d399;margin-top:6px">Solicitud creada y guardada</div>'
-      + '<div id="mpo-numero" style="font-family:monospace;font-size:22px;font-weight:800;color:#a78bfa;background:#1e1b4b;border:1.5px solid #4338ca;border-radius:10px;padding:10px 16px;margin:12px auto;display:inline-block"></div>'
-      + '<div style="font-size:13px;color:#cbd5e1;line-height:1.6;text-align:left;background:#0f172a;border-radius:8px;padding:12px 14px;margin:10px 14px">'
-      + '<div><b style="color:#94a3b8">Influencer:</b> <span id="mpo-nombre"></span></div>'
-      + '<div><b style="color:#94a3b8">Monto:</b> <span id="mpo-monto" style="color:#fbbf24;font-weight:700"></span></div>'
-      + '<div><b style="color:#94a3b8">Concepto:</b> <span id="mpo-concepto"></span></div>'
-      + '<div style="margin-top:8px;border-top:1px solid #334155;padding-top:8px;color:#a78bfa">'
+      + '<div style="font-size:18px;font-weight:800;color:#16a34a;margin-top:6px">Solicitud creada y guardada</div>'
+      + '<div id="mpo-numero" style="font-family:monospace;font-size:22px;font-weight:800;color:#6d28d9;background:var(--cx-primary-soft);border:1.5px solid #4338ca;border-radius:10px;padding:10px 16px;margin:12px auto;display:inline-block"></div>'
+      + '<div style="font-size:13px;color:var(--cx-text-soft);line-height:1.6;text-align:left;background:var(--cx-bg-alt);border-radius:8px;padding:12px 14px;margin:10px 14px">'
+      + '<div><b style="color:var(--cx-text-mute)">Influencer:</b> <span id="mpo-nombre"></span></div>'
+      + '<div><b style="color:var(--cx-text-mute)">Monto:</b> <span id="mpo-monto" style="color:#b45309;font-weight:700"></span></div>'
+      + '<div><b style="color:var(--cx-text-mute)">Concepto:</b> <span id="mpo-concepto"></span></div>'
+      + '<div style="margin-top:8px;border-top:1px solid #e7e5e4;padding-top:8px;color:#6d28d9">'
       + '📌 Ya quedó visible para Sebastián en <b>/compras → tab Influencers</b>. '
       + 'Cuando pague vas a recibir notificación in-app. También aparece ahora en tu tabla con el badge ⏳.'
       + '</div></div>'
@@ -3828,7 +3828,7 @@ function renderKanbanCard(it) {
   if (it.tipo) meta.push(`<span>${esc(it.tipo)}</span>`);
   if (it.plataforma && it.plataforma !== 'Instagram') meta.push(`<span>${esc(it.plataforma)}</span>`);
   if (it.influencer_nombre) {
-    const code = it.influencer_code ? ` · <code style="color:#34d399;">${esc(it.influencer_code)}</code>` : '';
+    const code = it.influencer_code ? ` · <code style="color:#16a34a;">${esc(it.influencer_code)}</code>` : '';
     meta.push(`<span>👤 ${esc(it.influencer_nombre)}${code}</span>`);
   }
   if (it.campana_nombre) meta.push(`<span>📢 ${esc(it.campana_nombre)}</span>`);
@@ -3845,7 +3845,7 @@ function renderKanbanCard(it) {
     if (it.guardados) stats.push(`🔖 <b>${fmt(it.guardados)}</b>`);
     // AUDIT 26-may · marca de origen métricas · IG live = automático del Graph API
     const fuenteBadge = it.ig_match
-      ? `<span style="background:#1e3a8a;color:#93c5fd;padding:1px 6px;border-radius:6px;font-size:9px;font-weight:700;margin-right:6px" title="Métricas auto-sincronizadas desde Instagram Graph API${it.ig_synced_at?' · sync '+esc(it.ig_synced_at):''}">📡 IG LIVE</span>`
+      ? `<span style="background:var(--cx-info-pale);color:#2563eb;padding:1px 6px;border-radius:6px;font-size:9px;font-weight:700;margin-right:6px" title="Métricas auto-sincronizadas desde Instagram Graph API${it.ig_synced_at?' · sync '+esc(it.ig_synced_at):''}">📡 IG LIVE</span>`
       : (it.url_publicacion && it.estado === 'Publicado'
           ? `<span style="background:#7c2d12;color:#fdba74;padding:1px 6px;border-radius:6px;font-size:9px;font-weight:700;margin-right:6px" title="Esta pieza tiene URL pero no hay match en posts IG sincronizados · refresca IG en Dashboard ↻">⚠ sin sync IG</span>`
           : '');
@@ -3854,7 +3854,7 @@ function renderKanbanCard(it) {
 
   let urlBtn = '';
   if (it.url_publicacion) {
-    urlBtn = `<a href="${escUrl(it.url_publicacion)}" target="_blank" rel="noopener noreferrer" style="color:#60a5fa;font-size:11px;text-decoration:none;margin-right:8px;" onclick="event.stopPropagation();">🔗 Ver post</a>`;
+    urlBtn = `<a href="${escUrl(it.url_publicacion)}" target="_blank" rel="noopener noreferrer" style="color:#2563eb;font-size:11px;text-decoration:none;margin-right:8px;" onclick="event.stopPropagation();">🔗 Ver post</a>`;
   }
 
   return `<div class="kanban-card" onclick="editContenido(${it.id})">
@@ -3873,8 +3873,8 @@ function kanbanMoveButtons(it) {
   const seq = ['Brief','Produccion','Pendiente','Publicado','Performance'];
   const idx = seq.indexOf(it.estado_kanban || it.estado);
   let html = '';
-  if (idx > 0) html += `<button onclick="event.stopPropagation();moveContenido(${it.id},'${seq[idx-1]}')" title="← ${seq[idx-1]}" style="background:none;border:none;color:#64748b;cursor:pointer;padding:2px 4px;font-size:13px;">←</button>`;
-  if (idx >= 0 && idx < seq.length-1) html += `<button onclick="event.stopPropagation();moveContenido(${it.id},'${seq[idx+1]}')" title="→ ${seq[idx+1]}" style="background:none;border:none;color:#a78bfa;cursor:pointer;padding:2px 4px;font-size:13px;">→</button>`;
+  if (idx > 0) html += `<button onclick="event.stopPropagation();moveContenido(${it.id},'${seq[idx-1]}')" title="← ${seq[idx-1]}" style="background:none;border:none;color:var(--cx-text-mute);cursor:pointer;padding:2px 4px;font-size:13px;">←</button>`;
+  if (idx >= 0 && idx < seq.length-1) html += `<button onclick="event.stopPropagation();moveContenido(${it.id},'${seq[idx+1]}')" title="→ ${seq[idx+1]}" style="background:none;border:none;color:#6d28d9;cursor:pointer;padding:2px 4px;font-size:13px;">→</button>`;
   return html;
 }
 
@@ -4102,11 +4102,11 @@ async function loadConnections() {
 function _mesActual(){ return new Date().toISOString().substr(0,7); }
 
 function _fmtPctBar(pct, color){
-  if(pct == null) return '<span style="color:#64748b">sin meta</span>';
+  if(pct == null) return '<span style="color:var(--cx-text-mute)">sin meta</span>';
   const cap = Math.min(pct, 100);
   const col = pct >= 100 ? '#10b981' : pct >= 70 ? '#22c55e' : pct >= 40 ? '#f59e0b' : '#ef4444';
   return `<div style="display:flex;align-items:center;gap:8px">
-    <div style="flex:1;background:#1e293b;border-radius:4px;height:8px;overflow:hidden;min-width:60px">
+    <div style="flex:1;background:var(--cx-card);border-radius:4px;height:8px;overflow:hidden;min-width:60px">
       <div style="background:${col};height:100%;width:${cap}%;transition:width .3s"></div>
     </div>
     <span style="color:${col};font-weight:700;font-size:11px;min-width:46px;text-align:right">${pct}%</span>
@@ -4127,7 +4127,7 @@ async function openABTestsModal(){
       <div class="modal-title">🔬 A/B Tests · creatividades</div>
       <button class="btn btn-outline btn-sm" onclick="closeModal('modal-ab-tests')">✕</button>
     </div>
-    <p style="color:#94a3b8;font-size:12px;margin-bottom:14px">
+    <p style="color:var(--cx-text-mute);font-size:12px;margin-bottom:14px">
       Compará 2 piezas del Kanban para descubrir cuál convierte mejor. Score con métricas IG live (likes + comentarios×3 + alcance÷10).
     </p>
     <button class="btn btn-primary btn-sm" onclick="openABTestCrear()" style="margin-bottom:12px">+ Nuevo A/B test</button>
@@ -4146,28 +4146,28 @@ async function loadABTests(){
     const d = await r.json();
     const tests = d.tests || [];
     if(!tests.length){
-      list.innerHTML = '<div style="color:#64748b;padding:14px;text-align:center;background:#0f172a;border-radius:8px">Sin tests · creá el primero arriba</div>';
+      list.innerHTML = '<div style="color:var(--cx-text-mute);padding:14px;text-align:center;background:var(--cx-bg-alt);border-radius:8px">Sin tests · creá el primero arriba</div>';
       return;
     }
     list.innerHTML = tests.map(t => {
       const gan = t.ganadora;
       const ganChip = gan === 'a'
-        ? `<span style="background:#064e3b;color:#34d399;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700">🏆 A gana · ${t.ganadora_diff_pct}%</span>`
+        ? `<span style="background:var(--cx-success-pale);color:#16a34a;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700">🏆 A gana · ${t.ganadora_diff_pct}%</span>`
         : gan === 'b'
-        ? `<span style="background:#064e3b;color:#34d399;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700">🏆 B gana · ${t.ganadora_diff_pct}%</span>`
+        ? `<span style="background:var(--cx-success-pale);color:#16a34a;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700">🏆 B gana · ${t.ganadora_diff_pct}%</span>`
         : gan === 'tie'
         ? `<span style="background:#3f3f46;color:#a8a29e;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700">⚖ Empate técnico</span>`
         : gan === 'indeterminado'
         ? `<span style="background:#7c2d12;color:#fdba74;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700">❓ Sin data</span>`
-        : `<span style="background:#1e3a8a;color:#93c5fd;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700">🟡 Activo</span>`;
+        : `<span style="background:var(--cx-info-pale);color:#2563eb;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700">🟡 Activo</span>`;
       const aScore = (parseInt(t.a_likes)||0)+(parseInt(t.a_com)||0)*3+(parseInt(t.a_alc)||0)/10;
       const bScore = (parseInt(t.b_likes)||0)+(parseInt(t.b_com)||0)*3+(parseInt(t.b_alc)||0)/10;
-      return `<div style="background:#0f172a;border:1px solid #1e293b;border-radius:10px;padding:14px;margin-bottom:10px">
+      return `<div style="background:var(--cx-bg-alt);border:1px solid var(--cx-hairline);border-radius:10px;padding:14px;margin-bottom:10px">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:8px">
           <div>
-            <div style="font-size:14px;font-weight:700;color:#f1f5f9">${esc(t.nombre||'')}</div>
-            ${t.hipotesis?'<div style="font-size:11px;color:#94a3b8;margin-top:2px">'+esc(t.hipotesis)+'</div>':''}
-            <div style="font-size:10px;color:#64748b;margin-top:4px">Métrica: <b>${esc(t.metrica_objetivo||'engagement')}</b> · creado ${esc((t.fecha_creacion||'').slice(0,10))}</div>
+            <div style="font-size:14px;font-weight:700;color:var(--cx-text)">${esc(t.nombre||'')}</div>
+            ${t.hipotesis?'<div style="font-size:11px;color:var(--cx-text-mute);margin-top:2px">'+esc(t.hipotesis)+'</div>':''}
+            <div style="font-size:10px;color:var(--cx-text-mute);margin-top:4px">Métrica: <b>${esc(t.metrica_objetivo||'engagement')}</b> · creado ${esc((t.fecha_creacion||'').slice(0,10))}</div>
           </div>
           <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
             ${ganChip}
@@ -4175,13 +4175,13 @@ async function loadABTests(){
           </div>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">
-          <div style="background:${gan==='a'?'#064e3b':'#1e293b'};padding:10px;border-radius:8px;border:${gan==='a'?'2px solid #10b981':'1px solid #334155'}">
-            <div style="font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px">Pieza A · #${t.contenido_a_id}</div>
+          <div style="background:${gan==='a'?'#064e3b':'#f1f5f9'};padding:10px;border-radius:8px;border:${gan==='a'?'2px solid #10b981':'1px solid #e7e5e4'}">
+            <div style="font-size:10px;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.5px">Pieza A · #${t.contenido_a_id}</div>
             <div style="display:flex;gap:8px;font-size:11px;margin-top:4px"><span>❤️ ${parseInt(t.a_likes)||0}</span><span>💬 ${parseInt(t.a_com)||0}</span><span>👁 ${parseInt(t.a_alc)||0}</span></div>
             <div style="font-size:11px;color:${gan==='a'?'#34d399':'#94a3b8'};margin-top:4px;font-weight:700">Score: ${Math.round(aScore)}</div>
           </div>
-          <div style="background:${gan==='b'?'#064e3b':'#1e293b'};padding:10px;border-radius:8px;border:${gan==='b'?'2px solid #10b981':'1px solid #334155'}">
-            <div style="font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px">Pieza B · #${t.contenido_b_id}</div>
+          <div style="background:${gan==='b'?'#064e3b':'#f1f5f9'};padding:10px;border-radius:8px;border:${gan==='b'?'2px solid #10b981':'1px solid #e7e5e4'}">
+            <div style="font-size:10px;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.5px">Pieza B · #${t.contenido_b_id}</div>
             <div style="display:flex;gap:8px;font-size:11px;margin-top:4px"><span>❤️ ${parseInt(t.b_likes)||0}</span><span>💬 ${parseInt(t.b_com)||0}</span><span>👁 ${parseInt(t.b_alc)||0}</span></div>
             <div style="font-size:11px;color:${gan==='b'?'#34d399':'#94a3b8'};margin-top:4px;font-weight:700">Score: ${Math.round(bScore)}</div>
           </div>
@@ -4194,15 +4194,15 @@ async function loadABTests(){
 function openABTestCrear(){
   // Modal compacto que pide los IDs y campos
   const html = `
-    <div style="background:#1e293b;padding:14px;border-radius:8px;margin-top:12px">
-      <h4 style="font-size:13px;color:#f1f5f9;margin:0 0 10px">Crear nuevo A/B test</h4>
+    <div style="background:var(--cx-card);padding:14px;border-radius:8px;margin-top:12px">
+      <h4 style="font-size:13px;color:var(--cx-text);margin:0 0 10px">Crear nuevo A/B test</h4>
       <div style="display:flex;flex-direction:column;gap:8px">
-        <input id="ab-nombre" placeholder="Nombre del test (ej. Reel rutina vs antes/después)" style="width:100%;padding:8px;background:#0f172a;border:1px solid #334155;color:#f1f5f9;border-radius:6px;font-size:12px">
-        <input id="ab-hipotesis" placeholder="Hipótesis · qué esperás (opcional)" style="width:100%;padding:8px;background:#0f172a;border:1px solid #334155;color:#f1f5f9;border-radius:6px;font-size:12px">
+        <input id="ab-nombre" placeholder="Nombre del test (ej. Reel rutina vs antes/después)" style="width:100%;padding:8px;background:var(--cx-bg-alt);border:1px solid #e7e5e4;color:var(--cx-text);border-radius:6px;font-size:12px">
+        <input id="ab-hipotesis" placeholder="Hipótesis · qué esperás (opcional)" style="width:100%;padding:8px;background:var(--cx-bg-alt);border:1px solid #e7e5e4;color:var(--cx-text);border-radius:6px;font-size:12px">
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
-          <input id="ab-a-id" type="number" placeholder="ID pieza A" style="padding:8px;background:#0f172a;border:1px solid #334155;color:#f1f5f9;border-radius:6px;font-size:12px">
-          <input id="ab-b-id" type="number" placeholder="ID pieza B" style="padding:8px;background:#0f172a;border:1px solid #334155;color:#f1f5f9;border-radius:6px;font-size:12px">
-          <select id="ab-metrica" style="padding:8px;background:#0f172a;border:1px solid #334155;color:#f1f5f9;border-radius:6px;font-size:12px">
+          <input id="ab-a-id" type="number" placeholder="ID pieza A" style="padding:8px;background:var(--cx-bg-alt);border:1px solid #e7e5e4;color:var(--cx-text);border-radius:6px;font-size:12px">
+          <input id="ab-b-id" type="number" placeholder="ID pieza B" style="padding:8px;background:var(--cx-bg-alt);border:1px solid #e7e5e4;color:var(--cx-text);border-radius:6px;font-size:12px">
+          <select id="ab-metrica" style="padding:8px;background:var(--cx-bg-alt);border:1px solid #e7e5e4;color:var(--cx-text);border-radius:6px;font-size:12px">
             <option value="engagement">Engagement</option>
             <option value="alcance">Alcance</option>
             <option value="conversiones">Conversiones</option>
@@ -4212,7 +4212,7 @@ function openABTestCrear(){
           <button class="btn btn-primary btn-sm" onclick="saveABTest()">✓ Crear</button>
           <span id="ab-crear-status" style="font-size:11px;color:#10b981"></span>
         </div>
-        <div style="font-size:10px;color:#64748b;margin-top:6px">
+        <div style="font-size:10px;color:var(--cx-text-mute);margin-top:6px">
           💡 Los IDs de las piezas los ves en la URL al hacer click en una card del Kanban, o en el botón "✏️ Editar"
         </div>
       </div>
@@ -4276,39 +4276,39 @@ async function loadSentimentDashboard(){
     const tot = d.total_analizados || 0;
     const pend = d.pendientes_analisis || 0;
     if(tot === 0){
-      el.innerHTML = `<div style="color:#94a3b8">Sin comentarios analizados aún${pend>0?' ('+pend+' pendientes · click 🤖 Analizar)':' · click ↻ Sync + 🤖 Analizar para empezar'}</div>`;
+      el.innerHTML = `<div style="color:var(--cx-text-mute)">Sin comentarios analizados aún${pend>0?' ('+pend+' pendientes · click 🤖 Analizar)':' · click ↻ Sync + 🤖 Analizar para empezar'}</div>`;
       return;
     }
     const dist = d.distribucion || {};
     const alerta = d.alerta_crisis;
     const fmtPct = v => Math.round((v/tot)*100);
     const alertaHtml = alerta
-      ? `<div style="background:#7f1d1d;color:#fca5a5;padding:10px 14px;border-radius:8px;font-size:13px;font-weight:700;margin-bottom:10px">${esc(alerta)}</div>`
+      ? `<div style="background:#7f1d1d;color:#dc2626;padding:10px 14px;border-radius:8px;font-size:13px;font-weight:700;margin-bottom:10px">${esc(alerta)}</div>`
       : '';
     el.innerHTML = `
       ${alertaHtml}
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-        <div style="font-size:12px;color:#94a3b8">${tot} comentarios analizados · 30 días${pend>0?' · '+pend+' pendientes':''}</div>
-        <div style="font-size:11px;color:#94a3b8">Quejas: <b style="color:${d.pct_quejas>10?'#ef4444':d.pct_quejas>5?'#f59e0b':'#10b981'}">${d.pct_quejas}%</b></div>
+        <div style="font-size:12px;color:var(--cx-text-mute)">${tot} comentarios analizados · 30 días${pend>0?' · '+pend+' pendientes':''}</div>
+        <div style="font-size:11px;color:var(--cx-text-mute)">Quejas: <b style="color:${d.pct_quejas>10?'#ef4444':d.pct_quejas>5?'#f59e0b':'#10b981'}">${d.pct_quejas}%</b></div>
       </div>
       <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:6px;margin-bottom:10px">
-        <div style="background:#064e3b;padding:8px;border-radius:6px;text-align:center"><div style="font-size:9px;color:#86efac;text-transform:uppercase">😊 Positivo</div><div style="font-size:16px;font-weight:700;color:#34d399">${dist.positivo||0}</div><div style="font-size:9px;color:#86efac">${fmtPct(dist.positivo||0)}%</div></div>
-        <div style="background:#1e293b;padding:8px;border-radius:6px;text-align:center"><div style="font-size:9px;color:#94a3b8;text-transform:uppercase">😐 Neutro</div><div style="font-size:16px;font-weight:700;color:#cbd5e1">${dist.neutro||0}</div><div style="font-size:9px;color:#94a3b8">${fmtPct(dist.neutro||0)}%</div></div>
+        <div style="background:var(--cx-success-pale);padding:8px;border-radius:6px;text-align:center"><div style="font-size:9px;color:#86efac;text-transform:uppercase">😊 Positivo</div><div style="font-size:16px;font-weight:700;color:#16a34a">${dist.positivo||0}</div><div style="font-size:9px;color:#86efac">${fmtPct(dist.positivo||0)}%</div></div>
+        <div style="background:var(--cx-card);padding:8px;border-radius:6px;text-align:center"><div style="font-size:9px;color:var(--cx-text-mute);text-transform:uppercase">😐 Neutro</div><div style="font-size:16px;font-weight:700;color:var(--cx-text-soft)">${dist.neutro||0}</div><div style="font-size:9px;color:var(--cx-text-mute)">${fmtPct(dist.neutro||0)}%</div></div>
         <div style="background:#78350f;padding:8px;border-radius:6px;text-align:center"><div style="font-size:9px;color:#fdba74;text-transform:uppercase">😕 Negativo</div><div style="font-size:16px;font-weight:700;color:#fb923c">${dist.negativo||0}</div><div style="font-size:9px;color:#fdba74">${fmtPct(dist.negativo||0)}%</div></div>
-        <div style="background:#7f1d1d;padding:8px;border-radius:6px;text-align:center"><div style="font-size:9px;color:#fca5a5;text-transform:uppercase">🚨 Queja</div><div style="font-size:16px;font-weight:700;color:#ef4444">${dist.queja||0}</div><div style="font-size:9px;color:#fca5a5">${fmtPct(dist.queja||0)}%</div></div>
-        <div style="background:#1e3a8a;padding:8px;border-radius:6px;text-align:center"><div style="font-size:9px;color:#93c5fd;text-transform:uppercase">❓ Pregunta</div><div style="font-size:16px;font-weight:700;color:#60a5fa">${dist.pregunta||0}</div><div style="font-size:9px;color:#93c5fd">${fmtPct(dist.pregunta||0)}%</div></div>
+        <div style="background:#7f1d1d;padding:8px;border-radius:6px;text-align:center"><div style="font-size:9px;color:#dc2626;text-transform:uppercase">🚨 Queja</div><div style="font-size:16px;font-weight:700;color:#ef4444">${dist.queja||0}</div><div style="font-size:9px;color:#dc2626">${fmtPct(dist.queja||0)}%</div></div>
+        <div style="background:var(--cx-info-pale);padding:8px;border-radius:6px;text-align:center"><div style="font-size:9px;color:#2563eb;text-transform:uppercase">❓ Pregunta</div><div style="font-size:16px;font-weight:700;color:#2563eb">${dist.pregunta||0}</div><div style="font-size:9px;color:#2563eb">${fmtPct(dist.pregunta||0)}%</div></div>
         <div style="background:#3f3f46;padding:8px;border-radius:6px;text-align:center"><div style="font-size:9px;color:#a8a29e;text-transform:uppercase">🗑 Spam</div><div style="font-size:16px;font-weight:700;color:#a1a1aa">${dist.spam||0}</div><div style="font-size:9px;color:#a8a29e">${fmtPct(dist.spam||0)}%</div></div>
       </div>
       ${(d.quejas_por_sku||[]).length ? `
-        <div style="font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Top SKUs con quejas</div>
+        <div style="font-size:10px;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Top SKUs con quejas</div>
         <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">
-          ${d.quejas_por_sku.map(q => `<span style="background:#7f1d1d;color:#fca5a5;padding:3px 8px;border-radius:6px;font-size:11px;font-weight:700">${esc(q.sku_detectado)} · ${q.n}</span>`).join('')}
+          ${d.quejas_por_sku.map(q => `<span style="background:#7f1d1d;color:#dc2626;padding:3px 8px;border-radius:6px;font-size:11px;font-weight:700">${esc(q.sku_detectado)} · ${q.n}</span>`).join('')}
         </div>` : ''}
       ${(d.ultimas_quejas_top10||[]).length ? `
         <details style="margin-top:8px">
-          <summary style="cursor:pointer;font-size:11px;color:#94a3b8">Ver últimas ${d.ultimas_quejas_top10.length} quejas</summary>
+          <summary style="cursor:pointer;font-size:11px;color:var(--cx-text-mute)">Ver últimas ${d.ultimas_quejas_top10.length} quejas</summary>
           <div style="margin-top:8px;display:flex;flex-direction:column;gap:6px;max-height:300px;overflow-y:auto">
-            ${d.ultimas_quejas_top10.map(q => `<div style="background:#1e293b;padding:8px;border-radius:6px;font-size:11px"><div style="color:#fca5a5">"${esc((q.texto||'').slice(0,200))}"</div><div style="color:#64748b;margin-top:3px">@${esc(q.autor_username||'')} · ${esc((q.publicado_en||'').slice(0,10))}${q.sku_detectado?' · '+esc(q.sku_detectado):''}</div></div>`).join('')}
+            ${d.ultimas_quejas_top10.map(q => `<div style="background:var(--cx-card);padding:8px;border-radius:6px;font-size:11px"><div style="color:#dc2626">"${esc((q.texto||'').slice(0,200))}"</div><div style="color:var(--cx-text-mute);margin-top:3px">@${esc(q.autor_username||'')} · ${esc((q.publicado_en||'').slice(0,10))}${q.sku_detectado?' · '+esc(q.sku_detectado):''}</div></div>`).join('')}
           </div>
         </details>` : ''}
     `;
@@ -4320,7 +4320,7 @@ async function loadSentimentDashboard(){
 async function sentimentSyncManual(){
   if(!confirm('¿Sincronizar comentarios IG nuevos? Toma ~30s.')) return;
   const el = document.getElementById('dash-sentiment');
-  if(el) el.innerHTML = '<div style="color:#94a3b8">Sincronizando comentarios IG…</div>';
+  if(el) el.innerHTML = '<div style="color:var(--cx-text-mute)">Sincronizando comentarios IG…</div>';
   try {
     const r = await fetch('/api/marketing/sentiment/sync', _fetchOpts('POST', {dias:30, limit_por_post:50}));
     const d = await r.json();
@@ -4333,7 +4333,7 @@ async function sentimentSyncManual(){
 async function sentimentAnalyzeManual(){
   if(!confirm('¿Analizar comentarios pendientes con Claude? Toma ~30s por lote de 50.')) return;
   const el = document.getElementById('dash-sentiment');
-  if(el) el.innerHTML = '<div style="color:#94a3b8">Analizando con Claude…</div>';
+  if(el) el.innerHTML = '<div style="color:var(--cx-text-mute)">Analizando con Claude…</div>';
   try {
     const r = await fetch('/api/marketing/sentiment/analyze', _fetchOpts('POST', {batch:50}));
     const d = await r.json();
@@ -4355,7 +4355,7 @@ async function loadMetaProgreso(){
     const d = await r.json();
     if(!d.meta){
       el.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;gap:12px">
-        <span style="color:#94a3b8">No hay meta configurada para ${esc(d.mes)} · click "⚙ Editar meta" para crearla.</span>
+        <span style="color:var(--cx-text-mute)">No hay meta configurada para ${esc(d.mes)} · click "⚙ Editar meta" para crearla.</span>
         <button class="btn btn-primary btn-sm" onclick="openMetaModal()">⚙ Configurar meta</button>
       </div>`;
       return;
@@ -4365,20 +4365,20 @@ async function loadMetaProgreso(){
     const py = d.proyeccion_fin_de_mes || {};
     el.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-        <div style="font-size:12px;color:#94a3b8">${esc(d.mes)} · ${d.dias_transcurridos}/${d.dias_mes} días</div>
-        <div style="font-size:10px;color:#64748b">Proyección fin de mes: <b style="color:#a78bfa">${fmtCOP(py.revenue||0)}</b> (${py.revenue_pct_meta||0}% meta)</div>
+        <div style="font-size:12px;color:var(--cx-text-mute)">${esc(d.mes)} · ${d.dias_transcurridos}/${d.dias_mes} días</div>
+        <div style="font-size:10px;color:var(--cx-text-mute)">Proyección fin de mes: <b style="color:#6d28d9">${fmtCOP(py.revenue||0)}</b> (${py.revenue_pct_meta||0}% meta)</div>
       </div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px">
         <div>
-          <div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">💰 Revenue · ${fmtCOP(av.revenue)} / ${fmtCOP(d.meta.revenue)}</div>
+          <div style="font-size:10px;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">💰 Revenue · ${fmtCOP(av.revenue)} / ${fmtCOP(d.meta.revenue)}</div>
           ${_fmtPctBar(av.revenue_pct)}
         </div>
         <div>
-          <div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">📦 Pedidos · ${av.pedidos||0} / ${d.meta.pedidos||0}</div>
+          <div style="font-size:10px;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">📦 Pedidos · ${av.pedidos||0} / ${d.meta.pedidos||0}</div>
           ${_fmtPctBar(av.pedidos_pct)}
         </div>
         <div>
-          <div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">🆕 Clientes nuevos · ${av.clientes_nuevos||0} / ${d.meta.clientes_nuevos||0}</div>
+          <div style="font-size:10px;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">🆕 Clientes nuevos · ${av.clientes_nuevos||0} / ${d.meta.clientes_nuevos||0}</div>
           ${_fmtPctBar(av.clientes_nuevos_pct)}
         </div>
       </div>`;
@@ -4409,20 +4409,20 @@ async function openMetaModal(){
     </div>
     <div style="display:flex;flex-direction:column;gap:12px">
       <div>
-        <label style="display:block;font-size:11px;color:#94a3b8;margin-bottom:4px">💰 Revenue meta (COP)</label>
-        <input id="meta-rev" type="number" min="0" step="100000" value="${cur.revenue_meta||0}" style="width:100%;padding:10px;background:#1e293b;border:1px solid #334155;color:#f1f5f9;border-radius:6px">
+        <label style="display:block;font-size:11px;color:var(--cx-text-mute);margin-bottom:4px">💰 Revenue meta (COP)</label>
+        <input id="meta-rev" type="number" min="0" step="100000" value="${cur.revenue_meta||0}" style="width:100%;padding:10px;background:var(--cx-card);border:1px solid #e7e5e4;color:var(--cx-text);border-radius:6px">
       </div>
       <div>
-        <label style="display:block;font-size:11px;color:#94a3b8;margin-bottom:4px">📦 Pedidos meta</label>
-        <input id="meta-ped" type="number" min="0" step="10" value="${cur.pedidos_meta||0}" style="width:100%;padding:10px;background:#1e293b;border:1px solid #334155;color:#f1f5f9;border-radius:6px">
+        <label style="display:block;font-size:11px;color:var(--cx-text-mute);margin-bottom:4px">📦 Pedidos meta</label>
+        <input id="meta-ped" type="number" min="0" step="10" value="${cur.pedidos_meta||0}" style="width:100%;padding:10px;background:var(--cx-card);border:1px solid #e7e5e4;color:var(--cx-text);border-radius:6px">
       </div>
       <div>
-        <label style="display:block;font-size:11px;color:#94a3b8;margin-bottom:4px">🆕 Clientes nuevos meta</label>
-        <input id="meta-cln" type="number" min="0" step="5" value="${cur.clientes_nuevos_meta||0}" style="width:100%;padding:10px;background:#1e293b;border:1px solid #334155;color:#f1f5f9;border-radius:6px">
+        <label style="display:block;font-size:11px;color:var(--cx-text-mute);margin-bottom:4px">🆕 Clientes nuevos meta</label>
+        <input id="meta-cln" type="number" min="0" step="5" value="${cur.clientes_nuevos_meta||0}" style="width:100%;padding:10px;background:var(--cx-card);border:1px solid #e7e5e4;color:var(--cx-text);border-radius:6px">
       </div>
       <div>
-        <label style="display:block;font-size:11px;color:#94a3b8;margin-bottom:4px">📝 Notas (opcional)</label>
-        <textarea id="meta-notas" rows="2" style="width:100%;padding:10px;background:#1e293b;border:1px solid #334155;color:#f1f5f9;border-radius:6px;resize:vertical">${esc(cur.notas||'')}</textarea>
+        <label style="display:block;font-size:11px;color:var(--cx-text-mute);margin-bottom:4px">📝 Notas (opcional)</label>
+        <textarea id="meta-notas" rows="2" style="width:100%;padding:10px;background:var(--cx-card);border:1px solid #e7e5e4;color:var(--cx-text);border-radius:6px;resize:vertical">${esc(cur.notas||'')}</textarea>
       </div>
       <div id="meta-alert" style="display:none"></div>
       <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:8px">
@@ -4478,17 +4478,17 @@ async function openCalendarioCosmeticoModal(){
       <div class="modal-title">📅 Calendario cosmético editable</div>
       <button class="btn btn-outline btn-sm" onclick="closeModal('modal-cal-cosm')">✕</button>
     </div>
-    <div style="font-size:11px;color:#94a3b8;margin-bottom:10px">
+    <div style="font-size:11px;color:var(--cx-text-mute);margin-bottom:10px">
       Eventos cosméticos que los agentes IA usan para calcular demanda proyectada · multiplicador = factor vs día normal (Black Friday típico 3.5).
     </div>
     <div id="cal-cosm-list" style="margin-bottom:14px">Cargando…</div>
-    <div style="border-top:1px solid #334155;padding-top:12px">
-      <div style="font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">➕ Agregar evento</div>
+    <div style="border-top:1px solid #e7e5e4;padding-top:12px">
+      <div style="font-size:11px;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">➕ Agregar evento</div>
       <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr auto;gap:8px;align-items:end">
-        <div><label style="font-size:10px;color:#64748b">Evento</label><input id="cal-nuevo-evento" placeholder="Ej. Black Friday Animus" style="width:100%;padding:6px 8px;background:#1e293b;border:1px solid #334155;color:#f1f5f9;border-radius:6px;font-size:12px"></div>
-        <div><label style="font-size:10px;color:#64748b">Fecha</label><input id="cal-nuevo-fecha" type="date" style="width:100%;padding:6px 8px;background:#1e293b;border:1px solid #334155;color:#f1f5f9;border-radius:6px;font-size:12px"></div>
-        <div><label style="font-size:10px;color:#64748b">Multiplicador</label><input id="cal-nuevo-mult" type="number" step="0.1" min="0.1" max="10" value="2.0" style="width:100%;padding:6px 8px;background:#1e293b;border:1px solid #334155;color:#f1f5f9;border-radius:6px;font-size:12px"></div>
-        <div><label style="font-size:10px;color:#64748b">Color</label><input id="cal-nuevo-color" type="color" value="#a78bfa" style="width:100%;height:32px;padding:0;border:1px solid #334155;border-radius:6px;background:#1e293b"></div>
+        <div><label style="font-size:10px;color:var(--cx-text-mute)">Evento</label><input id="cal-nuevo-evento" placeholder="Ej. Black Friday Animus" style="width:100%;padding:6px 8px;background:var(--cx-card);border:1px solid #e7e5e4;color:var(--cx-text);border-radius:6px;font-size:12px"></div>
+        <div><label style="font-size:10px;color:var(--cx-text-mute)">Fecha</label><input id="cal-nuevo-fecha" type="date" style="width:100%;padding:6px 8px;background:var(--cx-card);border:1px solid #e7e5e4;color:var(--cx-text);border-radius:6px;font-size:12px"></div>
+        <div><label style="font-size:10px;color:var(--cx-text-mute)">Multiplicador</label><input id="cal-nuevo-mult" type="number" step="0.1" min="0.1" max="10" value="2.0" style="width:100%;padding:6px 8px;background:var(--cx-card);border:1px solid #e7e5e4;color:var(--cx-text);border-radius:6px;font-size:12px"></div>
+        <div><label style="font-size:10px;color:var(--cx-text-mute)">Color</label><input id="cal-nuevo-color" type="color" value="#a78bfa" style="width:100%;height:32px;padding:0;border:1px solid #e7e5e4;border-radius:6px;background:var(--cx-card)"></div>
         <button class="btn btn-primary btn-sm" onclick="addEventoCalendario()">+ Agregar</button>
       </div>
       <div id="cal-cosm-alert" style="margin-top:8px"></div>
@@ -4506,13 +4506,13 @@ async function loadEventosCalendario(){
     if(!r.ok){ list.innerHTML = '<span style="color:#ef4444">Error '+r.status+'</span>'; return; }
     const d = await r.json();
     const evs = d.eventos || [];
-    if(!evs.length){ list.innerHTML = '<div style="color:#64748b;padding:14px;text-align:center">Sin eventos · agrega el primero abajo</div>'; return; }
-    list.innerHTML = '<table style="width:100%;font-size:12px;border-collapse:collapse"><thead><tr style="color:#94a3b8;font-weight:700;text-align:left"><th style="padding:6px;border-bottom:1px solid #334155">Evento</th><th style="padding:6px;border-bottom:1px solid #334155">Fecha</th><th style="padding:6px;border-bottom:1px solid #334155">×Mult.</th><th style="padding:6px;border-bottom:1px solid #334155">Color</th><th style="padding:6px;border-bottom:1px solid #334155;text-align:center">Activo</th><th style="padding:6px;border-bottom:1px solid #334155;text-align:right">Acción</th></tr></thead><tbody>'
-      + evs.map(e => `<tr style="border-bottom:1px solid #1e293b;${e.activo?'':'opacity:.45'}">
+    if(!evs.length){ list.innerHTML = '<div style="color:var(--cx-text-mute);padding:14px;text-align:center">Sin eventos · agrega el primero abajo</div>'; return; }
+    list.innerHTML = '<table style="width:100%;font-size:12px;border-collapse:collapse"><thead><tr style="color:var(--cx-text-mute);font-weight:700;text-align:left"><th style="padding:6px;border-bottom:1px solid #e7e5e4">Evento</th><th style="padding:6px;border-bottom:1px solid #e7e5e4">Fecha</th><th style="padding:6px;border-bottom:1px solid #e7e5e4">×Mult.</th><th style="padding:6px;border-bottom:1px solid #e7e5e4">Color</th><th style="padding:6px;border-bottom:1px solid #e7e5e4;text-align:center">Activo</th><th style="padding:6px;border-bottom:1px solid #e7e5e4;text-align:right">Acción</th></tr></thead><tbody>'
+      + evs.map(e => `<tr style="border-bottom:1px solid var(--cx-hairline);${e.activo?'':'opacity:.45'}">
         <td style="padding:6px">${esc(e.evento)}</td>
-        <td style="padding:6px;font-family:monospace;color:#94a3b8">${esc(e.fecha)}</td>
-        <td style="padding:6px"><span style="background:#1e1b4b;color:#a78bfa;padding:1px 6px;border-radius:6px;font-weight:700">${e.multiplicador}×</span></td>
-        <td style="padding:6px"><div style="width:24px;height:18px;background:${esc(e.color||'#94a3b8')};border-radius:3px;border:1px solid #334155"></div></td>
+        <td style="padding:6px;font-family:monospace;color:var(--cx-text-mute)">${esc(e.fecha)}</td>
+        <td style="padding:6px"><span style="background:var(--cx-primary-soft);color:#6d28d9;padding:1px 6px;border-radius:6px;font-weight:700">${e.multiplicador}×</span></td>
+        <td style="padding:6px"><div style="width:24px;height:18px;background:${esc(e.color||'#94a3b8')};border-radius:3px;border:1px solid #e7e5e4"></div></td>
         <td style="padding:6px;text-align:center">${e.activo?'✓':'—'}</td>
         <td style="padding:6px;text-align:right">
           ${e.activo
@@ -4589,7 +4589,7 @@ async function loadFeedbackStats() {
       if (!tag) {
         tag = document.createElement('div');
         tag.className = 'agent-feedback-tag';
-        tag.style.cssText = 'font-size:10px;color:#94a3b8;margin-bottom:6px;padding:3px 8px;background:#0f172a;border-radius:6px;display:inline-block;';
+        tag.style.cssText = 'font-size:10px;color:var(--cx-text-mute);margin-bottom:6px;padding:3px 8px;background:var(--cx-bg-alt);border-radius:6px;display:inline-block;';
         // Insertar antes del botón
         btn.parentElement.insertBefore(tag, btn);
       }
@@ -4602,12 +4602,12 @@ async function loadFeedbackStats() {
 
 function renderFeedbackBar(logId) {
   if (!logId) return '';
-  return `<div class="feedback-bar" id="fb-bar-${logId}" style="display:flex;align-items:center;gap:8px;margin-top:14px;padding:10px 14px;background:#0f172a;border:1px solid #334155;border-radius:8px;">
-    <span style="font-size:11px;color:#94a3b8;font-weight:600;">¿Te sirvió este análisis?</span>
-    <button onclick="sendFeedback(${logId},'util',event)" style="background:#064e3b;color:#34d399;border:1px solid #065f46;padding:5px 12px;border-radius:6px;font-size:11px;cursor:pointer;font-weight:700;">👍 Útil</button>
-    <button onclick="sendFeedback(${logId},'ejecutado',event)" style="background:#1e3a8a;color:#60a5fa;border:1px solid #1d4ed8;padding:5px 12px;border-radius:6px;font-size:11px;cursor:pointer;font-weight:700;">⚡ Ejecuté la acción</button>
-    <button onclick="sendFeedback(${logId},'no_util',event)" style="background:#7f1d1d;color:#f87171;border:1px solid #991b1b;padding:5px 12px;border-radius:6px;font-size:11px;cursor:pointer;font-weight:700;">👎 No sirvió</button>
-    <span id="fb-status-${logId}" style="font-size:10px;color:#64748b;margin-left:auto;"></span>
+  return `<div class="feedback-bar" id="fb-bar-${logId}" style="display:flex;align-items:center;gap:8px;margin-top:14px;padding:10px 14px;background:var(--cx-bg-alt);border:1px solid #e7e5e4;border-radius:8px;">
+    <span style="font-size:11px;color:var(--cx-text-mute);font-weight:600;">¿Te sirvió este análisis?</span>
+    <button onclick="sendFeedback(${logId},'util',event)" style="background:var(--cx-success-pale);color:#16a34a;border:1px solid var(--cx-hairline);padding:5px 12px;border-radius:6px;font-size:11px;cursor:pointer;font-weight:700;">👍 Útil</button>
+    <button onclick="sendFeedback(${logId},'ejecutado',event)" style="background:var(--cx-info-pale);color:#2563eb;border:1px solid #1d4ed8;padding:5px 12px;border-radius:6px;font-size:11px;cursor:pointer;font-weight:700;">⚡ Ejecuté la acción</button>
+    <button onclick="sendFeedback(${logId},'no_util',event)" style="background:#7f1d1d;color:#dc2626;border:1px solid #991b1b;padding:5px 12px;border-radius:6px;font-size:11px;cursor:pointer;font-weight:700;">👎 No sirvió</button>
+    <span id="fb-status-${logId}" style="font-size:10px;color:var(--cx-text-mute);margin-left:auto;"></span>
   </div>`;
 }
 
@@ -4655,7 +4655,7 @@ async function runAgent(agente) {
     // Audit 25-may PM · validar HTTP antes de parsear · evita JSON parse error si backend 500
     if(!resp.ok){
       const txt = await resp.text().catch(()=>'');
-      resultDiv.innerHTML = `<pre style="color:#f87171;">Error HTTP ${resp.status}: ${_escHtml(txt.slice(0,400))}</pre>`;
+      resultDiv.innerHTML = `<pre style="color:#dc2626;">Error HTTP ${resp.status}: ${_escHtml(txt.slice(0,400))}</pre>`;
       resultDiv.classList.add('show');
       btn.classList.remove('running');
       btn.innerHTML = `<span>&#x25B6; ${AGENT_LABELS[agente]||agente}</span>`;
@@ -4663,7 +4663,7 @@ async function runAgent(agente) {
     }
     const data = await resp.json();
     if(data.error) {
-      resultDiv.innerHTML = `<pre style="color:#f87171;">Error: ${_escHtml(data.error)}</pre>`;
+      resultDiv.innerHTML = `<pre style="color:#dc2626;">Error: ${_escHtml(data.error)}</pre>`;
     } else {
       resultDiv.innerHTML = formatAgentResult(agente, data) + renderFeedbackBar(data.log_id);
 
@@ -4687,7 +4687,7 @@ async function runAgent(agente) {
     loadAgentLog();
     loadFeedbackStats();
   } catch(e) {
-    resultDiv.innerHTML = `<pre style="color:#f87171;">Error: ${e.message}</pre>`;
+    resultDiv.innerHTML = `<pre style="color:#dc2626;">Error: ${e.message}</pre>`;
     resultDiv.classList.add('show');
   } finally {
     btn.classList.remove('running');
@@ -4704,7 +4704,7 @@ function fmtIA(data) {
       <span style="font-size:15px">🤖</span>
       <span style="font-size:11px;font-weight:700;color:#d4af37;letter-spacing:.5px;text-transform:uppercase">Análisis IA — Claude</span>
     </div>
-    <div style="font-size:13px;color:#e2e8f0;line-height:1.7;white-space:pre-line">${esc(data.analisis_ia)}</div>
+    <div style="font-size:13px;color:var(--cx-text);line-height:1.7;white-space:pre-line">${esc(data.analisis_ia)}</div>
   </div>`;
 }
 
@@ -4867,9 +4867,9 @@ function formatAgentResult(agente, data) {
       {label:'Producción planificada', val:k.produccion_planificada||0, color:'#60a5fa'},
     ];
     html += kpiCards.map(c=>`
-      <div style="background:#0f172a;border:1px solid #334155;border-radius:10px;padding:12px 14px;">
+      <div style="background:var(--cx-bg-alt);border:1px solid #e7e5e4;border-radius:10px;padding:12px 14px;">
         <div style="font-size:22px;font-weight:800;color:${c.color};line-height:1;">${c.val}</div>
-        <div style="font-size:11px;color:#64748b;margin-top:4px;">${c.label}</div>
+        <div style="font-size:11px;color:var(--cx-text-mute);margin-top:4px;">${c.label}</div>
       </div>`).join('');
     html += '</div>';
     // Análisis IA (markdown del modelo) — render con markdown básico
@@ -4877,7 +4877,7 @@ function formatAgentResult(agente, data) {
       html += `<div style="background:linear-gradient(135deg,rgba(124,58,237,.10),rgba(124,58,237,.03));border:1px solid rgba(124,58,237,.35);border-radius:12px;padding:18px;">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
           <span style="font-size:16px;">🧠</span>
-          <span style="font-size:11px;font-weight:700;color:#a78bfa;letter-spacing:.5px;text-transform:uppercase;">Análisis estratégico — Claude Sonnet</span>
+          <span style="font-size:11px;font-weight:700;color:#6d28d9;letter-spacing:.5px;text-transform:uppercase;">Análisis estratégico — Claude Sonnet</span>
         </div>
         <div class="estrategia-md">${renderMarkdownBasic(data.analisis_ia)}</div>
       </div>`;
@@ -4886,8 +4886,8 @@ function formatAgentResult(agente, data) {
     }
     // Datos crudos colapsables (para debug / power user)
     html += `<details style="margin-top:14px;">
-      <summary style="cursor:pointer;color:#94a3b8;font-size:11px;">Ver snapshot crudo (debug)</summary>
-      <pre style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:12px;margin-top:8px;font-size:11px;color:#94a3b8;max-height:300px;overflow:auto;">${esc(JSON.stringify(snap, null, 2))}</pre>
+      <summary style="cursor:pointer;color:var(--cx-text-mute);font-size:11px;">Ver snapshot crudo (debug)</summary>
+      <pre style="background:var(--cx-bg-alt);border:1px solid #e7e5e4;border-radius:8px;padding:12px;margin-top:8px;font-size:11px;color:var(--cx-text-mute);max-height:300px;overflow:auto;">${esc(JSON.stringify(snap, null, 2))}</pre>
     </details>`;
     return html;
   }
@@ -4907,30 +4907,30 @@ function renderMarkdownBasic(md) {
     const headers = lines[0].split('|').slice(1,-1).map(s=>s.trim());
     const rowsMd = lines.slice(2);
     let tbl = '<table style="width:100%;margin:10px 0;border-collapse:collapse;font-size:12px;">';
-    tbl += '<thead><tr>'+headers.map(h=>`<th style="text-align:left;padding:8px;background:#0f172a;color:#a78bfa;border-bottom:1px solid #334155;">${h}</th>`).join('')+'</tr></thead>';
+    tbl += '<thead><tr>'+headers.map(h=>`<th style="text-align:left;padding:8px;background:var(--cx-bg-alt);color:#6d28d9;border-bottom:1px solid #e7e5e4;">${h}</th>`).join('')+'</tr></thead>';
     tbl += '<tbody>'+rowsMd.map(r=>{
       const cols = r.split('|').slice(1,-1).map(s=>s.trim());
-      return '<tr>'+cols.map(c=>`<td style="padding:7px 8px;color:#cbd5e1;border-bottom:1px solid #1e293b;">${c}</td>`).join('')+'</tr>';
+      return '<tr>'+cols.map(c=>`<td style="padding:7px 8px;color:var(--cx-text-soft);border-bottom:1px solid var(--cx-hairline);">${c}</td>`).join('')+'</tr>';
     }).join('')+'</tbody></table>';
     return tbl;
   });
   // Headings
-  h = h.replace(/^## (.+)$/gm, '<h3 style="font-size:14px;color:#a78bfa;margin:18px 0 8px;font-weight:700;">$1</h3>');
-  h = h.replace(/^# (.+)$/gm, '<h2 style="font-size:16px;color:#f1f5f9;margin:18px 0 10px;font-weight:800;">$1</h2>');
+  h = h.replace(/^## (.+)$/gm, '<h3 style="font-size:14px;color:#6d28d9;margin:18px 0 8px;font-weight:700;">$1</h3>');
+  h = h.replace(/^# (.+)$/gm, '<h2 style="font-size:16px;color:var(--cx-text);margin:18px 0 10px;font-weight:800;">$1</h2>');
   // Bold + italic
-  h = h.replace(/\*\*(.+?)\*\*/g, '<strong style="color:#f1f5f9;">$1</strong>');
+  h = h.replace(/\*\*(.+?)\*\*/g, '<strong style="color:var(--cx-text);">$1</strong>');
   h = h.replace(/\*(.+?)\*/g, '<em>$1</em>');
   // Listas numeradas
-  h = h.replace(/^(\d+)\. (.+)$/gm, '<div style="margin:4px 0;"><span style="color:#a78bfa;font-weight:700;margin-right:6px;">$1.</span>$2</div>');
+  h = h.replace(/^(\d+)\. (.+)$/gm, '<div style="margin:4px 0;"><span style="color:#6d28d9;font-weight:700;margin-right:6px;">$1.</span>$2</div>');
   // Listas bullets
-  h = h.replace(/^[-*] (.+)$/gm, '<div style="margin:4px 0 4px 16px;"><span style="color:#a78bfa;margin-right:6px;">·</span>$1</div>');
+  h = h.replace(/^[-*] (.+)$/gm, '<div style="margin:4px 0 4px 16px;"><span style="color:#6d28d9;margin-right:6px;">·</span>$1</div>');
   // Saltos de línea (no dentro de tablas/divs ya generados)
   h = h.replace(/\n\n+/g, '<div style="height:8px;"></div>');
   h = h.replace(/\n/g, '<br>');
   // Limpiar dobles <br> alrededor de tablas/headings/divs
   h = h.replace(/<br>\s*(<(?:h[123]|table|div|details))/g, '$1');
   h = h.replace(/(<\/(?:h[123]|table|div|details)>)\s*<br>/g, '$1');
-  return `<div style="font-size:13px;color:#e2e8f0;line-height:1.7;">${h}</div>`;
+  return `<div style="font-size:13px;color:var(--cx-text);line-height:1.7;">${h}</div>`;
 }
 
 // Sebastián 25-may-2026 PM · audit P0 · esc reforzado para XSS.
@@ -4973,9 +4973,9 @@ async function loadAgentLog() {
   if(!rows.length) { body.innerHTML='<tr class="empty-row"><td colspan="5">Sin ejecuciones registradas</td></tr>'; return; }
   body.innerHTML = rows.map(r=>`
     <tr>
-      <td style="color:#64748b;">${r.fecha?.substring(0,16)||'—'}</td>
+      <td style="color:var(--cx-text-mute);">${r.fecha?.substring(0,16)||'—'}</td>
       <td><span class="badge badge-purple">${r.agente}</span></td>
-      <td style="color:#94a3b8;">${r.accion||'—'}</td>
+      <td style="color:var(--cx-text-mute);">${r.accion||'—'}</td>
       <td>${r.ejecutado_por||'—'}</td>
       <td><button class="btn btn-outline btn-sm" onclick="verResultadoLog(${r.id})">Ver</button></td>
     </tr>`).join('');
@@ -5001,7 +5001,7 @@ async function loadAnalytics() {
   const fmt  = v => v>=1e6?(v/1e6).toFixed(1)+'M':v>=1e3?(v/1e3).toFixed(0)+'K':String(Math.round(v||0));
   const fmtM = v => '$'+fmt(v||0);
   function svgBars(meses, valFn, colorFill, labelFn) {
-    if(!meses.length) return '<div style="color:#64748b;text-align:center;padding:40px;">Sin datos</div>';
+    if(!meses.length) return '<div style="color:var(--cx-text-mute);text-align:center;padding:40px;">Sin datos</div>';
     const vals = meses.map(valFn);
     const maxV = Math.max(...vals, 1);
     const W=520, H=190, padL=8, padR=8, padB=32, padT=20;
@@ -5065,20 +5065,20 @@ async function loadAnalytics() {
   const rb = document.getElementById('an-ranking-body');
   rb.innerHTML = ranking.length ? ranking.map((r,i)=>{
     const estadoBadge = r.estado==='Activo'
-      ? '<span style="color:#34d399;">Activo</span>'
-      : '<span style="color:#f87171;">'+r.estado+'</span>';
+      ? '<span style="color:#16a34a;">Activo</span>'
+      : '<span style="color:#dc2626;">'+r.estado+'</span>';
     const pendBadge = r.pendiente>0
       ? `<span style="color:#f59e0b;font-weight:700;">${fmtM(r.pendiente)}</span>`
-      : '<span style="color:#475569;">—</span>';
+      : '<span style="color:var(--cx-text-faint);">—</span>';
     return `<tr>
-      <td class="mob-hide" style="color:#64748b;font-weight:700;">${i+1}</td>
+      <td class="mob-hide" style="color:var(--cx-text-mute);font-weight:700;">${i+1}</td>
       <td style="font-weight:700;">${esc(r.nombre||'—')}</td>
-      <td class="mob-hide" style="color:#94a3b8;">${r.colabs||0}</td>
+      <td class="mob-hide" style="color:var(--cx-text-mute);">${r.colabs||0}</td>
       <td style="color:#818cf8;font-weight:800;">${fmtM(r.total)}</td>
       <td>${pendBadge}</td>
-      <td class="mob-hide" style="color:#94a3b8;">${fmtM(r.promedio)}</td>
-      <td class="mob-hide" style="color:#64748b;font-size:12px;">${esc(r.primer_pago||'—')}</td>
-      <td class="mob-hide" style="color:#64748b;font-size:12px;">${esc(r.ultimo_pago||'—')}</td>
+      <td class="mob-hide" style="color:var(--cx-text-mute);">${fmtM(r.promedio)}</td>
+      <td class="mob-hide" style="color:var(--cx-text-mute);font-size:12px;">${esc(r.primer_pago||'—')}</td>
+      <td class="mob-hide" style="color:var(--cx-text-mute);font-size:12px;">${esc(r.ultimo_pago||'—')}</td>
       <td>${estadoBadge}</td>
     </tr>`;
   }).join('') : '<tr class="empty-row"><td colspan="9">Sin datos de pagos registrados.</td></tr>';
@@ -5087,12 +5087,12 @@ async function loadAnalytics() {
   const mb = document.getElementById('an-meses-body');
   mb.innerHTML = meses.length ? [...meses].reverse().map(m=>
     `<tr>
-      <td style="font-weight:700;color:#e2e8f0;">${esc(m.mes)}</td>
+      <td style="font-weight:700;color:var(--cx-text);">${esc(m.mes)}</td>
       <td class="mob-hide">${m.colabs}</td>
       <td class="mob-hide">${m.creadores_unicos_mes}</td>
       <td style="color:#818cf8;font-weight:700;">${fmtM(m.total_pagado)}</td>
       <td style="color:#f59e0b;">${m.total_pendiente>0?fmtM(m.total_pendiente):'—'}</td>
-      <td class="mob-hide" style="color:#34d399;">${m.nuevos_creadores||0}</td>
+      <td class="mob-hide" style="color:#16a34a;">${m.nuevos_creadores||0}</td>
     </tr>`
   ).join('') : '<tr class="empty-row"><td colspan="6">Sin datos</td></tr>';
 }
@@ -5118,37 +5118,37 @@ function verHistorial(id, infOptional) {
 
   // ── KPI resumen ──
   html += `<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px;">
-    <div style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:12px;text-align:center;">
-      <div style="font-size:18px;font-weight:800;color:#34d399;">${fmtM(inf.total_pagado||0)}</div>
-      <div style="font-size:11px;color:#64748b;margin-top:2px;">Total pagado</div>
+    <div style="background:var(--cx-bg-alt);border:1px solid #e7e5e4;border-radius:8px;padding:12px;text-align:center;">
+      <div style="font-size:18px;font-weight:800;color:#16a34a;">${fmtM(inf.total_pagado||0)}</div>
+      <div style="font-size:11px;color:var(--cx-text-mute);margin-top:2px;">Total pagado</div>
     </div>
-    <div style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:12px;text-align:center;">
+    <div style="background:var(--cx-bg-alt);border:1px solid #e7e5e4;border-radius:8px;padding:12px;text-align:center;">
       <div style="font-size:18px;font-weight:800;color:#818cf8;">${inf.pagos_count||0}</div>
-      <div style="font-size:11px;color:#64748b;margin-top:2px;">Colaboraciones</div>
+      <div style="font-size:11px;color:var(--cx-text-mute);margin-top:2px;">Colaboraciones</div>
     </div>
-    <div style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:12px;text-align:center;">
+    <div style="background:var(--cx-bg-alt);border:1px solid #e7e5e4;border-radius:8px;padding:12px;text-align:center;">
       <div style="font-size:18px;font-weight:800;color:#f59e0b;">${fmtM(inf.total_pendiente||0)}</div>
-      <div style="font-size:11px;color:#64748b;margin-top:2px;">Pendiente pago</div>
+      <div style="font-size:11px;color:var(--cx-text-mute);margin-top:2px;">Pendiente pago</div>
     </div>
   </div>`;
 
   // ── Pagos realizados ──
   if(pagadas.length) {
-    html += `<div style="font-size:12px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px;">✅ Pagos realizados</div>
+    html += `<div style="font-size:12px;font-weight:700;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px;">✅ Pagos realizados</div>
     <table style="width:100%;border-collapse:collapse;margin-bottom:16px;font-size:13px;">
-      <thead><tr style="border-bottom:1px solid #334155;">
-        <th style="padding:6px 8px;text-align:left;color:#64748b;">Fecha</th>
-        <th style="padding:6px 8px;text-align:left;color:#64748b;">Concepto</th>
-        <th style="padding:6px 8px;text-align:right;color:#64748b;">Valor</th>
-        <th style="padding:6px 8px;text-align:left;color:#64748b;">OC</th>
+      <thead><tr style="border-bottom:1px solid #e7e5e4;">
+        <th style="padding:6px 8px;text-align:left;color:var(--cx-text-mute);">Fecha</th>
+        <th style="padding:6px 8px;text-align:left;color:var(--cx-text-mute);">Concepto</th>
+        <th style="padding:6px 8px;text-align:right;color:var(--cx-text-mute);">Valor</th>
+        <th style="padding:6px 8px;text-align:left;color:var(--cx-text-mute);">OC</th>
       </tr></thead>
       <tbody>`;
     pagadas.forEach(p=>{
-      html += `<tr style="border-bottom:1px solid #1e293b;">
-        <td style="padding:6px 8px;color:#94a3b8;">${p.fecha||'—'}</td>
+      html += `<tr style="border-bottom:1px solid var(--cx-hairline);">
+        <td style="padding:6px 8px;color:var(--cx-text-mute);">${p.fecha||'—'}</td>
         <td style="padding:6px 8px;">${p.concepto||'—'}</td>
-        <td style="padding:6px 8px;text-align:right;color:#34d399;font-weight:700;">${fmtM(p.valor||0)}</td>
-        <td style="padding:6px 8px;color:#64748b;font-size:11px;">${p.numero_oc||'—'}</td>
+        <td style="padding:6px 8px;text-align:right;color:#16a34a;font-weight:700;">${fmtM(p.valor||0)}</td>
+        <td style="padding:6px 8px;color:var(--cx-text-mute);font-size:11px;">${p.numero_oc||'—'}</td>
       </tr>`;
     });
     html += `</tbody></table>`;
@@ -5156,17 +5156,17 @@ function verHistorial(id, infOptional) {
 
   // ── Pendientes ──
   if(pendientes.length) {
-    html += `<div style="font-size:12px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px;">⏳ Pendientes de pago</div>
+    html += `<div style="font-size:12px;font-weight:700;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px;">⏳ Pendientes de pago</div>
     <table style="width:100%;border-collapse:collapse;margin-bottom:16px;font-size:13px;">
-      <thead><tr style="border-bottom:1px solid #334155;">
-        <th style="padding:6px 8px;text-align:left;color:#64748b;">Fecha</th>
-        <th style="padding:6px 8px;text-align:left;color:#64748b;">Concepto</th>
-        <th style="padding:6px 8px;text-align:right;color:#64748b;">Valor</th>
+      <thead><tr style="border-bottom:1px solid #e7e5e4;">
+        <th style="padding:6px 8px;text-align:left;color:var(--cx-text-mute);">Fecha</th>
+        <th style="padding:6px 8px;text-align:left;color:var(--cx-text-mute);">Concepto</th>
+        <th style="padding:6px 8px;text-align:right;color:var(--cx-text-mute);">Valor</th>
       </tr></thead>
       <tbody>`;
     pendientes.forEach(p=>{
-      html += `<tr style="border-bottom:1px solid #1e293b;">
-        <td style="padding:6px 8px;color:#94a3b8;">${p.fecha||'—'}</td>
+      html += `<tr style="border-bottom:1px solid var(--cx-hairline);">
+        <td style="padding:6px 8px;color:var(--cx-text-mute);">${p.fecha||'—'}</td>
         <td style="padding:6px 8px;">${p.concepto||'—'}</td>
         <td style="padding:6px 8px;text-align:right;color:#f59e0b;font-weight:700;">${fmtM(p.valor||0)}</td>
       </tr>`;
@@ -5175,7 +5175,7 @@ function verHistorial(id, infOptional) {
   }
 
   if(!pagadas.length && !pendientes.length) {
-    html += `<div style="text-align:center;color:#64748b;padding:32px;">Sin pagos registrados aún.</div>`;
+    html += `<div style="text-align:center;color:var(--cx-text-mute);padding:32px;">Sin pagos registrados aún.</div>`;
   }
 
   document.getElementById('hist-content').innerHTML = html;
@@ -5217,9 +5217,9 @@ async function loadAgencia(force) {
   var errHtml = '';
   try {
     document.getElementById('ag-scoring-tbody').innerHTML = '<tr class="empty-row"><td colspan="8">Analizando portafolio...</td></tr>';
-    document.getElementById('ag-audit-list').innerHTML = '<div style="color:#64748b;font-size:13px;">Calculando...</div>';
-    document.getElementById('ag-competition').innerHTML = '<div style="color:#64748b;font-size:13px;">Calculando...</div>';
-    document.getElementById('ag-proposals').innerHTML = '<div style="color:#64748b;font-size:13px;">Generando propuestas...</div>';
+    document.getElementById('ag-audit-list').innerHTML = '<div style="color:var(--cx-text-mute);font-size:13px;">Calculando...</div>';
+    document.getElementById('ag-competition').innerHTML = '<div style="color:var(--cx-text-mute);font-size:13px;">Calculando...</div>';
+    document.getElementById('ag-proposals').innerHTML = '<div style="color:var(--cx-text-mute);font-size:13px;">Generando propuestas...</div>';
   } catch(domErr) {
     console.error('[loadAgencia] DOM error:', domErr);
     _agLoaded = false;
@@ -5231,7 +5231,7 @@ async function loadAgencia(force) {
     if (!r.ok) { throw new Error(d.error || 'Error del servidor'); }
     renderAgencia(d);
   } catch(fetchErr) {
-    errHtml = '<div style="color:#f87171;font-size:13px;padding:12px;background:#7f1d1d22;border-radius:8px;border:1px solid #f87171;">Error: '+fetchErr.message+'</div>';
+    errHtml = '<div style="color:#dc2626;font-size:13px;padding:12px;background:#7f1d1d22;border-radius:8px;border:1px solid #f87171;">Error: '+fetchErr.message+'</div>';
     try { document.getElementById('ag-scoring-tbody').innerHTML = '<tr><td colspan="8">'+errHtml+'</td></tr>'; } catch(_){}
     try { document.getElementById('ag-audit-list').innerHTML = errHtml; } catch(_){}
     try { document.getElementById('ag-competition').innerHTML = errHtml; } catch(_){}
@@ -5264,18 +5264,18 @@ function renderAgencia(d) {
   var rows = '';
   sorted.forEach(function(inf) {
     var est = inf.estado === 'Activo'
-      ? '<span style="color:#34d399;font-size:11px;font-weight:700;">Activo</span>'
-      : '<span style="color:#64748b;font-size:11px;">Inactivo</span>';
+      ? '<span style="color:#16a34a;font-size:11px;font-weight:700;">Activo</span>'
+      : '<span style="color:var(--cx-text-mute);font-size:11px;">Inactivo</span>';
     var eng = inf.engagement_rate ? (inf.engagement_rate*100).toFixed(1)+'%' : '&#x2014;';
     var seg = inf.seguidores ? Number(inf.seguidores).toLocaleString('es-CO') : '&#x2014;';
-    rows += '<tr style="border-bottom:1px solid #1e293b;">'
-      +'<td style="padding:8px;font-weight:600;color:#e2e8f0;">'+(inf.nombre||'&#x2014;')+'</td>'
-      +'<td style="padding:8px;color:#94a3b8;font-size:12px;">'+(inf.nicho||'&#x2014;')+'</td>'
+    rows += '<tr style="border-bottom:1px solid var(--cx-hairline);">'
+      +'<td style="padding:8px;font-weight:600;color:var(--cx-text);">'+(inf.nombre||'&#x2014;')+'</td>'
+      +'<td style="padding:8px;color:var(--cx-text-mute);font-size:12px;">'+(inf.nicho||'&#x2014;')+'</td>'
       +'<td style="padding:8px;text-align:center;">'+scoreBadge(inf.score||0)+'</td>'
-      +'<td style="padding:8px;text-align:right;color:#94a3b8;">'+eng+'</td>'
-      +'<td style="padding:8px;text-align:right;color:#94a3b8;">'+seg+'</td>'
-      +'<td style="padding:8px;text-align:right;color:#94a3b8;">'+(inf.campanas_count||0)+'</td>'
-      +'<td style="padding:8px;text-align:right;color:#34d399;font-weight:600;">'+fmtM(inf.total_pagado||0)+'</td>'
+      +'<td style="padding:8px;text-align:right;color:var(--cx-text-mute);">'+eng+'</td>'
+      +'<td style="padding:8px;text-align:right;color:var(--cx-text-mute);">'+seg+'</td>'
+      +'<td style="padding:8px;text-align:right;color:var(--cx-text-mute);">'+(inf.campanas_count||0)+'</td>'
+      +'<td style="padding:8px;text-align:right;color:#16a34a;font-weight:600;">'+fmtM(inf.total_pagado||0)+'</td>'
       +'<td style="padding:8px;text-align:center;">'+est+'</td>'
       +'</tr>';
   });
@@ -5291,16 +5291,16 @@ function renderAgencia(d) {
     auditHtml += '<div style="margin-bottom:12px;">'
       +'<div style="font-size:11px;font-weight:700;color:'+c+';text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px;">'+sevLabel(sev)+' ('+bySev[sev].length+')</div>';
     bySev[sev].forEach(function(item) {
-      auditHtml += '<div style="display:flex;align-items:flex-start;gap:8px;padding:6px 0;border-bottom:1px solid #1e293b;">'
+      auditHtml += '<div style="display:flex;align-items:flex-start;gap:8px;padding:6px 0;border-bottom:1px solid var(--cx-hairline);">'
         +'<span style="color:'+c+';margin-top:1px;flex-shrink:0;">&#x25CF;</span>'
         +'<div>'
-        +'<div style="color:#e2e8f0;font-size:13px;">'+item.finding+'</div>'
-        +(item.recommendation ? '<div style="color:#64748b;font-size:11px;margin-top:2px;">'+item.recommendation+'</div>' : '')
+        +'<div style="color:var(--cx-text);font-size:13px;">'+item.finding+'</div>'
+        +(item.recommendation ? '<div style="color:var(--cx-text-mute);font-size:11px;margin-top:2px;">'+item.recommendation+'</div>' : '')
         +'</div></div>';
     });
     auditHtml += '</div>';
   });
-  document.getElementById('ag-audit-list').innerHTML = auditHtml || '<div style="color:#34d399;font-size:13px;">Sin hallazgos.</div>';
+  document.getElementById('ag-audit-list').innerHTML = auditHtml || '<div style="color:#16a34a;font-size:13px;">Sin hallazgos.</div>';
 
   // Competition
   var niches = competition.niches || {};
@@ -5309,43 +5309,43 @@ function renderAgencia(d) {
   var nicheKeys = Object.keys(niches).sort(function(a,b){ return niches[b]-niches[a]; });
   if (nicheKeys.length) {
     var total = nicheKeys.reduce(function(s,k){ return s+niches[k]; },0);
-    compHtml += '<div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px;">Distribucion por nicho</div>';
+    compHtml += '<div style="font-size:11px;font-weight:700;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px;">Distribucion por nicho</div>';
     nicheKeys.forEach(function(nicho) {
       var cnt = niches[nicho];
       var pct = total ? Math.round(cnt/total*100) : 0;
       compHtml += '<div style="margin-bottom:8px;">'
-        +'<div style="display:flex;justify-content:space-between;font-size:12px;color:#94a3b8;margin-bottom:3px;">'
+        +'<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--cx-text-mute);margin-bottom:3px;">'
         +'<span>'+nicho+'</span><span>'+cnt+' &middot; '+pct+'%</span></div>'
-        +'<div style="background:#1e293b;border-radius:4px;height:6px;">'
+        +'<div style="background:var(--cx-card);border-radius:4px;height:6px;">'
         +'<div style="background:#667eea;width:'+pct+'%;height:6px;border-radius:4px;"></div></div></div>';
     });
   }
   if (gaps.length) {
     compHtml += '<div style="margin-top:14px;font-size:11px;font-weight:700;color:#f59e0b;text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px;">Brechas detectadas</div>';
     gaps.forEach(function(g) {
-      compHtml += '<div style="padding:5px 0;border-bottom:1px solid #1e293b;font-size:12px;color:#e2e8f0;">&#x26A0; '+g+'</div>';
+      compHtml += '<div style="padding:5px 0;border-bottom:1px solid var(--cx-hairline);font-size:12px;color:var(--cx-text);">&#x26A0; '+g+'</div>';
     });
   }
-  document.getElementById('ag-competition').innerHTML = compHtml || '<div style="color:#64748b;font-size:13px;">Sin datos suficientes.</div>';
+  document.getElementById('ag-competition').innerHTML = compHtml || '<div style="color:var(--cx-text-mute);font-size:13px;">Sin datos suficientes.</div>';
 
   // Proposals
   var propHtml = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px;">';
   if (proposals.length) {
     proposals.forEach(function(p) {
       var priCol = p.priority==='alta' ? '#f87171' : (p.priority==='media' ? '#f59e0b' : '#34d399');
-      propHtml += '<div style="background:#1e293b;border:1px solid #334155;border-radius:12px;padding:16px;border-left:3px solid '+priCol+';">'
+      propHtml += '<div style="background:var(--cx-card);border:1px solid #e7e5e4;border-radius:12px;padding:16px;border-left:3px solid '+priCol+';">'
         +'<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">'
-        +'<div style="font-weight:700;color:#e2e8f0;font-size:14px;">'+(p.title||'')+'</div>'
+        +'<div style="font-weight:700;color:var(--cx-text);font-size:14px;">'+(p.title||'')+'</div>'
         +'<span style="font-size:10px;font-weight:700;color:'+priCol+';text-transform:uppercase;background:'+priCol+'22;padding:2px 8px;border-radius:10px;">'+(p.priority||'media')+'</span></div>'
-        +'<div style="color:#94a3b8;font-size:12px;line-height:1.5;margin-bottom:10px;">'+(p.description||'')+'</div>'
+        +'<div style="color:var(--cx-text-mute);font-size:12px;line-height:1.5;margin-bottom:10px;">'+(p.description||'')+'</div>'
         +'<div style="display:flex;gap:8px;flex-wrap:wrap;">'
-        +(p.budget_est ? '<span style="font-size:11px;color:#34d399;background:#34d39922;padding:2px 8px;border-radius:8px;">'+p.budget_est+'</span>' : '')
+        +(p.budget_est ? '<span style="font-size:11px;color:#16a34a;background:#34d39922;padding:2px 8px;border-radius:8px;">'+p.budget_est+'</span>' : '')
         +(p.influencers_needed ? '<span style="font-size:11px;color:#667eea;background:#667eea22;padding:2px 8px;border-radius:8px;">'+p.influencers_needed+' influencers</span>' : '')
         +(p.expected_reach ? '<span style="font-size:11px;color:#f59e0b;background:#f59e0b22;padding:2px 8px;border-radius:8px;">'+p.expected_reach+'</span>' : '')
         +'</div></div>';
     });
   } else {
-    propHtml += '<div style="color:#64748b;font-size:13px;padding:20px;">Sin propuestas.</div>';
+    propHtml += '<div style="color:var(--cx-text-mute);font-size:13px;padding:20px;">Sin propuestas.</div>';
   }
   propHtml += '</div>';
   document.getElementById('ag-proposals').innerHTML = propHtml;
@@ -5387,87 +5387,87 @@ function renderAdsTab() {
   const platCards = ADS_PLATFORMS.map(p =>
     `<div class="ads-plat-card" data-platform="${p.id}" onclick="selectAdsPlatform('${p.id}')" style="border-color:${p.color}33;">
        <div style="font-size:28px;line-height:1;color:${p.color};">${p.icon}</div>
-       <div style="font-weight:700;color:#f1f5f9;font-size:13px;margin-top:8px;">${p.name}</div>
-       <div style="font-size:10px;color:#64748b;margin-top:2px;">${p.desc}</div>
+       <div style="font-weight:700;color:var(--cx-text);font-size:13px;margin-top:8px;">${p.name}</div>
+       <div style="font-size:10px;color:var(--cx-text-mute);margin-top:2px;">${p.desc}</div>
      </div>`).join('');
 
   const actPlatBtns = ADS_ACTIONS_PLATFORM.map(a =>
     `<div class="ads-act-card" data-action="${a.id}" onclick="selectAdsAction('${a.id}',false)">
        <div style="font-size:22px;">${a.icon}</div>
-       <div style="font-weight:700;color:#f1f5f9;font-size:13px;margin-top:6px;">${a.label}</div>
-       <div style="font-size:10px;color:#64748b;margin-top:2px;">${a.desc}</div>
+       <div style="font-weight:700;color:var(--cx-text);font-size:13px;margin-top:6px;">${a.label}</div>
+       <div style="font-size:10px;color:var(--cx-text-mute);margin-top:2px;">${a.desc}</div>
      </div>`).join('');
 
   const actGlobBtns = ADS_ACTIONS_GLOBAL.map(a =>
     `<div class="ads-act-card global" data-action="${a.id}" onclick="selectAdsAction('${a.id}',true)">
        <div style="font-size:22px;">${a.icon}</div>
-       <div style="font-weight:700;color:#f1f5f9;font-size:13px;margin-top:6px;">${a.label}</div>
-       <div style="font-size:10px;color:#64748b;margin-top:2px;">${a.desc}</div>
+       <div style="font-weight:700;color:var(--cx-text);font-size:13px;margin-top:6px;">${a.label}</div>
+       <div style="font-size:10px;color:var(--cx-text-mute);margin-top:2px;">${a.desc}</div>
      </div>`).join('');
 
   root.innerHTML = `
     <style>
-      .ads-hero{background:linear-gradient(135deg,#1e1b4b 0%,#0f172a 60%,#1e293b 100%);border:1px solid #4c1d95;border-radius:16px;padding:24px;margin-bottom:18px;position:relative;overflow:hidden;}
+      .ads-hero{background:var(--cx-hero-grad);border:1px solid #4c1d95;border-radius:16px;padding:24px;margin-bottom:18px;position:relative;overflow:hidden;}
       .ads-hero:after{content:'';position:absolute;top:-50%;right:-10%;width:400px;height:400px;background:radial-gradient(circle,#7c3aed44 0%,transparent 70%);pointer-events:none;}
       .ads-hero h2{font-size:22px;font-weight:800;color:#fff;margin-bottom:6px;display:flex;align-items:center;gap:10px;}
-      .ads-hero .sub{color:#a78bfa;font-size:13px;max-width:720px;line-height:1.5;}
+      .ads-hero .sub{color:#6d28d9;font-size:13px;max-width:720px;line-height:1.5;}
       .ads-hero .stats{display:flex;gap:18px;margin-top:18px;flex-wrap:wrap;}
-      .ads-hero .stat{background:#0f172a99;border:1px solid #334155;border-radius:10px;padding:10px 14px;}
-      .ads-hero .stat .v{font-size:20px;font-weight:800;color:#a78bfa;line-height:1;}
-      .ads-hero .stat .l{font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:.08em;margin-top:4px;}
+      .ads-hero .stat{background:var(--cx-bg-alt)99;border:1px solid #e7e5e4;border-radius:10px;padding:10px 14px;}
+      .ads-hero .stat .v{font-size:20px;font-weight:800;color:#6d28d9;line-height:1;}
+      .ads-hero .stat .l{font-size:10px;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.08em;margin-top:4px;}
 
-      .ads-section-title{font-size:11px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:.1em;margin:18px 0 10px;display:flex;align-items:center;gap:8px;}
+      .ads-section-title{font-size:11px;font-weight:700;color:var(--cx-text-mute);text-transform:uppercase;letter-spacing:.1em;margin:18px 0 10px;display:flex;align-items:center;gap:8px;}
       .ads-section-title .num{display:inline-flex;width:20px;height:20px;border-radius:50%;background:#4c1d95;color:#fff;font-size:11px;font-weight:800;align-items:center;justify-content:center;}
 
       .ads-plat-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;}
-      .ads-plat-card{background:#1e293b;border:1px solid #334155;border-radius:12px;padding:14px;cursor:pointer;text-align:center;transition:.2s;}
-      .ads-plat-card:hover{transform:translateY(-2px);background:#263348;}
-      .ads-plat-card.active{background:#1e1b4b;border-color:#7c3aed!important;box-shadow:0 0 0 3px #7c3aed33;}
+      .ads-plat-card{background:var(--cx-card);border:1px solid #e7e5e4;border-radius:12px;padding:14px;cursor:pointer;text-align:center;transition:.2s;}
+      .ads-plat-card:hover{transform:translateY(-2px);background:#e7e5e4;}
+      .ads-plat-card.active{background:var(--cx-primary-soft);border-color:#7c3aed!important;box-shadow:0 0 0 3px #7c3aed33;}
 
       .ads-act-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;}
-      .ads-act-card{background:#1e293b;border:1px solid #334155;border-radius:10px;padding:12px;cursor:pointer;text-align:center;transition:.15s;}
-      .ads-act-card:hover{background:#263348;border-color:#475569;}
-      .ads-act-card.active{background:linear-gradient(135deg,#1e1b4b,#312e81);border-color:#7c3aed;}
+      .ads-act-card{background:var(--cx-card);border:1px solid #e7e5e4;border-radius:10px;padding:12px;cursor:pointer;text-align:center;transition:.15s;}
+      .ads-act-card:hover{background:#e7e5e4;border-color:var(--cx-text-faint);}
+      .ads-act-card.active{background:var(--cx-primary-grad);border-color:#7c3aed;}
       .ads-act-card.global{border-style:dashed;}
 
       .ads-form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-bottom:10px;}
-      .ads-input{background:#0f172a;border:1px solid #334155;color:#e2e8f0;padding:9px 12px;border-radius:8px;font-size:13px;width:100%;font-family:inherit;}
+      .ads-input{background:var(--cx-bg-alt);border:1px solid #e7e5e4;color:var(--cx-text);padding:9px 12px;border-radius:8px;font-size:13px;width:100%;font-family:inherit;}
       .ads-input:focus{outline:none;border-color:#7c3aed;}
-      .ads-textarea{background:#0f172a;border:1px solid #334155;color:#e2e8f0;padding:12px;border-radius:8px;font-size:12px;width:100%;font-family:'Cascadia Code',Consolas,monospace;min-height:140px;resize:vertical;}
+      .ads-textarea{background:var(--cx-bg-alt);border:1px solid #e7e5e4;color:var(--cx-text);padding:12px;border-radius:8px;font-size:12px;width:100%;font-family:'Cascadia Code',Consolas,monospace;min-height:140px;resize:vertical;}
       .ads-textarea:focus{outline:none;border-color:#7c3aed;}
-      .ads-label{font-size:11px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;display:block;}
+      .ads-label{font-size:11px;color:var(--cx-text-mute);font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;display:block;}
 
       .ads-run-btn{width:100%;padding:16px;border-radius:12px;border:none;cursor:pointer;background:linear-gradient(135deg,#7c3aed,#4c1d95);color:#fff;font-size:15px;font-weight:800;letter-spacing:.02em;text-transform:uppercase;transition:.2s;display:flex;align-items:center;justify-content:center;gap:10px;}
       .ads-run-btn:hover{filter:brightness(1.1);transform:translateY(-1px);box-shadow:0 8px 24px #7c3aed44;}
       .ads-run-btn:disabled{opacity:.5;cursor:wait;transform:none;}
 
-      .ads-output{background:#1e293b;border:1px solid #334155;border-radius:14px;padding:24px;margin-top:18px;}
-      .ads-output h1{font-size:20px;color:#f1f5f9;margin:18px 0 10px;font-weight:800;border-bottom:1px solid #334155;padding-bottom:8px;}
-      .ads-output h2{font-size:16px;color:#e2e8f0;margin:16px 0 8px;font-weight:700;}
-      .ads-output h3{font-size:14px;color:#a78bfa;margin:14px 0 6px;font-weight:700;}
-      .ads-output p{color:#cbd5e1;font-size:13px;line-height:1.65;margin:6px 0;}
-      .ads-output ul,.ads-output ol{margin:8px 0 8px 22px;color:#cbd5e1;font-size:13px;line-height:1.7;}
+      .ads-output{background:var(--cx-card);border:1px solid #e7e5e4;border-radius:14px;padding:24px;margin-top:18px;}
+      .ads-output h1{font-size:20px;color:var(--cx-text);margin:18px 0 10px;font-weight:800;border-bottom:1px solid #e7e5e4;padding-bottom:8px;}
+      .ads-output h2{font-size:16px;color:var(--cx-text);margin:16px 0 8px;font-weight:700;}
+      .ads-output h3{font-size:14px;color:#6d28d9;margin:14px 0 6px;font-weight:700;}
+      .ads-output p{color:var(--cx-text-soft);font-size:13px;line-height:1.65;margin:6px 0;}
+      .ads-output ul,.ads-output ol{margin:8px 0 8px 22px;color:var(--cx-text-soft);font-size:13px;line-height:1.7;}
       .ads-output li{margin:3px 0;}
-      .ads-output strong{color:#f1f5f9;font-weight:700;}
-      .ads-output code{background:#0f172a;color:#a78bfa;padding:1px 6px;border-radius:4px;font-size:12px;font-family:'Cascadia Code',Consolas,monospace;}
-      .ads-output pre{background:#0f172a;border:1px solid #334155;border-radius:8px;padding:12px;overflow-x:auto;margin:10px 0;}
-      .ads-output pre code{background:transparent;color:#e2e8f0;padding:0;font-size:12px;}
+      .ads-output strong{color:var(--cx-text);font-weight:700;}
+      .ads-output code{background:var(--cx-bg-alt);color:#6d28d9;padding:1px 6px;border-radius:4px;font-size:12px;font-family:'Cascadia Code',Consolas,monospace;}
+      .ads-output pre{background:var(--cx-bg-alt);border:1px solid #e7e5e4;border-radius:8px;padding:12px;overflow-x:auto;margin:10px 0;}
+      .ads-output pre code{background:transparent;color:var(--cx-text);padding:0;font-size:12px;}
       .ads-output table{width:100%;margin:10px 0;border-collapse:collapse;}
-      .ads-output th{background:#0f172a;text-align:left;padding:8px 10px;font-size:11px;color:#94a3b8;text-transform:uppercase;border-bottom:1px solid #334155;}
-      .ads-output td{padding:8px 10px;font-size:12px;color:#cbd5e1;border-bottom:1px solid #1e293b;}
-      .ads-output blockquote{border-left:3px solid #7c3aed;padding:6px 14px;margin:10px 0;color:#a78bfa;background:#1e1b4b33;font-style:italic;}
-      .ads-meta{display:flex;flex-wrap:wrap;gap:10px;font-size:11px;color:#64748b;margin-top:14px;padding-top:12px;border-top:1px solid #334155;}
-      .ads-meta span{background:#0f172a;padding:3px 9px;border-radius:6px;border:1px solid #334155;}
+      .ads-output th{background:var(--cx-bg-alt);text-align:left;padding:8px 10px;font-size:11px;color:var(--cx-text-mute);text-transform:uppercase;border-bottom:1px solid #e7e5e4;}
+      .ads-output td{padding:8px 10px;font-size:12px;color:var(--cx-text-soft);border-bottom:1px solid var(--cx-hairline);}
+      .ads-output blockquote{border-left:3px solid #7c3aed;padding:6px 14px;margin:10px 0;color:#6d28d9;background:var(--cx-primary-soft)33;font-style:italic;}
+      .ads-meta{display:flex;flex-wrap:wrap;gap:10px;font-size:11px;color:var(--cx-text-mute);margin-top:14px;padding-top:12px;border-top:1px solid #e7e5e4;}
+      .ads-meta span{background:var(--cx-bg-alt);padding:3px 9px;border-radius:6px;border:1px solid #e7e5e4;}
 
       .ads-loader{display:flex;flex-direction:column;align-items:center;gap:14px;padding:60px 20px;}
-      .ads-loader .ring{width:48px;height:48px;border:3px solid #334155;border-top-color:#7c3aed;border-radius:50%;animation:adsspin 0.9s linear infinite;}
+      .ads-loader .ring{width:48px;height:48px;border:3px solid #e7e5e4;border-top-color:#7c3aed;border-radius:50%;animation:adsspin 0.9s linear infinite;}
       @keyframes adsspin{to{transform:rotate(360deg);}}
-      .ads-loader .lbl{color:#a78bfa;font-size:13px;font-weight:600;}
-      .ads-loader .sub{color:#64748b;font-size:11px;}
+      .ads-loader .lbl{color:#6d28d9;font-size:13px;font-weight:600;}
+      .ads-loader .sub{color:var(--cx-text-mute);font-size:11px;}
 
-      .ads-history{background:#1e293b;border:1px solid #334155;border-radius:12px;padding:14px;margin-top:18px;}
-      .ads-history-item{display:flex;align-items:center;gap:10px;padding:8px 4px;border-bottom:1px solid #263348;cursor:pointer;font-size:12px;transition:.1s;}
-      .ads-history-item:hover{background:#0f172a44;border-radius:6px;}
+      .ads-history{background:var(--cx-card);border:1px solid #e7e5e4;border-radius:12px;padding:14px;margin-top:18px;}
+      .ads-history-item{display:flex;align-items:center;gap:10px;padding:8px 4px;border-bottom:1px solid #e7e5e4;cursor:pointer;font-size:12px;transition:.1s;}
+      .ads-history-item:hover{background:var(--cx-bg-alt)44;border-radius:6px;}
       .ads-history-item:last-child{border-bottom:none;}
     </style>
 
@@ -5532,19 +5532,19 @@ function renderAdsTab() {
       <div>
         <div class="ads-section-title"><span class="num">&#x2728;</span> Resultado</div>
         <div id="ads-output-wrap" class="ads-output" style="min-height:300px;">
-          <div style="text-align:center;padding:60px 20px;color:#64748b;">
+          <div style="text-align:center;padding:60px 20px;color:var(--cx-text-mute);">
             <div style="font-size:48px;margin-bottom:12px;">&#x1F680;</div>
-            <div style="font-size:14px;font-weight:600;color:#94a3b8;">Configura los pasos 1-4 y ejecuta</div>
+            <div style="font-size:14px;font-weight:600;color:var(--cx-text-mute);">Configura los pasos 1-4 y ejecuta</div>
             <div style="font-size:11px;margin-top:8px;">El reporte aparecera aqui en markdown</div>
           </div>
         </div>
 
         <div class="ads-history">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-            <div style="font-size:12px;font-weight:700;color:#94a3b8;">&#x23F1; Historial reciente</div>
+            <div style="font-size:12px;font-weight:700;color:var(--cx-text-mute);">&#x23F1; Historial reciente</div>
             <button class="btn btn-outline btn-sm" onclick="loadAdsHistory()">Actualizar</button>
           </div>
-          <div id="ads-history-list" style="font-size:12px;color:#64748b;">Cargando...</div>
+          <div id="ads-history-list" style="font-size:12px;color:var(--cx-text-mute);">Cargando...</div>
         </div>
       </div>
     </div>
@@ -5642,11 +5642,11 @@ async function runAdsSkill() {
     const r = await fetch('/api/marketing/ads/run', _fetchOpts('POST', {platform, action, payload, business_context}));
     const data = await r.json();
     if (!r.ok || data.error) {
-      out.innerHTML = `<div style="color:#f87171;font-weight:700;font-size:14px;">&#x26A0; Error</div>
-        <div style="color:#fca5a5;font-size:12px;margin-top:8px;">${data.error||'Fallo desconocido'}</div>
-        ${data.detail ? '<pre style="background:#0f172a;padding:10px;border-radius:8px;font-size:11px;color:#94a3b8;margin-top:10px;overflow-x:auto;">'+data.detail+'</pre>' : ''}`;
+      out.innerHTML = `<div style="color:#dc2626;font-weight:700;font-size:14px;">&#x26A0; Error</div>
+        <div style="color:#dc2626;font-size:12px;margin-top:8px;">${data.error||'Fallo desconocido'}</div>
+        ${data.detail ? '<pre style="background:var(--cx-bg-alt);padding:10px;border-radius:8px;font-size:11px;color:var(--cx-text-mute);margin-top:10px;overflow-x:auto;">'+data.detail+'</pre>' : ''}`;
     } else {
-      const cacheTag = data.cache_read_tokens ? ` <span style="color:#34d399;">cache hit ${data.cache_read_tokens.toLocaleString()} tok</span>` : '';
+      const cacheTag = data.cache_read_tokens ? ` <span style="color:#16a34a;">cache hit ${data.cache_read_tokens.toLocaleString()} tok</span>` : '';
       out.innerHTML = adsRenderMarkdown(data.text || '(sin texto)') +
         `<div class="ads-meta">
           <span>&#x1F916; ${data.model||'?'}</span>
@@ -5658,7 +5658,7 @@ async function runAdsSkill() {
       loadAdsHistory();
     }
   } catch (e) {
-    out.innerHTML = `<div style="color:#f87171;">Error de red: ${e.message}</div>`;
+    out.innerHTML = `<div style="color:#dc2626;">Error de red: ${e.message}</div>`;
   } finally {
     ADS_STATE.running = false;
     btn.disabled = false;
@@ -5674,7 +5674,7 @@ async function loadAdsHistory() {
     const r = await fetch('/api/marketing/ads/log');
     const list = await r.json();
     if (!Array.isArray(list) || list.length === 0) {
-      wrap.innerHTML = '<div style="color:#64748b;padding:8px;">Sin ejecuciones aun.</div>';
+      wrap.innerHTML = '<div style="color:var(--cx-text-mute);padding:8px;">Sin ejecuciones aun.</div>';
       return;
     }
     wrap.innerHTML = list.slice(0,12).map(x => {
@@ -5682,14 +5682,14 @@ async function loadAdsHistory() {
       const plat = x.platform ? x.platform.toUpperCase() : 'GLOBAL';
       return `<div class="ads-history-item" onclick="loadAdsLogDetail(${x.id})">
         <span style="background:#4c1d95;color:#fff;font-size:10px;font-weight:700;padding:2px 7px;border-radius:6px;">${plat}</span>
-        <span style="color:#a78bfa;font-weight:600;">${x.accion||''}</span>
-        <span style="color:#cbd5e1;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${x.client||x.preview||''}</span>
-        <span style="color:#64748b;font-size:10px;">${(x.fecha||'').slice(5,16)}</span>
-        <span style="color:#34d399;font-size:10px;">${cost}</span>
+        <span style="color:#6d28d9;font-weight:600;">${x.accion||''}</span>
+        <span style="color:var(--cx-text-soft);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${x.client||x.preview||''}</span>
+        <span style="color:var(--cx-text-mute);font-size:10px;">${(x.fecha||'').slice(5,16)}</span>
+        <span style="color:#16a34a;font-size:10px;">${cost}</span>
       </div>`;
     }).join('');
   } catch (e) {
-    wrap.innerHTML = '<div style="color:#f87171;">Error: '+e.message+'</div>';
+    wrap.innerHTML = '<div style="color:#dc2626;">Error: '+e.message+'</div>';
   }
 }
 
@@ -5700,7 +5700,7 @@ async function loadAdsLogDetail(id) {
     const r = await fetch('/api/marketing/ads/log/'+id);
     const data = await r.json();
     if (!r.ok) {
-      out.innerHTML = '<div style="color:#f87171;">No se pudo cargar</div>';
+      out.innerHTML = '<div style="color:#dc2626;">No se pudo cargar</div>';
       return;
     }
     out.innerHTML = adsRenderMarkdown(data.text || '(vacio)') +
@@ -5712,7 +5712,7 @@ async function loadAdsLogDetail(id) {
         <span>&#x1F4B5; ~$${(data.cost_usd||0).toFixed(4)}</span>
       </div>`;
   } catch (e) {
-    out.innerHTML = '<div style="color:#f87171;">Error: '+e.message+'</div>';
+    out.innerHTML = '<div style="color:#dc2626;">Error: '+e.message+'</div>';
   }
 }
 
