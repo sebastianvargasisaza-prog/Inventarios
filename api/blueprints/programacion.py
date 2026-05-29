@@ -2520,8 +2520,18 @@ def prog_crear_evento():
            VALUES (?, ?, ?, ?)""",
         (producto, fecha, max(1, lotes), obs)
     )
+    pid = cur.lastrowid
+    # Audit fix 28-may · regla dura: toda mutación de produccion_programada
+    # debe auditarse (hueco de trazabilidad tipo 19-may · desaparición sin rastro).
+    try:
+        audit_log(conn.cursor(), usuario=session.get('compras_user', 'sistema'),
+                  accion='CREAR_PRODUCCION_PROGRAMADA', tabla='produccion_programada',
+                  registro_id=pid,
+                  despues={'producto': producto, 'fecha': fecha, 'lotes': max(1, lotes)})
+    except Exception:
+        pass
     conn.commit()
-    return jsonify({'ok': True, 'id': cur.lastrowid, 'producto': producto, 'fecha': fecha})
+    return jsonify({'ok': True, 'id': pid, 'producto': producto, 'fecha': fecha})
 
 
 @bp.route('/api/programacion/programar/<int:evento_id>', methods=['DELETE'])

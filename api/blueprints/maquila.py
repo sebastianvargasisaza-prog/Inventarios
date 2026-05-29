@@ -340,6 +340,18 @@ def api_maquila_facturar(oid):
                  SET estado=COALESCE(estado,'En proceso')
                  WHERE id=?""", (oid,))
 
+    # Audit fix 28-may · emisión de factura (mutación fiscal) obligatoriamente
+    # auditada · antes la FM se emitía sin rastro.
+    try:
+        audit_log(c, usuario=session.get('compras_user', 'sistema'),
+                  accion='FACTURAR_MAQUILA', tabla='facturas', registro_id=numero,
+                  despues={'orden_id': oid, 'total': total, 'tipo': 'FM',
+                           'cliente': cliente_nombre, 'empresa': empresa_emisora,
+                           'iva_valor': iva_valor},
+                  detalle=f'Factura maquila {numero} · orden #{oid} · ${total:,.0f} COP')
+    except Exception:
+        pass
+
     conn.commit()
 
     return jsonify({
@@ -473,10 +485,24 @@ def animus_solicitudes_produccion():
 
 @bp.route('/api/animus/solicitudes-produccion/<int:sid>', methods=['PATCH'])
 def animus_update_solicitud(sid):
-    d = request.json or {}
+    d = request.get_json(silent=True) or {}
     conn = get_db(); c = conn.cursor()
     if 'estado' in d:
-        c.execute("UPDATE solicitudes_produccion SET estado=? WHERE id=?", (d['estado'], sid))
+        nuevo = (d.get('estado') or '').strip()
+        if not nuevo:
+            return jsonify({'error': 'estado vacío'}), 400
+        antes = c.execute("SELECT estado FROM solicitudes_produccion WHERE id=?", (sid,)).fetchone()
+        if not antes:
+            return jsonify({'error': 'solicitud no encontrada'}), 404
+        c.execute("UPDATE solicitudes_produccion SET estado=? WHERE id=?", (nuevo, sid))
+        # Audit fix 28-may · antes el cambio de estado no dejaba rastro.
+        try:
+            audit_log(c, usuario=session.get('compras_user', 'sistema'),
+                      accion='ACTUALIZAR_SOLICITUD_PRODUCCION',
+                      tabla='solicitudes_produccion', registro_id=sid,
+                      antes={'estado': antes[0]}, despues={'estado': nuevo})
+        except Exception:
+            pass
     conn.commit()
     return jsonify({'ok': True})
 

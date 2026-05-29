@@ -1158,6 +1158,22 @@ def aplicar_plan(plan, usuario='cron'):
         json.dumps({'log': plan['log'][:50]}, ensure_ascii=False),
         plan['duracion_ms'],
     ))
+    # Audit fix 28-may · aplicar_plan crea produccion_programada y
+    # solicitudes_compra · auditar en bloque (regla dura · evidencia INVIMA).
+    # auto_plan_runs es log operativo, no el audit_log inmutable.
+    try:
+        from audit_helpers import audit_log as _al
+        _al(c, usuario=usuario or 'auto_plan',
+            accion='APLICAR_AUTO_PLAN', tabla='produccion_programada',
+            registro_id=f"run:{plan['fecha_hoy']}",
+            despues={'producciones_ids': creadas_prod,
+                     'solicitudes': [x['numero'] for x in creadas_compras],
+                     'conteos': len(creadas_conteos)},
+            detalle=(f"Auto-plan aplicado por {usuario}: "
+                     f"{len(creadas_prod)} producciones, "
+                     f"{len(creadas_compras)} SOLs, {len(creadas_conteos)} conteos"))
+    except Exception:
+        pass
     conn.commit()
 
     return {

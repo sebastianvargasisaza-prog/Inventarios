@@ -12044,6 +12044,22 @@ def admin_influencers_reset_pendientes():
         )
         eliminado['solicitudes_compra'] = c.rowcount
 
+    # Audit fix 28-may · limpieza destructiva masiva (pagos+SOL+OC) debe dejar
+    # rastro · antes borraba sin auditar (INVIMA · operaciones destructivas).
+    try:
+        from audit_helpers import audit_log as _al
+        _al(c, usuario=u, accion='ADMIN_RESET_PENDIENTES_INFLUENCERS',
+            tabla='pagos_influencers', registro_id='reset-pendientes',
+            antes={'sol_numeros': [s[0] for s in sol_nums][:50],
+                   'oc_numeros': oc_nums_a_borrar[:50]},
+            despues={'eliminado': eliminado},
+            detalle=(f"Admin {u} reset pendientes influencers: "
+                     f"{eliminado['pagos_influencers']} pagos, "
+                     f"{eliminado['solicitudes_compra']} SOLs, "
+                     f"{eliminado['ordenes_compra']} OCs"))
+    except Exception:
+        pass
+
     conn.commit(); conn.close()
     return jsonify({
         'ok': True,
