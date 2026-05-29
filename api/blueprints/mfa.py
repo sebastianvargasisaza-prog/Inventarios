@@ -148,7 +148,7 @@ def _is_mfa_enabled(username):
     return bool(rec and rec.get('enabled'))
 
 
-def _verify_totp(secret, token):
+def _verify_totp(secret, token, username=None):
     """Verifica un token TOTP de 6 dígitos contra el secret. Retorna bool.
 
     Acepta tokens del paso anterior y siguiente (window=1) para tolerar
@@ -183,12 +183,18 @@ def _verify_totp(secret, token):
         # rotado siga colidiendo solo consigo mismo.
         import hashlib
         tok_hash = hashlib.sha256(f'{secret}:{token}'.encode()).hexdigest()[:24]
+        # SEC-FIX 28-may · replay protection también en el LOGIN MFA. Antes
+        # uname solo salía de compras_user, que en /login/mfa está vacío (el
+        # user aún no está autenticado) → caía en "permitir" y NO registraba
+        # el token, dejando el flujo más crítico sin protección de replay.
+        # Ahora aceptamos username explícito y caemos a mfa_pending_user.
         try:
-            uname = (session.get('compras_user') or '').strip().lower()
+            uname = (username or session.get('compras_user')
+                     or session.get('mfa_pending_user') or '').strip().lower()
         except Exception:
-            uname = ''
+            uname = (username or '').strip().lower()
         if not uname:
-            # Sin contexto Flask (test directo de pyotp) · permitir.
+            # Sin contexto Flask ni username (test directo de pyotp) · permitir.
             return True
         _c = None
         try:
@@ -657,6 +663,16 @@ def admin_mfa_reset(username):
     ip = _client_ip()
     _log_sec("mfa_admin_reset", caller, ip,
               details=f"target={username} prev_enabled={had_enabled}")
+    # Audit fix 28-may · acción admin muy sensible (deja entrar SIN MFA) ·
+    # además del log de seguridad, dejar evidencia en audit_log inmutable.
+    try:
+        from audit_helpers import audit_log as _al
+        _al(usuario=caller, accion='ADMIN_MFA_RESET', tabla='users_mfa',
+            registro_id=username,
+            despues={'enabled': 0, 'prev_enabled': had_enabled, 'reset_por': caller},
+            detalle=f"Admin {caller} reseteó MFA de {username} (prev_enabled={had_enabled})")
+    except Exception:
+        pass
     return jsonify({
         'ok': True,
         'target_username': username,
@@ -985,7 +1001,7 @@ def login_mfa_verify():
         session['mfa_error'] = 'Demasiados intentos. Espera 15 min.'
         return redirect('/login/mfa')
 
-    if not rec or not rec.get('enabled') or not _verify_totp(rec['secret'], token):
+    if not rec or not rec.get('enabled') or not _verify_totp(rec['secret'], token, username=pending):
         _record_failure(ip, pending)
         _log_sec("mfa_login_token_failed", pending, ip)
         session['mfa_error'] = 'Token incorrecto. Inténtalo de nuevo.'

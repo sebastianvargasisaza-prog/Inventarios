@@ -295,11 +295,24 @@ def contabilidad_index():
 
 @bp.route('/api/contabilidad/login', methods=['POST'])
 def cont_login():
-    from config import COMPRAS_USERS as ALL_PASSES
     data = request.get_json() or {}
     u = data.get('usuario', '').strip().lower()
     p = data.get('password', '')
-    if u in CONT_USERS and ALL_PASSES.get(u) == p:
+    if u not in CONT_USERS:
+        return jsonify({'error': 'Credenciales incorrectas'}), 401
+    # SEC-FIX 28-may · antes comparaba el HASH almacenado contra el password
+    # en texto plano (ALL_PASSES.get(u) == p) → el login NUNCA funcionaba y
+    # violaba la política de hash. Ahora usa _resolve_password_hash (BD→env) +
+    # check_password_hash, igual que el login principal y el step-up MFA.
+    import hmac as _hmac
+    from werkzeug.security import check_password_hash as _cph
+    from blueprints.core import _resolve_password_hash
+    expected = _resolve_password_hash(u)
+    if expected and (expected.startswith('pbkdf2:') or expected.startswith('scrypt:')):
+        ok = _cph(expected, p)
+    else:
+        ok = bool(expected) and _hmac.compare_digest(expected, p)
+    if ok:
         session['cont_user'] = u
         return jsonify({'ok': True, 'usuario': u})
     return jsonify({'error': 'Credenciales incorrectas'}), 401
