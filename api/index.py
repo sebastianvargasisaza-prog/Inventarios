@@ -413,7 +413,11 @@ except Exception as _e:
 
 # Arrancar loops de background daemon (no bloqueantes).
 # Solo si NO estamos en modo testing (los tests no necesitan loops corriendo).
-if not app.config.get("TESTING"):
+# NOTA: este bloque corre al IMPORTAR el módulo · app.config['TESTING'] todavía
+# no está seteado por conftest en ese momento, así que también chequeamos la env
+# var EOS_DISABLE_DAEMONS (conftest la setea ANTES del import). Sin esto los
+# daemons arrancaban en pytest y bloqueaban la BD ('database is locked').
+if not app.config.get("TESTING") and not os.environ.get("EOS_DISABLE_DAEMONS"):
     try:
         from blueprints.marketing import _start_marketing_metrics_loop
         _start_marketing_metrics_loop()
@@ -552,6 +556,11 @@ _BACKUP_CHECK_EVERY_N_REQUESTS = 50
 @app.before_request
 def _maybe_trigger_backup():
     """Cada N requests, evalúa si toca correr backup automático."""
+    # En tests NO disparar backups async: el thread copia/escribe la BD y
+    # causa 'database is locked' intermitente en los tests que abren conexiones
+    # sqlite crudas (test_planta_*). Audit ronda2 29-may-2026.
+    if app.config.get("TESTING") or os.environ.get("EOS_DISABLE_DAEMONS"):
+        return
     _backup_check_counter[0] += 1
     if _backup_check_counter[0] % _BACKUP_CHECK_EVERY_N_REQUESTS != 0:
         return

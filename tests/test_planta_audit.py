@@ -77,9 +77,9 @@ def test_rechazar_lote_requiere_motivo(app, db_clean):
     c = _login(app, "laura")
     conn = sqlite3.connect(os.environ["DB_PATH"])
     cur = conn.execute("""
-        INSERT INTO movimientos (tipo, material_nombre, cantidad, lote,
+        INSERT INTO movimientos (material_id, tipo, material_nombre, cantidad, lote,
                                   estado_lote, fecha)
-        VALUES ('Entrada', 'Test', 1, 'LOTE-REJ-T', 'Cuarentena', datetime('now'))
+        VALUES ('TEST-REJ', 'Entrada', 'Test', 1, 'LOTE-REJ-T', 'Cuarentena', datetime('now'))
     """)
     mov_id = cur.lastrowid
     conn.commit(); conn.close()
@@ -113,7 +113,9 @@ def test_aprobar_lote_estado_invalido_400(app, db_clean):
 # ─── Producción iniciar/terminar ─────────────────────────────────────
 
 def test_iniciar_produccion_audita(app, db_clean):
-    c = _login(app, "luis")  # operario tiene acceso (compras_user)
+    # 23-may-PM (P0-2): /iniciar descuenta MP · solo el dispensador asignado o
+    # admin/jefe puede. Admin (sebastian) está autorizado y ejercita el audit.
+    c = _login(app, "sebastian")
     conn = sqlite3.connect(os.environ["DB_PATH"])
     cur = conn.execute("""
         INSERT INTO produccion_programada (producto, fecha_programada, lotes, estado)
@@ -135,7 +137,8 @@ def test_iniciar_produccion_audita(app, db_clean):
 
 
 def test_terminar_produccion_audita(app, db_clean):
-    c = _login(app, "luis")
+    # Igual que iniciar · terminar requiere dispensación/jefe/admin (P0-2).
+    c = _login(app, "sebastian")
     conn = sqlite3.connect(os.environ["DB_PATH"])
     cur = conn.execute("""
         INSERT INTO produccion_programada

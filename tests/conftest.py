@@ -84,6 +84,12 @@ def app(test_workspace):
     os.environ["SECRET_KEY"] = "test-secret-key-only-for-pytest"
     os.environ["BACKUP_RETENTION_DAYS"] = "7"
     os.environ["BACKUP_INTERVAL_HOURS"] = "23"
+    # Desactivar los daemons de fondo (marketing-metrics, auto-plan-cron,
+    # multi-cron, supervisor). El bloque que los arranca en index.py corre al
+    # IMPORTAR (antes de que se setee config['TESTING']), así que debe leerse de
+    # env. Sin esto, los daemons escriben a la BD durante los tests y causan
+    # 'database is locked' intermitente (flaky). Audit ronda2 29-may-2026.
+    os.environ["EOS_DISABLE_DAEMONS"] = "1"
 
     # Hash de password para todos los users · DEBE setearse antes de que
     # se importe config.py (lo evalúa en import time) · en modo Postgres

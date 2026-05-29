@@ -39,7 +39,7 @@ def test_movimientos_post_allowed_for_planta(app, db_clean):
     c = _login(app, "luis")
     r = c.post("/api/movimientos",
                json={"material_id": "TEST_X", "material_nombre": "Test",
-                     "cantidad": 100, "tipo": "Entrada"},
+                     "cantidad": 100, "tipo": "Entrada", "lote": "LOTE-MOV-T1"},
                headers=csrf_headers())
     assert r.status_code == 201
 
@@ -48,7 +48,7 @@ def test_movimientos_post_allowed_for_calidad(app, db_clean):
     c = _login(app, "laura")
     r = c.post("/api/movimientos",
                json={"material_id": "TEST_Y", "material_nombre": "Test",
-                     "cantidad": 50, "tipo": "Entrada"},
+                     "cantidad": 50, "tipo": "Entrada", "lote": "LOTE-MOV-T2"},
                headers=csrf_headers())
     assert r.status_code == 201
 
