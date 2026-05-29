@@ -12,7 +12,7 @@ HTML = r"""<!DOCTYPE html>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Bienestar · HHA Group</title>
-<link rel="stylesheet" href="/static/cortex.css?v=eos13">
+<link rel="stylesheet" href="/static/cortex.css?v=eos15">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Segoe UI',sans-serif;background:#f5f4f2;color:#1c1917;font-size:14px}

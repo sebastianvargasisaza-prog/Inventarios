@@ -246,36 +246,49 @@ code, pre, kbd, samp, .mono, [class*="font-mono"] {
 .cx-chip-info    { background: var(--cx-info-pale);    color: var(--cx-info);    }
 .cx-chip-violet  { background: var(--cx-primary-pale); color: var(--cx-primary); }
 
-/* EOS — Header de modulo unificado */
+/* EOS — Header de modulo unificado · v2 premium (28-may) ·
+   El logo pasa de trazo tenue a TILE con gradiente violeta + marca en blanco
+   (presencia de marca real) · header con gradiente hero sutil. Compartido por
+   todas las páginas → eleva el "first impression" de toda la app. */
 .cx-mod-header {
-  background: var(--cx-card);
-  border-bottom: 1px solid var(--cx-border);
-  padding: 14px 24px;
+  background: var(--cx-hero-grad);
+  border-bottom: 1px solid var(--cx-hairline);
+  padding: 15px 28px;
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 15px;
 }
 .cx-mod-header__logo {
-  width: 40px;
-  height: 40px;
-  border-radius: 9px;
+  width: 44px;
+  height: 44px;
+  border-radius: 13px;
   flex-shrink: 0;
-  box-shadow: var(--cx-sh-sm);
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  background: var(--cx-primary-grad);
+  box-shadow: var(--cx-sh-violet-sm);
 }
+/* la marca (SVG inline con stroke violeta) va BLANCA dentro del tile */
+.cx-mod-header__logo svg { stroke: #fff !important; width: 26px; height: 26px; }
+.cx-mod-header__logo svg circle[fill] { fill: #fff !important; }
 .cx-mod-header__title {
-  font-size: 17px;
-  font-weight: 700;
+  font-size: 19px;
+  font-weight: 800;
   color: var(--cx-text);
-  letter-spacing: -0.3px;
-  line-height: 1.2;
+  letter-spacing: -0.4px;
+  line-height: 1.15;
+  display: flex;
+  align-items: center;
 }
 .cx-mod-header__sub {
-  font-size: 11px;
+  font-size: 11.5px;
   color: var(--cx-text-mute);
-  margin-top: 2px;
+  margin-top: 3px;
 }
 .cx-mod-header__sub strong {
-  color: var(--cx-primary);
+  color: var(--cx-primary-dark);
+  font-weight: 700;
 }
 .cx-mod-header__nav {
   margin-left: auto;
