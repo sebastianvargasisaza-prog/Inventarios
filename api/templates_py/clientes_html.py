@@ -965,7 +965,7 @@ async function loadDashA(){
       var saldoColor=saldo>0?'#dc2626':'#16a34a';
       var estadoPago=saldo<=0?'<span class="badge badge-verde">Al d&#xed;a</span>':'<span class="badge badge-rojo">Deuda activa</span>';
       return '<tr>'
-        +'<td style="font-weight:700;">'+a.nombre+'</td>'
+        +'<td style="font-weight:700;">'+esc(a.nombre)+'</td>'
         +'<td style="text-align:right;">'+fmt(a.facturado)+'</td>'
         +'<td style="text-align:right;color:#16a34a;">'+fmt(a.pagado)+'</td>'
         +'<td style="text-align:right;font-weight:700;color:'+saldoColor+';">'+fmt(saldo)+'</td>'
@@ -989,16 +989,16 @@ async function loadAliados(){
     if(!cls.length){tb.innerHTML='<tr><td colspan="10" class="empty">Sin aliados registrados</td></tr>';return;}
     var sel=document.getElementById('ped-cliente');
     sel.innerHTML='<option value="">Seleccionar...</option>';
-    cls.forEach(function(cl){sel.innerHTML+='<option value="'+cl.id+'">'+cl.nombre+'</option>';});
+    cls.forEach(function(cl){sel.innerHTML+='<option value="'+cl.id+'">'+esc(cl.nombre)+'</option>';});
     tb.innerHTML=cls.map(function(cl){
       var saldo=saldoMap[cl.id]||0;
       var saldoCell=saldo>0
         ?'<span style="color:#dc2626;font-weight:700;">'+fmt(saldo)+'</span>'
         :'<span style="color:#16a34a;">&#x2014;</span>';
       return '<tr>'
-        +'<td style="font-family:monospace;font-size:0.8em;color:#888;">'+cl.codigo+'</td>'
-        +'<td style="font-weight:700;">'+cl.nombre+'</td>'
-        +'<td style="color:#888;font-size:0.85em;">'+(cl.ciudad||'&#x2014;')+'</td>'
+        +'<td style="font-family:monospace;font-size:0.8em;color:#888;">'+esc(cl.codigo)+'</td>'
+        +'<td style="font-weight:700;">'+esc(cl.nombre)+'</td>'
+        +'<td style="color:#888;font-size:0.85em;">'+(cl.ciudad?esc(cl.ciudad):'&#x2014;')+'</td>'
         +'<td>'+nivelBadge(cl.nivel_aliado||'Ingreso')+'</td>'
         +'<td>'+semHtml(cl.semaforo||'verde')+'</td>'
         +'<td style="text-align:center;">'+(cl.total_pedidos||0)+'</td>'
@@ -1375,9 +1375,9 @@ async function loadProspectos(){
   if(!prosp.length){tb.innerHTML='<tr><td colspan="7" class="empty">Sin prospectos</td></tr>';return;}
   tb.innerHTML=prosp.map(function(p){
     return '<tr>'
-      +'<td style="font-weight:700;">'+p.empresa+'</td>'
-      +'<td>'+(p.contacto||'—')+'</td>'
-      +'<td style="font-size:0.83em;">'+(p.producto_tipo||'—')+'</td>'
+      +'<td style="font-weight:700;">'+esc(p.empresa)+'</td>'
+      +'<td>'+(p.contacto?esc(p.contacto):'—')+'</td>'
+      +'<td style="font-size:0.83em;">'+(p.producto_tipo?esc(p.producto_tipo):'—')+'</td>'
       +'<td>'+etapaBadge(p.etapa)+'</td>'
       +'<td style="text-align:right;color:#5C4B99;font-weight:700;">'+fmt(p.valor_estimado)+'</td>'
       +'<td style="color:#999;font-size:0.82em;">'+(p.fecha_contacto||'').substring(0,10)+'</td>'
@@ -1417,8 +1417,8 @@ async function loadOrdenes(){
   tb.innerHTML=ords.map(function(o){
     return '<tr>'
       +'<td style="font-family:monospace;font-size:0.8em;color:#888;">#'+o.id+'</td>'
-      +'<td style="font-weight:700;">'+o.empresa+'</td>'
-      +'<td>'+o.producto+'</td>'
+      +'<td style="font-weight:700;">'+esc(o.empresa)+'</td>'
+      +'<td>'+esc(o.producto)+'</td>'
       +'<td style="text-align:right;">'+(o.batch_size_kg||0)+' kg</td>'
       +'<td style="color:#999;font-size:0.82em;">'+(o.fecha_entrega||'—')+'</td>'
       +'<td><span class="badge '+(estColors[o.estado]||'badge-gris')+'">'+o.estado+'</span></td>'
@@ -1484,7 +1484,7 @@ async function loadSkusSegmento() {
         const barW = Math.round((sk.revenue / maxRev) * 100);
         return `<div style="margin-bottom:8px;">
           <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:3px;">
-            <span style="font-size:11px;font-weight:700;color:#1e293b;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;max-width:150px;" title="${sk.descripcion||sk.sku}">${sk.sku}</span>
+            <span style="font-size:11px;font-weight:700;color:#1e293b;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;max-width:150px;" title="${esc(sk.descripcion||sk.sku)}">${esc(sk.sku)}</span>
             <span style="font-size:10px;color:#64748b;white-space:nowrap;margin-left:6px;">${sk.uds} uds &nbsp;${fmtCOP(sk.revenue)}</span>
           </div>
           <div style="height:5px;background:#f1f5f9;border-radius:3px;overflow:hidden;">
@@ -1495,7 +1495,7 @@ async function loadSkusSegmento() {
       return `<div style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:16px;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
           <div>
-            <div style="font-size:13px;font-weight:800;color:#0f172a;">${seg.categoria}</div>
+            <div style="font-size:13px;font-weight:800;color:#0f172a;">${esc(seg.categoria)}</div>
             <div style="font-size:10px;color:#94a3b8;margin-top:2px;">${seg.total_pedidos} pedidos &nbsp;·&nbsp; ${fmtCOP(seg.total_revenue)}</div>
           </div>
           <div style="width:10px;height:10px;border-radius:50%;background:${color};flex-shrink:0;"></div>
