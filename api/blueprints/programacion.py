@@ -6368,11 +6368,16 @@ def prog_completar_evento(evento_id):
         if mp_ya_descontado:
             claim_rowcount = 0  # ya descontado, skip MP loop
         elif forzar:
+            # CAS atómico (fix 28-may) · antes UPDATE incondicional → dos
+            # /completar?forzar paralelos pasaban ambos y doble-descontaban MP.
+            # Ahora solo gana el request que coincide con el descontado_at
+            # previo leído · el segundo cae en el 409 YA_DESCONTADO_RACE.
             claim_cur = c.execute("""
                 UPDATE produccion_programada
                    SET inventario_descontado_at = ?
                  WHERE id = ?
-            """, (fecha_iso, evento_id))
+                   AND COALESCE(inventario_descontado_at, '') = COALESCE(?, '')
+            """, (fecha_iso, evento_id, descontado_at))
             claim_rowcount = claim_cur.rowcount
         else:
             claim_cur = c.execute("""

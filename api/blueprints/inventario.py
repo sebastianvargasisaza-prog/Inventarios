@@ -9927,6 +9927,18 @@ def mee_registrar_movimiento():
         return jsonify({'error': f'Codigo MEE {codigo} no encontrado'}), 404
     stock_ant = float(mee[2] or 0)
 
+    # Fix 28-may · rechazar Salida que excede el stock (como el pre-check de MP)
+    # en vez de clampar a 0 registrando la cantidad completa → eso dejaba drift
+    # entre maestro_mee.stock_actual (0) y SUM(movimientos_mee). Para corregir
+    # stock a la baja sin venta real, usar 'Ajuste' (stock objetivo).
+    if tipo == 'Salida' and cantidad > stock_ant + 0.001:
+        return jsonify({
+            'error': 'stock insuficiente',
+            'stock_actual': stock_ant,
+            'cantidad_pedida': cantidad,
+            'sugerencia': 'Usar Ajuste para fijar el stock objetivo',
+        }), 422
+
     # Para 'Ajuste', 'cantidad' es el stock OBJETIVO (absoluto). El movimiento
     # debe registrar el DELTA (objetivo - actual) · si registrara el absoluto,
     # SUM(movimientos_mee) driftearía contra stock_actual. Entrada/Salida sí

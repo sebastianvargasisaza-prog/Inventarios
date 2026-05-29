@@ -3148,6 +3148,10 @@ def solicitudes_agrupadas_por_proveedor():
     sql += " AND s.categoria NOT IN ('Influencer/Marketing Digital','Cuenta de Cobro')"
     if fuente == 'planta':
         sql += " AND s.categoria IN ('Materia Prima','Empaque','Material de Empaque')"
+    elif fuente == 'usuarios':
+        # Fix 28-may · INV-1: rama simétrica que faltaba · sin esto fuente=usuarios
+        # dejaba colar SOLs de planta (MP/Empaque) en el tab Solicitudes.
+        sql += " AND s.categoria NOT IN ('Materia Prima','Empaque','Material de Empaque')"
     if categoria_filtro:
         sql += " AND s.categoria=?"
         params.append(categoria_filtro)
