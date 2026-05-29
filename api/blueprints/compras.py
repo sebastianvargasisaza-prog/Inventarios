@@ -1030,7 +1030,7 @@ def handle_ordenes_compra():
                     c.execute("""UPDATE maestro_mps
                                  SET precio_referencia=?, proveedor=COALESCE(NULLIF(proveedor,''),?)
                                  WHERE codigo_mp=?""",
-                              (precio_u, d['proveedor'], codigo))
+                              (precio_u * 1000.0, d['proveedor'], codigo))  # $/g → $/kg (INV-2)
                 except Exception:
                     pass
 
@@ -3585,7 +3585,7 @@ def crear_oc_desde_solicitudes():
                            SET precio_referencia=?,
                                proveedor=COALESCE(NULLIF(proveedor,''),?)
                            WHERE codigo_mp=?""",
-                        (pu, proveedor, cod_mp),
+                        (pu * 1000.0, proveedor, cod_mp),  # $/g → $/kg (INV-2)
                     )
                 except Exception:
                     pass
@@ -5699,7 +5699,7 @@ def recibir_oc(numero_oc):
             params_u.append(fecha)
             if precio_item and float(precio_item) > 0:
                 sets.append("precio_referencia=?")
-                params_u.append(float(precio_item))
+                params_u.append(float(precio_item) * 1000.0)  # $/g → $/kg (INV-2)
             params_u.append(codigo_mp_item)
             try:
                 cur.execute(
@@ -5713,7 +5713,7 @@ def recibir_oc(numero_oc):
                     try:
                         cur.execute(
                             "UPDATE maestro_mps SET precio_referencia=? WHERE codigo_mp=?",
-                            (float(precio_item), codigo_mp_item),
+                            (float(precio_item) * 1000.0, codigo_mp_item),  # $/g → $/kg (INV-2)
                         )
                     except Exception:
                         pass
@@ -6287,14 +6287,14 @@ def pagar_oc(numero_oc):
                 cur.execute("""INSERT OR IGNORE INTO precios_mp_historico
                                (codigo_mp, precio_kg, numero_factura, proveedor, fecha)
                                VALUES (?, ?, ?, ?, datetime('now', '-5 hours'))""",
-                            (codigo_mp, precio, numero_factura, proveedor))
+                            (codigo_mp, float(precio) * 1000.0, numero_factura, proveedor))  # precio_unitario $/g → precio_kg
                 # AUDITORÍA-FIX 23-may-2026 · C14 · sincronizar precio_referencia
                 # en maestro_mps (canonical para sugeridor) · antes solo se
                 # actualizaba precios_mp_historico
                 try:
                     cur.execute(
                         "UPDATE maestro_mps SET precio_referencia=? WHERE codigo_mp=?",
-                        (float(precio), codigo_mp),
+                        (float(precio) * 1000.0, codigo_mp),  # $/g → $/kg (INV-2)
                     )
                 except Exception:
                     pass

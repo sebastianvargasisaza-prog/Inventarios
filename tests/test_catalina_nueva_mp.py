@@ -365,8 +365,11 @@ def test_oc_con_mp_existente_actualiza_precio_referencia(app, db_clean):
         ).fetchone()
         conn.close()
         assert row is not None
-        # 0.001 → 0.005 (sobrescrito por OC mas reciente)
-        assert abs(row[0] - 0.005) < 0.0001, f"precio_referencia esperado 0.005, got {row[0]}"
+        # fix 28-may: el test asumía precio_referencia en $/g crudo (0.005),
+        # codificando el bug de unidad. precio_referencia es $/kg (INV-2) →
+        # precio_unitario 0.005 $/g × 1000 = 5.0 $/kg. Consistente con
+        # update_sol_items y test_compras_3fuentes (0.025→25.0).
+        assert abs(row[0] - 5.0) < 0.0001, f"precio_referencia esperado 5.0 ($/kg), got {row[0]}"
     finally:
         conn = sqlite3.connect(os.environ["DB_PATH"])
         conn.execute("DELETE FROM ordenes_compra_items WHERE codigo_mp='MP-INT-PRE'")
