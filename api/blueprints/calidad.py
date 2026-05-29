@@ -1217,6 +1217,11 @@ def calidad_micro_specs():
         return jsonify({'error': 'No autorizado'}), 401
     conn = get_db(); c = conn.cursor()
     if request.method == 'POST':
+        # RBAC fix 28-may · antes cualquier logueado podía mover los límites
+        # micro (limite_industria) que definen el veredicto OOS/cuarentena.
+        err, code = _require_calidad()
+        if err:
+            return err, code
         d = request.get_json(silent=True) or {}
         prod = (d.get('producto_nombre') or '').strip()
         micro = (d.get('microorganismo') or '').strip()
@@ -1271,6 +1276,11 @@ def calidad_micro_resultados():
     conn = get_db(); c = conn.cursor()
 
     if request.method == 'POST':
+        # RBAC fix 28-may · antes cualquier logueado podía inyectar lecturas
+        # micro y disparar OOS/cuarentena de un lote (decisión regulatoria).
+        err, code = _require_calidad()
+        if err:
+            return err, code
         d = request.get_json(silent=True) or {}
         producto = (d.get('producto_nombre') or '').strip()
         lote = (d.get('lote') or '').strip()
