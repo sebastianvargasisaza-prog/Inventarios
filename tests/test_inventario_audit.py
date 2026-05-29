@@ -204,6 +204,11 @@ def test_mee_ajustar_audita(app, db_clean):
     conn = sqlite3.connect(os.environ["DB_PATH"])
     conn.execute("""INSERT OR IGNORE INTO maestro_mee
         (codigo, descripcion, stock_actual) VALUES ('MEE-AJ-T1', 'MEE ajustar', 50)""")
+    # El endpoint calcula stock_anterior desde SUM(movimientos_mee), NO desde
+    # el cache maestro_mee.stock_actual (fix anti-drift 21-may). Sembramos un
+    # movimiento Entrada de 50 para que el stock real sea 50.
+    conn.execute("""INSERT INTO movimientos_mee (mee_codigo, tipo, cantidad, responsable)
+                    VALUES ('MEE-AJ-T1', 'Entrada', 50, 'seed-test')""")
     conn.commit(); conn.close()
     try:
         r = c.post("/api/mee/MEE-AJ-T1/ajustar",

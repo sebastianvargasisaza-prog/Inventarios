@@ -192,13 +192,22 @@ def test_cron_lock_adquirir_y_liberar(app, db_clean):
 def test_cron_lock_ttl_expira(app, db_clean):
     """Si un worker crashea sin liberar, el lock vencido (>TTL) se libera."""
     from blueprints.auto_plan_jobs import _adquirir_lock_cron
+    from datetime import datetime as _dt, timedelta as _td
     conn = sqlite3.connect(os.environ["DB_PATH"])
     try:
-        # Insertar un lock viejo (3 horas atrás · TTL es 2h)
-        conn.execute("""
-            INSERT OR REPLACE INTO cron_locks (job_name, locked_at, locked_by)
-            VALUES ('test_job_old', datetime('now', '-3 hours'), 'crashed_worker')
-        """)
+        # `_adquirir_lock_cron` almacena locked_at en base Bogotá (now-5h) y el
+        # cutoff de expiración es (now - (ttl_horas + 5h)) — el +5 compensa el
+        # offset UTC→Bogotá con el que se guarda el timestamp (fix Bug #10,
+        # 22-may-2026, PG-safe sin datetime multi-arg). Para simular un worker
+        # que crasheó, el lock huérfano debe insertarse en la MISMA base de
+        # reloj y ser más viejo que (ttl_horas + 5). Con ttl=2 → cutoff 7h →
+        # insertamos a -10h para que quede holgadamente vencido.
+        viejo = (_dt.now() - _td(hours=10)).strftime('%Y-%m-%d %H:%M:%S')
+        conn.execute(
+            "INSERT OR REPLACE INTO cron_locks (job_name, locked_at, locked_by) "
+            "VALUES ('test_job_old', ?, 'crashed_worker')",
+            (viejo,),
+        )
         conn.commit()
         # Adquirir debe limpiar el viejo y reclamar
         assert _adquirir_lock_cron(conn, 'test_job_old', ttl_horas=2) is True

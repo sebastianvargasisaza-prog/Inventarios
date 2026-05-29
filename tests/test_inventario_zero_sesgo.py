@@ -23,6 +23,21 @@ import pytest
 from .conftest import TEST_PASSWORD, csrf_headers
 
 
+def _connect():
+    """Conexión cruda a la DB de test con el MISMO busy_timeout que producción.
+
+    Producción usa journal_mode=DELETE + busy_timeout=15000 (api/database.py).
+    En DELETE mode un escritor bloquea a lectores/escritores; sin busy_timeout
+    la conexión cruda del test fallaba instantáneamente con 'database is locked'
+    en cuanto la request Flask (get_db) aún tenía el lock — y dejaba la conexión
+    abierta, lo que encadenaba locks en cascada (278s). 15s de espera + cierre
+    garantizado en finally elimina el problema. Audit zero-error 29-may-2026.
+    """
+    conn = sqlite3.connect(os.environ["DB_PATH"], timeout=15.0)
+    conn.execute("PRAGMA busy_timeout=15000")
+    return conn
+
+
 def _login(app, user="sebastian"):
     c = app.test_client()
     r = c.post("/login", data={"username": user, "password": TEST_PASSWORD},
@@ -48,9 +63,25 @@ def _seed_mp(conn, codigo, movs):
     conn.commit()
 
 
+def _seed_maestro_mp(conn, codigo, nombre='MP test'):
+    """Registra un MP en maestro_mps (activo=1).
+
+    El trigger `trg_fi_material_id_fk` (api/database.py · audit FK INVIMA)
+    BLOQUEA cualquier INSERT en formula_items cuyo material_id no exista en
+    maestro_mps activo. Comportamiento correcto de producción · los tests de
+    listo-producir deben sembrar el maestro antes de la fórmula. Audit
+    zero-error 29-may-2026 (antes el test reventaba con FK violation porque
+    fue escrito antes de que existiera el trigger).
+    """
+    conn.execute(
+        "INSERT OR IGNORE INTO maestro_mps (codigo_mp, nombre_inci, activo) "
+        "VALUES (?, ?, 1)", (codigo, nombre))
+    conn.execute("UPDATE maestro_mps SET activo=1 WHERE codigo_mp=?", (codigo,))
+
+
 def test_stock_total_suma_entradas_resta_salidas(app, db_clean):
     from inventario_helpers import stock_mp_total
-    conn = sqlite3.connect(os.environ["DB_PATH"])
+    conn = _connect()
     _seed_mp(conn, 'MP-CERO-T1', [
         ('Entrada', 1000, 'Aprobado'),
         ('Entrada', 500, 'Aprobado'),
@@ -66,7 +97,7 @@ def test_stock_total_suma_entradas_resta_salidas(app, db_clean):
 def test_stock_total_incluye_cuarentena(app, db_clean):
     """stock_mp_total debe incluir lotes en cuarentena (visión completa)."""
     from inventario_helpers import stock_mp_total
-    conn = sqlite3.connect(os.environ["DB_PATH"])
+    conn = _connect()
     _seed_mp(conn, 'MP-CERO-T2', [
         ('Entrada', 800, 'Aprobado'),
         ('Entrada', 200, 'CUARENTENA'),
@@ -81,7 +112,7 @@ def test_stock_total_incluye_cuarentena(app, db_clean):
 def test_stock_disponible_excluye_cuarentena(app, db_clean):
     """stock_mp_disponible NO debe contar cuarentena."""
     from inventario_helpers import stock_mp_disponible
-    conn = sqlite3.connect(os.environ["DB_PATH"])
+    conn = _connect()
     _seed_mp(conn, 'MP-CERO-T3', [
         ('Entrada', 800, 'Aprobado'),
         ('Entrada', 200, 'CUARENTENA'),
@@ -98,7 +129,7 @@ def test_stock_disponible_excluye_cuarentena(app, db_clean):
 
 def test_stock_disponible_excluye_vencido_rechazado(app, db_clean):
     from inventario_helpers import stock_mp_disponible
-    conn = sqlite3.connect(os.environ["DB_PATH"])
+    conn = _connect()
     _seed_mp(conn, 'MP-CERO-T4', [
         ('Entrada', 1000, 'Aprobado'),
         ('Entrada', 300, 'VENCIDO'),
@@ -114,7 +145,7 @@ def test_stock_disponible_excluye_vencido_rechazado(app, db_clean):
 def test_stock_estado_lote_vacio_o_null_se_considera_aprobado(app, db_clean):
     """Lotes legacy sin estado_lote NULL/'' se consideran disponibles."""
     from inventario_helpers import stock_mp_disponible
-    conn = sqlite3.connect(os.environ["DB_PATH"])
+    conn = _connect()
     conn.execute("DELETE FROM movimientos WHERE material_id='MP-CERO-T5'")
     conn.execute("INSERT INTO movimientos (material_id,material_nombre,cantidad,tipo,fecha,estado_lote) VALUES ('MP-CERO-T5','Test',500,'Entrada',datetime('now'),NULL)")
     conn.execute("INSERT INTO movimientos (material_id,material_nombre,cantidad,tipo,fecha,estado_lote) VALUES ('MP-CERO-T5','Test',300,'Entrada',datetime('now'),'')")
@@ -126,22 +157,55 @@ def test_stock_estado_lote_vacio_o_null_se_considera_aprobado(app, db_clean):
         conn.commit(); conn.close()
 
 
-def test_stock_legacy_ajuste_signed_funciona(app, db_clean):
-    """Tipos legacy 'Ajuste +'/'Ajuste -' (animus) deben funcionar."""
+def test_stock_tipos_insertables_suman_correcto(app, db_clean):
+    """Tipos VÁLIDOS hoy en BD ('Entrada','Salida','Ajuste') suman bien.
+
+    El esquema actual restringe `movimientos.tipo` a Entrada/Salida/Ajuste
+    vía el trigger `trg_mov_tipo_valido` (api/database.py) y exige cantidad>0
+    vía `trg_..._cantidad`. 'Ajuste' (sin signo) cuenta como SUMA. Los signos
+    se modelan con Entrada/Salida, no con 'Ajuste +'/'Ajuste -'.
+    """
     from inventario_helpers import stock_mp_total
-    conn = sqlite3.connect(os.environ["DB_PATH"])
+    conn = _connect()
     _seed_mp(conn, 'MP-CERO-T6', [
         ('Entrada', 1000, 'Aprobado'),
-        ('Ajuste +', 100, 'Aprobado'),
-        ('Ajuste -', 50, 'Aprobado'),
-        ('Ajuste', 200, 'Aprobado'),  # legacy sin signo, contado como entrada
+        ('Salida', 50, 'Aprobado'),
+        ('Ajuste', 200, 'Aprobado'),  # sin signo, cuenta como entrada (+)
     ])
     try:
-        # 1000 + 100 - 50 + 200 = 1250
-        assert stock_mp_total(conn, 'MP-CERO-T6') == 1250.0
+        # 1000 - 50 + 200 = 1150
+        assert stock_mp_total(conn, 'MP-CERO-T6') == 1150.0
     finally:
         conn.execute("DELETE FROM movimientos WHERE material_id='MP-CERO-T6'")
         conn.commit(); conn.close()
+
+
+def test_stock_legacy_ajuste_signed_helper_los_reconoce():
+    """El helper DEBE seguir sumando data LEGACY 'Ajuste +'/'Ajuste -'.
+
+    Estos tipos ya NO se pueden INSERTAR (trigger trg_mov_tipo_valido los
+    rechaza desde may-2026), pero filas históricas anteriores al trigger
+    existen en producción · el CASE de stock_mp_total tiene que clasificarlas
+    bien (+ para 'Ajuste +'/'Ajuste', − para 'Ajuste -'). Se prueba contra una
+    BD in-memory SIN triggers — única vía honesta de sembrar data legacy sin
+    debilitar el esquema de producción. Audit zero-error 29-may-2026.
+    """
+    import sqlite3 as _sq
+    from inventario_helpers import stock_mp_total
+    mem = _sq.connect(":memory:")
+    mem.execute("""CREATE TABLE movimientos
+        (id INTEGER PRIMARY KEY, material_id TEXT, material_nombre TEXT,
+         cantidad REAL, tipo TEXT, fecha TEXT, estado_lote TEXT)""")
+    for tipo, cant in [('Entrada', 1000), ('Ajuste +', 100),
+                       ('Ajuste -', 50), ('Ajuste', 200)]:
+        mem.execute("INSERT INTO movimientos (material_id,cantidad,tipo) "
+                    "VALUES (?,?,?)", ('MP-LEGACY', cant, tipo))
+    mem.commit()
+    try:
+        # 1000 + 100 - 50 + 200 = 1250
+        assert stock_mp_total(mem, 'MP-LEGACY') == 1250.0
+    finally:
+        mem.close()
 
 
 def test_regresion_no_volver_a_ingreso_consumo():
@@ -169,7 +233,7 @@ def test_regresion_no_volver_a_ingreso_consumo():
 
 def test_cancelar_pendiente_funciona(app, db_clean):
     c = _login(app, "sebastian")
-    conn = sqlite3.connect(os.environ["DB_PATH"])
+    conn = _connect()
     cur = conn.execute("""INSERT INTO produccion_programada
         (producto, fecha_programada, lotes, estado)
         VALUES ('PROD-CANCEL-T1', date('now'), 1, 'pendiente')""")
@@ -180,13 +244,13 @@ def test_cancelar_pendiente_funciona(app, db_clean):
                      headers=csrf_headers())
         assert r.status_code == 200
         # Verificar estado
-        conn = sqlite3.connect(os.environ["DB_PATH"])
+        conn = _connect()
         estado = conn.execute("SELECT estado FROM produccion_programada WHERE id=?",
                               (pid,)).fetchone()[0]
         conn.close()
         assert estado == 'cancelado'
     finally:
-        conn = sqlite3.connect(os.environ["DB_PATH"])
+        conn = _connect()
         conn.execute("DELETE FROM produccion_programada WHERE id=?", (pid,))
         conn.commit(); conn.close()
 
@@ -194,7 +258,7 @@ def test_cancelar_pendiente_funciona(app, db_clean):
 def test_cancelar_completada_devuelve_409(app, db_clean):
     """No se puede cancelar una producción que ya descontó inventario."""
     c = _login(app, "sebastian")
-    conn = sqlite3.connect(os.environ["DB_PATH"])
+    conn = _connect()
     # Verificar que la columna inventario_descontado_at exista
     cols = [r[1] for r in conn.execute("PRAGMA table_info(produccion_programada)").fetchall()]
     if 'inventario_descontado_at' not in cols:
@@ -211,7 +275,7 @@ def test_cancelar_completada_devuelve_409(app, db_clean):
         data = r.get_json()
         assert data.get('codigo') == 'YA_COMPLETADA'
     finally:
-        conn = sqlite3.connect(os.environ["DB_PATH"])
+        conn = _connect()
         conn.execute("DELETE FROM produccion_programada WHERE id=?", (pid,))
         conn.commit(); conn.close()
 
@@ -226,7 +290,7 @@ def test_cancelar_inexistente_404(app, db_clean):
 def test_cancelar_idempotente(app, db_clean):
     """Cancelar 2 veces no debe romper · segunda devuelve ya_cancelado=True."""
     c = _login(app, "sebastian")
-    conn = sqlite3.connect(os.environ["DB_PATH"])
+    conn = _connect()
     cur = conn.execute("""INSERT INTO produccion_programada
         (producto, fecha_programada, lotes, estado)
         VALUES ('PROD-IDEMP-T', date('now'), 1, 'cancelado')""")
@@ -239,7 +303,7 @@ def test_cancelar_idempotente(app, db_clean):
         d = r.get_json()
         assert d.get('ya_cancelado') is True
     finally:
-        conn = sqlite3.connect(os.environ["DB_PATH"])
+        conn = _connect()
         conn.execute("DELETE FROM produccion_programada WHERE id=?", (pid,))
         conn.commit(); conn.close()
 
@@ -250,19 +314,28 @@ def test_listo_producir_refleja_stock_real(app, db_clean):
     """El semáforo /api/planta/listo-producir debe devolver disponible_g real,
     no el -200 fantasma del bug anterior."""
     c = _login(app, "sebastian")
-    conn = sqlite3.connect(os.environ["DB_PATH"])
-    # Sembrar fórmula + MP con stock conocido
-    conn.execute("""INSERT OR IGNORE INTO formula_headers
-        (producto_nombre, lote_size_kg) VALUES ('PROD-LISTO-T', 1.0)""")
-    conn.execute("DELETE FROM formula_items WHERE producto_nombre='PROD-LISTO-T'")
-    conn.execute("""INSERT INTO formula_items
-        (producto_nombre, material_id, material_nombre, porcentaje, cantidad_g_por_lote)
-        VALUES ('PROD-LISTO-T', 'MP-LISTO-T', 'MP listo test', 50, 500)""")
-    # Stock: 1000g aprobado + 200g cuarentena · disponible = 1000
-    _seed_mp(conn, 'MP-LISTO-T', [
-        ('Entrada', 1000, 'Aprobado'),
-        ('Entrada', 200, 'CUARENTENA'),
-    ])
+    # Sembrar fórmula + MP con stock conocido · commit+close ANTES de la
+    # request HTTP. Si la conexión del seed quedara abierta (transacción de
+    # escritura sin cerrar) durante el c.get(), en journal_mode=DELETE
+    # bloquearía el get_db() de la request y dejaría un lock huérfano que se
+    # encadena al siguiente test (causa raíz de los 278s). Audit 29-may-2026.
+    conn = _connect()
+    try:
+        _seed_maestro_mp(conn, 'MP-LISTO-T', 'MP listo test')  # FK trigger
+        conn.execute("""INSERT OR IGNORE INTO formula_headers
+            (producto_nombre, lote_size_kg) VALUES ('PROD-LISTO-T', 1.0)""")
+        conn.execute("DELETE FROM formula_items WHERE producto_nombre='PROD-LISTO-T'")
+        conn.execute("""INSERT INTO formula_items
+            (producto_nombre, material_id, material_nombre, porcentaje, cantidad_g_por_lote)
+            VALUES ('PROD-LISTO-T', 'MP-LISTO-T', 'MP listo test', 50, 500)""")
+        # Stock: 1000g aprobado + 200g cuarentena · disponible = 1000
+        _seed_mp(conn, 'MP-LISTO-T', [
+            ('Entrada', 1000, 'Aprobado'),
+            ('Entrada', 200, 'CUARENTENA'),
+        ])
+        conn.commit()
+    finally:
+        conn.close()
     try:
         r = c.get("/api/planta/listo-producir/PROD-LISTO-T?lotes=1")
         assert r.status_code == 200
@@ -274,27 +347,34 @@ def test_listo_producir_refleja_stock_real(app, db_clean):
         assert mp['requerido_g'] == 500
         assert mp['status'] == 'ok'
     finally:
-        conn = sqlite3.connect(os.environ["DB_PATH"])
+        conn = _connect()
         conn.execute("DELETE FROM formula_items WHERE producto_nombre='PROD-LISTO-T'")
         conn.execute("DELETE FROM formula_headers WHERE producto_nombre='PROD-LISTO-T'")
         conn.execute("DELETE FROM movimientos WHERE material_id='MP-LISTO-T'")
+        conn.execute("DELETE FROM maestro_mps WHERE codigo_mp='MP-LISTO-T'")
         conn.commit(); conn.close()
 
 
 def test_listo_producir_deficit_real(app, db_clean):
     """Si el stock disponible es < requerido, status='deficit'."""
     c = _login(app, "sebastian")
-    conn = sqlite3.connect(os.environ["DB_PATH"])
-    conn.execute("""INSERT OR IGNORE INTO formula_headers
-        (producto_nombre, lote_size_kg) VALUES ('PROD-DEF-T', 2.0)""")
-    conn.execute("DELETE FROM formula_items WHERE producto_nombre='PROD-DEF-T'")
-    conn.execute("""INSERT INTO formula_items
-        (producto_nombre, material_id, material_nombre, porcentaje, cantidad_g_por_lote)
-        VALUES ('PROD-DEF-T', 'MP-DEF-T', 'MP def test', 50, 1000)""")
-    # Solo 100g aprobado · necesita 1000 → deficit
-    _seed_mp(conn, 'MP-DEF-T', [
-        ('Entrada', 100, 'Aprobado'),
-    ])
+    # commit+close del seed ANTES del c.get() (ver nota en test anterior).
+    conn = _connect()
+    try:
+        _seed_maestro_mp(conn, 'MP-DEF-T', 'MP def test')  # FK trigger
+        conn.execute("""INSERT OR IGNORE INTO formula_headers
+            (producto_nombre, lote_size_kg) VALUES ('PROD-DEF-T', 2.0)""")
+        conn.execute("DELETE FROM formula_items WHERE producto_nombre='PROD-DEF-T'")
+        conn.execute("""INSERT INTO formula_items
+            (producto_nombre, material_id, material_nombre, porcentaje, cantidad_g_por_lote)
+            VALUES ('PROD-DEF-T', 'MP-DEF-T', 'MP def test', 50, 1000)""")
+        # Solo 100g aprobado · necesita 1000 → deficit
+        _seed_mp(conn, 'MP-DEF-T', [
+            ('Entrada', 100, 'Aprobado'),
+        ])
+        conn.commit()
+    finally:
+        conn.close()
     try:
         r = c.get("/api/planta/listo-producir/PROD-DEF-T?lotes=1")
         d = r.get_json()
@@ -302,8 +382,9 @@ def test_listo_producir_deficit_real(app, db_clean):
         assert mp['disponible_g'] == 100
         assert mp['status'] == 'deficit'
     finally:
-        conn = sqlite3.connect(os.environ["DB_PATH"])
+        conn = _connect()
         conn.execute("DELETE FROM formula_items WHERE producto_nombre='PROD-DEF-T'")
         conn.execute("DELETE FROM formula_headers WHERE producto_nombre='PROD-DEF-T'")
         conn.execute("DELETE FROM movimientos WHERE material_id='MP-DEF-T'")
+        conn.execute("DELETE FROM maestro_mps WHERE codigo_mp='MP-DEF-T'")
         conn.commit(); conn.close()

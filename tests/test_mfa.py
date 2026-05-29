@@ -11,10 +11,31 @@ Cubre:
 - Login con backup code desactiva MFA + completa sesión
 """
 import sqlite3
+import time
 import pytest
 import pyotp
 
 from .conftest import TEST_PASSWORD
+
+
+def _fresh_totp(secret, ya_usado=None):
+    """Genera un token TOTP válido NO reusado.
+
+    SEC 25-may-2026: hay protección anti-replay (tabla mfa_tokens_usados ·
+    UNIQUE(username, token_hash) donde hash = sha256(secret:token)). Un mismo
+    token TOTP no se puede consumir dos veces. Los helpers que ya gastaron un
+    token (p.ej. verify-setup) deben pedir uno de una ventana posterior para
+    el siguiente paso (disable / login). Avanzamos de a 30s (una ventana TOTP)
+    hasta obtener un código distinto del ya consumido. El server verifica con
+    valid_window=1, así que un token de la ventana +30s sigue siendo aceptado.
+    """
+    base = time.time()
+    for paso in range(1, 6):
+        token = pyotp.TOTP(secret).at(base + 30 * paso)
+        if token != ya_usado:
+            return token
+    # Fallback improbable (5 ventanas idénticas) · devolver la última.
+    return pyotp.TOTP(secret).at(base + 30)
 
 
 def _login(client, username="sebastian"):
@@ -36,13 +57,13 @@ def _setup_mfa(client, username="sebastian"):
                     headers={"Origin": "http://localhost"})
     assert r.status_code == 200, r.get_data(as_text=True)
     secret = r.get_json()["secret"]
-    # Generar token válido
+    # Generar token válido · este queda CONSUMIDO (anti-replay) tras verify-setup
     token = pyotp.TOTP(secret).now()
     r = client.post("/api/mfa/verify-setup", json={"token": token},
                     headers={"Origin": "http://localhost"})
     assert r.status_code == 200, r.get_data(as_text=True)
     backup_code = r.get_json()["backup_code"]
-    return secret, backup_code
+    return secret, backup_code, token
 
 
 def test_mfa_status_sin_auth_devuelve_401(app, db_clean):
@@ -76,7 +97,7 @@ def test_mfa_verify_setup_token_incorrecto_falla(app, db_clean):
 
 def test_mfa_verify_setup_token_correcto_activa(app, db_clean):
     client = app.test_client()
-    secret, backup_code = _setup_mfa(client)
+    secret, backup_code, _ = _setup_mfa(client)
     # Status ahora dice enabled
     r = client.get("/api/mfa/status")
     assert r.status_code == 200
@@ -88,23 +109,24 @@ def test_mfa_verify_setup_token_correcto_activa(app, db_clean):
 
 def test_mfa_disable_requiere_password_y_token(app, db_clean):
     client = app.test_client()
-    secret, _ = _setup_mfa(client)
-    # Sin password → 400
-    r = client.post("/api/mfa/disable", json={"token": pyotp.TOTP(secret).now()},
+    secret, _, usado = _setup_mfa(client)
+    # Sin password → 400 (falla antes de verificar el token · no consume)
+    r = client.post("/api/mfa/disable", json={"token": _fresh_totp(secret, usado)},
                     headers={"Origin": "http://localhost"})
     assert r.status_code == 400
-    # Password incorrecto → 403
+    # Password incorrecto → 403 (falla en password · token no se verifica)
     r = client.post("/api/mfa/disable",
-                    json={"password": "wrong", "token": pyotp.TOTP(secret).now()},
+                    json={"password": "wrong", "token": _fresh_totp(secret, usado)},
                     headers={"Origin": "http://localhost"})
     assert r.status_code == 403
 
 
 def test_mfa_disable_con_credenciales_correctas_funciona(app, db_clean):
     client = app.test_client()
-    secret, _ = _setup_mfa(client)
+    secret, _, usado = _setup_mfa(client)
+    # Token FRESCO · el de setup ya fue consumido (anti-replay) y daría 400
     r = client.post("/api/mfa/disable",
-                    json={"password": TEST_PASSWORD, "token": pyotp.TOTP(secret).now()},
+                    json={"password": TEST_PASSWORD, "token": _fresh_totp(secret, usado)},
                     headers={"Origin": "http://localhost"})
     assert r.status_code == 200, r.get_data(as_text=True)
     # Status ahora dice disabled
@@ -138,7 +160,7 @@ def test_mfa_admin_disable_funciona_para_admin(app, db_clean):
 
 def test_login_con_mfa_activa_redirige_a_segundo_paso(app, db_clean):
     client = app.test_client()
-    secret, _ = _setup_mfa(client)
+    secret, _, _ = _setup_mfa(client)
     # Logout y volver a entrar
     client.get("/logout")
     r = client.post(
@@ -154,14 +176,14 @@ def test_login_con_mfa_activa_redirige_a_segundo_paso(app, db_clean):
 
 def test_login_mfa_token_correcto_completa_sesion(app, db_clean):
     client = app.test_client()
-    secret, _ = _setup_mfa(client)
+    secret, _, usado = _setup_mfa(client)
     client.get("/logout")
     # Step 1
     client.post("/login",
                 data={"username": "sebastian", "password": TEST_PASSWORD},
                 headers={"Origin": "http://localhost"})
-    # Step 2 con token correcto
-    token = pyotp.TOTP(secret).now()
+    # Step 2 con token FRESCO · el de setup ya fue consumido (anti-replay)
+    token = _fresh_totp(secret, usado)
     r = client.post("/login/mfa", data={"token": token, "csrf_token": "x"},
                     headers={"Origin": "http://localhost"})
     assert r.status_code == 302
@@ -170,7 +192,7 @@ def test_login_mfa_token_correcto_completa_sesion(app, db_clean):
 
 def test_login_backup_code_desactiva_mfa(app, db_clean):
     client = app.test_client()
-    secret, backup_code = _setup_mfa(client)
+    secret, backup_code, _ = _setup_mfa(client)
     client.get("/logout")
     # Step 1
     client.post("/login",

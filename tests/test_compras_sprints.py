@@ -99,7 +99,9 @@ def test_pagar_oc_registra_en_pagos_oc(app, db_clean):
     conn.commit()
     conn.close()
 
-    c = _login(app, "catalina")
+    # Pagar exige autorización (no contadora) · segregación de duties 21-may.
+    # Catalina (CONTADORA) registra pero no autoriza/paga → usar admin.
+    c = _login(app, "sebastian")
     r = c.patch("/api/ordenes-compra/OC-PAY-1/pagar",
                 json={"monto": 1000000, "medio": "Transferencia",
                       "numero_factura_proveedor": "FAC-12345"},
@@ -127,7 +129,8 @@ def test_pago_parcial_estado_correcto(app, db_clean):
     conn.commit()
     conn.close()
 
-    c = _login(app, "catalina")
+    # Pagar exige autorización (no contadora) · segregación de duties 21-may.
+    c = _login(app, "sebastian")
     r = c.patch("/api/ordenes-compra/OC-PAR-1/pagar",
                 json={"monto": 800000, "numero_factura_proveedor": "FAC-PARCIAL-1"},
                 headers=csrf_headers())
@@ -148,7 +151,8 @@ def test_factura_duplicada_rechazada(app, db_clean):
     conn.commit()
     conn.close()
 
-    c = _login(app, "catalina")
+    # Pagar exige autorización (no contadora) · segregación de duties 21-may.
+    c = _login(app, "sebastian")
     # Primer pago con factura: OK
     r = c.patch("/api/ordenes-compra/OC-DUP-1/pagar",
                 json={"monto": 100, "numero_factura_proveedor": "FAC-UNICA"},
@@ -207,8 +211,11 @@ def test_limite_aprobacion_admin_sin_limite(app, db_clean):
     assert r.status_code != 403
 
 
-def test_limite_aprobacion_catalina_no_excede(app, db_clean):
-    """Catalina (límite 5M) NO puede autorizar OC de 10M."""
+def test_contadora_no_autoriza_oc_grande(app, db_clean):
+    """Segregación de duties 21-may: contadora (catalina) NO autoriza OCs,
+    sin importar el monto. El control de segregación dispara antes que el
+    límite de monto → SEGREGATION_OF_DUTIES, no EXCEDE_LIMITE_APROBACION.
+    """
     conn = sqlite3.connect(os.environ["DB_PATH"])
     conn.execute("""INSERT INTO ordenes_compra
                     (numero_oc, fecha, estado, proveedor, valor_total)
@@ -219,11 +226,13 @@ def test_limite_aprobacion_catalina_no_excede(app, db_clean):
     c = _login(app, "catalina")
     r = c.patch("/api/ordenes-compra/OC-EXCEDE/autorizar", headers=csrf_headers())
     assert r.status_code == 403
-    assert r.get_json().get("codigo") == "EXCEDE_LIMITE_APROBACION"
+    assert r.get_json().get("codigo") == "SEGREGATION_OF_DUTIES"
 
 
-def test_limite_aprobacion_catalina_dentro(app, db_clean):
-    """Catalina puede autorizar OC dentro de su límite (5M)."""
+def test_contadora_no_autoriza_oc_pequena(app, db_clean):
+    """Segregación de duties: ni siquiera una OC pequeña puede ser autorizada
+    por la contadora. Solo admin/compras autorizan.
+    """
     conn = sqlite3.connect(os.environ["DB_PATH"])
     conn.execute("""INSERT INTO ordenes_compra
                     (numero_oc, fecha, estado, proveedor, valor_total)
@@ -233,7 +242,8 @@ def test_limite_aprobacion_catalina_dentro(app, db_clean):
 
     c = _login(app, "catalina")
     r = c.patch("/api/ordenes-compra/OC-OK/autorizar", headers=csrf_headers())
-    assert r.status_code != 403
+    assert r.status_code == 403
+    assert r.get_json().get("codigo") == "SEGREGATION_OF_DUTIES"
 
 
 # ═══ Sprint 5: cotizaciones + centro de costos ════════════════════════════

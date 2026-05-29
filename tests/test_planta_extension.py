@@ -284,18 +284,32 @@ def test_eliminar_lote_borra_movimientos_y_audit(app, db_clean):
     assert r.status_code == 200
     j = r.get_json()
     assert j["ok"] is True
-    assert j["deleted_count"] == 2
+    # FIX-B5 (13-may-2026): la eliminación ya NO hace hard-delete de los
+    # movimientos (rompía trazabilidad INVIMA Res. 2214/2021 art.10) — ahora
+    # PRESERVA el histórico y escribe un contra-movimiento que cancela el saldo
+    # neto. deleted_count es 0 por diseño; el saldo cancelado va en
+    # saldo_cancelado_g.
+    assert j["deleted_count"] == 0
+    assert j["saldo_cancelado_g"] == 700.0
     assert j["snapshot"]["saldo_neto_g_al_eliminar"] == 700.0
     assert j["snapshot"]["motivo"] == "Recepcion duplicada de prueba"
 
-    # Verificar que los movimientos ya no existen
+    # Los 2 movimientos originales se PRESERVAN; además se agrega 1 contra-
+    # movimiento de Salida por 700g que deja el saldo neto del lote en 0.
     conn = sqlite3.connect(os.environ["DB_PATH"])
     cur = conn.cursor()
     rows = cur.execute(
         "SELECT COUNT(*) FROM movimientos WHERE material_id='MP_DEL_TEST' "
         "AND lote='LOTE-DEL-1'"
     ).fetchone()
-    assert rows[0] == 0
+    assert rows[0] == 3, "2 originales preservados + 1 contra-movimiento"
+    saldo = cur.execute(
+        "SELECT COALESCE(SUM(CASE WHEN tipo IN ('Entrada','Ajuste +','Ajuste') "
+        "THEN cantidad WHEN tipo IN ('Salida','Ajuste -') THEN -cantidad "
+        "ELSE 0 END),0) FROM movimientos "
+        "WHERE material_id='MP_DEL_TEST' AND lote='LOTE-DEL-1'"
+    ).fetchone()
+    assert saldo[0] == 0, "el contra-movimiento debe dejar el saldo neto en 0"
 
     # Verificar que quedó audit_log
     audit = cur.execute(
@@ -331,7 +345,11 @@ def test_eliminar_lote_sin_lote_placeholder(app, db_clean):
                  headers=csrf_headers())
     assert r.status_code == 200
     j = r.get_json()
-    assert j["deleted_count"] == 1
+    # FIX-B5 (13-may-2026): histórico preservado · contra-movimiento en vez de
+    # hard-delete. deleted_count == 0; el saldo del único movimiento (Entrada
+    # 500g, sin lote) se cancela vía contra-movimiento.
+    assert j["deleted_count"] == 0
+    assert j["saldo_cancelado_g"] == 500.0
 
 
 def test_solicitar_desde_lote_crea_solicitud_compra(app, db_clean):

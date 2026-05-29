@@ -17,6 +17,25 @@ def _login(app, user="sebastian"):
     return c
 
 
+def _exec(sqls):
+    """Ejecuta SQL contra la BD de test cerrando SIEMPRE la conexión.
+
+    Las conexiones crudas con sqlite3.connect() no traen busy_timeout ni WAL;
+    si una excepción dejara la conexión abierta, el lock se propaga en cascada
+    al resto de tests (eran 188s). Por eso usamos try/finally.
+
+    sqls: lista de (sql, params).
+    """
+    conn = sqlite3.connect(os.environ["DB_PATH"])
+    try:
+        cur = conn.cursor()
+        for sql, params in sqls:
+            cur.execute(sql, params)
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def test_diagnosticar_formulas_requiere_admin(app, db_clean):
     c = app.test_client()
     r = c.get("/api/admin/diagnosticar-formulas")
@@ -39,21 +58,23 @@ def test_diagnosticar_formulas_devuelve_estructura(app, db_clean):
 def test_diagnosticar_detecta_huerfano(app, db_clean):
     """Inserta un formula_item que apunta a código no existente, debe detectarse."""
     c = _login(app)
-    conn = sqlite3.connect(os.environ["DB_PATH"])
-    cur = conn.cursor()
-    # Insertar MP en catálogo con nombre "TEST DIAG MP"
-    cur.execute(
-        "INSERT OR REPLACE INTO maestro_mps (codigo_mp, nombre_comercial, activo) "
-        "VALUES (?,?,?)", ("MP_DIAG_OK", "TEST DIAG MP", 1),
-    )
-    # Insertar formula_item con código huérfano pero nombre que coincide
-    cur.execute(
-        "INSERT INTO formula_items (producto_nombre, material_id, material_nombre, "
-        "porcentaje, cantidad_g_por_lote) VALUES (?,?,?,?,?)",
-        ("PRODUCTO_TEST_DIAG", "MP_HUERFANO_X", "TEST DIAG MP", 5.0, 100.0),
-    )
-    conn.commit()
-    conn.close()
+    # Insertar MP candidato en catálogo con nombre "TEST DIAG MP" (activo).
+    # Crear el código huérfano TAMBIÉN como activo primero: el trigger FK
+    # (mig 98 trg_fi_material_id_fk) bloquea insertar formula_items con
+    # material_id que no exista en maestro_mps activo. Luego lo desactivamos
+    # para que el diagnóstico (que solo carga activo=1) lo vea como huérfano,
+    # tal como ocurre en producción cuando un MP se da de baja.
+    _exec([
+        ("INSERT OR REPLACE INTO maestro_mps (codigo_mp, nombre_comercial, activo) "
+         "VALUES (?,?,?)", ("MP_DIAG_OK", "TEST DIAG MP", 1)),
+        ("INSERT OR REPLACE INTO maestro_mps (codigo_mp, nombre_comercial, activo) "
+         "VALUES (?,?,?)", ("MP_HUERFANO_X", "HUERFANO TEMP", 1)),
+        ("INSERT INTO formula_items (producto_nombre, material_id, material_nombre, "
+         "porcentaje, cantidad_g_por_lote) VALUES (?,?,?,?,?)",
+         ("PRODUCTO_TEST_DIAG", "MP_HUERFANO_X", "TEST DIAG MP", 5.0, 100.0)),
+        # Desactivar el código huérfano → ya no aparece en el catálogo activo.
+        ("UPDATE maestro_mps SET activo=0 WHERE codigo_mp=?", ("MP_HUERFANO_X",)),
+    ])
 
     r = c.get("/api/admin/diagnosticar-formulas")
     assert r.status_code == 200
@@ -73,11 +94,10 @@ def test_diagnosticar_detecta_huerfano(app, db_clean):
     assert item["mejor_candidato"]["score"] >= 100
 
     # Cleanup
-    conn = sqlite3.connect(os.environ["DB_PATH"])
-    conn.execute("DELETE FROM formula_items WHERE producto_nombre='PRODUCTO_TEST_DIAG'")
-    conn.execute("DELETE FROM maestro_mps WHERE codigo_mp='MP_DIAG_OK'")
-    conn.commit()
-    conn.close()
+    _exec([
+        ("DELETE FROM formula_items WHERE producto_nombre='PRODUCTO_TEST_DIAG'", ()),
+        ("DELETE FROM maestro_mps WHERE codigo_mp IN ('MP_DIAG_OK','MP_HUERFANO_X')", ()),
+    ])
 
 
 def test_corregir_formulas_requiere_token(app, db_clean):
@@ -93,22 +113,20 @@ def test_corregir_formulas_requiere_token(app, db_clean):
 def test_diagnostico_detecta_sinonimo_inci(app, db_clean):
     """Formula con nombre español matchea catalogo con nombre INCI ingles."""
     c = _login(app)
-    conn = sqlite3.connect(os.environ["DB_PATH"])
-    cur = conn.cursor()
-    # Catálogo con nombre INCI inglés
-    cur.execute(
-        "INSERT OR REPLACE INTO maestro_mps "
-        "(codigo_mp, nombre_inci, nombre_comercial, activo) VALUES (?,?,?,?)",
-        ("MP_INCI_TEST", "ALLANTOIN", "Alantoína", 1),
-    )
-    # Fórmula con nombre español
-    cur.execute(
-        "INSERT INTO formula_items (producto_nombre, material_id, material_nombre, "
-        "porcentaje, cantidad_g_por_lote) VALUES (?,?,?,?,?)",
-        ("PROD_INCI_TEST", "MPALANTOSO01", "ALANTOINA", 0.5, 50.0),
-    )
-    conn.commit()
-    conn.close()
+    # Catálogo con nombre INCI inglés (candidato real, activo).
+    # El código huérfano MPALANTOSO01 se crea activo para pasar el trigger FK
+    # (mig 98) y luego se desactiva, igual que un MP dado de baja en prod.
+    _exec([
+        ("INSERT OR REPLACE INTO maestro_mps "
+         "(codigo_mp, nombre_inci, nombre_comercial, activo) VALUES (?,?,?,?)",
+         ("MP_INCI_TEST", "ALLANTOIN", "Alantoína", 1)),
+        ("INSERT OR REPLACE INTO maestro_mps (codigo_mp, nombre_comercial, activo) "
+         "VALUES (?,?,?)", ("MPALANTOSO01", "HUERFANO ALANTO", 1)),
+        ("INSERT INTO formula_items (producto_nombre, material_id, material_nombre, "
+         "porcentaje, cantidad_g_por_lote) VALUES (?,?,?,?,?)",
+         ("PROD_INCI_TEST", "MPALANTOSO01", "ALANTOINA", 0.5, 50.0)),
+        ("UPDATE maestro_mps SET activo=0 WHERE codigo_mp=?", ("MPALANTOSO01",)),
+    ])
 
     r = c.get("/api/admin/diagnosticar-formulas")
     assert r.status_code == 200
@@ -117,16 +135,22 @@ def test_diagnostico_detecta_sinonimo_inci(app, db_clean):
              if p["material_id_actual"] == "MPALANTOSO01"]
     assert len(items) >= 1
     item = items[0]
-    # Debe encontrar candidato MP_INCI_TEST por sinónimo ALANTOINA<->ALLANTOIN
-    assert item["mejor_candidato"] is not None
-    assert item["mejor_candidato"]["codigo"] == "MP_INCI_TEST"
+    # Debe encontrar un candidato por sinónimo ALANTOINA<->ALLANTOIN.
+    # NOTA: el catálogo real ya trae la Alantoína canónica (MP00047,
+    # INCI=ALLANTOIN) sembrada por mig 127, que empata en score con el MP
+    # sintético del test; el diagnóstico (correctamente) sugiere uno de los
+    # dos. Por eso no fijamos el código exacto — verificamos que el match
+    # sea efectivamente Allantoin (que es lo que prueba la lógica de sinónimos).
+    cand = item["mejor_candidato"]
+    assert cand is not None
+    assert "ALLANTOIN" in (cand.get("nombre_inci") or "").upper()
+    assert cand["score"] >= 80
 
     # Cleanup
-    conn = sqlite3.connect(os.environ["DB_PATH"])
-    conn.execute("DELETE FROM formula_items WHERE producto_nombre='PROD_INCI_TEST'")
-    conn.execute("DELETE FROM maestro_mps WHERE codigo_mp='MP_INCI_TEST'")
-    conn.commit()
-    conn.close()
+    _exec([
+        ("DELETE FROM formula_items WHERE producto_nombre='PROD_INCI_TEST'", ()),
+        ("DELETE FROM maestro_mps WHERE codigo_mp IN ('MP_INCI_TEST','MPALANTOSO01')", ()),
+    ])
 
 
 def test_eliminar_formulas_obsoletas_requiere_token(app, db_clean):
@@ -141,20 +165,29 @@ def test_eliminar_formulas_obsoletas_requiere_token(app, db_clean):
 
 def test_corregir_formulas_aplica_cambio(app, db_clean):
     c = _login(app)
+    # MP destino válido (activo) + código viejo creado activo para pasar el
+    # trigger FK (mig 98) y luego desactivado → item huérfano como en prod.
     conn = sqlite3.connect(os.environ["DB_PATH"])
-    cur = conn.cursor()
-    cur.execute(
-        "INSERT OR REPLACE INTO maestro_mps (codigo_mp, nombre_comercial, activo) "
-        "VALUES (?,?,?)", ("MP_DIAG_NEW", "TEST DIAG B", 1),
-    )
-    cur.execute(
-        "INSERT INTO formula_items (producto_nombre, material_id, material_nombre, "
-        "porcentaje, cantidad_g_por_lote) VALUES (?,?,?,?,?)",
-        ("PROD_TEST_FIX", "MP_OLD_X", "TEST DIAG B", 1.0, 50.0),
-    )
-    fid = cur.lastrowid
-    conn.commit()
-    conn.close()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT OR REPLACE INTO maestro_mps (codigo_mp, nombre_comercial, activo) "
+            "VALUES (?,?,?)", ("MP_DIAG_NEW", "TEST DIAG B", 1),
+        )
+        cur.execute(
+            "INSERT OR REPLACE INTO maestro_mps (codigo_mp, nombre_comercial, activo) "
+            "VALUES (?,?,?)", ("MP_OLD_X", "VIEJO TEMP", 1),
+        )
+        cur.execute(
+            "INSERT INTO formula_items (producto_nombre, material_id, material_nombre, "
+            "porcentaje, cantidad_g_por_lote) VALUES (?,?,?,?,?)",
+            ("PROD_TEST_FIX", "MP_OLD_X", "TEST DIAG B", 1.0, 50.0),
+        )
+        fid = cur.lastrowid
+        cur.execute("UPDATE maestro_mps SET activo=0 WHERE codigo_mp=?", ("MP_OLD_X",))
+        conn.commit()
+    finally:
+        conn.close()
 
     r = c.post(
         "/api/admin/corregir-formulas",
@@ -177,15 +210,16 @@ def test_corregir_formulas_aplica_cambio(app, db_clean):
 
         # Verificar BD
         conn = sqlite3.connect(os.environ["DB_PATH"])
-        row = conn.execute(
-            "SELECT material_id FROM formula_items WHERE id=?", (fid,)
-        ).fetchone()
-        conn.close()
+        try:
+            row = conn.execute(
+                "SELECT material_id FROM formula_items WHERE id=?", (fid,)
+            ).fetchone()
+        finally:
+            conn.close()
         assert row[0] == "MP_DIAG_NEW"
 
     # Cleanup
-    conn = sqlite3.connect(os.environ["DB_PATH"])
-    conn.execute("DELETE FROM formula_items WHERE producto_nombre='PROD_TEST_FIX'")
-    conn.execute("DELETE FROM maestro_mps WHERE codigo_mp='MP_DIAG_NEW'")
-    conn.commit()
-    conn.close()
+    _exec([
+        ("DELETE FROM formula_items WHERE producto_nombre='PROD_TEST_FIX'", ()),
+        ("DELETE FROM maestro_mps WHERE codigo_mp IN ('MP_DIAG_NEW','MP_OLD_X')", ()),
+    ])

@@ -103,11 +103,13 @@ def test_agrupamiento_por_proveedor_basico(app, db_clean):
         r = cs.get('/api/compras/solicitudes-agrupadas-por-proveedor?estado=Pendiente')
         assert r.status_code == 200
         d = r.get_json()
-        provs = {g['proveedor'] for g in d['grupos']}
+        # El endpoint normaliza la KEY 'proveedor' a UPPER (dedup case-insensible
+        # · fix 24-may) y conserva la forma original en 'proveedor_label'.
+        provs = {g['proveedor_label'] for g in d['grupos']}
         assert 'Inquimica Test' in provs
         assert 'Otro Proveedor' in provs
         # Inquimica Test debe tener 2 solicitudes consolidadas
-        inq = [g for g in d['grupos'] if g['proveedor'] == 'Inquimica Test'][0]
+        inq = [g for g in d['grupos'] if g['proveedor_label'] == 'Inquimica Test'][0]
         assert inq['solicitudes_count'] == 2
         assert inq['items_count'] == 2  # 2 MPs distintas
         assert any(s['numero'] == 'SOL-AGR-001' for s in inq['solicitudes'])
@@ -129,7 +131,7 @@ def test_agrupamiento_consolida_mismo_codigo_mp(app, db_clean):
     try:
         r = cs.get('/api/compras/solicitudes-agrupadas-por-proveedor?estado=Pendiente')
         d = r.get_json()
-        grp = [g for g in d['grupos'] if g['proveedor'] == 'Prov Consol'][0]
+        grp = [g for g in d['grupos'] if g['proveedor_label'] == 'Prov Consol'][0]
         assert grp['solicitudes_count'] == 2
         assert grp['items_count'] == 1  # consolidado a 1 MP
         item = grp['items_consolidados'][0]

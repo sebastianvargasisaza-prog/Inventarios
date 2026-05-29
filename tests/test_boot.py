@@ -7,7 +7,7 @@ y verifica los puntos críticos:
 1. App importa sin errores
 2. Todos los blueprints están registrados
 3. Migraciones aplicadas correctamente (schema_migrations completa)
-4. /healthz responde 200 con DB+WAL OK
+4. /healthz responde 200 con DB OK (journal_mode reportado)
 5. /api/health responde con structure válida
 6. Las tablas críticas existen
 """
@@ -85,22 +85,32 @@ def test_healthz_endpoint_publico(app):
     assert r.status_code == 200
     body = r.get_json()
     assert body["status"] == "ok"
-    assert body["db"]["wal_mode"] is True, "WAL mode no activado — concurrencia deficiente"
+    # Nota (Sebastián, fix corrupción BD): la app ya NO usa WAL.
+    # _configure_conn fuerza journal_mode=DELETE porque el volumen de Render
+    # es disco de red y mmap sobre filesystem de red corrompía el WAL.
+    # Por tanto wal_mode es False tanto en test como en producción — solo
+    # validamos que el health REPORTE el flag (bool), no que sea WAL.
+    assert isinstance(body["db"]["wal_mode"], bool)
     assert body["db"]["tables"] >= 50, f"Solo {body['db']['tables']} tablas — algo no migró"
 
 
-def test_api_health_alias(app):
-    """/api/health y /healthz comparten handler — ambos responden 200 status ok."""
+def test_api_health_endpoint(app):
+    """/api/health responde 200 con status ok y bloque db.
+
+    Nota (actualizado): /api/health y /healthz YA NO comparten handler.
+    - /healthz lo sirve index.py (db.wal_mode bool + db.tables int).
+    - /api/health lo sirve el blueprint core (db.backend + db.tables como
+      dict por tabla + bloque migrations). No expone wal_mode.
+    Aquí validamos el contrato actual de /api/health sin asumir wal_mode.
+    """
     client = app.test_client()
     r1 = client.get("/api/health")
     assert r1.status_code == 200
     j1 = r1.get_json()
     assert j1["status"] == "ok"
-    # Si esta primer respuesta tiene 'db', /healthz también lo tendrá
-    # (mismo handler). No hacemos doble call para evitar race en SQLite WAL
-    # con conexiones efímeras del test client.
-    if "db" in j1:
-        assert j1["db"]["wal_mode"] is True
+    assert "db" in j1
+    # El handler de core reporta el backend activo (sqlite / postgres).
+    assert j1["db"].get("backend") in ("sqlite", "postgres")
 
 
 def test_tablas_criticas_existen(app):

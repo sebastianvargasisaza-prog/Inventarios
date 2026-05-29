@@ -614,6 +614,21 @@ def test_e2e_oc_recepcion_a_produccion(app, db_clean):
     assert r1.status_code == 200, r1.get_data(as_text=True)
     assert _stock_actual(db_path, "MP_E2E") == 5000
 
+    # Paso 2b: Liberar el lote de cuarentena (paso de calidad · INVIMA).
+    # Toda recepción de MP entra como estado_lote='CUARENTENA' (compras.py
+    # recibir_oc) y el consumo FEFO en producción EXCLUYE los lotes en
+    # CUARENTENA (_ESTADOS_LOTE_NO_PRODUCIBLES en programacion.py). En el flujo
+    # real, Calidad libera el lote antes de que pueda consumirse. Lo simulamos
+    # marcando el lote como LIBERADO; sin esto, completar producción falla con
+    # "Stock real insuficiente" aunque el stock agregado sea 5000g.
+    con = sqlite3.connect(db_path)
+    con.execute(
+        "UPDATE movimientos SET estado_lote='LIBERADO' "
+        "WHERE material_id='MP_E2E' AND lote='L001'"
+    )
+    con.commit()
+    con.close()
+
     # Paso 3: Crear producción que consume MP
     pid = _crear_produccion(db_path, producto, "2026-04-29", lotes=2)
 

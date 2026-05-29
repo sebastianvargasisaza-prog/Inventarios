@@ -37,6 +37,11 @@ def _seed_produccion(conn, codigo='PROD-RACE-T'):
     conn.execute(f"DELETE FROM formula_headers WHERE producto_nombre=?", (codigo,))
     conn.execute(f"DELETE FROM formula_items WHERE producto_nombre=?", (codigo,))
     conn.execute(f"DELETE FROM movimientos WHERE material_id LIKE ?", (f'MP-RACE-%',))
+    # MP en maestro (FK enforcement mig 98: formula_items.material_id debe
+    # existir en maestro_mps activo · trigger trg_fi_material_id_fk).
+    conn.execute("""INSERT OR IGNORE INTO maestro_mps
+        (codigo_mp, nombre_inci, nombre_comercial, tipo, activo)
+        VALUES ('MP-RACE-1', 'MP race test', 'MP race test', 'Test', 1)""")
     # Fórmula
     conn.execute("""INSERT INTO formula_headers (producto_nombre, lote_size_kg)
                     VALUES (?, 1.0)""", (codigo,))

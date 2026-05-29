@@ -134,7 +134,9 @@ def test_fuente_usuarios_excluye_planta_e_influencers(app, db_clean):
 
 
 def test_fuente_influencers_solo_marketing_y_cc(app, db_clean):
-    cs = _login(app, 'catalina')
+    # PRIVACY-FIX 21-may (Ley 1581): fuente=influencers expone datos bancarios
+    # → solo admin. Catalina (contadora) recibe 403 PRIVATE_INFLUENCERS.
+    cs = _login(app, 'sebastian')
     _seed_sol('TEST-INF-MK', 'Influencer/Marketing Digital')
     _seed_sol('TEST-INF-CC', 'Cuenta de Cobro')
     _seed_sol('TEST-INF-MP', 'Materia Prima')

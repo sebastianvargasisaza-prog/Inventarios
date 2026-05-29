@@ -261,6 +261,12 @@ def test_crear_despacho_audita(app, db_clean):
     c = _login(app, "sebastian")
     conn = sqlite3.connect(os.environ["DB_PATH"])
     conn.execute("INSERT INTO clientes (id, codigo, nombre, activo) VALUES (9005, 'CLI-DSP', 'Dsp', 1)")
+    # El endpoint ahora exige stock real Disponible (FEFO) · descuenta de stock_pt
+    # y falla 409 STOCK_INSUFICIENTE_DESPACHO si no hay lote Disponible.
+    conn.execute("""INSERT INTO stock_pt
+                    (sku, lote_produccion, fecha_produccion, unidades_inicial,
+                     unidades_disponible, estado)
+                    VALUES ('X', 'LOTE-DSP-X', datetime('now'), 100, 100, 'Disponible')""")
     conn.commit(); conn.close()
     try:
         r = c.post("/api/despachos",
@@ -279,6 +285,7 @@ def test_crear_despacho_audita(app, db_clean):
     finally:
         conn = sqlite3.connect(os.environ["DB_PATH"])
         conn.execute("DELETE FROM clientes WHERE id=9005")
+        conn.execute("DELETE FROM stock_pt WHERE lote_produccion='LOTE-DSP-X'")
         conn.commit(); conn.close()
 
 

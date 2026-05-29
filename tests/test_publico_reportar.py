@@ -60,8 +60,13 @@ def test_endpoint_publico_no_requiere_login(client, db_clean):
         _cleanup_empleado("99999999")
 
 
-def test_cedula_no_existe_404(client, db_clean):
-    """Cedula con formato valido pero sin empleado → 404."""
+def test_cedula_no_existe_400_uniforme(client, db_clean):
+    """Cedula con formato valido pero sin empleado → 400 uniforme.
+
+    El endpoint público responde 400 genérico (no 404) a propósito:
+    distinguir 404 de 200 permitiría enumerar cédulas válidas de empleados
+    (PII). Es una mejora de seguridad intencional anti-enumeración.
+    """
     # Limpiar empleados de tests previos
     conn = sqlite3.connect(os.environ["DB_PATH"])
     conn.execute("DELETE FROM empleados WHERE cedula='1234567890'")
@@ -70,7 +75,7 @@ def test_cedula_no_existe_404(client, db_clean):
                     json={"cedula": "1234567890", "tipo": "permiso",
                           "asunto": "Asunto largo de prueba"},
                     headers={"Origin": "http://localhost"})
-    assert r.status_code == 404, r.data
+    assert r.status_code == 400, r.data
 
 
 def test_cedula_no_numerica_400(client, db_clean):
@@ -105,14 +110,20 @@ def test_asunto_corto_400(client, db_clean):
         _cleanup_empleado("77777777")
 
 
-def test_empleado_inactivo_403(client, db_clean):
+def test_empleado_inactivo_400_uniforme(client, db_clean):
+    """Empleado inactivo → 400 uniforme (no 403).
+
+    Mismo motivo anti-enumeración que test_cedula_no_existe_400_uniforme:
+    distinguir 403 (existe pero inactivo) de 400 (no existe) revelaría el
+    estado laboral del empleado (PII). El endpoint responde 400 genérico.
+    """
     eid = _seed_empleado("66666666", estado="Inactivo")
     try:
         r = client.post("/api/publico/empleado-reporte",
                         json={"cedula": "66666666", "tipo": "permiso",
                               "asunto": "Test inactivo asunto largo"},
                         headers={"Origin": "http://localhost"})
-        assert r.status_code == 403
+        assert r.status_code == 400
     finally:
         _cleanup_empleado("66666666")
 

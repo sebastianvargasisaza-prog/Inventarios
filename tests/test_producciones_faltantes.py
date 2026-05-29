@@ -33,48 +33,83 @@ def _seed_mp_y_stock(codigo, nombre, gramos_stock, proveedor='ProveedorMP'):
     si otro test dejo una fila ahi, sobreescribiria nuestro proveedor.
     """
     conn = sqlite3.connect(os.environ["DB_PATH"])
-    c = conn.cursor()
-    c.execute(
-        """INSERT OR REPLACE INTO maestro_mps
-           (codigo_mp, nombre_comercial, proveedor, activo, tipo_material)
-           VALUES (?, ?, ?, 1, 'MP')""",
-        (codigo, nombre, proveedor),
-    )
     try:
-        c.execute("DELETE FROM mp_lead_time_config WHERE material_id=?", (codigo,))
-    except sqlite3.OperationalError:
-        pass  # tabla puede no existir en schema legacy
-    c.execute(
-        """INSERT INTO movimientos
-           (material_id, material_nombre, cantidad, tipo, fecha,
-            lote, estado_lote, operador)
-           VALUES (?, ?, ?, 'Entrada', date('now'),
-                   'L-SEED', 'VIGENTE', 'test')""",
-        (codigo, nombre, gramos_stock),
-    )
-    conn.commit(); conn.close()
+        c = conn.cursor()
+        c.execute(
+            """INSERT OR REPLACE INTO maestro_mps
+               (codigo_mp, nombre_comercial, proveedor, activo, tipo_material)
+               VALUES (?, ?, ?, 1, 'MP')""",
+            (codigo, nombre, proveedor),
+        )
+        try:
+            c.execute("DELETE FROM mp_lead_time_config WHERE material_id=?", (codigo,))
+        except sqlite3.OperationalError:
+            pass  # tabla puede no existir en schema legacy
+        # Sebastián 29-may-2026: el trigger trg_mov_cantidad_positiva (mig ~99)
+        # ABORTA movimientos con cantidad <= 0. "Stock cero" se modela como
+        # AUSENCIA de movimiento (stock = SUM(movimientos) = 0), no como una
+        # Entrada de 0g. Solo sembramos el movimiento si hay gramos positivos.
+        if gramos_stock and gramos_stock > 0:
+            c.execute(
+                """INSERT INTO movimientos
+                   (material_id, material_nombre, cantidad, tipo, fecha,
+                    lote, estado_lote, operador)
+                   VALUES (?, ?, ?, 'Entrada', date('now'),
+                           'L-SEED', 'VIGENTE', 'test')""",
+                (codigo, nombre, gramos_stock),
+            )
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def _seed_formula(producto, items, lote_size_kg=10):
-    """items: list de (codigo_mp, nombre, cantidad_g_por_lote)."""
+    """items: list de (codigo_mp, nombre, cantidad_g_por_lote).
+
+    Sebastián 29-may-2026 (tests stale): migración 99 añadió el trigger
+    `trg_fi_material_id_fk`, que ABORTA cualquier INSERT en formula_items
+    cuyo material_id no exista en maestro_mps activo. Los tests viejos
+    insertaban fórmulas con MPs sin sembrar primero → IntegrityError que
+    dejaba la conexión cruda abierta y bloqueaba la BD en cascada. La
+    corrección correcta (y fiel al invariante de producción: toda fórmula
+    referencia una MP real) es auto-sembrar en maestro_mps cualquier MP que
+    no esté ya presente, ANTES de insertar el formula_item.
+    """
     conn = sqlite3.connect(os.environ["DB_PATH"])
-    c = conn.cursor()
-    c.execute(
-        """INSERT OR REPLACE INTO formula_headers
-           (producto_nombre, unidad_base_g, lote_size_kg, fecha_creacion)
-           VALUES (?, ?, ?, datetime('now'))""",
-        (producto, lote_size_kg * 1000, lote_size_kg),
-    )
-    c.execute("DELETE FROM formula_items WHERE producto_nombre=?", (producto,))
-    for cod, nom, g_lote in items:
+    try:
+        c = conn.cursor()
         c.execute(
-            """INSERT INTO formula_items
-               (producto_nombre, material_id, material_nombre,
-                porcentaje, cantidad_g_por_lote)
-               VALUES (?, ?, ?, 0, ?)""",
-            (producto, cod, nom, g_lote),
+            """INSERT OR REPLACE INTO formula_headers
+               (producto_nombre, unidad_base_g, lote_size_kg, fecha_creacion)
+               VALUES (?, ?, ?, datetime('now'))""",
+            (producto, lote_size_kg * 1000, lote_size_kg),
         )
-    conn.commit(); conn.close()
+        c.execute("DELETE FROM formula_items WHERE producto_nombre=?", (producto,))
+        for cod, nom, g_lote in items:
+            # Garantiza que la MP exista y esté activa (satisface el trigger
+            # FK de migración 99). Solo crea si falta · no pisa la fila real
+            # que _seed_mp_y_stock pudo haber sembrado con proveedor/stock.
+            existe = c.execute(
+                "SELECT 1 FROM maestro_mps WHERE codigo_mp=? AND activo=1",
+                (cod,),
+            ).fetchone()
+            if not existe:
+                c.execute(
+                    """INSERT OR REPLACE INTO maestro_mps
+                       (codigo_mp, nombre_comercial, proveedor, activo, tipo_material)
+                       VALUES (?, ?, 'ProveedorSeed', 1, 'MP')""",
+                    (cod, nom),
+                )
+            c.execute(
+                """INSERT INTO formula_items
+                   (producto_nombre, material_id, material_nombre,
+                    porcentaje, cantidad_g_por_lote)
+                   VALUES (?, ?, ?, 0, ?)""",
+                (producto, cod, nom, g_lote),
+            )
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def _seed_mee_y_stock(codigo, descripcion, stock_unidades, proveedor='ProveedorMEE'):
@@ -680,7 +715,9 @@ def test_dashboard_html_expone_vista_simple(app, db_clean):
     # Vista por producto + cleanup duplicados (Sebastian 7-may-2026)
     assert 'pv2VerProductoAgrupado' in body
     assert 'pv2LimpiarDuplicados' in body
-    assert 'Limpiar duplicados' in body
+    # 29-may-2026: el botón se renombró de "Limpiar duplicados" a "Limpiar"
+    # (handler pv2LimpiarDuplicados sigue igual). Aceptamos el texto actual.
+    assert 'Limpiar' in body
     # Sebastian 8-may-2026: UNA FILA POR (producto × fecha) — antes colapsaba
     # múltiples fechas en "Lun 11 +N" oculto.
     assert 'UNA FILA POR (producto × fecha)' in body
@@ -877,7 +914,14 @@ def test_limpiar_duplicados_dry_run_no_borra(app, db_clean):
 
 
 def test_limpiar_duplicados_ejecuta_borra_solo_clones(app, db_clean):
-    """Ejecuta cleanup · debe borrar el clon (más tarde) y conservar el ancla."""
+    """Ejecuta cleanup · debe eliminar el clon (más tarde) y conservar el ancla.
+
+    29-may-2026: el endpoint ya NO hace DELETE duro (fix 19-may-2026 'hueco
+    Fijo vs Sugerido' · MEMORY). Ahora SOFT-CANCEL: la fila del clon SIGUE
+    en la tabla con estado='cancelado' (auditable/recuperable), mientras la
+    ancla permanece 'pendiente'. Actualizamos las aserciones al borrado
+    lógico actual en vez del borrado físico viejo.
+    """
     cs = _login(app, 'sebastian')
     _seed_formula('PROD-LIMP-EXEC', [('MP-LX', 'X', 1000)], lote_size_kg=1)
     pid_a = _seed_produccion('PROD-LIMP-EXEC', lotes=1, cantidad_kg=1,
@@ -892,17 +936,21 @@ def test_limpiar_duplicados_ejecuta_borra_solo_clones(app, db_clean):
         d = r.get_json()
         assert d['ok'] is True
         assert d['producciones_borradas'] >= 1
-        # ancla queda, clon borrado
+        # ancla sigue activa, clon soft-cancelado
         conn = sqlite3.connect(os.environ['DB_PATH'])
         anc = conn.execute(
-            "SELECT 1 FROM produccion_programada WHERE id=?", (pid_a,)
+            "SELECT LOWER(COALESCE(estado,'')) FROM produccion_programada WHERE id=?",
+            (pid_a,)
         ).fetchone()
         clon = conn.execute(
-            "SELECT 1 FROM produccion_programada WHERE id=?", (pid_b,)
+            "SELECT LOWER(COALESCE(estado,'')) FROM produccion_programada WHERE id=?",
+            (pid_b,)
         ).fetchone()
         conn.close()
-        assert anc is not None, 'ancla (más temprana) NO debe borrarse'
-        assert clon is None, 'clon (más tarde) DEBE borrarse'
+        assert anc is not None and anc[0] != 'cancelado', \
+            'ancla (más temprana) NO debe cancelarse'
+        assert clon is not None and clon[0] == 'cancelado', \
+            'clon (más tarde) DEBE quedar soft-cancelado'
     finally:
         _cleanup(productos=['PROD-LIMP-EXEC'], prod_ids=[pid_a, pid_b])
 

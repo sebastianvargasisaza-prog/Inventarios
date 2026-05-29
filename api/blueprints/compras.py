@@ -5564,7 +5564,12 @@ def recibir_oc(numero_oc):
             if row_post:
                 cant_pedida_post = float(row_post[0] or 0)
                 cant_recib_post = float(row_post[1] or 0)
-                if cant_pedida_post > 0 and cant_recib_post > cant_pedida_post * 1.05:
+                # FIX · 29-may-2026 · audit ronda2 · honrar forzar_excepciones
+                # igual que el pre-check (5425): si un admin envió forzar:true
+                # acepta explícitamente la sobre-recepción · este guard de race
+                # NO debe revertirla (antes anulaba el override documentado).
+                if (not forzar_excepciones and cant_pedida_post > 0
+                        and cant_recib_post > cant_pedida_post * 1.05):
                     # REVERTIR el UPDATE (race detectado)
                     cur.execute(
                         "UPDATE ordenes_compra_items "

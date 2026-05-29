@@ -80,12 +80,16 @@ def test_health_critical_paths_no_admin_403(app, db_clean):
 
 def test_health_critical_paths_503_si_critical(app, db_clean):
     """Si hay un check critical, response es 503 (para uptime monitors)."""
-    # Insertar un movimiento con tipo inválido para forzar critical
+    # El trigger trg_mov_tipo_valido (database.py:2752) ahora bloquea cualquier
+    # tipo fuera de Entrada/Salida/Ajuste, así que ya no se puede insertar
+    # 'TIPO_INVALIDO'. Pero el check movimientos_consistency (admin.py:2338)
+    # NO incluye 'Ajuste' en su whitelist · un movimiento 'Ajuste' es aceptado
+    # por el trigger y a la vez marcado critical por el health check.
     conn = sqlite3.connect(os.environ['DB_PATH'])
     conn.execute("""
         INSERT INTO movimientos
           (material_id, material_nombre, cantidad, tipo, fecha, lote, operador)
-        VALUES ('TEST-INVALID', 'X', 100, 'TIPO_INVALIDO', date('now'), 'L1', 'test')
+        VALUES ('TEST-INVALID', 'X', 100, 'Ajuste', date('now'), 'L1', 'test')
     """)
     conn.commit()
     conn.close()

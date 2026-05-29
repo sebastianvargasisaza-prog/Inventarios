@@ -548,7 +548,8 @@ def test_consolidar_fallback_a_maestro_mps_cuando_item_sin_proveedor(app, db_cle
 
 
 def test_limpiar_y_regenerar_dry_run_no_modifica(app, db_clean):
-    cs = _login(app)
+    # Endpoint admin-only (SEC-FIX 21-may-2026) → loguea sebastian
+    cs = _login(app, user="sebastian")
     _crear_auto_xxxx_legacy('AUTO-9201', 'MP-X', 'X', 100, 'P')
     _crear_auto_xxxx_legacy('AUTO-9202', 'MP-Y', 'Y', 100, 'P')
     try:
@@ -571,7 +572,8 @@ def test_limpiar_y_regenerar_dry_run_no_modifica(app, db_clean):
 
 def test_limpiar_y_regenerar_borra_pero_preserva_con_oc(app, db_clean):
     """AUTO-XXXX con numero_oc!='' NO debe ser borrado (es historico)."""
-    cs = _login(app)
+    # Endpoint admin-only (SEC-FIX 21-may-2026) → loguea sebastian
+    cs = _login(app, user="sebastian")
     _crear_auto_xxxx_legacy('AUTO-9301', 'MP-A', 'A', 100, 'P')
     # Crear AUTO-9302 con OC vinculada (simulando que ya fue procesada)
     conn = sqlite3.connect(os.environ["DB_PATH"])
@@ -606,7 +608,8 @@ def test_limpiar_y_regenerar_borra_pero_preserva_con_oc(app, db_clean):
 
 
 def test_limpiar_y_regenerar_audit_log(app, db_clean):
-    cs = _login(app)
+    # Endpoint admin-only (SEC-FIX 21-may-2026) → loguea sebastian
+    cs = _login(app, user="sebastian")
     _crear_auto_xxxx_legacy('AUTO-9401', 'MP-A', 'A', 100, 'P')
     try:
         cs.post('/api/compras/limpiar-y-regenerar-auto-plan',
@@ -619,13 +622,14 @@ def test_limpiar_y_regenerar_audit_log(app, db_clean):
         ).fetchone()
         conn.close()
         assert row is not None
-        assert row[0] == 'catalina'
+        assert row[0] == 'sebastian'
     finally:
         _cleanup_auto_solicitudes()
 
 
 def test_limpiar_y_regenerar_horizonte_invalido_400(app, db_clean):
-    cs = _login(app)
+    # Endpoint admin-only (SEC-FIX 21-may-2026) → loguea sebastian
+    cs = _login(app, user="sebastian")
     r = cs.post('/api/compras/limpiar-y-regenerar-auto-plan',
                 json={'horizonte_dias': 1000}, headers=csrf_headers())
     assert r.status_code == 400
@@ -633,7 +637,8 @@ def test_limpiar_y_regenerar_horizonte_invalido_400(app, db_clean):
 
 def test_solo_limpiar_no_regenera(app, db_clean):
     """regenerar=false → borra AUTO-XXXX pero NO crea nuevas (deja al cron)."""
-    cs = _login(app)
+    # Endpoint admin-only (SEC-FIX 21-may-2026) → loguea sebastian
+    cs = _login(app, user="sebastian")
     _crear_auto_xxxx_legacy('AUTO-9501', 'MP-A', 'A', 100, 'P')
     _crear_auto_xxxx_legacy('AUTO-9502', 'MP-B', 'B', 100, 'P')
     try:
@@ -661,7 +666,8 @@ def test_solo_limpiar_no_regenera(app, db_clean):
 
 
 def test_solo_limpiar_dry_run_indica_no_regenera_en_mensaje(app, db_clean):
-    cs = _login(app)
+    # Endpoint admin-only (SEC-FIX 21-may-2026) → loguea sebastian
+    cs = _login(app, user="sebastian")
     _crear_auto_xxxx_legacy('AUTO-9601', 'MP', 'X', 100, 'P')
     try:
         r = cs.post('/api/compras/limpiar-y-regenerar-auto-plan',
@@ -731,7 +737,8 @@ def _cleanup_sol_y_ocs(nums_sol, nums_oc):
 
 def test_solo_limpiar_borra_sol_yyyy_xxxx_auto_generadas(app, db_clean):
     """SOL-2026-XXXX con observ 'Auto-generada Centro Programación' deben borrarse."""
-    cs = _login(app)
+    # Endpoint admin-only (SEC-FIX 21-may-2026) → loguea sebastian
+    cs = _login(app, user="sebastian")
     _crear_sol_yyyy_xxxx_auto_generada(
         'SOL-2026-9701',
         'Auto-generada Centro Programación — Proveedor: Test · 1 MPs',
@@ -769,7 +776,8 @@ def test_solo_limpiar_borra_sol_yyyy_xxxx_auto_generadas(app, db_clean):
 
 def test_solo_limpiar_preserva_sol_yyyy_xxxx_NO_auto_generadas(app, db_clean):
     """SOL-2026-XXXX manual (sin observ auto-generada) NO debe borrarse."""
-    cs = _login(app)
+    # Endpoint admin-only (SEC-FIX 21-may-2026) → loguea sebastian
+    cs = _login(app, user="sebastian")
     _crear_sol_yyyy_xxxx_auto_generada(
         'SOL-2026-9711',
         'Solicitud manual del usuario',  # sin keywords auto
@@ -790,7 +798,8 @@ def test_solo_limpiar_preserva_sol_yyyy_xxxx_NO_auto_generadas(app, db_clean):
 
 def test_solo_limpiar_preserva_oc_autorizada(app, db_clean):
     """OC en estado Autorizada NO debe borrarse aunque su SOL sea auto-generada."""
-    cs = _login(app)
+    # Endpoint admin-only (SEC-FIX 21-may-2026) → loguea sebastian
+    cs = _login(app, user="sebastian")
     _crear_sol_yyyy_xxxx_auto_generada(
         'SOL-2026-9721',
         'Auto-generada Centro Programación',

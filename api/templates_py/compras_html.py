@@ -1742,17 +1742,32 @@ async function renderAlertasBanner(){
   var cont = document.getElementById('dash-alertas-banner');
   if(!cont) return;
   try{
-    var r = await fetch('/api/alertas-mp');
+    var r = await fetch('/api/compras/alertas-vivas');
     if(!r.ok){ cont.innerHTML = ''; return; }
     var d = await r.json();
-    var alertas = (d.alertas || d.items || []).filter(function(a){
-      return a.severidad === 'critica' || a.severidad === 'alta';
-    }).slice(0, 5);
+    // /api/compras/alertas-vivas devuelve listas categorizadas con severidad
+    // 'critico'/'alto'/'medio'/'bajo'. Aplanamos a mensajes y mostramos solo
+    // las críticas/altas (banner de atención inmediata).
+    var esCrit = function(s){ return s === 'critico' || s === 'alto'; };
+    var alertas = [];
+    (d.ocs_sin_recibir || []).forEach(function(a){
+      if(esCrit(a.severidad)) alertas.push('OC '+(a.numero_oc||'')+' sin recibir '+(a.dias_sin_recibir||'?')+'d');
+    });
+    (d.pagos_por_vencer || []).forEach(function(a){
+      if(esCrit(a.severidad)) alertas.push('Pago OC '+(a.numero_oc||'')+' por vencer');
+    });
+    (d.solicitudes_pendientes || []).forEach(function(a){
+      if(esCrit(a.severidad)) alertas.push('SOL '+(a.numero||'')+' pendiente '+(a.dias_pendiente||'?')+'d');
+    });
+    (d.ocs_borrador_estancadas || []).forEach(function(a){
+      if(esCrit(a.severidad)) alertas.push('OC borrador '+(a.numero_oc||'')+' estancada');
+    });
+    alertas = alertas.slice(0, 5);
     if(!alertas.length){ cont.innerHTML = ''; return; }
     cont.innerHTML = '<div style="background:#fef2f2;border:2px solid #dc2626;border-radius:10px;padding:12px 16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">'+
       '<div style="font-size:1.4em">🚨</div>'+
       '<div style="flex:1;font-size:13px;color:#991b1b"><b>'+alertas.length+' alerta(s) críticas:</b> '+
-      alertas.map(function(a){return _esc(a.mensaje||a.titulo||a.tipo||'');}).join(' · ')+
+      alertas.map(function(m){return _esc(m);}).join(' · ')+
       '</div></div>';
   }catch(e){ cont.innerHTML = ''; }
 }
@@ -1760,7 +1775,7 @@ async function renderMisSolicWidget(){
   var cont = document.getElementById('dash-mis-solic-widget');
   if(!cont) return;
   try{
-    var r = await fetch('/api/mis-solicitudes-compra');
+    var r = await fetch('/api/solicitudes-compra/mis');
     if(!r.ok){ cont.innerHTML = ''; return; }
     var d = await r.json();
     var sols = (d.solicitudes || d.items || []).slice(0, 5);

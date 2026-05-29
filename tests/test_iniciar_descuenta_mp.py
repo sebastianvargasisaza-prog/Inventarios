@@ -21,7 +21,7 @@ import sqlite3
 from .conftest import TEST_PASSWORD, csrf_headers
 
 
-def _login(app, user="luis"):
+def _login(app, user="sebastian"):
     c = app.test_client()
     r = c.post("/login", data={"username": user, "password": TEST_PASSWORD},
                headers=csrf_headers(), follow_redirects=False)
@@ -123,7 +123,7 @@ def _stock_disponible(codigo_mp):
 
 def test_iniciar_descuenta_mp_de_inventario(app, db_clean):
     """Al iniciar, las MPs de la formula deben descontarse del inventario."""
-    cs = _login(app, 'luis')
+    cs = _login(app, 'sebastian')
     _seed_mp_con_stock('MP-INI-A', 'Glicerina test', 50000)
     _seed_mp_con_stock('MP-INI-B', 'Agua test', 100000)
     _seed_formula('PROD-INI-1', [
@@ -166,7 +166,7 @@ def test_iniciar_descuenta_mp_de_inventario(app, db_clean):
 
 def test_iniciar_bloquea_si_stock_insuficiente(app, db_clean):
     """Si falta stock para alguna MP, iniciar devuelve 422 sin tocar nada."""
-    cs = _login(app, 'luis')
+    cs = _login(app, 'sebastian')
     _seed_mp_con_stock('MP-LOW-A', 'MP escasa', 100)  # solo 100g
     _seed_formula('PROD-INI-2', [
         ('MP-LOW-A', 'MP escasa', 100.0, 5000),  # necesita 5kg
@@ -198,7 +198,7 @@ def test_iniciar_bloquea_si_stock_insuficiente(app, db_clean):
 
 def test_iniciar_idempotente_segundo_post_no_descuenta_doble(app, db_clean):
     """Segundo POST /iniciar devuelve ya_iniciada sin descontar otra vez."""
-    cs = _login(app, 'luis')
+    cs = _login(app, 'sebastian')
     _seed_mp_con_stock('MP-IDM-1', 'Material', 100000)
     _seed_formula('PROD-IDM', [
         ('MP-IDM-1', 'Material', 100.0, 5000),
@@ -225,7 +225,7 @@ def test_iniciar_idempotente_segundo_post_no_descuenta_doble(app, db_clean):
 
 def test_iniciar_sin_formula_permite_pero_warning(app, db_clean):
     """Producto sin formula → iniciar OK pero sin_formula=true sin descontar."""
-    cs = _login(app, 'luis')
+    cs = _login(app, 'sebastian')
     pid = _seed_produccion('PROD-SIN-FORMULA', lotes=1)
     try:
         r = cs.post(f'/api/programacion/programar/{pid}/iniciar',
@@ -256,7 +256,7 @@ def test_iniciar_sin_formula_permite_pero_warning(app, db_clean):
 
 def test_completar_tras_iniciar_skip_mp_y_solo_cierra(app, db_clean):
     """Si iniciar ya descontó, completar NO debe descontar otra vez."""
-    cs = _login(app, 'luis')
+    cs = _login(app, 'sebastian')
     _seed_mp_con_stock('MP-CMP-1', 'M1', 50000)
     _seed_formula('PROD-CMP', [
         ('MP-CMP-1', 'M1', 100.0, 2000),
@@ -288,7 +288,7 @@ def test_completar_tras_iniciar_skip_mp_y_solo_cierra(app, db_clean):
 
 
 def test_iniciar_audit_log_registra_descuento(app, db_clean):
-    cs = _login(app, 'luis')
+    cs = _login(app, 'sebastian')
     _seed_mp_con_stock('MP-AUD-1', 'Auditest', 50000)
     _seed_formula('PROD-AUD', [
         ('MP-AUD-1', 'Auditest', 100.0, 3000),
@@ -305,7 +305,7 @@ def test_iniciar_audit_log_registra_descuento(app, db_clean):
         ).fetchone()
         conn.close()
         assert row is not None
-        assert row[0] == 'luis'
+        assert row[0] == 'sebastian'
         assert 'descontó' in row[2] or 'MPs' in row[2]
     finally:
         _cleanup('PROD-AUD', ['MP-AUD-1'], pid)
@@ -314,7 +314,7 @@ def test_iniciar_audit_log_registra_descuento(app, db_clean):
 def test_iniciar_terminada_devuelve_idempotente(app, db_clean):
     """Si producción ya iniciada+terminada, iniciar es idempotente
     (devuelve 200 ya_iniciada, no toca nada)."""
-    cs = _login(app, 'luis')
+    cs = _login(app, 'sebastian')
     pid = _seed_produccion('PROD-TERM-1', lotes=1)
     conn = sqlite3.connect(os.environ["DB_PATH"])
     conn.execute(
@@ -347,7 +347,7 @@ def test_dashboard_html_popup_stock_insuficiente_visible(app, db_clean):
 def test_api_produccion_devuelve_faltantes_si_sin_stock(app, db_clean):
     """Endpoint /api/produccion devuelve detalle de faltantes en 422
     para que el popup pueda renderizarse."""
-    cs = _login(app, 'luis')
+    cs = _login(app, 'sebastian')
     _seed_mp_con_stock('MP-FALT-1', 'M1', 100)  # solo 100g
     _seed_formula('PROD-FALT', [
         ('MP-FALT-1', 'M1', 100.0, 5000),  # necesita 5000g
@@ -374,7 +374,7 @@ def test_api_produccion_devuelve_faltantes_si_sin_stock(app, db_clean):
 
 def test_iniciar_fefo_distribuye_entre_lotes_por_vencimiento(app, db_clean):
     """Con 2 lotes: el más cercano a vencer se consume primero."""
-    cs = _login(app, 'luis')
+    cs = _login(app, 'sebastian')
     # Lote viejo (vence pronto): 1000g
     conn = sqlite3.connect(os.environ["DB_PATH"])
     conn.execute(

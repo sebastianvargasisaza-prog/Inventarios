@@ -486,16 +486,29 @@ def test_consumo_manual_codigo_inexistente_404(app, db_clean):
 
 
 def test_consumo_manual_sobreconsumo_se_audita_con_warning(app, db_clean):
-    """Si cantidad > stock disponible, NO bloquea (puede ser ajuste
-    correctivo) pero el audit_log lo flagea como sobreconsumo=True."""
-    cs = _login(app, 'luis')
+    """Si cantidad > stock disponible, por defecto se BLOQUEA (422) para evitar
+    stock negativo fantasma (SEC-FIX 21-may-2026). Un admin puede forzar el
+    consumo correctivo con forzar_sobreconsumo=true; en ese caso el audit_log lo
+    flagea como sobreconsumo=True."""
+    # forzar_sobreconsumo es admin-only → usar sebastian (admin), no 'luis'.
+    cs = _login(app, 'sebastian')
     _seed_lote('MP-AUD-OVR', 'X', 100, 'L-OVR', '2027-01-01', 'VIGENTE')
     try:
-        # Pedir 500g cuando solo hay 100g
+        # Sin forzar: pedir 500g cuando solo hay 100g → bloqueado con 422.
+        r_block = cs.post('/api/consumo-manual',
+                          json={'codigo_mp': 'MP-AUD-OVR',
+                                'cantidad': 500,
+                                'observaciones': 'Test sobreconsumo'},
+                          headers=csrf_headers())
+        assert r_block.status_code == 422
+        assert r_block.get_json().get('codigo') == 'STOCK_INSUFICIENTE'
+
+        # Forzando (admin): se permite y se audita como sobreconsumo=True.
         r = cs.post('/api/consumo-manual',
                     json={'codigo_mp': 'MP-AUD-OVR',
                           'cantidad': 500,
-                          'observaciones': 'Test sobreconsumo'},
+                          'observaciones': 'Test sobreconsumo',
+                          'forzar_sobreconsumo': True},
                     headers=csrf_headers())
         assert r.status_code == 201
         # Audit debe marcar sobreconsumo=true en despues

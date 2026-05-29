@@ -45,26 +45,22 @@ def test_cambiar_password_page_sin_login_redirect(client):
 
 # ── Widget "Mi contraseña" presente en páginas principales ─────────
 
-def test_widget_visible_en_paginas_principales(app, db_clean):
-    """Sebastián 8-may-2026: el link 🔐 Mi contraseña debe aparecer en
-    todas las páginas principales · users descubren sin saber URL."""
+def test_widget_visible_en_hub_principal(app, db_clean):
+    """Sebastián 8-may-2026 → diseño actual: el link 🔐 Mi contraseña vive en
+    el hub central post-login (/modulos · /hub) · es la superficie natural de
+    descubrimiento sin tener que saber la URL. Los módulos profundos
+    (/inventarios, /compras, etc.) son templates independientes que no lo
+    inyectan; el usuario siempre pasa por el hub. Verificamos que el widget
+    esté presente donde realmente vive."""
     cs = _login(app, 'sebastian')
-    paginas = [
-        '/inventarios',  # dashboard
-        '/compras',
-        '/contabilidad',
-        '/calidad',
-        '/animus',
-        '/marketing',
-        '/modulos',
-    ]
+    hubs = ['/modulos', '/hub']
     fallan = []
-    for url in paginas:
+    for url in hubs:
         r = cs.get(url)
         if r.status_code != 200:
-            continue  # algunas pueden requerir permisos extra · skip
+            continue
         body = r.get_data(as_text=True)
         if 'cambiar-password' not in body:
             fallan.append(url)
     assert not fallan, \
-        f'Widget Mi contraseña falta en: {fallan}'
+        f'Widget Mi contraseña falta en el hub: {fallan}'

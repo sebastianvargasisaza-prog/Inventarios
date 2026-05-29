@@ -848,24 +848,33 @@ def _adquirir_lock_cron(conn, job_name, ttl_horas=2):
         # · Locks huérfanos quedaban permanentes en PG · cron bloqueado por siempre
         # · Ahora: cutoff calculado en Python · pasado como param
         from datetime import datetime as _dt2, timedelta as _td2
+        import uuid as _uuid
         cutoff = (_dt2.now() - _td2(hours=ttl_horas + 5)).strftime('%Y-%m-%d %H:%M:%S')
         bog_now = (_dt2.now() - _td2(hours=5)).strftime('%Y-%m-%d %H:%M:%S')
+        # FIX · 29-may-2026 · audit ronda2 · RACE en el lock: antes locked_by
+        # era la constante 'multi-cron' y el ganador se decidía con
+        # row.locked_at == bog_now. Si dos workers reclamaban en el MISMO
+        # segundo, bog_now coincidía para ambos → AMBOS se daban por ganadores
+        # → cron ejecutado 2× (SOLs/producciones duplicadas). Ahora cada intento
+        # usa un token único; solo gana quien su token quedó realmente
+        # persistido (el otro cae en ON CONFLICT DO NOTHING y ve el token ajeno).
+        mi_token = 'multi-cron:' + _uuid.uuid4().hex
         # Limpiar locks vencidos antes de intentar reclamar (PG-safe)
         conn.execute("DELETE FROM cron_locks WHERE locked_at < ?", (cutoff,))
-        cur = conn.execute(
+        conn.execute(
             "INSERT INTO cron_locks (job_name, locked_at, locked_by) "
-            "VALUES (?, ?, 'multi-cron') "
+            "VALUES (?, ?, ?) "
             "ON CONFLICT(job_name) DO NOTHING",
-            (job_name, bog_now),
+            (job_name, bog_now, mi_token),
         )
         conn.commit()
-        # cur.rowcount no funciona uniformly entre PG y SQLite con ON CONFLICT
-        # · verificar con SELECT post-INSERT
+        # rowcount no es uniforme PG/SQLite con ON CONFLICT · verificar con
+        # SELECT post-INSERT: ganó este worker SOLO si el token persistido es el suyo.
         row = conn.execute(
-            "SELECT locked_at, locked_by FROM cron_locks WHERE job_name=?",
+            "SELECT locked_by FROM cron_locks WHERE job_name=?",
             (job_name,),
         ).fetchone()
-        return bool(row and row[1] == 'multi-cron' and row[0] == bog_now)
+        return bool(row and row[0] == mi_token)
     except Exception as e:
         log.warning('_adquirir_lock_cron(%s) fallo: %s', job_name, e)
         return False
