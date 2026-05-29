@@ -7,7 +7,7 @@ import time
 from datetime import datetime, timedelta
 from flask import Blueprint, jsonify, request, Response, session, redirect, url_for
 from werkzeug.security import generate_password_hash, check_password_hash
-from config import DB_PATH, COMPRAS_USERS, ADMIN_USERS, CONTADORA_USERS
+from config import DB_PATH, COMPRAS_USERS, ADMIN_USERS, CONTADORA_USERS, FINANZAS_ACCESS
 from database import get_db
 from auth import _client_ip, _is_locked, _record_failure, _clear_attempts, _log_sec
 from templates_py.rrhh_html import RRHH_HTML
@@ -29,6 +29,13 @@ bp = Blueprint('hub', __name__)
 
 @bp.route('/api/hub/resumen')
 def hub_resumen():
+    # Authz fix 28-may · antes SIN auth (anónimo podía leerlo) y exponía
+    # montos financieros (valor OCs por pagar/autorizar, pagado semana) a
+    # cualquier usuario. Ahora requiere login; los montos en COP solo a
+    # FINANZAS_ACCESS · los counts/KPIs operacionales siguen visibles a todos.
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
+    _ver_finanzas = session.get('compras_user', '') in FINANZAS_ACCESS
     conn = get_db(); c = conn.cursor()
     # OCs
     c.execute("SELECT estado, COUNT(*), COALESCE(SUM(valor_total),0) FROM ordenes_compra GROUP BY estado")
@@ -69,15 +76,20 @@ def hub_resumen():
     clientes_activos = c.fetchone()[0] or 0
     return jsonify({
         'ocs': {'por_autorizar': cnt_por_autorizar, 'por_pagar': cnt_por_pagar,
-                'valor_autorizar': val_por_autorizar, 'valor_pagar': val_por_pagar},
+                'valor_autorizar': (val_por_autorizar if _ver_finanzas else None),
+                'valor_pagar': (val_por_pagar if _ver_finanzas else None)},
         'stock_critico': stock_crit,
-        'pagado_semana': pag_semana,
+        'pagado_semana': (pag_semana if _ver_finanzas else None),
         'compromisos': {'pendientes': comp_pendientes, 'vencidos': comp_vencidos, 'criticos': comp_criticos},
         'clientes': clientes_activos
     })
 
 @bp.route('/api/hub/alertas')
 def hub_alertas():
+    # Authz fix 28-may · antes SIN auth (anónimo podía leer alertas con
+    # valores de OC) · requiere login.
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autorizado'}), 401
     conn = get_db(); c = conn.cursor()
     hoy = datetime.now().strftime('%Y-%m-%d')
     alertas = []

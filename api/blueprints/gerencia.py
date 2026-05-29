@@ -778,6 +778,10 @@ def gerencia_aliados_feed():
     mix de canales (aliados vs Shopify), concentracion de riesgo,
     valor en riesgo, tendencia de ticket mensual, MoM canal.
     """
+    # Authz fix 28-may · expone financieros B2B del CEO · gate igual que
+    # gerencia_kpis/flujo_operacional/dashboard_extra (FINANZAS_ACCESS).
+    if 'compras_user' not in session or session.get('compras_user','') not in FINANZAS_ACCESS:
+        return jsonify({'error': 'No autorizado'}), 401
     conn = get_db(); c = conn.cursor()
     try:
         hoy          = datetime.now()
