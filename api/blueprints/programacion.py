@@ -5915,13 +5915,24 @@ def _descontar_mp_produccion(c, evento_id, user, forzar=False):
             obs_mp = (obs_base + f" | FEFO lote: {lote_fragment}" +
                        (f" (vence {d['fecha_vencimiento']})"
                         if d['fecha_vencimiento'] else ""))
-            c.execute("""
-                INSERT INTO movimientos
-                  (material_id, material_nombre, cantidad, tipo, fecha,
-                   observaciones, operador, lote, produccion_id)
-                VALUES (?, ?, ?, 'Salida', ?, ?, ?, ?, ?)
-            """, (mp['codigo_mp'], mp['nombre'], d['cantidad'],
-                  fecha_iso, obs_mp, user, d['lote'], evento_id))
+            try:
+                c.execute("""
+                    INSERT INTO movimientos
+                      (material_id, material_nombre, cantidad, tipo, fecha,
+                       observaciones, operador, lote, produccion_id)
+                    VALUES (?, ?, ?, 'Salida', ?, ?, ?, ?, ?)
+                """, (mp['codigo_mp'], mp['nombre'], d['cantidad'],
+                      fecha_iso, obs_mp, user, d['lote'], evento_id))
+            except Exception:
+                # mig 201 aún no aplicada (PG sin produccion_id) · fallback sin
+                # la columna · la reversión cae al LIKE legacy hasta aplicarla.
+                c.execute("""
+                    INSERT INTO movimientos
+                      (material_id, material_nombre, cantidad, tipo, fecha,
+                       observaciones, operador, lote)
+                    VALUES (?, ?, ?, 'Salida', ?, ?, ?, ?)
+                """, (mp['codigo_mp'], mp['nombre'], d['cantidad'],
+                      fecha_iso, obs_mp, user, d['lote']))
             mp['distribucion_fefo'].append({
                 'lote': d['lote'],
                 'cantidad_g': d['cantidad'],
@@ -6415,13 +6426,23 @@ def prog_completar_evento(evento_id):
                     obs_mp = (obs_base +
                               f" | FEFO lote: {lote_fragment}" +
                               (f" (vence {d['fecha_vencimiento']})" if d['fecha_vencimiento'] else ""))
-                    c.execute("""
-                        INSERT INTO movimientos
-                          (material_id, material_nombre, cantidad, tipo, fecha,
-                           observaciones, operador, lote, produccion_id)
-                        VALUES (?, ?, ?, 'Salida', ?, ?, ?, ?, ?)
-                    """, (mp['codigo_mp'], mp['nombre'], d['cantidad'],
-                          fecha_iso, obs_mp, user, d['lote'], evento_id))
+                    try:
+                        c.execute("""
+                            INSERT INTO movimientos
+                              (material_id, material_nombre, cantidad, tipo, fecha,
+                               observaciones, operador, lote, produccion_id)
+                            VALUES (?, ?, ?, 'Salida', ?, ?, ?, ?, ?)
+                        """, (mp['codigo_mp'], mp['nombre'], d['cantidad'],
+                              fecha_iso, obs_mp, user, d['lote'], evento_id))
+                    except Exception:
+                        # mig 201 aún no aplicada (PG) · fallback sin la columna.
+                        c.execute("""
+                            INSERT INTO movimientos
+                              (material_id, material_nombre, cantidad, tipo, fecha,
+                               observaciones, operador, lote)
+                            VALUES (?, ?, ?, 'Salida', ?, ?, ?, ?)
+                        """, (mp['codigo_mp'], mp['nombre'], d['cantidad'],
+                              fecha_iso, obs_mp, user, d['lote']))
                     mp['distribucion_fefo'].append({
                         'lote': d['lote'],
                         'cantidad_g': d['cantidad'],
@@ -6592,15 +6613,26 @@ def prog_revertir_completado(evento_id):
         # revertir el MP de OTRA producción del mismo producto+fecha
         # (cross-reversal → inventario fantasma). Fallback al LIKE por texto
         # solo para movimientos legacy SIN produccion_id (pre-migración).
-        rows = c.execute("""
-            SELECT id, material_id, material_nombre, cantidad, lote, fecha_vencimiento
-            FROM movimientos
-            WHERE tipo='Salida'
-              AND (produccion_id = ?
-                   OR (produccion_id IS NULL
-                       AND (observaciones LIKE ? ESCAPE '\\'
-                            OR observaciones LIKE ? ESCAPE '\\')))
-        """, (evento_id, f"{obs_filtro_esc}%", f"{obs_filtro_ini_esc}%")).fetchall()
+        try:
+            rows = c.execute("""
+                SELECT id, material_id, material_nombre, cantidad, lote, fecha_vencimiento
+                FROM movimientos
+                WHERE tipo='Salida'
+                  AND (produccion_id = ?
+                       OR (produccion_id IS NULL
+                           AND (observaciones LIKE ? ESCAPE '\\'
+                                OR observaciones LIKE ? ESCAPE '\\')))
+            """, (evento_id, f"{obs_filtro_esc}%", f"{obs_filtro_ini_esc}%")).fetchall()
+        except Exception:
+            # mig 201 aún no aplicada (PG sin produccion_id) · degradar al LIKE
+            # legacy (comportamiento previo · con su limitación conocida).
+            rows = c.execute("""
+                SELECT id, material_id, material_nombre, cantidad, lote, fecha_vencimiento
+                FROM movimientos
+                WHERE tipo='Salida'
+                  AND (observaciones LIKE ? ESCAPE '\\'
+                       OR observaciones LIKE ? ESCAPE '\\')
+            """, (f"{obs_filtro_esc}%", f"{obs_filtro_ini_esc}%")).fetchall()
         for mid, cod, nom, cant, lote, fv in rows:
             c.execute("""
                 INSERT INTO movimientos
