@@ -3708,7 +3708,12 @@ def alertas_all():
                                WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad
                                ELSE 0 END) as stock
                FROM movimientos
-               WHERE UPPER(COALESCE(estado_lote,'')) NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO','ANULADO')
+               -- FIX 30-may-2026 · audit Planta/mínimos · agregar VENCIDO y
+               -- AGOTADO a la exclusión (antes solo CUARENTENA/RECHAZADO/ANULADO)
+               -- · un MP cuyo stock está vencido NO es usable → debe disparar
+               -- "bajo mínimo". Unifica con /api/alertas-reabastecimiento.
+               WHERE UPPER(COALESCE(estado_lote,'')) NOT IN
+                     ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO','ANULADO','VENCIDO','AGOTADO')
                GROUP BY material_id
            ) s ON mp.codigo_mp = s.material_id
            WHERE COALESCE(mp.activo, 1) = 1
