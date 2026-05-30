@@ -20145,6 +20145,15 @@ async function ckMarcar(itemId, estado){
         return;
       }
       window._SHOPIFY_DIAG = d;
+      // Lista de productos para el dropdown de mapeo (huérfanos)
+      var prodOptions = '<option value="">— elegí producto —</option>';
+      try {
+        var rp = await fetch('/api/programacion/productos', {cache:'no-store'});
+        var dp = await rp.json();
+        (dp.formulas || []).forEach(function(p){
+          prodOptions += '<option>' + escapeHtmlNec(p.nombre || '') + '</option>';
+        });
+      } catch(e) { /* sin lista · el dropdown queda solo con el placeholder */ }
       var esc = escapeHtmlNec;
       var s = d.sync || {}, rec = d.reconciliacion || {};
       var cob = rec.pct_cobertura_real || 0;
@@ -20208,7 +20217,7 @@ async function ckMarcar(itemId, estado){
         html += '<th style="text-align:' + al + ';padding:7px 8px;font-weight:700;white-space:nowrap">' + h + '</th>';
       });
       html += '</tr></thead><tbody id="shopify-diag-tbody">';
-      det.forEach(function(it){
+      det.forEach(function(it, idx){
         var badge, bg = '#fff';
         if(it.estado === 'MAPEADO'){ badge = '<span style="background:#dcfce7;color:#15803d;padding:1px 7px;border-radius:4px;font-weight:700">MAPEADO</span>'; }
         else if(it.estado === 'REGALO'){ badge = '<span style="background:#f1f5f9;color:#64748b;padding:1px 7px;border-radius:4px;font-weight:700">REGALO</span>'; }
@@ -20217,7 +20226,15 @@ async function ckMarcar(itemId, estado){
         var sattr = ((it.sku||'') + ' ' + (it.producto||'') + ' ' + (it.tono||'')).toLowerCase();
         html += '<tr data-s="' + esc(sattr) + '" style="border-top:1px solid #f1f5f9;background:' + bg + '">';
         html += '<td style="padding:6px 8px;font-family:ui-monospace;font-weight:700">' + esc(it.sku||'') + '</td>';
-        html += '<td style="padding:6px 8px">' + (it.producto ? esc(it.producto) : '<span style="color:#94a3b8">— sin mapear —</span>') + '</td>';
+        if(it.estado === 'HUERFANO'){
+          html += '<td style="padding:6px 8px;white-space:nowrap">' +
+            '<select id="hp-' + idx + '" style="max-width:190px;font-size:11px;padding:3px;border:1px solid #f59e0b;border-radius:4px">' + prodOptions + '</select>' +
+            '<label style="font-size:10px;margin-left:5px;color:#64748b"><input type="checkbox" id="hr-' + idx + '" style="vertical-align:middle"> regalo</label>' +
+            '<button onclick="mapearHuerfano(' + idx + ')" style="margin-left:5px;background:#0f766e;color:#fff;border:none;padding:3px 9px;border-radius:4px;font-size:11px;font-weight:700;cursor:pointer">Mapear</button>' +
+            '</td>';
+        } else {
+          html += '<td style="padding:6px 8px">' + (it.producto ? esc(it.producto) : '<span style="color:#94a3b8">—</span>') + '</td>';
+        }
         html += '<td style="padding:6px 8px;text-align:center">' + badge + '</td>';
         html += '<td style="padding:6px 8px">' + (it.tono ? esc(it.tono) : '') + '</td>';
         html += '<td style="padding:6px 8px;text-align:center">' + mlTxt + '</td>';
@@ -20240,6 +20257,40 @@ async function ckMarcar(itemId, estado){
     for(var i=0;i<rows.length;i++){
       var s = rows[i].getAttribute('data-s') || '';
       rows[i].style.display = (!q || s.indexOf(q) >= 0) ? '' : 'none';
+    }
+  }
+  // Mapea un SKU huérfano a un producto (o lo marca regalo) desde el modal.
+  async function mapearHuerfano(idx){
+    var det = (window._SHOPIFY_DIAG || {}).por_sku || [];
+    var it = det[idx];
+    if(!it){ return; }
+    var sel = document.getElementById('hp-' + idx);
+    var chk = document.getElementById('hr-' + idx);
+    var prod = sel ? sel.value : '';
+    var esRegalo = !!(chk && chk.checked);
+    if(!prod){ alert('Elegí un producto para ' + it.sku + (esRegalo ? ' (un regalo igual necesita su producto base)' : '')); return; }
+    var btn = sel ? sel.parentNode.querySelector('button') : null;
+    if(btn){ btn.disabled = true; btn.textContent = '…'; }
+    try {
+      var r = await fetch('/api/admin/sku-producto-map/bulk', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json','X-CSRF-Token':(typeof csrfTokenNec==='function'?csrfTokenNec():'')},
+        body: JSON.stringify({items: [{sku: it.sku, producto_nombre: prod, es_regalo: esRegalo}]}),
+      });
+      var d = await r.json();
+      if(r.status === 401){ window.location.href = '/login'; return; }
+      if(!r.ok || !d.ok || (d.n_mapeados || 0) < 1){
+        var msg = (d && d.errores && d.errores[0] && d.errores[0].error) || (d && d.error) || ('HTTP ' + r.status);
+        alert('No se pudo mapear ' + it.sku + ': ' + msg);
+        if(btn){ btn.disabled = false; btn.textContent = 'Mapear'; }
+        return;
+      }
+      // Éxito · refrescar reconciliación + el plan de necesidades por detrás
+      verificarShopify();
+      if(typeof cargarNecesidades === 'function'){ try { cargarNecesidades(); } catch(e){} }
+    } catch(e) {
+      alert('Error de red: ' + e.message);
+      if(btn){ btn.disabled = false; btn.textContent = 'Mapear'; }
     }
   }
 
