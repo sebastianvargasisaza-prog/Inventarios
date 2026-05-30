@@ -13873,18 +13873,28 @@ async function abrirLoteModal(id, producto, fecha, kg){
   if (!_esPrimerLote){
     diagFecha = 'serie';
     diagFechaTxt = '📋 Lote de la serie planificada · el diagnóstico de timing (TARDE/a tiempo) aplica solo al PRIMER lote del producto, no a los siguientes';
-  } else if (diasCob != null && diasCob > 0){
+  } else if (velKgDia > 0.0001){
+    // Sebastián 30-may-2026 · FIX lógica óptimo · ANTES usaba info.dias_cobertura,
+    // que = stock_kg_total / velocidad e incluye pipeline_FIJO (¡la producción ya
+    // programada, incluido ESTE lote!). Eso era circular: el lote se contaba a sí
+    // mismo como stock → salía "TEMPRANO" por cientos de días. AHORA el óptimo se
+    // mide contra el stock FÍSICO real (góndola + tránsito pipeline), SIN la
+    // producción programada. Buffer 25d = cob_alerta del backend (igual que la
+    // próxima sugerida · antes eran 20 vs 25, inconsistentes).
+    const stockFisicoKg = (info.stock_kg_gondola || 0) + (info.pipeline_kg || 0);
+    const diasCobFisica = Math.round(stockFisicoKg / velKgDia);
     const hoy = new Date();
-    const fAgot = new Date(hoy); fAgot.setDate(fAgot.getDate() + diasCob);
-    const fOpt = new Date(fAgot); fOpt.setDate(fOpt.getDate() - 20);
+    const fAgot = new Date(hoy); fAgot.setDate(fAgot.getDate() + diasCobFisica);
+    const fOpt = new Date(fAgot); fOpt.setDate(fOpt.getDate() - 25);
     const fProg = new Date(fecha + 'T12:00:00');
     const diffDias = Math.round((fProg - fOpt) / 86400000);
+    const _cobTxt = stockFisicoKg.toFixed(1) + 'kg físico ≈ ' + diasCobFisica + 'd (sin contar este lote)';
     if (Math.abs(diffDias) <= 7){
-      diagFecha = 'ok'; diagFechaTxt = '✅ Bien calculado · está dentro de ±7 días del óptimo';
+      diagFecha = 'ok'; diagFechaTxt = '✅ A tiempo · dentro de ±7d del óptimo · produce ~25d antes de agotar el stock físico · ' + _cobTxt;
     } else if (diffDias > 0){
-      diagFecha = 'tarde'; diagFechaTxt = '⚠ TARDE · está ' + diffDias + ' días después del óptimo (stock se agota antes)';
+      diagFecha = 'tarde'; diagFechaTxt = '⚠ TARDE · ' + diffDias + ' días después del óptimo · el stock físico se agota antes · ' + _cobTxt;
     } else {
-      diagFecha = 'temprano'; diagFechaTxt = '📌 TEMPRANO · está ' + Math.abs(diffDias) + ' días antes del óptimo (no urgente)';
+      diagFecha = 'temprano'; diagFechaTxt = '📌 TEMPRANO · ' + Math.abs(diffDias) + ' días antes del óptimo (no urgente) · ' + _cobTxt;
     }
   }
 
