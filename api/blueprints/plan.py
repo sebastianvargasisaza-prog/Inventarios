@@ -14080,6 +14080,42 @@ async function abrirLoteModal(id, producto, fecha, kg){
     html += '<div class="banner-inline ok">🔁 ' + proximaTxt + '</div>';
   }
 
+  // Sebastián 30-may-2026 · "¿la próxima ya está programada?" · cruza la fecha
+  // sugerida contra las producciones YA agendadas de ESTE producto y deja
+  // programarla / ajustarla desde el mismo modal.
+  if (proximaSugerida){
+    const _toD = s => new Date((s || '').slice(0,10) + 'T12:00:00');
+    let prox = null;
+    (PLAN_DATA.agendadas || []).forEach(a => {
+      if (a.id === id) return;
+      if ((a.producto || '') !== producto) return;
+      const f = (a.fecha_programada || '').slice(0,10);
+      if (!f || f <= fecha) return;  // sólo lotes posteriores a éste
+      const est = (a.estado || '').toLowerCase();
+      if (est === 'cancelado' || est === 'completado') return;
+      if (!prox || f < (prox.fecha_programada || '').slice(0,10)) prox = a;
+    });
+    if (prox){
+      const pf = (prox.fecha_programada || '').slice(0,10);
+      const dd = Math.round((_toD(pf) - _toD(proximaSugerida)) / 86400000);  // + = después
+      let txt, col;
+      if (Math.abs(dd) <= 7){ txt = '✅ alineada con la sugerida'; col = '#15803d'; }
+      else if (dd < 0){ txt = '📌 ' + Math.abs(dd) + ' días ANTES de la sugerida'; col = '#7c3aed'; }
+      else { txt = '⚠ ' + dd + ' días DESPUÉS de la sugerida (stock se agota antes)'; col = '#b45309'; }
+      html += '<div class="banner-inline" style="border-color:' + col + ';color:' + col + '">'
+            + '✓ La próxima YA está programada el <strong>' + pf + '</strong> · ' + txt + '. '
+            + '<button onclick="abrirLoteModal(' + prox.id + ',&quot;' + escapeHtml(producto) + '&quot;,&quot;' + pf + '&quot;,' + (prox.kg || 0) + ')" '
+            + 'style="margin-left:8px;background:#fff;border:1px solid ' + col + ';color:' + col + ';padding:2px 9px;border-radius:5px;font-size:11px;cursor:pointer">abrir / mover</button>'
+            + '</div>';
+    } else {
+      html += '<div class="banner-inline" style="border-color:#b45309;color:#b45309">'
+            + '⚠ No hay una próxima producción programada para este producto. '
+            + '<button onclick="programarProxima(&quot;' + escapeHtml(producto) + '&quot;,&quot;' + proximaSugerida + '&quot;,' + kg + ')" '
+            + 'style="margin-left:6px;background:#16a34a;color:#fff;border:none;padding:3px 11px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">📅 Programar el ' + proximaSugerida + ' (' + kg + 'kg)</button>'
+            + '</div>';
+    }
+  }
+
   // Sección 4: Acciones
   html += _renderAccionesLote(id, producto, fecha);
   document.getElementById('lote-body').innerHTML = html;
@@ -14158,6 +14194,27 @@ async function loteAccion(id, accion, producto, fecha){
     if (!r.ok){ alert('Error: ' + (d.error || r.status)); return; }
     cargar();
   }
+}
+
+async function programarProxima(producto, fecha, kg){
+  // Sebastián 30-may-2026 · programar la próxima producción sugerida desde el
+  // modal del lote · crea produccion_programada (origen eos_plan) en esa fecha.
+  const f = prompt('Programar próxima producción de "' + producto + '"\\n\\nFecha (YYYY-MM-DD):', fecha);
+  if (!f) return;
+  let kgN = parseFloat(prompt('Kg a producir:', kg) || kg);
+  if (!(kgN > 0)){ alert('Kg inválido'); return; }
+  try {
+    const r = await fetch('/api/plan/programar-produccion', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':getCSRF()},
+      credentials: 'same-origin',
+      body: JSON.stringify({producto_nombre: producto, fecha_programada: f.trim(), cantidad_kg: kgN}),
+    });
+    const d = await r.json();
+    if (!r.ok){ alert('Error: ' + (d.error || r.status)); return; }
+    cerrarLoteModal();
+    cargar();
+  } catch(e){ alert('Error de red: ' + e.message); }
 }
 
 async function reprogramarLote(id, nuevaFecha, razon){
