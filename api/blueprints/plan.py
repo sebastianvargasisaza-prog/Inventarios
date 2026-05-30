@@ -32,6 +32,14 @@ from audit_helpers import audit_log
 bp = Blueprint("plan", __name__)
 log = logging.getLogger("plan")
 
+# Buffer de re-orden · "producir N días ANTES de agotar el stock".
+# Fuente de verdad única (Sebastián 23-may-2026: "las sugerencias deben ser 25
+# días antes de que se acabe"). Antes había 20 hardcodeado en varios cálculos
+# (timing_status, generadores de plan, frecuencia óptima) y 25 en otros
+# (proxima_sugerida, cob_alerta) → fechas inconsistentes. Unificado a 25 ·
+# coincide con cob_alerta default. Audit 30-may-2026.
+BUFFER_REORDEN_DIAS = 25
+
 
 def _require_admin_or_compras():
     user = session.get("compras_user", "")
@@ -4504,7 +4512,7 @@ def comparar_calendar_necesidades():
     # NUEVA lógica · "producir 20 días antes de agotamiento"
     # - stock_efectivo = stock_gondola + pipeline_7d (ya producido)
     # - fecha_agotamiento = hoy + stock_efectivo / velocidad
-    # - fecha_producir_sugerida = agotamiento - 20 días
+    # - fecha_producir_sugerida = agotamiento - BUFFER_REORDEN_DIAS (25) días
     # - Comparar FECHA del PRIMER lote Calendar vs sugerido
     out = []
     for nec in necesidades:
@@ -4545,7 +4553,7 @@ def comparar_calendar_necesidades():
         # Fecha producir sugerida · 20 días antes de agotamiento
         if dias_hasta_agotamiento is not None:
             try:
-                fecha_producir_sugerida = (hoy + _td(days=max(0, int(dias_hasta_agotamiento) - 20))).isoformat()
+                fecha_producir_sugerida = (hoy + _td(days=max(0, int(dias_hasta_agotamiento) - BUFFER_REORDEN_DIAS))).isoformat()
             except Exception:
                 fecha_producir_sugerida = None
         else:
@@ -6332,7 +6340,7 @@ def generar_plan_perfecto():
                 base_freq = ult + _td(days=freq)
                 if vel > 0.001:
                     dias_dura = int(kg / vel)
-                    base_20d = ult + _td(days=max(dias_dura - 20, 14))
+                    base_20d = ult + _td(days=max(dias_dura - BUFFER_REORDEN_DIAS, 14))
                     base = min(base_freq, base_20d)
                 else:
                     base = base_freq
@@ -10240,7 +10248,7 @@ def regenerar_canonicos():
         # Sin cobertura (sin ventas) → histórico o próximo día hábil.
         cob = cobertura_por_prod.get(prod)
         if cob is not None:
-            base = hoy + _td(days=max(int(cob) - 20, 0))
+            base = hoy + _td(days=max(int(cob) - BUFFER_REORDEN_DIAS, 0))
         elif prod in ultima_real:
             try:
                 base = _date.fromisoformat(ultima_real[prod]) + _td(days=freq)
@@ -10433,7 +10441,7 @@ def calculo_frecuencias_api():
         if kg_mes_total > 0.001 and lote > 0:
             dias_dura_lote = round((lote / kg_mes_total) * 30)
             # Producir 20 días antes de agotar
-            frecuencia_optima = max(dias_dura_lote - 20, 15)
+            frecuencia_optima = max(dias_dura_lote - BUFFER_REORDEN_DIAS, 15)
             # Lotes/año
             lotes_anuales = round(365 / frecuencia_optima, 1)
         else:
