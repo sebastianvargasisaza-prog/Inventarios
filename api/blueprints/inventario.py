@@ -224,17 +224,26 @@ def get_inventario():
 
     # ── AHORA (crítico — acción hoy) ──────────────────────────────────
     # MPs sin stock (en cero)
-    mps_sin_stock = _safe("""
+    # FIX 30-may-2026 · audit Planta/Dashboard · estos KPIs ("bloquean
+    # producción") deben usar stock DISPONIBLE, no físico total. Antes sumaban
+    # todos los movimientos incluyendo lotes en CUARENTENA/VENCIDO/RECHAZADO/
+    # AGOTADO → un MP cuyo stock está atrapado en cuarentena salía "OK" aunque
+    # no se puede producir con él. Ahora se excluyen esos estados (patrón
+    # canónico de stock disponible · zero-error protocol). Las Salidas
+    # (estado_lote NULL) siguen restando.
+    _avail_filter = ("(estado_lote IS NULL OR UPPER(COALESCE(estado_lote,'')) "
+                     "NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','VENCIDO','RECHAZADO','AGOTADO'))")
+    mps_sin_stock = _safe(f"""
         SELECT COUNT(*) FROM maestro_mps m
         LEFT JOIN (SELECT material_id, SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END) as stock
-                   FROM movimientos GROUP BY material_id) s ON m.codigo_mp=s.material_id
+                   FROM movimientos WHERE {_avail_filter} GROUP BY material_id) s ON m.codigo_mp=s.material_id
         WHERE m.activo=1 AND m.stock_minimo>0 AND COALESCE(s.stock,0) <= 0
     """)
-    # MPs bajo mínimo (incluye sin stock)
-    mps_bajo_min = _safe("""
+    # MPs bajo mínimo (incluye sin stock) · mismo criterio de disponible
+    mps_bajo_min = _safe(f"""
         SELECT COUNT(*) FROM maestro_mps m
         LEFT JOIN (SELECT material_id, SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END) as stock
-                   FROM movimientos GROUP BY material_id) s ON m.codigo_mp=s.material_id
+                   FROM movimientos WHERE {_avail_filter} GROUP BY material_id) s ON m.codigo_mp=s.material_id
         WHERE m.activo=1 AND m.stock_minimo>0 AND COALESCE(s.stock,0)<m.stock_minimo
     """)
     # Lotes vencidos · Sebastian 5-may-2026 (audit zero-error dashboard):
@@ -269,10 +278,14 @@ def get_inventario():
     # Lotes en cuarentena (esperando QC) · case-insensitive: calidad.py
     # escribe 'Cuarentena' (Capitalized), inventario.py escribe 'CUARENTENA'
     # (uppercase). UPPER normaliza ambos.
+    # FIX 30-may-2026 · contar LOTES distintos, no filas de movimiento (un lote
+    # con varias Entradas en cuarentena se contaba múltiples veces).
     lotes_cuarentena = _safe("""
-        SELECT COUNT(*) FROM movimientos
-        WHERE tipo='Entrada'
-          AND UPPER(COALESCE(estado_lote,'')) IN ('CUARENTENA','CUARENTENA_EXTENDIDA')
+        SELECT COUNT(*) FROM (
+          SELECT DISTINCT material_id, lote FROM movimientos
+          WHERE tipo='Entrada' AND COALESCE(lote,'') != ''
+            AND UPPER(COALESCE(estado_lote,'')) IN ('CUARENTENA','CUARENTENA_EXTENDIDA')
+        )
     """)
     # Vencimientos críticos próximos 30d · Sebastian 5-may-2026 (audit
     # zero-error): ANTES usaba estado_lote IN ('CRITICO','PROXIMO') que
@@ -294,20 +307,32 @@ def get_inventario():
              AND venc <= date('now', '-5 hours', '+30 day')
         )
     """)
-    # OCs en tránsito (Autorizada/Pagada sin recepción)
+    # OCs en tránsito · Autorizada/Pagada sin recepción, MÁS Parcial (recepción
+    # parcial · el resto sigue por llegar · FIX 30-may-2026 · antes no contaba
+    # las Parcial porque ya tienen fecha_recepcion de la recepción parcial).
     ocs_transito = _safe("""
         SELECT COUNT(*) FROM ordenes_compra
-        WHERE estado IN ('Autorizada','Pagada')
-          AND (fecha_recepcion IS NULL OR fecha_recepcion = '')
-          AND COALESCE(categoria,'') NOT IN
+        WHERE COALESCE(categoria,'') NOT IN
               ('Influencer/Marketing Digital','Cuenta de Cobro','SVC')
+          AND (
+                estado='Parcial'
+             OR (estado IN ('Autorizada','Pagada')
+                 AND (fecha_recepcion IS NULL OR fecha_recepcion = ''))
+          )
     """)
     # MEE bajo mínimo (envases)
     # FIX · 21-may-2026 · maestro_mee usa `estado` no `activo`
+    # FIX 30-may-2026 · usar stock canónico SUM(movimientos_mee) en vez del
+    # cache stock_actual (que deriva · drift histórico MEE). anulado=0.
     mees_bajo_min = _safe("""
-        SELECT COUNT(*) FROM maestro_mee
-        WHERE COALESCE(estado,'Activo')='Activo' AND COALESCE(stock_minimo,0)>0
-          AND COALESCE(stock_actual,0) < COALESCE(stock_minimo,0)
+        SELECT COUNT(*) FROM maestro_mee m
+        WHERE COALESCE(m.estado,'Activo')='Activo' AND COALESCE(m.stock_minimo,0)>0
+          AND COALESCE((
+                SELECT SUM(CASE WHEN tipo IN ('Entrada','Ajuste +','Ajuste') THEN cantidad
+                                WHEN tipo IN ('Salida','Ajuste -') THEN -cantidad ELSE 0 END)
+                FROM movimientos_mee mm
+                WHERE mm.mee_codigo=m.codigo AND COALESCE(mm.anulado,0)=0
+              ),0) < COALESCE(m.stock_minimo,0)
     """)
 
     return jsonify({
