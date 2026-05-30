@@ -1831,6 +1831,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
         <button onclick="abrirFormB2B()" style="background:#1e40af;color:#fff;border:none;padding:7px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">+ Pedido B2B</button>
         <button onclick="autoSugerirProducciones()" style="background:#7c3aed;color:#fff;border:none;padding:7px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer" title="Crea producciones Sugeridas en el calendario para los productos que se van a quebrar (cron diario 5 AM también lo hace)">🤖 Auto-sugerir</button>
         <button onclick="abrirHerramientasLimpieza()" style="background:#475569;color:#fff;border:none;padding:7px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer" title="Limpia Sugeridas viejas del calendario + arregla productos con lote_size_kg absurdo">⚙ Herramientas</button>
+        <button onclick="verificarShopify()" style="background:#0f766e;color:#fff;border:none;padding:7px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer" title="Reconciliación: ¿llega Shopify? ¿cada SKU/sub-SKU se atribuye a un producto? ¿cuánta demanda se pierde por SKU vacío o sin mapear?">🔍 Verificar Shopify</button>
         <button onclick="cargarNecesidades()" style="background:#6d28d9;color:#fff;border:none;padding:7px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">↻ Recargar</button>
       </div>
     </div>
@@ -1996,35 +1997,6 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     <iframe id="midia-frame" src="about:blank" loading="lazy"
             style="width:100%;height:80vh;min-height:600px;border:0;display:block;background:#0f172a"
             sandbox="allow-same-origin allow-scripts allow-forms allow-popups"></iframe>
-  </div>
-  <!-- Pestaña Abastecimiento · Sebastián 15-may-2026 -->
-  <div id="ptab-abastecimiento" style="display:none;background:#fff;border-radius:12px;padding:18px;box-shadow:0 2px 8px rgba(0,0,0,.06)">
-    <h2 style="margin:0 0 4px;color:#6d28d9;font-size:19px">&#128230; Abastecimiento</h2>
-    <div style="color:#64748b;font-size:12px;margin-bottom:12px">
-      Materias primas y envases que el plan de producción va a consumir ·
-      qué falta comprar · generá las solicitudes a Compras.
-    </div>
-    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
-      <span style="font-size:12px;color:#475569;font-weight:700;margin-right:4px">Horizonte:</span>
-      <button class="abast-h" data-dias="30"  onclick="abastSetHoriz(30)">1 mes</button>
-      <button class="abast-h" data-dias="60"  onclick="abastSetHoriz(60)">2 meses</button>
-      <button class="abast-h" data-dias="90"  onclick="abastSetHoriz(90)">3 meses</button>
-      <button class="abast-h" data-dias="180" onclick="abastSetHoriz(180)">6 meses</button>
-      <button class="abast-h" data-dias="365" onclick="abastSetHoriz(365)">1 año</button>
-      <button onclick="cargarAbastecimiento()" style="margin-left:8px;padding:7px 14px;border:1px solid #cbd5e1;background:#fff;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer">&#8635; Recargar</button>
-    </div>
-    <style>
-      .abast-h{padding:7px 14px;border:2px solid #e2e8f0;background:#fff;color:#475569;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer}
-      .abast-h.active{border-color:#7c3aed;background:#7c3aed;color:#fff}
-      #ptab-abastecimiento table{width:100%;border-collapse:collapse;font-size:12px}
-      #ptab-abastecimiento th{text-align:left;color:#64748b;font-size:11px;padding:6px 8px;border-bottom:2px solid #e2e8f0}
-      #ptab-abastecimiento td{padding:6px 8px;border-bottom:1px solid #f1f5f9}
-      .abast-falta{color:#dc2626;font-weight:800}
-      .abast-ok{color:#16a34a;font-weight:700}
-    </style>
-    <div id="abast-resumen" style="margin-bottom:12px"></div>
-    <div id="abast-contenido"><div style="padding:30px;text-align:center;color:#94a3b8">Elegí un horizonte para ver qué falta…</div></div>
-    <div id="abast-accion" style="margin-top:14px"></div>
   </div>
   <!-- Botones HIDDEN para no romper switchProgTab() y JS existente -->
   <div style="display:none">
@@ -11803,31 +11775,8 @@ async function ckMarcar(itemId, estado){
     cargarProgramacion(null);
   }
 
-  // ── Pestaña Abastecimiento · Sebastián 15-may-2026 ───────────────────────
-  var ABAST_HORIZ = 90;  // default 3 meses
-  function _abastEsc(s){
-    return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
-      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
-    });
-  }
-  function _abastG(gr){
-    gr = parseFloat(gr) || 0;
-    if(gr >= 1000) return (gr/1000).toFixed(1) + ' kg';
-    return Math.round(gr) + ' g';
-  }
-  function _abastKpi(lbl, val, color){
-    return '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:8px 14px;min-width:120px;text-align:center">' +
-      '<div style="font-size:21px;font-weight:800;color:' + color + '">' + val + '</div>' +
-      '<div style="font-size:10px;color:#64748b;text-transform:uppercase">' + lbl + '</div></div>';
-  }
-  function abastSetHoriz(dias){
-    ABAST_HORIZ = dias;
-    var btns = document.querySelectorAll('.abast-h');
-    for(var i=0;i<btns.length;i++){
-      btns[i].classList.toggle('active', parseInt(btns[i].dataset.dias) === dias);
-    }
-    cargarAbastecimiento();
-  }
+  // -- Pestana Abastecimiento (sistema VIVO en cargarAbastecimiento ~L20xxx)
+  // setAbastFoco resalta el horizonte foco y dispara la recarga.
   // Sebastián 24-may-2026 noche · selector 7 opciones · 15/30/60/90/120/180/365
   window.setAbastFoco = function(dias){
     window.ABAST_HORIZ = dias;
@@ -11844,206 +11793,6 @@ async function ckMarcar(itemId, estado){
     }
     if (typeof cargarAbastecimiento === 'function') cargarAbastecimiento();
   };
-  async function cargarAbastecimiento(){
-    var btns = document.querySelectorAll('.abast-h');
-    var hayActivo = document.querySelector('.abast-h.active');
-    if(!hayActivo){
-      for(var i=0;i<btns.length;i++){
-        if(parseInt(btns[i].dataset.dias) === ABAST_HORIZ) btns[i].classList.add('active');
-      }
-    }
-    var cont = document.getElementById('abast-contenido');
-    var resu = document.getElementById('abast-resumen');
-    var acc = document.getElementById('abast-accion');
-    if(!cont) return;
-    cont.innerHTML = '<div style="padding:30px;text-align:center;color:#94a3b8">Calculando materias primas y envases del plan…</div>';
-    resu.innerHTML = ''; acc.innerHTML = '';
-    try {
-      var r = await fetch('/api/programacion/producciones-faltantes?dias=' + ABAST_HORIZ, {cache:'no-store'});
-      var d = await r.json();
-      if(!r.ok){
-        cont.innerHTML = '<div style="color:#dc2626;padding:20px">Error: ' + _abastEsc(d.error || r.status) + '</div>';
-        return;
-      }
-      var mps = d.faltantes_mps || [];
-      var mees = d.faltantes_mees || [];
-      var nProd = (d.resumen && d.resumen.n_producciones) || (d.producciones || []).length;
-      resu.innerHTML = '<div style="display:flex;gap:10px;flex-wrap:wrap">' +
-        _abastKpi('Lotes en el horizonte', nProd, '#475569') +
-        _abastKpi('Materias primas faltan', mps.length, mps.length ? '#dc2626' : '#16a34a') +
-        _abastKpi('Envases faltan', mees.length, mees.length ? '#dc2626' : '#16a34a') +
-        '</div>';
-      var prods = d.producciones || [];
-      var html = '';
-
-      // Advertencia · productos con envases configurados pero SIN volumen_ml
-      // registrado · su faltante de envases NO se puede calcular (queda en 0).
-      var sinVol = d.productos_sin_volumen || [];
-      if(sinVol.length){
-        html += '<div style="background:#fffbeb;border:1px solid #fbbf24;border-left:4px solid #f59e0b;' +
-          'border-radius:8px;padding:10px 12px;margin:10px 0;color:#92400e;font-size:12px">' +
-          '<b>&#9888; ' + sinVol.length + ' producto(s) sin volumen registrado.</b> ' +
-          'No se puede calcular cuántos envases necesitan &middot; el faltante de envases puede estar incompleto. ' +
-          'Registrá el volumen (ml) de: ' + sinVol.map(_abastEsc).join(', ') +
-          '</div>';
-      }
-
-      // ═══ SECCIÓN 1 · Materias primas → Compras (agrupadas por proveedor) ═══
-      html += '<h3 style="margin:14px 0 8px;color:#6d28d9;font-size:15px">' +
-        '1 · Materias primas &rarr; Compras</h3>';
-      if(!mps.length){
-        html += '<div class="abast-ok" style="padding:10px">El stock de materias primas alcanza para todo el horizonte.</div>';
-      } else {
-        // Agrupar por proveedor · un bloque por proveedor
-        var porProv = {};
-        for(var a=0;a<mps.length;a++){
-          var prov = mps[a].proveedor_sugerido || 'Sin proveedor asignado';
-          (porProv[prov] = porProv[prov] || []).push(mps[a]);
-        }
-        Object.keys(porProv).sort().forEach(function(prov){
-          html += '<div style="border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;margin:8px 0;background:#faf8ff">';
-          html += '<div style="font-weight:800;color:#7c3aed;margin-bottom:6px">' +
-            '&#127981; ' + _abastEsc(prov) + ' &middot; ' + porProv[prov].length + ' material(es)</div>';
-          html += '<table><tr><th>Material</th><th>Necesario</th><th>En stock</th><th>Falta comprar</th></tr>';
-          porProv[prov].forEach(function(m){
-            html += '<tr><td>' + _abastEsc(m.nombre) + '</td>' +
-              '<td>' + _abastG(m.necesario_total_g) + '</td>' +
-              '<td>' + _abastG(m.stock_actual_g) + '</td>' +
-              '<td class="abast-falta">' + _abastG(m.faltante_g) + '</td></tr>';
-          });
-          html += '</table></div>';
-        });
-      }
-
-      // ═══ SECCIÓN 2 · Envases → alerta compartida (planta + Catalina) ═══
-      html += '<h3 style="margin:18px 0 8px;color:#6d28d9;font-size:15px">' +
-        '2 · Envases &rarr; alerta planta + Compras</h3>';
-      if(!mees.length){
-        html += '<div class="abast-ok" style="padding:10px">El stock de envases en la Bodega MEE alcanza.</div>';
-      } else {
-        // "Para cuándo" · fecha más temprana de una producción que usa cada envase
-        var fechaPorMee = {};
-        prods.forEach(function(p){
-          // Saltar producciones ya hechas/en proceso · su fecha no es un
-          // "para cuándo" futuro (mostraba fechas en el pasado).
-          if(p.realizada || p.en_proceso) return;
-          var f = (p.fecha || '').slice(0, 10);
-          if(!f) return;
-          (p.mees_necesarios || []).forEach(function(mn){
-            var cod = (mn.codigo || '').toUpperCase();
-            if(cod && (!fechaPorMee[cod] || f < fechaPorMee[cod])) fechaPorMee[cod] = f;
-          });
-        });
-        html += '<table><tr><th>Envase</th><th>Necesario</th><th>En bodega MEE</th>' +
-          '<th>Falta</th><th>Para cuándo</th><th>Proveedor</th><th>Acción</th></tr>';
-        for(var b=0;b<mees.length;b++){
-          var e = mees[b];
-          var cuando = fechaPorMee[(e.codigo || '').toUpperCase()] || '—';
-          // Sebastián 25-may-2026 · Fase C · si la bodega tiene stock pero
-          // hace falta serigrafiar/etiquetar para el lote programado, botón
-          // "🎨 Servicio" abre modal para crear OS con datos pre-llenados.
-          // Aplica cuando stock_actual_u >= necesario_total_u (no comprar)
-          // pero el envase requiere proceso adicional (logo/etiqueta).
-          var stockUds = parseFloat(e.stock_actual_u || 0);
-          var neceUds = parseFloat(e.necesario_total_u || 0);
-          var faltaUds = parseFloat(e.faltante_u || 0);
-          // Botón Servicio · útil tanto si falta (parte serigrafiar) como si
-          // tiene stock total (todo el lote necesita logo). Usa max(necesario,
-          // faltante) como sugerencia de cantidad para la OS.
-          var sugUds = Math.max(neceUds, faltaUds, 0);
-          var btnOS = '<button onclick="abastCrearOS(' +
-            '&quot;' + _abastEsc(e.codigo || '') + '&quot;,' +
-            '&quot;' + _abastEsc(e.descripcion || '').replace(/"/g,'&quot;') + '&quot;,' +
-            Math.round(sugUds) + ',' +
-            '&quot;' + _abastEsc(e.proveedor_sugerido || '').replace(/"/g,'&quot;') + '&quot;)" ' +
-            'style="background:#7c3aed;color:#fff;border:0;padding:4px 9px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer" ' +
-            'title="Crear Orden de Servicio (serigrafía / etiquetado) para este envase">🎨 Servicio</button>';
-          html += '<tr><td>' + _abastEsc(e.descripcion) + '</td>' +
-            '<td>' + Math.round(e.necesario_total_u) + ' u</td>' +
-            '<td>' + Math.round(e.stock_actual_u) + ' u</td>' +
-            '<td class="abast-falta">' + Math.round(e.faltante_u) + ' u</td>' +
-            '<td style="font-weight:700">' + _abastEsc(cuando) + '</td>' +
-            '<td>' + _abastEsc(e.proveedor_sugerido || '—') + '</td>' +
-            '<td>' + btnOS + '</td></tr>';
-        }
-        html += '</table>';
-        html += '<div style="font-size:11px;color:#64748b;margin-top:6px">' +
-          '&#128161; Planta revisa la Bodega MEE y alista lo que ya tiene &middot; ' +
-          'Catalina compra lo que falte. La misma alerta la ven los dos. &middot; ' +
-          '<b>🎨 Servicio</b> crea una OS de serigrafía/etiquetado (usa stock que ya tenés).</div>';
-      }
-      cont.innerHTML = html;
-      if(mps.length || mees.length){
-        acc.innerHTML = '<button onclick="abastGenerarSols()" style="background:#16a34a;color:#fff;border:none;padding:11px 22px;border-radius:8px;font-size:14px;font-weight:800;cursor:pointer">&#128228; Generar solicitudes a Compras</button>' +
-          '<div style="font-size:11px;color:#64748b;margin-top:6px">Crea las solicitudes agrupadas por proveedor · aparecen en el módulo Compras (Catalina).</div>';
-      } else {
-        acc.innerHTML = '<div style="color:#16a34a;font-weight:700">Nada que solicitar · el stock cubre el plan de este horizonte.</div>';
-      }
-    } catch(e){
-      cont.innerHTML = '<div style="color:#dc2626;padding:20px">Error de red: ' + _abastEsc(e.message) + '</div>';
-    }
-  }
-  // Sebastián 25-may-2026 · Fase C · crear OS de serigrafía/etiquetado para
-  // envases del Abastecimiento · pre-llena cantidad + proveedor sugerido.
-  async function abastCrearOS(envaseCod, envaseDesc, sugUds, provSug){
-    var tipo = prompt('Tipo de servicio:\\n· Serigrafía\\n· Tampografía\\n· Etiquetado\\n· Sleeve termoencogible\\n· Hot stamping\\n· Acondicionamiento externo', 'Serigrafía');
-    if(!tipo) return;
-    tipo = tipo.trim();
-    var prodFinal = prompt('Producto final (lo que sale del servicio · ej "Frasco BLUSH BALM con logo"):', envaseDesc + ' procesado');
-    if(!prodFinal) return;
-    var cantStr = prompt('Cantidad de unidades a procesar (sugerencia: '+sugUds+'):', String(sugUds));
-    if(!cantStr) return;
-    var cant = parseInt(cantStr, 10);
-    if(isNaN(cant) || cant <= 0){ alert('Cantidad inválida'); return; }
-    var prov = prompt('Proveedor del servicio (ej "Serigrafías ABC"):', provSug || '');
-    if(!prov) return;
-    var costo = prompt('Costo estimado COP (opcional · vacío = 0):', '');
-    var fechaReq = prompt('Fecha requerida de entrega (YYYY-MM-DD · opcional):', '');
-    var arte = prompt('Descripción del arte/especificación (opcional):', '');
-    if(!confirm('Crear OS:\\n· Tipo: '+tipo+'\\n· Producto: '+prodFinal+'\\n· Cantidad: '+cant+' uds\\n· Proveedor: '+prov+'\\n· Envase MEE: '+envaseCod+'\\n\\nEstado inicial: Borrador (después marcar Enviada para descontar stock)')) return;
-    try{
-      var body = {
-        tipo_servicio: tipo,
-        producto_final: prodFinal,
-        proveedor: prov,
-        cantidad_unidades: cant,
-        envase_codigo_mee: envaseCod,
-        envase_descripcion: envaseDesc,
-        arte_descripcion: arte || '',
-      };
-      if(costo && parseFloat(costo) > 0) body.costo_estimado_cop = parseFloat(costo);
-      if(fechaReq && /^\\d{4}-\\d{2}-\\d{2}$/.test(fechaReq.trim())) body.fecha_requerida_entrega = fechaReq.trim();
-      var r = await fetch('/api/compras/ordenes-servicio', {
-        method:'POST',
-        headers:{'Content-Type':'application/json','X-CSRF-Token':(typeof csrfTokenNec==='function'?csrfTokenNec():'')},
-        body: JSON.stringify(body),
-      });
-      var d = await r.json();
-      if(!r.ok){ alert('Error: '+(d.error||r.status)); return; }
-      alert('✅ OS creada: '+d.numero_os+'\\n\\nEstado: Borrador · revisala en /compras → tab Órdenes de Servicio para marcarla Enviada (descuenta stock MEE).');
-    }catch(e){ alert('Error red: '+e.message); }
-  }
-
-  async function abastGenerarSols(){
-    if(!confirm('¿Generar las solicitudes de compra para el horizonte de ' + ABAST_HORIZ + ' días?\\n\\nSe crean agrupadas por proveedor y aparecen en el módulo Compras.')) return;
-    try {
-      var r = await fetch('/api/programacion/solicitar-faltantes-bulk', {
-        method:'POST',
-        headers:{'Content-Type':'application/json','X-CSRF-Token':(typeof csrfTokenNec==='function'?csrfTokenNec():'')},
-        body: JSON.stringify({dias: ABAST_HORIZ, urgencia:'Alta'}),
-      });
-      var d = await r.json();
-      if(!r.ok){ alert('Error: ' + (d.error || ('HTTP ' + r.status))); return; }
-      var msg = '✅ ' + d.total_solicitudes + ' solicitud(es) creada(s) para ' +
-        d.total_proveedores + ' proveedor(es):\\n\\n';
-      (d.solicitudes_creadas || []).forEach(function(s){
-        msg += '· ' + s.numero + ' · ' + s.proveedor + ' · ' + s.items_count + ' items\\n';
-      });
-      msg += '\\nYa están en el módulo Compras.';
-      alert(msg);
-      cargarAbastecimiento();
-    } catch(e){ alert('Error de red: ' + e.message); }
-  }
 
   // ── Sub-tabs internos de Programacion ────────────────────────────────────
   // Sprint Programación 20-may-2026 · Opción A · 4 grupos visuales.
@@ -20373,6 +20122,125 @@ async function ckMarcar(itemId, estado){
   function escapeHtmlNec(s) {
     if (s === null || s === undefined) return '';
     return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  // Sebastián 30-may-2026 · Verificar Shopify · reconciliación ventas por SKU.
+  // ¿Llega Shopify? ¿cada SKU/sub-SKU se atribuye? ¿cuánta demanda se pierde?
+  window._SHOPIFY_DIAG = null;
+  async function verificarShopify(){
+    var m = document.getElementById('modal-shopify-diag');
+    if(m) m.remove();
+    m = document.createElement('div');
+    m.id = 'modal-shopify-diag';
+    m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:20px;overflow:auto';
+    m.innerHTML = '<div style="background:#fff;border-radius:12px;max-width:1150px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,.3);padding:24px"><div style="text-align:center;padding:40px;color:#94a3b8">Reconciliando ventas de Shopify…</div></div>';
+    document.body.appendChild(m);
+    m.addEventListener('click', function(e){ if(e.target === m) m.remove(); });
+    try {
+      var r = await fetch('/api/plan/diagnostico-shopify', {cache:'no-store'});
+      if(r.status === 401){ window.location.href = '/login'; return; }
+      var d = await r.json();
+      if(!r.ok || !d.ok){
+        m.querySelector('div').innerHTML = '<div style="color:#dc2626;padding:30px">Error: ' + escapeHtmlNec((d && d.error) || r.status) + '</div>';
+        return;
+      }
+      window._SHOPIFY_DIAG = d;
+      var esc = escapeHtmlNec;
+      var s = d.sync || {}, rec = d.reconciliacion || {};
+      var cob = rec.pct_cobertura_real || 0;
+      var cobColor = cob >= 95 ? '#15803d' : (cob >= 80 ? '#b45309' : '#b91c1c');
+      var cfg = s.shopify_configurado;
+      var cfgTxt = cfg === true ? '✅ conectado' + (s.shopify_shop ? ' (' + esc(s.shopify_shop) + ')' : '')
+                  : (cfg === false ? '❌ NO configurado' : '— desconocido');
+      var html = '';
+      // Header
+      html += '<div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #e2e8f0;padding-bottom:12px;margin-bottom:14px">';
+      html += '<div><h2 style="margin:0;font-size:18px;color:#0f766e">🔍 Verificar Shopify · reconciliación de ventas por SKU</h2>';
+      html += '<div style="font-size:11px;color:#64748b;margin-top:3px">Ventana 90 días · filtra cancelled/refunded · DTC-only</div></div>';
+      html += '<button onclick="document.getElementById(&quot;modal-shopify-diag&quot;).remove()" style="background:#e2e8f0;color:#475569;border:none;width:36px;height:36px;border-radius:50%;font-size:20px;cursor:pointer">×</button>';
+      html += '</div>';
+      // Salud de ingesta
+      html += '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;font-size:12px">';
+      function kpi(lbl, val, col){ return '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:8px 14px;min-width:120px;text-align:center"><div style="font-size:18px;font-weight:800;color:' + (col||'#1e293b') + '">' + val + '</div><div style="font-size:10px;color:#64748b;text-transform:uppercase">' + lbl + '</div></div>'; }
+      html += kpi('Shopify', cfgTxt, cfg === false ? '#b91c1c' : '#0f766e');
+      html += kpi('Órdenes totales', (s.ordenes_total||0).toLocaleString('es-CO'));
+      html += kpi('Últimos 30d', s.ordenes_30d||0);
+      html += kpi('Últimos 60d', s.ordenes_60d||0);
+      html += kpi('Últimos 90d', s.ordenes_90d||0);
+      html += kpi('Última orden', s.fecha_max ? esc(String(s.fecha_max).slice(0,10)) : '—');
+      html += kpi('Último sync', s.ultimo_synced_at ? esc(String(s.ultimo_synced_at).slice(0,16).replace('T',' ')) : '—');
+      html += '</div>';
+      // Reconciliación
+      html += '<div style="background:linear-gradient(90deg,#f0fdfa,#ecfeff);border:1px solid #99f6e4;border-radius:10px;padding:14px;margin-bottom:14px">';
+      html += '<div style="display:flex;align-items:center;gap:18px;flex-wrap:wrap">';
+      html += '<div style="text-align:center"><div style="font-size:34px;font-weight:900;color:' + cobColor + '">' + cob + '%</div><div style="font-size:11px;color:#475569;max-width:130px">demanda que SÍ entra al plan</div></div>';
+      html += '<div style="flex:1;min-width:260px;display:flex;gap:8px;flex-wrap:wrap">';
+      html += kpi('Mapeadas 90d', (rec.uds_mapeadas_90d||0).toLocaleString('es-CO'), '#15803d');
+      html += kpi('Huérfanas 90d', (rec.uds_huerfanas_90d||0).toLocaleString('es-CO'), (rec.uds_huerfanas_90d>0?'#b45309':'#15803d'));
+      html += kpi('SKU vacío 90d', (rec.uds_sku_vacio_90d||0).toLocaleString('es-CO'), (rec.uds_sku_vacio_90d>0?'#b91c1c':'#15803d'));
+      html += kpi('Regalo 90d', (rec.uds_regalo_90d||0).toLocaleString('es-CO'), '#64748b');
+      html += '</div></div>';
+      // Alertas de fuga
+      var alertas = '';
+      if((rec.uds_sku_vacio_90d||0) > 0){
+        var muestra = (d.sku_vacio && d.sku_vacio.ordenes_muestra) || [];
+        alertas += '<div style="background:#fef2f2;border-left:4px solid #dc2626;border-radius:6px;padding:8px 12px;margin-top:10px;color:#991b1b;font-size:12px"><b>⚠ ' + (rec.uds_sku_vacio_90d) + ' uds vendidas sin SKU en Shopify (' + (rec.pct_perdido_sku_vacio||0) + '%)</b> · esa demanda se PIERDE. Asigná SKU a esas variantes en Shopify. Órdenes ej.: ' + muestra.slice(0,12).map(esc).join(', ') + '</div>';
+      }
+      if((rec.uds_huerfanas_90d||0) > 0){
+        alertas += '<div style="background:#fffbeb;border-left:4px solid #f59e0b;border-radius:6px;padding:8px 12px;margin-top:8px;color:#92400e;font-size:12px"><b>⚠ ' + (rec.n_skus_huerfanos) + ' SKU sin mapear = ' + (rec.uds_huerfanas_90d) + ' uds (' + (rec.pct_perdido_huerfano||0) + '%)</b> · vendiste pero no cuentan al plan. Mapealos en sku_producto_map (tabla de abajo, filas naranja).</div>';
+      }
+      if(!alertas){
+        alertas = '<div style="background:#f0fdf4;border-left:4px solid #16a34a;border-radius:6px;padding:8px 12px;margin-top:10px;color:#15803d;font-size:12px"><b>✓ Sin fugas</b> · toda la venta no-regalo está mapeada a un producto.</div>';
+      }
+      html += alertas;
+      html += '</div>';
+      // Tabla por SKU
+      var det = d.por_sku || [];
+      html += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">';
+      html += '<h3 style="margin:0;font-size:14px;color:#0f766e">Ventas por SKU / sub-SKU (' + det.length + ')</h3>';
+      html += '<input type="text" placeholder="🔍 filtrar SKU / producto / tono…" oninput="_filtShopify(this.value)" style="flex:1;max-width:340px;padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:12px">';
+      html += '</div>';
+      html += '<div style="overflow-x:auto;border:1px solid #e2e8f0;border-radius:8px">';
+      html += '<table style="width:100%;border-collapse:collapse;font-size:12px">';
+      html += '<thead><tr style="background:#f8fafc;color:#475569">';
+      ['SKU','Producto','Estado','Tono','ml','30d','60d','90d'].forEach(function(h, i){
+        var al = i >= 5 ? 'right' : (i===2||i===4?'center':'left');
+        html += '<th style="text-align:' + al + ';padding:7px 8px;font-weight:700;white-space:nowrap">' + h + '</th>';
+      });
+      html += '</tr></thead><tbody id="shopify-diag-tbody">';
+      det.forEach(function(it){
+        var badge, bg = '#fff';
+        if(it.estado === 'MAPEADO'){ badge = '<span style="background:#dcfce7;color:#15803d;padding:1px 7px;border-radius:4px;font-weight:700">MAPEADO</span>'; }
+        else if(it.estado === 'REGALO'){ badge = '<span style="background:#f1f5f9;color:#64748b;padding:1px 7px;border-radius:4px;font-weight:700">REGALO</span>'; }
+        else { badge = '<span style="background:#fee2e2;color:#b91c1c;padding:1px 7px;border-radius:4px;font-weight:700">HUÉRFANO</span>'; bg = '#fff7ed'; }
+        var mlTxt = it.ml_faltante ? '<span style="color:#b45309;font-weight:700" title="Producto mapeado pero sin volumen_ml · no se puede convertir uds→kg">⚠ falta</span>' : (it.ml ? it.ml : '—');
+        var sattr = ((it.sku||'') + ' ' + (it.producto||'') + ' ' + (it.tono||'')).toLowerCase();
+        html += '<tr data-s="' + esc(sattr) + '" style="border-top:1px solid #f1f5f9;background:' + bg + '">';
+        html += '<td style="padding:6px 8px;font-family:ui-monospace;font-weight:700">' + esc(it.sku||'') + '</td>';
+        html += '<td style="padding:6px 8px">' + (it.producto ? esc(it.producto) : '<span style="color:#94a3b8">— sin mapear —</span>') + '</td>';
+        html += '<td style="padding:6px 8px;text-align:center">' + badge + '</td>';
+        html += '<td style="padding:6px 8px">' + (it.tono ? esc(it.tono) : '') + '</td>';
+        html += '<td style="padding:6px 8px;text-align:center">' + mlTxt + '</td>';
+        html += '<td style="padding:6px 8px;text-align:right">' + (it.uds_30d||0) + '</td>';
+        html += '<td style="padding:6px 8px;text-align:right">' + (it.uds_60d||0) + '</td>';
+        html += '<td style="padding:6px 8px;text-align:right;font-weight:700">' + (it.uds_90d||0) + '</td>';
+        html += '</tr>';
+      });
+      if(!det.length){ html += '<tr><td colspan="8" style="padding:20px;text-align:center;color:#94a3b8">Sin ventas en la ventana de 90 días</td></tr>'; }
+      html += '</tbody></table></div>';
+      html += '<div style="font-size:11px;color:#94a3b8;margin-top:8px">' + esc(d.nota||'') + '</div>';
+      m.querySelector('div').innerHTML = html;
+    } catch(e) {
+      m.querySelector('div').innerHTML = '<div style="color:#dc2626;padding:30px">Error de red: ' + escapeHtmlNec(e.message) + '</div>';
+    }
+  }
+  function _filtShopify(q){
+    q = (q || '').toLowerCase().trim();
+    var rows = document.querySelectorAll('#shopify-diag-tbody tr');
+    for(var i=0;i<rows.length;i++){
+      var s = rows[i].getAttribute('data-s') || '';
+      rows[i].style.display = (!q || s.indexOf(q) >= 0) ? '' : 'none';
+    }
   }
 
   async function cargarNecesidades() {

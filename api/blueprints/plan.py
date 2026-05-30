@@ -1522,6 +1522,208 @@ def plan_desglose_tonos():
     })
 
 
+@bp.route("/api/plan/diagnostico-shopify", methods=["GET"])
+def diagnostico_shopify_skus():
+    """Read-only · verifica la ingesta Shopify y la atribución por SKU/sub-SKU.
+
+    Responde 3 preguntas de Sebastián (30-may-2026):
+      1. ¿Está llegando de verdad Shopify? → salud de ingesta (conteos, frescura).
+      2. ¿Se ve lo que se vende por cada SKU y sub-SKU? → ventas 30/60/90d por SKU.
+      3. ¿Se pierde demanda? → reconciliación: uds mapeadas vs huérfanas vs SKU vacío.
+
+    NO muta nada. Una sola pasada sobre animus_shopify_orders (90d), filtrando
+    cancelled/refunded igual que el cálculo real de necesidades (_calcular_animus_dtc).
+    """
+    err = _require_login()
+    if err:
+        return err
+    import json as _json
+    from datetime import timedelta as _td
+    try:
+        from tz_colombia import hoy_colombia as _hoy_col
+    except ImportError:
+        from api.tz_colombia import hoy_colombia as _hoy_col
+    conn = get_db()
+    cur = conn.cursor()
+    hoy = _hoy_col()
+
+    # ── 1. Salud de ingesta ────────────────────────────────────────────────
+    meta = cur.execute(
+        "SELECT COUNT(*), MIN(creado_en), MAX(creado_en), MAX(synced_at) "
+        "FROM animus_shopify_orders"
+    ).fetchone()
+
+    def _cnt(dias):
+        desde = (hoy - _td(days=dias)).isoformat() + 'T00:00:00'
+        return cur.execute(
+            "SELECT COUNT(*) FROM animus_shopify_orders WHERE creado_en >= ?",
+            (desde,)).fetchone()[0]
+
+    sync = {
+        'ordenes_total': meta[0] or 0,
+        'fecha_min': meta[1], 'fecha_max': meta[2],
+        'ultimo_synced_at': meta[3],
+        'ordenes_30d': _cnt(30), 'ordenes_60d': _cnt(60), 'ordenes_90d': _cnt(90),
+    }
+    try:
+        from shopify_client import _get_shopify_config
+        tok, shop = _get_shopify_config(conn)
+        sync['shopify_configurado'] = bool(tok and shop)
+        sync['shopify_shop'] = shop or None
+    except Exception:
+        sync['shopify_configurado'] = None
+
+    # ── 2. Mapa SKU→producto (+es_regalo +tono) y ml por SKU ────────────────
+    # Degrada por columnas que pueden faltar en instancias viejas (mig 170/177).
+    rows_map = []
+    for _sel in (
+        "SELECT UPPER(TRIM(sku)), producto_nombre, COALESCE(es_regalo,0), COALESCE(tono_label,'')",
+        "SELECT UPPER(TRIM(sku)), producto_nombre, COALESCE(es_regalo,0), ''",
+        "SELECT UPPER(TRIM(sku)), producto_nombre, 0, ''",
+    ):
+        try:
+            rows_map = cur.execute(
+                _sel + " FROM sku_producto_map WHERE COALESCE(activo,1)=1 "
+                "AND producto_nombre IS NOT NULL AND TRIM(producto_nombre)!=''"
+            ).fetchall()
+            break
+        except Exception:
+            continue
+    sku_to_prod, skus_regalo, tono_por_sku = {}, set(), {}
+    for r in rows_map:
+        sku_to_prod[r[0]] = r[1]
+        if r[2]:
+            skus_regalo.add(r[0])
+        if r[3]:
+            tono_por_sku[r[0]] = r[3]
+    ml_por_sku = {}
+    try:
+        for r in cur.execute(
+            "SELECT UPPER(TRIM(sku_shopify)), volumen_ml FROM producto_presentaciones "
+            "WHERE COALESCE(activo,1)=1 AND sku_shopify IS NOT NULL "
+            "AND TRIM(sku_shopify)!='' AND COALESCE(volumen_ml,0)>0"
+        ).fetchall():
+            ml_por_sku[r[0]] = float(r[1])
+    except Exception:
+        pass
+
+    # ── 3. Una pasada sobre órdenes 90d (filtrando cancel/refund) ───────────
+    cut90 = (hoy - _td(days=90)).isoformat() + 'T00:00:00'
+    cut60 = (hoy - _td(days=60)).isoformat() + 'T00:00:00'
+    cut30 = (hoy - _td(days=30)).isoformat() + 'T00:00:00'
+    rows = cur.execute(
+        "SELECT sku_items, creado_en, nombre FROM animus_shopify_orders "
+        "WHERE creado_en >= ? AND sku_items IS NOT NULL AND sku_items!='' "
+        "AND LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided') "
+        "AND LOWER(COALESCE(estado_pago,'')) NOT IN ('refunded','voided','partially_refunded')",
+        (cut90,)).fetchall()
+
+    por_sku = {}           # sku -> {30,60,90}
+    uds_vacio = {'30': 0, '60': 0, '90': 0}
+    uds_total = {'30': 0, '60': 0, '90': 0}
+    ordenes_vacio = []     # muestra de órdenes con line item sin SKU
+    for r in rows:
+        try:
+            items = _json.loads(r[0]) if r[0] else []
+        except Exception:
+            continue
+        if not isinstance(items, list):
+            continue
+        creado = r[1] or ''
+        e60 = creado >= cut60
+        e30 = creado >= cut30   # e90 garantizado por el WHERE
+        tiene_vacio = False
+        for it in items:
+            sku = str(it.get('sku', '') or '').strip().upper()
+            qty = int(it.get('qty') or it.get('quantity') or it.get('cantidad') or 0)
+            if qty <= 0:
+                continue
+            uds_total['90'] += qty
+            if e60:
+                uds_total['60'] += qty
+            if e30:
+                uds_total['30'] += qty
+            if not sku:
+                tiene_vacio = True
+                uds_vacio['90'] += qty
+                if e60:
+                    uds_vacio['60'] += qty
+                if e30:
+                    uds_vacio['30'] += qty
+                continue
+            d = por_sku.setdefault(sku, {'30': 0, '60': 0, '90': 0})
+            d['90'] += qty
+            if e60:
+                d['60'] += qty
+            if e30:
+                d['30'] += qty
+        if tiene_vacio and len(ordenes_vacio) < 20:
+            ordenes_vacio.append(r[2] or '(sin nombre)')
+
+    # ── 4. Clasificar cada SKU + reconciliación ─────────────────────────────
+    detalle = []
+    uds_map = {'30': 0, '60': 0, '90': 0}
+    uds_huerf = {'30': 0, '60': 0, '90': 0}
+    uds_regalo = {'30': 0, '60': 0, '90': 0}
+    n_map = n_huerf = n_regalo = 0
+    for sku, d in por_sku.items():
+        if sku in skus_regalo:
+            estado, prod = 'REGALO', sku_to_prod.get(sku)
+            n_regalo += 1
+            for k in ('30', '60', '90'):
+                uds_regalo[k] += d[k]
+        elif sku in sku_to_prod:
+            estado, prod = 'MAPEADO', sku_to_prod[sku]
+            n_map += 1
+            for k in ('30', '60', '90'):
+                uds_map[k] += d[k]
+        else:
+            estado, prod = 'HUERFANO', None
+            n_huerf += 1
+            for k in ('30', '60', '90'):
+                uds_huerf[k] += d[k]
+        detalle.append({
+            'sku': sku, 'producto': prod, 'estado': estado,
+            'es_regalo': sku in skus_regalo,
+            'tono': tono_por_sku.get(sku) or None,
+            'ml': ml_por_sku.get(sku),
+            'ml_faltante': (estado == 'MAPEADO' and sku not in ml_por_sku),
+            'uds_30d': d['30'], 'uds_60d': d['60'], 'uds_90d': d['90'],
+        })
+    detalle.sort(key=lambda x: -x['uds_90d'])
+
+    tot90 = uds_total['90'] or 1
+    reconciliacion = {
+        'uds_total_90d': uds_total['90'],
+        'uds_mapeadas_90d': uds_map['90'],
+        'uds_huerfanas_90d': uds_huerf['90'],
+        'uds_regalo_90d': uds_regalo['90'],
+        'uds_sku_vacio_90d': uds_vacio['90'],
+        # % de la demanda que SÍ entra al plan (mapeada, no-regalo):
+        'pct_cobertura_real': round(100.0 * uds_map['90'] / tot90, 1),
+        'pct_perdido_huerfano': round(100.0 * uds_huerf['90'] / tot90, 1),
+        'pct_perdido_sku_vacio': round(100.0 * uds_vacio['90'] / tot90, 1),
+        'n_skus_distintos': len(por_sku),
+        'n_skus_mapeados': n_map,
+        'n_skus_huerfanos': n_huerf,
+        'n_skus_regalo': n_regalo,
+    }
+    return jsonify({
+        'ok': True,
+        'sync': sync,
+        'reconciliacion': reconciliacion,
+        'por_sku': detalle,
+        'sku_vacio': {
+            'uds_30d': uds_vacio['30'], 'uds_60d': uds_vacio['60'],
+            'uds_90d': uds_vacio['90'], 'ordenes_muestra': ordenes_vacio,
+        },
+        'nota': ('uds_mapeadas = demanda que SÍ entra al plan · huerfanas = SKU '
+                 'vendido pero sin fila en sku_producto_map · sku_vacio = line '
+                 'items sin SKU en Shopify (se pierden) · regalo = es_regalo=1 '
+                 '(excluido a propósito). Filtra cancelled/refunded. DTC-only.'),
+    })
+
+
 @bp.route("/api/admin/formula-desactivar", methods=["POST"])
 def admin_formula_desactivar():
     """Sebastián 24-may · 'EMULSION ANTIOX, SUERO C+B3, SUERO AZ+B3 ya
