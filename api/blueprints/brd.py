@@ -838,6 +838,155 @@ def crear_ebr_desde_mbr(cur, *, producto_nombre, lote, produccion_id=None,
     return {'ok': True, 'id': ebr_id, 'numero_op': numero_op, 'pasos': len(pasos)}
 
 
+def _generar_mbr_desde_formula(cur, producto_nombre, usuario=''):
+    """Crea un MBR borrador a partir de la fórmula EXISTENTE del producto.
+
+    Reemplazo MyBatch · las fórmulas ya viven en EOS (formula_headers/items), así
+    que no se re-ingresa la receta: el MBR se vincula a la fórmula
+    (formula_version_id = formula_headers.id) y genera un paso de dispensación
+    por componente + un paso de mezcla. El usuario revisa, agrega IPCs y aprueba.
+    NO commitea. Idempotente: si el producto ya tiene un MBR no-obsoleto, lo reusa.
+
+    Returns dict: {ok, id, version, pasos, lote_size_g} | {ok, id, estado, ya_existe}
+                  | {ok:False, error:'SIN_FORMULA'}
+    """
+    # No duplicar: si ya hay un MBR vigente (draft/en_revision/aprobado), reusar.
+    ex = cur.execute(
+        """SELECT id, estado, version FROM mbr_templates
+            WHERE producto_nombre=? AND COALESCE(estado,'') != 'obsoleto'
+            ORDER BY version DESC LIMIT 1""",
+        (producto_nombre,),
+    ).fetchone()
+    if ex:
+        return {'ok': True, 'id': ex[0], 'estado': ex[1], 'version': ex[2],
+                'ya_existe': True}
+    # Fórmula activa del producto (la receta ya existe en EOS).
+    fh = cur.execute(
+        """SELECT id, COALESCE(lote_size_kg,0), COALESCE(unidad_base_g,0)
+             FROM formula_headers
+            WHERE producto_nombre=? AND COALESCE(activo,1)=1
+            ORDER BY id DESC LIMIT 1""",
+        (producto_nombre,),
+    ).fetchone()
+    if not fh:
+        return {'ok': False, 'error': 'SIN_FORMULA',
+                'detail': f"'{producto_nombre}' no tiene fórmula activa"}
+    formula_id = fh[0]
+    items = cur.execute(
+        """SELECT material_nombre, material_id, COALESCE(porcentaje,0),
+                  COALESCE(cantidad_g_por_lote,0)
+             FROM formula_items WHERE producto_nombre=?
+            ORDER BY cantidad_g_por_lote DESC""",
+        (producto_nombre,),
+    ).fetchall()
+    # Tamaño de lote en g: lote_size_kg*1000, o unidad_base_g, o suma de componentes.
+    lote_size_g = fh[1] * 1000.0 or fh[2] or sum(float(i[3] or 0) for i in items)
+    if lote_size_g <= 0:
+        lote_size_g = 1000.0  # fallback razonable; el usuario lo ajusta en draft
+    version = _next_version(cur, producto_nombre)
+    cur.execute(
+        """INSERT INTO mbr_templates
+             (producto_nombre, formula_version_id, version, estado, lote_size_g, creado_por)
+           VALUES (?, ?, ?, 'draft', ?, ?)""",
+        (producto_nombre, formula_id, version, float(lote_size_g), usuario),
+    )
+    mbr_id = cur.lastrowid
+    orden = 0
+    for it in items:
+        orden += 1
+        mat_nom, mat_id, pct, cant_g = it[0], it[1], it[2], it[3]
+        desc = f"Dispensar {mat_nom or mat_id} ({mat_id}) — {round(float(cant_g or 0),2)} g ({round(float(pct or 0),2)}%)"
+        cur.execute(
+            """INSERT INTO mbr_pasos
+                 (mbr_template_id, orden, fase, descripcion, tipo_paso,
+                  requiere_e_sign, requiere_qc)
+               VALUES (?, ?, 'Dispensación', ?, 'dispensacion', 1, 0)""",
+            (mbr_id, orden, desc),
+        )
+    # Paso de mezcla/homogenización tras la dispensación.
+    orden += 1
+    cur.execute(
+        """INSERT INTO mbr_pasos
+             (mbr_template_id, orden, fase, descripcion, tipo_paso,
+              requiere_e_sign, requiere_qc)
+           VALUES (?, ?, 'Fabricación', 'Mezcla y homogenización del granel', 'mezclado', 1, 0)""",
+        (mbr_id, orden),
+    )
+    return {'ok': True, 'id': mbr_id, 'version': version, 'pasos': orden,
+            'lote_size_g': float(lote_size_g)}
+
+
+@bp.route("/api/brd/mbr/generar-desde-formula", methods=["POST"])
+def mbr_generar_desde_formula():
+    """Genera un MBR borrador desde la fórmula de UN producto. Body: {producto_nombre}."""
+    err = _require_login()
+    if err:
+        return err
+    user = session.get("compras_user", "")
+    if user not in ADMIN_USERS and user not in CALIDAD_USERS:
+        return jsonify({"error": "solo Admin/Calidad puede generar MBR"}), 403
+    body = request.get_json(silent=True) or {}
+    producto = (body.get("producto_nombre") or "").strip()
+    if not producto:
+        return jsonify({"error": "producto_nombre requerido"}), 400
+    conn = get_db(); cur = conn.cursor()
+    res = _generar_mbr_desde_formula(cur, producto, usuario=user)
+    if not res.get("ok"):
+        return jsonify(res), 404
+    if not res.get("ya_existe"):
+        audit_log(cur, usuario=user, accion="GENERAR_MBR_DESDE_FORMULA",
+                  tabla="mbr_templates", registro_id=res["id"],
+                  despues={"producto": producto, "version": res.get("version"),
+                            "pasos": res.get("pasos")})
+    conn.commit()
+    return jsonify(res), (200 if res.get("ya_existe") else 201)
+
+
+@bp.route("/api/brd/mbr/generar-todas-desde-formulas", methods=["POST"])
+def mbr_generar_todas_desde_formulas():
+    """Genera MBR borrador para TODAS las fórmulas activas sin MBR vigente (bulk).
+
+    Idempotente: salta productos que ya tienen MBR no-obsoleto. Devuelve resumen.
+    """
+    err = _require_login()
+    if err:
+        return err
+    user = session.get("compras_user", "")
+    if user not in ADMIN_USERS and user not in CALIDAD_USERS:
+        return jsonify({"error": "solo Admin/Calidad puede generar MBR"}), 403
+    conn = get_db(); cur = conn.cursor()
+    productos = [r[0] for r in cur.execute(
+        """SELECT DISTINCT producto_nombre FROM formula_headers
+            WHERE COALESCE(activo,1)=1 AND producto_nombre IS NOT NULL
+              AND TRIM(producto_nombre) != ''
+            ORDER BY producto_nombre""",
+    ).fetchall()]
+    creados, reusados, sin_formula = [], [], []
+    for p in productos:
+        res = _generar_mbr_desde_formula(cur, p, usuario=user)
+        if not res.get("ok"):
+            sin_formula.append(p)
+        elif res.get("ya_existe"):
+            reusados.append(p)
+        else:
+            creados.append({"producto": p, "mbr_id": res["id"], "pasos": res.get("pasos")})
+            audit_log(cur, usuario=user, accion="GENERAR_MBR_DESDE_FORMULA",
+                      tabla="mbr_templates", registro_id=res["id"],
+                      despues={"producto": p, "version": res.get("version"),
+                                "pasos": res.get("pasos"), "bulk": True})
+    conn.commit()
+    return jsonify({
+        "ok": True,
+        "total_formulas": len(productos),
+        "mbr_creados": len(creados),
+        "ya_tenian_mbr": len(reusados),
+        "sin_formula": sin_formula,
+        "creados": creados,
+        "nota": "MBR creados en DRAFT · revisá pasos, agregá IPCs y aprobá cada uno "
+                "(la aprobación exige e-firma). Recién ahí EBR_MODE=strict los usará.",
+    }), 201
+
+
 @bp.route("/api/brd/ebr", methods=["POST"])
 def iniciar_ebr():
     err = _require_login()

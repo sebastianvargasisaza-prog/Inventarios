@@ -5066,6 +5066,65 @@ def test_golden_ebr_auto_al_aceptar_produccion(app, db_clean, monkeypatch):
         conn.execute("DELETE FROM mbr_templates WHERE id=?", (mbr_id,))
         conn.commit(); conn.close()
 
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 63 · Reemplazo MyBatch · generar MBR desde fórmula existente
+# ═══════════════════════════════════════════════════════════════════
+# Las fórmulas ya viven en EOS · el MBR se bootstrapea desde formula_items
+# (1 paso de dispensación por componente + mezcla) vinculado a la fórmula,
+# en draft, para revisar+aprobar. Idempotente. Sin fórmula → 404.
+def test_golden_generar_mbr_desde_formula(app, db_clean):
+    """Genera MBR draft desde fórmula (pasos desde componentes) · idempotente · sin fórmula 404."""
+    import sqlite3 as _sq
+    cs = _login(app, 'sebastian')
+
+    def _exec(sql, params=()):
+        conn = _sq.connect(os.environ['DB_PATH'], timeout=10.0)
+        try:
+            cur = conn.execute(sql, params); conn.commit(); return cur.lastrowid
+        finally:
+            conn.close()
+
+    # MP en maestro (trigger FK: formula_items.material_id debe existir activo)
+    _exec("INSERT OR IGNORE INTO maestro_mps (codigo_mp, nombre_inci, activo) VALUES ('MP-A','Agua',1)")
+    _exec("INSERT OR IGNORE INTO maestro_mps (codigo_mp, nombre_inci, activo) VALUES ('MP-B','Glicerina',1)")
+    _exec("INSERT INTO formula_headers (producto_nombre, lote_size_kg, activo) VALUES ('PROD-MBRGEN-T1', 2, 1)")
+    _exec("INSERT INTO formula_items (producto_nombre, material_id, material_nombre, porcentaje, cantidad_g_por_lote) VALUES ('PROD-MBRGEN-T1','MP-A','Agua',60,1200)")
+    _exec("INSERT INTO formula_items (producto_nombre, material_id, material_nombre, porcentaje, cantidad_g_por_lote) VALUES ('PROD-MBRGEN-T1','MP-B','Glicerina',40,800)")
+    try:
+        # Generar desde fórmula → 201, draft, 2 dispensaciones + 1 mezcla = 3 pasos
+        r = cs.post('/api/brd/mbr/generar-desde-formula',
+                    json={'producto_nombre': 'PROD-MBRGEN-T1'}, headers=csrf_headers())
+        assert r.status_code == 201, r.data
+        d = r.get_json()
+        assert d['ok'] and d.get('pasos') == 3 and d.get('lote_size_g') == 2000.0, d
+        mbr_id = d['id']
+        conn = _sq.connect(os.environ['DB_PATH'], timeout=10.0)
+        estado, fvid = conn.execute("SELECT estado, formula_version_id FROM mbr_templates WHERE id=?", (mbr_id,)).fetchone()
+        n_disp = conn.execute("SELECT COUNT(*) FROM mbr_pasos WHERE mbr_template_id=? AND tipo_paso='dispensacion'", (mbr_id,)).fetchone()[0]
+        conn.close()
+        assert estado == 'draft' and fvid is not None, 'MBR draft vinculado a la fórmula'
+        assert n_disp == 2, 'un paso de dispensación por componente'
+        # Idempotente: re-generar reusa (200 ya_existe)
+        r2 = cs.post('/api/brd/mbr/generar-desde-formula',
+                     json={'producto_nombre': 'PROD-MBRGEN-T1'}, headers=csrf_headers())
+        assert r2.status_code == 200 and r2.get_json().get('ya_existe') is True
+        # Producto sin fórmula → 404 SIN_FORMULA
+        r3 = cs.post('/api/brd/mbr/generar-desde-formula',
+                     json={'producto_nombre': 'NO-EXISTE-FORMULA'}, headers=csrf_headers())
+        assert r3.status_code == 404 and r3.get_json().get('error') == 'SIN_FORMULA'
+    finally:
+        conn = _sq.connect(os.environ['DB_PATH'], timeout=10.0)
+        ids = [r[0] for r in conn.execute("SELECT id FROM mbr_templates WHERE producto_nombre='PROD-MBRGEN-T1'").fetchall()]
+        for mid in ids:
+            conn.execute("UPDATE mbr_templates SET estado='draft' WHERE id=?", (mid,))
+            conn.execute("DELETE FROM mbr_pasos WHERE mbr_template_id=?", (mid,))
+            conn.execute("DELETE FROM mbr_templates WHERE id=?", (mid,))
+        conn.execute("DELETE FROM formula_items WHERE producto_nombre='PROD-MBRGEN-T1'")
+        conn.execute("DELETE FROM formula_headers WHERE producto_nombre='PROD-MBRGEN-T1'")
+        conn.execute("DELETE FROM maestro_mps WHERE codigo_mp IN ('MP-A','MP-B')")
+        conn.commit(); conn.close()
+
     # Cleanup
     cs.patch('/api/identidad/sebastian',
              json={'cedula': '', 'nombre_completo': ''},
