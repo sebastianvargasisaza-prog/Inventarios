@@ -1038,6 +1038,15 @@ def job_sync_stock_shopify_diario(app):
             except Exception:
                 avail_map = {}
         used_available = bool(avail_map)
+        # FIX 30-may-2026 · audit Plan · si NO se obtuvo "Available" real, el sync
+        # cae a "On hand" (incluye Committed = ya vendido) → infla el stock de
+        # planeación y hace producir de menos. Antes era SILENCIOSO (solo en
+        # observaciones). Ahora se loguea WARNING y se reporta en el resultado
+        # del job para que el monitoreo/health lo vea.
+        if not used_available:
+            log.warning("[sync-stock-shopify] ⚠ Available NO disponible · stock "
+                        "cae a ON HAND (incluye Committed/vendido) · stock de "
+                        "planeación puede quedar INFLADO. Revisar inventory_levels API.")
 
         conn.execute("UPDATE stock_pt SET estado='Ajustado' WHERE lote_produccion LIKE 'SHOPIFY-%'")
         synced = 0
@@ -1074,6 +1083,8 @@ def job_sync_stock_shopify_diario(app):
         return True, {
             'synced': synced,
             'skipped_zero': skipped,
+            'fuente_stock': 'Available' if used_available else 'On hand (FALLBACK · stock puede estar inflado)',
+            'available_ok': used_available,
             'total_variantes': len(all_variants),
             'usado_available': used_available,
         }, 0
@@ -1349,7 +1360,10 @@ def job_lunes_7am_workflow(app):
                         items_sku = _json.dumps([{"sku": li.get("sku",""), "qty": li.get("quantity",0)}
                                                   for li in o.get("line_items",[])])
                         total_uds = sum(li.get("quantity",0) for li in o.get("line_items",[]))
-                        addr = o.get("billing_address") or {}
+                        # FIX 30-may-2026 · usar shipping (con fallback billing)
+                        # igual que shopify_client · antes solo billing → ciudad/país
+                        # inconsistente vs el sync diario (en CO billing≠shipping).
+                        addr = o.get("shipping_address") or o.get("billing_address") or {}
                         _tg = o.get("tags","") or ""
                         _cg = ((o.get("customer") or {}).get("tags","")) or ""
                         conn.execute("""

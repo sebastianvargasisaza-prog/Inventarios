@@ -1672,6 +1672,7 @@ def admin_skus_huerfanos_top():
         'huerfanos_top': [{'sku': k, 'uds_60d': v} for k, v in top],
         'productos_disponibles': productos,
         'n_huerfanos_total': len(huerfanos),
+        'uds_huerfanas_total_60d': round(sum(huerfanos.values())),
     })
 
 
@@ -2239,33 +2240,53 @@ def plan_necesidades():
     # SHOPIFY-FIX · 22-may-2026 · Bug #5 audit · SKUs huérfanos vendiendo
     # · Detecta SKUs vendiendo en Shopify SIN mapping a producto
     # · Sebastián los necesita ver para mapearlos en admin/maestro_pt
+    # FIX 30-may-2026 · auditoría Plan · DOS arreglos:
+    #  (a) PG-safe: antes usaba json_each() (SQLite-only) · en PostgreSQL caía al
+    #      except y la detección de huérfanos quedaba INERTE en producción.
+    #      Ahora parsea sku_items en Python (funciona en SQLite y PG).
+    #  (b) Cuantifica las UDS vendidas sin mapear (no solo lista SKUs), para
+    #      mostrar cuánta VELOCIDAD/venta se está perdiendo del cálculo.
+    from datetime import datetime as _dt2, timedelta as _td2
+    import json as _jh_orf
+    cutoff = (_dt2.now() - _td2(days=30)).strftime('%Y-%m-%d')
+    uds_por_sku_vend = {}
     try:
-        # Ventana últimos 30 días
-        from datetime import datetime as _dt2, timedelta as _td2
-        cutoff = (_dt2.now() - _td2(days=30)).strftime('%Y-%m-%d')
-        # Todos los SKUs que aparecen en ventas
-        # FIX 23-may-2026 · auditoría detectó tabla incorrecta · era
-        # `ordenes_shopify` (inexistente) · la real es `animus_shopify_orders`
-        # El try/except tragaba el error · feature SKUs huérfanos nunca corría
-        skus_vendidos = c.execute(
-            """SELECT DISTINCT TRIM(json_each.value->>'sku') as sku_v
-               FROM animus_shopify_orders, json_each(sku_items)
-               WHERE date(creado_en) >= ?
-                 AND TRIM(json_each.value->>'sku') != ''""",
+        for (items_json,) in c.execute(
+            "SELECT sku_items FROM animus_shopify_orders "
+            "WHERE COALESCE(creado_en,'') >= ? AND COALESCE(sku_items,'') != ''",
             (cutoff,),
-        ).fetchall()
+        ).fetchall():
+            try:
+                items = _jh_orf.loads(items_json) if items_json else []
+                if not isinstance(items, list):
+                    continue
+                for li in items:
+                    sk = (li.get('sku') or '').strip().upper()
+                    qty = int(li.get('qty') or li.get('quantity') or li.get('cantidad') or 0)
+                    if sk and qty > 0:
+                        uds_por_sku_vend[sk] = uds_por_sku_vend.get(sk, 0) + qty
+            except Exception:
+                continue
     except Exception:
-        skus_vendidos = []
-    skus_set = set(r[0] for r in skus_vendidos if r and r[0])
-    # SKUs mapeados (sku_producto_map)
+        uds_por_sku_vend = {}
+    skus_set = set(uds_por_sku_vend.keys())
     try:
-        skus_mapeados_rows = c.execute(
-            "SELECT DISTINCT sku FROM sku_producto_map WHERE COALESCE(activo,1)=1"
-        ).fetchall()
-        skus_mapeados = set(r[0] for r in skus_mapeados_rows if r and r[0])
+        skus_mapeados = set(
+            (r[0] or '').strip().upper()
+            for r in c.execute(
+                "SELECT DISTINCT sku FROM sku_producto_map WHERE COALESCE(activo,1)=1"
+            ).fetchall() if r and r[0]
+        )
     except Exception:
         skus_mapeados = set()
-    skus_huerfanos = sorted(skus_set - skus_mapeados)[:50]
+    _huerfanos_ids = sorted(skus_set - skus_mapeados,
+                            key=lambda s: -uds_por_sku_vend.get(s, 0))
+    skus_huerfanos = _huerfanos_ids[:50]
+    skus_huerfanos_detalle = [
+        {"sku": s, "uds_30d": uds_por_sku_vend.get(s, 0)} for s in skus_huerfanos
+    ]
+    uds_huerfanas_total = sum(uds_por_sku_vend.get(s, 0)
+                              for s in (skus_set - skus_mapeados))
 
     # Resumen consolidado
     resumen = {
@@ -2277,6 +2298,8 @@ def plan_necesidades():
         "n_sin_mapeo": sum(1 for p in productos_animus if p["urgencia"] == "SIN_MAPEO"),
         "n_skus_huerfanos_vendiendo": len(skus_huerfanos),
         "skus_huerfanos_vendiendo": skus_huerfanos,  # solo top 50
+        "skus_huerfanos_detalle": skus_huerfanos_detalle,  # [{sku, uds_30d}] top 50
+        "uds_huerfanas_total_30d": uds_huerfanas_total,  # ⚠ ventas que NO entran al cálculo de velocidad
         "n_clientes_b2b": len(b2b_por_cliente),
         "n_pedidos_b2b_pendientes": sum(len(c["pedidos"]) for c in b2b_por_cliente.values()),
         "kg_total_b2b_pendientes": round(sum(c["kg_total"] for c in b2b_por_cliente.values()), 2),
@@ -2645,15 +2668,21 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
             if _t:
                 _b2b_clauses += " AND LOWER(COALESCE(tags,'')) NOT LIKE ? AND LOWER(COALESCE(customer_tags,'')) NOT LIKE ?"
                 _b2b_params.extend(['%' + _t + '%', '%' + _t + '%'])
-    for r in c.execute(
-        f"""SELECT sku_items, creado_en FROM animus_shopify_orders
+    # FIX 30-may-2026 · audit Plan · robustez: si tags/customer_tags no existen
+    # (mig 166 sin aplicar en PG) y hay filtro B2B, la query crasheaba TODA la
+    # planificación. Ahora degrada al SELECT sin filtro B2B en vez de romper.
+    _vel_base_sql = """SELECT sku_items, creado_en FROM animus_shopify_orders
            WHERE creado_en >= ?
              AND sku_items IS NOT NULL AND sku_items != ''
              AND LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided')
-             AND LOWER(COALESCE(estado_pago,'')) NOT IN ('refunded','voided','partially_refunded')
-             {_b2b_clauses}""",
-        tuple([_vd_base] + _b2b_params),
-    ).fetchall():
+             AND LOWER(COALESCE(estado_pago,'')) NOT IN ('refunded','voided','partially_refunded')"""
+    try:
+        _vel_rows = c.execute(_vel_base_sql + _b2b_clauses,
+                              tuple([_vd_base] + _b2b_params)).fetchall()
+    except Exception as _e_b2b:
+        log.warning('velocidad · filtro B2B falló (%s) · degradando sin filtro', _e_b2b)
+        _vel_rows = c.execute(_vel_base_sql, (_vd_base,)).fetchall()
+    for r in _vel_rows:
         try:
             items = _json.loads(r[0]) if r[0] else []
         except Exception:
@@ -2690,6 +2719,10 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
            WHERE fin_real_at IS NOT NULL
              AND date(fin_real_at) >= ?
              AND date(fin_real_at) <= date('now', '-5 hours')
+             -- FIX 30-may-2026 · evitar doble conteo con góndola CC: un lote
+             -- 'completado' ya pasó a stock_pt (liberación QC) · contarlo además
+             -- como pipeline lo sumaba 2 veces e inflaba la cobertura ~7d.
+             AND LOWER(COALESCE(estado,'')) NOT IN ('completado','cancelado')
            GROUP BY producto""",
         (pipeline_desde,),
     ).fetchall():
@@ -12876,6 +12909,8 @@ async function cargar(){
     render();
     // Sebastián 19-may-2026: cargar alertas IA en paralelo (no bloqueante).
     if (typeof cargarAlertasIA === 'function') { cargarAlertasIA(); }
+    // 30-may-2026: aviso de ventas sin mapear (no entran a la velocidad).
+    if (typeof cargarAlertasVentas === 'function') { cargarAlertasVentas(); }
   } catch(e){
     // Sebastián 16-may-2026: error visible en el grid + botón reintentar
     // (antes solo alert · el grid quedaba en "Cargando…" para siempre).
@@ -13189,6 +13224,33 @@ function render(){
 // ═══════ ALERTAS IA · Sebastián 19-may-2026 ═══════
 // Banner proactivo arriba del calendario · cobertura crítica, adelantar
 // lotes, pedidos B2B con MP faltante.
+async function cargarAlertasVentas(){
+  // 30-may-2026 · audit Plan · ventas de SKUs NO mapeados a producto NO entran
+  // al cálculo de velocidad → necesidades subestimadas. Banner visible + acción.
+  const wrap = document.getElementById('alertas-ventas-wrap');
+  if (!wrap) return;
+  try{
+    const r = await fetch('/api/admin/skus-huerfanos-top?limit=10', {cache:'no-store'});
+    if(!r.ok){ wrap.innerHTML=''; return; }
+    const d = await r.json();
+    const uds = d.uds_huerfanas_total_60d || 0;
+    const n = d.n_huerfanos_total || 0;
+    if(!uds || uds <= 0){ wrap.innerHTML=''; return; }
+    const top = (d.huerfanos_top || []).slice(0,6)
+      .map(h => escapeHtml(h.sku) + ' (' + Math.round(h.uds_60d) + ')').join(' · ');
+    wrap.innerHTML =
+      '<div style="background:#fffbeb;border:2px solid #f59e0b;border-radius:10px;padding:12px 16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">'
+      + '<div style="font-size:1.4em">⚠️</div>'
+      + '<div style="flex:1;min-width:240px;font-size:13px;color:#92400e">'
+      + '<b>' + Math.round(uds).toLocaleString('es-CO') + ' uds vendidas en 60d SIN mapear a producto</b> (' + n + ' SKUs). '
+      + 'Estas ventas NO cuentan en la velocidad → las necesidades de esos productos salen subestimadas.'
+      + (top ? '<div style="font-size:11px;margin-top:4px;opacity:.85">Top: ' + top + '</div>' : '')
+      + '</div>'
+      + '<a href="/herramientas#skus-huerfanos" style="background:#f59e0b;color:#fff;text-decoration:none;padding:6px 14px;border-radius:6px;font-size:12px;font-weight:700">Mapear SKUs</a>'
+      + '</div>';
+  }catch(e){ wrap.innerHTML=''; }
+}
+
 async function cargarAlertasIA(){
   const wrap = document.getElementById('alertas-ia-wrap');
   if (!wrap) return;
