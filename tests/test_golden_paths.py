@@ -5125,6 +5125,74 @@ def test_golden_generar_mbr_desde_formula(app, db_clean):
         conn.execute("DELETE FROM maestro_mps WHERE codigo_mp IN ('MP-A','MP-B')")
         conn.commit(); conn.close()
 
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 64 · Reemplazo MyBatch fase 2 · IPC OOS → desviación + gate liberar
+# ═══════════════════════════════════════════════════════════════════
+# Un IPC fuera de spec abre una desviación automática ligada al lote/IPC; y el
+# EBR no se puede liberar mientras la desviación esté abierta.
+def test_golden_ipc_oos_abre_desviacion_y_bloquea_liberar(app, db_clean):
+    """IPC no conforme → desviación auto + enlace · liberar bloqueado si desviación abierta."""
+    import sqlite3 as _sq
+    cs = _login(app, 'sebastian')
+
+    def _exec(sql, params=()):
+        conn = _sq.connect(os.environ['DB_PATH'], timeout=10.0)
+        try:
+            cur = conn.execute(sql, params); conn.commit(); return cur.lastrowid
+        finally:
+            conn.close()
+
+    # draft → insertar spec → aprobar (specs de MBR aprobado son inmutables)
+    mbr_id = _exec("INSERT INTO mbr_templates (producto_nombre, version, estado, lote_size_g, creado_por) "
+                   "VALUES ('PROD-IPC-T1', 1, 'draft', 1000, 'sebastian')")
+    spec_id = _exec("INSERT INTO ipc_specs (mbr_template_id, parametro, unidad, valor_min, valor_max, obligatorio) "
+                    "VALUES (?, 'pH', '', 5.0, 7.0, 1)", (mbr_id,))
+    _exec("UPDATE mbr_templates SET estado='aprobado' WHERE id=?", (mbr_id,))
+    ebr_id = _exec("INSERT INTO ebr_ejecuciones (mbr_template_id, mbr_version, lote, estado, iniciado_por, iniciado_at_utc, cantidad_objetivo_g) "
+                   "VALUES (?, 1, 'LOTE-IPC-T1', 'iniciado', 'sebastian', datetime('now','utc'), 1000)", (mbr_id,))
+    try:
+        # IPC fuera de rango (pH 9 > 7) → conforme=0 + desviación automática
+        r = cs.post(f'/api/brd/ebr/{ebr_id}/ipc-resultados',
+                    json={'ipc_spec_id': spec_id, 'valor_medido': 9.0}, headers=csrf_headers())
+        assert r.status_code == 201, r.data
+        d = r.get_json()
+        assert d['conforme'] == 0, d
+        assert d.get('desviacion') and d['desviacion'].get('codigo'), 'debe abrir desviación auto'
+        desv_cod = d['desviacion']['codigo']
+        conn = _sq.connect(os.environ['DB_PATH'], timeout=10.0)
+        # desviación creada con el lote afectado + enlace en ipc_resultados
+        dv = conn.execute("SELECT lotes_afectados, estado FROM desviaciones WHERE codigo=?", (desv_cod,)).fetchone()
+        link = conn.execute("SELECT desviacion_id FROM ipc_resultados WHERE ebr_id=? AND ipc_spec_id=?", (ebr_id, spec_id)).fetchone()
+        conn.close()
+        assert dv is not None and 'LOTE-IPC-T1' in (dv[0] or ''), 'lote afectado registrado'
+        assert dv[1] == 'detectada', 'desviación arranca en detectada'
+        assert link is not None and link[0] is not None, 'ipc_resultado enlazado a la desviación'
+
+        # Gate liberar: EBR completado pero con desviación ABIERTA → 409
+        _exec("UPDATE ebr_ejecuciones SET estado='completado' WHERE id=?", (ebr_id,))
+        r2 = cs.post(f'/api/brd/ebr/{ebr_id}/liberar',
+                     json={'signature_id': 999999}, headers=csrf_headers())
+        assert r2.status_code == 409, r2.data
+        assert r2.get_json().get('codigo') == 'DESVIACION_ABIERTA'
+
+        # Cerrar la desviación → el gate ya no bloquea (avanza a validar firma → 400)
+        _exec("UPDATE desviaciones SET estado='cerrada' WHERE codigo=?", (desv_cod,))
+        r3 = cs.post(f'/api/brd/ebr/{ebr_id}/liberar',
+                     json={'signature_id': 999999}, headers=csrf_headers())
+        assert r3.status_code != 409 or r3.get_json().get('codigo') != 'DESVIACION_ABIERTA', \
+            'cerrada la desviación, el gate de desviación no debe bloquear'
+    finally:
+        conn = _sq.connect(os.environ['DB_PATH'], timeout=10.0)
+        conn.execute("DELETE FROM ipc_resultados WHERE ebr_id=?", (ebr_id,))
+        conn.execute("DELETE FROM ebr_ejecuciones WHERE id=?", (ebr_id,))
+        conn.execute("UPDATE mbr_templates SET estado='draft' WHERE id=?", (mbr_id,))
+        conn.execute("DELETE FROM ipc_specs WHERE mbr_template_id=?", (mbr_id,))
+        conn.execute("DELETE FROM mbr_templates WHERE id=?", (mbr_id,))
+        conn.execute("DELETE FROM desviaciones_eventos WHERE desviacion_id IN (SELECT id FROM desviaciones WHERE lotes_afectados LIKE '%LOTE-IPC-T1%')")
+        conn.execute("DELETE FROM desviaciones WHERE lotes_afectados LIKE '%LOTE-IPC-T1%'")
+        conn.commit(); conn.close()
+
     # Cleanup
     cs.patch('/api/identidad/sebastian',
              json={'cedula': '', 'nombre_completo': ''},

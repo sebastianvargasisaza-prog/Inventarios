@@ -312,6 +312,15 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (203, "ipc_resultados.desviacion_id · enlace IPC fuera de spec → desviación/CAPA automática (reemplazo MyBatch fase 2) · 30-may-2026", [
+        # Cuando un IPC del EBR sale NO conforme se abre una desviación
+        # automáticamente (aseguramiento) y se enlaza acá para trazabilidad
+        # bidireccional EBR/IPC ↔ desviación. El EBR no se libera con la
+        # desviación abierta.
+        "ALTER TABLE ipc_resultados ADD COLUMN desviacion_id INTEGER",
+        "CREATE INDEX IF NOT EXISTS idx_ipcres_desviacion ON ipc_resultados(desviacion_id) WHERE desviacion_id IS NOT NULL",
+    ]),
+
     (202, "rate_limit_hits · rate limit cross-worker para webhooks públicos (el limiter en memoria se anulaba con 3 workers gunicorn) · audit ronda2 29-may-2026", [
         # Audit ronda2 29-may-2026: comercial._rate_limit_check usaba un dict en
         # memoria por proceso · con 3 workers el límite efectivo era 3×. Esta

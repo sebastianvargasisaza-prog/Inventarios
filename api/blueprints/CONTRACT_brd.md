@@ -222,3 +222,13 @@ no alterado.
     produccion_programada.
 - Activar 'strict' SOLO cuando todos los MBR estén cargados/aprobados (sino frena
   planta). Cubierto por golden GP-62 test_golden_ebr_auto_al_aceptar_produccion.
+
+### 2026-05-30 · Fase 2 · IPC fuera de spec → desviación/CAPA automática (mig 203)
+- `reportar_ipc_resultado`: si conforme=0, abre desviación automática vía
+  `aseguramiento.crear_desviacion_auto` (tipo proceso, lotes_afectados=lote EBR,
+  descripción con parámetro+valor+rango) y enlaza en `ipc_resultados.desviacion_id`
+  (mig 203). Devuelve {desviacion:{codigo,id}}. Deploy-safe.
+- `liberar_ebr`: GATE nuevo · 409 DESVIACION_ABIERTA si existe una desviación con
+  el lote del EBR en lotes_afectados y estado NOT IN ('cerrada','anulada'). El
+  lote no se libera hasta resolver la desviación (clasificar→investigar→CAPA→cerrar).
+- Golden GP-64. La desviación sigue su workflow normal en /aseguramiento.

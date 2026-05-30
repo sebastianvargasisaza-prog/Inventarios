@@ -901,6 +901,41 @@ def _generar_codigo_desviacion(c):
     return f'DESV-{anio}-0001'
 
 
+def crear_desviacion_auto(c, *, tipo, descripcion, lotes_afectados='',
+                          detectado_por='sistema', area_origen='',
+                          impacto_producto=1, contencion_inmediata=''):
+    """Crea una desviación programáticamente (p.ej. IPC fuera de spec del EBR ·
+    reemplazo MyBatch fase 2). Mismo patrón que el endpoint POST (código
+    race-safe + evento inicial + audit_log). NO commitea · el caller maneja la
+    transacción. Devuelve (codigo, desv_id).
+    """
+    def _ins():
+        cod = _generar_codigo_desviacion(c)
+        c.execute("""
+            INSERT INTO desviaciones
+              (codigo, fecha_deteccion, hora_deteccion, detectado_por, tipo,
+               area_origen, descripcion, contencion_inmediata, impacto_producto,
+               lotes_afectados, estado)
+            VALUES (?, date('now', '-5 hours'), ?, ?, ?, ?, ?, ?, ?, ?, 'detectada')
+        """, (cod, datetime.now().strftime('%H:%M'), detectado_por, tipo,
+              (area_origen or '')[:80], (descripcion or '')[:2000],
+              (contencion_inmediata or '')[:1000], 1 if impacto_producto else 0,
+              (lotes_afectados or '')[:500]))
+        return cod, c.lastrowid
+    codigo, desv_id = _intentar_insert_con_retry(_ins)
+    c.execute("""
+        INSERT INTO desviaciones_eventos
+          (desviacion_id, evento_tipo, estado_nuevo, usuario, comentario)
+        VALUES (?, 'detectada', 'detectada', ?, ?)
+    """, (desv_id, detectado_por, 'Desviación creada automáticamente'))
+    _audit_log(c, usuario=detectado_por, accion='CREAR_DESVIACION_AUTO',
+               tabla='desviaciones', registro_id=codigo,
+               despues={'codigo': codigo, 'tipo': tipo,
+                        'lotes_afectados': (lotes_afectados or '')[:200]},
+               detalle=f"Desviación {codigo} auto · {(descripcion or '')[:120]}")
+    return codigo, desv_id
+
+
 @bp.route('/api/aseguramiento/desviaciones', methods=['GET', 'POST'])
 def desviaciones_endpoint():
     """GET: lista filtrable. POST: crea nueva desviación (cualquier user)."""

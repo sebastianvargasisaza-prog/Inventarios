@@ -1663,6 +1663,28 @@ def liberar_ebr(ebr_id):
     if ebr["estado"] not in ("completado", "en_revision_qc"):
         return jsonify({"error": f"solo completado puede liberarse (actual: {ebr['estado']})"}), 409
 
+    # Reemplazo MyBatch fase 2 · no liberar un lote con una desviación ABIERTA
+    # (la que abre un IPC OOS, u otra del lote). Debe cerrarse/anularse antes.
+    try:
+        _lr = cur.execute("SELECT lote FROM ebr_ejecuciones WHERE id=?", (ebr_id,)).fetchone()
+        _lote = (_lr[0] if _lr else '') or ''
+        if _lote:
+            desv_open = cur.execute(
+                """SELECT codigo FROM desviaciones
+                    WHERE lotes_afectados LIKE ?
+                      AND COALESCE(estado,'') NOT IN ('cerrada', 'anulada')
+                    ORDER BY id DESC LIMIT 1""",
+                (f'%{_lote}%',),
+            ).fetchone()
+            if desv_open:
+                return jsonify({
+                    "error": f"No se puede liberar: desviación {desv_open[0]} ABIERTA para el lote {_lote}. "
+                             f"Cerrá/resolvé la desviación (clasificar→investigar→CAPA→cerrar) primero.",
+                    "codigo": "DESVIACION_ABIERTA",
+                }), 409
+    except Exception:
+        pass  # deploy-safe (tabla/columna ausente no debe romper liberación)
+
     # INVIMA-FIX · 21-may-2026 · tiempo mínimo cuarentena antes de liberar
     # Antes: QA podía liberar EBR completado inmediatamente
     # Default: 0 días (sin gate) · env BRD_CUARENTENA_MIN_DIAS=N para gate
@@ -2004,12 +2026,38 @@ def reportar_ipc_resultado(ebr_id):
             return jsonify({"error": "ya existe resultado para este spec en este EBR"}), 409
         raise
     rid = cur.lastrowid
+    # Reemplazo MyBatch fase 2 · IPC NO conforme → abre desviación/CAPA
+    # automática (aseguramiento) ligada a este resultado y al lote del EBR.
+    # Deploy-safe: si la mig 203 (desviacion_id) o el helper no están, no rompe.
+    desviacion = None
+    if conforme == 0:
+        try:
+            lr = cur.execute("SELECT lote FROM ebr_ejecuciones WHERE id=?", (ebr_id,)).fetchone()
+            lote = (lr[0] if lr else '') or f'EBR{ebr_id}'
+            _vis = valor_f if valor_f is not None else (valor_texto or '?')
+            desc = (f"IPC fuera de especificación · lote {lote} (EBR #{ebr_id}) · "
+                    f"{spec['parametro']} = {_vis} {spec['unidad'] or ''} "
+                    f"(rango {spec['valor_min']}–{spec['valor_max']}). "
+                    f"Desviación abierta automáticamente desde el EBR.")
+            from blueprints.aseguramiento import crear_desviacion_auto
+            cod, desv_id = crear_desviacion_auto(
+                cur, tipo='proceso', descripcion=desc, lotes_afectados=lote,
+                detectado_por=user, area_origen='Producción', impacto_producto=1)
+            try:
+                cur.execute("UPDATE ipc_resultados SET desviacion_id=? WHERE id=?", (desv_id, rid))
+            except Exception:
+                pass  # mig 203 aún no aplicada · enlace opcional
+            desviacion = {"codigo": cod, "id": desv_id}
+        except Exception as _ed:
+            logging.getLogger('brd').warning('auto-desviación IPC OOS fallo: %s', _ed)
     conn.commit()
     audit_log(cur, usuario=user, accion="REPORTAR_IPC",
               tabla="ipc_resultados", registro_id=rid,
               despues={"ebr_id": ebr_id, "spec_id": spec_id,
-                        "valor": valor_f, "conforme": conforme})
-    return jsonify({"ok": True, "id": rid, "conforme": conforme}), 201
+                        "valor": valor_f, "conforme": conforme,
+                        "desviacion": (desviacion or {}).get("codigo")})
+    return jsonify({"ok": True, "id": rid, "conforme": conforme,
+                     "desviacion": desviacion}), 201
 
 
 # ════════════════════════════════════════════════════════════════════════════
