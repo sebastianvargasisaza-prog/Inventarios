@@ -20,7 +20,7 @@ from database import db_connect
 import os, json, logging, sqlite3, urllib.request, urllib.error, urllib.parse
 from datetime import datetime, timedelta, date, timezone
 from database import get_db
-from config import ADMIN_USERS, APP_BASE_URL, CALIDAD_USERS, COMPRAS_USERS, PLANTA_USERS
+from config import ADMIN_USERS, APP_BASE_URL, CALIDAD_USERS, COMPRAS_USERS, PLANTA_USERS, EBR_MODE
 from inventario_helpers import stock_mp_total, stock_mp_disponible
 from audit_helpers import audit_log
 
@@ -16885,6 +16885,22 @@ def planta_aceptar_produccion(produccion_id):
     prod_id, producto, fecha_prog, lotes, area_id, estado = pp_row
     lotes = lotes or 1
 
+    # Reemplazo MyBatch · fase 1 · BPM estricto: no se acepta producción sin un
+    # MBR (receta maestra) aprobado. Se evalúa ANTES de cualquier mutación.
+    # Solo aplica con EBR_MODE='strict' (default 'off' no bloquea nada).
+    if EBR_MODE == 'strict':
+        _mbr_ok = c.execute(
+            "SELECT 1 FROM mbr_templates WHERE producto_nombre=? AND estado='aprobado' LIMIT 1",
+            (producto,),
+        ).fetchone()
+        if not _mbr_ok:
+            return jsonify({
+                'error': f"No se puede aceptar: '{producto}' no tiene un MBR "
+                         f"(receta maestra) aprobado. Creá y aprobá el MBR antes "
+                         f"de fabricar (BPM/INVIMA).",
+                'codigo': 'SIN_MBR_APROBADO',
+            }), 409
+
     log = []
     # 1) Asignar área si no la tiene
     if not area_id:
@@ -17025,6 +17041,34 @@ def planta_aceptar_produccion(produccion_id):
                            'tareas_creadas': len(tareas_creadas)})
     except Exception as _ae:
         logging.getLogger('programacion').warning('audit_log ACEPTAR_PRODUCCION fallo: %s', _ae)
+
+    # Reemplazo MyBatch · fase 1 · crear/vincular el EBR (batch record) del lote
+    # desde el MBR aprobado. EBR_MODE controla el comportamiento (off/warn/strict).
+    # El bloqueo strict por falta de MBR ya se evaluó al inicio (antes de mutar).
+    ebr = None
+    if EBR_MODE in ('warn', 'strict'):
+        try:
+            from blueprints.brd import crear_ebr_desde_mbr
+            ebr = crear_ebr_desde_mbr(
+                c, producto_nombre=producto, lote=f'PP{produccion_id}',
+                produccion_id=produccion_id, usuario=user)
+            if ebr.get('ok'):
+                log.append('✓ EBR ' + str(ebr.get('numero_op', '')) +
+                           (' reusado' if ebr.get('reusado') else
+                            ' creado (' + str(ebr.get('pasos', 0)) + ' pasos)'))
+                try:
+                    audit_log(c, usuario=user, accion='CREAR_EBR_AUTO',
+                              tabla='ebr_ejecuciones', registro_id=ebr.get('id'),
+                              despues={'produccion_id': produccion_id,
+                                       'numero_op': ebr.get('numero_op'),
+                                       'reusado': bool(ebr.get('reusado'))})
+                except Exception:
+                    pass
+            else:
+                log.append('⚠ EBR no creado: ' + str(ebr.get('detail', ebr.get('error'))))
+        except Exception as _eebr:
+            logging.getLogger('programacion').warning('crear EBR en aceptar fallo: %s', _eebr)
+
     conn.commit()
 
     return jsonify({
@@ -17035,6 +17079,7 @@ def planta_aceptar_produccion(produccion_id):
         'tareas_creadas': tareas_creadas,
         'fecha_envasado_estimada': fecha_obj,
         'area_id': area_id,
+        'ebr': ebr,
     })
 
 

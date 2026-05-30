@@ -205,3 +205,20 @@ no alterado.
 - Importar más fórmulas reales como MBR draft (hoy solo Blush Balm).
 - Hookear `produccion_programada.iniciar` para crear EBR auto.
 - Pack CSV (URS / IQ / OQ / PQ) cuando se vaya a auditoría INVIMA.
+
+### 2026-05-30 · Reemplazo MyBatch fase 1 · EBR automático al aceptar producción
+- Helper nuevo `crear_ebr_desde_mbr(cur, *, producto_nombre, lote, produccion_id,
+  cantidad_objetivo_g, usuario, notas)`: crea (o reusa, idempotente por
+  produccion_id) un EBR desde el MBR APROBADO más reciente del producto, clona
+  sus pasos. NO commitea ni audita (lo hace el caller). Devuelve
+  {ok, id, numero_op, pasos} o {ok:False, error:'NO_MBR_APROBADO'|'LOTE_DUPLICADO'}.
+- `programacion.planta_aceptar_produccion` lo invoca según `config.EBR_MODE`:
+  - 'off' (default): no crea EBR (sin cambios).
+  - 'warn': crea EBR si hay MBR aprobado; si falta, deja aceptar con aviso en log.
+  - 'strict': BLOQUEA aceptar (409 SIN_MBR_APROBADO) si el producto no tiene MBR
+    aprobado · BPM. El chequeo es ANTES de mutar.
+  - lote del EBR provisional = 'PP<produccion_id>'; el lote físico real se
+    enlazará al completar (refinamiento fase futura). Modelo: 1 EBR por
+    produccion_programada.
+- Activar 'strict' SOLO cuando todos los MBR estén cargados/aprobados (sino frena
+  planta). Cubierto por golden GP-62 test_golden_ebr_auto_al_aceptar_produccion.

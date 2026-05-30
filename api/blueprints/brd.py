@@ -773,6 +773,71 @@ def _validar_signature(cur, signature_id, *, record_table, record_id,
     return sig is not None
 
 
+def crear_ebr_desde_mbr(cur, *, producto_nombre, lote, produccion_id=None,
+                        cantidad_objetivo_g=None, usuario='', notas=''):
+    """Crea (o reusa) un EBR para un lote desde el MBR APROBADO del producto.
+
+    Reutilizable fuera de brd.py (p.ej. hook de aceptar producción en planta ·
+    reemplazo de MyBatch fase 1). NO hace commit ni audit_log: el caller maneja
+    la transacción y la auditoría. Usa índices posicionales (no row['k']) para
+    funcionar con cualquier row_factory del cursor del caller.
+
+    Returns dict:
+      {ok:True, id, numero_op, pasos}            · EBR creado
+      {ok:True, id, numero_op, reusado:True}     · ya existía para esa producción
+      {ok:False, error:'NO_MBR_APROBADO'|'LOTE_DUPLICADO', detail}
+    """
+    # Idempotencia: si la producción ya tiene EBR, reusar (no duplicar legajo).
+    if produccion_id is not None:
+        ex = cur.execute(
+            "SELECT id, numero_op FROM ebr_ejecuciones WHERE produccion_id=?",
+            (produccion_id,),
+        ).fetchone()
+        if ex:
+            return {'ok': True, 'id': ex[0], 'numero_op': ex[1],
+                    'pasos': 0, 'reusado': True}
+    # MBR aprobado más reciente del producto (BPM: no se fabrica sin MBR aprobado).
+    mbr = cur.execute(
+        """SELECT id, version, lote_size_g
+             FROM mbr_templates
+            WHERE producto_nombre=? AND estado='aprobado'
+            ORDER BY version DESC LIMIT 1""",
+        (producto_nombre,),
+    ).fetchone()
+    if not mbr:
+        return {'ok': False, 'error': 'NO_MBR_APROBADO',
+                'detail': f"No hay MBR aprobado para '{producto_nombre}'"}
+    if cur.execute("SELECT id FROM ebr_ejecuciones WHERE lote=?", (lote,)).fetchone():
+        return {'ok': False, 'error': 'LOTE_DUPLICADO',
+                'detail': f"el lote '{lote}' ya tiene un EBR"}
+    cant = cantidad_objetivo_g if cantidad_objetivo_g is not None else mbr[2]
+    numero_op = assign_numero_op(cur)
+    cur.execute(
+        """INSERT INTO ebr_ejecuciones
+             (mbr_template_id, mbr_version, produccion_id, lote, numero_op,
+              estado, iniciado_por, iniciado_at_utc, cantidad_objetivo_g, notas)
+           VALUES (?, ?, ?, ?, ?, 'iniciado', ?, datetime('now', 'utc'), ?, ?)""",
+        (mbr[0], mbr[1], produccion_id, lote, numero_op, usuario,
+         float(cant or 0), notas),
+    )
+    ebr_id = cur.lastrowid
+    pasos = cur.execute(
+        """SELECT id, orden, descripcion, tipo_paso, equipo_requerido,
+                  requiere_e_sign, requiere_qc
+             FROM mbr_pasos WHERE mbr_template_id=? ORDER BY orden""",
+        (mbr[0],),
+    ).fetchall()
+    for p in pasos:
+        cur.execute(
+            """INSERT INTO ebr_pasos_ejecutados
+                 (ebr_id, mbr_paso_id, orden, descripcion, tipo_paso,
+                  equipo_requerido, requiere_e_sign, requiere_qc, estado)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pendiente')""",
+            (ebr_id, p[0], p[1], p[2], p[3], p[4], p[5], p[6]),
+        )
+    return {'ok': True, 'id': ebr_id, 'numero_op': numero_op, 'pasos': len(pasos)}
+
+
 @bp.route("/api/brd/ebr", methods=["POST"])
 def iniciar_ebr():
     err = _require_login()

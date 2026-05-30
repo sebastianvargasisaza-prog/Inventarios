@@ -5002,6 +5002,70 @@ def test_golden_liberar_lote_mp_requiere_efirma(app, db_clean):
         conn.execute("DELETE FROM movimientos WHERE material_id='MP-EFIRMA-T'")
         conn.commit(); conn.close()
 
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLDEN PATH 62 · Reemplazo MyBatch fase 1 · EBR automático al aceptar
+# ═══════════════════════════════════════════════════════════════════
+# Al aceptar una producción, EOS crea/vincula el EBR (batch record) desde el
+# MBR aprobado del producto (ebr_ejecuciones.produccion_id). EBR_MODE controla:
+# off=nada, warn=crea si hay MBR, strict=bloquea aceptar sin MBR aprobado (BPM).
+def test_golden_ebr_auto_al_aceptar_produccion(app, db_clean, monkeypatch):
+    """warn: aceptar crea EBR vinculado + idempotente · strict: bloquea sin MBR."""
+    import sqlite3 as _sq
+    import blueprints.programacion as _prog
+    cs = _login(app, 'sebastian')
+
+    def _exec(sql, params=()):
+        conn = _sq.connect(os.environ['DB_PATH'], timeout=10.0)
+        try:
+            cur = conn.execute(sql, params); conn.commit(); return cur.lastrowid
+        finally:
+            conn.close()
+
+    # MBR en draft (los pasos de un MBR aprobado son inmutables · trigger),
+    # se agregan los pasos y recién después se aprueba.
+    mbr_id = _exec("INSERT INTO mbr_templates (producto_nombre, version, estado, lote_size_g, creado_por) "
+                   "VALUES ('PROD-EBR-T1', 1, 'draft', 1000, 'sebastian')")
+    _exec("INSERT INTO mbr_pasos (mbr_template_id, orden, descripcion) VALUES (?, 1, 'Dispensar')", (mbr_id,))
+    _exec("INSERT INTO mbr_pasos (mbr_template_id, orden, descripcion) VALUES (?, 2, 'Mezclar')", (mbr_id,))
+    _exec("UPDATE mbr_templates SET estado='aprobado' WHERE id=?", (mbr_id,))
+    pp_con = _exec("INSERT INTO produccion_programada (producto, fecha_programada, lotes, estado) "
+                   "VALUES ('PROD-EBR-T1', date('now'), 1, 'pendiente')")
+    pp_sin = _exec("INSERT INTO produccion_programada (producto, fecha_programada, lotes, estado) "
+                   "VALUES ('PROD-SIN-MBR-T1', date('now'), 1, 'pendiente')")
+    try:
+        # WARN · producto con MBR aprobado → crea EBR vinculado
+        monkeypatch.setattr(_prog, 'EBR_MODE', 'warn')
+        r = cs.post(f'/api/planta/aceptar-produccion/{pp_con}', json={}, headers=csrf_headers())
+        assert r.status_code == 200, r.data
+        assert (r.get_json().get('ebr') or {}).get('ok') is True, r.data
+        conn = _sq.connect(os.environ['DB_PATH'], timeout=10.0)
+        row = conn.execute("SELECT produccion_id FROM ebr_ejecuciones WHERE produccion_id=?", (pp_con,)).fetchone()
+        n_pasos = conn.execute("SELECT COUNT(*) FROM ebr_pasos_ejecutados eb JOIN ebr_ejecuciones e ON e.id=eb.ebr_id WHERE e.produccion_id=?", (pp_con,)).fetchone()[0]
+        conn.close()
+        assert row is not None and row[0] == pp_con, 'EBR debe quedar vinculado a la producción'
+        assert n_pasos == 2, 'EBR debe clonar los 2 pasos del MBR'
+        # Idempotente: re-aceptar reusa el mismo EBR
+        r2 = cs.post(f'/api/planta/aceptar-produccion/{pp_con}', json={}, headers=csrf_headers())
+        assert r2.status_code == 200
+        assert (r2.get_json().get('ebr') or {}).get('reusado') is True
+
+        # STRICT · producto SIN MBR aprobado → 409 bloqueo BPM
+        monkeypatch.setattr(_prog, 'EBR_MODE', 'strict')
+        r3 = cs.post(f'/api/planta/aceptar-produccion/{pp_sin}', json={}, headers=csrf_headers())
+        assert r3.status_code == 409, r3.data
+        assert r3.get_json().get('codigo') == 'SIN_MBR_APROBADO'
+    finally:
+        conn = _sq.connect(os.environ['DB_PATH'], timeout=10.0)
+        conn.execute("DELETE FROM ebr_pasos_ejecutados WHERE ebr_id IN (SELECT id FROM ebr_ejecuciones WHERE produccion_id IN (?,?))", (pp_con, pp_sin))
+        conn.execute("DELETE FROM ebr_ejecuciones WHERE produccion_id IN (?,?)", (pp_con, pp_sin))
+        conn.execute("DELETE FROM produccion_programada WHERE id IN (?,?)", (pp_con, pp_sin))
+        # volver a draft para poder borrar los pasos (inmutables si aprobado)
+        conn.execute("UPDATE mbr_templates SET estado='draft' WHERE id=?", (mbr_id,))
+        conn.execute("DELETE FROM mbr_pasos WHERE mbr_template_id=?", (mbr_id,))
+        conn.execute("DELETE FROM mbr_templates WHERE id=?", (mbr_id,))
+        conn.commit(); conn.close()
+
     # Cleanup
     cs.patch('/api/identidad/sebastian',
              json={'cedula': '', 'nombre_completo': ''},

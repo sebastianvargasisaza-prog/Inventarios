@@ -52,6 +52,17 @@ DB_PATH = os.environ.get("DB_PATH", "/var/data/inventario.db")
 # backup pero NO debe aparecer hardcodeado en ninguna parte.
 APP_BASE_URL = os.environ.get("APP_BASE_URL", "https://app.eossuite.com").rstrip("/")
 
+# Reemplazo de MyBatch · fase 1 · EBR (batch record) automático al aceptar
+# producción. Modo de transición controlado por env para no frenar planta antes
+# de tener todos los MBR cargados:
+#   'off'    → no crea EBR (comportamiento actual · default seguro al desplegar)
+#   'warn'   → crea EBR si hay MBR aprobado; si falta, deja aceptar con aviso
+#   'strict' → BLOQUEA aceptar producción si no hay MBR aprobado (BPM estricto)
+# Activar 'strict' SOLO cuando todos los MBR estén cargados y aprobados.
+EBR_MODE = os.environ.get("EBR_MODE", "off").strip().lower()
+if EBR_MODE not in ("off", "warn", "strict"):
+    EBR_MODE = "off"
+
 
 # Contraseñas plaintext conocidas que NUNCA deben usarse en producción.
 # validate_config() las detecta y emite un warning por cada usuario afectado.

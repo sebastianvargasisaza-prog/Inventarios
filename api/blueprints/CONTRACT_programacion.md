@@ -233,3 +233,9 @@ Tests goldens que protegen:
   antes del commit (operación inversa de COMPLETAR_PRODUCCION, regulada INVIMA).
 - **`planta_aceptar_produccion`**: agregado `audit_log(accion='ACEPTAR_PRODUCCION')`
   tras asignar área + crear tareas (registra quién aceptó/cuándo).
+
+### 2026-05-30 · planta_aceptar_produccion crea/vincula EBR (MyBatch fase 1)
+- Al aceptar, si `config.EBR_MODE` ∈ ('warn','strict'), llama
+  `brd.crear_ebr_desde_mbr` para crear/vincular el EBR del lote (audit
+  CREAR_EBR_AUTO). Con 'strict' BLOQUEA (409 SIN_MBR_APROBADO) antes de mutar si
+  el producto no tiene MBR aprobado. Default 'off' = sin cambios. Ver CONTRACT_brd.md.
