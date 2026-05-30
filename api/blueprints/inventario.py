@@ -6842,12 +6842,19 @@ def registrar_recepcion():
     # una Entrada idéntica (material+lote+cantidad) en los últimos 10 min,
     # se rechaza con 409 salvo que se pase forzar_duplicado=true.
     if not d.get('forzar_duplicado'):
+        # FIX 30-may-2026 · audit Planta/Recepciones · ANTES usaba
+        # julianday('now')-julianday(fecha), que es SQLite-only · en PostgreSQL
+        # (producción) la función no existe → la recepción tiraba 500 en cada
+        # ingreso no-forzado. Ahora: cutoff de 10 min calculado en Python y
+        # comparación de strings ISO (fecha se guarda como datetime.now().isoformat()).
+        from datetime import timedelta as _tddup
+        _cut_dup = (datetime.now() - _tddup(minutes=10)).isoformat()
         dup = c.execute(
             """SELECT id, fecha FROM movimientos
                WHERE material_id=? AND lote=? AND cantidad=? AND tipo='Entrada'
-                 AND (julianday('now') - julianday(fecha)) BETWEEN 0 AND ?
+                 AND fecha >= ?
                ORDER BY id DESC LIMIT 1""",
-            (codigo, lote, cantidad_recibida, 10.0 / 1440.0),
+            (codigo, lote, cantidad_recibida, _cut_dup),
         ).fetchone()
         if dup:
             return jsonify({
@@ -7183,7 +7190,12 @@ def diagnostico_post_incidente():
 
     # 1) Movimientos Entrada duplicados · mismo material+lote+cantidad,
     # < 10 min entre sí, en los últimos 4 días.
-    dup_rows = c.execute(
+    # FIX 30-may-2026 · audit Planta · ANTES usaba julianday() (SQLite-only ·
+    # rompía en PostgreSQL). Ahora: cutoff 4d en Python (string ISO) y la
+    # ventana de 10 min entre el par se filtra en Python.
+    from datetime import timedelta as _td7, datetime as _dt7
+    _cut4d = (_dt7.now() - _td7(days=4)).isoformat()
+    _pairs = c.execute(
         """SELECT m1.id, m2.id, m1.material_id, m1.material_nombre,
                   m1.lote, m1.cantidad, m1.fecha, m2.fecha
            FROM movimientos m1
@@ -7193,16 +7205,25 @@ def diagnostico_post_incidente():
             AND m1.cantidad = m2.cantidad
             AND m1.tipo = m2.tipo
             AND m1.id < m2.id
-            AND ABS(julianday(m2.fecha) - julianday(m1.fecha)) < 0.0070
            WHERE m1.tipo = 'Entrada'
-             AND (julianday('now') - julianday(m1.fecha)) < 4
+             AND m1.fecha >= ? AND m2.fecha >= ?
            ORDER BY m1.material_id, m1.fecha""",
+        (_cut4d, _cut4d),
     ).fetchall()
-    duplicados = [{
-        'mov_id_1': r[0], 'mov_id_2': r[1], 'material_id': r[2],
-        'material_nombre': r[3], 'lote': r[4], 'cantidad': r[5],
-        'fecha_1': r[6], 'fecha_2': r[7],
-    } for r in dup_rows]
+    duplicados = []
+    for r in _pairs:
+        try:
+            _f1 = _dt7.fromisoformat(str(r[6]))
+            _f2 = _dt7.fromisoformat(str(r[7]))
+            if abs((_f2 - _f1).total_seconds()) >= 600:  # >10 min · no es reintento
+                continue
+        except (ValueError, TypeError):
+            continue  # fecha mal formada · omitir del reporte
+        duplicados.append({
+            'mov_id_1': r[0], 'mov_id_2': r[1], 'material_id': r[2],
+            'material_nombre': r[3], 'lote': r[4], 'cantidad': r[5],
+            'fecha_1': r[6], 'fecha_2': r[7],
+        })
 
     # 2) Producciones iniciadas sin terminar
     colg_rows = c.execute(
