@@ -22920,6 +22920,8 @@ async function ckMarcar(itemId, estado){
   // Sebastián 30-may-2026 · Revisar B2B (read-only) · cobertura + duplicados.
   // Caso Kelly: ver qué pedidos están en calendario, cuáles duplicadas, estados.
   window.revisarB2BCliente = async function(cliId, cliNom){
+    window._B2B_DIAG_CLI = {id: cliId, nom: cliNom};
+    window._B2B_DIAG_PEDIDOS = {};
     var m = document.getElementById('modal-b2b-diag');
     if(m) m.remove();
     m = document.createElement('div');
@@ -22944,12 +22946,13 @@ async function ckMarcar(itemId, estado){
       html += '</div>';
       html += '<div style="overflow-x:auto;border:1px solid #e2e8f0;border-radius:8px"><table style="width:100%;border-collapse:collapse;font-size:12px">';
       html += '<thead><tr style="background:#f8fafc;color:#475569">';
-      ['Producto','Uds','kg','Fecha','Estado','En calendario','Cobertura'].forEach(function(h,i){
+      ['Producto','Uds','kg','Fecha','Estado','En calendario','Cobertura','Acción'].forEach(function(h,i){
         var al = (i===1||i===2) ? 'right' : 'left';
         html += '<th style="text-align:' + al + ';padding:7px 8px;font-weight:700;white-space:nowrap">' + h + '</th>';
       });
       html += '</tr></thead><tbody>';
       (d.pedidos || []).forEach(function(p){
+        window._B2B_DIAG_PEDIDOS[p.id] = {producto: p.producto, kg: p.kg};
         var bg = p.duplicado ? '#fff1f2' : (p.sin_lote ? '#fff7ed' : '#fff');
         var cobBadge, cobCol;
         if(p.duplicado){ cobBadge = '⚠ DUPLICADO'; cobCol = '#b91c1c'; }
@@ -22965,15 +22968,41 @@ async function ckMarcar(itemId, estado){
         html += '<td style="padding:6px 8px">' + esc(p.estado||'') + '</td>';
         html += '<td style="padding:6px 8px;font-size:11px;color:#64748b">' + esc(lotesTxt) + (p.apariciones_texto>1 ? ' <span style="color:#b91c1c;font-weight:700">·texto x' + p.apariciones_texto + '</span>' : '') + '</td>';
         html += '<td style="padding:6px 8px"><span style="color:' + cobCol + ';font-weight:700">' + cobBadge + '</span><div style="font-size:10px;color:#94a3b8">' + esc(p.recomendacion||'') + '</div></td>';
+        if((p.estado||'').toLowerCase() === 'cancelado'){
+          html += '<td style="padding:6px 8px;text-align:center;color:#94a3b8;font-size:11px">—</td>';
+        } else {
+          html += '<td style="padding:6px 8px;text-align:center"><button onclick="cancelarPedidoB2B(' + p.id + ')" style="background:#dc2626;color:#fff;border:none;padding:4px 10px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer" title="Cancelar este pedido · le resta el kg al lote del calendario">🗑 Cancelar</button></td>';
+        }
         html += '</tr>';
       });
-      if(!(d.pedidos||[]).length){ html += '<tr><td colspan="7" style="padding:20px;text-align:center;color:#94a3b8">Sin pedidos para este cliente</td></tr>'; }
+      if(!(d.pedidos||[]).length){ html += '<tr><td colspan="8" style="padding:20px;text-align:center;color:#94a3b8">Sin pedidos para este cliente</td></tr>'; }
       html += '</tbody></table></div>';
       html += '<div style="font-size:11px;color:#94a3b8;margin-top:8px">' + esc(d.nota||'') + '</div>';
       m.querySelector('div').innerHTML = html;
     } catch(e){
       m.querySelector('div').innerHTML = '<div style="color:#dc2626;padding:30px">Error de red: ' + escapeHtmlNec(e.message) + '</div>';
     }
+  };
+
+  // Sebastián 30-may-2026 · cancelar un pedido B2B desde el modal Revisar.
+  // Caso Kelly: borrar el pedido de prueba duplicado. El backend resta el kg
+  // al lote (reversion) · idempotente. Refresca modal + necesidades.
+  window.cancelarPedidoB2B = async function(pid){
+    var info = (window._B2B_DIAG_PEDIDOS || {})[pid] || {};
+    var desc = info.producto ? (info.producto + ' · ' + info.kg + 'kg') : ('pedido #' + pid);
+    if(!confirm('¿Cancelar ' + desc + ' (pedido #' + pid + ')?\\n\\nSe le restará el kg al lote en el calendario. Útil para borrar duplicados/pruebas.')) return;
+    try {
+      var r = await fetch('/api/pedidos-b2b/' + pid, {method:'DELETE', headers:{'X-CSRF-Token':(typeof csrfTokenNec==='function'?csrfTokenNec():'')}});
+      if(r.status === 401){ window.location.href = '/login'; return; }
+      var d = await r.json();
+      if(!r.ok || !d.ok){
+        alert('No se pudo cancelar: ' + String((d && d.error) || ('HTTP ' + r.status)).substring(0, 300));
+        return;
+      }
+      var cli = window._B2B_DIAG_CLI || {};
+      if(cli.id || cli.nom){ revisarB2BCliente(cli.id, cli.nom); }  // refresca el modal
+      if(typeof cargarNecesidades === 'function'){ try { cargarNecesidades(); } catch(e){} }
+    } catch(e){ alert('Error de red: ' + e.message); }
   };
 
   // Pre-llena cliente_id y abre el form B2B
