@@ -1834,6 +1834,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
         <button onclick="verificarShopify()" style="background:#0f766e;color:#fff;border:none;padding:7px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer" title="Reconciliación: ¿llega Shopify? ¿cada SKU/sub-SKU se atribuye a un producto? ¿cuánta demanda se pierde por SKU vacío o sin mapear?">🔍 Verificar Shopify</button>
         <button onclick="syncVentasNec(this)" style="background:#0891b2;color:#fff;border:none;padding:7px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer" title="Trae las ventas más recientes de Shopify AHORA (el cron diario las trae a las 6am · usá esto si los datos están atrasados)">🔄 Sincronizar ventas</button>
         <button onclick="verPreparacionEnvases()" style="background:#5b21b6;color:#fff;border:none;padding:7px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer" title="Envases en preparación (serigrafía/tampografía) · qué se está preparando y para cuándo">📦 Preparación envases</button>
+        <button onclick="verificarSyncSalud()" style="background:#475569;color:#fff;border:none;padding:7px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer" title="Salud del sync Shopify (conexión, última sync, órdenes) + filtro B2B (SHOPIFY_B2B_TAGS) y qué tags traen realmente las órdenes">🔌 Salud sync + B2B</button>
         <button onclick="cargarNecesidades()" style="background:#6d28d9;color:#fff;border:none;padding:7px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">↻ Recargar</button>
       </div>
     </div>
@@ -20124,6 +20125,51 @@ async function ckMarcar(itemId, estado){
   function escapeHtmlNec(s) {
     if (s === null || s === undefined) return '';
     return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  // Sebastián 31-may-2026 · salud del sync Shopify + filtro B2B (verificación config)
+  async function verificarSyncSalud(){
+    var m=document.getElementById('modal-sync-salud'); if(m) m.remove();
+    m=document.createElement('div'); m.id='modal-sync-salud';
+    m.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:99999;display:flex;align-items:flex-start;justify-content:center;padding:20px;overflow:auto';
+    m.innerHTML='<div style="background:#fff;border-radius:12px;max-width:760px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,.3);padding:24px"><div style="text-align:center;padding:40px;color:#94a3b8">Consultando salud del sync…</div></div>';
+    document.body.appendChild(m);
+    m.addEventListener('click',function(e){ if(e.target===m) m.remove(); });
+    try{
+      var r=await fetch('/api/programacion/sync-salud',{cache:'no-store'});
+      if(r.status===401){ location.href='/login'; return; }
+      var d=await r.json();
+      var esc=escapeHtmlNec;
+      function row(k,v,col){ return '<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f1f5f9"><span style="color:#64748b">'+k+'</span><span style="font-weight:700;color:'+(col||'#1e293b')+'">'+v+'</span></div>'; }
+      var cfg=d.config||{}, b=d.b2b||{}, html='';
+      html+='<div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #e2e8f0;padding-bottom:12px;margin-bottom:14px">';
+      html+='<div><h2 style="margin:0;font-size:18px;color:#0891b2">🔌 Salud del sync Shopify + filtro B2B</h2></div>';
+      html+='<button onclick="document.getElementById(&quot;modal-sync-salud&quot;).remove()" style="background:#e2e8f0;color:#475569;border:none;width:36px;height:36px;border-radius:50%;font-size:20px;cursor:pointer">×</button></div>';
+      html+='<div style="font-weight:700;color:#0f172a;margin-bottom:4px">Conexión &amp; sync</div>';
+      html+=row('Dominio configurado', cfg.dominio_set?'✓ sí':'✗ NO', cfg.dominio_set?'#15803d':'#b91c1c');
+      html+=row('Token configurado', cfg.token_set?'✓ sí':'✗ NO', cfg.token_set?'#15803d':'#b91c1c');
+      html+=row('Órdenes totales', (d.ordenes_total!=null?d.ordenes_total:'—'));
+      html+=row('Órdenes últimos 30d', (d.ordenes_30d!=null?d.ordenes_30d:'—'));
+      html+=row('Última sincronización', d.ultima_sync?esc(d.ultima_sync):'—');
+      html+='<div style="font-weight:700;color:#0f172a;margin:16px 0 4px">Filtro B2B (SHOPIFY_B2B_TAGS)</div>';
+      if(b.error){ html+='<div style="color:#b91c1c">Error: '+esc(b.error)+'</div>'; }
+      else{
+        if(!b.configurado){
+          html+='<div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:10px;font-size:12px;color:#9a3412;margin-bottom:8px">⚠ <b>SHOPIFY_B2B_TAGS está vacío</b> en Render. Si vendés B2B/mayorista por la tienda Shopify, esas ventas se cuentan como DTC e inflan la velocidad. Si el B2B entra solo por pedidos manuales (no por Shopify), está bien dejarlo vacío.</div>';
+        } else {
+          html+=row('Tags configurados', esc(b.tags_configurados.join(', ')), '#15803d');
+          html+=row('Órdenes 30d clasificadas B2B', (b.ordenes_30d_clasificadas_b2b!=null?b.ordenes_30d_clasificadas_b2b:'—'));
+        }
+        if(b.columnas_tags_existen===false){ html+='<div style="color:#b45309;font-size:12px;margin:6px 0">⚠ Las columnas de tags no existen (mig 166 sin aplicar) · no se puede clasificar B2B.</div>'; }
+        html+=row('Órdenes 30d con algún tag', (b.ordenes_30d_con_tag!=null?b.ordenes_30d_con_tag:'—'));
+        if(b.tags_vistos_top && b.tags_vistos_top.length){
+          html+='<div style="font-size:12px;color:#64748b;margin:10px 0 4px">Tags que traen las órdenes (últimos 30d) — usá estos para configurar la var:</div><div style="display:flex;flex-wrap:wrap;gap:6px">';
+          b.tags_vistos_top.forEach(function(t){ html+='<span style="background:#eef2ff;color:#3730a3;border-radius:6px;padding:3px 8px;font-size:11px;font-weight:600">'+esc(t[0])+' <span style="color:#6366f1">×'+t[1]+'</span></span>'; });
+          html+='</div>';
+        } else { html+='<div style="font-size:12px;color:#94a3b8;margin-top:8px">No se vieron tags en las órdenes de los últimos 30 días.</div>'; }
+      }
+      m.querySelector('div').innerHTML=html;
+    }catch(e){ m.querySelector('div').innerHTML='<div style="color:#dc2626;padding:30px">Error: '+escapeHtmlNec(e.message||e)+'</div>'; }
   }
 
   // Sebastián 31-may-2026 · Planta ve las asignaciones de preparación de envases

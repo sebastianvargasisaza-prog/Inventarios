@@ -2176,6 +2176,73 @@ def prog_test_shopify():
         return jsonify({'ok': False, 'paso': 'exception', 'error': str(e)})
 
 
+@bp.route('/api/programacion/sync-salud', methods=['GET'])
+def prog_sync_salud():
+    """Salud del sync Shopify (local, sin llamada externa) + diagnóstico del filtro
+    B2B (SHOPIFY_B2B_TAGS): qué tags traen realmente las órdenes, cuántas se
+    clasifican B2B y si la var está configurada. Sebastián 31-may-2026."""
+    if not _auth():
+        return jsonify({'error': 'No autenticado'}), 401
+    import os as _os
+    conn = get_db(); c = conn.cursor()
+    out = {'ok': True}
+    try:
+        def _cfg(k):
+            r = conn.execute("SELECT valor FROM animus_config WHERE clave=?", (k,)).fetchone()
+            return r[0] if r else None
+        out['config'] = {'dominio_set': bool(_cfg('shopify_shop')),
+                         'token_set': bool(_cfg('shopify_token'))}
+    except Exception as e:
+        out['config'] = {'error': str(e)}
+    try:
+        out['ordenes_total'] = c.execute("SELECT COUNT(*) FROM animus_shopify_orders").fetchone()[0]
+    except Exception:
+        out['ordenes_total'] = None
+    try:
+        out['ordenes_30d'] = c.execute(
+            "SELECT COUNT(*) FROM animus_shopify_orders "
+            "WHERE creado_en >= date('now','-30 days')").fetchone()[0]
+    except Exception:
+        out['ordenes_30d'] = None
+    try:
+        out['ultima_sync'] = c.execute(
+            "SELECT MAX(synced_at) FROM animus_shopify_orders").fetchone()[0]
+    except Exception:
+        out['ultima_sync'] = None
+    try:
+        b2b_raw = (_os.environ.get('SHOPIFY_B2B_TAGS') or '').strip()
+        tags_cfg = [t.strip().lower() for t in b2b_raw.split(',') if t.strip()]
+        b2b = {'tags_configurados': tags_cfg, 'configurado': bool(tags_cfg)}
+        cols_ok = True
+        try:
+            c.execute("SELECT tags, customer_tags FROM animus_shopify_orders LIMIT 1")
+        except Exception:
+            cols_ok = False
+        b2b['columnas_tags_existen'] = cols_ok
+        if cols_ok:
+            from collections import Counter as _Counter
+            rows = c.execute(
+                "SELECT COALESCE(tags,''), COALESCE(customer_tags,'') "
+                "FROM animus_shopify_orders WHERE creado_en >= date('now','-30 days')"
+            ).fetchall()
+            con_tag = 0; clasif_b2b = 0; vistos = _Counter()
+            for tg, ctg in rows:
+                full = (str(tg) + ',' + str(ctg)).lower()
+                indiv = [x.strip() for x in full.split(',') if x.strip()]
+                if indiv:
+                    con_tag += 1
+                    for x in set(indiv):
+                        vistos[x] += 1
+                if tags_cfg and any(cfg in full for cfg in tags_cfg):
+                    clasif_b2b += 1
+            b2b['ordenes_30d_con_tag'] = con_tag
+            b2b['ordenes_30d_clasificadas_b2b'] = clasif_b2b
+            b2b['tags_vistos_top'] = vistos.most_common(20)
+        out['b2b'] = b2b
+    except Exception as e:
+        out['b2b'] = {'error': str(e)}
+    return jsonify(out)
+
 
 @bp.route('/api/programacion/sync-ventas', methods=['POST'])
 def prog_sync_ventas():
