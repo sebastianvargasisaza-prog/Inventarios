@@ -2957,6 +2957,29 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
     except Exception:
         pass
 
+    # FIX 30-may-2026 · Sebastián · "el lote no es todo Animus, va una parte a B2B".
+    # La porción comprometida a clientes B2B (registrada en pedidos_b2b_lote) NO
+    # cubre la demanda DTC de Animus · restarla del pipeline Fijo para que cobertura
+    # y "durará X días" reflejen lo que REALMENTE le queda a Animus. Cubre tanto
+    # lotes dedicados eos_b2b (100% B2B) como aportes sumados a lotes canónicos.
+    b2b_fijo_kg_por_prod = {}
+    try:
+        for r in c.execute(
+            """SELECT pp.producto, COALESCE(SUM(COALESCE(pbl.kg_aporte, 0)), 0)
+               FROM produccion_programada pp
+               JOIN pedidos_b2b_lote pbl ON pbl.lote_produccion_id = pp.id
+               WHERE pp.fin_real_at IS NULL
+                 AND COALESCE(pp.estado, 'programado') NOT IN ('cancelado', 'completado')
+                 AND COALESCE(pp.origen, '') IN ('eos_plan', 'eos_b2b', 'eos_retroactivo')
+                 AND date(pp.fecha_programada) >= date('now', '-5 hours')
+                 AND date(pp.fecha_programada) <= date('now', '-5 hours', '+60 days')
+               GROUP BY pp.producto"""
+        ).fetchall():
+            if r[0]:
+                b2b_fijo_kg_por_prod[r[0]] = float(r[1] or 0)
+    except Exception:
+        pass
+
     # FIX 24-may PM · auto-sugerencia Nivel 1 (Sebastián) · detectar
     # huérfanos vendiendo y sugerirlos al producto cuyo nombre contiene
     # substrings del SKU. Pre-calcular el set de huérfanos para evitar
@@ -3126,6 +3149,11 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
         stock_kg_gondola = (stock_uds_total * ml_promedio) / 1000.0
         pipeline_kg = pipeline_kg_por_prod.get(prod_nombre, 0.0)
         pipeline_fijo_kg = pipeline_fijo_kg_por_prod.get(prod_nombre, 0.0)
+        # FIX 30-may-2026 · restar la porción B2B de los lotes Fijo: lo comprometido
+        # a otros clientes (Fernando Meza, etc.) NO cubre demanda Animus DTC, así que
+        # no debe inflar la cobertura. Antes "durará 191d" usaba el lote completo.
+        b2b_fijo_kg = b2b_fijo_kg_por_prod.get(prod_nombre, 0.0)
+        pipeline_fijo_kg = max(0.0, pipeline_fijo_kg - b2b_fijo_kg)
         stock_kg_total = stock_kg_gondola + pipeline_kg + pipeline_fijo_kg
 
         # FIX #2-b · 23-may-2026 Sebastián · AZ HIBRID CLEAR tenía
@@ -3253,6 +3281,7 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
             "stock_kg_gondola": round(stock_kg_gondola, 2),
             "pipeline_kg": round(pipeline_kg, 2),
             "pipeline_fijo_kg": round(pipeline_fijo_kg, 2),
+            "b2b_comprometido_kg": round(b2b_fijo_kg, 2),
             "stock_kg_total": round(stock_kg_total, 2),
             "ventas_periodo_uds": ventas_periodo_total,
             "ventas_30d_uds": ventas_30d_total,
@@ -14188,12 +14217,27 @@ async function abrirLoteModal(id, producto, fecha, kg){
   let proximaSugerida = null;
   let proximaTxt = '';
   if (velKgDia > 0.001 && kg > 0){
-    const diasDura = kg / velKgDia;
+    // FIX 30-may-2026 · Sebastián · "el lote no es todo Animus, va a otro cliente".
+    // La duración la determina SOLO la porción que consume Animus al ritmo DTC ·
+    // los kg comprometidos a B2B (Fernando Meza, etc.) salen del lote y no cubren
+    // demanda diaria · usar kg_residual_dtc de la composición, no el lote completo.
+    let kgAnimus = kg;
+    try {
+      const _c = _parsearComposicionLote((PLAN_DATA.agendadas || []).find(a => a.id === id), kg);
+      if (_c && _c.entradas.length > 0 && _c.kg_residual_dtc != null && _c.kg_residual_dtc > 0.01) {
+        kgAnimus = _c.kg_residual_dtc;
+      }
+    } catch(e){}
+    const kgB2B = Math.max(0, kg - kgAnimus);
+    const diasDura = kgAnimus / velKgDia;
     const diasHastaProx = Math.max(Math.round(diasDura) - 25, 1);  // 25d antes de agotar · mín 1
     const fProx = new Date(fecha + 'T12:00:00');
     fProx.setDate(fProx.getDate() + diasHastaProx);
     proximaSugerida = fechaLocalStr(fProx);
-    proximaTxt = '✓ Lote programado para <strong>' + fecha + '</strong> · ' + kg + 'kg · durará ~' + Math.round(diasDura) + ' días al ritmo actual · próxima producción sugerida: <strong>' + proximaSugerida + '</strong>';
+    const _kgTxt = kgB2B > 0.01
+      ? kg + 'kg (' + kgAnimus.toFixed(1) + ' Animus + ' + kgB2B.toFixed(1) + ' B2B)'
+      : kg + 'kg';
+    proximaTxt = '✓ Lote programado para <strong>' + fecha + '</strong> · ' + _kgTxt + ' · cubre Animus ~' + Math.round(diasDura) + ' días al ritmo actual · próxima producción sugerida: <strong>' + proximaSugerida + '</strong>';
   }
 
   let html = '';
@@ -14331,7 +14375,11 @@ async function abrirLoteModal(id, producto, fecha, kg){
     '<div class="metric-sub" id="edit-kg-uds">' + Math.round(kg * 1000 / ml) + ' uds aprox</div></div>';
   html += '<div class="metric-card"><div class="metric-lbl">Vende/día</div><div class="metric-val">' + velUds.toFixed(1) + '</div><div class="metric-sub">' + velKgDia.toFixed(2) + ' kg/día</div></div>';
   html += '<div class="metric-card"><div class="metric-lbl">Vende/mes</div><div class="metric-val">' + velMes + '</div><div class="metric-sub">' + (velKgDia * 30).toFixed(1) + ' kg/mes</div></div>';
-  html += '<div class="metric-card"><div class="metric-lbl">Stock actual</div><div class="metric-val">' + stockUds + ' uds</div><div class="metric-sub">' + stockKg.toFixed(1) + ' kg</div></div>';
+  // FIX 30-may-2026 · "237 uds / 72.1 kg" era incoherente · 237 uds × 30ml = 7.1kg,
+  // no 72.1 (eso era góndola + lote programado). Mostrar el FÍSICO de góndola, que
+  // sí cuadra con las uds. La cobertura (que sí cuenta lo programado) va en su tarjeta.
+  const _stockKgFisico = (info.stock_kg_gondola != null) ? info.stock_kg_gondola : stockKg;
+  html += '<div class="metric-card"><div class="metric-lbl">Stock actual</div><div class="metric-val">' + stockUds + ' uds</div><div class="metric-sub">' + _stockKgFisico.toFixed(1) + ' kg físico</div></div>';
   html += '<div class="metric-card"><div class="metric-lbl">Cobertura</div><div class="metric-val">' + (diasCob != null ? diasCob + 'd' : '—') + '</div><div class="metric-sub">' + (info.urgencia || '') + '</div></div>';
   html += '</div>';
 
