@@ -370,6 +370,169 @@ def admin_formulas_agrupar_canonico():
                     'n_actualizadas': len(actualizadas)})
 
 
+@bp.route("/api/admin/diag-familia-producto", methods=["GET"])
+def admin_diag_familia_producto():
+    """Read-only · radiografía de una familia de producto (ej. 'LIP SERUM').
+
+    Sebastián 31-may-2026: para decidir cómo unificar 'LIP SERUM PIB CHINO' vs
+    'LIP SERUM VOLUMINIZADOR PEPTIDOS' (mismo producto, distinta MP). Muestra:
+    fórmulas (con canónico/variante), SKUs mapeados y a qué nombre, y las
+    presentaciones (tonos/envases). NO muta nada.
+    """
+    err = _require_login()
+    if err:
+        return err
+    q = (request.args.get("q") or "").strip()
+    if not q:
+        return jsonify({"error": "q (texto a buscar) requerido"}), 400
+    conn = get_db()
+    c = conn.cursor()
+    like = "%" + q.upper() + "%"
+
+    # 1) Fórmulas (formula_headers) · con canónico/variante (fallback si faltan)
+    formulas = []
+    for _cols in (
+        "producto_nombre, COALESCE(producto_canonico,''), COALESCE(variante_label,''), "
+        "COALESCE(prioridad,0), COALESCE(activo,1), COALESCE(lote_size_kg,0), COALESCE(codigo_pt,'')",
+        "producto_nombre, '', '', 0, COALESCE(activo,1), COALESCE(lote_size_kg,0), COALESCE(codigo_pt,'')",
+    ):
+        try:
+            rows = c.execute(
+                "SELECT " + _cols + " FROM formula_headers "
+                "WHERE UPPER(producto_nombre) LIKE ? OR UPPER(COALESCE(producto_canonico,'')) LIKE ? "
+                "ORDER BY producto_nombre", (like, like)).fetchall()
+            break
+        except Exception:
+            rows = []
+    for r in rows:
+        formulas.append({
+            "producto_nombre": r[0], "producto_canonico": r[1], "variante_label": r[2],
+            "prioridad": r[3], "activo": bool(r[4]), "lote_size_kg": float(r[5] or 0),
+            "codigo_pt": r[6],
+        })
+
+    # 2) SKUs en sku_producto_map relacionados (por SKU o por producto)
+    skus = []
+    for _cols in (
+        "sku, producto_nombre, COALESCE(es_regalo,0), COALESCE(tono_label,''), COALESCE(activo,1)",
+        "sku, producto_nombre, COALESCE(es_regalo,0), '', COALESCE(activo,1)",
+        "sku, producto_nombre, 0, '', COALESCE(activo,1)",
+    ):
+        try:
+            srows = c.execute(
+                "SELECT " + _cols + " FROM sku_producto_map "
+                "WHERE UPPER(sku) LIKE ? OR UPPER(COALESCE(producto_nombre,'')) LIKE ? "
+                "ORDER BY producto_nombre, sku", (like, like)).fetchall()
+            break
+        except Exception:
+            srows = []
+    for r in srows:
+        skus.append({"sku": r[0], "producto_nombre": r[1], "es_regalo": bool(r[2]),
+                     "tono_label": r[3], "activo": bool(r[4])})
+
+    # 3) Presentaciones (tonos/envases) de los productos de la familia
+    pres = []
+    for _cols in (
+        "producto_nombre, presentacion_codigo, COALESCE(etiqueta,''), COALESCE(volumen_ml,0), "
+        "COALESCE(envase_codigo,''), COALESCE(cantidad_fija_uds,0)",
+        "producto_nombre, presentacion_codigo, COALESCE(etiqueta,''), COALESCE(volumen_ml,0), "
+        "COALESCE(envase_codigo,''), 0",
+    ):
+        try:
+            prows = c.execute(
+                "SELECT " + _cols + " FROM producto_presentaciones "
+                "WHERE UPPER(producto_nombre) LIKE ? AND COALESCE(activo,1)=1 "
+                "ORDER BY producto_nombre, volumen_ml DESC", (like,)).fetchall()
+            break
+        except Exception:
+            prows = []
+    for r in prows:
+        pres.append({"producto_nombre": r[0], "presentacion_codigo": r[1], "etiqueta": r[2],
+                     "volumen_ml": float(r[3] or 0), "envase_codigo": r[4],
+                     "cantidad_fija_uds": float(r[5] or 0)})
+
+    return jsonify({
+        "ok": True, "query": q,
+        "formulas": formulas, "n_formulas": len(formulas),
+        "skus": skus, "n_skus": len(skus),
+        "presentaciones": pres, "n_presentaciones": len(pres),
+    })
+
+
+@bp.route("/admin/diag-familia", methods=["GET"])
+def admin_diag_familia_page():
+    """Página read-only · radiografía de una familia de producto (Sebastián 31-may)."""
+    if not session.get("compras_user"):
+        from flask import redirect
+        return redirect("/login?next=/admin/diag-familia")
+    from flask import Response
+    return Response(_DIAG_FAMILIA_HTML, mimetype="text/html")
+
+
+_DIAG_FAMILIA_HTML = """<!DOCTYPE html>
+<html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Diagnóstico familia de producto · EOS</title>
+<style>
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;color:#1e293b;margin:0;padding:20px}
+.wrap{max-width:1200px;margin:0 auto}
+.card{background:#fff;border-radius:12px;padding:18px;margin-bottom:16px;box-shadow:0 2px 6px rgba(0,0,0,.05)}
+h1{margin:0 0 6px;color:#0f766e;font-size:21px} h3{color:#0f766e;margin:0 0 8px}
+input{padding:9px 12px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px;min-width:240px}
+button{background:#0f766e;color:#fff;border:none;padding:9px 18px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer}
+table{width:100%;border-collapse:collapse;font-size:12px;margin-top:6px}
+th{text-align:left;padding:7px 8px;background:#f1f5f9;color:#475569;font-weight:700}
+td{padding:6px 8px;border-bottom:1px solid #f1f5f9}
+.mono{font-family:ui-monospace,monospace;font-weight:700;color:#1e40af}
+.muted{color:#64748b;font-size:12px}
+.tag{padding:1px 7px;border-radius:5px;font-weight:700;font-size:11px}
+</style></head><body>
+<div class="wrap">
+<a href="/modulos">&larr; Volver</a>
+<div class="card">
+  <h1>🔬 Diagnóstico familia de producto</h1>
+  <div class="muted">Read-only · fórmulas + canónico + mapeo de SKUs + presentaciones. Para decidir cómo unificar nombres.</div>
+  <div style="margin-top:12px"><input id="q" value="LIP SERUM" placeholder="ej. LIP SERUM, GLOSS, SUERO..."> <button onclick="ir()">Buscar</button></div>
+</div>
+<div id="out"></div>
+</div>
+<script>
+function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[c];});}
+async function ir(){
+  var q=document.getElementById('q').value.trim();
+  var out=document.getElementById('out');
+  if(!q){ out.innerHTML='<div class="card">Escribí algo</div>'; return; }
+  out.innerHTML='<div class="card">Buscando…</div>';
+  try{
+    var r=await fetch('/api/admin/diag-familia-producto?q='+encodeURIComponent(q),{cache:'no-store'});
+    var d=await r.json();
+    if(!r.ok||!d.ok){ out.innerHTML='<div class="card" style="color:#dc2626">Error: '+esc((d&&d.error)||r.status)+'</div>'; return; }
+    var h='';
+    // Fórmulas
+    h+='<div class="card"><h3>📋 Fórmulas ('+d.n_formulas+')</h3>';
+    h+='<table><tr><th>Producto (formula_headers)</th><th>Canónico</th><th>Variante</th><th>Activo</th><th>Lote kg</th><th>codigo_pt</th></tr>';
+    d.formulas.forEach(function(f){ h+='<tr><td class="mono">'+esc(f.producto_nombre)+'</td><td>'+esc(f.producto_canonico||'—')+'</td><td>'+esc(f.variante_label||'—')+'</td><td>'+(f.activo?'sí':'<span style="color:#b91c1c">no</span>')+'</td><td>'+f.lote_size_kg+'</td><td>'+esc(f.codigo_pt||'')+'</td></tr>'; });
+    if(!d.formulas.length) h+='<tr><td colspan="6" class="muted">sin fórmulas</td></tr>';
+    h+='</table></div>';
+    // SKUs
+    h+='<div class="card"><h3>🔗 SKUs mapeados ('+d.n_skus+')</h3>';
+    h+='<table><tr><th>SKU</th><th>Mapea a producto</th><th>Tono</th><th>Regalo</th><th>Activo</th></tr>';
+    d.skus.forEach(function(s){ h+='<tr><td class="mono">'+esc(s.sku)+'</td><td>'+esc(s.producto_nombre)+'</td><td>'+esc(s.tono_label||'—')+'</td><td>'+(s.es_regalo?'🎁':'')+'</td><td>'+(s.activo?'sí':'no')+'</td></tr>'; });
+    if(!d.skus.length) h+='<tr><td colspan="5" class="muted">sin SKUs · las ventas no se asocian</td></tr>';
+    h+='</table></div>';
+    // Presentaciones
+    h+='<div class="card"><h3>📐 Presentaciones / tonos ('+d.n_presentaciones+')</h3>';
+    h+='<table><tr><th>Producto</th><th>Presentación</th><th>Etiqueta</th><th>ml</th><th>Envase</th><th>Fija</th></tr>';
+    d.presentaciones.forEach(function(p){ h+='<tr><td>'+esc(p.producto_nombre)+'</td><td class="mono">'+esc(p.presentacion_codigo)+'</td><td>'+esc(p.etiqueta)+'</td><td>'+p.volumen_ml+'</td><td class="mono">'+esc(p.envase_codigo||'—')+'</td><td>'+(p.cantidad_fija_uds||'')+'</td></tr>'; });
+    if(!d.presentaciones.length) h+='<tr><td colspan="6" class="muted">sin presentaciones</td></tr>';
+    h+='</table></div>';
+    out.innerHTML=h;
+  }catch(e){ out.innerHTML='<div class="card" style="color:#dc2626">Error red: '+esc(e.message)+'</div>'; }
+}
+ir();
+</script>
+</body></html>"""
+
+
 @bp.route("/api/admin/b2b/cliente/<cliente_id>/envases", methods=["GET"])
 def admin_b2b_envases_cliente(cliente_id):
     """FEATURE B2B 24-may-2026 · whitelist envases por cliente.
