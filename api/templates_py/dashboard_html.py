@@ -1832,6 +1832,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
         <button onclick="autoSugerirProducciones()" style="background:#7c3aed;color:#fff;border:none;padding:7px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer" title="Crea producciones Sugeridas en el calendario para los productos que se van a quebrar (cron diario 5 AM también lo hace)">🤖 Auto-sugerir</button>
         <button onclick="abrirHerramientasLimpieza()" style="background:#475569;color:#fff;border:none;padding:7px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer" title="Limpia Sugeridas viejas del calendario + arregla productos con lote_size_kg absurdo">⚙ Herramientas</button>
         <button onclick="verificarShopify()" style="background:#0f766e;color:#fff;border:none;padding:7px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer" title="Reconciliación: ¿llega Shopify? ¿cada SKU/sub-SKU se atribuye a un producto? ¿cuánta demanda se pierde por SKU vacío o sin mapear?">🔍 Verificar Shopify</button>
+        <button onclick="syncVentasNec(this)" style="background:#0891b2;color:#fff;border:none;padding:7px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer" title="Trae las ventas más recientes de Shopify AHORA (el cron diario las trae a las 6am · usá esto si los datos están atrasados)">🔄 Sincronizar ventas</button>
         <button onclick="cargarNecesidades()" style="background:#6d28d9;color:#fff;border:none;padding:7px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">↻ Recargar</button>
       </div>
     </div>
@@ -20122,6 +20123,36 @@ async function ckMarcar(itemId, estado){
   function escapeHtmlNec(s) {
     if (s === null || s === undefined) return '';
     return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  // Sebastián 30-may-2026 · sync manual de ventas Shopify (el cron 6am a veces
+  // se atrasa · esto fuerza el pull ahora). También sirve de diagnóstico: si
+  // falla, el alert muestra por qué (token/HTTP) → explica datos desactualizados.
+  async function syncVentasNec(btn){
+    var prev = btn ? btn.textContent : '';
+    if(btn){ btn.disabled = true; btn.textContent = 'Sincronizando…'; }
+    try {
+      var r = await fetch('/api/programacion/sync-ventas', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json','X-CSRF-Token':(typeof csrfTokenNec==='function'?csrfTokenNec():'')},
+        body: JSON.stringify({days: 90}),
+      });
+      if(r.status === 401){ window.location.href = '/login'; return; }
+      var d = await r.json();
+      if(d && d.ok){
+        alert('✅ ' + (d.mensaje || (d.synced + ' órdenes sincronizadas')) +
+              '\\n\\nRecargá Necesidades y reabrí el lote en el calendario para ver la velocidad actualizada.');
+        if(typeof cargarNecesidades === 'function'){ try { cargarNecesidades(); } catch(e){} }
+      } else {
+        alert('❌ El sync de Shopify FALLÓ:\\n\\n' +
+              String((d && d.error) || JSON.stringify(d)).substring(0, 400) +
+              '\\n\\nEsto explica por qué las ventas están atrasadas. Pasame este mensaje.');
+      }
+    } catch(e) {
+      alert('Error de red: ' + e.message);
+    } finally {
+      if(btn){ btn.disabled = false; btn.textContent = prev || '🔄 Sincronizar ventas'; }
+    }
   }
 
   // Sebastián 30-may-2026 · Verificar Shopify · reconciliación ventas por SKU.
