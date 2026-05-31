@@ -1833,6 +1833,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
         <button onclick="abrirHerramientasLimpieza()" style="background:#475569;color:#fff;border:none;padding:7px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer" title="Limpia Sugeridas viejas del calendario + arregla productos con lote_size_kg absurdo">⚙ Herramientas</button>
         <button onclick="verificarShopify()" style="background:#0f766e;color:#fff;border:none;padding:7px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer" title="Reconciliación: ¿llega Shopify? ¿cada SKU/sub-SKU se atribuye a un producto? ¿cuánta demanda se pierde por SKU vacío o sin mapear?">🔍 Verificar Shopify</button>
         <button onclick="syncVentasNec(this)" style="background:#0891b2;color:#fff;border:none;padding:7px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer" title="Trae las ventas más recientes de Shopify AHORA (el cron diario las trae a las 6am · usá esto si los datos están atrasados)">🔄 Sincronizar ventas</button>
+        <button onclick="verPreparacionEnvases()" style="background:#5b21b6;color:#fff;border:none;padding:7px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer" title="Envases en preparación (serigrafía/tampografía) · qué se está preparando y para cuándo">📦 Preparación envases</button>
         <button onclick="cargarNecesidades()" style="background:#6d28d9;color:#fff;border:none;padding:7px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">↻ Recargar</button>
       </div>
     </div>
@@ -20123,6 +20124,53 @@ async function ckMarcar(itemId, estado){
   function escapeHtmlNec(s) {
     if (s === null || s === undefined) return '';
     return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  // Sebastián 31-may-2026 · Planta ve las asignaciones de preparación de envases
+  // (OS de serigrafía/tampografía en curso) · read-only · qué viene y para cuándo.
+  async function verPreparacionEnvases(){
+    var m = document.getElementById('modal-prep-envases');
+    if(m) m.remove();
+    m = document.createElement('div');
+    m.id = 'modal-prep-envases';
+    m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:20px;overflow:auto';
+    m.innerHTML = '<div style="background:#fff;border-radius:12px;max-width:1000px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,.3);padding:24px"><div style="text-align:center;padding:40px;color:#94a3b8">Cargando preparación de envases…</div></div>';
+    document.body.appendChild(m);
+    m.addEventListener('click', function(e){ if(e.target === m) m.remove(); });
+    try {
+      var r = await fetch('/api/compras/ordenes-servicio', {cache:'no-store'});
+      if(r.status === 401){ window.location.href = '/login'; return; }
+      var d = await r.json();
+      var act = (d.ordenes || []).filter(function(o){ return ['Entregada','Confirmada','Cancelada'].indexOf(o.estado) < 0; });
+      act.sort(function(a,b){ return (a.fecha_requerida_entrega||'9999') < (b.fecha_requerida_entrega||'9999') ? -1 : 1; });
+      var esc = escapeHtmlNec, hoy = new Date().toISOString().slice(0,10), html = '';
+      html += '<div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #e2e8f0;padding-bottom:12px;margin-bottom:14px">';
+      html += '<div><h2 style="margin:0;font-size:18px;color:#5b21b6">📦 Preparación de envases · en curso</h2><div style="font-size:11px;color:#64748b;margin-top:3px">' + act.length + ' en preparación · serigrafía / tampografía · qué viene y para cuándo (read-only)</div></div>';
+      html += '<button onclick="document.getElementById(&quot;modal-prep-envases&quot;).remove()" style="background:#e2e8f0;color:#475569;border:none;width:36px;height:36px;border-radius:50%;font-size:20px;cursor:pointer">×</button></div>';
+      html += '<div style="overflow-x:auto;border:1px solid #e2e8f0;border-radius:8px"><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f8fafc;color:#475569">';
+      ['OS','Envase','Producto','Uds','Tipo','Proveedor','Lista para','Estado'].forEach(function(h,i){ html += '<th style="text-align:' + (i===3?'right':'left') + ';padding:7px 8px;font-weight:700;white-space:nowrap">' + h + '</th>'; });
+      html += '</tr></thead><tbody>';
+      act.forEach(function(o){
+        var fr = (o.fecha_requerida_entrega||'').slice(0,10);
+        var atras = fr && fr < hoy;
+        var estCol = {'Borrador':'#64748b','Enviada':'#0891b2','Recogida':'#7c3aed','En proceso':'#b45309'}[o.estado] || '#475569';
+        html += '<tr style="border-top:1px solid #f1f5f9' + (atras?';background:#fff1f2':'') + '">';
+        html += '<td style="padding:6px 8px;font-family:ui-monospace;font-weight:700">' + esc(o.numero_os||'') + '</td>';
+        html += '<td style="padding:6px 8px;font-size:11px">' + esc(o.envase_codigo_mee || o.envase_descripcion || '') + '</td>';
+        html += '<td style="padding:6px 8px">' + esc(o.producto_final||'') + '</td>';
+        html += '<td style="padding:6px 8px;text-align:right">' + (o.cantidad_unidades||0) + '</td>';
+        html += '<td style="padding:6px 8px">' + esc(o.tipo_servicio||'') + '</td>';
+        html += '<td style="padding:6px 8px">' + esc(o.proveedor||'') + '</td>';
+        html += '<td style="padding:6px 8px;white-space:nowrap' + (atras?';color:#b91c1c;font-weight:700':'') + '">' + (fr||'—') + (atras?' ⚠':'') + '</td>';
+        html += '<td style="padding:6px 8px"><span style="color:' + estCol + ';font-weight:700">' + esc(o.estado||'') + '</span></td>';
+        html += '</tr>';
+      });
+      if(!act.length) html += '<tr><td colspan="8" style="padding:20px;text-align:center;color:#94a3b8">No hay envases en preparación.</td></tr>';
+      html += '</tbody></table></div>';
+      m.querySelector('div').innerHTML = html;
+    } catch(e){
+      m.querySelector('div').innerHTML = '<div style="color:#dc2626;padding:30px">Error: ' + escapeHtmlNec(e.message) + '</div>';
+    }
   }
 
   // Sebastián 30-may-2026 · sync manual de ventas Shopify (el cron 6am a veces
