@@ -7018,6 +7018,18 @@ def admin_producto_presentaciones_upsert():
             (prod, pcod, etiq, vol, env, factor, sku_shopify, es_default,
              ventas_mes_ref)
         )
+        # Sebastián 30-may-2026 · cantidad FIJA (mig 204) · SOLO si el caller la
+        # envía explícitamente · así editar el ratio (uds/mes) NO la borra.
+        # Guard si la columna no existe (instancia sin mig 204).
+        if 'cantidad_fija_uds' in d:
+            try:
+                _cf = max(0.0, float(d.get('cantidad_fija_uds') or 0))
+                c.execute(
+                    "UPDATE producto_presentaciones SET cantidad_fija_uds=? "
+                    "WHERE producto_nombre=? AND presentacion_codigo=?",
+                    (_cf, prod, pcod))
+            except Exception:
+                pass
         try:
             audit_log(c, usuario=u, accion='UPSERT_PRODUCTO_PRESENTACION',
                       tabla='producto_presentaciones',

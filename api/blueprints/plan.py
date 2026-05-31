@@ -14103,6 +14103,57 @@ async function _editarUdsMesPresentacion(loteId, productoEnc, codigo, etiqueta, 
     alert('Error red: ' + e.message);
   }
 }
+
+// Sebastián 30-may-2026 · cantidad FIJA por lote para una presentación.
+// Caso SUERO ILUMINADOR TRX: 10ml = SIEMPRE 1200 uds (no %). El sistema reserva
+// esas uds primero y reparte el resto del bulk en las demás presentaciones.
+async function _fijarUdsPresentacion(loteId, productoEnc, codigo, etiqueta, volMl, envaseCodigo, fijaActual){
+  const producto = decodeURIComponent(productoEnc);
+  const nueva = prompt(
+    'Cantidad FIJA por lote · ' + producto + ' · ' + etiqueta + '\\n\\n' +
+    'El sistema reserva SIEMPRE estas unidades de esta presentación (sin importar\\n' +
+    'el tamaño del lote) y reparte el RESTO del bulk en las demás presentaciones.\\n\\n' +
+    'Ej: mini 10ml de regalo = 1200.  Escribí 0 para volver a porcentaje (%).\\n\\n' +
+    'Cantidad fija actual: ' + (fijaActual || 0),
+    String(fijaActual || 0)
+  );
+  if (nueva === null) return;  // cancel
+  const valor = parseFloat(nueva);
+  if (isNaN(valor) || valor < 0){ alert('Número inválido · debe ser ≥ 0'); return; }
+  let csrf = '';
+  try {
+    if (window._csrfTok) { csrf = window._csrfTok; }
+    else {
+      const tr = await fetch('/api/csrf-token', {credentials:'same-origin'});
+      if (tr.ok){ const td = await tr.json(); csrf = td.csrf_token || ''; window._csrfTok = csrf; }
+    }
+  } catch(_){}
+  try {
+    const r = await fetch('/api/admin/producto-presentaciones-upsert', {
+      method:'POST', credentials:'same-origin',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},
+      body: JSON.stringify({
+        producto_nombre: producto,
+        presentacion_codigo: codigo,
+        etiqueta: etiqueta,
+        volumen_ml: volMl,
+        envase_codigo: envaseCodigo,
+        cantidad_fija_uds: valor,
+      })
+    });
+    const d = await r.json();
+    if(r.ok && d.ok){
+      delete window._COMP_MEE_CACHE[loteId];
+      const box = document.getElementById('comp-mee-' + loteId);
+      if (box) box.innerHTML = '<span style="opacity:.7">⏳ Recalculando...</span>';
+      _cargarComposicionMee(loteId);
+    } else {
+      alert('Error ' + r.status + ': ' + (d.error || 'desconocido'));
+    }
+  } catch(e){
+    alert('Error red: ' + e.message);
+  }
+}
 async function _cargarComposicionMee(loteId){
   const box = document.getElementById('comp-mee-' + loteId);
   if(!box) return;
@@ -14127,15 +14178,25 @@ async function _cargarComposicionMee(loteId){
     let h = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><span style="font-weight:800;font-size:13px">📐 Composición de envases · ' + d.cantidad_kg + 'kg bulk</span><span style="font-size:10px">' + fuenteTxt + '</span></div>';
     h += '<div style="display:grid;grid-template-columns:1fr;gap:6px">';
     for(const v of d.variantes){
-      const ratioBg = v.ratio_pct >= 50 ? '#0d9488' : (v.ratio_pct >= 25 ? '#0891b2' : '#64748b');
-      h += '<div style="display:grid;grid-template-columns:90px 60px 1fr 100px 32px;gap:6px;align-items:center;background:#fff;border:1px solid #ccfbf1;border-radius:6px;padding:6px 10px;font-size:12px">';
-      h += '<div><span style="background:' + ratioBg + ';color:#fff;padding:2px 8px;border-radius:10px;font-weight:700;font-size:11px">' + v.ratio_pct + '%</span></div>';
+      const esFija = !!v.es_fija;
+      const ratioBg = esFija ? '#7c3aed' : (v.ratio_pct >= 50 ? '#0d9488' : (v.ratio_pct >= 25 ? '#0891b2' : '#64748b'));
+      const chipTxt = esFija ? ('🔢 ' + v.ratio_pct + '%') : (v.ratio_pct + '%');
+      const chipTitle = esFija ? ('FIJA ' + (v.cantidad_fija_uds || 0) + ' uds por lote') : 'porcentaje del bulk';
+      h += '<div style="display:grid;grid-template-columns:96px 60px 1fr 96px 66px;gap:6px;align-items:center;background:#fff;border:1px solid #ccfbf1;border-radius:6px;padding:6px 10px;font-size:12px">';
+      h += '<div><span title="' + chipTitle + '" style="background:' + ratioBg + ';color:#fff;padding:2px 8px;border-radius:10px;font-weight:700;font-size:11px">' + chipTxt + '</span></div>';
       h += '<div style="font-weight:700;color:#0f766e">' + escapeHtml(v.etiqueta || '') + '</div>';
       h += '<div style="font-family:monospace;font-size:11px;color:#334155">' + escapeHtml(v.envase_codigo || '(sin envase)') + (v.envase_descripcion && v.envase_descripcion !== v.envase_codigo ? ' · <span style="color:#64748b">' + escapeHtml(v.envase_descripcion) + '</span>' : '') + '</div>';
-      h += '<div style="text-align:right;font-weight:800;color:#0e7490">' + (v.unidades_estimadas || 0).toLocaleString('es-CO') + ' uds</div>';
-      // FIX 27-may-2026 PM · botón editar uds/mes (afecta TODOS los lotes futuros del producto)
+      h += '<div style="text-align:right;font-weight:800;color:#0e7490">' + (v.unidades_estimadas || 0).toLocaleString('es-CO') + ' uds' + (esFija ? ' <span style="font-size:9px;color:#7c3aed;font-weight:700">FIJA</span>' : '') + '</div>';
       const _produ = encodeURIComponent(d.producto || '');
-      h += '<button onclick="_editarUdsMesPresentacion(' + loteId + ',&quot;' + _produ + '&quot;,&quot;' + escapeHtml(v.presentacion_codigo || '') + '&quot;,&quot;' + escapeHtml(v.etiqueta || '') + '&quot;,' + (v.volumen_ml || 0) + ',&quot;' + escapeHtml(v.envase_codigo || '') + '&quot;,' + (v.unidades_estimadas || 0) + ')" title="Editar uds/mes de referencia (afecta TODOS los lotes futuros · planificación, no fabricación)" style="background:#7c3aed;color:#fff;border:0;padding:4px 6px;border-radius:4px;cursor:pointer;font-size:11px">✏</button>';
+      const _pcodOk = v.presentacion_codigo && v.presentacion_codigo !== '-';
+      h += '<div style="display:flex;gap:3px;justify-content:flex-end">';
+      // ✏ editar uds/mes de referencia (ratio · afecta TODOS los lotes futuros)
+      h += '<button onclick="_editarUdsMesPresentacion(' + loteId + ',&quot;' + _produ + '&quot;,&quot;' + escapeHtml(v.presentacion_codigo || '') + '&quot;,&quot;' + escapeHtml(v.etiqueta || '') + '&quot;,' + (v.volumen_ml || 0) + ',&quot;' + escapeHtml(v.envase_codigo || '') + '&quot;,' + (v.unidades_estimadas || 0) + ')" title="Editar uds/mes de referencia (RATIO · % del bulk)" style="background:#a78bfa;color:#fff;border:0;padding:4px 6px;border-radius:4px;cursor:pointer;font-size:11px">✏</button>';
+      // 🔢 cantidad FIJA por lote (ej. 10ml regalo = 1200 uds siempre)
+      if(_pcodOk){
+        h += '<button onclick="_fijarUdsPresentacion(' + loteId + ',&quot;' + _produ + '&quot;,&quot;' + escapeHtml(v.presentacion_codigo || '') + '&quot;,&quot;' + escapeHtml(v.etiqueta || '') + '&quot;,' + (v.volumen_ml || 0) + ',&quot;' + escapeHtml(v.envase_codigo || '') + '&quot;,' + (v.cantidad_fija_uds || 0) + ')" title="Cantidad FIJA por lote (ej. 1200 · 0 = usar %)" style="background:#0f766e;color:#fff;border:0;padding:4px 6px;border-radius:4px;cursor:pointer;font-size:11px">🔢</button>';
+      }
+      h += '</div>';
       h += '</div>';
     }
     h += '</div>';

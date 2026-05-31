@@ -4934,28 +4934,34 @@ def prog_composicion_mee(evento_id):
     producto_norm = (producto or '').strip().upper()
     cant_kg_f = float(cant_kg or 0)
 
-    # Cargar presentaciones activas del producto
+    # Cargar presentaciones activas del producto. cantidad_fija_uds (mig 204)
+    # puede no existir en instancias viejas → fallback graceful a 0.
     presentaciones = []
-    try:
-        for r in c.execute(
-            """SELECT presentacion_codigo, COALESCE(etiqueta,''),
-                      COALESCE(volumen_ml,0), COALESCE(envase_codigo,''),
-                      COALESCE(sku_shopify,''),
-                      COALESCE(ventas_mes_referencia,0)
-               FROM producto_presentaciones
-               WHERE LOWER(TRIM(producto_nombre))=LOWER(TRIM(?))
-                 AND COALESCE(activo,1)=1 AND COALESCE(volumen_ml,0) > 0
-               ORDER BY volumen_ml DESC""",
-            (producto,)
-        ).fetchall():
-            presentaciones.append({
-                'codigo': r[0], 'etiqueta': r[1],
-                'volumen_ml': float(r[2]), 'envase_codigo': r[3],
-                'sku_shopify': r[4],
-                'ventas_mes_referencia': float(r[5] or 0),
-            })
-    except sqlite3.OperationalError:
-        pass
+    _pp_base = (
+        "presentacion_codigo, COALESCE(etiqueta,''), COALESCE(volumen_ml,0), "
+        "COALESCE(envase_codigo,''), COALESCE(sku_shopify,''), "
+        "COALESCE(ventas_mes_referencia,0), {fija} "
+        "FROM producto_presentaciones "
+        "WHERE LOWER(TRIM(producto_nombre))=LOWER(TRIM(?)) "
+        "AND COALESCE(activo,1)=1 AND COALESCE(volumen_ml,0) > 0 "
+        "ORDER BY volumen_ml DESC")
+    _rows_pp = None
+    for _fija_expr in ("COALESCE(cantidad_fija_uds,0)", "0"):
+        try:
+            _rows_pp = c.execute(
+                "SELECT " + _pp_base.format(fija=_fija_expr), (producto,)).fetchall()
+            break
+        except Exception:
+            _rows_pp = None
+            continue
+    for r in (_rows_pp or []):
+        presentaciones.append({
+            'codigo': r[0], 'etiqueta': r[1],
+            'volumen_ml': float(r[2]), 'envase_codigo': r[3],
+            'sku_shopify': r[4],
+            'ventas_mes_referencia': float(r[5] or 0),
+            'cantidad_fija_uds': float(r[6] or 0),
+        })
 
     if not presentaciones:
         # Fallback · solo 1 volumen sin presentaciones definidas
@@ -5040,10 +5046,35 @@ def prog_composicion_mee(evento_id):
     except Exception:
         pass
 
+    # Sebastián 30-may-2026 · presentaciones con CANTIDAD FIJA (mig 204):
+    # se reservan PRIMERO sus uds (y su kg); el bulk RESTANTE se reparte por
+    # ratio entre las NO-fijas. Caso TRX: 10ml fijo 1200 uds, resto al 30ml.
+    kg_fijo_total = 0.0
+    for p in presentaciones:
+        fija = float(p.get('cantidad_fija_uds') or 0)
+        p['_es_fija'] = fija > 0 and p['volumen_ml'] > 0
+        p['_kg_fijo'] = (fija * p['volumen_ml']) / 1000.0 if p['_es_fija'] else 0.0
+        if p['_es_fija']:
+            kg_fijo_total += p['_kg_fijo']
+    # Si lo fijo excede el bulk, escalar hacia abajo para no pasarse.
+    fija_scale = (cant_kg_f / kg_fijo_total) if (kg_fijo_total > cant_kg_f and kg_fijo_total > 0) else 1.0
+    kg_restante = max(0.0, cant_kg_f - min(kg_fijo_total, cant_kg_f))
+    suma_ratio_no_fija = sum(p['_ratio'] for p in presentaciones if not p['_es_fija'])
+    n_no_fija = sum(1 for p in presentaciones if not p['_es_fija'])
+    hay_fija = any(p['_es_fija'] for p in presentaciones)
+
     variantes_out = []
     for p in presentaciones:
-        kg_p = cant_kg_f * p['_ratio']
-        un_p = int(round((kg_p * 1000.0) / p['volumen_ml'])) if p['volumen_ml'] > 0 else 0
+        if p['_es_fija']:
+            kg_p = p['_kg_fijo'] * fija_scale
+            un_p = int(round((kg_p * 1000.0) / p['volumen_ml'])) if p['volumen_ml'] > 0 else 0
+        else:
+            if suma_ratio_no_fija > 0:
+                r_rel = p['_ratio'] / suma_ratio_no_fija
+            else:
+                r_rel = (1.0 / n_no_fija) if n_no_fija else 0.0
+            kg_p = kg_restante * r_rel
+            un_p = int(round((kg_p * 1000.0) / p['volumen_ml'])) if p['volumen_ml'] > 0 else 0
         variantes_out.append({
             'presentacion_codigo': p['codigo'],
             'etiqueta': p['etiqueta'],
@@ -5051,14 +5082,18 @@ def prog_composicion_mee(evento_id):
             'envase_codigo': p['envase_codigo'],
             'envase_descripcion': mee_descs.get(p['envase_codigo'], p['envase_codigo']),
             'sku_shopify': p['sku_shopify'],
-            'ratio_pct': round(p['_ratio'] * 100, 1),
+            'ratio_pct': round((kg_p / cant_kg_f * 100), 1) if cant_kg_f > 0 else 0,
             'ventas_90d_uds': p['_ventas_90d'],
+            'cantidad_fija_uds': float(p.get('cantidad_fija_uds') or 0),
+            'es_fija': p['_es_fija'],
             'unidades_estimadas': un_p,
         })
 
     return jsonify({
         'ok': True, 'producto': producto, 'cantidad_kg': cant_kg_f,
-        'variantes': variantes_out, 'fuente_ratio': fuente,
+        'variantes': variantes_out,
+        'fuente_ratio': ('fija+' + fuente) if hay_fija else fuente,
+        'tiene_fija': hay_fija,
         'sin_variantes': False,
     })
 

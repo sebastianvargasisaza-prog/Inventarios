@@ -312,6 +312,14 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (204, "producto_presentaciones.cantidad_fija_uds · presentaciones con cantidad FIJA por lote (ej. mini 10ml regalo = 1200 uds siempre, resto al envase principal) · Sebastián 30-may-2026", [
+        # Sebastián 30-may-2026 · SUERO ILUMINADOR TRX: el 10ml es SIEMPRE 1200
+        # uds, NO un % del bulk. Si cantidad_fija_uds > 0, composicion-mee reserva
+        # primero esas uds (con su kg) y reparte el RESTO del bulk por ratio entre
+        # las demás presentaciones. 0 = ratio % normal (comportamiento previo).
+        "ALTER TABLE producto_presentaciones ADD COLUMN cantidad_fija_uds REAL DEFAULT 0",
+    ]),
+
     (203, "ipc_resultados.desviacion_id · enlace IPC fuera de spec → desviación/CAPA automática (reemplazo MyBatch fase 2) · 30-may-2026", [
         # Cuando un IPC del EBR sale NO conforme se abre una desviación
         # automáticamente (aseguramiento) y se enlaza acá para trazabilidad
