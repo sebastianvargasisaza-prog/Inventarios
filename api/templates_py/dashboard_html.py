@@ -20348,9 +20348,38 @@ async function ckMarcar(itemId, estado){
       window._NEC_SKUS_HUERFANOS = (d.resumen && d.resumen.skus_huerfanos_vendiendo) || [];
       renderResumenNec(d.resumen);
       renderClientesNec(d.clientes);
+      renderSyncBanner(d.sync_ventas);
     } catch(e) {
       div.innerHTML = '<div style="text-align:center;color:#dc2626;padding:40px">Error: ' + escapeHtmlNec(e.message) + '</div>';
     }
+  }
+
+  // Sebastián 30-may-2026 · banner de ATRASO del sync de ventas. Si pasa >36h
+  // sin sincronizar Shopify, el plan corre con ventas viejas (caso 25-may: 5
+  // días stale → velocidad baja). Hace visible el fallo que antes era silencioso.
+  function renderSyncBanner(sv){
+    var host = document.getElementById('nec-contenido');
+    if(!host) return;
+    var old = document.getElementById('nec-sync-banner');
+    if(old) old.remove();
+    if(!sv) return;
+    var h = sv.horas_desde;
+    var stale = (h == null) || (h > 36);
+    if(!stale) return;
+    var cuanto = (h == null) ? 'tiempo desconocido'
+                 : (h >= 48 ? (h/24).toFixed(1) + ' días' : Math.round(h) + ' horas');
+    var ultimo = sv.ultimo ? String(sv.ultimo).slice(0,16).replace('T',' ') : '—';
+    var msg = '⚠ Ventas Shopify sin sincronizar hace <b>' + cuanto + '</b> (último: ' +
+              escapeHtmlNec(ultimo) + '). El plan puede estar usando ventas viejas · ' +
+              'la velocidad y la cobertura saldrán bajas.';
+    var html = '<div id="nec-sync-banner" style="background:#fef2f2;border:1px solid #fecaca;' +
+      'border-left:4px solid #dc2626;border-radius:8px;padding:10px 14px;margin-bottom:12px;' +
+      'color:#991b1b;font-size:13px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
+      '<span style="flex:1;min-width:220px">' + msg + '</span>' +
+      '<button onclick="syncVentasNec(this)" style="background:#dc2626;color:#fff;border:none;' +
+      'padding:6px 14px;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer">🔄 Sincronizar ahora</button>' +
+      '</div>';
+    host.insertAdjacentHTML('afterbegin', html);
   }
 
   // ═══════════════════════════════════════════════════════════════════

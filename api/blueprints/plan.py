@@ -2507,9 +2507,40 @@ def plan_necesidades():
         "kg_total_b2b_pendientes": round(sum(c["kg_total"] for c in b2b_por_cliente.values()), 2),
     }
 
+    # Sebastián 30-may-2026 · estado del sync de ventas · si pasa mucho sin
+    # sincronizar, el plan queda CIEGO (caso 25-may: 5 días stale → velocidad
+    # baja, "dura hasta noviembre"). El frontend pinta un banner de atraso.
+    ultimo_sync_ventas = None
+    horas_desde_sync = None
+    try:
+        _row = conn.execute(
+            "SELECT MAX(synced_at) FROM animus_shopify_orders"
+        ).fetchone()
+        ultimo_sync_ventas = _row[0] if (_row and _row[0]) else None
+        if ultimo_sync_ventas:
+            from datetime import datetime as _dts
+            try:
+                from tz_colombia import now_colombia as _nowcol
+                _ahora = _nowcol().replace(tzinfo=None)
+            except Exception:
+                _ahora = None
+            try:
+                _s = str(ultimo_sync_ventas)[:19].replace('T', ' ')
+                _ts = _dts.strptime(_s, '%Y-%m-%d %H:%M:%S')
+                if _ahora is not None:
+                    horas_desde_sync = round((_ahora - _ts).total_seconds() / 3600.0, 1)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
     return jsonify({
         "clientes": clientes,
         "resumen": resumen,
+        "sync_ventas": {
+            "ultimo": ultimo_sync_ventas,
+            "horas_desde": horas_desde_sync,
+        },
         "parametros": {
             "cobertura_dias_minimo": cob_critico,
             "cobertura_dias_alerta": cob_alerta,
