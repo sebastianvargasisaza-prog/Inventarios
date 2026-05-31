@@ -5203,6 +5203,101 @@ def compras_preparacion_envases():
                     'items': items, 'n': len(items)})
 
 
+@bp.route('/api/compras/minimos-envases-sugeridos', methods=['GET'])
+def compras_minimos_envases_sugeridos():
+    """Mínimo de stock SUGERIDO de cada envase (MEE) según el consumo REAL del
+    plan de producción (no el estático 1000). minimo = consumo_diario × cobertura.
+    Read-only · compara vs el stock_minimo actual. Sebastián 31-may-2026 (Pieza 3)."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autenticado'}), 401
+    from datetime import datetime as _dm, timedelta as _tdm
+    import math as _math
+    try:
+        dias = max(30, min(365, int(request.args.get('dias', 90))))
+    except Exception:
+        dias = 90
+    try:
+        cobertura = max(7, min(180, int(request.args.get('cobertura_dias', 45))))
+    except Exception:
+        cobertura = 45
+    conn = get_db(); c = conn.cursor()
+    hoy = (_dm.utcnow() - _tdm(hours=5)).date()
+    hasta = (hoy + _tdm(days=dias)).isoformat()
+    rows = c.execute(
+        """SELECT id FROM produccion_programada
+           WHERE COALESCE(estado,'') NOT IN ('cancelado','completado')
+             AND inicio_real_at IS NULL
+             AND date(fecha_programada) >= date('now','-5 hours')
+             AND date(fecha_programada) <= date(?)""", (hasta,)).fetchall()
+    consumo = {}
+    for (pid,) in rows:
+        comp = _composicion_envases_lote(c, pid)
+        if not comp:
+            continue
+        for v in (comp.get('variantes') or []):
+            env = (v.get('envase_codigo') or '').strip()
+            if not env:
+                continue
+            consumo[env] = consumo.get(env, 0) + int(v.get('unidades_estimadas') or 0)
+    mee = {}
+    try:
+        for r in c.execute(
+            "SELECT codigo, COALESCE(descripcion,''), COALESCE(stock_minimo,0), "
+            "COALESCE(stock_actual,0) FROM maestro_mee").fetchall():
+            mee[r[0]] = {'descripcion': r[1], 'stock_minimo': float(r[2] or 0),
+                         'stock_actual': float(r[3] or 0)}
+    except Exception:
+        pass
+    items = []
+    for env, uds in consumo.items():
+        diario = uds / float(dias)
+        sugerido = int(_math.ceil(diario * cobertura))
+        info = mee.get(env, {})
+        actual = info.get('stock_minimo', 0)
+        items.append({
+            'envase_codigo': env, 'descripcion': info.get('descripcion', ''),
+            'consumo_horizonte': uds, 'consumo_diario': round(diario, 2),
+            'minimo_actual': actual, 'minimo_sugerido': sugerido,
+            'stock_actual': info.get('stock_actual', 0),
+            'diff': sugerido - actual, 'en_maestro': env in mee,
+        })
+    items.sort(key=lambda x: -x['consumo_horizonte'])
+    return jsonify({'ok': True, 'dias': dias, 'cobertura_dias': cobertura,
+                    'items': items, 'n': len(items)})
+
+
+@bp.route('/api/compras/minimos-envases-aplicar', methods=['POST'])
+def compras_minimos_envases_aplicar():
+    """Aplica stock_minimo a los MEE elegidos. Body {items:[{codigo, stock_minimo}]}."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autenticado'}), 401
+    user = session.get('compras_user', '')
+    d = request.get_json(silent=True) or {}
+    items = d.get('items') or []
+    if not isinstance(items, list) or not items:
+        return jsonify({'error': 'items requerido'}), 400
+    conn = get_db(); c = conn.cursor()
+    n = 0
+    for it in items[:500]:
+        cod = (it.get('codigo') or '').strip()
+        if not cod:
+            continue
+        try:
+            sm = max(0.0, float(it.get('stock_minimo')))
+        except (TypeError, ValueError):
+            continue
+        cur = c.execute("UPDATE maestro_mee SET stock_minimo=? WHERE codigo=?", (sm, cod))
+        if cur.rowcount:
+            n += 1
+    try:
+        audit_log(c, usuario=user, accion='MINIMOS_MEE_APLICAR',
+                  tabla='maestro_mee', registro_id='', despues={'n_actualizados': n})
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({'ok': True, 'actualizados': n})
+
+
 @bp.route('/api/programacion/lote/<int:lote_id>/fija-override', methods=['PATCH'])
 def prog_fija_override(lote_id):
     """Override de cantidad FIJA de una presentación SOLO para este lote (mig 205).

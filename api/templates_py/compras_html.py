@@ -527,6 +527,7 @@ async function cxIAPreguntar(pregunta){
         </select>
       </label>
       <button class="btn bp" onclick="loadPreparacionEnvases()" style="padding:6px 14px;font-size:12px">&#8635; Actualizar</button>
+      <button class="btn" onclick="recalcularMinimosEnvases()" style="padding:6px 14px;font-size:12px;background:#7c3aed;color:#fff;font-weight:700" title="Calcula el mínimo de cada envase según el consumo real del plan (en vez del estático)">&#9881; Mínimos de envases</button>
     </div>
   </div>
   <div id="prep-tabla-wrap" style="overflow-x:auto;margin-top:10px">Cargando&hellip;</div>
@@ -1577,6 +1578,64 @@ async function generarOSDesdePrep(i){
     var row=document.getElementById('prep-row-'+i);
     if(row){ row.style.opacity='0.55'; var ac=row.querySelector('td:last-child'); if(ac) ac.innerHTML='<span style="color:#15803d;font-weight:700;font-size:11px">✓ '+_esc(d.numero_os||'OS creada')+'</span>'; }
   }catch(e){ alert('Error red: '+(e.message||e)); }
+}
+
+// Sebastián 31-may-2026 · Pieza 3 · mínimos de envases dinámicos (consumo del plan)
+window._MINENV = [];
+async function recalcularMinimosEnvases(){
+  var m=document.getElementById('modal-min-env'); if(m) m.remove();
+  m=document.createElement('div'); m.id='modal-min-env';
+  m.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:20px;overflow:auto';
+  m.innerHTML='<div style="background:#fff;border-radius:12px;max-width:1000px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,.3);padding:24px"><div style="text-align:center;padding:40px;color:#94a3b8">Calculando mínimos…</div></div>';
+  document.body.appendChild(m);
+  m.addEventListener('click',function(e){ if(e.target===m) m.remove(); });
+  try{
+    var r=await fetch('/api/compras/minimos-envases-sugeridos?dias=90&cobertura_dias=45',{cache:'no-store'});
+    if(r.status===401){ location.href='/login'; return; }
+    var d=await r.json();
+    if(!d.ok){ m.querySelector('div').innerHTML='<div style="color:#dc2626;padding:30px">Error: '+_esc((d&&d.error)||r.status)+'</div>'; return; }
+    window._MINENV=d.items||[];
+    var html='';
+    html+='<div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #e2e8f0;padding-bottom:12px;margin-bottom:14px">';
+    html+='<div><h2 style="margin:0;font-size:18px;color:#7c3aed">⚙ Mínimos de envases · sugeridos por consumo</h2><div style="font-size:11px;color:#64748b;margin-top:3px">Mínimo = consumo diario del plan × '+d.cobertura_dias+'d de cobertura · horizonte '+d.dias+'d. Marcá los que querés aplicar.</div></div>';
+    html+='<button onclick="document.getElementById(&quot;modal-min-env&quot;).remove()" style="background:#e2e8f0;color:#475569;border:none;width:36px;height:36px;border-radius:50%;font-size:20px;cursor:pointer">×</button></div>';
+    html+='<div style="overflow-x:auto;border:1px solid #e2e8f0;border-radius:8px"><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f8fafc;color:#475569">';
+    html+='<th style="padding:7px;text-align:center"><input type="checkbox" id="min-all" onchange="_minToggleAll(this.checked)"></th>';
+    ['Envase','Consumo '+d.dias+'d','Diario','Mín actual','Mín sugerido','Stock'].forEach(function(h,i){ html+='<th style="padding:7px;text-align:'+(i===0?'left':'right')+'">'+h+'</th>'; });
+    html+='</tr></thead><tbody>';
+    window._MINENV.forEach(function(it,i){
+      var sube=it.minimo_sugerido>it.minimo_actual, baja=it.minimo_sugerido<it.minimo_actual;
+      var difCol=sube?'#b45309':(baja?'#15803d':'#475569'), noM=!it.en_maestro;
+      html+='<tr style="border-top:1px solid #f1f5f9'+(noM?';background:#fff7ed':'')+'">';
+      html+='<td style="padding:6px;text-align:center"><input type="checkbox" class="min-chk" data-i="'+i+'"'+(((sube||baja)&&!noM)?' checked':'')+(noM?' disabled':'')+'></td>';
+      html+='<td style="padding:6px;font-family:ui-monospace;font-size:11px">'+_esc(it.envase_codigo)+(noM?' <span style="color:#b45309;font-size:10px">⚠ no en maestro</span>':'')+'<div style="color:#64748b;font-size:10px">'+_esc(it.descripcion||'')+'</div></td>';
+      html+='<td style="padding:6px;text-align:right">'+it.consumo_horizonte+'</td>';
+      html+='<td style="padding:6px;text-align:right">'+it.consumo_diario+'</td>';
+      html+='<td style="padding:6px;text-align:right">'+it.minimo_actual+'</td>';
+      html+='<td style="padding:6px;text-align:right;font-weight:700;color:'+difCol+'">'+it.minimo_sugerido+(sube?' ↑':(baja?' ↓':''))+'</td>';
+      html+='<td style="padding:6px;text-align:right">'+it.stock_actual+'</td>';
+      html+='</tr>';
+    });
+    if(!window._MINENV.length) html+='<tr><td colspan="7" style="padding:20px;text-align:center;color:#94a3b8">Sin consumo de envases en el horizonte.</td></tr>';
+    html+='</tbody></table></div>';
+    html+='<div style="margin-top:12px;text-align:right"><button onclick="_aplicarMinimosEnvases()" style="background:#7c3aed;color:#fff;border:none;padding:8px 18px;border-radius:6px;font-weight:700;cursor:pointer">Aplicar seleccionados</button></div>';
+    html+='<div id="min-out" style="margin-top:8px;font-size:12px"></div>';
+    m.querySelector('div').innerHTML=html;
+  }catch(e){ m.querySelector('div').innerHTML='<div style="color:#dc2626;padding:30px">Error red: '+_esc(e.message||e)+'</div>'; }
+}
+function _minToggleAll(ch){ document.querySelectorAll('.min-chk:not([disabled])').forEach(function(x){ x.checked=ch; }); }
+async function _aplicarMinimosEnvases(){
+  var sel=[]; document.querySelectorAll('.min-chk:checked').forEach(function(x){ var it=window._MINENV[parseInt(x.dataset.i,10)]; if(it) sel.push({codigo:it.envase_codigo, stock_minimo:it.minimo_sugerido}); });
+  if(!sel.length){ alert('Marcá al menos uno'); return; }
+  if(!confirm('¿Aplicar el mínimo sugerido a '+sel.length+' envase(s)?')) return;
+  var out=document.getElementById('min-out'); if(out) out.textContent='Aplicando…';
+  try{
+    var r=await fetch('/api/compras/minimos-envases-aplicar', _fetchOpts('POST', {items:sel}));
+    var d=await r.json();
+    if(!r.ok||!d.ok){ if(out) out.innerHTML='<span style="color:#dc2626">Error: '+_esc((d&&d.error)||r.status)+'</span>'; return; }
+    if(out) out.innerHTML='<span style="color:#15803d;font-weight:700">✓ '+d.actualizados+' mínimos actualizados</span>';
+    setTimeout(recalcularMinimosEnvases, 800);
+  }catch(e){ if(out) out.innerHTML='<span style="color:#dc2626">Error red: '+_esc(e.message||e)+'</span>'; }
 }
 
 async function loadOrdenesServicio(){
