@@ -275,6 +275,7 @@ async function cxIAPreguntar(pregunta){
     <button class="tn"      data-tab="cotiz" id="tn-cotiz" title="Rondas de cotizaciones · comparar proveedores lado a lado · elegir ganadora">💬 Cotizaciones <span id="cotiz-badge" style="display:none;background:#0891b2;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
     <!-- Sebastián 21-may-2026 · Órdenes de Servicio (serigrafía/tampografía) -->
     <button class="tn"      data-tab="ordserv" id="tn-ordserv" title="Órdenes de Servicio · serigrafía, tampografía, etiquetado">🎨 Órdenes de Servicio</button>
+    <button class="tn"      data-tab="prepenv" id="tn-prepenv" title="Preparar envases · jalona los envases de las producciones próximas para mandar a serigrafía/tampografía con anticipación">📦 Preparar envases</button>
   </span>
   <!-- Sub-tabs del grupo MAESTROS -->
   <span data-cx-sub="maestros" style="display:none;gap:6px;flex-wrap:wrap">
@@ -510,6 +511,25 @@ async function cxIAPreguntar(pregunta){
       <tbody id="os-tbody"><tr><td colspan="10" style="text-align:center;padding:18px;color:#94a3b8">Cargando…</td></tr></tbody>
     </table>
   </div>
+</div>
+
+<!-- Sebastián 31-may-2026 · Preparar envases (Pieza 1) -->
+<div id="pane-prepenv" class="pane">
+  <div class="bar" style="flex-wrap:wrap;gap:8px">
+    <div>
+      <span style="font-weight:700;color:#1e293b;font-size:15px">&#128230; Preparar envases &middot; serigrafía / tampografía</span>
+      <div style="font-size:11px;color:#64748b;margin-top:2px">Jalona los envases de las producciones próximas. Elegí cuáles preparar, proveedor y tipo &middot; la fecha lista ya viene con 30 días de anticipación. "Generar OS" crea la orden y queda asignada.</div>
+    </div>
+    <div style="margin-left:auto;display:flex;gap:6px;align-items:center">
+      <label style="font-size:12px;color:#475569">Horizonte
+        <select id="prep-dias" onchange="loadPreparacionEnvases()" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:12px">
+          <option value="60">60d</option><option value="90" selected>90d</option><option value="120">120d</option><option value="180">180d</option>
+        </select>
+      </label>
+      <button class="btn bp" onclick="loadPreparacionEnvases()" style="padding:6px 14px;font-size:12px">&#8635; Actualizar</button>
+    </div>
+  </div>
+  <div id="prep-tabla-wrap" style="overflow-x:auto;margin-top:10px">Cargando&hellip;</div>
 </div>
 
 <div id="pane-solprod" class="pane">
@@ -1485,8 +1505,9 @@ document.querySelectorAll('.tn').forEach(function(btn){
     else if(tab==='solprod'){ loadSolicitudesProduccion(); }
     else if(tab==='mis-sol'){ loadMisSolicitudes(); }
     else if(tab==='ordserv'){ loadOrdenesServicio(); }
+    else if(tab==='prepenv'){ loadPreparacionEnvases(); }
     var fab = document.getElementById('fab-btn');
-    if(tab==='prov'||tab==='solic'||tab==='planta'||tab==='influencer'||tab==='consol'||tab==='pagos'||tab==='por-pagar'||tab==='alertas'||tab==='mis-sol'){ fab.style.display='none'; }
+    if(tab==='prov'||tab==='solic'||tab==='planta'||tab==='influencer'||tab==='consol'||tab==='pagos'||tab==='por-pagar'||tab==='alertas'||tab==='mis-sol'||tab==='prepenv'||tab==='ordserv'){ fab.style.display='none'; }
     else{ fab.style.display='flex'; fab.onclick=function(){
       var cat=tab==='dash'?'':tab.toUpperCase();
       openNuevaOC(cat);
@@ -1499,6 +1520,65 @@ document.querySelectorAll('.tn').forEach(function(btn){
 // Órdenes de Servicio · Sebastián 21-may-2026
 // Catalina crea · proveedor procesa · planta confirma recepción
 // ════════════════════════════════════════════════════════════════════════
+// Sebastián 31-may-2026 · Preparar envases (Pieza 1) · jalona producciones → OS
+window._PREP_ITEMS = [];
+async function loadPreparacionEnvases(){
+  var wrap = document.getElementById('prep-tabla-wrap');
+  if(!wrap) return;
+  var dias = (document.getElementById('prep-dias')||{}).value || 90;
+  wrap.innerHTML = 'Cargando…';
+  try{
+    var r = await fetch('/api/compras/preparacion-envases?dias='+dias+'&anticipo=30', {cache:'no-store'});
+    if(r.status===401){ location.href='/login'; return; }
+    var d = await r.json();
+    if(!d.ok){ wrap.innerHTML='<div style="color:#dc2626;padding:14px">Error: '+_esc((d&&d.error)||r.status)+'</div>'; return; }
+    window._PREP_ITEMS = d.items||[];
+    if(!window._PREP_ITEMS.length){ wrap.innerHTML='<div style="padding:18px;color:#64748b">No hay envases en producciones próximas ('+dias+'d).</div>'; return; }
+    var h='<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#0f766e;color:#fff">'+
+      '<th style="padding:7px;text-align:left">Producto</th><th style="padding:7px;text-align:left">Envase</th>'+
+      '<th style="padding:7px;text-align:right">Uds</th><th style="padding:7px">Producción</th>'+
+      '<th style="padding:7px">Lista para</th><th style="padding:7px">Proveedor</th>'+
+      '<th style="padding:7px">Tipo</th><th style="padding:7px;text-align:center">Acción</th></tr></thead><tbody>';
+    window._PREP_ITEMS.forEach(function(it,i){
+      var fl = it.fecha_lista_sugerida||'';
+      var flStyle = it.lista_atrasada ? 'background:#fee2e2;color:#991b1b;font-weight:700' : '';
+      var osTag = it.os_existentes ? ' <span title="ya hay OS para este envase" style="background:#fef3c7;color:#92400e;padding:1px 5px;border-radius:4px;font-size:10px">OS×'+it.os_existentes+'</span>' : '';
+      h+='<tr id="prep-row-'+i+'" style="border-top:1px solid #e2e8f0">'+
+        '<td style="padding:6px">'+_esc(it.producto||'')+osTag+'</td>'+
+        '<td style="padding:6px;font-family:ui-monospace;font-size:11px">'+_esc(it.envase_codigo||'')+'<div style="color:#64748b;font-size:10px">'+_esc(it.presentacion||'')+'</div></td>'+
+        '<td style="padding:6px;text-align:right"><input id="prep-cant-'+i+'" type="number" min="1" value="'+(it.uds||0)+'" style="width:78px;padding:3px;border:1px solid #cbd5e1;border-radius:4px;text-align:right"></td>'+
+        '<td style="padding:6px;white-space:nowrap;color:#475569">'+_esc(it.fecha_produccion||'')+'</td>'+
+        '<td style="padding:6px"><input id="prep-fecha-'+i+'" type="date" value="'+_esc(fl)+'" style="padding:3px;border:1px solid #cbd5e1;border-radius:4px;'+flStyle+'"></td>'+
+        '<td style="padding:6px"><input id="prep-prov-'+i+'" placeholder="proveedor" style="width:140px;padding:3px;border:1px solid #cbd5e1;border-radius:4px"></td>'+
+        '<td style="padding:6px"><select id="prep-tipo-'+i+'" style="padding:3px;border:1px solid #cbd5e1;border-radius:4px"><option>Serigrafía</option><option>Tampografía</option><option>Etiquetado</option></select></td>'+
+        '<td style="padding:6px;text-align:center"><button onclick="generarOSDesdePrep('+i+')" style="background:#0f766e;color:#fff;border:none;padding:5px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">Generar OS</button></td>'+
+        '</tr>';
+    });
+    h+='</tbody></table>';
+    wrap.innerHTML=h;
+  }catch(e){ wrap.innerHTML='<div style="color:#dc2626;padding:14px">Error red: '+_esc(e.message||e)+'</div>'; }
+}
+async function generarOSDesdePrep(i){
+  var it=(window._PREP_ITEMS||[])[i]; if(!it) return;
+  var prov=((document.getElementById('prep-prov-'+i)||{}).value||'').trim();
+  var tipo=(document.getElementById('prep-tipo-'+i)||{}).value||'Serigrafía';
+  var cant=parseInt((document.getElementById('prep-cant-'+i)||{}).value||'0',10);
+  var fecha=(document.getElementById('prep-fecha-'+i)||{}).value||'';
+  if(!prov){ alert('Elegí un proveedor para '+it.envase_codigo); return; }
+  if(!cant||cant<=0){ alert('Cantidad inválida'); return; }
+  var data={tipo_servicio:tipo, producto_final:(it.producto||'')+' · '+(it.presentacion||''),
+            envase_codigo_mee:it.envase_codigo||'', envase_descripcion:it.envase_descripcion||'',
+            cantidad_unidades:cant, proveedor:prov, fecha_requerida_entrega:fecha,
+            observaciones:'Preparación envase · lote #'+it.lote_id+' · producción '+it.fecha_produccion};
+  try{
+    var r=await fetch('/api/compras/ordenes-servicio', _fetchOpts('POST', data));
+    var d=await r.json();
+    if(!r.ok || (d&&d.error)){ alert('Error: '+((d&&d.error)||r.status)); return; }
+    var row=document.getElementById('prep-row-'+i);
+    if(row){ row.style.opacity='0.55'; var ac=row.querySelector('td:last-child'); if(ac) ac.innerHTML='<span style="color:#15803d;font-weight:700;font-size:11px">✓ '+_esc(d.numero_os||'OS creada')+'</span>'; }
+  }catch(e){ alert('Error red: '+(e.message||e)); }
+}
+
 async function loadOrdenesServicio(){
   var tb = document.getElementById('os-tbody');
   if(!tb) return;
