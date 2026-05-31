@@ -13229,7 +13229,11 @@ select,input{padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-si
   <div class="modal-box">
     <div class="modal-head">
       <h3 id="lote-titulo" style="margin:0;font-size:16px;font-weight:800">Lote</h3>
-      <button onclick="cerrarLoteModal()" style="background:transparent;border:none;color:white;font-size:22px;cursor:pointer;line-height:1">✕</button>
+      <div style="display:flex;align-items:center;gap:6px">
+        <button onclick="navLoteModal(-1)" id="lote-nav-prev" title="Lote anterior (por fecha)" style="background:rgba(255,255,255,.2);border:none;color:white;font-size:18px;font-weight:800;cursor:pointer;line-height:1;border-radius:6px;padding:3px 11px">‹</button>
+        <button onclick="navLoteModal(1)" id="lote-nav-next" title="Lote siguiente (por fecha)" style="background:rgba(255,255,255,.2);border:none;color:white;font-size:18px;font-weight:800;cursor:pointer;line-height:1;border-radius:6px;padding:3px 11px">›</button>
+        <button onclick="cerrarLoteModal()" style="background:transparent;border:none;color:white;font-size:22px;cursor:pointer;line-height:1;margin-left:4px">✕</button>
+      </div>
     </div>
     <div class="modal-body" id="lote-body"></div>
   </div>
@@ -13799,6 +13803,35 @@ function ignorarSugerencia(i){
 // segun los kilos programados"
 function cerrarLoteModal(){
   document.getElementById('loteModal').classList.remove('show');
+}
+
+// Sebastián 30-may-2026 · navegar al lote anterior/siguiente (por fecha) sin
+// cerrar el modal. dir = -1 (anterior) | +1 (siguiente).
+function navLoteModal(dir){
+  const cur = window._LOTE_MODAL_ACTUAL;
+  if(!cur){ return; }
+  // Lista de lotes agendados ordenada por fecha · luego producto · luego id
+  const lista = (PLAN_DATA && PLAN_DATA.agendadas ? PLAN_DATA.agendadas.slice() : [])
+    .filter(a => a && a.id != null)
+    .sort((a,b) => {
+      const fa = (a.fecha_programada||'').slice(0,10), fb = (b.fecha_programada||'').slice(0,10);
+      if(fa !== fb) return fa < fb ? -1 : 1;
+      const pa = a.producto||'', pb = b.producto||'';
+      if(pa !== pb) return pa < pb ? -1 : 1;
+      return (a.id||0) - (b.id||0);
+    });
+  if(!lista.length){ return; }
+  let idx = lista.findIndex(a => a.id === cur.id);
+  if(idx < 0){ idx = 0; }
+  const ni = idx + dir;
+  if(ni < 0 || ni >= lista.length){
+    // Borde · feedback sutil (no romper)
+    const btn = document.getElementById(dir < 0 ? 'lote-nav-prev' : 'lote-nav-next');
+    if(btn){ btn.style.opacity = '0.35'; setTimeout(()=>{ btn.style.opacity=''; }, 400); }
+    return;
+  }
+  const nx = lista[ni];
+  abrirLoteModal(nx.id, nx.producto, (nx.fecha_programada||'').slice(0,10), nx.kg || nx.cantidad_kg || 0);
 }
 
 function buscarNecesidadProducto(producto){
@@ -14382,6 +14415,7 @@ async function guardarPlanEnvasado(loteId, pblId){
 }
 
 async function abrirLoteModal(id, producto, fecha, kg){
+  window._LOTE_MODAL_ACTUAL = {id: id, producto: producto, fecha: fecha, kg: kg};
   document.getElementById('lote-titulo').textContent = '📅 ' + producto;
   document.getElementById('lote-body').innerHTML = '<div class="muted" style="padding:30px;text-align:center">Cargando datos del producto…</div>';
   document.getElementById('loteModal').classList.add('show');
