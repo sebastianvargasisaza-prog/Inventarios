@@ -14041,6 +14041,31 @@ function _parsearComposicionLote(loteData, kgTotal){
   let idx = 0;
   const _color = () => PALETA[(idx++) % PALETA.length];
 
+  // 0) FUENTE PRIMARIA · desglose estructurado desde pedidos_b2b_lote (mig 171),
+  //    que el listado ya trae en cada lote (desglose_b2b + kg_dtc). Sebastián
+  //    30-may-2026: antes solo se parseaba el TEXTO de observaciones, así que los
+  //    lotes con B2B vinculado pero SIN nota en obs (la mayoría) salían "100%
+  //    Animus" y el consumo no restaba al cliente. Ahora se usa la tabla → TODOS
+  //    los lotes con Kelly/etc. muestran el desglose y el DTC correcto.
+  const desg = loteData.desglose_b2b;
+  if (Array.isArray(desg) && desg.length){
+    const porPed = {};   // dedupe defensivo por pedido_id
+    desg.forEach(function(x){
+      const key = (x.pedido_id != null) ? ('p' + x.pedido_id) : ((x.cliente||'') + '|' + x.kg);
+      porPed[key] = { cliente: x.cliente || 'B2B', kg: parseFloat(x.kg) || 0 };
+    });
+    let b2bTot = 0;
+    Object.keys(porPed).forEach(function(k){
+      entradas.push({ cliente: porPed[k].cliente, kg: porPed[k].kg, color: _color() });
+      b2bTot += porPed[k].kg;
+    });
+    const kgDTC = (loteData.kg_dtc != null) ? parseFloat(loteData.kg_dtc) : Math.max(kgT - b2bTot, 0);
+    if (kgDTC > 0.01){
+      entradas.unshift({ cliente: 'Animus DTC', kg: Math.round(kgDTC * 100) / 100, color: '#0f766e' });
+    }
+    return { kg_total: kgT, entradas, kg_residual_dtc: Math.max(kgDTC, 0) };
+  }
+
   // 1) Lote dedicado eos_b2b: 100% del kg al cliente del pedido
   if (origen === 'eos_b2b'){
     const m = obs.match(/Pedido B2B (.+?) · #(\d+)/);
