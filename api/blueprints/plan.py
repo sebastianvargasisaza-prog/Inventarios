@@ -14498,7 +14498,12 @@ async function abrirLoteModal(id, producto, fecha, kg){
         const cliEsc = cli.replace(/'/g, "&#39;");
         const envase = d.envase || '—';
         const udsCalc = d.unidades_calculadas || 0;
-        const planUds = d.plan_envasado_uds || 0;
+        // FIX 30-may-2026 · Sebastián (caso Kelly BHA): el campo arrancaba en 0
+        // cuando no se había llenado → una orden quedaba en 0 y NO se envasaba.
+        // Ahora pre-llena con las uds calculadas (el operario solo confirma y
+        // guarda). Si de verdad quieren 0, lo escriben.
+        const planUds = (d.plan_envasado_uds && Number(d.plan_envasado_uds) > 0)
+                        ? d.plan_envasado_uds : udsCalc;
         const planNotas = (d.plan_envasado_notas || '').replace(/"/g, '&quot;');
         const pblId = d.pbl_id;
         const inputId = 'env-uds-' + pblId;
