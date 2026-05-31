@@ -20132,21 +20132,30 @@ async function ckMarcar(itemId, estado){
     var prev = btn ? btn.textContent : '';
     if(btn){ btn.disabled = true; btn.textContent = 'Sincronizando…'; }
     try {
+      // Ventana chica (cubre el atraso reciente) · 90 días por HTTP supera el
+      // límite de 30s del worker → 502. El cron 6am hace los 90 días completos
+      // en background (sin ese límite). Sebastián 30-may-2026.
       var r = await fetch('/api/programacion/sync-ventas', {
         method: 'POST',
         headers: {'Content-Type':'application/json','X-CSRF-Token':(typeof csrfTokenNec==='function'?csrfTokenNec():'')},
-        body: JSON.stringify({days: 90}),
+        body: JSON.stringify({days: 7}),
       });
       if(r.status === 401){ window.location.href = '/login'; return; }
-      var d = await r.json();
+      var txt = await r.text();
+      var d = null;
+      try { d = JSON.parse(txt); } catch(pe){ d = null; }
       if(d && d.ok){
         alert('✅ ' + (d.mensaje || (d.synced + ' órdenes sincronizadas')) +
               '\\n\\nRecargá Necesidades y reabrí el lote en el calendario para ver la velocidad actualizada.');
         if(typeof cargarNecesidades === 'function'){ try { cargarNecesidades(); } catch(e){} }
-      } else {
+      } else if(d) {
         alert('❌ El sync de Shopify FALLÓ:\\n\\n' +
-              String((d && d.error) || JSON.stringify(d)).substring(0, 400) +
-              '\\n\\nEsto explica por qué las ventas están atrasadas. Pasame este mensaje.');
+              String(d.error || JSON.stringify(d)).substring(0, 400) +
+              '\\n\\nPasame este mensaje.');
+      } else {
+        // Respuesta no-JSON (página HTML) = timeout/502 del servidor
+        alert('⏱ El servidor tardó demasiado (HTTP ' + r.status + ') y cortó la sincronización.\\n\\n' +
+              'Probá de nuevo en un momento. El cron de las 6am hace la sincronización completa de 90 días en segundo plano.');
       }
     } catch(e) {
       alert('Error de red: ' + e.message);
