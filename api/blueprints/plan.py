@@ -459,6 +459,105 @@ def admin_diag_familia_producto():
     })
 
 
+@bp.route("/api/admin/consolidar-producto", methods=["POST"])
+def admin_consolidar_producto():
+    """Consolida dos fórmulas del MISMO producto comercial en una sola.
+
+    Sebastián 31-may-2026: 'LIP SERUM (PIB CHINO)' fue temporal (se acabó el PIB
+    de siempre, usaron uno chino); ya volvieron a 'LIP SERUM VOLUMINIZADOR
+    PEPTIDOS'. Mueve presentaciones (tonos) + lotes PENDIENTES + (opcional) receta
+    del source al target, y desactiva el source. Los lotes ya producidos/iniciados
+    quedan como historia. dry_run=true (default) solo REPORTA, no muta.
+    """
+    user, err = _require_admin_or_compras()
+    if err:
+        body, code = err
+        return jsonify(body), code
+    from config import ADMIN_USERS as _AU
+    if user not in _AU:
+        return jsonify({'error': 'solo admin puede consolidar'}), 403
+    d = request.get_json(silent=True) or {}
+    source = (d.get('source') or '').strip()
+    target = (d.get('target') or '').strip()
+    aplicar = bool(d.get('aplicar'))
+    copiar_receta = bool(d.get('copiar_receta'))
+    if not source or not target or source == target:
+        return jsonify({'error': 'source y target (distintos) requeridos'}), 400
+    conn = get_db()
+    c = conn.cursor()
+    for nm in (source, target):
+        if not c.execute("SELECT 1 FROM formula_headers WHERE producto_nombre=?", (nm,)).fetchone():
+            return jsonify({'error': f"'{nm}' no existe en formula_headers"}), 404
+
+    def _cnt(sql, p):
+        try:
+            return int(c.execute(sql, p).fetchone()[0] or 0)
+        except Exception:
+            return 0
+
+    pres_source = [r[0] for r in c.execute(
+        "SELECT presentacion_codigo FROM producto_presentaciones WHERE producto_nombre=?",
+        (source,)).fetchall()]
+    pres_target = set(r[0] for r in c.execute(
+        "SELECT presentacion_codigo FROM producto_presentaciones WHERE producto_nombre=?",
+        (target,)).fetchall())
+    pres_conflict = [p for p in pres_source if p in pres_target]
+    pres_mover = [p for p in pres_source if p not in pres_target]
+    lotes_mover = _cnt(
+        "SELECT COUNT(*) FROM produccion_programada WHERE producto=? "
+        "AND COALESCE(estado,'') NOT IN ('cancelado','completado') AND inicio_real_at IS NULL",
+        (source,))
+    lotes_hist = _cnt(
+        "SELECT COUNT(*) FROM produccion_programada WHERE producto=? "
+        "AND (COALESCE(estado,'')='completado' OR inicio_real_at IS NOT NULL)", (source,))
+    receta_source = _cnt("SELECT COUNT(*) FROM formula_items WHERE producto_nombre=?", (source,))
+    receta_target = _cnt("SELECT COUNT(*) FROM formula_items WHERE producto_nombre=?", (target,))
+    rep = {
+        'ok': True, 'source': source, 'target': target,
+        'presentaciones_a_mover': pres_mover,
+        'presentaciones_en_conflicto': pres_conflict,
+        'lotes_pendientes_a_mover': lotes_mover,
+        'lotes_historicos_se_quedan': lotes_hist,
+        'receta_source_items': receta_source,
+        'receta_target_items': receta_target,
+    }
+    if not aplicar:
+        rep['dry_run'] = True
+        if receta_target == 0:
+            rep['advertencia'] = ('El target NO tiene receta (formula_items). Tildá '
+                                  '"copiar receta" para copiar la del temporal, o cargá la receta antes.')
+        return jsonify(rep)
+
+    # ── APLICAR ──
+    if receta_target == 0 and not copiar_receta:
+        rep['error'] = 'target sin receta · tildá copiar receta o cargá la receta primero'
+        return jsonify(rep), 400
+    if receta_target == 0 and copiar_receta and receta_source > 0:
+        c.execute(
+            "INSERT INTO formula_items (producto_nombre, material_id, material_nombre, porcentaje) "
+            "SELECT ?, material_id, material_nombre, porcentaje FROM formula_items WHERE producto_nombre=?",
+            (target, source))
+    for pc in pres_mover:
+        c.execute(
+            "UPDATE producto_presentaciones SET producto_nombre=? "
+            "WHERE producto_nombre=? AND presentacion_codigo=?", (target, source, pc))
+    c.execute(
+        "UPDATE produccion_programada SET producto=? WHERE producto=? "
+        "AND COALESCE(estado,'') NOT IN ('cancelado','completado') AND inicio_real_at IS NULL",
+        (target, source))
+    c.execute("UPDATE formula_headers SET activo=0 WHERE producto_nombre=?", (source,))
+    audit_log(c, usuario=user, accion='CONSOLIDAR_PRODUCTO',
+              tabla='formula_headers', registro_id=source,
+              despues={'source': source, 'target': target,
+                       'lotes_movidos': lotes_mover, 'pres_movidas': len(pres_mover),
+                       'receta_copiada': bool(receta_target == 0 and copiar_receta)})
+    conn.commit()
+    rep['aplicado'] = True
+    rep['mensaje'] = (f"Consolidado: '{source}' → '{target}'. {len(pres_mover)} presentaciones + "
+                      f"{lotes_mover} lotes movidos. '{source}' desactivada.")
+    return jsonify(rep)
+
+
 @bp.route("/admin/diag-familia", methods=["GET"])
 def admin_diag_familia_page():
     """Página read-only · radiografía de una familia de producto (Sebastián 31-may)."""
@@ -492,6 +591,18 @@ td{padding:6px 8px;border-bottom:1px solid #f1f5f9}
   <h1>🔬 Diagnóstico familia de producto</h1>
   <div class="muted">Read-only · fórmulas + canónico + mapeo de SKUs + presentaciones. Para decidir cómo unificar nombres.</div>
   <div style="margin-top:12px"><input id="q" value="LIP SERUM" placeholder="ej. LIP SERUM, GLOSS, SUERO..."> <button onclick="ir()">Buscar</button></div>
+</div>
+<div class="card" style="border:1px solid #fca5a5">
+  <h3 style="color:#b91c1c">🔗 Consolidar (unificar fórmulas del mismo producto)</h3>
+  <div class="muted">Mueve presentaciones (tonos) + lotes PENDIENTES + (opcional) receta del temporal al definitivo y <b>desactiva</b> el temporal. Los lotes ya producidos quedan como historia. <b>Vista previa antes de aplicar.</b></div>
+  <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:13px">
+    <span>Desactivar (temporal):</span><input id="cs-source" placeholder="LIP SERUM (PIB CHINO)" style="min-width:260px">
+    <span>→ Mantener (definitivo):</span><input id="cs-target" placeholder="LIP SERUM VOLUMINIZADOR PEPTIDOS" style="min-width:300px">
+    <label style="font-size:12px"><input type="checkbox" id="cs-receta"> copiar receta si el definitivo no tiene</label>
+    <button onclick="consPreview()">👁 Vista previa</button>
+    <button onclick="consAplicar()" style="background:#b91c1c">Aplicar</button>
+  </div>
+  <div id="cons-out" style="margin-top:10px"></div>
 </div>
 <div id="out"></div>
 </div>
@@ -528,6 +639,33 @@ async function ir(){
     out.innerHTML=h;
   }catch(e){ out.innerHTML='<div class="card" style="color:#dc2626">Error red: '+esc(e.message)+'</div>'; }
 }
+async function _csrf(){ try{ var r=await fetch('/api/csrf-token',{credentials:'same-origin'}); if(r.ok){ var d=await r.json(); return d.csrf_token||''; } }catch(_){} return ''; }
+function _renderRep(d){
+  var h='<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px;font-size:12px">';
+  if(d.mensaje) h+='<div style="color:#15803d;font-weight:700;margin-bottom:6px">✓ '+esc(d.mensaje)+'</div>';
+  if(d.error) h+='<div style="color:#b91c1c;font-weight:700;margin-bottom:6px">✕ '+esc(d.error)+'</div>';
+  h+='Presentaciones a mover: <b>'+((d.presentaciones_a_mover||[]).length)+'</b>'+(((d.presentaciones_en_conflicto||[]).length)?' · ⚠ en conflicto: '+d.presentaciones_en_conflicto.join(', '):'')+'<br>';
+  h+='Lotes pendientes a mover: <b>'+(d.lotes_pendientes_a_mover||0)+'</b> · históricos que se quedan: '+(d.lotes_historicos_se_quedan||0)+'<br>';
+  h+='Receta · temporal: '+(d.receta_source_items||0)+' items · <b>definitivo: '+(d.receta_target_items||0)+' items</b><br>';
+  if(d.advertencia) h+='<div style="color:#b45309;margin-top:4px">⚠ '+esc(d.advertencia)+'</div>';
+  h+='</div>';
+  return h;
+}
+async function _consCall(aplicar){
+  var s=document.getElementById('cs-source').value.trim(), t=document.getElementById('cs-target').value.trim();
+  var rec=document.getElementById('cs-receta').checked, o=document.getElementById('cons-out');
+  if(!s||!t){ o.innerHTML='<span style="color:#dc2626">Completá ambos nombres</span>'; return; }
+  if(aplicar && !confirm('¿Aplicar la consolidación?\\n\\nDesactiva "'+s+'" y mueve presentaciones + lotes pendientes a "'+t+'".\\nNo se deshace fácil.')) return;
+  o.innerHTML='Procesando…';
+  try{
+    var r=await fetch('/api/admin/consolidar-producto',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':await _csrf()},credentials:'same-origin',body:JSON.stringify({source:s,target:t,aplicar:aplicar,copiar_receta:rec})});
+    var d=await r.json();
+    o.innerHTML=_renderRep(d);
+    if(d.aplicado){ setTimeout(ir,700); }
+  }catch(e){ o.innerHTML='<span style="color:#dc2626">Error red: '+esc(e.message)+'</span>'; }
+}
+function consPreview(){ _consCall(false); }
+function consAplicar(){ _consCall(true); }
 ir();
 </script>
 </body></html>"""
