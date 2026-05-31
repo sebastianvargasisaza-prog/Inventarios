@@ -4923,14 +4923,32 @@ def prog_composicion_mee(evento_id):
     if 'compras_user' not in session:
         return jsonify({'error': 'No autenticado'}), 401
     conn = db_connect(); c = conn.cursor()
-    row = c.execute(
-        """SELECT id, producto, cantidad_kg, lotes
-           FROM produccion_programada WHERE id=?""",
-        (evento_id,)
-    ).fetchone()
+    # fija_override_json (mig 205) · override de cantidad fija POR LOTE · fallback
+    # si la columna no existe (instancia sin migrar).
+    row = None
+    for _ovr in ("COALESCE(fija_override_json,'')", "''"):
+        try:
+            row = c.execute(
+                "SELECT id, producto, cantidad_kg, lotes, " + _ovr +
+                " FROM produccion_programada WHERE id=?", (evento_id,)).fetchone()
+            break
+        except Exception:
+            row = None
     if not row:
         return jsonify({'error': f'Producción {evento_id} no encontrada'}), 404
-    pid, producto, cant_kg, lotes = row
+    pid, producto, cant_kg, lotes = row[0], row[1], row[2], row[3]
+    # Override por lote · {presentacion_codigo: uds}
+    fija_override = {}
+    try:
+        import json as _jovr
+        _raw = row[4] if len(row) > 4 else ''
+        if _raw:
+            _parsed = _jovr.loads(_raw)
+            if isinstance(_parsed, dict):
+                fija_override = {str(k).strip().upper(): float(v)
+                                 for k, v in _parsed.items() if v is not None}
+    except Exception:
+        fija_override = {}
     producto_norm = (producto or '').strip().upper()
     cant_kg_f = float(cant_kg or 0)
 
@@ -5051,7 +5069,13 @@ def prog_composicion_mee(evento_id):
     # ratio entre las NO-fijas. Caso TRX: 10ml fijo 1200 uds, resto al 30ml.
     kg_fijo_total = 0.0
     for p in presentaciones:
-        fija = float(p.get('cantidad_fija_uds') or 0)
+        _cod = (p['codigo'] or '').strip().upper()
+        _ovr = fija_override.get(_cod)            # override POR LOTE (mig 205)
+        _default = float(p.get('cantidad_fija_uds') or 0)  # default del producto
+        fija = _ovr if _ovr is not None else _default      # override gana
+        p['_fija_efectiva'] = fija
+        p['_fija_default'] = _default
+        p['_fija_es_override'] = _ovr is not None
         p['_es_fija'] = fija > 0 and p['volumen_ml'] > 0
         p['_kg_fijo'] = (fija * p['volumen_ml']) / 1000.0 if p['_es_fija'] else 0.0
         if p['_es_fija']:
@@ -5084,7 +5108,9 @@ def prog_composicion_mee(evento_id):
             'sku_shopify': p['sku_shopify'],
             'ratio_pct': round((kg_p / cant_kg_f * 100), 1) if cant_kg_f > 0 else 0,
             'ventas_90d_uds': p['_ventas_90d'],
-            'cantidad_fija_uds': float(p.get('cantidad_fija_uds') or 0),
+            'cantidad_fija_uds': float(p.get('_fija_efectiva') or 0),
+            'cantidad_fija_default': float(p.get('_fija_default') or 0),
+            'fija_es_override': bool(p.get('_fija_es_override')),
             'es_fija': p['_es_fija'],
             'unidades_estimadas': un_p,
         })
@@ -5094,8 +5120,70 @@ def prog_composicion_mee(evento_id):
         'variantes': variantes_out,
         'fuente_ratio': ('fija+' + fuente) if hay_fija else fuente,
         'tiene_fija': hay_fija,
+        'tiene_override': bool(fija_override),
         'sin_variantes': False,
     })
+
+
+@bp.route('/api/programacion/lote/<int:lote_id>/fija-override', methods=['PATCH'])
+def prog_fija_override(lote_id):
+    """Override de cantidad FIJA de una presentación SOLO para este lote (mig 205).
+
+    Sebastián 30-may-2026: el default vive en producto_presentaciones (modal admin);
+    esto permite ajustar un lote puntual (ej. promo: 2000 minis en vez de 1200) sin
+    tocar el default. Body: {presentacion_codigo, uds}. uds null/'' → quita el
+    override (vuelve al default del producto). No muta producto_presentaciones.
+    """
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autenticado'}), 401
+    user = session.get('compras_user', '')
+    d = request.get_json(silent=True) or {}
+    cod = (d.get('presentacion_codigo') or '').strip().upper()
+    if not cod:
+        return jsonify({'error': 'presentacion_codigo requerido'}), 400
+    uds_raw = d.get('uds', None)
+    import json as _jfo
+    conn = get_db(); c = conn.cursor()
+    row = c.execute(
+        "SELECT COALESCE(fija_override_json,''), COALESCE(inicio_real_at,''), "
+        "COALESCE(fin_real_at,'') FROM produccion_programada WHERE id=?",
+        (lote_id,)).fetchone()
+    if not row:
+        return jsonify({'error': f'Lote {lote_id} no existe'}), 404
+    if row[1] or row[2]:
+        return jsonify({'error': 'Lote ya iniciado/terminado · no se puede cambiar'}), 400
+    try:
+        ovr = _jfo.loads(row[0]) if row[0] else {}
+        if not isinstance(ovr, dict):
+            ovr = {}
+    except Exception:
+        ovr = {}
+    if uds_raw is None or str(uds_raw).strip() == '':
+        ovr.pop(cod, None)            # quitar override → vuelve al default
+        accion = 'quitado'
+    else:
+        try:
+            v = max(0.0, float(uds_raw))
+        except (TypeError, ValueError):
+            return jsonify({'error': 'uds inválido'}), 400
+        ovr[cod] = v
+        accion = f'fijado {v:g}'
+    nuevo = _jfo.dumps(ovr) if ovr else None
+    try:
+        c.execute("UPDATE produccion_programada SET fija_override_json=? WHERE id=?",
+                  (nuevo, lote_id))
+    except Exception as e:
+        return jsonify({'error': f'no se pudo guardar: {e}'}), 500
+    try:
+        audit_log(c, usuario=user, accion='FIJA_OVERRIDE_LOTE',
+                  tabla='produccion_programada', registro_id=lote_id,
+                  despues={'presentacion': cod, 'override': ovr})
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({'ok': True, 'lote_id': lote_id, 'presentacion_codigo': cod,
+                    'override': ovr,
+                    'mensaje': f'Override {accion} para este lote'})
 
 
 @bp.route('/api/programacion/lote/<int:lote_id>/plan-envasado/<int:pbl_id>', methods=['PATCH'])

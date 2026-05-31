@@ -312,6 +312,16 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (205, "produccion_programada.fija_override_json · override de cantidad fija POR LOTE (ajustar minis de un lote puntual sin cambiar el default del producto) · Sebastián 30-may-2026", [
+        # Sebastián 30-may-2026 · el default de la cantidad fija vive en
+        # producto_presentaciones.cantidad_fija_uds (mig 204 · se edita en el
+        # modal admin). Este campo permite, AL PROGRAMAR un lote, subir/bajar la
+        # cantidad fija SOLO para ese lote (ej. promo: 2000 minis en vez de 1200)
+        # sin tocar el default. JSON map {presentacion_codigo: uds}. NULL = usar
+        # el default del producto. Lo lee composicion-mee (override > default).
+        "ALTER TABLE produccion_programada ADD COLUMN fija_override_json TEXT",
+    ]),
+
     (204, "producto_presentaciones.cantidad_fija_uds · presentaciones con cantidad FIJA por lote (ej. mini 10ml regalo = 1200 uds siempre, resto al envase principal) · Sebastián 30-may-2026", [
         # Sebastián 30-may-2026 · SUERO ILUMINADOR TRX: el 10ml es SIEMPRE 1200
         # uds, NO un % del bulk. Si cantidad_fija_uds > 0, composicion-mee reserva

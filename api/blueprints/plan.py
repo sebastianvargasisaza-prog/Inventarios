@@ -14107,19 +14107,25 @@ async function _editarUdsMesPresentacion(loteId, productoEnc, codigo, etiqueta, 
 // Sebastián 30-may-2026 · cantidad FIJA por lote para una presentación.
 // Caso SUERO ILUMINADOR TRX: 10ml = SIEMPRE 1200 uds (no %). El sistema reserva
 // esas uds primero y reparte el resto del bulk en las demás presentaciones.
-async function _fijarUdsPresentacion(loteId, productoEnc, codigo, etiqueta, volMl, envaseCodigo, fijaActual){
-  const producto = decodeURIComponent(productoEnc);
-  const nueva = prompt(
-    'Cantidad FIJA por lote · ' + producto + ' · ' + etiqueta + '\\n\\n' +
-    'El sistema reserva SIEMPRE estas unidades de esta presentación (sin importar\\n' +
-    'el tamaño del lote) y reparte el RESTO del bulk en las demás presentaciones.\\n\\n' +
-    'Ej: mini 10ml de regalo = 1200.  Escribí 0 para volver a porcentaje (%).\\n\\n' +
-    'Cantidad fija actual: ' + (fijaActual || 0),
-    String(fijaActual || 0)
-  );
+// Sebastián 30-may-2026 · OVERRIDE de cantidad fija SOLO para ESTE lote.
+// El default del producto se edita en Presentaciones (admin); esto ajusta un
+// lote puntual (ej. promo: más regalos) sin tocar el default. Vacío = volver al default.
+async function _fijarUdsPresentacion(loteId, codigo, etiqueta, efectiva, defaultUds, esOverride){
+  const msg = 'Cantidad fija de "' + etiqueta + '" SOLO para ESTE lote\\n\\n' +
+    'Default del producto: ' + (defaultUds || 0) + ' uds' +
+    (esOverride ? '  ·  override actual de este lote: ' + (efectiva || 0) : '') + '\\n\\n' +
+    'Escribí las uds para ESTE lote (ej. promo: 2000), o dejá VACÍO para volver al default del producto.';
+  const nueva = prompt(msg, String(efectiva || 0));
   if (nueva === null) return;  // cancel
-  const valor = parseFloat(nueva);
-  if (isNaN(valor) || valor < 0){ alert('Número inválido · debe ser ≥ 0'); return; }
+  const limpio = nueva.trim();
+  let valorParam;  // '' = quitar override (volver al default)
+  if (limpio === ''){
+    valorParam = '';
+  } else {
+    const valor = parseFloat(limpio);
+    if (isNaN(valor) || valor < 0){ alert('Número inválido · debe ser ≥ 0 (o vacío para usar el default)'); return; }
+    valorParam = valor;
+  }
   let csrf = '';
   try {
     if (window._csrfTok) { csrf = window._csrfTok; }
@@ -14129,17 +14135,10 @@ async function _fijarUdsPresentacion(loteId, productoEnc, codigo, etiqueta, volM
     }
   } catch(_){}
   try {
-    const r = await fetch('/api/admin/producto-presentaciones-upsert', {
-      method:'POST', credentials:'same-origin',
+    const r = await fetch('/api/programacion/lote/' + loteId + '/fija-override', {
+      method:'PATCH', credentials:'same-origin',
       headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},
-      body: JSON.stringify({
-        producto_nombre: producto,
-        presentacion_codigo: codigo,
-        etiqueta: etiqueta,
-        volumen_ml: volMl,
-        envase_codigo: envaseCodigo,
-        cantidad_fija_uds: valor,
-      })
+      body: JSON.stringify({ presentacion_codigo: codigo, uds: valorParam })
     });
     const d = await r.json();
     if(r.ok && d.ok){
@@ -14186,7 +14185,8 @@ async function _cargarComposicionMee(loteId){
       h += '<div><span title="' + chipTitle + '" style="background:' + ratioBg + ';color:#fff;padding:2px 8px;border-radius:10px;font-weight:700;font-size:11px">' + chipTxt + '</span></div>';
       h += '<div style="font-weight:700;color:#0f766e">' + escapeHtml(v.etiqueta || '') + '</div>';
       h += '<div style="font-family:monospace;font-size:11px;color:#334155">' + escapeHtml(v.envase_codigo || '(sin envase)') + (v.envase_descripcion && v.envase_descripcion !== v.envase_codigo ? ' · <span style="color:#64748b">' + escapeHtml(v.envase_descripcion) + '</span>' : '') + '</div>';
-      h += '<div style="text-align:right;font-weight:800;color:#0e7490">' + (v.unidades_estimadas || 0).toLocaleString('es-CO') + ' uds' + (esFija ? ' <span style="font-size:9px;color:#7c3aed;font-weight:700">FIJA</span>' : '') + '</div>';
+      const fijaTag = esFija ? (v.fija_es_override ? ' <span style="font-size:9px;color:#b45309;font-weight:700" title="override solo para este lote">FIJA·LOTE</span>' : ' <span style="font-size:9px;color:#7c3aed;font-weight:700" title="cantidad fija (default del producto)">FIJA</span>') : '';
+      h += '<div style="text-align:right;font-weight:800;color:#0e7490">' + (v.unidades_estimadas || 0).toLocaleString('es-CO') + ' uds' + fijaTag + '</div>';
       const _produ = encodeURIComponent(d.producto || '');
       const _pcodOk = v.presentacion_codigo && v.presentacion_codigo !== '-';
       h += '<div style="display:flex;gap:3px;justify-content:flex-end">';
@@ -14194,7 +14194,7 @@ async function _cargarComposicionMee(loteId){
       h += '<button onclick="_editarUdsMesPresentacion(' + loteId + ',&quot;' + _produ + '&quot;,&quot;' + escapeHtml(v.presentacion_codigo || '') + '&quot;,&quot;' + escapeHtml(v.etiqueta || '') + '&quot;,' + (v.volumen_ml || 0) + ',&quot;' + escapeHtml(v.envase_codigo || '') + '&quot;,' + (v.unidades_estimadas || 0) + ')" title="Editar uds/mes de referencia (RATIO · % del bulk)" style="background:#a78bfa;color:#fff;border:0;padding:4px 6px;border-radius:4px;cursor:pointer;font-size:11px">✏</button>';
       // 🔢 cantidad FIJA por lote (ej. 10ml regalo = 1200 uds siempre)
       if(_pcodOk){
-        h += '<button onclick="_fijarUdsPresentacion(' + loteId + ',&quot;' + _produ + '&quot;,&quot;' + escapeHtml(v.presentacion_codigo || '') + '&quot;,&quot;' + escapeHtml(v.etiqueta || '') + '&quot;,' + (v.volumen_ml || 0) + ',&quot;' + escapeHtml(v.envase_codigo || '') + '&quot;,' + (v.cantidad_fija_uds || 0) + ')" title="Cantidad FIJA por lote (ej. 1200 · 0 = usar %)" style="background:#0f766e;color:#fff;border:0;padding:4px 6px;border-radius:4px;cursor:pointer;font-size:11px">🔢</button>';
+        h += '<button onclick="_fijarUdsPresentacion(' + loteId + ',&quot;' + escapeHtml(v.presentacion_codigo || '') + '&quot;,&quot;' + escapeHtml(v.etiqueta || '') + '&quot;,' + (v.cantidad_fija_uds || 0) + ',' + (v.cantidad_fija_default || 0) + ',' + (v.fija_es_override ? 'true' : 'false') + ')" title="Cantidad fija SOLO para ESTE lote (el default del producto se edita en Presentaciones)" style="background:#0f766e;color:#fff;border:0;padding:4px 6px;border-radius:4px;cursor:pointer;font-size:11px">🔢</button>';
       }
       h += '</div>';
       h += '</div>';
