@@ -52,6 +52,43 @@ def _pk_columns(pgcur, tabla):
     return pk
 
 
+_UNIQUE_CACHE = {}
+
+
+def _unique_keysets(pgcur, tabla):
+    """Conjuntos de columnas de cada índice/constraint UNIQUE de `tabla`.
+
+    Devuelve lista de (es_pk: bool, [columnas]). La PK va primero. Cacheado.
+
+    Sebastián 30-may-2026 · FIX sync Shopify atascado: `INSERT OR REPLACE`
+    solo miraba la PK como objetivo del ON CONFLICT. Tablas como
+    `animus_shopify_orders` (PK=id autoincrement + UNIQUE shopify_id) chocaban
+    en la constraint UNIQUE no-PK → 'duplicate key' y el sync moría. Ahora se
+    consideran TODAS las constraints únicas para elegir el objetivo correcto.
+    """
+    clave = tabla.lower()
+    if clave in _UNIQUE_CACHE:
+        return _UNIQUE_CACHE[clave]
+    keysets = []
+    try:
+        pgcur.execute(
+            "SELECT i.indisprimary, array_agg(a.attname) "
+            "FROM pg_index i "
+            "JOIN pg_attribute a ON a.attrelid = i.indrelid "
+            "                   AND a.attnum = ANY(i.indkey) "
+            "WHERE i.indrelid = %s::regclass AND i.indisunique "
+            "GROUP BY i.indexrelid, i.indisprimary",
+            (clave,))
+        for r in pgcur.fetchall():
+            keysets.append((bool(r[0]), [str(c) for c in (r[1] or [])]))
+    except Exception:
+        keysets = []
+    # PK primero · luego las demás UNIQUE
+    keysets.sort(key=lambda x: (not x[0]))
+    _UNIQUE_CACHE[clave] = keysets
+    return keysets
+
+
 # Cache de "¿la tabla tiene columna id?" (para decidir el RETURNING id).
 _IDCOL_CACHE = {}
 
@@ -299,18 +336,32 @@ class _Cursor:
             return base                       # sin lista de columnas
         tabla, cols_raw = m.group(1), m.group(2)
         cols = [c.strip().strip('"') for c in cols_raw.split(',') if c.strip()]
-        pk = _pk_columns(self._cur, tabla)
-        if not pk:
-            return base                       # sin PK no hay conflicto
-        set_cols = [c for c in cols if c.lower() not in
-                    {p.lower() for p in pk}]
+        cols_lower = {c.lower() for c in cols}
+        # Elegir el objetivo del ON CONFLICT = la constraint única cuyas columnas
+        # estén TODAS presentes en el INSERT (así el conflicto puede ocurrir de
+        # verdad). La PK autoincrement (id) normalmente NO está en el INSERT →
+        # se descarta y se usa la UNIQUE real (p.ej. shopify_id). Se prefiere la
+        # PK si califica (preserva comportamiento previo).
+        target = None
+        for _es_pk, kcols in _unique_keysets(self._cur, tabla):
+            if kcols and all(kc.lower() in cols_lower for kc in kcols):
+                target = kcols
+                break
+        if target is None:
+            # Fallback: PK aunque no esté en las columnas (comportamiento previo)
+            pk = _pk_columns(self._cur, tabla)
+            if not pk:
+                return base                   # sin clave no hay conflicto
+            target = pk
+        tgt_lower = {t.lower() for t in target}
+        set_cols = [c for c in cols if c.lower() not in tgt_lower]
         if set_cols:
             sets = ', '.join('{0}=EXCLUDED.{0}'.format(c) for c in set_cols)
             accion = 'DO UPDATE SET ' + sets
         else:
             accion = 'DO NOTHING'
         return '{0} ON CONFLICT ({1}) {2}'.format(
-            base, ', '.join(pk), accion)
+            base, ', '.join(target), accion)
 
     def executemany(self, sql, seq_params):
         self.lastrowid = None
