@@ -13889,17 +13889,23 @@ function _parsearComposicionLote(loteData, kgTotal){
   }
 
   // 2) Lote canónico con sumados: extraer cada "+Xkg B2B <Cliente> (pedido #N)"
+  // FIX 30-may-2026 · Sebastián "en BHA Kelly sale dos veces": si la integración
+  // B2B corrió >1 vez, el aporte queda escrito 2× en observaciones y se contaba
+  // doble (kg_residual_dtc se hundía → duración mal). Deduplicamos por # de
+  // pedido (último valor gana) → cada pedido cuenta UNA sola vez.
   const reSum = /\+(\d+(?:\.\d+)?)\s*kg\s+B2B\s+(.+?)\s*\(pedido\s+#(\d+)\)/gi;
   let mm;
-  const aportadoTotal = { value: 0 };
+  const porPedido = {};
   while ((mm = reSum.exec(obs)) !== null){
-    const kg = parseFloat(mm[1]) || 0;
-    const cli = mm[2].trim();
-    entradas.push({ cliente: cli, kg: kg, color: _color() });
-    aportadoTotal.value += kg;
+    porPedido[mm[3]] = { cliente: mm[2].trim(), kg: parseFloat(mm[1]) || 0 };
   }
+  let aportadoTotal = 0;
+  Object.keys(porPedido).forEach(function(ped){
+    entradas.push({ cliente: porPedido[ped].cliente, kg: porPedido[ped].kg, color: _color() });
+    aportadoTotal += porPedido[ped].kg;
+  });
   // Lo que queda (total − B2B) es DTC / Animus
-  const kgDTC = Math.max(kgT - aportadoTotal.value, 0);
+  const kgDTC = Math.max(kgT - aportadoTotal, 0);
   if (kgDTC > 0.01){
     entradas.unshift({ cliente: 'Animus DTC', kg: kgDTC, color: '#0f766e' });
   }
