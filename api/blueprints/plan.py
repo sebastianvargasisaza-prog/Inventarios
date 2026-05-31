@@ -4682,7 +4682,15 @@ def comparar_calendar_necesidades():
                   COALESCE(SUM(cantidad_kg), 0),
                   GROUP_CONCAT(origen, ',')
            FROM produccion_programada
-           WHERE origen IN ('calendar','manual')
+           -- FIX 30-may-2026 · el cruce era CIEGO: contaba solo 'calendar'/'manual'
+           -- (legacy Google Cal) y NO los orígenes nativos EOS (Fijo eos_plan/b2b/
+           -- retroactivo + Sugeridas eos_canonico/auto_plan/sugerido) → marcaba como
+           -- "URGENTE_SIN_AGENDAR" lo que SÍ estaba programado. Google Cal fuera ·
+           -- todo autónomo en EOS. (n_calendar_legacy ~L11287 y cancelables ~L12804
+           --  SÍ deben seguir solo calendar/manual a propósito · NO tocar.)
+           WHERE origen IN ('eos_plan','eos_b2b','eos_retroactivo',
+                            'eos_canonico','auto_plan','sugerido',
+                            'calendar','manual')
              AND estado IN ('pendiente','programado','en_curso')
              AND fin_real_at IS NULL
              AND date(fecha_programada) >= date('now', '-5 hours')
@@ -4869,7 +4877,9 @@ def comparar_calendar_necesidades():
     rows_huerfanos = c.execute(
         """SELECT producto, COUNT(*), SUM(cantidad_kg)
            FROM produccion_programada
-           WHERE origen IN ('calendar','manual')
+           WHERE origen IN ('eos_plan','eos_b2b','eos_retroactivo',
+                            'eos_canonico','auto_plan','sugerido',
+                            'calendar','manual')
              AND estado IN ('pendiente','programado','en_curso')
              AND fin_real_at IS NULL
              AND date(fecha_programada) >= date('now', '-5 hours')
@@ -4936,8 +4946,8 @@ td{padding:7px 8px;border-bottom:1px solid #f1f5f9;vertical-align:top}
 <div class="wrap">
 <a href="/modulos">&larr; Volver al panel</a>
 <div class="card">
-  <h1>📊 Comparar Google Calendar vs Necesidades reales</h1>
-  <div class="muted">Análisis read-only · cruza producciones agendadas en Calendar contra lo que el sistema dice que necesitás producir (basado en Shopify ventas + stock actual). NO modifica nada.</div>
+  <h1>📊 Comparar Calendario EOS vs Necesidades reales</h1>
+  <div class="muted">Análisis read-only · cruza lo programado en EOS (Fijo + Sugeridas, todos los orígenes) contra lo que el sistema dice que necesitás producir (basado en Shopify ventas + stock actual). NO modifica nada.</div>
   <div style="display:flex;gap:10px;margin-top:14px;align-items:center;flex-wrap:wrap">
     Horizonte: <select id="hz">
       <option value="60">60 días</option>
