@@ -7636,6 +7636,135 @@ def pedidos_b2b_asignar_a_lote(pid, lote_id):
     })
 
 
+@bp.route("/api/pedidos-b2b/diagnostico-cliente", methods=["GET"])
+def pedidos_b2b_diagnostico_cliente():
+    """Read-only · estado de las pedidos B2B de un cliente vs el calendario.
+
+    Sebastián 30-may-2026 (caso Kelly Guerra): normalizar sin tocar nada primero.
+    Para cada pedido devuelve: estado, kg, lotes vinculados (pedidos_b2b_lote),
+    cuántas veces aparece en observaciones (detecta texto duplicado), si hay un
+    lote del producto en el calendario, y una recomendación. NO muta nada.
+    """
+    err = _require_login()
+    if err:
+        return err
+    cliente = (request.args.get("cliente") or "").strip()
+    if not cliente:
+        return jsonify({"error": "cliente requerido (id o nombre)"}), 400
+    conn = get_db()
+    c = conn.cursor()
+
+    # Pedidos del cliente · match por cliente_id exacto o nombre LIKE
+    _sel = ("SELECT id, cliente_id, cliente_nombre, producto_nombre, "
+            "COALESCE(cantidad_uds,0), COALESCE(ml_unidad,30), fecha_estimada, "
+            "COALESCE(estado,'pendiente'), {urg} "
+            "FROM pedidos_b2b WHERE (cliente_id = ? OR UPPER(COALESCE(cliente_nombre,'')) "
+            "LIKE UPPER(?)) ORDER BY fecha_estimada ASC, id ASC")
+    like = '%' + cliente + '%'
+    try:
+        rows = c.execute(_sel.format(urg="COALESCE(urgencia,'media')"),
+                         (cliente, like)).fetchall()
+    except Exception:
+        rows = c.execute(_sel.format(urg="'media'"), (cliente, like)).fetchall()
+
+    pedidos = []
+    n_vinc = n_sin_lote = n_dup = 0
+    estados_count = {}
+    for r in rows:
+        pid, cli_id, cli_nom, producto, uds, ml, fest, estado, urg = r
+        kg = round(float(uds or 0) * float(ml or 30) / 1000.0, 2)
+        estados_count[estado] = estados_count.get(estado, 0) + 1
+
+        # Lotes vinculados (pedidos_b2b_lote)
+        vinc = []
+        try:
+            for lr in c.execute(
+                """SELECT pbl.lote_produccion_id, COALESCE(pbl.kg_aporte,0),
+                          COALESCE(pbl.modo,''), pp.fecha_programada,
+                          COALESCE(pp.estado,''), COALESCE(pp.cantidad_kg,0),
+                          COALESCE(pp.origen,''), pp.inicio_real_at, pp.fin_real_at
+                   FROM pedidos_b2b_lote pbl
+                   LEFT JOIN produccion_programada pp ON pp.id = pbl.lote_produccion_id
+                   WHERE pbl.pedido_b2b_id = ?""", (pid,)).fetchall():
+                vinc.append({
+                    "lote_id": lr[0], "kg_aporte": round(float(lr[1] or 0), 2),
+                    "modo": lr[2], "fecha": (lr[3] or "")[:10],
+                    "lote_estado": lr[4], "lote_kg": round(float(lr[5] or 0), 2),
+                    "origen": lr[6],
+                    "iniciado": bool(lr[7]), "terminado": bool(lr[8]),
+                })
+        except Exception:
+            vinc = []
+        lotes_distintos = len(set(v["lote_id"] for v in vinc if v["lote_id"]))
+
+        # Veces que el pedido aparece en observaciones (texto duplicado)
+        apariciones_texto = 0
+        try:
+            for (obs,) in c.execute(
+                "SELECT COALESCE(observaciones,'') FROM produccion_programada "
+                "WHERE observaciones LIKE ?", ('%pedido #' + str(pid) + '%',)
+            ).fetchall():
+                apariciones_texto += (obs or '').count('pedido #' + str(pid))
+        except Exception:
+            apariciones_texto = 0
+
+        # ¿Hay un lote ACTIVO futuro de este producto (aunque no esté vinculado)?
+        try:
+            hay_lote = c.execute(
+                """SELECT COUNT(*) FROM produccion_programada
+                   WHERE UPPER(TRIM(producto)) = UPPER(TRIM(?))
+                     AND COALESCE(estado,'') NOT IN ('cancelado','completado')
+                     AND fin_real_at IS NULL
+                     AND date(fecha_programada) >= date('now','-5 hours')""",
+                (producto,)).fetchone()[0]
+        except Exception:
+            hay_lote = 0
+
+        vinculado = len(vinc) > 0
+        duplicado = (lotes_distintos > 1) or (apariciones_texto > 1)
+        sin_lote = (not vinculado) and (hay_lote == 0)
+        if vinculado:
+            n_vinc += 1
+        if sin_lote:
+            n_sin_lote += 1
+        if duplicado:
+            n_dup += 1
+
+        if duplicado:
+            reco = "DUPLICADO · vinculado a varios lotes o repetido en observaciones · deduplicar"
+        elif vinculado:
+            reco = "OK · vinculado a lote · se puede marcar 'en producción'"
+        elif hay_lote > 0:
+            reco = "Hay lote del producto en calendario pero el pedido NO está vinculado · vincular (sin sumar kg si ya lo incluiste)"
+        else:
+            reco = "SIN lote en calendario · falta programar este producto"
+
+        pedidos.append({
+            "id": pid, "producto": producto, "uds": int(uds or 0),
+            "kg": kg, "fecha_estimada": (fest or "")[:10] if fest else None,
+            "estado": estado, "urgencia": str(urg or 'media').lower(),
+            "lotes_vinculados": vinc, "n_lotes_distintos": lotes_distintos,
+            "apariciones_texto": apariciones_texto,
+            "hay_lote_calendario": int(hay_lote or 0),
+            "vinculado": vinculado, "duplicado": duplicado, "sin_lote": sin_lote,
+            "recomendacion": reco,
+        })
+
+    return jsonify({
+        "ok": True,
+        "cliente": cliente,
+        "cliente_nombre": (rows[0][2] if rows else cliente),
+        "n_pedidos": len(pedidos),
+        "n_vinculados": n_vinc,
+        "n_sin_lote": n_sin_lote,
+        "n_duplicados": n_dup,
+        "estados": estados_count,
+        "pedidos": pedidos,
+        "nota": ("Read-only · no modifica nada. 'duplicado' = el pedido cuenta "
+                 "más de una vez (en >1 lote o repetido en observaciones)."),
+    })
+
+
 @bp.route("/api/admin/sub-skus", methods=["GET"])
 def admin_sub_skus_listar():
     """Lista todos los SKUs agrupados por producto canónico con tonos.

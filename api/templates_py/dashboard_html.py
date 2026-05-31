@@ -22877,6 +22877,7 @@ async function ckMarcar(itemId, estado){
     html += '<div><span style="color:#3730a3;font-size:16px;font-weight:800">📦 ' + escapeHtmlNec(cli.cliente_nombre) + '</span>';
     html += ' <span style="font-size:11px;font-weight:500;color:#94a3b8">· B2B · ' + (cli.pedidos||[]).length + ' pedidos · ' + cli.kg_total.toFixed(1) + ' kg</span></div>';
     html += '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">' + chipUrgHeader + chips;
+    html += '<button onclick="event.preventDefault();event.stopPropagation();revisarB2BCliente(\\''+cliEsc+'\\',\\''+cliNomEsc+'\\')" style="background:#0f766e;color:#fff;border:none;padding:6px 12px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;margin-left:8px" title="Revisar cobertura y duplicados de este cliente (read-only)">🔍 Revisar</button>';
     html += '<button onclick="event.preventDefault();event.stopPropagation();abrirFormB2BCliente(\\''+cliEsc+'\\',\\''+cliNomEsc+'\\')" style="background:#7c3aed;color:#fff;border:none;padding:6px 12px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;margin-left:8px">+ Producto</button>';
     html += '</div></summary>';
     html += '<div style="padding:14px 18px;overflow-x:auto">';
@@ -22915,6 +22916,65 @@ async function ckMarcar(itemId, estado){
     html += '</tbody></table></div></details>';
     return html;
   }
+
+  // Sebastián 30-may-2026 · Revisar B2B (read-only) · cobertura + duplicados.
+  // Caso Kelly: ver qué pedidos están en calendario, cuáles duplicadas, estados.
+  window.revisarB2BCliente = async function(cliId, cliNom){
+    var m = document.getElementById('modal-b2b-diag');
+    if(m) m.remove();
+    m = document.createElement('div');
+    m.id = 'modal-b2b-diag';
+    m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:flex-start;justify-content:center;padding:20px;overflow:auto';
+    m.innerHTML = '<div style="background:#fff;border-radius:12px;max-width:1050px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,.3);padding:24px"><div style="text-align:center;padding:40px;color:#94a3b8">Revisando pedidos de ' + escapeHtmlNec(cliNom||cliId) + '…</div></div>';
+    document.body.appendChild(m);
+    m.addEventListener('click', function(e){ if(e.target === m) m.remove(); });
+    try {
+      var r = await fetch('/api/pedidos-b2b/diagnostico-cliente?cliente=' + encodeURIComponent(cliId || cliNom), {cache:'no-store'});
+      if(r.status === 401){ window.location.href = '/login'; return; }
+      var d = await r.json();
+      if(!r.ok || !d.ok){
+        m.querySelector('div').innerHTML = '<div style="color:#dc2626;padding:30px">Error: ' + escapeHtmlNec((d && d.error) || r.status) + '</div>';
+        return;
+      }
+      var esc = escapeHtmlNec, html = '';
+      html += '<div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #e2e8f0;padding-bottom:12px;margin-bottom:14px">';
+      html += '<div><h2 style="margin:0;font-size:18px;color:#0f766e">🔍 Revisar B2B · ' + esc(d.cliente_nombre || cliNom || '') + '</h2>';
+      html += '<div style="font-size:11px;color:#64748b;margin-top:3px">' + d.n_pedidos + ' pedidos · ' + d.n_vinculados + ' en calendario · ' + d.n_sin_lote + ' sin lote · ' + (d.n_duplicados ? ('<b style="color:#b91c1c">' + d.n_duplicados + ' duplicados</b>') : '0 duplicados') + ' · read-only</div></div>';
+      html += '<button onclick="document.getElementById(&quot;modal-b2b-diag&quot;).remove()" style="background:#e2e8f0;color:#475569;border:none;width:36px;height:36px;border-radius:50%;font-size:20px;cursor:pointer">×</button>';
+      html += '</div>';
+      html += '<div style="overflow-x:auto;border:1px solid #e2e8f0;border-radius:8px"><table style="width:100%;border-collapse:collapse;font-size:12px">';
+      html += '<thead><tr style="background:#f8fafc;color:#475569">';
+      ['Producto','Uds','kg','Fecha','Estado','En calendario','Cobertura'].forEach(function(h,i){
+        var al = (i===1||i===2) ? 'right' : 'left';
+        html += '<th style="text-align:' + al + ';padding:7px 8px;font-weight:700;white-space:nowrap">' + h + '</th>';
+      });
+      html += '</tr></thead><tbody>';
+      (d.pedidos || []).forEach(function(p){
+        var bg = p.duplicado ? '#fff1f2' : (p.sin_lote ? '#fff7ed' : '#fff');
+        var cobBadge, cobCol;
+        if(p.duplicado){ cobBadge = '⚠ DUPLICADO'; cobCol = '#b91c1c'; }
+        else if(p.vinculado){ cobBadge = '✓ vinculado'; cobCol = '#15803d'; }
+        else if(p.hay_lote_calendario > 0){ cobBadge = 'lote sin vincular'; cobCol = '#b45309'; }
+        else { cobBadge = '✗ sin lote'; cobCol = '#b91c1c'; }
+        var lotesTxt = (p.lotes_vinculados || []).map(function(l){ return '#' + l.lote_id + ' (' + l.fecha + ', ' + l.kg_aporte + 'kg)'; }).join(', ') || '—';
+        html += '<tr style="border-top:1px solid #f1f5f9;background:' + bg + '">';
+        html += '<td style="padding:6px 8px">' + esc(p.producto||'') + '</td>';
+        html += '<td style="padding:6px 8px;text-align:right">' + p.uds + '</td>';
+        html += '<td style="padding:6px 8px;text-align:right">' + p.kg + '</td>';
+        html += '<td style="padding:6px 8px;white-space:nowrap">' + (p.fecha_estimada||'—') + '</td>';
+        html += '<td style="padding:6px 8px">' + esc(p.estado||'') + '</td>';
+        html += '<td style="padding:6px 8px;font-size:11px;color:#64748b">' + esc(lotesTxt) + (p.apariciones_texto>1 ? ' <span style="color:#b91c1c;font-weight:700">·texto x' + p.apariciones_texto + '</span>' : '') + '</td>';
+        html += '<td style="padding:6px 8px"><span style="color:' + cobCol + ';font-weight:700">' + cobBadge + '</span><div style="font-size:10px;color:#94a3b8">' + esc(p.recomendacion||'') + '</div></td>';
+        html += '</tr>';
+      });
+      if(!(d.pedidos||[]).length){ html += '<tr><td colspan="7" style="padding:20px;text-align:center;color:#94a3b8">Sin pedidos para este cliente</td></tr>'; }
+      html += '</tbody></table></div>';
+      html += '<div style="font-size:11px;color:#94a3b8;margin-top:8px">' + esc(d.nota||'') + '</div>';
+      m.querySelector('div').innerHTML = html;
+    } catch(e){
+      m.querySelector('div').innerHTML = '<div style="color:#dc2626;padding:30px">Error de red: ' + escapeHtmlNec(e.message) + '</div>';
+    }
+  };
 
   // Pre-llena cliente_id y abre el form B2B
   window.abrirFormB2BCliente = function(cli_id, cli_nom) {
