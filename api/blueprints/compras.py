@@ -7875,6 +7875,56 @@ def movimientos_mee_lote():
     if errores: return jsonify({'ok':True,'advertencias':errores})
     return jsonify({'ok':True})
 
+@bp.route('/api/compras/feed-necesidades', methods=['GET'])
+def compras_feed_necesidades():
+    """Feed unificado de necesidades de compra: materias primas (MP) y envases
+    (MEE) por debajo del mínimo, en un solo lugar, ordenado por criticidad
+    (menor % de cobertura primero). Read-only. Sebastián 31-may-2026 (Pieza 2)."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autenticado'}), 401
+    conn = get_db(); c = conn.cursor()
+    items = []
+    # MP bajo mínimo · stock = SUM(movimientos) (mismo cálculo del dashboard)
+    try:
+        for r in c.execute("""
+            SELECT m.codigo_mp,
+                   COALESCE(NULLIF(TRIM(m.nombre_comercial),''),
+                            NULLIF(TRIM(m.nombre_inci),''), m.codigo_mp),
+                   COALESCE(m.proveedor,''), COALESCE(m.stock_minimo,0), COALESCE(s.stock,0)
+            FROM maestro_mps m
+            LEFT JOIN (SELECT material_id, SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad
+                              WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END) AS stock
+                       FROM movimientos GROUP BY material_id) s ON s.material_id = m.codigo_mp
+            WHERE m.activo=1 AND m.stock_minimo>0 AND COALESCE(s.stock,0) < m.stock_minimo
+        """).fetchall():
+            mn = float(r[3] or 0); st = float(r[4] or 0)
+            items.append({'tipo': 'MP', 'codigo': r[0], 'nombre': r[1], 'proveedor': r[2],
+                          'stock': round(st, 1), 'minimo': round(mn, 1),
+                          'faltante': round(max(0.0, mn - st), 1),
+                          'pct': round(st / mn * 100, 0) if mn > 0 else 0, 'unidad': 'g'})
+    except Exception:
+        pass
+    # Envases (MEE) bajo mínimo
+    try:
+        for r in c.execute(
+            "SELECT codigo, COALESCE(descripcion,''), COALESCE(proveedor,''), "
+            "COALESCE(stock_actual,0), COALESCE(stock_minimo,0) "
+            "FROM maestro_mee WHERE estado='Activo' AND COALESCE(stock_minimo,0) > 0").fetchall():
+            mn = float(r[4] or 0); st = float(r[3] or 0)
+            if st < mn:
+                items.append({'tipo': 'MEE', 'codigo': r[0], 'nombre': r[1], 'proveedor': r[2],
+                              'stock': round(st, 1), 'minimo': round(mn, 1),
+                              'faltante': round(max(0.0, mn - st), 1),
+                              'pct': round(st / mn * 100, 0) if mn > 0 else 0, 'unidad': 'u'})
+    except Exception:
+        pass
+    items.sort(key=lambda x: x['pct'])
+    n_mp = sum(1 for i in items if i['tipo'] == 'MP')
+    n_mee = sum(1 for i in items if i['tipo'] == 'MEE')
+    return jsonify({'ok': True, 'items': items, 'n': len(items),
+                    'n_mp': n_mp, 'n_mee': n_mee})
+
+
 @bp.route('/api/alertas-mee', methods=['GET'])
 def alertas_mee():
     # AUDITORÍA-FIX 23-may-2026 · C18 · canonical SUM(movimientos_mee) ·

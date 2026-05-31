@@ -269,6 +269,7 @@ async function cxIAPreguntar(pregunta){
     <button class="tn"      data-tab="por-pagar" id="tn-por-pagar" title="Pendientes · OCs autorizadas sin pagar">💰 Por Pagar</button>
     <button class="tn"      data-tab="pagos" id="tn-pagos" title="Histórico · pagos ya ejecutados">💸 Pagos</button>
     <button class="tn"      data-tab="atrasadas" id="tn-atrasadas" title="OCs sin recibir tras lead_time + buffer · Sebastián 23-may">🚨 Atrasadas <span id="atrasadas-badge" style="display:none;background:#dc2626;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
+    <button class="tn"      data-tab="feedneed" id="tn-feedneed" title="Necesidades de compra · materias primas y envases por debajo del mínimo, en un solo lugar">🔔 Necesidades <span id="feedneed-badge" style="display:none;background:#dc2626;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
     <button class="tn"      data-tab="discrep" id="tn-discrep" title="Recepciones con faltante · ranking calidad proveedor · Sebastián 23-may">📋 Calidad recepción <span id="discrep-badge" style="display:none;background:#dc2626;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
     <button class="tn"      data-tab="mailbox" id="tn-mailbox" title="Facturas detectadas por el cron mailbox · revisar/completar/descartar · Sebastián 23-may">📧 Mailbox <span id="mailbox-badge" style="display:none;background:#7c3aed;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
     <!-- COT comparador · Sebastián 23-may-2026 PM · backend ya estaba listo, UI nueva -->
@@ -531,6 +532,21 @@ async function cxIAPreguntar(pregunta){
     </div>
   </div>
   <div id="prep-tabla-wrap" style="overflow-x:auto;margin-top:10px">Cargando&hellip;</div>
+</div>
+
+<!-- Sebastián 31-may-2026 · Feed de necesidades (Pieza 2) -->
+<div id="pane-feedneed" class="pane">
+  <div class="bar" style="flex-wrap:wrap;gap:8px">
+    <div>
+      <span style="font-weight:700;color:#1e293b;font-size:15px">&#128276; Necesidades de compra</span>
+      <div style="font-size:11px;color:#64748b;margin-top:2px">Materias primas y envases por debajo del mínimo, en un solo lugar &middot; lo más crítico arriba.</div>
+    </div>
+    <div style="margin-left:auto;display:flex;gap:6px;align-items:center">
+      <button class="btn bp" onclick="loadFeedNecesidades()" style="padding:6px 14px;font-size:12px">&#8635; Actualizar</button>
+    </div>
+  </div>
+  <div id="feedneed-kpis" style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0"></div>
+  <div id="feedneed-wrap" style="overflow-x:auto">Cargando&hellip;</div>
 </div>
 
 <div id="pane-solprod" class="pane">
@@ -1507,8 +1523,9 @@ document.querySelectorAll('.tn').forEach(function(btn){
     else if(tab==='mis-sol'){ loadMisSolicitudes(); }
     else if(tab==='ordserv'){ loadOrdenesServicio(); }
     else if(tab==='prepenv'){ loadPreparacionEnvases(); }
+    else if(tab==='feedneed'){ loadFeedNecesidades(); }
     var fab = document.getElementById('fab-btn');
-    if(tab==='prov'||tab==='solic'||tab==='planta'||tab==='influencer'||tab==='consol'||tab==='pagos'||tab==='por-pagar'||tab==='alertas'||tab==='mis-sol'||tab==='prepenv'||tab==='ordserv'){ fab.style.display='none'; }
+    if(tab==='prov'||tab==='solic'||tab==='planta'||tab==='influencer'||tab==='consol'||tab==='pagos'||tab==='por-pagar'||tab==='alertas'||tab==='mis-sol'||tab==='prepenv'||tab==='ordserv'||tab==='feedneed'){ fab.style.display='none'; }
     else{ fab.style.display='flex'; fab.onclick=function(){
       var cat=tab==='dash'?'':tab.toUpperCase();
       openNuevaOC(cat);
@@ -1521,6 +1538,46 @@ document.querySelectorAll('.tn').forEach(function(btn){
 // Órdenes de Servicio · Sebastián 21-may-2026
 // Catalina crea · proveedor procesa · planta confirma recepción
 // ════════════════════════════════════════════════════════════════════════
+// Sebastián 31-may-2026 · Feed de necesidades (Pieza 2) · MP + envases bajo mínimo
+async function loadFeedNecesidades(){
+  var wrap=document.getElementById('feedneed-wrap'), kpis=document.getElementById('feedneed-kpis');
+  if(!wrap) return;
+  wrap.innerHTML='Cargando…';
+  try{
+    var r=await fetch('/api/compras/feed-necesidades',{cache:'no-store'});
+    if(r.status===401){ location.href='/login'; return; }
+    var d=await r.json();
+    if(!d.ok){ wrap.innerHTML='<div style="color:#dc2626;padding:14px">Error: '+_esc((d&&d.error)||r.status)+'</div>'; return; }
+    if(kpis){
+      kpis.innerHTML=
+        '<div style="background:#fee2e2;border:1px solid #fecaca;border-radius:8px;padding:8px 14px;min-width:120px;text-align:center"><div style="font-size:22px;font-weight:800;color:#991b1b">'+d.n+'</div><div style="font-size:10px;color:#64748b;text-transform:uppercase">Necesidades</div></div>'+
+        '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:8px 14px;min-width:120px;text-align:center"><div style="font-size:22px;font-weight:800;color:#1e293b">'+d.n_mp+'</div><div style="font-size:10px;color:#64748b;text-transform:uppercase">Materias primas</div></div>'+
+        '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:8px 14px;min-width:120px;text-align:center"><div style="font-size:22px;font-weight:800;color:#1e293b">'+d.n_mee+'</div><div style="font-size:10px;color:#64748b;text-transform:uppercase">Envases</div></div>';
+    }
+    var bdg=document.getElementById('feedneed-badge'); if(bdg){ if(d.n>0){ bdg.textContent=d.n; bdg.style.display='inline-block'; } else bdg.style.display='none'; }
+    if(!d.items.length){ wrap.innerHTML='<div style="padding:18px;color:#15803d">✓ Todo por encima del mínimo · nada urgente por comprar.</div>'; return; }
+    var html='<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#0f766e;color:#fff">';
+    ['Tipo','Código','Nombre','Stock','Mínimo','Falta','Cobertura','Proveedor'].forEach(function(h,i){ html+='<th style="padding:7px;text-align:'+((i>=3&&i<=5)?'right':'left')+'">'+h+'</th>'; });
+    html+='</tr></thead><tbody>';
+    d.items.forEach(function(it){
+      var pct=it.pct||0, col=pct<25?'#991b1b':(pct<60?'#b45309':'#475569'), bg=pct<25?'#fff1f2':'';
+      var tip=it.tipo==='MP'?'<span style="background:#dbeafe;color:#1e40af;padding:1px 6px;border-radius:4px;font-weight:700;font-size:10px">MP</span>':'<span style="background:#ede9fe;color:#5b21b6;padding:1px 6px;border-radius:4px;font-weight:700;font-size:10px">Envase</span>';
+      html+='<tr style="border-top:1px solid #f1f5f9'+(bg?';background:'+bg:'')+'">';
+      html+='<td style="padding:6px">'+tip+'</td>';
+      html+='<td style="padding:6px;font-family:ui-monospace;font-size:11px">'+_esc(it.codigo)+'</td>';
+      html+='<td style="padding:6px">'+_esc(it.nombre||'')+'</td>';
+      html+='<td style="padding:6px;text-align:right">'+it.stock+(it.unidad==='g'?'g':'')+'</td>';
+      html+='<td style="padding:6px;text-align:right">'+it.minimo+'</td>';
+      html+='<td style="padding:6px;text-align:right;color:#b91c1c;font-weight:700">'+it.faltante+'</td>';
+      html+='<td style="padding:6px;text-align:right;color:'+col+';font-weight:700">'+pct+'%</td>';
+      html+='<td style="padding:6px">'+_esc(it.proveedor||'—')+'</td>';
+      html+='</tr>';
+    });
+    html+='</tbody></table>';
+    wrap.innerHTML=html;
+  }catch(e){ wrap.innerHTML='<div style="color:#dc2626;padding:14px">Error red: '+_esc(e.message||e)+'</div>'; }
+}
+
 // Sebastián 31-may-2026 · Preparar envases (Pieza 1) · jalona producciones → OS
 window._PREP_ITEMS = [];
 async function loadPreparacionEnvases(){
