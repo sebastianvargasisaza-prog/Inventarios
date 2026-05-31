@@ -83,3 +83,36 @@ def test_composicion_mee_sin_fija_sigue_proporcional(app, db_clean):
     assert d.get("tiene_fija") is False, d
     # 30kg ÷ 30ml = 1000 uds
     assert d["variantes"][0]["unidades_estimadas"] == 1000, d["variantes"]
+
+
+def test_upsert_preserva_fija_al_editar_ratio(app, db_clean):
+    """El upsert persiste cantidad_fija_uds, y editar SOLO el ratio (sin enviar
+    cantidad_fija_uds) NO la borra."""
+    import json
+    from .conftest import csrf_headers
+    PROD = "PROD-UPSERT-FIJA"
+    c = _login_as(app, "sebastian")
+    h = csrf_headers()
+    h["Content-Type"] = "application/json"
+    # 1) Crear presentación con cantidad fija = 1200
+    r = c.post("/api/admin/producto-presentaciones-upsert",
+               data=json.dumps({"producto_nombre": PROD, "presentacion_codigo": "P10",
+                                "etiqueta": "10 ml", "volumen_ml": 10,
+                                "envase_codigo": "", "cantidad_fija_uds": 1200}),
+               headers=h)
+    assert r.status_code == 200, r.data
+    g = c.get("/api/admin/producto-presentaciones?producto=" + PROD)
+    assert g.status_code == 200, g.data
+    pres = g.get_json()["presentaciones"]
+    fila = next(p for p in pres if p["presentacion_codigo"] == "P10")
+    assert abs(float(fila["cantidad_fija_uds"]) - 1200) < 0.01, fila
+    # 2) Editar SOLO el ratio (sin cantidad_fija_uds) → no debe borrar la fija
+    r2 = c.post("/api/admin/producto-presentaciones-upsert",
+                data=json.dumps({"producto_nombre": PROD, "presentacion_codigo": "P10",
+                                 "etiqueta": "10 ml", "volumen_ml": 10,
+                                 "envase_codigo": "", "ventas_mes_referencia": 50}),
+                headers=h)
+    assert r2.status_code == 200, r2.data
+    g2 = c.get("/api/admin/producto-presentaciones?producto=" + PROD)
+    fila2 = next(p for p in g2.get_json()["presentaciones"] if p["presentacion_codigo"] == "P10")
+    assert abs(float(fila2["cantidad_fija_uds"]) - 1200) < 0.01, fila2  # sigue 1200

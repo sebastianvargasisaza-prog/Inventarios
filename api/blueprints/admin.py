@@ -6929,24 +6929,28 @@ def admin_producto_presentaciones_list():
     conn = db_connect()
     conn.row_factory = sqlite3.Row
     c = conn.cursor()
-    try:
-        rows = c.execute(
-            """SELECT id, producto_nombre, presentacion_codigo, etiqueta,
-                      COALESCE(volumen_ml,0) AS volumen_ml,
-                      COALESCE(envase_codigo,'') AS envase_codigo,
-                      COALESCE(factor_g_por_unidad,0) AS factor_g_por_unidad,
-                      COALESCE(sku_shopify,'') AS sku_shopify,
-                      COALESCE(es_default,0) AS es_default,
-                      COALESCE(ventas_mes_referencia,0) AS ventas_mes_referencia
-               FROM producto_presentaciones
-               WHERE LOWER(TRIM(producto_nombre))=LOWER(TRIM(?))
-                 AND COALESCE(activo,1)=1
-               ORDER BY volumen_ml DESC""",
-            (producto,)
-        ).fetchall()
-    except Exception as e:
+    # cantidad_fija_uds (mig 204) · fallback si la columna no existe.
+    _q = (
+        "SELECT id, producto_nombre, presentacion_codigo, etiqueta, "
+        "COALESCE(volumen_ml,0) AS volumen_ml, "
+        "COALESCE(envase_codigo,'') AS envase_codigo, "
+        "COALESCE(factor_g_por_unidad,0) AS factor_g_por_unidad, "
+        "COALESCE(sku_shopify,'') AS sku_shopify, "
+        "COALESCE(es_default,0) AS es_default, "
+        "COALESCE(ventas_mes_referencia,0) AS ventas_mes_referencia{fija} "
+        "FROM producto_presentaciones "
+        "WHERE LOWER(TRIM(producto_nombre))=LOWER(TRIM(?)) "
+        "AND COALESCE(activo,1)=1 ORDER BY volumen_ml DESC")
+    rows = None
+    for _f in (", COALESCE(cantidad_fija_uds,0) AS cantidad_fija_uds", ""):
+        try:
+            rows = c.execute(_q.format(fija=_f), (producto,)).fetchall()
+            break
+        except Exception:
+            rows = None
+    if rows is None:
         conn.close()
-        return jsonify({'error': f'query fallo: {e}'}), 500
+        return jsonify({'error': 'query fallo'}), 500
     conn.close()
     return jsonify({'producto': producto, 'total': len(rows),
                     'presentaciones': [dict(r) for r in rows]})
@@ -7139,11 +7143,11 @@ def admin_mees_diagnostico_page():
       Si el producto se vende en <b>varios volúmenes</b> (30ml, 15ml, 10ml), agregá una fila por cada uno con su envase específico.<br>
       <span style="color:#67e8f9;">Ejemplo:</span> SUERO X viene en 30ml (envase A) y 15ml (envase B) → 2 filas. El cálculo MEE multiplica por unidades = cantidad_kg × 1000 / volumen_ml de cada presentación, usando ratio histórico de ventas Shopify (próxima fase).
     </div>
-    <div style="display:grid;grid-template-columns:70px 100px 70px 1fr 90px 32px;gap:6px;margin-bottom:6px;font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.4px;font-weight:700;">
-      <div>Código</div><div>Etiqueta</div><div>Vol ml</div><div>Envase MEE</div><div style="color:#a5b4fc">Uds/mes</div><div></div>
+    <div style="display:grid;grid-template-columns:64px 90px 56px 1fr 78px 78px 32px;gap:6px;margin-bottom:6px;font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:.4px;font-weight:700;">
+      <div>Código</div><div>Etiqueta</div><div>Vol ml</div><div>Envase MEE</div><div style="color:#a5b4fc">Uds/mes</div><div style="color:#6ee7b7">Fija</div><div></div>
     </div>
     <div style="font-size:10px;color:#a5b4fc;margin-bottom:6px;line-height:1.4;">
-      💡 <b>Uds/mes</b> (opcional · override): si Shopify no captura bien el ratio, fijá las ventas mensuales reales por presentación. <b>0 = no se vende ese tamaño</b>. Si dejás todas vacías, usa Shopify (180d).
+      💡 <b>Uds/mes</b> (ratio · opcional): si Shopify no captura bien el %, fijá las ventas mensuales reales · <b>0 = no se vende</b>. · 🟢 <b>Fija</b> (regalos/minis): cantidad FIJA por lote (ej. 10ml=1200) · el sistema reserva esas uds y reparte el resto del bulk · <b>0 = usar %</b>.
     </div>
     <div id="mv-filas" style="margin-bottom:8px;"></div>
     <button onclick="addFilaVariante({})" style="background:#164e63;color:#67e8f9;border:1px solid #0e7490;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:700;margin-bottom:10px;">+ Otra variante</button>
@@ -7333,18 +7337,20 @@ function addFilaVariante(p){
   const cont = document.getElementById('mv-filas');
   const row = document.createElement('div');
   row.className = 'mv-fila';
-  row.style.cssText = 'display:grid;grid-template-columns:70px 100px 70px 1fr 90px 32px;gap:6px;margin-bottom:6px;align-items:center;';
+  row.style.cssText = 'display:grid;grid-template-columns:64px 90px 56px 1fr 78px 78px 32px;gap:6px;margin-bottom:6px;align-items:center;';
   const codVal = p && p.presentacion_codigo ? esc(p.presentacion_codigo) : '';
   const etiqVal = p && p.etiqueta ? esc(p.etiqueta) : '';
   const volVal = p && p.volumen_ml ? p.volumen_ml : '';
   const envSel = p && p.envase_codigo ? p.envase_codigo : '';
   const ventasVal = p && p.ventas_mes_referencia ? p.ventas_mes_referencia : '';
+  const fijaVal = p && p.cantidad_fija_uds ? p.cantidad_fija_uds : '';
   row.innerHTML =
     '<input class="mv-cod" type="text" placeholder="30ML" value="'+codVal+'" style="background:#0f172a;color:#e2e8f0;border:1px solid #334155;padding:5px;border-radius:4px;font-size:12px;text-transform:uppercase;">'
     + '<input class="mv-etiq" type="text" placeholder="30 ml" value="'+etiqVal+'" style="background:#0f172a;color:#e2e8f0;border:1px solid #334155;padding:5px;border-radius:4px;font-size:12px;">'
     + '<input class="mv-vol" type="number" step="0.1" placeholder="30" value="'+volVal+'" style="background:#0f172a;color:#e2e8f0;border:1px solid #334155;padding:5px;border-radius:4px;font-size:12px;">'
     + _meeDropdownPick('mv-env-'+_MV_ROW_SEQ, envSel)
-    + '<input class="mv-ventas" type="number" step="1" min="0" placeholder="uds/mes" value="'+ventasVal+'" title="Override manual de ventas mensuales · si lo llenás, ignora Shopify · 0 = no se vende ese tamaño" style="background:#1e1b4b;color:#c7d2fe;border:1px solid #4338ca;padding:5px;border-radius:4px;font-size:12px;">'
+    + '<input class="mv-ventas" type="number" step="1" min="0" placeholder="uds/mes" value="'+ventasVal+'" title="Ratio: override manual de ventas mensuales · 0 = no se vende ese tamaño" style="background:#1e1b4b;color:#c7d2fe;border:1px solid #4338ca;padding:5px;border-radius:4px;font-size:12px;">'
+    + '<input class="mv-fija" type="number" step="1" min="0" placeholder="fija" value="'+fijaVal+'" title="Cantidad FIJA por lote (regalos/minis · ej. 10ml=1200) · el sistema reserva estas uds y reparte el resto del bulk · 0 = usar %" style="background:#064e3b;color:#a7f3d0;border:1px solid #047857;padding:5px;border-radius:4px;font-size:12px;">'
     + '<button onclick="this.parentNode.remove()" style="background:#7f1d1d;color:#fecaca;border:0;padding:5px 8px;border-radius:4px;cursor:pointer;" title="Quitar">✕</button>';
   cont.appendChild(row);
 }
@@ -7374,6 +7380,9 @@ async function guardarVariantesModal(){
     const ventasInp = r.querySelector('input.mv-ventas');
     const ventasStr = ventasInp ? ventasInp.value.trim() : '';
     const ventasMes = ventasStr === '' ? null : (parseFloat(ventasStr)||0);
+    const fijaInp = r.querySelector('input.mv-fija');
+    const fijaStr = fijaInp ? fijaInp.value.trim() : '';
+    const fijaUds = fijaStr === '' ? null : (parseFloat(fijaStr)||0);
     if(!cod) errs.push('Fila '+(idx+1)+': código (ej. 30ML) requerido');
     else if(!etiq) errs.push('Fila '+(idx+1)+': etiqueta (ej. "30 ml") requerida');
     else if(vol <= 0) errs.push('Fila '+(idx+1)+': volumen_ml debe ser > 0');
@@ -7381,6 +7390,7 @@ async function guardarVariantesModal(){
     else {
       const payload = {producto_nombre: producto, presentacion_codigo: cod, etiqueta: etiq, volumen_ml: vol, envase_codigo: env};
       if (ventasMes !== null) payload.ventas_mes_referencia = ventasMes;
+      if (fijaUds !== null) payload.cantidad_fija_uds = fijaUds;
       payloads.push(payload);
     }
   });
