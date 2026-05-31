@@ -4923,6 +4923,16 @@ def prog_composicion_mee(evento_id):
     if 'compras_user' not in session:
         return jsonify({'error': 'No autenticado'}), 401
     conn = db_connect(); c = conn.cursor()
+    _res = _composicion_envases_lote(c, evento_id)
+    if _res is None:
+        return jsonify({'error': f'Producción {evento_id} no encontrada'}), 404
+    return jsonify(_res)
+
+
+def _composicion_envases_lote(c, evento_id):
+    """Composición de envases (variantes) de un lote · helper reusable por
+    composicion-mee y por la preparación de envases. Devuelve dict o None
+    (si el lote no existe). Misma lógica · sin duplicar."""
     # fija_override_json (mig 205) · override de cantidad fija POR LOTE · fallback
     # si la columna no existe (instancia sin migrar).
     row = None
@@ -4935,7 +4945,7 @@ def prog_composicion_mee(evento_id):
         except Exception:
             row = None
     if not row:
-        return jsonify({'error': f'Producción {evento_id} no encontrada'}), 404
+        return None
     pid, producto, cant_kg, lotes = row[0], row[1], row[2], row[3]
     # Override por lote · {presentacion_codigo: uds}
     fija_override = {}
@@ -4993,7 +5003,7 @@ def prog_composicion_mee(evento_id):
         except Exception:
             pass
         units = int(round((cant_kg_f * 1000.0) / vol)) if vol > 0 else 0
-        return jsonify({
+        return {
             'ok': True, 'producto': producto, 'cantidad_kg': cant_kg_f,
             'variantes': [{
                 'presentacion_codigo': '-', 'etiqueta': f'{int(vol)} ml' if vol > 0 else '(sin volumen)',
@@ -5002,7 +5012,7 @@ def prog_composicion_mee(evento_id):
                 'ratio_pct': 100.0, 'unidades_estimadas': units,
             }] if vol > 0 else [],
             'fuente_ratio': 'unica', 'sin_variantes': True,
-        })
+        }
 
     # Ratio Shopify · ventana ampliada a 180d (6 meses) Sebastián 27-may-2026 PM
     # · "si lanzas la busqueda de ventas en 6 meses sabras que se vendio no
@@ -5115,14 +5125,82 @@ def prog_composicion_mee(evento_id):
             'unidades_estimadas': un_p,
         })
 
-    return jsonify({
+    return {
         'ok': True, 'producto': producto, 'cantidad_kg': cant_kg_f,
         'variantes': variantes_out,
         'fuente_ratio': ('fija+' + fuente) if hay_fija else fuente,
         'tiene_fija': hay_fija,
         'tiene_override': bool(fija_override),
         'sin_variantes': False,
-    })
+    }
+
+
+@bp.route('/api/compras/preparacion-envases', methods=['GET'])
+def compras_preparacion_envases():
+    """Jalona los envases de las producciones próximas (no iniciadas) para que
+    Compras escoja cuáles preparar (serigrafía/tampografía). Reusa el cálculo de
+    composición de envases. fecha_lista = fecha_produccion − anticipo (30d def).
+    Read-only · no muta. Sebastián 31-may-2026 (Pieza 1)."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autenticado'}), 401
+    from datetime import date as _dpe, timedelta as _tdpe, datetime as _dtpe
+    try:
+        dias = max(7, min(365, int(request.args.get('dias', 90))))
+    except Exception:
+        dias = 90
+    try:
+        anticipo = max(0, min(180, int(request.args.get('anticipo', 30))))
+    except Exception:
+        anticipo = 30
+    conn = get_db(); c = conn.cursor()
+    hoy = (_dtpe.utcnow() - _tdpe(hours=5)).date()
+    hasta = (hoy + _tdpe(days=dias)).isoformat()
+    rows = c.execute(
+        """SELECT id, producto, fecha_programada FROM produccion_programada
+           WHERE COALESCE(estado,'') NOT IN ('cancelado','completado')
+             AND inicio_real_at IS NULL
+             AND date(fecha_programada) >= date('now','-5 hours')
+             AND date(fecha_programada) <= date(?)
+           ORDER BY fecha_programada""", (hasta,)).fetchall()
+    # OS ya existentes por envase (para avisar y no duplicar)
+    os_por_envase = {}
+    try:
+        for r in c.execute(
+            "SELECT envase_codigo_mee, COUNT(*) FROM ordenes_servicio "
+            "WHERE COALESCE(estado,'') != 'Cancelada' GROUP BY envase_codigo_mee").fetchall():
+            if r[0]:
+                os_por_envase[r[0]] = int(r[1] or 0)
+    except Exception:
+        pass
+    items = []
+    for (pid, producto, fecha) in rows:
+        comp = _composicion_envases_lote(c, pid)
+        if not comp:
+            continue
+        f10 = (fecha or '')[:10]
+        try:
+            fl = (_dpe.fromisoformat(f10) - _tdpe(days=anticipo)).isoformat()
+        except Exception:
+            fl = None
+        atrasado = bool(fl and fl < hoy.isoformat())
+        for v in (comp.get('variantes') or []):
+            env = (v.get('envase_codigo') or '').strip()
+            if not env:
+                continue
+            items.append({
+                'lote_id': pid, 'producto': producto,
+                'fecha_produccion': f10, 'fecha_lista_sugerida': fl,
+                'lista_atrasada': atrasado,
+                'envase_codigo': env,
+                'envase_descripcion': v.get('envase_descripcion') or env,
+                'presentacion': v.get('etiqueta'),
+                'volumen_ml': v.get('volumen_ml'),
+                'uds': int(v.get('unidades_estimadas') or 0),
+                'os_existentes': os_por_envase.get(env, 0),
+            })
+    items.sort(key=lambda x: (x.get('fecha_lista_sugerida') or '9999'))
+    return jsonify({'ok': True, 'dias': dias, 'anticipo_dias': anticipo,
+                    'items': items, 'n': len(items)})
 
 
 @bp.route('/api/programacion/lote/<int:lote_id>/fija-override', methods=['PATCH'])
