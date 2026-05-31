@@ -14711,10 +14711,21 @@ async function abrirLoteModal(id, producto, fecha, kg){
       if (Math.abs(dd) <= 7){ txt = '✅ alineada con la sugerida'; col = '#15803d'; }
       else if (dd < 0){ txt = '📌 ' + Math.abs(dd) + ' días ANTES de la sugerida'; col = '#7c3aed'; }
       else { txt = '⚠ ' + dd + ' días DESPUÉS de la sugerida (stock se agota antes)'; col = '#b45309'; }
+      // Sebastián 30-may-2026 · botón "Aplicar recomendación": mueve la próxima
+      // a la fecha sugerida automáticamente (adelanta/atrasa según corresponda),
+      // en vez de tener que abrir y mover a mano. Solo si NO está alineada (±7d).
+      let accionBtn = '';
+      if (Math.abs(dd) > 7){
+        const verbo = dd > 0 ? 'Adelantar' : 'Atrasar';
+        accionBtn = '<button onclick="aplicarRecomendacionProxima(' + prox.id + ',&quot;' + proximaSugerida + '&quot;,' + id + ',&quot;' + escapeHtml(producto) + '&quot;,&quot;' + fecha + '&quot;,' + kg + ')" '
+          + 'style="margin-left:8px;background:#16a34a;color:#fff;border:none;padding:3px 11px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer" '
+          + 'title="Mueve la próxima producción a la fecha sugerida">✅ ' + verbo + ' a ' + proximaSugerida + '</button>';
+      }
       html += '<div class="banner-inline" style="border-color:' + col + ';color:' + col + '">'
             + '✓ La próxima YA está programada el <strong>' + pf + '</strong> · ' + txt + '. '
+            + accionBtn
             + '<button onclick="abrirLoteModal(' + prox.id + ',&quot;' + escapeHtml(producto) + '&quot;,&quot;' + pf + '&quot;,' + (prox.kg || 0) + ')" '
-            + 'style="margin-left:8px;background:#fff;border:1px solid ' + col + ';color:' + col + ';padding:2px 9px;border-radius:5px;font-size:11px;cursor:pointer">abrir / mover</button>'
+            + 'style="margin-left:6px;background:#fff;border:1px solid ' + col + ';color:' + col + ';padding:2px 9px;border-radius:5px;font-size:11px;cursor:pointer">abrir</button>'
             + '</div>';
     } else {
       html += '<div class="banner-inline" style="border-color:#b45309;color:#b45309">'
@@ -14870,6 +14881,16 @@ async function reprogramarLote(id, nuevaFecha, razon){
   } catch(e){
     alert('❌ Error de red: ' + e.message);
   }
+}
+
+// Sebastián 30-may-2026 · "Aplicar recomendación": mueve la próxima producción
+// a la fecha sugerida (adelanta/atrasa) con un clic, en vez de abrir y mover a
+// mano. Reprograma (queda Fijo) y refresca el calendario + este modal.
+async function aplicarRecomendacionProxima(proxId, fechaSugerida, curId, producto, curFecha, curKg){
+  if(!confirm('¿Mover la próxima producción de "' + producto + '" a la fecha recomendada ' + fechaSugerida + '?\\n\\nSe reprograma el lote (queda como Fijo).')) return;
+  await reprogramarLote(proxId, fechaSugerida, 'aplicar_recomendacion');
+  try { await cargar(); } catch(_){}            // asegurar PLAN_DATA fresco
+  try { abrirLoteModal(curId, producto, curFecha, curKg); } catch(_){}  // refrescar este modal
 }
 
 // ═══════ DRAG & DROP ═══════
