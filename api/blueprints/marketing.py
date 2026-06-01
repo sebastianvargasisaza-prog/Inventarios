@@ -3387,6 +3387,89 @@ def mkt_influencers_duplicados():
     })
 
 
+def _score_inf_dedup(x):
+    # x = (id, nombre, usuario_red, seguidores, tarifa, cuenta, cedula, n_pagos)
+    return ((x[7] or 0) * 100 + (1 if x[2] else 0) + (1 if x[3] else 0)
+            + (1 if x[4] else 0) + (1 if x[5] else 0) + (1 if x[6] else 0))
+
+
+@bp.route("/api/marketing/influencers/dedup-merge", methods=["POST"])
+def mkt_influencers_dedup_merge():
+    """Fusiona influencers duplicados por nombre normalizado: conserva uno (más
+    pagos / más completo), repunta pagos_influencers + solicitudes_compra al
+    keeper, elimina los duplicados, y crea un UNIQUE index para que el panel deje
+    de re-crearlos (el INSERT OR IGNORE no deduplicaba sin UNIQUE · 3 workers →
+    race). Body: {apply: bool} · dry-run por default. Solo admin (destructivo).
+    Sebastián 1-jun-2026 · reporte 'todos juanito rebel'."""
+    u, err, code = _auth()
+    if err:
+        return err, code
+    if (u or '').lower() not in {x.lower() for x in ADMIN_USERS}:
+        return jsonify({'error': 'Solo admin puede fusionar duplicados'}), 403
+    apply = bool((request.get_json(silent=True) or {}).get('apply'))
+    conn = _db(); c = conn.cursor()
+    rows = c.execute(
+        "SELECT id, nombre, COALESCE(usuario_red,''), COALESCE(seguidores,0), "
+        "COALESCE(tarifa,0), COALESCE(cuenta_bancaria,''), COALESCE(cedula_nit,''), "
+        "(SELECT COUNT(*) FROM pagos_influencers WHERE influencer_id=marketing_influencers.id) "
+        "FROM marketing_influencers ORDER BY id"
+    ).fetchall()
+    grupos = {}
+    for r in rows:
+        k = ' '.join((r[1] or '').strip().split()).lower()
+        if not k:
+            continue
+        grupos.setdefault(k, []).append(r)
+    plan = []
+    for k, lst in grupos.items():
+        if len(lst) < 2:
+            continue
+        ordered = sorted(lst, key=lambda x: (-_score_inf_dedup(x), x[0]))
+        keeper = ordered[0]
+        plan.append({'nombre': keeper[1], 'keeper_id': keeper[0],
+                     'baja_ids': [x[0] for x in ordered[1:]],
+                     'duplicados': len(ordered) - 1})
+    total_dups = sum(p['duplicados'] for p in plan)
+    if not apply:
+        return jsonify({'ok': True, 'dry_run': True, 'grupos': plan,
+                        'grupos_n': len(plan), 'duplicados_a_eliminar': total_dups,
+                        'total_influencers': len(rows)})
+    refs_pagos = 0; refs_sols = 0; eliminados = 0
+    for p in plan:
+        for bid in p['baja_ids']:
+            try:
+                cur1 = c.execute("UPDATE pagos_influencers SET influencer_id=? WHERE influencer_id=?",
+                                 (p['keeper_id'], bid)); refs_pagos += (cur1.rowcount or 0)
+            except Exception:
+                pass
+            try:
+                cur2 = c.execute("UPDATE solicitudes_compra SET influencer_id=? WHERE influencer_id=?",
+                                 (p['keeper_id'], bid)); refs_sols += (cur2.rowcount or 0)
+            except Exception:
+                pass
+            c.execute("DELETE FROM marketing_influencers WHERE id=?", (bid,))
+            eliminados += 1
+    idx_ok = True
+    try:
+        c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_mktinf_nombre_unq "
+                  "ON marketing_influencers(LOWER(TRIM(nombre)))")
+    except Exception as _eidx:
+        idx_ok = False
+        __import__('logging').getLogger('marketing').warning(
+            'UNIQUE index influencers no creado (dups residuales?): %s', _eidx)
+    try:
+        audit_log(c, usuario=u, accion='DEDUP_INFLUENCERS',
+                  tabla='marketing_influencers', registro_id='',
+                  despues={'eliminados': eliminados, 'refs_pagos': refs_pagos,
+                           'refs_sols': refs_sols, 'unique_index': idx_ok})
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({'ok': True, 'aplicado': True, 'duplicados_eliminados': eliminados,
+                    'pagos_repuntados': refs_pagos, 'sols_repuntadas': refs_sols,
+                    'unique_index': idx_ok})
+
+
 @bp.route("/api/marketing/influencers/<int:iid>", methods=["GET", "PUT", "DELETE"])
 def mkt_influencer_detail(iid):
     u, err, code = _auth()
@@ -5905,10 +5988,16 @@ def mkt_influencers_panel():
                 nuevos.append(nm)
         if nuevos:
             for nm in nuevos:
-                c.execute(
-                    "INSERT OR IGNORE INTO marketing_influencers (nombre, red_social, estado) VALUES (?,?,?)",
-                    (nm, "Instagram", "Activo")
-                )
+                # FIX 1-jun-2026: con UNIQUE index en LOWER(TRIM(nombre)) el OR IGNORE
+                # por fin deduplica · el try evita 500 si el index rechaza un race
+                # cross-worker (3 gunicorn workers creaban dups · 'todos juanito rebel').
+                try:
+                    c.execute(
+                        "INSERT OR IGNORE INTO marketing_influencers (nombre, red_social, estado) VALUES (?,?,?)",
+                        (nm, "Instagram", "Activo")
+                    )
+                except Exception:
+                    pass
             conn.commit()
             # Recargar lista completa
             sql2 = base_sql + (" WHERE " + " AND ".join(conds) if conds else "") + " ORDER BY nombre"

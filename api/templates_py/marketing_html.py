@@ -3442,6 +3442,39 @@ async function eliminarInfluencer(id, nombre) {
   }
 }
 
+// FIX 1-jun-2026 · fusiona en bloque los duplicados por nombre (caso 'todos
+// juanito rebel') · dry-run → confirmar → apply. Repunta pagos al conservado.
+async function dedupMergeInfluencers() {
+  if(!window._csrfTok){ try{const tr=await fetch('/api/csrf-token',{credentials:'same-origin'}); if(tr.ok){const td=await tr.json(); window._csrfTok=td.csrf_token||'';}}catch(_){} }
+  let dry;
+  try {
+    const r = await fetch('/api/marketing/influencers/dedup-merge', {
+      method:'POST', credentials:'same-origin',
+      headers:{'Content-Type':'application/json','X-CSRF-Token': window._csrfTok||''},
+      body: JSON.stringify({})
+    });
+    dry = await r.json();
+    if(!r.ok || !dry.ok){ alert('Error: '+((dry&&dry.error)||r.status)); return; }
+  } catch(e){ alert('Error red: '+e.message); return; }
+  if(!dry.duplicados_a_eliminar){ alert('No hay duplicados por nombre para fusionar.'); return; }
+  if(!confirm('Se fusionarán '+dry.grupos_n+' grupo(s) de nombre · se eliminarán '
+      +dry.duplicados_a_eliminar+' duplicado(s).\n\nSe conserva el de MÁS pagos y se repuntan'
+      +' los pagos/solicitudes al conservado. Acción irreversible (queda en auditoría).\n\n¿Continuar?')) return;
+  try {
+    const r2 = await fetch('/api/marketing/influencers/dedup-merge', {
+      method:'POST', credentials:'same-origin',
+      headers:{'Content-Type':'application/json','X-CSRF-Token': window._csrfTok||''},
+      body: JSON.stringify({apply:true})
+    });
+    const d2 = await r2.json();
+    if(!r2.ok || !d2.ok){ alert('Error: '+((d2&&d2.error)||r2.status)); return; }
+    alert('✅ '+d2.duplicados_eliminados+' duplicados fusionados · '+d2.pagos_repuntados
+      +' pago(s) repuntado(s)'+(d2.unique_index?' · protección anti-duplicados ACTIVADA':''));
+    closeModal('modal-duplicados');
+    if(typeof loadInfluencers==='function') loadInfluencers();
+  } catch(e){ alert('Error red: '+e.message); }
+}
+
 async function abrirDuplicados() {
   const modalId = 'modal-duplicados';
   let modal = document.getElementById(modalId);
@@ -3453,7 +3486,10 @@ async function abrirDuplicados() {
       +'<div class="modal-content" style="max-width:900px;">'
       +'  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">'
       +'    <div class="modal-title">\u{1F50D} Posibles influencers duplicados</div>'
-      +'    <button class="btn btn-outline btn-sm" onclick="closeModal(\''+modalId+'\')">Cerrar</button>'
+      +'    <div style="display:flex;gap:6px;">'
+      +'      <button class="btn btn-sm" style="background:#dc2626;color:#fff;" onclick="dedupMergeInfluencers()" title="Fusiona TODOS los duplicados por nombre · conserva el de más pagos · repunta los pagos al conservado (solo admin)">\u{1F9F9} Fusionar duplicados</button>'
+      +'      <button class="btn btn-outline btn-sm" onclick="closeModal(\''+modalId+'\')">Cerrar</button>'
+      +'    </div>'
       +'  </div>'
       +'  <div id="dup-body" style="max-height:65vh;overflow:auto;font-size:13px;"></div>'
       +'</div>';
