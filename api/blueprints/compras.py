@@ -12241,3 +12241,87 @@ def admin_proveedores_fusionar():
         'contadores_filas_actualizadas': contadores,
         'total_filas_movidas': sum(v for v in contadores.values() if isinstance(v, int)),
     })
+
+
+@bp.route('/api/admin/proveedores-dedup-nombre', methods=['POST'])
+def admin_proveedores_dedup_nombre():
+    """Deduplica proveedores con el MISMO nombre (varias filas activas, distinto
+    id). La fusión normal trabaja por nombre y se bloquea si keeper==merge_from;
+    esto opera por ID: conserva la fila más completa y da de baja las demás.
+    Como las referencias downstream apuntan al NOMBRE, mueve también las de
+    cualquier variante (mayúsculas/espacios) al nombre del keeper. Body: {nombre}.
+    Sebastián 31-may-2026 · caso Agenquimicos duplicado exacto."""
+    usuario, err, code = _require_compras_write()
+    if err:
+        return err, code
+    d = request.get_json(silent=True) or {}
+    nombre = (d.get('nombre') or '').strip()
+    if not nombre:
+        return jsonify({'error': 'nombre requerido'}), 400
+    norm = ' '.join(nombre.split()).upper()
+    conn = get_db(); c = conn.cursor()
+    rows = c.execute(
+        "SELECT id, nombre, COALESCE(nit,''), COALESCE(banco,''), "
+        "COALESCE(num_cuenta,''), COALESCE(contacto,''), COALESCE(email,''), "
+        "COALESCE(telefono,'') FROM proveedores "
+        "WHERE COALESCE(activo,1)=1 AND UPPER(TRIM(nombre))=?", (norm,)
+    ).fetchall()
+    if len(rows) < 2:
+        return jsonify({'error': 'no hay 2+ filas activas con ese nombre',
+                        'encontrados': len(rows)}), 409
+
+    def _score(r):
+        return ((2 if r[2] else 0) + (1 if r[3] else 0) + (1 if r[4] else 0) +
+                (1 if r[5] else 0) + (1 if r[6] else 0) + (1 if r[7] else 0))
+    ordenados = sorted(rows, key=lambda r: (-_score(r), r[0]))
+    keeper = ordenados[0]
+    bajas = ordenados[1:]
+    keeper_nombre = keeper[1]
+    # Copiar al keeper datos que le falten y un duplicado sí tenga
+    campos = {'nit': 2, 'banco': 3, 'num_cuenta': 4, 'contacto': 5, 'email': 6, 'telefono': 7}
+    for campo, idx in campos.items():
+        if not keeper[idx]:
+            for b in bajas:
+                if b[idx]:
+                    try:
+                        c.execute(f"UPDATE proveedores SET {campo}=? WHERE id=?",
+                                  (b[idx], keeper[0]))
+                    except Exception:
+                        pass
+                    break
+    propagar = [
+        ('ordenes_compra', 'proveedor'),
+        ('solicitudes_compra', 'proveedor_sugerido'),
+        ('solicitudes_compra_items', 'proveedor_sugerido'),
+        ('precios_mp_historico', 'proveedor'),
+        ('ordenes_servicio', 'proveedor'),
+        ('mp_lead_time_config', 'proveedor_principal'),
+        ('cotizaciones', 'proveedor'),
+    ]
+    contadores = {}
+    ids_baja = []
+    for b in bajas:
+        if b[1] != keeper_nombre:  # variante de mayúsculas/espacios · mover refs
+            for tabla, col in propagar:
+                try:
+                    c.execute(f"UPDATE {tabla} SET {col}=? WHERE {col}=?",
+                              (keeper_nombre, b[1]))
+                    contadores[tabla] = contadores.get(tabla, 0) + (c.rowcount or 0)
+                except Exception:
+                    pass
+        c.execute(
+            "UPDATE proveedores SET activo=0, motivo_baja=?, fecha_baja=? WHERE id=?",
+            (f'Dedup · se conserva id {keeper[0]} ("{keeper_nombre}") por {usuario}',
+             datetime.now().isoformat(), b[0]))
+        ids_baja.append(b[0])
+    try:
+        audit_log(c, usuario=usuario, accion='DEDUP_PROVEEDOR_NOMBRE',
+                  tabla='proveedores', registro_id=str(keeper[0]),
+                  despues={'nombre': nombre, 'keeper_id': keeper[0],
+                           'dados_de_baja': ids_baja, 'refs_movidas': contadores})
+    except Exception as e:
+        log.warning('audit DEDUP_PROVEEDOR_NOMBRE fallo: %s', e)
+    conn.commit()
+    return jsonify({'ok': True, 'nombre': nombre, 'keeper_id': keeper[0],
+                    'dados_de_baja': ids_baja, 'n_baja': len(ids_baja),
+                    'refs_movidas': contadores})

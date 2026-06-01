@@ -6052,10 +6052,20 @@ async function _provFusionar(keeper, mergeFrom){
   if(!confirm('Fusionar "'+mergeFrom+'" → "'+keeper+'"?\\n\\nEsto:\\n· Traspasa todas las OCs, SOLs, cotizaciones, lead_times de "'+mergeFrom+'" a "'+keeper+'"\\n· Si "'+keeper+'" no tiene NIT, le copia el del huérfano\\n· Da de baja a "'+mergeFrom+'"\\n\\nIrreversible (audit log queda)')) return;
   try{
     await _ensureCsrf();  // /api/admin/* exige X-CSRF-Token (FIX 31-may)
-    var r = await fetch('/api/admin/proveedores-fusionar', _fetchOpts('POST', {keeper: keeper, merge_from: mergeFrom}));
-    var d = await r.json();
-    if(!r.ok || d.error){ alert('Error: '+(d.error||r.status)); return; }
-    alert('✅ Fusionado · '+d.total_filas_movidas+' filas movidas\\n\\n'+JSON.stringify(d.contadores_filas_actualizadas, null, 2));
+    var r, d;
+    if((keeper||'').trim().toLowerCase() === (mergeFrom||'').trim().toLowerCase()){
+      // Mismo nombre exacto (2 filas, distinto id) · no se puede fusionar por
+      // nombre · deduplicar por id (FIX 31-may · caso Agenquimicos)
+      r = await fetch('/api/admin/proveedores-dedup-nombre', _fetchOpts('POST', {nombre: keeper}));
+      d = await r.json();
+      if(!r.ok || d.error){ alert('Error: '+(d.error||r.status)); return; }
+      alert('✅ Duplicado exacto resuelto · se conservó 1 fila y se dio de baja '+d.n_baja+' con el mismo nombre.');
+    } else {
+      r = await fetch('/api/admin/proveedores-fusionar', _fetchOpts('POST', {keeper: keeper, merge_from: mergeFrom}));
+      d = await r.json();
+      if(!r.ok || d.error){ alert('Error: '+(d.error||r.status)); return; }
+      alert('✅ Fusionado · '+d.total_filas_movidas+' filas movidas\\n\\n'+JSON.stringify(d.contadores_filas_actualizadas, null, 2));
+    }
     abrirProvDuplicados();  // refresh
     loadData();
   }catch(e){ alert('Error red: '+e.message); }
