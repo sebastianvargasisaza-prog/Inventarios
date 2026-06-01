@@ -268,6 +268,7 @@ async function cxIAPreguntar(pregunta){
     <button class="tn"      data-tab="consol" id="tn-consol" title="OCs activas (Borrador/Revisada/Autorizada) agrupadas por proveedor">📦 OCs Activas <span style="font-size:9px;background:#cbd5e1;color:#475569;padding:1px 5px;border-radius:6px;margin-left:2px;font-weight:600">activas</span></button>
     <button class="tn"      data-tab="por-pagar" id="tn-por-pagar" title="Pendientes · OCs autorizadas sin pagar">💰 Por Pagar</button>
     <button class="tn"      data-tab="pagos" id="tn-pagos" title="Histórico · pagos ya ejecutados">💸 Pagos</button>
+    <button class="tn"      data-tab="facprov" id="tn-facprov" title="Libro de facturas de proveedor · cuentas por pagar formales con retenciones, vencimiento y saldos">🧾 Facturas <span id="facprov-badge" style="display:none;background:#dc2626;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
     <button class="tn"      data-tab="atrasadas" id="tn-atrasadas" title="OCs sin recibir tras lead_time + buffer · Sebastián 23-may">🚨 Atrasadas <span id="atrasadas-badge" style="display:none;background:#dc2626;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
     <button class="tn"      data-tab="feedneed" id="tn-feedneed" title="Necesidades de compra · materias primas y envases por debajo del mínimo, en un solo lugar">🔔 Necesidades <span id="feedneed-badge" style="display:none;background:#dc2626;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
     <button class="tn"      data-tab="discrep" id="tn-discrep" title="Recepciones con faltante · ranking calidad proveedor · Sebastián 23-may">📋 Calidad recepción <span id="discrep-badge" style="display:none;background:#dc2626;color:#fff;font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;margin-left:4px"></span></button>
@@ -547,6 +548,30 @@ async function cxIAPreguntar(pregunta){
   </div>
   <div id="feedneed-kpis" style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0"></div>
   <div id="feedneed-wrap" style="overflow-x:auto">Cargando&hellip;</div>
+</div>
+
+<!-- Sebastián 1-jun-2026 · Libro de facturas de proveedor (cuentas por pagar) -->
+<div id="pane-facprov" class="pane">
+  <div class="bar" style="flex-wrap:wrap;gap:8px">
+    <div>
+      <span style="font-weight:700;color:#1e293b;font-size:15px">&#129534; Facturas de proveedor &middot; cuentas por pagar</span>
+      <div style="font-size:11px;color:#64748b;margin-top:2px">Cada factura es un documento del proveedor (con retenciones y vencimiento) que se va saldando con pagos. Lo vencido arriba.</div>
+    </div>
+    <div style="margin-left:auto;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+      <input type="text" id="fp-q" placeholder="Buscar nº, proveedor, OC…" oninput="_fpDeb()" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;min-width:180px">
+      <select id="fp-estado" onchange="loadFacturasProv()" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:12px">
+        <option value="todas">Todos los estados</option>
+        <option value="pendiente">Pendiente</option>
+        <option value="parcial">Parcial</option>
+        <option value="pagada">Pagada</option>
+        <option value="anulada">Anulada</option>
+      </select>
+      <button class="btn bp" onclick="loadFacturasProv()" style="padding:6px 14px;font-size:12px">&#8635; Actualizar</button>
+      <button class="btn" onclick="fpNuevaModal()" style="padding:6px 14px;font-size:12px;background:#0f766e;color:#fff;font-weight:700">&#10133; Nueva factura</button>
+    </div>
+  </div>
+  <div id="fp-kpis" style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0"></div>
+  <div id="fp-wrap" style="overflow-x:auto">Cargando&hellip;</div>
 </div>
 
 <div id="pane-solprod" class="pane">
@@ -1538,8 +1563,9 @@ document.querySelectorAll('.tn').forEach(function(btn){
     else if(tab==='ordserv'){ loadOrdenesServicio(); }
     else if(tab==='prepenv'){ loadPreparacionEnvases(); }
     else if(tab==='feedneed'){ loadFeedNecesidades(); }
+    else if(tab==='facprov'){ loadFacturasProv(); }
     var fab = document.getElementById('fab-btn');
-    if(tab==='prov'||tab==='solic'||tab==='planta'||tab==='influencer'||tab==='consol'||tab==='pagos'||tab==='por-pagar'||tab==='alertas'||tab==='mis-sol'||tab==='prepenv'||tab==='ordserv'||tab==='feedneed'){ fab.style.display='none'; }
+    if(tab==='prov'||tab==='solic'||tab==='planta'||tab==='influencer'||tab==='consol'||tab==='pagos'||tab==='por-pagar'||tab==='alertas'||tab==='mis-sol'||tab==='prepenv'||tab==='ordserv'||tab==='feedneed'||tab==='facprov'){ fab.style.display='none'; }
     else{ fab.style.display='flex'; fab.onclick=function(){
       var cat=tab==='dash'?'':tab.toUpperCase();
       openNuevaOC(cat);
@@ -1552,6 +1578,166 @@ document.querySelectorAll('.tn').forEach(function(btn){
 // Órdenes de Servicio · Sebastián 21-may-2026
 // Catalina crea · proveedor procesa · planta confirma recepción
 // ════════════════════════════════════════════════════════════════════════
+// Sebastián 1-jun-2026 · Libro de facturas de proveedor (cuentas por pagar)
+window._FP = [];
+var _fpT=null;
+function _fpDeb(){ clearTimeout(_fpT); _fpT=setTimeout(loadFacturasProv, 350); }
+function _fpMoney(n){ return '$'+(Math.round(n||0)).toLocaleString('es-CO'); }
+async function loadFacturasProv(){
+  var wrap=document.getElementById('fp-wrap'), kpis=document.getElementById('fp-kpis');
+  if(!wrap) return;
+  wrap.innerHTML='Cargando…';
+  var est=(document.getElementById('fp-estado')||{}).value||'todas';
+  var q=((document.getElementById('fp-q')||{}).value||'').trim();
+  try{
+    var r=await fetch('/api/compras/facturas-proveedor?estado='+encodeURIComponent(est)+'&q='+encodeURIComponent(q),{cache:'no-store'});
+    if(r.status===401){ location.href='/login'; return; }
+    var d=await r.json();
+    if(!d.ok){ wrap.innerHTML='<div style="color:#dc2626;padding:14px">Error: '+_esc((d&&d.error)||r.status)+'</div>'; return; }
+    window._FP=d.items||[];
+    if(kpis){
+      kpis.innerHTML=
+        '<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:8px 14px;min-width:150px;text-align:center"><div style="font-size:20px;font-weight:800;color:#991b1b">'+_fpMoney(d.total_vencido)+'</div><div style="font-size:10px;color:#64748b;text-transform:uppercase">Vencido</div></div>'+
+        '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:8px 14px;min-width:150px;text-align:center"><div style="font-size:20px;font-weight:800;color:#1e293b">'+_fpMoney(d.total_saldo)+'</div><div style="font-size:10px;color:#64748b;text-transform:uppercase">Saldo total</div></div>'+
+        '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:8px 14px;min-width:120px;text-align:center"><div style="font-size:20px;font-weight:800;color:#1e293b">'+d.n+'</div><div style="font-size:10px;color:#64748b;text-transform:uppercase">Facturas</div></div>';
+    }
+    var b=document.getElementById('facprov-badge'); var nv=window._FP.filter(function(x){return x.vencida;}).length;
+    if(b){ if(nv>0){ b.textContent=nv; b.style.display='inline-block'; } else b.style.display='none'; }
+    if(!window._FP.length){ wrap.innerHTML='<div style="padding:18px;color:#64748b">No hay facturas registradas. Usá "➕ Nueva factura".</div>'; return; }
+    var html='<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#0f766e;color:#fff">';
+    ['Nº Factura','Proveedor','OC','Vence','Total','Pagado','Saldo','Estado','Acciones'].forEach(function(h,i){ html+='<th style="padding:7px;text-align:'+((i>=4&&i<=6)?'right':'left')+'">'+h+'</th>'; });
+    html+='</tr></thead><tbody>';
+    window._FP.forEach(function(it){
+      var estMap={'pendiente':['#64748b','Pendiente'],'parcial':['#b45309','Parcial'],'pagada':['#15803d','Pagada'],'anulada':['#94a3b8','Anulada'],'vencida':['#b91c1c','Vencida']};
+      var ef=it.estado_efectivo||it.estado; var em=estMap[ef]||['#475569',ef];
+      var venc=it.fecha_vencimiento||'—';
+      var diasTxt=(it.dias_vencimiento!=null&&ef!=='pagada'&&ef!=='anulada')?(' <span style="font-size:10px;color:'+(it.dias_vencimiento<0?'#b91c1c':'#64748b')+'">('+(it.dias_vencimiento<0?Math.abs(it.dias_vencimiento)+'d venc':it.dias_vencimiento+'d')+')</span>'):'';
+      var sobre=it.sobre_facturada?' <span title="total factura &gt; valor OC" style="background:#fee2e2;color:#991b1b;font-size:9px;padding:1px 4px;border-radius:3px">⚠ &gt;OC</span>':'';
+      html+='<tr style="border-top:1px solid #f1f5f9'+(it.vencida?';background:#fff1f2':'')+(it.estado==='anulada'?';opacity:.55':'')+'">';
+      html+='<td style="padding:6px;font-weight:700">'+_esc(it.numero_factura)+sobre+(it.tiene_pdf?' <a href="/api/compras/facturas-proveedor/'+it.id+'/pdf" target="_blank" title="ver PDF" style="text-decoration:none">📎</a>':'')+'</td>';
+      html+='<td style="padding:6px">'+_esc(it.proveedor||'')+'</td>';
+      html+='<td style="padding:6px;font-size:11px;color:#64748b">'+_esc(it.numero_oc||'—')+'</td>';
+      html+='<td style="padding:6px;white-space:nowrap">'+_esc(venc)+diasTxt+'</td>';
+      html+='<td style="padding:6px;text-align:right">'+_fpMoney(it.total)+'</td>';
+      html+='<td style="padding:6px;text-align:right;color:#15803d">'+_fpMoney(it.pagado)+'</td>';
+      html+='<td style="padding:6px;text-align:right;font-weight:700">'+_fpMoney(it.saldo)+'</td>';
+      html+='<td style="padding:6px"><span style="color:'+em[0]+';font-weight:700">'+em[1]+'</span></td>';
+      html+='<td style="padding:6px;white-space:nowrap">';
+      if(it.estado!=='anulada'){
+        if(it.saldo>0.5) html+='<button onclick="fpPagarModal('+it.id+')" style="background:#0f766e;color:#fff;border:none;padding:4px 10px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer;margin-right:4px">Pagar</button>';
+        html+='<button onclick="fpDetalle('+it.id+')" style="background:#e2e8f0;color:#334155;border:none;padding:4px 10px;border-radius:5px;font-size:11px;cursor:pointer;margin-right:4px">Ver</button>';
+        html+='<button onclick="fpAnular('+it.id+')" style="background:#fff;color:#dc2626;border:1px solid #dc2626;padding:4px 8px;border-radius:5px;font-size:11px;cursor:pointer">Anular</button>';
+      } else { html+='<span style="color:#94a3b8;font-size:11px">—</span>'; }
+      html+='</td></tr>';
+    });
+    html+='</tbody></table>';
+    wrap.innerHTML=html;
+  }catch(e){ wrap.innerHTML='<div style="color:#dc2626;padding:14px">Error red: '+_esc(e.message||e)+'</div>'; }
+}
+function _fpModalShell(inner, maxw){
+  var m=document.getElementById('fp-modal'); if(m) m.remove();
+  m=document.createElement('div'); m.id='fp-modal';
+  m.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:99999;display:flex;align-items:flex-start;justify-content:center;padding:20px;overflow:auto';
+  m.innerHTML='<div style="background:#fff;border-radius:12px;max-width:'+(maxw||640)+'px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,.3);padding:24px">'+inner+'</div>';
+  document.body.appendChild(m);
+  m.addEventListener('click',function(e){ if(e.target===m) m.remove(); });
+  return m;
+}
+function _fpClose(){ var m=document.getElementById('fp-modal'); if(m) m.remove(); }
+function fpNuevaModal(){
+  function fld(lbl,id,tp,ph){ return '<div><label style="font-size:11px;color:#64748b;font-weight:700;display:block;margin-bottom:3px">'+lbl+'</label><input id="'+id+'" type="'+(tp||'text')+'" placeholder="'+(ph||'')+'" oninput="_fpRecalc()" style="width:100%;padding:7px;border:1px solid #cbd5e1;border-radius:5px;box-sizing:border-box"></div>'; }
+  var h='<div style="display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #e2e8f0;padding-bottom:10px;margin-bottom:14px"><h2 style="margin:0;font-size:17px;color:#0f766e">🧾 Nueva factura de proveedor</h2><button onclick="_fpClose()" style="background:#e2e8f0;border:none;width:32px;height:32px;border-radius:50%;font-size:18px;cursor:pointer">×</button></div>';
+  h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">';
+  h+=fld('Nº Factura *','fp-n-num')+fld('Proveedor *','fp-n-prov')+fld('NIT','fp-n-nit')+fld('OC vinculada','fp-n-oc','text','OC-2026-...')+fld('Fecha emisión','fp-n-emi','date')+fld('Fecha vencimiento','fp-n-venc','date');
+  h+='</div>';
+  h+='<div style="margin-top:12px;font-weight:700;color:#334155;font-size:13px">Valores (el total se calcula solo)</div>';
+  h+='<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:6px">';
+  h+=fld('Subtotal','fp-n-sub','number')+fld('IVA','fp-n-iva','number')+fld('Retefuente','fp-n-rf','number')+fld('ReteICA','fp-n-ri','number');
+  h+='<div><label style="font-size:11px;color:#64748b;font-weight:700;display:block;margin-bottom:3px">Total a pagar</label><input id="fp-n-total" type="number" style="width:100%;padding:7px;border:2px solid #0f766e;border-radius:5px;box-sizing:border-box;font-weight:700"></div>';
+  h+='</div>';
+  h+='<div style="margin-top:10px"><label style="font-size:11px;color:#64748b;font-weight:700;display:block;margin-bottom:3px">Observaciones</label><input id="fp-n-obs" style="width:100%;padding:7px;border:1px solid #cbd5e1;border-radius:5px;box-sizing:border-box"></div>';
+  h+='<div id="fp-n-msg" style="margin-top:8px;font-size:12px"></div>';
+  h+='<div style="margin-top:14px;text-align:right"><button onclick="_fpClose()" style="background:#e2e8f0;color:#334155;border:none;padding:8px 16px;border-radius:6px;margin-right:6px;cursor:pointer">Cancelar</button><button onclick="fpGuardar()" style="background:#0f766e;color:#fff;border:none;padding:8px 18px;border-radius:6px;font-weight:700;cursor:pointer">Guardar factura</button></div>';
+  _fpModalShell(h, 700);
+}
+function _fpRecalc(){
+  var g=function(id){ return parseFloat((document.getElementById(id)||{}).value||'0')||0; };
+  var t=g('fp-n-sub')+g('fp-n-iva')-g('fp-n-rf')-g('fp-n-ri');
+  var el=document.getElementById('fp-n-total'); if(el && document.activeElement!==el) el.value=Math.round(t*100)/100;
+}
+async function fpGuardar(){
+  var g=function(id){ return (document.getElementById(id)||{}).value||''; };
+  var body={numero_factura:g('fp-n-num').trim(), proveedor:g('fp-n-prov').trim(), nit:g('fp-n-nit').trim(),
+    numero_oc:g('fp-n-oc').trim(), fecha_emision:g('fp-n-emi'), fecha_vencimiento:g('fp-n-venc'),
+    subtotal:parseFloat(g('fp-n-sub'))||0, iva:parseFloat(g('fp-n-iva'))||0,
+    retefuente:parseFloat(g('fp-n-rf'))||0, retica:parseFloat(g('fp-n-ri'))||0,
+    total:parseFloat(g('fp-n-total'))||0, observaciones:g('fp-n-obs').trim()};
+  if(!body.numero_factura||!body.proveedor){ document.getElementById('fp-n-msg').innerHTML='<span style="color:#dc2626">Nº factura y proveedor son obligatorios</span>'; return; }
+  try{
+    var r=await fetch('/api/compras/facturas-proveedor', _fetchOpts('POST', body));
+    var d=await r.json();
+    if(!r.ok||!d.ok){ document.getElementById('fp-n-msg').innerHTML='<span style="color:#dc2626">'+_esc((d&&(d.detail||d.error))||r.status)+'</span>'; return; }
+    if(d.warning) alert('⚠ '+d.warning);
+    _fpClose(); loadFacturasProv();
+  }catch(e){ document.getElementById('fp-n-msg').innerHTML='<span style="color:#dc2626">Error red: '+_esc(e.message||e)+'</span>'; }
+}
+function fpPagarModal(fid){
+  var it=(window._FP||[]).find(function(x){return x.id===fid;}); if(!it) return;
+  var h='<div style="display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #e2e8f0;padding-bottom:10px;margin-bottom:14px"><h2 style="margin:0;font-size:16px;color:#0f766e">Pagar factura '+_esc(it.numero_factura)+'</h2><button onclick="_fpClose()" style="background:#e2e8f0;border:none;width:32px;height:32px;border-radius:50%;font-size:18px;cursor:pointer">×</button></div>';
+  h+='<div style="font-size:12px;color:#64748b;margin-bottom:10px">'+_esc(it.proveedor)+(it.numero_oc?' · OC '+_esc(it.numero_oc):'')+' · saldo <b>'+_fpMoney(it.saldo)+'</b></div>';
+  h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">';
+  h+='<div><label style="font-size:11px;color:#64748b;font-weight:700">Monto</label><input id="fp-p-monto" type="number" value="'+(it.saldo||0)+'" style="width:100%;padding:7px;border:1px solid #cbd5e1;border-radius:5px;box-sizing:border-box"></div>';
+  h+='<div><label style="font-size:11px;color:#64748b;font-weight:700">Medio</label><select id="fp-p-medio" style="width:100%;padding:7px;border:1px solid #cbd5e1;border-radius:5px;box-sizing:border-box"><option>Transferencia</option><option>Nequi</option><option>Daviplata</option><option>Efectivo</option><option>Cheque</option><option>Tarjeta</option></select></div>';
+  h+='</div>';
+  h+='<div style="margin-top:10px"><label style="font-size:11px;color:#64748b;font-weight:700">Observaciones</label><input id="fp-p-obs" style="width:100%;padding:7px;border:1px solid #cbd5e1;border-radius:5px;box-sizing:border-box"></div>';
+  h+='<div id="fp-p-msg" style="margin-top:8px;font-size:12px"></div>';
+  h+='<div style="margin-top:14px;text-align:right"><button onclick="_fpClose()" style="background:#e2e8f0;color:#334155;border:none;padding:8px 16px;border-radius:6px;margin-right:6px;cursor:pointer">Cancelar</button><button onclick="fpDoPagar('+fid+')" style="background:#0f766e;color:#fff;border:none;padding:8px 18px;border-radius:6px;font-weight:700;cursor:pointer">Registrar pago</button></div>';
+  _fpModalShell(h, 480);
+}
+async function fpDoPagar(fid){
+  var monto=parseFloat((document.getElementById('fp-p-monto')||{}).value||'0')||0;
+  var medio=(document.getElementById('fp-p-medio')||{}).value||'Transferencia';
+  var obs=(document.getElementById('fp-p-obs')||{}).value||'';
+  if(monto<=0){ document.getElementById('fp-p-msg').innerHTML='<span style="color:#dc2626">Monto inválido</span>'; return; }
+  try{
+    var r=await fetch('/api/compras/facturas-proveedor/'+fid+'/pagar', _fetchOpts('POST', {monto:monto, medio:medio, observaciones:obs}));
+    var d=await r.json();
+    if(!r.ok||!d.ok){ document.getElementById('fp-p-msg').innerHTML='<span style="color:#dc2626">'+_esc((d&&d.error)||r.status)+(d&&d.saldo!=null?' (saldo '+_fpMoney(d.saldo)+')':'')+'</span>'; return; }
+    if(d.oc_estado) alert('✅ Pago registrado · la OC quedó "'+d.oc_estado+'"');
+    _fpClose(); loadFacturasProv();
+  }catch(e){ document.getElementById('fp-p-msg').innerHTML='<span style="color:#dc2626">Error red: '+_esc(e.message||e)+'</span>'; }
+}
+async function fpDetalle(fid){
+  try{
+    var r=await fetch('/api/compras/facturas-proveedor/'+fid,{cache:'no-store'});
+    var d=await r.json();
+    if(!r.ok||!d.ok){ alert('Error: '+((d&&d.error)||r.status)); return; }
+    var f=d.factura;
+    function rw(k,v){ return '<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f1f5f9"><span style="color:#64748b">'+k+'</span><span style="font-weight:600">'+v+'</span></div>'; }
+    var h='<div style="display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #e2e8f0;padding-bottom:10px;margin-bottom:14px"><h2 style="margin:0;font-size:16px;color:#0f766e">Factura '+_esc(f.numero_factura)+'</h2><button onclick="_fpClose()" style="background:#e2e8f0;border:none;width:32px;height:32px;border-radius:50%;font-size:18px;cursor:pointer">×</button></div>';
+    h+=rw('Proveedor', _esc(f.proveedor||'')+(f.nit?' · '+_esc(f.nit):''));
+    h+=rw('OC', _esc(f.numero_oc||'—'));
+    h+=rw('Emisión / Vence', _esc(f.fecha_emision||'—')+' → '+_esc(f.fecha_vencimiento||'—'));
+    h+=rw('Subtotal', _fpMoney(f.subtotal))+rw('IVA', _fpMoney(f.iva))+rw('Retefuente', '-'+_fpMoney(f.retefuente))+rw('ReteICA', '-'+_fpMoney(f.retica));
+    h+=rw('Total', '<b>'+_fpMoney(f.total)+'</b>')+rw('Pagado', _fpMoney(f.pagado))+rw('Saldo', '<b>'+_fpMoney(f.saldo)+'</b>');
+    if(f.observaciones) h+=rw('Obs', _esc(f.observaciones));
+    h+='<div style="margin-top:12px;font-weight:700;color:#334155;font-size:13px">Pagos ('+f.pagos.length+')</div>';
+    if(f.pagos.length){ h+='<table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:4px">'; f.pagos.forEach(function(p){ h+='<tr style="border-bottom:1px solid #f1f5f9"><td style="padding:4px">'+_esc((p.fecha_pago||'').slice(0,10))+'</td><td style="padding:4px">'+_esc(p.medio||'')+'</td><td style="padding:4px;text-align:right;font-weight:600">'+_fpMoney(p.monto)+'</td><td style="padding:4px;color:#64748b;font-size:11px">'+_esc(p.registrado_por||'')+'</td></tr>'; }); h+='</table>'; }
+    else h+='<div style="color:#94a3b8;font-size:12px;padding:6px 0">Sin pagos aún.</div>';
+    if(f.tiene_pdf) h+='<div style="margin-top:10px"><a href="/api/compras/facturas-proveedor/'+fid+'/pdf" target="_blank" style="color:#0f766e;font-weight:700">📎 Ver PDF de la factura</a></div>';
+    _fpModalShell(h, 560);
+  }catch(e){ alert('Error: '+(e.message||e)); }
+}
+async function fpAnular(fid){
+  var mot=prompt('¿Anular esta factura? Motivo (opcional):'); if(mot===null) return;
+  try{
+    var r=await fetch('/api/compras/facturas-proveedor/'+fid, _fetchOpts('PATCH', {anular:true, motivo:mot}));
+    var d=await r.json();
+    if(!r.ok||!d.ok){ alert('Error: '+((d&&d.error)||r.status)); return; }
+    loadFacturasProv();
+  }catch(e){ alert('Error: '+(e.message||e)); }
+}
+
 // Sebastián 31-may-2026 · Feed de necesidades (Pieza 2) · MP + envases bajo mínimo
 async function loadFeedNecesidades(){
   var wrap=document.getElementById('feedneed-wrap'), kpis=document.getElementById('feedneed-kpis');
