@@ -451,11 +451,81 @@ def admin_diag_familia_producto():
                      "volumen_ml": float(r[3] or 0), "envase_codigo": r[4],
                      "cantidad_fija_uds": float(r[5] or 0)})
 
+    # 4) STOCK por SKU · diagnóstico "dice que no hay pero en Shopify sí"
+    # Sebastián 1-jun-2026: el motor de necesidades resuelve stock con la regla
+    # "CC manda sobre SHOPIFY" (_resolved_stock_por_sku) y descarta filas con
+    # unidades_disponible<=0. Si Shopify trae stock pero un conteo CC lo pisa, o
+    # no hay filas en stock_pt para el SKU (el sync no lo trajo), acá se ve.
+    stock_por_sku = []
+    try:
+        from blueprints.programacion import _resolved_stock_por_sku as _rss
+        resolved = _rss(conn, empresa='ANIMUS')
+    except Exception:
+        resolved = {}
+    sku_set = set()
+    for s in skus:
+        if s.get('sku'):
+            sku_set.add(str(s['sku']).strip().upper())
+    try:
+        for r in c.execute(
+            "SELECT UPPER(TRIM(sku_shopify)) FROM producto_presentaciones "
+            "WHERE UPPER(producto_nombre) LIKE ? AND sku_shopify IS NOT NULL "
+            "AND TRIM(sku_shopify)!=''", (like,)).fetchall():
+            if r[0]:
+                sku_set.add(r[0])
+    except Exception:
+        pass
+    for sku in sorted(sku_set):
+        cc_uds = 0
+        shop_uds = 0
+        empresas = set()
+        try:
+            for rr in c.execute(
+                """SELECT CASE WHEN COALESCE(lote_produccion,'') LIKE 'SHOPIFY-%'
+                               THEN 'SHOPIFY' ELSE 'CC' END AS bucket,
+                          COALESCE(SUM(unidades_disponible), 0),
+                          MAX(COALESCE(empresa, ''))
+                   FROM stock_pt
+                   WHERE UPPER(TRIM(sku)) = ? AND estado = 'Disponible'
+                   GROUP BY CASE WHEN COALESCE(lote_produccion,'') LIKE 'SHOPIFY-%'
+                                 THEN 'SHOPIFY' ELSE 'CC' END""", (sku,)).fetchall():
+                if rr[0] == 'SHOPIFY':
+                    shop_uds = int(rr[1] or 0)
+                else:
+                    cc_uds = int(rr[1] or 0)
+                if rr[2]:
+                    empresas.add(rr[2])
+        except Exception:
+            pass
+        res = resolved.get(sku, {})
+        if cc_uds > 0 and shop_uds > 0:
+            diag = ('CC manda (%d uds) · Shopify (%d uds) IGNORADO por regla de autoridad. '
+                    'Si Shopify es el real, el conteo CC quedó desactualizado.' % (cc_uds, shop_uds))
+        elif cc_uds > 0:
+            diag = 'CC (%d uds) · sin snapshot Shopify' % cc_uds
+        elif shop_uds > 0:
+            diag = 'Shopify (%d uds) · sin conteo CC' % shop_uds
+        else:
+            diag = ('SIN STOCK en stock_pt (ni CC ni Shopify Disponible). El sync no trajo '
+                    'este SKU o no hay disponible · revisar sync-stock-shopify y que el SKU '
+                    'coincida exacto con el de Shopify.')
+        stock_por_sku.append({
+            'sku': sku,
+            'resolved_uds': int(res.get('uds', 0) or 0),
+            'fuente': res.get('fuente', ''),
+            'cc_uds_disponible': cc_uds,
+            'shopify_uds_disponible': shop_uds,
+            'empresas': sorted(empresas),
+            'mapeado': any((s.get('sku') or '').strip().upper() == sku for s in skus),
+            'diagnostico': diag,
+        })
+
     return jsonify({
         "ok": True, "query": q,
         "formulas": formulas, "n_formulas": len(formulas),
         "skus": skus, "n_skus": len(skus),
         "presentaciones": pres, "n_presentaciones": len(pres),
+        "stock_por_sku": stock_por_sku, "n_stock_skus": len(stock_por_sku),
     })
 
 
@@ -635,6 +705,26 @@ async function ir(){
     h+='<table><tr><th>Producto</th><th>Presentación</th><th>Etiqueta</th><th>ml</th><th>Envase</th><th>Fija</th></tr>';
     d.presentaciones.forEach(function(p){ h+='<tr><td>'+esc(p.producto_nombre)+'</td><td class="mono">'+esc(p.presentacion_codigo)+'</td><td>'+esc(p.etiqueta)+'</td><td>'+p.volumen_ml+'</td><td class="mono">'+esc(p.envase_codigo||'—')+'</td><td>'+(p.cantidad_fija_uds||'')+'</td></tr>'; });
     if(!d.presentaciones.length) h+='<tr><td colspan="6" class="muted">sin presentaciones</td></tr>';
+    h+='</table></div>';
+    // Stock por SKU · "dice que no hay pero en Shopify sí"
+    var sps=d.stock_por_sku||[];
+    h+='<div class="card"><h3>📦 Stock por SKU ('+sps.length+') · qué ve el motor de necesidades</h3>';
+    h+='<div class="muted">Regla: si hay conteo CC para el SKU, ESE manda y se IGNORA el snapshot Shopify. Filas con 0 disponibles se descartan. Si "dice que no hay y en Shopify sí", mirá la columna diagnóstico.</div>';
+    h+='<table><tr><th>SKU</th><th>Mapeado</th><th>Resuelto (motor)</th><th>Fuente</th><th>CC disp.</th><th>Shopify disp.</th><th>Empresa</th><th>Diagnóstico</th></tr>';
+    sps.forEach(function(s){
+      var resColor = s.resolved_uds>0 ? '#15803d' : '#b91c1c';
+      var diagColor = (s.shopify_uds_disponible>0 && s.resolved_uds<s.shopify_uds_disponible) ? '#b45309'
+                    : (s.resolved_uds<=0 ? '#b91c1c' : '#475569');
+      h+='<tr><td class="mono">'+esc(s.sku)+'</td>'
+        +'<td>'+(s.mapeado?'sí':'<span style="color:#b91c1c">NO</span>')+'</td>'
+        +'<td style="font-weight:700;color:'+resColor+'">'+s.resolved_uds+'</td>'
+        +'<td>'+esc(s.fuente||'—')+'</td>'
+        +'<td>'+s.cc_uds_disponible+'</td>'
+        +'<td>'+s.shopify_uds_disponible+'</td>'
+        +'<td class="muted">'+esc((s.empresas||[]).join(', ')||'—')+'</td>'
+        +'<td style="color:'+diagColor+'">'+esc(s.diagnostico)+'</td></tr>';
+    });
+    if(!sps.length) h+='<tr><td colspan="8" class="muted">sin SKUs con stock para revisar</td></tr>';
     h+='</table></div>';
     out.innerHTML=h;
   }catch(e){ out.innerHTML='<div class="card" style="color:#dc2626">Error red: '+esc(e.message)+'</div>'; }
