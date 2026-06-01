@@ -107,3 +107,39 @@ def test_pdf_va_a_tabla_1a1(app, db_clean):
     pr = c.get(f"/api/compras/facturas-proveedor/{fid}/pdf")
     assert pr.status_code == 200, pr.data
     assert pr.data == b"%PDF-1.4 test"
+
+
+def test_pago_factura_recalcula_estado_oc_y_warning(app, db_clean):
+    """fp_pagar refleja el estado en la OC ligada; fp_crear avisa si la OC no existe."""
+    import json
+    c = _login(app)
+    with app.app_context():
+        from database import get_db
+        cu = get_db().cursor()
+        cu.execute("DELETE FROM ordenes_compra WHERE numero_oc='OC-FP-T'")
+        cu.execute("DELETE FROM facturas_proveedor WHERE numero_factura IN ('FAC-OC-1','FAC-NOOC-1')")
+        cu.execute("INSERT INTO ordenes_compra (numero_oc, proveedor, estado, valor_total) VALUES ('OC-FP-T','ProvOC','Autorizada',1000)")
+        get_db().commit()
+    # factura ligada a OC existente
+    r = c.post("/api/compras/facturas-proveedor",
+               data=json.dumps({"numero_factura":"FAC-OC-1","proveedor":"ProvOC","numero_oc":"OC-FP-T","total":1000}), headers=_h())
+    assert r.status_code == 200, r.data
+    assert r.get_json().get("warning") in (None, ""), "OC existe → sin warning"
+    fid = r.get_json()["id"]
+    # pago parcial → OC Parcial
+    rp = c.post(f"/api/compras/facturas-proveedor/{fid}/pagar",
+                data=json.dumps({"monto":400,"medio":"Transferencia"}), headers=_h())
+    assert rp.get_json().get("oc_estado") == "Parcial", rp.data
+    # pago final → OC Pagada
+    rp2 = c.post(f"/api/compras/facturas-proveedor/{fid}/pagar",
+                 data=json.dumps({"monto":600,"medio":"Transferencia"}), headers=_h())
+    assert rp2.get_json().get("oc_estado") == "Pagada", rp2.data
+    with app.app_context():
+        from database import get_db
+        est = get_db().execute("SELECT estado FROM ordenes_compra WHERE numero_oc='OC-FP-T'").fetchone()[0]
+    assert est == "Pagada"
+    # factura con OC inexistente → warning no bloqueante
+    r2 = c.post("/api/compras/facturas-proveedor",
+                data=json.dumps({"numero_factura":"FAC-NOOC-1","proveedor":"ProvX","numero_oc":"OC-NO-EXISTE","total":50}), headers=_h())
+    assert r2.status_code == 200, r2.data
+    assert r2.get_json().get("warning"), "OC inexistente → debe avisar"

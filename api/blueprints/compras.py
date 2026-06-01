@@ -2043,6 +2043,13 @@ def fp_crear():
     if dup:
         return jsonify({'error': 'factura duplicada',
                         'detail': f'Ya existe {numero} de {proveedor} (id {dup[0]})'}), 409
+    # Validación no bloqueante de la OC ligada (FIX 1-jun-2026 · audit)
+    numero_oc = (d.get('numero_oc') or '').strip()
+    warning = None
+    if numero_oc:
+        _ocx = c.execute("SELECT 1 FROM ordenes_compra WHERE numero_oc=?", (numero_oc,)).fetchone()
+        if not _ocx:
+            warning = f'La OC "{numero_oc}" no existe — la factura se creó igual, verificá el número.'
 
     def _f(k):
         try:
@@ -2056,7 +2063,7 @@ def fp_crear():
          subtotal, iva, iva_pct, retefuente, retefuente_pct, retica, retica_pct,
          total, estado, pdf_adjunto, observaciones, creado_por, empresa)
         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-        (numero, proveedor, (d.get('nit') or '').strip(), (d.get('numero_oc') or '').strip(),
+        (numero, proveedor, (d.get('nit') or '').strip(), numero_oc,
          (d.get('fecha_emision') or '').strip() or _hoy,
          (d.get('fecha_vencimiento') or '').strip(),
          _f('subtotal'), _f('iva'), _f('iva_pct'), _f('retefuente'), _f('retefuente_pct'),
@@ -2079,7 +2086,7 @@ def fp_crear():
     except Exception:
         pass
     conn.commit()
-    return jsonify({'ok': True, 'id': fid, 'total': total})
+    return jsonify({'ok': True, 'id': fid, 'total': total, 'warning': warning})
 
 
 @bp.route('/api/compras/facturas-proveedor/<int:fid>', methods=['GET'])
@@ -2217,15 +2224,32 @@ def fp_pagar(fid):
          (d.get('observaciones') or '').strip(), fid))
     pago_id = c.lastrowid
     _fp_recalc_estado(c, fid)
+    # Reflejar el pago en el estado de la OC ligada (consistencia OC↔factura · FIX
+    # 1-jun-2026) · mismo CAS que pagar_oc (Pagada/Parcial por SUM(pagos) vs valor_total).
+    # No toca OCs en estado no-pagable.
+    oc_num = (f[0] or '').strip()
+    oc_estado = None
+    if oc_num:
+        ocr = c.execute("SELECT estado, COALESCE(valor_total,0) FROM ordenes_compra "
+                        "WHERE numero_oc=?", (oc_num,)).fetchone()
+        if ocr and (ocr[0] or '') not in ('Cancelada', 'Rechazada', 'Borrador', 'Revisada'):
+            c.execute("""UPDATE ordenes_compra SET estado = CASE WHEN (
+                    SELECT COALESCE(SUM(monto),0) FROM pagos_oc WHERE numero_oc=?
+                 ) >= ? - 0.01 THEN 'Pagada' ELSE 'Parcial' END
+                 WHERE numero_oc=?""", (oc_num, float(ocr[1] or 0), oc_num))
+            _re = c.execute("SELECT estado FROM ordenes_compra WHERE numero_oc=?",
+                            (oc_num,)).fetchone()
+            oc_estado = _re[0] if _re else None
     try:
         audit_log(c, usuario=user, accion='PAGAR_FACTURA_PROVEEDOR',
                   tabla='facturas_proveedor', registro_id=str(fid),
-                  despues={'monto': monto, 'medio': medio, 'pago_id': pago_id})
+                  despues={'monto': monto, 'medio': medio, 'pago_id': pago_id,
+                           'oc': oc_num, 'oc_estado': oc_estado})
     except Exception:
         pass
     conn.commit()
     est = c.execute("SELECT estado FROM facturas_proveedor WHERE id=?", (fid,)).fetchone()[0]
-    return jsonify({'ok': True, 'pago_id': pago_id, 'estado': est})
+    return jsonify({'ok': True, 'pago_id': pago_id, 'estado': est, 'oc_estado': oc_estado})
 
 
 @bp.route('/api/compras/mailbox-facturas', methods=['GET'])
