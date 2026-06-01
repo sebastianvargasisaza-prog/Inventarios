@@ -2322,6 +2322,7 @@ def prog_reconciliar_shopify():
     if not _auth():
         return jsonify({'error': 'No autenticado'}), 401
     conn = get_db()
+    q_filtro = (request.args.get('q') or '').strip().upper()
 
     def _cfg(k):
         r = conn.execute("SELECT valor FROM animus_config WHERE clave=?", (k,)).fetchone()
@@ -2449,6 +2450,11 @@ def prog_reconciliar_shopify():
         })
     # problemas primero, luego por producto
     filas.sort(key=lambda x: (not x['problema'], x['producto'], x['sku']))
+    # Filtro opcional ?q= · para inspeccionar un producto/SKU puntual (ej. ?q=BHA)
+    if q_filtro:
+        filas = [f for f in filas
+                 if q_filtro in (f.get('sku') or '').upper()
+                 or q_filtro in (f.get('producto') or '').upper()]
     return jsonify({
         'ok': True,
         'used_available': used_available,
