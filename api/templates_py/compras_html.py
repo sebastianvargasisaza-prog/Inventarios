@@ -1281,9 +1281,23 @@ async function cxIAPreguntar(pregunta){
 
 <script>
 // ── CSRF defense-in-depth · Sebastian 3-may-2026 ──────────────────
+// FIX 31-may-2026 · el token vive en la sesión del servidor (no en una cookie
+// legible por JS) y se obtiene de /api/csrf-token. Antes _csrf() leía la cookie
+// (vacía) y la carga inicial descartaba la respuesta → los endpoints /api/admin/*
+// (ej. fusionar proveedores) rechazaban con "CSRF token requerido".
+window._csrfTok = window._csrfTok || '';
 function _csrf() {
+  if (window._csrfTok) return window._csrfTok;
   var m = document.cookie.match(/(?:^|;\\s*)csrf_token=([^;]+)/);
   return m ? decodeURIComponent(m[1]) : '';
+}
+async function _ensureCsrf() {
+  if (window._csrfTok) return window._csrfTok;
+  try {
+    var r = await fetch('/api/csrf-token', {credentials: 'same-origin'});
+    if (r.ok) { var d = await r.json(); window._csrfTok = (d && d.csrf_token) || ''; }
+  } catch (e) {}
+  return window._csrfTok;
 }
 function _fetchOpts(method, body) {
   var headers = {};
@@ -1296,7 +1310,7 @@ function _fetchOpts(method, body) {
   }
   return opts;
 }
-fetch('/api/csrf-token', {credentials: 'same-origin'}).catch(function(){});
+fetch('/api/csrf-token', {credentials: 'same-origin'}).then(function(r){ return r.ok ? r.json() : null; }).then(function(d){ if (d && d.csrf_token) window._csrfTok = d.csrf_token; }).catch(function(){});
 
 // ── Filtros + Paginacion (client-side) ────────────────────────────
 var TBL_STATE = {
@@ -6037,6 +6051,7 @@ async function abrirProvDuplicados(){
 async function _provFusionar(keeper, mergeFrom){
   if(!confirm('Fusionar "'+mergeFrom+'" → "'+keeper+'"?\\n\\nEsto:\\n· Traspasa todas las OCs, SOLs, cotizaciones, lead_times de "'+mergeFrom+'" a "'+keeper+'"\\n· Si "'+keeper+'" no tiene NIT, le copia el del huérfano\\n· Da de baja a "'+mergeFrom+'"\\n\\nIrreversible (audit log queda)')) return;
   try{
+    await _ensureCsrf();  // /api/admin/* exige X-CSRF-Token (FIX 31-may)
     var r = await fetch('/api/admin/proveedores-fusionar', _fetchOpts('POST', {keeper: keeper, merge_from: mergeFrom}));
     var d = await r.json();
     if(!r.ok || d.error){ alert('Error: '+(d.error||r.status)); return; }
