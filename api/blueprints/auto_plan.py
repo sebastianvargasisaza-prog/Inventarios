@@ -11017,21 +11017,18 @@ def planta_accion_rapida():
                 except Exception as _e_a:
                     log.warning(f'[iniciar_calendar] auto-asignar falla pid={pid}: {_e_a}')
 
-            # Re-leer área asignada (puede haber cambiado)
-            ar = c.execute("SELECT area_id FROM produccion_programada WHERE id=?", (pid,)).fetchone()
-            area_id_final = ar[0] if ar else None
-
-            # Marcar como iniciada · guard idempotente (no re-pisar inicio_real_at)
-            c.execute("""
-                UPDATE produccion_programada
-                  SET estado='en_proceso', inicio_real_at=datetime('now', '-5 hours')
-                WHERE id=? AND inicio_real_at IS NULL
-            """, (pid,))
-            # Marcar área ocupada
-            if area_id_final:
-                c.execute("UPDATE areas_planta SET estado='ocupada' WHERE id=? AND estado IN ('libre','limpiando')", (area_id_final,))
-            conn.commit()
-            return jsonify({'ok': True, 'mensaje': '▶ Producción iniciada (registro creado desde Calendar)', 'produccion_id': pid})
+            # FIX 1-jun-2026 audit Planta (P1 drift) · ANTES marcaba estado='en_proceso'
+            # + inicio_real_at SIN descontar MP y saltándose los gates (sala sucia / QC
+            # granel) → la MP salía de bodega física pero el kardex no la descontaba.
+            # Ahora delega al canónico prog_iniciar_produccion (descuento FEFO + permisos
+            # + gates + inicio_real_at + área ocupada), igual que la acción rápida
+            # 'iniciar_produccion'. Garantiza que INICIAR siempre descuente. La fila ya
+            # fue creada/ubicada + auto-asignada arriba (misma conexión/transacción).
+            try:
+                from blueprints.programacion import prog_iniciar_produccion
+            except ImportError:
+                from api.blueprints.programacion import prog_iniciar_produccion
+            return prog_iniciar_produccion(int(pid))
         except Exception as e:
             try: conn.rollback()
             except Exception as _r: log.debug('rollback no aplicable: %s', _r)

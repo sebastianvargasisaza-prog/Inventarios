@@ -17352,12 +17352,32 @@ def cancelar_proxima(pid):
             "error": f"solo se puede cancelar pendiente/programado · estado actual: {estado_actual}",
         }), 409
 
+    # FIX 1-jun-2026 audit Planta (P0 drift) · el flujo canónico de iniciar
+    # (prog_iniciar_produccion) descuenta MP y setea inicio_real_at/
+    # inventario_descontado_at SIN cambiar estado (queda 'programado'). El guard
+    # de arriba (solo estado) dejaba cancelar una producción YA iniciada con MP
+    # descontada SIN revertir → la MP desaparecía del kardex (drift permanente).
+    # Ahora bloqueamos si ya arrancó/descontó: hay que revertir el descuento primero.
+    ya = cur.execute(
+        "SELECT COALESCE(inicio_real_at,''), COALESCE(inventario_descontado_at,'') "
+        "FROM produccion_programada WHERE id=?", (pid,)).fetchone()
+    if ya and (ya[0] or ya[1]):
+        return jsonify({
+            "error": "no se puede cancelar: la producción ya inició o descontó inventario. "
+                     "Revertí el descuento primero (revertir-completado).",
+            "codigo": "YA_EN_EJECUCION",
+            "inicio_real_at": ya[0] or None,
+            "inventario_descontado_at": ya[1] or None,
+        }), 409
+
     cur.execute("UPDATE produccion_programada SET estado='cancelado' WHERE id = ?", (pid,))
-    conn.commit()
+    # FIX 1-jun-2026 · audit ANTES del commit (audit_log usa el cursor del caller
+    # sin commit propio · antes corría DESPUÉS del commit → nunca se persistía).
     audit_log(cur, usuario=user, accion="CANCELAR_PRODUCCION_PROGRAMADA",
               tabla="produccion_programada", registro_id=pid,
               antes={"estado": estado_actual, "producto": producto, "fecha": fecha},
               despues={"estado": "cancelado"})
+    conn.commit()
     return jsonify({"ok": True, "id": pid, "estado": "cancelado"})
 
 

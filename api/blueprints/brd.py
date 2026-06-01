@@ -1547,9 +1547,16 @@ def completar_ebr(ebr_id):
 
     # IPCs obligatorios deben estar reportados Y conformes (Part 11 + GMP).
     # mbr_template_id viene de ebr_ejecuciones · re-leemos para no asumir.
-    ebr_full = cur.execute(
-        "SELECT mbr_template_id FROM ebr_ejecuciones WHERE id = ?", (ebr_id,)
+    # FIX 1-jun-2026 audit Planta (P0 INVIMA) · ANTES seleccionaba solo
+    # mbr_template_id pero abajo (cuarentena) accedía ebr_full['lote'] / .get('lote')
+    # → KeyError/AttributeError SIEMPRE → la Entrada en CUARENTENA NUNCA se creaba
+    # (lote PT no pasaba por cuarentena · liberar_ebr no tenía qué promover).
+    # Ahora cargamos lote y lo dejamos como dict (para .get) · lote_codigo no existe
+    # como columna, se elimina su referencia.
+    _ef = cur.execute(
+        "SELECT mbr_template_id, lote FROM ebr_ejecuciones WHERE id = ?", (ebr_id,)
     ).fetchone()
+    ebr_full = dict(_ef) if _ef else {}
     ipcs_faltantes = cur.execute(
         """SELECT s.parametro
            FROM ipc_specs s
@@ -1601,7 +1608,7 @@ def completar_ebr(ebr_id):
     # Ahora: INSERT movimientos · libera_ebr promueve a VIGENTE (Fix prev).
     cuarentena_creada = False
     try:
-        lote_ref = ebr_full['lote'] if ebr_full.get('lote') else (ebr_full.get('lote_codigo') or '')
+        lote_ref = (ebr_full.get('lote') or '').strip()
         if lote_ref and cantidad_real and cantidad_real > 0:
             # Buscar producto del producción para material_id (puede ser PT)
             prod_row = cur.execute(
