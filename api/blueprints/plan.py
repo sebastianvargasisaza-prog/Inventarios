@@ -3012,7 +3012,13 @@ def plan_alertas_ia():
         nombre = p.get("producto_nombre") or ""
         key = nombre.upper().strip()
         prox = prox_lote.get(key)
-        cob = p.get("dias_cobertura")
+        # FIX 1-jun-2026 · la alerta IA decide crítico por urgencia (= stock físico
+        # de góndola) · el texto DEBE usar el MISMO dato (dias_gondola), no
+        # dias_cobertura (con pipeline). Antes mostraba "95.7d (≤20d crítico)" —
+        # contradictorio — porque mezclaba cobertura-con-pipeline con la urgencia física.
+        cob = p.get("dias_gondola")
+        if cob is None:
+            cob = p.get("dias_cobertura")
         cob_txt = f"{cob}d" if cob is not None else "sin datos"
 
         if urg == "CRITICO":
