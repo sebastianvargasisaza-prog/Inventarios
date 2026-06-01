@@ -15101,6 +15101,17 @@ async function abrirLoteModal(id, producto, fecha, kg){
   try {
     const _loteFull = (PLAN_DATA.agendadas || []).find(a => a.id === id);
     const _desg = (_loteFull && _loteFull.desglose_b2b) || [];
+    // FIX 1-jun-2026 · desglose por cliente × envase (cuántos 10ml/30ml para Animus,
+    // cuántos 30ml para Kelly). Backend computa DTC = composición − B2B.
+    let _planCli = [];
+    try {
+      const _rcomp = await fetch('/api/programacion/programar/' + id + '/composicion-mee', {credentials:'same-origin'});
+      if (_rcomp.ok){ const _dcomp = await _rcomp.json(); if (_dcomp && _dcomp.plan_por_cliente) _planCli = _dcomp.plan_por_cliente; }
+    } catch(_eC){}
+    const _envTxt = (cli) => !cli ? '' : (cli.envases||[]).filter(e=>e.uds>0).map(e =>
+      '<b>' + (e.uds).toLocaleString('es-CO') + '</b>×' + escapeHtml(e.etiqueta)
+      + (e.es_fija ? ' <span style="color:#7c3aed;font-size:10px">(fijo/regalo)</span>' : '')
+    ).join(' &nbsp;·&nbsp; ');
     if (_desg.length > 0 || (_loteFull && _loteFull.kg_b2b_total > 0)){
       const kgB2B = (_loteFull && _loteFull.kg_b2b_total) || 0;
       const kgDTC = (_loteFull && _loteFull.kg_dtc) || 0;
@@ -15119,22 +15130,26 @@ async function abrirLoteModal(id, producto, fecha, kg){
         + '<th style="padding:6px 8px;background:#fef3c7">Uds a envasar ✏</th>'
         + '<th style="padding:6px 8px;background:#fef3c7">Observaciones ✏</th>'
         + '</tr></thead><tbody>';
-      // Fila DTC (no editable, no tiene pbl_id)
+      // Fila DTC (no editable) · ahora muestra el desglose por envase (10ml/30ml)
       if (kgDTC > 0.05){
-        const udsDtcCalc = '—';
+        const _dtcCli = _planCli.find(x => x.es_dtc);
+        const _dtcEnv = _envTxt(_dtcCli);
         dHtml += '<tr style="border-top:1px solid #e2e8f0;background:#eff6ff">'
           + '<td style="padding:6px 8px;font-weight:700;color:#1e40af">🛍️ Animus DTC</td>'
           + '<td style="padding:6px 8px;text-align:center;font-weight:700">' + kgDTC + ' kg</td>'
-          + '<td style="padding:6px 8px;text-align:center;color:#64748b">default</td>'
-          + '<td style="padding:6px 8px;text-align:center;color:#64748b">—</td>'
-          + '<td style="padding:6px 8px;text-align:center;color:#94a3b8" colspan="2"><em>DTC se calcula automático · no editable</em></td>'
+          + '<td colspan="4" style="padding:6px 8px;font-size:11px;color:#1e293b">'
+            + (_dtcEnv || '<em style="color:#94a3b8">DTC automático</em>')
+            + ' <span style="color:#94a3b8;font-size:10px">· auto · no editable</span></td>'
           + '</tr>';
       }
       // Filas B2B (editables)
       _desg.forEach((d, idx) => {
         const cli = (d.cliente || 'B2B');
         const cliEsc = cli.replace(/'/g, "&#39;");
-        const envase = d.envase || '—';
+        // envase real desde plan_por_cliente (ej. "30ml") · si no, el de desglose
+        const _cliPlan = _planCli.find(x => !x.es_dtc && x.cliente === cli);
+        const envase = (_cliPlan && _cliPlan.envases && _cliPlan.envases[0] && _cliPlan.envases[0].etiqueta)
+                       ? _cliPlan.envases[0].etiqueta : (d.envase || '—');
         const udsCalc = d.unidades_calculadas || 0;
         // FIX 30-may-2026 · Sebastián (caso Kelly BHA): el campo arrancaba en 0
         // cuando no se había llenado → una orden quedaba en 0 y NO se envasaba.

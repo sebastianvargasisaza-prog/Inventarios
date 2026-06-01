@@ -5331,6 +5331,12 @@ def prog_composicion_mee(evento_id):
     _res = _composicion_envases_lote(c, evento_id)
     if _res is None:
         return jsonify({'error': f'Producción {evento_id} no encontrada'}), 404
+    # Desglose por cliente × envase (DTC = composición − B2B) · Sebastián 1-jun-2026
+    try:
+        _res['plan_por_cliente'] = _plan_envasado_por_cliente(
+            c, evento_id, _res.get('variantes') or [])
+    except Exception:
+        _res['plan_por_cliente'] = []
     return jsonify(_res)
 
 
@@ -5559,6 +5565,58 @@ def _composicion_envases_lote(c, evento_id):
         'tiene_override': bool(fija_override),
         'sin_variantes': False,
     }
+
+
+def _plan_envasado_por_cliente(c, evento_id, variantes):
+    """Desglose del envasado POR CLIENTE × ENVASE (Sebastián 1-jun-2026: "no deja
+    claro cuánto envasar de 10/30 para Animus y cuántos de 30 para Kelly").
+
+    Modelo (decisión Sebastián): el B2B SALE de la mezcla → DTC = composición − B2B
+    por volumen. Cada aporte B2B (pedidos_b2b_lote) toma sus unidades de su envase
+    (match por ml); lo que queda de cada variante es de Animus DTC.
+
+    Devuelve: [{cliente, es_dtc, envases:[{etiqueta, ml, uds, es_fija}]}, ...]
+    Animus DTC primero, luego cada cliente B2B."""
+    aportes = []
+    try:
+        for r in c.execute(
+            "SELECT COALESCE(cliente_nombre,''), COALESCE(ml_unidad,0), "
+            "COALESCE(unidades_aporte,0), COALESCE(envase_codigo,'') "
+            "FROM pedidos_b2b_lote WHERE lote_produccion_id=? "
+            "ORDER BY kg_aporte DESC", (evento_id,)).fetchall():
+            aportes.append({'cliente': (r[0] or 'B2B'), 'ml': round(float(r[1] or 0), 1),
+                            'uds': int(r[2] or 0), 'envase': r[3] or ''})
+    except Exception:
+        aportes = []  # mig 171/172 no aplicada
+
+    # uds B2B por ml (para restar del DTC)
+    b2b_uds_por_ml = {}
+    for a in aportes:
+        b2b_uds_por_ml[a['ml']] = b2b_uds_por_ml.get(a['ml'], 0) + a['uds']
+
+    dtc_envases = []
+    for v in (variantes or []):
+        ml = round(float(v.get('volumen_ml') or 0), 1)
+        uds_total = int(v.get('unidades_estimadas') or 0)
+        uds_dtc = max(0, uds_total - int(b2b_uds_por_ml.get(ml, 0)))
+        if uds_total > 0:
+            dtc_envases.append({
+                'etiqueta': v.get('etiqueta') or (f'{int(ml)}ml' if ml else '—'),
+                'ml': ml, 'uds': uds_dtc, 'es_fija': bool(v.get('es_fija')),
+            })
+
+    out = []
+    if any(e['uds'] > 0 for e in dtc_envases):
+        out.append({'cliente': 'Animus DTC', 'es_dtc': True, 'envases': dtc_envases})
+    for a in aportes:
+        out.append({
+            'cliente': a['cliente'], 'es_dtc': False,
+            'envases': [{
+                'etiqueta': (f"{int(a['ml'])}ml" if a['ml'] else (a['envase'] or '—')),
+                'ml': a['ml'], 'uds': a['uds'], 'es_fija': False,
+            }],
+        })
+    return out
 
 
 @bp.route('/api/compras/preparacion-envases', methods=['GET'])
