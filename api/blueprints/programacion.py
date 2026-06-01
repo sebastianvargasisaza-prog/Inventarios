@@ -6880,6 +6880,7 @@ def prog_completar_evento(evento_id):
         c.execute("""
             UPDATE produccion_programada
                SET estado='completado',
+                   fin_real_at = COALESCE(fin_real_at, datetime('now','-5 hours')),
                    observaciones = COALESCE(observaciones,'') ||
                                    ' | INVENTARIO DESCONTADO ' || ? || ' por ' || ?
              WHERE id=?

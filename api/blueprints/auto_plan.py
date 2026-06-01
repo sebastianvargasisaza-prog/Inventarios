@@ -10876,46 +10876,21 @@ def planta_accion_rapida():
             return jsonify({'error': f'redirect interno falló: {e}'}), 500
 
     elif tipo == 'terminar_produccion':
+        # FIX 1-jun-2026 (audit): el flujo simplificado NO descontaba envases (drift
+        # de MEE) ni auditaba. Ahora REDIRIGE al canónico /completar que hace descuento
+        # MP+MEE + área sucia + limpieza + fin_real_at + audit INVIMA, idempotente
+        # (no descuenta 2×). Mismo patrón que iniciar_produccion (BUG-2 fix).
         pid = d.get('produccion_id')
         if not pid: return jsonify({'error': 'produccion_id requerido'}), 400
-        # Llamar al endpoint existente de completar (que ya hace descuento + limpieza auto)
         try:
-            from blueprints.programacion import prog_completar_evento
-            # No podemos llamar directo porque hace request.get_json() interno
-            # Mejor hacer el flujo aquí simplificado:
-            row = c.execute("""
-                SELECT id, producto, fecha_programada, area_id
-                FROM produccion_programada WHERE id=?
-            """, (pid,)).fetchone()
-            if not row: return jsonify({'error': 'producción no existe'}), 404
-            c.execute("""
-                UPDATE produccion_programada
-                  SET estado='completado', fin_real_at=datetime('now', '-5 hours')
-                WHERE id=?
-            """, (pid,))
-            # Marcar área sucia + crear limpieza auto.
-            # Sebastián 1-may-2026: guard para no sobrescribir 'limpiando'
-            # (alguien limpiando antes de que estado cambie a libre).
-            if row[3]:
-                c.execute("""
-                    UPDATE areas_planta SET estado='sucia'
-                    WHERE id=? AND estado IN ('ocupada','libre')
-                """, (row[3],))
-                try:
-                    from blueprints.programacion import _crear_limpieza_post_produccion
-                    fecha_iso = row[2][:10] if row[2] else datetime.now().date().isoformat()
-                    area_row = c.execute("SELECT codigo FROM areas_planta WHERE id=?", (row[3],)).fetchone()
-                    if area_row:
-                        _crear_limpieza_post_produccion(c, row[3], area_row[0], fecha_iso,
-                                                          row[1], '', user)
-                except Exception as _e:
-                    log.warning('crear_limpieza_post_produccion fallo prod=%s: %s', row[0], _e)
-            conn.commit()
-            return jsonify({'ok': True, 'mensaje': '✓ Producción terminada · área marcada sucia · limpieza programada'})
+            try:
+                from blueprints.programacion import prog_completar_evento
+            except ImportError:
+                from api.blueprints.programacion import prog_completar_evento
+            return prog_completar_evento(int(pid))
         except Exception as e:
-            try: conn.rollback()
-            except Exception as _r: log.debug('rollback no aplicable: %s', _r)
-            return jsonify({'error': str(e)}), 500
+            log.warning('accion-rapida terminar_produccion redirect fallo · pid=%s err=%s', pid, e)
+            return jsonify({'error': f'redirect interno falló: {e}'}), 500
 
     elif tipo == 'marcar_limpia':
         lid = d.get('limpieza_id')
