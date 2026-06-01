@@ -179,10 +179,17 @@ def _shopify_velocity(conn, days=60):
     (pero NUNCA trunca a 6 chars — eso rompía SVITC33 y RECN-2).
     """
     since = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
-    rows = conn.execute(
-        "SELECT sku_items, unidades_total, creado_en FROM animus_shopify_orders WHERE creado_en >= ? AND sku_items IS NOT NULL",
-        (since,)
-    ).fetchall()
+    # FIX 1-jun-2026 (audit): excluir canceladas/reembolsadas (inflan la velocidad →
+    # sobreproducción). Mismo filtro que plan.py/auto_plan. Fallback si faltan columnas.
+    _vel_base = ("SELECT sku_items, unidades_total, creado_en FROM animus_shopify_orders "
+                 "WHERE creado_en >= ? AND sku_items IS NOT NULL")
+    _vel_filtro = (" AND LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided') "
+                   "AND LOWER(COALESCE(estado_pago,'')) NOT IN "
+                   "('refunded','voided','partially_refunded')")
+    try:
+        rows = conn.execute(_vel_base + _vel_filtro, (since,)).fetchall()
+    except Exception:
+        rows = conn.execute(_vel_base, (since,)).fetchall()
 
     sku_units = {}  # full_sku -> total units in period
 

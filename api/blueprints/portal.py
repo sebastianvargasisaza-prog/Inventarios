@@ -926,8 +926,12 @@ def portal_crear_pedido():
              notas + (' [via portal]' if notas else 'via portal'),
              f'portal:{email}', envase_codigo, envase_notas, urgencia),
         )
-    except Exception:
-        # Fallback · mig 172 (envase_codigo) o mig 182 (urgencia) no aplicada
+    except Exception as _e1:
+        # Fallback SOLO si falta una columna (mig 172/182 no aplicada) · FIX 1-jun-2026
+        # (audit): re-lanzar cualquier otro error (constraint, disco) para no perder
+        # urgencia/envase en silencio. Patrón igual a convertir-a-pedido.
+        if 'column' not in str(_e1).lower():
+            raise
         try:
             cur.execute(
                 """INSERT INTO pedidos_b2b
@@ -939,7 +943,9 @@ def portal_crear_pedido():
                  notas + (' [via portal]' if notas else 'via portal'),
                  f'portal:{email}', envase_codigo, envase_notas),
             )
-        except Exception:
+        except Exception as _e2:
+            if 'column' not in str(_e2).lower():
+                raise
             cur.execute(
                 """INSERT INTO pedidos_b2b
                      (cliente_id, cliente_nombre, producto_nombre, cantidad_uds,

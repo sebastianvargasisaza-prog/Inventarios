@@ -1724,6 +1724,8 @@ def detectar_cambios_demanda():
                 FROM animus_shopify_orders
                 WHERE creado_en BETWEEN date('now', '-5 hours', '-44 days') AND date('now', '-5 hours', '-15 days')
                   AND sku_items IS NOT NULL
+                  AND LOWER(COALESCE(estado,'')) NOT IN ('cancelled','cancelado','voided')
+                  AND LOWER(COALESCE(estado_pago,'')) NOT IN ('refunded','voided','partially_refunded')
             """).fetchall()
             cant = 0
             for fecha, sku_items_json in r2:
