@@ -22486,8 +22486,19 @@ async function ckMarcar(itemId, estado){
         const dias = _dg != null ? _dg + 'd' : (p.dias_cobertura != null ? p.dias_cobertura + 'd' : '—');
         const diasColorReal = (_dg == null) ? cfg.text
                             : (_dg < 20 ? '#dc2626' : (_dg < 40 ? '#d97706' : '#16a34a'));
-        // ¿extiende producción la cobertura más allá de lo físico?
-        const _hayPipeline = (p.dias_cobertura != null && _dg != null && p.dias_cobertura > _dg + 1);
+        // FIX 1-jun-2026 · en vez del confuso "+prod → Xd" (cobertura con el lote
+        // grande / venta chica daba 355d), mostrar el PRÓXIMO LOTE: cuántas uds
+        // entran para Animus DTC y cuándo. Más claro y accionable.
+        let _prodInfo = '';
+        const _pl = p.proximo_lote;
+        if (_pl && _pl.fecha) {
+          const _mlu = p.ml_unidad || 30;
+          const _kgIn = (_pl.kg_dtc != null ? _pl.kg_dtc : _pl.kg) || 0;
+          const _udsIn = (_mlu > 0) ? Math.round(_kgIn * 1000 / _mlu) : 0;
+          if (_udsIn > 0) {
+            _prodInfo = '<div style="font-size:9px;color:#2563eb" title="próximo lote programado · unidades que entran para Animus DTC">📦 +' + _udsIn.toLocaleString('es-CO') + ' uds · ' + _pl.fecha.slice(5,10) + '</div>';
+          }
+        }
         // Estado de programación · explícito para CADA producto. El positivo
         // (📅 fecha) ya lo pinta chipPlan junto al nombre; acá resaltamos el caso
         // ACCIONABLE: cobertura física baja Y sin lote programado → "⚠ Sin programar".
@@ -22549,7 +22560,7 @@ async function ckMarcar(itemId, estado){
         html += '<td style="padding:10px 8px;text-align:center">' + p.stock_uds_total + '</td>';
         html += '<td style="padding:10px 8px;text-align:center">'
               + '<div style="font-weight:700;color:' + diasColorReal + '">' + dias + '</div>'
-              + (_hayPipeline ? '<div style="font-size:9px;color:#64748b" title="incluye lotes ya programados / en producción (≤7d aún no disponibles en Shopify)">+prod → ' + p.dias_cobertura + 'd</div>' : '')
+              + _prodInfo
               + estadoProgHtml
               + '</td>';
         // Programar
