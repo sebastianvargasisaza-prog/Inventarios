@@ -20256,7 +20256,43 @@ async function ckMarcar(itemId, estado){
           html+='</div>';
         } else { html+='<div style="font-size:12px;color:#94a3b8;margin-top:8px">No se vieron tags en las órdenes de los últimos 30 días.</div>'; }
       }
+      // ── Salud del STOCK (lo que jala de Shopify) ──
+      var st=d.stock||{};
+      html+='<div style="font-weight:700;color:#0f172a;margin:16px 0 4px">📦 Stock desde Shopify</div>';
+      if(st.error){ html+='<div style="color:#b91c1c">Error: '+esc(st.error)+'</div>'; }
+      else{
+        html+=row('Último sync de stock', st.ultimo_sync_stock?esc(st.ultimo_sync_stock):'—', st.ultimo_sync_stock?'#1e293b':'#b91c1c');
+        html+=row('SKUs con stock disponible', (st.skus_disponibles!=null?st.skus_disponibles:'—'), (st.skus_disponibles>0?'#15803d':'#b91c1c'));
+        html+=row('SKUs agotados', (st.skus_agotados!=null?st.skus_agotados:'—'));
+        html+=row('Unidades disponibles (total)', (st.uds_disponibles_total!=null?st.uds_disponibles_total:'—'));
+        html+=row('Fuente del último sync', st.uso_available?'✓ Available (correcto)':'⚠ On hand (fallback)', st.uso_available?'#15803d':'#b45309');
+        if(st.alerta){ html+='<div style="background:#fff1f2;border:1px solid #fecaca;border-radius:8px;padding:10px;font-size:12px;color:#991b1b;margin-top:8px">'+esc(st.alerta)+'</div>'; }
+      }
+      // ── Scopes del token (chequeo decisivo) ──
+      var sc=d.shopify_scopes||{};
+      html+='<div style="font-weight:700;color:#0f172a;margin:16px 0 4px">🔑 Permisos del token Shopify</div>';
+      if(sc.error){ html+='<div style="color:#b91c1c;font-size:12px">'+esc(sc.error)+'</div>'; }
+      else{
+        html+=row('read_products', sc.read_products?'✓ sí':'✗ NO', sc.read_products?'#15803d':'#b91c1c');
+        html+=row('read_inventory', sc.read_inventory?'✓ sí':'✗ NO', sc.read_inventory?'#15803d':'#b91c1c');
+        if(sc.alerta){ html+='<div style="background:#fff1f2;border:1px solid #fecaca;border-radius:8px;padding:10px;font-size:12px;color:#991b1b;margin-top:8px">'+esc(sc.alerta)+'</div>'; }
+      }
+      // Botón para refrescar el stock desde Shopify AHORA
+      html+='<div style="margin-top:16px;display:flex;gap:8px;align-items:center">';
+      html+='<button id="btn-sync-stock-now" style="background:#0891b2;color:#fff;border:none;padding:9px 16px;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer">🔄 Sincronizar stock desde Shopify ahora</button>';
+      html+='<span id="sync-stock-now-msg" style="font-size:12px;color:#64748b"></span></div>';
       m.querySelector('div').innerHTML=html;
+      var bsn=document.getElementById('btn-sync-stock-now');
+      if(bsn){ bsn.addEventListener('click', async function(){
+        var msg=document.getElementById('sync-stock-now-msg');
+        bsn.disabled=true; bsn.textContent='Sincronizando…'; if(msg) msg.textContent='';
+        try{
+          var rr=await fetch('/api/programacion/sync-stock-shopify',{method:'POST',headers:{'Content-Type':'application/json'}});
+          var dd=await rr.json();
+          if(dd.ok){ if(msg){ msg.style.color='#15803d'; msg.textContent='✓ '+(dd.mensaje||'')+' · '+(dd.skipped_zero||0)+' agotados de '+(dd.total_variantes||0); } setTimeout(verificarSyncSalud,900); }
+          else { if(msg){ msg.style.color='#b91c1c'; msg.textContent='✕ '+(dd.error||'falló'); } bsn.disabled=false; bsn.textContent='🔄 Reintentar'; }
+        }catch(err){ if(msg){ msg.style.color='#b91c1c'; msg.textContent='✕ '+(err.message||err); } bsn.disabled=false; bsn.textContent='🔄 Reintentar'; }
+      }); }
     }catch(e){ m.querySelector('div').innerHTML='<div style="color:#dc2626;padding:30px">Error: '+escapeHtmlNec(e.message||e)+'</div>'; }
   }
 

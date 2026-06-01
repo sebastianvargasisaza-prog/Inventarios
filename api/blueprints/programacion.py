@@ -2248,6 +2248,68 @@ def prog_sync_salud():
         out['b2b'] = b2b
     except Exception as e:
         out['b2b'] = {'error': str(e)}
+
+    # ── Salud del SYNC DE STOCK (stock_pt SHOPIFY) ──────────────────────
+    # Sebastián 1-jun-2026 · "necesito que jale los stock reales · día a día".
+    # Revela si el sync de stock corrió, si usó Available o cayó a On hand, y
+    # si TODO quedó Agotado (señal típica de token sin scope read_inventory).
+    try:
+        stk = {}
+        stk['ultimo_sync_stock'] = c.execute(
+            "SELECT MAX(fecha_produccion) FROM stock_pt "
+            "WHERE lote_produccion LIKE 'SHOPIFY-%'").fetchone()[0]
+        stk['skus_disponibles'] = c.execute(
+            "SELECT COUNT(DISTINCT UPPER(TRIM(sku))) FROM stock_pt "
+            "WHERE lote_produccion LIKE 'SHOPIFY-%' AND estado='Disponible'").fetchone()[0]
+        stk['skus_agotados'] = c.execute(
+            "SELECT COUNT(DISTINCT UPPER(TRIM(sku))) FROM stock_pt "
+            "WHERE lote_produccion LIKE 'SHOPIFY-%' AND estado='Agotado'").fetchone()[0]
+        stk['uds_disponibles_total'] = c.execute(
+            "SELECT COALESCE(SUM(unidades_disponible),0) FROM stock_pt "
+            "WHERE lote_produccion LIKE 'SHOPIFY-%' AND estado='Disponible'").fetchone()[0]
+        fuente = c.execute(
+            "SELECT COALESCE(observaciones,''), COUNT(*) FROM stock_pt "
+            "WHERE lote_produccion LIKE 'SHOPIFY-%' AND estado IN ('Disponible','Agotado') "
+            "GROUP BY COALESCE(observaciones,'') ORDER BY COUNT(*) DESC LIMIT 4").fetchall()
+        stk['fuente_observaciones'] = [{'obs': o, 'n': n} for o, n in fuente]
+        stk['uso_available'] = any('Available' in (o or '') for o, _ in fuente)
+        if (stk['skus_agotados'] or 0) > 0 and (stk['skus_disponibles'] or 0) == 0:
+            stk['alerta'] = ('TODOS los SKU quedaron Agotados (0 disponibles). Causa típica: '
+                             'el token Shopify no tiene scope read_inventory → Available/On hand '
+                             'vuelve 0. Revisá shopify_scopes abajo.')
+        out['stock'] = stk
+    except Exception as e:
+        out['stock'] = {'error': str(e)}
+
+    # ── Scopes del token (llamada externa liviana) · confirma read_inventory ──
+    # Es el chequeo decisivo: sin read_inventory, Shopify no devuelve
+    # Available ni On hand → todo el stock entra en 0.
+    try:
+        token = _cfg('shopify_token')
+        shop = _cfg('shopify_shop')
+        if token and shop:
+            url = 'https://' + shop + '/admin/oauth/access_scopes.json'
+            req = urllib.request.Request(url, headers={'X-Shopify-Access-Token': token})
+            with urllib.request.urlopen(req, timeout=12) as r:
+                sc = json.loads(r.read())
+            handles = [s.get('handle') for s in sc.get('access_scopes', []) if s.get('handle')]
+            sc_out = {
+                'todos': sorted(handles),
+                'read_products': 'read_products' in handles,
+                'read_inventory': 'read_inventory' in handles,
+            }
+            if 'read_inventory' not in handles:
+                sc_out['alerta'] = ('⚠ FALTA read_inventory · sin él Shopify NO devuelve '
+                    'Available/On hand → el stock de Necesidades queda en 0. Agregá el scope '
+                    'en la Custom App de Shopify (Apps → tu app → API scopes) y reinstalá/'
+                    'regenerá el token.')
+            out['shopify_scopes'] = sc_out
+        else:
+            out['shopify_scopes'] = {'error': 'token o shop no configurados'}
+    except urllib.error.HTTPError as e:
+        out['shopify_scopes'] = {'error': 'HTTP ' + str(e.code) + ' al leer access_scopes (token inválido o sin permiso)'}
+    except Exception as e:
+        out['shopify_scopes'] = {'error': str(e)}
     return jsonify(out)
 
 
