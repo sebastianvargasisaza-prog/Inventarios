@@ -9793,16 +9793,50 @@ def kanban_etapa_accion(pid, rol, accion):
                         "WHERE id=? AND estado='ocupada'",
                         (pp_post[1],),
                     )
-                # Bug #4 audit · marcar MEEs como consumidos via produccion_checklist
+                # FIX 1-jun-2026 audit Planta (P0 drift) · ANTES este bloque marcaba
+                # consumido_at SIN generar movimientos_mee → los envases/tapas/etiquetas
+                # NUNCA se descontaban del inventario (drift permanente de MEE) Y, peor,
+                # al dejar consumido_at seteado envenenaba el guard del canónico
+                # (prog_completar_evento los saltea con consumido_at=''). Ahora se
+                # descuenta de verdad vía aplicar_movimiento_mee (drift=0 garantizado,
+                # mismo helper y filtro que el canónico) y SOLO entonces se marca
+                # consumido_at. Items sin MEE asignado o sin verificar quedan para
+                # que /completar los procese (no se marcan en falso).
                 try:
-                    c.execute(
-                        """UPDATE produccion_checklist SET consumido_at=datetime('now','-5 hours')
-                           WHERE produccion_id=? AND consumido_at IS NULL
+                    from inventario_helpers import aplicar_movimiento_mee as _aplicar_mee_k
+                    _mee_rows = c.execute(
+                        """SELECT id, mee_codigo_asignado, cantidad_unidades
+                           FROM produccion_checklist
+                           WHERE produccion_id=? AND COALESCE(consumido_at,'')=''
+                             AND COALESCE(mee_codigo_asignado,'')!=''
+                             AND COALESCE(cantidad_unidades,0) > 0
+                             AND estado IN ('verificado_ok','recibido','listo')
                              AND item_tipo IN ('envase_primario','envase_secundario','tapa','etiqueta_frontal','etiqueta_posterior','etiqueta_lateral','caja_exterior','instructivo','estuche')""",
                         (pid,),
-                    )
-                except Exception:
-                    pass
+                    ).fetchall()
+                    for _mid, _mcod, _mcant in _mee_rows:
+                        _qm = int(_mcant or 0)
+                        try:
+                            _aplicar_mee_k(
+                                c.connection, _mcod, 'Salida', _qm,
+                                observaciones=f'Cierre Kanban acondicionamiento · pid {pid}',
+                                responsable=user, lote_ref=str(pid),
+                            )
+                            c.execute(
+                                """UPDATE produccion_checklist
+                                   SET consumido_at=datetime('now','-5 hours'),
+                                       consumido_por=?, cantidad_consumida_real=?,
+                                       consumido_contexto='kanban_acond'
+                                   WHERE id=?""",
+                                (user, _qm, _mid),
+                            )
+                        except sqlite3.OperationalError as _oe:
+                            _m = str(_oe).lower()
+                            if 'no such table' in _m or 'no existe' in _m:
+                                continue
+                            raise
+                except Exception as _e_mee:
+                    log.warning('Kanban acond · descuento MEE falló · pid=%s err=%s', pid, _e_mee)
                 try:
                     audit_log(c, usuario=user, accion='COMPLETAR_PRODUCCION_KANBAN',
                                tabla='produccion_programada', registro_id=pid,

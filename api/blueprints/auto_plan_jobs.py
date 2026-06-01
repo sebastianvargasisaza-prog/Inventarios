@@ -1033,8 +1033,18 @@ def job_sync_stock_shopify_diario(app):
         avail_map = {}
         if _fetch_shopify_available is not None:
             inv_item_ids = [v.get('inv_item_id') for v in all_variants if v.get('inv_item_id')]
+            # FIX 1-jun-2026 · SOLO tienda ÁNIMUS LAB (no sumar locations fantasma
+            # en negativo · caso LBHA 226 real vs -235 sumando todas).
             try:
-                avail_map = _fetch_shopify_available(token, shop, inv_item_ids) or {}
+                from .programacion import _shopify_location_id as _sli
+            except Exception:
+                try:
+                    from blueprints.programacion import _shopify_location_id as _sli
+                except Exception:
+                    _sli = None
+            _loc_id = _sli(conn, token, shop) if _sli else None
+            try:
+                avail_map = _fetch_shopify_available(token, shop, inv_item_ids, location_id=_loc_id) or {}
             except Exception:
                 avail_map = {}
         used_available = bool(avail_map)

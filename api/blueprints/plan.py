@@ -7542,13 +7542,19 @@ def _auto_programar_sugeridas(conn, dias_horizonte=365, ventana_velocidad=60,
                 try:
                     fdesde = (f_cursor - _td2(days=7)).isoformat()
                     fhasta = (f_cursor + _td2(days=7)).isoformat()
+                    # FIX 1-jun-2026 audit Planta · doble producción:
+                    #  (a) chequear la VARIANTE que realmente se va a insertar
+                    #      (prod_efectivo), no el original → si la variante ya tiene
+                    #      lote ±7d no se duplica.
+                    #  (b) NO excluir lotes con inventario_descontado_at: un lote YA
+                    #      EN PRODUCCIÓN debe contar como ocupado · si se excluía, el
+                    #      cron programaba un Sugerido encima de un Fijo en curso.
                     existing = cur.execute(
                         """SELECT COUNT(*) FROM produccion_programada
                            WHERE UPPER(TRIM(producto))=UPPER(TRIM(?))
                              AND substr(fecha_programada,1,10) BETWEEN ? AND ?
-                             AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado')
-                             AND inventario_descontado_at IS NULL""",
-                        (prod, fdesde, fhasta),
+                             AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado')""",
+                        (prod_efectivo, fdesde, fhasta),
                     ).fetchone()
                     if existing and int(existing[0] or 0) > 0:
                         saltados.append({'producto': prod, 'fecha': f_cursor.isoformat(),

@@ -2079,20 +2079,23 @@ def prog_registrar_stock():
 
 
 
-def _fetch_shopify_available(token, shop, inv_item_ids):
+def _fetch_shopify_available(token, shop, inv_item_ids, location_id=None):
     """Para una lista de inventory_item_ids de Shopify, devuelve dict
-    {inv_item_id: total_available_across_locations}.
+    {inv_item_id: available}.
 
     Sebastián 12-may-2026: fix #D On hand → Available. Shopify Admin API
     expone 'inventory_quantity' = ON HAND (incluye Committed/Reservado),
     pero para MRP/planeación necesitamos AVAILABLE (= On hand - Committed).
     Para obtenerlo hay que ir a /inventory_levels.json que sí trae 'available'.
 
-    Limitación API: ~50 IDs por request. Chunkeamos.
-    Si hay múltiples locations Shopify, suma 'available' de todas (cubre
-    el caso de tiendas con bodega + retail · si quieren restringir a una
-    location específica, agregar query param &location_ids=).
+    FIX 1-jun-2026 (Sebastián · caso LBHA): si NO se pasa location_id, sumaba
+    'available' de TODAS las locations. Con una location fantasma/vieja en negativo
+    el total quedaba absurdo (ej. LBHA: location real 226 + fantasma -461 = -235) y
+    el motor mostraba stock 0/erróneo. Ahora, si se pasa location_id, se filtra a
+    esa única location (la real de la tienda) vía &location_ids=. Sin location_id
+    mantiene el comportamiento anterior (suma todas) para compatibilidad.
 
+    Limitación API: ~50 IDs por request. Chunkeamos.
     Si falla (red/auth/empty IDs), devuelve dict vacío y loggea warning.
     El caller debe tener fallback (usualmente: usar inventory_quantity).
     """
@@ -2102,6 +2105,7 @@ def _fetch_shopify_available(token, shop, inv_item_ids):
     # Dedupe + filtrar None/0
     unique_ids = sorted({int(x) for x in inv_item_ids if x})
     chunk = 50
+    _loc_q = ('&location_ids=' + str(location_id)) if location_id else ''
     # FIX 23-may-2026 · auditoría P2 · antes si un chunk fallaba seguía con
     # continue · resultado: mezcla Available + On Hand para distintos SKUs
     # en el mismo sync · ahora all-or-nothing + retry con backoff en 429
@@ -2111,7 +2115,7 @@ def _fetch_shopify_available(token, shop, inv_item_ids):
         ids_csv = ','.join(str(x) for x in sub)
         url = ('https://' + shop +
                '/admin/api/2024-01/inventory_levels.json'
-               '?inventory_item_ids=' + ids_csv + '&limit=' + str(chunk * 5))
+               '?inventory_item_ids=' + ids_csv + _loc_q + '&limit=' + str(chunk * 5))
         # Retry con backoff exponencial para 429/5xx · 3 intentos
         data = None
         for intento in range(3):
@@ -2151,6 +2155,50 @@ def _fetch_shopify_available(token, shop, inv_item_ids):
             except Exception:
                 continue
     return out
+
+
+def _shopify_locations(token, shop, timeout=12):
+    """Lista de locations de Shopify: [{'id','name','active','legacy'}]. [] si falla."""
+    try:
+        url = 'https://' + shop + '/admin/api/2024-01/locations.json'
+        req = urllib.request.Request(url, headers={'X-Shopify-Access-Token': token})
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            data = json.loads(r.read())
+        return [{'id': l.get('id'), 'name': l.get('name', ''),
+                 'active': bool(l.get('active')), 'legacy': bool(l.get('legacy'))}
+                for l in (data.get('locations') or []) if l.get('id')]
+    except Exception:
+        return []
+
+
+def _shopify_location_id(conn, token, shop):
+    """location_id de la tienda ÁNIMUS LAB para leer Available · Sebastián 1-jun-2026:
+    'solo debe mirar tienda animus lab nada más'. Antes se sumaba el Available de TODAS
+    las locations → una location fantasma/vieja en negativo daba totales absurdos
+    (LBHA: 226 real + -461 fantasma = -235). Prioriza animus_config('shopify_location_id');
+    si no, autodetecta la location cuyo nombre contiene 'ANIMUS'. Devuelve str o None."""
+    try:
+        r = conn.execute(
+            "SELECT valor FROM animus_config WHERE clave='shopify_location_id'").fetchone()
+        if r and (r[0] or '').strip():
+            return (r[0] or '').strip()
+    except Exception:
+        pass
+
+    def _norm(s):
+        import unicodedata
+        return ''.join(ch for ch in unicodedata.normalize('NFKD', str(s or ''))
+                       if not unicodedata.combining(ch)).upper().strip()
+
+    locs = _shopify_locations(token, shop)
+    for l in locs:
+        if 'ANIMUS' in _norm(l.get('name')) and l.get('id'):
+            return str(l['id'])
+    activas = [str(l['id']) for l in locs
+               if l.get('active') and not l.get('legacy') and l.get('id')]
+    if len(activas) == 1:
+        return activas[0]
+    return None
 
 
 @bp.route('/api/programacion/test-shopify')
@@ -2383,7 +2431,8 @@ def prog_reconciliar_shopify():
 
     # Available real (inventory_levels) + stock resuelto por el motor
     iids = [v['inv_item_id'] for v in variants if v.get('inv_item_id')]
-    avail = _fetch_shopify_available(token, shop, iids)
+    loc_id = _shopify_location_id(conn, token, shop)  # solo tienda ÁNIMUS LAB
+    avail = _fetch_shopify_available(token, shop, iids, location_id=loc_id)
     used_available = bool(avail)
     resolved = _resolved_stock_por_sku(conn, empresa='ANIMUS')
 
@@ -2458,6 +2507,7 @@ def prog_reconciliar_shopify():
     return jsonify({
         'ok': True,
         'used_available': used_available,
+        'location_id': loc_id,
         'total_variantes': len(variants),
         'mapeados': n_map, 'sin_mapeo': n_sinmap,
         'available_difiere_onhand': n_avail_dif,
@@ -2579,7 +2629,9 @@ def prog_sync_stock_shopify():
         # available (de inventory_levels.json) = lo realmente disponible.
         # Si la segunda API call falla, caemos back a inventory_quantity (mejor algo que nada).
         inv_item_ids = [v['inv_item_id'] for v in all_variants if v.get('inv_item_id')]
-        avail_map = _fetch_shopify_available(token, shop, inv_item_ids)
+        # FIX 1-jun-2026 · SOLO tienda ÁNIMUS LAB (no sumar locations fantasma)
+        _loc_id = _shopify_location_id(conn, token, shop)
+        avail_map = _fetch_shopify_available(token, shop, inv_item_ids, location_id=_loc_id)
         used_available = bool(avail_map)  # True si Shopify nos dio Available (fix activo)
 
         conn.execute("UPDATE stock_pt SET estado='Ajustado' WHERE lote_produccion LIKE 'SHOPIFY-%'")
