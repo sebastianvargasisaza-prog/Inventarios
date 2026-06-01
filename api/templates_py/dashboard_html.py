@@ -22386,7 +22386,25 @@ async function ckMarcar(itemId, estado){
       prods.forEach((p, j) => {
         const idx = baseIdx + j;
         const cfg = URG_COLORS[p.urgencia] || URG_COLORS.OK;
-        const dias = p.dias_cobertura != null ? p.dias_cobertura + 'd' : '—';
+        // FIX 1-jun-2026 · "centro real de necesidades en tiempo real": la columna
+        // Alcanza ahora muestra los días REALES de góndola (stock físico/velocidad),
+        // NO la cobertura-con-pipeline (que daba "95.9d" con góndola 0 y parecía
+        // estático). El color sale de los días reales. dias_cobertura (incluye lotes
+        // programados/en producción) se muestra como anotación "+prod → Xd".
+        const _dg = (p.dias_gondola != null) ? p.dias_gondola : null;
+        const dias = _dg != null ? _dg + 'd' : (p.dias_cobertura != null ? p.dias_cobertura + 'd' : '—');
+        const diasColorReal = (_dg == null) ? cfg.text
+                            : (_dg < 20 ? '#dc2626' : (_dg < 40 ? '#d97706' : '#16a34a'));
+        // ¿extiende producción la cobertura más allá de lo físico?
+        const _hayPipeline = (p.dias_cobertura != null && _dg != null && p.dias_cobertura > _dg + 1);
+        // Estado de programación · explícito para CADA producto. El positivo
+        // (📅 fecha) ya lo pinta chipPlan junto al nombre; acá resaltamos el caso
+        // ACCIONABLE: cobertura física baja Y sin lote programado → "⚠ Sin programar".
+        const _tienePlan = (p.planificacion || []).length > 0;
+        let estadoProgHtml = '';
+        if (!_tienePlan && p.velocidad_uds_dia > 0 && _dg != null && _dg < 40) {
+          estadoProgHtml = '<div style="font-size:9px;color:#dc2626;font-weight:700;margin-top:2px" title="Cobertura física baja y sin lote programado · requiere acción">⚠ Sin programar</div>';
+        }
         const codDisp = escapeHtmlNec(p.codigo_pt || '');
         const ventaMes = Math.round(p.velocidad_uds_dia * 30);
         const mlReal = p.ml_unidad || 30;
@@ -22438,7 +22456,11 @@ async function ckMarcar(itemId, estado){
         html += '<td style="padding:10px 8px;text-align:center">' + p.velocidad_uds_dia.toFixed(1) + '</td>';
         html += '<td style="padding:10px 8px;text-align:center">' + ventaMes + '</td>';
         html += '<td style="padding:10px 8px;text-align:center">' + p.stock_uds_total + '</td>';
-        html += '<td style="padding:10px 8px;text-align:center;font-weight:700;color:' + cfg.text + '">' + dias + '</td>';
+        html += '<td style="padding:10px 8px;text-align:center">'
+              + '<div style="font-weight:700;color:' + diasColorReal + '">' + dias + '</div>'
+              + (_hayPipeline ? '<div style="font-size:9px;color:#64748b" title="incluye lotes ya programados / en producción (≤7d aún no disponibles en Shopify)">+prod → ' + p.dias_cobertura + 'd</div>' : '')
+              + estadoProgHtml
+              + '</td>';
         // Programar
         html += '<td style="padding:10px 8px;text-align:right"><button onclick="abrirPlanProduccion(' + idx + ')" style="background:#6d28d9;color:#fff;border:none;padding:7px 16px;border-radius:5px;font-size:12px;font-weight:700;cursor:pointer">📅 Programar</button></td>';
         html += '</tr>';

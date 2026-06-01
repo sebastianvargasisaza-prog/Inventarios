@@ -3630,6 +3630,15 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
             "lote_size_faltante": float(lote_kg or 0) < 1.0,  # FIX #2-b · BD tiene valor absurdo o falta
             "huerfanos_sugeridos": _sugerir_huerfanos(prod_nombre),  # FIX 24-may · auto-sugerencia
             "dias_cobertura": dias_cobertura,
+            # FIX 1-jun-2026 Sebastián · "necesidades debe ser en tiempo real y decir
+            # si ya está programado". dias_cobertura SUMA pipeline+Fijo (para que el
+            # cron no sobre-sugiera) → un producto con góndola 0 pero lote programado
+            # mostraba "95.9d" y parecía estático. dias_gondola = SOLO lo físico en
+            # góndola / velocidad → refleja la realidad (góndola 0 → 0d). El front
+            # pinta dias_gondola (color real) + badge "✅ Programado / ⚠ Sin programar".
+            "dias_gondola": (round(stock_kg_gondola / velocidad_kg_dia, 1)
+                             if velocidad_kg_dia > 0 else None),
+            "ya_programado": bool(pipeline_fijo_kg > 0.001),
             "urgencia": urgencia,
             "n_lotes_recomendados": n_lotes_recomendados,
             "kg_a_producir": kg_a_producir,
