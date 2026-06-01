@@ -1089,6 +1089,14 @@ def job_sync_stock_shopify_diario(app):
             )
             synced += 1
 
+        # Marca el momento del sync (habilita auto-refresh en vivo de Necesidades)
+        try:
+            from datetime import datetime as _dtnow
+            conn.execute(
+                "INSERT OR REPLACE INTO animus_config (clave, valor) VALUES ('last_stock_sync_at', ?)",
+                (_dtnow.utcnow().isoformat(timespec='seconds'),))
+        except Exception:
+            pass
         conn.commit()
         return True, {
             'synced': synced,

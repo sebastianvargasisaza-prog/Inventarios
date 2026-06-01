@@ -2747,6 +2747,18 @@ def plan_necesidades():
     conn = get_db()
     c = conn.cursor()
 
+    # EN VIVO · Sebastián 1-jun-2026: "que lea Shopify en vivo, no el snapshot".
+    # Antes de calcular, refresca el stock de Shopify si el snapshot está viejo
+    # (>10 min). Best-effort + lock-guarded: solo UNA carga sincroniza (las demás
+    # usan el snapshot sin esperar) y NUNCA rompe Necesidades si Shopify falla.
+    # ?live=0 lo salta (cargas rápidas / debugging).
+    if request.args.get('live', '1') != '0':
+        try:
+            from blueprints.programacion import _auto_refresh_shopify_stock
+            _auto_refresh_shopify_stock(conn)
+        except Exception:
+            pass
+
     # ─── Cliente 1: Animus DTC (Shopify auto) ─────────────────────────────
     # Re-usamos la lógica existente del endpoint animus-prioridad-agotamiento
     # pero ajustando umbrales a la lógica de Sebastián (20-25-45d).

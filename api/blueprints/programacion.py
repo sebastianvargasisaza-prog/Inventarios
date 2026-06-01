@@ -2213,6 +2213,55 @@ def _shopify_location_id(conn, token, shop):
     return None
 
 
+def _stamp_stock_sync(conn):
+    """Marca el momento (UTC) del último sync de stock Shopify · habilita el
+    auto-refresh en vivo de Necesidades."""
+    try:
+        from datetime import datetime as _dt
+        conn.execute(
+            "INSERT OR REPLACE INTO animus_config (clave, valor) VALUES ('last_stock_sync_at', ?)",
+            (_dt.utcnow().isoformat(timespec='seconds'),))
+    except Exception:
+        pass
+
+
+def _auto_refresh_shopify_stock(conn, max_age_seg=600):
+    """Necesidades EN VIVO (Sebastián 1-jun-2026: 'que lea Shopify en vivo, no el
+    snapshot'). Si el snapshot de stock Shopify (stock_pt) está más viejo que
+    max_age_seg, lo refresca llamando al sync real (con el fix de location/máximo).
+    · Best-effort: NUNCA rompe ni bloquea Necesidades si Shopify falla.
+    · Lock-guarded: SOLO una carga/worker sincroniza · las demás usan el snapshot
+      actual sin esperar (no se cuelga la vista para todos)."""
+    try:
+        from datetime import datetime as _dt
+        r = conn.execute(
+            "SELECT valor FROM animus_config WHERE clave='last_stock_sync_at'").fetchone()
+        if r and r[0]:
+            try:
+                if (_dt.utcnow() - _dt.fromisoformat(r[0])).total_seconds() < max_age_seg:
+                    return  # snapshot fresco · no re-sincronizar
+            except Exception:
+                pass
+        try:
+            from blueprints.auto_plan_jobs import (
+                _adquirir_lock_cron, _liberar_lock_cron, job_sync_stock_shopify_diario)
+        except Exception:
+            from api.blueprints.auto_plan_jobs import (  # type: ignore
+                _adquirir_lock_cron, _liberar_lock_cron, job_sync_stock_shopify_diario)
+        if not _adquirir_lock_cron(conn, 'sync_stock_shopify', ttl_horas=1):
+            return  # otra carga/worker ya está sincronizando · usar snapshot actual
+        try:
+            from flask import current_app
+            job_sync_stock_shopify_diario(current_app._get_current_object())
+        finally:
+            try:
+                _liberar_lock_cron(conn, 'sync_stock_shopify')
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+
 @bp.route('/api/programacion/test-shopify')
 def prog_test_shopify():
     """GET diagnostico: verifica credenciales y cuenta productos Shopify.
@@ -2686,6 +2735,7 @@ def prog_sync_stock_shopify():
             )
             synced += 1
 
+        _stamp_stock_sync(conn)  # habilita auto-refresh en vivo de Necesidades
         conn.commit()
         return jsonify({
             'ok': True,
