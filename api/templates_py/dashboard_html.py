@@ -22496,7 +22496,12 @@ async function ckMarcar(itemId, estado){
           const _kgIn = (_pl.kg_dtc != null ? _pl.kg_dtc : _pl.kg) || 0;
           const _udsIn = (_mlu > 0) ? Math.round(_kgIn * 1000 / _mlu) : 0;
           if (_udsIn > 0) {
-            _prodInfo = '<div style="font-size:9px;color:#2563eb" title="próximo lote programado · unidades que entran para Animus DTC">📦 +' + _udsIn.toLocaleString('es-CO') + ' uds · ' + _pl.fecha.slice(5,10) + '</div>';
+            if (p.lote_tarde) {
+              // El stock se agota ANTES de que llegue este lote → adelantar
+              _prodInfo = '<div style="font-size:9px;color:#dc2626;font-weight:700" title="El stock físico se agota el ' + (p.agota_fecha||'') + ' pero el lote llega el ' + _pl.fecha.slice(0,10) + ' → ' + (p.dias_descubierto||0) + ' día(s) sin stock. Adelantá la producción.">⏩ lote TARDE ' + _pl.fecha.slice(5,10) + ' · ' + (p.dias_descubierto||0) + 'd sin stock</div>';
+            } else {
+              _prodInfo = '<div style="font-size:9px;color:#2563eb" title="próximo lote programado · unidades que entran para Animus DTC">📦 +' + _udsIn.toLocaleString('es-CO') + ' uds · ' + _pl.fecha.slice(5,10) + '</div>';
+            }
           }
         }
         // Estado de programación · explícito para CADA producto. El positivo

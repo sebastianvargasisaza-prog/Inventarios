@@ -3021,6 +3021,33 @@ def plan_alertas_ia():
             cob = p.get("dias_cobertura")
         cob_txt = f"{cob}d" if cob is not None else "sin datos"
 
+        # FIX 1-jun-2026 Sebastián · ADELANTAR: si el stock físico se agota ANTES
+        # de que llegue el próximo lote programado (porque la venta subió o el lote
+        # quedó tarde) → alerta para adelantar la producción. Independiente de la
+        # urgencia · _calcular_animus_dtc ya calculó lote_tarde/dias_descubierto.
+        if p.get("lote_tarde") and p.get("proximo_lote"):
+            _pl = p["proximo_lote"]
+            _desc = int(p.get("dias_descubierto") or 0)
+            _agota = p.get("agota_fecha") or ""
+            alertas.append({
+                "tipo": "adelantar_lote",
+                "severidad": "critica" if _desc >= 7 else "advertencia",
+                "titulo": f"⏩ {nombre} · adelantar producción ({_desc}d sin stock)",
+                "detalle": (
+                    f"El stock físico se agota el {_agota} (≈{cob_txt}) pero el próximo "
+                    f"lote llega el {_pl.get('fecha')} → {_desc} día(s) SIN stock. "
+                    f"La venta subió o el lote quedó tarde · adelantá la producción a "
+                    f"{_agota} o antes."
+                ),
+                "accion": "adelantar",
+                "payload": {
+                    "producto": nombre,
+                    "lote_id": _pl.get("id"),
+                    "fecha_actual": _pl.get("fecha"),
+                    "fecha_sugerida": _agota,
+                },
+            })
+
         if urg == "CRITICO":
             # Si NO hay lote programado o el lote es muy lejano → alerta crítica
             if not prox or prox > horizonte_str:
@@ -4281,6 +4308,26 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
         p["lotes_pausados"] = pausados
         p["tiene_pausa"] = len(pausados) > 0
         p["tiene_plan_activo"] = proximo is not None
+
+        # FIX 1-jun-2026 Sebastián · "si aumenta la venta y la programación ya no es
+        # adecuada, ¿cómo lo sabremos?". Detectar lote TARDE: el stock físico se agota
+        # (hoy + dias_gondola) ANTES de que llegue el próximo lote programado → hay días
+        # descubiertos (stock-out) → alerta de ADELANTAR. Usa dias_gondola (físico), así
+        # que si la venta sube, dias_gondola baja y la alerta salta sola.
+        p["lote_tarde"] = False
+        p["dias_descubierto"] = 0
+        p["agota_fecha"] = None
+        _dg_p = p.get("dias_gondola")
+        if proximo and proximo.get("fecha") and _dg_p is not None:
+            try:
+                _f_lote = _date.fromisoformat(str(proximo["fecha"])[:10])
+                _s_out = hoy + _td(days=int(_dg_p))
+                p["agota_fecha"] = _s_out.isoformat()
+                if _f_lote > _s_out:
+                    p["lote_tarde"] = True
+                    p["dias_descubierto"] = (_f_lote - _s_out).days
+            except Exception:
+                pass
 
         # Detectar duplicados · Sebastián 14-may-2026: "veo mucha cosa
         # repetida como producción esta semana y se repite la próxima, de
