@@ -2313,6 +2313,155 @@ def prog_sync_salud():
     return jsonify(out)
 
 
+@bp.route('/api/programacion/reconciliar-shopify', methods=['GET'])
+def prog_reconciliar_shopify():
+    """Read-only · trae EN VIVO cada variante de Shopify y la reconcilia contra lo
+    que el motor de Necesidades ve. Por SKU: On hand, Available, si está mapeada,
+    a qué producto, qué stock resuelve el motor, cuánto vende (60d) y un diagnóstico.
+    Sebastián 1-jun-2026: 'revisemos cómo jala de Shopify todo y cada uno'."""
+    if not _auth():
+        return jsonify({'error': 'No autenticado'}), 401
+    conn = get_db()
+
+    def _cfg(k):
+        r = conn.execute("SELECT valor FROM animus_config WHERE clave=?", (k,)).fetchone()
+        return r[0] if r else None
+
+    token = _cfg('shopify_token')
+    shop = _cfg('shopify_shop')
+    if not token or not shop:
+        return jsonify({'ok': False, 'error': 'Shopify no configurado'}), 200
+
+    # Mapeos locales
+    sku_map = {}
+    for row in conn.execute(
+            "SELECT sku, producto_nombre FROM sku_producto_map WHERE COALESCE(activo,1)=1").fetchall():
+        sku_map[str(row[0] or '').strip().upper()] = str(row[1] or '').strip()
+    pres_map = {}
+    try:
+        for row in conn.execute(
+                "SELECT UPPER(TRIM(sku_shopify)), producto_nombre FROM producto_presentaciones "
+                "WHERE sku_shopify IS NOT NULL AND TRIM(sku_shopify)!=''").fetchall():
+            if row[0]:
+                pres_map[row[0]] = row[1]
+    except Exception:
+        pass
+
+    # Variantes en vivo desde Shopify
+    variants = []
+    url = ('https://' + shop +
+           '/admin/api/2024-01/products.json?limit=250&fields=id,title,variants')
+    try:
+        while url:
+            req = urllib.request.Request(url, headers={'X-Shopify-Access-Token': token})
+            with urllib.request.urlopen(req, timeout=20) as r:
+                data = json.loads(r.read())
+                link = r.headers.get('Link', '') or ''
+            for p in data.get('products', []):
+                title = str(p.get('title', '') or '')
+                for v in p.get('variants', []):
+                    variants.append({
+                        'sku': str(v.get('sku', '') or '').strip().upper(),
+                        'title': title,
+                        'on_hand': int(v.get('inventory_quantity', 0) or 0),
+                        'inv_item_id': v.get('inventory_item_id'),
+                        'inv_mgmt': v.get('inventory_management'),
+                    })
+            nxt = None
+            for part in link.split(','):
+                if 'rel="next"' in part:
+                    s = part.find('<') + 1
+                    e = part.find('>')
+                    if s > 0 and e > s:
+                        nxt = part[s:e].strip()
+            url = nxt
+    except urllib.error.HTTPError as e:
+        return jsonify({'ok': False, 'error': 'Shopify HTTP ' + str(e.code) + ' (revisá scopes/token)'}), 200
+    except Exception as e:
+        return jsonify({'ok': False, 'error': 'Error red Shopify: ' + str(e)}), 200
+
+    # Available real (inventory_levels) + stock resuelto por el motor
+    iids = [v['inv_item_id'] for v in variants if v.get('inv_item_id')]
+    avail = _fetch_shopify_available(token, shop, iids)
+    used_available = bool(avail)
+    resolved = _resolved_stock_por_sku(conn, empresa='ANIMUS')
+
+    # Ventas 60d por SKU (para ver 'vende pero stock 0')
+    ventas60 = {}
+    try:
+        for (si,) in conn.execute(
+                "SELECT sku_items FROM animus_shopify_orders "
+                "WHERE creado_en >= date('now','-60 days') AND sku_items IS NOT NULL").fetchall():
+            try:
+                items = json.loads(si)
+            except Exception:
+                continue
+            for it in (items or []):
+                k = str(it.get('sku', '') or '').strip().upper()
+                q = int(it.get('qty') or it.get('quantity') or 0)
+                if k and q > 0:
+                    ventas60[k] = ventas60.get(k, 0) + q
+    except Exception:
+        pass
+
+    filas = []
+    n_map = n_sinmap = n_avail_dif = n_problema = 0
+    for v in variants:
+        sku = v['sku']
+        iid = v.get('inv_item_id')
+        av = avail.get(int(iid)) if (iid and int(iid) in avail) else None
+        prod = sku_map.get(sku) or pres_map.get(sku)
+        mapeado = sku in sku_map
+        res = resolved.get(sku, {})
+        res_uds = int(res.get('uds', 0) or 0)
+        vende = ventas60.get(sku, 0)
+        shop_qty = av if av is not None else v['on_hand']
+        if mapeado:
+            n_map += 1
+        else:
+            n_sinmap += 1
+        if av is not None and av != v['on_hand']:
+            n_avail_dif += 1
+        problema = False
+        if not sku:
+            diag = 'SKU vacío en Shopify · no se puede mapear'
+            problema = True
+        elif not prod:
+            diag = '⚠ SKU NO mapeado (ni sku_producto_map ni presentaciones) → su stock NO aparece en Necesidades'
+            problema = True
+        elif res_uds > 0:
+            diag = 'OK · motor ve ' + str(res_uds) + ' (' + str(res.get('fuente', '')) + ')'
+        elif (shop_qty or 0) <= 0:
+            diag = 'Available=0 en Shopify → 0 correcto (toca producir)'
+        else:
+            diag = ('⚠ Shopify tiene ' + str(shop_qty) + ' pero el motor resuelve 0 · '
+                    'la fila en stock_pt no coincide por SKU o no quedó Disponible')
+            problema = True
+        if problema:
+            n_problema += 1
+        filas.append({
+            'sku': sku, 'producto': prod or '', 'mapeado': mapeado,
+            'en_presentaciones': sku in pres_map,
+            'on_hand': v['on_hand'], 'available': av,
+            'rastrea_inventario': bool(v.get('inv_mgmt')),
+            'resuelto_motor': res_uds, 'fuente': res.get('fuente', ''),
+            'vende_60d': vende, 'problema': problema, 'diagnostico': diag,
+        })
+    # problemas primero, luego por producto
+    filas.sort(key=lambda x: (not x['problema'], x['producto'], x['sku']))
+    return jsonify({
+        'ok': True,
+        'used_available': used_available,
+        'total_variantes': len(variants),
+        'mapeados': n_map, 'sin_mapeo': n_sinmap,
+        'available_difiere_onhand': n_avail_dif,
+        'con_problema': n_problema,
+        'onhand_total': sum(v['on_hand'] for v in variants),
+        'available_total': (sum(int(x) for x in avail.values()) if avail else None),
+        'filas': filas,
+    })
+
+
 @bp.route('/api/programacion/sync-ventas', methods=['POST'])
 def prog_sync_ventas():
     """Sincroniza ordenes Shopify directamente — independiente de marketing."""

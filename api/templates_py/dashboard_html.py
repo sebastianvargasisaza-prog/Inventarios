@@ -1848,6 +1848,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
         <button onclick="syncVentasNec(this)" style="background:#0891b2;color:#fff;border:none;padding:7px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer" title="Trae las ventas más recientes de Shopify AHORA (el cron diario las trae a las 6am · usá esto si los datos están atrasados)">🔄 Sincronizar ventas</button>
         <button onclick="verPreparacionEnvases()" style="background:#5b21b6;color:#fff;border:none;padding:7px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer" title="Envases en preparación (serigrafía/tampografía) · qué se está preparando y para cuándo">📦 Preparación envases</button>
         <button onclick="verificarSyncSalud()" style="background:#475569;color:#fff;border:none;padding:7px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer" title="Salud del sync Shopify (conexión, última sync, órdenes) + filtro B2B (SHOPIFY_B2B_TAGS) y qué tags traen realmente las órdenes">🔌 Salud sync + B2B</button>
+        <button onclick="reconciliarShopify()" style="background:#be185d;color:#fff;border:none;padding:7px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer" title="Trae EN VIVO cada variante de Shopify y la compara SKU x SKU contra lo que ve el motor (On hand, Available, mapeo, stock resuelto, ventas) · para confirmar cómo jala de Shopify todo y cada uno">🔍 Reconciliar Shopify</button>
         <button onclick="cargarNecesidades()" style="background:#6d28d9;color:#fff;border:none;padding:7px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">↻ Recargar</button>
       </div>
     </div>
@@ -20293,6 +20294,60 @@ async function ckMarcar(itemId, estado){
           else { if(msg){ msg.style.color='#b91c1c'; msg.textContent='✕ '+(dd.error||'falló'); } bsn.disabled=false; bsn.textContent='🔄 Reintentar'; }
         }catch(err){ if(msg){ msg.style.color='#b91c1c'; msg.textContent='✕ '+(err.message||err); } bsn.disabled=false; bsn.textContent='🔄 Reintentar'; }
       }); }
+    }catch(e){ m.querySelector('div').innerHTML='<div style="color:#dc2626;padding:30px">Error: '+escapeHtmlNec(e.message||e)+'</div>'; }
+  }
+
+  // Sebastián 1-jun-2026 · Reconciliación EN VIVO Shopify ↔ motor de Necesidades.
+  // Trae cada variante de Shopify y la compara SKU x SKU: On hand, Available,
+  // mapeo, stock resuelto, ventas 60d, diagnóstico. "cómo jala de Shopify todo y cada uno".
+  window._RECON_FILAS = []; window._RECON_SOLO_PROB = false;
+  function _renderReconTabla(){
+    var d = window._RECON_DATA || {}; var esc = escapeHtmlNec;
+    var filas = (d.filas||[]).filter(function(f){ return window._RECON_SOLO_PROB ? f.problema : true; });
+    var h = '';
+    h += '<div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #e2e8f0;padding-bottom:12px;margin-bottom:12px">';
+    h += '<div><h2 style="margin:0;font-size:18px;color:#be185d">🔍 Reconciliación Shopify ↔ Necesidades</h2>';
+    h += '<div style="font-size:11px;color:#64748b;margin-top:3px">'+(d.total_variantes||0)+' variantes · '+(d.mapeados||0)+' mapeadas · '+(d.sin_mapeo||0)+' sin mapear · <b style="color:'+((d.con_problema||0)>0?'#b91c1c':'#15803d')+'">'+(d.con_problema||0)+' con problema</b> · fuente: '+(d.used_available?'Available ✓':'On hand (fallback) ⚠')+'</div></div>';
+    h += '<button onclick="document.getElementById(&quot;modal-recon&quot;).remove()" style="background:#e2e8f0;color:#475569;border:none;width:36px;height:36px;border-radius:50%;font-size:20px;cursor:pointer">×</button></div>';
+    h += '<label style="font-size:12px;color:#475569;display:inline-flex;align-items:center;gap:6px;margin-bottom:10px;cursor:pointer"><input type="checkbox" '+(window._RECON_SOLO_PROB?'checked':'')+' onchange="window._RECON_SOLO_PROB=this.checked;_renderReconTabla()"> Mostrar solo problemas ('+((d.filas||[]).filter(function(f){return f.problema;}).length)+')</label>';
+    h += '<div style="overflow-x:auto;max-height:60vh;border:1px solid #e2e8f0;border-radius:8px"><table style="width:100%;border-collapse:collapse;font-size:11px">';
+    h += '<thead style="position:sticky;top:0"><tr style="background:#f8fafc;color:#475569"><th style="text-align:left;padding:6px 8px">SKU</th><th style="text-align:left;padding:6px 8px">Producto</th><th style="padding:6px 8px">Map</th><th style="padding:6px 8px">On hand</th><th style="padding:6px 8px">Available</th><th style="padding:6px 8px">Motor</th><th style="padding:6px 8px">Vende 60d</th><th style="text-align:left;padding:6px 8px">Diagnóstico</th></tr></thead><tbody>';
+    filas.forEach(function(f){
+      var bg = f.problema ? '#fff1f2' : '#fff';
+      var mapCell = f.mapeado ? '✓' : (f.en_presentaciones ? '~' : '<span style="color:#b91c1c;font-weight:700">✗</span>');
+      var avCell = (f.available==null) ? '<span style="color:#94a3b8">—</span>' : f.available;
+      var motorCol = f.resuelto_motor>0 ? '#15803d' : '#b91c1c';
+      var diagCol = f.problema ? '#b91c1c' : '#64748b';
+      h += '<tr style="border-top:1px solid #f1f5f9;background:'+bg+'">'
+        + '<td style="padding:5px 8px;font-family:ui-monospace;font-weight:700">'+esc(f.sku||'(vacío)')+'</td>'
+        + '<td style="padding:5px 8px">'+esc(f.producto||'—')+'</td>'
+        + '<td style="padding:5px 8px;text-align:center">'+mapCell+'</td>'
+        + '<td style="padding:5px 8px;text-align:center">'+f.on_hand+'</td>'
+        + '<td style="padding:5px 8px;text-align:center">'+avCell+'</td>'
+        + '<td style="padding:5px 8px;text-align:center;font-weight:700;color:'+motorCol+'">'+f.resuelto_motor+'</td>'
+        + '<td style="padding:5px 8px;text-align:center">'+(f.vende_60d||0)+'</td>'
+        + '<td style="padding:5px 8px;color:'+diagCol+'">'+esc(f.diagnostico||'')+'</td>'
+        + '</tr>';
+    });
+    if(!filas.length) h += '<tr><td colspan="8" style="padding:20px;text-align:center;color:#94a3b8">Sin filas</td></tr>';
+    h += '</tbody></table></div>';
+    h += '<div style="font-size:10px;color:#94a3b8;margin-top:8px">Map: ✓ en sku_producto_map · ~ solo en presentaciones · ✗ sin mapeo (su stock NO entra a Necesidades). "Motor" = unidades que ve el cálculo de cobertura.</div>';
+    var mm = document.getElementById('modal-recon'); if(mm) mm.querySelector('div').innerHTML = h;
+  }
+  async function reconciliarShopify(){
+    var m=document.getElementById('modal-recon'); if(m) m.remove();
+    m=document.createElement('div'); m.id='modal-recon';
+    m.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:99999;display:flex;align-items:flex-start;justify-content:center;padding:20px;overflow:auto';
+    m.innerHTML='<div style="background:#fff;border-radius:12px;max-width:1000px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,.3);padding:24px"><div style="text-align:center;padding:40px;color:#94a3b8">Trayendo cada variante de Shopify en vivo… (puede tardar unos segundos)</div></div>';
+    document.body.appendChild(m);
+    m.addEventListener('click',function(e){ if(e.target===m) m.remove(); });
+    try{
+      var r=await fetch('/api/programacion/reconciliar-shopify',{cache:'no-store'});
+      if(r.status===401){ location.href='/login'; return; }
+      var d=await r.json();
+      if(!d.ok){ m.querySelector('div').innerHTML='<div style="color:#dc2626;padding:30px">Error: '+escapeHtmlNec(d.error||'')+'</div>'; return; }
+      window._RECON_DATA=d; window._RECON_SOLO_PROB=((d.con_problema||0)>0);
+      _renderReconTabla();
     }catch(e){ m.querySelector('div').innerHTML='<div style="color:#dc2626;padding:30px">Error: '+escapeHtmlNec(e.message||e)+'</div>'; }
   }
 

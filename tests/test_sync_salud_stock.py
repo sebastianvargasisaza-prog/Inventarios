@@ -36,3 +36,22 @@ def test_sync_salud_reporta_stock(app, db_clean):
     assert st.get("uso_available") is True, st
     # scopes: sin token configurado en test → reporta error/no configurado (no crashea)
     assert "shopify_scopes" in d, d
+
+
+def test_reconciliar_shopify_sin_config(app, db_clean):
+    """Smoke · el endpoint de reconciliación responde limpio sin Shopify configurado
+    (no 500). Con token devolvería filas SKU x SKU."""
+    c = _login_as(app, "sebastian")
+    db = sqlite3.connect(os.environ["DB_PATH"])
+    db.execute("DELETE FROM animus_config WHERE clave IN ('shopify_token','shopify_shop')")
+    db.commit(); db.close()
+    r = c.get("/api/programacion/reconciliar-shopify")
+    assert r.status_code == 200, r.data
+    d = r.get_json()
+    assert d.get("ok") is False
+    assert "configurado" in (d.get("error") or "").lower(), d
+
+
+def test_reconciliar_shopify_requiere_auth(app, db_clean):
+    r = app.test_client().get("/api/programacion/reconciliar-shopify")
+    assert r.status_code == 401
