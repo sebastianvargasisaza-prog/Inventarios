@@ -2229,7 +2229,23 @@ document.addEventListener('DOMContentLoaded',function(){
     document.getElementById('modal-operador').style.display='flex';
     setTimeout(function(){var inp=document.getElementById('oper-input');if(inp)inp.focus();},150);
   }
+  // Sebastián 31-may-2026 · abrir pestaña según el hash de la URL (ej. /inventarios#servicios)
+  setTimeout(_openTabFromHash, 700);
 });
+// Abre la pestaña indicada en location.hash (deep-link desde el menú de módulos)
+function _openTabFromHash(){
+  var h = (location.hash || '').replace('#','').trim();
+  if(!h) return;
+  var valid = ['dashboard','stock','empaque','programacion','formulas','produccion',
+               'cuarentena','servicios','alertas','movimientos','ingreso','abc'];
+  if(valid.indexOf(h) < 0) return;
+  var btn = null;
+  document.querySelectorAll('.tab-button').forEach(function(b){
+    if((b.getAttribute('onclick')||'').indexOf("'"+h+"'") >= 0) btn = b;
+  });
+  try{ switchTab(h, btn); }catch(e){}
+}
+window.addEventListener('hashchange', _openTabFromHash);
 var _ajDat={};
 function _eq(s){return (s||'').split("'").join('&#39;');}
 function selOper(n){
