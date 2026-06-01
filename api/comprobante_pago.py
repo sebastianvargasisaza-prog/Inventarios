@@ -751,7 +751,11 @@ def crear_comprobante_y_pdf(
 
     iva = round(monto_subtotal * 0.19, 2) if aplicar_iva else 0
     retefuente = round(monto_subtotal * 0.10, 2) if aplicar_retefuente else 0
-    retica = round(monto_subtotal * 0.00066, 2) if aplicar_retica else 0
+    # reteICA SIEMPRE 0 · la empresa es AGENTE RETENEDOR de ICA (no se autorretiene),
+    # consistente con el PDF que ya fuerza rete_ica=0. Decisión Sebastián 1-jun-2026.
+    # ANTES: round(monto_subtotal * 0.00066, 2) — 0.066% (10× bajo) e inconsistente con
+    # el pct 0.66 que se guardaba abajo. Se elimina la ruta para que BD y PDF concuerden.
+    retica = 0
     total_pagado = round(monto_subtotal + iva - retefuente - retica, 2)
 
     pdf_bytes = generar_comprobante_egreso_pdf(
@@ -783,7 +787,7 @@ def crear_comprobante_y_pdf(
         beneficiario.get("tipo_cuenta", ""), beneficiario.get("ciudad", ""),
         monto_subtotal, iva, 19 if aplicar_iva else 0,
         retefuente, 10 if aplicar_retefuente else 0,
-        retica, 0.66 if aplicar_retica else 0,
+        retica, 0,  # reteICA pct=0 · agente retenedor (ver arriba · 1-jun-2026)
         total_pagado,
         medio_pago, observaciones, pagado_por, empresa, pdf_b64,
     ))
