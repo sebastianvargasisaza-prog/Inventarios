@@ -3962,6 +3962,24 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
             ult_fijo_prog[r[0]] = r[1]
             ult_fijo_kg[r[0]] = float(r[2] or 0)
 
+    # FIX 1-jun-2026 Sebastián · kg B2B por (producto, fecha) del lote · para
+    # restar del ancla y que la SUGERENCIA de próxima producción se base SOLO en
+    # los kg que van para Animus DTC (la parte B2B va a otro cliente y NO cubre
+    # la venta de Animus · sumar el total hacía durar de más → sugería tarde).
+    b2b_kg_por_lote_fecha = {}
+    try:
+        for r in c.execute(
+            """SELECT UPPER(TRIM(pp.producto)), substr(pp.fecha_programada,1,10),
+                      COALESCE(SUM(pbl.kg_aporte),0)
+               FROM pedidos_b2b_lote pbl
+               JOIN produccion_programada pp ON pp.id = pbl.lote_produccion_id
+               GROUP BY UPPER(TRIM(pp.producto)), substr(pp.fecha_programada,1,10)"""
+        ).fetchall():
+            if r[0]:
+                b2b_kg_por_lote_fecha[(r[0], r[1])] = float(r[2] or 0)
+    except Exception:
+        b2b_kg_por_lote_fecha = {}  # mig 171/172 no aplicada
+
     for p in out:
         info = lotes_pendientes.get(p["producto_nombre"])
         if info:
@@ -4031,7 +4049,15 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
             p["ultimo_fijo_programado_kg"] = 0.0
 
         if ancla_fecha and p["velocidad_kg_dia"] > 0 and ancla_kg > 0:
-            dur_dias = int(ancla_kg / p["velocidad_kg_dia"])
+            # SOLO la parte Animus del ancla (resta B2B) · la sugerencia de próxima
+            # producción debe basarse en lo que cubre Animus, no en el total del lote.
+            _ancla_b2b = b2b_kg_por_lote_fecha.get(
+                ((p["producto_nombre"] or "").strip().upper(), ancla_fecha.isoformat()), 0.0)
+            ancla_kg_animus = max(0.0, ancla_kg - _ancla_b2b)
+            p["ancla_kg_animus"] = round(ancla_kg_animus, 2)
+            p["ancla_kg_b2b"] = round(_ancla_b2b, 2)
+            # Si todo el ancla fue B2B (Animus=0) → dur_dias=0 → sugiere producir ya.
+            dur_dias = int(ancla_kg_animus / p["velocidad_kg_dia"])
             p["duracion_lote_dias"] = dur_dias
             try:
                 proxima_calc = ancla_fecha + _td(days=max(1, dur_dias - cob_alerta))
