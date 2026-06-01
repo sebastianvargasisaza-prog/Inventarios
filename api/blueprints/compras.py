@@ -2048,13 +2048,15 @@ def fp_crear():
             return float(d.get(k) or 0)
         except (TypeError, ValueError):
             return 0.0
+    import datetime as _dtfp
+    _hoy = (_dtfp.datetime.utcnow() - _dtfp.timedelta(hours=5)).date().isoformat()
     c.execute("""INSERT INTO facturas_proveedor
         (numero_factura, proveedor, nit, numero_oc, fecha_emision, fecha_vencimiento,
          subtotal, iva, iva_pct, retefuente, retefuente_pct, retica, retica_pct,
          total, estado, pdf_adjunto, observaciones, creado_por, empresa)
         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (numero, proveedor, (d.get('nit') or '').strip(), (d.get('numero_oc') or '').strip(),
-         (d.get('fecha_emision') or '').strip() or None,
+         (d.get('fecha_emision') or '').strip() or _hoy,
          (d.get('fecha_vencimiento') or '').strip(),
          _f('subtotal'), _f('iva'), _f('iva_pct'), _f('retefuente'), _f('retefuente_pct'),
          _f('retica'), _f('retica_pct'), total, 'pendiente',
