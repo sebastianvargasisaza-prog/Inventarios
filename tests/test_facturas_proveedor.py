@@ -78,3 +78,32 @@ def test_crear_listar_pagar_anular(app, db_clean):
     ra = c.patch(f"/api/compras/facturas-proveedor/{fid}",
                  data=json.dumps({"anular": True, "motivo": "test"}), headers=_h())
     assert ra.get_json()["estado"] == "anulada"
+
+
+def test_pdf_va_a_tabla_1a1(app, db_clean):
+    """mig 207: el PDF se guarda en facturas_proveedor_pdf, NO en la tabla padre."""
+    import base64, json
+    c = _login(app)
+    data_url = "data:application/pdf;base64," + base64.b64encode(b"%PDF-1.4 test").decode()
+    r = c.post("/api/compras/facturas-proveedor",
+               data=json.dumps({"numero_factura": "FAC-PDF-1", "proveedor": "ProvPDF",
+                                "subtotal": 100, "pdf_adjunto": data_url}), headers=_h())
+    assert r.status_code == 200, r.data
+    fid = r.get_json()["id"]
+    # la tabla padre NO debe tener el blob; la hija SÍ
+    with app.app_context():
+        from database import get_db
+        cu = get_db().cursor()
+        padre = cu.execute("SELECT COALESCE(pdf_adjunto,'') FROM facturas_proveedor WHERE id=?", (fid,)).fetchone()[0]
+        hija = cu.execute("SELECT pdf_adjunto FROM facturas_proveedor_pdf WHERE factura_id=?", (fid,)).fetchone()
+    assert padre == "", "el blob NO debe vivir en la tabla transaccional"
+    assert hija and hija[0] == data_url, "el blob debe vivir en la tabla 1:1"
+    # el listado marca tiene_pdf sin traer el blob
+    lst = c.get("/api/compras/facturas-proveedor").get_json()
+    fila = next(x for x in lst["items"] if x["id"] == fid)
+    assert fila["tiene_pdf"] is True
+    assert "pdf_adjunto" not in fila, "el listado NO debe incluir el blob"
+    # fp_pdf lo sirve desde la tabla 1:1
+    pr = c.get(f"/api/compras/facturas-proveedor/{fid}/pdf")
+    assert pr.status_code == 200, pr.data
+    assert pr.data == b"%PDF-1.4 test"

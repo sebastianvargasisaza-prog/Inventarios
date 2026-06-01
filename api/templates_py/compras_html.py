@@ -4253,11 +4253,8 @@ async function guardarProvItemMP(){
   }
   msg.innerHTML = '<span style="color:#64748b;">Guardando...</span>';
   try {
-    var r = await fetch('/api/maestro-mps/' + encodeURIComponent(_epmActual.cod) + '/proveedor', {
-      method: 'PUT',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({proveedor: nuevo})
-    });
+    await _ensureCsrf();  // /api/maestro-mps/ exige X-CSRF-Token (FIX 1-jun-2026)
+    var r = await fetch('/api/maestro-mps/' + encodeURIComponent(_epmActual.cod) + '/proveedor', _fetchOpts('PUT', {proveedor: nuevo}));
     var d = await r.json();
     if (r.ok) {
       msg.innerHTML = '<span style="color:#16a34a;font-weight:700;">&#10003; ' + (d.message || 'Proveedor actualizado') + '</span>';

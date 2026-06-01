@@ -4996,6 +4996,48 @@ def prog_composicion_mee(evento_id):
     return jsonify(_res)
 
 
+def _ventas_sku_180d(c):
+    """Ventas por SKU (Shopify) últimos 180d · memoizado por request en flask.g.
+    FIX 1-jun-2026 (audit escalabilidad): antes se re-escaneaba animus_shopify_orders
+    + se parseaba JSON por CADA producción (N+1 O(N·M)). Ahora se calcula 1 vez."""
+    _g = None
+    try:
+        from flask import g as _g
+        _cached = getattr(_g, '_ventas_sku_180d_cache', None)
+        if _cached is not None:
+            return _cached
+    except Exception:
+        _g = None
+    from datetime import datetime as _dtV, timedelta as _tdV
+    import json as _jsonV
+    cutoff = (_dtV.utcnow() - _tdV(hours=5) - _tdV(days=180)).date().isoformat()
+    ventas = {}
+    try:
+        for (it,) in c.execute(
+            """SELECT sku_items FROM animus_shopify_orders
+               WHERE COALESCE(creado_en,'') >= ? AND sku_items IS NOT NULL
+                 AND sku_items != ''""", (cutoff,)).fetchall():
+            try:
+                items = _jsonV.loads(it) if it else []
+                if not isinstance(items, list):
+                    continue
+                for li in items:
+                    sk = (li.get('sku') or '').strip()
+                    qty = int(li.get('qty') or 0)
+                    if sk and qty > 0:
+                        ventas[sk] = ventas.get(sk, 0) + qty
+            except Exception:
+                continue
+    except sqlite3.OperationalError:
+        pass
+    if _g is not None:
+        try:
+            _g._ventas_sku_180d_cache = ventas
+        except Exception:
+            pass
+    return ventas
+
+
 def _composicion_envases_lote(c, evento_id):
     """Composición de envases (variantes) de un lote · helper reusable por
     composicion-mee y por la preparación de envases. Devuelve dict o None
@@ -5085,28 +5127,7 @@ def _composicion_envases_lote(c, evento_id):
     # · "si lanzas la busqueda de ventas en 6 meses sabras que se vendio no
     # puede se 50 50". Capturar ciclo de venta más realista para SKUs B2B
     # cosmético con cadencia mensual.
-    from datetime import datetime as _dtCC, timedelta as _tdCC
-    cutoff = (_dtCC.utcnow() - _tdCC(hours=5) - _tdCC(days=180)).date().isoformat()
-    ventas_sku = {}
-    try:
-        import json as _jsonCC
-        for (it,) in c.execute(
-            """SELECT sku_items FROM animus_shopify_orders
-               WHERE COALESCE(creado_en,'') >= ? AND sku_items IS NOT NULL AND sku_items != ''""",
-            (cutoff,)
-        ).fetchall():
-            try:
-                items = _jsonCC.loads(it) if it else []
-                if not isinstance(items, list): continue
-                for li in items:
-                    sk = (li.get('sku') or '').strip()
-                    qty = int(li.get('qty') or 0)
-                    if sk and qty > 0:
-                        ventas_sku[sk] = ventas_sku.get(sk, 0) + qty
-            except Exception:
-                continue
-    except sqlite3.OperationalError:
-        pass
+    ventas_sku = _ventas_sku_180d(c)  # memoizado por request (FIX N+1 · 1-jun-2026)
 
     # Derivar ratio por presentación · prioridad: 1) override manual,
     # 2) Shopify histórico 180d, 3) uniforme

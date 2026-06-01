@@ -1962,14 +1962,29 @@ def fp_listar():
     estado = (request.args.get('estado') or '').strip()
     proveedor = (request.args.get('proveedor') or '').strip()
     q = (request.args.get('q') or '').strip().lower()
-    sql = "SELECT * FROM facturas_proveedor WHERE 1=1"
+    # FIX 1-jun-2026 (audit escalabilidad): sin SELECT * (no traer el PDF · anti-OOM)
+    # y sin N+1 · pagado/valor_oc/tiene_pdf vía LEFT JOIN · filtro q en SQL.
+    sql = """SELECT f.id, f.numero_factura, f.proveedor, f.nit, f.numero_oc,
+                 f.fecha_emision, f.fecha_vencimiento, f.total, f.estado,
+                 COALESCE(p.pagado,0) AS pagado, oc.valor_total AS valor_oc,
+                 CASE WHEN pdf.factura_id IS NOT NULL THEN 1 ELSE 0 END AS tiene_pdf
+          FROM facturas_proveedor f
+          LEFT JOIN (SELECT factura_proveedor_id, SUM(monto) AS pagado FROM pagos_oc
+                     WHERE factura_proveedor_id IS NOT NULL
+                     GROUP BY factura_proveedor_id) p ON p.factura_proveedor_id = f.id
+          LEFT JOIN ordenes_compra oc ON oc.numero_oc = f.numero_oc
+          LEFT JOIN facturas_proveedor_pdf pdf ON pdf.factura_id = f.id
+          WHERE 1=1"""
     params = []
     if estado and estado != 'todas':
-        sql += " AND estado=?"; params.append(estado)
+        sql += " AND f.estado=?"; params.append(estado)
     if proveedor:
-        sql += " AND LOWER(proveedor) LIKE ?"; params.append('%' + proveedor.lower() + '%')
-    sql += (" ORDER BY COALESCE(NULLIF(fecha_vencimiento,''), fecha_emision) ASC,"
-            " id DESC LIMIT 1000")
+        sql += " AND LOWER(f.proveedor) LIKE ?"; params.append('%' + proveedor.lower() + '%')
+    if q:
+        sql += (" AND LOWER(COALESCE(f.numero_factura,'')||' '||COALESCE(f.proveedor,'')"
+                "||' '||COALESCE(f.numero_oc,'')) LIKE ?"); params.append('%' + q + '%')
+    sql += (" ORDER BY COALESCE(NULLIF(f.fecha_vencimiento,''), f.fecha_emision) ASC,"
+            " f.id DESC LIMIT 1000")
     rows = c.execute(sql, tuple(params)).fetchall()
     cols = [x[0] for x in c.description]
     import datetime as _dt
@@ -1977,16 +1992,11 @@ def fp_listar():
     items = []; tot_saldo = 0.0; tot_vencido = 0.0
     for r in rows:
         f = dict(zip(cols, r))
-        if q and q not in (str(f.get('numero_factura', '')).lower() + ' '
-                           + str(f.get('proveedor', '')).lower() + ' '
-                           + str(f.get('numero_oc', '')).lower()):
-            continue
-        pagado = float(c.execute(
-            "SELECT COALESCE(SUM(monto),0) FROM pagos_oc WHERE factura_proveedor_id=?",
-            (f['id'],)).fetchone()[0] or 0)
         total = float(f.get('total') or 0)
+        pagado = float(f.get('pagado') or 0)
         saldo = round(max(0.0, total - pagado), 2)
         f['pagado'] = round(pagado, 2); f['saldo'] = saldo
+        f['tiene_pdf'] = bool(f.get('tiene_pdf'))
         dias = None; vencida = False
         fv = (f.get('fecha_vencimiento') or '').strip()[:10]
         if fv:
@@ -1998,21 +2008,12 @@ def fp_listar():
                 pass
         f['dias_vencimiento'] = dias; f['vencida'] = vencida
         f['estado_efectivo'] = 'vencida' if vencida else f['estado']
-        f['sobre_facturada'] = False
-        if f.get('numero_oc'):
-            try:
-                ocr = c.execute("SELECT valor_total FROM ordenes_compra WHERE numero_oc=?",
-                                (f['numero_oc'],)).fetchone()
-                if ocr and ocr[0] and total > float(ocr[0]) + 0.01:
-                    f['sobre_facturada'] = True; f['valor_oc'] = float(ocr[0])
-            except Exception:
-                pass
+        f['sobre_facturada'] = bool(f.get('numero_oc') and f.get('valor_oc')
+                                    and total > float(f['valor_oc']) + 0.01)
         if f['estado'] != 'anulada':
             tot_saldo += saldo
             if vencida:
                 tot_vencido += saldo
-        f['tiene_pdf'] = bool((f.get('pdf_adjunto') or '').strip())
-        f.pop('pdf_adjunto', None)
         items.append(f)
     return jsonify({'ok': True, 'items': items, 'n': len(items),
                     'total_saldo': round(tot_saldo, 2),
@@ -2060,9 +2061,17 @@ def fp_crear():
          (d.get('fecha_vencimiento') or '').strip(),
          _f('subtotal'), _f('iva'), _f('iva_pct'), _f('retefuente'), _f('retefuente_pct'),
          _f('retica'), _f('retica_pct'), total, 'pendiente',
-         (d.get('pdf_adjunto') or '')[:6_000_000], (d.get('observaciones') or '').strip(),
+         '', (d.get('observaciones') or '').strip(),
          user, (d.get('empresa') or 'Espagiria').strip()))
     fid = c.lastrowid
+    # PDF en tabla 1:1 (mig 207) · fuera de la tabla transaccional · anti-OOM/bloat
+    _pdf = (d.get('pdf_adjunto') or '')[:6_000_000]
+    if _pdf:
+        try:
+            c.execute("INSERT INTO facturas_proveedor_pdf (factura_id, pdf_adjunto) VALUES (?,?)",
+                      (fid, _pdf))
+        except Exception:
+            pass
     try:
         audit_log(c, usuario=user, accion='CREAR_FACTURA_PROVEEDOR',
                   tabla='facturas_proveedor', registro_id=str(fid),
@@ -2078,13 +2087,16 @@ def fp_detalle(fid):
     if 'compras_user' not in session:
         return jsonify({'error': 'No autenticado'}), 401
     conn = get_db(); c = conn.cursor()
-    r = c.execute("SELECT * FROM facturas_proveedor WHERE id=?", (fid,)).fetchone()
+    r = c.execute("""SELECT id, numero_factura, proveedor, nit, numero_oc, fecha_emision,
+        fecha_vencimiento, subtotal, iva, iva_pct, retefuente, retefuente_pct, retica,
+        retica_pct, total, estado, observaciones, creado_por, created_at, empresa
+        FROM facturas_proveedor WHERE id=?""", (fid,)).fetchone()
     if not r:
         return jsonify({'error': 'no existe'}), 404
     cols = [x[0] for x in c.description]
     f = dict(zip(cols, r))
-    f['tiene_pdf'] = bool((f.get('pdf_adjunto') or '').strip())
-    f.pop('pdf_adjunto', None)
+    _tp = c.execute("SELECT 1 FROM facturas_proveedor_pdf WHERE factura_id=?", (fid,)).fetchone()
+    f['tiene_pdf'] = bool(_tp)
     pagos = c.execute(
         "SELECT id, monto, medio, fecha_pago, registrado_por, observaciones "
         "FROM pagos_oc WHERE factura_proveedor_id=? ORDER BY id", (fid,)).fetchall()
@@ -2101,7 +2113,9 @@ def fp_pdf(fid):
     if 'compras_user' not in session:
         return jsonify({'error': 'No autenticado'}), 401
     conn = get_db(); c = conn.cursor()
-    r = c.execute("SELECT pdf_adjunto FROM facturas_proveedor WHERE id=?", (fid,)).fetchone()
+    r = c.execute("SELECT pdf_adjunto FROM facturas_proveedor_pdf WHERE factura_id=?", (fid,)).fetchone()
+    if not r or not (r[0] or '').strip():  # fallback legacy (filas previas a mig 207)
+        r = c.execute("SELECT pdf_adjunto FROM facturas_proveedor WHERE id=?", (fid,)).fetchone()
     if not r or not (r[0] or '').strip():
         return jsonify({'error': 'sin adjunto'}), 404
     raw = r[0]
@@ -8188,7 +8202,10 @@ def compras_feed_necesidades():
             FROM maestro_mps m
             LEFT JOIN (SELECT material_id, SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad
                               WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END) AS stock
-                       FROM movimientos GROUP BY material_id) s ON s.material_id = m.codigo_mp
+                       FROM movimientos
+                       WHERE UPPER(COALESCE(estado_lote,'')) NOT IN
+                             ('CUARENTENA','CUARENTENA_EXTENDIDA','VENCIDO','RECHAZADO','AGOTADO')
+                       GROUP BY material_id) s ON s.material_id = m.codigo_mp
             WHERE m.activo=1 AND m.stock_minimo>0 AND COALESCE(s.stock,0) < m.stock_minimo
         """).fetchall():
             mn = float(r[3] or 0); st = float(r[4] or 0)
@@ -12297,6 +12314,7 @@ def admin_proveedores_dedup_nombre():
         ('ordenes_servicio', 'proveedor'),
         ('mp_lead_time_config', 'proveedor_principal'),
         ('cotizaciones', 'proveedor'),
+        ('pagos_influencers', 'influencer_nombre'),
     ]
     contadores = {}
     ids_baja = []

@@ -312,6 +312,15 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (207, "facturas_proveedor_pdf · blob del PDF en tabla 1:1 (saca el base64 de la tabla transaccional · anti-OOM/bloat en listados) · Sebastián 1-jun-2026", [
+        # Audit escalabilidad: el PDF base64 (hasta 6MB) vivía en
+        # facturas_proveedor.pdf_adjunto → SELECT * arrastraba MB por fila. Ahora
+        # vive en tabla 1:1; la tabla padre queda liviana para listados/índices.
+        "CREATE TABLE IF NOT EXISTS facturas_proveedor_pdf (factura_id INTEGER PRIMARY KEY, pdf_adjunto TEXT)",
+        "INSERT INTO facturas_proveedor_pdf (factura_id, pdf_adjunto) SELECT id, pdf_adjunto FROM facturas_proveedor WHERE COALESCE(pdf_adjunto,'') != ''",
+        "UPDATE facturas_proveedor SET pdf_adjunto='' WHERE COALESCE(pdf_adjunto,'') != ''",
+    ]),
+
     (206, "facturas_proveedor · libro de facturas de proveedor (cuentas por pagar formal): factura = padre de pagos, con retenciones (IVA/retefuente/reteICA), vencimiento/estado, PDF y vínculo a OC · Sebastián 31-may-2026", [
         # Sebastián 31-may-2026 · hasta ahora la factura de proveedor vivía SOLO
         # como pagos_oc.numero_factura_proveedor (un texto + imagen). Esta tabla la
