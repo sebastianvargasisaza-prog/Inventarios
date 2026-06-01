@@ -2151,9 +2151,21 @@ def _fetch_shopify_available(token, shop, inv_item_ids, location_id=None):
             if iid is None or av is None:
                 continue
             try:
-                out[int(iid)] = out.get(int(iid), 0) + int(av)
+                _iid = int(iid)
+                _v = int(av)
             except Exception:
                 continue
+            if location_id:
+                # Filtrado a la(s) location(s) reales → sumar (normalmente 1 sola)
+                out[_iid] = out.get(_iid, 0) + _v
+            else:
+                # FIX 1-jun-2026 · sin filtro de location: tomar el MÁXIMO por ítem
+                # entre locations en vez de SUMAR. Así una location fantasma/vieja en
+                # negativo (caso LBHA: 226 real vs -461 fantasma) ya NO arrastra el
+                # total a negativo · la location real (positiva) domina. Robusto aún
+                # si el token no tiene scope read_locations para autodetectar.
+                if _iid not in out or _v > out[_iid]:
+                    out[_iid] = _v
     return out
 
 
