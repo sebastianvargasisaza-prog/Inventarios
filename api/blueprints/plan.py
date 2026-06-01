@@ -3647,11 +3647,22 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
             lote_kg_efectivo = max(round(velocidad_kg_dia * 60, 1), 1.0)
             lote_calculado = True
 
-        # Días de cobertura
+        # Días de cobertura (CON pipeline · stock_kg_total = góndola + producción
+        # en camino) · se muestra como anotación "+prod → Xd".
         if velocidad_kg_dia > 0:
             dias_cobertura = round(stock_kg_total / velocidad_kg_dia, 1)
         else:
             dias_cobertura = None
+        # FIX 1-jun-2026 Sebastián · días con SOLO stock físico de góndola (sin
+        # pipeline). La URGENCIA/alerta se basa en ESTO → un producto agotado
+        # (stock 0 → 0d) sale CRÍTICO/rojo arriba aunque tenga lote programado
+        # (los chips +prod / 📅 / ⚠ Sin programar indican si la reposición viene).
+        # "la condición de generar esa alerta no funciona" · ahora la alerta
+        # coincide con la columna 'Alcanza' (que muestra dias_gondola).
+        if velocidad_kg_dia > 0:
+            dias_gondola = round(stock_kg_gondola / velocidad_kg_dia, 1)
+        else:
+            dias_gondola = None
 
         # Urgencia (lógica Sebastián 20-25-45)
         # SHOPIFY-FIX · 22-may-2026 · Bug #6 audit · separar SIN_VENTAS en sub-estados
@@ -3677,13 +3688,13 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
                 urgencia = "SIN_HISTORIAL"
             else:
                 urgencia = "SIN_VENTAS_REAL"
-        elif dias_cobertura is None:
+        elif dias_gondola is None:
             urgencia = "SIN_VENTAS"
-        elif dias_cobertura <= cob_critico:
+        elif dias_gondola <= cob_critico:
             urgencia = "CRITICO"
-        elif dias_cobertura <= cob_alerta:
+        elif dias_gondola <= cob_alerta:
             urgencia = "URGENTE"
-        elif dias_cobertura <= cob_vigilar:
+        elif dias_gondola <= cob_vigilar:
             urgencia = "VIGILAR"
         else:
             urgencia = "OK"
@@ -3781,8 +3792,7 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
             # mostraba "95.9d" y parecía estático. dias_gondola = SOLO lo físico en
             # góndola / velocidad → refleja la realidad (góndola 0 → 0d). El front
             # pinta dias_gondola (color real) + badge "✅ Programado / ⚠ Sin programar".
-            "dias_gondola": (round(stock_kg_gondola / velocidad_kg_dia, 1)
-                             if velocidad_kg_dia > 0 else None),
+            "dias_gondola": dias_gondola,
             "ya_programado": bool(pipeline_fijo_kg > 0.001),
             "urgencia": urgencia,
             "n_lotes_recomendados": n_lotes_recomendados,
@@ -4301,11 +4311,15 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
         else:
             p["mps_alcanza"] = "DESCONOCIDO"
 
-    # Ordenar por urgencia + días cobertura ascendente
-    ORDEN = {"CRITICO": 0, "URGENTE": 1, "VIGILAR": 2, "OK": 3, "SIN_VENTAS": 4}
+    # Ordenar por urgencia + días de góndola (físico) ascendente · FIX 1-jun-2026:
+    # antes el desempate usaba dias_cobertura (con pipeline) → un agotado con lote
+    # programado quedaba debajo. Ahora desempata por dias_gondola (lo realmente
+    # disponible) para que lo más agotado salga primero.
+    ORDEN = {"CRITICO": 0, "URGENTE": 1, "VIGILAR": 2, "OK": 3,
+             "SIN_VENTAS": 4, "SIN_VENTAS_REAL": 4, "SIN_HISTORIAL": 4, "SIN_MAPEO": 5}
     out.sort(key=lambda x: (
         ORDEN.get(x["urgencia"], 9),
-        x["dias_cobertura"] if x["dias_cobertura"] is not None else 99999,
+        x.get("dias_gondola") if x.get("dias_gondola") is not None else 99999,
     ))
     return out
 
