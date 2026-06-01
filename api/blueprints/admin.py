@@ -12504,6 +12504,8 @@ def admin_sku_map_upsert():
                 WHERE producto=? AND origen='calendar'
                   AND fecha_programada >= date('now', '-5 hours', '-1 day')
                   AND LOWER(COALESCE(estado,'')) NOT IN ('cancelado','completado')
+                  AND COALESCE(inicio_real_at,'')=''
+                  AND COALESCE(inventario_descontado_at,'')=''
             """, (sku, producto_anterior, producto, producto_anterior))
             canceladas = cur.rowcount or 0
         except Exception:
@@ -23266,7 +23268,10 @@ def limpiar_produccion_zombies():
                                 || ' [auto-cancelado: programada >7d sin iniciar]',
                               -1500
                             )
-                        WHERE id IN ({ph})""",
+                        WHERE id IN ({ph})
+                          AND COALESCE(inicio_real_at,'')=''
+                          AND COALESCE(inventario_descontado_at,'')=''
+                          AND COALESCE(origen,'') NOT IN ('eos_plan','eos_b2b','eos_retroactivo')""",
                     ids
                 )
                 canceladas = c.rowcount or 0

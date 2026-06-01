@@ -12920,7 +12920,10 @@ def _sync_calendar_a_produccion_programada(conn, days_ahead=90,
                 # Modo espejo · HARD DELETE para que la app refleje exactamente
                 # Calendar (sin entries fantasma cancelados ocupando memoria).
                 conn.execute(
-                    f"DELETE FROM produccion_programada WHERE id IN ({placeholders})",
+                    f"DELETE FROM produccion_programada WHERE id IN ({placeholders}) "
+                    f"AND COALESCE(inicio_real_at,'')='' "
+                    f"AND COALESCE(inventario_descontado_at,'')='' "
+                    f"AND COALESCE(origen,'') NOT IN ('eos_plan','eos_b2b','eos_retroactivo')",
                     huerfanos,
                 )
                 accion_audit = 'AUTO_BORRAR_PRODUCCION_ESPEJO'

@@ -418,12 +418,33 @@ def cont_facturas_generar():
             (numero_pedido,)
         ).fetchall()]
 
+    # Idempotencia DIAN (FIX 1-jun-2026 · audit): no generar 2 facturas para el
+    # mismo pedido (doble clic / reintento → doble numeración fiscal).
+    if numero_pedido:
+        _ya = conn.execute(
+            "SELECT numero FROM facturas WHERE numero_pedido=? AND estado!='Anulada'",
+            (numero_pedido,)).fetchone()
+        if _ya:
+            return jsonify({'error': f'El pedido {numero_pedido} ya tiene factura {_ya[0]}',
+                            'codigo': 'FACTURA_DUPLICADA', 'numero': _ya[0]}), 409
+    # Validar ítems: cantidad/precio no negativos (no inflar el subtotal)
+    for _it in items_src:
+        try:
+            if (float(_it.get('cantidad', 0) or 0) < 0
+                    or float(_it.get('precio_unitario', 0) or 0) < 0):
+                return jsonify({'error': 'cantidad y precio de cada ítem deben ser >= 0',
+                                'codigo': 'ITEM_INVALIDO'}), 400
+        except (TypeError, ValueError):
+            return jsonify({'error': 'ítem con cantidad/precio inválido'}), 400
     # Calcular totales
     subtotal = sum(it.get('subtotal', 0) or (it.get('cantidad', 0) * it.get('precio_unitario', 0)) for it in items_src)
     try:
         descuento = float(data.get('descuento', 0))
     except (TypeError, ValueError):
         return jsonify({'error': 'descuento inválido'}), 400
+    if descuento < 0 or descuento > subtotal:
+        return jsonify({'error': 'descuento debe estar entre 0 y el subtotal',
+                        'codigo': 'DESCUENTO_INVALIDO'}), 400
     base_iva = subtotal - descuento
     iva_valor = round(base_iva * iva_pct / 100, 2)
     total = base_iva + iva_valor

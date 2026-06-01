@@ -10165,6 +10165,7 @@ def tablero_equipo():
                WHERE date(fecha_programada) = ?
                  AND COALESCE(estado,'') IN ('','programado','planeado','sugerido')
                  AND inicio_real_at IS NULL
+                 AND COALESCE(inventario_descontado_at,'') = ''
                  AND COALESCE(origen,'') NOT IN ('eos_plan','eos_b2b','eos_retroactivo')
                LIMIT 50""",
             (hoy,),
@@ -10178,7 +10179,9 @@ def tablero_equipo():
                 c.execute(
                     "UPDATE produccion_programada SET estado='cancelado', "
                     "observaciones=COALESCE(observaciones,'') || ' [auto-equipo-clean]' "
-                    "WHERE id=? AND inicio_real_at IS NULL",
+                    "WHERE id=? AND inicio_real_at IS NULL "
+                    "AND COALESCE(inventario_descontado_at,'') = '' "
+                    "AND COALESCE(origen,'') NOT IN ('eos_plan','eos_b2b','eos_retroactivo')",
                     (_pid,),
                 )
             except Exception:
@@ -11007,11 +11010,11 @@ def planta_accion_rapida():
             ar = c.execute("SELECT area_id FROM produccion_programada WHERE id=?", (pid,)).fetchone()
             area_id_final = ar[0] if ar else None
 
-            # Marcar como iniciada
+            # Marcar como iniciada · guard idempotente (no re-pisar inicio_real_at)
             c.execute("""
                 UPDATE produccion_programada
                   SET estado='en_proceso', inicio_real_at=datetime('now', '-5 hours')
-                WHERE id=?
+                WHERE id=? AND inicio_real_at IS NULL
             """, (pid,))
             # Marcar área ocupada
             if area_id_final:
