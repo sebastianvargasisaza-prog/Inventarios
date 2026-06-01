@@ -16059,17 +16059,22 @@ def planta_envasado_iniciar():
     try:
         cur2 = c.execute("""
             INSERT INTO calidad_micro_resultados
-              (lote, producto, microorganismo, valor, estado, fecha_analisis,
+              (lote, producto_nombre, microorganismo, valor, estado, fecha_analisis,
                envasado_id, deadline_resultado)
-            VALUES (?, ?, 'pendiente_recoleccion', NULL, 'pendiente', ?, ?, ?)
+            VALUES (?, ?, 'pendiente_recoleccion', NULL, 'observacion', ?, ?, ?)
         """, (lote, producto, fecha_hoy, envasado_id, deadline))
         muestra_id = cur2.lastrowid
         c.execute("UPDATE produccion_envasado SET muestra_micro_id=? WHERE id=?",
                   (muestra_id, envasado_id))
     except Exception as e:
-        # Si la columna no existe (esquema viejo), silenciar — el envasado igual
-        # se crea, solo no se linkea muestra micro.
+        # FIX 1-jun-2026 (audit): antes usaba columna 'producto' (no existe · es
+        # producto_nombre) + estado='pendiente' (viola el CHECK) → SIEMPRE fallaba y
+        # el marcador de muestra micro NUNCA se creaba (se perdía el deadline 5d).
+        # Ahora producto_nombre + estado='observacion' (válido · el gate lo trata como
+        # NO conforme → avisa). Si aún falla (esquema viejo), no romper pero LOGUEAR.
         muestra_id = None
+        log.warning('marcador micro NO creado · envasado=%s lote=%s err=%s',
+                    envasado_id, lote, e)
     # 3) Cola de liberación
     c.execute("""
         INSERT INTO cola_liberacion
@@ -16236,6 +16241,7 @@ def planta_cola_liberacion_disposicion(item_id):
     if not antes_row:
         return jsonify({'error': 'Item no encontrado'}), 404
     antes = dict(antes_row)
+    _micro_override = False  # se marca True si se libera sin micro conforme (avisar+override)
     # Sebastián 28-may-2026 · INVIMA Res 2674/2013 · BLOQUEAR liberación si el
     # lote tiene resultado micro FUERA DE SPEC industria (no apto). QC debe
     # rechazar o reanalizar primero · no se puede liberar producto no conforme.
@@ -16261,6 +16267,29 @@ def planta_cola_liberacion_disposicion(item_id):
                              'REANALIZAR antes de liberar. INVIMA Res 2674/2013.'),
                     'bloqueo': 'micro_fuera_industria',
                 }), 409
+            # FIX 1-jun-2026 · INVIMA Res 2674/2013 · además del OOS (arriba), exigir
+            # micro CONFORME (ok/fuera_meta). Si no hay → AVISAR + override explícito
+            # (decisión Sebastián 1-jun: avisar+override, no bloqueo duro). El override
+            # queda en audit (quién liberó sin micro conforme).
+            try:
+                _conf = c.execute(
+                    "SELECT COUNT(*) FROM calidad_micro_resultados "
+                    "WHERE lote=? AND estado IN ('ok','fuera_meta')", (_lote_lib,)
+                ).fetchone()
+            except Exception:
+                _conf = None
+            if not (_conf and (_conf[0] or 0) > 0):
+                if not bool(d.get('override_micro')):
+                    return jsonify({
+                        'warning': (f'El lote {_lote_lib} NO tiene un resultado micro '
+                                    f'CONFORME (ok/fuera_meta) registrado. Si lo liberás '
+                                    f'igual, queda bajo tu responsabilidad y se registra '
+                                    f'en auditoría.'),
+                        'requiere_override': True,
+                        'hint': 'Registrá el resultado micro primero, o confirmá para liberar igual.',
+                        'bloqueo': 'micro_sin_conforme',
+                    }), 409
+                _micro_override = True
     c.execute("""
         UPDATE cola_liberacion SET
           disposicion=?, estado=?, aprobado_por=?, aprobado_at=datetime('now', '-5 hours'),
@@ -16275,8 +16304,10 @@ def planta_cola_liberacion_disposicion(item_id):
     audit_log(c, usuario=user, accion=accion, tabla='cola_liberacion',
               registro_id=item_id, antes=antes,
               despues={'disposicion': disposicion, 'estado': estado_nuevo,
-                       'aprobado_por': user, 'notas': notas},
+                       'aprobado_por': user, 'notas': notas,
+                       'micro_override': _micro_override},
               detalle=f"{accion} lote {antes.get('lote','—')} ({antes.get('producto_nombre','')})"
+                      + (' · ⚠ LIBERADO SIN MICRO CONFORME (override)' if _micro_override else '')
                       + (f" · {notas}" if notas else ""))
     conn.commit()
     return jsonify({'ok': True, 'estado': estado_nuevo})

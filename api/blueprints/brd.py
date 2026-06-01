@@ -1669,18 +1669,32 @@ def liberar_ebr(ebr_id):
         _lr = cur.execute("SELECT lote FROM ebr_ejecuciones WHERE id=?", (ebr_id,)).fetchone()
         _lote = (_lr[0] if _lr else '') or ''
         if _lote:
+            # FIX 1-jun-2026 (audit): bloquear también desviaciones CERRADAS con CAPA
+            # NO EFECTIVO (efectividad_ok=0) — antes una cerrada-no-efectiva desbloqueaba
+            # la liberación. (El LIKE '%lote%' se mantiene a propósito: afinarlo a token
+            # exacto podría NO ver una desviación real si lotes_afectados es texto libre →
+            # liberaría producto no conforme. El falso positivo bloquea de más = lado seguro.)
             desv_open = cur.execute(
-                """SELECT codigo FROM desviaciones
+                """SELECT codigo, COALESCE(estado,''), COALESCE(efectividad_ok,1)
+                     FROM desviaciones
                     WHERE lotes_afectados LIKE ?
-                      AND COALESCE(estado,'') NOT IN ('cerrada', 'anulada')
+                      AND ( COALESCE(estado,'') NOT IN ('cerrada', 'anulada')
+                            OR (COALESCE(estado,'') = 'cerrada'
+                                AND COALESCE(efectividad_ok,1) = 0) )
                     ORDER BY id DESC LIMIT 1""",
                 (f'%{_lote}%',),
             ).fetchone()
             if desv_open:
+                _cerrada_inef = (desv_open[1] == 'cerrada')
                 return jsonify({
-                    "error": f"No se puede liberar: desviación {desv_open[0]} ABIERTA para el lote {_lote}. "
-                             f"Cerrá/resolvé la desviación (clasificar→investigar→CAPA→cerrar) primero.",
-                    "codigo": "DESVIACION_ABIERTA",
+                    "error": (f"No se puede liberar: desviación {desv_open[0]} "
+                              + ("CERRADA con CAPA NO EFECTIVO" if _cerrada_inef else "ABIERTA")
+                              + f" para el lote {_lote}. "
+                              + ("Reabrí/resolvé con un CAPA efectivo antes de liberar."
+                                 if _cerrada_inef else
+                                 "Cerrá/resolvé la desviación (clasificar→investigar→CAPA→cerrar) primero.")),
+                    "codigo": ("DESVIACION_CAPA_INEFECTIVO" if _cerrada_inef
+                               else "DESVIACION_ABIERTA"),
                 }), 409
     except Exception:
         pass  # deploy-safe (tabla/columna ausente no debe romper liberación)
