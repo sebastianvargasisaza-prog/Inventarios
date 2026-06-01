@@ -3261,6 +3261,45 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
     resolved_stock = _resolved_stock_por_sku(c.connection, empresa='ANIMUS')
     # resolved_stock: {sku_upper: {descripcion, uds, fuente}}
 
+    # FIX 1-jun-2026 Sebastián · caso "Limpiador BHA: vende pero stock 0".
+    # El stock se atribuía SOLO por los SKU de sku_producto_map (skus_de_prod).
+    # Si el SKU de la VARIANTE en Shopify (con el que el sync escribe stock_pt)
+    # difiere del SKU de la ORDEN (mapeado · con el que SÍ funciona la velocidad),
+    # ese stock quedaba huérfano → Stock=0 aunque Shopify tuviera unidades.
+    # Atribuimos ese stock huérfano al producto vía producto_presentaciones.sku_shopify
+    # (mapeo autoritativo de envases) o, en su defecto, vía la descripción exacta que
+    # el sync guardó. ADITIVO: solo cuenta SKUs que NO están en sku_to_prod (los que
+    # sí están ya los suma skus_de_prod abajo) → imposible doble-contar.
+    _pres_sku_to_prod = {}
+    try:
+        for _r in c.execute(
+            """SELECT UPPER(TRIM(sku_shopify)), producto_nombre
+               FROM producto_presentaciones
+               WHERE COALESCE(activo,1)=1 AND sku_shopify IS NOT NULL
+                 AND TRIM(sku_shopify) != ''""",
+        ).fetchall():
+            if _r[0] and _r[1]:
+                _pres_sku_to_prod[_r[0]] = str(_r[1]).strip()
+    except Exception:
+        pass
+    _prod_nombres_lc = {(p[0] or '').strip().lower(): (p[0] or '').strip()
+                        for p in productos if p[0]}
+    extra_stock_by_prod_lc = {}   # prod_lc → uds de SKUs huérfanos atribuidos
+    for _sku, _info in resolved_stock.items():
+        if _sku in sku_to_prod:
+            continue   # ya cubierto por skus_de_prod (evita doble conteo)
+        _uds = int(_info.get('uds', 0) or 0)
+        if _uds <= 0:
+            continue
+        _p = _pres_sku_to_prod.get(_sku)
+        if not _p:
+            _desc = (_info.get('descripcion') or '').strip()
+            if _desc.lower() in _prod_nombres_lc:
+                _p = _prod_nombres_lc[_desc.lower()]
+        if _p:
+            _k = _p.strip().lower()
+            extra_stock_by_prod_lc[_k] = extra_stock_by_prod_lc.get(_k, 0) + _uds
+
     # 4. Ventas por SKU últimos N días
     # PERF-FIX 23-may-2026 · auditoría · `date(creado_en) >= ?` con función
     # wrapper bloquea uso de idx_aso_creado en PG · ahora comparación directa
@@ -3472,6 +3511,10 @@ def _calcular_animus_dtc(c, ventana, cob_critico, cob_alerta, cob_vigilar):
             ventas_periodo_total += int(ventas_por_sku.get(sku, 0) or 0)
             ventas_30d_total += int(ventas_30d_por_sku.get(sku, 0) or 0)
             ventas_90d_total += int(ventas_90d_por_sku.get(sku, 0) or 0)
+        # FIX 1-jun-2026 · sumar stock de SKUs huérfanos (variante Shopify cuyo SKU
+        # no está en sku_producto_map pero sí mapea a este producto vía presentaciones
+        # o descripción exacta). Caso Limpiador BHA. Aditivo, sin doble conteo.
+        stock_uds_total += extra_stock_by_prod_lc.get(_prod_key_lc, 0)
 
         # ml por presentación · Sebastián 13-may-2026: "los sueros son
         # de 30, los limpiadores de 150, geles e hidratantes de 50 ml".
