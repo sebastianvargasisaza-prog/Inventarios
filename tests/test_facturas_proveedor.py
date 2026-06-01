@@ -143,3 +143,32 @@ def test_pago_factura_recalcula_estado_oc_y_warning(app, db_clean):
                 data=json.dumps({"numero_factura":"FAC-NOOC-1","proveedor":"ProvX","numero_oc":"OC-NO-EXISTE","total":50}), headers=_h())
     assert r2.status_code == 200, r2.data
     assert r2.get_json().get("warning"), "OC inexistente → debe avisar"
+
+
+def test_fp_pagar_bloquea_factura_ya_pagada_directo(app, db_clean):
+    """Anti-doble-pago: si el nº ya se pagó por el camino directo (pagos_oc), fp_pagar rechaza."""
+    import json
+    c = _login(app)
+    with app.app_context():
+        from database import get_db
+        conn = get_db(); cu = conn.cursor()
+        cu.execute("DELETE FROM facturas_proveedor WHERE numero_factura='FAC-DIR-X'")
+        cu.execute("DELETE FROM pagos_oc WHERE numero_factura_proveedor='FAC-DIR-X'")
+        # pago previo por el camino directo (pagar_oc) con ese nº de factura
+        cu.execute("INSERT INTO pagos_oc (numero_oc, monto, medio, registrado_por, numero_factura_proveedor) VALUES ('OC-X',100,'Transferencia','t','FAC-DIR-X')")
+        conn.commit()
+    # crear la misma factura en el libro y tratar de pagarla
+    r = c.post("/api/compras/facturas-proveedor",
+               data=json.dumps({"numero_factura":"FAC-DIR-X","proveedor":"ProvDir","total":100}), headers=_h())
+    fid = r.get_json()["id"]
+    rp = c.post(f"/api/compras/facturas-proveedor/{fid}/pagar",
+                data=json.dumps({"monto":100,"medio":"Transferencia"}), headers=_h())
+    assert rp.status_code == 409, rp.data
+    assert rp.get_json().get("codigo") == "YA_PAGADA_DIRECTO"
+
+
+def test_conteo_cerrar_requiere_auth(app, db_clean):
+    """conteo_cerrar ya NO es accesible sin autenticación (P1 seguridad)."""
+    anon = app.test_client()  # sin login
+    r = anon.post("/api/conteo/999999/cerrar")
+    assert r.status_code in (401, 403), f"debe rechazar sin auth, got {r.status_code}"

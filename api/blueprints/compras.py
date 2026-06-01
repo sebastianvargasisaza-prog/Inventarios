@@ -2194,12 +2194,25 @@ def fp_pagar(fid):
     user = session.get('compras_user', '')
     d = request.get_json(silent=True) or {}
     conn = get_db(); c = conn.cursor()
-    f = c.execute("SELECT numero_oc, total, estado FROM facturas_proveedor WHERE id=?",
-                  (fid,)).fetchone()
+    f = c.execute("SELECT numero_oc, total, estado, numero_factura "
+                  "FROM facturas_proveedor WHERE id=?", (fid,)).fetchone()
     if not f:
         return jsonify({'error': 'no existe'}), 404
     if f[2] == 'anulada':
         return jsonify({'error': 'factura anulada'}), 400
+    oc_num = (f[0] or '').strip()
+    # Guarda: no pagar contra OC en estado no-pagable (consistencia con pagar_oc · 1-jun)
+    if oc_num:
+        _oce = c.execute("SELECT estado FROM ordenes_compra WHERE numero_oc=?", (oc_num,)).fetchone()
+        if _oce and (_oce[0] or '') in ('Cancelada', 'Rechazada', 'Borrador', 'Revisada'):
+            return jsonify({'error': f'La OC {oc_num} está en estado "{_oce[0]}" · no admite pagos'}), 409
+    # Anti-doble-pago: ese número ya fue pagado por el camino directo de OC (INV-6)
+    if (f[3] or '').strip():
+        _dir = c.execute("SELECT 1 FROM pagos_oc WHERE numero_factura_proveedor=? LIMIT 1",
+                         (f[3],)).fetchone()
+        if _dir:
+            return jsonify({'error': f'La factura "{f[3]}" ya fue pagada por el camino directo '
+                                     f'de OC · no la dupliques acá', 'codigo': 'YA_PAGADA_DIRECTO'}), 409
     try:
         monto = float(d.get('monto') or 0)
     except (TypeError, ValueError):
@@ -6420,6 +6433,22 @@ def pagar_oc(numero_oc):
                 'detail': 'Anti doble pago — verifica antes de continuar.',
                 'codigo': 'FACTURA_DUPLICADA'
             }), 409
+        # Anti-doble-pago cruzado con el libro de facturas (INV-6 · 1-jun-2026):
+        # si ese número ya tiene pagos en facturas_proveedor, no pagar de nuevo acá.
+        try:
+            _enlibro = cur.execute(
+                """SELECT 1 FROM facturas_proveedor f
+                   WHERE f.numero_factura=? AND COALESCE(f.estado,'') != 'anulada'
+                     AND EXISTS (SELECT 1 FROM pagos_oc p WHERE p.factura_proveedor_id=f.id)
+                   LIMIT 1""", (numero_factura,)).fetchone()
+        except Exception:
+            _enlibro = None
+        if _enlibro:
+            return jsonify({
+                'error': f"La factura '{numero_factura}' ya tiene pagos en el libro de facturas · "
+                         f"no la pagues de nuevo por acá",
+                'codigo': 'FACTURA_YA_EN_LIBRO'
+            }), 409
 
     # Registrar el pago en pagos_oc (auditoría completa)
     try:
@@ -7896,10 +7925,10 @@ def get_comprobante(numero_oc):
         # Multi-pago · histórico completo
         try:
             rows = cur.execute(
-                """SELECT id, fecha, monto, medio, COALESCE(referencia,''),
+                """SELECT id, fecha_pago, monto, medio, COALESCE(observaciones,''),
                           COALESCE(numero_factura_proveedor,''),
                           COALESCE(comprobante_imagen,'')
-                   FROM pagos_oc WHERE numero_oc=? ORDER BY fecha DESC""",
+                   FROM pagos_oc WHERE numero_oc=? ORDER BY fecha_pago DESC""",
                 (numero_oc,),
             ).fetchall()
             return jsonify({

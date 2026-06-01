@@ -7787,7 +7787,13 @@ def conteo_cerrar(conteo_id):
     Trazabilidad: cada auto-ajuste queda en `movimientos` con lote
     'AJUSTE-CICLICO-<conteo_id>' y observaciones que indican causa.
     """
-    user = session.get('compras_user','') or 'sistema'
+    # FIX 1-jun-2026 (audit) · era el único write del flujo de conteo SIN gate de
+    # auth → petición no autenticada podía mutar el kardex y el audit registraba
+    # 'sistema'. Ahora exige planta-write (igual que conteo_iniciar/ajustar).
+    u, err, code = _require_planta_write()
+    if err:
+        return err, code
+    user = u
     conn = get_db(); c = conn.cursor()
 
     c.execute("SELECT estado FROM conteos_fisicos WHERE id=?", (conteo_id,))

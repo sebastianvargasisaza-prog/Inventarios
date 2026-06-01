@@ -8598,7 +8598,10 @@ def asistente_operacion():
                   SELECT material_id, SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad
                                                 WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad
                                                 ELSE 0 END) as stock
-                  FROM movimientos GROUP BY material_id
+                  FROM movimientos
+                  WHERE UPPER(COALESCE(estado_lote,'')) NOT IN
+                        ('CUARENTENA','CUARENTENA_EXTENDIDA','VENCIDO','RECHAZADO','AGOTADO')
+                  GROUP BY material_id
                ) s ON mp.codigo_mp = s.material_id
                WHERE COALESCE(mp.activo,1)=1 AND COALESCE(mp.stock_minimo,0)>0
                  AND COALESCE(s.stock,0) < COALESCE(mp.stock_minimo,0)

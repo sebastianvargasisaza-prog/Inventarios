@@ -202,3 +202,40 @@ Cuando Catalina edita un item:
   20+ queries). Ahora 1 sola query `GROUP BY codigo_mp` pre-cargada en
   dict + lookup O(1) en loop. Verificable con OC de 30+ items.
 - **No invariantes nuevas · solo performance**. INV-1..INV-5 intactas.
+
+### 2026-06-01 · Libro de facturas de proveedor + dedup + audit de salud
+**Tablas nuevas:** `facturas_proveedor` (mig 206), `facturas_proveedor_pdf` (mig 207
+· blob del PDF en 1:1 · la tabla padre NO guarda el blob), `pagos_oc.factura_proveedor_id`
+(liga pago→factura).
+
+**Endpoints nuevos:**
+- `GET/POST /api/compras/facturas-proveedor` · libro de cuentas por pagar + crear.
+  GET sin SELECT* ni N+1 (pagado/valor_oc/tiene_pdf por LEFT JOIN · filtro q en SQL).
+- `GET /api/compras/facturas-proveedor/<id>` · detalle con pagos.
+- `GET /api/compras/facturas-proveedor/<id>/pdf` · sirve el PDF desde la tabla 1:1.
+- `PATCH /api/compras/facturas-proveedor/<id>` · editar / anular.
+- `POST /api/compras/facturas-proveedor/<id>/pagar` · pago contra factura.
+- `POST /api/admin/proveedores-dedup-nombre` · dedup por variante de mayúsculas
+  (la fusión por nombre se bloquea si keeper.lower()==merge_from.lower()).
+- `GET /api/compras/feed-necesidades` · MP + envases bajo mínimo (unificado).
+
+**Invariantes nuevas:**
+- **INV-6 · factura = padre de pagos.** Un pago vía factura va a `pagos_oc` con
+  `factura_proveedor_id` set y `numero_factura_proveedor=''` (el índice UNIQUE parcial
+  `idx_pagos_oc_factura_unique` ignora ''→permite pagos parciales). `fp_pagar` recalcula
+  el estado de la factura (SUM pagos vs total) Y el de la OC ligada (mismo CAS que
+  pagar_oc, Pagada/Parcial · no toca OCs no-pagables).
+- **INV-7 · stock de MP en feeds excluye lotes no disponibles.** Cualquier cálculo de
+  stock de MP para necesidades/compra DEBE excluir estado_lote en
+  (CUARENTENA, CUARENTENA_EXTENDIDA, VENCIDO, RECHAZADO, AGOTADO) — igual que
+  `_get_mp_stock`. (feed-necesidades violaba esto → falso negativo de compra · INVIMA.)
+- **INV-8 · dedup propaga = fusión propaga.** `admin_proveedores_dedup_nombre` y
+  `admin_proveedores_fusionar` comparten la MISMA lista `propagar` de tablas/columnas
+  (incluye `pagos_influencers`). Si una agrega una tabla, la otra también.
+
+**Perf (audit escalabilidad):** N+1 de Shopify en preparar/mínimos envases resuelto
+con `_ventas_sku_180d(c)` memoizado por request (flask.g). Blobs PDF fuera de la tabla
+transaccional (1:1). NO materializar stock con cache persistente (drift · prohibido).
+
+**CSRF:** `PUT /api/maestro-mps/<cod>/proveedor` ahora manda X-CSRF-Token desde el front
+(estaba roto en prod · /api/maestro-mps/ está en _admin_paths).
