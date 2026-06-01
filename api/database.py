@@ -312,6 +312,46 @@ except ImportError:
         _MIG_137_STMTS = []
 
 MIGRATIONS: list[tuple[int, str, list[str]]] = [
+    (206, "facturas_proveedor · libro de facturas de proveedor (cuentas por pagar formal): factura = padre de pagos, con retenciones (IVA/retefuente/reteICA), vencimiento/estado, PDF y vínculo a OC · Sebastián 31-may-2026", [
+        # Sebastián 31-may-2026 · hasta ahora la factura de proveedor vivía SOLO
+        # como pagos_oc.numero_factura_proveedor (un texto + imagen). Esta tabla la
+        # vuelve una ENTIDAD: una factura (documento real del proveedor) puede
+        # tener 1+ pagos parciales (pagos_oc.factura_proveedor_id la liga). El
+        # estado (pendiente/parcial/pagada/vencida/anulada) se recalcula por
+        # SUM(pagos) vs total. Retenciones a nivel factura (no solo en el CE de
+        # egreso). 3-way: numero_oc liga a la OC y a lo recibido.
+        """CREATE TABLE IF NOT EXISTS facturas_proveedor (
+            id                INTEGER PRIMARY KEY AUTOINCREMENT,
+            numero_factura    TEXT NOT NULL,
+            proveedor         TEXT NOT NULL DEFAULT '',
+            nit               TEXT DEFAULT '',
+            numero_oc         TEXT DEFAULT '',
+            fecha_emision     TEXT NOT NULL DEFAULT (date('now','-5 hours')),
+            fecha_vencimiento TEXT DEFAULT '',
+            subtotal          REAL DEFAULT 0,
+            iva               REAL DEFAULT 0,
+            iva_pct           REAL DEFAULT 0,
+            retefuente        REAL DEFAULT 0,
+            retefuente_pct    REAL DEFAULT 0,
+            retica            REAL DEFAULT 0,
+            retica_pct        REAL DEFAULT 0,
+            total             REAL DEFAULT 0,
+            estado            TEXT DEFAULT 'pendiente',
+            pdf_adjunto       TEXT DEFAULT '',
+            observaciones     TEXT DEFAULT '',
+            creado_por        TEXT DEFAULT '',
+            created_at        TEXT DEFAULT (datetime('now')),
+            empresa           TEXT DEFAULT 'Espagiria'
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_facturas_prov_oc ON facturas_proveedor(numero_oc)",
+        "CREATE INDEX IF NOT EXISTS idx_facturas_prov_prov ON facturas_proveedor(proveedor)",
+        "CREATE INDEX IF NOT EXISTS idx_facturas_prov_estado ON facturas_proveedor(estado)",
+        "CREATE INDEX IF NOT EXISTS idx_facturas_prov_venc ON facturas_proveedor(fecha_vencimiento)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_facturas_prov_unq ON facturas_proveedor(proveedor, numero_factura) WHERE numero_factura != ''",
+        "ALTER TABLE pagos_oc ADD COLUMN factura_proveedor_id INTEGER",
+        "CREATE INDEX IF NOT EXISTS idx_pagos_oc_factura_id ON pagos_oc(factura_proveedor_id) WHERE factura_proveedor_id IS NOT NULL",
+    ]),
+
     (205, "produccion_programada.fija_override_json · override de cantidad fija POR LOTE (ajustar minis de un lote puntual sin cambiar el default del producto) · Sebastián 30-may-2026", [
         # Sebastián 30-may-2026 · el default de la cantidad fija vive en
         # producto_presentaciones.cantidad_fija_uds (mig 204 · se edita en el

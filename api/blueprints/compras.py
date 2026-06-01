@@ -1920,6 +1920,298 @@ def sugerir_mp(codigo_mp):
     return jsonify(out)
 
 
+# ════════════════════════════════════════════════════════════════════
+# Libro de facturas de proveedor (cuentas por pagar formal) · mig 206
+# Sebastián 31-may-2026 · factura = padre de pagos (pagos_oc.factura_proveedor_id)
+# Antes la factura vivía solo como pagos_oc.numero_factura_proveedor (texto+imagen).
+# ════════════════════════════════════════════════════════════════════
+def _fp_recalc_estado(c, factura_id):
+    """Recalcula estado por SUM(pagos) vs total. No toca 'anulada'."""
+    row = c.execute("SELECT total, estado FROM facturas_proveedor WHERE id=?",
+                    (factura_id,)).fetchone()
+    if not row or row[1] == 'anulada':
+        return
+    total = float(row[0] or 0)
+    pagado = float(c.execute(
+        "SELECT COALESCE(SUM(monto),0) FROM pagos_oc WHERE factura_proveedor_id=?",
+        (factura_id,)).fetchone()[0] or 0)
+    if pagado <= 0.009:
+        est = 'pendiente'
+    elif pagado < total - 0.01:
+        est = 'parcial'
+    else:
+        est = 'pagada'
+    c.execute("UPDATE facturas_proveedor SET estado=? WHERE id=?", (est, factura_id))
+
+
+def _fp_total_calc(d):
+    """Total a pagar = subtotal + iva - retefuente - retica."""
+    try:
+        return round(float(d.get('subtotal') or 0) + float(d.get('iva') or 0)
+                     - float(d.get('retefuente') or 0) - float(d.get('retica') or 0), 2)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+@bp.route('/api/compras/facturas-proveedor', methods=['GET'])
+def fp_listar():
+    """Libro de facturas de proveedor + saldos/aging. Filtros: estado, proveedor, q."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autenticado'}), 401
+    conn = get_db(); c = conn.cursor()
+    estado = (request.args.get('estado') or '').strip()
+    proveedor = (request.args.get('proveedor') or '').strip()
+    q = (request.args.get('q') or '').strip().lower()
+    sql = "SELECT * FROM facturas_proveedor WHERE 1=1"
+    params = []
+    if estado and estado != 'todas':
+        sql += " AND estado=?"; params.append(estado)
+    if proveedor:
+        sql += " AND LOWER(proveedor) LIKE ?"; params.append('%' + proveedor.lower() + '%')
+    sql += (" ORDER BY COALESCE(NULLIF(fecha_vencimiento,''), fecha_emision) ASC,"
+            " id DESC LIMIT 1000")
+    rows = c.execute(sql, tuple(params)).fetchall()
+    cols = [x[0] for x in c.description]
+    import datetime as _dt
+    hoy = (_dt.datetime.utcnow() - _dt.timedelta(hours=5)).date()
+    items = []; tot_saldo = 0.0; tot_vencido = 0.0
+    for r in rows:
+        f = dict(zip(cols, r))
+        if q and q not in (str(f.get('numero_factura', '')).lower() + ' '
+                           + str(f.get('proveedor', '')).lower() + ' '
+                           + str(f.get('numero_oc', '')).lower()):
+            continue
+        pagado = float(c.execute(
+            "SELECT COALESCE(SUM(monto),0) FROM pagos_oc WHERE factura_proveedor_id=?",
+            (f['id'],)).fetchone()[0] or 0)
+        total = float(f.get('total') or 0)
+        saldo = round(max(0.0, total - pagado), 2)
+        f['pagado'] = round(pagado, 2); f['saldo'] = saldo
+        dias = None; vencida = False
+        fv = (f.get('fecha_vencimiento') or '').strip()[:10]
+        if fv:
+            try:
+                dias = (_dt.date.fromisoformat(fv) - hoy).days
+                if f['estado'] not in ('pagada', 'anulada') and dias < 0:
+                    vencida = True
+            except ValueError:
+                pass
+        f['dias_vencimiento'] = dias; f['vencida'] = vencida
+        f['estado_efectivo'] = 'vencida' if vencida else f['estado']
+        f['sobre_facturada'] = False
+        if f.get('numero_oc'):
+            try:
+                ocr = c.execute("SELECT valor_total FROM ordenes_compra WHERE numero_oc=?",
+                                (f['numero_oc'],)).fetchone()
+                if ocr and ocr[0] and total > float(ocr[0]) + 0.01:
+                    f['sobre_facturada'] = True; f['valor_oc'] = float(ocr[0])
+            except Exception:
+                pass
+        if f['estado'] != 'anulada':
+            tot_saldo += saldo
+            if vencida:
+                tot_vencido += saldo
+        f['tiene_pdf'] = bool((f.get('pdf_adjunto') or '').strip())
+        f.pop('pdf_adjunto', None)
+        items.append(f)
+    return jsonify({'ok': True, 'items': items, 'n': len(items),
+                    'total_saldo': round(tot_saldo, 2),
+                    'total_vencido': round(tot_vencido, 2)})
+
+
+@bp.route('/api/compras/facturas-proveedor', methods=['POST'])
+def fp_crear():
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autenticado'}), 401
+    user = session.get('compras_user', '')
+    d = request.get_json(silent=True) or {}
+    numero = (d.get('numero_factura') or '').strip()
+    proveedor = (d.get('proveedor') or '').strip()
+    if not numero:
+        return jsonify({'error': 'numero_factura requerido'}), 400
+    if not proveedor:
+        return jsonify({'error': 'proveedor requerido'}), 400
+    total = d.get('total')
+    try:
+        total = float(total) if total not in (None, '', 0, 0.0) else _fp_total_calc(d)
+    except (TypeError, ValueError):
+        total = _fp_total_calc(d)
+    conn = get_db(); c = conn.cursor()
+    dup = c.execute("SELECT id FROM facturas_proveedor WHERE proveedor=? AND numero_factura=?",
+                    (proveedor, numero)).fetchone()
+    if dup:
+        return jsonify({'error': 'factura duplicada',
+                        'detail': f'Ya existe {numero} de {proveedor} (id {dup[0]})'}), 409
+
+    def _f(k):
+        try:
+            return float(d.get(k) or 0)
+        except (TypeError, ValueError):
+            return 0.0
+    c.execute("""INSERT INTO facturas_proveedor
+        (numero_factura, proveedor, nit, numero_oc, fecha_emision, fecha_vencimiento,
+         subtotal, iva, iva_pct, retefuente, retefuente_pct, retica, retica_pct,
+         total, estado, pdf_adjunto, observaciones, creado_por, empresa)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (numero, proveedor, (d.get('nit') or '').strip(), (d.get('numero_oc') or '').strip(),
+         (d.get('fecha_emision') or '').strip() or None,
+         (d.get('fecha_vencimiento') or '').strip(),
+         _f('subtotal'), _f('iva'), _f('iva_pct'), _f('retefuente'), _f('retefuente_pct'),
+         _f('retica'), _f('retica_pct'), total, 'pendiente',
+         (d.get('pdf_adjunto') or '')[:6_000_000], (d.get('observaciones') or '').strip(),
+         user, (d.get('empresa') or 'Espagiria').strip()))
+    fid = c.lastrowid
+    try:
+        audit_log(c, usuario=user, accion='CREAR_FACTURA_PROVEEDOR',
+                  tabla='facturas_proveedor', registro_id=str(fid),
+                  despues={'numero': numero, 'proveedor': proveedor, 'total': total})
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({'ok': True, 'id': fid, 'total': total})
+
+
+@bp.route('/api/compras/facturas-proveedor/<int:fid>', methods=['GET'])
+def fp_detalle(fid):
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autenticado'}), 401
+    conn = get_db(); c = conn.cursor()
+    r = c.execute("SELECT * FROM facturas_proveedor WHERE id=?", (fid,)).fetchone()
+    if not r:
+        return jsonify({'error': 'no existe'}), 404
+    cols = [x[0] for x in c.description]
+    f = dict(zip(cols, r))
+    f['tiene_pdf'] = bool((f.get('pdf_adjunto') or '').strip())
+    f.pop('pdf_adjunto', None)
+    pagos = c.execute(
+        "SELECT id, monto, medio, fecha_pago, registrado_por, observaciones "
+        "FROM pagos_oc WHERE factura_proveedor_id=? ORDER BY id", (fid,)).fetchall()
+    f['pagos'] = [{'id': p[0], 'monto': float(p[1] or 0), 'medio': p[2],
+                   'fecha_pago': p[3], 'registrado_por': p[4], 'observaciones': p[5]}
+                  for p in pagos]
+    f['pagado'] = round(sum(x['monto'] for x in f['pagos']), 2)
+    f['saldo'] = round(max(0.0, float(f.get('total') or 0) - f['pagado']), 2)
+    return jsonify({'ok': True, 'factura': f})
+
+
+@bp.route('/api/compras/facturas-proveedor/<int:fid>/pdf', methods=['GET'])
+def fp_pdf(fid):
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autenticado'}), 401
+    conn = get_db(); c = conn.cursor()
+    r = c.execute("SELECT pdf_adjunto FROM facturas_proveedor WHERE id=?", (fid,)).fetchone()
+    if not r or not (r[0] or '').strip():
+        return jsonify({'error': 'sin adjunto'}), 404
+    raw = r[0]
+    import base64 as _b64
+    if raw.startswith('data:'):
+        try:
+            header, b64 = raw.split(',', 1)
+            mime = header.split(':', 1)[1].split(';', 1)[0] or 'application/octet-stream'
+        except Exception:
+            return jsonify({'error': 'adjunto inválido'}), 400
+    else:
+        b64 = raw; mime = 'application/pdf'
+    try:
+        data = _b64.b64decode(b64)
+    except Exception:
+        return jsonify({'error': 'adjunto inválido'}), 400
+    from flask import Response as _Resp
+    return _Resp(data, mimetype=mime)
+
+
+@bp.route('/api/compras/facturas-proveedor/<int:fid>', methods=['PATCH'])
+def fp_editar(fid):
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autenticado'}), 401
+    user = session.get('compras_user', '')
+    d = request.get_json(silent=True) or {}
+    conn = get_db(); c = conn.cursor()
+    r = c.execute("SELECT estado FROM facturas_proveedor WHERE id=?", (fid,)).fetchone()
+    if not r:
+        return jsonify({'error': 'no existe'}), 404
+    if d.get('anular'):
+        c.execute("UPDATE facturas_proveedor SET estado='anulada' WHERE id=?", (fid,))
+        try:
+            audit_log(c, usuario=user, accion='ANULAR_FACTURA_PROVEEDOR',
+                      tabla='facturas_proveedor', registro_id=str(fid),
+                      despues={'motivo': (d.get('motivo') or '')})
+        except Exception:
+            pass
+        conn.commit()
+        return jsonify({'ok': True, 'estado': 'anulada'})
+    campos = ['proveedor', 'nit', 'numero_oc', 'fecha_emision', 'fecha_vencimiento',
+              'subtotal', 'iva', 'iva_pct', 'retefuente', 'retefuente_pct',
+              'retica', 'retica_pct', 'total', 'observaciones']
+    sets = []; params = []
+    for k in campos:
+        if k in d:
+            sets.append(f"{k}=?"); params.append(d.get(k))
+    if not sets:
+        return jsonify({'error': 'nada que actualizar'}), 400
+    params.append(fid)
+    c.execute(f"UPDATE facturas_proveedor SET {', '.join(sets)} WHERE id=?", tuple(params))
+    _fp_recalc_estado(c, fid)
+    try:
+        audit_log(c, usuario=user, accion='EDITAR_FACTURA_PROVEEDOR',
+                  tabla='facturas_proveedor', registro_id=str(fid), despues=d)
+    except Exception:
+        pass
+    conn.commit()
+    return jsonify({'ok': True})
+
+
+@bp.route('/api/compras/facturas-proveedor/<int:fid>/pagar', methods=['POST'])
+def fp_pagar(fid):
+    """Registra un pago CONTRA la factura (pagos_oc.factura_proveedor_id=fid) y
+    recalcula el estado. El link es factura_proveedor_id (NO numero_factura_proveedor,
+    que es UNIQUE y bloquearía pagos parciales de la misma factura)."""
+    if 'compras_user' not in session:
+        return jsonify({'error': 'No autenticado'}), 401
+    user = session.get('compras_user', '')
+    d = request.get_json(silent=True) or {}
+    conn = get_db(); c = conn.cursor()
+    f = c.execute("SELECT numero_oc, total, estado FROM facturas_proveedor WHERE id=?",
+                  (fid,)).fetchone()
+    if not f:
+        return jsonify({'error': 'no existe'}), 404
+    if f[2] == 'anulada':
+        return jsonify({'error': 'factura anulada'}), 400
+    try:
+        monto = float(d.get('monto') or 0)
+    except (TypeError, ValueError):
+        monto = 0
+    if monto <= 0:
+        return jsonify({'error': 'monto > 0 requerido'}), 400
+    medio = (d.get('medio') or 'Transferencia').strip()
+    if medio.upper() == 'PENDIENTE':
+        return jsonify({'error': 'elegí un medio de pago real'}), 400
+    pagado = float(c.execute(
+        "SELECT COALESCE(SUM(monto),0) FROM pagos_oc WHERE factura_proveedor_id=?",
+        (fid,)).fetchone()[0] or 0)
+    total = float(f[1] or 0)
+    if total > 0 and pagado + monto > total + 0.01:
+        return jsonify({'error': 'el pago excede el saldo de la factura',
+                        'saldo': round(total - pagado, 2)}), 400
+    c.execute("""INSERT INTO pagos_oc
+        (numero_oc, monto, medio, registrado_por, numero_factura_proveedor,
+         observaciones, factura_proveedor_id)
+        VALUES (?,?,?,?,?,?,?)""",
+        (f[0] or '', monto, medio, user, '',
+         (d.get('observaciones') or '').strip(), fid))
+    pago_id = c.lastrowid
+    _fp_recalc_estado(c, fid)
+    try:
+        audit_log(c, usuario=user, accion='PAGAR_FACTURA_PROVEEDOR',
+                  tabla='facturas_proveedor', registro_id=str(fid),
+                  despues={'monto': monto, 'medio': medio, 'pago_id': pago_id})
+    except Exception:
+        pass
+    conn.commit()
+    est = c.execute("SELECT estado FROM facturas_proveedor WHERE id=?", (fid,)).fetchone()[0]
+    return jsonify({'ok': True, 'pago_id': pago_id, 'estado': est})
+
+
 @bp.route('/api/compras/mailbox-facturas', methods=['GET'])
 def listar_mailbox_facturas():
     """Sebastián 23-may-2026 · MBX UI · lista facturas detectadas por el
