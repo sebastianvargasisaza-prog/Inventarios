@@ -6730,6 +6730,17 @@ def mkt_solicitar_pago_influencer(iid):
         else:
             seq = 1
         numero = f"{prefix}{seq:04d}"
+        # FIX 1-jun-2026 · blindaje anti-colisión. Si el seq quedó mal (formatos
+        # heterogéneos de SOL en prod → split/int falla → seq=1) el numero podría
+        # YA existir y el INSERT violaría UNIQUE(numero) → 500 PERMANENTE en cada
+        # intento ("no sirve"). Incrementamos hasta encontrar uno libre.
+        _guard = 0
+        while c.execute("SELECT 1 FROM solicitudes_compra WHERE numero=?", (numero,)).fetchone():
+            seq += 1
+            _guard += 1
+            numero = f"{prefix}{seq:04d}"
+            if _guard > 100000:
+                break
 
         # Build observaciones in standard beneficiary format
         obs_parts = [f"BENEFICIARIO: {inf['nombre']}"]
@@ -6768,6 +6779,13 @@ def mkt_solicitar_pago_influencer(iid):
 
         # Auto-generate OC
         oc_num = numero.replace("SOL", "OC")
+        # Mismo blindaje anti-colisión para numero_oc (UNIQUE)
+        _guard_oc = 0
+        while c.execute("SELECT 1 FROM ordenes_compra WHERE numero_oc=?", (oc_num,)).fetchone():
+            _guard_oc += 1
+            oc_num = numero.replace("SOL", "OC") + "-" + str(_guard_oc)
+            if _guard_oc > 100000:
+                break
         c.execute("""
             INSERT INTO ordenes_compra
             (numero_oc, fecha, estado, proveedor, observaciones, creado_por, categoria, valor_total)
@@ -6852,8 +6870,19 @@ def mkt_solicitar_pago_influencer(iid):
             )
 
         return jsonify({"ok": True, "numero": numero, "oc": oc_num, "monto": monto})
-    finally:
-        pass
+    except Exception as e:
+        # FIX 1-jun-2026 · antes había try/finally SIN except → cualquier error de
+        # datos (columna faltante, etc.) propagaba como 500 HTML y el front mostraba
+        # "Error de red" sin pista → marketing reportaba "no sirve" sin diagnóstico.
+        # Ahora: rollback + log + JSON con el error real para que se vea la causa.
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        __import__('logging').getLogger('marketing').exception(
+            'solicitar_pago_influencer falló (iid=%s)', iid)
+        return jsonify({"ok": False,
+                        "error": "No se pudo crear la solicitud de pago: " + str(e)}), 500
 
 
 @bp.route("/api/marketing/influencers/<int:iid>/banco", methods=["PUT"])
