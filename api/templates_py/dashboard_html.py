@@ -862,7 +862,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
     <div style="background:#f8f9ff;border:1px solid #dde;border-radius:10px;padding:18px;margin-bottom:22px;">
       <h3 style="margin-bottom:12px;">Nueva Formula / Editar Existente</h3>
       <div style="display:grid;grid-template-columns:1fr 200px;gap:12px;">
-        <div class="form-group"><label>Nombre del Producto</label><input type="text" id="formula-producto" placeholder="Ej: Renova C 10"></div>
+        <div class="form-group"><label>Nombre del Producto</label><input type="text" id="formula-producto" placeholder="Ej: Renova C 10" onchange="if(typeof mbrCargar==='function')mbrCargar(this.value)"></div>
         <div class="form-group"><label>Base (g) = 100%</label><input type="number" id="formula-base" value="1000"></div>
       </div>
       <div class="form-group"><label>Descripcion (opcional)</label><input type="text" id="formula-desc" placeholder="Descripcion breve"></div>
@@ -880,6 +880,43 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
         <span id="pct-total" style="font-size:0.9em;color:#666;font-weight:600;"></span>
       </div>
       <div id="formula-msg"></div>
+
+      <!-- Integración MyBatch · paso 1 · Procedimiento + IPC = el MBR maestro -->
+      <div id="mbr-secciones" style="margin-top:18px;border-top:1px dashed #c4b5fd;padding-top:14px">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+          <label style="font-weight:800;font-size:0.95em;color:#5b21b6">🏭 Registro de lote (MBR) · procedimiento + controles</label>
+          <span id="mbr-estado-badge" style="font-size:11px;color:#64748b"></span>
+        </div>
+        <div style="font-size:11px;color:#64748b;margin:2px 0 12px">Esto convierte la fórmula en el <b>maestro de fabricación</b> (estilo MyBatch): lo que el operario ejecuta y firma al producir. Guardá la fórmula primero.</div>
+
+        <label style="display:block;font-weight:700;font-size:0.85em;color:#444;margin-top:6px">② Procedimiento de fabricación</label>
+        <div style="display:grid;grid-template-columns:90px 1fr 150px 38px;gap:6px;margin-bottom:4px">
+          <span style="font-size:.76em;color:#888;font-weight:600">FASE</span>
+          <span style="font-size:.76em;color:#888;font-weight:600">PASO (qué hacer)</span>
+          <span style="font-size:.76em;color:#888;font-weight:600">REGISTRAR (temp/RPM…)</span>
+          <span></span>
+        </div>
+        <div id="mbr-pasos"></div>
+        <button onclick="mbrAddPaso()" style="background:#0f766e;margin-top:6px">+ Paso</button>
+
+        <label style="display:block;font-weight:700;font-size:0.85em;color:#444;margin-top:16px">③ Controles en proceso (IPC)</label>
+        <div style="display:grid;grid-template-columns:1fr 80px 70px 70px 1fr 38px;gap:6px;margin-bottom:4px">
+          <span style="font-size:.76em;color:#888;font-weight:600">CONTROL</span>
+          <span style="font-size:.76em;color:#888;font-weight:600">UNIDAD</span>
+          <span style="font-size:.76em;color:#888;font-weight:600">MÍN</span>
+          <span style="font-size:.76em;color:#888;font-weight:600">MÁX</span>
+          <span style="font-size:.76em;color:#888;font-weight:600">o ESPECIFICACIÓN (texto)</span>
+          <span></span>
+        </div>
+        <div id="mbr-ipc"></div>
+        <button onclick="mbrAddIpc()" style="background:#0f766e;margin-top:6px">+ Control</button>
+
+        <div style="display:flex;gap:10px;margin-top:16px;align-items:center;flex-wrap:wrap">
+          <button onclick="mbrGuardarProcedimiento()" style="background:#7c3aed">&#128190; Guardar procedimiento + IPC</button>
+          <button onclick="mbrEnviarAprobacion()" style="background:#16a34a" title="Envía a revisión · la aprobación final con firma electrónica (Part 11) se hace en el módulo Calidad/BRD">✅ Enviar a aprobación</button>
+          <span id="mbr-msg" style="font-size:12px"></span>
+        </div>
+      </div>
     </div>
     <h3 style="margin-bottom:12px;">Formulas Guardadas</h3>
     <div id="formulas-list"><p style="color:#999;">Cargando...</p></div>
@@ -4954,7 +4991,91 @@ function editFormula(idx){
     row.querySelector('.fi-pc').value=item.porcentaje;
   });
   calcPct();
+  mbrCargar(f.producto_nombre);   // integración MyBatch · cargar procedimiento+IPC
   document.getElementById('formula-producto').scrollIntoView({behavior:'smooth'});
+}
+
+// ── Integración MyBatch · paso 1 · Procedimiento + IPC del MBR en el editor ──
+function _mbrCsrf(){ try{ var m=(window._csrfTok||''); return m; }catch(_){ return ''; } }
+async function _mbrEnsureCsrf(){ if(!window._csrfTok){ try{ var r=await fetch('/api/csrf-token',{credentials:'same-origin'}); if(r.ok){ var d=await r.json(); window._csrfTok=d.csrf_token||''; } }catch(_){ } } }
+function mbrAddPaso(fase, desc, registrar){
+  var div=document.createElement('div');
+  div.style.cssText='display:grid;grid-template-columns:90px 1fr 150px 38px;gap:6px;margin-bottom:6px;align-items:start';
+  div.innerHTML='<input type="text" class="mbr-fase" value="'+_escHTML(fase||'Fabricación')+'" style="padding:6px;border:1px solid #ddd;border-radius:5px;font-size:12px">'
+    +'<textarea class="mbr-desc" rows="2" placeholder="Ej: Premezcla 1: 90% agua + niacinamida, agitar a 65°C" style="padding:6px;border:1px solid #ddd;border-radius:5px;font-size:12px;resize:vertical">'+_escHTML(desc||'')+'</textarea>'
+    +'<input type="text" class="mbr-reg" value="'+_escHTML(registrar||'')+'" placeholder="temperatura / RPM" style="padding:6px;border:1px solid #ddd;border-radius:5px;font-size:12px">'
+    +'<button onclick="this.parentElement.remove()" style="background:#ef4444;color:#fff;border:none;border-radius:5px;cursor:pointer;padding:6px;font-size:.9em">x</button>';
+  document.getElementById('mbr-pasos').appendChild(div);
+}
+function mbrAddIpc(par, uni, vmin, vmax, texto){
+  var div=document.createElement('div');
+  div.style.cssText='display:grid;grid-template-columns:1fr 80px 70px 70px 1fr 38px;gap:6px;margin-bottom:6px';
+  function _v(x){ return (x===null||x===undefined)?'':x; }
+  div.innerHTML='<input type="text" class="ipc-par" value="'+_escHTML(par||'')+'" placeholder="pH / Densidad / Color" style="padding:6px;border:1px solid #ddd;border-radius:5px;font-size:12px">'
+    +'<input type="text" class="ipc-uni" value="'+_escHTML(uni||'')+'" placeholder="°C, etc" style="padding:6px;border:1px solid #ddd;border-radius:5px;font-size:12px">'
+    +'<input type="number" step="any" class="ipc-min" value="'+_v(vmin)+'" style="padding:6px;border:1px solid #ddd;border-radius:5px;font-size:12px">'
+    +'<input type="number" step="any" class="ipc-max" value="'+_v(vmax)+'" style="padding:6px;border:1px solid #ddd;border-radius:5px;font-size:12px">'
+    +'<input type="text" class="ipc-txt" value="'+_escHTML(texto||'')+'" placeholder="Blanco hueso / Líquido viscoso" style="padding:6px;border:1px solid #ddd;border-radius:5px;font-size:12px">'
+    +'<button onclick="this.parentElement.remove()" style="background:#ef4444;color:#fff;border:none;border-radius:5px;cursor:pointer;padding:6px;font-size:.9em">x</button>';
+  document.getElementById('mbr-ipc').appendChild(div);
+}
+async function mbrCargar(producto){
+  document.getElementById('mbr-pasos').innerHTML='';
+  document.getElementById('mbr-ipc').innerHTML='';
+  document.getElementById('mbr-msg').innerHTML='';
+  document.getElementById('mbr-estado-badge').textContent='';
+  if(!producto) return;
+  try{
+    var r=await fetch('/api/brd/mbr/por-producto?producto='+encodeURIComponent(producto),{credentials:'same-origin'});
+    var d=await r.json();
+    if(d && d.existe){
+      var est=d.estado||''; var col=est==='aprobado'?'#15803d':(est==='en_revision'?'#9a3412':'#64748b');
+      document.getElementById('mbr-estado-badge').innerHTML='MBR v'+(d.version||1)+' · <b style="color:'+col+'">'+est+'</b>';
+      (d.pasos||[]).forEach(function(p){ mbrAddPaso(p.fase, p.descripcion, p.resultado_label); });
+      (d.ipc||[]).forEach(function(s){ mbrAddIpc(s.parametro, s.unidad, s.valor_min, s.valor_max, s.especificacion); });
+    } else {
+      document.getElementById('mbr-estado-badge').innerHTML='<span style="color:#94a3b8">sin MBR aún · agregá pasos y guardá</span>';
+    }
+  }catch(e){ document.getElementById('mbr-estado-badge').textContent=''; }
+}
+function _mbrRecoger(){
+  var pasos=[]; document.querySelectorAll('#mbr-pasos > div').forEach(function(row){
+    var desc=(row.querySelector('.mbr-desc').value||'').trim();
+    if(desc) pasos.push({descripcion:desc, fase:(row.querySelector('.mbr-fase').value||'Fabricación').trim(), resultado_label:(row.querySelector('.mbr-reg').value||'').trim()});
+  });
+  var ipc=[]; document.querySelectorAll('#mbr-ipc > div').forEach(function(row){
+    var par=(row.querySelector('.ipc-par').value||'').trim();
+    if(par) ipc.push({parametro:par, unidad:(row.querySelector('.ipc-uni').value||'').trim(), valor_min:row.querySelector('.ipc-min').value, valor_max:row.querySelector('.ipc-max').value, especificacion:(row.querySelector('.ipc-txt').value||'').trim()});
+  });
+  return {pasos:pasos, ipc:ipc};
+}
+async function mbrGuardarProcedimiento(){
+  var prod=(document.getElementById('formula-producto').value||'').trim();
+  if(!prod){ document.getElementById('mbr-msg').innerHTML='<span style="color:#b91c1c">Poné el nombre del producto (y guardá la fórmula primero)</span>'; return; }
+  var data=_mbrRecoger();
+  if(!data.pasos.length){ document.getElementById('mbr-msg').innerHTML='<span style="color:#b91c1c">Agregá al menos un paso</span>'; return; }
+  document.getElementById('mbr-msg').textContent='Guardando…';
+  await _mbrEnsureCsrf();
+  try{
+    var r=await fetch('/api/brd/mbr/sync-procedimiento',{method:'POST',credentials:'same-origin',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':window._csrfTok||''},
+      body:JSON.stringify({producto_nombre:prod, pasos:data.pasos, ipc:data.ipc})});
+    var d=await r.json();
+    if(!r.ok||!d.ok){ document.getElementById('mbr-msg').innerHTML='<span style="color:#b91c1c">Error: '+_escHTML(d.error||r.status)+'</span>'; return; }
+    document.getElementById('mbr-msg').innerHTML='<span style="color:#15803d;font-weight:700">✓ '+d.n_pasos+' pasos · '+d.n_ipc+' IPC guardados (MBR draft)</span>';
+    window._mbrLastId=d.mbr_id;
+  }catch(e){ document.getElementById('mbr-msg').innerHTML='<span style="color:#b91c1c">Error red: '+_escHTML(e.message)+'</span>'; }
+}
+async function mbrEnviarAprobacion(){
+  await mbrGuardarProcedimiento();
+  if(!window._mbrLastId){ return; }
+  await _mbrEnsureCsrf();
+  try{
+    var r=await fetch('/api/brd/mbr/'+window._mbrLastId+'/submit',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-CSRF-Token':window._csrfTok||''}});
+    var d=await r.json();
+    if(!r.ok||!d.ok){ document.getElementById('mbr-msg').innerHTML='<span style="color:#b91c1c">Error al enviar: '+_escHTML(d.error||r.status)+'</span>'; return; }
+    document.getElementById('mbr-msg').innerHTML='<span style="color:#15803d;font-weight:700">✓ Enviado a revisión.</span> <a href="/brd" target="_blank" style="color:#7c3aed;font-weight:700">Aprobar con e-firma en Calidad/BRD →</a>';
+  }catch(e){ document.getElementById('mbr-msg').innerHTML='<span style="color:#b91c1c">Error red: '+_escHTML(e.message)+'</span>'; }
 }
 
 async function delFormula(idx){
