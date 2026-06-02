@@ -21141,6 +21141,10 @@ async function ckMarcar(itemId, estado){
     });
     if (!items.length) { alert('Selecciona al menos 1 item con cantidad > 0'); return; }
     if (!confirm('Crear SOL(s) agrupadas por proveedor con ' + items.length + ' item(s)?\\n\\nCubrir días: ' + st.cubrir_dias + 'd · urgencia: Normal')) return;
+    // FIX 1-jun-2026 audit Abastecimiento (P1) · guard anti-doble-orden · evita que
+    // un doble-click cree las SOLs dos veces (×2 compra). Re-entrada bloqueada.
+    if (window._abastSolicitando) { return; }
+    window._abastSolicitando = true;
     try {
       const r = await fetch('/api/abastecimiento/solicitar-items', {
         method: 'POST',
@@ -21159,6 +21163,8 @@ async function ckMarcar(itemId, estado){
       cargarAbastecimiento();  // refresh
     } catch(e) {
       alert('Error red: ' + e.message);
+    } finally {
+      window._abastSolicitando = false;
     }
   }
 
