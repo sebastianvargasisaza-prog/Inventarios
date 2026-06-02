@@ -6480,6 +6480,65 @@ def borrar_produccion_programada(evento_id):
     })
 
 
+def _resolver_material_bodega(c, formula_mid, formula_nombre):
+    """FIX 1-jun-2026 (P0 · frena producción) · resuelve el material_id de FÓRMULA al
+    material_id que usa BODEGA/movimientos. Bug: al producir 'N-acetil glucosamina' decía
+    'Hay 0g' aunque bodega tenía 600g bajo otro código (los ~116 MPs con ID distinto entre
+    fórmula y bodega). La validación de stock + FEFO buscaban movimientos por el id de
+    fórmula EXACTO, sin bridge/nombre/alias. Mismo patrón M1 que el resto del audit.
+
+    Tiers (SOLO se resuelve si el id de fórmula NO tiene movimientos → los MPs que ya
+    funcionan quedan IDÉNTICOS · cero riesgo de regresión):
+      1) el propio formula_mid si ya tiene movimientos → se devuelve igual.
+      2) mp_formula_bridge (formula_material_id → bodega_material_id).
+      3) match por nombre normalizado/alias contra maestro_mps con movimientos.
+    Devuelve el id resuelto, o el formula_mid original si no se encontró nada mejor."""
+    fmid = str(formula_mid or '').strip()
+
+    def _tiene_mov(mid):
+        if not mid:
+            return False
+        try:
+            return c.execute("SELECT 1 FROM movimientos WHERE material_id=? LIMIT 1", (mid,)).fetchone() is not None
+        except Exception:
+            return False
+
+    # 1) el id de fórmula ya es el de bodega (tiene movimientos) → no tocar
+    if fmid and _tiene_mov(fmid):
+        return fmid
+    # 2) bridge explícito
+    try:
+        r = c.execute(
+            "SELECT bodega_material_id FROM mp_formula_bridge "
+            "WHERE TRIM(formula_material_id)=? AND COALESCE(activo,1)=1 LIMIT 1", (fmid,)).fetchone()
+        if r and r[0] and _tiene_mov(str(r[0]).strip()):
+            return str(r[0]).strip()
+    except Exception:
+        pass
+    # 3) por nombre (exacto/normalizado/alias) contra maestro_mps que tenga movimientos
+    nom = (formula_nombre or '').strip()
+    if nom:
+        nn = _norm_mp_name(nom)
+        _alias_nn = _MP_NAME_ALIAS.get(nn)
+        try:
+            for r in c.execute(
+                "SELECT codigo_mp, COALESCE(nombre_inci,''), COALESCE(nombre_comercial,'') "
+                "FROM maestro_mps WHERE COALESCE(activo,1)=1").fetchall():
+                cod = str(r[0] or '').strip()
+                if not cod:
+                    continue
+                for cand in (r[1], r[2]):
+                    if not cand:
+                        continue
+                    cn = _norm_mp_name(cand)
+                    if cn == nn or cn == _alias_nn or _MP_NAME_ALIAS.get(cn) == nn:
+                        if _tiene_mov(cod):
+                            return cod
+        except Exception:
+            pass
+    return fmid  # fallback · comportamiento previo
+
+
 def _calcular_mp_consumo_produccion(c, evento_id):
     """Calcula MPs a consumir por una producción programada.
 
@@ -6520,8 +6579,13 @@ def _calcular_mp_consumo_produccion(c, evento_id):
         if g_total <= 0 and cant_kg_total > 0:
             g_total = (float(pct or 0) / 100.0) * cant_kg_total * 1000.0
         if g_total > 0:
+            # FIX 1-jun-2026 · resolver el id de fórmula → id de bodega (movimientos)
+            # para que la validación de stock + FEFO encuentren el inventario real
+            # (caso 'N-acetil glucosamina · Hay 0g' con 600g en bodega).
+            cod_bodega = _resolver_material_bodega(c, cod or '', nom or '')
             mps.append({
-                'codigo_mp': cod or '',
+                'codigo_mp': cod_bodega or (cod or ''),
+                'codigo_mp_formula': cod or '',
                 'nombre': nom or '',
                 'cantidad_g': round(g_total, 2),
             })
