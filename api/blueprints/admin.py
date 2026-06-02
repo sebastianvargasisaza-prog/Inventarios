@@ -13893,6 +13893,136 @@ def admin_mps_duplicados_page():
     return _MPS_DUPLICADOS_HTML
 
 
+@bp.route("/api/admin/formulas-mismapeo", methods=["GET"])
+def admin_formulas_mismapeo():
+    """Líneas de fórmula cuyo NOMBRE no concuerda con su CÓDIGO asignado, cuando
+    existe en el catálogo otro código que SÍ corresponde al nombre (match fuerte).
+
+    Caso real: 'N-acetil glucosamina' guardada con MP00175 (= Acetyl
+    tetrapeptide-5) → stock cruzado al producir. El detector de huérfanos NO lo
+    ve porque MP00175 es un código válido con stock. Usa el MISMO motor que el
+    guard de guardado (blueprints.formula_match · M1). SIN escritura."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    try:
+        from blueprints.formula_match import build_maestro_index, evaluar_item
+    except ImportError:
+        from api.blueprints.formula_match import build_maestro_index, evaluar_item
+    conn = db_connect()
+    c = conn.cursor()
+    try:
+        mrows = c.execute(
+            "SELECT codigo_mp, COALESCE(nombre_comercial,''), COALESCE(nombre_inci,'') "
+            "FROM maestro_mps WHERE activo=1").fetchall()
+        idx = build_maestro_index([(r[0], r[1], r[2]) for r in mrows])
+        items = c.execute(
+            "SELECT id, producto_nombre, material_id, COALESCE(material_nombre,'') "
+            "FROM formula_items WHERE material_id IS NOT NULL AND TRIM(material_id)!='' "
+            "ORDER BY producto_nombre, material_nombre").fetchall()
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+    cruces = []
+    for r in items:
+        ev = evaluar_item(r[3], r[2], idx)
+        mej = ev.get('mejor_candidato') or {}
+        if (ev.get('problema') == 'mismatch_nombre'
+                and mej.get('codigo') and mej['codigo'] != r[2]
+                and (mej.get('score') or 0) >= 80):
+            cruces.append({
+                'formula_item_id': r[0],
+                'producto': r[1],
+                'material_id': r[2],
+                'material_nombre': r[3],
+                'codigo_es_en_catalogo': ev.get('maestro_nombre') or '?',
+                'codigo_sugerido': mej.get('codigo'),
+                'nombre_sugerido': mej.get('nombre_comercial') or mej.get('nombre_inci'),
+                'score': mej.get('score'),
+            })
+    cruces.sort(key=lambda x: (-(x['score'] or 0), x['producto']))
+    return jsonify({'ok': True, 'cruces': cruces, 'total': len(cruces)})
+
+
+_FORMULAS_MISMAPEO_HTML = """<!DOCTYPE html>
+<html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Fórmulas · nombre↔código cruzado · EOS</title>
+<style>
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;color:#1e293b;margin:0;padding:20px}
+.wrap{max-width:1150px;margin:0 auto}
+.card{background:#fff;border-radius:12px;padding:18px;margin-bottom:16px;box-shadow:0 2px 6px rgba(0,0,0,.05)}
+h1{margin:0 0 6px;color:#b91c1c;font-size:21px}
+table{width:100%;border-collapse:collapse;font-size:12px;margin-top:6px}
+th{text-align:left;padding:8px;background:#f1f5f9;color:#475569;font-weight:700}
+td{padding:8px;border-bottom:1px solid #f1f5f9;vertical-align:top}
+.mono{font-family:ui-monospace,monospace;font-weight:700;color:#1e40af}
+.muted{color:#64748b;font-size:11px}
+button{background:#0f766e;color:#fff;border:none;padding:7px 14px;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer}
+.tag{background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:4px;font-size:10px}
+.bad{color:#b91c1c;font-weight:700}
+</style></head><body>
+<div class="wrap">
+<a href="/modulos">&larr; Volver</a>
+<div class="card">
+  <h1>&#129518; Fórmulas · nombre que no concuerda con su código</h1>
+  <div class="muted">La fórmula dice un ingrediente pero su código pertenece a OTRA materia prima del catálogo (mapeo cruzado al registrar). Eso cruza el stock y produce "Hay 0g" al producir. El detector de huérfanos NO lo ve porque el código es válido. Read-only hasta que aprietes Corregir.</div>
+  <div style="margin-top:10px"><button onclick="cargar()">↻ Recargar</button> <span id="resumen" class="muted"></span></div>
+</div>
+<div id="out" class="card">Cargando…</div>
+</div>
+<script>
+function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[c];});}
+async function _csrf(){ try{ var r=await fetch('/api/csrf-token',{credentials:'same-origin'}); if(r.ok){ var d=await r.json(); return d.csrf_token||''; } }catch(_){} return ''; }
+async function cargar(){
+  var out=document.getElementById('out'); out.innerHTML='Cargando…';
+  try{
+    var r=await fetch('/api/admin/formulas-mismapeo',{cache:'no-store'});
+    if(r.status===401){ location.href='/login'; return; }
+    var d=await r.json();
+    if(!r.ok||!d.ok){ out.innerHTML='<span class="bad">Error: '+esc((d&&d.error)||r.status)+'</span>'; return; }
+    document.getElementById('resumen').textContent = d.total+' línea(s) con código cruzado';
+    if(!d.cruces.length){ out.innerHTML='<div style="color:#15803d;font-weight:700">✅ Ninguna línea de fórmula con nombre↔código cruzado.</div>'; return; }
+    var h='<table><tr><th>Producto</th><th>Ingrediente (nombre)</th><th>Código actual (es en realidad)</th><th>Código correcto sugerido</th><th>Acción</th></tr>';
+    d.cruces.forEach(function(x,i){
+      h+='<tr id="row-'+i+'">'
+        +'<td>'+esc(x.producto)+'</td>'
+        +'<td>'+esc(x.material_nombre)+'</td>'
+        +'<td><span class="mono bad">'+esc(x.material_id)+'</span><br><span class="muted">= '+esc(x.codigo_es_en_catalogo)+'</span></td>'
+        +'<td><span class="mono">'+esc(x.codigo_sugerido)+'</span><br><span class="muted">'+esc(x.nombre_sugerido||'')+' <span class="tag">score '+(x.score||0)+'</span></span></td>'
+        +'<td><button onclick="corregir('+i+','+x.formula_item_id+',\\''+esc(x.codigo_sugerido)+'\\',\\''+esc(x.material_nombre).replace(/\\x27/g,"")+'\\',\\''+esc(x.codigo_sugerido)+' '+esc(x.nombre_sugerido||'').replace(/\\x27/g,"")+'\\')">✔ Corregir</button></td>'
+        +'</tr>';
+    });
+    h+='</table>';
+    out.innerHTML=h;
+  }catch(e){ out.innerHTML='<span class="bad">Error red: '+esc(e.message)+'</span>'; }
+}
+async function corregir(i, fid, nuevoCod, nombreLinea, sugTxt){
+  if(!confirm('Corregir esta línea:\\n\\n  Ingrediente: '+nombreLinea+'\\n  Código nuevo: '+sugTxt+'\\n\\nSe reemplaza el código en la fórmula (con backup + audit). ¿Continuar?')) return;
+  var row=document.getElementById('row-'+i);
+  try{
+    var r=await fetch('/api/admin/corregir-formulas',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':await _csrf()},credentials:'same-origin',
+      body:JSON.stringify({token:'CORREGIR_FORMULAS_2026', correcciones:[{formula_item_id:fid, nuevo_material_id:nuevoCod, nuevo_material_nombre:nombreLinea}]})});
+    var d=await r.json();
+    if(!r.ok||d.error){ alert('Error: '+(d.error||r.status)); return; }
+    if((d.count_aplicados||0)>=1){ if(row){ row.style.background='#dcfce7'; row.querySelector('td:last-child').innerHTML='<span style="color:#15803d;font-weight:700">✓ corregido</span>'; } }
+    else { alert('No se aplicó: '+JSON.stringify(d.errores||d)); }
+  }catch(e){ alert('Error red: '+e.message); }
+}
+cargar();
+</script>
+</body></html>"""
+
+
+@bp.route("/admin/formulas-mismapeo", methods=["GET"])
+def admin_formulas_mismapeo_page():
+    """Página · líneas de fórmula con nombre↔código cruzado (código de otra MP)."""
+    if 'compras_user' not in session:
+        return redirect("/login?next=/admin/formulas-mismapeo")
+    return _FORMULAS_MISMAPEO_HTML
+
+
 @bp.route("/api/admin/maestro-mps-unificar", methods=["POST"])
 def maestro_mps_unificar():
     """Fusiona 2+ MPs duplicadas en una canónica.
