@@ -15000,6 +15000,207 @@ def admin_lotes_stock_atrapado_page():
     return _LOTES_ATRAPADO_HTML
 
 
+@bp.route("/api/admin/diagnostico-produccion-global", methods=["GET"])
+def admin_diagnostico_produccion_global():
+    """Recorre TODAS las fórmulas y reporta cada ingrediente que producción NO
+    puede tomar (stock disponible = 0), categorizando el POR QUÉ y la acción:
+
+      ATRAPADO       · el MISMO código tiene stock pero en AGOTADO/VENCIDO-no-vencido
+                       (reset 27-abr) → /admin/lotes-stock-atrapado.
+      DUPLICADO_INCI · existe OTRO código activo con el MISMO INCI que SÍ tiene stock
+                       (mismo material, código distinto · ej. boron MPBNIT01 vs MP00428
+                       'Nitruro de boro') → Unificar MPs.
+      MISMATCH_NOMBRE· el nombre de la línea no concuerda con su código (otra MP) →
+                       /admin/verificar-formulas o /admin/formulas-mismapeo.
+      SIN_STOCK_REAL · no hay stock en ningún lado → comprar (OC).
+
+    SIN escritura · solo diagnóstico global. Excluye MPs ilimitadas (agua)."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    try:
+        from blueprints.formula_match import norm as _fnorm
+    except ImportError:
+        from api.blueprints.formula_match import norm as _fnorm
+    from datetime import datetime as _dt
+    hoy = _dt.now().strftime('%Y-%m-%d')
+    _NO_PROD = ('CUARENTENA', 'CUARENTENA_EXTENDIDA', 'RECHAZADO', 'VENCIDO', 'AGOTADO', 'BLOQUEADO')
+
+    conn = db_connect()
+    c = conn.cursor()
+
+    # disponible + retenido(atrapado recuperable) por código, en una pasada de movimientos
+    disp = {}
+    retenido = {}
+    movs = c.execute(
+        "SELECT material_id, tipo, cantidad, UPPER(COALESCE(estado_lote,'')), COALESCE(fecha_vencimiento,'') "
+        "FROM movimientos WHERE material_id IS NOT NULL AND material_id!=''").fetchall()
+    for mid, tipo, cant, est, venc in movs:
+        mid = str(mid).strip()
+        signed = float(cant or 0) if tipo in ('Entrada', 'entrada', 'ENTRADA', 'Ajuste +', 'Ajuste') else (
+            -float(cant or 0) if tipo in ('Salida', 'salida', 'SALIDA', 'Ajuste -') else 0.0)
+        if est not in _NO_PROD:
+            disp[mid] = disp.get(mid, 0.0) + signed
+        else:
+            # recuperable: AGOTADO siempre · VENCIDO solo si no vencido de verdad
+            venc_s = str(venc or '')[:10]
+            es_vencido_real = bool(venc_s) and venc_s < hoy
+            if signed > 0 and (est == 'AGOTADO' or (est == 'VENCIDO' and not es_vencido_real)):
+                retenido[mid] = retenido.get(mid, 0.0) + signed
+
+    # maestro: codigo -> (nombre, inci_norm) · INCI -> [(codigo, disp)]
+    nombres = {}
+    inci_de = {}
+    por_inci = {}
+    _INCI_GENERICO = {'', 'PENDIENTE INCI', 'AQUA', 'WATER'}
+    for r in c.execute("SELECT codigo_mp, COALESCE(nombre_comercial, nombre_inci, codigo_mp), "
+                       "COALESCE(nombre_inci,'') FROM maestro_mps WHERE COALESCE(activo,1)=1").fetchall():
+        cod = str(r[0]).strip()
+        nombres[cod] = r[1]
+        inci_n = _fnorm(r[2])
+        inci_de[cod] = inci_n
+        if inci_n and r[2].strip().upper() not in _INCI_GENERICO and len(inci_n) >= 4:
+            por_inci.setdefault(inci_n, []).append(cod)
+
+    # formula_items
+    items = c.execute(
+        "SELECT producto_nombre, material_id, COALESCE(material_nombre,'') "
+        "FROM formula_items WHERE material_id IS NOT NULL AND TRIM(material_id)!=''").fetchall()
+    conn.close()
+
+    def _es_agua(nom):
+        n = _fnorm(nom)
+        return any(t in n for t in ('AGUA', 'WATER', 'AQUA'))
+
+    by_prod = {}
+    cat_count = {'ATRAPADO': 0, 'DUPLICADO_INCI': 0, 'MISMATCH_NOMBRE': 0, 'SIN_STOCK_REAL': 0}
+    for prod, mid, nom in items:
+        mid = str(mid).strip()
+        if _es_agua(nom):
+            continue
+        d = disp.get(mid, 0.0)
+        if d > 0.01:
+            continue  # producción lo puede tomar
+        # categorizar
+        cat = None
+        detalle = {}
+        if retenido.get(mid, 0) > 0.01:
+            cat = 'ATRAPADO'
+            detalle = {'recuperable_g': round(retenido[mid], 2)}
+        else:
+            # ¿hermano por INCI con stock?
+            inci_n = inci_de.get(mid, '')
+            hermano = None
+            if inci_n:
+                for c2 in por_inci.get(inci_n, []):
+                    if c2 != mid and disp.get(c2, 0) > 0.01:
+                        if hermano is None or disp[c2] > hermano[1]:
+                            hermano = (c2, disp[c2])
+            if hermano:
+                cat = 'DUPLICADO_INCI'
+                detalle = {'codigo_con_stock': hermano[0], 'nombre': nombres.get(hermano[0], hermano[0]),
+                           'stock_g': round(hermano[1], 2), 'inci': inci_n}
+            else:
+                # ¿el nombre de la línea concuerda con el INCI de su código? si no, mismatch
+                nom_n = _fnorm(nom)
+                inci_self = inci_de.get(mid, '')
+                comparte = bool(set(nom_n.split()) & set(inci_self.split())) if (nom_n and inci_self) else True
+                cat = 'MISMATCH_NOMBRE' if (inci_self and not comparte) else 'SIN_STOCK_REAL'
+        cat_count[cat] = cat_count.get(cat, 0) + 1
+        by_prod.setdefault(prod, []).append({
+            'material_id': mid, 'nombre_linea': nom,
+            'nombre_catalogo': nombres.get(mid, mid),
+            'disponible_g': round(max(d, 0), 2),
+            'categoria': cat, 'detalle': detalle,
+        })
+
+    productos = sorted(([{'producto': k, 'bloqueos': v} for k, v in by_prod.items()]),
+                       key=lambda x: -len(x['bloqueos']))
+    return jsonify({
+        'ok': True,
+        'productos_bloqueados': len(productos),
+        'total_ingredientes_bloqueados': sum(len(p['bloqueos']) for p in productos),
+        'por_categoria': cat_count,
+        'productos': productos,
+    })
+
+
+_DIAG_PROD_HTML = """<!DOCTYPE html>
+<html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Diagnóstico global de producción · EOS</title>
+<style>
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;color:#1e293b;margin:0;padding:20px}
+.wrap{max-width:1150px;margin:0 auto}
+.card{background:#fff;border-radius:12px;padding:18px;margin-bottom:16px;box-shadow:0 2px 6px rgba(0,0,0,.05)}
+h1{margin:0 0 6px;color:#7c3aed;font-size:21px}h3{margin:14px 0 4px;font-size:14px}
+table{width:100%;border-collapse:collapse;font-size:12px;margin-top:4px}
+th{text-align:left;padding:6px;background:#f1f5f9;color:#475569;font-weight:700}
+td{padding:6px;border-bottom:1px solid #f1f5f9;vertical-align:top}
+.mono{font-family:ui-monospace,monospace;font-weight:700;color:#1e40af}.muted{color:#64748b;font-size:11px}.bad{color:#b91c1c;font-weight:700}
+.pill{padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700}
+.atra{background:#fff7ed;color:#9a3412}.dup{background:#fef3c7;color:#92400e}.mis{background:#fee2e2;color:#991b1b}.sin{background:#e0e7ff;color:#3730a3}
+button{background:#7c3aed;color:#fff;border:none;padding:8px 16px;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer}
+.summary{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px}
+.box{padding:8px 12px;border-radius:8px;font-size:12px;font-weight:700}
+</style></head><body>
+<div class="wrap">
+<a href="/modulos">&larr; Volver</a>
+<div class="card">
+  <h1>&#128300; Diagnóstico global · stock invisible para producción</h1>
+  <div class="muted">Recorre TODAS las fórmulas y muestra cada ingrediente que producción no puede tomar (stock 0), con la CAUSA y la acción. Solo lectura.</div>
+  <div style="margin-top:10px"><button onclick="cargar()">🔍 Analizar todo</button></div>
+  <div id="summary" class="summary"></div>
+</div>
+<div id="out" class="card">Apretá Analizar.</div>
+</div>
+<script>
+function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[c];});}
+function pill(c){var m={ATRAPADO:['atra','lote AGOTADO → liberar'],DUPLICADO_INCI:['dup','duplicado INCI → unificar'],MISMATCH_NOMBRE:['mis','nombre≠código → verificar'],SIN_STOCK_REAL:['sin','sin stock → comprar']};var x=m[c]||['sin',c];return '<span class="pill '+x[0]+'">'+x[1]+'</span>';}
+async function cargar(){
+  var out=document.getElementById('out'); out.innerHTML='Analizando todas las fórmulas…';
+  try{
+    var r=await fetch('/api/admin/diagnostico-produccion-global',{cache:'no-store'});
+    if(r.status===401){location.href='/login';return;}
+    var d=await r.json();
+    if(!r.ok||!d.ok){ out.innerHTML='<span class="bad">Error: '+esc((d&&d.error)||r.status)+'</span>'; return; }
+    var pc=d.por_categoria||{};
+    document.getElementById('summary').innerHTML=
+      '<div class="box" style="background:#ede9fe;color:#5b21b6">'+d.productos_bloqueados+' productos · '+d.total_ingredientes_bloqueados+' ingredientes bloqueados</div>'+
+      '<div class="box atra">ATRAPADO: '+(pc.ATRAPADO||0)+'</div>'+
+      '<div class="box dup">DUPLICADO INCI: '+(pc.DUPLICADO_INCI||0)+'</div>'+
+      '<div class="box mis">MISMATCH: '+(pc.MISMATCH_NOMBRE||0)+'</div>'+
+      '<div class="box sin">SIN STOCK: '+(pc.SIN_STOCK_REAL||0)+'</div>';
+    if(!d.productos.length){ out.innerHTML='<div style="color:#15803d;font-weight:700">✅ Ningún ingrediente bloqueado · producción ve todo el stock.</div>'; return; }
+    var h='<div class="muted" style="margin-bottom:8px">Acciones: <b>ATRAPADO</b>→/admin/lotes-stock-atrapado · <b>DUPLICADO INCI</b>→Unificar MPs (canónico = el código de la fórmula) · <b>MISMATCH</b>→/admin/verificar-formulas · <b>SIN STOCK</b>→comprar.</div>';
+    d.productos.forEach(function(p){
+      h+='<h3>'+esc(p.producto)+' <span class="muted">('+p.bloqueos.length+')</span></h3>';
+      h+='<table><tr><th>Ingrediente</th><th>Código</th><th>Causa</th><th>Detalle / acción</th></tr>';
+      p.bloqueos.forEach(function(b){
+        var det='';
+        if(b.categoria==='ATRAPADO') det='Recuperable: <b>'+(b.detalle.recuperable_g||0).toLocaleString()+' g</b> en AGOTADO/VENCIDO';
+        else if(b.categoria==='DUPLICADO_INCI') det='Stock en <span class="mono">'+esc(b.detalle.codigo_con_stock)+'</span> ('+esc(b.detalle.nombre)+') · <b>'+(b.detalle.stock_g||0).toLocaleString()+' g</b> · mismo INCI → unificar a '+esc(b.material_id);
+        else if(b.categoria==='SIN_STOCK_REAL') det='Sin stock en ningún código · comprar';
+        else det='El nombre no concuerda con el código · revisar verificar-formulas';
+        h+='<tr><td>'+esc(b.nombre_linea)+'</td><td class="mono bad">'+esc(b.material_id)+'</td><td>'+pill(b.categoria)+'</td><td>'+det+'</td></tr>';
+      });
+      h+='</table>';
+    });
+    out.innerHTML=h;
+  }catch(e){ out.innerHTML='<span class="bad">Error red: '+esc(e.message)+'</span>'; }
+}
+cargar();
+</script>
+</body></html>"""
+
+
+@bp.route("/admin/diagnostico-produccion", methods=["GET"])
+def admin_diagnostico_produccion_page():
+    """Página · diagnóstico global de stock invisible para producción."""
+    if 'compras_user' not in session:
+        return redirect("/login?next=/admin/diagnostico-produccion")
+    return _DIAG_PROD_HTML
+
+
 @bp.route("/api/admin/maestro-mps-unificar", methods=["POST"])
 def maestro_mps_unificar():
     """Fusiona 2+ MPs duplicadas en una canónica.
