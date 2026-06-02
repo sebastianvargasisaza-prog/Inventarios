@@ -9972,7 +9972,7 @@ def abastecimiento_consumo_horizontes():
                    COALESCE(SUM(sci.cantidad_g),0)
             FROM solicitudes_compra_items sci
             JOIN solicitudes_compra sc ON sc.numero = sci.numero
-            WHERE sc.estado IN ('Pendiente','Aprobada')
+            WHERE sc.estado IN ('Pendiente','En revision','Aprobada')
               AND COALESCE(sc.numero_oc,'')=''
               AND sci.codigo_mp IS NOT NULL AND TRIM(sci.codigo_mp) != ''
               AND COALESCE(sc.categoria,'') NOT IN ('Empaque','Material de Empaque')
@@ -10006,7 +10006,7 @@ def abastecimiento_consumo_horizontes():
                    COALESCE(sci.cantidad_g, 0), COALESCE(sc.categoria,'')
             FROM solicitudes_compra_items sci
             JOIN solicitudes_compra sc ON sc.numero = sci.numero
-            WHERE sc.estado IN ('Pendiente','Aprobada')
+            WHERE sc.estado IN ('Pendiente','En revision','Aprobada')
               AND COALESCE(sc.numero_oc,'')=''
               AND sci.codigo_mp IS NOT NULL AND TRIM(sci.codigo_mp) != ''
         """).fetchall():
@@ -10048,7 +10048,7 @@ def abastecimiento_consumo_horizontes():
                        COALESCE(SUM(sci.cantidad_g),0)
                 FROM solicitudes_compra_items sci
                 JOIN solicitudes_compra sc ON sc.numero = sci.numero
-                WHERE sc.estado IN ('Pendiente','Aprobada')
+                WHERE sc.estado IN ('Pendiente','En revision','Aprobada')
                   AND COALESCE(sc.numero_oc,'')=''
                   AND sci.codigo_mp IS NOT NULL AND TRIM(sci.codigo_mp) != ''
                   AND COALESCE(sc.categoria,'') IN ('Empaque','Material de Empaque')
@@ -10456,6 +10456,26 @@ def abastecimiento_consumo_horizontes():
                     return ('VIGILAR', h)
                 return ('PLANIFICAR', h)
         return ('OK', None)
+
+    # FIX 2-jun-2026 audit abastecimiento (P0 · M1) · COLAPSAR la demanda al código
+    # de BODEGA resuelto. Antes consumo_mp se llaveaba por el material_id CRUDO de
+    # fórmula → la demanda de un mismo material quedaba PARTIDA entre 2-4 códigos (el
+    # bridge solo se aplicaba al stock, no a la demanda) → déficit subestimado +
+    # pendiente de compra no acreditado (pendientes_mp está por código de bodega) +
+    # proveedor vacío + números distintos a auditar-minimos. Resolvemos cada código
+    # (id-con-mov → bridge → nombre/alias) y sumamos los horizontes.
+    try:
+        _consumo_col = {}
+        for _cod, _cons in consumo_mp.items():
+            _nom = (mp_info.get(_cod, {}) or {}).get('nombre', '') or ''
+            _bod = _resolver_material_bodega(c, _cod, _nom) or _cod
+            _acc = _consumo_col.setdefault(_bod, {h: 0.0 for h in horizontes})
+            for h in horizontes:
+                _acc[h] = _acc.get(h, 0.0) + float(_cons.get(h, 0) or 0)
+        if _consumo_col:
+            consumo_mp = _consumo_col
+    except Exception:
+        log.warning('colapso consumo_mp por bodega falló · uso crudo', exc_info=True)
 
     items_out_mp = []
     if incluir_mp:
@@ -12982,7 +13002,7 @@ def checklist_item_solicitar(item_id):
                     """SELECT sc.numero FROM solicitudes_compra sc
                        JOIN solicitudes_compra_items sci ON sci.numero=sc.numero
                        WHERE sci.codigo_mp=?
-                         AND sc.estado IN ('Pendiente','Aprobada')
+                         AND sc.estado IN ('Pendiente','En revision','Aprobada')
                        ORDER BY sc.fecha DESC LIMIT 1""",
                     (codigo_mp_req,),
                 ).fetchone()

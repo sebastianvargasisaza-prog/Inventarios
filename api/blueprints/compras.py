@@ -5177,10 +5177,14 @@ def get_solicitud_estado(numero):
         stock_total = 0
         try:
             if cod:
+                # FIX 2-jun audit abastecimiento · excluir estados no-producibles
+                # (AGOTADO del reset/CUARENTENA/etc) · antes mostraba stock fantasma
+                # en el modal que dispara la compra → comprador sub-compraba.
                 r = c.execute("""SELECT
                     COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END), 0),
                     COUNT(*)
-                    FROM movimientos WHERE material_id=?""", (cod,)).fetchone()
+                    FROM movimientos WHERE material_id=?
+                      AND (estado_lote IS NULL OR UPPER(COALESCE(estado_lote,'')) NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','VENCIDO','RECHAZADO','AGOTADO','BLOQUEADO'))""", (cod,)).fetchone()
                 if r and r[1] > 0:  # hubo movimientos con ese código
                     stock_total = float(r[0] or 0)
                 elif nombre:
@@ -5188,14 +5192,16 @@ def get_solicitud_estado(numero):
                     r2 = c.execute("""SELECT
                         COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END), 0)
                         FROM movimientos
-                        WHERE UPPER(TRIM(material_nombre)) = UPPER(TRIM(?))""",
+                        WHERE UPPER(TRIM(material_nombre)) = UPPER(TRIM(?))
+                          AND (estado_lote IS NULL OR UPPER(COALESCE(estado_lote,'')) NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','VENCIDO','RECHAZADO','AGOTADO','BLOQUEADO'))""",
                         (nombre,)).fetchone()
                     stock_total = float(r2[0] or 0) if r2 else 0
             elif nombre:
                 r = c.execute("""SELECT
                     COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END), 0)
                     FROM movimientos
-                    WHERE UPPER(TRIM(material_nombre)) = UPPER(TRIM(?))""",
+                    WHERE UPPER(TRIM(material_nombre)) = UPPER(TRIM(?))
+                      AND (estado_lote IS NULL OR UPPER(COALESCE(estado_lote,'')) NOT IN ('CUARENTENA','CUARENTENA_EXTENDIDA','VENCIDO','RECHAZADO','AGOTADO','BLOQUEADO'))""",
                     (nombre,)).fetchone()
                 stock_total = float(r[0] or 0) if r else 0
             it['stock_actual_g'] = max(0, stock_total)  # nunca negativo en display
