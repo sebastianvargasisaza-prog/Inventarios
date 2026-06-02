@@ -3918,16 +3918,21 @@ def crear_oc_desde_solicitudes():
             cod_mp = it.get('codigo_mp', '')
             if cod_mp and pu > 0:
                 try:
+                    # FIX 1-jun-2026 audit Abastecimiento (P1) · el INSERT usaba columnas
+                    # inexistentes (nombre_mp/precio_unitario/cantidad_g) y omitía precio_kg
+                    # (NOT NULL) → fallaba SIEMPRE en silencio → el histórico de precios NUNCA
+                    # se grababa desde el flujo canónico de OC. Columnas reales + precio_kg
+                    # = pu($/g) × 1000.
                     c.execute(
                         """INSERT OR IGNORE INTO precios_mp_historico
-                           (codigo_mp, nombre_mp, precio_unitario, proveedor,
-                            fecha, numero_oc, cantidad_g)
-                           VALUES (?,?,?,?,?,?,?)""",
-                        (cod_mp, it.get('nombre_mp', ''), pu, proveedor,
-                         datetime.now().isoformat()[:10], numero_oc, cant_g),
+                           (codigo_mp, proveedor, precio_kg, fecha, numero_oc, origen)
+                           VALUES (?,?,?,?,?,'oc')""",
+                        (cod_mp, proveedor, pu * 1000.0,
+                         datetime.now().isoformat()[:10], numero_oc),
                     )
-                except Exception:
-                    pass
+                except Exception as _eph:
+                    __import__('logging').getLogger('compras').warning(
+                        'precios_mp_historico insert falló (oc %s, mp %s): %s', numero_oc, cod_mp, _eph)
                 try:
                     c.execute(
                         """UPDATE maestro_mps
