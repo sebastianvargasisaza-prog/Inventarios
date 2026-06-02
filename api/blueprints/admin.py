@@ -13752,7 +13752,7 @@ def admin_mps_duplicados_stock():
         from blueprints.programacion import _norm_mp_name as _nm, _ESTADOS_LOTE_NO_PRODUCIBLES as _EST
     except ImportError:
         from api.blueprints.programacion import _norm_mp_name as _nm, _ESTADOS_LOTE_NO_PRODUCIBLES as _EST
-    conn = _get_db(); c = conn.cursor()
+    conn = db_connect(); c = conn.cursor()
     _ph = ','.join(['?'] * len(_EST))
     stock_por_cod = {}
     try:
@@ -13811,6 +13811,10 @@ def admin_mps_duplicados_stock():
                 'candidato_stock_g': round(best[2], 1),
             })
     dups.sort(key=lambda x: -x['candidato_stock_g'])
+    try:
+        conn.close()
+    except Exception:
+        pass
     return jsonify({'ok': True, 'duplicados': dups, 'total': len(dups)})
 
 
