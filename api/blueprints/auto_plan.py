@@ -798,11 +798,21 @@ def generar_plan(horizonte_dias=60, tipo='auto', usuario='cron'):
         _pend_cola = _pendiente_en_compras_bulk(c)
     except Exception:
         _pend_cola = {}
+    try:
+        from blueprints.programacion import _resolver_material_bodega as _resolv_mp
+    except Exception:
+        try:
+            from api.blueprints.programacion import _resolver_material_bodega as _resolv_mp
+        except Exception:
+            _resolv_mp = None
     for mat_id, req_g in consumo_acumulado.items():
         # Stock disponible · audit zero-error 2-may-2026: usar helper canónico.
         # Antes usaba 'Ingreso'/'Consumo' (no existen) y devolvía 0/negativo
         # siempre · IA proponía compras erróneas (toda MP aparecía en déficit).
-        stock_g = stock_mp_disponible(c, mat_id)
+        # FIX 1-jun-2026 · resolver id fórmula→bodega (bridge) antes del lookup ·
+        # IA-compras daba déficit falso por el desajuste de id (caso glucosamina).
+        _mid_b = _resolv_mp(c, mat_id, '') if _resolv_mp else mat_id
+        stock_g = stock_mp_disponible(c, _mid_b)
         # Lead time + buffer · Sebastian 4-may-2026 (Catalina): ANTES leía SOLO
         # mp_lead_time_config.proveedor_principal y si estaba vacio aparecia "sin
         # proveedor" en compras aunque maestro_mps.proveedor sí tuviera valor.

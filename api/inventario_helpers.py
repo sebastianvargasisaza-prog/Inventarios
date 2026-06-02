@@ -32,7 +32,11 @@ Usar:
 """
 
 # Estados de lote que NO se consideran disponibles para producción
-ESTADOS_LOTE_NO_DISPONIBLES = ('CUARENTENA', 'VENCIDO', 'RECHAZADO', 'AGOTADO')
+# FIX 1-jun-2026 audit · faltaban CUARENTENA_EXTENDIDA y BLOQUEADO (el resto del código
+# y _ESTADOS_LOTE_NO_PRODUCIBLES sí los excluyen) → este helper contaba como disponible
+# un lote en cuarentena extendida/bloqueado (over-count en gate/semáforo/IA-compras).
+ESTADOS_LOTE_NO_DISPONIBLES = ('CUARENTENA', 'CUARENTENA_EXTENDIDA', 'VENCIDO',
+                               'RECHAZADO', 'AGOTADO', 'BLOQUEADO')
 
 
 def stock_mp_total(conn, codigo_mp):

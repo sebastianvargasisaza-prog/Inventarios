@@ -533,6 +533,31 @@ def _norm_mp_name(name):
     return s
 
 
+def _lookup_stock_5tier(stock_mp, mid, nombre):
+    """Lookup canónico de stock en el dict de _get_mp_stock con los 5 tiers
+    (id → id.upper → nombre exacto → nombre normalizado → alias). Helper reusable ·
+    Sebastián 1-jun-2026: varios lookups usaban menos tiers → 'Hay 0g' con stock /
+    déficit falso (sobre-compra). Devuelve gramos (0 si no se encuentra)."""
+    s = stock_mp.get(mid)
+    if s is not None:
+        return float(s)
+    s = stock_mp.get((mid or '').upper())
+    if s is not None:
+        return float(s)
+    _ne = (nombre or '').upper()
+    s = stock_mp.get(_ne)
+    if s is not None:
+        return float(s)
+    _nn = _norm_mp_name(nombre or '')
+    s = stock_mp.get(_nn)
+    if s is not None:
+        return float(s)
+    _al = _MP_NAME_ALIAS.get(_nn) or _MP_NAME_ALIAS.get(_ne)
+    if _al and stock_mp.get(_al) is not None:
+        return float(stock_mp.get(_al))
+    return 0.0
+
+
 # Static alias map: normalised formula name -> normalised movimientos name
 # Handles brand-name differences, typos, Spanish/English variants, presentation suffixes
 _MP_NAME_ALIAS = {
@@ -3997,7 +4022,9 @@ def planta_listo_producir(producto):
         # Disponible en bodega · excluye CUARENTENA/VENCIDO/RECHAZADO
         # Audit zero-error 2-may-2026: SQL anterior usaba 'Ingreso'/'Consumo'
         # (no existen) y devolvía valores negativos siempre · semáforo roto.
-        disp_g = stock_mp_disponible(c, mat_id)
+        # FIX 1-jun-2026 · resolver id de fórmula → id de bodega (caso glucosamina)
+        # antes del lookup · el semáforo daba 'falta' con stock real.
+        disp_g = stock_mp_disponible(c, _resolver_material_bodega(c, mat_id, mat_nom))
 
         # Status
         if disp_g >= req_g:
@@ -9190,13 +9217,10 @@ def producciones_faltantes():
     faltantes_mps = []
     for cod, g_total in consumo_mp_agregado.items():
         info = mp_info.get(cod, {'nombre': cod, 'proveedor': ''})
-        s_actual = float(stock_mp.get(cod, 0))
-        if cod not in stock_mp:
-            # Fallback por nombre canónico · solo si el código NO está en el
-            # mapa (stock 0 es un valor legítimo · no dispara el fallback).
-            nom_up = (info.get('nombre') or '').upper()
-            if nom_up in stock_mp:
-                s_actual = float(stock_mp[nom_up])
+        # FIX 1-jun-2026 audit · lookup canónico 5-tier (antes solo id + nombre exacto
+        # → MP con variante de nombre no bridgeada daba stock 0 → faltante FALSO →
+        # sobre-compra · esto alimenta solicitar-faltantes-bulk que crea SOLs reales).
+        s_actual = _lookup_stock_5tier(stock_mp, cod, info.get('nombre') or '')
         ya_pedido = pedido_por_codigo.get((cod or '').strip().upper(), 0.0)
         faltante = max(0.0, g_total - s_actual - ya_pedido)
         if faltante > 0:
@@ -10410,7 +10434,9 @@ def abastecimiento_consumo_horizontes():
         for cod, consumo in consumo_mp.items():
             info = mp_info.get(cod, {'nombre': cod, 'proveedor': '',
                                      'lead_time_dias': 14, 'buffer_dias': 30})
-            stock_g = float(stock_mp.get(cod, 0) or 0)
+            # FIX 1-jun-2026 audit · lookup canónico 5-tier (antes solo id → MP con
+            # variante de nombre no bridgeada daba stock 0 → déficit falso).
+            stock_g = _lookup_stock_5tier(stock_mp, cod, info.get('nombre') or '')
             pend_g = float(pendientes_mp.get(cod.upper(), 0) or 0)
             disponible = stock_g + pend_g
             deficits = {h: round(max(consumo[h] - disponible, 0), 1) for h in horizontes}
@@ -16327,7 +16353,10 @@ def _gate_mp_disponibles(produccion, conn):
     for mat_id, mat_nom, pct, cant_lote_g in items:
         req_g = (cant_lote_g or 0) * lotes if cant_lote_g else (pct or 0) / 100.0 * (fh[0] or 0) * 1000 * lotes
         # Audit zero-error 2-may-2026: usar helper canónico · excluye cuarentena
-        disp_g_total = stock_mp_disponible(conn, mat_id)
+        # FIX 1-jun-2026 · resolver id fórmula→bodega antes del lookup (caso glucosamina)
+        # · el gate bloqueaba producción que el descuento real sí podía ejecutar.
+        _mid_bod = _resolver_material_bodega(conn, mat_id, mat_nom)
+        disp_g_total = stock_mp_disponible(conn, _mid_bod)
         reservado_g = reservas_dia.get((mat_id or '').upper().strip(), 0.0)
         disp_g = disp_g_total - reservado_g
         if reservado_g > 0 and disp_g_total >= req_g and disp_g < req_g:
