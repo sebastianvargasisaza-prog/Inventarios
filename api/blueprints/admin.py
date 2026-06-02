@@ -13925,25 +13925,64 @@ def admin_formulas_mismapeo():
             conn.close()
         except Exception:
             pass
+    # 1) Por línea: el nombre no concuerda con la identidad real del código.
+    #    Mostramos TODO mismatch (con o sin candidato fuerte) para no esconder
+    #    cruces que no tengan un código alternativo limpio en el catálogo.
     cruces = []
     for r in items:
         ev = evaluar_item(r[3], r[2], idx)
+        if ev.get('problema') != 'mismatch_nombre':
+            continue
         mej = ev.get('mejor_candidato') or {}
-        if (ev.get('problema') == 'mismatch_nombre'
-                and mej.get('codigo') and mej['codigo'] != r[2]
-                and (mej.get('score') or 0) >= 80):
-            cruces.append({
-                'formula_item_id': r[0],
-                'producto': r[1],
-                'material_id': r[2],
-                'material_nombre': r[3],
-                'codigo_es_en_catalogo': ev.get('maestro_nombre') or '?',
-                'codigo_sugerido': mej.get('codigo'),
-                'nombre_sugerido': mej.get('nombre_comercial') or mej.get('nombre_inci'),
-                'score': mej.get('score'),
-            })
+        sug = mej.get('codigo') if (mej.get('codigo') and mej['codigo'] != r[2]) else None
+        cruces.append({
+            'formula_item_id': r[0],
+            'producto': r[1],
+            'material_id': r[2],
+            'material_nombre': r[3],
+            'codigo_es_en_catalogo': ev.get('maestro_nombre') or '?',
+            'codigo_sugerido': sug,
+            'nombre_sugerido': (mej.get('nombre_comercial') or mej.get('nombre_inci')) if sug else None,
+            'score': mej.get('score') if sug else 0,
+            'auto': bool(sug and (mej.get('score') or 0) >= 80),
+        })
     cruces.sort(key=lambda x: (-(x['score'] or 0), x['producto']))
-    return jsonify({'ok': True, 'cruces': cruces, 'total': len(cruces)})
+
+    # 2) Colisiones: un mismo código usado por líneas con nombres de materiales
+    #    DISTINTOS (identidad disjunta · ej. MP00175 = 'Acetyl tetrapeptide-5' Y
+    #    'N-acetil glucosamina'). Señal robusta aunque el catálogo no tenga el
+    #    código correcto alternativo. Independiente del scoring per-línea.
+    try:
+        from blueprints.formula_match import norm as _fnorm, _hay_identidad_disjunta as _disj, palabras_clave as _pclave
+    except ImportError:
+        from api.blueprints.formula_match import norm as _fnorm, _hay_identidad_disjunta as _disj, palabras_clave as _pclave
+    _por_cod = {}
+    for r in items:
+        _por_cod.setdefault(r[2], {})  # code -> {norm_name: (item_id, producto, nombre)}
+        _por_cod[r[2]].setdefault(_fnorm(r[3]), (r[0], r[1], r[3]))
+    colisiones = []
+    for code, nm_map in _por_cod.items():
+        if len(nm_map) < 2:
+            continue
+        nombres = list(nm_map.values())  # [(item_id, producto, nombre), ...]
+        disjunto = False
+        for i in range(len(nombres)):
+            for j in range(i + 1, len(nombres)):
+                if _disj(_pclave(nombres[i][2]), _pclave(nombres[j][2])):
+                    disjunto = True
+                    break
+            if disjunto:
+                break
+        if disjunto:
+            colisiones.append({
+                'material_id': code,
+                'codigo_es_en_catalogo': next((m['nombre_comercial'] or m['nombre_inci']
+                                               for m in idx if m['codigo'] == code), '?'),
+                'lineas': [{'formula_item_id': n[0], 'producto': n[1], 'nombre': n[2]}
+                           for n in nombres],
+            })
+    return jsonify({'ok': True, 'cruces': cruces, 'total': len(cruces),
+                    'colisiones': colisiones, 'total_colisiones': len(colisiones)})
 
 
 _FORMULAS_MISMAPEO_HTML = """<!DOCTYPE html>
@@ -13982,19 +14021,41 @@ async function cargar(){
     if(r.status===401){ location.href='/login'; return; }
     var d=await r.json();
     if(!r.ok||!d.ok){ out.innerHTML='<span class="bad">Error: '+esc((d&&d.error)||r.status)+'</span>'; return; }
-    document.getElementById('resumen').textContent = d.total+' línea(s) con código cruzado';
-    if(!d.cruces.length){ out.innerHTML='<div style="color:#15803d;font-weight:700">✅ Ninguna línea de fórmula con nombre↔código cruzado.</div>'; return; }
-    var h='<table><tr><th>Producto</th><th>Ingrediente (nombre)</th><th>Código actual (es en realidad)</th><th>Código correcto sugerido</th><th>Acción</th></tr>';
-    d.cruces.forEach(function(x,i){
-      h+='<tr id="row-'+i+'">'
-        +'<td>'+esc(x.producto)+'</td>'
-        +'<td>'+esc(x.material_nombre)+'</td>'
-        +'<td><span class="mono bad">'+esc(x.material_id)+'</span><br><span class="muted">= '+esc(x.codigo_es_en_catalogo)+'</span></td>'
-        +'<td><span class="mono">'+esc(x.codigo_sugerido)+'</span><br><span class="muted">'+esc(x.nombre_sugerido||'')+' <span class="tag">score '+(x.score||0)+'</span></span></td>'
-        +'<td><button onclick="corregir('+i+','+x.formula_item_id+',\\''+esc(x.codigo_sugerido)+'\\',\\''+esc(x.material_nombre).replace(/\\x27/g,"")+'\\',\\''+esc(x.codigo_sugerido)+' '+esc(x.nombre_sugerido||'').replace(/\\x27/g,"")+'\\')">✔ Corregir</button></td>'
-        +'</tr>';
-    });
-    h+='</table>';
+    document.getElementById('resumen').textContent = d.total+' línea(s) con nombre≠código · '+(d.total_colisiones||0)+' colisión(es) de código';
+    var h='';
+    // Colisiones: mismo código usado por materiales distintos
+    if((d.colisiones||[]).length){
+      h+='<div style="margin-bottom:8px"><b class="bad">⚠ '+d.colisiones.length+' código(s) usados por materiales DISTINTOS</b> (un solo código para dos ingredientes → stock cruzado):</div>';
+      h+='<table><tr><th>Código</th><th>En catálogo es</th><th>Líneas de fórmula que lo usan (materiales distintos)</th></tr>';
+      d.colisiones.forEach(function(co){
+        var ls=(co.lineas||[]).map(function(l){ return '<li>'+esc(l.nombre)+' <span class="muted">('+esc(l.producto)+')</span></li>'; }).join('');
+        h+='<tr><td><span class="mono bad">'+esc(co.material_id)+'</span></td><td>'+esc(co.codigo_es_en_catalogo)+'</td><td><ul style="margin:0;padding-left:16px">'+ls+'</ul><div class="muted">La línea que NO sea \"'+esc(co.codigo_es_en_catalogo)+'\" está mal · corregila abajo o en Bodega MP.</div></td></tr>';
+      });
+      h+='</table><div style="height:14px"></div>';
+    }
+    if(!d.cruces.length && !(d.colisiones||[]).length){ out.innerHTML='<div style="color:#15803d;font-weight:700">✅ Ninguna fórmula con nombre↔código cruzado ni colisiones.</div>'; return; }
+    if(d.cruces.length){
+      h+='<div style="margin-bottom:6px"><b>Líneas donde el nombre no concuerda con su código:</b></div>';
+      h+='<table><tr><th>Producto</th><th>Ingrediente (nombre)</th><th>Código actual (es en realidad)</th><th>Código correcto</th><th>Acción</th></tr>';
+      d.cruces.forEach(function(x,i){
+        var sugCell, accion;
+        if(x.codigo_sugerido){
+          sugCell='<span class="mono">'+esc(x.codigo_sugerido)+'</span><br><span class="muted">'+esc(x.nombre_sugerido||'')+' <span class="tag">score '+(x.score||0)+'</span></span>';
+          accion='<button onclick="corregir('+i+','+x.formula_item_id+',\\''+esc(x.codigo_sugerido)+'\\',\\''+esc(x.material_nombre).replace(/\\x27/g,"")+'\\',\\''+esc(x.codigo_sugerido)+' '+esc(x.nombre_sugerido||'').replace(/\\x27/g,"")+'\\')">✔ Corregir</button>';
+        } else {
+          sugCell='<span class="muted">sin candidato claro en catálogo</span>';
+          accion='<span class="muted">revisá el código en Bodega MP / creá la MP correcta</span>';
+        }
+        h+='<tr id="row-'+i+'">'
+          +'<td>'+esc(x.producto)+'</td>'
+          +'<td>'+esc(x.material_nombre)+'</td>'
+          +'<td><span class="mono bad">'+esc(x.material_id)+'</span><br><span class="muted">= '+esc(x.codigo_es_en_catalogo)+'</span></td>'
+          +'<td>'+sugCell+'</td>'
+          +'<td>'+accion+'</td>'
+          +'</tr>';
+      });
+      h+='</table>';
+    }
     out.innerHTML=h;
   }catch(e){ out.innerHTML='<span class="bad">Error red: '+esc(e.message)+'</span>'; }
 }
