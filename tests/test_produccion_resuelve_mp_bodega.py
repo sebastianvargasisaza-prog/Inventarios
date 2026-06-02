@@ -85,6 +85,27 @@ def test_faltante_muestra_pista_duplicado(app, db_clean):
         assert faltantes[0]['pista']['stock_g'] >= 600, faltantes
 
 
+def test_formula_dup_no_doble_descuento(app, db_clean):
+    """audit MP/fórmulas P0-1: dos formula_items del mismo material NO deben descontar
+    doble · _calcular_mp_consumo_produccion dedup por código de bodega (suma gramos, 1 MP)."""
+    with app.app_context():
+        from database import get_db
+        from blueprints.programacion import _calcular_mp_consumo_produccion
+        conn = get_db()
+        conn.execute("DELETE FROM movimientos WHERE material_id='BODDUP1'")
+        conn.execute("INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, fecha, lote, estado_lote) "
+                     "VALUES ('BODDUP1','MP DUP',9999,'Entrada','2026-06-01','LDUP','VIGENTE')")
+        pid = _seed_prod(conn, "ZZDUP TEST", "BODDUP1", "MP DUP", g_por_lote=100)
+        # segundo item DUPLICADO del mismo material (formula_items sin UNIQUE)
+        conn.execute("INSERT INTO formula_items (producto_nombre, material_id, material_nombre, porcentaje, cantidad_g_por_lote) "
+                     "VALUES ('ZZDUP TEST','BODDUP1','MP DUP',0,100)")
+        conn.commit()
+        mps, _ = _calcular_mp_consumo_produccion(conn.cursor(), pid)
+        rows_dup = [m for m in mps if m['codigo_mp'] == 'BODDUP1']
+        assert len(rows_dup) == 1, mps                 # UNA sola entrada (no 2)
+        assert rows_dup[0]['cantidad_g'] == 200.0, rows_dup  # 100+100 sumados, no descontados 2× por separado
+
+
 def test_mp_que_ya_funciona_no_cambia(app, db_clean):
     """SEGURIDAD: si el id de fórmula YA tiene movimientos, el resolver lo deja igual."""
     with app.app_context():

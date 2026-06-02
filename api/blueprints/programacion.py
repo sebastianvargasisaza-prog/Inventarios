@@ -577,7 +577,8 @@ _MP_NAME_ALIAS = {
     'EZ-4U':                   'PEMULEN EZ 4U',
     'GRANSIL V 419':           'GRANSIL VX 419',   # Gransil variants
     'GRANSIL VX419':           'GRANSIL VX 419',
-    'GRANSIL VX-419':          'PEMULEN EZ 4U',   # placeholder, update when confirmed
+    'GRANSIL VX-419':          'GRANSIL VX 419',   # FIX 1-jun-2026 · era placeholder
+    # 'PEMULEN EZ 4U' (falso match · descontaba MP equivocada vía tier-3 nombre)
     # Regaliz / licorice
     'REGALIZ':                 'EXTRACTO DE REGALIZ',
     'EXTRACTO REGALIZ':        'EXTRACTO DE REGALIZ',
@@ -6566,7 +6567,6 @@ def _calcular_mp_consumo_produccion(c, evento_id):
     lotes = int(lotes or 1)
     cant_kg_total = float(cant_kg_exp or 0) or (lotes * float(lote_kg or 0))
 
-    mps = []
     rows = c.execute("""
         SELECT material_id, material_nombre,
                COALESCE(porcentaje, 0)                as pct,
@@ -6574,21 +6574,29 @@ def _calcular_mp_consumo_produccion(c, evento_id):
         FROM formula_items
         WHERE UPPER(TRIM(producto_nombre)) = UPPER(TRIM(?))
     """, (producto,)).fetchall()
+    # FIX 1-jun-2026 audit MP/fórmulas (P0-1) · DEDUP por código de bodega resuelto:
+    # formula_items no tiene UNIQUE → dos filas del mismo material (o dos ids de
+    # fórmula que mapean a la misma bodega) descontaban el DOBLE. Acumulamos por el
+    # código de bodega resuelto y SUMAMOS los gramos · una sola Salida por MP.
+    _acc = {}   # cod_bodega → {nombre, codigo_mp_formula, cantidad_g}
     for cod, nom, pct, g_lote in rows:
         g_total = float(g_lote or 0) * lotes
         if g_total <= 0 and cant_kg_total > 0:
             g_total = (float(pct or 0) / 100.0) * cant_kg_total * 1000.0
-        if g_total > 0:
-            # FIX 1-jun-2026 · resolver el id de fórmula → id de bodega (movimientos)
-            # para que la validación de stock + FEFO encuentren el inventario real
-            # (caso 'N-acetil glucosamina · Hay 0g' con 600g en bodega).
-            cod_bodega = _resolver_material_bodega(c, cod or '', nom or '')
-            mps.append({
-                'codigo_mp': cod_bodega or (cod or ''),
-                'codigo_mp_formula': cod or '',
-                'nombre': nom or '',
-                'cantidad_g': round(g_total, 2),
-            })
+        if g_total <= 0:
+            continue
+        # resolver el id de fórmula → id de bodega (movimientos) · caso glucosamina
+        cod_bodega = _resolver_material_bodega(c, cod or '', nom or '') or (cod or '')
+        if not cod_bodega:
+            continue
+        a = _acc.setdefault(cod_bodega, {
+            'codigo_mp': cod_bodega, 'codigo_mp_formula': cod or '',
+            'nombre': nom or '', 'cantidad_g': 0.0,
+        })
+        a['cantidad_g'] += g_total
+    mps = [{'codigo_mp': k, 'codigo_mp_formula': v['codigo_mp_formula'],
+            'nombre': v['nombre'], 'cantidad_g': round(v['cantidad_g'], 2)}
+           for k, v in _acc.items()]
     return mps, {
         'producto': producto, 'fecha': fecha, 'lotes': lotes,
         'cantidad_kg_total': cant_kg_total, 'pid': pid,
@@ -7188,26 +7196,15 @@ def prog_completar_evento(evento_id):
     mp_ya_descontado = bool(descontado_at) and not forzar
 
     # ── 1. Calcular MPs a consumir ─────────────────────────────────────
-    mps_a_consumir = []
+    # FIX 1-jun-2026 audit MP/fórmulas (P0) · ANTES recalculaba inline con el
+    # material_id de FÓRMULA crudo (sin resolver a bodega) → reintroducía 'Hay 0g'
+    # al completar (caso glucosamina) y duplicaba el cálculo de iniciar. Ahora usa
+    # el helper canónico _calcular_mp_consumo_produccion (resuelve fórmula→bodega +
+    # dedup) · UN solo punto de cálculo para iniciar y completar.
     try:
-        rows = c.execute("""
-            SELECT material_id, material_nombre,
-                   COALESCE(porcentaje, 0)                as pct,
-                   COALESCE(cantidad_g_por_lote, 0)       as g_por_lote
-            FROM formula_items
-            WHERE UPPER(TRIM(producto_nombre)) = UPPER(TRIM(?))
-        """, (producto,)).fetchall()
-        for cod, nom, pct, g_lote in rows:
-            # Preferimos cantidad_g_por_lote * lotes. Fallback: porcentaje*kg*1000
-            g_total = float(g_lote or 0) * lotes
-            if g_total <= 0 and cant_kg_total > 0:
-                g_total = (float(pct or 0) / 100.0) * cant_kg_total * 1000.0
-            if g_total > 0:
-                mps_a_consumir.append({
-                    'codigo_mp': cod or '',
-                    'nombre': nom or '',
-                    'cantidad_g': round(g_total, 2),
-                })
+        mps_a_consumir, _meta_mp = _calcular_mp_consumo_produccion(c, evento_id)
+        if mps_a_consumir is None:
+            mps_a_consumir = []
     except Exception as e:
         return jsonify({'error': f'Error calculando MPs: {e}'}), 500
 
