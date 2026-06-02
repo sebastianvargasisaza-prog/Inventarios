@@ -14614,6 +14614,7 @@ button.ap{background:#b45309}
     <button style="background:#0f766e" onclick="crearMps(false,false)">➕ Ver faltantes / inactivas</button>
     <button style="background:#047857" onclick="crearMps(true,false)">➕ Crear faltantes</button>
     <button style="background:#7c3aed" onclick="crearMps(false,true)">♻ Reactivar inactivas</button>
+    <button style="background:#9333ea" onclick="verificarMps()">🔎 Cruce integral · ¿MPs perdidas?</button>
     <button style="background:#047857" onclick="run(true,true)">✔ Aplicar SOLO las que destraban (seguro)</button>
     <button class="ap" onclick="run(true,false)">✔ Aplicar TODAS (riesgoso)</button>
   </div>
@@ -14625,6 +14626,26 @@ button.ap{background:#b45309}
 <script>
 function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[c];});}
 async function _csrf(){ try{ var r=await fetch('/api/csrf-token',{credentials:'same-origin'}); if(r.ok){ var d=await r.json(); return d.csrf_token||''; } }catch(_){} return ''; }
+async function verificarMps(){
+  var fi=document.getElementById('f'); if(!fi.files||!fi.files[0]){ alert('Elegí el archivo Excel primero'); return; }
+  var out=document.getElementById('out'); out.innerHTML='Cruzando TODAS las MPs del maestro…';
+  var fd=new FormData(); fd.append('file', fi.files[0]);
+  try{
+    var r=await fetch('/api/admin/verificar-mps-maestro',{method:'POST',headers:{'X-CSRF-Token':await _csrf()},credentials:'same-origin',body:fd});
+    var d=await r.json();
+    if(!r.ok||!d.ok){ out.innerHTML='<span class="bad">Error: '+esc((d&&d.error)||r.status)+'</span>'; return; }
+    var co=d.conteo||{};
+    document.getElementById('resumen').innerHTML=d.total_codigos_excel+' MPs en Excel · <b class="ok">'+(co.OK||0)+' OK</b> · <b class="bad">'+(co.NO_EXISTE||0)+' no existen</b> · '+(co.INACTIVO||0)+' inactivas · '+(co.ATRAPADO||0)+' atrapadas · '+(co.EN_CUARENTENA||0)+' cuarentena · '+(co.SIN_STOCK||0)+' sin stock';
+    if(!d.problemas.length){ out.innerHTML='<div class="ok">✅ Todas las MPs del maestro existen, activas y con stock. Nada perdido.</div>'; return; }
+    function lbl(e){return {NO_EXISTE:'🔴 NO EXISTE → crear',INACTIVO:'🟧 INACTIVA → reactivar',ATRAPADO:'🟨 ATRAPADA → lotes-stock-atrapado',EN_CUARENTENA:'🟦 CUARENTENA → liberar Calidad',SIN_STOCK:'⚪ sin stock → comprar'}[e]||e;}
+    var h='<table><tr><th>Código</th><th>Material</th><th>Estado</th><th>Stock</th><th>Usada en</th></tr>';
+    d.problemas.forEach(function(p){
+      var stk=p.disponible_g+' g'+(p.cuarentena_g>0?(' · cuar '+p.cuarentena_g):'')+(p.atrapado_g>0?(' · atrap '+p.atrapado_g):'');
+      h+='<tr><td class="mono bad">'+esc(p.codigo)+'</td><td>'+esc(p.comercial||p.inci||'')+'</td><td>'+lbl(p.estado)+'</td><td class="muted">'+stk+'</td><td class="muted">'+p.n_productos+': '+(p.productos||[]).map(esc).join(', ')+'</td></tr>';
+    });
+    out.innerHTML=h+'</table>';
+  }catch(e){ out.innerHTML='<span class="bad">Error red: '+esc(e.message)+'</span>'; }
+}
 async function crearMps(aplicar, reactivar){
   var fi=document.getElementById('f'); if(!fi.files||!fi.files[0]){ alert('Elegí el archivo Excel primero'); return; }
   if(aplicar && !confirm('Vas a CREAR en el catálogo las MPs que tu Excel define y que faltan. No toca fórmulas ni stock. ¿Continuar?')) return;
@@ -14802,6 +14823,111 @@ def admin_crear_mps_faltantes_excel():
         'faltantes': faltantes, 'total_faltantes': len(faltantes),
         'inactivos': inactivos, 'total_inactivos': len(inactivos),
         'creados': creados, 'reactivados': reactivados,
+    })
+
+
+@bp.route("/api/admin/verificar-mps-maestro", methods=["POST"])
+def admin_verificar_mps_maestro():
+    """Cruce INTEGRAL: cada MP (código) que el Excel maestro usa, ¿existe en el
+    catálogo, está activa y tiene stock? Detecta MPs 'perdidas' (no existe /
+    inactiva / sin stock / atrapada / en cuarentena) en TODO el maestro, no solo
+    las de un producto. Body: multipart file o {contenido_b64}. Read-only."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    raw = None
+    if request.files and 'file' in request.files:
+        raw = request.files['file'].read()
+    else:
+        b = request.get_json(silent=True) or {}
+        if b.get('contenido_b64'):
+            import base64 as _b64
+            try:
+                raw = _b64.b64decode(b['contenido_b64'])
+            except Exception:
+                return jsonify({'error': 'base64 inválido'}), 400
+    if not raw:
+        return jsonify({'error': 'archivo requerido'}), 400
+    try:
+        excel = _parse_excel_maestro(raw)
+    except Exception as e:
+        return jsonify({'error': f'No pude leer el Excel: {str(e)[:200]}'}), 400
+    if not excel:
+        return jsonify({'error': 'El Excel no tiene hojas de producto reconocibles.'}), 400
+
+    from datetime import datetime as _dt
+    hoy = _dt.now().strftime('%Y-%m-%d')
+    _NP = ('CUARENTENA', 'CUARENTENA_EXTENDIDA', 'RECHAZADO', 'VENCIDO', 'AGOTADO', 'BLOQUEADO')
+
+    # códigos únicos del Excel + en qué productos
+    cods = {}
+    for pnorm, data in excel.items():
+        for it in data['items']:
+            cod = it['codigo'].strip().upper()
+            if not cod:
+                continue
+            slot = cods.setdefault(cod, {'inci': '', 'comercial': '', 'productos': set()})
+            if it.get('inci') and not slot['inci']:
+                slot['inci'] = it['inci']
+            if it.get('comercial') and not slot['comercial']:
+                slot['comercial'] = it['comercial']
+            slot['productos'].add(data['titulo'])
+
+    conn = db_connect()
+    c = conn.cursor()
+    # maestro: codigo -> activo
+    maestro = {}
+    for r in c.execute("SELECT UPPER(codigo_mp), COALESCE(activo,1) FROM maestro_mps").fetchall():
+        maestro[str(r[0]).strip()] = int(r[1] or 0)
+    # stock por código
+    disp = {}
+    cuar = {}
+    atrap = {}
+    for mid, tipo, cant, est, venc in c.execute(
+        "SELECT UPPER(material_id), tipo, cantidad, UPPER(COALESCE(estado_lote,'')), COALESCE(fecha_vencimiento,'') "
+        "FROM movimientos WHERE material_id IS NOT NULL AND material_id!=''").fetchall():
+        mid = str(mid).strip()
+        signed = float(cant or 0) if tipo in ('Entrada', 'entrada', 'ENTRADA', 'Ajuste +', 'Ajuste') else (
+            -float(cant or 0) if tipo in ('Salida', 'salida', 'SALIDA', 'Ajuste -') else 0.0)
+        if est not in _NP:
+            disp[mid] = disp.get(mid, 0.0) + signed
+        elif est in ('CUARENTENA', 'CUARENTENA_EXTENDIDA'):
+            cuar[mid] = cuar.get(mid, 0.0) + signed
+        else:
+            venc_s = str(venc or '')[:10]
+            if signed > 0 and (est == 'AGOTADO' or (est == 'VENCIDO' and not (venc_s and venc_s < hoy))):
+                atrap[mid] = atrap.get(mid, 0.0) + signed
+    conn.close()
+
+    filas = []
+    cont = {'OK': 0, 'NO_EXISTE': 0, 'INACTIVO': 0, 'EN_CUARENTENA': 0, 'ATRAPADO': 0, 'SIN_STOCK': 0}
+    for cod, info in sorted(cods.items()):
+        d = round(disp.get(cod, 0.0), 2)
+        if cod not in maestro:
+            estado = 'NO_EXISTE'
+        elif maestro[cod] == 0:
+            estado = 'INACTIVO'
+        elif d > 0.01:
+            estado = 'OK'
+        elif cuar.get(cod, 0) > 0.01:
+            estado = 'EN_CUARENTENA'
+        elif atrap.get(cod, 0) > 0.01:
+            estado = 'ATRAPADO'
+        else:
+            estado = 'SIN_STOCK'
+        cont[estado] = cont.get(estado, 0) + 1
+        if estado != 'OK':
+            filas.append({
+                'codigo': cod, 'inci': info['inci'], 'comercial': info['comercial'],
+                'estado': estado, 'disponible_g': d,
+                'cuarentena_g': round(cuar.get(cod, 0), 2), 'atrapado_g': round(atrap.get(cod, 0), 2),
+                'n_productos': len(info['productos']), 'productos': sorted(info['productos'])[:6],
+            })
+    _ord = {'NO_EXISTE': 0, 'INACTIVO': 1, 'ATRAPADO': 2, 'EN_CUARENTENA': 3, 'SIN_STOCK': 4}
+    filas.sort(key=lambda x: (_ord.get(x['estado'], 9), -x['n_productos'], x['codigo']))
+    return jsonify({
+        'ok': True, 'total_codigos_excel': len(cods),
+        'conteo': cont, 'problemas': filas,
     })
 
 
