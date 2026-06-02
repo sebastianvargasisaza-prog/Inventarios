@@ -14582,8 +14582,11 @@ button.ap{background:#b45309}
   <div style="margin-top:12px">
     <input type="file" id="f" accept=".xlsx">
     <button onclick="run(false)">🔍 Verificar (reporte)</button>
-    <button class="ap" onclick="run(true)">✔ Aplicar correcciones</button>
+    <button style="background:#0f766e" onclick="crearMps(false)">➕ Crear MPs faltantes (ver)</button>
+    <button style="background:#047857" onclick="crearMps(true)">➕ Crear MPs faltantes (aplicar)</button>
+    <button class="ap" onclick="run(true)">✔ Aplicar correcciones de código</button>
   </div>
+  <div class="muted" style="margin-top:6px">Orden recomendado: <b>1)</b> Crear MPs faltantes · <b>2)</b> reconciliar stock · <b>3)</b> Aplicar correcciones de código.</div>
   <div id="resumen" class="muted" style="margin-top:8px"></div>
 </div>
 <div id="out" class="card">Subí el Excel y apretá Verificar.</div>
@@ -14591,6 +14594,27 @@ button.ap{background:#b45309}
 <script>
 function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[c];});}
 async function _csrf(){ try{ var r=await fetch('/api/csrf-token',{credentials:'same-origin'}); if(r.ok){ var d=await r.json(); return d.csrf_token||''; } }catch(_){} return ''; }
+async function crearMps(aplicar){
+  var fi=document.getElementById('f'); if(!fi.files||!fi.files[0]){ alert('Elegí el archivo Excel primero'); return; }
+  if(aplicar && !confirm('Vas a CREAR en el catálogo las MPs que tu Excel define y que faltan (con su INCI/comercial). No toca fórmulas ni stock. ¿Continuar?')) return;
+  var out=document.getElementById('out'); out.innerHTML='Procesando…';
+  var fd=new FormData(); fd.append('file', fi.files[0]);
+  try{
+    var r=await fetch('/api/admin/crear-mps-faltantes-excel'+(aplicar?'?aplicar=1':''),{method:'POST',headers:{'X-CSRF-Token':await _csrf()},credentials:'same-origin',body:fd});
+    var d=await r.json();
+    if(!r.ok||!d.ok){ out.innerHTML='<span class="bad">Error: '+esc((d&&d.error)||r.status)+'</span>'; return; }
+    document.getElementById('resumen').innerHTML='Códigos en Excel: '+d.codigos_en_excel+' · ya existen: '+d.ya_existen+' · <b class="bad">faltan: '+d.total_faltantes+'</b>'+(d.total_inactivos?(' · inactivos: '+d.total_inactivos):'')+(d.aplicado?(' · <b class="ok">'+d.creados+' creados</b>'):'');
+    var h='<h3>MPs faltantes en el catálogo'+(d.aplicado?' (creadas)':' (se crearían)')+'</h3>';
+    if(!d.faltantes.length){ h+='<div class="ok">✅ No falta ninguna MP del Excel.</div>'; }
+    else{
+      h+='<table><tr><th>Código</th><th>Nombre INCI</th><th>Nombre comercial</th><th>Usada en</th></tr>';
+      d.faltantes.forEach(function(m){ h+='<tr><td class="mono ok">'+esc(m.codigo)+'</td><td>'+esc(m.nombre_inci||'')+'</td><td>'+esc(m.nombre_comercial||'')+'</td><td class="muted">'+(m.productos||[]).map(esc).join(', ')+'</td></tr>'; });
+      h+='</table>';
+    }
+    if(d.inactivos&&d.inactivos.length){ h+='<h3 class="muted">Existen pero INACTIVAS (reactivar en Bodega MP si se usan)</h3><div class="muted">'+d.inactivos.map(function(x){return esc(x.codigo)+' '+esc(x.nombre_comercial||x.nombre_inci||'');}).join(' · ')+'</div>'; }
+    out.innerHTML=h;
+  }catch(e){ out.innerHTML='<span class="bad">Error red: '+esc(e.message)+'</span>'; }
+}
 async function run(aplicar){
   var fi=document.getElementById('f'); if(!fi.files||!fi.files[0]){ alert('Elegí el archivo Excel primero'); return; }
   if(aplicar && !confirm('Vas a CORREGIR los códigos de las fórmulas para que coincidan con el Excel maestro. Se hace backup y es reversible. ¿Continuar?')) return;
@@ -14621,6 +14645,110 @@ async function run(aplicar){
 }
 </script>
 </body></html>"""
+
+
+@bp.route("/api/admin/crear-mps-faltantes-excel", methods=["POST"])
+def admin_crear_mps_faltantes_excel():
+    """Crea en maestro_mps las MPs que el Excel maestro define pero NO existen
+    aún en el catálogo (paso 1 de la reconciliación · prerequisito para corregir
+    fórmulas a su código correcto).
+
+    SEGURO: solo INSERTA códigos ausentes (codigo_mp + nombre_inci +
+    nombre_comercial + activo=1). NO toca fórmulas, NI stock, NI filas existentes.
+
+    Body: multipart `file` o JSON {contenido_b64}. Query ?aplicar=1 para crear
+    (sin aplicar = solo reporte de qué se crearía)."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    aplicar = (request.args.get('aplicar') or '').strip() in ('1', 'true', 'yes')
+    raw = None
+    if request.files and 'file' in request.files:
+        raw = request.files['file'].read()
+    else:
+        b = request.get_json(silent=True) or {}
+        if b.get('contenido_b64'):
+            import base64 as _b64
+            try:
+                raw = _b64.b64decode(b['contenido_b64'])
+            except Exception:
+                return jsonify({'error': 'base64 inválido'}), 400
+    if not raw:
+        return jsonify({'error': 'archivo requerido (file= o contenido_b64)'}), 400
+    if len(raw) > 12 * 1024 * 1024:
+        return jsonify({'error': 'archivo muy grande (max 12MB)'}), 413
+    try:
+        excel = _parse_excel_maestro(raw)
+    except Exception as e:
+        return jsonify({'error': f'No pude leer el Excel: {str(e)[:200]}'}), 400
+    if not excel:
+        return jsonify({'error': 'El Excel no tiene hojas de producto reconocibles.'}), 400
+
+    # codigos únicos del Excel (prefiriendo la fila con INCI no vacío)
+    cods = {}   # codigo -> {inci, comercial, productos:set}
+    for pnorm, data in excel.items():
+        for it in data['items']:
+            cod = it['codigo'].strip().upper()
+            if not cod:
+                continue
+            slot = cods.setdefault(cod, {'inci': '', 'comercial': '', 'productos': set()})
+            if it.get('inci') and not slot['inci']:
+                slot['inci'] = it['inci']
+            if it.get('comercial') and not slot['comercial']:
+                slot['comercial'] = it['comercial']
+            slot['productos'].add(data['titulo'])
+
+    conn = db_connect()
+    c = conn.cursor()
+    existentes = {}
+    for r in c.execute("SELECT codigo_mp, COALESCE(activo,1) FROM maestro_mps").fetchall():
+        existentes[str(r[0]).strip().upper()] = int(r[1] or 0)
+
+    faltantes = []
+    inactivos = []
+    for cod, slot in cods.items():
+        if cod not in existentes:
+            faltantes.append({'codigo': cod, 'nombre_inci': slot['inci'],
+                              'nombre_comercial': slot['comercial'],
+                              'productos': sorted(slot['productos'])[:6]})
+        elif existentes[cod] == 0:
+            inactivos.append({'codigo': cod, 'nombre_inci': slot['inci'],
+                             'nombre_comercial': slot['comercial']})
+    faltantes.sort(key=lambda x: x['codigo'])
+
+    creados = 0
+    if aplicar and faltantes:
+        for f in faltantes:
+            try:
+                c.execute(
+                    "INSERT INTO maestro_mps (codigo_mp, nombre_inci, nombre_comercial, activo) "
+                    "VALUES (?,?,?,1)",
+                    (f['codigo'], f['nombre_inci'] or None, f['nombre_comercial'] or None))
+                creados += 1
+            except Exception:
+                pass  # ya existe (carrera) u otra restricción · se reporta como no creado
+        conn.commit()
+        try:
+            import json as _json
+            c.execute(
+                "INSERT INTO audit_log (usuario, accion, tabla, registro_id, detalle, ip, fecha) "
+                "VALUES (?,?,?,?,?,?,datetime('now','-5 hours'))",
+                (u, 'CREAR_MPS_FALTANTES', 'maestro_mps', '_BULK_',
+                 _json.dumps({'creados': creados, 'codigos': [f['codigo'] for f in faltantes][:200]},
+                             ensure_ascii=False),
+                 request.remote_addr))
+            conn.commit()
+        except Exception:
+            pass
+    conn.close()
+    return jsonify({
+        'ok': True, 'aplicado': aplicar,
+        'codigos_en_excel': len(cods),
+        'ya_existen': len(cods) - len(faltantes) - len(inactivos),
+        'faltantes': faltantes, 'total_faltantes': len(faltantes),
+        'inactivos': inactivos, 'total_inactivos': len(inactivos),
+        'creados': creados,
+    })
 
 
 @bp.route("/admin/verificar-formulas", methods=["GET"])
