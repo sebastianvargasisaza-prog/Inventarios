@@ -4673,6 +4673,115 @@ def admin_corregir_formulas():
     })
 
 
+@bp.route("/api/admin/revertir-correcciones-formulas-recientes", methods=["POST"])
+def admin_revertir_correcciones_formulas_recientes():
+    """Deshace las correcciones CORREGIR_FORMULAS recientes usando el audit_log.
+
+    2-jun-2026 · INCIDENTE: las sugerencias automáticas de /admin/formulas-mismapeo
+    (score 65-80) eran de baja confianza (N-acetil glucosamina → N-acetil cisteína,
+    aceite jojoba → geranio, etc) y el usuario aplicó muchas con un click. Cada
+    corrección guardó en audit_log el material_id PREVIO, así que las revertimos
+    EXACTO sin depender de backups (DB-native · funciona en PG).
+
+    Body: token='REVERTIR_FORMULAS_2026', horas (opcional, default 12).
+    Revierte cada aplicado: si formula_items sigue con el material_id_nuevo,
+    lo vuelve al material_id_previo (match por producto+nombre+codigo)."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    d = request.json or {}
+    if d.get('token', '').strip() != 'REVERTIR_FORMULAS_2026':
+        return jsonify({'error': 'Token incorrecto'}), 403
+    try:
+        horas = float(d.get('horas', 12) or 12)
+    except (TypeError, ValueError):
+        horas = 12.0
+
+    import json as _json
+    from datetime import datetime as _dt, timedelta as _td
+
+    conn = db_connect()
+    c = conn.cursor()
+    try:
+        rows = c.execute(
+            "SELECT detalle, fecha FROM audit_log "
+            "WHERE accion='CORREGIR_FORMULAS' AND tabla='formula_items' "
+            "ORDER BY fecha DESC").fetchall()
+    except Exception as _e:
+        conn.close()
+        return jsonify({'error': f'No pude leer audit_log: {_e}'}), 500
+
+    if not rows:
+        conn.close()
+        return jsonify({'ok': True, 'revertidos': 0, 'mensaje': 'No hay correcciones registradas.'})
+
+    def _parse(f):
+        s = str(f or '').strip().replace('T', ' ')[:19]
+        try:
+            return _dt.strptime(s, '%Y-%m-%d %H:%M:%S')
+        except Exception:
+            return None
+
+    fechas = [_parse(r[1]) for r in rows if _parse(r[1])]
+    latest = max(fechas) if fechas else None
+    cutoff = (latest - _td(hours=horas)) if latest else None
+
+    # Backup defensivo antes de tocar nada
+    try:
+        do_backup(triggered_by='pre_revertir_correcciones_formulas')
+    except Exception:
+        pass
+
+    revertidos = 0
+    detalle_rev = []
+    for det, fecha in rows:
+        fp = _parse(fecha)
+        if cutoff and fp and fp < cutoff:
+            continue  # fuera de la ventana reciente · no tocar correcciones viejas legítimas
+        try:
+            data = _json.loads(det) if det else {}
+        except Exception:
+            continue
+        for ap in (data.get('correcciones_sample') or []):
+            prod = ap.get('producto')
+            prev = (ap.get('material_id_previo') or '').strip()
+            nuevo = (ap.get('material_id_nuevo') or '').strip()
+            nom = ap.get('material_nombre_previo')
+            if not (prod and prev and nuevo) or prev == nuevo:
+                continue
+            try:
+                cur = c.execute(
+                    "UPDATE formula_items SET material_id=? "
+                    "WHERE producto_nombre=? AND material_id=? "
+                    "  AND COALESCE(material_nombre,'')=COALESCE(?, material_nombre)",
+                    (prev, prod, nuevo, nom))
+                if cur.rowcount:
+                    revertidos += cur.rowcount
+                    detalle_rev.append({'producto': prod, 'de': nuevo, 'a': prev, 'nombre': nom})
+            except Exception:
+                continue
+    conn.commit()
+    try:
+        c.execute(
+            "INSERT INTO audit_log (usuario, accion, tabla, registro_id, detalle, ip, fecha) "
+            "VALUES (?,?,?,?,?,?,datetime('now','-5 hours'))",
+            (u, 'REVERTIR_CORRECCIONES_FORMULAS', 'formula_items', '_BULK_',
+             _json.dumps({'revertidos': revertidos, 'ventana_horas': horas,
+                          'sample': detalle_rev[:40]}, ensure_ascii=False),
+             request.remote_addr))
+        conn.commit()
+    except Exception:
+        pass
+    conn.close()
+    return jsonify({
+        'ok': True,
+        'revertidos': revertidos,
+        'ventana_horas': horas,
+        'sample': detalle_rev[:50],
+        'mensaje': f'{revertidos} línea(s) de fórmula revertidas a su código original.',
+    })
+
+
 @bp.route("/api/admin/revertir-formulas-desde-backup", methods=["POST"])
 def admin_revertir_formulas_desde_backup():
     """Revierte formula_items al estado guardado en el backup mas reciente
@@ -14006,8 +14115,11 @@ button{background:#0f766e;color:#fff;border:none;padding:7px 14px;border-radius:
 <a href="/modulos">&larr; Volver</a>
 <div class="card">
   <h1>&#129518; Fórmulas · nombre que no concuerda con su código</h1>
-  <div class="muted">La fórmula dice un ingrediente pero su código pertenece a OTRA materia prima del catálogo (mapeo cruzado al registrar). Eso cruza el stock y produce "Hay 0g" al producir. El detector de huérfanos NO lo ve porque el código es válido. Read-only hasta que aprietes Corregir.</div>
-  <div style="margin-top:10px"><button onclick="cargar()">↻ Recargar</button> <span id="resumen" class="muted"></span></div>
+  <div class="muted">La fórmula dice un ingrediente pero su código pertenece a OTRA materia prima del catálogo (mapeo cruzado al registrar). Esto es <b>diagnóstico</b>: las sugerencias automáticas NO son confiables (pueden coincidir por una palabra). Corregí cada caso a mano en <b>la fórmula (/tecnica)</b> con el código correcto, o unificá en Bodega MP.</div>
+  <div style="margin-top:10px"><button onclick="cargar()">↻ Recargar</button>
+    <button onclick="revertir()" style="background:#b45309;margin-left:8px">↩ Revertir mis correcciones recientes</button>
+    <span id="resumen" class="muted"></span></div>
+  <div id="revmsg" style="margin-top:8px;font-size:12px"></div>
 </div>
 <div id="out" class="card">Cargando…</div>
 </div>
@@ -14036,22 +14148,16 @@ async function cargar(){
     if(!d.cruces.length && !(d.colisiones||[]).length){ out.innerHTML='<div style="color:#15803d;font-weight:700">✅ Ninguna fórmula con nombre↔código cruzado ni colisiones.</div>'; return; }
     if(d.cruces.length){
       h+='<div style="margin-bottom:6px"><b>Líneas donde el nombre no concuerda con su código:</b></div>';
-      h+='<table><tr><th>Producto</th><th>Ingrediente (nombre)</th><th>Código actual (es en realidad)</th><th>Código correcto</th><th>Acción</th></tr>';
+      h+='<table><tr><th>Producto</th><th>Ingrediente (nombre)</th><th>Código actual (es en realidad)</th><th>Candidato (solo pista · verificá)</th></tr>';
       d.cruces.forEach(function(x,i){
-        var sugCell, accion;
-        if(x.codigo_sugerido){
-          sugCell='<span class="mono">'+esc(x.codigo_sugerido)+'</span><br><span class="muted">'+esc(x.nombre_sugerido||'')+' <span class="tag">score '+(x.score||0)+'</span></span>';
-          accion='<button onclick="corregir('+i+','+x.formula_item_id+',\\''+esc(x.codigo_sugerido)+'\\',\\''+esc(x.material_nombre).replace(/\\x27/g,"")+'\\',\\''+esc(x.codigo_sugerido)+' '+esc(x.nombre_sugerido||'').replace(/\\x27/g,"")+'\\')">✔ Corregir</button>';
-        } else {
-          sugCell='<span class="muted">sin candidato claro en catálogo</span>';
-          accion='<span class="muted">revisá el código en Bodega MP / creá la MP correcta</span>';
-        }
+        var sugCell = x.codigo_sugerido
+          ? '<span class="mono">'+esc(x.codigo_sugerido)+'</span> <span class="muted">'+esc(x.nombre_sugerido||'')+' · score '+(x.score||0)+' (NO confiar sin verificar)</span>'
+          : '<span class="muted">sin candidato — revisá en Bodega MP</span>';
         h+='<tr id="row-'+i+'">'
           +'<td>'+esc(x.producto)+'</td>'
           +'<td>'+esc(x.material_nombre)+'</td>'
           +'<td><span class="mono bad">'+esc(x.material_id)+'</span><br><span class="muted">= '+esc(x.codigo_es_en_catalogo)+'</span></td>'
           +'<td>'+sugCell+'</td>'
-          +'<td>'+accion+'</td>'
           +'</tr>';
       });
       h+='</table>';
@@ -14059,17 +14165,17 @@ async function cargar(){
     out.innerHTML=h;
   }catch(e){ out.innerHTML='<span class="bad">Error red: '+esc(e.message)+'</span>'; }
 }
-async function corregir(i, fid, nuevoCod, nombreLinea, sugTxt){
-  if(!confirm('Corregir esta línea:\\n\\n  Ingrediente: '+nombreLinea+'\\n  Código nuevo: '+sugTxt+'\\n\\nSe reemplaza el código en la fórmula (con backup + audit). ¿Continuar?')) return;
-  var row=document.getElementById('row-'+i);
+async function revertir(){
+  if(!confirm('Revertir TODAS las correcciones de fórmulas de las últimas 12 horas (deja cada línea con su código original). ¿Continuar?')) return;
+  var m=document.getElementById('revmsg'); m.innerHTML='Revirtiendo…';
   try{
-    var r=await fetch('/api/admin/corregir-formulas',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':await _csrf()},credentials:'same-origin',
-      body:JSON.stringify({token:'CORREGIR_FORMULAS_2026', correcciones:[{formula_item_id:fid, nuevo_material_id:nuevoCod, nuevo_material_nombre:nombreLinea}]})});
+    var r=await fetch('/api/admin/revertir-correcciones-formulas-recientes',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':await _csrf()},credentials:'same-origin',
+      body:JSON.stringify({token:'REVERTIR_FORMULAS_2026', horas:12})});
     var d=await r.json();
-    if(!r.ok||d.error){ alert('Error: '+(d.error||r.status)); return; }
-    if((d.count_aplicados||0)>=1){ if(row){ row.style.background='#dcfce7'; row.querySelector('td:last-child').innerHTML='<span style="color:#15803d;font-weight:700">✓ corregido</span>'; } }
-    else { alert('No se aplicó: '+JSON.stringify(d.errores||d)); }
-  }catch(e){ alert('Error red: '+e.message); }
+    if(!r.ok||d.error){ m.innerHTML='<span class="bad">Error: '+esc(d.error||r.status)+'</span>'; return; }
+    m.innerHTML='<b style="color:#15803d">✓ '+(d.revertidos||0)+' línea(s) revertidas a su código original.</b> Recargando…';
+    setTimeout(cargar, 1200);
+  }catch(e){ m.innerHTML='<span class="bad">Error red: '+esc(e.message)+'</span>'; }
 }
 cargar();
 </script>
