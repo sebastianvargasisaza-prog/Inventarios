@@ -14426,6 +14426,9 @@ def admin_verificar_formulas_excel():
     if err:
         return err, code
     aplicar = (request.args.get('aplicar') or '').strip() in ('1', 'true', 'yes')
+    # modo SEGURO: solo re-apunta cuando el código actual está en 0 disponible y el
+    # código del Excel SÍ tiene stock → desbloquea sin romper lo que ya funciona.
+    solo_desbloquea = (request.args.get('solo_desbloquea') or '').strip() in ('1', 'true', 'yes')
 
     raw = None
     if request.files and 'file' in request.files:
@@ -14465,6 +14468,24 @@ def admin_verificar_formulas_excel():
     for r in c.execute("SELECT codigo_mp FROM maestro_mps WHERE COALESCE(activo,1)=1").fetchall():
         cod_validos.add(str(r[0]).strip().upper())
 
+    # stock DISPONIBLE por código (excluye estados no-producibles) · para el modo
+    # seguro: no re-apuntar a un código vacío ni abandonar uno que tiene el stock.
+    stock_por_cod = {}
+    try:
+        for r in c.execute(
+            """SELECT material_id,
+                      COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END),0)
+               FROM movimientos
+               WHERE UPPER(COALESCE(estado_lote,'')) NOT IN
+                     ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO','VENCIDO','AGOTADO','BLOQUEADO')
+               GROUP BY material_id""").fetchall():
+            stock_por_cod[str(r[0]).strip().upper()] = float(r[1] or 0)
+    except Exception:
+        pass
+
+    def _stk(cod):
+        return stock_por_cod.get(str(cod).strip().upper(), 0.0)
+
     if aplicar:
         try:
             do_backup(triggered_by='pre_verificar_formulas_excel')
@@ -14497,12 +14518,20 @@ def admin_verificar_formulas_excel():
                 continue
             excel_cod = mm[0]['codigo'].strip().upper()
             if str(mid).strip().upper() != excel_cod:
+                _stk_app = _stk(mid)
+                _stk_excel = _stk(excel_cod)
+                # En modo seguro: solo corregir si el código actual está vacío
+                # (≤0.01) y el del Excel tiene stock → desbloquea sin romper.
+                _es_seguro = (_stk_app <= 0.01 and _stk_excel > 0.01)
                 m = {'formula_item_id': fid, 'nombre': nom,
                      'codigo_app': mid, 'codigo_excel': excel_cod,
-                     'score': mm[1], 'excel_valido': excel_cod in cod_validos}
+                     'score': mm[1], 'excel_valido': excel_cod in cod_validos,
+                     'stock_app_g': round(_stk_app, 2), 'stock_excel_g': round(_stk_excel, 2),
+                     'desbloquea': _es_seguro}
                 mismatches.append(m)
                 total_mismatch += 1
-                if aplicar and excel_cod in cod_validos:
+                _hacer = aplicar and excel_cod in cod_validos and (_es_seguro or not solo_desbloquea)
+                if _hacer:
                     try:
                         c.execute("UPDATE formula_items SET material_id=? WHERE id=?",
                                   (excel_cod, fid))
@@ -14585,9 +14614,10 @@ button.ap{background:#b45309}
     <button style="background:#0f766e" onclick="crearMps(false,false)">➕ Ver faltantes / inactivas</button>
     <button style="background:#047857" onclick="crearMps(true,false)">➕ Crear faltantes</button>
     <button style="background:#7c3aed" onclick="crearMps(false,true)">♻ Reactivar inactivas</button>
-    <button class="ap" onclick="run(true)">✔ Aplicar correcciones de código</button>
+    <button style="background:#047857" onclick="run(true,true)">✔ Aplicar SOLO las que destraban (seguro)</button>
+    <button class="ap" onclick="run(true,false)">✔ Aplicar TODAS (riesgoso)</button>
   </div>
-  <div class="muted" style="margin-top:6px">Orden recomendado: <b>1)</b> Crear MPs faltantes · <b>2)</b> reconciliar stock · <b>3)</b> Aplicar correcciones de código.</div>
+  <div class="muted" style="margin-top:6px"><b>Seguro</b> = solo re-apunta donde el código actual está en 0 y el correcto tiene stock (destraba sin romper). <b>TODAS</b> puede romper producción si el stock está en el código actual — usar solo tras reconciliar stock.</div>
   <div id="resumen" class="muted" style="margin-top:8px"></div>
 </div>
 <div id="out" class="card">Subí el Excel y apretá Verificar.</div>
@@ -14618,13 +14648,15 @@ async function crearMps(aplicar, reactivar){
     out.innerHTML=h;
   }catch(e){ out.innerHTML='<span class="bad">Error red: '+esc(e.message)+'</span>'; }
 }
-async function run(aplicar){
+async function run(aplicar, seguro){
   var fi=document.getElementById('f'); if(!fi.files||!fi.files[0]){ alert('Elegí el archivo Excel primero'); return; }
-  if(aplicar && !confirm('Vas a CORREGIR los códigos de las fórmulas para que coincidan con el Excel maestro. Se hace backup y es reversible. ¿Continuar?')) return;
+  if(aplicar && seguro && !confirm('Aplicar SOLO las correcciones que DESTRABAN (código actual en 0 y el correcto con stock). No toca las que ya funcionan. Backup + reversible. ¿Continuar?')) return;
+  if(aplicar && !seguro && !confirm('⚠ Aplicar TODAS las correcciones de código. Esto PUEDE ROMPER producción si el stock está en el código actual. Solo hacelo tras reconciliar stock. ¿Seguro?')) return;
   var out=document.getElementById('out'); out.innerHTML='Procesando…';
   var fd=new FormData(); fd.append('file', fi.files[0]);
+  var qs=[]; if(aplicar)qs.push('aplicar=1'); if(aplicar&&seguro)qs.push('solo_desbloquea=1');
   try{
-    var r=await fetch('/api/admin/verificar-formulas-excel'+(aplicar?'?aplicar=1':''),{method:'POST',headers:{'X-CSRF-Token':await _csrf()},credentials:'same-origin',body:fd});
+    var r=await fetch('/api/admin/verificar-formulas-excel'+(qs.length?('?'+qs.join('&')):''),{method:'POST',headers:{'X-CSRF-Token':await _csrf()},credentials:'same-origin',body:fd});
     var d=await r.json();
     if(!r.ok||!d.ok){ out.innerHTML='<span class="bad">Error: '+esc((d&&d.error)||r.status)+'</span>'; return; }
     document.getElementById('resumen').innerHTML='Productos en Excel: '+d.productos_en_excel+' · comparados: '+d.productos_comparados+' · <b class="bad">'+d.total_mismatches+' códigos no coinciden</b>'+(d.aplicado?(' · <b class="ok">'+d.total_corregidos+' corregidos</b>'):'')+(d.hojas_sin_producto_en_app.length?(' · '+d.hojas_sin_producto_en_app.length+' hojas sin producto en app'):'');
@@ -14633,9 +14665,11 @@ async function run(aplicar){
       if(!p.mismatches.length && !p.sin_match.length && !p.faltan_en_app.length) return;
       h+='<h3>'+esc(p.producto)+' <span class="muted">(Excel: '+p.n_excel+' · app: '+p.n_app+')</span></h3>';
       if(p.mismatches.length){
-        h+='<table><tr><th>Ingrediente</th><th>Código en app</th><th>Código correcto (Excel)</th><th>Estado</th></tr>';
+        h+='<table><tr><th>Ingrediente</th><th>Código app (stock)</th><th>Código Excel (stock)</th><th>Estado</th></tr>';
         p.mismatches.forEach(function(m){
-          h+='<tr><td>'+esc(m.nombre)+'</td><td class="mono bad">'+esc(m.codigo_app)+'</td><td class="mono ok">'+esc(m.codigo_excel)+(m.excel_valido?'':' <span class="bad">(no existe en maestro!)</span>')+'</td><td>'+(m.aplicado?'<span class="ok">✓ corregido</span>':(d.aplicado?'<span class="bad">no aplicado</span>':'pendiente'))+'</td></tr>';
+          var badge = m.desbloquea ? ' <span class="tag" style="background:#dcfce7;color:#166534">destraba</span>' : '';
+          var est = m.aplicado?'<span class="ok">✓ corregido</span>':(d.aplicado?(m.desbloquea?'<span class="bad">no aplicado</span>':'<span class="muted">omitido (ya funciona)</span>'):'pendiente');
+          h+='<tr><td>'+esc(m.nombre)+badge+'</td><td class="mono bad">'+esc(m.codigo_app)+' <span class="muted">('+(m.stock_app_g||0).toLocaleString()+'g)</span></td><td class="mono ok">'+esc(m.codigo_excel)+' <span class="muted">('+(m.stock_excel_g||0).toLocaleString()+'g)</span>'+(m.excel_valido?'':' <span class="bad">(no existe!)</span>')+'</td><td>'+est+'</td></tr>';
         });
         h+='</table>';
       }
