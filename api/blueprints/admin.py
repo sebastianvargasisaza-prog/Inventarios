@@ -15397,6 +15397,57 @@ cargar();
 </body></html>"""
 
 
+@bp.route("/api/admin/mp-ficha/<path:codigo>", methods=["GET"])
+def admin_mp_ficha(codigo):
+    """Ficha completa de un código de MP · diagnóstico read-only. Responde:
+    existe en maestro, activo, nombres, mínimo, stock DISPONIBLE, stock por estado
+    (cuarentena/agotado/vencido), lotes, total movimientos. Para responder
+    'el código existe? está activo? tiene stock? dónde?'."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    cod = (codigo or '').strip()
+    conn = db_connect()
+    c = conn.cursor()
+    out = {'codigo': cod}
+    try:
+        r = c.execute("SELECT codigo_mp, COALESCE(nombre_comercial,''), COALESCE(nombre_inci,''), "
+                      "COALESCE(activo,1), COALESCE(stock_minimo,0), COALESCE(proveedor,'') "
+                      "FROM maestro_mps WHERE UPPER(codigo_mp)=UPPER(?)", (cod,)).fetchone()
+        if r:
+            out['en_maestro'] = True
+            out.update({'nombre_comercial': r[1], 'nombre_inci': r[2],
+                        'activo': bool(r[3]), 'stock_minimo': float(r[4] or 0), 'proveedor': r[5]})
+        else:
+            out['en_maestro'] = False
+        # stock por lote+estado desde movimientos
+        lotes = {}
+        por_estado = {}
+        nmov = 0
+        for m in c.execute(
+            "SELECT COALESCE(lote,''), tipo, cantidad, UPPER(COALESCE(estado_lote,'')) "
+            "FROM movimientos WHERE UPPER(material_id)=UPPER(?)", (cod,)).fetchall():
+            nmov += 1
+            signed = float(m[2] or 0) if m[1] in ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') else (
+                -float(m[2] or 0) if m[1] in ('Salida','salida','SALIDA','Ajuste -') else 0.0)
+            lotes[m[0]] = lotes.get(m[0], 0.0) + signed
+            est = m[3] or '(sin estado)'
+            por_estado[est] = por_estado.get(est, 0.0) + signed
+        _NP = ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO','VENCIDO','AGOTADO','BLOQUEADO')
+        disp = 0.0
+        for e, v in por_estado.items():
+            if e == '(sin estado)' or e.upper() not in _NP:
+                disp += v
+        out['total_movimientos'] = nmov
+        out['stock_disponible_g'] = round(disp, 2)
+        out['stock_por_estado'] = {k: round(v, 2) for k, v in por_estado.items() if abs(v) > 0.01}
+        out['lotes_con_stock'] = {k or '(sin lote)': round(v, 2) for k, v in lotes.items() if v > 0.01}
+    finally:
+        conn.close()
+    out['ok'] = True
+    return jsonify(out)
+
+
 @bp.route("/admin/schema-doctor", methods=["GET"])
 def admin_schema_doctor_page():
     """Página · doctor de esquema (columnas faltantes en la BD)."""
