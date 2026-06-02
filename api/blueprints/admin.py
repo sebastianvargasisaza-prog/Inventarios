@@ -13730,6 +13730,156 @@ def auditoria_catalogo():
     }), 200
 
 
+@bp.route("/api/admin/mps-duplicados-stock", methods=["GET"])
+def admin_mps_duplicados_stock():
+    """Read-only · CIERRE del problema fórmula-id↔bodega-id (Sebastián 1-jun-2026).
+    Lista MPs que la FÓRMULA usa con un código SIN stock, mientras existe OTRO código
+    en bodega CON stock y nombre similar (comparten tokens) → duplicados a unificar.
+    Excluye los ya bridgeados (auto-resuelven). Para limpiar todo de una con Unificar MPs."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    try:
+        from blueprints.programacion import _norm_mp_name as _nm, _ESTADOS_LOTE_NO_PRODUCIBLES as _EST
+    except ImportError:
+        from api.blueprints.programacion import _norm_mp_name as _nm, _ESTADOS_LOTE_NO_PRODUCIBLES as _EST
+    conn = _get_db(); c = conn.cursor()
+    _ph = ','.join(['?'] * len(_EST))
+    stock_por_cod = {}
+    try:
+        for r in c.execute(f"""
+            SELECT material_id, COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad
+                                                  WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END),0)
+            FROM movimientos
+            WHERE UPPER(COALESCE(estado_lote,'')) NOT IN ({_ph})
+            GROUP BY material_id""", _EST).fetchall():
+            stock_por_cod[str(r[0]).strip()] = float(r[1] or 0)
+    except Exception:
+        pass
+    maestro = {}
+    for r in c.execute("SELECT codigo_mp, COALESCE(nombre_comercial, nombre_inci, codigo_mp) "
+                       "FROM maestro_mps WHERE COALESCE(activo,1)=1").fetchall():
+        maestro[str(r[0]).strip()] = str(r[1] or '')
+    stocked = [(cod, maestro.get(cod, cod), s) for cod, s in stock_por_cod.items()
+               if s > 0 and cod in maestro]
+    bridged = set()
+    try:
+        for r in c.execute("SELECT TRIM(formula_material_id) FROM mp_formula_bridge "
+                           "WHERE COALESCE(activo,1)=1").fetchall():
+            if r[0]:
+                bridged.add(str(r[0]).strip())
+    except Exception:
+        pass
+    usados = {}
+    for r in c.execute("SELECT material_id, producto_nombre, COALESCE(material_nombre,'') "
+                       "FROM formula_items WHERE material_id IS NOT NULL AND TRIM(material_id)!=''").fetchall():
+        cod = str(r[0]).strip()
+        d = usados.setdefault(cod, {'productos': set(), 'nombre': ''})
+        if r[1]:
+            d['productos'].add(r[1])
+        if r[2] and not d['nombre']:
+            d['nombre'] = r[2]
+    dups = []
+    for cod, info in usados.items():
+        if stock_por_cod.get(cod, 0) > 0 or cod in bridged:
+            continue  # ya tiene stock o ya está bridgeado → no es problema
+        nom = info['nombre'] or maestro.get(cod, cod)
+        toks = {t for t in _nm(nom).split() if len(t) >= 4}
+        if not toks:
+            continue
+        best = None
+        for bcod, bnom, bstk in stocked:
+            if bcod == cod:
+                continue
+            if toks & {t for t in _nm(bnom).split() if len(t) >= 4}:
+                if best is None or bstk > best[2]:
+                    best = (bcod, bnom, bstk)
+        if best:
+            dups.append({
+                'formula_codigo': cod, 'formula_nombre': nom,
+                'productos': sorted(info['productos'])[:8], 'n_productos': len(info['productos']),
+                'candidato_codigo': best[0], 'candidato_nombre': best[1],
+                'candidato_stock_g': round(best[2], 1),
+            })
+    dups.sort(key=lambda x: -x['candidato_stock_g'])
+    return jsonify({'ok': True, 'duplicados': dups, 'total': len(dups)})
+
+
+_MPS_DUPLICADOS_HTML = """<!DOCTYPE html>
+<html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>MPs duplicados · unificar · EOS</title>
+<style>
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;color:#1e293b;margin:0;padding:20px}
+.wrap{max-width:1100px;margin:0 auto}
+.card{background:#fff;border-radius:12px;padding:18px;margin-bottom:16px;box-shadow:0 2px 6px rgba(0,0,0,.05)}
+h1{margin:0 0 6px;color:#b91c1c;font-size:21px}
+table{width:100%;border-collapse:collapse;font-size:12px;margin-top:6px}
+th{text-align:left;padding:8px;background:#f1f5f9;color:#475569;font-weight:700}
+td{padding:8px;border-bottom:1px solid #f1f5f9;vertical-align:top}
+.mono{font-family:ui-monospace,monospace;font-weight:700;color:#1e40af}
+.muted{color:#64748b;font-size:11px}
+button{background:#0f766e;color:#fff;border:none;padding:7px 14px;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer}
+.btn-unif{background:#b91c1c}
+.tag{background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:4px;font-size:10px}
+</style></head><body>
+<div class="wrap">
+<a href="/modulos">&larr; Volver</a>
+<div class="card">
+  <h1>🔗 MPs duplicados · unificar fórmula ↔ bodega</h1>
+  <div class="muted">La fórmula usa un código de MP SIN stock, pero hay otro código en bodega CON stock y nombre similar (mismo material, código distinto). Esto hace que producción diga "Hay 0g". Unificá cada par para arreglarlo de raíz. Read-only hasta que aprietes Unificar.</div>
+  <div style="margin-top:10px"><button onclick="cargar()">↻ Recargar</button> <span id="resumen" class="muted"></span></div>
+</div>
+<div id="out" class="card">Cargando…</div>
+</div>
+<script>
+function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[c];});}
+async function _csrf(){ try{ var r=await fetch('/api/csrf-token',{credentials:'same-origin'}); if(r.ok){ var d=await r.json(); return d.csrf_token||''; } }catch(_){} return ''; }
+async function cargar(){
+  var out=document.getElementById('out'); out.innerHTML='Cargando…';
+  try{
+    var r=await fetch('/api/admin/mps-duplicados-stock',{cache:'no-store'});
+    if(r.status===401){ location.href='/login'; return; }
+    var d=await r.json();
+    if(!r.ok||!d.ok){ out.innerHTML='<span style="color:#dc2626">Error: '+esc((d&&d.error)||r.status)+'</span>'; return; }
+    document.getElementById('resumen').textContent = d.total+' duplicado(s) detectado(s)';
+    if(!d.duplicados.length){ out.innerHTML='<div style="color:#15803d;font-weight:700">✅ Sin duplicados · todas las MPs de fórmula tienen su stock o están bridgeadas.</div>'; return; }
+    var h='<table><tr><th>MP en fórmula (SIN stock)</th><th>Usada en</th><th>Candidato en bodega (CON stock)</th><th>Acción</th></tr>';
+    d.duplicados.forEach(function(x,i){
+      h+='<tr id="row-'+i+'">'
+        +'<td><span class="mono">'+esc(x.formula_codigo)+'</span><br>'+esc(x.formula_nombre)+'</td>'
+        +'<td class="muted">'+(x.productos||[]).map(esc).join(', ')+(x.n_productos>(x.productos||[]).length?(' +'+(x.n_productos-(x.productos||[]).length)+' más'):'')+'</td>'
+        +'<td><span class="mono">'+esc(x.candidato_codigo)+'</span><br>'+esc(x.candidato_nombre)+' <span class="tag">'+(x.candidato_stock_g||0).toLocaleString()+' g</span></td>'
+        +'<td><button class="btn-unif" onclick="unificar('+i+',\\''+esc(x.candidato_codigo).replace(/\\\\/g,"")+'\\',\\''+esc(x.formula_codigo)+'\\',\\''+esc(x.candidato_nombre).replace(/\\x27/g,"")+'\\',\\''+esc(x.formula_nombre).replace(/\\x27/g,"")+'\\')">🔗 Unificar</button></td>'
+        +'</tr>';
+    });
+    h+='</table>';
+    out.innerHTML=h;
+  }catch(e){ out.innerHTML='<span style="color:#dc2626">Error red: '+esc(e.message)+'</span>'; }
+}
+async function unificar(i, canonico, formulaCod, canonNom, formNom){
+  if(!confirm('Unificar:\\n\\n  Fórmula: '+formNom+' ('+formulaCod+')\\n  → Bodega: '+canonNom+' ('+canonico+')\\n\\nSe moverán las fórmulas/producciones del código de fórmula al de bodega (que tiene el stock) y se archiva el duplicado. ¿Continuar?')) return;
+  var btnRow=document.getElementById('row-'+i);
+  try{
+    var r=await fetch('/api/admin/maestro-mps-unificar',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':await _csrf()},credentials:'same-origin',
+      body:JSON.stringify({codigo_canonico:canonico, codigos_duplicados:[formulaCod], motivo:'Unificar duplicado fórmula↔bodega (herramienta mps-duplicados)', merge_force:true})});
+    var d=await r.json();
+    if(!r.ok||d.error){ alert('Error: '+(d.error||r.status)); return; }
+    if(btnRow){ btnRow.style.background='#dcfce7'; btnRow.querySelector('td:last-child').innerHTML='<span style="color:#15803d;font-weight:700">✓ unificado</span>'; }
+  }catch(e){ alert('Error red: '+e.message); }
+}
+cargar();
+</script>
+</body></html>"""
+
+
+@bp.route("/admin/mps-duplicados", methods=["GET"])
+def admin_mps_duplicados_page():
+    """Página · MPs duplicados a unificar (fórmula sin stock ↔ bodega con stock)."""
+    if 'compras_user' not in session:
+        return redirect("/login?next=/admin/mps-duplicados")
+    return _MPS_DUPLICADOS_HTML
+
+
 @bp.route("/api/admin/maestro-mps-unificar", methods=["POST"])
 def maestro_mps_unificar():
     """Fusiona 2+ MPs duplicadas en una canónica.
