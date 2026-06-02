@@ -1861,26 +1861,24 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
   </div>
   <!-- Tab "Abastecimiento" · MRP por horizontes · Sebastián 23-may-2026 -->
   <div id="ptab-abastecimiento" style="display:none">
-    <div style="background:linear-gradient(90deg,#faf5ff,#f3e8ff);padding:14px 18px;border-radius:10px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
-      <div>
-        <h3 style="margin:0;color:#5b21b6;font-size:15px;font-weight:800">&#128230; Abastecimiento &middot; suma del Calendario</h3>
-        <div style="font-size:11px;color:#475569;margin-top:3px">Lee TODO el calendario (Fijas + Sugeridas + B2B) y suma el consumo MP/MEE por horizonte. Si las cifras son bajas, es porque el calendario está corto &middot; llenálo desde <a href="/admin/llenar-calendario" target="_blank" style="color:#7c3aed;font-weight:700;text-decoration:underline">aquí</a>.</div>
+    <!-- Compactado 2-jun-2026 · Sebastián "mucho ruido visual" · banner a una línea
+         fina · explicación movida a tooltip ⓘ. -->
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid #eef0f3">
+      <div style="display:flex;align-items:center;gap:7px">
+        <h3 style="margin:0;color:#5b21b6;font-size:15px;font-weight:800">&#128230; Abastecimiento</h3>
+        <span title="Lee TODO el calendario (Fijas + Sugeridas + B2B) y suma el consumo MP/MEE por horizonte. Si las cifras son bajas, el calendario está corto: llenalo con el botón 365d." style="cursor:help;color:#a3a3c2;font-size:13px">&#9432;</span>
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:11px">
-        <label style="color:#475569;display:flex;align-items:center;gap:4px">
-          Modo:
+        <label style="color:#475569;display:flex;align-items:center;gap:4px">Modo:
           <select id="abast-modo" onchange="cargarAbastecimiento()" style="padding:3px 6px;border:1px solid #cbd5e1;border-radius:4px;font-size:11px">
-            <option value="comprometido">Comprometido (solo Fijas + B2B)</option>
-            <option value="run_rate">Run-rate (+ velocidad ventas)</option>
+            <option value="comprometido">Comprometido (Fijas + B2B)</option>
+            <option value="run_rate">Run-rate (+ ventas)</option>
           </select>
         </label>
-        <!-- Sebastián 25-may-2026 PM · checkboxes MP/MEE removidos · ahora
-             dos sub-pestañas separadas abajo. Inputs hidden para preservar
-             la lógica JS que lee `.checked` sin tener que cambiar la API. -->
         <input type="hidden" id="abast-mp" checked>
         <input type="hidden" id="abast-mee" checked>
-        <button onclick="cargarAbastecimiento()" style="background:#7c3aed;color:#fff;border:none;padding:7px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">↻ Recargar</button>
-        <a href="/admin/llenar-calendario" target="_blank" style="background:#16a34a;color:#fff;border:none;padding:7px 12px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer;text-decoration:none;display:inline-block" title="Llenar el calendario con Sugeridas a 365 días · si Abastecimiento muestra cifras bajas es porque el calendario está corto">🚀 Llenar calendario 365d</a>
+        <button onclick="cargarAbastecimiento()" style="background:#7c3aed;color:#fff;border:none;padding:6px 11px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">↻ Recargar</button>
+        <a href="/admin/llenar-calendario" target="_blank" style="background:#16a34a;color:#fff;border:none;padding:6px 11px;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer;text-decoration:none;display:inline-block" title="Llenar el calendario con Sugeridas a 365 días">🚀 365d</a>
       </div>
     </div>
 
@@ -1903,7 +1901,7 @@ h2 { color:#333; margin-bottom:12px; font-size:1.3em; }
       <button data-h="90"  onclick="setAbastFoco(90)"  class="abast-htab" style="padding:5px 12px;border:1px solid #cbd5e1;background:#fff;color:#475569;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">90d</button>
       <button data-h="120" onclick="setAbastFoco(120)" class="abast-htab" style="padding:5px 12px;border:1px solid #cbd5e1;background:#fff;color:#475569;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">120d</button>
       <button data-h="180" onclick="setAbastFoco(180)" class="abast-htab" style="padding:5px 12px;border:1px solid #cbd5e1;background:#fff;color:#475569;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">180d</button>
-      <button data-h="365" onclick="setAbastFoco(365)" class="abast-htab" style="padding:5px 12px;border:1px solid #cbd5e1;background:#fff;color:#475569;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">365d (1 año)</button>
+      <button data-h="365" onclick="setAbastFoco(365)" class="abast-htab" style="padding:5px 12px;border:1px solid #cbd5e1;background:#fff;color:#475569;border-radius:5px;font-size:11px;font-weight:700;cursor:pointer">365d</button>
       <span id="abast-foco-hint" style="font-size:10px;color:#94a3b8;margin-left:8px"></span>
     </div>
     <div id="abast-resumen" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px"></div>
@@ -11869,10 +11867,26 @@ async function ckMarcar(itemId, estado){
     });
     var hint = document.getElementById('abast-foco-hint');
     if (hint) {
-      var lbl = (dias >= 365) ? '1 año completo' : (dias >= 30 ? Math.round(dias/30) + ' meses' : dias + ' días');
-      hint.textContent = '· enfocando ' + lbl + ' · stock + pendientes vs consumo proyectado';
+      var lbl = (dias >= 365) ? '1 año' : (dias >= 30 ? Math.round(dias/30) + ' meses' : dias + ' días');
+      hint.textContent = '· ' + lbl;
     }
     if (typeof cargarAbastecimiento === 'function') cargarAbastecimiento();
+  };
+
+  // Inyecta el déficit por horizonte DENTRO de cada botón de horizonte (compactado
+  // 2-jun-2026 · elimina la caja duplicada "déficit por horizonte"). setAbastFoco
+  // solo cambia colores, no innerHTML, así que el conteo persiste al resaltar.
+  window._abastPintarHorizontes = function(d){
+    try {
+      (d.horizontes || []).forEach(function(h){
+        var btn = document.querySelector('.abast-htab[data-h="' + h + '"]');
+        if (!btn) return;
+        var r2 = (d.resumen_por_horizonte || {})[String(h)] || {};
+        var n = r2.n_total_con_deficit || 0;
+        var base = (h >= 365) ? '365d' : (h + 'd');
+        btn.innerHTML = base + ' <span style="opacity:.6;font-weight:800">·' + n + '</span>';
+      });
+    } catch(_) {}
   };
 
   // ── Sub-tabs internos de Programacion ────────────────────────────────────
@@ -20830,33 +20844,23 @@ async function ckMarcar(itemId, estado){
       const cobDias = d.cobertura_dias || 0;
       const ultimoLote = d.ultimo_lote_fecha || '—';
 
-      // Fila A · "qué hay en el calendario"
-      let html = '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:10px 14px;margin-bottom:8px">';
-      html += '<div style="font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;margin-bottom:4px">📅 Lotes en el calendario · futuro hasta 365d</div>';
-      html += '<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:center;font-size:13px">';
-      html += '<div><strong style="font-size:18px;color:#1e293b">' + nTotal + '</strong> <span style="color:#64748b;font-size:11px">lotes totales</span></div>';
-      html += '<div style="color:#475569"><span style="color:#6d28d9;font-weight:700">' + nFij + '</span> <span style="font-size:10px">Fijas</span> + <span style="color:#7c3aed;font-weight:700">' + nSug + '</span> <span style="font-size:10px">Sugeridas</span> + <span style="color:#ea580c;font-weight:700">' + nB2B + '</span> <span style="font-size:10px">B2B pend.</span></div>';
-      html += '<div style="color:#475569">📈 <strong>' + lotesSem + '</strong> lotes/sem (90d)</div>';
-      html += '<div style="color:#475569">Cobertura: <strong>' + cobDias + 'd</strong> · último ' + ultimoLote + '</div>';
-      html += '<div style="margin-left:auto">' + modoLabel + '</div>';
-      html += '</div></div>';
-
-      // Fila B · "MP/MEE con déficit por horizonte"
-      html += '<div style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:10px 14px">';
-      html += '<div style="font-size:11px;color:#64748b;font-weight:700;text-transform:uppercase;margin-bottom:4px" title="Cantidad de materias primas o envases distintos cuyo stock + pendientes NO alcanza para cubrir las producciones del horizonte">📦 Materias primas / envases con déficit por horizonte</div>';
-      html += '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">';
-      d.horizontes.forEach(h => {
-        const r2 = d.resumen_por_horizonte[String(h)] || {};
-        const n = r2.n_total_con_deficit || 0;
-        const bg = n>0 ? (h<=15?'#fee2e2':h<=30?'#fff7ed':h<=90?'#fefce8':'#eff6ff') : '#f0fdf4';
-        const tc = n>0 ? (h<=15?'#991b1b':h<=30?'#9a3412':h<=90?'#854d0e':'#1e40af') : '#15803d';
-        html += '<span style="background:'+bg+';color:'+tc+';padding:5px 10px;border-radius:6px;font-size:12px;font-weight:700" title="' + n + ' MP/MEE en déficit dentro de ' + h + ' días">' + h + 'd: ' + n + '</span>';
-      });
+      // Compactado 2-jun-2026 · UNA línea fina de contexto (no 2 cajas) · el
+      // "déficit por horizonte" se fusiona DENTRO de los botones de horizonte.
+      let html = '<div style="font-size:12px;color:#64748b;display:flex;gap:12px;flex-wrap:wrap;align-items:center">';
+      html += '<span><strong style="color:#1e293b;font-size:14px">' + nTotal + '</strong> lotes</span>';
+      html += '<span title="Fijas + Sugeridas + B2B pendientes"><span style="color:#6d28d9;font-weight:700">' + nFij + '</span> Fij · <span style="color:#7c3aed;font-weight:700">' + nSug + '</span> Sug · <span style="color:#ea580c;font-weight:700">' + nB2B + '</span> B2B</span>';
+      html += '<span>📈 <strong>' + lotesSem + '</strong>/sem</span>';
+      html += '<span>cobertura <strong>' + cobDias + 'd</strong></span>';
       if (d.productos_sin_lote_size && d.productos_sin_lote_size.length) {
-        html += '<span style="background:#fef3c7;color:#92400e;padding:5px 10px;border-radius:6px;font-size:11px;font-weight:700;margin-left:8px" title="Productos sin lote_size_kg · completar en /admin/formulas">⚠ ' + d.productos_sin_lote_size.length + ' sin lote_size</span>';
+        html += '<span style="background:#fef3c7;color:#92400e;padding:1px 8px;border-radius:6px;font-weight:700" title="Productos sin lote_size_kg · completar en /admin/formulas">⚠ ' + d.productos_sin_lote_size.length + ' sin lote_size</span>';
       }
-      html += '</div></div>';
+      html += '<span style="margin-left:auto">' + modoLabel + '</span>';
+      html += '</div>';
       resumenDiv.innerHTML = html;
+
+      // Inyectar el déficit por horizonte DENTRO de cada botón de horizonte
+      // (elimina la caja duplicada · "90d ·51").
+      _abastPintarHorizontes(d);
 
       renderTablaAbast();
     } catch(e) {
