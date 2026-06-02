@@ -6763,26 +6763,45 @@ def mkt_solicitar_pago_influencer(iid):
         # Asi el flujo de aprobar/rechazar puede notificar al solicitante real por email.
         solicitante_user = (u or '').lower().strip() or 'jefferson'
         email_sol = USER_EMAILS.get(solicitante_user, '') or USER_EMAILS.get('jefferson', '')
+        # FIX 2-jun-2026 · HTTP 500 persistente: si una migración no se aplicó en
+        # PostgreSQL (ej. mig 20 que agrega solicitudes_compra.influencer_id), el
+        # INSERT con esa columna falla → 500 (y en PG aborta toda la transacción, así
+        # que los try/except internos NO salvan). Solución robusta: detectar qué
+        # columnas EXISTEN y armar el INSERT solo con esas. Portable SQLite/PG.
+        def _cols_tabla(tabla):
+            cset = set()
+            try:
+                for _r in c.execute("PRAGMA table_info(" + tabla + ")").fetchall():
+                    cset.add(str(_r[1]).lower())
+            except Exception:
+                cset = set()
+            if not cset:
+                try:
+                    for _r in c.execute(
+                        "SELECT column_name FROM information_schema.columns WHERE table_name=?",
+                        (tabla,)).fetchall():
+                        cset.add(str(_r[0]).lower())
+                except Exception:
+                    pass
+            return cset
+
+        def _insert_dyn(tabla, pares, core):
+            cset = _cols_tabla(tabla)
+            usar = [(k, v) for (k, v) in pares if (k in core) or (not cset) or (k.lower() in cset)]
+            cols_sql = ",".join(k for k, _ in usar)
+            ph = ",".join(["?"] * len(usar))
+            c.execute("INSERT INTO " + tabla + " (" + cols_sql + ") VALUES (" + ph + ")",
+                      tuple(v for _, v in usar))
+
         # Beneficiario (nombre del influencer) va en observaciones para no perder visibilidad
-        c.execute("""
-            INSERT INTO solicitudes_compra
-            (numero, fecha, estado, solicitante, email_solicitante, urgencia, observaciones,
-             area, empresa, categoria, tipo, valor, influencer_id)
-            VALUES (?,?,'Aprobada',?,?,?,?,?,?,?,?,?,?)
-        """, (
-            numero,
-            _fecha_hoy,
-            solicitante_user,
-            email_sol,
-            "Normal",
-            observaciones,
-            "Marketing",
-            "ANIMUS",
-            "Influencer/Marketing Digital",
-            "Servicio",
-            monto,
-            iid,
-        ))
+        _insert_dyn('solicitudes_compra', [
+            ('numero', numero), ('fecha', _fecha_hoy), ('estado', 'Aprobada'),
+            ('solicitante', solicitante_user), ('email_solicitante', email_sol),
+            ('urgencia', 'Normal'), ('observaciones', observaciones),
+            ('area', 'Marketing'), ('empresa', 'ANIMUS'),
+            ('categoria', 'Influencer/Marketing Digital'), ('tipo', 'Servicio'),
+            ('valor', monto), ('influencer_id', iid),
+        ], core=('numero', 'fecha', 'estado', 'observaciones', 'categoria'))
 
         # Auto-generate OC
         oc_num = numero.replace("SOL", "OC")
@@ -6793,19 +6812,12 @@ def mkt_solicitar_pago_influencer(iid):
             oc_num = numero.replace("SOL", "OC") + "-" + str(_guard_oc)
             if _guard_oc > 100000:
                 break
-        c.execute("""
-            INSERT INTO ordenes_compra
-            (numero_oc, fecha, estado, proveedor, observaciones, creado_por, categoria, valor_total)
-            VALUES (?,?,'Aprobada',?,?,?,?,?)
-        """, (
-            oc_num,
-            _fecha_hoy,
-            inf["nombre"],
-            observaciones,
-            u,
-            "Influencer/Marketing Digital",
-            monto,
-        ))
+        _insert_dyn('ordenes_compra', [
+            ('numero_oc', oc_num), ('fecha', _fecha_hoy), ('estado', 'Aprobada'),
+            ('proveedor', inf["nombre"]), ('observaciones', observaciones),
+            ('creado_por', u), ('categoria', 'Influencer/Marketing Digital'),
+            ('valor_total', monto),
+        ], core=('numero_oc', 'fecha', 'estado'))
         c.execute(
             "UPDATE solicitudes_compra SET numero_oc=? WHERE numero=?",
             (oc_num, numero)
@@ -6813,22 +6825,20 @@ def mkt_solicitar_pago_influencer(iid):
 
         # Also register in pagos_influencers for the marketing panel
         # FEATURE 27-may PM · fecha_contenido + vence_pago_at (30d desde contenido)
+        # SAVEPOINT: si pagos_influencers falla (no crítico · la SOL+OC ya quedaron),
+        # NO debe abortar la transacción entera en PG. INSERT dinámico por columnas.
         try:
-            c.execute("""
-                INSERT INTO pagos_influencers
-                (influencer_id, influencer_nombre, valor, fecha, estado, concepto,
-                 numero_oc, fecha_contenido, vence_pago_at)
-                VALUES (?,?,?,?,'Pendiente',?,?,?,?)
-            """, (iid, inf["nombre"], int(monto), _fecha_hoy, concepto, oc_num,
-                   fecha_contenido, vence_pago_at))
-        except Exception as e:
-            # Fallback para instancias viejas sin las columnas nuevas (mig 195 no aplicada)
+            c.execute("SAVEPOINT sp_pi")
+            _insert_dyn('pagos_influencers', [
+                ('influencer_id', iid), ('influencer_nombre', inf["nombre"]),
+                ('valor', int(monto)), ('fecha', _fecha_hoy), ('estado', 'Pendiente'),
+                ('concepto', concepto), ('numero_oc', oc_num),
+                ('fecha_contenido', fecha_contenido), ('vence_pago_at', vence_pago_at),
+            ], core=('influencer_nombre', 'valor', 'estado'))
+            c.execute("RELEASE SAVEPOINT sp_pi")
+        except Exception:
             try:
-                c.execute("""
-                    INSERT INTO pagos_influencers
-                    (influencer_id, influencer_nombre, valor, fecha, estado, concepto, numero_oc)
-                    VALUES (?,?,?,?,'Pendiente',?,?)
-                """, (iid, inf["nombre"], int(monto), _fecha_hoy, concepto, oc_num))
+                c.execute("ROLLBACK TO SAVEPOINT sp_pi")
             except Exception:
                 pass
 
