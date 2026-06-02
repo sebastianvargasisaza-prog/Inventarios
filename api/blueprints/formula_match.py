@@ -280,6 +280,20 @@ def _hay_identidad_disjunta(palabras_form, cat_palabras):
     return False
 
 
+def mejor_match(nombre, maestro_index):
+    """Devuelve (entry, score) del mejor match de `nombre` en el índice, o None.
+    Útil para casar una línea de fórmula contra un catálogo (p.ej. el Excel maestro)."""
+    pf = palabras_clave(nombre)
+    pfe = expandir_sinonimos(pf)
+    nn = norm(nombre)
+    best = None
+    for m in maestro_index:
+        s = _score_entry(pf, pfe, nn, m)
+        if s > 0 and (best is None or s > best[1]):
+            best = (m, s)
+    return best
+
+
 def evaluar_item(nombre_formula, mid, maestro_index):
     """Evalúa una línea de fórmula contra el catálogo.
 

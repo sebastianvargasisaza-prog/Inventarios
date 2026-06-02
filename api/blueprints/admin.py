@@ -14345,6 +14345,292 @@ def admin_mps_inci_page():
     return _MPS_INCI_HTML
 
 
+def _norm_prod_excel(s):
+    """Normaliza nombre de producto para casar hoja Excel ↔ formula_headers."""
+    import unicodedata as _ud, re as _re
+    s = _ud.normalize('NFKD', str(s or '')).encode('ascii', 'ignore').decode().upper()
+    s = _re.sub(r'[^A-Z0-9]+', ' ', s)
+    return _re.sub(r'\s+', ' ', s).strip()
+
+
+def _parse_excel_maestro(raw_bytes):
+    """Parsea el Excel maestro de fórmulas (1 hoja por producto · columnas
+    NOMBRE INCI | NOMBRE COMERCIAL | CÓD. BATCH | % FÓRMULA).
+
+    Devuelve {producto_norm: {'titulo': str, 'items': [{codigo, inci, comercial, pct}]}}."""
+    import io as _io
+    import openpyxl  # disponible (requirements)
+    wb = openpyxl.load_workbook(_io.BytesIO(raw_bytes), read_only=True, data_only=True)
+    productos = {}
+    for ws in wb.worksheets:
+        titulo = (ws.title or '').strip()
+        if _norm_prod_excel(titulo) in ('RESUMEN', 'INDICE', 'INDEX'):
+            continue
+        # localizar fila header (la que tiene 'COD' y 'BATCH' o 'INCI')
+        rows = list(ws.iter_rows(values_only=True))
+        hdr_idx = None
+        col = {}
+        for i, r in enumerate(rows[:8]):
+            cells = [str(c or '').strip().upper() for c in r]
+            joined = ' '.join(cells)
+            if ('BATCH' in joined or 'COD' in joined) and ('INCI' in joined or 'COMERCIAL' in joined):
+                for j, cell in enumerate(cells):
+                    cu = cell.replace('Ó', 'O').replace('É', 'E')
+                    if 'BATCH' in cu or ('COD' in cu and 'MP' in cu) or cu in ('CODIGO', 'COD'):
+                        col['codigo'] = j
+                    elif 'INCI' in cu:
+                        col['inci'] = j
+                    elif 'COMERCIAL' in cu:
+                        col['comercial'] = j
+                    elif '%' in cell or 'FORMULA' in cu or 'PORCENT' in cu:
+                        col.setdefault('pct', j)
+                hdr_idx = i
+                break
+        if hdr_idx is None or 'codigo' not in col:
+            continue
+        items = []
+        for r in rows[hdr_idx + 1:]:
+            def _g(k):
+                j = col.get(k)
+                return (str(r[j]).strip() if (j is not None and j < len(r) and r[j] is not None) else '')
+            codigo = _g('codigo')
+            inci = _g('inci')
+            comercial = _g('comercial')
+            if not codigo or _norm_prod_excel(codigo) in ('TOTAL', ''):
+                continue
+            if not (codigo.upper().startswith('MP') or codigo.upper().startswith('OP')):
+                continue
+            try:
+                pct = float(str(_g('pct')).replace(',', '.')) if _g('pct') else 0.0
+            except ValueError:
+                pct = 0.0
+            items.append({'codigo': codigo.strip().upper(), 'inci': inci,
+                          'comercial': comercial, 'pct': pct})
+        if items:
+            productos[_norm_prod_excel(titulo)] = {'titulo': titulo, 'items': items}
+    return productos
+
+
+@bp.route("/api/admin/verificar-formulas-excel", methods=["POST"])
+def admin_verificar_formulas_excel():
+    """Compara las fórmulas de la app contra el Excel maestro (fuente de verdad).
+
+    Body: multipart `file` (xlsx) o JSON {contenido_b64}. Query ?aplicar=1 para
+    corregir los códigos de formula_items al del Excel (matched por nombre · backup
+    + audit · reversible). Sin aplicar = solo reporte (read-only).
+
+    Por producto reporta: codigo_ok, mismatches (app code ≠ Excel), faltan_en_app,
+    sin_match. El match ingrediente↔Excel es por NOMBRE (INCI/comercial, con
+    sinónimos) — NO por código (los códigos son justamente lo que puede estar mal)."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    aplicar = (request.args.get('aplicar') or '').strip() in ('1', 'true', 'yes')
+
+    raw = None
+    if request.files and 'file' in request.files:
+        raw = request.files['file'].read()
+    else:
+        b = request.get_json(silent=True) or {}
+        if b.get('contenido_b64'):
+            import base64 as _b64
+            try:
+                raw = _b64.b64decode(b['contenido_b64'])
+            except Exception:
+                return jsonify({'error': 'base64 inválido'}), 400
+    if not raw:
+        return jsonify({'error': 'archivo requerido (file= o contenido_b64)'}), 400
+    if len(raw) > 12 * 1024 * 1024:
+        return jsonify({'error': 'archivo muy grande (max 12MB)'}), 413
+
+    try:
+        from blueprints.formula_match import build_maestro_index, mejor_match
+    except ImportError:
+        from api.blueprints.formula_match import build_maestro_index, mejor_match
+    try:
+        excel = _parse_excel_maestro(raw)
+    except Exception as e:
+        return jsonify({'error': f'No pude leer el Excel: {str(e)[:200]}'}), 400
+    if not excel:
+        return jsonify({'error': 'El Excel no tiene hojas de producto reconocibles (columnas INCI/Comercial/Cód. Batch).'}), 400
+
+    conn = db_connect()
+    c = conn.cursor()
+    # productos de la app
+    app_prods = {}
+    for r in c.execute("SELECT DISTINCT producto_nombre FROM formula_headers").fetchall():
+        app_prods[_norm_prod_excel(r[0])] = r[0]
+    # códigos válidos en maestro (para no proponer un código inexistente)
+    cod_validos = set()
+    for r in c.execute("SELECT codigo_mp FROM maestro_mps WHERE COALESCE(activo,1)=1").fetchall():
+        cod_validos.add(str(r[0]).strip().upper())
+
+    if aplicar:
+        try:
+            do_backup(triggered_by='pre_verificar_formulas_excel')
+        except Exception:
+            pass
+
+    reporte = []
+    sheets_sin_producto = []
+    total_mismatch = 0
+    total_corregidos = 0
+    correcciones_audit = []
+
+    for pnorm, data in excel.items():
+        app_nombre = app_prods.get(pnorm)
+        if not app_nombre:
+            sheets_sin_producto.append(data['titulo'])
+            continue
+        # índice de items del Excel para matching por nombre
+        idx = build_maestro_index([(it['codigo'], it['comercial'], it['inci']) for it in data['items']])
+        # líneas de la app
+        app_items = c.execute(
+            "SELECT id, material_id, COALESCE(material_nombre,'') FROM formula_items "
+            "WHERE producto_nombre=?", (app_nombre,)).fetchall()
+        mismatches = []
+        sin_match = []
+        for fid, mid, nom in app_items:
+            mm = mejor_match(nom, idx)
+            if not mm or mm[1] < 70:
+                sin_match.append({'material_id': mid, 'nombre': nom})
+                continue
+            excel_cod = mm[0]['codigo'].strip().upper()
+            if str(mid).strip().upper() != excel_cod:
+                m = {'formula_item_id': fid, 'nombre': nom,
+                     'codigo_app': mid, 'codigo_excel': excel_cod,
+                     'score': mm[1], 'excel_valido': excel_cod in cod_validos}
+                mismatches.append(m)
+                total_mismatch += 1
+                if aplicar and excel_cod in cod_validos:
+                    try:
+                        c.execute("UPDATE formula_items SET material_id=? WHERE id=?",
+                                  (excel_cod, fid))
+                        total_corregidos += 1
+                        m['aplicado'] = True
+                        correcciones_audit.append({'producto': app_nombre, 'nombre': nom,
+                                                    'de': mid, 'a': excel_cod})
+                    except Exception:
+                        m['aplicado'] = False
+        # ingredientes del Excel que no aparecen en la app (por código tras eventual corrección)
+        cods_app = {str(x[1]).strip().upper() for x in app_items}
+        faltan = [{'codigo': it['codigo'], 'inci': it['inci'], 'comercial': it['comercial']}
+                  for it in data['items'] if it['codigo'].upper() not in cods_app]
+        reporte.append({
+            'producto': app_nombre, 'hoja_excel': data['titulo'],
+            'n_excel': len(data['items']), 'n_app': len(app_items),
+            'mismatches': mismatches, 'sin_match': sin_match,
+            'faltan_en_app': faltan[:30],
+        })
+
+    if aplicar:
+        conn.commit()
+        try:
+            import json as _json
+            c.execute(
+                "INSERT INTO audit_log (usuario, accion, tabla, registro_id, detalle, ip, fecha) "
+                "VALUES (?,?,?,?,?,?,datetime('now','-5 hours'))",
+                (u, 'CORREGIR_FORMULAS', 'formula_items', '_BULK_',
+                 _json.dumps({'count': total_corregidos, 'errores': 0, 'origen': 'verificar-excel',
+                              'correcciones_sample': [{'producto': x['producto'],
+                                                       'material_id_previo': x['de'],
+                                                       'material_nombre_previo': x['nombre'],
+                                                       'material_id_nuevo': x['a']}
+                                                      for x in correcciones_audit[:200]]},
+                             ensure_ascii=False),
+                 request.remote_addr))
+            conn.commit()
+        except Exception:
+            pass
+    conn.close()
+
+    reporte.sort(key=lambda x: -len(x['mismatches']))
+    return jsonify({
+        'ok': True,
+        'aplicado': aplicar,
+        'productos_en_excel': len(excel),
+        'productos_comparados': len(reporte),
+        'total_mismatches': total_mismatch,
+        'total_corregidos': total_corregidos,
+        'hojas_sin_producto_en_app': sheets_sin_producto,
+        'reporte': reporte,
+    })
+
+
+_VERIFICAR_FORMULAS_HTML = """<!DOCTYPE html>
+<html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Verificar fórmulas vs Excel maestro · EOS</title>
+<style>
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;color:#1e293b;margin:0;padding:20px}
+.wrap{max-width:1150px;margin:0 auto}
+.card{background:#fff;border-radius:12px;padding:18px;margin-bottom:16px;box-shadow:0 2px 6px rgba(0,0,0,.05)}
+h1{margin:0 0 6px;color:#1e40af;font-size:21px}
+h3{margin:14px 0 4px;font-size:14px}
+table{width:100%;border-collapse:collapse;font-size:12px;margin-top:4px}
+th{text-align:left;padding:6px;background:#f1f5f9;color:#475569;font-weight:700}
+td{padding:6px;border-bottom:1px solid #f1f5f9;vertical-align:top}
+.mono{font-family:ui-monospace,monospace;font-weight:700}
+.muted{color:#64748b;font-size:11px}.bad{color:#b91c1c;font-weight:700}.ok{color:#15803d;font-weight:700}
+button{background:#1d4ed8;color:#fff;border:none;padding:8px 16px;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer}
+button.ap{background:#b45309}
+</style></head><body>
+<div class="wrap">
+<a href="/modulos">&larr; Volver</a>
+<div class="card">
+  <h1>&#129516; Verificar fórmulas vs Excel maestro</h1>
+  <div class="muted">Subí el Excel maestro (FORMULAS_MAESTRO). Compara <b>por nombre de ingrediente</b> contra cada fórmula de la app y te muestra qué <b>código</b> no coincide con tu maestro. <b>Verificar</b> = solo reporte. <b>Aplicar</b> = corrige los códigos al del Excel (backup + reversible).</div>
+  <div style="margin-top:12px">
+    <input type="file" id="f" accept=".xlsx">
+    <button onclick="run(false)">🔍 Verificar (reporte)</button>
+    <button class="ap" onclick="run(true)">✔ Aplicar correcciones</button>
+  </div>
+  <div id="resumen" class="muted" style="margin-top:8px"></div>
+</div>
+<div id="out" class="card">Subí el Excel y apretá Verificar.</div>
+</div>
+<script>
+function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[c];});}
+async function _csrf(){ try{ var r=await fetch('/api/csrf-token',{credentials:'same-origin'}); if(r.ok){ var d=await r.json(); return d.csrf_token||''; } }catch(_){} return ''; }
+async function run(aplicar){
+  var fi=document.getElementById('f'); if(!fi.files||!fi.files[0]){ alert('Elegí el archivo Excel primero'); return; }
+  if(aplicar && !confirm('Vas a CORREGIR los códigos de las fórmulas para que coincidan con el Excel maestro. Se hace backup y es reversible. ¿Continuar?')) return;
+  var out=document.getElementById('out'); out.innerHTML='Procesando…';
+  var fd=new FormData(); fd.append('file', fi.files[0]);
+  try{
+    var r=await fetch('/api/admin/verificar-formulas-excel'+(aplicar?'?aplicar=1':''),{method:'POST',headers:{'X-CSRF-Token':await _csrf()},credentials:'same-origin',body:fd});
+    var d=await r.json();
+    if(!r.ok||!d.ok){ out.innerHTML='<span class="bad">Error: '+esc((d&&d.error)||r.status)+'</span>'; return; }
+    document.getElementById('resumen').innerHTML='Productos en Excel: '+d.productos_en_excel+' · comparados: '+d.productos_comparados+' · <b class="bad">'+d.total_mismatches+' códigos no coinciden</b>'+(d.aplicado?(' · <b class="ok">'+d.total_corregidos+' corregidos</b>'):'')+(d.hojas_sin_producto_en_app.length?(' · '+d.hojas_sin_producto_en_app.length+' hojas sin producto en app'):'');
+    var h='';
+    d.reporte.forEach(function(p){
+      if(!p.mismatches.length && !p.sin_match.length && !p.faltan_en_app.length) return;
+      h+='<h3>'+esc(p.producto)+' <span class="muted">(Excel: '+p.n_excel+' · app: '+p.n_app+')</span></h3>';
+      if(p.mismatches.length){
+        h+='<table><tr><th>Ingrediente</th><th>Código en app</th><th>Código correcto (Excel)</th><th>Estado</th></tr>';
+        p.mismatches.forEach(function(m){
+          h+='<tr><td>'+esc(m.nombre)+'</td><td class="mono bad">'+esc(m.codigo_app)+'</td><td class="mono ok">'+esc(m.codigo_excel)+(m.excel_valido?'':' <span class="bad">(no existe en maestro!)</span>')+'</td><td>'+(m.aplicado?'<span class="ok">✓ corregido</span>':(d.aplicado?'<span class="bad">no aplicado</span>':'pendiente'))+'</td></tr>';
+        });
+        h+='</table>';
+      }
+      if(p.faltan_en_app.length){ h+='<div class="muted">Faltan en app (están en Excel, no en la fórmula): '+p.faltan_en_app.map(function(x){return esc(x.codigo)+' '+esc(x.comercial||x.inci||'');}).join(' · ')+'</div>'; }
+    });
+    if(!h) h='<div class="ok">✅ Todas las fórmulas comparadas coinciden con el Excel.</div>';
+    if(d.hojas_sin_producto_en_app.length){ h+='<h3 class="muted">Hojas del Excel sin fórmula en la app</h3><div class="muted">'+d.hojas_sin_producto_en_app.map(esc).join(' · ')+'</div>'; }
+    out.innerHTML=h;
+  }catch(e){ out.innerHTML='<span class="bad">Error red: '+esc(e.message)+'</span>'; }
+}
+</script>
+</body></html>"""
+
+
+@bp.route("/admin/verificar-formulas", methods=["GET"])
+def admin_verificar_formulas_page():
+    """Página · verificar fórmulas de la app contra el Excel maestro."""
+    if 'compras_user' not in session:
+        return redirect("/login?next=/admin/verificar-formulas")
+    return _VERIFICAR_FORMULAS_HTML
+
+
 @bp.route("/api/admin/maestro-mps-unificar", methods=["POST"])
 def maestro_mps_unificar():
     """Fusiona 2+ MPs duplicadas en una canónica.
