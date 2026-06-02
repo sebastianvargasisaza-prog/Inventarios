@@ -162,6 +162,10 @@ textarea{resize:vertical;min-height:80px;}
 <script>
 // CSRF defense-in-depth · Sebastian 3-may-2026
 function _csrf() {
+  // FIX 2-jun-2026 (Jefferson "no me deja cargar pago influencer"): el token vive
+  // en window._csrfTok (traído de /api/csrf-token), NO en una cookie (esa cookie
+  // nunca se setea → _fetchOpts mandaba token vacío). Preferimos el real.
+  if (window._csrfTok) return window._csrfTok;
   var m = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/);
   return m ? decodeURIComponent(m[1]) : '';
 }
@@ -176,7 +180,7 @@ function _fetchOpts(method, body) {
   }
   return opts;
 }
-fetch('/api/csrf-token', {credentials: 'same-origin'}).catch(function(){});
+fetch('/api/csrf-token', {credentials: 'same-origin'}).then(function(r){return r.ok?r.json():null;}).then(function(d){if(d&&d.csrf_token)window._csrfTok=d.csrf_token;}).catch(function(){});
 
 function showToast(msg, type) {
   const c = document.getElementById('toast-container');
@@ -3768,6 +3772,8 @@ async function confirmarPagoInf() {
   let btnTxt = '';
   if (btn) { btnTxt = btn.textContent; btn.disabled = true; btn.textContent = '⏳ Procesando...'; }
   try {
+    // Asegurar token CSRF real antes de enviar (mismo patrón que cmoDecidir/bulk)
+    if(!window._csrfTok){ try{ const tr=await fetch('/api/csrf-token',{credentials:'same-origin'}); if(tr.ok){ const td=await tr.json(); window._csrfTok=td.csrf_token||''; } }catch(_){} }
     const resp = await fetch(`/api/marketing/influencers/${id}/solicitar-pago`,_fetchOpts('POST', {valor, concepto, fecha_publicacion:fechaPub, entregable, fecha_contenido:fechaCont}));
     const data = await resp.json();
     if(data.ok) {
