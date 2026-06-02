@@ -15201,6 +15201,185 @@ def admin_diagnostico_produccion_page():
     return _DIAG_PROD_HTML
 
 
+# ── ESQUEMA CRÍTICO · columnas que el código ESCRIBE y deben existir en PG ──
+# Capa 2 del esquema cero-error: detectar drift SQLite↔PG (migraciones que no se
+# aplicaron en prod) ANTES de que rompan un endpoint con 500. Tipo por columna
+# para poder repararla (ADD COLUMN nullable · seguro · idempotente).
+_SCHEMA_CRITICO = {
+    'solicitudes_compra': {
+        'numero': 'TEXT', 'fecha': 'TEXT', 'estado': 'TEXT', 'solicitante': 'TEXT',
+        'email_solicitante': 'TEXT', 'urgencia': 'TEXT', 'observaciones': 'TEXT',
+        'area': 'TEXT', 'empresa': 'TEXT', 'categoria': 'TEXT', 'tipo': 'TEXT',
+        'valor': 'NUMERIC', 'influencer_id': 'INTEGER', 'numero_oc': 'TEXT',
+    },
+    'ordenes_compra': {
+        'numero_oc': 'TEXT', 'fecha': 'TEXT', 'estado': 'TEXT', 'proveedor': 'TEXT',
+        'observaciones': 'TEXT', 'creado_por': 'TEXT', 'categoria': 'TEXT', 'valor_total': 'NUMERIC',
+    },
+    'pagos_influencers': {
+        'influencer_id': 'INTEGER', 'influencer_nombre': 'TEXT', 'valor': 'NUMERIC',
+        'fecha': 'TEXT', 'estado': 'TEXT', 'concepto': 'TEXT', 'numero_oc': 'TEXT',
+        'fecha_contenido': 'TEXT', 'vence_pago_at': 'TEXT',
+    },
+    'movimientos': {
+        'material_id': 'TEXT', 'material_nombre': 'TEXT', 'cantidad': 'NUMERIC', 'tipo': 'TEXT',
+        'fecha': 'TEXT', 'lote': 'TEXT', 'estado_lote': 'TEXT', 'fecha_vencimiento': 'TEXT',
+        'observaciones': 'TEXT', 'operador': 'TEXT', 'proveedor': 'TEXT', 'produccion_id': 'INTEGER',
+    },
+    'formula_items': {
+        'producto_nombre': 'TEXT', 'material_id': 'TEXT', 'material_nombre': 'TEXT',
+        'porcentaje': 'NUMERIC', 'cantidad_g_por_lote': 'NUMERIC',
+    },
+    'maestro_mps': {
+        'codigo_mp': 'TEXT', 'nombre_comercial': 'TEXT', 'nombre_inci': 'TEXT',
+        'activo': 'INTEGER', 'stock_minimo': 'NUMERIC', 'proveedor': 'TEXT',
+    },
+}
+
+
+def _columnas_existentes(c, tabla):
+    cset = set()
+    try:
+        for r in c.execute("PRAGMA table_info(" + tabla + ")").fetchall():
+            cset.add(str(r[1]).lower())
+    except Exception:
+        cset = set()
+    if not cset:
+        try:
+            for r in c.execute(
+                "SELECT column_name FROM information_schema.columns WHERE table_name=?",
+                (tabla,)).fetchall():
+                cset.add(str(r[0]).lower())
+        except Exception:
+            pass
+    return cset
+
+
+@bp.route("/api/admin/schema-doctor", methods=["GET", "POST"])
+def admin_schema_doctor():
+    """Doctor de esquema · detecta columnas que el código ESCRIBE pero NO existen
+    en la BD (drift SQLite↔PG · migración no aplicada en prod). Causa típica de
+    500 silencioso (ej. solicitudes_compra.influencer_id → pago influencer 500).
+
+    GET = reporte. POST token=SCHEMA_DOCTOR_2026 = repara (ALTER TABLE ADD COLUMN
+    nullable · seguro/idempotente · no toca datos existentes · audit)."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    aplicar = request.method == 'POST'
+    if aplicar:
+        d = request.json or {}
+        if d.get('token', '').strip() != 'SCHEMA_DOCTOR_2026':
+            return jsonify({'error': 'Token incorrecto'}), 403
+
+    conn = db_connect()
+    c = conn.cursor()
+    faltantes = []
+    for tabla, cols in _SCHEMA_CRITICO.items():
+        existentes = _columnas_existentes(c, tabla)
+        if not existentes:
+            faltantes.append({'tabla': tabla, 'columna': '(tabla no encontrada o sin permiso)',
+                              'tipo': '', 'estado': 'tabla_ausente'})
+            continue
+        for col, tipo in cols.items():
+            if col.lower() not in existentes:
+                faltantes.append({'tabla': tabla, 'columna': col, 'tipo': tipo, 'estado': 'falta'})
+
+    reparados = []
+    if aplicar:
+        for f in faltantes:
+            if f['estado'] != 'falta':
+                continue
+            try:
+                c.execute("ALTER TABLE " + f['tabla'] + " ADD COLUMN " + f['columna'] + " " + f['tipo'])
+                conn.commit()
+                reparados.append({'tabla': f['tabla'], 'columna': f['columna']})
+            except Exception as e:
+                f['error'] = str(e)[:160]
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+        if reparados:
+            try:
+                import json as _json
+                c.execute(
+                    "INSERT INTO audit_log (usuario, accion, tabla, registro_id, detalle, ip, fecha) "
+                    "VALUES (?,?,?,?,?,?,datetime('now','-5 hours'))",
+                    (u, 'SCHEMA_DOCTOR_REPARAR', 'schema', '_BULK_',
+                     _json.dumps({'reparados': reparados}, ensure_ascii=False), request.remote_addr))
+                conn.commit()
+            except Exception:
+                pass
+    conn.close()
+    return jsonify({
+        'ok': True, 'aplicado': aplicar,
+        'total_faltantes': len([f for f in faltantes if f['estado'] == 'falta']),
+        'faltantes': faltantes, 'reparados': reparados,
+        'backend': 'postgres' if _usa_postgres_admin() else 'sqlite',
+    })
+
+
+def _usa_postgres_admin():
+    try:
+        from database import _usa_postgres
+        return _usa_postgres()
+    except Exception:
+        try:
+            from api.database import _usa_postgres
+            return _usa_postgres()
+        except Exception:
+            return False
+
+
+_SCHEMA_DOCTOR_HTML = """<!DOCTYPE html>
+<html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Doctor de esquema · EOS</title>
+<style>
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;color:#1e293b;margin:0;padding:20px}
+.wrap{max-width:1000px;margin:0 auto}.card{background:#fff;border-radius:12px;padding:18px;margin-bottom:16px;box-shadow:0 2px 6px rgba(0,0,0,.05)}
+h1{margin:0 0 6px;color:#0f766e;font-size:21px}
+table{width:100%;border-collapse:collapse;font-size:12px;margin-top:6px}th{text-align:left;padding:7px;background:#f1f5f9;color:#475569;font-weight:700}td{padding:7px;border-bottom:1px solid #f1f5f9}
+.mono{font-family:ui-monospace,monospace;font-weight:700}.bad{color:#b91c1c;font-weight:700}.ok{color:#15803d;font-weight:700}.muted{color:#64748b;font-size:11px}
+button{background:#0f766e;color:#fff;border:none;padding:8px 16px;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer}button.ap{background:#b45309}
+</style></head><body>
+<div class="wrap">
+<a href="/modulos">&larr; Volver</a>
+<div class="card">
+  <h1>&#129658; Doctor de esquema · columnas que faltan en la BD</h1>
+  <div class="muted">Detecta columnas que el código ESCRIBE pero no existen en la base (migración no aplicada en PostgreSQL) — causa típica de 500 silencioso (ej. el pago a influencer). Reparar = ADD COLUMN nullable, seguro, no toca datos.</div>
+  <div style="margin-top:10px"><button onclick="cargar()">🔍 Revisar esquema</button> <button class="ap" onclick="reparar()">🛠️ Reparar faltantes</button> <span id="resumen" class="muted"></span></div>
+  <div id="msg" style="margin-top:8px;font-size:12px"></div>
+</div>
+<div id="out" class="card">Apretá Revisar.</div>
+</div>
+<script>
+function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[c];});}
+async function _csrf(){ try{ var r=await fetch('/api/csrf-token',{credentials:'same-origin'}); if(r.ok){ var d=await r.json(); return d.csrf_token||''; } }catch(_){} return ''; }
+function render(d){
+  document.getElementById('resumen').innerHTML='Backend: <b>'+esc(d.backend)+'</b> · <b class="'+(d.total_faltantes?'bad':'ok')+'">'+d.total_faltantes+' columna(s) faltante(s)</b>'+(d.aplicado?(' · <b class="ok">'+(d.reparados||[]).length+' reparadas</b>'):'');
+  if(!d.faltantes.length){ document.getElementById('out').innerHTML='<div class="ok">✅ Esquema completo · ninguna columna crítica falta.</div>'; return; }
+  var h='<table><tr><th>Tabla</th><th>Columna</th><th>Tipo</th><th>Estado</th></tr>';
+  d.faltantes.forEach(function(f){ h+='<tr><td class="mono">'+esc(f.tabla)+'</td><td class="mono bad">'+esc(f.columna)+'</td><td>'+esc(f.tipo)+'</td><td>'+esc(f.error||f.estado)+'</td></tr>'; });
+  document.getElementById('out').innerHTML=h+'</table>';
+}
+async function cargar(){ document.getElementById('out').innerHTML='Revisando…'; document.getElementById('msg').innerHTML='';
+  try{ var r=await fetch('/api/admin/schema-doctor',{cache:'no-store'}); if(r.status===401){location.href='/login';return;} var d=await r.json(); if(!r.ok||!d.ok){document.getElementById('out').innerHTML='<span class="bad">Error: '+esc((d&&d.error)||r.status)+'</span>';return;} render(d); }catch(e){ document.getElementById('out').innerHTML='<span class="bad">Error red: '+esc(e.message)+'</span>'; } }
+async function reparar(){ if(!confirm('Agregar las columnas faltantes (ADD COLUMN nullable). Seguro, no toca datos. ¿Continuar?')) return; document.getElementById('msg').innerHTML='Reparando…';
+  try{ var r=await fetch('/api/admin/schema-doctor',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':await _csrf()},credentials:'same-origin',body:JSON.stringify({token:'SCHEMA_DOCTOR_2026'})}); var d=await r.json(); if(!r.ok||!d.ok){document.getElementById('msg').innerHTML='<span class="bad">Error: '+esc((d&&d.error)||r.status)+'</span>';return;} document.getElementById('msg').innerHTML='<b class="ok">✓ '+(d.reparados||[]).length+' columnas agregadas.</b>'; render(d); }catch(e){ document.getElementById('msg').innerHTML='<span class="bad">Error red: '+esc(e.message)+'</span>'; } }
+cargar();
+</script>
+</body></html>"""
+
+
+@bp.route("/admin/schema-doctor", methods=["GET"])
+def admin_schema_doctor_page():
+    """Página · doctor de esquema (columnas faltantes en la BD)."""
+    if 'compras_user' not in session:
+        return redirect("/login?next=/admin/schema-doctor")
+    return _SCHEMA_DOCTOR_HTML
+
+
 @bp.route("/api/admin/maestro-mps-unificar", methods=["POST"])
 def maestro_mps_unificar():
     """Fusiona 2+ MPs duplicadas en una canónica.
