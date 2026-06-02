@@ -1094,6 +1094,12 @@ def _check_mp_para_pedido_b2b(c, producto, kg_b2b):
                                      ELSE 0 END),0)
             FROM movimientos
             WHERE material_id IN ({placeholders})
+              -- FIX 1-jun-2026 audit Abastecimiento (P0-3) · excluir estados no
+              -- disponibles (cuarentena/vencido/rechazado) igual que _get_mp_stock ·
+              -- antes el aviso B2B contaba ese stock → sobre-optimista.
+              AND (estado_lote IS NULL
+                   OR UPPER(COALESCE(estado_lote,'')) NOT IN
+                      ('CUARENTENA','CUARENTENA_EXTENDIDA','VENCIDO','RECHAZADO','AGOTADO'))
             GROUP BY material_id""",
         ids,
     ).fetchall():
@@ -4744,8 +4750,13 @@ def plan_factibilidad():
         factible = len(faltantes) == 0
         # F5 · consumir stock SIEMPRE (factible o bloqueada) · si A bloquea
         # MP-X, B que la comparte tampoco la tiene en su fecha posterior.
+        # FIX 1-jun-2026 audit Abastecimiento (P1-2) · NO clavar en 0: arrastrar el
+        # balance real (puede quedar negativo) para que el déficit acumulado se
+        # propague · antes el max(.,0) lo escondía y un lote posterior aparecía
+        # factible aunque la MP ya estuviera sobre-comprometida. El display usa
+        # max(disp,0) arriba (4747), así que el negativo no se muestra como stock.
         for mid, _mnom, need in req:
-            stock[mid] = max(stock.get(mid, 0.0) - need, 0.0)
+            stock[mid] = stock.get(mid, 0.0) - need
         producciones.append({
             "id": fid, "producto": prod, "fecha": fecha,
             "cantidad_kg": round(float(cant_kg or 0), 1),

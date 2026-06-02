@@ -308,8 +308,8 @@ def _pendiente_en_compras_g(c, codigo_mp):
             """SELECT COALESCE(SUM(sci.cantidad_g), 0)
                FROM solicitudes_compra_items sci
                JOIN solicitudes_compra sc ON sc.numero = sci.numero
-               WHERE sci.codigo_mp = ?
-                 AND sc.estado IN ('Pendiente','Aprobada')
+               WHERE UPPER(TRIM(sci.codigo_mp)) = UPPER(TRIM(?))
+                 AND sc.estado IN ('Pendiente','En revision','Aprobada')
                  AND COALESCE(sc.numero_oc,'') = ''""",
             (codigo_mp,),
         ).fetchone()
@@ -326,7 +326,7 @@ def _pendiente_en_compras_g(c, codigo_mp):
             """SELECT COALESCE(SUM(oci.cantidad_g - COALESCE(oci.cantidad_recibida_g,0)), 0)
                FROM ordenes_compra_items oci
                JOIN ordenes_compra oc ON oc.numero_oc = oci.numero_oc
-               WHERE oci.codigo_mp = ?
+               WHERE UPPER(TRIM(oci.codigo_mp)) = UPPER(TRIM(?))
                  AND (
                        oc.estado IN ('Borrador','Revisada','Autorizada','Parcial')
                     OR (oc.estado='Pagada' AND COALESCE(oc.fecha_recepcion,'')='')
@@ -350,12 +350,12 @@ def _pendiente_en_compras_bulk(c):
     pendiente = {}
     try:
         for r in c.execute(
-            """SELECT sci.codigo_mp, COALESCE(SUM(sci.cantidad_g), 0)
+            """SELECT UPPER(TRIM(sci.codigo_mp)), COALESCE(SUM(sci.cantidad_g), 0)
                FROM solicitudes_compra_items sci
                JOIN solicitudes_compra sc ON sc.numero = sci.numero
-               WHERE sc.estado IN ('Pendiente','Aprobada')
+               WHERE sc.estado IN ('Pendiente','En revision','Aprobada')
                  AND COALESCE(sc.numero_oc,'') = ''
-               GROUP BY sci.codigo_mp""",
+               GROUP BY UPPER(TRIM(sci.codigo_mp))""",
         ).fetchall():
             mid = str(r[0] or '').strip()
             if mid:
@@ -364,7 +364,7 @@ def _pendiente_en_compras_bulk(c):
         pass
     try:
         for r in c.execute(
-            """SELECT oci.codigo_mp,
+            """SELECT UPPER(TRIM(oci.codigo_mp)),
                       COALESCE(SUM(oci.cantidad_g - COALESCE(oci.cantidad_recibida_g,0)), 0)
                FROM ordenes_compra_items oci
                JOIN ordenes_compra oc ON oc.numero_oc = oci.numero_oc
@@ -372,7 +372,7 @@ def _pendiente_en_compras_bulk(c):
                        oc.estado IN ('Borrador','Revisada','Autorizada','Parcial')
                     OR (oc.estado='Pagada' AND COALESCE(oc.fecha_recepcion,'')='')
                  )
-               GROUP BY oci.codigo_mp""",
+               GROUP BY UPPER(TRIM(oci.codigo_mp))""",
         ).fetchall():
             mid = str(r[0] or '').strip()
             if mid:
