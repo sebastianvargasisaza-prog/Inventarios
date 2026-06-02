@@ -1194,8 +1194,13 @@ def _compute_mp_deficit_aggregated(conn, days_ahead=90):
         lote_kg = formula.get('lote_size_kg', 1)
         factor = kg_ev / lote_kg if lote_kg > 0 else 1.0
         for item in formula.get('items', []):
-            mid = str(item['material_id']).strip()
             nombre = item.get('material_nombre', '')
+            # FIX 2-jun-2026 audit abastecimiento (M1) · resolver a código de BODEGA
+            # antes de acumular demanda · igual que consumo_horizontes · evita demanda
+            # partida entre códigos de fórmula del mismo material (este motor alimenta
+            # /generar-oc, /regenerar-oc, /mps-deficit).
+            _mid_raw = str(item['material_id']).strip()
+            mid = _resolver_material_bodega(conn, _mid_raw, nombre) or _mid_raw
             g_lote = item.get('cantidad_g_por_lote', 0)
             g_need = float(g_lote) * factor
             if g_need <= 0 or not mid:
