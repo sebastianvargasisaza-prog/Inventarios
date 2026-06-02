@@ -2111,12 +2111,34 @@ def _handle_produccion_inner():
             lotes_fefo = c.fetchall()
             stock_total_disp = sum(float(l[2] or 0) for l in lotes_fefo)
             if stock_total_disp + 0.01 < g_total:  # tolerancia 0.01g por floats
+                # 2-jun-2026 · TRANSPARENCIA: ¿cuánto stock de este código está
+                # RETENIDO en estados no-producibles (VENCIDO/AGOTADO/CUARENTENA)?
+                # Caso CONTORNO: 600g del lote YT20251203 marcado no-usable → por
+                # eso producción ve 17.5g aunque Bodega muestre 617g.
+                retenido = {}
+                ret_total = 0.0
+                try:
+                    for er in c.execute(
+                        """SELECT COALESCE(estado_lote,'(sin estado)') est, lote,
+                                  SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END) stk
+                           FROM movimientos
+                           WHERE material_id=? AND estado_lote IN ('CUARENTENA','CUARENTENA_EXTENDIDA','RECHAZADO','VENCIDO','AGOTADO','BLOQUEADO')
+                           GROUP BY estado_lote, lote HAVING stk > 0""", (mat_id,)).fetchall():
+                        g = float(er[2] or 0)
+                        retenido.setdefault(er[0], 0.0)
+                        retenido[er[0]] += g
+                        ret_total += g
+                    retenido = {k: round(v, 2) for k, v in retenido.items()}
+                except Exception:
+                    retenido = {}
                 faltantes.append({
                     'material': mat_nombre,
                     'material_id': mat_id,
                     'requerido_g': g_total,
                     'disponible_g': round(stock_total_disp, 2),
                     'falta_g': round(g_total - stock_total_disp, 2),
+                    'retenido_g': round(ret_total, 2),
+                    'retenido_por_estado': retenido,
                 })
                 continue
 
