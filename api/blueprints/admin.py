@@ -15029,9 +15029,10 @@ def admin_diagnostico_produccion_global():
     conn = db_connect()
     c = conn.cursor()
 
-    # disponible + retenido(atrapado recuperable) por código, en una pasada de movimientos
+    # disponible + retenido(atrapado recuperable) + cuarentena, por código
     disp = {}
     retenido = {}
+    cuarentena = {}
     movs = c.execute(
         "SELECT material_id, tipo, cantidad, UPPER(COALESCE(estado_lote,'')), COALESCE(fecha_vencimiento,'') "
         "FROM movimientos WHERE material_id IS NOT NULL AND material_id!=''").fetchall()
@@ -15047,6 +15048,9 @@ def admin_diagnostico_produccion_global():
             es_vencido_real = bool(venc_s) and venc_s < hoy
             if signed > 0 and (est == 'AGOTADO' or (est == 'VENCIDO' and not es_vencido_real)):
                 retenido[mid] = retenido.get(mid, 0.0) + signed
+            # CUARENTENA: stock REAL físico, solo falta que Calidad lo libere
+            if signed != 0 and est in ('CUARENTENA', 'CUARENTENA_EXTENDIDA'):
+                cuarentena[mid] = cuarentena.get(mid, 0.0) + signed
 
     # maestro: codigo -> (nombre, inci_norm) · INCI -> [(codigo, disp)]
     nombres = {}
@@ -15086,7 +15090,7 @@ def admin_diagnostico_produccion_global():
         return any(t in n for t in ('AGUA', 'WATER', 'AQUA'))
 
     by_prod = {}
-    cat_count = {'ATRAPADO': 0, 'DUPLICADO_INCI': 0, 'MISMATCH_NOMBRE': 0, 'SIN_STOCK_REAL': 0}
+    cat_count = {'ATRAPADO': 0, 'EN_CUARENTENA': 0, 'DUPLICADO_INCI': 0, 'MISMATCH_NOMBRE': 0, 'SIN_STOCK_REAL': 0}
     for prod, mid, nom in items:
         mid = str(mid).strip()
         if _es_agua(nom):
@@ -15100,6 +15104,9 @@ def admin_diagnostico_produccion_global():
         if retenido.get(mid, 0) > 0.01:
             cat = 'ATRAPADO'
             detalle = {'recuperable_g': round(retenido[mid], 2)}
+        elif cuarentena.get(mid, 0) > 0.01:
+            cat = 'EN_CUARENTENA'
+            detalle = {'cuarentena_g': round(cuarentena[mid], 2)}
         else:
             # ¿hermano por INCI con stock? · SOLO si el nombre comercial también
             # se parece (evita unir Yogurt↔Fragancia pistacho que comparten INCI
@@ -15171,7 +15178,7 @@ button{background:#7c3aed;color:#fff;border:none;padding:8px 16px;border-radius:
 </div>
 <script>
 function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[c];});}
-function pill(c){var m={ATRAPADO:['atra','lote AGOTADO → liberar'],DUPLICADO_INCI:['dup','duplicado INCI → unificar'],MISMATCH_NOMBRE:['mis','nombre≠código → verificar'],SIN_STOCK_REAL:['sin','sin stock → comprar']};var x=m[c]||['sin',c];return '<span class="pill '+x[0]+'">'+x[1]+'</span>';}
+function pill(c){var m={ATRAPADO:['atra','lote AGOTADO → liberar'],EN_CUARENTENA:['atra','en CUARENTENA → liberar en Calidad'],DUPLICADO_INCI:['dup','posible duplicado → verificar'],MISMATCH_NOMBRE:['mis','nombre≠código → verificar'],SIN_STOCK_REAL:['sin','sin stock → comprar']};var x=m[c]||['sin',c];return '<span class="pill '+x[0]+'">'+x[1]+'</span>';}
 async function cargar(){
   var out=document.getElementById('out'); out.innerHTML='Analizando todas las fórmulas…';
   try{
@@ -15183,18 +15190,20 @@ async function cargar(){
     document.getElementById('summary').innerHTML=
       '<div class="box" style="background:#ede9fe;color:#5b21b6">'+d.productos_bloqueados+' productos · '+d.total_ingredientes_bloqueados+' ingredientes bloqueados</div>'+
       '<div class="box atra">ATRAPADO: '+(pc.ATRAPADO||0)+'</div>'+
+      '<div class="box atra">CUARENTENA: '+(pc.EN_CUARENTENA||0)+'</div>'+
       '<div class="box dup">DUPLICADO INCI: '+(pc.DUPLICADO_INCI||0)+'</div>'+
       '<div class="box mis">MISMATCH: '+(pc.MISMATCH_NOMBRE||0)+'</div>'+
       '<div class="box sin">SIN STOCK: '+(pc.SIN_STOCK_REAL||0)+'</div>';
     if(!d.productos.length){ out.innerHTML='<div style="color:#15803d;font-weight:700">✅ Ningún ingrediente bloqueado · producción ve todo el stock.</div>'; return; }
-    var h='<div class="muted" style="margin-bottom:8px">Acciones: <b>ATRAPADO</b>→/admin/lotes-stock-atrapado · <b>DUPLICADO INCI</b>→Unificar MPs (canónico = el código de la fórmula) · <b>MISMATCH</b>→/admin/verificar-formulas · <b>SIN STOCK</b>→comprar.</div>';
+    var h='<div class="muted" style="margin-bottom:8px">Acciones: <b>ATRAPADO</b>→/admin/lotes-stock-atrapado · <b>CUARENTENA</b>→liberar en Calidad · <b>DUPLICADO INCI</b>→verificar (puede ser otro grado) · <b>MISMATCH</b>→/admin/verificar-formulas · <b>SIN STOCK</b>→comprar.</div>';
     d.productos.forEach(function(p){
       h+='<h3>'+esc(p.producto)+' <span class="muted">('+p.bloqueos.length+')</span></h3>';
       h+='<table><tr><th>Ingrediente</th><th>Código</th><th>Causa</th><th>Detalle / acción</th></tr>';
       p.bloqueos.forEach(function(b){
         var det='';
         if(b.categoria==='ATRAPADO') det='Recuperable: <b>'+(b.detalle.recuperable_g||0).toLocaleString()+' g</b> en AGOTADO/VENCIDO';
-        else if(b.categoria==='DUPLICADO_INCI') det='Stock en <span class="mono">'+esc(b.detalle.codigo_con_stock)+'</span> ('+esc(b.detalle.nombre)+') · <b>'+(b.detalle.stock_g||0).toLocaleString()+' g</b> · mismo INCI → unificar a '+esc(b.material_id);
+        else if(b.categoria==='EN_CUARENTENA') det='<b>'+(b.detalle.cuarentena_g||0).toLocaleString()+' g</b> en CUARENTENA · stock REAL · liberar lote en Calidad';
+        else if(b.categoria==='DUPLICADO_INCI') det='POSIBLE mismo material: <span class="mono">'+esc(b.detalle.codigo_con_stock)+'</span> ('+esc(b.detalle.nombre)+') · '+(b.detalle.stock_g||0).toLocaleString()+' g · <b>verificá si es igual</b> (puede ser otro grado)';
         else if(b.categoria==='SIN_STOCK_REAL') det='Sin stock en ningún código · comprar';
         else det='El nombre no concuerda con el código · revisar verificar-formulas';
         h+='<tr><td>'+esc(b.nombre_linea)+'</td><td class="mono bad">'+esc(b.material_id)+'</td><td>'+pill(b.categoria)+'</td><td>'+det+'</td></tr>';
