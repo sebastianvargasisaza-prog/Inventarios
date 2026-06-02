@@ -15019,9 +15019,9 @@ def admin_diagnostico_produccion_global():
     if err:
         return err, code
     try:
-        from blueprints.formula_match import norm as _fnorm
+        from blueprints.formula_match import norm as _fnorm, build_maestro_index, evaluar_item
     except ImportError:
-        from api.blueprints.formula_match import norm as _fnorm
+        from api.blueprints.formula_match import norm as _fnorm, build_maestro_index, evaluar_item
     from datetime import datetime as _dt
     hoy = _dt.now().strftime('%Y-%m-%d')
     _NO_PROD = ('CUARENTENA', 'CUARENTENA_EXTENDIDA', 'RECHAZADO', 'VENCIDO', 'AGOTADO', 'BLOQUEADO')
@@ -15052,15 +15052,28 @@ def admin_diagnostico_produccion_global():
     nombres = {}
     inci_de = {}
     por_inci = {}
-    _INCI_GENERICO = {'', 'PENDIENTE INCI', 'AQUA', 'WATER'}
+    _midx_rows = []
+    # INCIs genéricos/ambiguos que NO identifican un material único (distintos
+    # grados/fragancias comparten estos) → no usarlos para "duplicado INCI".
+    _INCI_GENERICO = {'', 'PENDIENTE INCI', 'AQUA', 'WATER', 'PARFUM', 'FRAGRANCE',
+                      'AROMA', 'FLAVOR', 'PERFUME', 'CENTELLA ASIATICA EXTRACT',
+                      'CENTELLA ASIATICA', 'GLYCERIN'}
     for r in c.execute("SELECT codigo_mp, COALESCE(nombre_comercial, nombre_inci, codigo_mp), "
                        "COALESCE(nombre_inci,'') FROM maestro_mps WHERE COALESCE(activo,1)=1").fetchall():
         cod = str(r[0]).strip()
         nombres[cod] = r[1]
+        inci_raw = (r[2] or '').strip().upper()
         inci_n = _fnorm(r[2])
         inci_de[cod] = inci_n
-        if inci_n and r[2].strip().upper() not in _INCI_GENERICO and len(inci_n) >= 4:
+        _midx_rows.append((cod, r[1], r[2]))
+        if inci_n and inci_raw not in _INCI_GENERICO and len(inci_n) >= 4:
             por_inci.setdefault(inci_n, []).append(cod)
+    maestro_index = build_maestro_index(_midx_rows)
+
+    def _comercial_parecido(cod_a, cod_b):
+        ta = {t for t in _fnorm(nombres.get(cod_a, '')).split() if len(t) >= 4}
+        tb = {t for t in _fnorm(nombres.get(cod_b, '')).split() if len(t) >= 4}
+        return bool(ta & tb)
 
     # formula_items
     items = c.execute(
@@ -15088,24 +15101,27 @@ def admin_diagnostico_produccion_global():
             cat = 'ATRAPADO'
             detalle = {'recuperable_g': round(retenido[mid], 2)}
         else:
-            # ¿hermano por INCI con stock?
+            # ¿hermano por INCI con stock? · SOLO si el nombre comercial también
+            # se parece (evita unir Yogurt↔Fragancia pistacho que comparten INCI
+            # genérico). Aun así es "posible · verificar", nunca auto-unificar.
             inci_n = inci_de.get(mid, '')
             hermano = None
             if inci_n:
                 for c2 in por_inci.get(inci_n, []):
-                    if c2 != mid and disp.get(c2, 0) > 0.01:
+                    if c2 != mid and disp.get(c2, 0) > 0.01 and _comercial_parecido(mid, c2):
                         if hermano is None or disp[c2] > hermano[1]:
                             hermano = (c2, disp[c2])
             if hermano:
                 cat = 'DUPLICADO_INCI'
                 detalle = {'codigo_con_stock': hermano[0], 'nombre': nombres.get(hermano[0], hermano[0]),
-                           'stock_g': round(hermano[1], 2), 'inci': inci_n}
+                           'stock_g': round(hermano[1], 2), 'inci': inci_n, 'verificar': True}
             else:
-                # ¿el nombre de la línea concuerda con el INCI de su código? si no, mismatch
-                nom_n = _fnorm(nom)
-                inci_self = inci_de.get(mid, '')
-                comparte = bool(set(nom_n.split()) & set(inci_self.split())) if (nom_n and inci_self) else True
-                cat = 'MISMATCH_NOMBRE' if (inci_self and not comparte) else 'SIN_STOCK_REAL'
+                # mismatch REAL solo si el motor (con sinónimos ES/EN) dice que el
+                # nombre no concuerda con la identidad del código · así "Sorbato de
+                # potasio" (MP00202=POTASSIUM SORBATE) NO se marca (es correcto, solo
+                # está sin stock).
+                _ev = evaluar_item(nom, mid, maestro_index)
+                cat = 'MISMATCH_NOMBRE' if _ev.get('problema') == 'mismatch_nombre' else 'SIN_STOCK_REAL'
         cat_count[cat] = cat_count.get(cat, 0) + 1
         by_prod.setdefault(prod, []).append({
             'material_id': mid, 'nombre_linea': nom,
