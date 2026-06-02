@@ -6715,8 +6715,14 @@ def mkt_solicitar_pago_influencer(iid):
         vence_pago_at = (base + _td_fc(days=30)).strftime('%Y-%m-%d')
 
         # Generate SOL number
-        from datetime import datetime as dt
+        from datetime import datetime as dt, timedelta as _td_hoy
         today = dt.now()
+        # FIX 2-jun-2026 · HTTP 500 al solicitar pago: date('now','-5 hours') depende
+        # de una función custom de PostgreSQL (pg_functions.sql) que NO se recarga al
+        # bootear · si la BD se reconstruyó, falla → 500 SOLO en endpoints que usan
+        # date('now',...) (producción usa fechas de Python, por eso anda). Calculamos
+        # la fecha de Bogotá en Python y la pasamos como parámetro · portable SQLite/PG.
+        _fecha_hoy = (today - _td_hoy(hours=5)).strftime('%Y-%m-%d')
         prefix = f"SOL-{today.year}-"
         last = c.execute(
             "SELECT numero FROM solicitudes_compra WHERE numero LIKE ? ORDER BY numero DESC LIMIT 1",
@@ -6762,9 +6768,10 @@ def mkt_solicitar_pago_influencer(iid):
             INSERT INTO solicitudes_compra
             (numero, fecha, estado, solicitante, email_solicitante, urgencia, observaciones,
              area, empresa, categoria, tipo, valor, influencer_id)
-            VALUES (?,date('now', '-5 hours'),'Aprobada',?,?,?,?,?,?,?,?,?,?)
+            VALUES (?,?,'Aprobada',?,?,?,?,?,?,?,?,?,?)
         """, (
             numero,
+            _fecha_hoy,
             solicitante_user,
             email_sol,
             "Normal",
@@ -6789,9 +6796,10 @@ def mkt_solicitar_pago_influencer(iid):
         c.execute("""
             INSERT INTO ordenes_compra
             (numero_oc, fecha, estado, proveedor, observaciones, creado_por, categoria, valor_total)
-            VALUES (?,date('now', '-5 hours'),'Aprobada',?,?,?,?,?)
+            VALUES (?,?,'Aprobada',?,?,?,?,?)
         """, (
             oc_num,
+            _fecha_hoy,
             inf["nombre"],
             observaciones,
             u,
@@ -6810,8 +6818,8 @@ def mkt_solicitar_pago_influencer(iid):
                 INSERT INTO pagos_influencers
                 (influencer_id, influencer_nombre, valor, fecha, estado, concepto,
                  numero_oc, fecha_contenido, vence_pago_at)
-                VALUES (?,?,?,date('now', '-5 hours'),'Pendiente',?,?,?,?)
-            """, (iid, inf["nombre"], int(monto), concepto, oc_num,
+                VALUES (?,?,?,?,'Pendiente',?,?,?,?)
+            """, (iid, inf["nombre"], int(monto), _fecha_hoy, concepto, oc_num,
                    fecha_contenido, vence_pago_at))
         except Exception as e:
             # Fallback para instancias viejas sin las columnas nuevas (mig 195 no aplicada)
@@ -6819,8 +6827,8 @@ def mkt_solicitar_pago_influencer(iid):
                 c.execute("""
                     INSERT INTO pagos_influencers
                     (influencer_id, influencer_nombre, valor, fecha, estado, concepto, numero_oc)
-                    VALUES (?,?,?,date('now', '-5 hours'),'Pendiente',?,?)
-                """, (iid, inf["nombre"], int(monto), concepto, oc_num))
+                    VALUES (?,?,?,?,'Pendiente',?,?)
+                """, (iid, inf["nombre"], int(monto), _fecha_hoy, concepto, oc_num))
             except Exception:
                 pass
 
