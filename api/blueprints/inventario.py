@@ -598,6 +598,54 @@ def handle_formulas():
                          'Si el resto es agua/c.s.p. está bien; si falta un ingrediente, agregalo.'
                          ) if _sum_pct < 95.0 else None
 
+        # GUARD nombre↔código · 1-jun-2026 (caso "N-acetil glucosamina" guardada
+        # con MP00175 = Acetyl tetrapeptide-5 → stock cruzado → "Hay 0g" al
+        # producir). El form tiene código y nombre como inputs independientes y el
+        # backend solo validaba que el código existiera, NO que concordara con el
+        # nombre. Acá rechazamos el mapeo cruzado salvo override explícito,
+        # usando el MISMO motor que el detector (blueprints.formula_match · M1).
+        if not data.get('forzar_mismatch'):
+            try:
+                from blueprints.formula_match import build_maestro_index, evaluar_item
+            except ImportError:
+                from api.blueprints.formula_match import build_maestro_index, evaluar_item
+            try:
+                _mrows = c.execute(
+                    "SELECT codigo_mp, COALESCE(nombre_comercial,''), COALESCE(nombre_inci,'') "
+                    "FROM maestro_mps WHERE activo=1").fetchall()
+                _idx = build_maestro_index(_mrows)
+                _mismatches = []
+                for it in items_validados:
+                    ev = evaluar_item(it['material_nombre'], it['material_id'], _idx)
+                    _mej = ev.get('mejor_candidato') or {}
+                    # Bloquear SOLO si el nombre choca con el código Y existe otro
+                    # código que es un match FUERTE (≥80) y DISTINTO al asignado.
+                    # Así no molestamos cuando el código asignado es lo mejor que hay
+                    # (nombre abreviado/variante sin mejor candidato) · evita falsos
+                    # positivos en nombres que no calzan léxicamente con el catálogo.
+                    if (ev.get('problema') == 'mismatch_nombre'
+                            and _mej.get('codigo')
+                            and _mej.get('codigo') != it['material_id']
+                            and (_mej.get('score') or 0) >= 80):
+                        _mismatches.append({
+                            'material_id': it['material_id'],
+                            'material_nombre': it['material_nombre'],
+                            'codigo_es_en_catalogo': ev.get('maestro_nombre') or '?',
+                            'codigo_sugerido': _mej.get('codigo'),
+                            'nombre_sugerido': _mej.get('nombre_comercial') or _mej.get('nombre_inci'),
+                        })
+            except Exception:
+                _mismatches = []  # nunca bloquear por fallo del motor (degradación segura)
+            if _mismatches:
+                return jsonify({
+                    'error': 'El nombre no coincide con el código en una o más líneas',
+                    'detalle': ('El código pertenece a OTRA materia prima del catálogo. '
+                                'Corregí el código de la línea marcada, o reenviá con '
+                                '"forzar_mismatch" si estás 100% seguro.'),
+                    'mismatches': _mismatches,
+                    'forzar_mismatch_requerido': True,
+                }), 409
+
         # Sprint Fórmulas PRO · 20-may-2026: versionar ANTES de pisar.
         # Si ya existe esa fórmula, archivamos versión actual en
         # formula_versiones. INVIMA puede pedir trazabilidad de cambios.

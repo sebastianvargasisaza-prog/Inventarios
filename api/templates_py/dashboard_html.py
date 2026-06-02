@@ -4893,9 +4893,27 @@ async function guardarFormula(){
   // aunque el POST devolviera 400 (FK violation por material_id sin registrar
   // en maestro_mps activo, etc). Luis Enrique creía que guardaba pero la BD
   // nunca recibía el INSERT. Ahora chequea r.ok y muestra error real.
+  await _postFormula(prod,base,desc,items,false);
+}
+
+async function _postFormula(prod,base,desc,items,forzar){
   try{
-    var r=await fetch('/api/formulas',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({producto_nombre:prod,unidad_base_g:base,descripcion:desc,items:items})});
+    var r=await fetch('/api/formulas',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({producto_nombre:prod,unidad_base_g:base,descripcion:desc,items:items,forzar_mismatch:!!forzar})});
     var res=await r.json();
+    // 409 · el nombre de una línea no coincide con su código (mapeo cruzado)
+    if(r.status===409 && res.mismatches){
+      var det='<div class="alert-error"><b>&#x26A0; El nombre no coincide con el código</b>';
+      det+='<div style="margin-top:6px;font-size:12px;">'+_escHTML(res.detalle||'')+'</div><ul style="margin:8px 0 0 0;padding-left:18px;font-size:12px;">';
+      res.mismatches.forEach(function(m){
+        det+='<li style="margin-bottom:4px"><b>'+_escHTML(m.material_nombre)+'</b> tiene el código <span style="font-family:monospace">'+_escHTML(m.material_id)+'</span>, que en el catálogo es <b>'+_escHTML(m.codigo_es_en_catalogo||'?')+'</b>.';
+        if(m.codigo_sugerido){ det+=' &#x2192; ¿Querías <span style="font-family:monospace">'+_escHTML(m.codigo_sugerido)+'</span> ('+_escHTML(m.nombre_sugerido||'')+')?'; }
+        det+='</li>';
+      });
+      det+='</ul><div style="margin-top:10px"><button onclick="_forzarFormula()" style="background:#b45309;color:#fff;border:none;padding:7px 14px;border-radius:6px;font-size:12px;font-weight:700;cursor:pointer">Guardar de todos modos (forzar)</button> <span style="font-size:11px;color:#7f1d1d">Solo si estás 100% seguro del código.</span></div></div>';
+      document.getElementById('formula-msg').innerHTML=det;
+      window.__formForzar={prod:prod,base:base,desc:desc,items:items};
+      return;
+    }
     if(!r.ok){
       var msg='<div class="alert-error"><b>&#x274C; No se guardó la fórmula</b>';
       msg+='<div style="margin-top:6px;font-size:13px;">'+_escHTML(res.error||'Error desconocido')+'</div>';
@@ -4914,6 +4932,12 @@ async function guardarFormula(){
     await loadFormulas();
     setTimeout(function(){document.getElementById('formula-msg').innerHTML='';},3000);
   }catch(e){document.getElementById('formula-msg').innerHTML='<div class="alert-error">Error red: '+_escHTML(e.message)+'</div>';}
+}
+
+async function _forzarFormula(){
+  var f=window.__formForzar; if(!f) return;
+  if(!confirm('Vas a guardar con códigos que NO coinciden con el nombre del ingrediente. Esto puede cruzar el stock al producir. ¿Estás 100% seguro?')) return;
+  await _postFormula(f.prod,f.base,f.desc,f.items,true);
 }
 
 function editFormula(idx){
