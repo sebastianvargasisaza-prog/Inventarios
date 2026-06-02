@@ -4713,7 +4713,8 @@ def get_lote_movimientos(material_id, lote):
     lote_real = '' if lote == '_SIN_LOTE_' else lote
     rows = c.execute(
         """SELECT id, material_id, material_nombre, cantidad, tipo, lote,
-                  fecha, observaciones, operador, proveedor
+                  fecha, observaciones, operador, proveedor,
+                  COALESCE(estado_lote,''), COALESCE(fecha_vencimiento,'')
            FROM movimientos
            WHERE material_id = ? AND COALESCE(lote,'') = ?
            ORDER BY fecha DESC, id DESC
@@ -4727,9 +4728,21 @@ def get_lote_movimientos(material_id, lote):
         'lote': r[5] or '', 'fecha': r[6] or '',
         'observaciones': r[7] or '', 'operador': r[8] or '',
         'proveedor': r[9] or '',
+        'estado_lote': r[10] or '', 'fecha_vencimiento': str(r[11] or ''),
     } for r in rows]
+    # resumen por estado_lote · para ver de un vistazo por qué producción excluye
+    _por_estado = {}
+    for it in items:
+        e = it['estado_lote'] or '(sin estado)'
+        d = _por_estado.setdefault(e, {'entradas': 0.0, 'salidas': 0.0})
+        if it['tipo'] in ('Entrada', 'entrada', 'ENTRADA', 'Ajuste +', 'Ajuste'):
+            d['entradas'] += it['cantidad']
+        elif it['tipo'] in ('Salida', 'salida', 'SALIDA', 'Ajuste -'):
+            d['salidas'] += it['cantidad']
+    resumen = {e: {'neto_g': round(v['entradas'] - v['salidas'], 2)} for e, v in _por_estado.items()}
     return jsonify({'movimientos': items, 'total': len(items),
-                    'material_id': material_id, 'lote': lote_real})
+                    'material_id': material_id, 'lote': lote_real,
+                    'resumen_por_estado': resumen})
 
 
 @bp.route('/api/proveedores-unicos', methods=['GET'])
