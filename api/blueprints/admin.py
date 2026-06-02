@@ -8637,24 +8637,42 @@ def _compute_audit_minimos(horizonte_proyeccion_dias: int = 90,
             dias_cobertura_minimo = None
             modo_uniforme = False
 
-    # 1. Cargar planificacion estratégica para el horizonte
+    # 1. Demanda de MP desde produccion_programada (FUENTE UNIFICADA · Sebastián
+    #    1-jun-2026: "todo debe unificarse en produccion_programada"). ANTES este
+    #    audit medía la demanda con planificacion_estrategica (Google Calendar
+    #    parseando títulos de eventos) — fuente DISTINTA a factibilidad/abastecimiento
+    #    que leen produccion_programada → daban veredictos opuestos sobre la misma MP.
+    #    Ahora consume de abastecimiento_consumo_horizontes (misma fuente y lógica).
+    #    El consumo viene keyed por material_id de fórmula; el bridge de abajo lo
+    #    re-llavea a código de bodega.
     try:
-        from blueprints.programacion import planificacion_estrategica as _plan
+        from blueprints.programacion import abastecimiento_consumo_horizontes as _abh
     except ImportError:
-        from api.blueprints.programacion import planificacion_estrategica as _plan
-    with current_app.test_request_context(
-        f'/api/programacion/planificacion?dias={horizonte_proyeccion_dias}'
-    ):
-        plan_resp = _plan()
-    plan_data = plan_resp.get_json() or {}
-
+        from api.blueprints.programacion import abastecimiento_consumo_horizontes as _abh
+    from flask import session as _sess_outer
+    _u_audit = (_sess_outer.get('compras_user') if _sess_outer else None) or 'sebastian'
+    _hk = str(horizonte_proyeccion_dias)
     consumo_por_mp = {}
-    for mp in (plan_data.get('mps_deficit') or []) + (plan_data.get('mps_ok') or []):
-        consumo_por_mp[str(mp['material_id']).strip()] = {
-            'total_g_horizonte': float(mp.get('total_g') or 0),
-            'origen': mp.get('origen', 'desconocido'),
-            'productos': mp.get('productos', []) or [],
-        }
+    try:
+        with current_app.test_request_context(
+            f'/api/abastecimiento/consumo-horizontes?tipo=mp&modo=comprometido'
+            f'&horizontes={horizonte_proyeccion_dias}'
+        ):
+            from flask import session as _s_ab
+            _s_ab['compras_user'] = _u_audit
+            _ab_resp = _abh()
+        _ab_data = _ab_resp.get_json() if hasattr(_ab_resp, 'get_json') else {}
+        for _it in (_ab_data.get('mps') or []):
+            _cod = str(_it.get('codigo') or '').strip()
+            if not _cod:
+                continue
+            consumo_por_mp[_cod] = {
+                'total_g_horizonte': float((_it.get('consumo') or {}).get(_hk, 0) or 0),
+                'origen': 'desconocido',  # china/colombia se deriva del proveedor abajo
+                'productos': [],
+            }
+    except Exception:
+        consumo_por_mp = {}  # si abastecimiento falla, el audit sigue (consumo 0)
 
     conn = _get_db()
 
@@ -8734,6 +8752,15 @@ def _compute_audit_minimos(horizonte_proyeccion_dias: int = 90,
         proy = consumo_por_bodega.get(str(codigo).strip()) or consumo_por_mp.get(str(codigo).strip())
         consumo_horizonte_g = proy['total_g_horizonte'] if proy else 0.0
         origen = proy['origen'] if proy else 'desconocido'
+        # China/lead-time se deriva del proveedor de maestro_mps (que ya tenemos en
+        # el loop) · antes venía de planificacion_estrategica · Sebastián 1-jun-2026.
+        if origen in ('desconocido', '') and proveedor:
+            try:
+                from blueprints.programacion import PROVEEDORES_CHINA as _PCHINA
+            except Exception:
+                _PCHINA = {'lyphar', 'yitibio'}
+            _pl = proveedor.lower()
+            origen = 'china' if any(_c in _pl for _c in _PCHINA) else 'colombia'
         productos = proy['productos'] if proy else []
         consumo_diario_g = consumo_horizonte_g / horizonte_proyeccion_dias if horizonte_proyeccion_dias > 0 else 0
         consumo_mensual_g = consumo_diario_g * 30
