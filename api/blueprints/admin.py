@@ -14779,6 +14779,193 @@ def admin_verificar_formulas_page():
     return _VERIFICAR_FORMULAS_HTML
 
 
+@bp.route("/api/admin/lotes-stock-atrapado", methods=["GET", "POST"])
+def admin_lotes_stock_atrapado():
+    """Lotes con STOCK REAL atrapado en estado no-producible (AGOTADO, o VENCIDO
+    con vencimiento futuro/sin fecha) → producción los ignora aunque tengan stock.
+
+    Causa: el 'reset_2026_04_27' regeneró las Entradas marcándolas 'AGOTADO' para
+    preservar trazabilidad, pero varios lotes seguían con stock. Producción excluye
+    AGOTADO → 'Hay 0g' aunque la bodega muestre el stock (caso lote YT20251203 de
+    glucosamina · 600g).
+
+    GET = reporte (read-only). POST con token CORREGIR_LOTES_2026 = reclasifica a
+    VIGENTE las Entradas atrapadas de los lotes con neto>0 y no vencidos realmente.
+    Backup + audit + reversible (audit guarda id+estado previo).
+
+    NO toca: CUARENTENA/CUARENTENA_EXTENDIDA (control de calidad legítimo),
+    RECHAZADO/BLOQUEADO, ni VENCIDO con fecha pasada (vencido de verdad)."""
+    u, err, code = _require_admin()
+    if err:
+        return err, code
+    from datetime import datetime as _dt
+    hoy = _dt.now().strftime('%Y-%m-%d')
+    aplicar = request.method == 'POST'
+    if aplicar:
+        d = request.json or {}
+        if d.get('token', '').strip() != 'CORREGIR_LOTES_2026':
+            return jsonify({'error': 'Token incorrecto'}), 403
+
+    _ENTRADA = ('Entrada', 'entrada', 'ENTRADA', 'Ajuste +', 'Ajuste')
+    _SALIDA = ('Salida', 'salida', 'SALIDA', 'Ajuste -')
+    _NO_PROD = ('CUARENTENA', 'CUARENTENA_EXTENDIDA', 'RECHAZADO', 'VENCIDO', 'AGOTADO', 'BLOQUEADO')
+
+    conn = db_connect()
+    c = conn.cursor()
+    rows = c.execute(
+        "SELECT id, material_id, COALESCE(lote,''), tipo, cantidad, "
+        "       UPPER(COALESCE(estado_lote,'')), COALESCE(fecha_vencimiento,'') "
+        "FROM movimientos WHERE COALESCE(lote,'') != ''").fetchall()
+
+    # agregación por (material_id, lote)
+    agg = {}
+    for rid, mid, lote, tipo, cant, est, venc in rows:
+        k = (str(mid), str(lote))
+        a = agg.setdefault(k, {'neto_total': 0.0, 'neto_disp': 0.0, 'fixables': [], 'estados': {}})
+        signed = float(cant or 0) if tipo in _ENTRADA else (-float(cant or 0) if tipo in _SALIDA else 0.0)
+        a['neto_total'] += signed
+        if est not in _NO_PROD:
+            a['neto_disp'] += signed
+        if signed != 0:
+            a['estados'][est or '(sin estado)'] = round(a['estados'].get(est or '(sin estado)', 0.0) + signed, 2)
+        # fixable: Entrada/Ajuste+ en AGOTADO, o VENCIDO con venc vacío o futuro
+        venc_s = str(venc or '')[:10]
+        es_vencido_real = bool(venc_s) and venc_s < hoy
+        if tipo in _ENTRADA and signed > 0:
+            if est == 'AGOTADO' or (est == 'VENCIDO' and not es_vencido_real):
+                a['fixables'].append({'id': rid, 'cantidad': float(cant or 0),
+                                       'estado': est, 'venc': venc_s})
+
+    atrapados = []
+    for (mid, lote), a in agg.items():
+        # atrapado = stock que se recuperaría = neto real − lo disponible hoy
+        disp_hoy = max(a['neto_disp'], 0.0)
+        trapped = round(a['neto_total'] - disp_hoy, 2)
+        if a['neto_total'] > 0.5 and trapped > 0.5 and a['fixables']:
+            atrapados.append({
+                'material_id': mid, 'lote': lote,
+                'neto_total_g': round(a['neto_total'], 2),
+                'disponible_g': round(max(a['neto_disp'], 0), 2),
+                'atrapado_g': trapped,
+                'estados': a['estados'],
+                'fixables': a['fixables'],
+            })
+    atrapados.sort(key=lambda x: -x['atrapado_g'])
+
+    # nombres de MP para el reporte
+    nombres = {}
+    try:
+        for r in c.execute("SELECT codigo_mp, COALESCE(nombre_comercial, nombre_inci, codigo_mp) FROM maestro_mps").fetchall():
+            nombres[str(r[0]).strip()] = r[1]
+    except Exception:
+        pass
+    for a in atrapados:
+        a['nombre'] = nombres.get(a['material_id'], a['material_id'])
+
+    corregidos = 0
+    if aplicar and atrapados:
+        try:
+            do_backup(triggered_by='pre_corregir_lotes_atrapados')
+        except Exception:
+            pass
+        prev = []
+        for a in atrapados:
+            for f in a['fixables']:
+                try:
+                    cur = c.execute(
+                        "UPDATE movimientos SET estado_lote='VIGENTE' WHERE id=? AND UPPER(COALESCE(estado_lote,''))=?",
+                        (f['id'], f['estado']))
+                    if cur.rowcount:
+                        corregidos += cur.rowcount
+                        prev.append({'id': f['id'], 'material_id': a['material_id'],
+                                     'lote': a['lote'], 'estado_previo': f['estado']})
+                except Exception:
+                    pass
+        conn.commit()
+        try:
+            import json as _json
+            c.execute(
+                "INSERT INTO audit_log (usuario, accion, tabla, registro_id, detalle, ip, fecha) "
+                "VALUES (?,?,?,?,?,?,datetime('now','-5 hours'))",
+                (u, 'CORREGIR_LOTES_ATRAPADOS', 'movimientos', '_BULK_',
+                 _json.dumps({'corregidos': corregidos, 'prev': prev[:300]}, ensure_ascii=False),
+                 request.remote_addr))
+            conn.commit()
+        except Exception:
+            pass
+    conn.close()
+    return jsonify({
+        'ok': True, 'aplicado': aplicar,
+        'total_lotes': len(atrapados),
+        'total_atrapado_g': round(sum(a['atrapado_g'] for a in atrapados), 2),
+        'corregidos': corregidos,
+        'lotes': atrapados[:300],
+    })
+
+
+_LOTES_ATRAPADO_HTML = """<!DOCTYPE html>
+<html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Lotes con stock atrapado · EOS</title>
+<style>
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f8fafc;color:#1e293b;margin:0;padding:20px}
+.wrap{max-width:1100px;margin:0 auto}
+.card{background:#fff;border-radius:12px;padding:18px;margin-bottom:16px;box-shadow:0 2px 6px rgba(0,0,0,.05)}
+h1{margin:0 0 6px;color:#b45309;font-size:21px}
+table{width:100%;border-collapse:collapse;font-size:12px;margin-top:6px}
+th{text-align:left;padding:8px;background:#f1f5f9;color:#475569;font-weight:700}
+td{padding:8px;border-bottom:1px solid #f1f5f9;vertical-align:top}
+.mono{font-family:ui-monospace,monospace;font-weight:700;color:#1e40af}
+.muted{color:#64748b;font-size:11px}.bad{color:#b91c1c;font-weight:700}.ok{color:#15803d;font-weight:700}
+button{background:#1d4ed8;color:#fff;border:none;padding:8px 16px;border-radius:7px;font-size:13px;font-weight:700;cursor:pointer}
+button.ap{background:#b45309}
+</style></head><body>
+<div class="wrap">
+<a href="/modulos">&larr; Volver</a>
+<div class="card">
+  <h1>&#128230; Lotes con stock REAL atrapado en AGOTADO/VENCIDO</h1>
+  <div class="muted">El reset del 27-abr regeneró Entradas marcándolas AGOTADO, pero varios lotes seguían con stock → producción los ignora ("Hay 0g" con bodega llena). Esto los reclasifica a VIGENTE. NO toca cuarentena, rechazado, ni vencidos reales (fecha pasada). Backup + reversible.</div>
+  <div style="margin-top:10px"><button onclick="cargar()">🔍 Buscar (reporte)</button> <button class="ap" onclick="aplicar()">✔ Corregir a VIGENTE</button> <span id="resumen" class="muted"></span></div>
+  <div id="msg" style="margin-top:8px;font-size:12px"></div>
+</div>
+<div id="out" class="card">Apretá Buscar.</div>
+</div>
+<script>
+function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[c];});}
+async function _csrf(){ try{ var r=await fetch('/api/csrf-token',{credentials:'same-origin'}); if(r.ok){ var d=await r.json(); return d.csrf_token||''; } }catch(_){} return ''; }
+function render(d){
+  document.getElementById('resumen').innerHTML=d.total_lotes+' lote(s) · <b class="bad">'+(d.total_atrapado_g||0).toLocaleString()+' g atrapados</b>'+(d.aplicado?(' · <b class="ok">'+d.corregidos+' corregidos</b>'):'');
+  if(!d.lotes.length){ document.getElementById('out').innerHTML='<div class="ok">✅ Ningún lote con stock atrapado.</div>'; return; }
+  var h='<table><tr><th>MP</th><th>Lote</th><th>Atrapado</th><th>Neto real</th><th>Disponible (hoy)</th><th>Estados</th></tr>';
+  d.lotes.forEach(function(x){
+    var est=Object.keys(x.estados||{}).map(function(k){return esc(k)+': '+(x.estados[k]).toLocaleString();}).join(' · ');
+    h+='<tr><td><span class="mono">'+esc(x.material_id)+'</span><br><span class="muted">'+esc(x.nombre||'')+'</span></td><td class="mono">'+esc(x.lote)+'</td><td class="bad">'+(x.atrapado_g||0).toLocaleString()+' g</td><td>'+(x.neto_total_g||0).toLocaleString()+' g</td><td>'+(x.disponible_g||0).toLocaleString()+' g</td><td class="muted">'+est+'</td></tr>';
+  });
+  document.getElementById('out').innerHTML=h+'</table>';
+}
+async function cargar(){
+  document.getElementById('out').innerHTML='Buscando…'; document.getElementById('msg').innerHTML='';
+  try{ var r=await fetch('/api/admin/lotes-stock-atrapado',{cache:'no-store'}); if(r.status===401){location.href='/login';return;} var d=await r.json(); if(!r.ok||!d.ok){document.getElementById('out').innerHTML='<span class="bad">Error: '+esc((d&&d.error)||r.status)+'</span>';return;} render(d); }
+  catch(e){ document.getElementById('out').innerHTML='<span class="bad">Error red: '+esc(e.message)+'</span>'; }
+}
+async function aplicar(){
+  if(!confirm('Vas a reclasificar a VIGENTE las Entradas con stock atrapado en AGOTADO/VENCIDO-no-vencido. Hace backup y es reversible. ¿Continuar?')) return;
+  document.getElementById('msg').innerHTML='Corrigiendo…';
+  try{ var r=await fetch('/api/admin/lotes-stock-atrapado',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':await _csrf()},credentials:'same-origin',body:JSON.stringify({token:'CORREGIR_LOTES_2026'})}); var d=await r.json(); if(!r.ok||!d.ok){document.getElementById('msg').innerHTML='<span class="bad">Error: '+esc((d&&d.error)||r.status)+'</span>';return;} document.getElementById('msg').innerHTML='<b class="ok">✓ '+d.corregidos+' movimientos reclasificados a VIGENTE.</b>'; render(d); }
+  catch(e){ document.getElementById('msg').innerHTML='<span class="bad">Error red: '+esc(e.message)+'</span>'; }
+}
+cargar();
+</script>
+</body></html>"""
+
+
+@bp.route("/admin/lotes-stock-atrapado", methods=["GET"])
+def admin_lotes_stock_atrapado_page():
+    """Página · lotes con stock real atrapado en AGOTADO/VENCIDO."""
+    if 'compras_user' not in session:
+        return redirect("/login?next=/admin/lotes-stock-atrapado")
+    return _LOTES_ATRAPADO_HTML
+
+
 @bp.route("/api/admin/maestro-mps-unificar", methods=["POST"])
 def maestro_mps_unificar():
     """Fusiona 2+ MPs duplicadas en una canónica.
