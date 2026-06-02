@@ -571,6 +571,33 @@ def handle_formulas():
         if not items_validados:
             return jsonify({'error': 'items todos inválidos (id, nombre y porcentaje>0 requeridos)'}), 400
 
+        # FIX 1-jun-2026 audit fórmulas (P0-1) · CONSOLIDAR material_id duplicado ·
+        # formula_items no tiene UNIQUE → dos filas del mismo MP descontaban el DOBLE
+        # en producción. Sumamos su % y g_por_lote en una sola línea.
+        _by_mid = {}
+        for iv in items_validados:
+            k = iv['material_id'].upper()
+            if k in _by_mid:
+                _by_mid[k]['porcentaje'] = round(_by_mid[k]['porcentaje'] + iv['porcentaje'], 4)
+                _by_mid[k]['cantidad_g_por_lote'] = round(
+                    _by_mid[k]['cantidad_g_por_lote'] + iv['cantidad_g_por_lote'], 2)
+            else:
+                _by_mid[k] = iv
+        items_validados = list(_by_mid.values())
+        # FIX 1-jun-2026 audit (P0-2) · validar suma de % · >101% es imposible (los
+        # ingredientes no pueden superar el 100% del lote · error de captura). <95%
+        # solo avisa (puede ser agua c.s.p. no listada).
+        _sum_pct = round(sum(iv['porcentaje'] for iv in items_validados), 2)
+        if _sum_pct > 101.0:
+            return jsonify({
+                'error': f'La suma de porcentajes es {_sum_pct}% (>100%). '
+                         'Los ingredientes no pueden superar el 100% del lote · revisá los valores.',
+                'suma_pct': _sum_pct,
+            }), 400
+        _warning_suma = (f'La suma de porcentajes es {_sum_pct}% (<100%). '
+                         'Si el resto es agua/c.s.p. está bien; si falta un ingrediente, agregalo.'
+                         ) if _sum_pct < 95.0 else None
+
         # Sprint Fórmulas PRO · 20-may-2026: versionar ANTES de pisar.
         # Si ya existe esa fórmula, archivamos versión actual en
         # formula_versiones. INVIMA puede pedir trazabilidad de cambios.
@@ -647,6 +674,8 @@ def handle_formulas():
                 'unidad_base_g': unidad_base_g,
                 'lote_size_kg': lote_size_kg,
                 'items_count': len(items_validados),
+                'suma_pct': _sum_pct,
+                'warning': _warning_suma,
             }), 201
         except Exception as e:
             try: conn.rollback()
@@ -6900,7 +6929,10 @@ def registrar_recepcion():
             c.execute("SELECT COUNT(*) FROM ordenes_compra_items WHERE numero_oc=? AND (cantidad_g - cantidad_recibida_g) > 1", (numero_oc,))
             pendientes = c.fetchone()[0]
             if pendientes == 0:
-                c.execute("UPDATE ordenes_compra SET estado='RECIBIDA',fecha_recepcion=datetime('now', '-5 hours'),recibido_por=? WHERE numero_oc=?",
+                # FIX 1-jun-2026 audit · 'Recibida' (no 'RECIBIDA') · el resto del
+                # sistema usa mixed-case · una OC en 'RECIBIDA' desaparecía de listas
+                # de recibidas / cola de pago / discrepancias / aprendizaje de lead-time.
+                c.execute("UPDATE ordenes_compra SET estado='Recibida',fecha_recepcion=datetime('now', '-5 hours'),recibido_por=? WHERE numero_oc=?",
                           (d.get('operador',''), numero_oc))
         except Exception as oc_err:
             # Log but don't fail the reception — OC can be reconciled manually
