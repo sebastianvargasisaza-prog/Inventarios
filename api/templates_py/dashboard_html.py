@@ -6017,6 +6017,20 @@ function _showStockInsuficientePopup(producto, cantidad_kg, faltantes){
       '<td style="padding:8px 10px;text-align:right;font-weight:800;color:#dc2626;font-size:14px;">'+
         (f.falta_g||0).toLocaleString()+' g</td>'+
     '</tr>';
+    // 2-jun-2026 · TRANSPARENCIA: stock RETENIDO (cuarentena, etc) del MISMO código.
+    // Caso "bodega tiene 600g pero producción ve 17.5g" = el resto está sin liberar.
+    if(f.retenido_g && f.retenido_g>0){
+      var det=[]; var rpe=f.retenido_por_estado||{};
+      Object.keys(rpe).forEach(function(k){ det.push((rpe[k]||0).toLocaleString()+' g en '+k); });
+      base += '<tr style="background:#fff7ed"><td colspan="4" style="padding:6px 10px;font-size:11px;color:#9a3412;border-top:1px dashed #fed7aa">'+
+        '&#9888; Hay <b>'+(f.retenido_g||0).toLocaleString()+' g</b> de este MP en bodega pero <b>NO disponible</b>: '+det.join(' · ')+'. '+
+        'Si es CUARENTENA, <b>liberá el lote en Calidad</b> (control de calidad → aprobar) y volvé a producir.</td></tr>';
+    }
+    // código de fórmula ≠ código de bodega → mapeo cruzado (revisar mapeo)
+    if(f.codigo_mp_formula && f.codigo_mp && f.codigo_mp_formula!==f.codigo_mp){
+      base += '<tr style="background:#fef2f2"><td colspan="4" style="padding:5px 10px;font-size:10px;color:#7f1d1d">'+
+        'Código fórmula <b>'+f.codigo_mp_formula+'</b> → bodega <b>'+f.codigo_mp+'</b>. Si no es el mismo material, revisá <b>/admin/formulas-mismapeo</b>.</td></tr>';
+    }
     // FIX 1-jun-2026 · pista de MP duplicada con stock (mismo MP, otro código)
     if(f.pista){
       base += '<tr style="background:#fffbeb"><td colspan="4" style="padding:6px 10px;font-size:11px;color:#92400e;border-top:1px dashed #fde68a">'+

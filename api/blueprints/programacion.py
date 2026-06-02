@@ -6667,6 +6667,19 @@ def _validar_stock_para_produccion(c, mps_a_consumir):
         WHERE material_id=?
           AND UPPER(COALESCE(estado_lote,'')) NOT IN ({placeholders})
     """
+    # 2-jun-2026 · TRANSPARENCIA "no jala lo que hay en bodega": cuando falta una
+    # MP, también medimos cuánto stock de ese MISMO código está RETENIDO en estados
+    # no-producibles (CUARENTENA, etc). Caso típico: bodega muestra 600g pero
+    # producción ve 17.5g porque 583g están en cuarentena sin liberar por Calidad.
+    sql_retenido = f"""
+        SELECT UPPER(COALESCE(estado_lote,'')) AS est,
+               COALESCE(SUM(CASE WHEN tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN cantidad WHEN tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -cantidad ELSE 0 END), 0) AS stk
+        FROM movimientos
+        WHERE material_id=?
+          AND UPPER(COALESCE(estado_lote,'')) IN ({placeholders})
+        GROUP BY UPPER(COALESCE(estado_lote,''))
+        HAVING stk > 0
+    """
     faltantes = []
     for mp in mps_a_consumir:
         cod = mp['codigo_mp']
@@ -6676,13 +6689,28 @@ def _validar_stock_para_produccion(c, mps_a_consumir):
         r = c.execute(sql, params).fetchone()
         disp = float(r[0] or 0)
         if disp + 0.01 < float(mp['cantidad_g']):
-            faltantes.append({
+            # desglose de stock retenido por estado (cuarentena/vencido/...)
+            retenido = {}
+            ret_total = 0.0
+            try:
+                for rr in c.execute(sql_retenido, params).fetchall():
+                    est = str(rr[0] or '').strip() or '(sin estado)'
+                    stk = float(rr[1] or 0)
+                    retenido[est] = round(stk, 2)
+                    ret_total += stk
+            except Exception:
+                pass
+            falt = {
                 'codigo_mp': cod,
                 'nombre': mp['nombre'],
+                'codigo_mp_formula': mp.get('codigo_mp_formula') or cod,
                 'requerido_g': mp['cantidad_g'],
                 'disponible_g': round(disp, 2),
                 'falta_g': round(mp['cantidad_g'] - disp, 2),
-            })
+                'retenido_g': round(ret_total, 2),
+                'retenido_por_estado': retenido,
+            }
+            faltantes.append(falt)
 
     # FIX 1-jun-2026 · PISTA de MP duplicada: si una MP falta pero hay OTRA en bodega
     # con stock y nombre similar (comparte tokens · caso 'N-acetil glucosamina' vs
