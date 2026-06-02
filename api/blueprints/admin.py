@@ -257,19 +257,15 @@ def animus_prioridad_agotamiento():
                 'pct': float(r['pct']),
             })
 
-        # 5. Stock actual MPs
-        mp_stock = {}
-        for r in c.execute("""
-            SELECT material_id, SUM(
-                CASE WHEN tipo='Entrada' THEN cantidad
-                     WHEN tipo='Salida' THEN -cantidad
-                     ELSE 0 END
-            ) AS stock_g
-            FROM movimientos
-            WHERE material_id IS NOT NULL AND TRIM(material_id) != ''
-            GROUP BY material_id
-        """).fetchall():
-            mp_stock[r['material_id']] = float(r['stock_g'] or 0)
+        # 5. Stock actual MPs · FIX 1-jun-2026 audit · usar el resolver canónico
+        # _get_mp_stock (tiers id/nombre/norm/alias/bridge + excluye cuarentena/vencido/
+        # etc + cuenta todas las variantes de tipo) · ANTES un SUM propio solo contaba
+        # 'Entrada'/'Salida' exact-case, sin estados ni tiers → faltantes falsos/inflados.
+        try:
+            from blueprints.programacion import _get_mp_stock as _gms
+        except ImportError:
+            from api.blueprints.programacion import _get_mp_stock as _gms
+        mp_stock = _gms(c.connection)
 
         mp_info = {}
         for r in c.execute("""
@@ -368,10 +364,15 @@ def animus_prioridad_agotamiento():
 
         # 7. MPs necesarias agregadas
         mps_out = []
+        try:
+            from blueprints.programacion import _lookup_stock_5tier as _l5
+        except ImportError:
+            from api.blueprints.programacion import _lookup_stock_5tier as _l5
         for mid, nec_g in mp_necesario_g.items():
-            stock_g = mp_stock.get(mid, 0)
-            faltante_g = max(0, nec_g - stock_g)
             info = mp_info.get(mid, {'nombre': '', 'proveedor': ''})
+            # 5-tier (resuelve fórmula→bodega vía nombre/alias/bridge en el dict canónico)
+            stock_g = _l5(mp_stock, mid, info.get('nombre') or '')
+            faltante_g = max(0, nec_g - stock_g)
             mps_out.append({
                 'codigo_mp': mid,
                 'nombre': info['nombre'],
@@ -4606,6 +4607,14 @@ def admin_corregir_formulas():
             ).fetchone()
             if not row:
                 errores.append({'formula_item_id': fid, 'error': 'no encontrado'})
+                continue
+            # FIX 1-jun-2026 audit · validar que el nuevo material_id exista en
+            # maestro_mps activo (como el POST de fórmulas) · antes permitía meter
+            # un material_id huérfano → MP no se descuenta / faltante falso.
+            if not c.execute("SELECT 1 FROM maestro_mps WHERE codigo_mp=? AND COALESCE(activo,1)=1",
+                             (nuevo_mid,)).fetchone():
+                errores.append({'formula_item_id': fid,
+                                'error': f'nuevo_material_id "{nuevo_mid}" no existe en maestro_mps activo'})
                 continue
             previo = {
                 'producto': row[0],

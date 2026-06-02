@@ -168,6 +168,7 @@ def _seleccionar_variante_optima(conn, producto_canonico, kg_objetivo=1.0):
                       COALESCE(prioridad, 0), COALESCE(lote_size_kg, 0)
                FROM formula_headers
                WHERE UPPER(TRIM(producto_canonico)) = UPPER(TRIM(?))
+                 AND COALESCE(activo,1) = 1
                ORDER BY prioridad DESC, id ASC""",
             (producto_canonico,),
         ).fetchall()
