@@ -6648,6 +6648,45 @@ def _validar_stock_para_produccion(c, mps_a_consumir):
                 'disponible_g': round(disp, 2),
                 'falta_g': round(mp['cantidad_g'] - disp, 2),
             })
+
+    # FIX 1-jun-2026 · PISTA de MP duplicada: si una MP falta pero hay OTRA en bodega
+    # con stock y nombre similar (comparte tokens · caso 'N-acetil glucosamina' vs
+    # 'N-Acetyl Glucosamina'), lo señalamos para que el usuario unifique/cree el puente.
+    # Es solo diagnóstico (no se usa para descontar · ahí mandan id/bridge/nombre exacto).
+    if faltantes:
+        try:
+            _stocked = []  # [(codigo, nombre, stock_g)] con stock disponible
+            _ph = ','.join(['?'] * len(_ESTADOS_LOTE_NO_PRODUCIBLES))
+            for rr in c.execute(f"""
+                SELECT mm.codigo_mp,
+                       COALESCE(mm.nombre_comercial, mm.nombre_inci, mm.codigo_mp),
+                       COALESCE(SUM(CASE WHEN m.tipo IN ('Entrada','entrada','ENTRADA','Ajuste +','Ajuste') THEN m.cantidad
+                                         WHEN m.tipo IN ('Salida','salida','SALIDA','Ajuste -') THEN -m.cantidad ELSE 0 END),0) AS stk
+                FROM maestro_mps mm
+                JOIN movimientos m ON m.material_id = mm.codigo_mp
+                WHERE UPPER(COALESCE(m.estado_lote,'')) NOT IN ({_ph})
+                GROUP BY mm.codigo_mp
+                HAVING stk > 0
+            """, _ESTADOS_LOTE_NO_PRODUCIBLES).fetchall():
+                _stocked.append((str(rr[0]).strip(), str(rr[1] or ''), float(rr[2] or 0)))
+            for f in faltantes:
+                _toks = {t for t in _norm_mp_name(f['nombre']).split() if len(t) >= 4}
+                if not _toks:
+                    continue
+                _best = None
+                for _cod2, _nom2, _stk2 in _stocked:
+                    if _cod2 == f['codigo_mp']:
+                        continue
+                    if _toks & {t for t in _norm_mp_name(_nom2).split() if len(t) >= 4}:
+                        if _best is None or _stk2 > _best[2]:
+                            _best = (_cod2, _nom2, _stk2)
+                if _best:
+                    f['pista'] = {
+                        'codigo_mp': _best[0], 'nombre': _best[1],
+                        'stock_g': round(_best[2], 2),
+                    }
+        except Exception:
+            pass
     return faltantes
 
 

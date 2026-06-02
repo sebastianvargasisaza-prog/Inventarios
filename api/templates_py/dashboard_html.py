@@ -5983,8 +5983,8 @@ function _showStockInsuficientePopup(producto, cantidad_kg, faltantes){
   var prev = document.getElementById('popup-stock-insuf');
   if(prev) prev.remove();
   var rows = (faltantes||[]).map(function(f){
-    var nom = f.material || f.material_id || '?';
-    return '<tr style="border-top:1px solid #fecaca;">'+
+    var nom = f.material || f.material_id || f.nombre || '?';
+    var base = '<tr style="border-top:1px solid #fecaca;">'+
       '<td style="padding:8px 10px;font-weight:600;color:#1f2937;">'+nom+'</td>'+
       '<td style="padding:8px 10px;text-align:right;color:#475569;">'+
         (f.requerido_g||0).toLocaleString()+' g</td>'+
@@ -5993,6 +5993,15 @@ function _showStockInsuficientePopup(producto, cantidad_kg, faltantes){
       '<td style="padding:8px 10px;text-align:right;font-weight:800;color:#dc2626;font-size:14px;">'+
         (f.falta_g||0).toLocaleString()+' g</td>'+
     '</tr>';
+    // FIX 1-jun-2026 · pista de MP duplicada con stock (mismo MP, otro código)
+    if(f.pista){
+      base += '<tr style="background:#fffbeb"><td colspan="4" style="padding:6px 10px;font-size:11px;color:#92400e;border-top:1px dashed #fde68a">'+
+        '💡 Posible MP duplicada en bodega con stock: <b>'+(f.pista.nombre||'')+'</b> '+
+        '(cód. '+(f.pista.codigo_mp||'')+') · <b>'+(f.pista.stock_g||0).toLocaleString()+' g</b> disponibles. '+
+        'Parece el mismo material con otro código → unificá en <b>Bodega MP → Unificar MPs</b> '+
+        '(o creá el puente fórmula↔bodega) y volvé a producir.</td></tr>';
+    }
+    return base;
   }).join('');
   var modal = document.createElement('div');
   modal.id = 'popup-stock-insuf';

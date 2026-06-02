@@ -59,6 +59,32 @@ def test_resuelve_via_nombre(app, db_clean):
         assert _validar_stock_para_produccion(conn.cursor(), mps) == []
 
 
+def test_faltante_muestra_pista_duplicado(app, db_clean):
+    """Si el nombre difiere demasiado para auto-resolver (acetil vs acetyl), el faltante
+    debe traer una PISTA al MP duplicado con stock (token compartido 'glucosamina')."""
+    with app.app_context():
+        from database import get_db
+        from blueprints.programacion import _calcular_mp_consumo_produccion, _validar_stock_para_produccion
+        conn = get_db()
+        # limpiar otros MPs con token 'glucosamina' para que la pista sea determinista
+        conn.execute("DELETE FROM movimientos WHERE material_id IN ('BODGLU3','FORMGLU3','BODGLU2','BODGLU','FORMGLU','FORMGLU2')")
+        conn.execute("DELETE FROM maestro_mps WHERE codigo_mp IN ('BODGLU3','BODGLU2','BODGLU')")
+        # bodega: stock bajo BODGLU3 'N-Acetyl Glucosamina' · fórmula usa 'N-acetil glucosamina'
+        # (difieren en acetil/acetyl → no normaliza igual → no auto-resuelve · pero comparten 'glucosamina')
+        conn.execute("INSERT INTO maestro_mps (codigo_mp, nombre_inci, nombre_comercial, activo) "
+                     "VALUES ('BODGLU3','N-ACETYL GLUCOSAMINE','N-Acetyl Glucosamina',1)")
+        conn.execute("INSERT INTO movimientos (material_id, material_nombre, cantidad, tipo, fecha, lote, estado_lote) "
+                     "VALUES ('BODGLU3','N-Acetyl Glucosamina',600,'Entrada','2026-06-01','LBG-3','VIGENTE')")
+        pid = _seed_prod(conn, "ZZGLU PISTA", "FORMGLU3", "N-acetil glucosamina")
+        conn.commit()
+        mps, _ = _calcular_mp_consumo_produccion(conn.cursor(), pid)
+        faltantes = _validar_stock_para_produccion(conn.cursor(), mps)
+        assert len(faltantes) == 1, faltantes          # no auto-resuelto (nombres difieren)
+        assert faltantes[0].get('pista'), faltantes     # pero trae pista al duplicado
+        assert faltantes[0]['pista']['codigo_mp'] == 'BODGLU3', faltantes
+        assert faltantes[0]['pista']['stock_g'] >= 600, faltantes
+
+
 def test_mp_que_ya_funciona_no_cambia(app, db_clean):
     """SEGURIDAD: si el id de fórmula YA tiene movimientos, el resolver lo deja igual."""
     with app.app_context():
